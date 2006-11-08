@@ -100,6 +100,23 @@
 
 
 %%%----------------------------------------------------------------------
+%%% Error/warning/info message macro(s)
+%%%----------------------------------------------------------------------
+
+-define(megaco_info(F, A),
+	(catch error_logger:info_msg("[ ~w : ~w : ~p ] ~n" ++ F ++ "~n", 
+				     [?APPLICATION, ?MODULE, self()|A]))).
+
+-define(megaco_warning(F, A),
+	(catch error_logger:warning_msg("[ ~w : ~w : ~p ] ~n" ++ F ++ "~n", 
+					[?APPLICATION, ?MODULE, self()|A]))).
+
+-define(megaco_error(F, A),
+	(catch error_logger:error_msg("[ ~w : ~w : ~p ] ~n" ++ F ++ "~n", 
+				      [?APPLICATION, ?MODULE, self()|A]))).
+
+
+%%%----------------------------------------------------------------------
 %%% Event Trace
 %%%----------------------------------------------------------------------
 

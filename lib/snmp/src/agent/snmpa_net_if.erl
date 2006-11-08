@@ -27,6 +27,7 @@
 -export([init/5]).
 
 -include("snmp_types.hrl").
+-include("snmpa_internal.hrl").
 -include("snmpa_atl.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
@@ -262,7 +263,7 @@ gen_udp_open(Port, Opts) ->
 loop(S) ->
     receive
 	{udp, _UdpId, Ip, Port, Packet} ->
-	    ?vlog("~n   got paket from ~w:~w",[Ip,Port]),
+	    ?vlog("got paket from ~w:~w",[Ip,Port]),
 	    NewS = handle_recv(S, Ip, Port, Packet),
 	    loop(NewS);
 
@@ -280,8 +281,8 @@ loop(S) ->
 
 	{send_pdu, Vsn, Pdu, MsgData, To} ->
 	    ?vdebug("send pdu: "
-		"~n   Pdu: ~p"
-		"~n   To:  ~p", [Pdu,To]),
+		    "~n   Pdu: ~p"
+		    "~n   To:  ~p", [Pdu,To]),
 	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
 
@@ -306,20 +307,23 @@ loop(S) ->
 	    loop(S);
 
 	{set_log_type, Type} when Type == write; Type == read_write ->
+	    ?vdebug("set log type: ~p", [Type]),
 	    #state{log = {Log, _}} = S,
 	    loop(S#state{log = {Log, Type}});
 
 	{disk_log, _Node, Log, Info} ->
+	    ?vdebug("disk log event: ~p, ~p", [Log, Info]),
 	    NewS = handle_disk_log(Log, Info, S),
 	    loop(NewS);
 
 	{verbosity, Verbosity} ->
-	    ?vlog("verbosity: ~p -> ~p",[get(verbosity),Verbosity]),
+	    ?vlog("verbosity: ~p -> ~p",[get(verbosity), Verbosity]),
 	    put(verbosity,snmp_verbosity:validate(Verbosity)),
 	    loop(S);
 
 	{'EXIT', Parent, Reason} when Parent == S#state.parent ->
-	    ?vlog("~n   parent (~p) exited: ~p", [Parent,Reason]),
+	    ?vlog("parent (~p) exited: "
+		  "~n   ~p", [Parent, Reason]),
 	    exit(Reason);
 
 	{'EXIT', Port, Reason} when Port == S#state.usock ->
@@ -327,12 +331,15 @@ loop(S) ->
 	    NewS = 
 		case gen_udp_open(UDPPort, S#state.usock_opts) of
 		    {ok, Id} ->
-			error_msg("Port ~p exited for reason ~p~n"
-				  "Re-opened (~p)", [Port, Reason, Id]),
+			error_msg("Port ~p exited for reason"
+				  "~n   ~p"
+				  "~n   Re-opened (~p)", [Port, Reason, Id]),
 			S#state{usock = Id};
 		    {error, ReopenReason} ->
-			error_msg("Port ~p exited for reason ~p~n"
-				  "Re-open failed for reason ~p", 
+			error_msg("Port ~p exited for reason"
+				  "~n   ~p"
+				  "~n   Re-open failed with reason"
+				  "~n   ~p", 
 				  [Port, Reason, ReopenReason]),
 			ok
 		end,
@@ -344,12 +351,13 @@ loop(S) ->
 	    loop(S);
 
 	{'EXIT', Pid, Reason} ->
-	    ?vlog("~p exited: ~p", [Pid,Reason]),
+	    ?vlog("~p exited: "
+		  "~n   ~p", [Pid, Reason]),
 	    NewS = clear_reqs(Pid, S),
 	    loop(NewS);
 
 	{system, From, Msg} ->
-	    ?vdebug("system signal ~p from ~p", [Msg,From]),
+	    ?vdebug("system event ~p from ~p", [Msg, From]),
 	    sys:handle_system_msg(Msg, From, S#state.parent, ?MODULE, [], S);
 
 	_ ->
@@ -733,15 +741,17 @@ get_bind_to_ip_address(Opts) ->
 
 %% ----------------------------------------------------------------
 
+error_msg(F,A) -> 
+    ?snmpa_error("NET-IF server: " ++ F, A).
+
+%% --- 
+
 user_err(F, A) ->
     snmpa_error:user_err(F, A).
  
 config_err(F, A) ->
     snmpa_error:config_err(F, A).
  
-error_msg(F,A) -> 
-    (catch error_logger:error_msg("~w: " ++ F,[?MODULE|A])).
-
 
 %% ----------------------------------------------------------------
 

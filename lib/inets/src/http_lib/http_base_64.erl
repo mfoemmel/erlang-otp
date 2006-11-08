@@ -78,7 +78,6 @@ int_to_b64(63) -> $/.
 %% a group of 3 output characters, with the three special-cases for
 %% end-of-input first:
 		      
-		      
 decode_base64_list({[],[]}, Acc) ->
     lists:reverse(Acc);
 decode_base64_list({[Sixtet1,Sixtet2,pad,pad], []}, Acc) ->
@@ -90,7 +89,11 @@ decode_base64_list({[Sixtet1,Sixtet2,Sixtet3,pad], []}, Acc) ->
     Octet1 = Bits3x6 bsr 16,
     Octet2 = (Bits3x6 bsr 8) band 16#ff,
     lists:reverse([Octet2, Octet1 | Acc]);
-decode_base64_list({[Sixtet1,Sixtet2,Sixtet3,Sixtet4],Rest}, Acc) ->
+decode_base64_list({[Sixtet1,Sixtet2,Sixtet3,Sixtet4],Rest}, Acc) when 
+  Sixtet1 =/= pad,
+  Sixtet2 =/= pad,
+  Sixtet3 =/= pad,
+  Sixtet4 =/= pad ->
     Bits4x6 =
 	(Sixtet1 bsl 18) bor (Sixtet2 bsl 12) bor (Sixtet3 bsl 6) bor Sixtet4,
     Octet1 = Bits4x6 bsr 16,

@@ -73,6 +73,8 @@ http_headers(Headers = #http_request_h{other = Other}) ->
 %%-------------------------------------------------------------------------
 is_absolut_uri("http://" ++ _) ->
     true;
+is_absolut_uri("https://" ++ _) ->
+    true;
 is_absolut_uri(_) ->
     false.
 
@@ -110,7 +112,7 @@ headers("if-unmodified-since", Value, Headers) ->
 headers("max-forwards", Value, Headers) ->
     Headers#http_request_h{'max-forwards' = Value};
 headers("proxy-authorization", Value, Headers) ->
-    Headers#http_request_h{'proxy-authenticate' = Value};
+    Headers#http_request_h{'proxy-authorization' = Value};
 headers("range", Value, Headers) ->
     Headers#http_request_h{range = Value};
 headers("referer", Value, Headers) ->
@@ -137,7 +139,7 @@ headers("upgrade", Value, Headers) ->
     Headers#http_request_h{upgrade = Value};
 headers("via", Value, Headers) ->
     Headers#http_request_h{via = Value};
-headers("waring", Value, Headers) ->
+headers("warning", Value, Headers) ->
     Headers#http_request_h{warning = Value};
 
 %% Entity header
@@ -219,9 +221,9 @@ key_value_str(Key = 'if-unmodified-since', Headers) ->
 key_value_str(Key = 'max-forwards', Headers) ->
     key_value_str(atom_to_list(Key),
 		    Headers#http_request_h.'max-forwards');
-key_value_str(Key = 'proxy-authenticate', Headers) ->
+key_value_str(Key = 'proxy-authorization', Headers) ->
     key_value_str(atom_to_list(Key),
-		    Headers#http_request_h.'proxy-authenticate');
+		    Headers#http_request_h.'proxy-authorization');
 key_value_str(Key = range, Headers) ->
     key_value_str(atom_to_list(Key),
 		    Headers#http_request_h.range);

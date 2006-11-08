@@ -117,6 +117,11 @@ typedef struct _process_list {
     struct _process_list* next;	/* Next waiting process. */
 } ProcessList;
 
+typedef struct {
+    Eterm reason;
+    ErlHeapFragment *bp;
+} ErtsPendExit;
+
 typedef struct process {
     /* All fields in the PCB that differs between different heap
      * architectures, have been moved to the end of this struct to
@@ -225,6 +230,7 @@ typedef struct process {
     ErlHeapFragment* mbuf;	/* Pointer to message buffer list */
     Uint mbuf_sz;		/* Size of all message buffers */
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
     /*
      * Secondary heap for arithmetic operations.
      */
@@ -236,6 +242,7 @@ typedef struct process {
     char* arith_file;
     int arith_line;
     Eterm* arith_check_me;	/* Address to check for overwrite. */
+#endif
 #endif
 
 #ifdef ERTS_SMP
@@ -253,6 +260,7 @@ typedef struct process {
     ErlMessageInQueue msg_inq;
     Eterm suspendee;
     ProcessList *pending_suspenders;
+    ErtsPendExit pending_exit;
 #ifdef HIPE
     struct hipe_process_state_smp hipe_smp;
 #endif
@@ -349,6 +357,7 @@ void erts_check_for_holes(Process* p);
 
 #define SPO_LINK 1
 #define SPO_USE_ARGS 2
+#define SPO_MONITOR 4
 
 /*
  * The following struct contains options for a process to be spawned.
@@ -356,6 +365,7 @@ void erts_check_for_holes(Process* p);
 typedef struct {
     Uint flags;
     int error_code;		/* Error code returned from create_process(). */
+    Eterm mref;			/* Monitor ref returned (if SPO_MONITOR was given). */
 
     /*
      * The following items are only initialized if the SPO_USE_ARGS flag is set.
@@ -375,6 +385,9 @@ typedef struct {
 
 void erts_arith_shrink(Process* p, Eterm* hp);
 Eterm* erts_heap_alloc(Process* p, Uint need);
+#ifdef CHECK_FOR_HOLES
+Eterm* erts_set_hole_marker(Eterm* ptr, Uint sz);
+#endif
 
 extern Process** process_tab;
 #ifdef HYBRID
@@ -424,6 +437,7 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 #define F_DISTRIBUTION       (1 << 16)  /* Process used in distribution */
 #define F_HEAP_GROW          (1 << 17)
 #define F_NEED_FULLSWEEP     (1 << 18) /* If process has old binaries & funs. */
+#define F_USING_DDLL         (1 << 24) /* Process has used the DDLL interface */
 
 /* process trace_flags */
 #define F_TRACE_SEND         (1 << 4)   
@@ -464,12 +478,48 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 								   schedule q */
 #define ERTS_PROC_SFLG_INRUNQ		(((Uint32) 1) << 1)	/* Process is
 								   in run q */
+#define ERTS_PROC_SFLG_TRAPEXIT		(((Uint32) 1) << 2)	/* Process is
+								   trapping
+								   exit */
+#define ERTS_PROC_SFLG_SCHEDULED	(((Uint32) 1) << 3)	/* Process is
+								   scheduled */
 /* Scheduler flags in process struct... */
 #define ERTS_PROC_SCHED_FLG_SCHEDULED	(((Uint32) 1) << 0)	/* Process is
 								   scheduled */
 
 #endif
 
+
+#ifdef ERTS_SMP
+#define ERTS_PROC_IS_TRAPPING_EXITS(P)					\
+  (ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks((P))			\
+		      & ERTS_PROC_LOCK_STATUS),				\
+   (P)->status_flags & ERTS_PROC_SFLG_TRAPEXIT)
+
+#define ERTS_PROC_SET_TRAP_EXIT(P)					\
+  (ERTS_SMP_LC_ASSERT(((ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS)	\
+		       & erts_proc_lc_my_proc_locks((P)))		\
+		      == (ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS)),	\
+   (P)->status_flags |= ERTS_PROC_SFLG_TRAPEXIT,			\
+   (P)->flags |= F_TRAPEXIT,						\
+   1)
+
+#define ERTS_PROC_UNSET_TRAP_EXIT(P)					\
+  (ERTS_SMP_LC_ASSERT(((ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS)	\
+		       & erts_proc_lc_my_proc_locks((P)))		\
+		      == (ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS)),	\
+   (P)->status_flags &= ~ERTS_PROC_SFLG_TRAPEXIT,			\
+   (P)->flags &= ~F_TRAPEXIT,						\
+   0)
+#else
+#define ERTS_PROC_IS_TRAPPING_EXITS(P) ((P)->flags & F_TRAPEXIT)
+#define ERTS_PROC_SET_TRAP_EXIT(P) ((P)->flags |= F_TRAPEXIT, 1)
+#define ERTS_PROC_UNSET_TRAP_EXIT(P) ((P)->flags &= ~F_TRAPEXIT, 0)
+#endif
+
+/* Option flags to erts_send_exit_signal() */
+#define ERTS_XSIG_FLG_IGN_KILL		(((Uint32) 1) << 0)
+#define ERTS_XSIG_FLG_NO_IGN_NORMAL	(((Uint32) 1) << 1)
 
 
 /* Process status values */
@@ -499,8 +549,7 @@ int  sched_q_len(void);
 void add_to_schedule_q(Process*);
 Process *schedule(Process*, int);
 Eterm erl_create_process(Process*, Eterm, Eterm, Eterm, ErlSpawnOpts*);
-void erts_schedule_exit(Process*, Process*, Eterm);
-void do_exit(Process*, Eterm);
+void erts_do_exit_process(Process*, Eterm);
 void set_timer(Process*, Uint);
 void cancel_timer(Process*);
 Uint erts_process_count(void);
@@ -522,6 +571,16 @@ void erts_get_exact_total_reductions(Process *, Uint *, Uint *);
 
 void erts_suspend(Process*, Uint32, Eterm);
 void erts_resume(Process*, Uint32);
+int erts_send_exit_signal(Process *, Eterm, Process *, Uint32 *, Eterm, Eterm,
+			  Process *, Uint32);
+#ifdef ERTS_SMP
+void erts_handle_pending_exit(Process *, Uint32);
+#define ERTS_PROC_PENDING_EXIT(P) \
+  (ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks((P)) & ERTS_PROC_LOCK_STATUS),\
+   (P)->pending_exit.reason != THE_NON_VALUE)
+#else
+#define ERTS_PROC_PENDING_EXIT(P) 0
+#endif
 
 #ifdef ERTS_SMP
 Process *erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
@@ -606,7 +665,7 @@ Eterm erts_get_current_pid(void)
 #define ERTS_PROC_LOCK_MSGQ		(((Uint32) 1) << 2)
 
 /*
- * Status lists:
+ * Status lock:
  *   Protects the following fields in the process structure:
  *   * status
  *   * rstatus
@@ -677,6 +736,8 @@ Eterm erts_get_current_pid(void)
 					 | ERTS_PROC_LOCK_STATUS)
 #define ERTS_PROC_LOCKS_MSG_SEND	(ERTS_PROC_LOCK_MSGQ		\
 					 | ERTS_PROC_LOCK_STATUS)
+#define ERTS_PROC_LOCKS_XSIG_SEND	(ERTS_PROC_LOCK_MSGQ		\
+					 | ERTS_PROC_LOCK_STATUS)
 
 #define ERTS_PROC_LOCKS_ALL \
   ((((Uint32) 1) << (ERTS_PROC_LOCK_MAX_BIT + 1)) - 1)
@@ -690,6 +751,13 @@ Eterm erts_get_current_pid(void)
 Uint erts_get_no_schedulers(void);
 int erts_set_no_schedulers(Process *, Uint *, Uint *, Uint, int *);
 
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
+#define ERTS_SMP_CHK_NO_PROC_LOCKS \
+  erts_proc_lc_chk_no_proc_locks(__FILE__, __LINE__)
+#else
+#define ERTS_SMP_CHK_NO_PROC_LOCKS
+#endif
+
 #ifdef ERTS_SMP
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
@@ -699,7 +767,7 @@ void erts_proc_lc_unlock(Process *p, Uint32 locks);
 void erts_proc_lc_chk_have_proc_locks(Process *p, Uint32 locks);
 void erts_proc_lc_chk_proc_locks(Process *p, Uint32 locks);
 void erts_proc_lc_chk_only_proc_main(Process *p);
-void erts_proc_lc_chk_no_proc_locks(void);
+void erts_proc_lc_chk_no_proc_locks(char *file, int line);
 Uint32 erts_proc_lc_my_proc_locks(Process *p);
 int erts_proc_lc_trylock_force_busy(Process *p, Uint32 locks);
 #endif
@@ -814,8 +882,7 @@ erts_proc_safelock(Process * this_proc,
 
 #endif /* #ifdef ERTS_SMP */
 
-#define ERTS_P2P_FLG_ALLOW_CURRENT_X	(((Uint32) 1) <<  0)
-#define ERTS_P2P_FLG_ALLOW_OTHER_X	(((Uint32) 1) <<  1)
+#define ERTS_P2P_FLG_ALLOW_OTHER_X	(((Uint32) 1) <<  0)
 
 #ifdef ERTS_SMP
 /*
@@ -906,7 +973,7 @@ erts_pid2proc_opt(Process *c_p, Uint32 c_p_have_locks,
 	if (!erts_proc_safelock(c_p,
 				c_p_have_locks,
 				c_p_have_locks,
-				flags & ERTS_P2P_FLG_ALLOW_CURRENT_X,
+				1,
 				pid,
 				proc,
 				0,
@@ -962,10 +1029,6 @@ Process *erts_pid2proc_not_running(Process *, Uint32, Eterm, Uint32);
 #define erts_pid2proc(PROC, HL, PID, NL) \
   erts_pid2proc_opt((PROC), (HL), (PID), (NL), 0)
 
-#define erts_pid2proc_x(PROC, HL, PID, NL) \
-  erts_pid2proc_opt((PROC), (HL), (PID), (NL), ERTS_P2P_FLG_ALLOW_CURRENT_X)
-
-
 ERTS_GLB_INLINE Process *
 #ifdef ERTS_SMP
 erts_pid2proc_unlocked_opt(Eterm pid, int flags);
@@ -1011,11 +1074,9 @@ erts_pid2proc_opt(Process *c_p_unused,
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
 #ifdef ERTS_SMP
-#define erts_pid2proc_unlocked(PID) \
-  erts_pid2proc_unlocked_opt((PID), ERTS_P2P_FLG_ALLOW_CURRENT_X)
+#define erts_pid2proc_unlocked(PID) erts_pid2proc_unlocked_opt((PID), 0)
 #else
-#define erts_pid2proc_unlocked(PID) \
-  erts_pid2proc_opt(NULL, 0, (PID), 0, ERTS_P2P_FLG_ALLOW_CURRENT_X)
+#define erts_pid2proc_unlocked(PID) erts_pid2proc_opt(NULL, 0, (PID), 0, 0)
 #endif
 
 /* Minimum NUMBER of processes for a small system to start */

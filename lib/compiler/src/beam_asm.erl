@@ -122,7 +122,7 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, SourceFile, Opts) ->
 
 %% Build an IFF form.
 
-build_form(Id, Chunks0) when size(Id) == 4, list(Chunks0) ->
+build_form(Id, Chunks0) when size(Id) =:= 4, is_list(Chunks0) ->
     Chunks = list_to_binary(Chunks0),
     Size = size(Chunks),
     0 = Size rem 4,				% Assertion: correct padding?
@@ -130,18 +130,18 @@ build_form(Id, Chunks0) when size(Id) == 4, list(Chunks0) ->
 
 %% Build a correctly padded chunk (with no sub-header).
 
-chunk(Id, Contents) when size(Id) == 4, binary(Contents) ->
+chunk(Id, Contents) when size(Id) =:= 4, is_binary(Contents) ->
     Size = size(Contents),
     [<<Id/binary,Size:32>>,Contents|pad(Size)];
-chunk(Id, Contents) when list(Contents) ->
+chunk(Id, Contents) when is_list(Contents) ->
     chunk(Id, list_to_binary(Contents)).
 
 %% Build a correctly padded chunk (with a sub-header).
 
-chunk(Id, Head, Contents) when size(Id) == 4, is_binary(Head), is_binary(Contents) ->
+chunk(Id, Head, Contents) when size(Id) =:= 4, is_binary(Head), is_binary(Contents) ->
     Size = size(Head)+size(Contents),
     [<<Id/binary,Size:32,Head/binary>>,Contents|pad(Size)];
-chunk(Id, Head, Contents) when list(Contents) ->
+chunk(Id, Head, Contents) when is_list(Contents) ->
     chunk(Id, Head, list_to_binary(Contents)).
 
 pad(Size) ->
@@ -193,14 +193,16 @@ bif_type('bxor', 2) -> {op, int_bxor};
 bif_type('bsl', 2)  -> {op, int_bsl};
 bif_type('bsr', 2)  -> {op, int_bsr};
 bif_type('bnot', 1) -> {op, int_bnot};
-bif_type(fnegate, 1)   -> {op, fnegate};
+bif_type(fnegate, 1) -> {op, fnegate};
 bif_type(fadd, 2)   -> {op, fadd};
 bif_type(fsub, 2)   -> {op, fsub};
 bif_type(fmul, 2)   -> {op, fmul};
 bif_type(fdiv, 2)   -> {op, fdiv};
-bif_type(_, _)      -> bif.
+bif_type(_, 0)      -> bif0;
+bif_type(_, 1)      -> bif1;
+bif_type(_, 2)      -> bif2.
 
-make_op(Comment, Dict) when element(1, Comment) == '%' ->
+make_op({'%',_}, Dict) ->
     {[],Dict};
 make_op({'%live',_R}, Dict) ->
     {[],Dict};
@@ -208,17 +210,16 @@ make_op({bif, Bif, nofail, [], Dest}, Dict) ->
     encode_op(bif0, [{extfunc, erlang, Bif, 0}, Dest], Dict);
 make_op({bif, raise, _Fail, [A1,A2], _Dest}, Dict) ->
     encode_op(raise, [A1,A2], Dict);
-make_op({bif, Bif, Fail, Args, Dest}, Dict) ->
+make_op({bif,Bif,Fail,Args,Dest}, Dict) ->
     Arity = length(Args),
     case bif_type(Bif, Arity) of
-	{op, Op} ->
-	    make_op(list_to_tuple([Op, Fail|Args++[Dest]]), Dict);
+	{op,Op} ->
+	    make_op(list_to_tuple([Op,Fail|Args++[Dest]]), Dict);
 	negate ->
 	    %% Fake negation operator.
-	    make_op({m_minus, Fail, {integer,0}, hd(Args), Dest}, Dict);
-	bif ->
-	    BifOp = list_to_atom(lists:concat([bif, Arity])),
-	    encode_op(BifOp, [Fail, {extfunc, erlang, Bif, Arity}|Args++[Dest]],
+	    make_op({m_minus,Fail,{integer,0},hd(Args),Dest}, Dict);
+	BifOp when is_atom(BifOp) ->
+	    encode_op(BifOp, [Fail,{extfunc,erlang,Bif,Arity}|Args++[Dest]],
 		      Dict)
     end;
 make_op({gc_bif,Bif,Fail,Live,Args,Dest}, Dict) ->
@@ -231,13 +232,11 @@ make_op({gc_bif,Bif,Fail,Live,Args,Dest}, Dict) ->
     encode_op(BifOp, [Fail,Live,{extfunc,erlang,Bif,Arity}|Args++[Dest]],Dict);
 make_op({bs_add=Op,Fail,[Src1,Src2,Unit],Dest}, Dict) ->
     encode_op(Op, [Fail,Src1,Src2,Unit,Dest], Dict);
-make_op({test,Cond,Fail,Ops}, Dict) when list(Ops) ->
+make_op({test,Cond,Fail,Ops}, Dict) when is_list(Ops) ->
     encode_op(Cond, [Fail|Ops], Dict);
 make_op({make_fun2,{f,Lbl},Index,OldUniq,NumFree}, Dict0) ->
     {Fun,Dict} = beam_dict:lambda(Lbl, Index, OldUniq, NumFree, Dict0),
     make_op({make_fun2,Fun}, Dict);
-make_op(Op, Dict) when atom(Op) ->
-    encode_op(Op, [], Dict);
 make_op({kill,Y}, Dict) ->
     make_op({init,Y}, Dict);
 make_op({Name,Arg1}, Dict) ->
@@ -251,26 +250,25 @@ make_op({Name,Arg1,Arg2,Arg3,Arg4}, Dict) ->
 make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5}, Dict) ->
     encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5], Dict);
 make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5,Arg6}, Dict) ->
-    encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6], Dict).
+    encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6], Dict);
+make_op(Op, Dict) when is_atom(Op) ->
+    encode_op(Op, [], Dict).
 
-encode_op(Name, Args, Dict0) when atom(Name) ->
-    {EncArgs,Dict1} = encode_args(Args, Dict0),
+encode_op(Name, Args, Dict0) when is_atom(Name) ->
     Op = beam_opcodes:opcode(Name, length(Args)),
-    Dict2 = beam_dict:opcode(Op, Dict1),
-    {list_to_binary([Op|EncArgs]),Dict2}.
+    Dict = beam_dict:opcode(Op, Dict0),
+    encode_op_1(Args, Dict, Op).
 
-encode_args([Arg| T], Dict0) ->
-    {EncArg, Dict1} = encode_arg(Arg, Dict0),
-    {EncTail, Dict2} = encode_args(T, Dict1),
-    {[EncArg| EncTail], Dict2};
-encode_args([], Dict) ->
-    {[], Dict}.
+encode_op_1([A0|As], Dict0, Acc) ->
+    {A,Dict} = encode_arg(A0, Dict0),
+    encode_op_1(As, Dict, [Acc,A]);
+encode_op_1([], Dict, Acc) -> {Acc,Dict}.
 
-encode_arg({x, X}, Dict) when X >= 0 ->
+encode_arg({x, X}, Dict) when is_integer(X), X >= 0 ->
     {encode(?tag_x, X), Dict};
-encode_arg({y, Y}, Dict) when Y >= 0 ->
+encode_arg({y, Y}, Dict) when is_integer(Y), Y >= 0 ->
     {encode(?tag_y, Y), Dict};
-encode_arg({atom, Atom}, Dict0) when atom(Atom) ->
+encode_arg({atom, Atom}, Dict0) when is_atom(Atom) ->
     {Index, Dict} = beam_dict:atom(Atom, Dict0),
     {encode(?tag_a, Index), Dict};
 encode_arg({integer, N}, Dict) ->
@@ -290,8 +288,8 @@ encode_arg({extfunc, M, F, A}, Dict0) ->
 encode_arg({list, List}, Dict0) ->
     {L, Dict} = encode_list(List, Dict0, []),
     {[encode(?tag_z, 1), encode(?tag_u, length(List))|L], Dict};
-encode_arg({float, Float}, Dict) when float(Float) ->
-    {[encode(?tag_z, 0)|<<Float:64/float>>], Dict};
+encode_arg({float, Float}, Dict) when is_float(Float) ->
+    {[encode(?tag_z, 0),<<Float:64/float>>], Dict};
 encode_arg({fr,Fr}, Dict) ->
     {[encode(?tag_z, 2),encode(?tag_u,Fr)], Dict};
 encode_arg({field_flags,Flags0}, Dict) ->
@@ -314,9 +312,8 @@ encode_list([H|T], _Dict, _Acc) when is_list(H) ->
     exit({illegal_nested_list,encode_arg,[H|T]});
 encode_list([H|T], Dict0, Acc) ->
     {Enc,Dict} = encode_arg(H, Dict0),
-    encode_list(T, Dict, [Enc|Acc]);
-encode_list([], Dict, Acc) ->
-    {lists:reverse(Acc), Dict}.
+    encode_list(T, Dict, [Acc,Enc]);
+encode_list([], Dict, Acc) -> {Acc,Dict}.
 
 encode_alloc_list(L0) ->
     L = encode_alloc_list_1(L0),

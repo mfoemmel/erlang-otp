@@ -119,6 +119,10 @@ void erts_sys_alloc_init(void) {
   initialize_allocation();
 }
 
+Eterm erts_check_io_info(void *proc)
+{
+    return NIL;
+}
 
 Uint
 erts_sys_misc_mem_sz(void)

@@ -427,6 +427,7 @@
 -export([mk_if/4,           %% mk_if(Op, Args, TrueLbl, FalseLbl)
 	 %% mk_if/5,	    %% mk_if(Op, Args, TrueLbl, FalseLbl, Prob)
 	 if_op/1,
+	 if_op_update/2,
 	 if_true_label/1,
 	 if_false_label/1,
 	 if_args/1,
@@ -691,6 +692,7 @@ mk_if(Op, Args, TrueLbl, FalseLbl) ->
 %% mk_if(Op, Args, TrueLbl, FalseLbl, P) ->
 %%   #'if'{op=Op, args=Args, true_label=TrueLbl, false_label=FalseLbl, p=P}.
 if_op(#'if'{op=Op}) -> Op.
+if_op_update(IF, NewOp) -> IF#'if'{op=NewOp}.
 if_args(#'if'{args=Args}) -> Args.
 if_true_label(#'if'{true_label=TrueLbl}) -> TrueLbl.
 if_true_label_update(IF, TrueLbl) ->

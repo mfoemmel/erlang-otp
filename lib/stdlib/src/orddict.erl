@@ -140,13 +140,13 @@ update_counter(Key, Incr, []) -> [{Key,Incr}].
 
 fold(F, Acc, [{Key,Val}|D]) ->
     fold(F, F(Key, Val, Acc), D);
-fold(_, Acc, []) -> Acc.
+fold(F, Acc, []) when is_function(F, 3) -> Acc.
 
 %% map(MapFun, Dictionary) -> Dictionary.
 
 map(F, [{Key,Val}|D]) ->
     [{Key,F(Key, Val)}|map(F, D)];
-map(_, []) -> [].
+map(F, []) when is_function(F, 2) -> [].
 
 %% filter(FilterFun, Dictionary) -> Dictionary.
 
@@ -155,7 +155,7 @@ filter(F, [{Key,Val}=E|D]) ->
 	true -> [E|filter(F, D)]; 
 	false -> filter(F, D)
     end;
-filter(_, []) -> [].
+filter(F, []) when is_function(F, 2) -> [].
 
 %% merge(MergeFun, Dictionary1, Dictionary2) -> Dictionary.
 
@@ -165,8 +165,8 @@ merge(F, [{K1,_}=E1|D1], [{K2,_}=E2|D2]) when K1 > K2 ->
     [E2|merge(F, [E1|D1], D2)];
 merge(F, [{K1,V1}|D1], [{_K2,V2}|D2]) ->	%K1 == K2
     [{K1,F(K1, V1, V2)}|merge(F, D1, D2)];
-merge(_, [], D2) -> D2;
-merge(_, D1, []) -> D1.
+merge(F, [], D2) when is_function(F, 3) -> D2;
+merge(F, D1, []) when is_function(F, 3) -> D1.
 
 %% Deprecated interface.
 

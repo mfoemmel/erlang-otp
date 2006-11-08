@@ -2,7 +2,11 @@
 %%% $Id$
 %%% x86_liveness -- compute register liveness for x86 CFGs
 
--ifndef(HIPE_X86_LIVENESS).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_LIVENESS,	hipe_amd64_liveness).
+-define(HIPE_X86_DEFUSE,	hipe_amd64_defuse).
+-define(HIPE_X86_REGISTERS,	hipe_amd64_registers).
+-else.
 -define(HIPE_X86_LIVENESS,	hipe_x86_liveness).
 -define(HIPE_X86_DEFUSE,	hipe_x86_defuse).
 -define(HIPE_X86_REGISTERS,	hipe_x86_registers).

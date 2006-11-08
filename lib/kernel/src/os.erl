@@ -79,7 +79,7 @@ verify_executable(Name0, [Ext|Rest]) ->
 	    end;
 	_ ->
 	    case file:read_file_info(Name1) of
-		{ok, #file_info{mode=Mode}} when Mode band 8#111 /= 0 ->
+		{ok, #file_info{mode=Mode}} when Mode band 8#111 =/= 0 ->
 		    %% XXX This test for execution permission is not fool-proof on
 		    %% Unix, since we test if any execution bit is set.
 		    {ok, Name1};
@@ -219,24 +219,23 @@ eot([], _As) ->
 %%
 %% We use ^D (= EOT = 4) to mark the end of the stream.
 %%
-mk_cmd(Cmd) when atom(Cmd) ->			% backward comp.
+mk_cmd(Cmd) when is_atom(Cmd) ->		% backward comp.
     mk_cmd(atom_to_list(Cmd));
 mk_cmd(Cmd) ->
     %% We insert a new line after the command, in case the command
     %% contains a comment character.
-    {ok, io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n",
-			       [Cmd])}.
+    {ok, io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n", [Cmd])}.
 
 
 
-validate(Atom) when atom(Atom) ->
+validate(Atom) when is_atom(Atom) ->
     ok;
-validate(List) when list(List) ->
+validate(List) when is_list(List) ->
     validate1(List).
 
-validate1([C|Rest]) when 0 =< C, C < 256 ->
+validate1([C|Rest]) when is_integer(C), 0 =< C, C < 256 ->
     validate1(Rest);
-validate1([List|Rest]) when list(List) ->
+validate1([List|Rest]) when is_list(List) ->
     validate1(List),
     validate1(Rest);
 validate1([]) ->

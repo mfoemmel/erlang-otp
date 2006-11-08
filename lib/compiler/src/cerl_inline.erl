@@ -104,6 +104,7 @@ debug_counters() -> false.
 
 default_effort() -> 150.
 default_size() -> 24.
+default_unroll() -> 1.
 
 %% Base costs/weights for different kinds of expressions. If these are
 %% modified, the size limits above may have to be adjusted.
@@ -176,7 +177,8 @@ main(Tree, Ctxt, Opts) ->
     %% about cluttering the process dictionary with debugging info, or
     %% proper deallocation of ets-tables.
     Opts1 = Opts ++ [{inline_size, default_size()},
-		     {inline_effort, default_effort()}],
+		     {inline_effort, default_effort()},
+		     {inline_unroll, default_unroll()}],
     Reply = self(),
     Pid = spawn_link(fun () -> start(Reply, Tree, Ctxt, Opts1) end),
     receive
@@ -195,6 +197,7 @@ start(Reply, Tree, Ctxt, Opts) ->
     end,
     Size = max(1, proplists:get_value(inline_size, Opts)),
     Effort = max(1, proplists:get_value(inline_effort, Opts)),
+    Unroll = max(1, proplists:get_value(inline_unroll, Opts)),
     case proplists:get_bool(verbose, Opts) of
 	true ->
 	    io:fwrite("Inlining: inline_size=~w inline_effort=~w\n",
@@ -204,7 +207,7 @@ start(Reply, Tree, Ctxt, Opts) ->
     end,
 
     %% Note that the counters of the new state are passive.
-    S = st__new(Effort, Size),
+    S = st__new(Effort, Size, Unroll),
 
 %%% Initialization is not needed at present. Note that the code in
 %%% `inline_init' is not up-to-date with this module.
@@ -2510,6 +2513,7 @@ env__new_fname(A, N, Env) ->
 -record(state, {free,		% next free location
 		size,		% size counter
 		effort,		% effort counter
+		unroll,		% inner/outer-pending initial value
 		cache,		% operand expression cache
 		var_flags,	% flags for variables (#ref-structures)
 		opnd_flags,	% flags for operands
@@ -2534,10 +2538,8 @@ env__new_fname(A, N, Env) ->
 %% flag whether we are in the process of inlining a propagated
 %% functional value. The "pending flags" are really counters limiting
 %% the number of times an operand may be inlined recursively, causing
-%% loop unrolling; however, unrolling more than one iteration does not
-%% work offhand in the present implementation. (TODO: find out why.)
-%% Note that the initial value must be greater than zero in order for
-%% any inlining at all to be done.
+%% loop unrolling. Note that the initial value must be greater than zero
+%% in order for any inlining at all to be done.
 
 %% Flags are stored in ETS-tables, one table for each class. The second
 %% element in each stored tuple is the key (the "label").
@@ -2547,10 +2549,11 @@ env__new_fname(A, N, Env) ->
 		     effect = false}).
 -record(app_flags, {lab, inlined = false}).
 
-st__new(Effort, Size) ->
+st__new(Effort, Size, Unroll) ->
     #state{free = 0,
 	   size = counter__new_passive(Size),
-           effort = counter__new_passive(Effort),
+	   effort = counter__new_passive(Effort),
+	   unroll = Unroll,
 	   cache = dict:new(),
  	   var_flags = ets:new(var, [set, private, {keypos, 2}]),
 	   opnd_flags = ets:new(opnd, [set, private, {keypos, 2}]),
@@ -2657,7 +2660,11 @@ st__new_ref_loc(S) ->
 
 st__new_opnd_loc(S) ->
     V = {L, _S1} = st__new_loc(S),
-    ets:insert(S#state.opnd_flags, #opnd_flags{lab = L}),
+    N = S#state.unroll,
+    ets:insert(S#state.opnd_flags,
+	       #opnd_flags{lab = L,
+			   inner_pending = N,
+			   outer_pending = N}),
     V.
 
 

@@ -20,11 +20,16 @@
 -define(PHIWIDENING, 4). %< LABELITERATIONS
 -define(FUNCTION_FIXPOINT_DEPTH, 5).
 
+%-define(not_done_debug, fun(X, Y) -> io:format(X, Y) end).
+-define(not_done_debug, fun(_, _) -> ok end).
+
+%-define(call_or_enter_debug, fun(X, Y) -> io:format(X, Y) end).
+-define(call_or_enter_debug, fun(_, _) -> ok end).
 
 %todo snodd
 -define(TAG_IMMED1_SIZE, 4).
 
--define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
+-define(BITS, (hipe_rtl_arch:word_size() bsl 3) - ?TAG_IMMED1_SIZE).
 -define(FIXNUM_UPPER, ((1 bsl (?BITS - 1)) - 1)).
 -define(FIXNUM_LOWER, -(1 bsl (?BITS - 1))).
 -define(MAX_BYTE, 255).
@@ -78,9 +83,9 @@
 %% Initializes the analysis
 %%
 
-init(IC, Options, Server, MFA) ->
-  %io:format("begin icode range analysis"),
-  %% hipe_icode_pp:pp(hipe_icode_cfg:cfg_to_linear(IC)),
+init(IC, Options, Server, MFA) ->  
+  %%io:format("analysing ~p ~n", [MFA]),
+  %%hipe_icode_pp:pp(hipe_icode_cfg:cfg_to_linear(IC)),
   case info_struct__init(IC, Server, Options, MFA) of
     break ->
       none;
@@ -89,7 +94,7 @@ init(IC, Options, Server, MFA) ->
       case info_struct__current_mfa_not_done(Info2) of 
 	true ->
 	  server__update_return_value(Info2),
-	  none;
+	  not_fixpoint;
 	false ->
 	  server__update_return_value(Info2), % I Know :)
 	  Range_info = range_info_from_info_struct(Info2),	
@@ -103,6 +108,14 @@ init(IC, Options, Server, MFA) ->
 	    false ->
 	      ok
 	  end,
+	  case proplists:get_bool(icode_range_analysis_insn_count, Options) of
+	    true ->
+	      Old = hipe_icode_instruction_counter:cfg(IC, MFA, Options),
+	      New = hipe_icode_instruction_counter:cfg(SpecIC, MFA, Options),
+	      hipe_icode_instruction_counter:compare(MFA, Old, New);
+	    false ->
+	      ok
+	  end,	  
 	  SpecIC
       end
   end.
@@ -114,36 +127,62 @@ init(IC, Options, Server, MFA) ->
 %%
 
 server__update_return_value(Info) ->
-  Server = info_struct__server(Info),
   Return_range = return_range(Info),
   Return_range_is_not_set = var_range__is_empty(Return_range) andalso var_range__is_not_other(Return_range),
   MFA = info_struct__current_mfa(Info),
-
+  Not_done = info_struct__current_mfa_not_done(Info),
+  Server = info_struct__server(Info),
+  %%io:format("MFA ~p ~p ~n", [MFA, Return_range]),
   if not Return_range_is_not_set ->
-      Server ! {self(), {load, message, {MFA, return_range}}},
-      
-      {State, Prev_return_range} = 
-	receive
-	  none -> 
-	    {0, range_init(return_range, empty, false)};
-	  {value, {Lookup_return_range, Prev_state}} ->
-	    {Prev_state, Lookup_return_range}
-	end,
-       Fixed_return_range = 
- 	if (State > ?FUNCTION_FIXPOINT_DEPTH) ->
- 	    Wideningvalues = info_struct__wideningvalues(Info),
- 	    range_widening(Prev_return_range, Return_range, Wideningvalues);
- 	   true ->
- 	    Return_range
- 	end, 
-      %% io:format("~p return range ~p ~n", [MFA, Return_range2]),
-      Is_not_updated = var_range__is_equal(Fixed_return_range, Prev_return_range),
-      if Is_not_updated -> 
-	  ok;
-	 true -> 
-	  Server ! {self(), {message, {MFA, return_range}, {Fixed_return_range, State + 1}}}
-      end,
-      ok;
+      %% We are performing an update
+
+
+      Wideningvalues = info_struct__wideningvalues(Info),
+
+      Fun = fun (MessageTree) ->
+		Key = {MFA, return_range},
+		{State, Prev_return_range} = 
+		  case gb_trees:lookup(Key, MessageTree) of
+		    none ->
+		      {0, range_init(return_range, empty, false)};
+		    {value, {Lookup_return_range, Prev_state}} ->
+		      {Prev_state, Lookup_return_range}
+		  end,
+		Fixed_return_range = 
+		  if (State > ?FUNCTION_FIXPOINT_DEPTH) ->
+		      range_widening(Prev_return_range, Return_range, 
+				     Wideningvalues);
+		     true ->
+		      Return_range
+		  end, 
+		Is_not_updated = var_range__is_equal(Fixed_return_range, 
+						     Prev_return_range),
+		A= 
+		if Is_not_updated -> 
+		    MessageTree;
+		   true -> 
+		    gb_trees:enter(Key, {Fixed_return_range, State + 1}, 
+				   MessageTree)
+		end,
+		%%io:format("A ~p ~n", [A]),
+		A
+	    end,
+      Server ! {self(), {transaction, Fun}};
+    not Not_done ->
+      Fun = fun(MessageTree) ->
+		
+		Key = {MFA, return_range},
+		Any = range_init(return_range, {neginf, posinf}, true),
+		  case gb_trees:lookup(Key, MessageTree) of
+		    none ->
+		      %%io:format("no returnpoints ~p ~n", [MFA]),
+		      gb_trees:enter(Key, {Any, 1}, 
+				     MessageTree);
+		    {value, _Val} ->
+		      MessageTree
+		  end
+	    end,
+      Server ! {self(), {transaction, Fun}};
      true ->
       ok
   end.
@@ -193,8 +232,10 @@ server__update_call_args(MFA, Args, Info) -> %% TODO Needs comments
   %% io:format("~p Insert_args: ~p ~n Args_updated ~p ~n", [MFA, Insert_args, Args_updated]),
   New_info=
     if Args_updated ->
-	%io:format("~p insert args ~p ~n", [MFA, Insert_args]),
+	?not_done_debug("server_update_args break ~n", []),
+	%%io:format("~p insert args ~p ~n", [MFA, Insert_args]),
 	Server ! {self(), {message, {MFA, args}, {Insert_args, Lookup_state + 1}}},
+	
 	info_struct__set_current_mfa_not_done(Info, true);
        true ->
 	Info
@@ -294,7 +335,6 @@ int_range_from_number_vals(Number) ->
   int_range_from_number_val(Number).
 
 get_range_from_annotation(Arg_info, Key) ->
-%%  io:format("Arg_info ~p ~p ~n", [Arg_info, Key]),
   Is_byte = erl_types:t_is_byte(Arg_info),
   Is_char = erl_types:t_is_char(Arg_info),
   Is_integer = erl_types:t_is_integer(Arg_info),
@@ -364,6 +404,7 @@ analyse_BB([Last], Info) ->
 analyse_BB([Insn|InsnList], Info) ->
   case analyse_insn(Insn, Info) of
     {break, NewInfo} ->
+      ?not_done_debug("analyse_BB break ~n", []),
       info_struct__set_current_mfa_not_done(NewInfo, true); 
     NewInfo = #info_struct{} ->
       analyse_BB(InsnList, NewInfo)
@@ -397,6 +438,7 @@ analyse_last_insn(Insn, Info) ->
 		end,
   case Case_return of
     {break, Updated_info} ->
+      ?not_done_debug("analyse_last_insn break ~p ~n", [Insn]),
       info_struct__set_current_mfa_not_done(Updated_info, true);
     Updated_info = #info_struct{} -> %TODO ordning på labelar ... vad??
       {_, Return_info} = info_struct__save_current_range_tree({out_tree, info_struct__current_label(Updated_info)}, Updated_info),
@@ -420,7 +462,8 @@ analyse_call(Call, Info) ->
 	name_from_icode_var(Dst)
     end,
   Fun = hipe_icode:call_fun(Call),
-  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info),
+  Type = hipe_icode:call_type(Call),
+  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info, Type),
   case Analysis_result of
     {break, Analyse_info} ->
       {break, Analyse_info};
@@ -540,7 +583,7 @@ analyse_enter(Insn, Info) ->
   %% io:format("Enter ~p ~n", [Insn]),
   Args = hipe_icode:enter_args(Insn),
   Fun = hipe_icode:enter_fun(Insn),
-  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, [undef], Info), 
+  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, [undef], Info, local), 
   case Analysis_result of
     {break, Analyse_info} ->
       {break, Analyse_info};
@@ -567,10 +610,10 @@ analyse_begin_try(Insn, Info) ->
 
 analyse_begin_handler(Handler, Info) ->
   lists:foldl(
-    fun (Var, Info) ->
+    fun (Var, InfoAcc) ->
 	Var_range = range_init(
 		      name_from_icode_var(Var), {neginf, posinf}, true),
-	info_struct__insert_range(Var_range, Info)
+	info_struct__insert_range(Var_range, InfoAcc)
     end,
     Info,
     hipe_icode:begin_handler_dstlist(Handler)).
@@ -595,12 +638,6 @@ analyse_switch_val(Switch, Info) ->
   {Updated_edges, Info2} = info_struct__save_spec_range_trees(Info, [{Fail_range, Fail_label}|Range_label_list], [Fail_label|Labels]),
   {_, To_labels} = lists:unzip(Updated_edges),
   Info3 = Info2,
-%%   Info3 = lists:foldl(
-%%  	    fun (Val, Info) ->
-%%  		info_struct__add_wideningvalue(Val, Info)
-%%  	    end,
-%%  	    Info2,
-%%  	    Old_vals),
   info_struct__add_work(Info3, To_labels).
 
 analyse_sane_if(If, Info, [Range_1, Range_2]) ->
@@ -669,10 +706,10 @@ analyse_if(If, Info) ->
       Current_label = info_struct__current_label(Info),
       New_work = [hipe_icode:if_true_label(If), hipe_icode:if_false_label(If)],
       lists:foldl(
-	fun (Label, Info) ->
-	    {Updated_edges, Info2} = info_struct__save_current_range_tree({Current_label, Label}, Info),
+	fun (Label, InfoAcc) ->
+	    {Updated_edges, InfoAcc2} = info_struct__save_current_range_tree({Current_label, Label}, InfoAcc),
 	    {_, To_labels} = lists:unzip(Updated_edges),
-	    info_struct__add_work(Info2, To_labels)
+	    info_struct__add_work(InfoAcc2, To_labels)
 	end,
 	Info,
 	New_work);
@@ -767,8 +804,8 @@ analyse_other_module_fcall(Key, {M,F,A}, Info, Args) ->
 	    end,
 	    Args, List),
 	lists:foldl(
-	  fun (Range, Info) ->
-	      info_struct__insert_range(Range, Info)
+	  fun (Range, InfoAcc) ->
+	      info_struct__insert_range(Range, InfoAcc)
 	  end,
 	  Info,
 	  New_arg_ranges)
@@ -792,8 +829,11 @@ analyse_fcall(Key, {M,F,A}, Info, Args) ->
       case Current_mfa of
 	{M,_,_} ->
 	  %% is_recursive här??
+	  %?not_done_debug("need info ~p ~n", [{M,F,A}]),
 	  Info3 = server__update_call_args({M,F,A}, Args, Info2),
-	  {break, Info3};
+	  Range = range_init(Key, {neginf, posinf}, true),
+	  info_struct__insert_range(Range, Info3);
+	  %{break, Info3};
 	_ -> 
 	  %% doesn't save args info about function in other module
 	  analyse_other_module_fcall(Key, {M,F,A}, Info2, Args)
@@ -833,10 +873,15 @@ get_range_from_dst_annotation(Key, Dsts) ->
       end
   end.
 
-analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info) ->
+lasy_type(Fun) ->
+  ?call_or_enter_debug("fun type ~p ~n", [Fun]),
+  basic_type(Fun).
+
+analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info, CallType) ->
   %% io:format("Fun ~p ~n", [Fun]),
-  case basic_type(Fun) of
+  case lasy_type(Fun) of
     {bin, Operation} ->
+      ?call_or_enter_debug("bin", []),
       [Arg_range1|[Arg_range2|[]]] = get_range_from_args(Args, Info),
       A1_is_empty = var_range__is_empty(Arg_range1),
       A2_is_empty = var_range__is_empty(Arg_range2),
@@ -847,6 +892,7 @@ analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info) ->
 	  Operation(Key, Arg_range1, Arg_range2)
       end;
     {unary, Operation} ->
+      ?call_or_enter_debug("unary", []),
       [Arg_range] = get_range_from_args(Args, Info),
       case var_range__is_empty(Arg_range) of
 	true ->
@@ -855,33 +901,47 @@ analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info) ->
 	  Operation(Key, Arg_range)
       end;
     {fcall, {M,F,A}} ->
-      case analyse_fcall(Key, {M,F,A}, Info, Args) of
-	Fcallinfo = #info_struct{} ->
-	  Fcall_range = info_struct__get_range(Key, Fcallinfo),
-	  Annotation_range = get_range_from_dst_annotation(Key, Dsts),
-	  New_range = range_cut(Key, [Fcall_range, Annotation_range]),
-	  info_struct__insert_range(New_range, Fcallinfo);
-	Other ->
-	  Other
+      ?call_or_enter_debug("fcall", []),
+      case CallType of
+	local ->
+	  case analyse_fcall(Key, {M,F,A}, Info, Args) of
+	    Fcallinfo = #info_struct{} ->
+	      Fcall_range = info_struct__get_range(Key, Fcallinfo),
+	      Annotation_range = get_range_from_dst_annotation(Key, Dsts),
+	      New_range = range_cut(Key, [Fcall_range, Annotation_range]),
+	      info_struct__insert_range(New_range, Fcallinfo);
+	    Other ->
+	      Other
+	  end;
+	remote ->
+	  analyse_other_module_fcall(Key, {M,F,A}, Info, Args)
+%	primops ->
+%	  get_range_from_dst_annotation(Key, Dsts)
       end;
     not_int ->
+      ?call_or_enter_debug("not int", []),
       range_init(Key, empty, true);
 %%    range_cut(Key, 
 %%		[range_init(Key, empty, true), 
 %%		 get_range_from_dst_annotation(Key, Dsts)]);
       
     not_analysed -> 
+      ?call_or_enter_debug("not analysed", []),
       get_range_from_dst_annotation(Key, Dsts);
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
+      ?call_or_enter_debug("bs1", []),
       {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, length(Args) =:= 4),
       range_init(Key, {Min, Max}, false);
     {hipe_bs_primop, {bs_get_integer_2, Size, Flags}} ->
+      ?call_or_enter_debug("bs2", []),
       {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, length(Args) =:= 1),					
       range_init(Key, {Min, Max}, false);
-    {hipe_bs_primop, Primop} ->
+    {hipe_bs_primop, _} = Primop ->
+      ?call_or_enter_debug("bs3 ~p ~n", [Primop]),
       Type = hipe_icode_primops:type(Primop),
       get_range_from_annotation(Type, Key);
     {hipe_bsi_primop, {bs_get_integer, Size, Flags}} ->
+      ?call_or_enter_debug("bs4", []),
       {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, true),
       range_init(Key, {Min, Max}, false)
   end.
@@ -1058,16 +1118,16 @@ get_range_label_list(Range, [Case|Cases], Info, Range_label_list, Constants_to_c
 annotate_IC(IC, Range_info) ->
   Label_list = hipe_icode_cfg:labels(IC),
   lists:foldl(
-    fun (Label, IC) ->
+    fun (Label, ICAcc) ->
 	case range_info__is_live(Range_info, Label) of
 	  true ->
-	    BB = hipe_icode_cfg:bb(IC, Label),
+	    BB = hipe_icode_cfg:bb(ICAcc, Label),
 	    Code = hipe_bb:code(BB),
 	    NewCode = annotate_BB(Code, Range_info, Label),
 	    NewBB = hipe_bb:code_update(BB, NewCode),
-	    hipe_icode_cfg:bb_add(IC, Label, NewBB);
+	    hipe_icode_cfg:bb_add(ICAcc, Label, NewBB);
 	  false ->
-	    IC
+	    ICAcc
 	end
     end,
     IC,
@@ -1165,19 +1225,19 @@ print_icode_to_file(IC, Info) ->
 specialize_IC(IC, Range_info) ->
   Label_list = hipe_icode_cfg:labels(IC),
   lists:foldl(
-    fun (Label, IC) ->
+    fun (Label, ICAcc) ->
 	%% hipe_icode_pp:pp_block(Code),
 	case range_info__is_live(Range_info, Label) of
 	  true ->
-	    BB = hipe_icode_cfg:bb(IC, Label),
+	    BB = hipe_icode_cfg:bb(ICAcc, Label),
 	    Code = hipe_bb:code(BB),
 	    NewCode = specialize_BB(Code, Range_info, Label),
 	    NewBB = hipe_bb:code_update(BB, NewCode),
-	    hipe_icode_cfg:bb_add(IC, Label, NewBB);
+	    hipe_icode_cfg:bb_add(ICAcc, Label, NewBB);
 	  false ->
 	    Warn = range_info__warn(Range_info),
 	    warning("Dead code", Label, Warn),
-	    IC
+	    ICAcc
 	end
     end,
     IC,
@@ -1194,6 +1254,8 @@ specialize_insn(Insn, Range_info, Label) ->
       specialize_call(Insn, Range_info, Label);
     #enter{} ->
       specialize_enter(Insn, Range_info, Label);
+    #'if'{} ->
+      specialize_if(Insn, Range_info, Label);
     Other ->
       Other
   end,
@@ -1262,6 +1324,15 @@ specialized_op('extra_unsafe_add', extra_unsafe, _) -> 'extra_unsafe_add';
 
 specialized_op(Op, _, _) -> Op.
 
+
+specialized_if_op('<', true) -> 'fixnum_lt';
+specialized_if_op('=<', true) -> 'fixnum_le';
+specialized_if_op('>', true) -> 'fixnum_gt';
+specialized_if_op('>=', true) -> 'fixnum_ge';
+specialized_if_op('=:=', true) -> 'fixnum_eq';
+specialized_if_op('=/=', true) -> 'fixnum_neq';
+specialized_if_op(Op, _) -> Op.
+
 %% this is not sane
 make_const({reg, N}, Range_info, Label) ->
   range_info__def_range(Range_info, Label, {reg, N}); 
@@ -1270,6 +1341,24 @@ make_const({const, {flat, N}}, _, _) when is_integer(N) ->
 make_const({const, _}, _, _) -> range_init(const, empty, true);
 make_const({fvar, _}, _, _) -> range_init(const, empty, true).
 
+specialize_if(If, Range_info, Label) ->
+  IfOp = hipe_icode:if_op(If),
+  Use_ranges = lists:map(fun (Var) ->
+			     range_info__use_range(Range_info, Label,
+						   name_from_icode_var(Var))
+			 end, uses(If)),
+  Use_constants = lists:map(fun (Const) ->
+				make_const(Const, Range_info, Label)
+			    end, consts(If)), 
+  RangeFun = fun(Range) -> 
+		 var_range__is_fixnum(Range) andalso
+		 (var_range__other(Range) =:= false) 
+	     end,
+  New_if_op = specialized_if_op(IfOp, 
+			     lists:all(RangeFun, Use_ranges ++ Use_constants)),
+  hipe_icode:if_op_update(If, New_if_op).
+  
+  
 
 specialize_call(Call, Range_info, Label) ->
   Fun = hipe_icode:call_fun(Call),
@@ -1444,11 +1533,13 @@ info_struct__current_mfa(#info_struct{current_mfa=Mfa}) -> Mfa.
 info_struct__set_current_mfa_not_done(Info, Bool) ->
   Info#info_struct{current_mfa_not_done=Bool}.
 
-info_struct__current_mfa_not_done(#info_struct{current_mfa_not_done=Done, 
+info_struct__current_mfa_not_done(#info_struct{current_mfa_not_done=NotDone, 
 				  current_mfa = MFA,
 				  server = Server,
 				  is_recursive = Recursive} = Info) ->
-  Done and 
+
+
+  NotDone and 
   if Recursive ->
     Server ! {self(), {load, message, {MFA, return_range}}},
     Old_return = 
@@ -1458,7 +1549,6 @@ info_struct__current_mfa_not_done(#info_struct{current_mfa_not_done=Done,
       {value, {Lookup_range, _Final}} ->
 	Lookup_range
     end,
-%    io:format("MFA ~p ~nold ~p ~nnew ~p ~n", [MFA, Old_return, return_range(Info)]),
     not var_range__is_equal(return_range(Info), Old_return);
   true ->
     true
@@ -1477,8 +1567,8 @@ info_struct__startlabel(#info_struct{startlabel=StartLabel}) -> StartLabel.
 info_struct__worklist(#info_struct{worklist=List}) -> List. 
 
 info_struct__add_live_labels(Info, Label_list) ->
-  lists:foldl(fun(Label, Info) ->
-		  Labels = info_struct__live_labels(Info),
+  lists:foldl(fun(Label, InfoAcc) ->
+		  Labels = info_struct__live_labels(InfoAcc),
 		  Info#info_struct{live_labels = gb_sets:add(Label, Labels)}
 	      end,
 	      Info,
@@ -1511,6 +1601,7 @@ info_struct__add_params([Param|ParamList], Info, Arg_range_list,
 	    New_arg_range = range_init(Key, Int_range, Other),
 	    {Arg_range_tail, New_arg_range};
 	  [] ->
+	    ?not_done_debug("In add params ~n", []),
 	    {[], break}
 	end
     end,
@@ -1585,6 +1676,7 @@ info_struct__set_new_current_tree(Label, Info) ->
       end,
       Info#info_struct{current_range_tree = New_range_tree};
     false ->
+      ?not_done_debug("set new current tree ~n", []),
       break
   end.
 
@@ -1853,9 +1945,18 @@ var_range__is_correct(#var_range{range={Min, Max}}) when (Min =/= empty),
   true.
 -endif.
 
+is_max(posinf) -> true;
+is_max(N) when is_integer(N) -> true.
+
+is_min(neginf) -> true;
+is_min(N) when is_integer(N) -> true.
+    
+
 range_init_1(Name, empty) ->
   #var_range{var_name = Name, range=empty};
-range_init_1(Name, {Min, Max}) ->
+range_init_1(Name, {Min, Max}) -> 
+  true = is_max(Max),
+  true = is_min(Min),
   IsNotEmpty = inf_geq(Max, Min),
   if not IsNotEmpty ->
       #var_range{var_name=Name, range=empty};
@@ -2074,374 +2175,104 @@ range_bsl(Name, Range1, Range2) ->
 	    {inf_bsl(Min1, Max2), inf_bsl(Max1, Max2)}
 	end
     end,
+  true = is_min(Min),
+  true = is_max(Max),
   range_init(Name, {Min, Max}, false).
 
 range_bnot(Name, Range) ->
   Minus_one = range_init(const, {-1,-1}, false),
   range_add(Name, range_mult(Name, Range, Minus_one), Minus_one).
 
-bits_xor(Pattern1, Pattern2) ->
-  {P1, P2} = bitpattern_even_length(Pattern1, Pattern2),
-  bits_op(P1, P2,
-	  fun(Bit1, Bit2) ->
-	      if (Bit1 =:= unsure) orelse (Bit2 =:= unsure) ->
-		  unsure;
-		 true ->
-		  Bit1 bxor Bit2
-	      end
-	  end).
+width({Min, Max}) -> inf_max([width(Min), width(Max)]);
+width(posinf) -> posinf;
+width(neginf) -> posinf;
+width(X) when X >= 0 ->
+  poswidth(X, 0);
+width(X) when X < 0 ->
+  negwidth(X, 0).
 
-bits_or(Pattern1, Pattern2) ->
-  {P1, P2} = bitpattern_even_length(Pattern1, Pattern2),
-  bits_op(P1, P2, 
-	  fun(Bit1, Bit2) -> 
-	      if (Bit1 =:= unsure) orelse (Bit2 =:= unsure) ->
-		  unsure;
-		 true ->
-		  Bit1 bor Bit2
-	      end
-	  end).
-
-bits_and(Pattern1, Pattern2) ->
-  {P1, P2} = bitpattern_even_length(Pattern1, Pattern2),
-  bits_op(P1, P2, 
-	  fun(Bit1, Bit2) -> 
-	      if Bit1 =:= 1 ->
-		  Bit2;
-		 Bit2 =/= 0 ->
-		  Bit1;
-		 true ->
-		  0
-	      end
-	  end).
-
-bits_range(Range) ->	
-  Pattern1 = bitpattern(var_range__min(Range)), 
-  Pattern2 = bitpattern(var_range__max(Range)),
-  %% io:format("P1 ~p P2 ~p ~n", [to_int([Sign1|Pattern1]), to_int([Sign2|Pattern2])]),
-  case bitpattern_even_length(Pattern1, Pattern2) of
-    {[Sign1|Bits1], [Sign2|Bits2]} -> 
-      Sign =
-	if Sign1 =:= Sign2 ->
-	    Sign1;
-	  true ->
-	    unsure
-	end
-  end,
-  %% {neginf, posinf} ->
-  bits_range(Bits1, Bits2, [Sign]).
-
-bits_range([], [], Acc) ->
-  lists:reverse(Acc);
-bits_range([H1|Pattern1], [H2|Pattern2], Acc) ->
-  %% io:format("H1 ~p H2 ~p ~n", [H1, H2]),
-  if (H1 =:= unsure) orelse (H2 =:= unsure) orelse ((H1 bxor H2) =:= 1) ->
-      A = lists:reverse(fillpattern(length(Pattern1) + 1, Acc, unsure)),
-      %% io:format("A ~p ~n", [A]),
-      A;
-     (H1 band H2) =:= 1 ->
-      bits_range(Pattern1, Pattern2, [1|Acc]);
-     true ->
-      bits_range(Pattern1, Pattern2, [0|Acc])
+poswidth(X, N) ->
+  case X < (1 bsl N) of
+    true ->
+      N;
+    false ->
+      poswidth(X, N+1)
   end.
 
-bits_op(Pattern1, Pattern2, Op) ->
-  lists:zipwith(Op, Pattern1, Pattern2).
-
-inv_pattern(Pattern) -> %% xor
-  lists:map(fun (X) ->
-		if X =:= unsure -> unsure;
-		   true -> X bxor 1
-		end
-	    end, Pattern).
-
-fillpattern(N, Pattern, Fill) when N > 0 ->
-  fillpattern(N-1, [Fill|Pattern], Fill);
-fillpattern(0, Pattern, _) -> Pattern.
-
-bitpattern(0, Pattern) -> Pattern;
-%% Bits_to_write = (?BITS - length(Pattern)),
-%% fillpattern(Bits_to_write, Pattern, 0);
-bitpattern(N, Pattern) -> 
-  bitpattern((N div 2), [(N rem 2)|Pattern]).
-
-bitpattern(N) when is_integer(N), (N >= 0) ->
-  [0|bitpattern(N, [])];
-bitpattern(posinf) -> %posinf;
-  [0|bitpattern(?FIXNUM_UPPER, [])];
-bitpattern(neginf) -> %neginf;
-  [1|inv_pattern(bitpattern(?FIXNUM_UPPER, []))];
-bitpattern(N) ->
-  [1|inv_pattern(bitpattern(-(N + 1), []))].
-
-bitpattern_split([Sign|Pattern]) -> 
-  if Sign =:= unsure ->
-      bitpattern_split(Pattern, [1], [0]);
-     true ->
-      bitpattern_split(Pattern, [Sign], [Sign])
+negwidth(X, N) ->
+  case X > (-1 bsl N) of
+    true ->
+      N;
+    false ->
+      negwidth(X, N+1)
   end.
-
-bitpattern_split([], Min, Max) -> {lists:reverse(Min), lists:reverse(Max)};
-bitpattern_split([Head|Tail], Min, Max) ->
-  %% io:format("head ~p min ~p max ~p~n", [Head, Min_sign, Max_sign]),
-  if Head =:= unsure ->
-      bitpattern_split(Tail, [0|Min], [1|Max]);
-     true ->
-      bitpattern_split(Tail, [Head|Min], [Head|Max])
-  end.
-
-to_int(Pattern) ->
-  {[Sign_min|Min], [Sign_max|Max]} = bitpattern_split(Pattern),
-  %% io:format("from bitsplit ~p ~p ~n", [Min, Max]),
-  {to_int(lists:reverse(Min), 1, 0, Sign_min),
-   to_int(lists:reverse(Max), 1, 0, Sign_max)}.
-
-to_int([], _, Acc, Sign) -> 
-  if Sign =:= 1 -> 
-      bnot Acc;
-     true ->
-      Acc
-  end;
-to_int([H|Tail], Value, Acc, Sign) -> %% lists:foldl
-  %% io:format("H ~p Sign ~p Acc ~p ~n", [H, Sign, Acc]),
-  New_acc = 
-    if H =/= Sign ->
-	Value + Acc;
-       true ->
-	Acc
-    end,
-  %% io:format("new acc ~p ~n", [New_acc]),
-  to_int(Tail, Value bsl 1, New_acc, Sign).
-
-bitpattern_even_length([Sign1|R1], [Sign2|R2]) ->
-  Fill = length(R1) - length(R2),
-  if Fill > 0 ->
-      %% io:format("sign ~p ~n", [Sign2]),
-      %% io:format("fill ~p ~n", [fillpattern(Fill, R2, Sign2)]),
-      {[Sign1|R1], [Sign2|fillpattern(Fill, R2, Sign2)]};
-     Fill < 0 ->
-      {[Sign1|fillpattern(-Fill, R1, Sign1)], [Sign2|R2]};
-     true ->
-      {[Sign1|R1], [Sign2|R2]}
-  end.
-
-%% width({Min, Max}) -> inf_max([width(Min), width(Max)]);
-%% width(posinf) -> posinf;
-%% width(neginf) -> posinf;
-%% width(X) when X >= 0 ->
-%%   poswidth(X, 0);
-%% width(X) when X < 0 ->
-%%   negwidth(X, 0).
-%%
-%% poswidth(X, N) ->
-%%   case X < (1 bsl N) of
-%%     true ->
-%%       N;
-%%     false ->
-%%       poswidth(X, N+1)
-%%   end.
-%%
-%% negwidth(X, N) ->
-%%   case X > (-1 bsl N) of
-%%     true ->
-%%       N;
-%%     false ->
-%%       negwidth(X, N+1)
-%%   end.
-
-%% get_next_bit({neginf, posinf}, _Fill) -> {{neginf, posinf}, unsure, true};
-%% get_next_bit({Min, posinf}, _Fill) ->
-%%	io:format("Min ~p ~n", [Min]),
-%%	Next_bit = 
-%%	if (Min rem 2) =:= 1 ->
-%%		1;
-%%	true ->
-%%		unsure
-%%	end,
-%%	New_min = Min bsr 1,
-%%	Done = Min =:= New_min,
-%%	{{New_min, posinf}, Next_bit, Done};
-%% get_next_bit({neginf, Max}, _Fill) ->
-%%	io:format("Max ~p ~n", [Max]),
-%%	Next_bit = 
-%%	if (Max rem 2) =:= 1 ->
-%%		unsure;
-%%	true ->
-%%		0
-%%	end,
-%%	New_max = Max bsr 1,
-%%	Done = (Max =:= New_max),
-%%	{{neginf, New_max}, Next_bit, Done};
-%% get_next_bit({Min, Max}, Fill) ->
-%%	%io:format("Min ~p, Max ~p ~n", [Min, Max]),
-%%	Next_min_bit = Min rem 2,
-%%	Next_max_bit = Max rem 2,
-%%	Next_bit =
-%%	if (Min =:= 0), (Max =:= 0) ->
-%%		Fill;
-%%	Next_min_bit =:= Next_max_bit ->
-%%		Next_min_bit;
-%%	true ->
-%%		unsure
-%%	end,
-%%	New_max = Max bsr 1,
-%%	New_min = Min bsr 1,
-%%	Done = (Max =:= New_max) and (Min =:= New_min),
-%%	{{New_min, New_max}, Next_bit, Done}.
-
-%% bit_tuple_list_band([{Sign1, Sign2}|List]) -> 
-%%	Sign = 
-%%	if Sign1 =:= Sign2 ->
-%%		Sign1;
-%%	(Sign1 =:= 0) or (Sign2 =:= 0) ->
-%%		0;
-%%	true ->
-%%		unsure
-%%	end,
-%%	[Sign|bit_tuple_list_band(List, [])].
-
-%% bit_tuple_list_band([], Acc) -> lists:reverse(Acc);
-%% bit_tuple_list_band([{Bit1, Bit2}|List], Acc) ->
-%%	Bit = 
-%%	if Bit1 =:= 1 ->
-%%		Bit2;
-%%	Bit2 =/= 0 ->
-%%		Bit1;
-%%	true ->
-%%		0
-%%	end,
-%%	if Bit =:= unsure ->
-%%		%Left = length(Acc),
-%%		Left = length(List),
-%%		fillpattern(Left, Acc, unsure);
-%%		%bit_tuple_list_band(List, fillpattern(Left, [], unsure));
-%%	true ->
-%%		bit_tuple_list_band(List, [Bit|Acc])
-%%	end.
-
-%% bit_and({R1, R1_fill}, {R2, R2_fill}, Acc, Length) ->
-%%	{New_R1, Bit2, Done1} = get_next_bit(R1, R1_fill),
-%%	{New_R2, Bit1, Done2} = get_next_bit(R2, R2_fill),
-%%	Bits = ?BITS,
-%%	New_acc = [{Bit1, Bit2}|Acc],
-%%	if (Done1, Done2) ->
-%%		Tuplelist = [{R1_fill, R2_fill}|New_acc],
-%%		io:format("tuple ~p ~n", [Tuplelist]),
-%%		List = bit_tuple_list_band(Tuplelist),
-%%		io:format("list ~p ~n", [List]),
-%%		A = to_int(List),
-%%		io:format("ans ~p ~n", [A]),
-%%		A;
-%%	(Length =:= (Bits bsl 2)) ->
-%%		{neginf, posinf}; 
-%%	true ->
-%%		bit_and({New_R1, R1_fill}, {New_R2, R2_fill}, New_acc, Length + 1)
-%%	end.
-%%
-%% is_negative(neginf) -> true;
-%% is_negative(N) when is_integer(N), N < 0 -> true;
-%% is_negative(N) when is_integer(N) -> false;
-%% is_negative(posinf) -> false.
-
-%% fill(Min, Max) ->
-%%	Min_geq_zero = inf_geq(Min, 0),
-%%	Max_geq_zero = inf_geq(Max, 0),
-%%	if not Min_geq_zero ->
-%%		if Max_geq_zero ->
-%%			unsure;
-%%		true ->
-%%			1
-%%		end;
-%%	true ->
-%%		0
-%%	end.
-
-%% range_brand(Name, R1, R2) ->
-%%	io:format("r1 ~p, ~n r2 ~p ~n", [var_range__range(R1), var_range__range(R2)]),
-%%	R1_min = var_range__min(R1),
-%%	R2_min = var_range__min(R2),
-%%	R1_max = var_range__max(R1),
-%%	R2_max = var_range__max(R2),
-%%	Fill1 = fill(R1_min, R1_max),
-%%	Fill2 = fill(R2_min, R2_max),
-%%	%io:format("Fill1 ~p Fill2 ~p ~n", [Fill1, Fill2]),
-%%	Int_range = bit_and({var_range__range(R1), Fill1}, {var_range__range(R2), Fill2}, [], 0),
-%%	io:format("int_rabge ~p ~n", [Int_range]),
-%%	range_init(Name, Int_range, {true, true}, false).
 
 range_band(Name, R1, R2) ->
-  %% io:format("R1 ~p, ~nR2 ~p ~n", [R1, R2]),
-  Is_empty = var_range__is_empty(R1) orelse var_range__is_empty(R2),
-  if Is_empty ->
-      range_init(Name, empty, false);
-     true ->
-      R1_min = var_range__min(R1),
-      R2_min = var_range__min(R2),
-      R1_max = var_range__max(R1),
-      R2_max = var_range__max(R2),
-      R1_range = bits_range(R1),
-      R2_range = bits_range(R2),
-      {And_min, And_max} = to_int(bits_and(R1_range, R2_range)),
-      Min = 
-	case ((R1_min =:= neginf) and (inf_geq(0, R2_min))) orelse
-	  ((R2_min =:= neginf) and (inf_geq(0, R1_min))) of
-	  true -> neginf;
-	  false -> And_min
-	end,
-      Max = 
-	case (R1_max =:= posinf) and (inf_geq(0, R2_min) orelse (R2_max =:= posinf)) 
-	  orelse (R2_max =:= posinf) and (inf_geq(0, R1_min) orelse (R1_max =:= posinf)) of
-	  true -> posinf;
-	  false -> And_max
-	end,
-      range_init(Name, {Min, Max}, false)
-      
-  end.
-		
+  {Min1, Max1} = var_range__range(R1),
+  {Min2, Max2} = var_range__range(R2),
+  Width = inf_min([width({Min1, Max1}), width({Min2, Max2})]),
+  true = inf_geq(Width, 0),
+  Min =
+    case inf_geq(0, Min1) and inf_geq(0, Min2) of
+      true ->
+	inf_bsl(-1, Width);
+      false ->
+	0
+    end,
+  Max =
+    case inf_geq(0, Max1) and inf_geq(0, Max2) of
+      true ->
+	0;
+      false ->
+	inf_bsl(1, Width)
+    end,
+  true = is_min(Min),
+  true = is_max(Max),
+  range_init(Name, {Min, Max}, false).
+
 range_bor(Name, R1, R2) ->
-  %% io:format("R1 ~p, ~nR2 ~p ~n", [R1, R2]),
-  Is_empty = var_range__is_empty(R1) orelse var_range__is_empty(R2),
-  if Is_empty ->
-      range_init(Name, empty, false);
-     true ->
-      R1_range = bits_range(R1),
-      R2_range = bits_range(R2),
-      {And_min, And_max} = to_int(bits_or(R1_range, R2_range)),
-      %% io:format("Min ~p, Max ~p ~n", [And_min, And_max]),
-      Min = 
-	case (var_range__min(R1) =:= neginf) orelse (var_range__min(R2) =:= neginf) of
-	  true -> neginf;
-	  false -> And_min
-	end,
-      Max = 
-	case (var_range__max(R1) =:= posinf) and (var_range__max(R2) =:= posinf) of
-	  true -> posinf;
-	  false -> And_max
-	end,
-      range_init(Name, {Min, Max}, false)
-  end.
+  {Min1, Max1} = var_range__range(R1),
+  {Min2, Max2} = var_range__range(R2),
+  Width = width({width({Min1, Max1}), width({Min2, Max2})}),
+  Min =
+    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
+      true ->
+	0;
+      false ->
+	inf_bsl(-1, Width)
+    end,	  
+  Max =
+    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
+      true ->
+	inf_bsl(1, Width);
+      false ->
+	-1
+    end,
+  true = is_min(Min),
+  true = is_max(Max),
+  range_init(Name, {Min, Max}, false).
 
 range_bxor(Name, R1, R2) ->
-  %% io:format("R1 ~p, ~nR2 ~p ~n", [R1, R2]),
-  Is_empty = var_range__is_empty(R1) orelse var_range__is_empty(R2),
-  if Is_empty ->
-      range_init(Name, empty, false);
-     true ->
-      R1_range = bits_range(R1),
-      R2_range = bits_range(R2),
-      {And_min, And_max} = to_int(bits_xor(R1_range, R2_range)),
-      Min = 
-	case (var_range__min(R1) =:= neginf) orelse (var_range__min(R2) =:= neginf) of
-	  true -> neginf;
-	  false -> And_min
-	end,
-      Max = 
-	case (var_range__max(R1) =:= posinf) orelse (var_range__max(R2) =:= posinf) of
-	  true -> posinf;
-	  false -> And_max
-	end,
-      range_init(Name, {Min, Max}, false)
-  end.
+  {Min1, Max1} = var_range__range(R1),
+  {Min2, Max2} = var_range__range(R2),
+  Width = width({width({Min1, Max1}), width({Min2, Max2})}),
+  Min =
+    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
+      true ->
+	0;
+      false ->
+	inf_bsl(-1, Width)
+    end,	  
+  Max =
+    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
+      true ->
+	inf_bsl(1, Width);
+      false ->
+	-1
+    end,
+  true = is_min(Min),
+  true = is_max(Max),
+  range_init(Name, {Min, Max}, false).
 
 %% Propagation
 
@@ -2468,9 +2299,7 @@ range_remove_constant(Range1, #var_range{range={Const, Const}}) when is_integer(
     end,
   %%TODO
   range_init(var_range__name(Range1), Range_range, var_range__other(Range1)).
-%  R = Range1#var_range{range=Range_range},
 
-%  R.
 
 %% range_diff(Name, Range1, #var_range{range = empty}) ->
 %%	var_range__copy(Range1, Name);	
@@ -2636,15 +2465,6 @@ range_inequality_propagation(Range1, Range2) ->
 
 %% Range widening
 
-%% insert_ordered([], Value) -> Value;
-%% insert_ordered(List = [Value|_Tail], Value) -> List;
-%% insert_ordered([Head_value|Tail], Value) ->
-%%   case inf_geq(Head_value, Value) of
-%%     true ->
-%%	 [Head_value|insert_ordered(Tail, Value)];
-%%     false ->
-%%	 [Value|[Head_value|Tail]]
-%%   end.
 
 get_larger_value(Value, List) ->
   get_larger_value_1(Value, lists:reverse(List)).
@@ -2820,14 +2640,15 @@ inf_mult(Number1, Number2) -> Number1 * Number2.
 
 inf_bsl(posinf, _) -> posinf;
 inf_bsl(neginf, _) -> neginf;
-inf_bsl(_, posinf) -> posinf;
-inf_bsl(Number, neginf) when Number > 0 -> 0;
+inf_bsl(Number, posinf) when Number >= 0 -> posinf;
+inf_bsl(_, posinf) -> neginf;
+inf_bsl(Number, neginf) when Number >= 0 -> 0;
 inf_bsl(_Number, neginf) -> -1;
 inf_bsl(Number1, Number2) -> 
   Bits = ?BITS,
-  if Number2 > (Bits * 2) ->
+  if Number2 > (Bits bsl 1) ->	% (Bits * 2)
       inf_bsl(Number1, posinf);
-	Number2 < (-Bits * 2) ->
+     Number2 < (-Bits bsl 1) ->	% (-Bits * 2)
       inf_bsl(Number1, neginf);
      true ->
       Number1 bsl Number2
@@ -2893,5 +2714,12 @@ info(New, Old, true) ->
   ?msg(Text,Args);
 info(_, _, false) ->
   ok. 
+
+%%---------------------------------------------------------------------------
+%% Print out messages
+%%---------------------------------------------------------------------------
+
+test() ->
+  ok.
 
 % vim: set tabstop=2 ft=erlang

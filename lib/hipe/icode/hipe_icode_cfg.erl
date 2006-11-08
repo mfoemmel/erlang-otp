@@ -8,7 +8,7 @@
 	 cfg_to_linear/1,
 	 is_closure/1,
 	 closure_arity/1,
-	 closure_arity_update/2,
+	 closure_arity_update/2,function/1,
          info/1, linear_to_cfg/1,
          labels/1, start_label/1,
 	 params/1, params_update/2,

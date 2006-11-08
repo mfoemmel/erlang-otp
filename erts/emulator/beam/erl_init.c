@@ -217,6 +217,7 @@ erl_init(void)
     init_register_table();
     init_message();
     erts_bif_info_init();
+    erts_ddll_init();
     init_emulator();
     erts_bp_init();
     init_db(); /* Must be after init_emulator */
@@ -906,9 +907,9 @@ erl_start(int argc, char **argv)
     erl_init();
 
     init_shared_memory(boot_argc, boot_argv);
-    erts_initialized = 1;
-
     load_preloaded();
+
+    erts_initialized = 1;
 
     erl_first_process_otp("otp_ring0", NULL, 0, boot_argc, boot_argv);
 

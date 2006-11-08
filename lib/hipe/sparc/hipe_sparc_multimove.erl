@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Copyright (c) 2000 by Erik Johansson.  All Rights Reserved 
 %% ====================================================================
@@ -9,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.8 $
+%%              $Date: 2006/09/14 15:33:58 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -21,6 +22,8 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_sparc.hrl").
+
+%%=====================================================================
 
 remove_multimoves(CFG) ->
   traverse(hipe_sparc_cfg:labels(CFG), CFG).
@@ -62,9 +65,8 @@ make_moves(_, _, Acc, [{D,S}], _) ->
   %% Just one unresolved move definitly no conflict
   [hipe_sparc:move_create(D, S)|Acc];
 make_moves(_, _, Acc, Unresolved, true) ->
-  %% Some moves where resolved so try again with 
-  %%  the unresolved ones.
-  {Ds, Ss} = split(Unresolved),
+  %% Some moves were resolved so try again with the unresolved ones.
+  {Ds, Ss} = lists:unzip(Unresolved),
   make_moves(Ds, Ss, Acc, [], false);
 make_moves(_, _, Acc, Unresolved, false) ->
   %% No moves where resolved and we have unresolved ones. 
@@ -76,49 +78,43 @@ make_moves(_, _, Acc, Unresolved, false) ->
   %%    e.g.
   %%     [r1,r2,r3] = [r4,r3,r2] 
   %%      ->  r1 = r2, r2 = r3, r3 = r1, r1 = r4 
-  ?WARNING_MSG("Conflict in multimove ~w\n",[Unresolved]),
-  NewAcc = save(Unresolved, Acc, 0),
-  restore(Unresolved, NewAcc, 0).
+  ?WARNING_MSG("Conflict in multimove ~w\n", [Unresolved]),
+  SP = hipe_sparc_registers:stack_pointer(),
+  NewAcc = save(Unresolved, Acc, SP, 0),
+  restore(Unresolved, NewAcc, SP, 0).
 
-split(Pairlist) ->
-  split(Pairlist, [], []).
-split([{A,B}|Rest], As, Bs) ->
-  split(Rest,[A|As],[B|Bs]);
-split([],As,Bs) ->
-  {As,Bs}.
-
-save([{_,S}|More], Acc, Pos) ->
+save([{_,S}|More], Acc, SP, Pos) ->
   case hipe_sparc:is_reg(S) of
     true ->
       save(More,
-	   [hipe_sparc:store_create(hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
-			       hipe_sparc:mk_imm(Pos * 4),
-			       w,
-			       S)
+	   [hipe_sparc:store_create(hipe_sparc:mk_reg(SP),
+				    hipe_sparc:mk_imm(Pos bsl ?log2_wordsize),
+				    w,
+				    S)
 	    |Acc],
+	   SP,
 	   Pos + 1);
-    _ ->    
-      save(More, Acc, Pos)
+    _ ->
+      save(More, Acc, SP, Pos)
   end;
-save([], Acc, _) ->
+save([], Acc, _, _) ->
   Acc.
 
-restore([{D,S} | More], Acc, Pos) ->
+restore([{D,S}|More], Acc, SP, Pos) ->
   case hipe_sparc:is_reg(S) of
     true ->
-      restore(More, 
+      restore(More,
 	      [hipe_sparc:load_create(D,
-				 uw,
-				 hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
-				 hipe_sparc:mk_imm(Pos * 4))
+				      uw,
+				      hipe_sparc:mk_reg(SP),
+				      hipe_sparc:mk_imm(Pos bsl ?log2_wordsize))
 	       |Acc],
+	      SP, 
 	      Pos + 1);
     _ ->
-      restore(More, 
-	      [hipe_sparc:move_create(D,S)|Acc],
-	      Pos)
+      restore(More, [hipe_sparc:move_create(D,S)|Acc], SP, Pos)
   end;
-restore([], Acc, _) ->
+restore([], Acc, _, _) ->
   Acc.
 
 %% Check if the current destination is the source in any unresolved moves.
@@ -150,7 +146,7 @@ unresolved(D, [_|Unresolved]) ->
 %%       case Dest of
 %% 	{spill, Off1} ->
 %% 	  spill_rewrite_mm(Ds, Ss, 
-%% 			   [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), w, ScratchReg, []),
+%% 			   [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1 bsl ?log2_wordsize), w, ScratchReg, []),
 %% 			    hipe_sparc:move_create(ScratchReg, S, Info)
 %% 			    |Acc],
 %% 			   Info,
@@ -177,9 +173,9 @@ unresolved(D, [_|Unresolved]) ->
 %% 		{spill, Off2} ->
 %% 		  spill_rewrite_mm(Ds, Ss, 
 %% 				   [hipe_sparc:store_create(SpillAreaReg, 
-%% 						       hipe_sparc:mk_imm(Off1*4), w, ScratchReg, []),
+%% 						       hipe_sparc:mk_imm(Off1 bsl ?log2_wordsize), w, ScratchReg, []),
 %% 				    hipe_sparc:load_create(ScratchReg, w, SpillAreaReg, 
-%% 						      hipe_sparc:mk_imm(Off2*4), [])|
+%% 						      hipe_sparc:mk_imm(Off2 bsl ?log2_wordsize), [])|
 %% 				    Acc], Info,
 %% 				   Mapping, Unresolved, [D|Overwritten],
 %% 				   SpillAreaReg, ScratchReg);
@@ -187,7 +183,7 @@ unresolved(D, [_|Unresolved]) ->
 %% 		  SR = hipe_sparc:mk_reg(SourceR),
 %% 		  spill_rewrite_mm(Ds, Ss, 
 %% 				   [hipe_sparc:store_create(SpillAreaReg, 
-%% 							    hipe_sparc:mk_imm(Off1*4), 
+%% 							    hipe_sparc:mk_imm(Off1 bsl ?log2_wordsize), 
 %% 							    w, SR, [])|Acc],
 %% 				   Info,
 %% 				   Mapping, Unresolved, [D|Overwritten],
@@ -198,7 +194,7 @@ unresolved(D, [_|Unresolved]) ->
 %% 	      case Source of
 %% 		{spill, Off2} ->
 %% 		  spill_rewrite_mm(Ds, Ss, 
-%% 				   [hipe_sparc:load_create(DestR, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2*4), [])|Acc],
+%% 				   [hipe_sparc:load_create(DestR, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2 bsl ?log2_wordsize), [])|Acc],
 %% 				   Info,
 %% 				   Mapping, Unresolved, [DestR|Overwritten],
 %% 				   SpillAreaReg, ScratchReg);
@@ -232,35 +228,35 @@ unresolved(D, [_|Unresolved]) ->
 %%       case Source of
 %% 	{spill, Off2} ->
 %% 	  save(More,
-%% 	       [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1*4), ScratchReg),
-%% 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
+%% 	       [hipe_sparc:store_create(SpillAreaReg, hipe_sparc:mk_imm(Off1 bsl ?log2_wordsize), ScratchReg),
+%% 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), [])|
 %% 		Acc] ++
-%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), ScratchReg),
-%% 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2*4), [])],
+%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), ScratchReg),
+%% 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2 bsl ?log2_wordsize), [])],
 %% 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg);
 %% 	{reg, SourceR} ->
 %% 	  save(More,
 %% 	       [hipe_sparc:store_create(SpillAreaReg,hipe_sparc:mk_imm( Off1),
 %% 				   ScratchReg),
-%% 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
+%% 		hipe_sparc:load_create(ScratchReg, uw, SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), [])|
 %% 		Acc] ++
-%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), SourceR)],
+%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), SourceR)],
 %% 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg)
 %%       end;
 %%     {reg, DestR} ->
 %%       case Source of
 %% 	{spill, Off2} ->
 %% 	  save(More,
-%% 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
+%% 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), [])|
 %% 		Acc] ++
-%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), ScratchReg),
-%% 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2*4), [])],
+%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), ScratchReg),
+%% 		hipe_sparc:load_create(ScratchReg, uw, SpillAreaReg, hipe_sparc:mk_imm(Off2 bsl ?log2_wordsize), [])],
 %% 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg);
 %% 	{reg, SourceR} ->
 %% 	  save(More,
-%% 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex*4), [])|
+%% 	       [hipe_sparc:load_create(DestR, uw, SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), [])|
 %% 		Acc] ++
-%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex*4), SourceR)],
+%% 	       [hipe_sparc:store_create(SP, hipe_sparc:mk_imm(StackIndex bsl ?log2_wordsize), SourceR)],
 %% 	       StackIndex + 1, Info, SpillAreaReg, ScratchReg)
 %%       end
 %%   end;

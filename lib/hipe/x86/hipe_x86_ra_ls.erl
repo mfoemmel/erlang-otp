@@ -2,14 +2,18 @@
 %%% $Id$
 %%% Linear Scan register allocator for x86
 
--ifndef(HIPE_X86_RA_LS).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_RA_LS,			hipe_amd64_ra_ls).
+-define(HIPE_X86_PP,			hipe_amd64_pp).
+-define(HIPE_X86_RA_POSTCONDITIONS,	hipe_amd64_ra_postconditions).
+-define(HIPE_X86_REGISTERS,		hipe_amd64_registers).
+-define(HIPE_X86_SPECIFIC,		hipe_amd64_specific).
+-else.
 -define(HIPE_X86_RA_LS,			hipe_x86_ra_ls).
--define(HIPE_X86_LIVENESS,		hipe_x86_liveness).
 -define(HIPE_X86_PP,			hipe_x86_pp).
 -define(HIPE_X86_RA_POSTCONDITIONS,	hipe_x86_ra_postconditions).
 -define(HIPE_X86_REGISTERS,		hipe_x86_registers).
 -define(HIPE_X86_SPECIFIC,		hipe_x86_specific).
--define(HIPE_X86_SPECIFIC_FP,		hipe_x86_specific_fp).
 -endif.
 
 -module(?HIPE_X86_RA_LS).

@@ -394,6 +394,10 @@ static int read_args(const char* fmt, va_list ap, union arg **argp)
 	  args[i++].s = va_arg(ap, char*);
 	  break;
 	case 'i':
+#ifdef EI_64BIT	  
+	  args[i++].l = (long) va_arg(ap, int);
+	  break;
+#endif
 	case 'l':
 	  args[i++].l = va_arg(ap, long);
 	  break;

@@ -62,6 +62,7 @@ BUILDTARGET   = $(MIB_TARGETS) emakebuild
 RELTEST_FILES = $(EMAKEFILE) $(SPECS) $(SOURCE) 
 endif
 
+COVER_SPEC_FILE = snmp.cover
 
 
 # ----------------------------------------------------
@@ -168,7 +169,7 @@ release_spec:
 
 release_tests_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)
-	$(INSTALL_DATA) $(RELTEST_FILES) $(RELSYSDIR)
+	$(INSTALL_DATA) $(RELTEST_FILES) $(COVER_SPEC_FILE) $(RELSYSDIR)
 	chmod -f -R u+w $(RELSYSDIR)
 	tar cf - snmp_test_data | (cd $(RELSYSDIR); tar xf -)
 

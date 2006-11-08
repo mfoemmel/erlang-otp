@@ -136,6 +136,11 @@ void erl_sys_args(int* argc, char** argv);
 
 int nohup;
 
+Eterm erts_check_io_info(void *proc)
+{
+    return NIL;
+}
+
 Uint
 erts_sys_misc_mem_sz(void)
 {

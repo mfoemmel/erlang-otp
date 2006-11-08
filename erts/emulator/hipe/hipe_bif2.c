@@ -24,7 +24,6 @@ BIF_RETTYPE hipe_bifs_show_estack_1(BIF_ALIST_1)
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
     if( !rp ) {
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     hipe_print_estack(rp);
@@ -37,7 +36,6 @@ BIF_RETTYPE hipe_bifs_show_heap_1(BIF_ALIST_1)
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
     if( !rp ) {
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     hipe_print_heap(rp);
@@ -50,7 +48,6 @@ BIF_RETTYPE hipe_bifs_show_nstack_1(BIF_ALIST_1)
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
     if( !rp ) {
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     hipe_print_nstack(rp);
@@ -68,7 +65,6 @@ BIF_RETTYPE hipe_bifs_show_pcb_1(BIF_ALIST_1)
     Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 				BIF_ARG_1, ERTS_PROC_LOCKS_ALL);
     if( !rp ) {
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_ERROR(BIF_P, BADARG);
     }
     hipe_print_pcb(rp);

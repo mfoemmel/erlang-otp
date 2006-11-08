@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 4 -*-
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -25,8 +26,8 @@
 
 -module(cerl_trees).
 
--export([depth/1, fold/3, free_variables/1, label/1, label/2, map/2,
-	 mapfold/3, size/1, variables/1]).
+-export([depth/1, fold/3, free_variables/1, get_label/1, label/1, label/2, 
+	 map/2, mapfold/3, size/1, variables/1]).
 
 -import(cerl, [alias_pat/1, alias_var/1, ann_c_alias/3, ann_c_apply/3,
 	       ann_c_binary/2, ann_c_bitstr/6, ann_c_call/4,
@@ -799,3 +800,9 @@ filter_labels([A | As]) ->
     [A | filter_labels(As)];
 filter_labels([]) ->
     [].
+
+get_label(T) ->
+    case get_ann(T) of
+	[{label, L} | _] -> L;
+	_ -> throw({missing_label, T})
+    end.

@@ -36,6 +36,7 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_binary.h"
+#include "erl_bits.h"
 #include "zlib.h"
 
 #ifdef HIPE
@@ -113,6 +114,7 @@ term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
     return term_to_binary(p, Term, compressed);
 }
 
+
 BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
 {
     int heap_size;
@@ -123,13 +125,15 @@ BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
     byte* bytes;
     byte* dest_ptr = NULL;
     byte* ep;
+    byte* temp_alloc = NULL;
 
-    if (is_not_binary(BIF_ARG_1)) {
+    if ((bytes = erts_get_aligned_binary_bytes(BIF_ARG_1, &temp_alloc)) == NULL) {
     error:
+	erts_free_aligned_binary_bytes(temp_alloc);
 	BIF_ERROR(BIF_P, BADARG);
+	goto error;
     }
     size = binary_size(BIF_ARG_1);
-    GET_BINARY_BYTES(BIF_ARG_1, bytes);
     if (size < 1 || bytes[0] != VERSION_MAGIC) {
 	goto error;
     }
@@ -155,6 +159,7 @@ BIF_RETTYPE binary_to_term_1(BIF_ALIST_1)
     hp = HAlloc(BIF_P, heap_size);
     endp = hp + heap_size;
     ep = dec_term(NULL, &hp, bytes, &MSO(BIF_P), &res);
+    erts_free_aligned_binary_bytes(temp_alloc);
     if (dest_ptr != NULL) {
 	erts_free(ERTS_ALC_T_TMP, dest_ptr);
     }
@@ -227,7 +232,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	    dest_len = real_size - 5;
 	}
 	bin = new_binary(p, NULL, real_size+1);
-	GET_BINARY_BYTES(bin, out_bytes);
+	out_bytes = binary_bytes(bin);
 	out_bytes[0] = VERSION_MAGIC;
 	if (compress(out_bytes+6, &dest_len, bytes, real_size) != Z_OK) {
 	    sys_memcpy(out_bytes+1, bytes, real_size);
@@ -245,8 +250,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	byte* bytes;
 
 	bin = new_binary(p, (byte *)NULL, size);
-	GET_BINARY_BYTES(bin, bytes);
-	
+	bytes = binary_bytes(bin);
 	bytes[0] = VERSION_MAGIC;
 	if ((endp = enc_term(NULL, Term, bytes+1, TERM_TO_BINARY_DFLAGS))	
 	    == NULL) {
@@ -604,13 +608,16 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 
     case BINARY_DEF:
 	{
+	    Uint bitoffs;
+	    Uint bitsize;
 	    byte* bytes;
-	    GET_BINARY_BYTES(obj, bytes);
+
+	    ERTS_GET_BINARY_BYTES(obj, bytes, bitoffs, bitsize);
 	    *ep++ = BINARY_EXT;
 	    j = binary_size(obj);
 	    put_int32(j, ep);
 	    ep += 4;
-	    sys_memcpy(ep, bytes, j);
+	    copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j);
 	    return ep + j;
 	}
     case EXPORT_DEF:
@@ -1169,6 +1176,61 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		ep += n;
 		break;
 	    }
+	case BIT_BINARY_EXT:
+	    {
+		Eterm bin;
+		ErlSubBin* sb;
+		Uint bitoffs1;
+		Uint bitoffs2;
+
+		n = get_int32(ep);
+		bitoffs1 = ep[4]; /* Number of bits to skip in first byte */
+		bitoffs2 = ep[5]; /* Number of bits to skip in last byte */
+		if ((bitoffs1|bitoffs2) > 7) {
+		    return NULL;
+		}
+		ep += 6;
+		if (n <= ERL_ONHEAP_BIN_LIMIT) {
+		    ErlHeapBin* hb = (ErlHeapBin *) hp;
+
+		    hb->thing_word = header_heap_bin(n);
+		    hb->size = n;
+		    sys_memcpy(hb->data, ep, n);
+		    bin = make_binary(hb);
+		    hp += heap_bin_size(n);
+		} else {
+		    Binary* dbin = erts_bin_nrml_alloc(n);
+		    ProcBin* pb;
+		    dbin->flags = 0;
+		    dbin->orig_size = n;
+		    erts_refc_init(&dbin->refc, 1);
+		    sys_memcpy(dbin->orig_bytes, ep, n);
+		    pb = (ProcBin *) hp;
+		    pb->thing_word = HEADER_PROC_BIN;
+		    pb->size = n;
+		    pb->next = off_heap->mso;
+		    off_heap->mso = pb;
+		    pb->val = dbin;
+		    pb->bytes = (byte*) dbin->orig_bytes;
+		    bin = make_binary(pb);
+		    hp += PROC_BIN_SIZE;
+		}
+		ep += n;
+		if ((bitoffs1|bitoffs2) == 0) {
+		    *objp = bin;
+		} else {
+		    sb = (ErlSubBin *) hp;
+		    sb->thing_word = HEADER_SUB_BIN;
+		    sb->orig = bin;
+		    sb->size = n - (bitoffs1+bitoffs2+7)/8;
+		    sb->bitsize = (16 - bitoffs2 - bitoffs1)%8;
+		    sb->bitoffs = bitoffs1;
+		    sb->offs = 0;
+		    *objp = make_binary(sb);
+		    hp += ERL_SUB_BIN_SIZE;
+		}
+		break;
+	    }
 	case EXPORT_EXT:
 	    {
 		Eterm mod;
@@ -1190,7 +1252,7 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		}
 		*objp = make_export(hp);
 		*hp++ = HEADER_EXPORT;
-		*hp++ = (Eterm) erts_export_put(mod, name, arity);
+		*hp++ = (Eterm) erts_export_get_or_make_stub(mod, name, arity);
 		break;
 	    }
 	    break;
@@ -1655,6 +1717,18 @@ decode_size2(byte *ep, byte* endp)
 		    heap_size += heap_bin_size(n);
 		} else {
 		    heap_size += PROC_BIN_SIZE;
+		}
+		break;
+	    case BIT_BINARY_EXT:
+		{
+		    CHKSIZE(6);
+		    n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
+		    SKIP2(n, 6);
+		    if (n <= ERL_ONHEAP_BIN_LIMIT) {
+			heap_size += heap_bin_size(n) + ERL_SUB_BIN_SIZE;
+		    } else {
+			heap_size += PROC_BIN_SIZE + ERL_SUB_BIN_SIZE;
+		    }
 		}
 		break;
 	    case EXPORT_EXT:

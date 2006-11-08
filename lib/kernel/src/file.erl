@@ -68,174 +68,9 @@
 
 -define(FILE_IO_SERVER_TABLE, file_io_servers).
 
--define(OLD_FILE_SERVER, file_server). % Registered name
 -define(FILE_SERVER, file_server_2).   % Registered name
 -define(PRIM_FILE, prim_file).         % Module
 -define(RAM_FILE, ram_file).           % Module
-
-
-%%%-----------------------------------------------------------------
-%%% === Concerning backwards compatibility between R8 and older nodes
-%%%
-%%% The R7 file server protocol and the R8 file server protocol 
-%%% differs in three different details:
-%%% * The mode specification for an 'open' request is an integer
-%%%   (flag bits) in R7, and a list of atoms in R8. This was changed
-%%%   because the flag bits were considered too inflexible.
-%%% * The 'get_cwd' request useful for Windows systems in R7 had an 
-%%%   integer drive number as argument, but in R8 it is supposed to 
-%%%   be a string starting with "D:". This is because the drive
-%%%   number was regarded to low-level.
-%%% * A 'copy' request has been added in R8.
-%%%
-%%% The backwards compatibility problem is solved as follows:
-%%%
-%%% An R7 node registers the file server under the name 'file_server',
-%%% the code for the server is find in module 'file'.
-%%%
-%%% An R8 node registers the file server under the name 'file_server_2',
-%%% executed by module 'file_server'. It also registers a relay
-%%% process named 'file_server' executed by module 'old_file_server'
-%%% that relays all messages to the name 'file_server_2'.
-%%%
-%%% If the R8 node is a slave node, module 'file_server' will try to 
-%%% locate the name 'file_server_2' on the master node. If it exists
-%%% a relay process will register the name 'file_server_2' to relay
-%%% all messages to the master 'file_server_2'. If it does not exist
-%%% a stupid nameless process is created just to keep
-%%% the kernel supervisor happy.
-%%%
-%%% Module 'old_file_server' will do roughly the same with the name
-%%% 'file_server' towards the master node, with the exception that
-%%% it will first look for the name 'file_server_2' on the master
-%%% node, and then for 'file_server', and if neither name does exist, 
-%%% the kernel will crash during init.
-%%%
-%%% When the R8 node is not a slave node, the module 'file_server' 
-%%% is itself backwards compatible in that respect that it 
-%%% understands the R7 requests and replies correctly.
-%%%
-%%% Calls to module 'file' when an R8 node is a slave to an R7 master
-%%% will be translated when necessary by doing a local name lookup
-%%% with erlang:whereis/1 for the name 'file_server_2'. If that name
-%%% does not exist, the request will be in R7 format and sent to
-%%% the name 'file_server' (locally, as usual), otherwise an R8 
-%%% request is sent to 'file_server_2'.
-%%%
-%%% In the pictures below, nota that it is not common in practice
-%%% for a slave to have slaves. It is just to show that it is
-%%% theoretically possible.
-%%%
-%%%-----------------------------------------------------------------
-%%% R8 Master with R8 and R7 slaves:
-%%%                                                                 
-%%% +============================================+                  
-%%% | R7 Slave                                   |                  
-%%% |                                            |                  
-%%% | +-------+                  +-----------+   |                  
-%%% | |<X.X.X>|----------------->|file_server|   |                  
-%%% | +-------+                  +-----------+   |                  
-%%% |                                  |         |                  
-%%% +==================================|=========+                  
-%%%                                    |                            
-%%%                                    |                            
-%%% +==================================|=========+                  
-%%% | R8 Slave                         |         |                  
-%%% |                                  |         |                  
-%%% | +-------+                        |         |                  
-%%% | |<X.X.X>|                        |         |                  
-%%% | +-------+                        |         |                  
-%%% |        |                         |         |                  
-%%% |        V                         V         |                  
-%%% |       +-------------+      +-----------+   |                  
-%%% |       |file_server_2|      |file_server|   |                  
-%%% |       +-------------+      +-----------+   |                  
-%%% |              |                   |         |                  
-%%% |              |    +--------------+         |                  
-%%% |              |    |                        |                  
-%%% +==============|====|========================+                  
-%%%                |    |                                           
-%%%                |    |                                           
-%%% +==============|====|========================+                  
-%%% | R8 Master    |    |                        |                  
-%%% |              V    V                        |                  
-%%% |       +-------------+      +-----------+   |                  
-%%% |       |file_server_2|<-----|file_server|   |                  
-%%% |       +-------------+      +-----------+   |                  
-%%% |        A                         A         |                  
-%%% |        |                         |         |                  
-%%% | +-------+                        |         |                  
-%%% | |<X.X.X>|                        |         |                  
-%%% | +-------+                        |         |                  
-%%% |                                  |         |                  
-%%% +==================================|=========+                  
-%%%                                    |                            
-%%%                                    |                            
-%%% +==================================|=========+                  
-%%% | R7 Slave                         |         |                  
-%%% |                                  |         |                  
-%%% | +-------+                  +-----------+   |                  
-%%% | |<X.X.X>|----------------->|file_server|   |                  
-%%% | +-------+                  +-----------+   |                  
-%%% |                                            |                  
-%%% +============================================+                  
-%%%                                                                 
-%%%-----------------------------------------------------------------
-%%% R7 Master with R7 and R8 slaves:
-%%%                                                                 
-%%% +============================================+                  
-%%% | R7 Slave                                   |                  
-%%% |                                            |                  
-%%% | +-------+                  +-----------+   |                  
-%%% | |<X.X.X>|----------------->|file_server|   |                  
-%%% | +-------+                  +-----------+   |                  
-%%% |                                  |         |                  
-%%% +==================================|=========+                  
-%%%                                    |                            
-%%%                                    |                            
-%%% +==================================|=========+                  
-%%% | R8 Slave                         |         |                  
-%%% |                                  |         |                  
-%%% | +-------+                        |         |                  
-%%% | |<X.X.X>|                        |         |                  
-%%% | +-------+                        |         |                  
-%%% |        |                         |         |                  
-%%% |        |                         V         |                  
-%%% |        |                   +-----------+   |                  
-%%% |        +------------------>|file_server|   |                  
-%%% |                            +-----------+   |                  
-%%% |                                  |         |                  
-%%% +==================================|=========+                  
-%%%                                    |                            
-%%%                                    |                            
-%%% +==================================|=========+                  
-%%% | R7 Master                        |         |                  
-%%% |                                  V         |                  
-%%% | +-------+                  +-----------+   |                  
-%%% | |<X.X.X>|----------------->|file_server|   |                  
-%%% | +-------+                  +-----------+   |                  
-%%% |                                  A         |                  
-%%% +==================================|=========+                  
-%%%                                    |                            
-%%%                                    |                            
-%%% +==================================|=========+                  
-%%% | R7 Slave                         |         |                  
-%%% |                                  |         |                  
-%%% | +-------+                  +-----------+   |                  
-%%% | |<X.X.X>|----------------->|file_server|   |                  
-%%% | +-------+                  +-----------+   |                  
-%%% |                                            |                  
-%%% +============================================+                  
-%%%                                                                 
-%%%-----------------------------------------------------------------
-
-
-%% Mode bit mask values for R7 file server call {open, Name, Mode}
--define(OLD_MODE_READ,       (1 bsl 0)).
--define(OLD_MODE_WRITE,      (1 bsl 1)).
--define(OLD_MODE_APPEND,     (1 bsl 2)).
--define(OLD_MODE_COMPRESSED, (1 bsl 3)).
--define(OLD_MODE_BINARY,     (1 bsl 10)).
 
 %%%-----------------------------------------------------------------
 %%% General functions
@@ -251,7 +86,7 @@ format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
 pid2name(Pid) when pid(Pid) ->
-    case whereis(file_server) of
+    case whereis(?FILE_SERVER) of
 	undefined ->
 	    undefined;
 	_ ->
@@ -269,28 +104,9 @@ pid2name(Pid) when pid(Pid) ->
 %%% Stateless.
 
 get_cwd() -> 
-    case file_server() of
-	?FILE_SERVER ->
-	    call(?FILE_SERVER, get_cwd, []);
-	?OLD_FILE_SERVER ->
-	    call(?OLD_FILE_SERVER, get_cwd, [0])
-    end.
+    call(get_cwd, []).
 get_cwd(Dirname) ->
-    case file_server() of
-	?FILE_SERVER ->
-	    check_and_call(?FILE_SERVER, get_cwd, [file_name(Dirname)]);
-	?OLD_FILE_SERVER ->
-	    case Dirname of
-		[D, $: | _] when 
-		      integer(D), $A =< D, D =< $Z ->
-		    call(?OLD_FILE_SERVER, get_cwd, [1+D-$A]);
-		[D, $: | _] when 
-		      integer(D), $a =< D, D =< $z ->
-		    call(?OLD_FILE_SERVER, get_cwd, [1+D-$a]);
-		_ ->
-		    {error, einval}
-	    end
-    end.
+    check_and_call(get_cwd, [file_name(Dirname)]).
 set_cwd(Dirname) -> 
     check_and_call(set_cwd, [file_name(Dirname)]).
 delete(Name) ->
@@ -423,26 +239,11 @@ open(Item, ModeList) when list(ModeList) ->
 		    end;
 		%% File server file
 		false ->
-		    case file_server() of
-			?OLD_FILE_SERVER ->
-			    Mode = old_mode(ModeList),
-			    Args = [file_name(Item), Mode],
-			    case check_args(Args) of
-				ok ->
-				    call(?OLD_FILE_SERVER, open, Args);
-				Error ->
-				    Error
-			    end;
-			?FILE_SERVER ->
-			    Args = [file_name(Item) | ModeList],
-			    case check_args(Args) of 
-				ok ->
-				    [FileName | _] = Args,
-				    call(?FILE_SERVER, 
-					 open, [FileName, ModeList]);
-				Error ->
-				    Error
-			    end;
+		    Args = [file_name(Item) | ModeList],
+		    case check_args(Args) of 
+			ok ->
+			    [FileName | _] = Args,
+			    call(open, [FileName, ModeList]);
 			Error ->
 			    Error
 		    end
@@ -601,12 +402,12 @@ truncate(_) ->
 
 
 copy(Source, Dest) ->
-    copy_int(file_server(), Source, Dest, infinity).
+    copy_int(Source, Dest, infinity).
 
 copy(Source, Dest, Length) 
   when integer(Length), Length >= 0;
        atom(Length) ->
-    copy_int(file_server(), Source, Dest, Length);
+    copy_int(Source, Dest, Length);
 copy(_, _, _) ->
     {error, einval}.
 
@@ -614,56 +415,55 @@ copy(_, _, _) ->
 %% (by the way, atoms > integers)
 %%
 %% Copy between open files. 
-copy_int(_FileServer, Source, Dest, Length) 
+copy_int(Source, Dest, Length) 
   when pid(Source), pid(Dest);
        pid(Source), record(Dest, file_descriptor);
        record(Source, file_descriptor), pid(Dest) ->
     copy_opened_int(Source, Dest, Length, 0);
 %% Copy between open raw files, both handled by the same module
-copy_int(_FileServer, #file_descriptor{module = Module} = Source,
+copy_int(#file_descriptor{module = Module} = Source,
 	 #file_descriptor{module = Module} = Dest,
-     Length) ->
+	 Length) ->
     Module:copy(Source, Dest, Length);
-%% Copy between open raw files
-copy_int(_FileServer, Source, Dest, Length) 
-  when record(Source, file_descriptor), record(Dest, file_descriptor) ->
+%% Copy between open raw files of different modules
+copy_int(#file_descriptor{} = Source, 
+	 #file_descriptor{} = Dest, Length) ->
     copy_opened_int(Source, Dest, Length, 0);
-%%
-%% At least one of the files needs to be opened
-%%
 %% Copy between filenames, let the server do the copy
-copy_int(?FILE_SERVER, {SourceName, SourceOpts}, {DestName, DestOpts}, Length) 
+copy_int({SourceName, SourceOpts}, {DestName, DestOpts}, Length) 
   when list(SourceOpts), list(DestOpts) ->
-   check_and_call(?FILE_SERVER, copy, 
+    check_and_call(copy, 
 		   [file_name(SourceName), SourceOpts,
 		    file_name(DestName), DestOpts,
 		    Length]);
-%% Must open Source
-copy_int(FileServer, {SourceName, SourceOpts}, Dest, Length) 
-  when list(SourceOpts) ->
+%% Filename -> open file; must open Source and do client copy
+copy_int({SourceName, SourceOpts}, Dest, Length) 
+  when list(SourceOpts), pid(Dest);
+       list(SourceOpts), record(Dest, file_descriptor) ->
     case file_name(SourceName) of
 	{error, _} = Error ->
 	    Error;
 	Source ->
 	    case open(Source, [read | SourceOpts]) of
 		{ok, Handle} ->
-		    Result = copy_int(FileServer, Handle, Dest, Length),
+		    Result = copy_opened_int(Handle, Dest, Length, 0),
 		    close(Handle),
 		    Result;
 		{error, _} = Error ->
 		    Error
 	    end
     end;
-%% Must open Dest
-copy_int(FileServer, Source, {DestName, DestOpts}, Length)
-  when list(DestOpts) ->
+%% Open file -> filename; must open Dest and do client copy
+copy_int(Source, {DestName, DestOpts}, Length)
+  when pid(Source), list(DestOpts);
+       record(Source, file_descriptor), list(DestOpts) ->
     case file_name(DestName) of
 	{error, _} = Error ->
 	    Error;
 	Dest ->
 	    case open(Dest, [write | DestOpts]) of
 		{ok, Handle} ->
-		    Result = copy_int(FileServer, Source, Handle, Length),
+		    Result = copy_opened_int(Source, Handle, Length, 0),
 		    close(Handle),
 		    Result;
 		{error, _} = Error ->
@@ -671,22 +471,30 @@ copy_int(FileServer, Source, {DestName, DestOpts}, Length)
 	    end
     end;
 %%
-%% Neither of Source and Dest is a {Name, Opts} tuple, so they must
-%% be open file handles or filenames
+%% That was all combinations of {Name, Opts} tuples
+%% and open files. At least one of Source and Dest has
+%% to be a bare filename.
 %%
-%% Copy from open file to filename
-copy_int(FileServer, Source, Dest, Length) 
+%% If Source is not a bare filename; Dest must be
+copy_int(Source, Dest, Length) 
   when pid(Source);
        record(Source, file_descriptor) ->
-    copy_int(FileServer, Source, {Dest, []}, Length);
-%% Copy from filename to open file
-copy_int(FileServer, Source, Dest, Length) 
+    copy_int(Source, {Dest, []}, Length);
+copy_int({_SourceName, SourceOpts} = Source, Dest, Length) 
+  when list(SourceOpts) ->
+    copy_int(Source, {Dest, []}, Length);
+%% If Dest is not a bare filename; Source must be
+copy_int(Source, Dest, Length) 
   when pid(Dest);
        record(Dest, file_descriptor) ->
-    copy_int(FileServer, {Source, []}, Dest, Length);
-%% Copy between filenames
-copy_int(FileServer, Source, Dest, Length) ->
-    copy_int(FileServer, {Source, []}, {Dest, []}, Length).
+    copy_int({Source, []}, Dest, Length);
+copy_int(Source, {_DestName, DestOpts} = Dest, Length) 
+  when list(DestOpts) ->
+    copy_int({Source, []}, Dest, Length);
+%% Both must be bare filenames. If they are not,
+%% the filename check in the copy operation will yell.
+copy_int(Source, Dest, Length) ->
+    copy_int({Source, []}, {Dest, []}, Length).
 
 
 
@@ -952,19 +760,20 @@ change_time(Name, Atime, Mtime)
 %%% Helpers
 
 consult_stream(Fd) ->
-    case catch consult_stream(io:read(Fd, '', 1), Fd) of
-	{'EXIT', _Reason} ->
-	    {error, einval};
-	{error, Reason} ->
-	    {error, Reason};
+    try consult_stream(io:read(Fd, '', 1), Fd) of
 	List ->
-	    {ok, List}
+	    {ok,List}
+    catch
+	throw:Reason ->
+	    {error,Reason};
+	_:_ ->
+	    {error,einval}
     end.
 
 consult_stream({ok,Term,Line}, Fd) ->
     [Term|consult_stream(io:read(Fd, '',Line), Fd)];
 consult_stream({error,What,_Line}, _Fd) ->
-    throw({error, What});
+    throw(What);
 consult_stream({eof,_Line}, _Fd) ->
     [].
 
@@ -978,7 +787,7 @@ eval_stream2({ok,Form,EndLine}, Fd, H, Last, E, Bs0) ->
     try erl_eval:exprs(Form, Bs0) of
 	{value,V,Bs} ->
 	    eval_stream(Fd, H, EndLine, {V}, E, Bs)
-    catch _Class:Reason ->
+    catch _:Reason ->
             Error = {EndLine,?MODULE,{Reason,erlang:get_stacktrace()}},
 	    eval_stream(Fd, H, EndLine, Last, [Error|E], Bs0)
     end;
@@ -1063,67 +872,16 @@ mode_list(_) ->
 
 
 
-%% Convert mode list to bit mask for old R7 file server
-
-old_mode(List) when list(List) ->
-    case old_mode(List, 0) of
-	Mode when Mode band (?OLD_MODE_READ bor ?OLD_MODE_WRITE) == 0 ->
-	    Mode bor ?OLD_MODE_READ;
-	Other ->
-	    Other
-    end.
-
-old_mode([read|Rest], Mode) ->
-    old_mode(Rest, Mode bor ?OLD_MODE_READ);
-old_mode([write|Rest], Mode) ->
-    old_mode(Rest, Mode bor ?OLD_MODE_WRITE);
-old_mode([binary|Rest], Mode) ->
-    old_mode(Rest, Mode bor ?OLD_MODE_BINARY);
-old_mode([compressed|Rest], Mode) ->
-    old_mode(Rest, Mode bor ?OLD_MODE_COMPRESSED);
-old_mode([append|Rest], Mode) ->
-    old_mode(Rest, Mode bor ?OLD_MODE_APPEND bor ?OLD_MODE_WRITE);
-old_mode([{delayed_write, _, _}|Rest], Mode) ->
-    old_mode(Rest, Mode);
-old_mode([delayed_write|Rest], Mode) ->
-    old_mode(Rest, Mode);
-old_mode([{read_ahead, _}|Rest], Mode) ->
-    old_mode(Rest, Mode);
-old_mode([read_ahead|Rest], Mode) ->
-    old_mode(Rest, Mode);
-old_mode([], Mode) ->
-    Mode;
-old_mode(_, _) ->
-    {error, einval}.
-
-
 %%-----------------------------------------------------------------
 %% Functions for communicating with the file server
 
-%% Selects between an old and a new file server
-file_server() ->
-    case whereis(?FILE_SERVER) of
-	Pid when pid(Pid) ->
-	    ?FILE_SERVER;
-	undefined ->
-	    ?OLD_FILE_SERVER
-    end.
+call(Command, Args) when list(Args) ->
+    gen_server:call(?FILE_SERVER, list_to_tuple([Command | Args]), infinity).
 
-%% Currently not used
-%% 
-%% call(Command, Args) ->
-%%     call(file_server(), Command, Args).
-
-call(FileServer, Command, Args) when list(Args) ->
-    gen_server:call(FileServer, list_to_tuple([Command | Args]), infinity).
-
-check_and_call(Command, Args) ->
-    check_and_call(file_server(), Command, Args).
-
-check_and_call(FileServer, Command, Args) when list(Args) ->
+check_and_call(Command, Args) when list(Args) ->
     case check_args(Args) of
 	ok ->
-	    call(FileServer, Command, Args);
+	    call(Command, Args);
 	Error ->
 	    Error
     end.

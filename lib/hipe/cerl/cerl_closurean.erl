@@ -29,6 +29,9 @@
 -module(cerl_closurean).
 
 -export([analyze/1, annotate/1]).
+%% The following functions are exported from this module since they
+%% are also used by Dialyzer (file dialyzer/src/dialyzer_dep.erl)
+-export([is_escape_op/2, is_escape_op/3, is_literal_op/2, is_literal_op/3]).
 
 -import(cerl, [ann_c_apply/3, ann_c_fun/3, ann_c_var/2, apply_args/1,
 	       apply_op/1, atom_val/1, bitstr_size/1, bitstr_val/1,
@@ -45,6 +48,7 @@
 	       try_arg/1, try_body/1, try_vars/1, try_evars/1,
 	       try_handler/1, tuple_es/1, type/1, values_es/1]).
 
+-import(cerl_trees, [get_label/1]).
 
 %% =====================================================================
 %% annotate(Tree) -> {Tree1, OutList, Outputs, Dependencies, Escapes,
@@ -782,12 +786,6 @@ take_work({Queue0, Set0}) ->
 	    none
     end.
 
-get_label(T) ->
-    case get_ann(T) of
-	[{label, L} | _] -> L;
-	_ -> erlang:fault({missing_label, T})
-    end.
-
 %% Escape operators may let their arguments escape. Unless we know
 %% otherwise, and the function is not pure, we assume this is the case.
 %% Error-raising functions (fault/match_fail) are not considered as
@@ -795,13 +793,13 @@ get_label(T) ->
 %% listed.
 
 is_escape_op(match_fail, 1) -> false; 
-is_escape_op(_F, _A) -> true.
+is_escape_op(F, A) when is_atom(F), is_integer(A) -> true.
 
 is_escape_op(erlang, error, 1) -> false;
 is_escape_op(erlang, error, 2) -> false;
 is_escape_op(erlang, fault, 1) -> false;
 is_escape_op(erlang, fault, 2) -> false;
-is_escape_op(_M, _F, _A) -> true.
+is_escape_op(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> true.
 
 %% "Literal" operators will never return functional values even when
 %% found in their arguments. Unless we know otherwise, we assume this is
@@ -810,7 +808,7 @@ is_escape_op(_M, _F, _A) -> true.
 %% contains an encoding of the closure.)
 
 is_literal_op(match_fail, 1) -> true;
-is_literal_op(_, _) -> false.
+is_literal_op(F, A) when is_atom(F), is_integer(A) -> false.
 
 is_literal_op(erlang, '+', 2) -> true;
 is_literal_op(erlang, '-', 2) -> true;
@@ -838,14 +836,12 @@ is_literal_op(erlang, fault, 1) -> true;
 is_literal_op(erlang, fault, 2) -> true;
 is_literal_op(erlang, error, 1) -> true;
 is_literal_op(erlang, error, 2) -> true;
-is_literal_op(_, _, _) -> false.
+is_literal_op(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> false.
 
 %% Pure functions neither affect the state, nor depend on it.
 
-is_pure_op(_, _) -> false.
+is_pure_op(F, A) when is_atom(F), is_integer(A) -> false.
 
 is_pure_op(M, F, A) -> erl_bifs:is_pure(M, F, A).
-
-
 
 %% =====================================================================

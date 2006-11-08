@@ -11,7 +11,10 @@
 
 -export([take_indep_scc/1, reverse_preorder_sccs/1]).
 
--record(digraph, {edges, rev_edges, leaves, nodes}).
+-record(digraph, {edges,
+		  rev_edges,
+		  leaves::list(),
+		  nodes}).
 
 new() ->
   #digraph{edges=dict:new(), rev_edges=dict:new(), 

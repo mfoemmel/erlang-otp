@@ -128,6 +128,8 @@ extern struct erl_bits_state ErlBitsState;
 
 #endif	/* ERL_BITS_REENTRANT */
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
+
 #define erts_mb			(ErlBitsState.erts_mb_)
 #define erts_save_mb		(ErlBitsState.erts_save_mb_)
 #define erts_bin_offset		(ErlBitsState.erts_bin_offset_)
@@ -135,22 +137,37 @@ extern struct erl_bits_state ErlBitsState;
 #define erts_bin_buf		(ErlBitsState.erts_bin_buf_)
 #define erts_bin_buf_len	(ErlBitsState.erts_bin_buf_len_)
 
-#define erts_InitMatchBuf(Src, Fail)				\
-do {								\
-    Eterm _Bin = (Src);						\
-    if (!is_binary(_Bin)) {					\
-	Fail;							\
-    } else {							\
-	Eterm _orig;						\
-	Uint _offs;						\
-								\
-	GET_REAL_BIN(_Bin, _orig, _offs);			\
-	erts_mb.orig = _orig;					\
-	erts_mb.base = binary_bytes(_orig);			\
-	erts_mb.offset = 8 * _offs;				\
-	erts_mb.size = binary_size(_Bin) * 8 + erts_mb.offset;	\
-    }								\
+#define erts_InitMatchBuf(Src, Fail)					\
+do {									\
+    Eterm _Bin = (Src);							\
+    if (!is_binary(_Bin)) {						\
+	Fail;								\
+    } else {								\
+	Eterm _orig;							\
+	Uint _offs;							\
+	Uint _bitoffs;							\
+	Uint _bitsize;							\
+									\
+	ERTS_GET_REAL_BIN(_Bin, _orig, _offs, _bitoffs, _bitsize);	\
+	erts_mb.orig = _orig;						\
+	erts_mb.base = binary_bytes(_orig);				\
+	erts_mb.offset = 8 * _offs+_bitoffs;				\
+	erts_mb.size = binary_size(_Bin) * 8 + erts_mb.offset+_bitsize;	\
+    }									\
 } while (0)
+#endif
+
+#define copy_binary_to_buffer(DstBuffer, DstBufOffset, SrcBuffer, SrcBufferOffset, NumBits) \
+  do {											    \
+    if (BIT_OFFSET(DstBufOffset) == 0 && (SrcBufferOffset == 0) &&			    \
+        (BIT_OFFSET(NumBits)==0)) {							    \
+      sys_memcpy(DstBuffer+BYTE_OFFSET(DstBufOffset),					    \
+		 SrcBuffer, NBYTES(NumBits));						    \
+    } else {										    \
+      erts_copy_bits(SrcBuffer, SrcBufferOffset, 1,					    \
+        (byte*)DstBuffer, DstBufOffset, 1, NumBits);					    \
+    }											    \
+  }  while (0)
 
 void erts_init_bits(void);	/* Initialization once. */
 #ifdef ERTS_SMP
@@ -164,6 +181,8 @@ void erts_bits_destroy_state(ERL_BITS_PROTO_0);
  */
 
 #define NBYTES(x)  (((x) + 7) >> 3) 
+#define BYTE_OFFSET(ofs) ((unsigned) (ofs) >> 3)
+#define BIT_OFFSET(ofs) ((ofs) & 7)
 
 /*
  * Return number of Eterm words needed for allocation with HAlloc(),
@@ -194,6 +213,7 @@ Eterm erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMat
 Eterm erts_bs_get_binary_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb);
 Eterm erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb);
 Eterm erts_bs_get_binary_all_2(Process *p, ErlBinMatchBuffer* mb);
+
 /*
  * Binary construction, new instruction set.
  */
@@ -210,12 +230,20 @@ void erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
 
 void erts_bs_init(ERL_BITS_PROTO_0);
 Eterm erts_bs_final(Process* p);
+Eterm erts_bs_final2(Process* p, Eterm bin);
 Uint erts_bits_bufs_size(void);
 int erts_bs_put_integer(ERL_BITS_PROTO_3(Eterm Integer, Uint num_bits, unsigned flags));
 int erts_bs_put_binary(ERL_BITS_PROTO_2(Eterm Bin, Uint num_bits));
 int erts_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm Bin));
 int erts_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
 void erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
+
+/*
+ * Common utilities.
+ */
+void erts_copy_bits(byte* src, size_t soffs, int sdir,
+		    byte* dst, size_t doffs,int ddir, size_t n);        
+int erts_cmp_bits(byte* a_ptr, size_t a_offs, byte* b_ptr, size_t b_offs, size_t size); 
 
 /*
  * Flags for bs_get_* / bs_put_* / bs_init* instructions.

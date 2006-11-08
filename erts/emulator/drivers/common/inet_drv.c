@@ -468,6 +468,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_LOPT_TCP_SEND_TIMEOUT 30      /* set send timeout */
 #define INET_LOPT_TCP_DELAY_SEND   31      /* Delay sends until next poll */
 #define INET_LOPT_PACKET_SIZE      32      /* Max packet size */
+#define INET_LOPT_UDP_READ_PACKETS 33  /* Number of packets to read */
 
 #define INET_IFOPT_ADDR       1
 #define INET_IFOPT_BROADADDR  2
@@ -510,7 +511,6 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 
 #define INET_MAX_ASYNC 1           /* max number of async queue ops */
 
-/* INET_UDP_POLL could be an option !! */
 #define INET_UDP_POLL   5        /* maximum number of packets to poll */
 
 /* Max interface name */
@@ -771,6 +771,7 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event);
 
 typedef struct {
     inet_descriptor inet;   /* common data structure (DON'T MOVE) */
+    int read_packets;       /* Number of packets to read per invocation */
 } udp_descriptor;
 
 static int udp_inet_input(udp_descriptor* desc, HANDLE event);
@@ -2932,10 +2933,10 @@ static char* fmt_addr(unsigned long x, char* ptr)
 	int nb[3];
 	int y = (x >> 24) & 0xff;
 	x <<= 8;
-	nb[2] = y % 10; y /= 10;
-	nb[1] = y % 10; y /= 10;
 	nb[0] = y % 10; y /= 10;
-	switch((nb[2]>0 ? 3 : (nb[1]>0 ? 2 : 1))) {
+	nb[1] = y % 10; y /= 10;
+	nb[2] = y % 10; y /= 10;
+	switch((nb[2] ? 3 : (nb[1] ? 2 : 1))) {
 	case 3:  *ptr++ = nb[2] + '0';
 	case 2:  *ptr++ = nb[1] + '0';
 	case 1:  *ptr++ = nb[0] + '0';
@@ -2951,28 +2952,29 @@ static int parse_addr(char* ptr, int n, long* x)
     long addr = 0;
     int  dots = 0;
     int  digs = 0;
+    int  v  = 0;
 
     while(n--) {
 	switch(*ptr) {
 	case '0': case '1': case '2':case '3':case '4':case '5':
 	case '6': case '7': case '8':case '9':
-	    n = n*10 + *ptr++ - '0';
-	    digs++;
+	    v = v*10 + *ptr - '0';
+	    if (++digs > 3) return -1;
 	    break;
 	case '.':
-	    if ((dots>2) || (digs==0) || (digs > 3) || (n > 0xff)) return -1;
+	    if ((dots>2) || (digs==0) || (digs > 3) || (v > 0xff)) return -1;
 	    dots++;
 	    digs = 0;
-	    addr = (addr << 8) | n;
-	    n = 0;
-	    ptr++;
+	    addr = (addr << 8) | v;
+	    v = 0;
 	    break;
 	default:
 	    return -1;
 	}
+	ptr++;
     }
-    if ((dots != 3) || (digs==0) || (digs > 3) || (n > 0xff)) return -1;
-    addr = (addr << 8) | n;
+    if ((dots!=3) || (digs==0) || (digs > 3) || (v > 0xff)) return -1;
+    addr = (addr << 8) | v;
     *x = addr;
     return 0;
 }
@@ -3023,7 +3025,7 @@ static char* buf_to_sockaddr(char* ptr, char* end, struct sockaddr* addr)
 
 static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
 {
-    char  buf[BUFSIZ];
+    char ifbuf[BUFSIZ];
     char sbuf[BUFSIZ];
     char* sptr;
     INTERFACE_INFO* ifp;
@@ -3031,7 +3033,8 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
     int n;
     int err;
 
-    ifp = (INTERFACE_INFO*) buf;
+    ifp = (INTERFACE_INFO*) ifbuf;
+    len = 0;
     err = (*winSock.WSAIoctl)(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
 			      (LPVOID) ifp, BUFSIZ, (LPDWORD) &len,
 			      NULL, NULL);
@@ -3046,7 +3049,7 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
 	    struct in_addr sina = ((struct sockaddr_in*)&ifp->iiAddress)->sin_addr;
 	    /* discard INADDR_ANY interface address */
 	    if (sina.s_addr != INADDR_ANY)
-		sptr = fmt_addr(sina.s_addr, sptr);
+		sptr = fmt_addr(sock_ntohl(sina.s_addr), sptr);
 	}
 	ifp++;
     }
@@ -3060,37 +3063,40 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
 static int inet_ctl_ifget(inet_descriptor* desc, char* buf, int len,
 			  char** rbuf, int rsize)
 {
-
+    char ifbuf[BUFSIZ];
+    int  n;
     char sbuf[BUFSIZ];
     char* sptr;
     char* s_end = sbuf + BUFSIZ;
     int namlen;
     int   err;
     INTERFACE_INFO* ifp;
-    int n;
     long namaddr;
 
     if ((len == 0) || ((namlen = buf[0]) > len))
 	goto error;
     if (parse_addr(buf+1, namlen, &namaddr) < 0)
 	goto error;
+    namaddr = sock_ntohl(namaddr);
     buf += (namlen+1);
     len -= (namlen+1);
 
-    ifp = (INTERFACE_INFO*) buf;
+    ifp = (INTERFACE_INFO*) ifbuf;
     err = (*winSock.WSAIoctl)(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
-			      (LPVOID) ifp, BUFSIZ, (LPDWORD) &len, 
+			      (LPVOID) ifp, BUFSIZ, (LPDWORD) &n, 
 			      NULL, NULL);
-    if (err == SOCKET_ERROR)
+    if (err == SOCKET_ERROR) {
 	return ctl_error(sock_errno(), rbuf, rsize);
+    }
 
-    n = (len + sizeof(INTERFACE_INFO) - 1) / sizeof(INTERFACE_INFO);
+    n = (n + sizeof(INTERFACE_INFO) - 1) / sizeof(INTERFACE_INFO);
 
     /* find interface */
-    while(n--) {
+    while(n) {
 	if (((struct sockaddr_in*)&ifp->iiAddress)->sin_addr.s_addr == namaddr)
 	    break;
 	ifp++;
+	n--;
     }
     if (n == 0)
 	goto error;
@@ -3113,7 +3119,6 @@ static int inet_ctl_ifget(inet_descriptor* desc, char* buf, int len,
 	case INET_IFOPT_BROADADDR:
 #ifdef SIOCGIFBRDADDR
 	    buf_check(sptr, s_end, 1);
-	    *sptr++ = INET_IFOPT_BROADADDR;
 	    *sptr++ = INET_IFOPT_BROADADDR;
 	    if ((sptr=sockaddr_to_buf((struct sockaddr *)
 				      &ifp->iiBroadcastAddress,sptr,s_end))
@@ -3195,47 +3200,60 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
     struct ifconf ifc;
     struct ifreq *ifr;
     char *buf;
-    char *sbuf;
-    char* cp;
-    char* cplim;
-    char* sp;
-    int buflen;
-    int res;
+    int buflen, ifc_len, i;
+    char *sbuf, *sp;
     
-    buf = (char *) ALLOC(1);
-    buflen = 0;
+    /* Courtesy of Per Bergqvist and W. Richard Stevens */
     
-    /* Courtesy of Per Bergqvist */
-    
-    /* loop until we get all available interfaces */
-    do {
-	buflen += 4096;
-	buf = (char *)REALLOC(buf,buflen);
-	
+    ifc_len = 0;
+    buflen = 100 * sizeof(struct ifreq);
+    buf = ALLOC(buflen);
+
+    for (;;) {
 	ifc.ifc_len = buflen;
 	ifc.ifc_buf = buf;
-	
 	if (ioctl(desc->s, SIOCGIFCONF, (char *)&ifc) < 0) {
-	    FREE(buf);
-	    return ctl_error(sock_errno(), rbuf, rsize);
+	    int res = sock_errno();
+	    if (res != EINVAL || ifc_len) {
+		FREE(buf);
+		return ctl_error(res, rbuf, rsize);
+	    }
+	} else {
+	    if (ifc.ifc_len == ifc_len) break; /* buf large enough */
+	    ifc_len = ifc.ifc_len;
 	}
-    } while ( (buflen-ifc.ifc_len) < sizeof(struct ifreq) );
-    
-    sp = sbuf = ALLOC(buflen);
-    cplim = buf + ifc.ifc_len; /* skip over if's with big ifr_addr's */
-    for (cp = buf; (cp < cplim); 
-	 cp += sizeof(ifr->ifr_name)+SIZEA(ifr->ifr_addr)) {
-	ifr = (struct ifreq *) VOIDP(cp);
-	strncpy(sp, ifr->ifr_name, IFNAMSIZ);
-	sp[IFNAMSIZ] = '\0';
-	while (*sp != '\0')
-	    sp++;
-	sp++;
+	buflen += 10 * sizeof(struct ifreq);
+	buf = (char *)REALLOC(buf, buflen);
     }
-    res = ctl_reply(INET_REP_OK, sbuf, sp - sbuf, rbuf, rsize);
+    
+    sp = sbuf = ALLOC(ifc_len+1);
+    *sp++ = INET_REP_OK;
+    i = 0;
+    for (;;) {
+	int n;
+	
+	ifr = (struct ifreq *) VOIDP(buf + i);
+	n = sizeof(ifr->ifr_name) + SIZEA(ifr->ifr_addr);
+	if (n < sizeof(*ifr)) n = sizeof(*ifr);
+	if (i+n > ifc_len) break;
+	i += n;
+	
+	switch (ifr->ifr_addr.sa_family) {
+#if defined(HAVE_IN6) && defined(AF_INET6)
+	case AF_INET6:
+#endif
+	case AF_INET:
+	    ASSERT(sp+IFNAMSIZ+1 < sbuf+buflen+1)
+	    strncpy(sp, ifr->ifr_name, IFNAMSIZ);
+	    sp[IFNAMSIZ] = '\0';
+	    sp += strlen(sp), ++sp;
+	}
+	
+	if (i >= ifc_len) break;
+    }
     FREE(buf);
-    FREE(sbuf);
-    return res;
+    *rbuf = sbuf;
+    return sp - sbuf;
 }
 
 
@@ -3717,7 +3735,14 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 		tdesc->fdelay_send = ival;
 	    }
 	    continue;
-	    
+
+	case INET_LOPT_UDP_READ_PACKETS:
+	    if (desc->stype == SOCK_DGRAM) {
+		udp_descriptor* udesc = (udp_descriptor*) desc;
+		if (ival <= 0) return -1;
+		udesc->read_packets = ival;
+	    }
+	    continue;
 
 	case INET_OPT_REUSEADDR: 
 #ifdef __WIN32__
@@ -4047,6 +4072,16 @@ static int inet_fill_opts(inet_descriptor* desc,
 		ptr += 4;
 	    }
 	    continue;
+
+	case INET_LOPT_UDP_READ_PACKETS:
+	    if (desc->stype == SOCK_DGRAM) {
+		*ptr++ = opt;
+		ival = ((udp_descriptor*)desc)->read_packets;
+		put_int32(ival, ptr);
+		ptr += 4;
+	    }
+	    continue;
+
 	case INET_OPT_PRIORITY:
 #ifdef SO_PRIORITY
 	    type = SO_PRIORITY;
@@ -6428,6 +6463,7 @@ static ErlDrvData udp_inet_start(ErlDrvPort port, char* args)
     desc = (udp_descriptor*) inet_start(port, sizeof(udp_descriptor));
     if (desc == NULL)
 	return ERL_DRV_ERROR_ERRNO;
+    desc->read_packets = INET_UDP_POLL;
     return (ErlDrvData) desc;
 }
 
@@ -6700,7 +6736,7 @@ static int udp_inet_input(udp_descriptor* desc, HANDLE event)
     int sz;
     char* ptr;
     ErlDrvBinary* buf; /* binary */
-    int packet_count = INET_UDP_POLL;
+    int packet_count = desc->read_packets;
     int count = 0;   /* number of packets delivered to owner */
 
     while(packet_count--) {

@@ -95,6 +95,7 @@ atom gc_1
 atom hipe_apply
 atom rethrow
 atom find_na_or_make_stub
+atom nonclosure_address
 atom atomic_inc
 atom clear_timeout
 atom check_get_msg
@@ -123,6 +124,7 @@ atom bs_put_binary_all
 atom bs_put_float
 atom bs_put_big_integer
 atom bs_put_small_float
+atom bs_put_bits
 atom bs_allocate
 atom bs_get_integer_2
 atom bs_get_float_2

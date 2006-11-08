@@ -152,7 +152,8 @@ handle_info({ssh_cm, CM, {open, Channel, _RemoteChannel, {session}}}, State) ->
     {noreply,
      State#state{cm = CM, channel = Channel,
 		 buf = empty_buf(), group = Group}};
-handle_info({ssh_cm, _CM, {data, _Channel, _Type, Data}}, State) ->
+handle_info({ssh_cm, CM, {data, Channel, _Type, Data}}, State) ->
+    ssh_cm:adjust_window(CM, Channel, size(Data)),
     State#state.group ! {self(), {data, binary_to_list(Data)}},
     {noreply, State};
 handle_info({ssh_cm, _CM, {pty, _Channel, _WantReply, Pty}}, State) ->

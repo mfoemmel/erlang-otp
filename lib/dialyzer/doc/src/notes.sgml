@@ -11,6 +11,33 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.5.0</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Dialyzer's building of PLT is based on a different
+	    type inference algorithm. More specifically, Dialyzer
+	    uses inferrence of refined success typings to infer
+	    function prototypes. As a result, Dialyzer bases its
+	    analysis on a significantly more powerful basis and thus
+	    is able to detect more discrepancies. The downside is
+	    that building the PLT is a considerably slower process.
+	    We will work on improving that.</p>
+	    <p>Dialyzer takes into account the BEAM compiler
+	    directive <c>-compile({nowarn_unused_function,
+	    {F,A}}).</c> and then suppresses the warning that
+	    function F/A will never be called.</p>
+	    <p>Dialyzer's default initial PLT now also includes
+	    "mnesia".</p>
+          <p>
+	    Own Id: OTP-6304
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Dialyzer 1.4.2</title>
 
     <section><title>Improvements and New Features</title>

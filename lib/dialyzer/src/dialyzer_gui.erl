@@ -503,17 +503,12 @@ gui_loop(State = #gui_state{}) ->
       gui_loop(NewState);
     %% ----- Analysis -----
     {BackendPid, ext_calls, ExtCalls} ->
-      %% This also signals that the analysis is done.
-      io:format("\nUnknown functions: ~p\n", [ExtCalls]),
-      ExtMods = lists:usort([M || {M,_F,_A} <- ExtCalls]),
-      Msg = io_lib:format("Functions from the following modules are called "
+      Msg = io_lib:format("The following functions are called "
 			  "but type information about them is not available.\n"
 			  "The analysis might get more precise by including "
-			  "these modules:\n\n\t~p\n", 
-			  [ExtMods]),	
+			  "the modules containing these functions:\n\n\t~p\n", 
+			  [ExtCalls]),
       free_editor(State, Msg, "Analysis done"),
-      dialyzer_plt:delete(State#gui_state.user_plt),
-      config_gui_stop(State),
       gui_loop(State);
     {BackendPid, log, LogMsg} ->
       update_editor(State#gui_state.log, LogMsg),

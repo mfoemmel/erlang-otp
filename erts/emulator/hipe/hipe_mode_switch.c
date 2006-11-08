@@ -312,12 +312,18 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  break;
       }
       case HIPE_MODE_SWITCH_RES_TRAP: {
-	  /* Native code called a BIF, which "failed" with a TRAP to BEAM.
+	  /*
+	   * Native code called a BIF, which "failed" with a TRAP to BEAM.
+	   * Prior to returning, the BIF stored (see BIF_TRAP<N>):
+
+	   * the callee's Export* in p->def_arg_reg[3]
+	   * the callee's parameters in p->def_arg_reg[0..2]
+	   * the callee's arity in p->arity (for BEAM gc purposes)
 	   *
-	   * p->def_arg_reg[0] is the callee's Export*
-	   * p->def_arg_reg[1..] contains the parameters
-	   * p->arity is the original BIF's arity
-	   * the BIF and the new callee may have different arities
+	   * We need to remove the BIF's parameters from the native
+	   * stack: to this end hipe_${ARCH}_glue.S overwrites p->arity
+	   * with the BIF's arity. We will recompute the callee's
+	   * arity by fetching it from its BEAM function head.
 	   */
 	  unsigned int i, is_recursive;
 
@@ -328,11 +334,11 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	     specialised hipe_trap_from_native_is_recursive() later. */
 	  is_recursive = hipe_call_from_native_is_recursive(p, reg);
 
-	  p->i = ((Export*)(p->def_arg_reg[0]))->address;
+	  p->i = ((Export*)(p->def_arg_reg[3]))->address;
 	  p->arity = p->i[-1];
 
 	  for(i = 0; i < p->arity; ++i)
-	      reg[i] = p->def_arg_reg[i+1];
+	      reg[i] = p->def_arg_reg[i];
 
 	  if( is_recursive )
 	      hipe_push_beam_trap_frame(p, reg, p->arity);

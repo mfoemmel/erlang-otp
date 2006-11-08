@@ -2,12 +2,16 @@
 %%% $Id$
 %%% simple local x86 regalloc
 
--ifndef(HIPE_X86_RA_NAIVE).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_RA_NAIVE, hipe_amd64_ra_naive).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-define(HIPE_X86_SPECIFIC_FP, hipe_amd64_specific_sse2).
+-define(ECX, rcx).
+-else.
 -define(HIPE_X86_RA_NAIVE, hipe_x86_ra_naive).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
--define(HIPE_X86_SPECIFIC_FP, hipe_x86_specific_fp).
+-define(HIPE_X86_SPECIFIC_FP, hipe_x86_specific_x87).
 -define(ECX, ecx).
--define(MOVE64, #move64{} -> exit({?MODULE, move64_in_x86})).
 -endif.
 
 -module(?HIPE_X86_RA_NAIVE).
@@ -60,7 +64,8 @@ do_insn(I) ->	% Insn -> Insn list
 	    do_lea(I);
 	#move{} ->
 	    do_move(I);
-	?MOVE64;
+	#move64{} ->
+	    do_move64(I);
  	#movzx{} ->
 	    do_movx(I);
 	#movsx{} ->
@@ -112,7 +117,34 @@ do_cmp(I) ->
 
 %%% Fix a jmp_switch op.
 
--ifndef(DO_JMP_SWITCH).
+-ifdef(HIPE_AMD64).
+do_jmp_switch(I) ->
+    #jmp_switch{temp=Temp, jtab=Tab} = I,
+    case temp_is_pseudo(Temp) of
+	false ->
+	    case temp_is_pseudo(Tab) of
+		false ->
+		    [I];
+		true ->
+		    Reg = hipe_x86:mk_temp(hipe_amd64_registers:temp0(),
+					   'untagged'),
+		    [hipe_x86:mk_move(Temp, Reg), I#jmp_switch{jtab=Reg}]
+	    end;
+	true ->
+	    Reg = hipe_x86:mk_temp(hipe_amd64_registers:temp1(),
+				   'untagged'),
+	    case temp_is_pseudo(Tab) of
+		false ->
+		    [hipe_x86:mk_move(Temp, Reg), I#jmp_switch{temp=Reg}];
+		true ->
+		    Reg2 = hipe_x86:mk_temp(hipe_amd64_registers:temp0(),
+					    'untagged'),
+		    [hipe_x86:mk_move(Temp, Reg),
+		     hipe_x86:mk_move(Tab, Reg2),
+		     I#jmp_switch{temp=Reg, jtab=Reg2}]
+	    end
+    end.
+-else.
 do_jmp_switch(I) ->
     #jmp_switch{temp=Temp} = I,
     case temp_is_pseudo(Temp) of
@@ -122,8 +154,6 @@ do_jmp_switch(I) ->
 	    Reg = hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp0(), 'untagged'),
 	    [hipe_x86:mk_move(Temp, Reg), I#jmp_switch{temp=Reg}]
     end.
--else.
-?DO_JMP_SWITCH.
 -endif.
 
 %%% Fix a lea op.
@@ -145,8 +175,19 @@ do_move(I) ->
     {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
     FixSrc ++ FixDst ++ [I#move{src=Src,dst=Dst}].
 
--ifdef(DO_MOVE64).
-?DO_MOVE64.
+-ifdef(HIPE_AMD64).
+do_move64(I) ->
+    #move64{dst=Dst} = I,
+    case is_mem_opnd(Dst) of
+	false ->
+	    [I];
+	true ->     
+	    Reg = hipe_amd64_registers:temp1(),
+	    NewDst = clone(Dst, Reg),
+	    [I#move64{dst=NewDst}, hipe_x86:mk_move(NewDst, Dst)]
+    end.
+-else.
+do_move64(I) -> exit({?MODULE, I}).
 -endif.
 
 do_movx(I) ->

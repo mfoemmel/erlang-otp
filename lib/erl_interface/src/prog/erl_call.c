@@ -341,7 +341,8 @@ int erl_call(int argc, char **argv)
       sprintf(h_nodename, "%s@%s", h_alivename, h_hostname);
       
       if (ei_connect_xinit(&ec, h_hostname, h_alivename, h_nodename,
-			   (Erl_IpAddr)&h_ipadr, flags.cookie, creation) < 0) {
+			   (Erl_IpAddr)&h_ipadr, flags.cookie, 
+			   (short) creation) < 0) {
 	  fprintf(stderr,"erl_call: can't create C node %s; %d\n",
 		  h_nodename, erl_errno);
       	  exit(1);

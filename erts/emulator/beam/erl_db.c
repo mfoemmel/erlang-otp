@@ -1332,7 +1332,6 @@ static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1)
     }
 
     erts_match_set_release_result(p);
-    ERTS_SMP_BIF_CHK_EXITED(p); /* db_select_* */
 
     return result;
 }
@@ -1382,7 +1381,6 @@ BIF_RETTYPE ets_select_delete_2(BIF_ALIST_2)
     }
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1535,7 +1533,6 @@ BIF_RETTYPE ets_select_3(BIF_ALIST_3)
     }
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1587,7 +1584,7 @@ static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(p);
-    ERTS_SMP_BIF_CHK_EXITED(p); /* db_select_* */
+
     return result;
 }
 
@@ -1641,7 +1638,6 @@ BIF_RETTYPE ets_select_1(BIF_ALIST_1)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1685,7 +1681,6 @@ BIF_RETTYPE ets_select_2(BIF_ALIST_2)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1735,7 +1730,6 @@ static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1)
 
     db_unlock(tb, LCK_WRITE);
     erts_match_set_release_result(p);
-    ERTS_SMP_BIF_CHK_EXITED(p); /* db_select_* */
 
     return result;
 }
@@ -1777,7 +1771,6 @@ BIF_RETTYPE ets_select_count_2(BIF_ALIST_2)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1830,7 +1823,6 @@ BIF_RETTYPE ets_select_reverse_3(BIF_ALIST_3)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -1879,7 +1871,6 @@ BIF_RETTYPE ets_select_reverse_2(BIF_ALIST_2)
     db_unlock(tb, LCK_WRITE);
 
     erts_match_set_release_result(BIF_P);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P); /* db_select_* */
 
     return result;
 }
@@ -2080,7 +2071,6 @@ BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
     for (lst = BIF_ARG_1; is_list(lst); lst = CDR(list_val(lst))) {
 	if (++i > CONTEXT_REDS) {
 	    BUMP_ALL_REDS(BIF_P);
-	    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	    BIF_TRAP3(bif_export[BIF_ets_match_spec_run_r_3],
 		      BIF_P,lst,BIF_ARG_2,ret);
 	}
@@ -2093,7 +2083,6 @@ BIF_RETTYPE ets_match_spec_run_r_3(BIF_ALIST_3)
 	    /*hp += 2;*/
 	} 
     }
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
     if (lst != NIL) {
 	goto error;
     }

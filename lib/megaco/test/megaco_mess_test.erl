@@ -102,12 +102,19 @@
 t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 
+
+min(M) -> timer:minutes(M).
+
 %% Test server callbacks
 % init_per_testcase(pending_ack = Case, Config) ->
 %     put(dbg,true),
 %     megaco_test_lib:init_per_testcase(Case, Config);
+init_per_testcase(request_and_no_reply = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    megaco_test_lib:init_per_testcase(Case, [{tc_timeout, min(2)} |C]);
 init_per_testcase(Case, Config) ->
-    megaco_test_lib:init_per_testcase(Case, Config).
+    C = lists:keydelete(tc_timeout, 1, Config),
+    megaco_test_lib:init_per_testcase(Case, [{tc_timeout, min(1)} |C]).
 
 % fin_per_testcase(pending_ack = Case, Config) ->
 %     erase(dbg),
@@ -154,7 +161,8 @@ tickets(suite) ->
      otp_4836,
      otp_5805,
      otp_5881,
-     otp_5887
+     otp_5887,
+     otp_6253
     ].
 
 
@@ -4751,7 +4759,7 @@ request_and_pending_and_late_reply(Config) when is_list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    MgTag = megaco_test_generator:megaco(Mg, MgEvSeq),
+    _MgTag = megaco_test_generator:megaco(Mg, MgEvSeq),
 
     d("[MGC] await the generator reply"),
     case megaco_test_generator:await_reply(MgcTag, Mgc) of
@@ -6100,7 +6108,7 @@ otp_5805_err_desc(T) ->
 otp_5881(suite) ->
     [];
 otp_5881(Config) when is_list(Config) ->
-    ?SKIP("deprecated by OTP-58XX"),
+    ?SKIP("deprecated by OTP-5887"),
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        otp_5881),
@@ -6563,6 +6571,59 @@ otp_5887_verify_notify_request_fun() ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+otp_6253(suite) ->
+    [];
+otp_6253(Config) when is_list(Config) ->
+    ?ACQUIRE_NODES(1, Config),
+
+    put(verbosity, debug),
+    put(tc, otp_6253),
+
+    d("otp_6253 -> start test case controller",[]),
+    ok = megaco_tc_controller:start_link(),
+
+    PrelMid = preliminary_mid,
+    MgMid   = ipv4_mid(4711),
+
+    ?VERIFY(ok, application:start(megaco)),
+    ?VERIFY(ok,	megaco:start_user(MgMid, [{send_mod, megaco_mess_user_test},
+	                                  {request_timer, infinity},
+	                                  {reply_timer, infinity}])),
+
+    MgRH = user_info(MgMid, receive_handle),
+    {ok, PrelCH} = ?VERIFY({ok, _}, megaco:connect(MgRH, PrelMid, sh, self())),
+
+    connections([PrelCH]),
+    ?VERIFY([PrelCH], megaco:user_info(MgMid, connections)),
+    
+    SC = service_change_request(),
+
+    %% Instruct the transport module to fail all send_message
+    d("otp_6253 -> instruct transport module to fail message send",[]),
+    ok = megaco_tc_controller:insert(allow_send_message, {fail, otp_6253}),
+
+    ?VERIFY({1, {error, {send_message_failed, otp_6253}}},
+	    megaco:call(PrelCH, [SC], [])),
+
+    sleep(1000),
+
+    %% Instruct the transport module to cancel all send_message
+    d("otp_6253 -> instruct transport module to cancel message send",[]),
+    ok = megaco_tc_controller:insert(allow_send_message, {cancel, otp_6253}),
+
+    ?VERIFY({1, {error, {send_message_cancelled, otp_6253}}},
+	    megaco:call(PrelCH, [SC], [])),
+
+    ?VERIFY(ok, megaco:disconnect(PrelCH, shutdown)),
+
+    ?VERIFY(ok,	megaco:stop_user(MgMid)),
+    ?VERIFY(ok, application:stop(megaco)),
+    ?RECEIVE([]),
+    ok.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 cre_ErrDesc(T) ->
     EC = ?megaco_internal_gateway_error,
     ET = lists:flatten(io_lib:format("~w",[T])),
@@ -6819,7 +6880,9 @@ user_info(Mid, Key) ->
 	{'EXIT', _} = Error ->
 	    ?ERROR(Error);
 	Val ->
-	    ?LOG("Ok, ~p~n", [Val]),
+	    ?LOG("user_info -> ok: "
+		 "~n   ~p"
+		 "~n", [Val]),
 	    Val
     end.
 
@@ -6829,7 +6892,9 @@ stop_user(Mid) ->
 	{'EXIT', _} = Error ->
 	    ?ERROR(Error);
 	Val ->
-	    ?LOG("Ok, ~p~n", [Val]),
+	    ?LOG("stop_user -> ok:"
+		 "~n   ~p"
+		 "~n", [Val]),
 	    Val
     end.
 
@@ -6840,7 +6905,9 @@ connections(Conns0) ->
     Conns1 = lists:sort(Conns0),
     case lists:sort(connections()) of
 	Conns1 ->
-	    ?LOG("Ok, ~p~n", [Conns1]),
+	    ?LOG("connections -> ok:"
+		 "~n   ~p"
+		 "~n", [Conns1]),
 	    Conns1;
 	Conns2 ->
 	    ?ERROR({Conns1, Conns2}),

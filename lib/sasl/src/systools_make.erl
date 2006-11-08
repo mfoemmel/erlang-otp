@@ -61,7 +61,17 @@ make_script(RelName) ->
     badarg(RelName,[RelName]).
 
 make_script(RelName, Flags) when is_list(RelName), is_list(Flags) ->
-    make_script(RelName, RelName, Flags).
+    case get_outdir(Flags) of
+	"" ->
+	    make_script(RelName, RelName, Flags);
+	OutDir ->
+	    %% To maintain backwards compatibility for make_script/3,
+	    %% the boot script file name is constructed here, before
+	    %% checking the validity of OutDir
+	    %% (is done in check_args_script/1)
+	    Output = filename:join(OutDir, filename:basename(RelName)),
+	    make_script(RelName, Output, Flags)
+    end.
     
 make_script(RelName, Output, Flags) when is_list(RelName),
 					 is_list(Output),
@@ -69,13 +79,18 @@ make_script(RelName, Output, Flags) when is_list(RelName),
     case check_args_script(Flags) of
 	[] ->
 	    Path0 = get_path(Flags),
-	    Path = mk_path(Path0),
+	    Path1 = mk_path(Path0), % expand wildcards etc.
+	    Path  = make_set(Path1 ++ code:get_path()),
 	    ModTestP = {not member(no_module_tests, Flags),
 			xref_p(Flags)},
 	    case get_release(RelName, Path, ModTestP, machine(Flags)) of
 		{ok, Release, Appls, Warnings} ->
-		    generate_script(Output, Release, Appls, Flags),
-		    return(ok,Warnings,Flags);
+		    case generate_script(Output,Release,Appls,Flags) of
+			ok ->
+			    return(ok,Warnings,Flags);
+			Error ->
+			    return(Error,Warnings,Flags)
+		    end;
 		Error ->
 		    return(Error,[],Flags)
 	    end;
@@ -90,7 +105,7 @@ make_script(RelName, _Output, Flags) ->
 
 %% Inlined.
 badarg(BadArg, Args) ->
-    erlang:fault({badarg,BadArg}, Args).
+    erlang:error({badarg,BadArg}, Args).
 
 machine(Flags) ->
     case get_flag(machine,Flags) of
@@ -102,6 +117,14 @@ get_path(Flags) ->
     case get_flag(path,Flags) of
 	{path,Path} when is_list(Path) -> Path;
 	_                              -> []
+    end.
+
+get_outdir(Flags) ->
+    case get_flag(outdir,Flags) of
+	{outdir,OutDir} when is_list(OutDir) ->
+	    OutDir;
+	_ -> % false | {outdir, Badarg}
+	    ""
     end.
 
 return(ok,Warnings,Flags) ->
@@ -164,12 +187,13 @@ make_tar(RelName, Flags) when is_list(RelName), is_list(Flags) ->
     case check_args_tar(Flags) of
 	[] ->
 	    Path0 = get_path(Flags),
-	    Path = mk_path(Path0),
+	    Path1 = mk_path(Path0),
+	    Path  = make_set(Path1 ++ code:get_path()),
 	    ModTestP = {not member(no_module_tests, Flags),
 			xref_p(Flags)},
 	    case get_release(RelName, Path, ModTestP, machine(Flags)) of
 		{ok, Release, Appls, Warnings} ->
-		    case catch mk_tar(RelName, Release, Appls, Flags) of
+		    case catch mk_tar(RelName, Release, Appls, Flags, Path1) of
 			ok ->
 			    return(ok,Warnings,Flags);
 			Error ->
@@ -967,9 +991,24 @@ generate_script(Output, Release, Appls, Flags) ->
 	      create_start_appls(Appls) ++
 	      script_end()
 	     },
-    write_script(Output ++ ".script", Script),
-    file:write_file(Output ++ ".boot", term_to_binary(Script)),
-    ok.
+
+    ScriptFile = Output ++ ".script",
+    case file:open(ScriptFile, write) of
+	{ok, Fd} ->
+	    io:format(Fd, "%% script generated at ~w ~w\n~p.\n",
+		      [date(), time(), Script]),
+	    file:close(Fd),
+
+	    BootFile = Output ++ ".boot",
+	    case file:write_file(BootFile, term_to_binary(Script)) of
+		ok ->
+		    ok;
+		{error, Reason} ->
+		    {error, ?MODULE, {open,BootFile,Reason}}
+	    end;
+	{error, Reason} ->
+	    {error, ?MODULE, {open,ScriptFile,Reason}}
+    end.
 
 path_flag(Flags) ->
     case {member(local,Flags), member(otp_build, Flags)} of
@@ -1340,10 +1379,16 @@ create_kernel_procs(Appls) ->
 %% included in the main tar file or they can be omitted using
 %% the var_tar option.
 
-mk_tar(RelName, Release, Appls, Flags) ->
-    TarName = RelName ++ ".tar.gz",
+mk_tar(RelName, Release, Appls, Flags, Path1) ->
+    TarName = case get_outdir(Flags) of
+		  "" ->
+		      RelName ++ ".tar.gz";
+		  OutDir ->
+		      filename:join(OutDir, filename:basename(RelName))
+			  ++ ".tar.gz"
+	      end,
     Tar = open_main_tar(TarName),
-    case catch mk_tar(Tar, RelName, Release, Appls, Flags) of
+    case catch mk_tar(Tar, RelName, Release, Appls, Flags, Path1) of
 	{error,Error} ->
 	    del_tar(Tar, TarName),
 	    {error,?MODULE,Error};
@@ -1363,11 +1408,11 @@ open_main_tar(TarName) ->
 	    Tar
     end.
 
-mk_tar(Tar, RelName, Release, Appls, Flags) ->
+mk_tar(Tar, RelName, Release, Appls, Flags, Path1) ->
     Variables = get_variables(Flags),
     add_applications(Appls, Tar, Variables, Flags, false),
     add_variable_tars(Variables, Appls, Tar, Flags),
-    add_system_files(Tar, RelName, Release),
+    add_system_files(Tar, RelName, Release, Path1),
     add_erts_bin(Tar, Release, Flags).
     
 add_applications(Appls, Tar, Variables, Flags, Var) ->
@@ -1435,15 +1480,61 @@ var_tar_flag(Flags) ->
 %% add_system_files(Tar,Name,release#,Flags) ->
 %%   ok | throw({error,Error})
 
-add_system_files(Tar, RelName, Release) ->
+add_system_files(Tar, RelName, Release, Path1) ->
     SVsn = Release#release.vsn,
+    RelName0 = filename:basename(RelName),
+
+    add_to_tar(Tar, RelName ++ ".rel",
+	       filename:join("releases", RelName0 ++ ".rel")),
+
+    %% OTP-6226 Look for the system files not only in cwd
+    %% --
+    %% (well, actually the boot file was looked for in the same
+    %% directory as RelName, which is not necessarily the same as cwd)
+    %% --
+    %% but also in the path specfied as an option to systools:make_tar
+    %% (but make sure to search the RelName directory and cwd first)
+    Path = case filename:dirname(RelName) of
+	       "." ->
+		   ["."|Path1];
+	       RelDir ->
+		   [RelDir, "."|Path1]
+	   end,
+
     ToDir = filename:join(releases, SVsn),
-    add_to_tar(Tar, RelName ++ ".boot", filename:join(ToDir, "start.boot")),
-    catch add_to_tar(Tar, "relup", filename:join(ToDir, "relup")),
-    catch add_to_tar(Tar, "sys.config", filename:join(ToDir, "sys.config")),
-    catch add_to_tar(Tar, RelName ++ ".rel",
-		     filename:join("releases", RelName ++ ".rel")),
+    case lookup_file(RelName0 ++ ".boot", Path) of
+	false ->
+	    throw({error, {tar_error,{add, RelName0++".boot",enoent}}});
+	Boot ->
+	    add_to_tar(Tar, Boot, filename:join(ToDir, "start.boot"))
+    end,
+
+    case lookup_file("relup", Path) of
+	false ->
+	    ignore;
+	Relup ->
+	    add_to_tar(Tar, Relup, filename:join(ToDir, "relup"))
+    end,
+
+    case lookup_file("sys.config", Path) of
+	false ->
+	    ignore;
+	Sys ->
+	    add_to_tar(Tar, Sys, filename:join(ToDir, "sys.config"))
+    end,
+    
     ok.
+
+lookup_file(Name, [Dir|Path]) ->
+    File = filename:join(Dir, Name),
+    case filelib:is_file(File) of
+	true ->
+	    File;
+	false ->
+	    lookup_file(Name, Path)
+    end;
+lookup_file(_Name, []) ->
+    false.
 
 %%______________________________________________________________________
 %% Add either a application located under a variable dir or all other
@@ -1610,8 +1701,7 @@ mk_path(Path0) ->
     Path1 = map(fun(Dir) when is_atom(Dir) -> atom_to_list(Dir);
 		   (Dir)                   -> Dir
 		end, Path0),
-    Path = systools_lib:get_path(Path1),
-    make_set(Path ++ code:get_path()).  % Use code path as well !
+    systools_lib:get_path(Path1).
 
 %% duplicates([Tuple]) -> List of pairs where 
 %%    element(1, T1) == element(1, T2) and  where T1 and T2 are 
@@ -1625,20 +1715,6 @@ duplicates([H1,H2|T], L) ->
         _     -> duplicates([H2|T],L)
     end;
 duplicates(_, L) -> L.
-
-%% write_script(File, Term) -> ok %%   pretty prints Term on File 
-
-write_script(File, Term) ->
-    case file:open(File, write) of
-	{ok, S} ->
-	    io:format(S, "%% script generated at ~w ~w\n~p.\n",
-		      [date(),time(),Term]),
-	    file:close(S);
-	{error, Reason} ->
-	    io:format("Failed to open ~s for writing: ~s~n",
-		      [File, file:format_error(Reason)]),
-	    {error, Reason}
-    end.
 
 %% read_file(File, Path) -> {ok, Term, FullName} | {error, Error}
 %% read a file and check the syntax, i.e. that it contains a correct
@@ -1806,6 +1882,10 @@ cas([{exref, Apps} | Args], {Path, Sil, Loc, Test, Var, Mach,
 	    cas(Args, {Path, Sil, Loc, Test, Var, Mach, 
 			     Xref, XrefApps, X++[{exref, Apps}]})
     end;
+%%% outdir Dir ---------------------------------------------------------
+cas([{outdir, Dir} | Args], {Path, Sil, Loc, Test, Var, Mach,
+			     Xref, XrefApps, X}) when is_list(Dir) ->
+    cas(Args, {Path, Sil, Loc, Test, Var, Mach, Xref, XrefApps, X});
 %%% otp_build (secret, not documented) ---------------------------------
 cas([otp_build | Args], {Path, Sil, Loc, Test, Var, Mach,
 			 Xref, XrefApps, X}) ->
@@ -1889,6 +1969,10 @@ cat([{exref, Apps} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xre
 	    cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, 
 			     Xref, XrefApps, X++[{exref, Apps}]})
     end;
+%%% outdir Dir ---------------------------------------------------------
+cat([{outdir, Dir} | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X}) when is_list(Dir) ->
+    cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach,
+	       Xref, XrefApps, X});
 %%% otp_build (secret, not documented) ---------------------------------
 cat([otp_build | Args], {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X})  ->
     cat(Args, {Path, Sil, Dirs, Erts, Test, Var, VarTar, Mach, Xref, XrefApps, X});
@@ -1982,7 +2066,8 @@ format_error({parse,File,{Line,Mod,What}}) ->
 format_error({read,File}) ->
     io_lib:format("Cannot read ~p~n",[File]);
 format_error({open,File,Error}) ->
-    io_lib:format("Cannot open ~p - ~p~n",[File,Error]);
+    io_lib:format("Cannot open ~p - ~s~n",
+		  [File,file:format_error(Error)]);
 format_error({tar_error,What}) ->
     form_tar_err(What);
 format_error(ListOfErrors) when is_list(ListOfErrors) ->

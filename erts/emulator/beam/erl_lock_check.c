@@ -104,15 +104,18 @@ static erts_lc_lock_order_t erts_lock_order[] = {
 #ifdef ENABLE_CHILD_WAITER_THREAD
     {	"child_status",				NULL			},
 #endif
+    {	"drv_ev_state",				NULL			},
+    {	"pollset",				"address"		},
     {	"binary_alloc",				NULL			},
     {	"alcu_init_atoms",			NULL			},
     {	"mseg_init_atoms",			NULL			},
 #ifdef ERTS_SMP
     {	"sys_msg_q", 				NULL			},
     {	"atom_tab",				NULL			},
-    {	"message_buf",				NULL			},
     {	"make_ref",				NULL			},
-    {	"ptimers",				NULL,			},
+    {	"message_alloc_lock",			NULL			},
+    {	"ptimer_pre_alloc_lock",		NULL,			},
+    {	"btm_pre_alloc_lock",			NULL,			},
 #endif
     {	"mtrace_op",				NULL			},
     {	"instr_x",				NULL			},
@@ -127,6 +130,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"timeofday",				NULL			},
     {	"system_block",				NULL			},
     {	"breakpoints",				NULL			},
+    {	"pollsets_lock",			NULL			},
 #endif
     {	"mtrace_buf",				NULL			}
 };

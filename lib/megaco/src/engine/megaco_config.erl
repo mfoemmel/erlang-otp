@@ -708,9 +708,11 @@ handle_call({update_user_info, UserMid, Item, Val}, _From, S) ->
             {reply, Reply, S}
     end;
 
-handle_call(Request, From, S) ->
-    error_msg("unknown request from ~p~n~p",[From, Request]),
-    {reply, {error, {bad_request, Request}}, S}.
+handle_call(Req, From, S) ->
+    warning_msg("received unexpected request from ~p: "
+		"~n~w", [From, Req]),
+    {reply, {error, {bad_request, Req}}, S}.
+
 
 %%----------------------------------------------------------------------
 %% Func: handle_cast/2
@@ -720,7 +722,8 @@ handle_call(Request, From, S) ->
 %%----------------------------------------------------------------------
 
 handle_cast({trans_sender_exit, Reason, CH}, S) ->
-    error_msg("transaction sender (~p) restarting: ~n~p", [CH, Reason]),
+    warning_msg("transaction sender [~p] restarting: "
+		"~n~p", [CH, Reason]),
     case lookup_local_conn(CH) of
 	[] ->
 	    error_msg("connection data not found for ~p~n"
@@ -731,10 +734,11 @@ handle_cast({trans_sender_exit, Reason, CH}, S) ->
     end,
     {noreply, S};
 
-
 handle_cast(Msg, S) ->
-    error_msg("received unknown message~n~p~n~p", [Msg, S]),
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply, S}.
+
 
 %%----------------------------------------------------------------------
 %% Func: handle_info/2
@@ -747,8 +751,10 @@ handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
     {stop, Reason, S};
 
 handle_info(Info, S) ->
-    error_msg("received unknown info~n~p", [Info]),
+    warning_msg("received unknown info: "
+		"~n~w", [Info]),
     {noreply, S}.
+
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -765,222 +771,222 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, upgrade_from_pre_3_4) ->
-    upgrade_user_info(),
-    upgrade_conn_data(),
-    {ok, S};
-
-code_change(_Vsn, S, downgrade_to_pre_3_4) ->
-    downgrade_user_info(),
-    downgrade_conn_data(),
-    {ok, S};
-
+%% code_change(_Vsn, S, upgrade_from_pre_3_4) ->
+%%     upgrade_user_info(),
+%%     upgrade_conn_data(),
+%%     {ok, S};
+%% 
+%% code_change(_Vsn, S, downgrade_to_pre_3_4) ->
+%%     downgrade_user_info(),
+%%     downgrade_conn_data(),
+%%     {ok, S};
+%% 
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 
 %% -- Upgrade user info --
 
-upgrade_user_info() ->
-    NewValues = [{long_request_resend, false}],
-    upgrade_user_info(NewValues).
-
-upgrade_user_info(NewValues) ->
-    Users = [default|system_info(users)],
-    F = fun({Item, Val}) ->
-		upgrade_user_info(Users, Item, Val)
-	end,
-    lists:foreach(F, NewValues),
-    ok.
-
-upgrade_user_info(Users, Item, Val) ->
-    F = fun(User) -> do_update_user(User, Item, Val) end,
-    lists:foreach(F, Users),
-    ok.
-
-
-%% -- Downgrade user info --
-
-downgrade_user_info() ->
-    NewItems = [long_request_resend],
-    downgrade_user_info(NewItems).
-
-downgrade_user_info(NewItems) ->
-    Users = [default|system_info(users)],
-    F = fun(Item) ->
-		downgrade_user_info(Users, Item)
-	end,
-    lists:foreach(F, NewItems),
-    ok.
-    
-downgrade_user_info(Users, Item) ->
-    F = fun(User) -> do_downgrade_user_info(User, Item) end,
-    lists:foreach(F, Users),
-    ok.
-
-do_downgrade_user_info(User, Item) ->
-    ets:delete(megaco_config, {User, Item}).
-		
-
-%% -- Upgrade conn data --
-
-upgrade_conn_data() ->
-    Conns = system_info(connections),
-    upgrade_conn_data(Conns).
-
-upgrade_conn_data(Conns) ->
-    LongReqResendDefault = true,
-    F = fun(CH) ->
-		case lookup_local_conn(CH) of
-		    [] ->
-			ok;
-		    [CD] ->
-			upgrade_conn_data(CD, LongReqResendDefault)
-		end
-	end,
-    lists:foreach(F, Conns),
-    ok.
-
-upgrade_conn_data(OldStyleCD, LongReqResendDefault) ->
-    NewStyleCD = new_conn_data(OldStyleCD, LongReqResendDefault),
-    ets:insert(megaco_local_conn, NewStyleCD).
-    
-new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-	       AutoAck, 
-	       TransAck, TransAckMaxCnt, 
-	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
-	       TransTmr, TransSndr, 
-	       
-	       PendingTmr, 
-	       SentPendingLimit, 
-	       RecvPendingLimit,
-	       ReplyTmr, CtrPid, MonRef, 
-	       Sendmod, SendHandle, 
-	       EncodeMod, EncodeConf, 
-	       ProtV, AuthData, 
-	       UserMod, UserArgs, ReplyAction, ReplyData,
-	       Threaded,
-	       StrictVersion
-	       %% LongReqResend - This is where to insert the new values
-	      }, 
-	      LongReqResendDefault) ->
-    #conn_data{conn_handle          = CH, 
-	       serial               = Serial,
-	       max_serial           = MaxSerial,
-	       request_timer        = ReqTmr,
-	       long_request_timer   = LongReqTmr,
-	       
-	       auto_ack             = AutoAck,
-	       
-	       trans_ack            = TransAck,
-	       trans_ack_maxcount   = TransAckMaxCnt,
-	       
-	       trans_req            = TransReq,
-	       trans_req_maxcount   = TransReqMaxCnt,
-	       trans_req_maxsize    = TransReqMaxSz,
-	       
-	       trans_timer          = TransTmr,
-	       trans_sender         = TransSndr,
-	       
-	       pending_timer        = PendingTmr,
-	       sent_pending_limit   = SentPendingLimit,
-	       recv_pending_limit   = RecvPendingLimit, 
-
-	       reply_timer          = ReplyTmr,
-	       control_pid          = CtrPid,
-	       monitor_ref          = MonRef,
-	       send_mod             = Sendmod,
-	       send_handle          = SendHandle,
-	       encoding_mod         = EncodeMod,
-	       encoding_config      = EncodeConf,
-	       protocol_version     = ProtV,
-	       auth_data            = AuthData,
-	       user_mod             = UserMod,
-	       user_args            = UserArgs,
-	       reply_action         = ReplyAction,
-	       reply_data           = ReplyData,
-	       threaded             = Threaded,
-	       strict_version       = StrictVersion,
-	       long_request_resend  = LongReqResendDefault % The new value
-	      }.
-
-
-%% -- Downgrade conn data --
-
-downgrade_conn_data() ->
-    Conns = system_info(connections),
-    downgrade_conn_data(Conns).
-
-downgrade_conn_data(Conns) ->
-    F = fun(CH) ->
-		case lookup_local_conn(CH) of
-		    [] ->
-			ok;
-		    [CD] ->
-			do_downgrade_conn_data(CD)
-		end
-	end,
-    lists:foreach(F, Conns).
-
-do_downgrade_conn_data(NewStyleCD) ->
-    OldStyleCD = old_conn_data(NewStyleCD),
-    ets:insert(megaco_local_conn, OldStyleCD).
-
-old_conn_data(#conn_data{conn_handle          = CH, 
-			 serial               = Serial,
-			 max_serial           = MaxSerial,
-			 request_timer        = ReqTmr,
-			 long_request_timer   = LongReqTmr,
-			 
-			 auto_ack             = AutoAck,
-			 
-			 trans_ack            = TransAck,
-			 trans_ack_maxcount   = TransAckMaxCnt,
-			 
-			 trans_req            = TransReq,
-			 trans_req_maxcount   = TransReqMaxCnt,
-			 trans_req_maxsize    = TransReqMaxSz,
-			 
-			 trans_timer          = TransTmr,
-			 trans_sender         = TransSndr,
-			 
-			 pending_timer        = PendingTmr,
-			 sent_pending_limit   = SentPendingLimit,
-			 recv_pending_limit   = RecvPendingLimit, 
-			 
-			 reply_timer          = ReplyTmr,
-			 control_pid          = CtrPid,
-			 monitor_ref          = MonRef,
-			 send_mod             = Sendmod,
-			 send_handle          = SendHandle,
-			 encoding_mod         = EncodeMod,
-			 encoding_config      = EncodeConf,
-			 protocol_version     = ProtV,
-			 auth_data            = AuthData,
-			 user_mod             = UserMod,
-			 user_args            = UserArgs,
-			 reply_action         = ReplyAction,
-			 reply_data           = ReplyData,
-			 threaded             = Threaded,
-			 strict_version       = StrictVersion
-			 %% long_request_resend  = LongReqResend
-			}) ->
-    {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-     AutoAck, 
-     TransAck, TransAckMaxCnt, 
-     TransReq, TransReqMaxCnt, TransReqMaxSz, 
-     TransTmr, TransSndr, 
-     PendingTmr, 
-     SentPendingLimit, 
-     RecvPendingLimit, 
-     ReplyTmr, CtrPid, MonRef, 
-     Sendmod, SendHandle, 
-     EncodeMod, EncodeConf, 
-     ProtV, AuthData, 
-     UserMod, UserArgs, ReplyAction, ReplyData,
-     Threaded,
-     StrictVersion}.
-
+%% upgrade_user_info() ->
+%%     NewValues = [{long_request_resend, false}],
+%%     upgrade_user_info(NewValues).
+%% 
+%% upgrade_user_info(NewValues) ->
+%%     Users = [default|system_info(users)],
+%%     F = fun({Item, Val}) ->
+%% 		upgrade_user_info(Users, Item, Val)
+%% 	end,
+%%     lists:foreach(F, NewValues),
+%%     ok.
+%% 
+%% upgrade_user_info(Users, Item, Val) ->
+%%     F = fun(User) -> do_update_user(User, Item, Val) end,
+%%     lists:foreach(F, Users),
+%%     ok.
+%% 
+%% 
+%% %% -- Downgrade user info --
+%% 
+%% downgrade_user_info() ->
+%%     NewItems = [long_request_resend],
+%%     downgrade_user_info(NewItems).
+%% 
+%% downgrade_user_info(NewItems) ->
+%%     Users = [default|system_info(users)],
+%%     F = fun(Item) ->
+%% 		downgrade_user_info(Users, Item)
+%% 	end,
+%%     lists:foreach(F, NewItems),
+%%     ok.
+%%     
+%% downgrade_user_info(Users, Item) ->
+%%     F = fun(User) -> do_downgrade_user_info(User, Item) end,
+%%     lists:foreach(F, Users),
+%%     ok.
+%% 
+%% do_downgrade_user_info(User, Item) ->
+%%     ets:delete(megaco_config, {User, Item}).
+%% 		
+%% 
+%% %% -- Upgrade conn data --
+%% 
+%% upgrade_conn_data() ->
+%%     Conns = system_info(connections),
+%%     upgrade_conn_data(Conns).
+%% 
+%% upgrade_conn_data(Conns) ->
+%%     LongReqResendDefault = true,
+%%     F = fun(CH) ->
+%% 		case lookup_local_conn(CH) of
+%% 		    [] ->
+%% 			ok;
+%% 		    [CD] ->
+%% 			upgrade_conn_data(CD, LongReqResendDefault)
+%% 		end
+%% 	end,
+%%     lists:foreach(F, Conns),
+%%     ok.
+%% 
+%% upgrade_conn_data(OldStyleCD, LongReqResendDefault) ->
+%%     NewStyleCD = new_conn_data(OldStyleCD, LongReqResendDefault),
+%%     ets:insert(megaco_local_conn, NewStyleCD).
+%%     
+%% new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+%% 	       AutoAck, 
+%% 	       TransAck, TransAckMaxCnt, 
+%% 	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
+%% 	       TransTmr, TransSndr, 
+%% 	       
+%% 	       PendingTmr, 
+%% 	       SentPendingLimit, 
+%% 	       RecvPendingLimit,
+%% 	       ReplyTmr, CtrPid, MonRef, 
+%% 	       Sendmod, SendHandle, 
+%% 	       EncodeMod, EncodeConf, 
+%% 	       ProtV, AuthData, 
+%% 	       UserMod, UserArgs, ReplyAction, ReplyData,
+%% 	       Threaded,
+%% 	       StrictVersion
+%% 	       %% LongReqResend - This is where to insert the new values
+%% 	      }, 
+%% 	      LongReqResendDefault) ->
+%%     #conn_data{conn_handle          = CH, 
+%% 	       serial               = Serial,
+%% 	       max_serial           = MaxSerial,
+%% 	       request_timer        = ReqTmr,
+%% 	       long_request_timer   = LongReqTmr,
+%% 	       
+%% 	       auto_ack             = AutoAck,
+%% 	       
+%% 	       trans_ack            = TransAck,
+%% 	       trans_ack_maxcount   = TransAckMaxCnt,
+%% 	       
+%% 	       trans_req            = TransReq,
+%% 	       trans_req_maxcount   = TransReqMaxCnt,
+%% 	       trans_req_maxsize    = TransReqMaxSz,
+%% 	       
+%% 	       trans_timer          = TransTmr,
+%% 	       trans_sender         = TransSndr,
+%% 	       
+%% 	       pending_timer        = PendingTmr,
+%% 	       sent_pending_limit   = SentPendingLimit,
+%% 	       recv_pending_limit   = RecvPendingLimit, 
+%% 
+%% 	       reply_timer          = ReplyTmr,
+%% 	       control_pid          = CtrPid,
+%% 	       monitor_ref          = MonRef,
+%% 	       send_mod             = Sendmod,
+%% 	       send_handle          = SendHandle,
+%% 	       encoding_mod         = EncodeMod,
+%% 	       encoding_config      = EncodeConf,
+%% 	       protocol_version     = ProtV,
+%% 	       auth_data            = AuthData,
+%% 	       user_mod             = UserMod,
+%% 	       user_args            = UserArgs,
+%% 	       reply_action         = ReplyAction,
+%% 	       reply_data           = ReplyData,
+%% 	       threaded             = Threaded,
+%% 	       strict_version       = StrictVersion,
+%% 	       long_request_resend  = LongReqResendDefault % The new value
+%% 	      }.
+%% 
+%% 
+%% %% -- Downgrade conn data --
+%% 
+%% downgrade_conn_data() ->
+%%     Conns = system_info(connections),
+%%     downgrade_conn_data(Conns).
+%% 
+%% downgrade_conn_data(Conns) ->
+%%     F = fun(CH) ->
+%% 		case lookup_local_conn(CH) of
+%% 		    [] ->
+%% 			ok;
+%% 		    [CD] ->
+%% 			do_downgrade_conn_data(CD)
+%% 		end
+%% 	end,
+%%     lists:foreach(F, Conns).
+%% 
+%% do_downgrade_conn_data(NewStyleCD) ->
+%%     OldStyleCD = old_conn_data(NewStyleCD),
+%%     ets:insert(megaco_local_conn, OldStyleCD).
+%% 
+%% old_conn_data(#conn_data{conn_handle          = CH, 
+%% 			 serial               = Serial,
+%% 			 max_serial           = MaxSerial,
+%% 			 request_timer        = ReqTmr,
+%% 			 long_request_timer   = LongReqTmr,
+%% 			 
+%% 			 auto_ack             = AutoAck,
+%% 			 
+%% 			 trans_ack            = TransAck,
+%% 			 trans_ack_maxcount   = TransAckMaxCnt,
+%% 			 
+%% 			 trans_req            = TransReq,
+%% 			 trans_req_maxcount   = TransReqMaxCnt,
+%% 			 trans_req_maxsize    = TransReqMaxSz,
+%% 			 
+%% 			 trans_timer          = TransTmr,
+%% 			 trans_sender         = TransSndr,
+%% 			 
+%% 			 pending_timer        = PendingTmr,
+%% 			 sent_pending_limit   = SentPendingLimit,
+%% 			 recv_pending_limit   = RecvPendingLimit, 
+%% 			 
+%% 			 reply_timer          = ReplyTmr,
+%% 			 control_pid          = CtrPid,
+%% 			 monitor_ref          = MonRef,
+%% 			 send_mod             = Sendmod,
+%% 			 send_handle          = SendHandle,
+%% 			 encoding_mod         = EncodeMod,
+%% 			 encoding_config      = EncodeConf,
+%% 			 protocol_version     = ProtV,
+%% 			 auth_data            = AuthData,
+%% 			 user_mod             = UserMod,
+%% 			 user_args            = UserArgs,
+%% 			 reply_action         = ReplyAction,
+%% 			 reply_data           = ReplyData,
+%% 			 threaded             = Threaded,
+%% 			 strict_version       = StrictVersion
+%% 			 %% long_request_resend  = LongReqResend
+%% 			}) ->
+%%     {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+%%      AutoAck, 
+%%      TransAck, TransAckMaxCnt, 
+%%      TransReq, TransReqMaxCnt, TransReqMaxSz, 
+%%      TransTmr, TransSndr, 
+%%      PendingTmr, 
+%%      SentPendingLimit, 
+%%      RecvPendingLimit, 
+%%      ReplyTmr, CtrPid, MonRef, 
+%%      Sendmod, SendHandle, 
+%%      EncodeMod, EncodeConf, 
+%%      ProtV, AuthData, 
+%%      UserMod, UserArgs, ReplyAction, ReplyData,
+%%      Threaded,
+%%      StrictVersion}.
+%% 
 
 		
 %%%----------------------------------------------------------------------
@@ -1623,6 +1629,9 @@ snmp_counters() ->
 
 %%-----------------------------------------------------------------
 
+warning_msg(F, A) ->
+    ?megaco_warning("Config server: " ++ F, A).
+
 error_msg(F, A) ->
-    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?megaco_error("Config server: " ++ F, A).
 

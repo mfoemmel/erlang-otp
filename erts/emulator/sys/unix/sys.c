@@ -34,67 +34,14 @@
 #include <ctype.h>
 #include <sys/utsname.h>
 
-#if defined(ERTS_SMP) && defined(USE_KERNEL_POLL)
-#  error "smp support and kernel poll currently not supported (use poll)"
-#endif
-
-#if !defined(USE_SELECT)
-
-#include <poll.h>
-#  ifdef HAVE_SYS_STROPTS_H
-#    include <sys/stropts.h>	/* some keep INFTIM here */
-#  endif
-
-#  ifdef USE_KERNEL_POLL
-#    ifdef HAVE_SYS_EVENT_H
-#      include <sys/event.h>
-#      define USE_KQUEUE
-#    endif
-#    ifdef HAVE_SYS_DEVPOLL_H
-#      define USE_DEVPOLL
-#      include <sys/devpoll.h>
-#    endif
-#    ifdef HAVE_LINUX_KPOLL_H
-#      define USE_DEVPOLL
-#      include <asm/page.h>
-#      include <sys/mman.h>
-#      include <sys/ioctl.h>
-#      ifndef POLLREMOVE
-#        define POLLREMOVE 0x1000 /* some day it will make it to bits/poll.h ;-) */
-#      endif
-#      include <linux/kpoll.h>
-#    endif
-#    ifdef USE_DEVPOLL /* can only use one of them ... */
-#      ifdef USE_KQUEUE
-#        undef USE_KQUEUE
-#      endif
-#    endif
-#  endif /* USE_KERNEL_POLL */
-#endif /* !USE_SELECT */
-
 #ifdef ISC32
 #include <sys/bsdtypes.h>
 #endif
 
 #define NEED_CHILD_SETUP_DEFINES
+#define ERTS_WANT_BREAK_HANDLING
 #define WANT_NONBLOCKING    /* must define this to pull in defs from sys.h */
 #include "sys.h"
-
-#ifdef SYS_SELECT_H
-#include <sys/select.h>
-#endif
-
-#ifdef NO_SYSCONF
-#  ifdef USE_SELECT
-#    include <sys/param.h>
-#    define MAX_FILES()		NOFILE
-#  else
-#    include <limits.h>
-#    define MAX_FILES()		OPEN_MAX
-#  endif
-#else
-#define MAX_FILES()	sysconf(_SC_OPEN_MAX)
-#endif
 
 #ifdef USE_THREADS
 #include "erl_threads.h"
@@ -116,6 +63,7 @@ extern char **environ;
 #include "bif.h"
 
 #include "erl_sys_driver.h"
+#include "erl_check_io.h"
 
 #ifndef DISABLE_VFORK
 #define DISABLE_VFORK 0
@@ -161,76 +109,6 @@ extern void erts_sys_init_float(void);
 
 extern void erl_crash_dump(char* file, int line, char* fmt, ...);
 
-#ifdef USE_SELECT
-
-#define NULLFDS ((fd_set *) 0)
-
-static fd_set input_fds;
-static fd_set output_fds;
-static fd_set read_fds;  /* Gotta be global */
-static fd_set write_fds;
-
-#else
-
-struct readyfd {
-    int    iport;
-    int    oport;
-    struct pollfd pfd;
-    ErlDrvEventData event_data;
-};
-
-static struct pollfd*  poll_fds;      /* Allocated at startup */
-static struct readyfd* ready_fds;     /* Collect after poll */
-static int             nof_ready_fds; /* Number of fds after poll */
-
-#ifdef USE_KERNEL_POLL
-int erts_use_kernel_poll = 0;
-#endif
-
-#ifdef USE_DEVPOLL
-
-static int             dev_poll_fd;   /* fd for /dev/poll */
-#ifdef HAVE_LINUX_KPOLL_H
-static char *          dev_poll_map;  /* mmap'ed area from kernel /dev/kpoll */
-static struct k_poll   dev_poll;      /* control block for /dev/kpoll */
-static int max_poll_idx;              /* highest non /dev/kpoll fd */
-
-static void kpoll_enable();
-#else
-static struct dvpoll   dev_poll;      /* control block for /dev/poll */
-#endif /* !HAVE_LINUX_KPOLL_H */
-static struct pollfd*  dev_poll_rfds = NULL; /* Allocated at startup */
-
-static void devpoll_init(void);
-static void devpoll_update_pix(int pix);
-#ifdef HAVE_SYS_DEVPOLL_H
-static void devpoll_clear_pix(int pix);
-#endif /* HAVE_SYS_DEVPOLL_H */
-
-#endif /* !USE_DEVPOLL */
-
-#ifdef USE_KQUEUE
-
-static int              kqueue_fd;
-static struct kevent    *kqueue_res;
-static int              max_poll_idx;   /* highest non kqueue fd */
-
-static void kqueue_init();
-static void kqueue_enable();
-static void kqueue_update_pix(int pix, int old_events);
-
-#define ERL_POLL_READY_ENTRIES  2
-
-#endif
-
-#endif
-
-#ifndef ERL_POLL_READY_ENTRIES
-#define ERL_POLL_READY_ENTRIES  1
-#endif
-
-static int max_fd;
-
 #define DIR_SEPARATOR_CHAR    '/'
 
 #if defined(DEBUG)
@@ -256,6 +134,8 @@ static char *child_setup_prog;
 static int debug_log = 0;
 #endif
 
+volatile int erts_got_sigusr1 = 0;
+
 static erts_smp_atomic_t sys_misc_mem_sz;
 
 #if CHLDWTHR
@@ -277,12 +157,6 @@ static volatile int children_died;
 
 
 static struct fd_data {
-    int   inport;
-    int   outport;
-#if !defined(USE_SELECT)
-    ErlDrvEventData event_data;
-    int   pix;       /* index in poll_fds array */
-#endif
     char  pbuf[4];   /* hold partial packet bytes */
     int   psz;       /* size of pbuf */
     char  *buf;
@@ -292,27 +166,10 @@ static struct fd_data {
 } *fd_data;			/* indexed by fd */
 
 /* static FUNCTION(int, write_fill, (int, char*, int)); unused? */
-static FUNCTION(void, check_io, (int));
 static FUNCTION(void, note_child_death, (int, int));
 
 #if CHLDWTHR
 static FUNCTION(void *, child_waiter, (void *));
-#endif
-
-#ifdef ERTS_SMP
-
-typedef struct {
-    int started;
-    int fds[2];
-} io_thr_waker_data_t;
-
-static io_thr_waker_data_t io_thr_waker_data = {0};
-
-static void init_io_thr_waker_drv(void);
-erts_smp_mtx_t io_wake_mtx;
-erts_smp_atomic_t io_thread_waiting; /* io thread is waiting in poll,
-					select ... */
-int io_thread_alive = 0;
 #endif
 
 /********************* General functions ****************************/
@@ -323,17 +180,115 @@ static int max_files = -1;
 /* 
  * a few variables used by the break handler 
  */
-static volatile int break_requested = 0;
+volatile int erts_break_requested = 0;
 /* set early so the break handler has access to initial mode */
 static struct termios initial_tty_mode;
 static int replace_intr = 0;
 /* assume yes initially, ttsl_init will clear it */
 int using_oldshell = 1; 
 
+#ifdef ERTS_ENABLE_KERNEL_POLL
+
+int erts_use_kernel_poll = 0;
+
+struct {
+    int (*select)(ErlDrvPort, ErlDrvEvent, int, int);
+    int (*event)(ErlDrvPort, ErlDrvEvent, ErlDrvEventData);
+    void (*check_io)(int);
+#ifdef ERTS_SMP
+    void (*wake_io_thread)(void);
+#endif
+    Uint (*size)(void);
+    Eterm (*info)(void *);
+    int (*check_io_debug)(void);
+} io_func = {0};
+
+
+int
+driver_select(ErlDrvPort port, ErlDrvEvent event, int mode, int on)
+{
+    return (*io_func.select)(port, event, mode, on);
+}
+
+int
+driver_event(ErlDrvPort port, ErlDrvEvent event, ErlDrvEventData event_data)
+{
+    return (*io_func.event)(port, event, event_data);
+}
+
+#ifdef ERTS_SMP
+void
+erts_wake_io_thread(void)
+{
+    (*io_func.wake_io_thread)();
+}
+#endif
+
+Eterm erts_check_io_info(void *p)
+{
+    return (*io_func.info)(p);
+}
+
+int
+erts_check_io_debug(void)
+{
+    return (*io_func.check_io_debug)();
+}
+
+static void
+init_check_io(void)
+{
+    if (erts_use_kernel_poll) {
+	io_func.select		= driver_select_kp;
+	io_func.event		= driver_event_kp;
+	io_func.check_io	= erts_check_io_kp;
+#ifdef ERTS_SMP
+	io_func.wake_io_thread	= erts_wake_io_thread_kp;
+#endif
+	io_func.size		= erts_check_io_size_kp;
+	io_func.info		= erts_check_io_info_kp;
+	io_func.check_io_debug	= erts_check_io_debug_kp;
+	erts_init_check_io_kp();
+	max_files = erts_check_io_max_files_kp();
+    }
+    else {
+	io_func.select		= driver_select_nkp;
+	io_func.event		= driver_event_nkp;
+	io_func.check_io	= erts_check_io_nkp;
+#ifdef ERTS_SMP
+	io_func.wake_io_thread	= erts_wake_io_thread_nkp;
+#endif
+	io_func.size		= erts_check_io_size_nkp;
+	io_func.info		= erts_check_io_info_nkp;
+	io_func.check_io_debug	= erts_check_io_debug_nkp;
+	erts_init_check_io_nkp();
+	max_files = erts_check_io_max_files_nkp();
+    }
+}
+
+#define ERTS_CHK_IO	(*io_func.check_io)
+#define ERTS_CHK_IO_SZ	(*io_func.size)
+
+#else /* !ERTS_ENABLE_KERNEL_POLL */
+
+static void
+init_check_io(void)
+{
+    erts_init_check_io();
+    max_files = erts_check_io_max_files();
+}
+
+#define ERTS_CHK_IO	erts_check_io
+#define ERTS_CHK_IO_SZ	erts_check_io_size
+
+#endif
+
 Uint
 erts_sys_misc_mem_sz(void)
 {
-    return (Uint) erts_smp_atomic_read(&sys_misc_mem_sz);
+    Uint res = ERTS_CHK_IO_SZ();
+    res += erts_smp_atomic_read(&sys_misc_mem_sz);
+    return res;
 }
 
 /*
@@ -399,62 +354,9 @@ thr_create_cleanup(void *saved_sigmask)
 #endif /* #ifdef ERTS_THR_HAVE_SIG_FUNCS */
 #endif /* #ifdef USE_THREADS */
 
-#undef ERTS_CALL_INIT_LIBCCLOSE
-#if defined(ERTS_SMP) \
-    && defined(ERTS_SELECTER_THR_CLOSED_FD_BUG) \
-    && defined(HAVE_DLFCN_H)
-#include <dlfcn.h>
-#ifdef RTLD_NEXT
-/*
- * Workaround for buggy poll() and select() implementations that
- * do not return when a file descriptor in the poll set is closed
- * by another thread.
- *
- * At least some Linux and OSF1 poll()/select() suffer from this bug. Also
- * at least some emulatated poll() (which we don't use) on darwin suffer
- * from this bug. select() (which we use) on darwin does not have this bug.
- *
- */
-#define ERTS_HAVE_SELECTER_THR_CLOSED_FD_BUG_WORKAROUND
-static int libcclose_initialized = 0;
-static int (*libcclose)(int) = NULL;
-
-#define ERTS_CALL_INIT_LIBCCLOSE
-static void
-init_libcclose(void)
-{
-    if (libcclose_initialized)
-	return;
-
-    libcclose = dlsym(RTLD_NEXT, "close");
-    if (!libcclose)
-	erl_exit(-1, "Failed to lookup close()\n");
-    libcclose_initialized = 1;
-}
-
-/*
- * Override libc's close() with our own versions...
- */
-int
-close(int fd)
-{
-    if (!libcclose_initialized)
-	init_libcclose();
-    if (erts_initialized)
-	erts_wake_io_thread(); /* Need to get the io thread out of
-				  poll()/select() */
-    return (*libcclose)(fd);
-}
-
-#endif
-#endif
-
 void
 erts_sys_pre_init(void)
 {
-#ifdef ERTS_CALL_INIT_LIBCCLOSE
-    init_libcclose();
-#endif
     erts_printf_add_cr_to_stdout = 1;
     erts_printf_add_cr_to_stderr = 1;
 #ifdef USE_THREADS
@@ -517,16 +419,6 @@ erl_sys_init(void)
     setlinebuf(stdout);
 #else
     setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
-#endif
-
-    if ((max_files = MAX_FILES()) < 0)
-	erl_exit(1, "Can't get no. of available file descriptors\n");
-
-    /* Note: this is if MAX_FILES() differ from FD_SETSIZE which it */
-    /* does by deafult on e.g. BSDI  */
-#if defined(USE_SELECT) && defined(FD_SETSIZE)
-    if (max_files > FD_SETSIZE) 
-	max_files = FD_SETSIZE;
 #endif
 
     erts_sys_init_float();
@@ -638,10 +530,10 @@ static RETSIGTYPE request_break(int signum)
 #ifdef DEBUG			
   fprintf(stderr,"break!\n");
 #endif
-  if (break_requested > 0)
+  if (erts_break_requested > 0)
       erl_exit(ERTS_INTR_EXIT, "");
 
-  break_requested = 1;
+  erts_break_requested = 1;
 
 }
 
@@ -662,6 +554,8 @@ static RETSIGTYPE user_signal1(int signum)
       wanting to generate a crash dump in this way is that the emulator
       is hung somewhere, so it won't be able to poll any flag we set here.
       */
+
+   erts_got_sigusr1 = 1;
 
    /* First make sure we unregister at epmd... */
    max = max_files;
@@ -1332,6 +1226,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
     if (pid == -1) {
         saved_errno = errno;
+	CHLD_STAT_UNLOCK;
 	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
         unblock_signals();
         close_pipes(ifd, ofd, opts->read_write);
@@ -1958,532 +1853,6 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
     return; /* 0; */
 }
 
-
-#ifdef ERTS_SMP
-
-static int do_driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on);
-
-typedef struct erts_select_entry_ erts_select_entry;
-struct erts_select_entry_ {
-    erts_select_entry *next;
-    ErlDrvPort ix;
-    ErlDrvEvent e;
-    int mode;
-    int on;
-};
-
-#define ERTS_PREALCD_SELECT_ENTRIES 20
-
-static erts_select_entry select_entries[ERTS_PREALCD_SELECT_ENTRIES];
-static erts_select_entry *free_select_entries;
-static erts_select_entry *selectq;
-static erts_select_entry *selectq_end;
-
-static void
-init_selectq(void)
-{
-    int i;
-#ifdef DEBUG
-    sys_memset((void *) &select_entries[0], 0xaf, sizeof(select_entries));
-#endif
-    for (i = 0; i < ERTS_PREALCD_SELECT_ENTRIES - 1; i++)
-	select_entries[i].next = &select_entries[i+1];
-    select_entries[ERTS_PREALCD_SELECT_ENTRIES-1].next = NULL;
-    free_select_entries = &select_entries[0];
-    selectq = NULL;
-    selectq_end = NULL;
-}
-
-static ERTS_INLINE erts_select_entry *
-mk_select_entry(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
-{
-    erts_select_entry *sep;
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
-
-    if (!free_select_entries)
-	sep = (erts_select_entry *) erts_alloc(ERTS_ALC_T_SELECT_ENTRY,
-					       sizeof(erts_select_entry));
-    else {
-	sep = free_select_entries;
-	free_select_entries = free_select_entries->next;
-    }
-
-    sep->next =	NULL;
-    sep->ix =	ix;
-    sep->e =	e;
-    sep->mode =	mode;
-    sep->on =	on;
-
-    return sep;
-}
-
-static ERTS_INLINE void
-free_select_entry(erts_select_entry *sep)
-{
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
-#ifdef DEBUG
-    sys_memset((void *) sep, 0xaf, sizeof(erts_select_entry));
-#endif
-    if (sep > &select_entries[ERTS_PREALCD_SELECT_ENTRIES-1]
-	|| sep < &select_entries[0])
-	erts_free(ERTS_ALC_T_SELECT_ENTRY, (void *) sep);
-    else {
-	sep->next = free_select_entries;
-	free_select_entries = sep;
-    }
-}
-
-static ERTS_INLINE int
-process_queued_selects(void)
-{
-    erts_select_entry *sep = selectq;
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
-    while (sep) {
-	erts_select_entry *fsep;
-	(void) do_driver_select(sep->ix, sep->e, sep->mode, sep->on);
-	fsep = sep;
-	sep = sep->next;
-	free_select_entry(fsep);
-    }
-    selectq = NULL;
-    selectq_end = NULL;
-    ASSERT(max_fd >= 0 /* we should at least have the wakeup pipe ... */
-	   || ERTS_IS_CRASH_DUMPING); /* ... if we are not crashing */
-    return max_fd;
-}
-
-int
-driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
-{
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
-    ASSERT(on || ((int) e) != io_thr_waker_data.fds[0]); /* Never deselect... */
-
-    if (io_thread_alive
-	&& erts_smp_equal_tids(erts_smp_thr_self(), erts_io_thr_tid)) {
-	(void) process_queued_selects();
-	return do_driver_select(ix, e, mode, on);
-    }
-    else {
-	erts_select_entry *sep;
-	int fd = (int) e;
-
-	if ((fd < 0) || (fd >= max_files))
-	    return -1;
-
-	sep = mk_select_entry(ix, e, mode, on);
-
-	if (selectq_end) {
-	    selectq_end->next = sep;
-	    selectq_end = sep;
-	}
-	else
-	    selectq = selectq_end = sep;
-
-	/*
-	 * If we have a poll() or select that does not return when
-	 * a file descriptor in the poll set is closed, and we haven't
-	 * got the close workaround (implemented above), wake
-	 * the io-thread also when deselecting.
-	 */
-#if !defined(ERTS_SELECTER_THR_CLOSED_FD_BUG) \
-    || defined(ERTS_HAVE_SELECTER_THR_CLOSED_FD_BUG_WORKAROUND)
-	if (on)
-#endif
-	    erts_wake_io_thread();
-
-	return 0;
-    }
-}
-
-#endif /* #ifdef ERTS_SMP */
-
-#if !defined(USE_SELECT)
-
-/* At least on FreeBSD, we need POLLRDNORM for normal files, not POLLIN. */
-/* Whether this is a bug in FreeBSD, I don't know. */
-#ifdef POLLRDNORM
-#define POLL_INPUT	(POLLIN | POLLRDNORM)
-#else
-#define POLL_INPUT	POLLIN
-#endif
-
-#ifdef USE_KERNEL_POLL
-#define DRIVER_SELECT_P static int driver_select_p
-#else
-#ifdef ERTS_SMP
-#define DRIVER_SELECT_P static int do_driver_select
-#else
-#define DRIVER_SELECT_P int driver_select
-#endif
-#endif
-
-/* poll version of driver_select() */
-
-DRIVER_SELECT_P(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
-{
-
-    int fd = (int)e;
-    if ((fd < 0) || (fd >= max_files))
-	return -1;
-
-    if (on) {
-	if (mode & (DO_READ|DO_WRITE)) {
-	    int pix = fd_data[fd].pix;  /* index to poll_fds */
-
-	    if (pix < 0) {  /* add new slot */
-		max_fd++;   /* FIXME: panic if max_fds >= max_files */
-
-		pix = max_fd;
-		fd_data[fd].pix = pix;
-		fd_data[fd].event_data = NULL;
-	    }
-	    poll_fds[pix].fd = fd;
-	    if (mode & DO_READ) {
-		fd_data[fd].inport = ix;
-		poll_fds[pix].events |= POLL_INPUT;
-	    }
-	    if (mode & DO_WRITE) {
-		fd_data[fd].outport = ix;
-		poll_fds[pix].events |= POLLOUT;
-	    }
-	}
-    }
-    else {
-	int pix = fd_data[fd].pix;  /* index to poll_fds */
-	int rix;                    /* index to ready_fds */
-
-	if (pix < 0) 	           /* driver deselected already */
-	    return -1;
-	/* Find index of this ready fd */
-	for (rix = 0; rix < nof_ready_fds; rix++)
-	    if (ready_fds[rix].pfd.fd == fd)
-		break;
-	if (mode & DO_READ) {
-	    poll_fds[pix].events &= ~POLL_INPUT;
-	    /* Erase POLL_INPUT event from poll result being processed */
-	    if ((rix < nof_ready_fds)
-		&& (ready_fds[rix].pfd.events & POLL_INPUT)) 
-		ready_fds[rix].pfd.revents &= ~POLL_INPUT;
-	}
-	if (mode & DO_WRITE) {
-	    poll_fds[pix].events &= ~POLLOUT;
-	    /* Erase POLLOUT event from poll result being processed */
-	    if ((rix < nof_ready_fds)
-		&& (ready_fds[rix].pfd.events & POLLOUT)) 
-		ready_fds[rix].pfd.revents &= ~POLLOUT;
-	}
-	if (poll_fds[pix].events == 0) {
-	    /* Erase all events from poll result being processed */
-	    if (rix < nof_ready_fds)
-		ready_fds[rix].pfd.revents = 0;
-
-	    /* delete entry by moving the last entry to pix position */
-	    /* FIXME: panic if max_fd == -1 */
-
-	    fd_data[fd].pix  = -1;
-
-	    if (pix != max_fd) {
-		int rfd = poll_fds[max_fd].fd;
-		poll_fds[pix] = poll_fds[max_fd];
-		fd_data[rfd].pix = pix;
-	    }
-
-	    /* Need to clear at least .events since it is or'ed when
-	     * this slot is reused - might as well clear everything.
-	     */
-	    poll_fds[max_fd].fd      = -1;
-	    poll_fds[max_fd].events  = 0;
-	    poll_fds[max_fd].revents = 0;
-	    
-	    max_fd--;
-	}
-    }
-    return 0;
-}
-
-
-#ifdef USE_KERNEL_POLL
-
-/* kernel poll version of driver_select() */
-
-static int driver_select_kp(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
-{
-    int fd = (int)e;
-    if ((fd < 0) || (fd >= max_files))
-	return -1;
-
-    if (on) {
-	if (mode & (DO_READ|DO_WRITE)) {
-	    int pix = fd_data[fd].pix;  /* index to poll_fds */
-#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
-	    int old_events;
-#endif
-
-	    if (pix < 0) {  /* add new slot */
-		max_fd++;   /* FIXME: panic if max_fds >= max_files */
-		pix = max_fd;
-		fd_data[fd].pix = pix;
-		/* init the pfd structure */
-		poll_fds[pix].fd = fd;
-		poll_fds[pix].events = 0;
-	    }
-
-#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
-	    old_events = poll_fds[pix].events;
-#endif
-	    poll_fds[pix].fd = fd;
-	    if (mode & DO_READ) {
-		fd_data[fd].inport = ix;
-		poll_fds[pix].events |= POLL_INPUT;
-	    }
-	    if (mode & DO_WRITE) {
-		fd_data[fd].outport = ix;
-		poll_fds[pix].events |= POLLOUT;
-	    }
-
-#ifdef USE_DEVPOLL
-	    if (poll_fds[pix].events != old_events) 
-                devpoll_update_pix(pix);
-#endif
-#ifdef USE_KQUEUE
-	    if (poll_fds[pix].events != old_events) 
-                kqueue_update_pix(pix,old_events);
-#endif
-	}
-    }
-    else {
-	int pix = fd_data[fd].pix;  /* index to poll_fds */
-#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
-	int old_events ;
-#endif
-
-	int rix = 0;
-	int srix[ERL_POLL_READY_ENTRIES];      /* index(es) to ready_fds */
-	int srix_idx;
-
-	if (pix < 0) 	           /* driver deselected already */
-	    return -1;
-
-	for(srix_idx=0;srix_idx<(sizeof(srix)/sizeof(srix[0]));srix_idx++)
-	  srix[srix_idx]=-1;
-	srix_idx=0;
-
-#if defined(USE_DEVPOLL) || defined(USE_KQUEUE)
-	old_events = poll_fds[pix].events;
-#endif
-	if (mode & DO_READ) {
-	  poll_fds[pix].events &= ~POLL_INPUT;
-          fd_data[fd].inport = -1;
-        }
-	if (mode & DO_WRITE) {
-	  poll_fds[pix].events &= ~POLLOUT;
-          fd_data[fd].outport = -1;
-        }
-
-	/* Find index(es) of this fd in ready_fds */
-	for (rix = 0; rix < nof_ready_fds; rix++) {
-	  if (ready_fds[rix].pfd.fd == fd) {
-
-	    if (mode & DO_READ) 
-	      ready_fds[rix].pfd.revents &= ~POLL_INPUT;
-
-	    if (mode & DO_WRITE) 
-	      ready_fds[rix].pfd.revents &= ~POLLOUT;
-
-	    srix[srix_idx] = rix;
-	    if (++srix_idx == (sizeof(srix)/sizeof(srix[0]))) break;
-	  }
-	}
-	if (poll_fds[pix].events == 0) {
-#ifdef USE_DEVPOLL
-	    if ( old_events && (dev_poll_fd != -1) ) {
-	       /* Tell /dev/[k]poll that we are not interested any more ... */
-	       poll_fds[pix].events = POLLREMOVE;
-	       devpoll_update_pix(pix);
-	       /* devpoll_update_pix may change the pix */
-	       pix = fd_data[fd].pix;
-	       poll_fds[pix].events = 0;
-	    }
-#endif
-#ifdef USE_KQUEUE
-	    if ( old_events && (kqueue_fd != -1) ) {
-                /* Tell kqueue that we are not interested any more ... */
-                kqueue_update_pix(pix,old_events);
-                /*       devpoll_update_pix may change the pix */
-                pix = fd_data[fd].pix;
-                poll_fds[pix].events = 0;
-	    }
-#endif
-
-	    /* Erase all events from poll result being processed */
-	    {
-                int i;
-                for(i=0;i<srix_idx;i++) {
-                    if ((srix[i] != -1))
-                        ready_fds[srix[i]].pfd.revents = 0;
-                }
-	    }
-
-	    /* delete entry by moving the last entry to pix position */
-	    /* FIXME: panic if max_fd == -1 */
-
-	    fd_data[fd].pix  = -1;
-
-	    if (pix != max_fd) {
-		int rfd = poll_fds[max_fd].fd;
-		poll_fds[pix] = poll_fds[max_fd];
-		fd_data[rfd].pix = pix;
-	    }
-            
-	    /* Need to clear at least .events since it is or'ed when
-	     * this slot is reused - might as well clear everything.
-             */
-	    poll_fds[max_fd].fd      = -1;
-	    poll_fds[max_fd].events  = 0;
-	    poll_fds[max_fd].revents = 0;
-	    
-	    max_fd--;
-	}
-#ifdef USE_DEVPOLL
-	else if (mode) {
-
-	    /* If we have removed an event request but not all of them
-	       then we have to remove all requests and redo the
-	       request. This is because on Solaris the event mask is
-	       OR'ed in, i.e. if we earlier requested both POLLIN and
-	       POLLOUT and remove POLLOUT nothing will be changed */
-
-#ifdef HAVE_SYS_DEVPOLL_H
-	    devpoll_clear_pix(pix);
-#endif /* HAVE_SYS_DEVPOLL_H */
-	    devpoll_update_pix(pix);
-	}
-#endif
-#ifdef USE_KQUEUE
-	else {
-	    kqueue_update_pix(pix,old_events);
-	}
-#endif
-
-    }
-    return 0;
-}
-
-static int (*driver_select_func)(ErlDrvPort,
-				 ErlDrvEvent,
-				 int,
-				 int) = driver_select_p;
-
-int driver_select(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
-{
-    return (*driver_select_func)(ix, e, mode, on);
-}
-
-#endif /* #ifdef USE_KERNEL_POLL */
-
-int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
-    int fd = (int)e;
-    if ((fd < 0) || (fd >= max_files))
-	return -1;
-
-    if (event_data && event_data->events) {
-	int pix = fd_data[fd].pix;  /* index to poll_fds */
-	
-	if (pix < 0) {  /* add new slot */
-	    max_fd++;   /* FIXME: panic if max_fds >= max_files */
-	    
-	    pix = max_fd;
-	    poll_fds[pix].fd = fd;
-	    fd_data[fd].pix = pix;
-	    fd_data[fd].inport = ix;
-	}
-	fd_data[fd].event_data = event_data;
-	poll_fds[pix].events = event_data->events;
-    } else {
-	int pix = fd_data[fd].pix;  /* index to poll_fds */
-
-	if (pix < 0) 	           /* driver deselected already */
-	    return -1;
-
-	/* delete entry by moving the last entry to pix position */
-	/* FIXME: panic if max_fd == -1 */
-	
-	fd_data[fd].pix  = -1;
-	
-	if (pix != max_fd) {
-	    int rfd = poll_fds[max_fd].fd;
-	    poll_fds[pix] = poll_fds[max_fd];
-	    fd_data[rfd].pix = pix;
-	}
-	
-	/* Need to clear at least .events since it is or'ed when
-	 * this slot is reused - might as well clear everything.
-	 */
-	poll_fds[max_fd].fd      = -1;
-	poll_fds[max_fd].events  = 0;
-	poll_fds[max_fd].revents = 0;
-	
-	max_fd--;
-    }
-    return 0;
-}
-
-#else  /* if defined(USE_SELECT) */
-
-#ifdef ERTS_SMP
-#define DRIVER_SELECT do_driver_select
-#else
-#define DRIVER_SELECT driver_select
-#endif
-
-/* Interface function available to driver writers */
-int DRIVER_SELECT(ErlDrvPort ix, ErlDrvEvent e, int mode, int on)
- {
-   int this_port = (int)ix;
-   int fd = (int)e;
-#if defined(FD_SETSIZE)
-    if (fd >= FD_SETSIZE) {
-	erl_exit(1,"driver_select called with too large file descriptor %d"
-		 "(FD_SETSIZE == %d)",
-		 fd,FD_SETSIZE);
-    }
-#endif
-    if (fd >= 0 && fd < max_files) {
-	if (on) {
-	    if (mode & DO_READ) {
-		fd_data[fd].inport = this_port; 
-		FD_SET(fd, &input_fds);
-	    }
-	    if (mode & DO_WRITE) {
-		fd_data[fd].outport = this_port; 
-		FD_SET(fd, &output_fds);
-	    }
-	    if ((mode & (DO_READ|DO_WRITE)) && max_fd < fd) max_fd = fd;
-	} else {
-	    if (mode & DO_READ) {
-		FD_CLR(fd, &input_fds);
-	    }
-	    if (mode & DO_WRITE) {
-		FD_CLR(fd, &output_fds);
-	    }
-	    if ((mode & (DO_READ|DO_WRITE)) && max_fd == fd) {
-		while (max_fd >= 0 &&
-		       !FD_ISSET(max_fd, &input_fds) &&
-		       !FD_ISSET(max_fd, &output_fds))
-		    max_fd--;
-	    }
-	}
-	return(0);
-    } else
-	return(-1);
-}
-
-int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
-    return -1;
-}
-
-#endif /*  !defined(USE_SELECT) */
-
 /*
 ** Async opertation support
 */
@@ -2568,9 +1937,7 @@ static void async_drv_input(ErlDrvData e, ErlDrvEvent fd)
 }
 #endif
 
-
-/* Lifted out from check_io() */
-static void do_break_handling(void)
+void erts_do_break_handling(void)
 {
     struct termios temp_mode;
     int saved = 0;
@@ -2588,7 +1955,7 @@ static void do_break_handling(void)
     
     /* call the break handling function, reset the flag */
     do_break();
-    break_requested = 0;
+    erts_break_requested = 0;
     fflush(stdout);
     
     /* after break we go back to saved settings */
@@ -2599,692 +1966,6 @@ static void do_break_handling(void)
       tcsetattr(0,TCSANOW,&temp_mode);
     }
 }
-
-#ifdef ERTS_SMP
-
-static ERTS_INLINE int
-prepare_io_wait(SysTimeval *wait_time)
-{
-    int res;
-    erts_smp_atomic_set(&io_thread_waiting, 1);
-    erts_time_remaining(wait_time);
-    res = process_queued_selects();
-    erts_smp_io_unlock();
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
-#endif
-    erts_smp_activity_change(ERTS_ACTIVITY_IO,
-			     ERTS_ACTIVITY_WAIT,
-			     NULL,
-			     NULL,
-			     NULL);
-    return res;
-}
-
-static ERTS_INLINE void
-finish_io_wait(void)
-{
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_check_exact(NULL, 0); /* No locks should be locked */
-#endif
-    erts_smp_activity_change(ERTS_ACTIVITY_WAIT,
-			     ERTS_ACTIVITY_IO,
-			     NULL,
-			     NULL,
-			     NULL);
-    erts_smp_io_lock();
-    erts_smp_atomic_set(&io_thread_waiting, 0);
-}
-
-static ERTS_INLINE void
-bump_timers(void)
-{
-#ifndef ERTS_TIMER_THREAD
-    long dt = do_time_read_and_reset();
-    if (dt) {
-	erts_smp_io_unlock();
-	bump_timer(dt);
-	erts_smp_io_lock();
-    }
-#endif
-}
-
-#endif
-
-/* See if there is any i/o pending. If do_wait is 1 wait for i/o.
-   Both are done using "select". NULLTV (ie 0) causes select to wait.
-   &poll (ie a pointer to a zero timeval) causes select to poll.
-   If select returns unexpectedly we probably have an interrupt.
-   In this case we just return. This routine also does the time
-   measurement, using time_remaining() and deliver_time().
-   
-   Note: it is extremley important that this function always calls
-   deliver_time() before returning.
-*/
-#ifdef USE_SELECT
-static void check_io(do_wait)
-int do_wait;
-{
-    SysTimeval wait_time;
-    SysTimeval *sel_time;
-    SysTimeval poll;
-
-    int local_max_fd;
-    int i, saved_errno;
-    fd_set err_set;
-
-    sel_time = &wait_time;
-
-#ifdef ERTS_SMP
-
-    local_max_fd = prepare_io_wait(&wait_time);
-
-#else
-
-    local_max_fd = max_fd;
-    /* choose timeout value for select() */
-    if (do_wait) {
-	erts_time_remaining(&wait_time);
-    } else if (max_fd == -1) {  /* No need to poll. 
-				 * (QNX's select crashes;-) */
-	erts_deliver_time();	/* sync the machine's idea of time */
-        return;
-    } else {			/* poll only */
-        poll.tv_sec  = 0;	/* zero time - used for polling */
-	poll.tv_usec = 0;	/* Initiate each time, Linux select() may */
-	sel_time = &poll;	/* modify it */
-    }
-
-#endif
-
-    read_fds = input_fds; 
-    write_fds = output_fds;
-
-    i = select(max_fd + 1, &read_fds, &write_fds, NULLFDS, sel_time);
-    saved_errno = errno; /* erts_deliver_time() and do_break_handling()
-			    might change errno... */
-
-#ifdef ERTS_SMP
-    finish_io_wait();
-#endif
-
-    erts_deliver_time(); /* sync the machine's idea of time */
-
-#ifdef ERTS_SMP
-    bump_timers();
-#endif
-
-    /* break handling moved here, signal handler just sets flag */
-    if (break_requested) {
-	do_break_handling();
-    }
-
-#ifdef ERTS_SMP
-    local_max_fd = process_queued_selects();
-#endif
-
-    errno = saved_errno;
-    if (i <= 0) {
-	/* probably an interrupt or poll with no input */
-
-	if ((i == -1) && (errno == EBADF)) {
-	    /* check which fd that is bad */
-	    for (i = 0; i <= local_max_fd; i++) {
-		if (FD_ISSET(i, &input_fds)) {
-		    poll.tv_sec  = 0;	/* zero time - used for polling */
-		    poll.tv_usec = 0;	/* Initiate each time, 
-					 * Linux select() may */
-		    sel_time = &poll;	/* modify it */
-		    FD_ZERO(&err_set);
-		    FD_SET(i, &err_set);
-		    if (select(max_fd + 1, &err_set, NULL, NULL, sel_time) == -1){
-			/* bad read FD found */
-			erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-			erts_dsprintf(dsbufp,
-				      "Bad input_fd in select! "
-				      "fd,port,driver,name: %d,%d,%s,%s\n", 
-				      i, fd_data[i].inport,
-				      erts_port[fd_data[i].inport].drv_ptr->driver_name,
-				      erts_port[fd_data[i].inport].name);
-			erts_send_error_to_logger_nogl(dsbufp);
-			/* remove the bad fd */
-			FD_CLR(i, &input_fds);
-		    }
-		}
-		if (FD_ISSET(i, &output_fds)) {
-		    poll.tv_sec  = 0;	/* zero time - used for polling */
-		    poll.tv_usec = 0;	/* Initiate each time, 
-					 * Linux select() may */
-		    sel_time = &poll;	/* modify it */
-		    FD_ZERO(&err_set);
-		    FD_SET(i, &err_set);
-		    if (select(max_fd + 1, NULL, &err_set, NULL, sel_time) 
-			== -1) {
-			/* bad write FD found */
-			erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-			erts_dsprintf(dsbufp, "Bad output_fd in select! "
-				      "fd,port,driver,name: %d,%d,%s,%s\n", 
-				      i, fd_data[i].outport, 
-				      erts_port[fd_data[i].outport].drv_ptr->driver_name,
-				      erts_port[fd_data[i].outport].name);
-			erts_send_error_to_logger_nogl(dsbufp);
-			/* remove the bad fd */
-			FD_CLR(i, &output_fds);
-		    }
-		}
-	    }
-	}
-	return;
-    }
-
-    /* do the write's first */
-    for(i =0; i <= local_max_fd; i++) {
-	if (FD_ISSET(i, &write_fds)) /* No need to check output_fds here
-				      * since output_ready can deselect
-				      * it's input fd brother, but not the
-				      * other way around. This because
-				      * output_ready is run before
-				      * input_ready.
-				      */
-#ifdef ERTS_SMP
-	    if (FD_ISSET(i, &output_fds)) /* Needed when smp support is
-					     enabled */
-#endif
-		output_ready(fd_data[i].outport, i);
-    }
-    for (i = 0; i <= local_max_fd; i++) {
-	if (FD_ISSET(i, &read_fds) && FD_ISSET(i, &input_fds))
-	    input_ready(fd_data[i].inport, i);
-    }
-}
-
-#else /* poll() implementation of check_io() */
-
-
-#ifdef USE_KERNEL_POLL
-#define CHECK_IO_P static void check_io_p
-#else
-#define CHECK_IO_P static void check_io
-#endif
-
-CHECK_IO_P(int do_wait)
-{
-    SysTimeval wait_time;
-    int r, i, saved_errno = 0;
-    int max_fd_plus_one;
-    int timeout;		/* In milliseconds */
-    struct readyfd* rp;
-    struct readyfd* qp;
-
-
-#ifdef ERTS_SMP
-
-    max_fd_plus_one = prepare_io_wait(&wait_time) + 1;
-    timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
-
-#else
-
-    max_fd_plus_one = max_fd + 1;
-    /* Figure out timeout value */
-    if (do_wait) {
-	erts_time_remaining(&wait_time);
-	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
-    } else if (max_fd == -1) {  /* No need to poll. */
-	erts_deliver_time();	/* sync the machine's idea of time */
-        return;
-    } else {			/* poll only */
-	timeout = 0;
-    }
-
-#endif
-
-    r = poll(poll_fds, max_fd_plus_one, timeout);
-
-#ifdef ERTS_SMP
-    finish_io_wait();
-#endif
-
-    if (r > 0) {
-	int rr = r;
-	/* collect ready fds into the ready_fds stucture,
-	 * this makes the calls to input ready/output ready
-	 * independant of the poll_fds array 
-	 ** (accessed via call to driver_select etc)
-	 */
-	rp = ready_fds;
-	for (i = 0; rr && (i < max_fd_plus_one); i++) {
-	    short revents = poll_fds[i].revents;
-	    
-	    if (revents != 0) {
-		int fd = poll_fds[i].fd;
-		rp->pfd = poll_fds[i]; /* COPY! */
-		rp->iport = fd_data[fd].inport;
-		rp->oport = fd_data[fd].outport;
-		rp->event_data = fd_data[fd].event_data;
-		rp++;
-		rr--;
-	    }
-	}
-	nof_ready_fds = r;
-    } else {
-	nof_ready_fds = 0;
-	rp = NULL; /* avoid 'uninitialized' warning */
-	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
-				might change errno... */
-    }
-
-    erts_deliver_time(); /* sync the machine's idea of time */
-
-#ifdef ERTS_SMP
-    bump_timers();
-#endif
-
-    if (break_requested)
-	do_break_handling();
-
-    if (r == 0)     /* timeout */
-	return;
-
-    if (r < 0) {
-	errno = saved_errno;
-	if (errno != ERRNO_BLOCK && errno != EINTR) {
-	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	    erts_dsprintf(dsbufp, "poll() error %d (%s)\n", errno,
-			  erl_errno_id(errno));
-	    erts_send_error_to_logger_nogl(dsbufp);
-	}
-	return;
-    }
-
-    ASSERT(rp);
-    ASSERT(nof_ready_fds > 0);
-
-#ifdef ERTS_SMP
-    max_fd_plus_one = process_queued_selects() + 1;
-#endif
-
-    /* Note: this is *not* the same behaviour as in the select
-     *       implementation, where *all* write ready file descriptors
-     *       are done first.
-     */
-
-    for (qp = ready_fds; qp < rp; qp++) {
-	int   fd      = qp->pfd.fd;
-	short revents = qp->pfd.revents;
-
-	if (revents && qp->event_data) {
-	    qp->event_data->revents = revents;
-	    event_ready(qp->iport, fd, qp->event_data);
-	}
-	else if (revents & (POLL_INPUT|POLLOUT)) {
-	    if (revents & POLLOUT)
-		output_ready(qp->oport, fd);
-	    if (revents & (POLL_INPUT|POLLHUP))
-		input_ready(qp->iport, fd);
-	}
-	else if (revents & (POLLERR|POLLHUP)) {
-	    /* let the driver handle the error condition */
-	    if (qp->pfd.events & POLL_INPUT)
-		input_ready(qp->iport, fd);
-	    else
-		output_ready(qp->oport, fd);
-	}
-	else if (revents & POLLNVAL) {
-	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	    if (qp->pfd.events & POLL_INPUT) {
-		erts_dsprintf(dsbufp,
-			      "Bad input fd in poll()! fd,port,driver,name:"
-			      " %d,%d,%s,%s\n",
-			      fd, qp->iport, 
-			      erts_port[qp->iport].drv_ptr->driver_name,
-			      erts_port[qp->iport].name);
-	    } 
-	    else if (qp->pfd.events & POLLOUT) {
-		erts_dsprintf(dsbufp,
-			      "Bad output fd in poll()! fd,port,driver,name:"
-			      " %d,%d,%s,%s\n",
-			      fd, qp->oport,
-			      erts_port[qp->oport].drv_ptr->driver_name,
-			      erts_port[qp->oport].name);
-	    } 
-	    else {
-		erts_dsprintf(dsbufp, "Bad fd in poll(), %d!\n", fd);
-	    }
-	    erts_send_error_to_logger_nogl(dsbufp);
-
-	    /* unmap entry */
-	    if (qp->pfd.events & POLL_INPUT)
-		driver_select(qp->iport, fd, DO_READ|DO_WRITE, 0);
-	    if (qp->pfd.events & POLLOUT) {
-		if (!(qp->pfd.events & POLL_INPUT) || (qp->iport != qp->oport))
-		    driver_select(qp->oport, fd, DO_READ|DO_WRITE, 0);
-	    }
-	}
-    }
-}
-
-
-#ifdef USE_KERNEL_POLL
-/* kernel poll implementation of check_io() */
-
-static void check_io_kp(int do_wait)
-{
-    SysTimeval wait_time;
-    int r, i, saved_errno = 0;
-#ifndef USE_KQUEUE
-    int max_fd_plus_one = max_fd + 1;
-#endif
-    int timeout;		/* In milliseconds */
-    struct readyfd* rp;
-    struct readyfd* qp;
-
-    /* Figure out timeout value */
-    if (do_wait) {
-	erts_time_remaining(&wait_time);
-	timeout = wait_time.tv_sec * 1000 + wait_time.tv_usec / 1000;
-    } else if (max_fd == -1) {  /* No need to poll. */
-	erts_deliver_time();	/* sync the machine's idea of time */
-        return;
-    } else {			/* poll only */
-	timeout = 0;
-    }
-
-#ifdef USE_DEVPOLL
-    if ( dev_poll_fd != -1 ) {
-#ifdef HAVE_LINUX_KPOLL_H
-      int do_event_poll;
-
-      do_event_poll = 0;
-      if ((r = poll(poll_fds, (max_poll_idx+1), timeout)) > 0 ) {
-#else
-      dev_poll.dp_timeout = timeout;
-      dev_poll.dp_nfds    = max_fd_plus_one;
-      dev_poll.dp_fds     = dev_poll_rfds;
-      if ((r = ioctl(dev_poll_fd, DP_POLL, &dev_poll)) > 0 ) {
-#endif
-	/* collect ready fds into the ready_fds stucture,
-	 * this makes the calls to input ready/output ready
-	 * independant of the poll_fds array 
-	 ** (accessed via call to driver_select etc)
-	 */
-	int rr;
-	int vr = 0; /* valid */
-#ifdef HAVE_LINUX_KPOLL_H
-	dev_poll_rfds = poll_fds;
-#endif
-	rp = ready_fds;
-	rr = r;
-#ifdef HAVE_LINUX_KPOLL_H
-	r = max_poll_idx+1;
-#endif
-	for (i = 0; rr && (i < r); i++) {
-	    short revents = dev_poll_rfds[i].revents;
-
-	    if (revents != 0) {
-#if HAVE_LINUX_KPOLL_H
-	        if (dev_poll_rfds[i].fd != dev_poll_fd) {
-#endif
-		    int fd = dev_poll_rfds[i].fd;
-
-		    rp->pfd = dev_poll_rfds[i]; /* COPY! */
-		    rp->iport = fd_data[fd].inport;
-		    rp->oport = fd_data[fd].outport;
-		    rp++;
-		    rr--;
-		    vr++;
-#if HAVE_LINUX_KPOLL_H
-	        } else {
-	            do_event_poll = 1;
-		}
-#endif
-	    }
-
-	}
-	nof_ready_fds = vr;
-
-#if HAVE_LINUX_KPOLL_H
-	if ( do_event_poll ) {
-	  /* Now do the fast poll */
-	  dev_poll.kp_timeout = 0;
-	  dev_poll.kp_resoff  = 0;
-	  if ((r = ioctl(dev_poll_fd, KP_POLL, &dev_poll)) > 0 ) {
-	    dev_poll_rfds = (struct pollfd *)(dev_poll_map + dev_poll.kp_resoff);
-
-	    for (i = 0; (i < r); i++) {
-	      short revents = dev_poll_rfds[i].revents;
-
-	      if (revents != 0) {
-	        int fd = dev_poll_rfds[i].fd;
-		rp->pfd = dev_poll_rfds[i]; /* COPY! */
-		rp->iport = fd_data[fd].inport;
-		rp->oport = fd_data[fd].outport;
-		rp++;
-	      } 
-
-	    }
-	    nof_ready_fds += r;
-	  }
-	}
-#endif
-
-      } else {
-	nof_ready_fds = 0;
-	rp = NULL; /* avoid 'uninitialized' warning */
-	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
-				might change errno... */
-      }
-    } else {
-#endif
-#ifdef USE_KQUEUE
-    if ((r = poll(poll_fds, max_poll_idx+1, timeout)) > 0) {
-#else
-    if ((r = poll(poll_fds, max_fd_plus_one, timeout)) > 0) {
-#endif
-	int rr = r;
-	int vr = 0;
-#ifdef USE_KQUEUE
-	int do_kevent = 0;
-#endif
-	/* collect ready fds into the ready_fds stucture,
-	 * this makes the calls to input ready/output ready
-	 * independant of the poll_fds array 
-	 ** (accessed via call to driver_select etc)
-	 */
-	rp = ready_fds;
-#ifdef USE_KQUEUE
-	for (i = 0; rr && (i < (max_poll_idx+1)); i++) {
-#else
-	for (i = 0; rr && (i < max_fd_plus_one); i++) {
-#endif
-	    short revents = poll_fds[i].revents;
-	    
-	    if (revents != 0) {
-
-#ifdef USE_KQUEUE
-            if ((kqueue_fd != -1) && (poll_fds[i].fd == kqueue_fd)) {
-                do_kevent=1;
-            } else {
-#endif
-		int fd = poll_fds[i].fd;
-		rp->pfd = poll_fds[i]; /* COPY! */
-		rp->iport = fd_data[fd].inport;
-		rp->oport = fd_data[fd].outport;
-		rp++;
-		rr--;
-		vr++;
-#ifdef USE_KQUEUE
-	    }
-#endif
-	    }
-	}
-#ifdef USE_KQUEUE
-	if ( do_kevent ) {
-            int res;
-            struct timespec ts;
-
-            memset(&ts,(char)0,sizeof(ts));
-
-            if ( (res=kevent(kqueue_fd,NULL,0,kqueue_res,2*max_files,&ts)) < 0 ) {
-                erl_exit(1, "%s:%d kevent call failed. errno = %d\n",__FILE__,__LINE__,errno);
-            } else {
-                int i;
-                for(i=0;i<res;i++) {
-                    int pix;
-                    int fd;
-                    struct kevent *kep = &kqueue_res[i];
-                    fd = kep->ident;
-                    pix = fd_data[fd].pix;
-                    
-                    /* Now     we should copy this into the result fd array               */
-                    /* Please note t  he kqueue version may generate two entries per fd */
-                    /* This is handled in dr  iver_select for cleanup                   */
-                    
-                    rp->pfd = poll_fds[pix]; /* COPY! */
-                    if ( kep->filter == EVFILT_READ ) {
-                        rp->pfd.revents |= POLL_INPUT;
-                    } else if ( kep->filter == EVFILT_WRITE ) {
-                        rp->pfd.revents |= POLLOUT;
-                        if ( kep->flags & EV_EOF )
-                            rp->pfd.revents |= POLLHUP;
-                        if ( kep->flags & EV_ERROR )
-                            rp->pfd.revents |= POLLERR;
-                    } 
-                    if ( kep->flags & EV_EOF )
-                        rp->pfd.revents |= POLLHUP;
-                    if ( kep->flags & EV_ERROR )
-                        rp->pfd.revents |= POLLERR;
-                    
-                    rp->iport = fd_data[fd].inport;
-                    rp->oport = fd_data[fd].outport;
-                    rp++;
-                    vr++;
-                }
-            }
-	}
-#endif
-	nof_ready_fds = vr;
-    } else {
-	nof_ready_fds = 0;
-	rp = NULL; /* avoid 'uninitialized' warning */
-	saved_errno = errno; /* erts_deliver_time() and do_break_handling()
-				might change errno... */
-    }
-#ifdef USE_DEVPOLL
-    } 
-#endif
-
-    erts_deliver_time(); /* sync the machine's idea of time */
-
-    if (break_requested) 
-	do_break_handling();
-
-    if (r == 0)     /* timeout */
-	return;
-
-    if (r < 0) {
-	errno = saved_errno;
-	if (errno != ERRNO_BLOCK && errno != EINTR) {
-	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	    erts_dsprintf(dsbufp, "poll() error %d (%s)\n", errno,
-			  erl_errno_id(errno));
-	    erts_send_error_to_logger_nogl(dsbufp);
-	}
-	return;
-    }
-
-    ASSERT(rp);
-    ASSERT(nof_ready_fds > 0);
-
-    /* Note: this is *not* the same behaviour as in the select
-     *       implementation, where *all* write ready file descriptors
-     *       are done first.
-     */
-
-    for (qp = ready_fds; qp < rp; qp++) {
-	int   fd      = qp->pfd.fd;
-	short revents = qp->pfd.revents;
-
-#ifdef __linux__
-	/* Linux sets pollhup on fresh sockets. Mask it out if not POLL_INPUT */
-	if (!(poll_fds[fd_data[fd].pix].events & POLL_INPUT)) {
-	  revents &= ~POLLHUP;
-	}
-#endif
-
-	if (revents & (POLL_INPUT|POLLOUT)) {
-	    if (revents & POLLOUT) 
-		output_ready(qp->oport, fd);
-	    /* check if output_ready affected selected events */
-	    if (revents & (POLL_INPUT|POLLHUP)) {
-	        if (poll_fds[fd_data[fd].pix].events & POLL_INPUT) 
-                    if ( qp->iport != -1 ) 
-                        input_ready(qp->iport, fd);
-	    }
-	}
-	else if (revents & (POLLERR|POLLHUP)) {
-	    /* let the driver handle the error condition */
-	    if (qp->pfd.events & POLL_INPUT) {
-                Port* p = &erts_port[qp->iport];
-                if ( p->status == FREE ) {
-		    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-                    erts_dsprintf(dsbufp,
-				  "Driver input on free port! "
-				  "fd,port,driver,name: %d,%d,%s,%s\n",
-				  fd, qp->iport,
-				  erts_port[qp->iport].drv_ptr->driver_name,
-				  erts_port[qp->iport].name);
-		    erts_send_error_to_logger_nogl(dsbufp);
-                }
-                if ( qp->iport != -1 )
-                    input_ready(qp->iport, fd);
-            }
-	    else
-		output_ready(qp->oport, fd);
-	}
-	else if (revents & POLLNVAL) {
-	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	    if (qp->pfd.events & POLL_INPUT) {
-		erts_dsprintf(dsbufp,
-			      "Bad input fd in poll()! fd,port,driver,name:"
-			      " %d,%d,%s,%s\n",
-			      fd, qp->iport, 
-			      erts_port[qp->iport].drv_ptr->driver_name,
-			      erts_port[qp->iport].name);
-	    } 
-	    else if (qp->pfd.events & POLLOUT) {
-		erts_dsprintf(dsbufp,
-			      "Bad output fd in poll()! fd,port,driver,name:"
-			      " %d,%d,%s,%s\n",
-			      fd, qp->oport,
-			      erts_port[qp->oport].drv_ptr->driver_name,
-			      erts_port[qp->oport].name);
-	    } 
-	    else {
-		erts_dsprintf(dsbufp, "Bad fd in poll(), %d!\n", fd);
-	    }
-	    erts_send_error_to_logger_nogl(dsbufp);
-
-	    /* unmap entry */
-	    if (qp->pfd.events & POLL_INPUT)
-		driver_select(qp->iport, fd, DO_READ|DO_WRITE, 0);
-	    if (qp->pfd.events & POLLOUT) {
-		if (!(qp->pfd.events & POLL_INPUT) || (qp->iport != qp->oport))
-		    driver_select(qp->oport, fd, DO_READ|DO_WRITE, 0);
-	    }
-	}
-    }
-}
-
-static void (*check_io_func)(int) = check_io_p;
-
-static void check_io(int do_wait)
-{
-    (*check_io_func)(do_wait);
-}
-
-#endif /* #ifdef USE_KERNEL_POLL */
-
-#endif
 
 /* Fills in the systems representation of the jam/beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
@@ -3308,78 +1989,10 @@ int sys_putenv(char *buffer){
 void
 sys_init_io(void)
 {
-#ifdef ERTS_SMP
-    init_selectq();
-    erts_smp_atomic_init(&io_thread_waiting, 0);
-    io_thread_alive = 0;
-#endif
     fd_data = (struct fd_data *)
 	erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
     erts_smp_atomic_add(&sys_misc_mem_sz,
 			max_files * sizeof(struct fd_data));
-
-    max_fd = -1;
-
-#ifdef USE_SELECT
-    FD_ZERO(&input_fds);
-    FD_ZERO(&output_fds);
-
-#else
-    poll_fds =  (struct pollfd *)
-	erts_alloc(ERTS_ALC_T_POLL_FDS, max_files * sizeof(struct pollfd));
-    erts_smp_atomic_add(&sys_misc_mem_sz, max_files * sizeof(struct pollfd));
-    ready_fds =  (struct readyfd *)
-	erts_alloc(ERTS_ALC_T_READY_FDS, (ERL_POLL_READY_ENTRIES
-					  * max_files
-					  * sizeof(struct readyfd)));
-    erts_smp_atomic_add(&sys_misc_mem_sz,
-			(ERL_POLL_READY_ENTRIES
-			 * max_files
-			 * sizeof(struct readyfd)));
-
-    nof_ready_fds = 0;
-    {
-	int i;
-
-	for (i=0; i < max_files; i++) {
-	    poll_fds[i].fd      = -1;
-	    poll_fds[i].events  = 0;
-	    poll_fds[i].revents = 0;
-
-	    fd_data[i].pix = -1;
-	}
-    }
-
-
-#ifdef USE_KERNEL_POLL
-
-    if (erts_use_kernel_poll) {
-	driver_select_func = driver_select_kp;
-	check_io_func = check_io_kp;
-
-#ifdef USE_DEVPOLL
-	devpoll_init();
-#if HAVE_LINUX_KPOLL_H
-	max_poll_idx = -1;
-	kpoll_enable();
-#endif
-#else
-#ifdef USE_KQUEUE
-	kqueue_init();
-	max_poll_idx = -1;
-	kqueue_enable();
-#endif
-#endif /* ! USE_DEVPOLL */
-
-    }
-    else {
-	driver_select_func = driver_select_p;
-	check_io_func = check_io_p;
-    }
-
-#endif /* #ifdef USE_KERNEL_POLL */
-
-#endif /* !USE_SELECT */
 
 #ifdef USE_THREADS
 #ifdef ERTS_SMP
@@ -3405,9 +2018,6 @@ sys_init_io(void)
 #endif
 #endif
 
-#ifdef ERTS_SMP
-    init_io_thr_waker_drv();
-#endif
 }
 
 #if (0) /* unused? */
@@ -3506,41 +2116,6 @@ int fd;
 
 
 #ifdef DEBUG
-
-#if 0
-/* handy debug function that prints the current state of poll_fds[] */
-static void print_poll_fds()
-{
-    int i;
-    fprintf(stderr, "print_poll_fds() max_fd=%d\n\r", max_fd);
-    for (i=0; i<max_fd+1; i++) {
-	int fd=poll_fds[i].fd;
-	fprintf(stderr, "poll_fds[%d].fd=%d events=0x%x revents=0x%x "
-		"fd_data[%d].pix=%d inport=%d outport=%d\n\r",
-		i, fd, poll_fds[i].events, poll_fds[i].revents,
-		fd, fd_data[fd].pix, fd_data[fd].inport, fd_data[fd].outport);
-    }
-}
-#endif
-
-#if (0) /* unused? */
-static void  sdbg()
-{
-    int i;
-    Pend *p;
-    fprintf(stderr, "maxfd = %d\n", max_fd);
-    for (i = 0; i <max_files; i++) {
-	if (FD_ISSET(i, &input_fds))
-	    fprintf(stderr, "fd %d set on input \n", i);
-	if (fd_data[i].remain > 0)
-	    fprintf(stderr,"   Pending input %d bytes on %d\n", 
-		    fd_data[i].remain,i);
-
-	if (FD_ISSET(i, &output_fds))
-	    fprintf(stderr, "fd %d set on output \n", i);
-    }
-}
-#endif /* (0) */
 
 extern int erts_initialized;
 void
@@ -3660,9 +2235,8 @@ erl_sys_schedule(int runnable)
 #ifdef ERTS_SMP
     erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
     erts_smp_io_lock();
-    io_thread_alive = 1;
     while (1) {
-	check_io(1);
+	ERTS_CHK_IO(1);
 #if !CHLDWTHR
 	check_children();
 #endif
@@ -3672,18 +2246,17 @@ erl_sys_schedule(int runnable)
     erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
 #else
     if (runnable) {
-	check_io(0);		/* Poll for I/O */
+	ERTS_CHK_IO(0);		/* Poll for I/O */
 	check_async_ready();	/* Check async completions */
     } else {
-	check_io(check_async_ready() ? 0 : 1);
+	ERTS_CHK_IO(check_async_ready() ? 0 : 1);
     }
     check_children();
 #endif
 }
 
-
-#ifdef USE_KERNEL_POLL /* get_value() is currently only used when
-			  kernel-poll is used */
+#ifdef ERTS_ENABLE_KERNEL_POLL /* get_value() is currently only used when
+				  kernel-poll is enabled */
 
 /* Get arg marks argument as handled by
    putting NULL in argv */
@@ -3707,7 +2280,7 @@ get_value(char* rest, char** argv, int* ip)
     return rest;
 }
 
-#endif /* #ifdef USE_KERNEL_POLL */
+#endif /* ERTS_ENABLE_KERNEL_POLL */
 
 void
 erl_sys_args(int* argc, char** argv)
@@ -3721,7 +2294,7 @@ erl_sys_args(int* argc, char** argv)
     while (i < *argc) {
 	if(argv[i][0] == '-') {
 	    switch (argv[i][1]) {
-#ifdef USE_KERNEL_POLL
+#ifdef ERTS_ENABLE_KERNEL_POLL
 	    case 'K': {
 		char *arg = get_value(argv[i] + 2, argv, &i);
 		if (strcmp("true", arg) == 0) {
@@ -3748,6 +2321,19 @@ erl_sys_args(int* argc, char** argv)
 
  done_parsing:
 
+#ifdef ERTS_ENABLE_KERNEL_POLL
+    if (erts_use_kernel_poll) {
+	char *no_kp = getenv("ERL_NO_KERNEL_POLL");
+	if (no_kp
+	    && sys_strcmp("false", no_kp) != 0
+	    && sys_strcmp("FALSE", no_kp) != 0) {
+	    erts_use_kernel_poll = 0;
+	}
+    }
+#endif
+
+    init_check_io();
+
     /* Handled arguments have been marked with NULL. Slide arguments
        not handled towards the beginning of argv. */
     for (i = 0, j = 0; i < *argc; i++) {
@@ -3757,371 +2343,6 @@ erl_sys_args(int* argc, char** argv)
     *argc = j;
 }
 
-#ifdef USE_KERNEL_POLL /* kernel poll support */
-
-#ifdef USE_KQUEUE
-
-static void kqueue_init()
-{
-    if ( getenv("ERL_NO_KERNEL_POLL") != NULL ) {
-        DEBUGF(("Use of kqueue disabled\n"));
-        kqueue_fd=-1;
-        return;
-    } 
-    
-    if ( (kqueue_fd=kqueue()) < 0 ) {
-        DEBUGF(("Will use poll()\n"));
-        kqueue_fd = -1;
-    } else {
-	kqueue_res = 
-	    (struct kevent *) erts_alloc(ERTS_ALC_T_POLL_FDS,
-					 (ERL_POLL_READY_ENTRIES
-					  * sizeof(struct kevent)
-					  * max_files));
-	erts_smp_atomic_add(&sys_misc_mem_sz,
-			    (ERL_POLL_READY_ENTRIES
-			     *sizeof(struct kevent)
-			     *max_files));
-    }
-}
-
-static void kqueue_enable()
-{
-    int pix;
-    
-    /*     Add kqueue fd to pollable descriptors */
-    if ( kqueue_fd == -1 ) return;
-    
-    max_fd++;
-    max_poll_idx++;
-    pix = max_fd;
-    fd_data[kqueue_fd].pix = pix;
-    poll_fds[pix].fd = kqueue_fd;
-    poll_fds[pix].events = POLL_INPUT;
-    poll_fds[pix].revents = 0;
-}
-
-static void kqueue_set_event(int fd, int filter, int flags)
-{
-    int res;
-    struct timespec ts;
-    struct kevent ke,*kep=&ke;
-    
-    memset(&ts,(char)0,sizeof(ts));
-    memset(kep,(char)0,sizeof(struct kevent));
-    
-    kep->ident = fd;
-    kep->filter = filter;
-    kep->flags = flags;
-    
-    if ( (res=kevent(kqueue_fd,kep,1,NULL,0,&ts)) == -1 ) {
-        fprintf(stderr,"WARNING: %s:%d kevent call failed errno = %d fd = %d filter = %d flags = %d (ignored)\r\n",
-                __FILE__,__LINE__,errno,fd,filter,flags);
-        if ( (errno == ENOENT) ) return; /* fd is not valid (closed?) */
-        erl_exit(1, "%s:%d kevent call failed. fd = %d filter = %d flags = %d errno = %d\n",
-                 __FILE__,__LINE__,fd,filter,flags,errno);
-    }
-}
-
-static void kqueue_update_pix(int pix, int old_events)
-{
-    struct stat sb;
-    
-    if ( fstat(poll_fds[pix].fd,&sb) == -1 ) {
-        erl_exit(1,"Can't fstat file %d. errno = %d\n",poll_fds[pix].fd,errno);
-    }
-    
-    if ( (kqueue_fd != -1) && ( S_ISFIFO(sb.st_mode) || S_ISSOCK(sb.st_mode) ) ) {
-        
-        /* Input */
-        if ( (poll_fds[pix].events & POLL_INPUT) == POLL_INPUT ) 
-            kqueue_set_event(poll_fds[pix].fd,EVFILT_READ,(EV_ADD|EV_ENABLE));
-        else 
-            if ( ( old_events & POLL_INPUT ) == POLL_INPUT ) 
-                kqueue_set_event(poll_fds[pix].fd,EVFILT_READ,EV_DELETE);
-        
-        /* Output */
-        if ( (poll_fds[pix].events & POLLOUT) == POLLOUT ) 
-            kqueue_set_event(poll_fds[pix].fd,EVFILT_WRITE,(EV_ADD|EV_ENABLE));
-        else 
-            if ( ( old_events & POLLOUT ) == POLLOUT ) 
-                kqueue_set_event(poll_fds[pix].fd,EVFILT_WRITE,EV_DELETE);
-	
-    } else {
-        if ( poll_fds[pix].events == 0 ) {
-            if ( pix != max_poll_idx ) {
-                struct pollfd tmp_pfd;
-                /* swap this slot with max_poll_idx and decrement */
-                tmp_pfd = poll_fds[pix];
-                poll_fds[pix] = poll_fds[max_poll_idx];
-                fd_data[poll_fds[pix].fd].pix = pix;
-                poll_fds[max_poll_idx] = tmp_pfd;
-                fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
-            }
-            max_poll_idx--;
-            /* the normal processing in driver_select will kick it out completely */
-        } else {
-            if ( pix > max_poll_idx ) {
-                max_poll_idx++;
-                if ( max_poll_idx != max_fd ) {
-                    struct pollfd tmp_pfd;
-                    tmp_pfd = poll_fds[max_poll_idx];
-                    poll_fds[max_poll_idx] = poll_fds[pix];
-                    fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
-                    poll_fds[pix] = tmp_pfd;
-                    fd_data[poll_fds[pix].fd].pix = pix;
-                }
-            }
-        }
-    }
-}
-  
-#endif
-
-/* /dev/kpoll support */
-
-#ifdef USE_DEVPOLL
-
-#if HAVE_LINUX_KPOLL_H
-static void kpoll_enable()
-{
-    int pix;
-    
-    /* Add /dev/epoll fd to pollable descriptors */
-    if ( dev_poll_fd == -1 ) return;
-    
-    max_fd++;
-    max_poll_idx++;
-    pix = max_fd;
-    fd_data[dev_poll_fd].pix = pix;
-    poll_fds[pix].fd = dev_poll_fd;
-    poll_fds[pix].events = POLL_INPUT;
-    poll_fds[pix].revents = 0;
-}
-
-static void kpoll_init()
-{
-    if ( (dev_poll_fd=open("/dev/kpoll",O_RDWR)) < 0 ) {
-        /* This will happen if the module is not inserted yet as well... */
-        DEBUGF(("Will use poll()\n"));
-        dev_poll_fd = -1; /* We will not use /dev/kpoll */
-    } else {
-      DEBUGF(("Will use /dev/kpoll\n"));
-      if ( ioctl(dev_poll_fd,KP_ALLOC,max_files) == -1 ) {
-	perror("ioctl(KP_ALLOC)");
-	erl_exit(1, "Can't allocate %d /dev/kpoll file descriptors\n",
-		 max_files);
-      }
-      if ( (dev_poll_map = (char *)mmap(NULL,KP_MAP_SIZE(max_files),
-					PROT_READ|PROT_WRITE, 
-					MAP_PRIVATE, dev_poll_fd, 0)) == NULL ) {
-	erl_exit(1, "Can't mmap /dev/kpoll result area.\n");
-      }
-      dev_poll_rfds =  NULL;
-    }
-}
-
-#endif /* HAVE_LINUX_KPOLL_H */
-
-#ifdef HAVE_SYS_DEVPOLL_H
-
-static void solaris_devpoll_init(void)
-{
-    if ( (dev_poll_fd=open("/dev/poll",O_RDWR)) < 0 ) {
-        DEBUGF(("Will use poll()\n"));
-        dev_poll_fd = -1; /* We will not use /dev/poll */
-    } else {
-        DEBUGF(("Will use /dev/poll\n"));
-        dev_poll_rfds =
-	    (struct pollfd *) erts_alloc(ERTS_ALC_T_POLL_FDS,
-					 max_files * sizeof(struct pollfd));
-	erts_smp_atomic_add(&sys_misc_mem_sz, max_files*sizeof(struct pollfd));
-    }
-}
-
-#endif
-
-static void devpoll_init(void) 
-{
-    if ( getenv("ERL_NO_KERNEL_POLL") != NULL ) {
-        DEBUGF(("Use of kernel poll disabled.\n"));
-        dev_poll_fd=-1;
-    } else {
-        /* Determine use of poll vs. /dev/poll at runtime */
-#ifdef HAVE_LINUX_KPOLL_H
-        kpoll_init();
-#else
-#ifdef HAVE_SYS_DEVPOLL_H
-        solaris_devpoll_init();
-#endif
-#endif
-    }
-}
-
-static int devpoll_write(int fd, void *buf, size_t count)
-{
-    int res;
-    int left = count;
-
-    do {
-        if ( (res=write(fd,buf,left)) < 0 ) {
-            if ( errno == EINTR ) continue;
-            return res;
-        } else {
-            buf += res;
-            left -= res;
-        }
-    } while (left);
-    return count;
-}
-
-static void devpoll_update_pix(int pix)
-{
-    int res;
-
-#if HAVE_LINUX_KPOLL_H
-    struct stat sb;
-
-    if ( fstat(poll_fds[pix].fd,&sb) == -1 ) {
-        erl_exit(1,"Can't fstat file %d. errno = %d\n",poll_fds[pix].fd,errno);
-    }
-
-    if ( (dev_poll_fd != -1 ) && (S_ISFIFO(sb.st_mode) || S_ISSOCK(sb.st_mode)) ) {
-
-#endif
-    if ( dev_poll_fd != -1 ) {
-        if ( (res=devpoll_write(dev_poll_fd,&poll_fds[pix],sizeof(struct pollfd))) != 
-             (sizeof(struct pollfd)) ) {
-            erl_exit(1,"Can't write to /dev/poll\n");
-        }
-    }
-#if HAVE_LINUX_KPOLL_H
-    } else {
-        if ( poll_fds[pix].events & POLLREMOVE ) {
-            if ( pix != max_poll_idx ) {
-                struct pollfd tmp_pfd;
-                /* swap this slot with max_poll_idx and decrement */
-                tmp_pfd = poll_fds[pix];
-                poll_fds[pix] = poll_fds[max_poll_idx];
-                fd_data[poll_fds[pix].fd].pix = pix;
-                poll_fds[max_poll_idx] = tmp_pfd;
-                fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
-            }
-            max_poll_idx--;
-            /* the normal processing in driver_select will kick it out completely */
-        } else {
-            if ( pix > max_poll_idx ) {
-                max_poll_idx++;
-                if ( max_poll_idx != max_fd ) {
-                    struct pollfd tmp_pfd;
-                    tmp_pfd = poll_fds[max_poll_idx];
-                    poll_fds[max_poll_idx] = poll_fds[pix];
-                    fd_data[poll_fds[max_poll_idx].fd].pix = max_poll_idx;
-                    poll_fds[pix] = tmp_pfd;
-                    fd_data[poll_fds[pix].fd].pix = pix;
-                }
-            }
-        }
-    }
-#endif /* HAVE_LINUX_KPOLL_H */
-}
-
-
-#ifdef HAVE_SYS_DEVPOLL_H
-
-static void devpoll_clear_pix(int pix)
-{
-    struct pollfd tmp = poll_fds[pix];
-    tmp.events = POLLREMOVE;
-
-    if ( dev_poll_fd != -1 ) {
-        if ( (devpoll_write(dev_poll_fd,&tmp,sizeof(struct pollfd))) != 
-             (sizeof(struct pollfd)) ) {
-            erl_exit(1,"Can't write to /dev/poll\n");
-        }
-    }
-}
-#endif /* HAVE_SYS_DEVPOLL_H */
-
-#endif /* USE_DEVPOLL */
-
-#endif /* USE_KERNEL_POLL */
-
-#ifdef ERTS_SMP
-
-static int
-io_thr_waker_init(void)
-{
-    io_thr_waker_data.started = 0;
-    return 0;
-}
-
-static ErlDrvData
-io_thr_waker_start(ErlDrvPort port, char* buf, SysDriverOpts* opts)
-{
-    if (io_thr_waker_data.started)
-	return ERL_DRV_ERROR_BADARG;
-    if (pipe(io_thr_waker_data.fds) < 0)
-	return ERL_DRV_ERROR_ERRNO;
-    SET_NONBLOCKING(io_thr_waker_data.fds[0]);
-    SET_NONBLOCKING(io_thr_waker_data.fds[1]);
-    driver_select(port, io_thr_waker_data.fds[0], DO_READ, 1);
-    io_thr_waker_data.started = 1;
-    return (ErlDrvData) ((void *) &io_thr_waker_data);
-}
-
-static void
-io_thr_waker_ready_input(ErlDrvData drv_data, ErlDrvEvent event)
-{
-    char *buf[32];
-    while (read((int) event, (void *) buf, 32) > 0);
-}
-
-static ErlDrvEntry io_thr_waker_drv_entry = {
-    io_thr_waker_init,
-    io_thr_waker_start,
-    NULL,
-    NULL,
-    io_thr_waker_ready_input,
-    NULL,
-    "io_thr_waker",
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL,
-    NULL
-};
-
-static void
-init_io_thr_waker_drv(void)
-{
-    SysDriverOpts dopts;
-    int ret;
-
-    erts_smp_mtx_init(&io_wake_mtx, "io_wake");
-    erts_smp_io_lock();
-
-    io_thr_waker_init();
-
-    sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
-    add_driver_entry(&io_thr_waker_drv_entry);
-    ret = open_driver(&io_thr_waker_drv_entry, NIL, "io_thr_waker", &dopts);
-
-    erts_smp_io_unlock();
-    if (ret < 0)
-	erl_exit(1, "Failed to start io_thr_waker driver (%d)\n", ret);
-    erts_port[ret].status |= ERTS_IMMORTAL_PORT;
-}
-
-void
-erts_wake_io_thread(void)
-{
-    if (erts_smp_atomic_xchg(&io_thread_waiting, 0))
-	write(io_thr_waker_data.fds[1], "!", 1);
-}
-
-#endif /* #ifdef ERTS_SMP */
 
 #ifdef ERTS_TIMER_THREAD
 
@@ -4177,7 +2398,7 @@ static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
 	perror("FUTEX_WAKE");
 }
 
-#elif !defined(USE_SELECT) /* apparently this is the way to say USE_POLL, bleah */
+#elif defined(ERTS_USE_POLL)
 
 /*
  * This is an implementation of the interruptible wait facility on

@@ -23,6 +23,13 @@
 
 -behaviour(gen_server).
 
+
+%%-----------------------------------------------------------------
+%% Include files
+%%-----------------------------------------------------------------
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
+
+
 %% Application internal exports
 -export([
 	 start_link/0,
@@ -55,8 +62,7 @@
 -record(state, {parent_pid}).
 -record(apply_at_exit, {ref, pid, module, function, arguments}).
 
-%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
--define(d(F,A), ok).
+
 
 %%%----------------------------------------------------------------------
 %%% API
@@ -159,6 +165,7 @@ init([Parent]) ->
     ?d("init -> done", []),
     {ok, #state{parent_pid = Parent}}.
 
+
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
 %% Returns: {reply, Reply, State}          |
@@ -180,10 +187,11 @@ handle_call({apply_at_exit, M, F, A, Pid}, _From, S) ->
     Reply = Ref,
     {reply, Reply, S};
 
-handle_call(Request, From, S) ->
-    error("handle_call(~p, ~p, ~p)", [Request, From, S]),
-    Reply = {error, {bad_request, Request}},
-    {reply, Reply, S}.
+handle_call(Req, From, S) ->
+    warning_msg("received unexpected request from ~p: "
+		"~n~w",[From, Req]),
+    {reply, {error, {bad_request, Req}}, S}.
+
 
 %%----------------------------------------------------------------------
 %% Func: handle_cast/2
@@ -192,7 +200,8 @@ handle_call(Request, From, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_cast(Msg, S) ->
-    error("handle_cast(~p, ~p)", [Msg, S]),
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -239,12 +248,10 @@ handle_info({'EXIT', Pid, Reason}, S) when Pid == S#state.parent_pid ->
     {stop, Reason, S};
 
 handle_info(Info, S) ->
-    error("handle_info(~p, ~p)", [Info, S]),
+    warning_msg("received unknown info: "
+		"~n~w", [Info]),
     {noreply, S}.
 
-
-error(F, A) ->
-    ok = error_logger:format("~p(~p): " ++ F ++ "~n", [?MODULE, self()|A]).
 
 %%----------------------------------------------------------------------
 %% Func: terminate/2
@@ -262,6 +269,7 @@ terminate(_Reason, _State) ->
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
+
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
@@ -275,6 +283,8 @@ handle_apply(_Method, M, F, A, _ErrorTag) ->
     (catch apply(M, F, A)).
 
 
+warning_msg(F, A) ->
+    ?megaco_warning("Monitor server: " ++ F, A).
 
 
 % d(F) ->

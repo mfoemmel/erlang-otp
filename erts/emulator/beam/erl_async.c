@@ -57,14 +57,8 @@ static ErlAsync* async_ready_list = NULL;
 /* Detach from driver */
 static void async_detach(DE_Handle* dh)
 {
-    if (dh != NULL) {
-	dh->ref_count--;
-	DEBUGF(("async_detach: ref_count=%d\r\n", dh->ref_count));
-	if (dh->ref_count == 0) {
-	    if (dh->cb != NULL)
-		(*dh->cb)(dh->ca[0],dh->ca[1],dh->ca[2],dh->ca[3]);
-	}
-    }
+    /* XXX:PaN what should happen here? we want to unload the driver or??? */
+    return;
 }
 
 
@@ -139,8 +133,9 @@ int exit_async()
 
 static void async_add(ErlAsync* a, AsyncQueue* q)
 {
+    /* XXX:PaN Is this still necessary when ports lock drivers? */
     if (a->port != -1)
-	driver_attach(a->port);  /* make sure the driver will stay around */
+	driver_lock_driver(a->port);/*make sure the driver will stay around*/
 
     erts_mtx_lock(&q->mtx);
 

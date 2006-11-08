@@ -57,8 +57,10 @@
 	]).
 
 %% Statistics exports
--export([get_stats/0, get_stats/1, get_stats/2,
-	 reset_stats/0, reset_stats/1]).
+-export([
+	 get_stats/0, get_stats/1, get_stats/2,
+	 reset_stats/0, reset_stats/1
+	]).
 
 
 %%-----------------------------------------------------------------
@@ -338,9 +340,11 @@ init({SupPid, _}) ->
 terminate(_Reason, _State) ->
     ok.
 
+
 %%-----------------------------------------------------------------
 %% Internal Functions
 %%-----------------------------------------------------------------
+
 %%-----------------------------------------------------------------
 %% Func: start_tcp_listener/2
 %% Description: Function which parses the list of transport layers
@@ -363,6 +367,7 @@ start_tcp_listener(P, State) ->
 	    {reply, {error, {could_not_start_listener, Reason}}, State}
     end.
 
+
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
 %% Description: Handling call messages (really just garbage)
@@ -371,17 +376,21 @@ handle_call({add_listener, Parameters}, _From, State) ->
     ?d1("handle_call(add_listener) -> entry with"
 	"~n   Parameters: ~p", [Parameters]),
     start_tcp_listener(Parameters, State);
-handle_call(Request, From, State) ->
-    error_logger:error_report([{?MODULE, {garbage_call, Request, From}}]),
+handle_call(Req, From, State) ->
+    warning_msg("received unexpected request from ~p: "
+		"~n~w", [From, Req]),
     {noreply, State}.
+
 
 %%------------------------------------------------------------
 %% Func: handle_cast/2
 %% Description: Handling cast messages (really just garbage)
 %%------------------------------------------------------------
-handle_cast(Request, State) ->
-    error_logger:error_report([{?MODULE, {garbage_cast, Request}}]),
+handle_cast(Msg, State) ->
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply,  State}.
+
 
 %%-----------------------------------------------------------------
 %% Func: handle_info/2
@@ -392,23 +401,18 @@ handle_info({'EXIT', Pid, Reason}, State) when pid(Pid) ->
     NewState = resetup(Pid, Reason, State),
     {noreply, NewState};
 handle_info(Info, State) ->
-    error_logger:error_report([{?MODULE, {garbage_info, Info}}]),
+    warning_msg("received unexpected info: "
+		"~n~w", [Info]),
     {noreply,  State}.
+
 
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(_Vsn, State, upgrade_from_1_1_0) ->
-%     io:format("~pmegaco_tcp:code_change(upgrade_from_1_1_0)~n", [self()]),
-    megaco_stats:init(megaco_tcp_stats),
-    {ok, State};
-code_change(_Vsn, State, downgrade_to_1_1_0) ->
-%     io:format("~pmegaco_tcp:code_change(downgrade_to_1_1_0)~n", [self()]),
-    ets:delete(megaco_tcp_stats),
-    {ok, State};
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
+
 
 %%-----------------------------------------------------------------
 %% Internal functions
@@ -481,9 +485,10 @@ setup(SupPid, Options) ->
 
 %%-----------------------------------------------------------------
 %% Func: resetup
-%% Description: Function is used when restarting teh accept process
-%%              if it died of some reason.
+%% Description: Function is used when restarting the accept process
+%%              if it died for some reason.
 %%-----------------------------------------------------------------
+
 resetup(Pid, Reason, State) ->
     ?d1("resetup -> entry with"
 	"~n   Pid:    ~p"
@@ -495,6 +500,9 @@ resetup(Pid, Reason, State) ->
 		"~n   Listener: ~p", [TcpRec, Listener]),
 	    ?tcp_debug(TcpRec, "tcp listen resetup", [{error, Reason}]),
 	    unlink(Pid),
+	    warning_msg("received unexpected 'EXIT' signal "
+			"from accept process ~p: "
+			"~n~w", [Pid, Reason]),
 	    case start_accept(State#state.supervisor_pid, TcpRec, Listener) of
 		{ok, NewPid} ->
 		    ?d1("resetup -> start new accept process ok: "
@@ -511,8 +519,11 @@ resetup(Pid, Reason, State) ->
 		    State
 	    end;
 	false ->
+	    warning_msg("received unexpected 'EXIT' signal from ~p: "
+			"~n~w", [Pid, Reason]),
 	    State
     end.
+
 
 %%-----------------------------------------------------------------
 %% Func: start_accept
@@ -635,6 +646,13 @@ incCounter(Key, Inc) ->
 
 
 %%-----------------------------------------------------------------
+
+
+warning_msg(F, A) ->
+    ?megaco_warning("TCP server: " ++ F, A).
+  
+%% error_msg(F, A) ->
+%%     ?megaco_error("TCP server: " ++ F, A).
 
 
 call(Pid, Req) ->

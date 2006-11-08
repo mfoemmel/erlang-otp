@@ -174,7 +174,7 @@ static void unmask_fpe(void)
     __asm__ __volatile__("fldcw %0" : : "m"(cw));
 }
 
-void erts_restore_x87(void)
+static void erts_restore_x87(void)
 {
     __asm__ __volatile__("fninit");
     unmask_fpe();

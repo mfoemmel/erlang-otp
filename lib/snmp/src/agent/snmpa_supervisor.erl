@@ -30,6 +30,7 @@
 
 -define(SERVER, ?MODULE).
 
+-include("snmpa_internal.hrl").
 -include("snmp_verbosity.hrl").
 -include("snmp_debug.hrl").
 
@@ -168,8 +169,10 @@ init([AgentType, Opts]) ->
     ?d("init -> entry with"
       "~n   AgentType: ~p"
       "~n   Opts:      ~p", [AgentType, Opts]),
+
     put(sname, asup),
     put(verbosity,get_verbosity(Opts)),
+
     ?vlog("starting",[]),
 
     ?vdebug("create agent table",[]),
@@ -180,7 +183,7 @@ init([AgentType, Opts]) ->
 
     %% Get restart type for the agent
     Restart = get_opt(restart_type, Opts, permanent),
-    ?vdebug("agent restart type:  w", [Restart]),
+    ?vdebug("agent restart type: ~w", [Restart]),
 
     %% -- Agent type --
     ets:insert(snmp_agent_table, {agent_type, AgentType}),
@@ -512,7 +515,6 @@ get_verbosity(Opts) ->
 
 get_agent_type(Opts) ->
     get_opt(agent_type, Opts, master).
-	
 
 get_opt(Key, Opts) ->
     snmp_misc:get_option(Key, Opts).
@@ -527,7 +529,7 @@ key1search(Key, List) ->
 %%-----------------------------------------------------------------
 
 error_msg(F, A) ->
-    error_logger:info_msg("snmpa: " ++ F ++ "~n", A).
+    ?snmpa_error(F, A).
 
 % i(F) ->
 %     i(F, []).

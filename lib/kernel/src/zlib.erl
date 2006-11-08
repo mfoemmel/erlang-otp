@@ -359,28 +359,28 @@ read_gzip_header(Flags, Binary, Offs0, Gz0) ->
 		<<_:Offs0/binary, Len:16/little, _/binary>> = Binary,
 		Offs00 = Offs0+2,
 		<<_:Offs00/binary, Extra:Len/binary,_/binary>> = Binary,
-		{Gz0#gzip { extra = Extra }, Offs0 + 2 + Len};
+		{Gz0#gzip{extra = Extra}, Offs0 + 2 + Len};
 	   true -> 
 		{Gz0,Offs0}
 	end,
      {Gz2,Offs2} = 
 	if (Flags band ?FNAME) =/= 0 ->
 		Name = cname(Binary, Offs1),
-		{Gz1#gzip { name = Name}, Offs1 + length(Name)+1 };
+		{Gz1#gzip{name = Name}, Offs1 + length(Name)+1};
 	   true ->
 		{Gz1, Offs1}
 	end,
     {Gz3, Offs3} = 
 	if (Flags band ?FCOMMENT) =/= 0 ->
 		Comment = cname(Binary, Offs2),
-		{Gz2#gzip { comment = Comment}, Offs2 + length(Comment)+1};
+		{Gz2#gzip{comment = Comment}, Offs2 + length(Comment)+1};
 	   true ->
 		{Gz2, Offs2}
 	end,
     {Gz4, Offs4} = 
 	if (Flags band ?FHCRC) =/= 0 ->
 		<<_:Offs3, Crc:16/little, _/binary>> = Binary,
-		{Gz3#gzip { crc = Crc }, Offs3+2};
+		{Gz3#gzip{crc = Crc}, Offs3+2};
 	   true ->
 		{Gz3, Offs3}
 	end,
@@ -391,7 +391,7 @@ read_gzip_header(Flags, Binary, Offs0, Gz0) ->
 cname(Binary, Offs) ->
     case Binary of
 	<<_:Offs/binary, C, _/binary>> ->
-	    if C == 0 -> [];
+	    if C =:= 0 -> [];
 	       true -> [C|cname(Binary, Offs+1)]
 	    end;
 	<<_:Offs/binary>> ->
@@ -429,10 +429,10 @@ arg_level(none)             -> ?Z_NO_COMPRESSION;
 arg_level(best_speed)       -> ?Z_BEST_SPEED;
 arg_level(best_compression) -> ?Z_BEST_COMPRESSION;
 arg_level(default)          -> ?Z_DEFAULT_COMPRESSION;
-arg_level(Level) when Level >= 0, Level =< 9  -> Level;
+arg_level(Level) when is_integer(Level), Level >= 0, Level =< 9 -> Level;
 arg_level(_) -> erlang:error(badarg).
      
-arg_strategy(filtered) -> ?Z_FILTERED;
+arg_strategy(filtered) ->     ?Z_FILTERED;
 arg_strategy(huffman_only) -> ?Z_HUFFMAN_ONLY;
 arg_strategy(default) ->      ?Z_DEFAULT_STRATEGY;
 arg_strategy(_) -> erlang:error(badarg).
@@ -440,10 +440,10 @@ arg_strategy(_) -> erlang:error(badarg).
 arg_method(deflated) -> ?Z_DEFLATED;
 arg_method(_) -> erlang:error(badarg).
 
-arg_bitsz(Bits) when 8 < abs(Bits), abs(Bits) =< 15 ->  Bits;
+arg_bitsz(Bits) when is_integer(Bits), 8 < abs(Bits), abs(Bits) =< 15 -> Bits;
 arg_bitsz(_) -> erlang:error(badarg).
 
-arg_mem(Level) when is_integer(Level), 1 =< Level , Level =< 9 -> Level;
+arg_mem(Level) when is_integer(Level), 1 =< Level, Level =< 9 -> Level;
 arg_mem(_) -> erlang:error(badarg).
 
 call(Z, Cmd, Arg) ->

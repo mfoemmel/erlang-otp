@@ -346,6 +346,17 @@ int hipe_bs_put_small_float(
   return res;
 }
 
+void hipe_bs_put_bits(
+    Eterm arg, Uint num_bits, byte* base, unsigned offset, unsigned flags)
+{ 
+  Uint Bitoffs,Bitsize;
+  byte* Bytep;
+  ERTS_GET_BINARY_BYTES(arg,Bytep,Bitoffs,Bitsize);
+  erts_copy_bits(Bytep,Bitoffs,1,base,offset,1,num_bits);
+  return;
+}
+  
+
 /*
  * SMP-specific stuff
  */

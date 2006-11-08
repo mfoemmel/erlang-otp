@@ -179,22 +179,6 @@
 /* Define if you have the ieee_handler() function. */
 #undef HAVE_IEEE_HANDLER
 
-/* Define if you want to try to enable kernel poll */
-#undef ENABLE_KERNEL_POLL
-
-/* Define if you have the <sys/devpoll.h> header file. */
-#undef HAVE_SYS_DEVPOLL_H
- 
-/* Define if you have the <linux/kpoll.h> header file. */
-#undef HAVE_LINUX_KPOLL_H
- 
-/* Define if you have the <sys/event.h> header file. */
-#undef HAVE_SYS_EVENT_H
-
-/* Define if you don't have poll.h and a working poll() function. */
-#undef USE_SELECT
-
-
 /*
  * The lines below this marker is copied into the bottom of config.h.in
  */
@@ -220,14 +204,6 @@
 
 #ifdef REDEFINE_FD_SETSIZE
 #define FD_SETSIZE 1024
-#endif
-
-#if !defined(USE_SELECT) && !defined(ERTS_SMP)
-#  if defined(ENABLE_KERNEL_POLL)
-#    if defined(HAVE_SYS_DEVPOLL_H) || defined(HAVE_LINUX_KPOLL_H) || defined(HAVE_SYS_EVENT_H)
-#      define USE_KERNEL_POLL
-#    endif
-#  endif
 #endif
  
 #ifdef HAVE_GETHRVTIME_PROCFS_IOCTL

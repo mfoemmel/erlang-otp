@@ -153,9 +153,9 @@ type	REG_TABLE	STANDARD	SYSTEM		reg_tab
 type	FUN_TABLE	STANDARD	CODE		fun_tab
 type	DIST_TABLE	STANDARD	SYSTEM		dist_tab
 type	NODE_TABLE	STANDARD	SYSTEM		node_tab
-type	ATOM_TABLE	STANDARD	ATOM		atom_tab
-type	EXPORT_TABLE	STANDARD	CODE		export_tab
-type	MODULE_TABLE	STANDARD	CODE		module_tab
+type	ATOM_TABLE	LONG_LIVED	ATOM		atom_tab
+type	EXPORT_TABLE	LONG_LIVED	CODE		export_tab
+type	MODULE_TABLE	LONG_LIVED	CODE		module_tab
 type	MODULE_REFS	STANDARD	CODE		module_refs
 type	NC_TMP		TEMPORARY	SYSTEM		nc_tmp
 type	TMP		TEMPORARY	SYSTEM		tmp
@@ -209,7 +209,10 @@ type	TMP_DSBUF	TEMPORARY	SYSTEM		tmp_dsbuf
 type	INFO_DSBUF	SYSTEM		SYSTEM		info_dsbuf
 # INFO_DSBUF have to use the SYSTEM allocator; otherwise, a deadlock might occur
 type	SCHDLR_DATA	LONG_LIVED	PROCESSES	scheduler_data
-
+type	DDLL_PROCESS	STANDARD	SYSTEM		ddll_processes
+type	DDLL_HANDLE	STANDARD	SYSTEM		ddll_handle
+type	DDLL_ERRCODES	LONG_LIVED	SYSTEM		ddll_errcodes
+type	DDLL_TMP_BUF	TEMPORARY	SYSTEM		ddll_tmp_buf
 #
 # Types used for special emulators
 #
@@ -272,15 +275,17 @@ type	DRV_TAB		LONG_LIVED	SYSTEM		drv_tab
 type	SYS_READ_BUF	TEMPORARY	SYSTEM		sys_read_buf
 type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
 type	FD_ENTRY_BUF	STANDARD	SYSTEM		fd_entry_buf
-type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
-type	READY_FDS	LONG_LIVED	SYSTEM		ready_fds
+type	FD_LIST		SHORT_LIVED	SYSTEM		fd_list
 type	CS_PROG_PATH	LONG_LIVED	SYSTEM		cs_prog_path
 type	ENVIRONMENT	SYSTEM		SYSTEM		environment
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
-
-+if smp
-type	SELECT_ENTRY	SHORT_LIVED	SYSTEM		select_entry
-+endif
+type	POLLSET		LONG_LIVED	SYSTEM		poll_set
+type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
+type	POLL_RES_EVS	LONG_LIVED	SYSTEM		poll_result_events
+type	FD_STATUS	LONG_LIVED	SYSTEM		fd_status
+type	DRV_EV_STATE	LONG_LIVED	SYSTEM		driver_event_state
+type	DRV_EV_D_STATE	STANDARD	SYSTEM		driver_event_data_state
+type	POLLSET_UPDREQ	SHORT_LIVED	SYSTEM		pollset_update_req
 
 +endif
 

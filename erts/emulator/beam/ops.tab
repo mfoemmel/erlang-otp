@@ -892,17 +892,6 @@ i_bif2 f b d
 i_bif2_body b d
 
 #
-# New guard Bifs that may garbage collect (instead of building heap fragments).
-#
-
-gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => bif1 Fail Bif Src Dst
-gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => bif1 Fail Bif Src Dst
-gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => bif1 Fail Bif Src Dst
-gc_bif1 Fail I Bif=u$bif:erlang:float/1 Src Dst=d => bif1 Fail Bif Src Dst
-gc_bif1 Fail I Bif=u$bif:erlang:round/1 Src Dst=d => bif1 Fail Bif Src Dst
-gc_bif1 Fail I Bif=u$bif:erlang:trunc/1 Src Dst=d => bif1 Fail Bif Src Dst
-
-#
 # Internal calls.
 #
 
@@ -962,7 +951,6 @@ call_fun Arity=u => i_call_fun Arity
 i_call_fun I
 i_call_fun_last I P
 
-make_fun Lbl=f Uniq=u NumFree=u => gen_make_fun(Lbl, Uniq, NumFree)
 make_fun2 OldIndex=u => gen_make_fun2(OldIndex)
 
 %macro: i_make_fun MakeFun -pack
@@ -1025,8 +1013,8 @@ i_bs_get_binary_imm2 f r I I I d
 i_bs_get_binary_imm2 f x I I I d
 i_bs_get_binary2 f r I s I d
 i_bs_get_binary2 f x I s I d
-i_bs_get_binary_all2 f r I d
-i_bs_get_binary_all2 f x I d
+i_bs_get_binary_all2 f r I I d
+i_bs_get_binary_all2 f x I I d
 
 # Fetching float from binaries.
 bs_get_float2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
@@ -1054,8 +1042,8 @@ i_bs_skip_bits2 f x r I
 i_bs_skip_bits2 f x y I
 
 %macro: i_bs_skip_bits_all2 BsSkipBitsAll2 -fail_action
-i_bs_skip_bits_all2 f r
-i_bs_skip_bits_all2 f x
+i_bs_skip_bits_all2 f r I
+i_bs_skip_bits_all2 f x I 
 
 bs_test_tail2 Fail=f Ms=rx Bits=u==0 => bs_test_zero_tail2 Fail Ms
 bs_test_tail2 Fail=f Ms=rx Bits=u => bs_test_tail_imm2 Fail Ms Bits
@@ -1101,6 +1089,18 @@ bs_bits_to_bytes Fail Src Dst => i_bs_bits_to_bytes Src Fail Dst
 i_bs_bits_to_bytes r j d
 i_bs_bits_to_bytes x j d
 i_bs_bits_to_bytes y j d
+
+bs_bits_to_bytes2 Src Dst => i_bs_bits_to_bytes2 Src Dst
+
+i_bs_bits_to_bytes2 r d
+i_bs_bits_to_bytes2 x d
+i_bs_bits_to_bytes2 y d
+
+bs_final2 Src Dst => i_bs_final2 Src Dst
+
+i_bs_final2 r d
+i_bs_final2 x d
+i_bs_final2 y d
 
 bs_add Fail S1 S2 Unit D => i_fetch S1 S2 | i_bs_add Fail Unit D
 

@@ -37,7 +37,9 @@
 typedef struct erl_sub_bin {
     Eterm thing_word;		/* Subtag SUB_BINARY_SUBTAG. */
     Uint size;			/* Binary size in bytes. */
+    Uint bitsize; 
     Uint offs;			/* Offset into original binary. */
+    Uint bitoffs; 
     Eterm orig;			/* Original binary (REFC or HEAP binary). */
 } ErlSubBin;
 
@@ -67,24 +69,40 @@ typedef struct erl_heap_bin {
 
 #define binary_size(Bin) (binary_val(Bin)[1])
 
+#define binary_bitsize(Bin)			\
+  ((*binary_val(Bin) == HEADER_SUB_BIN) ?	\
+   ((ErlSubBin *) binary_val(Bin))->bitsize:	\
+   0)
+
+#define binary_bitoffset(Bin)			\
+  ((*binary_val(Bin) == HEADER_SUB_BIN) ?	\
+   ((ErlSubBin *) binary_val(Bin))->bitoffs:	\
+   0)
+
 /*
  * Get the pointer to the actual data bytes in a binary.
- * Works for any type of binary.
+ * Works for any type of binary. Always use binary_bytes() if
+ * you know that the binary cannot be a sub binary.
  *
  * Bin: input variable (Eterm)
  * Bytep: output variable (byte *)
+ * Bitoffs: output variable (Uint)
+ * Bitsize: output variable (Uint)
  */
 
-#define GET_BINARY_BYTES(Bin,Bytep)					\
+#define ERTS_GET_BINARY_BYTES(Bin,Bytep,Bitoffs,Bitsize)		\
 do {									\
     Eterm* _real_bin = binary_val(Bin);					\
     Uint _offs = 0;							\
-    if (thing_subtag(*_real_bin) == SUB_BINARY_SUBTAG) {		\
+    Bitoffs = Bitsize = 0;						\
+    if (*_real_bin == HEADER_SUB_BIN) {					\
 	ErlSubBin* _sb = (ErlSubBin *) _real_bin;			\
 	_offs = _sb->offs;						\
+        Bitoffs = _sb->bitoffs;						\
+        Bitsize = _sb->bitsize;						\
 	_real_bin = binary_val(_sb->orig);				\
     }									\
-    if (thing_subtag(*_real_bin) == REFC_BINARY_SUBTAG) {		\
+    if (*_real_bin == HEADER_PROC_BIN) {				\
 	Bytep = ((ProcBin *) _real_bin)->bytes + _offs;			\
     } else {								\
 	Bytep = (byte *)(&(((ErlHeapBin *) _real_bin)->data)) + _offs;	\
@@ -93,44 +111,51 @@ do {									\
 
 /*
  * Get the real binary from any binary type, where "real" means
- * a REFC or HEAP binary. Also get the byte offset into the
+ * a REFC or HEAP binary. Also get the byte and bit offset into the
  * real binary. Useful if you want to build a SUB binary from
  * any binary.
  *
  * Bin: Input variable (Eterm)
  * RealBin: Output variable (Eterm)
- * Offset: Output variable (Uint)
+ * ByteOffset: Output variable (Uint)
+ * BitOffset: Offset in bits (Uint)
+ * BitSize: Extra bit size (Uint)
  */
 
-#define GET_REAL_BIN(Bin, RealBin, Offset)			\
-do {								\
-    ErlSubBin* _sb = (ErlSubBin *) binary_val(Bin);		\
-    Offset = 0;							\
-    RealBin = Bin;							\
-    if (thing_subtag(_sb->thing_word) == SUB_BINARY_SUBTAG) {	\
-	Offset = _sb->offs;					\
-	RealBin = _sb->orig;					\
-    }								\
-} while (0)
+#define ERTS_GET_REAL_BIN(Bin, RealBin, ByteOffset, BitOffset, BitSize)	\
+  do {									\
+    ErlSubBin* _sb = (ErlSubBin *) binary_val(Bin);			\
+    if (_sb->thing_word == HEADER_SUB_BIN) {				\
+      RealBin = _sb->orig;						\
+      ByteOffset = _sb->offs;						\
+      BitOffset = _sb->bitoffs;						\
+      BitSize = _sb->bitsize;						\
+    } else {								\
+      RealBin = Bin;							\
+      ByteOffset = BitOffset = BitSize = 0;				\
+    }									\
+  } while (0)
 
 /*
- * Returns the pointer to the actual data bytes in a binary.
- * The binary must be a REFC or HEAP binary, not a SUB binary.
+ * Get a pointer to the binary bytes, for a heap or refc binary
+ * (NOT sub binary).
  */
-
-#define binary_bytes(Bin)					\
-((thing_subtag(*binary_val(Bin)) == REFC_BINARY_SUBTAG) ?	\
- ((ProcBin *) binary_val(Bin))->bytes :				\
- (byte *)(&(((ErlHeapBin *) binary_val(Bin))->data)))
-
+#define binary_bytes(Bin)						\
+  (*binary_val(Bin) == HEADER_PROC_BIN ?				\
+   ((ProcBin *) binary_val(Bin))->bytes :				\
+   (ASSERT_EXPR(thing_subtag(*binary_val(Bin)) == HEAP_BINARY_SUBTAG),	\
+   (byte *)(&(((ErlHeapBin *) binary_val(Bin))->data))))
 
 void erts_init_binary(void);
 extern Uint erts_allocated_binaries;
 extern erts_mtx_t erts_bin_alloc_mtx;
 
+byte* erts_get_aligned_binary_bytes(Eterm, byte**);
+
 #define ERTS_CHK_BIN_ALIGNMENT(B) \
   ASSERT((((Uint) &((Binary *)(B))->orig_bytes[0]) & ((Uint)7)) == ((Uint)0))
 
+ERTS_GLB_INLINE void erts_free_aligned_binary_bytes(byte* buf);
 ERTS_GLB_INLINE Uint erts_get_binaries_size(void);
 ERTS_GLB_INLINE Binary *erts_bin_drv_alloc_fnf(Uint size);
 ERTS_GLB_INLINE Binary *erts_bin_nrml_alloc(Uint size);
@@ -139,6 +164,14 @@ ERTS_GLB_INLINE Binary *erts_bin_realloc(Binary *bp, Uint size);
 ERTS_GLB_INLINE void erts_bin_free(Binary *bp);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
+
+ERTS_GLB_INLINE void
+erts_free_aligned_binary_bytes(byte* buf)
+{
+    if (buf) {
+	erts_free(ERTS_ALC_T_TMP, (void *) buf);
+    }
+}
 
 ERTS_GLB_INLINE Uint
 erts_get_binaries_size(void)

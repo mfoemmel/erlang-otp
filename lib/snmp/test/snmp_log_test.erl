@@ -505,8 +505,9 @@ log_writer_start(Name, File, Size, Repair) ->
 	{'EXIT', Pid, Reason} ->
 	    {error, Reason}
     after 60000 ->
-	    Msg = receive Any -> Any after 0 -> nothing end,
-	    exit({failed_starting_writer, timeout, Msg})
+	    Msg  = receive Any -> Any after 0 -> nothing end,
+	    Info = (catch process_info(Pid)),
+	    exit({failed_starting_writer, timeout, Msg, Info})
     end.
 
 log_writer_stop(Pid) ->
@@ -518,8 +519,9 @@ log_writer_stop(Pid) ->
 	    ?DBG("it took ~w ms to stop the writer", [T2 - T1]),
 	    ok
     after 60000 ->
-	    Msg = receive Any -> Any after 0 -> nothing end,
-	    exit({failed_stopping_writer, timeout, Msg})
+	    Msg  = receive Any -> Any after 0 -> nothing end,
+	    Info = (catch process_info(Pid)),
+	    exit({failed_stopping_writer, timeout, Msg, Info})
     end.
 
 log_writer_info(Pid) ->
@@ -536,8 +538,9 @@ log_writer_sleep(Pid, Time) ->
 	{'EXIT', Pid, Reason} ->
 	    {error, Reason}
     after 60000 ->
-	    Msg = receive Any -> Any after 0 -> nothing end,
-	    exit({failed_put_writer_to_sleep, timeout, Msg})
+	    Msg  = receive Any -> Any after 0 -> nothing end,
+	    Info = (catch process_info(Pid)),
+	    exit({failed_put_writer_to_sleep, timeout, Msg, Info})
     end.
 
 log_writer_main(Name, File, Size, Repair, P) ->
@@ -546,7 +549,7 @@ log_writer_main(Name, File, Size, Repair, P) ->
     %% put(verbosity,trace),
     {ok, Log} = snmp_log:create(Name, File, Size, Repair),
     P ! {log, Log, self()},
-    Msgs   = lists:flatten(lists:duplicate(100, messages())),
+    Msgs   = lists:flatten(lists:duplicate(10, messages())),
     Addr   = ?LOCALHOST(),
     Port   = 162,
     Logger =  fun(Packet) ->

@@ -6,7 +6,11 @@
 %%% - represent EFLAGS (condition codes) use/def by a virtual reg?
 %%% - should push use/def %esp?
 
--ifndef(HIPE_X86_DEFUSE).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_DEFUSE,	hipe_amd64_defuse).
+-define(HIPE_X86_REGISTERS,	hipe_amd64_registers).
+-define(RV,			rax).
+-else.
 -define(HIPE_X86_DEFUSE,	hipe_x86_defuse).
 -define(HIPE_X86_REGISTERS,	hipe_x86_registers).
 -define(RV,			eax).

@@ -105,14 +105,53 @@ typedef struct port {
 /* Driver handle (wrapper for old plain handle) */
 #define ERL_DE_OK      0
 #define ERL_DE_UNLOAD  1
-#define ERL_DE_RELOAD  2
+#define ERL_DE_FORCE_UNLOAD 2 
+#define ERL_DE_RELOAD  3
+#define ERL_DE_PERMANENT 4
+
+#define ERL_DE_PROC_LOADED 0
+#define ERL_DE_PROC_AWAIT_UNLOAD 1
+#define ERL_DE_PROC_AWAIT_LOAD 2
+
+/* Flags for drivers, put locking policy here /PaN */
+#define ERL_DE_FL_KILL_PORTS 1
+
+#define ERL_FL_CONSISTENT_MASK ( ERL_DE_FL_KILL_PORTS )
+
+/* System specific load errors are returned as positive values */
+#define ERL_DE_NO_ERROR 0
+#define ERL_DE_LOAD_ERROR_NO_INIT -1
+#define ERL_DE_LOAD_ERROR_FAILED_INIT -2
+#define ERL_DE_LOAD_ERROR_BAD_NAME -3
+#define ERL_DE_LOAD_ERROR_NAME_TO_LONG -4
+#define ERL_DE_ERROR_NO_DDLL_FUNCTIONALITY -5
+#define ERL_DE_ERROR_UNSPECIFIED -6
+#define ERL_DE_LOOKUP_ERROR_NOT_FOUND -7
+#define ERL_DE_DYNAMIC_ERROR_OFFSET -10
+
+typedef struct de_proc_entry {
+    Process *proc;                   /* The process... */
+    Uint    awaiting_status;         /* PROC_LOADED == Have loaded the driver
+			                PROC_AWAIT_UNLOAD == Wants to be notified 
+			                when we have unloaded the driver (was locked)
+			                PROC_AWAIT_LOAD == Wants to be notified when we
+			                reloaded the driver (old was locked) */
+    Eterm   heap[REF_THING_SIZE];    /* "ref heap" */
+    struct  de_proc_entry *next;
+} DE_ProcEntry;
 
 typedef struct {
-    void* handle;           /* Handle for DLL or SO (for dynamic drivers). */
-    int   ref_count;
-    int   status;
-    int   (*cb)(void*, void*, void*, void*);
-    void* ca[4];           /* max 4 args now */
+    void         *handle;             /* Handle for DLL or SO (for dyn. drivers). */
+    DE_ProcEntry *procs;              /* List of pids that have loaded this driver,
+				         or that wait for it to change state */
+    int          port_count;          /* Number of ports using the driver */
+    Uint         flags;               /* ERL_DE_FL_KILL_PORTS */
+    int          status;              /* ERL_DE_xxx */
+    char         *full_path;          /* Full path of the driver */
+    char         *reload_full_path;   /* If status == ERL_DE_RELOAD, this contains
+				         full name of driver (path) */
+    char         *reload_driver_name; /* ... and this contains the driver name */
+    Uint         reload_flags;        /* flags for reloaded driver */
 } DE_Handle;
 
 /*
@@ -120,13 +159,22 @@ typedef struct {
  */
 
 typedef struct de_list {
-    ErlDrvEntry *drv;		/* Pointer to entry for driver. */
-    DE_Handle* de_hndl;	     /* Handle for DLL or SO (for dynamic drivers). */
+    ErlDrvEntry    *drv;	/* Pointer to entry for driver. */
+    DE_Handle      *de_hndl;	/* Handle for DLL or SO (for dynamic drivers). */
     struct de_list *next;	/* Pointer to next. */
 } DE_List;
 
 extern DE_List *driver_list;
 
+extern void erts_ddll_init(void);
+extern void erts_ddll_lock_driver(DE_Handle *dh, char *name);
+extern void erts_ddll_increment_port_count(DE_Handle *dh);
+extern void erts_ddll_decrement_port_count(DE_Handle *dh);
+extern char *erts_ddll_error(int code);
+extern void erts_ddll_proc_dead(Process *p, Uint32 plocks);
+extern int erts_ddll_driver_ok(DE_Handle *dh);
+extern void erts_ddll_remove_monitor(Process *p, Eterm ref, Uint32 plocks);
+extern Eterm erts_ddll_monitor_driver(Process *p, Eterm description, Uint32 plocks);
 /*
  * Max no. of drivers (linked in and dynamically loaded). Each table
  * entry uses 4 bytes.
@@ -218,7 +266,6 @@ extern int erts_disable_tolerant_timeofday;
 #  define HEAP_LIMIT(p)     (p)->stop
 #  define HEAP_END(p)       (p)->hend
 #  define HEAP_SIZE(p)      (p)->heap_sz
-#  define SAVED_HEAP_TOP(p) (p)->saved_htop
 #  define STACK_START(p)    (p)->hend
 #  define STACK_TOP(p)      (p)->stop
 #  define STACK_END(p)      (p)->htop
@@ -412,7 +459,7 @@ void erts_init_bif(void);
 /* erl_bif_port.c */
 
 /* erl_bif_trace.c */
-int erts_system_monitor_clear(Process *c_p);
+void erts_system_monitor_clear(Process *c_p);
 void erts_do_pending_suspend(Process *c_p, Uint32 enter_locks);
 
 /* beam_load.c */
@@ -422,6 +469,7 @@ void init_load(void);
 Eterm* find_function_from_pc(Eterm* pc);
 Eterm erts_module_info_0(Process* p, Eterm module);
 Eterm erts_module_info_1(Process* p, Eterm module, Eterm what);
+Eterm erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info);
 
 /* break.c */
 void init_break_handler(void);
@@ -573,11 +621,11 @@ extern void create_cache(DistEntry*);
 extern void delete_cache(DistEntry*);
 
 /* Utilities */
-extern int erts_do_net_exits(Process *, DistEntry*);
+extern int erts_do_net_exits(DistEntry*);
 extern int distribution_info(int, void *);
 extern int is_node_name_atom(Eterm a);
 
-extern int net_mess2(Process *, DistEntry*, byte*, int, byte*, int);
+extern int erts_net_message(DistEntry*, byte*, int, byte*, int);
 
 extern void init_dist(void);
 extern int stop_dist(void);
@@ -596,15 +644,6 @@ Eterm build_stacktrace(Process* c_p, Eterm exc);
 Eterm expand_error_value(Process* c_p, Uint freason, Eterm Value);
 
 /* erl_init.c */
-
-#ifdef ERTS_SMP
-extern erts_smp_atomic_t erts_writing_erl_crash_dump;
-#define ERTS_IS_CRASH_DUMPING \
-  ((int) erts_smp_atomic_read(&erts_writing_erl_crash_dump))
-#else
-extern volatile int erts_writing_erl_crash_dump;
-#define ERTS_IS_CRASH_DUMPING erts_writing_erl_crash_dump
-#endif
 
 extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
@@ -642,6 +681,9 @@ typedef struct {
 void erts_gc_info(ErtsGCInfo *gcip);
 void erts_init_gc(void);
 int erts_garbage_collect(Process*, int, Eterm*, int);
+#if defined(HEAP_FRAG_ELIM_TEST)
+Eterm erts_gc_after_bif_call(Process* p, Eterm result);
+#endif
 Uint erts_next_heap_size(Uint, Uint);
 Eterm erts_heap_sizes(Process* p);
 void erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj);
@@ -661,7 +703,7 @@ int open_driver(ErlDrvEntry*, Eterm, char*, SysDriverOpts*);
 void close_port(Eterm);
 void init_io(void);
 void cleanup_io(void);
-void erts_do_exit_port(Process *, Eterm, Eterm, Eterm);
+void erts_do_exit_port(Eterm, Eterm, Eterm);
 void erts_port_command(Process *, Eterm, Port *, Eterm);
 Eterm erts_port_control(Process*, Port*, Uint, Eterm);
 int write_port(Eterm caller_id, int p, Eterm list);
@@ -674,6 +716,8 @@ void driver_report_exit(int, int);
 LineBuf* allocate_linebuf(int);
 int async_ready(int ix, void* data);
 Sint erts_test_next_port(int, Uint);
+int erts_driver_attach_port(ErlDrvPort ix);
+int erts_driver_detach_port(ErlDrvPort ix);
 
 /*
  * erts_smp_io_lock(), and erts_smp_io_unlock() are declared in sys.h
@@ -682,13 +726,11 @@ Sint erts_test_next_port(int, Uint);
 #ifdef ERTS_SMP
 int erts_io_trylock(void);
 int erts_io_safe_lock(Process *, Uint32);
-int erts_io_safe_lock_x(Process *p, Uint32 plocks);
 int erts_lc_io_is_locked(void);
 #endif
 
 ERTS_GLB_INLINE int erts_smp_io_trylock(void);
 ERTS_GLB_INLINE int erts_smp_io_safe_lock(Process *p, Uint32 plocks);
-ERTS_GLB_INLINE int erts_smp_io_safe_lock_x(Process *p, Uint32 plocks);
 ERTS_GLB_INLINE int erts_smp_lc_io_is_locked(void);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
@@ -708,16 +750,6 @@ erts_smp_io_safe_lock(Process *p, Uint32 plocks)
 {
 #ifdef ERTS_SMP
     return erts_io_safe_lock(p, plocks);
-#else
-    return 0;
-#endif
-}
-
-ERTS_GLB_INLINE int
-erts_smp_io_safe_lock_x(Process *p, Uint32 plocks)
-{
-#ifdef ERTS_SMP
-    return erts_io_safe_lock_x(p, plocks);
 #else
     return 0;
 #endif
@@ -859,12 +891,13 @@ Uint erts_fit_in_bits(Uint);
 int list_length(Eterm);
 Export* erts_find_function(Eterm, Eterm, unsigned int);
 int erts_is_builtin(Eterm, Eterm, int);
-Eterm double_to_integer(Process*, double);
 Uint32 make_broken_hash(Eterm, Uint32);
 Uint32 block_hash(byte *, unsigned, Uint32);
 Uint32 make_hash2(Eterm);
 Uint32 make_hash(Eterm, Uint32);
 
+
+Eterm erts_bld_atom(Uint **hpp, Uint *szp, char *str);
 Eterm erts_bld_uint(Uint **hpp, Uint *szp, Uint ui);
 Eterm erts_bld_cons(Uint **hpp, Uint *szp, Eterm car, Eterm cdr);
 Eterm erts_bld_tuple(Uint **hpp, Uint *szp, Uint arity, ...);
@@ -936,6 +969,7 @@ void erts_foreach_sys_msg_in_q(void (*func)(Eterm,
 void erts_queue_error_logger_message(Eterm, Eterm, ErlHeapFragment *);
 #endif
 
+void erts_send_sys_msg_proc(Eterm, Eterm, Eterm, ErlHeapFragment *);
 void trace_send(Process*, Eterm, Eterm);
 void trace_receive(Process*, Eterm);
 Uint32 erts_call_trace(Process *p, Eterm mfa[], Binary *match_spec, Eterm* args,
@@ -984,6 +1018,7 @@ char* Sint_to_buf(Sint, struct Sint_buf*);
 
 Eterm buf_to_intlist(Eterm**, char*, int, Eterm); /* most callers pass plain char*'s */
 int io_list_to_buf(Eterm, char*, int);
+int io_list_to_buf2(Eterm, char*, int);
 int io_list_len(Eterm);
 int is_string(Eterm);
 void erl_at_exit(FUNCTION(void,(*),(void*)), void*);
@@ -1013,6 +1048,13 @@ Eterm erts_gc_band(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_bor(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_bxor(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_bnot(Process* p, Eterm* reg, Uint live);
+
+Eterm erts_gc_length_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_abs_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_float_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_round_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_trunc_1(Process* p, Eterm* reg, Uint live);
 #endif
 
 Uint erts_current_reductions(Process* current, Process *p);
@@ -1122,6 +1164,19 @@ erts_alloc_message_heap(Uint size,
 			Uint32 *receiver_locks)
 {
     Eterm *hp;
+#if defined(HEAP_FRAG_ELIM_TEST)
+    if (HEAP_LIMIT(receiver) - HEAP_TOP(receiver) >= size) {
+	hp = HEAP_TOP(receiver);
+	HEAP_TOP(receiver) = hp + size;
+	*bpp = NULL;
+	*ohpp = &MSO(receiver);
+    } else {
+	ErlHeapFragment* bp = new_message_buffer(size);
+	hp = bp->mem;
+	*bpp = bp;
+	*ohpp = &bp->off_heap;
+    }
+#else
 #ifdef ERTS_SMP
     if (*receiver_locks & ERTS_PROC_LOCK_MAIN) {
     allocate_on_heap:
@@ -1153,7 +1208,7 @@ erts_alloc_message_heap(Uint size,
 	*ohpp = &bp->off_heap;
     }
 #endif
-
+#endif
     return hp;
 }
 

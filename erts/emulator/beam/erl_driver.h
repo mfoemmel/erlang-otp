@@ -388,8 +388,11 @@ EXTERN long driver_async(ErlDrvPort ix,
 
 EXTERN int driver_async_cancel(unsigned int key);
 
-EXTERN int driver_attach(ErlDrvPort ix);
-EXTERN int driver_detach(ErlDrvPort ix);
+/* Locks the driver in the machine "forever", there is
+   no unlock function. Note that this is almost never useful, as an open
+   port towards the driver locks it until the port is closed, why unexpected
+   unloading "never" happens. */
+EXTERN int driver_lock_driver(ErlDrvPort ix);
 
 /* These were removed from the ANSI version, now they're back. */
 

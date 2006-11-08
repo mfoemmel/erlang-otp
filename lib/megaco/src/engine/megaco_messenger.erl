@@ -1002,7 +1002,6 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 		    %%   The user does not know about this request
 		    %%   so we can safely perform cleanup.
 		    %% 
-		    ?report_pending_limit_exceeded(ConnData),
 		    megaco_monitor:cancel_apply_after(Ref),
 		    send_pending_limit_error(ConnData),
 		    if 
@@ -1037,18 +1036,16 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 		    %%     reply record & pending counter
 		    %% 
 		    %% -------------------------------------------
-		    case megaco_monitor:lookup_reply(TransId) of
-			[Rep] ->
-			    Rep2 = Rep#reply{state = aborted},
-			    cancel_reply(ConnData, Rep2, aborted);
-			_ ->
-			    ok
-		    end,
+
+		    Rep2 = Rep#reply{state = aborted},
+		    cancel_reply(ConnData, Rep2, aborted),
 		    prepare_trans(ConnData, Rest, AckList, ReqList)
 
 	    end;
 
-        [#reply{state = waiting_for_ack, bytes = Bin, version = Version}] ->
+        [#reply{state   = waiting_for_ack, 
+		bytes   = Bin, 
+		version = Version} = Rep] ->
 	    ?rt3("request resend when waiting for ack"),
 
             %% We have already sent a reply, but the receiver
@@ -1057,7 +1054,15 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
             ConnData2 = ConnData#conn_data{protocol_version = Version},
             ?report_trace(ConnData2, 
 			  "re-send trans reply", [T | {bytes, Bin}]),
-            megaco_messenger_misc:send_message(ConnData2, Bin),
+            case megaco_messenger_misc:send_message(ConnData2, Bin) of
+		ok ->
+		    ok;
+		{ok, _} ->
+		    ok;
+		{error, Reason} ->
+		    %% Pass it on to the user (via handle_ack)
+		    cancel_reply(ConnData2, Rep, Reason)
+	    end,
 	    prepare_trans(ConnData2, Rest, AckList, ReqList);
 
 	[#reply{state = aborted} = Rep] ->
@@ -1437,7 +1442,8 @@ handle_request_abort_callback(ConnData, TransId, Pid) ->
 	ok ->
 	    ok;
 	_ ->
-	    warning_msg("trans request abort callback failed: ~w", [Res]),
+	    warning_msg("transaction request abort callback failed: ~w", 
+			[Res]),
 	    ok
     end.
 
@@ -1573,7 +1579,7 @@ handle_request_callback(ConnData, TransId, Actions, T) ->
 	    ?report_important(ConnData, 
 			      "callback: <ERROR> trans request",
 			      [ED, {error, Error}]),
-	    error_msg("trans request callback failed: ~w", [Error]),
+	    error_msg("transaction request callback failed: ~w", [Error]),
 	    Reply = {transactionError, ED},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
 					 [], asn1_NOVALUE),
@@ -1624,7 +1630,7 @@ handle_long_request_callback(ConnData, TransId, RequestData) ->
 				    errorText = ErrorText},
 	    ?report_important(ConnData, "callback: <ERROR> trans long request",
 			      [ED, {error, Error}]),
-	    error_msg("long trans request callback failed: ~w", [Error]),
+	    error_msg("long transaction request callback failed: ~w", [Error]),
 	    Reply     = {transactionError, ED},
 	    SendReply = maybe_send_reply(ConnData, TransId, Reply, 
 					 [], asn1_NOVALUE),
@@ -1893,7 +1899,7 @@ handle_ack_callback(ConnData, AckStatus, {handle_ack, AckData}, T) ->
 	ok ->
 	    ok;
 	_ ->
-	    warning_msg("trans ack callback failed: ~w", [Res]),
+	    warning_msg("transaction ack callback failed: ~w", [Res]),
 	    ok
     end,
     Res.
@@ -2037,11 +2043,11 @@ test_reply_encode(ConnHandle, Version, EncodingMod, EncodingConfig, Reply) ->
 %% EncodedActionsList -> binary() | [binary()]
 %% Reason -> term()
 encode_actions(CH, [A|_] = ActionsList, Opts) 
-  when is_record(CH, megaco_conn_handle), list(A) ->
+  when is_record(CH, megaco_conn_handle) and is_list(A) ->
     (catch encode_multi_actions(CH, ActionsList, Opts));
 
 encode_actions(CH, [A|_] = Actions, Opts) 
-  when is_record(CH, megaco_conn_handle), tuple(A) ->
+  when is_record(CH, megaco_conn_handle) and is_tuple(A) ->
     do_encode_actions(CH, Actions, Opts).
     
 encode_multi_actions(CH, ActionsList, Opts) ->
@@ -2533,7 +2539,7 @@ send_reply(#conn_data{serial       = Serial,
 	    TR2 =  TR#'TransactionReply'{transactionResult = Reply},
 	    TraceLabel = "<ERROR> encode trans reply failed",
 	    ?report_important(CD, TraceLabel, [TR, TR2, ED, Error]),
-	    error_msg("encode trans reply body failed: ~s", 
+	    error_msg("failed encoding transaction reply body: ~s", 
 		      [format_encode_error_reason(Reason)]),
 	    Body2 = {transactions, [{transactionReply, TR2}]},
 	    megaco_messenger_misc:send_body(CD, TraceLabel, Body2),
@@ -2561,7 +2567,7 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
             TR2        =  TR#'TransactionReply'{transactionResult = Reply},
             TraceLabel = "<ERROR> encode trans reply body failed",
             ?report_important(CD, TraceLabel, [TR, TR2, ED, Error]),
-	    error_msg("encode trans reply body failed: ~s", 
+	    error_msg("failed encoding transaction reply body: ~s", 
 		      [format_encode_error_reason(Reason)]),
             Body2 = {transactions, [{transactionReply, TR2}]},
             megaco_messenger_misc:send_body(CD, TraceLabel, Body2),
@@ -2802,7 +2808,8 @@ return_reply(ConnData, TransId, UserReply) ->
 		ok ->
 		    ok;
 		_ ->
-		    warning_msg("trans reply callback failed: ~w", [Res]),
+		    warning_msg("transaction reply callback failed: ~w", 
+				[Res]),
 		    ok
 	    end,
 	    Res;
@@ -3168,11 +3175,7 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    %% 
 		    %% -------------------------------------------
 
-		    ?report_pending_limit_exceeded(ConnData),
-
-		    Code = ?megaco_number_of_transactionpending_exceeded,
-		    Reason = "Pending limit exceeded",
-		    send_message_error(ConnData, Code, Reason),
+		    send_pending_limit_error(ConnData),
 		    handle_request_abort_callback(ConnData, TransId, Pid),
 		    %% Timing problem?
 		    Rep2 = Rep#reply{state = aborted},
@@ -3226,7 +3229,7 @@ return_unexpected_trans(ConnData, Trans) ->
 	ok ->
 	    ok;
 	_ ->
-	    warning_msg("unexpected trans callback failed: ~w", [Res]),
+	    warning_msg("unexpected transaction callback failed: ~w", [Res]),
 	    ok
     end,
     Res.
@@ -3302,10 +3305,10 @@ decr(Int) when is_integer(Int) -> Int - 1.
 
 
 warning_msg(F, A) ->
-    (catch error_logger:warning_msg(F ++ "~n", A)).
+    ?megaco_warning(F, A).
 
 error_msg(F, A) ->
-    (catch error_logger:error_msg(F ++ "~n", A)).
+    ?megaco_error(F, A).
 
 
 %% d(F) ->

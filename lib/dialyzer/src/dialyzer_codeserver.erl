@@ -24,6 +24,7 @@
 -module(dialyzer_codeserver).
 
 -export([all_exports/1, 
+	 delete/1,
 	 insert/3, 
 	 insert_exports/2,	 
 	 is_exported/2,
@@ -40,8 +41,12 @@ new() ->
   Exports = sets:new(),
   #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0}.
 
+delete(#dialyzer_codeserver{table=Table}) ->
+  table__delete(Table).
+
 insert(List, Tag, CS) ->
-  List1 = [{{MFA, Tag}, Code}||{MFA, Code} <- List],
+  %% Note that ID is a MFA in icode and a module in core.
+  List1 = [{{ID, Tag}, Code}||{ID, Code} <- List],
   NewTable = table__insert(CS#dialyzer_codeserver.table, List1),
   CS#dialyzer_codeserver{table=NewTable}.
 
@@ -56,17 +61,33 @@ is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
 all_exports(#dialyzer_codeserver{exports=Exports}) ->
   Exports.
 
-lookup(MFA, Tag, CS) ->
-  table__lookup(CS#dialyzer_codeserver.table, {MFA, Tag}).      
+lookup({M,F,A}, core, CS) ->
+  case table__lookup(CS#dialyzer_codeserver.table, {M, core}) of
+    {ok, Tree} ->
+      case [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
+			  cerl:fname_id(Var) =:= F,
+			  cerl:fname_arity(Var) =:= A] of
+	[] -> error;
+	[Def] -> {ok, Def}
+      end;
+    error -> error
+  end;
+lookup(M, core, CS) ->
+  table__lookup(CS#dialyzer_codeserver.table, {M, core});
+lookup(MFA = {_,_,_}, icode, CS) ->
+  table__lookup(CS#dialyzer_codeserver.table, {MFA, icode}).      
 
 next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
   NCL.
 
-update_next_core_label(CS = #dialyzer_codeserver{}, NCL) ->
+update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
   CS#dialyzer_codeserver{next_core_label=NCL}.
 
 table__new() ->
   ets:new(dialyzer_codeserver, []).
+
+table__delete(Table) ->
+  ets:delete(Table).
 
 table__lookup(Table, Key) ->
   case ets:lookup(Table, Key) of

@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 %%-----------------------------------------------------------------
-%% This module implements the config convertion for the old SNMP 
+%% This module implements the config conversion for the old SNMP 
 %% application start method
 %% The purpose is to extract all agent app-env and convert to the 
 %% new format
@@ -44,7 +44,7 @@ convert_config() ->
     convert_config( application:get_all_env(snmp) ).
 
 convert_config(Opts) ->
-    ?d("start -> Opts: ~p", [Opts]),
+    ?d("convert_config -> Opts: ~p", [Opts]),
     Prio           = get_priority(Opts),
     DbDir          = get_db_dir(Opts),
     DbInitError    = terminate, 
@@ -61,7 +61,7 @@ convert_config(Opts) ->
     AgentType      = get_agent_type(Opts),
     case AgentType of
 	sub ->
-	    ?d("start -> agent type: sub",[]),
+	    ?d("convert_config -> agent type: sub",[]),
 	    SaVerb = get_sub_agent_verbosity(Opts),
 	    [{agent_type,             AgentType}, 
 	     {agent_verbosity,        SaVerb}, 
@@ -80,7 +80,7 @@ convert_config(Opts) ->
 	     {symbolic_store,         SymOpts}];
 	
 	master ->
-	    ?d("start -> agent type: master",[]),
+	    ?d("convert_config -> agent type: master",[]),
 	    MaVerb    = get_master_agent_verbosity(Opts),
 	    NoteOpts  = get_note_store_opts(Opts),
 	    NiOptions = get_net_if_options(Opts),

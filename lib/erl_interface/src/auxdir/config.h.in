@@ -201,6 +201,9 @@
 /* Define if you have the writev function.  */
 #undef HAVE_WRITEV
 
+/* Define if you have the socklen_t datatype */
+#undef HAVE_SOCKLEN_T
+
 /* Define to the address where bug reports for this package should be sent. */
 #undef PACKAGE_BUGREPORT
 

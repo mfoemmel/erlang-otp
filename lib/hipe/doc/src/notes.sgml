@@ -10,6 +10,26 @@
   
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.0</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Support for native code on Solaris 10/AMD64.</p>
+	    <p>Support for native code on FreeBSD/AMD64.</p>
+	    <p>Native code now handles external funs (<c>fun
+	    M:F/A</c>). Native code can now also apply so-called
+	    tuple-funs (<c>{M,F}</c>). (Tuple funs are NOT
+	    recommended for new code; they are deprecated and will be
+	    removed in some future release.)</p>
+          <p>
+	    Own Id: OTP-6305
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section><title>Hipe 3.5.6</title>
 
     <section><title>Improvements and New Features</title>

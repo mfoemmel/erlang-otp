@@ -23,43 +23,39 @@
 
 -import(lists, [map/2,foldl/3,reverse/1,reverse/2,filter/2,member/2]).
 
-module({Mod,Exp,Attr,Fs0,Lc}, Opt) ->
-    AllowFloatOpts = not member(no_float_opt, Opt),
-    Fs = map(fun(F) -> function(F, AllowFloatOpts) end, Fs0),
+module({Mod,Exp,Attr,Fs0,Lc}, _Opts) ->
+    Fs = [function(F) || F <- Fs0],
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
-function({function,Name,Arity,CLabel,Asm0}, AllowFloatOpts) ->
-    Asm = opt(Asm0, AllowFloatOpts, [], tdb_new()),
+function({function,Name,Arity,CLabel,Asm0}) ->
+    Asm = opt(Asm0, [], tdb_new()),
     {function,Name,Arity,CLabel,Asm}.
 
-%% opt([Instruction], AllowFloatOpts, Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
+%% opt([Instruction], Accumulator, TypeDb) -> {[Instruction'],TypeDb'}
 %%  Keep track of type information; try to simplify.
 
-opt([{block,Body1}|Is], AllowFloatOpts, [{block,Body0}|Acc], Ts0) ->
-    {Body2,Ts} = simplify(Body1, Ts0, AllowFloatOpts),
+opt([{block,Body1}|Is], [{block,Body0}|Acc], Ts0) ->
+    {Body2,Ts} = simplify(Body1, Ts0),
     Body = beam_block:merge_blocks(Body0, Body2),
-    opt(Is, AllowFloatOpts, [{block,Body}|Acc], Ts);
-opt([{block,Body0}|Is], AllowFloatOpts, Acc, Ts0) ->
-    {Body,Ts} = simplify(Body0, Ts0, AllowFloatOpts),
-    opt(Is, AllowFloatOpts, [{block,Body}|Acc], Ts);
-opt([I0|Is], AllowFloatOpts, Acc, Ts0) ->
-    case simplify([I0], Ts0, AllowFloatOpts) of
-	{[],Ts} -> opt(Is, AllowFloatOpts, Acc, Ts);
-	{[I],Ts} -> opt(Is, AllowFloatOpts, [I|Acc], Ts)
+    opt(Is, [{block,Body}|Acc], Ts);
+opt([{block,Body0}|Is], Acc, Ts0) ->
+    {Body,Ts} = simplify(Body0, Ts0),
+    opt(Is, [{block,Body}|Acc], Ts);
+opt([I0|Is], Acc, Ts0) ->
+    case simplify([I0], Ts0) of
+	{[],Ts} -> opt(Is, Acc, Ts);
+	{[I],Ts} -> opt(Is, [I|Acc], Ts)
     end;
-opt([], _, Acc, _) -> reverse(Acc).
+opt([], Acc, _) -> reverse(Acc).
 
-%% simplify(Instruction, TypeDb, AllowFloatOpts) -> NewInstruction
+%% simplify(Instruction, TypeDb) -> NewInstruction
 %%  Simplify an instruction using type information (this is
 %%  technically a "strength reduction").
 
-simplify(Is0, TypeDb0, AllowFloats) ->
-    case simplify_basic(Is0, TypeDb0) of
-	{Is,_}=BasicRes when AllowFloats ->
-	    case simplify_float(Is, TypeDb0) of
-		not_possible -> BasicRes;
-		{_,_}=Res -> Res
-	    end;
+simplify(Is0, TypeDb0) ->
+    {Is,_} = BasicRes = simplify_basic(Is0, TypeDb0),
+    case simplify_float(Is, TypeDb0) of
+	not_possible -> BasicRes;
 	{_,_}=Res -> Res
     end.
 
@@ -280,7 +276,7 @@ flt_alloc(H, Fl) -> [{set,[],[],{alloc,regs,{nozero,nostack,H,Fl,[]}}}].
 %%  entry to the instruction sequence.
 %%
 %%  An 'not_possible' term will be thrown if the set of live registers
-%%  is not continous at a allocation function (e.g. if {x,0} and {x,2}
+%%  is not continous at an allocation function (e.g. if {x,0} and {x,2}
 %%  are live, but not {x,1}).
 
 flt_liveness(Is, Live) ->

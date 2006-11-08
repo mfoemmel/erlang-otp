@@ -860,9 +860,6 @@ static BIF_RETTYPE bif_trap1(Export *bif,
  * Continue collecting select matches, this may happen either due to a trap
  * or when the user calls ets:select/1
  */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_continue_hash(Process *p, 
 				   DbTable *tbl, 
 				   Eterm continuation, 
@@ -1025,9 +1022,6 @@ static int db_select_hash(Process *p, DbTable *tbl,
     return db_select_chunk_hash(p, tbl, pattern, 0, reverse, ret);
 }
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_chunk_hash(Process *p, DbTable *tbl, 
 				Eterm pattern, Sint chunk_size, 
 				int reverse, /* not used */
@@ -1218,9 +1212,6 @@ trap:
 
 }
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_count_hash(Process *p, 
 				DbTable *tbl, 
 				Eterm pattern,
@@ -1340,8 +1331,6 @@ trap:
 	egot = uint_to_big(got, hp);
 	hp += BIG_UINT_HEAP_SIZE;
     }
-
-    hp = HAlloc(p,5+PROC_BIN_SIZE);
     mpb = db_make_mp_binary(p,mpi.mp,&hp);
     continuation = TUPLE4(hp, tb->common.id, make_small(chain_pos), 
 			  mpb, 
@@ -1355,9 +1344,6 @@ trap:
 
 }
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_delete_hash(Process *p,
 				 DbTable *tbl,
 				 Eterm pattern,
@@ -1515,9 +1501,6 @@ trap:
 /*
 ** This is called when select_delete traps
 */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_delete_continue_hash(Process *p, 
 					  DbTable *tbl,
 					  Eterm continuation,
@@ -1657,9 +1640,6 @@ trap:
 /*
 ** This is called when select_delete traps
 */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_count_continue_hash(Process *p, 
 					 DbTable *tbl,
 					 Eterm continuation,

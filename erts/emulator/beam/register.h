@@ -51,10 +51,10 @@ void init_register_table(void);
 void register_info(int, void *);
 int erts_register_name(Process *, Eterm, Eterm);
 Eterm erts_whereis_name_to_id(Process *, Eterm);
-void erts_whereis_name(Process *, Uint32, int, int,
+void erts_whereis_name(Process *, Uint32, int,
 		       Eterm, Process**, Uint32, int,
 		       struct port**);
-Process *erts_whereis_process(Process *, Uint32, int, Eterm, Uint32, int);
+Process *erts_whereis_process(Process *, Uint32, Eterm, Uint32, int);
 int erts_unregister_name(Process *, Uint32, int, Eterm);
 
 #endif

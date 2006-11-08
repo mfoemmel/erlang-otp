@@ -36,6 +36,7 @@
 	 code_change/3]).
 
 -include_lib("kernel/include/file.hrl").
+-include("snmpa_internal.hrl").
 -include("snmp_types.hrl").
 -include("snmp_verbosity.hrl").
 -include("snmp_debug.hrl").
@@ -394,7 +395,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call(Req, _From, State) ->
-    info_msg("received unknown request: ~n~p", [Req]),
+    warning_msg("received unknown request: ~n~p", [Req]),
     Reply = {error, {unknown, Req}}, 
     {reply, Reply, State}.
     
@@ -404,7 +405,7 @@ handle_cast({verbosity,Verbosity}, State) ->
     {noreply, State};
     
 handle_cast(Msg, State) ->
-    info_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
     
 handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
@@ -424,7 +425,7 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
     {noreply, S#state{backup = undefined}};
 
 handle_info(Info, State) ->
-    info_msg("received unknown info: ~n~p", [Info]),
+    warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 terminate(_Reason, #state{data = Data}) ->
@@ -496,8 +497,14 @@ call(MibServer, Req, To) ->
 
 %% ----------------------------------------------------------------
 
-info_msg(F, A) ->
-    error_logger:info_msg("~w: " ++ F ++ "~n", [?MODULE|A]).
+%% info_msg(F, A) ->
+%%     ?snmpa_info("Mib server: " ++ F, A).
+
+warning_msg(F, A) ->
+    ?snmpa_warning("Mib server: " ++ F, A).
+
+%% error_msg(F, A) ->
+%%     ?snmpa_error("Mib server: " ++ F, A).
 
 config_err(F, A) ->
     snmpa_error:config_err(F, A).

@@ -322,8 +322,8 @@ nbif_3_simple_exception:
 
 	/*
 	 * A BIF failed with freason TRAP:
-	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
-	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
+	 * - the BIF stored the callee's Export* in p->def_arg_reg[3]
+	 * - the BIF stored the callee's parameters in p->def_arg_reg[0..2]
 	 * - the BIF's arity is in ARG4
 	 * - the native RA was saved in TEMP3 before the BIF call
 	 * - FCALLS was just read from P

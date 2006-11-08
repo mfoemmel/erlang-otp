@@ -11,7 +11,12 @@
 %%% - Merge all_temps and defun_minframe to a single
 %%%   pass, for compile-time efficiency reasons.
 
--ifndef(HIPE_X86_FRAME).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_FRAME,     hipe_amd64_frame).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-define(HIPE_X86_LIVENESS,  hipe_amd64_liveness).
+-define(LEAF_WORDS,	    ?AMD64_LEAF_WORDS).
+-else.
 -define(HIPE_X86_FRAME,     hipe_x86_frame).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
 -define(HIPE_X86_LIVENESS,  hipe_x86_liveness).
@@ -36,8 +41,9 @@ frame(Defun, _Options) ->
 fix_formals(Formals) ->
   fix_formals(?HIPE_X86_REGISTERS:nr_args(), Formals).
 
-fix_formals(N, [_|Rest]) when N > 0 -> fix_formals(N-1, Rest);
-fix_formals(N, Formals) when is_integer(N), N >= 0 -> Formals.
+fix_formals(0, Rest) -> Rest;
+fix_formals(N, [_|Rest]) -> fix_formals(N-1, Rest);
+fix_formals(_, []) -> [].
 
 do_body(CFG0, Liveness, Formals, Temps) ->
   Context = mk_context(Liveness, Formals, Temps),

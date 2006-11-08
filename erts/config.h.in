@@ -165,23 +165,6 @@
 /* Define if you have matherr() function and struct exception type. */
 #undef USE_MATHERR
 
-/* Define if you want to try to enable kernel poll */
-#undef ENABLE_KERNEL_POLL
-
-/* Define if you have the <sys/devpoll.h> header file. */
-#undef HAVE_SYS_DEVPOLL_H
-
- 
-/* Define if you have the <linux/kpoll.h> header file. */
-#undef HAVE_LINUX_KPOLL_H
-
- 
-/* Define if you have the <sys/event.h> header file. */
-#undef HAVE_SYS_EVENT_H
-
-/* Define if you don't have poll.h and a working poll() function. */
-#undef USE_SELECT
-
 /* The number of bytes in a char.  */
 #undef SIZEOF_CHAR
 
@@ -226,6 +209,9 @@
 
 /* Define if you have the fpsetmask function.  */
 #undef HAVE_FPSETMASK
+
+/* Define if you have the fstat function.  */
+#undef HAVE_FSTAT
 
 /* Define if you have the gethrtime function.  */
 #undef HAVE_GETHRTIME
@@ -449,8 +435,23 @@
 /* Define if the hybrid emulator is built */
 #undef ERTS_HAVE_HYBRID_EMU
 
-/* Define if poll()/select() bug when another thread closes fd is present. */
-#undef ERTS_SELECTER_THR_CLOSED_FD_BUG
+/* Define if poll() should be used instead of select() */
+#undef ERTS_USE_POLL
+
+/* Define if select() should be used instead of poll() */
+#undef USE_SELECT
+
+/* Define if you have the <sys/epoll.h> header file. */
+#undef HAVE_SYS_EPOLL_H
+
+/* Define if you have <sys/devpoll.h> header file. */
+#undef HAVE_SYS_DEVPOLL_H
+
+/* Define if you have <sys/event.h> header file. */
+#undef HAVE_SYS_EVENT_H
+
+/* Define if you have kernel poll and want to use it */
+#undef ERTS_ENABLE_KERNEL_POLL
 
 
 /* Redefine in6_addr. XXX this should be moved to the files where it's used? */
@@ -473,14 +474,6 @@
 
 #ifdef REDEFINE_FD_SETSIZE
 #define FD_SETSIZE 1024
-#endif
-
-#if !defined(USE_SELECT) && !defined(ERTS_SMP)
-#  if defined(ENABLE_KERNEL_POLL)
-#    if defined(HAVE_SYS_DEVPOLL_H) || defined(HAVE_LINUX_KPOLL_H) || defined(HAVE_SYS_EVENT_H)
-#      define USE_KERNEL_POLL
-#    endif
-#  endif
 #endif
  
 #ifdef HAVE_GETHRVTIME_PROCFS_IOCTL

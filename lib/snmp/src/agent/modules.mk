@@ -48,6 +48,7 @@ MODULES = \
 
 INTERNAL_HRL_FILES = \
 	snmpa_vacm \
-	snmpa_atl
+	snmpa_atl  \
+	snmpa_internal
 
 EXT_HRL_FILES = 

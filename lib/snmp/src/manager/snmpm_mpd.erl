@@ -30,6 +30,7 @@
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
+-include("snmpm_internal.hrl").
 -include("SNMP-MPD-MIB.hrl").
 -include("SNMPv2-TM.hrl").
 
@@ -997,4 +998,4 @@ config_err(F, A) ->
     error_msg("CONFIG ERROR: " ++ F ++ "~n", A).
 
 error_msg(F, A) ->
-    error_logger:error_msg("SNMPM MPD - " ++ F ++ "~n", A).
+    ?snmpm_error("MPD: " ++ F, A).

@@ -25,15 +25,13 @@
 #include "global.h"
 #include "index.h"
 
-
 void index_info(int to, void *arg, IndexTable *t)
 {
     hash_info(to, arg, &t->htable);
     erts_print(to, arg, "=index_table:%s\n", t->htable.name);
     erts_print(to, arg, "size: %d\n",	t->size);
     erts_print(to, arg, "limit: %d\n",	t->limit);
-    erts_print(to, arg, "used: %d\n",	t->sz);
-    erts_print(to, arg, "rate: %d\n",	t->rate);
+    erts_print(to, arg, "entries: %d\n",t->entries);
 }
 
 
@@ -54,46 +52,20 @@ index_table_sz(IndexTable *t)
 ** init a pre allocated or static hash structure
 ** and allocate buckets.
 */
-IndexTable *index_init(ErtsAlcType_t type, IndexTable* t, char* name,
-		       int size, int limit, int rate, HashFunctions fun)
+IndexTable*
+erts_index_init(ErtsAlcType_t type, IndexTable* t, char* name,
+		int size, int limit, HashFunctions fun)
 {
-    int sz = size*sizeof(IndexSlot*);
-
+    Uint base_size = ((limit+INDEX_PAGE_SIZE-1)/INDEX_PAGE_SIZE)*sizeof(IndexSlot*);
     hash_init(type, &t->htable, name, 3*size/4, fun);
 
-    t->size = size;
+    t->size = 0;
     t->limit = limit;
-    t->rate = rate;
-    t->sz = 0;
-    t->is_allocated = 0;
+    t->entries = 0;
     t->type = type;
-    t->table = (IndexSlot**) erts_alloc(type, sz);
-    sys_memzero(t->table, sz);
+    t->seg_table = (IndexSlot***) erts_alloc(type, base_size);
     return t;
 }
-
-/*
-** Create a new hash table
-*/
-IndexTable *index_new(ErtsAlcType_t type, char* name, int size, int limit,
-		      int rate, HashFunctions fun)
-{
-    IndexTable* t;
-    t = erts_alloc(type, sizeof(IndexTable));
-    index_init(type, t, name, size, limit, rate, fun);
-    t->is_allocated = 1;
-    return t;
-}
-
-void index_delete(IndexTable* t)
-{
-    hash_delete(&t->htable);
-
-    erts_free(t->type, t->table);
-    if (t->is_allocated)
-	erts_free(t->type, t);
-}
-
 
 int
 index_put(IndexTable* t, void* tmpl)
@@ -105,76 +77,60 @@ index_put(IndexTable* t, void* tmpl)
 	return p->index;
     }
 
-    ix = t->sz;
+    ix = t->entries++;
     if (ix >= t->size) {
-	int sz;
-	int sz_inc;
-
-	if (t->rate < 0)
-	    sz_inc = t->size/-t->rate;
-	else
-	    sz_inc = t->rate;
-
-	if (sz_inc == 0)
-	    sz = t->size + 1;
-	else
-	    sz = t->size + sz_inc;
-
-	if (ix >= sz)
-	    sz = ix + 1;
-	
-	if (sz >= t->limit)
-	    sz = t->limit;
-	if (ix >= t->limit)
+	Uint sz;
+	if (ix >= t->limit) {
 	    erl_exit(1, "no more index entries in %s (max=%d)\n",
 		     t->htable.name, t->limit);
-	t->table = (IndexSlot**) erts_realloc(t->type,
-					      (void *) t->table, 
-					      sz*sizeof(IndexSlot*));
-	sys_memzero(t->table+t->size,
-		    (sz - t->size)*sizeof(void*));
-	t->size = sz;
+	}
+	sz = INDEX_PAGE_SIZE*sizeof(IndexSlot*);
+	t->seg_table[ix>>INDEX_PAGE_SHIFT] = erts_alloc(t->type, sz);
+	t->size += INDEX_PAGE_SIZE;
     }
 
     p->index = ix;
-    t->table[ix] = p;
-    t->sz = ix+1;
+    t->seg_table[ix>>INDEX_PAGE_SHIFT][ix&INDEX_PAGE_MASK] = p;
     return ix;
 }
-
 
 int index_get(IndexTable* t, void* tmpl)
 {
     IndexSlot* p = (IndexSlot*) hash_get(&t->htable, tmpl);
 
-    if (p != NULL)
-	return p->index;
-    return -1;
-}
-
-
-int index_erase(IndexTable* t, void* tmpl)
-{
-    IndexSlot* p = (IndexSlot*) hash_erase(&t->htable, tmpl);
-
     if (p != NULL) {
-	t->table[p->index] = NULL;
 	return p->index;
     }
     return -1;
 }
 
-/* Iterates over the used indices in the table. 'prev' should be the
-   previously used index, or -1 to start. Returns -1 when finished.
-*/
-int index_iter(IndexTable* t, int prev)
+void erts_index_merge(Hash* src, IndexTable* dst)
 {
-   int i = prev;
+    int limit = src->size;
+    HashBucket** bucket = src->bucket;
+    int i;
 
-   while (++i < t->size)
-   {
-      if (t->table[i] != NULL)
-	 return i;
-   }
-   return -1;
+    for (i = 0; i < limit; i++) {
+	HashBucket* b = bucket[i];
+	IndexSlot* p;
+	int ix;
+
+	while (b) {
+	    Uint sz;
+	    ix = dst->entries++;
+	    if (ix >= dst->size) {
+		if (ix >= dst->limit) {
+		    erl_exit(1, "no more index entries in %s (max=%d)\n",
+			     dst->htable.name, dst->limit);
+		}
+		sz = INDEX_PAGE_SIZE*sizeof(IndexSlot*);
+		dst->seg_table[ix>>INDEX_PAGE_SHIFT] = erts_alloc(dst->type, sz);
+		dst->size += INDEX_PAGE_SIZE;
+	    }
+	    p = (IndexSlot*) b;
+	    p->index = ix;
+	    dst->seg_table[ix>>INDEX_PAGE_SHIFT][ix&INDEX_PAGE_MASK] = p;
+	    b = b->next;
+	}
+    }
 }

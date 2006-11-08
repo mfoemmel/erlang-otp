@@ -36,28 +36,34 @@ typedef struct index_slot
 
 typedef struct index_table
 {
-    Hash htable;        /* Mapping obj -> index */
+    Hash htable;		/* Mapping obj -> index */
     ErtsAlcType_t type;
-    int size;           /* Allocated size */
-    int limit;          /* Max size */
-    int rate;           /* Factor or increament */
-    int sz;             /* Current size */
-    int is_allocated;   /* 0 iff not alloacted */
-    IndexSlot** table;  /* Mapping index -> obj */
+    int size;			/* Allocated size */
+    int limit;			/* Max size */
+    int entries;		/* Number of entries */
+    IndexSlot*** seg_table;	/* Mapping index -> obj */
 } IndexTable;
 
+#define INDEX_PAGE_SHIFT 10
+#define INDEX_PAGE_SIZE (1 << INDEX_PAGE_SHIFT)
+#define INDEX_PAGE_MASK ((1 << INDEX_PAGE_SHIFT)-1)
 
-IndexTable *index_new(ErtsAlcType_t,char*,int,int,int,HashFunctions);
-IndexTable *index_init(ErtsAlcType_t,IndexTable*,char*,int,int,int,HashFunctions);
-void index_delete(IndexTable*);
+IndexTable *erts_index_init(ErtsAlcType_t,IndexTable*,char*,int,int,HashFunctions);
 void index_info(int, void *, IndexTable*);
 int index_table_sz(IndexTable *);
 
 int index_get(IndexTable*, void*);
 int index_put(IndexTable*, void*);
-int index_erase(IndexTable*, void*);
+void erts_index_merge(Hash*, IndexTable*);
 
-int index_iter(IndexTable*, int);
+ERTS_GLB_INLINE IndexSlot* erts_index_lookup(IndexTable*, Uint);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+ERTS_GLB_INLINE IndexSlot*
+erts_index_lookup(IndexTable* t, Uint ix)
+{
+    return t->seg_table[ix>>INDEX_PAGE_SHIFT][ix&INDEX_PAGE_MASK];
+}
 #endif
 
-    
+#endif

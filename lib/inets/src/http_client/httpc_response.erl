@@ -21,7 +21,8 @@
 -include("httpc_internal.hrl").
 
 %% API
--export([parse/1, result/2, send/2, error/2, is_server_closing/1]).
+-export([parse/1, result/2, send/2, error/2, is_server_closing/1, 
+	 stream_start/2]).
 
 %% Callback API - used for example if the header/body is received a
 %% little at a time on a socket. 
@@ -56,18 +57,22 @@ parse_headers([Bin, Rest,Header, Headers, MaxHeaderSize, Result]) ->
     
 whole_body(Body, Length) ->
     case size(Body) of
-	N when N < Length, N > 0->
+	N when N < Length, N > 0  ->
 	    {?MODULE, whole_body, [Body, Length]};
-	N when N >= Length, Length > 0 ->
+	%% OBS!  The Server may close the connection to indicate that the
+	%% whole body is now sent instead of sending a lengh
+	%% indicator.In this case the lengh indicator will be
+	%% -1.
+	N when N >= Length, Length >= 0 -> 
 	    %% Potential trailing garbage will be thrown away in
 	    %% format_response/1 Some servers may send a 100-continue
 	    %% response without the client requesting it through an
 	    %% expect header in this case the trailing bytes may be
 	    %% part of the real response message.
 	    {ok, Body};
-	_ ->
+	_ -> %% Length == -1
 	    {?MODULE, whole_body, [Body, Length]} 
-	end.
+    end.
 
 %%-------------------------------------------------------------------------
 %% result(Response, Request) ->
@@ -77,6 +82,10 @@ whole_body(Body, Length) ->
 %%                                   
 %% Description: Checks the status code ...
 %%-------------------------------------------------------------------------
+result(Response = {{_,200,_}, _, _}, 
+       Request = #request{stream = Stream}) when Stream =/= none ->
+    stream_end(Response, Request);
+
 result(Response = {{_,100,_}, _, _}, Request) ->
     status_continue(Response, Request);
 
@@ -84,37 +93,32 @@ result(Response = {{_,100,_}, _, _}, Request) ->
 result(Response = {{_, Code, _}, _, _}, Request =
        #request{redircount = Redirects,
 		settings = #http_options{autoredirect = true}}) 
-  when Code / 100 == 3, Redirects > ?HTTP_MAX_REDIRECTS ->
+  when Code div 100 == 3, Redirects > ?HTTP_MAX_REDIRECTS ->
     transparent(Response, Request);
 
-%% multiple choices or use proxy
-result(Response = {{_, Code, _}, _, _}, 
+%% multiple choices 
+result(Response = {{_, 300, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = 
-					true}}) when Code == 300;
-						     Code == 305 ->
+					true}}) ->
     redirect(Response, Request);
-%% moved permanently, found, see other or temporary redirect
-result(Response = {{_, Code, _}, _, _}, 
+
+%% temporary redirect
+result(Response = {{_, 307, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = head}) when Code == 301;
-					       Code == 302;
-					       Code == 303; 
-					       Code == 307 ->
+			  method = head}) ->
     redirect(Response, Request);
-result(Response = {{_, Code, _}, _, _}, 
+result(Response = {{_, 307, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = get}) when Code == 301;
-					      Code == 302;
-					      Code == 303; 
-					      Code == 307 ->
+			  method = get}) ->
     redirect(Response, Request);
+
 
 result(Response = {{_,503,_}, _, _}, Request) ->
     status_service_unavailable(Response, Request);
-result(Response = {{_,Code,_}, _, _}, Request) when (Code / 100) == 5 ->
+result(Response = {{_,Code,_}, _, _}, Request) when (Code div 100) == 5 ->
     status_server_error_50x(Response, Request);
 
 result(Response, Request) -> 
@@ -137,7 +141,7 @@ parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result) ->
 parse_status_code(<<>>, StatusCodeStr, MaxHeaderSize, Result) -> 
     {?MODULE, parse_status_code, [StatusCodeStr, MaxHeaderSize, Result]};
 parse_status_code(<<?SP, Rest/binary>>, StatusCodeStr, 
-		  MaxHeaderSize, Result) -> 
+		  MaxHeaderSize, Result) ->
     parse_reason_phrase(Rest, [], MaxHeaderSize, 
 			[list_to_integer(lists:reverse(StatusCodeStr)) | 
 			 Result]);
@@ -208,8 +212,8 @@ status_service_unavailable(Response = {_, Headers, _}, Request) ->
     case Headers#http_response_h.'retry-after' of 
 	undefined ->
 	    status_server_error_50x(Response, Request);
-	Time when length(Time) == 1 ->
-	    NewTime = list_to_integer(Time),
+	Time when length(Time) < 3 -> % Wait only 99 s or less 
+	    NewTime = list_to_integer(Time) * 100, % time in ms
 	    {_, Data} =  format_response(Response),
 	    {retry, {NewTime, Request}, Data};
 	_ ->
@@ -236,7 +240,8 @@ redirect(Response = {StatusLine, Headers, Body}, Request) ->
 			      Body}, Request);
 		{error, Reason} ->
 		    {ok, error(Request, Reason), Data};
-		{Scheme, Host, Port, Path,  Query} -> % Automatic redirection
+		%% Automatic redirection
+		{Scheme, _, Host, Port, Path,  Query} -> 
 		    NewHeaders = 
 			(Request#request.headers)#http_request_h{host = 
 								 Host},
@@ -247,7 +252,12 @@ redirect(Response = {StatusLine, Headers, Body}, Request) ->
 					headers = NewHeaders,
 					address = {Host,Port},
 					path = Path,
-					pquery = Query},
+					pquery = Query,
+					abs_uri =
+					atom_to_list(Scheme) ++ "://" ++
+                                        Host ++ ":" ++ 
+					integer_to_list(Port) ++
+					Path ++ Query},
 		    {redirect, NewRequest, Data}
 	    end
     end.
@@ -266,6 +276,16 @@ transparent(Response, Request) ->
     {Msg, Data} =  format_response(Response),
     {ok, {Request#request.id, Msg}, Data}.
 
+stream_start(Headers, Request) ->
+    {Request#request.id, stream_start,  http_response:header_list(Headers)}.
+
+stream_end(Response, Request = #request{stream = self}) -> 
+    {{_, Headers, _}, Data} =  format_response(Response),
+    {ok, {Request#request.id, stream_end, Headers}, Data};
+stream_end(Response, Request) ->
+    {_, Data} =  format_response(Response),
+    {ok, {Request#request.id, saved_to_file}, Data}.
+
 is_server_closing(Headers) when record(Headers,http_response_h) ->
     case Headers#http_response_h.connection of
 	"close" ->
@@ -282,6 +302,8 @@ format_response({StatusLine, Headers, Body}) ->
     {NewBody, Data} = 
 	case Length of
 	    0 ->
+		{Body, <<>>};
+	    -1 -> % When no lenght indicator is provided
 		{Body, <<>>};
 	    Length when Length =< size(Body) ->
 		<<BodyThisReq:Length/binary, Next/binary>> = Body,

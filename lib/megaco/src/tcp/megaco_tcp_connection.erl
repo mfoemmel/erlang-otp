@@ -28,15 +28,12 @@
 -behaviour(gen_server).
 
 
-%% -define(d(F,A), io:format("~p~p:" ++ F ++ "~n", [self(),?MODULE|A])).
--define(d(F,A), ok).
-
-
 %%-----------------------------------------------------------------
 %% Include files
 %%-----------------------------------------------------------------
 
 -include_lib("megaco/src/tcp/megaco_tcp.hrl").
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
 
 
 %%-----------------------------------------------------------------
@@ -94,6 +91,7 @@ upgrade_receive_handle(Pid, NewHandle) ->
 %%-----------------------------------------------------------------
 %% Server functions
 %%-----------------------------------------------------------------
+
 %%-----------------------------------------------------------------
 %% Func: init/1
 %% Description: Init funcion for the generic server
@@ -103,13 +101,6 @@ init(Arg) ->
     ?tcp_debug(Arg, "tcp connection handler starting", [self()]),
     {ok, Arg}.
 
-%%-----------------------------------------------------------------
-%% Func: terminate/2
-%% Description: Termination function for the generic server
-%%-----------------------------------------------------------------
-terminate(Reason, TcpRec) ->
-    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(),Reason]),
-    ok.
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
@@ -120,8 +111,10 @@ handle_call(stop, _From, TcpRec) ->
 handle_call({upgrade_receive_handle, NewHandle}, _From, TcpRec) ->
     {reply, ok, TcpRec#megaco_tcp{receive_handle = NewHandle}};
 handle_call(Req, From, TcpRec) ->
-    error_msg("received unexpected request: ~n~p~n~p", [Req,From]),
+    warning_msg("received unexpected request from ~p: "
+		"~n~w", [From, Req]),
     {reply, {error, {invalid_request, Req}}, TcpRec}.
+
 
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2
@@ -130,7 +123,8 @@ handle_call(Req, From, TcpRec) ->
 handle_cast(stop, TcpRec) ->
     {stop, shutdown, TcpRec};
 handle_cast(Msg, TcpRec) ->
-    error_msg("received unexpected message: ~n~p", [Msg]),
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply, TcpRec}.
 
 %%-----------------------------------------------------------------
@@ -169,10 +163,12 @@ handle_info({tcp, Socket, <<3:8, _X:8, _Length:16, Msg/binary>>},
     {noreply, TcpRec};
 handle_info({tcp, Socket, Msg}, TcpRec) ->
     incNumErrors(Socket),
-    error_logger:error_report([{megaco_tcp, {bad_tpkt_packet, Msg}}]),
+    error_msg("received bad tpkt packet: "
+	      "~n~w", [Msg]),
     {noreply, TcpRec};
 handle_info(Info, TcpRec) ->
-    error_msg("received unexpected info: ~n~p", [Info]),
+    warning_msg("received unexpected info: "
+		"~n~p", [Info]),
     {noreply, TcpRec}.
 
 
@@ -181,7 +177,8 @@ process_received_message(Mod, RH, SH, Msg) ->
 	ok ->
 	    ok;
 	Error ->
-	    error_msg("failed processing received message: ~n~p", [Error]),
+	    error_msg("failed processing received message: "
+		      "~n~p", [Error]),
 	    ok
     end.
 
@@ -199,6 +196,15 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
     exit(normal).
 
     
+%%-----------------------------------------------------------------
+%% Func: terminate/2
+%% Description: Termination function for the generic server
+%%-----------------------------------------------------------------
+terminate(Reason, TcpRec) ->
+    ?tcp_debug(TcpRec, "tcp connection handler terminating", [self(),Reason]),
+    ok.
+
+
 %%-----------------------------------------------------------------
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
@@ -231,10 +237,13 @@ incCounter(Key, Inc) ->
 
 
 % info_msg(F, A) ->
-%     (catch error_logger:info_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+%     ?megaco_info("TCP connection handler " ++ F", A)).
+  
+warning_msg(F, A) ->
+    ?megaco_warning("TCP connection handler: " ++ F, A).
   
 error_msg(F, A) ->
-    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?megaco_error("TCP connection handler: " ++ F, A).
   
 
 call(Pid, Req) ->

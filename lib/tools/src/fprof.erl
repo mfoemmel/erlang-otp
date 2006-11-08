@@ -69,6 +69,7 @@
 
 
 -define(debug, 9).
+%-define(debug, 0).
 -ifdef(debug).
 dbg(Level, F, A) when Level >= ?debug ->
     io:format(F, A),
@@ -169,24 +170,18 @@ apply_start_stop(Function, Args, Procs, Options) ->
     catch Child ! {self(), Ref, start_trace},
     receive
 	{Child, Ref, trace_started} ->
-	    Try = (catch {Ref, erlang:apply(Function, Args)}),
-	    catch Child ! {self(), Ref, stop_trace},
-	    receive
-		{Child, Ref, trace_stopped} ->
-		    receive
-			{'DOWN', MRef, _, _, _} ->
-			    ok
-		    end;
-		{'DOWN', MRef, _, _, _} ->
-		    trace([stop])
-	    end,
-	    case Try of
-		{Ref, Result} ->
-		    Result;
-		{'EXIT', Reason} ->
-		    exit(Reason);
-		Exception ->
-		    throw(Exception)
+	    try erlang:apply(Function, Args)
+	    after
+		catch Child ! {self(), Ref, stop_trace},
+	        receive
+		    {Child, Ref, trace_stopped} ->
+			receive
+			    {'DOWN', MRef, _, _, _} ->
+				ok
+			end;
+		    {'DOWN', MRef, _, _, _} ->
+			trace([stop])
+		end
 	    end;
 	{'DOWN', MRef, _, _, Reason} ->
 	    exit(Reason)
@@ -217,14 +212,7 @@ apply_continue(Function, Args, Procs, Options) ->
     catch Child ! {self(), Ref, start_trace},
     receive
 	{'DOWN', MRef, _, _, {Ref, trace_started}} ->
-	    case catch {Ref, erlang:apply(Function, Args)} of
-		{Ref, Result} ->
-		    Result;
-		{'EXIT', Reason} ->
-		    exit(Reason);
-		Exception ->
-		    throw(Exception)
-	    end;
+	    erlang:apply(Function, Args);
 	{'DOWN', MRef, _, _, Reason} ->
 	    exit(Reason)
     end.
@@ -661,26 +649,29 @@ code_change() ->
 
 %% Start server process
 start() ->
-    case catch spawn_3step(
-	   fun (_Parent) ->
-		   register(?FPROF_SERVER, self()),
-		   process_flag(trap_exit, true),
-		   ready
-	   end,
-	   fun(_Server, ready) ->
-		   go
-	   end,
-	   fun(_Parent, go) ->
-		   put(trace_state, idle),
-		   put(profile_state, {idle, undefined}),
-		   put(pending_stop, []),
-		   server_loop([])
-	   end) of
-	{ok, Server, ready, go} ->
-	    {ok, Server};
-	{'EXIT', _} ->
-	    {error, {already_started, whereis(?FPROF_SERVER)}}
-    end.
+    spawn_3step(
+      fun () ->
+	      try register(?FPROF_SERVER, self()) of
+		  true ->
+		      process_flag(trap_exit, true),
+		      {{ok, self()}, loop}
+	      catch
+		  error:badarg ->
+		      {{error, {already_started, whereis(?FPROF_SERVER)}},
+		       already_started}
+	      end
+      end,
+      fun (X) ->
+	      X
+      end,
+      fun (loop) ->
+	      put(trace_state, idle),
+	      put(profile_state, {idle, undefined}),
+	      put(pending_stop, []),
+	      server_loop([]);
+	  (already_started) ->
+	      ok
+      end).
 
 
 
@@ -994,30 +985,25 @@ handle_req(#analyse{dest = Dest,
 		    State;
 		{DestState, DestPid} ->
 		    ProfileTable = get(profile_table),
-		    case catch spawn_3step(
-			   fun(_Server) ->
-				   do_analyse(ProfileTable, 
-					      Request#analyse{dest = DestPid})
-			   end,
-			   fun(_Worker, _Result) ->
-				   finish
-			   end,
-			   fun(_Server, finish) ->
-				   ok
-			   end) of
-			{ok, _Worker, Result, finish} ->
-			    reply(Tag, Result),
-			    State;
-			{'EXIT', Reason} ->
-			    reply(Tag, {error, Reason}),
-			    State
-		    end,
+		    reply(Tag,
+			  spawn_3step(
+			    fun() ->
+				    do_analyse(ProfileTable, 
+					       Request#analyse{dest = DestPid})
+			    end,
+			    fun(Result) ->
+				    {Result,finish}
+			    end,
+			    fun(finish) ->
+				    ok
+			    end)),
 		    case DestState of
 			already_open ->
 			    ok;
 			ok ->
 			    file:close(DestPid)
-		    end
+		    end,
+		    State
 	    end;
 	_ ->
 	    reply(Tag, {error, profiling}),
@@ -1234,7 +1220,7 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
     Child = 
 	erlang:Spawn(
 	  fun() ->
-		  Ack = FunPrelude(Parent),
+		  Ack = FunPrelude(),
 		  catch Parent ! {self(), Ref, Ack},
 		  MRef = erlang:monitor(process, Parent),
 		  receive
@@ -1243,7 +1229,7 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
 			  receive {'DOWN', MRef, _, _, _} -> ok 
 			  after 0 -> ok
 			  end,
-			  FunBody(Parent, Go);
+			  FunBody(Go);
 		      {'DOWN', MRef, _, _, _} ->
 			  ok
 		  end
@@ -1252,23 +1238,16 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
     receive
 	{Child, Ref, Ack} ->
 	    erlang:demonitor(MRef),
-	    case catch {Ref, FunAck(Child, Ack)} of
-		{Ref, Go} ->
-		    receive {'DOWN', MRef, _, _, _} -> ok after 0 -> ok end,
+	    receive {'DOWN', MRef, _, _, _} -> ok after 0 -> ok end,
+	    try FunAck(Ack) of
+		{Result, Go} ->
 		    catch Child ! {Parent, Ref, Go},
-		    {ok, Child, Ack, Go};
-		{'EXIT', Reason} ->
- 		    exit(Child, kill),
-		    receive 
-			{'DOWN', MRef, _, _, _} ->
-			    exit(Reason)
-		    end;
-		Exception ->
- 		    exit(Child, kill),
-		    receive 
-			{'DOWN', MRef, _, _, _} ->
-			    throw(Exception)
-		    end
+		    Result
+	    catch
+		Class:Reason ->
+		    Stacktrace = erlang:get_stacktrace(),
+		    catch exit(Child, kill),
+		    erlang:raise(Class, Reason, Stacktrace)
 	    end;
 	{'DOWN', MRef, _, _, Reason} ->
 	    receive {Child, Ref, _Ack} -> ok after 0 -> ok end,
@@ -1288,11 +1267,14 @@ spawn_3step(Spawn, FunPrelude, FunAck, FunBody)
 %%%---------------------------------
 
 trace_off() ->
-    case catch erlang:trace(all, false, [all, cpu_timestamp]) of
-	{'EXIT', {badarg, _}} ->
-	    erlang:trace(all, false, [all]);
-	_ ->
-	    ok
+    try erlang:trace_delivered(all) of
+	Ref -> receive {trace_delivered, all, Ref} -> ok end
+    catch
+	error:undef -> ok
+    end,
+    try erlang:trace(all, false, [all, cpu_timestamp])
+    catch
+	error:badarg -> erlang:trace(all, false, [all])
     end,
     erlang:trace_pattern(on_load, false, [local]),
     erlang:trace_pattern({'_', '_', '_'}, false, [local]),
@@ -1303,14 +1285,11 @@ trace_off() ->
 trace_on(Procs, Tracer, {V, CT}) ->
     case case CT of
 	     cpu_time ->
-		 case catch erlang:trace(all, true, [cpu_timestamp]) of
-		     {'EXIT', {badarg, _}} ->
-			 {error, not_supported};
-		     _ ->
-			 ok
+		 try erlang:trace(all, true, [cpu_timestamp]) of _ -> ok
+		 catch
+		     error:badarg -> {error, not_supported}
 		 end;
-	     wallclock ->
-		 ok
+	     wallclock -> ok
 	 end
 	of ok ->
 	    MatchSpec = [{'_', [], [{message, {{cp, {caller}}}}]}],
@@ -1366,20 +1345,19 @@ spawn_link_dbg_trace_client(File, Table, GroupLeader, Dump) ->
 
 
 spawn_link_trace_client(Table, GroupLeader, Dump) ->
-    {ok, Child, ready, go} = 
-	spawn_link_3step(
-	  fun(_Parent) ->
-		  process_flag(trap_exit, true),
-		  ready
-	  end,
-	  fun(_Child, ready) ->
-		  go
-	  end,
-	  fun(Parent, go) ->
-		  Init = {init, GroupLeader, Table, Dump},
-		  tracer_loop(Parent, fun handler/2, Init)
-	  end),
-    Child.
+    Parent = self(),
+    spawn_link_3step(
+      fun() ->
+	      process_flag(trap_exit, true),
+	      {self(),go}
+      end,
+      fun(Ack) ->
+	      Ack
+      end,
+      fun(go) ->
+	      Init = {init, GroupLeader, Table, Dump},
+	      tracer_loop(Parent, fun handler/2, Init)
+      end).
 
 tracer_loop(Parent, Handler, State) ->
     receive
@@ -1417,16 +1395,27 @@ handler(end_of_trace, {_, TS, GroupLeader, Table, Dump}) ->
 handler(Trace, {init, GroupLeader, Table, Dump}) ->
     dump(Dump, start_of_trace),
     info(GroupLeader, Dump, "Reading trace data...~n", []),
-    case catch trace_handler(Trace, Table, GroupLeader, Dump) of
-	{'EXIT', Reason} ->
-	    dump(Dump, {error, Reason}),
-	    end_of_trace(Table, undefined),
-	    {error, Reason, 1, GroupLeader, Dump};
+    try trace_handler(Trace, Table, GroupLeader, Dump) of
 	TS ->
 	    ets:insert(Table, #misc{id = first_ts, data = TS}),
 	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, 1}}),
 	    {1, TS, GroupLeader, Table, Dump}
+    catch
+	Error ->
+	    dump(Dump, {error, Error}),
+	    end_of_trace(Table, undefined),
+	    {error, Error, 1, GroupLeader, Dump}
     end;
+%%     case catch trace_handler(Trace, Table, GroupLeader, Dump) of
+%% 	{'EXIT', Reason} ->
+%% 	    dump(Dump, {error, Reason}),
+%% 	    end_of_trace(Table, undefined),
+%% 	    {error, Reason, 1, GroupLeader, Dump};
+%% 	TS ->
+%% 	    ets:insert(Table, #misc{id = first_ts, data = TS}),
+%% 	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, 1}}),
+%% 	    {1, TS, GroupLeader, Table, Dump}
+%%     end;
 handler(_, {error, Reason, M, GroupLeader, Dump}) ->
     N = M+1,
     info_dots(GroupLeader, Dump, N),
@@ -1434,15 +1423,25 @@ handler(_, {error, Reason, M, GroupLeader, Dump}) ->
 handler(Trace, {M, TS0, GroupLeader, Table, Dump}) ->
     N = M+1,
     info_dots(GroupLeader, Dump, N),
-    case catch trace_handler(Trace, Table, GroupLeader, Dump) of
-	{'EXIT', Reason} ->
-	    dump(Dump, {error, Reason}),
-	    end_of_trace(Table, TS0),
-	    {error, Reason, N, GroupLeader, Dump};
+    try trace_handler(Trace, Table, GroupLeader, Dump) of
 	TS ->
 	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, N}}),
 	    {N, TS, GroupLeader, Table, Dump}
+    catch
+	Error ->
+	    dump(Dump, {error, Error}),
+	    end_of_trace(Table, TS0),
+	    {error, Error, N, GroupLeader, Dump}
     end.
+%%     case catch trace_handler(Trace, Table, GroupLeader, Dump) of
+%% 	{'EXIT', Reason} ->
+%% 	    dump(Dump, {error, Reason}),
+%% 	    end_of_trace(Table, TS0),
+%% 	    {error, Reason, N, GroupLeader, Dump};
+%% 	TS ->
+%% 	    ets:insert(Table, #misc{id = last_ts_n, data = {TS, N}}),
+%% 	    {N, TS, GroupLeader, Table, Dump}
+%%     end.
 
 
 
@@ -1524,7 +1523,7 @@ trace_handler({trace_ts, Pid, call, _MFA, _TS} = Trace,
 	      _Table, _, Dump) ->
     Stack = get(Pid),
     dump_stack(Dump, Stack, Trace),
-    exit({incorrect_trace_data, ?MODULE, ?LINE,
+    throw({incorrect_trace_data, ?MODULE, ?LINE,
 	  [Trace, Stack]});
 trace_handler({trace_ts, Pid, call, {_M, _F, Arity} = Func, 
 	       {cp, CP}, TS} = Trace,
@@ -1689,7 +1688,7 @@ trace_handler({trace_ts, Pid, 'receive', _Msg, TS} = Trace,
 %% Others
 trace_handler(Trace, _Table, _, Dump) ->
     dump(Dump, Trace),
-    exit({incorrect_trace_data, ?MODULE, ?LINE, [Trace]}).
+    throw({incorrect_trace_data, ?MODULE, ?LINE, [Trace]}).
 
 
 
@@ -1771,10 +1770,10 @@ trace_call(Table, Pid, Func, TS, CP) ->
 		end,
 	    put(Pid, trace_call_push(Table, Pid, Func, FirstInTS, OldStack));
 	[[{suspend, _} | _] | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, CP, Stack]});
 	[[{garbage_collect, _} | _] | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, CP, Stack]});
 	[[{CP, _} | _], [{CP, _} | _] | _] ->
 	    %% This is a difficult case - current function becomes
@@ -1919,10 +1918,10 @@ trace_return_to(Table, Pid, Func, TS) ->
 	 [Pid, Func, TS, Stack]),
     case Stack of
 	[[{suspend, _} | _] | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, Stack]});
 	[[{garbage_collect, _} | _] | _] ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, Stack]});
 	[_ | _] ->
 	    put(Pid, trace_return_to_int(Table, Pid, Func, TS, Stack));
@@ -2017,7 +2016,7 @@ trace_spawn(Table, Pid, MFArgs, TS, Parent) ->
 	    ets:insert(Table, #proc{id = Pid, parent = Parent,
 				    spawned_as = MFArgs});
 	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, MFArgs, TS, Parent, Stack]})
     end.
 
@@ -2075,7 +2074,7 @@ trace_in(Table, Pid, Func, TS) ->
 	    %% scheduled out and now back in.
 	    put(Pid, trace_return_to_int(Table, Pid, Func1, TS, Stack));
 	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, Func, TS, Stack]})
     end.
 
@@ -2101,7 +2100,7 @@ trace_gc_end(Table, Pid, TS) ->
 	[[{garbage_collect, _}], [{Func1, _} | _] | _] ->
 	    put(Pid, trace_return_to_int(Table, Pid, Func1, TS, Stack));
 	_ ->
-	    exit({inconsistent_trace_data, ?MODULE, ?LINE,
+	    throw({inconsistent_trace_data, ?MODULE, ?LINE,
 		  [Pid, TS, Stack]})
     end.
 
@@ -2182,16 +2181,16 @@ trace_clock_1(Table, Pid, T, TS, Caller, Func, Clock) ->
 
 clock_add(Table, Id, Clock, T) ->
     ?dbg(1, "clock_add(Table, ~w, ~w, ~w)~n", [Id, Clock, T]),
-    case (catch ets:update_counter(Table, Id, {Clock, T})) of
-	{'EXIT', _} ->
+    try ets:update_counter(Table, Id, {Clock, T})
+    catch
+	error:badarg ->
 	    ets:insert(Table, #clocks{id = Id}),
-	    case ets:update_counter(Table, Id, {Clock, T}) of
-		X when X >= 0 -> ok;
-		_X -> ?dbg(0, "Negative counter value ~p ~p ~p ~p~n",
-			  [_X, Id, Clock, T])
-	    end;
-	V ->
-	    V
+	    X = ets:update_counter(Table, Id, {Clock, T}),
+	    if X >= 0 -> ok;
+	       true -> ?dbg(0, "Negative counter value ~p ~p ~p ~p~n",
+			  [X, Id, Clock, T])
+	    end,
+	    X
     end.
 
 clocks_add(Table, #clocks{id = Id} = Clocks) ->
@@ -2239,7 +2238,17 @@ ts_sub(_, _) ->
 
 
 
-do_analyse(Table, 
+do_analyse(Table, Analyse) ->
+    ?dbg(5, "do_analyse_1(~p, ~p)~n", [Table, Analyse]),
+    Result = 
+	try do_analyse_1(Table, Analyse)
+	catch
+	    Error -> Error
+	end,
+    ?dbg(5, "do_analyse_1(_, _) ->~p~n", [Result]),
+    Result.
+
+do_analyse_1(Table, 
 	   #analyse{group_leader = GroupLeader,
 		    dest = Io,
 		    cols = Cols0,
@@ -2247,7 +2256,6 @@ do_analyse(Table,
 		    sort = Sort,
 		    totals = PrintTotals,
 		    details = PrintDetails} = _Analyse) ->
-    ?dbg(5, "do_analyse(~p, ~p)~n", [Table, _Analyse]),
     Waste = 11,
     MinCols = Waste + 12, %% We need Width >= 1
     Cols = if Cols0 < MinCols -> MinCols; true -> Cols0 end,
@@ -2304,7 +2312,7 @@ do_analyse(Table,
 	    when FTS /= undefined, LTS /= undefined ->
 		{FTS, LTS, TC};
 	    _ ->
-		exit(empty_trace)
+		throw({error,empty_trace})
 	end,
     Totals0 = 
 	case ets:lookup(PidTable, totals) of
@@ -2312,7 +2320,7 @@ do_analyse(Table,
 		ets:delete(PidTable, totals),
 		T0;
 	    _ ->
-		exit(empty_trace)
+		throw({error,empty_trace})
 	end,
     Totals = Totals0#clocks{acc = ts_sub(LastTS, FirstTS)},
     ?dbg(3, "Totals0 =  ~p~n", [Totals0]),

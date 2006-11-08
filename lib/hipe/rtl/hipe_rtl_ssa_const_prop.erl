@@ -233,7 +233,7 @@ lattice_meet(Val1, Val2) ->
   {M, M, M, M, M}.
 
 all_ones() ->
-  (1 bsl hipe_rtl_arch:word_size() * 8) - 1.
+  (1 bsl ?bytes_to_bits(hipe_rtl_arch:word_size())) - 1.
 
 %% when calling partial_eval*() we know that at least one of the Values are 
 %% bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
@@ -310,7 +310,8 @@ partial_eval_alu(Val1, andnot, Val2) ->
     true -> lattice_meet(Val1, Val2)
   end;
 partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sll') or (Op =:= 'srl') ->
-  partial_eval_shift(hipe_rtl_arch:word_size()*8, Val1, Val2);
+  BitSize = ?bytes_to_bits(hipe_rtl_arch:word_size()),
+  partial_eval_shift(BitSize, Val1, Val2);
 partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sllx') or (Op =:= 'srlx') ->
   partial_eval_shift(64, Val1, Val2);
 
@@ -820,7 +821,8 @@ partial_update_alu(Val1, andnot, Val2) ->
     true -> keep_it
   end;
 partial_update_alu(Val1, Op, Val2) when (Op =:= 'sll') or (Op =:= 'srl') ->
-  partial_update_shift(hipe_rtl_arch:word_size()*8, Val1, Val2);
+  BitSize = ?bytes_to_bits(hipe_rtl_arch:word_size()),
+  partial_update_shift(BitSize, Val1, Val2);
 partial_update_alu(Val1, Op, Val2) when (Op =:= 'sllx') or (Op =:= 'srlx') ->
   partial_update_shift(64, Val1, Val2);
 partial_update_alu(Val1, Op, Val2) when (Op =:= 'sra') or (Op =:= 'srax') ->

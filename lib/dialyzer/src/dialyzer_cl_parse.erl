@@ -33,6 +33,10 @@ start() ->
       error("internal error")
   end.
 
+cl(["--check_init_plt"|T]) ->
+  put(dialyzer_options_gui, false),
+  put(dialyzer_only_check_init_plt, true),
+  cl(T);
 cl(["-D"|_]) ->
   error("No defines after -D");
 cl(["-D"++Defines|T]) ->
@@ -139,6 +143,8 @@ error(Str) ->
 
 init() ->
   put(dialyzer_include, []),
+  put(dialyzer_only_check_init_plt, false),
+  put(dialyzer_options_core_transform, cerl_typean),
   put(dialyzer_options_defines, []),
   put(dialyzer_options_gui, true),
   put(dialyzer_options_files, []),
@@ -147,7 +153,7 @@ init() ->
   put(dialyzer_options_suppress_inline, false),
   put(dialyzer_output, ""),
   put(dialyzer_options_from, byte_code),
-  put(dialyzer_options_libs, ?dialyzer_def_libs),
+  put(dialyzer_options_libs, ?DEFAULT_LIBS),
 
   InitPltDir = filename:join([code:lib_dir(dialyzer),
 			      "plt","dialyzer_init_plt"]),
@@ -187,19 +193,23 @@ doit() ->
   Opts = #options{init_plt=get(dialyzer_init_plt),
 		  plt_libs=get(dialyzer_options_libs)},
   case dialyzer_cl:check_init_plt(Opts) of
-    error -> erlang:halt(?RET_INTERNAL_ERROR);
-    ok -> 
-      case get(dialyzer_options_gui) of
-	true ->
-	  if Quiet -> ok;
-	     true  -> io:put_chars("  Proceeding with startup...\n")
-	  end,
-	  gui();
+    error -> return(?RET_INTERNAL_ERROR);
+    ok ->       
+      case get(dialyzer_only_check_init_plt) of
+	true -> return(?RET_NOTHING_SUSPICIOUS);
 	false ->
-	  if Quiet -> ok;
-	     true  -> io:put_chars("  Proceeding with analysis... ")
-	  end,
-	  cl()
+	  case get(dialyzer_options_gui) of
+	    true ->
+	      if Quiet -> ok;
+		 true  -> io:put_chars("  Proceeding with startup...\n")
+	      end,
+	      gui();
+	    false ->
+	      if Quiet -> ok;
+		 true  -> io:put_chars("  Proceeding with analysis... ")
+	      end,
+	      cl()
+	  end
       end
   end.
 
@@ -212,12 +222,18 @@ gui() ->
 
 cl() ->
   Output = get(dialyzer_output),
+  CoreTransform = get(dialyzer_options_core_transform),
   Opts = [{files,get(dialyzer_options_files)},
 	  {files_rec,get(dialyzer_options_files_rec)},
-	  {output_file,Output}|common_options()],
+	  {output_file,Output},
+	  {core_transform, CoreTransform}
+	  |common_options()],
   OptsRecord = dialyzer_options:build(Opts),
   %%io:format("~p\n", [OptsRecord]),
-  R = dialyzer_cl:start(OptsRecord),
+  return(dialyzer_cl:start(OptsRecord)).
+
+return(R) ->
+  Output = get(dialyzer_output),
   Quiet = get(dialyzer_options_quiet),
   case R of
     0 ->

@@ -110,10 +110,9 @@
 
 -import(lists, [map/2,mapfoldl/3,reverse/1,reverse/2,keysearch/3,foreach/2]).
 
-module({Mod,Exp,Attr,Fs0,Lc0}, Opts) ->
+module({Mod,Exp,Attr,Fs0,_}, _Opts) ->
     Fs1 = map(fun split_blocks/1, Fs0),
-    ModCode = {Mod,Exp,Attr,Fs1,Lc0},
-    {ok,{Mod,Exp,Attr,Fs2,Lc}} = beam_clean:module(ModCode, Opts),
+    {Fs2,Lc} = beam_clean:clean_labels(Fs1),
     Fs = map(fun function/1, Fs2),
     {ok,{Mod,Exp,Attr,Fs,Lc}}.
 

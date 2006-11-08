@@ -212,7 +212,7 @@ handle_call({cancel_request, RequestId}, From, State) ->
 
 handle_call({cookies, Url}, _, State) ->
     case http_uri:parse(Url) of
-	{Scheme, Host, Port, Path, _} ->
+	{Scheme, _, Host, Port, Path, _} ->
 	    CookieHeaders = 
 		http_cookie:header(Scheme, {Host, Port}, 
 				   Path, State#state.cookie_db),
@@ -233,7 +233,7 @@ handle_call(Msg, From, State) ->
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
 handle_cast({retry_or_redirect_request, {Time, Request}}, State) ->
-    {ok, _} = timer:send_after(Time, ?MODULE, Request),
+    {ok, _} = timer:apply_after(Time, ?MODULE, retry_request, [Request]),
     {noreply, State};
 
 handle_cast({retry_or_redirect_request, Request}, State) ->

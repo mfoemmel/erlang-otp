@@ -30,6 +30,11 @@
 
 -module(erl_types).
 
+-define(WIDENING_LIMIT, 5).
+
+%-define(widening_debug, fun(X, Y) -> io:format("widening: ~s ~p~n", [X, Y]) end).
+-define(widening_debug, fun(_, _) -> ok end).
+
 -export([
 	 t_any/0,
 	 t_atom/0,
@@ -56,7 +61,7 @@
 	 t_fun_range/1,
 	 t_has_var/1,
 	 t_identifier/0,
-	 t_pos_improper_list/0,
+	 t_improper_list/2,
 	 t_inf/2,
 	 t_inf_lists/2,
 	 t_integer/0,
@@ -76,6 +81,7 @@
 	 t_is_fun/1,
 	 t_is_pos_improper_list/1,
 	 t_is_integer/1,
+	 t_is_fixnum/1,
 	 t_is_list/1,
 	 t_is_nil/1,
 	 t_is_none/1,
@@ -99,6 +105,8 @@
 	 t_number_vals/1,
 	 t_pid/0,
 	 t_port/0,
+	 t_pos_improper_list/0,
+	 t_pos_improper_list/2,
 	 t_product/1,
 	 t_ref/0,
 	 t_string/0,
@@ -116,10 +124,15 @@
 	 t_tuple_subtypes/1,
 	 t_unify/2,
 	 t_var/1,
-	 t_var_name/1
+	 t_var_name/1,
+	 number_max/1,
+	 number_min/1,
+	 min/2,
+	 max/2,
+	 widening/3
 	]).
 
-%-define(ENABLE_TEST, true).
+-define(ENABLE_TEST, true).
 
 -ifdef(ENABLE_TEST).
 -export([test/0]).
@@ -153,8 +166,6 @@
 
 -define(atom_tag,       atom).
 -define(binary_tag,     binary).
--define(byte_tag,       byte).
--define(char_tag,       char).
 -define(float_tag,      float).
 -define(function_tag,   function).
 -define(identifier_tag, identifier).
@@ -273,7 +284,6 @@ t_atom_vals(Other) ->
     ?none -> ?none
   end.
       
-
 t_is_atom(?atom(_)) -> true;
 t_is_atom(_) -> false.
 
@@ -328,7 +338,7 @@ t_fun_args(?function(?any, _)) ->
 
 t_fun_arity(?function(?any, _)) ->
   ?any;
-t_fun_arity(?function(Domain, _)) ->
+t_fun_arity(?function(?product(Domain), _)) ->
   length(Domain).
 
 t_fun_range(?function(_, Range)) ->
@@ -377,7 +387,7 @@ t_is_ref(?identifier(Set)) ->
 t_is_ref(_) -> false.
 
 %%-----------------------------------------------------------------------------
-%% Numbers are divided into floats, integers, chars and byts.
+%% Numbers are divided into floats, integers, chars and bytes.
 %%
 
 t_number() ->
@@ -425,10 +435,11 @@ t_is_integer(_) -> false.
 t_byte() ->
   ?byte.
 
+t_is_byte(?int_range(neg_inf, _)) -> false;
+t_is_byte(?int_range(_, pos_inf)) -> false;
 t_is_byte(?int_range(From, To)) when From >= 0, To =< ?MAX_BYTE -> true;
-t_is_byte(?int_set(Set)) -> lists:all(fun(X) -> 
-					  (X >= 0) andalso (X =< ?MAX_BYTE)
-				      end, set_to_list(Set));
+t_is_byte(?int_set(Set)) -> 
+  (set_min(Set) >= 0) andalso (set_max(Set) =< ?MAX_BYTE);
 t_is_byte(_) -> false.
 
 %%------------------------------------
@@ -436,10 +447,11 @@ t_is_byte(_) -> false.
 t_char() ->
   ?char.
 
+t_is_char(?int_range(neg_inf, _)) -> false;
+t_is_char(?int_range(_, pos_inf)) -> false;
 t_is_char(?int_range(From, To)) when From >= 0, To =< ?MAX_CHAR -> true;
-t_is_char(?int_set(Set)) -> lists:all(fun(X) -> 
-					  (X >= 0) andalso (X =< ?MAX_CHAR)
-				      end, set_to_list(Set));
+t_is_char(?int_set(Set)) -> 
+  (set_min(Set) >= 0) andalso (set_max(Set) =< ?MAX_CHAR);
 t_is_char(_) -> false.
 
 %%-----------------------------------------------------------------------------
@@ -449,6 +461,13 @@ t_is_char(_) -> false.
 t_cons() ->
   ?nonempty_list(?any, ?any).
 
+
+%% Note that if the tail argument can be a list, we must collapse the
+%% content of the list to include both the content of the tail list
+%% and the head of the cons. If for example the tail argument is any()
+%% then there can be any list in the tail and the content of the
+%% returned list must be any().
+
 t_cons(?none,  _) -> ?none;
 t_cons(_, ?none) -> ?none;
 t_cons(Hd, ?nil) ->
@@ -457,10 +476,14 @@ t_cons(Hd, ?list(Contents, Termination, _)) ->
   ?nonempty_list(t_sup(Contents, Hd), Termination);
 t_cons(Hd, Tail) ->
   case t_inf(Tail, t_pos_improper_list()) of
-    ?list(Contents, _Termination, _Size) -> 
-      ?nonempty_list(t_sup(Hd, Contents), Tail);
-    _Other ->
-      ?nonempty_list(Hd, Tail)
+    ?list(Contents, Termination, _Size) ->
+      %% Collapse the list part of the termination but keep the
+      %% non-list part intact.
+      NewTermination = t_sup(t_subtract(Tail, t_pos_improper_list()), 
+			     Termination),
+      ?nonempty_list(t_sup(Hd, Contents), NewTermination);
+    ?nil -> ?nonempty_list(Hd, Tail);
+    ?none -> ?nonempty_list(Hd, Tail)
   end.
   
 t_is_cons(?nonempty_list(_, _)) -> true;
@@ -505,10 +528,21 @@ t_string() ->
 t_pos_improper_list() ->
   ?list(?any, ?any, ?any).
 
+%% Should only be used if you know what you are doing. See t_cons/2
+t_pos_improper_list(Content, Termination) ->
+  %% Safety check
+  true = t_is_subtype(t_nil(), Termination),
+  ?list(Content, Termination, ?any).
+
 t_is_pos_improper_list(?list(_, _, _)) -> true;
 t_is_pos_improper_list(?nil) -> true;
 t_is_pos_improper_list(_) -> false.
 
+%% Should only be used if you know what you are doing. See t_cons/2
+t_improper_list(Content, Termination) ->
+  %% Safety check
+  false = t_is_subtype(t_nil(), Termination),
+  ?list(Content, Termination, ?any).  
   
 %%-----------------------------------------------------------------------------
 %% Tuples
@@ -564,9 +598,16 @@ t_is_tuple(_) -> false.
 tuple_set(List) ->
   Length = length(List),
   if Length =:= 1 -> hd(List);
-     Length =< ?SET_LIMIT -> ?tuple_set(List);
+     Length =< ?SET_LIMIT -> case any_tuple_untagged(List) of
+			       true -> reduce_tuple_set(List);
+			       false -> ?tuple_set(List)
+			     end;
      true -> reduce_tuple_set(List)
   end.
+
+any_tuple_untagged([?tuple(_, _, ?any)|_]) -> true;
+any_tuple_untagged([?tuple(_, _, _)|Left]) -> any_tuple_untagged(Left);
+any_tuple_untagged([]) -> false.
 
 tuple_set(T1 = ?tuple(_Elements1, Arity1, Tag1),
 	  T2 = ?tuple(_Elements2, Arity2, Tag2)) ->
@@ -596,8 +637,6 @@ reduce_tuple_tags([T1 = ?tuple(_, Arity1, _)|Left],
   reduce_tuple_tags(Left, T1, [T2|Acc]);
 reduce_tuple_tags([], T, Acc) ->
   lists:reverse([T|Acc]).
-
-			  
 
 
 %%-----------------------------------------------------------------------------
@@ -679,23 +718,133 @@ t_from_term(T) when is_tuple(T) ->     t_tuple([t_from_term(E)
 %% Integer types from a range.
 %%
 
+%%-define(USE_RANGES, true).
+
+-ifdef(USE_RANGES).
+
+t_from_range(neg_inf, pos_inf) -> t_integer();
+t_from_range(neg_inf, Y) -> ?int_range(neg_inf, Y);
+t_from_range(X, pos_inf) -> ?int_range(X, pos_inf);
 t_from_range(X, Y) when is_integer(X), is_integer(Y), X =< Y ->
   if (Y - X) < ?SET_LIMIT -> t_integers(lists:seq(X, Y));
      true -> ?int_range(X, Y)
+  end;
+t_from_range(X, Y) when is_integer(X), is_integer(Y) -> t_none().
+
+-else.
+
+t_from_range(neg_inf, _) -> t_integer();
+t_from_range(_, pos_inf) -> t_integer();
+t_from_range(X, Y) when is_integer(X), is_integer(Y), X > Y -> t_none();
+t_from_range(X, Y) when is_integer(X), is_integer(Y) ->
+  case ((Y - X) < ?SET_LIMIT) of 
+    true -> t_integers(lists:seq(X, Y));
+    false ->
+      case X >= 0 of
+	false -> t_integer();
+	true ->
+	  if Y =< ?MAX_BYTE -> t_byte();
+	     Y =< ?MAX_CHAR -> t_char();
+	     true -> t_integer()
+	  end
+      end
   end.
 
-int_range(neg_inf, pos_inf)         -> t_integer();
-int_range(neg_inf, To)              -> ?int_range(neg_inf, To);
-int_range(From, pos_inf)            -> ?int_range(From, pos_inf);
-int_range(From, To) when From =< To -> t_from_range(From, To).
+
+-endif.
+
+t_is_fixnum(?int_range(neg_inf, _)) -> false;
+t_is_fixnum(?int_range(_, pos_inf)) -> false;
+t_is_fixnum(?int_range(From, To)) ->
+  hipe_tagscheme:is_fixnum(From) andalso hipe_tagscheme:is_fixnum(To);
+t_is_fixnum(?int_set(Set)) ->
+  hipe_tagscheme:is_fixnum(set_min(Set)) 
+    andalso hipe_tagscheme:is_fixnum(set_max(Set));
+t_is_fixnum(_) -> false.
+
+
+number_min(?int_range(From, _)) -> From;
+number_min(?int_set(Set)) -> set_min(Set);
+number_min(?number(?any, _Tag)) -> neg_inf.
+
+number_max(?int_range(_, To)) -> To;
+number_max(?int_set(Set)) -> set_max(Set);
+number_max(?number(?any, _Tag)) -> pos_inf.
+
+widening(?any, _, _) -> ?any;
+widening(Type, ?any, _) -> Type;
+widening(?function(Domain, Range), ?function(OldDomain, OldRange), Version) 
+  when length(Domain) == length(OldDomain) ->
+  ?widening_debug("function", {{Domain, Range}, {OldDomain, OldRange}}),
+  NewDomain = lists:zipwith(
+		fun(Type, OldType) -> widening(Type, OldType, Version) end,
+		Domain, OldDomain),
+  t_fun(NewDomain, widening(Range, OldRange, Version));
+widening(?function(?any,_Range), ?function(?any,_OldRange), _Version) -> 
+  t_fun();
+widening(?list(Contents, Termination, Size), 
+	 ?list(OldContents, OldTermination, Size), Version) ->
+  %?widening_debug("list", {Contents, Termination, OldTermination}),
+  NewContent = widening(Contents, OldContents, Version),
+  NewTermination = widening(Termination, OldTermination, Version),
+  %?widening_debug("NewList", {NewContent, NewTermination}),
+  ?list(NewContent, NewTermination, Size);
+%%  t_list(NewContent);
+widening(?product(Types), ?product(OldTypes), Version) 
+  when length(Types) == length(OldTypes) ->
+  %?widening_debug("Product", {Types, OldTypes}),
+  t_product(lists:zipwith(
+	      fun(Type, OldType) -> widening(Type, OldType, Version) end,
+	      Types, OldTypes));
+widening(Type = ?tuple(?any, ?any, ?any), _, _) -> 
+  %?widening_debug("An any-tuple", Type),
+  Type;
+widening(?tuple(Types, N, _), ?tuple(OldTypes, N, _), Version) ->
+  %?widening_debug("Tuple", {Types, OldTypes}),
+  t_tuple(lists:zipwith(
+	    fun(Type, OldType) -> widening(Type, OldType, Version) end,
+	    Types, OldTypes));
+widening(?union(Types), ?union(OldTypes), Version) ->
+  WidList = lists:zipwith(
+	      fun(Type, OldType) -> widening(Type, OldType, Version) end,
+	      Types, OldTypes),
+  ?union(WidList);
+widening(Type = ?integer(_), OldType = ?integer(_), Version) ->
+  %?widening_debug("Int", {Type, OldType}),
+  NewMin =
+    case (number_min(Type) =:= max(number_min(Type), number_min(OldType))) 
+      orelse (Version < ?WIDENING_LIMIT) of
+      true ->
+	min(number_min(Type), number_min(OldType));
+      false ->
+	neg_inf
+    end,
+  NewMax = 
+    case (number_max(OldType) =:= max(number_max(OldType), number_max(Type)))
+      orelse (Version < ?WIDENING_LIMIT) of
+      true ->
+	max(number_max(Type), number_max(OldType));
+      false ->
+	pos_inf
+    end,
+  Ans = t_from_range(NewMin, NewMax),
+  %?widening_debug("Answer", [Ans]),
+  Ans;
+widening(Type, Type, _) -> Type;
+widening(Type, OldType, _) ->
+  ?widening_debug("Dont know how to widen", {Type, OldType}),
+  Type.
+
+%% int_range(neg_inf, pos_inf)         -> t_integer();
+%% int_range(neg_inf, To)              -> ?int_range(neg_inf, To);
+%% int_range(From, pos_inf)            -> ?int_range(From, pos_inf);
+%% int_range(From, To) when From =< To -> t_from_range(From, To);
+%% int_range(From, To) when To < From  -> ?none.  
 
 in_range(_, ?int_range(neg_inf, pos_inf)) -> true;
 in_range(X, ?int_range(From, pos_inf))    -> X >= From;
 in_range(X, ?int_range(neg_inf, To))      -> X =< To;
 in_range(X, ?int_range(From, To))         -> (X >= From) andalso (X =< To).
-
-range_includes_set(Range, Set) ->
-  lists:all(fun(X) -> in_range(X, Range) end, set_to_list(Set)).
 
 max(neg_inf, Y) -> Y;
 max(X, neg_inf) -> X;
@@ -711,18 +860,13 @@ min(X, pos_inf) -> X;
 min(X, Y) when X =< Y -> X;
 min(_, Y) -> Y.
   
-expand_range_list(?int_range(From, To), List) ->
-  expand_range_limits_list(From, To, List).
+expand_range_from_set(Range = ?int_range(From, To), Set) ->
+  Min = min(set_min(Set), From),
+  Max = max(set_max(Set), To),
+  if From =:= Min, To =:= Max -> Range;
+     true -> t_from_range(Min, Max)
+  end.
 
-expand_range_limits_list(From, To, [H|T]) ->
-  Min = min(From, H),
-  Max = max(To, H),
-  if Min =:= neg_inf, Max =:= pos_inf -> t_integer();
-     true -> expand_range_limits_list(Min, Max, T)
-  end;
-expand_range_limits_list(From, To, []) ->
-  ?int_range(From, To).
-  
 %%============================================================================
 %% 
 %% Lattice operations
@@ -774,7 +918,13 @@ t_sup(?list(Contents1, Termination1, Size1),
     end,
   NewContents = t_sup(Contents1, Contents2),
   NewTermination = t_sup(Termination1, Termination2),
-  ?list(NewContents, NewTermination, NewSize);
+  TmpList = t_cons(NewContents, NewTermination),
+  case NewSize of
+    ?nonempty_tag -> TmpList;
+    ?any -> 
+      ?list(FinalContents, FinalTermination, _) = TmpList,
+      ?list(FinalContents, FinalTermination, ?any)
+  end;
 t_sup(?number(_, _), T = ?number(?any, ?number_tag)) -> T;  
 t_sup(T = ?number(?any, ?number_tag), ?number(_, _)) -> T;
 t_sup(?float, ?float) -> ?float;
@@ -800,17 +950,11 @@ t_sup(?int_set(Set1), ?int_set(Set2)) ->
     Set -> ?int_set(Set)
   end;
 t_sup(?int_range(From1, To1), ?int_range(From2, To2)) ->
-  int_range(min(From1, From2), max(To1, To2));
+  t_from_range(min(From1, From2), max(To1, To2));
 t_sup(Range = ?int_range(_, _), ?int_set(Set)) ->
-  case range_includes_set(Range, Set) of
-    true -> Range;
-    false -> expand_range_list(Range, set_to_list(Set))
-  end;
+  expand_range_from_set(Range, Set);
 t_sup(?int_set(Set), Range = ?int_range(_, _)) ->
-  case range_includes_set(Range, Set) of
-    true -> Range;
-    false -> expand_range_list(Range, set_to_list(Set))
-  end;
+  expand_range_from_set(Range, Set);
 t_sup(?product(Types1), ?product(Types2)) ->
   L1 = length(Types1),
   L2 = length(Types2),
@@ -901,6 +1045,14 @@ force_union(T = ?union(_)) ->       T.
 %% Infimum
 %%
 
+t_inf([H1, H2|T]) ->
+  case t_inf(H1, H2) of
+    ?none -> ?none;
+    NewH -> t_inf([NewH|T])
+  end;
+t_inf([H]) -> H;
+t_inf([]) -> ?none.
+
 t_inf(?var(_), ?var(_)) -> ?any;
 t_inf(?var(_), T) -> T;
 t_inf(T, ?var(_)) -> T;
@@ -937,7 +1089,7 @@ t_inf(?nil, ?list(_Contents, Termination, _)) ->
 t_inf(?list(_Contents, Termination, _), ?nil) ->
   t_inf(?nil, Termination);
 t_inf(?list(Contents1, Termination1, Size1), 
-      ?list(Contents2, Termination2, Size2)) ->
+      ?list(Contents2, Termination2, Size2)) ->  
   case t_inf(Termination1, Termination2) of
     ?none -> ?none;
     Termination ->
@@ -969,12 +1121,16 @@ t_inf(T1 = ?number(_, _), T2 = ?number(_, _)) ->
 	Set -> ?int_set(Set)
       end;
     {?int_range(From1, To1), ?int_range(From2, To2)} -> 
-      int_range(max(From1, From2), min(To1, To2));
+      t_from_range(max(From1, From2), min(To1, To2));
     {Range = ?int_range(_, _), ?int_set(Set)} ->
-      case set_filter(fun(X) -> in_range(X, Range) end, Set) of
-	?none -> ?none;
-	NewSet -> ?int_set(NewSet)
-      end;
+      %%io:format("t_inf range, set args ~p ~p ~n", [T1, T2]),
+      Ans2 = 
+	case set_filter(fun(X) -> in_range(X, Range) end, Set) of
+	  ?none -> ?none;
+	  NewSet -> ?int_set(NewSet)
+	end,
+      %%io:format("Ans2 ~p ~n", [Ans2]),
+      Ans2;
     {?int_set(Set), Range = ?int_range(_, _)} ->
       case set_filter(fun(X) -> in_range(X, Range) end, Set) of
 	?none -> ?none;
@@ -1107,7 +1263,15 @@ t_subst(T = ?var(Id), Dict, Fun) ->
     {ok, Type} -> Type
   end;
 t_subst(?list(Contents, Termination, Size), Dict, Fun) ->
-  ?list(t_subst(Contents, Dict, Fun), t_subst(Termination, Dict, Fun), Size);
+  NewContents = t_subst(Contents, Dict, Fun),
+  %% Be careful here to make the termination collapse if necessary.
+  case t_subst(Termination, Dict, Fun) of
+    ?nil -> ?list(NewContents, ?nil, Size);
+    ?any -> ?list(NewContents, ?any, Size);
+    Other ->
+      ?list(NewContents, NewTermination, _) = t_cons(NewContents, Other),
+      ?list(NewContents, NewTermination, Size)
+  end;
 t_subst(?function(Domain, Range), Dict, Fun) ->
   ?function(t_subst(Domain, Dict, Fun), t_subst(Range, Dict, Fun));
 t_subst(?product(Types), Dict, Fun) -> 
@@ -1121,8 +1285,7 @@ t_subst(?tuple_set(List), Dict, Fun) ->
 t_subst(T, _Dict, _Fun) -> 
   T.
 
-
-		      
+	      
 %%-----------------------------------------------------------------------------
 %% Unification
 %%
@@ -1283,12 +1446,12 @@ t_subtract(T1 = ?int_range(From1, To1), T2 = ?int_range(_, _)) ->
   case t_inf(T1, T2) of
     ?none -> T1;
     ?int_range(From1, To1) -> ?none;
-    ?int_range(neg_inf, To) -> int_range(To + 1, To1);
-    ?int_range(From, pos_inf) -> int_range(From1, From - 1);
-    ?int_range(From, To) -> t_sup(int_range(From1, From - 1), 
-				  int_range(To + 1, To))
+    ?int_range(neg_inf, To) -> t_from_range(To + 1, To1);
+    ?int_range(From, pos_inf) -> t_from_range(From1, From - 1);
+    ?int_range(From, To) -> t_sup(t_from_range(From1, From - 1), 
+				  t_from_range(To + 1, To))
   end;
-t_subtract(T1 = ?int_range(From, To), T2 = ?int_set(Set)) ->
+t_subtract(T1 = ?int_range(From, To), _T2 = ?int_set(Set)) ->
   NewFrom = case set_is_element(From, Set) of
 	      true -> From + 1;
 	      false -> From
@@ -1298,7 +1461,7 @@ t_subtract(T1 = ?int_range(From, To), T2 = ?int_set(Set)) ->
 	    false -> To
 	  end,
   if (NewFrom =:= From) and (NewTo =:= To) -> T1;
-     true -> t_subtract(t_from_range(NewFrom, NewTo), T2)
+     true -> t_from_range(NewFrom, NewTo)
   end;
 t_subtract(?int_set(Set), ?int_range(From, To)) ->
   case set_filter(fun(X) -> not ((X =< From) orelse (X >= To))end, Set) of
@@ -1331,7 +1494,7 @@ t_subtract(T1 = ?tuple_set(List1), T2 = ?tuple(_, Arity, _)) ->
 t_subtract(T1 = ?tuple(_, Arity, _), ?tuple_set(List1)) ->
   case [T || T = ?tuple(_, Arity1, _) <- List1, Arity1 =:= Arity] of
     [] -> T1;
-    List2 -> t_sup([t_subtract(T1, L) || L <- List2])
+    List2 -> t_inf([t_subtract(T1, L) || L <- List2])
   end;
 t_subtract(?tuple_set(List1), T2 = ?tuple_set(_)) ->
   case [T || T <- [t_subtract(Tuple, T2) || Tuple <- List1], T =/= ?none] of
@@ -1407,11 +1570,19 @@ t_limit(?tuple_set(List), K) ->
      true -> ?tuple_set([t_limit(L, K) || L <- List])
   end;
 t_limit(?list(Elements, Termination, Size), K) ->
-  if K =:= 1 ->
-      %% We do not want to lose the termination information.
-      ?list(t_limit(Elements, K - 1), t_limit(Termination, K), Size);
-     true ->
-      ?list(t_limit(Elements, K - 1), t_limit(Termination, K - 1), Size)
+  NewTermination = 
+    if K =:= 1 -> 
+	%% We do not want to lose the termination information.
+	t_limit(Termination, K);
+       true -> t_limit(Termination, K - 1)
+    end,
+  NewElements = t_limit(Elements, K - 1),
+  TmpList = t_cons(NewElements, NewTermination),
+  case Size of
+    ?nonempty_tag -> TmpList;
+    ?any -> 
+      ?list(NewElements1, NewTermination1, _) = TmpList,
+      ?list(NewElements1, NewTermination1, ?any)
   end;
 t_limit(?function(Domain, Range), K) ->
   %% The domain is either a product or any() so we do not decrease the K.
@@ -1475,15 +1646,28 @@ t_to_string(?nil, _RecDict) ->
 t_to_string(?nonempty_list(Contents, Termination), RecDict) ->
   ContentString = t_to_string(Contents, RecDict),
   case Termination of
-    ?nil -> "["++ContentString++",...]";
-    ?any -> 
-      if Contents =:= ?any ->
-	  "nonempty_possibly_improper_list()";
-	 true ->
-	  "nonempty_possibly_improper_list("++ContentString++")"
+    ?nil ->
+      case t_is_char(Contents) andalso (not t_is_byte(Contents)) of
+	true -> "nonempty_string()";
+	false -> "["++ContentString++",...]"
       end;
-    _ -> "nonempty_improper_list("++ContentString++","
-	   ++t_to_string(Termination, RecDict)++")"
+    ?any -> 
+      %% Just a safety check.
+      case Contents =:= ?any of
+	true -> ok;
+	false -> erlang:fault({illegal_list, 
+			       ?nonempty_list(Contents, Termination)})
+      end,
+      "nonempty_possibly_improper_list()";
+    _ ->
+      case t_is_subtype(t_nil(), Termination) of
+	true ->
+	  "nonempty_possibly_improper_list("++ContentString++","
+	    ++t_to_string(Termination, RecDict)++")";
+	false ->
+	  "nonempty_improper_list("++ContentString++","
+	    ++t_to_string(Termination, RecDict)++")"
+      end
   end;
 t_to_string(?list(Contents, Termination, ?any), RecDict) ->
   ContentString = t_to_string(Contents, RecDict),
@@ -1494,11 +1678,13 @@ t_to_string(?list(Contents, Termination, ?any), RecDict) ->
 	false -> "["++ContentString++"]"
       end;
     ?any ->
-      if Contents =:= ?any ->
-	  "possibly_improper_list()";
-	 true ->
-	  "possibly_improper_list("++ContentString++")"
-      end;
+      %% Just a safety check.      
+      case Contents =:= ?any of
+	true -> ok;
+	false -> erlang:fault({illegal_list, 
+			       ?list(Contents, Termination, ?any)})
+      end,
+      "possibly_improper_list()";
     _ -> 
       case t_is_subtype(t_nil(), Termination) of
 	true ->
@@ -1514,7 +1700,7 @@ t_to_string(?int_set(Set), _RecDict) ->
 t_to_string(?byte, _RecDict) -> "byte()";
 t_to_string(?char, _RecDict) -> "char()";
 t_to_string(?int_range(From, To), _RecDict) ->
-  io_lib:format("range(~w, ~w)", [From, To]);
+  lists:flatten(io_lib:format("range(~w, ~w)", [From, To]));
 t_to_string(?integer(?any), _RecDict) -> "integer()";
 t_to_string(?float, _RecDict) -> "float()";
 t_to_string(?number(?any, ?number_tag), _RecDict) -> "number()";
@@ -1526,8 +1712,9 @@ t_to_string(?tuple(Elements, _Arity, ?any), RecDict) ->
 t_to_string(?tuple(Elements, Arity, Tag), RecDict) ->
   [TagAtom] = t_atom_vals(Tag),
   case dict:find({TagAtom, Arity-1}, RecDict) of
-    error ->   "{" ++ comma_sequence(Elements, RecDict) ++ "}";
-    {ok, FieldNames} -> record_to_string(TagAtom, Elements, FieldNames, RecDict)
+    error -> "{" ++ comma_sequence(Elements, RecDict) ++ "}";
+    {ok, FieldNames} ->
+      record_to_string(TagAtom, Elements, FieldNames, RecDict)
   end;
 t_to_string(?tuple_set(List), RecDict) ->
   union_sequence(List, RecDict);
@@ -1656,6 +1843,10 @@ set_to_string(Set) ->
      end|| X <- List],
   sequence(List1, [], " | ").
 
+set_min([H|_]) -> H.
+
+set_max(Set) ->
+  hd(lists:reverse(Set)).
 
 %%============================================================================
 %% 
@@ -1758,6 +1949,8 @@ test() ->
   Function5 = t_inf(Union7, Function5),
   true   = t_is_byte(t_inf(Union9, t_number())),
   true   = t_is_char(t_inf(Union9, t_number())),
+
+  io:format("3? ~p ~n", [?int_set([3])]),
 
   RecDict = dict:store({foo, 2}, [bar, baz], dict:new()),
   Record1 = t_from_term({foo, [1,2], {1,2,3}}),

@@ -21,9 +21,9 @@
 %%  History  :	* 2000-04-07 Erik Johansson (happi@csd.uu.se): Created.
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %% CVS:
-%%    $Author: pergu $
-%%    $Date: 2005/05/11 10:40:12 $
-%%    $Revision: 1.30 $
+%%    $Author: mikpe $
+%%    $Date: 2006/09/14 13:33:28 $
+%%    $Revision: 1.32 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
@@ -731,7 +731,7 @@ flatten([],N,More) ->
 add_use_point([Temp|Temps],Pos,Intervals) ->
   %% Extend the old interval...
   NewInterval =
-    case hipe_vectors:get(Intervals, Temp+1) of
+    case hipe_vectors:get(Intervals, Temp) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -743,7 +743,7 @@ add_use_point([Temp|Temps],Pos,Intervals) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval),
+  Intervals2 = hipe_vectors:set(Intervals, Temp, NewInterval),
 
   %% Add the rest of the temporaries.
   add_use_point(Temps, Pos, Intervals2);
@@ -755,7 +755,7 @@ add_use_point([], _, I) ->
 add_def_point([Temp|Temps],Pos,Intervals) ->
   %% Extend the old interval...
   NewInterval =
-    case hipe_vectors:get(Intervals, Temp+1) of
+    case hipe_vectors:get(Intervals, Temp) of
       %% This is the first time we see this temp...
       none ->
 	%% ... create a new interval
@@ -767,7 +767,7 @@ add_def_point([Temp|Temps],Pos,Intervals) ->
     end,
 
   %% Add or update the extended interval.
-  Intervals2 = hipe_vectors:set(Intervals, Temp+1, NewInterval), 
+  Intervals2 = hipe_vectors:set(Intervals, Temp, NewInterval), 
 
   %% Add the rest of teh temporaries.
   add_def_point(Temps, Pos, Intervals2);

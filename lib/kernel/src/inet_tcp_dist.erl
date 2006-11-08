@@ -24,7 +24,7 @@
 
 %% internal exports
 
--export([accept_loop/2,do_accept/6,do_setup/6, getstat/1,tick/1]).
+-export([accept_loop/2,do_accept/6,do_setup/6,getstat/1,tick/1]).
 
 -import(error_logger,[error_msg/2]).
 
@@ -102,7 +102,6 @@ do_listen(First,Last,Options) ->
 	Other ->
 	    Other
     end.
-	    
 
 %% ------------------------------------------------------------
 %% Accepts new connection attempts from other Erlang nodes.
@@ -189,8 +188,8 @@ do_accept(Kernel, AcceptPid, Socket, MyNode, Allowed, SetupTime) ->
 					inet:getll(S)
 				end,
 		      f_address = fun get_remote_id/2,
-		      mf_tick = {?MODULE, tick},
-		      mf_getstat = {?MODULE,getstat}
+		      mf_tick = fun ?MODULE:tick/1,
+		      mf_getstat = fun ?MODULE:getstat/1
 		     },
 		    dist_util:handshake_other_started(HSData);
 		{false,IP} ->
@@ -290,7 +289,7 @@ do_setup(Kernel, Node, Type, MyNode, LongOrShortNames,SetupTime) ->
 			      f_getll = fun inet:getll/1,
 			      f_address = 
 			      fun(_,_) ->
-				      #net_address {
+				      #net_address{
 				   address = {Ip,TcpPort},
 				   host = Address,
 				   protocol = tcp,
@@ -424,8 +423,10 @@ is_node_name(Node) when atom(Node) ->
     end;
 is_node_name(_Node) ->
     false.
+
 tick(Sock) ->
     ?to_port(Sock,[]).
+
 getstat(Socket) ->
     case inet:getstat(Socket, [recv_cnt, send_cnt, send_pend]) of
 	{ok, Stat} ->

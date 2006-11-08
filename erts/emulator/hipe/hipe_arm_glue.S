@@ -315,8 +315,8 @@ nbif_3_simple_exception:
 
 	/*
 	 * A BIF failed with freason TRAP:
-	 * - the BIF stored the callee's Export* in p->def_arg_reg[0]
-	 * - the BIF stored the actual parameters in p->def_arg_reg[1..]
+	 * - the BIF stored the callee's Export* in p->def_arg_reg[3]
+	 * - the BIF stored the callee's parameters in p->def_arg_reg[0..2]
 	 * - the BIF's arity is in r1
 	 * - the native RA was saved in TEMP_LR before the BIF call
 	 * - HP was just read from P

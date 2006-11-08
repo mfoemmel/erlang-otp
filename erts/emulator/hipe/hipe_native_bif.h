@@ -22,6 +22,7 @@ AEXTERN(Eterm,nbif_gc_1,(void));
 
 AEXTERN(Eterm,nbif_apply,(void));
 AEXTERN(Eterm,nbif_find_na_or_make_stub,(void));
+AEXTERN(Eterm,nbif_nonclosure_address,(void));
 
 AEXTERN(Eterm,nbif_add_2,(void));
 AEXTERN(Eterm,nbif_sub_2,(void));
@@ -38,6 +39,7 @@ AEXTERN(int,nbif_bs_put_float,(void));
 AEXTERN(int,nbif_bs_put_integer,(void));
 AEXTERN(int,nbif_bs_put_big_integer,(void));
 AEXTERN(int,nbif_bs_put_small_float,(void));
+AEXTERN(void,nbif_bs_put_bits,(void));
 AEXTERN(int,nbif_bs_skip_bits_all,(void));
 AEXTERN(int,nbif_bs_skip_bits,(void));
 AEXTERN(Eterm,nbif_bs_get_integer,(void));
@@ -57,6 +59,7 @@ AEXTERN(void,nbif_select_msg,(Process*));
 AEXTERN(Eterm,nbif_cmp_2,(void));
 AEXTERN(Eterm,nbif_eq_2,(void));
 
+Eterm hipe_nonclosure_address(Process*, Eterm, Uint);
 Eterm hipe_conv_big_to_float(Process*, Eterm);
 void hipe_select_msg(Process*);
 void hipe_gc(Process*, Eterm);
@@ -65,7 +68,7 @@ void hipe_handle_exception(Process*);
 Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value);
 char *hipe_bs_allocate(int);
 int hipe_bs_put_small_float(Process*, Eterm, Uint, byte*, unsigned, unsigned);
-
+void hipe_bs_put_bits(Eterm, Uint, byte*, unsigned, unsigned);
 /*
  * Stuff that is different in SMP and non-SMP.
  */

@@ -47,12 +47,12 @@ int ei_decode_long(const char *buf, int *index, long *p)
 	{
 	    int sign = get8(s);
 	    int i;
-	    n = 0;
+	    unsigned long u = 0;
 
 	    /* Little Endian, and n always positive, except for LONG_MIN */
 	    for (i = 0; i < arity; i++) {
 		if (i < 4) {
-		    n |= get8(s) << (i * 8);
+		    u |= get8(s) << (i * 8);
 		} else if (get8(s) != 0) {
 		    return -1; /* All but first byte have to be 0 */
 		}
@@ -60,10 +60,15 @@ int ei_decode_long(const char *buf, int *index, long *p)
 
 	    /* check for overflow */
 	    if (sign) {
-		if ((n - 1) < 0) return -1;
-		n = -n;
+		if (u > 0x80000000UL) {
+		    return -1;
+		}
+		n = -((long)u);
 	    } else {
-		if (n < 0) return -1;
+		if (u > 0x7FFFFFFF) {
+		    return -1;
+		}
+		n = (long)u;
 	    }
 	}
 	break;

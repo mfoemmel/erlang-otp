@@ -20,14 +20,7 @@
 -module(hipe_main).
 -export([compile_icode/3]).
 -export([concurrent_icode_ssa/2]).
--export([client/2]).
--export([server/4]).
--export([first_icode_passes/4]).
--export([first_icode_ssa_passes/4]).
--export([final_icode_ssa_passes/4]).
--export([icode_range_analysis/4]).
--export([icode_type_analysis/4]).
--export([icode_fp/4]).
+
 
 %%=====================================================================
 
@@ -170,12 +163,12 @@ icode_handle_exceptions(IcodeCfg, MFA, Options) ->
 
 %%---------------------------------------------------------------------
 
-icode_range_analysis(IcodeCfg, Options, Server, MFA) ->
+icode_range_analysis(IcodeSSA, Options, Server, MFA) ->
   case proplists:get_bool(icode_range_analysis, Options) of
     true ->
-     ?option_time(hipe_icode_range_an:init(IcodeCfg, Options, Server, MFA), "Icode integer range analysis", Options);
+     ?option_time(hipe_icode_range_an:init(IcodeSSA, Options, Server, MFA), "Icode integer range analysis", Options);
     _ ->
-     IcodeCfg
+     IcodeSSA
   end.
 
 icode_split_arith(IcodeCfg, MFA, Options) ->  
@@ -283,7 +276,7 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
 	{type_only, _} -> TmpRes;
 	IcodeSSA4 ->
 	  IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
-	  icode_ssa_check(IcodeSSA5, Options), %% just for sanity
+	  %%icode_ssa_check(IcodeSSA5, Options), %% just for sanity
 	  icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
 	  IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
 	  ?opt_stop_timer("Icode SSA-passes"),
@@ -623,30 +616,41 @@ hash(X) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 concurrent_icode_ssa(IcodeCfgList, Options) ->
-  Clients_init_list = [{{MFA, spawn(hipe_main, client, [MFA, Options])}, Icode}
+  %%io:format("concurrent mode"),
+  Clients_init_list = [{{MFA, spawn_link(fun() ->  client(MFA, Options) end)}, Icode}
 		       || {MFA, Icode} <- IcodeCfgList],
-  %% WorkList = {name, [{{M, F}, fixpoint / not fixpoint}]}
   WorkList = 
     case proplists:get_bool(dialyzer, Options) of
       true ->
-	{dialyzer, [{{?MODULE, first_icode_passes}, not_fixpoint}]};
+	{dialyzer, [first_icode_passes]};
       false ->
 	{compile, [
-		   {{?MODULE, first_icode_passes}, not_fixpoint},
-		   {{?MODULE, first_icode_ssa_passes}, not_fixpoint},
-		   {{?MODULE, icode_type_analysis}, fixpoint},
-		   {{?MODULE, icode_fp}, not_fixpoint},
-		   {{?MODULE, icode_range_analysis}, fixpoint},
-		   {{?MODULE, final_icode_ssa_passes}, not_fixpoint}
+		   first_icode_passes,
+		   first_icode_ssa_passes,
+		   icode_type_analysis,
+		   icode_fp,
+		   icode_range_analysis,
+		   final_icode_ssa_passes
 		  ]}
     end,
-  spawn(?MODULE, server, [self(), Clients_init_list, WorkList, Options]),
+  Super = self(),
+  case proplists:get_value(concurrent_comp, Options) of
+    true ->
+      spawn_link(fun() -> 
+		     server(Super, Clients_init_list, WorkList, Options) 
+ 		 end);
+    debug ->
+      spawn_link(fun() -> 
+		     debug_server(Super, Clients_init_list, WorkList, Options) 
+		 end)
+  end,    
+
   receive
     {dialyzer, IcodeSSA} ->
       IcodeSSA;
     {compile, List} ->
       [handle_compile_icode_2(IcodeCFG, Options, null, MFA)
-       || {MFA, IcodeCFG} <- List]
+       || {MFA, IcodeCFG} <- List]  
   end.
 
 handle_compile_icode_2(Icode, Opts, _Server, MFA) -> 
@@ -685,13 +689,13 @@ set_gensym(LinearIcode) ->
   {_VMin,VMax} = hipe_icode:icode_var_range(LinearIcode),
   hipe_gensym:set_var(icode,VMax+1).
 
-icode_fp(AnnIcode, Options, _Server, _MFA) ->
+icode_fp(AnnIcode, Options) ->
   case proplists:get_bool(inline_fp, Options) of
     true -> hipe_icode_fp:cfg(AnnIcode);
     false -> AnnIcode
   end.
 
-first_icode_passes(LinearIcode, Options, _Server, MFA) ->
+first_icode_passes(LinearIcode, Options, MFA) ->
   set_gensym(LinearIcode),
   LinearIcode2 = icode_no_comment(LinearIcode, Options),
   IcodeCfg = icode_linear_to_cfg(LinearIcode2, Options),
@@ -700,14 +704,14 @@ first_icode_passes(LinearIcode, Options, _Server, MFA) ->
   icode_pp(IcodeCfg3, MFA, proplists:get_value(pp_icode, Options)),
   IcodeCfg3.
 
-first_icode_ssa_passes(IcodeCfg, Options, _Server, _MFA) ->
+first_icode_ssa_passes(IcodeCfg, Options) ->
   ?opt_start_timer("Icode SSA-passes"),
   IcodeSSA0 = icode_ssa_convert(IcodeCfg, Options),
   IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
   IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
   icode_ssa_copy_prop(IcodeSSA2, Options).
 
-final_icode_ssa_passes(IcodeSSA, Options, _Server, MFA) ->
+final_icode_ssa_passes(IcodeSSA, Options, MFA) ->
   IcodeSSA2 = hipe_icode_type:unannotate_cfg(IcodeSSA),
   IcodeSSA3 = icode_ssa_dead_code_elimination(IcodeSSA2, Options),
   icode_ssa_check(IcodeSSA3, Options), %% just for sanity
@@ -716,11 +720,20 @@ final_icode_ssa_passes(IcodeSSA, Options, _Server, MFA) ->
   ?opt_stop_timer("Icode SSA-passes"),
   IcodeCfg.
 
-icode_type_analysis(IcodeSSA, Options, _Server, MFA) ->
-  case icode_ssa_type_info(IcodeSSA, MFA, Options) of
-    {type_only, not_fixpoint} -> none;
-    {type_only, fixpoint} -> IcodeSSA; %%What??
-    AnnIcode -> AnnIcode
+icode_type_analysis(IcodeSSA, Options, Server, MFA) ->
+  NewOptions = [{use_callgraph, fixpoint},{compilation_server, {value, Server}}|Options],
+  Result = ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, NewOptions),
+			"Icode type info", NewOptions),
+%%  icode_ssa_type_info(IcodeSSA, MFA, NewOptions),
+%%  io:format("~p says ~p ~n", [MFA, Result]),
+  case Result of
+%%     {type_only, not_fixpoint} -> not_fixpoint;
+%%     {type_only, fixpoint} -> IcodeSSA; %%What??
+    {not_fixpoint, _} -> not_fixpoint;
+    {none, _} -> none;
+    {fixpoint, AnnIcode} -> AnnIcode;
+    {ok, AnnIcode} -> AnnIcode
+%%    AnnIcode -> AnnIcode
   end.
 
 client(Key, Options) ->
@@ -729,13 +742,37 @@ client(Key, Options) ->
   hipe:init(Options),
   clientloop(Key).
 
+apply_compiler_pass(first_icode_passes,  [LinearIcode, Options, _Serv, MFA]) ->
+  first_icode_passes(LinearIcode, Options, MFA);
+apply_compiler_pass(first_icode_ssa_passes, [IcodeCfg, Options|_]) ->
+  first_icode_ssa_passes(IcodeCfg, Options);
+apply_compiler_pass(icode_type_analysis, [IcodeSSA, Options, Server, MFA]) ->
+  icode_type_analysis(IcodeSSA, Options, Server, MFA);
+apply_compiler_pass(icode_fp, [AnnIcode, Options|_]) ->
+  icode_fp(AnnIcode, Options);
+apply_compiler_pass(icode_range_analysis, [IcodeSSA, Options, Server, MFA]) ->
+  icode_range_analysis(IcodeSSA, Options, Server, MFA);
+apply_compiler_pass(final_icode_ssa_passes, [IcodeSSA, Options, _Serv, MFA]) ->
+  final_icode_ssa_passes(IcodeSSA, Options, MFA).
+
+
+is_fixpoint_pass(first_icode_passes) -> false;
+is_fixpoint_pass(first_icode_ssa_passes) -> false;
+is_fixpoint_pass(icode_type_analysis) -> true;
+is_fixpoint_pass(icode_fp) -> false;
+is_fixpoint_pass(icode_range_analysis) -> true;
+is_fixpoint_pass(final_icode_ssa_passes) -> false.
+
 clientloop(Key) ->
   receive
-    {Server, start, {Module, Fun}, Args} ->
-      Answer = apply(Module, Fun, Args),
+    {Server, start, CompPass, Args} ->
+      %%io:format("about to start ~p ~n", [CompPass]),
+      Answer = apply_compiler_pass(CompPass, Args),
+	%%apply(Module, Fun, Args),
       Server ! {self(), {return, Key, Answer}},
       clientloop(Key);
     done ->
+      %%io:format("DONE ~n"),
       ok
   end.
 
@@ -759,23 +796,101 @@ clientloop(Key) ->
                }
         ).
 
+debug_server(Super, Clients_code_list, Worklist, Options) ->
+  {MfaClients, CodeList} = lists:unzip(Clients_code_list),
+  {MFAs, _} = lists:unzip(MfaClients),
+  Clients_init_list = lists:zip(MFAs, CodeList),
+  State = state__new_state(MfaClients, Worklist, Options),
+  {State2, Work} = state__get_work(State),
+  State3 = debug_server__worker(Work, Clients_init_list, Options, State2),
+  Super ! {state__work_name(State3),
+	   state__return_to_super(State3)}.
+
+
+debug_server__worker(Work, CodeList, Options, State) ->
+  State2 = 
+    lists:foldl(fun({Client, Code}, StateAcc) -> %Client == MFA
+%%		    io:format("Doing ~p ~p", [Work, Client]),
+		    state__pid_from_mfa(Client, StateAcc) !
+		      {self(), start, Work, [Code, Options, self(), Client]},
+		    debug_server__loop(StateAcc)
+		end,
+		State,
+		CodeList),
+  case server__clients_done(State2) of
+    {not_done, _Clients} ->
+%%      io:format("not done clients ~p ~n", [Clients]),
+      debug_server__worker(Work, CodeList, Options, 
+			   state__restart(State2));
+    {return, NewState} ->
+%%      io:format("returning ~n"),
+      NewState;
+    {restart, NewState} ->
+%%      io:format("Restart~n"),
+      debug_server__worker(Work, CodeList, Options, NewState);
+    {new_work, {NewState, NewWork}} ->
+      NewCodeList = state__return_list(NewState),
+%%      io:format("new work ~p ~n", [NewWork]),
+      debug_server__worker(NewWork, NewCodeList, Options, 
+			   state__new_work(NewState))
+  end.
+
+debug_server__loop(State) ->
+  case server__listen(State) of
+    {loop, NewState} ->
+      debug_server__loop(NewState);
+    {clientreturn, NewState} ->
+      NewState
+  end.
+
+
 server(Super, Clients_code_list, Worklist, Options) ->
   {MfaClients, CodeList} = lists:unzip(Clients_code_list),
   {MFAs, _} = lists:unzip(MfaClients),
   Clients_init_list = lists:zip(MFAs, CodeList),
   State = state__new_state(MfaClients, Worklist, Options),
   {State2, Work} = state__get_work(State),
-  start_clients(Work, Clients_init_list, Options, State2),
-  Super ! loop(State2).
+  server__start_clients(Work, Clients_init_list, Options, State2),
+  Super ! server__loop(State2).
 
-start_clients(Work, Clients_init_list, Options, State) ->
-  lists:map(fun({Client, Code}) -> %Client == MFA
-		state__pid_from_mfa(Client, State) !
-		  {self(), start, Work, [Code, Options, self(), Client]}
+server__start_clients(Work, Clients_init_list, Options, State) ->
+  lists:foreach(fun({Client, Code}) -> %Client == MFA
+		    %%io:format("Doing ~p ~n", [{Client, Work}]),
+		    state__pid_from_mfa(Client, State) !
+		      {self(), start, Work, [Code, Options, self(), Client]}
 	    end,
 	    Clients_init_list).
 
-loop(State) ->
+server__loop(State) ->
+  case server__clients_done(State) of
+    {return, NewState} ->
+      %%io:format("done in sever"),
+      {state__work_name(NewState),
+       state__return_to_super(NewState)};
+    {new_work, {NewState, Work}} ->
+      %%io:format("New work ~p ~n", [Work]),
+      CodeList = state__return_list(NewState),
+      Options = state__options(NewState),
+      NewerState = state__new_work(NewState),
+      server__start_clients(Work, CodeList, Options, NewerState),
+      server__loop(NewerState);
+    {restart, NewState} ->
+      Work = state__current_work(NewState),
+      CodeList = state__prev_return_list(NewState),
+      Options = state__options(NewState),
+      server__start_clients(Work, CodeList, Options, NewState),
+      server__loop(NewState);
+    {not_done, _NotDone} ->
+%%      io:format("not done ~p ~n", [NotDone]),
+      case server__listen(State) of
+	{loop, NewState} ->
+	  server__loop(NewState);
+	{clientreturn, NewState} ->
+	  server__loop(NewState)
+      end
+  end.
+
+server__clients_done(State) ->
   case state__clients_not_done(State) of
     [] ->
       case fixpoint(State) of
@@ -783,44 +898,47 @@ loop(State) ->
 	  case state__get_work(State) of
 	    {State, []} ->
 	      finish_clients(State),
-	      {state__work_name(State),
-	       state__return_to_super(State)};
+	      {return, State};
 	    {State2, Work} ->
-	      CodeList = state__return_list(State2),
-	      Options = state__options(State),
-	      start_clients(Work, CodeList, Options, State),
-	      loop(state__new_work(State2))
+	      {new_work, {State2, Work}}
 	  end;
 	false ->
-	  Options = state__options(State),
-	  CodeList = state__prev_return_list(State),
-	  start_clients(state__current_work(State), CodeList, Options, State),
-	  loop(state__restart(State))
+	  {restart, state__restart(State)}
+	   %%{state__restart(State), state__current_work(State)}}
       end;
-    _ ->
-      receive
-	{_Client, {message, Key, Value}} ->
-	  %io:format("message saved ~p ~p ~n", [Key, Value]),
-	  loop(state__add_message({Key, Value}, State));
-	{Client, {load, Type, Key}} ->
-	  %io:format("asked for ~p ~n", [Key]),
-	  Client ! state__lookup_value(Type, Key, State),
-	  loop(State);
-	{_Client, {return, Key, Value}} ->
-	  %io:format("return value saved ~p ~n", [Key]),
-	  State1 = state__client_return(Key, State),
-	  State2 = state__add_return_value({Key, Value}, State1),
-	  New_state = State2,
-	  loop(New_state)
-      end
+    NotDone ->  
+      {not_done, NotDone}
   end.
 
-fixpoint(#state{current_work = {_, not_fixpoint}}) ->
-  true;
+server__listen(State) ->
+  receive
+    {_Client, {transaction, Fun}} ->
+      Tree = state__current_message_board(State),
+      NewTree = Fun(Tree),
+%%      io:format("NewTree ~p ~n", [gb_trees:size(NewTree)]),
+      {loop, State#state{current_message_tree = NewTree}};
+    {_Client, {message, Key, Value}} ->
+      %%io:format("message saved ~p ~p ~n", [Key, Value]),
+      {loop, state__add_message({Key, Value}, State)};
+    {Client, {load, Type, Key}} ->
+      %%io:format("asked for ~p ~n", [Key]),
+      Client ! state__lookup_value(Type, Key, State),
+      {loop, State};
+    {_Client, {return, Key, Value}} ->
+      %%io:format("return value saved ~p ~p~n", [Key, Value]),
+      State1 = state__client_return(Key, State),
+      State2 = state__add_return_value({Key, Value}, State1),
+      {clientreturn, State2}
+  end.
+
+
 fixpoint(#state{prev_message_tree = Prev_message_tree,
 		current_message_tree = Message_tree,
+		current_work = Work,
 		not_reach_fixpoint_clients = Not_fixpoint}) ->
-  %% io:format("diff ~p~n", [(gb_trees:to_list(Message_tree) -- gb_trees:to_list(Prev_message_tree))]),
+%%  io:format("diff ~p~n", [(gb_trees:to_list(Message_tree) -- gb_trees:to_list(Prev_message_tree))]),
+%%  io:format("not fixpoint ~p ~n", [Not_fixpoint]),
+  not is_fixpoint_pass(Work) orelse 
   ((gb_trees:to_list(Message_tree) -- gb_trees:to_list(Prev_message_tree)) =:= []) and (Not_fixpoint =:= []).
 
 
@@ -850,11 +968,11 @@ state__new_work(State = #state{clients = Clients,
 	      current_message_tree = gb_trees:empty()
         }.
 
-state__get_work(State = #state{worklist=[{Work, Fixpoint}|Worklist]}) ->
-  {State#state{worklist = Worklist, current_work={Work, Fixpoint}},Work};
+state__get_work(State = #state{worklist=[Work|Worklist]}) ->
+  {State#state{worklist = Worklist, current_work=Work},Work};
 state__get_work(State = #state{worklist=[]}) -> {State, []}.
 
-state__current_work(#state{current_work = {Work, _Fixpoint}}) -> Work.
+state__current_work(#state{current_work = Work}) -> Work.
 
 state__clients_not_done(#state{not_done_clients = Clients}) -> Clients.
 
@@ -881,19 +999,32 @@ state__options(#state{options = Options}) -> Options.
 state__client_return(Client, State = #state{not_done_clients = Clients}) ->
   State#state{not_done_clients = lists:subtract(Clients, [Client])}.
 
+state__current_message_board(#state{current_message_tree = Tree}) -> Tree.
+
 state__add_message({Key, Value}, State = #state{current_message_tree = Tree}) ->
   New_tree = gb_trees:enter(Key, Value, Tree),
   State#state{current_message_tree = New_tree}.
 
 state__add_return_value({Key, not_fixpoint}, State = #state{prev_return_tree = Prev_tree, current_return_tree = Tree, not_reach_fixpoint_clients=Not_fixpoint}) ->
+%%  io:format("not fixpoint ~p ~n", [Key]),
   New_not_fixpoint=[Key|Not_fixpoint],
-  Prev_return = gb_trees:get(Key, Prev_tree),
-  New_tree = gb_trees:enter(Key, Prev_return, Tree),
+  New_tree = 
+    case gb_trees:lookup(Key, Prev_tree) of
+      none ->
+	Prev_tree;
+      Prev_return ->
+	gb_trees:enter(Key, Prev_return, Tree)
+    end,
   State#state{current_return_tree = New_tree, not_reach_fixpoint_clients=New_not_fixpoint};
 
 state__add_return_value({Key, none}, State = #state{prev_return_tree = Prev_tree, current_return_tree = Tree}) ->
-  Prev_return = gb_trees:get(Key, Prev_tree),
-  New_tree = gb_trees:enter(Key, Prev_return, Tree),
+  New_tree = 
+    case gb_trees:lookup(Key, Prev_tree) of
+      none ->
+	Prev_tree;
+      {value, Prev_return} ->
+	gb_trees:enter(Key, Prev_return, Tree)
+    end,
   State#state{current_return_tree = New_tree};
 state__add_return_value({Key, Value}, State = #state{current_return_tree = Tree}) ->
   New_tree = gb_trees:enter(Key, Value, Tree),

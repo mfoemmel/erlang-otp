@@ -6,7 +6,19 @@
 %%% - Simplify combine_label_maps and mk_data_relocs.
 %%% - Move find_const to hipe_pack_constants?
 
--ifndef(HIPE_X86_ASSEMBLE).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_ASSEMBLE,  hipe_amd64_assemble).
+-define(HIPE_X86_ENCODE,    hipe_amd64_encode).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-define(HIPE_X86_PP,        hipe_amd64_pp).
+-ifdef(AMD64_SIMULATE_NSP).
+-define(X86_SIMULATE_NSP, ?AMD64_SIMULATE_NSP).
+-endif.
+-define(EAX, rax).
+-define(REGArch, reg64).
+-define(RMArch, rm64).
+-define(EA_DISP32_ABSOLUTE, ea_disp32_sindex).
+-else.
 -define(HIPE_X86_ASSEMBLE,  hipe_x86_assemble).
 -define(HIPE_X86_ENCODE,    hipe_x86_encode).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
@@ -15,8 +27,6 @@
 -define(REGArch, reg32).
 -define(RMArch, rm32).
 -define(EA_DISP32_ABSOLUTE, ea_disp32).
--define(IMM_MOVE_ARGS, {temp_to_reg32(Dst),{imm32,Imm}}).
--define(MOVE64, #move64{} -> exit({?MODULE, no_move64_on_x86})).
 -endif.
 
 -module(?HIPE_X86_ASSEMBLE).
@@ -202,7 +212,8 @@ translate_insn(I, Context, Options) ->
       Arg = resolve_move_args(hipe_x86:move_src(I), hipe_x86:move_dst(I),
 			      Context),
       [{mov, Arg, I}];
-    ?MOVE64;
+    #move64{} ->
+      translate_move64(I, Context);
     #movsx{} ->
       Arg = resolve_movx_args(hipe_x86:movsx_src(I), hipe_x86:movsx_dst(I)),
       [{movsx, Arg, I}];
@@ -230,7 +241,50 @@ translate_insn(I, Context, Options) ->
   end.
 
 -ifdef(X86_SIMULATE_NSP).
--ifndef(TRANSLATE_CALL).%% FIXME: merge this better...
+-ifdef(HIPE_AMD64).
+translate_call(I) ->
+  WordSize = hipe_amd64_registers:wordsize(),
+  RegSP = 2#100, % esp/rsp
+  TempSP = hipe_x86:mk_temp(RegSP, untagged),
+  FunOrig = hipe_x86:call_fun(I),
+  Fun =
+    case FunOrig of
+      #x86_mem{base=#x86_temp{reg=4}, off=#x86_imm{value=Off}} ->
+	FunOrig#x86_mem{off=#x86_imm{value=Off+WordSize}};
+      _ -> FunOrig
+    end,
+  RegRA =
+    begin
+      RegTemp0 = hipe_amd64_registers:temp0(),
+      RegTemp1 = hipe_amd64_registers:temp1(),
+      case Fun of
+	#x86_temp{reg=RegTemp0} -> RegTemp1;
+	#x86_mem{base=#x86_temp{reg=RegTemp0}} -> RegTemp1;
+	_ -> RegTemp0
+      end
+    end,
+  TempRA = hipe_x86:mk_temp(RegRA, untagged),
+  PatchTypeExt =
+    case hipe_x86:call_linkage(I) of
+      remote -> ?PATCH_TYPE2EXT(call_remote);
+      not_remote -> ?PATCH_TYPE2EXT(call_local)
+    end,
+  JmpArg = translate_fun(Fun, PatchTypeExt),
+  I4 = {'.sdesc', hipe_x86:call_sdesc(I), #comment{term=sdesc}},
+  I3 = {jmp, {JmpArg}, #comment{term=call}},
+  Size3 = hipe_amd64_encode:insn_sizeof(jmp, {JmpArg}),
+  MovArgs = {mem_to_rmArch(hipe_x86:mk_mem(TempSP,
+					     hipe_x86:mk_imm(0),
+					     untagged)),
+	     temp_to_regArch(TempRA)},
+  I2 = {mov, MovArgs, #comment{term=call}},
+  Size2 = hipe_amd64_encode:insn_sizeof(mov, MovArgs),
+  I1 = {lea, {temp_to_regArch(TempRA),
+	      {ea, hipe_amd64_encode:ea_disp32_rip(Size2+Size3)}},
+	#comment{term=call}},
+  I0 = {sub, {temp_to_rmArch(TempSP), {imm8,WordSize}}, I},
+  [I0,I1,I2,I3,I4].
+-else.
 translate_call(I) ->
   WordSize = ?HIPE_X86_REGISTERS:wordsize(),
   RegSP = 2#100, % esp/rsp
@@ -258,8 +312,6 @@ translate_call(I) ->
 	#comment{term=call}},
   I0 = {sub, {temp_to_rmArch(TempSP), {imm8,WordSize}}, I},
   [I0,I1,I2,I3].
--else.
-?TRANSLATE_CALL.
 -endif.
 
 translate_ret(I) ->
@@ -498,9 +550,12 @@ fpreg_to_stack(#x86_fpreg{reg=Reg}) ->
 
 temp_to_regArch(#x86_temp{reg=Reg}) ->
   {?REGArch, Reg}.
--ifdef(TEMP_TO_REG64).
-?TEMP_TO_REG64.
+
+-ifdef(HIPE_AMD64).
+temp_to_reg64(#x86_temp{reg=Reg}) ->
+  {reg64, Reg}.
 -endif.
+
 temp_to_reg32(#x86_temp{reg=Reg}) ->
   {reg32, Reg}.
 temp_to_reg16(#x86_temp{reg=Reg}) ->
@@ -511,9 +566,11 @@ temp_to_reg8(#x86_temp{reg=Reg}) ->
 temp_to_xmm(#x86_temp{reg=Reg}) ->
   {xmm, Reg}. 
 
--ifdef(TEMP_TO_RM64).
-?TEMP_TO_RM64.
+-ifdef(HIPE_AMD64).
+temp_to_rm64(#x86_temp{reg=Reg}) ->
+  {rm64, hipe_amd64_encode:rm_reg(Reg)}.
 -endif.
+
 temp_to_rmArch(#x86_temp{reg=Reg}) ->
   {?RMArch, ?HIPE_X86_ENCODE:rm_reg(Reg)}.
 temp_to_rm64fp(#x86_temp{reg=Reg}) ->
@@ -608,15 +665,26 @@ mem_to_ea_common(#x86_mem{base=#x86_temp{reg=Base}, off=#x86_imm{value=Off}}) ->
   end.
 
 %% jmp_switch
--ifndef(RESOLVE_JMP_SWITCH_ARG).
+-ifdef(HIPE_AMD64).
+resolve_jmp_switch_arg(I, _Context) ->
+  Base = hipe_x86:temp_reg(hipe_x86:jmp_switch_jtab(I)),
+  Index = hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I)),
+  SINDEX = hipe_amd64_encode:sindex(3, Index),
+  SIB = hipe_amd64_encode:sib(Base, SINDEX),
+  EA =
+    if (Base =:= 5) or (Base =:= 13) ->
+	hipe_amd64_encode:ea_disp8_sib(0, SIB);
+       true ->
+	hipe_amd64_encode:ea_sib(SIB)
+    end,
+  {rm64,hipe_amd64_encode:rm_mem(EA)}.
+-else.
 resolve_jmp_switch_arg(I, {MFA,ConstMap}) ->
   ConstNo = find_const({MFA,hipe_x86:jmp_switch_jtab(I)}, ConstMap),
   Disp32 = {?PATCH_TYPE2EXT(load_address),{constant,ConstNo}},
   SINDEX = ?HIPE_X86_ENCODE:sindex(2, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
   EA = ?HIPE_X86_ENCODE:ea_disp32_sindex(Disp32, SINDEX), % this creates a SIB implicitly
   {rm32,?HIPE_X86_ENCODE:rm_mem(EA)}.
--else.
-?RESOLVE_JMP_SWITCH_ARG.
 -endif.
 
 %% lea reg, mem
@@ -711,10 +779,33 @@ resolve_move_args(Src=#x86_temp{}, Dst=#x86_temp{}, _Context) ->
 %% mov reg,imm
 resolve_move_args(Src=#x86_imm{value=_ImmSrc}, Dst=#x86_temp{}, Context) ->
   {_,Imm} = translate_imm(Src, Context, false),
-  ?IMM_MOVE_ARGS.
+  imm_move_args(Dst, Imm).
 
--ifdef(RESOLVE_MOVE64_ARGS).
-?RESOLVE_MOVE64_ARGS.
+-ifdef(HIPE_AMD64).
+imm_move_args(Dst, Imm) ->
+  if is_number(Imm), Imm >= 0 ->
+      {temp_to_reg32(Dst),{imm32,Imm}};
+     true ->
+      {temp_to_rm64(Dst),{imm32,Imm}}
+  end.
+-else.
+imm_move_args(Dst, Imm) ->
+  {temp_to_reg32(Dst),{imm32,Imm}}.
+-endif.
+
+-ifdef(HIPE_AMD64).
+translate_move64(I, Context) ->
+  Arg = resolve_move64_args(hipe_x86:move64_src(I),
+			    hipe_x86:move64_dst(I),
+			    Context),
+  [{mov, Arg, I}].
+
+%% mov reg,imm64
+resolve_move64_args(Src=#x86_imm{}, Dst=#x86_temp{}, Context) ->
+  {_,Imm} = translate_imm(Src, Context, false),
+  {temp_to_reg64(Dst),{imm64,Imm}}.
+-else.
+translate_move64(I, _Context) -> exit({?MODULE, I}).
 -endif.
 
 %%% mov{s,z}x

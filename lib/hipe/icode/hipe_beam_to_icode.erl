@@ -289,7 +289,7 @@ trans_fun([{label,B},
   [Goto,Begin,Mov,Fail,EntryPt | trans_fun(Instructions,Env)];
 %%--- label ---
 trans_fun([{label,L1},{label,L2}|Instructions], Env) ->
-  %% Old beam code can have two consectutive labels.
+  %% Old BEAM code can have two consecutive labels.
   Lab1 = mk_label(L1),
   Lab2 = mk_label(L2),
   Goto = hipe_icode:mk_goto(map_label(L2)),
@@ -953,7 +953,7 @@ trans_fun([{test,bs_skip_bits2,{f,Lbl},[Ms,Size,NumBits,{field_flags,Flags}]}|
   {Name, Args} = 
     case Size of
       {atom, all} -> %% Skip all bits
-	{{bs_skip_bits_all_2,Flags},[MsVar]};
+	{{bs_skip_bits_all_2,NumBits,Flags},[MsVar]};
       {integer, BitSize} when BitSize >= 0-> %% Skip N bits
 	{{bs_skip_bits_2,BitSize*NumBits}, [MsVar]};
       {integer, BitSize} when BitSize < 0 ->
@@ -986,7 +986,7 @@ trans_fun([{test,bs_get_binary2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags},
   {Name, Args} = 
     case Size of
       {atom, all} -> %% put all bits
-	{{bs_get_binary_all_2,Flags},[MsVar]};
+	{{bs_get_binary_all_2,Unit,Flags},[MsVar]};
       {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
 	{{bs_get_binary_2,NoBits*Unit,Flags}, [MsVar]};
       {integer, NoBits} when NoBits < 0 ->
@@ -1021,28 +1021,33 @@ trans_fun([{bs_bits_to_bytes, {f,Lbl}, Bits, Bytes}|Instructions], Env) ->
   Dst = mk_var(Bytes),
   trans_op_call({hipe_bs_primop,bs_bits_to_bytes}, Lbl, [Src], [Dst],
 		Env, Instructions);
+trans_fun([{bs_bits_to_bytes2, Bits, Bytes}|Instructions], Env) ->
+  Src = mk_var(Bits), 
+  Dst = mk_var(Bytes),
+  [hipe_icode:mk_primop([Dst],{hipe_bs_primop,bs_bits_to_bytes2},[Src])|
+   trans_fun(Instructions,Env)];
 trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
   Dst = mk_var(Res),
-  case New of
-    {integer, I} ->
+  case {Old,New} of
+    {{integer, I1},{integer, I2}} ->
+      [hipe_icode:mk_move(Dst,hipe_icode:mk_const(I2*Unit+I1))|
+       trans_fun(Instructions,Env)];
+    {_,{integer, I}} ->
       OldVar = mk_var(Old),
       trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, 
 		    Lbl, [OldVar], [Dst],
 		    Env, Instructions);
-  
-    _ ->
+    {{integer, I},_} ->
       NewVar = mk_var(New),
-      case Old of
-	{integer, I} ->
-	  trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, 
-			Lbl, [NewVar], [Dst],
-			Env, Instructions);
-	_ ->
-	  OldVar = mk_var(Old),
-	  trans_op_call({hipe_bs_primop,{bs_add,Unit}}, 
-			Lbl, [OldVar,NewVar],
-			[Dst], Env, Instructions)
-      end
+      trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, 
+		    Lbl, [NewVar], [Dst],
+		    Env, Instructions);
+    _ ->
+      OldVar = mk_var(Old),
+      NewVar = mk_var(New),
+      trans_op_call({hipe_bs_primop,{bs_add,Unit}}, 
+		    Lbl, [OldVar,NewVar],
+		    [Dst], Env, Instructions)
   end;
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
@@ -1276,7 +1281,7 @@ trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
 	I = hipe_icode:mk_primop(Dests, Name, Args),
 	{[I], Env};
       _ -> % op occurs in a guard - fail silently to Lbl
-	make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
+	make_fallthrough_guard(Dests, Name, Args, map_label(Lbl), Env)
     end,
   [Code|trans_fun(Instructions, Env1)].
 
@@ -1287,7 +1292,7 @@ trans_bin_call(Name, Lbl, Args, Dests, Base, Offset, Env, Instructions) ->
 	I = hipe_icode:mk_primop(Dests, Name, Args),
 	{[I], Env};
       _ -> % op occurs in a guard - fail silently to Lbl
-	make_fallthrough_guard(Dests,Name,Args,map_label(Lbl),Env)
+	make_fallthrough_guard(Dests, Name, Args, map_label(Lbl), Env)
     end,
   [Code|trans_bin(Instructions, Base, Offset, Env1)].
 
@@ -1403,8 +1408,11 @@ trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 	end
     end,
   SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
-			      Lbl, [Src|Args], [Offset],
-			      Base, Offset, Env2, Instructions);
+			     Lbl, [Src|Args], [Offset], Base, Offset, Env2, Instructions);
+trans_bin([{bs_final2,Src,Dst}|Instructions], _Base, Offset, Env) ->
+  [hipe_icode:mk_primop([mk_var(Dst)], {hipe_bs_primop, bs_final2}, 
+			[mk_var(Src),Offset])
+   |trans_fun(Instructions, Env)];
 trans_bin(Instructions, _Base, _Offset, Env) ->
   trans_fun(Instructions, Env).
 
@@ -1426,12 +1434,12 @@ trans_arith(Op, SrcRs, DstR, Lbl, Env) ->
   %%		[?MODULE,DstVar,SrcVars,Op]),
   case Lbl of
     0 ->  % Body arithmetic
-      Primop = hipe_icode:mk_primop([DstVar],arith_op_name(Op),SrcVars),
+      Primop = hipe_icode:mk_primop([DstVar], arith_op_name(Op), SrcVars),
       {Movs++[Primop], Env1};
     _ ->  % Guard arithmetic
       {Guard,Env2} = 
-	make_fallthrough_guard([DstVar],arith_op_name(Op),SrcVars,
-			       map_label(Lbl),Env1),
+	make_fallthrough_guard([DstVar], arith_op_name(Op), SrcVars,
+			       map_label(Lbl), Env1),
       {[Movs,Guard], Env2}
   end.
 
@@ -1569,7 +1577,7 @@ trans_is_eq_exact(Lbl, Arg1, Arg2, Env) ->
       True = mk_label(new),
       I = hipe_icode:mk_if('=:=',
 			   [mk_var(Arg1),mk_var(Arg2)],
-			   hipe_icode:label_name(True),map_label(Lbl)),
+			   hipe_icode:label_name(True), map_label(Lbl)),
       {[I,True], Env};
     {true,false} -> %% right argument is a constant -- use type()!
       trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env);
@@ -1611,7 +1619,7 @@ trans_is_ne_exact(Lbl, Arg1, Arg2, Env) ->
       True = mk_label(new),
       I = hipe_icode:mk_if('=/=',
 			   [mk_var(Arg1),mk_var(Arg2)],
-			   hipe_icode:label_name(True),map_label(Lbl)),
+			   hipe_icode:label_name(True), map_label(Lbl)),
       {[I,True], Env};
     {true,false} -> %% right argument is a constant -- use type()!
       trans_is_ne_exact_var_const(Lbl, Arg1, Arg2, Env);
@@ -1719,7 +1727,7 @@ mk_move_and_var(Var, Env) ->
 %% Find names of closures and number of free vars.
 %%-----------------------------------------------------------------------
 
--record(closure_info, {mfa, arity, fv_arity}).
+-record(closure_info, {mfa, arity::byte(), fv_arity::byte()}).
 
 closure_info_mfa(#closure_info{mfa=MFA}) -> MFA.
 closure_info_arity(#closure_info{arity=Arity}) -> Arity.
@@ -1850,7 +1858,8 @@ patch_make_funs([], FunIndex, Acc) ->
 
 find_mfa([{label,_}|Code]) ->
   find_mfa(Code);
-find_mfa([{func_info,{atom,M},{atom,F},A}|_]) ->
+find_mfa([{func_info,{atom,M},{atom,F},A}|_]) 
+  when is_atom(M), is_atom(F), is_integer(A) ->
   {M, F, A}.
 
 %%-----------------------------------------------------------------------
@@ -1858,9 +1867,9 @@ find_mfa([{func_info,{atom,M},{atom,F},A}|_]) ->
 %% Localize a particular function in a module
 get_fun([[L, {func_info,{atom,M},{atom,F},A} | Is] | _], M,F,A) ->
   [L, {func_info,{atom,M},{atom,F},A} | Is];
-get_fun([[_L1,_L2, {func_info,{atom,M},{atom,F},A} | _Is] | _], M,F,A) ->
+get_fun([[_L1,_L2, {func_info,{atom,M},{atom,F},A} = MFA| _Is] | _], M,F,A) ->
   ?WARNING_MSG("Consecutive labels found; please re-create the .beam file~n", []),
-  [_L1,_L2, {func_info,{atom,M},{atom,F},A} | _Is];
+  [_L1,_L2, MFA | _Is];
 get_fun([_|Rest], M,F,A) ->
   get_fun(Rest, M,F,A).    
 
@@ -1945,7 +1954,7 @@ trans_arg(Arg) ->
 
 trans_const(Const) ->
   case Const of
-    {atom,Atom} ->
+    {atom,Atom} when is_atom(Atom) ->
       hipe_icode:mk_const(Atom);
     {integer,N} when is_integer(N) ->
       hipe_icode:mk_const(N);
@@ -1955,17 +1964,17 @@ trans_const(Const) ->
       hipe_icode:mk_const(String);
     nil ->
       hipe_icode:mk_const([]);
-    _  ->
-      hipe_icode:mk_const(Const)
+    Int when is_integer(Int) ->
+      hipe_icode:mk_const(Int)
   end.
 
 %%-----------------------------------------------------------------------
 %% Make an icode variable of proper type
-%%   Variables == 0 (mod 5) are X regs
-%%   Variables == 1 (mod 5) are Y regs
-%%   Variables == 2 (mod 5) are FR regs
-%%   Variables == 3 (mod 5) are new temporaries
-%%   Variables == 4 (mod 5) are new register temporaries
+%%   (Variables mod 5) =:= 0  are X regs
+%%   (Variables mod 5) =:= 1  are Y regs
+%%   (Variables mod 5) =:= 2  are FR regs
+%%   (Variables mod 5) =:= 3  are new temporaries
+%%   (Variables mod 5) =:= 4  are new register temporaries
 %% Tell hipe_gensym to update its state for each new thing created!!
 %%-----------------------------------------------------------------------
 
@@ -1977,11 +1986,11 @@ mk_var({x,R}) when is_integer(R) ->
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_var(V);
 mk_var({y,R}) when is_integer(R) ->
-  V = 5*R+1,
+  V = (5*R)+1,
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_var(V);
 mk_var({fr,R}) when is_integer(R) ->
-  V = 5*R+2,
+  V = (5*R)+2,
   hipe_gensym:update_vrange(icode,V),
   case get(hipe_inline_fp) of
     true ->
@@ -1991,34 +2000,36 @@ mk_var({fr,R}) when is_integer(R) ->
   end;
 mk_var(new) ->
   T = hipe_gensym:new_var(icode),
-  V = 5*(T)+3,
+  V = (5*T)+3,
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_var(V);
 mk_var(reg) ->
   T = hipe_gensym:new_var(icode),
-  V = 5*(T)+4,
+  V = (5*T)+4,
   hipe_gensym:update_vrange(icode,V),
   hipe_icode:mk_reg(V).
 
 %%-----------------------------------------------------------------------
 %% Make an icode label of proper type
-%%   Labels == 0 (mod 2) are actually occuring in the BEAM code
-%%   Labels == 1 (mod 2) are new labels generated by the translation
+%%   (Labels mod 2) =:= 0  are actually occuring in the BEAM code
+%%   (Labels mod 2) =:= 1  are new labels generated by the translation
 %%-----------------------------------------------------------------------
 
 mk_label(L) when is_integer(L) ->
-  hipe_gensym:update_lblrange(icode,2*L),
-  hipe_icode:mk_label(2*L);
+  LL = 2 * L,
+  hipe_gensym:update_lblrange(icode, LL),
+  hipe_icode:mk_label(LL);
 mk_label(new) ->
   L = hipe_gensym:new_label(icode),
-  hipe_gensym:update_lblrange(icode,2*L+1),
-  hipe_icode:mk_label(2*L+1).
+  LL = (2 * L) + 1,
+  hipe_gensym:update_lblrange(icode, LL),
+  hipe_icode:mk_label(LL).
 
 %% Maps from the BEAM's labelling scheme to our labelling scheme.
 %% See mk_label to understand how it works.
 
 map_label(L) ->
-  2*L.
+  L bsl 1.  % faster and more type-friendly version of 2 * L
 
 %%-----------------------------------------------------------------------
 %% Returns the type of the given variables.
@@ -2030,16 +2041,14 @@ type({y,_}) ->
   var;
 type({fr,_}) ->
   var;
-type({atom,A}) ->
+type({atom,A}) when is_atom(A) ->
   {const,A};
 type(nil) ->
   {const,[]};
 type({integer,X}) when is_integer(X) ->
   {const,X};
 type({float,X}) when is_float(X) ->
-  {const,X};
-type(X) ->
-  ?EXIT({'type/1',unknown,X}).
+  {const,X}.
 
 %%-----------------------------------------------------------------------
 %% Returns true iff the argument is a variable.
@@ -2051,7 +2060,13 @@ is_var({y,_}) ->
   true;
 is_var({fr,_}) ->
   true;
-is_var(_) ->
+is_var({atom,A}) when is_atom(A) ->
+  false;
+is_var(nil) ->
+  false;
+is_var({integer,N}) when is_integer(N) ->
+  false;
+is_var({float,F}) when is_float(F) ->
   false.
 
 %%-----------------------------------------------------------------------
@@ -2121,7 +2136,7 @@ catch_handler('catch', [TagVar,ValueVar,TraceVar], OldCatchLbl) ->
   NoThrowLbl = mk_label(new),
   ExitLbl = mk_label(new),
   ErrorLbl = mk_label(new),
-  Dst=mk_var({r,0}),
+  Dst = mk_var({r,0}),
   [hipe_icode:mk_if('=:=', [TagVar, hipe_icode:mk_const('throw')],
 		    hipe_icode:label_name(ThrowLbl),
 		    hipe_icode:label_name(NoThrowLbl)),
@@ -2156,9 +2171,9 @@ catch_handler('catch', [TagVar,ValueVar,TraceVar], OldCatchLbl) ->
 split_code([First|Code], Label, Instr) ->
   split_code(Code, Label, Instr, First, []).
 
-split_code([Instr|Code], Label, Instr, Prev, As) when Prev == Label ->
+split_code([Instr|Code], Label, Instr, Prev, As) when Prev =:= Label ->
   split_code_final(Code, As);  % drop both label and instruction
-split_code([Other|_Code], Label, Instr, Prev, _As) when Prev == Label ->
+split_code([Other|_Code], Label, Instr, Prev, _As) when Prev =:= Label ->
   ?EXIT({missing_instr_after_label, Label, Instr, [Other, Prev | _As]});
 split_code([Other|Code], Label, Instr, Prev, As) ->
   split_code(Code, Label, Instr, Other, [Prev|As]);
@@ -2237,39 +2252,39 @@ resolve_native_endianess(Flags) ->
 %%-----------------------------------------------------------------------
 
 pp_beam(BeamCode, Options) ->
-  case proplists:get_value(pp_beam,Options) of
+  case proplists:get_value(pp_beam, Options) of
     true ->
       pp(BeamCode);
     {file,FileName} ->
-      {ok,File} = file:open(FileName,[write]),
-      pp(File,BeamCode);
+      {ok,File} = file:open(FileName, [write]),
+      pp(File, BeamCode);
     _ -> %% includes "false" case
       ok
   end.
 
 pp(Code) ->
-    pp(standard_io,Code).
+  pp(standard_io, Code).
 
 pp(Stream, []) ->
-    case Stream of  %% I am not sure whether this is necessary
-	standard_io -> ok;
-	_ -> file:close(Stream)
-    end;
+  case Stream of  %% I am not sure whether this is necessary
+    standard_io -> ok;
+    _ -> file:close(Stream)
+  end;
 pp(Stream, [FunCode|FunCodes]) ->
-    pp_mfa(Stream,FunCode),
-    put_nl(Stream),
-    pp(Stream,FunCodes).
+  pp_mfa(Stream, FunCode),
+  put_nl(Stream),
+  pp(Stream, FunCodes).
 
 pp_mfa(Stream, FunCode) ->
-    lists:foreach(fun(Instr) -> print_instr(Stream, Instr) end, FunCode).
+  lists:foreach(fun(Instr) -> print_instr(Stream, Instr) end, FunCode).
 
 print_instr(Stream, {label,Lbl}) ->
-    io:format(Stream, "  label ~p:\n", [Lbl]);
+  io:format(Stream, "  label ~p:\n", [Lbl]);
 print_instr(Stream, Op) ->
-    io:format(Stream, "    ~p\n", [Op]).
+  io:format(Stream, "    ~p\n", [Op]).
 
 put_nl(Stream) ->
-    io:format(Stream,"\n",[]).
+  io:format(Stream,"\n",[]).
 
 %%-----------------------------------------------------------------------
 %% Handling of environments -- used to process local tail calls.

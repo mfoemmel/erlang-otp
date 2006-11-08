@@ -29,6 +29,8 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("megaco/src/udp/megaco_udp.hrl").
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
+
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -110,7 +112,8 @@ handle_call(stop, _From, UdpRec) ->
 handle_call({upgrade_receive_handle, NewHandle}, _From, UdpRec) ->
     {reply, ok, UdpRec#megaco_udp{receive_handle = NewHandle}};
 handle_call(Req, From, UdpRec) ->
-    error_msg("received unexpected request: ~n~p~n~p", [Req,From]),
+    warning_msg("received unexpected request from ~p: "
+		"~n~p", [From, Req]),
     {reply, {error, {invalid_request, Req}}, UdpRec}.
 
 %%-----------------------------------------------------------------
@@ -121,7 +124,8 @@ handle_cast(stop, UdpRec) ->
     do_stop(UdpRec),
     {stop, shutdown, UdpRec};
 handle_cast(Msg, UdpRec) ->
-    error_msg("received unexpected message: ~n~p", [Msg]),
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply, UdpRec}.
 
 %%-----------------------------------------------------------------
@@ -155,7 +159,8 @@ handle_info({udp, _UdpId, Ip, Port, Msg},
     inet:setopts(Socket, [{active, once}]),
     {noreply, UdpRec};
 handle_info(Info, UdpRec) ->
-    error_msg("received unexpected info: ~n~p", [Info]),
+    warning_msg("received unexpected info: "
+		"~n~w", [Info]),
     {noreply, UdpRec}.
 
 
@@ -164,7 +169,8 @@ process_received_message(Mod, RH, SH, Msg) ->
 	ok ->
 	    ok;
 	Error ->
-	    error_msg("failed processing received message: ~n~p", [Error]),
+	    error_msg("failed processing received message: "
+		      "~n~p", [Error]),
 	    ok
     end.
 
@@ -186,12 +192,6 @@ handle_received_message(Mod, RH, Parent, SH, Msg) ->
 %% Func: code_change/3
 %% Descrition: Handles code change messages during upgrade.
 %%-----------------------------------------------------------------
-code_change(_Vsn, State, upgrade_from_1_1_0) ->
-    megaco_stats:init(megaco_udp_stats),
-    {ok, State};
-code_change(_Vsn, State, downgrade_to_1_1_0) ->
-    ets:delete(megaco_udp_stats),
-    {ok, State};
 code_change(_Vsn, State, _Extra) ->
     {ok, State}.
 
@@ -217,11 +217,14 @@ incCounter(Key, Inc) ->
 %     incCounter({SH, medGwyGatewayNumErrors}, 1).
 
 
-% info_msg(F, A) ->
-%     (catch error_logger:info_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+%% info_msg(F, A) ->
+%%     ?megaco_info("UDP server: " ++ F, A).
+
+warning_msg(F, A) ->
+    ?megaco_warning("UDP server: " ++ F, A).
   
 error_msg(F, A) ->
-    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?megaco_error("UDP server: " ++ F, A).
   
 
 call(Pid, Req) ->

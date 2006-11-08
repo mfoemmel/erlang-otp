@@ -11,6 +11,7 @@
 %%
 %% $Id$
 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_icode_primops).
 
@@ -36,7 +37,7 @@ is_safe(unsafe_sub) -> true;
 is_safe(unsafe_tag_float) -> true;
 is_safe(unsafe_tl) -> true;
 is_safe(unsafe_untag_float) -> true;
-is_safe({closure_element,_}) -> true;
+is_safe({closure_element, _}) -> true;
 is_safe({hipe_bs_primop, {bs_init,_,_}}) -> true;
 is_safe({hipe_bsi_primop, bs_get_orig_offset}) -> true;
 is_safe({hipe_bsi_primop, bs_get_size}) -> true;
@@ -49,16 +50,17 @@ is_safe({hipe_bsi_primop,{bs_get_integer,_Offset,_Flags}}) -> true;
 is_safe({hipe_bsi_primop,{bs_get_integer,_Size,_Offset,_Flags}}) -> true;
 is_safe({hipe_bs_primop2,{bs_restore_2,_}}) -> true;
 is_safe({hipe_bs_primop2,{bs_save_2,_}}) -> true;
+is_safe({hipe_bs_primop,bs_final2}) -> true;
 is_safe({mkfun,_,_,_}) -> true;
 is_safe({unsafe_element,_}) -> true;
 is_safe({unsafe_update_element, _}) -> true;
-is_safe(_Op) -> false.
+is_safe(Op) when is_atom(Op) orelse is_tuple(Op) -> false.
 
 
 fails(cons) -> false;
 fails(closure_element) -> false;
 fails(fclearerror) -> false;
-fails(fp_add) -> false;      
+fails(fp_add) -> false;
 fails(fp_sub) -> false;
 fails(fp_mul) -> false;
 fails(fp_div) -> false;
@@ -76,7 +78,7 @@ fails(unsafe_hd) -> false;
 fails(unsafe_tl) -> false;
 fails({unsafe_element,_}) -> false;
 fails({unsafe_update_element,_}) -> false;
-fails(_) -> true.
+fails(Op) when is_atom(Op) orelse is_tuple(Op) -> true.
 
 
 pp(Op, Dev) ->
@@ -103,36 +105,36 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
 	{bs_skip_bits, Unit} ->
 	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
-	{bs_skip_bits_all_2, Flags} ->
-	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
+	{bs_skip_bits_all_2, Unit, Flags} ->
+	  io:format(Dev, "bs_skip_bits_all<~w,~w>", [Unit,Flags]);
 	{bs_skip_bits_2, Unit} ->
 	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
 	bs_start_match ->
 	  io:format(Dev, "bs_start_match", []);
 	{bs_start_match_2, Max} ->
 	  io:format(Dev, "bs_start_match<~w>", [Max]);
-	{bs_get_integer,Size,Flags} ->
+	{bs_get_integer, Size, Flags} ->
 	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
-	{bs_get_float,Size,Flags} ->
+	{bs_get_float, Size, Flags} ->
 	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
-	{bs_get_binary,Size,Flags} ->
+	{bs_get_binary, Size, Flags} ->
 	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_all,Flags} ->
+	{bs_get_binary_all, Flags} ->
 	  io:format(Dev, "bs_get_binary_all<~w>", [Flags]);
-	{bs_test_tail,NumBits} ->
+	{bs_test_tail, NumBits} ->
 	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
 	{bs_restore, Index} ->
 	  io:format(Dev, "bs_restore<~w>", [Index]);
 	{bs_save, Index} ->
 	  io:format(Dev, "bs_save<~w>", [Index]);
-	{bs_get_integer_2,Size,Flags} ->
+	{bs_get_integer_2, Size, Flags} ->
 	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
-	{bs_get_float_2,Size,Flags} ->
+	{bs_get_float_2, Size, Flags} ->
 	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_2,Size,Flags} ->
+	{bs_get_binary_2, Size, Flags} ->
 	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_all_2,Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w>", [Flags]);
+	{bs_get_binary_all_2,Unit,Flags} ->
+	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit,Flags]);
 	{bs_test_tail_2,NumBits} ->
 	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
 	{bs_restore_2, Index} ->
@@ -157,8 +159,6 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_bits_to_bytes", []);
 	bs_final ->
 	  io:format(Dev, "bs_final", [])
-
-
       end;
     {hipe_bsi_primop, BsOp} ->
       case BsOp of
@@ -178,9 +178,9 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_size_test", []);
 	bs_size_test_all ->
 	  io:format(Dev, "bs_size_test_all", []);
-	{bs_get_float,Size, Offset, Flags} ->
+	{bs_get_float, Size, Offset, Flags} ->
 	  io:format(Dev, "bs_get_float<~w, ~w, ~w>", [Size, Offset, Flags]);
-	{bs_get_float,Offset, Flags} ->
+	{bs_get_float, Offset, Flags} ->
 	  io:format(Dev, "bs_get_float<~w, ~w>", [Offset, Flags]);
 	{bs_get_integer, Size, Offset, Flags} ->
 	  io:format(Dev, "bs_get_integer<~w, ~w, ~w>", [Size, Offset, Flags]);
@@ -207,15 +207,18 @@ pp(Op, Dev) ->
       io:format(Dev, "~w", [Fun])
   end.
 
-%% ____________________________________________________________________
-%%
-%% Type handling.
-%%
+%%=====================================================================
+%% Type handling
+%%=====================================================================
 
 type(Primop, Args) ->
   case Primop of
 %%% -----------------------------------------------------
 %%% Arithops
+    'bnot' ->
+      erl_bif_types:type(erlang, 'bnot', 1, Args);
+    unsafe_bnot ->
+      erl_bif_types:type(erlang, 'bnot', 1, Args);
     '+' ->
       erl_bif_types:type(erlang, '+', 2, Args);
     '-' ->
@@ -224,14 +227,16 @@ type(Primop, Args) ->
       erl_bif_types:type(erlang, '*', 2, Args);
     '/' ->
       erl_bif_types:type(erlang, '/', 2, Args);
-    'bor' ->
-      erl_bif_types:type(erlang, 'bor', 2, Args);
+    'div' ->
+      erl_bif_types:type(erlang, 'div', 2, Args);
+    'rem' ->
+      erl_bif_types:type(erlang, 'rem', 2, Args);
     'band' ->
       erl_bif_types:type(erlang, 'band', 2, Args);
+    'bor' ->
+      erl_bif_types:type(erlang, 'bor', 2, Args);
     'bxor' ->
       erl_bif_types:type(erlang, 'bxor', 2, Args);
-    'bnot' ->
-      erl_bif_types:type(erlang, 'bnot', 2, Args);
     'bsr' ->
       erl_bif_types:type(erlang, 'bsr', 2, Args);
     'bsl' ->
@@ -248,29 +253,29 @@ type(Primop, Args) ->
       erl_bif_types:type(erlang, 'band', 2, Args);
     unsafe_bxor ->
       erl_bif_types:type(erlang, 'bxor', 2, Args);
-    unsafe_bnot ->
-      erl_bif_types:type(erlang, 'bnot', 2, Args);
 %%% -----------------------------------------------------
 %%% Lists
     cons ->
       [HeadType, TailType] = Args,
       erl_types:t_cons(HeadType, TailType);
-    unsafe_tl ->
-      [Type] = Args,
-      case erl_types:t_is_cons(Type) of
-	true -> erl_types:t_cons_tl(Type);
-	false -> erl_types:t_none()
-      end;
     unsafe_hd ->
       [Type] = Args,
       case erl_types:t_is_cons(Type) of
 	true -> erl_types:t_cons_hd(Type);
 	false -> erl_types:t_none()
       end;
+    unsafe_tl ->
+      [Type] = Args,
+      case erl_types:t_is_cons(Type) of
+	true -> erl_types:t_cons_tl(Type);
+	false -> erl_types:t_none()
+      end;
 %%% -----------------------------------------------------
 %%% Tuples
     mktuple ->
       erl_types:t_tuple(Args);
+    {element, _} ->
+      erl_bif_types:type(erlang, element, 2, Args);
     {unsafe_element, N} ->
       [Type] = Args,
       case erl_types:t_is_tuple(Type) of
@@ -280,44 +285,37 @@ type(Primop, Args) ->
 	  Index = erl_types:t_from_term(N),
 	  erl_bif_types:type(erlang, element, 2, [Index|Args])
       end;
-    {element, _} ->
-      erl_bif_types:type(erlang, element, 2, Args);
     {unsafe_update_element, N} ->
-      [Tuple, NewElement] = Args,
-      case erl_types:t_is_tuple(Tuple) of
-	false -> erl_types:t_none();
-	true ->
-	  TupleArgs = erl_types:t_tuple_args(Tuple),
-	  case erl_types:t_is_any(TupleArgs) of
-	    true -> 
-	      Arity = erl_types:t_tuple_arity(Tuple),
-	      case erl_types:t_is_any(Arity) of
-		true -> Tuple;
-		false ->
-		  Any = erl_types:t_any(),
-		  Elements = 
-		    lists:duplicate(N-1, Any) ++
-		    [NewElement|lists:duplicate(Arity - N - 1, Any)],
-		  erl_types:t_tuple(Elements)
-	      end;
-	    false ->
-	      {H, [_|T]} = lists:split(N-1, TupleArgs),
-	      erl_types:t_tuple(H++[NewElement|T])
-	  end
-      end;
+      %% Same, same
+      erl_bif_types:type(erlang, setelement, 3, [erl_types:t_integer(N)|Args]);
 %%% -----------------------------------------------------
 %%% Floats
+    fclearerror ->
+      erl_types:t_any();
+    fcheckerror ->
+      erl_types:t_any();
     unsafe_tag_float ->
       erl_types:t_float();
+    %% These might look surprising, but the return is an untagged
+    %% float and we have no type for untagged values.
+    conv_to_float ->
+      erl_types:t_any();
+    unsafe_untag_float ->
+      erl_types:t_any();
+    X when X =:= fp_add; X =:= fp_sub; X =:= fp_mul;
+	   X =:= fp_div; X =:= fnegate -> erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Binaries    
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
       Signed = Flags band 4,
-      if length(Args) =:= 4 -> %% No variable part of the size parameter.
-	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-	     Size < 21, Signed =:= 0 -> erl_types:t_char();
-	     true -> erl_types:t_integer()
-	  end;
+      if (length(Args) =:= 4) and (Signed =:= 0) -> 
+	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
+	  %% No variable part of the size parameter.
+%% 	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+%% 	     Size < 21, Signed =:= 0 -> erl_types:t_char();
+%% 	     true -> erl_types:t_integer()
+%%	  end;
+	    
 	 true -> erl_types:t_integer()
       end;
     {hipe_bs_primop, {bs_get_float, _, _}} ->
@@ -328,18 +326,20 @@ type(Primop, Args) ->
       erl_types:t_binary();
     {hipe_bs_primop2, {bs_get_integer_2, Size, Flags}} ->
       Signed = Flags band 4,
-      if length(Args) =:= 1 -> %% No variable part of the size parameter.
-	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-	     Size < 21, Signed =:= 0 -> erl_types:t_char();
-	     true -> erl_types:t_integer()
-	  end;
+      if (length(Args) =:= 1) and (Signed =:= 0) -> 
+	  %% No variable part of the size parameter.
+	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
+%% 	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+%% 	     Size < 21, Signed =:= 0 -> erl_types:t_char();
+%% 	     true -> erl_types:t_integer()
+%% 	  end;
 	 true -> erl_types:t_integer()
       end;
     {hipe_bs_primop2, {bs_get_float_2, _, _}} ->
       erl_types:t_float();
     {hipe_bs_primop2, {bs_get_binary_2, _, _}} ->
       erl_types:t_binary();
-    {hipe_bs_primop2, {bs_get_binary_all_2, _}} ->
+    {hipe_bs_primop2, {bs_get_binary_all_2,_, _}} ->
       erl_types:t_binary();
     {hipe_bs_primop, bs_final} ->
       erl_types:t_binary();
@@ -347,9 +347,14 @@ type(Primop, Args) ->
       erl_types:t_integer();
     {hipe_bsi_primop, {bs_get_integer, Size, _, Flags}} ->
       Signed = Flags band 4,
-      if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-	 Size < 21, Signed =:= 0 -> erl_types:t_char();
-	 true -> erl_types:t_integer()
+      if Signed =:= 0 ->
+	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
+%%       if Size < 9, Signed =:= 0 -> erl_types:t_byte();
+%% 	 Size < 21, Signed =:= 0 -> erl_types:t_char();
+%% 	 true -> erl_types:t_integer()
+%%       end;
+	 true ->
+	  erl_types:t_integer()
       end;
     {hipe_bsi_primop, {bs_get_float, _, _}} ->
       erl_types:t_float();
@@ -365,11 +370,17 @@ type(Primop, Args) ->
       erl_types:t_binary();
     {hipe_bs_primop, {bs_init2,_}} ->
       erl_types:t_binary();
+    {X, _BsOp} when X =:= hipe_bs_primop; 
+		    X =:= hipe_bs_primop2;
+		    X =:= hipe_bsi_primop ->
+      erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Funs
     {mkfun, {_M, _F, A}, _MagicNum, _Index} ->
       %% Note that the arity includes the bound variables in args
       erl_types:t_fun(A - length(Args), erl_types:t_any());
+    {apply_N, _} ->
+      erl_types:t_any();
     Op when Op =:= call_fun; Op =:= enter_fun ->
       [Fun0|TailArgs0] = lists:reverse(Args),
       TailArgs = lists:reverse(TailArgs0),
@@ -391,18 +402,38 @@ type(Primop, Args) ->
 	  erl_types:t_none()
       end;
 %%% -----------------------------------------------------
+%%% Communication
+    check_get_msg ->
+      erl_types:t_any();
+    clear_timeout ->
+      erl_types:t_any();
+    next_msg ->
+      erl_types:t_any();
+    select_msg ->
+      erl_types:t_any();
+    set_timeout ->
+      erl_types:t_any();
+    suspend_msg ->
+      erl_types:t_any();
+%%% -----------------------------------------------------
 %%% Other
+    {closure_element, _} ->
+      erl_types:t_any();
+    redtest ->
+      erl_types:t_any();
     {M, F, A} ->
       erl_bif_types:type(M, F, A, Args);
-    _Op ->
-      %%exit({"No type information", Op})
-      erl_types:t_any()
+    Op ->
+      exit({'No type information', Op})
   end.
+
 
 type(Primop) ->
   case Primop of
 %%% -----------------------------------------------------
 %%% Arithops
+    'bnot' ->
+      erl_bif_types:type(erlang, 'bnot', 1);
     '+' ->
       erl_bif_types:type(erlang, '+', 2);
     '-' ->
@@ -411,32 +442,66 @@ type(Primop) ->
       erl_bif_types:type(erlang, '*', 2);
     '/' ->
       erl_bif_types:type(erlang, '/', 2);
-    'bor' ->
-      erl_bif_types:type(erlang, 'bor', 2);
+    'div' ->
+      erl_bif_types:type(erlang, 'div', 2);
+    'rem' ->
+      erl_bif_types:type(erlang, 'rem', 2);
     'band' ->
       erl_bif_types:type(erlang, 'band', 2);
+    'bor' ->
+      erl_bif_types:type(erlang, 'bor', 2);
     'bxor' ->
       erl_bif_types:type(erlang, 'bxor', 2);
-    'bnot' ->
-      erl_bif_types:type(erlang, 'bnot', 2);
     'bsr' ->
       erl_bif_types:type(erlang, 'bsr', 2);
     'bsl' ->
       erl_bif_types:type(erlang, 'bsl', 2);
-    {element, _} ->
-      erl_bif_types:type(erlang, element, 2);
+    unsafe_add ->
+      erl_bif_types:type(erlang, '+', 2);
+    extra_unsafe_add ->
+      erl_bif_types:type(erlang, '+', 2);
+    unsafe_sub ->
+      erl_bif_types:type(erlang, '-', 2);
+    unsafe_bor ->
+      erl_bif_types:type(erlang, 'bor', 2);
+    unsafe_band ->
+      erl_bif_types:type(erlang, 'band', 2);
+    unsafe_bxor ->
+      erl_bif_types:type(erlang, 'bxor', 2);
 %%% -----------------------------------------------------
 %%% Lists
     cons ->
       erl_types:t_cons();
+    unsafe_hd ->
+      erl_bif_types:type(erlang, hd, 1);
+    unsafe_tl ->
+      erl_bif_types:type(erlang, tl, 1);
 %%% -----------------------------------------------------
 %%% Tuples
     mktuple ->
       erl_types:t_tuple();
+    {element, _} ->
+      erl_bif_types:type(erlang, element, 2);
+    {unsafe_element, _} ->
+      erl_bif_types:type(erlang, element, 2);
+    {unsafe_update_element, _N} ->
+      erl_bif_types:type(erlang, setelement, 3);
 %%% -----------------------------------------------------
 %%% Floats
+    fclearerror ->
+      erl_types:t_any();
+    fcheckerror ->
+      erl_types:t_any();
     unsafe_tag_float ->
       erl_types:t_float();
+    %% These might look surprising, but the return is an untagged
+    %% float and we have no type for untagged values.
+    conv_to_float ->
+      erl_types:t_any();
+    unsafe_untag_float ->
+      erl_types:t_any();
+    X when X =:= fp_add; X =:= fp_sub; X =:= fp_mul;
+	   X =:= fp_div; X =:= fnegate -> erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Binaries    
     {hipe_bs_primop, {bs_get_integer, _Size, _Flags}} ->
@@ -458,28 +523,60 @@ type(Primop) ->
     {hipe_bsi_primop, {bs_get_float, _, _, _}} ->
       erl_types:t_float();
     {hipe_bsi_primop, {bs_get_binary, _, _}} ->
-	erl_types:t_binary();
+      erl_types:t_binary();
     {hipe_bsi_primop, {bs_get_binary, _, _, _}} ->
       erl_types:t_binary();
     {hipe_bsi_primop, {bs_get_binary_all, _, _}} ->
       erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2,_,_}} ->
+    {hipe_bs_primop, {bs_init2, _, _}} ->
       erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2,_}} ->
+    {hipe_bs_primop, {bs_init2, _}} ->
       erl_types:t_binary();
+    {X, _BsOp} when X =:= hipe_bs_primop; 
+		    X =:= hipe_bs_primop2;
+		    X =:= hipe_bsi_primop ->
+      erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Funs
     {mkfun, {_M, _F, _A}, _MagicNum, _Index} ->
       %% Note that the arity includes the bound variables in args
       erl_types:t_fun();
+    {apply_N, _} ->
+      erl_types:t_any();
+    call_fun ->
+      erl_types:t_any();
+    enter_fun ->
+      erl_types:t_any();
+%%% -----------------------------------------------------
+%%% Communication
+    check_get_msg ->
+      erl_types:t_any();
+    clear_timeout ->
+      erl_types:t_any();
+    next_msg ->
+      erl_types:t_any();
+    select_msg ->
+      erl_types:t_any();
+    set_timeout ->
+      erl_types:t_any();
+    suspend_msg ->
+      erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Other
+    {closure_element, _} ->
+      erl_types:t_any();
+    redtest ->
+      erl_types:t_any();
     {M, F, A} ->
       erl_bif_types:type(M, F, A);
-    _Op ->
-      %%exit({"No type information", Op})
-      erl_types:t_any()
+    Op ->
+      exit({'No type information', Op})
   end.
+
+
+%%=====================================================================
+%% Auxiliary functions
+%%=====================================================================
 
 check_fun_args([T1|Left1], [T2|Left2]) ->
   Inf = erl_types:t_inf(T1, T2),

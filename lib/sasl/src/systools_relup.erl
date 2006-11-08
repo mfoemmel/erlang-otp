@@ -121,6 +121,7 @@
 %% rel_filename() = description() = string()
 %% Opts = [opt()]
 %% opt() = {path, [path()]} | silent | noexec | restart_emulator
+%%       | {outdir, string()}
 %% path() = [string()]
 %% Ret = ok | error | {ok, Relup, Module, Warnings} | {error, Module, Error}
 %%
@@ -143,21 +144,38 @@
 mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs) ->
     mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs, []).
 mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs, Opts) ->
-    R = (catch do_mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs, 
-			 add_code_path(Opts), Opts)),
-    case {get_opt(silent, Opts), get_opt(noexec, Opts)} of
-	{false, false} ->
-	    case R of
-		{ok, _Res, _Mod, Ws} -> 
-		    print_warnings(Ws),
-		    ok;
-		Other -> 
-		    print_error(Other),
-		    error
+    case check_opts(Opts) of
+	[] ->
+	    R = (catch do_mk_relup(TopRelFile,BaseUpRelDcs,BaseDnRelDcs,
+				   add_code_path(Opts), Opts)),
+	    case {get_opt(silent, Opts), get_opt(noexec, Opts)} of
+		{false, false} ->
+		    case R of
+			{ok, _Res, _Mod, Ws} -> 
+			    print_warnings(Ws),
+			    ok;
+			Other -> 
+			    print_error(Other),
+			    error
+		    end;
+		_ -> 
+		    R
 	    end;
-	_ -> 
-	    R
+	BadArg ->
+	    erlang:error({badarg, BadArg})
     end.
+
+%% Function for checking validity of options in analogy with
+%% check_args_script/1 and check_args_tar/1 in systools_make.
+%% To maintain backwards compatibility, actually only outdir is checked.
+check_opts([{outdir, Dir}|_Opts]) when is_list(Dir) ->
+    [];
+check_opts([{outdir, BadArg}|_Opts]) ->
+    [{outdir, BadArg}];
+check_opts([_Opt|Opts]) ->
+    check_opts(Opts);
+check_opts([]) ->
+    [].
 
 do_mk_relup(TopRelFile, BaseUpRelDcs, BaseDnRelDcs, Path, Opts) ->
     ModTest = false,
@@ -445,7 +463,17 @@ write_relup_file(Relup, Opts) ->
 	true -> 
 	    ok;
 	_ ->
-	    case file:open("relup", write) of
+	    Filename = case get_opt(outdir, Opts) of
+			   OutDir when is_list(OutDir) ->
+			       filename:join(filename:absname(OutDir),
+					     "relup");
+			   false ->
+			       "relup";
+			   Badarg ->
+			       throw({error, ?MODULE, {badarg, {outdir,Badarg}}})
+		       end,
+			   
+	    case file:open(Filename, write) of
 		{ok, Fd} ->
 		    io:format(Fd, "~p.~n", [Relup]),
 		    file:close(Fd);
@@ -489,7 +517,8 @@ make_set([H|T]) ->
 default(path)   -> false;
 default(noexec) -> false;
 default(silent) -> false;
-default(restart_emulator) -> false.
+default(restart_emulator) -> false;
+default(outdir) -> false.
 
 print_error({'EXIT', Err}) -> 
     print_error(Err);
@@ -499,6 +528,8 @@ print_error({error, Mod, Error}) ->
 print_error(Other) ->
     io:format("Error: ~p~n", [Other]).
 
+format_error({file_problem, {"relup", _Posix}}) ->
+    io_lib:format("Could not open file relup~n", []);
 format_error({file_problem, {File, What}}) ->
     io_lib:format("Could not ~p file ~p~n", [get_reason(What), File]);
 format_error({no_rel_file, N, What}) ->
@@ -542,6 +573,3 @@ get_reason({parse, _}) -> parse;
 get_reason(open) -> open;
 get_reason(read) -> read;
 get_reason(parse) -> parse.
-
-
-

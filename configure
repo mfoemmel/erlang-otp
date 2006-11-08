@@ -20,6 +20,7 @@ ac_help="$ac_help
 ac_help="$ac_help
   --enable-kernel-poll    enable kernel poll support"
 ac_help="$ac_help
+  --enable-hipe           enable hipe support
   --disable-hipe          disable hipe support"
 ac_help="$ac_help
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno"
@@ -611,7 +612,7 @@ else { echo "configure: error: can not run $ac_config_sub" 1>&2; exit 1; }
 fi
 
 echo $ac_n "checking host system type""... $ac_c" 1>&6
-echo "configure:615: checking host system type" >&5
+echo "configure:616: checking host system type" >&5
 
 host_alias=$host
 case "$host_alias" in
@@ -642,7 +643,7 @@ TARGET=$host
 # We need GNU make, complain if we can't find it
 #
 echo $ac_n "checking for GNU make""... $ac_c" 1>&6
-echo "configure:646: checking for GNU make" >&5
+echo "configure:647: checking for GNU make" >&5
 # If there is a Makefile created we don't want make to start making, run
 # in a subdirectory and -f /dev/null
 MAKE_PROG=x
@@ -691,7 +692,7 @@ esac
 # SVR4 /usr/ucb/install, which tries to use the nonexistent group "staff"
 # ./install, which can be erroneously created by make from ./install.sh.
 echo $ac_n "checking for a BSD compatible install""... $ac_c" 1>&6
-echo "configure:695: checking for a BSD compatible install" >&5
+echo "configure:696: checking for a BSD compatible install" >&5
 if test -z "$INSTALL"; then
 if eval "test \"`echo '$''{'ac_cv_path_install'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
@@ -751,7 +752,7 @@ if test X"${INSTALL}" = "X${ac_aux_dir}/install-sh -c" && test -f /usr/ucb/insta
 fi
 
 echo $ac_n "checking whether ln -s works""... $ac_c" 1>&6
-echo "configure:755: checking whether ln -s works" >&5
+echo "configure:756: checking whether ln -s works" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_LN_S'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
@@ -774,7 +775,7 @@ fi
 # Extract the first word of "ranlib", so it can be a program name with args.
 set dummy ranlib; ac_word=$2
 echo $ac_n "checking for $ac_word""... $ac_c" 1>&6
-echo "configure:778: checking for $ac_word" >&5
+echo "configure:779: checking for $ac_word" >&5
 if eval "test \"`echo '$''{'ac_cv_prog_RANLIB'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else

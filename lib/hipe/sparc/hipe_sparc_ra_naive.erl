@@ -11,9 +11,9 @@
 %%              * 2002-05-09 Niklas Andersson, Andreas Lundin
 %%                Added support for stack frame minimization
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2005/08/29 14:34:43 $
-%%              $Revision: 1.2 $
+%%              $Author: mikpe $
+%%              $Date: 2006/09/14 13:33:29 $
+%%              $Revision: 1.4 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -66,7 +66,7 @@ spill(Cfg) ->
   %% except in really simple intermediate code which has no pseudos.
   LastPrecoloured = hipe_sparc_registers:first_virtual() - 1,
   {[{LastPrecoloured,{reg,hipe_sparc_registers:physical_name(LastPrecoloured)}} |
-    [{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap), Pos =/= undef]],
+    [{T,Pos} || {T,Pos} <- hipe_vectors:list(NewMap), Pos =/= undef]],
    SpillPos}.
 
 traverse(Code, Map) ->
@@ -78,7 +78,7 @@ map(I,Map) ->
    
 map_temp(T,{Map,SpillPos}) ->
   RealTemp = hipe_sparc:reg_nr(T),
-  Temp = RealTemp+1,
+  Temp = RealTemp,
   case hipe_vectors:get(Map,Temp) of
     undef ->
       case hipe_sparc_registers:is_precoloured(RealTemp) of

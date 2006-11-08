@@ -1108,7 +1108,7 @@ sync_others(Nodes) ->
                   end, Nodes).
 
 sync_other(Node, N) ->
-    monitor_node(Node, true),
+    erlang:monitor_node(Node, true, [allow_passive_connect]),
     receive
         {nodedown, Node} when N > 0 ->
             sync_other(Node, N - 1);

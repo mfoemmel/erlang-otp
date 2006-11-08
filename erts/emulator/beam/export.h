@@ -58,6 +58,10 @@ void export_info(int, void *);
 Export* erts_find_export_entry(Eterm m, Eterm f, unsigned int a);
 Export* erts_export_put(Eterm mod, Eterm func, unsigned int arity);
 
+
+Export* erts_export_get_or_make_stub(Eterm, Eterm, unsigned);
+void erts_export_consolidate(void);
+
 Export *export_list(int);
 int export_list_size(void);
 int export_table_sz(void);

@@ -35,6 +35,8 @@
 #include "erl_version.h"
 #include "beam_bp.h"
 
+#define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
+
 static erts_smp_mtx_t              trace_pattern_mutex;
 const struct trace_pattern_flags   erts_trace_pattern_flags_off = {0, 0, 0, 0};
 static int                         erts_default_trace_pattern_is_on;
@@ -80,14 +82,12 @@ suspend_process_1(Process* p, Eterm pid)
     }
 
 #ifdef ERTS_SMP
-    if (erts_smp_io_safe_lock_x(p, ERTS_PROC_LOCK_MAIN))
-	ERTS_BIF_EXITED(p);
+    erts_smp_io_safe_lock(p, ERTS_PROC_LOCK_MAIN);
 
     tracee = erts_suspend_another_process(p, ERTS_PROC_LOCK_MAIN,
 					  pid, ERTS_PROC_LOCKS_ALL);
     if (!tracee) {
 	erts_smp_io_unlock();
-	ERTS_SMP_BIF_CHK_EXITED(p);
 	ERTS_SMP_BIF_CHK_RESCHEDULE(p);
 	BIF_ERROR(p, BADARG);
     }
@@ -132,14 +132,10 @@ resume_process_1(Process* p, Eterm pid)
 	BIF_ERROR(p, BADARG);
     }
 
-#ifdef ERTS_SMP
-    if (erts_smp_io_safe_lock_x(p, ERTS_PROC_LOCK_MAIN))
-	ERTS_BIF_EXITED(p);
-#endif
+    erts_smp_io_safe_lock(p, ERTS_PROC_LOCK_MAIN);
     tracee = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN, pid, ERTS_PROC_LOCKS_ALL);
     if (!tracee) {
 	erts_smp_io_unlock();
-	ERTS_SMP_BIF_CHK_EXITED(p);
 	BIF_ERROR(p, BADARG);
     }
 
@@ -185,13 +181,6 @@ trace_pattern_3(Process* p, Eterm MFA, Eterm Pattern, Eterm flaglist)
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
 
-#ifdef ERTS_SMP
-    if (p->is_exiting) {
-	match_prog_set = NULL;
-	goto error;
-    }
-#endif
-
     /*
      * Check and compile the match specification.
      */
@@ -227,7 +216,6 @@ trace_pattern_3(Process* p, Eterm MFA, Eterm Pattern, Eterm flaglist)
 	    if (is_internal_pid(meta_tracer_pid)) {
 		meta_tracer_proc = erts_pid2proc(NULL, 0, meta_tracer_pid, 0);
 		if (!meta_tracer_proc) {
-		    ERTS_SMP_BIF_CHK_EXITED(p);
 		    goto error;
 		}
 	    } else if (is_internal_port(meta_tracer_pid)) {
@@ -407,7 +395,6 @@ trace_pattern_3(Process* p, Eterm MFA, Eterm Pattern, Eterm flaglist)
 
     erts_smp_release_system();
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(p);
 
     return make_small(matches);
 
@@ -417,7 +404,6 @@ trace_pattern_3(Process* p, Eterm MFA, Eterm Pattern, Eterm flaglist)
 
     erts_smp_release_system();
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(p);
     BIF_ERROR(p, BADARG);
 }
 
@@ -752,7 +738,6 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 
     erts_smp_release_system();
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(p);
 
     BIF_RET(make_small(matches));
 
@@ -760,7 +745,6 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 
     erts_smp_release_system();
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(p);
 
     BIF_ERROR(p, BADARG);
 
@@ -858,7 +842,6 @@ trace_info_2(Process* p, Eterm What, Eterm Key)
     } else {
 	BIF_ERROR(p, BADARG);
     }
-    ERTS_SMP_BIF_CHK_EXITED(p);
     BIF_RET(res);
 }
 
@@ -1827,7 +1810,7 @@ BIF_RETTYPE seq_trace_print_2(BIF_ALIST_2)
 
 
 
-int erts_system_monitor_clear(Process *c_p) {
+void erts_system_monitor_clear(Process *c_p) {
 #ifdef ERTS_SMP
     if (c_p) {
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MAIN);
@@ -1843,11 +1826,8 @@ int erts_system_monitor_clear(Process *c_p) {
     if (c_p) {
 	erts_smp_release_system();
 	erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
-	if (ERTS_PROC_IS_EXITING(c_p))
-	    return 0;
     }
 #endif
-    return 1;
 }
 
 static Eterm system_monitor_get(Process *p)
@@ -1921,8 +1901,7 @@ BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
 
     if (monitor_pid == am_undefined || list == NIL) {
 	prev = system_monitor_get(p);
-	if (!erts_system_monitor_clear(p))
-	    ERTS_BIF_EXITED(p);
+	erts_system_monitor_clear(p);
 	BIF_RET(prev);
     }
     if (is_not_list(list)) goto error;
@@ -1968,7 +1947,6 @@ BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
 
 	erts_smp_release_system();
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-	ERTS_SMP_BIF_CHK_EXITED(p);
 	BIF_RET(prev);
     }
 
@@ -1977,9 +1955,57 @@ BIF_RETTYPE system_monitor_2(Process *p, Eterm monitor_pid, Eterm list) {
     if (system_blocked) {
 	erts_smp_release_system();
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-	ERTS_SMP_BIF_CHK_EXITED(p);
     }
 
     BIF_ERROR(p, BADARG);
 }
 
+
+BIF_RETTYPE
+trace_delivered_1(BIF_ALIST_1)
+{
+    DECL_AM(trace_delivered);
+#ifdef ERTS_SMP
+    ErlHeapFragment *bp;
+#else
+    Uint32 locks = 0;
+#endif
+    Eterm *hp;
+    Eterm msg, ref, msg_ref;
+    Process *p;
+    if (BIF_ARG_1 == am_all) {
+	p = NULL;
+    } else if (! (p = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+				    BIF_ARG_1, ERTS_PROC_LOCKS_ALL))) {
+	if (is_not_internal_pid(BIF_ARG_1)
+	    || internal_pid_index(BIF_ARG_1) >= erts_max_processes) {
+	    BIF_ERROR(BIF_P, BADARG);
+	}
+    }
+    
+    ref = erts_make_ref(BIF_P);
+
+#ifdef ERTS_SMP
+    bp = new_message_buffer(REF_THING_SIZE + 4);
+    hp = &bp->mem[0];
+    msg_ref = STORE_NC(&hp, &bp->off_heap.externals, ref);
+#else
+    hp = HAlloc(BIF_P, 4);
+    msg_ref = ref;
+#endif
+
+    msg = TUPLE3(hp, AM_trace_delivered, BIF_ARG_1, msg_ref);
+
+#ifdef ERTS_SMP
+    erts_send_sys_msg_proc(BIF_P->id, BIF_P->id, msg, bp);
+    if (p)
+	erts_smp_proc_unlock(p,
+			     (BIF_P == p
+			      ? ERTS_PROC_LOCKS_ALL_MINOR
+			      : ERTS_PROC_LOCKS_ALL));
+#else
+    erts_send_message(BIF_P, BIF_P, &locks, msg, ERTS_SND_FLG_NO_SEQ_TRACE);
+#endif
+
+    BIF_RET(ref);
+}

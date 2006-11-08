@@ -147,8 +147,8 @@ expr(E0, Env, Ren, Ctxt, S0) ->
 	    {B, S2} = expr(cerl:letrec_body(E), Env1, Ren1, Ctxt, S1),
 	    {cerl:update_c_letrec(E, Ds1, B), S2};
 	binary ->
-	    {Segs, S1}=expr_list(cerl:binary_segments(E), Env, Ren,
-				 Ctxt, S0),
+	    {Segs, S1} = expr_list(cerl:binary_segments(E), Env, Ren,
+				   Ctxt, S0),
 	    {cerl:update_c_binary(E, Segs), S1};
 	bitstr ->
 	    {E1,S1} = expr(cerl:bitstr_val(E), Env, Ren, Ctxt, S0),
@@ -193,7 +193,7 @@ pattern(E, Env, Ren) ->
 	    P = pattern(cerl:alias_pat(E), Env, Ren),
 	    cerl:update_c_alias(E, V, P);
 	binary ->
-	    Segs=pattern_list(cerl:binary_segments(E), Env, Ren),
+	    Segs = pattern_list(cerl:binary_segments(E), Env, Ren),
 	    cerl:update_c_binary(E, Segs);
 	bitstr ->
 	    E1 = pattern(cerl:bitstr_val(E), Env, Ren),
@@ -204,12 +204,8 @@ pattern(E, Env, Ren) ->
 	    cerl:update_c_bitstr(E, E1, E2, E3, E4, E5)
     end.
 
-
-
-pattern_list([E | Es], Env, Ren) ->
-    [pattern(E, Env, Ren) | pattern_list(Es, Env, Ren)];
-pattern_list([], _, _) ->
-    [].
+pattern_list(ExprList, Env, Ren) ->
+    [pattern(E, Env, Ren) || E <- ExprList].
 
 %% Visit the function body of each definition. We insert an explicit
 %% reduction test at the start of each function.
@@ -223,8 +219,7 @@ defs([{V, F} | Ds], Ds1, Top, Env, Ren, S0) ->
 	     false -> S0
 	 end,
     {B, S2} = expr(cerl:fun_body(F), Env, Ren, #ctxt{}, S1),
-    B1 = cerl:c_seq(cerl:c_primop(cerl:c_atom(?PRIMOP_REDUCTION_TEST),
-				  []),
+    B1 = cerl:c_seq(cerl:c_primop(cerl:c_atom(?PRIMOP_REDUCTION_TEST), []),
 		    B),
     F1 = cerl:update_c_fun(F, cerl:fun_vars(F), B1),
     defs(Ds, [{V, F1} | Ds1], Top, Env, Ren, S2);
@@ -433,7 +428,7 @@ call_to_primop(erlang, error, 1) -> {yes, ?PRIMOP_ERROR};
 call_to_primop(erlang, error, 2) -> {yes, ?PRIMOP_ERROR};
 call_to_primop(erlang, fault, 1) -> {yes, ?PRIMOP_ERROR};
 call_to_primop(erlang, fault, 2) -> {yes, ?PRIMOP_ERROR};
-call_to_primop(_, _, _) -> no.
+call_to_primop(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> no.
 
 %% Also, some primops (introduced by Erlang to Core Erlang translation
 %% and possibly other stages) must be recognized and rewritten.
@@ -581,22 +576,18 @@ receive_expr(E, Env, Ren, Ctxt, S0) ->
     {cerl:update_c_receive(E, Cs1, T, A), S3}.
 
 receive_clauses([C | Cs]) ->
-    Call = cerl:c_primop(cerl:c_atom(?PRIMOP_RECEIVE_SELECT),
-			 []),
+    Call = cerl:c_primop(cerl:c_atom(?PRIMOP_RECEIVE_SELECT), []),
     B = cerl:c_seq(Call, cerl:clause_body(C)),
     C1 =  cerl:update_c_clause(C, cerl:clause_pats(C),
 			       cerl:clause_guard(C), B),
     [C1 | receive_clauses(Cs)];
 receive_clauses([]) ->
-    Call = cerl:c_primop(cerl:c_atom(?PRIMOP_RECEIVE_NEXT),
-			 []),
+    Call = cerl:c_primop(cerl:c_atom(?PRIMOP_RECEIVE_NEXT), []),
     V = cerl:c_var('X'),    % any name is ok
     [cerl:c_clause([V], Call)].
 
-
 new_vars(N, Env) ->
     [cerl:c_var(V) || V <- env__new_names(N, Env)].
-
 
 %% ---------------------------------------------------------------------
 %% Environment
@@ -625,7 +616,6 @@ env__new_names(N, Env) ->
 env__new_function_name(F, Env) ->
     rec_env:new_key(F, Env).
 
-
 %% ---------------------------------------------------------------------
 %% Renaming
 
@@ -643,11 +633,12 @@ ren__map(Key, Ren) ->
 	    Key
     end.
 
-
 %% ---------------------------------------------------------------------
 %% State
 
--record(state, {module, function, pmatch=true}).
+%%-type(t_pmatch(), 'true' | 'false' | 'no_duplicates' | 'duplicate_all').
+
+-record(state, {module::atom(), function::atom(), pmatch=true}).
 
 s__new(Module) ->
     #state{module = Module}.

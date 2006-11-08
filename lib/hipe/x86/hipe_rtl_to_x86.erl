@@ -3,7 +3,12 @@
 %%%
 %%% Translate 3-address RTL code to 2-address pseudo-x86 code.
 
--ifndef(HIPE_RTL_TO_X86).
+-ifdef(HIPE_AMD64).
+-define(HIPE_RTL_TO_X86,	hipe_rtl_to_amd64).
+-define(HIPE_X86_REGISTERS,	hipe_amd64_registers).
+-define(ECX,			rcx).
+-define(EAX,			rax).
+-else.
 -define(HIPE_RTL_TO_X86,	hipe_rtl_to_x86).
 -define(HIPE_X86_REGISTERS,	hipe_x86_registers).
 -define(ECX,			ecx).

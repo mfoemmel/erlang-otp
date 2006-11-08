@@ -13,8 +13,8 @@
 -endif.
 
 -record(spill_cost,
-	{uses		% number of uses of each temp
-	 ,bb_uses	% number of basic blocks each temp occurs in
+	{uses::binary(),       	% number of uses of each temp
+	 bb_uses::binary()	% number of basic blocks each temp occurs in
 	}).
 
 new(NrTemps) ->
@@ -29,13 +29,8 @@ new(NrTemps) ->
 
 inc_costs(Temps, SC) ->
   Uses = SC#spill_cost.uses,
-  inc_uses(Temps, Uses),
+  lists:foreach(fun (T) -> inc_use(T, Uses) end, Temps),
   SC. % updated via side-effects
-
-inc_uses([], _Uses) -> [];
-inc_uses([T|Ts], Uses) ->
-  inc_use(T, Uses),
-  inc_uses(Ts, Uses).
 
 inc_use(Temp, Uses) ->
   hipe_bifs:array_update(Uses, Temp, get_uses(Temp, Uses) + 1).
@@ -55,13 +50,8 @@ get_uses(Temp, Uses) ->
 
 ref_in_bb(Temps, SC) ->
   BBUses = SC#spill_cost.bb_uses,
-  inc_bb_uses(Temps, BBUses),
+  lists:foreach(fun (T) -> inc_bb_use(T, BBUses) end, Temps),
   SC. % updated via side-effects
-
-inc_bb_uses([], _BBUses) -> [];
-inc_bb_uses([T|Ts], BBUses) ->
-  inc_bb_use(T, BBUses),
-  inc_bb_uses(Ts, BBUses).
 
 inc_bb_use(Temp, BBUses) ->
   hipe_bifs:array_update(BBUses, Temp, get_bb_uses(Temp, BBUses) + 1).

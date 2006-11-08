@@ -36,13 +36,16 @@
 	 from_file/2,
 	 insert/2,
 	 lookup/2,
-	 lookup/4,
+	 lookup_module/2,
 	 merge_and_write_file/2,
+	 merge_plts/1,
 	 new/1,
 	 strip_non_member_mfas/2,
 	 to_edoc/1,
 	 to_edoc/4
 	]).
+
+-record(dialyzer_plt, {version, libs, md5, tab}).
 
 new(Name) when is_atom(Name) ->
   ets:new(Name, [set, public]).
@@ -67,21 +70,57 @@ copy(From, To) ->
 insert(Plt, Object) ->
   ets:insert(Plt, Object).
 
-lookup(Plt, {M, F, A}) ->
-  lookup(Plt, M, F, A).
+lookup(Plt, MFA={M, F, A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
+  lookup_1(Plt, MFA);
+lookup(Plt, Label) when is_integer(Label) ->
+  lookup_1(Plt, Label).
 
-lookup(Plt, M, F, A) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
-  case ets:lookup(Plt, {M, F, A}) of
+lookup_1(Plt, Obj) ->
+  case ets:lookup(Plt, Obj) of
     [] -> none;
-    [{_MFA, Ret, Arg}] -> {value, {Ret, Arg}}
+    [{Obj, Ret, Arg}] -> {value, {Ret, Arg}}
   end.
 
-from_file(Name, Dets) ->
-  Plt = new(Name),
-  {ok, D} = dets:open_file(Dets, [{access, read}]),
-  true = ets:from_dets(Plt, D),
-  ok = dets:close(D),
-  Plt.
+lookup_module(Plt, M) when is_atom(M) ->
+  case ets:match_object(Plt, {{M, '_', '_'}, '_', '_'}) of
+    [] -> none;
+    [_|_] = List -> {value, List}
+  end.
+  
+from_file(Name, FileName) ->
+  case get_record_from_file(FileName) of
+    {ok, Rec} ->
+      case check_version(Rec) of
+	{error, _Vsn} -> erlang:fault(old_plt);
+	ok -> 
+	  Plt = new(Name),
+	  insert(Plt, Rec#dialyzer_plt.tab),
+	  Plt
+      end;
+    {error, Reason} ->
+      erlang:fault(Reason)
+  end.
+
+check_version(#dialyzer_plt{version=?VSN}) -> ok;
+check_version(#dialyzer_plt{version=Vsn}) -> {error, Vsn}.
+
+get_record_from_file(FileName) ->
+  case file:read_file(FileName) of
+    {ok, Bin} ->
+      case catch binary_to_term(Bin) of
+	Rec = #dialyzer_plt{} -> {ok, Rec};
+	_ -> 
+	  %% Lets see if this is a dets, i.e., an old type of plt.
+	  case dets:is_dets_file(FileName) of
+	    true -> {error, dets_plt};
+	    false -> {error, not_valid}
+	  end
+      end;
+    {error, enoent} ->
+      {error, no_such_file};
+    {error, _} -> 
+      {error, read_error}
+  end.
 
 merge_and_write_file(PltList, File) ->
   NewPlt = merge_plts(PltList--[none]),
@@ -93,64 +132,101 @@ merge_plts([Plt1, Plt2|Left]) ->
   ets:foldl(fun(Obj, _) -> insert(Plt1, Obj) end, [], Plt2),
   ets:delete(Plt2),
   merge_plts([Plt1|Left]).
-		
 
-to_file(Plt, Dets) ->
-  file:delete(Dets),
-  MinSize = ets:info(Plt, size),
-  {ok, Dets} = dets:open_file(Dets, [{min_no_slots, MinSize}]),
-  ok = dets:from_ets(Dets, Plt),
-  ok = dets:sync(Dets),
-  ok = dets:close(Dets).
+to_file(Plt, FileName) ->
+  MD5 = case ets:lookup(Plt, md5) of
+	  [] -> none;
+	  [{md5, Val1}] -> Val1
+	end,
+  Libs = case ets:lookup(Plt, libs) of
+	   [] -> none;
+	   [{libs, Val2}] -> Val2
+	 end,
+  Record = #dialyzer_plt{version=?VSN, md5=MD5, 
+			 libs=Libs, tab=ets:tab2list(Plt)},
+  Bin = term_to_binary(Record),
+  case file:write_file(FileName, Bin) of
+    ok -> ok;
+    {error, Reason} ->
+      Msg = 
+	io_lib:format("Could not write plt file ~s: ~w\n", [FileName, Reason]),
+      erlang:fault(Msg)
+  end.
 
-check_init_plt(Libs0, InitPlt) ->  
-  case Libs0 =:= none of
-    true ->
-      case filelib:is_file(InitPlt) andalso dets:is_dets_file(InitPlt) of
-	true ->
-	  case dets:open_file(InitPlt, [{access, read}]) of
-	    {ok, Dets1} ->
-	      case dets:lookup(Dets1, libs) of
-		[{libs, Libs}] -> ok;
-		_ -> Libs = ?DEFAULT_LIBS
-	      end,
-	      ok = dets:close(Dets1);
-	    {error, _} ->
-	      Libs = ?DEFAULT_LIBS
+check_init_plt(InputLibs, FileName) ->
+  case get_record_from_file(FileName) of
+    {ok, Rec = #dialyzer_plt{libs=FileLibs, md5=Md5}} ->
+      Libs = case InputLibs =:= none of
+	       true -> 
+		 case FileLibs =:= none of
+		   true -> ?DEFAULT_LIBS;
+		   false -> FileLibs
+		 end;
+	       false -> InputLibs
+	     end,
+      case check_version(Rec) of
+	ok -> 
+	  case compute_md5(Libs) of
+	    Md5 -> {ok, FileName};
+	    NewMd5 -> {fail, NewMd5, Libs, FileName}
 	  end;
-	false ->
-	  Libs = ?DEFAULT_LIBS
+	{error, Vsn} ->
+	  case Md5 =:= none of
+	    true ->
+	      %% This is a user defined plt. No md5 check.
+	      Msg = io_lib:format("    The plt ~s was built with Dialyzer ~s\n"
+				  "    Please rebuild it using the current "
+				  "version (~s)\n", [FileName, Vsn, ?VSN]),
+	      {error, Msg};
+	    false ->
+	      NewMd5 = compute_md5(Libs),
+	      {fail, NewMd5, Libs, FileName}
+	  end
       end;
-    false ->
-      Libs = Libs0
-  end,
-  MD5 = compute_md5(Libs),
-  case filelib:is_file(InitPlt) andalso dets:is_dets_file(InitPlt) of
-    true ->
-      case dets:open_file(InitPlt, [{access, read}]) of
-	{ok, Dets2} ->
-	  Res =
-	    case dets:lookup(Dets2, md5) of
-	      [{md5, MD5}] -> {ok, InitPlt};
-	      [{md5, _Other}] -> {fail, MD5, Libs, InitPlt};
-	      [] ->
-		%% This is a user-defined plt => No check
-		{ok, InitPlt}
-	    end,
-	  ok = dets:close(Dets2),
-	  Res;
-	{error, _} ->
-	  {fail, MD5, Libs, InitPlt}
+    {error, dets_plt} ->
+      %% If this is a user-defined plt we need to fail with an error
+      %% message. On the other hand, if it was built from some libs
+      %% we can fail so that a new one is built.
+      {ok, Dets} = dets:open_file(FileName, [{access, read}]),
+      case dets:lookup(Dets, md5) of
+	[{md5, _}] -> 
+	  case InputLibs =:= none of
+	    true ->
+	      [{libs, PltLibs}] = dets:lookup(Dets, libs),
+	      ok = dets:close(Dets),
+	      {fail, compute_md5(PltLibs), PltLibs, FileName};
+	    false ->
+	      ok = dets:close(Dets),
+	      {fail, compute_md5(InputLibs), InputLibs, FileName}
+	  end;
+	[] ->
+	  %% This is a user-defined plt.
+	  ok = dets:close(Dets),
+	  Msg = io_lib:format("    The file ~s is an old type of plt\n"
+			      "    Please rebuild it with the current "
+			      "Dialyzer\n", [FileName]),
+	  {error, Msg}
       end;
-    false -> {fail, MD5, Libs, InitPlt}
-  end.      
+    {error, not_valid} ->
+      Msg = io_lib:format("    The file ~s is not a plt file\n", [FileName]),
+      {error, Msg};
+    {error, no_such_file} ->
+      case InputLibs =:= none of
+	true -> {fail, compute_md5(?DEFAULT_LIBS), ?DEFAULT_LIBS, FileName};
+	false -> {fail, compute_md5(InputLibs), InputLibs, FileName}
+      end;
+    {error, read_error} ->
+      Msg = io_lib:format("    Could not read the file ~s\n", [FileName]),
+      {error, Msg}
+  end.
 
 compute_md5(Libs) ->
   LibDirs = [code:lib_dir(L) || L <- Libs],
   Dirs = [filename:join(L, "ebin") || L <- LibDirs],
   case list_dirs(Dirs) of
     {error, List} ->
-      erlang:fault("Not valid libraries: ~w\n", [List]);
+      Msg = lists:flatten(io_lib:format("Invalid libraries: ~w\n", [List])),
+      erlang:fault(Msg);
     {ok, List} ->
       BeamFiles = [filename:join(Dir, X) 
 		   || {Dir, X} <- List, filename:extension(X)==".beam"],
@@ -158,7 +234,7 @@ compute_md5(Libs) ->
       Fun = fun(X, Acc) ->
 		compute_md5_from_file(X, Acc)
 	    end,
-      FinalContext = lists:foldl(Fun, Context, BeamFiles),
+      FinalContext = lists:foldl(Fun, Context, lists:sort(BeamFiles)),
       erlang:md5_final(FinalContext)
   end.
 

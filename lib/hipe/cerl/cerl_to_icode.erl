@@ -1330,8 +1330,7 @@ primop_receive_next(#ctxt{'receive' = R} = Ctxt, S0) ->
 	    %% same - add a dummy label if necessary.
 	    S1 = add_code(make_op(?OP_NEXT_MESSAGE, [], [], #ctxt{})
 			  ++ [icode_goto(Loop)], S0),
-	    L = new_continuation_label(Ctxt),
-	    add_continuation_label(L, Ctxt, S1);
+	    add_new_continuation_label(Ctxt, S1);
 	_ ->
 	    error_not_in_receive(?PRIMOP_RECEIVE_NEXT),
 	    throw(error)
@@ -1962,23 +1961,30 @@ boolean(E0, True, False, Ctxt, Env, S) ->
 	    end;
  	'case' ->
 	    %% Propagate boolean handling into clause bodies.
+	    %% (Note that case switches assume fallthrough code in the
+	    %% clause bodies, so we must add a dummy label as needed.)
 	    F = fun (B, Ctxt, Env, S) ->
-			boolean(B, True, False, Ctxt, Env, S)
+			S1 = boolean(B, True, False, Ctxt, Env, S),
+			add_new_continuation_label(Ctxt, S1)
 		end,
-	    expr_case_1(E, F, Ctxt, Env, S);
+	    S1 = expr_case_1(E, F, Ctxt, Env, S),
+	    %% Add a final goto if necessary, to compensate for the
+	    %% final continuation label of the case-expression. This
+	    %% should be unreachable, so the value does not matter.
+	    add_continuation_jump(False, Ctxt, S1);
 	seq ->
 	    %% Propagate boolean handling into body.
 	    F = fun (B, Ctxt, Env, S) ->
 			boolean(B, True, False, Ctxt, Env, S)
 		end,
-	    expr_seq_1(E, F, Ctxt, Env, S);	    
+	    expr_seq_1(E, F, Ctxt, Env, S);
 	'let' ->
 	    %% Propagate boolean handling into body. Note that we have
 	    %% called 'cerl_lib:reduce_expr/1' above.
 	    F = fun (B, Ctxt, Env, S) ->
 			boolean(B, True, False, Ctxt, Env, S)
 		end,
-	    expr_let_1(E, F, Ctxt, Env, S);	    
+	    expr_let_1(E, F, Ctxt, Env, S);
 	'try' ->
 	    case Ctxt#ctxt.class of
 		guard ->
@@ -1990,11 +1996,13 @@ boolean(E0, True, False, Ctxt, Env, S) ->
 		    boolean(cerl:try_arg(E), True, False, Ctxt1, Env,
 			    S);
 		_ ->
-		    %% Propagate boolean handling into the handler and body.
+		    %% Propagate boolean handling into the handler and body
+		    %% (see propagation into case switches for comparison)
 		    F = fun (B, Ctxt, Env, S) ->
 				boolean(B, True, False, Ctxt, Env, S)
 			end,
-		    expr_try_1(E, F, Ctxt, Env, S)
+		    S1 = expr_try_1(E, F, Ctxt, Env, S),
+		    add_continuation_jump(False, Ctxt, S1)
 	    end;
 	_ ->
 	    %% This handles everything else, including cases that are
@@ -2213,6 +2221,11 @@ add_continuation_jump(Label, Ctxt, S) ->
 	    S
     end.
 
+%% This is used to insert a new dummy label (if necessary) when
+%% a block is ended suddenly; cf. add_fail.
+add_new_continuation_label(Ctxt, S) ->
+    add_continuation_label(new_continuation_label(Ctxt), Ctxt, S).
+
 add_local_call({Name, _Arity} = V, Vs, Ts, Ctxt, S, DstType) ->
     Module = s__get_module(S),
     case Ctxt#ctxt.final of
@@ -2236,8 +2249,7 @@ add_local_call({Name, _Arity} = V, Vs, Ts, Ctxt, S, DstType) ->
 
 add_letrec_call(Label, Vs1, Vs, Ctxt, S) ->
     S1 = add_code(make_moves(Vs1, Vs) ++ [icode_goto(Label)], S),
-    L = new_continuation_label(Ctxt),
-    add_continuation_label(L, Ctxt, S1).
+    add_new_continuation_label(Ctxt, S1).
 
 add_exit(V, Ctxt, S) ->
     add_fail([V], exit, Ctxt, S).
@@ -2262,7 +2274,7 @@ add_rethrow(E, V, Ctxt, S) ->
 
 add_fail(Vs, Class, Ctxt, S0) ->
     S1 = add_code([icode_fail(Vs, Class)], S0),
-    add_continuation_label(new_continuation_label(Ctxt), Ctxt, S1).
+    add_new_continuation_label(Ctxt, S1).
 
 %% We must add continuation- and fail-labels if we are in a guard context.
 

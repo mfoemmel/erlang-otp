@@ -83,7 +83,6 @@ MODULES = \
 	file \
 	file_io_server \
 	file_server \
-	old_file_server \
 	gen_tcp \
 	gen_udp \
 	global \
@@ -192,8 +191,6 @@ $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
 	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) \
 		-o$(EBIN) $<
 
-$(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
-
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -213,3 +210,42 @@ release_docs_spec:
 
 list_preloaded:
 	@echo $(PRE_LOADED_MODULES)
+
+# Include dependencies -- list below added by Kostis Sagonas
+$(EBIN)/application_controller.beam: application_master.hrl
+$(EBIN)/application_master.beam: application_master.hrl
+$(EBIN)/auth.beam: ../include/file.hrl
+$(EBIN)/code.beam: ../include/file.hrl
+$(EBIN)/code_server.beam: ../include/file.hrl
+$(EBIN)/disk_log.beam: disk_log.hrl
+$(EBIN)/disk_log_1.beam: disk_log.hrl ../include/file.hrl
+$(EBIN)/disk_log_server.beam: disk_log.hrl
+$(EBIN)/dist_util.beam: dist_util.hrl dist.hrl
+$(EBIN)/erl_boot_server.beam: inet_boot.hrl
+$(EBIN)/erl_epmd.beam: inet_int.hrl erl_epmd.hrl
+$(EBIN)/erl_prim_loader.beam: inet_boot.hrl
+$(EBIN)/file.beam: ../include/file.hrl
+$(EBIN)/gen_tcp.beam: inet_int.hrl
+$(EBIN)/gen_udp.beam: inet_int.hrl
+$(EBIN)/global.beam: ../../stdlib/include/ms_transform.hrl
+$(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
+$(EBIN)/inet.beam: ../include/inet.hrl inet_int.hrl
+$(EBIN)/inet6_tcp.beam: inet_int.hrl
+$(EBIN)/inet6_tcp_dist.beam: net_address.hrl dist.hrl dist_util.hrl
+$(EBIN)/inet6_udp.beam: inet_int.hrl
+$(EBIN)/inet_config.beam: inet_config.hrl ../include/inet.hrl
+$(EBIN)/inet_db.beam: ../include/inet.hrl inet_int.hrl inet_res.hrl inet_dns.hrl inet_config.hrl
+$(EBIN)/inet_dns.beam: inet_int.hrl inet_dns.hrl
+$(EBIN)/inet_gethost_native.beam: ../include/inet.hrl
+$(EBIN)/inet_hosts.beam: ../include/inet.hrl
+$(EBIN)/inet_parse.beam: ../include/file.hrl
+$(EBIN)/inet_res.beam: ../include/inet.hrl inet_res.hrl inet_dns.hrl inet_int.hrl
+$(EBIN)/inet_tcp.beam: inet_int.hrl
+$(EBIN)/inet_udp_dist.beam: net_address.hrl dist.hrl dist_util.hrl
+$(EBIN)/inet_udp.beam: inet_int.hrl
+$(EBIN)/net_kernel.beam: net_address.hrl
+$(EBIN)/os.beam: ../include/file.hrl
+$(EBIN)/prim_file.beam: ../include/file.hrl
+$(EBIN)/prim_inet.beam: inet_int.hrl
+$(EBIN)/ram_file.beam: ../include/file.hrl
+$(EBIN)/wrap_log_reader.beam: disk_log.hrl ../include/file.hrl

@@ -526,6 +526,10 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
   TestRetName = hipe_rtl:label_name(TestRetLbl),
 
   case CondOp of
+    'fixnum_eq' ->
+      [Arg1, Arg2] = Args,
+      [hipe_rtl:mk_branch(Arg1, eq, Arg2, TrueLbl,
+			  FalseLbl, Pred)];
     '=:=' ->
       [Arg1, Arg2] = Args,
       [hipe_rtl:mk_branch(Arg1, eq, Arg2, TrueLbl,
@@ -535,6 +539,10 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
        TestRetLbl,
        hipe_rtl:mk_branch(Tmp, ne, hipe_rtl:mk_imm(0),
 			  TrueLbl, FalseLbl, Pred)];
+    'fixnum_neq' ->
+      [Arg1, Arg2] = Args,
+      [hipe_rtl:mk_branch(Arg1, eq, Arg2, FalseLbl,
+			  TrueLbl, 1-Pred)];
     '=/=' ->
       [Arg1, Arg2] = Args,
       [hipe_rtl:mk_branch(Arg1, eq, Arg2, FalseLbl,
@@ -562,6 +570,18 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
        TestRetLbl,
        hipe_rtl:mk_branch(Tmp, ne, hipe_rtl:mk_imm(0),
 			  TrueLbl, FalseLbl, Pred)];
+    'fixnum_gt' ->
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_gt(Arg1, Arg2, TrueLbl, FalseLbl, Pred)];
+    'fixnum_ge' ->
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_ge(Arg1, Arg2, TrueLbl, FalseLbl, Pred)];
+    'fixnum_lt' ->
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_lt(Arg1, Arg2, TrueLbl, FalseLbl, Pred)];
+    'fixnum_le' ->
+      [Arg1, Arg2] = Args,
+      [hipe_tagscheme:fixnum_le(Arg1, Arg2, TrueLbl, FalseLbl, Pred)];
     '>' ->
       [Arg1, Arg2] = Args,
       [hipe_tagscheme:test_two_fixnums(Arg1, Arg2,

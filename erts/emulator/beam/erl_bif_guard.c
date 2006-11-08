@@ -33,8 +33,13 @@
 #include "erl_binary.h"
 
 #if defined(HEAP_FRAG_ELIM_TEST)
-# define ArithAlloc(a, b) (abort(), THE_NON_VALUE)
+# undef ArithAlloc
+# define ArithAlloc(a, b) HAlloc(a, b)
+static Eterm gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live);
 #endif
+
+
+static Eterm double_to_integer(Process* p, double x);
 
 /*
  * Guard BIFs MUST allocate memory in heap fragments using ArithAlloc().
@@ -199,3 +204,315 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
     }
     BIF_ERROR(BIF_P, BADARG);
 }
+
+/*
+ * Generate the integer part from a double.
+ */
+static Eterm
+double_to_integer(Process* p, double x)
+{
+    int is_negative;
+    int ds;
+    digit_t* xp;
+    int i;
+    Eterm res;
+    size_t sz;
+    Eterm* hp;
+
+    if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
+	Sint xi = x;
+	return make_small(xi);
+    }
+
+    if (x >= 0) {
+	is_negative = 0;
+    } else {
+	is_negative = 1;
+	x = -x;
+    }
+
+    /* Unscale & (calculate exponent) */
+    ds = 0;
+    while(x >= 1.0) {
+	x /= D_BASE;         /* "shift" right */
+	ds++;
+    }
+    sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
+
+    /*
+     * Beam note: This function is called from guard bifs (round/1 and trunc/1),
+     * which are not allowed to build anything at all on the heap.
+     * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc().
+     */
+    hp = ArithAlloc(p, sz);
+    res = make_big(hp);
+    xp = (digit_t*) (hp + 1);
+
+    for (i = ds-1; i >= 0; i--) {
+	digit_t d;
+
+	x *= D_BASE;      /* "shift" left */
+	d = x;            /* trunc */
+	xp[i] = d;        /* store digit */
+	x -= d;           /* remove integer part */
+    }
+    while ((ds & (BIG_DIGITS_PER_WORD-1)) != 0) {
+	xp[ds++] = 0;
+    }
+
+    if (is_negative) {
+	*hp = make_neg_bignum_header(sz-1);
+    } else {
+	*hp = make_pos_bignum_header(sz-1);
+    }
+    return res;
+}
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+#undef ArithAlloc
+
+#define ERTS_GBIF_FORCE_GC 1
+
+#define ERTS_NEED_GC(p, need) \
+  (ERTS_GBIF_FORCE_GC || (HEAP_LIMIT((p)) - HEAP_TOP((p))) <= (need))
+
+Eterm erts_gc_length_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm list = reg[live];
+    int i;
+
+    if (is_nil(list)) 
+	return SMALL_ZERO;
+    i = 0;
+    while (is_list(list)) {
+	i++;
+	list = CDR(list_val(list));
+    }
+    if (is_not_nil(list))  {
+	BIF_ERROR(p, BADARG);
+    }
+    return make_small(i);
+}
+
+Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg = reg[live];
+    if (is_tuple(arg)) {
+	Eterm* tupleptr = tuple_val(arg);
+	return make_small(arityval(*tupleptr));
+    } else if (is_binary(arg)) {
+	Uint sz = binary_size(arg);
+	if (IS_USMALL(0, sz)) {
+	    return make_small(sz);
+	} else {
+	    Eterm* hp;
+	    if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
+		erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live);
+	    }
+	    hp = p->htop;
+	    p->htop += BIG_UINT_HEAP_SIZE;
+	    return uint_to_big(sz, hp);
+	}
+    }
+    BIF_ERROR(p, BADARG);
+}
+
+Eterm erts_gc_abs_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg;
+    Eterm res;
+    Sint i0, i;
+    Eterm* hp;
+
+    arg = reg[live];
+
+    /* integer arguments */
+    if (is_small(arg)) {
+	i0 = signed_val(arg);
+	i = labs(i0);
+	if (i0 == MIN_SMALL) {
+	    if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
+		erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live+1);
+		arg = reg[live];
+	    }
+	    hp = p->htop;
+	    p->htop += BIG_UINT_HEAP_SIZE;
+	    return uint_to_big(i, hp);
+	} else {
+	    return make_small(i);
+	}
+    } else if (is_big(arg)) {
+	if (!big_sign(arg)) {
+	    return arg;
+	} else {
+	    int sz = big_arity(arg) + 1;
+	    Uint* x;
+
+	    if (ERTS_NEED_GC(p, sz)) {
+		erts_garbage_collect(p, sz, reg, live+1);
+		arg = reg[live];
+	    }
+	    hp = p->htop;
+	    p->htop += sz;
+	    sz--;
+	    res = make_big(hp);
+	    x = big_val(arg);
+	    *hp++ = make_pos_bignum_header(sz);
+	    x++;                          /* skip thing */
+	    while(sz--)
+		*hp++ = *x++;
+	    return res;
+	}
+    } else if (is_float(arg)) {
+	FloatDef f;
+
+	GET_DOUBLE(arg, f);
+	if (f.fd < 0.0) {
+	    if (ERTS_NEED_GC(p, FLOAT_SIZE_OBJECT)) {
+		erts_garbage_collect(p, FLOAT_SIZE_OBJECT, reg, live+1);
+		arg = reg[live];
+	    }
+	    hp = p->htop;
+	    p->htop += FLOAT_SIZE_OBJECT;
+	    f.fd = fabs(f.fd);
+	    res = make_float(hp);
+	    PUT_DOUBLE(f, hp);
+	    return res;
+	}
+	else
+	    return arg;
+    }
+    BIF_ERROR(p, BADARG);
+}
+
+Eterm erts_gc_float_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg;
+    Eterm res;
+    Eterm* hp;
+    FloatDef f;
+     
+    /* check args */
+    arg = reg[live];
+    if (is_not_integer(arg)) {
+	if (is_float(arg))  {
+	    return arg;
+	} else {
+	badarg:
+	    BIF_ERROR(p, BADARG);
+	}
+    }
+    if (is_small(arg)) {
+	Sint i = signed_val(arg);
+	f.fd = i;		/* use "C"'s auto casting */
+    } else if (big_to_double(arg, &f.fd) < 0) {
+	goto badarg;
+    }
+    if (ERTS_NEED_GC(p, FLOAT_SIZE_OBJECT)) {
+	erts_garbage_collect(p, FLOAT_SIZE_OBJECT, reg, live+1);
+	arg = reg[live];
+    }
+    hp = p->htop;
+    p->htop += FLOAT_SIZE_OBJECT;
+    res = make_float(hp);
+    PUT_DOUBLE(f, hp);
+    return res;
+}
+
+Eterm erts_gc_round_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg;
+    FloatDef f;
+     
+    arg = reg[live];
+    if (is_not_float(arg)) {
+	if (is_integer(arg))  {
+	    return arg;
+	}
+	BIF_ERROR(p, BADARG);
+    }
+    GET_DOUBLE(arg, f);
+
+    return gc_double_to_integer(p, (f.fd > 0.0) ? f.fd + 0.5 : f.fd - 0.5,
+				reg, live);
+}
+
+Eterm erts_gc_trunc_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg;
+    FloatDef f;
+     
+    arg = reg[live];
+    if (is_not_float(arg)) {
+	if (is_integer(arg))  {
+	    return arg;
+	}
+	BIF_ERROR(p, BADARG);
+    }
+    /* get the float */
+    GET_DOUBLE(arg, f);
+
+    /* truncate it and return the resultant integer */
+    return gc_double_to_integer(p, (f.fd >= 0.0) ? floor(f.fd) : ceil(f.fd),
+				reg, live);
+}
+
+static Eterm
+gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live)
+{
+    int is_negative;
+    int ds;
+    digit_t* xp;
+    int i;
+    Eterm res;
+    size_t sz;
+    Eterm* hp;
+
+    if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
+	Sint xi = x;
+	return make_small(xi);
+    }
+
+    if (x >= 0) {
+	is_negative = 0;
+    } else {
+	is_negative = 1;
+	x = -x;
+    }
+
+    /* Unscale & (calculate exponent) */
+    ds = 0;
+    while(x >= 1.0) {
+	x /= D_BASE;         /* "shift" right */
+	ds++;
+    }
+    sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
+    if (ERTS_NEED_GC(p, sz)) {
+	erts_garbage_collect(p, sz, reg, live);
+    }
+    hp = p->htop;
+    p->htop += sz;
+    res = make_big(hp);
+    xp = (digit_t*) (hp + 1);
+
+    for (i = ds-1; i >= 0; i--) {
+	digit_t d;
+
+	x *= D_BASE;      /* "shift" left */
+	d = x;            /* trunc */
+	xp[i] = d;        /* store digit */
+	x -= d;           /* remove integer part */
+    }
+    while ((ds & (BIG_DIGITS_PER_WORD-1)) != 0) {
+	xp[ds++] = 0;
+    }
+
+    if (is_negative) {
+	*hp = make_neg_bignum_header(sz-1);
+    } else {
+	*hp = make_pos_bignum_header(sz-1);
+    }
+    return res;
+}
+
+#endif

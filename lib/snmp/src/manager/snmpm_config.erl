@@ -92,10 +92,11 @@
 
 %% Includes:
 -include_lib("kernel/include/file.hrl").
--include("snmp_debug.hrl").
 -include("snmp_types.hrl").
--include("snmp_verbosity.hrl").
+-include("snmpm_internal.hrl").
 -include("snmpm_usm.hrl").
+-include("snmp_debug.hrl").
+-include("snmp_verbosity.hrl").
 
 
 %% Types:
@@ -1962,7 +1963,7 @@ handle_call(stop, _From, State) ->
 
 
 handle_call(Req, _From, State) ->
-    info_msg("received unknown request: ~n~p", [Req]),
+    warning_msg("received unknown request: ~n~p", [Req]),
     {reply, {error, unknown_request}, State}.
 
 
@@ -1973,7 +1974,7 @@ handle_call(Req, _From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
 handle_cast(Msg, State) ->
-    info_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
 
 
@@ -2000,7 +2001,7 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
     {noreply, S#state{backup = undefined}};
 
 handle_info(Info, State) ->
-    info_msg("received unknown info: ~n~p", [Info]),
+    warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 
@@ -2756,7 +2757,10 @@ error(Reason) ->
 %%----------------------------------------------------------------------
 
 info_msg(F, A) ->
-    (catch error_logger:info_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?snmpm_info("Config server: " ++ F, A).
+
+warning_msg(F, A) ->
+    ?snmpm_warning("Config server: " ++ F, A).
 
 error_msg(F, A) ->
-    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?snmpm_error("Config server: " ++ F, A).

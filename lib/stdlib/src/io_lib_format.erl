@@ -36,7 +36,7 @@
 %%  and it also splits the handling of the control characters into two
 %%  parts.
 
-fwrite(Format, Args) when atom(Format) ->
+fwrite(Format, Args) when is_atom(Format) ->
     fwrite(atom_to_list(Format), Args);
 fwrite(Format, Args) ->
     Cs = collect(Format, Args),
@@ -74,14 +74,14 @@ precision([$.|Fmt], Args) ->
 precision(Fmt, Args) ->
     {none,Fmt,Args}.
 
-field_value([$*|Fmt], [A|Args]) when integer(A) ->
+field_value([$*|Fmt], [A|Args]) when is_integer(A) ->
     {A,Fmt,Args};
-field_value([C|Fmt], Args) when C >= $0, C =< $9 ->
+field_value([C|Fmt], Args) when is_integer(C), C >= $0, C =< $9 ->
     field_value([C|Fmt], Args, 0);
 field_value(Fmt, Args) ->
     {none,Fmt,Args}.
 
-field_value([C|Fmt], Args, F) when C >= $0, C =< $9 ->
+field_value([C|Fmt], Args, F) when is_integer(C), C >= $0, C =< $9 ->
     field_value(Fmt, Args, 10*F + (C - $0));
 field_value(Fmt, Args, F) ->		%Default case
     {F,Fmt,Args}.
@@ -110,8 +110,8 @@ collect_cc([$X|Fmt], [A,Prefix|Args]) -> {$X,[A,Prefix],Fmt,Args};
 collect_cc([$+|Fmt], [A|Args]) -> {$+,[A],Fmt,Args};
 collect_cc([$#|Fmt], [A|Args]) -> {$#,[A],Fmt,Args};
 collect_cc([$c|Fmt], [A|Args]) -> {$c,[A],Fmt,Args};
-collect_cc([$~|Fmt], Args) -> {$~,[],Fmt,Args};
-collect_cc([$n|Fmt], Args) -> {$n,[],Fmt,Args};
+collect_cc([$~|Fmt], Args) when is_list(Args) -> {$~,[],Fmt,Args};
+collect_cc([$n|Fmt], Args) when is_list(Args) -> {$n,[],Fmt,Args};
 collect_cc([$i|Fmt], [A|Args]) -> {$i,[A],Fmt,Args}.
 
 %% pcount([ControlC]) -> Count.
@@ -151,7 +151,7 @@ decr_pc(_, Pc) -> Pc.
 
 indentation([$\n|Cs], _I) -> indentation(Cs, 0);
 indentation([$\t|Cs], I) -> indentation(Cs, ((I + 8) div 8) * 8);
-indentation([C|Cs], I) when integer(C) ->
+indentation([C|Cs], I) when is_integer(C) ->
     indentation(Cs, I+1);
 indentation([C|Cs], I) ->
     indentation(Cs, indentation(C, I));
@@ -213,7 +213,7 @@ control($i, [_A], _F, _Adj, _P, _Pad, _I) -> [].
 %% Default integer base
 base(none) ->
     10;
-base(B) ->
+base(B) when is_integer(B) ->
     B.
 
 %% term(TermList, Field, Adjust, Precision, PadChar)
@@ -270,7 +270,7 @@ float_man(Ds, 0, Dc) ->
     {[$.|Cs],C};
 float_man([D|Ds], I, Dc) ->
     case float_man(Ds, I-1, Dc) of
-	{Cs,true} when D == $9 -> {[$0|Cs],true};
+	{Cs,true} when D =:= $9 -> {[$0|Cs],true};
 	{Cs,true} -> {[D+1|Cs],false};
 	{Cs,false} -> {[D|Cs],false}
     end;
@@ -281,7 +281,7 @@ float_man([D|_], 0) when D >= $5 -> {[],true};
 float_man([_|_], 0) -> {[],false};
 float_man([D|Ds], Dc) ->
     case float_man(Ds, Dc-1) of
-	{Cs,true} when D == $9 -> {[$0|Cs],true};
+	{Cs,true} when D =:= $9 -> {[$0|Cs],true};
 	{Cs,true} -> {[D+1|Cs],false}; 
 	{Cs,false} -> {[D|Cs],false}
     end;
@@ -349,7 +349,7 @@ fwrite_g(Fl, F, Adj, P, Pad) when P >= 1 ->
 	   A < 1.0e4  -> 3;
 	   true       -> fwrite_f
 	end,
-    if  P =< 1, E == -1;
+    if  P =< 1, E =:= -1;
 	P-1 > E, E >= -1 ->
 	    fwrite_f(Fl, F, Adj, P-1-E, Pad);
 	P =< 1 ->
@@ -472,10 +472,10 @@ chars(C, 2) ->
     [C,C];
 chars(C, 3) ->
     [C,C,C];
-chars(C, N) when integer(N), (N band 1) == 0 ->
+chars(C, N) when is_integer(N), (N band 1) =:= 0 ->
     S = chars(C, N bsr 1),
     [S|S];
-chars(C, N) when integer(N) ->
+chars(C, N) when is_integer(N) ->
     S = chars(C, N bsr 1),
     [C,S|S].
 
@@ -489,7 +489,7 @@ cond_lowercase(String, true) ->
 cond_lowercase(String,false) ->
     String.
 
-lowercase([H|T]) when integer(H), H >= $A, H =< $Z ->
+lowercase([H|T]) when is_integer(H), H >= $A, H =< $Z ->
     [(H-$A+$a)|lowercase(T)];
 lowercase([H|T]) ->
     [H|lowercase(T)];

@@ -1,0 +1,12 @@
+%% -*- erlang -*-
+{exclude,
+ [snmpa_authentication_service, 
+  snmpa_error_report,
+  snmpa_network_interface,
+  snmpa_notification_filter,
+  snmpa_set_mechanism,
+  snmpm_network_interface,
+  snmpm_user
+ ]
+}.
+

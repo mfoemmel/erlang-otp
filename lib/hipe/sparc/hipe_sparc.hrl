@@ -54,3 +54,9 @@
 -record(fcmp, {fccn, src1, type, src2, exception}).
 -record(fmove, {dst, type, src, negate, abs}).
 -record(conv_fp, {dst, dst_type, src, src_type}).
+
+%%---------------------------------------------------------------------
+
+-define(log2_wordsize, 2).
+
+%%---------------------------------------------------------------------

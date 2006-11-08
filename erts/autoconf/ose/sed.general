@@ -31,6 +31,7 @@ s|@ETHR_LIBS@||
 s|@ETHR_LIB_NAME@||
 s|@ETHR_DEFS@||
 s|@ETHR_THR_LIB_BASE@||
+s|@ERTS_ENABLE_KERNEL_POLL@|no|
 s|@cc_root@|/clearcase/otp/|
 # Define OSE even though cross-compiling. 
 s|@HCFLAGS@|-DOSE|

@@ -2,7 +2,7 @@
 
 {application, stdlib,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "1.14.1"},
+  {vsn, "1.14.2"},
   {modules, [beam_lib,
 	     c,
 	     calendar,
@@ -49,7 +49,6 @@
 	     io_lib_pretty,
 	     lib,
 	     lists,
-             lists_sort,
 	     log_mf_h,
 	     math,
 	     ms_transform,

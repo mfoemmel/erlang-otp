@@ -1,42 +1,51 @@
 %% -*- erlang-indent-level: 2 -*-
 %% $Id$
-%% 
-%% File: hipe_x86_specific
-%% This module defines interface to the x86 backend
-%% Copyright (C) Ulf Magnusson
-%% Email: ulf.magnusson@ubm-computing.com
 
--module(hipe_x86_specific).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_SPECIFIC, hipe_amd64_specific).
+-define(HIPE_X86_RA_POSTCONDITIONS, hipe_amd64_ra_postconditions).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-define(HIPE_X86_LIVENESS, hipe_amd64_liveness).
+-define(HIPE_X86_DEFUSE, hipe_amd64_defuse).
+-else.
+-define(HIPE_X86_SPECIFIC, hipe_x86_specific).
+-define(HIPE_X86_RA_POSTCONDITIONS, hipe_x86_ra_postconditions).
+-define(HIPE_X86_REGISTERS, hipe_x86_registers).
+-define(HIPE_X86_LIVENESS, hipe_x86_liveness).
+-define(HIPE_X86_DEFUSE, hipe_x86_defuse).
+-endif.
+
+-module(?HIPE_X86_SPECIFIC).
 
 -export([number_of_temporaries/1]).
 
-% The following exports are used as M:F(...) calls from other modules;
+%% The following exports are used as M:F(...) calls from other modules;
 %% e.g. hipe_x86_ra_ls.
 -export([analyze/1,
-         bb/2,
-         args/1,
-         labels/1,
-         livein/2,
-         liveout/2,
-         succ_map/1,
-         uses/1,
-         defines/1,
+	 bb/2,
+	 args/1,
+	 labels/1,
+	 livein/2,
+	 liveout/2,
+	 succ_map/1,
+	 uses/1,
+	 defines/1,
 	 def_use/1,
-	 is_arg/1,	%% used by hipe_ls_regalloc
+	 is_arg/1,	% used by hipe_ls_regalloc
 	 is_move/1,
-	 is_fixed/1,	%% used by hipe_graph_coloring_regalloc
-         is_global/1,
+	 is_fixed/1,	% used by hipe_graph_coloring_regalloc
+	 is_global/1,
 	 is_precoloured/1,
-         reg_nr/1,
+	 reg_nr/1,
 	 non_alloc/1,
 	 allocatable/0,
-         physical_name/1,
+	 physical_name/1,
 	 all_precoloured/0,
-	 new_spill_index/1,	%% used by hipe_ls_regalloc
+	 new_spill_index/1,	% used by hipe_ls_regalloc
 	 var_range/1,
-         breadthorder/1,
-         postorder/1,
-         reverse_postorder/1]).
+	 breadthorder/1,
+	 postorder/1,
+	 reverse_postorder/1]).
 
 %% callbacks for hipe_regalloc_loop
 -export([defun_to_cfg/1,
@@ -46,7 +55,7 @@ defun_to_cfg(Defun) ->
   hipe_x86_cfg:init(Defun).
 
 check_and_rewrite(Defun, Coloring) ->
-  hipe_x86_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal').
+  ?HIPE_X86_RA_POSTCONDITIONS:check_and_rewrite(Defun, Coloring, 'normal').
 
 reverse_postorder(CFG) ->
   hipe_x86_cfg:reverse_postorder(CFG).
@@ -57,57 +66,58 @@ breadthorder(CFG) ->
 postorder(CFG) ->
   hipe_x86_cfg:postorder(CFG).
 
-
 %% Globally defined registers for linear scan
 is_global(R) ->
-  hipe_x86_registers:temp1() =:= R orelse 
-  hipe_x86_registers:temp0() =:= R orelse
-  hipe_x86_registers:is_fixed(R).
- 
+  ?HIPE_X86_REGISTERS:temp1() =:= R orelse
+  ?HIPE_X86_REGISTERS:temp0() =:= R orelse
+  ?HIPE_X86_REGISTERS:is_fixed(R).
+
 is_fixed(R) ->
-  hipe_x86_registers:is_fixed(R).
+  ?HIPE_X86_REGISTERS:is_fixed(R).
 
 is_arg(R) ->
-  hipe_x86_registers:is_arg(R).
+  ?HIPE_X86_REGISTERS:is_arg(R).
 
 args(CFG) ->
-  hipe_x86_registers:args(hipe_x86_cfg:arity(CFG)).
- 
-non_alloc(CFG) ->
-  non_alloc(hipe_x86_registers:nr_args(), hipe_x86_cfg:params(CFG)).
+  ?HIPE_X86_REGISTERS:args(hipe_x86_cfg:arity(CFG)).
 
-non_alloc(N, [_|Rest]) when N > 0 -> non_alloc(N-1, Rest);
-non_alloc(N, Params) when is_integer(N), N >= 0 -> Params.
+non_alloc(CFG) ->
+  non_alloc(?HIPE_X86_REGISTERS:nr_args(), hipe_x86_cfg:params(CFG)).
+
+%% same as hipe_x86_frame:fix_formals/2
+non_alloc(0, Rest) -> Rest;
+non_alloc(N, [_|Rest]) -> non_alloc(N-1, Rest);
+non_alloc(_, []) -> [].
 
 %% Liveness stuff
 
 analyze(CFG) ->
-  hipe_x86_liveness:analyze(CFG).
+  ?HIPE_X86_LIVENESS:analyze(CFG).
 
 livein(Liveness,L) ->
-  [X || X <- hipe_x86_liveness:livein(Liveness,L),
- 	     hipe_x86:temp_is_allocatable(X),
- 	     hipe_x86:temp_reg(X) =/= hipe_x86_registers:fcalls(),
- 	     hipe_x86:temp_reg(X) =/= hipe_x86_registers:heap_limit(),
-	     hipe_x86:temp_type(X) =/= 'double'].
+  [X || X <- ?HIPE_X86_LIVENESS:livein(Liveness,L),
+	hipe_x86:temp_is_allocatable(X),
+	hipe_x86:temp_reg(X) =/= ?HIPE_X86_REGISTERS:fcalls(),
+	hipe_x86:temp_reg(X) =/= ?HIPE_X86_REGISTERS:heap_limit(),
+	hipe_x86:temp_type(X) =/= 'double'].
 
 liveout(BB_in_out_liveness,Label) ->
-  [X || X <- hipe_x86_liveness:liveout(BB_in_out_liveness,Label),
- 	     hipe_x86:temp_is_allocatable(X),
-	     hipe_x86:temp_reg(X) =/= hipe_x86_registers:fcalls(),
-	     hipe_x86:temp_reg(X) =/= hipe_x86_registers:heap_limit(),
-	     hipe_x86:temp_type(X) =/= 'double'].
+  [X || X <- ?HIPE_X86_LIVENESS:liveout(BB_in_out_liveness,Label),
+	hipe_x86:temp_is_allocatable(X),
+	hipe_x86:temp_reg(X) =/= ?HIPE_X86_REGISTERS:fcalls(),
+	hipe_x86:temp_reg(X) =/= ?HIPE_X86_REGISTERS:heap_limit(),
+	hipe_x86:temp_type(X) =/= 'double'].
 
 %% Registers stuff
 
 allocatable() ->
-  hipe_x86_registers:allocatable().
+  ?HIPE_X86_REGISTERS:allocatable().
 
 all_precoloured() ->
-  hipe_x86_registers:all_precoloured().
+  ?HIPE_X86_REGISTERS:all_precoloured().
 
 is_precoloured(Reg) ->
-  hipe_x86_registers:is_precoloured(Reg).
+  ?HIPE_X86_REGISTERS:is_precoloured(Reg).
 
 physical_name(Reg) ->
   Reg.
@@ -134,23 +144,23 @@ bb(CFG,L) ->
 %% X86 stuff
 
 def_use(Instruction) ->
-  {[X || X <- hipe_x86_defuse:insn_def(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
- 	   hipe_x86:temp_type(X) =/= 'double'],
-   [X || X <- hipe_x86_defuse:insn_use(Instruction), 
- 	   hipe_x86:temp_is_allocatable(X),
-	   hipe_x86:temp_type(X) =/= 'double']
+  {[X || X <- ?HIPE_X86_DEFUSE:insn_def(Instruction),
+	 hipe_x86:temp_is_allocatable(X),
+	 hipe_x86:temp_type(X) =/= 'double'],
+   [X || X <- ?HIPE_X86_DEFUSE:insn_use(Instruction),
+	 hipe_x86:temp_is_allocatable(X),
+	 hipe_x86:temp_type(X) =/= 'double']
   }.
 
 uses(I) ->
-  [X || X <- hipe_x86_defuse:insn_use(I),
- 	     hipe_x86:temp_is_allocatable(X),
- 	     hipe_x86:temp_type(X) =/= 'double'].
+  [X || X <- ?HIPE_X86_DEFUSE:insn_use(I),
+	hipe_x86:temp_is_allocatable(X),
+	hipe_x86:temp_type(X) =/= 'double'].
 
 defines(I) ->
-  [X || X <- hipe_x86_defuse:insn_def(I),
-	     hipe_x86:temp_is_allocatable(X),
-	     hipe_x86:temp_type(X) =/= 'double'].
+  [X || X <- ?HIPE_X86_DEFUSE:insn_def(I),
+	hipe_x86:temp_is_allocatable(X),
+	hipe_x86:temp_type(X) =/= 'double'].
 
 is_move(Instruction) ->
   case hipe_x86:is_move(Instruction) of
@@ -172,7 +182,7 @@ is_move(Instruction) ->
       end;
     false -> false
   end.
- 
+
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).
 

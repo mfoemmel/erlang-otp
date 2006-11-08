@@ -2,7 +2,12 @@
 %% $Id$
 %% Floating point handling.
 
--ifndef(HIPE_X86_X87).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_X87,       hipe_amd64_x87).
+-define(HIPE_X86_DEFUSE,    hipe_amd64_defuse).
+-define(HIPE_X86_LIVENESS,  hipe_amd64_liveness).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-else.
 -define(HIPE_X86_X87,       hipe_x86_x87).
 -define(HIPE_X86_DEFUSE,    hipe_x86_defuse).
 -define(HIPE_X86_LIVENESS,  hipe_x86_liveness).

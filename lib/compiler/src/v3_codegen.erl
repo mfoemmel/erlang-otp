@@ -1052,16 +1052,6 @@ bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
      [MakeFun],
      clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
      St1};
-bif_cg({old_make_fun,Func,Arity,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
-    %% This behaves more like a function call.
-    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
-    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
-    {FuncLbl,St1} = local_func_label(Func, Arity, St0),
-    MakeFun = {make_fun,{f,FuncLbl},Uniq,length(As)},
-    {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
-     [MakeFun],
-     clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
-     St1};
 bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Ars = cg_reg_args(As, Bef),
 
@@ -1322,13 +1312,17 @@ set_cg([], _, Le, Vdb, Bef, St) ->
 %%%
 
 cg_binary(PutCode, Target, Temp, Fail, MaxRegs) ->
-    SzCode = cg_binary_size(PutCode, Target, Temp, Fail),
+    Live = case Target of
+	       {x,X} when X =:= MaxRegs -> MaxRegs+1;
+	       {x,X} when X < MaxRegs -> MaxRegs
+	   end,
+    SzCode = cg_binary_size(PutCode, Target, Temp, Fail, Live),
     Code = SzCode ++ [{bs_init2,Fail,Target,MaxRegs,{field_flags,[]},Target}|PutCode],
     cg_bin_opt(Code).
 
-cg_binary_size(PutCode, Target, Temp, Fail) ->
+cg_binary_size(PutCode, Target, Temp, Fail, Live) ->
     Szs = cg_binary_size_1(PutCode, 0, []),
-    cg_binary_size_expr(Szs, Target, Temp, Fail).
+    cg_binary_size_expr(Szs, Target, Temp, Fail, Live).
 
 cg_binary_size_1([{_Put,_Fail,S,U,_Flags,Src}|T], Bits, Acc) ->
     cg_binary_size_2(S, U, Src, T, Bits, Acc);
@@ -1341,6 +1335,7 @@ cg_binary_size_1([], Bits, Acc) ->
 cg_binary_size_2({integer,N}, U, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits+N*U, Acc);
 cg_binary_size_2({atom,all}, 8, E, Next, Bits, Acc) ->
+
     cg_binary_size_1(Next, Bits, [{8,{size,E}}|Acc]);
 cg_binary_size_2(Reg, 1, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits, [{1,Reg}|Acc]);
@@ -1364,31 +1359,31 @@ cg_binary_size_4([{U,S}|T], U, Acc) ->
 cg_binary_size_4(T, _, Acc) ->
     {Acc,T}.
 
-%% cg_binary_size_expr/4
+%% cg_binary_size_expr/5
 %%  Generate code for calculating the resulting size of a binary.
-cg_binary_size_expr(Sizes, Target, Temp, Fail) ->
-    cg_binary_size_expr_1(Sizes, Target, Temp, Fail,
+cg_binary_size_expr(Sizes, Target, Temp, Fail, Live) ->
+    cg_binary_size_expr_1(Sizes, Target, Temp, Fail, Live,
 			  [{move,{integer,0},Target}]).
 
-cg_binary_size_expr_1([{1,E0}|T], Target, Temp, Fail, Acc) ->
-    E1 = cg_gen_binsize(E0, Target, Temp, Fail, Acc),
+cg_binary_size_expr_1([{1,E0}|T], Target, Temp, Fail, Live, Acc) ->
+    E1 = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
     E = [{bs_bits_to_bytes,Fail,Target,Target}|E1],
-    cg_binary_size_expr_1(T, Target, Temp, Fail, E);
-cg_binary_size_expr_1([{8,E0}], Target, Temp, Fail, Acc) ->
-    E = cg_gen_binsize(E0, Target, Temp, Fail, Acc),
+    cg_binary_size_expr_1(T, Target, Temp, Fail, Live, E);
+cg_binary_size_expr_1([{8,E0}], Target, Temp, Fail, Live, Acc) ->
+    E = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
     reverse(E);
-cg_binary_size_expr_1([], _, _, _, Acc) -> reverse(Acc).
+cg_binary_size_expr_1([], _, _, _, _, Acc) -> reverse(Acc).
 
-cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Acc) ->
-    cg_gen_binsize(T, Target, Temp, Fail,
+cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,A,B],Target}|Acc]);
-cg_gen_binsize([{size,B}|T], Target, Temp, Fail, Acc) ->
-    cg_gen_binsize([Temp|T], Target, Temp, Fail,
-		   [{bif,size,Fail,[B],Temp}|Acc]);
-cg_gen_binsize([E0|T], Target, Temp, Fail, Acc) ->
-    cg_gen_binsize(T, Target, Temp, Fail,
+cg_gen_binsize([{size,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
+		   [{gc_bif,size,Fail,Live,[B],Temp}|Acc]);
+cg_gen_binsize([E0|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
-cg_gen_binsize([], _, _, _, Acc) -> Acc.
+cg_gen_binsize([], _, _, _, _, Acc) -> Acc.
 
 %% cg_bin_opt(Code0) -> Code
 %%  Optimize the size calculations for binary construction.

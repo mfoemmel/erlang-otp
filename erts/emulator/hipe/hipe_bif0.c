@@ -157,12 +157,16 @@ static inline unsigned char *bytearray_lvalue(Eterm bin, Eterm idx)
 {
     Sint i;
     unsigned char *bytes;
+    Uint bitoffs;
+    Uint bitsize;
 
     if (is_not_binary(bin) ||
 	is_not_small(idx) ||
 	(i = unsigned_val(idx)) >= binary_size(bin))
 	return NULL;
-    GET_BINARY_BYTES(bin, bytes);
+    ERTS_GET_BINARY_BYTES(bin, bytes, bitoffs, bitsize);
+    ASSERT(bitoffs == 0);
+    ASSERT(bitsize == 0);
     return bytes + i;
 }
 
@@ -296,13 +300,17 @@ BIF_RETTYPE hipe_bifs_enter_code_2(BIF_ALIST_2)
     Uint nrbytes;
     void *bytes;
     void *address;
+    Uint bitoffs;
+    Uint bitsize;
     Eterm trampolines;
     Eterm *hp;
 
     if( is_not_binary(BIF_ARG_1) )
 	BIF_ERROR(BIF_P, BADARG);
     nrbytes = binary_size(BIF_ARG_1);
-    GET_BINARY_BYTES(BIF_ARG_1, bytes);
+    ERTS_GET_BINARY_BYTES(BIF_ARG_1, bytes, bitoffs, bitsize);
+    ASSERT(bitoffs == 0);
+    ASSERT(bitsize == 0);
     trampolines = NIL;
 #ifdef HIPE_ALLOC_CODE
     address = HIPE_ALLOC_CODE(nrbytes, BIF_ARG_2, &trampolines, BIF_P);
@@ -551,7 +559,7 @@ static void *hipe_get_emu_address(Eterm m, Eterm f, unsigned int arity, int is_r
 	address = hipe_find_emu_address(m, f, arity);
     if( !address ) {
 	/* if not found, stub it via the export entry */
-	Export *export_entry = erts_export_put(m, f, arity);
+	Export *export_entry = erts_export_get_or_make_stub(m, f, arity);
 	address = export_entry->address;
     }
     return address;
@@ -1425,6 +1433,41 @@ BIF_RETTYPE hipe_bifs_find_na_or_make_stub_2(BIF_ALIST_2)
 	BIF_ERROR(BIF_P, BADARG);
     address = hipe_get_na_nofail(mfa.mod, mfa.fun, mfa.ari, is_remote);
     BIF_RET(address_to_term(address, BIF_P));
+}
+
+/* primop, but called like a BIF for error handling purposes */
+BIF_RETTYPE hipe_nonclosure_address(BIF_ALIST_2)
+{
+    Eterm hdr, m, f;
+    void *address;
+
+    if (!is_boxed(BIF_ARG_1))
+	goto badfun;
+    hdr = *boxed_val(BIF_ARG_1);
+    if (is_export_header(hdr)) {
+	Export *ep = (Export*)(export_val(BIF_ARG_1)[1]);
+	unsigned int actual_arity = ep->code[2];
+	if (actual_arity != BIF_ARG_2)
+	    goto badfun;
+	m = ep->code[0];
+	f = ep->code[1];
+    } else if (hdr == make_arityval(2)) {
+	Eterm *tp = tuple_val(BIF_ARG_1);
+	m = tp[1];
+	f = tp[2];
+	if (is_not_atom(m) || is_not_atom(f))
+	    goto badfun;
+	if (!erts_find_export_entry(m, f, BIF_ARG_2))
+	    goto badfun;
+    } else
+	goto badfun;
+    address = hipe_get_na_nofail(m, f, BIF_ARG_2, 1);
+    BIF_RET((Eterm)address);
+
+ badfun:
+    BIF_P->current = NULL;
+    BIF_P->fvalue = BIF_ARG_1;
+    BIF_ERROR(BIF_P, EXC_BADFUN);
 }
 
 /*

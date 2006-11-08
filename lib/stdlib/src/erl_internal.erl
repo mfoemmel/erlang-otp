@@ -83,7 +83,7 @@ guard_bif(is_reference, 1) -> true;
 guard_bif(is_tuple, 1) -> true;
 guard_bif(is_record, 2) -> true;
 guard_bif(is_record, 3) -> true;
-guard_bif(_, _) -> false.
+guard_bif(Name, A) when is_atom(Name), is_integer(A) -> false.
 
 %% -type type_test(Name, Arity) -> bool()
 %%	when Name = atom(), Arity = integer().
@@ -112,7 +112,7 @@ new_type_test(is_reference, 1) -> true;
 new_type_test(is_tuple, 1) -> true;
 new_type_test(is_record, 2) -> true;
 new_type_test(is_record, 3) -> true;
-new_type_test(_, _) -> false.
+new_type_test(Name, A) when is_atom(Name), is_integer(A) -> false.
 
 %% -type old_type_test(Name, Arity) -> bool()
 %%	when Name = atom(), Arity = integer().
@@ -131,7 +131,7 @@ old_type_test(port, 1) -> true;
 old_type_test(binary, 1) -> true;
 old_type_test(record, 2) -> true;
 old_type_test(function, 1) -> true;
-old_type_test(_, _) -> false.
+old_type_test(Name, A) when is_atom(Name), is_integer(A) -> false.
 
 %% -type arith_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -150,7 +150,7 @@ arith_op('bor', 2) -> true;
 arith_op('bxor', 2) -> true;
 arith_op('bsl', 2) -> true;
 arith_op('bsr', 2) -> true;
-arith_op(_, _) -> false.
+arith_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 %% -type bool_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -159,7 +159,7 @@ bool_op('not', 1) -> true;
 bool_op('and', 2) -> true;
 bool_op('or', 2) -> true;
 bool_op('xor', 2) -> true;
-bool_op(_, _) -> false.
+bool_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 %% -type comp_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
@@ -172,20 +172,20 @@ comp_op('>=', 2) -> true;
 comp_op('>', 2) -> true;
 comp_op('=:=', 2) -> true;
 comp_op('=/=', 2) -> true;
-comp_op(_, _) -> false.
+comp_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 %% -type list_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
 
 list_op('++', 2) -> true;
 list_op('--', 2) -> true;
-list_op(_, _) -> false.
+list_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 %% -type send_op(Op, Arity) -> bool()
 %%	when Op = atom(), Arity = integer().
 
 send_op('!', 2) -> true;
-send_op(_, _) -> false.
+send_op(Op, A) when is_atom(Op), is_integer(A) -> false.
 
 %% -type op_type(Op, Arity) -> arith | bool | comp | list | send
 %%	when Op = atom(), Arity = integer().
@@ -221,7 +221,7 @@ op_type('--', 2) -> list;
 op_type('!', 2) -> send.
 
 bif(erlang, Name, Arity) -> bif(Name, Arity);
-bif(_, _, _) -> false.
+bif(M, F, A) when is_atom(M), is_atom(F), is_integer(A) -> false.
 
 %% bif(Name, Arity) -> true|false
 %%   Returns true if erlang:Name/Arity is an auto-imported BIF, false otherwise.
@@ -340,7 +340,7 @@ bif(tuple_to_list, 1) -> true;
 bif(unlink, 1) -> true;
 bif(unregister, 1) -> true;
 bif(whereis, 1) -> true;
-bif(_, _) -> false.
+bif(Name, A) when is_atom(Name), is_integer(A) -> false.
 
 obsolete(Mod, Fun, Arity) ->
     %% Just in case.

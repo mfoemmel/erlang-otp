@@ -720,7 +720,7 @@ handle({Server, {internal_open, A}}, S) ->
 		    put(log, opening_pid(A#arg.linkto, A#arg.notify, L)),
 		    reply(Server, Res, S#state{args=A, cnt=Cnt});
 		Res ->
-		    do_fast_exit(S, Server, Res, ?failure(Res, open, 1))
+		    do_fast_exit(S, Server, Res)
 	    end;
 	L ->
 	    TestH = mk_head(A#arg.head, A#arg.format),
@@ -925,10 +925,10 @@ do_exit(S, From, Message0, Reason) ->
     ?PROFILE(ep:done()),
     exit(Reason).
 
-do_fast_exit(S, Server, Message, Reason) ->
+do_fast_exit(S, Server, Message) ->
     _ = do_stop(S),
     Server ! {disk_log, self(), Message},
-    exit(Reason).
+    exit(normal).
 
 %% -> closed | Error
 do_stop(S) ->

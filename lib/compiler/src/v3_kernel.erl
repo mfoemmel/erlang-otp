@@ -91,6 +91,9 @@
 %% These are not defined in v3_kernel.hrl.
 get_kanno(Kthing) -> element(2, Kthing).
 set_kanno(Kthing, Anno) -> setelement(2, Kthing, Anno).
+copy_anno(Kdst, Ksrc) ->
+    Anno = get_kanno(Ksrc),
+    set_kanno(Kdst, Anno).
 
 %% Internal kernel expressions and help functions.
 %% N.B. the annotation field is ALWAYS the first field!
@@ -1114,8 +1117,7 @@ build_guard(Cs) -> #k_guard{clauses=Cs}.
 %% build_select(Var, [ConClause]) -> SelectExpr.
 
 build_select(V, [Tc|_]=Tcs) ->
-    Anno = get_kanno(Tc),
-    #k_select{anno=Anno,var=V,types=Tcs}.
+    copy_anno(#k_select{var=V,types=Tcs}, Tc).
 
 %% build_alt(First, Then) -> AltExpr.
 %%  Build an alt, attempt some simple optimisation.
@@ -1124,14 +1126,15 @@ build_alt(fail, Then) -> Then;
 build_alt(First,Then) -> build_alt_1st_no_fail(First, Then).
 
 build_alt_1st_no_fail(First, fail) -> First;
-build_alt_1st_no_fail(First, Then) -> #k_alt{first=First,then=Then}.
+build_alt_1st_no_fail(First, Then) ->
+    copy_anno(#k_alt{first=First,then=Then}, First).
 
 %% build_match([MatchVar], MatchExpr) -> Kexpr.
 %%  Build a match expr if there is a match.
 
-build_match(Us, #k_alt{}=Km) -> #k_match{vars=Us,body=Km};
-build_match(Us, #k_select{}=Km) -> #k_match{vars=Us,body=Km};
-build_match(Us, #k_guard{}=Km) -> #k_match{vars=Us,body=Km};
+build_match(Us, #k_alt{}=Km) -> copy_anno(#k_match{vars=Us,body=Km}, Km);
+build_match(Us, #k_select{}=Km) -> copy_anno(#k_match{vars=Us,body=Km}, Km);
+build_match(Us, #k_guard{}=Km) -> copy_anno(#k_match{vars=Us,body=Km}, Km);
 build_match(_, Km) -> Km.
 
 %% clause_arg(Clause) -> FirstArg.

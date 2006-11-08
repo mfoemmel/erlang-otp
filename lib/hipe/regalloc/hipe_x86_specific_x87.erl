@@ -1,7 +1,19 @@
 %%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 
--module(hipe_x86_specific_fp).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_SPECIFIC_X87, hipe_amd64_specific_x87).
+-define(HIPE_X86_LIVENESS, hipe_amd64_liveness).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-define(HIPE_X86_DEFUSE, hipe_amd64_defuse).
+-else.
+-define(HIPE_X86_SPECIFIC_X87, hipe_x86_specific_x87).
+-define(HIPE_X86_LIVENESS, hipe_x86_liveness).
+-define(HIPE_X86_REGISTERS, hipe_x86_registers).
+-define(HIPE_X86_DEFUSE, hipe_x86_defuse).
+-endif.
+
+-module(?HIPE_X86_SPECIFIC_X87).
 -export([allocatable/0,
 	 is_precoloured/1,
 	 %% var_range/1,
@@ -43,42 +55,42 @@ is_global(_) ->
 
 -ifdef(notdef).
 is_fixed(_) ->
-   false.
+  false.
 -endif.
- 
+
 is_arg(_) ->
-   false.
+  false.
 
 args(_) ->
   [].
 
 -ifdef(notdef).
 non_alloc(_) ->
-   [].
+  [].
 -endif.
 
 %% Liveness stuff
 
 analyze(CFG) ->
-  hipe_x86_liveness:analyze(CFG).
+  ?HIPE_X86_LIVENESS:analyze(CFG).
 
 livein(Liveness,L) ->
-  [X || X <- hipe_x86_liveness:livein(Liveness,L),
+  [X || X <- ?HIPE_X86_LIVENESS:livein(Liveness,L),
  	     hipe_x86:temp_is_allocatable(X),
  	     hipe_x86:temp_type(X) =:= 'double'].
 
 liveout(BB_in_out_liveness,Label) ->
-  [X || X <- hipe_x86_liveness:liveout(BB_in_out_liveness,Label),
+  [X || X <- ?HIPE_X86_LIVENESS:liveout(BB_in_out_liveness,Label),
 	     hipe_x86:temp_is_allocatable(X),
 	     hipe_x86:temp_type(X) =:= 'double'].
 
 %% Registers stuff
 
 allocatable() ->
-  hipe_x86_registers:allocatable_x87().
+  ?HIPE_X86_REGISTERS:allocatable_x87().
 
 is_precoloured(Reg) ->
-  hipe_x86_registers:is_precoloured_x87(Reg).
+  ?HIPE_X86_REGISTERS:is_precoloured_x87(Reg).
 
 physical_name(Reg) ->
   Reg.
@@ -93,9 +105,9 @@ labels(CFG) ->
 
 -ifdef(notdef).
 var_range(_CFG) ->
-   {Min,Max} = hipe_gensym:var_range(x86),
-   %% io:format("Var_range: ~w\n",[{Min,Max}]),
-   {Min,Max}.
+  {Min,Max} = hipe_gensym:var_range(x86),
+  %% io:format("Var_range: ~w\n",[{Min,Max}]),
+  {Min,Max}.
 -endif.
 
 number_of_temporaries(_CFG) ->
@@ -110,30 +122,30 @@ bb(CFG,L) ->
 
 -ifdef(notdef).
 def_use(Instruction) ->
-  {[X || X <- hipe_x86_defuse:insn_def(Instruction), 
+  {[X || X <- ?HIPE_X86_DEFUSE:insn_def(Instruction),
 	      hipe_x86:temp_is_allocatable(X),
- 	      temp_is_double(X)],
-   [X || X <- hipe_x86_defuse:insn_use(Instruction), 
- 	      hipe_x86:temp_is_allocatable(X),
- 	      temp_is_double(X)]
+	      temp_is_double(X)],
+   [X || X <- ?HIPE_X86_DEFUSE:insn_use(Instruction),
+	      hipe_x86:temp_is_allocatable(X),
+	      temp_is_double(X)]
   }.
 -endif.
- 
+
 uses(I) ->
-  [X || X <- hipe_x86_defuse:insn_use(I),
+  [X || X <- ?HIPE_X86_DEFUSE:insn_use(I),
  	     hipe_x86:temp_is_allocatable(X),
  	     temp_is_double(X)].
- 
+
 defines(I) ->
-  [X || X <- hipe_x86_defuse:insn_def(I),
+  [X || X <- ?HIPE_X86_DEFUSE:insn_def(I),
  	     hipe_x86:temp_is_allocatable(X),
  	     temp_is_double(X)].
- 
-temp_is_double(Temp)->
+
+temp_is_double(Temp) ->
   hipe_x86:temp_type(Temp) =:= 'double'.
 
 reg_nr(Reg) ->
   hipe_x86:temp_reg(Reg).
- 
-new_spill_index(SpillIndex)->
+
+new_spill_index(SpillIndex) ->
   SpillIndex+1.

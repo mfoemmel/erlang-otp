@@ -118,6 +118,14 @@
 #   endif
 #endif
 
+#ifdef ERTS_WANT_BREAK_HANDLING
+extern volatile int erts_break_requested;
+void erts_do_break_handling(void);
+#endif
+
+#define HAVE_ERTS_CHECK_IO_DEBUG
+int erts_check_io_debug(void);
+
 /*
 ** For the erl_timer_sup module.
 */
@@ -129,6 +137,8 @@ typedef struct timeval SysTimeval;
 typedef struct tms SysTimes;
 
 extern int erts_ticks_per_sec;
+
+extern volatile int erts_got_sigusr1;
 
 #define SYS_CLK_TCK (erts_ticks_per_sec)
 

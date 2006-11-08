@@ -54,7 +54,7 @@
 		case AcTuAlReS of
 		    Expected -> ?LOG("Ok, ~p~n", [AcTuAlReS]);
 		    _        ->	?ERROR(AcTuAlReS)
-	       end,
+		end,
 		AcTuAlReS
 	end()).
 

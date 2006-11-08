@@ -58,7 +58,6 @@
 	 is_remote_member/1,
          list2cs/1,
          lock_schema/0,
-	 lock_del_table/4, % Spawned
          merge_schema/0,
          move_table/3,
          opt_create_dir/2,
@@ -1855,7 +1854,9 @@ prepare_op(Tid, {op, del_table_copy, _Storage, Node, TabDef}, _WaitFor) ->
 	%% Schema table lock is always required to run a schema op.
 	%% No need to look it.
 	node(Tid#tid.pid) == node(), Tab /= schema -> 
-	    Pid = spawn_link(?MODULE, lock_del_table, [Tab, Node, Cs, self()]),
+	    Self = self(),
+	    Pid = spawn_link(fun() -> lock_del_table(Tab, Node, Cs, Self) end),
+	    put(mnesia_lock, Pid),
 	    receive 
 		{Pid, updated} -> 
 		    {true, optional};
@@ -2078,6 +2079,7 @@ receive_sync(Nodes, Pids) ->
 
 lock_del_table(Tab, Node, Cs, Father) ->
     Ns = val({schema, active_replicas}),
+    process_flag(trap_exit,true),
     Lock = fun() ->
 		   mnesia:write_lock_table(Tab),
 		   {Res, []} = rpc:multicall(Ns, ?MODULE, set_where_to_read, [Tab, Node, Cs]),
@@ -2091,16 +2093,23 @@ lock_del_table(Tab, Node, Cs, Father) ->
 			       (_) ->
 				    true
 			    end,
-		   [] = lists:filter(Filter, Res),
+		   case lists:filter(Filter, Res) of
+		       [] -> 
+			   Father ! {self(), updated},
+			   %% When transaction is commited the process dies 
+			   %% and the lock is released.
+			   receive _ -> ok end;
+		       Err ->
+			   Father ! {self(), {bad_commit, Err}}
+		   end,
 		   ok
-	   end,    
+	   end,
     case mnesia:transaction(Lock) of
-	{atomic, ok} ->
-	    Father ! {self(), updated};
-	{aborted, R} ->
-	    Father ! {self(), R}
+	{atomic, ok} ->  ok;
+	{aborted, R} ->  Father ! {self(), R}
     end,
     unlink(Father),
+    unlink(whereis(mnesia_tm)),
     exit(normal).
 
 set_where_to_read(Tab, Node, Cs) ->

@@ -130,14 +130,25 @@ size_object(Eterm obj)
 		    {
 			Eterm real_bin;
 			Uint offset; /* Not used. */
+			Uint bitsize;
+			Uint bitoffs;
+			Uint extra_bytes;
 			Eterm hdr;
-			GET_REAL_BIN(obj, real_bin, offset);
+			ERTS_GET_REAL_BIN(obj, real_bin, offset, bitoffs, bitsize);
+			if ((bitsize + bitoffs) > 8) {
+			    sum += ERL_SUB_BIN_SIZE;
+			    extra_bytes = 2;
+			} else if ((bitsize + bitoffs) > 0) {
+			    sum += ERL_SUB_BIN_SIZE;
+			    extra_bytes = 1;
+			} else {
+			    extra_bytes = 0;
+			}
 			hdr = *binary_val(real_bin);
-
 			if (thing_subtag(hdr) == REFC_BINARY_SUBTAG) {
 			    sum += PROC_BIN_SIZE;
 			} else {
-			    sum += heap_bin_size(binary_size(obj));
+			    sum += heap_bin_size(binary_size(obj)+extra_bytes);
 			}
 			goto size_common;
 		    }
@@ -308,26 +319,39 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    pb->next = off_heap->mso;
 		    off_heap->mso = pb;
 		    off_heap->overhead += pb->size /
-			BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+		      BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 		}
 		break;
 	    case SUB_BINARY_SUBTAG:
 		{
 		    ErlSubBin* sb = (ErlSubBin *) objp;
 		    Eterm real_bin = sb->orig;
+		    Uint bit_offset = sb->bitoffs;
+		    Uint bit_size = sb -> bitsize;
 		    Uint offset = sb->offs;
 		    size_t size = sb->size;
-
+		    Uint extra_bytes;
+		    Uint real_size;
+		    if ((bit_size + bit_offset) > 8) {
+			  extra_bytes = 2;
+			}  
+			else if ((bit_size + bit_offset) > 0) {
+			  extra_bytes = 1;
+			}
+			else {
+			  extra_bytes = 0;
+			} 
+		    real_size = size+extra_bytes;
 		    objp = binary_val(real_bin);
 		    if (thing_subtag(*objp) == HEAP_BINARY_SUBTAG) {
 			ErlHeapBin* from = (ErlHeapBin *) objp;
 			ErlHeapBin* to;
-			i = heap_bin_size(size);
+			i = heap_bin_size(real_size);
 			hbot -= i;
 			to = (ErlHeapBin *) hbot;
-			to->thing_word = header_heap_bin(size);
-			to->size = size;
-			sys_memcpy(to->data, ((byte *)from->data)+offset, size);
+			to->thing_word = header_heap_bin(real_size);
+			to->size = real_size;
+			sys_memcpy(to->data, ((byte *)from->data)+offset, real_size);
 		    } else {
 			ProcBin* from = (ProcBin *) objp;
 			ProcBin* to;
@@ -336,16 +360,28 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			hbot -= PROC_BIN_SIZE;
 			to = (ProcBin *) hbot;
 			to->thing_word = HEADER_PROC_BIN;
-			to->size = size;
+			to->size = real_size;
 			to->val = from->val;
 			erts_refc_inc(&to->val->refc, 2);
 			to->bytes = from->bytes + offset;
 			to->next = off_heap->mso;
 			off_heap->mso = to;
 			off_heap->overhead += to->size /
-			    BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+			  BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 		    }
 		    *argp = make_binary(hbot);
+		    if (extra_bytes != 0) {
+		      ErlSubBin* res;
+		      hbot -= ERL_SUB_BIN_SIZE;
+		      res = (ErlSubBin *) hbot;
+		      res->thing_word = HEADER_SUB_BIN;
+		      res->size = size;
+		      res->bitsize = bit_size;
+		      res->bitoffs = bit_offset;
+		      res->offs = 0;
+		      res->orig = *argp;
+		      *argp = make_binary(hbot);
+		    }
 		    break;
 		}
 		break;
@@ -692,46 +728,77 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 
             case SUB_BINARY_SUBTAG: {
                 ErlSubBin *sb = (ErlSubBin *) objp;
+		Eterm *hp;
+		Eterm res_binary;
                 Eterm real_bin = sb->orig;
-                Uint sub_offset = sb->offs;
+                Uint bit_offset = sb->bitoffs;
+		Uint bit_size = sb -> bitsize;
+		Uint sub_offset = sb->offs;
                 size_t size = sb->size;
-
+		Uint extra_bytes;
+		Uint real_size;
+		Uint sub_binary_heapneed;
+		if ((bit_size + bit_offset) > 8) {
+		    extra_bytes = 2;
+		    sub_binary_heapneed = ERL_SUB_BIN_SIZE;
+		}  
+		else if ((bit_size + bit_offset) > 0) {
+		    extra_bytes = 1;
+		    sub_binary_heapneed = ERL_SUB_BIN_SIZE;
+		}
+		else {
+		    extra_bytes = 0;
+		    sub_binary_heapneed = 0;
+		}
+		
+		real_size = size+extra_bytes;
                 objp = binary_val(real_bin);
                 if (thing_subtag(*objp) == HEAP_BINARY_SUBTAG) {
                     ErlHeapBin *from_bin;
                     ErlHeapBin *to_bin;
-                    Uint i = heap_bin_size(size);
-                    Eterm *hp;
-                    GlobalAlloc(from,i,hp);
-                    MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_binary(hp));
-                    MA_STACK_POP(dst);
+                    Uint i = heap_bin_size(real_size);
+                    GlobalAlloc(from,i+sub_binary_heapneed,hp);
                     from_bin = (ErlHeapBin *) objp;
                     to_bin = (ErlHeapBin *) hp;
-                    to_bin->thing_word = header_heap_bin(size);
-                    to_bin->size = size;
+                    to_bin->thing_word = header_heap_bin(real_size);
+                    to_bin->size = real_size;
                     sys_memcpy(to_bin->data, ((byte *)from_bin->data) +
-                               sub_offset, size);
+                               sub_offset, real_size);
+		    res_binary=make_binary(to_bin);
+		    hp += i;
                 } else {
                     ProcBin *from_bin;
                     ProcBin *to_bin;
-                    Eterm *hp;
-
+                    
                     ASSERT(thing_subtag(*objp) == REFC_BINARY_SUBTAG);
-                    GlobalAlloc(from,PROC_BIN_SIZE,hp);
-                    MA_STACK_UPDATE(dst,MA_STACK_POP(offset),make_binary(hp));
-                    MA_STACK_POP(dst);
-                    from_bin = (ProcBin *) objp;
+		    from_bin = (ProcBin *) objp;
+		    erts_refc_inc(&from_bin->val->refc, 2);
+                    GlobalAlloc(from,PROC_BIN_SIZE+sub_binary_heapneed,hp);
                     to_bin = (ProcBin *) hp;
                     to_bin->thing_word = HEADER_PROC_BIN;
-                    to_bin->size = size;
+                    to_bin->size = real_size;
                     to_bin->val = from_bin->val;
-                    erts_refc_inc(&to_bin->val->refc, 2);
                     to_bin->bytes = from_bin->bytes + sub_offset;
                     to_bin->next = erts_global_offheap.mso;
                     erts_global_offheap.mso = to_bin;
                     erts_global_offheap.overhead += to_bin->size /
                         BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
+		    res_binary=make_binary(to_bin);
+		    hp += PROC_BIN_SIZE;
                 }
+		if (extra_bytes != 0) {
+		      ErlSubBin* res;
+		      res = (ErlSubBin *) hp;
+		      res->thing_word = HEADER_SUB_BIN;
+		      res->size = size;
+		      res->bitsize = bit_size;
+		      res->bitoffs = bit_offset;
+		      res->offs = 0;
+		      res->orig = res_binary;
+		      res_binary = make_binary(hp);
+		    }
+		MA_STACK_UPDATE(dst,MA_STACK_POP(offset),res_binary);
+		MA_STACK_POP(dst);
                 continue;
             }
 

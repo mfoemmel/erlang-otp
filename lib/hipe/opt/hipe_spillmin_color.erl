@@ -465,10 +465,10 @@ init_stackslots(NumSlots, Acc) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info,{neighbors=[],degree=0}).
+-record(ig_info,{neighbors=[]::list(),degree=0::integer()}).
 
 empty_ig(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes,#ig_info{neighbors=[],degree=0}).
+  hipe_vectors:new(NumNodes,#ig_info{neighbors=[],degree=0}).
 
 degree(Info) ->
   Info#ig_info.degree.
@@ -481,51 +481,51 @@ add_edge(X,Y,IG) ->
   add_arc(X,Y,add_arc(Y,X,IG)).
 
 add_arc(X, Y, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Old = neighbors(Info),
   New = Info#ig_info{neighbors=[Y|Old]},
-  hipe_vectors_wrapper:set(IG,X,New).
+  hipe_vectors:set(IG,X,New).
 
 
 normalize_ig(IG) ->
-  Size = hipe_vectors_wrapper:size(IG),
+  Size = hipe_vectors:size(IG),
   normalize_ig(Size-1, IG).
 
 normalize_ig(-1, IG) ->
   IG;
 normalize_ig(I, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, I),
+  Info = hipe_vectors:get(IG, I),
   N = ordsets:from_list(neighbors(Info)),
-  NewIG = hipe_vectors_wrapper:set(IG, I, Info#ig_info{neighbors=N,
+  NewIG = hipe_vectors:set(IG, I, Info#ig_info{neighbors=N,
 						       degree=length(N)}),
   normalize_ig(I-1, NewIG).
 
 neighbors(X, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Info#ig_info.neighbors.
 
 decrement_degree(X, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Degree = degree(Info),
   NewDegree = Degree-1,
   NewInfo = Info#ig_info{degree=NewDegree},
-  {NewDegree,hipe_vectors_wrapper:set(IG,X,NewInfo)}.
+  {NewDegree,hipe_vectors:set(IG,X,NewInfo)}.
 
 list_ig(IG) ->
-  hipe_vectors_wrapper:list(IG).
+  hipe_vectors:list(IG).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% The coloring datatype:
 
 none_colored(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes,uncolored).
+  hipe_vectors:new(NumNodes,uncolored).
 
 color_of(X,Cols) ->
-  hipe_vectors_wrapper:get(Cols,X).
+  hipe_vectors:get(Cols,X).
 
 set_color(X,R,Cols) ->
-  hipe_vectors_wrapper:set(Cols,X,{color,R}).
+  hipe_vectors:set(Cols,X,{color,R}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -534,16 +534,13 @@ set_color(X,R,Cols) ->
 %% the integer version.
 
 none_visited(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes).
+  hipe_vectors:new(NumNodes,false).
 
 visit(X,Vis) ->
-  hipe_vectors_wrapper:set(Vis,X,visited).
+  hipe_vectors:set(Vis,X,true).
 
 is_visited(X,Vis) ->
-  case hipe_vectors_wrapper:get(Vis,X) of
-    visited -> true;
-    _ -> false
-  end.
+  hipe_vectors:get(Vis,X).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

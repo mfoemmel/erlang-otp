@@ -607,7 +607,7 @@ struct hostent *ei_gethostbyname_r(const char *name,
 				    int buflen, 
 				    int *h_errnop)
 {
-#if (EI_THREADS == false)
+#ifndef _REENTRANT
   /* threads disabled, no need to call reentrant function */
   return gethostbyname(name);
 #else

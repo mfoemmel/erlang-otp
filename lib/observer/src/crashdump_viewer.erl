@@ -2395,6 +2395,12 @@ parse_heap_term("B-16#"++Line0, Addr, D0) ->	%Negative big number
     Term = -Term0,
     D = gb_trees:insert(Addr, Term, D0),
     {Term,Line,D};
+parse_heap_term("B"++Line0, Addr, D0) ->	%Decimal big num (new in R10B-something).
+    case string:to_integer(Line0) of
+	{Int,Line} when is_integer(Int) ->
+	    D = gb_trees:insert(Addr, Int, D0),
+	    {Int,Line,D}
+    end;
 parse_heap_term([$P|Line0], Addr, D0) ->	% External Pid.
     {Pid0,Line} = get_id(Line0),
     Pid = "#CDVPid"++Pid0,

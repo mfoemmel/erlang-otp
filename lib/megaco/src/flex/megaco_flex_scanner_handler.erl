@@ -23,6 +23,12 @@
 
 -behaviour(gen_server).
 
+%%-----------------------------------------------------------------
+%% Include files
+%%-----------------------------------------------------------------
+-include_lib("megaco/src/engine/megaco_internal.hrl"). 
+
+
 %% External exports
 -export([start_link/0, get_config/1]).
 
@@ -84,9 +90,9 @@ init([]) ->
 handle_call(get_config, _From, #state{conf = Conf} = S) ->
     {reply, Conf, S};
 
-handle_call(Request, _From, S) ->
-    error_msg("received unknown request: "
-	      "~n   ~p", [Request]),
+handle_call(Req, From, S) ->
+    warning_msg("received unexpected request from ~p: "
+		"~n~w", [From, Req]),
     {reply, ok, S}.
 
 
@@ -97,8 +103,8 @@ handle_call(Request, _From, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_cast(Msg, S) ->
-    error_msg("received unknown message: "
-	      "~n   ~p", [Msg]),
+    warning_msg("received unexpected message: "
+		"~n~w", [Msg]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -108,8 +114,8 @@ handle_cast(Msg, S) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_info({'EXIT', Port, Error}, #state{conf = {flex, Port}} = S) ->
-    error_msg("Port (~p) exited:"
-	      "~n   ~p", [Port, Error]),
+    error_msg("Port [~p] exited:"
+	      "~n~w", [Port, Error]),
     {stop, {port_exit, Port, Error}, S};
 
 handle_info({'EXIT', Port, _Error}, S) when port(Port) ->
@@ -118,13 +124,13 @@ handle_info({'EXIT', Port, _Error}, S) when port(Port) ->
     {noreply, S};
 
 handle_info({'EXIT', Id, Error}, S) ->
-    error_msg("exit signal from ~p:"
-	      "~n   ~p", [Id, Error]),
+    warning_msg("received unexpected 'EXIT' signal from ~p:"
+		"~n~w", [Id, Error]),
     {noreply, S};
 
 handle_info(Info, S) ->
-    error_msg("received unknown info: "
-	      "~n   ~p", [Info]),
+    warning_msg("received unexpected info: "
+		"~n~w", [Info]),
     {noreply, S}.
 
 %%----------------------------------------------------------------------
@@ -168,8 +174,11 @@ update_flex_scanner(Error) ->
 %%% Internal functions
 %%%----------------------------------------------------------------------
 
+warning_msg(F, A) ->
+    ?megaco_warning("Flex scanner handler: " ++ F, A).
+
 error_msg(F, A) ->
-    error_logger:error_msg("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
+    ?megaco_error("Flex scanner handler: " ++ F, A).
 
 
 

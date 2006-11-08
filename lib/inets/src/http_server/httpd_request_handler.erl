@@ -219,8 +219,7 @@ terminate(_, State) ->
 do_terminate(#state{mod = ModData, manager = Manager} = State) ->
     catch httpd_manager:done_connection(Manager),
     cancel_request_timeout(State),
-    close_sleep(ModData#mod.socket_type, 1000),  
-    http_transport:close(ModData#mod.socket_type, ModData#mod.socket).
+    httpd_socket:close(ModData#mod.socket_type, ModData#mod.socket).
 
 %%--------------------------------------------------------------------
 %% code_change(OldVsn, State, Extra) -> {ok, NewState}
@@ -515,11 +514,3 @@ error_log(Mod, SocketType, Socket, ConfigDB, Peername, String) ->
 	    ok
     end.
 
-%% Workaround for ssl problem when ssl does not deliver the message
-%% sent prior to the close before the close signal.
-close_sleep({ssl, _}, Time) ->
-    sleep(Time);
-close_sleep(_, _) ->
-    ok.
-
-sleep(T) -> receive after T -> ok end.

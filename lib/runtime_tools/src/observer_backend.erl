@@ -117,7 +117,7 @@ ttb_meta_tracer(MetaFile,PI) ->
 	    ReturnMS = [{'_',[],[{return_trace}]}],
 	    erlang:trace_pattern({erlang,spawn,3},ReturnMS,[meta]),
 	    erlang:trace_pattern({erlang,spawn_link,3},ReturnMS,[meta]),
-	    erlang:trace_pattern({erlang,spawn_opt,4},ReturnMS,[meta]),
+	    erlang:trace_pattern({erlang,spawn_opt,1},ReturnMS,[meta]),
 	    erlang:trace_pattern({erlang,register,2},[],[meta]),
 	    erlang:trace_pattern({global,register_name,2},[],[meta]);
 	false ->
@@ -127,16 +127,23 @@ ttb_meta_tracer(MetaFile,PI) ->
 
 ttb_meta_tracer_loop(MetaFile,PI,Acc) ->
     receive
-	{trace_ts,CallingPid,call,{erlang,Spawn,[M,F,Args|_]},_} 
-	when Spawn==spawn;Spawn==spawn_link;Spawn==spawn_opt ->
+	{trace_ts,_,call,{erlang,register,[Name,Pid]},_} ->
+	    ttb_store_meta({pid,{Pid,Name}},MetaFile),
+	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
+	{trace_ts,_,call,{global,register_name,[Name,Pid]},_} ->
+	    ttb_store_meta({pid,{Pid,{global,Name}}},MetaFile),
+	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
+	{trace_ts,CallingPid,call,{erlang,spawn_opt,[{M,F,Args,_}]},_} ->
 	    MFA = {M,F,length(Args)},
 	    NewAcc = dict:update(CallingPid,
 				 fun(Old) -> [MFA|Old] end, [MFA], 
 				 Acc),
 	    ttb_meta_tracer_loop(MetaFile,PI,NewAcc);
-
-	{trace_ts,CallingPid,return_from,{erlang,Spawn,_Arity},NewPid,_} 
-	when Spawn==spawn;Spawn==spawn_link;Spawn==spawn_opt ->
+	{trace_ts,CallingPid,return_from,{erlang,spawn_opt,_Arity},Ret,_} ->
+	    case Ret of
+		{NewPid,_Mref} when is_pid(NewPid) -> ok;
+		NewPid when is_pid(NewPid) -> ok
+	    end,
 	    NewAcc = 
 		dict:update(CallingPid,
 			    fun([H|T]) -> 
@@ -145,14 +152,24 @@ ttb_meta_tracer_loop(MetaFile,PI,Acc) ->
 			    end,
 			    Acc),
 	    ttb_meta_tracer_loop(MetaFile,PI,NewAcc);
+	{trace_ts,CallingPid,call,{erlang,Spawn,[M,F,Args]},_} 
+	when Spawn==spawn;Spawn==spawn_link ->
+	    MFA = {M,F,length(Args)},
+	    NewAcc = dict:update(CallingPid,
+				 fun(Old) -> [MFA|Old] end, [MFA], 
+				 Acc),
+	    ttb_meta_tracer_loop(MetaFile,PI,NewAcc);
 
-	{trace_ts,_,call,{erlang,register,[Name,Pid]},_} ->
-	    ttb_store_meta({pid,{Pid,Name}},MetaFile),
-	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
-
-	{trace_ts,_,call,{global,register_name,[Name,Pid]},_} ->
-	    ttb_store_meta({pid,{Pid,{global,Name}}},MetaFile),
-	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
+	{trace_ts,CallingPid,return_from,{erlang,Spawn,_Arity},NewPid,_} 
+	when Spawn==spawn;Spawn==spawn_link ->
+	    NewAcc = 
+		dict:update(CallingPid,
+			    fun([H|T]) -> 
+				    ttb_store_meta({pid,{NewPid,H}},MetaFile),
+				    T
+			    end,
+			    Acc),
+	    ttb_meta_tracer_loop(MetaFile,PI,NewAcc);
 
 	{metadata,Data} when list(Data) ->
 	    ttb_store_meta(Data,MetaFile),
@@ -289,6 +306,3 @@ match_filenames(Dir,MetaFile,[H|T],Files) ->
     end;
 match_filenames(_Dir,_MetaFile,[],Files) ->
     Files.
-
-
-

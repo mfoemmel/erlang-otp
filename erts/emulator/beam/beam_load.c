@@ -454,6 +454,12 @@ static GenOp* const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
 			       GenOpArg Size, GenOpArg* Rest);
 static GenOp* gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg Func,
 			    GenOpArg arity, GenOpArg label);
+#if defined(HEAP_FRAG_ELIM_TEST)
+static GenOp*
+gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
+	      GenOpArg Src, GenOpArg Dst);
+#endif
+
 static int freeze_code(LoaderState* stp);
 
 static void final_touch(LoaderState* stp);
@@ -2164,10 +2170,10 @@ gen_get_integer2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_i) {
-	if (Flags.val & BSF_ALIGNED && (Flags.val & BSF_SIGNED) == 0) {
-	    Uint bits = Size.val * Unit.val;
-	    if (bits == 8) {
-		op->op = genop_i_bs_get_integer2_8_3;
+      if ((Flags.val & BSF_SIGNED) == 0) {
+	Uint bits = Size.val * Unit.val;
+	if (bits == 8) {
+	  op->op = genop_i_bs_get_integer2_8_3;
 		op->arity = 3;
 		op->a[0] = Fail;
 		op->a[1] = Ms;
@@ -2229,12 +2235,13 @@ gen_get_binary2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = genop_i_bs_get_binary_all2_4;
-	op->arity = 4;
+	op->op = genop_i_bs_get_binary_all2_5;
+	op->arity = 5;
 	op->a[0] = Fail;
 	op->a[1] = Ms;
-	op->a[2] = Live;
-	op->a[3] = Dst;
+	op->a[2] = Live;	
+	op->a[3] = Unit;
+	op->a[4] = Dst;
     } else if (Size.type == TAG_i) {
 	op->op = genop_i_bs_get_binary_imm2_6;
 	op->arity = 6;
@@ -2433,10 +2440,11 @@ gen_skip_bits2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms,
     NATIVE_ENDIAN(Flags);
     NEW_GENOP(stp, op);
     if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = genop_i_bs_skip_bits_all2_2;
-	op->arity = 2;
+	op->op = genop_i_bs_skip_bits_all2_3;
+	op->arity = 3;
 	op->a[0] = Fail;
 	op->a[1] = Ms; 
+	op->a[2] = Unit;
     } else if (Size.type == TAG_i) {
 	op->op = genop_i_bs_skip_bits_imm2_3;
 	op->arity = 3;
@@ -3118,6 +3126,7 @@ gen_func_info_mi(LoaderState* stp, GenOpArg mod,
 }
 
 
+#ifndef HEAP_FRAG_ELIM_TEST
 static GenOp*
 gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
 {
@@ -3159,6 +3168,7 @@ gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
     stp->num_lambdas++;
     return op;
 }
+#endif
 
 static GenOp*
 gen_make_fun2(LoaderState* stp, GenOpArg idx)
@@ -3183,6 +3193,43 @@ gen_make_fun2(LoaderState* stp, GenOpArg idx)
     op->next = NULL;
     return op;
 }
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+static GenOp*
+gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
+	      GenOpArg Src, GenOpArg Dst)
+{
+    GenOp* op;
+    BifFunction bf;
+
+    NEW_GENOP(stp, op);
+    op->op = genop_i_gc_bif1_5;
+    op->arity = 5;
+    op->a[0] = Fail;
+    op->a[1].type = TAG_u;
+    bf = stp->import[Bif.val].bf;
+    if (bf == length_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_length_1;
+    } else if (bf == size_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_size_1;
+    } else if (bf == abs_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_abs_1;
+    } else if (bf == float_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_float_1;
+    } else if (bf == round_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_round_1;
+    } else if (bf == trunc_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_trunc_1;
+    } else {
+	abort();
+    }
+    op->a[2] = Src;
+    op->a[3] = Live;
+    op->a[4] = Dst;
+    op->next = NULL;
+    return op;
+}
+#endif
 
 
 /*
@@ -4340,15 +4387,21 @@ code_get_chunk_2(Process* p, Eterm Bin, Eterm Chunk)
     Uint chunk = 0;
     ErlSubBin* sb;
     Uint offset;
+    Uint bitoffs;
+    Uint bitsize;
     byte* start;
     int i;
+    Eterm res;
+    Eterm real_bin;
+    byte* temp_alloc = NULL;
 
-    if (is_not_binary(Bin)) {
-	goto error;
+    if ((start = erts_get_aligned_binary_bytes(Bin, &temp_alloc)) == NULL) {
+    error:
+	erts_free_aligned_binary_bytes(temp_alloc);
+	BIF_ERROR(p, BADARG);
     }
     state.module = THE_NON_VALUE; /* Suppress diagnostiscs */
     state.file_name = "IFF header for Beam file";
-    GET_BINARY_BYTES(Bin, start);
     state.file_p = start;
     state.file_left = binary_size(Bin);
     for (i = 0; i < 4; i++) {
@@ -4368,19 +4421,25 @@ code_get_chunk_2(Process* p, Eterm Bin, Eterm Chunk)
     if (is_not_nil(Chunk)) {
 	goto error;
     }
-
     if (!scan_iff_file(&state, &chunk, 1, 1)) {
+	erts_free_aligned_binary_bytes(temp_alloc);
 	return am_undefined;
     }
-    sb = (ErlSubBin *) HAlloc(p, ERL_SUB_BIN_SIZE);
-    GET_REAL_BIN(Bin, sb->orig, offset);
-    sb->thing_word = HEADER_SUB_BIN;
-    sb->size = state.chunks[0].size;
-    sb->offs = offset + (state.chunks[0].start-start);
-    return make_binary(sb);
-
- error:
-    BIF_ERROR(p, BADARG);
+    ERTS_GET_REAL_BIN(Bin, real_bin, offset, bitoffs, bitsize);
+    if (bitoffs) {
+	res = new_binary(p, state.chunks[0].start, state.chunks[0].size);
+    } else {
+	sb = (ErlSubBin *) HAlloc(p, ERL_SUB_BIN_SIZE);
+	sb->thing_word = HEADER_SUB_BIN;
+	sb->orig = real_bin;
+	sb->size = state.chunks[0].size;
+	sb->bitsize = 0;
+	sb->bitoffs = 0;
+	sb->offs = offset + (state.chunks[0].start - start);
+	res = make_binary(sb);
+    }
+    erts_free_aligned_binary_bytes(temp_alloc);
+    return res;
 }
 
 /*
@@ -4391,20 +4450,19 @@ Eterm
 code_module_md5_1(Process* p, Eterm Bin)
 {
     LoaderState state;
-    byte* start;
+    byte* temp_alloc = NULL;
 
-    if (is_not_binary(Bin)) {
+    if ((state.file_p = erts_get_aligned_binary_bytes(Bin, &temp_alloc)) == NULL) {
 	BIF_ERROR(p, BADARG);
     }
     state.module = THE_NON_VALUE; /* Suppress diagnostiscs */
     state.file_name = "IFF header for Beam file";
-    GET_BINARY_BYTES(Bin, start);
-    state.file_p = start;
     state.file_left = binary_size(Bin);
 
     if (!scan_iff_file(&state, chunk_types, NUM_CHUNK_TYPES, NUM_MANDATORY)) {
 	return am_undefined;
     }
+    erts_free_aligned_binary_bytes(temp_alloc);
     return new_binary(p, state.mod_md5, sizeof(state.mod_md5));
 }
 
@@ -4426,18 +4484,6 @@ make_stub(Eterm* fp, Eterm mod, Eterm func, Uint arity, Uint native, Eterm OpCod
 #endif
     fp[5] = OpCode;
     return fp + WORDS_PER_FUNCTION;
-}
-
-static void
-stub_init_state(LoaderState* stp, Eterm Bin)
-{
-    byte* start;
-
-    init_state(stp);
-    stp->file_name = "IFF header for Beam file";
-    GET_BINARY_BYTES(Bin, start);
-    stp->file_p = start;
-    stp->file_left = binary_size(Bin);
 }
 
 static byte*
@@ -4678,7 +4724,7 @@ patch_funentries(Eterm Patchlist)
  */
 
 Eterm
-code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
+erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 {
     LoaderState state;
     Eterm Funcs;
@@ -4693,6 +4739,8 @@ code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     int code_size;
     int rval;
     int i;
+    byte* temp_alloc = NULL;
+    byte* bytes;
 
     if (is_not_atom(Mod)) {
 	goto error;
@@ -4711,12 +4759,18 @@ code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 	goto error;
     }
     n += 2;			/* module_info/0 and module_info/1 */
+    if ((bytes = erts_get_aligned_binary_bytes(Beam, &temp_alloc)) == NULL) {
+	goto error;
+    }
 
     /*
      * Scan the Beam binary and read the interesting sections.
      */
 
-    stub_init_state(&state, Beam);
+    init_state(&state);
+    state.file_name = "IFF header for Beam file";
+    state.file_p = bytes;
+    state.file_left = binary_size(Beam);
     state.module = Mod;
     state.group_leader = p->group_leader;
     state.num_functions = n;
@@ -4860,8 +4914,7 @@ code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
      * Insert the module in the module table.
      */
 
-    rval = insert_new_code(p, ERTS_PROC_LOCK_MAIN,
-			   p->group_leader, Mod, code, code_size,
+    rval = insert_new_code(p, 0, p->group_leader, Mod, code, code_size,
 			   BEAM_CATCHES_NIL);
     if (rval < 0) {
 	goto error;
@@ -4878,15 +4931,15 @@ code_make_stub_module_3(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     }
 
     if (patch_funentries(Patchlist)) {
-	ERTS_SMP_BIF_CHK_EXITED(p);
+	erts_free_aligned_binary_bytes(temp_alloc);
 	return Mod;
     }
 
  error:
+    erts_free_aligned_binary_bytes(temp_alloc);
     if (code != NULL) {
 	erts_free(ERTS_ALC_T_CODE, code);
     }
-    ERTS_SMP_BIF_CHK_EXITED(p);
     BIF_ERROR(p, BADARG);
 }
 

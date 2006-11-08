@@ -27,6 +27,8 @@
 
 -define(RECORDS, shell_records).
 
+-define(MAXSIZE_HEAPBINARY, 64).
+
 start() ->
     start(false, false).
 
@@ -213,8 +215,17 @@ server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
                     Results = min(History,
                                   get_env(shell_saved_results,?DEF_RESULTS)),
                     add_cmd(N, Es, V),
-                    del_cmd(command, N - History, N - History0),
-                    del_cmd(result, N - Results, N - Results0),
+                    HB1 = del_cmd(command, N - History, N - History0, false),
+                    HB = del_cmd(result, N - Results, N - Results0, HB1),
+                    %% The following test makes sure that large binaries
+                    %% (outside of the heap) are garbage collected as soon
+                    %% as possible.
+                    if
+                        HB ->
+                            erlang:garbage_collect();
+                        true ->
+                            ok
+                    end,
                     server_loop(N, Eval, Bs, RT, Ds, History, Results);
                 {error,E} ->
                     io:fwrite("** ~s **\n", [E]),
@@ -355,7 +366,7 @@ no_command(N) ->
 
 %% add_cmd(Number, Expressions, Value)
 %% get_cmd(Number, CurrentCommand)
-%% del_cmd(Number)
+%% del_cmd(Number, NewN, OldN, HasBin0) -> bool()
 
 add_cmd(N, Es, V) ->
     put({command,N}, Es),
@@ -371,11 +382,33 @@ get_cmd(Num, C) ->
 	_Other -> {undefined,undefined}
     end.
 
-del_cmd(_Type, N, N0) when N < N0 ->
-    ok;
-del_cmd(Type, N, N0) ->
-    erase({Type,N}),
-    del_cmd(Type, N-1, N0).
+del_cmd(_Type, N, N0, HasBin) when N < N0 ->
+    HasBin;
+del_cmd(Type, N, N0, HasBin0) ->
+    T = erase({Type,N}),
+    HasBin = HasBin0 orelse has_binary(T),
+    del_cmd(Type, N-1, N0, HasBin).
+
+has_binary(T) ->
+    try has_bin(T), false
+    catch true=Thrown -> Thrown
+    end.
+
+has_bin(T) when is_tuple(T) ->
+    has_bin(T, size(T));
+has_bin([E | Es]) ->
+    has_bin(E),
+    has_bin(Es);
+has_bin(B) when is_binary(B), size(B) > ?MAXSIZE_HEAPBINARY ->
+    throw(true);
+has_bin(T) ->
+    T.
+
+has_bin(T, 0) ->
+    T;
+has_bin(T, I) ->
+    has_bin(element(I, T)),
+    has_bin(T, I - 1).
 
 %% shell_cmd(Sequence, Evaluator, Bindings, RecordTable, Dictionary)
 %% shell_rep(Evaluator, Bindings, RecordTable, Dictionary) ->
@@ -1056,7 +1089,7 @@ shell_req(Shell, Req) ->
     end.
 
 list_commands([{{N,command},Es}, {{N,result}, V} |Ds], RT) ->
-    VS = io_lib_pretty:print(V, ?LINEMAX, record_print_fun(RT)),
+    VS = io_lib_pretty:print(V, 4, 80, ?LINEMAX, record_print_fun(RT)),
     io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]},
 		 {format,"-> ",[]},
                  {put_chars, VS},
@@ -1076,10 +1109,14 @@ list_bindings([{Name,Val}|Bs], RT) ->
     case erl_eval:fun_data(Val) of
         {fun_data,_FBs,FCs} ->
             F = {'fun',0,{clauses,FCs}},
-            io:fwrite("~s = ~s~n", [Name,erl_pp:expr(F)]);
+            M = {match,0,{var,0,Name},F},
+            io:fwrite("~s~n", [erl_pp:expr(M)]);
         false ->
-            ValS = io_lib_pretty:print(Val, ?LINEMAX, record_print_fun(RT)),
-            io:fwrite("~s = ", [Name]),
+            Namel = io_lib:fwrite("~s = ", [Name]),
+            Nl = iolist_size(Namel)+1,
+            io:put_chars(Namel),
+            ValS = io_lib_pretty:print(Val, Nl, 80, ?LINEMAX, 
+                                       record_print_fun(RT)),
             io:put_chars(ValS),
             io:nl()
     end,

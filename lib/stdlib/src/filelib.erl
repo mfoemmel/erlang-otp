@@ -46,7 +46,8 @@ wildcard({compiled_wildcard,{exists,File}}, Cwd) ->
 	{ok,_} -> [File];
 	_ -> []
     end;
-wildcard({compiled_wildcard,[current|Rest]}, Cwd) ->
+wildcard({compiled_wildcard,[current|Rest]}, Cwd0) ->
+    Cwd = filename:join([Cwd0]),		%Slash away redundant slashes.
     PrefixLen = length(Cwd)+1,
     [lists:nthtail(PrefixLen, N) || N <- wildcard_1([Cwd], Rest)];
 wildcard({compiled_wildcard,[Base|Rest]}, _Cwd) ->

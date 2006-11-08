@@ -87,9 +87,8 @@ send_bytes(Bytes, PacketPid) ->
 init_packet(Parent, SnmpMgr,
 	    AgentIp, UdpPort, TrapUdp,
 	    VsnHdr, Version, Dir, BufSz, DbgOptions) ->
-    put(sname,mgr_misc),
+    put(sname, mgr_misc),
     init_debug(DbgOptions),
-    put(verbosity, trace), %% TMP TMP TMP
     {ok, UdpId} = gen_udp:open(TrapUdp, [{recbuf,BufSz},{reuseaddr, true}]),
     put(msg_id, 1),
     proc_lib:init_ack(Parent, self()),
@@ -102,13 +101,13 @@ init_debug(Dbg) when atom(Dbg) ->
 init_debug(DbgOptions) when list(DbgOptions) ->
     case lists:keysearch(debug, 1, DbgOptions) of
 	{value, {_, Dbg}} when atom(Dbg) ->
-	    put(debug,Dbg);
+	    put(debug, Dbg);
 	_ ->
 	    put(debug, false)
     end,
     case lists:keysearch(verbosity, 1, DbgOptions) of
 	{value, {_, Ver}} when atom(ver) ->
-	    put(verbosity,Ver);
+	    put(verbosity, Ver);
 	_ ->
 	    put(verbosity, silence)
     end,
@@ -733,6 +732,17 @@ d(F)   -> d(F, []).
 d(F,A) -> d(get(debug),F,A).
 
 d(true,F,A) ->
-    io:format("MGR_PS_DBG:" ++ F ++ "~n",A);
+    io:format("*** [~s] MGR_PS_DBG *** " ++ F ++ "~n",
+	      [format_timestamp(now())|A]);
 d(_,_F,_A) -> 
     ok.
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+

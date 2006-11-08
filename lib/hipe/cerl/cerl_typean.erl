@@ -64,6 +64,8 @@
 	       tuple_es/1, type/1, values_es/1, var_name/1]).
 
 
+-import(cerl_trees, [get_label/1]).
+
 -ifdef(DEBUG).
 -define(ANNOTATE(X), case erl_types:t_to_string(X) of Q when length(Q) < 255 -> list_to_atom(Q); Q -> Q end).
 -else.
@@ -853,12 +855,6 @@ take_work({Queue0, Set0}) ->
 	    none
     end.
 
-get_label(T) ->
-    case get_ann(T) of
-	[{label, L} | _] -> L;
-	_ -> erlang:fault({missing_label, T})
-    end.
-
 get_deps(L, Dep) ->
     case dict:find(L, Dep) of
 	{ok, Ls} -> Ls;
@@ -968,26 +964,30 @@ pp_hook() ->
 pp_hook(Node, Ctxt, Cont) ->
     As = cerl:get_ann(Node),
     As1 = proplists:delete(type, proplists:delete(label, As)),
+    As2 = proplists:delete(typesig, proplists:delete(file, As1)),
     D = Cont(cerl:set_ann(Node, []), Ctxt),
-    D1 = case proplists:lookup(type, As) of
-	     {type, T} ->
-		 case erl_types:t_is_any(T) of
-		     true ->
-			 D;
-		     false ->
-			 case cerl:is_literal(Node) of
-			     true ->
-				 D;
-			     false ->
-				 S = erl_types:t_to_string(T),
-				 Q = prettypr:beside(prettypr:text("::"),
-						     prettypr:text(S)),
-				 prettypr:beside(D, Q)
-			 end
-		 end;
-	     _ ->
-		 D
-	 end,
-    cerl_prettypr:annotate(D1, As1, Ctxt).
+    T = case proplists:lookup(type, As) of
+	    {type, T0} -> T0;
+	    none ->
+		case proplists:lookup(typesig, As) of
+		    {typesig, T0} -> T0;
+		    none -> t_any()
+		end
+	end,
+    D1 =  case erl_types:t_is_any(T) of
+	      true ->
+		  D;
+	      false ->
+		  case cerl:is_literal(Node) of
+		      true ->
+			  D;
+		      false ->
+			  S = erl_types:t_to_string(T),
+			  Q = prettypr:beside(prettypr:text("::"),
+					      prettypr:text(S)),
+			  prettypr:beside(D, Q)
+		  end
+	  end,
+    cerl_prettypr:annotate(D1, As2, Ctxt).
 
 %% =====================================================================

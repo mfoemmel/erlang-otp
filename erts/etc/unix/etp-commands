@@ -385,21 +385,33 @@ define etp-boxed-immediate-1
                   if ($etp_boxed_immediate_h == 0x5)
                     printf "#Fun<"
                   else
-                    if ($etp_boxed_immediate_h >= 0x8 && \
-                        $etp_boxed_immediate_h <= 0xA)
-                      printf "#Binary%X<", $etp_boxed_immediate_h
+                    if ($etp_boxed_immediate_h == 0x8)
+                      printf "#RefcBinary<"
+                    else
+                    if ($etp_boxed_immediate_h == 0x9)
+                      printf "#HeapBinary<"
+                    else
+                    if ($etp_boxed_immediate_h == 0xA)
+                      printf "#SubBinary<"
                     else
                       printf "#Header%X<", $etp_boxed_immediate_h
                     end
+		  end
+		  end
                   end
                   set $etp_boxed_immediate_arity = $etp_boxed_immediate_p[0]>>6
                   while $etp_boxed_immediate_arity > 0
+                    set $etp_boxed_immediate_p++
                     if $etp_boxed_immediate_arity > 1
                       printf "%#x,", *$etp_boxed_immediate_p
                     else
-                      printf "%#x>", *$etp_boxed_immediate_p
+                      printf "%#x", *$etp_boxed_immediate_p
+        	      if ($etp_boxed_immediate_h == 0xA)
+                        set $etp_boxed_immediate_p++
+		    	printf ":%#x", *$etp_boxed_immediate_p
+		      end
+		      printf ">"
                     end
-                    set $etp_boxed_immediate_p++
                     set $etp_boxed_immediate_arity--
                   end
                   # End of hexdump
@@ -523,7 +535,7 @@ define etp-atom-1
   if ((Eterm)($arg0) & 0x3f) != 0xb
     printf "#NotAtom<%#x>", ($arg0)
   else
-    set $etp_atom_1_ap = (Atom*)atom_table.table[(Eterm)($arg0)>>6]
+    set $etp_atom_1_ap = (Atom*)erts_atom_table.seg_table[(Eterm)($arg0)>>16][((Eterm)($arg0)>>6)&0x3FF]
     set $etp_atom_1_i = ($etp_atom_1_ap)->len
     set $etp_atom_1_p = ($etp_atom_1_ap)->name
     set $etp_atom_1_quote = 1

@@ -340,17 +340,21 @@ void erts_check_for_holes(Process* p)
     p->last_htop = HEAP_TOP(p);
 
     for (hf = MBUF(p); hf != 0; hf = hf->next) {
+#if !defined(HEAP_FRAG_ELIM_TEST)
 	if (ARITH_HEAP(p) - hf->mem < (unsigned long)hf->size) {
 	    check_memory(hf->mem, ARITH_HEAP(p));
 	    if (hf == p->last_mbuf) {
 		break;
 	    }
 	} else {
+#endif
 	    if (hf == p->last_mbuf) {
 		break;
 	    }
 	    check_memory(hf->mem, hf->mem+hf->size);
+#if !defined(HEAP_FRAG_ELIM_TEST)
 	}
+#endif
     }
     p->last_mbuf = MBUF(p);
 }
@@ -392,12 +396,16 @@ void erts_check_heap(Process *p)
     }
 
     while (bp) {
+#if !defined(HEAP_FRAG_ELIM_TEST)
         if ((ARITH_HEAP(p) >= bp->mem) &&
             (ARITH_HEAP(p) < bp->mem + bp->size)) {
             erts_check_memory(p,bp->mem,ARITH_HEAP(p));
         } else {
+#endif
             erts_check_memory(p,bp->mem,bp->mem + bp->size);
+#if !defined(HEAP_FRAG_ELIM_TEST)
         }
+#endif
         bp = bp->next;
     }
 }
@@ -776,12 +784,16 @@ static void print_process_memory(Process *p)
                     PTR_SIZE, "heap fragments",
                     dashes, dashes, dashes, dashes);
     while (bp) {
+#if !defined(HEAP_FRAG_ELIM_TEST)
         if ((ARITH_HEAP(p) >= bp->mem) &&
             (ARITH_HEAP(p) < bp->mem + bp->size)) {
             print_untagged_memory(bp->mem,ARITH_HEAP(p));
         } else {
+#endif
             print_untagged_memory(bp->mem,bp->mem + bp->size);
+#if !defined(HEAP_FRAG_ELIM_TEST)
         }
+#endif
         bp = bp->next;
     }
 }

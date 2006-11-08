@@ -65,7 +65,7 @@ header_list(Headers) ->
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-headers("cache_control", Value, Headers) ->
+headers("cache-control", Value, Headers) ->
     Headers#http_response_h{'cache-control'= Value};
 headers("connection", Value, Headers) ->
     Headers#http_response_h{connection = Value};
@@ -83,7 +83,7 @@ headers("via", Value, Headers) ->
     Headers#http_response_h{via = Value};
 headers("warning", Value, Headers) ->
     Headers#http_response_h{warning = Value};
-headers("accept_ranges", Value, Headers) ->
+headers("accept-ranges", Value, Headers) ->
     Headers#http_response_h{'accept-ranges' = Value};
 headers("age", Value, Headers) ->
     Headers#http_response_h{age = Value};
@@ -91,15 +91,15 @@ headers("etag", Value, Headers) ->
     Headers#http_response_h{etag = Value};
 headers("location", Value, Headers) ->
     Headers#http_response_h{location = Value};
-headers("proxy_authenticate", Value, Headers) ->
+headers("proxy-authenticate", Value, Headers) ->
     Headers#http_response_h{'proxy-authenticate' = Value};
-headers("retry_after", Value, Headers) ->
+headers("retry-after", Value, Headers) ->
     Headers#http_response_h{'retry-after' = Value};
 headers("server", Value, Headers) ->
     Headers#http_response_h{server = Value};
 headers("vary", Value, Headers) ->
     Headers#http_response_h{vary = Value};
-headers("www_authenticate", Value, Headers) ->
+headers("www-authenticate", Value, Headers) ->
     Headers#http_response_h{'www-authenticate' = Value};
 headers("allow", Value, Headers) ->
     Headers#http_response_h{allow = Value};
@@ -119,7 +119,7 @@ headers("content-type", Value, Headers) ->
     Headers#http_response_h{'content-type' = Value};
 headers("expires", Value, Headers) ->
     Headers#http_response_h{expires = Value};
-headers("last_modified", Value, Headers) ->
+headers("last-modified", Value, Headers) ->
     Headers#http_response_h{'last-modified' = Value};
 headers(Key, Value, Headers) ->
     Headers#http_response_h{other=
@@ -177,7 +177,7 @@ key_value_tuple(Key = 'content-language', Headers) ->
 		    Headers#http_response_h.'content-language');
 key_value_tuple(Key = 'content-length', Headers) ->
     case Headers#http_response_h.'content-length' of
-	"0" ->
+	"-1" ->
 	    undefined;
 	_ -> 
 	    key_value_tuple(atom_to_list(Key), 

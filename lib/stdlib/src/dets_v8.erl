@@ -428,7 +428,7 @@ no_segs(NoSlots) ->
 
 bin2ints(<<Int:32, B/binary>>) ->
     [Int | bin2ints(B)];
-bin2ints(B) when size(B) == 0 ->
+bin2ints(<<>>) ->
     [].
 
 %%%
@@ -757,7 +757,7 @@ read_more_bytes(B, Min, Pos, F, L) ->
 
 fsck_objs(Bin = <<_N:32, Sz:32, Status:32, Tail/binary>>, Kp, Head, L) ->
     if 
-	Status == ?ACTIVE ->
+	Status =:= ?ACTIVE ->
 	    case Tail of
 		<<BinTerm:Sz/binary, Tail2/binary>> ->
 		    case catch element(Kp, binary_to_term(BinTerm)) of
@@ -780,7 +780,7 @@ fsck_objs(Bin, _Kp, _Head, L) ->
     {more, Bin, 0, L}.
     
 %% Version 8 has to know about version 9.
-make_object(Head, Key, _LogSz, BT) when Head#head.version == 9 ->
+make_object(Head, Key, _LogSz, BT) when Head#head.version =:= 9 ->
     Slot = dets_v9:db_hash(Key, Head),
     <<Slot:32, BT/binary>>;
 make_object(Head, Key, LogSz, BT) ->
@@ -887,12 +887,12 @@ re_hash(Head, SlotStart) ->
 
 split_bin(Pos, <<P:32, B/binary>>, R, Cs) ->
     if
-	P == 0 ->
+	P =:= 0 ->
 	    split_bin(Pos+4, B, R, Cs);
 	true ->
 	    split_bin(Pos+4, B, [{P,?ReadAhead} | R], [[Pos] | Cs])
     end;
-split_bin(_Pos, B, R, Cs) when size(B) == 0 ->
+split_bin(_Pos, <<>>, R, Cs) ->
     {R, Cs}.
 
 re_hash_read(Head, Cs, R, RCs) ->
@@ -915,7 +915,7 @@ re_hash_read(Head, [{Pos, Size} | Ps], [C | Cs],
 			     false -> [Pos | C]
 			 end,
 		    if
-			Next == 0 ->
+			Next =:= 0 ->
 			    NDoneCs = [NC | DoneCs], 
 			    re_hash_read(Head, Ps, Cs, Bins, NDoneCs, R, RCs);
 			true ->
@@ -924,7 +924,7 @@ re_hash_read(Head, [{Pos, Size} | Ps], [C | Cs],
 			    re_hash_read(Head, Ps, Cs, Bins, DoneCs, NR, NRCs)
 		    end
 	    end;
-	BinSz when Size == BinSz+?OHDSZ ->
+	BinSz when Size =:= BinSz+?OHDSZ ->
 	    NR = [{Pos, Sz+?OHDSZ} | R],
 	    re_hash_read(Head, Ps, Cs, Bins, DoneCs, NR, [C | RCs]);
 	_BinSz ->
@@ -1111,7 +1111,7 @@ grow(Head, Extra, SegZero) ->
     {Head2, ok} = dets_utils:pwrite(Head1, Ws2),
     NewHead =
 	if 
-	    N + ?SEGSZ == M ->
+	    N + ?SEGSZ =:= M ->
 		Head2#head{n = 0, next = Next + ?SEGSZ, m = 2 * M, m2 = 4 * M};
 	    true ->
 		Head2#head{n = N + ?SEGSZ, next = Next + ?SEGSZ}
@@ -1189,7 +1189,7 @@ remove_slot_tag([], Ls, SPs) ->
 %% quite substantial.
 
 first_object([WorkLists | SPs], [{P1,_4} | Ss], [<<P2:32>> | Bs], Head,
-	      ObjsToRead, ToRead, Ls, LU) when P2 == 0 ->
+	      ObjsToRead, ToRead, Ls, LU) when P2 =:= 0 ->
     L0 = [{old,P1}],
     {L, NLU} = eval_slot(Head, ?ReadAhead, P2, WorkLists, L0, LU),
     first_object(SPs, Ss, Bs, Head, ObjsToRead, ToRead, [L | Ls], NLU);
@@ -1223,7 +1223,7 @@ update_no_objects(Head, Ws, Delta) ->
 	if 
 	    NewNo > ?MAXOBJS ->
 		Ws;
-	    ?SLOT2SEG(No) == ?SLOT2SEG(NewNo) ->
+	    ?SLOT2SEG(No) =:= ?SLOT2SEG(NewNo) ->
 		Ws;
 	    true ->
 		[{?NO_OBJECTS_POS, <<NewNo:32>>} | Ws]
@@ -1247,9 +1247,9 @@ eval_first([<<Next:32, Sz:32, _Status:32, Bin/binary>> | Bins],
 eval_first([], [], _Head, Ls, LU) ->
     {ok, Ls, LU}.
 
-eval_slot(_Head, _TrySize, Pos, [], L, LU) when Pos == 0 ->
+eval_slot(_Head, _TrySize, Pos, [], L, LU) when Pos =:= 0 ->
     {L, LU};
-eval_slot(Head, _TrySize, Pos, [WL | WLs], L, LU) when Pos == 0 ->
+eval_slot(Head, _TrySize, Pos, [WL | WLs], L, LU) when Pos =:= 0 ->
     {_Key, {_Delete, LookUp, Objects}} = WL,
     {NL, NLU} = end_of_key(Objects, LookUp, L, []),
     eval_slot(Head, ?ReadAhead, Pos, WLs, NL, NLU++LU);
@@ -1279,7 +1279,7 @@ eval_key(_Key, _Delete, Lookup, _Objects, Head, Pos, WLs, L, LU, LUK)
 	  end,
     eval_slot(Head, ?ReadAhead, Pos, WLs, L, NLU);
 eval_key(_Key, _Delete, LookUp, Objects, Head, Pos, WLs, L, LU, LUK) 
-                                                          when Pos == 0 ->
+                                                          when Pos =:= 0 ->
     {NL, NLU} = end_of_key(Objects, LookUp, L, LUK),
     eval_slot(Head, ?ReadAhead, Pos, WLs, NL, NLU++LU);
 eval_key(Key, Delete, LookUp, Objects, Head, Pos, WLs, L, LU, LUK) ->
@@ -1299,7 +1299,7 @@ eval_key(Key, Delete, LookUp, Objects, Head, Pos, WLs, L, LU, LUK) ->
 eval_object(Size, Term, Delete, LookUp, Objects, Head, Pos, L, LU) ->
     Type = Head#head.type,
     case lists:keysearch(Term, 1, Objects) of
-	{value, {_Object, N}} when N == 0 ->
+	{value, {_Object, N}} when N =:= 0 ->
 	    L1 = [{delete,Pos,Size} | L],
 	    {Objects, L1, LU};
 	{value, {_Object, N}} when N < 0, Type == set ->
@@ -1396,7 +1396,7 @@ create_writes([{replace,Bin,Pos,OSize} | L], H, Ws, No, Next, _) ->
     {NH, NewPos, _} = dets_utils:alloc(H1, ?OHDSZ + Size),
     W1 = {NewPos, [<<Next:32, Size:32, ?ACTIVE:32>>, Bin]},
     NWs = if 
-	      Pos == NewPos -> 
+	      Pos =:= NewPos -> 
 		  [W1 | Ws];
 	      true -> 
 		  W2 = {Pos+?STATUS_POS, <<?FREE:32>>},
@@ -1446,8 +1446,8 @@ scan_objs(Bin, From, To, L, Ts, -1) ->
     {stop, Bin, From, To, L, Ts};
 scan_objs(B = <<_N:32, Sz:32, St:32, T/binary>>, From, To, L, Ts, R) ->
     if 
-	St == ?ACTIVE;
-	St == ?FREE -> % deleted after scanning started
+	St =:= ?ACTIVE;
+	St =:= ?FREE -> % deleted after scanning started
 	    case T of
 		<<BinTerm:Sz/binary, T2/binary>> ->
 		    NTs = [BinTerm | Ts],
@@ -1484,7 +1484,7 @@ scan_skip(_Bin, From, _To, Skip, L, Ts, R) -> % when From + Skip > _To
     From1 = From + Skip,
     {more, From1, From1, L, Ts, R, 0}.
 
-scan_next_allocated(_Bin, _From, To, L, Ts, R) when size(L) == 0 ->
+scan_next_allocated(_Bin, _From, To, L = <<>>, Ts, R) ->
     {more, To, To, L, Ts, R, 0};
 scan_next_allocated(Bin, From0, _To, <<From:32, To:32, L/binary>>, Ts, R) ->
     Skip = From - From0,
@@ -1514,7 +1514,7 @@ file_info(FH) ->
                 type = Type, no_objects = NoObjects} 
         = FH,
     if
-        CP == 0 ->
+        CP =:= 0 ->
             {error, not_closed};
         FH#fileheader.cookie /= ?MAGIC ->
             {error, not_a_dets_file};
@@ -1534,7 +1534,7 @@ v_segments(_H, ?SEGARRSZ) ->
 v_segments(H, SegNo) ->
     Seg = dets_utils:read_4(H#head.fptr, ?SEGADDR(SegNo)),
     if
-	Seg == 0 ->
+	Seg =:= 0 ->
 	    done;
 	true ->
 	    io:format("SEGMENT ~w ", [SegNo]),
@@ -1549,7 +1549,7 @@ v_segment(H, SegNo, SegPos, SegSlot) ->
     Slot = SegSlot + (SegNo * ?SEGSZ),
     Chain = dets_utils:read_4(H#head.fptr, SegPos + (4 * SegSlot)),
     if 
-	Chain == 0 ->  %% don't print empty chains
+	Chain =:= 0 ->  %% don't print empty chains
 	    true;
 	true ->
 	    io:format("   <~p>~p: [",[SegPos + (4 * SegSlot), Slot]),

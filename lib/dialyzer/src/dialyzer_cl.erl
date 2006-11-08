@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,7 +16,6 @@
 %%     $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer_cl.erl
 %%% Authors : Tobias Lindahl <tobiasl@csd.uu.se>
@@ -30,9 +31,15 @@
 -include("dialyzer.hrl").	  %% file is automatically generated
 -include("hipe_icode_type.hrl").
 
--record(cl_state, {backend_pid, legal_warnings=[],
-		   init_plt, output=standard_io, output_plt, user_plt,
-		   nof_warnings=0, return_status=0}).
+-record(cl_state, {backend_pid,
+		   legal_warnings=[],
+		   init_plt,
+		   output=standard_io,
+		   output_plt,
+		   user_plt,
+		   nof_warnings=0::integer(),
+		   return_status=0::integer()
+		  }).
 
 start(Options) when is_list(Options) ->
   start(dialyzer_options:build(Options));
@@ -40,9 +47,9 @@ start(#options{} = DialyzerOptions) ->
   process_flag(trap_exit, true),
   State = new_state(DialyzerOptions#options.init_plt),
   NewState1 = init_output(State, DialyzerOptions),
-  NewState2 = NewState1#cl_state{legal_warnings=
-				 DialyzerOptions#options.legal_warnings,
-				 output_plt=DialyzerOptions#options.output_plt},
+  NewState2 = 
+    NewState1#cl_state{legal_warnings=DialyzerOptions#options.legal_warnings,
+		       output_plt=DialyzerOptions#options.output_plt},
   InitAnalysis = build_analysis_record(NewState2, DialyzerOptions),
   NewState3 = run_analysis(NewState2, InitAnalysis),
   cl_loop(NewState3).
@@ -67,14 +74,20 @@ check_init_plt(Opts) ->
 	  Msg = "    Creating initial PLT"
 	    " (will take several minutes; please be patient)\n",
 	  io:format("~s", [Msg]),
-	  create_init_plt(MD5, Libs, InitPlt, Opts#options.include_dirs),
-	  ok
+	  case create_init_plt(MD5, Libs, InitPlt, Opts#options.include_dirs) of
+	    ?RET_INTERNAL_ERROR -> error;
+	    ?RET_NOTHING_SUSPICIOUS -> ok;
+	    ?RET_DISCREPANCIES_FOUND -> ok
+	  end
       end;
     {ok, _InitPlt} ->
       if Quiet -> ok;
 	 true  -> io:format(" yes\n")
       end,
-      ok
+      ok;
+    {error, Msg} ->
+      io:format(" no\n~s\n", [Msg]),
+      error
   end.
 
 check_if_installed() ->
@@ -87,12 +100,14 @@ create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->
   State = new_state_no_init(),
   State1 = State#cl_state{output_plt=InitPlt},
   Files = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
-  Analysis = #analysis{fixpoint=first, files=Files, 
+  Analysis = #analysis{fixpoint=first,
+		       files=Files, 
 		       granularity=all, 
 		       init_plt=dialyzer_plt:new(dialyzer_empty_plt),
 		       include_dirs=IncludeDirs,
 		       plt_info={MD5, Libs},
-		       start_from=byte_code, %core_transform=succ_typings,
+		       start_from=byte_code,
+		       core_transform=succ_typings,
 		       user_plt=State1#cl_state.user_plt,
 		       supress_inline=true},
   cl_loop(run_analysis(State1, Analysis)).
@@ -129,7 +144,6 @@ maybe_close_output_file(State) ->
     File -> file:close(File)
   end.
 
-			 
 %% ----------------------------------------------------------------
 %%
 %%  Main Loop
@@ -155,7 +169,7 @@ cl_loop(State) ->
       if Quiet -> ok;
 	 true  -> io:format("\nUnknown functions: ~p\n", [ExtCalls])
       end,
-      return_value(State);
+      cl_loop(State);
     {'EXIT', BackendPid, {error, Reason}} ->
       Msg = failed_anal_msg(Reason),
       error(State, Msg);
@@ -222,12 +236,11 @@ build_analysis_record(State, DialyzerOptions) ->
   Defines = DialyzerOptions#options.defines,
   SupressInline = DialyzerOptions#options.supress_inline,
   Files0 = ordsets:from_list(DialyzerOptions#options.files),
-  Files1 = ordsets:from_list(lists:concat([filelib:wildcard(F) || F<- Files0])),
+  Files1 = ordsets:from_list(lists:concat([filelib:wildcard(F) || F <- Files0])),
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
   CoreTransform = DialyzerOptions#options.core_transform,
   InitPlt = State#cl_state.init_plt,
-  
   #analysis{fixpoint=first, core_transform=CoreTransform,
 	    defines=Defines, granularity=all,
 	    include_dirs=IncludeDirs, init_plt=InitPlt, user_plt=PLT, 
@@ -236,7 +249,7 @@ build_analysis_record(State, DialyzerOptions) ->
 
 add_files_rec(Files, From) ->
   Files1 = ordsets:from_list(Files), 
-  Dirs1 = ordsets:filter(fun(X) -> filelib:is_dir(X)end, Files1),  
+  Dirs1 = ordsets:filter(fun(X) -> filelib:is_dir(X) end, Files1),  
   Dirs2 = ordsets:union(Dirs1, all_subdirs(Dirs1)),  
   FinalFiles = ordsets:union(Files1, Dirs2),
   case From of
@@ -263,16 +276,15 @@ all_subdirs([], Acc) ->
 
 filter_files(Files, Extension) ->
   Fun = fun(X) -> 
-	    filename:extension(X)==Extension 
+	    filename:extension(X) =:= Extension
 	      orelse 
-		(filelib:is_dir(X) andalso
-		 contains_files(X, Extension))
+		(filelib:is_dir(X) andalso contains_files(X, Extension))
 	end,
   lists:filter(Fun, Files).
 
 contains_files(Dir, Extension) ->
   {ok, Files} = file:list_dir(Dir),
-  lists:any(fun(X)->filename:extension(X)==Extension end,Files).
+  lists:any(fun(X) -> filename:extension(X) =:= Extension end, Files).
 
 
 run_analysis(State, Analysis) ->

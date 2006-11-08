@@ -24,7 +24,7 @@
 -import(lists, [reverse/1, nthtail/2, keysearch/3, prefix/2]).
 
 %% expand(CurrentBefore) ->
-%%	{yes, Expansion, Matches} | {no,Matches}
+%%	{yes, Expansion, Matches} | {no, Matches}
 %%  Try to expand the word before as either a module name or a function
 %%  name. We can handle white space around the seperating ':' but the
 %%  function name must be on the same line. CurrentBefore is reversed
@@ -60,19 +60,20 @@ expand_function_name(ModStr, FuncPrefix) ->
     end.
 
 match(Prefix, Alts, Extra) ->
+    Len = length(Prefix),
     Matches = [{S, A} || {H, A} <- Alts, prefix(Prefix, S=atom_to_list(H))],
     case longest_common_head([N || {N,_} <- Matches]) of
  	{partial, []} ->
  	    {no, [], Matches}; % format_matches(Matches)};
  	{partial, Str} ->
- 	    case nthtail(length(Prefix), Str) of
+ 	    case nthtail(Len, Str) of
  		[] ->
 		    {yes, [], Matches}; % format_matches(Matches)};
  		Remain ->
  		    {yes, Remain, []}
  	    end;
  	{complete, Str} ->
- 	    {yes, nthtail(length(Prefix), Str) ++ Extra, []};
+ 	    {yes, nthtail(Len, Str) ++ Extra, []};
  	no ->
  	    {no, [], []}
     end.
@@ -163,6 +164,5 @@ over_white([$\s|Cs], Stack, N) ->
     over_white(Cs, [$\s|Stack], N+1);
 over_white([$\t|Cs], Stack, N) ->
     over_white(Cs, [$\t|Stack], N+1);
-over_white(Cs, Stack, N) ->
+over_white(Cs, Stack, N) when is_list(Cs) ->
     {Cs,Stack,N}.
-

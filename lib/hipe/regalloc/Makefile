@@ -39,7 +39,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_node_sets hipe_spillcost hipe_reg_worklists \
-	  hipe_adj_list hipe_vectors_wrapper \
+	  hipe_adj_list \
 	  hipe_temp_map \
 	  hipe_optimistic_regalloc \
 	  hipe_coalescing_regalloc \
@@ -50,7 +50,7 @@ MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_sparc_specific hipe_sparc_specific_fp \
 	  hipe_ppc_specific hipe_ppc_specific_fp \
 	  hipe_arm_specific \
-	  hipe_x86_specific hipe_x86_specific_fp \
+	  hipe_x86_specific hipe_x86_specific_x87 \
 	  hipe_amd64_specific hipe_amd64_specific_sse2 hipe_amd64_specific_x87
 
 HRL_FILES=
@@ -105,10 +105,11 @@ release_spec: opt
 
 release_docs_spec:
 
+$(EBIN)/hipe_amd64_specific.beam: hipe_x86_specific.erl
+$(EBIN)/hipe_amd64_specific_x87.beam: hipe_x86_specific_x87.erl
 $(EBIN)/hipe_optimistic_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_coalescing_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_graph_coloring_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_ls_regalloc.beam: ../main/hipe.hrl
-$(EBIN)/hipe_ls_uc_regalloc.beam: ../main/hipe.hrl
 $(EBIN)/hipe_temp_map.beam: ../main/hipe.hrl
 $(EBIN)/hipe_regalloc_loop.beam: ../main/hipe.hrl

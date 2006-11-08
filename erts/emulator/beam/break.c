@@ -101,9 +101,17 @@ process_killer(void)
 		switch(j) {
 		case 'k':
 		    if (rp->status == P_WAITING) {
-			erts_smp_proc_lock(rp, ERTS_PROC_LOCK_MAIN);
-			erts_schedule_exit(NULL, rp, am_killed);
-			erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_MAIN);
+			Uint32 rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
+			erts_smp_proc_lock(rp, rp_locks);
+			(void) erts_send_exit_signal(NULL,
+						     NIL,
+						     rp,
+						     &rp_locks,
+						     am_kill,
+						     NIL,
+						     NULL,
+						     0);
+			erts_smp_proc_unlock(rp, rp_locks);
 		    }
 		    else
 			erts_printf("Can only kill WAITING processes this way\n");

@@ -20,7 +20,8 @@
             httpc_response,     
             httpc_sup,
             http_cookie,                
-            http_uri,
+
+	    http_uri, %% Proably will by used by server also in the future
 
             %% HTTP used by both client and server 
             http_base_64,

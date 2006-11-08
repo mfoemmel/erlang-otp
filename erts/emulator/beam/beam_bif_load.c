@@ -37,6 +37,9 @@ static void delete_code(Process *c_p, Uint32 c_p_locks, Module* modp);
 static void delete_export_references(Eterm module);
 static int purge_module(int module);
 static int is_native(Eterm* code);
+#if defined(HEAP_FRAG_ELIM_TEST)
+static int any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size);
+#endif
 
 Eterm
 load_module_2(BIF_ALIST_2)
@@ -52,22 +55,22 @@ load_module_2(BIF_ALIST_2)
     struct trace_pattern_flags trace_pattern_flags;
     Eterm meta_tracer_pid;
     Eterm res;
+    byte* temp_alloc = NULL;
 
-    if (is_not_atom(BIF_ARG_1) || is_not_binary(BIF_ARG_2)) {
+    if (is_not_atom(BIF_ARG_1)) {
+    error:
+	erts_free_aligned_binary_bytes(temp_alloc);
 	BIF_ERROR(BIF_P, BADARG);
     }
-
-#ifdef ERTS_SMP
+    if ((code = erts_get_aligned_binary_bytes(BIF_ARG_2, &temp_alloc)) == NULL) {
+	goto error;
+    }
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
-    if (BIF_P->is_exiting) {
-	res = NIL; /* Not used */
-	goto done;
-    }
-#endif
+
+    erts_export_consolidate();
 
     hp = HAlloc(BIF_P, 3);
-    GET_BINARY_BYTES(BIF_ARG_2, code);
     sz = binary_size(BIF_ARG_2);
     if ((i = erts_load_module(BIF_P, 0,
 			      BIF_P->group_leader, &BIF_ARG_1, code, sz)) < 0) { 
@@ -102,12 +105,9 @@ load_module_2(BIF_ALIST_2)
     res = TUPLE2(hp, am_module, BIF_ARG_1);
 
  done:
-
-#ifdef ERTS_SMP
+    erts_free_aligned_binary_bytes(temp_alloc);
     erts_smp_release_system();
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
-#endif
 
     BIF_RET(res);
 }
@@ -120,22 +120,14 @@ BIF_RETTYPE purge_module_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     }
 
-#ifdef ERTS_SMP
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
-    if (BIF_P->is_exiting)
-	purge_res = -1;
-    else {
-#endif
 
-	purge_res = purge_module(atom_val(BIF_ARG_1));
+    erts_export_consolidate();
+    purge_res = purge_module(atom_val(BIF_ARG_1));
 
-#ifdef ERTS_SMP
-    }
     erts_smp_release_system();
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
-#endif
 
     if (purge_res < 0) {
 	BIF_ERROR(BIF_P, BADARG);
@@ -156,6 +148,21 @@ BIF_RETTYPE code_is_module_native_1(BIF_ALIST_1)
     return (is_native(modp->code) ||
 	    (modp->old_code != 0 && is_native(modp->old_code))) ?
 		am_true : am_false;
+}
+
+BIF_RETTYPE code_make_stub_module_3(BIF_ALIST_3)
+{
+    Eterm res;
+
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    erts_smp_block_system(0);
+
+    erts_export_consolidate();
+    res = erts_make_stub_module(BIF_P, BIF_ARG_1, BIF_ARG_2, BIF_ARG_3);
+
+    erts_smp_release_system();
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+    return res;
 }
 
 Eterm
@@ -203,14 +210,8 @@ BIF_RETTYPE delete_module_1(BIF_ALIST_1)
     if (is_not_atom(BIF_ARG_1))
 	goto badarg;
 
-#ifdef ERTS_SMP
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
-    if (BIF_P->is_exiting) {
-	res = am_badarg;
-    }
-    else
-#endif
 
     {
 	Module *modp = erts_get_module(BIF_ARG_1);
@@ -231,11 +232,8 @@ BIF_RETTYPE delete_module_1(BIF_ALIST_1)
 	}
     }
 
-#ifdef ERTS_SMP
     erts_smp_release_system();
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
-#endif
 
     if (res == am_badarg) {
     badarg:
@@ -296,12 +294,14 @@ static Eterm
 check_process_code(Process* rp, Module* modp)
 {
     Eterm* start;
+    char* mod_start;
+    Uint mod_size;
     Eterm* end;
     Eterm* sp;
 #ifndef HYBRID /* FIND ME! */
     ErlFunThing* funp;
-    int done_gc = 0;
 #endif
+    int done_gc = 0;
 
 #define INSIDE(a) (start <= (a) && (a) < end)
     if (modp == NULL) {		/* Doesn't exist. */
@@ -315,6 +315,8 @@ check_process_code(Process* rp, Module* modp)
      */
     start = modp->old_code;
     end = (Eterm *)((char *)start + modp->old_code_length);
+    mod_start = (char *) start;
+    mod_size = modp->old_code_length;
 
     /*
      * Check if current instruction or continuation pointer points into module.
@@ -390,10 +392,82 @@ check_process_code(Process* rp, Module* modp)
 	}
     }
 #endif
+
+#if defined(HEAP_FRAG_ELIM_TEST)
+    /*
+     * See if there are constants inside the module referenced by the process.
+     */
+    for (;;) {
+	ErlMessage* mp;
+
+	if (any_heap_refs(rp->stop, rp->hend, mod_start, mod_size)) {
+	    goto need_gc;
+	}
+	if (any_heap_refs(rp->heap, rp->htop, mod_start, mod_size)) {
+	    goto need_gc;
+	}
+
+	if (rp->dictionary != NULL) {
+	    Eterm* start = rp->dictionary->data;
+	    Eterm* end = start + rp->dictionary->used;
+
+	    if (any_heap_refs(start, end, mod_start, mod_size)) {
+		goto need_gc;
+	    }
+	}
+
+	for (mp = rp->msg.first; mp != NULL; mp = mp->next) {
+	    if (any_heap_refs(mp->m, mp->m+2, mod_start, mod_size)) {
+		goto need_gc;
+	    }
+	}
+	break;
+
+    need_gc:
+	if (done_gc) {
+	    return am_true;
+	} else {
+	    /*
+	     * Try to get rid of constants by by garbage collecting.
+	     * Clear both fvalue and ftrace.
+	     */
+	    rp->freason = EXC_NULL;
+	    rp->fvalue = NIL;
+	    rp->ftrace = NIL;
+	    done_gc = 1;
+	    FLAGS(rp) |= F_NEED_FULLSWEEP;
+	    (void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
+	}
+    }
+#endif
     return am_false;
 #undef INSIDE
 }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+static int
+any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
+{
+#define in_area(ptr,start,nbytes) \
+    ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
+    Eterm* p;
+    Eterm val;
+
+    for (p = start; p < end; p++) {
+	val = *p;
+	switch (primary_tag(val)) {
+	case TAG_PRIMARY_BOXED:
+	case TAG_PRIMARY_LIST:
+	    if (in_area(val, mod_start, mod_size)) {
+		return 1;
+	    }
+	    break;
+	}
+    }
+    return 0;
+#undef in_area
+}
+#endif
 
 static int
 purge_module(int module)
@@ -463,7 +537,6 @@ purge_module(int module)
 static void 
 delete_code(Process *c_p, Uint32 c_p_locks, Module* modp)
 {
-
 #ifdef ERTS_ENABLE_LOCK_CHECK
 #ifdef ERTS_SMP
     if (c_p && c_p_locks)
@@ -472,6 +545,7 @@ delete_code(Process *c_p, Uint32 c_p_locks, Module* modp)
 #endif
 	erts_lc_check_exact(NULL, 0);
 #endif
+
     /*
      * Clear breakpoints if any
      */
@@ -521,9 +595,6 @@ delete_export_references(Eterm module)
 }
 
 
-/*
- * SMP NOTE: Process c_p may have become exiting on return!
- */
 int
 beam_make_current_old(Process *c_p, Uint32 c_p_locks, Eterm module)
 {

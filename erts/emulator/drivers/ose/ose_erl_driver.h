@@ -95,8 +95,7 @@ typedef struct erl_drv_if {
 		       void* async_data,
 		       void (*async_free)(void*));
   int (*driver_async_cancel)(unsigned int key);
-  int (*driver_attach)(ErlDrvPort ix);
-  int (*driver_detach)(ErlDrvPort ix);
+  int (*driver_lock_driver)(ErlDrvPort ix);
 } ErlDrvIf;
 
 
@@ -201,8 +200,7 @@ typedef struct erl_drv_if {
 #define driver_send_term (*erl_drv_funcs_g->driver_send_term)
 #define driver_async (*erl_drv_funcs_g->driver_async)
 #define driver_async_cancel (*erl_drv_funcs_g->driver_async_cancel)
-#define driver_attach (*erl_drv_funcs_g->driver_attach)
-#define driver_detach (*erl_drv_funcs_g->driver_detach)
+#define driver_lock_driver (*erl_drv_funcs_g->driver_lock_driver)
 #endif
 
 #endif

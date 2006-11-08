@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.12 $
+%%              $Date: 2006/09/14 15:33:58 $
+%%              $Revision: 1.13 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -23,9 +23,9 @@
 -include("hipe_sparc.hrl").
 
 -import(hipe_sparc_prop_env,
-	[end_of_bb/1, find_hpos/2, find_spos/2,
+	[find_hpos/2, find_spos/2,
 	 kill/2, kill_all/2, kill_hp/1, kill_phys_regs/1, kill_sp/1,
-	 kill_uses/2, lookup/2, new_genv/1, set_active_block/2, succ/1,
+	 kill_uses/2, new_genv/1, set_active_block/2, succ/1,
 	 zap_heap/1, zap_stack/1, bind_spos/3]).
 
 %% ____________________________________________________________________
@@ -35,14 +35,14 @@ cfg(CFG) ->
   Lbls = [hipe_sparc_cfg:start_label(CFG)],
   
   %% Forward prop to get rid of stores.
-  {CFG0,GEnv0} = prop_bbs(Lbls, CFG, new_genv(CFG),[]),
+  {CFG0,GEnv0} = prop_bbs(Lbls, CFG, new_genv(CFG), []),
   Max = hipe_gensym:get_label(sparc),
   CFG1 = 
     case Max > 1000 of
       true ->
 	CFG0;
       false ->
-	prop(Lbls, CFG0, GEnv0,100)
+	prop(Lbls, CFG0, GEnv0, 100)
     end,
   %% hipe_sparc_cfg:pp(CFG0),
   %% Backward prop to get rid of loads.
@@ -62,7 +62,7 @@ bwd_prop([L|Lbls], CFG, Liveness) ->
   BB = hipe_sparc_cfg:bb(CFG, L),
   LiveOut = hipe_sparc_liveness:liveout(Liveness, L),
   ?debug_msg("LiveOut ~w\n",[LiveOut]),
-  {NewCode,NewLiveIn} = bwd_prop_bb(hipe_bb:code(BB),LiveOut),
+  {NewCode,NewLiveIn} = bwd_prop_bb(hipe_bb:code(BB), LiveOut),
   ?debug_msg("LiveIn ~w\n",[NewLiveIn]),
   NewBB = hipe_bb:code_update(BB, NewCode),
   NewCFG = hipe_sparc_cfg:bb_add(CFG, L, NewBB),
@@ -88,8 +88,7 @@ bwd_prop_i(I,Live) ->
     ordsets:from_list(
       case I of
 	#call_link{} -> 
-	  [hipe_sparc:mk_reg(X) 
-	   || X <- hipe_sparc_registers:allocatable()];
+	  [hipe_sparc:mk_reg(X) || X <- hipe_sparc_registers:allocatable()];
 	_ -> hipe_sparc:defines(I)
       end),
   
@@ -123,9 +122,9 @@ can_kill(I) ->
 %% ____________________________________________________________________
 %% 
 %% Fixpoint iteration.
-prop(_Start,CFG,_Env,0) ->
+prop(_Start, CFG, _Env, 0) ->
   CFG;
-prop(Start,CFG,Env,N) ->
+prop(Start, CFG, Env, N) ->
   case hipe_sparc_prop_env:genv__changed(Env) of
     true ->
       {CFG0,GEnv0} = prop_bbs(Start, CFG,
@@ -137,14 +136,13 @@ prop(Start,CFG,Env,N) ->
 
 
 %% ____________________________________________________________________
-%% 
 %%
 %% Iterate over the basic blocks of a cfg.
 %%
-prop_bbs([], CFG, GEnv,_) ->
+prop_bbs([], CFG, GEnv, _) ->
   {CFG,GEnv};
-prop_bbs([BB|BBs], CFG, GEnv,Vis) ->
-  case prop_bb(BB, GEnv, CFG,Vis) of
+prop_bbs([BB|BBs], CFG, GEnv, Vis) ->
+  case prop_bb(BB, GEnv, CFG, Vis) of
     {[], CFG0, GEnv0, NewVis} ->
       prop_bbs(BBs, CFG0, GEnv0, NewVis);
     {[Succ],  CFG0,GEnv0, NewVis} ->
@@ -154,7 +152,6 @@ prop_bbs([BB|BBs], CFG, GEnv,Vis) ->
     {Succs, CFG0,GEnv0, NewVis} ->
       prop_bbs(BBs++Succs, CFG0, GEnv0, NewVis)
   end.
-  
   
 
 %%
@@ -179,7 +176,7 @@ prop_bb(Lbl, GEnv, CFG, Vis) ->
 
 
 prop_instrs([], GEnv) ->
-  {[], end_of_bb(GEnv)};
+  {[], hipe_sparc_prop_env:end_of_bb(GEnv)};
 prop_instrs([I|Is], GEnv) ->
   {NewI, Env0} = prop_instr(I, GEnv),
   ?IF_DEBUG(
@@ -256,14 +253,14 @@ end.
 
 %% ____________________________________________________________________
 %% 
-prop_store(I,Env) ->
+prop_store(I, Env) ->
   Base = hipe_sparc:store_dest(I),
   Offset = hipe_sparc:store_off(I),
-  Src = lookup(hipe_sparc:store_src(I),Env),
+  Src = hipe_sparc_prop_env:lookup(hipe_sparc:store_src(I), Env),
   NewI = 
     case hipe_sparc:is_reg(Src) of
       true ->
-	hipe_sparc:store_src_update(I,Src);
+	hipe_sparc:store_src_update(I, Src);
       false ->
 	I
     end,
@@ -281,15 +278,15 @@ prop_store(I,Env) ->
     true ->
       %% A store off stack and heap (Probably PCB).
       %% XXX: We assume there is no interference here!!!
-      {NewI,Env}
+      {NewI, Env}
   end.
 
 
 prop_stack_store(I,Env,Offset,Src) ->
   case hipe_sparc_prop_env:env__sp(Env) of
     unknown ->
-       %% We are updating via unknown SP.
-	{I, zap_stack(Env)};
+      %% We are updating via unknown SP.
+      {I, zap_stack(Env)};
     SOff ->
       case hipe_sparc:is_imm(Offset) of
 	false ->
@@ -306,28 +303,28 @@ prop_stack_store(I,Env,Offset,Src) ->
   end.
 
 prop_heap_store(I,Env,Offset,Src) ->
-    case hipe_sparc_prop_env:env__hp(Env) of
-      unknown ->
-	%% We are updating via unknown HP.    
-	{I, zap_heap(Env)};	
-      HOff ->
-	case hipe_sparc:is_imm(Offset) of
-	  false ->
-	    %% We are updating the heap via a reg...
-	    %% TODO: Check wehter the the reg is bound to a const...
-	    %% We have to zap the heap...
-	    {I, zap_heap(Env)};
-	  true ->
-	    Pos = hipe_sparc:imm_value(Offset) + HOff,
-	    NewEnv = hipe_sparc_prop_env:bind_hpos(Pos, Src, Env),
-	    %% TODO: Indicate that Src is copied on heap.
-	    {I, NewEnv}
-	end
-    end.
+  case hipe_sparc_prop_env:env__hp(Env) of
+    unknown ->
+      %% We are updating via unknown HP.    
+      {I, zap_heap(Env)};	
+    HOff ->
+      case hipe_sparc:is_imm(Offset) of
+	false ->
+	  %% We are updating the heap via a reg...
+	  %% TODO: Check wehter the the reg is bound to a const...
+	  %% We have to zap the heap...
+	  {I, zap_heap(Env)};
+	true ->
+	  Pos = hipe_sparc:imm_value(Offset) + HOff,
+	  NewEnv = hipe_sparc_prop_env:bind_hpos(Pos, Src, Env),
+	  %% TODO: Indicate that Src is copied on heap.
+	  {I, NewEnv}
+      end
+  end.
 
 prop_load(I,Env) ->
   Base = hipe_sparc:load_src(I),
-  Offset = lookup(hipe_sparc:load_off(I),Env),
+  Offset = hipe_sparc_prop_env:lookup(hipe_sparc:load_off(I),Env),
   Dest = hipe_sparc:load_dest(I),
   NewI = hipe_sparc:load_off_update(I,Offset),
   SP = hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
@@ -360,14 +357,12 @@ prop_stack_load(I,Env,Offset,Dest) ->
 	  {I, kill(Dest,Env)};
 	true ->
 	  Pos = hipe_sparc:imm_value(Offset) + SOff,
-	  
 	  case find_spos(Pos, Env) of
 	    undefined ->
 	      {I, kill(Dest,Env)};
 	    Val ->
-	      case lookup(Dest, Env) of
-		Val -> {hipe_sparc:comment_create("Removed load"),
-			Env};
+	      case hipe_sparc_prop_env:lookup(Dest, Env) of
+		Val -> {hipe_sparc:comment_create("Removed load"), Env};
 		_ ->
 		  bind_all([Val],[Dest],I,kill_uses([Dest],Env))
 	      end
@@ -397,7 +392,6 @@ prop_heap_load(I,Env,Offset,Dest) ->
       end
   end.
 
-
 %% ____________________________________________________________________
 %% 
 prop_alu(I,Env) ->
@@ -415,7 +409,7 @@ prop_alu(I,Env) ->
 	_ ->
 	  %% TODO: handle SP = x op SP
 	  %% unknown update of SP.
-	  {I,kill_sp(zap_stack(Env))}
+	  {I, kill_sp(zap_stack(Env))}
       end;
     Dest =:= HP ->
       case Src1 of
@@ -424,7 +418,7 @@ prop_alu(I,Env) ->
 	_ ->
 	  %% TODO: handle HP = x op HP
 	  %% unknown update of HP.
-	  {I,kill_hp(zap_heap(Env))}
+	  {I, kill_hp(zap_heap(Env))}
       end;
     true ->
       %% TODO: Fold consts ...
@@ -436,36 +430,36 @@ prop_sp_op(I,Env,'+',Src) ->
     true ->
       {I, hipe_sparc_prop_env:inc_sp(Env,hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_sp_op(I,Env,'-',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
       {I, hipe_sparc_prop_env:inc_sp(Env, - hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_sp_op(I,Env,_Op,_Src) ->
   %% Dont know how to handle other ops...
-  {I,kill_sp(zap_stack(Env))}.
+  {I, kill_sp(zap_stack(Env))}.
 
 prop_hp_op(I,Env,'+',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
       {I, hipe_sparc_prop_env:inc_hp(Env,hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_hp_op(I,Env,'-',Src) ->
   case hipe_sparc:is_imm(Src) of
     true ->
       {I, hipe_sparc_prop_env:inc_hp(Env, - hipe_sparc:imm_value(Src))};
     false ->
-      {I,kill_sp(zap_stack(Env))}
+      {I, kill_sp(zap_stack(Env))}
   end;
 prop_hp_op(I,Env,_Op,_Src) ->
   %% Dont know how to handle other ops...
-  {I,kill_hp(zap_heap(Env))}.
+  {I, kill_hp(zap_heap(Env))}.
 
 %% ____________________________________________________________________
 %% 
@@ -477,12 +471,11 @@ prop_call_link(I,Env) ->
   case NoArgs > ArgsInRegs of
     true ->
       StackAdjust = NoArgs - ArgsInRegs,
-      Env2 = hipe_sparc_prop_env:inc_sp(Env1, - StackAdjust*4),
+      Env2 = hipe_sparc_prop_env:inc_sp(Env1, - (StackAdjust bsl ?log2_wordsize)),
       {I,Env2};
     false ->
       {I,Env1}
   end.
-
 
 %% ____________________________________________________________________
 %% 
@@ -499,7 +492,7 @@ bind_all([Src|Srcs], [Dst|Dsts], I, Env, NewEnv) ->
       bind_all(Srcs, Dsts, I, Env,
 	       hipe_sparc_prop_env:bind(NewEnv, Dst, Src));
     false ->  %% its a variable
-      SrcVal = lookup(Src, Env),
+      SrcVal = hipe_sparc_prop_env:lookup(Src, Env),
       NewI = hipe_sparc:subst_uses(I,[{Src, SrcVal}]),
       bind_all(Srcs, Dsts, NewI, Env,
 	       hipe_sparc_prop_env:bind(NewEnv, Dst, SrcVal))
@@ -508,4 +501,3 @@ bind_all([], [], I, _, Env) ->
   {I, Env}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-

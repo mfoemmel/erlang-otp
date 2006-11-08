@@ -539,12 +539,16 @@ handle_exit(Pid, Reason, State) ->
 	{none, _} ->
 	    %% Check if it is a participant
 	    case mnesia_lib:key_search_delete(Pid, #participant.pid, State#state.participants) of
+		{none, _} when Reason =:= normal ->
+		    %% We got exit from a local fool
+		    dbg_out("** ERROR ** ~p got local EXIT from unknown process: ~p~n",  
+			    [?MODULE, {Pid, Reason}]),
+		    doit_loop(State);
 		{none, _} ->
 		    %% We got exit from a local fool
 		    verbose("** ERROR ** ~p got local EXIT from unknown process: ~p~n",  
 			    [?MODULE, {Pid, Reason}]),
-		    doit_loop(State);
-		
+		    doit_loop(State);		
 		{P, RestP} when record(P, participant) ->
 		    fatal("Participant ~p in transaction ~p died ~p~n",
 			  [P#participant.pid, P#participant.tid, Reason]),

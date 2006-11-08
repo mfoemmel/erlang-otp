@@ -23,7 +23,7 @@
 %%----------------------------------------------------------------------
 
 %% Application exports
--export([start/0, start/1,
+-export([start/0, start/1, stop/0, 
 	 start_agent/0,   start_agent/1, 
 	 start_manager/0, start_manager/1, 
 	 config/0,
@@ -140,6 +140,9 @@
 
 start() ->
     application:start(?APPLICATION).
+
+stop() ->
+    application:stop(?APPLICATION).
 
 start(p) ->
     start(permanent);

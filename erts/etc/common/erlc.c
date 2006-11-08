@@ -516,7 +516,7 @@ usage(void)
 	{"-I path", "where to search for include files"},
 	{"-o name", "name output directory or file"},
 	{"-pa path", "add path to the front of Erlang's code path"},
-	{"-pa path", "add path to then of Erlang's code path"},
+	{"-pa path", "add path to the end of Erlang's code path"},
 	{"-v", "verbose compiler output"},
 	{"-W0", "disable warnings"},
 	{"-Wnumber", "set warning level to number"},

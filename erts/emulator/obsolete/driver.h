@@ -189,8 +189,7 @@ EXTERN long driver_async _ANSI_ARGS_((int,
 				      void (*)(void*)));
 EXTERN int driver_async_cancel _ANSI_ARGS_((long));
 
-EXTERN int driver_attach _ANSI_ARGS_((int));
-EXTERN int driver_detach _ANSI_ARGS_((int));
+EXTERN int driver_lock_driver _ANSI_ARGS_((int));
 
 /* Threads */
 typedef void* erl_mutex_t;

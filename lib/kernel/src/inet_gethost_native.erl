@@ -489,18 +489,18 @@ getit(Req) ->
 	    Res2
     end.
 
-do_start(Sup,C) ->
+do_start(Sup, C) ->
     {Child,_,_,_,_,_} = C,
     case supervisor:start_child(Sup,C) of
 	{ok,_} ->
 	    ok;
-	{error, {already_started, _}} ->
+	{error, {already_started, Pid}} when is_pid(Pid) ->
+	    ok;
+	{error, {{already_started, Pid}, _Child}} when is_pid(Pid) ->
 	    ok;
 	{error, already_present} ->
-	    supervisor:terminate_child(Sup, Child),
 	    supervisor:delete_child(Sup, Child),
-	    supervisor:start_child(Sup,C),
-	    ok
+	    do_start(Sup, C)
     end.
 
 ensure_started() ->

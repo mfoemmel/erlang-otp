@@ -30,11 +30,6 @@
 #include "erl_bits.h"
 #include "erl_binary.h"
 
-typedef unsigned char Uint8;
-
-#define BYTE_OFFSET(ofs) ((unsigned) (ofs) >> 3)
-#define BIT_OFFSET(ofs) ((ofs) & 7)
-
 #ifdef MAX
 #undef MAX
 #endif
@@ -65,12 +60,7 @@ typedef unsigned char Uint8;
 
 #define MASK_BITS(src,dst,mask) (((src) & (mask)) | ((dst) & ~(mask)))
 
-
-static void
-copy_bits(Uint8* src, size_t soffs, int sdir,
-	  Uint8* dst, size_t doffs, int ddir,
-	  size_t n);
-
+static byte get_bit(byte b, size_t a_offs); 
 
 #if defined(ERTS_SMP)
 /* the state resides in the current process' scheduler data */
@@ -103,6 +93,8 @@ erts_bits_bufs_size(void)
 #if !defined(ERTS_SMP)
 static
 #endif
+
+
 void
 erts_bits_init_state(ERL_BITS_PROTO_0)
 {
@@ -169,8 +161,6 @@ erts_bs_skip_bits(ERL_BITS_PROTO_1(Uint num_bits))
 int
 erts_bs_skip_bits_all(ERL_BITS_PROTO_0)
 {
-    if (erts_mb.offset % 8)
-	return 0;
     erts_mb.offset = erts_mb.size;
     return 1;
 }
@@ -199,9 +189,9 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
     Uint bytes;
     Uint bits;
     Uint offs;
-    Uint8 bigbuf[64];
-    Uint8* LSB;
-    Uint8* MSB;
+    byte bigbuf[64];
+    byte* LSB;
+    byte* MSB;
     Uint* hp;
     Uint v32;
     int sgn = 0;
@@ -242,11 +232,11 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
      */
     
     if (flags & BSF_LITTLE) {
-	copy_bits(mb->base, mb->offset, 1, LSB, 0, 1, num_bits);
+	erts_copy_bits(mb->base, mb->offset, 1, LSB, 0, 1, num_bits);
 	*MSB >>= offs;		/* adjust msb */
     } else {
 	*MSB = 0;
-	copy_bits(mb->base, mb->offset, 1, MSB, offs, -1, num_bits);
+	erts_copy_bits(mb->base, mb->offset, 1, MSB, offs, -1, num_bits);
     }
     mb->offset += num_bits;
 
@@ -255,16 +245,16 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
      */
     sgn = 0;
     if ((flags & BSF_SIGNED) && (*MSB & (1<<(bits-1)))) {
-	Uint8* ptr = LSB; 
-	Uint8 c = 1;
+	byte* ptr = LSB; 
+	byte c = 1;
 
 	/* sign extend MSB */
 	*MSB |= ~MAKE_MASK(bits);
 
 	/* two's complement */
 	while (ptr <= MSB) {
-	    Uint8 pd = ~(*ptr);
-	    Uint8 d = pd + c;
+	    byte pd = ~(*ptr);
+	    byte d = pd + c;
 	    c = (d < pd);
 	    *ptr++ = d;
 	}
@@ -334,8 +324,8 @@ erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags)
 Eterm
 erts_bs_get_binary(Process *p, Uint num_bits, unsigned flags)
 {
-    size_t num_bytes;		/* Number of bytes in binary. */
     ErlBinMatchBuffer* mb;
+    ErlSubBin* sb;
     ERL_BITS_DEFINE_STATEP(p); /* Has to be at the end of declarations */
 
     mb = &erts_mb;
@@ -346,37 +336,20 @@ erts_bs_get_binary(Process *p, Uint num_bits, unsigned flags)
     if (mb->size - mb->offset < num_bits) {	/* Asked for too many bits.  */
 	return THE_NON_VALUE;
     }
-    if (BIT_OFFSET(num_bits) != 0) { /* Number of bits must be byte aligned. */
-	return THE_NON_VALUE;
-    }
 
     /*
      * From now on, we can't fail.
      */
-
-    num_bytes = NBYTES(num_bits);
-    if (BIT_OFFSET(mb->offset) == 0) {
-	ErlSubBin* sb = (ErlSubBin *) ArithAlloc(p, ERL_SUB_BIN_SIZE);
-
-	/*
-	 * Get a byte-aligned part of the old binary.
-	 */
-
-	sb->thing_word = HEADER_SUB_BIN;
-	sb->orig = mb->orig;
-	sb->size = num_bytes;
-	sb->offs = BYTE_OFFSET(mb->offset);
-	mb->offset += num_bits;
-	return make_binary(sb);
-    } else {
-	byte* bytes;
-	Eterm bin = new_binary_arith(p, NULL, num_bytes);
-
-	GET_BINARY_BYTES(bin, bytes);
-	copy_bits(mb->base, mb->offset, 1, bytes, 0, 1, num_bits);
-	mb->offset += num_bits;
-	return bin;
-    }
+    
+    sb = (ErlSubBin *) ArithAlloc(p, ERL_SUB_BIN_SIZE);
+    sb->thing_word = HEADER_SUB_BIN;
+    sb->orig = mb->orig;
+    sb->size = BYTE_OFFSET(num_bits);
+    sb->bitsize = BIT_OFFSET(num_bits);
+    sb->offs = BYTE_OFFSET(mb->offset);
+    sb->bitoffs = BIT_OFFSET(mb->offset);
+    mb->offset += num_bits;
+    return make_binary(sb);
 }
 
 Eterm
@@ -411,11 +384,11 @@ erts_bs_get_float(Process *p, Uint num_bits, unsigned flags)
     }
 
     if (BIT_IS_MACHINE_ENDIAN(flags)) {
-	copy_bits(mb->base, mb->offset, 1,
+	erts_copy_bits(mb->base, mb->offset, 1,
 		  fptr, 0, 1,
 		  num_bits);
     } else {
-	copy_bits(mb->base, mb->offset, 1,
+	erts_copy_bits(mb->base, mb->offset, 1,
 		  fptr + NBYTES(num_bits) - 1, 0, -1,
 		  num_bits);
     }
@@ -439,15 +412,18 @@ erts_bs_get_float(Process *p, Uint num_bits, unsigned flags)
 Eterm
 erts_bs_get_binary_all(Process *p)
 {
+    ErlSubBin* sb;
+    Uint size;
     ERL_BITS_DEFINE_STATEP(p);
 
-    if (BIT_OFFSET(erts_mb.offset) == 0) {
-	ErlSubBin* sb;
-
+    size = erts_mb.size-erts_mb.offset;
+    if (BIT_OFFSET(size) == 0) {
 	sb = (ErlSubBin *) ArithAlloc(p, ERL_SUB_BIN_SIZE);
 	sb->thing_word = HEADER_SUB_BIN;
-	sb->size = BYTE_OFFSET(erts_mb.size) - BYTE_OFFSET(erts_mb.offset);
+	sb->size = BYTE_OFFSET(size);
+	sb->bitsize = BIT_OFFSET(size);
 	sb->offs = BYTE_OFFSET(erts_mb.offset);
+	sb->bitoffs = BIT_OFFSET(erts_mb.offset);
 	sb->orig = erts_mb.orig;
 	erts_mb.offset = erts_mb.size;
 	return make_binary(sb);
@@ -462,10 +438,23 @@ erts_bs_get_binary_all(Process *p)
  ***
  *****************************************************************/
 
+#define HeapOnlyAlloc(p, sz)					\
+    (ASSERT_EXPR((sz) >= 0),					\
+     (ASSERT_EXPR(((HEAP_LIMIT(p) - HEAP_TOP(p)) >= (sz))),	\
+      (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+
+#define ReadToVariable(v64, Buffer, x)		\
+  do{						\
+    int _i;					\
+    v64 = 0;					\
+    for(_i = 0; _i < x; _i++) {			\
+      v64 = ((Uint)Buffer[_i] <<(8*_i)) + v64;	\
+	}					\
+  }while(0)					\
+
 Eterm
 erts_bs_start_match_2(Process *p, Eterm Binary, Uint Max)
 {
-    Eterm res;
     if (!is_binary(Binary)) {
 	return THE_NON_VALUE;
     } else { 
@@ -474,17 +463,18 @@ erts_bs_start_match_2(Process *p, Eterm Binary, Uint Max)
 	Uint* hp; 
 	Uint NeededSize;
 	ErlBinMatchState *ms;
+	Uint bitoffs;						
+	Uint bitsize;						
 	NeededSize = ERL_BIN_MATCHSTATE_SIZE(Max);
-	hp = HAlloc(p, NeededSize);
+	hp = HeapOnlyAlloc(p, NeededSize);
 	ms = (ErlBinMatchState *) hp;                         
-	GET_REAL_BIN(Binary, Orig, offs);			    
+	ERTS_GET_REAL_BIN(Binary, Orig, offs, bitoffs, bitsize);
 	ms->thing_word = HEADER_BIN_MATCHSTATE(Max);
-	(ms->mb).orig = Orig;                                   
-	(ms->mb).base = binary_bytes(Orig);			    
-	(ms->mb).offset = 8 * offs;				    
-	(ms->mb).size = binary_size(Binary) * 8 + (ms->mb).offset;  
-	res =  make_matchstate(ms);
-	return res;
+	(ms->mb).orig = Orig;
+	(ms->mb).base = binary_bytes(Orig);
+	(ms->mb).offset = 8 * offs + bitoffs;
+	(ms->mb).size = binary_size(Binary) * 8 + (ms->mb).offset + bitsize;
+	return make_matchstate(ms);
     }    
 }
 
@@ -494,9 +484,9 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
     Uint bytes;
     Uint bits;
     Uint offs;
-    Uint8 bigbuf[64];
-    Uint8* LSB;
-    Uint8* MSB;
+    byte bigbuf[64];
+    byte* LSB;
+    byte* MSB;
     Uint* hp;
     Uint v32;
     int sgn = 0;
@@ -530,11 +520,11 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
      */
     
     if (flags & BSF_LITTLE) {
-	copy_bits(mb->base, mb->offset, 1, LSB, 0, 1, num_bits);
+	erts_copy_bits(mb->base, mb->offset, 1, LSB, 0, 1, num_bits);
 	*MSB >>= offs;		/* adjust msb */
     } else {
 	*MSB = 0;
-	copy_bits(mb->base, mb->offset, 1, MSB, offs, -1, num_bits);
+	erts_copy_bits(mb->base, mb->offset, 1, MSB, offs, -1, num_bits);
     }
     mb->offset += num_bits;
 
@@ -543,16 +533,16 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
      */
     sgn = 0;
     if ((flags & BSF_SIGNED) && (*MSB & (1<<(bits-1)))) {
-	Uint8* ptr = LSB; 
-	Uint8 c = 1;
+	byte* ptr = LSB; 
+	byte c = 1;
 
 	/* sign extend MSB */
 	*MSB |= ~MAKE_MASK(bits);
 
 	/* two's complement */
 	while (ptr <= MSB) {
-	    Uint8 pd = ~(*ptr);
-	    Uint8 d = pd + c;
+	    byte pd = ~(*ptr);
+	    byte d = pd + c;
 	    c = (d < pd);
 	    *ptr++ = d;
 	}
@@ -576,29 +566,51 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
     case 3: 
 	v32 = LSB[0] + (LSB[1]<<8) + (LSB[2]<<16); 
 	goto big_small;
+#if !defined(ARCH_64)
     case 4:
-	v32 = (Uint32)(LSB[0] + (LSB[1]<<8) + (LSB[2]<<16) + (LSB[3]<<24));
+	v32 = (LSB[0] + (LSB[1]<<8) + (LSB[2]<<16) + (LSB[3]<<24));
 	if (!IS_USMALL(sgn, v32)) {
-	    hp = HAlloc(p, BIG_UINT_HEAP_SIZE);
-	    if (sgn) {
-		hp[0] = make_neg_bignum_header(1);
-	    } else {
-		hp[0] = make_pos_bignum_header(1);
-	    }
-	    BIG_DIGIT(hp,0) = DLOW(v32);
-	    BIG_DIGIT(hp,1) = DHIGH(v32);
-	    res = make_big(hp);
-	    break;
+	  goto make_big;
 	}
-    big_small:			/* v32 loaded with value (24 bit or less) */
+#else
+    case 4:
+      ReadToVariable(v32, LSB, 4);					
+      goto big_small;
+    case 5:	
+      ReadToVariable(v32, LSB, 5);					
+      goto big_small;
+    case 6:	
+      ReadToVariable(v32, LSB, 6);
+      goto big_small; 
+    case 7:
+      ReadToVariable(v32, LSB, 7);
+      goto big_small; 
+    case 8:
+      ReadToVariable(v32, LSB, 8);
+      if (!IS_USMALL(sgn, v32)) {
+	goto make_big;   
+	}
+#endif   
+    big_small:			/* v32 loaded with value which fits in fixnum */
 	if (sgn) {
 	    res = make_small(-((Sint)v32));
 	} else {
 	    res = make_small(v32);
 	}
 	break;
+    make_big:
+	hp = HeapOnlyAlloc(p, BIG_UINT_HEAP_SIZE);
+	if (sgn) {
+	  hp[0] = make_neg_bignum_header(1);
+	} else {
+	  hp[0] = make_pos_bignum_header(1);
+	}
+	BIG_DIGIT(hp,0) = DLOW(v32);
+	BIG_DIGIT(hp,1) = DHIGH(v32);
+	res = make_big(hp);
+	break;
     default:
-	hp = HAlloc(p, 1+WSIZE(bytes));
+	hp = HeapOnlyAlloc(p, 1+WSIZE(bytes));
 	res = bytes_to_big(LSB, bytes, sgn, hp); 
 	break;
     }
@@ -612,6 +624,7 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
 Eterm
 erts_bs_get_binary_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb)
 {
+    ErlSubBin* sb;
     size_t num_bytes;		/* Number of bytes in binary. */
 
     if (num_bits == 0) {		/* Empty binary. */
@@ -620,37 +633,24 @@ erts_bs_get_binary_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffe
     if (mb->size - mb->offset < num_bits) {	/* Asked for too many bits.  */
 	return THE_NON_VALUE;
     }
-    if (BIT_OFFSET(num_bits) != 0) { /* Number of bits must be byte aligned. */
-	return THE_NON_VALUE;
-    }
+    
 
     /*
      * From now on, we can't fail.
      */
 
     num_bytes = NBYTES(num_bits);
-    if (BIT_OFFSET(mb->offset) == 0) {
-	ErlSubBin* sb = (ErlSubBin *) HAlloc(p, ERL_SUB_BIN_SIZE);
-
-	/*
-	 * Get a byte-aligned part of the old binary.
-	 */
-
-	sb->thing_word = HEADER_SUB_BIN;
-	sb->orig = mb->orig;
-	sb->size = num_bytes;
-	sb->offs = BYTE_OFFSET(mb->offset);
-	mb->offset += num_bits;
-	return make_binary(sb);
-    } else {
-	byte* bytes;
-	Eterm bin = new_binary(p, NULL, num_bytes);
-
-	GET_BINARY_BYTES(bin, bytes);
-	copy_bits(mb->base, mb->offset, 1, bytes, 0, 1, num_bits);
-	mb->offset += num_bits;
-	return bin;
-    }
+    sb = (ErlSubBin *) HeapOnlyAlloc(p, ERL_SUB_BIN_SIZE);
+    
+    sb->thing_word = HEADER_SUB_BIN;
+    sb->orig = mb->orig;
+    sb->size = BYTE_OFFSET(num_bits);
+    sb->bitsize = BIT_OFFSET(num_bits);
+    sb->offs = BYTE_OFFSET(mb->offset);
+    sb->bitoffs = BIT_OFFSET(mb->offset);
+    mb->offset += num_bits;
+    
+    return make_binary(sb);
 }
 
 Eterm
@@ -664,7 +664,7 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 
     if (num_bits == 0) {
 	f.fd = 0.0;
-	hp = HAlloc(p, FLOAT_SIZE_OBJECT);
+	hp = HeapOnlyAlloc(p, FLOAT_SIZE_OBJECT);
 	PUT_DOUBLE(f, hp);
 	return make_float(hp);
     }
@@ -680,11 +680,11 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
     }
 
     if (BIT_IS_MACHINE_ENDIAN(flags)) {
-	copy_bits(mb->base, mb->offset, 1,
+	erts_copy_bits(mb->base, mb->offset, 1,
 		  fptr, 0, 1,
 		  num_bits);
     } else {
-	copy_bits(mb->base, mb->offset, 1,
+	erts_copy_bits(mb->base, mb->offset, 1,
 		  fptr + NBYTES(num_bits) - 1, 0, -1,
 		  num_bits);
     }
@@ -692,13 +692,13 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 
     ERTS_FP_CHECK_INIT(p);
     if (num_bits == 32) {
-	ERTS_FP_ERROR(p, f32, return THE_NON_VALUE);
+	ERTS_FP_ERROR_THOROUGH(p, f32, return THE_NON_VALUE);
 	f.fd = f32;
     } else {
-	ERTS_FP_ERROR(p, f64, return THE_NON_VALUE);
+	ERTS_FP_ERROR_THOROUGH(p, f64, return THE_NON_VALUE);
 	f.fd = f64;
     }
-    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
+    hp = HeapOnlyAlloc(p, FLOAT_SIZE_OBJECT);
     PUT_DOUBLE(f, hp);
     return make_float(hp);
 }
@@ -706,17 +706,18 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 Eterm
 erts_bs_get_binary_all_2(Process *p, ErlBinMatchBuffer* mb)
 {
-  if (BIT_OFFSET(mb->offset) == 0) {
-	ErlSubBin* sb;
-	sb = (ErlSubBin *) HAlloc(p, ERL_SUB_BIN_SIZE);
-	sb->thing_word = HEADER_SUB_BIN;
-	sb->size = BYTE_OFFSET(mb->size) - BYTE_OFFSET(mb->offset);
-	sb->offs = BYTE_OFFSET(mb->offset);
-	sb->orig = mb->orig;
-	mb->offset = mb->size;
-	return make_binary(sb);
-    }
-    return THE_NON_VALUE;
+  ErlSubBin* sb;
+  Uint size;
+  size =  mb->size-mb->offset;
+  sb = (ErlSubBin *) HeapOnlyAlloc(p, ERL_SUB_BIN_SIZE);
+  sb->thing_word = HEADER_SUB_BIN;
+  sb->size = BYTE_OFFSET(size);
+  sb->bitsize = BIT_OFFSET(size);
+  sb->offs = BYTE_OFFSET(mb->offset);
+  sb->bitoffs = BIT_OFFSET(mb->offset);
+  sb->orig = mb->orig;
+  mb->offset = mb->size;  
+  return make_binary(sb);
 }
 
 void
@@ -948,7 +949,7 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
 	if (fmt_int(iptr, NBYTES(num_bits), arg, num_bits, flags) < 0) {
 	    return 0;
 	}
-	copy_bits(iptr, 0, 1, erts_current_bin, bin_offset, 1, num_bits);
+	erts_copy_bits(iptr, 0, 1, erts_current_bin, bin_offset, 1, num_bits);
     }
     erts_bin_offset = bin_offset + num_bits;
     return 1;
@@ -958,20 +959,17 @@ int
 erts_new_bs_put_binary(ERL_BITS_PROTO_2(Eterm arg, Uint num_bits))
 {
     byte *bptr;
+    Uint bitoffs;
+    Uint bitsize; 
 
     if (!is_binary(arg)) {
 	return 0;
     }
-    GET_BINARY_BYTES(arg, bptr);
-    if (num_bits > 8*binary_size(arg)) {
+    ERTS_GET_BINARY_BYTES(arg, bptr, bitoffs, bitsize);
+    if (num_bits > 8*binary_size(arg)+bitsize) {
 	return 0;
     }
-    if (BIT_OFFSET(erts_bin_offset) == 0) {
-	sys_memcpy(erts_current_bin+BYTE_OFFSET(erts_bin_offset),
-		   bptr, NBYTES(num_bits));
-    } else {
-	copy_bits(bptr, 0, 1, erts_current_bin, erts_bin_offset, 1, num_bits);
-    }
+    copy_binary_to_buffer(erts_current_bin, erts_bin_offset, bptr, bitoffs, num_bits);
     erts_bin_offset += num_bits;
     return 1;
 }
@@ -979,21 +977,19 @@ erts_new_bs_put_binary(ERL_BITS_PROTO_2(Eterm arg, Uint num_bits))
 int
 erts_new_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm arg))
 {
-    byte *bptr;
-    unsigned n;
+   byte *bptr;
+   Uint bitoffs;
+   Uint bitsize;
+   Uint num_bits;
 
-    if (!is_binary(arg)) {
-	return 0;
-    }
-    GET_BINARY_BYTES(arg, bptr);
-    n = 8*binary_size(arg);
-    if (BIT_OFFSET(erts_bin_offset) == 0) {
-	sys_memcpy(erts_current_bin+BYTE_OFFSET(erts_bin_offset), bptr, NBYTES(n));
-    } else {
-	copy_bits(bptr, 0, 1, erts_current_bin, erts_bin_offset, 1, n);
-    }
-    erts_bin_offset += n;
-    return 1;
+   if (!is_binary(arg)) {
+       return 0;
+   }
+   ERTS_GET_BINARY_BYTES(arg, bptr, bitoffs, bitsize);
+   num_bits = 8*binary_size(arg)+bitsize;
+   copy_binary_to_buffer(erts_current_bin, erts_bin_offset, bptr, bitoffs, num_bits);
+   erts_bin_offset += num_bits;
+   return 1;
 }
 
 int
@@ -1157,13 +1153,13 @@ erts_new_bs_put_float(Process *c_p, Eterm arg, Uint num_bits, int flags)
 	    return 0;
 	}
 	if (BIT_IS_MACHINE_ENDIAN(flags)) {
-	    copy_bits(bptr, 0, 1,
+	    erts_copy_bits(bptr, 0, 1,
 		      erts_current_bin,
 		      erts_bin_offset, 1, num_bits);
 	} else {
-	    copy_bits(bptr+NBYTES(num_bits)-1, 0, -1,
-		      erts_current_bin, erts_bin_offset, 1,
-		      num_bits);
+	    erts_copy_bits(bptr+NBYTES(num_bits)-1, 0, -1,
+			   erts_current_bin, erts_bin_offset, 1,
+			   num_bits);
 	}
     }
     erts_bin_offset += num_bits;
@@ -1174,13 +1170,28 @@ void
 erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
 {
     if (BIT_OFFSET(erts_bin_offset) != 0) {
-	copy_bits(iptr, 0, 1, erts_current_bin, erts_bin_offset, 1, num_bytes*8);
+	erts_copy_bits(iptr, 0, 1, erts_current_bin, erts_bin_offset, 1, num_bytes*8);
     } else {
 	sys_memcpy(erts_current_bin+BYTE_OFFSET(erts_bin_offset), iptr, num_bytes);
     }
     erts_bin_offset += num_bytes*8;
 }
 
+Eterm
+erts_bs_final2(Process* p, Eterm bin)
+{ 
+    ErlSubBin* sb;
+    ERL_BITS_DEFINE_STATEP(p);
+    if ((erts_bin_offset & 7) == 0) {return bin;}
+    sb = (ErlSubBin *) HeapOnlyAlloc(p, ERL_SUB_BIN_SIZE);
+    sb->thing_word = HEADER_SUB_BIN;
+    sb->size = (erts_bin_offset - (erts_bin_offset & 7))/8;
+    sb->bitsize = erts_bin_offset & 7;
+    sb->offs = 0;
+    sb->bitoffs = 0;
+    sb->orig = bin;
+    return make_binary(sb);
+}
 
 #if !defined(HEAP_FRAG_ELIM_TEST)
 
@@ -1211,7 +1222,6 @@ Eterm
 erts_bs_final(Process* p)
 {
     ERL_BITS_DEFINE_STATEP(p);
-
     if (erts_bin_offset % 8 != 0) {
 	return THE_NON_VALUE;
     }
@@ -1238,7 +1248,7 @@ erts_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flags))
 	    return 0;
 	}
 	need_bin_buf(ERL_BITS_ARGS_1(NBYTES(num_bits+bin_offset)));
-	copy_bits(iptr, 0, 1, erts_bin_buf, bin_offset, 1, num_bits);
+	erts_copy_bits(iptr, 0, 1, erts_bin_buf, bin_offset, 1, num_bits);
     }
     erts_bin_offset = bin_offset + num_bits;
     return 1;
@@ -1248,20 +1258,21 @@ int
 erts_bs_put_binary(ERL_BITS_PROTO_2(Eterm arg, Uint num_bits))
 {
     byte *bptr;
-
+    Uint bitoffs;
+    Uint bitsize;
     if (!is_binary(arg)) {
 	return 0;
     }
-    GET_BINARY_BYTES(arg, bptr);
-    if (num_bits > 8*binary_size(arg)) {
+    ERTS_GET_BINARY_BYTES(arg, bptr, bitoffs, bitsize);
+    if (num_bits > 8*binary_size(arg)+bitsize) {
 	return 0;
     }
     need_bin_buf(ERL_BITS_ARGS_1(NBYTES(num_bits + erts_bin_offset)));
-    if (BIT_OFFSET(erts_bin_offset) == 0) {
+    if ((BIT_OFFSET(erts_bin_offset) == 0) & (bitoffs == 0) & (BIT_OFFSET(num_bits) == 0)) {
 	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset),
 		   bptr, NBYTES(num_bits));
     } else {
-	copy_bits(bptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, num_bits);
+	erts_copy_bits(bptr, bitoffs, 1, erts_bin_buf, erts_bin_offset, 1, num_bits);
     }
     erts_bin_offset += num_bits;
     return 1;
@@ -1272,17 +1283,19 @@ erts_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm arg))
 {
     byte *bptr;
     unsigned n;
+    Uint bitoffs;
+    Uint bitsize;
 
     if (!is_binary(arg)) {
 	return 0;
     }
-    GET_BINARY_BYTES(arg, bptr);
-    n = 8*binary_size(arg);
+    ERTS_GET_BINARY_BYTES(arg, bptr, bitoffs, bitsize);
+    n = 8*binary_size(arg)+bitsize; 
     need_bin_buf(ERL_BITS_ARGS_1(NBYTES(n + erts_bin_offset)));
-    if (BIT_OFFSET(erts_bin_offset) == 0) {
+    if ((BIT_OFFSET(erts_bin_offset) == 0) & (bitoffs == 0) & (bitsize == 0)) {
 	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset), bptr, NBYTES(n));
     } else {
-	copy_bits(bptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, n);
+	erts_copy_bits(bptr, bitoffs, 1, erts_bin_buf, erts_bin_offset, 1, n);
     }
     erts_bin_offset += n;
     return 1;
@@ -1366,13 +1379,13 @@ erts_bs_put_float(Process *c_p, Eterm arg, Uint num_bits, int flags)
 	}
     } else {
 	if (BIT_IS_MACHINE_ENDIAN(flags)) {
-	    copy_bits(bptr, 0, 1,
-		      erts_bin_buf,
-		      erts_bin_offset, 1, num_bits);
+	    erts_copy_bits(bptr, 0, 1,
+			   erts_bin_buf,
+			   erts_bin_offset, 1, num_bits);
 	} else {
-	    copy_bits(bptr+NBYTES(num_bits)-1, 0, -1,
-		      erts_bin_buf, erts_bin_offset, 1,
-		      num_bits);
+	    erts_copy_bits(bptr+NBYTES(num_bits)-1, 0, -1,
+			   erts_bin_buf, erts_bin_offset, 1,
+			   num_bits);
 	}
     }
     erts_bin_offset += num_bits;
@@ -1384,7 +1397,7 @@ erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
 {
     need_bin_buf(ERL_BITS_ARGS_1(num_bytes + NBYTES(erts_bin_offset)));
     if (BIT_OFFSET(erts_bin_offset) != 0) {
-	copy_bits(iptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, num_bytes*8);
+	erts_copy_bits(iptr, 0, 1, erts_bin_buf, erts_bin_offset, 1, num_bytes*8);
     } else {
 	sys_memcpy(erts_bin_buf+BYTE_OFFSET(erts_bin_offset), iptr, num_bytes);
     }
@@ -1392,20 +1405,103 @@ erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
 }
 #endif
 
+static byte
+get_bit(byte b, size_t offs) 
+{
+    return (b >> (7-offs)) & 1;
+}
+
+int
+erts_cmp_bits(byte* a_ptr, size_t a_offs, byte* b_ptr, size_t b_offs, size_t size) 
+{
+    byte a;
+    byte b;
+    byte a_bit;
+    byte b_bit;
+    Uint lshift;
+    Uint rshift;
+    int cmp;
+    
+    if (((a_offs | b_offs | size) & 7) == 0) {
+	int byte_size = size >> 3;
+	return sys_memcmp(a_ptr, b_ptr, byte_size);
+    }
+
+    /* Compare bit by bit until a_ptr is aligned on byte boundary */
+    a = *a_ptr++;
+    b = *b_ptr++;
+    while (size > 0) {
+	a_bit = get_bit(a, a_offs);
+	b_bit = get_bit(b, b_offs);
+	if ((cmp = (a_bit-b_bit)) != 0) {
+	    return cmp;
+	}
+	size--;
+	b_offs++;
+	if (b_offs == 8) {
+	    b_offs = 0;
+	    b = *b_ptr++;
+	}
+	a_offs++;
+	if (a_offs == 8) {
+	    a_offs = 0;
+	    a = *a_ptr++;
+	    break;
+	}
+    }
+
+    /* Compare byte by byte as long as at least 8 bits remain */
+    lshift = b_offs;
+    rshift = 8 - lshift;
+    while (size >= 8) {
+	byte b_cmp = (b << lshift);
+	b = *b_ptr++;
+	b_cmp |= b >> rshift;
+	if ((cmp = (a - b_cmp)) != 0) {
+	    return cmp;
+	}
+	a = *a_ptr++;
+	size -= 8;
+    }
+
+    /* Compare the remaining bits bit by bit */
+    while (size > 0) {
+	a_bit = get_bit(a, a_offs);
+	b_bit = get_bit(b, b_offs);
+	if ((cmp = (a_bit-b_bit)) != 0) {
+	    return cmp;
+	}
+	a_offs++;
+	if (a_offs == 8) {
+	    a_offs = 0;
+	    a = *a_ptr++;
+	}
+	b_offs++;
+	if (b_offs == 8) {
+	    b_offs = 0;
+	    b = *b_ptr++;
+	}
+	size--;
+    }
+
+    return 0;
+}
+
 /*
  * The basic bit copy operation. Copies n bits from the source buffer to
  * the destination buffer. Depending on the directions, it can reverse the
  * copied bits.
  */
 
-static void 
-copy_bits(Uint8* src,		/* Base pointer to source. */
-	  size_t soffs,		/* Bit offset for source relative to src. */
-	  int sdir,		/* Direction: 1 (forward) or -1 (backward). */
-	  Uint8* dst,		/* Base pointer to destination. */
-	  size_t doffs,		/* Bit offset for destination relative to dst. */
-	  int ddir,		/* Direction: 1 (forward) or -1 (backward). */
-	  size_t n)		/* Number of bits to copy. */
+
+void 
+erts_copy_bits(byte* src,	/* Base pointer to source. */
+	       size_t soffs,	/* Bit offset for source relative to src. */
+	       int sdir,	/* Direction: 1 (forward) or -1 (backward). */
+	       byte* dst,	/* Base pointer to destination. */
+	       size_t doffs,	/* Bit offset for destination relative to dst. */
+	       int ddir,	/* Direction: 1 (forward) or -1 (backward). */
+	       size_t n)	/* Number of bits to copy. */
 {
     Uint lmask;
     Uint rmask;

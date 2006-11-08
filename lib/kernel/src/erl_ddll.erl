@@ -22,299 +22,94 @@
 
 -module(erl_ddll).
 
--behaviour(gen_server).
-
--export([load_driver/2,unload_driver/1,loaded_drivers/0, format_error/1]).
--export([start/0, start_link/0, stop/0]).
-
-%% Internal exports, call-back functions.
--export([init/1,handle_call/3,handle_cast/2,handle_info/2,
-	 terminate/2,code_change/3]).
-
-%%% --------------------------------------------------------
-%%% Interface Functions. 
-%%% --------------------------------------------------------
+-export([load_driver/2, load/2, 
+	 unload_driver/1, unload/1, force_unload/1,
+	 format_error/1,info/1,info/0, start/0, stop/0]).
 
 start() ->
-    gen_server:start({local,ddll_server}, erl_ddll, [], []).
-
-start_link() ->
-    gen_server:start_link({local,ddll_server}, erl_ddll, [], []).
-
-load_driver(Path, Driver) when is_atom(Path) ->
-    load_driver(atom_to_list(Path), Driver);
-load_driver(Path, Driver) when is_atom(Driver) ->
-    load_driver(Path, atom_to_list(Driver));
-load_driver(Path, Driver) when is_list(Path), is_list(Driver) ->
-    FullName = filename:join(Path, Driver),
-    req({load_driver, FullName, Driver}).
-
-unload_driver(Path) when is_atom(Path) ->
-    unload_driver(atom_to_list(Path));
-unload_driver(Path) when is_list(Path) ->
-    req({unload_driver, Path}).
+    {error,{already_started,undefined}}.
 
 stop() ->
-    %% No-op since this process is never supposed to be stopped.
-    %% This function is kept for backwards compatibility.
     ok.
 
-loaded_drivers() ->
-    req(loaded_drivers).
+load_driver(Path, Driver) ->
+    do_load_driver(Path, Driver, [{driver_options,[kill_ports]}]).
 
-format_error(already_loaded) -> "Driver already loaded";
-format_error({open_error, Message}) -> "Open failed: " ++ Message;
-format_error({close_error, Message}) -> "Close failed: " ++ Message;
-format_error(no_driver_init) -> "No driver_init() function";
-format_error(driver_init_failed) -> "Function driver_init() failed";
-format_error(bad_driver_name) -> "Driver name doesn't match filename";
-format_error(linked_in_driver) -> "Cannot unload linked-in driver";
-format_error(driver_in_use) -> "Driver in use";
-format_error(finish_failed) -> "Finish function failed";
-format_error(not_loaded) -> "Driver not loaded";
-format_error(not_loaded_by_this_process) -> "Driver not loaded by this process";
-format_error(_) -> "Unknown error".
+load(Path, Driver) ->
+    do_load_driver(Path, Driver, []).
 
-
-%%% --------------------------------------------------------
-%%% Miscellanous functions.
-%%% --------------------------------------------------------
-
-%% Defines for ddll_drv.
-
--define(LOAD_DRIVER,$l).
--define(UNLOAD_DRIVER,$u).
--define(GET_DRIVERS,$g).
-
-init([]) ->
-    process_flag(trap_exit, true),
-    Port = open_port({spawn, ddll}, []),
-    {ok, {Port, []}}.
-
-req(Req) ->
-    gen_server:call(ddll_server, Req, infinity).
-
-
-%%% --------------------------------------------------------
-%%% The call-back functions.
-%%% --------------------------------------------------------
-
-handle_call({load_driver, Filename, Driver}, {From, _}, Data) ->
-    {Result, NewData} = load_command(Filename, Driver, From, Data),
-    {reply, Result, NewData};
-
-handle_call({unload_driver, Driver}, {From, _}, Data) ->
-    {Result, NewData} = unload_command(Driver, From, Data),
-    {reply, Result, NewData};
-
-handle_call(loaded_drivers, _From, {Port, Drivers}) ->
-    {reply, loaded_drivers(Port), {Port, Drivers}}.
-
-handle_cast(_, Data) ->
-    {noreply, Data}.
-
-handle_info({'EXIT', Port, Reason}, {Port, Drivers}) ->
-    {stop, {port_died, Reason}, {Port, Drivers}};
-handle_info({'EXIT', Pid, _Reason}, {Port, Drivers}) ->
-    NewDrivers = unload_drivers(Drivers, Pid, Port, []),
-    {noreply, {Port, NewDrivers}};
-handle_info(Other, Data) ->
-    error_logger:info_msg(?MODULE_STRING ++ " received:~n"
-			  "   ~p~n", [Other]),
-    {noreply, Data}.
-
-terminate(_Reason, {Port, Drivers}) ->
-    unload_all_drivers(Drivers, Port),
-    port_close(Port).
-
-code_change(_OldVsn, State, _Extra) ->
-    %% I doubt that changing the code for this module will work,
-    %% but at least we avoid a compilation warning.
-    {ok,State}.
-
-
-%%% --------------------------------------------------------
-%%% Implementation of server commands.
-%%% --------------------------------------------------------
-
-%% Loads a driver, or increments the reference count for the driver.
-
-load_command(Filename, Driver, From, {Port, Drivers}) ->
-    DriverAtom = list_to_atom(Driver),
-    case increment_count(Drivers, From, DriverAtom, []) of
-	{ok, NewDrivers} ->
-	    {ok, {Port, NewDrivers}};
-	not_loaded ->
-	    case load_driver(Port, Filename, Driver) of
-		ok ->
-		    link(From),
-		    {ok, {Port, [{DriverAtom, [{From, 1}]}|Drivers]}};
-		Other ->
-		    {Other, {Port, Drivers}}
+do_load_driver(Path, Driver, DriverFlags) ->
+    case erl_ddll:try_load(Path, Driver,[{monitor,pending}]++DriverFlags) of
+	{error, inconsistent} ->
+	    {error,bad_driver_name}; % BC 
+	{error, What} ->
+	    {error,What};
+	{ok, already_loaded} ->
+	    ok;
+	{ok,loaded} ->
+	    ok;
+	{ok, pending_driver, Ref} ->
+	    receive
+		{'DOWN', Ref, driver, Driver, load_cancelled} ->
+		    {error, load_cancelled};
+		{'UP', Ref, driver, Driver, permanent} ->
+		    {error, permanent}; 
+		{'DOWN', Ref, driver, Driver, {load_failure, Failure}} ->
+		    {error, Failure};
+		{'UP', Ref, driver, Driver, loaded} ->
+		    ok
 	    end
     end.
 
-increment_count([{Driver, Processes}|Rest], From, Driver, Result) ->
-    NewProcesses = increment_process_count(Processes, From, []),
-    {ok, Result ++ [{Driver, NewProcesses}|Rest]};
-increment_count([Drv|Rest], From, Driver, Result) ->
-    increment_count(Rest, From, Driver, [Drv|Result]);
-increment_count([], _From, _Driver, _Result) ->
-    not_loaded.
+do_unload_driver(Driver,Flags) ->
+   case erl_ddll:try_unload(Driver,[{monitor,pending_driver}]++Flags) of
+       {error,What} ->
+	   {error,What};
+       {ok, pending_process} ->
+	   ok;
+       {ok, unloaded} ->
+	   ok;
+       {ok, pending_driver, Ref} ->
+	   receive
+	       {'UP', Ref, driver, Driver, permanent} ->
+		   {error, permanent}; 
+	       {'DOWN', Ref, driver, Driver, unloaded} ->
+		   ok
+	   end
+   end.
 
-increment_process_count([{From, Count}|Rest], From, Result) ->
-    Result ++ [{From, Count+1}|Rest];
-increment_process_count([Process|Rest], From, _Result) ->
-    increment_process_count(Rest, From, [Process|Rest]);
-increment_process_count([], From, Result) ->
-    [{From, 1}|Result].
+unload_driver(Driver) ->
+    do_unload_driver(Driver,[kill_ports]).
+    %do_unload_driver(Driver,[]).			    
+unload(Driver) ->
+    do_unload_driver(Driver,[]).
 
-%% Decrements the reference count for Driver in process From,
-%% and unloads the driver if this was the last reference.
-
-unload_command(Driver, From, {Port, Drivers}) ->
-    DriverAtom = list_to_atom(Driver),
-    case decrement_count(Drivers, From, DriverAtom, []) of
-	{ok, NewDrivers} ->
-	    {ok, {Port, NewDrivers}};
-	{unload, NewDrivers} ->
-	    {unload_driver(Port, Driver), {Port, NewDrivers}};
-	Error0 ->
-	    Error = transform_static_driver_error(Error0, Driver, Port),
-	    {Error, {Port, Drivers}}
+force_unload(Driver) ->
+    do_unload_driver(Driver,[kill_ports]).
+			    
+format_error(Code) ->
+    case Code of
+	% This is the only error code returned only from erlang code...
+	% 'permanent' has a translation in the emulator, even though the erlang code uses it to...
+	load_cancelled ->
+	    "Loading was cancelled from other process";
+	_ ->
+	    erl_ddll:format_error_int(Code)
     end.
+    
+info(Driver) ->
+    [{name, Driver},
+     {processes, erl_ddll:info(Driver,processes)},
+     {driver_options, erl_ddll:info(Driver,driver_options)},
+     {port_count, erl_ddll:info(Driver,port_count)},
+     {linked_in_driver, erl_ddll:info(Driver,linked_in_driver)},
+     {permanent, erl_ddll:info(Driver,permanent)},
+     {awaiting_load,  erl_ddll:info(Driver,awaiting_load)},
+     {awaiting_unload, erl_ddll:info(Driver,awaiting_unload)}].
 
-%% If the error was "not_loaded" but the driver is in the list of
-%% all drivers, it must be a statically linked driver, and we transform
-%% the error message to "linked_in_driver". (If loaded_drivers/0 fails,
-%% we get a badmatch.)
-
-transform_static_driver_error({error, not_loaded}, Driver, Port) ->
-    {ok, All} = loaded_drivers(Port),
-    case lists:member(Driver, All) of
-	true ->
-	    %% Statically linked-in driver, or not loaded through
-	    %% this module.
-	    {error, linked_in_driver};
-	false ->
-	    {error, not_loaded}
-    end;
-transform_static_driver_error(Error, _, _) ->
-    Error.
-
-decrement_count([{Driver, Processes}|Rest], From, Driver, Result) ->
-    case decrement_process_count(Processes, From, []) of
-	[] ->
-	    {unload, Result ++ Rest};
-	{error, Error} ->
-	    {error, Error};
-	NewProcesses ->
-	    {ok, Result ++ [{Driver, NewProcesses}|Rest]}
-    end;
-decrement_count([Drv|Rest], From, Driver, Result) ->
-    decrement_count(Rest, From, Driver, [Drv|Result]);
-decrement_count([], _From, _Driver, _Result) ->
-    {error, not_loaded}.
-
-decrement_process_count([{From, 1}|Rest], From, Result) ->
-    unlink(From),
-    Result ++ Rest;
-decrement_process_count([{From, Count}|Rest], From, Result) ->
-    Result ++ [{From, Count-1}|Rest];
-decrement_process_count([Process|Rest], From, Result) ->
-    decrement_process_count(Rest, From, [Process|Result]);
-decrement_process_count([], _From, _Result) ->
-    {error, not_loaded_by_this_process}.
-
-%% Unloads all drivers owned by Pid.
-
-unload_drivers([{Driver, Processes}|Rest], Pid, Port, Result) ->
-    case unload_process(Processes, Pid, []) of
-	[] ->
-	    %% XXX There is a problem if this unload fails.
-	    case unload_driver(Port, atom_to_list(Driver)) of
-		ok -> ok;
-		Error ->
-		    error_logger:error_msg(
-		      ?MODULE_STRING ++ " unload_driver(~p, ~p)~n"
-		      "-> ~p~n"
-		      "From ~p~n",
-		      [Port,Driver,Error,Pid])
-	    end,
-	    unload_drivers(Rest, Pid, Port, Result);
-	NewProcesses ->
-	    unload_drivers(Rest, Pid, Port, [{Driver, NewProcesses}|Result])
-    end;
-unload_drivers([], _Pid, _Port, Result) ->
-    Result.
-
-unload_process([{Pid, _}|Rest], Pid, Result) ->
-    Result ++ Rest;
-unload_process([P|Rest], Pid, Result) ->
-    unload_process(Rest, Pid, [P|Result]);
-unload_process([], _Pid, Result) ->
-    Result.
-
-%% Unloads all drivers (called when the server terminates).
-
-unload_all_drivers([{Driver, _}|Rest], Port) ->
-    case unload_driver(Port, atom_to_list(Driver)) of
-	ok -> ok;
-	Error ->
-	    error_logger:error_msg(
-	      ?MODULE_STRING ++ " unload_driver(~p, ~p)~n"
-	      "-> ~p~n",
-	      [Port,Driver,Error])
-    end,
-    unload_all_drivers(Rest, Port);
-unload_all_drivers([], _) ->
-    ok.
-
-
-%%% --------------------------------------------------------
-%%% Talk to the linked in driver
-%%% --------------------------------------------------------
-
-load_driver(Port, FullName, Driver) ->
-    command(Port, [?LOAD_DRIVER, Driver, 0, FullName, 0]).
-
-unload_driver(Port, Driver) ->
-    command(Port, [?UNLOAD_DRIVER, Driver, 0]).
-
-loaded_drivers(Port) ->
-    loaded_drivers(Port, command(Port, [?GET_DRIVERS]), []).
-
-loaded_drivers(Port, {list_item, Item}, Result) ->
-    loaded_drivers(Port, get_response(Port), [Item|Result]);
-loaded_drivers(_Port, ok, Result) ->
-    {ok, lists:reverse(Result)};
-loaded_drivers(_Port, Status, []) ->
-    Status.
-
-command(Port, Command) ->
-    port_command(Port, Command),
-    get_response(Port).
-
-get_response(Port) ->
-    receive
-	{Port, {data, [Status|Rest]}} ->
-	    get_response(Status, Rest);
-	{'EXIT', Port, Reason} ->
-	    exit({'ddll_drv port died', Reason})
-    end.
-
-get_response($o, []) ->
-    ok;
-get_response($o, List) ->
-    {ok, List};
-get_response($e, Atom) ->
-    {error, list_to_atom(Atom)};
-get_response($E, Error) ->
-    get_error(Error, []);
-get_response($i, Item) ->
-    {list_item, Item}.
-
-get_error([0|Message], Atom) ->
-    {error, {list_to_atom(lists:reverse(Atom)), Message}};
-get_error([C|Rest], Atom) ->
-    get_error(Rest, [C|Atom]).
+info() ->
+    {ok,DriverList} = erl_ddll:loaded_drivers(),
+    [{X,Y} || X <- DriverList,
+	       Y <- [catch info(X)],
+	       is_list(Y)]. % The driver might have been unloaded between getting the list
+                            % and calling info...

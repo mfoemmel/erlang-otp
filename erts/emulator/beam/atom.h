@@ -36,7 +36,17 @@ typedef struct atom {
     byte* name;      /* name of atom */
 } Atom;
 
-Atom *atom_tab(int i);
+extern IndexTable erts_atom_table;
+
+ERTS_GLB_INLINE Atom* atom_tab(Uint i);
+
+#if ERTS_GLB_INLINE_INCL_FUNC_DEF
+ERTS_GLB_INLINE Atom*
+atom_tab(Uint i)
+{
+    return (Atom *) erts_index_lookup(&erts_atom_table, i);
+}
+#endif
 int atom_table_size(void);	/* number of elements */
 int atom_table_sz(void);	/* table size in bytes, excluding stored objects */
 

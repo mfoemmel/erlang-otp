@@ -46,14 +46,18 @@ print1(Verbosity,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
     A = process_args(Arguments, []),
-    (catch io:format("** SNMP ~s ~s: " ++ Format ++ "~n",[S,V]++A)).
+    (catch io:format("*** [~s] SNMP ~s ~s *** ~n" 
+		     "   " ++ Format ++ "~n",
+		     [timestamp(), S, V | A])).
 
 print1(false,_Module,_Format,_Arguments) -> ok;
 print1(Verbosity,Module,Format,Arguments) ->
     V = image_of_verbosity(Verbosity),
     S = image_of_sname(get(sname)),
     A = process_args(Arguments, []),
-    (catch io:format("** SNMP ~s ~s ~s: " ++ Format ++ "~n",[S,Module,V]++A)).
+    (catch io:format("*** [~s] SNMP ~s ~s ~s *** ~n" 
+		     "   " ++ Format ++ "~n",
+		     [timestamp(), S, Module, V | A])).
 
 
 print2(false,_Format,_Arguments) -> ok;
@@ -61,6 +65,18 @@ print2(_Verbosity,Format,Arguments) ->
     A = process_args(Arguments, []),
     (catch io:format(Format ++ "~n",A)).
 
+
+timestamp() ->
+    format_timestamp(now()).
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
 
 process_args([], Acc) ->
     lists:reverse(Acc);

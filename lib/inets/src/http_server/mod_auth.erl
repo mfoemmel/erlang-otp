@@ -142,17 +142,15 @@ require(Info, Directory, DirectoryData) ->
 		undefined ->
 		    authorization_required(DirectoryData);
 		%% Check credentials!
-		"Basic" ++ EncodedString ->
-		    DecodedString = http_base_64:decode(EncodedString),
-		    case a_valid_user(Info, DecodedString, 
-				      ValidUsers, ValidGroups, 
-				      Directory, DirectoryData) of
-			{yes, User} ->
-			    {authorized, User};
-			{no, _Reason} ->
-			    authorization_required(DirectoryData);
-			{status, {StatusCode,PhraseArgs,Reason}} ->
-			    {status,{StatusCode,PhraseArgs,Reason}}
+		"Basic" ++ EncodedString = Credentials ->
+		    case (catch http_base_64:decode(EncodedString)) of
+			{'EXIT',{function_clause, _}} ->
+			    {status, {401, none, ?NICE("Bad credentials "++
+						       Credentials)}};
+			DecodedString ->
+			   validate_user(Info, Directory, DirectoryData,
+					 ValidUsers, ValidGroups, 
+					 DecodedString)
 		    end;
 		%% Bad credentials!
 		BadCredentials ->
@@ -169,6 +167,20 @@ authorization_required(DirectoryData) ->
 	    {authorization_required, Realm}
     end.
 
+
+validate_user(Info, Directory, DirectoryData, ValidUsers, 
+	      ValidGroups, DecodedString) ->
+    case a_valid_user(Info, DecodedString, 
+		      ValidUsers, ValidGroups, 
+		      Directory, DirectoryData) of
+	{yes, User} ->
+	    {authorized, User};
+	{no, _Reason} ->
+	    authorization_required(DirectoryData);
+	{status, {StatusCode,PhraseArgs,Reason}} ->
+	    {status,{StatusCode,PhraseArgs,Reason}}
+    end.
+
 a_valid_user(Info,DecodedString,ValidUsers,ValidGroups,Dir,DirData) ->
     case httpd_util:split(DecodedString,":",2) of
 	{ok,[SupposedUser, Password]} ->
@@ -176,7 +188,8 @@ a_valid_user(Info,DecodedString,ValidUsers,ValidGroups,Dir,DirData) ->
 		true ->
 		    check_password(SupposedUser, Password, Dir, DirData);
 		false ->
-		    case group_accepted(Info,SupposedUser,ValidGroups,Dir,DirData) of
+		    case group_accepted(Info,SupposedUser,
+					ValidGroups,Dir,DirData) of
 			true ->
 			    check_password(SupposedUser,Password,Dir,DirData);
 			false ->
@@ -448,7 +461,8 @@ directory_config_check(Directory, DirData) ->
 	    check_filename_present(Directory,auth_user_file,DirData),
 	    check_filename_present(Directory,auth_group_file,DirData);
 	undefined ->
-	    throw({error,?NICE("Server configuration missed AuthDBType directive")});
+	    throw({error,
+		   ?NICE("Server configuration missed AuthDBType directive")});
 	_ ->
 	    ok
     end.
@@ -457,7 +471,8 @@ check_filename_present(_Dir,AuthFile,DirData) ->
 	Name when list(Name) ->
 	    ok;
 	_ ->
-	    throw({error,?NICE("Server configuration missed "++directive(AuthFile)++" directive")})
+	    throw({error,?NICE("Server configuration missed "++
+			       directive(AuthFile)++" directive")})
     end.
 
 directive(auth_user_file) ->

@@ -48,8 +48,10 @@ reverse_postorder(CFG) ->
 non_alloc(CFG) ->
   non_alloc(hipe_arm_registers:nr_args(), hipe_arm_cfg:params(CFG)).
 
-non_alloc(N, [_|Rest]) when N > 0 -> non_alloc(N-1, Rest);
-non_alloc(N, Params) when is_integer(N), N >= 0 -> Params.
+%% same as hipe_arm_frame:fix_formals/2
+non_alloc(0, Rest) -> Rest;
+non_alloc(N, [_|Rest]) -> non_alloc(N-1, Rest);
+non_alloc(_, []) -> [].
 
 %% Liveness stuff
 

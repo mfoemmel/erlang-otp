@@ -144,16 +144,10 @@ fun2ms(ShellFun) when is_function(ShellFun) ->
 foldl(F, Accu, T) ->
     ets:safe_fixtable(T, true),
     First = ets:first(T),
-    Ref = make_ref(),
-    R = (catch {Ref, do_foldl(F, Accu, First, T)}),
-    ets:safe_fixtable(T, false),
-    case R of
-	{Ref, Result} ->
-	    Result;
-	{'EXIT', Reason} ->
-	    erlang:fault(Reason);
-	Thrown ->
-	    throw(Thrown)
+    try
+        do_foldl(F, Accu, First, T)
+    after
+        ets:safe_fixtable(T, false)
     end.
 
 do_foldl(F, Accu0, Key, T) ->
@@ -169,16 +163,10 @@ do_foldl(F, Accu0, Key, T) ->
 foldr(F, Accu, T) ->
     ets:safe_fixtable(T, true),
     Last = ets:last(T),
-    Ref = make_ref(),
-    R = (catch {Ref, do_foldr(F, Accu, Last, T)}),
-    ets:safe_fixtable(T, false),
-    case R of
-	{Ref, Result} ->
-	    Result;
-	{'EXIT', Reason} ->
-	    erlang:fault(Reason);
-	Thrown ->
-	    throw(Thrown)
+    try
+        do_foldr(F, Accu, Last, T)
+    after 
+        ets:safe_fixtable(T, false)
     end.
 
 do_foldr(F, Accu0, Key, T) ->
@@ -495,6 +483,8 @@ table_info(Tab, keypos) ->
     info(Tab, keypos);
 table_info(Tab, is_unique_objects) ->
     info(Tab, type) =/= duplicate_bag;
+table_info(Tab, is_sorted_key) ->
+    info(Tab, type) =:= ordered_set;
 table_info(_Tab, _) ->
     undefined.
 

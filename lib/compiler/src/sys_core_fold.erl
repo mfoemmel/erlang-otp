@@ -236,13 +236,13 @@ expr(#c_case{}=Case0, Sub) ->
 	#c_case{arg=Arg0,clauses=Cs0}=Case ->
 	    Arg1 = body(Arg0, Sub),
 	    {Arg2,Cs1} = case_opt(Arg1, Cs0),
-	    Cs2 = clauses(Arg2, Cs1, Sub),
+	    Cs2 = clauses(Arg2, Cs1, Case, Sub),
 	    eval_case(Case#c_case{arg=Arg2,clauses=Cs2}, Sub);
 	Other ->
 	    expr(Other, Sub)
     end;
 expr(#c_receive{clauses=Cs0,timeout=T0,action=A0}=Recv, Sub) ->
-    Cs1 = clauses(#c_var{name='_'}, Cs0, Sub),	%This is all we know
+    Cs1 = clauses(#c_var{name='_'}, Cs0, Recv, Sub),	%This is all we know
     T1 = expr(T0, Sub),
     A1 = body(A0, Sub),
     Recv#c_receive{clauses=Cs1,timeout=T1,action=A1};
@@ -1029,11 +1029,11 @@ v_is_value(Var, Sub) ->
 	    (_) -> false
 	end, Sub).
 
-%% clauses(E, [Clause], Sub) -> [Clause].
+%% clauses(E, [Clause], TopLevel, Sub) -> [Clause].
 %%  Trim the clauses by removing all clauses AFTER the first one which
 %%  is guaranteed to match.  Also remove all trivially false clauses.
 
-clauses(E, Cs0, Sub) ->
+clauses(E, Cs0, TopLevel, Sub) ->
     Cs = clauses_1(E, Cs0, Sub),
 
     %% Here we want to warn if no clauses whatsoever will ever
@@ -1044,7 +1044,7 @@ clauses(E, Cs0, Sub) ->
 	    %% The original list of clauses did contain at least one
 	    %% user-specified clause, but none of them will match.
 	    %% That is probably a mistake.
-	    add_warning(E, no_clause_match);
+	    add_warning(TopLevel, no_clause_match);
 	false ->
 	    %% Either there were user-specified clauses left in
 	    %% the transformed clauses, or else none of the original

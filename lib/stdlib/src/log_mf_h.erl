@@ -55,7 +55,7 @@ init(Dir, MaxB, MaxF, Pred) -> {Dir, MaxB, MaxF, Pred}.
 %%-----------------------------------------------------------------
 %% Call-back functions from gen_event
 %%-----------------------------------------------------------------
-init({Dir, MaxB, MaxF, Pred}) when MaxF > 0, MaxF < 256 -> 
+init({Dir, MaxB, MaxF, Pred}) when is_integer(MaxF), MaxF > 0, MaxF < 256 -> 
     First = 
 	case read_index_file(Dir) of
 	    {ok, LastWritten} -> inc(LastWritten, MaxF);
@@ -110,6 +110,7 @@ terminate(_, State) ->
 
 handle_call(null, State) ->
     {ok, null, State}.
+
 code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 

@@ -101,7 +101,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                recdef_top=false,                %true in record initialisation
                                                 %outside any fun or lc
                xqlc=false,                      %true if qlc.hrl included
-               called=dict:new(),               %Called functions
+               called=[],			%Called functions
                usage = #usage{}
               }).
 
@@ -336,6 +336,12 @@ start(File, Opts) ->
 	],
     Enabled1 = [Category || {Category,true} <- Enabled0],
     Enabled = ordsets:from_list(Enabled1),
+    Calls = case ordsets:is_element(unused_function, Enabled) of
+		true ->
+		    dict:from_list([{{module_info,1},pseudolocals()}]);
+		false ->
+		    undefined
+	    end,
     #lint{state=start,
           exports=gb_sets:from_list([{module_info,0},
                                      {module_info,1}]),
@@ -343,10 +349,8 @@ start(File, Opts) ->
           compile=Opts,
           %% Internal pseudo-functions must appear as defined/reached.
           defined=gb_sets:from_list(pseudolocals()),
-          called = dict:from_list([{F, [0]} || 
-                                      F <- pseudolocals()]),
-          usage = #usage{calls=dict:from_list([{{module_info,1}, 
-                                                pseudolocals()}])},
+	  called = [{F,0} || F <- pseudolocals()],
+          usage = #usage{calls=Calls},
           warn_format=value_option(warn_format, 1, warn_format, 1,
                                    nowarn_format, 0, Opts),
 	  enabled_warnings = Enabled,
@@ -719,8 +723,8 @@ check_unused_functions(Forms, St0) ->
     St1 = check_option_functions(Forms, nowarn_unused_function,
                                  bad_nowarn_unused_function, St0),
     Opts = St1#lint.compile,
-    case member(export_all, Opts) 
-         or not is_warn_enabled(unused_function, St1) of
+    case member(export_all, Opts) orelse
+	not is_warn_enabled(unused_function, St1) of
         true -> 
             St1;
         false ->
@@ -758,14 +762,13 @@ reached_functions([], [], _Ref, Reached) -> gb_sets:to_list(Reached).
 
 %% check_undefined_functions(State0) -> State
 
-check_undefined_functions(St0) ->
-    Undef = foldl(fun (NA, Called) -> dict:erase(NA, Called) end,
-                  St0#lint.called, gb_sets:to_list(St0#lint.defined)),
-    dict:fold(fun (NA, Ls, St) ->
-		      foldl(fun (L, Sta) ->
-				    add_error(L, {undefined_function,NA}, Sta)
-			    end, St, Ls)
-	      end, St0, Undef).
+check_undefined_functions(#lint{called=Called0,defined=Def0}=St0) ->
+    Called = sofs:relation(Called0, [{func,location}]),
+    Def = sofs:from_external(gb_sets:to_list(Def0), [func]),
+    Undef = sofs:to_external(sofs:drestriction(Called, Def)),
+    foldl(fun ({NA,L}, St) ->
+		  add_error(L, {undefined_function,NA}, St)
+	  end, St0, Undef).
 
 %% check_bif_clashes(Forms, State0) -> State
 
@@ -832,7 +835,7 @@ export(Line, Es, #lint{exports=Es0}=St0) ->
                                    St2
                            end,
                       {gb_sets:add_element(NA, E),
-                       dict:append(NA, Line, C),
+                       [{NA,Line}|C],
                        St}
               end,
               {Es0,St0#lint.called,St0}, Es),
@@ -910,8 +913,11 @@ imported(F, A, St) ->
 call_function(Line, F, A, #lint{usage=Usage0,called=Cd,func=Func}=St) ->
     #usage{calls = Cs} = Usage0,
     NA = {F,A},
-    Usage = Usage0#usage{calls=dict:append(Func, NA, Cs)},
-    St#lint{called = dict:append(NA, Line, Cd), usage = Usage}.
+    Usage = case Cs of
+		undefined -> Usage0;
+		_ -> Usage0#usage{calls=dict:append(Func, NA, Cs)}
+	    end,
+    St#lint{called=[{NA,Line}|Cd],usage = Usage}.
 
 %% is_function_exported(Name, Arity, State) -> false|true.
 
@@ -1296,7 +1302,7 @@ elemtype_check(Line, float, _Size, St) ->
     add_warning(Line, {bad_bitsize,"float"}, St);
 elemtype_check(Line, binary, N, St) when N rem 8 =/= 0 ->
     add_warning(Line, {bad_bitsize,"binary"}, St);
-elemtype_check(_Line, _Type, _Size, St) ->  St.
+elemtype_check(_Line, _Type, Size, St) when is_integer(Size) -> St.
 
 %% add_bit_size(Line, ElementSize, BinSize, Build, State) -> {Size,State}.
 %%  Add bits to group size.
@@ -1535,6 +1541,7 @@ is_gexpr({op,_L,Op,A1,A2}, RDs) ->
         false -> false
     end;
 is_gexpr(_Other, _RDs) -> false.
+
 is_gexpr_op('andalso', 2) -> true;
 is_gexpr_op('orelse', 2) -> true;
 is_gexpr_op(Op, A) ->
@@ -2587,7 +2594,7 @@ is_format_function(io, fwrite) -> true;
 is_format_function(io, format) -> true;
 is_format_function(io_lib, fwrite) -> true;
 is_format_function(io_lib, format) -> true;
-is_format_function(_M, _F) -> false.
+is_format_function(M, F) when is_atom(M), is_atom(F) -> false.
 
 %% check_format_1([Arg]) -> ok | {warn,Level,Format,[Arg]}.
 

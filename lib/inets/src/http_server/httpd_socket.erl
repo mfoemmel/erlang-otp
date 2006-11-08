@@ -41,6 +41,7 @@ resolve() ->
    http_transport:resolve().
 
 close(SocketType, Socket) ->
+    close_sleep(SocketType, 1000),
     Res = 
 	case (catch http_transport:close(SocketType, Socket)) of
 	    ok ->                  ok;
@@ -51,3 +52,11 @@ close(SocketType, Socket) ->
 	end,
     Res.
 
+%% Workaround for ssl problem when ssl does not deliver the message
+%% sent prior to the close before the close signal.
+close_sleep({ssl, _}, Time) ->
+    sleep(Time);
+close_sleep(_, _) -> 
+    ok.
+
+sleep(T) -> receive after T -> ok end.

@@ -79,6 +79,7 @@ dump_process_info(int to, void *to_arg, Process *p)
 {
     Eterm* sp;
     ErlMessage* mp;
+    ErlFunThing* fptr;
     int yreg = -1;
 
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
@@ -114,6 +115,20 @@ dump_process_info(int to, void *to_arg, Process *p)
     }
 
     erts_print(to, to_arg, "=proc_heap:%T\n", p->id);
+
+#ifndef HYBRID /* FIND ME! */
+    /*
+     * We dump funs in the external format. Therefore, we must be sure
+     * sure that any part of the heap referenced by the funs's environments
+     * have not been destroyed. Dump the funs now.
+     */
+    for (fptr = MSO(p).funs; fptr != 0; fptr = fptr->next) {
+	erts_print(to, to_arg, ADDR_FMT ":", fptr);
+	dump_externally(to, to_arg, make_fun((Eterm)fptr));
+	erts_putc(to, to_arg, '\n');
+	* (Eterm *) fptr = OUR_NIL;
+    }
+#endif
 
     for (sp = p->stop; sp < STACK_START(p); sp++) {
 	Eterm term = *sp;
@@ -307,7 +322,7 @@ heap_dump(int to, void *to_arg, Eterm x)
 		    byte* p;
 
 		    erts_print(to, to_arg, "Yh%X:", size);
-		    GET_BINARY_BYTES(x, p);
+		    p = binary_bytes(x);
 		    for (i = 0; i < size; i++) {
 			erts_print(to, to_arg, "%02X", p[i]);
 		    }

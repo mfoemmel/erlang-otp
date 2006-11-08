@@ -43,6 +43,5 @@ void module_info(int, void *);
 Module *module_code(int);
 int module_code_size(void);
 int module_table_sz(void);
-int module_iter(int);
 
 #endif

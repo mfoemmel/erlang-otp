@@ -284,7 +284,7 @@ over_word([C|Cs], Stack, N) ->
 	true -> over_word(Cs, [C|Stack], N+1);
 	false -> {[C|Cs],Stack,N}
     end;
-over_word([], Stack, N) ->
+over_word([], Stack, N) when is_integer(N) ->
     {[],Stack,N}.
 
 over_non_word([C|Cs], Stack, N) ->

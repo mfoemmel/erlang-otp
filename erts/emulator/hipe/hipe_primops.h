@@ -56,12 +56,14 @@ PRIMOP_LIST(am_bs_put_string, &nbif_bs_put_string)
 PRIMOP_LIST(am_bs_allocate, &nbif_bs_allocate)
 PRIMOP_LIST(am_bs_put_big_integer, &nbif_bs_put_big_integer)
 PRIMOP_LIST(am_bs_put_small_float, &nbif_bs_put_small_float)
+PRIMOP_LIST(am_bs_put_bits, &nbif_bs_put_bits)
 
 PRIMOP_LIST(am_cmp_2, &nbif_cmp_2)
 PRIMOP_LIST(am_op_exact_eqeq_2, &nbif_eq_2)
 
 PRIMOP_LIST(am_hipe_apply, &nbif_apply)
 PRIMOP_LIST(am_find_na_or_make_stub, &nbif_find_na_or_make_stub)
+PRIMOP_LIST(am_nonclosure_address, &nbif_nonclosure_address)
 
 PRIMOP_LIST(am_conv_big_to_float, &nbif_conv_big_to_float)
 

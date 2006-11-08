@@ -135,7 +135,7 @@ write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->
     if
-	D == 1 -> "[...]";
+	D =:= 1 -> "[...]";
 	true ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
@@ -143,7 +143,7 @@ write(F, _D) when is_function(F) ->
     erlang:fun_to_list(F);
 write(T, D) when is_tuple(T) ->
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	true ->
 	    [${,
 	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
@@ -174,12 +174,12 @@ write_bin_tail([H|T], D, L) ->
 write_binary(B, D) ->
     L = size(B),
     if 
-        L == 0 ->
+        L =:= 0 ->
 	    "<<>>";
-        L == 1 ->
+        L =:= 1 ->
 	    [Byte] = binary_to_list(B),
             ["<<", integer_to_list(Byte), ">>"];
-        D == 1 ->
+        D =:= 1 ->
             "<<...>>";
         true ->
             [H|T] = bin_to_list_max(B, D),
@@ -199,7 +199,7 @@ write_atom(Atom) ->
     Chars = atom_to_list(Atom),
     case quote_atom(Atom, Chars) of
 	true ->
-	    write_string(Chars, $');
+	    write_string(Chars, $');   %'
 	false ->
 	    Chars
     end.
@@ -241,7 +241,7 @@ name_char(_) -> false.
 %%  Generate the list of characters needed to print a string.
 
 write_string(S) ->
-    write_string(S, $").
+    write_string(S, $").   %"
 
 write_string(S, Q) ->
     [Q|write_string1(S, Q)].
@@ -276,7 +276,7 @@ string_char(C, _, Tail) ->			%Other control characters.
 %%  Must special case SPACE, $\s, here.
 
 write_char($\s) -> "$\\s";			%Must special case this.
-write_char(C) when C >= $\000, C =< $\377 ->
+write_char(C) when is_integer(C), C >= $\000, C =< $\377 ->
     [$$|string_char(C, -1, [])].
 
 %% char_list(CharList)
@@ -284,7 +284,7 @@ write_char(C) when C >= $\000, C =< $\377 ->
 %%  Return true if CharList is a (possibly deep) list of characters, else
 %%  false.
 
-char_list([C|Cs]) when integer(C), C >= $\000, C =< $\377 ->
+char_list([C|Cs]) when is_integer(C), C >= $\000, C =< $\377 ->
     char_list(Cs);
 char_list([]) -> true;
 char_list(_) -> false.			%Everything else is false
@@ -292,9 +292,9 @@ char_list(_) -> false.			%Everything else is false
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
 
-deep_char_list([C|Cs], More) when list(C) ->
+deep_char_list([C|Cs], More) when is_list(C) ->
     deep_char_list(C, [Cs|More]);
-deep_char_list([C|Cs], More) when integer(C), C >= $\000, C =< $\377 ->
+deep_char_list([C|Cs], More) when is_integer(C), C >= $\000, C =< $\377 ->
     deep_char_list(Cs, More);
 deep_char_list([], [Cs|More]) ->
     deep_char_list(Cs, More);
@@ -306,9 +306,9 @@ deep_char_list(_, _More) ->			%Everything else is false
 %%  Return true if CharList is a list of printable characters, else
 %%  false.
 
-printable_list([C|Cs]) when integer(C), C >= $\040, C =< $\176 ->
+printable_list([C|Cs]) when is_integer(C), C >= $\040, C =< $\176 ->
     printable_list(Cs);
-printable_list([C|Cs]) when integer(C), C >= $\240, C =< $\377 ->
+printable_list([C|Cs]) when is_integer(C), C >= $\240, C =< $\377 ->
     printable_list(Cs);
 printable_list([$\n|Cs]) -> printable_list(Cs);
 printable_list([$\r|Cs]) -> printable_list(Cs);
@@ -335,7 +335,7 @@ nl() ->
 %%  Returns:
 %%      {stop,Result,RestData}
 %%      NewState
-collect_chars(start, Data, N) when binary(Data) ->
+collect_chars(start, Data, N) when is_binary(Data) ->
     Size = size(Data),
     if Size > N ->
 	    {B1,B2} = split_binary(Data, N),
@@ -345,7 +345,7 @@ collect_chars(start, Data, N) when binary(Data) ->
        true ->
 	    {stop,Data,eof}
     end;
-collect_chars(start,Data,N) when list(Data) ->
+collect_chars(start,Data,N) when is_list(Data) ->
     collect_chars_list([], N, Data);
 collect_chars(start, eof, _) ->
     {stop,eof,eof};
@@ -421,22 +421,22 @@ collect_line1([], Stack) ->
 %%	{stop,Result,RestData}
 %%	NewState
 
-collect_line(start, Data, _) when binary(Data) ->
+collect_line(start, Data, _) when is_binary(Data) ->
 %    erlang:display({?MODULE,?LINE,[start,Data]}),
     collect_line_bin([], Data, 0);
-collect_line(start, Data, _) when list(Data) ->
+collect_line(start, Data, _) when is_list(Data) ->
 %    erlang:display({?MODULE,?LINE,[start,Data]}),
     collect_line_list([], Data);
 collect_line(start, eof, _) ->
 %    erlang:display({?MODULE,?LINE,[start,eof]}),
     {stop,eof,eof};
-collect_line(Stack, Data, _) when binary(Data) ->
+collect_line(Stack, Data, _) when is_binary(Data) ->
 %    erlang:display({?MODULE,?LINE,[Stack,Data]}),
     collect_line_bin(Stack, Data, 0);
-collect_line(Stack, Data, _) when list(Data) ->
+collect_line(Stack, Data, _) when is_list(Data) ->
 %    erlang:display({?MODULE,?LINE,[Stack,Data]}),
     collect_line_list(Stack, Data);
-collect_line([B|_]=Stack, eof, _) when binary(B) ->
+collect_line([B|_]=Stack, eof, _) when is_binary(B) ->
 %    erlang:display({?MODULE,?LINE,[Stack,eof]}),
     {stop,binrev(Stack),eof};
 collect_line(Stack, eof, _) ->
@@ -451,7 +451,7 @@ collect_line_bin(Stack, B, N) when N < size(B) ->
 	<<B1:N/binary,$\r,$\n,B2/binary>> ->
 	    %% Base case for CRLF
 	    {stop,binrev(Stack, [B1,$\n]),B2};
-	<<_:N/binary,$\n,_/binary>> when Stack==[] ->
+	<<_:N/binary,$\n,_/binary>> when Stack =:= [] ->
 	    %% Optimization for NL, very common case
 	    {B1,B2} = split_binary(B, N+1),
 	    {stop,B1,B2};

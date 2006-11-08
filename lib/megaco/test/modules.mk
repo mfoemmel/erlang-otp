@@ -26,6 +26,7 @@ MODULES = \
 	megaco_mreq_test \
 	megaco_pending_limit_test \
 	megaco_sdp_test \
+	megaco_tc_controller \
 	megaco_tcp_test \
 	megaco_trans_test \
 	megaco_udp_test \

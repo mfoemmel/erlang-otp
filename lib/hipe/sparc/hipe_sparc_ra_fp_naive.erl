@@ -11,9 +11,9 @@
 %%  History  :	* 2000-08-21 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: richardc $
-%%              $Date: 2004/01/19 20:07:42 $
-%%              $Revision: 1.5 $
+%%              $Author: mikpe $
+%%              $Date: 2006/09/14 13:33:29 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -36,7 +36,7 @@ fp_alloc(Cfg) ->
   Map = hipe_vectors:new(Last+1,undef),
   Code = hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(Cfg)),
   {NewMap, _SpillPos} = traverse(Code,Map),
-  [{T-1,Pos} || {T,Pos} <- hipe_vectors:list(NewMap),
+  [{T,Pos} || {T,Pos} <- hipe_vectors:list(NewMap),
 		Pos =/= undef].
 
 traverse(Code, Map) ->
@@ -51,7 +51,7 @@ map(Temps, Map, Pos) ->
    
 map_temp(T,{Map,Pos}) ->
   RealTemp = hipe_sparc:fpreg_nr(T),
-  Temp = RealTemp + 1,
+  Temp = RealTemp,
   case hipe_vectors:get(Map,Temp) of
     undef ->
       {hipe_vectors:set(Map, Temp, {fp_reg,Pos}), Pos+2};

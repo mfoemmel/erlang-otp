@@ -176,18 +176,30 @@ send_message(ConnData, Bin) ->
     case (catch SendMod:send_message(SendHandle, Bin)) of
         ok ->
             ?SIM({ok, Bin}, send_message);
+        {cancel, Reason} ->
+            ?report_trace(ConnData, "<CANCEL> send_message callback",
+			  [{bytes, Bin}, {cancel, Reason}]),
+            {error, {send_message_cancelled, Reason}};
         {error, Reason} ->
 	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
-	    error_msg("error sending message on ~w: ~w", [SendHandle, Reason]),
+	    error_msg("failed (error) sending message (~p):"
+		      "~n~w", [SendHandle, Reason]),
             {error, {send_message_failed, Reason}};
+        {'EXIT', Reason} = Error ->
+	    incNumErrors(ConnData#conn_data.conn_handle),
+            ?report_important(ConnData, "<ERROR> send_message callback",
+                              [{bytes, Bin}, {exit, Reason}]),
+	    error_msg("failed (exit) sending message (~p):"
+		      "~n~w", [SendHandle, Reason]),
+            {error, {send_message_failed, Error}};
         Reason ->
 	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
-	    error_msg("failed sending message on ~w: ~w", 
-		      [SendHandle, Reason]),
+	    error_msg("failed sending message on (~p): "
+		      "~n~w", [SendHandle, Reason]),
             {error, {send_message_failed, Reason}}
     end.
 
@@ -201,8 +213,9 @@ send_message(ConnData, Bin) ->
 %% Func: error_msg/2
 %% Description: Send an error message
 %%-----------------------------------------------------------------
+
 error_msg(F, A) ->
-    (catch error_logger:error_msg(F ++ "~n", A)).
+    ?megaco_error(F, A).
 
 
 %%-----------------------------------------------------------------

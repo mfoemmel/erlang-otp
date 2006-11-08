@@ -31,6 +31,7 @@
 -include("SNMP-USER-BASED-SM-MIB.hrl").
 -include("SNMP-USM-AES-MIB.hrl").
 -include("SNMPv2-TC.hrl").
+-include("snmpa_internal.hrl").
 -include("snmp_types.hrl").
 
 -define(VMODULE,"USB_MIB").
@@ -44,6 +45,7 @@
 %% Columns not accessible via SNMP
 -define(usmUserAuthKey, 14).
 -define(usmUserPrivKey, 15).
+
 
 %%%-----------------------------------------------------------------
 %%% Implements the instrumentation functions and additional 
@@ -1083,11 +1085,15 @@ set_sname(undefined) ->
 set_sname(_) -> %% Keep it, if already set.
     ok.
 
-info_msg(F, A) ->
-    error_logger:info_msg("snmpa: " ++ F ++ "~n", A).
-
 error(Reason) ->
     throw({error, Reason}).
+
+%%-----------------------------------------------------------------
+
+info_msg(F, A) ->
+    ?snmpa_info("USM: " ++ F, A).
+
+%% --- 
 
 config_err(F, A) ->
     snmpa_error:config_err("[USER-BASED-SM-MIB]: " ++ F, A).

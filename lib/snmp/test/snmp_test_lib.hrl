@@ -26,6 +26,10 @@
 
 %% - Misc macros -
 
+-ifndef(APPLICATION).
+-define(APPLICATION,    snmp).
+-endif.
+
 -define(SCONF(K,D,C),   snmp_test_lib:set_config(K,D,C)).
 -define(GCONF(K,C),     snmp_test_lib:get_config(K,C)).
 -define(RCONF(K,C,V),   snmp_test_lib:replace_config(K,C,V)).
@@ -83,6 +87,7 @@
 %% - Application and Crypto utility macros - 
 
 -define(IS_APP_RUNNING(A),   snmp_test_lib:is_app_running(A)).
+-define(IS_SNMP_RUNNING(),   snmp_test_lib:is_snmp_running()).
 -define(IS_MNESIA_RUNNING(), snmp_test_lib:is_mnesia_running()).
 -define(IS_CRYPTO_RUNNING(), snmp_test_lib:is_crypto_running()).
 -define(CRYPTO_START(),      snmp_test_lib:crypto_start()).

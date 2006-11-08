@@ -31,7 +31,7 @@
 -export([compile/3,compile_beam/3,compile_asm/3,compile_core/3]).
 
 
--import(lists, [member/2,reverse/1,keysearch/3,last/1,
+-import(lists, [member/2,reverse/1,reverse/2,keysearch/3,last/1,
 		map/2,flatmap/2,foreach/2,foldr/3,any/2,filter/2]).
 
 %% file(FileName)
@@ -113,23 +113,22 @@ expand_opt(report, Os) ->
 expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
 expand_opt(r7, Os) ->
-    [no_float_opt,no_new_funs,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+    expand_opt(r9, Os);
 expand_opt(r8, Os) ->
-    [no_float_opt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+    expand_opt(r9, Os);
 expand_opt(r9, Os) ->
-    [no_float_opt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+    [no_topt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
 expand_opt(r10, Os) ->
-    [no_new_binaries,no_gc_bifs|Os];
+    [no_topt,no_new_binaries,no_gc_bifs|Os];
 expand_opt({debug_info_key,_}=O, Os) ->
     [encrypt_debug_info,O|Os];
+expand_opt(no_new_binaries=O, Os) ->
+    %%Turn off the entire type optimization pass.
+    [no_topt,O|Os];
+expand_opt(no_float_opt, Os) ->
+    %%Turn off the entire type optimization pass.
+    [no_topt|Os];
 expand_opt(O, Os) -> [O|Os].
-
-filter_opts(Opts0) ->
-    %% Native code generation is not supported if no_new_funs is given.
-    case member(no_new_funs, Opts0) of
-	false -> Opts0;
-	true -> Opts0 -- [native]
-    end.
 
 %% format_error(ErrorDescriptor) -> string()
 
@@ -226,6 +225,9 @@ internal_comp(Passes, File, Suffix, St0) ->
 	{error,St2} -> comp_ret_err(St2)
     end.
 
+fold_comp([{delay,Ps0}|Passes], Run, #compile{options=Opts}=St) ->
+    Ps = select_passes(Ps0, Opts) ++ Passes,
+    fold_comp(Ps, Run, St);
 fold_comp([{Name,Test,Pass}|Ps], Run, St) ->
     case Test(St) of
 	false ->				%Pass is not needed.
@@ -407,6 +409,17 @@ select_passes([{unless,Flag,Pass}|Ps], Opts) ->
     select_cond(Flag, false, Pass, Ps, Opts);
 select_passes([{_,Fun}=P|Ps], Opts) when is_function(Fun) ->
     [P|select_passes(Ps, Opts)];
+select_passes([{delay,Passes0}|Ps], Opts) when is_list(Passes0) ->
+    %% Delay evaluation of compiler options and which compiler passes to run.
+    %% Since we must know beforehand whether a listing will be produced, we
+    %% will go through the list of passes and evaluate all conditions that
+    %% select a list pass.
+    case select_list_passes(Passes0, Opts) of
+	{done,Passes} ->
+	    [{delay,Passes}];
+	{not_done,Passes} ->
+	    [{delay,Passes}|select_passes(Ps, Opts)]
+    end;
 select_passes([{_,Test,Fun}=P|Ps], Opts) when is_function(Test),
 					      is_function(Fun) ->
     [P|select_passes(Ps, Opts)];
@@ -428,6 +441,43 @@ select_cond(Flag, ShouldBe, Pass, Ps, Opts) ->
 	ShouldBe    -> select_passes([Pass|Ps], Opts);
 	ShouldNotBe -> select_passes(Ps, Opts)
     end.
+
+%% select_list_passes([Pass], Opts) -> {done,[Pass]} | {not_done,[Pass]}
+%%  Evaluate all conditions having to do with listings in the list of
+%%  passes. 
+
+select_list_passes(Ps, Opts) ->
+    select_list_passes_1(Ps, Opts, []).
+
+select_list_passes_1([{iff,Flag,{listing,_}=Listing}|Ps], Opts, Acc) ->
+    case member(Flag, Opts) of
+	true -> {done,reverse(Acc, [Listing])};
+	false -> select_list_passes_1(Ps, Opts, Acc)
+    end;
+select_list_passes_1([{iff,Flag,{done,Ext}}|Ps], Opts, Acc) ->
+    case member(Flag, Opts) of
+	false ->
+	    select_list_passes_1(Ps, Opts, Acc);
+	true ->
+	    {done,case member(binary, Opts) of
+		      false -> reverse(Acc, [{listing,Ext}]);
+		      true -> reverse(Acc)
+		  end}
+    end;
+select_list_passes_1([{iff=Op,Flag,List0}|Ps], Opts, Acc) when is_list(List0) ->
+    case select_list_passes(List0, Opts) of
+	{done,_}=Done -> Done;
+	{not_done,List} -> select_list_passes_1(Ps, Opts, [{Op,Flag,List}|Acc])
+    end;
+select_list_passes_1([{unless=Op,Flag,List0}|Ps], Opts, Acc) when is_list(List0) ->
+    case select_list_passes(List0, Opts) of
+	{done,_}=Done -> Done;
+	{not_done,List} -> select_list_passes_1(Ps, Opts, [{Op,Flag,List}|Acc])
+    end;
+select_list_passes_1([P|Ps], Opts, Acc) ->
+    select_list_passes_1(Ps, Opts, [P|Acc]);
+select_list_passes_1([], _, Acc) ->
+    {not_done,reverse(Acc)}.
 
 %% The standard passes (almost) always run.
 
@@ -454,16 +504,17 @@ standard_passes() ->
 
 core_passes() ->
     %% Optimization and transforms of Core Erlang code.
-    [{unless,no_copt,
-      [{core_old_inliner,fun test_old_inliner/1,fun core_old_inliner/1},
-       {iff,doldinline,{listing,"oldinline"}},
-       ?pass(core_fold_module),
-       {core_inline_module,fun test_core_inliner/1,fun core_inline_module/1},
-       {iff,dinline,{listing,"inline"}},
-       {core_fold_after_inline,fun test_core_inliner/1,fun core_fold_module/1},
-       ?pass(core_transforms)]},
-     {iff,dcopt,{listing,"copt"}},
-     {iff,'to_core',{done,"core"}}
+    [{delay,
+      [{unless,no_copt,
+       [{core_old_inliner,fun test_old_inliner/1,fun core_old_inliner/1},
+	{iff,doldinline,{listing,"oldinline"}},
+	?pass(core_fold_module),
+	{core_inline_module,fun test_core_inliner/1,fun core_inline_module/1},
+	{iff,dinline,{listing,"inline"}},
+	{core_fold_after_inline,fun test_core_inliner/1,fun core_fold_module/1},
+	?pass(core_transforms)]},
+       {iff,dcopt,{listing,"copt"}},
+       {iff,'to_core',{done,"core"}}]}
      | kernel_passes()].
 
 kernel_passes() ->
@@ -484,32 +535,32 @@ kernel_passes() ->
 
 asm_passes() ->
     %% Assembly level optimisations.
-    [{unless,no_postopt,
-      [{pass,beam_block},
-       {iff,dblk,{listing,"block"}},
-       {unless,no_bopt,{pass,beam_bool}},
-       {iff,dbool,{listing,"bool"}},
-       {unless,no_topt,{pass,beam_type}},
-       {iff,dtype,{listing,"type"}},
-       {pass,beam_dead},	      %Must always run since it splits blocks.
-       {iff,ddead,{listing,"dead"}},
-       {unless,no_jopt,{pass,beam_jump}},
-       {iff,djmp,{listing,"jump"}},
-       {pass,beam_clean},
-       {iff,dclean,{listing,"clean"}},
-       {pass,beam_flatten}]},
+    [{delay,
+      [{unless,no_postopt,
+	[{pass,beam_block},
+	 {iff,dblk,{listing,"block"}},
+	 {unless,no_bopt,{pass,beam_bool}},
+	 {iff,dbool,{listing,"bool"}},
+	 {unless,no_topt,{pass,beam_type}},
+	 {iff,dtype,{listing,"type"}},
+	 {pass,beam_dead},	      %Must always run since it splits blocks.
+	 {iff,ddead,{listing,"dead"}},
+	 {unless,no_jopt,{pass,beam_jump}},
+	 {iff,djmp,{listing,"jump"}},
+	 {pass,beam_clean},
+	 {iff,dclean,{listing,"clean"}},
+	 {pass,beam_flatten}]},
 
-     %% If post optimizations are turned off, we still coalesce
-     %% adjacent labels and remove unused labels to keep the
-     %% HiPE compiler happy.
-     {iff,no_postopt,
-      [?pass(beam_unused_labels),
-       {pass,beam_clean}]},
+       %% If post optimizations are turned off, we still coalesce
+       %% adjacent labels and remove unused labels to keep the
+       %% HiPE compiler happy.
+       {iff,no_postopt,
+	[?pass(beam_unused_labels),
+	 {pass,beam_clean}]},
 
-     {iff,dopt,{listing,"optimize"}},
-     {iff,'S',{listing,"S"}},
-     {iff,'to_asm',{done,"S"}},
-
+       {iff,dopt,{listing,"optimize"}},
+       {iff,'S',{listing,"S"}},
+       {iff,'to_asm',{done,"S"}}]},
      {pass,beam_validator},
      ?pass(beam_asm)
      | binary_passes()].
@@ -757,8 +808,7 @@ core_lint_module(St) ->
 
 expand_module(#compile{code=Code,options=Opts0}=St0) ->
     {Mod,Exp,Forms,Opts1} = sys_pre_expand:module(Code, Opts0),
-    Opts2 = expand_opts(Opts1),
-    Opts = filter_opts(Opts2),
+    Opts = expand_opts(Opts1),
     {ok,St0#compile{module=Mod,options=Opts,code={Mod,Exp,Forms}}}.
 
 core_module(#compile{code=Code0,options=Opts}=St) ->
@@ -906,8 +956,7 @@ beam_asm(#compile{ifile=File,code=Code0,abstract_code=Abst,options=Opts0}=St) ->
     end.
 
 test_native(#compile{options=Opts}) ->
-    %% This test must be made late, because the r7 or no_new_funs options
-    %% will turn off the native option.
+    %% This test is done late, in case some other option has turned off native.
     member(native, Opts).
 
 native_compile(#compile{code=none}=St) -> {ok,St};
@@ -1111,6 +1160,9 @@ listing(LFun, Ext, St) ->
 options() ->
     help(standard_passes()).
 
+help([{delay,Ps}|T]) ->
+    help(Ps),
+    help(T);
 help([{iff,Flag,{src_listing,Ext}}|T]) ->
     io:fwrite("~p - Generate .~s source listing file\n", [Flag,Ext]),
     help(T);

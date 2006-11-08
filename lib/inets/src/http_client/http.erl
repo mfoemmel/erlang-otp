@@ -38,20 +38,22 @@
 %%--------------------------------------------------------------------------
 %% request(Method, Request, HTTPOptions, Options) ->
 %%           {ok, {StatusLine, Headers, Body}} | {ok, {Status, Body}} |
-%%           {ok, RequestId} | {error,Reason} 
+%%           {ok, RequestId} | {error,Reason} | {ok, {saved_as, FilePath}
 %%
 %%	Method - atom() = head | get | put | post | trace | options| delete 
 %%	Request - {Url, Headers} | {Url, Headers, ContentType, Body} 
 %%	Url - string() 
 %%	HTTPOptions - [HttpOption]
-%%	HTTPOption - {timeout, Time} | {ssl, SSLOptions} 
-%%	SSLOptions = [SSLOption]
+%%	HTTPOption - {timeout, Time} | {ssl, SSLOptions} | 
+%%                   {proxy_auth, {User, Password}}
+%%	Ssloptions = [SSLOption]
 %%	SSLOption =  {verify, code()} | {depth, depth()} | {certfile, path()} |
 %%	{keyfile, path()} | {password, string()} | {cacertfile, path()} |
 %%	{ciphers, string()} 
 %%	Options - [Option]
 %%	Option - {sync, Boolean} | {body_format, BodyFormat} | 
-%%	{full_result, Boolean}
+%%	{full_result, Boolean} | {stream, To} |
+%%      {headers_as_is, Boolean}  
 %%	StatusLine = {HTTPVersion, StatusCode, ReasonPhrase}</v>
 %%	HTTPVersion = string()
 %%	StatusCode = integer()
@@ -128,7 +130,7 @@ set_options(Options) ->
     httpc_manager:set_options(Options).
 
 verify_cookies(SetCookieHeaders, Url) ->
-    {_, Host, Port, Path, _} = http_uri:parse(Url),
+    {_, _, Host, Port, Path, _} = http_uri:parse(Url),
     Cookies = http_cookie:cookies(SetCookieHeaders, Path, Host),
     httpc_manager:store_cookies(Cookies, {Host, Port}),
     ok.
@@ -139,53 +141,83 @@ cookie_header(Url) ->
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-handle_request(Method, Url, {{Scheme, Host, Port, Path, Query},
+handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
 			Headers, ContentType, Body}, HTTPOptions, Options) ->
-    HTTPRecordOptions = http_options(HTTPOptions, #http_options{}), 
+    HTTPRecordOptions = http_options(HTTPOptions, #http_options{}),
+    
+    Sync = http_util:key1search(Options, sync, true),
     NewHeaders = lists:map(fun({Key, Val}) -> 
 				   {http_util:to_lower(Key), Val} end,
 			   Headers),
-    RecordHeaders = header_record(NewHeaders, #http_request_h{}, Host),
-    Request = #request{from = self(),
-		       scheme = Scheme, address = {Host,Port},
-		       path = Path, pquery = Query, method = Method,
-		       headers = RecordHeaders, content = {ContentType,Body},
-		       settings = HTTPRecordOptions,
-		       abs_uri = Url},
-    
-    ensure_started(Scheme),
-    
-    case httpc_manager:request(Request) of
-	{ok, RequestId} ->
-	    Sync = http_util:key1search(Options, sync, true),
-	    handle_answer(RequestId, Sync, Options);
-	{error, Reason} ->
-	    {error, Reason}
+    Stream = http_util:key1search(Options, stream, none),
+
+    case {Sync, Stream} of
+	{true, self} ->
+	    {error, streaming_error};
+	_ ->
+	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, Host),
+	    Request = #request{from = self(),
+			       scheme = Scheme, address = {Host,Port},
+			       path = Path, pquery = Query, method = Method,
+			       headers = RecordHeaders, 
+			       content = {ContentType,Body},
+			       settings = HTTPRecordOptions,
+			       abs_uri = Url, userinfo = UserInfo, 
+			       stream = Stream, 
+			       headers_as_is = 
+			       headers_as_is(Headers, Options)},
+	    
+	    ensure_started(Scheme),
+	    
+	    case httpc_manager:request(Request) of
+		{ok, RequestId} ->
+		    handle_answer(RequestId, Sync, Options);
+		{error, Reason} ->
+		    {error, Reason}
+	    end
     end.
 
 handle_answer(RequestId, false, _) ->
     {ok, RequestId};
 handle_answer(RequestId, true, Options) ->
     receive
-	{http, {RequestId, {StatusLine, Headers, BinBody}}} ->
-	    Body = 
-		case http_util:key1search(Options, body_format, string) of
-		    string ->
-			binary_to_list(BinBody);
-		    _ ->
-			BinBody
-		end,
-	    case http_util:key1search(Options, full_result, true) of
-		true ->
-		    {ok, {StatusLine, Headers, Body}};
-		false ->
-		    {_, Status, _} = StatusLine,
-		    {ok, {Status, Body}}
-	    end;
+	{http, {RequestId, saved_to_file}} ->
+	    {ok, saved_to_file};
+	{http, {RequestId, Result = {_,_,_}}} ->
+	    return_answer(Options, Result);
 	{http, {RequestId, {error, Reason}}} ->
 	    {error, Reason}
     end.
  
+return_answer(Options, {StatusLine, Headers, BinBody}) ->
+    Body = 
+	case http_util:key1search(Options, body_format, string) of
+	    string ->
+		binary_to_list(BinBody);
+	    _ ->
+		BinBody
+	end,
+    case http_util:key1search(Options, full_result, true) of
+	true ->
+	    {ok, {StatusLine, Headers, Body}};
+	false ->
+	    {_, Status, _} = StatusLine,
+	    {ok, {Status, Body}}
+    end.
+
+
+%% This options is a workaround for http servers that do not follow the 
+%% http standard and have case sensative header parsing. Should only be
+%% used if there is no other way to communicate with the server or for
+%% testing purpose.
+headers_as_is(Headers, Options) ->
+     case http_util:key1search(Options, headers_as_is, false) of
+	 false ->
+	     [];
+	 true  ->
+	     Headers
+     end.
+
 http_options([], Acc) ->
     Acc;
 http_options([{timeout, Val} | Settings], Acc) 
@@ -201,6 +233,10 @@ http_options([{ssl, Val} | Settings], Acc) ->
 http_options([{relaxed, Val} | Settings], Acc)
   when Val == true; Val == false ->
     http_options(Settings, Acc#http_options{relaxed = Val});
+http_options([{proxy_auth, Val = {User, Passwd}} | Settings], Acc) 
+  when is_list(User),
+       is_list(Passwd) ->
+    http_options(Settings, Acc#http_options{proxy_auth = Val});
 http_options([Option | Settings], Acc) ->
     error_logger:info_report("Invalid option ignored ~p~n", [Option]),
     http_options(Settings, Acc).
@@ -268,8 +304,8 @@ header_record([{"if-unmodified-since", Val} | Rest], RequestHeaders, Host) ->
 header_record([{"max-forwards", Val} | Rest], RequestHeaders, Host) ->
     header_record(Rest, RequestHeaders#http_request_h{'max-forwards' = Val}, 
 		  Host);  
-header_record([{"proxy-authenticate", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{'proxy-authenticate' 
+header_record([{"proxy-authorization", Val} | Rest], RequestHeaders, Host) ->
+    header_record(Rest, RequestHeaders#http_request_h{'proxy-authorization' 
 						      = Val}, Host);  
 header_record([{"range", Val} | Rest], RequestHeaders, Host) ->
     header_record(Rest, RequestHeaders#http_request_h{range = Val}, Host);  

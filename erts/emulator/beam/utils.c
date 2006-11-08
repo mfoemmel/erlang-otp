@@ -29,6 +29,7 @@
 #include "big.h"
 #include "bif.h"
 #include "erl_binary.h"
+#include "erl_bits.h"
 #define ERTS_WANT_DB_INTERNAL__
 #include "erl_db.h"
 #include "erl_threads.h"
@@ -62,6 +63,9 @@ erts_heap_alloc(Process* p, Uint need)
     Uint i;
 #endif
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+    n = need;
+#else
     /*
      * Check if there is any space left in the previous heap fragment.
      */
@@ -96,6 +100,7 @@ erts_heap_alloc(Process* p, Uint need)
 	    n = 2*need;
 	}
     }
+#endif
 
 #ifdef DEBUG
     n++;
@@ -109,16 +114,21 @@ erts_heap_alloc(Process* p, Uint need)
     n--;
 #endif
 
+
+#ifndef HEAP_FRAG_ELIM_TEST
     if (ARITH_AVAIL(p) == 0) {
 	ARITH_AVAIL(p) = n - need;
 	ARITH_HEAP(p) = bp->mem + need;
     }
+#endif
 
 #if defined(DEBUG)
     for (i = 0; i <= n; i++) {
 	bp->mem[i] = ERTS_HOLE_MARKER;
     }
+#ifndef HEAP_FRAG_ELIM_TEST
     ARITH_CHECK_ME(p) = ARITH_HEAP(p);
+#endif
 #elif defined(CHECK_FOR_HOLES)
     for (i = 0; i < n; i++) {
 	bp->mem[i] = ERTS_HOLE_MARKER;
@@ -150,17 +160,11 @@ erts_heap_alloc(Process* p, Uint need)
     bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
 
-#ifdef HEAP_FRAG_ELIM_TEST
-    /*
-     * Unconditionally force a garbage collection.
-     */
-    MSO(p).overhead = HEAP_SIZE(p);
-    BUMP_ALL_REDS(p);
-#else
     /*
      * Test if time to do GC; if so bump the reduction count to force
      * a context switch.
      */
+#if !defined HEAP_FRAG_ELIM_TEST
     MSO(p).overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
     if (((MBUF_SIZE(p) + MSO(p).overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE(p)) {
 	BUMP_ALL_REDS(p);
@@ -169,6 +173,35 @@ erts_heap_alloc(Process* p, Uint need)
     return bp->mem;
 }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+void erts_arith_shrink(Process* p, Eterm* hp)
+{
+#if defined(CHECK_FOR_HOLES)
+    ErlHeapFragment* hf;
+
+    /*
+     * We must find the heap fragment that hp points into.
+     * If we are unlucky, we might have to search through
+     * a large part of the list. We'll hope that will not
+     * happen to often.
+     */
+    for (hf = MBUF(p); hf != 0; hf = hf->next) {
+	if (hp - hf->mem < (unsigned long)hf->size) {
+	    /*
+	     * We are not allowed to changed hf->size (because the
+	     * size must be correct when deallocating). Therefore,
+	     * clear out the uninitialized part of the heap fragment.
+	     */
+	    Eterm* to = hf->mem + hf->size;
+	    while (hp < to) {
+		*hp++ = NIL;
+	    }
+	    break;
+	}
+    }
+#endif
+}
+#else
 void erts_arith_shrink(Process* p, Eterm* hp)
 {
     ErlHeapFragment* hf;
@@ -223,6 +256,21 @@ void erts_arith_shrink(Process* p, Eterm* hp)
 	}
     }
 }
+#endif
+
+#ifdef CHECK_FOR_HOLES
+Eterm*
+erts_set_hole_marker(Eterm* ptr, Uint sz)
+{
+    Eterm* p = ptr;
+    int i;
+
+    for (i = 0; i < sz; i++) {
+	*p++ = ERTS_HOLE_MARKER;
+    }
+    return ptr;
+}
+#endif
 
 /*
  * Helper function for the ESTACK macros defined in global.h.
@@ -269,73 +317,6 @@ erl_grow_stack(Eterm* ptr, size_t new_size)
 #endif
 
 #define IS_PRINT(c)  (!IS_CNTRL(c))
-
-#if defined(HEAP_FRAG_ELIM_TEST)
-# define ArithAlloc(a, b) (abort(), 0)
-#endif
-
-/*
- * Generate the integer part from a double.
- */
-Eterm
-double_to_integer(Process* p, double x)
-{
-    int is_negative;
-    int ds;
-    digit_t* xp;
-    int i;
-    Eterm res;
-    size_t sz;
-    Eterm* hp;
-
-    if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
-	Sint xi = x;
-	return make_small(xi);
-    }
-
-    if (x >= 0) {
-	is_negative = 0;
-    } else {
-	is_negative = 1;
-	x = -x;
-    }
-
-    /* Unscale & (calculate exponent) */
-    ds = 0;
-    while(x >= 1.0) {
-	x /= D_BASE;         /* "shift" right */
-	ds++;
-    }
-    sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
-
-    /*
-     * Beam note: This function is called from guard bifs (round/1 and trunc/1),
-     * which are not allowed to build anything at all on the heap.
-     * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc().
-     */
-    hp = ArithAlloc(p, sz);
-    res = make_big(hp);
-    xp = (digit_t*) (hp + 1);
-
-    for (i = ds-1; i >= 0; i--) {
-	digit_t d;
-
-	x *= D_BASE;      /* "shift" left */
-	d = x;            /* trunc */
-	xp[i] = d;        /* store digit */
-	x -= d;           /* remove integer part */
-    }
-    while ((ds & (BIG_DIGITS_PER_WORD-1)) != 0) {
-	xp[ds++] = 0;
-    }
-
-    if (is_negative) {
-	*hp = make_neg_bignum_header(sz-1);
-    } else {
-	*hp = make_pos_bignum_header(sz-1);
-    }
-    return res;
-}
 
 /*
  * Calculate length of a list.
@@ -427,6 +408,15 @@ erts_putc(int to, void *arg, char c)
  * when needed.                                                              *
  *                                                                           *
 \*                                                                           */
+
+Eterm
+erts_bld_atom(Uint **hpp, Uint *szp, char *str)
+{
+    if (hpp)
+	return am_atom_put(str, sys_strlen(str));
+    else
+	return THE_NON_VALUE;
+}
 
 Eterm
 erts_bld_uint(Uint **hpp, Uint *szp, Uint ui)
@@ -642,6 +632,36 @@ erts_bld_2tup_list(Uint **hpp, Uint *szp,
 #define FUNNY_NUMBER10 268440479
 #define FUNNY_NUMBER11 268440577
 
+static Uint32
+hash_binary_bytes(Eterm bin, Uint sz, Uint32 hash)
+{
+    byte* ptr;
+    Uint bitoffs;
+    Uint bitsize;
+
+    if (sz > 0) {
+	ERTS_GET_BINARY_BYTES(bin, ptr, bitoffs, bitsize);
+	if (bitoffs == 0) {
+	    while (sz--) {
+		hash = hash*FUNNY_NUMBER1 + *ptr++;
+	    }
+	} else {
+	    Uint previous = *ptr++;
+	    Uint b;
+	    Uint lshift = bitoffs;
+	    Uint rshift = 8 - lshift;
+	    
+	    while (sz--) {
+		b = (previous << lshift) & 0xFF;
+		previous = *ptr++;
+		b |= previous >> rshift;
+		hash = hash*FUNNY_NUMBER1 + b;
+	    }
+	}
+    }
+    return hash;
+}
+
 Uint32
 make_hash(Eterm term, Uint32 hash)
 {
@@ -709,14 +729,9 @@ make_hash(Eterm term, Uint32 hash)
 
     case BINARY_DEF:
 	{
-	    byte* ptr;
-	    unsigned sz = binary_size(term);
-	    int i = sz;
+	    Uint sz = binary_size(term);
 
-	    GET_BINARY_BYTES(term, ptr);
-	    while (i--) {
-		hash = hash*FUNNY_NUMBER1 + *ptr++;
-	    }
+	    hash = hash_binary_bytes(term, sz, hash);
 	    return hash*FUNNY_NUMBER4 + sz;
 	}
 
@@ -1069,9 +1084,23 @@ make_hash2(Eterm term)
 		byte* bptr;
 		unsigned sz = binary_size(term);
 		Uint32 con = HCONST_13 + hash;
-			
-		GET_BINARY_BYTES(term, bptr);
-		hash = (sz == 0) ? con : block_hash(bptr, sz, con);
+
+		if (sz == 0) {
+		    hash = con;
+		} else {
+		    Uint bitoffs;
+		    Uint bitsize;
+
+		    ERTS_GET_BINARY_BYTES(term, bptr, bitoffs, bitsize);
+		    if (bitoffs == 0) {
+			hash = block_hash(bptr, sz, con);
+		    } else {
+			byte* buf = (byte *) erts_alloc(ERTS_ALC_T_TMP, sz);
+			erts_copy_bits(bptr, bitoffs, 1, buf, 0, 1, sz*8);
+			hash = block_hash(buf, sz, con);
+			erts_free(ERTS_ALC_T_TMP, (void *) buf);
+		    }
+		}
 		goto hash2_common;
 	    }
 	    break;
@@ -1242,14 +1271,10 @@ make_broken_hash(Eterm term, Uint hash)
 #endif
     case BINARY_DEF:
 	{
-	    byte* ptr;
 	    size_t sz = binary_size(term);
 	    size_t i = (sz < 15) ? sz : 15;
 
-	    GET_BINARY_BYTES(term, ptr);
-	    while (i-- != 0) {
-		hash = hash*FUNNY_NUMBER1 + *ptr++;
-	    }
+	    hash = hash_binary_bytes(term, i, hash);
 	    return hash*FUNNY_NUMBER4 + sz;
 	}
 
@@ -1402,7 +1427,7 @@ static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
 #ifdef USE_THREADS
 	!erts_get_scheduler_data() || /* Must be scheduler thread */
 #endif
-	(p = erts_whereis_process(NULL, 0, 0, am_error_logger, 0, 0)) == NULL
+	(p = erts_whereis_process(NULL, 0, am_error_logger, 0, 0)) == NULL
 	|| p->status == P_RUNNING) {
 	/* buf *always* points to a null terminated string */
 	erts_fprintf(stderr, "(no error logger present) %T: \"%s\"\n",
@@ -1695,22 +1720,35 @@ eq(Eterm a, Eterm b)
 	    case HEAP_BINARY_SUBTAG:
 	    case SUB_BINARY_SUBTAG:
 		{
-		    Uint size;
 		    byte* a_ptr;
 		    byte* b_ptr;
-
+		    size_t a_size;
+		    size_t b_size;
+		    Uint a_bitsize;
+		    Uint b_bitsize;
+		    Uint a_bitoffs;
+		    Uint b_bitoffs;
+		    
 		    if (is_not_binary(b)) {
 			return 0;
 		    }
-		    size = binary_size(a);
-		    if (size != binary_size(b)) {
+		    a_size = binary_size(a);
+		    b_size = binary_size(b); 
+		    if (a_size != b_size) {
 			return 0;
 		    }
-		    GET_BINARY_BYTES(a, a_ptr);
-		    GET_BINARY_BYTES(b, b_ptr);
-		    return sys_memcmp(a_ptr, b_ptr, size) == 0;
+		    ERTS_GET_BINARY_BYTES(a, a_ptr, a_bitoffs, a_bitsize);
+		    ERTS_GET_BINARY_BYTES(b, b_ptr, b_bitoffs, b_bitsize);
+		    if ((a_bitsize | b_bitsize | a_bitoffs | b_bitoffs) == 0) {
+			return sys_memcmp(a_ptr, b_ptr, a_size) == 0;
+		    } else if (a_bitsize == b_bitsize) {
+			return erts_cmp_bits(a_ptr, a_bitoffs, b_ptr, b_bitoffs,
+					     (a_size << 3) + a_bitsize) == 0;
+		    } else {
+			return 0;
+		    }
 		}
-	    case EXPORT_SUBTAG:
+	case EXPORT_SUBTAG:
 		{
 		    Export* a_exp;
 		    Export* b_exp;
@@ -2283,18 +2321,35 @@ cmp(Eterm a, Eterm b)
 		} else {
 		    Uint a_size = binary_size(a);
 		    Uint b_size = binary_size(b);
+		    Uint a_bitsize;
+		    Uint b_bitsize;
+		    Uint a_bitoffs;
+		    Uint b_bitoffs;
 		    Uint min_size;
 		    int cmp;
 		    byte* a_ptr;
 		    byte* b_ptr;
-		    
-		    min_size = (a_size < b_size) ? a_size : b_size;
-		    GET_BINARY_BYTES(a, a_ptr);
-		    GET_BINARY_BYTES(b, b_ptr);
-		    if ((cmp = sys_memcmp(a_ptr, b_ptr, min_size)) != 0) {
-			return cmp;
-		    } else {
-			return a_size - b_size;
+		    ERTS_GET_BINARY_BYTES(a, a_ptr, a_bitoffs, a_bitsize);
+		    ERTS_GET_BINARY_BYTES(b, b_ptr, b_bitoffs, b_bitsize);
+		    if ((a_bitsize | b_bitsize | a_bitoffs | b_bitoffs) == 0) {
+			min_size = (a_size < b_size) ? a_size : b_size;
+			if ((cmp = sys_memcmp(a_ptr, b_ptr, min_size)) != 0) {
+			    return cmp;
+			} else {
+			    return a_size - b_size;
+			}
+		    }
+		    else {
+			a_size = (a_size << 3) + a_bitsize;
+			b_size = (b_size << 3) + b_bitsize;
+			min_size = (a_size < b_size) ? a_size : b_size;
+			if ((cmp = erts_cmp_bits(a_ptr,a_bitoffs,
+						 b_ptr,b_bitoffs,min_size)) != 0) {
+			    return cmp;
+			}
+			else {
+			    return a_size - b_size;
+			}
 		    }
 		}
 	    }
@@ -2529,9 +2584,9 @@ buf_to_intlist(Eterm** hpp, char *buf, int len, Eterm tail)
 }
 
 /*
-** write io list in to a buffer.
+** Write io list in to a buffer.
 **
-** A iolist is defined as:
+** An iolist is defined as:
 **
 ** iohead ::= Binary
 **        |   Byte (i.e integer in range [0..255]
@@ -2548,17 +2603,18 @@ buf_to_intlist(Eterm** hpp, char *buf, int len, Eterm tail)
 **        |   [ iohead | iotail]
 **        ;
 ** 
-** Return remaing bytes in buffer on succsess
+** Return remaning bytes in buffer on success
 **        -1 on overflow
-**        -2 on type error
+**        -2 on type error (including that result would not be a whole number of bytes)
 */
 
 int io_list_to_buf(Eterm obj, char* buf, int len)
 {
     Eterm* objp;
+    int offset = 0;
     DECLARE_ESTACK(s);
     goto L_again;
-
+    
     while (!ESTACK_ISEMPTY(s)) {
 	obj = ESTACK_POP(s);
     L_again:
@@ -2569,18 +2625,31 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 	    if (is_byte(obj)) {
 		if (len == 0)
 		    goto L_overflow;
-		*buf++ = unsigned_val(obj);
+		if (offset == 0) {
+		    *buf++ = unsigned_val(obj);
+		} else {
+		    *buf =  (char)((unsigned_val(obj) >> offset) & *buf);
+		    buf++;
+		    *buf = (unsigned_val(obj) << (8-offset));
+		}   
 		len--;
 	    } else if (is_binary(obj)) {
-		byte* bytes;
+		byte* bptr;
 		size_t size = binary_size(obj);
+		Uint bitsize;
+		Uint bitoffs;
+		Uint num_bits;
+		
 		if (len < size) {
 		    goto L_overflow;
 		}
-		GET_BINARY_BYTES(obj, bytes);
-		sys_memcpy(buf, bytes, size);
-		buf += size;
-		len -= size;
+		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+		num_bits = 8*size+bitsize;
+		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+		offset += bitsize;
+		buf += size+(offset>7);
+		len -= size+(offset>7);
+		offset = offset & 7;
 	    }
 	    else if (is_nil(obj)) {
 		;
@@ -2596,37 +2665,164 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 	    if (is_list(obj))
 		goto L_iter_list; /* on tail */
 	    else if (is_binary(obj)) {
-		byte* bytes;
+		byte* bptr;
 		size_t size = binary_size(obj);
+		Uint bitsize;
+		Uint bitoffs;
+		Uint num_bits;
 		if (len < size) {
 		    goto L_overflow;
 		}
-		GET_BINARY_BYTES(obj, bytes);
-		sys_memcpy(buf, bytes, size);
-		buf += size;
-		len -= size;
+		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+		num_bits = 8*size+bitsize;
+		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+		offset += bitsize;
+		buf += size+(offset>7);
+		len -= size+(offset>7);
+		offset = offset & 7;
+	    } else if (is_nil(obj)) {
+		;
+	    } else {
+		goto L_type_error;
+	    }
+	} else if (is_binary(obj)) {
+	    byte* bptr;
+	    size_t size = binary_size(obj);
+	    Uint bitsize;
+	    Uint bitoffs;
+	    Uint num_bits;
+	    if (len < size) {
+		goto L_overflow;
+	    }
+	    ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+	    num_bits = 8*size+bitsize;
+	    copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+	    offset += bitsize;
+	    buf += size+(offset>7);
+	    len -= size+(offset>7);
+	    offset = offset & 7;
+	} else if (is_not_nil(obj)) {
+	    goto L_type_error;
+	}
+    }
+      
+    DESTROY_ESTACK(s);
+    if (offset) {
+	return -2;
+    }
+    return len;
+
+ L_type_error:
+    DESTROY_ESTACK(s);
+    return -2;
+
+ L_overflow:
+    DESTROY_ESTACK(s);
+    return -1;
+}
+
+int io_list_to_buf2(Eterm obj, char* buf, int len)
+{
+    Eterm* objp;
+    int offset=0;
+    DECLARE_ESTACK(s);
+    goto L_again;
+    
+    while (!ESTACK_ISEMPTY(s)) {
+	obj = ESTACK_POP(s);
+    L_again:
+	if (is_list(obj)) {
+	L_iter_list:
+	    objp = list_val(obj);
+	    obj = CAR(objp);
+	    if (is_byte(obj)) {
+		if (len == 0)
+		    goto L_overflow;
+		if (offset==0) {
+		    *buf++ = unsigned_val(obj);
+		} else {
+		    *buf =  (char)((unsigned_val(obj) >> offset) | 
+				   ((*buf >> (8-offset)) << (8-offset)));
+		    buf++;
+		    *buf = (unsigned_val(obj) << (8-offset));
+		}   
+		len--;
+	    } else if (is_binary(obj)) {
+		byte* bptr;
+		size_t size = binary_size(obj);
+		Uint bitsize;
+		Uint bitoffs;
+		Uint num_bits;
+		
+		if (len < size) {
+		    goto L_overflow;
+		}
+		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+		num_bits = 8*size+bitsize;
+		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+		offset += bitsize;
+		buf += size+(offset>7);
+		len -= size+(offset>7);
+		offset = offset & 7;
+	    }
+	    else if (is_nil(obj)) {
+		;
+	    }
+	    else if (is_list(obj)) {
+		ESTACK_PUSH(s, CDR(objp));
+		goto L_iter_list; /* on head */
+	    }
+	    else
+		goto L_type_error;
+
+	    obj = CDR(objp);
+	    if (is_list(obj))
+		goto L_iter_list; /* on tail */
+	    else if (is_binary(obj)) {
+		byte* bptr;
+		size_t size = binary_size(obj);
+		Uint bitsize;
+		Uint bitoffs;
+		Uint num_bits;
+		if (len < size) {
+		    goto L_overflow;
+		}
+		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+		num_bits = 8*size+bitsize;
+		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+		offset += bitsize;
+		buf += size+(offset>7);
+		len -= size+(offset>7);
+		offset = offset & 7;
+		
 	    }
 	    else if (is_nil(obj))
 		;
 	    else
 		goto L_type_error;
 	} else if (is_binary(obj)) {
-	    byte* bytes;
+	    byte* bptr;
 	    size_t size = binary_size(obj);
+	    Uint bitsize;
+	    Uint bitoffs;
+	    Uint num_bits;
 	    if (len < size) {
 		goto L_overflow;
 	    }
-	    GET_BINARY_BYTES(obj, bytes);
-	    sys_memcpy(buf, bytes, size);
-	    buf += size;
-	    len -= size;
+	    ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
+	    num_bits = 8*size+bitsize;
+	    copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
+	    offset += bitsize;
+	    buf += size+(offset>7);
+	    len -= size+(offset>7);
+	    offset = offset & 7;
 	} else if (is_not_nil(obj)) {
 	    goto L_type_error;
 	}
     }
-
+    
     DESTROY_ESTACK(s);
-    return len;
+    return offset;
 
  L_type_error:
     DESTROY_ESTACK(s);
@@ -2641,6 +2837,7 @@ int io_list_len(Eterm obj)
 {
     Eterm* objp;
     int len = 0;
+    int offs = 0;
     DECLARE_ESTACK(s);
     goto L_again;
 
@@ -2656,6 +2853,8 @@ int io_list_len(Eterm obj)
 		len++;
 	    } else if (is_binary(obj)) {
 		len += binary_size(obj);
+		offs += binary_bitsize(obj);
+		if (offs > 8) { len+=1; offs-=8;}
 	    } else if (is_nil(obj)) {
 		;
 	    } else if (is_list(obj)) {
@@ -2677,13 +2876,15 @@ int io_list_len(Eterm obj)
 	    }
 	} else if (is_binary(obj)) { /* Tail was binary */
 	    len += binary_size(obj);
+	    offs = binary_bitsize(obj);
+	    if (offs > 8) { len+=1; offs-=8;}
 	} else if (is_not_nil(obj)) {
 	    goto L_type_error;
 	}
     }
 
     DESTROY_ESTACK(s);
-    return len;
+    return len+(offs>0);
 
  L_type_error:
     DESTROY_ESTACK(s);
@@ -2749,12 +2950,7 @@ is_string(Eterm list)
  * Process and Port timers in smp case
  */
 
-#define ERTS_PREALLOCED_PTIMERS 1000
-
-static ErtsSmpPTimer prealloced_ptimers[ERTS_PREALLOCED_PTIMERS];
-static ErtsSmpPTimer *free_ptimers;
-
-static erts_smp_spinlock_t ptimers_lock;
+ERTS_SMP_PALLOC_IMPL(ptimer_pre, ErtsSmpPTimer, 1000)
 
 #define ERTS_PTMR_FLGS_ALLCD_SIZE \
   2
@@ -2769,12 +2965,7 @@ static erts_smp_spinlock_t ptimers_lock;
 static void
 init_ptimers(void)
 {
-    int i;
-    erts_smp_spinlock_init(&ptimers_lock, "ptimers");
-    for (i = 0; i < ERTS_PREALLOCED_PTIMERS - 1; i++)
-	prealloced_ptimers[i].next = &prealloced_ptimers[i+1];
-    free_ptimers = &prealloced_ptimers[0];
-    prealloced_ptimers[ERTS_PREALLOCED_PTIMERS - 1].next = NULL;
+    init_ptimer_pre_alloc();
 }
 
 static ERTS_INLINE void
@@ -2782,10 +2973,7 @@ free_ptimer(ErtsSmpPTimer *ptimer)
 {
     switch (ptimer->timer.flags & ERTS_PTMR_FLGS_ALLCD_MASK) {
     case ERTS_PTMR_FLGS_PREALLCD:
-	erts_smp_spin_lock(&ptimers_lock);
-	ptimer->next = free_ptimers;
-	free_ptimers = ptimer;
-	erts_smp_spin_unlock(&ptimers_lock);
+	(void) ptimer_pre_free(ptimer);
 	break;
     case ERTS_PTMR_FLGS_SLALLCD:
 	erts_free(ERTS_ALC_T_SL_PTIMER, (void *) ptimer);
@@ -2820,8 +3008,9 @@ ptimer_timeout(ErtsSmpPTimer *ptimer)
 			      ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 	    if (p) {
 		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
-		    (*ptimer->timer.timeout_func)(p);
+		    ASSERT(*ptimer->timer.timer_ref == ptimer);
 		    *ptimer->timer.timer_ref = NULL;
+		    (*ptimer->timer.timeout_func)(p);
 		}
 		erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 	    }
@@ -2832,8 +3021,9 @@ ptimer_timeout(ErtsSmpPTimer *ptimer)
 	    p = erts_id2port(ptimer->timer.id, NULL, 0);
 	    if (p) {
 		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
-		    (*ptimer->timer.timeout_func)(p);
+		    ASSERT(*ptimer->timer.timer_ref == ptimer);
 		    *ptimer->timer.timer_ref = NULL;
+		    (*ptimer->timer.timeout_func)(p);
 		}
 		erts_smp_io_unlock();
 	    }
@@ -2848,16 +3038,10 @@ erts_create_smp_ptimer(ErtsSmpPTimer **timer_ref,
 		       ErlTimeoutProc timeout_func,
 		       Uint timeout)
 {
-    ErtsSmpPTimer *res;
-    erts_smp_spin_lock(&ptimers_lock);
-    if (free_ptimers) {
-	res = free_ptimers;
-	free_ptimers = free_ptimers->next;
+    ErtsSmpPTimer *res = ptimer_pre_alloc();
+    if (res)
 	res->timer.flags = ERTS_PTMR_FLGS_PREALLCD;
-	erts_smp_spin_unlock(&ptimers_lock);
-    }
     else {
-	erts_smp_spin_unlock(&ptimers_lock);
 	if (timeout < ERTS_ALC_MIN_LONG_LIVED_TIME) {
 	    res = erts_alloc(ERTS_ALC_T_SL_PTIMER, sizeof(ErtsSmpPTimer));
 	    res->timer.flags = ERTS_PTMR_FLGS_SLALLCD;

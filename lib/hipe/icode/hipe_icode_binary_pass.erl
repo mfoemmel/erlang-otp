@@ -50,7 +50,7 @@ break_block(Instr, Acc) ->
   case hipe_icode:is_call(Instr) of 
     true ->
       case hipe_icode:call_fun(Instr) of
-	{hipe_bs_primop,_} ->
+	{hipe_bs_primop, _} ->
 	  case hipe_icode:call_continuation(Instr) of
 	    [] ->
 	      ContLbl = hipe_icode:mk_new_label(),
@@ -74,7 +74,7 @@ make_pass(CFG, [Label | Labels], Visited, BinChunks) ->
       NewVisited = hipe_icode_cfg:visit(Label, Visited),
       CurrentBB = hipe_icode_cfg:bb(CFG, Label),
       Instr = hipe_bb:last(CurrentBB),
-      NewBinChunks=test_instr(Instr, CFG, Label, BinChunks), 
+      NewBinChunks = test_instr(Instr, CFG, Label, BinChunks), 
       NewLabels = Labels ++ hipe_icode_cfg:succ(CFG, Label),
       make_pass(CFG, NewLabels, NewVisited, NewBinChunks)
   end;
@@ -124,9 +124,9 @@ extract_binary_creation(CFG, Label, Start, Labels, Sizes, VarMap, FailLbl) ->
 	    {bs_put_integer, Size, _, _} ->
 	      [];
 	    {bs_put_string, _, SizeInBytes} ->
-	      Size = SizeInBytes * 8;
+	      Size = SizeInBytes bsl 3;  % SizeInBytes * 8
 	    {bs_put_string, _, SizeInBytes, _} ->
-	      Size = SizeInBytes * 8
+	      Size = SizeInBytes bsl 3   % SizeInBytes * 8
 	  end,
 	  Next = hipe_icode:call_continuation(LastInstr),
 	  case {hipe_icode:call_args(LastInstr), Size} of
@@ -134,18 +134,28 @@ extract_binary_creation(CFG, Label, Start, Labels, Sizes, VarMap, FailLbl) ->
 	      NewFailLbl = hipe_icode:call_fail_label(LastInstr),
 	      case acceptable(CurrentBB, Arg) of
 		{true, Arg1} ->
-		  extract_binary_creation(CFG, Next, Start, [Label|Labels], [{all, Arg1}|Sizes],NewVarMap, NewFailLbl);
+		  extract_binary_creation(CFG, Next, Start,
+					  [Label|Labels], [{all, Arg1}|Sizes],
+					  NewVarMap, NewFailLbl);
 		false ->
-		  extract_binary_creation(CFG, Next, Start, [Label|Labels], [fail|Sizes],NewVarMap, FailLbl)
+		  extract_binary_creation(CFG, Next, Start, 
+					  [Label|Labels], [fail|Sizes],
+					  NewVarMap, FailLbl)
 	      end;
 	    {[_],_} ->
-	      extract_binary_creation(CFG, Next, Start, [Label|Labels], [{const, Size}|Sizes],NewVarMap, FailLbl);
+	      extract_binary_creation(CFG, Next, Start,
+				      [Label|Labels], [{const, Size}|Sizes],
+				      NewVarMap, FailLbl);
 	    {[],_} ->
-	      extract_binary_creation(CFG, Next, Start, [Label|Labels], [{const, Size}|Sizes],NewVarMap, FailLbl);
+	      extract_binary_creation(CFG, Next, Start,
+				      [Label|Labels], [{const, Size}|Sizes],
+				      NewVarMap, FailLbl);
 	    {[_,SizeVar],_} ->
 	      RealSizeVar = translate_sizevar(SizeVar, NewVarMap),
 	      NewFailLbl = hipe_icode:call_fail_label(LastInstr),
-	      extract_binary_creation(CFG, Next, Start, [Label|Labels], [{Size, RealSizeVar}|Sizes], NewVarMap, NewFailLbl)
+	      extract_binary_creation(CFG, Next, Start, [Label|Labels],
+				      [{Size, RealSizeVar}|Sizes],
+				      NewVarMap, NewFailLbl)
 	  end
       end
   end.      
@@ -214,7 +224,8 @@ extract_binary_matches(CFG, Label) ->
   Exit_set0 = hipe_icode_cfg:none_visited(),
   Bin_match_call = hipe_bb:last(CurrentBB),
   Exit_set = hipe_icode_cfg:visit(pass_by_begin_handler(hipe_icode:call_fail_label(Bin_match_call),CFG), Exit_set0),
-  Chunk = [{Label, 0, Successors = [hipe_icode:call_continuation(Bin_match_call)] }],
+  Successors = [hipe_icode:call_continuation(Bin_match_call)],
+  Chunk = [{Label, 0, Successors}],
   {Label, extract_binary_matches(CFG, Successors, Exit_set, Chunk)}.
 
 extract_binary_matches(CFG, [Label | Labels], Exit_set0, Chunk0) ->
@@ -230,7 +241,8 @@ extract_binary_matches(CFG, [Label | Labels], Exit_set0, Chunk0) ->
 	    true ->
 	      case hipe_icode:call_fun(LastInstr) of
 		{_, {bs_test_tail,_}} ->
-		  hipe_icode_cfg:visit(hipe_icode:call_continuation(LastInstr), Exit_set0);
+		  hipe_icode_cfg:visit(hipe_icode:call_continuation(LastInstr),
+				       Exit_set0);
 		_ ->
 		  Exit_set0
 	      end;
@@ -255,8 +267,7 @@ pass_by_begin_handler(Label, CFG) ->
   CurrentBB = hipe_icode_cfg:bb(CFG, Label), 
   [First|_] = hipe_bb:code(CurrentBB),
   case hipe_icode:is_begin_handler(First) of 
-    true ->  
-      hipe_icode:goto_label(hipe_bb:last(CurrentBB)); 
+    true ->  hipe_icode:goto_label(hipe_bb:last(CurrentBB)); 
     false -> Label 
   end.
 
@@ -285,7 +296,7 @@ heap_need(Instruction) ->
 		1 ->
 		  4;
 		0 ->
-		  trunc(?MAX_HEAP_BIN_SIZE/4) +2
+		  trunc(?MAX_HEAP_BIN_SIZE/4)+2
 	      end;
 	    {bs_get_binary_all, _} ->
 	      4;
@@ -317,9 +328,9 @@ calculate_need({Chunk, Hash}, Start) ->
     {value, Val} ->
       {Val, {Chunk, Hash}};
     none ->
-      {value,{Start,Need,Succ}}=lists:keysearch(Start,1,Chunk),
-      {NewValue, {Chunk, NewHash}} =calculate_need(Chunk, Succ, Need, Hash),
-      NewerHash=gb_trees:enter(Start, NewValue, NewHash),
+      {value,{Start,Need,Succ}} = lists:keysearch(Start,1,Chunk),
+      {NewValue, {Chunk, NewHash}} = calculate_need(Chunk, Succ, Need, Hash),
+      NewerHash = gb_trees:enter(Start, NewValue, NewHash),
       {NewValue, {Chunk, NewerHash}}
   end;
 calculate_need(Chunk, Start) ->
@@ -413,7 +424,7 @@ add_state_to_instr(Instruction, State=[_Base, Offset]) ->
       Instruction
   end.
 
-copy_state([{match,{_Start,{_Exitset,Chunk}}}|Rest],CFG) ->
+copy_state([{match,{_Start,{_Exitset,Chunk}}}|Rest], CFG) ->
   State = [hipe_icode:mk_new_reg(),
 	   hipe_icode:mk_new_reg(),
 	   hipe_icode:mk_new_reg(),
@@ -423,7 +434,7 @@ copy_state([{match,{_Start,{_Exitset,Chunk}}}|Rest],CFG) ->
   copy_state(Rest, NewCFG); 
 copy_state([_|Rest], CFG) ->
   copy_state(Rest, CFG);
-copy_state([],CFG) ->
+copy_state([], CFG) ->
   CFG.
 
 add_state_to_bs_primops([{Label,_,_}|Rest], CFG,
@@ -495,7 +506,7 @@ get_alias(Arg, Map) ->
   case gb_trees:lookup(Arg, Map) of
     {value, Val} -> Val;
     none -> Arg
-  end.       
+  end.
 
 runtime_effects(Chunk, CFG) ->
   {Vars, Bin}=find_results(Chunk, CFG),
@@ -504,7 +515,7 @@ runtime_effects(Chunk, CFG) ->
 runtime_effects([{Label,_,_}|Rest], CFG, Shifts, Args, Vars, Bin) ->
   BB = hipe_icode_cfg:bb(CFG, Label),
   LocalMapping = get_local_mapping(hipe_bb:code(BB)),
-  Instruction=hipe_bb:last(BB),
+  Instruction = hipe_bb:last(BB),
   case hipe_icode:is_call(Instruction) of
     true ->
       case hipe_icode:call_fun(Instruction) of
@@ -536,7 +547,7 @@ find_results(Chunk, CFG) ->
   find_results(Chunk, CFG, [], []).
 
 find_results([{Label,_,_}|Rest], CFG, Vars, Bin) ->
-  Instruction=hipe_bb:last(hipe_icode_cfg:bb(CFG, Label)),
+  Instruction = hipe_bb:last(hipe_icode_cfg:bb(CFG, Label)),
   {NewVars, NewBin} =
     case hipe_icode:is_call(Instruction) of
       true ->
@@ -544,7 +555,7 @@ find_results([{Label,_,_}|Rest], CFG, Vars, Bin) ->
 	  {hipe_bs_primop, bs_start_match} ->
 	    [Arg] = hipe_icode:call_args(Instruction),
 	    {Vars, Arg};
-	  {hipe_bs_primop, {bs_get_integer, _Size,_Flags}} ->
+	  {hipe_bs_primop, {bs_get_integer, _Size, _Flags}} ->
 	    [Dst] = hipe_icode:call_dstlist(Instruction),
 	    {[Dst|Vars], Bin};
 	  _ ->
@@ -604,7 +615,8 @@ iterate_instructions([Instruction|Rest], Info, Acc) ->
 	    [] ->
 	      iterate_instructions(Rest, NewInfo, Acc);
 	    Lbl ->
-	      iterate_instructions(Rest, NewInfo, [hipe_icode:mk_goto(Lbl)|Acc])
+	      iterate_instructions(Rest, NewInfo, 
+				   [hipe_icode:mk_goto(Lbl)|Acc])
 	  end;
 	{hipe_bs_primop, {bs_restore, I}} ->
 	  {value, Args} = gb_trees:lookup(I, Info),
@@ -614,7 +626,8 @@ iterate_instructions([Instruction|Rest], Info, Acc) ->
 	    [] ->
 	      iterate_instructions(Rest, Info, Moves++Acc);
 	    Lbl ->
-	      iterate_instructions(Rest, Info, [hipe_icode:mk_goto(Lbl)|Moves] ++ Acc)
+	      iterate_instructions(Rest, Info,
+				   [hipe_icode:mk_goto(Lbl)|Moves] ++ Acc)
 	  end;
 	_ ->
 	   iterate_instructions(Rest, Info, [Instruction|Acc])

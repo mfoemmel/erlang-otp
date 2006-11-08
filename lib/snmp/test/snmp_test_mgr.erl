@@ -148,7 +148,12 @@ receive_response(Timeout) ->
 
 
 get_timeout() ->
-    get_timeout(os:type()).
+    case get(receive_response_timeout) of
+	Int when is_integer(Int) and (Int > 0) ->
+	    Int;
+	_ ->
+	    get_timeout(os:type())
+    end.
 
 get_timeout(vxworks) -> 7000;
 get_timeout(_)       -> 3500.
@@ -176,6 +181,8 @@ receive_trap(Timeout) ->
 %%  {mibs, List of Filenames}, {trap_udp, UDPPort (default 5000)},
 %%----------------------------------------------------------------------
 init({Options, CallerPid}) ->
+    put(sname,     mgr),
+    put(verbosity, debug), 
     {A1,A2,A3} = erlang:now(),
     random:seed(A1,A2,A3),
     case (catch is_options_ok(Options)) of
@@ -626,6 +633,7 @@ make_request_id() ->
 echo_pdu(PDU, MiniMIB) ->
     io:format("~s", [snmp_misc:format_pdu(PDU, MiniMIB)]).
 
+
 %%----------------------------------------------------------------------
 %% Test Sequence
 %%----------------------------------------------------------------------
@@ -650,9 +658,12 @@ get_response_impl(Id, Vars) ->
 	     request_id   = ReqId, 
 	     error_status = Err2, 
 	     error_index  = Index2} ->
-	    {error, Id, {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w",
-			 ['get-response', noError, 0, ReqId]},
-	     {"Type: ~w ErrStat: ~w, Idx: ~w", [Type2, Err2, Index2]}};
+	    {error, 
+	     Id, 
+	     {"Type: ~w, ErrStat: ~w, Idx: ~w, RequestId: ~w",
+	      ['get-response', noError, 0, ReqId]},
+	     {"Type: ~w, ErrStat: ~w, Idx: ~w", 
+	      [Type2, Err2, Index2]}};
 
 	{error, Reason} -> 
 	    format_reason(Id, Reason)
@@ -1069,6 +1080,17 @@ sizeOf(B) when binary(B) ->
 d(F,A) -> d(get(debug),F,A).
 
 d(true,F,A) ->
-    io:format("MGR_DBG:" ++ F ++ "~n",A);
+    io:format("*** [~s] MGR_DBG *** " ++ F ++ "~n",
+	      [format_timestamp(now())|A]);
 d(_,_F,_A) -> 
     ok.
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+

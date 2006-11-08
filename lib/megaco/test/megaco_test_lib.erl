@@ -163,10 +163,12 @@ eval(Mod, Fun, Config) ->
 			[TestCase, Config]),
     global:register_name(megaco_test_case_sup, self()),
     Flag = process_flag(trap_exit, true),
+    put(megaco_test_server, true),
     Config2 = Mod:init_per_testcase(Fun, Config),
     Pid = spawn_link(?MODULE, do_eval, [self(), Mod, Fun, Config2]),
     R = wait_for_evaluator(Pid, Mod, Fun, Config2, []),
     Mod:fin_per_testcase(Fun, Config2),
+    erase(megaco_test_server),    
     global:unregister_name(megaco_test_case_sup),
     process_flag(trap_exit, Flag),
     R.
@@ -353,16 +355,22 @@ proxy_init(ProxyId, Controller) ->
 proxy_loop(OwnId, Controller) ->
     receive
 	{'EXIT', Controller, Reason} ->
-	    p("proxy received exit from controller...~n~p~n", [Reason]),
+	    p("proxy_loop -> received exit from controller"
+	      "~n   Reason: ~p"
+	      "~n", [Reason]),
 	    exit(Reason);
 	{apply, Fun} ->
-	    p("proxy received apply request~n", []),
+	    p("proxy_loop -> received apply request~n", []),
 	    Res = Fun(),
-	    %% p("proxy apply result: ~n~p~n", [Res]),
+	    p("proxy_loop -> apply result: "
+	      "~n   ~p"
+	      "~n", [Res]),
 	    Controller ! {res, OwnId, Res},
 	    proxy_loop(OwnId, Controller);
 	OtherMsg ->
-	    p("proxy received unknown message: ~n~p~n", [OtherMsg]),
+	    p("proxy_loop -> received unknown message: "
+	      "~n  OtherMsg: ~p"
+	      "~n", [OtherMsg]),
 	    Controller ! {msg, OwnId, OtherMsg},
 	    proxy_loop(OwnId, Controller)
     end.
@@ -370,16 +378,10 @@ proxy_loop(OwnId, Controller) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Test server callbacks
 init_per_testcase(_Case, Config) ->
-%     io:format("init_per_testcase -> entry with"
-% 	      "~n   _Case:  ~p"
-% 	      "~n   Config: ~p"
-% 	      "~n", [_Case, Config]),
     Pid = group_leader(),
     Name = megaco_global_logger,
     case global:whereis_name(Name) of
 	undefined ->
-% 	    io:format("init_per_testcase -> not already registered"
-% 		      "global: register megaco_global_logger ~p~n", [Pid]),
 	    global:register_name(megaco_global_logger, Pid);
 	Pid ->
 	    io:format("init_per_testcase -> "
@@ -393,32 +395,25 @@ init_per_testcase(_Case, Config) ->
     set_kill_timer(Config).
 
 fin_per_testcase(_Case, Config) ->
-%     io:format("fin_per_testcase -> entry with"
-% 	      "~n   _Case:  ~p"
-% 	      "~n   Config: ~p"
-% 	      "~n", [_Case, Config]),
     Name = megaco_global_logger,
     case global:whereis_name(Name) of
 	undefined ->
 	    io:format("fin_per_testcase -> already un-registered~n", []),
 	    ok;
 	Pid when pid(Pid) ->
-% 	    io:format("fin_per_testcase -> "
-% 		      "registered to ~p => unregister~n", [Pid]),
 	    global:unregister_name(megaco_global_logger),
 	    ok
     end,
-%     io:format("fin_per_testcase -> reset kill timer~n", []),
-    reset_kill_timer(Config),
-    ok.
+    reset_kill_timer(Config).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Set kill timer
 
 set_kill_timer(Config) ->
     case init:get_argument(megaco_test_timeout) of
-	{ok, _ } -> 
-	    ok;
+	{ok, _} -> 
+	    Config;
 	_ ->
 	    Time = 
 		case lookup_config(tc_timeout, Config) of
@@ -427,20 +422,37 @@ set_kill_timer(Config) ->
 		    ConfigTime when integer(ConfigTime) ->
 			ConfigTime
 		end,
-	    Pid = spawn_link(?MODULE, test_case_watchdog, [self(), Time]),
-	    [{kill_timer, Pid}|Config]
+	    Dog = 
+		case get(megaco_test_server) of
+		    true ->
+			spawn_link(?MODULE, watchdog, [self(), Time]);
+		    _ ->
+			test_server:timetrap(Time)
+		end,
+	    [{kill_timer, Dog}|Config]
+		    
+	    
     end.
 
 reset_kill_timer(Config) ->
+    DogKiller = 
+	case get(megaco_test_server) of
+	    true ->
+		fun(P) when is_pid(P) -> P ! stop;
+		   (_) -> ok 
+		end;
+	    _ ->
+		fun(Ref) -> test_server:timetrap_cancel(Ref) end
+	end,
     case lists:keysearch(kill_timer, 1, Config) of
-	{value, {kill_timer, Pid}} when pid(Pid) ->
-	    Pid ! stop,
+	{value, {kill_timer, Dog}} ->
+	    DogKiller(Dog), 
 	    lists:keydelete(kill_timer, 1, Config);
 	_ ->
 	    Config
     end.
 
-test_case_watchdog(Pid, Time) ->
+watchdog(Pid, Time) ->
     erlang:now(),
     receive
 	stop ->

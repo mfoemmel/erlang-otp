@@ -18,6 +18,7 @@
 -module(snmpa_agent).
 
 -include_lib("kernel/include/file.hrl").
+-include("snmpa_internal.hrl").
 -include("snmp_types.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
@@ -648,7 +649,7 @@ handle_info({'EXIT', Pid, Reason}, S) ->
     end;
 
 handle_info(Info, S) ->
-    info_msg("received unexpected info: ~n~p", [Info]),
+    warning_msg("received unexpected info: ~n~p", [Info]),
     {noreply, S}.
 
 handle_call({subagent_get, Varbinds, PduData, IsNotification}, _From, S) ->
@@ -850,7 +851,7 @@ handle_call(stop, _From, S) ->
     {stop, normal, ok, S};
 
 handle_call(Req, _From, S) ->
-    info_msg("received unknown request: ~n~p", [Req]),
+    warning_msg("received unknown request: ~n~p", [Req]),
     Reply = {error, {unknown, Req}}, 
     {reply, Reply, S}.
     
@@ -886,7 +887,7 @@ handle_cast({note_store_verbosity, Verbosity}, #state{note_store = Pid} = S) ->
     {noreply, S};
     
 handle_cast(Msg, S) ->
-    info_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, S}.
 
     
@@ -1223,8 +1224,10 @@ handle_send_trap(S, TrapName, NotifyName, ContextName, Recv, Varbinds) ->
 	[S#state.type, TrapName, NotifyName, ContextName]),
     case snmpa_trap:construct_trap(TrapName, Varbinds) of
 	{ok, TrapRecord, VarList} ->
-	    ?vtrace("handle_send_trap -> construction complete: ~n~p~n~p",
-		[TrapRecord, VarList]),
+	    ?vtrace("handle_send_trap -> construction complete: "
+		    "~n   TrapRecord: ~p"
+		    "~n   VarList: ~p",
+		    [TrapRecord, VarList]),
 	    case S#state.type of
 		subagent ->
 		    ?vtrace("handle_send_trap -> [sub] forward trap",[]),
@@ -3089,11 +3092,16 @@ get_stats_counters([Counter|Counters], Acc) ->
 
 %% ---------------------------------------------------------------------
 
-error_msg(F, A) ->
-    error_logger:error_msg("~w: " ++ F ++ "~n", [?MODULE|A]).
+%% info_msg(F, A) ->
+%%     ?snmpa_info(F, A).
 
-info_msg(F, A) ->
-    error_logger:info_msg("~w: " ++ F ++ "~n", [?MODULE|A]).
+warning_msg(F, A) ->
+    ?snmpa_warning(F, A).
+
+error_msg(F, A) ->
+    ?snmpa_error(F, A).
+
+%% --- 
 
 config_err(F, A) ->
     snmpa_error:config_err(F, A).
@@ -3163,8 +3171,8 @@ get_option(Key, Opts, Default) ->
 %% ---------------------------------------------------------------------
 
 
-% i(F) ->
-%     i(F, []).
+%% i(F) ->
+%%     i(F, []).
 
-% i(F, A) ->
-%     io:format("~p: " ++ F ++ "~n", [?MODULE|A]).
+%% i(F, A) ->
+%%     io:format("~p: " ++ F ++ "~n", [?MODULE|A]).

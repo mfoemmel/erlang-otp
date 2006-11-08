@@ -30,10 +30,10 @@
 #include "erl_process.h"
 #include "erl_nmgc.h"
 
-static ErlMessage erl_message_buf[ERL_MESSAGE_BUF_SZ];
-static ErlMessage *erl_message_buf_end;
-static ErlMessage *free_erl_message = NULL;
-static erts_smp_spinlock_t message_buf_lock;
+ERTS_SMP_QUALLOC_IMPL(message,
+		      ErlMessage,
+		      ERL_MESSAGE_BUF_SZ,
+		      ERTS_ALC_T_MSG_REF)
 
 #if defined(DEBUG) && 0
 #define HARD_DEBUG
@@ -44,53 +44,13 @@ static erts_smp_spinlock_t message_buf_lock;
 void
 init_message(void)
 {
-    int i;
-
-    erts_smp_spinlock_init(&message_buf_lock, "message_buf");
-
-    erl_message_buf_end = erl_message_buf + ERL_MESSAGE_BUF_SZ;
-
-    /* Setup free list */
-    free_erl_message = &erl_message_buf[0];
-    for (i = 0; i < ERL_MESSAGE_BUF_SZ - 1; i++)
-	erl_message_buf[i].next = &erl_message_buf[i + 1];
-    erl_message_buf[ERL_MESSAGE_BUF_SZ - 1].next = NULL;
-    ASSERT(&erl_message_buf[ERL_MESSAGE_BUF_SZ - 1] < erl_message_buf_end);
-}
-
-static ERTS_INLINE ErlMessage *
-alloc_message(void)
-{
-    ErlMessage *res;
-
-    erts_smp_spin_lock(&message_buf_lock);
-    if (free_erl_message) {
-	res = free_erl_message;
-	free_erl_message = free_erl_message->next;
-	erts_smp_spin_unlock(&message_buf_lock);
-    }
-    else {
-	erts_smp_spin_unlock(&message_buf_lock);
-	res = (ErlMessage *) erts_alloc(ERTS_ALC_T_MSG_REF,
-					sizeof(ErlMessage));
-    }
-
-    return res;
+    init_message_alloc();
 }
 
 void
 free_message(ErlMessage* mp)
 {
-    erts_smp_spin_lock(&message_buf_lock);
-    if (mp < erl_message_buf_end && mp >= erl_message_buf) {
-	mp->next = free_erl_message;
-	free_erl_message = mp;
-	erts_smp_spin_unlock(&message_buf_lock);
-    }
-    else {
-	erts_smp_spin_unlock(&message_buf_lock);
-	erts_free(ERTS_ALC_T_MSG_REF, (void *) mp);
-    }
+    message_free(mp);
 }
 
 /* Allocate message buffer (size in words) */
@@ -236,7 +196,11 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
 	bp->next = MBUF(proc);
 	MBUF(proc) = bp;
 	MBUF_SIZE(proc) += bp->size;
+#if defined(HEAP_FRAG_ELIM_TEST)
+	MSO(proc).overhead += proc->heap_sz; /* Force GC */
+#else
 	MSO(proc).overhead += (sizeof(ErlHeapFragment) / sizeof(Eterm) - 1);
+#endif
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {
@@ -291,7 +255,16 @@ erts_queue_message(Process* receiver,
     ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCKS_MSG_SEND & receiver_locks)
 		       == ERTS_PROC_LOCKS_MSG_SEND);
 
-    mp = alloc_message();
+#ifdef ERTS_SMP
+    if (ERTS_PROC_PENDING_EXIT(receiver)) {
+	/* Drop message if receiver has a pending exit ... */
+	if (bp)
+	    free_message_buffer(bp);
+	return;
+    }
+#endif
+
+    mp = message_alloc();
     ERL_MESSAGE_TERM(mp) = message;
     ERL_MESSAGE_TOKEN(mp) = seq_trace_token;
     mp->next = NULL;
@@ -337,6 +310,22 @@ erts_queue_message(Process* receiver,
     ERTS_HOLE_CHECK(receiver);
 #endif
 }
+
+void
+erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp)
+{
+    link_mbuf_to_proc(proc, bp);
+#ifdef HEAP_FRAG_ELIM_TEST
+    {
+	Eterm* htop = HEAP_TOP(proc);
+	if (htop < HEAP_LIMIT(proc)) {
+	    *htop = make_pos_bignum_header(HEAP_LIMIT(proc)-htop-1);
+	    HEAP_TOP(proc) = HEAP_LIMIT(proc);
+	}
+    }
+#endif
+}
+
 
 #ifdef ERTS_SMP
 
@@ -626,7 +615,8 @@ void
 erts_send_message(Process* sender,
 		  Process* receiver,
 		  Uint32 *receiver_locks,
-		  Eterm message)
+		  Eterm message,
+		  unsigned flags)
 {
     ErlHeapFragment* bp = NULL;
     Eterm token = NIL;
@@ -635,7 +625,7 @@ erts_send_message(Process* sender,
     BM_MESSAGE(message,sender,receiver);
     BM_START_TIMER(send);
 
-    if (SEQ_TRACE_TOKEN(sender) != NIL) {
+    if (SEQ_TRACE_TOKEN(sender) != NIL && !(flags & ERTS_SND_FLG_NO_SEQ_TRACE)) {
         Uint msize;
         Eterm* hp;
 
@@ -667,7 +657,7 @@ erts_send_message(Process* sender,
         BM_SWAP_TIMER(send,system);
 #ifdef HYBRID
     } else {
-        ErlMessage* mp = alloc_message();
+        ErlMessage* mp = message_alloc();
         BM_SWAP_TIMER(send,copy);
 #ifdef INCREMENTAL
         /* TODO: During GC activate processes if the message relies in
@@ -710,26 +700,29 @@ erts_send_message(Process* sender,
         return;
 #else
     } else if (sender == receiver) {
-	ErlMessage* mp = alloc_message();
+	/* Drop message if receiver has a pending exit ... */
+	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
+	    ErlMessage* mp = message_alloc();
 #ifdef ERTS_SMP
-	mp->bp = NULL;
+	    mp->bp = NULL;
 #endif
-	ERL_MESSAGE_TERM(mp) = message;
-	ERL_MESSAGE_TOKEN(mp) = NIL;
-	mp->next = NULL;
-	/*
-	 * We move 'in queue' to 'private queue' and place
-	 * message at the end of 'private queue' in order
-	 * to ensure that the 'in queue' doesn't contain
-	 * references into the heap. By ensuring this,
-	 * we don't need to include the 'in queue' in
-	 * the root set when garbage collecting.
-	 */
-	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(receiver);
-	LINK_MESSAGE_PRIVQ(receiver, mp);
+	    ERL_MESSAGE_TERM(mp) = message;
+	    ERL_MESSAGE_TOKEN(mp) = NIL;
+	    mp->next = NULL;
+	    /*
+	     * We move 'in queue' to 'private queue' and place
+	     * message at the end of 'private queue' in order
+	     * to ensure that the 'in queue' doesn't contain
+	     * references into the heap. By ensuring this,
+	     * we don't need to include the 'in queue' in
+	     * the root set when garbage collecting.
+	     */
+	    ERTS_SMP_MSGQ_MV_INQ2PRIVQ(receiver);
+	    LINK_MESSAGE_PRIVQ(receiver, mp);
 
-	if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
-	    trace_receive(receiver, message);
+	    if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
+		trace_receive(receiver, message);
+	    }
 	}
         BM_SWAP_TIMER(send,system);
 	return;
@@ -738,20 +731,23 @@ erts_send_message(Process* sender,
         Uint msz;
 	ErlOffHeap *ohp;
         Eterm *hp;
-        BM_SWAP_TIMER(send,size);
-        msz = size_object(message);
-        BM_SWAP_TIMER(size,send);
-	hp = erts_alloc_message_heap(msz, &bp, &ohp, receiver, receiver_locks);
-        BM_SWAP_TIMER(send,copy);
-	message = copy_struct(message, msz, &hp, ohp);
-        BM_MESSAGE_COPIED(msz);
-        BM_SWAP_TIMER(copy,send);
-        erts_queue_message(receiver, 
-			   *receiver_locks,
-			   bp, message, token);
+	/* Drop message if receiver has a pending exit ... */
+	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
+	    BM_SWAP_TIMER(send,size);
+	    msz = size_object(message);
+	    BM_SWAP_TIMER(size,send);
+	    hp = erts_alloc_message_heap(msz,&bp,&ohp,receiver,receiver_locks);
+	    BM_SWAP_TIMER(send,copy);
+	    message = copy_struct(message, msz, &hp, ohp);
+	    BM_MESSAGE_COPIED(msz);
+	    BM_SWAP_TIMER(copy,send);
+	    erts_queue_message(receiver, 
+			       *receiver_locks,
+			       bp, message, token);
+	}
         BM_SWAP_TIMER(send,system);
 #else
-	ErlMessage* mp = alloc_message();
+	ErlMessage* mp = message_alloc();
         Uint msize;
         Eterm *hp;
         BM_SWAP_TIMER(send,size);
@@ -841,40 +837,5 @@ erts_deliver_exit_message(Eterm from, Process *to, Uint32 *to_locksp,
 		     : copy_struct(from, sz_from, &hp, ohp));
 	save = TUPLE3(hp, am_EXIT, from_copy, mess);
 	erts_queue_message(to, *to_locksp, bp, save, NIL);
-    }
-}
-
-void
-deliver_result(Process *c_p, Eterm sender, Eterm pid, Eterm res)
-{
-    Process *rp;
-    Uint32 rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
-
-    ASSERT(is_internal_port(sender)
-	   && is_internal_pid(pid)
-	   && internal_pid_index(pid) < erts_max_processes);
-
-    rp = erts_pid2proc(c_p, ERTS_PROC_LOCK_MAIN, pid, rp_locks);
-
-    if (rp) {
-	Eterm tuple;
-	ErlHeapFragment *bp;
-	ErlOffHeap *ohp;
-	Eterm* hp;
-	Uint sz_res;
-#ifdef ERTS_SMP
-	if (rp == c_p)
-	    rp_locks |= ERTS_PROC_LOCK_MAIN;
-#endif
-	sz_res = size_object(res);
-	hp = erts_alloc_message_heap(sz_res + 3, &bp, &ohp, rp, &rp_locks);
-	res = copy_struct(res, sz_res, &hp, ohp);
-	tuple = TUPLE2(hp, sender, res);
-	erts_queue_message(rp, rp_locks, bp, tuple, NIL);
-#ifdef ERTS_SMP
-	if (rp == c_p)
-	    rp_locks &= ~ERTS_PROC_LOCK_MAIN;
-#endif
-	erts_smp_proc_unlock(rp, rp_locks);
     }
 }

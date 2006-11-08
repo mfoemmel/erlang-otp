@@ -440,19 +440,21 @@ erts_find_local_func(Eterm mfa[3]) {
 
 static int set_break(Eterm mfa[3], int specified, 
 		     Binary *match_spec, Eterm break_op, 
-		     enum erts_break_op count_op, Eterm tracer_pid) {
+		     enum erts_break_op count_op, Eterm tracer_pid)
+{
     Module *modp;
     int num_processed = 0;
     if (!specified) {
 	/* Find and process all modules in the system... */
-	int current = -1;
-	while ((current = module_iter(current)) >= 0) {
-	    if ((modp = module_code(current)) != NULL) {
-		num_processed += 
-		    set_module_break(modp, mfa, specified, 
-				     match_spec, break_op, count_op, 
-				     tracer_pid);
-	    }
+	int current;
+	int last = module_code_size();
+	for (current = 0; current < last; current++) {
+	    modp = module_code(current);
+	    ASSERT(modp != NULL);
+	    num_processed += 
+		set_module_break(modp, mfa, specified, 
+				 match_spec, break_op, count_op, 
+				 tracer_pid);
 	}
     } else {
 	/* Process a single module */
@@ -623,17 +625,20 @@ static int set_function_break(Module *modp, Uint *pc,
     return 1;
 }
 
-static int clear_break(Eterm mfa[3], int specified, Uint break_op) {
+static int clear_break(Eterm mfa[3], int specified, Uint break_op)
+{
     int num_processed = 0;
     Module *modp;
+
     if (!specified) {
 	/* Iterate over all modules */
-	int current = -1;
-	while ((current = module_iter(current)) >= 0) {
-	    if ((modp = module_code(current)) != NULL) {
-		num_processed += 
-		    clear_module_break(modp, mfa, specified, break_op);
-	    }
+	int current;
+	int last = module_code_size();
+
+	for (current = 0; current < last; current++) {
+	    modp = module_code(current);
+	    ASSERT(modp != NULL);
+	    num_processed += clear_module_break(modp, mfa, specified, break_op);
 	}
     } else {
 	/* Process a single module */

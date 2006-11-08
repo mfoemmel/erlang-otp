@@ -156,6 +156,8 @@ do {							\
 
 struct process;
 
+#define ERTS_SND_FLG_NO_SEQ_TRACE		(((unsigned) 1) << 0)
+
 void init_message(void);
 void free_message(ErlMessage *);
 ErlHeapFragment* new_message_buffer(Uint);
@@ -164,9 +166,8 @@ ErlHeapFragment* erts_resize_message_buffer(ErlHeapFragment *, Uint,
 void free_message_buffer(ErlHeapFragment *);
 void erts_queue_message(struct process*, Uint32, ErlHeapFragment*, Eterm, Eterm);
 void erts_deliver_exit_message(Eterm, struct process*, Uint32 *, Eterm, Eterm);
-void erts_send_message(struct process*, struct process*, Uint32 *, Eterm);
-
-void deliver_result(struct process*, Eterm, Eterm, Eterm);
+void erts_send_message(struct process*, struct process*, Uint32 *, Eterm, unsigned);
+void erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp);
 
 #ifdef ERTS_SMP
 void erts_move_msg_mbuf_to_heap(Eterm**, ErlOffHeap*, ErlMessage *);

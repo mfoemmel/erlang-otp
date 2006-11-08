@@ -56,6 +56,7 @@ app_init(Config) when list(Config) ->
     case is_app(megaco) of
 	{ok, AppFile} ->
 	    io:format("AppFile: ~n~p~n", [AppFile]),
+	    megaco:print_version_info(),
 	    [{app_file, AppFile}|Config];
 	{error, Reason} ->
 	    fail(Reason)

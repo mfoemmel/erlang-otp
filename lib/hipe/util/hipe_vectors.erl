@@ -2,7 +2,7 @@
 %%
 %%			  VECTORS IN ERLANG
 %%
-%% Abstract interface to vectors.
+%% Abstract interface to vectors, indexed from 0 to size-1.
 
 %-define(USE_TUPLES, true).
 -define(USE_GBTREES, true).
@@ -26,7 +26,7 @@ new(N, V) ->
 size(V) -> erlang:size(V).
 
 list(Vec) ->
-    index(tuple_to_list(Vec), 1).
+    index(tuple_to_list(Vec), 0).
 
 index([X|Xs],N) ->
     [{N,X} | index(Xs,N+1)];
@@ -40,9 +40,9 @@ vector_to_list(V) ->
     tuple_to_list(V).
 
 set(Vec,Ix,V) ->
-    setelement(Ix,Vec,V).
+    setelement(Ix+1,Vec,V).
 
-get(Vec,Ix) -> element(Ix,Vec).
+get(Vec,Ix) -> element(Ix+1,Vec).
 
 -endif. %% ifdef USE_TUPLES
 
@@ -50,13 +50,13 @@ get(Vec,Ix) -> element(Ix,Vec).
 
 -ifdef(USE_GBTREES).
 
-new(N, V) ->
+new(N, V) when is_integer(N) ->
     gb_trees:from_orddict(mklist(N, V)).
 
 mklist(N, V) ->
-    mklist(1, N, V).
+    mklist(0, N, V).
 
-mklist(M, N, V) when M =< N ->
+mklist(M, N, V) when M < N ->
     [{M, V} | mklist(M+1, N, V)];
 mklist(_, _, _) ->
     [].
@@ -67,20 +67,20 @@ list(Vec) ->
     gb_trees:to_list(Vec).
 
 list_to_vector(Xs) ->
-    gb_trees:from_orddict(index(Xs, 1)).
+    gb_trees:from_orddict(index(Xs, 0)).
 
-index([X|Xs],N) ->
-    [{N,X} | index(Xs,N+1)];
+index([X|Xs], N) ->
+    [{N, X} | index(Xs, N+1)];
 index([],_) ->
     [].
 
 vector_to_list(V) ->
     gb_trees:values(V).
 
-set(Vec,Ix,V) ->
-    gb_trees:update(Ix,V,Vec).
+set(Vec, Ix, V) ->
+    gb_trees:update(Ix, V, Vec).
 
-get(Vec,Ix) ->
-    gb_trees:get(Ix,Vec).
+get(Vec, Ix) ->
+    gb_trees:get(Ix, Vec).
 
 -endif. %% ifdef USE_GBTREES

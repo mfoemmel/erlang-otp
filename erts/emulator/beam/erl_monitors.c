@@ -24,11 +24,10 @@
  * references are strictly smaller than remote references and are sorted 
  * by inlined comparision functionality. Remote references are handled by the
  * usual cmp function.
- * Each Monitor is tagged with  diferent tags depending on which end of the 
+ * Each Monitor is tagged with different tags depending on which end of the 
  * monitor it is.
  * A monitor is removed either explicitly by reference or all monitors are 
  * removed when the process exits. No need to access the monitor by pid.
- * [...] More comments to follow when I know how I implemented it :-)
  **************************************************************************/ 
 
 #ifdef HAVE_CONFIG_H
@@ -837,7 +836,6 @@ Eterm erts_debug_dump_links_1(Process *p, Eterm pid)
 	    erts_smp_io_unlock();
 	    BIF_RET(am_true);
 	} else {
-	    ERTS_SMP_BIF_CHK_EXITED(p);
 	    BIF_ERROR(p,BADARG);
 	}
     } else {

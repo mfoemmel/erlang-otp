@@ -102,6 +102,11 @@ static void atexit_alloc_code_stats(void)
 #define ALLOC_CODE_STATS(X)	do{}while(0)
 #endif
 
+/* FreeBSD 6.1 breakage */
+#if !defined(MAP_ANONYMOUS) && defined(MAP_ANON)
+#define MAP_ANONYMOUS MAP_ANON
+#endif
+
 static void morecore(unsigned int alloc_bytes)
 {
     unsigned int map_bytes;
@@ -120,12 +125,37 @@ static void morecore(unsigned int alloc_bytes)
        and in the low 2GB of the address space. Also attempt
        to make it adjacent to the previous mapping. */
     map_hint = code_next + code_bytes;
+#if !defined(MAP_32BIT)
+    /* FreeBSD doesn't have MAP_32BIT, and it doesn't respect
+       a plain map_hint (returns high mappings even though the
+       hint refers to a free area), so we have to use both map_hint
+       and MAP_FIXED to get addresses below the 2GB boundary.
+       This is even worse than the Linux/ppc64 case.
+       Similarly, Solaris 10 doesn't have MAP_32BIT,
+       and it doesn't respect a plain map_hint. */
+    if (!map_hint) /* first call */
+	map_hint = (char*)(512*1024*1024); /* 0.5GB */
+#endif
     if ((unsigned long)map_hint & 4095)
 	abort();
     map_start = mmap(map_hint, map_bytes,
 		     PROT_EXEC|PROT_READ|PROT_WRITE,
-		     MAP_PRIVATE|MAP_ANONYMOUS|MAP_32BIT,
+		     MAP_PRIVATE|MAP_ANONYMOUS
+#if defined(MAP_32BIT)
+		     |MAP_32BIT
+#elif defined(__FreeBSD__) || defined(__sun__)
+		     |MAP_FIXED
+#endif
+		     ,
 		     -1, 0);
+    ALLOC_CODE_STATS(fprintf(stderr, "%s: mmap(%p,%u,...) == %p\r\n", __FUNCTION__, map_hint, map_bytes, map_start));
+#if !defined(MAP_32BIT)
+    if (map_start != MAP_FAILED &&
+	(((unsigned long)map_start + (map_bytes-1)) & ~0x7FFFFFFFUL)) {
+	fprintf(stderr, "mmap with hint %p returned code memory %p\r\n", map_hint, map_start);
+	abort();
+    }
+#endif
     if (map_start == MAP_FAILED) {
 	perror("mmap");
 	abort();
@@ -137,6 +167,10 @@ static void morecore(unsigned int alloc_bytes)
     if (map_start == map_hint) {
 	ALLOC_CODE_STATS(++nr_joins);
 	code_bytes += map_bytes;
+#if !defined(MAP_32BIT)
+	if (!code_next) /* first call */
+	    code_next = map_start;
+#endif
     } else {
 	ALLOC_CODE_STATS(++nr_splits);
 	ALLOC_CODE_STATS(total_lost += code_bytes);

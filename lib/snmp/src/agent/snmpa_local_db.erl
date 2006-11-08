@@ -18,9 +18,11 @@
 -module(snmpa_local_db).
 
 -include_lib("kernel/include/file.hrl").
+-include("snmpa_internal.hrl").
 -include("snmp_types.hrl").
 -include("STANDARD-MIB.hrl").
 
+%% -define(VMODULE, "LDB").
 -include("snmp_verbosity.hrl").
 
 
@@ -299,16 +301,16 @@ match(Name, Pattern) ->
 %% Implements the variable functions.
 %%-----------------------------------------------------------------
 handle_call({variable_get, Name, Db}, _From, State) -> 
-    ?vlog("variable get: ~p",[Name]),
+    ?vlog("variable get: ~p [~p]",[Name, Db]),
     {reply, lookup(Db, Name, State), State};
 
 handle_call({variable_set, Name, Db, Val}, _From, State) -> 
-    ?vlog("variable ~p set: "
-	  "~n   Val:  ~p",[Name, Val]),
+    ?vlog("variable ~p set [~p]: "
+	  "~n   Val:  ~p",[Name, Db, Val]),
     {reply, insert(Db, Name, Val, State), State};
 
 handle_call({variable_delete, Name, Db}, _From, State) -> 
-    ?vlog("variable delete: ~p",[Name]),
+    ?vlog("variable delete: ~p [~p]",[Name, Db]),
     {reply, delete(Db, Name, State), State};
 
 
@@ -330,12 +332,12 @@ handle_call({variable_delete, Name, Db}, _From, State) ->
 %% next(<tableName>, <list of indexes>)   if Row exist O(1), else O(n)
 %%-----------------------------------------------------------------
 handle_call({table_create, Name, Db}, _From, State) ->
-    ?vlog("table create: ~p",[Name]),
+    ?vlog("table create: ~p [~p]",[Name, Db]),
     catch handle_delete(Db, Name, State),
     {reply, insert(Db, {Name, first}, {undef, first, first}, State), State};
 
 handle_call({table_exists, Name, Db}, _From, State) ->
-    ?vlog("table exist: ~p",[Name]),
+    ?vlog("table exist: ~p [~p]",[Name, Db]),
     Res =
 	case lookup(Db, {Name, first}, State) of
 	    {value, _} -> true;
@@ -346,15 +348,15 @@ handle_call({table_exists, Name, Db}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_delete, Name, Db}, _From, State) ->
-    ?vlog("table delete: ~p",[Name]),
+    ?vlog("table delete: ~p [~p]",[Name, Db]),
     catch handle_delete(Db, Name, State),
     {reply, true, State};
 
 handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
-    ?vlog("table create row: "
+    ?vlog("table create row [~p]: "
 	  "~n   Name:    ~p"
 	  "~n   Indexes: ~p"
-	  "~n   Row:     ~p",[Name, Indexes, Row]),
+	  "~n   Row:     ~p",[Db, Name, Indexes, Row]),
     Res = 
 	case catch handle_create_row(Db, Name, Indexes, Row, State) of
 	    {'EXIT', _} -> false;
@@ -365,9 +367,9 @@ handle_call({table_create_row, Name, Db, Indexes, Row}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table delete row: "
+    ?vlog("table delete row [~p]: "
 	  "~n   Name:    ~p"
-	  "~n   Indexes: ~p", [Name, Indexes]),
+	  "~n   Indexes: ~p", [Db, Name, Indexes]),
     Res = 
 	case catch handle_delete_row(Db, Name, Indexes, State) of
 	    {'EXIT', _} -> false;
@@ -378,9 +380,9 @@ handle_call({table_delete_row, Name, Db, Indexes}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_get_row, Name, Db, Indexes}, _From, State) -> 
-    ?vlog("table get row: "
+    ?vlog("table get row [~p]: "
 	  "~n   Name:    ~p"
-	  "~n   Indexes: ~p",[Name, Indexes]),
+	  "~n   Indexes: ~p",[Db, Name, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> 
 		  undefined;
@@ -392,9 +394,9 @@ handle_call({table_get_row, Name, Db, Indexes}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_get_element, Name, Db, Indexes, Col}, _From, State) ->
-    ?vlog("table ~p get element: "
+    ?vlog("table ~p get element [~p]: "
 	  "~n   Indexes: ~p"
-	  "~n   Col:     ~p", [Name, Indexes, Col]),
+	  "~n   Col:     ~p", [Name, Db, Indexes, Col]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      undefined -> undefined;
 	      {value, {Row, _Prev, _Next}} -> {value, element(Col, Row)}
@@ -404,9 +406,9 @@ handle_call({table_get_element, Name, Db, Indexes, Col}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_set_elements, Name, Db, Indexes, Cols}, _From, State) ->
-    ?vlog("table ~p set element: "
+    ?vlog("table ~p set element [~p]: "
 	  "~n   Indexes: ~p"
-	  "~n   Cols:    ~p", [Name, Indexes, Cols]),
+	  "~n   Cols:    ~p", [Name, Db, Indexes, Cols]),
     Res = 
 	case catch handle_set_elements(Db, Name, Indexes, Cols, State) of
 	    {'EXIT', _} -> false;
@@ -417,12 +419,12 @@ handle_call({table_set_elements, Name, Db, Indexes, Cols}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_next, Name, Db, []}, From, State) ->
-    ?vlog("table next: ~p",[Name]),
+    ?vlog("table next: ~p [~p]",[Name, Db]),
     handle_call({table_next, Name, Db, first}, From, State);
     
 handle_call({table_next, Name, Db, Indexes}, _From, State) ->
-    ?vlog("table ~p next: "
-	  "~n   Indexes: ~p",[Name,Indexes]),
+    ?vlog("table ~p next [~p]: "
+	  "~n   Indexes: ~p",[Name, Db, Indexes]),
     Res = case lookup(Db, {Name, Indexes}, State) of
 	      {value, {_Row, _Prev, Next}} -> 
 		  if 
@@ -437,15 +439,15 @@ handle_call({table_next, Name, Db, Indexes}, _From, State) ->
     {reply, Res, State};
 
 handle_call({table_max_col, Name, Db, Col}, _From, State) ->
-    ?vlog("table ~p max col: "
-	  "~n   Col: ~p",[Name,Col]),
+    ?vlog("table ~p max col [~p]: "
+	  "~n   Col: ~p",[Name, Db, Col]),
     Res = table_max_col(Db, Name, Col, 0, first, State),
     ?vdebug("table max col result: "
 	    "~n   ~p",[Res]),
     {reply, Res, State};
 
 handle_call({match, Name, Db, Pattern}, _From, State) ->
-    ?vlog("~p match(~p):"
+    ?vlog("match ~p [~p]:"
 	"~n   Pat: ~p", [Name, Db, Pattern]),
     L1 = match(Db, Name, Pattern, State),
     {reply, lists:delete([undef], L1), State};
@@ -491,7 +493,7 @@ handle_call(print, _From, #state{dets = Dets, ets = Ets} = State) ->
     {reply, {{ets, L1}, {dets, L2}}, State};
 
 handle_call({print, Table, Db}, _From, State) ->
-    ?vlog("print: ~p",[Table]),
+    ?vlog("print: ~p [~p]", [Table, Db]),
     L = match(Db, Table, '$1', State),
     {reply, lists:delete([undef], L), State};
 
@@ -526,7 +528,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, stopped, State};
 
 handle_call(Req, _From, State) ->
-    info_msg("received unknown request: ~n~p", [Req]),
+    warning_msg("received unknown request: ~n~p", [Req]),
     Reply = {error, {unknown, Req}}, 
     {reply, Reply, State}.
 
@@ -547,7 +549,7 @@ handle_cast({verbosity,Verbosity}, State) ->
     {noreply, State};
     
 handle_cast(Msg, State) ->
-    info_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
     
 
@@ -568,7 +570,7 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
     {noreply, S#state{backup = undefined}};
 
 handle_info(Info, State) ->
-    info_msg("received unknown info: ~n~p", [Info]),
+    warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 
@@ -825,16 +827,16 @@ table_max_col(Db, Name, Col, Max, Indexes, State) ->
 %% Interface to Pets.
 %%-----------------------------------------------------------------
 insert(volatile, Key, Val, #state{ets = Ets}) -> 
-    ?vtrace("insert(volatile) -> ~n"
-	    "      Key: ~p~n"
-	    "      Val: ~p",
+    ?vtrace("insert(volatile) -> entry with"
+	    "~n   Key: ~p"
+	    "~n   Val: ~p",
 	    [Key,Val]),
     ets:insert(Ets, {Key, Val}),
     true;
 insert(persistent, Key, Val, #state{dets = Dets, notify_clients = NC}) -> 
-    ?vtrace("insert(persistent) -> ~n"
-	    "      Key:  ~p~n"
-	    "      Val:  ~p",
+    ?vtrace("insert(persistent) -> entry with"
+	    "~n   Key: ~p"
+	    "~n   Val: ~p",
 	    [Key,Val]),
     case dets:insert(Dets, {Key, Val}) of
 	ok ->
@@ -846,9 +848,9 @@ insert(persistent, Key, Val, #state{dets = Dets, notify_clients = NC}) ->
 	    false
     end;
 insert(permanent, Key, Val, #state{dets = Dets, notify_clients = NC}) -> 
-    ?vtrace("insert(permanent) -> ~n"
-	    "      Key:  ~p~n"
-	    "      Val:  ~p",
+    ?vtrace("insert(permanent) -> entry with"
+	    "~n   Key: ~p"
+	    "~n   Val: ~p",
 	    [Key,Val]),
     case dets:insert(Dets, {Key, Val}) of
 	ok ->
@@ -1137,11 +1139,16 @@ ets_size(T) ->
 
 %%------------------------------------------------------------------
 
-error_msg(F, A) ->
-    (catch error_logger:error_msg("~w: " ++ F ++ "~n", [?MODULE|A])).
+%% info_msg(F, A) ->
+%%     ?snmpa_info("Local DB server: " ++ F, A).
 
-info_msg(F, A) ->
-    (catch error_logger:info_msg("~w: " ++ F ++ "~n", [?MODULE|A])).
+warning_msg(F, A) ->
+    ?snmpa_warning("Local DB server: " ++ F, A).
+
+error_msg(F, A) ->
+    ?snmpa_error("Local DB server: " ++ F, A).
+
+%% --- 
 
 user_err(F, A) ->
     snmpa_error:user_err(F, A).
@@ -1166,3 +1173,4 @@ cast(Msg) ->
 
 % i(F, A) ->
 %     io:format("~p: " ++ F ++ "~n", [?MODULE|A]).
+

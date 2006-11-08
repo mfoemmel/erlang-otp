@@ -25,7 +25,7 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_icode).
 
--export([run_analysis/4]).
+-export([run_analysis/5]).
 
 -include("hipe_icode.hrl").
 -include("hipe_icode_type.hrl").
@@ -57,18 +57,17 @@
 
 %%-define(DEBUG, true).
 
-run_analysis(Cfg, IcodeFun, Plt, SendWarn) ->
+run_analysis(Cfg, IcodeFun, Plt, NoWarnUnused, SendWarn) ->
   OldSig = init_mfa_info(IcodeFun, Plt),
   State = analyze(Cfg),
   pp(State, IcodeFun, "Pre-specialization"),
   NewState = cfg_loop(State),
   pp(NewState, IcodeFun, "Post-specialization"),
-  case SendWarn of
-    true ->
-      Warnings = warn_on_type_errors(Cfg, State, NewState, IcodeFun);
-    false ->
-      Warnings = []
-  end,
+  Warnings =
+    case SendWarn of
+      true -> warn_on_type_errors(Cfg, State, NewState, NoWarnUnused, IcodeFun);
+      false -> []
+    end,
   return(NewState, IcodeFun, OldSig, Warnings).
 
 cfg_loop(State) ->
@@ -1362,8 +1361,13 @@ check_for_tuple_as_fun(Fun, [Arg|TailArgs]) ->
 			  primop_type(Fun, [t_fun()|TailArgs])))
   end.
 
-warn_on_type_errors(PreAnalysisCfg, OrigState, FinalState, IcodeFun) ->
-  Warn1 = [warn_on_args(IcodeFun, PreAnalysisCfg)],
+warn_on_type_errors(PreAnalysisCfg, OrigState, FinalState, 
+		    NoWarnUnused, IcodeFun) ->
+  Warn1 =
+    case sets:is_element(IcodeFun, NoWarnUnused) of
+      true -> [];
+      false -> [warn_on_args(IcodeFun, PreAnalysisCfg)]
+    end,
   OrigCfg = state__cfg(OrigState),
   OrigLabels = hipe_icode_cfg:reverse_postorder(OrigCfg),
   Warn2 = warn_on_control_flow(OrigLabels, OrigState, IcodeFun, Warn1),
@@ -1831,11 +1835,17 @@ call_warning(Fun, IcodeFun, Args) ->
   case hipe_icode_primops:fails(Fun) of
     true ->
       Signature = find_signature(Fun, length(Args)),
-      W = io_lib:format("~w: Call to function ~w with signature ~s will fail "
-			"since the arguments are of type ~s!\n",
-			[IcodeFun, Fun, t_to_string(Signature),
-			 pp_args(Args)]),
-      {?WARN_FAILING_CALL, W};
+      ArgTypes = t_fun_args(Signature),
+      RetType = t_fun_range(Signature),
+      case any_is_none([RetType|ArgTypes]) of
+	true -> none;
+	false ->
+	  W = io_lib:format("~w: Call to function ~w with signature ~s will "
+			    "fail since the arguments are of type ~s!\n",
+			    [IcodeFun, Fun, t_to_string(Signature),
+			     pp_args(Args)]),
+	  {?WARN_FAILING_CALL, W}
+      end;
     false ->
       W = io_lib:format("~w: Unsafe BEAM code! "
 			"Please recompile with a newer BEAM compiler.\n",

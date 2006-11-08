@@ -418,8 +418,9 @@ expr({'try',L,Es0,Cs0,Ecs,[]}, St0) ->
     {Fpat,St4} = new_var(St3),
     Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=try_clause},Fpat]}),
     {Evs,Hs,St5} = try_exception(Ecs, St4),
+    Lanno = lineno_anno(L, St1),
     {#itry{anno=#a{anno=lineno_anno(L, St5)},args=Es1,
-	   vars=[V],body=[#icase{anno=#a{},args=[V],clauses=Cs1,fc=Fc}],
+	   vars=[V],body=[#icase{anno=#a{anno=Lanno},args=[V],clauses=Cs1,fc=Fc}],
 	   evars=Evs,handler=Hs},
      [],St5};
 expr({'try',L,Es0,[],[],As0}, St0) ->
@@ -526,7 +527,7 @@ make_bool_switch_body(L, E, V, T, F) ->
        [{call,NegL,{remote,NegL,{atom,NegL,erlang},{atom,NegL,error}},
 	 [Error]}]}]}.
 
-make_bool_switch_guard(_, E, _, [{atom,_,true}], [{atom,_,false}]) -> E;
+make_bool_switch_guard(_, E, _, {atom,_,true}, {atom,_,false}) -> E;
 make_bool_switch_guard(L, E, V, T, F) ->
     NegL = -abs(L),
     {'case',NegL,E,
@@ -1386,8 +1387,10 @@ cexpr(Lit, _As, St) ->
 
 %% Kill the id annoations for any fun inside the expression.
 %% Necessary when duplicating code in try ... after.
-kill_id_anns(#ifun{}=Fun) ->
-    Fun#ifun{id=[]};
+
+kill_id_anns(#ifun{clauses=Cs0}=Fun) ->
+    Cs = kill_id_anns(Cs0),
+    Fun#ifun{clauses=Cs,id=[]};
 kill_id_anns(#a{}=A) ->
     %% Optimization: Don't waste time searching for funs inside annotations.
     A;

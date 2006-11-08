@@ -70,47 +70,77 @@ do {						\
 } while (0)
 
 
-#define ERTS_BIF_PREP_TRAP0(Ret, Trap, Proc)				\
-do {									\
-    (Proc)->def_arg_reg[0] = (Eterm) (Trap);				\
-    (Proc)->freason = TRAP;						\
-    (Ret) = THE_NON_VALUE;						\
+#define ERTS_BIF_PREP_TRAP0(Ret, Trap, Proc)		\
+do {							\
+    (Proc)->arity = 0;					\
+    (Proc)->def_arg_reg[3] = (Eterm) (Trap);		\
+    (Proc)->freason = TRAP;				\
+    (Ret) = THE_NON_VALUE;				\
 } while (0)
 
-#define ERTS_BIF_PREP_TRAP1(Ret, Trap, Proc, A0)			\
-do {									\
-    (Proc)->def_arg_reg[1] = (Eterm) (A0);				\
-    ERTS_BIF_PREP_TRAP0((Ret), (Trap), (Proc));				\
+#define ERTS_BIF_PREP_TRAP1(Ret, Trap, Proc, A0)	\
+do {							\
+    (Proc)->arity = 1;					\
+    (Proc)->def_arg_reg[0] = (Eterm) (A0);		\
+    (Proc)->def_arg_reg[3] = (Eterm) (Trap);		\
+    (Proc)->freason = TRAP;				\
+    (Ret) = THE_NON_VALUE;				\
 } while (0)
 
-#define ERTS_BIF_PREP_TRAP2(Ret, Trap, Proc, A0, A1)			\
-do {									\
-    (Proc)->def_arg_reg[2] = (Eterm) (A1);				\
-    ERTS_BIF_PREP_TRAP1((Ret), (Trap), (Proc), (A0));			\
+#define ERTS_BIF_PREP_TRAP2(Ret, Trap, Proc, A0, A1)	\
+do {							\
+    (Proc)->arity = 2;					\
+    (Proc)->def_arg_reg[0] = (Eterm) (A0);		\
+    (Proc)->def_arg_reg[1] = (Eterm) (A1);		\
+    (Proc)->def_arg_reg[3] = (Eterm) (Trap);		\
+    (Proc)->freason = TRAP;				\
+    (Ret) = THE_NON_VALUE;				\
 } while (0)
 
-#define ERTS_BIF_PREP_TRAP3(Ret, Trap, Proc, A0, A1, A2)		\
-do {									\
-    (Proc)->def_arg_reg[3] = (Eterm) (A2);				\
-    ERTS_BIF_PREP_TRAP2((Ret), (Trap), (Proc), (A0), (A1));		\
+#define ERTS_BIF_PREP_TRAP3(Ret, Trap, Proc, A0, A1, A2)\
+do {							\
+    (Proc)->arity = 3;					\
+    (Proc)->def_arg_reg[0] = (Eterm) (A0);		\
+    (Proc)->def_arg_reg[1] = (Eterm) (A1);		\
+    (Proc)->def_arg_reg[2] = (Eterm) (A2);		\
+    (Proc)->def_arg_reg[3] = (Eterm) (Trap);		\
+    (Proc)->freason = TRAP;				\
+    (Ret) = THE_NON_VALUE;				\
 } while (0)
 
-#define BIF_TRAP(p, Trap_) do { \
-      (p)->def_arg_reg[0] = (Eterm) (Trap_); \
-      (p)->freason = TRAP; \
-      return THE_NON_VALUE; \
+#define BIF_TRAP0(p, Trap_) do {		\
+      (p)->arity = 0;				\
+      (p)->def_arg_reg[3] = (Eterm) (Trap_);	\
+      (p)->freason = TRAP;			\
+      return THE_NON_VALUE;			\
  } while(0)
 
-#define BIF_TRAP0(Trap_,p)          BIF_TRAP(p, Trap_)
+#define BIF_TRAP1(Trap_, p, A0) do {		\
+      (p)->arity = 1;				\
+      (p)->def_arg_reg[0] = (A0);		\
+      (p)->def_arg_reg[3] = (Eterm) (Trap_);	\
+      (p)->freason = TRAP;			\
+      return THE_NON_VALUE;			\
+ } while(0)
 
-#define BIF_TRAP1(Trap_,p,a0)       do { (p)->def_arg_reg[1] = (a0); \
-					  BIF_TRAP0(Trap_, p); } while (0)
+#define BIF_TRAP2(Trap_, p, A0, A1) do {	\
+      (p)->arity = 2;				\
+      (p)->def_arg_reg[0] = (A0);		\
+      (p)->def_arg_reg[1] = (A1);		\
+      (p)->def_arg_reg[3] = (Eterm) (Trap_);	\
+      (p)->freason = TRAP;			\
+      return THE_NON_VALUE;			\
+ } while(0)
 
-#define BIF_TRAP2(Trap_,p,a0,a1)    do { (p)->def_arg_reg[2] = (a1); \
-					  BIF_TRAP1(Trap_, p, a0); } while (0)
-
-#define BIF_TRAP3(Trap_,p,a0,a1,a2) do { (p)->def_arg_reg[3] = (a2); \
-					  BIF_TRAP2(Trap_, p, a0, a1); } while (0)
+#define BIF_TRAP3(Trap_, p, A0, A1, A2) do {	\
+      (p)->arity = 3;				\
+      (p)->def_arg_reg[0] = (A0);		\
+      (p)->def_arg_reg[1] = (A1);		\
+      (p)->def_arg_reg[2] = (A2);		\
+      (p)->def_arg_reg[3] = (Eterm) (Trap_);	\
+      (p)->freason = TRAP;			\
+      return THE_NON_VALUE;			\
+ } while(0)
 
 #define ERTS_BIF_EXITED(PROC)		\
 do {					\
@@ -125,16 +155,29 @@ do {					\
 } while (0)
 
 #ifdef ERTS_SMP
-/* "Call" ERTS_SMP_BIF_CHK_EXITED(PROC) when current process might have
-   exited (while we released main lock) */
-#define ERTS_SMP_BIF_CHK_EXITED(PROC)	ERTS_BIF_CHK_EXITED((PROC))
 /* "Call" ERTS_SMP_BIF_CHK_RESCHEDULE(P) when current process might have
    to be rescheduled in order to avoid deadlock */
 #define ERTS_SMP_BIF_CHK_RESCHEDULE(P) \
 do { if ((P)->freason == RESCHEDULE) return THE_NON_VALUE; } while (0)
+#define ERTS_SMP_BIF_CHK_PENDING_EXIT(P, L)				\
+do {									\
+    ERTS_SMP_LC_ASSERT((L) == erts_proc_lc_my_proc_locks((P)));		\
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & (L));			\
+    if (!((L) & ERTS_PROC_LOCK_STATUS))					\
+	erts_smp_proc_lock((P), ERTS_PROC_LOCK_STATUS);			\
+    if (ERTS_PROC_PENDING_EXIT((P))) {					\
+	erts_handle_pending_exit((P), (L)|ERTS_PROC_LOCK_STATUS);	\
+	erts_smp_proc_unlock((P),					\
+			     (((L)|ERTS_PROC_LOCK_STATUS)		\
+			      & ~ERTS_PROC_LOCK_MAIN));			\
+	ERTS_BIF_EXITED((P));						\
+    }									\
+    if (!((L) & ERTS_PROC_LOCK_STATUS))					\
+	erts_smp_proc_unlock((P), ERTS_PROC_LOCK_STATUS);		\
+} while (0)
 #else
-#define ERTS_SMP_BIF_CHK_EXITED(PROC)
 #define ERTS_SMP_BIF_CHK_RESCHEDULE(P)
+#define ERTS_SMP_BIF_CHK_PENDING_EXIT(P, L)
 #endif
 
 #include "erl_bif_table.h"

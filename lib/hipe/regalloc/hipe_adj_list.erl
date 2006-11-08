@@ -30,7 +30,7 @@
 %%----------------------------------------------------------------------
 
 new(Max_nodes) ->
-  hipe_vectors_wrapper:empty(Max_nodes, []).
+  hipe_vectors:new(Max_nodes, []).
 
 %%----------------------------------------------------------------------
 %% Function:    add_edges
@@ -49,7 +49,7 @@ new(Max_nodes) ->
 
 %%add_edges(_, [], Adj_list) -> Adj_list;
 %%add_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
-%%    hipe_vectors_wrapper:set(Adj_list, U, ordsets:union(Vs, hipe_vectors_wrapper:get(Adj_list, U))).
+%%    hipe_vectors:set(Adj_list, U, ordsets:union(Vs, hipe_vectors:get(Adj_list, U))).
 
 %%----------------------------------------------------------------------
 %% Function:    add_edge
@@ -67,8 +67,8 @@ new(Max_nodes) ->
 %%----------------------------------------------------------------------
 
 add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
-  hipe_vectors_wrapper:set(Adj_list, U,
-			   [V | hipe_vectors_wrapper:get(Adj_list, U)]).
+  hipe_vectors:set(Adj_list, U,
+			   [V | hipe_vectors:get(Adj_list, U)]).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edges
@@ -87,7 +87,7 @@ add_edge(U, V, Adj_list) -> % PRE: U =/= V, not V \in adjList[U]
 
 %% remove_edges(_, [], Adj_list) -> Adj_list;
 remove_edges(U, Vs, Adj_list) when is_list(Vs), is_integer(U) ->
-  hipe_vectors_wrapper:set(Adj_list, U, lists:subtract(hipe_vectors_wrapper:get(Adj_list, U), Vs)).
+  hipe_vectors:set(Adj_list, U, lists:subtract(hipe_vectors:get(Adj_list, U), Vs)).
 
 %%----------------------------------------------------------------------
 %% Function:    remove_edge
@@ -123,4 +123,4 @@ remove_edge(U, V, Adj_list) when is_integer(U), is_integer(V) ->
 %%----------------------------------------------------------------------
 
 edges(U, Adj_list) ->
-    hipe_vectors_wrapper:get(Adj_list, U).
+    hipe_vectors:get(Adj_list, U).

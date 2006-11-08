@@ -26,7 +26,9 @@
 #include "erl_db.h"
 #include "beam_catches.h"
 #include "erl_binary.h"
+#include "erl_bits.h"
 #include "erl_nmgc.h"
+#include "error.h"
 #include "big.h"
 
 /*
@@ -35,6 +37,10 @@
 #define ALENGTH(a) (sizeof(a)/sizeof(a[0]))
 
 #ifdef HEAP_FRAG_ELIM_TEST
+
+#ifdef DEBUG
+#  define HARDDEBUG 1
+#endif
 
 static erts_smp_spinlock_t info_lck;
 static Uint garbage_cols;		/* no of garbage collections */
@@ -126,6 +132,12 @@ static void offset_mqueue(Process *p, Sint offs, char* area, Uint area_size);
 static int within(Eterm *ptr, Process *p);
 #endif
 #endif /* HEAP_FRAG_ELIM_TEST */
+
+#ifdef HARDDEBUG
+static void disallow_heap_frag_ref_in_heap(Process* p);
+static void disallow_heap_frag_ref_in_old_heap(Process* p);
+static void disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj);
+#endif
 
 #ifdef ARCH_64
 # define MAX_HEAP_SIZES 154
@@ -307,6 +319,32 @@ erts_offset_off_heap(ErlOffHeap *ohp, Sint offs, Eterm* low, Eterm* high)
 }
 #undef ptr_within
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+Eterm
+erts_gc_after_bif_call(Process* p, Eterm result)
+{
+    int cost;
+
+    if (is_non_value(result)) {
+	if (p->freason == TRAP) {
+	    cost = erts_garbage_collect(p, 0, p->def_arg_reg, p->arity);
+	} else if (p->freason == RESCHEDULE) {
+	    abort();
+	} else {
+	    cost = erts_garbage_collect(p, 0, NULL, 0);
+	}
+    } else {
+	Eterm val[1];
+
+	val[0] = result;
+	cost = erts_garbage_collect(p, 0, val, 1);
+	result = val[0];
+    }
+    BUMP_REDS(p, cost);
+    return result;
+}
+#endif
+
 /*
  * Garbage collect a process.
  *
@@ -366,12 +404,24 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     reclaimed += reclaimed_now;
     erts_smp_spin_unlock(&info_lck);
 
-    ARITH_AVAIL(p) = 0;
-    ARITH_HEAP(p) = NULL;
     MSO(p).overhead = 0;
-#ifdef DEBUG
-    ARITH_CHECK_ME(p) = NULL;
-#endif
+
+#ifdef CHECK_FOR_HOLES
+    /*
+     * We intentionally do not rescan the areas copied by the GC.
+     * We trust the GC not to leave any holes.
+     */
+    {
+	Eterm* start = p->htop;
+	Eterm* stop = p->stop;
+	p->last_htop = p->htop;
+	p->last_mbuf = 0;
+	while (start < stop) {
+	    *start++ = ERTS_HOLE_MARKER;
+	}
+    }
+#endif    
+
     return ((int) (HEAP_TOP(p) - HEAP_START(p)) / 10);
 }
 
@@ -584,10 +634,28 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
 		break;
 	    }
 	    case TAG_PRIMARY_HEADER: {
-		if (header_is_thing(gval))
-		    n_hp += (thing_arityval(gval)+1);
-		else
+		if (!header_is_thing(gval))
 		    n_hp++;
+		else {
+		    if (header_is_bin_matchstate(gval)) {
+			ErlBinMatchState *ms = (ErlBinMatchState*) n_hp;
+			ErlBinMatchBuffer *mb = &(ms->mb);
+			Eterm* origptr = &(mb->orig);
+			ptr = boxed_val(*origptr);
+			val = *ptr;
+			if (IS_MOVED(val)) {
+			    *origptr = val;
+			    mb->base = binary_bytes(val);
+			} else if (in_area(ptr, heap, mature_size)) {
+			    MOVE_BOXED(ptr,val,old_htop,origptr);
+			    mb->base = binary_bytes(mb->orig);
+			} else if (in_area(ptr, heap, heap_size)) {
+			    MOVE_BOXED(ptr,val,n_htop,origptr);
+			    mb->base = binary_bytes(mb->orig);
+			}
+		    }
+		    n_hp += (thing_arityval(gval)+1);
+		}
 		break;
 	    }
 	    default:
@@ -618,7 +686,6 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
     if (MSO(p).externals) {
         sweep_proc_externals(p, 0);
     }
-    remove_message_buffers(p);
 
     /* Copy stack to end of new heap */
     n = p->hend - p->stop;
@@ -635,6 +702,12 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
     HEAP_TOP(p) = n_htop;
     HEAP_SIZE(p) = new_sz;
     HEAP_END(p) = n_heap + new_sz;
+
+#ifdef HARDDEBUG
+    disallow_heap_frag_ref_in_heap(p);
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+    remove_message_buffers(p);
 }
 
 static int
@@ -800,10 +873,43 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 		break;
 	    }
 	    case TAG_PRIMARY_HEADER: {
-		if (header_is_thing(gval))
-		    n_hp += (thing_arityval(gval)+1);
-		else
+		if (!header_is_thing(gval))
 		    n_hp++;
+		else {
+		    if (header_is_bin_matchstate(gval)) {
+			ErlBinMatchState *ms = (ErlBinMatchState*) n_hp;
+			ErlBinMatchBuffer *mb = &(ms->mb);
+			Eterm* origptr;	
+			origptr = &(mb->orig);
+			ptr = boxed_val(*origptr);
+			val = *ptr;
+			if (IS_MOVED(val)) {
+			    *origptr = val;
+			    mb->base = binary_bytes(*origptr);
+			} else if (in_area(ptr, src, src_size)) {
+			    ASSERT(within(ptr, p));
+			    MOVE_BOXED(ptr,val,n_htop,origptr); 
+			    mb->base = binary_bytes(*origptr);
+			    ptr = boxed_val(*origptr);
+			    val = *ptr;
+			} else if (in_area(ptr, oh, oh_size)) {
+			    ASSERT(within(ptr, p));
+			    MOVE_BOXED(ptr,val,old_htop,origptr); 
+			    mb->base = binary_bytes(*origptr);
+			    ptr = boxed_val(*origptr);
+			    val = *ptr;
+#if 0
+			} else {
+			    ASSERT(within(ptr, p));
+			    MOVE_BOXED(ptr,val,n_htop,origptr); 
+			    mb->base = binary_bytes(*origptr);
+			    ptr = boxed_val(*origptr);
+			    val = *ptr;
+#endif
+			}
+		    }
+		    n_hp += (thing_arityval(gval)+1);
+		}
 		break;
 	    }
 	    default:
@@ -826,7 +932,6 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     if (MSO(p).externals) {
 	sweep_proc_externals(p, 1);
     }
-    remove_message_buffers(p);
 
     if (OLD_HEAP(p) != NULL) {
 #ifdef DEBUG
@@ -862,6 +967,13 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     HIGH_WATER(p) = HEAP_TOP(p);
 
     *recl += adjust_after_fullsweep(p, size_before, need, objv, nobj);
+
+#ifdef HARDDEBUG
+    disallow_heap_frag_ref_in_heap(p);
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+    remove_message_buffers(p);
+
     OverRunCheck();
     return 1;			/* We are done. */
 }
@@ -989,15 +1101,18 @@ collect_root_array(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
     return n_htop;
 }
 
-static Eterm*
+#ifdef HARDDEBUG
+static void
 disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 {
+    ErlHeapFragment* mbuf;
     ErlHeapFragment* qb;
     Eterm gval;
     Eterm* ptr;
     Eterm val;
 
     ASSERT(p->htop != NULL);
+    mbuf = MBUF(p);
 
     while (nobj--) {
 	gval = *objv;
@@ -1009,13 +1124,11 @@ disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 	    val = *ptr;
 	    if (IS_MOVED(val)) {
 		ASSERT(is_boxed(val));
-		*objv++ = val;
+		objv++;
 	    } else {
-		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+ 		for (qb = mbuf; qb != NULL; qb = qb->next) {
 		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
 			abort();
-			MOVE_BOXED(ptr,val,n_htop,objv);
-			break;
 		    }
 		}
 		objv++;
@@ -1027,13 +1140,11 @@ disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 	    ptr = list_val(gval);
 	    val = *ptr;
 	    if (is_non_value(val)) {
-		*objv++ = ptr[1];
+		objv++;
 	    } else {
-		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		for (qb = mbuf; qb != NULL; qb = qb->next) {
 		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
 			abort();
-			MOVE_CONS(ptr,val,n_htop,objv);
-			break;
 		    }
 		}
 		objv++;
@@ -1047,8 +1158,123 @@ disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int nobj)
 	}
 	}
     }
-    return n_htop;
 }
+
+static void
+disallow_heap_frag_ref_in_heap(Process* p)
+{
+    Eterm* hp;
+    Eterm* htop;
+    Eterm* heap;
+    Uint heap_size;
+
+    if (p->mbuf == 0) {
+	return;
+    }
+
+    htop = p->htop;
+    heap = p->heap;
+    heap_size = (htop - heap)*sizeof(Eterm);
+
+    hp = heap;
+    while (hp < htop) {
+	ErlHeapFragment* qb;
+	Eterm* ptr;
+	Eterm val;
+
+	val = *hp++;
+	switch (primary_tag(val)) {
+	case TAG_PRIMARY_BOXED:
+	    ptr = boxed_val(val);
+	    if (!in_area(ptr, heap, heap_size)) {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+		    }
+		}
+	    }
+	    break;
+	case TAG_PRIMARY_LIST:
+	    ptr = list_val(val);
+	    if (!in_area(ptr, heap, heap_size)) {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+		    }
+		}
+	    }
+	    break;
+	case TAG_PRIMARY_HEADER:
+	    if (header_is_thing(val)) {
+		hp += thing_arityval(val);
+	    }
+	    break;
+	}
+    }
+}
+
+static void
+disallow_heap_frag_ref_in_old_heap(Process* p)
+{
+    Eterm* hp;
+    Eterm* htop;
+    Eterm* old_heap;
+    Uint old_heap_size;
+    Eterm* new_heap;
+    Uint new_heap_size;
+
+    htop = p->old_htop;
+    old_heap = p->old_heap;
+    old_heap_size = (htop - old_heap)*sizeof(Eterm);
+    new_heap = p->heap;
+    new_heap_size = (p->htop - new_heap)*sizeof(Eterm);
+
+    hp = old_heap;
+    while (hp < htop) {
+	ErlHeapFragment* qb;
+	Eterm* ptr;
+	Eterm val;
+
+	val = *hp++;
+	switch (primary_tag(val)) {
+	case TAG_PRIMARY_BOXED:
+	    ptr = boxed_val(val);
+	    if (in_area(ptr, new_heap, new_heap_size)) {
+		abort();
+	    }
+	    if (!in_area(ptr, old_heap, old_heap_size)) {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+		    }
+		}
+	    }
+	    break;
+	case TAG_PRIMARY_LIST:
+	    ptr = list_val(val);
+	    if (in_area(ptr, new_heap, new_heap_size)) {
+		abort();
+	    }
+	    if (!in_area(ptr, old_heap, old_heap_size)) {
+		for (qb = MBUF(p); qb != NULL; qb = qb->next) {
+		    if (in_area(ptr, qb->mem, qb->size*sizeof(Eterm))) {
+			abort();
+		    }
+		}
+	    }
+	    break;
+	case TAG_PRIMARY_HEADER:
+	    if (header_is_thing(val)) {
+		hp += thing_arityval(val);
+		if (!in_area(hp, old_heap, old_heap_size+1)) {
+		    abort();
+		}
+	    }
+	    break;
+	}
+    }
+}
+#endif
 
 static Eterm*
 sweep_one_area(Eterm* n_hp, Eterm* n_htop, char* src, Uint src_size)
@@ -1085,10 +1311,26 @@ sweep_one_area(Eterm* n_hp, Eterm* n_htop, char* src, Uint src_size)
 	    break;
 	}
 	case TAG_PRIMARY_HEADER: {
-	    if (header_is_thing(gval))
-		n_hp += (thing_arityval(gval)+1);
-	    else
+	    if (!header_is_thing(gval)) {
 		n_hp++;
+	    } else {
+		if (header_is_bin_matchstate(gval)) {
+		    ErlBinMatchState *ms = (ErlBinMatchState*) n_hp;
+		    ErlBinMatchBuffer *mb = &(ms->mb);
+		    Eterm* origptr;	
+		    origptr = &(mb->orig);
+		    ptr = boxed_val(*origptr);
+		    val = *ptr;
+		    if (IS_MOVED(val)) {
+			*origptr = val;
+			mb->base = binary_bytes(*origptr);
+		    } else if (in_area(ptr, src, src_size)) {
+			MOVE_BOXED(ptr,val,n_htop,origptr); 
+			mb->base = binary_bytes(*origptr);
+		    }
+		}
+		n_hp += (thing_arityval(gval)+1);
+	    }
 	    break;
 	}
 	default:
@@ -1134,10 +1376,25 @@ sweep_old_heap(Process* p, Eterm* o_hp, Eterm* o_htop, char* src, Uint src_size)
 	    break;
 	}
 	case TAG_PRIMARY_HEADER: {
-	    if (header_is_thing(gval))
-		o_hp += (thing_arityval(gval)+1);
-	    else
+	    if (!header_is_thing(gval)) {
 		o_hp++;
+	    } else  {
+		if (header_is_bin_matchstate(gval)) {
+		    ErlBinMatchState *ms = (ErlBinMatchState*) o_hp;
+		    ErlBinMatchBuffer *mb = &(ms->mb);
+		    Eterm* origptr = &(mb->orig);
+		    Eterm* ptr = boxed_val(*origptr);
+		    val = *ptr;
+		    if (IS_MOVED(val)) {
+			*origptr = val;
+			mb->base = binary_bytes(val);
+		    } else if (in_area(ptr, src, src_size)) {
+			MOVE_BOXED(ptr,val,o_htop,origptr);
+			mb->base = binary_bytes(mb->orig);
+		    }
+		}
+		o_hp += (thing_arityval(gval)+1);
+	    }
 	    break;
 	}
 	default:
@@ -1147,6 +1404,7 @@ sweep_old_heap(Process* p, Eterm* o_hp, Eterm* o_htop, char* src, Uint src_size)
     }
     return o_htop;
 }
+
 
 /*
  * Collect heap fragments and check that they point in the correct direction.
@@ -1160,6 +1418,14 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
     char* frag_begin;
     Uint frag_size;
     ErlMessage* mp;
+
+    /*
+     * Checking...
+     */
+#ifdef HARDDEBUG
+    disallow_heap_frag_ref(p, n_htop, p->stop, STACK_START(p) - p->stop);
+    disallow_heap_frag_ref_in_heap(p);
+#endif
 
     /*
      * Go through the root set, move everything that it is in one of the
@@ -1186,16 +1452,16 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
 				    p->dictionary->data,
 				    p->dictionary->used);
     }
+#ifdef HARDDEBUG
     if (p->debug_dictionary != NULL) {
-	n_htop = disallow_heap_frag_ref(p, n_htop,
-				    p->debug_dictionary->data,
-				    p->debug_dictionary->used);
+	disallow_heap_frag_ref(p, n_htop,
+			       p->debug_dictionary->data,
+			       p->debug_dictionary->used);
     }
-
-    n_htop = collect_root_array(p, n_htop, p->stop, STACK_START(p) - p->stop);
+#endif
 
     /*
-     * Go through the message queue, move everything that it is in one of the
+     * Go through the message queue, move everything that is in one of the
      * heap fragments to our new heap.
      */
 
@@ -1596,6 +1862,18 @@ offset_heap(Eterm* hp, Uint sz, Sint offs, char* area, Uint area_size)
 		      hp += tari + 1;
 		  }
 		  break;
+	      case BIN_MATCHSTATE_SUBTAG:
+		{	
+		  ErlBinMatchState *ms = (ErlBinMatchState*) hp;
+		  ErlBinMatchBuffer *mb = &(ms->mb);
+		  if (in_area(ptr_val(mb->orig), area, area_size)) {
+		      mb->orig = offset_ptr(mb->orig, offs);
+		      mb->base = binary_bytes(mb->orig);
+		  }
+		  sz -= tari;
+		  hp += tari + 1;
+		}
+		break;
 	      case FUN_SUBTAG:
 		  {
 		      ErlFunThing* funp = (ErlFunThing *) hp;
@@ -1722,14 +2000,14 @@ offset_one_rootset(Process *p, Sint offs, char* area, Uint area_size,
 		    p->debug_dictionary->used, 
 		    offs, area, area_size);
     }
-    offset_heap(&p->fvalue, 1, offs, area, area_size);
-    offset_heap(&p->ftrace, 1, offs, area, area_size);
-    offset_heap(&p->seq_trace_token, 1, offs, area, area_size);
-    offset_heap(&p->group_leader, 1, offs, area, area_size);
+    offset_heap_ptr(&p->fvalue, 1, offs, area, area_size);
+    offset_heap_ptr(&p->ftrace, 1, offs, area, area_size);
+    offset_heap_ptr(&p->seq_trace_token, 1, offs, area, area_size);
+    offset_heap_ptr(&p->group_leader, 1, offs, area, area_size);
     offset_mqueue(p, offs, area, area_size);
     offset_heap_ptr(p->stop, (STACK_START(p) - p->stop), offs, area, area_size);
     if (nobj > 0) {
-	offset_heap(objv, nobj, offs, area, area_size);
+	offset_heap_ptr(objv, nobj, offs, area, area_size);
     }
     offset_off_heap(p, offs, area, area_size);
 }

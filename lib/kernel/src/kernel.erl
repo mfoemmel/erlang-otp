@@ -107,9 +107,6 @@ init([]) ->
 	    {file_server, start_link, []},
 	    permanent, 2000, worker, 
 	    [file, file_server, file_io_server, prim_file]},
-    OldFile = {file_server,
-	       {old_file_server, start_link, []},
-	       permanent, 2000, worker, [old_file_server]},
     User = {user,
 	    {user_sup, start, []},
 	    temporary, 2000, supervisor, [user_sup]},
@@ -123,11 +120,9 @@ init([]) ->
 			      permanent, infinity, supervisor, [?MODULE]},
 
 	    {ok, {SupFlags,
-		  [File, OldFile, Code, User,
+		  [File, Code, User,
 		   Config, SafeSupervisor]}};
 	_ ->
-	    ErlDdll = {ddll_server, {erl_ddll, start_link, []},
-		       permanent, 2000, worker, [erl_ddll]},
 	    Rpc = {rex, {rpc, start_link, []}, 
 		   permanent, 2000, worker, [rpc]},
 	    Global = {global_name_server, {global, start_link, []}, 
@@ -148,8 +143,8 @@ init([]) ->
 			      permanent, infinity, supervisor, [?MODULE]},	    
 
 	    {ok, {SupFlags,
-		  [ErlDdll, Rpc, Global, InetDb | DistAC] ++ 
-		  [NetSup, Glo_grp, File, OldFile, Code, 
+		  [Rpc, Global, InetDb | DistAC] ++ 
+		  [NetSup, Glo_grp, File, Code, 
 		   User, Config, SafeSupervisor] ++ Timer}}
     end;
 

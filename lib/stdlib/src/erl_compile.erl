@@ -76,7 +76,7 @@ compile(List) ->
 	    io:format("Runtime error: ~p~n", [Reason]),
 	    error
     end.
-	    
+
 compiler_runner(List) ->
     exit({compiler_result, compile1(List)}).
 
@@ -84,7 +84,7 @@ compiler_runner(List) ->
 
 compile1(['@cwd', Cwd|Rest]) ->
     CwdL = atom_to_list(Cwd),
-    compile1(Rest, Cwd, #options {outdir=CwdL, cwd=CwdL});
+    compile1(Rest, Cwd, #options{outdir=CwdL, cwd=CwdL});
 compile1(Other) ->
     throw({error, {bad_input, Other}}).
 
@@ -133,7 +133,7 @@ compile1(['@files'|Rest], Cwd, Opts) ->
     compile2(Rest, Cwd, Opts#options{includes=Includes}).
 
 compile2(Files, Cwd, Opts) ->
-    case {Opts#options.outfile,length(Files)} of
+    case {Opts#options.outfile, length(Files)} of
 	{"", _} ->
 	    compile3(Files, Cwd, Opts);
 	{[_|_], 1} ->

@@ -260,6 +260,7 @@ handle_info({open, Channel, {forwarded_tcpip,
 	    #state{opts = Opts, cm = CM} = State) ->
     TMO = proplists:get_value(connect_timeout,
 			      Opts, ?DEFAULT_TIMEOUT),
+    NoDelay = proplists:get_value(tcp_nodelay, Opts, false),
     case get({ipmap,{RemoteAddr,RemotePort}}) of
 	undefined ->
 	    ssh_cm:close(CM, Channel),
@@ -268,6 +269,7 @@ handle_info({open, Channel, {forwarded_tcpip,
 	    case gen_tcp:connect(LocalIP, LocalPort, [{active,once},
 						      {mode,binary},
 						      {packet,0},
+						      {nodelay,NoDelay},
 						      {connect_timeout, TMO}]) of
 		{ok, S} ->
 		    %% We want ack on send!

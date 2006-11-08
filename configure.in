@@ -138,7 +138,8 @@ AC_ARG_ENABLE(kernel-poll,
 [  --enable-kernel-poll    enable kernel poll support])
 
 AC_ARG_ENABLE(hipe,
-[  --disable-hipe          disable hipe support])
+[  --enable-hipe           enable hipe support
+  --disable-hipe          disable hipe support])
 
 AC_ARG_ENABLE(megaco_flex_scanner_lineno,
 [  --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno])

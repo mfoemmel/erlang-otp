@@ -93,11 +93,24 @@ replace_localhost(Host) ->
 %% lookup_host_key
 %% return {ok, Key(s)} or {error, not_found}
 %%
+
 lookup_host_key(Host, Alg, Opts) ->
-    Host1 = replace_localhost(Host),
+    case replace_localhost(Host) of
+	Host ->
+	    do_lookup_host_key(Host, Alg, Opts);
+	Host1 ->
+	    case do_lookup_host_key(Host, Alg, Opts) of
+		{error, not_found} ->
+		    do_lookup_host_key(Host1, Alg, Opts);
+		Other ->
+		    Other
+	    end
+    end.
+	    
+do_lookup_host_key(Host, Alg, Opts) ->
     case file:open(file_name(user, "known_hosts", Opts), [read]) of
 	{ok, Fd} ->
-	    Res = lookup_host_key_fd(Fd, Host1, Alg),
+	    Res = lookup_host_key_fd(Fd, Host, Alg),
 	    file:close(Fd),
 	    Res;
 	{error, enoent} -> {error, not_found};
@@ -107,12 +120,12 @@ lookup_host_key(Host, Alg, Opts) ->
 add_host_key(Host, Key, Opts) ->
     Host1 = add_ip(replace_localhost(Host)),
     case file:open(file_name(user, "known_hosts", Opts),[write,append]) of
-	{ok, Fd} ->
-	    Res = add_key_fd(Fd, Host1, Key),
-	    file:close(Fd),
-	    Res;
-	Error ->
-	    Error
+   	{ok, Fd} ->
+   	    Res = add_key_fd(Fd, Host1, Key),
+   	    file:close(Fd),
+   	    Res;
+   	Error ->
+   	    Error
     end.
 
 del_host_key(Host, Opts) ->

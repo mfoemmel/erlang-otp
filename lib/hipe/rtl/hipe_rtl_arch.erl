@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2006/03/30 12:38:40 $
-%%              $Revision: 1.59 $
+%%              $Author: pergu $
+%%              $Date: 2006/09/14 16:50:48 $
+%%              $Revision: 1.60 $
 %%=====================================================================
 %% @doc
 %%
@@ -48,7 +48,8 @@
 %%         alignment/0,
 	 nr_of_return_regs/0,
          log2_word_size/0,
-         word_size/0
+         word_size/0,
+	 halfword_size/0
 	]).
 
 -include("hipe_literals.hrl").
@@ -257,6 +258,14 @@ safe_handling_of_registers() ->
     amd64 ->
       true
   end.
+
+%% @spec word_size() -> integer()
+%%
+%% @doc Returns the target's word size.
+%%
+halfword_size() ->
+  word_size() div 2.
+
 %% @spec word_size() -> integer()
 %%
 %% @doc Returns the target's word size.

@@ -118,9 +118,9 @@ do {									\
 static ERTS_INLINE Process *
 get_proc(Process *cp, Uint32 cp_locks, Eterm id, Uint32 id_locks)
 {
-    Process *proc = erts_pid2proc_x(cp, cp_locks, id, id_locks);
+    Process *proc = erts_pid2proc(cp, cp_locks, id, id_locks);
     if (!proc && is_atom(id))
-	proc = erts_whereis_process(cp, cp_locks, 1, id, id_locks, 0);
+	proc = erts_whereis_process(cp, cp_locks, id, id_locks, 0);
     return proc;
 }
 
@@ -161,8 +161,8 @@ set_match_trace(Process *tracee_p, Eterm fail_term, Eterm tracer,
 
     if (is_internal_pid(tracer)
 	&& (tracer_p = 
-	    erts_pid2proc_x(tracee_p, ERTS_PROC_LOCKS_ALL,
-			    tracer, ERTS_PROC_LOCKS_ALL))) {
+	    erts_pid2proc(tracee_p, ERTS_PROC_LOCKS_ALL,
+			  tracer, ERTS_PROC_LOCKS_ALL))) {
 	if (tracee_p != tracer_p) {
 	    ret = set_tracee_flags(tracee_p, tracer, d_flags, e_flags);
 	    tracer_p->trace_flags |= tracee_p->trace_flags ? F_TRACER : 0;
@@ -1177,9 +1177,6 @@ done:
     return ret;
 }
     
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 Eterm erts_match_set_run(Process *p, Binary *mpsp, 
 			 Eterm *args, int num_args, 
 			 Uint32 *return_flags) 
@@ -1604,9 +1601,6 @@ static Eterm dpm_array_to_list(Process *psp, Eterm *arr, int arity)
 ** the para meter 'arity' is only used if 'term' is actually an array,
 ** i.e. 'DCOMP_TRACE' was specified 
 */
-/*
- * SMP NOTE: Process c_p may have become exiting on return!
- */
 Eterm db_prog_match(Process *c_p, Binary *bprog, Eterm term, 
 		    int arity,
 		    Uint32 *return_flags)
@@ -4360,13 +4354,11 @@ BIF_RETTYPE match_spec_test_3(BIF_ALIST_3)
 #endif
     if (BIF_ARG_3 == am_trace) {
 	res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 1);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	if (is_value(res)) {
 	    BIF_RET(res);
 	}
     } else if (BIF_ARG_3 == am_table) {
 	res = match_spec_test(BIF_P, BIF_ARG_1, BIF_ARG_2, 0);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	if (is_value(res)) {
 	    BIF_RET(res);
 	}

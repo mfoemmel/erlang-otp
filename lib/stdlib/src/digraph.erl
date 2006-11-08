@@ -115,7 +115,7 @@ add_vertex(G) ->
 add_vertex(G, V) -> 
     do_add_vertex({V,[]}, G).
 
-add_vertex(G, V, D) -> 
+add_vertex(G, V, D) ->
     do_add_vertex({V,D}, G).
 
 del_vertex(G, V) ->
@@ -148,7 +148,7 @@ in_degree(G, V) ->
 in_neighbours(G,V) ->
     ET = G#graph.etab,
     NT = G#graph.ntab,
-    collect_elems(ets:lookup(NT,{in,V}),ET,2).
+    collect_elems(ets:lookup(NT,{in,V}), ET, 2).
 
 in_edges(G, V) ->
     ets:select(G#graph.ntab, [{{{in,V},'$1'},[],['$1']}]).
@@ -159,7 +159,7 @@ out_degree(G, V) ->
 out_neighbours(G, V) -> 
     ET = G#graph.etab,
     NT = G#graph.ntab,
-    collect_elems(ets:lookup(NT,{out,V}),ET,3).
+    collect_elems(ets:lookup(NT,{out,V}), ET, 3).
 
 out_edges(G, V) -> 
     ets:select(G#graph.ntab, [{{{out,V},'$1'},[],['$1']}]).
@@ -221,7 +221,7 @@ new_vertex_id(G) ->
 %% Collect elements for a index in a tuple
 %%
 collect_elems(Keys, Table, Index) ->
-    collect_elems(Keys, Table, Index,[]).
+    collect_elems(Keys, Table, Index, []).
 
 collect_elems([{_,Key}|Keys], Table, Index, Acc) ->
     collect_elems(Keys, Table, Index,
@@ -250,14 +250,12 @@ collect_vertices(#graph{vtab=VT,ntab=NT}, Type) ->
 do_del_vertices([V | Vs], G) ->
     do_del_vertex(V, G),
     do_del_vertices(Vs, G);
-do_del_vertices([], _) -> true.
-
+do_del_vertices([], #graph{}) -> true.
 
 do_del_vertex(V, G) ->
     do_del_nedges(ets:lookup(G#graph.ntab, {in,V}), G),
     do_del_nedges(ets:lookup(G#graph.ntab, {out,V}), G),
     ets:delete(G#graph.vtab, V).
- 
 
 do_del_nedges([{_,E} | Ns], G) ->
     case ets:lookup(G#graph.etab, E) of
@@ -267,7 +265,7 @@ do_del_nedges([{_,E} | Ns], G) ->
 	[] ->
 	    do_del_nedges(Ns, G)
     end;
-do_del_nedges([], _) -> true.
+do_del_nedges([], #graph{}) -> true.
 
 %%
 %% Delete edges
@@ -280,7 +278,7 @@ do_del_edges([E | Es], G) ->
 	[] ->
 	    do_del_edges(Es, G)
     end;
-do_del_edges([], _) -> true.
+do_del_edges([], #graph{}) -> true.
 
 do_del_edge(E,V1,V2,G) ->
     ets:select_delete(G#graph.ntab, [{{{in,V2},E},[],[true]},
@@ -290,7 +288,7 @@ do_del_edge(E,V1,V2,G) ->
 rm_edges([V1,V2|Vs], G) ->
     rm_edge(V1,V2,G),
     rm_edges([V2|Vs],G);
-rm_edges(_,_) -> true.
+rm_edges(_, _) -> true.
 
 rm_edge(V1,V2,G) ->
     Ns = ets:lookup(G#graph.ntab,{out,V1}),
@@ -304,7 +302,7 @@ rm_edge_0([{_,E}|Es],V1,V2,G) ->
 	_ ->
 	    rm_edge_0(Es,V1,V2,G)
     end;
-rm_edge_0([],_,_,_) -> ok.
+rm_edge_0([],_,_,#graph{}) -> ok.
     
 %%
 %% Check that endpoints exists

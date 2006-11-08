@@ -28,7 +28,8 @@
 -export([flush_mqueue/0, trap_exit/0, trap_exit/1]).
 -export([ping/1, local_nodes/0, nodes_on/1]).
 -export([start_node/2]).
--export([is_app_running/1, is_crypto_running/0, is_mnesia_running/0]).
+-export([is_app_running/1, 
+	 is_crypto_running/0, is_mnesia_running/0, is_snmp_running/0]).
 -export([crypto_start/0, crypto_support/0]).
 -export([watchdog/3, watchdog_start/1, watchdog_start/2, watchdog_stop/1]).
 -export([del_dir/1]).
@@ -198,6 +199,9 @@ is_crypto_running() ->
 
 is_mnesia_running() ->
     is_app_running(mnesia).
+
+is_snmp_running() ->
+    is_app_running(snmp).
 
 crypto_start() ->
     case crypto:start() of
@@ -384,5 +388,16 @@ p(F, A) when is_list(F) and is_list(A) ->
     io:format(user, F ++ "~n", A).
 
 print(Prefix, Module, Line, Format, Args) ->
-    io:format("~p ~s[~p:~p:~p]: " ++ Format ++ "~n", 
-	      [node(), Prefix,self(),Module,Line]++Args).
+    io:format("*** [~s] ~s ~p ~p ~p:~p *** " ++ Format ++ "~n", 
+	      [format_timestamp(now()), 
+	       Prefix, node(), self(), Module, Line|Args]).
+
+format_timestamp({_N1, _N2, N3} = Now) ->
+    {Date, Time}   = calendar:now_to_datetime(Now),
+    {YYYY,MM,DD}   = Date,
+    {Hour,Min,Sec} = Time,
+    FormatDate =
+        io_lib:format("~.4w:~.2.0w:~.2.0w ~.2.0w:~.2.0w:~.2.0w 4~w",
+                      [YYYY,MM,DD,Hour,Min,Sec,round(N3/1000)]),
+    lists:flatten(FormatDate).
+

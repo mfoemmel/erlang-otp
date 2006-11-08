@@ -334,9 +334,9 @@ scan_beam(_FD, _Pos, [], Mod, Data) when Mod =/= 17 ->
     {ok, Mod, Data};    
 scan_beam(FD, Pos, What, Mod, Data) ->
     case pread(FD, Pos, 8) of
-	{_NFD, eof} when Mod == 17 ->
+	{_NFD, eof} when Mod =:= 17 ->
 	    error({missing_chunk, filename(FD), "Atom"});	    
-	{_NFD, eof} when What == info ->
+	{_NFD, eof} when What =:= info ->
 	    {ok, Mod, reverse(Data)};
 	{_NFD, eof} ->
 	    error({missing_chunk, filename(FD), hd(What)});
@@ -349,7 +349,7 @@ scan_beam(FD, Pos, What, Mod, Data) ->
 	    error({invalid_beam_file, filename(FD), Pos})
     end.
 
-get_data(Cs, Id, FD, Size, Pos, Pos2, _Mod, Data) when Id == "Atom" ->
+get_data(Cs, Id, FD, Size, Pos, Pos2, _Mod, Data) when Id =:= "Atom" ->
     NewCs = del_chunk(Id, Cs),
     {NFD, Chunk} = get_chunk(Id, Pos, Size, FD),
     <<_Num:32, Chunk2/binary>> = Chunk,
@@ -382,13 +382,13 @@ del_chunk(Id, Chunks) ->
 %% -> {NFD, binary()} | throw(Error)
 get_chunk(Id, Pos, Size, FD) ->
     case pread(FD, Pos, Size) of
-	{NFD, eof} when Size == 0 -> % cannot happen
+	{NFD, eof} when Size =:= 0 -> % cannot happen
 	    {NFD, <<>>};
 	{_NFD, eof} when Size > 0 ->
 	    error({chunk_too_big, filename(FD), Id, Size, 0});
 	{_NFD, {ok, Chunk}} when Size > size(Chunk) ->
 	    error({chunk_too_big, filename(FD), Id, Size, size(Chunk)});
-	{NFD, {ok, Chunk}} -> % when Size == size(Chunk)
+	{NFD, {ok, Chunk}} -> % when Size =:= size(Chunk)
 	    {NFD, Chunk}
     end.
 
@@ -399,7 +399,7 @@ chunks_to_data([{Id, Name} | CNs], Chunks, File, Cs, Module, Atoms, L) ->
 chunks_to_data([], _Chunks, _File, _Cs, Module, _Atoms, L) ->
     {ok, {Module, reverse(L)}}.
 
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id == attributes ->
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id =:= attributes ->
     try
 	Term = binary_to_term(Chunk),
 	{AtomTable, {Id, attributes(Term)}}
@@ -407,14 +407,14 @@ chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id == attributes ->
 	error:badarg ->
 	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
     end;
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id == compile_info ->
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id =:= compile_info ->
     try
 	{AtomTable, {Id, binary_to_term(Chunk)}}
     catch
 	error:badarg ->
 	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
     end;
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id == abstract_code ->
+chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id =:= abstract_code ->
     case Chunk of
 	<<>> ->
 	    {AtomTable, {Id, no_abstract_code}};
@@ -429,7 +429,7 @@ chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id == abstract_code ->
 		    {AtomTable, {Id, Term}}
 	    end
     end;
-chunk_to_data(Id, _Chunk, _File, Cs, AtomTable0, _Mod) when Id == atoms ->
+chunk_to_data(Id, _Chunk, _File, Cs, AtomTable0, _Mod) when Id =:= atoms ->
     AtomTable = ensure_atoms(AtomTable0, Cs),
     Atoms = ets:tab2list(AtomTable),
     {AtomTable, {Id, lists:sort(Atoms)}};
@@ -467,7 +467,7 @@ attributes([], R) ->
     reverse(R);
 attributes(L, R) ->
     K = element(1, hd(L)),
-    {L1, L2} = splitwith(fun(T) -> element(1, T) == K end, L),
+    {L1, L2} = splitwith(fun(T) -> element(1, T) =:= K end, L),
     V = append([A || {_, A} <- L1]),
     attributes(L2, [{K, V} | R]).
 
@@ -487,8 +487,8 @@ symbol(indexed_imports, AT, I1, I2, I3, Cnt) ->
     {Cnt, atm(AT, I1), atm(AT, I2), I3};
 symbol(imports, AT, I1, I2, I3, _Cnt) ->
     {atm(AT, I1), atm(AT, I2), I3};
-symbol(Name, AT, I1, I2, I3, _Cnt) when Name == labeled_exports; 
-					Name == labeled_locals ->
+symbol(Name, AT, I1, I2, I3, _Cnt) when Name =:= labeled_exports; 
+					Name =:= labeled_locals ->
     {atm(AT, I1), I2, I3};
 symbol(_, AT, I1, I2, _I3, _Cnt) ->
     {atm(AT, I1), I2}.

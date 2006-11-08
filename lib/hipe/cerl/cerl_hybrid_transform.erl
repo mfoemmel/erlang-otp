@@ -113,7 +113,7 @@ is_escaping(T) ->
     lists:member(escapes, cerl:get_ann(T)).
 
 wrap(Es, Node, Vars) ->
-    L = get_label(Node),
+    L = cerl_trees:get_label(Node),
     Xs = dict:fetch(L, Vars),
     wrap(Es, Xs).
 
@@ -130,9 +130,3 @@ wrap([E | Es], [{S, _} | Xs]) ->
     end;
 wrap([], _) ->
     [].
-
-get_label(T) ->
-    case cerl:get_ann(T) of
-	[{label, L} | _] -> L;
-	_ -> erlang:fault({missing_label, T})
-    end.

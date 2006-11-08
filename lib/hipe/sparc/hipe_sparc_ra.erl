@@ -157,8 +157,8 @@ count_caller_saves(CFG, Liveness, T) ->
       %% Get BBs
       T:labels(CFG))).
 
-liveout(Liveness,L, Target)->
-  regnames(Target:liveout(Liveness,L), Target).
+liveout(Liveness, L, Target)->
+  regnames(Target:liveout(Liveness, L), Target).
 
 uses(I, Target)->
   regnames(Target:uses(I), Target).
@@ -184,7 +184,7 @@ count_instrs_cfg(CFG) ->
   count_instrs(hipe_sparc:sparc_code(hipe_sparc_cfg:linearize(CFG))).
 
 count_instrs(Code) ->
-  count_instrs(Code,0).
+  count_instrs(Code, 0).
 
 count_instrs([Instr|Is], Acc) ->
   count_instrs(Is, Acc + icount(Instr));
@@ -207,7 +207,7 @@ icount(I) ->
       %%            r6 <- r4
       %%            r1 <- r5
       %%            r2 <- r6
-      length(hipe_sparc:multimove_dest(I))*2;
+      length(hipe_sparc:multimove_dest(I)) * 2;
     _Other ->
       1
   end.

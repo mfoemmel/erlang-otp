@@ -262,12 +262,7 @@ k_bif(_A, #k_internal{name=make_fun},
       [#k_atom{val=Fun},#k_int{val=Arity},
        #k_int{val=Index},#k_int{val=Uniq}|Free],
       Rs) ->
-    {bif,case get_opt(no_new_funs) of
-	     false ->
-		 {make_fun,Fun,Arity,Index,Uniq};
-	     true ->
-		 {old_make_fun,Fun,Arity,Uniq}
-	 end,var_list(Free),var_list(Rs)};
+    {bif,{make_fun,Fun,Arity,Index,Uniq},var_list(Free),var_list(Rs)};
 k_bif(_A, Op, As, Rs) ->
     %% The general case.
     Name = bif_op(Op),
@@ -443,7 +438,6 @@ is_gc_bif_1(node, 0) -> false;
 is_gc_bif_1(node, 1) -> false;
 is_gc_bif_1(element, 2) -> false;
 is_gc_bif_1(get, 1) -> false;
-is_gc_bif_1(internal_is_record, 3) -> false;
 is_gc_bif_1(raise, 2) -> false;
 is_gc_bif_1(Bif, Arity) ->
     not (erl_internal:bool_op(Bif, Arity) orelse

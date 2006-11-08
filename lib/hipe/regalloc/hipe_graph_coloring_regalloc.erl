@@ -230,7 +230,7 @@ color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,
 sort_on_degree(Nodes, IG) ->
   [ Node3 || {_,Node3} <- 
 	       lists:sort([{degree(Info),Node2} || 
-			    {Info,Node2} <- [{ hipe_vectors_wrapper:get(IG, Node),
+			    {Info,Node2} <- [{ hipe_vectors:get(IG, Node),
 					      Node} || Node <-
 							 Nodes]])].
 
@@ -283,7 +283,7 @@ simplify(Low, NumNodes, PreC, IG, Spill, K, Ix, Stk, SpillLimit,
 handle_non_spill([], _IG, _Spill, _K, Ix, Stk, Vis, Low, _SpillLimit, _Target) ->
   {Stk, Ix, Vis, Low};
 handle_non_spill([X|Xs], IG, Spill, K, Ix, Stk, Vis, Low, SpillLimit, Target) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Degree = degree(Info),
   ?report("Can't Spill ~w with degree ~w\n",[X,Degree]),
   if Degree > K ->
@@ -569,7 +569,7 @@ unvisited([X|Xs],Vis) ->
 -record(ig_info,{neighbors=[],degree=0}).
 
 empty_ig(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes,#ig_info{neighbors=[],degree=0}).
+  hipe_vectors:new(NumNodes,#ig_info{neighbors=[],degree=0}).
 
 degree(Info) ->
   Info#ig_info.degree.
@@ -582,41 +582,41 @@ add_edge(X,Y,IG) ->
   add_arc(X,Y,add_arc(Y,X,IG)).
 
 add_arc(X, Y, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Old = neighbors(Info),
   New = Info#ig_info{neighbors=[Y|Old]},
-  hipe_vectors_wrapper:set(IG,X,New).
+  hipe_vectors:set(IG,X,New).
 
 
 normalize_ig(IG) ->
-  Size = hipe_vectors_wrapper:size(IG),
+  Size = hipe_vectors:size(IG),
   normalize_ig(Size-1, IG).
 
 normalize_ig(-1, IG) ->
   IG;
 normalize_ig(I, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, I),
+  Info = hipe_vectors:get(IG, I),
   N = ordsets:from_list(neighbors(Info)),
-  NewIG = hipe_vectors_wrapper:set(IG, I, Info#ig_info{neighbors=N, degree=length(N)}),
+  NewIG = hipe_vectors:set(IG, I, Info#ig_info{neighbors=N, degree=length(N)}),
   normalize_ig(I-1, NewIG).
 
 %%degree(X, IG) ->
-%%  Info = hipe_vectors_wrapper:get(IG, X),
+%%  Info = hipe_vectors:get(IG, X),
 %%  Info#ig_info.degree.
 
 neighbors(X, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Info#ig_info.neighbors.
 
 decrement_degree(X, IG) ->
-  Info = hipe_vectors_wrapper:get(IG, X),
+  Info = hipe_vectors:get(IG, X),
   Degree = degree(Info),
   NewDegree = Degree-1,
   NewInfo = Info#ig_info{degree=NewDegree},
-  {NewDegree,hipe_vectors_wrapper:set(IG,X,NewInfo)}.
+  {NewDegree,hipe_vectors:set(IG,X,NewInfo)}.
 
 list_ig(IG) ->
-  hipe_vectors_wrapper:list(IG).
+  hipe_vectors:list(IG).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -626,36 +626,36 @@ list_ig(IG) ->
 %% instead, which will speed up things.
 
 empty_spill(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes, 0).
+  hipe_vectors:new(NumNodes, 0).
 
 spill_cost_of(X, Spill) ->
-  hipe_vectors_wrapper:get(Spill, X).
+  hipe_vectors:get(Spill, X).
 
 spill_cost_lookup(X, Spill) ->
   spill_cost_of(X, Spill).
 
 spill_cost_update(X, N, Spill) ->
-  hipe_vectors_wrapper:set(Spill, X, N).
+  hipe_vectors:set(Spill, X, N).
 
 %%list_spill_costs(Spill) ->
-%%   hipe_vectors_wrapper:list(Spill).
+%%   hipe_vectors:list(Spill).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% The coloring datatype:
 
 none_colored(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes,uncolored).
+  hipe_vectors:new(NumNodes,uncolored).
 
 color_of(X,Cols) ->
-  hipe_vectors_wrapper:get(Cols,X).
+  hipe_vectors:get(Cols,X).
 
 set_color(X,R,Cols) ->
-  hipe_vectors_wrapper:set(Cols,X,{color,R}).
+  hipe_vectors:set(Cols,X,{color,R}).
 
 -ifdef(DEBUG).
 list_coloring(Cols) ->
-  hipe_vectors_wrapper:list(Cols).
+  hipe_vectors:list(Cols).
 -endif.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -665,16 +665,13 @@ list_coloring(Cols) ->
 %% the integer version.
 
 none_visited(NumNodes) ->
-  hipe_vectors_wrapper:init(NumNodes).
+  hipe_vectors:new(NumNodes,false).
 
 visit(X,Vis) ->
-  hipe_vectors_wrapper:set(Vis,X,visited).
+  hipe_vectors:set(Vis,X,true).
 
 is_visited(X,Vis) ->
-  case hipe_vectors_wrapper:get(Vis,X) of
-    visited -> true;
-    _ -> false
-  end.
+  hipe_vectors:get(Vis,X).
 
 visit_all([],Vis) -> Vis;
 visit_all([X|Xs],Vis) ->

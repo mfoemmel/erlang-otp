@@ -28,7 +28,7 @@
 #include "bif.h"
 #include "big.h"
 #include "erl_binary.h"
-
+#include "erl_bits.h"
 
 Uint erts_allocated_binaries;
 erts_mtx_t erts_bin_alloc_mtx;
@@ -183,63 +183,132 @@ erts_realloc_binary(Eterm bin, size_t size)
     return bin;
 }
 
+byte*
+erts_get_aligned_binary_bytes(Eterm bin, byte** base_ptr)
+{
+    byte* bytes;
+    Eterm* real_bin;
+    Uint byte_size;
+    Uint offs = 0;
+    Uint bit_offs = 0;
+    
+    if (is_not_binary(bin)) {
+	return NULL;
+    }
+    byte_size = binary_size(bin);
+    real_bin = binary_val(bin);
+    if (*real_bin == HEADER_SUB_BIN) {
+	ErlSubBin* sb = (ErlSubBin *) real_bin;
+	if (sb->bitsize) {
+	    return NULL;
+	}
+	offs = sb->offs;
+	bit_offs = sb->bitoffs;
+	real_bin = binary_val(sb->orig);
+    }
+    if (*real_bin == HEADER_PROC_BIN) {
+	bytes = ((ProcBin *) real_bin)->bytes + offs;
+    } else {
+	bytes = (byte *)(&(((ErlHeapBin *) real_bin)->data)) + offs;
+    }
+    if (bit_offs) {
+	byte* buf = (byte *) erts_alloc(ERTS_ALC_T_TMP, byte_size);
+
+	erts_copy_bits(bytes, bit_offs, 1, buf, 0, 1, byte_size*8);
+	*base_ptr = buf;
+	bytes = buf;
+    }
+    return bytes;
+}
+
+static Eterm
+bin_bytes_to_list(Eterm previous, Eterm* hp, byte* bytes, Uint size, Uint bitoffs)
+{
+    if (bitoffs == 0) {
+	while (size) {
+	    previous = CONS(hp, make_small(bytes[--size]), previous);
+	    hp += 2;
+	}
+    } else {
+	byte present;
+	byte next;
+	next = bytes[size];
+	while (size) {
+	    present = next;
+	    next = bytes[--size];
+	    previous = CONS(hp, make_small(((present >> (8-bitoffs)) |
+					    (next << bitoffs)) & 255), previous);
+	    hp += 2;
+	}
+    }
+    return previous;
+}
+
+
 BIF_RETTYPE binary_to_list_1(BIF_ALIST_1)
 {
+    Eterm real_bin;
+    Uint offset;
     Uint size;
-    Eterm previous;
+    Uint bitsize;
+    Uint bitoffs;
+    byte* bytes;
+    Eterm previous = NIL;
     Eterm* hp;
-    byte* bufp;
 
     if (is_not_binary(BIF_ARG_1)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
-
     size = binary_size(BIF_ARG_1);
-    hp = HAlloc(BIF_P, 2 * size);
-    GET_BINARY_BYTES(BIF_ARG_1, bufp);
+    ERTS_GET_REAL_BIN(BIF_ARG_1, real_bin, offset, bitoffs, bitsize);
+    bytes = binary_bytes(real_bin)+offset;
+    if (bitsize == 0) {
+	hp = HAlloc(BIF_P, 2 * size);
+    } else {
+	ErlSubBin* last;
 
-    previous = NIL;
-    while (size) {
-	previous = CONS(hp, make_small(bufp[--size]), previous);
+	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE+2+2*size);
+	last = (ErlSubBin *) hp;
+	last->thing_word = HEADER_SUB_BIN;
+	last->size = 0;
+	last->bitsize = bitsize;
+	last->offs = offset+size;
+	last->bitoffs = bitoffs;
+	last->orig = real_bin;
+	hp += ERL_SUB_BIN_SIZE;
+	previous = CONS(hp, make_binary(last), previous);
 	hp += 2;
     }
-    BIF_RET(previous);
+    BIF_RET(bin_bytes_to_list(previous, hp, bytes, size, bitoffs));
 }
 
 BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
 {
-    Eterm previous;
     byte* bytes;
-    int size;
+    Uint size;
+    Uint bitoffs;
+    Uint bitsize;
     Uint i;
     Uint start;
     Uint stop;
     Eterm* hp;
 
     if (is_not_binary(BIF_ARG_1)) {
-	goto error;
+    error:
+	BIF_ERROR(BIF_P, BADARG);
     }
     if (!term_to_Uint(BIF_ARG_2, &start) || !term_to_Uint(BIF_ARG_3, &stop)) {
 	goto error;
     }
     size = binary_size(BIF_ARG_1);
-    GET_BINARY_BYTES(BIF_ARG_1, bytes);
-    if (start < 1 || start > size || stop < 1 || stop > size || stop < start) {
+    ERTS_GET_BINARY_BYTES(BIF_ARG_1, bytes, bitoffs, bitsize);
+    if (start < 1 || start > size || stop < 1 ||
+	stop > size || stop < start || bitsize != 0) {
 	goto error;
     }
-
     i = stop-start+1;
     hp = HAlloc(BIF_P, 2*i);
-    previous = NIL;
-    bytes += stop;
-    while (i-- > 0) {
-	previous = CONS(hp, make_small(*--bytes), previous);
-	hp += 2;
-    }
-    BIF_RET(previous);
-
- error:
-    BIF_ERROR(BIF_P, BADARG);
+    BIF_RET(bin_bytes_to_list(NIL, hp, bytes+start-1, i, bitoffs));
 }
 
 
@@ -249,9 +318,11 @@ BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
 BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 {
     Eterm bin;
-    int i;
+    int i,offset;
     byte* bytes;
-
+    ErlSubBin* sb1; 
+    Eterm* hp;
+    
     if (is_nil(BIF_ARG_1)) {
 	BIF_RET(new_binary(BIF_P,(byte*)"",0));
     }
@@ -263,10 +334,23 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 	goto error;
     }
     bin = new_binary(BIF_P, (byte *)NULL, i);
-    GET_BINARY_BYTES(bin, bytes);
-    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, i) < 0) {
+    bytes = binary_bytes(bin);
+    offset = io_list_to_buf2(BIF_ARG_1, (char*) bytes, i);
+    if (offset < 0) {
 	goto error;
+    } else if (offset > 0) {
+	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE);
+	sb1 = (ErlSubBin *) hp;
+	sb1->thing_word = HEADER_SUB_BIN;
+	sb1->size = i-1;
+	sb1->offs = 0;
+	sb1->orig = bin;
+	sb1->bitoffs = 0;
+	sb1->bitsize = offset;
+	hp += ERL_SUB_BIN_SIZE;
+	bin = make_binary(sb1);
     }
+    
     BIF_RET(bin);
 }
 
@@ -276,8 +360,10 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
 {
     Eterm bin;
-    int i;
+    int i, offset;
     byte* bytes;
+    ErlSubBin* sb1; 
+    Eterm* hp;
 
     if (is_binary(BIF_ARG_1)) {
 	BIF_RET(BIF_ARG_1);
@@ -293,9 +379,20 @@ BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
 	goto error;
     }
     bin = new_binary(BIF_P, (byte *)NULL, i);
-    GET_BINARY_BYTES(bin, bytes);
-    if (io_list_to_buf(BIF_ARG_1, (char*) bytes, i) < 0) {
+    bytes = binary_bytes(bin);
+    if ((offset = io_list_to_buf(BIF_ARG_1, (char*) bytes, i)) < 0) {
 	goto error;
+    } else if (offset > 0) {
+	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE);
+	sb1 = (ErlSubBin *) hp;
+	sb1->thing_word = HEADER_SUB_BIN;
+	sb1->size = i-1;
+	sb1->offs = 0;
+	sb1->orig = bin;
+	sb1->bitoffs = 0;
+	sb1->bitsize = offset;
+	hp += ERL_SUB_BIN_SIZE;
+	bin = make_binary(sb1);
     }
     BIF_RET(bin);
 }
@@ -308,6 +405,8 @@ BIF_RETTYPE split_binary_2(BIF_ALIST_2)
     size_t orig_size;
     Eterm orig;
     Uint offset;
+    Uint bit_offset;
+    Uint bit_size;
     Eterm* hp;
 
     if (is_not_binary(BIF_ARG_1)) {
@@ -321,12 +420,14 @@ BIF_RETTYPE split_binary_2(BIF_ALIST_2)
 	goto error;
     }
     hp = HAlloc(BIF_P, 2*ERL_SUB_BIN_SIZE+3);
-    GET_REAL_BIN(BIF_ARG_1, orig, offset);
+    ERTS_GET_REAL_BIN(BIF_ARG_1, orig, offset, bit_offset, bit_size);
     sb1 = (ErlSubBin *) hp;
     sb1->thing_word = HEADER_SUB_BIN;
     sb1->size = pos;
     sb1->offs = offset;
     sb1->orig = orig;
+    sb1->bitoffs = bit_offset;
+    sb1->bitsize = 0;
     hp += ERL_SUB_BIN_SIZE;
 
     sb2 = (ErlSubBin *) hp;
@@ -334,6 +435,8 @@ BIF_RETTYPE split_binary_2(BIF_ALIST_2)
     sb2->size = orig_size - pos;
     sb2->offs = offset + pos;
     sb2->orig = orig;
+    sb2->bitoffs = bit_offset;
+    sb2->bitsize = bit_size;	/* The extra bits go into the second binary. */
     hp += ERL_SUB_BIN_SIZE;
 
     return TUPLE2(hp, make_binary(sb1), make_binary(sb2));

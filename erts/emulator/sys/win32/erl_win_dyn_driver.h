@@ -77,8 +77,7 @@ WDD_TYPEDEF(int, driver_output_term, (ErlDrvPort, ErlDrvTermData*, int));
 WDD_TYPEDEF(int, driver_send_term, (ErlDrvPort, ErlDrvTermData, ErlDrvTermData*, int));
 WDD_TYPEDEF(long, driver_async, (ErlDrvPort,unsigned int*,void (*)(void*),void*,void (*)(void*)));
 WDD_TYPEDEF(int, driver_async_cancel, (unsigned int));
-WDD_TYPEDEF(int, driver_attach, (ErlDrvPort));
-WDD_TYPEDEF(int, driver_detach, (ErlDrvPort));
+WDD_TYPEDEF(int, driver_lock_driver, (ErlDrvPort));
 WDD_TYPEDEF(void *, driver_dl_open, (char *));
 WDD_TYPEDEF(void *, driver_dl_sym, (void *, char *));
 WDD_TYPEDEF(int, driver_dl_close, (void *));
@@ -141,8 +140,7 @@ typedef struct {
     WDD_FTYPE(driver_send_term) *driver_send_term;
     WDD_FTYPE(driver_async) *driver_async;
     WDD_FTYPE(driver_async_cancel) *driver_async_cancel;
-    WDD_FTYPE(driver_attach) *driver_attach;
-    WDD_FTYPE(driver_detach) *driver_detach;
+    WDD_FTYPE(driver_lock_driver) *driver_lock_driver;
     WDD_FTYPE(driver_dl_open) *driver_dl_open;
     WDD_FTYPE(driver_dl_sym) *driver_dl_sym;
     WDD_FTYPE(driver_dl_close) *driver_dl_close;
@@ -206,8 +204,7 @@ extern TWinDynDriverCallbacks WinDynDriverCallbacks;
 #define driver_send_term (WinDynDriverCallbacks.driver_send_term)
 #define driver_async (WinDynDriverCallbacks.driver_async)
 #define driver_async_cancel (WinDynDriverCallbacks.driver_async_cancel)
-#define driver_attach (WinDynDriverCallbacks.driver_attach)
-#define driver_detach (WinDynDriverCallbacks.driver_detach)
+#define driver_lock_driver (WinDynDriverCallbacks.driver_lock_driver)
 #define driver_dl_open (WinDynDriverCallbacks.driver_dl_open)
 #define driver_dl_sym (WinDynDriverCallbacks.driver_dl_sym)
 #define driver_dl_close (WinDynDriverCallbacks.driver_dl_close)
@@ -288,8 +285,7 @@ do {				                        \
 ((W).driver_send_term) = driver_send_term;		\
 ((W).driver_async) = driver_async;			\
 ((W).driver_async_cancel) = driver_async_cancel;	\
-((W).driver_attach) = driver_attach;			\
-((W).driver_detach) = driver_detach;                    \
+((W).driver_lock_driver) = driver_lock_driver;	       	\
 ((W).driver_dl_open) =  driver_dl_open;			\
 ((W).driver_dl_sym) =  driver_dl_sym;			\
 ((W).driver_dl_close) =  driver_dl_close;		\

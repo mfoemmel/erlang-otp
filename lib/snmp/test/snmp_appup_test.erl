@@ -20,19 +20,16 @@
 %%----------------------------------------------------------------------
 -module(snmp_appup_test).
 
--compile(export_all).
+-export([
+	 all/1, init_suite/1, fin_suite/1,
+	 init_per_testcase/2, fin_per_testcase/2, 
 
+	 appup_file/1
+
+	]).
+
+-include("test_server.hrl").
 -include("snmp_test_lib.hrl").
-
--define(APPLICATION, snmp).
-
-
-%% Test server callbacks
-init_per_testcase(_Case, Config) ->
-    Config.
-
-fin_per_testcase(_Case, Config) ->
-    Config.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -40,19 +37,29 @@ fin_per_testcase(_Case, Config) ->
 all(suite) ->
     Cases = 
 	[
-	 appup
+	 appup_file
 	],
-    {req, [], [{conf, appup_init, Cases, appup_fin}]}.
+    {conf, init_suite, Cases, fin_suite}.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-appup_init(suite) -> [];
-appup_init(doc) -> [];
-appup_init(Config) when is_list(Config) ->
+init_suite(suite) -> [];
+init_suite(doc) -> [];
+init_suite(Config) when is_list(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    TopDir  = filename:join(PrivDir, appup),
+    case file:make_dir(TopDir) of
+        ok ->
+            ok;
+        Error ->
+            fail({failed_creating_subsuite_top_dir, Error})
+    end,
     AppFile   = file_name(?APPLICATION, ".app"),
     AppupFile = file_name(?APPLICATION, ".appup"),
-    [{app_file, AppFile}, {appup_file, AppupFile}|Config].
+    [{app_file,     AppFile}, 
+     {appup_file,   AppupFile},
+     {appup_topdir, TopDir} | Config].
     
 
 file_name(App, Ext) ->
@@ -67,19 +74,29 @@ file_name(App, Ext) ->
     filename:join([LibDir, "ebin", atom_to_list(App) ++ Ext]).
 
 
-appup_fin(suite) -> [];
-appup_fin(doc) -> [];
-appup_fin(Config) when is_list(Config) ->
+fin_suite(suite) -> [];
+fin_suite(doc) -> [];
+fin_suite(Config) when is_list(Config) ->
     Config.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-appup(suite) ->
+%% Test server callbacks
+init_per_testcase(_Case, Config) when is_list(Config) ->
+    Config.
+
+fin_per_testcase(_Case, Config) when is_list(Config) ->
+    Config.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+appup_file(suite) ->
     [];
-appup(doc) ->
-    "perform a simple check of the appup file";
-appup(Config) when is_list(Config) ->
+appup_file(doc) ->
+    "Perform a simple check of the appup file";
+appup_file(Config) when is_list(Config) ->
     AppupFile = key1search(appup_file, Config),
     AppFile   = key1search(app_file, Config),
     Modules   = modules(AppFile),

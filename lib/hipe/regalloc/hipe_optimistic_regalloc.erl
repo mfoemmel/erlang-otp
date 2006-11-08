@@ -333,27 +333,23 @@ do_coloring(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
   if Simplify =:= true ->
       {IG0, Worklists0, Moves0} = 
 	simplify_O(hipe_reg_worklists:simplify(Worklists),
-		 IG, 
-		 Worklists, 
-		 Moves, 
-		 K),
-      do_coloring(IG0, Worklists0, Moves0, Alias,
-		  K, SpillLimit, Target);
+		   IG, 
+		   Worklists, 
+		   Moves, 
+		   K),
+      do_coloring(IG0, Worklists0, Moves0, Alias, K, SpillLimit, Target);
      Coalesce =:= true ->
       {Moves0, IG0, Worklists0, Alias0} =
 	coalesce_O(Moves, IG, Worklists, Alias, K, Target),
-      do_coloring(IG0, Worklists0, Moves0, Alias0, 
-		  K, SpillLimit, Target);
+      do_coloring(IG0, Worklists0, Moves0, Alias0, K, SpillLimit, Target);
      Freeze =:= true ->
-      {Worklists0,Moves0} = 
+      {Worklists0, Moves0} = 
 	freeze(K, Worklists, Moves, IG, Alias),
-      do_coloring(IG, Worklists0, Moves0, Alias, 
-		  K, SpillLimit, Target);
+      do_coloring(IG, Worklists0, Moves0, Alias, K, SpillLimit, Target);
      Spill =:= true ->
       {Worklists0, Moves0} = 
 	selectSpill_O(Worklists, Moves, IG, K, Alias, SpillLimit),
-      do_coloring(IG, Worklists0, Moves0, Alias, 
-		  K, SpillLimit, Target);
+      do_coloring(IG, Worklists0, Moves0, Alias, K, SpillLimit, Target);
      true -> % Catchall case
       {IG, Worklists, Moves, Alias}
     end.
@@ -425,7 +421,7 @@ do_simplify_or_spill(IG, Worklists, Moves, Alias, K, SpillLimit, Target) ->
       Worklists0 = 
 	selectSpill(Worklists, IG, SpillLimit),
       do_simplify_or_spill(IG, Worklists0, Moves, Alias, 
-		  K, SpillLimit, Target);
+			   K, SpillLimit, Target);
      true -> % Catchall case
       {IG, Worklists, Moves, Alias}
     end.
@@ -500,14 +496,11 @@ simplify_O([Node|Nodes], IG, Worklists, Moves, K) ->
 simplify([], IG, Worklists, Moves, _K) -> 
   {IG, Worklists, Moves};
 simplify([Node|Nodes], IG, Worklists, Moves, K) ->
-  Worklists0 = 
-    hipe_reg_worklists:remove_simplify(Node, Worklists),
+  Worklists0 = hipe_reg_worklists:remove_simplify(Node, Worklists),
   ?debug_msg("putting ~w on stack~n",[Node]),
   Adjacent = adjacent(Node, IG, Worklists0),
-  Worklists01 = 
-    hipe_reg_worklists:push_stack(Node, Adjacent, Worklists0),
-  {New_ig, Worklists1} =
-    decrement_degree(Adjacent, IG, Worklists01, K),
+  Worklists01 = hipe_reg_worklists:push_stack(Node, Adjacent, Worklists0),
+  {New_ig, Worklists1} = decrement_degree(Adjacent, IG, Worklists01, K),
   simplify(Nodes, New_ig, Worklists1, Moves, K).
 
 %%----------------------------------------------------------------------
@@ -582,10 +575,8 @@ decrement_degree([Node|Nodes], IG, Worklists, K) ->
   IG0 = hipe_ig:dec_node_degree(Node, IG),
   case PrevDegree =:= K of
     true ->
-      Worklists0 = 
-        hipe_reg_worklists:remove_spill(Node, Worklists),
-      Worklists1 = 
-	hipe_reg_worklists:add_simplify(Node, Worklists0),
+      Worklists0 = hipe_reg_worklists:remove_spill(Node, Worklists),
+      Worklists1 = hipe_reg_worklists:add_simplify(Node, Worklists0),
       decrement_degree(Nodes, IG0, Worklists1, K);
      _ ->
       decrement_degree(Nodes, IG0, Worklists, K)
@@ -637,8 +628,8 @@ enable_moves_active_to_worklist([], Moves) -> Moves;
 enable_moves_active_to_worklist([Node|Nodes], Moves) ->
   case hipe_moves:member_active(Node, Moves) of
     true ->
-      New_moves = hipe_moves:add_worklist(Node,
-				 hipe_moves:remove_active(Node, Moves)),
+      New_moves = 
+	hipe_moves:add_worklist(Node, hipe_moves:remove_active(Node, Moves)),
       enable_moves_active_to_worklist(Nodes, New_moves);
     _ ->
       enable_moves_active_to_worklist(Nodes, Moves)
@@ -768,27 +759,24 @@ is_already_in_list(Node, [L|List]) ->
     _ -> is_already_in_list(Node, List)
   end.
 
-build_alias_list([],_I,List) ->
+build_alias_list([], _I, List) ->
   List;
-build_alias_list([Alias|Aliases],I,List) when is_integer(Alias) ->
-  build_alias_list(Aliases,I+1,[I|List]);
-build_alias_list([_Alias|Aliases],I,List) ->
-  build_alias_list(Aliases,I+1,List).
+build_alias_list([Alias|Aliases], I, List) when is_integer(Alias) ->
+  build_alias_list(Aliases, I+1, [I|List]);
+build_alias_list([_Alias|Aliases], I, List) ->
+  build_alias_list(Aliases, I+1, List).
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
 sort_stack([]) -> [];
 sort_stack([Pivot|Rest]) ->
   {Smaller, Bigger} = sort_stack_split(Pivot, Rest),
   lists:append(sort_stack(Smaller), [Pivot|sort_stack(Bigger)]).
--endif.
 
--ifdef(COMPARE_ITERATED_OPTIMISTIC).
 sort_stack_split(Pivot, L) ->
   sort_stack_split(Pivot, L, [], []).
--endif.
 
--ifdef(COMPARE_ITERATED_OPTIMISTIC).
-sort_stack_split(_Pivot, [], Smaller, Bigger) -> {Smaller, Bigger};
+sort_stack_split(_Pivot, [], Smaller, Bigger) -> 
+  {Smaller, Bigger};
 sort_stack_split(Pivot, [H|T], Smaller, Bigger) when element(1, H) > element(1, Pivot) ->
   sort_stack_split(Pivot, T, [H|Smaller], Bigger);
 sort_stack_split(Pivot, [H|T], Smaller, Bigger) ->
@@ -942,8 +930,12 @@ splits([], _SavedSpillCosts) ->
 splits([L|Ls], SavedSpillCosts) ->
   Spl = splits(Ls, SavedSpillCosts),
   SpillCost = hipe_spillcost:spill_cost(L, SavedSpillCosts),
-  Spl1 = lists:map(fun({Cols, NonCols, OldSpillCost}) -> {[L|Cols], NonCols, OldSpillCost} end, Spl),
-  Spl2 = lists:map(fun({Cols, NonCols, OldSpillCost}) -> {Cols, [L|NonCols], OldSpillCost + SpillCost} end, Spl),
+  Spl1 = lists:map(fun({Cols, NonCols, OldSpillCost}) ->
+		       {[L|Cols], NonCols, OldSpillCost}
+		   end, Spl),
+  Spl2 = lists:map(fun({Cols, NonCols, OldSpillCost}) ->
+		       {Cols, [L|NonCols], OldSpillCost + SpillCost}
+		   end, Spl),
   spillCostOrderedMerge(Spl1, Spl2, []).
 
 %% Merge two ordered sub-splits into one.
@@ -964,7 +956,8 @@ spillCostOrderedMerge(Spl1, Spl2, Spl) ->
       spillCostOrderedMerge(Spl1, tl(Spl2), [hd(Spl2)|Spl])
   end.
 
-%% Process splits, finding the one with the smallest spill cost that can be assigned one color.
+%% Process splits, finding the one with the smallest spill cost that
+%% can be assigned one color.
 
 processSplits([], _AllColors, _IG, Color, NodeSets, _Alias, _Target, Stack) ->
   {NodeSets, Color, Stack};
@@ -1077,31 +1070,31 @@ assignColors_O(Stack,NodeSets,Color,Alias,AllColors,Target) ->
 %%   NewNodeSets    -- The updated node sets
 %%---------------------------------------------------------------------
 
-defaultColoring([],Color,NodeSets,_Target) ->
+defaultColoring([], Color, NodeSets, _Target) ->
   {Color,NodeSets};
-defaultColoring([Reg|Regs],Color,NodeSets,Target) ->
-  Color1 = setColor(Reg,Target:physical_name(Reg),Color),
+defaultColoring([Reg|Regs], Color, NodeSets, Target) ->
+  Color1 = setColor(Reg,Target:physical_name(Reg), Color),
   NodeSets1 = hipe_node_sets:add_colored(Reg, NodeSets),
-  defaultColoring(Regs,Color1,NodeSets1,Target).
+  defaultColoring(Regs, Color1, NodeSets1, Target).
 
 %% Find the colors that are OK for a node with certain edges.
 
-findOkColors(Edges,AllColors,Color,Alias) ->
+findOkColors(Edges, AllColors, Color, Alias) ->
   find(Edges, AllColors, Color, Alias).
 
 %% Find all the colors of the nodes in the list [Node|Nodes] and remove them 
 %% from the set OkColors, when the list is empty, return OkColors.
 
-find([],OkColors,_Color,_Alias) ->
+find([], OkColors, _Color, _Alias) ->
   OkColors;
-find([Node0|Nodes],OkColors,Color,Alias) ->
+find([Node0|Nodes], OkColors, Color, Alias) ->
   Node = getAlias(Node0, Alias),
   case getColor(Node, Color) of
     [] ->
-      find(Nodes,OkColors,Color,Alias);
+      find(Nodes, OkColors, Color, Alias);
     Col ->
       OkColors1 = colset_del_element(Col, OkColors),
-      find(Nodes,OkColors1,Color,Alias)
+      find(Nodes, OkColors1, Color, Alias)
   end.
 
 %%%
@@ -1144,6 +1137,7 @@ colset_smallest(ColSet) ->
 %%-ifdef(notdef). % new bitmask-based implementation
 colset_from_list(Allocatable) ->
   colset_from_list(Allocatable, 0).
+
 colset_from_list([], ColSet) ->
   ColSet;
 colset_from_list([Colour|Allocatable], ColSet) ->
@@ -1465,7 +1459,6 @@ combine_O(U, V, IG, Worklists, Moves, Alias, K, Target) ->
   {IG1, New_worklists, Moves3, Alias1}.
 -endif.
 
-
 %%----------------------------------------------------------------------
 %% Function:    combine
 %%
@@ -1485,18 +1478,11 @@ combine_O(U, V, IG, Worklists, Moves, Alias, K, Target) ->
 %%----------------------------------------------------------------------
        
 combine(U, V, IG, Alias, Worklists, K, Target) ->
-  
   ?debug_msg("N_Coalescing ~p and ~p to ~p~n",[V,U,U]),
-
   Worklists1 = hipe_reg_worklists:add_coalesced(V, U, Worklists),
-  
   Alias1 = setAlias(V, U, Alias),
-  
   AdjV = hipe_ig:node_adj_list(V, IG),
-  
-  IG1 =
-    combine_edges(AdjV, U, IG, Worklists1, K, Target),
-
+  IG1 = combine_edges(AdjV, U, IG, Worklists1, K, Target),
   {IG1, Alias1, Worklists1}.
 
 %%----------------------------------------------------------------------
@@ -1527,9 +1513,9 @@ combine_edges([T|Ts], U, IG, Worklists, K, Target) ->
     _ ->
       IG1 = hipe_ig:add_edge(T, U, IG, Target),
       IG2 = case Target:is_precoloured(T) of
-		true -> IG1;
-		false -> hipe_ig:dec_node_degree(T, IG1)
-	      end,
+	      true -> IG1;
+	      false -> hipe_ig:dec_node_degree(T, IG1)
+	    end,
       combine_edges(Ts, U, IG2, Worklists, K, Target)
   end.
 
@@ -1679,7 +1665,7 @@ findPrimitiveNodes(Node, N, Alias, PrimitiveNodes) ->
 %%   updated Interferece graph
 %%----------------------------------------------------------------------
 fixAdj(N, SavedAdj, IG, Target) ->
-  %Saved = hipe_vectors_wrapper:get(SavedAdj, N),
+  %Saved = hipe_vectors:get(SavedAdj, N),
   Saved = hipe_adj_list:edges(N, SavedAdj),
   ?debug_msg("§§--adj to ~p: ~p~n", [N, Saved]),
   Adj = hipe_ig:node_adj_list(N, IG),
@@ -1689,7 +1675,7 @@ fixAdj(N, SavedAdj, IG, Target) ->
   removeAdj(New, N, IG, Target),
   %% XXX the following lines seems to make double nodes in
   %% some adj_lists, which is a bug, apart from that they
-  %% don't seem to make ny difference at all (even though
+  %% don't seem to make any difference at all (even though
   %% they are in the pseudocode of "optimistic coalescing")
   %% addedge for all in the restored adj_list
   %%RestoredAdj = hipe_ig:node_adj_list(N, IG),
@@ -1801,7 +1787,7 @@ conservative(AdjU, AdjV, U, Worklists, IG, K) ->
 %%----------------------------------------------------------------------
 %% Function:    conservative_count
 %%
-%% Description: Counts degrees for conservative (Briggs' heuristic)
+%% Description: Counts degrees for conservative (Briggs' heuristics)
 %%
 %% Parameters:
 %%   Nodes         -- (Remaining) adjacent nodes
@@ -1866,8 +1852,8 @@ conservative_countV([Node|AdjV], U, Worklists, IG, K, Cnt) ->
 selectSpill(WorkLists, IG, SpillLimit) ->
   [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
   
-  SpillCost = getCost(CAR, IG,SpillLimit),
-  M = findCheapest(CDR,IG,SpillCost,CAR, SpillLimit),
+  SpillCost = getCost(CAR, IG, SpillLimit),
+  M = findCheapest(CDR, IG, SpillCost, CAR, SpillLimit),
   
   WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
   WorkLists2 = hipe_reg_worklists:add_simplify(M, WorkLists1),
@@ -1894,8 +1880,8 @@ selectSpill(WorkLists, IG, SpillLimit) ->
 selectSpill_O(WorkLists, Moves, IG, K, Alias, SpillLimit) ->
   [CAR|CDR] = hipe_reg_worklists:spill(WorkLists),
   
-  SpillCost = getCost(CAR, IG,SpillLimit),
-  M = findCheapest(CDR,IG,SpillCost,CAR, SpillLimit),
+  SpillCost = getCost(CAR, IG, SpillLimit),
+  M = findCheapest(CDR, IG, SpillCost, CAR, SpillLimit),
   
   WorkLists1 = hipe_reg_worklists:remove_spill(M, WorkLists),
   %% The published algorithm adds M to the simplify worklist
@@ -1912,7 +1898,7 @@ findCheapest([], _IG, _Cost, Cheapest, _SpillLimit) ->
   Cheapest;
 findCheapest([Node|Nodes], IG, Cost, Cheapest, SpillLimit) ->
   ThisCost = getCost(Node, IG, SpillLimit),
-  case ThisCost <  Cost of
+  case ThisCost < Cost of
     true ->
       findCheapest(Nodes, IG, ThisCost, Node, SpillLimit);
     false ->

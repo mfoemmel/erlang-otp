@@ -155,7 +155,7 @@ is_empty({0, nil}) ->
 is_empty(_) ->
     false.
 
-size({Size, _}) ->
+size({Size, _}) when is_integer(Size), Size >= 0 ->
     Size.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -226,9 +226,9 @@ update_1(Key, Value, {_, _, Smaller, Bigger}) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-insert(Key, Val, {S, T}) ->
+insert(Key, Val, {S, T}) when is_integer(S) ->
     S1 = S+1,
-    {S1,insert_1(Key, Val, T, ?pow(S1, ?p))}.
+    {S1, insert_1(Key, Val, T, ?pow(S1, ?p))}.
 
 insert_1(Key, Value, {Key1, V, Smaller, Bigger}, S) when Key < Key1 -> 
     case insert_1(Key, Value, Smaller, ?div2(S)) of
@@ -338,7 +338,7 @@ delete_any(Key, T) ->
 
 %%% delete. Assumes that key is present.
 
-delete(Key, {S, T}) ->
+delete(Key, {S, T}) when is_integer(S), S >= 0 ->
     {S - 1, delete_1(Key, T)}.
 
 %% See `lookup' for notes on the term comparison order.
@@ -362,7 +362,7 @@ merge(Smaller, Larger) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-take_smallest({Size, Tree}) ->
+take_smallest({Size, Tree}) when is_integer(Size), Size >= 0 ->
     {Key, Value, Larger} = take_smallest1(Tree),
     {Key, Value, {Size - 1, Larger}}.
 
@@ -380,7 +380,7 @@ smallest_1({Key, Value, nil, _Larger}) ->
 smallest_1({_Key, _Value, Smaller, _Larger}) ->
     smallest_1(Smaller).
 
-take_largest({Size, Tree}) ->
+take_largest({Size, Tree}) when is_integer(Size), Size >= 0 ->
     {Key, Value, Smaller} = take_largest1(Tree),
     {Key, Value, {Size - 1, Smaller}}.
 

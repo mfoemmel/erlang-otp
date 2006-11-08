@@ -8,9 +8,6 @@
 %%% Created : 1 Oct 2004 by Kostis Sagonas <kostis@it.uu.se>
 %%%-------------------------------------------------------------------
 
-%% Value will be set by the Makefile
--define(VSN,"v%VSN%").
-
 -define(RET_NOTHING_SUSPICIOUS, 0).
 -define(RET_INTERNAL_ERROR, 1).
 -define(RET_DISCREPANCIES_FOUND, 2).
@@ -21,9 +18,6 @@
 	[to_core, binary, report_errors, no_inline, strict_record_tests]).
 -define(HIPE_DEF_OPTS, 
 	[no_inline_fp, {pmatch, no_duplicates}, {target, x86}]).
-
-%% Values will be set by the Makefile
--define(DEFAULT_LIBS, %DEF_LIBS%).
 
 -record(analysis, {analysis_pid, core_transform=cerl_typean,
 		   defines=[], doc_plt,

@@ -299,8 +299,10 @@ service_request(SSH, Name)                                               ->
 client_init(User, Host, Port, Opts) ->
     IfAddr = proplists:get_value(ifaddr, Opts, any),
     Tmo    = proplists:get_value(connect_timeout, Opts, ?DEFAULT_TIMEOUT),
+    NoDelay= proplists:get_value(tcp_nodelay, Opts, false),
     case gen_tcp:connect(Host, Port, [{packet,line},
 				      {active,once},
+				      {nodelay, NoDelay},
 				      {ifaddr,IfAddr}], Tmo) of
 	{ok, S} ->
 	    SSH = ssh_init(S, client, Opts),
@@ -328,8 +330,10 @@ server_init(UserFun, Addr, Port, Opts) ->
 				proplists:get_value(timeout, Opts,
 						    ?DEFAULT_TIMEOUT))
 	   end,
+    NoDelay = proplists:get_value(tcp_nodelay, Opts, false),
     ssh_tcp_wrap:server(Port, [{packet,line}, {active,once},
-			       {ifaddr,Addr}, {reuseaddr,true}],
+			       {ifaddr,Addr}, {reuseaddr,true},
+			       {nodelay, NoDelay}],
 			Serv).
 
 %%

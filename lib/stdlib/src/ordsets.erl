@@ -165,7 +165,7 @@ is_subset(_, []) -> false.
 
 fold(F, Acc, [E|Es]) ->
     fold(F, F(E, Acc), Es);
-fold(_, Acc, []) -> Acc.
+fold(F, Acc, []) when is_function(F, 2) -> Acc.
 
 %% filter(Fun, OrdSet) -> OrdSet.
 %%  Filter OrdSet with Fun.
@@ -175,7 +175,7 @@ filter(F, [E|Es]) ->
 	true -> [E|filter(F, Es)]; 
 	false -> filter(F, Es)
     end;
-filter(_, []) -> [].
+filter(F, []) when is_function(F, 1) -> [].
 
 %% Deprecated interface.
 

@@ -397,18 +397,21 @@ getAuthenticatingDataFromHeader(Info)->
     case httpd_util:key1search(PrsedHeader,"authorization" ) of
 	undefined->
 	    {error,nouser};
-	[$B,$a,$s,$i,$c,$\ |EncodedString]->
-	    UnCodedString = http_base_64:decode(EncodedString),
-	    case httpd_util:split(UnCodedString,":",2) of
-		{ok,[User,PassWord]}->
-		    {user,User,PassWord};
-		{error,Error}->
-		    {error,Error}
+	[$B,$a,$s,$i,$c,$\ |EncodedString] = Credentials ->
+	    case (catch http_base_64:decode(EncodedString)) of
+		{'EXIT',{function_clause, _}} ->
+		    {error, Credentials};
+		UnCodedString ->
+		    case httpd_util:split(UnCodedString,":",2) of
+			{ok,[User,PassWord]}->
+			    {user,User,PassWord};
+			{error,Error}->
+			    {error,Error}
+		    end
 	    end;
 	BadCredentials ->
 	    {error,BadCredentials}
     end.
-
 
 %----------------------------------------------------------------------
 %Returns a list of all members of the allowed groups

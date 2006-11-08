@@ -50,7 +50,17 @@ do(Info) ->
 			    {proceed, Info#mod.data};
 			[$B,$a,$s,$i,$c,$ |EncodedString] ->
 			    %% Someone tried to authenticate, and obviously failed!
-			    DecodedString = http_base_64:decode(EncodedString),
+			    DecodedString =  
+				case (catch 
+					  http_base_64:decode(
+					    EncodedString)) of
+				    %% Decode failed 
+				    {'EXIT',{function_clause, _}} ->
+					EncodedString;
+				    String ->
+					String
+				end,
+				 
 			    report_failed(Info, DecodedString,"Failed authentication"),
 			    take_failed_action(Info, DecodedString),
 			    {proceed, Info#mod.data}

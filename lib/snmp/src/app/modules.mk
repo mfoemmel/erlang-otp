@@ -5,6 +5,7 @@ MODULES = \
 	snmp_app \
 	snmp_app_sup
 
-INTERNAL_HRL_FILES = 
+INTERNAL_HRL_FILES = \
+	snmp_internal
 
 

@@ -903,9 +903,6 @@ static BIF_RETTYPE bif_trap3(Export *bif,
 ** trap to itself again (via the ets:select/1 bif).
 ** Note that this is common for db_select_tree and db_select_chunk_tree.
 */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_continue_tree(Process *p, 
 				   DbTable *tbl,
 				   Eterm continuation,
@@ -1059,9 +1056,6 @@ static int db_select_continue_tree(Process *p,
 }
 
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_tree(Process *p, DbTable *tbl, 
 			  Eterm pattern, int reverse, Eterm *ret)
 {
@@ -1175,9 +1169,6 @@ static int db_select_tree(Process *p, DbTable *tbl,
 /*
 ** This is called either when the select_count bif traps.
 */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_count_continue_tree(Process *p, 
 					 DbTable *tbl,
 					 Eterm continuation,
@@ -1267,9 +1258,6 @@ static int db_select_count_continue_tree(Process *p,
 }
 
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_count_tree(Process *p, DbTable *tbl, 
 				Eterm pattern, Eterm *ret)
 {
@@ -1367,9 +1355,6 @@ static int db_select_count_tree(Process *p, DbTable *tbl,
 
 }
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_chunk_tree(Process *p, DbTable *tbl, 
 				Eterm pattern, Sint chunk_size,
 				int reverse,
@@ -1524,9 +1509,6 @@ static int db_select_chunk_tree(Process *p, DbTable *tbl,
 /*
 ** This is called when select_delete traps
 */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_delete_continue_tree(Process *p, 
 					  DbTable *tbl,
 					  Eterm continuation,
@@ -1613,9 +1595,6 @@ static int db_select_delete_continue_tree(Process *p,
 #undef RET_TO_BIF
 }
 
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 static int db_select_delete_tree(Process *p, DbTable *tbl, 
 				 Eterm pattern, Eterm *ret)
 {

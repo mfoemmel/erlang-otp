@@ -95,6 +95,7 @@ static erts_smp_atomic_t atomic_no_schedulers;
 static Uint schedulers_waiting_on_runq;
 static Uint use_no_schedulers;
 static int changing_no_schedulers;
+static ProcessList *pending_exiters;
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
 static struct {
@@ -152,7 +153,9 @@ static erts_smp_atomic_t process_count;
 static void print_function_from_pc(int to, void *to_arg, Eterm* x);
 static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
 			      int yreg);
-
+#ifdef ERTS_SMP
+static void handle_pending_exiters(ProcessList *);
+#endif
 
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
 
@@ -375,7 +378,7 @@ erts_proc_lc_my_proc_locks(Process *p)
 }
 
 void
-erts_proc_lc_chk_no_proc_locks(void)
+erts_proc_lc_chk_no_proc_locks(char *file, int line)
 {
     int resv[4];
     int ids[4] = {lc_id.proc_lock_main,
@@ -384,14 +387,12 @@ erts_proc_lc_chk_no_proc_locks(void)
 		  lc_id.proc_lock_status};
     erts_lc_have_lock_ids(resv, ids, 4);
     if (resv[0] || resv[1] || resv[2] || resv[3]) {
-	erts_lc_fail("Thread has process locks locked when expected "
-		     "not to have any process locks locked");
+	erts_lc_fail("%s:%d: Thread has process locks locked when expected "
+		     "not to have any process locks locked",
+		     file, line);
     }
 }
 
-#define ASSERT_NO_PROC_LOCKS erts_proc_lc_chk_no_proc_locks()
-#else
-#define ASSERT_NO_PROC_LOCKS
 #endif
 
 void
@@ -400,7 +401,9 @@ erts_pre_init_process(void)
 #ifdef USE_THREADS
     erts_tsd_key_create(&sched_data_key);
 #endif    
-
+#ifdef ERTS_SMP
+    pending_exiters = NULL;
+#endif
 #if defined(ERTS_ENABLE_LOCK_CHECK) && defined(ERTS_SMP)
     lc_id.proc_lock_main	= erts_lc_get_lock_order_id("proc_main");
     lc_id.proc_lock_link	= erts_lc_get_lock_order_id("proc_link");
@@ -598,8 +601,12 @@ suspend_process(Process *p)
     case P_RUNABLE:
 #ifdef ERTS_SMP
     runable:
+        if (!ERTS_PROC_PENDING_EXIT(p)) 
 #endif
-	remove_proc_from_sched_q(p);
+	    remove_proc_from_sched_q(p);
+	/* else:
+	 * leave process in schedq so it will discover the pending exit
+	 */
 	p->rstatus = P_RUNABLE; /* wakeup as runnable */
 	break;
     case P_RUNNING:
@@ -775,8 +782,8 @@ cancel_suspend_of_suspendee(Process *p, Uint32 p_locks)
 	Process *rp;
 	if (!(p_locks & ERTS_PROC_LOCK_STATUS))
 	    erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
-	rp = erts_pid2proc_x(p, p_locks|ERTS_PROC_LOCK_STATUS,
-			     p->suspendee, ERTS_PROC_LOCK_STATUS);
+	rp = erts_pid2proc(p, p_locks|ERTS_PROC_LOCK_STATUS,
+			   p->suspendee, ERTS_PROC_LOCK_STATUS);
 	if (rp)
 	    erts_resume(rp, ERTS_PROC_LOCK_STATUS);
 	if (!(p_locks & ERTS_PROC_LOCK_STATUS))
@@ -888,14 +895,9 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 	/* Process previously suspended by c_p (below)... */
 	Uint32 rp_locks = pid_locks|ERTS_PROC_LOCK_STATUS;
 	rp = erts_pid2proc(c_p, c_p_locks|ERTS_PROC_LOCK_STATUS, pid, rp_locks);
-	if (rp) {
-	    c_p->suspendee = NIL;
+	c_p->suspendee = NIL;
+	if (rp)
 	    resume_process(rp);
-	}
-	else {
-	    if (!ERTS_PROC_IS_EXITING(c_p))
-		c_p->suspendee = NIL;
-	}
     }
     else {
 
@@ -1631,8 +1633,10 @@ internal_add_to_schedule_q(Process *p)
       sq = &queue[p->prio];      
     }
 
-    /* Never schedule a suspended process */
+#ifndef ERTS_SMP
+    /* Never schedule a suspended process (ok in smp case) */
     ASSERT(p->status != P_SUSPENDED);
+#endif
 
     qmask |= (1 << p->prio);
 
@@ -1763,8 +1767,7 @@ erts_process_status(Process *c_p, Uint32 c_p_locks,
     else {
 	p = erts_pid2proc_opt(c_p, c_p_locks,
 			      rpid, ERTS_PROC_LOCK_STATUS,
-			      (ERTS_P2P_FLG_ALLOW_CURRENT_X
-			       | ERTS_P2P_FLG_ALLOW_OTHER_X));
+			      ERTS_P2P_FLG_ALLOW_OTHER_X);
     }
 
     if (p) {
@@ -1956,6 +1959,12 @@ Process *schedule(Process *p, int calls)
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
 
 #ifdef ERTS_SMP
+	if (ERTS_PROC_PENDING_EXIT(p)) {
+	    erts_handle_pending_exit(p,
+				     ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+	    p->status_flags |= ERTS_PROC_SFLG_PENDADD2SCHEDQ;
+	}
+
 	if (p->pending_suspenders) {
 	    handle_pending_suspend(p,
 				   ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
@@ -1974,6 +1983,7 @@ Process *schedule(Process *p, int calls)
 #ifdef ERTS_SMP
 	p->scheduler_data = NULL;
 	p->scheduler_flags &= ~ERTS_PROC_SCHED_FLG_SCHEDULED;
+	p->status_flags &= ~ERTS_PROC_SFLG_SCHEDULED;
 
 	if (p->status_flags & ERTS_PROC_SFLG_PENDADD2SCHEDQ) {
 	    p->status_flags &= ~ERTS_PROC_SFLG_PENDADD2SCHEDQ;
@@ -1997,7 +2007,12 @@ Process *schedule(Process *p, int calls)
 	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 	}
 
-	ASSERT_NO_PROC_LOCKS;
+#ifdef ERTS_SMP
+	ASSERT(!esdp->free_process);
+#endif
+	ASSERT(!esdp->current_process);
+
+	ERTS_SMP_CHK_NO_PROC_LOCKS;
 
 	dt = do_time_read_and_reset();
 	if (dt) {
@@ -2126,16 +2141,29 @@ Process *schedule(Process *p, int calls)
 
 	esdp->current_process = p;
 
-	erts_smp_mtx_unlock(&schdlq_mtx);
+#ifdef ERTS_SMP
+	{
+	    ProcessList *pnd_xtrs = pending_exiters;
+	    pending_exiters = NULL;
+	    erts_smp_mtx_unlock(&schdlq_mtx);
 
-	ASSERT_NO_PROC_LOCKS;
+	    if (pnd_xtrs)
+		handle_pending_exiters(pnd_xtrs);
+	}
+
+	ERTS_SMP_CHK_NO_PROC_LOCKS;
 
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 
-#ifdef ERTS_SMP
+	p->status_flags |= ERTS_PROC_SFLG_SCHEDULED;
+	p->status_flags &= ~ERTS_PROC_SFLG_INRUNQ;
+	if (ERTS_PROC_PENDING_EXIT(p)) {
+	    erts_handle_pending_exit(p,
+				     ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+	}
 	ASSERT(!p->scheduler_data);
 	p->scheduler_data = esdp;
-	p->status_flags &= ~ERTS_PROC_SFLG_INRUNQ;
+
 #endif
 	ASSERT(p->status != P_SUSPENDED); /* Never run a suspended process */
 
@@ -2515,10 +2543,12 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->stop = p->hend = p->heap + sz;
     p->htop = p->heap;
     p->heap_sz = sz;
+#if !defined(HEAP_FRAG_ELIM_TEST)
     p->arith_avail = 0;		/* No arithmetic heap. */
     p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
+#endif
 #endif
     p->catches = 0;
 
@@ -2662,6 +2692,18 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	}
     }
 
+    /*
+     * Test whether this process should be initially monitored by its parent.
+     */
+    if (so->flags & SPO_MONITOR) {
+	Eterm mref;
+
+	mref = erts_make_ref(parent);
+	erts_add_monitor(&(parent->monitors), MON_ORIGIN, mref, p->id, NIL);
+	erts_add_monitor(&(p->monitors), MON_TARGET, mref, parent->id, NIL);
+	so->mref = mref;
+    }
+
 #ifdef HYBRID
     /*
      * Add process to the array of active processes.
@@ -2708,6 +2750,8 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->scheduler_flags = 0;
     p->suspendee = NIL;
     p->pending_suspenders = NULL;
+    p->pending_exit.reason = THE_NON_VALUE;
+    p->pending_exit.bp = NULL;
 #endif
 
 #if !defined(NO_FPE_SIGNALS)
@@ -2718,7 +2762,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     erts_smp_mtx_unlock(&schdlq_mtx);
 
     res = p->id;
-
     erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL);
 
     VERBOSE(DEBUG_PROCESSES, ("Created a new process: %T\n",p->id));
@@ -2807,10 +2850,12 @@ void erts_init_empty_process(Process *p)
     /*
      * Secondary heap for arithmetic operations.
      */
+#if !defined(HEAP_FRAG_ELIM_TEST)
     p->arith_heap = NULL;
     p->arith_avail = 0;
 #ifdef DEBUG
     p->arith_check_me = NULL;
+#endif
 #endif
 
     /*
@@ -2857,11 +2902,14 @@ void erts_init_empty_process(Process *p)
     p->msg_inq.len = 0;
     p->suspendee = NIL;
     p->pending_suspenders = NULL;
+    p->pending_exit.reason = THE_NON_VALUE;
+    p->pending_exit.bp = NULL;
 #endif
 
 #if !defined(NO_FPE_SIGNALS)
     p->fp_exception = 0;
 #endif
+
 }    
 
 #ifdef DEBUG
@@ -2910,6 +2958,8 @@ erts_debug_verify_clean_empty_process(Process* p)
     ASSERT(p->msg_inq.len == 0);
     ASSERT(p->suspendee == NIL);
     ASSERT(p->pending_suspenders == NULL);
+    ASSERT(p->pending_exit.reason == THE_NON_VALUE);
+    ASSERT(p->pending_exit.bp == NULL);
 #endif
 
     /* Thing that erts_cleanup_empty_process() cleans up */
@@ -2921,13 +2971,14 @@ erts_debug_verify_clean_empty_process(Process* p)
     ASSERT(p->off_heap.externals == NULL);
     ASSERT(p->off_heap.overhead == 0);
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
     ASSERT(p->arith_avail == 0);
     ASSERT(p->arith_heap == NULL);
 #ifdef DEBUG
     ASSERT(p->arith_check_me == NULL);
 #endif
+#endif
     ASSERT(p->mbuf == NULL);
-
 }
 
 #endif
@@ -2947,10 +2998,12 @@ erts_cleanup_empty_process(Process* p)
     p->off_heap.externals = NULL;
     p->off_heap.overhead = 0;
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
     p->arith_avail = 0;
     p->arith_heap = NULL;
 #ifdef DEBUG
     p->arith_check_me = NULL;
+#endif
 #endif
 
     mbufp = p->mbuf;
@@ -3074,76 +3127,106 @@ delete_process(Process* p)
 
 }
 
-
-/*
- * schedule_exit() assumes that main locks are locked on both
- * c_p (current process) and e_p (exiting process).
- */
-void
-erts_schedule_exit(Process *c_p, Process *e_p, Eterm reason)
+static ERTS_INLINE void
+set_proc_exiting(Process *p, Eterm reason, ErlHeapFragment *bp)
 {
-    Eterm copy;
-    Uint32 old_status;
-
-    ERTS_SMP_LC_ASSERT(!c_p
-		       ||
-		       ERTS_PROC_LOCK_MAIN & erts_proc_lc_my_proc_locks(c_p));
-    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_MAIN & erts_proc_lc_my_proc_locks(e_p));
-
-
-    if (ERTS_PROC_IS_EXITING(e_p))
-	return;
-
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(p) == ERTS_PROC_LOCKS_ALL);
     /*
-     * If this is the currently running process, we'll only change its
-     * status to P_EXITING, and do nothing more.  It's the responsibility
-     * of the caller to make the current process exit.
+     * You are required to have all locks when going to status P_EXITING,
+     * This makes it is enough to take any lock when looking up a process
+     * (pid2proc()) to prevent the looked up process from exiting until
+     * the lock has been released.
      */
 
 #ifdef ERTS_SMP
-    /* By locking all locks when going to status P_EXITING, it is enough
-       to take any lock when looking up a process (pid2proc()) to prevent
-       the looked up process from exiting until the lock has been released. */
-    erts_smp_proc_lock(e_p,
-		       ERTS_PROC_LOCKS_ALL_MINOR|ERTS_PROC_LOCK_FLAG_EXITING);
-    e_p->is_exiting = 1;
+    erts_smp_proc_lock(p, ERTS_PROC_LOCK_FLAG_EXITING);
+    p->is_exiting = 1;
 #endif
-    old_status = e_p->status;
-    e_p->status = P_EXITING;
-
-    if (c_p == e_p) {
-	e_p->fvalue = reason;
+    p->status = P_EXITING;
+    p->fvalue = reason;
+    if (bp) {
+	bp->next = p->mbuf;
+	p->mbuf = bp;
     }
-    else {
+    p->freason = EXC_EXIT;
+    KILL_CATCHES(p);
+    cancel_timer(p);
+    p->i = (Eterm *) beam_exit;
+}
 
-	copy = copy_object(reason, e_p);
-    
-	ACTIVATE(e_p);
-	e_p->fvalue = copy;
-	cancel_timer(e_p);
-	e_p->freason = EXC_EXIT;
-	KILL_CATCHES(e_p);
-	e_p->i = (Eterm *) beam_exit;
-	if (
-#if ERTS_SMP
-	    old_status == P_WAITING || old_status == P_SUSPENDED
-#else
-	    old_status != P_RUNABLE
-#endif
-	    ) {
-	    add_to_schedule_q(e_p);
+
+#ifdef ERTS_SMP
+
+void
+erts_handle_pending_exit(Process *c_p, Uint32 locks)
+{
+    Uint32 xlocks;
+    ASSERT(is_value(c_p->pending_exit.reason));
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) == locks);
+    ERTS_SMP_LC_ASSERT(locks & ERTS_PROC_LOCK_MAIN);
+    ERTS_SMP_LC_ASSERT(c_p->status != P_EXITING);
+    ERTS_SMP_LC_ASSERT(c_p->status != P_FREE);
+
+    /* Ensure that all locks on c_p are locked before proceeding... */
+    if (locks == ERTS_PROC_LOCKS_ALL)
+	xlocks = 0;
+    else {
+	xlocks = ~locks & ERTS_PROC_LOCKS_ALL;
+	if (erts_smp_proc_trylock(c_p, xlocks) == EBUSY) {
+	    erts_smp_proc_unlock(c_p, locks & ~ERTS_PROC_LOCK_MAIN);
+	    erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
 	}
     }
 
-    erts_smp_proc_unlock(e_p, ERTS_PROC_LOCKS_ALL_MINOR);
+    set_proc_exiting(c_p, c_p->pending_exit.reason, c_p->pending_exit.bp);
+    c_p->pending_exit.reason = THE_NON_VALUE;
+    c_p->pending_exit.bp = NULL;
+
+    if (xlocks)
+	erts_smp_proc_unlock(c_p, xlocks);
 }
+
+static void
+handle_pending_exiters(ProcessList *pnd_xtrs)
+{
+    ProcessList *plp = pnd_xtrs;
+    ProcessList *free_plp;
+    while (plp) {
+	Process *p = erts_pid2proc(NULL, 0, plp->pid, ERTS_PROC_LOCKS_ALL);
+	if (p && !(p->status_flags & ERTS_PROC_SFLG_SCHEDULED)) {
+	    ASSERT(p->status_flags & ERTS_PROC_SFLG_INRUNQ);
+	    ASSERT(ERTS_PROC_PENDING_EXIT(p));
+	    erts_handle_pending_exit(p, ERTS_PROC_LOCKS_ALL);
+	}
+	if (p)
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL);
+	free_plp = plp;
+	plp = plp->next;
+	erts_free(ERTS_ALC_T_PROC_LIST, (void *) free_plp);
+    }
+}
+
+static void
+save_pending_exiter(Eterm pid)
+{
+    ProcessList *plp;
+
+    plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+    plp->pid = pid;
+    erts_smp_mtx_lock(&schdlq_mtx);
+    plp->next = pending_exiters;
+    pending_exiters = plp;
+    erts_smp_mtx_unlock(&schdlq_mtx);
+}
+
+#endif
 
 /*
  * This function delivers an EXIT message to a process
  * which is trapping EXITs.
  */
 
-static void
+static ERTS_INLINE void
 send_exit_message(Process *to, Uint32 *to_locksp,
 		  Eterm exit_term, Uint term_size, Eterm token)
 {
@@ -3173,6 +3256,231 @@ send_exit_message(Process *to, Uint32 *to_locksp,
 	temp_token = copy_struct(token, sz_token, &hp, &bp->off_heap);
 	erts_queue_message(to, *to_locksp, bp, mess, temp_token);
     }
+}
+
+/*
+ *
+ * *** Exit signal behavior ***
+ *
+ * Exit signals are asynchronous (truly asynchronous in the
+ * SMP emulator). When the signal is received the receiver receives an
+ * 'EXIT' message if it is trapping exits; otherwise, it will either
+ * ignore the signal if the exit reason is normal, or go into an
+ * exiting state (status P_EXITING). When a process has gone into the
+ * exiting state it will not execute any more Erlang code, but it might
+ * take a while before it actually exits. The exit signal is being
+ * received when the 'EXIT' message is put in the message queue, the
+ * signal is dropped, or when it changes state into exiting. The time it
+ * is in the exiting state before actually exiting is undefined (it
+ * might take a really long time under certain conditions). The
+ * receiver of the exit signal does not break links or trigger monitors
+ * until it actually exits.
+ *
+ * Exit signals and other signals, e.g. messages, have to be received
+ * by a receiver in the same order as sent by a sender.
+ *
+ *
+ *
+ * Exit signal implementation in the SMP emulator:
+ *
+ * If the receiver is trapping exits, the signal is transformed
+ * into an 'EXIT' message and sent as a normal message, if the
+ * reason is normal the signal is dropped; otherwise, the process
+ * is determined to be exited. The interesting case is when the
+ * process is to be exited and this is what is described below.
+ *
+ * If it is possible, the receiver is set in the exiting state straight
+ * away and we are done; otherwise, the sender places the exit reason
+ * in the pending_exit field of the process struct and if necessary
+ * adds the receiver to the run queue. It is typically not possible
+ * to set a scheduled process or a process which we cannot get all locks
+ * on without releasing locks on it in an exiting state straight away.
+ *
+ * The receiver will poll the pending_exit field when it reach certain
+ * places during it's execution. When it discovers the pending exit
+ * it will change state into the exiting state. If the receiver wasn't
+ * scheduled when the pending exit was set, the first scheduler that
+ * schedules a new process will set the receiving process in the exiting
+ * state just before it schedules next process.
+ * 
+ * When the exit signal is placed in the pending_exit field, the signal
+ * is considered as being in transit on the Erlang level. The signal is
+ * actually in some kind of semi transit state, since we have already
+ * determined how it should be received. It will exit the process no
+ * matter what if it is received (the process may exit by itself before
+ * reception of the exit signal). The signal is received when it is
+ * discovered in the pending_exit field by the receiver.
+ *
+ * The receiver have to poll the pending_exit field at least before:
+ * - moving messages from the message in queue to the private message
+ *   queue. This in order to preserve signal order.
+ * - unlink. Otherwise the process might get exited on a link that
+ *   have been removed.
+ * - changing the trap_exit flag to true. This in order to simplify the
+ *   implementation; otherwise, we would have to transform the signal
+ *   into an 'EXIT' message when setting the trap_exit flag to true. We
+ *   would also have to maintain a queue of exit signals in transit.
+ * - being scheduled in or out.
+ */
+
+static ERTS_INLINE int
+send_exit_signal(Process *c_p,		/* current process if and only
+					   if reason is stored on it */
+		 Eterm from,		/* Id of sender of signal */
+		 Process *rp,		/* receiving process */
+		 Uint32 *rp_locks,	/* current locks on receiver */
+		 Eterm reason,		/* exit reason */
+		 Eterm exit_tuple,	/* Prebuild exit tuple
+					   or THE_NON_VALUE */
+		 Uint exit_tuple_sz,	/* Size of prebuilt exit tuple
+					   (if exit_tuple != THE_NON_VALUE) */
+		 Eterm token,		/* token */
+		 Process *token_update, /* token updater */
+		 Uint32 flags		/* flags */
+    )		
+{
+    Eterm rsn = reason == am_kill ? am_killed : reason;
+
+    ERTS_SMP_LC_ASSERT(*rp_locks == erts_proc_lc_my_proc_locks(rp));
+    ERTS_SMP_LC_ASSERT((*rp_locks & ERTS_PROC_LOCKS_XSIG_SEND)
+		       == ERTS_PROC_LOCKS_XSIG_SEND);
+
+    ASSERT(reason != THE_NON_VALUE);
+
+    if (ERTS_PROC_IS_TRAPPING_EXITS(rp)
+	&& (reason != am_kill || (flags & ERTS_XSIG_FLG_IGN_KILL))) {
+	if (is_not_nil(token) && token_update)
+	    seq_trace_update_send(token_update);
+	if (is_value(exit_tuple))
+	    send_exit_message(rp, rp_locks, exit_tuple, exit_tuple_sz, token);
+	else
+	    erts_deliver_exit_message(from, rp, rp_locks, rsn, token);
+	return 1; /* Receiver will get a message */
+    }
+    else if (reason != am_normal || (flags & ERTS_XSIG_FLG_NO_IGN_NORMAL)) {
+#ifdef ERTS_SMP
+	if (!ERTS_PROC_PENDING_EXIT(rp) && !rp->is_exiting) {
+	    ASSERT(rp->status != P_EXITING);
+	    ASSERT(rp->status != P_FREE);
+	    ASSERT(!rp->pending_exit.bp);
+
+	    if (rp == c_p && (*rp_locks & ERTS_PROC_LOCK_MAIN)) {
+		/* Ensure that all locks on c_p are locked before
+		   proceeding... */
+		if (*rp_locks != ERTS_PROC_LOCKS_ALL) {
+		    Uint32 need_locks = ~(*rp_locks) & ERTS_PROC_LOCKS_ALL;
+		    if (erts_smp_proc_trylock(c_p, need_locks) == EBUSY) {
+			erts_smp_proc_unlock(c_p,
+					     *rp_locks & ~ERTS_PROC_LOCK_MAIN);
+			erts_smp_proc_lock(c_p, ERTS_PROC_LOCKS_ALL_MINOR);
+		    }
+		    *rp_locks = ERTS_PROC_LOCKS_ALL;
+		}
+		set_proc_exiting(c_p, rsn, NULL);
+	    }
+	    else if (!(rp->status_flags & ERTS_PROC_SFLG_SCHEDULED)) {
+		/* Process not scheduled ... */
+		Uint32 need_locks = ~(*rp_locks) & ERTS_PROC_LOCKS_ALL;
+		if (need_locks
+		    && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
+		    /* ... but we havn't got all locks on it ... */
+		    save_pending_exiter(rp->id);
+		    /*
+		     * The pending exit will be discovered when next
+		     * process is scheduled in
+		     */
+		    goto set_pending_exit;
+		}
+		else {
+		    /* ...and we have all locks on it... */
+		    *rp_locks = ERTS_PROC_LOCKS_ALL;
+		    set_proc_exiting(rp,
+				     (is_immed(rsn)
+				      ? rsn
+				      : copy_object(rsn, rp)),
+				     NULL);
+		}
+	    }
+	    else { /* Process scheduled... */
+
+		/*
+		 * The pending exit will be discovered when the process
+		 * is scheduled out if not discovered earlier.
+		 */
+
+	    set_pending_exit:
+		if (is_immed(rsn)) {
+		    rp->pending_exit.reason = rsn;
+		}
+		else {
+		    Eterm *hp;
+		    Uint sz = size_object(rsn);
+		    ErlHeapFragment *bp = new_message_buffer(sz);
+
+		    hp = &bp->mem[0];
+		    rp->pending_exit.reason = copy_struct(rsn,
+							  sz,
+							  &hp,
+							  &bp->off_heap);
+		    rp->pending_exit.bp = bp;
+		}
+		ASSERT(ERTS_PROC_PENDING_EXIT(rp));
+	    }
+	    if (!(rp->status_flags
+		  & (ERTS_PROC_SFLG_INRUNQ|ERTS_PROC_SFLG_SCHEDULED)))
+		add_to_schedule_q(rp);
+	}
+	/* else:
+	 *
+	 *    The receiver already has a pending exit (or is exiting)
+	 *    so we drop this signal.
+	 *
+	 *    NOTE: dropping this exit signal is based on the assumption
+	 *          that the receiver *will* exit; either on the pending
+	 *          exit or by itself before seeing the pending exit.
+	 */
+#else /* !ERTS_SMP */
+	if (c_p == rp) {
+	    rp->status = P_EXITING;
+	    c_p->fvalue = rsn;
+	}
+	else if (rp->status != P_EXITING) { /* No recursive process exits /PaN */
+	    Eterm old_status = rp->status;
+	    set_proc_exiting(rp,
+			     is_immed(rsn) ? rsn : copy_object(rsn, rp),
+			     NULL);
+	    ACTIVATE(rp);
+	    if (old_status != P_RUNABLE && old_status != P_RUNNING)
+		add_to_schedule_q(rp);
+	}
+#endif
+	return -1; /* Receiver will exit */
+    }
+
+    return 0; /* Receiver unaffected */
+}
+
+
+int
+erts_send_exit_signal(Process *c_p,
+		      Eterm from,
+		      Process *rp,
+		      Uint32 *rp_locks,
+		      Eterm reason,
+		      Eterm token,
+		      Process *token_update,
+		      Uint32 flags)
+{
+    return send_exit_signal(c_p,
+			    from,
+			    rp,
+			    rp_locks,
+			    reason,
+			    THE_NON_VALUE,
+			    0,
+			    token,
+			    token_update,
+			    flags);
 }
 
 typedef struct {
@@ -3265,7 +3573,7 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 		erts_smp_dist_entry_lock(dep);
 		rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		if (rmon) {
-		    dist_m_exit(pcontext->p, ERTS_PROC_LOCK_MAIN,
+		    dist_m_exit(NULL, 0,
 				dep, mon->pid, (rmon->name != NIL) 
 				? rmon->name : rmon->pid,
 				mon->ref, pcontext->reason);
@@ -3316,7 +3624,7 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 		if (rlnk != NULL) {
 		    erts_destroy_link(rlnk);
 		}
-		erts_do_exit_port(NULL, item, p->id, reason);
+		erts_do_exit_port(item, p->id, reason);
 	    }
 	    erts_smp_io_unlock();
 	}
@@ -3331,39 +3639,30 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 	    }
 	}
 	else if (is_internal_pid(item)) {
-	    Uint32 rp_locks = ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK;
+	    Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
 	    rp = erts_pid2proc(NULL, 0, item, rp_locks);
 	    if (rp) {
 		rlnk = erts_remove_link(&(rp->nlinks), p->id);
 		/* If rlnk == NULL, we got unlinked while exiting,
 		   i.e., do nothing... */
 		if (rlnk) {
+		    int xres;
 		    erts_destroy_link(rlnk);
-		    if (rp->flags & F_TRAPEXIT) {
-#ifdef ERTS_SMP
-			erts_smp_proc_lock(rp, ERTS_PROC_LOCKS_MSG_SEND);
-			rp_locks |= ERTS_PROC_LOCKS_MSG_SEND;
-#endif
-			if (SEQ_TRACE_TOKEN(p) != NIL ) {
-			    seq_trace_update_send(p);
-			}
-			send_exit_message(rp, &rp_locks,
-					  exit_tuple, exit_tuple_sz,
-					  SEQ_TRACE_TOKEN(p));
-			if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlnk != NULL) {
+		    xres = send_exit_signal(NULL,
+					    p->id,
+					    rp,
+					    &rp_locks, 
+					    reason,
+					    exit_tuple,
+					    exit_tuple_sz,
+					    SEQ_TRACE_TOKEN(p),
+					    p,
+					    ERTS_XSIG_FLG_IGN_KILL);
+		    if (xres >= 0 && IS_TRACED_FL(rp, F_TRACE_PROCS)) {
+			/* We didn't exit the process and it is traced */
+			if (IS_TRACED_FL(rp, F_TRACE_PROCS)) {
 			    trace_proc(p, rp, am_getting_unlinked, p->id);
 			}
-		    } else if (reason == am_normal) {
-			if (IS_TRACED_FL(rp, F_TRACE_PROCS) && rlnk != NULL) {
-			    trace_proc(p, rp, am_getting_unlinked, p->id);
-			}
-		    } else {
-#ifdef ERTS_SMP
-			erts_smp_proc_unlock(rp,
-					     rp_locks & ~ERTS_PROC_LOCK_MAIN);
-			rp_locks = ERTS_PROC_LOCK_MAIN;
-#endif
-			erts_schedule_exit(NULL, rp, reason);
 		    }
 		}
 		ASSERT(rp != p);
@@ -3420,7 +3719,7 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 /* this function fishishes a process and propagates exit messages - called
    by process_main when a process dies */
 void 
-do_exit(Process* p, Eterm reason)
+erts_do_exit_process(Process* p, Eterm reason)
 {
     ErtsLink* lnk;
     ErtsMonitor *mon;
@@ -3442,6 +3741,16 @@ do_exit(Process* p, Eterm reason)
     p->status = P_EXITING;
 
 #ifdef ERTS_SMP
+
+    if (ERTS_PROC_PENDING_EXIT(p)) {
+	/* Process exited before pending exit was received... */
+	p->pending_exit.reason = THE_NON_VALUE;
+	if (p->pending_exit.bp) {
+	    free_message_buffer(p->pending_exit.bp);
+	    p->pending_exit.bp = NULL;
+	}
+    }
+
     cancel_suspend_of_suspendee(p, ERTS_PROC_LOCKS_ALL); 
 
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
@@ -3452,10 +3761,6 @@ do_exit(Process* p, Eterm reason)
 
     erts_trace_check_exiting(p->id);
 
-    if (p->reg)
-	(void) erts_unregister_name(p, ERTS_PROC_LOCKS_ALL, 0, p->reg->name);
-
-
     cancel_timer(p);		/* Always cancel timer just in case */
 
     if (p->bif_timers)
@@ -3463,6 +3768,17 @@ do_exit(Process* p, Eterm reason)
 
     if (p->flags & F_USING_DB)
 	db_proc_dead(p->id);
+
+    if (p->flags & F_USING_DDLL) {
+	erts_ddll_proc_dead(p, ERTS_PROC_LOCKS_ALL);
+    }
+
+    /*
+     * The registered name *should* be the last "erlang resource" to
+     * cleanup.
+     */
+    if (p->reg)
+	(void) erts_unregister_name(p, ERTS_PROC_LOCKS_ALL, 0, p->reg->name);
 
     {
 	int pix;
@@ -3487,6 +3803,7 @@ do_exit(Process* p, Eterm reason)
 
 	p->scheduler_data->current_process = NULL;
 	p->scheduler_data->free_process = p;
+	p->status_flags = 0;
 #endif
 	process_tab[pix] = NULL; /* Time of death! */
 	ASSERT(erts_smp_atomic_read(&process_count) > 0);
@@ -3523,7 +3840,7 @@ do_exit(Process* p, Eterm reason)
     processes_busy--;
 
     if ((p->flags & F_DISTRIBUTION) && p->dist_entry)
-	erts_do_net_exits(NULL, p->dist_entry);
+	erts_do_net_exits(p->dist_entry);
 
     /*
      * Pre-build the EXIT tuple if there are any links.

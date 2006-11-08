@@ -121,8 +121,7 @@ static ErlDrvIf erl_drv_funcs =
   driver_send_term,
   driver_async,
   driver_async_cancel,
-  driver_attach,
-  driver_detach
+  driver_lock_driver
 };
 
 static int pls_req(union SIGNAL **sig) { 

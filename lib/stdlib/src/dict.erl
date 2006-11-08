@@ -48,26 +48,28 @@
 %%-export([get_slot/2,get_bucket/2,on_bucket/3,fold_dict/3,
 %%	 maybe_expand/2,maybe_contract/2]).
 
-%% Note: mk_seg/1 must be changed too if you seg_size is changed.
+%% Note: mk_seg/1 must be changed too if seg_size is changed.
 -define(seg_size, 16).
 -define(max_seg, 32).
 -define(expand_load, 5).
 -define(contract_load, 3).
+-define(exp_size, (?seg_size * ?expand_load)).
+-define(con_size, (?seg_size * ?contract_load)).
 
 %% Define a hashtable.  The default values are the standard ones.
 -record(dict,
-	{size=0,				%Number of elements
-	 n=?seg_size,				%Number of active slots
-	 maxn=?seg_size,			%Maximum slots
-	 bso=?seg_size div 2,			%Buddy slot offset
-	 exp_size=?seg_size * ?expand_load,	%Size to expand at
-	 con_size=?seg_size * ?contract_load,	%Size to contract at
-	 empty,					%Empty segment
-	 segs					%Segments
+	{size=0			::integer(),   	% Number of elements
+	 n=?seg_size		::integer(),   	% Number of active slots
+	 maxn=?seg_size		::integer(),	% Maximum slots
+	 bso=?seg_size div 2	::integer(),   	% Buddy slot offset
+	 exp_size=?exp_size	::integer(),   	% Size to expand at
+	 con_size=?con_size	::integer(),   	% Size to contract at
+	 empty,					% Empty segment
+	 segs			::tuple()      	% Segments
 	}).
 
--define(kv(K,V), [K|V]).			%Key-Value pair format
-%%-define(kv(K,V), {K,V}).			%Key-Value pair format
+-define(kv(K,V), [K|V]).			% Key-Value pair format
+%%-define(kv(K,V), {K,V}).			% Key-Value pair format
 
 %% new() -> Table.
 
@@ -96,9 +98,9 @@ to_list(D) ->
 from_list(L) ->
     lists:foldl(fun ({K,V}, D) -> store(K, V, D) end, new(), L).
 
-%% size(Dictionary) -> int().
+%% size(Dictionary) -> integer().
 
-size(D) -> D#dict.size. 
+size(#dict{size=N}) when is_integer(N), N >= 0 -> N. 
 
 %% fetch(Key, Dictionary) -> Value.
 
@@ -247,8 +249,7 @@ app_list_bkt(Key, L, []) -> {[?kv(Key,L)],1}.
 
 update(Key, F, D0) ->
     Slot = get_slot(D0, Key),
-    {D1,_Uv} = on_bucket(fun (B0) -> update_bkt(Key, F, B0) end,
-			D0, Slot),
+    {D1,_Uv} = on_bucket(fun (B0) -> update_bkt(Key, F, B0) end, D0, Slot),
     D1.
 
 update_bkt(Key, F, [?kv(Key,Val)|Bkt]) ->
@@ -271,11 +272,11 @@ update_bkt(Key, F, _, [?kv(Key,Val)|Bkt]) ->
 update_bkt(Key, F, I, [Other|Bkt0]) ->
     {Bkt1,Ic} = update_bkt(Key, F, I, Bkt0),
     {[Other|Bkt1],Ic};
-update_bkt(Key, _, I, []) -> {[?kv(Key,I)],1}.
+update_bkt(Key, F, I, []) when is_function(F, 1) -> {[?kv(Key,I)],1}.
 
 %% update_counter(Key, Incr, Dictionary) -> Dictionary.
 
-update_counter(Key, Incr, D0) ->
+update_counter(Key, Incr, D0) when is_integer(Incr) ->
     Slot = get_slot(D0, Key),
     {D1,Ic} = on_bucket(fun (B0) -> counter_bkt(Key, Incr, B0) end,
 			D0, Slot),
@@ -349,13 +350,13 @@ on_bucket(F, T, Slot) ->
     {B1,Res} = F(B0),				%Op on the bucket.
     {T#dict{segs=setelement(SegI, Segs, setelement(BktI, Seg, B1))},Res}.
 
-%% fold_dict(Fun, Acc, Dictionary) -> Dictionary.
+%% fold_dict(Fun, Acc, Dictionary) -> Acc.
 %% map_dict(Fun, Dictionary) -> Dictionary.
 %% filter_dict(Fun, Dictionary) -> Dictionary.
-
+%%
 %%  Work functions for fold, map and filter operations.  These
 %%  traverse the hash structure rebuilding as necessary.  Note we
-%%  could have implemented map and filter using fold but these are be
+%%  could have implemented map and filter using fold but these are
 %%  faster.  We hope!
 
 fold_dict(F, Acc, D) ->
@@ -365,15 +366,15 @@ fold_dict(F, Acc, D) ->
 fold_segs(F, Acc, Segs, I) when I >= 1 ->
     Seg = element(I, Segs),
     fold_segs(F, fold_seg(F, Acc, Seg, erlang:size(Seg)), Segs, I-1);
-fold_segs(_, Acc, _, _) -> Acc.
+fold_segs(F, Acc, _, 0) when is_function(F, 3) -> Acc.
 
 fold_seg(F, Acc, Seg, I) when I >= 1 ->
     fold_seg(F, fold_bucket(F, Acc, element(I, Seg)), Seg, I-1);
-fold_seg(_, Acc, _, _) -> Acc.
+fold_seg(F, Acc, _, 0) when is_function(F, 3) -> Acc.
 
 fold_bucket(F, Acc, [?kv(Key,Val)|Bkt]) ->
     fold_bucket(F, F(Key, Val, Acc), Bkt);
-fold_bucket(_, Acc, []) -> Acc.
+fold_bucket(F, Acc, []) when is_function(F, 3) -> Acc.
 
 map_dict(F, D) ->
     Segs0 = tuple_to_list(D#dict.segs),
@@ -384,15 +385,15 @@ map_seg_list(F, [Seg|Segs]) ->
     Bkts0 = tuple_to_list(Seg),
     Bkts1 = map_bkt_list(F, Bkts0),
     [list_to_tuple(Bkts1)|map_seg_list(F, Segs)];
-map_seg_list(_, []) -> [].
+map_seg_list(F, []) when is_function(F, 2) -> [].
 
 map_bkt_list(F, [Bkt0|Bkts]) ->
     [map_bucket(F, Bkt0)|map_bkt_list(F, Bkts)];
-map_bkt_list(_, []) -> [].
+map_bkt_list(F, []) when is_function(F, 2) -> [].
 
 map_bucket(F, [?kv(Key,Val)|Bkt]) ->
     [?kv(Key,F(Key, Val))|map_bucket(F, Bkt)];
-map_bucket(_, []) -> [].
+map_bucket(F, []) when is_function(F, 2) -> [].
 
 filter_dict(F, D) ->
     Segs0 = tuple_to_list(D#dict.segs),
@@ -403,13 +404,13 @@ filter_seg_list(F, [Seg|Segs], Fss, Fc0) ->
     Bkts0 = tuple_to_list(Seg),
     {Bkts1,Fc1} = filter_bkt_list(F, Bkts0, [], Fc0),
     filter_seg_list(F, Segs, [list_to_tuple(Bkts1)|Fss], Fc1);
-filter_seg_list(_, [], Fss, Fc) ->
+filter_seg_list(F, [], Fss, Fc) when is_function(F, 2) ->
     {lists:reverse(Fss, []),Fc}.
 
 filter_bkt_list(F, [Bkt0|Bkts], Fbs, Fc0) ->
     {Bkt1,Fc1} = filter_bucket(F, Bkt0, [], Fc0),
     filter_bkt_list(F, Bkts, [Bkt1|Fbs], Fc1);
-filter_bkt_list(_, [], Fbs, Fc) ->
+filter_bkt_list(F, [], Fbs, Fc) when is_function(F, 2) ->
     {lists:reverse(Fbs),Fc}.
 
 filter_bucket(F, [?kv(Key,Val)=E|Bkt], Fb, Fc) ->
@@ -417,7 +418,7 @@ filter_bucket(F, [?kv(Key,Val)=E|Bkt], Fb, Fc) ->
 	true -> filter_bucket(F, Bkt, [E|Fb], Fc);
 	false -> filter_bucket(F, Bkt, Fb, Fc+1)
     end;
-filter_bucket(_, [], Fb, Fc) ->
+filter_bucket(F, [], Fb, Fc) when is_function(F, 2) ->
     {lists:reverse(Fb),Fc}.
 
 %% get_bucket_s(Segments, Slot) -> Bucket.
@@ -434,7 +435,14 @@ put_bucket_s(Segs, Slot, Bkt) ->
     Seg = setelement(BktI, element(SegI, Segs), Bkt),
     setelement(SegI, Segs, Seg).
 
-maybe_expand(T0, Ic) when T0#dict.size + Ic > T0#dict.exp_size ->
+%% In maybe_expand(), the variable Ic only takes the values 0 or 1,
+%% but type inference is not strong enough to infer this. Thus, the
+%% use of explicit pattern matching and an auxiliary function.
+
+maybe_expand(T, 0) -> maybe_expand_aux(T, 0);
+maybe_expand(T, 1) -> maybe_expand_aux(T, 1).
+
+maybe_expand_aux(T0, Ic) when T0#dict.size + Ic > T0#dict.exp_size ->
     T = maybe_expand_segs(T0),			%Do we need more segments.
     N = T#dict.n + 1,				%Next slot to expand into
     Segs0 = T#dict.segs,
@@ -449,7 +457,7 @@ maybe_expand(T0, Ic) when T0#dict.size + Ic > T0#dict.exp_size ->
 	   exp_size=N * ?expand_load,
 	   con_size=N * ?contract_load,
 	   segs=Segs2};
-maybe_expand(T, Ic) -> T#dict{size=T#dict.size + Ic}.
+maybe_expand_aux(T, Ic) -> T#dict{size=T#dict.size + Ic}.
 
 maybe_expand_segs(T) when T#dict.n == T#dict.maxn ->
     T#dict{maxn=2 * T#dict.maxn,

@@ -729,6 +729,8 @@ expand_macros(Type, Lm, M, Toks, Ms0) ->
 	    throw({error,Lm,{undefined,M}})
     end.
 
+check_uses(undefined, _Anc, _U, _Lm) ->
+    ok;
 check_uses([], _Anc, _U, _Lm) ->
     ok;
 check_uses([M|Rest], Anc, U, Lm) ->

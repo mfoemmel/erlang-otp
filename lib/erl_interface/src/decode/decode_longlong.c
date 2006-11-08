@@ -26,6 +26,14 @@ int ei_decode_long(const char *buf, int *index, long *p)
 }
 #endif
 
+#ifdef _MSC_VER
+#define MAX_TO_NEGATE 0x8000000000000000Ui64
+#define MAX_TO_NOT_NEGATE 0x7FFFFFFFFFFFFFFFUi64
+#else 
+#define MAX_TO_NEGATE 0x8000000000000000ULL
+#define MAX_TO_NOT_NEGATE 0x7FFFFFFFFFFFFFFFULL
+#endif
+
 int ei_decode_longlong(const char *buf, int *index, EI_LONGLONG *p)
 {
     const char *s = buf + *index;
@@ -53,13 +61,13 @@ int ei_decode_longlong(const char *buf, int *index, EI_LONGLONG *p)
 	{
 	    int sign = get8(s);
 	    int i;
-	    n = 0;
+	    EI_ULONGLONG u = 0;
 
 	    /* Little Endian, and n always positive, except for LONG_MIN */
 	    for (i = 0; i < arity; i++) {
 		if (i < 8) {
 		    /* Use ULONGLONG not to get a negative integer if > 127 */
-		    n |= ((EI_ULONGLONG)get8(s)) << (i * 8);
+		    u |= ((EI_ULONGLONG)get8(s)) << (i * 8);
 		} else if (get8(s) != 0) {
 		    return -1; /* All but first byte have to be 0 */
 		}
@@ -67,10 +75,15 @@ int ei_decode_longlong(const char *buf, int *index, EI_LONGLONG *p)
 
 	    /* check for overflow */
 	    if (sign) {
-		if ((n - 1) < 0) return -1;
-		n = -n;
+		if (u > MAX_TO_NEGATE) {
+		    return -1;
+		}
+		n = -((EI_LONGLONG) u);
 	    } else {
-		if (n < 0) return -1;
+		if (u > MAX_TO_NOT_NEGATE) {
+		    return -1;
+		}
+		n = (EI_LONGLONG) u;
 	    }
 	}
 	break;

@@ -1,35 +1,61 @@
 {"%VSN%",
  [
-  {"3.4.2",
+  {"3.4.4",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
    ]
   },
-  {"3.4.1",
+  {"3.4.3",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.4",
-   [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
    ]
   }
  ],
  [
-  {"3.4.2",
+  {"3.4.4",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
    ]
   },
-  {"3.4.1",
+  {"3.4.3",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
-   ]
-  },
-  {"3.4",
-   [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []}
+    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
    ]
   }
  ]

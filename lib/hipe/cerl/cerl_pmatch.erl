@@ -325,8 +325,6 @@ typetest_clause_1(T, V, E) ->
 %% This returns a constructor descriptor, to be used for grouping and
 %% pattern generation. It consists of an identifier term and the arity.
 
-
-
 con_desc(E) ->
     case cerl:type(E) of
 	cons -> {?cons_id, 2};

@@ -105,3 +105,41 @@ int_band  Lbl S1 S2 D => too_old_compiler
 int_bor  Lbl S1 S2 D => too_old_compiler
 int_bxor  Lbl S1 S2 D => too_old_compiler
 int_bnot Fail Src Dst => too_old_compiler
+
+#
+# Old guard BIFs that creates heap fragments are no longer allowed.
+#
+bif1 Fail u$bif:erlang:length/1 s d => too_old_compiler
+bif1 Fail u$bif:erlang:size/1 s d => too_old_compiler
+bif1 Fail u$bif:erlang:abs/1 s d => too_old_compiler
+bif1 Fail u$bif:erlang:float/1 s d => too_old_compiler
+bif1 Fail u$bif:erlang:round/1 s d => too_old_compiler
+bif1 Fail u$bif:erlang:trunc/1 s d => too_old_compiler
+
+#
+# Guard BIFs.
+#
+gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+gc_bif1 Fail I Bif=u$bif:erlang:float/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+gc_bif1 Fail I Bif=u$bif:erlang:round/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+gc_bif1 Fail I Bif=u$bif:erlang:trunc/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
+i_gc_bif1 Fail Bif V=o Live D => i_put_float V x | i_gc_bif1 Fail Bif x Live D
+i_gc_bif1 Fail Bif V=w Live D => i_put_big V x | i_gc_bif1 Fail Bif x Live D
+
+i_gc_bif1 j I s I d
+
+make_fun f u u => too_old_compiler

@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -14,7 +16,6 @@
 %%     $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
 %%% File        : dialyzer.erl
 %%% Authors     : Tobias Lindahl <tobiasl@it.uu.se>
@@ -30,7 +31,7 @@
 %%% NOTE: Only functions exported by this module are available to
 %%%       other applications.
 %%%-------------------------------------------------------------------
--export([plain_cl/0, cl/1, run/1, gui/1, cl_check_init_plt/1]).
+-export([plain_cl/0, cl/1, run/1, gui/1]).
 
 -include("dialyzer.hrl").	  %% file is automatically generated
 
@@ -39,7 +40,6 @@
 %%  - cl/1 : to be run from the OS' command line
 %%  - run/1: to be run from within the Erlang shell
 %%  - gui/1: to be used by the GUI version
-%%  - cl_check_init_plt/1: Auxiliary function for the command line
 %%--------------------------------------------------------------------
 
 plain_cl() ->
@@ -73,21 +73,6 @@ gui(Args) ->
 	      dialyzer_gui:start(OptsRecord);
 	    Other ->
 	      invalid_args("dialyzer:gui/1", Other)
-	  end
-      end,
-  doit(F).
-
-cl_check_init_plt(Args) ->  
-  F = fun () -> 
-	  case parse_args(Args) of
-	    [Opts] when is_list(Opts) ->
-	      OptsRecord = dialyzer_options:build(Opts),
-	      case dialyzer_cl:check_init_plt(OptsRecord) of
-		ok -> ok;
-		error -> exit(error)
-	      end;
-	    Other ->
-	      invalid_args("dialyzer:cl_check_init_plt/1", Other)
 	  end
       end,
   doit(F).

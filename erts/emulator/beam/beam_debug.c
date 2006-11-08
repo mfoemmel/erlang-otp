@@ -104,24 +104,17 @@ erts_debug_breakpoint_2(Process* p, Eterm MFA, Eterm bool)
 	mfa[2] = signed_val(mfa[2]);
     }
 
-#ifdef ERTS_SMP
     erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
     erts_smp_block_system(0);
-    if (p->is_exiting)
-	res = NIL; /* Not used */
-    else
-#endif
-	if (bool == am_true) {
+
+    if (bool == am_true) {
 	res = make_small(erts_set_debug_break(mfa, specified));
     } else {
 	res = make_small(erts_clear_debug_break(mfa, specified));
     }
 
-#ifdef ERTS_SMP
     erts_smp_release_system();
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-    ERTS_SMP_BIF_CHK_EXITED(p);
-#endif
 
     return res;
 

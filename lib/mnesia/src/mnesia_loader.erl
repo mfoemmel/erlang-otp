@@ -235,19 +235,25 @@ init_receiver(Node, Tab,Storage,Cs,Reason) ->
 	fun() -> 
 		{_,Tid,Ts} = get(mnesia_activity_state), 
 		mnesia_locker:rlock(Tid, Ts#tidstore.store, {schema, Tab}),
-		%% Check that table still exists
+		%% Check that table still exists		
 		Active = val({Tab, active_replicas}),
-		%% And that sender still got a copy 
-		%% (something might have happend while 
-		%% we where waiting for the lock)
-		true = lists:member(Node, Active),
-		{SenderPid, TabSize, DetsData} = 
-		    start_remote_sender(Node,Tab,Storage),
-		Init = table_init_fun(SenderPid),
-		Args = [self(),Tab,Storage,Cs,SenderPid,TabSize,DetsData,Init],
-		Pid = spawn_link(?MODULE, spawned_receiver, Args),
-		put(mnesia_real_loader, Pid),
-		wait_on_load_complete(Pid)
+		%% Check that we havn't loaded it already
+		case val({Tab,where_to_read}) == node() of
+		    true -> ok;
+		    _ ->
+			%% And that sender still got a copy 
+			%% (something might have happend while 
+			%% we where waiting for the lock)
+			true = lists:member(Node, Active),
+			{SenderPid, TabSize, DetsData} = 
+			    start_remote_sender(Node,Tab,Storage),
+			Init = table_init_fun(SenderPid),
+			Args = [self(),Tab,Storage,Cs,SenderPid,
+				TabSize,DetsData,Init],
+			Pid = spawn_link(?MODULE, spawned_receiver, Args),
+			put(mnesia_real_loader, Pid),
+			wait_on_load_complete(Pid)
+		end
 	end,
     Res = 
 	case mnesia:transaction(Load, 20) of

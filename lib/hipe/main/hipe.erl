@@ -334,9 +334,17 @@ c(Name, Options) ->
 %% @see f/2
 
 c(Name, File, Opts) ->
-  case compile(Name, File, user_compile_opts(Opts)) of
+  %% No server if only one function is compiled
+  NewOpts = 
+    case Name of
+      {_M, _F, _A} ->
+	[no_concurrent_comp|Opts];
+      _ ->
+	Opts
+    end,
+  case compile(Name, File, user_compile_opts(NewOpts)) of
     {ok, Res} ->
-      case proplists:get_bool(dialyzer, Opts) of
+      case proplists:get_bool(dialyzer, NewOpts) of
 	true ->
 	  {ok, Res};
 	false ->
@@ -719,13 +727,17 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
 
 %% TODO: make the Exports info accessible to the compilation passes.
 finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
-  Opts = 
-  case proplists:get_value(icode_range_analysis, Opts0) of
-    true ->
-      [{exports, Exports},concurrent_comp|Opts0];
-    _ ->
-      [{exports, Exports} |Opts0]
-  end,
+  Opts1 = 
+    case {proplists:get_value(concurrent_comp, Opts0),
+	  proplists:get_value(icode_range_analysis, Opts0)} of
+      {false, _} ->
+	proplists:delete(icode_range_analysis, Opts0);
+      {_, true} ->
+	[concurrent_comp|Opts0];
+      _ ->
+	Opts0
+    end,
+  Opts = [{exports, Exports} |Opts1],
   List = icode_multret(OrigList, Mod, Opts, Exports),
   {T1Compile,_} = erlang:statistics(runtime),
   CompiledCode =
@@ -783,11 +795,11 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
 
 
 finalize_fun(MfaIcodeList, Opts) ->
-  case proplists:get_bool(concurrent_comp, Opts) of
-    true ->
-      hipe_main:concurrent_icode_ssa(MfaIcodeList, Opts);
-    false ->
-      [finalize_fun_sequential({MFA, Icode}, Opts) || {MFA, Icode} <- MfaIcodeList]
+  case proplists:get_value(concurrent_comp, Opts) of
+    FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
+      [finalize_fun_sequential({MFA, Icode}, Opts) || {MFA, Icode} <- MfaIcodeList];
+    TrueVal when (TrueVal =:= true) or (TrueVal =:= debug) ->
+      hipe_main:concurrent_icode_ssa(MfaIcodeList, Opts)
   end.
 
 
@@ -1346,6 +1358,7 @@ opt_keys() ->
      icode_range_analysis,
      icode_range_analysis_annotate,
      icode_range_analysis_warn,
+     icode_range_analysis_insn_count,
      icode_multret,
      inline_bs,
      inline_fp,
@@ -1466,6 +1479,7 @@ opt_negations() ->
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
    {no_get_called_modules, get_called_modules},
+   {no_concurrent_comp, concurrent_comp},
    {no_icode_split_arith, icode_split_arith},
    {no_icode_ssa_check, icode_ssa_check},
    {no_icode_ssa_copy_prop, icode_ssa_copy_prop},

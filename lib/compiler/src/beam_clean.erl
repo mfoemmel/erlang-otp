@@ -21,6 +21,7 @@
 
 -export([module/2]).
 -export([bs_clean_saves/1]).
+-export([clean_labels/1]).
 -import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
@@ -72,8 +73,6 @@ update_work_list([{call,_,{f,L}}|Is], Sets) ->
 update_work_list([{call_last,_,{f,L},_}|Is], Sets) ->
     update_work_list(Is, add_to_work_list(L, Sets));
 update_work_list([{call_only,_,{f,L}}|Is], Sets) ->
-    update_work_list(Is, add_to_work_list(L, Sets));
-update_work_list([{make_fun,{f,L},_,_}|Is], Sets) ->
     update_work_list(Is, add_to_work_list(L, Sets));
 update_work_list([{make_fun2,{f,L},_,_,_}|Is], Sets) ->
     update_work_list(Is, add_to_work_list(L, Sets));
@@ -221,8 +220,6 @@ replace([{call_last,Ar,{f,Lbl},N}|Is], Acc, D) ->
     replace(Is, [{call_last,Ar,{f,label(Lbl,D)},N}|Acc], D);
 replace([{call_only,Ar,{f,Lbl}}|Is], Acc, D) ->
     replace(Is, [{call_only,Ar,{f,label(Lbl, D)}}|Acc], D);
-replace([{make_fun,{f,Lbl},U1,U2}|Is], Acc, D) ->
-    replace(Is, [{make_fun,{f,label(Lbl, D)},U1,U2}|Acc], D);
 replace([{make_fun2,{f,Lbl},U1,U2,U3}|Is], Acc, D) ->
     replace(Is, [{make_fun2,{f,label(Lbl, D)},U1,U2,U3}|Acc], D);
 replace([{bs_init2,{f,Lbl},Sz,Words,R,F,Dst}|Is], Acc, D) when Lbl =/= 0 ->

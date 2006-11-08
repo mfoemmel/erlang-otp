@@ -3,7 +3,11 @@
 %%%
 %%% - apply temp -> reg/spill map from RA
 
--ifndef(HIPE_X86_RA_FINALISE).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_RA_FINALISE,	hipe_amd64_ra_finalise).
+-define(HIPE_X86_REGISTERS,	hipe_amd64_registers).
+-define(HIPE_X86_X87,		hipe_amd64_x87).
+-else.
 -define(HIPE_X86_RA_FINALISE,	hipe_x86_ra_finalise).
 -define(HIPE_X86_REGISTERS,	hipe_x86_registers).
 -define(HIPE_X86_X87,		hipe_x86_x87).

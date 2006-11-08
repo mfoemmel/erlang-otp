@@ -65,7 +65,9 @@ all(suite) ->
 decode_encode(suite) ->
     [];
 decode_encode(Config) when list(Config) ->
-    io:format("decode_encode -> entry~n", []),
+    io:format("decode_encode -> entry with"
+	      "~n   Config: ~p"
+	      "~n", [Config]),
 
     %%-------------------------------------
     %% Test data

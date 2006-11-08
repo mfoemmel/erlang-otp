@@ -1,2 +1,2 @@
-TOOLS_VSN = 2.5.1
+TOOLS_VSN = 2.5.2
 

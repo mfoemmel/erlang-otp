@@ -162,8 +162,6 @@ skip_prefix(Name, false) ->			% No prefix for unix, but for VxWorks.
 	_Else ->
 	    Name
     end;
-
-
 skip_prefix(Name, DrvSep) ->
     skip_prefix1(Name, DrvSep).
 
@@ -289,9 +287,9 @@ extension([], Result, _OsType) ->
 
 join([Name1, Name2|Rest]) ->
     join([join(Name1, Name2)|Rest]);
-join([Name]) when list(Name) ->
+join([Name]) when is_list(Name) ->
     join1(Name, [], [], major_os_type());
-join([Name]) when atom(Name) ->
+join([Name]) when is_atom(Name) ->
     join([atom_to_list(Name)]).
 
 %% Joins two filenames with directory separators.
@@ -403,7 +401,7 @@ win32_pathtype([$/, $\\|_]) -> absolute;
 win32_pathtype([$\\, $\\|_]) -> absolute;
 win32_pathtype([$/|_]) -> volumerelative;
 win32_pathtype([$\\|_]) -> volumerelative;
-win32_pathtype([C1, C2, List|Rest]) when list(List) ->
+win32_pathtype([C1, C2, List|Rest]) when is_list(List) ->
     pathtype([C1, C2|List++Rest]);
 win32_pathtype([_Letter, $:, $/|_]) -> absolute;
 win32_pathtype([_Letter, $:, $\\|_]) -> absolute;
@@ -517,7 +515,7 @@ split([$/|Rest], Components, OsType) ->
     split(Rest, [], [[$/]|Components], OsType);
 split([$\\|Rest], Components, win32) ->
     split(Rest, [], [[$/]|Components], win32);
-split([List|Rest], Components, OsType) when list(List) ->
+split([List|Rest], Components, OsType) when is_list(List) ->
     split(List++Rest, Components, OsType);
 split(RelativeName, Components, OsType) ->
     split(RelativeName, [], Components, OsType).
@@ -600,13 +598,13 @@ find_src(Mod) ->
 	case application:get_env(kernel, source_search_rules) of
 	    undefined -> Default;
 	    {ok, []} -> Default;
-	    {ok, R} when list(R) -> R
+	    {ok, R} when is_list(R) -> R
 	end,
     find_src(Mod, Rules).
 
-find_src(Mod, Rules) when atom(Mod) ->
+find_src(Mod, Rules) when is_atom(Mod) ->
     find_src(atom_to_list(Mod), Rules);
-find_src(File0, Rules) when list(File0) ->
+find_src(File0, Rules) when is_list(File0) ->
     Mod = list_to_atom(basename(File0, ".erl")),
     File = rootname(File0, ".erl"),
     case readable_file(File++".erl") of
@@ -618,11 +616,11 @@ find_src(File0, Rules) when list(File0) ->
 
 try_file(File, Mod, Rules) ->
     case code:which(Mod) of
-	Possibly_Rel_Path when list(Possibly_Rel_Path) ->
+	Possibly_Rel_Path when is_list(Possibly_Rel_Path) ->
 	    {ok, Cwd} = file:get_cwd(),
-	    Path = filename:join(Cwd, Possibly_Rel_Path),
+	    Path = join(Cwd, Possibly_Rel_Path),
 	    try_file(File, Path, Mod, Rules);
-	Ecode when atom(Ecode) -> % Ecode = non_existing | preloaded | interpreted
+	Ecode when is_atom(Ecode) -> % Ecode = non_existing | preloaded | interpreted
 	    {error, {Ecode, Mod}}
     end.
 
@@ -743,7 +741,7 @@ vxworks_first([$/|T]) ->
     vxworks_first2(device, T, [$/]);
 vxworks_first([$\\|T]) ->
     vxworks_first2(device, T, [$/]);
-vxworks_first([H|T]) when list(H) ->
+vxworks_first([H|T]) when is_list(H) ->
     vxworks_first(H++T);
 vxworks_first([H|T]) ->
     vxworks_first2(not_device, T, [H]).
@@ -756,7 +754,7 @@ vxworks_first2(Devicep, [$\\|T], FirstComp) ->
     {Devicep, [$/|T], FirstComp};
 vxworks_first2(_Devicep, [$:|T], FirstComp)->
     {device, T, [$:|FirstComp]};
-vxworks_first2(Devicep, [H|T], FirstComp) when list(H) ->
+vxworks_first2(Devicep, [H|T], FirstComp) when is_list(H) ->
     vxworks_first2(Devicep, H++T, FirstComp);
 vxworks_first2(Devicep, [H|T], FirstComp) ->
     vxworks_first2(Devicep, T, [H|FirstComp]).

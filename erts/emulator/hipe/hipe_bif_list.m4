@@ -187,6 +187,7 @@ standard_bif_interface_1(nbif_set_timeout, hipe_set_timeout)
 standard_bif_interface_1(nbif_conv_big_to_float, hipe_conv_big_to_float)
 standard_bif_interface_2(nbif_rethrow, hipe_rethrow)
 standard_bif_interface_3(nbif_find_na_or_make_stub, hipe_find_na_or_make_stub)
+standard_bif_interface_2(nbif_nonclosure_address, hipe_nonclosure_address)
 
 /*
  * Mbox primops with implicit P parameter.
@@ -229,6 +230,7 @@ noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
  */
 nocons_nofail_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
 nocons_nofail_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
+noproc_primop_interface_5(nbif_bs_put_bits, hipe_bs_put_bits)
 ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_1(nbif_bs_start_match, hipe_bs_start_match)
 nocons_nofail_primop_interface_1(nbif_bs_skip_bits, hipe_bs_skip_bits)

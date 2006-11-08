@@ -1,6 +1,11 @@
 %% -*- erlang -*-
 {exclude,
- [megaco_text_parser_v1, 
+ [megaco_encoder,
+  megaco_filter,
+  megaco_transport,
+  megaco_text_mini_decoder, 
+  megaco_text_mini_parser, 
+  megaco_text_parser_v1, 
   megaco_text_parser_v2,
   megaco_text_parser_prev3a,
   megaco_text_parser_prev3b,

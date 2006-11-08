@@ -25,7 +25,7 @@
 %% correctly. We also want to be sure that the length calcualtions are
 %% the same.
 
--export([print/1,print/2,print/3,print/4]).
+-export([print/1,print/2,print/3,print/4,print/5]).
 
 %% print(Term) -> [Chars]
 %% print(Term, Column, LineLength, Depth) -> [Chars]
@@ -44,8 +44,8 @@ print(Term, RecDefFun) ->
 print(Term, Depth, RecDefFun) ->
     print(Term, 1, 80, Depth, RecDefFun).
 
-print(List, Col, Ll, D) ->
-    print(List, Col, Ll, D, no_fun).
+print(Term, Col, Ll, D) ->
+    print(Term, Col, Ll, D, no_fun).
 
 print(Term, Col, Ll, D, RecDefFun) ->
     print(Term, Col, Ll, D, indent(Col), RecDefFun).
@@ -53,14 +53,14 @@ print(Term, Col, Ll, D, RecDefFun) ->
 print(_, _, _, 0, _, _RF) -> "...";
 print([], _, _, _, _, _RF) -> "[]";
 print({}, _, _, _, _, _RF) -> "{}";
-print(List, Col, Ll, D, Ind, RF) when list(List) ->
+print(List, Col, Ll, D, Ind, RF) when is_list(List) ->
     case io_lib:printable_list(List) of
 	true ->
-	    io_lib:write_string(List, $");
+	    io_lib:write_string(List, $");	%"
 	false ->
 	    Len = write_length(List, D, 0, Ll - Col, RF),
 	    if
-		D == 1 -> "[...]";
+		D =:= 1 -> "[...]";
 		Len + Col < Ll ->
 		    write(List, D, RF);
 		true ->
@@ -70,34 +70,20 @@ print(List, Col, Ll, D, Ind, RF) when list(List) ->
 		     $]]
 	    end
     end;
-print(Fun, _Col, _Ll, _D, _Ind, _RF) when function(Fun) ->
+print(Fun, _Col, _Ll, _D, _Ind, _RF) when is_function(Fun) ->
     io_lib:write(Fun);
-print(Rec, Col, Ll, D, Ind, RF) when atom(element(1, Rec)), function(RF) ->
+print(Rec, Col, Ll, D, Ind, RF) when is_atom(element(1, Rec)), 
+                                     is_function(RF) ->
     case RF(element(1, Rec), size(Rec) - 1) of
        no ->
             print_tuple(Rec, Col, Ll, D, Ind, RF);
        RDefs ->
             print_record(Rec, RDefs, Col, Ll, D, Ind, RF)
     end;
-print(Tuple, Col, Ll, D, Ind, RF) when tuple(Tuple) ->
+print(Tuple, Col, Ll, D, Ind, RF) when is_tuple(Tuple) ->
     print_tuple(Tuple, Col, Ll, D, Ind, RF);
-print(Binary, Col, Ll, D, _Ind, RF) when binary(Binary) ->
-    List = binary_to_list(Binary),
-    case io_lib:printable_list(List) of
-        true ->
-	    Len = write_length(List, D, 0, Ll - Col, RF),
-            if
-                Len + Col < Ll; D < 0 ->
-                    [$<, $<, io_lib:write_string(List, $"), $>, $>];
-                D == 1 ->
-                    ["<<...>>"];
-                true -> 
-                    Prefix = binary_to_list(Binary, 1, D),
-                    [$<, $<, io_lib:write_string(Prefix, $"), "...>>"]
-            end;
-        false ->
-            io_lib:write(Binary, D)
-    end;
+print(Binary, _Col, _Ll, D, _Ind, _RF) when is_binary(Binary) ->
+    write_binary(Binary, D);
 print(Term, _Col, _Ll, D, _Ind, _RF) -> io_lib:write(Term, D).
 
 print_record(Rec, RDefs, Col, Ll, D, Ind, RF) ->
@@ -105,7 +91,7 @@ print_record(Rec, RDefs, Col, Ll, D, Ind, RF) ->
     if
         Len + Col < Ll ->
             write(Rec, D, RF);
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
         true ->
             Name = io_lib:write_atom(element(1, Rec)),
             Nlen = length(Name),
@@ -139,10 +125,10 @@ print_field(Def, E, Col, Ll, D, Ind, RF) ->
 print_tuple(Tuple, Col, Ll, D, Ind, RF) ->
     Len = write_length(Tuple, D, 0, Ll - Col, RF),
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	Len + Col < Ll ->
 	    write(Tuple, D, RF);
-	atom(element(1, Tuple)), size(Tuple) > 1 ->
+	is_atom(element(1, Tuple)), size(Tuple) > 1 ->
 	    print_tag_tuple(Tuple, Col, Ll, D, Ind, RF);
 	true ->
 	    [${,
@@ -191,25 +177,27 @@ print_tail(E, Col, Ll, D, Ind, RF) ->
 %%  Write a term down to Depth on one line. Use io_lib:write/2 for
 %%  atomic terms.
 
-write(_, 0, _RF) -> "...";
-write([], _, _RF) -> "[]";
-write({}, _, _RF) -> "{}";
-write(List, D, RF) when list(List) ->
+write(T, D, RF) when is_integer(D) -> write1(T, D, RF).
+
+write1(_, 0, _RF) -> "...";
+write1([], _, _RF) -> "[]";
+write1({}, _, _RF) -> "{}";
+write1(List, D, RF) when is_list(List) ->
     case io_lib:printable_list(List) of
 	true ->
-	    io_lib:write_string(List, $");
+	    io_lib:write_string(List, $");	%"
 	false ->
 	    if
-		D == 1 -> "[...]";
+		D =:= 1 -> "[...]";
 		true ->
 		    [$[,
-		     [write(hd(List), D-1, RF)|write_tail(tl(List), D-1, RF)],
+		     [write1(hd(List), D-1, RF)|write_tail(tl(List), D-1, RF)],
 		     $]]
 	    end
     end;
-write(Fun, _D, _RF) when function(Fun) -> 
+write1(Fun, _D, _RF) when is_function(Fun) -> 
     io_lib:write(Fun); %Must catch this first
-write(R, D, RF) when atom(element(1, R)), function(RF) ->
+write1(R, D, RF) when is_atom(element(1, R)), is_function(RF) ->
     case RF(element(1, R), size(R) - 1) of
         no ->
             write_tuple(R, D, RF);
@@ -218,21 +206,35 @@ write(R, D, RF) when atom(element(1, R)), function(RF) ->
              write_fields(RDefs, D - 1, tl(tuple_to_list(R)), RF, []),
              $}]
     end;
-write(T, D, RF) when tuple(T) ->
+write1(T, D, RF) when is_tuple(T) ->
     write_tuple(T, D, RF);
-write(Bin, D, _RF) when binary(Bin) -> 
-    List = binary_to_list(Bin),
-    case io_lib:printable_list(List) of
-        true ->
+write1(Bin, D, _RF) when is_binary(Bin) -> 
+    write_binary(Bin, D);
+write1(Term, D, _RF) -> io_lib:write(Term, D).
+
+write_binary(Binary, _D) when size(Binary) =:= 0 ->
+    "<<>>";
+write_binary(Binary, D) ->
+    PLen = if
+               D < 0 -> size(Binary);
+               true -> min(size(Binary), D-1)
+           end,
+    case is_printable(Binary, PLen) of
+        true when PLen =:= 0 ->
+            "<<...>>";
+        true when size(Binary) =< PLen ->
+            List = binary_to_list(Binary),
             [$<, $<, io_lib:write_string(List, $"), $>, $>];
+        true ->
+            Prefix = binary_to_list(Binary, 1, PLen),
+            [$<,$<,io_lib:write_string(Prefix, $"), "...>>"];
         false ->
-            io_lib:write(Bin, D)
-    end;
-write(Term, D, _RF) -> io_lib:write(Term, D).
+            io_lib:write(Binary, D)
+    end.
 
 write_tuple(T, D, RF) ->
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	true ->
 	    [${,
 	     [write(element(1, T), D-1, RF) |
@@ -267,16 +269,17 @@ write_length(_, _D, Acc, Max, _RF) when Acc > Max -> Acc;
 write_length(_, 0, Acc, _Max, _RF) -> Acc + 3;
 write_length([], _, Acc, _, _RF) -> Acc + 2;
 write_length({}, _, Acc, _, _RF) -> Acc + 2;
-write_length(List, D, Acc, Max, RF) when list(List) ->
+write_length(List, D, Acc, Max, RF) when is_list(List) ->
     case io_lib:printable_list(List) of
 	true ->
-	    Acc + length(io_lib:write_string(List, $"));
+	    Acc + length(io_lib:write_string(List, $"));	%"
 	false ->
 	    write_length_list(List, D, Acc, Max, RF)
     end;
-write_length(Fun, _D, Acc, _Max, _RF) when function(Fun) ->
+write_length(Fun, _D, Acc, _Max, _RF) when is_function(Fun) ->
     Acc + length(io_lib:write(Fun));
-write_length(R, D, Acc, Max, RF) when atom(element(1, R)), function(RF) ->
+write_length(R, D, Acc, Max, RF) when is_atom(element(1, R)), 
+                                      is_function(RF) ->
     case RF(element(1, R), size(R) - 1 ) of
         no -> 
             write_length_list(tuple_to_list(R), D, Acc, Max, RF);
@@ -284,19 +287,24 @@ write_length(R, D, Acc, Max, RF) when atom(element(1, R)), function(RF) ->
             Acc1 = Acc + 2 + length(io_lib:write_atom(element(1, R))),
             write_length_fields(RDefs, D - 1, Acc1, Max, tl(tuple_to_list(R)), RF, 0)
     end;
-write_length(Tuple, D, Acc, Max, RF) when tuple(Tuple) ->
+write_length(Tuple, D, Acc, Max, RF) when is_tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max, RF);
-write_length(Bin, D, Acc, _Max, _RF) when binary(Bin) ->
-    List = binary_to_list(Bin),
-    Printable = io_lib:printable_list(List),
-    if 
-        Printable ->                    % All is printed, regardless of size
-            Acc + 4 + length(io_lib:write_string(List, $"));
-        D < 0;                          % Print all
-        size(Bin) =< D ->  
-            Acc + 4 + 4*size(Bin);      % Overestimation
+write_length(Bin, D, Acc, Max, _RF) when is_binary(Bin) ->
+    PLen = if
+               D < 0 -> min(size(Bin), Max);
+               true -> min(size(Bin), D - 1)
+           end,
+    case is_printable(Bin, PLen) of
+        true when PLen =:= 0 ->
+            Acc + 7;
         true ->
-            Acc + 4 + 4*(D+1)
+            List = binary_to_list(Bin, 1, PLen),
+            Acc + 4 + length(io_lib:write_string(List, $"));	%"
+        false when D < 0;                % Print all
+                  size(Bin) =< D ->  
+            Acc + 4 + 4*size(Bin);      % Overestimation
+        false ->
+            Acc + 4 + 4*D
     end;
 write_length(Term, _D, Acc, _Max, _RF) ->
     Acc + length(io_lib:write(Term)).
@@ -325,21 +333,21 @@ write_length_field(_Def, 0, Acc, _Max, _E, _RF) ->
 write_length_field(Def, D, Acc, Max, E, RF) ->
     write_length(E, D, Acc + length(io_lib:write_atom(Def)) + 3, Max, RF).
 
-indent(N) when integer(N), N > 0 ->
+indent(N) when is_integer(N), N > 0 ->
     chars($\s, N-1);
-indent(N) when integer(N) ->
+indent(N) when is_integer(N) ->
     [[]]. % This is an ugly kludge not crash for column less than 1
 
 indent(0, Ind) ->
     Ind;
-indent(N, [[]]) when integer(N), N > 0 ->
+indent(N, [[]]) when is_integer(N), N > 0 ->
     indent(N-1, []); % Same kludge as above
 indent(1, Ind) -> % Optimization of common case
     [$\s|Ind];
 indent(4, Ind) -> % Optimization of common case
     S2 = [$\s,$\s],
     [S2,S2|Ind];
-indent(N, Ind) when integer(N), N > 0 ->
+indent(N, Ind) when is_integer(N), N > 0 ->
     [chars($\s, N)|Ind].
 
 %% A deep version of string:chars/2
@@ -351,9 +359,26 @@ chars(C, 2) ->
     [C,C];
 chars(C, 3) ->
     [C,C,C];
-chars(C, N) when (N band 1) == 0 ->
+chars(C, N) when (N band 1) =:= 0 ->
     S = chars(C, N bsr 1),
     [S|S];
 chars(C, N) ->
     S = chars(C, N bsr 1),
     [C,S|S].
+
+is_printable(Bin, Len) when is_integer(Len) ->
+    is_printable(Bin, 1, min(Len, size(Bin))).
+
+is_printable(_Bin, _Start, 0) ->
+    true;
+is_printable(Bin, Start, Len) ->
+    N = min(10000, Len),
+    case io_lib:printable_list(binary_to_list(Bin, Start, Start+N-1)) of
+        true -> 
+            is_printable(Bin, Start+N, Len-N);
+        false ->
+            false
+    end.
+
+min(X, Y) when X =< Y -> X;
+min(_X, Y) -> Y.

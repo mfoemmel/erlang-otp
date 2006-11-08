@@ -98,17 +98,6 @@ handle_call({open, Name, ModeList}, {Pid, _Tag} = _From, Handle)
     end,
     {reply, Child, Handle};
 
-%% Obsolete - needed only by R7 slave nodes
-handle_call({open, Name, Mode}, {Pid, _Tag} = _From, Handle) 
-  when integer(Mode) ->
-    Child = ?FILE_IO_SERVER:start_link(Pid, Name, mode_list(Mode)),
-    case Child of
-	{ok, P} when pid(P) ->
-	    ets:insert(?FILE_IO_SERVER_TABLE, {P, Name});
-	_ ->
-	    ok
-    end,
-    {reply, Child, Handle};
 handle_call({open, _Name, _Mode}, _From, Handle) ->
     {reply, {error, einval}, Handle};
 
@@ -140,15 +129,6 @@ handle_call(get_cwd, _From, Handle) ->
     {reply, ?PRIM_FILE:get_cwd(Handle), Handle};
 handle_call({get_cwd}, _From, Handle) ->
     {reply, ?PRIM_FILE:get_cwd(Handle), Handle};
-%% Obsolete - needed only by R7 slave nodes
-handle_call({get_cwd, DriveNo}, _From, Handle) 
-  when integer(DriveNo), 0 =< DriveNo, DriveNo =< $Z-$A+1 ->
-    if DriveNo > 0 ->
-	    {reply, ?PRIM_FILE:get_cwd(Handle, [DriveNo-1+$A, $:]), Handle};
-       true ->
-	    {reply, ?PRIM_FILE:get_cwd(Handle), Handle}
-    end;
-%% Contemporary
 handle_call({get_cwd, Name}, _From, Handle) ->
     {reply, ?PRIM_FILE:get_cwd(Handle, Name), Handle};
 
@@ -342,33 +322,3 @@ relay_loop(Parent, Filer, FilerMonitor) ->
             Filer ! Msg
     end,
     relay_loop(Parent, Filer, FilerMonitor).
-
-
-
-%%% Helpers
-%%%
-%%%
-
-
-%% Converts an integer mode (R7) to a mode list (R8). 
-%% Obsolete - needed only by R7 slave nodes
-mode_list(Mode) when integer(Mode), Mode >= 0 ->
-    element(
-      2, 
-      lists:foldl(
-	fun
-	    ([], {M, ML}) ->
-		{M bsr 1, ML};
-	    (A, {M, ML}) ->
-		if (M band 1) /= 0 ->
-			{M bsr 1, [A | ML]};
-		   true ->
-			{M bsr 1, ML}
-		end
-	end,
-	{Mode, []}, 
-	%% Mode atoms of increasing bit weight, corresponding
-	%% to [2^0, 2^1, ...]. [] instead of atom means undefined.
-	[read, write, append, compressed, % 2^0 ... 2^3
-	 [], [], [], [],                  % 2^4 ... 2^7
-	 [], [], binary])).               % 2^8 ... 2^10

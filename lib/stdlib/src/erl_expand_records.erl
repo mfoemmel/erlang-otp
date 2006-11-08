@@ -310,7 +310,7 @@ expr({'fun',Line,{clauses,Cs0}}, St0) ->
 expr({call,Line,{atom,_,is_record},[A,{atom,_,Name}]}, St) ->
     record_test(Line, A, Name, St);
 expr({'cond',Line,Cs0}, St0) ->
-    {Cs,St1} = expr(Cs0, St0),
+    {Cs,St1} = clauses(Cs0, St0),
     {{'cond',Line,Cs},St1};
 expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,is_record}},
       [A,{atom,_,Name}]}, St) ->
@@ -530,9 +530,9 @@ sloppy_get_record_field(Line, R, Index, Name, St) ->
     expr({call,Line,{atom,Line,element},[I,R]}, St).
 
 strict_record_tests([strict_record_tests | _]) -> true;
-strict_record_tests([no_strict_record_tests | _]) ->false;
+strict_record_tests([no_strict_record_tests | _]) -> false;
 strict_record_tests([_ | Os]) -> strict_record_tests(Os);
-strict_record_tests([]) -> false.               %Default.
+strict_record_tests([]) -> true.		%Default.
 
 %% pattern_fields([RecDefField], [Match]) -> [Pattern].
 %%  Build a list of match patterns for the record tuple elements.

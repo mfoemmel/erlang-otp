@@ -123,7 +123,7 @@ md5_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     }
     bin = new_binary(BIF_P, (byte *)NULL, 16);
-    GET_BINARY_BYTES(bin, bytes);
+    bytes = binary_bytes(bin);
     MD5Final(bytes, &context);
     BIF_RET(bin);
 }
@@ -134,8 +134,7 @@ md5_init_0(BIF_ALIST_0)
     Eterm bin;
     byte* bytes;
 
-    bin = new_binary(BIF_P, (byte *)NULL, sizeof(MD5_CTX));
-    GET_BINARY_BYTES(bin, bytes);
+    bin = erts_new_heap_binary(BIF_P, (byte *)NULL, sizeof(MD5_CTX), &bytes);
     MD5Init((MD5_CTX *)bytes);
     BIF_RET(bin);
 }
@@ -146,21 +145,21 @@ md5_update_2(BIF_ALIST_2)
     byte* old_context;
     byte* new_context;
     Eterm bin;
+    byte* temp_alloc = NULL;
 
-    if (!is_binary(BIF_ARG_1)) {
+    if ((old_context = erts_get_aligned_binary_bytes(BIF_ARG_1, &temp_alloc)) == NULL) {
     error:
+	erts_free_aligned_binary_bytes(temp_alloc);
 	BIF_ERROR(BIF_P, BADARG);
     }
-    GET_BINARY_BYTES(BIF_ARG_1, old_context);
-    
     if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
 	goto error;
     }
-    bin = new_binary(BIF_P, old_context, sizeof(MD5_CTX));
-    GET_BINARY_BYTES(bin, new_context);
+    bin = erts_new_heap_binary(BIF_P, old_context, sizeof(MD5_CTX), &new_context);
     if (!update((MD5_CTX *)new_context, BIF_ARG_2)) {
 	goto error;
     }
+    erts_free_aligned_binary_bytes(temp_alloc);
     BIF_RET(bin);
 }
 
@@ -171,100 +170,64 @@ md5_final_1(BIF_ALIST_1)
     byte* context;
     byte* result;
     MD5_CTX ctx_copy;
+    byte* temp_alloc = NULL;
 
-    if (!is_binary(BIF_ARG_1)) {
+    if ((context = erts_get_aligned_binary_bytes(BIF_ARG_1, &temp_alloc)) == NULL) {
     error:
+	erts_free_aligned_binary_bytes(temp_alloc);
 	BIF_ERROR(BIF_P, BADARG);
     }
-    GET_BINARY_BYTES(BIF_ARG_1, context);
     if (binary_size(BIF_ARG_1) != sizeof(MD5_CTX)) {
 	goto error;
     }
-    bin = new_binary(BIF_P, (byte *)NULL, 16);
-    GET_BINARY_BYTES(bin, result);
+    bin = erts_new_heap_binary(BIF_P, (byte *)NULL, 16, &result);
     memcpy(&ctx_copy, context, sizeof(MD5_CTX));
+    erts_free_aligned_binary_bytes(temp_alloc);
     MD5Final(result, &ctx_copy);
     BIF_RET(bin);
 }
 
 static int
-update(MD5_CTX* context, Eterm obj)
+update(MD5_CTX* context, Eterm iolist)
 {
-    unsigned char buf[1024];
-
-    DECLARE_ESTACK(s);
-    Eterm* objp;
-    unsigned int csize = 0;
-    unsigned char* cptr = buf;
     byte* bytes;
+    Uint size = 64*1024;
+    int r;
 
-    goto L_jump_start;		/* Avoid push */
+    if (is_binary(iolist)) {
+	Uint bitoffs;
+	Uint bitsize;
 
-    while (!ESTACK_ISEMPTY(s)) {
-	obj = ESTACK_POP(s);
-    L_jump_start:
-	if (is_list(obj)) {
-	L_iter_list:
-	    objp = list_val(obj);
-	    obj = CAR(objp);
-	    if (is_byte(obj)) {
-		if (csize >= sizeof(buf)) {
-		    ASSERT(csize == sizeof buf);
-		    MD5Update(context, buf, csize);
-		    cptr = buf;
-		    csize = 0;
-		}
-		*cptr++ = unsigned_val(obj);
-		csize++;
-	    } else if (is_binary(obj)) {
-		if (csize != 0) {
-		    MD5Update(context, buf, csize);
-		    cptr = buf;
-		    csize = 0;
-		}
-		GET_BINARY_BYTES(obj, bytes);
-		MD5Update(context, bytes, binary_size(obj));
-	    } else if (is_list(obj)) {
-		ESTACK_PUSH(s, CDR(objp));
-		goto L_iter_list; /* on head */
-	    } else if (!is_nil(obj)) {
-		goto L_type_error;
-	    }
-
-	    obj = CDR(objp);
-	    if (is_list(obj)) {
-		goto L_iter_list; /* on tail */
-	    } else if (is_binary(obj)) {
-		if (csize != 0) {
-		    MD5Update(context, buf, csize);
-		    cptr = buf;
-		    csize = 0;
-		}
-		GET_BINARY_BYTES(obj, bytes);
-		MD5Update(context, bytes, binary_size(obj));
-	    } else if (!is_nil(obj)) {
-		goto L_type_error;
-	    }
-	} else if (is_binary(obj)) {
-	    if (csize != 0) {
-		MD5Update(context, buf, csize);
-		cptr = buf;
-		csize = 0;
-	    }
-	    GET_BINARY_BYTES(obj, bytes);
-	    MD5Update(context, bytes, binary_size(obj));
-	} else if (!is_nil(obj)) {
-	L_type_error:
-	    DESTROY_ESTACK(s);
+	ERTS_GET_BINARY_BYTES(iolist, bytes, bitoffs, bitsize);
+	if (bitsize != 0) {
 	    return 0;
+	}
+	size = binary_size(iolist);
+	if (bitoffs == 0) {
+	    MD5Update(context, bytes, size);
+	    return 1;
 	}
     }
 
-    if (csize != 0) {
-	MD5Update(context, buf, csize);
+    bytes = erts_alloc(ERTS_ALC_T_TMP, size);
+    r = io_list_to_buf(iolist, (char*) bytes, size);
+    if (r >= 0) {
+	size -= r;
+    } else if (r == -2) {	/* Type error */
+	erts_free(ERTS_ALC_T_TMP, (void *) bytes);
+	return 0;
+    } else {
+	ASSERT(r == -1);	/* Overflow */
+	erts_free(ERTS_ALC_T_TMP, (void *) bytes);
+	if ((size = io_list_len(iolist)) < 0) { /* Type error */
+	    return 0;
+	}
+	bytes = erts_alloc(ERTS_ALC_T_TMP, size);
+	r = io_list_to_buf(iolist, (char*) bytes, size);
+	ASSERT(r == 0);
     }
-
-    DESTROY_ESTACK(s);
+    MD5Update(context, bytes, size);
+    erts_free(ERTS_ALC_T_TMP, (void *) bytes);
     return 1;
 }
 

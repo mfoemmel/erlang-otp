@@ -93,7 +93,9 @@ call(UserCallback) ->
 	undefined ->
 	    exit({no_server, ?SERVER, Request});
         Pid when pid(Pid) ->
-	    ?LOG("call[~p] -> bang request: ~n~p~n", [Pid,Request]),
+	    ?LOG("call[~p] -> bang request: "
+		 "~n   ~p"
+		 "~n", [Pid, Request]),
 	    Pid ! Request,
 	    call_await_reply(Pid)
     end.
@@ -101,8 +103,6 @@ call(UserCallback) ->
 call_await_reply(Pid) ->
     receive
 	{?MODULE, Pid, UserReply} = _Reply ->
-%  	    io:format("~p~p[~p]: call_await_reply -> received: ~n~p~n", 
-%  		      [self(),?MODULE,?LINE,Reply]),
 	    case UserReply of
 		{ok, Good}   -> Good;
 		{error, Bad} -> exit(Bad)
@@ -123,11 +123,17 @@ call_await_reply(Pid) ->
 %%----------------------------------------------------------------------
 
 handle_connect(ConnHandle, ProtocolVersion) ->
-%     io:format("~p~p[~p]: handle_connect -> entry~n", 
-% 	      [self(),?MODULE,?LINE]),
+%%     io:format("~p~p[~p]: handle_connect -> entry~n", 
+%% 	      [self(),?MODULE,?LINE]),
     call({connect, ConnHandle, ProtocolVersion, []}).
 
 handle_disconnect(ConnHandle, ProtocolVersion, Reason) ->
+%%     io:format("~w:~w:~p:handle_disconnect -> entry with"
+%% 	      "~n   ConnHandle:      ~p"
+%% 	      "~n   ProtocolVersion: ~p"
+%% 	      "~n   Reason:          ~p"
+%% 	      "~n", 
+%% 	      [?MODULE, ?LINE, self(), ConnHandle, ProtocolVersion, Reason]),
     call({disconnect, ConnHandle, ProtocolVersion, [Reason]}).
 
 handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor) ->
@@ -175,6 +181,26 @@ loop_transport(Parent) ->
 	    exit(Reason)
     end.
 
-send_message({{RH, Pid} = LocalSendHandle, RemoteSendHandle}, Bin) ->
+send_message(Handles, Bin) ->
+    ?LOG("send_message -> entry with"
+	 "~n   Handles: ~p", [Handles]),    
+    case megaco_tc_controller:lookup(allow_send_message) of
+	{value, ok} ->
+	    do_send_message(Handles, Bin);
+	{value, {fail, Reason}} ->
+	    {error, Reason};
+	{value, {cancel, Reason}} ->
+	    {cancel, Reason};
+	{value, {skip, Result}} ->
+	    Result;
+	false ->
+	    do_send_message(Handles, Bin)
+    end.
+
+do_send_message({{RH, Pid} = LocalSendHandle, RemoteSendHandle}, Bin) ->
+    ?LOG("do_send_message -> entry with"
+	 "~n   RH:               ~p"
+	 "~n   Pid:              ~p"
+	 "~n   RemoteSendHandle: ~p", [RH, Pid, RemoteSendHandle]),    
     SwappedSendHandle = {RemoteSendHandle, LocalSendHandle},
     megaco:receive_message(RH, Pid, SwappedSendHandle, Bin).

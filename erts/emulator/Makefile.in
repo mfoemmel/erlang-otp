@@ -148,6 +148,8 @@ endif
 HIPEBEAMLDFLAGS=$($(ARCH)BEAMLDFLAGS)
 endif
 
+ERTS_ENABLE_KERNEL_POLL=@ERTS_ENABLE_KERNEL_POLL@
+
 #
 #
 #
@@ -176,6 +178,7 @@ MKDIR	= @MKDIR@
 
 USING_MINGW=@MIXED_CYGWIN_MINGW@
 
+OMIT_OMIT_FP=no
 
 ifeq (@EMU_LOCK_CHECKING@,yes)
 NO_INLINE_FUNCTIONS=true
@@ -185,7 +188,11 @@ ifeq ($(CC), gcc)
 ifeq ($(NO_INLINE_FUNCTIONS),true)
 GEN_OPT_FLGS = -O3 -fno-inline-functions
 else
+ifeq ($(OMIT_OMIT_FP),yes)
+GEN_OPT_FLGS = -O3
+else
 GEN_OPT_FLGS = -O3 -fomit-frame-pointer
+endif
 endif
 UNROLL_FLG = -funroll-loops
 else
@@ -300,6 +307,15 @@ all:
 	@echo '*** Omitted build of emulator with smp support'
 else
 all: generate erts_lib zlib $(BINDIR)/$(EMULATOR_EXECUTABLE) $(UNIX_ONLY_BUILDS)
+ifeq ($(OMIT_OMIT_FP),yes)
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* *                                                         * *'
+	@echo '* * NOTE: Omit frame pointer optimization has been omitted  * *'
+	@echo '* *                                                         * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+endif
 endif
 endif
 
@@ -588,6 +604,13 @@ $(OBJDIR)/%.elib.o: beam/%.c
 $(OBJDIR)/sys_sae.o: sys/$(ERLANG_OSTYPE)/sys.c
 	$(CC) -DDISABLE_VFORK=1 $(CFLAGS) $(INCLUDES) -c $< -o $@
 
+
+$(OBJDIR)/%.kp.o: sys/unix/%.c
+	$(CC) -DERTS_KERNEL_POLL_VERSION $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
+
+$(OBJDIR)/%.nkp.o: sys/unix/%.c
+	$(CC) -DERTS_NO_KERNEL_POLL_VERSION $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
+
 ifeq ($(CC), gcc)
 
 $(OBJDIR)/erl_obsolete.o: beam/erl_obsolete.c
@@ -636,7 +659,7 @@ RUN_OBJS = \
 	$(OBJDIR)/erl_bestfit_alloc.o	$(OBJDIR)/erl_afit_alloc.o \
 	$(OBJDIR)/erl_instrument.o	$(OBJDIR)/erl_init.o \
 	$(OBJDIR)/erl_atom_table.o	$(OBJDIR)/erl_bif_table.o \
-	$(OBJDIR)/erl_bif_guard.o \
+	$(OBJDIR)/erl_bif_ddll.o  	$(OBJDIR)/erl_bif_guard.o \
 	$(OBJDIR)/erl_bif_info.o	$(OBJDIR)/erl_bif_op.o \
 	$(OBJDIR)/erl_bif_os.o		$(OBJDIR)/erl_bif_lists.o \
 	$(OBJDIR)/erl_bif_trace.o	$(OBJDIR)/erl_bif_wrap.o \
@@ -667,13 +690,11 @@ RUN_OBJS = \
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
 	$(OBJDIR)/registry_drv.o \
-	$(OBJDIR)/ddll_drv.o \
 	$(OBJDIR)/efile_drv.o \
 	$(OBJDIR)/inet_drv.o \
 	$(OBJDIR)/zlib_drv.o \
 	$(OBJDIR)/ram_file_drv.o
 OS_OBJS = \
-	$(OBJDIR)/win_ddll_drv.o \
 	$(OBJDIR)/win_efile.o \
 	$(OBJDIR)/win_con.o \
 	$(OBJDIR)/dll_sys.o \
@@ -696,23 +717,29 @@ OS_OBJS = \
 	$(OBJDIR)/elib_memmove.o
 
 ifeq ($(findstring ose,$(TARGET)),ose)
-	OS_OBJS += $(OBJDIR)/ose_ddll_drv.o \
-		   $(OBJDIR)/erl_port_init.o \
+	OS_OBJS += $(OBJDIR)/erl_port_init.o \
 		   $(OBJDIR)/ose_inet_sock_select.o \
 		   $(OBJDIR)/ose_sfp.o
 else
 ifeq ($(findstring vxworks,$(TARGET)),vxworks)
-	OS_OBJS += $(OBJDIR)/vxworks_ddll_drv.o \
-                    $(OBJDIR)/int64.o 
+	OS_OBJS += $(OBJDIR)/int64.o 
 else
-	OS_OBJS += $(OBJDIR)/unix_ddll_drv.o \
-                   $(OBJDIR)/sys_float.o \
+	OS_OBJS += $(OBJDIR)/sys_float.o \
                    $(OBJDIR)/sys_time.o
+
+ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
+	OS_OBJS += $(OBJDIR)/erl_poll.kp.o \
+                   $(OBJDIR)/erl_check_io.kp.o \
+                   $(OBJDIR)/erl_poll.nkp.o \
+                   $(OBJDIR)/erl_check_io.nkp.o
+else
+	OS_OBJS += $(OBJDIR)/erl_poll.o \
+                   $(OBJDIR)/erl_check_io.o
+endif
 endif
 endif
 DRV_OBJS = \
 	$(OBJDIR)/efile_drv.o \
-	$(OBJDIR)/ddll_drv.o \
 	$(OBJDIR)/inet_drv.o \
 	$(OBJDIR)/zlib_drv.o \
 	$(OBJDIR)/ram_file_drv.o
@@ -727,6 +754,7 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
 endif
 
 OS_OBJS +=	$(OBJDIR)/erl_mseg.o \
+		$(OBJDIR)/erl_$(ERLANG_OSTYPE)_sys_ddll.o \
 		$(OBJDIR)/erl_mtrace_sys_wrap.o
 
 HIPE_ultrasparc_OBJS=$(OBJDIR)/hipe_sparc.o $(OBJDIR)/hipe_sparc_glue.o $(OBJDIR)/hipe_sparc_bifs.o $(OBJDIR)/hipe_sparc_stack.o
@@ -919,9 +947,17 @@ SED_REPL_O=s|^\([^:]*:\)|$$(OBJDIR)/\1|g
 SED_REPL_ELIB_O=s|^\([^:]*\).o[ 	]*:|$$(OBJDIR)/\1.elib.o:|g
 SED_REPL_TTF_DIR=s|$(TTF_DIR)/|$$(TTF_DIR)/|g
 SED_REPL_ERL_TOP=s|$(ERL_TOP)/|$$(ERL_TOP)/|g
+SED_REPL_POLL=s|$$(OBJDIR)/erl_poll.o|$$(OBJDIR)/erl_poll.kp.o $$(OBJDIR)/erl_poll.nkp.o|g
+SED_REPL_CHK_IO=s|$$(OBJDIR)/erl_check_io.o|$$(OBJDIR)/erl_check_io.kp.o $$(OBJDIR)/erl_check_io.nkp.o|g
 
 SED_DEPEND=sed '$(SED_REPL_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)'
 SED_ELIB_DEPEND=sed '$(SED_REPL_ELIB_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)'
+
+ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
+SED_SYS_DEPEND=sed '$(SED_REPL_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP);$(SED_REPL_POLL);$(SED_REPL_CHK_IO)'
+else
+SED_SYS_DEPEND=$(SED_DEPEND)
+endif
 
 ifdef HIPE_ENABLED
 HIPE_SRC=hipe/*.c
@@ -947,7 +983,7 @@ depend:
 		| $(SED_DEPEND) >> $(TARGET)/depend.mk
 	$(DEP_CC) $(DEP_FLAGS) \
 		sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c $(HIPE_SRC) \
-		| $(SED_DEPEND) >> $(TARGET)/depend.mk
+		| $(SED_SYS_DEPEND) >> $(TARGET)/depend.mk
 	$(DEP_CC) $(DEP_FLAGS) $(TARGET)/*.c $(TTF_DIR)/*.c \
 		| $(SED_DEPEND) >> $(TARGET)/depend.mk
 ifneq ($(TARGET),win32)

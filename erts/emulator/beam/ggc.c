@@ -772,7 +772,6 @@ static void fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
                      ptr_within(ptr, go_heap, go_htop) )
             {
                 RRMA_STORE(p,gval,n_hp);
-                ++n_hp;
             }
 #endif
 #endif	 
@@ -1522,7 +1521,6 @@ gen_cheney(Process *p, Eterm* low, Eterm* high, Eterm* n_hp, Eterm* n_htop)
 #endif
 			 ptr_within(ptr,go_start,go_end)) {
                 RRMA_STORE(p,gval,n_hp);
-                ++n_hp;
 	       }
 #endif
 		else {
@@ -2575,13 +2573,42 @@ static Eterm *rescueHeap(Eterm *start, Eterm *end, Eterm *top)
 	    continue;
         }
             
-        case TAG_PRIMARY_HEADER: {
-            if (header_is_thing(gval))
+        case TAG_PRIMARY_HEADER: 
+	  {
+            if (header_is_thing(gval)) 
+	      {
+		if (header_is_bin_matchstate(gval)) 
+		  {
+		    ErlBinMatchState *ms = (ErlBinMatchState *) hp;
+		    ErlBinMatchBuffer *mb = &(ms->mb);
+		    Eterm *origptr, *ptr;
+		    Eterm val;
+		    origptr = &(mb->orig);
+		    ptr = boxed_val(*origptr);
+		    val = *ptr; 
+		    if (MY_IS_MOVED(val))
+		      {
+			ASSERT(is_boxed(val));
+			*origptr = val; 
+			mb->base=binary_bytes(*origptr);
+		      }
+		    else if( ptr_within(ptr, g_heap, g_hend) )
+		      {
+			MOVE_BOXED(ptr,val,top,origptr);
+			mb->base=binary_bytes(*origptr);
+		      }
+		    else if( ptr_within(ptr, oh_start, oh_end) )
+		      {
+			MOVE_BOXED(ptr,val,top,origptr);
+			mb->base=binary_bytes(*origptr);
+		      }
+		  }
                 hp += (thing_arityval(gval)+1);
-            else
-                hp++;
+	      }	
+	    else
+	      hp++;
             continue;
-        }
+	  }
             
         default:
 	    hp++;
@@ -2763,15 +2790,16 @@ static void ma_fullsweep_heap(Process *p, int new_sz, Eterm* objv, int nobj)
 	    continue;
 	  }
 
-	  case TAG_PRIMARY_HEADER: {
-            if (header_is_thing(gval)) {
-		  n_hp += (thing_arityval(gval)+1);
-            }
-            else {
-		  n_hp++;
-            }
+	  case TAG_PRIMARY_HEADER: 
+            {
+	      if (header_is_thing(gval)) {
+		n_hp += (thing_arityval(gval)+1);
+	      }
+	      else {
+		n_hp++;
+	      }
 	      continue;
-	  }
+	    }
 
 	  default: {
 	    n_hp++;
@@ -3364,13 +3392,50 @@ static Eterm *rescueHeapGen(Process *p, Eterm *start, Eterm *end,
             }
 
             case TAG_PRIMARY_HEADER:
-            {
-                if (header_is_thing(gval))
-                    g_ptr += (thing_arityval(gval) + 1);
-                else
-                    g_ptr++;
-                continue;
-            }
+	      {
+		if (header_is_thing(gval)){
+		  if (header_is_bin_matchstate(gval)) {
+		    ErlBinMatchState *ms = (ErlBinMatchState *) g_ptr;
+		    ErlBinMatchBuffer *mb = &(ms->mb);
+		    Eterm *origptr,*ptr;
+		    Eterm val;
+		    origptr = &(mb->orig);
+		    ptr = boxed_val(*origptr);
+		    val = *ptr; 
+		    if (ptr_within(ptr,low_water,high_water))
+		      {
+			if (MY_IS_MOVED(val)) {
+			  ASSERT(is_boxed(val));
+			  *origptr = val; 
+			  mb->base=binary_bytes(*origptr);
+			}
+			else {
+			  MOVE_BOXED(ptr,val,oh_top,origptr);
+			  mb->base=binary_bytes(*origptr);
+			} 
+		      }
+		    else if (ptr_within(ptr,high_water,surface))
+		      {
+			Eterm val = *ptr;
+			if (MY_IS_MOVED(val)) {
+			  ASSERT(is_boxed(val));
+			  *origptr = val; 
+			  mb->base=binary_bytes(*origptr);
+			}
+			else {
+			  INC_MARK_FORWARD(ptr);
+			  MOVE_BOXED(ptr,val,oh_top,origptr);
+			  mb->base=binary_bytes(*origptr);
+			}
+		    }
+		  }
+		  g_ptr += (thing_arityval(gval) + 1);
+		}
+		else
+		  g_ptr++;
+		continue;
+	      }
+	      
 
             default:
                 g_ptr++;

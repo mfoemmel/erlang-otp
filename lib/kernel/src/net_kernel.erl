@@ -87,7 +87,7 @@
 	 protocol_childspecs/0,
 	 epmd_module/0]).
 
--export([connect/1, disconnect/1, hidden_connect/1]).
+-export([connect/1, disconnect/1, hidden_connect/1, passive_cnct/1]).
 -export([connect_node/1, hidden_connect_node/1]). %% explicit connect
 -export([set_net_ticktime/1, set_net_ticktime/2, get_net_ticktime/0]).
 
@@ -213,11 +213,14 @@ ticktime_res(A)      when atom(A)             -> A.
 
 %% Called though BIF's
 
-connect(Node) ->               connect(Node, normal).
+connect(Node) ->               do_connect(Node, normal, false).
+%%% Long timeout if blocked (== barred), only affects nodes with
+%%% {dist_auto_connect, once} set.
+passive_cnct(Node) ->              do_connect(Node, normal, true).
 disconnect(Node) ->            request({disconnect, Node}).
 
 %% connect but not seen
-hidden_connect(Node) ->        connect(Node, hidden).
+hidden_connect(Node) ->        do_connect(Node, hidden, false).
 
 %% Should this node publish itself on Node?
 publish_on_node(Node) when atom(Node) ->
@@ -233,24 +236,29 @@ connect_node(Node) when atom(Node) ->
 hidden_connect_node(Node) when atom(Node) ->
     request({connect, hidden, Node}).
 
-connect(Node, Type) -> %% Type = normal | hidden
+do_connect(Node, Type, WaitForBarred) -> %% Type = normal | hidden
     case catch ets:lookup(sys_dist, Node) of
 	{'EXIT', _} ->
 	    ?connect_failure(Node,{table_missing, sys_dist}),
 	    false;
 	[#barred_connection{}] ->
-	    Pid = spawn(?MODULE,passive_connect_monitor,[self(),Node]),
-	    receive
-		{Pid, true} ->
-		    %io:format("Net Kernel: barred connection (~p) "
-			%      "connected from other end.~n",[Node]),
-		    true;
-		{Pid, false} ->
-		    ?connect_failure(Node,{barred_connection,  
-					   ets:lookup(sys_dist, Node)}),
-		    %io:format("Net Kernel: barred connection (~p) "
-			%      "- failure.~n",[Node]),
-		    false
+	    case WaitForBarred of
+		false ->
+		    false;
+		true ->
+		    Pid = spawn(?MODULE,passive_connect_monitor,[self(),Node]),
+		    receive
+			{Pid, true} ->
+			    %%io:format("Net Kernel: barred connection (~p) "
+			    %%          "connected from other end.~n",[Node]),
+			    true;
+			{Pid, false} ->
+			    ?connect_failure(Node,{barred_connection,  
+						   ets:lookup(sys_dist, Node)}),
+			    %%io:format("Net Kernel: barred connection (~p) "
+			    %%      "- failure.~n",[Node]),
+			    false
+		    end
 	    end;
 	_ ->
 	    case application:get_env(kernel, dist_auto_connect) of

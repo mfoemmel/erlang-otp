@@ -177,7 +177,6 @@ do_start(Flags) ->
     os:module_info(module),
     filename:module_info(module),
     lists:module_info(module),
-    lists_sort:module_info(module),
 
     Mode = get_mode(Flags),
     case init:get_argument(root) of 

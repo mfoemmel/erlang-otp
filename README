@@ -28,15 +28,24 @@ At Ericsson we have a "Daily Build and Test" that runs on:
     Linux/Suse Amd64	    10.0
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
-    Mac OS X                10.3.9 (2)
-    Mac OS X                10.4.6 (2)
+    Mac OS X/PPC            10.4.8   (2)
+    Mac OS X/Intel          10.4.8   (3)
     Windows 		    XP
     Windows 		    2003
 
 (1) Older versions of Solaris should work as well, but we don't test them 
     any longer.
 (2) Runs on an Apple eMac. See notes below.
+(3) Runs on an Mac Mini. See notes below.
 
+Versions known *not* to work
+-------------------------------------
+
+Suse linux 9.1 is shipped with a patched GCC version 3.3.3, having the
+rpm named gcc-3.3.3-41. That version has a serious optimization bug
+that makes it unusable for building the erlang emulator. Please
+upgrade GCC to a newer version before building on Suse 9.1. Suse Linux
+EnterpriSe edition 9 (SLES9) has gcc-3.3.3-43 and is not affected.
 
 Required utilities
 ------------------
@@ -256,7 +265,7 @@ to print out the available options.
 Mac OS X (Darwin)
 -----------------
 
-Mac OS X version 10.3.9 (Panther) or later is recommended.
+Mac OS X version 10.4 (Tiger) or later is recommended.
 
 Earlier releases of Mac OS X might work, but we have not
 tested them. On earlier releases, use the "gnutar" command

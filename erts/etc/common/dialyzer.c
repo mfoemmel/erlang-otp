@@ -130,6 +130,11 @@ main(int argc, char** argv)
      * Push initial arguments.
      */
 
+    if (argc > 1 && strcmp(argv[1], "-smp") == 0) {
+        PUSH("-smpauto");
+	argc--, argv++;
+    }
+
     PUSH("+B");
     PUSH2("-boot", "start_clean");
     PUSH3("-run", "dialyzer", "plain_cl");

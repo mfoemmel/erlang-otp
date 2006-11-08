@@ -413,7 +413,7 @@ udp_options() ->
     [tos, priority, reuseaddr, sndbuf, recbuf, header, active, buffer, mode, 
      deliver,
      broadcast, dontroute, multicast_if, multicast_ttl, multicast_loop,
-     add_membership, drop_membership].
+     add_membership, drop_membership, read_packets].
 
 
 udp_options(Opts, Family) ->

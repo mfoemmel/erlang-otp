@@ -369,12 +369,12 @@ fill_branch_delay(Cand, Br, Sch, IxBlk, DAG) ->
 %%               To - 1, and the nodes between From and To gets old_index - 1.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 update_schedule(To, To, Sch) -> 
-    {{cycle, C}, {node, N}} = hipe_vectors:get(Sch, To),
-     hipe_vectors:set(Sch, To, {{cycle, C+1},{node, N}});
+    {{cycle, C}, {node, N}} = hipe_vectors:get(Sch, To-1),
+     hipe_vectors:set(Sch, To-1, {{cycle, C+1},{node, N}});
 update_schedule(From, To, Sch) ->
-    Temp = hipe_vectors:get(Sch, From),
-    Sch1 = hipe_vectors:set(Sch, From, hipe_vectors:get(Sch, From + 1)),
-    update_schedule(From + 1, To, hipe_vectors:set(Sch1, From + 1, Temp)).
+    Temp = hipe_vectors:get(Sch, From-1),
+    Sch1 = hipe_vectors:set(Sch, From-1, hipe_vectors:get(Sch, From)),
+    update_schedule(From + 1, To, hipe_vectors:set(Sch1, From, Temp)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Function    : single_depend
@@ -387,7 +387,7 @@ update_schedule(From, To, Sch) ->
 %%               latency between them is zero or 1.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 single_depend(N, M, DAG) ->
-    Deps = hipe_vectors:get(DAG, N),
+    Deps = hipe_vectors:get(DAG, N-1),
     single_depend(M, Deps).
 
 single_depend(_N, []) -> true;
@@ -404,7 +404,7 @@ single_depend(_N, [{_Lat, _}|_]) -> false.
 %% Description : Returns the index of the node on position N in the schedule.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_index(Sch, N) ->
-    {{cycle, _C},{node,Index}} = hipe_vectors:get(Sch,N),
+    {{cycle, _C},{node,Index}} = hipe_vectors:get(Sch,N-1),
     Index.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -415,7 +415,7 @@ get_index(Sch, N) ->
 %% Description : Returns the instr on position N in the indexed block.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_instr(IxBlk, N) ->
-    {_, Instr} = hipe_vectors:get(IxBlk, N),
+    {_, Instr} = hipe_vectors:get(IxBlk, N-1),
     Instr.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -427,8 +427,8 @@ get_instr(IxBlk, N) ->
 %% Description : Returns the instr on position N in the schedule.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 get_instr(Sch, IxBlk, N) ->
-     {{cycle, _C}, {node, Index}} = hipe_vectors:get(Sch, N),
-     {_, Instr} = hipe_vectors:get(IxBlk, Index),
+     {{cycle, _C}, {node, Index}} = hipe_vectors:get(Sch, N-1),
+     {_, Instr} = hipe_vectors:get(IxBlk, Index-1),
      Instr.
     
 
@@ -464,7 +464,7 @@ finalize_block(N, End, _C, Sch, IxBlk, _Instrs) when N =:= End - 1 ->
 	    [Last, NextLast]
     end;
 finalize_block(N, End, C0, Sch, IxBlk, Instrs) ->
-    {{cycle, _C1}, {node, _M}} = hipe_vectors:get(Sch, N),
+    {{cycle, _C1}, {node, _M}} = hipe_vectors:get(Sch, N-1),
     Instr = get_instr(Sch, IxBlk, N),
     ?debug5("Instr: ~p~n~n",[Instr]),
     [Instr | finalize_block(N + 1, End, C0, Sch, IxBlk, Instrs)].
@@ -652,10 +652,10 @@ advance_cycle(Rsrc) ->
 %% Description : Deletes node I and updates earliest times for the rest.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 delete_node(Cycle,I,DAG,Preds,Earl) ->
-    Succ = hipe_vectors:get(DAG,I),
-    NewDAG = hipe_vectors:set(DAG,I,scheduled),  % provides debug 'support'
+    Succ = hipe_vectors:get(DAG,I-1),
+    NewDAG = hipe_vectors:set(DAG,I-1,scheduled),  % provides debug 'support'
     {ReadyNs,NewPreds,NewEarl} = update_earliest(Succ,Cycle,Preds,Earl,[]),
-    ?debug('earliest after ~p: ~p~n',[I,hipe_vectors:list(NewEarl)]),
+    ?debug('earliest after ~p: ~p~n',[I,[{Ix+1,V} || {Ix,V} <- hipe_vectors:list(NewEarl)]]),
     {ReadyNs,NewDAG,NewPreds,NewEarl}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -672,18 +672,18 @@ delete_node(Cycle,I,DAG,Preds,Earl) ->
 update_earliest([],_Cycle,Preds,Earl,Ready) ->
     {Ready,Preds,Earl};
 update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
-    Old_earl = hipe_vectors:get(Earl,N),
+    Old_earl = hipe_vectors:get(Earl,N-1),
     New_earl = max(Old_earl,Cycle+Lat),
-    NewEarl = hipe_vectors:set(Earl,N,New_earl),
-    Num_preds = hipe_vectors:get(Preds,N),
-    NewPreds = hipe_vectors:set(Preds,N,Num_preds-1),
+    NewEarl = hipe_vectors:set(Earl,N-1,New_earl),
+    Num_preds = hipe_vectors:get(Preds,N-1),
+    NewPreds = hipe_vectors:set(Preds,N-1,Num_preds-1),
     if
 	Num_preds =:= 0 ->
 	    ?debug('inconsistent DAG~n',[]),
 	    exit({update_earliest,N});
 	Num_preds =:= 1 ->
 	    NewReady = [{New_earl,N}|Ready],
-	    NewPreds2 = hipe_vectors:set(NewPreds,N,0),
+	    NewPreds2 = hipe_vectors:set(NewPreds,N-1,0),
 	    update_earliest(Xs,Cycle,NewPreds2,NewEarl,NewReady);
 	Num_preds > 1 ->
 	    update_earliest(Xs,Cycle,NewPreds,NewEarl,Ready)
@@ -782,15 +782,15 @@ indexed_bb([X|Xs],N) ->
 %%               Number of predeccessors for node M is increased.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 dep_arc(N, Lat, M, {Dag,Preds}) -> 
-    OldDeps = hipe_vectors:get(Dag, N),
+    OldDeps = hipe_vectors:get(Dag, N-1),
 %    io:format("{OldDeps} = {~p}~n",[OldDeps]),
     {NewDeps, Status} = add_arc(Lat, M, OldDeps),
 %    io:format("{NewDeps, Status} = {~p, ~p}~n",[NewDeps, Status]),
-    NewDag  = hipe_vectors:set(Dag, N, NewDeps),
+    NewDag  = hipe_vectors:set(Dag, N-1, NewDeps),
     NewPreds = case Status of
 		   added -> % just increase preds if new arc was added
-		       OldPreds = hipe_vectors:get(Preds, M),
-		       hipe_vectors:set(Preds, M, OldPreds + 1);
+		       OldPreds = hipe_vectors:get(Preds, M-1),
+		       hipe_vectors:set(Preds, M-1, OldPreds + 1);
 		   non_added -> 
 		       Preds
 	       end,

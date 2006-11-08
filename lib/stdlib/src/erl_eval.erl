@@ -316,7 +316,8 @@ expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf, Ef, RBs) ->
     {value,M,Bs1} = expr(Mod1, Bs0, Lf, Ef, none),
     {value,F,Bs2} = expr(Func, Bs0, Lf, Ef, none),
     {As,Bs3} = expr_list(As0, merge_bindings(Bs1, Bs2), Lf, Ef),
-    case erl_internal:bif(M, F, length(As)) of
+    %% M could be a parameterized module (not an atom).
+    case is_atom(M) andalso erl_internal:bif(M, F, length(As)) of
         true ->
             bif(F, As, Bs3, Ef, RBs);
         false ->

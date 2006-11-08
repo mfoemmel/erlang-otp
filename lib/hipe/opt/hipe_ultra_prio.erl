@@ -34,7 +34,7 @@ init_ready(Size,Preds) ->
     P = hipe_vectors:size(Preds),
     Ready = hipe_vectors:new(Size,[]),
     R = initial_ready_set(1,P,Preds,[]),
-    hipe_vectors:set(Ready,1,R).
+    hipe_vectors:set(Ready,0,R).
 
 init_instr_prio(N,DAG) ->
     critical_path(N,DAG).
@@ -53,7 +53,7 @@ initial_ready_set(M,N,Preds,Ready) ->
 	M > N ->
 	    Ready;
 	true ->
-	    case hipe_vectors:get(Preds,M) of
+	    case hipe_vectors:get(Preds,M-1) of
 		0 ->
 		    initial_ready_set(M+1,N,Preds,[M|Ready]);
 		V when V > 0 ->
@@ -82,24 +82,24 @@ initial_ready_set(M,N,Preds,Ready) ->
 %%                   = Id of instr and NewReady = updated ready-array.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 next_ready(C,Ready,Prio,Nodes,DAG,Preds,Earl) ->
-    Curr = hipe_vectors:get(Ready,C),
+    Curr = hipe_vectors:get(Ready,C-1),
     case Curr of
 	[] -> 
 	    none;
 	Instrs ->
 	    {BestI,RestIs} = 
 		get_best_instr(Instrs,Prio,Nodes,DAG,Preds,Earl,C),
-	    {next,BestI,hipe_vectors:set(Ready,C,RestIs)}
+	    {next,BestI,hipe_vectors:set(Ready,C-1,RestIs)}
     end.
 
 % next_ready(C,Ready,Prio,Nodes) ->
-%     Curr = hipe_vectors:get(Ready,C),
+%     Curr = hipe_vectors:get(Ready,C-1),
 %     case Curr of
 % 	[] ->   
 % 	    none;
 % 	Instrs ->
 % 	    {BestInstr,RestInstrs} = get_best_instr(Instrs, Prio, Nodes),
-% 	    {next,BestInstr,hipe_vectors:set(Ready,C,RestInstrs)}
+% 	    {next,BestInstr,hipe_vectors:set(Ready,C-1,RestInstrs)}
 %     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -178,7 +178,7 @@ get_instr(InstrId, [_|Xs]) -> get_instr(InstrId, Xs).
 priority(InstrId, Prio, Nodes,DAG,Preds,Earl,C) ->
     {ReadyNodes,_,_,_} = hipe_schedule:delete_node(C,InstrId,DAG,Preds,Earl),
     Instr = get_instr(InstrId, Nodes),
-    Prio1 = hipe_vectors:get(Prio, InstrId),
+    Prio1 = hipe_vectors:get(Prio, InstrId-1),
     Prio2 = length(ReadyNodes),
     PrioRest =
 	case Instr of
@@ -221,8 +221,8 @@ add_ready_nodes([{C,I}|Xs],Ready) ->
     add_ready_nodes(Xs,insert_node(C,I,Ready)).
 
 insert_node(C,I,Ready) ->
-    Old = hipe_vectors:get(Ready,C),
-    hipe_vectors:set(Ready,C,[I|Old]).
+    Old = hipe_vectors:get(Ready,C-1),
+    hipe_vectors:set(Ready,C-1,[I|Old]).
 
 %%
 %% Computes the latency for the "most expensive" way through the graph
@@ -250,7 +250,7 @@ critical_path(M,N,DAG,Prio) ->
 %%                  successors (+ latency)
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 cpath(M,DAG,Prio) ->
-    InitPrio = hipe_vectors:get(Prio,M),
+    InitPrio = hipe_vectors:get(Prio,M-1),
     if
 	InitPrio =:= -1 ->
 	    cpath_node(M,DAG,Prio);
@@ -261,7 +261,7 @@ cpath(M,DAG,Prio) ->
 cpath_node(N,DAG,Prio) ->
     SuccL = dag_succ(DAG,N),
     {Max,NewPrio} = cpath_succ(SuccL,DAG,Prio),
-    hipe_vectors:set(NewPrio,N,Max).
+    hipe_vectors:set(NewPrio,N-1,Max).
 
 cpath_succ(SuccL,DAG,Prio) ->
     cpath_succ(SuccL,DAG,Prio,0).
@@ -272,11 +272,11 @@ cpath_succ(SuccL,DAG,Prio) ->
 cpath_succ([],_DAG,Prio,NodePrio) -> {NodePrio,Prio};
 cpath_succ([{Lat,Succ}|Xs],DAG,Prio,NodePrio) ->
     NewPrio = cpath(Succ,DAG,Prio),
-    NewNodePrio = max(hipe_vectors:get(NewPrio,Succ)+Lat,NodePrio),
+    NewNodePrio = max(hipe_vectors:get(NewPrio,Succ-1)+Lat,NodePrio),
     cpath_succ(Xs,DAG,NewPrio,NewNodePrio).
 
 dag_succ(DAG,N) ->
-    hipe_vectors:get(DAG,N).
+    hipe_vectors:get(DAG,N-1).
 
 max(X,Y) ->
     if

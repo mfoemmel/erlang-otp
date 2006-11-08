@@ -141,6 +141,8 @@ bif erlang:function_exported/3
 bif 'erl.system.code':is_loaded/3	ebif_is_loaded_3 function_exported_3
 bif erlang:monitor_node/2
 bif 'erl.lang.node':monitor/2		ebif_monitor_node_2
+bif erlang:monitor_node/3
+bif 'erl.lang.node':monitor/3		ebif_monitor_node_3
 ubif erlang:node/1
 ubif 'erl.lang.node':node/1		ebif_node_1
 ubif erlang:node/0
@@ -189,6 +191,8 @@ bif erlang:setelement/3
 bif 'erl.lang.tuple':setelement/3	ebif_setelement_3
 ubif erlang:size/1
 ubif 'erl.lang.term':size/1		ebif_size_1
+ubif erlang:bitsize/1
+ubif 'erl.lang.term':bitsize/1		ebif_bitsize_1
 bif erlang:spawn/3
 bif 'erl.lang.proc':spawn/3		ebif_spawn_3
 bif erlang:spawn_link/3
@@ -255,6 +259,8 @@ bif erlang:trace/3
 bif 'erl.system.debug':trace/3		ebif_trace_3
 bif erlang:trace_info/2
 bif 'erl.system.debug':trace_info/2	ebif_trace_info_2
+bif erlang:trace_delivered/1
+bif 'erl.system.debug':trace_delivered/1	ebif_trace_delivered_1
 bif erlang:seq_trace/2
 bif 'erl.system.debug':seq_trace/2	ebif_seq_trace_2
 bif erlang:seq_trace_info/1
@@ -575,6 +581,17 @@ bif 'erl.system.os':getenv/1	ebif_os_getenv_1
 bif os:getpid/0
 bif 'erl.system.os':pid/0	ebif_os_pid_0 os_getpid_0
 
+#
+# Bifs in the erl_ddll module (the module actually does not exist)
+#
+
+bif erl_ddll:try_load/3
+bif erl_ddll:try_unload/2
+bif erl_ddll:loaded_drivers/0
+bif erl_ddll:info/2
+bif erl_ddll:format_error_int/1
+bif erl_ddll:monitor/2
+bif erl_ddll:demonitor/1
 
 #
 # Bifs in lists module.

@@ -192,3 +192,15 @@ i_bxor j d
 
 i_int_bnot j s d
 
+#
+# Guard BIFs.
+#
+gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:float/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:round/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:trunc/1 Src Dst=d => bif1 Fail Bif Src Dst
+
+
+make_fun Lbl=f Uniq=u NumFree=u => gen_make_fun(Lbl, Uniq, NumFree)

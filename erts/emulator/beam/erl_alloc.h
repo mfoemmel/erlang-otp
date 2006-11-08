@@ -226,6 +226,131 @@ void *erts_realloc_fnf(ErtsAlcType_t type, void *ptr, Uint size)
 
 #endif /* #if ERTS_ALC_DO_INLINE || defined(ERTS_ALC_INTERNAL__) */
 
+#define ERTS_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)			\
+ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT,				\
+		      (void) 0, (void) 0, (void) 0)
+
+#define ERTS_SMP_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)			\
+static erts_smp_spinlock_t NAME##_lck;					\
+ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT,				\
+		      erts_smp_spinlock_init(&NAME##_lck, #NAME "_alloc_lock"),\
+		      erts_smp_spin_lock(&NAME##_lck),			\
+		      erts_smp_spin_unlock(&NAME##_lck))
+
+#ifdef ERTS_SMP
+
+#define ERTS_TS_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)			\
+ERTS_SMP_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)
+
+#else /* !ERTS_SMP */
+
+#define ERTS_TS_QUALLOC_IMPL(NAME, TYPE, PASZ, ALCT)			\
+static erts_mtx_t NAME##_lck;						\
+ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT,				\
+		      erts_mtx_init(NAME##_lck, #NAME "_alloc_lock"),	\
+		      erts_mtx_lock(&NAME##_lck),			\
+		      erts_mtx_unlock(&NAME##_lck))
+
+
+#endif
+
+#define ERTS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ, (void) 0, (void) 0, (void) 0)
+
+#define ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+static erts_smp_spinlock_t NAME##_lck;					\
+ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ,					\
+		    erts_smp_spinlock_init(&NAME##_lck, #NAME "_alloc_lock"),\
+		    erts_smp_spin_lock(&NAME##_lck),			\
+		    erts_smp_spin_unlock(&NAME##_lck))
+
+#ifdef ERTS_SMP
+
+#define ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+ERTS_SMP_PALLOC_IMPL(NAME, TYPE, PASZ)
+
+#else /* !ERTS_SMP */
+
+#define ERTS_TS_PALLOC_IMPL(NAME, TYPE, PASZ)				\
+static erts_mtx_t NAME##_lck;						\
+ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ,					\
+		    erts_mtx_init(NAME##_lck, #NAME "_alloc_lock"),	\
+		    erts_mtx_lock(&NAME##_lck),				\
+		    erts_mtx_unlock(&NAME##_lck))
+
+#endif
+
+#define ERTS_QUICK_ALLOC_IMPL(NAME, TYPE, PASZ, ALCT, ILCK, LCK, ULCK)	\
+ERTS_PRE_ALLOC_IMPL(NAME##_pre, TYPE, PASZ, ILCK, LCK, ULCK)		\
+static void								\
+init_##NAME##_alloc(void)						\
+{									\
+    init_##NAME##_pre_alloc();						\
+}									\
+static ERTS_INLINE TYPE *						\
+NAME##_alloc(void)							\
+{									\
+    TYPE *res = NAME##_pre_alloc();					\
+    if (!res)								\
+	res = erts_alloc(ALCT, sizeof(TYPE));				\
+    return res;								\
+}									\
+static ERTS_INLINE void							\
+NAME##_free(TYPE *p)							\
+{									\
+    if (!NAME##_pre_free(p))						\
+	erts_free(ALCT, (void *) p);					\
+}
+
+#define ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ, ILCK, LCK, ULCK)		\
+union erts_qa_##NAME##__ {						\
+    TYPE type;								\
+    union erts_qa_##NAME##__ *next;					\
+};									\
+static union erts_qa_##NAME##__ qa_prealcd_##NAME[(PASZ)];		\
+static union erts_qa_##NAME##__ *qa_freelist_##NAME;			\
+static void								\
+init_##NAME##_alloc(void)						\
+{									\
+    int i;								\
+    qa_freelist_##NAME = &qa_prealcd_##NAME[0];				\
+    for (i = 1; i < (PASZ); i++)					\
+	qa_prealcd_##NAME[i-1].next = &qa_prealcd_##NAME[i];		\
+    qa_prealcd_##NAME[(PASZ)-1].next = NULL;				\
+    ILCK;								\
+}									\
+static ERTS_INLINE TYPE *						\
+NAME##_alloc(void)							\
+{									\
+    TYPE *res;								\
+    LCK;								\
+    if (!qa_freelist_##NAME)						\
+	res = NULL;							\
+    else {								\
+	res = &qa_freelist_##NAME->type;				\
+	qa_freelist_##NAME = qa_freelist_##NAME->next;			\
+    }									\
+    ULCK;								\
+    return res;								\
+}									\
+static ERTS_INLINE int							\
+NAME##_free(TYPE *p)							\
+{									\
+    union erts_qa_##NAME##__ * up;					\
+    up = ((union erts_qa_##NAME##__ *)					\
+	  (((char *) p)							\
+	   - ((char *) &((union erts_qa_##NAME##__ *) 0)->type)));	\
+    if (up < &qa_prealcd_##NAME[0] || up > &qa_prealcd_##NAME[(PASZ)-1])\
+	return 0;							\
+    else {								\
+	LCK;								\
+	up->next = qa_freelist_##NAME;					\
+	qa_freelist_##NAME = up;					\
+	ULCK;								\
+	return 1;							\
+    }									\
+}
+
 #ifdef DEBUG
 #define ERTS_ALC_DBG_BLK_SZ(PTR) (*(((Uint *) (PTR)) - 2))
 #endif /* #ifdef DEBUG */

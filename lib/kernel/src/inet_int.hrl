@@ -135,8 +135,9 @@
 -define(INET_LOPT_TCP_LOWTRMRK,  28).
 -define(INET_LOPT_BIT8,          29).
 -define(INET_LOPT_TCP_SEND_TIMEOUT, 30).
--define(INET_LOPT_TCP_DELAY_SEND, 31).
--define(INET_LOPT_PACKET_SIZE, 32).
+-define(INET_LOPT_TCP_DELAY_SEND,   31).
+-define(INET_LOPT_PACKET_SIZE,      32).
+-define(INET_LOPT_UDP_READ_PACKETS, 33).
 
 %% interface options
 -define(INET_IFOPT_ADDR,      1).

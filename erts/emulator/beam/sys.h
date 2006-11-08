@@ -53,6 +53,18 @@
 #endif
 
 /*
+ * To allow building of Universal Binaries for Mac OS X,
+ * we must not depend on the endian detected by the configure script.
+ */
+#if defined(__APPLE__)
+#  if defined(__BIG_ENDIAN__) && !defined(WORDS_BIGENDIAN)
+#    define WORDS_BIGENDIAN 1
+#  elif !defined(__BIG_ENDIAN__) && defined(WORDS_BIGENDIAN)
+#    undef WORDS_BIGENDIAN
+#  endif
+#endif
+
+/*
  * Make sure that ENOTSUP is defined.
  */
 #ifndef ENOTSUP
@@ -95,7 +107,6 @@
 
 #define ERTS_GLB_INLINE_INCL_FUNC_DEF \
   (ERTS_CAN_INLINE || defined(ERTS_DO_INCL_GLB_INLINE_FUNC_DEF))
-
 
 #ifndef ERTS_EXIT_AFTER_DUMP
 #  define ERTS_EXIT_AFTER_DUMP exit
@@ -162,6 +173,7 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 
 #if __GNUC__
 #  define __noreturn __attribute__((noreturn))
+#  undef __deprecated
 #  if __GNUC__ >= 3
 #    define __deprecated __attribute__((deprecated))
 #  else
@@ -261,6 +273,15 @@ typedef unsigned char byte;
 
 #include "erl_lock_check.h"
 #include "erl_smp.h"
+
+#ifdef ERTS_SMP
+extern erts_smp_atomic_t erts_writing_erl_crash_dump;
+#define ERTS_IS_CRASH_DUMPING \
+  ((int) erts_smp_atomic_read(&erts_writing_erl_crash_dump))
+#else
+extern volatile int erts_writing_erl_crash_dump;
+#define ERTS_IS_CRASH_DUMPING erts_writing_erl_crash_dump
+#endif
 
 /* Deal with memcpy() vs bcopy() etc. We want to use the mem*() functions,
    but be able to fall back on bcopy() etc on systems that don't have
@@ -406,6 +427,8 @@ erts_smp_io_unlock(void)
 
 #endif
 
+Eterm erts_check_io_info(void *p);
+
 /* Size of misc memory allocated from system dependent code */
 Uint erts_sys_misc_mem_sz(void);
 
@@ -496,6 +519,16 @@ extern void erts_time_remaining(SysTimeval *);
 extern int erts_init_time_sup(void);
 extern void erts_sys_init_float(void);
 extern void erts_thread_init_float(void);
+
+/* Dynamic library/driver loading */
+extern void erl_sys_ddll_init(void); /* to initialize mutexes etc */
+extern int erts_sys_ddll_open(char *path, void **handle);
+extern int erts_sys_ddll_load_driver_init(void *handle, void **function);
+extern int erts_sys_ddll_close(void *handle);
+extern void *erts_sys_ddll_call_init(void *function);
+extern int erts_sys_ddll_sym(void *handle, char *name, void **function);
+extern char *erts_sys_ddll_error(int code);
+
 
 /*
  * System interfaces for startup/sae code (functions found in respective sys.c)
@@ -943,7 +976,7 @@ erts_refc_read(erts_refc_t *refcp, long min_val)
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
-#ifdef USE_KERNEL_POLL
+#ifdef ERTS_ENABLE_KERNEL_POLL
 extern int erts_use_kernel_poll;
 #endif
 

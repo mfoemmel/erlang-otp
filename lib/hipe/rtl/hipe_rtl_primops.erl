@@ -19,6 +19,7 @@
 %% --------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
 
 %% --------------------------------------------------------------------
@@ -526,19 +527,23 @@ gen_bsr_2(Res, Args, Cont, Fail, Op) ->
   case hipe_rtl:is_imm(Arg2) of
     true ->
       Val =  hipe_tagscheme:fixnum_val(hipe_rtl:imm_value(Arg2)),
-      Limit = hipe_rtl_arch:word_size()*8,
+      Limit = ?bytes_to_bits(hipe_rtl_arch:word_size()),
       if 
 	Val < Limit, Val >= 0 ->
 	  case Res of
 	    [] ->
-	      [hipe_tagscheme:test_fixnum(Arg1, hipe_rtl:label_name(Cont),
-					  hipe_rtl:label_name(GenCaseLabel), 0.99),
-	       gen_op_general_case(hipe_rtl:mk_new_var(), Op, Args, Cont, Fail, 
+	      [hipe_tagscheme:test_fixnum(Arg1,
+					  hipe_rtl:label_name(Cont),
+					  hipe_rtl:label_name(GenCaseLabel),
+					  0.99),
+	       gen_op_general_case(hipe_rtl:mk_new_var(), Op, Args, Cont, Fail,
 				   GenCaseLabel)];
 	    [Res0] ->
 	      FixLabel = hipe_rtl:mk_new_label(),
-	      [hipe_tagscheme:test_fixnum(Arg1, hipe_rtl:label_name(FixLabel),
-					  hipe_rtl:label_name(GenCaseLabel), 0.99),
+	      [hipe_tagscheme:test_fixnum(Arg1,
+					  hipe_rtl:label_name(FixLabel),
+					  hipe_rtl:label_name(GenCaseLabel),
+					  0.99),
 	       FixLabel,
 	       hipe_tagscheme:fixnum_bsr(Arg1, Arg2, Res0),
 	       gen_op_general_case(Res0, Op, Args, Cont, Fail, GenCaseLabel)]
@@ -799,7 +804,27 @@ gen_call_fun(Dst, ArgsAndFun, Continuation, Fail) ->
   ArityReg = hipe_rtl:mk_new_reg_gcsafe(),
   [Fun|RevArgs] = lists:reverse(ArgsAndFun),
 
-  {BadFunLabName, BadFunCode} = gen_fail_code(Fail, {badfun, Fun}),
+  %% {BadFunLabName, BadFunCode} = gen_fail_code(Fail, {badfun, Fun}),
+  Args = lists:reverse(RevArgs),
+  NonClosureLabel = hipe_rtl:mk_new_label(),
+  CallNonClosureLabel = hipe_rtl:mk_new_label(),
+  BadFunLabName = hipe_rtl:label_name(NonClosureLabel),
+  BadFunCode =
+    [NonClosureLabel,
+     hipe_rtl:mk_call([NAddressReg],
+		      'nonclosure_address',
+		      [Fun, hipe_rtl:mk_imm(length(Args))],
+		      hipe_rtl:label_name(CallNonClosureLabel),
+		      Fail,
+		      not_remote),
+     CallNonClosureLabel,
+     case Continuation of
+       [] ->
+	 hipe_rtl:mk_enter(NAddressReg, Args, not_remote);
+       _ ->
+	 hipe_rtl:mk_call(Dst, NAddressReg, Args, Continuation, Fail, not_remote)
+     end],
+
   {BadArityLabName, BadArityCode} = gen_fail_code(Fail, {badarity, Fun}),
 
   CheckGetCode = 

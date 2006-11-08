@@ -62,6 +62,7 @@
 -export([gct_init/1, gct/2]).
 
 
+-include("snmpm_internal.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_types.hrl").
 -include("STANDARD-MIB.hrl").
@@ -701,12 +702,12 @@ handle_call(stop, _From, State) ->
 
 
 handle_call(Req, _From, State) ->
-    info_msg("received unknown request: ~n~p", [Req]),
+    warning_msg("received unknown request: ~n~p", [Req]),
     {reply, {error, unknown_request}, State}.
 
 
 handle_cast(Msg, State) ->
-    info_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
 
 
@@ -805,7 +806,7 @@ handle_info({'EXIT', Pid, Reason}, #state{gct = Pid} = State) ->
 
 
 handle_info(Info, State) ->
-    info_msg("received unknown info: ~n~p", [Info]),
+    warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 
@@ -2596,14 +2597,17 @@ call(Req) ->
 call(Req, To) ->
     gen_server:call(?SERVER, Req, To).
 
-% cast(Msg) ->
-%     gen_server:cast(?SERVER, Msg).
+%% cast(Msg) ->
+%%     gen_server:cast(?SERVER, Msg).
 
-info_msg(F, A) ->
-    catch error_logger:info_msg("*** SNMPM: " ++ F ++ "~n", A).
- 
+%% info_msg(F, A) ->
+%%     ?snmpm_info("Server: " ++ F, A).
+
+warning_msg(F, A) ->
+    ?snmpm_warning("Server: " ++ F, A).
+
 error_msg(F, A) ->
-    catch error_logger:error_msg("*** SNMPM: " ++ F ++ "~n", A).
+    ?snmpm_error("Server: " ++ F, A).
  
 
 %%----------------------------------------------------------------------

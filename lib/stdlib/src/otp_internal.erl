@@ -158,6 +158,9 @@ obsolete(ordsets, subset, 2) ->
 obsolete(calendar, local_time_to_universal_time, 1) ->
     {true, {calendar, local_time_to_universal_time_dst, 1}};
 
+obsolete(rpc, safe_multi_server_call, A) when A =:= 2; A =:= 3 ->
+    {true, {rpc, multi_server_call, A}};
+
 obsolete(snmp, N, A) ->
     case is_snmp_agent_function(N, A) of
 	false -> false;

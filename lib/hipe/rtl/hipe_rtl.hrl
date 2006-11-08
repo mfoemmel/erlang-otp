@@ -34,3 +34,9 @@
 -record(store, {base, offset, src, size}).
 -record(switch, {src, labels, sorted_by=[]}).
 
+%%---------------------------------------------------------------------
+
+%% An efficient macro to convert byte sizes to bit sizes
+-define(bytes_to_bits(Bytes), ((Bytes) bsl 3)).  % (N * 8)
+
+%%---------------------------------------------------------------------

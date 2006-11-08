@@ -31,39 +31,22 @@
 	[t_any/0, t_atom/0, t_atom/1, t_binary/0, t_bool/0, t_cons/0, t_cons/2,
 	 t_cons_hd/1, t_cons_tl/1, t_components/1, t_float/0,
 	 t_from_range/2, t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1,
-	 t_inf/2, t_inf_lists/2, t_integer/0, t_is_integer/1,
+	 t_inf/2, t_inf_lists/2, t_integer/0, t_is_integer/1, t_is_nil/1,
 	 t_is_atom/1, t_atom_vals/1, t_is_equal/2, t_is_none/1,
 	 t_is_any/1, t_is_subtype/2, t_limit/2,
 	 t_number/0, t_number_vals/1, t_pid/0, t_port/0,
+	 t_pos_improper_list/0,
 	 t_product/1, t_ref/0, t_to_string/1,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_subtypes/1, t_sup/1, t_sup/2,
 	 t_from_term/1, t_none/0]).
 
--import(cerl, 
-	[ann_c_fun/3, alias_pat/1, alias_var/1,
-	 apply_args/1, apply_op/1, atom_val/1, bitstr_size/1,
-	 bitstr_val/1, bitstr_type/1, bitstr_flags/1,
-	 binary_segments/1, c_letrec/2, 
-	 call_args/1, call_module/1, call_name/1, case_arg/1,
-	 case_clauses/1, catch_body/1, clause_body/1, clause_guard/1,
-	 clause_pats/1, concrete/1, cons_hd/1, cons_tl/1,
-	 fname_arity/1, fname_id/1,
-	 fun_arity/1, fun_body/1, fun_vars/1, get_ann/1, int_val/1,
-	 is_c_fun/1, is_c_values/1, is_c_var/1, is_literal/1,
-	 let_arg/1, let_body/1, let_vars/1, letrec_body/1,
-	 letrec_defs/1, module_defs/1, 
-	 primop_name/1, receive_action/1,
-	 receive_clauses/1, receive_timeout/1, seq_arg/1, seq_body/1,
-	 set_ann/2, subtrees/1,
-	 try_arg/1, try_body/1, try_evars/1, try_handler/1,
-	 try_vars/1, tuple_es/1, type/1, update_tree/2, values_es/1]).
-	 
 
--export([annotate_module/1,
-	 doit/1,
-	 get_fun_types/3,
+-export([annotate_module/2,
+	 doit/2,
+	 get_fun_types/4,
 	 get_top_level_signatures/1,
+	 %get_warnings/1,
 	 pp/1]).
 
 %-define(DEBUG, true).
@@ -81,17 +64,19 @@
 %-define(debug1(S_, L_), io:format(S_, L_)).
 %-define(debug1(S_, L_), ok).
 
--define(TYPE_LIMIT, 4).
+-define(TYPE_LIMIT, 3).
 
 
 pp(Code) ->
-  AnnTree = annotate_module(Code),
+  Plt = get_def_plt(),
+  AnnTree = annotate_module(Code, Plt),
+  dialyzer_plt:delete(Plt),
   io:put_chars(cerl_prettypr:format(AnnTree, [{hook, cerl_typean:pp_hook()}])),
   io:nl().
 
-get_fun_types(Tree, FunTypes, Plt) ->
+get_fun_types(Tree, FunTypes, Callgraph, Plt) ->
   debug_build_namemap(Tree),
-  State = analyze_module(Tree, Plt, FunTypes),
+  State = analyze_module(Tree, Plt, Callgraph, FunTypes),
   state__all_fun_types(State).
 
 get_top_level_signatures(Code) ->
@@ -99,31 +84,51 @@ get_top_level_signatures(Code) ->
 
 get_top_level_signatures(Code, _DoWarningPass) ->
   {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
-  Plt = dialyzer_plt:from_file(dialyzer_dataflow_plt, 
-			       filename:join([code:lib_dir(dialyzer),
-					      "plt","dialyzer_init_plt"])),
-  FunTypes = get_fun_types(Tree, dict:new(), Plt),
+  Callgraph0 = dialyzer_callgraph:new(),
+  Callgraph1 = dialyzer_callgraph:scan_core_tree(Tree, Callgraph0),
+  {Callgraph2, _} = dialyzer_callgraph:remove_external(Callgraph1),
+  Callgraph = dialyzer_callgraph:finalize(Callgraph2),
+  to_dot(Callgraph),
+  Plt = get_def_plt(),
+  FunTypes = get_fun_types(Tree, dict:new(), Callgraph, Plt),
   FunTypes1 = lists:foldl(fun({V, F}, Acc) ->
 			      Label = get_label(F),
 			      case dict:find(Label, Acc) of
 				error ->
-				  Arity = fname_arity(V),
+				  Arity = cerl:fname_arity(V),
 				  Type = t_fun(duplicate(Arity, t_none()), 
 					       t_none()),
 				  dict:store(Label, Type, Acc);
 				{ok, _} -> Acc
 			      end
-			  end, FunTypes, module_defs(Tree)),
-    
+			  end, FunTypes, cerl:module_defs(Tree)),
+  dialyzer_callgraph:delete(Callgraph),
 %  if DoWarningPass -> dialyzer_warnings:get_warnings(Tree, FunTypes1, Plt);
 %     true -> ok
 %  end,
-  Sigs = [{{fname_id(V), fname_arity(V)}, dict:fetch(get_label(F), FunTypes1)} 
-	  || {V, F} <- module_defs(Tree)],
+  Sigs = [{{cerl:fname_id(V), cerl:fname_arity(V)}, 
+	   dict:fetch(get_label(F), FunTypes1)} 
+	  || {V, F} <- cerl:module_defs(Tree)],
   ordsets:from_list(Sigs).
 
-doit(Module) ->
-  {ok, _, Code} = compile:file(Module,[to_core,binary,strict_record_tests]),
+%get_warnings(Module) ->
+%  {ok, _, Code} = compile:file(Module,[to_core,binary,strict_record_tests]),
+%  get_top_level_signatures(Code, true),
+%  ok.
+
+get_def_plt() ->
+  try 
+    dialyzer_plt:from_file(dialyzer_typesig_plt, 
+			   filename:join([code:lib_dir(dialyzer),
+					  "plt","dialyzer_init_plt"]))
+  catch
+    error:no_such_file -> ets:new(dialyzer_typesig_plt, [])
+  end.
+
+
+doit(Module, Opts) ->
+  {ok, _, Code} = compile:file(Module,[to_core,binary,
+				       strict_record_tests|Opts]),
   Sigs = get_top_level_signatures(Code, true),
   [io:format("~w/~w :: ~s\n", [F, A, t_to_string(T)])
    || {{F, A}, T} <- Sigs].
@@ -134,35 +139,51 @@ doit(Module) ->
 %%%
 %%% ============================================================================
 
-annotate_module(Code) ->
+annotate_module(Code, Plt) ->
   {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
   debug_build_namemap(Tree),
-  Plt = dialyzer_plt:from_file(dialyzer_dataflow_plt, 
-			       filename:join([code:lib_dir(dialyzer),
-					      "plt","dialyzer_init_plt"])),
-  State = analyze_module(Tree, Plt),
-  Map = state__get_env_out(Tree, State),
-  annotate(Tree, State, Map).
+  Callgraph0 = dialyzer_callgraph:new(),
+  Callgraph1 = dialyzer_callgraph:scan_core_tree(Tree, Callgraph0),
+  {Callgraph2, _} = dialyzer_callgraph:remove_external(Callgraph1),
+  Callgraph = dialyzer_callgraph:finalize(Callgraph2),
+  State = analyze_module(Tree, Plt, Callgraph),
+  Res = annotate(Tree, State),
+  dialyzer_callgraph:delete(Callgraph),
+  Res.
 
-annotate(Tree, State, Map) ->
-  case subtrees(Tree) of
+annotate(Tree, State) ->
+  case cerl:subtrees(Tree) of
     [] -> set_type(Tree, State);
     List -> 
-      NewSubTrees = [[annotate(Subtree, State, Map) || Subtree <- Group]
+      NewSubTrees = [[annotate(Subtree, State) || Subtree <- Group]
 		     || Group <- List],
-      NewTree = update_tree(Tree, NewSubTrees),
+      NewTree = cerl:update_tree(Tree, NewSubTrees),
       set_type(NewTree, State)
   end.
 
 set_type(Tree, State) ->
-  case is_c_fun(Tree) of
-    true ->
+  case cerl:type(Tree) of
+    'fun' ->
       Type = state__fun_type(Tree, State),
       case t_is_any(Type) of
-	true -> set_ann(Tree, delete_ann(typesig, get_ann(Tree)));
-	false -> set_ann(Tree, append_ann(typesig, Type, get_ann(Tree)))
+	true -> 
+	  cerl:set_ann(Tree, delete_ann(typesig, cerl:get_ann(Tree)));
+	false -> 
+	  cerl:set_ann(Tree, append_ann(typesig, Type, cerl:get_ann(Tree)))
       end;
-    false ->
+    apply ->
+      case state__find_apply_return(Tree, State) of
+	unknown -> Tree;
+	ReturnType ->
+	  case t_is_any(ReturnType) of
+	    true -> 
+	      cerl:set_ann(Tree, delete_ann(type, cerl:get_ann(Tree)));
+	    false -> 
+	      cerl:set_ann(Tree, append_ann(type, ReturnType, 
+					    cerl:get_ann(Tree)))
+	  end
+      end;
+    _ ->
       Tree
   end.
 
@@ -190,37 +211,14 @@ delete_ann(_, []) ->
 %%%
 %%% ============================================================================
 
-analyze_module(Tree, Plt) ->
-  analyze_module(Tree, Plt, dict:new()).
+analyze_module(Tree, Plt, Callgraph) ->
+  analyze_module(Tree, Plt, Callgraph, dict:new()).
 
-analyze_module(Tree, Plt, FunSigs) ->
+analyze_module(Tree, Plt, Callgraph, FunSigs) ->
   debug_pp(Tree, false),
-  {Deps0, Esc, Calls} = dialyzer_dep:analyze(Tree),
-  %% We want the reverse dependencies to know who to envoke
-  Deps = reverse_deps(Deps0),
-  ?debug("Reverse dependencies: ~p\n", [[{debug_lookup_name(X),
-					     [debug_lookup_name(Y0)||Y0 <-Y]} ||
-					     {X, Y} <- dict:to_list(Deps)]]),
-%  io:format("Parents: ~p\n", [dict:to_list(Parents)]),
-%  io:format("Deps: ~p\n", [dict:to_list(Deps)]),
-%  io:format("Esc: ~p\n", [Esc]),
-  
-  TopFun =  ann_c_fun([{label, top}], [], Tree),
-  State = state__new(Esc, Deps, Calls, TopFun, FunSigs, Plt),
+  TopFun =  cerl:ann_c_fun([{label, top}], [], Tree),
+  State = state__new(Callgraph, TopFun, FunSigs, Plt),
   analyze_loop(State).
-
-reverse_deps(Deps) ->
-  dict:fold(fun(Caller, CalleeSet, Acc) ->
-		lists:foldl(fun(Callee, Acc1) ->
-				case dict:find(Callee, Acc1) of
-				  {ok, Set} -> 
-				    NewSet = ordsets:add_element(Caller, Set);
-				  error -> 
-				    NewSet = [Caller]
-				end, 
-				dict:store(Callee, NewSet, Acc1)
-			    end, Acc, CalleeSet)
-	    end, dict:new(), Deps).
 
 analyze_loop(State) ->
   case state__get_work(State) of
@@ -229,39 +227,48 @@ analyze_loop(State) ->
       ArgTypes = state__get_args(Fun, NewState),
       case any_none(ArgTypes) of
 	true -> 
-	  ?debug("Not handling ~w: ~s\n", [debug_lookup_name(get_label(Fun)), 
-					    t_to_string(t_product(ArgTypes))]),
+	  ?debug("Not handling1 ~w: ~s\n", [debug_lookup_name(get_label(Fun)), 
+					   t_to_string(t_product(ArgTypes))]),
 	  analyze_loop(NewState);
 	false -> 
-	  ?debug("Handling fun ~p: ~p\n", [debug_lookup_name(get_label(Fun)), 
-					    [t_to_string(X)||X <- ArgTypes]]),
-	  Map = state__fun_env(Fun, NewState),
-	  Vars = fun_vars(Fun),
-	  Map1 = enter_type_lists(Vars, ArgTypes, Map),
-	  {State1, Map2, BodyType} = traverse(fun_body(Fun), Map1, NewState),
-	  ?debug("Done analyzing: ~w:~s\n", [debug_lookup_name(get_label(Fun)),
-				      t_to_string(t_fun(ArgTypes, BodyType))]),
-	  State2 = state__update_fun_entry(Fun, ArgTypes, BodyType, State1),
-	  ?debug("done adding stuff for ~w\n", 
-		 [debug_lookup_name(get_label(Fun))]),
-	  State3 = state__store_env_out(Fun, Map2, State2),
-	  %%debug_work(State3),
-	  %%debug_fun_type(get_label(Fun), State3),
-	  analyze_loop(State3)
+	  case state__fun_env(Fun, NewState) of
+	    none -> 
+	      ?debug("Not handling2 ~w: ~s\n", 
+		     [debug_lookup_name(get_label(Fun)), 
+		      t_to_string(t_product(ArgTypes))]),
+	      analyze_loop(NewState);
+	    {Map, DefVars} ->
+	      ?debug("Handling fun ~p: ~p\n", 
+		      [debug_lookup_name(get_label(Fun)), 
+		       [t_to_string(X)||X <- ArgTypes]]),
+	      Vars = cerl:fun_vars(Fun),
+	      Map1 = enter_type_lists(Vars, ArgTypes, Map),
+	      Body = cerl:fun_body(Fun),
+	      DefVars1 = add_def_vars(Vars, DefVars),
+	      {State1, _Map2, BodyType} = 
+		traverse(Body, Map1, DefVars1, NewState),
+	      ?debug("Done analyzing: ~w:~s\n", 
+		     [debug_lookup_name(get_label(Fun)),
+		      t_to_string(t_fun(ArgTypes, BodyType))]),
+	      State2 = state__update_fun_entry(Fun, ArgTypes, BodyType, State1),
+	      ?debug("done adding stuff for ~w\n", 
+		     [debug_lookup_name(get_label(Fun))]),
+	      analyze_loop(State2)
+	  end
       end
   end.
 
-traverse(Tree, Map, State) ->
-  %%io:format("Handling ~s\n", [cerl_prettypr:format(Tree)]),
+traverse(Tree, Map, DefVars, State) ->
+  %%io:format("Handling ~p\n", [cerl:type(Tree)]),
   %%debug_pp_map(Map),
-  case type(Tree) of
+  case cerl:type(Tree) of
     apply ->
-      Args = apply_args(Tree),
-      Op = apply_op(Tree),
-      {State1, Map1, ArgTypes} = traverse_list(Args, Map, State),
+      Args = cerl:apply_args(Tree),
+      Op = cerl:apply_op(Tree),
+      {State1, Map1, ArgTypes} = traverse_list(Args, Map, DefVars, State),
       case state__handle_apply(Tree, ArgTypes, State1) of
 	unknown ->
-	  {State2, Map2, OpType} = traverse(Op, Map1, State1),
+	  {State2, Map2, OpType} = traverse(Op, Map1, DefVars, State1),
 	  %% This is an externally defined closure
 	  OpType1 = t_inf(OpType, t_fun(length(Args), t_any())),
 	  case t_is_none(OpType1) of
@@ -269,7 +276,7 @@ traverse(Tree, Map, State) ->
 	      {State2, Map2, t_none()};
 	    false ->
 	      OpRange = t_fun_range(OpType1),
-	      {State2, Map2, OpRange}
+	      {State2, enter_type(Op, OpType1, Map2), OpRange}
 	  end;
 	{NewArgTypes, Return} ->
 	  State2 = state__forward_args(Tree, NewArgTypes, State1),
@@ -281,17 +288,18 @@ traverse(Tree, Map, State) ->
 	  end
       end;
     binary ->
-      {State1, Map1, _} = traverse_list(binary_segments(Tree), Map, State),
+      Segs = cerl:binary_segments(Tree),
+      {State1, Map1, _} = traverse_list(Segs, Map, DefVars, State),
       {State1, Map1, t_binary()};
     bitstr ->
       %% Only care about Size and Value since the other fields are
       %% constant literals. Size must be an integer - NO, it can be 'all'
-      Size = bitstr_size(Tree),
-      Val = bitstr_val(Tree),      
-      {State1, Map1, SizeType} = traverse(Size, Map, State),
-      {State2, Map2, ValType} = traverse(Val, Map1, State1),
+      Size = cerl:bitstr_size(Tree),
+      Val = cerl:bitstr_val(Tree),      
+      {State1, Map1, SizeType} = traverse(Size, Map, DefVars, State),
+      {State2, Map2, ValType} = traverse(Val, Map1, DefVars, State1),
       StrType =
-	case concrete(bitstr_type(Tree)) of
+	case cerl:concrete(cerl:bitstr_type(Tree)) of
 	  float -> t_float();
 	  binary -> t_binary();
 	  integer ->
@@ -301,7 +309,7 @@ traverse(Tree, Map, State) ->
 		  any -> t_integer();
 		  List ->
 		    SizeVal = lists:max(List),
-		    Flags = concrete(bitstr_flags(Tree)),
+		    Flags = cerl:concrete(cerl:bitstr_flags(Tree)),
 		    case lists:member(signed, Flags) of
 		      true -> 
 			t_from_range(-(1 bsl (SizeVal - 1)), 
@@ -326,10 +334,11 @@ traverse(Tree, Map, State) ->
       Map3 = enter_type(Val, Type, Map2),
       {State2, Map3, Type};
     call ->
-      M = call_module(Tree),
-      F = call_name(Tree),
-      MFAList = [M, F|call_args(Tree)],
-      {State1, Map1, [MType0, FType0|As]} = traverse_list(MFAList, Map, State),
+      M = cerl:call_module(Tree),
+      F = cerl:call_name(Tree),
+      MFAList = [M, F|cerl:call_args(Tree)],
+      {State1, Map1, [MType0, FType0|As]} = 
+	traverse_list(MFAList, Map, DefVars, State),
       MType = t_inf(t_atom(), MType0),
       FType = t_inf(t_atom(), FType0),
       case any_none([MType, FType|As]) of
@@ -340,7 +349,7 @@ traverse(Tree, Map, State) ->
 	  case {t_atom_vals(MType), t_atom_vals(FType)} of
 	    {[MAtom], [FAtom]} ->
 	      {Return, NewArgs} = do_call(MAtom, FAtom, As, State),
-	      Map2 = enter_type_lists(call_args(Tree), NewArgs, Map1),
+	      Map2 = enter_type_lists(cerl:call_args(Tree), NewArgs, Map1),
 	      {State1, Map2, Return};
 
 	    {_MAtoms, _FAtoms} ->
@@ -348,166 +357,176 @@ traverse(Tree, Map, State) ->
 	  end
       end;
     'case' ->
-      Arg = case_arg(Tree),
-      Clauses = filter_match_fail(case_clauses(Tree)),
-      {State1, Map1, ArgType} = traverse(Arg, Map, State),
+      Arg = cerl:case_arg(Tree),
+      Clauses = filter_match_fail(cerl:case_clauses(Tree)),
+      {State1, Map1, ArgType} = traverse(Arg, Map, DefVars, State),
       case any_none(wrap_if_single(t_components(ArgType))) of
 	true -> {State1, Map1, t_none()};
 	false ->
-	  {MapList, State2, Type} = handle_clauses(Clauses, Arg, ArgType, 
-						   State1, [], Map1, []),
+	  {MapList, State2, Type} = 
+	    handle_clauses(Clauses, Arg, ArgType, State1, 
+			   [], Map1, DefVars, []),
 	  Map2 = join_maps(MapList, Map1),
 	  {State2, Map2, Type}
       end;
     'catch' ->
-      {State1, Map1, _} = traverse(catch_body(Tree), Map, State),
-      State2 = state__store_env_out(Tree, Map1, State1),
-      {State2, Map, t_any()};
+      {State1, _Map1, _} = traverse(cerl:catch_body(Tree), Map, DefVars, State),
+      {State1, Map, t_any()};
     cons ->
-      Hd = cons_hd(Tree),
-      Tl = cons_tl(Tree),
-      {State1, Map1, [HdType, TlType]} = traverse_list([Hd, Tl], Map, State),
+      Hd = cerl:cons_hd(Tree),
+      Tl = cerl:cons_tl(Tree),
+      {State1, Map1, HdType} = traverse(Hd, Map, DefVars, State),
+      {State2, Map2, TlType} = traverse(Tl, Map1, DefVars, State1),
       Type = t_cons(HdType, TlType),
-      {State1, Map1, Type};
+      {State2, Map2, Type};
     'fun' ->
       Type = state__fun_type(Tree, State),
       State1 = state__add_work(get_label(Tree), State),
-      State2 = state__update_fun_env(Tree, Map, State1),
+      State2 = state__update_fun_env(Tree, {Map, DefVars}, State1),
       {State2, Map, Type};
     'let' ->
-      Arg = let_arg(Tree),
-      Body = let_body(Tree),
-      {State1, Map1, ArgTypes} = traverse(Arg, Map, State),
-      Vars = let_vars(Tree),
+      Arg = cerl:let_arg(Tree),
+      Body = cerl:let_body(Tree),
+      {State1, Map1, ArgTypes} = traverse(Arg, Map, DefVars, State),
+      Vars = cerl:let_vars(Tree),
       case t_is_none(ArgTypes) of
 	true -> {State1, Map1, t_none()};
 	false -> 
 	  VarTypes = wrap_if_single(t_components(ArgTypes)),
 	  Map2 = enter_type_lists(Vars, VarTypes, Map1),
-	  traverse(Body, Map2, State1)
+	  traverse(Body, Map2, add_def_vars(Vars, DefVars), State1)
       end;
     letrec ->
-      Defs = letrec_defs(Tree),
-      Body = letrec_body(Tree),
-      %% Make sure we have the recursion variables in the scope.
-      VarTypes = [{Var, state__fun_type(Fun, State)} || {Var, Fun} <- Defs],
-      Map1 = enter_type_list(VarTypes, Map),
-      {State1, Map2} = 
-	lists:foldl(fun({Var, Fun}, {AccState, AccMap}) ->
-			{NewAccState, NewAccMap0, FunType} = 
-			  traverse(Fun, AccMap, AccState),
-			NewAccMap = enter_type(Var, FunType, NewAccMap0),
-			{NewAccState, NewAccMap}
-		    end, {State, Map1}, Defs),
-      traverse(Body, Map2, State1);
+      Defs = cerl:letrec_defs(Tree),
+      Body = cerl:letrec_body(Tree),
+      %% By not including the variables in scope we can assure that we
+      %% will get the current function type when using the variables.
+      FoldFun = fun({Var, Fun}, {AccState, AccMap}) ->
+		    {NewAccState, NewAccMap0, FunType} = 
+		      traverse(Fun, AccMap, DefVars, AccState),
+		    NewAccMap = enter_type(Var, FunType, NewAccMap0),
+		    {NewAccState, NewAccMap}
+		end,
+      {State1, Map1} = lists:foldl(FoldFun, {State, Map}, Defs),
+      traverse(Body, Map1, DefVars, State1);
     literal ->
       {State, Map, literal_type(Tree)};      
     module ->
-      Defs = module_defs(Tree),
-      Defs1 = [{Var, Fun} || {Var, Fun} <- Defs, 
-			     state__is_escaping(get_label(Fun), State)],
-      Letrec = c_letrec(Defs1, cerl:c_int(42)),
-      State0 = state__store_module_defs(Defs, State),
-      {State1, Map1, _FunTypes} = traverse(Letrec, Map, State0),
-      State2 = state__store_env_out(Tree, Map1, State1),
+      %% By not including the variables in scope we can assure that we
+      %% will get the current function type when using the variables.
+      Defs = cerl:module_defs(Tree),
+      PartFun = fun({_Var, Fun}) -> 
+		    state__is_escaping(get_label(Fun), State)
+		end,
+      {Defs1, Defs2} = 	lists:partition(PartFun, Defs),
+      Letrec = cerl:c_letrec(Defs1, cerl:c_int(42)),
+      {State1, Map1, _FunTypes} = traverse(Letrec, Map, DefVars, State),
+      %% Also add environments for the other top-level functions.
+      VarTypes = [{Var, state__fun_type(Fun, State1)} || {Var, Fun} <- Defs],
+      EnvMap = enter_type_list(VarTypes, Map),
+      FoldFun = fun({_Var, Fun}, AccState) ->
+		    state__update_fun_env(Fun, {EnvMap, DefVars}, AccState)
+		end,
+      State2 = lists:foldl(FoldFun, State1, Defs2),
       {State2, Map1, t_any()};
     primop ->
       Type =
-	case atom_val(primop_name(Tree)) of
+	case cerl:atom_val(cerl:primop_name(Tree)) of
 	  match_fail -> t_none();
 	  raise -> t_none();
 	  Other -> erlang:fault({'Unsupported primop', Other})
 	end,
       {State, Map, Type};      
     'receive' ->
-      Clauses = filter_match_fail(receive_clauses(Tree)),
-      Timeout = receive_timeout(Tree),
+      Clauses = filter_match_fail(cerl:receive_clauses(Tree)),
+      Timeout = cerl:receive_timeout(Tree),
       {MapList, State1, ReceiveType} = 
-	handle_clauses(Clauses, none, t_any(), State, [], Map, []),
-		       
+	handle_clauses(Clauses, none, t_any(), State, [], Map, DefVars, []),
       Map1 = join_maps(MapList, Map),
-      {State2, Map2, TimeoutType} = traverse(Timeout, Map1, State1),
-
+      {State2, Map2, TimeoutType} = traverse(Timeout, Map1, DefVars, State1),
       case (t_is_atom(TimeoutType) andalso 
 	    (t_atom_vals(TimeoutType) =:= [infinity])) of
 	true ->
 	  {State2, Map2, ReceiveType};
 	false ->
-	  Action = receive_action(Tree),
-	  {State3, Map3, ActionType} = traverse(Action, Map, State2),
+	  Action = cerl:receive_action(Tree),
+	  {State3, Map3, ActionType} = traverse(Action, Map, DefVars, State2),
 	  Map4 = join_maps([Map3, Map1], Map),
 	  Type = t_sup(ReceiveType, ActionType),
 	  {State3, Map4, Type}
       end;
     seq ->
-      Arg = seq_arg(Tree),
-      Body = seq_body(Tree),
-      {State1, Map1, ArgType} = traverse(Arg, Map, State),
+      Arg = cerl:seq_arg(Tree),
+      Body = cerl:seq_body(Tree),
+      {State1, Map1, ArgType} = traverse(Arg, Map, DefVars, State),
       case t_is_none(ArgType) of
 	true ->
 	  {State1, Map1, t_none()};
 	false ->
-	  traverse(Body, Map1, State1)
+	  traverse(Body, Map1, DefVars, State1)
       end;
     'try' ->
-      Arg = try_arg(Tree),
-      EVars = try_evars(Tree),
-      Vars = try_vars(Tree),
-      Body = try_body(Tree),
-      Handler = try_handler(Tree),
+      Arg = cerl:try_arg(Tree),
+      EVars = cerl:try_evars(Tree),
+      Vars = cerl:try_vars(Tree),
+      Body = cerl:try_body(Tree),
+      Handler = cerl:try_handler(Tree),
 
-      {State1, Map1, ArgType} = traverse(Arg, Map, State),      
+      {State1, Map1, ArgType} = traverse(Arg, Map, DefVars, State),      
       Map2 = mark_as_fresh(Vars, Map1),
       ArgTypes = wrap_if_single(t_components(ArgType)),
-      case bind_pat_vars(Vars, ArgTypes, [], Map2) of
-	error -> 
-	  SuccState = State1,
-	  SuccMap = map__new(),
-	  SuccType = t_none();
-	{SuccMap1, VarTypes} ->
-	  %% Try to bind the argument. Will only succeed if 
-	  %% it is a simple structured term.
-	  case bind_pat_vars([Arg], [t_product(VarTypes)], [], SuccMap1) of
-	    error -> SuccMap2 = SuccMap1;
-	    {SuccMap2, _} -> ok
-	  end,
-	  {SuccState, SuccMap, SuccType} = traverse(Body, SuccMap2, State1)
-      end,      
-      ExcMap0 = mark_as_fresh(EVars, Map),
-      {State2, ExcMap1, _EVarsType} = traverse_list(EVars, ExcMap0, SuccState),
-      {State3, ExcMap2, HandlerType} = traverse(Handler, ExcMap1, State2),
+      {SuccState, SuccMap, SuccType} =       
+	case bind_pat_vars(Vars, ArgTypes, [], Map2) of
+	  error -> 
+	    {State1, map__new(), t_none()};
+	  {SuccMap1, VarTypes} ->
+	    %% Try to bind the argument. Will only succeed if 
+	    %% it is a simple structured term.
+	    case bind_pat_vars([Arg], [t_product(VarTypes)], [], SuccMap1) of
+	      error -> SuccMap2 = SuccMap1;
+	      {SuccMap2, _} -> ok
+	    end,
+	    DefVars1 = add_def_vars(Vars, DefVars),
+	    traverse(Body, SuccMap2, DefVars1, State1)
+	end,
+      ExcMap1 = mark_as_fresh(EVars, Map),
+      DefVars2 = add_def_vars(EVars, DefVars),
+      {State2, ExcMap2, HandlerType} = 
+	traverse(Handler, ExcMap1, DefVars2, SuccState),
       TryType = t_sup(SuccType, HandlerType),
-      {State3, join_maps([ExcMap2, SuccMap], Map1), TryType};
+      {State2, join_maps([ExcMap2, SuccMap], Map1), TryType};
     tuple ->
-      Elements = tuple_es(Tree),
-      {State1, Map1, EsType} = traverse_list(Elements, Map, State),
+      Elements = cerl:tuple_es(Tree),
+      {State1, Map1, EsType} = traverse_list(Elements, Map, DefVars, State),
       Type = t_tuple(EsType),
       {State1, Map1, Type};
     values ->
-      Elements = values_es(Tree),
-      {State1, Map1, EsType} = traverse_list(Elements, Map, State),      
+      Elements = cerl:values_es(Tree),
+      {State1, Map1, EsType} = traverse_list(Elements, Map, DefVars, State),
       Type  = t_product(EsType),
       {State1, Map1, Type};
     var ->
-      case state__is_module_defined(Tree, State) of
+      case is_def_var(Tree, DefVars) of
 	true ->
-	  Fun = state__get_fun_from_defs(Tree, State),
-	  State1 = state__add_work(Fun, State),
-	  {State1, Map, state__fun_type(Fun, State)};
+	  {State, Map, lookup_type(Tree, Map)};
 	false ->
-	  {State, Map, lookup_type(Tree, Map)}
+	  ?debug("Looking up unknown variable: ~p\n", [Tree]),
+	  case state__lookup_type_for_rec_var(Tree, State) of
+	    error -> erlang:fault({'Non-defined variable', Tree});
+	    {ok, Type} -> {State, Map, Type}
+	  end
       end;
     Other ->
       erlang:fault({'Unsupported type', Other})
   end.
 
-traverse_list(Trees, Map, State) ->
-  traverse_list(Trees, Map, State, []).
+traverse_list(Trees, Map, DefVars, State) ->
+  traverse_list(Trees, Map, DefVars, State, []).
 
-traverse_list([Tree|Tail], Map, State, Acc) ->
-  {State1, Map1, Type} = traverse(Tree, Map, State),
-  traverse_list(Tail, Map1, State1, [Type|Acc]);
-traverse_list([], Map, State, Acc) ->
+traverse_list([Tree|Tail], Map, DefVars, State, Acc) ->
+  {State1, Map1, Type} = traverse(Tree, Map, DefVars, State),
+  traverse_list(Tail, Map1, DefVars, State1, [Type|Acc]);
+traverse_list([], Map, _DefVars, State, Acc) ->
   {State, Map, lists:reverse(Acc)}.
 
   
@@ -537,18 +556,20 @@ do_call(M, F, As, State) ->
     false -> {Ret, NewArgs}
   end.
   
-handle_clauses([C|Left], Arg, ArgType, State, CaseTypes, MapIn, Acc) ->
-  {State1, ClauseMap, BodyType} = do_clause(C, Arg, ArgType, MapIn, State),
+handle_clauses([C|Left], Arg, ArgType, State, CaseTypes, MapIn, DefVars, Acc) ->
+  {State1, ClauseMap, BodyType} = 
+    do_clause(C, Arg, ArgType, MapIn, DefVars, State),
   NewCaseTypes = [BodyType|CaseTypes],
   NewAcc = [ClauseMap|Acc],
-  handle_clauses(Left, Arg, ArgType, State1, NewCaseTypes, MapIn, NewAcc);
-handle_clauses([], _Arg, _ArgType, State, CaseTypes, _MapIn, Acc) ->
+  handle_clauses(Left, Arg, ArgType, State1, 
+		 NewCaseTypes, MapIn, DefVars, NewAcc);
+handle_clauses([], _Arg, _ArgType, State, CaseTypes, _MapIn, _DefVars, Acc) ->
   {lists:reverse(Acc), State, t_sup(CaseTypes)}.
 
-do_clause(C, Arg, ArgType0, Map, State) ->
-  Pats = clause_pats(C),
-  Guard = clause_guard(C),
-  Body = clause_body(C),
+do_clause(C, Arg, ArgType0, Map, DefVars, State) ->
+  Pats = cerl:clause_pats(C),
+  Guard = cerl:clause_guard(C),
+  Body = cerl:clause_body(C),
   Map0 = mark_as_fresh(Pats, Map),
   ArgTypes = t_components(ArgType0),  
   
@@ -572,13 +593,20 @@ do_clause(C, Arg, ArgType0, Map, State) ->
 	  end
       end,
       case bind_guard(Guard, Map3) of
-	error -> ?debug("Failed guard: ~s\n", 
-		       [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
-		 {State, Map, t_none()};
+	error -> 
+	  ?debug("Failed guard: ~s\n", 
+		 [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
+	  {State, Map, t_none()};
 	Map4 ->
-	  {State1, Map5, Type} = traverse(Body, Map4, State),
-	  State2 = state__store_env_out(C, Map5, State1),
-	  {State2, Map5, Type}
+	  FoldFun = fun(ST, Acc) ->
+			case cerl:is_c_var(ST) of
+			  true -> [ST|Acc];
+			  false -> Acc
+			end
+		    end,
+	  PatVars = [cerl_trees:fold(FoldFun, [], Pat) || Pat <- Pats],
+	  DefVars1 = add_def_vars(lists:flatten(PatVars), DefVars),
+	  traverse(Body, Map4, DefVars1, State)
       end
   end.
 
@@ -586,9 +614,9 @@ wrap_if_single(X) when is_list(X) -> X;
 wrap_if_single(X) -> [X].
 
 bind_subst(Arg, Pats, Map) ->
-  case type(Arg) of
+  case cerl:type(Arg) of
     values -> 
-      bind_subst_list(values_es(Arg), Pats, Map);
+      bind_subst_list(cerl:values_es(Arg), Pats, Map);
     var ->
       [Pat] = Pats,
       enter_subst(Arg, Pat, Map);
@@ -597,90 +625,91 @@ bind_subst(Arg, Pats, Map) ->
   end.
 
 bind_subst_list([Arg|ArgLeft], [Pat|PatLeft], Map) ->
-  case {type(Arg), type(Pat)} of
-    {var, var} ->         NewMap = enter_subst(Arg, Pat, Map);
-    {var, alias} ->       NewMap = enter_subst(Arg, alias_pat(Pat), Map);
-    {literal, literal} -> NewMap = Map;
-    {T, T} ->             NewMap = bind_subst_list(lists:flatten(subtrees(Arg)), 
-						   lists:flatten(subtrees(Pat)), 
-						   Map);
-    _ ->                  NewMap = Map
-  end,
+  NewMap =
+    case {cerl:type(Arg), cerl:type(Pat)} of
+      {var, var} ->         enter_subst(Arg, Pat, Map);
+      {var, alias} ->       enter_subst(Arg, cerl:alias_pat(Pat), Map);
+      {literal, literal} -> Map;
+      {T, T} ->             bind_subst_list(lists:flatten(cerl:subtrees(Arg)),
+					    lists:flatten(cerl:subtrees(Pat)),
+					    Map);
+      _ ->                  Map
+    end,
   bind_subst_list(ArgLeft, PatLeft, NewMap);
 bind_subst_list([], [], Map) ->
   Map.
 
 bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
-  ?debug("binding ~w\n", [type(Pat)]),
-  case type(Pat) of
-    alias ->
-      AliasPat = alias_pat(Pat),
-      Var = alias_var(Pat),
-      Map1 = enter_subst(Var, AliasPat, Map),
-      case bind_pat_vars([AliasPat], [Type], [], Map1) of
-	error -> Res = error;
-	{Map2, [PatType]} -> 	  	  
-	  Res = {enter_type(Var, PatType, Map2), PatType}
-      end;
-    binary ->
-      case t_is_none(t_inf(t_binary(), Type)) of
-	true -> Res = error;
-	false -> Res = {bind_bin_segs(binary_segments(Pat), Map), t_binary()}
-      end;
+  ?debug("binding ~w\n", [cerl:type(Pat)]),
+  Res =
+    case cerl:type(Pat) of
+      alias ->
+	AliasPat = cerl:alias_pat(Pat),
+	Var = cerl:alias_var(Pat),
+	Map1 = enter_subst(Var, AliasPat, Map),
+	case bind_pat_vars([AliasPat], [Type], [], Map1) of
+	  error -> error;
+	  {Map2, [PatType]} -> {enter_type(Var, PatType, Map2), PatType}
+	end;
+      binary ->
+	case t_is_none(t_inf(t_binary(), Type)) of
+	  true -> error;
+	  false -> {bind_bin_segs(cerl:binary_segments(Pat), Map), t_binary()}
+	end;
     cons ->
-      Cons = t_inf(Type, t_cons()),
-      case t_is_none(Cons) of
-	true -> Res = error;
-	false ->
-	  case bind_pat_vars([cons_hd(Pat), cons_tl(Pat)],
-			     [t_cons_hd(Cons), t_cons_tl(Cons)], [], Map) of
-	    error -> Res = error;
-	    {Map1, [HdType, TlType]} -> Res = {Map1, t_cons(HdType, TlType)}
-	  end
-      end;
-    literal ->
-      Literal = literal_type(Pat),
-      case t_is_none(t_inf(Literal, Type)) of
-	true -> Res = error;
-	false -> Res = {Map, Literal}
-      end;
-    tuple ->
-      Es = tuple_es(Pat),
-      Tuple = t_inf(t_tuple(length(Es)), Type),
-      case t_is_none(Tuple) of
-	true -> Res = error;
-	false ->
-	  SubTuples = t_tuple_subtypes(Tuple),
-	  Results = [bind_pat_vars(Es, t_tuple_args(SubTuple), [], Map)||
-		      SubTuple <- SubTuples],
-	  case lists:all(fun(X) -> X =:= error end, Results) of
-	    true -> Res = error;
-	    false ->
-	      Map1 = join_maps([M || {M, _} <- Results], Map),
-	      TupleType = t_sup([t_tuple(EsTypes) || {_, EsTypes} <- Results]),
-	      Res = {Map1, TupleType}
-	  end
-      end;
-    values ->
-      Es = values_es(Pat),
-      case bind_pat_vars(Es, t_components(Type), [], Map) of
-	error -> Res = error;
-	{Map1, EsTypes} -> Res = {Map1, t_product(EsTypes)}
-      end;
-    var ->
-      %% Must do inf when binding args to pats. Vars in pats are fresh.
-      VarType = t_inf(lookup_type(Pat, Map), Type),
-      case t_is_none(VarType) of
-	true -> Res = error;
-	false ->
-	  Map1 = enter_type(Pat, VarType, Map),
-	  Res = {Map1, Type}
-      end;
-    _Other ->
-      %% Catch all is needed when binding args to pats
-      ?debug("Failed match for ~p\n", [_Other]),
-      Res = error
-  end,
+	Cons = t_inf(Type, t_cons()),
+	case t_is_none(Cons) of
+	  true -> error;
+	  false ->
+	    case bind_pat_vars([cerl:cons_hd(Pat), cerl:cons_tl(Pat)],
+			       [t_cons_hd(Cons), t_cons_tl(Cons)], [], Map) of
+	      error -> error;
+	      {Map1, [HdType, TlType]} -> {Map1, t_cons(HdType, TlType)}
+	    end
+	end;
+      literal ->
+	Literal = literal_type(Pat),
+	case t_is_none(t_inf(Literal, Type)) of
+	  true -> error;
+	  false -> {Map, Literal}
+	end;
+      tuple ->
+	Es = cerl:tuple_es(Pat),
+	Tuple = t_inf(t_tuple(length(Es)), Type),
+	case t_is_none(Tuple) of
+	  true -> error;
+	  false ->
+	    SubTuples = t_tuple_subtypes(Tuple),
+	    Results = [bind_pat_vars(Es, t_tuple_args(SubTuple), [], Map)||
+			SubTuple <- SubTuples],
+	    case lists:all(fun(X) -> X =:= error end, Results) of
+	      true -> error;
+	      false ->
+		Map1 = join_maps([M || {M, _} <- Results], Map),
+		TupleType = t_sup([t_tuple(EsTypes)|| {_, EsTypes} <- Results]),
+		{Map1, TupleType}
+	    end
+	end;
+      values ->
+	Es = cerl:values_es(Pat),
+	case bind_pat_vars(Es, t_components(Type), [], Map) of
+	  error -> error;
+	  {Map1, EsTypes} -> {Map1, t_product(EsTypes)}
+	end;
+      var ->
+	%% Must do inf when binding args to pats. Vars in pats are fresh.
+	VarType = t_inf(lookup_type(Pat, Map), Type),
+	case t_is_none(VarType) of
+	  true -> error;
+	  false ->
+	    Map1 = enter_type(Pat, VarType, Map),
+	    {Map1, Type}
+	end;
+      _Other ->
+	%% Catch all is needed when binding args to pats
+	?debug("Failed match for ~p\n", [_Other]),
+	error
+    end,
   case Res of
     error -> error;
     {NewMap, TypeOut} -> bind_pat_vars(PatLeft, TypeLeft, [TypeOut|Acc], NewMap)
@@ -700,25 +729,25 @@ bind_pat_vars(Pats, Type, Acc, Map) ->
 bind_bin_segs([Bitstr|Left], Map) ->
   %% Only care about Size and Value since the other fields are
   %% constant literals. Size must be an integer - NO, it can be 'all'
-  Val = bitstr_val(Bitstr),
-  Size = bitstr_size(Bitstr),
+  Val = cerl:bitstr_val(Bitstr),
+  Size = cerl:bitstr_size(Bitstr),
   SizeType =  
-    case type(Size) of
+    case cerl:type(Size) of
       literal ->
 	%% Safety check
-	case concrete(Size) of
+	case cerl:concrete(Size) of
 	  all -> t_from_term(all);
 	  N when is_integer(N) -> t_from_term(N)
 	end;
       var ->
-	t_inf(t_integer(), lookup_type(bitstr_size(Bitstr), Map))
+	t_inf(t_integer(), lookup_type(cerl:bitstr_size(Bitstr), Map))
     end,
-  ValType = case type(Val) of
-	      literal -> t_from_term(concrete(Val));
+  ValType = case cerl:type(Val) of
+	      literal -> t_from_term(cerl:concrete(Val));
 	      var -> t_any()
 	    end,
   PatType =
-    case concrete(bitstr_type(Bitstr)) of
+    case cerl:concrete(cerl:bitstr_type(Bitstr)) of
       float -> t_float();
       binary -> t_binary();
       integer ->
@@ -728,7 +757,7 @@ bind_bin_segs([Bitstr|Left], Map) ->
 	      any -> t_integer();
 	      List ->
 		SizeVal = lists:max(List),
-		Flags = concrete(bitstr_flags(Bitstr)),
+		Flags = cerl:concrete(cerl:bitstr_flags(Bitstr)),
 		case lists:member(signed, Flags) of
 		  true -> 
 		    t_from_range(-(1 bsl (SizeVal - 1)), 
@@ -776,50 +805,37 @@ bind_guard(Guard, Map) ->
 
 bind_guard(Guard, Map, Env) ->
   ?debug("Handling guard: ~s\n", [cerl_prettypr:format(Guard)]),
-  case type(Guard) of
+  case cerl:type(Guard) of
     binary -> 
       {Map, t_binary()};
     'case' ->
-      %% This is so far only possible in strict record tests and
-      %% orelse-guards. This might have to be extended if general case
-      %% statements are allowed here.
-      Arg = case_arg(Guard),
-      [] = values_es(Arg),
-      [C1, C2] = case_clauses(Guard),
-      B1 = clause_body(C1),
-      B2 = clause_body(C2),
-      G1 = clause_guard(C1),
-      G2 = clause_guard(C2),
-      Erlang = cerl:c_atom(erlang),
-      And = cerl:c_atom('and'),
-      Or = cerl:c_atom('or'),
-      Call1 = cerl:c_call(Erlang, And, [G1, B1]),
-      Call2 = cerl:c_call(Erlang, And, [G2, B2]),
-      case is_literal(B2) andalso (concrete(B2) =:= fail) of
-	true -> %% Special case for strict record tests
-	  bind_guard(Call1, Map, Env);
-	false ->
-	  bind_guard(cerl:c_call(Erlang, Or, [Call1, Call2]), Map, Env)
-      end;
+      Arg = cerl:case_arg(Guard),
+      {NewMap, ArgType} = bind_guard(Arg, Map, Env),
+      Clauses = cerl:case_clauses(Guard),
+      bind_guard_case_clauses(ArgType, Clauses, NewMap, Env);
     cons ->
       {Map, t_cons()};
     literal ->
       {Map, literal_type(Guard)};
     'try' ->
-      Arg = try_arg(Guard),
-      [Var] = try_vars(Guard),
+      Arg = cerl:try_arg(Guard),
+      [Var] = cerl:try_vars(Guard),
       %%?debug("Storing: ~w\n", [Var]),
       NewEnv = dict:store(get_label(Var), Arg, Env),
-      bind_guard(try_body(Guard), Map, NewEnv);
+      bind_guard(cerl:try_body(Guard), Map, NewEnv);
     tuple ->
-      {Map1, Es} = bind_guard_list(tuple_es(Guard), Map, Env),
+      {Map1, Es} = bind_guard_list(cerl:tuple_es(Guard), Map, Env),
       {Map1, t_tuple(Es)};
     'let' ->
-      Arg = let_arg(Guard),
-      [Var] = let_vars(Guard),
+      Arg = cerl:let_arg(Guard),
+      [Var] = cerl:let_vars(Guard),
       %%?debug("Storing: ~w\n", [Var]),
       NewEnv = dict:store(get_label(Var), Arg, Env),
-      bind_guard(let_body(Guard), Map, NewEnv);
+      bind_guard(cerl:let_body(Guard), Map, NewEnv);
+    values ->
+      List = [bind_guard(V, Map, Env) || V <- cerl:values_es(Guard)],
+      Type = t_product([T || {_, T} <- List]),
+      {Map, Type};
     var ->
       %?debug("Looking for: ~w...", [Guard]),
       case dict:find(get_label(Guard), Env) of
@@ -832,9 +848,9 @@ bind_guard(Guard, Map, Env) ->
 	  {enter_type(Guard, Type, Map1), Type}
       end;
     call ->
-      Args = call_args(Guard),      
-      M = atom_val(call_module(Guard)),
-      F = atom_val(call_name(Guard)),
+      Args = cerl:call_args(Guard),      
+      M = cerl:atom_val(cerl:call_module(Guard)),
+      F = cerl:atom_val(cerl:call_name(Guard)),
       A = length(Args),      
       case {M, F, A} of
 	{erlang, is_atom, 1} ->
@@ -907,7 +923,7 @@ bind_guard(Guard, Map, Env) ->
 	{erlang, is_list, 1} ->
 	  [Arg] = Args,
 	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
-	  Type = t_inf(t_cons(), ArgType),
+	  Type = t_inf(t_pos_improper_list(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
 	    false -> {enter_type(Arg, Type, Map1), t_atom(true)}
@@ -940,8 +956,8 @@ bind_guard(Guard, Map, Env) ->
 		 (MFA =:= {erlang, is_record, 3}) ->
 	  [Rec, Tag, Arity] = Args,
 	  {Map1, RecType} = bind_guard(Rec, Map, Env),
-	  TupleType = t_tuple([t_atom(atom_val(Tag))
-			       |duplicate(int_val(Arity)-1, t_any())]),
+	  TupleType = t_tuple([t_atom(cerl:atom_val(Tag))
+			       |duplicate(cerl:int_val(Arity)-1, t_any())]),
 	  Type = t_inf(TupleType, RecType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -973,7 +989,7 @@ bind_guard(Guard, Map, Env) ->
 	  case t_is_none(Inf) of
 	    true -> {Map, t_none()};
 	    false -> 
-	      case {type(Arg1), type(Arg2)} of
+	      case {cerl:type(Arg1), cerl:type(Arg2)} of
 		{literal, literal} -> {Map2, t_atom(true)};
 		{var, var} ->
 		  Map3 = enter_subst(Arg1, Arg2, Map2),
@@ -989,7 +1005,39 @@ bind_guard(Guard, Map, Env) ->
 		  {Map2, t_atom(true)}
 	      end
 	  end;
-%%%	{erlang, '==', 2} ->
+	{erlang, '==', 2} ->
+	  [Arg1, Arg2] = Args,
+	  {Map1, Type1} = bind_guard(Arg1, Map, Env),
+	  {Map2, Type2} = bind_guard(Arg2, Map1, Env),
+	  ?debug("Types are:~s and ~s\n", [t_to_string(Type1), 
+					  t_to_string(Type2)]),
+	  %% A very special case when at least one of the operands is an atom.
+	  case (t_is_atom(Type1) orelse t_is_atom(Type2)
+		orelse t_is_nil(Type1) orelse t_is_nil(Type2)) of
+	    true ->
+	      Inf = t_inf(Type1, Type2),
+	      case t_is_none(Inf) of
+		true -> {Map, t_none()};
+		false -> 
+		  case {cerl:type(Arg1), cerl:type(Arg2)} of
+		    {literal, literal} -> {Map2, t_atom(true)};
+		    {var, var} ->
+		      Map3 = enter_subst(Arg1, Arg2, Map2),
+		      Map4 = enter_type(Arg2, Inf, Map3),
+		      {Map4, t_atom(true)};
+		    {var, _} ->
+		      Map3 = enter_type(Arg1, Inf, Map2),
+		      {Map3, t_atom(true)};
+		    {_, var} ->
+		      Map3 = enter_type(Arg2, Inf, Map2),
+		      {Map3, t_atom(true)};
+		    {_, _} ->
+		      {Map2, t_atom(true)}
+		  end	      
+	      end;
+	    false ->
+	      {Map2, t_bool()}
+	  end;	  
 	{erlang, 'and', 2} ->
 	  [Arg1, Arg2] = Args,
 	  True = t_atom(true),
@@ -1061,6 +1109,61 @@ bind_guard_list([G|Left], Map, Env, Acc) ->
 bind_guard_list([], Map, _Env, Acc) ->
   {Map, lists:reverse(Acc)}.
 
+bind_guard_case_clauses(ArgType, Clauses, Map, Env) ->
+  Clauses1 = filter_fail_clauses(Clauses),
+  bind_guard_case_clauses(ArgType, Clauses1, Map, Env, t_none(), []).
+
+filter_fail_clauses([Clause|Left]) ->
+  case (cerl:clause_pats(Clause) =:= []) of
+    true ->
+      Body = cerl:clause_body(Clause),
+      case cerl:is_literal(Body) andalso (cerl:concrete(Body) =:= fail) of
+	true -> filter_fail_clauses(Left);
+	false -> [Clause|filter_fail_clauses(Left)]
+      end;
+    false ->
+      [Clause|filter_fail_clauses(Left)]
+  end;
+filter_fail_clauses([]) ->
+  [].
+
+bind_guard_case_clauses(ArgType, [Clause|Left], Map, Env, AccType, AccMaps) ->
+  Pats = cerl:clause_pats(Clause),
+  NewMap1 =
+    case Pats =:= [] of
+      true -> Map;
+      false ->
+	case bind_pat_vars(Pats, t_components(ArgType), [], Map) of
+	  error -> none;
+	  {PatMap, _PatTypes} -> PatMap
+	end
+    end,
+  case NewMap1 =:= none of
+    true ->
+      bind_guard_case_clauses(ArgType, Left, Map, Env, AccType, AccMaps);
+    false ->
+      try
+	Guard = cerl:clause_guard(Clause),
+	{NewMap2, GuardType} = bind_guard(Guard, NewMap1, Env),	
+	case t_is_none(t_inf(t_from_term(true), GuardType)) of
+	  true -> throw(error);
+	  false -> ok
+	end,
+	{NewMap3, CType} = bind_guard(cerl:clause_body(Clause), NewMap2, Env),
+	NewAccType = t_sup(AccType, CType),
+	NewAccMaps = [NewMap3|AccMaps],
+	bind_guard_case_clauses(ArgType, Left, Map, Env, NewAccType, NewAccMaps)
+      catch
+	throw:error ->
+	  bind_guard_case_clauses(ArgType, Left, Map, Env, AccType, AccMaps)
+      end
+  end;
+bind_guard_case_clauses(_ArgType, [], Map, _Env, AccType, AccMaps) ->
+  case t_is_none(AccType) of
+    true -> throw(error);
+    false -> {join_maps(AccMaps, Map), AccType}
+  end.
+
 %%% ============================================================================
 %%%
 %%%  Maps and types.
@@ -1114,17 +1217,17 @@ enter_type_list([], Map) ->
   Map.
 
 enter_type(Key, Val, MS = {Map, Subst}) ->  
-  case is_literal(Key) of
+  case cerl:is_literal(Key) of
     true -> MS;
     false ->
-      case is_c_values(Key) of
+      case cerl:is_c_values(Key) of
 	true ->
-	  Keys = values_es(Key),
+	  Keys = cerl:values_es(Key),
 	  case t_is_any(Val) orelse t_is_none(Val) of
 	    true ->
 	      enter_type_lists(Keys, duplicate(length(Keys), Val), MS);
 	    false ->
-	      enter_type_lists(values_es(Key), t_components(Val), MS)
+	      enter_type_lists(cerl:values_es(Key), t_components(Val), MS)
 	  end;
 	false ->
 	  KeyLabel = get_label(Key),
@@ -1145,12 +1248,12 @@ enter_type(Key, Val, MS = {Map, Subst}) ->
 
 enter_subst(Key, Val, MS = {Map, Subst}) ->
   KeyLabel = get_label(Key),
-  case is_literal(Val) of
+  case cerl:is_literal(Val) of
     true -> 
       NewMap = dict:store(KeyLabel, literal_type(Val), Map),
       {NewMap, Subst};
     false ->
-      case is_c_var(Val) of
+      case cerl:is_c_var(Val) of
 	false -> MS;
 	true ->
 	  ValLabel = get_label(Val),
@@ -1176,7 +1279,7 @@ lookup_type(Key, {Map, Subst}) ->
 
 
 lookup(Key, Map, Subst, AnyNone) ->
-  case is_literal(Key) of
+  case cerl:is_literal(Key) of
     true -> literal_type(Key);
     false -> 
       Label = get_label(Key),
@@ -1191,11 +1294,11 @@ lookup(Key, Map, Subst, AnyNone) ->
   end.
 
 literal_type(Lit) ->
-  t_from_term(concrete(Lit)).
+  t_from_term(cerl:concrete(Lit)).
 
 mark_as_fresh(Trees, Map) ->
   Fun = fun(T, AccMap) ->
-	    case is_literal(T) of
+	    case cerl:is_literal(T) of
 	      true -> enter_type(T, literal_type(T), AccMap);
 	      false -> enter_type(T, t_any(), AccMap)
 	    end
@@ -1206,15 +1309,7 @@ mark_as_fresh([Tree|Left], Fun, Map) ->
   Map1 = cerl_trees:fold(Fun, Map, Tree),
   mark_as_fresh(Left, Map1);
 mark_as_fresh([], _Fun, Map) ->
-  Map.
-
-%debug_pp_map(Map = {Map0, Subst}) ->
-%  Keys = ordsets:from_list(dict:fetch_keys(Map0) ++ dict:fetch_keys(Subst)),
-%  io:format("Map:\n", []),
-%  [io:format("\t~p :: ~s\n", [K, t_to_string(lookup_type(K, Map))])
-%   ||K<-Keys],
-%  ok.
-  
+  Map.  
 
 %%% ============================================================================
 %%%
@@ -1222,13 +1317,18 @@ mark_as_fresh([], _Fun, Map) ->
 %%%
 %%% ============================================================================
 
+add_def_vars([H|T], DefVars) ->
+  add_def_vars(T, ordsets:add_element(get_label(H), DefVars));
+add_def_vars([], DefVars) ->
+  DefVars.
+
+is_def_var(Var, DefVars) ->
+  ordsets:is_element(get_label(Var), DefVars).
+
 get_label(L) when is_integer(L) ->
   L;
 get_label(T) ->
-  case get_ann(T) of
-    [{label, L} | _] -> L;
-    _ -> erlang:fault({missing_label, T})
-  end.
+  cerl_trees:get_label(T).
 
 any_none([X|Xs]) ->
   case t_is_none(X) of
@@ -1241,10 +1341,10 @@ any_none([]) -> false.
 
 
 filter_match_fail([Clause]) ->
-  Body = clause_body(Clause),
-  case type(Body) of
+  Body = cerl:clause_body(Clause),
+  case cerl:type(Body) of
     primop ->
-      case atom_val(primop_name(Body)) of
+      case cerl:atom_val(cerl:primop_name(Body)) of
 	match_fail -> [];
 	raise -> [];
 	_ -> [Clause]
@@ -1265,41 +1365,32 @@ filter_match_fail([]) ->
 %%%
 %%% ============================================================================
 
--record(state, {deps, calls, envs, envs_out, esc, fun_tab, fun_sigs, 
-		module_defs,
-		plt, tree_map, work}).
+-record(state, {callgraph, envs, fun_tab, fun_sigs, plt, tree_map, work}).
 
-state__new(Esc, Deps, Calls, Tree, FunSigs, Plt) -> 
+state__new(Callgraph, Tree, FunSigs, Plt) -> 
   TreeMap = build_tree_map(Tree),
   Funs = dict:fetch_keys(TreeMap),
-  FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Esc, FunSigs),
+  FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Callgraph, FunSigs),
   Work = init_work([get_label(Tree)]),
-  #state{deps=Deps, calls=Calls, envs=dict:new(), envs_out=dict:new(), esc=Esc,
-	 fun_sigs=FunSigs, fun_tab=FunTab, module_defs=[], plt=Plt, 
-	 work=Work, tree_map=TreeMap}.
+  Env = dict:store(top, {map__new(), []}, dict:new()),
+  #state{callgraph=Callgraph, envs=Env, fun_sigs=FunSigs,
+	 fun_tab=FunTab, plt=Plt, work=Work, tree_map=TreeMap}.
 
-state__is_escaping(Fun, #state{esc=Esc}) ->
-  ordsets:is_element(Fun, Esc).
+state__is_escaping(Fun, #state{callgraph=Callgraph}) ->
+  dialyzer_callgraph:is_escaping(Fun, Callgraph).
 
-state__is_module_defined(Tree, #state{module_defs=MD}) ->
-  orddict:is_key(get_label(Tree), MD).
-  
-state__get_fun_from_defs(Var, #state{module_defs=MD}) ->
+state__lookup_type_for_rec_var(Var, S = #state{callgraph=Callgraph}) ->
   Label = get_label(Var),
-  orddict:fetch(Label, MD).
+  case dialyzer_callgraph:lookup_rec_var(Label, Callgraph) of
+    error -> error;
+    {ok, MFA} ->
+      case dialyzer_callgraph:lookup_label(MFA, Callgraph) of
+	error -> error;
+	{ok, FunLabel} ->
+	  {ok, state__fun_type(FunLabel, S)}
+      end
+  end.
 
-state__store_module_defs(Defs, State) ->
-  State#state{module_defs=orddict:from_list([{get_label(Var), get_label(Fun)}
-					      || {Var, Fun} <- Defs])}.
-
-%state__update_module_def_types(State = #state{envs=Envs, module_defs=MD}) ->
-%  Types = [{Var, state__fun_type(Fun, State)} || {Var, Fun} <- MD],
-%  NewEnvs = dict:map(fun(_, Map) ->
-%			 lists:foldl(fun({Var, Type}, AccMap) ->
-%					 enter_type(Var, Type, AccMap)
-%				     end, Map, Types)
-%		     end, Envs),
-%  State#state{envs=NewEnvs}.
 
 state__get_args(Tree, #state{fun_tab=FunTab}) ->
   Fun = get_label(Tree),
@@ -1311,24 +1402,24 @@ state__get_args(Tree, #state{fun_tab=FunTab}) ->
 build_tree_map(Tree) ->
   Fun =
     fun(T, Dict) ->
-	case type(T) of
-	  'fun' ->
+	case cerl:is_c_fun(T) of
+	  true ->
 	    dict:store(get_label(T), T, Dict);
-	  _ ->
+	  false ->
 	    Dict
 	end
     end,
   cerl_trees:fold(Fun, dict:new(), Tree).
 
-init_fun_tab([Fun|Left], Dict, TreeMap, Esc, FunSigs) ->
-  case fun_arity(dict:fetch(Fun, TreeMap)) of
+init_fun_tab([Fun|Left], Dict, TreeMap, Callgraph, FunSigs) ->
+  case cerl:fun_arity(dict:fetch(Fun, TreeMap)) of
     0 ->
       %% Ensure that this function will be analyzed once if it is
       %% called, by not entering anything.
-      init_fun_tab(Left, Dict, TreeMap, Esc, FunSigs);
+      init_fun_tab(Left, Dict, TreeMap, Callgraph, FunSigs);
     Arity ->
       Args = 
-	case ordsets:is_element(Fun, Esc) of
+	case dialyzer_callgraph:is_escaping(Fun, Callgraph) of
 	  true -> 
 	    case dict:find(Fun, FunSigs) of
 	      error -> duplicate(Arity, t_any());
@@ -1342,20 +1433,20 @@ init_fun_tab([Fun|Left], Dict, TreeMap, Esc, FunSigs) ->
 	end,
       FunEntry = {Args, t_none()},
       NewDict = dict:store(Fun, FunEntry, Dict),
-      init_fun_tab(Left, NewDict, TreeMap, Esc, FunSigs)
+      init_fun_tab(Left, NewDict, TreeMap, Callgraph, FunSigs)
   end;
-init_fun_tab([], Dict, _TreeMap, _Esc, _FunSigs) ->
+init_fun_tab([], Dict, _TreeMap, _Callgraph, _FunSigs) ->
   Dict.
 
-state__update_fun_env(Tree, Map, State = #state{envs=Envs}) ->
-  NewEnvs = dict:store(get_label(Tree), Map, Envs),
+state__update_fun_env(Tree, MapAndDef, State = #state{envs=Envs}) ->
+  NewEnvs = dict:store(get_label(Tree), MapAndDef, Envs),
   State#state{envs=NewEnvs}.
 
 state__fun_env(Tree, #state{envs=Envs}) ->
   Fun = get_label(Tree),
   case dict:find(Fun, Envs) of
-    error -> map__new();
-    {ok, Map} -> Map
+    error -> none;
+    {ok, MapAndDef} -> MapAndDef
   end.
 
 state__all_fun_types(#state{fun_tab=FunTab}) ->
@@ -1415,25 +1506,30 @@ state__update_fun_entry(Tree, ArgTypes, Out0, State = #state{fun_tab=FunTab}) ->
       state__add_work_from_fun(Tree, State1)
   end.
 
-state__add_work_from_fun(Tree, State = #state{deps=Deps}) ->
-  Label = get_label(Tree),
-  case dict:find(Label, Deps) of
-    error -> State;
-    {ok, List} -> 
-      ?debug("~w: Will try to add:~w\n", 
-	     [debug_lookup_name(get_label(Tree)),
-	      [debug_lookup_name(X) || X <- List]]),
-      lists:foldl(fun(X, AccState)->
-		      state__add_work(X, AccState)end,
-		  State, List)
+state__add_work_from_fun(Tree, State = #state{callgraph=Callgraph, 
+					      tree_map=TreeMap}) ->
+  case get_label(Tree) of
+    top -> State;
+    Label when is_integer(Label) ->
+      case dialyzer_callgraph:in_neighbours(Label, Callgraph) of
+	none -> State;
+	MFAList ->
+	  LabelList = [dialyzer_callgraph:lookup_label(MFA, Callgraph)
+		       || MFA <- MFAList],
+	  %% Must filter the result for results in this module.	  
+	  FilteredList = lists:filter(fun({ok, L})->dict:is_key(L, TreeMap)end,
+				      LabelList),
+	  ?debug("~w: Will try to add:~w\n", 
+		 [debug_lookup_name(get_label(Tree)), MFAList]),
+	  lists:foldl(fun({ok, X}, AccState)->
+			  state__add_work(X, AccState)end,
+		      State, FilteredList)
+      end
   end.
 
 state__add_work(external, State) ->
   State;
 state__add_work(top, State) ->
-  %% Instead of adding the top function we update all function
-  %% environments to reflect the current top-level bindings.
-%%  state__update_module_def_types(State);
   State;
 state__add_work(Fun, State = #state{work=Work}) ->
   NewWork = add_work(Fun, Work),
@@ -1446,10 +1542,27 @@ state__get_work(State = #state{work=Work, tree_map=TreeMap}) ->
       {dict:fetch(Fun, TreeMap), State#state{work=NewWork}}
   end.
 
-state__handle_apply(Tree, Args, State = #state{calls=Calls}) ->
+state__find_apply_return(Tree, State = #state{callgraph=Callgraph}) ->
   Apply = get_label(Tree),
-  case dict:find(Apply, Calls) of
+  case dialyzer_callgraph:lookup_call_site(Apply, Callgraph) of
     error ->
+      unknown;
+    {ok, List} ->
+      case lists:member(external, List) of
+	true -> t_any();
+	false ->
+	  FunTypes = [state__fun_type(F, State) || F <- List],
+	  Returns = [t_fun_range(F) || F <- FunTypes],
+	  t_sup(Returns)
+      end
+  end.
+
+state__handle_apply(Tree, Args, State = #state{callgraph=Callgraph}) ->
+  Apply = get_label(Tree),
+  case dialyzer_callgraph:lookup_call_site(Apply, Callgraph) of
+    error ->
+      unknown;
+    {ok, [external]} ->
       unknown;
     {ok, List} ->
       case lists:member(external, List) of
@@ -1501,7 +1614,8 @@ state__forward_args(Apply, ArgTypes0, State = #state{}) ->
   case any_none(ArgTypes) of
     true -> State;
     false ->      
-      Funs = dict:fetch(get_label(Apply), State#state.calls),
+      {ok, Funs} = dialyzer_callgraph:lookup_call_site(get_label(Apply), 
+						       State#state.callgraph),
       forward_args(Funs, ArgTypes, State)
   end.
 
@@ -1536,20 +1650,10 @@ forward_args([Fun|Left], ArgTypes, State = #state{work=Work, fun_tab=FunTab}) ->
   end;
 forward_args([], _ArgTypes, State) ->
   State.
-
-state__store_env_out(Fun, Map, State = #state{envs_out=Envs}) ->  
-  NewEnvs = dict:store(get_label(Fun), Map, Envs),
-  State#state{envs_out=NewEnvs}.
   
-state__get_env_out(Fun, #state{envs_out=Envs}) ->
-  case dict:find(get_label(Fun), Envs) of
-    error -> map__new();
-    {ok, Map} -> Map
-  end.
-
 state__lookup_non_local(M, F, A, #state{plt=Plt}) ->
   Res = 
-    case dialyzer_plt:lookup(Plt, M, F, A) of
+    case dialyzer_plt:lookup(Plt, {M, F, A}) of
       none ->
 	{t_any(), duplicate(A, t_any())};
       {value, Ret}->
@@ -1652,4 +1756,12 @@ debug_fun_type(Label, #state{fun_tab=FunTab}) ->
     {ok, {_Args, _Return}} ->
       ?debug("\t~s\n", [t_to_string(t_fun(_Args, _Return))])
   end.
+-endif.
+
+-ifdef(DOT).
+to_dot(CG) ->
+  dialyzer_callgraph:to_dot(CG).
+-else.
+to_dot(_) ->
+  ok.
 -endif.

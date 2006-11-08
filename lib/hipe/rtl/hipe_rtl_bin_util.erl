@@ -164,8 +164,8 @@ do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when is_integer(Siz
 signed_bignum(Dst1, Src, TrueLblName) ->
   Tmp1 = hipe_rtl:mk_new_reg(),
   BignumLabel = hipe_rtl:mk_new_label(),
-  [hipe_tagscheme:tag_fixnum(Dst1, Src),
-   hipe_tagscheme:untag_fixnum(Tmp1, Dst1),
+  [hipe_tagscheme:realtag_fixnum(Dst1, Src),
+   hipe_tagscheme:realuntag_fixnum(Tmp1, Dst1),
    hipe_rtl:mk_branch(Tmp1, eq, Src, TrueLblName, 
 		      hipe_rtl:label_name(BignumLabel)),
    BignumLabel,
@@ -173,17 +173,17 @@ signed_bignum(Dst1, Src, TrueLblName) ->
    hipe_rtl:mk_goto(TrueLblName)].
 
 unsigned_bignum(Dst1, Src, TrueLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  BignumLabel = hipe_rtl:mk_new_label(),
-  NextLabel =  hipe_rtl:mk_new_label(),
-  [hipe_tagscheme:tag_fixnum(Dst1, Src),
-   hipe_rtl:mk_alu(Tmp1, Dst1, srl, hipe_rtl:mk_imm(4)),
-   hipe_rtl:mk_branch(Tmp1, eq, Src, hipe_rtl:label_name(NextLabel), 
-		      hipe_rtl:label_name(BignumLabel)),
-   NextLabel,
-   hipe_rtl:mk_branch(Dst1, ge, hipe_rtl:mk_imm(0), TrueLblName, 
-		      hipe_rtl:label_name(BignumLabel)),
-   BignumLabel,
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  BignumLbl = hipe_rtl:mk_new_label(),
+  BignumLblName = hipe_rtl:label_name(BignumLbl),
+  NxtLbl = hipe_rtl:mk_new_label(),
+  NxtLblName = hipe_rtl:label_name(NxtLbl),
+  [hipe_rtl:mk_branch(Src, lt, hipe_rtl:mk_imm(0), BignumLblName, NxtLblName),
+   NxtLbl,
+   hipe_tagscheme:realtag_fixnum(Dst1, Src),
+   hipe_tagscheme:realuntag_fixnum(Tmp1, Dst1),
+   hipe_rtl:mk_branch(Tmp1, eq, Src, TrueLblName, BignumLblName),
+   BignumLbl,
    hipe_tagscheme:unsafe_mk_big(Dst1, Src, unsigned),
    hipe_rtl:mk_goto(TrueLblName)].
 
@@ -288,14 +288,15 @@ create_lbls(X) when X > 0 ->
 create_lbls(0) ->
   [].
 
-first_part(Variable, Register, FalseLblName) ->
+first_part(Var, Register, FalseLblName) ->
   [SuccessLbl1, SuccessLbl2] = create_lbls(2),
-  [hipe_tagscheme:test_fixnum(Variable, hipe_rtl:label_name(SuccessLbl1),
+  [hipe_tagscheme:test_fixnum(Var, hipe_rtl:label_name(SuccessLbl1),
 			     FalseLblName, 0.99),
   SuccessLbl1,
-  hipe_tagscheme:fixnum_ge(Variable, hipe_rtl:mk_imm(15), hipe_rtl:label_name(SuccessLbl2), FalseLblName, 0.99),
+  hipe_tagscheme:fixnum_ge(Var, hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(0)), 
+			   hipe_rtl:label_name(SuccessLbl2), FalseLblName, 0.99),
   SuccessLbl2,
-  hipe_tagscheme:untag_fixnum(Register, Variable)].
+  hipe_tagscheme:untag_fixnum(Register, Var)].
 
 make_size(1, BitsVar, FalseLblName) ->
   [DstReg] = create_regs(1),

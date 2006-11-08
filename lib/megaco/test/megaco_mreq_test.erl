@@ -254,7 +254,7 @@ req_and_rep_await_load_complete(MGs0) ->
 	    req_and_rep_await_load_complete(lists:delete(Pid, MGs1));
 	{'EXIT', Pid, Reason} ->
 	    i("exit signal from ~p: ~p", [Pid, Reason]),
-	    case lists:meymember(Pid, 2, MGs0) of
+	    case lists:keymember(Pid, 2, MGs0) of
 		true ->
 		    exit({mg_exit, Pid, Reason});
 		false ->

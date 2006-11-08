@@ -79,13 +79,21 @@
          VERBOSE(DEBUG_ALLOCATION,("HAlloc @ 0x%08lx (%d) %s:%d\n",     \
                  (unsigned long)HEAP_TOP(p),(sz),__FILE__,__LINE__)),   \
  */
+#ifdef CHECK_FOR_HOLES
+#define HAlloc(p, sz)						\
+    (ASSERT_EXPR((sz) >= 0),					\
+     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))			\
+      ? erts_heap_alloc((p),(sz))				\
+      : (erts_set_hole_marker(HEAP_TOP(p), (sz)),		\
+         HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+#else
 #define HAlloc(p, sz)                                                   \
     (ASSERT_EXPR((sz) >= 0),                                            \
-     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))                         \
+     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))                          \
       ? erts_heap_alloc((p),(sz))                                       \
       : (memset(HEAP_TOP(p),DEBUG_BAD_BYTE,(sz)*sizeof(Eterm*)),        \
          HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
-
+#endif
 #else
 
 /*
@@ -94,7 +102,7 @@
  */
 #define HAlloc(p, sz)                                                   \
     (ASSERT_EXPR((sz) >= 0),                                            \
-     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) <= (sz)))                         \
+     ((((HEAP_LIMIT(p) - HEAP_TOP(p)) < (sz)))                          \
       ? erts_heap_alloc((p),(sz))                                       \
       : (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
 
@@ -123,9 +131,12 @@
 # define ERTS_HOLE_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #endif
 
+#if defined(DEBUG)
+# define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
+#endif
+
 #if !defined(HEAP_FRAG_ELIM_TEST)
 #if defined(DEBUG)
-#  define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #  define ArithCheck(p) \
       ASSERT(ARITH_CHECK_ME(p)[0] == ARITH_MARKER);
 #  define ArithAlloc(p, need)					\

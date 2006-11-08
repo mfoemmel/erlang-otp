@@ -47,16 +47,37 @@
 
 static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
 
+#if defined(HEAP_FRAG_ELIM_TEST)
 static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
 {
     Uint actual;
 
-    if (is_small(res)) {
+    if (is_immed(res)) {
+	if (p->heap <= hp && hp < p->htop) {
+	    p->htop = hp;
+	} else {
+	    erts_arith_shrink(p, hp);
+	}
+    } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
+	if (p->heap <= hp && hp < p->htop) {
+	    p->htop = hp+actual;
+	} else {
+	    erts_arith_shrink(p, hp+actual);
+	}
+    }
+}
+#else
+static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
+{
+    Uint actual;
+
+    if (is_immed(res)) {
 	erts_arith_shrink(p, hp);
     } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
 	erts_arith_shrink(p, hp+actual);
     }
 }
+#endif
 
 /*
  ** Bif interfaces
@@ -218,10 +239,10 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 		need = BIG_NEED_SIZE(ires+1);
 		bigp = ArithAlloc(p, need);
 		arg1 = big_lshift(arg1, i, bigp);
+		maybe_shrink(p, bigp, arg1, need);
 		if (is_nil(arg1)) {
 		    BIF_ERROR(p, SYSTEM_LIMIT);
 		}
-		maybe_shrink(p, bigp, arg1, need);
 		ArithCheck(p);
 		BIF_RET(arg1);
 	    } else if (is_big(arg1)) {
@@ -246,10 +267,10 @@ BIF_RETTYPE bnot_1(BIF_ALIST_1)
 	Eterm* bigp = ArithAlloc(BIF_P, need);
 
 	ret = big_bnot(BIF_ARG_1, bigp);
+	maybe_shrink(BIF_P, bigp, ret, need);
 	if (is_nil(ret)) {
 	    BIF_ERROR(BIF_P, SYSTEM_LIMIT);
 	}
-	maybe_shrink(BIF_P, bigp, ret, need);
 	ArithCheck(BIF_P);
     } else {
 	BIF_ERROR(BIF_P, BADARITH);
@@ -1074,11 +1095,11 @@ Eterm erts_bnot(Process* p, Eterm arg)
 	Eterm* bigp = ArithAlloc(p, need);
 
 	ret = big_bnot(arg, bigp);
+	maybe_shrink(p, bigp, ret, need);
 	if (is_nil(ret)) {
 	    p->freason = SYSTEM_LIMIT;
 	    return NIL;
 	}
-	maybe_shrink(p, bigp, ret, need);
 	ArithCheck(p);
     } else {
 	p->freason = BADARITH;
@@ -1088,7 +1109,7 @@ Eterm erts_bnot(Process* p, Eterm arg)
 } 
 
 #if defined(HEAP_FRAG_ELIM_TEST)
-#define ERTS_ARITH_FORCE_GC 1
+#define ERTS_ARITH_FORCE_GC 0
 
 #define ERTS_NEED_GC(p, need) \
   (ERTS_ARITH_FORCE_GC || (HEAP_LIMIT((p)) - HEAP_TOP((p))) <= (need))
@@ -1096,7 +1117,7 @@ Eterm erts_bnot(Process* p, Eterm arg)
 static ERTS_INLINE void
 trim_heap(Process* p, Eterm* hp, Eterm res)
 {
-    ASSERT(p->heap < hp && hp <= p->htop);
+    ASSERT(p->heap <= hp && hp <= p->htop);
     if (is_immed(res)) {
 	p->htop = hp;
     } else {
@@ -1210,10 +1231,10 @@ erts_gc_mixed_plus(Process* p, Eterm* reg, Uint live)
 		    need_heap = BIG_NEED_SIZE(sz);
 		    if (ERTS_NEED_GC(p, need_heap)) {
 			erts_garbage_collect(p, 2, reg, live+2);
-			if (big_val(arg1) != tmp_big1) {
+			if (arg1 != make_big(tmp_big1)) {
 			    arg1 = reg[live];
 			}
-			if (big_val(arg2) != tmp_big2) {
+			if (arg2 != make_big(tmp_big2)) {
 			    arg2 = reg[live+1];
 			}
 		    }
@@ -1367,10 +1388,10 @@ erts_gc_mixed_minus(Process* p, Eterm* reg, Uint live)
 		    need_heap = BIG_NEED_SIZE(sz);
 		    if (ERTS_NEED_GC(p, need_heap)) {
 			erts_garbage_collect(p, need_heap, reg, live+2);
-			if (big_val(arg1) != tmp_big1) {
+			if (arg1 != make_big(tmp_big1)) {
 			    arg1 = reg[live];
 			}
-			if (big_val(arg2) != tmp_big2) {
+			if (arg2 != make_big(tmp_big2)) {
 			    arg2 = reg[live+1];
 			}
 		    }
@@ -1583,10 +1604,10 @@ erts_gc_mixed_times(Process* p, Eterm* reg, Uint live)
 		    need_heap = BIG_NEED_SIZE(sz);
 		    if (ERTS_NEED_GC(p, need_heap)) {
 			erts_garbage_collect(p, need_heap, reg, live+2);
-			if (big_val(arg1) != tmp_big1) {
+			if (arg1 != make_big(tmp_big1)) {
 			    arg1 = reg[live];
 			}
-			if (big_val(arg2) != tmp_big2) {
+			if (arg2 != make_big(tmp_big2)) {
 			    arg2 = reg[live+1];
 			}
 		    }
@@ -1840,10 +1861,10 @@ erts_gc_int_div(Process* p, Eterm* reg, Uint live)
 	    need = BIG_NEED_SIZE(i-ires+1) + BIG_NEED_SIZE(i);
 	    if (ERTS_NEED_GC(p, need)) {
 		erts_garbage_collect(p, need, reg, live+2);
-		if (big_val(arg1) != tmp_big1) {
+		if (arg1 != make_big(tmp_big1)) {
 		    arg1 = reg[live];
 		}
-		if (big_val(arg2) != tmp_big2) {
+		if (arg2 != make_big(tmp_big2)) {
 		    arg2 = reg[live+1];
 		}
 	    }
@@ -1895,10 +1916,10 @@ erts_gc_int_rem(Process* p, Eterm* reg, Uint live)
 
 	    if (ERTS_NEED_GC(p, need)) {
 		erts_garbage_collect(p, need, reg, live+2);
-		if (big_val(arg1) != tmp_big1) {
+		if (arg1 != make_big(tmp_big1)) {
 		    arg1 = reg[live];
 		}
-		if (big_val(arg2) != tmp_big2) {
+		if (arg2 != make_big(tmp_big2)) {
 		    arg2 = reg[live+1];
 		}
 	    }
@@ -1936,9 +1957,7 @@ Eterm erts_gc_##func(Process* p, Eterm* reg, Uint live)				\
 	need = BIG_NEED_SIZE(big_size(arg2) + 1);				\
 	if (ERTS_NEED_GC(p, need)) {						\
 	    erts_garbage_collect(p, need, reg, live+2);				\
-	    if (big_val(arg2) != tmp_big2) {					\
-		arg2 = reg[live+1];						\
-	    }									\
+	    arg2 = reg[live+1];							\
 	}									\
 	break;									\
     case BIG_SMALL:								\
@@ -1946,9 +1965,7 @@ Eterm erts_gc_##func(Process* p, Eterm* reg, Uint live)				\
 	need = BIG_NEED_SIZE(big_size(arg1) + 1);				\
 	if (ERTS_NEED_GC(p, need)) {						\
 	    erts_garbage_collect(p, need, reg, live+2);				\
-	    if (big_val(arg1) != tmp_big1) {					\
-		arg1 = reg[live];						\
-	    }									\
+	    arg1 = reg[live];							\
 	}									\
 	break;									\
     case BIG_BIG:								\

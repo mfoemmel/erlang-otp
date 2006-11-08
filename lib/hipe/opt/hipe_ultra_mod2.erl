@@ -67,7 +67,7 @@ ultra_instr_rsrcs([N|Ns],I_res) ->
     ultra_instr_rsrcs(Ns,ultra_instr_type(N,I_res)).
 
 ultra_instr_type({N,I},I_res) ->
-    hipe_vectors:set(I_res,N,instr_type(I)).
+    hipe_vectors:set(I_res,N-1,instr_type(I)).
 
 instr_type(I) ->
     case I of
@@ -128,7 +128,7 @@ resources_available(_Cycle,I,Rsrc,I_res) ->
     res_avail(instruction_resource(I_res,I),Rsrc).
 
 instruction_resource(I_res,I) ->
-    hipe_vectors:get(I_res,I).
+    hipe_vectors:get(I_res,I-1).
 
 %% The following function checks resource availability.
 %% * all function units are assumed to be fully pipelined, so only

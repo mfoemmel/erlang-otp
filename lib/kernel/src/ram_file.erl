@@ -401,7 +401,7 @@ open_mode(List) when is_list(List) ->
     case open_mode(List, {0, []}) of
 	{Mode, Opts} when Mode band 
 			  (?RAM_FILE_MODE_READ bor ?RAM_FILE_MODE_WRITE) 
-			  == 0 ->
+			  =:= 0 ->
 	    {Mode bor ?RAM_FILE_MODE_READ, Opts};
 	Other ->
 	    Other
@@ -460,7 +460,6 @@ translate_response(X, Data) ->
 
 i32(Int) when is_binary(Int) ->
     i32(binary_to_list(Int));
-
 i32(Int) when is_integer(Int) ->
     [(Int bsr 24) band 255,
      (Int bsr 16) band 255,

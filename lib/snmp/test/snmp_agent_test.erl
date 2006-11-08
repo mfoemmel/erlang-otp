@@ -112,7 +112,7 @@ cases() ->
 	    ];
 	_Else ->
   	    [
-    	     misc, 
+     	     misc, 
        	     test_v1, 
     	     test_v2, 
     	     test_v1_v2, 
@@ -883,7 +883,8 @@ test_v1(suite) -> {req, [], {conf, init_v1, v1_cases(), finish_v1}}.
 
 %v1_cases() -> [loop_mib];
 v1_cases() ->
-    [simple, 
+    [
+     simple, 
      db_notify_client,
      v1_processing, 
      big, 
@@ -903,8 +904,9 @@ v1_cases() ->
      sparse_table, 
      cnt_64, 
      opaque,
-    
-     change_target_addr_config].  
+ 
+     change_target_addr_config
+    ].  
 
 init_v1(Config) when list(Config) ->
     ?line SaNode = ?config(snmp_sa, Config),
@@ -1126,11 +1128,11 @@ stop_subagent(SA) ->
 %%-----------------------------------------------------------------
 init_old() ->
     snmpa_local_db:table_create_row(intCommunityTable,
-				   get(mip) ++ [6 | "public"],
-				   {get(mip), "public", 2, 2}),
+				    get(mip) ++ [6 | "public"],
+				    {get(mip), "public", 2, 2}),
     snmpa_local_db:table_create_row(intCommunityTable,
-				   get(mip) ++ [13 | "standard trap"],
-				   {get(mip), "standard trap", 2, 1}),
+				    get(mip) ++ [13 | "standard trap"],
+				    {get(mip), "standard trap", 2, 1}),
     snmpa_local_db:variable_set(intAgentIpAddress, [127,0,0,1]).
     
 				    
@@ -1161,6 +1163,9 @@ simple_3(X) ->
 big(suite) -> [];
 big(Config) when list(Config) ->
     ?P(big),
+    %% put(sname, {?MODULE, big}),
+    %% put(verbosity, trace),
+
     {SaNode, _MgrNode, _MibDir} = init_case(Config),
 
     ?P1("Starting subagent..."),
@@ -1170,7 +1175,13 @@ big(Config) when list(Config) ->
     ?DBG("big -> SA: ~p", [SA]),
     ?line load_master("OLD-SNMPEA-MIB"),
     ?line init_old(),
+
+    snmpa:dump_mibs(),
+    snmpa:dump_mibs("dumped_mibs.txt"),
+    io:format("Local DB: ~n~p~n", [snmpa_local_db:print()]),
+
     try_test(big_test),
+
     ?line stop_subagent(SA),
     ?line unload_master("OLD-SNMPEA-MIB").
 
@@ -2606,6 +2617,9 @@ notify(Pid,What) ->
 
 %% Req: system group, OLD-SNMPEA-MIB, Klas1
 big_test() ->
+    %% put(sname, {?MODULE, big_test}),
+    %% put(verbosity, trace),
+
     ?DBG("big_test -> testing simple next/get/set @ master agent...",[]),
     simple_standard_test(),
     
@@ -4484,7 +4498,10 @@ loop_it_1(Oid, N) ->
 	     error_status = Err, 
 	     error_index  = Idx,
 	     varbinds     = Vbs} ->
-	    exit({unexpected_pdu, ?LINE, Type, Err, Idx, Vbs})
+	    exit({unexpected_pdu, ?LINE, Type, Err, Idx, Vbs});
+
+	{error, Reason} ->
+	    exit({error, Reason, ?LINE})
     end.
 	    
 
@@ -4540,7 +4557,10 @@ loop_it_2(Oid, N) ->
 	     error_status = ES, 
 	     error_index  = EI,
 	     varbinds     = Vbs} ->
-	    exit({unexpected_pdu, ?LINE, Type, ES, EI, Vbs})
+	    exit({unexpected_pdu, ?LINE, Type, ES, EI, Vbs});
+
+	{error, Reason} ->
+	    exit({error, Reason, N, ?LINE})
 
     end.
 	    

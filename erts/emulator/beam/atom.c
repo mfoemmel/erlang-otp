@@ -31,9 +31,8 @@
 
 #define ATOM_SIZE  3000
 #define ATOM_LIMIT (1024*1024)
-#define ATOM_RATE  100
 
-static IndexTable atom_table;    /* The index table */
+IndexTable erts_atom_table;	/* The index table */
 
 #include "erl_smp.h"
 
@@ -69,7 +68,7 @@ void atom_info(int to, void *to_arg)
     int lock = !ERTS_IS_CRASH_DUMPING;
     if (lock)
 	atom_read_lock();
-    index_info(to, to_arg, &atom_table);
+    index_info(to, to_arg, &erts_atom_table);
     if (lock)
 	atom_read_unlock();
 }
@@ -195,46 +194,40 @@ am_atom_put(const char* name, int len)
     a.len = len;
     a.name = (byte*)name;
     atom_write_lock();
-    ret = make_atom(index_put(&atom_table, (void*) &a));
+    ret = make_atom(index_put(&erts_atom_table, (void*) &a));
     atom_write_unlock();
-    return ret;
-}
-
-Atom *atom_tab(int i)
-{
-    Atom *ret;
-    int lock = !ERTS_IS_CRASH_DUMPING;
-    if (lock)
-	atom_read_lock();
-    ret = (Atom*) atom_table.table[i];
-    if (lock)
-	atom_read_unlock();
     return ret;
 }
 
 int atom_table_size(void)
 {
     int ret;
+#ifdef ERTS_SMP
     int lock = !ERTS_IS_CRASH_DUMPING;
-    /* XXX: taking a lock for this is excessive,
-       change .sz field to be an atomic_t */
     if (lock)
 	atom_read_lock();
-    ret = atom_table.sz;
+#endif
+    ret = erts_atom_table.entries;
+#ifdef ERTS_SMP
     if (lock)
 	atom_read_unlock();
+#endif
     return ret;
 }
 
 int atom_table_sz(void)
 {
     int ret;
+#ifdef ERTS_SMP
     int lock = !ERTS_IS_CRASH_DUMPING;
     if (lock)
 	atom_read_lock();
-    ret = index_table_sz(&atom_table);
+#endif
+    ret = index_table_sz(&erts_atom_table);
+#ifdef ERTS_SMP
     if (lock)
 	atom_read_unlock();
+#endif
     return ret;
 }
 
@@ -248,7 +241,7 @@ erts_atom_get(byte* name, int len, Eterm* ap)
     a.len = len;
     a.name = name;
     atom_read_lock();
-    i = index_get(&atom_table, (void*) &a);
+    i = index_get(&erts_atom_table, (void*) &a);
     res = i < 0 ? 0 : (*ap = make_atom(i), 1);
     atom_read_unlock();
     return res;
@@ -257,15 +250,19 @@ erts_atom_get(byte* name, int len, Eterm* ap)
 void
 erts_atom_get_text_space_sizes(Uint *reserved, Uint *used)
 {
+#ifdef ERTS_SMP
     int lock = !ERTS_IS_CRASH_DUMPING;
     if (lock)
 	atom_read_lock();
+#endif
     if (reserved)
 	*reserved = reserved_atom_space;
     if (used)
 	*used = atom_space;
+#ifdef ERTS_SMP
     if (lock)
 	atom_read_unlock();
+#endif
 }
 
 void
@@ -287,8 +284,8 @@ init_atom_table(void)
     atom_space = 0;
     text_list = NULL;
 
-    index_init(ERTS_ALC_T_ATOM_TABLE, &atom_table, "atom_tab", ATOM_SIZE,
-	       ATOM_LIMIT, ATOM_RATE, f);
+    erts_index_init(ERTS_ALC_T_ATOM_TABLE, &erts_atom_table,
+		    "atom_tab", ATOM_SIZE, ATOM_LIMIT, f);
     more_atom_space();
 
     /* Ordinary atoms */
@@ -297,7 +294,7 @@ init_atom_table(void)
 	a.len = strlen(erl_atom_names[i]);
 	a.name = (byte*)erl_atom_names[i];
 	a.slot.index = i;
-	ix = index_put(&atom_table, (void*) &a);
+	ix = index_put(&erts_atom_table, (void*) &a);
 	atom_text_pos -= a.len;
 	atom_space -= a.len;
 	atom_tab(ix)->name = (byte*)erl_atom_names[i];
@@ -307,12 +304,14 @@ init_atom_table(void)
 void
 dump_atoms(int to, void *to_arg)
 {
-    int i = atom_table.size;
+    int i = erts_atom_table.size;
 
     /*
      * Print out the atom table starting from the end.
      */
-    while (--i >= 0)
-	if (atom_table.table[i])
+    while (--i >= 0) {
+	if (erts_index_lookup(&erts_atom_table, i)) {
 	    erts_print(to, to_arg, "%T\n", make_atom(i));
+	}
+    }
 }

@@ -3,6 +3,30 @@
 		(in reversed chronological order)
 ==============================================================================
 
+Version 1.5.0 (in Erlang/OTP R11B-2)
+-------------------------------------
+ - Dialyzer's building of PLT is based on a different type inference algorithm.
+   More specifically, Dialyzer uses inferrence of refined success typings to
+   infer function prototypes.  As a result, Dialyzer bases its analysis on a
+   significantly more powerful basis and thus is able to detect more
+   discrepancies.  The downside is that building the PLT is a considerably
+   slower process.  We will work on improving that.
+ - Dialyzer takes into account the BEAM compiler directive
+	-compile({nowarn_unused_function, {F,A}}).
+   and then suppresses the warning that function F/A will never be called.
+ - Dialyzer's default initial PLT now also includes "mnesia".
+
+Version 1.4.2 (in Erlang/OTP R11B-1)
+------------------------------------
+ - Speed up changes and small bug fixes.
+
+Version 1.4.1 (in Erlang/OTP R11B-0)
+------------------------------------
+ - Dialyzer is officially part of Erlang/OTP as a library application.
+ - Instead of being a shell script, "dialyzer" is an executable (generated
+   by a C program -- thanks to Bjorn Gustavsson), and works similarly to "erlc".
+   As a side-effect of this change, Dialyzer now also works on Windows.
+
 Version 1.4.0
 -------------
  - Changes for Dialyzer to work with Erlang/OTP R10B-10.

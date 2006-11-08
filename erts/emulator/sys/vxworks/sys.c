@@ -146,6 +146,11 @@ static volatile int break_requested = 0;
 
 /********************* General functions ****************************/
 
+Eterm erts_check_io_info(void *proc)
+{
+    return NIL;
+}
+
 Uint
 erts_sys_misc_mem_sz(void)
 {

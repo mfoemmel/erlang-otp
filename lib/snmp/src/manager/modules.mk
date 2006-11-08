@@ -19,5 +19,6 @@ MODULES = \
 
 INTERNAL_HRL_FILES = \
 	snmpm_usm \
-	snmpm_atl
+	snmpm_atl \
+	snmpm_internal
 

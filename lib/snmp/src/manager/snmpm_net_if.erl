@@ -42,13 +42,12 @@
 
 -define(SNMP_USE_V3, true).
 -include("snmp_types.hrl").
+-include("snmpm_internal.hrl").
 -include("snmpm_atl.hrl").
 -include("snmp_debug.hrl").
 
 %% -define(VMODULE,"NET_IF").
 -include("snmp_verbosity.hrl").
-
-%% -define(SERVER, ?MODULE).
 
 -record(state, 
 	{
@@ -287,7 +286,7 @@ handle_call(info, _From, State) ->
     {reply, Reply, State};
 
 handle_call(Req, From, State) ->
-    error_msg("received unknown request (from ~p): ~n~p", [Req, From]),
+    warning_msg("received unknown request (from ~p): ~n~p", [Req, From]),
     {reply, {error, {invalid_request, Req}}, State}.
 
 
@@ -316,7 +315,7 @@ handle_cast({inform_response, Ref, Addr, Port}, State) ->
     {noreply, State};
 
 handle_cast(Msg, State) ->
-    error_msg("received unknown message: ~n~p", [Msg]),
+    warning_msg("received unknown message: ~n~p", [Msg]),
     {noreply, State}.
 
 
@@ -343,7 +342,7 @@ handle_info({disk_log, _Node, Log, Info}, State) ->
     {noreply, State2};
 
 handle_info(Info, State) ->
-    error_msg("received unknown info: ~n~p", [Info]),
+    warning_msg("received unknown info: ~n~p", [Info]),
     {noreply, State}.
 
 
@@ -763,11 +762,15 @@ logger({Log, Types}, Type, Addr, Port) ->
 
 %% -------------------------------------------------------------------
 
-error_msg(F, A) ->
-    error_logger:error_msg("SNMPM: " ++ F ++ "~n", A).
+%% info_msg(F, A) ->
+%%     ?snmpm_info("NET-IF server: " ++ F, A).
 
-% info_msg(F, A) ->
-%     error_logger:info_msg("SNMPM: " ++ F ++ "~n", A).
+warning_msg(F, A) ->
+    ?snmpm_warning("NET-IF server: " ++ F, A).
+
+error_msg(F, A) ->
+    ?snmpm_error("NET-IF server: " ++ F, A).
+
 
 
 %%%-------------------------------------------------------------------

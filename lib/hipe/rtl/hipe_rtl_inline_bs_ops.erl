@@ -7,9 +7,9 @@
 %%  History  :	*2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2006/07/03 13:46:32 $
-%%              $Revision: 1.56 $
+%%              $Author: pergu $
+%%              $Date: 2006/09/26 08:43:49 $
+%%              $Revision: 1.61 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -21,6 +21,7 @@
 %%-------------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
+-include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
 
 -define(BYTE_SHIFT, 3). %% Turn bits into bytes or vice versa
@@ -28,6 +29,7 @@
 -define(LOW_BITS, 7). %% Three lowest bits set
 -define(BYTE_SIZE, 8).
 -define(MAX_SMALL_BITS, 27).
+
 %% -------------------------------------------------------------------------
 %% The code is generated as a list of lists, it will be flattened later.
 %% 
@@ -44,14 +46,14 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
     {bs_put_string, String, SizeInBytes, Flags} ->
       [NewOffset] = get_real(Dst),
       [Base, Offset] = Args,
-      Aligned=aligned(Flags),
+      Aligned = aligned(Flags),
       put_string(NewOffset, ConstTab, String, SizeInBytes, 
 		 Base, Offset, TrueLblName, Aligned);
     
     _ -> 
       Code = 
 	case BsOP of
-	  bs_bits_to_bytes ->
+	  bs_bits_to_bytes2 ->
 	    [Src]=Args,
 	    [Dst0]=Dst,
 	    SuccessLbl = hipe_rtl:mk_new_label(),
@@ -64,13 +66,29 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 	     hipe_rtl:mk_alu(Raw, Raw, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
 	     hipe_tagscheme:tag_fixnum(Dst0, Raw),
 	     hipe_rtl:mk_goto(TrueLblName)];
-	  
+	  bs_bits_to_bytes ->
+	    [Src] = Args,
+	    [Dst0] = Dst,
+	    SuccessLbl = hipe_rtl:mk_new_label(),
+	    NextLbl = hipe_rtl:mk_new_label(),
+	    Raw = hipe_rtl:mk_new_reg(),
+	    Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+	    [hipe_tagscheme:test_fixnum(Src, hipe_rtl:label_name(SuccessLbl),
+					FalseLblName, 0.99),
+	     SuccessLbl,
+	     hipe_tagscheme:untag_fixnum(Raw, Src),
+	     hipe_rtl:mk_alub(Tmp, Raw, 'and', hipe_rtl:mk_imm(?LOW_BITS),eq,
+			      hipe_rtl:label_name(NextLbl),FalseLblName),
+	     NextLbl,
+	     hipe_rtl:mk_alu(Raw, Raw, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
+	     hipe_tagscheme:tag_fixnum(Dst0, Raw),
+	     hipe_rtl:mk_goto(TrueLblName)];
 	  {bs_add, Const, Unit} ->
 	    Raw = hipe_rtl:mk_imm(Const),
 	    Tmp1 = hipe_rtl:mk_new_reg(),
 	    Tmp2 = hipe_rtl:mk_new_reg(),
-	    [New]=Args,
-	    [Dst0]=Dst,
+	    [New] = Args,
+	    [Dst0] = Dst,
 	    {SizeCode, SizeReg} = hipe_rtl_bin_util:make_size(Unit, New, FalseLblName),
 	    SizeCode ++
 	      [hipe_rtl:mk_alu(Tmp1, SizeReg, add, Raw),
@@ -82,8 +100,8 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 	    Raw = hipe_rtl:mk_new_reg(),
 	    Tmp1 = hipe_rtl:mk_new_reg(),
 	    Tmp2 = hipe_rtl:mk_new_reg(),
-	    [Old, New]=Args,
-	    [Dst0]=Dst,
+	    [Old, New] = Args,
+	    [Dst0] = Dst,
 	    {SizeCode, SizeReg} = hipe_rtl_bin_util:make_size(Unit, New, FalseLblName),
 	    SizeCode ++
 	      [hipe_tagscheme:untag_fixnum(Raw, Old),
@@ -117,26 +135,22 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 	     get_binary_bytes(Binary, BinSize, Base, Offset, 
 					       Orig, OrigOffset, TrueLblName, 
 					       FalseLblName);
-	   
-	  {bs_put_binary_all, Flags} ->
-	    Aligned=aligned(Flags),
+
+	  {bs_put_binary_all, _Flags} ->
 	    [Src, Base, Offset] = Args,
 	    [NewOffset] = get_real(Dst),
-	    put_binary_all(NewOffset, Src, Base, Offset, Aligned, 
-					    TrueLblName, FalseLblName);
+	    put_binary_all(NewOffset, Src, Base, Offset, TrueLblName, FalseLblName);
 	   
-	  {bs_put_binary, Size, Flags} ->
-	    Aligned = aligned(Flags),
+	  {bs_put_binary, Size, _Flags} ->
 	    [NewOffset] = get_real(Dst),
 	    case Args of
 	      [Src, Base, Offset] ->
-		put_static_binary(NewOffset, Src, Base, Offset, Size, Aligned, 
+		put_static_binary(NewOffset, Src, Size, Base, Offset, 
 					    TrueLblName, FalseLblName);
 	      [Src, Bits, Base, Offset]  ->
 		{SizeCode, SizeReg} = hipe_rtl_bin_util:make_size(Size, Bits, FalseLblName),
 		InCode = put_dynamic_binary(NewOffset, Src, SizeReg, Base, 
-					    Offset, Aligned, TrueLblName,
-					    FalseLblName),
+					    Offset, TrueLblName, FalseLblName),
 		SizeCode ++ InCode
 	    end;
 		
@@ -183,7 +197,17 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 		    SizeCode ++ InCode
 		end
 	    end;    
-	  
+	  {unsafe_bs_put_integer, 0, _Flags, _ConstInfo} ->
+	    [NewOffset] = get_real(Dst),
+	    case Args of
+	      [_Src, _Base, Offset]  ->
+		[hipe_rtl:mk_move(NewOffset,Offset),
+		 hipe_rtl:mk_goto(TrueLblName)];
+	      [_Src, _Bits, _Base, Offset] ->
+		[hipe_rtl:mk_move(NewOffset,Offset),
+		 hipe_rtl:mk_goto(TrueLblName)]
+	    end;
+	    
 	  {unsafe_bs_put_integer, Size, Flags, ConstInfo} ->
 	    Aligned = aligned(Flags),
 	    LittleEndian = littleendian(Flags),
@@ -334,7 +358,31 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 	      [] ->
 		[hipe_rtl:mk_goto(TrueLblName)]
 	    end;
-
+	  bs_final2 ->
+	    [Src, Offset] = Args,
+	    BitSize = hipe_rtl:mk_new_reg(),
+	    ByteSize = hipe_rtl:mk_new_reg(),
+	    ShortLbl = hipe_rtl:mk_new_label(),
+	    LongLbl = hipe_rtl:mk_new_label(),
+	    case Dst of
+	      [DstVar] ->
+		[
+		 hipe_rtl:mk_alub(BitSize, Offset, 'and', hipe_rtl:mk_imm(?LOW_BITS),
+				 eq, hipe_rtl:label_name(ShortLbl), 
+				  hipe_rtl:label_name(LongLbl)),
+		 ShortLbl,
+		 hipe_rtl:mk_move(DstVar, Src),
+		 hipe_rtl:mk_goto(TrueLblName),
+		 %hipe_rtl:mk_goto(hipe_rtl:label_name(LongLbl)),
+		 LongLbl,
+		 
+		 hipe_rtl:mk_alu(ByteSize, Offset, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
+		 hipe_tagscheme:safe_mk_sub_binary(DstVar, ByteSize, hipe_rtl:mk_imm(0),
+						   BitSize, hipe_rtl:mk_imm(0), Src),
+		 hipe_rtl:mk_goto(TrueLblName)]; 
+	      [] ->
+		[hipe_rtl:mk_goto(TrueLblName)]
+	    end;
 	  _ -> 
 	    ?EXIT({unhandled_bs_primop, BsOP})
 	      end,
@@ -342,7 +390,7 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
   end.
 
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %%  Code that is used to create calls to beam functions
 %%
@@ -357,7 +405,7 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 %% - gen_test_sideffect_bs_call/4 is used to make a C-call that might
 %%       fail but doesn't return an erlang value.
 %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 static_float_c_code(NewOffset, Src, Base, Offset, Size, Flags, TrueLblName, 
 		    FalseLblName) ->
@@ -379,6 +427,18 @@ int_c_code(NewOffset, Src, Base, Offset, SizeReg, Flags, TrueLblName, FalseLblNa
   put_c_code(bs_put_big_integer, NewOffset, Src, Base, Offset, SizeReg, 
 	     Flags, TrueLblName, FalseLblName).
 
+binary_c_code(NewOffset, Src, Base, Offset, Size, TrueLblName) ->
+  PassedLbl = hipe_rtl:mk_new_label(),
+  SizeReg = hipe_rtl:mk_new_reg(),
+  FlagsReg = hipe_rtl:mk_new_reg(),
+  [hipe_rtl:mk_move(FlagsReg, hipe_rtl:mk_imm(0)),
+   hipe_rtl:mk_move(SizeReg, Size),
+   hipe_rtl:mk_call([], bs_put_bits, [Src, SizeReg, Base, Offset, FlagsReg], 
+		    hipe_rtl:label_name(PassedLbl),[],not_remote),
+   PassedLbl,
+   hipe_rtl:mk_alu(NewOffset, Offset, add, SizeReg),
+   hipe_rtl:mk_goto(TrueLblName)].
+
 put_c_code(Func, NewOffset, Src, Base, Offset, SizeReg, Flags, TrueLblName, 
 	   FalseLblName) ->
   PassedLbl = hipe_rtl:mk_new_label(),
@@ -394,7 +454,7 @@ static_int_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, Size, Flags,
 		      TrueLblName, FalseLblName) ->
   SizeReg = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size))|
-   int_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
+   int_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags,
 		  TrueLblName, FalseLblName)].
 
 int_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
@@ -402,17 +462,17 @@ int_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags,
   get_c_code(bs_get_integer, Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
 	   TrueLblName, FalseLblName).
 
-static_float_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, Size, Flags, 
-		      TrueLblName, FalseLblName) ->
+static_float_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, Size,
+			Flags, TrueLblName, FalseLblName) ->
   SizeReg = hipe_rtl:mk_new_reg(),
   [hipe_rtl:mk_move(SizeReg, hipe_rtl:mk_imm(Size))|
    float_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
-		  TrueLblName, FalseLblName)].
+		    TrueLblName, FalseLblName)].
 
 float_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
-	       TrueLblName, FalseLblName) ->
+		 TrueLblName, FalseLblName) ->
   get_c_code(bs_get_float, Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags, 
-	   TrueLblName, FalseLblName).
+	     TrueLblName, FalseLblName).
 
 binary_get_c_code(Dst1, BinSize, Base, Offset, NewOffset, Orig, SizeReg, Flags,
 		  TrueLblName, FalseLblName) ->
@@ -584,6 +644,7 @@ var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
   USize = hipe_rtl:mk_new_reg(),
   Tmp = hipe_rtl:mk_new_reg(),
   [hipe_tagscheme:untag_fixnum(USize, Size),
+   
    hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_branch(USize, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
 		      hipe_rtl:label_name(HeapLbl), 
@@ -641,65 +702,54 @@ create_space(Size, Shifts, Args, TLName) ->
     ++ [hipe_rtl:mk_gctest(NumberOfWords),
 	hipe_rtl:mk_goto(TLName)].
 
-put_binary_all(NewOffset, Src, Base, Offset, Aligned, TLName, FLName) ->
-  [Orig, OrigOffset, CopyBase, CopyOffset, CopyEnd, CopySize, NewSize] = create_regs(7),
-  [NextLbl] = create_lbls(1),
-  get_binary_bytes(Src, CopyEnd, CopyBase, CopyOffset, Orig, OrigOffset,
-		   hipe_rtl:label_name(NextLbl), FLName) ++
-    [NextLbl,
-     hipe_rtl:mk_alu(CopySize, CopyEnd, sub, CopyOffset)] ++
-  case Aligned of
-    true ->
-	copy_aligned_bytes_all(CopyBase, CopyOffset, CopySize, Base, Offset, 
-			       NewOffset, TLName);
-    false ->
-	[hipe_rtl:mk_move(NewSize, CopySize)|
-	 copy_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, 
-		    NewSize, TLName, FLName)]
-  end.
+put_binary_all(NewOffset, Src, Base, Offset, TLName, FLName) ->
+  [SrcBase,SrcOffset,NumBits] = create_regs(3),
+  CCode = binary_c_code(NewOffset, Src, Base, Offset, NumBits, TLName),
+  AlignedCode = copy_aligned_bytes(SrcBase, SrcOffset, NumBits, Base, Offset, 
+				   NewOffset, TLName),
+  get_base_offset_size(Src, SrcBase, SrcOffset, NumBits,FLName) ++
+    test_alignment(SrcOffset,NumBits,Offset,AlignedCode,CCode).
 
-put_static_binary(NewOffset, Src, Base, Offset, Size, Aligned, TLName, FLName) ->
-  [Orig, OrigOffset, CopyBase, CopyOffset, CopySize] = create_regs(5),
-  [NextLbl] = create_lbls(1),
-  get_binary_bytes(Src, CopySize, CopyBase, CopyOffset, Orig, OrigOffset,
-		   hipe_rtl:label_name(NextLbl), FLName) ++
-    [NextLbl] ++
+test_alignment(SrcOffset,NumBits,Offset,AlignedCode,CCode) ->
+  Tmp = hipe_rtl:mk_new_reg(),  
+  AlignedLbl = hipe_rtl:mk_new_label(),
+  CLbl = hipe_rtl:mk_new_label(),
+  [hipe_rtl:mk_alu(Tmp, SrcOffset, 'or', NumBits),
+   hipe_rtl:mk_alu(Tmp, Tmp, 'or', Offset),
+   hipe_rtl:mk_alub(Tmp, Tmp, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, 
+		    hipe_rtl:label_name(AlignedLbl), hipe_rtl:label_name(CLbl)),
+   AlignedLbl,
+   AlignedCode,
+   CLbl,
+   CCode].
+ 
+
+put_static_binary(NewOffset, Src, Size, Base, Offset, TLName, FLName) ->
+  [SrcBase, SrcOffset, SrcSize] = create_regs(3),
     case Size of 
-       0 ->
-	 [hipe_rtl:mk_move(NewOffset, Offset), 
-	  hipe_rtl:mk_goto(TLName)];
-       _ ->
-	 case Size band ?LOW_BITS of
-	   0 ->
-	     case Aligned of
-	       true -> 
-		 copy_aligned_static_bytes(CopyBase, CopyOffset, CopySize, Base, 
-					     Offset, NewOffset, Size, TLName, 
-					     FLName);
-	       false ->
-		 copy_static_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, 
-				     NewOffset, Size, TLName, FLName)
-	     end;
-	   _ ->
-	     [hipe_rtl:mk_goto(FLName)]
-	 end
+      0 ->
+	get_base_offset_size(Src, SrcBase, SrcOffset, SrcSize, FLName) ++
+	[hipe_rtl:mk_move(NewOffset, Offset), 
+	 hipe_rtl:mk_goto(TLName)];
+      _ ->
+	CCode = binary_c_code(NewOffset, Src, Base, Offset, hipe_rtl:mk_imm(Size), TLName),
+	AlignedCode = copy_aligned_bytes(SrcBase, SrcOffset, hipe_rtl:mk_imm(Size), Base, Offset, 
+					 NewOffset, TLName),
+	get_base_offset_size(Src, SrcBase, SrcOffset, SrcSize, FLName) ++
+	  small_check(hipe_rtl:mk_imm(Size), SrcSize, FLName) ++
+	  test_alignment(SrcOffset,hipe_rtl:mk_imm(Size),Offset,AlignedCode, CCode)
      end.
 
-put_dynamic_binary(NewOffset, Src, SizeReg, Base, Offset, Aligned, 
-		   TLName, FLName) ->
-  [Orig, OrigOffset, CopyBase, CopyOffset, CopySize] = create_regs(5),
-  [NextLbl] = create_lbls(1),
-  get_binary_bytes(Src, CopySize, CopyBase, CopyOffset, Orig, OrigOffset,
-				   hipe_rtl:label_name(NextLbl), FLName) ++	
-		  [NextLbl] ++
-    case Aligned of
-      true -> 
-	copy_aligned_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, 
-			   NewOffset, SizeReg, TLName, FLName);
-      false ->
-	copy_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, 
-		   SizeReg, TLName, FLName)	
-    end.
+put_dynamic_binary(NewOffset, Src, SizeReg, Base, Offset, TLName, FLName) ->
+  [SrcBase, SrcOffset, SrcSize] = create_regs(3),
+  CCode = binary_c_code(NewOffset, Src, Base, Offset, SizeReg, TLName),
+  AlignedCode = copy_aligned_bytes(SrcBase, SrcOffset, SizeReg, Base, Offset, 
+				   NewOffset, TLName),
+  get_base_offset_size(Src, SrcBase, SrcOffset, SrcSize, FLName) ++
+    small_check(SizeReg, SrcSize, FLName) ++
+    test_alignment(SrcOffset, SizeReg, Offset, AlignedCode, CCode).
+
+
 
 put_float(NewOffset, Src, Base, Offset, 64, CCode, Aligned, LittleEndian, 
 			  ConstInfo, TrueLblName) ->
@@ -823,7 +873,7 @@ skip_bits(SizeOfBin, Offset, NewOffset, NoOfBits, TrueLblName, FalseLblName) ->
 get_static_int(Dst1, NewOffset, BinSize, Base, Offset, Size, CCode, Signed,
 	       LittleEndian, Aligned, TrueLblName, FalseLblName) ->
   WordSize = hipe_rtl_arch:word_size(),
-  case Size =< WordSize*?BYTE_SIZE of
+  case Size =< ?bytes_to_bits(WordSize) of
     true ->
       case {Aligned, LittleEndian} of
 	{true, false} ->
@@ -1119,95 +1169,151 @@ get_binary_bytes(Binary, BinSize, Base, Offset, Orig, OrigOffset,
    REFCLbl,
    hipe_rtl:mk_load(Base, Binary, hipe_rtl:mk_imm(?PROC_BIN_BYTES-2)),
    hipe_rtl:mk_goto(TrueLblName)].
- 
-copy_aligned_static_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset,
-			  Size, TrueLblName, FalseLblName) ->
-  BaseDst = hipe_rtl:mk_new_reg(),
-  BaseSrc = hipe_rtl:mk_new_reg(),
-  BothOffset = hipe_rtl:mk_new_reg(),
-  Iter = hipe_rtl:mk_imm(Size div ?BYTE_SIZE),
 
-  small_check(hipe_rtl:mk_imm(Size), CopySize, FalseLblName) ++
-    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
-    [hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
-    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, hipe_rtl:mk_imm(Size band ?LOW_BITS), TrueLblName).
+get_base_offset_size(Binary, SrcBase, SrcOffset, SrcSize, FLName) -> 
+  EndLbl = hipe_rtl:mk_new_label(),
+  EndLblName = hipe_rtl:label_name(EndLbl),
+  SuccessLbl = hipe_rtl:mk_new_label(),
+  SubLbl = hipe_rtl:mk_new_label(),
+  OtherLbl = hipe_rtl:mk_new_label(),
+  HeapLbl = hipe_rtl:mk_new_label(),
+  REFCLbl = hipe_rtl:mk_new_label(),
+  SubHeapLbl = hipe_rtl:mk_new_label(),
+  SubREFCLbl = hipe_rtl:mk_new_label(),
+  BitSize = hipe_rtl:mk_new_reg(),
+  BitOffset = hipe_rtl:mk_new_reg(),
+  Orig = hipe_rtl:mk_new_reg(),
+  [hipe_tagscheme:test_binary(Binary, hipe_rtl:label_name(SuccessLbl), FLName, 0.99),
+   SuccessLbl,
+   hipe_rtl:mk_load(SrcSize, Binary, hipe_rtl:mk_imm(?SUB_BIN_BINSIZE-2)),
+   hipe_rtl:mk_alu(SrcSize, SrcSize, sll, hipe_rtl:mk_imm(?BYTE_SHIFT)),
+   hipe_tagscheme:test_subbinary(Binary, hipe_rtl:label_name(SubLbl), hipe_rtl:label_name(OtherLbl)),
+   SubLbl,
+   hipe_rtl:mk_load(BitSize, Binary, hipe_rtl:mk_imm(?SUB_BIN_BITSIZE-2)),
+   hipe_rtl:mk_alu(SrcSize, SrcSize, add, BitSize),
+   hipe_rtl:mk_load(SrcOffset, Binary, hipe_rtl:mk_imm(?SUB_BIN_OFFS-2)),
+   hipe_rtl:mk_load(BitOffset, Binary, hipe_rtl:mk_imm(?SUB_BIN_BITOFFS-2)),
+   hipe_rtl:mk_alu(SrcOffset, SrcOffset, sll, hipe_rtl:mk_imm(?BYTE_SHIFT)),
+   hipe_rtl:mk_alu(SrcOffset, SrcOffset, add, BitOffset),
+   hipe_rtl:mk_load(Orig, Binary, hipe_rtl:mk_imm(?SUB_BIN_ORIG-2)),
+   hipe_tagscheme:test_heap_binary(Orig, hipe_rtl:label_name(SubHeapLbl), hipe_rtl:label_name(SubREFCLbl)),
+   SubHeapLbl,
+   hipe_rtl:mk_alu(SrcBase, Orig, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA-2)),
+   hipe_rtl:mk_goto(EndLblName),
+   SubREFCLbl,
+   hipe_rtl:mk_load(SrcBase, Orig, hipe_rtl:mk_imm(?PROC_BIN_BYTES-2)),
+   hipe_rtl:mk_goto(EndLblName),
+   OtherLbl,
+   hipe_rtl:mk_move(SrcOffset, hipe_rtl:mk_imm(0)),
+   hipe_tagscheme:test_heap_binary(Binary, hipe_rtl:label_name(HeapLbl), hipe_rtl:label_name(REFCLbl)),
+   HeapLbl,
+   hipe_rtl:mk_alu(SrcBase, Binary, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA-2)),
+   hipe_rtl:mk_goto(EndLblName),
+   REFCLbl,
+   hipe_rtl:mk_load(SrcBase, Binary, hipe_rtl:mk_imm(?PROC_BIN_BYTES-2)),
+   EndLbl].
 
-copy_aligned_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset,
-		   Size, TrueLblName, FalseLblName) ->
+%copy_aligned_static_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset,
+%			  Size, TrueLblName, FalseLblName) ->
+%  BaseDst = hipe_rtl:mk_new_reg(),
+%  BaseSrc = hipe_rtl:mk_new_reg(),
+%  BothOffset = hipe_rtl:mk_new_reg(),
+%  Iter = hipe_rtl:mk_imm(Size div ?BYTE_SIZE),
+
+%  small_check(hipe_rtl:mk_imm(Size), CopySize, FalseLblName) ++
+%    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
+%    [hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
+%    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, hipe_rtl:mk_imm(Size band ?LOW_BITS), TrueLblName).
+
+copy_aligned_bytes(CopyBase, CopyOffset, Size, Base, Offset, NewOffset, TrueLblName) ->
   BaseDst = hipe_rtl:mk_new_reg(),
   BaseSrc = hipe_rtl:mk_new_reg(),
   Iter = hipe_rtl:mk_new_reg(),
   Extra = hipe_rtl:mk_new_reg(),
   BothOffset = hipe_rtl:mk_new_reg(), 
- 
-  small_check(Size, CopySize, FalseLblName) ++
     initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
     [hipe_rtl:mk_alu(Extra, Size, 'and', hipe_rtl:mk_imm(?LOW_BITS)), 
      hipe_rtl:mk_alu(Iter, Size, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)), 
      hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)] ++
     easy_loop(BaseSrc, BaseDst, BothOffset, Iter, Extra, TrueLblName).
 
-copy_aligned_bytes_all(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset,
-		       TrueLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg(),
-  BaseDst = hipe_rtl:mk_new_reg(),
-  BaseSrc = hipe_rtl:mk_new_reg(),
-  Iter = hipe_rtl:mk_new_reg(),
-  BothOffset = hipe_rtl:mk_new_reg(),
-  LoopLbl = hipe_rtl:mk_new_label(), 
-    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
-    [hipe_rtl:mk_alu(Iter, CopySize, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)), 
-     hipe_rtl:mk_alu(NewOffset, Offset, 'add', CopySize),
-     hipe_rtl:mk_branch(BothOffset, ne, Iter, hipe_rtl:label_name(LoopLbl), TrueLblName, 0.99),
-     LoopLbl,
-     hipe_rtl:mk_load(Tmp1, BaseSrc, BothOffset, byte, unsigned),
-     hipe_rtl:mk_store(BaseDst, BothOffset, Tmp1, byte),
-     hipe_rtl:mk_alu(BothOffset, BothOffset, add, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_branch(BothOffset, ne, Iter, hipe_rtl:label_name(LoopLbl), TrueLblName, 0.99)].
+%copy_aligned_bytes_all(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset,
+%		       TrueLblName) ->
+%  Tmp1 = hipe_rtl:mk_new_reg(),
+%  BaseDst = hipe_rtl:mk_new_reg(),
+%  BaseSrc = hipe_rtl:mk_new_reg(),
+%  Iter = hipe_rtl:mk_new_reg(),
+%  BothOffset = hipe_rtl:mk_new_reg(),
+%  LoopLbl = hipe_rtl:mk_new_label(), 
+%    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
+%    [hipe_rtl:mk_alu(Iter, CopySize, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)), 
+%     hipe_rtl:mk_alu(NewOffset, Offset, 'add', CopySize),
+%     hipe_rtl:mk_branch(BothOffset, ne, Iter, hipe_rtl:label_name(LoopLbl), TrueLblName, 0.99),
+%     LoopLbl,
+%     hipe_rtl:mk_load(Tmp1, BaseSrc, BothOffset, byte, unsigned),
+%     hipe_rtl:mk_store(BaseDst, BothOffset, Tmp1, byte),
+%     hipe_rtl:mk_alu(BothOffset, BothOffset, add, hipe_rtl:mk_imm(1)),
+%     hipe_rtl:mk_branch(BothOffset, ne, Iter, hipe_rtl:label_name(LoopLbl), TrueLblName, 0.99)].
 
-copy_static_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, Size,
-		  TrueLblName, FalseLblName) ->
-  InitOffs = hipe_rtl:mk_new_reg(),
-  BaseDst = hipe_rtl:mk_new_reg(),
-  BaseSrc = hipe_rtl:mk_new_reg(),
-  BothOffset = hipe_rtl:mk_new_reg(),
-  EasyLbl = hipe_rtl:mk_new_label(),
-  HardLbl = hipe_rtl:mk_new_label(),
-  Iter = hipe_rtl:mk_imm(Size div ?BYTE_SIZE),
+%copy_static_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, Size,
+%		  TrueLblName, FalseLblName) ->
+%  InitOffs = hipe_rtl:mk_new_reg(),
+%  BaseDst = hipe_rtl:mk_new_reg(),
+%  BaseSrc = hipe_rtl:mk_new_reg(),
+%  BothOffset = hipe_rtl:mk_new_reg(),
+%  EasyLbl = hipe_rtl:mk_new_label(),
+%  HardLbl = hipe_rtl:mk_new_label(),
+%  Iter = hipe_rtl:mk_imm(Size div ?BYTE_SIZE),
   
-  small_check(hipe_rtl:mk_imm(Size div ?BYTE_SIZE), CopySize, FalseLblName) ++
-    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
-    [hipe_rtl:mk_alub(InitOffs, Offset, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, hipe_rtl:label_name(EasyLbl), hipe_rtl:label_name(HardLbl)),
-     EasyLbl,
-     hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
-    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, hipe_rtl:mk_imm(Size), TrueLblName) ++
-    [HardLbl,
-     hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
-    hard_loop(BaseSrc, BaseDst, BothOffset, Iter, InitOffs, hipe_rtl:mk_imm(Size band ?LOW_BITS), TrueLblName).
+%  small_check(hipe_rtl:mk_imm(Size div ?BYTE_SIZE), CopySize, FalseLblName) ++
+%    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
+%    [hipe_rtl:mk_alub(InitOffs, Offset, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, hipe_rtl:label_name(EasyLbl), hipe_rtl:label_name(HardLbl)),
+%     EasyLbl,
+%     hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
+%    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, hipe_rtl:mk_imm(Size), TrueLblName) ++
+%    [HardLbl,
+%     hipe_rtl:mk_alu(NewOffset, Offset, 'add', hipe_rtl:mk_imm(Size))] ++
+%    hard_loop(BaseSrc, BaseDst, BothOffset, Iter, InitOffs, hipe_rtl:mk_imm(Size band ?LOW_BITS), TrueLblName).
  
 
-copy_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, Size,
-	   TrueLblName, FalseLblName) ->
-  InitOffs = hipe_rtl:mk_new_reg(),
-  Iter = hipe_rtl:mk_new_reg(),
-  BaseSrc = hipe_rtl:mk_new_reg(),
-  BaseDst = hipe_rtl:mk_new_reg(),
-  BothOffset = hipe_rtl:mk_new_reg(),
-  Extra = hipe_rtl:mk_new_reg(),
-  EasyLbl = hipe_rtl:mk_new_label(),
-  HardLbl = hipe_rtl:mk_new_label(),
+%copy_bits(NoOfBits, FromBitOffs, ToBitOffs, FromBase, ToBase, FromSize, TrueLblName, FalseLblName) ->
+%  ShiftReg = hipe_rtl:mk_new_reg(),
+%  small_check(FormSize, NoOfBits, FalseLblName) ++
+%     [hipe_rtl
+%      hipe_rtl:mk_load(Shiftreg, BaseSrc, BothOffset, byte, unsigned),
+  
+
+%ToWordOffset = (ToBitOffs srl 5) sll 2,
+%ShiftReg = load(ToBase, ToWordOffset),
+%TBitOffset = ToBitOffs and 31,
+%ShiftReg = (ShiftReg srl BitOffset) sll BitOffset,
+%ToWordOffset = (ToBitOffs srl 5) sll 2,
+%FBitOffset = FromBitOffs and 31,
+%Tmp = load(FromBase, FromWordOffset),
+  
+
+%copy_bytes(CopyBase, CopyOffset, CopySize, Base, Offset, NewOffset, Size,
+%	   TrueLblName, FalseLblName) ->
+%  InitOffs = hipe_rtl:mk_new_reg(),
+%  Iter = hipe_rtl:mk_new_reg(),
+%  BaseSrc = hipe_rtl:mk_new_reg(),
+%  BaseDst = hipe_rtl:mk_new_reg(),
+%  BothOffset = hipe_rtl:mk_new_reg(),
+%  Extra = hipe_rtl:mk_new_reg(),
+%  EasyLbl = hipe_rtl:mk_new_label(),
+%  HardLbl = hipe_rtl:mk_new_label(),
  
-  small_check(Size, CopySize, FalseLblName) ++
-    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
-    [hipe_rtl:mk_alu(Iter, Size, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)), 
-     hipe_rtl:mk_alu(Extra, Size, 'and', hipe_rtl:mk_imm(?LOW_BITS)), 
-     hipe_rtl:mk_alub(InitOffs, Offset, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, hipe_rtl:label_name(EasyLbl), hipe_rtl:label_name(HardLbl)),
-     EasyLbl,
-     hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)] ++
-    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, Extra, TrueLblName) ++
-    [HardLbl,
-     hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)] ++
-    hard_loop(BaseSrc, BaseDst, BothOffset, Iter, InitOffs, Extra, TrueLblName).
+%  small_check(Size, CopySize, FalseLblName) ++
+%    initializations(BaseSrc, BaseDst, BothOffset, CopyOffset, Offset, CopyBase, Base) ++
+%    [hipe_rtl:mk_alu(Iter, Size, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)), 
+%     hipe_rtl:mk_alu(Extra, Size, 'and', hipe_rtl:mk_imm(?LOW_BITS)), 
+%     hipe_rtl:mk_alub(InitOffs, Offset, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, hipe_rtl:label_name(EasyLbl), hipe_rtl:label_name(HardLbl)),
+%     EasyLbl,
+%     hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)] ++
+%    easy_loop(BaseSrc, BaseDst, BothOffset, Iter, Extra, TrueLblName) ++
+%    [HardLbl,
+%     hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)] ++
+%    hard_loop(BaseSrc, BaseDst, BothOffset, Iter, InitOffs, Extra, TrueLblName).
 
 copy_string(StringBase, StringSize, BinBase, BinOffset, NewOffset, TrueLblName) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
@@ -1221,11 +1327,14 @@ copy_string(StringBase, StringSize, BinBase, BinOffset, NewOffset, TrueLblName) 
    hipe_rtl:mk_move(BothOffset, hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_alub(InitOffs, BinOffset, 'and', hipe_rtl:mk_imm(?LOW_BITS), eq, hipe_rtl:label_name(EasyLbl), hipe_rtl:label_name(HardLbl)),
    EasyLbl,
-   hipe_rtl:mk_alu(NewOffset, BinOffset, add, hipe_rtl:mk_imm(StringSize*?BYTE_SIZE))] ++
+   hipe_rtl:mk_alu(NewOffset, BinOffset, add, 
+		   hipe_rtl:mk_imm(?bytes_to_bits(StringSize)))] ++
    easy_loop(StringBase, NewBinBase, BothOffset, hipe_rtl:mk_imm(StringSize), hipe_rtl:mk_imm(0), TrueLblName) ++
     [HardLbl,
-     hipe_rtl:mk_alu(NewOffset, BinOffset, add, hipe_rtl:mk_imm(StringSize*?BYTE_SIZE))] ++
-    hard_loop(StringBase, NewBinBase, BothOffset, hipe_rtl:mk_imm(StringSize), InitOffs, hipe_rtl:mk_imm(0), TrueLblName).
+     hipe_rtl:mk_alu(NewOffset, BinOffset, add,
+		     hipe_rtl:mk_imm(?bytes_to_bits(StringSize)))] ++
+    hard_loop(StringBase, NewBinBase, BothOffset, hipe_rtl:mk_imm(StringSize),
+	      InitOffs, hipe_rtl:mk_imm(0), TrueLblName).
 
 copy_aligned_string(StringBase, StringSize, BinBase, BinOffset, NewOffset,
 		    TrueLblName) ->
@@ -1233,12 +1342,13 @@ copy_aligned_string(StringBase, StringSize, BinBase, BinOffset, NewOffset,
   TmpOffset = hipe_rtl:mk_new_reg(),
   BothOffset = hipe_rtl:mk_new_reg(),
   NewBinBase = hipe_rtl:mk_new_reg(),
-  ExtraBytes=StringSize rem WordSize,
+  ExtraBytes = StringSize rem WordSize,
   Code1 = [hipe_rtl:mk_alu(TmpOffset, BinOffset, srl, hipe_rtl:mk_imm(3)),
-   hipe_rtl:mk_alu(NewBinBase, BinBase, add, TmpOffset),
-   hipe_rtl:mk_move(BothOffset, hipe_rtl:mk_imm(0)),
-   hipe_rtl:mk_alu(NewOffset, BinOffset, add, hipe_rtl:mk_imm(StringSize*8))],
-  Code2 = case WordSize*(StringSize div WordSize) of
+	   hipe_rtl:mk_alu(NewBinBase, BinBase, add, TmpOffset),
+	   hipe_rtl:mk_move(BothOffset, hipe_rtl:mk_imm(0)),
+	   hipe_rtl:mk_alu(NewOffset, BinOffset, add,
+			   hipe_rtl:mk_imm(?bytes_to_bits(StringSize)))],
+  Code2 = case WordSize * (StringSize div WordSize) of
 	    0 ->
 	      [];
 	    X ->
@@ -1256,7 +1366,9 @@ tight_loop(BaseSrc, BaseDst, BothOffset, Iterations) ->
   [LoopLbl,
    hipe_rtl:mk_load(Tmp1, BaseSrc, BothOffset),
    hipe_rtl_arch:store_4(BaseDst, BothOffset, Tmp1),
-   hipe_rtl:mk_branch(BothOffset, ne, Iterations, hipe_rtl:label_name(LoopLbl), hipe_rtl:label_name(FinishLbl), 0.99),
+   hipe_rtl:mk_branch(BothOffset, ne, Iterations, 
+		      hipe_rtl:label_name(LoopLbl), 
+		      hipe_rtl:label_name(FinishLbl), 0.99),
    FinishLbl].
 
 last_part(_StringBase, _NewBinBase, _BothOffset, 0, TrueLblName) ->
@@ -1424,12 +1536,12 @@ big_loop(Tmp1, Tmp3, TmpOffset, Base) ->
 
 copy_int_big(_Base, Offset, NewOffset, 0, _Tmp1) ->
   [hipe_rtl:mk_move(NewOffset, Offset)];
-copy_int_big(Base, Offset, NewOffset, 8, Tmp1) ->
+copy_int_big(Base, Offset, NewOffset, ?BYTE_SIZE, Tmp1) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
     [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(3)),
      hipe_rtl:mk_store(Base, TmpOffset, Tmp1, byte),
      hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(8))];
-copy_int_big(Base, Offset, NewOffset, 16, Tmp1) ->
+copy_int_big(Base, Offset, NewOffset, 2*?BYTE_SIZE, Tmp1) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
     [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(3)),
      hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
@@ -1438,7 +1550,7 @@ copy_int_big(Base, Offset, NewOffset, 16, Tmp1) ->
      hipe_rtl:mk_alu(Tmp1, Tmp1, sra, hipe_rtl:mk_imm(8)),
      hipe_rtl:mk_store(Base, TmpOffset, Tmp1, byte),
      hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(16))];
-copy_int_big(Base, Offset, NewOffset, 24, Tmp1) ->
+copy_int_big(Base, Offset, NewOffset, 3*?BYTE_SIZE, Tmp1) ->
   TmpOffset = hipe_rtl:mk_new_reg(), 
     [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(3)),
      hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(2)),
@@ -1450,13 +1562,13 @@ copy_int_big(Base, Offset, NewOffset, 24, Tmp1) ->
      hipe_rtl:mk_alu(Tmp1, Tmp1, sra, hipe_rtl:mk_imm(8)),
      hipe_rtl:mk_store(Base, TmpOffset, Tmp1, byte),
      hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(24))];
-copy_int_big(Base, Offset,NewOffset, 32, Tmp1) ->
-    copy_big_word(Base, Offset, NewOffset, Tmp1);
+copy_int_big(Base, Offset,NewOffset, 4*?BYTE_SIZE, Tmp1) ->
+  copy_big_word(Base, Offset, NewOffset, Tmp1);
 copy_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
   OldOffset = hipe_rtl:mk_new_reg(),
   TmpOffset = hipe_rtl:mk_new_reg(),
   Bits = hipe_rtl:mk_new_reg(),
-  ByteSize = (Size + 7) div 8,
+  ByteSize = (Size + 7) div ?BYTE_SIZE,
   case Size band 7 of 
     0 -> 
       [hipe_rtl:mk_alu(OldOffset, Offset, sra, hipe_rtl:mk_imm(3)),
@@ -1465,7 +1577,7 @@ copy_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
     Rest ->
       [hipe_rtl:mk_alu(OldOffset, Offset, sra, hipe_rtl:mk_imm(3)),
        hipe_rtl:mk_alu(TmpOffset, OldOffset, add, hipe_rtl:mk_imm(ByteSize-1)),
-       hipe_rtl:mk_alu(Bits, Tmp1, sll, hipe_rtl:mk_imm(8-Rest)),
+       hipe_rtl:mk_alu(Bits, Tmp1, sll, hipe_rtl:mk_imm(?BYTE_SIZE-Rest)),
        hipe_rtl:mk_store(Base, TmpOffset, Bits, byte),
        hipe_rtl:mk_alu(Tmp1, Tmp1, sra, hipe_rtl:mk_imm(Rest))]
   end ++
@@ -1480,52 +1592,52 @@ copy_int_big(Base, Offset, NewOffset, Size, Tmp1) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
   EvenLbl = hipe_rtl:mk_new_label(),
   OddLbl = hipe_rtl:mk_new_label(),
-    [hipe_rtl:mk_alu(Tmp2, Size, srl, hipe_rtl:mk_imm(3)),
-     hipe_rtl:mk_alu(Tmp3, Offset, srl, hipe_rtl:mk_imm(3)),
-     hipe_rtl:mk_alu(TmpOffset, Tmp2, 'add', Tmp3),
-     hipe_rtl:mk_alub(Tmp4, Size, 'and', hipe_rtl:mk_imm(7), eq, 
-		      hipe_rtl:label_name(EvenLbl), hipe_rtl:label_name(OddLbl)),
-     OddLbl,
-     hipe_rtl:mk_alu(Tmp6, hipe_rtl:mk_imm(8), sub, Tmp4),
-     hipe_rtl:mk_alu(Tmp5, Tmp1, sll, Tmp6),
-     hipe_rtl:mk_store(Base, TmpOffset, Tmp5, byte),
-     EvenLbl,
-     hipe_rtl:mk_alu(Tmp1, Tmp1, srl, Tmp4)] ++
+  [hipe_rtl:mk_alu(Tmp2, Size, srl, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_alu(Tmp3, Offset, srl, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_alu(TmpOffset, Tmp2, 'add', Tmp3),
+   hipe_rtl:mk_alub(Tmp4, Size, 'and', hipe_rtl:mk_imm(7), eq, 
+		    hipe_rtl:label_name(EvenLbl), hipe_rtl:label_name(OddLbl)),
+   OddLbl,
+   hipe_rtl:mk_alu(Tmp6, hipe_rtl:mk_imm(8), sub, Tmp4),
+   hipe_rtl:mk_alu(Tmp5, Tmp1, sll, Tmp6),
+   hipe_rtl:mk_store(Base, TmpOffset, Tmp5, byte),
+   EvenLbl,
+   hipe_rtl:mk_alu(Tmp1, Tmp1, srl, Tmp4)] ++
     
     big_loop(Tmp1, Tmp3, TmpOffset, Base) ++
-  
+    
     [hipe_rtl:mk_alu(NewOffset, Offset, 'add', Size)].
 
 copy_big_word(Base, Offset, NewOffset, Word) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
-    [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(3)),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(3)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(32))].
+  [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, sub, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(8)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(32))].
 
 copy_little_word(Base, Offset, NewOffset, Word) ->
   TmpOffset = hipe_rtl:mk_new_reg(),
-    [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
-     hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
-     hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
-     hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(32))].
+  [hipe_rtl:mk_alu(TmpOffset, Offset, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(TmpOffset, TmpOffset, add, hipe_rtl:mk_imm(1)),
+   hipe_rtl:mk_alu(Word, Word, sra, hipe_rtl:mk_imm(?BYTE_SIZE)),
+   hipe_rtl:mk_store(Base, TmpOffset, Word, byte),
+   hipe_rtl:mk_alu(NewOffset, Offset, add, hipe_rtl:mk_imm(32))].
 
 copy_offset_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) ->
   Tmp2 = hipe_rtl:mk_new_reg(),
@@ -1573,7 +1685,8 @@ copy_offset_int_big(Base, Offset, NewOffset, Size, Tmp1) when is_integer(Size) -
    hipe_rtl:mk_alu(Tmp8, hipe_rtl:mk_imm(?BYTE_SIZE), 'sub', Tmp2),
    hipe_rtl:mk_alu(OldByte, OldByte, srl, Tmp8),
    hipe_rtl:mk_alu(OldByte, OldByte, sll, Tmp8),
-   hipe_rtl:mk_alu(Tmp7, Tmp2, 'add', hipe_rtl:mk_imm((WordSize-1)*?BYTE_SIZE)),
+   hipe_rtl:mk_alu(Tmp7, Tmp2, 'add',
+		   hipe_rtl:mk_imm(?bytes_to_bits(WordSize-1))),
    hipe_rtl:mk_alu(Tmp1, Tmp1, sll, Tmp7),
    hipe_rtl:mk_alu(Tmp1, Tmp1, srl, Tmp7),
    hipe_rtl:mk_alu(Tmp1, Tmp1, 'or', OldByte),
@@ -1584,7 +1697,7 @@ copy_float_little(_Base, _Offset, _NewOffset, _Src, FalseLblName, _TrueLblName, 
 copy_float_little(Base, Offset, NewOffset, Src, _FalseLblName, TrueLblName, pass) ->
   FloatLo = hipe_rtl:mk_new_reg(),
   FloatHi = hipe_rtl:mk_new_reg(),
-  TmpOffset =hipe_rtl:mk_new_reg(),
+  TmpOffset = hipe_rtl:mk_new_reg(),
    hipe_tagscheme:unsafe_load_float(FloatLo, FloatHi, Src) ++
     copy_little_word(Base, Offset, TmpOffset, FloatLo) ++
     copy_little_word(Base, TmpOffset, NewOffset, FloatHi) ++
@@ -1641,12 +1754,12 @@ calculate_var_size([], Args, _VarSize, _FalseLblName) ->
   {[], Args};
 
 calculate_var_size([Unit|Units], [Var|Vars], VarSize, FalseLblName) ->
-  {SizeCode, ThisSize} =  hipe_rtl_bin_util:make_size(Unit, Var, FalseLblName),
+  {SizeCode, ThisSize} = hipe_rtl_bin_util:make_size(Unit, Var, FalseLblName),
   calculate_var_size(Units, Vars, VarSize, ThisSize, SizeCode, FalseLblName).
 
 calculate_var_size([Unit|Units], [Var|Vars], VarSize, LastSize, AccCode, FalseLblName) ->
   
-  {SizeCode,ThisSize} =  hipe_rtl_bin_util:make_size(Unit, Var, FalseLblName),
+  {SizeCode,ThisSize} = hipe_rtl_bin_util:make_size(Unit, Var, FalseLblName),
   ThisCode = [SizeCode,
 	      hipe_rtl:mk_alu(ThisSize, ThisSize, 'add', LastSize)],
   calculate_var_size(Units, Vars, VarSize, ThisSize, AccCode ++ ThisCode, FalseLblName);
@@ -1658,7 +1771,8 @@ calculate_all_size([], _VarSize, _FalseLblName) ->
 
 calculate_all_size([Bin|Rest], VarSize, FalseLblName) ->
   ThisSize = hipe_rtl:mk_new_reg(),
-  calculate_all_size(Rest, VarSize, ThisSize, get_binsize(ThisSize, Bin, FalseLblName), FalseLblName).
+  calculate_all_size(Rest, VarSize, ThisSize,
+		     get_binsize(ThisSize, Bin, FalseLblName), FalseLblName).
 
 calculate_all_size([Bin|Rest],  VarSize, LastSize, AccCode, FalseLblName) ->
   ThisSize = hipe_rtl:mk_new_reg(),

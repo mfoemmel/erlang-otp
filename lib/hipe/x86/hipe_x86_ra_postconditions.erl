@@ -1,7 +1,12 @@
 %%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
 
--ifndef(HIPE_X86_RA_POSTCONDITIONS).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_RA_POSTCONDITIONS,	hipe_amd64_ra_postconditions).
+-define(HIPE_X86_REGISTERS,		hipe_amd64_registers).
+-define(HIPE_X86_SPECIFIC,		hipe_amd64_specific).
+-define(ECX,				rcx).
+-else.
 -define(HIPE_X86_RA_POSTCONDITIONS,	hipe_x86_ra_postconditions).
 -define(HIPE_X86_REGISTERS,		hipe_x86_registers).
 -define(HIPE_X86_SPECIFIC,		hipe_x86_specific).

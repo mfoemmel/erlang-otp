@@ -340,9 +340,17 @@ check_lock(Tid, Oid, [Lock | Locks], TabLocks, X, AlreadyQ, Type) ->
 	       Tid#tid.pid == WaitForTid#tid.pid ->
 		    dbg_out("Spurious lock conflict ~w ~w: ~w -> ~w~n",
 			    [Oid, Lock, Tid, WaitForTid]),  
-		    %%	    check_lock(Tid, Oid, Locks, TabLocks, {queue, WaitForTid}, AlreadyQ);
-		    %% BUGBUG Fix this if possible
-		    {no, WaitForTid};
+		    %% Test..
+		    {Tab, _Key} = Oid,
+		    HaveQ = (ets:lookup(mnesia_lock_queue, Oid) /= []) 
+			orelse (ets:lookup(mnesia_lock_queue,{Tab,?ALL}) /= []),
+		    if 
+			HaveQ -> 
+			    {no, WaitForTid};
+			true -> 
+			    check_lock(Tid,Oid,Locks,TabLocks,{queue,WaitForTid},AlreadyQ,Type)
+		    end;
+		    %%{no, WaitForTid};  Safe solution 
 	       true ->
 		    {no, WaitForTid}
 	    end

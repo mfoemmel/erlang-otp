@@ -19,6 +19,9 @@
 include $(ERL_TOP)/make/target.mk
 include ../include/internal/$(TARGET)/ethread.mk
 
+OMIT_OMIT_FP=no
+
+
 CC=@CC@
 LD=@LD@
 AR=@AR@
@@ -79,6 +82,10 @@ endif
 endif
 endif
 endif
+endif
+
+ifeq ($(OMIT_OMIT_FP),yes)
+OMIT_FP=false
 endif
 
 CREATE_DIRS=
@@ -290,7 +297,15 @@ endif
 # Everything to build
 #
 all: $(CREATE_DIRS) $(ETHREAD_LIB) $(ERTS_LIBS) $(ERTS_INTERNAL_LIBS)
-
+ifeq ($(OMIT_OMIT_FP),yes)
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* *                                                         * *'
+	@echo '* * NOTE: Omit frame pointer optimization has been omitted  * *'
+	@echo '* *                                                         * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+	@echo '* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *'
+endif
 #
 # The libs ...
 #

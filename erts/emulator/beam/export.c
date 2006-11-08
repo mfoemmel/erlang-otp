@@ -28,14 +28,15 @@
 
 #define EXPORT_SIZE   500
 #define EXPORT_LIMIT  (64*1024)
-#define EXPORT_RATE   100
 
 #define EXPORT_HASH(m,f,a) ((m)*(f)+(a))
-static IndexTable export_table;
+
+static IndexTable export_table;	/* Not locked. */
+static Hash secondary_export_table; /* Locked. */
 
 #include "erl_smp.h"
 
-static erts_smp_rwmtx_t export_table_lock;
+static erts_smp_rwmtx_t export_table_lock; /* Locks the secondary export table. */
 
 #define export_read_lock()	erts_smp_rwmtx_rlock(&export_table_lock)
 #define export_read_unlock()	erts_smp_rwmtx_runlock(&export_table_lock)
@@ -44,19 +45,23 @@ static erts_smp_rwmtx_t export_table_lock;
 #define export_init_lock()	erts_smp_rwmtx_init(&export_table_lock, \
 						    "export_tab")
 
-
 extern Eterm* em_call_error_handler;
 extern Uint* em_call_traced_function;
 
 void
 export_info(int to, void *to_arg)
 {
+#ifdef ERTS_SMP
     int lock = !ERTS_IS_CRASH_DUMPING;
     if (lock)
 	export_read_lock();
+#endif
     index_info(to, to_arg, &export_table);
+    hash_info(to, to_arg, &secondary_export_table);
+#ifdef ERTS_SMP
     if (lock)
 	export_read_unlock();
+#endif
 }
 
 
@@ -112,8 +117,10 @@ init_export_table(void)
     f.alloc = (HALLOC_FUN) export_alloc;
     f.free = (HFREE_FUN) export_free;
 
-    index_init(ERTS_ALC_T_EXPORT_TABLE, &export_table, "export_list",
-	       EXPORT_SIZE, EXPORT_LIMIT, EXPORT_RATE, f);
+    erts_index_init(ERTS_ALC_T_EXPORT_TABLE, &export_table, "export_list",
+		    EXPORT_SIZE, EXPORT_LIMIT, f);
+    hash_init(ERTS_ALC_T_EXPORT_TABLE, &secondary_export_table,
+	      "secondary_export_table", 50, f);
 }
 
 /*
@@ -136,7 +143,6 @@ erts_find_export_entry(Eterm m, Eterm f, unsigned int a)
     int ix;
     HashBucket* b;
 
-    export_read_lock();
     ix = hval % export_table.htable.size;
     b = export_table.htable.bucket[ix];
 
@@ -151,7 +157,6 @@ erts_find_export_entry(Eterm m, Eterm f, unsigned int a)
 	}
 	b = b->next;
     }
-    export_read_unlock();
     return (Export*)b;
 }
 
@@ -177,20 +182,21 @@ erts_find_function(Eterm m, Eterm f, unsigned int a)
     e.code[1] = f;
     e.code[2] = a;
 
-    export_read_lock();
     ep = hash_get(&export_table.htable, (void*) &e);
     if (ep != NULL && ep->address == ep->code+3 &&
 	ep->code[3] != (Uint) em_call_traced_function) {
 	ep = NULL;
     }
-    export_read_unlock();
     return ep;
 }
-
 
 /*
  * Returns a pointer to an existing export entry for a MFA,
  * or creates a new one and returns the pointer.
+ *
+ * This function provides unlocked write access to the main export
+ * table. It should only be used during start up or when
+ * all other threads are blocked.
  */
 
 Export*
@@ -198,66 +204,92 @@ erts_export_put(Eterm mod, Eterm func, unsigned int arity)
 {
     Export e;
     int ix;
-    Export *ep;
+
+    ERTS_SMP_LC_ASSERT(erts_initialized == 0 || erts_smp_is_system_blocked(0));
+    ASSERT(is_atom(mod));
+    ASSERT(is_atom(func));
+    e.code[0] = mod;
+    e.code[1] = func;
+    e.code[2] = arity;
+    ix = index_put(&export_table, (void*) &e);
+    return (Export*) erts_index_lookup(&export_table, ix);
+}
+
+/*
+ * Find the existing export entry for M:F/A. Failing that, create a stub
+ * export entry (making a call through it will cause the error_handler to
+ * be called).
+ *
+ * Stub export entries will be placed in the secondary export table.
+ * erts_export_consolidate() will move all stub export entries into the
+ * main export table (will be done the next time code is loaded).
+ */
+
+Export*
+erts_export_get_or_make_stub(Eterm mod, Eterm func, unsigned int arity)
+{
+    Export e;
+    Export* ep;
     
     ASSERT(is_atom(mod));
     ASSERT(is_atom(func));
     
-    e.fake_op_func_info_for_hipe[0] = 0;
-    e.fake_op_func_info_for_hipe[1] = 0;
     e.code[0] = mod;
     e.code[1] = func;
     e.code[2] = arity;
-    e.address = e.code+3;
-    e.code[4] = 0;
-    e.match_prog_set = NULL;
-    export_write_lock();
-    ix = index_put(&export_table, (void*) &e);
-    ep = (Export*)export_table.table[ix];
-    export_write_unlock();
+    ep = erts_find_export_entry(mod, func, arity);
+    if (ep == 0) {
+	/*
+	 * The code is not loaded (yet). Put the export in the secondary
+	 * export table, to avoid having to lock the main export table.
+	 */
+	export_write_lock();
+	ep = (Export *) hash_put(&secondary_export_table, (void*) &e);
+	export_write_unlock();
+    }
     return ep;
+}
+
+/*
+ * To be called before loading code (with other threads blocked).
+ * This function will move all export entries from the secondary
+ * export table into the primary.
+ */
+void
+erts_export_consolidate(void)
+{
+#ifdef DEBUG
+    HashInfo hi;
+#endif
+
+    ERTS_SMP_LC_ASSERT(erts_initialized == 0 || erts_smp_is_system_blocked(0));
+
+    export_write_lock();
+    erts_index_merge(&secondary_export_table, &export_table);
+    erts_hash_merge(&secondary_export_table, &export_table.htable);
+    export_write_unlock();
+#ifdef DEBUG
+    hash_get_info(&hi, &export_table.htable);
+    ASSERT(export_table.entries == hi.objs);
+#endif
 }
 
 Export *export_list(int i)
 {
-    Export *ep;
-
-    export_read_lock();
-    ep = (Export*)export_table.table[i];
-    export_read_unlock();
-    return ep;
+    return (Export*) erts_index_lookup(&export_table, i);
 }
 
 int export_list_size(void)
 {
-    int size;
-    int lock = !ERTS_IS_CRASH_DUMPING;
-    if (lock)
-	export_read_lock();
-    size = export_table.sz;
-    if (lock)
-	export_read_unlock();
-    return size;
+    return export_table.entries;
 }
 
 int export_table_sz(void)
 {
-    int sz;
-    int lock = !ERTS_IS_CRASH_DUMPING;
-    if (lock)
-	export_read_lock();
-    sz = index_table_sz(&export_table);
-    if (lock)
-	export_read_unlock();
-    return sz;
+    return index_table_sz(&export_table);
 }
 
 Export *export_get(Export *e)
 {
-    Export *ep;
-
-    export_read_lock();
-    ep = hash_get(&export_table.htable, e);
-    export_read_unlock();
-    return ep;
+    return hash_get(&export_table.htable, e);
 }

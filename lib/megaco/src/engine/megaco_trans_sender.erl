@@ -174,13 +174,15 @@ loop(#state{reqs = [], acks = [], timeout = Timeout} = S, _) ->
 
 	{send_pending, Serial} ->
 	    ?d("loop(empty) -> received send_pending [~w] request", [Serial]),
-	    send_pending(S#state.conn_handle, Serial, [], []),
+	    handle_send_result( 
+	      send_pending(S#state.conn_handle, Serial, [], []) 
+	     ),
 	    loop(S, Timeout);
 
 	{send_reply, Reply} ->
 	    ?d("loop(empty) -> received send_reply request", []),
 	    #state{conn_handle = CH, req_maxsize = MaxSz} = S,
-	    send_reply(CH, Reply, MaxSz, 0, [], []),
+	    handle_send_result( send_reply(CH, Reply, MaxSz, 0, [], []) ),
 	    loop(S, Timeout);
 
 	{upgrade, CH} ->
@@ -221,7 +223,8 @@ loop(#state{reqs = [], acks = [], timeout = Timeout} = S, _) ->
 	    exit(Reason);
 
 	M ->
-	    error_msg("received unexpected message: ignoring: ~n~p", [M]),
+	    warning_msg("received unexpected message (ignoring): "
+			"~n~p", [M]),
 	    loop(S, Timeout)
 
     end;
@@ -236,7 +239,9 @@ loop(#state{reqs = Reqs, acks = Acks, ack_maxcount = MaxAcks,
 	    ?d("loop(active,~w) -> "
 		"received [~w] send_ack [~w] request", 
 	    [To, length(Acks), Serial]),
-	    send_msg(S#state.conn_handle, Reqs, [Serial|Acks]),
+	    handle_send_result( 
+	      send_msg(S#state.conn_handle, Reqs, [Serial|Acks])
+	     ),
 	    loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout);
 
 	{send_ack, Serial} ->
@@ -248,7 +253,9 @@ loop(#state{reqs = Reqs, acks = Acks, ack_maxcount = MaxAcks,
 	    ?d("loop(active,~w) -> [~w,~w] "
 		"received send_ack_now [~w] request", 
 		[To, length(Reqs), length(Acks), Serial]),
-	    send_msg(S#state.conn_handle, Reqs, [Serial|Acks]),
+	    handle_send_result( 
+	      send_msg(S#state.conn_handle, Reqs, [Serial|Acks])
+	     ),
 	    loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout);
 
 	%% We need to check that this is not a resend!!
@@ -278,13 +285,17 @@ loop(#state{reqs = Reqs, acks = Acks, ack_maxcount = MaxAcks,
 	{send_pending, Serial} ->
 	    ?d("loop(active,~w) -> received send_pending [~w] request", 
 		[To, Serial]),
-	    send_pending(S#state.conn_handle, Serial, Reqs, Acks),
+	    handle_send_result( 
+	      send_pending(S#state.conn_handle, Serial, Reqs, Acks)
+	     ),
 	    loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout);
 
 	{send_reply, Reply} ->
 	    ?d("loop(active,~w) -> received send_reply request", [To]),
 	    #state{conn_handle = CH, req_maxsize = MaxSz, req_sz = ReqSz} = S,
-	    send_reply(CH, Reply, MaxSz, ReqSz, Reqs, Acks),
+	    handle_send_result( 
+	      send_reply(CH, Reply, MaxSz, ReqSz, Reqs, Acks)
+	     ),
 	    loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout);
 
 	{upgrade, CH} ->
@@ -319,7 +330,7 @@ loop(#state{reqs = Reqs, acks = Acks, ack_maxcount = MaxAcks,
 
 	stop ->
 	    ?d("loop(active,~w) -> received stop request", [To]),
-	    send_msg(S#state.conn_handle, Reqs, Acks),
+	    handle_send_result( send_msg(S#state.conn_handle, Reqs, Acks) ),
 	    exit(normal);
 
 	{system, From, Msg} ->
@@ -335,18 +346,19 @@ loop(#state{reqs = Reqs, acks = Acks, ack_maxcount = MaxAcks,
 	    exit(Reason);
 
 	M ->
-	    error_msg("received unexpected message: ignoring: ~n~p", [M]),
+	    warning_msg("received unexpected message (ignoring): "
+			"~n~p", [M]),
 	    loop(S, to(To, Start))
 
     after To ->
 	    ?d("loop(active,~w) -> timeout - time to send", [To]),
-	    send_msg(S#state.conn_handle, Reqs, Acks),
+	    handle_send_result( send_msg(S#state.conn_handle, Reqs, Acks) ),
 	    loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout)
     end;
 
 loop(#state{reqs = Reqs, acks = Acks, timeout = Timeout} = S, _To) ->
     ?d("loop(active) -> timeout [~w, ~w]", [length(Reqs),length(Acks)]),
-    send_msg(S#state.conn_handle, Reqs, Acks),
+    handle_send_result( send_msg(S#state.conn_handle, Reqs, Acks) ),
     loop(S#state{req_sz = 0, reqs = [], acks = []}, Timeout).
 
 
@@ -364,8 +376,8 @@ handle_send_req(Tid, Req,
 		       req_maxsize = MaxSz, reqs = Reqs, acks = Acks} = S) 
   when size(Req) >= MaxSz ->
     ?d("handle_send_req -> request bigger then maxsize ~w", [MaxSz]),
-    send_msg(CH, Reqs, Acks),
-    send_msg(CH, [{Tid, Req}], []),
+    handle_send_result( send_msg(CH, Reqs, Acks) ),
+    handle_send_result( send_msg(CH, [{Tid, Req}], []) ),
     {S#state{req_sz = 0, reqs = [], acks = []}, true};
 
 %% And handle all the other cases
@@ -377,19 +389,23 @@ handle_send_req(Tid, Req,
 	true ->
 	    %% A re-send, time to send whatever we have in the store
 	    ?d("handle_send_req -> was a re-send, so flush",[]),
-	    send_msg(CH, Reqs, Acks),
+	    handle_send_result( send_msg(CH, Reqs, Acks) ),
 	    {S#state{req_sz = 0, reqs = [], acks = []}, true};
 
 	false when length(Reqs) + 1 >= MaxReqs ->
 	    %% We finally passed the req-maxcount limit
 	    ?d("handle_send_req -> maxcount ~w passed", [MaxReqs]),
-	    send_msg(S#state.conn_handle, [{Tid, Req}|Reqs], Acks),
+	    handle_send_result( 
+	      send_msg(S#state.conn_handle, [{Tid, Req}|Reqs], Acks)
+	     ),
 	    {S#state{req_sz = 0, reqs = [], acks = []}, true};
 
 	false when size(Req) + ReqSz >= MaxSz ->
 	    %% We finally passed the req-maxsize limit
 	    ?d("handle_send_req -> maxsize ~w passed", [MaxSz]),
-	    send_msg(S#state.conn_handle, [{Tid, Req}|Reqs], Acks),
+	    handle_send_result( 
+	      send_msg(S#state.conn_handle, [{Tid, Req}|Reqs], Acks)
+	     ),
 	    {S#state{req_sz = 0, reqs = [], acks = []}, true};
 
 	false ->
@@ -454,7 +470,7 @@ send_reqs(CH, Reqs, Acks, Acc, AccSz, MaxSz) ->
 	{NewReqs, _NewReqSz, false} ->
 	    ?d("send_reqs -> nothing sent yet"
 		"~n   length(NewReqs): ~w", [length(NewReqs)]),
-	    send_msg(CH, NewReqs, Acks),
+	    handle_send_result( send_msg(CH, NewReqs, Acks) ),
 	    {[], 0};
 	{NewReqs, NewReqSz, true} ->
 	    ?d("send_reqs -> something sent"
@@ -477,8 +493,8 @@ maybe_send_reqs(CH, [{Tid, Req}|Reqs], Acks, Acc, _AccSz, MaxSz, _Sent)
     ?d("maybe_send_reqs -> entry when request [~w] size (~w) > max size"
 	"~n   Acks:        ~w"
 	"~n   length(Acc): ~w", [Tid, size(Req), Acks, length(Acc)]),
-    send_msg(CH, Acc, Acks),
-    send_msg(CH, [{Tid, Req}], []),
+    handle_send_result( send_msg(CH, Acc, Acks) ),
+    handle_send_result( send_msg(CH, [{Tid, Req}], []) ),
     maybe_send_reqs(CH, Reqs, [], [], 0, MaxSz, true);
 maybe_send_reqs(CH, [{Tid, Req}|Reqs], Acks, Acc, AccSz, MaxSz, _Sent) 
   when AccSz + size(Req) >= MaxSz ->
@@ -487,7 +503,7 @@ maybe_send_reqs(CH, [{Tid, Req}|Reqs], Acks, Acc, AccSz, MaxSz, _Sent)
 	"~n   Tid:         ~w"
 	"~n   Acks:        ~w"
 	"~n   length(Acc): ~w", [Tid, size(Req) + AccSz, Acks, length(Acc)]),
-    send_msg(CH, [{Tid, Req}|Acc], Acks),
+    handle_send_result( send_msg(CH, [{Tid, Req}|Acc], Acks) ),
     maybe_send_reqs(CH, Reqs, [], [], 0, MaxSz, true);
 maybe_send_reqs(CH, [{Tid, Req}|Reqs], Acks, Acc, AccSz, MaxSz, Sent) ->
     ?d("maybe_send_reqs -> entry when"
@@ -526,7 +542,7 @@ send_reply(CH, Reply, MaxSz, _ReqSz, Reqs, Acks) ->
 	"~n   length(Acks): ~w", [length(Reqs), length(Acks)]),
     case megaco_config:lookup_local_conn(CH) of
 	[CD] when size(Reply) > MaxSz ->
-	    send_msg(CD, lists:reverse(Reqs), Acks),
+	    handle_send_result( send_msg(CD, lists:reverse(Reqs), Acks) ),
 	    Rep = {transactionReply, Reply},
 	    do_send_msg(CD, Rep, [], []);
 	[CD] ->
@@ -599,6 +615,20 @@ do_send_msg(CD, Reqs0, SerialRanges) ->
     megaco_messenger_misc:send_body(CD, "send trans reqs and acks", Body).
 
 
+handle_send_result(ok) ->
+    ok;
+handle_send_result({ok, _}) ->
+    ok;
+handle_send_result({error, {send_message_cancelled, _Reason}}) ->
+    ok;
+handle_send_result({error, {send_message_failed, Reason}}) ->
+    error_msg("Failed sending message: ~n   ~p", [Reason]),
+    error;
+handle_send_result(Error) ->
+    error_msg("Failed sending message: ~n   ~p", [Error]),
+    error.
+
+
 ranges(L) ->
     lists:reverse(ranges(lists:sort(L), [], [])).
 
@@ -639,8 +669,11 @@ t() ->
     {A,B,C} = erlang:now(),
     A*1000000000+B*1000+(C div 1000).
 
+warning_msg(F, A) ->
+    ?megaco_warning("Transaction sender: " ++ F, A).
+ 
 error_msg(F, A) ->
-    (catch error_logger:error_msg("[~p] " ++ F ++ "~n", [?MODULE|A])).
+    ?megaco_error("Transaction sender: " ++ F, A).
  
 
 %%%-----------------------------------------------------------------

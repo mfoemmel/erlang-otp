@@ -88,7 +88,7 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef ERTS_ENABLE_LOCK_CHECK
 				     " [lock-checking]"
 #endif
-#ifdef USE_KERNEL_POLL
+#ifdef ERTS_ENABLE_KERNEL_POLL
 				     " [kernel-poll:%s]"
 #endif	
 #ifdef HEAP_FRAG_ELIM_TEST
@@ -281,7 +281,7 @@ erts_print_system_version(int to, void *arg, Process *c_p)
 #ifdef USE_THREADS
 		      , erts_async_max_threads
 #endif
-#ifdef USE_KERNEL_POLL
+#ifdef ERTS_ENABLE_KERNEL_POLL
 		      , erts_use_kernel_poll ? "true" : "false"
 #endif
 	);
@@ -330,7 +330,6 @@ process_info_1(Process* p, Eterm pid)
     rp = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN,
 		       pid, ERTS_PROC_LOCKS_ALL);
     if (!rp) {
-	ERTS_SMP_BIF_CHK_EXITED(p);
 	return am_undefined;
     }
 
@@ -562,8 +561,6 @@ BIF_RETTYPE process_info_2(BIF_ALIST_2)
 	res = am_undefined; /* if the process is not active return undefined */
     }
 
-    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
-
 #ifdef ERTS_SMP
     if (BIF_P == rp)
 	info_locks &= ~ERTS_PROC_LOCK_MAIN;
@@ -634,7 +631,6 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 	hp = HAlloc(BIF_P, 3);
     } else if (item == am_messages) {
 	ErlMessage* mp;
-	Eterm* cons;
 	int n;
 
 	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(rp);
@@ -642,32 +638,21 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 
 	if (n == 0) {
 	    hp = HAlloc(BIF_P, 3);
-	    res = NIL;
 	} else {
-	    /*
-	     * XXX Notes for heap fragment elimination (private heap emulator):
-	     * Several heap fragments can get allocated, and the pointers could
-	     * be in the wrong order. (Because copy_object() implictly calls
-	     * HAlloc().)
-	     */
+	    Eterm* ma = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, n*sizeof(Eterm));
+	    int i;
 
-	    hp = HAlloc(BIF_P, 3 + 2*n);
-	    hp += 2*n;		/* Point beyond the list. */
-	    cons = hp - 2;
-	    res = make_list(cons); /* first cons cell */
-	    /* Build with back-pointers (as cons whould have done) */
-	    mp = rp->msg.first;
-
-	    while (mp != NULL) {
+	    i = 0;
+	    for (mp = rp->msg.first; mp != NULL; mp = mp->next) {
 #ifdef HYBRID
 		/*
 		 * Hybrid: Almost all messages already are in the message area.
 		 */
 		if (NO_COPY(ERL_MESSAGE_TERM(mp)) || rp == BIF_P) {
 		    /* Constant, already in message area, or same process. */
-		    cons[0] = ERL_MESSAGE_TERM(mp);
+		    ma[i] = ERL_MESSAGE_TERM(mp);
 		} else {
-		    cons[0] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
+		    ma[i] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
 		}
 #else
 		/*
@@ -675,19 +660,23 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 		 */
 		if (rp == BIF_P) {
 #if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
-		    if (mp->bp)
+		    if (mp->bp) {
 			erts_move_msg_mbuf_to_proc_mbufs(BIF_P, mp);
+		    }
 #endif
-		    cons[0] = ERL_MESSAGE_TERM(mp);
+		    ma[i] = ERL_MESSAGE_TERM(mp);
 		} else {
-		    cons[0] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
+		    ma[i] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
 		}
 #endif
-		cons -= 2;	/* next cell */
-		cons[3] = make_list(cons); /* write tail */
-		mp = mp->next;
+		i++;
 	    }
-	    cons[3] = NIL; 
+	    hp = HAlloc(BIF_P, 3+2*n);
+	    for (i = n-1; i >= 0; i--) {
+		res = CONS(hp, ma[i], res);
+		hp += 2;
+	    }
+	    erts_free(ERTS_ALC_T_TMP, (void *) ma);
 	}
     } else if (item == am_message_queue_len) {
 	hp = HAlloc(BIF_P, 3);
@@ -1133,7 +1122,6 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	Eterm* tp = tuple_val(BIF_ARG_1);
 	Uint arity = *tp++;
 	res = info_1_tuple(BIF_P, tp, arityval(arity));
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	if (is_non_value(res))
 	    goto error;
 	return res;
@@ -1144,13 +1132,11 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_memory(NULL, NULL, BIF_P, THE_NON_VALUE);
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_allocated_areas) {
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_allocated_areas(NULL, NULL, BIF_P);
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_allocated) {
 	BIF_RET(erts_instr_get_memory_map(BIF_P));
@@ -1194,11 +1180,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 
 	/* Need to be the only thread running... */
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
-	erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
-	/*
-	 * NOTE: since we alloc gc we are not allowed to lock
-	 *       (any) process main locks while blocking system...
-	 */
+	erts_smp_block_system(0);
 
 	if (BIF_ARG_1 == am_info)
 	    info(ERTS_PRINT_DSBUF, (void *) dsbufp);
@@ -1215,7 +1197,6 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	ASSERT(dsbufp && dsbufp->str);
 	res = new_binary(BIF_P, (byte *) dsbufp->str, (int) dsbufp->str_len);
 	erts_destroy_info_dsbuf(dsbufp);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == AM_dist_ctrl) {
 	DistEntry *dep;
@@ -1251,7 +1232,6 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	hp = HAlloc(BIF_P, dsbufp->str_len*2);
 	res = buf_to_intlist(&hp, dsbufp->str, dsbufp->str_len, NIL);
 	erts_destroy_tmp_dsbuf(dsbufp);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	BIF_RET(res);
     } else if (BIF_ARG_1 == am_system_architecture) {
 	hp = HAlloc(BIF_P, 2*(sizeof(ERLANG_ARCHITECTURE)-1));
@@ -1549,13 +1529,23 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	return am_false;
     } else {
 	/* Arguments that are unusual... */
+	DECL_AM(constant_pool_support);
 	DECL_AM(scheduler_id);
 	DECL_AM(schedulers);
 	DECL_AM(smp_support);
+	DECL_AM(lock_checking);
+	DECL_AM(kernel_poll);
+	DECL_AM(check_io);
 	DECL_AM(stop_memory_trace);
 
 	if (BIF_ARG_1 == AM_smp_support) {
 #ifdef ERTS_SMP
+	    BIF_RET(am_true);
+#else
+	    BIF_RET(am_false);
+#endif
+	} else if (BIF_ARG_1 == AM_constant_pool_support) {
+#if defined(HEAP_FRAG_ELIM_TEST)
 	    BIF_RET(am_true);
 #else
 	    BIF_RET(am_false);
@@ -1570,6 +1560,20 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	} else if (BIF_ARG_1 == AM_schedulers) {
 	    res = make_small(erts_get_no_schedulers());
 	    BIF_RET(res);
+	} else if (BIF_ARG_1 == AM_kernel_poll) {
+#ifdef ERTS_ENABLE_KERNEL_POLL
+	    BIF_RET(erts_use_kernel_poll ? am_true : am_false);
+#else
+	    BIF_RET(am_false);
+#endif    
+	} else if (BIF_ARG_1 == AM_lock_checking) {
+#ifdef ERTS_ENABLE_LOCK_CHECK
+	    BIF_RET(am_true);
+#else
+	    BIF_RET(am_false);
+#endif
+	} else if (BIF_ARG_1 == AM_check_io) {
+	    BIF_RET(erts_check_io_info(BIF_P));
 	} else if (BIF_ARG_1 == AM_stop_memory_trace) {
 	    erts_mtrace_stop();
 	    BIF_RET(am_true);
@@ -1661,7 +1665,7 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
     if (is_internal_port(portid))
 	prt = erts_id2port(portid, BIF_P, ERTS_PROC_LOCK_MAIN);
     else if (is_atom(portid))
-	erts_whereis_name(BIF_P, ERTS_PROC_LOCK_MAIN, 0, 0,
+	erts_whereis_name(BIF_P, ERTS_PROC_LOCK_MAIN, 0,
 			  portid, NULL, 0, 0, &prt);
     else if (is_external_port(portid)
 	     && external_port_dist_entry(portid) == erts_this_dist_entry)
@@ -1671,9 +1675,6 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
     }
 
     if (!prt) {
-#ifdef ERTS_SMP
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
-#endif
 	BIF_RET(am_undefined);
     }
 
@@ -1948,7 +1949,6 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
 	Eterm b1, b2;
 
 	erts_get_exact_total_reductions(BIF_P, &reds, &diff);
-	ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	(void) erts_bld_uint(NULL, &hsz, reds);
 	(void) erts_bld_uint(NULL, &hsz, diff);
 	hp = HAlloc(BIF_P, hsz);
@@ -1982,8 +1982,7 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
 	Eterm in, out;
 	Uint hsz = 9;
 	
-	if (erts_smp_io_safe_lock_x(BIF_P, ERTS_PROC_LOCK_MAIN))
-	    ERTS_BIF_EXITED(BIF_P);
+	erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 
 	(void) erts_bld_uint(NULL, &hsz, bytes_in);
 	(void) erts_bld_uint(NULL, &hsz, bytes_out);
@@ -2024,12 +2023,12 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	DECL_AM(DbTable_words);
 	DECL_AM(next_pid);
 	DECL_AM(next_port);
+	DECL_AM(check_io_debug);
 	DECL_AM(available_internal_state);
 
 	if (BIF_ARG_1 == AM_node_and_dist_references) {
 	    /* Used by node_container_SUITE (emulator) */
 	    Eterm res = erts_get_node_and_dist_references(BIF_P);
-	    ERTS_SMP_BIF_CHK_EXITED(BIF_P);
 	    BIF_RET(res);
 	}
 	else if (BIF_ARG_1 == AM_next_pid || BIF_ARG_1 == AM_next_port) {
@@ -2038,10 +2037,7 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    if (BIF_ARG_1 == AM_next_pid)
 		res = erts_test_next_pid(0, 0);
 	    else {
-#ifdef ERTS_SMP
-		if (erts_smp_io_safe_lock_x(BIF_P, ERTS_PROC_LOCK_MAIN))
-		    ERTS_BIF_EXITED(BIF_P);
-#endif
+		erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 		res = erts_test_next_port(0, 0);
 		erts_smp_io_unlock();
 	    }
@@ -2054,6 +2050,17 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    size_t words = (sizeof(DbTable) + sizeof(Uint) - 1)/sizeof(Uint);
 	    BIF_RET(make_small((Uint) words));
 	}
+	else if (BIF_ARG_1 == AM_check_io_debug) {
+	    /* Used by (emulator) */
+	    int res;
+#ifdef HAVE_ERTS_CHECK_IO_DEBUG
+	    res = erts_check_io_debug();
+#else
+	    res = 0;
+#endif
+	    ASSERT(res >= 0);
+	    BIF_RET(erts_make_integer((Uint) res, BIF_P));
+	}
 	else if (BIF_ARG_1 == AM_available_internal_state) {
 	    BIF_RET(am_true);
 	}
@@ -2065,6 +2072,7 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    DECL_AM(link_list);
 	    DECL_AM(monitor_list);
 	    DECL_AM(channel_number);
+	    DECL_AM(have_pending_exit);
 
 	    if (tp[1] == AM_link_list) {
 		/* Used by erl_link_SUITE (emulator) */
@@ -2152,6 +2160,19 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		}
 		BIF_RET(res);
 	    }
+	    else if (tp[1] == AM_have_pending_exit) {
+		Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+					    tp[2], ERTS_PROC_LOCK_STATUS);
+		if (!rp) {
+		    BIF_RET(am_undefined);
+		}
+		else {
+		    Eterm res = ERTS_PROC_PENDING_EXIT(rp) ? am_true : am_false;
+		    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
+		    BIF_RET(res);
+		}
+	    }
+
 	    break;
 	}
 	default:
@@ -2194,6 +2215,7 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
     if (is_atom(BIF_ARG_1)) {
 	DECL_AM(next_pid);
 	DECL_AM(next_port);
+	DECL_AM(send_fake_exit_signal);
 	
 	if (BIF_ARG_1 == AM_next_pid || BIF_ARG_1 == AM_next_port) {
 	    /* Used by node_container_SUITE (emulator) */
@@ -2205,16 +2227,68 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		if (BIF_ARG_1 == AM_next_pid)
 		    res = erts_test_next_pid(1, next);
 		else {
-#ifdef ERTS_SMP
-		    if (erts_smp_io_safe_lock_x(BIF_P, ERTS_PROC_LOCK_MAIN))
-			ERTS_BIF_EXITED(BIF_P);
-#endif
+		    erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 		    res = erts_test_next_port(1, next);
 		    erts_smp_io_unlock();
 		}
 		if (res < 0)
 		    BIF_RET(am_false);
 		BIF_RET(erts_make_integer(res, BIF_P));
+	    }
+	}
+	else if (BIF_ARG_1 == AM_send_fake_exit_signal) {
+	    /* Used by signal_SUITE (emulator) */
+
+	    /* Testcases depend on the exit being received via
+	       a pending exit when the receiver is the same as
+	       the caller.  */
+	    if (is_tuple(BIF_ARG_2)) {
+		Eterm* tp = tuple_val(BIF_ARG_2);
+		if (arityval(tp[0]) == 3
+		    && (is_pid(tp[1]) || is_port(tp[1]))
+		    && is_internal_pid(tp[2])) {
+		    int xres;
+		    Uint32 rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
+		    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+						tp[2], rp_locks);
+		    if (!rp) {
+			DECL_AM(dead);
+			BIF_RET(AM_dead);
+		    }
+
+#ifdef ERTS_SMP
+		    if (BIF_P == rp)
+			rp_locks |= ERTS_PROC_LOCK_MAIN;
+#endif
+		    xres = erts_send_exit_signal(NULL, /* NULL in order to
+							  force a pending exit
+							  when we send to our
+							  selves. */
+						 tp[1],
+						 rp,
+						 &rp_locks,
+						 tp[3],
+						 NIL,
+						 NULL,
+						 0);
+#ifdef ERTS_SMP
+		    if (BIF_P == rp)
+			rp_locks &= ~ERTS_PROC_LOCK_MAIN;
+#endif
+		    erts_smp_proc_unlock(rp, rp_locks);
+		    if (xres > 1) {
+			DECL_AM(message);
+			BIF_RET(AM_message);
+		    }
+		    else if (xres == 0) {
+			DECL_AM(unaffected);
+			BIF_RET(AM_unaffected);
+		    }
+		    else {
+			DECL_AM(exit);
+			BIF_RET(AM_exit);
+		    }
+		}
 	    }
 	}
     }

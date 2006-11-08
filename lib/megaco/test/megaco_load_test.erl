@@ -58,23 +58,38 @@
 t()     -> megaco_test_lib:t(?MODULE).
 t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 
+min(M) -> timer:minutes(M).
 
 %% Test server callbacks
+init_per_testcase(single_user_medium_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(5)}|C]);
 init_per_testcase(single_user_heavy_load = Case, Config) ->
-    process_flag(trap_exit, true),
     C = lists:keydelete(tc_timeout, 1, Config),
-    megaco_test_lib:init_per_testcase(Case, [{tc_timeout,timer:minutes(10)}|C]);
+    do_init_per_testcase(Case, [{tc_timeout, min(10)}|C]);
 init_per_testcase(single_user_extreme_load = Case, Config) ->
-    process_flag(trap_exit, true),
     C = lists:keydelete(tc_timeout, 1, Config),
-    megaco_test_lib:init_per_testcase(Case, [{tc_timeout,timer:minutes(20)}|C]);
+    do_init_per_testcase(Case, [{tc_timeout, min(20)}|C]);
+init_per_testcase(multi_user_medium_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(5)}|C]);
+init_per_testcase(multi_user_heavy_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(10)}|C]);
+init_per_testcase(multi_user_extreme_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(20)}|C]);
 init_per_testcase(Case, Config) ->
+    do_init_per_testcase(Case, Config).
+
+do_init_per_testcase(Case, Config) ->
     process_flag(trap_exit, true),
     megaco_test_lib:init_per_testcase(Case, Config).
-
+    
 fin_per_testcase(Case, Config) ->
     process_flag(trap_exit, false),
     megaco_test_lib:fin_per_testcase(Case, Config).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 

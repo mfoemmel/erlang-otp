@@ -17,6 +17,42 @@
 -include("hipe_icode.hrl").
 -include("hipe_icode_type.hrl").
 
+-define(ENABLE_TEST, true).
+
+-ifdef(ENABLE_TEST).
+-export([test/0]).
+-endif.
+
+%-define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
+%-define(TAG_IMMED1_SIZE, 4).
+
+%% -define(MFA_debug, fun(MFA, X, Y) -> 
+%%  		       if MFA =:= {pseudoknot,p_apply,3} ->
+%%  			   io:format("~s ~p~n", [X, Y]);
+%%  			  true  ->
+%%  			   ok
+%%  		       end
+%%  		   end).
+-define(MFA_debug, fun(_, _, _) -> ok end).
+
+%-define(debug, fun(X, Y) -> io:format("~s ~p~n", [X, Y]) end).
+-define(debug, fun(_, _) -> ok end).
+
+%define(flow_debug, fun(X, Y) -> io:format("flow: ~s ~p~n", [X, Y]) end).
+-define(flow_debug, fun(_, _) -> ok end).
+
+%-define(widening_debug, fun(X, Y) -> io:format("wid: ~s ~p~n", [X, Y]) end).
+-define(widening_debug, fun(_, _) -> ok end).
+
+%-define(call_debug, fun(X, Y) -> io:format("call: ~s ~p~n", [X, Y]) end).
+-define(call_debug, fun(_, _) -> ok end).
+
+%-define(ineq_debug, fun(X, Y) -> io:format("ineq: ~s ~p~n", [X, Y]) end).
+-define(ineq_debug, fun(_, _) -> ok end).
+
+%-define(server_debug, fun(X, Y) -> io:format("~p server: ~s ~p~n", [self(), X, Y]) end).
+-define(server_debug, fun(_, _) -> ok end).
+
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bool/0, t_cons/0, t_constant/0,
 		    t_pos_improper_list/0,
@@ -25,7 +61,7 @@
 		    t_fun_range/1,t_inf/2, t_inf_lists/2, 
 		    t_integer/0,
 		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
-		    t_is_bool/1, t_is_char/1, t_is_cons/1, t_is_constant/1,
+		    t_is_bool/1, t_is_fixnum/1, t_is_cons/1, t_is_constant/1,
 		    t_is_pos_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
 		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
@@ -35,27 +71,43 @@
 		    t_number/0, t_number/1, t_number_vals/1, t_pid/0,
 		    t_port/0, t_ref/0, t_subtract/2, t_sup/2,
 		    t_to_string/1, t_tuple/0, t_tuple/1,
-		    t_tuple_arity/1, t_tuple_arities/1, t_none/0]).
+		    %%t_tuple_arity/1, 
+		    t_tuple_arities/1, t_none/0,
+		    number_min/1, number_max/1, t_from_range/2, 
+		    min/2, max/2, widening/3]).
 
 
 cfg(Cfg, IcodeFun, Options) ->
+  ?flow_debug("starting", {IcodeFun, self()}),
   OldSig = init_mfa_info(IcodeFun, Options),
-  State = analyse(Cfg),
-  pp(State, IcodeFun, Options, "Pre-specialization"),
-  NewState = cfg_loop(State, IcodeFun),  
-  pp(NewState, IcodeFun, Options, "Post-specialization"),
-  warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
-  Fixpoint = update_mfa_info(NewState, IcodeFun, OldSig, Options),
-  {Fixpoint, state__cfg(annotate_cfg(NewState))}.
+  Exports = proplists:get_value(exports, Options),
+  {_, F, A} = IcodeFun,
+  Is_exported = lists:member({F,A}, Exports),
+  Is_closure = hipe_icode_cfg:is_closure(Cfg),
+  case server__has_needed_info(IcodeFun, Is_exported, Is_closure) of
+    true ->
+      State = analyse(Cfg, {IcodeFun, {Is_exported, OldSig}}),
+      pp(State, IcodeFun, Options, "Pre-specialization"),
+      NewState = cfg_loop(State, {IcodeFun, {Is_exported, OldSig}}),  
+      pp(NewState, IcodeFun, Options, "Post-specialization"),
+      warn_on_type_errors(Cfg, State, NewState, IcodeFun, Options),
+      Fixpoint = update_mfa_info(NewState, IcodeFun, OldSig, Options),
+      ?flow_debug("done", {IcodeFun, Fixpoint}),
+      {Fixpoint, state__cfg(annotate_cfg(NewState))};
+    false ->
+      ?flow_debug("dosen't have needed info", IcodeFun),
+      {not_fixpoint, Cfg}
+  end.
 
-cfg_loop(State, IcodeFun) ->
+cfg_loop(State, {IcodeFun, {Is_exported, OldSig}}) ->
   NewState0 = specialize(State),
   Labels = hipe_icode_cfg:reverse_postorder(state__cfg(NewState0)),
   case simplify_controlflow(Labels, NewState0, false) of
     {dirty, Cfg} ->
+      ?flow_debug("restarting analysis", IcodeFun),
       NewCfg = hipe_icode_cfg:remove_unreachable_code(Cfg),
-      NewState1 = analyse(NewCfg),
-      cfg_loop(NewState1, IcodeFun);
+      NewState1 = analyse(NewCfg, {IcodeFun, {Is_exported, OldSig}}),
+      cfg_loop(NewState1, {IcodeFun, {Is_exported, OldSig}});
     NewState1 ->
       NewState1
   end.
@@ -72,9 +124,9 @@ cfg_loop(State, IcodeFun) ->
 %% information is added to the worklist.
 %%
 
-analyse(Cfg)->
+analyse(Cfg, {IcodeFun, {Is_exported, OldSig}})->
   %%hipe_icode_cfg:pp(Cfg),
-  State = new_state(Cfg),
+  State = new_state(Cfg, {IcodeFun, {Is_exported, OldSig}}),
   analyse_blocks(State).
 
 analyse_blocks(State)->
@@ -97,9 +149,14 @@ analyse_block(Label, InfoIn, State)->
   BB = state__bb(State, Label),
   Code = hipe_bb:butlast(BB),
   Last = hipe_bb:last(BB),
-  InfoOut = analyse_insns(Code, InfoIn),
-  NewState = state__info_out_update(State, Label, InfoOut),
-
+  PhiNodes = state__phi_nodes(State),
+  {InfoOut, NewPhiNodes} = analyse_insns(Code, {InfoIn, PhiNodes}),
+  NewState = state__info_out_update(
+	       state__phi_nodes_update(State, NewPhiNodes),
+	       Label, InfoOut),
+%%  InfoOut = analyse_insns(Code, InfoIn),
+%%  NewState = state__info_out_update(State, Label, InfoOut),
+  
   case Last of
     #'if'{} ->
       UpdateInfo = do_if(Last, InfoOut),
@@ -119,12 +176,19 @@ analyse_block(Label, InfoIn, State)->
       UpdateInfo = do_switch_val(Last, InfoOut),
       %%io:format("Update info for ~w:\n~w", [Label, UpdateInfo]),
       do_updates(NewState, UpdateInfo);
+    #enter{} ->
+      update_enter_call_args(Last, InfoOut),
+      %% UpdateInfo realy needed??
+      UpdateInfo = [{X, InfoOut} || X <- state__succ(NewState, Label)],
+      %%io:format("Update info for ~w:\n~w", [Label, UpdateInfo]),
+      do_updates(NewState, UpdateInfo);
     #call{} ->
       NewInfoOut = do_call(Last, InfoOut),
       NewState1 = state__info_out_update(NewState, Label, NewInfoOut),
       ContInfo = update_call_arguments(Last, NewInfoOut),      
       Cont = hipe_icode:call_continuation(Last),
       Fail = hipe_icode:call_fail_label(Last),
+      ?call_debug("Continfo, NewInfoOut", {ContInfo, NewInfoOut}),
       UpdateInfo =
 	case Fail of
 	  [] ->
@@ -151,21 +215,36 @@ analyse_block(Label, InfoIn, State)->
       do_updates(NewState, UpdateInfo)
   end.
 
-analyse_insns([I|Insns], Info)->
-  NewInfo = analyse_insn(I, Info),
-  analyse_insns(Insns, NewInfo);
-analyse_insns([], Info) ->
-  Info.
+analyse_insns([I|Insns], {Info, PhiNodes})->
+  case analyse_insn(I, Info, PhiNodes) of
+    {new_phi, NewInfo, NewPhiNodes} ->
+      analyse_insns(Insns, {NewInfo, NewPhiNodes});
+    NewInfo ->
+      analyse_insns(Insns, {NewInfo, PhiNodes})
+  end;
+analyse_insns([], {Info, PhiNodes}) ->
+  {Info, PhiNodes}.
 
 analyse_insn(I, Info) ->
+  case analyse_insn(I, Info, gb_trees:empty()) of
+    {new_phi, NewInfo, _NewPhiNodes} ->
+      NewInfo;
+    NewInfo ->
+      NewInfo
+  end.
+
+analyse_insn(I, Info, PhiNodes) ->
   case I of
     #move{} ->
       do_move(I, Info);
     #call{} ->
-      update_call_arguments(I, do_call(I, Info));
+      A = do_call(I, Info),
+      update_call_arguments(I, A);
     #phi{} ->
       Type = t_limit(join_list(args(I), Info), ?TYPE_DEPTH),
-      enter_defines(I, Type, Info);
+      {WidendType, NewPhiNodes} = 
+	phi_widening(Type, PhiNodes, hipe_icode:phi_dst(I)),
+      {new_phi, enter_defines(I, WidendType, Info), NewPhiNodes};
     #begin_handler{} ->
       enter_defines(I, t_any(), Info);
     _ ->
@@ -174,6 +253,32 @@ analyse_insn(I, Info) ->
 	[] -> Info;
 	_ -> exit({"Instruction with destination not analysed", I})
       end
+  end.
+
+phi_widening(Type, PhiNodes, Key) ->
+  {Version, OldType} = phi_lookup(Key, PhiNodes),
+  WidenedType = widening(Type, OldType, Version),
+  ?widening_debug("Key, Version, Old, Arg and Ans to phi", 
+		  {Key, Version, OldType, Type, WidenedType}),
+  %%io:format("Phi widenedTYpe ~p ~n", [WidenedType]),
+  New_phi_tree = 
+  case t_is_equal(WidenedType, OldType) of
+    true ->
+      PhiNodes;
+    false ->
+      gb_trees:enter(Key, {Version +1, WidenedType}, PhiNodes)
+  end,
+  ?widening_debug("diff", 
+		  gb_trees:to_list(New_phi_tree) -- 
+		  gb_trees:to_list(PhiNodes)),
+  {WidenedType, New_phi_tree}.
+
+phi_lookup(Var, Tree) ->
+  case gb_trees:lookup(Var, Tree) of
+    none ->
+      {0, t_none()};
+    {value, Val} ->
+      Val
   end.
 
 do_move(I, Info)->
@@ -199,9 +304,16 @@ do_call(I, Info)->
     remote ->
       MFA = {M, F, A} = hipe_icode:call_fun(I),
       ArgTypes = lookup_list(args(I), Info),
-      PltType = find_plt_return(MFA, ArgTypes),
+      %PltType = find_plt_return(MFA, ArgTypes),
+      {PltType, _} = server__get_return_type(MFA),
+      %%Type = PltType,
+      ?call_debug("remote call MFA, Args", {MFA, args(I)}),
+      ?call_debug("Args", ArgTypes),
+
       BifType = erl_bif_types:type(M, F, A, ArgTypes),
+
       Type = t_inf(BifType, PltType),
+      ?call_debug("t_inf with", {PltType, BifType, Type}),
       %%      io:format("The result of the call to ~p is ~s\n", 
       %%      		[hipe_icode:call_fun(I), format_type(Type)]),
       %%      io:format("Argtypes: ~p\n", [[format_type(X) || X <- ArgTypes]]),
@@ -222,6 +334,8 @@ do_call(I, Info)->
       ArgTypes = lookup_list(args(I), Info),
       PltType = find_plt_return(MFA, ArgTypes),
       Type = t_inf(AnnotatedType, PltType),
+      ?call_debug("local call", MFA),
+      server__update_call_args(MFA, lookup_list(args(I), Info)),
       %%      io:format("The result of the call to ~w is ~s\n", 
       %%		[hipe_icode:call_fun(I), format_type(Type)]),
       %%      io:format("Annotated type: ~s\n", 
@@ -229,6 +343,17 @@ do_call(I, Info)->
       %%      io:format("Plt type: ~s\n", 
       %%		[format_type(PltType)]),
       enter_defines(I, Type, Info)
+  end.
+
+update_enter_call_args(I, Info) ->
+  case hipe_icode:enter_type(I) of
+    local ->
+      MFA = hipe_icode:enter_fun(I),
+      server__update_call_args(MFA, lookup_list(args(I), Info));
+    remote ->
+      ok;
+    primop ->
+      ok
   end.
 
 do_if(I, Info) ->
@@ -258,14 +383,73 @@ do_if(I, Info) ->
 		  [{FalseLab, enter(Arg1, Inf, enter(Arg2, Inf, Info))}, 
 		   {TrueLab, Info}]
 	      end;
-	    _ ->
-	      [{TrueLab, Info}, {FalseLab, Info}]
+	    '==' ->
+	      [{TrueLab, Info}, {FalseLab, Info}];
+	    '/=' ->
+	      [{TrueLab, Info}, {FalseLab, Info}];
+	    Op ->
+	      integer_range_inequality_propagation(Op, Arg1, Arg2,
+						   TrueLab, FalseLab, Info)
+	      %%_ ->
+	      %%  [{TrueLab, Info}, {FalseLab, Info}]
 	  end
       end;
     _ ->
       %% Only care for binary if:s
       [{TrueLab, Info}, {FalseLab, Info}]
   end.
+
+integer_range_inequality_propagation(Op, A1, A2, TrueLab, FalseLab, Info) ->
+  Arg1 = lookup(A1, Info), 
+  Arg2 = lookup(A2, Info), 
+  ?ineq_debug("args", [Arg1,Arg2]),
+  IntArg1 = t_inf(Arg1, t_integer()),
+  IntArg2 = t_inf(Arg2, t_integer()),
+  NonIntArg1 = t_subtract(Arg1, t_integer()),
+  NonIntArg2 = t_subtract(Arg2, t_integer()),
+  ?ineq_debug("nonintargs", [NonIntArg1,NonIntArg2]),
+  case t_is_none(IntArg1) or t_is_none(IntArg2) of
+    true ->
+      ?ineq_debug("one is none", [IntArg1,IntArg2]),
+      [{TrueLab, Info}, {FalseLab, Info}];
+    false ->
+      case Op of
+	'>=' ->
+ 	  {FalseArg1, FalseArg2, TrueArg1, TrueArg2} =
+ 	    integer_range_less_then_propagator(IntArg1, IntArg2);
+ 	'>' ->
+ 	  {TrueArg2, TrueArg1, FalseArg2, FalseArg1} =
+ 	    integer_range_less_then_propagator(IntArg2, IntArg1);
+ 	'<' ->
+ 	  {TrueArg1, TrueArg2, FalseArg1, FalseArg2} =
+ 	    integer_range_less_then_propagator(IntArg1, IntArg2);
+ 	'=<' ->
+ 	  {FalseArg2, FalseArg1, TrueArg2, TrueArg1} =
+ 	    integer_range_less_then_propagator(IntArg2, IntArg1)
+	end,
+      ?ineq_debug("int res", [TrueArg1,TrueArg2, FalseArg1, FalseArg2]),
+      False = {FalseLab, enter(A1, t_sup(FalseArg1, NonIntArg1),
+			       enter(A2, t_sup(FalseArg2, NonIntArg2), Info))},
+      True = {TrueLab, enter(A1, t_sup(TrueArg1, NonIntArg1),
+			     enter(A2, t_sup(TrueArg2, NonIntArg2), Info))},
+      [True, False]
+  end.
+
+
+integer_range_less_then_propagator(IntArg1, IntArg2) ->
+  Min1 = number_min(IntArg1),
+  Max1 = number_max(IntArg1),
+  Min2 = number_min(IntArg2),
+  Max2 = number_max(IntArg2),
+  %% is this the same as erl_types:t_subtract?? no ... ??
+  TrueMax1 = min(Max1, erl_bif_types:infinity_add(Max2, -1)),
+  TrueMin2 = max(erl_bif_types:infinity_add(Min1, 1), Min2),
+  FalseMin1 = max(Min1, Min2),
+  FalseMax2 = min(Max1, Max2),
+  {t_from_range(Min1, TrueMax1),
+   t_from_range(TrueMin2, Max2),
+   t_from_range(FalseMin1, Max1),
+   t_from_range(Min2, FalseMax2)}.
 
 do_type(I, Info) ->
   case args(I) of
@@ -458,7 +642,7 @@ switch_tuple_arity_update_info([], Var, _TupleType,
   {{FailLabel, enter(Var, FailType, Info)}, Acc}.
 
 
-do_switch_val(I, Info)->
+do_switch_val(I, Info) ->
   Arg = hipe_icode:switch_val_arg(I),
   ArgType = lookup(Arg, Info),
   Cases = hipe_icode:switch_val_cases(I),
@@ -912,7 +1096,6 @@ make_transformations([I|Left], Info, Acc) ->
   make_transformations(Left, NewInfo, [NewI|Acc]);
 make_transformations([], _Info, Acc) ->
   lists:reverse(Acc).
-
 transform_insn(I, Info) ->
   case I of
     I when is_record(I, call) ; is_record(I, enter) ->
@@ -921,6 +1104,8 @@ transform_insn(I, Info) ->
 	'bor'  -> transform_arith(I, 'bor', Info);
 	'bxor' -> transform_arith(I, 'bxor', Info);
 	'bnot' -> transform_arith(I, 'bnot', Info);
+	'bsl'  -> transform_arith(I, 'bsl', Info);
+	'bsr'  -> transform_arith(I, 'bsr', Info);
 	'+'    -> transform_arith(I, '+', Info);
 	'-'    -> transform_arith(I, '-', Info);
 	{element, _} ->
@@ -958,9 +1143,19 @@ transform_insn(I, Info) ->
 	_ ->
 	  I
       end;
+    I when is_record(I, 'if') ->
+      UsesFixnums = all_fixnums(uses(I)),
+      if UsesFixnums ->
+	  CurrentIfOp = hipe_icode:if_op(I),
+	  hipe_icode:if_op_update(I, fixnum_ifop(CurrentIfOp));
+	 true ->
+	  I
+      end;
     _ ->
       I
   end.
+
+
 
 call_or_enter_fun(I) ->
   case hipe_icode:is_call(I) of
@@ -989,6 +1184,7 @@ transform_element2(I, Info) ->
   [Index, Tuple] = args(I),
   IndexType = safe_lookup(Index, Info),
   TupleType = safe_lookup(Tuple, Info),
+  ?debug("Tuple", TupleType),
   NewIndex =
     case test_type(integer, IndexType) of
       true ->
@@ -1002,10 +1198,18 @@ transform_element2(I, Info) ->
   NewTuple =
     case test_type(tuple, TupleType) of
       true ->
-	case t_tuple_arity(TupleType) of
-	  Arity when is_number(Arity) -> {tuple, Arity};
-	  _ -> tuple
+	?debug("is tuple", TupleType),
+	Arities = t_tuple_arities(TupleType),
+	Any = t_any(),
+	if Arities =:= Any ->
+	    Arities;
+	   true ->
+	    lists:min(Arities)
 	end;
+%% 	case t_tuple_arity(TupleType) of
+%% 	  Arity when is_number(Arity) -> {tuple, Arity};
+%% 	  _ -> tuple
+%% 	end;
       _ -> [] %% Might fail - don't care.
     end,
   case {NewTuple, NewIndex} of
@@ -1091,89 +1295,54 @@ arithop_to_unsafe(Op) ->
     'band' -> unsafe_band;
     'bor'  -> unsafe_bor;
     'bxor' -> unsafe_bxor;
-    'bnot' -> unsafe_bnot  
+    'bnot' -> unsafe_bnot;
+    'bsl'  -> unsafe_bsl;
+    'bsr'  -> unsafe_bsr
   end.
 
-get_unsafe_arithop(Fun) ->  
-  case Fun of
-    '+' ->              {true, fun(A, B) -> A + B end};
-    '-' ->              {true, fun(A, B) -> A - B end};
-    'band' ->           {true, fun(A, B) -> A band B end};
-    'bor'  ->           {true, fun(A, B) -> A bor B end};
-    'bxor' ->           {true, fun(A, B) -> A bxor B end};
-    'bnot' ->           {true, fun(A) -> bnot A end};
-    extra_unsafe_add -> {true, fun(A, B) -> A + B end};
-    unsafe_add ->       {true, fun(A, B) -> A + B end};
-    unsafe_sub ->       {true, fun(A, B) -> A - B end};
-    unsafe_band ->      {true, fun(A, B) -> A band B end};
-    unsafe_bor ->       {true, fun(A, B) -> A bor B end};
-    unsafe_bxor ->      {true, fun(A, B) -> A bxor B end};
-    unsafe_bnot ->      {true, fun(A) -> bnot A end};
-    _ -> false
+fixnum_ifop(Op) ->
+  case Op of
+    '=:=' -> 'fixnum_eq';
+    '=/=' -> 'fixnum_neq';
+    '>' -> 'fixnum_gt';
+    '<' -> 'fixnum_lt';
+    '>=' -> 'fixnum_ge';
+    '=<' -> 'fixnum_le';
+    Op -> Op
   end.
 
 all_fixnums([Type|Left]) ->
-  case t_is_char(Type) of
-    true ->
-      all_fixnums(Left);
-    false ->
-      case all_fixnum_values([Type]) of
-	true -> all_fixnums(Left);
-	false -> false
-      end
-  end;
+  t_is_fixnum(Type) andalso all_fixnums(Left);
 all_fixnums([]) ->
   true.
 
-all_fixnum_values([Type|Left]) ->
-  case t_is_number(Type) of
-    false -> false;
-    true ->
-      case t_number_vals(Type) of
-	any -> false;
-	Vals ->
-	  case lists:all(fun(X)-> hipe_tagscheme:is_fixnum(X) end, Vals) of
-	    true ->
-	      all_fixnum_values(Left);
-	    false ->
-	      false
-	  end
-      end
-  end;
-all_fixnum_values([]) ->
-  true.
+get_standard_primop(unsafe_bsl) -> 'bsl';
+get_standard_primop(unsafe_bsr) -> 'bsr';
+get_standard_primop(unsafe_add) -> '+';
+get_standard_primop(extra_unsafe_add) -> '+';
+get_standard_primop(unsafe_bnot) -> 'bnot';
+get_standard_primop(unsafe_bxor) -> 'bxor';
+get_standard_primop(unsafe_band) -> 'band';
+get_standard_primop(unsafe_bor) -> 'bor';
+get_standard_primop(unsafe_sub) -> '-';
+get_standard_primop(Op) -> Op.
 
 primop_type(Op, Args) ->
   case Op of
     {mkfun, MFA = {_M, _F, _A}, _MagicNum, _Index} ->
       t_inf(t_fun(), find_signature_mfa(MFA));
     _ ->
-      case get_unsafe_arithop(Op) of
-	false ->
-	  hipe_icode_primops:type(Op, Args);
-	{true, Fun} ->
-	  case all_fixnum_values(Args) of
-	    false ->
-	      hipe_icode_primops:type(Op, Args);
-	    true ->
-	      evaluate_unsafe_arith(Fun, Args)
-	  end
-      end
+      hipe_icode_primops:type(get_standard_primop(Op), Args)
   end.
 
-evaluate_unsafe_arith(Fun, [Arg]) ->
-  sup_list([t_from_term(Fun(X)) || X <- t_number_vals(Arg)]);
-evaluate_unsafe_arith(Fun, [Arg1, Arg2]) ->
-  sup_list([t_from_term(Fun(X, Y)) || X <- t_number_vals(Arg1), 
-				      Y <- t_number_vals(Arg2)]).
 
-sup_list(List) ->
-  sup_list(List, t_none()).
+%% sup_list(List) ->
+%%   sup_list(List, t_none()).
 
-sup_list([H|T], Acc) ->
-  sup_list(T, t_sup(H, Acc));
-sup_list([], Acc) ->
-  Acc.
+%% sup_list([H|T], Acc) ->
+%%   sup_list(T, t_sup(H, Acc));
+%% sup_list([], Acc) ->
+%%   Acc.
 
 %% _________________________________________________________________
 %%
@@ -1450,40 +1619,30 @@ any_is_none([]) ->
 %%
 
 -record(state, {succmap, predmap, info_map, cfg, liveness, arg_types,
-		created_funs=[]}).
+		created_funs=[], phi_nodes = gb_trees:empty()}).
 
-new_state(Cfg) ->
+new_state(Cfg, {_MFA, {Is_exported, OldSig}}) ->
   SuccMap = hipe_icode_cfg:succ_map(Cfg),
   PredMap = hipe_icode_cfg:pred_map(Cfg),
   Start = hipe_icode_cfg:start_label(Cfg),  
-  Info = case lists:keysearch(arg_type, 1, hipe_icode_cfg:info(Cfg)) of
-	   false ->
-	     Any = t_any(),
-	     lists:foldl(fun(X, Tree) -> gb_trees:insert(X, Any, Tree) end,
-			 empty(), hipe_icode_cfg:params(Cfg));
-	   {value, {_, ArgType}}->
-	     case lists:any(fun(X) -> t_is_none(X) end, ArgType) of
-	       true ->
-		 %% The call to this function is masked by an error.
-		 %% We cannot trust the arguments.
-		 Any = t_any(),
-		 lists:foldl(fun(X, Tree) -> gb_trees:insert(X, Any, Tree) end,
-			     empty(), hipe_icode_cfg:params(Cfg));
-	       false ->
-		 add_arg_types(hipe_icode_cfg:params(Cfg), ArgType)
-	     end
-	 end,
-  ArgTypes0 = lookup_list(hipe_icode_cfg:params(Cfg), Info),
-  %% We cannot trust the arity for closures.
-  ArgTypes =
-    case hipe_icode_cfg:is_closure(Cfg) of    
-      true -> lists:sublist(ArgTypes0, hipe_icode_cfg:closure_arity(Cfg));
-      false -> ArgTypes0
+  Params = hipe_icode_cfg:params(Cfg),
+  ParamTypes = 
+    case hipe_icode_cfg:is_closure(Cfg) of
+      true -> 
+	type_loop(t_any(), hipe_icode_cfg:closure_arity(Cfg) + 1, []);
+      false -> 
+	NoServer = not server__is_active(),
+	if Is_exported or NoServer ->
+	    type_loop(t_any(), length(Params), []);
+	   true ->
+	    t_fun_args(OldSig)
+	end
     end,
+  Info = add_arg_types(Params, ParamTypes),
   InfoMap = gb_trees:insert({Start, in}, Info, empty()),
   Liveness = hipe_icode_ssa:ssa_liveness__analyze(Cfg),
   #state{succmap=SuccMap, predmap=PredMap,info_map=InfoMap, 
-	 cfg=Cfg, liveness=Liveness, arg_types=ArgTypes}.
+	 cfg=Cfg, liveness=Liveness, arg_types=ParamTypes}.
 
 state__cfg(#state{cfg=Cfg}) ->
   Cfg.
@@ -1500,6 +1659,11 @@ state__bb(#state{cfg=Cfg}, Label) ->
 state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
+
+state__phi_nodes(#state{phi_nodes = PhiNodes}) -> PhiNodes.
+
+state__phi_nodes_update(State, PhiNodes) -> 
+  State#state{phi_nodes = PhiNodes}.
 
 state__info_in(S, Label) ->
   state__info(S, {Label, in}).
@@ -2344,7 +2508,8 @@ find_return_type([Label|Left], State, ReturnType, ExplExit, HasReturn) ->
       find_return_type(Left, State, ReturnType, ExplExit, HasReturn)
   end;
 find_return_type([], _State, ReturnType, ExplExit, HasReturn) ->
-  {t_limit(ReturnType, ?TYPE_DEPTH), ExplExit, HasReturn}.
+  LimitReturnType = t_limit(ReturnType, ?TYPE_DEPTH),
+  {LimitReturnType, ExplExit, HasReturn}.
 
 
 find_return_type_in_block([I], Info) ->
@@ -2394,63 +2559,62 @@ update_call_arguments(I, Info) ->
 %%
 
 init_mfa_info(MFA, Options) ->
-  case proplists:get_value(icode_type, Options) of
-    {plt, Plt} ->
-      put(hipe_mfa_plt, {ok, Plt}),
-      plt_lookup(MFA);
+  case proplists:get_value(compilation_server, Options) of
+    {value, Server} ->
+      put(compilation_server, {value, Server}),
+      server__get_signature(MFA);
     _ ->
-      put(hipe_mfa_plt, none),
-      none
+      put(compilation_server, none),
+      t_fun()
   end.
 
 update_mfa_info(State, IcodeFun, OldSig, Options) ->
-  case proplists:get_value(icode_type, Options) of
-    {plt, Plt} ->      
+  case proplists:get_value(compilation_server, Options) of
+    {value, _} ->      
       Labels = hipe_icode_cfg:labels(state__cfg(State)),
       {ReturnType, _, _} = find_return_type(Labels, State),
       ArgTypes=State#state.arg_types,
       NewSig = t_fun(ArgTypes, ReturnType),
+      ?server_debug("Old & New Sig", {IcodeFun, OldSig, NewSig}),
+      Temp_return = 
       case t_is_none(NewSig) of
 	true ->
-	  NewReturnType = t_none();
+	  t_none();
 	false ->
-	  NewReturnType = t_fun_range(NewSig)
+	  t_fun_range(NewSig)
       end,
-      case t_is_none(NewReturnType) of
-	true ->
-	  insert_mfa(Plt, {IcodeFun, t_any(), ArgTypes});
-	false ->
-	  insert_mfa(Plt, {IcodeFun, NewReturnType, ArgTypes})
-      end,
+      NewReturnType = 
+	case t_is_none(Temp_return) of
+	  true ->
+	    t_any();
+	  false ->
+	    Temp_return
+	end,
+      server__update_return_value(IcodeFun, NewReturnType),
       OldReturnType = t_fun_range(OldSig),
-      case proplists:get_value(use_callgraph, Options) of
-	fixpoint ->
-	  case t_is_none(NewReturnType) andalso t_is_any(OldReturnType) of
-	    true -> 
+      case t_is_none(NewReturnType) andalso t_is_any(OldReturnType) of
+	true -> 
+	  fixpoint;
+	false ->
+	  case t_is_equal(NewReturnType, OldReturnType) of
+	    true ->
 	      fixpoint;
 	    false ->
-	      case t_is_equal(NewReturnType, OldReturnType) of
-		true ->
-		  fixpoint;
-		false ->
-%%		  io:format("~w: Not fixpoint: ~s /= ~s\n", 
-%%			    [IcodeFun, format_type(ReturnType), 
-%%			     format_type(OldReturnType)]),
-		  not_fixpoint
-	      end
-	  end;
-	_ ->
-	  ok
+%% 		  io:format("~w: Not fixpoint: ~s /= ~s\n", 
+%% 			    [IcodeFun, format_type(ReturnType), 
+%% 			     format_type(OldReturnType)]),
+	      not_fixpoint
+	  end
       end;
     _ ->
-      ok
+      fixpoint
   end.
 
 find_signature(MFA = {_, _, _}, _) -> find_signature_mfa(MFA);
 find_signature(Primop, Arity) -> find_signature_primop(Primop, Arity).
 
 find_signature_mfa(MFA = {M, F, A}) ->
-  PltSig = plt_lookup(MFA),
+  PltSig = server__get_signature(MFA),
   BifRet = erl_bif_types:type(M, F, A),
   case erl_bif_types:arg_types(M, F, A) of
     any ->
@@ -2462,13 +2626,13 @@ find_signature_mfa(MFA = {M, F, A}) ->
 find_signature_primop(Primop, Arity) ->
   case erl_bif_types:arg_types(Primop) of
     any ->
-      t_fun(Arity, hipe_icode_primops:type(Primop));
+      t_fun(Arity, hipe_icode_primops:type(get_standard_primop(Primop)));
     ArgTypes ->
-      t_fun(ArgTypes, hipe_icode_primops:type(Primop))
+      t_fun(ArgTypes, hipe_icode_primops:type(get_standard_primop(Primop)))
   end.
 
 find_plt_return(MFA, ArgTypes) ->
-  PltSig = plt_lookup(MFA),
+  PltSig = server__get_signature(MFA),
   BifSig = find_signature_mfa(MFA),
   Sig = t_inf(PltSig, BifSig),
   SigArgTypes = t_fun_args(Sig),
@@ -2482,24 +2646,188 @@ find_plt_return(MFA, ArgTypes) ->
       end
   end.
 
-plt_lookup(MFA) ->
-  case get(hipe_mfa_plt) of
-    none ->
-      t_fun();
-    {ok, Plt} ->
-      case lookup_mfa(Plt, MFA) of
+%
+% Server
+%
+
+
+sup_lists([], [], Acc) -> lists:reverse(Acc);
+sup_lists([Arg1|Tail1], [Arg2|Tail2], Acc) ->
+  sup_lists(Tail1, Tail2, [t_sup(Arg1, Arg2)|Acc]).
+
+server__has_needed_info(MFA, Is_exported, Is_closure) ->
+  case get(compilation_server) of
+    {value, Server} ->
+      Server ! {self(), {load, message, {MFA, args}}},
+      receive
 	none ->
-	  t_fun();
-	{value, {_, RetType, ArgTypes}} ->
-	  t_fun(ArgTypes, RetType)
+	  ?flow_debug("no info", {Is_exported, Is_closure, MFA}),
+	  Is_exported or Is_closure;
+	{value, Args} ->
+	  ?flow_debug("has Value", Args),
+	  true
+      end;
+    Val ->
+      ?flow_debug("no comp_server", Val),
+      true
+  end.
+
+
+server__update_call_args(MFA, ArgTypes) ->
+  ?server_debug("in update call args", MFA),
+  case get(compilation_server) of
+    {value, Server} ->
+      %% This code isn't ugly ... I know.
+      Key = {MFA, args},
+      PID = self(), %% debug only
+      Fun = fun(MessageTree) ->
+		{Version, OldArgtypes} = 
+		  case gb_trees:lookup(Key, MessageTree) of
+		    none ->
+		      {0, t_any()};
+		    {value, {LookupVersion, LookupType}} ->
+		      {LookupVersion, LookupType}
+		  end,
+		Unions = 
+		  case Version =:= 0 of
+		    true ->
+		      ArgTypes;
+		    false ->
+		      Widening = 
+			lists:zipwith(fun(New, Old) -> 
+					  widening(New, Old, Version) end,
+				      ArgTypes, OldArgtypes),
+		      sup_lists(OldArgtypes, Widening, [])
+		  end,
+		case t_is_equal(Unions, OldArgtypes) of
+		  true ->
+		    MessageTree;
+		  false ->
+		    ?server_debug("update call args: pid, mfa, old, new",
+				  {PID, MFA, OldArgtypes, Unions}),
+		    gb_trees:enter(Key, {Version + 1, Unions}, 
+				   MessageTree)
+		end
+	    end,
+      Server ! {self(), {transaction, Fun}};
+    _ ->
+      ok
+  end.
+
+server__update_return_value(MFA, ReturnType) ->
+  ?server_debug("in update_return_value", {MFA, ReturnType}),
+  case get(compilation_server) of
+    {value, Server} ->
+      Key = {MFA, return_range}, 
+      Fun = fun(MessageTree) ->
+		{OldReturntype, Version} = 
+		  case gb_trees:lookup(Key, MessageTree) of
+		    none ->
+		      {t_any(), 0};
+		    {value, {LookupType, LookupVersion}} ->
+		      {LookupType, LookupVersion}
+		  end,
+		case t_is_equal(OldReturntype, ReturnType) of 
+		  true ->
+		    MessageTree;
+		  false ->
+		    ?server_debug("New return value", {MFA, ReturnType}),
+		    gb_trees:enter(Key, {ReturnType, Version + 1}, 
+				   MessageTree)
+		end
+	    end,
+      
+      Server ! {self(), {transaction, Fun}};
+    _ ->
+      ok
+  end.
+  
+server__get_return_type(MFA) ->
+  case get(compilation_server) of
+    {value, Server} ->
+      Server ! {self(), {load, message, {MFA, return_range}}},
+      receive
+	none ->
+	  {t_any(), 0};
+	{value, LookupType} ->
+	  LookupType
+      end;
+    _ ->
+      {t_any(), 0}
+  end.
+
+type_loop(_Type, 0, Acc) -> Acc;
+type_loop(Type, N, Acc) -> type_loop(Type, N - 1, [Type|Acc]).
+
+server__is_active() ->
+  case get(compilation_server) of
+    {value, _Server} ->
+      true;
+    _ ->
+      false
+  end.
+
+server__get_arg_types(MFA) ->
+  server__get_arg_types(MFA, unkown, t_any()).
+
+server__get_arg_types(MFA, Length, None_value) ->
+  Res = 
+  case get(compilation_server) of
+    {value, Server} ->
+      Server ! {self(), {load, message, {MFA, args}}},
+      receive
+	none ->
+	  if Length =:= unkown ->
+	      {0, t_any()};
+	     true ->
+	      {0, type_loop(None_value, Length, [])}
+	  end;
+	{value, {Version, LookupType}} ->
+	  {Version, LookupType}
+      end;
+    _ ->
+      if Length =:= unkown ->
+	  {0, t_any()};
+	 true ->
+	  {0, type_loop(None_value, Length, [])}
       end
-  end.
+  end,
+  ?server_debug("Reading", {MFA, Res}),
+  Res.
 
-lookup_mfa(Plt, MFA) ->
-  case ets:lookup(Plt, MFA) of
-    [Val] -> {value, Val};
-    [] -> none
-  end.
+server__get_signature(MFA) ->
+  {_, Args} = server__get_arg_types(MFA), 
+  {Return, _Version} = server__get_return_type(MFA),
+  Ans = 
+    case t_is_none(Args) or t_is_none(Return) of
+      true ->
+	t_fun();
+      false ->
+	case (Args =:= t_any()) of
+	  true ->
+	    t_fun(Return);
+	  false ->
+	    t_fun(Args, Return)
+	end
+    end,
+  ?server_debug("Signature", {MFA, Ans}),
+  Ans.
 
-insert_mfa(Plt, Object) ->
-  ets:insert(Plt, Object).
+
+test() ->
+  Range1 = t_from_range(1, pos_inf),
+  Range2 = t_from_range(0, 5),
+  Var1 = {var, 1},
+  Var2 = {var, 2},
+
+  Info = enter(Var1, Range1, enter(Var2, Range2, gb_trees:empty())),
+  io:format("A1 ~p~n", [Info]),
+  A = integer_range_inequality_propagation('<', Var1, Var2, 1, 2, Info),
+  B = integer_range_inequality_propagation('>=', Var1, Var2, 1, 2, Info),
+  C = integer_range_inequality_propagation('=<', Var1, Var2, 1, 2, Info),
+  D = integer_range_inequality_propagation('>', Var1, Var2, 1, 2, Info),
+
+  io:format("< ~p~n", [A]),
+  io:format(">= ~p~n", [B]),
+  io:format("<= ~p~n", [C]),
+  io:format("> ~p~n", [D]).

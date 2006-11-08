@@ -64,7 +64,8 @@ enum ErtsSysMsgType {
     SYS_MSG_TYPE_TRACE,
     SYS_MSG_TYPE_SEQTRACE,
     SYS_MSG_TYPE_SYSMON,
-    SYS_MSG_TYPE_ERRLGR
+    SYS_MSG_TYPE_ERRLGR,
+    SYS_MSG_TYPE_PROC_MSG
 };
 
 #ifdef ERTS_SMP
@@ -1423,9 +1424,6 @@ erts_trace_exception(Process* p, Eterm mfa[3], Eterm class, Eterm value,
  * the process tracer, if it is NIL no trace message is generated, 
  * if it is a pid or port we do a meta trace.
  */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 Uint32
 erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec, 
 		Eterm* args, int local, Eterm *tracer_pid)
@@ -1987,9 +1985,6 @@ void save_calls(Process *p, Export *e)
  * The trace wrap functions are themselves called through the export
  * entries instead of the original BIF functions.
  */
-/*
- * SMP NOTE: Process p may have become exiting on return!
- */
 Eterm
 erts_bif_trace(int bif_index, Process* p, 
 	       Eterm arg1, Eterm arg2, Eterm arg3, Uint *I)
@@ -2154,7 +2149,6 @@ erts_bif_trace(int bif_index, Process* p,
 	}
     }
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p->id);
-    ERTS_SMP_BIF_CHK_EXITED(p);
     return result;
 }
 
@@ -2434,37 +2428,7 @@ static erts_cnd_t smq_cnd;
 
 static int dispatcher_waiting;
 
-#define PREALCD_SMQ_ELS 20
-static ErtsSysMsgQ prealloced_smq_elements[PREALCD_SMQ_ELS];
-static ErtsSysMsgQ *free_smq_elements;
-
-static ERTS_INLINE ErtsSysMsgQ *
-alloc_smq_element(void)
-{
-    ErtsSysMsgQ *smqp;
-    if (free_smq_elements) {
-	smqp = free_smq_elements;
-	free_smq_elements = smqp->next;
-    }
-    else {
-	smqp = (ErtsSysMsgQ *) erts_alloc(ERTS_ALC_T_SYS_MSG_Q,
-					   sizeof(ErtsSysMsgQ));
-    }
-    return smqp;
-}
-
-static ERTS_INLINE void
-free_smq_element(ErtsSysMsgQ *smqp)
-{
-    if (&prealloced_smq_elements[0] <= smqp
-	&& smqp <= &prealloced_smq_elements[PREALCD_SMQ_ELS-1]) {
-	smqp->next = free_smq_elements;
-	free_smq_elements = smqp;
-    }
-    else {
-	erts_free(ERTS_ALC_T_SYS_MSG_Q, (void *) smqp);
-    }
-}
+ERTS_QUALLOC_IMPL(smq_element, ErtsSysMsgQ, 20, ERTS_ALC_T_SYS_MSG_Q)
 
 static void
 enqueue_sys_msg_unlocked(enum ErtsSysMsgType type,
@@ -2475,7 +2439,7 @@ enqueue_sys_msg_unlocked(enum ErtsSysMsgType type,
 {
     ErtsSysMsgQ *smqp;
 
-    smqp	= alloc_smq_element();
+    smqp	= smq_element_alloc();
     smqp->next	= NULL;
     smqp->type	= type;
     smqp->from	= from;
@@ -2525,6 +2489,12 @@ erts_queue_error_logger_message(Eterm from, Eterm msg, ErlHeapFragment *bp)
     enqueue_sys_msg(SYS_MSG_TYPE_ERRLGR, from, am_error_logger, msg, bp);
 }
 
+void
+erts_send_sys_msg_proc(Eterm from, Eterm to, Eterm msg, ErlHeapFragment *bp)
+{
+    ASSERT(is_internal_pid(to));
+    enqueue_sys_msg(SYS_MSG_TYPE_PROC_MSG, from, to, msg, bp);
+}
 
 #ifdef DEBUG_PRINTOUTS
 static void
@@ -2542,6 +2512,9 @@ print_msg_type(ErtsSysMsgQ *smqp)
 	break;
     case SYS_MSG_TYPE_ERRLGR:
 	erts_fprintf(stderr, "ERRLGR ");
+	break;
+    case SYS_MSG_TYPE_PROC_MSG:
+	erts_fprintf(stderr, "PROC_MSG ");
 	break;
     default:
 	erts_fprintf(stderr, "??? ");
@@ -2609,6 +2582,8 @@ sys_msg_disp_failure(ErtsSysMsgQ *smqp, Eterm receiver)
 		     no_elgger, tag, CAR(list_val(tp[3])));
 	break;
     }
+    case SYS_MSG_TYPE_PROC_MSG:
+	break;
     default:
 	ASSERT(0);
     }
@@ -2635,7 +2610,7 @@ sys_msg_dispatcher_func(void *unused)
 	while (local_sys_message_queue) {
 	    smqp = local_sys_message_queue;
 	    local_sys_message_queue = smqp->next;
-	    free_smq_element(smqp);
+	    smq_element_free(smqp);
 	}
 
 	/* Fetch current trace message queue ... */
@@ -2675,6 +2650,7 @@ sys_msg_dispatcher_func(void *unused)
 #endif
 	    switch (smqp->type) {
 	    case SYS_MSG_TYPE_TRACE:
+	    case SYS_MSG_TYPE_PROC_MSG:
 		receiver = smqp->to;
 		break;
 	    case SYS_MSG_TYPE_SEQTRACE:
@@ -2709,7 +2685,7 @@ sys_msg_dispatcher_func(void *unused)
 			&& !(proc->trace_flags & F_TRACER))) {
 		    /* Bad tracer */
 #ifdef DEBUG_PRINTOUTS
-		    if (proc)
+		    if (smqp->type == SYS_MSG_TYPE_TRACE && proc)
 			erts_fprintf(stderr,
 				     "<tracer alive but missing  "
 				     "F_TRACER flag> ");
@@ -2726,7 +2702,7 @@ sys_msg_dispatcher_func(void *unused)
 		}
 	    }
 	    else if (receiver == am_error_logger) {
-		proc = erts_whereis_process(NULL,0,0,receiver,proc_locks,0);
+		proc = erts_whereis_process(NULL,0,receiver,proc_locks,0);
 		if (!proc)
 		    goto failure;
 		else if (smqp->from == proc->id)
@@ -2812,10 +2788,7 @@ erts_foreach_sys_msg_in_q(void (*func)(Eterm,
 static void
 init_sys_msg_dispatcher(void)
 {
-    int i;
-    for (i = 1; i < PREALCD_SMQ_ELS; i++)
-	prealloced_smq_elements[i].next = &prealloced_smq_elements[i-1];
-    free_smq_elements = &prealloced_smq_elements[PREALCD_SMQ_ELS-1];
+    init_smq_element_alloc();
     sys_message_queue = NULL;
     sys_message_queue_end = NULL;
     erts_smp_cnd_init(&smq_cnd);

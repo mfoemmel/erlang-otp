@@ -269,8 +269,8 @@ handle_filename(_Filename, State) when record(State, state) ->
 filename_join(Dir, Filename) ->
     case filename:pathtype(Filename) of
 	absolute ->
-	    [_ | RelDir] = filename:split(Dir),
-	    filename:join([RelDir, Filename]);
+	    [_ | RelFilename] = filename:split(Filename),
+	    filename:join([Dir, RelFilename]);
 	_ ->
 	    filename:join([Dir, Filename])
     end.

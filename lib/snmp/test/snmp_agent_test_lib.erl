@@ -422,11 +422,12 @@ start_agent(Config, Vsn, Opts) ->
 		  {snmp_config_dir, AgentDir},
 		  {snmp_db_dir, AgentDir},
 		  {snmp_local_db_auto_repair, true},
+		  {snmp_local_db_verbosity, log},
 		  {snmp_master_agent_verbosity, trace},
 		  {snmp_supervisor_verbosity, trace},
-		  {snmp_mibserver_verbosity, trace},
-		  {snmp_symbolic_store_verbosity, trace},
-		  {snmp_note_store_verbosity, trace},
+		  {snmp_mibserver_verbosity, log},
+		  {snmp_symbolic_store_verbosity, log},
+		  {snmp_note_store_verbosity, log},
 		  {snmp_net_if_verbosity, trace}],
 		 Opts),
 
@@ -1005,9 +1006,20 @@ get_req(Id, Vars) ->
 	   "~n   Vars: ~p",[Id,Vars]),
     snmp_test_mgr:g(Vars),
     ?DBG("get_req -> await response",[]),
-    {ok, Val} = snmp_test_mgr:get_response(Id, Vars), 
-    ?DBG("get_req -> response: ~p",[Val]),
-    Val.
+    case snmp_test_mgr:get_response(Id, Vars) of
+	{ok, Val} ->
+	    ?DBG("get_req -> response: ~p",[Val]),
+	    Val;
+	{error, _, {ExpFmt, ExpArg}, {ActFmt, ActArg}} ->
+	    ?DBG("get_req -> error for ~p: "
+		 "~n   " ++ ExpFmt ++ 
+		 "~n   " ++ ActFmt, 
+		 [Id] ++ ExpArg ++ ActArg),
+	    exit({unexpected_response, ExpArg, ActArg});
+	Error ->
+	    ?DBG("get_req -> error: ~n~p",[Error]),
+	    exit({unknown, Error})
+    end.
 
 
 get_next_req(Vars) ->

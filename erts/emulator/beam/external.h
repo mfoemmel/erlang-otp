@@ -37,6 +37,7 @@
 #define STRING_EXT        'k'
 #define LIST_EXT          'l'
 #define BINARY_EXT        'm'
+#define BIT_BINARY_EXT    'M'
 #define SMALL_BIG_EXT     'n'
 #define LARGE_BIG_EXT     'o'
 #define NEW_FUN_EXT       'p'

@@ -451,7 +451,8 @@ connect_nodes2(Father, Ns) ->
     Res = try_merge_schema(New),
     Msg = {schema_is_merged, [], late_merge, []},
     multicall([node()|Ns], Msg),
-    Father ! {?MODULE, self(), Res, New},
+    After = val({current, db_nodes}),    
+    Father ! {?MODULE, self(), Res, mnesia_lib:intersect(Ns,After--Current)},
     unlink(Father),
     ok.
     

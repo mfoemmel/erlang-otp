@@ -14,7 +14,7 @@
 
 new(NrTemps) ->
   #ig_moves{
-     movelist = hipe_vectors_wrapper:empty(NrTemps, ordsets:new()),
+     movelist = hipe_vectors:new(NrTemps, ordsets:new()),
      nrmoves = 0,
      moveinsns = [],
      moveset = gb_sets:empty()}.
@@ -36,10 +36,10 @@ new_move(Dst, Src, IG_moves) ->
   end.
 
 add_movelist(MoveNr, Temp, Movelist) ->
-  Assoc_moves = hipe_vectors_wrapper:get(Movelist, Temp),
+  Assoc_moves = hipe_vectors:get(Movelist, Temp),
   %% XXX: MoveNr does not occur in moveList[Temp], but the new list must be an
   %% ordset due to the ordsets:union in hipe_coalescing_regalloc:combine().
-  hipe_vectors_wrapper:set(Movelist, Temp, ordsets:add_element(MoveNr, Assoc_moves)).
+  hipe_vectors:set(Movelist, Temp, ordsets:add_element(MoveNr, Assoc_moves)).
 
 get_moves(IG_moves) -> % -> {MoveList, NrMoves, MoveInsns}
   {IG_moves#ig_moves.movelist,

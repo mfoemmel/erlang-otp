@@ -20,21 +20,30 @@
 %%----------------------------------------------------------------------
 -module(snmp_app_test).
 
--compile(export_all).
+-export([
+	 all/1, init_suite/1, fin_suite/1,
+	 init_per_testcase/2, fin_per_testcase/2, 
 
+	 fields/1,
+	 modules/1,
+	 exportall/1,
+	 app_depend/1,
+
+	 start_and_stop/1,
+	 start_and_stop_empty/1, 
+	 start_and_stop_with_agent/1, 
+	 start_and_stop_with_manager/1,
+	 start_and_stop_with_agent_and_manager/1,
+	 start_epmty_and_then_agent_and_manager_and_stop/1,
+	 start_with_agent_and_then_manager_and_stop/1,
+	 start_with_manager_and_then_agent_and_stop/1
+	]).
+
+
+-include_lib("kernel/include/file.hrl").
+-include("test_server.hrl").
 -include("snmp_test_lib.hrl").
 
-
-% t()     -> megaco_test_lib:t(?MODULE).
-% t(Case) -> megaco_test_lib:t({?MODULE, Case}).
-
-
-%% Test server callbacks
-init_per_testcase(_Case, Config) ->
-    Config.
-
-fin_per_testcase(_Case, Config) ->
-    Config.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -44,25 +53,34 @@ all(suite) ->
 	 fields,
 	 modules,
 	 exportall,
-	 app_depend
+	 app_depend,
+	 start_and_stop
 	],
-    {req, [], [{conf, app_init, Cases, app_fin}]}.
+    {conf, init_suite, Cases, fin_suite}.
 
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-app_init(suite) -> [];
-app_init(doc) -> [];
-app_init(Config) when list(Config) ->
-    case is_app(snmp) of
-	{ok, AppFile} ->
-	    io:format("AppFile: ~n~p~n", [AppFile]),
-	    print_versions(1, (catch snmp:versions1())),
-	    print_versions(2, (catch snmp:versions2())),
-	    [{app_file, AppFile}|Config];
+init_suite(Config) when is_list(Config) ->
+    PrivDir = ?config(priv_dir, Config),
+    TopDir = filename:join(PrivDir, app),
+    case file:make_dir(TopDir) of
+        ok ->
+            ok;
+        Error ->
+            fail({failed_creating_subsuite_top_dir, Error})
+    end,
+    AppFile = 
+	case is_app() of
+	    {ok, File} ->
+		io:format("File: ~n~p~n", [File]),
+		snmp:print_version_info(), 
+		File;
 	{error, Reason} ->
 	    fail(Reason)
-    end.
+    end,
+    [{app_topdir, TopDir}, {app_file, AppFile} | Config].
+
+
+is_app() ->
+    is_app(?APPLICATION).
 
 is_app(App) ->
     LibDir = code:lib_dir(App),
@@ -74,15 +92,19 @@ is_app(App) ->
 	    {error, {invalid_format, Error}}
     end.
 
-print_versions(N, {ok, Versions}) ->
-    V = lists:flatten(io_lib:format("VERSIONS ~w: ", [N])),
-    snmp:print_versions(V, Versions);
-print_versions(_, _) ->
-    ok.
+fin_suite(suite) -> [];
+fin_suite(doc) -> [];
+fin_suite(Config) when is_list(Config) ->
+    Config.
 
-app_fin(suite) -> [];
-app_fin(doc) -> [];
-app_fin(Config) when list(Config) ->
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+%% Test server callbacks
+init_per_testcase(_Case, Config) ->
+    Config.
+
+fin_per_testcase(_Case, Config) ->
     Config.
 
 
@@ -236,6 +258,104 @@ check_apps([App|Apps]) ->
     end.
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_and_stop(suite) ->
+    [
+     start_and_stop_empty, 
+     start_and_stop_with_agent, 
+     start_and_stop_with_manager,
+     start_and_stop_with_agent_and_manager,
+     start_epmty_and_then_agent_and_manager_and_stop,
+     start_with_agent_and_then_manager_and_stop,
+     start_with_manager_and_then_agent_and_stop
+    ].
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_and_stop_empty(suite) ->
+    [];
+start_and_stop_empty(doc) ->
+    ["Start and stop the application empty (no configured components)"];
+start_and_stop_empty(Config) when is_list(Config) ->
+    ?line false = ?IS_SNMP_RUNNING(),
+
+    ?line ok    = snmp:start(),
+
+    ?line true  = ?IS_SNMP_RUNNING(),
+
+    ?line ok    = snmp:stop(),
+    
+    ?line false = ?IS_SNMP_RUNNING(),
+
+    ok.
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_and_stop_with_agent(suite) ->
+    [];
+start_and_stop_with_agent(doc) ->
+    ["Start and stop the application with the agent pre-configured"];
+start_and_stop_with_agent(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_and_stop_with_manager(suite) ->
+    [];
+start_and_stop_with_manager(doc) ->
+    ["Start and stop the application with the manager pre-configured"];
+start_and_stop_with_manager(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_and_stop_with_agent_and_manager(suite) ->
+    [];
+start_and_stop_with_agent_and_manager(doc) ->
+    ["Start and stop the application with both the agent "
+     "and the manager pre-configured"];
+start_and_stop_with_agent_and_manager(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_epmty_and_then_agent_and_manager_and_stop(suite) ->
+    [];
+start_epmty_and_then_agent_and_manager_and_stop(doc) ->
+    ["Start the application empty, then start the agent and then "
+     "the manager and then stop the application"];
+start_epmty_and_then_agent_and_manager_and_stop(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_with_agent_and_then_manager_and_stop(suite) ->
+    [];
+start_with_agent_and_then_manager_and_stop(doc) ->
+    ["Start the application with the agent pre-configured, "
+     "then start the manager and then stop the application"];
+start_with_agent_and_then_manager_and_stop(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+start_with_manager_and_then_agent_and_stop(suite) ->
+    [];
+start_with_manager_and_then_agent_and_stop(doc) ->
+    ["Start the application with the manager pre-configured, "
+     "then start the agent and then stop the application"];
+start_with_manager_and_then_agent_and_stop(Config) when is_list(Config) ->
+    ?SKIP(not_implemented_yet).
+
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 

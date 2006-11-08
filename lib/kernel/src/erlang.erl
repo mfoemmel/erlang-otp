@@ -18,6 +18,7 @@
 -module(erlang).
 
 -export([apply/2,apply/3,spawn/4,spawn_link/4,
+	 spawn_monitor/1,spawn_monitor/3,
 	 spawn_opt/2,spawn_opt/3,spawn_opt/4,spawn_opt/5,
 	 disconnect_node/1]).
 -export([spawn/1, spawn_link/1, spawn/2, spawn_link/2]).
@@ -28,7 +29,7 @@
 -export([localtime_to_universaltime/1]).
 
 -export([dlink/1, dunlink/1, dsend/2, dsend/3, dgroup_leader/2,
-	 dexit/2, dmonitor_node/2, dmonitor_p/2]).
+	 dexit/2, dmonitor_node/3, dmonitor_p/2]).
 
 -export([set_cookie/2, get_cookie/0]).
 
@@ -85,6 +86,18 @@ spawn_link(N, {M,F}=MF) when atom(M), atom(F) ->
     spawn_link(N, erlang, apply, [MF, []]);
 spawn_link(N, F) ->
     erlang:fault(badarg, [N, F]).
+
+%% Spawn and atomically set up a monitor.
+
+spawn_monitor(F) when is_function(F, 0) ->
+    erlang:spawn_opt({erlang,apply,[F,[]],[monitor]});
+spawn_monitor(F) ->
+    erlang:error(badarg, [F]).
+
+spawn_monitor(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
+    erlang:spawn_opt({M,F,A,[monitor]});
+spawn_monitor(M, F, A) ->
+    erlang:error(badarg, [M,F,A]).
 
 spawn_opt(F, O) when function(F) ->
     spawn_opt(erlang, apply, [F, []], O);
@@ -157,21 +170,27 @@ spawn_link(N,M,F,A) ->
     erlang:fault(badarg, [N, M, F, A]).
 
 spawn_opt(M, F, A, Opts) ->
-    case catch erlang:spawn_opt({M, F, A, Opts}) of
-	Pid when pid(Pid) ->
-	    Pid;
-	{'EXIT', {Reason, _}} ->
-	    erlang:fault(Reason, [M,F,A,Opts])
+    case catch erlang:spawn_opt({M,F,A,Opts}) of
+	{'EXIT',{Reason,_}} ->
+	    erlang:error(Reason, [M,F,A,Opts]);
+	Res ->
+	    Res
     end.
 
-spawn_opt(N,M,F,A,O) when N == node(), atom(M), atom(F), list(A), list(O) ->
-    spawn_opt(M,F,A,O);
-spawn_opt(N,M,F,A,O) when atom(N), atom(M), atom(F) ->
+spawn_opt(N, M, F, A, O) when N =:= node(),
+			      is_atom(M), is_atom(F), is_list(A),
+			      is_list(O) ->
+    spawn_opt(M, F, A, O);
+spawn_opt(N, M, F, A, O) when is_atom(N), is_atom(M), is_atom(F) ->
     case {is_well_formed_list(A), is_well_formed_list(O)} of
 	{true, true} ->
 	    ok;
 	_ ->
-	    erlang:fault(badarg, [N, M, F, A, O])
+	    erlang:error(badarg, [N, M, F, A, O])
+    end,
+    case lists:member(monitor, O) of
+	false -> ok;
+	true -> erlang:error(badarg, [N, M, F, A, O])
     end,
     {L,NO} = lists:foldl(fun (link, {_, NewOpts}) ->
 				 {link, NewOpts};
@@ -278,10 +297,21 @@ dunlink(Pid) ->
 	false -> true  %% dist_unlink ??
     end.
 
-dmonitor_node(Node, Flag) ->
+dmonitor_node(Node, Flag, []) ->
     case net_kernel:connect(Node) of
-	true -> monitor_node(Node, Flag);
+	true -> erlang:monitor_node(Node, Flag, []);
 	false -> self() ! {nodedown, Node}, true
+    end;
+
+dmonitor_node(Node, Flag, Opts) ->
+    case lists:member(allow_passive_connect,Opts) of
+	true ->
+	    case net_kernel:passive_cnct(Node) of
+		true -> erlang:monitor_node(Node, Flag, Opts);
+		false -> self() ! {nodedown, Node}, true
+	    end;
+	_ ->
+	    dmonitor_node(Node,Flag,[])
     end.
 
 dgroup_leader(Leader, Pid) ->
@@ -477,7 +507,7 @@ demonitor(MRef, Opts) ->
 	      R -> R
 	  end,
     case Flush of
-	true -> receive {'DOWN', MRef, _, _, _} -> ok after 0 -> ok end;
+	true -> receive {_, MRef, _, _, _} -> ok after 0 -> ok end;
 	_ -> ok
     end,
     Res.

@@ -282,10 +282,10 @@ sent_timer_exceeded(Config) when list(Config) ->
     ?MGC_REQ_IGNORE(Mgc),
 
     d("[MG] send the notify"),
-    ED = ?MG_NOTIF_RAR(Mg),
+    {ok, {_ProtocolVersion, {error, ED}}} = ?MG_NOTIF_RAR(Mg),
     d("[MG] ED: ~p", [ED]),
     ErrorCode = ?megaco_number_of_transactionpending_exceeded,
-    #'ErrorDescriptor'{errorCode = ErrorCode} = ED,
+    ErrorCode = ED#'ErrorDescriptor'.errorCode, 
 
     %% Tell MG to stop
     i("[MG] stop"),
@@ -353,10 +353,10 @@ sent_timer_exceeded_long(Config) when list(Config) ->
     ?MGC_REQ_PIGNORE(Mgc),
 
     d("[MG] send the notify"),
-    ED = ?MG_NOTIF_RAR(Mg),
+    {ok, {_ProtocolVersion, {error, ED}}} = ?MG_NOTIF_RAR(Mg),
     d("[MG] ED: ~p", [ED]),
     ErrorCode = ?megaco_number_of_transactionpending_exceeded,
-    #'ErrorDescriptor'{errorCode = ErrorCode} = ED,
+    ErrorCode = ED#'ErrorDescriptor'.errorCode, 
 
     %% Tell MG to stop
     i("[MG] stop"),
@@ -1079,7 +1079,7 @@ otp_4956(Config) when list(Config) ->
             ok;
         {error, MgcReply} ->
             d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-            ?ERROR(mgc_failed)
+            ?ERROR({mgc_failed, MgcReply})
     end,
 
     d("[MG] await the generator reply"),
@@ -1089,7 +1089,7 @@ otp_4956(Config) when list(Config) ->
             ok;
         {error, MgReply} ->
             d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-            ?ERROR(mg_failed)
+            ?ERROR({mg_failed, MgReply})
     end,
 
     %% Tell Mgc to stop
@@ -1115,12 +1115,18 @@ otp_4956_mgc_event_sequence(text, tcp) ->
           {encoding_config,  []},
           {transport_module, megaco_tcp}
          ],
-    ConnectVerify = fun otp_4956_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = otp_4956_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify1 = otp_4956_mgc_verify_notify_request_fun1(),
-    NotifyReqVerify2 = otp_4956_mgc_verify_notify_request_fun2(),
-    ReqAbortVerify = fun otp_4956_mgc_verify_handle_trans_request_abort/1, 
-    DiscoVerify = fun otp_4956_mgc_verify_handle_disconnect/1,
+    ConnectVerify = 
+	otp_4956_mgc_verify_handle_connect_fun(),
+    ServiceChangeReqVerify = 
+	otp_4956_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify1 = 
+	otp_4956_mgc_verify_notify_request_fun1(),
+    NotifyReqVerify2 = 
+	otp_4956_mgc_verify_notify_request_fun2(),
+    ReqAbortVerify = 
+	otp_4956_mgc_verify_handle_trans_request_abort_fun(), 
+    DiscoVerify = 
+	fun otp_4956_mgc_verify_handle_disconnect/1,
     EvSeq = [
              {debug, true},
 	     {megaco_trace, disable},
@@ -1143,97 +1149,115 @@ otp_4956_mgc_event_sequence(text, tcp) ->
             ],
     EvSeq.
 
+otp_4956_mgc_verify_handle_connect_fun() ->
+    fun(M) ->
+	    otp_4956_mgc_verify_handle_connect(M)
+    end.
+
 otp_4956_mgc_verify_handle_connect({handle_connect, CH, ?VERSION}) -> 
     {ok, CH, ok};
 otp_4956_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 otp_4956_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-%             io:format("otp_4956_mgc_verify_service_change_req -> ok"
-%                       "~n   AR: ~p~n", [AR]),
-            case AR of
-                #'ActionRequest'{commandRequests = [CR]} ->
-                    case CR of
-                        #'CommandRequest'{command = Cmd} ->
-                            case Cmd of
-                                {serviceChangeReq, 
-                                 #'ServiceChangeRequest'{terminationID = [Tid],
-                                                         serviceChangeParms = Parms}} ->
-                                    case Tid of
-                                        #megaco_term_id{contains_wildcards = false, 
-                                                        id = ["root"]} ->
-                                            case Parms of
-                                                #'ServiceChangeParm'{
-                                                         serviceChangeMethod = restart,
-                                                         serviceChangeReason = [[$9,$0,$1|_]]} ->
-                                                    Reply = 
-                                                        {discard_ack, 
-                                                         [otp_4956_mgc_service_change_reply_ar(Mid, 1)]},
-                                                    {ok, AR, Reply};
-                                                _ ->
-                                                    Err = {invalid_SCP, Parms},
-                                                    ED = otp_4956_err_desc(Parms),
-                                                    ErrReply = {discard_ack, 
-                                                                ED},
-                                                    {error, Err, ErrReply}
-                                            end;
-                                        _ ->
-                                            Err = {invalid_termination_id, Tid},
-                                            ED = otp_4956_err_desc(Tid),
-                                            ErrReply = {discard_ack, ED},
-                                            {error, Err, ErrReply}
-                                    end;
-                                _ ->
-                                    Err = {invalid_command, Cmd},
-                                    ED = otp_4956_err_desc(Cmd),
-                                    ErrReply = {discard_ack, ED},
-                                    {error, Err, ErrReply}
-                            end;
-                        _ ->
-                            Err = {invalid_command_request, CR},
-                            ED = otp_4956_err_desc(CR),
-                            ErrReply = {discard_ack, ED},
-                            {error, Err, ErrReply}
-                    end;
-                _ ->
-                    Err = {invalid_action_request, AR},
-                    ED = otp_4956_err_desc(AR),
-                    ErrReply = {discard_ack, ED},
-                    {error, Err, ErrReply}
-            end;
-       (Else) ->
-%             io:format("otp_4956_mgc_verify_service_change_req -> unknown"
-%                       "~n   Else: ~p~n", [Else]),
-            ED = otp_4956_err_desc(Else),
-            ErrReply = {discard_ack, ED},
-            {error, Else, ErrReply}
+    fun(Req) ->
+	    otp_4956_mgc_verify_service_change_req(Mid, Req)
     end.
 
+otp_4956_mgc_verify_service_change_req(
+  Mid, 
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp_4956_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [otp_4956_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
+					_ ->
+					    Err = {invalid_SCP, Parms},
+					    ED = otp_4956_err_desc(Parms),
+					    ErrReply = {discard_ack, ED},
+					    {error, Err, ErrReply}
+				    end;
+				_ ->
+				    Err = {invalid_termination_id, Tid},
+				    ED = otp_4956_err_desc(Tid),
+				    ErrReply = {discard_ack, ED},
+				    {error, Err, ErrReply}
+			    end;
+			_ ->
+			    Err = {invalid_command, Cmd},
+			    ED = otp_4956_err_desc(Cmd),
+			    ErrReply = {discard_ack, ED},
+			    {error, Err, ErrReply}
+		    end;
+		_ ->
+		    Err = {invalid_command_request, CR},
+		    ED = otp_4956_err_desc(CR),
+		    ErrReply = {discard_ack, ED},
+		    {error, Err, ErrReply}
+	    end;
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = otp_4956_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, Err, ErrReply}
+    end;
+otp_4956_mgc_verify_service_change_req(_Mid, Else) ->
+    io:format("otp_4956_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = otp_4956_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
 otp_4956_mgc_verify_notify_request_fun1() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-            case AR of
-                #'ActionRequest'{contextId = Cid, 
-                                 commandRequests = [CR]} ->
-                    #'CommandRequest'{command = Cmd} = CR,
-                    {notifyReq, NR} = Cmd,
-                    #'NotifyRequest'{terminationID = [Tid],
-                                     observedEventsDescriptor = OED,
-                                     errorDescriptor = asn1_NOVALUE} = NR,
-                    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-                    #'ObservedEvent'{eventName = "al/of"} = OE,
-                    Reply = {discard_ack, [otp_4956_mgc_notify_reply_ar(Cid, Tid)]},
-                    {ok, 6000, AR, Reply};
-                _ ->
-                    ED = otp_4956_err_desc(AR),
-                    ErrReply = {discard_ack, ED},
-                    {error, AR, ErrReply}
-            end;
-       (Else) ->
-            ED = otp_4956_err_desc(Else),
-            ErrReply = {discard_ack, ED},
-            {error, Else, ErrReply}
+    fun(Req) ->
+	    otp_4956_mgc_verify_notify_req1(Req)
     end.
+
+otp_4956_mgc_verify_notify_req1({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("otp_4956_mgc_verify_notify_req1 -> entry with"
+	      "~n   AR: ~p"
+	      "~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [otp_4956_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, 6500, AR, Reply};
+	_ ->
+                    ED = otp_4956_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+otp_4956_mgc_verify_notify_req1(Else) ->
+    io:format("otp_4956_mgc_verify_notify_req1 -> entry with"
+	      "~n   Else: ~p"
+	      "~n", [Else]),
+    ED = otp_4956_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 otp_4956_mgc_verify_notify_request_fun2() ->
     fun({handle_trans_request, _, ?VERSION, [AR]}) ->
@@ -1260,10 +1284,31 @@ otp_4956_mgc_verify_notify_request_fun2() ->
             {error, Else, ErrReply}
     end.
 
+otp_4956_mgc_verify_handle_trans_request_abort_fun() ->
+    fun(Req) -> 
+	    otp_4956_mgc_verify_handle_trans_request_abort(Req)
+    end.
+
 otp_4956_mgc_verify_handle_trans_request_abort({handle_trans_request_abort, 
 						CH, ?VERSION, 2, Pid}) -> 
+    io:format("otp_4956_mgc_verify_handle_trans_request_abort -> ok"
+	      "~n   CH:  ~p"
+	      "~n   Pid: ~p"
+	      "~n", [CH, Pid]),
     {ok, {CH, Pid}, ok};
+otp_4956_mgc_verify_handle_trans_request_abort({handle_trans_request_abort, 
+						CH, Version, TransId, Pid}) -> 
+    io:format("otp_4956_mgc_verify_handle_trans_request_abort -> error"
+	      "~n   CH:      ~p"
+	      "~n   Version: ~p"
+	      "~n   TransId: ~p"
+	      "~n   Pid:     ~p"
+	      "~n", [CH, Version, TransId, Pid]),
+    {error, {error, {invalid_version_trans_id, Version, TransId}}, ok};
 otp_4956_mgc_verify_handle_trans_request_abort(Else) ->
+    io:format("otp_4956_mgc_verify_handle_trans_request_abort -> error"
+	      "~n   Else: ~p"
+	      "~n", [Else]),
     {error, Else, ok}.
 
 otp_4956_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, _R}) -> 
@@ -1345,7 +1390,7 @@ otp_4956_mg_event_sequence(text, tcp) ->
 	     {send, "notify request (resend 5)", NotifyReq}, 
 	     {expect_receive, "pending limit exceeded", 
 	      {PendingLimitVerify, 1000}},
-	     {sleep, 2000},
+	     {sleep, 4000},
 	     {send, "notify request (resend 6)", NotifyReq}, 
 	     {expect_nothing, 4000},
 	     disconnect
@@ -1398,37 +1443,48 @@ otp_4956_mg_verify_service_change_rep_msg_fun() ->
     end.
 
 otp_4956_mg_verify_pending_msg_fun() ->
-    fun(#'MegacoMessage'{mess = Mess} = M) -> 
-	    io:format("otp_4956_mg_verify_pending_msg_fun -> entry with"
-		      "~n~p~n", [M]),
-            #'Message'{messageBody = Body} = Mess,
-            {transactions, [Trans]} = Body,
-            {transactionPending, TP} = Trans,
-            #'TransactionPending'{transactionId = _Id} = TP,
-	    io:format("otp_4956_mg_verify_pending_msg_fun -> done~n", []),
-            {ok, M};
-       (M) ->
-            {error, {invalid_message, M}}
+    fun(M) ->
+	    otp_4956_mg_verify_pending_msg(M)
     end.
 
+otp_4956_mg_verify_pending_msg(#'MegacoMessage'{mess = Mess} = M) ->
+    print("otp_4956_mg_verify_pending_msg -> entry with"
+	  "~n~p", [M]),
+    #'Message'{messageBody = Body} = Mess,
+    {transactions, [Trans]} = Body,
+    {transactionPending, TP} = Trans,
+    #'TransactionPending'{transactionId = _Id} = TP,
+    print("otp_4956_mg_verify_pending_msg -> done~n", []),
+    {ok, M};
+otp_4956_mg_verify_pending_msg(M) ->
+    print("otp_4956_mg_verify_pending_msg -> entry with invalid message"
+	  "~n~p", [M]),
+    {error, {invalid_message, M}}.
+
 otp_4956_mg_verify_pending_limit_msg_fun() ->
-    fun(#'MegacoMessage'{mess = Mess} = M) -> 
-	    io:format("otp_4956_mg_verify_pending_limit_msg_fun -> entry with"
-		      "~n~p~n", [M]),
-            #'Message'{messageBody = Body} = Mess,
-	    {transactions, [Trans]} = Body,
-	    {transactionReply, TR} = Trans,
-	    case element(4, TR) of
-		{transactionError, ED} ->
-		    EC = ?megaco_number_of_transactionpending_exceeded,
-		    #'ErrorDescriptor'{errorCode = EC} = ED,
-		    {ok, M};
-		_ ->
-		    {error, {invalid_transactionReply, TR}}
-	    end;
-       (M) ->
-            {error, {invalid_message, M}}
+    fun(M) ->
+	    otp_4956_mg_verify_pending_limit_msg(M)
     end.
+
+otp_4956_mg_verify_pending_limit_msg(#'MegacoMessage'{mess = Mess} = M) ->
+    print("otp_4956_mg_verify_pending_limit_msg -> entry with"
+	  "~n~p", [M]),
+    #'Message'{messageBody = Body} = Mess,
+    {transactions, [Trans]} = Body,
+    {transactionReply, TR} = Trans,
+    case element(4, TR) of
+	{transactionError, ED} ->
+	    EC = ?megaco_number_of_transactionpending_exceeded,
+	    EC = ED#'ErrorDescriptor'.errorCode, 
+	    print("otp_4956_mg_verify_pending_limit_msg -> done~n", []),
+	    {ok, M};
+	_ ->
+	    {error, {invalid_transactionReply, TR}}
+    end;
+otp_4956_mg_verify_pending_limit_msg(M) ->
+    print("otp_4956_mg_verify_pending_limit_msg -> entry with invalid message"
+	  "~n~p", [M]),
+    {error, {invalid_message, M}}.
 
 otp_4956_mg_service_change_request_ar(_Mid, Cid) ->
     Prof  = cre_serviceChangeProf("resgw", 1),
@@ -1544,15 +1600,10 @@ otp_5310(Config) when list(Config) ->
 
     %% Make MG send a request
     d("[MG] send the notify"),
-    Reply = ?MG_NOTIF_RAR(Mg),
-    d("[MG] Reply: ~p", [Reply]),
-    case Reply of
-	#'ErrorDescriptor'{errorCode = 
-			   ?megaco_number_of_transactionpending_exceeded} ->
-	    ok;
-	_ ->
-	    ?ERROR({invalid_mg_reply, Reply})
-    end,
+    {ok, {_ProtocolVersion, {error, ED}}} = ?MG_NOTIF_RAR(Mg),
+    d("[MG] ED: ~p", [ED]),
+    ErrorCode = ?megaco_number_of_transactionpending_exceeded,
+    ErrorCode = ED#'ErrorDescriptor'.errorCode, 
 
     %% Wait for the MGC to get aborted
     d("[MGC] await the abort callback"),
@@ -1912,6 +1963,11 @@ print(true, Ts, Tc, P, F, A) ->
 print(_, _, _, _, _, _) ->
     ok.
 
+print(F, A) ->
+    io:format("*** [~s] ***"
+	      "~n   " ++ F ++ "~n", 
+	      [format_timestamp(now()) | A]).
+    
 format_timestamp(Now) -> megaco:format_timestamp(Now).
 
 

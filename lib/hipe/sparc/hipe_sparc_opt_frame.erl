@@ -27,8 +27,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2006/03/15 22:07:18 $
-%%              $Revision: 1.17 $
+%%              $Date: 2006/09/14 15:33:58 $
+%%              $Revision: 1.19 $
 %% ====================================================================
 %%  Exports  : cfg/1 - Takes a SPARC CFG and rewrites it.
 %%
@@ -65,7 +65,6 @@ cfg(CFG) ->
   %% Backward prop to get rid of loads.
   CFG2 = remove_dead(CFG1),
   CFG2.
-
 
 %% ____________________________________________________________________
 %% 
@@ -309,7 +308,7 @@ prop_store(I,Env) ->
   end.
 
 prop_spill(I,Env) ->
-  Pos = hipe_sparc:imm_value(hipe_sparc:pseudo_spill_pos(I))*4,
+  Pos = hipe_sparc:imm_value(hipe_sparc:pseudo_spill_pos(I)) bsl ?log2_wordsize,
   Src = hipe_sparc:pseudo_spill_reg(I),
   case find_spos(Pos, Env) of
     Src ->
@@ -323,7 +322,7 @@ prop_spill(I,Env) ->
   end. 
 
 prop_unspill(I,Env) ->
-  Pos = hipe_sparc:imm_value(hipe_sparc:pseudo_unspill_pos(I))*4,
+  Pos = hipe_sparc:imm_value(hipe_sparc:pseudo_unspill_pos(I)) bsl ?log2_wordsize,
   Dest = hipe_sparc:pseudo_unspill_reg(I),
   case find_spos(Pos, Env) of
     undefined ->
@@ -331,9 +330,6 @@ prop_unspill(I,Env) ->
     Val ->
       bind_all([Val],[Dest],I,Env)
   end.
-
-
-
 
 prop_stack_store(I,Env,Offset,Src) ->
   case hipe_sparc_prop_env:env__sp(Env) of
@@ -446,7 +442,6 @@ prop_heap_load(I,Env,Offset,Dest) ->
       end
   end.
 
-
 %% ____________________________________________________________________
 %% 
 prop_alu(I,Env) ->
@@ -526,12 +521,11 @@ prop_call_link(I,Env) ->
   case NoArgs > ArgsInRegs of
     true ->
       StackAdjust = NoArgs - ArgsInRegs,
-      Env2 = hipe_sparc_prop_env:inc_sp(Env1, - StackAdjust*4),
+      Env2 = hipe_sparc_prop_env:inc_sp(Env1, - (StackAdjust bsl ?log2_wordsize)),
       {I,Env2};
     false ->
       {I,Env1}
   end.
-
 
 %% ____________________________________________________________________
 %% 
@@ -561,6 +555,5 @@ bind_all([Src|Srcs], [Dst|Dsts], I, Env, NewEnv) ->
   end;
 bind_all([], [], I, _, Env) ->
   {I, Env}.
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-

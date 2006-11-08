@@ -19,6 +19,8 @@
 
 -export([table_func/2, table_func/4]).
 
+-include("snmpa_internal.hrl").
+
 -record(time_stamp, {key, data}).
 
 -define(verify(Expr, Error), verify(catch Expr, Error, ?FILE, ?LINE)).
@@ -30,10 +32,11 @@ verify(Res, Error, File, Line) ->
 	ok ->
 	    Res;
 	_ ->
-	    error_logger:format("~s(~w): crashed ~p -> ~p ~p~n",
-				[File, Line, Error, Res, process_info(self())]),
+	    error_msg("~s(~w): crashed ~p -> ~p ~p~n",
+		      [File, Line, Error, Res, process_info(self())]),
 	    Res
     end.
+
 
 %%%-----------------------------------------------------------------
 %%% This module contains generic functions for implementing an SNMP
@@ -173,4 +176,11 @@ delete_table(Tab) ->
 	false ->
 	    ok
     end.
+
+
+%%-----------------------------------------------------------------
+
+error_msg(F, A) ->
+    ?snmpa_error(F, A).
+
 

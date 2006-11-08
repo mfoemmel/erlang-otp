@@ -97,6 +97,12 @@
 #define RSH "/usr/bin/rsh"
 #endif
 
+#ifndef HAVE_SOCKLEN_T
+typedef int SocklenType;
+#else
+typedef socklen_t SocklenType;
+#endif
+
 /* FIXME check errors from malloc */
 
 static struct in_addr *get_addr(const char *hostname, struct in_addr *oaddr);
@@ -135,7 +141,7 @@ int erl_start_sys(ei_cnode *ec, char *alive, Erl_IpAddr adr, int flags,
 {
   struct timeval timeout;
   struct sockaddr_in addr;
-  int namelen;
+  SocklenType namelen;
   int port;
   int sockd = 0;
   int one = 1;
@@ -622,7 +628,7 @@ static int wait_for_erlang(int sockd, int magic, struct timeval *timeout)
   int n,i;
   char buf[16];
   struct sockaddr_in peer;
-  int len = sizeof(peer);
+  SocklenType len = (SocklenType) sizeof(peer);
 
   /* determine when we should exit this function */
   gettimeofday(&now,NULL);

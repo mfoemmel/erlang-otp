@@ -19,7 +19,6 @@
 
 %% Primitive inet_drv interface
 
-
 -export([open/1, open/2, fdopen/2, fdopen/3, close/1]).
 -export([bind/3, listen/1, listen/2]). 
 -export([connect/3, connect/4, async_connect/4]).
@@ -214,7 +213,6 @@ async_connect(S, IP, Port, Time) ->
 	Error -> Error
     end.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% ACCEPT(insock() [,Timeout] ) -> {ok,insock()} | {error, Reason}
@@ -276,6 +274,7 @@ async_accept(L, Time) ->
 %% set listen mode on socket
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 listen(S) -> listen(S, ?LISTEN_BACKLOG).
     
 listen(S, BackLog) when port(S), integer(BackLog) ->
@@ -311,7 +310,7 @@ send(S, Data) when port(S) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 sendto(S,IP,Port,Data) when port(S), Port >= 0, Port =< 65535 ->
-    case catch erlang:port_command(S, [?int16(Port), ip_to_bytes(IP),Data]) of
+    case catch erlang:port_command(S, [?int16(Port), ip_to_bytes(IP), Data]) of
 	true -> 
 	    receive
 		{inet_reply, S, Reply} -> Reply
@@ -329,6 +328,7 @@ sendto(S,IP,Port,Data) when port(S), Port >= 0, Port =< 65535 ->
 %%    N read N bytes
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 recv(S, Length) -> recv0(S, Length, -1).
 
 recv(S, Length, infinity) -> recv0(S, Length,-1);
@@ -351,8 +351,7 @@ async_recv(S, Length, Time) ->
     case ctl_cmd(S, ?TCP_REQ_RECV, [enc_time(Time), ?int32(Length)]) of
 	{ok,[R1,R0]} -> {ok, ?u16(R1,R0)};
 	Error -> Error
-    end.
-		    
+    end.	    
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -433,7 +432,6 @@ setsockname(S, undefined) when port(S) ->
 	{ok,[]} -> ok;
 	Error -> Error
     end.
-	     
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -660,7 +658,6 @@ getstatus(S) when port(S) ->
 gethostname(S) when port(S) ->
     ctl_cmd(S, ?INET_REQ_GETHOSTNAME, []).
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% GETSERVBYNAME(insock(),Name,Proto) -> {ok,Port} | {error, Reason}
@@ -734,7 +731,6 @@ unrecv(S, Data) ->
 	Error  -> Error
     end.
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% DETACH(insock()) -> ok
@@ -757,7 +753,6 @@ attach(S) when port(S) ->
 	{'EXIT', Reason} -> {error, Reason}
     end.
 
-    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% INTERNAL FUNCTIONS
@@ -801,7 +796,8 @@ enc_opt(bit8)            -> ?INET_LOPT_BIT8;
 enc_opt(send_timeout)    -> ?INET_LOPT_TCP_SEND_TIMEOUT;
 enc_opt(delay_send)      -> ?INET_LOPT_TCP_DELAY_SEND;
 enc_opt(packet_size)     -> ?INET_LOPT_PACKET_SIZE;
-enc_opt(_) ->          -1.
+enc_opt(read_packets)    -> ?INET_LOPT_UDP_READ_PACKETS;
+enc_opt(O) when is_atom(O) -> -1.
 
 dec_opt(?INET_OPT_REUSEADDR)      -> reuseaddr;
 dec_opt(?INET_OPT_KEEPALIVE)      -> keepalive;
@@ -829,9 +825,10 @@ dec_opt(?INET_LOPT_TCP_HIWTRMRK)  -> high_watermark;
 dec_opt(?INET_LOPT_TCP_LOWTRMRK)  -> low_watermark;
 dec_opt(?INET_LOPT_BIT8)          -> bit8;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT) -> send_timeout;
-dec_opt(?INET_LOPT_TCP_DELAY_SEND) -> delay_send;
-dec_opt(?INET_LOPT_PACKET_SIZE)   -> packet_size;
-dec_opt(_)                        -> undefined.
+dec_opt(?INET_LOPT_TCP_DELAY_SEND)   -> delay_send;
+dec_opt(?INET_LOPT_PACKET_SIZE)      -> packet_size;
+dec_opt(?INET_LOPT_UDP_READ_PACKETS) -> read_packets;
+dec_opt(I) when is_integer(I)     -> undefined.
 
 type_opt(reuseaddr)       -> bool;
 type_opt(keepalive)       -> bool;
@@ -874,7 +871,6 @@ type_opt(mode) ->
 type_opt(deliver) ->
     {enum, [{port, ?INET_DELIVER_PORT},
 	    {term, ?INET_DELIVER_TERM}]};
-
 type_opt(exit_on_close)   -> bool;
 type_opt(low_watermark)   -> int;
 type_opt(high_watermark)  -> int;
@@ -886,8 +882,8 @@ type_opt(bit8) ->
 type_opt(send_timeout)    -> time;
 type_opt(delay_send)      -> bool;
 type_opt(packet_size)     -> uint;
-type_opt(_)               -> undefined.
-
+type_opt(read_packets)    -> uint;
+type_opt(O) when is_atom(O) -> undefined.
 
 
 type_value(bool, true)                     -> true;
@@ -897,7 +893,7 @@ type_value(uint, X) when integer(X)        -> true;
 type_value(time, infinity)                 -> true;
 type_value(time, X) when integer(X), X>=0  -> true;
 type_value(ip,{A,B,C,D}) when ?ip(A,B,C,D) -> true;
-type_value(ether,[_X1,_X2,_X3,_X4,_X5,_X6])      -> true;
+type_value(ether,[_X1,_X2,_X3,_X4,_X5,_X6]) -> true;
 type_value({X,Y},{XV,YV}) -> type_value(X,XV) and type_value(Y,YV);
 type_value({enum,List},Enum) -> 
     case enum_val(Enum, List) of
@@ -918,9 +914,9 @@ enc_value(int, Val)       -> ?int32(Val);
 enc_value(uint, Val)      -> ?int32(Val);
 enc_value(time, infinity) -> ?int32(-1);
 enc_value(time, Val)      -> ?int32(Val);
-enc_value(ip,{A,B,C,D}) -> [A,B,C,D];
-enc_value(ip,any)       -> [0,0,0,0];
-enc_value(ip,loopback)  -> [127,0,0,1];
+enc_value(ip,{A,B,C,D})   -> [A,B,C,D];
+enc_value(ip,any)         -> [0,0,0,0];
+enc_value(ip,loopback)    -> [127,0,0,1];
 enc_value(ether,[X1,X2,X3,X4,X5,X6]) -> [X1,X2,X3,X4,X5,X6];
 enc_value({enum,List},Enum) ->
     {value,Val} = enum_val(Enum, List),
@@ -977,7 +973,7 @@ enum_vals([Enum|Es], List) ->
 enum_vals([], _) -> [].
 
 enum_names(Val, [{Enum,BitVal} |List]) ->
-    if Val band BitVal == BitVal ->
+    if Val band BitVal =:= BitVal ->
 	    [Enum | enum_names(Val, List)];
        true ->
 	    enum_names(Val, List)
@@ -1047,7 +1043,7 @@ type_ifopt(broadaddr) -> ip;
 type_ifopt(dstaddr)   -> ip;
 type_ifopt(mtu)       -> int;
 type_ifopt(netmask)   -> ip;
-type_ifopt(flags) ->
+type_ifopt(flags)     ->
     {bitenumlist,
      [{up, ?INET_IFF_UP},
       {down, ?INET_IFF_DOWN},
@@ -1058,8 +1054,8 @@ type_ifopt(flags) ->
       {no_pointtopoint, ?INET_IFF_NPOINTTOPOINT},
       {running, ?INET_IFF_RUNNING},
       {multicast, ?INET_IFF_MULTICAST}]};
-type_ifopt(hwaddr)  -> ether;
-type_ifopt(_)       -> undefined.
+type_ifopt(hwaddr)    -> ether;
+type_ifopt(Opt) when is_atom(Opt) -> undefined.
 
 enc_ifopt(addr)      -> ?INET_IFOPT_ADDR;
 enc_ifopt(broadaddr) -> ?INET_IFOPT_BROADADDR;
@@ -1068,7 +1064,7 @@ enc_ifopt(mtu)       -> ?INET_IFOPT_MTU;
 enc_ifopt(netmask)   -> ?INET_IFOPT_NETMASK;
 enc_ifopt(flags)     -> ?INET_IFOPT_FLAGS;
 enc_ifopt(hwaddr)    -> ?INET_IFOPT_HWADDR;
-enc_ifopt(_) -> -1.
+enc_ifopt(Opt) when is_atom(Opt) -> -1.
 
 dec_ifopt(?INET_IFOPT_ADDR)      -> addr;
 dec_ifopt(?INET_IFOPT_BROADADDR) -> broadaddr;
@@ -1077,7 +1073,7 @@ dec_ifopt(?INET_IFOPT_MTU)       -> mtu;
 dec_ifopt(?INET_IFOPT_NETMASK)   -> netmask;
 dec_ifopt(?INET_IFOPT_FLAGS)     -> flags;
 dec_ifopt(?INET_IFOPT_HWADDR)    -> hwaddr;
-dec_ifopt(_)                     -> undefined.
+dec_ifopt(I) when is_integer(I)  -> undefined.
 
 %% decode if options returns a reversed list
 decode_ifopts([B | Buf], Acc) ->
@@ -1259,9 +1255,8 @@ rev(L) -> rev(L,[]).
 rev([C|L],Acc) -> rev(L,[C|Acc]);
 rev([],Acc) -> Acc.
 
-ip_to_bytes(IP) when size(IP) == 4 -> ip4_to_bytes(IP);
-ip_to_bytes(IP) when size(IP) == 8 -> ip6_to_bytes(IP).
-
+ip_to_bytes(IP) when size(IP) =:= 4 -> ip4_to_bytes(IP);
+ip_to_bytes(IP) when size(IP) =:= 8 -> ip6_to_bytes(IP).
 
 ip4_to_bytes({A,B,C,D}) ->
     [A band 16#ff, B band 16#ff, C band 16#ff, D band 16#ff].
@@ -1283,7 +1278,7 @@ get_ip6([X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16 | T]) ->
 %% Control command
 ctl_cmd(Port, Cmd, Args) ->
     case catch erlang:port_control(Port, Cmd, Args) of
-	[?INET_REP_OK | Reply]      -> {ok, Reply};
+	[?INET_REP_OK | Reply] -> {ok, Reply};
 	[?INET_REP_ERROR| Err] -> {error, list_to_atom(Err)};
 	{'EXIT', _} -> {error, einval};
 	_ -> {error, internal}

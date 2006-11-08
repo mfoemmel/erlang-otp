@@ -42,6 +42,7 @@ s|@ETHR_THR_LIB_BASE@||
 s|@EMU_THR_DEFS@||
 s|@EMU_THR_LIBS@||
 s|@EMU_THR_LIB_NAME@|ethread|
+s|@ERTS_ENABLE_KERNEL_POLL@|no|
 s|@cc_root@|/clearcase/otp/|
 # Define VxWorks even though cross-compiling. 
 s|@HCFLAGS@|-DVXWORKS|

@@ -59,11 +59,14 @@ atom undefined_lambda
 # All other atoms.  Try to keep the order alphabetic.
 #
 atom DOWN='DOWN'
+atom UP='UP'
 atom EXIT='EXIT'
 atom all
 atom allocated
 atom allocated_areas
 atom allocator
+atom allow_passive_connect
+atom already_loaded
 atom and
 atom andalso
 atom andthen
@@ -71,6 +74,8 @@ atom arity
 atom atom
 atom atom_used
 atom attributes
+atom awaiting_load
+atom awaiting_unload
 atom backtrace backtrace_depth
 atom badarg badarith badarity badfile badmatch badsig badfun
 atom bag
@@ -126,6 +131,8 @@ atom dmonitor_p
 atom DollarDollar='$$'
 atom DollarUnderscore='$_'
 atom DollarDictionary='$dictionary'
+atom driver
+atom driver_options
 atom dsend
 atom dunlink
 atom duplicate_bag
@@ -188,6 +195,7 @@ atom id
 atom if_clause
 atom imports
 atom in
+atom inconsistent
 atom index
 atom infinity
 atom info
@@ -203,14 +211,19 @@ atom io
 atom keypos
 atom kill
 atom killed
+atom kill_ports
 atom known
 atom label
 atom large_heap
 atom last_calls
 atom Le='=<'
 atom line
+atom linked_in_driver
 atom links
 atom little
+atom loaded
+atom load_cancelled
+atom load_failure
 atom local
 atom long_gc
 atom low
@@ -261,6 +274,9 @@ atom no_float
 atom no_integer
 atom not
 atom not_a_list
+atom not_loaded
+atom not_loaded_by_this_process
+atom not_pending
 atom not_purged
 atom notalive
 atom notify
@@ -270,6 +286,7 @@ atom ok
 atom old_heap_block_size
 atom old_heap_size
 atom on_load
+atom open_error
 atom or
 atom ordered_set
 atom orelse
@@ -288,8 +305,12 @@ atom owner
 atom packet
 atom Plus='+'
 atom pause
+atom pending
+atom pending_driver
+atom permanent
 atom pid
 atom port
+atom port_count
 atom print
 atom priority
 atom private
@@ -349,6 +370,7 @@ atom suspend
 atom suspended
 atom sys_misc
 atom system
+atom system_error
 atom system_limit
 atom system_version
 atom system_architecture
@@ -371,6 +393,8 @@ atom true
 atom tuple
 atom type
 atom undef
+atom unloaded
+atom unloading
 atom unregister
 atom ultrasparc_read_pic1
 atom ultrasparc_read_tick1

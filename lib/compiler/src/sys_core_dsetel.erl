@@ -62,9 +62,20 @@
 
 -include("core_parse.hrl").
 
-module(M, _Options) ->
-    {M1, _} = visit(dict:new(), M),
-    {ok, M1}.
+module(M0, _Options) ->
+    M = visit_module(M0),
+    {ok,M}.
+
+visit_module(#c_module{defs=Ds0}=R) ->
+    Env = dict:new(),
+    Ds = visit_module_1(Ds0, Env, []),
+    R#c_module{defs=Ds}.
+
+visit_module_1([F0|Fs], Env, Acc) ->
+    {F,_} = visit(Env, F0),
+    visit_module_1(Fs, Env, [F|Acc]);
+visit_module_1([], _, Acc) ->
+    lists:reverse(Acc).
 
 visit(Env0, #c_var{name=X}=R) ->
     case dict:find(X, Env0) of
@@ -142,9 +153,12 @@ visit(Env0, #c_letrec{defs=Ds0,body=B0}=R) ->
     {Ds1,Env2} = visit_list(Env1, Ds0),
     {B1,Env3} = visit(Env2, B0),
     {R#c_letrec{defs=Ds1,body=B1}, restore_vars(Xs, Env0, Env3)};
-visit(Env0, #c_module{defs=D0}=R) ->
-    {R1,Env1} = visit(Env0, #c_letrec{defs=D0,body=#c_nil{}}),
-    {R#c_module{defs=R1#c_letrec.defs}, Env1};
+%% The following general code for handling modules is slow if a module
+%% contains very many functions. There is special code in visit_module/1
+%% which is much faster.
+%% visit(Env0, #c_module{defs=D0}=R) ->
+%%     {R1,Env1} = visit(Env0, #c_letrec{defs=D0,body=#c_nil{}}),
+%%     {R#c_module{defs=R1#c_letrec.defs}, Env1};
 visit(Env, T) ->    % constants
 	{T, Env}.
 

@@ -50,7 +50,8 @@ static erts_smp_rwmtx_t regtab_rwmtx;
 static ERTS_INLINE void
 reg_safe_read_lock(Process *c_p, Uint32 *c_p_locks)
 {
-    if (c_p && *c_p_locks) {
+    if (*c_p_locks) {
+	ASSERT(c_p);
 	ASSERT(c_p_locks);
 	ASSERT(*c_p_locks);
 
@@ -68,7 +69,8 @@ reg_safe_read_lock(Process *c_p, Uint32 *c_p_locks)
 static ERTS_INLINE void
 reg_safe_write_lock(Process *c_p, Uint32 *c_p_locks)
 {
-    if (c_p && *c_p_locks) {
+    if (*c_p_locks) {
+	ASSERT(c_p);
 	ASSERT(c_p_locks);
 	ASSERT(*c_p_locks);
 
@@ -87,7 +89,8 @@ static ERTS_INLINE void
 io_safe_lock(Process *c_p, Uint32 *c_p_locks)
 {
     ASSERT(c_p_locks);
-    if (c_p && *c_p_locks) {
+    if (*c_p_locks) {
+	ASSERT(c_p);
 	if (erts_smp_io_trylock() != EBUSY)
 	    return;
 
@@ -167,7 +170,7 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
     Port *port;
     RegProc r, *rp;
 #ifdef ERTS_SMP
-    Uint32 proc_locks = ERTS_PROC_LOCK_MAIN;
+    Uint32 proc_locks = c_p ? ERTS_PROC_LOCK_MAIN : 0;
 #endif
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
 
@@ -181,8 +184,6 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
 
     if (c_p && !proc_locks) {
         erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
-	if (ERTS_PROC_IS_EXITING(c_p))
-	    goto done;
     }
     else
 	proc_locks = 0;
@@ -258,17 +259,12 @@ erts_whereis_name_to_id(Process *c_p, Eterm name)
     int ix;
     HashBucket* b;
 #ifdef ERTS_SMP
-    Uint32 c_p_locks = ERTS_PROC_LOCK_MAIN;
+    Uint32 c_p_locks = c_p ? ERTS_PROC_LOCK_MAIN : 0;
 
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
     reg_safe_read_lock(c_p, &c_p_locks);
-    if (c_p && !c_p_locks) {
+    if (c_p && !c_p_locks)
         erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
-	if (ERTS_PROC_IS_EXITING(c_p)) {
-	    reg_read_unlock();
-	    return am_undefined;
-	}
-    }
 #endif
 
     hval = REG_HASH(name);
@@ -306,7 +302,6 @@ erts_whereis_name_to_id(Process *c_p, Eterm name)
 
 void
 erts_whereis_name(Process *c_p, Uint32 c_p_locks,
-		  int allow_c_p_exiting,
 		  int have_io_lock,
 		  Eterm name,
 		  Process** proc, Uint32 need_locks, int allow_proc_exiting,
@@ -317,8 +312,13 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
     int ix;
     HashBucket* b;
 #ifdef ERTS_SMP
-    Uint32 current_c_p_locks = c_p_locks;
+    Uint32 current_c_p_locks;
     int locked_io_lock = 0;
+
+    if (!c_p)
+	c_p_locks = 0;
+    current_c_p_locks = c_p_locks;
+
  restart:
 
     reg_safe_read_lock(c_p, &current_c_p_locks);
@@ -357,7 +357,7 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
 		if (erts_proc_safelock(c_p,
 				       current_c_p_locks,
 				       c_p_locks,
-				       allow_c_p_exiting,
+				       1,
 				       rp->p->id,
 				       rp->p,
 				       0,
@@ -405,22 +405,8 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
     }
 
 #ifdef ERTS_SMP
-    if (c_p) {
-
-	if (!current_c_p_locks)
-	    erts_smp_proc_lock(c_p, c_p_locks);
-
-	if (!allow_c_p_exiting && ERTS_PROC_IS_EXITING(c_p)) {
-	    ASSERT(!proc || !*proc);
-
-	    if (port && *port) {
-		if (locked_io_lock)
-		    erts_smp_io_unlock();
-		*port = NULL;
-	    }
-	}
-    }
-
+    if (c_p && !current_c_p_locks)
+	erts_smp_proc_lock(c_p, c_p_locks);
 #endif
 
     reg_read_unlock();
@@ -429,13 +415,12 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
 Process *
 erts_whereis_process(Process *c_p,
 		     Uint32 c_p_locks,
-		     int allow_c_p_exiting,
 		     Eterm name,
 		     Uint32 need_locks,
 		     int allow_exiting)
 {
     Process *proc;
-    erts_whereis_name(c_p, c_p_locks, allow_c_p_exiting,
+    erts_whereis_name(c_p, c_p_locks,
 		      0, /* Only important when looking up ports */
 		      name, &proc, need_locks, allow_exiting,
 		      NULL);
@@ -455,9 +440,12 @@ int erts_unregister_name(Process *c_p, Uint32 c_p_locks, int have_io_lock,
     int res = 0;
     RegProc r, *rp;
 #ifdef ERTS_SMP
-    Uint32 current_c_p_locks = c_p_locks;
+    Uint32 current_c_p_locks;
     int unlock_io_lock = !have_io_lock;
 
+    if (!c_p)
+	c_p_locks = 0;
+    current_c_p_locks = c_p_locks;
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
 
  restart:

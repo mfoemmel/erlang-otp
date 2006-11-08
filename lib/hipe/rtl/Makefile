@@ -80,7 +80,7 @@ docs:
 clean:
 	rm -f hipe_literals.hrl
 	rm -f $(TARGET_FILES)
-	rm -f core
+	rm -f core erl_crash.dump
 
 # ----------------------------------------------------
 # Special Build Targets
@@ -116,15 +116,15 @@ $(EBIN)/hipe_rtl_cleanup_const.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl ../icode/hipe_icode.hrl
-$(EBIN)/hipe_tagscheme.beam: hipe_literals.hrl
-$(EBIN)/hipe_rtl_primops.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_tagscheme.beam: hipe_rtl.hrl hipe_literals.hrl
+$(EBIN)/hipe_rtl_primops.beam: hipe_rtl.hrl hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_arith_64.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_cerl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_exceptions.beam: hipe_literals.hrl ../main/hipe.hrl
-$(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_rtl.hrl hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_lcm.beam: hipe_rtl.hrl
 $(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl

@@ -2,10 +2,12 @@
 %%% $Id$
 %%% x86 pretty-printer
 
--ifndef(HIPE_X86_PP).
+-ifdef(HIPE_AMD64).
+-define(HIPE_X86_PP,        hipe_amd64_pp).
+-define(HIPE_X86_REGISTERS, hipe_amd64_registers).
+-else.
 -define(HIPE_X86_PP,        hipe_x86_pp).
 -define(HIPE_X86_REGISTERS, hipe_x86_registers).
--define(HIPE_X86_PP_MOVE64(Dev, I), exit({?MODULE, I})).
 -endif.
 
 -module(?HIPE_X86_PP).
@@ -114,7 +116,7 @@ pp_insn(Dev, I, Pre) ->
       pp_dst(Dev, Dst),
       io:format(Dev, "\n", []);
     #move64{} ->
-      ?HIPE_X86_PP_MOVE64(Dev, I);
+      pp_move64(Dev, I);
     #movsx{src=Src, dst=Dst} ->
       io:format(Dev, "\tmovsx ", []),
       pp_src(Dev, Src),
@@ -181,6 +183,18 @@ pp_insn(Dev, I, Pre) ->
     _ ->
       exit({?MODULE, pp_insn, {"unknown x86 instruction", I}})
   end.
+
+-ifdef(HIPE_AMD64).
+pp_move64(Dev, I) ->
+  #move64{imm=Src, dst=Dst} = I,
+  io:format(Dev, "\tmov64 ", []),
+  pp_src(Dev, Src),
+  io:format(Dev, ", ", []),
+  pp_dst(Dev, Dst),
+  io:format(Dev, "\n", []).
+-else.
+pp_move64(_Dev, I) -> exit({?MODULE, I}).
+-endif.
 
 to_hex(N) ->
   io_lib:format("~.16x", [N, "0x"]).

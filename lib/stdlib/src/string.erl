@@ -51,13 +51,13 @@ concat(S1, S2) -> S1 ++ S2.
 %% rchr(String, Char)
 %%  Return the first/last index of the character in a string.
 
-chr(S, C) -> chr(S, C, 1).
+chr(S, C) when is_integer(C) -> chr(S, C, 1).
 
 chr([C|_Cs], C, I) -> I;
 chr([_|Cs], C, I) -> chr(Cs, C, I+1);
 chr([], _C, _I) -> 0.
 
-rchr(S, C) -> rchr(S, C, 1, 0).
+rchr(S, C) when is_integer(C) -> rchr(S, C, 1, 0).
 
 rchr([C|Cs], C, I, _L) ->			%Found one, now find next!
     rchr(Cs, C, I+1, I);
@@ -71,7 +71,7 @@ rchr([], _C, _I, L) -> L.
 %%  Return the first/last index of the sub-string in a string.
 %%  index/2 is kept for backwards compatibility.
 
-str(S, Sub) -> str(S, Sub, 1).
+str(S, Sub) when is_list(Sub) -> str(S, Sub, 1).
 
 str([C|S], [C|Sub], I) ->
     case prefix(Sub, S) of
@@ -81,7 +81,7 @@ str([C|S], [C|Sub], I) ->
 str([_|S], Sub, I) -> str(S, Sub, I+1);
 str([], _Sub, _I) -> 0.
 
-rstr(S, Sub) -> rstr(S, Sub, 1, 0).
+rstr(S, Sub) when is_list(Sub) -> rstr(S, Sub, 1, 0).
 
 rstr([C|S], [C|Sub], I, L) ->
     case prefix(Sub, S) of
@@ -92,15 +92,15 @@ rstr([_|S], Sub, I, L) -> rstr(S, Sub, I+1, L);
 rstr([], _Sub, _I, L) -> L.
 
 prefix([C|Pre], [C|String]) -> prefix(Pre, String);
-prefix([], _String) -> true;
-prefix(_Pre, _String) -> false.
+prefix([], String) when is_list(String) -> true;
+prefix(Pre, String) when is_list(Pre), is_list(String) -> false.
 
 index(S, Sub) -> str(S, Sub).
 
 %% span(String, Chars) -> Length.
 %% cspan(String, Chars) -> Length.
 
-span(S, Cs) -> span(S, Cs, 0).
+span(S, Cs) when is_list(Cs) -> span(S, Cs, 0).
 
 span([C|S], Cs, I) ->
     case member(C, Cs) of
@@ -109,7 +109,7 @@ span([C|S], Cs, I) ->
     end;
 span([], _Cs, I) -> I.
 
-cspan(S, Cs) -> cspan(S, Cs, 0).
+cspan(S, Cs) when is_list(Cs) -> cspan(S, Cs, 0).
 
 cspan([C|S], Cs, I) ->
     case member(C, Cs) of
@@ -121,19 +121,18 @@ cspan([], _Cs, I) -> I.
 %% substr(String, Start)
 %% substr(String, Start, Length)
 %%  Extract a sub-string from String.
-substr(String, 1) when list(String) -> 
+substr(String, 1) when is_list(String) -> 
     String;
-substr(String, S) when list(String), integer(S), S > 1 ->
+substr(String, S) when is_integer(S), S > 1 ->
     substr2(String, S).
 
-substr(String, S, L) 
-  when list(String), integer(S), S >= 1, integer(L), L >= 0 ->
+substr(String, S, L) when is_integer(S), S >= 1, is_integer(L), L >= 0 ->
     substr1(substr2(String, S), L).
 
 substr1([C|String], L) when L > 0 -> [C|substr1(String, L-1)];
-substr1(_String, _L) -> [].			%Be nice!
+substr1(String, _L) when is_list(String) -> [].	     %Be nice!
 
-substr2(String, 1) -> String;
+substr2(String, 1) when is_list(String) -> String;
 substr2([_|String], S) -> substr2(String, S-1).
 
 %% tokens(String, Seperators).
@@ -162,14 +161,14 @@ chars(C, N) -> chars(C, N, []).
 
 chars(C, N, Tail) when N > 0 ->
     chars(C, N-1, [C|Tail]);
-chars(_C, 0, Tail) ->
+chars(C, 0, Tail) when is_integer(C) ->
     Tail.
 
 %% Torbjörn's bit.
 
 %%% COPIES %%%
 
-copies(CharList, Num) when list(CharList), Num >= 0 ->
+copies(CharList, Num) when is_list(CharList), Num >= 0 ->
     copies(CharList, Num, []).
 
 copies(_CharList, 0, R) ->
@@ -181,7 +180,7 @@ copies(CharList, Num, R) ->
 
 words(String) -> words(String, $\s).
 
-words(String, Char) when integer(Char) ->
+words(String, Char) when is_integer(Char) ->
     w_count(strip(String, both, Char), Char, 0).
 
 w_count([], _, Num) -> Num+1;
@@ -192,7 +191,7 @@ w_count([_H|T], Char, Num) -> w_count(T, Char, Num).
 
 sub_word(String, Index) -> sub_word(String, Index, $\s).
 
-sub_word(String, Index, Char) when integer(Index), integer(Char) ->
+sub_word(String, Index, Char) when is_integer(Index), is_integer(Char) ->
     case words(String, Char) of
 	Num when Num < Index ->
 	    [];
@@ -224,8 +223,8 @@ strip(String, both, Char) ->
 
 strip_left([Sc|S], Sc) ->
     strip_left(S, Sc);
-strip_left([_|_]=S, _Sc) -> S;
-strip_left([], _Sc) -> [].
+strip_left([_|_]=S, Sc) when is_integer(Sc) -> S;
+strip_left([], Sc) when is_integer(Sc) -> [].
 
 strip_right([Sc|S], Sc) ->
     case strip_right(S, Sc) of
@@ -234,52 +233,52 @@ strip_right([Sc|S], Sc) ->
     end;
 strip_right([C|S], Sc) ->
     [C|strip_right(S, Sc)];
-strip_right([], _) ->
+strip_right([], Sc) when is_integer(Sc) ->
     [].
 
 %%% LEFT %%%
 
-left(String, Len) -> left(String, Len, $\s).
+left(String, Len) when is_integer(Len) -> left(String, Len, $\s).
 
-left(String, Len, Char) when integer(Char) ->
+left(String, Len, Char) when is_integer(Char) ->
     Slen = length(String),
     if
 	Slen > Len -> substr(String, 1, Len);
 	Slen < Len -> l_pad(String, Len-Slen, Char);
-	Slen == Len -> String
+	Slen =:= Len -> String
     end.
 
 l_pad(String, Num, Char) -> String ++ chars(Char, Num).
 
 %%% RIGHT %%%
 
-right(String, Len) -> right(String, Len, $\s).
+right(String, Len) when is_integer(Len) -> right(String, Len, $\s).
 
-right(String, Len, Char) when integer(Char) ->
+right(String, Len, Char) when is_integer(Char) ->
     Slen = length(String),
     if
 	Slen > Len -> substr(String, Slen-Len+1);
 	Slen < Len -> r_pad(String, Len-Slen, Char);
-	Slen == Len -> String
+	Slen =:= Len -> String
     end.
 
 r_pad(String, Num, Char) -> chars(Char, Num, String).
 
 %%% CENTRE %%%
 
-centre(String, Len) -> centre(String ,Len, $\s).
+centre(String, Len) when is_integer(Len) -> centre(String, Len, $\s).
 
-centre(_String, 0, _) -> [];			%Strange cases to centre string
-centre(String, Len, Char) ->
+centre(String, 0, Char) when is_list(String), is_integer(Char) ->
+    [];                       % Strange cases to centre string
+centre(String, Len, Char) when is_integer(Char) ->
     Slen = length(String),
     if
 	Slen > Len -> substr(String, (Slen-Len) div 2 + 1, Len);
 	Slen < Len ->
 	    N = (Len-Slen) div 2,
 	    r_pad(l_pad(String, Len-(Slen+N), Char), N, Char);
-	Slen == Len -> String
+	Slen =:= Len -> String
     end.
-	    
 
 %%% SUB_STRING %%%
 

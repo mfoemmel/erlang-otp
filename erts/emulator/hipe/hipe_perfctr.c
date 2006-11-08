@@ -7,6 +7,7 @@
 #include "error.h"
 #include "global.h"
 #include "bif.h"
+#include "big.h"
 #include "erl_binary.h"
 #include "hipe_perfctr.h"
 #include "libperfctr.h"
@@ -114,10 +115,39 @@ BIF_RETTYPE hipe_bifs_vperfctr_close_0(BIF_ALIST_0)
     BIF_RET(NIL);
 }
 
-static Eterm ull_to_integer(unsigned long long val, Process *p)
+static Eterm ull_to_integer(unsigned long long x, Process *p)
 {
-    /* XXX: gross, and incorrect for very large values */
-    return double_to_integer(p, (double)val);
+    unsigned long long tmpx;
+    unsigned int ds, i;
+    size_t sz;
+    Eterm *hp;
+    digit_t *xp;
+
+    if (x <= (unsigned long long)MAX_SMALL)
+	return make_small(x);
+
+    /* Calculate number of digits. */
+    ds = 0;
+    tmpx = x;
+    do {
+	++ds;
+	tmpx >>= D_EXP;
+    } while (tmpx != 0);
+
+    sz = BIG_NEED_SIZE(ds);	/* number of words including arity */
+    hp = HAlloc(p, sz);
+    *hp = make_pos_bignum_header(sz-1);
+
+    xp = (digit_t*)(hp+1);
+    i = 0;
+    do {
+	xp[i++] = (digit_t)x;
+	x >>= D_EXP;
+    } while (i < ds);
+    while (i & (BIG_DIGITS_PER_WORD-1))
+	xp[i++] = 0;
+
+    return make_big(hp);
 }
 
 BIF_RETTYPE hipe_bifs_vperfctr_info_0(BIF_ALIST_0)
@@ -156,6 +186,8 @@ BIF_RETTYPE hipe_bifs_vperfctr_control_1(BIF_ALIST_1)
 {
     void *bytes;
     struct vperfctr_control control;
+    Uint bitoffs;
+    Uint bitsize;
 
     if (!vperfctr)
 	BIF_ERROR(BIF_P, BADARG);
@@ -163,7 +195,9 @@ BIF_RETTYPE hipe_bifs_vperfctr_control_1(BIF_ALIST_1)
 	BIF_ERROR(BIF_P, BADARG);
     if (binary_size(BIF_ARG_1) != sizeof control)
 	BIF_ERROR(BIF_P, BADARG);
-    GET_BINARY_BYTES(BIF_ARG_1, bytes);
+    ERTS_GET_BINARY_BYTES(BIF_ARG_1, bytes, bitoffs, bitsize);
+    ASSERT(bitoffs == 0);
+    ASSERT(bitsize == 0);
     memcpy(&control, bytes, sizeof control);
     if (have_rdtsc)
 	control.cpu_control.tsc_on = 1;

@@ -85,7 +85,6 @@ MODULES= \
 	io_lib_pretty \
 	lib \
 	lists \
-	lists_sort \
 	log_mf_h \
 	math \
 	ms_transform \

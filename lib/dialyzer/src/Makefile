@@ -29,9 +29,9 @@ HIPE_ICODE_DIR = $(ERL_TOP)/lib/hipe/icode
 ## Edit here if you want to change the default libraries included in
 ## Dialyzer's initial PLT (Persistent Lookup Table).
 ##
-## 1. Minimal configuration -- compatible with Dialyzer version 1.3.0
+## 1. Minimal configuration
 ##
-DIALYZER_DEF_LIBS = "kernel,stdlib"
+DIALYZER_DEF_LIBS = "kernel,mnesia,stdlib"
 ##
 ## 2. Configuration which includes enough stuff for most Dialyzer uses
 ## 
@@ -63,10 +63,12 @@ MODULES =  \
 	dialyzer_icode \
 	dialyzer_options \
 	dialyzer_plt \
+	dialyzer_succ_typings \
 	dialyzer_typesig
 
-EXTRA_FILES= dialyzer.hrl ../plt/dialyzer_init_plt	## automatically generated
+EXTRA_FILES=  ../plt/dialyzer_init_plt	## automatically generated
 
+HRL_FILES= dialyzer.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 TARGET_FILES= $(INSTALL_FILES)
@@ -107,21 +109,22 @@ $(DIALYZER_DIR)/plt/dialyzer_init_plt:
 	@echo "A PLT for following libs will be built:"
 	@echo "  [$(DIALYZER_DEF_LIBS)]"
 	@echo "To select a different set please edit the file $(DIALYZER_DIR)/src/Makefile"
-	$(ERL_TOP)/bin/dialyzer --include_libs $(DIALYZER_DEF_LIBS) -I $(HIPE_ICODE_DIR) --command-line ../ebin
+	$(ERL_TOP)/bin/dialyzer --check_init_plt
 
-$(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -Ddialyzer_def_libs="[$(DIALYZER_DEF_LIBS)]" -o$(EBIN) dialyzer_cl_parse.erl
+$(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl ../vsn.mk Makefile
+	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
+
+$(EBIN)/dialyzer_plt.$(EMULATOR): dialyzer_plt.erl Makefile ../vsn.mk
+	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS)  -DVSN="\"v$(VSN)\"" -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -o$(EBIN) dialyzer_plt.erl
+
+$(EBIN)/dialyzer_gui.$(EMULATOR): dialyzer_gui.erl ../vsn.mk
+	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
-
-dialyzer.hrl: dialyzer.hrl.src ../vsn.mk Makefile
-	sed -e "s;%VSN%;$(VSN);" \
-	    -e "s;%DEF_LIBS%;\[$(DIALYZER_DEF_LIBS)\];" \
-		$< > $@
 
 # ---------------------------------------------------------------------
 # dependencies -- I wish they were somehow automatically generated
@@ -146,7 +149,8 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/src
-	$(INSTALL_DATA) $(ERL_FILES) $(EXTRA_FILES) $(RELSYSDIR)/src
+	$(INSTALL_DATA) $(ERL_FILES) $(HRL_FILES) $(EXTRA_FILES) \
+		$(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(INSTALL_FILES) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR) $(RELSYSDIR)/plt

@@ -41,7 +41,7 @@ set_movelist(New_movelist, MoveSets) ->
   MoveSets#movesets{movelist = New_movelist}.
 
 update_movelist(Node, MoveList, MoveSets) ->
-  set_movelist(hipe_vectors_wrapper:set(movelist(MoveSets), Node, MoveList),
+  set_movelist(hipe_vectors:set(movelist(MoveSets), Node, MoveList),
 	       MoveSets).
 
 new(IG) ->
@@ -123,7 +123,7 @@ move_related2([Move|MoveSets], Membership) ->
   end.
 
 node_movelist(Node, MoveSets) ->
-  hipe_vectors_wrapper:get(movelist(MoveSets), Node).
+  hipe_vectors:get(movelist(MoveSets), Node).
 
 get_move(Move, MoveSets) ->
   element(Move+1, MoveSets#movesets.moveinsns).

@@ -51,11 +51,19 @@ t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 %% Test server callbacks
 init_per_testcase(Case, Config) ->
     process_flag(trap_exit, true),
-    megaco_test_lib:init_per_testcase(Case, Config).
+    case Case of
+	traffic ->
+	    Conf0 = lists:keydelete(tc_timeout, 1, Config),
+	    Conf  = [{tc_timeout, timer:minutes(5)}|Conf0],
+	    megaco_test_lib:init_per_testcase(Case, Conf);
+	_ ->
+	    megaco_test_lib:init_per_testcase(Case, Config)
+    end.
 
 fin_per_testcase(Case, Config) ->
     process_flag(trap_exit, false),
     megaco_test_lib:fin_per_testcase(Case, Config).
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -481,7 +489,7 @@ traffic_await_load_complete(MGs0) ->
 	    traffic_await_load_complete(lists:delete(Pid, MGs1));
 	{'EXIT', Pid, Reason} ->
 	    i("exit signal from ~p: ~p", [Pid, Reason]),
-	    case lists:meymember(Pid, 2, MGs0) of
+	    case lists:keymember(Pid, 2, MGs0) of
 		true ->
 		    exit({mg_exit, Pid, Reason});
 		false ->

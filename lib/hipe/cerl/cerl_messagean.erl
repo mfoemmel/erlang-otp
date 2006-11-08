@@ -46,6 +46,8 @@
 	       try_evars/1, try_handler/1, tuple_es/1, type/1,
 	       values_es/1]).
 
+-import(cerl_trees, [get_label/1]).
+
 -define(DEF_LIMIT, 4).
 
 %-export([test/1, test1/1, ttest/1]).
@@ -1024,12 +1026,6 @@ take_work({Queue0, Set0}) ->
 	    {ok, L, {Queue1, Set1}};
 	empty ->
 	    none
-    end.
-
-get_label(T) ->
-    case get_ann(T) of
-	[{label, L} | _] -> L;
-	_ -> erlang:fault({missing_label, T})
     end.
 
 get_deps(L, Dep) ->

@@ -17,6 +17,7 @@
 %%
 -module(snmp_note_store).
 
+-include_lib("snmp/src/app/snmp_internal.hrl").
 -include("snmp_debug.hrl").
 -include("snmp_verbosity.hrl").
 
@@ -100,6 +101,7 @@ do_init(Prio, Mod, Opts) ->
     process_flag(priority, Prio),
     put(sname, get_sname(Opts)),
     put(verbosity, get_verbosity(Opts)),
+    put(snmp_component, get_component(Mod)),
     ?vlog("starting",[]),
     Notes   = ets:new(snmp_note_store, [set, protected]), 
     Timeout = get_timeout(Opts),
@@ -155,7 +157,7 @@ handle_call(stop, _From, State) ->
     {stop, normal, ok, State};
 
 handle_call(Req, From, State) ->
-    info_msg("received unexpected request from ~p: ~n~p",[From, Req]),
+    warning_msg("received unexpected request from ~p: ~n~p",[From, Req]),
     {reply, {error, {unknown_request, Req}}, State}.
 
 
@@ -165,7 +167,7 @@ handle_cast({verbosity,Verbosity}, State) ->
     {noreply, State};
     
 handle_cast(Msg, State) ->
-    info_msg("received unexpected message: ~n~p",[Msg]),
+    warning_msg("received unexpected message: ~n~p",[Msg]),
     {noreply, State}.
     
 
@@ -199,7 +201,7 @@ handle_info({'EXIT',Pid,Reason}, State) ->
     {noreply, State};
 
 handle_info(Info, State) ->
-    info_msg("received unexpected info: ~n~p",[Info]),
+    warning_msg("received unexpected info: ~n~p",[Info]),
     {noreply, State}.
 
 
@@ -387,22 +389,31 @@ cast(Pid, Msg) ->
 
 %%-----------------------------------------------------------------
 
-error_msg(F, A) ->
-    error_logger:error_msg("~w: " ++ F ++ "~n", [?MODULE|A]).
+%% info_msg(F, A) ->
+%%     ?snmp_info(get(snmp_component), "Note store server " ++ F, A).
 
-info_msg(F, A) ->
-    error_logger:info_msg("~w: " ++ F ++ "~n", [?MODULE|A]).
+warning_msg(F, A) ->
+    ?snmp_warning(get(snmp_component), "Note store server " ++ F, A).
+
+error_msg(F, A) ->
+    ?snmp_error(get(snmp_component), "Note store server " ++ F, A).
 
 
 %%-----------------------------------------------------------------
 
 get_verbosity(Opts) ->
-    snmp_misc:get_option(verbosity,Opts,?default_verbosity).
+    snmp_misc:get_option(verbosity, Opts, ?default_verbosity).
 
 get_sname(Opts) ->
-    snmp_misc:get_option(sname,Opts,ns).
+    snmp_misc:get_option(sname, Opts, ns).
 
 get_timeout(Opts) ->
-    snmp_misc:get_option(timeout,Opts,?timeout).
+    snmp_misc:get_option(timeout, Opts, ?timeout).
 
- 
+get_component(snmpm) -> 
+    "manager";
+get_component(snmpa) ->
+    "agent";
+get_component(_) ->
+    "".
+

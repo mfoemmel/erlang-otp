@@ -552,7 +552,7 @@ sz2pos(N) when N > 0 ->
     1 + log2(N+1).
 
 %% Returns the i such that 2^(i-1) < N =< 2^i.
-log2(N) -> % when integer(N), N >= 0
+log2(N) when integer(N), N >= 0 ->
     if N > ?POW(8) ->
 	    if N > ?POW(10) ->
 		    if N > ?POW(11) ->
