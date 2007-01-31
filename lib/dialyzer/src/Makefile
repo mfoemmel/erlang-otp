@@ -35,7 +35,7 @@ DIALYZER_DEF_LIBS = "kernel,mnesia,stdlib"
 ##
 ## 2. Configuration which includes enough stuff for most Dialyzer uses
 ## 
-# DIALYZER_DEF_LIBS = "compiler,gs,hipe,kernel,mnesia,stdlib,syntax_tools"
+## DIALYZER_DEF_LIBS = "compiler,gs,hipe,kernel,mnesia,stdlib,syntax_tools"
 ##
 ## 3. Configuration without any unknown functions when building the PLT.
 ##    Gives good results for most uses, but takes really long to
@@ -44,7 +44,7 @@ DIALYZER_DEF_LIBS = "kernel,mnesia,stdlib"
 ##    more OTP libraries than those listed below, then by all means add
 ##    them to the list.
 ##
-# DIALYZER_DEF_LIBS = "asn1,compiler,crypto,dialyzer,debugger,edoc,et,gs,hipe,inets,kernel,observer,mnesia,mnemosyne,parsetools,runtime_tools,snmp,stdlib,ssl,syntax_tools,tools,webtool,xmerl"
+## DIALYZER_DEF_LIBS = "asn1,compiler,crypto,dialyzer,debugger,edoc,et,gs,hipe,inets,kernel,observer,mnesia,mnemosyne,parsetools,runtime_tools,snmp,stdlib,ssl,syntax_tools,tools,webtool,xmerl"
 ##---------------------------------------------------------------------
 
 # ----------------------------------------------------
@@ -64,7 +64,8 @@ MODULES =  \
 	dialyzer_options \
 	dialyzer_plt \
 	dialyzer_succ_typings \
-	dialyzer_typesig
+	dialyzer_typesig \
+	dialyzer_utils
 
 EXTRA_FILES=  ../plt/dialyzer_init_plt	## automatically generated
 
@@ -104,7 +105,7 @@ clean:
 # Special Build Targets
 # ----------------------------------------------------
 
-$(DIALYZER_DIR)/plt/dialyzer_init_plt:
+$(DIALYZER_DIR)/plt/dialyzer_init_plt: ../../hipe/ebin/erl_types.beam ../../hipe/ebin/erl_bif_types.beam
 	@echo "Dialyzer will now build auxiliary information needed for subsequent analyses..."
 	@echo "A PLT for following libs will be built:"
 	@echo "  [$(DIALYZER_DEF_LIBS)]"
@@ -115,7 +116,7 @@ $(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl ../vsn.mk Makefile
 	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
 
 $(EBIN)/dialyzer_plt.$(EMULATOR): dialyzer_plt.erl Makefile ../vsn.mk
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS)  -DVSN="\"v$(VSN)\"" -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -o$(EBIN) dialyzer_plt.erl
+	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_plt.erl
 
 $(EBIN)/dialyzer_gui.$(EMULATOR): dialyzer_gui.erl ../vsn.mk
 	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
@@ -140,7 +141,7 @@ $(EBIN)/dialyzer_gui.beam: dialyzer.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
 $(EBIN)/dialyzer_icode.beam: $(HIPE_ICODE_DIR)/hipe_icode.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
 $(EBIN)/dialyzer_options.beam: dialyzer.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
 $(EBIN)/dialyzer_plt.beam: dialyzer.hrl
-$(EBIN)/dialyzer_typesig.beam: dialyzer.hrl
+$(EBIN)/dialyzer_typesig.beam: dialyzer.hrl dialyzer_bif_constraints.inc
 
 # ----------------------------------------------------
 # Release Target

@@ -788,6 +788,15 @@ void erts_time_remaining(SysTimeval *rem_time)
     }
 }
 
+#if defined(ERTS_TIMER_THREAD)
+void erts_get_timeval(SysTimeval *tv)
+{
+    erts_smp_mtx_lock(&erts_timeofday_mtx);
+    get_tolerant_timeofday(tv);
+    erts_smp_mtx_unlock(&erts_timeofday_mtx);
+}
+#endif
+
 long
 erts_get_time(void)
 {

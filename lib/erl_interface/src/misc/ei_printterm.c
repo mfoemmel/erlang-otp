@@ -46,7 +46,7 @@
  * PRINT out a binary term (hacked from 'erl'_print_term)
  */
 
-static int print_string(FILE* fp, ei_x_buff* x, char* s);
+static int print_string(FILE* fp, ei_x_buff* x, char* s, int len);
 static int print_term(FILE* fp, ei_x_buff* x,
 			       const char* buf, int* index);
 
@@ -190,7 +190,7 @@ static int print_term(FILE* fp, ei_x_buff* x,
 	    ei_free(p);
 	    goto err;
 	}
-	ch_written += print_string(fp, x, p);
+	ch_written += print_string(fp, x, p, n);
 	ei_free(p);
 	break;
     case ERL_SMALL_TUPLE_EXT:
@@ -267,13 +267,13 @@ static int print_term(FILE* fp, ei_x_buff* x,
     return -1;
 }
 
-static int print_string(FILE* fp, ei_x_buff* x, char* s)
+static int print_string(FILE* fp, ei_x_buff* x, char* s, int len)
 {
     int ch_written = 0;		/* counter of written chars */
-  
+
     xputc('"', fp, x);
     ++ch_written;
-    for (; *s != '\0'; ++s) {
+    for (; len > 0; ++s, --len) {
 	int c = *s;
 	if (c >= ' ') {
 	    xputc((char)c, fp, x); ++ch_written; }
@@ -296,7 +296,6 @@ static int print_string(FILE* fp, ei_x_buff* x, char* s)
     return ch_written;
 }
 
-
 /* ------------------------------------------ */
 
 /*

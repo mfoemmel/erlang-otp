@@ -396,8 +396,6 @@ max(_, B) ->
 
 position(Handle, cur, Buf) ->
     position(Handle, {cur, 0}, Buf);
-position(Handle, {cur, Offs}, Buf) when list(Buf) ->
-    ?PRIM_FILE:position(Handle, {cur, Offs-length(Buf)});
 position(Handle, {cur, Offs}, Buf) when binary(Buf) ->
     ?PRIM_FILE:position(Handle, {cur, Offs-size(Buf)});
 position(Handle, At, _Buf) ->

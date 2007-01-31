@@ -29,6 +29,12 @@
 #define HAVE_CONFLICTING_FREAD_DECLARATION
 #endif
 
+#ifdef STDC
+#  define zstrerror(errnum) strerror(errnum)
+#else
+#  define zstrerror(errnum) ""
+#endif
+
 #include "zutil.h"
 #include "gzio.h"
 
@@ -455,7 +461,7 @@ int gzread (file, buf, len)
 */
 int gzwrite (file, buf, len)
     gzFile file;
-    const voidp buf;
+    voidpc buf;
     unsigned len;
 {
     gz_stream *s = (gz_stream*)file;

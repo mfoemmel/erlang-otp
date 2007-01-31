@@ -88,7 +88,7 @@ source(Forms, Comments, File, Env, Opts) ->
 %%	    Forms = syntaxTree() | [syntaxTree()]
 %%	    ModuleName = atom()
 %%          edoc_module() = edoc:edoc_module()
-%%          edoc_env() = edoc_lib:edoc_env()
+%% @type edoc_env() = edoc_lib:edoc_env()
 %%
 %% @doc Extracts EDoc documentation from commented source code syntax
 %% trees. The given `Forms' must be a single syntax tree of
@@ -132,8 +132,6 @@ source(Tree, File0, Env, Opts) ->
 
 %% @spec header(File::filename(), Env::edoc_env(), Options::option_list())
 %%             -> {ok, Tags} | {error, Reason}
-%%
-%%   edoc_env() = edoc_lib:edoc_env()
 %%   Tags = [term()]
 %%   Reason = term()
 %%
@@ -152,9 +150,7 @@ header(File, Env, Opts) ->
 %% @spec header(Forms, Comments::[comment()], File::filename(),
 %%              Env::edoc_env(), Options::option_list()) ->
 %%       {ok, Tags} | {error, Reason}
-%%
 %%   Forms = syntaxTree() | [syntaxTree()]
-%%   edoc_env() = edoc_lib:edoc_env()
 %%   Tags = [term()]
 %%   Reason = term()
 %%
@@ -176,9 +172,7 @@ header(Forms, Comments, File, Env, Opts) ->
 %% @spec header(Forms, File::filename(), Env::edoc_env(),
 %%              Options::option_list()) ->
 %%       {ok, Tags} | {error, Reason}
-%%
 %%   Forms = syntaxTree() | [syntaxTree()]
-%%   edoc_env() = edoc_lib:edoc_env()
 %%   Tags = [term()]
 %%   Reason = term()
 %%
@@ -224,7 +218,6 @@ add_macro_defs(Defs0, Opts, Env) ->
 %% @spec file(File::filename(), Context, Env::edoc_env(),
 %%            Options::option_list()) -> {ok, Tags} | {error, Reason}
 %%   Context = overview | package
-%%   edoc_env() = edoc_lib:edoc_env()
 %%   Tags = [term()]
 %%   Reason = term()
 %%
@@ -251,7 +244,6 @@ file(File, Context, Env, Opts) ->
 %%        Options::option_list()) -> Tags
 %%     Context = overview | package
 %%     Tags = [term()]
-%%     edoc_env() = edoc_lib:edoc_env()
 %%
 %% @doc Returns the list of tags in the text. Any lines of text before
 %% the first tag are ignored. `Env' is an environment created by {@link

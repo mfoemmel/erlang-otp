@@ -189,12 +189,17 @@ if [ "x$GDB" = "x" ]; then
 	else
 	    valgrind_log="--log-file=$VALGRIND_LOG_DIR/$EMU.log"
 	fi
+	if [ "x$VALGRIND_MISC_FLAGS" = "x" ]; then
+	    valgrind_misc_flags=
+	else
+	    valgrind_misc_flags="$VALGRIND_MISC_FLAGS"
+	fi
 	beam_args=`$EXEC -emu_args_exit ${1+"$@"}`
 	# Ahhhh... Need to quote $PROGNAME...
 	early_beam_args=`echo $beam_args | sed "s|^\(.*-progname\).*$|\1|g"`
 	late_beam_args=`echo $beam_args | sed "s|^$pre_beam_args.*\(--.*\)$|\1|g"`
 	
-	exec valgrind $valgrind_log $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
+	exec valgrind $valgrind_log $valgrind_misc_flags $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
     else
 	exec $EXEC $xargs ${1+"$@"}
     fi

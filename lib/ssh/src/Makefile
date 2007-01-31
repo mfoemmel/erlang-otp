@@ -47,6 +47,7 @@ MODULES= \
 	ssh_rsa \
 	ssh_sftp \
 	ssh_sftpd \
+	ssh_sftpd_file\
 	ssh_ssh \
 	ssh_sshd \
 	ssh_tcp \

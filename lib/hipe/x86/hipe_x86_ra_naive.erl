@@ -35,16 +35,17 @@ ra(X86Defun, Coloring_fp, Options) ->
 		    var_range={0, hipe_gensym:get_var(x86)}},
      TempMap}.
 
-count_non_float_spills(Coloring_fp)->
-    count_non_float_spills(Coloring_fp,0).
-count_non_float_spills([{_,To}|Tail], Num)->
+count_non_float_spills(Coloring_fp) ->
+    count_non_float_spills(Coloring_fp, 0).
+
+count_non_float_spills([{_,To}|Tail], Num) ->
     case ?HIPE_X86_SPECIFIC_FP:is_precoloured(To) of
 	true ->
 	    count_non_float_spills(Tail, Num);
-	_ ->
+	false ->
 	    count_non_float_spills(Tail, Num+1)
     end;
-count_non_float_spills([],Num) ->
+count_non_float_spills([], Num) ->
     Num.
 
 do_insns([I|Insns]) ->
@@ -58,6 +59,8 @@ do_insn(I) ->	% Insn -> Insn list
 	    do_alu(I);
 	#cmp{} ->
 	    do_cmp(I);
+	#imul{} ->
+	    do_imul(I);
 	#jmp_switch{} ->
 	    do_jmp_switch(I);
 	#lea{} ->
@@ -88,13 +91,13 @@ do_insn(I) ->	% Insn -> Insn list
 	    [I];
 	#pseudo_tailcall_prepare{} ->
 	    [I];
-	#pseudo_tailcall{} ->      
+	#pseudo_tailcall{} ->
 	    [I];
-	#push{} ->     
+	#push{} ->
 	    [I];
-	#jmp_label{} ->     
+	#jmp_label{} ->
 	    [I];
-	#comment{} ->     
+	#comment{} ->
 	    [I];
 	_ ->
 	    io:format("Unknown Instruction = ~w\n", [I]),
@@ -114,6 +117,26 @@ do_cmp(I) ->
     #cmp{src=Src0,dst=Dst0} = I,
     {FixSrc, Src, FixDst, Dst} = do_binary(Src0, Dst0),
     FixSrc ++ FixDst ++ [I#cmp{src=Src,dst=Dst}].
+
+%%% Fix an imul op.
+
+do_imul(I) ->
+    #imul{imm_opt=ImmOpt,src=Src0,temp=Temp0} = I,
+    {FixSrc,Src} = fix_src_operand(Src0),	% may use temp0
+    {FixTempSrc,Temp,FixTempDst} =
+	case temp_is_pseudo(Temp0) of
+	    false ->
+		{[], Temp0, []};
+	    true ->
+		Reg = hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp1(), 'untagged'),
+		{case ImmOpt of
+		     [] -> [hipe_x86:mk_move(Temp0, Reg)];	% temp *= src
+		     _ -> []					% temp = src * imm
+		 end,
+		 Reg,
+		 [hipe_x86:mk_move(Reg, Temp0)]}
+	end,
+    FixSrc ++ FixTempSrc ++ [I#imul{src=Src,temp=Temp}] ++ FixTempDst.
 
 %%% Fix a jmp_switch op.
 

@@ -1,8 +1,4 @@
 %% =====================================================================
-%% epp_dodger - bypasses the Erlang preprocessor.
-%%
-%% Copyright (C) 2001-2006 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,24 +14,23 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
 %%
+%% @copyright 2001-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc `epp_dodger' - bypasses the Erlang preprocessor.
 %%
 %% <p>This module tokenises and parses most Erlang source code without
 %% expanding preprocessor directives and macro applications, as long as
 %% these are syntactically "well-behaved". Because the normal parse
-%% trees of the `erl_parse' module cannot represent these
-%% things (normally, they are expanded by the Erlang preprocessor
-%% {@link epp} before the parser sees them), an extended syntax
-%% tree is created, using the {@link erl_syntax} module.</p>
-%% 
-%% @end
-%% =====================================================================
+%% trees of the `erl_parse' module cannot represent these things
+%% (normally, they are expanded by the Erlang preprocessor {@link
+%% //stdlib/epp} before the parser sees them), an extended syntax tree
+%% is created, using the {@link erl_syntax} module.</p>
+
 
 %% NOTES:
 %%
@@ -92,8 +87,8 @@
 %%                      Module::atom(),
 %%                      Descriptor::term()}.
 %% 
-%% This is a so-called Erlang I/O ErrorInfo structure; see the stdlib
-%% {@link io} module for details.
+%% This is a so-called Erlang I/O ErrorInfo structure; see the {@link
+%% //stdlib/io} module for details.
 
 
 %% =====================================================================

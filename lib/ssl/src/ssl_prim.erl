@@ -39,13 +39,29 @@ connect(Address, Port, Opts) ->
     ?filter(ssl_broker:connect_prim(ssl_server_prim, inet_tcp, self(), Address, 
 				    Port, nonactive(Opts), infinity, St)).
 
-accept(ListenSt) when record(ListenSt, st) ->
+accept(ListenSt0) when record(ListenSt0, st) ->
+    case transport_accept(ListenSt0) of
+	{ok, ListenSt1} ->
+	    ssl_accept(ListenSt1);
+	Error ->
+	    Error
+    end.
+
+transport_accept(ListenSt) when record(ListenSt, st) ->
     NewSt = newstate(acceptor),
     ListenSocket=ListenSt#st.thissock,
     ListenFd = ListenSocket#sslsocket.fd,
     ListenOpts = ListenSt#st.opts,
-    ?filter(ssl_broker:accept_prim(ssl_server_prim, inet_tcp, self(), ListenFd,
-				   ListenOpts, infinity, NewSt)).
+    ?filter(ssl_broker:transport_accept_prim(
+	      ssl_server_prim, ListenFd,
+	      ListenOpts, infinity, NewSt)).
+
+ssl_accept(ListenSt) when record(ListenSt, st) ->
+    NewSt = newstate(acceptor),
+    ListenSocket=ListenSt#st.thissock,
+    ListenFd = ListenSocket#sslsocket.fd,
+    ?filter(ssl_broker:ssl_accept_prim(
+	      ssl_server_prim, gen_tcp, self(), ListenFd, infinity, NewSt)).
 
 
 close(_St = #st{fd = Fd}) when integer(Fd) ->

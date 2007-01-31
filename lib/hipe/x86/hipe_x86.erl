@@ -88,6 +88,11 @@
 	 fp_binop_dst/1,
 	 fp_binop_op/1,
 
+	 mk_imul/3,
+	 imul_imm_opt/1,
+	 imul_src/1,
+	 imul_temp/1,
+
 	 mk_jcc/2,
 	 %% is_jcc/1,
 	 jcc_cc/1,
@@ -303,6 +308,11 @@ mk_fp_binop(Op, Src, Dst) -> #fp_binop{op=Op, src=Src, dst=Dst}.
 fp_binop_src(#fp_binop{src=Src}) -> Src.
 fp_binop_dst(#fp_binop{dst=Dst}) -> Dst.
 fp_binop_op(#fp_binop{op=Op}) -> Op.
+
+mk_imul(ImmOpt, Src, Temp) -> #imul{imm_opt=ImmOpt, src=Src, temp=Temp}.
+imul_imm_opt(#imul{imm_opt=ImmOpt}) -> ImmOpt.
+imul_src(#imul{src=Src}) -> Src.
+imul_temp(#imul{temp=Temp}) -> Temp.
 
 mk_jcc(Cc, Label) -> #jcc{cc=Cc, label=Label}.
 %% is_jcc(Insn) -> is_insn_type(Insn, jcc).

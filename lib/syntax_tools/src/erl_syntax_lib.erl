@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Support library for abstract Erlang syntax trees.
-%%
-%% Copyright (C) 1997-2002 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,20 +14,20 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
 %%
+%% @copyright 1997-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Support library for abstract Erlang syntax trees.
 %%
-%% <p> This module contains utility functions for working with the
-%% abstract data type defined in the module <a
-%% href="erl_syntax.html"><code>erl_syntax</code></a>.</p>
+%% This module contains utility functions for working with the
+%% abstract data type defined in the module {@link erl_syntax}.
 %%
 %% @type syntaxTree() = erl_syntax:syntaxTree(). An abstract syntax
-%% tree. See the <code>erl_syntax</code> module for details.
+%% tree. See the {@link erl_syntax} module for details.
 
 -module(erl_syntax_lib).
 
@@ -102,9 +98,9 @@ map_subtrees(F, Tree) ->
 %%          Function = (syntaxTree(), term()) -> term()
 %%
 %% @doc Folds a function over all nodes of a syntax tree. The result is
-%% the value of <code>Function(X1, Function(X2, ... Function(Xn, Start)
-%% ... ))</code>, where <code>[X1, X2, ..., Xn]</code> are the nodes of
-%% <code>Tree</code> in a post-order traversal.
+%% the value of `Function(X1, Function(X2, ... Function(Xn, Start)
+%% ... ))', where `[X1, X2, ..., Xn]' are the nodes of
+%% `Tree' in a post-order traversal.
 %%
 %% @see fold_subtrees/3
 %% @see foldl_listlist/3
@@ -135,9 +131,9 @@ fold_2(_, S, []) ->
 %%          Function = (syntaxTree(), term()) -> term()
 %%
 %% @doc Folds a function over the immediate subtrees of a syntax tree.
-%% This is similar to <code>fold/3</code>, but only on the immediate
-%% subtrees of <code>Tree</code>, in left-to-right order; it does not
-%% include the root node of <code>Tree</code>.
+%% This is similar to `fold/3', but only on the immediate
+%% subtrees of `Tree', in left-to-right order; it does not
+%% include the root node of `Tree'.
 %%
 %% @see fold/3
 
@@ -150,10 +146,10 @@ fold_subtrees(F, S, Tree) ->
 %%
 %%          Function = (term(), term()) -> term()
 %%
-%% @doc Like <code>lists:foldl/3</code>, but over a list of lists.
+%% @doc Like `lists:foldl/3', but over a list of lists.
 %%
 %% @see fold/3
-%% @see lists:foldl/3
+%% @see //stdlib/lists:foldl/3
 
 foldl_listlist(F, S, [L | Ls]) ->
     foldl_listlist(F, foldl(F, S, L), Ls);
@@ -173,10 +169,10 @@ foldl(_, S, []) ->
 %%          Function = (syntaxTree(), term()) -> {syntaxTree(), term()}
 %%
 %% @doc Combines map and fold in a single operation. This is similar to
-%% <code>map/2</code>, but also propagates an extra value from each
-%% application of the <code>Function</code> to the next, while doing a
-%% post-order traversal of the tree like <code>fold/3</code>. The value
-%% <code>Start</code> is passed to the first function application, and
+%% `map/2', but also propagates an extra value from each
+%% application of the `Function' to the next, while doing a
+%% post-order traversal of the tree like `fold/3'. The value
+%% `Start' is passed to the first function application, and
 %% the final result is the result of the last application.
 %%
 %% @see map/2
@@ -214,9 +210,9 @@ mapfold_2(_, S, []) ->
 %%          Function = (syntaxTree(), term()) -> {syntaxTree(), term()}
 %%
 %% @doc Does a mapfold operation over the immediate subtrees of a syntax
-%% tree. This is similar to <code>mapfold/3</code>, but only on the
-%% immediate subtrees of <code>Tree</code>, in left-to-right order; it
-%% does not include the root node of <code>Tree</code>.
+%% tree. This is similar to `mapfold/3', but only on the
+%% immediate subtrees of `Tree', in left-to-right order; it
+%% does not include the root node of `Tree'.
 %%
 %% @see mapfold/3
 
@@ -237,7 +233,7 @@ mapfold_subtrees(F, S, Tree) ->
 %%
 %%          Function = (term(), term()) -> {term(), term()}
 %%
-%% @doc Like <code>lists:mapfoldl/3</code>, but over a list of lists.
+%% @doc Like `lists:mapfoldl/3', but over a list of lists.
 %% The list of lists in the result has the same structure as the given
 %% list of lists.
 
@@ -259,13 +255,13 @@ mapfoldl(_, S, []) ->
 %% =====================================================================
 %% @spec variables(syntaxTree()) -> set(atom())
 %%
-%%        set(T) = sets:set(T)
+%%        set(T) = //stdlib/sets:set(T)
 %%
 %% @doc Returns the names of variables occurring in a syntax tree, The
 %% result is a set of variable names represented by atoms. Macro names
 %% are not included.
 %%
-%% @see sets
+%% @see //stdlib/sets
 
 variables(Tree) ->
     variables(Tree, sets:new()).
@@ -313,12 +309,10 @@ default_variable_name(N) ->
 %% =====================================================================
 %% @spec new_variable_name(Used::set(atom())) -> atom()
 %%
-%% @doc Returns an atom which is not already in the set
-%% <code>Used</code>. This is equivalent to
-%% <code>new_variable_name(Function, Used)</code>, where
-%% <code>Function</code> maps a given integer <code>N</code> to the atom
-%% whose name consists of "<code>V</code>" followed by the numeral for
-%% <code>N</code>.
+%% @doc Returns an atom which is not already in the set `Used'. This is
+%% equivalent to `new_variable_name(Function, Used)', where `Function'
+%% maps a given integer `N' to the atom whose name consists of "`V'"
+%% followed by the numeral for `N'.
 %%
 %% @see new_variable_name/2
 
@@ -331,20 +325,20 @@ new_variable_name(S) ->
 %%          Function = (integer()) -> atom()
 %%
 %% @doc Returns a user-named atom which is not already in the set
-%% <code>Used</code>. The atom is generated by applying the given
-%% <code>Function</code> to a generated integer. Integers are generated
+%% `Used'. The atom is generated by applying the given
+%% `Function' to a generated integer. Integers are generated
 %% using an algorithm which tries to keep the names randomly distributed
 %% within a reasonably small range relative to the number of elements in
 %% the set.
 %%
-%% <p>This function uses the module <code>random</code> to generate new
+%% This function uses the module `random' to generate new
 %% keys. The seed it uses may be initialized by calling
-%% <code>random:seed/0</code> or <code>random:seed/3</code> before this
-%% function is first called.</p>
+%% `random:seed/0' or `random:seed/3' before this
+%% function is first called.
 %%
 %% @see new_variable_name/1
-%% @see sets
-%% @see random
+%% @see //stdlib/sets
+%% @see //stdlib/random
 
 new_variable_name(F, S) ->
     R = start_range(S),
@@ -389,8 +383,8 @@ generate(_Key, Range) ->
 %% =====================================================================
 %% @spec new_variable_names(N::integer(), Used::set(atom())) -> [atom()]
 %%
-%% @doc Like <code>new_variable_name/1</code>, but generates a list of
-%% <code>N</code> new names.
+%% @doc Like `new_variable_name/1', but generates a list of
+%% `N' new names.
 %% 
 %% @see new_variable_name/1
 
@@ -403,8 +397,8 @@ new_variable_names(N, S) ->
 %%
 %%          Function = (integer()) -> atom()
 %%
-%% @doc Like <code>new_variable_name/2</code>, but generates a list of
-%% <code>N</code> new names.
+%% @doc Like `new_variable_name/2', but generates a list of
+%% `N' new names.
 %% 
 %% @see new_variable_name/2
 
@@ -424,28 +418,28 @@ new_variable_names(0, Names, _, _, _) ->
 %% @spec annotate_bindings(Tree::syntaxTree(),
 %%                         Bindings::ordset(atom())) -> syntaxTree()
 %%
-%%          ordset(T) = ordsets:ordset(T)
+%% @type ordset(T) = //stdlib/ordsets:ordset(T)
 %%
 %% @doc Adds or updates annotations on nodes in a syntax tree.
-%% <code>Bindings</code> specifies the set of bound variables in the
+%% `Bindings' specifies the set of bound variables in the
 %% environment of the top level node. The following annotations are
 %% affected:
 %% <ul>
-%%     <li><code>{env, Vars}</code>, representing the input environment
+%%     <li>`{env, Vars}', representing the input environment
 %%     of the subtree.</li>
 %%
-%%     <li><code>{bound, Vars}</code>, representing the variables that
+%%     <li>`{bound, Vars}', representing the variables that
 %%     are bound in the subtree.</li>
 %%
-%%     <li><code>{free, Vars}</code>, representing the free variables in
+%%     <li>`{free, Vars}', representing the free variables in
 %%     the subtree.</li>
 %% </ul>
-%% <code>Bindings</code> and <code>Vars</code> are ordered-set lists
-%% (cf. module <code>ordsets</code>) of atoms representing variable
+%% `Bindings' and `Vars' are ordered-set lists
+%% (cf. module `ordsets') of atoms representing variable
 %% names.
 %%
 %% @see annotate_bindings/1
-%% @see ordsets
+%% @see //stdlib/ordsets
 
 annotate_bindings(Tree, Env) ->
     {Tree1, _, _} = vann(Tree, Env),
@@ -455,10 +449,10 @@ annotate_bindings(Tree, Env) ->
 %% @spec annotate_bindings(Tree::syntaxTree()) -> syntaxTree()
 %%
 %% @doc Adds or updates annotations on nodes in a syntax tree.
-%% Equivalent to <code>annotate_bindings(Tree, Bindings)</code> where
-%% the top-level environment <code>Bindings</code> is taken from the
-%% annotation <code>{env, Bindings}</code> on the root node of
-%% <code>Tree</code>. An exception is thrown if no such annotation
+%% Equivalent to `annotate_bindings(Tree, Bindings)' where
+%% the top-level environment `Bindings' is taken from the
+%% annotation `{env, Bindings}' on the root node of
+%% `Tree'. An exception is thrown if no such annotation
 %% should exist.
 %%
 %% @see annotate_bindings/2
@@ -791,16 +785,16 @@ delete_binding_anns([]) ->
 %% =====================================================================
 %% @spec is_fail_expr(Tree::syntaxTree()) -> bool()
 %%
-%% @doc Returns <code>true</code> if <code>Tree</code> represents an
+%% @doc Returns `true' if `Tree' represents an
 %% expression which never terminates normally. Note that the reverse
 %% does not apply. Currently, the detected cases are calls to
-%% <code>exit/1</code>, <code>throw/1</code>,
-%% <code>erlang:fault/1</code> and <code>erlang:fault/2</code>.
+%% `exit/1', `throw/1',
+%% `erlang:fault/1' and `erlang:fault/2'.
 %%
-%% @see erlang:exit/1
-%% @see erlang:throw/1
-%% @see erlang:fault/1
-%% @see erlang:fault/2
+%% @see //kernel/erlang:exit/1
+%% @see //kernel/erlang:throw/1
+%% @see //kernel/erlang:fault/1
+%% @see //kernel/erlang:fault/2
 
 is_fail_expr(E) ->          
     case erl_syntax:type(E) of
@@ -842,125 +836,125 @@ is_fail_expr(E) ->
 %%                | module | records | rules | warnings
 %%
 %% @doc Analyzes a sequence of "program forms". The given
-%% <code>Forms</code> may be a single syntax tree of type
-%% <code>form_list</code>, or a list of "program form" syntax trees. The
-%% returned value is a list of pairs <code>{Key, Info}</code>, where
-%% each value of <code>Key</code> occurs at most once in the list; the
+%% `Forms' may be a single syntax tree of type
+%% `form_list', or a list of "program form" syntax trees. The
+%% returned value is a list of pairs `{Key, Info}', where
+%% each value of `Key' occurs at most once in the list; the
 %% absence of a particular key indicates that there is no well-defined
 %% value for that key.
 %%
-%% <p>Each entry in the resulting list contains the following
+%% Each entry in the resulting list contains the following
 %% corresponding information about the program forms:
 %% <dl>
-%%     <dt><code>{attributes, Attributes}</code></dt>
+%%     <dt>`{attributes, Attributes}'</dt>
 %%       <dd><ul>
-%% 	   <li><code>Attributes = [{atom(), term()}]</code></li>
+%% 	   <li>`Attributes = [{atom(), term()}]'</li>
 %%       </ul>
-%% 	 <code>Attributes</code> is a list of pairs representing the
+%% 	 `Attributes' is a list of pairs representing the
 %% 	 names and corresponding values of all so-called "wild"
-%% 	 attributes (as e.g. "<code>-compile(...)</code>") occurring in
-%% 	 <code>Forms</code> (cf. <code>analyze_wild_attribute/1</code>).
+%% 	 attributes (as e.g. "`-compile(...)'") occurring in
+%% 	 `Forms' (cf. `analyze_wild_attribute/1').
 %% 	 We do not guarantee that each name occurs at most once in the
 %% 	 list. The order of listing is not defined.</dd>
 %%
-%%     <dt><code>{errors, Errors}</code></dt>
+%%     <dt>`{errors, Errors}'</dt>
 %%       <dd><ul>
-%% 	   <li><code>Errors = [term()]</code></li>
+%% 	   <li>`Errors = [term()]'</li>
 %%       </ul>
-%% 	 <code>Errors</code> is the list of error descriptors of all
-%% 	 <code>error_marker</code> nodes that occur in
-%% 	 <code>Forms</code>. The order of listing is not defined.</dd>
+%% 	 `Errors' is the list of error descriptors of all
+%% 	 `error_marker' nodes that occur in
+%% 	 `Forms'. The order of listing is not defined.</dd>
 %%
-%%     <dt><code>{exports, Exports}</code></dt>
+%%     <dt>`{exports, Exports}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Exports = [FunctionName]</code></li>
-%% 	    <li><code>FunctionName = atom()
+%% 	    <li>`Exports = [FunctionName]'</li>
+%% 	    <li>`FunctionName = atom()
 %%                    | {atom(), integer()}
-%% 		      | {ModuleName, FunctionName}</code></li>
-%% 	    <li><code>ModuleName = atom()</code></li>
+%% 		      | {ModuleName, FunctionName}'</li>
+%% 	    <li>`ModuleName = atom()'</li>
 %%       </ul>
-%% 	 <code>Exports</code> is a list of representations of those
+%% 	 `Exports' is a list of representations of those
 %% 	 function names that are listed by export declaration attributes
-%% 	 in <code>Forms</code> (cf.
-%% 	 <code>analyze_export_attribute/1</code>). We do not guarantee
+%% 	 in `Forms' (cf.
+%% 	 `analyze_export_attribute/1'). We do not guarantee
 %% 	 that each name occurs at most once in the list. The order of
 %% 	 listing is not defined.</dd>
 %%
-%%     <dt><code>{functions, Functions}</code></dt>
+%%     <dt>`{functions, Functions}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Functions = [{atom(), integer()}]</code></li>
+%% 	    <li>`Functions = [{atom(), integer()}]'</li>
 %%       </ul>
-%% 	 <code>Functions</code> is a list of the names of the functions
-%% 	 that are defined in <code>Forms</code> (cf.
-%% 	 <code>analyze_function/1</code>). We do not guarantee that each
+%% 	 `Functions' is a list of the names of the functions
+%% 	 that are defined in `Forms' (cf.
+%% 	 `analyze_function/1'). We do not guarantee that each
 %% 	 name occurs at most once in the list. The order of listing is
 %% 	 not defined.</dd>
 %%
-%%     <dt><code>{imports, Imports}</code></dt>
+%%     <dt>`{imports, Imports}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Imports = [{Module, Names}]</code></li>
-%% 	    <li><code>Module = atom()</code></li>
-%% 	    <li><code>Names = [FunctionName]</code></li>
-%% 	    <li><code>FunctionName = atom()
+%% 	    <li>`Imports = [{Module, Names}]'</li>
+%% 	    <li>`Module = atom()'</li>
+%% 	    <li>`Names = [FunctionName]'</li>
+%% 	    <li>`FunctionName = atom()
 %%                    | {atom(), integer()}
-%% 		      | {ModuleName, FunctionName}</code></li>
-%% 	    <li><code>ModuleName = atom()</code></li>
+%% 		      | {ModuleName, FunctionName}'</li>
+%% 	    <li>`ModuleName = atom()'</li>
 %%       </ul>
-%% 	 <code>Imports</code> is a list of pairs representing those
+%% 	 `Imports' is a list of pairs representing those
 %% 	 module names and corresponding function names that are listed
-%% 	 by import declaration attributes in <code>Forms</code> (cf.
-%% 	 <code>analyze_import_attribute/1</code>), where each
-%% 	 <code>Module</code> occurs at most once in
-%% 	 <code>Imports</code>. We do not guarantee that each name occurs
+%% 	 by import declaration attributes in `Forms' (cf.
+%% 	 `analyze_import_attribute/1'), where each
+%% 	 `Module' occurs at most once in
+%% 	 `Imports'. We do not guarantee that each name occurs
 %% 	 at most once in the lists of function names. The order of
 %% 	 listing is not defined.</dd>
 %%
-%%     <dt><code>{module, ModuleName}</code></dt>
+%%     <dt>`{module, ModuleName}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>ModuleName = atom()</code></li>
+%% 	    <li>`ModuleName = atom()'</li>
 %%       </ul>
-%% 	 <code>ModuleName</code> is the name declared by a module
-%% 	 attribute in <code>Forms</code>. If no module name is defined
-%% 	 in <code>Forms</code>, the result will contain no entry for the
-%% 	 <code>module</code> key. If multiple module name declarations
+%% 	 `ModuleName' is the name declared by a module
+%% 	 attribute in `Forms'. If no module name is defined
+%% 	 in `Forms', the result will contain no entry for the
+%% 	 `module' key. If multiple module name declarations
 %% 	 should occur, all but the first will be ignored.</dd>
 %%
-%%     <dt><code>{records, Records}</code></dt>
+%%     <dt>`{records, Records}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Records = [{atom(), Fields}]</code></li>
-%% 	    <li><code>Fields = [{atom(), Default}]</code></li>
-%% 	    <li><code>Default = none | syntaxTree()</code></li>
+%% 	    <li>`Records = [{atom(), Fields}]'</li>
+%% 	    <li>`Fields = [{atom(), Default}]'</li>
+%% 	    <li>`Default = none | syntaxTree()'</li>
 %%       </ul>
-%% 	 <code>Records</code> is a list of pairs representing the names
+%% 	 `Records' is a list of pairs representing the names
 %% 	 and corresponding field declarations of all record declaration
-%% 	 attributes occurring in <code>Forms</code>. For fields declared
+%% 	 attributes occurring in `Forms'. For fields declared
 %% 	 without a default value, the corresponding value for
-%% 	 <code>Default</code> is the atom <code>none</code> (cf.
-%% 	 <code>analyze_record_attribute/1</code>). We do not guarantee
+%% 	 `Default' is the atom `none' (cf.
+%% 	 `analyze_record_attribute/1'). We do not guarantee
 %% 	 that each record name occurs at most once in the list. The
 %% 	 order of listing is not defined.</dd>
 %%
-%%     <dt><code>{rules, Rules}</code></dt>
+%%     <dt>`{rules, Rules}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Rules = [{atom(), integer()}]</code></li>
+%% 	    <li>`Rules = [{atom(), integer()}]'</li>
 %%       </ul>
-%% 	 <code>Rules</code> is a list of the names of the rules that are
-%% 	 defined in <code>Forms</code> (cf.
-%% 	 <code>analyze_rule/1</code>). We do not guarantee that each
+%% 	 `Rules' is a list of the names of the rules that are
+%% 	 defined in `Forms' (cf.
+%% 	 `analyze_rule/1'). We do not guarantee that each
 %% 	 name occurs at most once in the list. The order of listing is
 %% 	 not defined.</dd>
 %%
-%%     <dt><code>{warnings, Warnings}</code></dt>
+%%     <dt>`{warnings, Warnings}'</dt>
 %%       <dd><ul>
-%% 	    <li><code>Warnings = [term()]</code></li>
+%% 	    <li>`Warnings = [term()]'</li>
 %%       </ul>
-%% 	 <code>Warnings</code> is the list of error descriptors of all
-%% 	 <code>warning_marker</code> nodes that occur in
-%% 	 <code>Forms</code>. The order of listing is not defined.</dd>
-%% </dl></p>
+%% 	 `Warnings' is the list of error descriptors of all
+%% 	 `warning_marker' nodes that occur in
+%% 	 `Forms'. The order of listing is not defined.</dd>
+%% </dl>
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if an ill-formed
-%% Erlang construct is encountered.</p>
+%% The evaluation throws `syntax_error' if an ill-formed
+%% Erlang construct is encountered.
 %%
 %% @see analyze_wild_attribute/1
 %% @see analyze_export_attribute/1
@@ -1095,38 +1089,38 @@ list_value(List) ->
 %% =====================================================================
 %% @spec analyze_form(Node::syntaxTree()) -> {atom(), term()} | atom()
 %%
-%% @doc Analyzes a "source code form" node. If <code>Node</code> is a
-%% "form" type (cf. <code>erl_syntax:is_form/1</code>), the returned
-%% value is a tuple <code>{Type, Info}</code> where <code>Type</code> is
-%% the node type and <code>Info</code> depends on <code>Type</code>, as
+%% @doc Analyzes a "source code form" node. If `Node' is a
+%% "form" type (cf. `erl_syntax:is_form/1'), the returned
+%% value is a tuple `{Type, Info}' where `Type' is
+%% the node type and `Info' depends on `Type', as
 %% follows:
 %% <dl>
-%%   <dt><code>{attribute, Info}</code></dt>
+%%   <dt>`{attribute, Info}'</dt>
 %%
-%%      <dd>where <code>Info = analyze_attribute(Node)</code>.</dd>
+%%      <dd>where `Info = analyze_attribute(Node)'.</dd>
 %%
-%%   <dt><code>{error_marker, Info}</code></dt>
+%%   <dt>`{error_marker, Info}'</dt>
 %%
-%% 	<dd>where <code>Info =
-%% 	erl_syntax:error_marker_info(Node)</code>.</dd>
+%% 	<dd>where `Info =
+%% 	erl_syntax:error_marker_info(Node)'.</dd>
 %%
-%%   <dt><code>{function, Info}</code></dt>
+%%   <dt>`{function, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info = analyze_function(Node)</code>.</dd>
+%% 	    <dd>where `Info = analyze_function(Node)'.</dd>
 %%
-%%   <dt><code>{rule, Info}</code></dt>
+%%   <dt>`{rule, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info = analyze_rule(Node)</code>.</dd>
+%% 	    <dd>where `Info = analyze_rule(Node)'.</dd>
 %%
-%%   <dt><code>{warning_marker, Info}</code></dt>
+%%   <dt>`{warning_marker, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    erl_syntax:warning_marker_info(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    erl_syntax:warning_marker_info(Node)'.</dd>
 %% </dl>
 %% For other types of forms, only the node type is returned.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> is not well-formed.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' is not well-formed.
 %%
 %% @see analyze_attribute/1
 %% @see analyze_function/1
@@ -1160,44 +1154,44 @@ analyze_form(Node) ->
 %% @spec analyze_attribute(Node::syntaxTree()) ->
 %%           preprocessor | {atom(), atom()}
 %%
-%% @doc Analyzes an attribute node. If <code>Node</code> represents a
-%% preprocessor directive, the atom <code>preprocessor</code> is
-%% returned. Otherwise, if <code>Node</code> represents a module
-%% attribute "<code>-<em>Name</em>...</code>", a tuple <code>{Name,
-%% Info}</code> is returned, where <code>Info</code> depends on
-%% <code>Name</code>, as follows:
+%% @doc Analyzes an attribute node. If `Node' represents a
+%% preprocessor directive, the atom `preprocessor' is
+%% returned. Otherwise, if `Node' represents a module
+%% attribute "`-<em>Name</em>...'", a tuple `{Name,
+%% Info}' is returned, where `Info' depends on
+%% `Name', as follows:
 %% <dl>
-%%     <dt><code>{module, Info}</code></dt>
+%%     <dt>`{module, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    analyze_module_attribute(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    analyze_module_attribute(Node)'.</dd>
 %%
-%%     <dt><code>{export, Info}</code></dt>
+%%     <dt>`{export, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    analyze_export_attribute(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    analyze_export_attribute(Node)'.</dd>
 %%
-%%     <dt><code>{import, Info}</code></dt>
+%%     <dt>`{import, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    analyze_import_attribute(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    analyze_import_attribute(Node)'.</dd>
 %%
-%%     <dt><code>{file, Info}</code></dt>
+%%     <dt>`{file, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    analyze_file_attribute(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    analyze_file_attribute(Node)'.</dd>
 %%
-%%     <dt><code>{record, Info}</code></dt>
+%%     <dt>`{record, Info}'</dt>
 %%
-%% 	    <dd>where <code>Info =
-%% 	    analyze_record_attribute(Node)</code>.</dd>
+%% 	    <dd>where `Info =
+%% 	    analyze_record_attribute(Node)'.</dd>
 %%
-%%     <dt><code>{Name, Info}</code></dt>
+%%     <dt>`{Name, Info}'</dt>
 %%
-%% 	    <dd>where <code>{Name, Info} =
-%% 	    analyze_wild_attribute(Node)</code>.</dd>
+%% 	    <dd>where `{Name, Info} =
+%% 	    analyze_wild_attribute(Node)'.</dd>
 %% </dl>
-%% The evaluation throws <code>syntax_error</code> if <code>Node</code>
+%% The evaluation throws `syntax_error' if `Node'
 %% does not represent a well-formed module attribute.
 %%
 %% @see analyze_module_attribute/1
@@ -1249,9 +1243,9 @@ analyze_attribute(_, Node) ->
 %%
 %% @doc Returns the module name declared by a module attribute.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed module
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed module
+%% attribute.
 %%
 %% @see analyze_attribute/1
 
@@ -1293,9 +1287,9 @@ analyze_variable_list(Node) ->
 %% attribute. We do not guarantee that each name occurs at most once in
 %% the list. The order of listing is not defined.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed export
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed export
+%% attribute.
 %%
 %% @see analyze_attribute/1
 
@@ -1330,14 +1324,14 @@ analyze_function_name_list(Node) ->
 %%          ModuleName = atom()
 %%
 %% @doc Returns the function name represented by a syntax tree. If
-%% <code>Node</code> represents a function name, such as
-%% "<code>foo/1</code>" or "<code>bloggs:fred/2</code>", a uniform
+%% `Node' represents a function name, such as
+%% "`foo/1'" or "`bloggs:fred/2'", a uniform
 %% representation of that name is returned. Different nestings of arity
 %% and module name qualifiers in the syntax tree does not affect the
 %% result.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed function name.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed function name.
 
 analyze_function_name(Node) ->
     case erl_syntax:type(Node) of
@@ -1387,15 +1381,15 @@ append_arity(_A, Name) ->
 %%
 %% @doc Returns the module name and (if present) list of function names
 %% declared by an import attribute. The returned value is an atom
-%% <code>Module</code> or a pair <code>{Module, Names}</code>, where
-%% <code>Names</code> is a list of function names declared as imported
-%% from the module named by <code>Module</code>. We do not guarantee
-%% that each name occurs at most once in <code>Names</code>. The order
+%% `Module' or a pair `{Module, Names}', where
+%% `Names' is a list of function names declared as imported
+%% from the module named by `Module'. We do not guarantee
+%% that each name occurs at most once in `Names'. The order
 %% of listing is not defined.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed import
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed import
+%% attribute.
 %%
 %% @see analyze_attribute/1
 
@@ -1421,16 +1415,16 @@ analyze_import_attribute(Node) ->
 %% @spec analyze_wild_attribute(Node::syntaxTree()) -> {atom(), term()}
 %%
 %% @doc Returns the name and value of a "wild" attribute. The result is
-%% the pair <code>{Name, Value}</code>, if <code>Node</code> represents
-%% "<code>-Name(Value)</code>".
+%% the pair `{Name, Value}', if `Node' represents
+%% "`-Name(Value)'".
 %%
-%% <p>Note that no checking is done whether <code>Name</code> is a
-%% reserved attribute name such as <code>module</code> or
-%% <code>export</code>: it is assumed that the attribute is "wild".</p>
+%% Note that no checking is done whether `Name' is a
+%% reserved attribute name such as `module' or
+%% `export': it is assumed that the attribute is "wild".
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed wild
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed wild
+%% attribute.
 %%
 %% @see analyze_attribute/1
 
@@ -1462,18 +1456,18 @@ analyze_wild_attribute(Node) ->
 %%          Fields = [{atom(), none | syntaxTree()}]
 %%
 %% @doc Returns the name and the list of fields of a record declaration
-%% attribute. The result is a pair <code>{Name, Fields}</code>, if
-%% <code>Node</code> represents "<code>-record(Name, {...}).</code>",
-%% where <code>Fields</code> is a list of pairs <code>{Label,
-%% Default}</code> for each field "<code>Label</code>" or "<code>Label =
-%% <em>Default</em></code>" in the declaration, listed in left-to-right
+%% attribute. The result is a pair `{Name, Fields}', if
+%% `Node' represents "`-record(Name, {...}).'",
+%% where `Fields' is a list of pairs `{Label,
+%% Default}' for each field "`Label'" or "`Label =
+%% <em>Default</em>'" in the declaration, listed in left-to-right
 %% order. If the field has no default-value declaration, the value for
-%% <code>Default</code> will be the atom <code>none</code>. We do not
+%% `Default' will be the atom `none'. We do not
 %% guarantee that each label occurs at most one in the list.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed record declaration
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed record declaration
+%% attribute.
 %%
 %% @see analyze_attribute/1
 %% @see analyze_record_field/1
@@ -1515,35 +1509,35 @@ analyze_record_attribute_tuple(Node) ->
 %%    Value = none | syntaxTree()
 %%
 %% @doc Returns the record name and field name/names of a record
-%% expression. If <code>Node</code> has type <code>record_expr</code>,
-%% <code>record_index_expr</code> or <code>record_access</code>, a pair
-%% <code>{Type, Info}</code> is returned, otherwise an atom
-%% <code>Type</code> is returned. <code>Type</code> is the node type of
-%% <code>Node</code>, and <code>Info</code> depends on
-%% <code>Type</code>, as follows:
+%% expression. If `Node' has type `record_expr',
+%% `record_index_expr' or `record_access', a pair
+%% `{Type, Info}' is returned, otherwise an atom
+%% `Type' is returned. `Type' is the node type of
+%% `Node', and `Info' depends on
+%% `Type', as follows:
 %% <dl>
-%%   <dt><code>record_expr</code>:</dt>
-%%     <dd><code>{atom(), [{atom(), Value}]}</code></dd>
-%%   <dt><code>record_access</code>:</dt>
-%%     <dd><code>{atom(), atom()} | atom()</code></dd>
-%%   <dt><code>record_index_expr</code>:</dt>
-%%     <dd><code>{atom(), atom()}</code></dd>
+%%   <dt>`record_expr':</dt>
+%%     <dd>`{atom(), [{atom(), Value}]}'</dd>
+%%   <dt>`record_access':</dt>
+%%     <dd>`{atom(), atom()} | atom()'</dd>
+%%   <dt>`record_index_expr':</dt>
+%%     <dd>`{atom(), atom()}'</dd>
 %% </dl>
 %%
-%% <p>For a <code>record_expr</code> node, <code>Info</code> represents
+%% For a `record_expr' node, `Info' represents
 %% the record name and the list of descriptors for the involved fields,
 %% listed in the order they appear. (See
-%% <code>analyze_record_field/1</code> for details on the field
-%% descriptors). For a <code>record_access</code> node,
-%% <code>Info</code> represents the record name and the field name (or
+%% `analyze_record_field/1' for details on the field
+%% descriptors). For a `record_access' node,
+%% `Info' represents the record name and the field name (or
 %% if the record name is not included, only the field name; this is
 %% allowed only in Mnemosyne-query syntax). For a
-%% <code>record_index_expr</code> node, <code>Info</code> represents the
-%% record name and the name field name.</p>
+%% `record_index_expr' node, `Info' represents the
+%% record name and the name field name.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> represents a record expression that is not
-%% well-formed.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' represents a record expression that is not
+%% well-formed.
 %%
 %% @see analyze_record_attribute/1
 %% @see analyze_record_field/1
@@ -1606,15 +1600,15 @@ analyze_record_expr(Node) ->
 %%          Value = none | syntaxTree()
 %%
 %% @doc Returns the label and value-expression of a record field
-%% specifier. The result is a pair <code>{Label, Value}</code>, if
-%% <code>Node</code> represents "<code>Label = <em>Value</em></code>" or
-%% "<code>Label</code>", where in the first case, <code>Value</code> is
-%% a syntax tree, and in the second case <code>Value</code> is
-%% <code>none</code>.
+%% specifier. The result is a pair `{Label, Value}', if
+%% `Node' represents "`Label = <em>Value</em>'" or
+%% "`Label'", where in the first case, `Value' is
+%% a syntax tree, and in the second case `Value' is
+%% `none'.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed record field
-%% specifier.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed record field
+%% specifier.
 %%
 %% @see analyze_record_attribute/1
 %% @see analyze_record_expr/1
@@ -1639,13 +1633,13 @@ analyze_record_field(Node) ->
 %% @spec analyze_file_attribute(Node::syntaxTree()) ->
 %%           {string(), integer()}
 %%
-%% @doc Returns the file name and line number of a <code>file</code>
-%% attribute. The result is the pair <code>{File, Line}</code> if
-%% <code>Node</code> represents "<code>-file(File, Line).</code>".
+%% @doc Returns the file name and line number of a `file'
+%% attribute. The result is the pair `{File, Line}' if
+%% `Node' represents "`-file(File, Line).'".
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed <code>file</code>
-%% attribute.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed `file'
+%% attribute.
 %%
 %% @see analyze_attribute/1
 
@@ -1674,13 +1668,13 @@ analyze_file_attribute(Node) ->
 %% @spec analyze_function(Node::syntaxTree()) -> {atom(), integer()}
 %%
 %% @doc Returns the name and arity of a function definition. The result
-%% is a pair <code>{Name, A}</code> if <code>Node</code> represents a
-%% function definition "<code>Name(<em>P_1</em>, ..., <em>P_A</em>) ->
-%% ...</code>".
+%% is a pair `{Name, A}' if `Node' represents a
+%% function definition "`Name(<em>P_1</em>, ..., <em>P_A</em>) ->
+%% ...'".
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed function
-%% definition.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed function
+%% definition.
 %%
 %% @see analyze_rule/1
 
@@ -1704,12 +1698,12 @@ analyze_function(Node) ->
 %% @spec analyze_rule(Node::syntaxTree()) -> {atom(), integer()}
 %%
 %% @doc Returns the name and arity of a Mnemosyne rule. The result is a
-%% pair <code>{Name, A}</code> if <code>Node</code> represents a rule
-%% "<code>Name(<em>P_1</em>, ..., <em>P_A</em>) :- ...</code>".
+%% pair `{Name, A}' if `Node' represents a rule
+%% "`Name(<em>P_1</em>, ..., <em>P_A</em>) :- ...'".
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed Mnemosyne
-%% rule.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed Mnemosyne
+%% rule.
 %%
 %% @see analyze_function/1
 
@@ -1736,12 +1730,12 @@ analyze_rule(Node) ->
 %%                       | {ModuleName, FunctionName}
 %%          ModuleName = atom()
 %%      
-%% @doc Returns the name of an implicit fun expression "<code>fun
-%% <em>F</em></code>". The result is a representation of the function
-%% name <code>F</code>. (Cf. <code>analyze_function_name/1</code>.)
+%% @doc Returns the name of an implicit fun expression "`fun
+%% <em>F</em>'". The result is a representation of the function
+%% name `F'. (Cf. `analyze_function_name/1'.)
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed implicit fun.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed implicit fun.
 %%
 %% @see analyze_function_name/1
 
@@ -1764,15 +1758,15 @@ analyze_implicit_fun(Node) ->
 %%          ModuleName = atom()
 %%
 %% @doc Returns the name of a called function. The result is a
-%% representation of the name of the applied function <code>F/A</code>,
-%% if <code>Node</code> represents a function application
-%% "<code><em>F</em>(<em>X_1</em>, ..., <em>X_A</em>)</code>". If the
-%% function is not explicitly named (i.e., <code>F</code> is given by
-%% some expression), only the arity <code>A</code> is returned.
+%% representation of the name of the applied function `F/A',
+%% if `Node' represents a function application
+%% "`<em>F</em>(<em>X_1</em>, ..., <em>X_A</em>)'". If the
+%% function is not explicitly named (i.e., `F' is given by
+%% some expression), only the arity `A' is returned.
 %%
-%% <p>The evaluation throws <code>syntax_error</code> if
-%% <code>Node</code> does not represent a well-formed application
-%% expression.</p>
+%% The evaluation throws `syntax_error' if
+%% `Node' does not represent a well-formed application
+%% expression.
 %%
 %% @see analyze_function_name/1
 
@@ -1802,17 +1796,17 @@ analyze_application(Node) ->
 %%
 %% @doc Creates a mapping from corresponding short names to full
 %% function names. Names are represented by nested tuples of atoms and
-%% integers (cf. <code>analyze_function_name/1</code>). The result is a
-%% list containing a pair <code>{ShortName, Name}</code> for each
-%% element <code>Name</code> in the given list, where the corresponding
-%% <code>ShortName</code> is the rightmost-innermost part of
-%% <code>Name</code>. The list thus represents a finite mapping from
+%% integers (cf. `analyze_function_name/1'). The result is a
+%% list containing a pair `{ShortName, Name}' for each
+%% element `Name' in the given list, where the corresponding
+%% `ShortName' is the rightmost-innermost part of
+%% `Name'. The list thus represents a finite mapping from
 %% unqualified names to the corresponding qualified names.
 %%
-%% <p>Note: the resulting list can contain more than one tuple
-%% <code>{ShortName, Name}</code> for the same <code>ShortName</code>,
-%% possibly with different values for <code>Name</code>, depending on
-%% the given list.</p>
+%% Note: the resulting list can contain more than one tuple
+%% `{ShortName, Name}' for the same `ShortName',
+%% possibly with different values for `Name', depending on
+%% the given list.
 %%
 %% @see analyze_function_name/1
 
@@ -1868,9 +1862,9 @@ to_comment(Tree) ->
 %% @spec to_comment(Tree::syntaxTree(), Prefix::string()) ->
 %%           syntaxTree()
 %%
-%% @doc Equivalent to <code>to_comment(Tree, Prefix, F)</code> for a
-%% default formatting function <code>F</code>. The default
-%% <code>F</code> simply calls <code>erl_prettypr:format/1</code>.
+%% @doc Equivalent to `to_comment(Tree, Prefix, F)' for a
+%% default formatting function `F'. The default
+%% `F' simply calls `erl_prettypr:format/1'.
 %%
 %% @see to_comment/3
 %% @see erl_prettypr:format/1
@@ -1886,20 +1880,20 @@ to_comment(Tree, Prefix) ->
 %%          Printer = (syntaxTree()) -> string()
 %%
 %% @doc Transforms a syntax tree into an abstract comment. The lines of
-%% the comment contain the text for <code>Node</code>, as produced by
-%% the given <code>Printer</code> function. Each line of the comment is
-%% prefixed by the string <code>Prefix</code> (this does not include the
-%% initial "<code>%</code>" character of the comment line).
+%% the comment contain the text for `Node', as produced by
+%% the given `Printer' function. Each line of the comment is
+%% prefixed by the string `Prefix' (this does not include the
+%% initial "`%'" character of the comment line).
 %%
-%% <p>For example, the result of
-%% <code>to_comment(erl_syntax:abstract([a,b,c]))</code> represents
+%% For example, the result of
+%% `to_comment(erl_syntax:abstract([a,b,c]))' represents
 %% <pre>
 %%         %% [a,b,c]</pre>
-%% (cf. <code>to_comment/1</code>).</p>
+%% (cf. `to_comment/1').
 %%
-%% <p>Note: the text returned by the formatting function will be split
+%% Note: the text returned by the formatting function will be split
 %% automatically into separate comment lines at each line break. No
-%% extra work is needed.</p>
+%% extra work is needed.
 %%
 %% @see to_comment/1
 %% @see to_comment/2
@@ -1911,8 +1905,8 @@ to_comment(Tree, Prefix, F) ->
 %% =====================================================================
 %% @spec limit(Tree, Depth) -> syntaxTree()
 %%
-%% @doc Equivalent to <code>limit(Tree, Depth, Text)</code> using the
-%% text <code>"..."</code> as default replacement.
+%% @doc Equivalent to `limit(Tree, Depth, Text)' using the
+%% text `"..."' as default replacement.
 %%
 %% @see limit/3
 %% @see erl_syntax:text/1
@@ -1925,23 +1919,23 @@ limit(Tree, Depth) ->
 %%             Node::syntaxTree()) -> syntaxTree()
 %%
 %% @doc Limits a syntax tree to a specified depth. Replaces all non-leaf
-%% subtrees in <code>Tree</code> at the given <code>Depth</code> by
-%% <code>Node</code>. If <code>Depth</code> is negative, the result is
-%% always <code>Node</code>, even if <code>Tree</code> has no subtrees.
+%% subtrees in `Tree' at the given `Depth' by
+%% `Node'. If `Depth' is negative, the result is
+%% always `Node', even if `Tree' has no subtrees.
 %%
-%% <p>When a group of subtrees (as e.g., the argument list of an
-%% <code>application</code> node) is at the specified depth, and there
+%% When a group of subtrees (as e.g., the argument list of an
+%% `application' node) is at the specified depth, and there
 %% are two or more subtrees in the group, these will be collectively
-%% replaced by <code>Node</code> even if they are leaf nodes. Groups of
+%% replaced by `Node' even if they are leaf nodes. Groups of
 %% subtrees that are above the specified depth will be limited in size,
 %% as if each subsequent tree in the group were one level deeper than
-%% the previous. E.g., if <code>Tree</code> represents a list of
-%% integers "<code>[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]</code>", the result
-%% of <code>limit(Tree, 5)</code> will represent <code>[1, 2, 3, 4,
-%% ...]</code>.</p>
+%% the previous. E.g., if `Tree' represents a list of
+%% integers "`[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]'", the result
+%% of `limit(Tree, 5)' will represent `[1, 2, 3, 4,
+%% ...]'.
 %%
-%% <p>The resulting syntax tree is typically only useful for
-%% pretty-printing or similar visual formatting.</p>
+%% The resulting syntax tree is typically only useful for
+%% pretty-printing or similar visual formatting.
 %%
 %% @see limit/2
 

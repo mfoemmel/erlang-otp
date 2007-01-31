@@ -143,6 +143,7 @@ stream(BodyPart, Request,_) -> % only 200 responses can be streamed
 %%--------------------------------------------------------------------
 init([Request, Options]) ->
     process_flag(trap_exit, true),
+    handle_verbose(Options#options.verbose),
     Address = handle_proxy(Request#request.address, Options#options.proxy),
     case {Address /= Request#request.address, Request#request.scheme} of
 	{true, https} ->
@@ -173,8 +174,7 @@ handle_call(Request, _, State = #state{session = Session =
 				       timers = Timers,
 				       options = Options}) ->
     Address = handle_proxy(Request#request.address, Options#options.proxy),
-    http_util:verbose_output(Options#options.verbose,
-			     Request,"Sending: "),
+
     case httpc_request:send(Address, Request, Socket) of
         ok ->
 	    %% Activate the request time out for the new request
@@ -255,8 +255,7 @@ handle_info({Proto, _Socket, Data}, State =
 				      stream = Stream} = Request, 
 		   session = Session, status_line = StatusLine}) 
   when Proto == tcp; Proto == ssl; Proto == httpc_handler ->
-    http_util:verbose_output((State#state.options)#options.verbose,
-			     Data,"Received: "),
+
     case Module:Function([Data | Args]) of
         {ok, Result} ->
             handle_http_msg(Result, State); 
@@ -398,8 +397,6 @@ send_first_request(Address, Request, State) ->
     SocketType = socket_type(Request),
     case http_transport:connect(SocketType, Address, Ipv6) of
 	{ok, Socket} ->
-	    http_util:verbose_output((State#state.options)#options.verbose,
-				     Request,"Sending: "),
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->
 		    ClientClose = 
@@ -573,8 +570,6 @@ handle_response(State = #state{request = Request,
 	continue -> 
 	    %% Send request body
 	    {_, RequestBody} = Request#request.content,
-	    http_util:verbose_output(Options#options.verbose,
-				     RequestBody,"Sending request body: "),
 	    http_transport:send(socket_type(Session#tcp_session.scheme), 
 					    Session#tcp_session.socket, 
 				RequestBody),
@@ -882,6 +877,17 @@ end_stream({_,200,_}, #request{stream = Fd}) ->
     end;
 end_stream(_, _) ->
     ok.
+
+handle_verbose(verbose) ->
+    dbg:p(self(), [r]);
+handle_verbose(debug) ->
+    dbg:p(self(), [call]),
+    dbg:tp(?MODULE, [{'_', [], [{return_trace}]}]);
+handle_verbose(trace) ->
+    dbg:p(self(), [call]),
+    dbg:tpl(?MODULE, [{'_', [], [{return_trace}]}]);
+handle_verbose(_) ->
+    ok.    
 
 %%% Normaly I do not comment out code, I throw it away. But this might
 %%% actually be used on day if ssl is improved.

@@ -10,17 +10,16 @@
 #include "global.h"
 #include "erl_threads.h"
 
-EXTERN_FUNCTION(int, async_ready, (int, void*));
 extern  int erts_async_max_threads;
 
 typedef struct _erl_async {
     struct _erl_async* next;
     struct _erl_async* prev;
     DE_Handle*         hndl;   /* The DE_Handle is needed when port is gone */
-    int                port;
+    Eterm              port;
     long               async_id;
     void*              async_data;
-
+    ErlDrvPDL          pdl;
     void (*async_invoke)(void*);
     void (*async_free)(void*);
 } ErlAsync;
@@ -113,7 +112,7 @@ int exit_async()
     for (i = 0; i < erts_async_max_threads; i++) {
 	ErlAsync* a = (ErlAsync*) erts_alloc(ERTS_ALC_T_ASYNC,
 					     sizeof(ErlAsync));
-	a->port = -1;
+	a->port = NIL;
 	async_add(a, &async_q[i]);
     }
 
@@ -134,8 +133,11 @@ int exit_async()
 static void async_add(ErlAsync* a, AsyncQueue* q)
 {
     /* XXX:PaN Is this still necessary when ports lock drivers? */
-    if (a->port != -1)
-	driver_lock_driver(a->port);/*make sure the driver will stay around*/
+    if (is_internal_port(a->port)) {
+	ERTS_LC_ASSERT(erts_drvportid2port(a->port));
+	/* make sure the driver will stay around */
+	driver_lock_driver(internal_port_index(a->port));
+    }
 
     erts_mtx_lock(&q->mtx);
 
@@ -257,7 +259,7 @@ static void* async_main(void* arg)
     while(1) {
 	ErlAsync* a = async_get(q);
 
-	if (a->port == -1) { /* TIME TO DIE SIGNAL */
+	if (a->port == NIL) { /* TIME TO DIE SIGNAL */
 	    erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 	    break;
 	}
@@ -266,20 +268,33 @@ static void* async_main(void* arg)
 	    /* Major problem if the code for async_invoke
 	       or async_free is removed during a blocking operation */
 #ifdef ERTS_SMP
-	    erts_smp_io_lock();
-	    if (async_ready(a->port, a->async_data)) {
-		if (a->async_free)
-		    (*a->async_free)(a->async_data);
+	    {
+		Port *p;
+		p = erts_id2port_sflgs(a->port,
+				       NULL,
+				       0,
+				       ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
+		if (p) {
+		    if (async_ready(p, a->async_data)) {
+			if (a->async_free)
+			    (*a->async_free)(a->async_data);
+		    }
+		    async_detach(a->hndl);
+		    erts_port_release(p);
+		}
+		if (a->pdl) {
+		    driver_pdl_dec_refc(a->pdl);
+		}
+		erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 	    }
-	    async_detach(a->hndl);
-	    erts_smp_io_unlock();
-	    erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 #else
+	    if (a->pdl) {
+		driver_pdl_dec_refc(a->pdl);
+	    }
 	    erts_mtx_lock(&async_ready_mtx);
 	    a->next = async_ready_list;
 	    async_ready_list = a;
 	    erts_mtx_unlock(&async_ready_mtx);
-
 	    sys_async_ready(q->hndl);
 #endif
 	}
@@ -307,12 +322,20 @@ int check_async_ready()
 
     while(a != NULL) {
 	ErlAsync* a_next = a->next;
-	count++;
-	if (async_ready(a->port, a->async_data)) {
-	    if (a->async_free != NULL)
-		(*a->async_free)(a->async_data);
+	/* Every port not dead */
+	Port *p = erts_id2port_sflgs(a->port,
+				     NULL,
+				     0,
+				     ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
+	if (p != NULL) {
+	    count++;
+	    if (async_ready(p, a->async_data)) {
+		if (a->async_free != NULL)
+		    (*a->async_free)(a->async_data);
+	    }
+	    async_detach(a->hndl);
+	    erts_port_release(p);
 	}
-	async_detach(a->hndl);
 	erts_free(ERTS_ALC_T_ASYNC, (void *) a);
 	a = a_next;
     }
@@ -341,20 +364,21 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 		  void (*async_free)(void*))
 {
     ErlAsync* a = (ErlAsync*) erts_alloc(ERTS_ALC_T_ASYNC, sizeof(ErlAsync));
-    Port* ptr;
+    Port* prt = erts_drvport2port(ix);
     long id;
     unsigned int qix;
 
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
 
-    if ((ix < 0) || (ix >= erts_max_ports) || erts_port[ix].status == FREE)
+    if (!prt)
 	return -1;
-    ptr = &erts_port[ix];
+
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
 
     a->next = NULL;
     a->prev = NULL;
-    a->hndl = (DE_Handle*)ptr->drv_ptr->handle;
-    a->port = ix;
+    a->hndl = (DE_Handle*)prt->drv_ptr->handle;
+    a->port = prt->id;
+    a->pdl = NULL;
     a->async_data = async_data;
     a->async_invoke = async_invoke;
     a->async_free = async_free;
@@ -376,6 +400,10 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
     }
 #ifdef USE_THREADS
     if (erts_async_max_threads > 0) {
+	if (prt->port_data_lock) {
+	    driver_pdl_inc_refc(prt->port_data_lock);
+	    a->pdl = prt->port_data_lock;
+	}
 	async_add(a, &async_q[qix]);
 	return id;
     }
@@ -383,7 +411,7 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
 
     (*a->async_invoke)(a->async_data);
 
-    if (async_ready(a->port, a->async_data)) {
+    if (async_ready(prt, a->async_data)) {
 	if (a->async_free != NULL)
 	    (*a->async_free)(a->async_data);
     }

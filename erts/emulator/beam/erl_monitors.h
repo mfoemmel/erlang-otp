@@ -23,13 +23,14 @@
  * Monitors are kept in an AVL tree and the data structures for
  * the four different types of monitors are like this:
  **********************************************************************
- * Local monitor by pid: (Ref is always same in all involved data structures)
+ * Local monitor by pid/port: 
+ * (Ref is always same in all involved data structures)
  **********************************************************************
- *        Process X          Process Y
+ *        Process/Port X     Process Y
  *       +-------------+    +-------------+
  * Type: | MON_ORIGIN  |    | MON_TARGET  |
  *       +-------------+    +-------------+
- * Pid:  | Pid(Y)      |    | Pid(X)      |
+ * Pid:  | Pid(Y)      |    | Pid/Port(X) |
  *       +-------------+    +-------------+
  * Name: | []          |    | []          |
  *       +-------------+    +-------------+
@@ -106,7 +107,8 @@ typedef struct erts_monitor {
     Uint16 type;  /* MON_ORIGIN | MON_TARGET */
     Eterm ref;
     Eterm pid;    /* In case of distributed named monitor, this is the
-		     nodename atom in MON_ORIGIN process, otherwise a pid */
+		     nodename atom in MON_ORIGIN process, otherwise a pid or
+		     , in case of a MON_TARGET, a port */
     Eterm name;   /* When monitoring a named process: atom() else [] */
     Uint heap[1]; /* Larger in reality */
 } ErtsMonitor;

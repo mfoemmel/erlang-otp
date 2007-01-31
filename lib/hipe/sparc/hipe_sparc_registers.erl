@@ -37,7 +37,7 @@
 	 icc/0,
 	 xcc/0,
 	 %% fcc/1,
-	 %% y/0,
+	 y/0,
 	 arg/1,
 	 ret/1,
 	 temp0/0,
@@ -223,7 +223,7 @@ xcc() -> ?XCC.
 %%     2 -> ?FCC2;
 %%     3 -> ?FCC3
 %%   end.
-%% y() -> ?Y.
+y() -> ?Y.
 zero() -> ?Z.
 arg(X) ->
    case X of
@@ -294,6 +294,7 @@ is_fixed(?HEAP_LIMIT) -> true;
 is_fixed(?PROC_POINTER) -> true;
 is_fixed(?FCALLS) -> true;
 is_fixed(?RETURN_ADDRESS) -> true;
+is_fixed(?Y) -> true;
 is_fixed(_) -> false.
 
 %%
@@ -305,6 +306,7 @@ global() ->
     ?HEAP_POINTER,
     ?HEAP_LIMIT,
     ?PROC_POINTER,
+    ?Y,
     ?FCALLS].
 
 %%

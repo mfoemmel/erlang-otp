@@ -96,6 +96,7 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/cerl_to_icode.beam: cerl_hipe_primops.hrl
+$(EBIN)/cerl_to_icode.beam: cerl_hipe_primops.hrl ../icode/hipe_icode_primops.hrl
 $(EBIN)/cerl_hipeify.beam: cerl_hipe_primops.hrl
 $(EBIN)/cerl_lambdalift.beam: cerl_hipe_primops.hrl
+$(EBIN)/erl_bif_types.beam: ../icode/hipe_icode_primops.hrl

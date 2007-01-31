@@ -69,8 +69,10 @@
 	     stk=[],				%Stack table
 	     res=[]}).				%Reserved regs: [{reserved,I,V}]
 
-module({Mod,Exp,Attr,Forms}, _Options) ->
+module({Mod,Exp,Attr,Forms}, Options) ->
+    put(?MODULE, Options),
     {Fs,St} = functions(Forms, {atom,Mod}),
+    erase(?MODULE),
     {ok,{Mod,Exp,Attr,Fs,St#cg.lcount}}.
 
 functions(Forms, AtomMod) ->
@@ -1061,11 +1063,11 @@ bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     %%   Currently, we are somewhat pessimistic in
     %% that we save any variable that will be live after this BIF call.
 
-    {Sis,Int0} =
-	case St0#cg.in_catch of
-	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
-	    false -> {[],Bef}
-	end,
+    {Sis,Int0} = case St0#cg.in_catch andalso
+		     not erl_bifs:is_safe(erlang, Bif, length(As)) of
+		     true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
+		     false -> {[],Bef}
+		 end,
     Int1 = clear_dead(Int0, Le#l.i, Vdb),
     Reg = put_reg(V, Int1#sr.reg),
     Int = Int1#sr{reg=Reg},
@@ -1270,7 +1272,7 @@ set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
     MaxRegs = max_reg(Bef#sr.reg),
     Aft = clear_dead(Int1, Le#l.i, Vdb),
     Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs),
-    {Sis++Code,Aft,St};
+    {Sis++Code++make_bs_final(Target,Target),Aft,St};
 set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
     %% Find a place for the return register first.
     Int = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
@@ -1335,8 +1337,9 @@ cg_binary_size_1([], Bits, Acc) ->
 cg_binary_size_2({integer,N}, U, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits+N*U, Acc);
 cg_binary_size_2({atom,all}, 8, E, Next, Bits, Acc) ->
-
     cg_binary_size_1(Next, Bits, [{8,{size,E}}|Acc]);
+cg_binary_size_2({atom,all}, 1, E, Next, Bits, Acc) ->
+    cg_binary_size_1(Next, Bits, [{1,{bitsize,E}}|Acc]);
 cg_binary_size_2(Reg, 1, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits, [{1,Reg}|Acc]);
 cg_binary_size_2(Reg, 8, _, Next, Bits, Acc) ->
@@ -1367,7 +1370,7 @@ cg_binary_size_expr(Sizes, Target, Temp, Fail, Live) ->
 
 cg_binary_size_expr_1([{1,E0}|T], Target, Temp, Fail, Live, Acc) ->
     E1 = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
-    E = [{bs_bits_to_bytes,Fail,Target,Target}|E1],
+    E = [make_bs_bits_to_bytes(Fail,Target,Target)|E1],
     cg_binary_size_expr_1(T, Target, Temp, Fail, Live, E);
 cg_binary_size_expr_1([{8,E0}], Target, Temp, Fail, Live, Acc) ->
     E = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
@@ -1377,13 +1380,17 @@ cg_binary_size_expr_1([], _, _, _, _, Acc) -> reverse(Acc).
 cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,A,B],Target}|Acc]);
+cg_gen_binsize([{bitsize,B}|T], Target, Temp, Fail, Live, Acc) ->
+    cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
+		   [{gc_bif,bitsize,Fail,Live,[B],Temp}|Acc]);
 cg_gen_binsize([{size,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
 		   [{gc_bif,size,Fail,Live,[B],Temp}|Acc]);
 cg_gen_binsize([E0|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
-		   [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
+		 [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
 cg_gen_binsize([], _, _, _, _, Acc) -> Acc.
+
 
 %% cg_bin_opt(Code0) -> Code
 %%  Optimize the size calculations for binary construction.
@@ -1398,10 +1405,14 @@ cg_bin_opt([{move,{integer,Bytes},D},{bs_init2,Fail,D,Regs0,Flags,D}|Is]) ->
 cg_bin_opt([{move,Src,D},{bs_init2,Fail,D,Regs0,Flags,D}|Is]) ->
     Regs = cg_bo_newregs(Regs0, D),
     cg_bin_opt([{bs_init2,Fail,Src,Regs,Flags,D}|Is]);
+cg_bin_opt([{move,Src,Dst},{bs_bits_to_bytes2,Dst,Dst}|Is]) ->
+    cg_bin_opt([{bs_bits_to_bytes2,Src,Dst}|Is]);
 cg_bin_opt([{move,Src,Dst},{bs_bits_to_bytes,Fail,Dst,Dst}|Is]) ->
     cg_bin_opt([{bs_bits_to_bytes,Fail,Src,Dst}|Is]);
 cg_bin_opt([{move,Src1,Dst},{bs_add,Fail,[Dst,Src2,U],Dst}|Is]) ->
     cg_bin_opt([{bs_add,Fail,[Src1,Src2,U],Dst}|Is]);
+cg_bin_opt([{bs_bits_to_bytes2,{integer,N},D}|Is0]) -> 
+  cg_bin_opt([{move,{integer,(N+7) div 8},D}|Is0]); 
 cg_bin_opt([{bs_bits_to_bytes,Fail,{integer,N},_}|Is0]) when N rem 8 =/= 0 ->
     case Fail of
 	{f,0} ->
@@ -1941,3 +1952,18 @@ flatmapfoldr(F, Accu0, [Hd|Tail]) ->
     {R,Accu2} = F(Hd, Accu1),
     {R++Rs,Accu2};
 flatmapfoldr(_, Accu, []) -> {[],Accu}.
+
+%% Utility functions for generating different code depending on wether 
+%% the bitlevel_binaries option is given or not
+
+make_bs_final(Src,Dst) ->
+  case proplists:get_bool(bitlevel_binaries, get(?MODULE)) of
+    true -> [{bs_final2,Src,Dst}];
+    false -> []
+  end.
+
+make_bs_bits_to_bytes(Fail,Src,Dst) ->
+  case proplists:get_bool(bitlevel_binaries, get(?MODULE)) of
+    true -> {bs_bits_to_bytes2,Src,Dst};
+    false -> {bs_bits_to_bytes,Fail,Src,Dst}
+  end.

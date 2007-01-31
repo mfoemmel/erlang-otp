@@ -303,7 +303,7 @@ BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
     size = binary_size(BIF_ARG_1);
     ERTS_GET_BINARY_BYTES(BIF_ARG_1, bytes, bitoffs, bitsize);
     if (start < 1 || start > size || stop < 1 ||
-	stop > size || stop < start || bitsize != 0) {
+	stop > size || stop < start ) {
 	goto error;
     }
     i = stop-start+1;

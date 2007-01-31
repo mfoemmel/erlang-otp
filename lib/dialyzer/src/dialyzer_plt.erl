@@ -24,10 +24,10 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_plt).
 
--include("dialyzer.hrl").	  %% file is automatically generated
+-include("dialyzer.hrl").
 
 -export([
-	 check_init_plt/2,
+	 check_init_plt/1,
 	 copy/2,
 	 contains_mfa/2,
 	 delete/1,
@@ -44,6 +44,9 @@
 	 to_edoc/1,
 	 to_edoc/4
 	]).
+
+%% Debug utility
+-export([find_non_returning/0]).
 
 -record(dialyzer_plt, {version, libs, md5, tab}).
 
@@ -98,7 +101,7 @@ from_file(Name, FileName) ->
 	  Plt
       end;
     {error, Reason} ->
-      erlang:fault(Reason)
+      error(io_lib:format("Could not read plt file ~s: ~p\n", [Name, Reason]))
   end.
 
 check_version(#dialyzer_plt{version=?VSN}) -> ok;
@@ -148,27 +151,30 @@ to_file(Plt, FileName) ->
   case file:write_file(FileName, Bin) of
     ok -> ok;
     {error, Reason} ->
-      Msg = 
-	io_lib:format("Could not write plt file ~s: ~w\n", [FileName, Reason]),
-      erlang:fault(Msg)
+      Msg = io_lib:format("Could not write plt file ~s: ~w\n", 
+			  [FileName, Reason]),
+      throw({dialyzer_error, Msg})
   end.
 
-check_init_plt(InputLibs, FileName) ->
+check_init_plt(FileName) ->
   case get_record_from_file(FileName) of
     {ok, Rec = #dialyzer_plt{libs=FileLibs, md5=Md5}} ->
-      Libs = case InputLibs =:= none of
-	       true -> 
-		 case FileLibs =:= none of
-		   true -> ?DEFAULT_LIBS;
-		   false -> FileLibs
-		 end;
-	       false -> InputLibs
-	     end,
+      Libs = 
+	case FileLibs =:= none of
+	  true -> ?DEFAULT_LIBS;
+	  false -> FileLibs
+	end,
       case check_version(Rec) of
 	ok -> 
 	  case compute_md5(Libs) of
 	    Md5 -> {ok, FileName};
-	    NewMd5 -> {fail, NewMd5, Libs, FileName}
+	    NewMd5 ->
+	      DiffMd5 = 
+		if is_list(Md5) -> find_diffs_in_md5(NewMd5, Md5);
+		   %% The Md5 was calculated in the old fashion.
+		   true -> none
+		end,
+	      {fail, NewMd5, DiffMd5, Libs, FileName}
 	  end;
 	{error, Vsn} ->
 	  case Md5 =:= none of
@@ -180,7 +186,7 @@ check_init_plt(InputLibs, FileName) ->
 	      {error, Msg};
 	    false ->
 	      NewMd5 = compute_md5(Libs),
-	      {fail, NewMd5, Libs, FileName}
+	      {fail, NewMd5, none, Libs, FileName}
 	  end
       end;
     {error, dets_plt} ->
@@ -190,15 +196,9 @@ check_init_plt(InputLibs, FileName) ->
       {ok, Dets} = dets:open_file(FileName, [{access, read}]),
       case dets:lookup(Dets, md5) of
 	[{md5, _}] -> 
-	  case InputLibs =:= none of
-	    true ->
-	      [{libs, PltLibs}] = dets:lookup(Dets, libs),
-	      ok = dets:close(Dets),
-	      {fail, compute_md5(PltLibs), PltLibs, FileName};
-	    false ->
-	      ok = dets:close(Dets),
-	      {fail, compute_md5(InputLibs), InputLibs, FileName}
-	  end;
+	  [{libs, PltLibs}] = dets:lookup(Dets, libs),
+	  ok = dets:close(Dets),
+	  {fail, compute_md5(PltLibs), none, PltLibs, FileName};
 	[] ->
 	  %% This is a user-defined plt.
 	  ok = dets:close(Dets),
@@ -211,10 +211,7 @@ check_init_plt(InputLibs, FileName) ->
       Msg = io_lib:format("    The file ~s is not a plt file\n", [FileName]),
       {error, Msg};
     {error, no_such_file} ->
-      case InputLibs =:= none of
-	true -> {fail, compute_md5(?DEFAULT_LIBS), ?DEFAULT_LIBS, FileName};
-	false -> {fail, compute_md5(InputLibs), InputLibs, FileName}
-      end;
+      {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
     {error, read_error} ->
       Msg = io_lib:format("    Could not read the file ~s\n", [FileName]),
       {error, Msg}
@@ -225,30 +222,48 @@ compute_md5(Libs) ->
   Dirs = [filename:join(L, "ebin") || L <- LibDirs],
   case list_dirs(Dirs) of
     {error, List} ->
-      Msg = lists:flatten(io_lib:format("Invalid libraries: ~w\n", [List])),
-      erlang:fault(Msg);
+      error(io_lib:format("Invalid libraries: ~w\n", [List]));
     {ok, List} ->
       BeamFiles = [filename:join(Dir, X) 
 		   || {Dir, X} <- List, filename:extension(X)==".beam"],
-      Context = erlang:md5_init(),
-      Fun = fun(X, Acc) ->
-		compute_md5_from_file(X, Acc)
-	    end,
-      FinalContext = lists:foldl(Fun, Context, lists:sort(BeamFiles)),
-      erlang:md5_final(FinalContext)
+      [compute_md5_from_file(F) || F <- lists:sort(BeamFiles)]
   end.
 
-compute_md5_from_file(File, Acc) ->
+compute_md5_from_file(File) ->
   %% Avoid adding stuff like compile time etc.
-  ChunkNames = sets:from_list(["Atom", "Code", "FunT", "StrT", "ImpT", "ExpT"]),
-  {ok, _, Chunks} = beam_lib:all_chunks(File),
-  Fun = fun({Name, Content}, FunAcc) ->
-	    case sets:is_element(Name, ChunkNames) of
-	      true -> erlang:md5_update(FunAcc, Content);
-	      false -> FunAcc
-	    end
+  ChunkNames = ["Atom", "Code", "StrT", "ImpT", "ExpT"],
+  case beam_lib:chunks(File, ChunkNames) of
+    {ok, {Module, Chunks1}} ->
+      %% Check if funt is available, it might not be but this is not a problem
+      FinalChunks =
+	case beam_lib:chunks(File, ["FunT"]) of
+	  {ok, {Module, Chunks2}} -> Chunks2 ++ Chunks1;
+	  {error, beam_lib, {missing_chunk, _, _}} -> Chunks1
 	end,
-  lists:foldl(Fun, Acc, Chunks).
+      {Module, erlang:md5(term_to_binary(FinalChunks))};
+    {error, beam_lib, Reason} ->
+      throw({dialyzer_error, 
+	     io_lib:format("Could not compute md5 for file: ~s\nReason: ~p\n", 
+			   [File, Reason])})
+  end.
+
+find_diffs_in_md5(NewMd5, OldMd5) ->
+  find_diffs_in_md5(NewMd5, OldMd5, []).
+
+find_diffs_in_md5([{Mod, Md5}|Left1], [{Mod, Md5}|Left2], Acc) ->
+  find_diffs_in_md5(Left1, Left2, Acc);
+find_diffs_in_md5([{Mod, _}|Left1], [{Mod, _}|Left2], Acc) ->
+  find_diffs_in_md5(Left1, Left2, [{diff, Mod}|Acc]);
+find_diffs_in_md5([{Mod1, _}|Left1], L2 =[{Mod2, _}|_], Acc) when Mod1 < Mod2 ->
+  find_diffs_in_md5(Left1, L2, [{new, Mod1}|Acc]);
+find_diffs_in_md5(L1 =[{Mod1, _}|_], [{Mod2, _}|Left2], Acc) when Mod1 > Mod2 ->
+  find_diffs_in_md5(L1, Left2, [{removed, Mod2}|Acc]);
+find_diffs_in_md5([], [], Acc) ->
+  Acc;
+find_diffs_in_md5(L1, [], Acc) ->
+  [{new, Mod} || {Mod, _} <- L1] ++ Acc;
+find_diffs_in_md5([], L2, Acc) ->
+  [{removed, Mod} || {Mod, _} <- L2] ++ Acc.
 
 list_dirs(Dirs) ->
   list_dirs(Dirs, [], []).
@@ -320,10 +335,26 @@ strip_non_member_mfas(Plt, Set) ->
 	      true -> Acc;
 	      false -> [MFA|Acc]
 	    end;
-	   (_, Acc) ->
-	    Acc
+	   ({Label, _, _}, Acc) when is_integer(Label) -> [Label|Acc];
+	   (_, Acc) -> Acc
 	end,
   ets:safe_fixtable(Plt, true),
   Delete = ets:foldl(Fun, [], Plt),
   ets:safe_fixtable(Plt, false),
   delete_list(Plt, Delete).
+
+error(Msg) ->
+  throw({dialyzer_error, lists:flatten(Msg)}).
+
+%%---------------------------------------------------------------------------
+%% Debug utilities.
+
+find_non_returning() ->
+  PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
+  Plt = from_file(foo, PltFile),
+  List = ets:tab2list(Plt),
+  NonRet = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
+			   erl_types:t_is_none(Range)],
+  [io:format("~w :: ~s\n", [MFA, erl_types:t_to_string(Type)])
+   || {MFA, Type} <- NonRet],
+  ok.

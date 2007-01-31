@@ -166,6 +166,7 @@ typedef struct {
     Boolean use_srollable_cursors;
     Boolean tuple_row;
     Boolean exists_more_result_sets;
+    Boolean param_query;
 } db_state;
 
 #define connection_handle(db_state) (db_state -> connection_handle)
@@ -178,3 +179,4 @@ typedef struct {
 #define use_srollable_cursors(db_state) (db_state -> use_srollable_cursors)
 #define tuple_row(db_state) (db_state -> tuple_row)
 #define exists_more_result_sets(db_state) (db_state -> exists_more_result_sets)
+#define param_query(db_state) (db_state -> param_query)

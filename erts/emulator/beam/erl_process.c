@@ -16,11 +16,12 @@
  *     $Id$
  */
 
+#define ERL_PROCESS_C__
+
 #ifdef HAVE_CONFIG_H
 #  include "config.h"
 #endif
 
-#define ERL_PROCESS_C__
 #include "sys.h"
 #include "erl_vm.h"
 #include "global.h"
@@ -72,29 +73,45 @@ static Sint p_serial;
 static Uint p_serial_mask;
 static Uint p_serial_shift;
 
+Uint erts_no_of_schedulers;
+#ifdef ERTS_SMP
+Uint used_schedulers;
+erts_smp_mtx_t msched_blk_mtx;
+erts_smp_cnd_t msched_blk_cnd;
+#endif
 Uint erts_max_processes = ERTS_DEFAULT_MAX_PROCESSES;
 Uint erts_process_tab_index_mask;
 
 erts_smp_atomic_t erts_tot_proc_mem; /* in bytes */
 
+int block_multi_scheduling;
+int is_setting_block_multi_scheduling;
+ProcessList *block_multi_scheduling_procs;
+
 #ifdef USE_THREADS
 static erts_tsd_key_t sched_data_key;
 #endif
 
-static erts_smp_mtx_t schdlq_mtx;
-static erts_smp_cnd_t schdlq_cnd;
+erts_smp_mtx_t schdlq_mtx;
 static erts_smp_mtx_t proc_tab_mtx;
+
+#ifdef ERTS_SMP
+static erts_smp_cnd_t schdlq_cnd;
+int erts_all_schedulers_waiting;
+#ifndef ERTS_SMP_USE_IO_THREAD
+static int doing_sys_schedule;
+static int waiting_in_sys_schedule = 0;
+#endif
+#endif
+#ifndef ERTS_SMP_USE_IO_THREAD
+static int function_calls = 0;
+#endif
 
 #ifdef ERTS_SMP
 erts_proc_lock_t erts_proc_locks[ERTS_PROC_LOCKS_NO_OF];
 
 static ErtsSchedulerData *schedulers;
-static Uint last_scheduler_no;
-static Uint no_schedulers;
-static erts_smp_atomic_t atomic_no_schedulers;
 static Uint schedulers_waiting_on_runq;
-static Uint use_no_schedulers;
-static int changing_no_schedulers;
 static ProcessList *pending_exiters;
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
@@ -109,7 +126,7 @@ static struct {
 ErtsSchedulerData erts_scheduler_data;
 #endif
 
-static void init_sched_thr_data(ErtsSchedulerData *esdp);
+static void init_sched_thr_data(ErtsSchedulerData *esdp, Uint id);
 
 typedef struct schedule_q {
     Process* first;
@@ -147,9 +164,24 @@ Process** erts_active_procs;
 
 static erts_smp_atomic_t process_count;
 
+#define ERTS_MAX_MISC_OPS 5
+
+typedef struct ErtsMiscOpList_ ErtsMiscOpList;
+struct ErtsMiscOpList_ {
+    ErtsMiscOpList *next;
+    void (*func)(void *arg);
+    void *arg;
+};
+
+static ErtsMiscOpList *misc_op_queue;
+static ErtsMiscOpList *misc_op_queue_end;
+
+ERTS_QUALLOC_IMPL(misc_op_list, ErtsMiscOpList, 10, ERTS_ALC_T_MISC_OP_LIST)
+
 /*
  * Local functions.
  */
+static void exec_misc_ops(void);
 static void print_function_from_pc(int to, void *to_arg, Eterm* x);
 static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
 			      int yreg);
@@ -393,7 +425,12 @@ erts_proc_lc_chk_no_proc_locks(char *file, int line)
     }
 }
 
-#endif
+int erts_smp_is_sched_locked(void)
+{
+    return erts_smp_lc_mtx_is_locked(&schdlq_mtx);
+}
+
+#endif /* #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK) */
 
 void
 erts_pre_init_process(void)
@@ -410,7 +447,6 @@ erts_pre_init_process(void)
     lc_id.proc_lock_msgq	= erts_lc_get_lock_order_id("proc_msgq");
     lc_id.proc_lock_status	= erts_lc_get_lock_order_id("proc_status");
 #endif
-
 }
 
 /* initialize the scheduler */
@@ -422,6 +458,15 @@ erts_init_process(void)
 #ifndef ERTS_SMP
     ErtsSchedulerData *esdp;
 #endif
+
+#ifdef ERTS_USE_PORT_TASKS
+    erts_port_task_init();
+#endif
+
+    init_misc_op_list_alloc();
+
+    misc_op_queue = NULL;
+    misc_op_queue_end = NULL;
 
     erts_smp_atomic_init(&process_count, 0);
 
@@ -444,15 +489,27 @@ erts_init_process(void)
     erts_num_active_procs = 0;
 #endif
 
+#ifndef ERTS_SMP_USE_IO_THREAD
+    function_calls = 0;
+#endif
+
+    block_multi_scheduling = 0;
+    is_setting_block_multi_scheduling = 0;
+    block_multi_scheduling_procs = 0;
+
 #ifdef ERTS_SMP
+    erts_no_of_schedulers = 0;
+    used_schedulers = 0;
+    erts_smp_mtx_init(&msched_blk_mtx, "multi_scheduling_block");
+    erts_smp_cnd_init(&msched_blk_cnd);
+    erts_all_schedulers_waiting = 0;
+#ifndef ERTS_SMP_USE_IO_THREAD
+    doing_sys_schedule = 0;
+    waiting_in_sys_schedule = 0;
+#endif
     erts_smp_mtx_init(&schdlq_mtx, "schdlq");
     erts_smp_cnd_init(&schdlq_cnd);
 
-    use_no_schedulers = 1;
-    changing_no_schedulers = 0;
-    no_schedulers = 0;
-    erts_smp_atomic_init(&atomic_no_schedulers, 0L);
-    last_scheduler_no = 0;
     schedulers_waiting_on_runq = 0;
 
     schedulers = NULL;
@@ -469,13 +526,14 @@ erts_init_process(void)
 
 #else /* !ERTS_SMP */
 
+    erts_no_of_schedulers = 1;
     esdp = &erts_scheduler_data;
 
 #ifdef USE_THREADS
     erts_tsd_set(sched_data_key, (void *) esdp);
 #endif
 
-    init_sched_thr_data(esdp);
+    init_sched_thr_data(esdp, 1);
 
 #endif
 
@@ -507,10 +565,32 @@ erts_init_process(void)
 
 #ifdef ERTS_SMP
 
+void
+erts_wake_one_scheduler(void)
+{
+    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+#ifndef ERTS_SMP_USE_IO_THREAD
+    if (schedulers_waiting_on_runq == 1 && waiting_in_sys_schedule)
+	erts_sys_schedule_interrupt(1);
+    else
+#endif
+	erts_smp_cnd_signal(&schdlq_cnd);
+}
+
+static void
+wake_all_schedulers(void)
+{
+    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+#ifndef ERTS_SMP_USE_IO_THREAD
+    erts_sys_schedule_interrupt(1);
+#endif
+    erts_smp_cnd_broadcast(&schdlq_cnd);
+}
+
 static void
 prepare_for_block(void *c_p)
 {
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
     if (c_p)
 	erts_smp_proc_unlock((Process *) c_p, ERTS_PROC_LOCK_MAIN);
 }
@@ -520,47 +600,18 @@ resume_after_block(void *c_p)
 {
     if (c_p)
 	erts_smp_proc_lock((Process *) c_p, ERTS_PROC_LOCK_MAIN);
-    erts_smp_mtx_lock(&schdlq_mtx);
-}
-
-void
-erts_start_schedulers(Uint wanted)
-{
-    int res;
-    int want_reschedule;
-    Uint actual;
-    if (wanted < 1)
-	wanted = 1;
-    res = erts_set_no_schedulers(NULL, NULL, &actual, wanted, 
-				 &want_reschedule);
-    if (actual < 1)
-	erl_exit(1,
-		 "Failed to create any scheduler-threads: %s (%d)\n",
-		 erl_errno_id(res),
-		 res);
-    if (want_reschedule)
-	erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
-    if (res != 0) {
-	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
-	ASSERT(actual != wanted);
-	erts_dsprintf(dsbufp,
-		      "Failed to create %bpu scheduler-threads (%s:%d); "
-		      "only %bpu scheduler-thread%s created.\n",
-		      wanted, erl_errno_id(res), res,
-		      actual, actual == 1 ? " was" : "s were");
-	erts_send_error_to_logger_nogl(dsbufp);
-    }
+    erts_smp_sched_lock();
 }
 
 #endif /* #ifdef ERTS_SMP */
 
 static void
-init_sched_thr_data(ErtsSchedulerData *esdp)
+init_sched_thr_data(ErtsSchedulerData *esdp, Uint id)
 {
 #ifdef ERTS_SMP
     erts_bits_init_state(&esdp->erl_bits_state);
     esdp->match_pseudo_process = NULL;
-    esdp->no = last_scheduler_no;
+    esdp->no = id;
     esdp->free_process = NULL;
 #endif
 
@@ -584,7 +635,7 @@ static ERTS_INLINE void
 suspend_process(Process *p)
 {
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p));
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_mtx_is_locked(&schdlq_mtx));
+    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
 
     p->rcount++;  /* count number of suspend */
 #ifdef ERTS_SMP
@@ -652,23 +703,190 @@ resume_process(Process *p)
 #ifdef ERTS_SMP
 
 static void
+block_multi_scheduling_block(void)
+{
+    used_schedulers--;
+    if (used_schedulers == 1)
+	erts_wake_one_scheduler(); /* The one performing the block */
+    while (block_multi_scheduling) {
+	erts_smp_sched_unlock();
+	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	erts_smp_mtx_lock(&msched_blk_mtx);
+	while (block_multi_scheduling)
+	    erts_smp_cnd_wait(&msched_blk_cnd, &msched_blk_mtx);
+	erts_smp_mtx_unlock(&msched_blk_mtx);
+	erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	erts_smp_sched_lock();
+    }
+    used_schedulers++;
+    erts_all_schedulers_waiting = 0;
+}
+
+/*
+ * Return values:
+ *  < 0: reschedule operation
+ *  0:   multi-scheduling
+ *  > 1: multi-scheduling blocked
+ */
+
+int
+erts_block_multi_scheduling(Process *p, Uint32 plocks, int on, int all)
+{
+    int res;
+    ProcessList *plp;
+    int have_unlocked_plocks = 0;
+
+    erts_smp_sched_lock();
+    if (on) {
+	res = 1;
+
+	if (block_multi_scheduling) {
+	    plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+	    plp->pid = p->id;
+	    plp->next = block_multi_scheduling_procs;
+	    block_multi_scheduling_procs = plp;
+	    p->flags |= F_HAVE_BLCKD_MSCHED;
+	}
+	else {
+	    if (is_setting_block_multi_scheduling) {
+		p->freason = RESCHEDULE;
+		res = -1; /* Reschedule */
+	    }
+	    else {
+		is_setting_block_multi_scheduling = 1;
+		erts_smp_mtx_lock(&msched_blk_mtx);
+		block_multi_scheduling = 1;
+		erts_smp_mtx_unlock(&msched_blk_mtx);
+		p->flags |= F_HAVE_BLCKD_MSCHED;
+		if (plocks) {
+		    have_unlocked_plocks = 1;
+		    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
+		}
+		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
+					prepare_for_block,
+					resume_after_block,
+					NULL);
+		wake_all_schedulers();
+		while (used_schedulers != 1)
+		    erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
+		erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
+				      prepare_for_block,
+				      resume_after_block,
+				      NULL);
+		plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+		plp->pid = p->id;
+		plp->next = block_multi_scheduling_procs;
+		block_multi_scheduling_procs = plp;
+		is_setting_block_multi_scheduling = 0;
+	    }
+	}
+    }
+    else {
+	if (!block_multi_scheduling)
+	    res = 0;
+	else {
+	    Eterm pid = p->id;
+	    ProcessList **plpp = &block_multi_scheduling_procs;
+	    plp = block_multi_scheduling_procs;
+
+	    while (plp) {
+		if (plp->pid != pid){
+		    plpp = &plp->next;
+		    plp = plp->next;
+		}
+		else {
+		    *plpp = plp->next;
+		    erts_free(ERTS_ALC_T_PROC_LIST, plp);
+		    if (!all)
+			break;
+		    plp = *plpp;
+		}
+	    }
+
+	    if (block_multi_scheduling_procs)
+		res = 1;
+	    else {
+		res = 0;
+		erts_smp_mtx_lock(&msched_blk_mtx);
+		block_multi_scheduling = 0;
+		erts_smp_cnd_broadcast(&msched_blk_cnd);
+		erts_smp_mtx_unlock(&msched_blk_mtx);
+	    }
+	}
+    }
+
+    erts_smp_sched_unlock();
+    if (have_unlocked_plocks)
+	erts_smp_proc_lock(p, plocks);
+    return res;
+}
+
+
+int
+erts_is_multi_scheduling_blocked(void)
+{
+    int res;
+    erts_smp_sched_lock();
+    res = block_multi_scheduling && used_schedulers == 1;
+    erts_smp_sched_unlock();
+    return res;
+}
+
+Eterm
+erts_multi_scheduling_blockers(Process *p)
+{
+    Eterm res = NIL;
+    erts_smp_sched_lock();
+
+    if (!block_multi_scheduling || used_schedulers != 1) {
+	ASSERT(!block_multi_scheduling_procs);
+    }
+    else {
+	Eterm *hp, *hp_end;
+	ProcessList *plp1, *plp2;
+	Uint max_size;
+	ASSERT(block_multi_scheduling_procs);
+	for (max_size = 0, plp1 = block_multi_scheduling_procs;
+	     plp1;
+	     plp1 = plp1->next) {
+	    max_size += 2;
+	}
+	ASSERT(max_size);
+	hp = HAlloc(p, max_size);
+	hp_end = hp + max_size;
+	for (plp1 = block_multi_scheduling_procs; plp1; plp1 = plp1->next) {
+	    for (plp2 = block_multi_scheduling_procs;
+		 plp2->pid != plp1->pid;
+		 plp2 = plp2->next);
+	    if (plp2 == plp1) {
+		res = CONS(hp, plp1->pid, res);
+		hp += 2;
+	    }
+	    /* else: already in result list */
+	}
+	HRelease(p, hp_end, hp);
+    }
+    erts_smp_sched_unlock();
+    return res;
+}
+
+static void
 exit_sched_thr(ErtsSchedulerData *esdp, int schdlq_mtx_locked)
 {
     ASSERT(esdp);
     if (!schdlq_mtx_locked)
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
     if (esdp->prev)
 	esdp->prev->next = esdp->next;
     else
 	schedulers = esdp->next;
     if (esdp->next)
 	esdp->next->prev = esdp->prev;
-    no_schedulers--;
-    erts_smp_atomic_dec(&atomic_no_schedulers);
     erts_bits_destroy_state(&esdp->erl_bits_state);
     erts_free(ERTS_ALC_T_SCHDLR_DATA, (void *) esdp);
-    erts_smp_cnd_broadcast(&schdlq_cnd);
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    wake_all_schedulers();
+    used_schedulers--;
+    erts_smp_sched_unlock();
     erts_thr_exit(NULL);
 }
 
@@ -693,6 +911,72 @@ sched_thread_func(void *vesdp)
     exit_sched_thr((ErtsSchedulerData *) vesdp, 0);
     return NULL;
 }
+
+#ifdef ERTS_SMP
+
+void
+erts_start_schedulers(Uint wanted_no_of_schedulers)
+{
+    int res = 0;
+    Uint actual = 0;
+    Uint wanted = wanted_no_of_schedulers;
+    if (wanted < 1)
+	wanted = 1;
+    if (wanted > ERTS_MAX_NO_OF_SCHEDULERS) {
+	wanted = ERTS_MAX_NO_OF_SCHEDULERS;
+	res = ENOTSUP;
+    }
+
+    erts_smp_sched_lock();
+
+    while (actual < wanted) {
+	ErtsSchedulerData *esdp;
+	int cres;
+	esdp = erts_alloc_fnf(ERTS_ALC_T_SCHDLR_DATA, sizeof(ErtsSchedulerData));
+	if (!esdp) {
+	    res = ENOMEM;
+	    break;
+	}
+	actual++;
+	init_sched_thr_data(esdp, actual);
+	cres = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,1);
+	if (cres != 0) {
+	    res = cres;
+	    erts_free(ERTS_ALC_T_SCHDLR_DATA, (void *) esdp);
+	    actual--;
+	    break;
+	}
+
+	if (schedulers)
+	    schedulers->prev = esdp;
+	esdp->next = schedulers;
+	esdp->prev = NULL;
+	schedulers = esdp;
+    }
+
+    erts_no_of_schedulers = actual;
+    used_schedulers = actual;
+
+    erts_smp_sched_unlock();
+
+    if (actual < 1)
+	erl_exit(1,
+		 "Failed to create any scheduler-threads: %s (%d)\n",
+		 erl_errno_id(res),
+		 res);
+    if (res != 0) {
+	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	ASSERT(actual != wanted_no_of_schedulers);
+	erts_dsprintf(dsbufp,
+		      "Failed to create %bpu scheduler-threads (%s:%d); "
+		      "only %bpu scheduler-thread%s created.\n",
+		      wanted_no_of_schedulers, erl_errno_id(res), res,
+		      actual, actual == 1 ? " was" : "s were");
+	erts_send_error_to_logger_nogl(dsbufp);
+    }
+}
+
+#endif
 
 static void
 add_to_proc_list(ProcessList** plpp, Eterm pid)
@@ -759,9 +1043,9 @@ handle_pending_suspend(Process *p, Uint32 p_locks)
 	    ASSERT(is_nil(rp->suspendee));
 	    rp->suspendee = suspendee;
 	    if (do_suspend) {
-		erts_smp_mtx_lock(&schdlq_mtx);
+		erts_smp_sched_lock();
 		suspend_process(p);
-		erts_smp_mtx_unlock(&schdlq_mtx);
+		erts_smp_sched_unlock();
 		do_suspend = 0;
 	    }
 	    /* rp is suspended waiting for p to suspend: resume rp */
@@ -823,11 +1107,11 @@ erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
 		       suspendee, ERTS_PROC_LOCK_STATUS);
 
     if (rp) {
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
 	if (!(rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)) {
 	    Uint32 need_locks = suspendee_locks & ~ERTS_PROC_LOCK_STATUS;
 	    suspend_process(rp);
-	    erts_smp_mtx_unlock(&schdlq_mtx);
+	    erts_smp_sched_unlock();
 	    c_p->suspendee = suspendee;
 	    if (need_locks && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
 		erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
@@ -842,7 +1126,7 @@ erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
 	    /* Suspend c_p (caller is assumed to return to process_main
 	       immediately). When rp is suspended c_p will be resumed. */
 	    suspend_process(c_p);
-	    erts_smp_mtx_unlock(&schdlq_mtx);
+	    erts_smp_sched_unlock();
 	    c_p->freason = RESCHEDULE;
 	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
 	    rp = NULL;
@@ -907,7 +1191,7 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 	if (!rp)
 	    goto done;
 
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
 	if (rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED) {
 	scheduled:
 	    /* Phiu... */
@@ -926,13 +1210,13 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 	else {
 	    Uint32 need_locks = pid_locks & ~ERTS_PROC_LOCK_STATUS;
 	    if (need_locks && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
-		erts_smp_mtx_unlock(&schdlq_mtx);
+		erts_smp_sched_unlock();
 		erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
 		rp = erts_pid2proc(c_p, c_p_locks|ERTS_PROC_LOCK_STATUS,
 				   pid, pid_locks|ERTS_PROC_LOCK_STATUS);
 		if (!rp)
 		    goto done;
-		erts_smp_mtx_lock(&schdlq_mtx);
+		erts_smp_sched_lock();
 		if (rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED) {
 		    /* Ahh... */
 		    erts_smp_proc_unlock(rp,
@@ -943,7 +1227,7 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 
 	    /* rp is not scheduled and we got the locks we want... */
 	}
-	erts_smp_mtx_unlock(&schdlq_mtx);
+	erts_smp_sched_unlock();
     }
 
  done:
@@ -1427,123 +1711,6 @@ erts_proc_safelock(Process * this_proc,
 
 #endif /* ERTS_SMP */
 
-Uint erts_get_no_schedulers(void)
-{
-#ifndef ERTS_SMP
-    return 1;
-#else
-    return (Uint) erts_smp_atomic_read(&atomic_no_schedulers);
-#endif
-}
-
-int
-erts_set_no_schedulers(Process *c_p, Uint *oldp, Uint *actualp, Uint wanted, int *reschedule)
-{
-#ifndef ERTS_SMP
-    *reschedule = 0;
-    if (oldp)
-	*oldp = 1;
-    if (actualp)
-	*actualp = 1;
-    if (wanted < 1)
-	return EINVAL;
-    if (wanted != 1)
-	return ENOTSUP;
-    return 0;
-#else
-    int res = 0;
-    ErtsSchedulerData *esdp;
-
-    *reschedule = 0;
-    erts_smp_mtx_lock(&schdlq_mtx);
-
-    if (oldp)
-	*oldp = no_schedulers;
-
-    if (wanted < 1) {
-	res = EINVAL;
-	goto done;
-    }
-
-    if (changing_no_schedulers) {
-	/*
-	 * Only one scheduler at a time is allowed to change the
-	 * number of schedulers. Currently, someone else is doing
-	 * this, i.e. we need to rescheduler c_p ...
-	 */
-	*reschedule = 1;
-	goto done;
-    }
-
-    changing_no_schedulers = 1;
-
-    use_no_schedulers = wanted;
-
-    if (use_no_schedulers > ERTS_MAX_NO_OF_SCHEDULERS) {
-	use_no_schedulers = ERTS_MAX_NO_OF_SCHEDULERS;
-	res = EAGAIN;
-    }
-
-    while (no_schedulers > use_no_schedulers) {
-	erts_smp_cnd_broadcast(&schdlq_cnd);
-
-	/* Wait for another scheduler to terminate ... */
-	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
-				prepare_for_block,
-				resume_after_block,
-				(void *) c_p);
-	erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
-	erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
-			      prepare_for_block,
-			      resume_after_block,
-			      (void *) c_p);
-    }
-
-
-    while (no_schedulers < use_no_schedulers) {
-	int cres;
-	erts_smp_chk_system_block(prepare_for_block,
-				  resume_after_block,
-				  (void *) c_p);
-	esdp = erts_alloc_fnf(ERTS_ALC_T_SCHDLR_DATA, sizeof(ErtsSchedulerData));
-	if (!esdp) {
-	    res = ENOMEM;
-	    use_no_schedulers = no_schedulers;
-	    break;
-	}
-	last_scheduler_no++;
-	init_sched_thr_data(esdp);
-	cres = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,1);
-	if (cres != 0) {
-	    res = cres;
-	    erts_free(ERTS_ALC_T_SCHDLR_DATA, (void *) esdp);
-	    last_scheduler_no--;
-	    use_no_schedulers = no_schedulers;
-	    break;
-	}
-
-	no_schedulers++;
-	erts_smp_atomic_inc(&atomic_no_schedulers);
-
-	if (schedulers)
-	    schedulers->prev = esdp;
-	esdp->next = schedulers;
-	esdp->prev = NULL;
-	schedulers = esdp;
-    }
-
-    changing_no_schedulers = 0;
-
- done:
-    if (actualp)
-	*actualp = no_schedulers;
-
-    erts_smp_mtx_unlock(&schdlq_mtx);
-
-    return res;
-#endif /* ERTS_SMP */
-}
-
 int
 sched_q_len(void)
 {
@@ -1552,7 +1719,7 @@ sched_q_len(void)
 #endif
     Sint len = 0;
 
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
 
 #ifdef DEBUG
     for (i = 0; i < NPRIORITY_LEVELS - 1; i++) {
@@ -1567,7 +1734,7 @@ sched_q_len(void)
 
     len = runq_len;
 
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
 
     return (int) len;
 }
@@ -1603,7 +1770,7 @@ internal_add_to_schedule_q(Process *p)
 #ifdef ERTS_SMP
 
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p));
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_mtx_is_locked(&schdlq_mtx));
+    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
 
     if (p->status_flags & ERTS_PROC_SFLG_INRUNQ)
 	return;
@@ -1661,13 +1828,10 @@ internal_add_to_schedule_q(Process *p)
 void
 add_to_schedule_q(Process *p)
 {
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     internal_add_to_schedule_q(p);
-#ifdef ERTS_SMP
-    if (no_schedulers == schedulers_waiting_on_runq)
-	erts_smp_cnd_signal(&schdlq_cnd);
-#endif
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_notify_inc_runq();
+    erts_smp_sched_unlock();
 }
 
 /* Possibly remove a scheduled process we need to suspend */
@@ -1803,14 +1967,14 @@ erts_process_status(Process *c_p, Uint32 c_p_locks,
     }
     else {
 	ErtsSchedulerData *esdp;
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
 	for (esdp = schedulers; esdp; esdp = esdp->next) {
 	    if (esdp->free_process && esdp->free_process->id == rpid) {
 		res = am_free;
 		break;
 	    }
 	}
-	erts_smp_mtx_unlock(&schdlq_mtx);
+	erts_smp_sched_unlock();
 #endif
 
     }
@@ -1825,21 +1989,21 @@ erts_process_status(Process *c_p, Uint32 c_p_locks,
 */
 
 void
-erts_suspend(Process* process, Uint32 process_locks, Eterm busy_port)
+erts_suspend(Process* process, Uint32 process_locks, Port *busy_port)
 {
 
     ERTS_SMP_LC_ASSERT(process_locks == erts_proc_lc_my_proc_locks(process));
     if (!(process_locks & ERTS_PROC_LOCK_STATUS))
 	erts_smp_proc_lock(process, ERTS_PROC_LOCK_STATUS);
 
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
 
     suspend_process(process);
 
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
 
-    if (busy_port != NIL)
-	wake_process_later(busy_port, process);
+    if (busy_port)
+	erts_wake_process_later(busy_port, process);
 
     if (!(process_locks & ERTS_PROC_LOCK_STATUS))
 	erts_smp_proc_unlock(process, ERTS_PROC_LOCK_STATUS);
@@ -1862,7 +2026,7 @@ erts_get_process_priority(Process *p)
 {
     Eterm value;
     ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(p));
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     switch(p->prio) {
     case PRIORITY_MAX:		value = am_max;			break;
     case PRIORITY_HIGH:		value = am_high;		break;
@@ -1870,7 +2034,7 @@ erts_get_process_priority(Process *p)
     case PRIORITY_LOW:		value = am_low;			break;
     default: ASSERT(0);		value = am_undefined;		break;
     }
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
     return value;
 }
 
@@ -1879,7 +2043,7 @@ erts_set_process_priority(Process *p, Eterm new_value)
 {
     Eterm old_value;
     ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(p));
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     switch(p->prio) {
     case PRIORITY_MAX:		old_value = am_max;		break;
     case PRIORITY_HIGH:		old_value = am_high;		break;
@@ -1894,11 +2058,9 @@ erts_set_process_priority(Process *p, Eterm new_value)
     case am_low:		p->prio = PRIORITY_LOW;		break;
     default:			old_value = THE_NON_VALUE;	break;
     }
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
     return old_value;
 }
-
-
 
 /* note that P_RUNNING is only set so that we don't try to remove
 ** running processes from the schedule queue if they exit - a running
@@ -1928,19 +2090,29 @@ erts_set_process_priority(Process *p, Eterm new_value)
 Process *schedule(Process *p, int calls)
 {
     ScheduleQ *sq;
-#ifndef ERTS_SMP
-    static int function_calls;
-#endif
     long dt;
     ErtsSchedulerData *esdp;
-    
+    int context_reds;
+    int input_reductions;
+
+    if (ERTS_USE_MODIFIED_TIMING()) {
+	context_reds = ERTS_MODIFIED_TIMING_CONTEXT_REDS;
+	input_reductions = ERTS_MODIFIED_TIMING_INPUT_REDS;
+    }
+    else {
+	context_reds = CONTEXT_REDS;
+	input_reductions = INPUT_REDUCTIONS;
+    }
+
+    ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+
     /*
      * Clean up after the process being suspended.
      */
     if (!p) {	/* NULL in the very first schedule() call */
 	esdp = erts_get_scheduler_data();
 	ASSERT(esdp);
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
     } else {
 #ifdef ERTS_SMP
 	esdp = p->scheduler_data;
@@ -1949,6 +2121,8 @@ Process *schedule(Process *p, int calls)
 #else
 	esdp = &erts_scheduler_data;
 	ASSERT(esdp->current_process == p);
+#endif
+#ifndef ERTS_SMP_USE_IO_THREAD
 	function_calls += calls;
 #endif
 	reductions += calls;
@@ -1972,7 +2146,7 @@ Process *schedule(Process *p, int calls)
 		   || p->status != P_SUSPENDED);
 	}
 #endif
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
 
 	/* Rule of thumb, only trace when we have a valid current_process */
 	if (p->status != P_FREE && IS_TRACED_FL(p, F_TRACE_SCHED)) {
@@ -2016,27 +2190,183 @@ Process *schedule(Process *p, int calls)
 
 	dt = do_time_read_and_reset();
 	if (dt) {
-	    erts_smp_mtx_unlock(&schdlq_mtx);
+	    erts_smp_sched_unlock();
 	    bump_timer(dt);
-	    erts_smp_mtx_lock(&schdlq_mtx);
+	    erts_smp_sched_lock();
 	}
 	BM_STOP_TIMER(system);
 
     }
 
-    /*
-     * Find a new process to run.
-     */
- pick_next_process:
-#ifdef ERTS_SMP
-    erts_smp_chk_system_block(prepare_for_block, resume_after_block, NULL);
-    if (no_schedulers > use_no_schedulers)
-	exit_sched_thr(esdp, 1);
-
-#else
-    if (function_calls <= INPUT_REDUCTIONS)
+    ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+ check_activities_to_run: {
+#ifdef ERTS_USE_PORT_TASKS
+	long port_runq_len;
 #endif
-    {
+	long tot_runq_len;
+	
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+	ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+
+	if (misc_op_queue)
+	    exec_misc_ops();
+
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+	ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+
+#ifdef ERTS_SMP
+	if (block_multi_scheduling && used_schedulers != 1)
+	    block_multi_scheduling_block();
+	else
+	    erts_smp_chk_system_block(prepare_for_block,
+				      resume_after_block,
+				      NULL);
+#endif
+
+	tot_runq_len = runq_len;
+
+#ifdef ERTS_USE_PORT_TASKS
+	port_runq_len = erts_port_task_port_queue_len();
+	tot_runq_len += port_runq_len;
+#endif
+
+
+#ifdef ERTS_SMP
+	if (schedulers_waiting_on_runq && tot_runq_len > 1)
+	    erts_wake_one_scheduler();
+
+	if (tot_runq_len == 0) {
+	empty_runq:
+	    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+	    schedulers_waiting_on_runq++;
+	    if (used_schedulers == schedulers_waiting_on_runq)
+		erts_all_schedulers_waiting = 1;
+#ifndef ERTS_SMP_USE_IO_THREAD
+	    if (!doing_sys_schedule
+#ifdef ERTS_USE_PORT_TASKS
+		&& !erts_port_task_have_outstanding_io_tasks()
+#endif
+		) {
+		function_calls = 0;
+		waiting_in_sys_schedule = doing_sys_schedule = 1;
+		erts_sys_schedule_interrupt(0);
+		erts_smp_sched_unlock();
+		erl_sys_schedule(0);
+		dt = do_time_read_and_reset();
+		if (dt) bump_timer(dt);
+		erts_smp_sched_lock();
+		waiting_in_sys_schedule = doing_sys_schedule = 0;
+	    }
+	    else
+#endif
+	    {
+#ifndef ERTS_SMP_USE_IO_THREAD
+		/* If all schedulers are waiting, one of them *should*
+		   be waiting in erl_sys_schedule() */
+		ASSERT(!erts_all_schedulers_waiting
+		       || waiting_in_sys_schedule);
+#endif
+
+		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
+					prepare_for_block,
+					resume_after_block,
+					NULL);
+		erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
+		erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
+				      prepare_for_block,
+				      resume_after_block,
+				      NULL);
+	    }
+	    if (erts_all_schedulers_waiting)
+		erts_all_schedulers_waiting = 0;
+	    ASSERT(schedulers_waiting_on_runq > 0);
+	    schedulers_waiting_on_runq--;
+	    goto check_activities_to_run;
+	}
+#endif /* #ifdef ERTS_SMP */
+#if defined(ERTS_SMP) && !defined(ERTS_SMP_USE_IO_THREAD)
+	else
+#endif
+#ifndef ERTS_SMP_USE_IO_THREAD
+	if (function_calls > input_reductions
+#ifdef ERTS_SMP
+	    && !doing_sys_schedule
+#endif
+#ifdef ERTS_USE_PORT_TASKS
+	    && !erts_port_task_have_outstanding_io_tasks()
+#endif
+	    ) {
+	    int runnable;
+
+#ifdef ERTS_SMP
+	    runnable = 1;
+#else
+	    runnable = tot_runq_len != 0;
+	do_sys_schedule:
+#endif
+
+	    /*
+	     * Schedule system-level activities.
+	     */
+
+	    function_calls = 0;
+#ifdef ERTS_USE_PORT_TASKS
+	    ASSERT(!erts_port_task_have_outstanding_io_tasks());
+#endif
+#ifdef ERTS_SMP
+	    /* erts_sys_schedule_interrupt(0); */
+	    doing_sys_schedule = 1;
+#endif
+	    erts_smp_sched_unlock();
+	    erl_sys_schedule(runnable);
+	    dt = do_time_read_and_reset();
+	    if (dt) bump_timer(dt);
+	    erts_smp_sched_lock();
+#ifdef ERTS_SMP
+	    doing_sys_schedule = 0;
+#endif
+	    goto check_activities_to_run;
+#ifndef ERTS_SMP
+	empty_runq:
+	    runnable = 0;
+	    goto do_sys_schedule;
+#endif
+	}
+#endif /* !ERTS_SMP_USE_IO_THREAD */
+
+#ifdef ERTS_USE_PORT_TASKS
+	/*
+	 * Find a new port to run.
+	 */
+
+	if (port_runq_len) {
+	    int have_outstanding_io = erts_port_task_execute();
+	    if (have_outstanding_io && function_calls > 2*input_reductions) {
+		/*
+		 * If we have performed more than 2*INPUT_REDUCTIONS since
+		 * last call to erl_sys_schedule() and we still haven't
+		 * handled all I/O tasks we stop running processes and
+		 * focus completely on ports.
+		 *
+		 * One could argue that this is a strange behavior. The
+		 * reason for doing it this way is that it is similar
+		 * to the behavior before port tasks were introduced.
+		 * We don't want to change the behavior too much, at
+		 * least not at the time of writing. This behavior
+		 * might change in the future.
+		 *
+		 * /rickard
+		 */
+		goto check_activities_to_run;
+	    }
+	}
+#endif
+
+	/*
+	 * Find a new process to run.
+	 */
+ pick_next_process:
+
       switch (qmask) {
 	case MAX_BIT:
 	case MAX_BIT|HIGH_BIT:
@@ -2079,15 +2409,14 @@ Process *schedule(Process *p, int calls)
 	    }
 	    break;
         case 0:			/* No process at all */
+	default:
+	    ASSERT(qmask == 0);
 	    ASSERT(runq_len == 0);
-	    goto do_sys_schedule;
-#ifdef DEBUG
-	default:
-	    ASSERT(0);
-#else
-	default:
-	    goto do_sys_schedule; /* Should not happen ... */
+#ifdef ERTS_USE_PORT_TASKS
+	    if (erts_port_task_port_queue_len())
+		goto check_activities_to_run;
 #endif
+	    goto empty_runq;
 	}
 
         BM_START_TIMER(system);
@@ -2131,8 +2460,6 @@ Process *schedule(Process *p, int calls)
 
 #ifdef ERTS_SMP
 	p->scheduler_flags |= ERTS_PROC_SCHED_FLG_SCHEDULED;
-	if (runq_len && schedulers_waiting_on_runq)
-	    erts_smp_cnd_signal(&schdlq_cnd);
 #endif
 	
 #ifdef HARDDEBUG
@@ -2145,7 +2472,7 @@ Process *schedule(Process *p, int calls)
 	{
 	    ProcessList *pnd_xtrs = pending_exiters;
 	    pending_exiters = NULL;
-	    erts_smp_mtx_unlock(&schdlq_mtx);
+	    erts_smp_sched_unlock();
 
 	    if (pnd_xtrs)
 		handle_pending_exiters(pnd_xtrs);
@@ -2168,7 +2495,7 @@ Process *schedule(Process *p, int calls)
 	ASSERT(p->status != P_SUSPENDED); /* Never run a suspended process */
 
         ACTIVATE(p);
-	calls = CONTEXT_REDS;
+	calls = context_reds;
 	if (p->status != P_EXITING) {
 	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 		trace_sched(p, am_in);
@@ -2192,37 +2519,75 @@ Process *schedule(Process *p, int calls)
 
 	p->fcalls = calls;
 	ASSERT(IS_ACTIVE(p));
-
 	return p;
     }
+}
 
-    /*
-     * Schedule system-level activities.
-     */
- do_sys_schedule:
+/*
+ * Scheduling of misc stuff
+ */
 
-#ifdef ERTS_SMP
-    schedulers_waiting_on_runq++;
-    erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
-			    prepare_for_block,
-			    resume_after_block,
-			    NULL);
-    erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
-    ASSERT(schedulers_waiting_on_runq > 0);
-    erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
-			  prepare_for_block,
-			  resume_after_block,
-			  NULL);
-    schedulers_waiting_on_runq--;
-#else
-    erl_sys_schedule(qmask);
+void
+erts_schedule_misc_op(void (*func)(void *), void *arg)
+{
+    ErtsMiscOpList *molp;
+    erts_smp_sched_lock();
+    molp = misc_op_list_alloc();
+    molp->next = NULL;
+    molp->func = func;
+    molp->arg = arg;
+    if (misc_op_queue_end)
+	misc_op_queue_end->next = molp;
+    else
+	misc_op_queue = molp;
+    misc_op_queue_end = molp;
+    erts_smp_notify_inc_runq();
+    erts_smp_sched_unlock();
+}
 
-    function_calls = 0;
-    dt = do_time_read_and_reset();
-    if (dt) bump_timer(dt);
-#endif
+static void
+exec_misc_ops(void)
+{
+    int i;
+    ErtsMiscOpList *molp = misc_op_queue;
+    ErtsMiscOpList *tmp_molp = molp;
 
-    goto pick_next_process;
+    for (i = 0; i < ERTS_MAX_MISC_OPS-1; i++) {
+	if (!tmp_molp) 
+	    goto mtq;
+	tmp_molp = tmp_molp->next;
+    }
+    
+    if (!tmp_molp) {
+    mtq:
+	misc_op_queue = NULL;
+	misc_op_queue_end = NULL;
+    }
+    else {
+	misc_op_queue = tmp_molp->next;
+	tmp_molp->next = NULL;
+	if (!misc_op_queue)
+	    misc_op_queue_end = NULL;
+    }
+
+    tmp_molp = molp;
+
+    erts_smp_sched_unlock();
+
+    while (molp) {
+	(*molp->func)(molp->arg);
+	molp = molp->next;
+    }
+
+    erts_smp_sched_lock();
+
+    molp = tmp_molp;
+
+    while (molp) {
+	tmp_molp = molp;
+	molp = molp->next;
+	misc_op_list_free(tmp_molp); /* need sched lock */
+    }
 }
 
 
@@ -2235,9 +2600,9 @@ Uint
 erts_get_total_context_switches(void)
 {
     Uint res;
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     res = context_switches;
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
     return res;
 }
 
@@ -2245,14 +2610,14 @@ void
 erts_get_total_reductions(Uint *redsp, Uint *diffp)
 {
     Uint reds;
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     reds = reductions;
     if (redsp)
 	*redsp = reds;
     if (diffp)
 	*diffp = reds - last_reds;
     last_reds = reds;
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
 }
 
 /*
@@ -2268,14 +2633,14 @@ erts_get_exact_total_reductions(Process *c_p, Uint *redsp, Uint *diffp)
      * Wait for other schedulers to schedule out their processes
      * and update 'reductions'.
      */
-    erts_smp_block_system(ERTS_ACTIVITY_IO); /*erts_smp_mtx_lock(&schdlq_mtx);*/
+    erts_smp_block_system(ERTS_ACTIVITY_IO); /*erts_smp_sched_lock();*/
     reds += reductions;
     if (redsp)
 	*redsp = reds;
     if (diffp)
 	*diffp = reds - last_exact_reds;
     last_exact_reds = reds;
-    erts_smp_release_system(); /*erts_smp_mtx_unlock(&schdlq_mtx);*/
+    erts_smp_release_system(); /*erts_smp_sched_unlock();*/
     erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
 }
 
@@ -2717,7 +3082,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
      * Schedule process for execution.
      */
 
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
 
     qmask |= (1 << p->prio);
 
@@ -2758,8 +3123,8 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->fp_exception = 0;
 #endif
 
-    erts_smp_cnd_signal(&schdlq_cnd);
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_notify_inc_runq();
+    erts_smp_sched_unlock();
 
     res = p->id;
     erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL);
@@ -3213,10 +3578,10 @@ save_pending_exiter(Eterm pid)
 
     plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
     plp->pid = pid;
-    erts_smp_mtx_lock(&schdlq_mtx);
+    erts_smp_sched_lock();
     plp->next = pending_exiters;
     pending_exiters = plp;
-    erts_smp_mtx_unlock(&schdlq_mtx);
+    erts_smp_sched_unlock();
 }
 
 #endif
@@ -3501,15 +3866,13 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	    ASSERT(is_node_name_atom(mon->pid));
 	    dep = erts_sysname_to_connected_dist_entry(mon->pid);
 	    if (dep) {
-		erts_smp_io_lock();
-		erts_smp_dist_entry_lock(dep);
+		erts_dist_op_prepare(dep, NULL, 0);
 		rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		if (rmon) {
 		    dist_demonitor(NULL,0,dep,rmon->pid,mon->name,mon->ref,1);
 		    erts_destroy_monitor(rmon);
 		}
-		erts_smp_io_unlock();
-		erts_smp_dist_entry_unlock(dep);
+		erts_dist_op_finalize(dep);
 		erts_deref_dist_entry(dep);
 	    }
 	} else {
@@ -3530,21 +3893,27 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 		dep = external_pid_dist_entry(mon->pid);
 		ASSERT(dep != NULL);
 		if (dep) {
-		    erts_smp_io_lock();
-		    erts_smp_dist_entry_lock(dep);
+		    erts_dist_op_prepare(dep, NULL, 0);
 		    rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		    if (rmon) {
 			dist_demonitor(NULL,0,dep,rmon->pid,mon->pid,mon->ref,1);
 			erts_destroy_monitor(rmon);
 		    }
-		    erts_smp_io_unlock();
-		    erts_smp_dist_entry_unlock(dep);
+		    erts_dist_op_finalize(dep);
 		}
 	    }
 	}
     } else { /* type == MON_TARGET */
-	ASSERT(mon->type == MON_TARGET && is_pid(mon->pid));
-	if (is_internal_pid(mon->pid)) {/* local by name or pid */
+	ASSERT(mon->type == MON_TARGET);
+	ASSERT(is_pid(mon->pid) || is_internal_port(mon->pid));
+	if (is_internal_port(mon->pid)) {
+	    Port *prt = erts_id2port(mon->pid, NULL, 0);
+	    if (prt == NULL) {
+		goto done;
+	    }
+	    erts_fire_port_monitor(prt, mon->ref);
+	    erts_port_release(prt); 
+	} else if (is_internal_pid(mon->pid)) {/* local by name or pid */
 	    Eterm watched;
 	    Eterm lhp[3];
 	    Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_MSG_SEND;
@@ -3566,11 +3935,10 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	    erts_smp_proc_unlock(rp, rp_locks);
 	} else { /* external by pid or name */
 	    ASSERT(is_external_pid(mon->pid));    
-	    erts_smp_io_lock();
 	    dep = external_pid_dist_entry(mon->pid);
 	    ASSERT(dep != NULL);
 	    if (dep) {
-		erts_smp_dist_entry_lock(dep);
+		erts_dist_op_prepare(dep, NULL, 0);
 		rmon = erts_remove_monitor(&(dep->monitors), mon->ref);
 		if (rmon) {
 		    dist_m_exit(NULL, 0,
@@ -3579,9 +3947,8 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 				mon->ref, pcontext->reason);
 		    erts_destroy_monitor(rmon);
 		}
-		erts_smp_dist_entry_unlock(dep);
+		erts_dist_op_finalize(dep);
 	    }
-	    erts_smp_io_unlock();
 	}
     }
  done:
@@ -3608,7 +3975,6 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
     Eterm exit_tuple = pcontext->exit_tuple;
     Uint exit_tuple_sz = pcontext->exit_tuple_sz;
     Eterm item = lnk->pid;
-    int ix;
     ErtsLink *rlnk;
     DistEntry *dep;
     Process *rp;
@@ -3616,27 +3982,24 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
     switch(lnk->type) {
     case LINK_PID:
 	if(is_internal_port(item)) {
-	    erts_smp_io_lock();
-	    ix = internal_port_index(item);
-	    if (! INVALID_PORT(erts_port+ix, item)) {
-		rlnk = erts_remove_link(&(erts_port[ix].nlinks),
-					p->id);
-		if (rlnk != NULL) {
+	    Port *prt = erts_id2port(item, NULL, 0);
+	    if (prt) {
+		rlnk = erts_remove_link(&prt->nlinks, p->id);
+		if (rlnk)
 		    erts_destroy_link(rlnk);
-		}
-		erts_do_exit_port(item, p->id, reason);
+		erts_do_exit_port(prt, p->id, reason);
+		erts_port_release(prt);
 	    }
-	    erts_smp_io_unlock();
 	}
 	else if(is_external_port(item)) {
-	    dep = external_port_dist_entry(item);
-	    if(dep != erts_this_dist_entry) {
-		erts_smp_io_lock();
-		erts_smp_dist_entry_lock(dep);
-		dist_exit(NULL, 0, dep, p->id, item, reason);
-		erts_smp_dist_entry_unlock(dep);
-		erts_smp_io_unlock();
-	    }
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    erts_dsprintf(dsbufp,
+			  "Erroneous link between %T and external port %T "
+			  "found\n",
+			  p->id,
+			  item);
+	    erts_send_error_to_logger_nogl(dsbufp);
+	    ASSERT(0); /* It isn't possible to setup such a link... */
 	}
 	else if (is_internal_pid(item)) {
 	    Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
@@ -3672,14 +4035,12 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 	else if (is_external_pid(item)) {
 	    dep = external_pid_dist_entry(item);
 	    if(dep != erts_this_dist_entry) {
-		erts_smp_io_lock();
-		erts_smp_dist_entry_lock(dep);
+		erts_dist_op_prepare(dep, NULL, 0);
 		if (SEQ_TRACE_TOKEN(p) != NIL) {
 		    seq_trace_update_send(p);
 		}
 		dist_exit_tt(NULL,0,dep,p->id,item,reason,SEQ_TRACE_TOKEN(p));
-		erts_smp_io_unlock();
-		erts_smp_dist_entry_unlock(dep);
+		erts_dist_op_finalize(dep);
 	    }
 	}
 	break;
@@ -3769,6 +4130,11 @@ erts_do_exit_process(Process* p, Eterm reason)
     if (p->flags & F_USING_DB)
 	db_proc_dead(p->id);
 
+#ifdef ERTS_SMP
+    if (p->flags & F_HAVE_BLCKD_MSCHED)
+	erts_block_multi_scheduling(p, ERTS_PROC_LOCKS_ALL, 0, 1);
+#endif
+
     if (p->flags & F_USING_DDLL) {
 	erts_ddll_proc_dead(p, ERTS_PROC_LOCKS_ALL);
     }
@@ -3778,7 +4144,7 @@ erts_do_exit_process(Process* p, Eterm reason)
      * cleanup.
      */
     if (p->reg)
-	(void) erts_unregister_name(p, ERTS_PROC_LOCKS_ALL, 0, p->reg->name);
+	(void) erts_unregister_name(p, ERTS_PROC_LOCKS_ALL, NULL, p->reg->name);
 
     {
 	int pix;
@@ -3793,7 +4159,7 @@ erts_do_exit_process(Process* p, Eterm reason)
 	pix = internal_pid_index(p->id);
 
 	erts_smp_mtx_lock(&proc_tab_mtx);
-	erts_smp_mtx_lock(&schdlq_mtx);
+	erts_smp_sched_lock();
 	erts_smp_mtx_lock(ptabix_mtxp);
 
 #ifdef ERTS_SMP
@@ -3810,7 +4176,7 @@ erts_do_exit_process(Process* p, Eterm reason)
 	erts_smp_atomic_dec(&process_count);
 
 	erts_smp_mtx_unlock(ptabix_mtxp);
-	erts_smp_mtx_unlock(&schdlq_mtx);
+	erts_smp_sched_unlock();
 
 	if (p_next < 0) {
 	    if (p_last >= p_next) {

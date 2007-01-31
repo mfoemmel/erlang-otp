@@ -157,7 +157,7 @@ static int unload(void* arg1, void* arg2, void* dummy1, void* dummy2)
      * Kill all ports that depend on this driver.
      */
     for (j = 0; j < erts_max_ports; j++) {
-	if (erts_port[j].status != FREE &&
+	if (!(erts_port[j].status & ERTS_PORT_SFLGS_DEAD) &&
 	    erts_port[j].drv_ptr == de->drv) {
 	    driver_failure_atom(j, "driver_unloaded");
 	}

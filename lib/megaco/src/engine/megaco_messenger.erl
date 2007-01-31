@@ -118,8 +118,34 @@
 			Afun
 		end
 	end(Other,Where)).
+-define(TC_AWAIT_CANCEL_EVENT(),
+	case megaco_tc_controller:lookup(block_on_cancel) of
+	    {value, {Tag, Pid}} when is_pid(Pid) ->
+		Pid ! {Tag, self()},
+		receive
+		    {Tag, Pid} ->
+			ok
+		end;
+	    {value, {sleep, To}} when is_integer(To) and (To > 0) ->
+		receive after To -> ok end;
+	    _ ->
+		ok
+	end).
+-define(TC_AWAIT_REPLY_EVENT(Info),
+	case megaco_tc_controller:lookup(block_on_reply) of
+	    {value, {Tag, Pid}} when is_pid(Pid) ->
+		Pid ! {Tag, self(), Info},
+		receive
+		    {Tag, Pid} ->
+			ok
+		end;
+	    _ ->
+		ok
+	end).
 -else.
 -define(SIM(Other,Where),Other).
+-define(TC_AWAIT_CANCEL_EVENT(),ok).
+-define(TC_AWAIT_REPLY_EVENT(_),ok).
 -endif.
 
 
@@ -480,11 +506,6 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, Bin) ->
 			    ?rt3("no requests"),
 			    ignore;
 			[Req|Reqs] when (ConnData#conn_data.threaded == true) ->
-% 			    lists:foreach(
-% 			      fun() -> 
-% 				      spawn(?MODULE,handle_request,[R]) 
-% 			      end, 
-% 			      Reqs),
 			    [spawn(?MODULE,handle_request,[R]) || R <- Reqs],
 			    handle_request(Req);
 			_ ->
@@ -1821,40 +1842,66 @@ handle_recv_pending_error(ConnData, TransId, Req, T) ->
     return_reply(ConnData2, TransId, UserReply).
 
 
-handle_reply(ConnData, T) ->
-    TransId = to_local_trans_id(ConnData),
-    ?rt2("handle reply", [T, TransId]),
+handle_reply(CD, T) ->
+    TransId = to_local_trans_id(CD),
+    ?rt2("handle reply", [T, TransId]), 
     case megaco_monitor:lookup_request(TransId) of
-	[#request{timer_ref = {_Type, Ref}} = Req] -> %% OTP-4843
-            %% Don't care about Req and Rep version diff
-            ?report_trace(ConnData, "trans reply", [T]),
-            megaco_monitor:delete_request(TransId),
-            megaco_monitor:cancel_apply_after(Ref), %% OTP-4843
+	[Req] when is_record(Req, request) and CD#conn_data.cancel == true -> 
+	    ?TC_AWAIT_REPLY_EVENT(true),
+	    do_handle_reply_cancel(CD, Req, T);
 
-	    %% Send acknowledgement
-	    maybe_send_ack(T#'TransactionReply'.immAckRequired, ConnData),
-
-	    UserMod   = Req#request.user_mod,
-	    UserArgs  = Req#request.user_args,
-	    Action    = Req#request.reply_action,
-	    UserData  = Req#request.reply_data,
-	    UserReply =
-		case T#'TransactionReply'.transactionResult of
-		    {transactionError, Reason} ->
-			{error, Reason};
-		    {actionReplies, Replies} ->
-			{ok, Replies}
-		end,
-	    ConnData2 = ConnData#conn_data{user_mod     = UserMod,
-					   user_args    = UserArgs,
-					   reply_action = Action,
-					   reply_data   = UserData},
-	    return_reply(ConnData2, TransId, UserReply);
+	[Req] -> 
+	    ?TC_AWAIT_REPLY_EVENT(false),
+	    %% Just in case conn_data got update after our lookup
+	    %% but before we looked up the request record, we
+	    %% check the cancel field again.
+	    case megaco_config:conn_info(CD, cancel) of
+		true ->
+		    do_handle_reply_cancel(CD, Req, T);
+		false ->
+		    do_handle_reply(CD, Req, TransId, T)
+	    end;
 	[] ->
-	    ?report_trace(ConnData, "trans reply (no receiver)", [T]),
-	    return_unexpected_trans(ConnData, T)
+	    ?TC_AWAIT_REPLY_EVENT(undefined),
+	    ?report_trace(CD, "trans reply (no receiver)", [T]),
+	    return_unexpected_trans(CD, T)
     end.
 
+do_handle_reply_cancel(CD, #request{user_mod     = UserMod,
+				    user_args    = UserArgs, 
+				    reply_action = Action, 
+				    reply_data   = UserData}, T) ->
+    CD2 = CD#conn_data{user_mod     = UserMod,
+		       user_args    = UserArgs,
+		       reply_action = Action,
+		       reply_data   = UserData},
+    return_unexpected_trans(CD2, T).
+
+do_handle_reply(CD, #request{timer_ref    = {_Type, Ref}, % OTP-4843
+			     user_mod     = UserMod,
+			     user_args    = UserArgs, 
+			     reply_action = Action, 
+			     reply_data   = UserData}, TransId, T) ->
+    %% Don't care about Req and Rep version diff
+    ?report_trace(CD, "trans reply", [T]),
+    megaco_monitor:delete_request(TransId),
+    megaco_monitor:cancel_apply_after(Ref), %% OTP-4843
+    
+    %% Send acknowledgement
+    maybe_send_ack(T#'TransactionReply'.immAckRequired, CD),
+
+    UserReply =
+	case T#'TransactionReply'.transactionResult of
+	    {transactionError, Reason} ->
+		{error, Reason};
+	    {actionReplies, Replies} ->
+		{ok, Replies}
+	end,
+    CD2 = CD#conn_data{user_mod     = UserMod,
+		       user_args    = UserArgs,
+		       reply_action = Action,
+		       reply_data   = UserData},
+    return_reply(CD2, TransId, UserReply).
 
 handle_acks([{ConnData, Rep, T} | Rest])
   when Rep#reply.state == waiting_for_ack ->
@@ -2380,7 +2427,7 @@ override_req_send_options(ConnData, [{Key, Val} | Tail]) ->
 	trans_req when Val == false -> 
 	    %% We only allow turning the transaction-sender off, since
 	    %% the opposite (turning it on) would causing to much headake...
-	    %% This vould allow not using the transaction sender for
+	    %% This will allow not using the transaction sender for
 	    %% occasional messages
 	    ConnData2 = ConnData#conn_data{trans_req = Val, 
 					   trans_sender = undefined},
@@ -2410,7 +2457,7 @@ override_rep_send_options(ConnData, [{Key, Val} | Tail]) ->
 	trans_req when Val == false -> 
 	    %% We only allow turning the transaction-sender off, since
 	    %% the opposite (turning it on) would causing to much headake...
-	    %% This vould allow not using the transaction sender for
+	    %% This will allow not using the transaction sender for
 	    %% occasional messages
 	    ConnData2 = ConnData#conn_data{trans_req = Val, 
 					   trans_sender = undefined},
@@ -2689,7 +2736,7 @@ send_pending_limit_error(ConnData) ->
     send_trans_error(ConnData, Code, Reason).
     
 send_trans_error(ConnData, Code, Reason) ->
-    %% Encapsule the transaction error into a reply message
+    %% Encapsulate the transaction error into a reply message
     ED     = #'ErrorDescriptor'{errorCode = Code, errorText = Reason},
     Serial = ConnData#conn_data.serial,
     TR     = #'TransactionReply'{transactionId     = Serial,
@@ -2714,8 +2761,11 @@ send_message_error(ConnData, Code, Reason) ->
 
 cancel(ConnHandle, Reason) when is_record(ConnHandle, megaco_conn_handle) ->
     case megaco_config:lookup_local_conn(ConnHandle) of
-        [ConnData] ->
-	    do_cancel(ConnHandle, Reason, ConnData);
+        [CD] ->
+	    megaco_config:update_conn_info(CD, cancel, true),
+	    do_cancel(ConnHandle, Reason, CD#conn_data{cancel = true}),
+	    megaco_config:update_conn_info(CD, cancel, false),
+	    ok;
         [] ->
 	    ConnData = fake_conn_data(ConnHandle),
 	    do_cancel(ConnHandle, Reason, ConnData)
@@ -2763,6 +2813,7 @@ cancel_requests(ConnData, [{transactionRequest,TR}|TRs], Reason) ->
 
 cancel_request(ConnData, Req, Reason)  ->
     ?report_trace(ignore, "cancel request", [Req]),
+    ?TC_AWAIT_CANCEL_EVENT(),
     TransId   = Req#request.trans_id,
     Version   = Req#request.version,
     UserMod   = Req#request.user_mod,
@@ -2894,15 +2945,16 @@ request_timeout(ConnHandle, TransId) ->
  		    incNumTimerRecovery(ConnHandle),
  		    do_request_timeout(ConnHandle, TransId, ConnData, Req);
 		[] when ConnHandle#megaco_conn_handle.remote_mid == preliminary_mid ->
- 		    %% The connection has just been upgraded from a 
- 		    %% preliminary to a real connection. So this timeout
- 		    %% is just a glitch. E.g. between the removel of this
- 		    %% ConnHandle and the timer.
-		    %% Or this could be because the first message sent
-		    %% (the service-change) got e messageError reply,
-		    %% and so there is no transaction-id, and therefor no
-		    %% way to get hold of the request record.
- 		    request_timeout_upgraded(TransId);
+ 		    %% There are two possibillities:
+		    %% 1) The connection has just been upgraded from a 
+ 		    %%    preliminary to a real connection. So this timeout
+ 		    %%    is just a glitch. E.g. between the removel of this
+ 		    %%    ConnHandle and the timer.
+		    %% 2) The first message sent, the service-change, got no 
+		    %%    reply (UDP without three-way-handshake).
+		    %%    And then the other side (MGC) sends a request,
+		    %%    which causes an auto-upgrade
+ 		    request_timeout_upgraded(ConnHandle, Req);
 		[] ->
  		    incNumTimerRecovery(ConnHandle),
  		    ConnData = fake_conn_data(ConnHandle),
@@ -2910,9 +2962,9 @@ request_timeout(ConnHandle, TransId) ->
 	    end
     end.
 
-request_timeout_upgraded(TransId) ->
-    megaco_monitor:delete_request(TransId).
-
+request_timeout_upgraded(ConnHandle, Req) ->
+    CD = fake_conn_data(ConnHandle),
+    cancel_request(CD, Req, timeout).
     
 do_request_timeout(ConnHandle, TransId, ConnData, 
 		   #request{curr_timer = CurrTimer} = Req) ->
@@ -3147,11 +3199,11 @@ pending_timeout(ConnData, TransId, Timer) ->
 			timeout ->
 			    %% We are done
 			    incNumTimerRecovery(ConnHandle),
-			    ok;
+			    timeout_out1;
 			{_, timeout} ->
 			    %% We are done
 			    incNumTimerRecovery(ConnHandle),
-			    ok;
+			    timeout_out2;
 			_ ->
 			    {WaitFor, Timer2} = recalc_timer(Timer),
 			    M = ?MODULE,
@@ -3161,7 +3213,8 @@ pending_timeout(ConnData, TransId, Timer) ->
 				megaco_monitor:apply_after(M, F, A, WaitFor),
 			    Rep2 = Rep#reply{pending_timer_ref = PendingRef},
 			    %% Timing problem?
-			    megaco_monitor:insert_reply(Rep2)
+			    megaco_monitor:insert_reply(Rep2),
+			    {restarted, WaitFor, Timer2}
 		    end;
 
 
@@ -3180,7 +3233,8 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    %% Timing problem?
 		    Rep2 = Rep#reply{state = aborted},
 		    %% megaco_monitor:insert_reply(Rep2);
-		    cancel_reply(ConnData, Rep2, aborted);
+		    cancel_reply(ConnData, Rep2, aborted),
+		    pending_limit_error;
 
 
 		aborted ->
@@ -3192,21 +3246,21 @@ pending_timeout(ConnData, TransId, Timer) ->
 		    %% -------------------------------------------
 		    Rep2 = Rep#reply{state = aborted},
 		    cancel_reply(ConnData, Rep2, aborted),
-		    ignore
+		    pending_limit_aborted
 
 	    end;
 	[] ->
-	    ignore; % Trace ??
+	    reply_not_found; % Trace ??
 
 	[#reply{state = waiting_for_ack}] ->
 	    %% The reply has already been sent
 	    %% No need for any pending trans reply
-	    ignore;
+	    reply_has_been_sent;
 
 	[#reply{state = aborted} = Rep] ->
 	    %% glitch, but cleanup just the same
 	    cancel_reply(ConnData, Rep, aborted),
-	    ignore
+	    reply_aborted_state
 
     end.
 

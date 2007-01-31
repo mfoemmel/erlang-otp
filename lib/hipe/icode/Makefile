@@ -37,20 +37,20 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-DOC_MODULES = hipe_icode hipe_icode_cfg hipe_icode_liveness \
+DOC_MODULES = hipe_beam_to_icode \
+	hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_heap_test \
-	hipe_icode_exceptions hipe_beam_to_icode hipe_icode_primops \
+	hipe_icode_exceptions hipe_icode_primops \
 	hipe_icode_binary_pass hipe_icode_bincomp \
-	hipe_icode_ssa \
-	hipe_icode_type hipe_icode_ssa_copy_prop hipe_icode_pp hipe_icode_fp \
-	hipe_icode_ssa_const_prop \
+	hipe_icode_range_an \
+	hipe_icode_ssa hipe_icode_ssa_const_prop hipe_icode_ssa_copy_prop \
+	hipe_icode_type hipe_icode_pp hipe_icode_fp \
 	hipe_icode_split_arith hipe_icode_callgraph \
 	hipe_icode_instruction_counter
 
+MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret 
 
-MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret hipe_icode_range_an 
-
-HRL_FILES=hipe_icode.hrl hipe_icode_type.hrl
+HRL_FILES=hipe_icode.hrl hipe_icode_primops.hrl hipe_icode_type.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
@@ -104,22 +104,24 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_beam_to_icode.beam: hipe_icode.hrl ../main/hipe.hrl
+$(EBIN)/hipe_beam_to_icode.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl
 $(EBIN)/hipe_icode.beam: hipe_icode.hrl ../main/hipe.hrl
 $(EBIN)/hipe_icode_binary_pass.beam: ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_icode_callgraph.beam: hipe_icode.hrl
+$(EBIN)/hipe_icode_callgraph.beam: hipe_icode.hrl hipe_icode_primops.hrl
 $(EBIN)/hipe_icode_cfg.beam: hipe_icode.hrl ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_icode_exceptions.beam: hipe_icode.hrl
 $(EBIN)/hipe_icode_fp.beam: hipe_icode.hrl
-$(EBIN)/hipe_icode_heap_test.beam: hipe_icode.hrl ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode_heap_test.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_liveness.beam: ../flow/liveness.inc
-$(EBIN)/hipe_icode_multret.beam: hipe_icode.hrl
+$(EBIN)/hipe_icode_multret.beam: hipe_icode.hrl hipe_icode_primops.hrl
 $(EBIN)/hipe_icode_pp.beam: hipe_icode.hrl
+$(EBIN)/hipe_icode_primops.beam: hipe_icode_primops.hrl
 $(EBIN)/hipe_icode_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_icode_range_an.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl
 $(EBIN)/hipe_icode_split_arith.beam: hipe_icode.hrl
 $(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
-$(EBIN)/hipe_icode_ssa_const_prop.beam: hipe_icode.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
+$(EBIN)/hipe_icode_ssa_const_prop.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
 $(EBIN)/hipe_icode_ssa_copy_prop.beam: hipe_icode.hrl ../ssa/hipe_ssa_copy_prop.inc
-$(EBIN)/hipe_icode_type.beam: hipe_icode.hrl hipe_icode_type.hrl
+$(EBIN)/hipe_icode_type.beam: hipe_icode.hrl hipe_icode_primops.hrl hipe_icode_type.hrl
 

@@ -36,7 +36,8 @@
 -export([dissect/1,
 	 get_def/1,
 	 get_name/2,
-	 type/1]).
+	 type/1,
+	 is_system_exception/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -80,6 +81,20 @@
 
 
 -define(DEBUG_LEVEL, 5).
+
+%%-----------------------------------------------------------------
+%% Function   : is_system_exception
+%% Arguments  : Exception - record()
+%% Returns    : true | false
+%% Raises     : 
+%% Description: Check if CORBA system exception or user defined
+%%-----------------------------------------------------------------
+is_system_exception({'EXCEPTION', E}) ->
+    is_system_exception(E);
+is_system_exception(E) when tuple(E) ->
+    ?SYSTEM_EXCEPTION == type(element(1, E));
+is_system_exception(_E) ->
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%-----------------------------------------------------------------
 %% Function   : type

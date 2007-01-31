@@ -1,10 +1,28 @@
 {"%VSN%",
  [
+  {"4.8.3",   
+   [
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
+  {"4.8.2",   
+   [
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
   {"4.8.1",   
    [
     {load_module, snmp_verbosity, soft_purge, soft_purge, []},
     {load_module, snmpa_app, soft_purge, soft_purge, []},
     {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_shadow_table, soft_purge, soft_purge, []},
     {load_module, snmpm_mpd, soft_purge, soft_purge, []},
     {update, snmpa_agent, soft, soft_purge, soft_purge, []},
@@ -25,6 +43,8 @@
     {load_module, snmp_verbosity, soft_purge, soft_purge, []},
     {load_module, snmpa_app, soft_purge, soft_purge, []},
     {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_shadow_table, soft_purge, soft_purge, []},
     {load_module, snmpm_mpd, soft_purge, soft_purge, []},
     {update, snmpa_agent, soft, soft_purge, soft_purge, []},
@@ -42,11 +62,29 @@
 %% ---------------------------------------------------------------------------
 
  [
+  {"4.8.3",   
+   [
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
+  {"4.8.2",   
+   [
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, []}
+   ]
+  },
+
   {"4.8.1",   
    [
     {load_module, snmp_verbosity, soft_purge, soft_purge, []},
     {load_module, snmpa_app, soft_purge, soft_purge, []},
     {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_shadow_table, soft_purge, soft_purge, []},
     {load_module, snmpm_mpd, soft_purge, soft_purge, []},
     {update, snmpa_agent, soft, soft_purge, soft_purge, []},
@@ -67,6 +105,8 @@
     {load_module, snmp_verbosity, soft_purge, soft_purge, []},
     {load_module, snmpa_app, soft_purge, soft_purge, []},
     {load_module, snmpa_supervisor, soft_purge, soft_purge, []},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if]},
+    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
     {load_module, snmp_shadow_table, soft_purge, soft_purge, []},
     {load_module, snmpm_mpd, soft_purge, soft_purge, []},
     {update, snmpa_agent, soft, soft_purge, soft_purge, []},

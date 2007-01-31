@@ -1353,9 +1353,9 @@ pretty_format(In) ->
 
 %% Finish term
 scan(In,Acc,list,Insrt) when hd(In)==$] ->
-    {lists:reverse(Acc),tail(In),Insrt};    
+    {lists:reverse(Acc),tl(In),Insrt};    
 scan(In,Acc,tuple,Insrt) when hd(In)==$} ->
-    {list_to_tuple(lists:reverse(Acc)),tail(In),Insrt};    
+    {list_to_tuple(lists:reverse(Acc)),tl(In),Insrt};    
 scan(In,Acc,atom,Insrt) when In==[];hd(In)==$,;hd(In)==$];hd(In)==$} ->
     {list_to_atom(lists:reverse(Acc)),In,Insrt};
 scan(In,Acc,float,Insrt) when In==[];hd(In)==$,;hd(In)==$];hd(In)==$} ->
@@ -1434,11 +1434,6 @@ scan([$#|T],Acc,Cur,Insrt0) ->
 scan([],Acc,initial,Insrt) ->
     {Acc,[],Insrt}.
 
-
-tail([]) ->
-    [];
-tail([_H|T]) ->
-    T.
 
 replace_insrt("'trsni$'"++Rest,[H|T],Acc) -> % the list is reversed here!
     Special = 

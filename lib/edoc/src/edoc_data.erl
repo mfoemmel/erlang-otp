@@ -32,9 +32,9 @@
 
 -include("edoc.hrl").
 
-%% @TODO report multiple definitions of the same type in the same module.
-%% @TODO check that variables in @equiv are found in the signature
-%% @TODO copy types from target (if missing) when using @equiv
+%% TODO: report multiple definitions of the same type in the same module.
+%% TODO: check that variables in @equiv are found in the signature
+%% TODO: copy types from target (if missing) when using @equiv
 
 %% <!ELEMENT module (description?, author*, copyright?, version?,
 %%                   since?, deprecated?, see*, reference*, todo?,
@@ -264,7 +264,7 @@ get_pcdata_tag(Tag, Ts) ->
 %%       Spec = module | {F,A} | {F,A,Details}}
 %%       Details = next_version | next_major_release | eventually
 %%                 (EXTENSION: | string() | {M1,F1,A1}}
-%% @TODO use info from '-deprecated(...)' (xref-)declarations.
+%% TODO: use info from '-deprecated(...)' (xref-)declarations.
 
 get_deprecated(Ts) ->
     case get_tags(deprecated, Ts) of

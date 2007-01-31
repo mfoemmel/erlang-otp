@@ -366,6 +366,9 @@ ensure_started(Scheme) ->
     case application:start(inets) of
 	{error,{already_started,inets}} ->
 	    ok;
+	{error, {{already_started,_}, % Started as an included application
+	 {inets_app, start, _}}} ->
+	    ok;
 	ok ->
 	    error_logger:info_report("The inets application was not started."
 				     " Has now been started as a temporary" 
@@ -379,9 +382,13 @@ ensure_started(Scheme) ->
 	    case application:start(ssl) of
 		{error,{already_started,ssl}} ->
 		    ok;
+		%% Started as an included application
+		{error, {{already_started,_}, 
+		 {ssl_app, start, _}}} ->
+		    ok;
 		ok ->
 		    error_logger:info_report("The ssl application was not "
-					     "started. Has now been started " 
+					     "started. Has now been started "
 					     "as a temporary application.")
 	    end;
 	_ ->

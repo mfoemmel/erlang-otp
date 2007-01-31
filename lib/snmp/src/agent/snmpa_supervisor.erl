@@ -89,22 +89,26 @@ start_link(master, Opts, {takeover, Node}) when node(Node) ->
     end.
 
 get_own_loaded_mibs() ->
-    InfoList = snmpa:info(snmp_master_agent),
-    {value, {_, LoadedMibs}} = key1search(loaded_mibs, InfoList),
-    [ Name || {Name, _, _} <- LoadedMibs ].
-
-mibs_to_load(OtherMibs, OwnMibs) ->
-    [{N, S, F} || {N, S, F} <- OtherMibs, not lists:member(N, OwnMibs)].
+    AgentInfo = snmpa:info(snmp_master_agent),
+    [ Name || {Name, _, _} <- loaded_mibs(AgentInfo) ].
 
 try_load_other_loaded_mibs(Node, OwnMibs) ->
     case rpc:call(Node, snmpa, info, [snmp_master_agent]) of
         {badrpc, R} ->
             error_msg("could not takeover loaded mibs: ~p", [R]);
-	InfoList ->
-            {value, {_, LoadedMibs}} = key1search(loaded_mibs, InfoList),
+	AgentInfo ->
+            LoadedMibs = loaded_mibs(AgentInfo),
             MibsToLoad = mibs_to_load(LoadedMibs, OwnMibs),
             lists:foreach(fun(M) -> takeover_mib(M) end, MibsToLoad)
     end.
+
+loaded_mibs(AgentInfo) ->
+    {value, {_, MibInfo}}    = key1search(mib_server,  AgentInfo),
+    {value, {_, LoadedMibs}} = key1search(loaded_mibs, MibInfo),
+    LoadedMibs.
+
+mibs_to_load(OtherMibs, OwnMibs) ->
+    [{N, S, F} || {N, S, F} <- OtherMibs, not lists:member(N, OwnMibs)].
 
 takeover_mib({'STANDARD-MIB', _Symbolic, _FileName}) ->
     ok;
@@ -402,7 +406,7 @@ add_v3_mibs(MibDir, Mibs) ->
 add_mib(DefaultMib, [], _BaseNames) -> [DefaultMib];
 add_mib(DefaultMib, [Mib | T], BaseNames) ->
     case lists:member(filename:basename(Mib), BaseNames) of
-	true -> [Mib | T]; % The user defined his own version of the mib
+	true  -> [Mib | T]; % The user defined his own version of the mib
 	false -> [Mib | add_mib(DefaultMib, T, BaseNames)]
     end.
 

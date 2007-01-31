@@ -7,9 +7,9 @@
 %%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.25 $
+%%              $Author: mikpe $
+%%              $Date: 2006/12/19 17:11:52 $
+%%              $Revision: 1.26 $
 %% ====================================================================
 %%  Exports  :
 %%              pp/1,        Pretty prints linear SPARC code.
@@ -357,6 +357,10 @@ pp_instr(I, Dev, Pre) ->
       io:format(Dev, "+", []),
       pp_arg(Dev, hipe_sparc:store_off(I)),
       io:format(Dev, "]~n", []);
+    #rdy{} ->
+      io:format(Dev, "    rd %y, ", []),
+      pp_arg(Dev, hipe_sparc:rdy_dest(I)),
+      io:format(Dev, "~n", []);
     #sethi{} ->
       io:format(Dev, "    sethi ", []),
       pp_arg(Dev, hipe_sparc:sethi_const(I)),
@@ -476,6 +480,7 @@ pp_alu_op(Dev, Op) ->
 	  '-c' -> "subc";
 	  'andn' -> "andn";
 	  'xnor' ->  "xnor";
+	  'smul' -> "smul";
 	  X -> exit({sparc, {"unkown alu-op", X}}), ""
 	end,
   io:format(Dev, "~s", [Str]).

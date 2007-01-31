@@ -11,6 +11,35 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.5.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Updated the chapter "More on the Persistant Lookup Table
+	    (PLT)" in Dialyzer User's Guide and added information on
+	    how to use Dialyzer from Erlang to <c>dialyzer(3)</c>.
+	    Also, the Dialyzer text files used by its GUI are now
+	    included in the Erlang/OTP release.</p>
+          <p>
+	    Own Id: OTP-6361</p>
+        </item>
+        <item>
+	    <p>New options <c>--check_init_plt</c> and
+	    <c>--verbose</c>.</p>
+	    <p>Improvements in the analysis (meaning that this
+	    version can find more discrepancies than the previous
+	    version).</p>
+          <p>
+	    Own Id: OTP-6421</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Dialyzer 1.5.0</title>
 
     <section><title>Improvements and New Features</title>

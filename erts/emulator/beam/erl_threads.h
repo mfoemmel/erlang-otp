@@ -58,8 +58,12 @@ void erts_thr_fatal_error(int, char *); /* implemented in erl_init.c */
 #define ERTS_CND_INITER			ETHR_COND_INITER
 #define ERTS_THR_INIT_DATA_DEF_INITER	ETHR_INIT_DATA_DEFAULT_INITER
 
-#define ERTS_HAVE_REC_MTX_INIT		ETHR_HAVE_ETHR_REC_MUTEX_INIT
-#define ERTS_HAVE_MTX_TRYLOCK		ETHR_HAVE_ETHR_MUTEX_TRYLOCK
+#ifdef ETHR_HAVE_ETHR_REC_MUTEX_INIT
+#  define ERTS_HAVE_REC_MTX_INIT	ETHR_HAVE_ETHR_REC_MUTEX_INIT
+#endif
+#ifdef ETHR_HAVE_ETHR_MUTEX_TRYLOCK
+#  define ERTS_HAVE_MTX_TRYLOCK		ETHR_HAVE_ETHR_MUTEX_TRYLOCK
+#endif
 
 
 #else /* #ifdef USE_THREADS */
@@ -98,7 +102,11 @@ ERTS_GLB_INLINE int erts_equal_tids(erts_tid_t x, erts_tid_t y);
 ERTS_GLB_INLINE void erts_rec_mtx_init(erts_mtx_t *mtx);
 #endif
 ERTS_GLB_INLINE void erts_mtx_init_x(erts_mtx_t *mtx, char *name, Eterm extra);
+ERTS_GLB_INLINE void erts_mtx_init_locked_x(erts_mtx_t *mtx,
+					    char *name,
+					    Eterm extra);
 ERTS_GLB_INLINE void erts_mtx_init(erts_mtx_t *mtx, char *name);
+ERTS_GLB_INLINE void erts_mtx_init_locked(erts_mtx_t *mtx, char *name);
 ERTS_GLB_INLINE void erts_mtx_destroy(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_set_forksafe(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_unset_forksafe(erts_mtx_t *mtx);
@@ -239,6 +247,25 @@ erts_mtx_init_x(erts_mtx_t *mtx, char *name, Eterm extra)
 }
 
 ERTS_GLB_INLINE void
+erts_mtx_init_locked_x(erts_mtx_t *mtx, char *name, Eterm extra)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_init(&mtx->mtx);
+    if (res)
+	erts_thr_fatal_error(res, "initialize mutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock_x(&mtx->lc, name, ERTS_LC_FLG_LT_MUTEX, extra);
+#endif
+    res = ethr_mutex_lock(&mtx->mtx);
+    if (res)
+	erts_thr_fatal_error(res, "lock mutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_trylock(1, &mtx->lc);
+#endif
+#endif
+}
+
+ERTS_GLB_INLINE void
 erts_mtx_init(erts_mtx_t *mtx, char *name)
 {
 #ifdef USE_THREADS
@@ -247,6 +274,25 @@ erts_mtx_init(erts_mtx_t *mtx, char *name)
 	erts_thr_fatal_error(res, "initialize mutex");
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_init_lock(&mtx->lc, name, ERTS_LC_FLG_LT_MUTEX);
+#endif
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_mtx_init_locked(erts_mtx_t *mtx, char *name)
+{
+#ifdef USE_THREADS
+    int res = ethr_mutex_init(&mtx->mtx);
+    if (res)
+	erts_thr_fatal_error(res, "initialize mutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock(&mtx->lc, name, ERTS_LC_FLG_LT_MUTEX);
+#endif
+    res = ethr_mutex_lock(&mtx->mtx);
+    if (res)
+	erts_thr_fatal_error(res, "lock mutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_trylock(1, &mtx->lc);
 #endif
 #endif
 }
@@ -383,11 +429,8 @@ ERTS_GLB_INLINE void
 erts_cnd_wait(erts_cnd_t *cnd, erts_mtx_t *mtx)
 {
 #ifdef USE_THREADS
-    int res;
-    do {
-	res = ethr_cond_wait(cnd, &mtx->mtx);
-    } while (res == EINTR);
-    if (res)
+    int res = ethr_cond_wait(cnd, &mtx->mtx);
+    if (res != 0 && res != EINTR)
 	erts_thr_fatal_error(res, "wait on condition variable");
 #endif
 }
@@ -396,13 +439,10 @@ ERTS_GLB_INLINE int
 erts_cnd_timedwait(erts_cnd_t *cnd, erts_mtx_t *mtx, erts_thr_timeval_t *time)
 {
 #ifdef USE_THREADS
-    int res;
-    do {
-	res = ethr_cond_timedwait(cnd, &mtx->mtx, time);
-    } while (res == EINTR);
-    if (res != 0 && res != ETIMEDOUT)
+    int res = ethr_cond_timedwait(cnd, &mtx->mtx, time);
+    if (res != 0 && res != EINTR && res != ETIMEDOUT)
 	erts_thr_fatal_error(res,
-				 "wait with timeout on condition variable");
+			     "wait with timeout on condition variable");
     return res;
 #else
     return 0;

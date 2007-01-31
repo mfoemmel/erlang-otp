@@ -67,7 +67,7 @@ functions([], Acc) -> reverse(Acc).
 %% function(Kfunc) -> Func.
 
 function(#k_fdef{func=F,arity=Ar,vars=Vs,body=Kb}) ->
-    %%ok = io:fwrite("life ~w: ~p~n", [?LINE,{F,Ar}]),
+    %ok = io:fwrite("life ~w: ~p~n~p~n", [?LINE,{F,Ar},Kb]),
     As = var_list(Vs),
     Vdb0 = foldl(fun ({var,N}, Vdb) -> new_var(N, 0, Vdb) end, [], As),
     %% Force a top-level match!
@@ -289,7 +289,7 @@ match(#k_select{anno=A,var=V,types=Kts}, Ls0, I, Ctxt, Vdb0) ->
 	  end,
     Vdb1 = use_vars(union(A#k.us, Ls1), I, Vdb0),
     Ts = map(fun (Tc) -> type_clause(Tc, Ls1, I+1, Ctxt, Vdb1) end, Kts),
-    #l{ke={select,literal(V, Ctxt),Ts},i=I,vdb=Vdb1,a=A#k.a};
+    #l{ke={select,literal2(V, Ctxt),Ts},i=I,vdb=Vdb1,a=A#k.a};
 match(#k_guard{anno=A,clauses=Kcs}, Ls, I, Ctxt, Vdb0) ->
     Vdb1 = use_vars(union(A#k.us, Ls), I, Vdb0),
     Cs = map(fun (G) -> guard_clause(G, Ls, I+1, Ctxt, Vdb1) end, Kcs),
@@ -316,7 +316,7 @@ val_clause(#k_val_clause{anno=A,val=V,body=Kb}, Ls0, I, Ctxt0, Vdb0) ->
 	       _ -> Ctxt0
 	   end,
     B = match(Kb, Ls1, I+1, Ctxt, Vdb1),
-    #l{ke={val_clause,literal(V, Ctxt),B},i=I,vdb=use_vars(Bus, I+1, Vdb1),a=A#k.a}.
+    #l{ke={val_clause,literal2(V, Ctxt),B},i=I,vdb=use_vars(Bus, I+1, Vdb1),a=A#k.a}.
 
 guard_clause(#k_guard_clause{anno=A,guard=Kg,body=Kb}, Ls, I, Ctxt, Vdb0) ->
     Vdb1 = use_vars(union(A#k.us, Ls), I+2, Vdb0),
@@ -421,6 +421,46 @@ literal(#k_tuple{es=Es}, Ctxt) ->
 
 literal_list(Ks, Ctxt) ->
     map(fun(K) -> literal(K, Ctxt) end, Ks).
+
+literal2(#k_var{name=N}, _) -> {var,N};
+literal2(#k_int{val=I}, _) -> {integer,I};
+literal2(#k_float{val=F}, _) -> {float,F};
+literal2(#k_atom{val=N}, _) -> {atom,N};
+%%literal2(#k_char{val=C}, _) -> {char,C};
+literal2(#k_string{val=S}, _) -> {string,S};
+literal2(#k_nil{}, _) -> nil;
+literal2(#k_cons{hd=H,tl=T}, Ctxt) ->
+    {cons,[literal2(H, Ctxt),literal2(T, Ctxt)]};
+literal2(#k_binary{segs=V}, Ctxt) ->
+    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
+	true ->
+	    {old_binary,literal2(V, Ctxt)};
+	false ->
+	    {binary,literal2(V, Ctxt)}
+    end;
+literal2(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}, Ctxt) ->
+    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
+	true ->
+	    {old_bin_seg,literal2(S, Ctxt),U,T,Fs,
+	     [literal2(Seg, Ctxt),literal2(N, Ctxt)]};
+	false ->
+	    {bin_seg,Ctxt,literal2(S, Ctxt),U,T,Fs,
+	     [literal2(Seg, Ctxt),literal2(N, Ctxt)]}
+    end;
+literal2(#k_bin_end{}, Ctxt) ->
+    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
+	true -> old_bin_end;
+	false -> {bin_end,Ctxt}
+    end;
+literal2(#k_tuple{es=Es}, Ctxt) ->
+    {tuple,literal_list2(Es, Ctxt)}.
+
+literal_list2(Ks, Ctxt) ->
+    map(fun(K) -> literal2(K, Ctxt) end, Ks).
+
+%% literal_bin(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}) ->
+%%     {bin_seg,literal(S),U,T,Fs,[literal(Seg),literal(N)]}
+
 
 %% is_gc_bif(Name, Arity) -> true|false
 %%  Determines whether the BIF Name/Arity might do a GC.

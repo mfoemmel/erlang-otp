@@ -127,16 +127,12 @@ erts_trace_check_exiting(Eterm exiting)
 Eterm
 erts_set_system_seq_tracer(Process *c_p, Uint32 c_p_locks, Eterm new)
 {
-    Process *proc = NULL;
-    Port *prt = NULL;
     Eterm old = THE_NON_VALUE;
 
     if (new != am_false) {
-	proc = erts_pid2proc(c_p, c_p_locks, new, ERTS_PROC_LOCK_STATUS);
-	if (!proc) {
-	    prt = erts_id2port(new, c_p, c_p_locks);
-	    if (INVALID_TRACER_PORT(prt, new))
-		goto error;
+	if (!erts_pid2proc(c_p, c_p_locks, new, 0)
+	    && !erts_is_valid_tracer_port(new)) {
+	    return old;
 	}
     }
 
@@ -148,11 +144,6 @@ erts_set_system_seq_tracer(Process *c_p, Uint32 c_p_locks, Eterm new)
     erts_fprintf(stderr, "set seq tracer new=%T old=%T\n", new, old);
 #endif
     erts_smp_mtx_unlock(&sys_trace_mtx);
- error:
-    if (proc)
-	erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_STATUS);
-    if (prt)
-	erts_smp_io_unlock();
     return old;
 }
 
@@ -184,10 +175,8 @@ get_default_tracing(Uint *flagsp, Eterm *tracerp)
 	    default_tracer = NIL;
 	}
     } else {
-	Port *port;
 	ASSERT(is_internal_port(default_tracer));
-	port = &erts_port[internal_port_index(default_tracer)];
-	if (INVALID_TRACER_PORT(port, default_tracer))
+	if (!erts_is_valid_tracer_port(default_tracer))
 	    goto reset_tracer;
     }
 
@@ -295,7 +284,14 @@ WRITE_SYS_MSG_TO_PORT(Eterm unused_to,
 	erl_exit(1, "Internal error in do_send_to_port: %d\n", ptr-buffer);
     }
 
-    dist_port_command(trace_port, buffer, ptr-buffer);
+#ifndef ERTS_SMP
+    if (!INVALID_TRACER_PORT(trace_port, trace_port->id)) {
+#endif
+	dist_port_command(trace_port, buffer, ptr-buffer);
+#ifndef ERTS_SMP
+	erts_port_release(trace_port);
+    }
+#endif
 
     erts_free(ERTS_ALC_T_TMP, (void *) buffer);
 }
@@ -1480,13 +1476,9 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 
     if (is_internal_port(*tracer_pid)) {
 	Eterm local_heap[64+MAX_ARG];
-	Port *tracer_port;
 	hp = local_heap;
 
-	ASSERT(internal_port_index(*tracer_pid) < erts_max_ports);
-	(void) erts_smp_io_safe_lock(p, ERTS_PROC_LOCK_MAIN);
-	tracer_port = &erts_port[internal_port_index(*tracer_pid)];
-	if (INVALID_TRACER_PORT(tracer_port, *tracer_pid)) {
+	if (!erts_is_valid_tracer_port(*tracer_pid)) {
 #ifdef ERTS_SMP
 	    ASSERT(is_nil(tracee) || tracer_pid == &p->tracer_proc);
 	    if (is_not_nil(tracee))
@@ -1498,10 +1490,8 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	    if (is_not_nil(tracee))
 		erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL_MINOR);
 #endif
-	    erts_smp_io_unlock();
 	    return 0;
 	}
-	erts_smp_io_unlock();
 	
 	/*
 	 * If there is a PAM program, run it.  Return if it fails.
@@ -2604,6 +2594,8 @@ sys_msg_dispatcher_func(void *unused)
     while (1) {
 	ErtsSysMsgQ *smqp;
 
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+
 	erts_smp_mtx_lock(&smq_mtx);
 
 	/* Free previously used queue ... */
@@ -2711,10 +2703,10 @@ sys_msg_dispatcher_func(void *unused)
 		    goto queue_proc_msg;
 	    }
 	    else if (is_internal_port(receiver)) {
-		erts_smp_io_lock();
-		port = &erts_port[internal_port_index(receiver)];
+		port = erts_id2port(receiver, NULL, 0);
 		if (INVALID_TRACER_PORT(port, receiver)) {
-		    erts_smp_io_unlock();
+		    if (port)
+			erts_port_release(port);
 		    goto failure;
 		}
 		else {
@@ -2728,7 +2720,7 @@ sys_msg_dispatcher_func(void *unused)
 #ifdef DEBUG_PRINTOUTS
 		    erts_fprintf(stderr, "delivered\n");
 #endif
-		    erts_smp_io_unlock();
+		    erts_port_release(port);
 		    if (smqp->bp)
 			free_message_buffer(smqp->bp);
 		}

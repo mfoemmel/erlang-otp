@@ -122,7 +122,7 @@ int ConReadInput(unsigned char *data, int n);
 
 #define sys_init_hrtime() /* Nothing */
 
-#define SYS_CLK_TCK 100
+#define SYS_CLK_TCK 1000
 #define SYS_CLOCK_RESOLUTION 1
 
 typedef struct {

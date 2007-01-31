@@ -42,6 +42,8 @@ do_insn(I, TempMap, Strategy) ->	% Insn -> {Insn list, DidSpill}
       do_alu(I, TempMap, Strategy);
     #cmp{} ->
       do_cmp(I, TempMap, Strategy);
+    #imul{} ->
+      do_imul(I, TempMap, Strategy);
     #jmp_switch{} ->
       do_jmp_switch(I, TempMap, Strategy);
     #lea{} ->
@@ -79,6 +81,28 @@ do_cmp(I, TempMap, Strategy) ->
   {FixSrc, Src, FixDst, Dst, DidSpill} =
     do_binary(Src0, Dst0, TempMap, Strategy),
   {FixSrc ++ FixDst ++ [I#cmp{src=Src,dst=Dst}], DidSpill}.
+
+%%% Fix an imul op.
+
+do_imul(I, TempMap, Strategy) ->
+  #imul{imm_opt=ImmOpt,src=Src0,temp=Temp0} = I,
+  {FixSrc,Src,DidSpill1} = fix_src_operand(Src0, TempMap, Strategy),	% temp1
+  {FixTempSrc,Temp,FixTempDst,DidSpill2} =
+    case is_spilled(Temp0, TempMap) of
+      false ->
+	{[], Temp0, [], false};
+      true ->
+	Reg = spill_temp0('untagged', Strategy),
+	{case ImmOpt of
+	   [] -> [hipe_x86:mk_move(Temp0, Reg)];	% temp *= src
+	   _ -> []					% temp = src * imm
+	 end,
+	 Reg,
+	 [hipe_x86:mk_move(Reg, Temp0)],
+	 true}
+    end,
+  {FixSrc ++ FixTempSrc ++ [I#imul{src=Src,temp=Temp}] ++ FixTempDst,
+   DidSpill1 or DidSpill2}.
 
 %%% Fix a jmp_switch op.
 
@@ -385,12 +409,10 @@ clone(Dst, Strategy) ->
     end,
   spill_temp(Type, Strategy).
 
--ifdef(HIPE_AMD64).
 spill_temp0(Type, 'normal') ->
   hipe_x86:mk_new_temp(Type);
 spill_temp0(Type, 'linearscan') ->
   hipe_x86:mk_temp(?HIPE_X86_REGISTERS:temp0(), Type).
--endif.
 
 spill_temp(Type, 'normal') ->
   hipe_x86:mk_new_temp(Type);

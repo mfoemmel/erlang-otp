@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 4 -*-
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -223,6 +224,10 @@ format_error({bad_bitsize,Type}) ->
     io_lib:format("bad ~s bit size", [Type]);
 format_error(unaligned_bitpat) ->
     "bit pattern not byte aligned";
+format_error(binary_comprehension) ->
+    "binary comprehension in code not compiled with the binary comprehension flag";
+format_error(binary_generator) ->
+    "binary generator in code not compiled with the binary comprehension flag";
 
 format_error({format_error,{Fmt,Args}}) ->
     io_lib:format(Fmt, Args);
@@ -332,7 +337,11 @@ start(File, Opts) ->
 		      true, Opts)},
 	 {deprecated_function,
 	  bool_option(warn_deprecated_function, nowarn_deprecated_function,
-		      true, Opts)}
+		      true, Opts)},
+	 {bitlevel_binaries,
+	  bool_option(bitlevel_binaries, nobit_level_binaries, false, Opts)},
+	 {binary_comprehension,
+	  bool_option(binary_comprehension, nobinary_comprehension, false, Opts)}
 	],
     Enabled1 = [Category || {Category,true} <- Enabled0],
     Enabled = ordsets:from_list(Enabled1),
@@ -1179,10 +1188,13 @@ pattern_bin(Line, Es, Vt, Old, Bvt0, St0) ->
                                   pattern_element(E, Vt, Old, Acc)
                           end,
                           {0,[],Bvt0,St0}, Es),
-    St2 = if is_integer(Sz), Sz rem 8 =/= 0 -> 
-                  add_warning(Line,unaligned_bitpat, St1);
-             true -> St1
-          end,
+    St2 = if integer(Sz), Sz rem 8 =/= 0 -> 
+	      case bitlevel_binaries(St1) of
+		  true -> St1;
+		  false -> add_warning(Line,unaligned_bitpat, St1)
+	      end;
+	     true -> St1
+	  end,
     {Esvt,Bvt,St2}.
 
 pattern_element({bin_element,Line,E,Sz0,Ts}, Vt, Old, {Size0,Esvt,Bvt,St0}) ->
@@ -1237,8 +1249,11 @@ expr_bin(Line, Es, Vt, St0, Check) ->
     {Sz,Esvt,St1} = foldl(fun (E, Acc) -> bin_element(E, Vt, Acc, Check) end,
                           {0,[],St0}, Es),
     St2 = if is_integer(Sz), Sz rem 8 =/= 0 -> 
-                  add_warning(Line,unaligned_bitpat, St1);
-              true -> St1
+		  case bitlevel_binaries(St1) of
+		      true -> St1;
+		      false -> add_warning(Line,unaligned_bitpat, St1)
+		  end;
+	     true -> St1
           end,
     {Esvt,St2}.
 
@@ -1274,7 +1289,7 @@ bit_size(Size, Vt, St, Check) ->
 bit_type(Line, Size0, Type, St) ->
     case erl_bits:set_bit_type(Size0, Type) of
         {ok,Size1,Bt} -> {Size1,Bt,St};
-        {error,What} ->
+	{error,What} ->
             %% Flag error and generate a default.
             {ok,Size1,Bt} = erl_bits:set_bit_type(default, []),
             {Size1,Bt,add_error(Line, What, St)}
@@ -1300,9 +1315,13 @@ elemtype_check(_Line, float, 32, St) -> St;
 elemtype_check(_Line, float, 64, St) -> St;
 elemtype_check(Line, float, _Size, St) ->
     add_warning(Line, {bad_bitsize,"float"}, St);
-elemtype_check(Line, binary, N, St) when N rem 8 =/= 0 ->
-    add_warning(Line, {bad_bitsize,"binary"}, St);
-elemtype_check(_Line, _Type, Size, St) when is_integer(Size) -> St.
+elemtype_check(Line, binary, N, St) when (N rem 8) =/= 0 ->
+    case bitlevel_binaries(St) of
+	true -> St; 
+	false -> add_warning(Line, {bad_bitsize,"binary"}, St)
+    end;
+elemtype_check(_Line, _Type, _Size, St) ->  St.
+
 
 %% add_bit_size(Line, ElementSize, BinSize, Build, State) -> {Size,State}.
 %%  Add bits to group size.
@@ -1590,18 +1609,16 @@ expr({nil,_Line}, _Vt, St) -> {[],St};
 expr({cons,_Line,H,T}, Vt, St) ->
     expr_list([H,T], Vt, St);
 expr({lc,Line,E,Qs}, Vt0, St0) ->
-    {Vt1, Uvt, St1} = lc_quals(Qs, Vt0, St0),
-    {Evt,St2} = expr(E, Vt1, St1),
-    Vt2 = vtupdate(Evt, Vt1),
-    %% Shadowed global variables.
-    {_,St3} = check_old_unused_vars(Vt2, Uvt, St2),
-    %% There may be local variables in Uvt that are not global.
-    {_,St4} = check_unused_vars(Uvt, Vt0, St3),
-    %% Local variables that have not been shadowed.
-    {_,St5} = check_unused_vars(Vt2, Vt0, St4),
-    Vt3 = vtmerge(vtsubtract(Vt2, Uvt), Uvt),
-    St = warn_no_generator(Line, Qs, St5),
-    {vtold(Vt3, Vt0),St};                      %Don't export local variables
+    {Vt,St} = handle_comprehension(Line, E, Qs, Vt0, St0),
+    {vtold(Vt, Vt0),St};                      %Don't export local variables
+expr({bc,Line,E,Qs}, Vt0, St0) ->
+    {Vt,St} = handle_comprehension(Line, E, Qs, Vt0, St0),
+    case binary_comprehension(St0) of
+	true ->
+	    {vtold(Vt,Vt0),St};               %Don't export local variables
+	false ->
+	    {vtold(Vt,Vt0), add_error(Line,binary_comprehension,St)}
+    end;
 expr({tuple,_Line,Es}, Vt, St) ->
     expr_list(Es, Vt, St);
 %%expr({struct,Line,Tag,Es}, Vt, St) ->
@@ -1797,6 +1814,7 @@ record_expr(Line, Rec, Vt, St0) ->
 %% Adds warning if a list comprehension has no generator.
 
 warn_no_generator(_, [{generate,_,_,_}|_], St) -> St;
+warn_no_generator(_, [{b_generate,_,_,_}|_], St) -> St;
 warn_no_generator(Line, [_|T], St) -> warn_no_generator(Line, T, St);
 warn_no_generator(Line, [], St) -> add_warning(Line, no_generator, St).
 
@@ -1893,10 +1911,15 @@ def_fields(Fs0, Name, St0) ->
 %% normalise_fields([RecDef]) -> [Field].
 %%  Normalise the field definitions to always have a default value. If
 %%  none has been given then use 'undefined'.
+%%  Also, strip type information from typed record fields.
 
 normalise_fields(Fs) ->
     map(fun ({record_field,Lf,Field}) ->
-                {record_field,Lf,Field,{atom,Lf,undefined}};
+		{record_field,Lf,Field,{atom,Lf,undefined}};
+	    ({typed_record_field,{record_field,Lf,Field},_Type}) ->
+		{record_field,Lf,Field,{atom,Lf,undefined}};
+	    ({typed_record_field,Field,_Type}) ->
+		Field;
             (F) -> F end, Fs).
 
 %% exist_record(Line, RecordName, State) -> State.
@@ -2127,6 +2150,21 @@ icrt_export(Csvt, Vt, In, St) ->
     Vt2 = vtmerge(Uvt, vtsubtract(Vt1, Uvt)),
     {Vt2,St}.
 
+
+handle_comprehension(Line,E,Qs,Vt0,St0) ->
+    {Vt1, Uvt, St1} = lc_quals(Qs, Vt0, St0),
+    {Evt,St2} = expr(E, Vt1, St1),
+    Vt2 = vtupdate(Evt, Vt1),
+    %% Shadowed global variables.
+    {_,St3} = check_old_unused_vars(Vt2, Uvt, St2),
+    %% There may be local variables in Uvt that are not global.
+    {_,St4} = check_unused_vars(Uvt, Vt0, St3),
+    %% Local variables that have not been shadowed.
+    {_,St5} = check_unused_vars(Vt2, Vt0, St4),
+    Vt3 = vtmerge(vtsubtract(Vt2, Uvt), Uvt),
+    St = warn_no_generator(Line, Qs, St5),
+    {Vt3,St}.
+
 %% lc_quals(Qualifiers, ImportVarTable, State) ->
 %%      {VarTable,ShadowedVarTable,State}
 %%  Test list comprehension qualifiers, return all variables. Allow
@@ -2143,7 +2181,27 @@ lc_quals(Qs, Vt0, St0) ->
     {Vt,Uvt,St} = lc_quals(Qs, Vt0, [], St0#lint{recdef_top = false}),
     {Vt,Uvt,St#lint{recdef_top = OldRecDef}}.
 
-lc_quals([{generate,_Line,P,E} | Qs], Vt, Uvt, St0) ->
+lc_quals([{generate,_Line,P,E} | Qs], Vt0, Uvt0, St0) ->
+    {Vt,Uvt,St} = handle_generator(P,E,Vt0,Uvt0,St0),
+    lc_quals(Qs, Vt, Uvt, St);
+lc_quals([{b_generate,Line,P,E} | Qs], Vt0, Uvt0, St0) ->
+    {Vt,Uvt,St} = handle_generator(P,E,Vt0,Uvt0,St0),
+    case binary_comprehension(St0) of
+	true ->
+	    lc_quals(Qs, Vt, Uvt, St);
+	false ->
+	    lc_quals(Qs, Vt, Uvt, add_error(Line,binary_generator,St))
+    end;
+lc_quals([F|Qs], Vt, Uvt, St0) ->
+    {Fvt,St1} = case is_guard_test2(F, St0#lint.records) of
+		    true -> guard_test(F, Vt, St0);
+		    false -> expr(F, Vt, St0)
+		end,
+    lc_quals(Qs, vtupdate(Fvt, Vt), Uvt, St1);
+lc_quals([], Vt, Uvt, St) ->
+    {Vt, Uvt, St}.
+
+handle_generator(P,E,Vt,Uvt,St0) ->
     {Evt,St1} = expr(E, Vt, St0),
     %% Forget variables local to E immediately.
     Vt1 = vtupdate(vtold(Evt, Vt), Vt),
@@ -2158,15 +2216,7 @@ lc_quals([{generate,_Line,P,E} | Qs], Vt, Uvt, St0) ->
     {_, St5} = check_old_unused_vars(Svt, Uvt, St4),
     NUvt = vtupdate(vtnew(Svt, Uvt), Uvt),
     Vt3 = vtupdate(vtsubtract(Vt2, Binvt), Binvt),
-    lc_quals(Qs, Vt3, NUvt, St5);
-lc_quals([F|Qs], Vt, Uvt, St0) ->
-    {Fvt,St1} = case is_guard_test2(F, St0#lint.records) of
-                    true -> guard_test(F, Vt, St0);
-                    false -> expr(F, Vt, St0)
-                end,
-    lc_quals(Qs, vtupdate(Fvt, Vt), Uvt, St1);
-lc_quals([], Vt, Uvt, St) ->
-    {Vt, Uvt, St}.
+    {Vt3,NUvt,St5}.
 
 %% fun_clauses(Clauses, ImportVarTable, State) ->
 %%      {UsedVars, State}.
@@ -2484,6 +2534,8 @@ modify_line({warning,W}, _Mf) -> {warning,W};
 modify_line({error,W}, _Mf) -> {error,W};
 %% Expressions.
 modify_line({clauses,Cs}, Mf) -> {clauses,modify_line(Cs, Mf)};
+modify_line({typed_record_field,Fields,Types}, Mf) -> 
+    {typed_record_field,modify_line(Fields, Mf),Types};
 modify_line({Tag,L}, Mf) -> {Tag,Mf(L)};
 modify_line({Tag,L,E1}, Mf) ->
     {Tag,Mf(L),modify_line(E1, Mf)};
@@ -2766,3 +2818,9 @@ expand_package(M, St0) ->
                     {error, St1}
             end
     end.
+
+bitlevel_binaries(#lint{enabled_warnings=Enabled}) ->
+    ordsets:is_element(bitlevel_binaries, Enabled).
+
+binary_comprehension(#lint{enabled_warnings=Enabled}) ->
+    ordsets:is_element(binary_comprehension, Enabled).

@@ -392,17 +392,15 @@ erts_bs_get_float(Process *p, Uint num_bits, unsigned flags)
 		  fptr + NBYTES(num_bits) - 1, 0, -1,
 		  num_bits);
     }
-    mb->offset += num_bits;
-
     ERTS_FP_CHECK_INIT(p);
     if (num_bits == 32) {
-	ERTS_FP_ERROR(p, f32, return THE_NON_VALUE);
+	ERTS_FP_ERROR_THOROUGH(p, f32, return THE_NON_VALUE);
 	f.fd = f32;
     } else {
-	ERTS_FP_ERROR(p, f64, return THE_NON_VALUE);
+	ERTS_FP_ERROR_THOROUGH(p, f64, return THE_NON_VALUE);
 	f.fd = f64;
     }
-
+    mb->offset += num_bits;
     hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
     PUT_DOUBLE(f, hp);
     ArithCheck(p);
@@ -688,8 +686,6 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 		  fptr + NBYTES(num_bits) - 1, 0, -1,
 		  num_bits);
     }
-    mb->offset += num_bits;
-
     ERTS_FP_CHECK_INIT(p);
     if (num_bits == 32) {
 	ERTS_FP_ERROR_THOROUGH(p, f32, return THE_NON_VALUE);
@@ -698,6 +694,7 @@ erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer
 	ERTS_FP_ERROR_THOROUGH(p, f64, return THE_NON_VALUE);
 	f.fd = f64;
     }
+    mb->offset += num_bits;
     hp = HeapOnlyAlloc(p, FLOAT_SIZE_OBJECT);
     PUT_DOUBLE(f, hp);
     return make_float(hp);

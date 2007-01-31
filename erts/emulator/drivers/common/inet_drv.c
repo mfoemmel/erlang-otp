@@ -53,8 +53,6 @@
 #endif
 #include <windows.h>
 
-#include <winsock_func.h>
-
 #include <Ws2tcpip.h>   /* NEED VC 6.0 !!! */
 
 #undef WANT_NONBLOCKING
@@ -109,50 +107,50 @@
 
 #define INVALID_EVENT           WSA_INVALID_EVENT
 
-WinSockFuncs winSock;
+static BOOL (WINAPI *fpSetHandleInformation)(HANDLE,DWORD,DWORD);
 
 #define sock_open(af, type, proto) \
-    make_noninheritable_handle((*winSock.socket)((af), (type), (proto)))
-#define sock_close(s)              (*winSock.closesocket)((s))
-#define sock_shutdown(s, how)      (*winSock.shutdown)((s), (how))
+    make_noninheritable_handle(socket((af), (type), (proto)))
+#define sock_close(s)              closesocket((s))
+#define sock_shutdown(s, how)      shutdown((s), (how))
 
 #define sock_accept(s, addr, len) \
-    make_noninheritable_handle((*winSock.accept)((s), (addr), (len)))
-#define sock_connect(s, addr, len) (*winSock.connect)((s), (addr), (len))
-#define sock_listen(s, b)          (*winSock.listen)((s), (b))
-#define sock_bind(s, addr, len)    (*winSock.bind)((s), (addr), (len))
-#define sock_getopt(s,t,n,v,l)     (*winSock.getsockopt)((s),(t),(n),(v),(l))
-#define sock_setopt(s,t,n,v,l)     (*winSock.setsockopt)((s),(t),(n),(v),(l))
-#define sock_name(s, addr, len)    (*winSock.getsockname)((s), (addr), (len))
-#define sock_peer(s, addr, len)    (*winSock.getpeername)((s), (addr), (len))
-#define sock_ntohs(x)              (*winSock.ntohs)((x))
-#define sock_ntohl(x)              (*winSock.ntohl)((x))
-#define sock_htons(x)              (*winSock.htons)((x))
-#define sock_htonl(x)              (*winSock.htonl)((x))
-#define sock_send(s,buf,len,flag)  (*winSock.send)((s),(buf),(len),(flag))
+    make_noninheritable_handle(accept((s), (addr), (len)))
+#define sock_connect(s, addr, len) connect((s), (addr), (len))
+#define sock_listen(s, b)          listen((s), (b))
+#define sock_bind(s, addr, len)    bind((s), (addr), (len))
+#define sock_getopt(s,t,n,v,l)     getsockopt((s),(t),(n),(v),(l))
+#define sock_setopt(s,t,n,v,l)     setsockopt((s),(t),(n),(v),(l))
+#define sock_name(s, addr, len)    getsockname((s), (addr), (len))
+#define sock_peer(s, addr, len)    getpeername((s), (addr), (len))
+#define sock_ntohs(x)              ntohs((x))
+#define sock_ntohl(x)              ntohl((x))
+#define sock_htons(x)              htons((x))
+#define sock_htonl(x)              htonl((x))
+#define sock_send(s,buf,len,flag)  send((s),(buf),(len),(flag))
 #define sock_sendv(s, vec, size, np, flag) \
-                (*winSock.WSASend)((s),(WSABUF*)(vec),\
+                WSASend((s),(WSABUF*)(vec),\
 				   (size),(np),(flag),NULL,NULL)
-#define sock_recv(s,buf,len,flag)  (*winSock.recv)((s),(buf),(len),(flag))
+#define sock_recv(s,buf,len,flag)  recv((s),(buf),(len),(flag))
 
 #define sock_recvfrom(s,buf,blen,flag,addr,alen) \
-                (*winSock.recvfrom)((s),(buf),(blen),(flag),(addr),(alen))
+                recvfrom((s),(buf),(blen),(flag),(addr),(alen))
 #define sock_sendto(s,buf,blen,flag,addr,alen) \
-                (*winSock.sendto)((s),(buf),(blen),(flag),(addr),(alen))
-#define sock_hostname(buf, len)    (*winSock.gethostname)((buf), (len))
+                sendto((s),(buf),(blen),(flag),(addr),(alen))
+#define sock_hostname(buf, len)    gethostname((buf), (len))
 
-#define sock_getservbyname(name,proto) (*winSock.getservbyname)((name),(proto))
-#define sock_getservbyport(port,proto) (*winSock.getservbyport)((port),(proto))
+#define sock_getservbyname(name,proto) getservbyname((name),(proto))
+#define sock_getservbyport(port,proto) getservbyport((port),(proto))
 
-#define sock_errno() \
-              (winSock.WSAGetLastError ? (*winSock.WSAGetLastError)() : 0)
-#define sock_create_event(d)       (*winSock.WSACreateEvent)()
-#define sock_close_event(e)        (*winSock.WSACloseEvent)(e)
+#define sock_errno() WSAGetLastError()
+#define sock_create_event(d)       WSACreateEvent()
+#define sock_close_event(e)        WSACloseEvent(e)
 
 #define sock_select(D, Flags, OnOff) winsock_event_select(D, Flags, OnOff)
 
-#define SET_BLOCKING(s)           (*winSock.ioctlsocket)(s, FIONBIO, &zero_value)
-#define SET_NONBLOCKING(s)        (*winSock.ioctlsocket)(s, FIONBIO, &one_value)
+#define SET_BLOCKING(s)           ioctlsocket(s, FIONBIO, &zero_value)
+#define SET_NONBLOCKING(s)        ioctlsocket(s, FIONBIO, &one_value)
+
 
 static unsigned long zero_value = 0;
 static unsigned long one_value = 1;
@@ -386,6 +384,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define INET_F_ACC          0x0020
 #define INET_F_LST          0x0040
 #define INET_F_BUSY         0x0080 
+#define INET_F_MULTI_CLIENT 0x0100 /* Multiple clients for one dscriptor, i.e. multi-accept */
 
 #define INET_STATE_CLOSED    0
 #define INET_STATE_OPEN      (INET_F_OPEN)
@@ -557,12 +556,41 @@ typedef union {
    ((family == AF_INET) ? sizeof(struct in_addr) : 0)
 #endif
 
+typedef struct _multi_timer_data {
+    ErlDrvNowData when;
+    ErlDrvTermData caller;
+    void (*timeout_function)(ErlDrvData drv_data, ErlDrvTermData caller);
+    struct _multi_timer_data *next;
+    struct _multi_timer_data *prev;
+} MultiTimerData;
+
+static MultiTimerData *add_multi_timer(MultiTimerData **first, ErlDrvPort port, 
+			    ErlDrvTermData caller, unsigned timeout,
+			    void (*timeout_fun)(ErlDrvData drv_data,
+						ErlDrvTermData caller));
+static void fire_multi_timers(MultiTimerData **first, ErlDrvPort port,
+			      ErlDrvData data);
+static void remove_multi_timer(MultiTimerData **first, ErlDrvPort port, MultiTimerData *p);
+
+static void tcp_inet_multi_timeout(ErlDrvData e, ErlDrvTermData caller);
+static void clean_multi_timers(MultiTimerData **first, ErlDrvPort port);
+
 typedef struct {
     int            id;      /* id used to identify reply */
     ErlDrvTermData caller;  /* recipient of async reply */
     int            req;     /* Request id (CONNECT/ACCEPT/RECV) */
-    unsigned       timeout; /* Request timeout (since op issued,not started) */
+    union {
+	unsigned       value; /* Request timeout (since op issued,not started) */
+	MultiTimerData *mtd;
+    } tmo;
+    ErlDrvMonitor monitor;
 } inet_async_op;
+
+typedef struct inet_async_multi_op_ {
+    inet_async_op op;
+    struct inet_async_multi_op_ *next;
+} inet_async_multi_op;
+
 
 typedef struct subs_list_ {
   ErlDrvTermData subscriber;
@@ -639,6 +667,7 @@ typedef struct {
 #define TCP_REQ_RECV      32
 #define TCP_REQ_UNRECV    33
 #define TCP_REQ_SHUTDOWN  34
+#define TCP_REQ_MULTI_OP  35
 
 
 #define TCP_STATE_CLOSED     INET_STATE_CLOSED
@@ -648,6 +677,7 @@ typedef struct {
 #define TCP_STATE_LISTEN     (TCP_STATE_BOUND | INET_F_LISTEN)
 #define TCP_STATE_CONNECTING (TCP_STATE_BOUND | INET_F_CON)
 #define TCP_STATE_ACCEPTING  (TCP_STATE_LISTEN | INET_F_ACC)
+#define TCP_STATE_MULTI_ACCEPTING (TCP_STATE_ACCEPTING | INET_F_MULTI_CLIENT)
 
 #define TCP_PB_RAW     0
 #define TCP_PB_1       1
@@ -677,9 +707,11 @@ static void tcp_inet_drv_input(ErlDrvData, ErlDrvEvent);
 static void tcp_inet_drv_output(ErlDrvData data, ErlDrvEvent event);
 static ErlDrvData tcp_inet_start(ErlDrvPort, char* command);
 static int tcp_inet_ctl(ErlDrvData, unsigned int, char*, int, char**, int);
-static void  tcp_inet_timeout(ErlDrvData);
+static void tcp_inet_timeout(ErlDrvData);
+static void tcp_inet_process_exit(ErlDrvData, ErlDrvMonitor *); 
 #ifdef __WIN32__
 static void tcp_inet_event(ErlDrvData, ErlDrvEvent);
+static void find_dynamic_functions(void);
 #endif
 
 static struct erl_drv_entry tcp_inet_driver_entry = 
@@ -700,7 +732,17 @@ static struct erl_drv_entry tcp_inet_driver_entry =
     NULL,
     tcp_inet_ctl,
     tcp_inet_timeout,
-    tcp_inet_commandv
+    tcp_inet_commandv,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+    NULL,
+    tcp_inet_process_exit
 };
 
 #define UDP_REQ_RECV         30
@@ -723,6 +765,9 @@ static SOCKET make_noninheritable_handle(SOCKET s);
 static int winsock_event_select(inet_descriptor *, int, int);
 #endif
 
+
+    
+
 static struct erl_drv_entry udp_inet_driver_entry = 
 {
     udp_inet_init,  /* inet_init will add this driver !! */
@@ -740,7 +785,15 @@ static struct erl_drv_entry udp_inet_driver_entry =
     NULL,
     udp_inet_ctl,
     udp_inet_timeout,
-    NULL
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING
 };
 
 typedef struct {
@@ -758,6 +811,9 @@ typedef struct {
 #ifdef USE_HTTP
     int           http_state;   /* 0 = response|request  1=headers fields */
 #endif
+    inet_async_multi_op *multi_first;/* NULL == no multi-accept-queue, op is in ordinary queue */
+    inet_async_multi_op *multi_last;
+    MultiTimerData *mtd;        /* Timer structures for multiple accept */
 } tcp_descriptor;
 
 /* send function */
@@ -959,8 +1015,19 @@ static int load_ip_address(ErlDrvTermData* spec, int i, int family, char* buf)
 */
 #define BUFFER_STACK_SIZE 16
 
+static erts_smp_spinlock_t inet_buffer_stack_lock;
 static ErlDrvBinary* buffer_stack[BUFFER_STACK_SIZE];
 static int buffer_stack_pos = 0;
+
+
+/*
+ * XXX
+ * The erts_smp_spin_* functions should not be used by drivers (but this
+ * driver is special). Replace when driver locking api has been implemented.
+ * /rickard
+ */
+#define BUFSTK_LOCK	erts_smp_spin_lock(&inet_buffer_stack_lock);
+#define BUFSTK_UNLOCK	erts_smp_spin_unlock(&inet_buffer_stack_lock);
 
 #ifdef DEBUG
 static int tot_buf_allocated = 0;  /* memory in use for i_buf */
@@ -968,14 +1035,24 @@ static int tot_buf_stacked = 0;   /* memory on stack */
 static int max_buf_allocated = 0; /* max allocated */
 
 #define COUNT_BUF_ALLOC(sz) do { \
+  BUFSTK_LOCK; \
   tot_buf_allocated += (sz); \
   if (tot_buf_allocated > max_buf_allocated) \
     max_buf_allocated = tot_buf_allocated; \
+  BUFSTK_UNLOCK; \
 } while(0)
 
-#define COUNT_BUF_FREE(sz) do { tot_buf_allocated -= (sz); } while(0)
+#define COUNT_BUF_FREE(sz) do { \
+ BUFSTK_LOCK; \
+ tot_buf_allocated -= (sz); \
+ BUFSTK_UNLOCK; \
+ } while(0)
 
-#define COUNT_BUF_STACK(sz) do { tot_buf_stacked += (sz); } while(0)
+#define COUNT_BUF_STACK(sz) do { \
+ BUFSTK_LOCK; \
+ tot_buf_stacked += (sz); \
+ BUFSTK_UNLOCK; \
+ } while(0)
 
 #else
 
@@ -989,6 +1066,8 @@ static ErlDrvBinary* alloc_buffer(long minsz)
 {
     ErlDrvBinary* buf = NULL;
 
+    BUFSTK_LOCK;
+
     DEBUGF(("alloc_buffer: sz = %ld, tot = %d, max = %d\r\n", 
 	    minsz, tot_buf_allocated, max_buf_allocated));
 
@@ -997,6 +1076,7 @@ static ErlDrvBinary* alloc_buffer(long minsz)
 
 	buf = buffer_stack[--buffer_stack_pos];
 	origsz = buf->orig_size;
+	BUFSTK_UNLOCK;
 	COUNT_BUF_STACK(-origsz);
 	if (origsz < minsz) {
 	    if ((buf = driver_realloc_binary(buf, minsz)) == NULL)
@@ -1005,6 +1085,7 @@ static ErlDrvBinary* alloc_buffer(long minsz)
 	}
     }
     else {
+	BUFSTK_UNLOCK;
 	if ((buf = driver_alloc_binary(minsz)) == NULL)
 	    return NULL;
 	COUNT_BUF_ALLOC(buf->orig_size);
@@ -1022,8 +1103,10 @@ static void release_buffer(ErlDrvBinary* buf)
     DEBUGF(("release_buffer: %ld\r\n", (buf==NULL) ? 0 : buf->orig_size));
     if (buf == NULL)
 	return;
+    BUFSTK_LOCK;
     if ((buf->orig_size > INET_MAX_BUFFER) || 
 	(buffer_stack_pos >= BUFFER_STACK_SIZE)) {
+	BUFSTK_UNLOCK;
 	COUNT_BUF_FREE(buf->orig_size);
 	driver_free_binary(buf);
     }
@@ -1042,6 +1125,7 @@ static void release_buffer(ErlDrvBinary* buf)
 	}
 #endif
 	buffer_stack[buffer_stack_pos++] = buf;
+	BUFSTK_UNLOCK;
 	COUNT_BUF_STACK(buf->orig_size);
     }
 }
@@ -1180,8 +1264,102 @@ static ErlDrvTermData error_atom(int err)
     return driver_mk_atom(errstr);
 }
 
+
+static void enq_old_multi_op(tcp_descriptor *desc, int id, int req, 
+			     ErlDrvTermData caller, MultiTimerData *timeout,
+			     ErlDrvMonitor *monitorp)
+{
+    inet_async_multi_op *opp;
+
+    opp = ALLOC(sizeof(inet_async_multi_op));
+
+    opp->op.id = id;
+    opp->op.caller = caller;
+    opp->op.req = req;
+    opp->op.tmo.mtd = timeout;
+    memcpy(&(opp->op.monitor), monitorp, sizeof(ErlDrvMonitor));
+    opp->next = NULL;
+
+    if (desc->multi_first == NULL) {
+	desc->multi_first = opp;
+    } else {
+	desc->multi_last->next = opp;
+    }
+    desc->multi_last = opp;
+}   
+
+static void enq_multi_op(tcp_descriptor *desc, char *buf, int req, 
+			 ErlDrvTermData caller, MultiTimerData *timeout,
+			 ErlDrvMonitor *monitorp)
+{
+    int id = NEW_ASYNC_ID();
+    enq_old_multi_op(desc,id,req,caller,timeout,monitorp);
+    if (buf != NULL)
+	put_int16(id, buf);
+}
+
+static int deq_multi_op(tcp_descriptor *desc, int *id_p, int *req_p, 
+			ErlDrvTermData *caller_p, MultiTimerData **timeout_p,
+			ErlDrvMonitor *monitorp)
+{
+    inet_async_multi_op *opp;
+    opp = desc->multi_first;
+    if (!opp) {
+	return -1;
+    }
+    desc->multi_first = opp->next;
+    if (desc->multi_first == NULL) {
+	desc->multi_last = NULL;
+    }
+    *id_p = opp->op.id;
+    *req_p = opp->op.req;
+    *caller_p = opp->op.caller;
+    if (timeout_p != NULL) {
+	*timeout_p = opp->op.tmo.mtd;
+    }
+    if (monitorp != NULL) {
+	memcpy(monitorp,&(opp->op.monitor),sizeof(ErlDrvMonitor));
+    }
+    FREE(opp);
+    return 0;
+}
+
+static int remove_multi_op(tcp_descriptor *desc, int *id_p, int *req_p, 
+			   ErlDrvTermData caller, MultiTimerData **timeout_p,
+			   ErlDrvMonitor *monitorp)
+{
+    inet_async_multi_op *opp, *slap;
+    for (opp = desc->multi_first, slap = NULL; 
+	 opp != NULL && opp->op.caller != caller; 
+	 slap = opp, opp = opp->next)
+	;
+    if (!opp) {
+	return -1;
+    }
+    if (slap == NULL) {
+	desc->multi_first = opp->next;
+    } else {
+	slap->next = opp->next;
+    }
+    if (desc->multi_last == opp) {
+	desc->multi_last = slap;
+    }
+    *id_p = opp->op.id;
+    *req_p = opp->op.req;
+    if (timeout_p != NULL) {
+	*timeout_p = opp->op.tmo.mtd;
+    }
+    if (monitorp != NULL) {
+	memcpy(monitorp,&(opp->op.monitor),sizeof(ErlDrvMonitor));
+    }
+    FREE(opp);
+    return 0;
+}
+
 /* setup a new async id + caller (format async_id into buf) */
-static int enq_async(inet_descriptor* desc, char* buf, int req)
+
+static int enq_async_w_tmo(inet_descriptor* desc, char* buf, int req, unsigned timeout,
+			   ErlDrvMonitor *monitorp)
 {
     int id = NEW_ASYNC_ID();
     inet_async_op* opp;
@@ -1196,6 +1374,10 @@ static int enq_async(inet_descriptor* desc, char* buf, int req)
     opp->id = id;
     opp->caller = driver_caller(desc->port);
     opp->req = req;
+    opp->tmo.value = timeout;
+    if (monitorp != NULL) {
+	memcpy(&(opp->monitor),monitorp,sizeof(ErlDrvMonitor));
+    }
 
     DEBUGF(("enq(%ld): %d %ld %d\r\n", 
 	    (long) desc->port, opp->id, opp->caller, opp->req));
@@ -1211,7 +1393,13 @@ static int enq_async(inet_descriptor* desc, char* buf, int req)
     return 0;
 }
 
-static int deq_async(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, int* rp)
+static int enq_async(inet_descriptor* desc, char* buf, int req) 
+{
+    return enq_async_w_tmo(desc,buf,req,INET_INFINITY, NULL);
+}
+
+static int deq_async_w_tmo(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, 
+			   int* rp, unsigned *tp, ErlDrvMonitor *monitorp)
 {
     inet_async_op* opp;
 
@@ -1222,6 +1410,12 @@ static int deq_async(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, int* rp
     *ap = opp->id;
     *cp = opp->caller;
     *rp = opp->req;
+    if (tp != NULL) {
+	*tp = opp->tmo.value;
+    }
+    if (monitorp != NULL) {
+	memcpy(monitorp,&(opp->monitor),sizeof(ErlDrvMonitor));
+    }
     
     DEBUGF(("deq(%ld): %d %ld %d\r\n", 
 	    (long)desc->port, opp->id, opp->caller, opp->req));
@@ -1237,7 +1431,10 @@ static int deq_async(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, int* rp
     return 0;
 }
 
-
+static int deq_async(inet_descriptor* desc, int* ap, ErlDrvTermData* cp, int* rp)
+{
+    return deq_async_w_tmo(desc,ap,cp,rp,NULL,NULL);
+}
 /* send message:
 **     {inet_async, Port, Ref, ok} 
 */
@@ -2637,23 +2834,20 @@ sock_init(void) /* May be called multiple times. */
 	return res;
 
     wVersionRequested = MAKEWORD(2,0);
-    if (!tcp_lookup_functions())
+    if (WSAStartup(wVersionRequested, &wsaData) != 0)
 	goto error;
-    if ((*winSock.WSAStartup)(wVersionRequested, &wsaData) != 0)
-	goto error;
+
     if ((LOBYTE(wsaData.wVersion) != 2) || (HIBYTE(wsaData.wVersion) != 0))
 	goto error;
+
+    find_dynamic_functions();
 
     return res = 1;
 
  error:
 
-    if (winSock.WSACleanup) {
-	(*winSock.WSACleanup)();
-    }
-    winSock.WSACleanup = NULL;
+    WSACleanup();
     return res = 0;
-
 #else
     return 1;
 #endif
@@ -2666,6 +2860,8 @@ static int inet_init()
 	goto error;
 
     buffer_stack_pos = 0;
+
+    erts_smp_spinlock_init(&inet_buffer_stack_lock, "inet_buffer_stack_lock");
 
 #ifdef DEBUG
     tot_buf_allocated = 0;
@@ -2702,23 +2898,6 @@ static int inet_init()
     return 0;
 
  error:
-#ifdef __WIN32__
-    if (winSock.WSACleanup) {
-	(*winSock.WSACleanup)();
-    }
-    {
-	char *msg =
-	    "Failed to load or start Winsock2 (ws2_32.dll).\r\n\r\n"
-	    "Erlang modules using TCP/IP (gen_tcp, ftp, and others),\r\n"
-	    "will not work.  Furthermore, this Erlang node will not be able to\r\n"
-	    "communicate with other Erlang nodes.\r\n\r\n"
-	    "Refer to the Installation Guide for instructions about installing\r\n"
-	    "Winsock2 on Windows 95.\r\n\r\n";
-	erts_send_error_to_logger_str_nogl(msg);
-    }
-    add_driver_entry(&dummy_tcp_driver_entry);
-    add_driver_entry(&dummy_udp_driver_entry);
-#endif
     remove_driver_entry(&inet_driver_entry);
     return -1;
 }
@@ -3035,9 +3214,10 @@ static int inet_ctl_getiflist(inet_descriptor* desc, char** rbuf, int rsize)
 
     ifp = (INTERFACE_INFO*) ifbuf;
     len = 0;
-    err = (*winSock.WSAIoctl)(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
-			      (LPVOID) ifp, BUFSIZ, (LPDWORD) &len,
-			      NULL, NULL);
+    err = WSAIoctl(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
+		   (LPVOID) ifp, BUFSIZ, (LPDWORD) &len,
+		   NULL, NULL);
+
     if (err == SOCKET_ERROR)
 	return ctl_error(sock_errno(), rbuf, rsize);
 
@@ -3082,7 +3262,7 @@ static int inet_ctl_ifget(inet_descriptor* desc, char* buf, int len,
     len -= (namlen+1);
 
     ifp = (INTERFACE_INFO*) ifbuf;
-    err = (*winSock.WSAIoctl)(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
+    err = WSAIoctl(desc->s, SIO_GET_INTERFACE_LIST, NULL, 0,
 			      (LPVOID) ifp, BUFSIZ, (LPDWORD) &n, 
 			      NULL, NULL);
     if (err == SOCKET_ERROR) {
@@ -4863,6 +5043,8 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
 #ifdef USE_HTTP
     desc->http_state = 0;
 #endif
+    desc->mtd = NULL;
+    desc->multi_first = desc->multi_last = NULL;
     DEBUGF(("tcp_inet_start(%ld) }\r\n", (long)port));
     return (ErlDrvData) desc;
 }
@@ -4874,10 +5056,10 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
 static tcp_descriptor* tcp_inet_copy(tcp_descriptor* desc,SOCKET s,
 				     ErlDrvTermData owner, int* err)
 {
-    ErlDrvPort port;
+    ErlDrvPort port = desc->inet.port;
     tcp_descriptor* copy_desc;
 
-    copy_desc = (tcp_descriptor*) tcp_inet_start(desc->inet.port, NULL);
+    copy_desc = (tcp_descriptor*) tcp_inet_start(port, NULL);
 
     /* Setup event if needed */
     if ((copy_desc->inet.s = s) != INVALID_SOCKET) {
@@ -4905,9 +5087,7 @@ static tcp_descriptor* tcp_inet_copy(tcp_descriptor* desc,SOCKET s,
     copy_desc->send_timeout = desc->send_timeout;
     
     /* The new port will be linked and connected to the original caller */
-    port = driver_create_port(&tcp_inet_driver_entry, owner,
-			      "tcp_inet",
-			      (ErlDrvData) copy_desc);
+    port = driver_create_port(port, owner, "tcp_inet", (ErlDrvData) copy_desc);
     if ((long)port == -1) {
 	*err = ENFILE;
 	FREE(copy_desc);
@@ -4926,11 +5106,30 @@ static tcp_descriptor* tcp_inet_copy(tcp_descriptor* desc,SOCKET s,
 */
 static void tcp_close_check(tcp_descriptor* desc)
 {
+    /* XXX:PaN - multiple clients to handle! */
     if (desc->inet.state == TCP_STATE_ACCEPTING) {
+	inet_async_op *this_op = desc->inet.opt;
 	sock_select(INETP(desc), FD_ACCEPT, 0);
 	desc->inet.state = TCP_STATE_LISTEN;
+	if (this_op != NULL) {
+	    driver_demonitor_process(desc->inet.port, &(this_op->monitor));
+	}
 	async_error_am(INETP(desc), am_closed);
+    } 
+    else if (desc->inet.state == TCP_STATE_MULTI_ACCEPTING) {
+	int id,req;
+	ErlDrvTermData caller;
+	ErlDrvMonitor monitor;
+
+	sock_select(INETP(desc), FD_ACCEPT, 0);
+	desc->inet.state = TCP_STATE_LISTEN;
+	while (deq_multi_op(desc,&id,&req,&caller,NULL,&monitor) == 0) {
+	    driver_demonitor_process(desc->inet.port, &monitor);
+	    send_async_error(desc->inet.port, desc->inet.dport, id, caller, am_closed);
+	}
+	clean_multi_timers(&(desc->mtd), desc->inet.port);
     }
+
     else if (desc->inet.state == TCP_STATE_CONNECTING) {
 	async_error_am(INETP(desc), am_closed);
     }
@@ -5072,51 +5271,104 @@ static int tcp_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	/* INPUT: Timeout(4) */
 
 	/* FIXME implement ACCEPT queue ! */
-	if (desc->inet.state != TCP_STATE_LISTEN)
+	if ((desc->inet.state != TCP_STATE_LISTEN && desc->inet.state != TCP_STATE_ACCEPTING &&
+	     desc->inet.state != TCP_STATE_MULTI_ACCEPTING) || len != 4) {
 	    return ctl_error(EINVAL, rbuf, rsize);
-	if (len != 4)
-	    return ctl_error(EINVAL, rbuf, rsize);
+	}
+
 	timeout = get_int32(buf);
 
-	n = sizeof(desc->inet.remote);
-	s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &n);
-	if (s == INVALID_SOCKET) {
-	    if (sock_errno() == ERRNO_BLOCK) {
-		enq_async(INETP(desc), tbuf, TCP_REQ_ACCEPT);
-		desc->inet.state = TCP_STATE_ACCEPTING;
-		sock_select(INETP(desc),FD_ACCEPT,1);
-		if (timeout != INET_INFINITY)
-		    driver_set_timer(desc->inet.port, timeout);
-	    }
-	    else
-		return ctl_error(sock_errno(), rbuf, rsize);
-	}
-	else {
+	if (desc->inet.state == TCP_STATE_ACCEPTING) {
+	    unsigned long time_left;
+	    int oid;
+	    ErlDrvTermData ocaller;
+	    int oreq;
+	    unsigned otimeout;
 	    ErlDrvTermData caller = driver_caller(desc->inet.port);
-	    tcp_descriptor* accept_desc;
-	    int err;
+	    MultiTimerData *mtd = NULL,*omtd = NULL;
+	    ErlDrvMonitor monitor, omonitor;
 
-	    if ((accept_desc = tcp_inet_copy(desc,s,caller,&err)) == NULL) {
-		sock_close(s);
-		return ctl_error(err, rbuf, rsize);
+
+	    if (driver_monitor_process(desc->inet.port, caller ,&monitor) != 0) { 
+		return ctl_xerror("noproc", rbuf, rsize);
 	    }
-	    /* FIXME: may MUST lock access_port 
-	     * 1 - Port is accessible via the erlang:ports()
-	     * 2 - Port is accessible via callers process_info(links)
-	     */
-	    accept_desc->inet.remote = remote;
-	    SET_NONBLOCKING(accept_desc->inet.s);
-#ifdef __WIN32__
-	    driver_select(accept_desc->inet.port, accept_desc->inet.event, 
-			  DO_READ, 1);
-#endif
-	    accept_desc->inet.state = TCP_STATE_CONNECTED;
-	    enq_async(INETP(desc), tbuf, TCP_REQ_ACCEPT);
-	    async_ok_port(INETP(desc), accept_desc->inet.dport);
-	}
-	return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
-    }
+	    deq_async_w_tmo(INETP(desc),&oid,&ocaller,&oreq,&otimeout,&omonitor);
+	    if (otimeout != INET_INFINITY) {
+		driver_read_timer(desc->inet.port, &time_left);
+		driver_cancel_timer(desc->inet.port);
+		if (time_left <= 0) {
+		    time_left = 1;
+		}
+		omtd = add_multi_timer(&(desc->mtd), desc->inet.port, ocaller, 
+				       time_left, &tcp_inet_multi_timeout);
+	    }
+	    enq_old_multi_op(desc, oid, oreq, ocaller, omtd, &omonitor);
+	    if (timeout != INET_INFINITY) {
+		mtd = add_multi_timer(&(desc->mtd), desc->inet.port, caller, 
+				      timeout, &tcp_inet_multi_timeout);
+	    }
+	    enq_multi_op(desc, tbuf, TCP_REQ_ACCEPT, caller, mtd, &monitor);
+	    desc->inet.state = TCP_STATE_MULTI_ACCEPTING;
+	    return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
+	} else if (desc->inet.state == TCP_STATE_MULTI_ACCEPTING) {
+	    ErlDrvTermData caller = driver_caller(desc->inet.port);
+	    MultiTimerData *mtd = NULL;
+	    ErlDrvMonitor monitor;
 
+	    if (driver_monitor_process(desc->inet.port, caller ,&monitor) != 0) { 
+		return ctl_xerror("noproc", rbuf, rsize);
+	    }
+	    if (timeout != INET_INFINITY) {
+		mtd = add_multi_timer(&(desc->mtd), desc->inet.port, caller, 
+				      timeout, &tcp_inet_multi_timeout);
+	    }
+	    enq_multi_op(desc, tbuf, TCP_REQ_ACCEPT, caller, mtd, &monitor);
+	    return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
+ 	} else {
+	    n = sizeof(desc->inet.remote);
+	    s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &n);
+	    if (s == INVALID_SOCKET) {
+		if (sock_errno() == ERRNO_BLOCK) {
+		    ErlDrvMonitor monitor;
+		    if (driver_monitor_process(desc->inet.port, driver_caller(desc->inet.port),
+					       &monitor) != 0) { 
+			return ctl_xerror("noproc", rbuf, rsize);
+		    }
+		    enq_async_w_tmo(INETP(desc), tbuf, TCP_REQ_ACCEPT, timeout, &monitor);
+		    desc->inet.state = TCP_STATE_ACCEPTING;
+		    sock_select(INETP(desc),FD_ACCEPT,1);
+		    if (timeout != INET_INFINITY) {
+			driver_set_timer(desc->inet.port, timeout);
+		    }
+		} else {
+		    return ctl_error(sock_errno(), rbuf, rsize);
+		}
+	    } else {
+		ErlDrvTermData caller = driver_caller(desc->inet.port);
+		tcp_descriptor* accept_desc;
+		int err;
+		
+		if ((accept_desc = tcp_inet_copy(desc,s,caller,&err)) == NULL) {
+		    sock_close(s);
+		    return ctl_error(err, rbuf, rsize);
+		}
+		/* FIXME: may MUST lock access_port 
+		 * 1 - Port is accessible via the erlang:ports()
+		 * 2 - Port is accessible via callers process_info(links)
+		 */
+		accept_desc->inet.remote = remote;
+		SET_NONBLOCKING(accept_desc->inet.s);
+#ifdef __WIN32__
+		driver_select(accept_desc->inet.port, accept_desc->inet.event, 
+			      DO_READ, 1);
+#endif
+		accept_desc->inet.state = TCP_STATE_CONNECTED;
+		enq_async(INETP(desc), tbuf, TCP_REQ_ACCEPT);
+		async_ok_port(INETP(desc), accept_desc->inet.dport);
+	    }
+	    return ctl_reply(INET_REP_OK, tbuf, 2, rbuf, rsize);
+	}
+    }
     case INET_REQ_CLOSE:
 	DEBUGF(("tcp_inet_ctl(%ld): CLOSE\r\n", (long)desc->inet.port)); 
 	tcp_close_check(desc);
@@ -5211,7 +5463,9 @@ static void tcp_inet_timeout(ErlDrvData e)
 
     DEBUGF(("tcp_inet_timeout(%ld) {s=%d\r\n", 
 	    (long)desc->inet.port, desc->inet.s)); 
-    if ((state & TCP_STATE_CONNECTED) == TCP_STATE_CONNECTED) {
+    if ((state & INET_F_MULTI_CLIENT)) { /* Multi-client always means multi-timers */
+	fire_multi_timers(&(desc->mtd), desc->inet.port, e);
+    } else if ((state & TCP_STATE_CONNECTED) == TCP_STATE_CONNECTED) {
 	if (desc->busy_on_send) {
 	    desc->busy_on_send = 0;
 	    inet_reply_error_am(INETP(desc), am_timeout);
@@ -5231,14 +5485,37 @@ static void tcp_inet_timeout(ErlDrvData e)
 	async_error_am(INETP(desc), am_timeout);
     }
     else if ((state & TCP_STATE_ACCEPTING) == TCP_STATE_ACCEPTING) {
+	inet_async_op *this_op = desc->inet.opt;
 	/* timer is set on accept */
 	sock_select(INETP(desc), FD_ACCEPT, 0);
+	if (this_op != NULL) {
+	    driver_demonitor_process(desc->inet.port, &(this_op->monitor));
+	}
 	desc->inet.state = TCP_STATE_LISTEN;
 	async_error_am(INETP(desc), am_timeout);
     }
     DEBUGF(("tcp_inet_timeout(%ld) }\r\n", (long)desc->inet.port)); 
 }
 
+static void tcp_inet_multi_timeout(ErlDrvData e, ErlDrvTermData caller)
+{
+    tcp_descriptor* desc = (tcp_descriptor*)e;
+    int id,req;
+    ErlDrvMonitor monitor;
+
+    if (remove_multi_op(desc, &id, &req, caller, NULL, &monitor) != 0) {
+	return;
+    }
+    driver_demonitor_process(desc->inet.port, &monitor);
+    if (desc->multi_first == NULL) {
+	sock_select(INETP(desc),FD_ACCEPT,0);
+	desc->inet.state = TCP_STATE_LISTEN; /* restore state */
+    }
+    send_async_error(desc->inet.port, desc->inet.dport, id, caller, am_timeout);
+}
+    
+
+	
 /*
 ** command:
 **   output on a socket only !
@@ -5277,12 +5554,45 @@ static void tcp_inet_commandv(ErlDrvData e, ErlIOVec* ev)
     DEBUGF(("tcp_inet_commandv(%ld) }\r\n", (long)desc->inet.port)); 
 }
 
+static void tcp_inet_process_exit(ErlDrvData e, ErlDrvMonitor *monitorp) 
+{
+    tcp_descriptor* desc = (tcp_descriptor*)e;
+    ErlDrvTermData who = driver_get_monitored_process(desc->inet.port,monitorp);
+    int state = desc->inet.state;
+
+    if ((state & TCP_STATE_MULTI_ACCEPTING) == TCP_STATE_MULTI_ACCEPTING) {
+	int id,req;
+	MultiTimerData *timeout;
+	if (remove_multi_op(desc, &id, &req, who, &timeout, NULL) != 0) {
+	    return;
+	}
+	if (timeout != NULL) {
+	    remove_multi_timer(&(desc->mtd), desc->inet.port, timeout);
+	}
+	if (desc->multi_first == NULL) {
+	    sock_select(INETP(desc),FD_ACCEPT,0);
+	    desc->inet.state = TCP_STATE_LISTEN; /* restore state */
+	}
+    } else if ((state & TCP_STATE_ACCEPTING) == TCP_STATE_ACCEPTING) {
+	int did,drid; 
+	ErlDrvTermData dcaller;
+	deq_async(INETP(desc), &did, &dcaller, &drid);
+	driver_cancel_timer(desc->inet.port);
+	sock_select(INETP(desc),FD_ACCEPT,0);
+	desc->inet.state = TCP_STATE_LISTEN; /* restore state */
+    }
+} 
+
+
 
 /* The socket has closed, cleanup and send event */
 static int tcp_recv_closed(tcp_descriptor* desc)
 {
+#ifdef DEBUG
+    long port = (long) desc->inet.port; /* Used after driver_exit() */
+#endif
     DEBUGF(("tcp_recv_closed(%ld): s=%d, in %s, line %d\r\n",
-	    (long)desc->inet.port, desc->inet.s, __FILE__, __LINE__));
+	    port, desc->inet.s, __FILE__, __LINE__));
     if (IS_BUSY(INETP(desc))) {
 	/* A send is blocked */
 	desc->inet.caller = desc->inet.busy_caller;
@@ -5290,14 +5600,12 @@ static int tcp_recv_closed(tcp_descriptor* desc)
 	if (desc->busy_on_send) {
 	    driver_cancel_timer(desc->inet.port);
 	    desc->busy_on_send = 0;
-	    DEBUGF(("tcp_recv_closed(%ld): busy on send\r\n", 
-		    (long)desc->inet.port));
+	    DEBUGF(("tcp_recv_closed(%ld): busy on send\r\n", port));
 	}
 	desc->inet.state &= ~INET_F_BUSY;
 	set_busy_port(desc->inet.port, 0);
 	inet_reply_error_am(INETP(desc), am_closed);
-	DEBUGF(("tcp_recv_closed(%ld): busy reply 'closed'\r\n", 
-		(long)desc->inet.port));
+	DEBUGF(("tcp_recv_closed(%ld): busy reply 'closed'\r\n", port));
     }
     if (!desc->inet.active) {
 	/* We must cancel any timer here ! */
@@ -5311,8 +5619,7 @@ static int tcp_recv_closed(tcp_descriptor* desc)
 	}
 	async_error_am_all(INETP(desc), am_closed);
 	/* next time EXBADSEQ will be delivered  */
-	DEBUGF(("tcp_recv_closed(%ld): passive reply all 'closed'\r\n", 
-		(long)desc->inet.port));
+	DEBUGF(("tcp_recv_closed(%ld): passive reply all 'closed'\r\n", port));
     } else {
 	tcp_clear_input(desc);
 	tcp_closed_message(desc);
@@ -5321,10 +5628,9 @@ static int tcp_recv_closed(tcp_descriptor* desc)
 	} else {
 	    desc_close_read(INETP(desc));
 	}
-	DEBUGF(("tcp_recv_closed(%ld): active close\r\n", 
-		(long)desc->inet.port));
+	DEBUGF(("tcp_recv_closed(%ld): active close\r\n", port));
     }
-    DEBUGF(("tcp_recv_closed(%ld): done\r\n", (long)desc->inet.port));
+    DEBUGF(("tcp_recv_closed(%ld): done\r\n", port));
     return -1;
 }
 
@@ -5812,6 +6118,7 @@ static int tcp_recv(tcp_descriptor* desc, int request_len)
 
 #ifdef __WIN32__
 
+
 static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 {
     int save_event_mask = desc->event_mask;
@@ -5834,7 +6141,7 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
        The simplest way to do it is to turn off all events, reset the
        event handle and then, if event_mask != 0, turn on the appropriate
        events again. */
-    if ((*winSock.WSAEventSelect)(desc->s, NULL, 0) != 0) {
+    if (WSAEventSelect(desc->s, NULL, 0) != 0) {
 	DEBUGF(("port %d: winsock_event_select: "
 		"WSAEventSelect returned error, code %d.\n", 
 		sock_errno()));
@@ -5849,9 +6156,9 @@ static int winsock_event_select(inet_descriptor *desc, int flags, int on)
 	return -1;
     }
     if (desc->event_mask != 0) {
-	if ((*winSock.WSAEventSelect)(desc->s, 
-				      desc->event, 
-				      desc->event_mask) != 0) {
+	if (WSAEventSelect(desc->s, 
+			     desc->event, 
+			     desc->event_mask) != 0) {
 	    DEBUGF(("port %d: winsock_event_select: "
 		    "WSAEventSelect returned error, code %d.\n", 
 		    sock_errno()));
@@ -5915,7 +6222,7 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 
     DEBUGF(("tcp_inet_event(%ld) {s=%d\r\n", 
 	    (long)desc->inet.port, desc->inet.s));
-    if ((*winSock.WSAEnumNetworkEvents)(desc->inet.s, desc->inet.event,
+    if (WSAEnumNetworkEvents(desc->inet.s, desc->inet.event,
 					&netEv) != 0) {
 	DEBUGF((" => EnumNetworkEvents = %d\r\n", sock_errno() ));
 	goto error;
@@ -6002,19 +6309,31 @@ static void tcp_inet_event(ErlDrvData e, ErlDrvEvent event)
 static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 {
     int ret = 0;
-
-    DEBUGF(("tcp_inet_input(%ld) {s=%d\r\n", 
-	    (long)desc->inet.port, desc->inet.s));
+#ifdef DEBUG
+    long port = (long) desc->inet.port;  /* Used after driver_exit() */
+#endif
+    DEBUGF(("tcp_inet_input(%ld) {s=%d\r\n", port, desc->inet.s));
     if (desc->inet.state == TCP_STATE_ACCEPTING) {
 	SOCKET s;
 	unsigned int len;
 	inet_address remote;
+	inet_async_op *this_op = desc->inet.opt;
 	
+	len = sizeof(desc->inet.remote);
+	s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &len);
+	if (s == INVALID_SOCKET && sock_errno() == ERRNO_BLOCK) {
+	    /* Just try again, no real error, just a ghost trigger from poll, 
+	       keep the default return code and everything else as is */
+	    goto done;
+	}
+
 	sock_select(INETP(desc),FD_ACCEPT,0);
 	desc->inet.state = TCP_STATE_LISTEN; /* restore state */
 
-	len = sizeof(desc->inet.remote);
-	s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &len);
+	if (this_op != NULL) {
+	    driver_demonitor_process(desc->inet.port, &(this_op->monitor));
+	}
+
 
 	driver_cancel_timer(desc->inet.port); /* posssibly cancel a timer */
 
@@ -6039,10 +6358,6 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 		ret = async_error(INETP(desc), err);
 		goto done;
 	    }
-	    /* FIXME: may MUST lock port 
-	     * 1 - Port is accessible via the erlang:ports()
-	     * 2 - Port is accessible via callers process_info(links)
-	     */
 	    accept_desc->inet.remote = remote;
 	    SET_NONBLOCKING(accept_desc->inet.s);
 #ifdef __WIN32__
@@ -6053,6 +6368,74 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 	    ret =  async_ok_port(INETP(desc), accept_desc->inet.dport);
 	    goto done;
 	}
+    } else if (desc->inet.state == TCP_STATE_MULTI_ACCEPTING) {
+	SOCKET s;
+	unsigned int len;
+	inet_address remote;
+	int id,req;
+	ErlDrvTermData caller;
+	MultiTimerData *timeout;
+	ErlDrvMonitor monitor;
+#ifdef HARDDEBUG
+	int times = 0;
+#endif
+
+	while (desc->inet.state == TCP_STATE_MULTI_ACCEPTING) {
+	    len = sizeof(desc->inet.remote);
+	    s = sock_accept(desc->inet.s, (struct sockaddr*) &remote, &len);
+	    
+	    if (s == INVALID_SOCKET && sock_errno() == ERRNO_BLOCK) {
+		/* Just try again, no real error, keep the last return code */
+		goto done;
+	    }
+#ifdef HARDDEBUG
+	    if (++times > 1) {
+		erts_fprintf(stderr,"Accepts in one suite: %d :-)\r\n",times);
+	    }
+#endif
+	    if (deq_multi_op(desc,&id,&req,&caller,&timeout,&monitor) != 0) {
+		ret = -1;
+		goto done;
+	    }
+	    
+	    if (desc->multi_first == NULL) {
+		sock_select(INETP(desc),FD_ACCEPT,0);
+		desc->inet.state = TCP_STATE_LISTEN; /* restore state */
+	    }
+	    
+	    if (timeout != NULL) {
+		remove_multi_timer(&(desc->mtd), desc->inet.port, timeout);
+	    }
+	    
+	    driver_demonitor_process(desc->inet.port, &monitor);
+	    
+	    
+	    if (s == INVALID_SOCKET) { /* Not ERRNO_BLOCK, that's handled right away */
+		ret = send_async_error(desc->inet.port, desc->inet.dport, 
+				       id, caller, error_atom(sock_errno()));
+		goto done;
+	    }
+	    else {
+		tcp_descriptor* accept_desc;
+		int err;
+		
+		if ((accept_desc = tcp_inet_copy(desc,s,caller,&err)) == NULL) {
+		    sock_close(s);
+		    ret = send_async_error(desc->inet.port, desc->inet.dport, 
+					   id, caller, error_atom(err));
+		    goto done;
+		}
+		accept_desc->inet.remote = remote;
+		SET_NONBLOCKING(accept_desc->inet.s);
+#ifdef __WIN32__
+		driver_select(accept_desc->inet.port, accept_desc->inet.event, 
+			      DO_READ, 1);
+#endif
+		accept_desc->inet.state = TCP_STATE_CONNECTED;
+		ret =  send_async_ok_port(desc->inet.port, desc->inet.dport, 
+					  id, caller, accept_desc->inet.dport);
+	    }
+	}
     }
     else if (IS_CONNECTED(INETP(desc))) {
 	ret = tcp_recv(desc, 0);
@@ -6062,10 +6445,10 @@ static int tcp_inet_input(tcp_descriptor* desc, HANDLE event)
 	/* maybe a close op from connection attempt?? */
 	sock_select(INETP(desc),FD_ACCEPT,0);
 	DEBUGF(("tcp_inet_input(%ld): s=%d bad state: %04x\r\n", 
-		(long)desc->inet.port, desc->inet.s, desc->inet.state));
+		port, desc->inet.s, desc->inet.state));
     }
  done:
-    DEBUGF(("tcp_inet_input(%ld) }\r\n", (long)desc->inet.port));
+    DEBUGF(("tcp_inet_input(%ld) }\r\n", port));
     return ret;
 }
 
@@ -6708,8 +7091,8 @@ static void udp_inet_event(ErlDrvData e, ErlDrvEvent event)
     udp_descriptor* desc = (udp_descriptor*)e;
     WSANETWORKEVENTS netEv;
 
-    if ((winSock.WSAEnumNetworkEvents)(desc->inet.s, desc->inet.event,
-				       &netEv) != 0) {
+    if (WSAEnumNetworkEvents(desc->inet.s, desc->inet.event,
+				&netEv) != 0) {
 	DEBUGF(( "port %d: EnumNetworkEvents = %d\r\n", 
 		desc->inet.port, sock_errno() ));
 	return;
@@ -6812,110 +7195,22 @@ static int udp_inet_input(udp_descriptor* desc, HANDLE event)
 
 #ifdef __WIN32__
 
-int tcp_lookup_functions(void)
+/*
+ * Although we no longer need to lookup all of winsock2 dynamically,
+ * there are still some function(s) we need to look up.
+ */
+static void find_dynamic_functions(void)
 {
-    static char dll_name[] = "ws2_32";
+    char kernel_dll_name[] = "kernel32";
     HMODULE module;
-    int i;
-
-    if (winSock.WSAStartup != NULL)
-	return TRUE;
-
-    module = LoadLibrary(dll_name);
-
-    if (module == NULL) {
-	return FALSE;
-    }
-    winSock.WSAStartup = (LPFN_WSASTARTUP) 
-	GetProcAddress(module, "WSAStartup");
-    winSock.WSACleanup = (LPFN_WSACLEANUP)
-	GetProcAddress(module, "WSACleanup");
-    winSock.WSAGetLastError = (LPFN_WSAGETLASTERROR)
-	GetProcAddress(module, "WSAGetLastError");
-    winSock.WSAWaitForMultipleEvents = (LPFN_WSAWAITFORMULTIPLEEVENTS)
-	GetProcAddress(module, "WSAWaitForMultipleEvents");
-    winSock.WSACreateEvent = (LPFN_WSACREATEEVENT) 
-	GetProcAddress(module, "WSACreateEvent");
-    winSock.WSACloseEvent = (LPFN_WSACLOSEEVENT) 
-	GetProcAddress(module, "WSACloseEvent");
-    winSock.WSAResetEvent = (LPFN_WSARESETEVENT)
-	GetProcAddress(module, "WSAResetEvent");
-    winSock.WSAEventSelect = (LPFN_WSAEVENTSELECT)
-	GetProcAddress(module, "WSAEventSelect");
-    winSock.WSASetEvent = (LPFN_WSASETEVENT)
-	GetProcAddress(module, "WSASetEvent");
-    winSock.WSAEnumNetworkEvents = (LPFN_WSAENUMNETWORKEVENTS)
-	GetProcAddress(module, "WSAEnumNetworkEvents");
-    winSock.WSASend = (LPFN_WSASEND) 
-	GetProcAddress(module, "WSASend");
-    winSock.accept = (LPFN_ACCEPT)
-	GetProcAddress(module, "accept");
-    winSock.bind = (LPFN_BIND) 
-	GetProcAddress(module, "bind");
-    winSock.closesocket = (LPFN_CLOSESOCKET)
-	GetProcAddress(module, "closesocket");
-    winSock.connect = (LPFN_CONNECT) 
-	GetProcAddress(module, "connect");
-    winSock.ioctlsocket = (LPFN_IOCTLSOCKET)
-	GetProcAddress(module, "ioctlsocket");
-    winSock.getsockopt = (LPFN_GETSOCKOPT)
-	GetProcAddress(module, "getsockopt");
-    winSock.htonl = (LPFN_HTONL) 
-	GetProcAddress(module, "htonl");
-    winSock.htons = (LPFN_HTONS)
-	GetProcAddress(module, "htons");
-    winSock.inet_addr = (LPFN_INET_ADDR)
-	GetProcAddress(module, "inet_addr");
-    winSock.inet_ntoa = (LPFN_INET_NTOA)
-	GetProcAddress(module, "inet_ntoa");
-    winSock.listen = (LPFN_LISTEN)
-	GetProcAddress(module, "listen");
-    winSock.ntohs = (LPFN_NTOHS)
-	GetProcAddress(module, "ntohs");
-    winSock.ntohl = (LPFN_NTOHL) 
-	GetProcAddress(module, "ntohl");
-    winSock.recv = (LPFN_RECV) 
-	GetProcAddress(module, "recv");
-    winSock.send = (LPFN_SEND) 
-	GetProcAddress(module, "send");
-    winSock.recvfrom = (LPFN_RECVFROM)
-	GetProcAddress(module, "recvfrom");
-    winSock.sendto = (LPFN_SENDTO) 
-	GetProcAddress(module, "sendto");
-    winSock.setsockopt = (LPFN_SETSOCKOPT)
-	GetProcAddress(module, "setsockopt");
-    winSock.shutdown = (LPFN_SHUTDOWN) 
-	GetProcAddress(module, "shutdown");
-    winSock.socket = (LPFN_SOCKET) 
-	GetProcAddress(module, "socket");
-    winSock.gethostbyaddr = (LPFN_GETHOSTBYADDR)
-	GetProcAddress(module, "gethostbyaddr");
-    winSock.gethostbyname = (LPFN_GETHOSTBYNAME)
-	GetProcAddress(module, "gethostbyname");
-    winSock.gethostname = (LPFN_GETHOSTNAME) 
-	GetProcAddress(module, "gethostname");
-    winSock.getservbyname = (LPFN_GETSERVBYNAME)
-	GetProcAddress(module, "getservbyname");
-    winSock.getservbyport = (LPFN_GETSERVBYPORT)
-	GetProcAddress(module, "getservbyport");
-    winSock.getsockname = (LPFN_GETSOCKNAME) 
-	GetProcAddress(module, "getsockname");
-    winSock.getpeername = (LPFN_GETPEERNAME) 
-	GetProcAddress(module, "getpeername");
-    winSock.WSAIoctl = (LPFN_WSAIOCTL)
-	GetProcAddress(module, "WSAIoctl");
-    /*
-     * Check that all of the pointers got a non-NULL value.
-     */
-    for (i = 0; i < sizeof(WinSockFuncs)/sizeof(void*); i++) {
-	if (((char **)&winSock)[i] == NULL) {
-	    DEBUGF(("Function %d not initialized\r\n", i));
-	    return FALSE;
-	}
-    }
-
-    return TRUE;
+    module = GetModuleHandle(kernel_dll_name);
+    fpSetHandleInformation = (module != NULL) ? 
+	(BOOL (WINAPI *)(HANDLE,DWORD,DWORD)) 
+	    GetProcAddress(module,"SetHandleInformation") : 
+	NULL;
 }
+			      
+
 
 /*
  * We must make sure that the socket handles are not inherited
@@ -6931,25 +7226,246 @@ int tcp_lookup_functions(void)
 static SOCKET
 make_noninheritable_handle(SOCKET s)
 {
-    HANDLE non_inherited;
-    HANDLE this_process = GetCurrentProcess();
-
-    if (s == INVALID_SOCKET) {
-	return s;
-    } else if (DuplicateHandle(this_process, (HANDLE) s,
-			       this_process, &non_inherited, 0,
-			       FALSE, DUPLICATE_SAME_ACCESS)) {
-	(*winSock.closesocket)(s);
-	return (SOCKET) non_inherited;
-    } else {
-	/*
-	 * Silently use the old handle.
-	 */
-	return s;
+    if (s != INVALID_SOCKET) {
+	if (fpSetHandleInformation != NULL) {
+	    (*fpSetHandleInformation)((HANDLE) s, HANDLE_FLAG_INHERIT, 0);
+	} else {
+	    HANDLE non_inherited;
+	    HANDLE this_process = GetCurrentProcess();
+	    if (DuplicateHandle(this_process, (HANDLE) s,
+				this_process, &non_inherited, 0,
+				FALSE, DUPLICATE_SAME_ACCESS)) {
+		sock_close(s);
+		s = (SOCKET) non_inherited;
+	    }
+	} 	
     }
+    return s;
 }
 
 #endif
+
+/*
+ * Multi-timers
+ */
+
+static void absolute_timeout(unsigned millis, ErlDrvNowData *out)
+{
+    unsigned rest;
+    unsigned long millipart;
+    unsigned long secpart;
+    unsigned long megasecpart;
+    unsigned tmo_secs = (millis / 1000U);
+    unsigned tmo_millis = (millis % 1000);
+    driver_get_now(out);
+    rest = (out->microsecs) % 1000;
+    millipart = ((out->microsecs) / 1000UL);
+    if (rest >= 500) {
+	++millipart;
+    }
+    secpart = out->secs;
+    megasecpart = out->megasecs;
+    millipart += tmo_millis;
+    secpart += (millipart / 1000000UL);
+    millipart %= 1000000UL;
+    secpart += tmo_secs;
+    megasecpart += (secpart / 1000000UL);
+    secpart %= 1000000UL;
+    out->megasecs = megasecpart;
+    out->secs = secpart;
+    out->microsecs = (millipart * 1000UL);
+}
+
+static unsigned relative_timeout(ErlDrvNowData *in) 
+{
+    ErlDrvNowData now;
+    unsigned rest;
+    unsigned long millipart, in_millis, in_secs, in_megasecs;
+
+    driver_get_now(&now);
+
+    in_secs = in->secs;
+    in_megasecs = in->megasecs;
+
+    rest = (now.microsecs) % 1000;
+    millipart = ((now.microsecs) / 1000UL);
+    if (rest >= 500) {
+	++millipart;
+    }
+    in_millis = ((in->microsecs) / 1000UL);
+    if ( in_millis < millipart ) {
+	if (in_secs > 0) {
+	    --in_secs;
+	} else {
+	    in_secs = (1000000UL - 1UL);
+	    if (in_megasecs <= now.megasecs) {
+		return 0;
+	    } else {
+		--in_megasecs;
+	    }
+	}
+	in_millis += 1000UL;
+    }
+    in_millis -= millipart;
+    
+    if (in_secs < now.secs) {
+	if (in_megasecs <= now.megasecs) {
+	    return 0;
+	} else {
+	    --in_megasecs;
+	}
+	in_secs += 1000000;
+    }
+    in_secs -= now.secs;
+    if (in_megasecs < now.megasecs) {
+	return 0;
+    } else {
+	in_megasecs -= now.megasecs;
+    }
+    return (unsigned) ((in_megasecs * 1000000000UL) + 
+		       (in_secs * 1000UL) + 
+		       in_millis);
+}
+
+#ifdef DEBUG
+static int nowcmp(ErlDrvNowData *d1, ErlDrvNowData *d2)
+{
+    /* Assume it's not safe to do signed conversion on megasecs... */
+    if (d1->megasecs < d2->megasecs) {
+	return -1;
+    } else if (d1->megasecs > d2->megasecs) {
+	return 1;
+    } else if (d1->secs != d2->secs) {
+	return ((int) d1->secs) - ((int) d2->secs);
+    } 
+    return ((int) d1->microsecs) - ((int) d2->microsecs);
+}
+#endif
+
+static void fire_multi_timers(MultiTimerData **first, ErlDrvPort port,
+			      ErlDrvData data)
+{
+    unsigned next_timeout;
+    if (!*first) {
+	ASSERT(0);
+	return;
+    }
+#ifdef DEBUG
+    {
+	ErlDrvNowData chk;
+	driver_get_now(&chk);
+	chk.microsecs /= 10000UL;
+	chk.microsecs *= 10000UL;
+	chk.microsecs += 10000;
+	ASSERT(nowcmp(&chk,&((*first)->when)) >= 0);
+    }
+#endif
+    do {
+	MultiTimerData *save = *first;
+	*first = save->next;
+	(*(save->timeout_function))(data,save->caller);
+	FREE(save);
+	if (*first == NULL) {
+	    return;
+	}
+	(*first)->prev = NULL;
+	next_timeout = relative_timeout(&((*first)->when));
+    } while (next_timeout == 0);
+    driver_set_timer(port,next_timeout);
+}
+
+static void clean_multi_timers(MultiTimerData **first, ErlDrvPort port)
+{
+    MultiTimerData *p;
+    if (*first) {
+	driver_cancel_timer(port);
+    }
+    while (*first) {
+	p = *first;
+	*first = p->next;
+	FREE(p);
+    }
+}
+static void remove_multi_timer(MultiTimerData **first, ErlDrvPort port, MultiTimerData *p)
+{
+    if (p->prev != NULL) {
+	p->prev->next = p->next;
+    } else {
+	driver_cancel_timer(port);
+	*first = p->next;
+	if (*first) {
+	    unsigned ntmo = relative_timeout(&((*first)->when));
+	    driver_set_timer(port,ntmo);
+	}
+    }
+    if (p->next != NULL) {
+	p->next->prev = p->prev;
+    }
+    FREE(p);
+}
+
+static MultiTimerData *add_multi_timer(MultiTimerData **first, ErlDrvPort port, 
+				       ErlDrvTermData caller, unsigned timeout,
+				       void (*timeout_fun)(ErlDrvData drv_data, 
+							   ErlDrvTermData caller))
+{
+    MultiTimerData *mtd, *p, *s;
+    mtd = ALLOC(sizeof(MultiTimerData));
+    absolute_timeout(timeout, &(mtd->when));
+    mtd->timeout_function = timeout_fun;
+    mtd->caller = caller;
+    mtd->next = mtd->prev = NULL;
+    for(p = *first,s = NULL; p != NULL; s = p, p = p->next) {
+	if (p->when.megasecs >= mtd->when.megasecs) {
+	    break;
+	}
+    }
+    if (!p || p->when.megasecs > mtd->when.megasecs) {
+	goto found;
+    }
+    for (; p!= NULL; s = p, p = p->next) {
+	if (p->when.secs >= mtd->when.secs) {
+	    break;
+	}
+    }
+    if (!p || p->when.secs > mtd->when.secs) {
+	goto found;
+    }
+    for (; p!= NULL; s = p, p = p->next) {
+	if (p->when.microsecs >= mtd->when.microsecs) {
+	    break;
+	}
+    }
+ found:
+    if (!p) {
+	if (!s) {
+	    *first = mtd;
+	} else {
+	    s->next = mtd;
+	    mtd->prev = s;
+	}
+    } else {
+	if (!s) {
+	    *first = mtd;
+	} else {
+	    s->next = mtd;
+	    mtd->prev = s;
+	}
+	mtd->next = p;
+	p->prev = mtd;
+    }
+    if (!s) {
+	if (mtd->next) {
+	    driver_cancel_timer(port);
+	}
+	driver_set_timer(port,timeout);
+    }
+    return mtd;
+}
+	
+
+
+
 
 /*-----------------------------------------------------------------------------
 

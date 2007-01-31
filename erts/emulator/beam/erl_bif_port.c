@@ -53,10 +53,8 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
     char *str;
 
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
-    erts_smp_io_lock();
 
     if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2)) < 0) {
-       erts_smp_io_unlock();
        erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
        if (port_num == -3) {
 	  BIF_ERROR(BIF_P, BADARG);
@@ -77,7 +75,7 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
 
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
 
-    erts_smp_io_unlock();
+    erts_port_release(&erts_port[port_num]);
 
     BIF_RET(port_val);
 }
@@ -111,7 +109,7 @@ id_or_name2port(Process *c_p, Eterm id)
     if (is_not_atom(id))
 	port = erts_id2port(id, c_p, ERTS_PROC_LOCK_MAIN);
     else
-	erts_whereis_name(c_p,ERTS_PROC_LOCK_MAIN,0,id,NULL,0,0,&port);
+	erts_whereis_name(c_p, ERTS_PROC_LOCK_MAIN, id, NULL, 0, 0, &port);
     return port;
 }
 
@@ -127,8 +125,8 @@ BIF_RETTYPE port_command_2(BIF_ALIST_2)
 
     ERTS_BIF_PREP_RET(res, am_true);
 
-    if (p->status & PORT_BUSY) {
-	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, p->id);
+    if (p->status & ERTS_PORT_SFLG_PORT_BUSY) {
+	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, p);
 	if (erts_system_monitor_flags.busy_port) {
 	    monitor_generic(BIF_P, am_busy_port, p->id);
 	}
@@ -138,14 +136,14 @@ BIF_RETTYPE port_command_2(BIF_ALIST_2)
 	int wres;
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	ERTS_SMP_CHK_NO_PROC_LOCKS;
-	wres = write_port(BIF_P->id,internal_port_index(p->id),BIF_ARG_2);
+	wres = erts_write_to_port(BIF_P->id, p, BIF_ARG_2);
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	if (wres != 0) {
 	    ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
 	}
     }
 
-    erts_smp_io_unlock();
+    erts_port_release(p);
     
     if (ERTS_PROC_IS_EXITING(BIF_P)) {
 	KILL_CATCHES(BIF_P);	/* Must exit */
@@ -197,9 +195,6 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
     Eterm *hp;
     Eterm *hp_end;              /* To satisfy hybrid heap architecture */
     unsigned ret_flags = 0U;
-#ifdef ERTS_SMP
-    int have_io_lock = 0;
-#endif
 
     port_resp = port_result;
     p = id_or_name2port(BIF_P, BIF_ARG_1);
@@ -209,16 +204,15 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 	    !(ret_flags & DRIVER_CALL_KEEP_BUFFER)) {
 	    driver_free(port_resp);
 	}
+	if (p)
+	    erts_port_release(p);
 #ifdef ERTS_SMP
-	if (have_io_lock)
-	    erts_smp_io_unlock();
+	ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P, ERTS_PROC_LOCK_MAIN);
+#else
+	ERTS_BIF_CHK_EXITED(BIF_P);
 #endif
 	BIF_ERROR(BIF_P, BADARG);
     }
-
-#ifdef ERTS_SMP
-    have_io_lock = 1;
-#endif
 
     if ((drv = p->drv_ptr) == NULL) {
 	goto error;
@@ -243,7 +237,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 	erl_exit(1, "%s, line %d: buffer overflow: %d word(s)\n",
 		 __FILE__, __LINE__, endp - (bytes + size));
     }
-
+    p->caller = BIF_P->id;
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
     prc  = (char *) port_resp;
     ret = drv->call((ErlDrvData)p->drv_data, 
@@ -254,6 +248,7 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 		    (int) sizeof(port_result),
 		    &ret_flags);
     port_resp = (byte *) prc;
+    p->caller = NIL;
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 #ifdef HARDDEBUG
     { 
@@ -292,12 +287,13 @@ BIF_RETTYPE port_call_3(BIF_ALIST_3)
 	driver_free(port_resp);
     }
 
+    if (p)
+	erts_port_release(p);
 #ifdef ERTS_SMP
-    ASSERT(have_io_lock);
-    erts_smp_io_unlock();
-#endif
-
     ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P, ERTS_PROC_LOCK_MAIN);
+#else
+    ERTS_BIF_CHK_EXITED(BIF_P);
+#endif
     return res;
 }
     
@@ -314,8 +310,12 @@ BIF_RETTYPE port_control_3(BIF_ALIST_3)
 
     if (term_to_Uint(BIF_ARG_2, &op))
 	res = erts_port_control(BIF_P, p, op, BIF_ARG_3);
-    erts_smp_io_unlock();
+    erts_port_release(p);
+#ifdef ERTS_SMP
     ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P, ERTS_PROC_LOCK_MAIN);
+#else
+    ERTS_BIF_CHK_EXITED(BIF_P);
+#endif
     if (is_non_value(res)) {
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -331,11 +331,11 @@ BIF_RETTYPE port_close_1(BIF_ALIST_1)
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	BIF_ERROR(BIF_P, BADARG);
     }
-    erts_do_exit_port(p->id, p->connected, am_normal);
+    erts_do_exit_port(p, p->connected, am_normal);
     /* if !ERTS_SMP: since we terminate port with reason normal 
        we SHOULD never get an exit signal ourselves
        */
-    erts_smp_io_unlock();
+    erts_port_release(p);
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
     BIF_RET(am_true);
 }
@@ -358,7 +358,7 @@ BIF_RETTYPE port_connect_2(BIF_ALIST_2)
     rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
 		       pid, ERTS_PROC_LOCK_LINK);
     if (!rp) {
-	erts_smp_io_unlock();
+	erts_smp_port_unlock(prt);
 	ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
 	goto error;
     }
@@ -369,7 +369,7 @@ BIF_RETTYPE port_connect_2(BIF_ALIST_2)
     erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_LINK);
 
     prt->connected = pid; /* internal pid */
-    erts_smp_io_unlock();
+    erts_smp_port_unlock(prt);
     BIF_RET(am_true);
 }
 
@@ -399,7 +399,7 @@ BIF_RETTYPE port_set_data_2(BIF_ALIST_2)
 	hp = bp->mem;
 	prt->data = copy_struct(data, size, &hp, &bp->off_heap);
     }
-    erts_smp_io_unlock();
+    erts_smp_port_unlock(prt);
     BIF_RET(am_true);
 }
 
@@ -420,7 +420,7 @@ BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
 	Eterm* hp = HAlloc(BIF_P, prt->bp->size);
 	res = copy_struct(prt->data, prt->bp->size, &hp, &MSO(BIF_P));
     }
-    erts_smp_io_unlock();
+    erts_smp_port_unlock(prt);
     BIF_RET(res);
 }
 
@@ -669,14 +669,17 @@ open_port(Process* p, Eterm name, Eterm settings)
     }
 
     if (binary_io) {
-	erts_port[port_num].status |= BINARY_IO;
+	erts_port_status_bor_set(&erts_port[port_num],
+				 ERTS_PORT_SFLG_BINARY_IO);
     }
     if (soft_eof) {
-	erts_port[port_num].status |= SOFT_EOF;
+	erts_port_status_bor_set(&erts_port[port_num],
+				 ERTS_PORT_SFLG_SOFT_EOF);
     }
     if (linebuf && erts_port[port_num].linebuf == NULL){
 	erts_port[port_num].linebuf = allocate_linebuf(linebuf); 
-	erts_port[port_num].status |= LINEBUF_IO;
+	erts_port_status_bor_set(&erts_port[port_num],
+				 ERTS_PORT_SFLG_LINEBUF_IO);
     }
 
  do_return:

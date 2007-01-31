@@ -26,5 +26,7 @@ These are the rules that HiPE x86 register allocators must abide by.
 
 - After RA, the temp in a lea must be a register.
 
+- After RA, the temp in an imul must be a register.
+
 - After RA, a function's formal parameters must reside on the stack.
   Therefore, the RA MUST NOT map the formals to actual registers.

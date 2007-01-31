@@ -31,6 +31,7 @@ insn_def(I) ->
     #fmove{dst=Dst} -> dst_def(Dst);
     #fp_binop{dst=Dst} -> dst_def(Dst);
     #fp_unop{arg=Arg} -> dst_def(Arg);
+    #imul{temp=Temp} -> [Temp];
     #lea{temp=Temp} -> [Temp];
     #move{dst=Dst} -> dst_def(Dst);
     #move64{dst=Dst} -> dst_def(Dst);
@@ -72,6 +73,8 @@ insn_use(I) ->
     #fmove{src=Src,dst=Dst} -> addtemp(Src, dst_use(Dst));
     #fp_unop{arg=Arg} -> addtemp(Arg, []);
     #fp_binop{src=Src,dst=Dst} -> addtemp(Src, addtemp(Dst, []));
+    #imul{imm_opt=ImmOpt,src=Src,temp=Temp} ->
+      addtemp(Src, case ImmOpt of [] -> addtemp(Temp, []); _ -> [] end);
     #jmp_fun{'fun'=Fun} -> addtemp(Fun, []);
     #jmp_switch{temp=Temp, jtab=JTab} -> addtemp(Temp, addtemp(JTab, []));
     #lea{mem=Mem} -> addtemp(Mem, []);

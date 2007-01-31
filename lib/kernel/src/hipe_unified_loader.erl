@@ -64,21 +64,19 @@
 
 chunk_name(Architecture) ->
   case Architecture of
-    ultrasparc -> ?HS8P_TAG; %% HiPE, SPARC, V8+ (implicit: 32-bit)
+    amd64 ->      ?HA64_TAG; %% HiPE, x86_64, (implicit: 64-bit, Unix)
+    arm ->	  ?HARM_TAG; %% HiPE, arm, v5 (implicit: 32-bit, Linux)
     powerpc ->    ?HPPC_TAG; %% HiPE, PowerPC (implicit: 32-bit, Linux)
     ppc64 ->	  ?HP64_TAG; %% HiPE, ppc64 (implicit: 64-bit, Linux)
-    arm ->	  ?HARM_TAG; %% HiPE, arm, v5 (implicit: 32-bit, Linux)
-    x86 ->        ?HX86_TAG; %% HiPE, x86, (implicit: Unix)
-    amd64 ->      ?HA64_TAG  %% HiPE, x86_64, (implicit: 64-bit, Unix)
+    ultrasparc -> ?HS8P_TAG; %% HiPE, SPARC, V8+ (implicit: 32-bit)
+    x86 ->        ?HX86_TAG  %% HiPE, x86, (implicit: Unix)
     %% Future:     HSV9      %% HiPE, SPARC, V9 (implicit: 64-bit)
     %%             HW32      %% HiPE, x86, Win32 
   end.
 
 %%========================================================================
 
-%% @spec load_hipe_modules() -> module_name() | ok
-%%
-%% @type module_name() = atom()
+%% @spec load_hipe_modules() -> ok
 %%
 %% @doc
 %%    Ensures HiPE's loader modules are loaded.
@@ -97,7 +95,7 @@ load_hipe_modules() ->
 %%    Returns {module,Mod} on success (for compatibility with
 %%    code:load_file/1) and the atom `no_native' on failure.
 
-load_native_code(Mod, Bin) ->
+load_native_code(Mod, Bin) when is_atom(Mod), is_binary(Bin) ->
   Architecture = erlang:system_info(hipe_architecture),
   case catch chunk_name(Architecture) of
     {'EXIT',_} ->
@@ -116,7 +114,7 @@ load_native_code(Mod, Bin) ->
       end
   end.
 
-post_beam_load(Mod) ->
+post_beam_load(Mod) when is_atom(Mod) ->
   Architecture = erlang:system_info(hipe_architecture),
   case catch chunk_name(Architecture) of
     {'EXIT',_} ->
@@ -127,7 +125,7 @@ post_beam_load(Mod) ->
 
 %%========================================================================
 
-version_check(Version, Mod) ->
+version_check(Version, Mod) when is_atom(Mod) ->
   Ver = ?VERSION_STRING(),
   case Version < Ver of
     true -> 
@@ -167,8 +165,9 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
   version_check(Version, Mod),
   case hipe_bifs:check_crc(CheckSum) of
     false ->
-      ?msg("Warning: not loading native code for module ~w: it was "
-	   "compiled for an incompatible runtime system\n", [Mod]),
+      ?msg("Warning: not loading native code for module ~w: "
+	   "it was compiled for an incompatible runtime system; "
+	   "please regenerate native code for this runtime system\n", [Mod]),
       bad_crc;
     true ->
       %% Create data segment
@@ -217,12 +216,14 @@ load_common(Mod, Bin, Beam, OldReferencesToPatch) ->
 %% Scan the list of patches and build a set (returned as a tuple)
 %% of the callees for which we may need trampolines.
 %%
-find_callee_mfas(Patches) ->
+find_callee_mfas(Patches) when is_list(Patches) ->
   case erlang:system_info(hipe_architecture) of
+    amd64 -> [];
+    arm -> find_callee_mfas(Patches, gb_sets:empty(), false);
     powerpc -> find_callee_mfas(Patches, gb_sets:empty(), true);
     %% ppc64 -> find_callee_mfas(Patches, gb_sets:empty(), true);
-    arm -> find_callee_mfas(Patches, gb_sets:empty(), false);
-    _ -> []
+    ultrasparc -> [];
+    x86 -> []
   end.
 
 find_callee_mfas([{Type,Data}|Patches], MFAs, SkipErtsSyms) ->
@@ -267,7 +268,7 @@ mk_trampoline_map(I, CalleeMFAs, Trampolines, Map) when I >= 1 ->
   Trampoline = element(I, Trampolines),
   NewMap = gb_trees:insert(MFA, Trampoline, Map),
   mk_trampoline_map(I-1, CalleeMFAs, Trampolines, NewMap);
-mk_trampoline_map(_, _, _, Map) -> Map.
+mk_trampoline_map(0, _, _, Map) -> Map.
 
 %%----------------------------------------------------------------
 %%
@@ -283,7 +284,10 @@ trampoline_map_lookup(Primop, Map) ->
 
 %%------------------------------------------------------------------------
 
--record(fundef, {address, mfa, is_closure, is_exported}).
+-record(fundef, {address::integer(),
+		 mfa::mfa(),
+		 is_closure::bool(),
+		 is_exported::bool()}).
 
 exports(ExportMap, BaseAddress) ->
   exports(ExportMap, BaseAddress, [], []).
@@ -301,7 +305,7 @@ mod({M,_F,_A}) -> M.
 
 %% ____________________________________________________________________
 %% 
-calculate_addresses(PatchOffsets,Base,Addresses) ->
+calculate_addresses(PatchOffsets, Base, Addresses) ->
   RemoteOrLocal = local, % closure code refs are local
   [{Data,
     offsets_to_addresses(Offsets, Base),
@@ -373,7 +377,7 @@ export_funs(Mod, Beam, Addresses, ClosuresToPatch) ->
 %%  (we use this to look up the address of a referred function only once).
 %%
 
-patch([{Type,SortedRefs} | Rest], CodeAddress, ConstMap2, Addresses, TrampolineMap) ->
+patch([{Type,SortedRefs}|Rest], CodeAddress, ConstMap2, Addresses, TrampolineMap) ->
  ?debug_msg("Patching ~w at [~w+offset] with ~w\n",
 	     [Type,CodeAddress,SortedRefs]),
   case ?EXT2PATCH_TYPE(Type) of 
@@ -499,7 +503,7 @@ patch_load_address(Data, Address, ConstAndZone, Addresses) ->
       patch_instr(Address, bif_address(CConst), c_const)
   end.
 
-patch_closure(DestMFA,Uniq,Index,Address,Addresses)->
+patch_closure(DestMFA, Uniq, Index, Address, Addresses) ->
   case get(hipe_patch_closures) of
     false ->
       true; % This is taken care of when registering the module.
@@ -609,7 +613,7 @@ create_data_segment(DataAlign, DataSize, DataList) ->
 
 enter_data(List, ConstMap2, DataAddress, DataSize) ->
   case List of
-    [ConstNo,Offset,Type,Data|Rest] ->
+    [ConstNo,Offset,Type,Data|Rest] when is_integer(Offset) ->
       %%?msg("Const ~w\n",[[ConstNo,Offset,Type,Data]]),
       ?ASSERT((Offset >= 0) and (Offset =< DataSize)),
       Res = enter_datum(Type, Data, DataAddress+Offset),
@@ -648,14 +652,14 @@ group([B1,B2,B3,B4|Ls], [O|Os]) ->
 bytes_to_32(B4,B3,B2,B1) ->
   (B4 bsl 24) bor (B3 bsl 16) bor (B2 bsl 8) bor B1.
 
-write_words([W|Rest],Addr) ->
+write_words([W|Rest], Addr) ->
   write_words(Rest, write_word(Addr, W));
-write_words([],_) -> true.
+write_words([], Addr) when is_integer(Addr) -> true.
 
-write_bytes([B|Rest],Addr) ->
+write_bytes([B|Rest], Addr) ->
   hipe_bifs:write_u8(Addr, B),
-  write_bytes(Rest,Addr+1);
-write_bytes([],_) -> true.
+  write_bytes(Rest, Addr+1);
+write_bytes([], Addr) when is_integer(Addr) -> true.
 
 %%% lists:keysearch/3 conses a useless wrapper around the found tuple :-(
 %%% otherwise it would have been a good replacement for this loop
@@ -741,7 +745,7 @@ patch_to_emu_step2(ReferencesToPatch) ->
 
 %% @spec is_loaded(Module::atom()) -> bool()
 %% @doc Checks whether a module is loaded or not.
-is_loaded(M) ->
+is_loaded(M) when is_atom(M) ->
   case catch hipe_bifs:fun_to_address({M,module_info,0}) of
     I when is_integer(I) ->
       true;
@@ -839,7 +843,7 @@ mfa_to_address(MFA, [#fundef{address=Adr, mfa=MFA,
 	  false
       end
   end;
-mfa_to_address(MFA, [_ | Rest], RemoteOrLocal) ->
+mfa_to_address(MFA, [_|Rest], RemoteOrLocal) ->
   mfa_to_address(MFA, Rest, RemoteOrLocal);
 mfa_to_address(_, [], _) -> false.
 
@@ -864,7 +868,7 @@ init_assert_patch(Base, Size) ->
   put(hipe_assert_code_area,{Base,Base+Size}),
   true.
 
-assert_local_patch(Address) ->
+assert_local_patch(Address) when is_integer(Address) ->
   {First,Last} = get(hipe_assert_code_area),
   Address >= First andalso Address < (Last).
 

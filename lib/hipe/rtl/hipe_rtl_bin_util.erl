@@ -1,21 +1,25 @@
-%%%-------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%%-----------------------------------------------------------------------
 %%% File    : hipe_rtl_bin_util.erl
-%%% Author  : Per Gustafsson <pergu@amanda.it.uu.se>
+%%% Author  : Per Gustafsson <pergu@it.uu.se>
 %%% Description : 
 %%%
-%%% Created :  4 Mar 2004 by Per Gustafsson <pergu@amanda.it.uu.se>
-%%%-------------------------------------------------------------------
+%%% Created :  4 Mar 2004 by Per Gustafsson <pergu@it.uu.se>
+%%%-----------------------------------------------------------------------
 -module(hipe_rtl_bin_util).
 
 -export([get_unaligned_int/7, get_int/7, get_big_unknown_int/7,
 	 get_little_unknown_int/7, bs_call/9, load_bytes/5, 
 	 make_size/3]).
+
 -include("hipe_literals.hrl").
+
 -define(LOW_BITS, 7). %% Three lowest bits set
 -define(BYTE_SIZE, 8).
 -define(MAX_SMALL_BITS, hipe_rtl_arch:word_size() * ?BYTE_SIZE - 5).
 -define(BYTE_SHIFT, 3).
 
+%%------------------------------------------------------------------------
 
 get_unaligned_int(Dst1, Size, Base, Offset, Shiftr, 
 		  Type, TrueLblName) ->
@@ -89,11 +93,12 @@ get_int(Dst1, Size, Base, Offset, Shiftr, Type,
     end,
   Code1 ++ Code2 ++ do_bignum_code(Size, Type, LoadDst, Dst1, TrueLblName).
    
-get_big_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName) ->
+get_big_unknown_int(Dst1, Base, Offset, NewOffset,
+		    Shiftr, Type, TrueLblName) ->
   [LoadDst, ByteOffset, Limit, Tmp, LowBits] = create_regs(5),
   [ContLbl, BackLbl, LoopLbl, TagLbl, LastLbl, EndLbl] = create_lbls(6),
   [hipe_rtl:mk_move(LoadDst, hipe_rtl:mk_imm(0)),
-   hipe_rtl:mk_branch(Offset, ne, NewOffset, hipe_rtl:label_name(ContLbl), 
+   hipe_rtl:mk_branch(NewOffset, ne, Offset, hipe_rtl:label_name(ContLbl), 
 		      hipe_rtl:label_name(TagLbl), 0.99),
    ContLbl,
    hipe_rtl:mk_alu(Limit, NewOffset, sub, hipe_rtl:mk_imm(1)),
@@ -118,11 +123,12 @@ get_big_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName) ->
     do_bignum_code(64, Type, LoadDst, Dst1, TrueLblName).
     
 
-get_little_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName) ->
+get_little_unknown_int(Dst1, Base, Offset, NewOffset,
+		       Shiftr, Type, TrueLblName) ->
   [LoadDst, ByteOffset, Limit, ShiftReg, LowBits, Tmp] = create_regs(6),
   [ContLbl, BackLbl, LoopLbl, DoneLbl, TagLbl] = create_lbls(5),
   [hipe_rtl:mk_move(LoadDst, hipe_rtl:mk_imm(0)),
-   hipe_rtl:mk_branch(Offset, ne, NewOffset, hipe_rtl:label_name(ContLbl), 
+   hipe_rtl:mk_branch(NewOffset, ne, Offset, hipe_rtl:label_name(ContLbl), 
 		      hipe_rtl:label_name(TagLbl), 0.99),
    ContLbl,
    hipe_rtl:mk_alu(Tmp, NewOffset, sub, hipe_rtl:mk_imm(1)),
@@ -148,10 +154,11 @@ get_little_unknown_int(Dst1, Base, Offset, NewOffset, Shiftr, Type, TrueLblName)
    hipe_rtl:mk_alu(Tmp, Tmp, sll, ShiftReg),
    hipe_rtl:mk_alu(LoadDst, LoadDst, 'or', Tmp),
    TagLbl] ++
-    do_bignum_code(64, Type, LoadDst, Dst1, TrueLblName).
+     do_bignum_code(64, Type, LoadDst, Dst1, TrueLblName).
 
-do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName) when is_integer(Size) ->
-  case {Size>?MAX_SMALL_BITS, Signedness} of
+do_bignum_code(Size, {Signedness,_}, Src, Dst1, TrueLblName)
+  when is_integer(Size) ->
+  case {Size > ?MAX_SMALL_BITS, Signedness} of
     {false, _} ->
       [hipe_tagscheme:tag_fixnum(Dst1, Src),
        hipe_rtl:mk_goto(TrueLblName)];

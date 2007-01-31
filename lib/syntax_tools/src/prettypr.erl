@@ -17,8 +17,7 @@
 %% $Id$
 %%
 %% @copyright 2000-2006 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
-%%   [http://www.csd.uu.se/~richardc/]
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @end
 %% =====================================================================
 
@@ -53,7 +52,7 @@
 -record(nest, {n, d}).
 -record(beside, {d1, d2}).
 -record(above, {d1, d2}).
--record(sep, {ds, i = 0, p = false}).
+-record(sep, {ds, i = 0, p = false}). %% i::integer(), p::bool()
 
 
 %% ---------------------------------------------------------------------
@@ -371,7 +370,7 @@ par(Ds, N) ->
 
 %% Used internally only:
 
-mksep(Ds, N, P) ->
+mksep(Ds, N, P) when is_integer(N) ->
     #sep{ds = Ds, i = N, p = P}.
 
 
@@ -400,7 +399,7 @@ follow(D1, D2) ->
 %%
 %% @see follow/2
 
-follow(D1, D2, N) ->
+follow(D1, D2, N) when is_integer(N) ->
     beside(par([D1, nil()], N), D2).
 
 
@@ -433,7 +432,7 @@ floating(D) ->
 
 -record(float, {d, h, v}).
 
-floating(D, H, V) ->
+floating(D, H, V) when is_integer(H), is_integer(V) ->
     #float{d = D, h = H, v = V}.
 
 
@@ -484,11 +483,10 @@ format(D, W, R) ->
 %% Representation:
 %%
 %%	document() = #text{s = string()}
-%%		   | #nest{n = int(), d = document()}
+%%		   | #nest{n = integer(), d = document()}
 %%		   | #beside{d1 = document(), d2 = document()}
 %%		   | #above{d1 = document(), d2 = document()}
-%%		   | #sep{ds = [document()], i = int(),
-%%			  p = bool()}
+%%		   | #sep{ds = [document()], i = integer(), p = bool()}
 %%		   | null
 %%
 %% A `text' node simply represents a string (which should not contain
@@ -507,7 +505,7 @@ format(D, W, R) ->
 %%
 %%	layout() = #text{s = string()}
 %%		 | #above{d1 = #text{s = string()}, d2 = layout()}
-%%		 | #nest{n = int(), d = layout()}
+%%		 | #nest{n = integer(), d = layout()}
 %%		 | null
 %%
 %% The function `layout/1' performs the final transformation to a single
@@ -581,13 +579,13 @@ flatrev([], As, []) ->
 
 %% Contexts:
 %%
-%%	#c_best_nest{w = int(), r = int(), i = int()}
-%%	#c_above_nest{d = doc(), i = int(), c = ctxt()}
+%%	#c_best_nest{w = integer(), r = integer(), i = integer()}
+%%	#c_above_nest{d = doc(), i = integer(), c = ctxt()}
 %%	#c_beside{d = doc(), c = ctxt()}
 %%	#c_text_beside{s = string(), c = ctxt()}
-%%	#c_sep_nest{ds = [doc()], i = int(), p = bool(),
+%%	#c_sep_nest{ds = [doc()], i = integer(), p = bool(),
 %%		    c = ctxt()}
-%%	#c_best_nest_or{w = int(), r = int(), i = int(),
+%%	#c_best_nest_or{w = integer(), r = integer(), i = integer(),
 %%			d = doc()}
 %%	#c_fit{c = ctxt()}
 
@@ -1226,7 +1224,7 @@ width(S) ->
 
 is_empty_string([_ | []]) ->
     true;
-is_empty_string(_) ->
+is_empty_string([_ | _]) ->
     false.
 
 %% We need to use `strwidth' instead of list `length', to properly

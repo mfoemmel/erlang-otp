@@ -208,8 +208,8 @@ update_nodes([Node | NodeList], Environment) ->
     true ->
       Instructions    = extract_code(Node, Environment),
       Updater         = fun(Instruction) ->
-                            update_instruction(Instruction, Environment) end,
-
+                            update_instruction(Instruction, Environment)
+			end,
       NewInstructions = lists:flatmap(Updater, Instructions),
       Environment1    = update_code(Node, NewInstructions, Environment);
     false -> 
@@ -277,13 +277,13 @@ partition(Function, [Hd | Tail], True, False) ->
 visit_phi_nodes([], CurrentNode, _Environment, _SSAWork) ->
   ?EXIT({"~w: visit_phi_nodes/4 Basic block contains no code",
 	 ?MODULE, CurrentNode});
-visit_phi_nodes([Inst | Insts], Node, Environment, SSAWork) ->
+visit_phi_nodes(Is = [Inst | Insts], Node, Environment, SSAWork) ->
   case ?CODE:is_phi(Inst) of
     true ->
       {Environment1, NewSSA} = visit_phi(Inst, Node, Environment),
       visit_phi_nodes(Insts, Node, Environment1, NewSSA ++ SSAWork);
     false ->
-      {Environment, [Inst | Insts], SSAWork}
+      {Environment, Is, SSAWork}
   end.
 
 %%-----------------------------------------------------------------------------

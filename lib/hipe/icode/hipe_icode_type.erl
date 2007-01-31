@@ -15,16 +15,18 @@
 -export([cfg/3, unannotate_cfg/1]).
 
 -include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 -include("hipe_icode_type.hrl").
 
--define(ENABLE_TEST, true).
+-define(DO_HIPE_ICODE_TYPE_TEST, false).
 
--ifdef(ENABLE_TEST).
+-ifdef(DO_HIPE_ICODE_TYPE_TEST).
 -export([test/0]).
 -endif.
 
-%-define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
-%-define(TAG_IMMED1_SIZE, 4).
+
+%% -define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
+%% -define(TAG_IMMED1_SIZE, 4).
 
 %% -define(MFA_debug, fun(MFA, X, Y) -> 
 %%  		       if MFA =:= {pseudoknot,p_apply,3} ->
@@ -38,7 +40,7 @@
 %-define(debug, fun(X, Y) -> io:format("~s ~p~n", [X, Y]) end).
 -define(debug, fun(_, _) -> ok end).
 
-%define(flow_debug, fun(X, Y) -> io:format("flow: ~s ~p~n", [X, Y]) end).
+%-define(flow_debug, fun(X, Y) -> io:format("flow: ~s ~p~n", [X, Y]) end).
 -define(flow_debug, fun(_, _) -> ok end).
 
 %-define(widening_debug, fun(X, Y) -> io:format("wid: ~s ~p~n", [X, Y]) end).
@@ -74,7 +76,7 @@
 		    %%t_tuple_arity/1, 
 		    t_tuple_arities/1, t_none/0,
 		    number_min/1, number_max/1, t_from_range/2, 
-		    min/2, max/2, widening/3]).
+		    min/2, max/2, widening/3, t_is_bitwidth/1]).
 
 
 cfg(Cfg, IcodeFun, Options) ->
@@ -96,7 +98,7 @@ cfg(Cfg, IcodeFun, Options) ->
       {Fixpoint, state__cfg(annotate_cfg(NewState))};
     false ->
       ?flow_debug("dosen't have needed info", IcodeFun),
-      {not_fixpoint, Cfg}
+      {none, Cfg}
   end.
 
 cfg_loop(State, {IcodeFun, {Is_exported, OldSig}}) ->
@@ -112,7 +114,6 @@ cfg_loop(State, {IcodeFun, {Is_exported, OldSig}}) ->
       NewState1
   end.
 
-
 %% _________________________________________________________________
 %% 
 %% Global type analysis on the whole function. Demands that the code
@@ -124,12 +125,12 @@ cfg_loop(State, {IcodeFun, {Is_exported, OldSig}}) ->
 %% information is added to the worklist.
 %%
 
-analyse(Cfg, {IcodeFun, {Is_exported, OldSig}})->
+analyse(Cfg, {IcodeFun, {Is_exported, OldSig}}) ->
   %%hipe_icode_cfg:pp(Cfg),
   State = new_state(Cfg, {IcodeFun, {Is_exported, OldSig}}),
   analyse_blocks(State).
 
-analyse_blocks(State)->
+analyse_blocks(State) ->
   Work = init_work(State),
   analyse_blocks(Work, State).
 
@@ -144,7 +145,7 @@ analyse_blocks(Work, State)->
       analyse_blocks(NewWork2, NewState2)
   end.
   
-analyse_block(Label, InfoIn, State)->
+analyse_block(Label, InfoIn, State) ->
   %%io:format("Handling ~w\n", [Label]),
   BB = state__bb(State, Label),
   Code = hipe_bb:butlast(BB),
@@ -215,7 +216,7 @@ analyse_block(Label, InfoIn, State)->
       do_updates(NewState, UpdateInfo)
   end.
 
-analyse_insns([I|Insns], {Info, PhiNodes})->
+analyse_insns([I|Insns], {Info, PhiNodes}) ->
   case analyse_insn(I, Info, PhiNodes) of
     {new_phi, NewInfo, NewPhiNodes} ->
       analyse_insns(Insns, {NewInfo, NewPhiNodes});
@@ -281,7 +282,7 @@ phi_lookup(Var, Tree) ->
       Val
   end.
 
-do_move(I, Info)->
+do_move(I, Info) ->
   %% Can't use uses/1 since we must keep constants.
   [Src] = args(I),
   case hipe_icode:is_const(Src) of
@@ -292,7 +293,7 @@ do_move(I, Info)->
       enter_defines(I, Src, Info)
   end.
 
-do_call(I, Info)->
+do_call(I, Info) ->
   case hipe_icode:call_type(I) of
     primop ->
       Fun = hipe_icode:call_fun(I),
@@ -1096,9 +1097,10 @@ make_transformations([I|Left], Info, Acc) ->
   make_transformations(Left, NewInfo, [NewI|Acc]);
 make_transformations([], _Info, Acc) ->
   lists:reverse(Acc).
+
 transform_insn(I, Info) ->
   case I of
-    I when is_record(I, call) ; is_record(I, enter) ->
+    I when is_record(I, call) orelse is_record(I, enter) ->
       case call_or_enter_fun(I) of
 	'band' -> transform_arith(I, 'band', Info);
 	'bor'  -> transform_arith(I, 'bor', Info);
@@ -1108,14 +1110,14 @@ transform_insn(I, Info) ->
 	'bsr'  -> transform_arith(I, 'bsr', Info);
 	'+'    -> transform_arith(I, '+', Info);
 	'-'    -> transform_arith(I, '-', Info);
-	{element, _} ->
+	#element{} ->
 	  transform_insn(update_call_or_enter(I, {erlang,element,2}), Info);
 	{erlang,element,2} -> 
 	  NewI1 = transform_element2(I, Info),
 	  case is_record(I, call) andalso hipe_icode:call_in_guard(I) of
 	    true ->
 	      case hipe_icode:call_fun(NewI1) of
-		{unsafe_element, _} -> NewI1;
+		#unsafe_element{} -> NewI1;
 		_ -> I
 	      end;
 	    false -> 
@@ -1143,7 +1145,7 @@ transform_insn(I, Info) ->
 	_ ->
 	  I
       end;
-    I when is_record(I, 'if') ->
+    #'if'{} ->
       UsesFixnums = all_fixnums(uses(I)),
       if UsesFixnums ->
 	  CurrentIfOp = hipe_icode:if_op(I),
@@ -1154,7 +1156,6 @@ transform_insn(I, Info) ->
     _ ->
       I
   end.
-
 
 
 call_or_enter_fun(I) ->
@@ -1178,7 +1179,6 @@ update_call_or_enter(I, NewFun, NewArgs) ->
       I1 = hipe_icode:enter_args_update(I, NewArgs),
       hipe_icode:enter_fun_update(I1, NewFun)
   end.
-
 
 transform_element2(I, Info) ->
   [Index, Tuple] = args(I),
@@ -1219,7 +1219,7 @@ transform_element2(I, Info) ->
 	  case N of
 	    [Num] ->
 	      [_, Tuple] = args(I),
-	      update_call_or_enter(I, {unsafe_element, Num}, [Tuple]);
+	      update_call_or_enter(I, #unsafe_element{index=Num}, [Tuple]);
 	    _ ->
 	      NewFun = {element, [{tuple, A}, valid]},
 	      update_call_or_enter(I, NewFun)
@@ -1265,11 +1265,11 @@ transform_bs_put_integer(I, Primop, Info) ->
 transform_arith(I, Op = '+', Info) ->
   Args = safe_lookup_list(args(I), Info),
   NewInfo = analyse_insn(I, Info),
-  Dst = case hipe_icode:is_call(I) of
-	  true -> safe_lookup_list(call_dstlist(I), NewInfo);
-	  false -> []
-	end,
-  case all_fixnums(Dst++Args) of
+  AllTypes = case hipe_icode:is_call(I) of
+	       true -> safe_lookup_list(call_dstlist(I), NewInfo) ++ Args;
+	       false -> [erl_bif_types:type(erlang, Op, 2, Args)|Args]
+	     end,
+  case all_fixnums(AllTypes) of
     true ->
       update_call_or_enter(I, extra_unsafe_add);
     false ->
@@ -1280,12 +1280,50 @@ transform_arith(I, Op = '+', Info) ->
 	  I
       end
   end;
+transform_arith(I, Op = '-', Info) ->
+  Args = safe_lookup_list(args(I), Info),
+  NewInfo = analyse_insn(I, Info),
+  AllTypes = case hipe_icode:is_call(I) of
+	       true -> safe_lookup_list(call_dstlist(I), NewInfo) ++ Args;
+	       false -> [erl_bif_types:type(erlang, Op, 2, Args)|Args]
+	     end,
+  case all_fixnums(AllTypes) of
+    true ->
+      update_call_or_enter(I, extra_unsafe_sub);
+    false ->
+      case all_fixnums(Args) of
+	true ->
+	  update_call_or_enter(I, arithop_to_unsafe(Op));
+	false ->
+	  I
+      end
+  end;
 transform_arith(I, Op, Info) ->
   Args = safe_lookup_list(args(I), Info),
-  case all_fixnums(Args) of
+  NewInfo = analyse_insn(I, Info),
+  [TempDst] = case hipe_icode:is_call(I) of
+	      true -> safe_lookup_list(call_dstlist(I), NewInfo);
+	      false -> [erl_bif_types:type(erlang, Op, length(Args), Args)]
+	     end,
+  %% the t_is_fixnum(TempDst) check is unnecessary for bitwise boolean Ops.
+  case valid_unsafe_args(Args, Op) and t_is_fixnum(TempDst) of
     true -> 
       update_call_or_enter(I, arithop_to_unsafe(Op));
     false -> I
+  end.
+
+valid_unsafe_args(Args, Op) ->
+  if Op =:= 'bnot' ->
+      [Arg] = Args,
+      t_is_fixnum(Arg);
+     true ->
+      [LeftArg, RightArg] = Args,
+      case Op of
+	'bsl'  -> t_is_fixnum(LeftArg) and t_is_bitwidth(RightArg);
+	'bsr'  -> t_is_fixnum(LeftArg) and t_is_bitwidth(RightArg);
+	%% 'div'  -> t_is_fixnum(LeftArg) and not span_zero(RightArg);%not needed now
+	_      -> t_is_fixnum(LeftArg) and t_is_fixnum(RightArg)
+      end
   end.
 
 arithop_to_unsafe(Op) ->
@@ -1325,16 +1363,16 @@ get_standard_primop(unsafe_bxor) -> 'bxor';
 get_standard_primop(unsafe_band) -> 'band';
 get_standard_primop(unsafe_bor) -> 'bor';
 get_standard_primop(unsafe_sub) -> '-';
+get_standard_primop(extra_unsafe_sub) -> '-';
 get_standard_primop(Op) -> Op.
 
 primop_type(Op, Args) ->
   case Op of
-    {mkfun, MFA = {_M, _F, _A}, _MagicNum, _Index} ->
+    #mkfun{mfa=MFA} ->
       t_inf(t_fun(), find_signature_mfa(MFA));
     _ ->
       hipe_icode_primops:type(get_standard_primop(Op), Args)
   end.
-
 
 %% sup_list(List) ->
 %%   sup_list(List, t_none()).
@@ -2145,7 +2183,7 @@ warn_on_call(I, Ins, Info, IcodeFun) ->
       CallFun = hipe_icode:call_fun(I),
       Warn = 
 	case CallFun of
-	  {mkfun, {_M,F,_A}, _, _} when length(Ins) =:= 1 -> {true, {'fun', F}};
+	  #mkfun{mfa={_M,F,_A}} when length(Ins) =:= 1 -> {true, {'fun', F}};
 	  {erlang, make_ref, 0} when length(Ins) =:= 1 -> {true, ref};
 	  _  -> false
 	end,
@@ -2310,7 +2348,7 @@ print_call_warning(Fun, IcodeFun, Args) ->
       warn(?WARN_OLD_BEAM, W)
   end.
 
-format_fun({element, _}) ->
+format_fun(#element{}) ->
   {erlang, element, 2};
 format_fun(Other) ->
   Other.
@@ -2813,6 +2851,11 @@ server__get_signature(MFA) ->
   ?server_debug("Signature", {MFA, Ans}),
   Ans.
 
+%%=====================================================================
+%% Testing function below
+%%=====================================================================
+
+-ifdef(DO_HIPE_ICODE_TYPE_TEST).
 
 test() ->
   Range1 = t_from_range(1, pos_inf),
@@ -2831,3 +2874,5 @@ test() ->
   io:format(">= ~p~n", [B]),
   io:format("<= ~p~n", [C]),
   io:format("> ~p~n", [D]).
+
+-endif.

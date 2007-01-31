@@ -94,12 +94,15 @@
           rule_nmbr,
           head,
           nmbr_of_daughters,
-          prec
+          prec,
+          unused % assure that #reduce{} comes before #shift{} when soring
          }).
 
 -record(shift, {
           state,
-          prec
+          pos,
+          prec,
+          rule_nmbr
          }).
 
 -record(user_code, {state, terminal, funname, action}).
@@ -1444,18 +1447,27 @@ compute_parse_actions1([#item{rule_pointer = RulePointer,
                               prec = get_prec(Daughters ++ [Head], St)}}
                      | compute_parse_actions1(Items, N, St)]
             end;
-        [Symbol | _] ->
+        [Symbol | Daughters] ->
             case is_terminal(St#yecc.symbol_tab, Symbol) of
                 true ->
                     DecSymbol = decode_symbol(Symbol, St#yecc.inv_symbol_tab),
-                    Prec1 = case rule(RulePointer, St) of
-                                {[Head, DecSymbol], _RuleLine, _} ->
-                                    get_prec([Head, DecSymbol], St);
-                                _ ->
-                                    get_prec([DecSymbol], St)
+                    {[Head | _], _RuleLine, _} = rule(RulePointer, St),
+                    %% A bogus shift-shift conflict can be introduced
+                    %% here if some terminal occurs in different rules
+                    %% which have been given precedence "one level up".
+                    Prec1 = case Daughters of
+                                [] -> get_prec([DecSymbol, Head], St);
+                                _ -> get_prec([DecSymbol], St)
                             end,
+                    Pos = case Daughters of
+                              [] -> z;
+                              _ -> a
+                          end,
                     [{[DecSymbol],
-                      #shift{state = goto(N, DecSymbol, St), prec = Prec1}}
+                      #shift{state = goto(N, DecSymbol, St), 
+                             pos = Pos,
+                             prec = Prec1,
+                             rule_nmbr = RulePointer}}
                      | compute_parse_actions1(Items, N, St)];
                 false ->
                     compute_parse_actions1(Items, N, St)
@@ -1517,6 +1529,19 @@ find_action_conflicts(St0) ->
 
 find_action_conflicts2([Action], Cxt) ->
     {Action, Cxt};
+find_action_conflicts2([#shift{state = St, pos = Pos, prec = Prec},
+                        #shift{state = St}=S | As], 
+                       Cxt) when Pos =:= a; Prec =:= {0,none} ->
+    %% This is a kludge to remove the bogus shift-shift conflict
+    %% introduced in compute_parse_actions1().
+    find_action_conflicts2([S | As], Cxt);
+find_action_conflicts2([#shift{state = NewState, pos = z}=S1,
+                        #shift{state = NewState}=S2 | _], Cxt) ->
+    %% This is even worse than last clause. Give up.
+    Confl = conflict(S1, S2, Cxt),
+    #cxt{yecc = St0} = Cxt,
+    St = conflict_error(Confl, St0),
+    {S1, Cxt#cxt{yecc = St}}; % return any action
 find_action_conflicts2([#shift{prec = {P1, Ass1}}=S | Rs], Cxt0) ->
     {R, Cxt1} = find_reduce_reduce(Rs, Cxt0),
     #cxt{res = Res0, yecc = St0} = Cxt1,
@@ -1547,7 +1572,7 @@ find_action_conflicts2(Rs, Cxt0) ->
 find_reduce_reduce([R], Cxt) ->
     {R, Cxt};
 find_reduce_reduce([#reduce{head = Categ1, prec = {P1, _}}=R1, 
-         #reduce{head = Categ2, prec = {P2, _}}=R2 | Rs], Cxt0) ->
+                    #reduce{head = Categ2, prec = {P2, _}}=R2 | Rs], Cxt0) ->
     #cxt{res = Res0, yecc = St0} = Cxt0,
     Confl = conflict(R1, R2, Cxt0),
     {R, Res, St} = 
@@ -1604,9 +1629,19 @@ add_conflict(Conflict, St) ->
         {Symbol, StateN, _, {reduce, _, _, _}} ->
             St#yecc{reduce_reduce = [{StateN,Symbol} |St#yecc.reduce_reduce]};
         {Symbol, StateN, _, {shift, _, _}} ->
-            St#yecc{shift_reduce = [{StateN,Symbol} | St#yecc.shift_reduce]}
+            St#yecc{shift_reduce = [{StateN,Symbol} | St#yecc.shift_reduce]};
+        {_Symbol, _StateN, {one_level_up, _, _}, _Confl} ->
+            St
     end.
 
+conflict(#shift{prec = Prec1, rule_nmbr = RuleNmbr1}, 
+         #shift{prec = Prec2, rule_nmbr = RuleNmbr2}, Cxt) ->
+    %% Conflict due to precedences "one level up". Kludge.
+    #cxt{terminal = Symbol, state_n = N, yecc = St} = Cxt,    
+    {_, L1, RuleN1} = rule(RuleNmbr1, St),
+    {_, L2, RuleN2} = rule(RuleNmbr2, St),
+    Confl = {one_level_up, {L1, RuleN1, Prec1}, {L2, RuleN2, Prec2}},
+    {Symbol, N, Confl, Confl};
 conflict(#reduce{rule_nmbr = RuleNmbr1}, NewAction, Cxt) ->
     #cxt{terminal = Symbol, state_n = N, yecc = St} = Cxt,
     {R1, RuleLine1, RuleN1} = rule(RuleNmbr1, St),
@@ -1619,6 +1654,18 @@ conflict(#reduce{rule_nmbr = RuleNmbr1}, NewAction, Cxt) ->
             end,
     {Symbol, N, {R1, RuleN1, RuleLine1}, Confl}.
 
+format_conflict({Symbol, N, _, {one_level_up, 
+                                {L1, RuleN1, {P1, Ass1}}, 
+                                {L2, RuleN2, {P2, Ass2}}}}) ->
+    S1 = io_lib:fwrite("Conflicting precedences of symbols when "
+                       "scanning ~s in state ~w:\n", 
+                       [format_symbol(Symbol), N]),
+    S2 = io_lib:fwrite("   ~s ~w (rule ~w at line ~w)\n"
+                        "      vs.\n",
+                       [format_assoc(Ass1), P1, RuleN1, L1]),
+    S3 = io_lib:fwrite("   ~s ~w (rule ~w at line ~w)\n", 
+                       [format_assoc(Ass2), P2, RuleN2, L2]),
+    [S1, S2, S3];
 format_conflict({Symbol, N, Reduce, Confl}) ->
     S1 = io_lib:fwrite("Parse action conflict scanning symbol "
                        "~s in state ~w:\n", [format_symbol(Symbol), N]),
@@ -2093,6 +2140,15 @@ first_line(Tokens) ->
 
 format_filename(Filename) ->
     io_lib:write_string(filename:flatten(Filename)).
+
+format_assoc(left) ->
+    "Left";
+format_assoc(right) ->
+    "Right";
+format_assoc(unary) ->
+    "Unary";
+format_assoc(nonassoc) ->
+    "Nonassoc".
 
 format_symbol(Symbol) ->
     String = concat([Symbol]),

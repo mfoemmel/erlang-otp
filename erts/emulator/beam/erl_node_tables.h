@@ -57,6 +57,7 @@
 
 struct erl_link;
 struct process;
+struct port;
 
 typedef struct dist_entry_ {
     HashBucket hash_bucket;     /* Hash bucket */
@@ -80,6 +81,7 @@ typedef struct dist_entry_ {
 				   atom cache etc. */
     struct cache* cache;	/* The atom cache */
     unsigned long version;	/* Protocol version */
+    struct port *port;
 #ifdef ERTS_SMP
     erts_smp_mtx_t *mtxp;
 #endif
@@ -139,6 +141,9 @@ void erts_init_node_tables(void);
 void erts_node_table_info(int, void *);
 void erts_print_node_info(int, void *, Eterm, int*, int*);
 Eterm erts_get_node_and_dist_references(struct process *);
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
+int erts_lc_is_dist_entry_locked(DistEntry *);
+#endif
 
 ERTS_GLB_INLINE void erts_deref_dist_entry(DistEntry *dep);
 ERTS_GLB_INLINE void erts_deref_node_entry(ErlNode *np);

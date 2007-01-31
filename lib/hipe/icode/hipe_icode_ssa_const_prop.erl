@@ -37,6 +37,7 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 
 -define(CONST_PROP_MSG(Str,L),ok).
 %%-define(CONST_PROP_MSG(Str,L),io:format(Str,L)).
@@ -264,12 +265,22 @@ call_continuation_labels(I)->
 %% Unary calls
 evaluate_call_or_enter([Argument], Fun) ->
   case Fun of
+    mktuple ->
+      hipe_icode:mk_const(list_to_tuple([Argument]));
+    unsafe_untag_float ->
+      hipe_icode:mk_const(float(Argument));
+    conv_to_float ->
+      hipe_icode:mk_const(float(Argument));
+    fnegate ->
+      hipe_icode:mk_const(0.0 - Argument);
+    'bnot' ->
+      hipe_icode:mk_const(Argument);
+    #unsafe_element{index=N} ->
+      hipe_icode:mk_const(element(N, Argument));
     {erlang, hd, 1} ->
       hipe_icode:mk_const(hd(Argument));
     {erlang, tl, 1} ->
       hipe_icode:mk_const(tl(Argument));
-    {unsafe_element, N} ->
-      hipe_icode:mk_const(element(N, Argument));
     {erlang, atom_to_list, 1} ->
       hipe_icode:mk_const(atom_to_list(Argument));
     {erlang, list_to_atom, 1} ->
@@ -288,16 +299,6 @@ evaluate_call_or_enter([Argument], Fun) ->
       hipe_icode:mk_const(round(Argument));
     {erlang, trunc, 1} ->
       hipe_icode:mk_const(trunc(Argument));
-    mktuple ->
-      hipe_icode:mk_const(list_to_tuple([Argument]));
-    unsafe_untag_float ->
-      hipe_icode:mk_const(float(Argument));
-    conv_to_float ->
-      hipe_icode:mk_const(float(Argument));
-    fnegate ->
-      hipe_icode:mk_const(0.0 - Argument);
-    'bnot' ->
-      hipe_icode:mk_const(Argument);
     _ ->
       bottom
   end;
@@ -313,18 +314,14 @@ evaluate_call_or_enter([Argument1,Argument2], Fun) ->
       hipe_icode:mk_const(Argument1 * Argument2);
     '/' ->
       hipe_icode:mk_const(Argument1 / Argument2);
-    {erlang, 'div', 2} ->
-      hipe_icode:mk_const(Argument1 div Argument2);
-    {erlang, 'rem', 2} ->
-      hipe_icode:mk_const(Argument1 rem Argument2);
-    'bsl' ->
-      hipe_icode:mk_const(Argument1 bsl Argument2);
-    'bsr' ->
-      hipe_icode:mk_const(Argument1 bsr Argument2);
     'band' ->
       hipe_icode:mk_const(Argument1 band Argument2);
     'bor' ->
       hipe_icode:mk_const(Argument1 bor Argument2);
+    'bsl' ->
+      hipe_icode:mk_const(Argument1 bsl Argument2);
+    'bsr' ->
+      hipe_icode:mk_const(Argument1 bsr Argument2);
     'bxor' ->
       hipe_icode:mk_const(Argument1 bxor Argument2);
     fp_add ->
@@ -337,18 +334,22 @@ evaluate_call_or_enter([Argument1,Argument2], Fun) ->
       hipe_icode:mk_const(Argument1 / Argument2);
     cons ->
       hipe_icode:mk_const([Argument1 | Argument2]);
-    {erlang,element,2} ->
-      hipe_icode:mk_const(element(Argument1, Argument2));
+    mktuple -> 
+      hipe_icode:mk_const(list_to_tuple([Argument1,Argument2]));
+    #unsafe_update_element{index=N} ->
+      hipe_icode:mk_const(setelement(N, Argument1, Argument2));
     {erlang, '++', 2} ->
       hipe_icode:mk_const(Argument1 ++ Argument2);
     {erlang, '--', 2} ->
       hipe_icode:mk_const(Argument1 -- Argument2);
+    {erlang, 'div', 2} ->
+      hipe_icode:mk_const(Argument1 div Argument2);
+    {erlang, 'rem', 2} ->
+      hipe_icode:mk_const(Argument1 rem Argument2);
     {erlang, append_element, 2} ->
       hipe_icode:mk_const(erlang:append_element(Argument1, Argument2));
-    {unsafe_update_element, N} ->
-      hipe_icode:mk_const(setelement(N, Argument1, Argument2));
-    mktuple -> 
-      hipe_icode:mk_const(list_to_tuple([Argument1,Argument2]));
+    {erlang, element, 2} ->
+      hipe_icode:mk_const(element(Argument1, Argument2));
     _Other ->
       %% io:format("In ~w(~w,~w)~n", [_Other,Argument1,Argument2]),
       bottom

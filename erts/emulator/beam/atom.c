@@ -232,14 +232,14 @@ int atom_table_sz(void)
 }
 
 int
-erts_atom_get(byte* name, int len, Eterm* ap)
+erts_atom_get(const char *name, int len, Eterm* ap)
 {
     Atom a;
     int i;
     int res;
 
     a.len = len;
-    a.name = name;
+    a.name = (byte *)name;
     atom_read_lock();
     i = index_get(&erts_atom_table, (void*) &a);
     res = i < 0 ? 0 : (*ap = make_atom(i), 1);

@@ -35,7 +35,8 @@
 	 try_subdir/2, unique/1, write_file/3, write_file/4,
 	 write_info_file/4, read_info_file/1, get_doc_env/1,
 	 get_doc_env/4, copy_file/2, copy_dir/2, uri_get/1,
-	 run_doclet/2, run_layout/2, simplify_path/1]).
+	 run_doclet/2, run_layout/2, simplify_path/1, timestr/1,
+	 datestr/1]).
 
 -import(edoc_report, [report/2, warning/2]).
 
@@ -47,6 +48,14 @@
 
 %% ---------------------------------------------------------------------
 %% List and string utilities
+
+timestr({H,M,Sec}) ->
+    lists:flatten(io_lib:fwrite("~2.2.0w:~2.2.0w:~2.2.0w",[H,M,Sec])).
+
+datestr({Y,M,D}) ->
+    Ms = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+	  "Oct", "Nov", "Dec"],
+    lists:flatten(io_lib:fwrite("~s ~w ~w",[lists:nth(M, Ms),D,Y])).
 
 count(X, Xs) ->
     count(X, Xs, 0).
@@ -340,7 +349,7 @@ strip_and_reverse(As) ->
 %% Note that this should *not* be applied to complete URI, but only to
 %% segments that may need escaping, when forming a complete URI.
 %%
-%% @TODO general utf-8 encoding for all of Unicode (0-16#10ffff)
+%% TODO: general utf-8 encoding for all of Unicode (0-16#10ffff)
 
 escape_uri([C | Cs]) when C >= $a, C =< $z ->
     [C | escape_uri(Cs)];
@@ -501,7 +510,7 @@ uri_get_http_1(Result, URI) ->
 http_errmsg(Reason, URI) ->
     io_lib:format("http error: ~s: '~s'", [Reason, URI]).
 
-%% @TODO implement ftp access method
+%% TODO: implement ftp access method
 
 uri_get_ftp(URI) ->
     Msg = io_lib:format("cannot access ftp scheme yet: '~s'.", [URI]),

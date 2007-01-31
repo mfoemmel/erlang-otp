@@ -82,6 +82,7 @@
 -record(load, {ldop, dst, am2}).	% cond not included; ldrh/ldrsh not included
 -record(ldrsb, {dst, am3}).		% cond not included
 -record(move, {movop, s, dst, am1}).	% cond not included
+-record(mul, {dst, src1, src2}).	% cond not included, s not included
 -record(pseudo_bc, {'cond', true_label, false_label, pred}).
 -record(pseudo_blr, {}).		% alias for "mov pc,lr" to help cfg
 -record(pseudo_bx, {src}).		% alias for "mov pc,src" to help cfg
@@ -92,6 +93,7 @@
 -record(pseudo_switch, {jtab, index, labels}).
 -record(pseudo_tailcall, {funv, arity, stkargs, linkage}).
 -record(pseudo_tailcall_prepare, {}).
+-record(smull, {dstlo, dsthi, src1, src2}). % cond not included, s not included
 -record(store, {stop, src, am2}).	% cond not included; strh not included
 
 %%% Function definitions.

@@ -102,7 +102,14 @@ translate_instruction(I, Map, ConstTab) ->
       {Dst, Map0} = rv2sr(hipe_rtl:alub_dst(I), Map),
       {Src1, Map1} = rv2sr(hipe_rtl:alub_src1(I), Map0),
       {Src2, Map2} = rv2sr(hipe_rtl:alub_src2(I), Map1),
-      Cond = rtl_cond_to_sparc_cc(hipe_rtl:alub_cond(I)),
+      Cond0 = rtl_cond_to_sparc_cc(hipe_rtl:alub_cond(I)),
+      Cond =
+	case {Op,Cond0} of
+	  {'smul','vs'} -> 'ne';	% overflow becomes not-equal
+	  {'smul','vc'} -> 'e';		% no-overflow becomes equal
+	  {'smul',_} -> exit({?MODULE, {"invalid mul alub cond", Cond0}});
+	  {_,_} -> Cond0
+	end,
       Pred = hipe_rtl:alub_pred(I),
       Branch = 
 	if Pred >= 0.5 ->
@@ -118,8 +125,27 @@ translate_instruction(I, Map, ConstTab) ->
 				1.0 - Pred,
 				na)
 	end,
-      Ins = [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2),
-	     Branch],
+      Ins =
+	case Op of
+	  'smul' ->
+	    %% To check for overflow in 32x32->32 multiplication:
+	    %% smul Src1,Src2,Dst	% Dst receives the low 32 bits, %y the high 32 bits
+	    %% rd %y,Reg1
+	    %% sra Dst,31,Reg2	% fill Reg2 with sign of Dst
+	    %% cmp Reg1,Reg2	% V9: xor Reg1,Reg2,Reg3
+	    %% bne OverflowLabel	% V9: brnz Reg3,OverflowLabel
+	    Reg1 = hipe_sparc:mk_new_reg(),
+	    Reg2 = hipe_sparc:mk_new_reg(),
+	    G0 = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
+	    [hipe_sparc:alu_create(Dst, Src1, Op, Src2), % smul also sets %y
+	     hipe_sparc:rdy_create(Reg1),
+	     hipe_sparc:alu_create(Reg2, Dst, '>>?', hipe_sparc:mk_imm(31)),
+	     hipe_sparc:alu_cc_create(G0, Reg1, '-', Reg2),
+	     Branch];
+	  _ ->
+	    [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2),
+	     Branch]
+	end,
       {Ins, Map2, ConstTab};
     #switch{} -> % this instruction is a lot more high-level
       Labels = hipe_rtl:switch_labels(I),
@@ -585,6 +611,7 @@ rtl_op2sparc_op(srl) -> '>>';
 rtl_op2sparc_op(srlx) -> '>>64';
 rtl_op2sparc_op(sra) -> '>>?';
 rtl_op2sparc_op(srax) -> '>>?64';
+rtl_op2sparc_op(mul) -> 'smul';
 rtl_op2sparc_op(X) -> exit({?MODULE, {"unknown alu-op", X}}).
 
 

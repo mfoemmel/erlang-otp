@@ -29,7 +29,7 @@
 %%% aluop	::= add | add. | addi | addic. | addis | addo. | subf | subf. | subfo.
 %%%		  | and | and. | andi. | or | or. | ori | xor | xor. | xori
 %%%		  | slw | slw. | slwi | slwi. | srw | srw. | srwi | srwi.
-%%%		  | sraw | sraw. | srawi | srawi.
+%%%		  | sraw | sraw. | srawi | srawi. | mulli | mullw | mullw. | mullwo.
 %%% bcond	::= eq | ne | gt | ge | lt | le | so | ns
 %%% cmpop	::= cmp | cmpi | cmpl | cmpli
 %%% ldop	::= lbz | lha | lhz | lwz

@@ -107,9 +107,29 @@ int erts_disable_tolerant_timeofday; /* Time correction can be disabled it is
 Uint no_of_schedulers;
 #endif
 
+int erts_modified_timing_level;
+
 /*
  * Other global variables.
  */
+
+ErtsModifiedTimings erts_modified_timings[] = {
+    /* 0 */	{make_small(0), CONTEXT_REDS, INPUT_REDUCTIONS},
+    /* 1 */	{make_small(0), 2*CONTEXT_REDS, 2*INPUT_REDUCTIONS},
+    /* 2 */	{make_small(0), CONTEXT_REDS/2, INPUT_REDUCTIONS/2},
+    /* 3 */	{make_small(0), 3*CONTEXT_REDS, 3*INPUT_REDUCTIONS},
+    /* 4 */	{make_small(0), CONTEXT_REDS/3, 3*INPUT_REDUCTIONS},
+    /* 5 */	{make_small(0), 4*CONTEXT_REDS, INPUT_REDUCTIONS/2},
+    /* 6 */	{make_small(1), CONTEXT_REDS/4, 2*INPUT_REDUCTIONS},
+    /* 7 */	{make_small(1), 5*CONTEXT_REDS, INPUT_REDUCTIONS/3},
+    /* 8 */	{make_small(10), CONTEXT_REDS/5, 3*INPUT_REDUCTIONS},
+    /* 9 */	{make_small(10), 6*CONTEXT_REDS, INPUT_REDUCTIONS/4}
+};
+
+#define ERTS_MODIFIED_TIMING_LEVELS \
+  (sizeof(erts_modified_timings)/sizeof(ErtsModifiedTimings))
+
+Export *erts_delay_trap = NULL;
 
 int erts_use_r9_pids_ports;
 
@@ -230,6 +250,7 @@ erl_init(void)
     init_load();
     erts_init_bif();
     erts_init_obsolete();
+    erts_delay_trap = erts_export_put(am_erlang, am_delay_trap, 2);
 #if HAVE_ERTS_MSEG
     erts_mseg_late_init(); /* Must be after timer (init_time()) and thread
 			      initializations */
@@ -495,6 +516,9 @@ void erts_usage(void)
     erts_fprintf(stderr, "-S number  set number of schedulers on this node,\n");
     erts_fprintf(stderr, "           valid range is [1-%d]\n",
 		 ERTS_MAX_NO_OF_SCHEDULERS);
+    erts_fprintf(stderr, "-T number  set modified timing level,\n");
+    erts_fprintf(stderr, "           valid range is [0-%d]\n",
+		 ERTS_MODIFIED_TIMING_LEVELS-1);
     erts_fprintf(stderr, "-V         print Erlang version\n");
 
     erts_fprintf(stderr, "-v         turn on chatty mode (GCs will be reported etc)\n");
@@ -528,6 +552,8 @@ early_init(int *argc, char **argv) /*
     ignore_break = 0;
     replace_intr = 0;
     program = argv[0];
+
+    erts_modified_timing_level = -1;
 
     erts_compat_rel = this_rel_num();
 
@@ -564,7 +590,10 @@ early_init(int *argc, char **argv) /*
 #endif
     erl_sys_init();
 #ifdef ERTS_SMP
-    no_of_schedulers = erts_no_of_cpus();
+    {
+	int ncpu = erts_no_of_cpus();
+	no_of_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+    }
 #endif
     erl_sys_args(argc, argv);
 
@@ -623,6 +652,8 @@ erl_start(int argc, char **argv)
 	     *
 	     * The -d, -m, -S, -t, and -T flags was removed in
 	     * Erlang 5.3/OTP R9C.
+	     *
+	     * -S, and -T has been reused in Erlang 5.5/OTP R11B.
 	     */
 
 	case '#' :
@@ -638,7 +669,7 @@ erl_start(int argc, char **argv)
 	case 'l':
 	    display_loads++;
 	    break;
-	    
+
 	case 'v':
 #ifdef DEBUG
 	    if (argv[i][2] == '\0') {
@@ -800,6 +831,24 @@ erl_start(int argc, char **argv)
 #endif
 	    break;
 	}
+	    
+	case 'T' :
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    errno = 0;
+	    erts_modified_timing_level = atoi(arg);
+	    if ((erts_modified_timing_level == 0 && errno != 0)
+		|| erts_modified_timing_level < 0
+		|| erts_modified_timing_level >= ERTS_MODIFIED_TIMING_LEVELS) {
+		erts_fprintf(stderr, "bad modified timing level %s\n", arg);
+		erts_usage();
+	    }
+	    else {
+		VERBOSE(DEBUG_SYSTEM,
+			("using modified timing level %d\n",
+			 erts_modified_timing_level));
+	    }
+
+	    break;
 
 	case 'R': {
 	    /* set compatibility release */
@@ -915,15 +964,8 @@ erl_start(int argc, char **argv)
 
 #ifdef ERTS_SMP
     erts_start_schedulers(no_of_schedulers);
-    /* Become io thread... */
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_set_thread_name("io");
-#endif
-    erts_register_blockable_thread();
-    erts_io_thr_tid = erts_smp_thr_self();
-    erts_thread_init_fp_exception();
-    erl_sys_schedule(0); /* Never returns... */
-    ASSERT(0);
+    /* Let system specific code decide what to do with the main thread... */
+    erts_sys_main_thread(); /* May or may not return! */
 #else
     process_main();
 #endif

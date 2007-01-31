@@ -63,6 +63,7 @@ guard_bif(length, 1) -> true;
 guard_bif(hd, 1) -> true;
 guard_bif(tl, 1) -> true;
 guard_bif(size, 1) -> true;
+guard_bif(bitsize, 1) -> true;
 guard_bif(element, 2) -> true;
 guard_bif(self, 0) -> true;
 guard_bif(node,0) -> true;

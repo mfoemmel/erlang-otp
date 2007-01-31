@@ -21,7 +21,7 @@
 
 -export([module/2]).
 
--import(lists, [reverse/1,foldl/3,mapfoldl/3,sort/1,member/2]).
+-import(lists, [reverse/1,reverse/2,foldl/3,mapfoldl/3,sort/1,member/2]).
 -define(MAXREG, 1024).
 
 -record(st,
@@ -53,7 +53,7 @@ bopt([{block,Bl0}=Block|
        {label,Fail},
        {block,[{set,[Dst],[{atom,false}],move},{'%live',Live}]},
        {label,Succ}|Is]=Is0], Acc0, St) ->
-    case split_block(Bl0, Dst, Fail, Acc0) of
+    case split_block(Bl0, Dst, Fail, Acc0, true) of
 	failed ->
 	    bopt(Is0, [Block|Acc0], St);
 	{Bl,PreBlock} ->
@@ -88,7 +88,7 @@ bopt_reverse([], Acc) -> Acc.
 %%  Attempt to optimized a block of guard BIFs followed by a test
 %%  instruction.
 bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
-    case split_block(Bl0, Reg, Fail, Acc0) of
+    case split_block(Bl0, Reg, Fail, Acc0, false) of
 	failed ->
 	    %% Reason for failure: The block either contained no
 	    %% guard BIFs with the failure label Fail, or the final
@@ -120,19 +120,20 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 		    %%
 		    %% 3. Other bug or limitation.
 
-		    %%io:format("~P\n", [_Reason,20]),
+		    %%io:format("~P\n", [_Reason,40]),
 		    failed;
 		{NewCode,St} ->
-		    case is_opt_safe(Bl, NewCode, OldIs, St) of
+		    case is_opt_safe(Bl, NewCode, OldIs, Acc, St) of
 			false ->
 			    %% The optimization is not safe. (A register
 			    %% used by the instructions following the
 			    %% optimized code is either not assigned a
 			    %% value at all or assigned a different value.)
 
-			    %%io:format("\nNot safe:\n"),
-			    %%io:format("~p\n", [Bl]),
-			    %%io:format("~p\n", [reverse(NewCode)]),
+%% 			    io:format("\nNot safe:\n"),
+%% 			    io:format("~p\n", [Bl]),
+%% 			    io:format("~p\n", [reverse(NewCode)]),
+%% 			    io:format("~p\n", [reverse(Acc0)]),
 			    failed;
 			true -> {NewCode++Acc,St}
 		    end
@@ -144,41 +145,43 @@ bopt_block_1(Block, Fail, St) ->
     Pre = update_fail_label(Pre0, Fail, []),
     bopt_cg(Tree, Fail, make_block(Pre, []), St).
 
-%% is_opt_safe(OriginalCode, OptCode, FollowingCode, State) -> true|false
+%% is_opt_safe(OriginalCode, OptCode, FollowingCode,
+%%             ReversedPreceedingCode, State) -> true|false
 %%  Comparing the original code to the optimized code, determine
 %%  whether the optimized code is guaranteed to work in the same
 %%  way as the original code.
 
-is_opt_safe(Bl, NewCode, OldIs, St) ->
+is_opt_safe(Bl, NewCode, OldIs, PreceedingCode, St) ->
     %% Here are the conditions that must be true for the
     %% optimization to be safe.
     %%
-    %% 1. Any register that was assigned a value in the original
-    %%    code, but is not in the optimized code, must be guaranteed
-    %%    to be KILLED in the following code. (NotSet below.)
-    %% 
-    %% 2. Any register that is assigned a value in the optimized
-    %%    code must be UNUSED in the following code. (NewDst, Set.)
+    %% 1. If a register is INITIALIZED by PreceedingCode,
+    %%    then if that register assigned a value in the original
+    %%    code, but not in the optimized code, it must be UNUSED or KILLED
+    %%    in the code that follows.
+    %%
+    %% 2. If a register is not known to be INITIALIZED by PreccedingCode,
+    %%    then if that register assigned a value in the original
+    %%    code, but not in the optimized code, it must be KILLED
+    %%    by the code that follows.
+    %%
+    %% 3. Any register that is assigned a value in the optimized
+    %%    code must be UNUSED or KILLED in the following code.
     %%    (Possible future improvement: Registers that are known
     %%    to be assigned the SAME value in the original and optimized
     %%    code don't need to be unused in the following code.)
 
+    InitInPreceeding = initialized_regs(PreceedingCode),
+
     PrevDst = dst_regs(Bl),
     NewDst = dst_regs(NewCode),
     NotSet = ordsets:subtract(PrevDst, NewDst),
+    MustBeKilled = ordsets:subtract(NotSet, InitInPreceeding),
+    MustBeUnused = ordsets:subtract(ordsets:union(NotSet, NewDst), MustBeKilled),
 
-    %% Note: The following line is an optimization. We don't need
-    %% to test whether variables in NotSet for being unused, because
-    %% they will all be tested for being killed (a stronger condition
-    %% than being unused).
-    
-    Set = ordsets:subtract(NewDst, NotSet),
+    all_killed(MustBeKilled, OldIs, St) andalso
+	none_used(MustBeUnused, OldIs, St).
 
-    all_killed(NotSet, OldIs, St) andalso
-	none_used(Set, OldIs, St).
-
-% update_fail_label([{set,_,_,{bif,_,{f,0}}}=I|Is], Fail, Acc) ->
-%     update_fail_label(Is, Fail, [I|Acc]);
 update_fail_label([{set,Ds,As,{bif,N,{f,_}}}|Is], Fail, Acc) ->
     update_fail_label(Is, Fail, [{set,Ds,As,{bif,N,{f,Fail}}}|Acc]);
 update_fail_label([], _, Acc) -> Acc.
@@ -206,40 +209,52 @@ extend_block_1([{set,[_],As,{bif,Bif,_}}=I|Is]=Is0, Fail, Acc) ->
 extend_block_1([_|_]=Is, _, Acc) -> {Acc,reverse(Is)};
 extend_block_1([], _, Acc) -> {Acc,[]}.
 
-split_block(Is0, Dst, Fail, PreIs) ->
-    case beam_jump:is_label_used_in(Fail, PreIs) of
+%% split_block([Instruction], Destination, FailLabel, [PreInstruction],
+%%             ProhibitFailLabelInPreBlock) -> failed | {Block,PreBlock}
+%% Split a sequence of instructions into two blocks - one containing
+%% all guard bif instructions and a pre-block all instructions before
+%% the guard BIFs.
+
+split_block(Is0, Dst, Fail, PreIs, ProhibitFailLabel) ->
+    case ProhibitFailLabel andalso beam_jump:is_label_used_in(Fail, PreIs) of
 	true ->
 	    %% The failure label was used in one of the instructions (most
-	    %% probably bit syntax construction) preceeding the block.
-	    %% We cannot allow that because the failure label will be
-	    %% eliminated.
+	    %% probably bit syntax construction) preceeding the block,
+	    %% the caller might eliminate the label.
 	    failed;
 	false ->
 	    case reverse(Is0) of
 		[{'%live',_}|[{set,[Dst],_,_}|_]=Is] ->
-		    split_block_1(Is, Fail);
+		    split_block_1(Is, Fail, ProhibitFailLabel);
 		[{set,[Dst],_,_}|_]=Is ->
-		    split_block_1(Is, Fail);
+		    split_block_1(Is, Fail, ProhibitFailLabel);
 		_ -> failed
 	    end
     end.
 
-split_block_1(Is, Fail) ->
-    case split_block_2(Is, Fail, []) of
+split_block_1(Is, Fail, ProhibitFailLabel) ->
+    case split_block_2(Is, Fail, ProhibitFailLabel, []) of
 	failed -> failed;
 	{[],_} -> failed;
 	{_,_}=Res -> Res
     end.
 
-split_block_2([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Acc) ->
-    split_block_2(Is, Fail, [I|Acc]);
-split_block_2([{'%live',_}|Is], Fail, Acc) ->
-    split_block_2(Is, Fail, Acc);
-split_block_2(Is, Fail, Acc) ->
-    %% We are done, but we must make sure that the failure label
-    %% is not used in the pre-block (because the failure label
-    %% might be removed).
-    split_block_3(Is, Fail, {Acc,reverse(Is)}).
+split_block_2([{set,[_],_,{bif,_,{f,Fail}}}=I|Is], Fail, Flag, Acc) ->
+    split_block_2(Is, Fail, Flag, [I|Acc]);
+split_block_2([{'%live',_}|Is], Fail, Flag, Acc) ->
+    split_block_2(Is, Fail, Flag, Acc);
+split_block_2(Is0, Fail, ProhibitFailLabel, Acc) ->
+    Is = reverse(Is0),
+    Res = {Acc,Is},
+    case ProhibitFailLabel of
+	true ->
+	    %% We are done, but we must make sure that the failure label
+	    %% is not used in the pre-block (because it might be removed).
+	    split_block_3(Is, Fail, Res);
+	false ->
+	    %% Done. The caller will not remove the failure label.
+	    Res
+    end.
 
 split_block_3([{set,[_],_,{bif,_,{f,Fail}}}|_], Fail, _) ->
     failed;
@@ -354,6 +369,8 @@ bif_to_test('=<', [L,R]) -> {test,is_ge,fail,[R,L]};
 bif_to_test('>=', As) -> {test,is_ge,fail,As};
 bif_to_test('>', [L,R]) -> {test,is_lt,fail,[R,L]};
 bif_to_test('<', As) -> {test,is_lt,fail,As};
+bif_to_test(is_function, [_,_]=As) -> {test,is_function2,fail,As};
+bif_to_test(is_record, [_,_,_]=As) -> {test,is_record,fail,As};
 bif_to_test(Name, [_]=As) ->
     case erl_internal:new_type_test(Name, 1) of
 	false -> exit({bif_to_test,Name,As,failed});
@@ -631,3 +648,26 @@ is_used_at_none(R, [{f,Lbl}|T], St) ->
 is_used_at_none(R, [_|T], St) ->
     is_used_at_none(R, T, St);
 is_used_at_none(_, [], _) -> true.
+
+%% initialized_regs([Instruction]) -> [Register])
+%%  Given a REVERSED instruction sequence, return a list of the registers
+%%  that are guaranteed to be initialized (not contain garbage).
+
+initialized_regs(Is) ->
+    initialized_regs(Is, ordsets:new()).
+
+initialized_regs([{set,Dst,Src,_}|Is], Regs) ->
+    initialized_regs(Is, add_init_regs(Dst, add_init_regs(Src, Regs)));
+initialized_regs([{test,_,_,Src}|Is], Regs) ->
+    initialized_regs(Is, add_init_regs(Src, Regs));
+initialized_regs([{block,Bl}|Is], Regs) ->
+    initialized_regs(reverse(Bl, Is), Regs);
+initialized_regs([_|_], Regs) -> Regs;
+initialized_regs([], Regs) -> Regs.
+
+add_init_regs([{x,_}=X|T], Regs) ->
+    add_init_regs(T, ordsets:add_element(X, Regs));
+add_init_regs([_|T], Regs) ->
+    add_init_regs(T, Regs);
+add_init_regs([], Regs) -> Regs.
+   

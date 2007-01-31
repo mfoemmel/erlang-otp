@@ -81,7 +81,7 @@ exprs(Es, Hook) ->
     exprs(Es, 0, Hook).
 
 exprs(Es, I, Hook) ->
-    map(fun(Item) -> frmt(Item, I) end, lexprs(Es, Hook)).
+    frmt({seq,[],[],[$,],lexprs(Es, Hook)}, I).
 
 expr(E) ->
     frmt(lexpr(E, 0, none)).
@@ -359,7 +359,7 @@ call(Name, Args, Prec, Hook) ->
     maybe_paren(P, Prec, Item).
 
 fun_info(Extra) ->
-    leaf(format("% fun-info: ~p", [Extra])).
+    leaf(format("% fun-info: ~w", [Extra])).
 
 %% BITS:
 
@@ -585,7 +585,7 @@ frmt(Item, I) ->
 %%% - {seq,Before,After,Separator,IPs}: a sequence of Is separated by 
 %%%   Separator. Before is output before IPs, and the indentation of IPs 
 %%%   is updated with the width of Before. After follows after IPs.
-%%% - {force_el,ExtraInfo,I}: fun-info (a comment) forces linebreak before I.
+%%% - {force_nl,ExtraInfo,I}: fun-info (a comment) forces linebreak before I.
 %%% - {prefer_nl,Sep,IPs}: forces linebreak between Is unlesss negative
 %%%   indentation.
 %%% - {string,S}: a string.
@@ -594,7 +594,7 @@ frmt(Item, I) ->
 %%% list, first, seq, force_nl, and prefer_nl all accept IPs, where each
 %%% element is either an item or a tuple {step|cstep,I1,I2}. step means
 %%% that I2 is output after linebreak and an incremented indentation.
-%%% cstep works similarly, but no linebreak is the width of I1 is less
+%%% cstep works similarly, but no linebreak if the width of I1 is less
 %%% than the indentation (this is for "A = <expression over several lines>).
 
 f([]=Nil, _I0, _ST, _WT) ->

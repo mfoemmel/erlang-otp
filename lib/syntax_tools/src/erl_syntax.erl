@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Abstract Erlang syntax trees (`erl_parse'-compatible).
-%%
-%% Copyright (C) 1997-2004 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,15 +14,16 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
 %%
+%% @copyright 1997-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Abstract Erlang syntax trees.
 %%
-%% <p> This module defines an abstract data type for representing Erlang
+%% This module defines an abstract data type for representing Erlang
 %% source code as syntax trees, in a way that is backwards compatible
 %% with the data structures created by the Erlang standard library
 %% parser module <code>erl_parse</code> (often referred to as "parse
@@ -38,24 +35,24 @@
 %% Erlang program, the function <a
 %% href="#revert-1"><code>revert/1</code></a> should be able to
 %% transform it to the corresponding <code>erl_parse</code>
-%% representation.</p>
+%% representation.
 %%
-%% <p>A recommended starting point for the first-time user is the
+%% A recommended starting point for the first-time user is the
 %% documentation of the <a
 %% href="#type-syntaxTree"><code>syntaxTree()</code></a> data type, and
-%% the function <a href="#type-1"><code>type/1</code></a>.</p>
+%% the function <a href="#type-1"><code>type/1</code></a>.
 %%
 %% <h3><b>NOTES:</b></h3>
 %%
-%% <p>This module deals with the composition and decomposition of
+%% This module deals with the composition and decomposition of
 %% <em>syntactic</em> entities (as opposed to semantic ones); its
 %% purpose is to hide all direct references to the data structures used
 %% to represent these entities. With few exceptions, the functions in
 %% this module perform no semantic interpretation of their inputs, and
 %% in general, the user is assumed to pass type-correct arguments - if
-%% this is not done, the effects are not defined.</p>
+%% this is not done, the effects are not defined.
 %%
-%% <p>With the exception of the <code>erl_parse</code> data structures,
+%% With the exception of the <code>erl_parse</code> data structures,
 %% the internal representations of abstract syntax trees are subject to
 %% change without notice, and should not be documented outside this
 %% module. Furthermore, we do not give any guarantees on how an abstract
@@ -63,13 +60,13 @@
 %% exceptions</em>: no syntax tree is represented by a single atom, such
 %% as <code>none</code>, by a list constructor <code>[X | Y]</code>, or
 %% by the empty list <code>[]</code>. This can be relied on when writing
-%% functions that operate on syntax trees.</p>
-%%
+%% functions that operate on syntax trees.
+
 %% @type syntaxTree(). An abstract syntax tree. The
 %% <code>erl_parse</code> "parse tree" representation is a subset of the
 %% <code>syntaxTree()</code> representation.
 %%
-%% <p>Every abstract syntax tree node has a <em>type</em>, given by the
+%% Every abstract syntax tree node has a <em>type</em>, given by the
 %% function <a href="#type-1"><code>type/1</code></a>. Each node also
 %% has associated <em>attributes</em>; see <a
 %% href="#get_attrs-1"><code>get_attrs/1</code></a> for details. The
@@ -80,14 +77,11 @@
 %% href="#concrete-1"><code>concrete/1</code></a> convert between
 %% constant Erlang terms and their syntactic representations. The set of
 %% syntax tree nodes is extensible through the <a
-%% href="#tree-2"><code>tree/2</code></a> function.</p>
+%% href="#tree-2"><code>tree/2</code></a> function.
 %%
-%% <p>A syntax tree can be transformed to the <code>erl_parse</code>
+%% A syntax tree can be transformed to the <code>erl_parse</code>
 %% representation with the <a href="#revert-1"><code>revert/1</code></a>
-%% function.</p>
-%% 
-%% @end
-%% =====================================================================
+%% function.
 
 -module(erl_syntax).
 
@@ -683,7 +677,7 @@ is_leaf(Node) ->
 %% @see type/1
 %% @see attribute/2 
 %% @see comment/2
-%% @see eof_marker/1
+%% @see eof_marker/0
 %% @see error_marker/1
 %% @see form_list/1
 %% @see function/2
@@ -2693,7 +2687,7 @@ size_qualifier_argument(Node) ->
 %% @doc Creates an abstract error marker. The result represents an
 %% occurrence of an error in the source code, with an associated Erlang
 %% I/O ErrorInfo structure given by <code>Error</code> (see module
-%% <code>io</code> for details). Error markers are regarded as source
+%% {@link //stdlib/io} for details). Error markers are regarded as source
 %% code forms, but have no defined lexical form.
 %%
 %% <p>Note: this is supported only for backwards compatibility with
@@ -2703,7 +2697,6 @@ size_qualifier_argument(Node) ->
 %% @see warning_marker/1
 %% @see eof_marker/0
 %% @see is_form/1
-%% @see io
 
 %% type(Node) = error_marker
 %% data(Node) = term()
@@ -2749,7 +2742,7 @@ error_marker_info(Node) ->
 %% @doc Creates an abstract warning marker. The result represents an
 %% occurrence of a possible problem in the source code, with an
 %% associated Erlang I/O ErrorInfo structure given by <code>Error</code>
-%% (see module <code>io</code> for details). Warning markers are
+%% (see module {@link //stdlib/io} for details). Warning markers are
 %% regarded as source code forms, but have no defined lexical form.
 %%
 %% <p>Note: this is supported only for backwards compatibility with
@@ -2759,7 +2752,6 @@ error_marker_info(Node) ->
 %% @see error_marker/1
 %% @see eof_marker/0
 %% @see is_form/1
-%% @see io
 
 %% type(Node) = warning_marker
 %% data(Node) = term()
@@ -3164,7 +3156,7 @@ arity_qualifier(Body, Arity) ->
 %% @doc Returns the body subtree of an <code>arity_qualifier</code>
 %% node.
 %%
-%% @see arity_qualifier/1
+%% @see arity_qualifier/2
 
 arity_qualifier_body(Node) ->
     (data(Node))#arity_qualifier.body.
@@ -3176,7 +3168,7 @@ arity_qualifier_body(Node) ->
 %% @doc Returns the argument (the arity) subtree of an
 %% <code>arity_qualifier</code> node.
 %%
-%% @see arity_qualifier/1
+%% @see arity_qualifier/2
 
 arity_qualifier_argument(Node) ->
     (data(Node))#arity_qualifier.arity.
@@ -5397,7 +5389,7 @@ class_qualifier(Class, Body) ->
 %% @doc Returns the argument (the class) subtree of a
 %% <code>class_qualifier</code> node.
 %%
-%% @see class_qualifier/1
+%% @see class_qualifier/2
 
 class_qualifier_argument(Node) ->
     (data(Node))#class_qualifier.class.
@@ -5408,7 +5400,7 @@ class_qualifier_argument(Node) ->
 %%
 %% @doc Returns the body subtree of a <code>class_qualifier</code> node.
 %%
-%% @see class_qualifier/1
+%% @see class_qualifier/2
 
 class_qualifier_body(Node) ->
     (data(Node))#class_qualifier.body.
@@ -5903,7 +5895,7 @@ is_literal(T) ->
 %% code.</p>
 %%
 %% @see revert_forms/1
-%% @see erl_parse
+%% @see //stdlib/erl_parse
 
 revert(Node) ->
     case is_tree(Node) of
@@ -6330,7 +6322,7 @@ update_tree(Node, Groups) ->
 %% does not necessarily have the same data representation as
 %% <code>Node</code>.</p>
 %%
-%% @see update_tree/1
+%% @see update_tree/2
 %% @see subtrees/1
 %% @see type/1
 %% @see is_leaf/1

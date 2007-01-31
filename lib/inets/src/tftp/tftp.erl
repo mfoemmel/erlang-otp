@@ -49,6 +49,19 @@
 %%%     will pick a free port (which is returned by the start/1
 %%%     function).
 %%%     
+%%%     If a socket has somehow already has been connected, the
+%%%     {udp, [{fd, integer()}]} option can be used to pass the
+%%%     open file descriptor to gen_udp. This can be automated
+%%%     a bit by using a command line argument stating the
+%%%     prebound file descriptor number. For example, if the
+%%%     Port is 69 and the file descriptor 22 has been opened by
+%%%     setuid_socket_wrap. Then the command line argument
+%%%     "-tftpd_69 22" will trigger the prebound file
+%%%     descriptor 22 to be used instead of opening port 69.
+%%%     The UDP option {udp, [{fd, 22}]} autmatically be added.
+%%%     See init:get_argument/ about command line arguments and
+%%%     gen_udp:open/2 about UDP options.
+%%%
 %%%   {port_policy, Policy}
 %%%
 %%%     Policy = random | Port | {range, MinPort, MaxPort}
@@ -59,6 +72,24 @@
 %%%     'random' which is the standardized policy. With this policy a
 %%%     randomized free port used. A single port or a range of ports
 %%%     can be useful if the protocol should pass thru a firewall.
+%%%   
+%%%   {prebound_fd, InitArgFlag}
+%%%
+%%%     InitArgFlag = atom()
+%%%
+%%%     If a socket has somehow already has been connected, the
+%%%     {udp, [{fd, integer()}]} option can be used to pass the
+%%%     open file descriptor to gen_udp.
+%%%
+%%%     The prebound_fd option makes it possible to pass give the
+%%%     file descriptor as a command line argument. The typical
+%%%     usage is when used in conjunction with setuid_socket_wrap
+%%%     to be able to open privileged sockets. For example if the
+%%%     file descriptor 22 has been opened by setuid_socket_wrap
+%%%     and you have choosen my_tftp_fd as init argument, the
+%%%     command line should like this "erl -my_tftp_fd 22" and 
+%%%     FileDesc should be set to my_tftpd_fd. This would 
+%%%     automatically imply {fd, 22} to be set as UDP option.
 %%%   
 %%%   {udp, UdpOptions}
 %%%
@@ -166,7 +197,7 @@
 -export([behaviour_info/1]).
 
 behaviour_info(callbacks) ->
-    [{prepare, 5}, {open, 5}, {read, 1}, {write, 2}, {abort, 3}];
+    [{prepare, 6}, {open, 6}, {read, 1}, {write, 2}, {abort, 3}];
 behaviour_info(_) ->
     undefined.
 

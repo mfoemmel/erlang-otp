@@ -36,13 +36,14 @@
 %%-----------------------------------------------------------------
 -export([start/1, connect/4, connections/0, 
 	 sockname2peername/2, peername2sockname/2,
-	 add_connection/5, 
+	 add_connection/5,
 	 add/2, add/3, remove/1, reconfigure/1, reconfigure/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
--export([init/1, terminate/2, handle_call/3, handle_cast/2, handle_info/2, code_change/3]).
+-export([init/1, terminate/2, handle_call/3, 
+	 handle_cast/2, handle_info/2, code_change/3]).
 
 %%-----------------------------------------------------------------
 %% Server state record and definitions
@@ -53,7 +54,7 @@
 
 -record(connection, {pid, socket, type, peerdata, localdata, ref = 0}).
 
--record(listen, {pid, socket, port, type, ref = 0}).
+-record(listen, {pid, socket, port, type, ref = 0, options}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -187,7 +188,8 @@ parse_options([{port, Type, Port} | Rest], State) ->
     {ok, Pid} = orber_iiop_socketsup:start_accept(Type, Listen, 0),
     link(Pid),
     ets:insert(?CONNECTION_DB, #listen{pid = Pid, socket = Listen, 
-				       port = NewPort, type = Type}),
+				       port = NewPort, type = Type,
+				       options = Options2}),
     parse_options(Rest, State);
 parse_options([], State) ->
     State.
@@ -237,7 +239,8 @@ handle_call({add, IP, Type, Port}, _From, State) ->
 		    ets:insert(?CONNECTION_DB, #listen{pid = Pid, 
 						       socket = Listen, 
 						       port = NewPort, 
-						       type = Type, ref = Ref}),
+						       type = Type, ref = Ref,
+						       options = Options}),
 		    {reply, {ok, Ref}, State};
 		Error ->
 		    {reply, Error, State}
@@ -250,9 +253,13 @@ handle_call({connect, Type, Socket, _AcceptPid, AccepRef}, _From, State)
        State#state.max_connections > State#state.counter ->
     case catch access_allowed(Type, Socket, Type) of
 	true ->
-	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket, AccepRef),
-	    link(Pid),
-	    {reply, {ok, Pid, true}, update_counter(State, 1)};
+	    case orber_iiop_insup:start_connection(Type, Socket, AccepRef) of
+		{ok, Pid} when pid(Pid) ->
+		    link(Pid),
+		    {reply, {ok, Pid, true}, update_counter(State, 1)};
+		Other ->
+		    {reply, Other, State}
+	    end;
 	_ ->
 	    {H, P} = orber_socket:peerdata(Type, Socket),
 	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
@@ -262,12 +269,16 @@ handle_call({connect, Type, Socket, AcceptPid, AccepRef}, _From,
 	    #state{queue = Q} = State) ->
     case catch access_allowed(Type, Socket, Type) of
 	true ->
-	    {ok, Pid} = orber_iiop_insup:start_connection(Type, Socket, AccepRef),
-	    link(Pid),
-	    Ref = erlang:make_ref(),
-	    {reply, {ok, Pid, Ref}, 
-	     update_counter(State#state{queue = 
-					queue:in({AcceptPid, Ref}, Q)}, 1)};
+	    case orber_iiop_insup:start_connection(Type, Socket, AccepRef) of
+		{ok, Pid} when pid(Pid) ->
+		    link(Pid),
+		    Ref = erlang:make_ref(),
+		    {reply, {ok, Pid, Ref}, 
+		     update_counter(State#state{queue = 
+						queue:in({AcceptPid, Ref}, Q)}, 1)};
+		Other ->
+		    {reply, Other, State}
+	    end;
 	_ ->
 	    {H, P} = orber_socket:peerdata(Type, Socket),
 	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
@@ -334,14 +345,16 @@ handle_cast(_, State) ->
 %%------------------------------------------------------------
 handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
     case ets:lookup(?CONNECTION_DB, Pid) of
-	[#listen{pid = Pid, socket = Listen, port = Port, type = Type, ref = Ref}] ->
+	[#listen{pid = Pid, socket = Listen, port = Port, type = Type, 
+		 ref = Ref, options = Options}] ->
 	    ets:delete(?CONNECTION_DB, Pid),
 	    unlink(Pid),
-	    {ok, NewPid} = orber_iiop_socketsup:start_accept(Type, Listen, Ref),
+	    NewListen = new_listen_socket(Type, Listen, Port, Options),
+	    {ok, NewPid} = orber_iiop_socketsup:start_accept(Type, NewListen, Ref),
 	    link(NewPid),
-	    ets:insert(?CONNECTION_DB, #listen{pid = NewPid, socket = Listen, 
+	    ets:insert(?CONNECTION_DB, #listen{pid = NewPid, socket = NewListen, 
 					       port = Port, type = Type, 
-					       ref = Ref}),
+					       ref = Ref, options = Options}),
 	    %% Remove the connection if it's in the queue.
 	    {noreply, 
 	     State#state{queue = 
@@ -363,6 +376,17 @@ handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
     end;
 handle_info(_, State) ->
     {noreply,  State}.
+
+new_listen_socket(normal, ListenFd, _Port, _Options) ->
+    ListenFd;
+new_listen_socket(ssl, ListenFd, Port, Options) ->
+    case is_process_alive(ssl:pid(ListenFd)) of
+	true ->
+	    ListenFd;
+	_ ->
+	    {ok, Listen, _NP} = orber_socket:listen(ssl, Port, Options, true),
+	    Listen
+    end.
 
 from_list(List) ->
     from_list(List, queue:new()).

@@ -728,6 +728,22 @@ node_test({name, {Tag, Prefix, Local}},
 		 [{Tag, Prefix, Local}, write_node(Name), Res]),
 	    Res
     end;
+node_test({name, {_Tag, Prefix, Local}}, 
+	  #xmlNode{node = #xmlElement{name = Name,
+				      expanded_name = _EExpName,
+				      namespace = NS
+				     }}, Context) -> 
+    case expanded_name(Prefix, Local, Context) of
+	[] ->
+	    ?dbg("node_test(~p, ~p) -> ~p.~n", 
+		 [{Tag, Prefix, Local}, write_node(Name), false]),
+	    false;
+	ExpName ->
+	    Res = (ExpName == {NS#xmlNamespace.default,Name}),
+	    ?dbg("node_test(~p, ~p) -> ~p.~n", 
+		 [{Tag, Prefix, Local}, write_node(Name), Res]),
+	    Res
+    end;
 node_test({name, {Tag,_Prefix,_Local}}, 
 	  #xmlNode{node = #xmlAttribute{name = Tag}}, _Context) -> 
     true;

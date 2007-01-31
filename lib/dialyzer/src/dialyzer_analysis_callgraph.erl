@@ -138,7 +138,7 @@ analyze_callgraph(Callgraph, State) ->
       Codeserver = State#analysis_state.codeserver,
       Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
       dialyzer_succ_typings:analyze_callgraph(Callgraph1, Plt, Codeserver);
-    cerl_typean ->
+    dataflow ->
       case erlang:system_info(schedulers) of
 	1 -> 
 	  Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
@@ -190,7 +190,7 @@ analyze_callgraph_single_threaded(Callgraph, State) ->
   case dialyzer_callgraph:take_scc(Callgraph) of
     {ok, SCC, NewCallgraph} ->
       case State#analysis_state.core_transform of
-	cerl_typean ->
+	dataflow ->
 	  %% Since we are only analyzing once, we can use the top-down
 	  %% version to get the warnings etc.
 	  analyze_scc_warnings(SCC, Callgraph, State);
@@ -383,15 +383,21 @@ compile_src(File, Includes, Defines, Callgraph, CServer, CoreTransform, Plt) ->
   DefaultIncludes = default_includes(filename:dirname(File)),
   CompOpts = ?SRC_COMPILE_OPTS ++ Includes++Defines++DefaultIncludes,
   Mod = list_to_atom(filename:basename(File, ".erl")),
-  case compile:file(File, [to_pp, binary|CompOpts]) of
-    error -> {error, []};
-    {error, Errors, _} -> {error, format_errors(Errors)};
-    {ok, _, AbstrCode} ->
-      case abs_get_core(AbstrCode, Mod) of
-	error -> error;
-	{Core, NoWarn} ->
-	  compile_core(Mod, Core, NoWarn, Callgraph, 
-		       CServer, CoreTransform, Plt)
+  case dialyzer_utils:get_abstract_code_from_src(File, CompOpts) of
+    {error, Msg} -> {error, Msg};
+    AbstrCode ->
+      case dialyzer_utils:get_core_from_abstract_code(AbstrCode) of
+	error -> {error, "Could not find abstract code for: "++File};
+	Core ->
+	  NoWarn = abs_get_nowarn(AbstrCode, Mod),
+	  case dialyzer_utils:get_record_info(AbstrCode) of
+	    {error, _} = Error -> Error;
+	    {ok, RecInfo} ->
+	      CServer2 = 
+		dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
+	      compile_core(Mod, Core, NoWarn, Callgraph, 
+			   CServer2, CoreTransform, Plt)
+	  end
       end
   end.
 
@@ -404,7 +410,7 @@ compile_byte(File, Callgraph, CServer, CoreTransform, Plt) ->
   case code:add_patha(Dir) of
     true ->            
       Res = 
-	case beam_get_core(File, Mod) of
+	case dialyzer_utils:get_abstract_code_from_beam(File) of
 	  error ->	  
 	    case (catch hipe:c(Mod, ?HIPE_COMPILE_OPTS)) of
 	      {'EXIT', Why} -> {error, io_lib:format("~p", [Why])};
@@ -417,9 +423,20 @@ compile_byte(File, Callgraph, CServer, CoreTransform, Plt) ->
 		NoWarn = beam_get_nowarn(File),
 		{ok, NewCG, NoWarn, CServer2}
 	    end;
-	  {Core, NoWarn} ->
-	    compile_core(Mod, Core, NoWarn, Callgraph, 
-			 CServer, CoreTransform, Plt)
+	  AbstrCode ->
+	    NoWarn = abs_get_nowarn(AbstrCode, Mod),
+	    case dialyzer_utils:get_core_from_abstract_code(AbstrCode) of
+	      error -> {error, "Could not get core for "++File};
+	      Core ->
+		case dialyzer_utils:get_record_info(AbstrCode) of
+		  {error, _} = Error -> Error;
+		  {ok, RecInfo} ->
+		    CServer1 = 
+		      dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
+		    compile_core(Mod, Core, NoWarn, Callgraph, 
+				 CServer1, CoreTransform, Plt)
+		end
+	    end
 	end,
       true = code:set_path(OldPath),
       Res;
@@ -435,43 +452,19 @@ compile_core(Mod, Core, NoWarn, Callgraph, CServer, CoreTransform, Plt) ->
     succ_typings ->
       store_code_and_build_callgraph(Mod, LabeledCore, none, Callgraph, 
 				     CServer2, CoreTransform, NoWarn);
-    cerl_typean  -> 
-      AnnCore = dialyzer_dataflow:annotate_module(LabeledCore, Plt),
-      TransCore = cerl:to_records(AnnCore),
-      case (catch hipe:compile_core(Mod, TransCore, [], 
-				    ?HIPE_COMPILE_OPTS)) of
-	{'EXIT', Why} -> {error, io_lib:format("~p", [Why])};
-	{error, Why} -> {error, io_lib:format("~p", [Why])};
-	{ok, Icode} ->
-	  store_code_and_build_callgraph(Mod, TransCore, Icode, Callgraph, 
-					 CServer2, CoreTransform, NoWarn)
+    dataflow  ->
+      try 
+	AnnCore = dialyzer_dataflow:annotate_module(LabeledCore, Plt),
+	TransCore = cerl:to_records(AnnCore),
+	case hipe:compile_core(Mod, TransCore, [], ?HIPE_COMPILE_OPTS) of
+	  {error, Why} -> {error, io_lib:format("~p", [Why])};
+	  {ok, Icode} ->
+	    store_code_and_build_callgraph(Mod, TransCore, Icode, Callgraph, 
+					   CServer2, CoreTransform, NoWarn)
+	end
+      catch
+	_:What -> {error, io_lib:format("~p", [What])}
       end
-  end.
-
-beam_get_core(File, Mod) ->
-  case beam_get_abstract_code(File) of
-    error -> error;
-    {ok, Abs} -> abs_get_core(Abs, Mod)
-  end.
-
-beam_get_abstract_code(File) ->
-  case beam_lib:chunks(File, [abstract_code]) of
-    {ok,{_,List}} ->
-      case lists:keysearch(abstract_code, 1, List) of
-	{value, {abstract_code,{raw_abstract_v1,Abstr}}} -> {ok, Abstr};
-	_ -> error
-      end;
-    _ ->
-      %% No or unsuitable abstract code.
-      error
-  end.
-
-abs_get_core(AbstrCode, Mod) ->
-  try compile:forms(AbstrCode, ?SRC_COMPILE_OPTS) of
-      {ok,_,Core} -> {Core, abs_get_nowarn(AbstrCode, Mod)};
-      _ -> error
-  catch
-    error:_ -> error
   end.
   
 abs_get_nowarn(Abs, M) ->
@@ -519,7 +512,7 @@ store_code_and_build_callgraph(Mod, Core, Icode, Callgraph, CServer,
       NewCallgraph = dialyzer_callgraph:scan_core_tree(CoreTree, Callgraph),
       CServer2 = dialyzer_codeserver:insert([{Mod, CoreTree}], core, CServer),
       {ok, NewCallgraph, NoWarn, CServer2};
-    cerl_typean ->
+    dataflow ->
       %% When building the callgraph from core that is not lambda
       %% lifted, we lose the lifted functions. We solve this for now
       %% by scanning the icode instead of the core code. I can't wait
@@ -563,14 +556,6 @@ expand_files([File|Left], Ext, Acc) ->
 expand_files([], _Ext, Acc) ->
   ordsets:from_list(Acc).
 
-format_errors([{Mod, Errors}|Left])->
-  FormatedError = 
-    [io_lib:format("~s:~w: ~s\n", [Mod, Line,apply(M,format_error, [Desc])])
-     || {Line, M, Desc} <- Errors],
-  [lists:flatten(FormatedError) | format_errors(Left)];
-format_errors([]) ->
-  [].
-
 default_includes(Dir) ->
   L1 = ["..", "../incl", "../inc", "../include"],
   [{i, filename:join(Dir, X)}||X<-L1].
@@ -589,7 +574,7 @@ send_warnings(Parent, Warnings) ->
   Parent ! {self(), warnings, Warnings}.
 
 filter_warnings(LegalWarnings, Warnings) ->
-  [String || {Tag, String} <- Warnings, lists:member(Tag, LegalWarnings)].
+  [Warning || {Tag, Warning} <- Warnings, lists:member(Tag, LegalWarnings)].
 
 send_analysis_done(Parent) ->
   Parent ! {self(), done}.
@@ -611,7 +596,8 @@ send_ext_calls(Parent, ExtCalls) ->
 send_bad_calls(Parent, BadCalls) ->
   Warnings = 
     [{?WARN_CALLGRAPH, 
-      io_lib:format("~w calls missing or unexported function ~w\n", [From, To])} 
+      {From, io_lib:format("Call to missing or unexported function ~w\n", 
+			   [To])}}
      || {From, To} <- BadCalls],
   send_warnings(Parent, Warnings).
 

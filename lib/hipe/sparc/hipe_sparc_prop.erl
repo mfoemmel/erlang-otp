@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2006/09/14 15:33:58 $
-%%              $Revision: 1.13 $
+%%              $Date: 2006/11/04 19:07:57 $
+%%              $Revision: 1.14 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -189,10 +189,7 @@ prop_instrs([I|Is], GEnv) ->
      no_debug),
   GEnv0 = hipe_sparc_prop_env:genv__env_update(Env0,GEnv),
   {NewIs, NewEnv} = prop_instrs(Is, GEnv0),
-  case NewI of
-    [_|_] -> {NewI++NewIs, NewEnv};	%% alub -> [move, goto]
-    _ -> {[NewI|NewIs], NewEnv}
-  end.
+  {[NewI|NewIs], NewEnv}.
 
 
 %%

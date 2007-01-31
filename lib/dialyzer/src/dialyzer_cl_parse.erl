@@ -19,6 +19,7 @@
 -module(dialyzer_cl_parse).
 
 -export([start/0]).
+-export([collect_args/1]).	% used also by typer_options.erl
 
 -include("dialyzer.hrl").
 
@@ -28,9 +29,10 @@ start() ->
   try
     cl(Args)
   catch
+    throw:{dialyzer_cl_parse_error, Msg} -> {error, Msg};
     _:R ->
-      io:format("~p\n~p\n", [R,erlang:get_stacktrace()]),
-      error("internal error")
+      Msg = io_lib:format("~p\n~p\n", [R,erlang:get_stacktrace()]),
+      {error, lists:flatten(Msg)}
   end.
 
 cl(["--check_init_plt"|T]) ->
@@ -38,7 +40,7 @@ cl(["--check_init_plt"|T]) ->
   put(dialyzer_only_check_init_plt, true),
   cl(T);
 cl(["-D"|_]) ->
-  error("No defines after -D");
+  error("No defines specified after -D");
 cl(["-D"++Defines|T]) ->
   {ok,Def} = regexp:split(Defines, "="),
   append_defines(Def),
@@ -47,10 +49,6 @@ cl(["-h"|_]) ->
   help_message();
 cl(["--help"|_]) ->
   help_message();
-cl(["--include_libs",Libs0|T]) ->
-  {ok,Libs} = regexp:split(Libs0, ","),
-  put(dialyzer_options_libs, Libs),
-  cl(T);
 cl(["-I"]) ->
   error("no include directory specified after -I");
 cl(["-I",Dir|T]) ->
@@ -60,26 +58,28 @@ cl(["-I"++Dir|T]) ->
   append_include(Dir),
   cl(T);
 cl(["-c"++_|T]) ->
-  command_line(T);
+  NewTail = command_line(T),
+  cl(NewTail);
 cl(["-r"++_|T0]) ->
   put(dialyzer_options_gui, false),
   {Args,T} = collect_args(T0),
   append_var(dialyzer_options_files_rec, Args),
   cl(T);
 cl(["--com"++_|T]) ->
-  command_line(T);
+  NewTail = command_line(T),
+  cl(NewTail);
 cl(["--no_warn_on_inline"|T]) ->
   put(dialyzer_options_suppress_inline, true),
   cl(T);
 cl(["--output"]) ->
-  error("no outfile specified");
+  error("No outfile specified");
 cl(["-o"]) ->
-  error("no outfile specified");
+  error("No outfile specified");
 cl(["--output",Output|T]) ->
   put(dialyzer_output, Output),
   cl(T);
 cl(["--output_plt"]) ->
-  error("no outfile specified for --output_plt");
+  error("No outfile specified for --output_plt");
 cl(["--output_plt",Output|T]) ->
   put(dialyzer_output_plt, Output),
   cl(T);
@@ -98,7 +98,7 @@ cl(["--plt", Plt|T]) ->
   put(dialyzer_init_plt, Plt),
   cl(T);
 cl(["--plt"]) ->
-  error("no plt specified for --plt");
+  error("No plt specified for --plt");
 cl(["-q"|T]) ->
   put(dialyzer_options_quiet, true),
   cl(T);
@@ -109,11 +109,14 @@ cl(["--src"|T]) ->
   put(dialyzer_options_from, src_code),
   cl(T);
 cl(["-v"|_]) ->
-  io:format("Dialyzer vsn "++?VSN++"\n"),
-  erlang:halt(0);
+  io:format("Dialyzer version "++?VSN++"\n"),
+  erlang:halt(?RET_NOTHING_SUSPICIOUS);
 cl(["--version"|_]) ->
-  io:format("Dialyzer vsn "++?VSN++"\n"),
-  erlang:halt(0);
+  io:format("Dialyzer version "++?VSN++"\n"),
+  erlang:halt(?RET_NOTHING_SUSPICIOUS);
+cl(["--verbose"|T]) ->
+  put(dialyzer_options_quiet, verbose),
+  cl(T);
 cl(["-W"|_]) ->
   error("-W given without warning");
 cl(["-Whelp"|_]) ->
@@ -122,9 +125,23 @@ cl(["-W"++Warn|T]) ->
   append_var(dialyzer_warnings, [list_to_atom(Warn)]),
   cl(T);
 cl([H|_]) ->
-  error("unknown option: "++H);
+  error("Unknown option: "++H);
 cl([]) ->
-  doit().
+  {RetTag, Opts} = 
+    case get(dialyzer_only_check_init_plt) of
+      true -> 
+	{check_init, common_options()};
+      false -> 
+	case get(dialyzer_options_gui) of
+	  true -> {gui, common_options()};
+	  false -> {cl, cl_opts()}
+	end
+    end,
+  case dialyzer_options:build(Opts) of
+    {error, Msg} -> error(Msg);
+    OptsRecord -> {RetTag, OptsRecord}
+  end.
+
 
 command_line(T0) ->
   put(dialyzer_options_gui, false),
@@ -135,30 +152,31 @@ command_line(T0) ->
     true -> put(dialyzer_options_from, src_code);
     false -> ok
   end,
-  cl(T).
+  T.
 
 error(Str) ->
-  io:format("dialyzer: ~s\n", [Str]),
-  erlang:halt(1).
+  Msg = lists:flatten(Str),
+  throw({dialyzer_cl_parse_error, Msg}).
 
 init() ->
-  put(dialyzer_include, []),
+  InitPlt = filename:join([code:lib_dir(dialyzer), "plt","dialyzer_init_plt"]),
+  put(dialyzer_init_plt, InitPlt),
   put(dialyzer_only_check_init_plt, false),
-  put(dialyzer_options_core_transform, cerl_typean),
-  put(dialyzer_options_defines, []),
   put(dialyzer_options_gui, true),
-  put(dialyzer_options_files, []),
   put(dialyzer_options_files_rec, []),
   put(dialyzer_options_quiet, false),
-  put(dialyzer_options_suppress_inline, false),
-  put(dialyzer_output, ""),
-  put(dialyzer_options_from, byte_code),
   put(dialyzer_options_libs, ?DEFAULT_LIBS),
+  put(dialyzer_warnings, []),
 
-  InitPltDir = filename:join([code:lib_dir(dialyzer),
-			      "plt","dialyzer_init_plt"]),
-  put(dialyzer_init_plt, InitPltDir),
-  put(dialyzer_warnings, []).
+  DefaultOpts = #options{},
+  put(dialyzer_include,                 DefaultOpts#options.include_dirs),
+  put(dialyzer_options_core_transform,  DefaultOpts#options.core_transform),
+  put(dialyzer_options_defines,         DefaultOpts#options.defines),
+  put(dialyzer_options_files,           DefaultOpts#options.files),
+  put(dialyzer_options_suppress_inline, DefaultOpts#options.supress_inline),
+  put(dialyzer_output,                  DefaultOpts#options.output_file),
+  put(dialyzer_options_from,            DefaultOpts#options.from),
+  ok.
 
 append_defines([Def, Val]) ->
   {ok, Tokens, _} = erl_scan:string(Val++"."),
@@ -183,89 +201,22 @@ collect_args_1([Arg|T], Acc) ->
 collect_args_1([], Acc) ->
   {lists:reverse(Acc),[]}.
 
-doit() ->
-  %%io:format("~p\n", [get()]),
-  Quiet = get(dialyzer_options_quiet),
-  if Quiet -> ok;
-     true -> io:put_chars("  Checking whether the initial "
-			  "PLT exists and is up-to-date...")
-  end,
-  Opts = #options{init_plt=get(dialyzer_init_plt),
-		  plt_libs=get(dialyzer_options_libs)},
-  case dialyzer_cl:check_init_plt(Opts) of
-    error -> return(?RET_INTERNAL_ERROR);
-    ok ->       
-      case get(dialyzer_only_check_init_plt) of
-	true -> return(?RET_NOTHING_SUSPICIOUS);
-	false ->
-	  case get(dialyzer_options_gui) of
-	    true ->
-	      if Quiet -> ok;
-		 true  -> io:put_chars("  Proceeding with startup...\n")
-	      end,
-	      gui();
-	    false ->
-	      if Quiet -> ok;
-		 true  -> io:put_chars("  Proceeding with analysis... ")
-	      end,
-	      cl()
-	  end
-      end
-  end.
-
-gui() ->
-  Opts = common_options(),
-  OptsRecord = dialyzer_options:build(Opts),
-  %%io:format("~p\n", [OptsRecord]),
-  dialyzer_gui:start(OptsRecord),
-  erlang:halt(0).
-
-cl() ->
-  Output = get(dialyzer_output),
-  CoreTransform = get(dialyzer_options_core_transform),
-  Opts = [{files,get(dialyzer_options_files)},
-	  {files_rec,get(dialyzer_options_files_rec)},
-	  {output_file,Output},
-	  {core_transform, CoreTransform}
-	  |common_options()],
-  OptsRecord = dialyzer_options:build(Opts),
-  %%io:format("~p\n", [OptsRecord]),
-  return(dialyzer_cl:start(OptsRecord)).
-
-return(R) ->
-  Output = get(dialyzer_output),
-  Quiet = get(dialyzer_options_quiet),
-  case R of
-    0 ->
-      if Quiet -> ok;
-	 true  -> io:put_chars("done (passed successfully)\n")
-      end;
-    1 ->
-      io:nl(),
-      io:put_chars("dialyzer: Internal problems were encountered in the analysis.\n"),
-      cl_check_log(Output);
-    2 ->
-      if Quiet -> ok;
-	 true  -> io:put_chars("done (warnings were emitted)\n"),
-		  cl_check_log(Output)
-      end
-  end,
-  halt(R).
-
-cl_check_log("") ->
-  ok;
-cl_check_log(Output) ->
-  io:format("  Check output file `~s' for details\n", [Output]).
+cl_opts() ->
+  [{core_transform, get(dialyzer_options_core_transform)},
+   {files,get(dialyzer_options_files)},
+   {files_rec,get(dialyzer_options_files_rec)},
+   {output_file,get(dialyzer_output)}
+   |common_options()].
 
 common_options() ->
   [{defines, get(dialyzer_options_defines)},
+   {from, get(dialyzer_options_from)},
    {include_dirs, get(dialyzer_include)},
    {init_plt, get(dialyzer_init_plt)},
    {output_plt, get(dialyzer_output_plt)},
-   {from, get(dialyzer_options_from)},
+   {quiet, get(dialyzer_options_quiet)},
    {supress_inline, get(dialyzer_options_suppress_inline)},
    {warnings, get(dialyzer_warnings)}].
-
 
 help_warnings() ->
   S = "Warning options:
@@ -293,10 +244,10 @@ Note:
   *** This is the only option that turns on warnings rather than turning them off.
 ",
   io:put_chars(S),
-  erlang:halt(0).
+  erlang:halt(?RET_NOTHING_SUSPICIOUS).
 
 help_message() ->
-  S = "Usage: dialyzer [--help] [--version] [--shell] [--quiet]
+  S = "Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
 		[--output_plt file] [-Wwarn]* [--src] 
 		[-c applications] [-r applications] [-o outfile]
@@ -341,6 +292,8 @@ help_message() ->
        prints this message and exits
    --quiet (or -q)
        makes Dialyzer a bit more quiet
+   --verbose
+       makes Dialyzer a bit more verbose
 
 Note:
   * denotes that multiple occurrences of these options are possible.
@@ -355,4 +308,4 @@ The exit status of the command line version is:
     2 - No problems were encountered, but warnings were emitted.
 ",
   io:put_chars(S),
-  erlang:halt(0).
+  erlang:halt(?RET_NOTHING_SUSPICIOUS).

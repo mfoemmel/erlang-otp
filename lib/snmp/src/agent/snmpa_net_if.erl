@@ -539,13 +539,32 @@ handle_send_pdu(S, Type, Pdu, Addresses) ->
 	    
 handle_send_pdu1(#state{log = Log, usock = Sock}, Type, Addresses) ->
     SendFun = 
-	fun({snmpUDPDomain, {Ip, Port}, Packet}) ->
+	fun({snmpUDPDomain, {Ip, Port}, Packet}) when is_binary(Packet) ->
 		?vdebug("sending packet:"
 			"~n   size: ~p"
 			"~n   to:   ~p:~p",
 			[sz(Packet), Ip, Port]),
 		log(Log, Type, Packet, Ip, Port),
 		udp_send(Sock, Ip, Port, Packet);
+	   ({snmpUDPDomain, {Ip, Port}, {Packet, LogData}}) when is_binary(Packet) ->
+		?vdebug("sending encrypted packet:"
+			"~n   size: ~p"
+			"~n   to:   ~p:~p",
+			[sz(Packet), Ip, Port]),
+		log(Log, Type, LogData, Ip, Port),
+		udp_send(Sock, Ip, Port, Packet);
+
+	   %% This clause is intended to be used during the code 
+	   %% upgrade, from pre-4.8.4 to 4.8.4: Skip logging since 
+	   %% the item logged will be a list, that cannot be 
+	   %% handled during log coversion.
+	   ({snmpUDPDomain, {Ip, Port}, Packet}) ->
+		?vdebug("sending packet:"
+			"~n   size: ~p"
+			"~n   to:   ~p:~p",
+			[sz(Packet), Ip, Port]),
+		udp_send(Sock, Ip, Port, Packet);
+	   
 	   (_X) ->
 		?vlog("** bad res: ~p", [_X]),
 		ok
@@ -565,14 +584,14 @@ handle_response(Vsn, Pdu, From, S) ->
 
 udp_send(UdpId, AgentIp, UdpPort, B) ->
     case (catch gen_udp:send(UdpId, AgentIp, UdpPort, B)) of
-	{error,emsgsize} ->
+	{error, emsgsize} ->
 	    %% From this message we cannot recover, so exit sending loop
-	    throw({emsgsize,sz(B)});
-	{error,ErrorReason} ->
+	    throw({emsgsize, sz(B)});
+	{error, ErrorReason} ->
 	    error_msg("[error] cannot send message "
 		      "(destination: ~p:~p, size: ~p, reason: ~p)",
 		      [AgentIp, UdpPort, sz(B), ErrorReason]);
-	{'EXIT',ExitReason} ->
+	{'EXIT', ExitReason} ->
 	    error_msg("[exit] cannot send message "
 		      "(destination: ~p:~p, size: ~p, reason: ~p)",
 		      [AgentIp, UdpPort, sz(B), ExitReason]);

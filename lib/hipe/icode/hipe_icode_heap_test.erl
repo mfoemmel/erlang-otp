@@ -11,6 +11,7 @@
 %%
 %% $Id$
 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_icode_heap_test).
 
@@ -23,6 +24,7 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 
 %-------------------------------------------------------------------------
 -include("../rtl/hipe_literals.hrl").
@@ -135,7 +137,7 @@ primop_need(Op, As) ->
       2;
     mktuple ->
       length(As) + 1;
-    {mkfun,_MFA,_MagicNum,_Index} ->
+    #mkfun{} ->
       NumFree = length(As),
       ?ERL_FUN_SIZE + NumFree;
     unsafe_tag_float ->
@@ -147,8 +149,9 @@ primop_need(Op, As) ->
 
 gc_test(Need) ->
   L = hipe_icode:mk_new_label(),
-  [hipe_icode:mk_primop([],{gc_test,Need},[],
-		   hipe_icode:label_name(L),hipe_icode:label_name(L)),
+  [hipe_icode:mk_primop([], #gc_test{need=Need}, [],
+		        hipe_icode:label_name(L),
+			hipe_icode:label_name(L)),
    L].
 
 split(I) ->
@@ -174,9 +177,9 @@ known_heap_need(Name) ->
     unsafe_tag_float -> true;
     unsafe_tl -> true;
     unsafe_untag_float -> true;
-    {element, _TypeInfo} -> true;
-    {unsafe_element,_N} -> true;
-    {unsafe_update_element,_N}  -> true;
+    #element{} -> true;
+    #unsafe_element{} -> true;
+    #unsafe_update_element{}  -> true;
 
     %% MFAs
     {erlang, element, 2} -> true;

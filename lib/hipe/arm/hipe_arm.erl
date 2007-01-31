@@ -51,6 +51,8 @@
 	 mk_move/3,
 	 mk_move/2,
 
+	 mk_mul/3,
+
 	 mk_pseudo_bc/4,
 
 	 mk_pseudo_call/4,
@@ -77,6 +79,8 @@
 	 pseudo_tailcall_linkage/1,
 
 	 mk_pseudo_tailcall_prepare/0,
+
+	 mk_smull/4,
 
 	 mk_store/3,
 	 mk_store/6,
@@ -175,8 +179,8 @@ mk_load(LdOp, Dst, Base, Offset, Scratch, Rest) ->
 	  end
 	end,
       Am2 = #am2{src=Base,sign=Sign,offset=Index},
-      [mk_li(Index, AbsOffset),
-       mk_load(LdOp, Dst, Am2) | Rest]
+      mk_li(Index, AbsOffset,
+	    [mk_load(LdOp, Dst, Am2) | Rest])
   end.
 
 mk_scratch(Scratch) ->
@@ -190,6 +194,8 @@ mk_ldrsb(Dst, Am3) -> #ldrsb{dst=Dst, am3=Am3}.
 mk_move(MovOp, S, Dst, Am1) -> #move{movop=MovOp, s=S, dst=Dst, am1=Am1}.
 mk_move(S, Dst, Am1) -> mk_move('mov', S, Dst, Am1).
 mk_move(Dst, Am1) -> mk_move('mov', false, Dst, Am1).
+
+mk_mul(Dst, Src1, Src2) -> #mul{dst=Dst, src1=Src1, src2=Src2}.
 
 mk_pseudo_bc(Cond, TrueLab, FalseLab, Pred) ->
   if Pred >= 0.5 ->
@@ -249,6 +255,8 @@ pseudo_tailcall_linkage(#pseudo_tailcall{linkage=Linkage}) -> Linkage.
 
 mk_pseudo_tailcall_prepare() -> #pseudo_tailcall_prepare{}.
 
+mk_smull(DstLo, DstHi, Src1, Src2) -> #smull{dstlo=DstLo, dsthi=DstHi, src1=Src1, src2=Src2}.
+
 mk_store(StOp, Src, Am2) -> #store{stop=StOp, src=Src, am2=Am2}.
 
 mk_store(StOp, Src, Base, Offset, Scratch, Rest) ->
@@ -262,8 +270,8 @@ mk_store(StOp, Src, Base, Offset, Scratch, Rest) ->
      true ->
       Index = mk_scratch(Scratch),
       Am2 = #am2{src=Base,sign=Sign,offset=Index},
-      [mk_li(Index, AbsOffset),
-       mk_store(StOp, Src, Am2) | Rest]
+      mk_li(Index, AbsOffset,
+	    [mk_store(StOp, Src, Am2) | Rest])
   end.
 
 mk_pseudo_blr() -> #pseudo_blr{}.

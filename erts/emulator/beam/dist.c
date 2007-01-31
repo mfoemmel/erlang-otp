@@ -354,29 +354,35 @@ static void doit_node_link_net_exits(ErtsLink *lnk, void *vnecp)
 int erts_do_net_exits(DistEntry *dep)
 {
     if (dep == erts_this_dist_entry) {  /* Net kernel has died (clean up!!) */
-	DistEntry *tdep;
-	(void) erts_smp_io_lock();
 	erts_smp_mtx_lock(&erts_dist_table_mtx);
 
 	/* KILL all port controllers */
 	while(erts_visible_dist_entries || erts_hidden_dist_entries) {
+	    DistEntry *tdep;
+	    Eterm prt_id;
+	    Port *prt;
 	    if(erts_hidden_dist_entries)
 		tdep = erts_hidden_dist_entries;
 	    else
 		tdep = erts_visible_dist_entries;
-	    ASSERT(is_internal_port(tdep->cid)
-		   && (erts_port[internal_port_index(tdep->cid)].status
-		       & DISTRIBUTION)
-		   && erts_port[internal_port_index(tdep->cid)].dist_entry);
+	    prt_id = tdep->cid;
+	    ASSERT(is_internal_port(prt_id));
 	    erts_smp_mtx_unlock(&erts_dist_table_mtx);
-	    /* will call do_net_exists !!! */
-	    erts_do_exit_port(tdep->cid, tdep->cid, am_killed);
+
+	    prt = erts_id2port(prt_id, NULL, 0);
+	    if (prt) {
+		ASSERT(prt->status & ERTS_PORT_SFLG_DISTRIBUTION);
+		ASSERT(prt->dist_entry);
+		/* will call do_net_exists !!! */
+		erts_do_exit_port(prt, prt_id, am_killed);
+		erts_port_release(prt);
+	    }
+
 	    erts_smp_mtx_lock(&erts_dist_table_mtx);
 	}
 
 	erts_smp_mtx_unlock(&erts_dist_table_mtx);
 
-	erts_smp_io_unlock();
 	erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
 	erts_set_this_node(am_Noname, 0);
 	set_not_alive();
@@ -389,15 +395,19 @@ int erts_do_net_exits(DistEntry *dep)
 	ErtsLink *node_links;
 	ErtsMonitor *monitors;
 
-	ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
 
 	erts_smp_dist_entry_lock(dep);
+
+	ERTS_SMP_LC_ASSERT(is_internal_port(dep->cid)
+			   && erts_lc_is_port_locked(&erts_port[internal_port_index(dep->cid)]));
+
 	monitors	= dep->monitors;
         nlinks		= dep->nlinks;
 	node_links	= dep->node_links;
 	dep->monitors	= NULL;
         dep->nlinks	= NULL;
 	dep->node_links	= NULL;
+
 	erts_smp_dist_entry_unlock(dep);
 
 	erts_sweep_monitors(monitors, &doit_monitor_net_exits, (void *) &nec);
@@ -680,7 +690,12 @@ int dist_group_leader(Process* c_p, Uint32 c_p_locks,
 **
 **   assert  hlen == 0 !!!
 */
-int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
+int erts_net_message(Port *prt,
+		     DistEntry *dep,
+		     byte *hbuf,
+		     int hlen,
+		     byte *buf,
+		     int len)
 {
     byte *t;
     int i;
@@ -717,7 +732,7 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
 
     if (!is_alive())
 	return 0;
@@ -781,6 +796,16 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	from = tuple[2];
 	to   = tuple[3];  /* local proc to link to */
 
+	if (is_not_pid(from) || is_not_pid(to)) {
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    PURIFY_MSG("data error");
+	    erts_dsprintf(dsbufp,
+			  "Invalid DOP_LINK distribution message: %.200T",
+			  arg);
+	    erts_send_error_to_logger_nogl(dsbufp);
+	    goto data_error;
+	}
+
 	rp = erts_pid2proc_opt(NULL, 0,
 			       to, ERTS_PROC_LOCK_LINK,
 			       ERTS_P2P_FLG_ALLOW_OTHER_X);
@@ -788,7 +813,12 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	if (!rp) {
 	    /* This is tricky (we MUST force a distributed send) */
 	    /* We may send it to net_kernel and let it do the job !!! */
+
+	    ASSERT(dep->cid == prt->id);
+	    ASSERT(dep->port == NULL);
+	    dep->port = prt;
 	    dist_exit(NULL, 0, dep, to, from, am_noproc);
+	    dep->port = NULL;
 	    erts_smp_dist_entry_unlock(dep);
 	    break;
 	}
@@ -870,8 +900,13 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 
 	erts_smp_dist_entry_lock(dep);
 	
-	if (!rp)
+	if (!rp) {
+	    ASSERT(dep->cid == prt->id);
+	    ASSERT(dep->port == NULL);
+	    dep->port = prt;
 	    dist_m_exit(NULL, 0, dep, watcher, watched, ref, am_noproc);
+	    dep->port = NULL;
+	}
 	else {
 	    if (is_atom(watched))
 		watched = rp->id;
@@ -1119,8 +1154,15 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	   token = tuple[4];
 	   reason = tuple[5];
 	}
-	if (is_not_internal_pid(to) && is_not_internal_port(to))
-	    break;
+	if (is_not_internal_pid(to)) {
+	    erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
+	    PURIFY_MSG("data error");
+	    erts_dsprintf(dsbufp,
+			  "Invalid DOP_EXIT distribution message: %.200T",
+			  arg);
+	    erts_send_error_to_logger_nogl(dsbufp);
+	    goto data_error;
+	}
 
 	erts_smp_dist_entry_lock(dep);
 	lnk = erts_lookup_link(dep->nlinks, to); 
@@ -1167,17 +1209,6 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 		}
 	    }
 	    erts_smp_proc_unlock(rp, rp_locks);
-	}
-	else if (is_internal_port(to)) {
-	    /* Internal port */
-	    int ix = internal_port_index(to);
-	    if (! INVALID_PORT(erts_port+ix, to)) {
-		lnk = erts_remove_link(&(erts_port[ix].nlinks), from);
-		if (lnk != NULL) {
-		    erts_destroy_link(lnk);
-		}
-	    }
-	    erts_do_exit_port(to, from, reason);
 	}
 	break;
     }
@@ -1276,7 +1307,7 @@ int erts_net_message(DistEntry *dep, byte *hbuf, int hlen, byte *buf, int len)
 	erts_free(ERTS_ALC_T_DCTRL_BUF, (void *) ctl);
     }
 #endif
-    erts_do_exit_port(dep->cid, dep->cid, am_killed);
+    erts_do_exit_port(prt, dep->cid, am_killed);
     ERTS_SMP_CHK_NO_PROC_LOCKS;
     return -1;
 }
@@ -1307,6 +1338,9 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
     Port* p;
     Eterm cid = dep->cid;
 
+    /* Caller is *not* allowed to hold status proc lock */
+    ERTS_SMP_LC_ASSERT(!(c_p_locks & ERTS_PROC_LOCK_STATUS));
+
     if (!is_alive())
 	return -1;
     if (cid == NIL)
@@ -1315,10 +1349,14 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 	return 0; /* Ignore it */
 
     ASSERT(is_internal_port(cid));
-    p = &erts_port[internal_port_index(cid)];
-    if (p->status & EXITING)
+    ASSERT(!INVALID_PORT(dep->port, cid));
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(dep->port));
+
+    p = dep->port;
+
+    if (p->status & ERTS_PORT_SFLG_EXITING)
 	return 0;
-    if (!force_busy && (p->status & PORT_BUSY))
+    if (!force_busy && (p->status & ERTS_PORT_SFLG_PORT_BUSY))
 	return 1;
 
 #ifdef MESS_DEBUG
@@ -1338,7 +1376,7 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 
 #ifdef ERTS_SMP
     /*
-     * When we call dist_port_command we should only hold the io lock.
+     * When we call dist_port_command we should only hold the port lock.
      */
     erts_smp_dist_entry_unlock(dep);
     if (!c_p)
@@ -1347,7 +1385,6 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 	erts_smp_proc_unlock(c_p, c_p_locks);
 
     ERTS_SMP_CHK_NO_PROC_LOCKS;
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
 #endif
 
     dist_port_command(p, bufp, t-bufp);
@@ -1356,7 +1393,7 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 #ifdef ERTS_SMP
     /* Restore locks as held when pack_and_send() was called...
      * Lock order of interest:
-     * - io lock
+     * - port lock
      * - process locks
      * - dist entry
      */
@@ -1364,6 +1401,9 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 	erts_smp_proc_lock(c_p, c_p_locks);
     erts_smp_dist_entry_lock(dep);
 #endif
+
+    ASSERT(dep->port);
+    ASSERT(is_nil(dep->cid) || !INVALID_PORT(dep->port, dep->cid));
 
     return 0;
 }
@@ -1722,13 +1762,11 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
     Eterm ic, oc;
     Eterm *tp;
     DistEntry *dep = NULL;
-    int ix;
+    Port *pp = NULL;
 
     /*
      * Check and pick out arguments
      */
-
-    erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 
     if (!is_node_name_atom(BIF_ARG_1) ||
 	is_not_internal_port(BIF_ARG_2) ||
@@ -1784,15 +1822,13 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
     if (dep->cid != NIL)
 	goto error;
 
-    ix = internal_port_index(BIF_ARG_2);
-    if ((INVALID_PORT(erts_port+ix, BIF_ARG_2)) 
-	|| (erts_port[ix].status & EXITING)
-	|| (erts_port[ix].dist_entry != NULL))
+    pp = erts_id2port(BIF_ARG_2, BIF_P, ERTS_PROC_LOCK_MAIN);
+    if (!pp || (pp->status & ERTS_PORT_SFLG_EXITING) || pp->dist_entry)
 	goto error;
 
-    erts_port[ix].status |= DISTRIBUTION;
+    erts_port_status_bor_set(pp, ERTS_PORT_SFLG_DISTRIBUTION);
 
-    erts_port[ix].dist_entry = dep;
+    pp->dist_entry = dep;
 
     if (!(flags & DFLAG_ATOM_CACHE) ||
 	(!(flags & DFLAG_PUBLISHED) && !(flags & DFLAG_HIDDEN_ATOM_CACHE))
@@ -1813,7 +1849,8 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
 
  done_error:
 
-    erts_smp_io_unlock();
+    if (pp)
+	erts_smp_port_unlock(pp);
 
     return res;
 
@@ -1843,18 +1880,13 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
     local = BIF_ARG_1;
     remote = BIF_ARG_3;
 
-    /* Check that remote is a remote process or port */
-    if (is_not_external_pid(remote) && is_not_external_port(remote))
+    /* Check that remote is a remote process */
+    if (is_not_external_pid(remote))
 	goto error;
 
     rdep = external_dist_entry(remote);
     
     if(rdep == erts_this_dist_entry)
-	goto error;
-
-    /* Also check that if the caller is a distribution controller then the
-       object is from that node */
-    if (((BIF_P->dist_entry != NULL) && (BIF_P->dist_entry != rdep)))
 	goto error;
 
     /* Check that local is local */
@@ -1895,13 +1927,7 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
 	 }
 	 erts_smp_proc_unlock(lp, lp_locks);
     }
-    else if (is_internal_port(local)) {
-	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
-	erts_do_exit_port(local, remote, BIF_ARG_2);
-	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-	ERTS_BIF_CHK_EXITED(BIF_P);
-    }
-    else if ((is_external_pid(local) || is_external_port(local))
+    else if (is_external_pid(local)
 	     && external_dist_entry(local) == erts_this_dist_entry) {
 	BIF_RET(am_true); /* ignore */
     }
@@ -1912,127 +1938,6 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
  error:
     BIF_ERROR(BIF_P, BADARG);
 }
-
-/**********************************************************************/
-/* link(Local, Remote) -> Bool */
-
-BIF_RETTYPE dist_link_2(BIF_ALIST_2)
-{
-    Eterm local;
-    Eterm remote;
-    Process *lp;
-    DistEntry *dep = BIF_P->dist_entry;
-    ErtsLink *lnk;
-
-    erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
-
-    /* Must be called from distribution process */
-    if (!(BIF_P->flags & F_DISTRIBUTION) || (dep == NULL))
-	goto error;
-
-    local = BIF_ARG_1;
-    remote = BIF_ARG_2;
-
-    if (is_not_pid(remote) || (pid_dist_entry(remote) != dep))
-	goto error;
-    if (is_pid(local)) {
-	lp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
-			   local, ERTS_PROC_LOCK_LINK);
-	erts_smp_dist_entry_lock(dep);
-	if (!lp) {
-	    ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
-	    dist_exit(BIF_P, ERTS_PROC_LOCK_MAIN,
-		      dep, local, remote,  am_noproc);
-	    erts_smp_dist_entry_unlock(dep);
-	    erts_smp_io_unlock();
-	    BIF_RET(am_true);
-	}
-    }
-    else /* no ports yet */
-	goto error;
-
-    erts_smp_io_unlock();
-
-    if (erts_add_link(&(lp->nlinks), LINK_PID, remote) < 0) {
-	erts_smp_dist_entry_unlock(dep);
-	BIF_RET(am_true);
-    }
-    lnk = erts_add_or_lookup_link(&(dep->nlinks), LINK_PID, lp->id);
-
-    erts_add_link(&(lnk->root), LINK_PID, remote);
-
-    erts_smp_dist_entry_unlock(dep);
-
-    if (IS_TRACED_FL(lp, F_TRACE_PROCS))
-        trace_proc(BIF_P, lp, am_getting_linked, remote);
-
-    erts_smp_proc_unlock(lp, ERTS_PROC_LOCK_LINK);
-    BIF_RET(am_true);
-
- error:
-    erts_smp_io_unlock();
-    BIF_ERROR(BIF_P, BADARG);
-}
-
-/**********************************************************************/
-/* unlink(Local, Remote) -> Bool */
-
-BIF_RETTYPE dist_unlink_2(BIF_ALIST_2)
-{
-    Eterm local = BIF_ARG_1;
-    Eterm remote = BIF_ARG_2;
-    Process *lp;
-    DistEntry *dep = BIF_P->dist_entry;
-    ErtsLink *lnk, *sublnk;
-
-    /* Must be called from distribution process */
-    if (!(BIF_P->flags & F_DISTRIBUTION) || (dep == NULL))
-	goto error;
-
-    /* Remote must be a process */
-    if (is_not_pid(remote) || (pid_dist_entry(remote) != dep))
-	goto error;
-
-    if (is_pid(local)) {
-	lp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
-			   local, ERTS_PROC_LOCK_LINK);
-	if (!lp) {
-	    ERTS_SMP_ASSERT_IS_NOT_EXITING(BIF_P);
-	    BIF_RET(am_true);
-	}
-    }
-    else /* no ports yet */
-	goto error;
-
-    erts_smp_dist_entry_lock(dep);
-
-    /* unlink and ignore errors */
-    lnk = erts_lookup_link(dep->nlinks, local);
-
-    if (lnk != NULL) {
-	sublnk = erts_remove_link(&(lnk->root), remote);
-	if (sublnk != NULL) {
-	    erts_destroy_link(sublnk);
-	}
-	if (lnk->root == NULL) {
-	    erts_destroy_link(erts_remove_link(&(dep->nlinks), local));
-	}
-    }
-    lnk = erts_remove_link(&(lp->nlinks), remote);
-    if (lnk != NULL) {
-	erts_destroy_link(lnk);
-    }
-    erts_smp_dist_entry_unlock(dep);
-
-    if (IS_TRACED_FL(lp, F_TRACE_PROCS))
-        trace_proc(BIF_P, lp, am_unlink, remote);
-    erts_smp_proc_unlock(lp, ERTS_PROC_LOCK_LINK);
-    BIF_RET(am_true);
-
- error:
-    BIF_ERROR(BIF_P, BADARG);
-}
-
 
 /**********************************************************************/
 /* node(Object) -> Node */

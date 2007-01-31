@@ -490,12 +490,20 @@ imul_encode(Opnds) ->
     case Opnds of
 	{{rm32,RM32}} ->				% <edx,eax> *= rm32
 	    [16#F7 | encode_rm(RM32, 2#101, [])];
+	{{rm64,RM64}} ->
+	    [rex([{w,1}]), 16#F7 | encode_rm(RM64, 2#101, [])];
 	{{reg32,Reg32}, {rm32,RM32}} ->			% reg *= rm32
 	    [16#0F, 16#AF | encode_rm(RM32, Reg32, [])];
+	{{reg64,Reg64}, {rm64,RM64}} ->
+	    [rex([{w,1}]), 16#0F, 16#AF | encode_rm(RM64, Reg64, [])];
 	{{reg32,Reg32}, {rm32,RM32}, {imm8,Imm8}} ->	% reg := rm32 * sext(imm8)
 	    [16#6B | encode_rm(RM32, Reg32, [Imm8])];
+	{{reg64,Reg64}, {rm64,RM64}, {imm8,Imm8}} ->
+	    [rex([{w,1}]), 16#6B | encode_rm(RM64, Reg64, [Imm8])];
 	{{reg32,Reg32}, {rm32,RM32}, {imm32,Imm32}} ->	% reg := rm32 * imm32
-	    [16#69 | encode_rm(RM32, Reg32, le32(Imm32, []))]
+	    [16#69 | encode_rm(RM32, Reg32, le32(Imm32, []))];
+	{{reg64,Reg64}, {rm64,RM64}, {imm32,Imm32}} ->
+	    [rex([{w,1}]), 16#69 | encode_rm(RM64, Reg64, le32(Imm32, []))]
     end.
 
 %% imul_sizeof(Opnds) ->

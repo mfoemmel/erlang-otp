@@ -39,7 +39,7 @@
 	 get_orbfield/1, set_orbfield/2, 
 	 get_flagfield/1, set_flagfield/2, 
 	 create_external/5, create_external/6, print/1, print/2,
-	 get_alt_addr/1, add_component/2]).
+	 get_alt_addr/1, add_component/2, get_peerdata/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -226,6 +226,77 @@ create_external(Version, TypeID, Host, IIOP_port, Objkey, MC) ->
 	      [?LINE, Version, TypeID, Host, IIOP_port, Objkey, MC], ?DEBUG_LEVEL),
     corba:raise(#'INV_OBJREF'{completion_status=?COMPLETED_NO}).
    
+%%-----------------------------------------------------------------
+%% Func: get_peerdata/1
+%%-----------------------------------------------------------------
+%% Probably an external IOR.
+get_peerdata(#'IOP_IOR'{} = IOR)  ->
+    get_peerdata(get_key(IOR), IOR, [], []);
+%% Local object reference.
+get_peerdata(_) ->
+    [].
+
+%% "Plain" TCP/IP.
+get_peerdata({'external', {Host, Port, _InitObjkey, Index, TaggedProfile, 
+			   #host_data{protocol = normal, 
+				      csiv2_mech = undefined}}}, 
+	     IOR, Acc, Indexes) ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
+		 [Index|Indexes]);
+%% "Plain" SSL
+get_peerdata({'external', {Host, _Port, _InitObjkey, Index, TaggedProfile,
+			   #host_data{protocol = ssl, 
+				      ssl_data = #'SSLIOP_SSL'{port = Port}, 
+				      csiv2_mech = undefined}}}, 
+	     IOR, Acc, Indexes) ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
+		 [Index|Indexes]);
+%% TEMPORARY FIX TO SKIP CSIv2 DATA.
+get_peerdata({'external', {Host, _Port, _InitObjkey, Index, TaggedProfile,
+			   #host_data{protocol = ssl, 
+				      ssl_data = #'SSLIOP_SSL'{port = Port}}}}, 
+	     IOR, Acc, Indexes) ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
+		 [Index|Indexes]);
+%% CSIv2 over SSL (TAG_TLS_SEC_TRANS) using the SAS protocol. Note port must equal 0.
+get_peerdata({'external', 
+	      {_Host, 0, _InitObjkey, Index, TaggedProfile, 
+	       #host_data{protocol = ssl, 
+			  csiv2_mech = 
+			  #'CSIIOP_CompoundSecMech'{target_requires = _TR} = _Mech,
+			  csiv2_addresses = Addresses}}}, 
+	     IOR, Acc, Indexes) ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, Addresses ++ Alts ++ Acc, 
+		 [Index|Indexes]);
+%% CSIv2 over SSL (TAG_NULL_TAG) using the SAS protocol.
+get_peerdata({'external', 
+	      {Host, _Port, _InitObjkey, Index, TaggedProfile, 
+	       #host_data{protocol = ssl, 
+			  ssl_data = #'SSLIOP_SSL'{port = Port}, 
+			  csiv2_mech = Mech}}},
+	     IOR, Acc, Indexes) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
+		 [Index|Indexes]);
+%% CSIv2 over TCP (TAG_NULL_TAG) using the SAS protocol.
+get_peerdata({'external', 
+	      {Host, Port, _InitObjkey, Index, TaggedProfile, 
+	       #host_data{protocol = normal, 
+			  csiv2_mech = Mech}}},
+	     IOR, Acc, Indexes) when record(Mech, 'CSIIOP_CompoundSecMech') ->
+    Alts = get_alt_addr(TaggedProfile),
+    get_peerdata(get_key(IOR, [Index|Indexes]), IOR, [{Host, Port}|Alts] ++ Acc, 
+		 [Index|Indexes]);
+get_peerdata(undefined, _IOR, Acc, _Indexes) ->
+    Acc;
+%% Local object reference.
+get_peerdata(_, _, _, _) ->
+    [].
+
 %%-----------------------------------------------------------------
 %% Func: get_key/1
 %%-----------------------------------------------------------------
@@ -464,7 +535,7 @@ check_sec_mech([#'CSIIOP_CompoundSecMech'
 		 #'IOP_TaggedComponent'{tag = ?TAG_NULL_TAG}} = Mech|_], _Port)
   when TR =< ?CSIv2_MAX_TARGET_REQUIRES ->
     {ok, Mech};
-%% Unrecognized or the requires more than we support.
+%% Unrecognized or the peer requires more than we support.
 check_sec_mech([_ | Rest], Port) ->
     check_sec_mech(Rest, Port).
 
@@ -1189,13 +1260,13 @@ code(#giop_env{version = Version, host = 0, flags = EnvFlags} = Env,
 	 end,
     IOR = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_ENABLE_NAT) of
 	      false ->
-		  create(Version, Mod:typeID(), orber:host(), orber:iiop_port(),
-			 orber:iiop_ssl_port(),
+		  create(Version, Mod:typeID(), orber_env:host(), 
+			 orber_env:iiop_port(), orber_env:iiop_ssl_port(),
 			 {Mod, Type, Key, UserDef, OrberDef, Flags}, 
 			 MC, Flags, EnvFlags);
 	      true ->
-		  create(Version, Mod:typeID(), orber:nat_host(), 
-			 orber:nat_iiop_port(), orber:nat_iiop_ssl_port(),
+		  create(Version, Mod:typeID(), orber_env:nat_host(), 
+			 orber_env:nat_iiop_port(), orber_env:nat_iiop_ssl_port(),
 			 {Mod, Type, Key, UserDef, OrberDef, Flags}, 
 			 MC, Flags, EnvFlags)
 	  
@@ -1211,9 +1282,19 @@ code(#giop_env{version = Version, host = Host, iiop_port = IIOPort,
 		 [#'IOP_TaggedComponent'{tag=?TAG_CODE_SETS, 
 					 component_data=?DEFAULT_CODESETS}]
 	 end,
-    IOR = create(Version, Mod:typeID(), Host, check_port(IIOPort, normal), 
-		 check_port(SSLPort, ssl), {Mod, Type, Key, UserDef, OrberDef, Flags}, 
-		 MC, Flags, EnvFlags),
+    IOR = case ?ORB_FLAG_TEST(EnvFlags, ?ORB_ENV_ENABLE_NAT) of
+	      false ->
+		  create(Version, Mod:typeID(), Host, check_port(IIOPort, normal), 
+			 check_port(SSLPort, ssl), 
+			 {Mod, Type, Key, UserDef, OrberDef, Flags}, 
+			 MC, Flags, EnvFlags);
+	      true ->
+		  create(Version, Mod:typeID(), orber_env:nat_host(Host), 
+			 orber_env:nat_iiop_port(check_port(IIOPort, normal)), 
+			 orber_env:nat_iiop_ssl_port(check_port(SSLPort, ssl)),
+			 {Mod, Type, Key, UserDef, OrberDef, Flags}, 
+			 MC, Flags, EnvFlags)
+	  end,
     code(Env, IOR, Bytes, Len).
 
 check_port(Port, _Type) when integer(Port) ->

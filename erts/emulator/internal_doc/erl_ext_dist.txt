@@ -22,18 +22,16 @@ ERLANGS EXTERNAL FORMAT and distribution protocol
 1.  INTRODUCTION
 
 The external format is mainly used in the distribution mechanism of
-erlang. The interace generator (ig) also use this format for implementing
-foreign interface to other languages. Similar formats me be found in 
-XDR, CDR, ASN.1 etc.
+erlang.
 
 Since erlang has a fixed number of types, there is no need for a programmer
-to define a specefication for the external format used within some application.
+to define a specification for the external format used within some application.
 All Erlang terms has an external representation and the interpretation of
 the different terms are application specific.
 
-In erlang the BIF term_to_binary may is used to convert a term into
+In erlang the BIF term_to_binary/1,2 is used to convert a term into
 the external format. To convert binary data encoding a term the BIF
-binary_to_term is used.
+binary_to_term/1 is used.
 
 The distribution does this implicitly when sending messages across node
 boundaries.
@@ -174,9 +172,9 @@ The represenation for [].
 | 107 | Len |  Characters     |
 +-----+-----+-----------------+
 
-String do NOT have a corrspeonding erlang representation. But the
-Erlang 4.4 normally regards lists of bytes (i.e integer in range 0..255)
-as strings. Since the length field is a unsigned 2 byte integer (big endian)
+String does NOT have a corresponding erlang representation. But from
+Erlang 4.4, lists of bytes (i.e integer in range 0..255) are displayed as
+string. Since the length field is a unsigned 2 byte integer (big endian)
 implementations must make sure that lists longer than 65535 elements are
 encoded with the LIST_EXT (2.13.).
 
@@ -188,8 +186,8 @@ encoded with the LIST_EXT (2.13.).
 | 108 |   n    | Elem(1) ... Elem(n) |
 +-----+--------+---------------------+
 
-Lists are stored in the same way as the LARGE_TUPLE_EXT, There is NO
-short form i.e no SMALL_LIST_EXT.
+Lists are stored in the same way as the LARGE_TUPLE_EXT. There is NO
+short form, i.e. there is no SMALL_LIST_EXT.
 
 2.14. BINARY_EXT        (109)
 
@@ -234,7 +232,7 @@ See SMALL_BIG_EXT with the difference that the length field is an unsigned
 | 78 | index |  Len   | Atom name |
 +----+-------+--------+-----------+
 
-NEW_CACHE works just like ATOM_EXT but it must also cache the atom 
+NEW_CACHE works just like ATOM_EXT, but it must also cache the atom 
 in the atom cache in the location given by index.
 
 2.18. CACHED_ATOM       (67)
@@ -244,8 +242,8 @@ in the atom cache in the location given by index.
 | 67 | index |
 +----+-------+
 
-When the atom cache is in use, index is the slot number that the 
-atom MUST be located.
+When the atom cache is in use, index is the slot number in which
+the atom MUST be located.
 
 2.19. NEW_REFERENCE_EXT		(114)
 
@@ -290,6 +288,68 @@ Uniq is an integer encoded using SMALL_INTEGER_EXT (2.2) or INTEGER_EXT (2.3).
 Uniq is the hash value of the parse for the fun.
 
 Free vars is Len number of terms, each one encoded according to its type.
+
+2.21. NEW_FUN_EXT	(112)
+
+  1      4      1      16      4
++-----+-----+-------+------+-------+
+| 112 | Len | Arity | Uniq | Index |
++-----+-----+-------+------+-------+
+
+     4        N1       N2        N3       N4      N5
++---------+--------+----------+---------+-----+--------------+
+| NumFree | Module | OldIndex | OldUniq | Pid | Free vars... |
++---------+--------+----------+---------+-----+--------------+
+
+Arity is the arity of the function implementing the fun.
+
+Uniq is the 16 bytes MD5 of the significant parts of the Beam file.
+
+Index is an index number. Each fun within a module has an unique
+index. Index is stored in big-endian byte order.
+
+Pid is process identifier as in PID_EXT. It represents the process in which
+the fun was created.
+
+Module is an encoded as an atom, using ATOM_EXT, NEW_CACHE (2.17) or
+CACHED_ATOM (2.18). This is the module that the fun is implemented in.
+
+Uniq is an integer encoded using SMALL_INTEGER_EXT (2.2) or INTEGER_EXT (2.3).
+Uniq is the hash value of the parse for the fun.
+
+OldIndex is an integer encoded using SMALL_INTEGER_EXT (2.2) or INTEGER_EXT (2.3).
+It is typically a small index into the module's fun table.
+
+Free vars is Len number of terms, each one encoded according to its type.
+
+
+2.22. EXPORT_EXT	(113)
+
+  1      N1        N2        N3
++-----+--------+----------+-------+
+| 113 | Module | Function | Arity |
++-----+--------+----------+-------+
+
+This term is the encoding for external funs: fun M:F/A.
+
+Module and Function are atoms (encoded using ATOM_EXT, NEW_CACHE or CACHED_ATOM).
+
+Arity is an integer encoded using SMALL_INTEGER_EXT.
+
+
+2.23 BIT_BINARY_EXT	(77)
+
+   1      4      1      Len
++-----+-------+------+----------------+
+|  77 |  Len  | Bits | Data           |
++-----+-------+------+----------------+
+
+This term represents a binary whose length is in bits is not a multiple
+of 8. The Len field is an unsigned 4 byte integer (big endian).
+The Bits field is the number of bits that are used in the last byte in
+the data field, counting from the most significant bit towards the least
+significant.
+
 
 3. EPMD protocol
 

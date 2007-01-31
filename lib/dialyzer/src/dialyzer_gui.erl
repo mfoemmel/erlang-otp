@@ -29,7 +29,7 @@
 
 -export([start/1]).
 
--include("dialyzer.hrl").	  %% file is automatically generated
+-include("dialyzer.hrl").
 -include("hipe_icode_type.hrl").
 
 -record(gui_state, {add_all, add_file, add_rec,
@@ -47,7 +47,7 @@
 	       warnings}).
 	       
 -record(mode, {gran_all, start_byte_code, iter_fixpoint, gran_module,
-	       start_src_code, iter_qad, typean, typesig}).
+	       start_src_code, iter_qad, dataflow, succ_typings}).
 
 
 start(DialyzerOptions = #options{}) ->
@@ -152,12 +152,12 @@ start(DialyzerOptions = #options{}) ->
   %% Core transform
 %%  gs:label(ModePacker, [{label, {text, "Analysis:"}}, 
 %%			{height, 20}, {pack_xy, {1,10}}]),
-%%  ModeTypean = gs:radiobutton(ModePacker,
+%%  ModeDataflow = gs:radiobutton(ModePacker,
 %%			      [{group, core},
 %%			       {label,{text,"Quick & dirty"}}, 
 %%			       {select, true},
 %%			       {pack_xy, {2,10}}]),
-%%  ModeTypesig = gs:radiobutton(ModePacker,
+%%  ModeSuccTypings = gs:radiobutton(ModePacker,
 %%			       [{group, core},
 %%				{label,{text,"More precise"}}, 
 %%				{pack_xy, {2,11}}]),
@@ -168,8 +168,8 @@ start(DialyzerOptions = #options{}) ->
 	       %% gran_module=ModeFileModule, 
 	       %% iter_fixpoint=ModeAnalysisFixpoint, 
 	       %% iter_qad=ModeAnalysisQaD,
-	       %% typean=ModeTypean,
-	       %% typesig=ModeTypesig
+	       %% dataflow=ModeDataflow,
+	       %% succ_typings=ModeSuccTypings
 	      },
 
   %% --------- Log box --------------
@@ -280,6 +280,10 @@ start(DialyzerOptions = #options{}) ->
 				       [{label, 
 					 {text, "Functions of no return"}},
 					{itemtype, check}, {select, true}]),  
+  MenuWarnCallNonExported = gs:menuitem(MenuWarn,
+					[{label, 
+					  {text,"Call to unexported function"}},
+					 {itemtype, check}, {select, true}]),  
   
   %% PLT Menu
   MenuBarPLT = gs:menubutton(MenuBar, [{label, {text,"PLT"}}]),
@@ -316,7 +320,8 @@ start(DialyzerOptions = #options{}) ->
 	      {?WARN_COMP, MenuWarnEq},
 	      {?WARN_GUARDS, MenuWarnGuards},
 	      {?WARN_OLD_BEAM, MenuWarnBeam},
-	      {?WARN_FAILING_CALL, MenuWarnFailingCall}
+	      {?WARN_FAILING_CALL, MenuWarnFailingCall},
+	      {?WARN_CALLGRAPH, MenuWarnCallNonExported}
 	     ],
 
   init_warnings(Warnings, DialyzerOptions#options.legal_warnings),
@@ -415,7 +420,7 @@ gui_loop(State = #gui_state{}) ->
       gs:config(Packer, [{width, W}, {height, H}]),
       gui_loop(State);
     {gs, TopWin, destroy, _Data, _Args} ->
-      ok;
+      ?RET_NOTHING_SUSPICIOUS;
     {gs, File, doubleclick, _, [_Id, Text|_]} ->
       NewState = change_dir_or_add_file(State, Text),
       gui_loop(NewState);
@@ -464,8 +469,10 @@ gui_loop(State = #gui_state{}) ->
       gui_loop(State);
     %% ----- Menu -----
     {gs, Quit, click, _, _} ->
-      maybe_quit(State),
-      gui_loop(State);
+      case maybe_quit(State) of
+	true -> ?RET_NOTHING_SUSPICIOUS;
+	false -> gui_loop(State)
+      end;
     {gs, Overview, click, _, _} ->
       spawn_link(fun()->overview(State)end),
       gui_loop(State);
@@ -514,7 +521,9 @@ gui_loop(State = #gui_state{}) ->
       update_editor(State#gui_state.log, LogMsg),
       gui_loop(State);
     {BackendPid, warnings, Warnings} ->
-      update_editor(State#gui_state.warnings_box, Warnings),
+      WarningString = lists:flatten([io_lib:format("~w: ~s", [Fun, W])
+				     || {Fun, W} <- Warnings]),
+      update_editor(State#gui_state.warnings_box, WarningString),
       gui_loop(State);
     {BackendPid, inline_warnings, Warnings} ->
       update_editor(State#gui_state.warnings_box, Warnings),
@@ -540,7 +549,7 @@ gui_loop(State = #gui_state{}) ->
       config_gui_stop(State),
       gui_loop(State);
     _Other ->
-      %%io:format("Received ~p\n", [Other]),
+      %io:format("Received ~p\n", [Other]),
       gui_loop(State)
   end.
 
@@ -750,8 +759,8 @@ config_gui_start(State) ->
   gs:config(Mode#mode.gran_module, {enable, false}),
   gs:config(Mode#mode.start_src_code, {enable, false}),
   gs:config(Mode#mode.iter_qad, {enable, false}),  
-  gs:config(Mode#mode.typean, {enable, false}),
-  gs:config(Mode#mode.typesig, {enable, false}).
+  gs:config(Mode#mode.dataflow, {enable, false}),
+  gs:config(Mode#mode.succ_typings, {enable, false}).
 
 
 config_gui_stop(State) ->
@@ -782,8 +791,8 @@ config_gui_stop(State) ->
   gs:config(Mode#mode.gran_module, {enable, true}),
   gs:config(Mode#mode.start_src_code, {enable, true}),
   gs:config(Mode#mode.iter_qad, {enable, true}),
-  gs:config(Mode#mode.typean, {enable, true}),
-  gs:config(Mode#mode.typesig, {enable, true}).
+  gs:config(Mode#mode.dataflow, {enable, true}),
+  gs:config(Mode#mode.succ_typings, {enable, true}).
 
 
 
@@ -871,9 +880,9 @@ maybe_quit(State=#gui_state{top=TopWin})->
       flush(),
       gs:destroy(TopWin),
       gs:stop(),
-      exit(normal);
+      true;
     false ->
-      ok
+      false
   end.
 
 
@@ -984,7 +993,6 @@ about(State) ->
   gs:config(Frame, WH),
 
   AboutFile = filename:join([code:lib_dir(dialyzer), "doc", "about.txt"]),
-  io:format("AboutFile: ~p\n", [AboutFile]),
   case gs:config(Editor, {load, AboutFile}) of
     {error, Reason} ->
       gs:destroy(Win),
@@ -1497,10 +1505,10 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
       true -> EmptyPlt;
       false -> InitPlt0
     end,
-  CoreTransform = cerl_typean,
-%%    case gs:read(Mode#mode.typean, select) of
-%%      true -> cerl_typean;
-%%      false -> cerl_typesig
+  CoreTransform = dataflow,
+%%    case gs:read(Mode#mode.dataflow, select) of
+%%      true -> dataflow;
+%%      false -> succ_typings
 %%    end,
   
   #analysis{supress_inline=CheckInline,

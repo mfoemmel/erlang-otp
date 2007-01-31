@@ -590,14 +590,14 @@ to_ets(DTab, ETab) ->
 traverse(Tab, Fun) ->
     Ref = make_ref(),
     TFun = 
-	fun(O, Ack) ->
+	fun(O, Acc) ->
 		case Fun(O) of
 		    continue  ->
-			Ack;
+			Acc;
 		    {continue, Val} ->
-			[Val | Ack];
+			[Val | Acc];
 		    {done, Value} ->
-			throw({Ref, [Value | Ack]});
+			throw({Ref, [Value | Acc]});
 		    Other ->
 			throw({Ref, Other})
 		end
@@ -718,6 +718,8 @@ chunk_match(State) ->
                                 false ->
                                     badarg
                             end;
+                        [] ->
+                            chunk_match(NewState);
 			Terms ->
 			    {Terms, NewState}
 		    end;
@@ -2348,9 +2350,7 @@ module2version(not_used) -> 9.
 compact(SourceHead) ->
     #head{name = Tab, filename = Fname, fptr = SFd, type = Type, keypos = Kp,
 	  ram_file = Ram, auto_save = Auto} = SourceHead,
-    Tmp = lists:concat([Fname, ".TMP"]),
-    file:delete(Tmp),
-
+    Tmp = tempfile(Fname),
     TblParms = dets_v9:table_parameters(SourceHead),
     {ok, Fd} = dets_utils:open(Tmp, open_args(read_write, false)),
     CacheSz = ?DEFAULT_CACHE,
@@ -2428,8 +2428,7 @@ choose_no_slots(NoSlots, _) -> NoSlots.
 %% file are completely different things, but nevertheless the same
 %% method is used in both cases...
 fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) ->
-    Tmp = lists:concat([Fname, ".TMP"]),
-    file:delete(Tmp),
+    Tmp = tempfile(Fname),
     #fileheader{type = Type, keypos = KeyPos} = FH,
     {_MinSlots, EstNoSlots, MaxSlots} = SlotNumbers,
     OpenArgs = #open_args{file = Tmp, type = Type, keypos = KeyPos, 
@@ -2463,6 +2462,17 @@ fsck_try(Fd, Tab, FH, Fname, SlotNumbers, Version) ->
 	    file:close(Fd),
 	    Error
     end.
+
+tempfile(Fname) ->
+    Tmp = lists:concat([Fname, ".TMP"]),
+    case file:delete(Tmp) of
+        {error, eacces} -> % 'dets_process_died' happened anyway... (W-nd-ws)
+            timer:sleep(5000),
+            file:delete(Tmp);
+        _ ->
+            ok
+    end,
+    Tmp.
 
 %% -> {ok, NewHead} | {try_again, integer()} | Error
 fsck_try_est(Head, Fd, Fname, SlotNumbers, FH) ->

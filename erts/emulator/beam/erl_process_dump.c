@@ -79,8 +79,10 @@ dump_process_info(int to, void *to_arg, Process *p)
 {
     Eterm* sp;
     ErlMessage* mp;
-    ErlFunThing* fptr;
     int yreg = -1;
+#ifndef HYBRID
+    ErlFunThing* fptr;
+#endif
 
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
 

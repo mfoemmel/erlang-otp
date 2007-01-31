@@ -133,7 +133,9 @@ void error(char* format, ...);
  * Local functions.
  */
 
+#if !defined(ERTS_HAVE_SMP_EMU) || !defined(ERTS_HAVE_HYBRID_EMU)
 static void usage_notsup(const char *switchname);
+#endif
 static void usage_msg(const char *msg);
 static void mergeargs(int *argc, char ***argv, char **addargs);
 static char **build_args_from_env(char *env_var);
@@ -628,6 +630,7 @@ int main(int argc, char **argv)
 		  case 'i':
 		  case 'P':
 		  case 'S':
+		  case 'T':
 		  case 'R':
 		  case 'W':
 		  case 'K':
@@ -833,7 +836,8 @@ usage_aux(void)
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
 	  "[+A THREADS] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
 	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
-	  "[+r] [+S NO_OF_SCHEDULERS] [+V] [+v] [+W<i|w>] [args ...]\n");
+	  "[+r] [+S NO_OF_SCHEDULERS] [+T LEVEL] [+V] [+v] [+W<i|w>] "
+	  "[args ...]\n");
   exit(1);
 }
 
@@ -844,12 +848,14 @@ usage(const char *switchname)
     usage_aux();
 }
 
+#if !defined(ERTS_HAVE_SMP_EMU) || !defined(ERTS_HAVE_HYBRID_EMU)
 static void
 usage_notsup(const char *switchname)
 {
     fprintf(stderr, "Argument \'%s\' not supported.\n", switchname);
     usage_aux();
 }
+#endif
 
 static void
 usage_msg(const char *msg)

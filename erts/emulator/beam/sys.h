@@ -18,6 +18,10 @@
 #ifndef __SYS_H__
 #define __SYS_H__
 
+#if defined(VALGRIND) && !defined(NO_FPE_SIGNALS)
+#  define NO_FPE_SIGNALS
+#endif
+
 /* xxxP __VXWORKS__ */
 #ifdef VXWORKS
 #include <vxWorks.h>
@@ -35,8 +39,23 @@
 /* The ERTS_TIMER_TREAD #define must be visible to the
    erl_${OS}_sys.h #include files: it controls whether
    certain optional facilities should be defined or not. */
-#ifdef ERTS_SMP
-/* #define ERTS_TIMER_THREAD No timer thread for now (bugs present) */
+#if defined(ERTS_SMP) && 0
+#define ERTS_TIMER_THREAD
+#endif
+
+#ifdef ERTS_SMP /* Use port tasks by default on on smp emu */
+#define ERTS_USE_PORT_TASKS 
+#endif
+
+#ifdef ERTS_DONT_USE_PORT_TASKS
+#undef ERTS_USE_PORT_TASKS
+#endif
+
+#if defined(ERTS_SMP_USE_IO_THREAD) && !defined(ERTS_SMP)
+#undef ERTS_SMP_USE_IO_THREAD
+#endif
+#if defined(ERTS_SMP_USE_IO_THREAD) && defined(ERTS_USE_PORT_TASKS)
+#error "Cannot combine I/O thread with port tasks"
 #endif
 
 #if defined (__WIN32__)
@@ -105,8 +124,11 @@
 #define ERTS_GLB_INLINE
 #endif
 
-#define ERTS_GLB_INLINE_INCL_FUNC_DEF \
-  (ERTS_CAN_INLINE || defined(ERTS_DO_INCL_GLB_INLINE_FUNC_DEF))
+#if ERTS_CAN_INLINE || defined(ERTS_DO_INCL_GLB_INLINE_FUNC_DEF) 
+#  define ERTS_GLB_INLINE_INCL_FUNC_DEF 1
+#else
+#  define ERTS_GLB_INLINE_INCL_FUNC_DEF 0
+#endif
 
 #ifndef ERTS_EXIT_AFTER_DUMP
 #  define ERTS_EXIT_AFTER_DUMP exit
@@ -182,10 +204,6 @@ EXTERN_FUNCTION(int, real_printf, (const char *fmt, ...));
 #else
 #  define __noreturn
 #  define __deprecated
-#endif
-
-#ifdef ERTS_SMP
-void erts_wake_io_thread(void);
 #endif
 
 /*
@@ -399,34 +417,6 @@ EXTERN_FUNCTION(void, sys_async_ready, (int hndl));
 #endif
 #endif
 
-#ifdef ERTS_SMP
-void erts_io_lock(void);
-void erts_io_unlock(void);
-#endif
-
-ERTS_GLB_INLINE void erts_smp_io_lock(void);
-ERTS_GLB_INLINE void erts_smp_io_unlock(void);
-
-#if ERTS_GLB_INLINE_INCL_FUNC_DEF
-
-ERTS_GLB_INLINE void
-erts_smp_io_lock(void)
-{
-#ifdef ERTS_SMP
-    erts_io_lock();
-#endif
-}
-
-ERTS_GLB_INLINE void
-erts_smp_io_unlock(void)
-{
-#ifdef ERTS_SMP
-    erts_io_unlock();
-#endif
-}
-
-#endif
-
 Eterm erts_check_io_info(void *p);
 
 /* Size of misc memory allocated from system dependent code */
@@ -534,6 +524,15 @@ extern char *erts_sys_ddll_error(int code);
  * System interfaces for startup/sae code (functions found in respective sys.c)
  */
 
+
+#ifdef ERTS_SMP
+void erts_sys_schedule_interrupt(int set);
+void erts_sys_schedule_interrupt_timed(int set, long msec);
+void erts_sys_main_thread(void);
+#else
+#define erts_sys_schedule_interrupt(Set)
+#endif
+
 extern void erts_sys_pre_init(void);
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);
@@ -544,7 +543,7 @@ extern void erl_sys_init_final(void);
 void sys_tty_reset(void);
 #endif
 
-#ifdef ERTS_SMP
+#ifdef ERTS_SMP_USE_IO_THREAD
 extern erts_smp_tid_t erts_io_thr_tid; /* io.c */
 #endif
 
@@ -575,17 +574,18 @@ EXTERN_FUNCTION(void, set_break_quit, (void (*)(void), void (*)(void)));
 
 typedef void *GETENV_STATE;
 
-EXTERN_FUNCTION(void, os_flavor, (char*, unsigned));
-EXTERN_FUNCTION(void, os_version, (int*, int*, int*));
-EXTERN_FUNCTION(void, init_getenv_state, (GETENV_STATE *));
-EXTERN_FUNCTION(char *, getenv_string, (GETENV_STATE *));
+void os_flavor(char*, unsigned);
+void os_version(int*, int*, int*);
+void init_getenv_state(GETENV_STATE *);
+char * getenv_string(GETENV_STATE *);
+void fini_getenv_state(GETENV_STATE *);
 
 /* xxxP */
-EXTERN_FUNCTION(void, init_sys_float, (void));
-EXTERN_FUNCTION(int, sys_chars_to_double, (char*, double*));
-EXTERN_FUNCTION(int, sys_double_to_chars, (double, char*));
-EXTERN_FUNCTION(void, sys_get_pid, (char *));
-EXTERN_FUNCTION(int, sys_putenv, (char *));
+void init_sys_float(void);
+int sys_chars_to_double(char*, double*);
+int sys_double_to_chars(double, char*);
+void sys_get_pid(char *);
+int sys_putenv(char *);
 
 /* utils.c */
 
@@ -664,6 +664,9 @@ void erts_set_activity_error(erts_activity_error_t, char *, int);
 #ifdef ERTS_ENABLE_LOCK_CHECK
 void erts_lc_activity_change_begin(void);
 void erts_lc_activity_change_end(void);
+int erts_lc_is_blocking(void);
+#define ERTS_LC_IS_BLOCKING \
+  (erts_smp_pending_system_block() && erts_lc_is_blocking())
 #endif
 #endif
 
@@ -844,7 +847,8 @@ erts_smp_set_activity(erts_activity_t old_activity,
 	break;
     }
 
-    if (erts_smp_pending_system_block())
+    /* We are not allowed to block when going to activity waiting... */
+    if (new_activity != ERTS_ACTIVITY_WAIT && erts_smp_pending_system_block())
 	erts_check_block(old_activity,new_activity,locked,prepare,resume,arg);
 
     switch (new_activity) {

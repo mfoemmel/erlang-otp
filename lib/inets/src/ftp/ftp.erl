@@ -118,7 +118,7 @@ open(Host, Flags) when list(Flags) ->
 open(Host, Port, Flags) when integer(Port), list(Flags) ->
     ensure_started(),
     {ok, Pid} = ftp_sup:start_child([[[{client, self()}, Flags], []]]), 
-    Opts = [{host, Host}, {port, Port}], 
+    Opts = [{host, Host}, {port, Port}| Flags], 
     call(Pid, {open, ip_comm, Opts}, pid).
 
 %%--------------------------------------------------------------------------
@@ -1007,9 +1007,9 @@ handle_ctrl_result({pos_compl, Lines}, #state{mode = passive,
     [_, PortStr | _] =  lists:reverse(string:tokens(Lines, "|")),
     {ok, {IP, _}} = inet:peername(CSock),
     case connect(IP, list_to_integer(PortStr), Timeout, State) of
-	{ok, Socket} ->	       
+	{_,{ok, Socket}} ->	       
 	    handle_caller(State#state{caller = Caller, dsock = Socket});
-	{error,Reason} ->
+	{_,{error,Reason}} ->
 	    gen_server:reply(From,{error,Reason}),
 	    {noreply,State#state{client = undefined, caller = undefined}}
     end;
@@ -1027,9 +1027,9 @@ handle_ctrl_result({pos_compl, Lines},
     [A1, A2, A3, A4, P1, P2] = lists:map(fun(X) -> list_to_integer(X) end,
 					 string:tokens(NewPortAddr, [$,])),
     case connect({A1, A2, A3, A4}, (P1 * 256) + P2, Timeout, State) of
-	{ok,Socket} ->
+	{_,{ok,Socket}} ->
 	    handle_caller(State#state{caller = Caller, dsock = Socket});
-	{error,Reason} ->
+	{_,{error,Reason}} ->
 	    gen_server:reply(From,{error,Reason}),
 	    {noreply,State#state{client = undefined, caller = undefined}}
     end;
@@ -1293,12 +1293,18 @@ handle_caller(#state{caller = {transfer_data, {Cmd, Bin, RemoteFile}}} =
 %% Connect to FTP server at Host (default is TCP port 21) 
 %% in order to establish a control connection.
 setup_ctrl_connection(Host, Port, Timeout, State)->
-    T = t(),
+    MsTime = millisec_time(),
     case connect(Host, Port, Timeout, State) of
-	{ok, CSock} ->
-	    NewState = State#state{csock = CSock},
+	{Ipv, {ok, CSock}} ->
+	    NewState = 
+		case Ipv of
+		    ipv4 -> 
+			State#state{csock = CSock, ip_v6_disabled = true};
+		    ipv6 ->
+			State#state{csock = CSock}
+		end,
 	    activate_ctrl_connection(NewState),
-	    case Timeout - (t() - T) of
+	    case Timeout - (millisec_time() - MsTime) of
 		Timeout2 when (Timeout2 >= 0) ->
 		    {noreply, NewState#state{caller = open}, Timeout2};
 		_ ->
@@ -1306,7 +1312,7 @@ setup_ctrl_connection(Host, Port, Timeout, State)->
 		    self() ! timeout,
 		    {noreply, NewState#state{caller = open}}
 	    end;
-	{error, _} ->
+	{_,{error, _}} ->
 	    gen_server:reply(State#state.client, {error, ehost}),
 	    {stop, normal, State#state{client = undefined}}
     end.
@@ -1355,15 +1361,16 @@ setup_data_connection(#state{mode = passive, ip_v6_disabled = true,
     activate_ctrl_connection(State),
     {noreply, State#state{caller = {setup_data_connection, Caller}}}.
 
-connect(Host={_,_,_,_}, Port, TimeOut, _) ->
-    gen_tcp:connect(Host, Port,[binary, {packet, 0}, {active, false}] ,
-		    TimeOut);
-connect(Host={_,_,_,_,_,_,_,_}, Port, TimeOut, #state{ip_v6_disabled = false}) ->
-    gen_tcp:connect(Host, Port,
+connect(Host = {_,_,_,_}, Port, TimeOut, _) ->
+    {ipv4, gen_tcp:connect(Host, Port,[binary, {packet, 0}, {active, false}] ,
+		    TimeOut)};
+connect(Host = {_,_,_,_,_,_,_,_}, Port, TimeOut, 
+	#state{ip_v6_disabled = false}) ->
+    {ipv6, gen_tcp:connect(Host, Port,
 		    [binary, {packet, 0}, {active, false}, inet6],
-		    TimeOut);    
+		    TimeOut)};    
 connect(Host, Port, TimeOut, #state{ip_v6_disabled = false}) ->
-    {Opts, NewHost} = 
+    {Opts, NewHost, Ipv} = 
 	case (inet:getaddr(Host, inet6)) of
 	    %% If an ipv4-mapped ipv6 address is returned 
 	    %% use ipv4 directly as some ftp-servers does not
@@ -1371,20 +1378,21 @@ connect(Host, Port, TimeOut, #state{ip_v6_disabled = false}) ->
 	    {ok, IP = {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
 		case inet:getaddr(Host, inet) of
 		    {ok,NewIP} -> 
-			{[binary, {packet, 0}, {active, false}], NewIP};
+			{[binary, {packet, 0}, {active, false}], NewIP, ipv4};
 		    _Error ->
-			{[binary, {packet, 0}, {active, false}, inet6], IP}
+			{[binary, {packet, 0}, {active, false}, inet6], 
+			 IP,ipv6}
 		end;
 	    {ok, IP} ->
-		{[binary, {packet, 0}, {active, false}, inet6], IP};
+		{[binary, {packet, 0}, {active, false}, inet6], IP, ipv6};
 	    {error, _} ->
-		{[binary, {packet, 0}, {active, false}], Host}
+		{[binary, {packet, 0}, {active, false}], Host, ipv4}
 	end,
-    gen_tcp:connect(NewHost, Port, Opts, TimeOut);
+    {Ipv, gen_tcp:connect(NewHost, Port, Opts, TimeOut)};
 
 connect(Host, Port, TimeOut, #state{ip_v6_disabled = true}) -> 
     Opts = [binary, {packet, 0}, {active, false}],
-    gen_tcp:connect(Host, Port, Opts, TimeOut).
+    {ipv4, gen_tcp:connect(Host, Port, Opts, TimeOut)}.
 
 accept_data_connection(#state{mode = active,
 			      dsock = {lsock, LSock}} = State) ->
@@ -1562,6 +1570,9 @@ ensure_started() ->
     case application:start(inets) of
 	{error,{already_started,inets}} ->
 	    ok;
+	{error,{{already_started, _}, % Started as an included application
+		{inets_app,start, _}}} ->
+	    ok;
 	ok ->
 	    error_logger:info_report("The inets application was not started."
 				     " Has now been started as a temporary" 
@@ -1580,7 +1591,7 @@ progress_report({binary, Data}, #state{progress = ProgressPid}) ->
 progress_report(Report,  #state{progress = ProgressPid}) ->
     ftp_progress:report(ProgressPid, Report).
 
-%% Time in milli seconds
-t() ->
+
+millisec_time() ->
     {A,B,C} = erlang:now(),
     A*1000000000+B*1000+(C div 1000).

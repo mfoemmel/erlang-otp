@@ -50,12 +50,6 @@ validate(#xmerl_scanner{doctype_name=DTName,doctype_DTD=OpProv},
     {error, {mismatched_root_element,Name,DTName}};
 validate(#xmerl_scanner{rules=Rules}=S,
 	 XML=#xmlElement{name=Name})->
-%    io:format("XML:~n~p~n",[XML]),
-%     case S#xmerl_scanner.doctype_DTD of
-% 	option_provided ->
-% 	    io:format("xmerl: WARNING! DTD provided by option \"doctype_DTD\"~n");
-% 	_ -> ok
-%     end,
     catch do_validation(read_rules(Rules,Name),XML,Rules,S);
 validate(_, XML) ->
     {error, {no_xml_element, XML}}.
@@ -66,8 +60,6 @@ validate(_, XML) ->
 %%              {ok,xmlElement()} | {error,tuple()}.
 do_validation(undefined,#xmlElement{name=Name}, _Rules,_S) ->
     {error,{unknown_element,Name}};
-do_validation(_E, #xmlText{}=XML, _Rules,_S) -> % Nothing to validate
-    XML;
 do_validation(El_Rule,XML,Rules,S)->
     case catch valid_attributes(El_Rule#xmlElement.attributes,
 			  XML#xmlElement.attributes,S) of
@@ -617,9 +609,7 @@ seq2([H|T],Toks,Rules,Tree,WSaction,S) ->
     end.
 
 el_name(#xmlElement{name=Name})->
-    Name;
-el_name(#xmlText{}) ->
-    pcdata.
+    Name.
 
 parse_pcdata([#xmlText{}=H|T])->
     parse_pcdata(T,[H]);

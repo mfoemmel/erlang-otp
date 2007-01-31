@@ -272,8 +272,23 @@ handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
 						 OldOptions#options.cookies),
 		 ipv6 = http_util:key1search(Options, ipv6, 
 					     OldOptions#options.ipv6),
-		 verbose = is_verbose(Options)
+		 verbose = http_util:key1search(Options, verbose, 
+						OldOptions#options.verbose)
 		}, 
+    case {OldOptions#options.verbose, NewOptions#options.verbose} of
+	{Same, Same} ->
+	    ok;
+	{_, false} ->
+	    dbg:stop();
+	{false, Level}  ->
+	    dbg:tracer(),
+	    handle_verbose(Level);
+	{_, Level} ->
+	    dbg:stop(),
+	    dbg:tracer(),
+	    handle_verbose(Level)
+    end,
+
     {noreply, State#state{options = NewOptions}};
 
 handle_cast({store_cookies, _}, 
@@ -448,8 +463,12 @@ call(Msg, Timeout) ->
 cast(Msg) ->
    gen_server:cast(?MODULE, Msg).
 
-is_verbose(Ps) ->
-    check_param(verbose,Ps).
+handle_verbose(debug) ->
+    dbg:p(self(), [call]),
+    dbg:tp(?MODULE, [{'_', [], [{return_trace}]}]);
+handle_verbose(trace) ->
+    dbg:p(self(), [call]),
+    dbg:tpl(?MODULE, [{'_', [], [{return_trace}]}]);
+handle_verbose(_) ->
+    ok.  
 
-check_param(Key,Ps) ->
-    lists:member(Key,Ps).

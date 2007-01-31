@@ -96,16 +96,15 @@
 
 open(Data, ModeList) when is_list(ModeList) ->
     case open_mode(ModeList) of
-	{error, _} = Error ->
-	    Error;
-	{Mode, Opts} ->
-	    case ll_open(Data, Mode, Opts) of
-		{ok, Port} ->
-		    {ok, 
-		     #file_descriptor{module = ?MODULE, data = Port}};
-		Error ->
-		    Error
-	    end
+  	{Mode,Opts} when is_integer(Mode) ->
+  	    case ll_open(Data, Mode, Opts) of
+  		{ok,Port} ->
+  		    {ok,#file_descriptor{module=?MODULE, data=Port}};
+  		Error ->
+  		    Error
+ 	    end;
+ 	{error,_}=Error ->
+  	    Error
     end;
 %% Old obsolete mode specification
 open(Data, Mode) ->
@@ -121,7 +120,7 @@ close(#file_descriptor{module = ?MODULE, data = Port}) ->
 
 read(#file_descriptor{module = ?MODULE, data = Port}, Sz)
   when ?G_I32(Sz) ->
-    Cmd = [?RAM_FILE_READ | i32(Sz)],
+    Cmd = <<?RAM_FILE_READ:8,Sz:32>>,
     case call_port(Port, Cmd) of
 	{ok, {0, _Data}} when Sz =/= 0 ->
 	    eof;
@@ -178,7 +177,7 @@ truncate(#file_descriptor{module = ?MODULE, data = Port}) ->
 position(#file_descriptor{module = ?MODULE, data = Port}, Pos) -> 
     case lseek_position(Pos) of
 	{ok, Offs, Whence} ->
-	    call_port(Port, [?RAM_FILE_LSEEK, i32(Offs), i32(Whence)]);
+	    call_port(Port, <<?RAM_FILE_LSEEK:8,Offs:32,Whence:32>>);
 	Error ->
 	    Error
     end.
@@ -197,7 +196,7 @@ pread(#file_descriptor{module = ?MODULE}, _) ->
 
 pread_1([]) -> [];
 pread_1([{At, Sz} | T]) when ?G_I32(At), ?G_I32(Sz) ->
-    [{Sz,[?RAM_FILE_PREAD, i32(At), i32(Sz)]} | pread_1(T)];
+    [{Sz,<<?RAM_FILE_PREAD:8,At:32,Sz:32>>}|pread_1(T)];
 pread_1(_) ->
    {error, einval}.
 
@@ -215,7 +214,7 @@ pread_2(Port, [{Sz,Command}|Commands], R) ->
 
 pread(#file_descriptor{module = ?MODULE, data = Port}, At, Sz) 
   when ?G_I32(At), ?G_I32(Sz) ->
-    case call_port(Port, [?RAM_FILE_PREAD, i32(At), i32(Sz)]) of
+    case call_port(Port, <<?RAM_FILE_PREAD:8,At:32,Sz:32>>) of
 	{ok, {0,_Data}} when Sz =/= 0 -> 
 	    eof;
 	{ok, {_Sz,Data}} -> 
@@ -240,7 +239,7 @@ pwrite(#file_descriptor{module = ?MODULE}, _) ->
 
 pwrite_1([]) -> [];
 pwrite_1([{At, Bytes} | T]) when ?G_I32(At) ->
-    [[?RAM_FILE_PWRITE, i32(At) | Bytes] | pwrite_1(T)];
+    [[<<?RAM_FILE_PWRITE:8,At:32>> | Bytes] | pwrite_1(T)];
 pwrite_1(_) ->
     {error, einval}.
 
@@ -256,7 +255,7 @@ pwrite_2(Port, [Command|Commands], R) ->
 
 pwrite(#file_descriptor{module = ?MODULE, data = Port}, At, Bytes) 
   when ?G_I32(At) ->
-    case call_port(Port, [?RAM_FILE_PWRITE, i32(At), Bytes]) of
+    case call_port(Port, [<<?RAM_FILE_PWRITE:8,At:32>>|Bytes]) of
 	{ok, _Sz} ->
 	    ok;
 	Error ->
@@ -336,7 +335,7 @@ ll_open(Data, Mode, Opts) ->
 	{'EXIT', _Reason} ->
 	    {error, emfile};
 	Port ->
-	    case call_port(Port, [?RAM_FILE_OPEN, i32(Mode) | Data]) of
+	    case call_port(Port, [<<?RAM_FILE_OPEN:8,Mode:32>>|Data]) of
 		{error, _} = Error ->
 		    ll_close(Port),
 		    Error;
@@ -345,17 +344,19 @@ ll_open(Data, Mode, Opts) ->
 	    end
     end.
     
+call_port(Port, Command0) when is_list(Command0) ->
+    case catch list_to_binary(Command0) of
+	{'EXIT',_} ->
+	    {error, einval};
+	Command when is_binary(Command) ->
+	    call_port(Port, Command)
+    end;
 call_port(Port, Command) ->
-    case (catch list_to_binary(Command)) of
-	Cmd when is_binary(Cmd) ->
-	    case (catch erlang:port_command(Port, Cmd)) of
-		{'EXIT', _} ->
-		    {error, einval};
-		_ ->
-		    get_response(Port)
-	    end;
+    case catch erlang:port_command(Port, Command) of
+	{'EXIT', _} ->
+	    {error, einval};
 	_ ->
-	    {error, einval}
+	    get_response(Port)
     end.
 
 get_response(Port) ->
@@ -457,16 +458,6 @@ translate_response(?RAM_FILE_RESP_DATA, [X1, X2, X3, X4|Data]) ->
     {ok, {i32(X1, X2, X3, X4), Data}};
 translate_response(X, Data) ->
     {error, {bad_response_from_port, X, Data}}.
-
-i32(Int) when is_binary(Int) ->
-    i32(binary_to_list(Int));
-i32(Int) when is_integer(Int) ->
-    [(Int bsr 24) band 255,
-     (Int bsr 16) band 255,
-     (Int bsr  8) band 255,
-     Int band 255];
-i32([X1,X2,X3,X4]) ->
-    (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.
 
 i32(X1,X2,X3,X4) ->
     (X1 bsl 24) bor (X2 bsl 16) bor (X3 bsl 8) bor X4.

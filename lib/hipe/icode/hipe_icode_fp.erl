@@ -8,8 +8,8 @@
 %%%
 %%% CVS      :
 %%%              $Author: kostis $
-%%%              $Date: 2006/07/24 22:12:25 $
-%%%              $Revision: 1.33 $
+%%%              $Date: 2006/12/15 21:11:54 $
+%%%              $Revision: 1.34 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -187,7 +187,7 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
       end;
     #call{} ->
       case hipe_icode:call_fun(I) of
-	X when X =:= unsafe_untag_float; X =:= conv_to_float ->
+	X when X =:= unsafe_untag_float orelse X =:= conv_to_float ->
 	  [Dst] = hipe_icode:defines(I),
 	  case hipe_icode:uses(I) of
 	    [] -> %% Constant

@@ -30,22 +30,23 @@
 -import(erl_types, 
 	[t_any/0, t_atom/0, t_atom/1, t_binary/0, t_bool/0, t_cons/0, t_cons/2,
 	 t_cons_hd/1, t_cons_tl/1, t_components/1, t_float/0,
-	 t_from_range/2, t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1,
+	 t_from_range/2, t_fun/0, t_fun/2, t_fun_range/1,
 	 t_inf/2, t_inf_lists/2, t_integer/0, t_is_integer/1, t_is_nil/1,
 	 t_is_atom/1, t_atom_vals/1, t_is_equal/2, t_is_none/1,
 	 t_is_any/1, t_is_subtype/2, t_limit/2,
 	 t_number/0, t_number_vals/1, t_pid/0, t_port/0,
 	 t_pos_improper_list/0,
-	 t_product/1, t_ref/0, t_to_string/1,
+	 t_product/1, t_ref/0, t_to_string/2,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
-	 t_tuple_subtypes/1, t_sup/1, t_sup/2,
+	 t_tuple_subtypes/1, t_sup/1, t_sup/2, t_subtract/2,
 	 t_from_term/1, t_none/0]).
 
 
 -export([annotate_module/2,
+	 doit/1,
 	 doit/2,
-	 get_fun_types/4,
-	 get_top_level_signatures/1,
+	 get_fun_types/5,
+	 get_top_level_signatures/2,
 	 %get_warnings/1,
 	 pp/1]).
 
@@ -74,15 +75,12 @@ pp(Code) ->
   io:put_chars(cerl_prettypr:format(AnnTree, [{hook, cerl_typean:pp_hook()}])),
   io:nl().
 
-get_fun_types(Tree, FunTypes, Callgraph, Plt) ->
+get_fun_types(Tree, FunTypes, Callgraph, Plt, Records) ->
   debug_build_namemap(Tree),
-  State = analyze_module(Tree, Plt, Callgraph, FunTypes),
+  State = analyze_module(Tree, Plt, Callgraph, FunTypes, Records),
   state__all_fun_types(State).
 
-get_top_level_signatures(Code) ->
-  get_top_level_signatures(Code, false).
-
-get_top_level_signatures(Code, _DoWarningPass) ->
+get_top_level_signatures(Code, Records) ->
   {Tree, _} = cerl_trees:label(cerl:from_records(Code)),
   Callgraph0 = dialyzer_callgraph:new(),
   Callgraph1 = dialyzer_callgraph:scan_core_tree(Tree, Callgraph0),
@@ -90,7 +88,7 @@ get_top_level_signatures(Code, _DoWarningPass) ->
   Callgraph = dialyzer_callgraph:finalize(Callgraph2),
   to_dot(Callgraph),
   Plt = get_def_plt(),
-  FunTypes = get_fun_types(Tree, dict:new(), Callgraph, Plt),
+  FunTypes = get_fun_types(Tree, Plt, Callgraph, Plt, Records),
   FunTypes1 = lists:foldl(fun({V, F}, Acc) ->
 			      Label = get_label(F),
 			      case dict:find(Label, Acc) of
@@ -103,18 +101,10 @@ get_top_level_signatures(Code, _DoWarningPass) ->
 			      end
 			  end, FunTypes, cerl:module_defs(Tree)),
   dialyzer_callgraph:delete(Callgraph),
-%  if DoWarningPass -> dialyzer_warnings:get_warnings(Tree, FunTypes1, Plt);
-%     true -> ok
-%  end,
   Sigs = [{{cerl:fname_id(V), cerl:fname_arity(V)}, 
 	   dict:fetch(get_label(F), FunTypes1)} 
 	  || {V, F} <- cerl:module_defs(Tree)],
   ordsets:from_list(Sigs).
-
-%get_warnings(Module) ->
-%  {ok, _, Code} = compile:file(Module,[to_core,binary,strict_record_tests]),
-%  get_top_level_signatures(Code, true),
-%  ok.
 
 get_def_plt() ->
   try 
@@ -125,12 +115,15 @@ get_def_plt() ->
     error:no_such_file -> ets:new(dialyzer_typesig_plt, [])
   end.
 
+doit(Module) ->
+  doit(Module, []).
 
 doit(Module, Opts) ->
-  {ok, _, Code} = compile:file(Module,[to_core,binary,
-				       strict_record_tests|Opts]),
-  Sigs = get_top_level_signatures(Code, true),
-  [io:format("~w/~w :: ~s\n", [F, A, t_to_string(T)])
+  AbstrCode = dialyzer_utils:get_abstract_code_from_src(Module, Opts),
+  Code = dialyzer_utils:get_core_from_abstract_code(AbstrCode),
+  {ok, Records} = dialyzer_utils:get_record_info(AbstrCode),
+  Sigs = get_top_level_signatures(Code, Records),
+  [io:format("~w/~w :: ~s\n", [F, A, t_to_string(T, Records)])
    || {{F, A}, T} <- Sigs].
 
 %%% ============================================================================
@@ -212,12 +205,12 @@ delete_ann(_, []) ->
 %%% ============================================================================
 
 analyze_module(Tree, Plt, Callgraph) ->
-  analyze_module(Tree, Plt, Callgraph, dict:new()).
+  analyze_module(Tree, Plt, Callgraph, dialyzer_plt:new(fun_sigs), dict:new()).
 
-analyze_module(Tree, Plt, Callgraph, FunSigs) ->
+analyze_module(Tree, Plt, Callgraph, FunSigs, Records) ->
   debug_pp(Tree, false),
   TopFun =  cerl:ann_c_fun([{label, top}], [], Tree),
-  State = state__new(Callgraph, TopFun, FunSigs, Plt),
+  State = state__new(Callgraph, TopFun, FunSigs, Plt, Records),
   analyze_loop(State).
 
 analyze_loop(State) ->
@@ -410,7 +403,11 @@ traverse(Tree, Map, DefVars, State) ->
       {State1, Map1} = lists:foldl(FoldFun, {State, Map}, Defs),
       traverse(Body, Map1, DefVars, State1);
     literal ->
-      {State, Map, literal_type(Tree)};      
+      %% This is needed for finding records
+      case cerl:unfold_literal(Tree) of
+	Tree -> {State, Map, literal_type(Tree)};
+	NewTree -> traverse(NewTree, Map, DefVars, State)
+      end;
     module ->
       %% By not including the variables in scope we can assure that we
       %% will get the current function type when using the variables.
@@ -476,13 +473,14 @@ traverse(Tree, Map, DefVars, State) ->
       Map2 = mark_as_fresh(Vars, Map1),
       ArgTypes = wrap_if_single(t_components(ArgType)),
       {SuccState, SuccMap, SuccType} =       
-	case bind_pat_vars(Vars, ArgTypes, [], Map2) of
+	case bind_pat_vars(Vars, ArgTypes, [], Map2, State1) of
 	  error -> 
 	    {State1, map__new(), t_none()};
 	  {SuccMap1, VarTypes} ->
 	    %% Try to bind the argument. Will only succeed if 
 	    %% it is a simple structured term.
-	    case bind_pat_vars([Arg], [t_product(VarTypes)], [], SuccMap1) of
+	    case bind_pat_vars([Arg], [t_product(VarTypes)], [], 
+			       SuccMap1, State1) of
 	      error -> SuccMap2 = SuccMap1;
 	      {SuccMap2, _} -> ok
 	    end,
@@ -498,8 +496,35 @@ traverse(Tree, Map, DefVars, State) ->
     tuple ->
       Elements = cerl:tuple_es(Tree),
       {State1, Map1, EsType} = traverse_list(Elements, Map, DefVars, State),
-      Type = t_tuple(EsType),
-      {State1, Map1, Type};
+      %% Let's find out if this is a record construction.
+      case Elements of
+	[Tag|Left] ->
+	  case cerl:is_c_atom(Tag) of
+	    true ->
+	      TagVal = cerl:atom_val(Tag),
+	      case state__lookup_record(TagVal, length(Left), State1) of
+		error -> {State1, Map1, t_tuple(EsType)};
+		{ok, Prototype} -> 
+		  TupleType = t_inf(Prototype, t_tuple(EsType)),
+		  case t_is_none(TupleType) of
+		    true ->
+		      {State1, Map1, t_none()};
+		    false ->
+		      case bind_pat_vars(Elements, t_tuple_args(TupleType), [], 
+					 Map1, State1) of
+			error ->
+			  {State1, Map1, t_none()};
+			{Map2, ETypes} ->
+			  {State1, Map2, t_tuple(ETypes)}
+		      end
+		  end
+	      end;
+	    false ->
+	      {State1, Map1, t_tuple(EsType)}
+	  end;
+	[] ->
+	  {State1, Map1, t_tuple([])}
+      end;
     values ->
       Elements = cerl:values_es(Tree),
       {State1, Map1, EsType} = traverse_list(Elements, Map, DefVars, State),
@@ -557,11 +582,11 @@ do_call(M, F, As, State) ->
   end.
   
 handle_clauses([C|Left], Arg, ArgType, State, CaseTypes, MapIn, DefVars, Acc) ->
-  {State1, ClauseMap, BodyType} = 
+  {State1, ClauseMap, BodyType, NewArgType} = 
     do_clause(C, Arg, ArgType, MapIn, DefVars, State),
   NewCaseTypes = [BodyType|CaseTypes],
   NewAcc = [ClauseMap|Acc],
-  handle_clauses(Left, Arg, ArgType, State1, 
+  handle_clauses(Left, Arg, NewArgType, State1, 
 		 NewCaseTypes, MapIn, DefVars, NewAcc);
 handle_clauses([], _Arg, _ArgType, State, CaseTypes, _MapIn, _DefVars, Acc) ->
   {lists:reverse(Acc), State, t_sup(CaseTypes)}.
@@ -577,26 +602,33 @@ do_clause(C, Arg, ArgType0, Map, DefVars, State) ->
      true ->         Map1 = bind_subst(Arg, Pats, Map0)
   end,
 
-  case bind_pat_vars(Pats, ArgTypes, [], Map1) of
+  case bind_pat_vars(Pats, ArgTypes, [], Map1, State) of
     error -> ?debug("Failed binding pattern: ~s\nto ~s\n", 
 		    [cerl_prettypr:format(C), t_to_string(ArgType0)]),
-	     {State, Map, t_none()};
+	     {State, Map, t_none(), ArgType0};
     {Map2, PatTypes} ->
       case Arg =:= none of
 	true -> Map3 = Map2;
 	false ->
 	  %% Try to bind the argument. Will only succeed if 
 	  %% it is a simple structured term.
-	  case bind_pat_vars([Arg], [t_product(PatTypes)], [], Map2) of
+	  case bind_pat_vars([Arg], [t_product(PatTypes)], [], Map2, State) of
 	    error -> Map3 = Map2;
 	    {Map3, _} -> ok
 	  end
       end,
-      case bind_guard(Guard, Map3) of
+      NewArgType = 
+	case Arg =:= none of
+	  true -> ArgType0;
+	  false ->
+	    GenType = dialyzer_typesig:get_safe_underapprox(Pats, Guard),
+	    t_subtract(t_product(wrap_if_single(ArgType0)), GenType)
+	end,
+      case bind_guard(Guard, Map3, State) of
 	error -> 
 	  ?debug("Failed guard: ~s\n", 
 		 [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
-	  {State, Map, t_none()};
+	  {State, Map, t_none(), NewArgType};
 	Map4 ->
 	  FoldFun = fun(ST, Acc) ->
 			case cerl:is_c_var(ST) of
@@ -606,7 +638,8 @@ do_clause(C, Arg, ArgType0, Map, DefVars, State) ->
 		    end,
 	  PatVars = [cerl_trees:fold(FoldFun, [], Pat) || Pat <- Pats],
 	  DefVars1 = add_def_vars(lists:flatten(PatVars), DefVars),
-	  traverse(Body, Map4, DefVars1, State)
+	  {RetState, RetMap, BodyType} = traverse(Body, Map4, DefVars1, State),
+	  {RetState, RetMap, BodyType, NewArgType}
       end
   end.
 
@@ -639,7 +672,7 @@ bind_subst_list([Arg|ArgLeft], [Pat|PatLeft], Map) ->
 bind_subst_list([], [], Map) ->
   Map.
 
-bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
+bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map, State) ->
   ?debug("binding ~w\n", [cerl:type(Pat)]),
   Res =
     case cerl:type(Pat) of
@@ -647,7 +680,7 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
 	AliasPat = cerl:alias_pat(Pat),
 	Var = cerl:alias_var(Pat),
 	Map1 = enter_subst(Var, AliasPat, Map),
-	case bind_pat_vars([AliasPat], [Type], [], Map1) of
+	case bind_pat_vars([AliasPat], [Type], [], Map1, State) of
 	  error -> error;
 	  {Map2, [PatType]} -> {enter_type(Var, PatType, Map2), PatType}
 	end;
@@ -656,13 +689,14 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
 	  true -> error;
 	  false -> {bind_bin_segs(cerl:binary_segments(Pat), Map), t_binary()}
 	end;
-    cons ->
+      cons ->
 	Cons = t_inf(Type, t_cons()),
 	case t_is_none(Cons) of
 	  true -> error;
 	  false ->
 	    case bind_pat_vars([cerl:cons_hd(Pat), cerl:cons_tl(Pat)],
-			       [t_cons_hd(Cons), t_cons_tl(Cons)], [], Map) of
+			       [t_cons_hd(Cons), t_cons_tl(Cons)], 
+			       [], Map, State) of
 	      error -> error;
 	      {Map1, [HdType, TlType]} -> {Map1, t_cons(HdType, TlType)}
 	    end
@@ -673,15 +707,29 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
 	  true -> error;
 	  false -> {Map, Literal}
 	end;
-      tuple ->
+      tuple ->	
 	Es = cerl:tuple_es(Pat),
-	Tuple = t_inf(t_tuple(length(Es)), Type),
+	Prototype = 
+	  case Es of
+	    [] -> t_tuple([]);
+	    [Tag|Left] ->
+	      case cerl:is_c_atom(Tag) of
+		true ->
+		  TagAtom = cerl:atom_val(Tag),
+		  case state__lookup_record(TagAtom, length(Left), State) of
+		    error -> t_tuple(length(Es));
+		    {ok, Record} -> Record
+		  end;
+		false -> t_tuple(length(Es))
+	      end
+	  end,
+	Tuple = t_inf(Prototype, Type),
 	case t_is_none(Tuple) of
 	  true -> error;
 	  false ->
 	    SubTuples = t_tuple_subtypes(Tuple),
-	    Results = [bind_pat_vars(Es, t_tuple_args(SubTuple), [], Map)||
-			SubTuple <- SubTuples],
+	    Results = [bind_pat_vars(Es, t_tuple_args(SubTuple), [], Map, State)
+		       || SubTuple <- SubTuples],
 	    case lists:all(fun(X) -> X =:= error end, Results) of
 	      true -> error;
 	      false ->
@@ -692,7 +740,7 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
 	end;
       values ->
 	Es = cerl:values_es(Pat),
-	case bind_pat_vars(Es, t_components(Type), [], Map) of
+	case bind_pat_vars(Es, t_components(Type), [], Map, State) of
 	  error -> error;
 	  {Map1, EsTypes} -> {Map1, t_product(EsTypes)}
 	end;
@@ -712,13 +760,15 @@ bind_pat_vars([Pat|PatLeft], [Type|TypeLeft], Acc, Map) ->
     end,
   case Res of
     error -> error;
-    {NewMap, TypeOut} -> bind_pat_vars(PatLeft, TypeLeft, [TypeOut|Acc], NewMap)
+    {NewMap, TypeOut} -> 
+      bind_pat_vars(PatLeft, TypeLeft, [TypeOut|Acc], NewMap, State)
   end;
-bind_pat_vars([], [], Acc, Map) ->
+bind_pat_vars([], [], Acc, Map, _State) ->
   {Map, lists:reverse(Acc)};
-bind_pat_vars(Pats, Type, Acc, Map) ->
+bind_pat_vars(Pats, Type, Acc, Map, State) ->
   case t_is_any(Type) of
-    true -> bind_pat_vars(Pats, duplicate(length(Pats), t_any()), Acc, Map);
+    true -> 
+      bind_pat_vars(Pats, duplicate(length(Pats), t_any()), Acc, Map, State);
     false ->
       case t_is_none(Type) of
 	true -> error;
@@ -790,8 +840,8 @@ bind_bin_segs([], Map) ->
 %% Guards
 %%
 
-bind_guard(Guard, Map) ->
-  try bind_guard(Guard, Map, dict:new()) of
+bind_guard(Guard, Map, State) ->
+  try bind_guard(Guard, Map, dict:new(), State) of
     {Map1, Type} ->
       case t_is_none(t_inf(t_atom(true), Type)) of
 	true -> error;
@@ -803,16 +853,16 @@ bind_guard(Guard, Map) ->
     throw:fatal_fail -> error
   end.
 
-bind_guard(Guard, Map, Env) ->
+bind_guard(Guard, Map, Env, State) ->
   ?debug("Handling guard: ~s\n", [cerl_prettypr:format(Guard)]),
   case cerl:type(Guard) of
     binary -> 
       {Map, t_binary()};
     'case' ->
       Arg = cerl:case_arg(Guard),
-      {NewMap, ArgType} = bind_guard(Arg, Map, Env),
+      {NewMap, ArgType} = bind_guard(Arg, Map, Env, State),
       Clauses = cerl:case_clauses(Guard),
-      bind_guard_case_clauses(ArgType, Clauses, NewMap, Env);
+      bind_guard_case_clauses(ArgType, Clauses, NewMap, Env, State);
     cons ->
       {Map, t_cons()};
     literal ->
@@ -822,18 +872,18 @@ bind_guard(Guard, Map, Env) ->
       [Var] = cerl:try_vars(Guard),
       %%?debug("Storing: ~w\n", [Var]),
       NewEnv = dict:store(get_label(Var), Arg, Env),
-      bind_guard(cerl:try_body(Guard), Map, NewEnv);
+      bind_guard(cerl:try_body(Guard), Map, NewEnv, State);
     tuple ->
-      {Map1, Es} = bind_guard_list(cerl:tuple_es(Guard), Map, Env),
+      {Map1, Es} = bind_guard_list(cerl:tuple_es(Guard), Map, Env, State),
       {Map1, t_tuple(Es)};
     'let' ->
       Arg = cerl:let_arg(Guard),
       [Var] = cerl:let_vars(Guard),
       %%?debug("Storing: ~w\n", [Var]),
       NewEnv = dict:store(get_label(Var), Arg, Env),
-      bind_guard(cerl:let_body(Guard), Map, NewEnv);
+      bind_guard(cerl:let_body(Guard), Map, NewEnv, State);
     values ->
-      List = [bind_guard(V, Map, Env) || V <- cerl:values_es(Guard)],
+      List = [bind_guard(V, Map, Env, State) || V <- cerl:values_es(Guard)],
       Type = t_product([T || {_, T} <- List]),
       {Map, Type};
     var ->
@@ -844,7 +894,7 @@ bind_guard(Guard, Map, Env) ->
 	  {Map, lookup_type(Guard, Map)};
 	{ok, Tree} -> 
 	  %?debug("Found it\n", []),
-	  {Map1, Type} = bind_guard(Tree, Map, Env),
+	  {Map1, Type} = bind_guard(Tree, Map, Env, State),
 	  {enter_type(Guard, Type, Map1), Type}
       end;
     call ->
@@ -855,7 +905,7 @@ bind_guard(Guard, Map, Env) ->
       case {M, F, A} of
 	{erlang, is_atom, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_atom(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -863,7 +913,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_boolean, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_bool(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -871,7 +921,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_binary, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_binary(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -879,7 +929,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_float, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_float(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -887,14 +937,15 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_function, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_fun(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
 	    false -> {enter_type(Arg, Type, Map1), t_atom(true)}
 	  end;
 	{erlang, is_function, 2} ->
-	  {Map1, [FunType0, ArityType0]} = bind_guard_list(Args, Map, Env),
+	  {Map1, [FunType0, ArityType0]} = 
+	    bind_guard_list(Args, Map, Env, State),
 	  ArityType = t_inf(ArityType0, t_integer()),
 	  case t_is_none(ArityType) of
 	    true -> throw(fail);
@@ -914,7 +965,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_integer, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_integer(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -922,7 +973,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_list, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_pos_improper_list(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -930,7 +981,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_number, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_number(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -938,7 +989,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_pid, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_pid(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -946,7 +997,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_port, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_port(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -954,10 +1005,15 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	MFA when (MFA =:= {erlang, internal_is_record, 3}) or 
 		 (MFA =:= {erlang, is_record, 3}) ->
-	  [Rec, Tag, Arity] = Args,
-	  {Map1, RecType} = bind_guard(Rec, Map, Env),
-	  TupleType = t_tuple([t_atom(cerl:atom_val(Tag))
-			       |duplicate(cerl:int_val(Arity)-1, t_any())]),
+	  [Rec, Tag0, Arity0] = Args,
+	  Tag = cerl:atom_val(Tag0),
+	  Arity = cerl:int_val(Arity0),
+	  {Map1, RecType} = bind_guard(Rec, Map, Env, State),
+	  TupleType =
+	    case state__lookup_record(Tag, Arity - 1, State) of
+	      error -> t_tuple([t_atom(Tag)|duplicate(Arity - 1, t_any())]);
+	      {ok, Prototype} -> Prototype
+	    end,
 	  Type = t_inf(TupleType, RecType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -965,7 +1021,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_reference, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_ref(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -973,7 +1029,7 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, is_tuple, 1} ->
 	  [Arg] = Args,
-	  {Map1, ArgType} = bind_guard(Arg, Map, Env),
+	  {Map1, ArgType} = bind_guard(Arg, Map, Env, State),
 	  Type = t_inf(t_tuple(), ArgType),
 	  case t_is_none(Type) of
 	    true -> throw(fail);
@@ -981,8 +1037,8 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, '=:=', 2} ->
 	  [Arg1, Arg2] = Args,
-	  {Map1, Type1} = bind_guard(Arg1, Map, Env),
-	  {Map2, Type2} = bind_guard(Arg2, Map1, Env),
+	  {Map1, Type1} = bind_guard(Arg1, Map, Env, State),
+	  {Map2, Type2} = bind_guard(Arg2, Map1, Env, State),
 	  ?debug("Types are:~s and ~s\n", [t_to_string(Type1), 
 					  t_to_string(Type2)]),
 	  Inf = t_inf(Type1, Type2),
@@ -1007,8 +1063,8 @@ bind_guard(Guard, Map, Env) ->
 	  end;
 	{erlang, '==', 2} ->
 	  [Arg1, Arg2] = Args,
-	  {Map1, Type1} = bind_guard(Arg1, Map, Env),
-	  {Map2, Type2} = bind_guard(Arg2, Map1, Env),
+	  {Map1, Type1} = bind_guard(Arg1, Map, Env, State),
+	  {Map2, Type2} = bind_guard(Arg2, Map1, Env, State),
 	  ?debug("Types are:~s and ~s\n", [t_to_string(Type1), 
 					  t_to_string(Type2)]),
 	  %% A very special case when at least one of the operands is an atom.
@@ -1041,12 +1097,12 @@ bind_guard(Guard, Map, Env) ->
 	{erlang, 'and', 2} ->
 	  [Arg1, Arg2] = Args,
 	  True = t_atom(true),
-	  {Map1, Bool1} = bind_guard(Arg1, Map, Env),
+	  {Map1, Bool1} = bind_guard(Arg1, Map, Env, State),
 	  case t_is_none(t_inf(Bool1, True)) of
 	      true ->
 	      {Map, t_none()};
 	    false ->
-	      {Map2, Bool2} = bind_guard(Arg2, Map1, Env),
+	      {Map2, Bool2} = bind_guard(Arg2, Map1, Env, State),
 	      case t_is_none(t_inf(Bool2, True)) of
 		true ->
 		  {Map, t_none()};
@@ -1060,15 +1116,15 @@ bind_guard(Guard, Map, Env) ->
 	  False = t_atom(false),
 	  {Map1, Bool1} = 
 	    try
-	      bind_guard(Arg1, Map, Env)
+	      bind_guard(Arg1, Map, Env, State)
 	    catch
-	      throw:{fail, _, _} -> {Map, False}
+	      throw:fail -> {Map, False}
 	    end,
 	  {Map2, Bool2} = 
 	    try
-	      bind_guard(Arg2, Map, Env)
+	      bind_guard(Arg2, Map, Env, State)
 	    catch
-	      throw:{fail, _, _} -> {Map, False}
+	      throw:fail -> {Map, False}
 	    end,
 	  case t_is_none(t_inf(Bool1, True)) of
 	    true -> 
@@ -1085,10 +1141,15 @@ bind_guard(Guard, Map, Env) ->
 	{erlang, 'not', 1} ->
 	  throw(dont_know);
 	{M, F, A} ->
-	  {Map1, As} = bind_guard_list(Args, Map, Env),
+	  {Map1, As} = bind_guard_list(Args, Map, Env, State),
 	  BifRet = erl_bif_types:type(M, F, A, As),
 	  case t_is_none(BifRet) of
-	    true -> throw(fatal_fail);
+	    true ->
+	      %% Is this an error-bif?
+	      case t_is_none(erl_bif_types:type(M, F, A)) of
+		true -> throw(fail);
+		false -> throw(fatal_fail)
+	      end;
 	    false ->
 	      case erl_bif_types:arg_types(M, F, A) of
 		any -> BifArgs = duplicate(A, t_any());
@@ -1100,18 +1161,18 @@ bind_guard(Guard, Map, Env) ->
       end
   end.
 
-bind_guard_list(Guards, Map, Env) ->
-  bind_guard_list(Guards, Map, Env, []).
+bind_guard_list(Guards, Map, Env, State) ->
+  bind_guard_list(Guards, Map, Env, State, []).
 
-bind_guard_list([G|Left], Map, Env, Acc) ->
-  {Map1, T} = bind_guard(G, Map, Env),
-  bind_guard_list(Left, Map1, Env, [T|Acc]);
-bind_guard_list([], Map, _Env, Acc) ->
+bind_guard_list([G|Left], Map, Env, State, Acc) ->
+  {Map1, T} = bind_guard(G, Map, Env, State),
+  bind_guard_list(Left, Map1, Env, State, [T|Acc]);
+bind_guard_list([], Map, _Env, _State, Acc) ->
   {Map, lists:reverse(Acc)}.
 
-bind_guard_case_clauses(ArgType, Clauses, Map, Env) ->
+bind_guard_case_clauses(ArgType, Clauses, Map, Env, State) ->
   Clauses1 = filter_fail_clauses(Clauses),
-  bind_guard_case_clauses(ArgType, Clauses1, Map, Env, t_none(), []).
+  bind_guard_case_clauses(ArgType, Clauses1, Map, Env, t_none(), [], State).
 
 filter_fail_clauses([Clause|Left]) ->
   case (cerl:clause_pats(Clause) =:= []) of
@@ -1127,40 +1188,42 @@ filter_fail_clauses([Clause|Left]) ->
 filter_fail_clauses([]) ->
   [].
 
-bind_guard_case_clauses(ArgType, [Clause|Left], Map, Env, AccType, AccMaps) ->
+bind_guard_case_clauses(ArgType, [Clause|Left], Map, Env, AccType, 
+			AccMaps, State) ->
   Pats = cerl:clause_pats(Clause),
   NewMap1 =
     case Pats =:= [] of
       true -> Map;
       false ->
-	case bind_pat_vars(Pats, t_components(ArgType), [], Map) of
+	case bind_pat_vars(Pats, t_components(ArgType), [], Map, State) of
 	  error -> none;
 	  {PatMap, _PatTypes} -> PatMap
 	end
     end,
   case NewMap1 =:= none of
     true ->
-      bind_guard_case_clauses(ArgType, Left, Map, Env, AccType, AccMaps);
+      bind_guard_case_clauses(ArgType, Left, Map, Env, AccType, AccMaps, State);
     false ->
-      try
-	Guard = cerl:clause_guard(Clause),
-	{NewMap2, GuardType} = bind_guard(Guard, NewMap1, Env),	
-	case t_is_none(t_inf(t_from_term(true), GuardType)) of
-	  true -> throw(error);
-	  false -> ok
+      {NewAccType, NewAccMaps} =
+	try
+	  Guard = cerl:clause_guard(Clause),
+	  {NewMap2, GuardType} = bind_guard(Guard, NewMap1, Env, State),	
+	  case t_is_none(t_inf(t_from_term(true), GuardType)) of
+	    true -> throw(fail);
+	    false -> ok
+	  end,
+	  {NewMap3, CType} = bind_guard(cerl:clause_body(Clause), NewMap2, 
+					Env, State),
+	  {t_sup(AccType, CType), [NewMap3|AccMaps]}
+	catch
+	  throw:fail -> {AccType, AccMaps}
 	end,
-	{NewMap3, CType} = bind_guard(cerl:clause_body(Clause), NewMap2, Env),
-	NewAccType = t_sup(AccType, CType),
-	NewAccMaps = [NewMap3|AccMaps],
-	bind_guard_case_clauses(ArgType, Left, Map, Env, NewAccType, NewAccMaps)
-      catch
-	throw:error ->
-	  bind_guard_case_clauses(ArgType, Left, Map, Env, AccType, AccMaps)
-      end
+      bind_guard_case_clauses(ArgType, Left, Map, Env, NewAccType, 
+			      NewAccMaps, State)
   end;
-bind_guard_case_clauses(_ArgType, [], Map, _Env, AccType, AccMaps) ->
+bind_guard_case_clauses(_ArgType, [], Map, _Env, AccType, AccMaps, _State) ->
   case t_is_none(AccType) of
-    true -> throw(error);
+    true -> throw(fail);
     false -> {join_maps(AccMaps, Map), AccType}
   end.
 
@@ -1293,6 +1356,14 @@ lookup(Key, Map, Subst, AnyNone) ->
       end
   end.
 
+lookup_fun_sig(Fun, Callgraph, FunSigs) ->
+  MFAorLabel =
+    case dialyzer_callgraph:lookup_name(Fun, Callgraph) of
+      {ok, MFA} -> MFA;
+      error -> Fun
+    end,
+  dialyzer_plt:lookup(FunSigs, MFAorLabel).
+
 literal_type(Lit) ->
   t_from_term(cerl:concrete(Lit)).
 
@@ -1365,16 +1436,17 @@ filter_match_fail([]) ->
 %%%
 %%% ============================================================================
 
--record(state, {callgraph, envs, fun_tab, fun_sigs, plt, tree_map, work}).
+-record(state, {callgraph, envs, fun_tab, fun_sigs, plt, 
+		records, tree_map, work}).
 
-state__new(Callgraph, Tree, FunSigs, Plt) -> 
+state__new(Callgraph, Tree, FunSigs, Plt, Records) -> 
   TreeMap = build_tree_map(Tree),
   Funs = dict:fetch_keys(TreeMap),
   FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Callgraph, FunSigs),
   Work = init_work([get_label(Tree)]),
   Env = dict:store(top, {map__new(), []}, dict:new()),
   #state{callgraph=Callgraph, envs=Env, fun_sigs=FunSigs,
-	 fun_tab=FunTab, plt=Plt, work=Work, tree_map=TreeMap}.
+	 fun_tab=FunTab, plt=Plt, records=Records, work=Work, tree_map=TreeMap}.
 
 state__is_escaping(Fun, #state{callgraph=Callgraph}) ->
   dialyzer_callgraph:is_escaping(Fun, Callgraph).
@@ -1391,6 +1463,14 @@ state__lookup_type_for_rec_var(Var, S = #state{callgraph=Callgraph}) ->
       end
   end.
 
+state__lookup_record(Tag, Arity, #state{records=Records}) ->
+  case erl_types:lookup_record(Tag, Arity, Records) of
+    {ok, Fields} -> 
+      {ok, t_tuple([t_from_term(Tag)|
+		    [FieldType || {_FieldName, FieldType} <- Fields]])};
+    error -> 
+      error
+  end.
 
 state__get_args(Tree, #state{fun_tab=FunTab}) ->
   Fun = get_label(Tree),
@@ -1421,12 +1501,12 @@ init_fun_tab([Fun|Left], Dict, TreeMap, Callgraph, FunSigs) ->
       Args = 
 	case dialyzer_callgraph:is_escaping(Fun, Callgraph) of
 	  true -> 
-	    case dict:find(Fun, FunSigs) of
-	      error -> duplicate(Arity, t_any());
-	      {ok, Sig} -> 
-		case t_is_none(Sig) of
+	    case lookup_fun_sig(Fun, Callgraph, FunSigs) of
+	      none -> duplicate(Arity, t_any());
+	      {value, {RetType, ArgTypes}} -> 
+		case any_none([RetType|ArgTypes]) of
 		  true -> duplicate(Arity, t_none());
-		  false -> t_fun_args(Sig)
+		  false -> ArgTypes
 		end
 	    end;
 	  false -> duplicate(Arity, t_none())
@@ -1584,14 +1664,16 @@ state__handle_apply(Tree, Args, State = #state{callgraph=Callgraph}) ->
       end
   end.
 
-state__fun_apply(Fun, Args, #state{fun_sigs=FunSigs, fun_tab=FunTab}) ->
+state__fun_apply(Fun, Args, #state{callgraph=Callgraph, 
+				   fun_sigs=FunSigs, 
+				   fun_tab=FunTab}) ->
   NewArgs =
-    case dict:find(Fun, FunSigs) of
-      error -> Args;
-      {ok, Sig} -> 
-	case t_is_none(Sig) of
+    case lookup_fun_sig(Fun, Callgraph, FunSigs) of
+      none -> Args;
+      {value, {ReturnType, ArgTypes}} -> 
+	case t_is_none(ReturnType) of
 	  true -> duplicate(length(Args), t_none());
-	  false -> t_inf_lists(t_fun_args(Sig), Args)
+	  false -> t_inf_lists(ArgTypes, Args)
 	end
     end,
   case any_none(NewArgs) of

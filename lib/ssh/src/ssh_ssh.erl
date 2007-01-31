@@ -32,16 +32,16 @@
 connect(A) ->
     connect(A, []).
 
-connect(CM, Opts) when is_pid(Opts) ->
+connect(Host, Opts) when is_list(Host) ->
+    connect(Host, 22, Opts);
+connect(CM, Opts) ->
     Timeout = proplists:get_value(connect_timeout, Opts, ?default_timeout),
     case ssh_cm:attach(CM, Timeout) of
 	{ok,CMPid} ->
 	    session(CMPid, Timeout);
 	Error ->
 	    Error
-    end;
-connect(Host, Opts) ->
-    connect(Host, 22, Opts).
+    end.
 
 connect(Host, Port, Opts) ->
     case ssh_cm:connect(Host, Port, Opts) of

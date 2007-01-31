@@ -58,7 +58,7 @@ BINDIR      = $(INSTALL_PREFIX)@bindir@
 #
 # Erlang base public files
 #
-ERL_BASE_PUB_FILES=erl erlc epmd run_erl to_erl dialyzer 
+ERL_BASE_PUB_FILES=erl erlc epmd run_erl to_erl dialyzer
 
 # The directory which will contain installed Erlang version.
 # (ILIBDIR is supposed to be LIBDIR *without* the install prefix)
@@ -249,6 +249,11 @@ ifneq ($(OTP_SMALL_BUILD),true)
 	ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
 	    $(MAKE) opt BUILD_ALL=true
 endif
+
+typer:
+	cd lib/typer && \
+	ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
+	    $(MAKE) opt BUILD_ALL=true
 
 dep depend:
 	cd erts/emulator && ERL_TOP=$(ERL_TOP) $(MAKE) generate depend

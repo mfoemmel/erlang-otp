@@ -23,7 +23,7 @@
 -module(erl_ddll).
 
 -export([load_driver/2, load/2, 
-	 unload_driver/1, unload/1, force_unload/1,
+	 unload_driver/1, unload/1, reload/2, reload_driver/2, 
 	 format_error/1,info/1,info/0, start/0, stop/0]).
 
 start() ->
@@ -39,7 +39,7 @@ load(Path, Driver) ->
     do_load_driver(Path, Driver, []).
 
 do_load_driver(Path, Driver, DriverFlags) ->
-    case erl_ddll:try_load(Path, Driver,[{monitor,pending}]++DriverFlags) of
+    case erl_ddll:try_load(Path, Driver,[{monitor,pending_driver}]++DriverFlags) of
 	{error, inconsistent} ->
 	    {error,bad_driver_name}; % BC 
 	{error, What} ->
@@ -50,43 +50,51 @@ do_load_driver(Path, Driver, DriverFlags) ->
 	    ok;
 	{ok, pending_driver, Ref} ->
 	    receive
-		{'DOWN', Ref, driver, Driver, load_cancelled} ->
+		{'DOWN', Ref, driver, _, load_cancelled} ->
 		    {error, load_cancelled};
-		{'UP', Ref, driver, Driver, permanent} ->
+		{'UP', Ref, driver, _, permanent} ->
 		    {error, permanent}; 
-		{'DOWN', Ref, driver, Driver, {load_failure, Failure}} ->
+		{'DOWN', Ref, driver, _, {load_failure, Failure}} ->
 		    {error, Failure};
-		{'UP', Ref, driver, Driver, loaded} ->
+		{'UP', Ref, driver, _, loaded} ->
 		    ok
 	    end
     end.
 
 do_unload_driver(Driver,Flags) ->
-   case erl_ddll:try_unload(Driver,[{monitor,pending_driver}]++Flags) of
-       {error,What} ->
-	   {error,What};
-       {ok, pending_process} ->
-	   ok;
-       {ok, unloaded} ->
-	   ok;
-       {ok, pending_driver, Ref} ->
-	   receive
-	       {'UP', Ref, driver, Driver, permanent} ->
-		   {error, permanent}; 
-	       {'DOWN', Ref, driver, Driver, unloaded} ->
-		   ok
-	   end
-   end.
+    case erl_ddll:try_unload(Driver,Flags) of
+	{error,What} ->
+	    {error,What};
+	{ok, pending_process} ->
+	    ok;
+	{ok, unloaded} ->
+	    ok;
+	{ok, pending_driver} ->
+	    ok;
+	{ok, pending_driver, Ref} ->
+	    receive
+		{'UP', Ref, driver, _, permanent} ->
+		    {error, permanent}; 
+		{'UP', Ref, driver, _, unload_cancelled} ->
+		    ok;
+		{'DOWN', Ref, driver, _, unloaded} ->
+		    ok
+	    end
+    end.
 
 unload_driver(Driver) ->
-    do_unload_driver(Driver,[kill_ports]).
-    %do_unload_driver(Driver,[]).			    
+    do_unload_driver(Driver,[{monitor,pending_driver},kill_ports]).
+
 unload(Driver) ->
     do_unload_driver(Driver,[]).
 
-force_unload(Driver) ->
-    do_unload_driver(Driver,[kill_ports]).
-			    
+
+reload(Path,Driver) ->
+    do_load_driver(Path, Driver, [{reload,pending_driver}]).
+
+reload_driver(Path,Driver) ->
+    do_load_driver(Path, Driver, [{reload,pending_driver},
+				  {driver_options,[kill_ports]}]).			    
 format_error(Code) ->
     case Code of
 	% This is the only error code returned only from erlang code...
@@ -98,8 +106,7 @@ format_error(Code) ->
     end.
     
 info(Driver) ->
-    [{name, Driver},
-     {processes, erl_ddll:info(Driver,processes)},
+    [{processes, erl_ddll:info(Driver,processes)},
      {driver_options, erl_ddll:info(Driver,driver_options)},
      {port_count, erl_ddll:info(Driver,port_count)},
      {linked_in_driver, erl_ddll:info(Driver,linked_in_driver)},
@@ -111,5 +118,4 @@ info() ->
     {ok,DriverList} = erl_ddll:loaded_drivers(),
     [{X,Y} || X <- DriverList,
 	       Y <- [catch info(X)],
-	       is_list(Y)]. % The driver might have been unloaded between getting the list
-                            % and calling info...
+	       is_list(Y), not lists:member({linked_in_driver,true},Y)]. 

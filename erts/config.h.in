@@ -252,6 +252,9 @@
 /* Define if you have the mremap function.  */
 #undef HAVE_MREMAP
 
+/* Define if you have the openpty function.  */
+#undef HAVE_OPENPTY
+
 /* Define if you have the pread function.  */
 #undef HAVE_PREAD
 
@@ -269,6 +272,12 @@
 
 /* Define if you have the strerror_r function.  */
 #undef HAVE_STRERROR_R
+
+/* Define if you have the strlcat function.  */
+#undef HAVE_STRLCAT
+
+/* Define if you have the strlcpy function.  */
+#undef HAVE_STRLCPY
 
 /* Define if you have the strncasecmp function.  */
 #undef HAVE_STRNCASECMP
@@ -306,6 +315,9 @@
 /* Define if you have the <net/errno.h> header file.  */
 #undef HAVE_NET_ERRNO_H
 
+/* Define if you have the <pty.h> header file.  */
+#undef HAVE_PTY_H
+
 /* Define if you have the <sys/dir.h> header file.  */
 #undef HAVE_SYS_DIR_H
 
@@ -339,6 +351,12 @@
 /* Define if you have the <unistd.h> header file.  */
 #undef HAVE_UNISTD_H
 
+/* Define if you have the <util.h> header file.  */
+#undef HAVE_UTIL_H
+
+/* Define if you have the <utmp.h> header file.  */
+#undef HAVE_UTMP_H
+
 /* Define if you have the dl library (-ldl).  */
 #undef HAVE_LIBDL
 
@@ -347,6 +365,9 @@
 
 /* Define if you have the m library (-lm).  */
 #undef HAVE_LIBM
+
+/* Define if you have the util library (-lutil).  */
+#undef HAVE_LIBUTIL
 
 /* Define if you have win32 threads */
 #undef ETHR_WIN32_THREADS
@@ -395,6 +416,15 @@
 
 /* Define if the smp emulator is built */
 #undef ERTS_HAVE_SMP_EMU
+
+/* Define if you want to use SMP I/O thread */
+#undef ERTS_SMP_USE_IO_THREAD
+
+/* Define if you want to use port tasks */
+#undef ERTS_USE_PORT_TASKS
+
+/* Define if you do not want to use port tasks */
+#undef ERTS_DONT_USE_PORT_TASKS
 
 /* Define if windows.h includes winsock2.h */
 #undef WINDOWS_H_INCLUDES_WINSOCK2_H

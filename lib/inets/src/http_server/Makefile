@@ -44,6 +44,7 @@ MODULES = \
 	httpd_conf \
 	httpd_example \
 	httpd_esi \
+	httpd_file\
 	httpd_instance_sup \
 	httpd_manager \
 	httpd_misc_sup \

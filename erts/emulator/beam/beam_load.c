@@ -1982,6 +1982,17 @@ load_code(LoaderState* stp)
 	    break;
 
 	    /*
+	     * Validate operand.
+	     * code[ci-1]	Index (0 <= Index < MAX_REG)
+	     */
+	case op_bs_save_I:
+	case op_bs_restore_I:
+	    if (code[ci-1] >= MAX_REG) {
+		LoadError1(stp, "index %d out of range", code[ci-1]);
+	    }
+	    break;
+
+	    /*
 	     * End of code found.
 	     */
 	case op_int_code_end:
@@ -3212,6 +3223,8 @@ gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
 	op->a[1].val = (Uint) (void *) erts_gc_length_1;
     } else if (bf == size_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_size_1;
+    } else if (bf == bitsize_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_bitsize_1;
     } else if (bf == abs_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_abs_1;
     } else if (bf == float_1) {
@@ -3711,6 +3724,7 @@ transform_engine(LoaderState* st)
 #include "beam_tr_funcs.h"
 #undef RVAL
 		default:
+		    new_instr = NULL; /* Silence compiler warning. */
 		    ASSERT(0);
 		}
 		if (new_instr == NULL) {
@@ -4719,7 +4733,7 @@ patch_funentries(Eterm Patchlist)
 /*
  * Do a dummy load of a module. No threaded code will be loaded.
  * Used for loading native code.
- * Will also patch all referenses to fun_entries to point to 
+ * Will also patch all references to fun_entries to point to 
  * the new fun_entries created.
  */
 
@@ -4741,6 +4755,12 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     int i;
     byte* temp_alloc = NULL;
     byte* bytes;
+
+    /*
+     * Must initialize state.lambdas here because the error handling code
+     * at label 'error' uses it.
+     */
+    init_state(&state);
 
     if (is_not_atom(Mod)) {
 	goto error;
@@ -4767,7 +4787,6 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
      * Scan the Beam binary and read the interesting sections.
      */
 
-    init_state(&state);
     state.file_name = "IFF header for Beam file";
     state.file_p = bytes;
     state.file_left = binary_size(Beam);
@@ -4932,6 +4951,9 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 
     if (patch_funentries(Patchlist)) {
 	erts_free_aligned_binary_bytes(temp_alloc);
+	if (state.lambdas != state.def_lambdas) {
+	    erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
+	}
 	return Mod;
     }
 
@@ -4939,6 +4961,9 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
     erts_free_aligned_binary_bytes(temp_alloc);
     if (code != NULL) {
 	erts_free(ERTS_ALC_T_CODE, code);
+    }
+    if (state.lambdas != state.def_lambdas) {
+	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
     }
     BIF_ERROR(p, BADARG);
 }

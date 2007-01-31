@@ -35,10 +35,10 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/0, connect/4, listen/3, listen/4, accept/2, write/3,
+-export([start/0, connect/4, listen/3, listen/4, accept/2, accept/3, write/3,
 	 controlling_process/3, close/2, peername/2, sockname/2, 
 	 peerdata/2, peercert/2, peercert/3, sockdata/2, setopts/3, 
-	 clear/2, shutdown/3]).
+	 clear/2, shutdown/3, post_accept/2, post_accept/3]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -70,12 +70,22 @@ setopts(ssl, Socket, Opts) ->
 connect(Type, Host, Port, Options) ->
     Timeout = orber:iiop_setup_connection_timeout(),
     Options1 = check_options(Type, Options),
+    Options2 = 
+	case Type of
+	    normal ->
+		Keepalive = orber_env:iiop_out_keepalive(),
+		[{keepalive, Keepalive}|Options1];
+	    _ ->
+%		Keepalive = orber_env:iiop_ssl_out_keepalive(),
+%		[{keepalive, Keepalive}|Options1]
+		Options1
+	end,
     case orber:iiop_out_ports() of
 	{Min, Max} ->
 	    multi_connect(Min, Max, Type, Host, Port, 
-			  [binary, {packet,cdr}| Options1], Timeout);
+			  [binary, {packet,cdr}| Options2], Timeout);
 	_ ->
-	    connect(Type, Host, Port, [binary, {packet,cdr}| Options1], Timeout)
+	    connect(Type, Host, Port, [binary, {packet,cdr}| Options2], Timeout)
     end.
 
 connect(normal, Host, Port, Options, Timeout) ->
@@ -144,6 +154,7 @@ listen(Type, Port, Options) ->
 listen(normal, Port, Options, Exception) ->
     Options1 = check_options(normal, Options),
     Backlog = orber:iiop_backlog(),
+    Keepalive = orber_env:iiop_in_keepalive(),
     Options2 = case orber:iiop_max_in_requests() of
 		   infinity ->
 		       Options1;
@@ -156,7 +167,7 @@ listen(normal, Port, Options, Exception) ->
 		   MaxSize ->
 		       [{packet_size, MaxSize}|Options1]
 	       end,
-    case catch gen_tcp:listen(Port, [binary, {packet,cdr},
+    case catch gen_tcp:listen(Port, [binary, {packet,cdr}, {keepalive, Keepalive},
 				     {reuseaddr,true}, {backlog, Backlog} |
 				     Options3]) of
 	{ok, ListenSocket} ->
@@ -183,6 +194,7 @@ listen(normal, Port, Options, Exception) ->
     end;
 listen(ssl, Port, Options, Exception) ->
     Backlog = orber:iiop_ssl_backlog(),
+%    Keepalive = orber_env:iiop_ssl_in_keepalive(),
     Options1 = check_options(ssl, Options),
     Options2 = case orber:iiop_max_in_requests() of
 		   infinity ->
@@ -196,7 +208,8 @@ listen(ssl, Port, Options, Exception) ->
 		   MaxSize ->
 		       [{packet_size, MaxSize}|Options1]
 	       end,
-    case catch ssl:listen(Port, [binary, {packet,cdr}, 
+%    case catch ssl:listen(Port, [binary, {packet,cdr}, {keepalive, Keepalive},
+    case catch ssl:listen(Port, [binary, {packet,cdr},
 				 {backlog, Backlog} | Options3]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, ssl, ListenSocket)};
@@ -222,7 +235,10 @@ listen(ssl, Port, Options, Exception) ->
 %%-----------------------------------------------------------------
 %% Wait in accept on the socket
 %% 
-accept(normal, ListenSocket) ->
+accept(Type, ListenSocket) ->
+    accept(Type, ListenSocket, infinity).
+
+accept(normal, ListenSocket, _Timeout) ->
     case catch gen_tcp:accept(ListenSocket) of
 	{ok, S} ->
 	    S;
@@ -232,8 +248,8 @@ accept(normal, ListenSocket) ->
 		      [?LINE, ListenSocket, Error], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end;
-accept(ssl, ListenSocket) ->
-    case catch ssl:accept(ListenSocket) of
+accept(ssl, ListenSocket, Timeout) ->
+    case catch ssl:transport_accept(ListenSocket, Timeout) of
 	{ok, S} ->
 	    S;
 	Error ->
@@ -243,13 +259,30 @@ accept(ssl, ListenSocket) ->
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
     end.
 
+post_accept(Type, Socket) ->
+    post_accept(Type, Socket, infinity).
+
+post_accept(normal, _Socket, _Timeout) ->
+    ok;
+post_accept(ssl, Socket, Timeout) ->
+    case catch ssl:ssl_accept(Socket, Timeout) of
+	ok ->
+	    ok;
+	Error ->
+	    orber:dbg("[~p] orber_socket:post_accept(ssl, ~p);~n"
+		      "Failed with reason: ~p", 
+		      [?LINE, Socket, Error], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO})
+    end.
+
+
 %%-----------------------------------------------------------------
 %% Close the socket
 %% 
 close(normal, Socket) ->
-    gen_tcp:close(Socket);
+    (catch gen_tcp:close(Socket));
 close(ssl, Socket) ->
-    ssl:close(Socket).
+    (catch ssl:close(Socket)).
 
 %%-----------------------------------------------------------------
 %% Write to socket
@@ -324,7 +357,7 @@ create_data({ok, {Addr, Port}}) ->
 create_data(What) ->
     orber:dbg("[~p] orber_socket:peername() or orber_socket:sockname();~n"
 	      "Failed with reason: ~p", [?LINE, What], ?DEBUG_LEVEL),
-    {"Unable to lookup peername", 0}.
+    {"Unable to lookup peer- or sockname", 0}.
 
 
 %%-----------------------------------------------------------------

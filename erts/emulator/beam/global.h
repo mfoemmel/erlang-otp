@@ -36,6 +36,9 @@
 #include "erl_sys_driver.h"
 #include "erl_debug.h"
 
+typedef struct port Port;
+#include "erl_port_task.h"
+
 #define D_EXITING           1   /* Status field vals  for dist_enntry's */
 #define D_REAL_BUSY         4
 
@@ -75,14 +78,60 @@ typedef struct line_buf {  /* Buffer used in line oriented I/O */
 			      The rest is the overflow buffer. */
 } LineBuf;
 
-typedef struct port {
+#ifdef ERTS_SMP
+typedef struct ErtsXPortsList_ ErtsXPortsList;
+#endif
+
+/*
+ * Port locking:
+ *
+ * Locking is done either driver specific or port specific. When
+ * driver specific locking is used, all instances of the driver,
+ * i.e. ports running the driver, share the same lock. When port
+ * specific locking is used each instance have its own lock.
+ *
+ * Most fields in the Port structure are protected by the lock
+ * referred to by the lock filed. I'v called it the port lock.
+ * This lock is shared between all ports running the same driver
+ * when driver specific locking is used.
+ *
+ * The 'sched' field is protected by the port tasks lock
+ * (see erl_port_tasks.c)
+ *
+ * The 'status' field is protected by a combination of the port lock,
+ * the port tasks lock, and the port table lock. It may be read if
+ * the port table lock, or the port lock is held. It may only be
+ * modified if both the port lock and the port table lock is held
+ * (with one exception; see below). When changeing status from alive
+ * to dead or vice versa, also the port task lock has to be held.
+ * This in order to guarantee that tasks are scheduled only for
+ * ports that are alive.
+ *
+ * The status field may be modified with only the port table lock
+ * held when status is changed from dead to alive. This since no
+ * threads can have any references to the port other than via the
+ * port table.
+ *
+ * /rickard
+ */
+
+struct port {
+#ifdef ERTS_USE_PORT_TASKS
+    ErtsPortTaskSched sched;
+    ErtsPortTaskHandle timeout_task;
+#endif
+#ifdef ERTS_SMP
+    erts_smp_atomic_t refc;
+    erts_smp_mtx_t *lock;
+    ErtsXPortsList *xports;
+#endif
     Eterm id;                   /* The Port id of this port */
     Eterm connected;            /* A connected process */
     Eterm caller;		/* Current caller. */
     Eterm data;			/* Data associated with port. */
     ErlHeapFragment* bp;	/* Heap fragment holding data (NULL if imm data). */
-    Uint status;		/* Status and type flags */
     ErtsLink *nlinks;
+    ErtsMonitor *monitors;      /* Only MON_ORIGIN monitors of pid's */
     Uint bytes_in;		/* Number of bytes read */
     Uint bytes_out;		/* Number of bytes written */
 #ifdef ERTS_SMP
@@ -98,20 +147,27 @@ typedef struct port {
     ProcessList *suspended;	 /* List of suspended processes. */
     LineBuf *linebuf;            /* Buffer to hold data not ready for
 				    process to get (line oriented I/O)*/
+    Uint32 status;		 /* Status and type flags */
     int control_flags;		 /* Flags for port_control()  */
     struct reg_proc *reg;
-} Port;
+    ErlDrvPDL port_data_lock;
+};
 
 /* Driver handle (wrapper for old plain handle) */
 #define ERL_DE_OK      0
 #define ERL_DE_UNLOAD  1
 #define ERL_DE_FORCE_UNLOAD 2 
 #define ERL_DE_RELOAD  3
-#define ERL_DE_PERMANENT 4
+#define ERL_DE_FORCE_RELOAD  4
+#define ERL_DE_PERMANENT 5
 
 #define ERL_DE_PROC_LOADED 0
 #define ERL_DE_PROC_AWAIT_UNLOAD 1
-#define ERL_DE_PROC_AWAIT_LOAD 2
+#define ERL_DE_PROC_AWAIT_UNLOAD_ONLY 2
+#define ERL_DE_PROC_AWAIT_LOAD 3
+
+/* Flags for process entries */
+#define ERL_DE_FL_DEREFERENCED 1
 
 /* Flags for drivers, put locking policy here /PaN */
 #define ERL_DE_FL_KILL_PORTS 1
@@ -124,9 +180,10 @@ typedef struct port {
 #define ERL_DE_LOAD_ERROR_FAILED_INIT -2
 #define ERL_DE_LOAD_ERROR_BAD_NAME -3
 #define ERL_DE_LOAD_ERROR_NAME_TO_LONG -4
-#define ERL_DE_ERROR_NO_DDLL_FUNCTIONALITY -5
-#define ERL_DE_ERROR_UNSPECIFIED -6
-#define ERL_DE_LOOKUP_ERROR_NOT_FOUND -7
+#define ERL_DE_LOAD_ERROR_INCORRECT_VERSION -5
+#define ERL_DE_ERROR_NO_DDLL_FUNCTIONALITY -6
+#define ERL_DE_ERROR_UNSPECIFIED -7
+#define ERL_DE_LOOKUP_ERROR_NOT_FOUND -8
 #define ERL_DE_DYNAMIC_ERROR_OFFSET -10
 
 typedef struct de_proc_entry {
@@ -136,6 +193,7 @@ typedef struct de_proc_entry {
 			                when we have unloaded the driver (was locked)
 			                PROC_AWAIT_LOAD == Wants to be notified when we
 			                reloaded the driver (old was locked) */
+    Uint    flags;                   /* ERL_FL_DE_DEREFERENCED when reload in progress */
     Eterm   heap[REF_THING_SIZE];    /* "ref heap" */
     struct  de_proc_entry *next;
 } DE_ProcEntry;
@@ -144,7 +202,9 @@ typedef struct {
     void         *handle;             /* Handle for DLL or SO (for dyn. drivers). */
     DE_ProcEntry *procs;              /* List of pids that have loaded this driver,
 				         or that wait for it to change state */
-    int          port_count;          /* Number of ports using the driver */
+    erts_refc_t  refc;                /* Number of ports/processes having
+					 references to the driver */
+    Uint         port_count;          /* Number of ports using the driver */
     Uint         flags;               /* ERL_DE_FL_KILL_PORTS */
     int          status;              /* ERL_DE_xxx */
     char         *full_path;          /* Full path of the driver */
@@ -162,14 +222,27 @@ typedef struct de_list {
     ErlDrvEntry    *drv;	/* Pointer to entry for driver. */
     DE_Handle      *de_hndl;	/* Handle for DLL or SO (for dynamic drivers). */
     struct de_list *next;	/* Pointer to next. */
+    struct de_list *prev;       /* Pointer to previous */
+#ifdef ERTS_SMP
+    erts_smp_mtx_t *driver_lock;
+#endif
 } DE_List;
 
 extern DE_List *driver_list;
+extern erts_smp_mtx_t erts_driver_list_lock;
 
 extern void erts_ddll_init(void);
 extern void erts_ddll_lock_driver(DE_Handle *dh, char *name);
+
+/* These are for bookkeeping */
 extern void erts_ddll_increment_port_count(DE_Handle *dh);
 extern void erts_ddll_decrement_port_count(DE_Handle *dh);
+
+/* These makes things happen, drivers may be scheduled for unload etc */
+extern void erts_ddll_reference_driver(DE_Handle *dh);
+extern void erts_ddll_reference_referenced_driver(DE_Handle *dh);
+extern void erts_ddll_dereference_driver(DE_Handle *dh);
+
 extern char *erts_ddll_error(int code);
 extern void erts_ddll_proc_dead(Process *p, Uint32 plocks);
 extern int erts_ddll_driver_ok(DE_Handle *dh);
@@ -244,14 +317,15 @@ typedef struct proc_bin {
 
 /* arrays that get malloced at startup */
 extern Port* erts_port;
+extern long erts_ports_alive;
 
 extern Uint erts_max_ports;
 extern Uint erts_port_tab_index_mask;
 /* controls warning mapping in error_logger */
 
 extern Eterm node_cookie;
-extern Uint bytes_out;		/* no bytes written out */
-extern Uint bytes_in;		/* no bytes sent into the system */
+extern erts_smp_atomic_t erts_bytes_out;	/* no bytes written out */
+extern erts_smp_atomic_t erts_bytes_in;		/* no bytes sent into the system */
 extern Uint display_items;	/* no of items to display in traces etc */
 extern Uint display_loads;	/* print info about loaded modules */
 
@@ -423,19 +497,50 @@ do {										\
 #define ESTACK_POP(s)								\
 ((ESTK_CONCAT(s,_sp) -= sizeof(Eterm)), ESTK_SUBSCRIPT(s,ESTK_CONCAT(s,_sp)))
 
-/* flags  for the port status info*/
+/* port status flags */
 
-#define FREE          0
-#define CONNECTED     (1 << 0)
-#define EXITING       (1 << 1)
-#define DISTRIBUTION  (1 << 2)
-#define BINARY_IO     (1 << 3)
-#define SOFT_EOF      (1 << 4)
-#define PORT_BUSY     (1 << 5)  /* Flow control on ports */
-#define CLOSING       (1 << 6)  /* Port is closing (no i/o accepted ) */
-#define SEND_CLOSED   (1 << 7)  /* Send a closed message when terminating */
-#define LINEBUF_IO    (1 << 8)  /* Line orinted io on port */
-#define ERTS_IMMORTAL_PORT (1 << 9)
+#define ERTS_PORT_SFLG_CONNECTED	((Uint32) (1 <<  0))
+/* Port have begun exiting */
+#define ERTS_PORT_SFLG_EXITING		((Uint32) (1 <<  1))
+/* Distribution port */
+#define ERTS_PORT_SFLG_DISTRIBUTION	((Uint32) (1 <<  2))
+#define ERTS_PORT_SFLG_BINARY_IO	((Uint32) (1 <<  3))
+#define ERTS_PORT_SFLG_SOFT_EOF		((Uint32) (1 <<  4))
+/* Flow control */
+#define ERTS_PORT_SFLG_PORT_BUSY	((Uint32) (1 <<  5))
+/* Port is closing (no i/o accepted) */
+#define ERTS_PORT_SFLG_CLOSING		((Uint32) (1 <<  6))
+/* Send a closed message when terminating */
+#define ERTS_PORT_SFLG_SEND_CLOSED	((Uint32) (1 <<  7))
+/* Line orinted io on port */  
+#define ERTS_PORT_SFLG_LINEBUF_IO	((Uint32) (1 <<  8))
+/* Immortal port (only certain system ports) */
+#define ERTS_PORT_SFLG_IMMORTAL		((Uint32) (1 <<  9))
+#define ERTS_PORT_SFLG_FREE		((Uint32) (1 << 10))
+#define ERTS_PORT_SFLG_FREE_SCHEDULED	((Uint32) (1 << 11))
+#define ERTS_PORT_SFLG_INITIALIZING	((Uint32) (1 << 12))
+/* Port uses port specific locking (opposed to driver specific locking) */
+#define ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK ((Uint32) (1 << 13))
+
+#ifdef DEBUG
+/* Only debug: make sure all flags aren't cleared unintentionally */
+#define ERTS_PORT_SFLG_PORT_DEBUG	((Uint32) (1 << 31))
+#endif
+
+/* Combinations of port status flags */ 
+#define ERTS_PORT_SFLGS_DEAD						\
+  (ERTS_PORT_SFLG_FREE							\
+   | ERTS_PORT_SFLG_FREE_SCHEDULED					\
+   | ERTS_PORT_SFLG_INITIALIZING)
+#define ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP				\
+  ERTS_PORT_SFLGS_DEAD
+#define ERTS_PORT_SFLGS_INVALID_LOOKUP					\
+  (ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP				\
+   | ERTS_PORT_SFLG_CLOSING)
+#define ERTS_PORT_SFLGS_INVALID_TRACER_LOOKUP				\
+  (ERTS_PORT_SFLGS_INVALID_LOOKUP					\
+   | ERTS_PORT_SFLG_PORT_BUSY						\
+   | ERTS_PORT_SFLG_DISTRIBUTION)
 
 /* binary.c */
 
@@ -453,6 +558,7 @@ void erts_bif_info_init(void);
 
 /* bif.c */
 Eterm erts_make_ref(Process *);
+Eterm erts_make_ref_in_buffer(Eterm buffer[REF_THING_SIZE]);
 void erts_queue_monitor_message(Process *, Uint32*, Eterm, Eterm, Eterm, Eterm);
 void erts_init_bif(void);
 
@@ -625,7 +731,7 @@ extern int erts_do_net_exits(DistEntry*);
 extern int distribution_info(int, void *);
 extern int is_node_name_atom(Eterm a);
 
-extern int erts_net_message(DistEntry*, byte*, int, byte*, int);
+extern int erts_net_message(Port *, DistEntry *, byte *, int, byte *, int);
 
 extern void init_dist(void);
 extern int stop_dist(void);
@@ -644,6 +750,24 @@ Eterm build_stacktrace(Process* c_p, Eterm exc);
 Eterm expand_error_value(Process* c_p, Uint freason, Eterm Value);
 
 /* erl_init.c */
+
+typedef struct {
+    Eterm delay_time;
+    int context_reds;
+    int input_reds;
+} ErtsModifiedTimings;
+
+extern Export *erts_delay_trap;
+extern int erts_modified_timing_level;
+extern ErtsModifiedTimings erts_modified_timings[];
+#define ERTS_USE_MODIFIED_TIMING() \
+  (erts_modified_timing_level >= 0)
+#define ERTS_MODIFIED_TIMING_DELAY \
+  (erts_modified_timings[erts_modified_timing_level].delay_time)
+#define ERTS_MODIFIED_TIMING_CONTEXT_REDS \
+  (erts_modified_timings[erts_modified_timing_level].context_reds)
+#define ERTS_MODIFIED_TIMING_INPUT_REDS \
+  (erts_modified_timings[erts_modified_timing_level].input_reds)
 
 extern Eterm erts_error_logger_warnings;
 extern int erts_initialized;
@@ -698,129 +822,341 @@ int erts_global_garbage_collect(Process*, int, Eterm*, int);
 
 /* io.c */
 
-void wake_process_later(Eterm, Process*);
+struct erl_drv_port_data_lock {
+    erts_mtx_t mtx;
+#ifdef ETHR_EXTENDED_LIB
+    ethr_atomic_t refc;
+#else
+    long refc;
+#endif
+};
+
+typedef struct {
+    char *name;
+    char *driver_name;
+} ErtsPortNames;
+
+
+void erts_add_driver_entry(ErlDrvEntry *drv, int driver_list_locked);
+void erts_wake_process_later(Port*, Process*);
 int open_driver(ErlDrvEntry*, Eterm, char*, SysDriverOpts*);
 void close_port(Eterm);
 void init_io(void);
 void cleanup_io(void);
-void erts_do_exit_port(Eterm, Eterm, Eterm);
+void erts_do_exit_port(Port *, Eterm, Eterm);
 void erts_port_command(Process *, Eterm, Port *, Eterm);
 Eterm erts_port_control(Process*, Port*, Uint, Eterm);
-int write_port(Eterm caller_id, int p, Eterm list);
+int erts_write_to_port(Eterm caller_id, Port *p, Eterm list);
 void print_port_info(int, void *, int);
 void dist_port_command(Port*, byte*, int);
-void input_ready(int, int);
-void output_ready(int, int);
-void event_ready(int, int, ErlDrvEventData);
 void driver_report_exit(int, int);
 LineBuf* allocate_linebuf(int);
-int async_ready(int ix, void* data);
+int async_ready(Port *, void*);
 Sint erts_test_next_port(int, Uint);
-int erts_driver_attach_port(ErlDrvPort ix);
-int erts_driver_detach_port(ErlDrvPort ix);
-
-/*
- * erts_smp_io_lock(), and erts_smp_io_unlock() are declared in sys.h
- * since they are needed by sys files.
- */
+ErtsPortNames *erts_get_port_names(Eterm);
+void erts_free_port_names(ErtsPortNames *);
+Uint erts_port_ioq_size(Port *pp);
+void erts_stale_drv_select(Eterm, ErlDrvEvent, int, int);
+/* use erts_port_ready_input() instead of input_ready() */
+void input_ready(int, int) __deprecated;
+/* use erts_port_ready_input() instead of output_ready() */
+void output_ready(int, int) __deprecated;
+/* use erts_port_ready_event() instead of event_ready() */
+void event_ready(int, int, ErlDrvEventData) __deprecated;
+void erts_port_ready_input(Port *, ErlDrvEvent);
+void erts_port_ready_output(Port *, ErlDrvEvent);
+void erts_port_ready_event(Port *, ErlDrvEvent, ErlDrvEventData);
+void erts_port_cleanup(Port *);
+void erts_fire_port_monitor(Port *prt, Eterm ref);
 #ifdef ERTS_SMP
-int erts_io_trylock(void);
-int erts_io_safe_lock(Process *, Uint32);
-int erts_lc_io_is_locked(void);
+void erts_smp_xports_unlock(Port *);
+#endif
+#ifdef ERTS_USE_PORT_TASKS
+void erts_port_ready_timeout(Port *p);
 #endif
 
-ERTS_GLB_INLINE int erts_smp_io_trylock(void);
-ERTS_GLB_INLINE int erts_smp_io_safe_lock(Process *p, Uint32 plocks);
-ERTS_GLB_INLINE int erts_smp_lc_io_is_locked(void);
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
+int erts_lc_is_port_locked(Port *);
+#endif
+
+extern erts_smp_spinlock_t erts_port_tab_lock;
+
+ERTS_GLB_INLINE void erts_smp_port_tab_lock(void);
+ERTS_GLB_INLINE void erts_smp_port_tab_unlock(void);
+
+ERTS_GLB_INLINE int erts_smp_port_trylock(Port *prt);
+ERTS_GLB_INLINE void erts_smp_port_lock(Port *prt);
+ERTS_GLB_INLINE void erts_smp_port_unlock(Port *prt);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
+ERTS_GLB_INLINE void
+erts_smp_port_tab_lock(void)
+{
+    erts_smp_spin_lock(&erts_port_tab_lock);
+}
+
+ERTS_GLB_INLINE void
+erts_smp_port_tab_unlock(void)
+{
+    erts_smp_spin_unlock(&erts_port_tab_lock);
+}
+
 ERTS_GLB_INLINE int
-erts_smp_io_trylock(void)
+erts_smp_port_trylock(Port *prt)
 {
 #ifdef ERTS_SMP
-    return erts_io_trylock();
-#else
+    int res;
+
+    ASSERT(erts_smp_atomic_read(&prt->refc) > 0);
+    erts_smp_atomic_inc(&prt->refc);
+    res = erts_smp_mtx_trylock(prt->lock);
+    if (res == EBUSY) {
+	erts_smp_atomic_dec(&prt->refc);
+    }
+
+    return res;
+#else /* !ERTS_SMP */
     return 0;
 #endif
 }
 
-ERTS_GLB_INLINE int
-erts_smp_io_safe_lock(Process *p, Uint32 plocks)
+ERTS_GLB_INLINE void
+erts_smp_port_lock(Port *prt)
 {
 #ifdef ERTS_SMP
-    return erts_io_safe_lock(p, plocks);
-#else
-    return 0;
+    ASSERT(erts_smp_atomic_read(&prt->refc) > 0);
+    erts_smp_atomic_inc(&prt->refc);
+    erts_smp_mtx_lock(prt->lock);
 #endif
 }
 
-ERTS_GLB_INLINE int
-erts_smp_lc_io_is_locked(void)
+ERTS_GLB_INLINE void
+erts_smp_port_unlock(Port *prt)
 {
-#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    return erts_lc_io_is_locked();
-#else
-    return 0;
+#ifdef ERTS_SMP
+    long refc;
+    refc = erts_smp_atomic_dectest(&prt->refc);
+    ASSERT(refc >= 0);
+    if (refc == 0)
+	erts_port_cleanup(prt);
+    else
+	erts_smp_mtx_unlock(prt->lock);
 #endif
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
+
+#define ERTS_INVALID_PORT_OPT(PP, ID, FLGS) \
+  (!(PP) || ((PP)->status & (FLGS)) || (PP)->id != (ID))
+
 /* port lookup */
 
-#define INVALID_PORT(port, port_id) \
-((port) == NULL || \
- (port)->status == FREE || \
- (port)->id != (port_id) || \
- ((port)->status & CLOSING))
+#define INVALID_PORT(PP, ID) \
+  ERTS_INVALID_PORT_OPT((PP), (ID), ERTS_PORT_SFLGS_INVALID_LOOKUP)
 
 /* Invalidate trace port if anything suspicious, for instance
  * that the port is a distribution port or it is busy.
  */
-#define INVALID_TRACER_PORT(port, port_id) \
-((port) == NULL || \
- (port)->id != (port_id) || \
- (port)->status == FREE || \
- ((port)->status & (EXITING|CLOSING|PORT_BUSY|DISTRIBUTION)))
+#define INVALID_TRACER_PORT(PP, ID)					\
+  ERTS_INVALID_PORT_OPT((PP), (ID), ERTS_PORT_SFLGS_INVALID_TRACER_LOOKUP)
 
-ERTS_GLB_INLINE Port*erts_id2port(Eterm id, Process *c_p, Uint32 c_p_locks);
+#ifdef ERTS_SMP
+Port *erts_de2port(DistEntry *, Process *, Uint32);
+#endif
+
+#define erts_id2port(ID, P, PL) \
+  erts_id2port_sflgs((ID), (P), (PL), ERTS_PORT_SFLGS_INVALID_LOOKUP)
+
+ERTS_GLB_INLINE Port*erts_id2port_sflgs(Eterm, Process *, Uint32, Uint32);
+ERTS_GLB_INLINE void erts_port_release(Port *);
+ERTS_GLB_INLINE Port*erts_drvport2port(ErlDrvPort);
+ERTS_GLB_INLINE Port*erts_drvportid2port(Eterm);
+ERTS_GLB_INLINE int erts_is_valid_tracer_port(Eterm id);
+ERTS_GLB_INLINE void erts_dist_op_prepare(DistEntry *, Process *, Uint32);
+ERTS_GLB_INLINE void erts_dist_op_finalize(DistEntry *);
+ERTS_GLB_INLINE void erts_port_status_bandor_set(Port *, Uint32, Uint32);
+ERTS_GLB_INLINE void erts_port_status_band_set(Port *, Uint32);
+ERTS_GLB_INLINE void erts_port_status_bor_set(Port *, Uint32);
+ERTS_GLB_INLINE void erts_port_status_set(Port *, Uint32);
+ERTS_GLB_INLINE Uint32 erts_port_status_get(Port *);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE Port*
-erts_id2port(Eterm id, Process *c_p, Uint32 c_p_locks)
+erts_id2port_sflgs(Eterm id, Process *c_p, Uint32 c_p_locks, Uint32 sflgs)
 {
+#ifdef ERTS_SMP
+    int no_proc_locks = !c_p || !c_p_locks;
+    int proc_locks_unlocked = 0;
+#endif
+    Port *prt;
     int ix;
 
     if (is_not_internal_port(id))
 	return NULL;
 
-#ifdef ERTS_SMP
-    if (!c_p || !c_p_locks)
-	erts_smp_io_lock();
+    ix = internal_port_index(id);
+
+    erts_smp_port_tab_lock();
+    if (ERTS_INVALID_PORT_OPT(&erts_port[ix], id, sflgs)) {
+	prt = NULL;
+    }
     else {
-	if (erts_smp_io_trylock() == EBUSY) {
+#ifdef ERTS_SMP
+	erts_smp_atomic_inc(&erts_port[ix].refc);
+#endif
+	prt = &erts_port[ix];
+    }
+    erts_smp_port_tab_unlock();
+
+#ifdef ERTS_SMP
+    if (prt) {
+	if (no_proc_locks)
+	    erts_smp_mtx_lock(prt->lock);
+	else if (erts_smp_mtx_trylock(prt->lock) == EBUSY) {
 	    /* Unlock process locks, and acquire locks in lock order... */
 	    erts_smp_proc_unlock(c_p, c_p_locks);
-	    erts_smp_io_lock();
-	    erts_smp_proc_lock(c_p, c_p_locks);
-	    if (ERTS_PROC_IS_EXITING(c_p))
-		goto error;
+	    proc_locks_unlocked = 1;
+	    erts_smp_mtx_lock(prt->lock);
+	}
+
+	/* The id may not have changed... */
+	ERTS_SMP_LC_ASSERT(prt->id == id);
+	/* ... but status may have... */
+	if (prt->status & sflgs) {
+	    erts_smp_port_unlock(prt); /* Also decrements refc... */
+	    prt = NULL;
 	}
     }
+
+    if (proc_locks_unlocked)
+	erts_smp_proc_lock(c_p, c_p_locks);
 #endif
 
-    ix = internal_port_index(id);
-    if (!INVALID_PORT(&erts_port[ix], id))
-	return &erts_port[ix];
-#ifdef ERTS_SMP
- error:
-    erts_smp_io_unlock();
-#endif
-    return NULL;
+    return prt;
 }
 
+ERTS_GLB_INLINE void
+erts_port_release(Port *prt)
+{
+#ifdef ERTS_SMP
+    erts_smp_port_unlock(prt);
+#else
+    if (prt->status & ERTS_PORT_SFLGS_DEAD)
+	erts_port_cleanup(prt);
+#endif
+}
+
+ERTS_GLB_INLINE Port*
+erts_drvport2port(ErlDrvPort drvport)
+{
+    int ix = (int) drvport;
+    if (ix < 0 || erts_max_ports <= ix)
+	return NULL;
+    if (erts_port[ix].status & ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP)
+	return NULL;
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(&erts_port[ix]));
+    return &erts_port[ix];
+}
+
+ERTS_GLB_INLINE Port*
+erts_drvportid2port(Eterm id)
+{
+    int ix;
+    if (is_not_internal_port(id))
+	return NULL;
+    ix = (int) internal_port_index(id);
+    if (erts_max_ports <= ix)
+	return NULL;
+    if (erts_port[ix].status & ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP)
+	return NULL;
+    if (erts_port[ix].id != id)
+	return NULL;
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(&erts_port[ix]));
+    return &erts_port[ix];
+}
+
+ERTS_GLB_INLINE int
+erts_is_valid_tracer_port(Eterm id)
+{
+    if (is_not_internal_port(id))
+	return 0;
+    else {
+	int valid;
+	int ix = internal_port_index(id);
+	erts_smp_port_tab_lock();
+	valid = !INVALID_TRACER_PORT(&erts_port[ix], id);
+	erts_smp_port_tab_unlock();
+	return valid;
+    }
+}
+
+ERTS_GLB_INLINE void
+erts_dist_op_prepare(DistEntry *dep, Process *proc, Uint32 proc_locks)
+{
+    erts_smp_dist_entry_lock(dep);
+#ifdef ERTS_SMP
+    dep->port = erts_de2port(dep, proc, proc_locks);
+#else
+    dep->port = erts_id2port(dep->cid, NULL, 0);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_dist_op_finalize(DistEntry *dep)
+{
+    if (dep->port) {
+	erts_port_release(dep->port);
+	dep->port = NULL;
+    }
+    erts_smp_dist_entry_unlock(dep);
+}
+
+ERTS_GLB_INLINE void erts_port_status_bandor_set(Port *prt,
+						 Uint32 band_status,
+						 Uint32 bor_status)
+{
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
+    erts_smp_port_tab_lock();
+    prt->status &= band_status;
+    prt->status |= bor_status;
+    erts_smp_port_tab_unlock();
+}
+
+ERTS_GLB_INLINE void erts_port_status_band_set(Port *prt, Uint32 status)
+{
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
+    erts_smp_port_tab_lock();
+    prt->status &= status;
+    erts_smp_port_tab_unlock();
+}
+
+ERTS_GLB_INLINE void erts_port_status_bor_set(Port *prt, Uint32 status)
+{
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
+    erts_smp_port_tab_lock();
+    prt->status |= status;
+    erts_smp_port_tab_unlock();
+}
+
+ERTS_GLB_INLINE void erts_port_status_set(Port *prt, Uint32 status)
+{
+    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(prt));
+    erts_smp_port_tab_lock();
+    prt->status = status;
+    erts_smp_port_tab_unlock();
+}
+
+ERTS_GLB_INLINE Uint32 erts_port_status_get(Port *prt)
+{
+    Uint32 res;
+    erts_smp_port_tab_lock();
+    res = prt->status;
+    erts_smp_port_tab_unlock();
+    return res;
+}
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
 /* erl_obsolete.c */
@@ -876,6 +1212,9 @@ Uint erts_timer_wheel_memory_size(void);
 void erts_get_now_cpu(Uint* megasec, Uint* sec, Uint* microsec);
 #endif
 
+#if defined(ERTS_TIMER_THREAD)
+void erts_get_timeval(SysTimeval *tv);
+#endif
 long erts_get_time(void);
 
 #ifdef DEBUG
@@ -1051,6 +1390,7 @@ Eterm erts_gc_bnot(Process* p, Eterm* reg, Uint live);
 
 Eterm erts_gc_length_1(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live);
+Eterm erts_gc_bitsize_1(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_abs_1(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_float_1(Process* p, Eterm* reg, Uint live);
 Eterm erts_gc_round_1(Process* p, Eterm* reg, Uint live);

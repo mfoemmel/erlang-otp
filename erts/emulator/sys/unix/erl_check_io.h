@@ -25,6 +25,8 @@
 #ifndef ERL_CHECK_IO_H__
 #define ERL_CHECK_IO_H__
 
+#include "erl_sys_driver.h"
+
 #ifdef ERTS_ENABLE_KERNEL_POLL
 
 int driver_select_kp(ErlDrvPort, ErlDrvEvent, int, int);
@@ -37,6 +39,10 @@ Eterm erts_check_io_info_kp(void *);
 Eterm erts_check_io_info_nkp(void *);
 int erts_check_io_max_files_kp(void);
 int erts_check_io_max_files_nkp(void);
+void erts_check_io_interrupt_kp(int);
+void erts_check_io_interrupt_nkp(int);
+void erts_check_io_interrupt_timed_kp(int, long);
+void erts_check_io_interrupt_timed_nkp(int, long);
 void erts_check_io_kp(int);
 void erts_check_io_nkp(int);
 void erts_init_check_io_kp(void);
@@ -44,16 +50,13 @@ void erts_init_check_io_nkp(void);
 int erts_check_io_debug_kp(void);
 int erts_check_io_debug_nkp(void);
 
-#ifdef ERTS_SMP
-void erts_wake_io_thread_kp(void);
-void erts_wake_io_thread_nkp(void);
-#endif
-
 #else /* !ERTS_ENABLE_KERNEL_POLL */
 
 Uint erts_check_io_size(void);
 Eterm erts_check_io_info(void *);
 int erts_check_io_max_files(void);
+void erts_check_io_interrupt(int);
+void erts_check_io_interrupt_timed(int, long);
 void erts_check_io(int);
 void erts_init_check_io(void);
 
@@ -61,3 +64,36 @@ void erts_init_check_io(void);
 
 #endif /*  ERL_CHECK_IO_H__ */
 
+#if !defined(ERL_CHECK_IO_C__) && !defined(ERTS_ALLOC_C__)
+#define ERL_CHECK_IO_INTERNAL__
+#endif
+
+#ifndef ERL_CHECK_IO_INTERNAL__
+#define ERL_CHECK_IO_INTERNAL__
+#include "erl_poll.h"
+#include "erl_port_task.h"
+
+/*
+ * ErtsDrvEventDataState is used by driver_event() which is almost never
+ * used. We allocate ErtsDrvEventDataState separate since we dont wan't
+ * the size of ErtsDrvEventState to increase due to driver_event()
+ * information.
+ */
+typedef struct {
+    Eterm port;
+    ErlDrvEventData data;
+    ErtsPollEvents removed_events;
+#ifdef ERTS_USE_PORT_TASKS
+    ErtsPortTaskHandle task;
+#endif
+} ErtsDrvEventDataState;
+
+typedef struct {
+    Eterm inport;
+    Eterm outport;
+#ifdef ERTS_USE_PORT_TASKS
+    ErtsPortTaskHandle intask;
+    ErtsPortTaskHandle outtask;
+#endif
+} ErtsDrvSelectDataState;
+#endif /* #ifndef ERL_CHECK_IO_INTERNAL__ */

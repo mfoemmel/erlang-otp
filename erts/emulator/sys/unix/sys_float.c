@@ -321,7 +321,7 @@ static void unmask_fpe(void)
 
 #endif
 
-#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && defined(__i386__)) || (defined(__FreeBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && defined(__i386__)) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__sun__) && defined(__x86_64__))
 #include <ucontext.h>
 
 #if defined(__linux__) && defined(__x86_64__)
@@ -335,6 +335,9 @@ typedef mcontext_t *erts_mcontext_ptr_t;
 typedef mcontext_t erts_mcontext_ptr_t;
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #define mc_pc(mc)	((mc)->mc_rip)
+typedef mcontext_t *erts_mcontext_ptr_t;
+#elif defined(__FreeBSD__) && defined(__i386__)
+#define mc_pc(mc)	((mc)->mc_eip)
 typedef mcontext_t *erts_mcontext_ptr_t;
 #elif defined(__sun__) && defined(__x86_64__)
 #define mc_pc(mc)	((mc)->gregs[REG_RIP])
@@ -439,15 +442,18 @@ static void skip_sse2_insn(erts_mcontext_ptr_t mc)
     /* Done. */
     mc_pc(mc) = (long)pc;
 }
-#endif /* (__linux__ && (__x86_64__ || __i386__)) || (__DARWIN__ && __i386__) || (__FreeBSD__ && __x86_64__) || (__sun__ && __x86_64__) */
+#endif /* (__linux__ && (__x86_64__ || __i386__)) || (__DARWIN__ && __i386__) || (__FreeBSD__ && (__x86_64__ || __i386__)) || (__sun__ && __x86_64__) */
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
 #include <asm/sigcontext.h>
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
+#elif defined(__FreeBSD__) && defined(__i386__)
+#include <sys/types.h>
+#include <machine/npx.h>
 #endif
 #include <ucontext.h>
 #include <string.h>
@@ -515,6 +521,20 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 	skip_sse2_insn(mc);
     }
     envxmm->en_sw &= ~0xFF;
+#elif defined(__FreeBSD__) && defined(__i386__)
+    mcontext_t *mc = &uc->uc_mcontext;
+    union savefpu *savefpu = (union savefpu*)&mc->mc_fpstate;
+    if (mc->mc_fpformat == _MC_FPFMT_XMM) {
+	struct envxmm *envxmm = &savefpu->sv_xmm.sv_env;
+	if (envxmm->en_mxcsr & 0x000D) {
+	    envxmm->en_mxcsr &= ~(0x003F|0x0680);
+	    skip_sse2_insn(mc);
+	}
+	envxmm->en_sw &= ~0xFF;
+    } else {
+	struct env87 *env87 = &savefpu->sv_87.sv_env;
+	env87->en_sw &= ~0xFF;
+    }
 #elif defined(__sun__) && defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     struct fpchip_state *fpstate = &mc->fpregs.fp_reg_set.fpchip_state;

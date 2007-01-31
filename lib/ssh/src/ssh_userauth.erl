@@ -41,12 +41,12 @@ auth(SSH, Service, Opts) ->
 				       Opts, ?PREFERRED_PK_ALG),
 	    case public_key(SSH, Service, User, Opts, AlgM) of
 		ok -> ok;
-		{failure, _F} ->
+		{failure, _F1} ->
 		    case public_key(SSH, Service, User, Opts,
 				    other_alg(AlgM)) of
 			ok ->
 			    ok;
-			{failure, _F} ->
+			{failure, _F2} ->
 			    passwd(SSH, Service, User, Opts);
 			Error -> Error
 		    end;
@@ -285,11 +285,10 @@ do_auth_remote(SSH, Service, Opts) ->
 					  partial_success = false}},
 		    do_auth_remote(SSH, Service, Opts)
 	    end;
-	{ssh_msg, SSH, #ssh_msg_userauth_request { user = User,
+	{ssh_msg, SSH, #ssh_msg_userauth_request { user = _User,
 						   service = Service,
 						   method = "none",
 						   data = _Data}} ->
-	    infofun(User, Opts, {authmethod, none}),
 	    SSH ! {ssh_msg, self(), #ssh_msg_userauth_failure {
 				  authentications = "publickey,password",
 				  partial_success = false}},

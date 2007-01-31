@@ -350,21 +350,6 @@ get_line1({expand, Before, Cs0, Cont,Rs}, Drv, Ls0) ->
 		  [$\^L | Cs1]
 	 end,
     get_line1(edlin:edit_line(Cs, Cont), Drv, Ls0);
-    
-%%     Rs = expand(
-%%     case down_stack(Ls0) of
-%% 	{none,_Ls} ->
-%% 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
-%% 	    get_line1(edlin:start(edlin:prompt(Cont)), Drv, Ls0);
-%% 	{Lcs,Ls} ->
-%% 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
-%% 	    {more_chars,Ncont,Nrs} = edlin:start(edlin:prompt(Cont)),
-%% 	    send_drv_reqs(Drv, Nrs),
-%% 	    get_line1(edlin:edit_line1(lists:sublist(Lcs, 1, length(Lcs)-1),
-%% 				      Ncont),
-%% 		      Drv,
-%% 		      Ls)
-%%     end;
 get_line1({undefined,_Char,Cs,Cont,Rs}, Drv, Ls) ->
     send_drv_reqs(Drv, Rs),
     send_drv(Drv, beep),
@@ -468,16 +453,14 @@ prompt_bytes({format,Format,Args}) ->
 prompt_bytes(Prompt) ->
     lists:flatten(io_lib:format("~p", [Prompt])).
 
-cast(L, binary) when list(L) ->
+cast(L, binary) when is_list(L) ->
     list_to_binary(L);
-cast(B, list) when binary(B) ->
-    binary_to_list(B);
-cast(Eof, _undefined) ->
-    Eof.
+cast(Other, _) ->
+    Other.
 
-append(B, L) when binary(B) ->
+append(B, L) when is_binary(B) ->
     binary_to_list(B)++L;
-append(L1, L2) when list(L1) ->
+append(L1, L2) when is_list(L1) ->
     L1++L2;
 append(_Eof, L) ->
     L.

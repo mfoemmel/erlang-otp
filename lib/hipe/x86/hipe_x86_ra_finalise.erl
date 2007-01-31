@@ -74,6 +74,10 @@ ra_insn(I, Map, FpMap) ->
       Src = ra_opnd(Src0, Map, FpMap),
       Dst = ra_opnd(Dst0, Map, FpMap),
       I#fp_binop{src=Src,dst=Dst};
+    #imul{src=Src0,temp=Temp0} ->
+      Src = ra_opnd(Src0, Map),
+      Temp = ra_temp(Temp0, Map),
+      I#imul{src=Src,temp=Temp};
     #jcc{} ->
       I;
     #jmp_fun{'fun'=Fun0} ->

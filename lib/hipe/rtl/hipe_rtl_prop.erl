@@ -138,21 +138,17 @@ eval(I, Env) ->
 	  Val2 = hipe_rtl:imm_value(Src2),
 	  Op = hipe_rtl:alub_op(I),
 	  Cond = hipe_rtl:alub_cond(I),
-	  case hipe_rtl_arch:eval_alub(Op, Cond, Val1, Val2) of
-	    {Val3, Bool} ->
-	      Src3 = hipe_rtl:mk_imm(Val3),
-	      Label =
-		case Bool of
-		  true -> hipe_rtl:alub_true_label(I);
-		  false -> hipe_rtl:alub_false_label(I)
-		end,
-	      Dst = hipe_rtl:alub_dst(I),
-	      {[hipe_rtl:mk_move(Dst, Src3),
-		hipe_rtl:mk_goto(Label)],
-	       bind(Env, Dst, Src3)};
-	    _ ->
-	      {I, Env}
-	  end;
+	  {Val3, Bool} = hipe_rtl_arch:eval_alub(Op, Cond, Val1, Val2),
+	  Src3 = hipe_rtl:mk_imm(Val3),
+	  Label =
+	    case Bool of
+	      true -> hipe_rtl:alub_true_label(I);
+	      false -> hipe_rtl:alub_false_label(I)
+	    end,
+	  Dst = hipe_rtl:alub_dst(I),
+	  {[hipe_rtl:mk_move(Dst, Src3),
+	    hipe_rtl:mk_goto(Label)],
+	   bind(Env, Dst, Src3)};
 	_ ->
 	  {I, Env}
       end;

@@ -36,38 +36,60 @@ build(Opts) ->
 		  ?WARN_TUPLE_AS_FUN,
 		  ?WARN_FUN_APP,
 		  ?WARN_MATCHING,
+		  ?WARN_CALLGRAPH,
 		  ?WARN_COMP,
 		  ?WARN_GUARDS,
 		  ?WARN_OLD_BEAM,
 		  ?WARN_FAILING_CALL,
 		  ?WARN_CALLGRAPH],
-  build_options(Opts, #options{legal_warnings=ordsets:from_list(DefaultWarns)}).
+  DefaultWarns1 = ordsets:from_list(DefaultWarns),
+  InitPlt=filename:join([code:lib_dir(dialyzer),"plt","dialyzer_init_plt"]),
+  DefaultOpts = #options{},
+  DefaultOpts1 = DefaultOpts#options{legal_warnings=DefaultWarns1,
+				      init_plt=InitPlt},
+  try 
+    build_options(Opts, DefaultOpts1)
+  catch
+    throw:{dialyzer_options_error, Msg} -> {error, Msg}
+  end.
 
-build_options([Term={OptionName,Value}|Rest], Options) ->
+build_options([{_OptionName, undefined}|Rest], Options) ->
+  build_options(Rest, Options);
+build_options([Term = {OptionName, Value}|Rest], Options) ->
   case OptionName of
     files ->
+      assert_filenames(Term, Value),
       build_options(Rest, Options#options{files=Value});
     files_rec ->
+      assert_filenames(Term, Value),
       build_options(Rest, Options#options{files_rec=Value});
     core_transform ->
       build_options(Rest, Options#options{core_transform=Value});
     defines ->
-      build_options(Rest, Options#options{defines=ordsets:from_list(Value)});
-    from ->
+      assert_defines(Term, Value),
+      OldVal = Options#options.defines,
+      NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
+      build_options(Rest, Options#options{defines=NewVal});
+    from when Value =:= byte_code; Value =:= src_code ->
       build_options(Rest, Options#options{from=Value});
     init_plt ->
+      assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{init_plt=Value});
     include_dirs ->
-      build_options(Rest, Options#options{include_dirs=Value});
+      assert_filenames(Term, Value),
+      OldVal = Options#options.include_dirs,
+      NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
+      build_options(Rest, Options#options{include_dirs=NewVal});
     output_file ->
+      assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_file=Value});
     output_plt ->
+      assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_plt=Value});
-    plt_libs ->
-      case Value of
-	[] -> build_options(Rest, Options);
-	_  -> build_options(Rest, Options#options{plt_libs=Value})
-      end;
+    quiet ->
+      build_options(Rest, Options#options{quiet=Value});
+    erlang_mode ->
+      build_options(Rest, Options#options{erlang_mode=true});
     supress_inline ->
       build_options(Rest, Options#options{supress_inline=Value});
     warnings ->
@@ -81,9 +103,24 @@ build_options([Term|_Rest], _Options) ->
 build_options([], Options) ->
   Options.
 
+assert_filenames(Term, [FileName|Left]) when length(FileName) >= 0 ->
+  assert_filenames(Term, Left);
+assert_filenames(_Term, []) ->
+  ok;
+assert_filenames(Term, [_|_]) ->
+  bad_option(Term).
+
+assert_defines(Term, [{Macro, _Value}|Left]) when is_atom(Macro) ->
+  assert_defines(Term, Left);
+assert_defines(_Term, []) ->
+  ok;
+assert_defines(Term, [_|_]) ->
+  bad_option(Term).
+
+
 bad_option(Term) ->
-  report("error building dialyzer options: ~P.\n",[Term,15]),
-  exit(error).
+  Msg = io_lib:format("Illegal dialyzer option: ~P.\n",[Term,15]),
+  throw({dialyzer_options_error, Msg}).
 
 
 build_warnings([Opt|Left], Warnings) ->
@@ -117,8 +154,3 @@ build_warnings([Opt|Left], Warnings) ->
   build_warnings(Left, NewWarnings);
 build_warnings([], Warnings) ->
   Warnings.
-
-report(S, As) ->
-  io:nl(),
-  io:fwrite(S, As),
-  io:nl().

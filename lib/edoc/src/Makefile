@@ -22,26 +22,18 @@ RELSYSDIR = $(RELEASE_PATH)/lib/edoc-$(VSN)
 #
 
 EBIN = ../ebin
-
-ifndef EDOC_INCLUDE
-  EDOC_INCLUDE = ../../xmerl/include
-endif
-
-ERL_COMPILE_FLAGS += -I$(EDOC_INCLUDE) +warn_unused_vars +nowarn_shadow_vars +warn_unused_import
+XMERL = ../../xmerl
+ERL_COMPILE_FLAGS += -I../include -I$(XMERL)/include +warn_unused_vars +nowarn_shadow_vars +warn_unused_import
 
 SOURCES= \
-	edoc.erl \
-	edoc_scanner.erl \
-	edoc_parser.erl \
-	edoc_layout.erl \
-	edoc_lib.erl \
-	edoc_run.erl edoc_report.erl edoc_extract.erl edoc_tags.erl \
-	edoc_macros.erl edoc_doclet.erl edoc_data.erl edoc_refs.erl \
-	edoc_types.erl edoc_wiki.erl otpsgml_layout.erl
+	edoc.erl edoc_data.erl edoc_doclet.erl edoc_extract.erl \
+	edoc_layout.erl edoc_lib.erl edoc_macros.erl edoc_parser.erl \
+	edoc_refs.erl edoc_report.erl edoc_run.erl edoc_scanner.erl \
+	edoc_tags.erl edoc_types.erl edoc_wiki.erl otpsgml_layout.erl
 
 OBJECTS=$(SOURCES:%.erl=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 
-HRL_FILES = edoc.hrl
+HRL_FILES = edoc.hrl edoc_types.hrl ../include/edoc_doclet.hrl
 
 APP_FILE= edoc.app
 APP_SRC= $(APP_FILE).src
@@ -59,20 +51,7 @@ debug opt: $(OBJECTS)
 
 all: $(OBJECTS)
 
-$(EBIN)/edoc.$(EMULATOR): edoc.hrl
-$(EBIN)/edoc_data.$(EMULATOR): edoc.hrl
-$(EBIN)/edoc_doclet.$(EMULATOR): $(EDOC_INCLUDE)/xmerl.hrl
-$(EBIN)/edoc_extract.$(EMULATOR): edoc.hrl
-$(EBIN)/edoc_layout.$(EMULATOR): $(EDOC_INCLUDE)/xmerl.hrl
-$(EBIN)/edoc_lib.$(EMULATOR): edoc.hrl $(EDOC_INCLUDE)/xmerl.hrl
-$(EBIN)/edoc_macros.$(EMULATOR): edoc.hrl edoc_types.hrl
-$(EBIN)/edoc_parse_xml.$(EMULATOR): $(EDOC_INCLUDE)/xmerl.hrl
-$(EBIN)/edoc_parser.$(EMULATOR): edoc_types.hrl
-$(EBIN)/edoc_refs.$(EMULATOR): edoc.hrl
-$(EBIN)/edoc_report.$(EMULATOR): edoc.hrl
-$(EBIN)/edoc_tags.$(EMULATOR): edoc.hrl edoc_types.hrl
-$(EBIN)/edoc_types.$(EMULATOR): edoc_types.hrl $(EDOC_INCLUDE)/xmerl.hrl
-
+$(OBJECTS): $(HRL_FILES) $(XMERL)/include/xmerl.hrl
 
 clean:
 	rm -f $(OBJECTS) edoc_parser.erl

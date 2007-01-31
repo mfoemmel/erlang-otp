@@ -35,7 +35,7 @@
 %% Internal exports.
 -export([wake_up/3]).
 
-spawn(F) when function(F) ->
+spawn(F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(proc_lib,init_p,[Parent,Ancestors,F]).
@@ -45,7 +45,7 @@ spawn(M,F,A) ->
     Ancestors = get_ancestors(),
     erlang:spawn(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
-spawn_link(F) when function(F) ->
+spawn_link(F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,F]).
@@ -55,7 +55,7 @@ spawn_link(M,F,A) ->
     Ancestors = get_ancestors(),
     erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
-spawn(Node, F) when function(F) ->
+spawn(Node, F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,F]).
@@ -65,7 +65,7 @@ spawn(Node,M,F,A) ->
     Ancestors = get_ancestors(),
     erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
-spawn_link(Node,F) when function(F) ->
+spawn_link(Node,F) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,F]).
@@ -75,26 +75,39 @@ spawn_link(Node,M,F,A) ->
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
 
-spawn_opt(F, Opts) when function(F) ->
+spawn_opt(F, Opts) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
+    check_for_monitor(Opts),
     erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,F],Opts).
 
-spawn_opt(Node, F, Opts) when function(F) ->
+spawn_opt(Node, F, Opts) when is_function(F) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
+    check_for_monitor(Opts),
     erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,F],Opts).
 
 spawn_opt(M,F,A,Opts) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
+    check_for_monitor(Opts),
     erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
 
 spawn_opt(Node,M,F,A,Opts) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
+    check_for_monitor(Opts),
     erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
 
+%% OTP-6345
+%% monitor spawn_opt option is currently not possible to use
+check_for_monitor(SpawnOpts) ->
+    case lists:member(monitor, SpawnOpts) of
+	true ->
+	    erlang:error(badarg);
+	false ->
+	    false
+    end.
 
 hibernate(M,F,A) ->
     erlang:hibernate(proc_lib, wake_up, [M,F,A]).
@@ -108,7 +121,7 @@ ensure_link(SpawnOpts) ->
     end.
 
 
-init_p(Parent,Ancestors,F) when function(F) ->
+init_p(Parent,Ancestors,F) when is_function(F) ->
     put('$ancestors',[Parent|Ancestors]),
     put('$initial_call',F),
     Result = (catch F()),
@@ -184,16 +197,16 @@ init_ack(Return) ->
 %% Fetch the initial call of a proc_lib spawned process.
 %% -----------------------------------------------------
 
-initial_call({X,Y,Z})  when integer(X), integer(Y), integer(Z) ->
+initial_call({X,Y,Z}) when is_integer(X),is_integer(Y),is_integer(Z) ->
     initial_call(c:pid(X,Y,Z));
-initial_call(Pid)  when pid(Pid) ->
+initial_call(Pid) when is_pid(Pid) ->
     case get_process_info(Pid,dictionary) of
 	{dictionary,Dict} ->
 	    init_call(Dict);
 	_ ->
 	    false
     end;
-initial_call(ProcInfo) when list(ProcInfo) ->
+initial_call(ProcInfo) when is_list(ProcInfo) ->
     case lists:keysearch(dictionary,1,ProcInfo) of
 	{value,{dictionary,Dict}} ->
 	    init_call(Dict);
@@ -205,7 +218,7 @@ init_call(Dict) ->
     case lists:keysearch('$initial_call',1,Dict) of
 	{value,{_,{M,F,A}}} ->
 	    {M,F,A};
-	{value,{_,F}} when function(F) ->
+	{value,{_,F}} when is_function(F) ->
 	    F;
 	_ ->
 	    false
@@ -222,7 +235,7 @@ translate_initial_call(DictOrPid) ->
     case initial_call(DictOrPid) of
 	{M,F,A} ->
 	    trans_init(M,F,A);
-	F when function(F) ->
+	F when is_function(F) ->
 	    F;
 	false ->
 	    {proc_lib,init_p,5}
@@ -424,7 +437,7 @@ get_my_name() ->
 
 get_ancestors() ->
     case get('$ancestors') of
-	A when list(A) -> A;
+	A when is_list(A) -> A;
 	_              -> []
     end.
 
@@ -458,7 +471,7 @@ format_own(Report) ->
 format_link(Report) ->
     format_report(Report).
 
-format_report(Rep) when list(Rep) ->
+format_report(Rep) when is_list(Rep) ->
     format_rep(Rep);
 format_report(Rep) ->
     io_lib:format("~p~n",[Rep]).

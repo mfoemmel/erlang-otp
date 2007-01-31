@@ -35,6 +35,7 @@
 #include "erl_db.h"
 #include "erl_instrument.h"
 #include "dist.h"
+#include "erl_misc_utils.h"
 #ifdef ELIB_ALLOC_IS_CLIB
 #include "elib_stat.h"
 #endif
@@ -71,6 +72,23 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef HIPE
 				     " [hipe]"
 #endif	
+#ifdef ERTS_ENABLE_KERNEL_POLL
+				     " [kernel-poll:%s]"
+#endif	
+#ifdef HEAP_FRAG_ELIM_TEST
+				     " [no-frag]"
+#endif
+#ifdef ERTS_SMP
+#if defined(ERTS_SMP_USE_IO_THREAD)
+				     " [io-thread]"
+#elif !defined(ERTS_USE_PORT_TASKS)
+				     " [io-at-once]"
+#endif
+#else /* !ERTS_SMP */
+#ifdef ERTS_USE_PORT_TASKS
+				     " [port-tasks]"
+#endif
+#endif
 #ifdef HYBRID
 				     " [hybrid heap]"
 #endif
@@ -87,12 +105,6 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #endif	
 #ifdef ERTS_ENABLE_LOCK_CHECK
 				     " [lock-checking]"
-#endif
-#ifdef ERTS_ENABLE_KERNEL_POLL
-				     " [kernel-poll:%s]"
-#endif	
-#ifdef HEAP_FRAG_ELIM_TEST
-				     " [no-frag]"
 #endif
 #ifdef PURIFY
 				     " [purify-compiled]"
@@ -276,7 +288,7 @@ erts_print_system_version(int to, void *arg, Process *c_p)
 {
     return erts_print(to, arg, erts_system_version
 #ifdef ERTS_SMP
-		      , erts_get_no_schedulers()
+		      , erts_no_of_schedulers
 #endif
 #ifdef USE_THREADS
 		      , erts_async_max_threads
@@ -1125,6 +1137,13 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	if (is_non_value(res))
 	    goto error;
 	return res;
+    } else if (BIF_ARG_1 == am_scheduler_id) {
+#ifdef ERTS_SMP
+	    ASSERT(BIF_P->scheduler_data);
+	    BIF_RET(make_small(BIF_P->scheduler_data->no));
+#else
+	    BIF_RET(make_small(1));
+#endif
     } else if (BIF_ARG_1 == am_compat_rel) {
 	ASSERT(erts_compat_rel > 0);
 	BIF_RET(make_small(erts_compat_rel));
@@ -1133,6 +1152,18 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	res = erts_memory(NULL, NULL, BIF_P, THE_NON_VALUE);
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	BIF_RET(res);
+    } else if (BIF_ARG_1 == am_multi_scheduling) {
+#ifndef ERTS_SMP
+	BIF_RET(am_disabled);
+#else
+	if (erts_no_of_schedulers == 1)
+	    BIF_RET(am_disabled);
+	else {
+	    BIF_RET(erts_is_multi_scheduling_blocked()
+		    ? am_blocked
+		    : am_enabled);
+	}
+#endif
     } else if (BIF_ARG_1 == am_allocated_areas) {
 	erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 	res = erts_allocated_areas(NULL, NULL, BIF_P);
@@ -1529,16 +1560,32 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	return am_false;
     } else {
 	/* Arguments that are unusual... */
+	DECL_AM(otp_release);	
+	DECL_AM(driver_version);
 	DECL_AM(constant_pool_support);
-	DECL_AM(scheduler_id);
 	DECL_AM(schedulers);
 	DECL_AM(smp_support);
 	DECL_AM(lock_checking);
 	DECL_AM(kernel_poll);
+	DECL_AM(port_tasks);
+	DECL_AM(io_thread);
 	DECL_AM(check_io);
+	DECL_AM(modified_timing_level);
 	DECL_AM(stop_memory_trace);
+	DECL_AM(multi_scheduling_blockers);
 
-	if (BIF_ARG_1 == AM_smp_support) {
+	if (BIF_ARG_1 == AM_otp_release) {
+	    int n = sizeof(ERLANG_OTP_RELEASE)-1;
+	    hp = HAlloc(BIF_P, 2*n);
+	    BIF_RET(buf_to_intlist(&hp, ERLANG_OTP_RELEASE, n, NIL));
+	} else if (BIF_ARG_1 == AM_driver_version) {
+	    char buf[42];
+	    int n = erts_snprintf(buf, 42, "%d.%d",
+				  ERL_DRV_EXTENDED_MAJOR_VERSION,
+				  ERL_DRV_EXTENDED_MINOR_VERSION);
+	    hp = HAlloc(BIF_P, 2*n);
+	    BIF_RET(buf_to_intlist(&hp, buf, n, NIL));
+	} else if (BIF_ARG_1 == AM_smp_support) {
 #ifdef ERTS_SMP
 	    BIF_RET(am_true);
 #else
@@ -1550,19 +1597,24 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #else
 	    BIF_RET(am_false);
 #endif
-	} else if (BIF_ARG_1 == AM_scheduler_id) {
-#ifdef ERTS_SMP
-	    ASSERT(BIF_P->scheduler_data);
-	    BIF_RET(erts_make_integer(BIF_P->scheduler_data->no, BIF_P));
-#else
-	    BIF_RET(make_small(1));
-#endif
 	} else if (BIF_ARG_1 == AM_schedulers) {
-	    res = make_small(erts_get_no_schedulers());
+	    res = make_small(erts_no_of_schedulers);
 	    BIF_RET(res);
 	} else if (BIF_ARG_1 == AM_kernel_poll) {
 #ifdef ERTS_ENABLE_KERNEL_POLL
 	    BIF_RET(erts_use_kernel_poll ? am_true : am_false);
+#else
+	    BIF_RET(am_false);
+#endif    
+	} else if (BIF_ARG_1 == AM_port_tasks) {
+#ifdef ERTS_USE_PORT_TASKS
+	    BIF_RET(am_true);
+#else
+	    BIF_RET(am_false);
+#endif    
+	} else if (BIF_ARG_1 == AM_io_thread) {
+#ifdef ERTS_SMP_USE_IO_THREAD
+	    BIF_RET(am_true);
 #else
 	    BIF_RET(am_false);
 #endif    
@@ -1574,6 +1626,19 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 #endif
 	} else if (BIF_ARG_1 == AM_check_io) {
 	    BIF_RET(erts_check_io_info(BIF_P));
+	} else if (BIF_ARG_1 == AM_multi_scheduling_blockers) {
+#ifndef ERTS_SMP
+	BIF_RET(NIL);
+#else
+	if (erts_no_of_schedulers == 1)
+	    BIF_RET(NIL);
+	else
+	    BIF_RET(erts_multi_scheduling_blockers(BIF_P));
+#endif
+	} else if (BIF_ARG_1 == AM_modified_timing_level) {
+	    BIF_RET(ERTS_USE_MODIFIED_TIMING()
+		    ? make_small(erts_modified_timing_level)
+		    : am_undefined);
 	} else if (BIF_ARG_1 == AM_stop_memory_trace) {
 	    erts_mtrace_stop();
 	    BIF_RET(am_true);
@@ -1593,7 +1658,7 @@ port_info_1(Process* p, Eterm pid)
 	am_id,
 	am_connected,
 	am_input,
-	am_output,
+	am_output
     };
     Eterm items[ASIZE(keys)];
     Eterm result = NIL;
@@ -1665,7 +1730,7 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
     if (is_internal_port(portid))
 	prt = erts_id2port(portid, BIF_P, ERTS_PROC_LOCK_MAIN);
     else if (is_atom(portid))
-	erts_whereis_name(BIF_P, ERTS_PROC_LOCK_MAIN, 0,
+	erts_whereis_name(BIF_P, ERTS_PROC_LOCK_MAIN,
 			  portid, NULL, 0, 0, &prt);
     else if (is_external_port(portid)
 	     && external_port_dist_entry(portid) == erts_this_dist_entry)
@@ -1696,6 +1761,28 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	for (i = 0; i < mic.mi_i; i++) {
 	    item = STORE_NC(&hp, &MSO(BIF_P).externals, mic.mi[i].entity); 
 	    res = CONS(hp, item, res);
+	    hp += 2;
+	}
+	DESTROY_MONITOR_INFOS(mic);
+
+    }
+    else if (item == am_monitors) {
+	MonitorInfoCollection mic;
+	int i;
+	Eterm item;
+
+	INIT_MONITOR_INFOS(mic);
+
+	erts_doforall_monitors(prt->monitors, &collect_one_origin_monitor, &mic);
+
+	hp = HAlloc(BIF_P, 3 + mic.sz);
+	res = NIL;
+	for (i = 0; i < mic.mi_i; i++) {
+	    Eterm t;
+	    item = STORE_NC(&hp, &MSO(BIF_P).externals, mic.mi[i].entity); 
+	    t = TUPLE2(hp, am_process, item);
+	    hp += 3;
+	    res = CONS(hp, t, res);
 	    hp += 2;
 	}
 	DESTROY_MONITOR_INFOS(mic);
@@ -1764,16 +1851,45 @@ BIF_RETTYPE port_info_2(BIF_ALIST_2)
 	hp = HAlloc(BIF_P, hsz);
 	res = erts_bld_uint(&hp, NULL, size);
     }
+    else if (item == am_queue_size) {
+	Uint ioq_size = erts_port_ioq_size(prt);
+	Uint hsz = 3;
+	(void) erts_bld_uint(NULL, &hsz, ioq_size);
+	hp = HAlloc(BIF_P, hsz);
+	res = erts_bld_uint(&hp, NULL, ioq_size);
+    }
     else {
-	ERTS_BIF_PREP_ERROR(ret, BIF_P, BADARG);
-	goto done;
+	DECL_AM(locking);
+	if (item == AM_locking) {
+	    hp = HAlloc(BIF_P, 3);
+#ifndef ERTS_SMP
+	    res = am_false;
+#else
+	    if (prt->status & ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK) {
+		DECL_AM(port_level);
+		ASSERT(prt->drv_ptr->driver_flags
+		       & ERL_DRV_FLAG_USE_PORT_LOCKING);
+		res = AM_port_level;
+	    }
+	    else {
+		DECL_AM(driver_level);
+		ASSERT(!(prt->drv_ptr->driver_flags
+			 & ERL_DRV_FLAG_USE_PORT_LOCKING));
+		res = AM_driver_level;
+	    }
+#endif
+	}
+	else {
+	    ERTS_BIF_PREP_ERROR(ret, BIF_P, BADARG);
+	    goto done;
+	}
     }
 
     ERTS_BIF_PREP_RET(ret, TUPLE2(hp, item, res));
 
  done:
 
-    erts_smp_io_unlock();
+    erts_smp_port_unlock(prt);
 
     return ret;
 }
@@ -1981,16 +2097,14 @@ BIF_RETTYPE statistics_1(BIF_ALIST_1)
 	Eterm r1, r2;
 	Eterm in, out;
 	Uint hsz = 9;
-	
-	erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+	Uint bytes_in = (Uint) erts_smp_atomic_read(&erts_bytes_in);
+	Uint bytes_out = (Uint) erts_smp_atomic_read(&erts_bytes_out);
 
 	(void) erts_bld_uint(NULL, &hsz, bytes_in);
 	(void) erts_bld_uint(NULL, &hsz, bytes_out);
 	hp = HAlloc(BIF_P, hsz);
 	in = erts_bld_uint(&hp, NULL, bytes_in);
 	out = erts_bld_uint(&hp, NULL, bytes_out);
-
-	erts_smp_io_unlock();
 
 	r1 = TUPLE2(hp,  am_input, in);
 	hp += 3;
@@ -2037,9 +2151,7 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	    if (BIF_ARG_1 == AM_next_pid)
 		res = erts_test_next_pid(0, 0);
 	    else {
-		erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 		res = erts_test_next_port(0, 0);
-		erts_smp_io_unlock();
 	    }
 	    if (res < 0)
 		BIF_RET(am_false);
@@ -2095,11 +2207,10 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 		else if(is_internal_port(tp[2])) {
 		    Eterm res;
 		    Port *p = erts_id2port(tp[2], BIF_P, ERTS_PROC_LOCK_MAIN);
-		    if(p)
-			res = make_link_list(BIF_P, p->nlinks, NIL);
-		    else
-			res = am_undefined;
-		    erts_smp_io_unlock();
+		    if(!p)
+			BIF_RET(am_undefined);
+		    res = make_link_list(BIF_P, p->nlinks, NIL);
+		    erts_smp_port_unlock(p);
 		    BIF_RET(res);
 		}
 		else if(is_node_name_atom(tp[2])) {
@@ -2213,11 +2324,25 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
     }
 
     if (is_atom(BIF_ARG_1)) {
+	DECL_AM(block);
 	DECL_AM(next_pid);
 	DECL_AM(next_port);
 	DECL_AM(send_fake_exit_signal);
 	
-	if (BIF_ARG_1 == AM_next_pid || BIF_ARG_1 == AM_next_port) {
+	if (BIF_ARG_1 == AM_block) {
+	    Sint ms;
+	    if (term_to_Sint(BIF_ARG_2, &ms) != 0) {
+		if (ms > 0) {
+		    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
+		    erts_smp_block_system(0);
+		    while (erts_milli_sleep((long) ms) != 0);
+		    erts_smp_release_system();
+		    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
+		}
+		BIF_RET(am_true);
+	    }
+	}
+	else if (BIF_ARG_1 == AM_next_pid || BIF_ARG_1 == AM_next_port) {
 	    /* Used by node_container_SUITE (emulator) */
 	    Uint next;
 
@@ -2227,9 +2352,7 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		if (BIF_ARG_1 == AM_next_pid)
 		    res = erts_test_next_pid(1, next);
 		else {
-		    erts_smp_io_safe_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 		    res = erts_test_next_port(1, next);
-		    erts_smp_io_unlock();
 		}
 		if (res < 0)
 		    BIF_RET(am_false);

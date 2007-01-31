@@ -87,6 +87,18 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, "\n", []);
     #comment{term=Term} ->
       io:format(Dev, "\t# ~p\n", [Term]);
+    #imul{imm_opt=ImmOpt, src=Src, temp=Temp} ->
+      io:format(Dev, "\timul ", []),
+      case ImmOpt of
+	[] -> [];
+	Imm ->
+	  pp_imm(Dev, Imm, true),
+	  io:format(Dev, ", ", [])
+      end,
+      pp_src(Dev, Src),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Temp),
+      io:format(Dev, "\n", []);
     #jcc{cc=Cc, label=Label} ->
       io:format(Dev, "\tj~s .~s_~w\n", [cc_name(Cc), Pre, Label]);
     #jmp_fun{'fun'=Fun, linkage=Linkage} ->

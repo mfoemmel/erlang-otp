@@ -86,14 +86,22 @@
 %%    <dd>Controls whether to behave as a namespace conformant XML parser,
 %%    'false' (default) to not otherwise 'true'.</dd>
 %%  <dt><code>{validation, Flag}</code></dt>
-%%    <dd>Controls whether to process as a validating XML parser,
-%%    'false' (default) to not otherwise 'true'.</dd>
+%%    <dd>Controls whether to process as a validating XML parser:
+%%    'off' (default) no validation, or validation 'dtd' by DTD or 'schema'
+%%    by XML Schema. 'false' and 'true' options are obsolete 
+%%    (i.e. they may be removed in a future release), if used 'false' 
+%%    equals 'off' and 'true' equals 'dtd'.</dd>
+%%  <dt><code>{schemaLocation, [{Namespace,Link}|...]}</code></dt>
+%%    <dd>Tells explicitly which XML Schema documents to use to validate 
+%%    the XML document. Used together with the 
+%%    <code>{validation,schema}</code> option.</dd>
 %%  <dt><code>{quiet, Flag}</code></dt>
 %%    <dd>Set to 'true' if xmerl should behave quietly and not output any 
 %%    information to standard output (default 'false').</dd>
 %%  <dt><code>{doctype_DTD, DTD}</code></dt>
 %%    <dd>Allows to specify DTD name when it isn't available in the XML
-%%    document.</dd>
+%%    document. This option has effect only together with
+%%    <code>{validation,'dtd'</code> option.</dd>
 %%  <dt><code>{xmlbase, Dir}</code></dt>
 %%    <dd>XML Base directory. If using string/1 default is current directory.
 %%    If using file/1 default is directory of given file.</dd>
@@ -368,8 +376,11 @@ initial_state([{line, L}|T], S) ->
     initial_state(T, S#xmerl_scanner{line = L});
 initial_state([{namespace_conformant, F}|T], S) when F==true; F==false ->
     initial_state(T, S#xmerl_scanner{namespace_conformant = F});
-initial_state([{validation, F}|T], S) when F==true; F==false ->
-    initial_state(T, S#xmerl_scanner{validation = F});
+initial_state([{validation, F}|T], S) 
+  when F==off; F==dtd; F==schema; F==true; F==false ->
+    initial_state(T, S#xmerl_scanner{validation = validation_value(F)});
+initial_state([{schemaLocation, SL}|T], S) when is_list(SL) ->
+    initial_state(T, S#xmerl_scanner{schemaLocation=SL});
 initial_state([{quiet, F}|T], S) when F==true; F==false ->
     initial_state(T, S#xmerl_scanner{quiet = F});
 initial_state([{doctype_DTD,DTD}|T], S) ->
@@ -388,6 +399,12 @@ initial_state([], S=#xmerl_scanner{rules = undefined}) ->
 initial_state([], S) ->
     S.
 
+validation_value(true) ->
+    dtd;
+validation_value(false) ->
+    off;
+validation_value(F) ->
+    F.
 
 %%% -----------------------------------------------------
 %%% Default modifier functions
@@ -521,10 +538,10 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
 					       col = S4#xmerl_scanner.col,
 					       data = document}, S4),
     
-    S6 = case ValidateResult of
-	     false ->
-		 cleanup(S5);
-	     true when Env == element; Env == prolog ->
+    {Res2,S6} = case validation_mode(ValidateResult) of
+	     off ->
+		 {Res,cleanup(S5)};
+	     dtd when Env == element; Env == prolog ->
 		 check_decl2(S5),
 		 case xmerl_validate:validate(S5,Res) of
 		     {'EXIT',{error,Reason}} ->
@@ -540,13 +557,23 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
 			 S5b=cleanup(S5),
 			 ?fatal({failed_validation,Reason}, S5b);
 		     _XML ->
-			 cleanup(S5)
+			 {Res,cleanup(S5)}
 		 end;
-	     true ->
-		 cleanup(S5)
+	     schema ->
+		 case schemaLocations(Res,S5) of
+		     {ok,Schemas} ->
+			 cleanup(S5),
+			 io:format("Schemas: ~p~nRes: ~p~ninhertih_options(S): ~p~n",[Schemas,Res,inherit_options(S5)]),
+			 XSDRes = xmerl_xsd:process_validate(Schemas,Res,inherit_options(S5)),
+			 handle_schema_result(XSDRes,S5);
+		     _ ->
+			 {Res,cleanup(S5)}
+		 end;
+	     _ ->
+		 {Res,cleanup(S5)}
 	 end,
 
-    {Res, Tail, S6}.
+    {Res2, Tail, S6}.
 
 
 scan_decl(Str, S=#xmerl_scanner{event_fun = Event,
@@ -677,7 +704,7 @@ scan_prolog2(Str, S0 = #xmerl_scanner{user_state=_US},Pos) ->
     %% Here we consider the DTD provided by doctype_DTD option,
     S1 =
 	case S0 of
-	    #xmerl_scanner{validation=true,doctype_DTD=DTD} when list(DTD) ->
+	    #xmerl_scanner{validation=dtd,doctype_DTD=DTD} when list(DTD) ->
 		S=fetch_DTD(undefined,S0),
 		check_decl(S),
 		S;
@@ -813,7 +840,7 @@ scan_xml_decl3("standalone" ++ T,S0 = #xmerl_scanner{event_fun = Event},
     return_xml_decl(T4, S4#xmerl_scanner{col=S4#xmerl_scanner.col+2}, Decl).
 
 
-return_xml_decl(T,S=#xmerl_scanner{hook_fun = Hook,
+return_xml_decl(T,S=#xmerl_scanner{hook_fun = _Hook,
 				   event_fun = Event},
 		Decl0 = #xmlDecl{attributes = Attrs}) ->
     ?strip1,
@@ -822,8 +849,9 @@ return_xml_decl(T,S=#xmerl_scanner{hook_fun = Hook,
 					       line = S#xmerl_scanner.line,
 					       col = S#xmerl_scanner.col,
 					       data = Decl}, S1),
-    {Ret, S3} = Hook(Decl, S2),
-    {Ret, T1, S3}.
+%%    {Ret, S3} = Hook(Decl, S2),
+%%    {Ret, T1, S3}.
+    {Decl, T1, S2}.
     
 
 scan_standalone_value("'yes'" ++T,S0)->
@@ -866,7 +894,7 @@ scan_text_decl(T,S=#xmerl_scanner{event_fun = Event}) ->
 					     data = Attr}, S5),
     scan_text_decl(T5,S6,Decl).
 
-scan_text_decl("?>"++T,S0 = #xmerl_scanner{hook_fun = Hook,
+scan_text_decl("?>"++T,S0 = #xmerl_scanner{hook_fun = _Hook,
 					   event_fun = Event}, 
 	       Decl0 = #xmlDecl{attributes = Attrs}) ->
     ?bump_col(2),
@@ -876,8 +904,9 @@ scan_text_decl("?>"++T,S0 = #xmerl_scanner{hook_fun = Hook,
 					       line = S0#xmerl_scanner.line,
 					       col = S0#xmerl_scanner.col,
 					       data = Decl}, S1),
-    {Ret, S3} = Hook(Decl, S2),
-    {Ret, T1, S3};
+%%     {Ret, S3} = Hook(Decl, S2),
+%%     {Ret, T1, S3};
+    {Decl, T1, S2};
 scan_text_decl([H|_T],S,_) ->
     ?fatal({unexpected_character_in_text_declaration,H},S).
 
@@ -1264,7 +1293,7 @@ get_file(F,S) ->
 %% Now it is necessary to check that all referenced types is declared,
 %% since it is legal to reference some xml types before they are
 %% declared.
-check_decl(#xmerl_scanner{validation=false}) ->
+check_decl(#xmerl_scanner{validation=V}) when V /= dtd ->
     ok;
 check_decl(#xmerl_scanner{rules=Tab} = S) ->
     check_notations(Tab,S),
@@ -1328,7 +1357,7 @@ check_attributes([_|T],S) ->
 check_attributes([],_S) ->
     ok.
 
-check_entities(Tab,S=#xmerl_scanner{validation=true}) ->
+check_entities(Tab,S=#xmerl_scanner{validation=dtd}) ->
     case ets:match(Tab,{{entity,'$1'},undeclared}) of
 	[[]] -> ok;
 	[] ->  ok;
@@ -1533,7 +1562,7 @@ scan_markup_decl("<!ELEMENT" ++ T,
 	case Read(elem_def, Ename, S2) of
 	    El = #xmlElement{elementdef=Decl} when Decl /= undeclared ->
 		case S2#xmerl_scanner.validation of
-		    true ->
+		    dtd ->
 			?fatal({already_defined, Ename}, S2);
 		    _ ->
 			Delete(elem_def,Ename,S2),
@@ -2256,9 +2285,9 @@ markup_delimeter(">") ->   true;
 markup_delimeter("%") ->   true;
 markup_delimeter(_) ->     false.
 
-check_att_default_val(true,[],_Ent,_S) ->
+check_att_default_val(dtd,[],_Ent,_S) ->
     ok;
-check_att_default_val(true,RevName,Ent,S) ->
+check_att_default_val(dtd,RevName,Ent,S) ->
     check_att_default_val(lists:reverse(RevName),Ent,S);
 check_att_default_val(_,_,_,_) ->
     ok.
@@ -2302,7 +2331,7 @@ check_att_default_val(Name,'ID',S=#xmerl_scanner{rules_write_fun=Write,
 check_att_default_val(_,_,_) ->
     ok.
 
-valid_Char(true,AT,C,S) when AT=='NMTOKEN';AT=='NMTOKENS' ->
+valid_Char(dtd,AT,C,S) when AT=='NMTOKEN';AT=='NMTOKENS' ->
     vc_Valid_Char(AT,C,S);
 valid_Char(_,_,[C],S) ->
     case xmerl_lib:is_char(C) of
@@ -2406,7 +2435,8 @@ scan_content([_H|T], S= #xmerl_scanner{environment={external,{entity,_}}},
     %% references.
     scan_content(T,S,Pos, Name, Attrs, Space, Lang, Parents, NS, Acc,[]);
 scan_content(T, S=#xmerl_scanner{acc_fun = F, 
-				 event_fun = Event, 
+				 event_fun = Event,
+				 hook_fun=Hook,
 				 line = _L}, 
              Pos, Name, Attrs, Space, Lang, Parents, NS, Acc,MarkupDel) ->
     Text0 = #xmlText{pos = Pos,
@@ -2416,10 +2446,11 @@ scan_content(T, S=#xmerl_scanner{acc_fun = F,
                                                data = Text0}, S),
     {Data, T1, S2} =  scan_char_data(T, S1, Space,MarkupDel),
     Text = Text0#xmlText{value = Data},
+    {Ret,S2b} = Hook(Text,S2),
     S3 = #xmerl_scanner{} = Event(#xmerl_event{event = ended,
-                                               line = S2#xmerl_scanner.line,
-                                               data = Text}, S2),
-    {NewAcc, NewPos, NewS} = case F(Text, Acc, S3) of
+                                               line = S2b#xmerl_scanner.line,
+                                               data = Ret}, S2b),
+    {NewAcc, NewPos, NewS} = case F(Ret, Acc, S3) of
 				 {Acc4, S4} ->
 				     {Acc4, Pos+1, S4};
 				 {Acc4, Pos4, S4} ->
@@ -3095,7 +3126,8 @@ vc_Valid_Char(_AT,C,S) ->
 % vc_test_attr_value({_,{enumeration,_NameL},_,_,_},_S) ->
 %     ok.
 
-vc_ID_Attribute_Default(_,#xmerl_scanner{validation=false}) ->
+vc_ID_Attribute_Default(_,#xmerl_scanner{validation=Valid}) 
+  when Valid /= dtd ->
     ok;  
 vc_ID_Attribute_Default({_,'ID',_,Def,_},_S) 
   when Def=='#IMPLIED';Def=='#REQUIRED' ->
@@ -3146,7 +3178,7 @@ vc_Entity_Name({_,'ENTITIES',DefaultVal,_,_},S) when list(DefaultVal) ->
 vc_Entity_Name({_,'ENTITIES',_,_,_},_S) ->
     ok.
 
-vc_No_Duplicate_Types(#xmerl_scanner{validation=true} = S,mixed,Acc) ->
+vc_No_Duplicate_Types(#xmerl_scanner{validation=dtd} = S,mixed,Acc) ->
     CheckDupl = 
 	fun([H|T],F) ->
 		case lists:member(H,T) of
@@ -3231,7 +3263,7 @@ wfc_Internal_parsed_entity(_,_,_) ->
 vc_Element_valid(_Name,#xmerl_scanner{environment=internal_parsed_entity}) ->
     ok;
 vc_Element_valid(Name,S=#xmerl_scanner{rules_read_fun=Read,
-				       validation=true}) ->
+				       validation=dtd}) ->
     case Read(elem_def,Name,S) of
 	#xmlElement{elementdef=undeclared} ->
 	    ?fatal({error,{error_missing_element_declaration_in_DTD,Name}},S);        undefined ->
@@ -3335,13 +3367,13 @@ scan_entity_value([], S=#xmerl_scanner{environment={external,{entity,_}}},
 		  _Delim,Acc,_,_,[]) ->
     {lists:flatten(lists:reverse(Acc)), [], S};
 scan_entity_value([], S=#xmerl_scanner{environment={external,{entity,_}},
-				       validation=true},
+				       validation=dtd},
 		  _Delim,_Acc,PEName,_,_) ->
     {{error,{failed_VC_Proper_Declaration_PE_Nesting,1,PEName}},[],S};
 scan_entity_value([],S,
 		  no_delim,Acc,_,_,[]) ->
     {lists:flatten(lists:reverse(Acc)),[],S};
-scan_entity_value([],S=#xmerl_scanner{validation=true},
+scan_entity_value([],S=#xmerl_scanner{validation=dtd},
 		  no_delim,_Acc,PEName,_,_PENesting) ->
     {{error,{failed_VC_Proper_Declaration_PE_Nesting,2,PEName}},[],S};
 scan_entity_value([], S=#xmerl_scanner{continuation_fun = F}, 
@@ -3353,7 +3385,7 @@ scan_entity_value([], S=#xmerl_scanner{continuation_fun = F},
       end,
       fun(S1) -> ?fatal(unexpected_end, S1) end,
       S);
-scan_entity_value([Delim|T], S=#xmerl_scanner{validation=true},
+scan_entity_value([Delim|T], S=#xmerl_scanner{validation=dtd},
 		  Delim,_Acc,PEName,_NS,PENesting) when length(PENesting) /= 0 ->
     {{error,{failed_VC_Proper_Declaration_PE_Nesting,3,PEName}},T,S};
 scan_entity_value([Delim|T], S0,
@@ -3542,7 +3574,7 @@ save_refed_entity_name1(Name,PEName,
 pe_push(Tok,Stack,_S) when Tok=="<!";Tok=="<?";Tok=="<!--";Tok=="<![";
 			   Tok=="[";Tok=="<";Tok=="</";Tok=="(" ->
     [Tok|Stack];
-pe_push(Tok,Stack,#xmerl_scanner{validation=true}) 
+pe_push(Tok,Stack,#xmerl_scanner{validation=dtd}) 
   when Tok==")";Tok==">";Tok=="?>";Tok=="]]>";Tok=="-->";Tok=="/>"->
     [Tok|Stack];
 pe_push(_,Stack,_S) ->
@@ -3556,23 +3588,23 @@ pe_pop("/>",["<"|Rest],_S) ->        Rest;
 pe_pop(">",["<"|Rest],_S) ->         Rest;
 pe_pop(">",["</"|Rest],_S) ->        Rest;
 pe_pop(")",["("|Rest],_S) ->         Rest;
-pe_pop(Token,_Stack,S=#xmerl_scanner{validation=true}) ->
+pe_pop(Token,_Stack,S=#xmerl_scanner{validation=dtd}) ->
     ?fatal({error,{failed_VC_Proper_Declaration_PE_Nesting,5,Token}},S);
 pe_pop(_,Rest,_) ->
     Rest.
 
-pe_nesting_token("<!"++_T,parameter,true) ->   "<!";
-pe_nesting_token("<?"++_T,parameter,true) ->   "<?";
-pe_nesting_token("<!--"++_T,parameter,true) -> "<!--";
-pe_nesting_token("<!["++_T,parameter,true) ->  "<![";
-pe_nesting_token("["++_T,parameter,true) ->    "[";
-pe_nesting_token("("++_T,parameter,true) ->    "(";
-pe_nesting_token(">"++_T,parameter,true) ->    ">";
-pe_nesting_token("?>"++_T,parameter,true) ->   "?>";
-pe_nesting_token("-->"++_T,parameter,true) ->  "-->";
-pe_nesting_token("]]>"++_T,parameter,true) ->  "]]>";
-pe_nesting_token(")"++_T,parameter,true) ->    ")";
-pe_nesting_token("/>"++_T,parameter,true) ->   "/>";
+pe_nesting_token("<!"++_T,parameter,dtd) ->   "<!";
+pe_nesting_token("<?"++_T,parameter,dtd) ->   "<?";
+pe_nesting_token("<!--"++_T,parameter,dtd) -> "<!--";
+pe_nesting_token("<!["++_T,parameter,dtd) ->  "<![";
+pe_nesting_token("["++_T,parameter,dtd) ->    "[";
+pe_nesting_token("("++_T,parameter,dtd) ->    "(";
+pe_nesting_token(">"++_T,parameter,dtd) ->    ">";
+pe_nesting_token("?>"++_T,parameter,dtd) ->   "?>";
+pe_nesting_token("-->"++_T,parameter,dtd) ->  "-->";
+pe_nesting_token("]]>"++_T,parameter,dtd) ->  "]]>";
+pe_nesting_token(")"++_T,parameter,dtd) ->    ")";
+pe_nesting_token("/>"++_T,parameter,dtd) ->   "/>";
 pe_nesting_token(_,_,_) ->                     false.
 
 predefined_entity(amp) ->  true;
@@ -3764,6 +3796,63 @@ expand_tab(Col) ->
     Rem = (Col-1) rem 8,
     _NewCol = Col + 8 - Rem.
 
+%% validation_mode(Validation)
+%% Validation = off | dtd | schema | true | false
+%% true and false are obsolete
+validation_mode(false) ->
+    off;
+validation_mode(true) ->
+    dtd;
+validation_mode(Other) ->
+    Other.
+
+
+schemaLocations(El,#xmerl_scanner{schemaLocation=[]}) ->
+    schemaLocations(El);
+schemaLocations(El,#xmerl_scanner{schemaLocation=SL}) ->
+    case SL of
+	[{_,_}|_] ->
+	    {ok,SL};
+	_ ->
+	    schemaLocations(El)
+    end.
+
+schemaLocations(#xmlElement{attributes=Atts,xmlbase=Base}) -> 
+    Pred = fun(#xmlAttribute{name=schemaLocation}) -> false;
+	      (#xmlAttribute{namespace={_,"schemaLocation"}}) -> false;
+	      (_) -> true
+	   end,
+    case lists:dropwhile(Pred,Atts) of
+	[#xmlAttribute{value=Paths}|_] ->
+	    case string:tokens(Paths," ") of
+		L when length(L) > 0 ->
+		    case length(L) rem 2 of
+			0 ->
+			    PairList = 
+				fun([],_Fun) ->
+					[];
+				   ([SLNS,SLLoc|Rest],Fun) ->
+					[{SLNS,filename:join(Base,SLLoc)}|Fun(Rest,Fun)]
+				end,
+			    {ok,PairList(L,PairList)};
+			_ ->
+			    {error,{schemaLocation_attribute,namespace_location_not_in_pair}}
+		    end;
+		_ ->
+		    {error,{missing_scheamaLocation}}
+	    end;
+	[] ->
+	    {error,{missing_scheamaLocation}}
+    end.
+
+inherit_options(S) ->
+    io:format("xsdbase: ~p~n",[S#xmerl_scanner.xmlbase]),
+    [{xsdbase,S#xmerl_scanner.xmlbase}].
+
+handle_schema_result({XSDRes=#xmlElement{},_},S5) ->
+    {XSDRes,S5};
+handle_schema_result({error,Reason},S5) ->
+    ?fatal({failed_schema_validation,Reason},S5).
 
 %%% Helper functions
 

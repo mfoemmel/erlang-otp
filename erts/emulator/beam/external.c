@@ -613,12 +613,42 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 	    byte* bytes;
 
 	    ERTS_GET_BINARY_BYTES(obj, bytes, bitoffs, bitsize);
-	    *ep++ = BINARY_EXT;
-	    j = binary_size(obj);
-	    put_int32(j, ep);
-	    ep += 4;
-	    copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j);
-	    return ep + j;
+	    if (bitsize == 0) {
+		/* Plain old byte-sized binary. */
+		*ep++ = BINARY_EXT;
+		j = binary_size(obj);
+		put_int32(j, ep);
+		ep += 4;
+		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j);
+		return ep + j;
+	    } else if (dflags & DFLAG_BIT_BINARIES) {
+		/* Bit-level binary. */
+		*ep++ = BIT_BINARY_EXT;
+		j = binary_size(obj);
+		put_int32((j+1), ep);
+		ep += 4;
+		*ep++ = bitsize;
+		ep[j] = 0;	/* Zero unused bits at end of binary */
+		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
+		return ep + j + 1;
+	    } else {
+		/*
+		 * Bit-level binary, but the receiver doesn't support it.
+		 * Build a tuple instead.
+		 */
+		*ep++ = SMALL_TUPLE_EXT;
+		*ep++ = 2;
+		*ep++ = BINARY_EXT;
+		j = binary_size(obj);
+		put_int32((j+1), ep);
+		ep += 4;
+		ep[j] = 0;	/* Zero unused bits at end of binary */
+		copy_binary_to_buffer(ep, 0, bytes, bitoffs, 8*j+bitsize);
+		ep += j+1;
+		*ep++ = SMALL_INTEGER_EXT;
+		*ep++ = bitsize;
+		return ep;
+	    }
 	}
     case EXPORT_DEF:
 	{
@@ -1180,16 +1210,11 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 	    {
 		Eterm bin;
 		ErlSubBin* sb;
-		Uint bitoffs1;
-		Uint bitoffs2;
+		Uint bitsize;
 
 		n = get_int32(ep);
-		bitoffs1 = ep[4]; /* Number of bits to skip in first byte */
-		bitoffs2 = ep[5]; /* Number of bits to skip in last byte */
-		if ((bitoffs1|bitoffs2) > 7) {
-		    return NULL;
-		}
-		ep += 6;
+		bitsize = ep[4];
+		ep += 5;
 		if (n <= ERL_ONHEAP_BIN_LIMIT) {
 		    ErlHeapBin* hb = (ErlHeapBin *) hp;
 
@@ -1216,15 +1241,15 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		    hp += PROC_BIN_SIZE;
 		}
 		ep += n;
-		if ((bitoffs1|bitoffs2) == 0) {
+		if (bitsize == 0) {
 		    *objp = bin;
 		} else {
 		    sb = (ErlSubBin *) hp;
 		    sb->thing_word = HEADER_SUB_BIN;
 		    sb->orig = bin;
-		    sb->size = n - (bitoffs1+bitoffs2+7)/8;
-		    sb->bitsize = (16 - bitoffs2 - bitoffs1)%8;
-		    sb->bitoffs = bitoffs1;
+		    sb->size = n - 1;
+		    sb->bitsize = bitsize;
+		    sb->bitoffs = 0;
 		    sb->offs = 0;
 		    *objp = make_binary(sb);
 		    hp += ERL_SUB_BIN_SIZE;
@@ -1504,7 +1529,8 @@ encode_size_struct2(Eterm obj, unsigned dflags)
     case FLOAT_DEF:
 	return 32;   /* Yes, including the tag */
     case BINARY_DEF:
-	return 1 + 4 + binary_size(obj);
+	return 1 + 4 + binary_size(obj) +
+	    5;			/* For unaligned binary */
     case FUN_DEF:
 	if ((dflags & DFLAG_NEW_FUN_TAGS) != 0) {
 	    sum = 20+1+1+4;	/* New ID + Tag */
@@ -1514,7 +1540,7 @@ encode_size_struct2(Eterm obj, unsigned dflags)
 	    goto fun_size;
 	} else {
 	    /*
-	     * Size when fun is mapped to a tuple (to avoid crasching).
+	     * Size when fun is mapped to a tuple (to avoid crashing).
 	     */
 
 	    ErlFunThing* funp = (ErlFunThing *) fun_val(obj);
@@ -1721,9 +1747,9 @@ decode_size2(byte *ep, byte* endp)
 		break;
 	    case BIT_BINARY_EXT:
 		{
-		    CHKSIZE(6);
+		    CHKSIZE(5);
 		    n = (ep[0] << 24) | (ep[1] << 16) | (ep[2] << 8) | ep[3];
-		    SKIP2(n, 6);
+		    SKIP2(n, 5);
 		    if (n <= ERL_ONHEAP_BIN_LIMIT) {
 			heap_size += heap_bin_size(n) + ERL_SUB_BIN_SIZE;
 		    } else {

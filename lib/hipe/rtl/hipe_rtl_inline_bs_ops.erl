@@ -8,8 +8,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: pergu $
-%%              $Date: 2006/09/26 08:43:49 $
-%%              $Revision: 1.61 $
+%%              $Date: 2006/11/20 21:50:05 $
+%%              $Revision: 1.62 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -375,9 +375,8 @@ gen_rtl(BsOP, Args, Dst, TrueLblName, FalseLblName, ConstTab) ->
 		 hipe_rtl:mk_goto(TrueLblName),
 		 %hipe_rtl:mk_goto(hipe_rtl:label_name(LongLbl)),
 		 LongLbl,
-		 
 		 hipe_rtl:mk_alu(ByteSize, Offset, srl, hipe_rtl:mk_imm(?BYTE_SHIFT)),
-		 hipe_tagscheme:safe_mk_sub_binary(DstVar, ByteSize, hipe_rtl:mk_imm(0),
+		 hipe_tagscheme:unsafe_mk_sub_binary(DstVar, ByteSize, hipe_rtl:mk_imm(0),
 						   BitSize, hipe_rtl:mk_imm(0), Src),
 		 hipe_rtl:mk_goto(TrueLblName)]; 
 	      [] ->
@@ -619,13 +618,13 @@ const_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
   NextLbl = hipe_rtl:mk_new_label(),
   case Size =< ?MAX_HEAP_BIN_SIZE of
     true ->
-      [hipe_rtl:mk_gctest(((Size + 3*WordSize-1) bsr Log2WordSize)),
+      [hipe_rtl:mk_gctest(((Size + 3*WordSize-1) bsr Log2WordSize)+?SUB_BIN_WORDSIZE),
        hipe_tagscheme:create_heap_binary(Base, Size, Dst),
        hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
        hipe_rtl:mk_goto(TrueLblName)];
     false ->
       ByteSize = hipe_rtl:mk_new_reg(),
-      [hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE),
+      [hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+?SUB_BIN_WORDSIZE),
        hipe_rtl:mk_move(Offset, hipe_rtl:mk_imm(0)),
        hipe_rtl:mk_move(ByteSize, hipe_rtl:mk_imm(Size)),
        hipe_rtl:mk_call([Base], bs_allocate, [ByteSize],
@@ -652,12 +651,13 @@ var_init2(Size, Dst, Base, Offset, TrueLblName, _FalseLblName) ->
    HeapLbl,
    hipe_rtl:mk_alu(Tmp, USize, add, hipe_rtl:mk_imm(3*WordSize-1)),
    hipe_rtl:mk_alu(Tmp, Tmp, srl, hipe_rtl:mk_imm(Log2WordSize)),
+   hipe_rtl:mk_alu(Tmp, Tmp, add, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE)),
    hipe_rtl:mk_gctest(Tmp),
    hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_tagscheme:create_heap_binary(Base, USize, Dst),
    hipe_rtl:mk_goto(TrueLblName),
    REFCLbl,
-   hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE),
+   hipe_rtl:mk_gctest(?PROC_BIN_WORDSIZE+?SUB_BIN_WORDSIZE),
    hipe_tagscheme:untag_fixnum(USize, Size),
    hipe_rtl:mk_call([Base], bs_allocate, [USize],
 		    hipe_rtl:label_name(NextLbl),[],not_remote),

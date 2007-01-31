@@ -89,7 +89,11 @@
 	  reply_data,          % term()
 	  threaded,            % boolean(), false
 	  strict_version,      % boolean(), true
-	  long_request_resend  % boolean(), false
+	  long_request_resend, % boolean(), false
+	  %% This flag is used when a connection is being cancelled.
+	  %% The purpuse is to avoid raise conditions with replies
+	  %% during the cancellation. 
+	  cancel               % boolean(), false
 	 }).
 
 %% N.B. Update megaco_config when a new field is added

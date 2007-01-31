@@ -151,7 +151,7 @@ pp_insn(Dev, I, Pre) ->
       pp_temp(Dev, Base2),
       io:format(Dev, "\n", []);
     #unary{unop=UnOp, dst=Dst, src=Src} ->
-      io:format(Dev, "\t~s ", [unop_name(UnOp)]),
+      io:format(Dev, "\t~w ", [unop_name(UnOp)]),
       pp_temp(Dev, Dst),
       io:format(Dev, ", ", []),
       pp_temp(Dev, Src),

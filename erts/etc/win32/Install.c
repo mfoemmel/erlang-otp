@@ -26,7 +26,8 @@ int main(int argc, char **argv)
     InitFile *ini_file;
     InitSection *ini_section;
     HANDLE module = GetModuleHandle(NULL);
-    char *binaries[] = { "erl.exe", "werl.exe", "erlc.exe", NULL };
+    char *binaries[] = { "erl.exe", "werl.exe", "erlc.exe",
+			     "dialyzer.exe", "typer.exe", NULL };
     char *scripts[] = { "start_clean.boot", "start_sasl.boot", NULL };
     char fromname[MAX_PATH];
     char toname[MAX_PATH];

@@ -64,14 +64,16 @@
 	 reconfigure_out_connection/3, reconfigure_out_connection/4, 
 	 reconfigure_in_connections/1, reconfigure_in_connection/2,
 	 activate_audit_trail/0, activate_audit_trail/1, deactivate_audit_trail/0,
-	 iiop_ssl_ip_address_local/0, ip_address_local/0]).
+	 iiop_ssl_ip_address_local/0, ip_address_local/0,
+	 close_connection/1, close_connection/2, is_system_exception/1,
+	 exception_info/1]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([nat_host/0, host/0, ip_address_variable_defined/0, start/2, init/1,
 	 get_debug_level/0, debug_level_print/3, dbg/3, error/3,
-	 exception_info/1, configure/2, configure_override/2, multi_configure/1,
+	 configure/2, configure_override/2, multi_configure/1,
 	 mjs/1, mjs/2, js/0, js/1]).
 
 %%-----------------------------------------------------------------
@@ -353,6 +355,7 @@ find_sockname_by_peername(Host, Port) ->
 %% Returns    : Connections - [{Host, Port}] | [{Host, Port, Interface}] 
 %%              Host        - string
 %%              Port        - integer
+%%              Interface   - string
 %% Raises     : 
 %% Description: List existing in- and/or out-bound connections.
 %%----------------------------------------------------------------------
@@ -365,6 +368,34 @@ iiop_connections(in) ->
     orber_iiop_net:connections();
 iiop_connections(out) ->
     orber_iiop_pm:list_existing_connections().
+
+%%----------------------------------------------------------------------
+%% Function   : close_connection
+%% Arguments  : ObjRef      - #'IOP_IOR'{} | [{Host, Port}] | 
+%%              Interface   - string (optional)
+%%              Host        - string
+%%              Port        - integer
+%% Returns    : ok | {'EXCEPTION', #'BAD_PARAM'{}}
+%% Raises     : 
+%% Description: Close outgoing connections.
+%%----------------------------------------------------------------------
+close_connection(ObjRef) ->
+    close_connection(ObjRef, 0).
+
+close_connection(ObjRef, Interface) when record(ObjRef, 'IOP_IOR') ->
+    case iop_ior:get_peerdata(ObjRef) of
+	[] ->
+	    ok;
+	PeerData ->
+	    orber_iiop_pm:close_connection(PeerData, Interface)
+    end;
+close_connection(PeerData, Interface) when list(PeerData) ->
+    orber_iiop_pm:close_connection(PeerData, Interface);
+close_connection(What, Interface) ->
+    orber:dbg("[~p] orber:close_connection(~p, ~p);~n"
+	      "Incorrect type of arguments.", 
+	      [?LINE, What, Interface], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
 %%----------------------------------------------------------------------
 %% Function   : iiop_connections_pending
@@ -697,6 +728,9 @@ info(IoDevice) ->
 exception_info(Exc) ->
     orber_exceptions:dissect(Exc).
 
+is_system_exception(Exc) ->
+    orber_exceptions:is_system_exception(Exc).
+
 %%-----------------------------------------------------------------
 %% Installation interface functions
 %%-----------------------------------------------------------------
@@ -801,20 +835,22 @@ try_starting(Type, Exit) ->
 	ok ->
 	    case partial_security() of
 		true ->
-		    error_logger:error_msg("=================== Orber =================
-*******************************************
-**** WARNING - WARNING - WARNING **********
-**** WARNING - WARNING - WARNING **********
-**** WARNING - WARNING - WARNING **********
-**** WARNING - WARNING - WARNING **********
-*******************************************
-  ORBER STARTED WITH AN INSECURE OPTION:
-
-             {flags, ~p}
-
- THIS OPTION MAY ONLY BE USED DURING TESTS
-
-===========================================~n", [?ORB_ENV_PARTIAL_SECURITY]),
+		    error_logger:warning_msg(
+		      "=================== Orber ================="
+		      "*******************************************"
+		      "**** WARNING - WARNING - WARNING **********"
+		      "**** WARNING - WARNING - WARNING **********"
+		      "**** WARNING - WARNING - WARNING **********"
+		      "**** WARNING - WARNING - WARNING **********"
+		      "*******************************************"
+		      "  ORBER STARTED WITH AN INSECURE OPTION:"
+		      " "
+		      "             {flags, ~p}"
+		      " "
+		      " THIS OPTION MAY ONLY BE USED DURING TESTS"
+		      " "
+		      "===========================================~n", 
+		      [?ORB_ENV_PARTIAL_SECURITY]),
 		    ok;
 		false ->
 		    ok

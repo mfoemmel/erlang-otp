@@ -3,7 +3,7 @@
 	EDoc overview page
 
 
-@author Richard Carlsson <richardc@csd.uu.se>
+@author Richard Carlsson <richardc@it.uu.se>
 @copyright 2003-2006 Richard Carlsson
 @version {@vsn}
 @title Welcome to EDoc
@@ -83,8 +83,8 @@ The following are the main functions for running EDoc:
           back-end for the above functions. Options are documented here.</li>
     </ul>
 
-Note that the function {@link edoc:file/2} belongs to the old
-interface (from EDoc version 0.1) and is now deprecated.
+Note that the function {@link edoc:file/2} belongs to the old, deprecated
+interface (from EDoc version 0.1), and should not be used.
 
 
 == Generic tags ==
@@ -189,12 +189,12 @@ The following tags can be used before a module declaration:
       Examples:
 ```%% @author Richard Carlsson'''
 
-```%% @author Richard Carlsson <richardc@csd.uu.se>
-   %%   [http://www.csd.uu.se/~richardc/]'''
+```%% @author Richard Carlsson <richardc@it.uu.se>
+   %%   [http://user.it.uu.se/~richardc/]'''
 
-```%% @author <richardc@csd.uu.se>'''
+```%% @author <richardc@it.uu.se>'''
 
-```%% @author richardc@csd.uu.se [http://www.csd.uu.se/~richardc/]'''
+```%% @author richardc@it.uu.se [http://user.it.uu.se/~richardc/]'''
       </dd>
 
 <dt><a name="mtag-copyright">`@copyright'</a></dt>
@@ -349,18 +349,18 @@ In several contexts (`@see' tags, `@link' macros, etc.), EDoc lets
 you refer to the generated documentation for modules, functions,
 datatypes, and applications, using a simple and compact syntax. The
 possible formats for references are:
-<table border="1">
-  <tr><th>Reference syntax</th><th>Example</th></tr>
-  <tr><td>`Module'</td><td>{@link edoc_run}, {@link erl.lang}</td></tr>
-  <tr><td>`Package.*'</td><td>{@link erl.lang.*}</td></tr>
-  <tr><td>`Function/Arity'</td><td>`file/2' *</td></tr>
-  <tr><td>`Module:Function/Arity'</td><td>{@link edoc:application/2}</td></tr>
-  <tr><td>`Type()'</td><td>`filename()' *</td></tr>
-  <tr><td>`Module:Type()'</td><td>{@link edoc:edoc_module()}</td></tr>
-  <tr><td>`//Application'</td><td>{@link //edoc}</td></tr>
-  <tr><td>`//Application/Module'</td><td>{@link //edoc/edoc_doclet}</td></tr>
-  <tr><td>`//Application/Module:Function/Arity'</td><td>{@link //edoc/edoc_run:file/1}</td></tr>
-  <tr><td>`//Application/Module:Type()'</td><td>{@link //edoc/edoc:edoc_module()}</td></tr>
+<table border="1" summary="reference syntax">
+  <tr><th>Reference syntax</th><th>Example</th><th>Scope</th></tr>
+  <tr><td>`Module'</td><td>{@link edoc_run}, `erl.lang.list'</td><td>Global</td></tr>
+  <tr><td>`Package.*'</td><td>`erl.lang.*'</td><td>Global</td></tr>
+  <tr><td>`Function/Arity'</td><td>`file/2'</td><td>Within module</td></tr>
+  <tr><td>`Module:Function/Arity'</td><td>{@link edoc:application/2}</td><td>Global</td></tr>
+  <tr><td>`Type()'</td><td>`filename()'</td><td>Within module</td></tr>
+  <tr><td>`Module:Type()'</td><td>{@link edoc:edoc_module()}</td><td>Global</td></tr>
+  <tr><td>`//Application'</td><td>{@link //edoc}</td><td>Global</td></tr>
+  <tr><td>`//Application/Module'</td><td>{@link //edoc/edoc_doclet}</td><td>Global</td></tr>
+  <tr><td>`//Application/Module:Function/Arity'</td><td>{@link //edoc/edoc_run:file/1}</td><td>Global</td></tr>
+  <tr><td>`//Application/Module:Type()'</td><td>{@link //edoc/edoc:edoc_module()}</td><td>Global</td></tr>
 </table>
 
 
@@ -383,9 +383,9 @@ found). This makes it possible to refer to e.g. a module "`fred'" as
 names that are local to the application you are currently creating -
 they will always be resolved correctly.
 
-*) Local references such as these only work properly within a
-module. In an overview-page like this (i.e., the one you are currently
-reading), no module context is available.
+Note that module-local references such as `file/2' only work properly
+within a module. In an overview-page like this (i.e., the one you are
+currently reading), no module context is available.
 
 == Notes on XHTML ==
 
@@ -670,48 +670,48 @@ following escape sequences may be used: <dl>
 The following grammar describes the form of the specifications  
 following a `@spec' tag:
 
-<table valign="top">
-  <tr valign="top">
+<table summary="specification syntax grammar">
+  <tr>
     <td><code>Spec</code></td>
     <td>::=</td>
     <td><code>FunType Def*
 	  <br/>| FunctionName FunType Def*</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>FunctionName</code></td>
     <td>::=</td>
     <td><code>Atom</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>FunType</code></td>
     <td>::=</td>
     <td><code>"(" UnionTypes? ")" "->" UnionType</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>UnionTypes</code></td>
     <td>::=</td>
     <td><code>UnionType
 	  <br/>| UnionType "," UnionTypes</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>UnionType</code></td>
     <td>::=</td>
     <td><code>UnionList
 	  <br/>| Name "::" UnionList</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>Name</code></td>
     <td>::=</td>
     <td><code>Variable</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>UnionList</code></td>
     <td>::=</td>
     <td><code>Type
 	  <br/>| Type "+" UnionList
 	  <br/>| Type "|" UnionList</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>Type</code></td>
     <td>::=</td>
     <td><code>TypeVariable
@@ -726,34 +726,34 @@ following a `@spec' tag:
 	  <br/>| ModuleName ":" TypeName "(" UnionTypes? ")"
 	  <br/>| "//" AppName "/" ModuleName ":" TypeName "(" UnionTypes? ")"</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>TypeVariable</code></td>
     <td>::=</td>
     <td><code>Variable</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>TypeName</code></td>
     <td>::=</td>
     <td><code>Atom</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>ModuleName</code></td>
     <td>::=</td>
     <td><code>Atom
           <br/>| ModuleName "." Atom</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>AppName</code></td>
     <td>::=</td>
     <td><code>Atom</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>Def</code></td>
     <td>::=</td>
     <td><code>TypeVariable "=" UnionType
 	  <br/>| TypeName "(" TypeVariables? ")" "=" UnionType</code></td>
   </tr>
-  <tr valign="top">
+  <tr>
     <td><code>TypeVariables</code></td>
     <td>::=</td>
     <td><code>TypeVariable
@@ -819,8 +819,8 @@ contain any annotations at all.
 The following grammar (see above for auxiliary definitions) describes
 the form of the definitions that may follow a `@type' tag:
 
-<table valign="top">
-  <tr valign="top">
+<table summary="type definition grammar">
+  <tr>
     <td><code>Typedef</code></td>
     <td>::=</td>
     <td><code>TypeName "(" TypeVariables? ")" Def*

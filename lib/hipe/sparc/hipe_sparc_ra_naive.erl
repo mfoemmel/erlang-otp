@@ -12,8 +12,8 @@
 %%                Added support for stack frame minimization
 %%  CVS      :
 %%              $Author: mikpe $
-%%              $Date: 2006/09/14 13:33:29 $
-%%              $Revision: 1.4 $
+%%              $Date: 2006/12/19 17:11:52 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -64,9 +64,17 @@ spill(Cfg) ->
   %% Liveness includes the global precoloured registers. Pseudos have
   %% higher numbers than precoloured registers, so this is not a problem
   %% except in really simple intermediate code which has no pseudos.
+  %% However, don't include LastPrecoloured if doing so would create
+  %% a duplicate entry, as that throws cols2tuple/2 into a loop.
+  Map0 = [{T,Pos} || {T,Pos} <- hipe_vectors:list(NewMap), Pos =/= undef],
   LastPrecoloured = hipe_sparc_registers:first_virtual() - 1,
-  {[{LastPrecoloured,{reg,hipe_sparc_registers:physical_name(LastPrecoloured)}} |
-    [{T,Pos} || {T,Pos} <- hipe_vectors:list(NewMap), Pos =/= undef]],
+  Map1 =
+    case lists:keymember(LastPrecoloured, 1, Map0) of
+      true -> Map0;
+      false ->
+        [{LastPrecoloured,{reg,hipe_sparc_registers:physical_name(LastPrecoloured)}} | Map0]
+    end,
+  {Map1,
    SpillPos}.
 
 traverse(Code, Map) ->

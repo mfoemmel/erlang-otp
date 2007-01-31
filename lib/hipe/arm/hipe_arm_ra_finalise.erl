@@ -24,11 +24,13 @@ ra_insn(I, Map) ->
     #load{} -> ra_load(I, Map);
     #ldrsb{} -> ra_ldrsb(I, Map);
     #move{} -> ra_move(I, Map);
+    #mul{} -> ra_mul(I, Map);
     #pseudo_call{} -> ra_pseudo_call(I, Map);
     #pseudo_li{} -> ra_pseudo_li(I, Map);
     #pseudo_move{} -> ra_pseudo_move(I, Map);
     #pseudo_switch{} -> ra_pseudo_switch(I, Map);
     #pseudo_tailcall{} -> ra_pseudo_tailcall(I, Map);
+    #smull{} -> ra_smull(I, Map);
     #store{} -> ra_store(I, Map);
     _ -> I
   end.
@@ -59,6 +61,12 @@ ra_move(I=#move{dst=Dst,am1=Am1}, Map) ->
   NewAm1 = ra_am1(Am1, Map),
   I#move{dst=NewDst,am1=NewAm1}.
 
+ra_mul(I=#mul{dst=Dst,src1=Src1,src2=Src2}, Map) ->
+  NewDst = ra_temp(Dst, Map),
+  NewSrc1 = ra_temp(Src1, Map),
+  NewSrc2 = ra_temp(Src2, Map),
+  I#mul{dst=NewDst,src1=NewSrc1,src2=NewSrc2}.
+
 ra_pseudo_call(I=#pseudo_call{funv=FunV}, Map) ->
   NewFunV = ra_funv(FunV, Map),
   I#pseudo_call{funv=NewFunV}.
@@ -81,6 +89,13 @@ ra_pseudo_tailcall(I=#pseudo_tailcall{funv=FunV,stkargs=StkArgs}, Map) ->
   NewFunV = ra_funv(FunV, Map),
   NewStkArgs = ra_args(StkArgs, Map),
   I#pseudo_tailcall{funv=NewFunV,stkargs=NewStkArgs}.
+
+ra_smull(I=#smull{dstlo=DstLo,dsthi=DstHi,src1=Src1,src2=Src2}, Map) ->
+  NewDstLo = ra_temp(DstLo, Map),
+  NewDstHi = ra_temp(DstHi, Map),
+  NewSrc1 = ra_temp(Src1, Map),
+  NewSrc2 = ra_temp(Src2, Map),
+  I#smull{dstlo=NewDstLo,dsthi=NewDstHi,src1=NewSrc1,src2=NewSrc2}.
 
 ra_store(I=#store{src=Src,am2=Am2}, Map) ->
   NewSrc = ra_temp(Src, Map),

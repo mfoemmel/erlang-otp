@@ -493,20 +493,6 @@ do_break(void)
     int i;
 #endif /* __WIN32__ */
 
-    /*
-     * Most functions that do_break() calls are intentionally not thread safe;
-     * therefore, make sure that all threads but this one (the io thread)
-     * are blocked before proceeding!
-     */
-
-    erts_smp_io_unlock();
-    erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
-    /*
-     * NOTE: since we allow gc we are not allowed to lock
-     *       (any) process main locks while blocking system...
-     */
-
-
     erts_printf("\n"
 		"BREAK: (a)bort (c)ontinue (p)roc info (i)nfo (l)oaded\n"
 		"       (v)ersion (k)ill (D)b-tables (d)istribution\n");
@@ -527,40 +513,40 @@ do_break(void)
 	case 'A':		/* Halt generating crash dump */
 	    erl_exit(1, "Crash dump requested by user");
 	case 'c':
-	    goto done;
+	    return;
 	case 'p':
 	    process_info(ERTS_PRINT_STDOUT, NULL);
-	    goto done;
+	    return;
 	case 'm':
-	    goto done;
+	    return;
 	case 'o':
 	    port_info(ERTS_PRINT_STDOUT, NULL);
-	    goto done;
+	    return;
 	case 'i':
 	    info(ERTS_PRINT_STDOUT, NULL);
-	    goto done;
+	    return;
 	case 'l':
 	    loaded(ERTS_PRINT_STDOUT, NULL);
-	    goto done;
+	    return;
 	case 'v':
 	    erts_printf("Erlang (%s) emulator version "
 		       ERLANG_VERSION "\n",
 		       EMULATOR);
 	    erts_printf("Compiled on " ERLANG_COMPILE_DATE "\n");
-	    goto done;
+	    return;
 	case 'd':
 	    distribution_info(ERTS_PRINT_STDOUT, NULL);
-	    goto done;
+	    return;
 	case 'D':
 	    db_info(ERTS_PRINT_STDOUT, NULL, 1);
-	    goto done; 
+	    return; 
 	case 'k':
 	    process_killer();
-	    goto done;
+	    return;
 #ifdef OPPROF
 	case 'X':
 	    dump_frequencies();
-	    goto done;
+	    return;
 	case 'x':
 	    {
 		int i;
@@ -570,22 +556,22 @@ do_break(void)
 		    }
 		}
 	    }
-	    goto done;
+	    return;
 	case 'z':
 	    {
 		int i;
 		for (i = 0; i <= HIGHEST_OP; i++)
 		    opc[i].count = 0;
 	    }
-	    goto done;
+	    return;
 #endif
 #ifdef DEBUG
 	case 't':
 	    p_slpq();
-	    goto done;
+	    return;
 	case 'b':
 	    bin_check();
-	    goto done;
+	    return;
 	case 'C':
 	    abort();
 #endif
@@ -596,10 +582,6 @@ do_break(void)
 	}
     }
 
- done:
-
-    erts_smp_release_system();
-    erts_smp_io_lock();
 }
 
 

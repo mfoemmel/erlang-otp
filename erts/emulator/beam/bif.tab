@@ -230,8 +230,6 @@ bif 'erl.lang.proc':spawn_opt/1		ebif_spawn_opt_1
 bif erlang:setnode/2
 bif erlang:setnode/3
 bif erlang:dist_exit/3
-bif erlang:dist_unlink/2
-bif erlang:dist_link/2
 
 bif erlang:port_call/2
 bif 'erl.lang.port':call/2		ebif_port_call_2

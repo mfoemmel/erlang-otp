@@ -334,13 +334,17 @@ tracer(Node,Type,Data) ->
 flush_trace_port() ->
     trace_port_control(flush).
 flush_trace_port(Node) ->
-    trace_port_control(Node,flush).
+    trace_port_control(Node, flush).
 
 trace_port_control(Operation) ->
-    trace_port_control(node(),Operation).
+    trace_port_control(node(), Operation).
 
-trace_port_control(Node,flush) ->
-    case trace_port_control(Node,$f, "") of
+trace_port_control(Node, flush) ->
+    Ref = erlang:trace_delivered(all),
+    receive
+	{trace_delivered,all,Ref} -> ok
+    end,
+    case trace_port_control(Node, $f, "") of
 	{ok, [0]} ->
 	    ok;
 	{ok, _} ->
@@ -482,11 +486,11 @@ trace_client(ip, {Host, Portno}, {Fun, Data}) when integer(Portno),
 						   function(Fun) ->
     trace_client1(ip, {Host, Portno}, {Fun, Data}).
 
-trace_client1(Type, OpenData, HandlerData) ->
+trace_client1(Type, OpenData, {Handler,HData}) ->
     case req({link_to, 
 	      spawn(
 		fun() ->
-			tc_loop(gen_reader(Type, OpenData), HandlerData)
+			tc_loop(gen_reader(Type, OpenData), Handler, HData)
 		end)}) of
 	{ok, Pid} ->
 	    Pid;
@@ -556,7 +560,12 @@ c(Parent, M, F, A, Flags) ->
     Parent ! {self(), Res}.
 
 stop() ->
-    req(stop).
+    Mref = erlang:monitor(process, dbg),
+    catch dbg ! {self(),stop},
+    receive
+	{'DOWN',Mref,_,_,_} ->
+	    ok
+    end.
 
 stop_clear() ->
     ctp(),
@@ -665,9 +674,20 @@ loop({C,T}=SurviveLinks, Table) ->
 		  end,
 	    reply(From, {ok, Tab}),
 	    loop(SurviveLinks, Tab);
-	{From,stop} ->
-	    reply(From, ok),
-	    exit(done);
+	{_From,stop} ->
+	    Nodes = [N || {N,_} <- get()],
+	    Delivered = fun() ->
+				Ref = erlang:trace_delivered(all),
+				receive
+				    {trace_delivered,all,Ref} -> ok
+				end
+			end,
+	    catch rpc:multicall(Nodes, erlang, apply, [Delivered,[]]),
+	    Ref = erlang:trace_delivered(all),
+	    receive
+		{trace_delivered,all,Ref} ->
+		    exit(done)
+	    end;
 	{From, {link_to, Pid}} -> 	    
 	    case (catch link(Pid)) of
 		{'EXIT', Reason} ->
@@ -745,22 +765,26 @@ reply(Pid, Reply) ->
 %%% A process-based tracer.
 
 start_tracer_process(Handler, HandlerData) ->
-    spawn_link(fun() -> tracer_init(Handler,HandlerData) end).
+    spawn_opt(fun() -> tracer_init(Handler, HandlerData) end,
+	      [link,{priority,max}]).
+    
 
 tracer_init(Handler, HandlerData) ->
     process_flag(trap_exit, true),
-    process_flag(priority, max),
     tracer_loop(Handler, HandlerData).
 
 tracer_loop(Handler, Hdata) ->
     receive
-	{From,stop} ->
-	    From ! {stop,Hdata};
-	{'EXIT',_Pid,_Reason} ->
-	    ok;
-	Trace ->
-	    NewData = recv_all_traces(Trace, Handler, Hdata),
-	    tracer_loop(Handler, NewData)
+	Msg ->
+	    %% Don't match in receive to avoid giving EXIT message higher
+	    %% priority than the trace messages.
+	    case Msg of
+		{'EXIT',_Pid,_Reason} ->
+		    ok;
+		Trace ->
+		    NewData = recv_all_traces(Trace, Handler, Hdata),
+		    tracer_loop(Handler, NewData)
+	    end
     end.
     
 recv_all_traces(Trace, Handler, Hdata) ->
@@ -1152,15 +1176,16 @@ check(X) -> X.
 %% If it is a fun, it is evaluated for rest of the lazy list.
 %% A list head is considered to be a trace term. End of list 
 %% is interpreted as end of trace.
-tc_loop(Reader, {Handler, HData}) when function(Reader) ->
-    tc_loop(Reader(), {Handler, HData});
-tc_loop([], {Handler, HData}) ->
+
+tc_loop([Term|Tail], Handler, HData0) ->
+    HData = Handler(Term, HData0),
+    tc_loop(Tail, Handler, HData);
+tc_loop([], Handler, HData) ->
     Handler(end_of_trace, HData),
     exit(normal);
-tc_loop([Term | Tail], {Handler, HData}) ->
-    NewHData = Handler(Term, HData),
-    tc_loop(Tail, {Handler, NewHData});
-tc_loop(Other, {_Handler, _HData}) ->
+tc_loop(Reader, Handler, HData) when is_function(Reader) ->
+    tc_loop(Reader(), Handler, HData);
+tc_loop(Other, _Handler, _HData) ->
     io:format("~p:tc_loop ~p~n", [?MODULE, Other]),
     exit({unknown_term_from_reader, Other}).
 

@@ -234,6 +234,60 @@ GS now requires Tcl/Tk 8.3. It will be searched for when starting GS.
 Using HiPE
 ----------
 
+HiPE supports the following system configurations:
+
+x86:
+	All 32-bit and 64-bit mode processors should work.
+
+	The following systems are supported:
+
+	Linux:
+		Fedora Core is supported.
+		Both 32-bit and 64-bit modes are supported.
+
+		NPTL glibc is strongly preferred, or a LinuxThreads
+		glibc configured for "floating stacks". Old non-floating
+		stacks glibcs have a fundamental problem that makes HiPE
+		support	and threads support mutually exclusive.
+	Solaris:
+		Solaris 10 (32-bit and 64-bit) and 9 (32-bit) are
+		supported.
+
+		The build requires a version of the GNU C compiler (gcc)
+		that has been configured to use the GNU assembler (gas).
+		Sun's x86 assembler is emphatically /not/ supported.
+	FreeBSD:
+		FreeBSD 6.1 and 6.2 in 32-bit and 64-bit modes should work.
+
+PowerPC:
+	All 32-bit 6xx/7xx(G3)/74xx(G4) processors should work.
+	32-bit mode on 970 (G5) and POWER5 is untested and may need
+	compiler changes (to avoid using the "mcrxr" instruction).
+
+	Linux (Yellow Dog) and Mac OSX 10.3.9 are supported.
+
+SPARC:
+	All UltraSPARC processors running 32-bit user code should work.
+
+	Solaris 9 and Linux (Aurora) are supported.
+
+	On Solaris the build requires a gcc that has been configured
+	to use Sun's assembler and linker. Using the GNU assembler but
+	Sun's linker has been known to cause problems.
+ARM:
+	Big-endian mode on ARMv5TE (i.e., XScale) processors should work.
+
+	Linux is supported.
+
+HiPE is automatically enabled on the following systems:
+	x86 in 32-bit mode: Linux, Solaris, FreeBSD
+	x86 in 64-bit mode: Linux, Solaris, FreeBSD
+	PowerPC: Linux, MacOSX
+	SPARC: Linux, Solaris
+	ARM: Linux
+On other supported systems you need to "./configure --enable-hipe".
+
+
 If you are running on a platform supporting HiPE and if
 you have not disabled HiPE, you can compile a module into
 native code like this from the Erlang shell:

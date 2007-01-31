@@ -21,8 +21,6 @@
 
 -export([type/0, version/0, cmd/1, find_executable/1, find_executable/2]).
 
--export([unix_cmd1/2]).
-
 -include("file.hrl").
 
 type() ->
@@ -145,26 +143,20 @@ cmd(Cmd) ->
     end.
 
 unix_cmd(Cmd) ->
-    Pid = spawn_link(?MODULE, unix_cmd1, [Cmd, self()]),
+    Tag = make_ref(),
+    {Pid,Mref} = erlang:spawn_monitor(
+		   fun() ->
+			   process_flag(trap_exit, true),
+			   Port = start_port(),
+			   erlang:port_command(Port, mk_cmd(Cmd)),
+			   exit({Tag,unix_get_data(Port)})
+		   end),
     receive
-	{Pid, Result} ->
-	    receive
-		{'EXIT', Pid, normal} ->
-		    ok
-	    after 0 ->
-		    ok
-	    end,
+	{'DOWN',Mref,_,Pid,{Tag,Result}} ->
 	    Result;
-	{'EXIT', Pid, Reason} ->
+	{'DOWN',Mref,_,Pid,Reason} ->
 	    exit(Reason)
     end.
-
-unix_cmd1(Cmd, Parent) ->
-    process_flag(trap_exit,true),
-    Port = start_port(),
-    {ok, C} = mk_cmd(Cmd),
-    Port ! {self(), {command, C}},
-    Parent ! {self(), unix_get_data(Port)}.
 
 %% The -s flag implies that only the positional parameters are set,
 %% and the commands are read from standard input. We set the 
@@ -224,8 +216,7 @@ mk_cmd(Cmd) when is_atom(Cmd) ->		% backward comp.
 mk_cmd(Cmd) ->
     %% We insert a new line after the command, in case the command
     %% contains a comment character.
-    {ok, io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n", [Cmd])}.
-
+    io_lib:format("(~s\n) </dev/null; echo  \"\^D\"\n", [Cmd]).
 
 
 validate(Atom) when is_atom(Atom) ->

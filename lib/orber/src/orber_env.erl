@@ -39,8 +39,8 @@
 	 multi_configure/1, get_env/1, set_env/2, get_keys/0, env/1,
 	 info/0, info/1]).
 
--export([iiop_acl/0, iiop_port/0, nat_iiop_port/0, iiop_out_ports/0,
-	 domain/0, ip_address_variable_defined/0, nat_host/0, host/0,
+-export([iiop_acl/0, iiop_port/0, nat_iiop_port/0, nat_iiop_port/1, iiop_out_ports/0,
+	 domain/0, ip_address_variable_defined/0, nat_host/0, nat_host/1, host/0,
 	 ip_address/0, ip_address/1, giop_version/0, iiop_timeout/0,
 	 iiop_connection_timeout/0, iiop_setup_connection_timeout/0,
 	 iiop_in_connection_timeout/0, iiop_max_fragments/0, iiop_max_in_requests/0,
@@ -48,7 +48,7 @@
 	 get_ORBInitRef/0, get_ORBDefaultInitRef/0, get_interceptors/0,
 	 get_local_interceptors/0, get_cached_interceptors/0,
 	 set_interceptors/1, is_lightweight/0, get_lightweight_nodes/0, secure/0, 
-	 iiop_ssl_backlog/0, iiop_ssl_port/0, nat_iiop_ssl_port/0, 
+	 iiop_ssl_backlog/0, iiop_ssl_port/0, nat_iiop_ssl_port/0, nat_iiop_ssl_port/1,
 	 ssl_server_certfile/0, ssl_client_certfile/0, set_ssl_client_certfile/1,
 	 ssl_server_verify/0, ssl_client_verify/0, set_ssl_client_verify/1,
 	 ssl_server_depth/0, ssl_client_depth/0, set_ssl_client_depth/1,
@@ -60,7 +60,9 @@
 	 exclude_codeset_ctx/0, exclude_codeset_component/0, partial_security/0,
 	 use_CSIv2/0, use_FT/0, ip_version/0, light_ifr/0, bidir_context/0,
 	 get_debug_level/0, getaddrstr/2, addr2str/1, iiop_packet_size/0,
-	 iiop_ssl_ip_address_local/0, ip_address_local/0]).
+	 iiop_ssl_ip_address_local/0, ip_address_local/0, iiop_in_keepalive/0, 
+	 iiop_out_keepalive/0, iiop_ssl_in_keepalive/0, iiop_ssl_out_keepalive/0,
+	 iiop_ssl_accept_timeout/0]).
 
 
 %%-----------------------------------------------------------------
@@ -93,7 +95,8 @@
 	 ssl_client_password, ssl_server_password, ssl_client_keyfile, 
 	 ssl_server_keyfile, ssl_client_ciphers, ssl_server_ciphers, 
 	 ssl_client_cachetimeout, ssl_server_cachetimeout, orber_debug_level,
-	 iiop_packet_size]).
+	 iiop_packet_size, iiop_in_keepalive, iiop_out_keepalive,
+	 iiop_ssl_in_keepalive, iiop_ssl_out_keepalive, iiop_ssl_accept_timeout]).
 
 %% The 'flags' parameter must be first in the list.
 %-define(ENV_KEYS,
@@ -231,8 +234,10 @@ create_main_info() ->
 		   "IIOP out ports................: ~p~n"
 		   "IIOP out connections..........: ~p~n"
 		   "IIOP out connections (pending): ~p~n"
+		   "IIOP out keepalive............: ~p~n"
 		   "IIOP in connections...........: ~p~n"
 		   "IIOP in connection timeout....: ~p msec~n"
+		   "IIOP in keepalive.............: ~p~n"
 		   "IIOP max fragments............: ~p~n"
 		   "IIOP max in requests..........: ~p~n"
 		   "IIOP max in connections.......: ~p~n"
@@ -251,7 +256,8 @@ create_main_info() ->
 		    iiop_timeout(), iiop_connection_timeout(), 
 		    iiop_setup_connection_timeout(), iiop_out_ports(), 
 		    orber:iiop_connections(out), orber:iiop_connections_pending(), 
-		    orber:iiop_connections(in), iiop_in_connection_timeout(), 
+		    iiop_out_keepalive(), orber:iiop_connections(in), 
+		    iiop_in_connection_timeout(), iiop_in_keepalive(), 
 		    iiop_max_fragments(), iiop_max_in_requests(), 
 		    iiop_max_in_connections(), iiop_backlog(), iiop_acl(),
 		    iiop_packet_size(), objectkeys_gc_time(), get_interceptors(), 
@@ -280,8 +286,11 @@ create_security_info(no, Info) ->
 create_security_info(ssl, Info) ->
     lists:flatten([Info, 
 		   io_lib:format("ORB security..................: ssl~n"
+%				 "SSL IIOP in keepalive.........: ~p~n"
+%				 "SSL IIOP out keepalive........: ~p~n"
 				 "SSL IIOP port number..........: ~p~n"
 				 "SSL IIOP NAT port number......: ~p~n"
+				 "SSL IIOP accept timeout.......: ~p~n"
 				 "SSL IIOP backlog..............: ~p~n"
 				 "SSL IIOP Local Interface......: ~p~n"
 				 "SSL server certfile...........: ~p~n"
@@ -301,7 +310,9 @@ create_security_info(ssl, Info) ->
 				 "SSL client ciphers............: ~p~n"
 				 "SSL client cachetimeout.......: ~p~n"
 				 "=========================================~n",
-				 [iiop_ssl_port(), nat_iiop_ssl_port(), 
+				 [iiop_ssl_port(), 
+%				  iiop_ssl_in_keepalive(), iiop_ssl_out_keepalive(),
+				  nat_iiop_ssl_port(), iiop_ssl_accept_timeout(), 
 				  iiop_ssl_backlog(), iiop_ssl_ip_address_local(),
 				  ssl_server_certfile(), ssl_server_verify(),
 				  ssl_server_depth(), ssl_server_cacertfile(), 
@@ -349,7 +360,19 @@ nat_iiop_port() ->
     case application:get_env(orber, nat_iiop_port) of
 	{ok, Port} when integer(Port), Port > 0 ->
 	    Port;
-	_ ->
+	{ok, {local, Default, _NATList}} ->
+	    Default;
+	_ -> 
+	    iiop_port()
+    end.
+
+nat_iiop_port(LocalPort) ->
+    case application:get_env(orber, nat_iiop_port) of
+	{ok, Port} when integer(Port), Port > 0 ->
+	    Port;
+	{ok, {local, Default, NATList}} ->
+	    orber_tb:keysearch(LocalPort, NATList, Default);
+	_ -> 
 	    iiop_port()
     end.
 
@@ -390,6 +413,20 @@ nat_host() ->
 	    [I];
 	{ok,{multiple, [I|_] = IList}} when list(I) ->
 	    IList;
+	{ok,{local, Default, _NATList}} ->
+	    [Default];
+	_ ->
+	    host()
+    end.
+
+nat_host([Host]) ->
+    case application:get_env(orber, nat_ip_address) of
+	{ok,I} when list(I) ->
+	    [I];
+	{ok,{multiple, [I|_] = IList}} when list(I) ->
+	    IList;
+	{ok,{local, Default, NATList}} ->
+	    [orber_tb:keysearch(Host, NATList, Default)]; 
 	_ ->
 	    host()
     end.
@@ -577,6 +614,23 @@ iiop_backlog() ->
 	_ ->
 	    5
     end.
+
+iiop_in_keepalive() ->
+    case application:get_env(orber, iiop_in_keepalive) of
+	{ok, true} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+iiop_out_keepalive() ->
+    case application:get_env(orber, iiop_out_keepalive) of
+	{ok, true} ->
+	    true;
+	_ ->
+	    false
+    end.
+ 
 
 
 get_flags() ->
@@ -771,15 +825,39 @@ iiop_ssl_backlog() ->
 	    5
     end.
 
+iiop_ssl_in_keepalive() ->
+    case application:get_env(orber, iiop_ssl_in_keepalive) of
+	{ok, true} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+iiop_ssl_out_keepalive() ->
+    case application:get_env(orber, iiop_ssl_out_keepalive) of
+	{ok, true} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+iiop_ssl_accept_timeout() ->
+    case application:get_env(orber, iiop_ssl_accept_timeout) of
+	{ok, N} when integer(N) ->
+	    N * 1000;
+	_  -> 
+	    infinity
+    end.
+ 
 iiop_ssl_port() ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
-	        case application:get_env(orber, iiop_ssl_port) of
-		    {ok, Port} when integer(Port) ->
-			Port;
-		    _ ->
-			4002
-		end;
+	    case application:get_env(orber, iiop_ssl_port) of
+		{ok, Port} when integer(Port) ->
+		    Port;
+		_ ->
+		    4002
+	    end;
 	_ ->
 	    -1
     end.
@@ -787,12 +865,29 @@ iiop_ssl_port() ->
 nat_iiop_ssl_port() ->
     case application:get_env(orber, secure) of
 	{ok, ssl} ->
-	        case application:get_env(orber, nat_iiop_ssl_port) of
-		    {ok, Port} when integer(Port), Port > 0 ->
-			Port;
-		    _ ->
-			iiop_ssl_port()
-		end;
+	    case application:get_env(orber, nat_iiop_ssl_port) of
+		{ok, Port} when integer(Port), Port > 0 ->
+		    Port;
+		{ok, {local, Default, _NATList}} ->
+		    Default;
+		_ ->
+		    iiop_ssl_port()
+	    end;
+	_ ->
+	    -1
+    end.
+
+nat_iiop_ssl_port(LocalPort) ->
+    case application:get_env(orber, secure) of
+	{ok, ssl} ->
+	    case application:get_env(orber, nat_iiop_ssl_port) of
+		{ok, Port} when integer(Port), Port > 0 ->
+		    Port;
+		{ok, {local, Default, NATList}} ->
+		    orber_tb:keysearch(LocalPort, NATList, Default);
+		_ ->
+		    iiop_ssl_port()
+	    end;
 	_ ->
 	    -1
     end.
@@ -1024,7 +1119,7 @@ multi_configure(KeyValueList) ->
 multi_configure_helper([], _) ->
     ok;
 multi_configure_helper([{Key, Value}|T], Status) ->
-    orber_env:configure(Key, Value, Status),
+    configure(Key, Value, Status),
     multi_configure_helper(T, Status);
 multi_configure_helper([What|_], _) ->
     ?EFORMAT("Incorrect configuration parameters supplied: ~p", [What]).
@@ -1055,6 +1150,16 @@ configure(iiop_timeout, Value, Status) when integer(Value), Value =< 1000000 ->
 %% Backlog
 configure(iiop_backlog, Value, Status) when integer(Value), Value >= 0 ->
     do_configure(iiop_backlog, Value, Status);
+%% configure 'iiop_in_keepalive' will only have effect on new connections.
+configure(iiop_in_keepalive, true, Status) ->
+    do_configure(iiop_in_keepalive, true, Status);
+configure(iiop_in_keepalive, false, Status) ->
+    do_configure(iiop_in_keepalive, false, Status);
+%% configure 'iiop_out_keepalive' will only have effect on new connections.
+configure(iiop_out_keepalive, true, Status) ->
+    do_configure(iiop_out_keepalive, true, Status);
+configure(iiop_out_keepalive, false, Status) ->
+    do_configure(iiop_out_keepalive, false, Status);
 %% configure 'iiop_connection_timout' will only have effect on new connections.
 configure(iiop_connection_timeout, infinity, Status) ->
     do_configure(iiop_connection_timeout, infinity, Status);
@@ -1101,6 +1206,10 @@ configure(iiop_port, Value, Status) when integer(Value) ->
 %% Set the NAT listen port
 configure(nat_iiop_port, Value, Status) when integer(Value), Value > 0 ->
     do_safe_configure(nat_iiop_port, Value, Status);
+configure(nat_iiop_port, {local, Value1, Value2}, Status) when integer(Value1), 
+							       Value1 > 0,
+							       list(Value2) ->
+    do_safe_configure(nat_iiop_port, {local, Value1, Value2}, Status);
 %% Set Maximum Packet Size
 configure(iiop_packet_size, Max, Status) when integer(Max), Max > 0 ->
     do_safe_configure(iiop_packet_size, Max, Status);
@@ -1125,6 +1234,9 @@ configure(nat_ip_address, Value, Status) when list(Value) ->
     do_safe_configure(nat_ip_address, Value, Status);
 configure(nat_ip_address, {multiple, Value}, Status) when list(Value) ->
     do_safe_configure(nat_ip_address, {multiple, Value}, Status);
+configure(nat_ip_address, {local, Value1, Value2}, Status) when list(Value1),
+								list(Value2) ->
+    do_safe_configure(nat_ip_address, {local, Value1, Value2}, Status);
 %% Set the range of ports we may use on this machine when connecting to a server.
 configure(iiop_out_ports, {Min, Max}, Status) when integer(Min), integer(Max) ->
     do_safe_configure(iiop_out_ports, {Min, Max}, Status);
@@ -1139,6 +1251,20 @@ configure(iiop_acl, Value, Status) when list(Value) ->
     do_safe_configure(iiop_acl, Value, Status);
 
 %% SSL settings
+%% configure 'iiop_in_keepalive' will only have effect on new connections.
+configure(iiop_ssl_in_keepalive, true, Status) ->
+    do_configure(iiop_ssl_in_keepalive, true, Status);
+configure(iiop_ssl_in_keepalive, false, Status) ->
+    do_configure(iiop_ssl_in_keepalive, false, Status);
+%% configure 'iiop_ssl_out_keepalive' will only have effect on new connections.
+configure(iiop_ssl_out_keepalive, true, Status) ->
+    do_configure(iiop_ssl_out_keepalive, true, Status);
+configure(iiop_ssl_out_keepalive, false, Status) ->
+    do_configure(iiop_ssl_out_keepalive, false, Status);
+configure(iiop_ssl_accept_timeout, infinity, Status) ->
+    do_configure(iiop_ssl_accept_timeout, infinity, Status);
+configure(iiop_ssl_accept_timeout, Value, Status) when integer(Value), Value >= 0 ->
+    do_configure(iiop_ssl_accept_timeout, Value, Status);
 configure(secure, ssl, Status) ->
     do_safe_configure(secure, ssl, Status);
 configure(iiop_ssl_ip_address_local, Value, Status) when list(Value) ->
@@ -1147,6 +1273,10 @@ configure(iiop_ssl_backlog, Value, Status) when integer(Value), Value >= 0 ->
     do_safe_configure(iiop_ssl_backlog, Value, Status);
 configure(nat_iiop_ssl_port, Value, Status) when integer(Value), Value > 0 ->
     do_safe_configure(nat_iiop_ssl_port, Value, Status);
+configure(nat_iiop_ssl_port, {local, Value1, Value2}, Status) when integer(Value1), 
+								   Value1 > 0,
+								   list(Value2) ->
+    do_safe_configure(nat_iiop_ssl_port, {local, Value1, Value2}, Status);
 configure(iiop_ssl_port, Value, Status) when integer(Value) ->
     do_safe_configure(iiop_ssl_port, Value, Status);
 configure(ssl_server_certfile, Value, Status) when list(Value) ->

@@ -154,7 +154,8 @@ user_info(UserMid, conn_data) ->
                      reply_data       	  = '_',
 		     threaded       	  = '_',
 		     strict_version   	  = '_',
-		     long_request_resend  = '_'},
+		     long_request_resend  = '_',
+		     cancel               = '_'},
     %% ok = io:format("PATTERN: ~p~n", [Pat]),
     ets:match_object(megaco_local_conn, Pat);
 user_info(UserMid, connections) ->
@@ -189,7 +190,8 @@ update_user_info(UserMid, orig_pending_limit, Val) ->
 update_user_info(UserMid, Item, Val) ->
     call({update_user_info, UserMid, Item, Val}).
 
-conn_info(CH, Item) when record(CH, megaco_conn_handle) ->
+conn_info(CH, Item) 
+  when is_record(CH, megaco_conn_handle) and (Item /= cancel) ->
     case Item of
         conn_handle ->
             CH;
@@ -214,7 +216,13 @@ conn_info(CH, Item) when record(CH, megaco_conn_handle) ->
                     conn_info(ConnData, Item)
             end
     end;
-conn_info(CD, Item) when record(CD, conn_data) ->
+conn_info(#conn_data{conn_handle = CH}, cancel) ->
+    %% To minimise raise-condition propabillity,
+    %% we always look in the table instead of
+    %% in the record for this one
+    ets:lookup_element(megaco_local_conn, CH, #conn_data.cancel);
+
+conn_info(CD, Item) when is_record(CD, conn_data) ->
     case Item of
 	all ->
 	    Tags0 = record_info(fields, conn_data),
@@ -223,7 +231,8 @@ conn_info(CD, Item) when record(CD, conn_data) ->
 		replace(max_serial, max_trans_id, Tags1),
 	    [{Tag, conn_info(CD,Tag)} || Tag <- Tags, 
 					 Tag /= conn_data, 
-					 Tag /= trans_sender];
+					 Tag /= trans_sender,
+					 Tag /= cancel];
         conn_data          -> CD;
         conn_handle        -> CD#conn_data.conn_handle;
         mid                -> (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid;
@@ -299,6 +308,7 @@ conn_info(CD, Item) when record(CD, conn_data) ->
                                    encoding_mod    = CD#conn_data.encoding_mod,
                                    encoding_config = CD#conn_data.encoding_config,
                                    send_mod        = CD#conn_data.send_mod};
+	cancel               -> CD#conn_data.cancel;
         _ ->
             exit({no_such_item, Item})
     end;
@@ -315,7 +325,8 @@ replace(Item, WithItem, [OtherItem|List]) ->
 
 update_conn_info(#conn_data{conn_handle = CH}, Item, Val) ->
     do_update_conn_info(CH, Item, Val);
-update_conn_info(CH, Item, Val) when record(CH, megaco_conn_handle) ->
+update_conn_info(CH, Item, Val) 
+  when is_record(CH, megaco_conn_handle) and (Item /= cancel) ->
     do_update_conn_info(CH, Item, Val);
 update_conn_info(BadHandle, _Item, _Val) ->
     {error, {no_such_connection, BadHandle}}.
@@ -370,7 +381,7 @@ connect(RH, RemoteMid, SendHandle, ControlPid) ->
 	"~n   SendHandle: ~p"
 	"~n   ControlPid: ~p", [RH, RemoteMid, SendHandle, ControlPid]),
     case RemoteMid of
-	{MidType, _MidValue} when atom(MidType) ->
+	{MidType, _MidValue} when is_atom(MidType) ->
 	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
 	preliminary_mid ->
 	    call({connect, RH, RemoteMid, SendHandle, ControlPid});
@@ -444,7 +455,7 @@ del_pending_counter(Direction, TransId) ->
 %% A wrapping transaction id counter
 incr_trans_id_counter(ConnHandle) ->
     incr_trans_id_counter(ConnHandle, 1).
-incr_trans_id_counter(ConnHandle, Incr) when integer(Incr), Incr > 0 ->
+incr_trans_id_counter(ConnHandle, Incr) when is_integer(Incr) and (Incr > 0) ->
     case megaco_config:lookup_local_conn(ConnHandle) of
         [] ->
             {error, {no_such_connection, ConnHandle}};
@@ -569,13 +580,16 @@ init_scanner() ->
 	flex ->
 	    start_scanner(megaco_flex_scanner_handler, 
 			  start_link, [], [gen_server]);
-	{M, F, A, Mods} when atom(M), atom(F), list(A), list(Mods) ->
+	{M, F, A, Mods} when is_atom(M) and 
+			     is_atom(F) and 
+			     is_list(A) and 
+			     is_list(Mods) ->
 	    start_scanner(M, F, A, Mods)
     end.
 
 start_scanner(M, F, A, Mods) ->
     case megaco_misc_sup:start_permanent_worker(M, F, A, Mods) of
-	{ok, Pid, Conf} when  pid(Pid) ->
+	{ok, Pid, Conf} when  is_pid(Pid) ->
 	    Key  = text_config,
 	    Data = [Conf],
 	    ets:insert(megaco_config, {Key, Data});
@@ -615,7 +629,8 @@ init_user_defaults() ->
     init_user_default(reply_data,           undefined),
     init_user_default(threaded,             false),
     init_user_default(strict_version,       true),
-    init_user_default(long_request_resend,  false).
+    init_user_default(long_request_resend,  false),
+    init_user_default(cancel,               false).
 
 init_user_default(Item, Default) when Item /= mid ->
     Val = get_env(Item, Default),
@@ -771,222 +786,226 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-%% code_change(_Vsn, S, upgrade_from_pre_3_4) ->
-%%     upgrade_user_info(),
-%%     upgrade_conn_data(),
-%%     {ok, S};
-%% 
-%% code_change(_Vsn, S, downgrade_to_pre_3_4) ->
-%%     downgrade_user_info(),
-%%     downgrade_conn_data(),
-%%     {ok, S};
-%% 
+code_change(_Vsn, S, upgrade_from_pre_3_5_1_a) ->
+    upgrade_user_info(),
+    upgrade_conn_data(),
+    {ok, S};
+
+code_change(_Vsn, S, downgrade_to_pre_3_5_1_a) ->
+    downgrade_user_info(),
+    downgrade_conn_data(),
+    {ok, S};
+
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 
 %% -- Upgrade user info --
 
-%% upgrade_user_info() ->
-%%     NewValues = [{long_request_resend, false}],
-%%     upgrade_user_info(NewValues).
-%% 
-%% upgrade_user_info(NewValues) ->
-%%     Users = [default|system_info(users)],
-%%     F = fun({Item, Val}) ->
-%% 		upgrade_user_info(Users, Item, Val)
-%% 	end,
-%%     lists:foreach(F, NewValues),
-%%     ok.
-%% 
-%% upgrade_user_info(Users, Item, Val) ->
-%%     F = fun(User) -> do_update_user(User, Item, Val) end,
-%%     lists:foreach(F, Users),
-%%     ok.
-%% 
-%% 
-%% %% -- Downgrade user info --
-%% 
-%% downgrade_user_info() ->
-%%     NewItems = [long_request_resend],
-%%     downgrade_user_info(NewItems).
-%% 
-%% downgrade_user_info(NewItems) ->
-%%     Users = [default|system_info(users)],
-%%     F = fun(Item) ->
-%% 		downgrade_user_info(Users, Item)
-%% 	end,
-%%     lists:foreach(F, NewItems),
-%%     ok.
-%%     
-%% downgrade_user_info(Users, Item) ->
-%%     F = fun(User) -> do_downgrade_user_info(User, Item) end,
-%%     lists:foreach(F, Users),
-%%     ok.
-%% 
-%% do_downgrade_user_info(User, Item) ->
-%%     ets:delete(megaco_config, {User, Item}).
-%% 		
-%% 
-%% %% -- Upgrade conn data --
-%% 
-%% upgrade_conn_data() ->
-%%     Conns = system_info(connections),
-%%     upgrade_conn_data(Conns).
-%% 
-%% upgrade_conn_data(Conns) ->
-%%     LongReqResendDefault = true,
-%%     F = fun(CH) ->
-%% 		case lookup_local_conn(CH) of
-%% 		    [] ->
-%% 			ok;
-%% 		    [CD] ->
-%% 			upgrade_conn_data(CD, LongReqResendDefault)
-%% 		end
-%% 	end,
-%%     lists:foreach(F, Conns),
-%%     ok.
-%% 
-%% upgrade_conn_data(OldStyleCD, LongReqResendDefault) ->
-%%     NewStyleCD = new_conn_data(OldStyleCD, LongReqResendDefault),
-%%     ets:insert(megaco_local_conn, NewStyleCD).
-%%     
-%% new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-%% 	       AutoAck, 
-%% 	       TransAck, TransAckMaxCnt, 
-%% 	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
-%% 	       TransTmr, TransSndr, 
-%% 	       
-%% 	       PendingTmr, 
-%% 	       SentPendingLimit, 
-%% 	       RecvPendingLimit,
-%% 	       ReplyTmr, CtrPid, MonRef, 
-%% 	       Sendmod, SendHandle, 
-%% 	       EncodeMod, EncodeConf, 
-%% 	       ProtV, AuthData, 
-%% 	       UserMod, UserArgs, ReplyAction, ReplyData,
-%% 	       Threaded,
-%% 	       StrictVersion
-%% 	       %% LongReqResend - This is where to insert the new values
-%% 	      }, 
-%% 	      LongReqResendDefault) ->
-%%     #conn_data{conn_handle          = CH, 
-%% 	       serial               = Serial,
-%% 	       max_serial           = MaxSerial,
-%% 	       request_timer        = ReqTmr,
-%% 	       long_request_timer   = LongReqTmr,
-%% 	       
-%% 	       auto_ack             = AutoAck,
-%% 	       
-%% 	       trans_ack            = TransAck,
-%% 	       trans_ack_maxcount   = TransAckMaxCnt,
-%% 	       
-%% 	       trans_req            = TransReq,
-%% 	       trans_req_maxcount   = TransReqMaxCnt,
-%% 	       trans_req_maxsize    = TransReqMaxSz,
-%% 	       
-%% 	       trans_timer          = TransTmr,
-%% 	       trans_sender         = TransSndr,
-%% 	       
-%% 	       pending_timer        = PendingTmr,
-%% 	       sent_pending_limit   = SentPendingLimit,
-%% 	       recv_pending_limit   = RecvPendingLimit, 
-%% 
-%% 	       reply_timer          = ReplyTmr,
-%% 	       control_pid          = CtrPid,
-%% 	       monitor_ref          = MonRef,
-%% 	       send_mod             = Sendmod,
-%% 	       send_handle          = SendHandle,
-%% 	       encoding_mod         = EncodeMod,
-%% 	       encoding_config      = EncodeConf,
-%% 	       protocol_version     = ProtV,
-%% 	       auth_data            = AuthData,
-%% 	       user_mod             = UserMod,
-%% 	       user_args            = UserArgs,
-%% 	       reply_action         = ReplyAction,
-%% 	       reply_data           = ReplyData,
-%% 	       threaded             = Threaded,
-%% 	       strict_version       = StrictVersion,
-%% 	       long_request_resend  = LongReqResendDefault % The new value
-%% 	      }.
-%% 
-%% 
-%% %% -- Downgrade conn data --
-%% 
-%% downgrade_conn_data() ->
-%%     Conns = system_info(connections),
-%%     downgrade_conn_data(Conns).
-%% 
-%% downgrade_conn_data(Conns) ->
-%%     F = fun(CH) ->
-%% 		case lookup_local_conn(CH) of
-%% 		    [] ->
-%% 			ok;
-%% 		    [CD] ->
-%% 			do_downgrade_conn_data(CD)
-%% 		end
-%% 	end,
-%%     lists:foreach(F, Conns).
-%% 
-%% do_downgrade_conn_data(NewStyleCD) ->
-%%     OldStyleCD = old_conn_data(NewStyleCD),
-%%     ets:insert(megaco_local_conn, OldStyleCD).
-%% 
-%% old_conn_data(#conn_data{conn_handle          = CH, 
-%% 			 serial               = Serial,
-%% 			 max_serial           = MaxSerial,
-%% 			 request_timer        = ReqTmr,
-%% 			 long_request_timer   = LongReqTmr,
-%% 			 
-%% 			 auto_ack             = AutoAck,
-%% 			 
-%% 			 trans_ack            = TransAck,
-%% 			 trans_ack_maxcount   = TransAckMaxCnt,
-%% 			 
-%% 			 trans_req            = TransReq,
-%% 			 trans_req_maxcount   = TransReqMaxCnt,
-%% 			 trans_req_maxsize    = TransReqMaxSz,
-%% 			 
-%% 			 trans_timer          = TransTmr,
-%% 			 trans_sender         = TransSndr,
-%% 			 
-%% 			 pending_timer        = PendingTmr,
-%% 			 sent_pending_limit   = SentPendingLimit,
-%% 			 recv_pending_limit   = RecvPendingLimit, 
-%% 			 
-%% 			 reply_timer          = ReplyTmr,
-%% 			 control_pid          = CtrPid,
-%% 			 monitor_ref          = MonRef,
-%% 			 send_mod             = Sendmod,
-%% 			 send_handle          = SendHandle,
-%% 			 encoding_mod         = EncodeMod,
-%% 			 encoding_config      = EncodeConf,
-%% 			 protocol_version     = ProtV,
-%% 			 auth_data            = AuthData,
-%% 			 user_mod             = UserMod,
-%% 			 user_args            = UserArgs,
-%% 			 reply_action         = ReplyAction,
-%% 			 reply_data           = ReplyData,
-%% 			 threaded             = Threaded,
-%% 			 strict_version       = StrictVersion
-%% 			 %% long_request_resend  = LongReqResend
-%% 			}) ->
-%%     {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
-%%      AutoAck, 
-%%      TransAck, TransAckMaxCnt, 
-%%      TransReq, TransReqMaxCnt, TransReqMaxSz, 
-%%      TransTmr, TransSndr, 
-%%      PendingTmr, 
-%%      SentPendingLimit, 
-%%      RecvPendingLimit, 
-%%      ReplyTmr, CtrPid, MonRef, 
-%%      Sendmod, SendHandle, 
-%%      EncodeMod, EncodeConf, 
-%%      ProtV, AuthData, 
-%%      UserMod, UserArgs, ReplyAction, ReplyData,
-%%      Threaded,
-%%      StrictVersion}.
-%% 
+upgrade_user_info() ->
+    NewValues = [{cancel, false}],
+    upgrade_user_info(NewValues).
+
+upgrade_user_info(NewValues) ->
+    Users = [default|system_info(users)],
+    F = fun({Item, Val}) ->
+		upgrade_user_info(Users, Item, Val)
+	end,
+    lists:foreach(F, NewValues),
+    ok.
+
+upgrade_user_info(Users, Item, Val) ->
+    F = fun(User) -> do_update_user(User, Item, Val) end,
+    lists:foreach(F, Users),
+    ok.
+
+
+%% -- Downgrade user info --
+
+downgrade_user_info() ->
+    NewItems = [cancel],
+    downgrade_user_info(NewItems).
+
+downgrade_user_info(NewItems) ->
+    Users = [default|system_info(users)],
+    F = fun(Item) ->
+		downgrade_user_info(Users, Item)
+	end,
+    lists:foreach(F, NewItems),
+    ok.
+    
+downgrade_user_info(Users, Item) ->
+    F = fun(User) -> do_downgrade_user_info(User, Item) end,
+    lists:foreach(F, Users),
+    ok.
+
+do_downgrade_user_info(User, Item) ->
+    ets:delete(megaco_config, {User, Item}).
+		
+
+%% -- Upgrade conn data --
+
+upgrade_conn_data() ->
+    Conns = system_info(connections),
+    upgrade_conn_data(Conns).
+
+upgrade_conn_data(Conns) ->
+    LongReqResendDefault = true,
+    F = fun(CH) ->
+		case lookup_local_conn(CH) of
+		    [] ->
+			ok;
+		    [CD] ->
+			upgrade_conn_data(CD, LongReqResendDefault)
+		end
+	end,
+    lists:foreach(F, Conns),
+    ok.
+
+upgrade_conn_data(OldStyleCD, LongReqResendDefault) ->
+    NewStyleCD = new_conn_data(OldStyleCD, LongReqResendDefault),
+    ets:insert(megaco_local_conn, NewStyleCD).
+    
+new_conn_data({conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+	       AutoAck, 
+	       TransAck, TransAckMaxCnt, 
+	       TransReq, TransReqMaxCnt, TransReqMaxSz, 
+	       TransTmr, TransSndr, 
+	       
+	       PendingTmr, 
+	       SentPendingLimit, 
+	       RecvPendingLimit,
+	       ReplyTmr, CtrPid, MonRef, 
+	       Sendmod, SendHandle, 
+	       EncodeMod, EncodeConf, 
+	       ProtV, AuthData, 
+	       UserMod, UserArgs, ReplyAction, ReplyData,
+	       Threaded,
+	       StrictVersion,
+	       LongReqResend
+	       %% Cancel- This is where to insert the new values
+	      }, 
+	      CancelDefault) ->
+    #conn_data{conn_handle          = CH, 
+	       serial               = Serial,
+	       max_serial           = MaxSerial,
+	       request_timer        = ReqTmr,
+	       long_request_timer   = LongReqTmr,
+	       
+	       auto_ack             = AutoAck,
+	       
+	       trans_ack            = TransAck,
+	       trans_ack_maxcount   = TransAckMaxCnt,
+	       
+	       trans_req            = TransReq,
+	       trans_req_maxcount   = TransReqMaxCnt,
+	       trans_req_maxsize    = TransReqMaxSz,
+	       
+	       trans_timer          = TransTmr,
+	       trans_sender         = TransSndr,
+	       
+	       pending_timer        = PendingTmr,
+	       sent_pending_limit   = SentPendingLimit,
+	       recv_pending_limit   = RecvPendingLimit, 
+
+	       reply_timer          = ReplyTmr,
+	       control_pid          = CtrPid,
+	       monitor_ref          = MonRef,
+	       send_mod             = Sendmod,
+	       send_handle          = SendHandle,
+	       encoding_mod         = EncodeMod,
+	       encoding_config      = EncodeConf,
+	       protocol_version     = ProtV,
+	       auth_data            = AuthData,
+	       user_mod             = UserMod,
+	       user_args            = UserArgs,
+	       reply_action         = ReplyAction,
+	       reply_data           = ReplyData,
+	       threaded             = Threaded,
+	       strict_version       = StrictVersion,
+	       long_request_resend  = LongReqResend,
+	       cancel               = CancelDefault % The new value
+	      }.
+
+
+%% -- Downgrade conn data --
+
+downgrade_conn_data() ->
+    Conns = system_info(connections),
+    downgrade_conn_data(Conns).
+
+downgrade_conn_data(Conns) ->
+    F = fun(CH) ->
+		case lookup_local_conn(CH) of
+		    [] ->
+			ok;
+		    [CD] ->
+			do_downgrade_conn_data(CD)
+		end
+	end,
+    lists:foreach(F, Conns).
+
+do_downgrade_conn_data(NewStyleCD) ->
+    OldStyleCD = old_conn_data(NewStyleCD),
+    ets:insert(megaco_local_conn, OldStyleCD).
+
+old_conn_data(#conn_data{conn_handle          = CH, 
+			 serial               = Serial,
+			 max_serial           = MaxSerial,
+			 request_timer        = ReqTmr,
+			 long_request_timer   = LongReqTmr,
+			 
+			 auto_ack             = AutoAck,
+			 
+			 trans_ack            = TransAck,
+			 trans_ack_maxcount   = TransAckMaxCnt,
+			 
+			 trans_req            = TransReq,
+			 trans_req_maxcount   = TransReqMaxCnt,
+			 trans_req_maxsize    = TransReqMaxSz,
+			 
+			 trans_timer          = TransTmr,
+			 trans_sender         = TransSndr,
+			 
+			 pending_timer        = PendingTmr,
+			 sent_pending_limit   = SentPendingLimit,
+			 recv_pending_limit   = RecvPendingLimit, 
+			 
+			 reply_timer          = ReplyTmr,
+			 control_pid          = CtrPid,
+			 monitor_ref          = MonRef,
+			 send_mod             = Sendmod,
+			 send_handle          = SendHandle,
+			 encoding_mod         = EncodeMod,
+			 encoding_config      = EncodeConf,
+			 protocol_version     = ProtV,
+			 auth_data            = AuthData,
+			 user_mod             = UserMod,
+			 user_args            = UserArgs,
+			 reply_action         = ReplyAction,
+			 reply_data           = ReplyData,
+			 threaded             = Threaded,
+			 strict_version       = StrictVersion,
+			 long_request_resend  = LongReqResend
+			 %% cancel               = Cancel
+			}) ->
+    {conn_data, CH, Serial, MaxSerial, ReqTmr, LongReqTmr, 
+     AutoAck, 
+     TransAck, TransAckMaxCnt, 
+     TransReq, TransReqMaxCnt, TransReqMaxSz, 
+     TransTmr, TransSndr, 
+     PendingTmr, 
+     SentPendingLimit, 
+     RecvPendingLimit, 
+     ReplyTmr, CtrPid, MonRef, 
+     Sendmod, SendHandle, 
+     EncodeMod, EncodeConf, 
+     ProtV, AuthData, 
+     UserMod, UserArgs, ReplyAction, ReplyData,
+     Threaded,
+     StrictVersion,
+     LongReqResend}.
+
 
 		
 %%%----------------------------------------------------------------------
@@ -1051,33 +1070,34 @@ verify_val(Item, Val) ->
         trans_timer            -> verify_timer(Val) and (Val >= 0);
 	trans_sender when Val == undefined -> true;
 
-        pending_timer                   -> verify_timer(Val);
-        sent_pending_limit              -> verify_int(Val) and (Val > 0);
-        recv_pending_limit              -> verify_int(Val) and (Val > 0);
-        reply_timer                     -> verify_timer(Val);
-        control_pid      when pid(Val)  -> true;
-        monitor_ref                     -> true; % Internal usage only
-        send_mod         when atom(Val) -> true;
-        send_handle                     -> true;
-        encoding_mod     when atom(Val) -> true;
-        encoding_config  when list(Val) -> true;
-        protocol_version                -> verify_strict_int(Val);
-        auth_data                       -> true;
-        user_mod         when atom(Val) -> true;
-        user_args        when list(Val) -> true;
-        reply_data                      -> true;
-        threaded                        -> verify_bool(Val);
-        strict_version                  -> verify_bool(Val);
-	long_request_resend             -> verify_bool(Val);
-        _                               -> false
+        pending_timer                      -> verify_timer(Val);
+        sent_pending_limit                 -> verify_int(Val) and (Val > 0);
+        recv_pending_limit                 -> verify_int(Val) and (Val > 0);
+        reply_timer                        -> verify_timer(Val);
+        control_pid      when is_pid(Val)  -> true;
+        monitor_ref                        -> true; % Internal usage only
+        send_mod         when is_atom(Val) -> true;
+        send_handle                        -> true;
+        encoding_mod     when is_atom(Val) -> true;
+        encoding_config  when is_list(Val) -> true;
+        protocol_version                   -> verify_strict_int(Val);
+        auth_data                          -> true;
+        user_mod         when is_atom(Val) -> true;
+        user_args        when is_list(Val) -> true;
+        reply_data                         -> true;
+        threaded                           -> verify_bool(Val);
+        strict_version                     -> verify_bool(Val);
+	long_request_resend                -> verify_bool(Val);
+	cancel                             -> verify_bool(Val);
+        _                                  -> false
     end.
 
 verify_bool(true)  -> true;
 verify_bool(false) -> true;
 verify_bool(_)     -> false.
 
-verify_strict_int(Int) when integer(Int), Int >= 0 -> true;
-verify_strict_int(_)                               -> false.
+verify_strict_int(Int) when is_integer(Int) and (Int >= 0) -> true;
+verify_strict_int(_)                                       -> false.
 
 verify_strict_int(Int, infinity) ->
     verify_strict_int(Int);
@@ -1094,7 +1114,7 @@ verify_int(infinity, _Max) ->
 verify_int(Int, Max) ->
     verify_strict_int(Int) and verify_strict_int(Max) and (Int =< Max).
 
-verify_timer(Timer) when record(Timer, megaco_incr_timer) ->
+verify_timer(Timer) when is_record(Timer, megaco_incr_timer) ->
     (verify_strict_int(Timer#megaco_incr_timer.wait_for) and
      verify_strict_int(Timer#megaco_incr_timer.factor)   and
      verify_strict_int(Timer#megaco_incr_timer.incr)     and
@@ -1126,11 +1146,11 @@ handle_stop_user(UserMid) ->
 handle_update_conn_data(CD, Item = receive_handle, RH) ->
     UserMid = (CD#conn_data.conn_handle)#megaco_conn_handle.local_mid,
     if
-        record(RH, megaco_receive_handle),
-        atom(RH#megaco_receive_handle.encoding_mod),
-        list(RH#megaco_receive_handle.encoding_config),
-        atom(RH#megaco_receive_handle.send_mod),
-        RH#megaco_receive_handle.local_mid /= UserMid ->
+        is_record(RH, megaco_receive_handle) and 
+        is_atom(RH#megaco_receive_handle.encoding_mod) and
+        is_list(RH#megaco_receive_handle.encoding_config) and
+        is_atom(RH#megaco_receive_handle.send_mod) and
+        (RH#megaco_receive_handle.local_mid /= UserMid) ->
             CD2 = CD#conn_data{encoding_mod    = RH#megaco_receive_handle.encoding_mod,
                                encoding_config = RH#megaco_receive_handle.encoding_config,
                                send_mod        = RH#megaco_receive_handle.send_mod},
@@ -1191,13 +1211,14 @@ replace_conn_data(CD, Item, Val) ->
         reply_data           -> CD#conn_data{reply_data           = Val};
         threaded             -> CD#conn_data{threaded             = Val};
         strict_version       -> CD#conn_data{strict_version       = Val};
-	long_request_resend  -> CD#conn_data{long_request_resend  = Val}
+	long_request_resend  -> CD#conn_data{long_request_resend  = Val};
+	cancel               -> CD#conn_data{cancel               = Val}
     end.
 
 %% update auto_ack
 update_auto_ack(#conn_data{trans_sender = Pid,
 			   trans_req    = false} = CD, 
-		false) when pid(Pid) ->
+		false) when is_pid(Pid) ->
     megaco_trans_sender:stop(Pid),
     CD#conn_data{auto_ack = false, trans_sender = undefined};
 
@@ -1228,7 +1249,7 @@ update_auto_ack(CD, Val) ->
 update_trans_ack(#conn_data{auto_ack     = true,
 			    trans_req    = false,
 			    trans_sender = Pid} = CD, 
-		      false) when pid(Pid) ->
+		      false) when is_pid(Pid) ->
     megaco_trans_sender:stop(Pid),
     CD#conn_data{trans_ack = false, trans_sender = undefined};
 
@@ -1258,7 +1279,7 @@ update_trans_ack(CD, Val) ->
 %% update trans_req
 update_trans_req(#conn_data{trans_ack    = false,
 			    trans_sender = Pid} = CD, 
-		      false) when pid(Pid) ->
+		      false) when is_pid(Pid) ->
     megaco_trans_sender:stop(Pid),
     CD#conn_data{trans_req = false, trans_sender = undefined};
 
@@ -1322,12 +1343,12 @@ update_trans_timer(#conn_data{trans_req    = true,
 
     CD#conn_data{trans_timer = To, trans_sender = Pid};
 
-update_trans_timer(#conn_data{trans_sender = Pid} = CD, 0) when pid(Pid) ->
+update_trans_timer(#conn_data{trans_sender = Pid} = CD, 0) when is_pid(Pid) ->
     megaco_trans_sender:stop(Pid),
     CD#conn_data{trans_timer = 0, trans_sender = undefined};
 
 update_trans_timer(#conn_data{trans_sender = Pid} = CD, To) 
-  when pid(Pid), To > 0 ->
+  when is_pid(Pid) and (To > 0) ->
     megaco_trans_sender:timeout(Pid, To),
     CD#conn_data{trans_timer = To};
 
@@ -1336,7 +1357,7 @@ update_trans_timer(CD, To) when To > 0 ->
 
 %% update trans_ack_maxcount
 update_trans_ack_maxcount(#conn_data{trans_sender = Pid} = CD, Max) 
-  when pid(Pid), Max > 0 ->
+  when is_pid(Pid) and (Max > 0) ->
     megaco_trans_sender:ack_maxcount(Pid, Max),
     CD#conn_data{trans_ack_maxcount = Max};
 
@@ -1347,7 +1368,7 @@ update_trans_ack_maxcount(CD, Max)
 
 %% update trans_req_maxcount
 update_trans_req_maxcount(#conn_data{trans_sender = Pid} = CD, Max) 
-  when pid(Pid), Max > 0 ->
+  when is_pid(Pid) and (Max > 0) ->
     megaco_trans_sender:req_maxcount(Pid, Max),
     CD#conn_data{trans_req_maxcount = Max};
 
@@ -1358,7 +1379,7 @@ update_trans_req_maxcount(CD, Max)
 
 %% update trans_req_maxsize
 update_trans_req_maxsize(#conn_data{trans_sender = Pid} = CD, Max) 
-  when pid(Pid), Max > 0 ->
+  when is_pid(Pid) and (Max > 0) ->
     megaco_trans_sender:req_maxsize(Pid, Max),
     CD#conn_data{trans_req_maxsize = Max};
 
@@ -1490,7 +1511,7 @@ trans_sender_start(CD) ->
 
 trans_sender_upgrade(#conn_data{conn_handle  = CH,
 				trans_sender = Pid})
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     ?d("trans_sende_upgrade -> entry when"
 	"~n   CH:  ~p"
 	"~n   Pid: ~p", [CH, Pid]),
@@ -1554,9 +1575,10 @@ init_conn_data(RH, RemoteMid, SendHandle, ControlPid) ->
                reply_data           = user_info(Mid, reply_data),
 	       threaded             = user_info(Mid, threaded),
 	       strict_version       = user_info(Mid, strict_version),
-	       long_request_resend  = user_info(Mid, long_request_resend)}.
+	       long_request_resend  = user_info(Mid, long_request_resend),
+	       cancel               = false}.
 
-handle_disconnect(ConnHandle) when record(ConnHandle, megaco_conn_handle) ->
+handle_disconnect(ConnHandle) when is_record(ConnHandle, megaco_conn_handle) ->
     case ets:lookup(megaco_local_conn, ConnHandle) of
         [ConnData] ->
 	    ets:delete(megaco_local_conn, ConnHandle),

@@ -965,8 +965,8 @@ parse_vsn_str(Str,WS,SH) ->
     case Str of
 	"[64-bit]" ++ Rest ->
 	    case SH of
-		undefined ->
-		    parse_vsn_str(Rest,8,undefined);
+		false ->
+		    parse_vsn_str(Rest,8,false);
 		_ ->
 		    {8,SH}
 	    end;

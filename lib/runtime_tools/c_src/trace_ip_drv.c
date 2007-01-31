@@ -53,7 +53,7 @@
 #ifdef DEBUG
 #    ifndef __WIN32__
          /* erl_exit is not available to dll_drivers on windows. */
-         extern int erl_exit(int, char *, ...);
+         void erl_exit(int, char *, ...);
 #        define ASSERT(X)                               \
                     do {				\
                         if (!(X)) {			\
@@ -427,8 +427,40 @@ static void trace_ip_ready_input(ErlDrvData handle, ErlDrvEvent fd)
 	return;
     }
 
-    ASSERT((SOCKET)fd == data->fd);
-    close_client(data);
+    /*
+     * It is a probably EOF because the other end closed the socket,
+     * but better make sure.
+     */
+
+    if ((SOCKET)fd == data->fd) {
+#ifdef __WIN32__
+	close_client(data);
+#else
+	int res;
+	char sbuf[128];
+	
+	if ((res = read(data->fd, sbuf, sizeof sbuf)) == 0) {
+	    close_client(data);
+	}
+
+	/*
+	 * Something else. Just ignore it.
+	 *
+	 * When /dev/poll is used on Solaris, this callback can
+	 * be called even if there is nothing to read. An attempt
+	 * to read will result in an EAGAIN error.
+	 */
+#ifdef DEBUG
+	if (res < 0) {
+	    fprintf(stderr, "Read on fd %d failed with errno=%d\r\n",
+		    data->fd, errno);
+	}
+#endif
+#endif
+	return;
+    }
+
+    ASSERT(0);
 }
 
 #ifdef __WIN32__

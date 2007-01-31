@@ -1,8 +1,44 @@
+%%
+%%      3.4.3
+%%        |
+%%        v
+%%      3.4.4
+%%     /     \
+%%    |       |
+%%    v       v
+%%   3.5     3.4.5
+%%    |        |
+%%    v        v
+%%  3.5.1 <- 3.4.6
+%%
 {"%VSN%",
  [
-  {"3.4.4",
+  {"3.5",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {update, megaco_config, {advanced, upgrade_from_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
+   ]
+  },
+  %% The version prior to 3.5 was 3.4.4
+  {"3.4.6",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, {advanced, upgrade_from_pre_3_5_1_b},
+     soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.4.5",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
     {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
     {update, megaco_tcp, soft, soft_purge, soft_purge, 
      [megaco_tcp_connection]},
@@ -11,12 +47,30 @@
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
     {update, megaco_config, soft, soft_purge, soft_purge, []},
     {update, megaco_monitor, soft, soft_purge, soft_purge, []},
-    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, upgrade_from_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.4.4",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, upgrade_from_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
    ]
   },
   {"3.4.3",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
     {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
     {update, megaco_tcp, soft, soft_purge, soft_purge, 
      [megaco_tcp_connection]},
@@ -25,28 +79,38 @@
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
     {update, megaco_config, soft, soft_purge, soft_purge, []},
     {update, megaco_monitor, soft, soft_purge, soft_purge, []},
-    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, upgrade_from_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
    ]
   }
  ],
  [
-  {"3.4.4",
+  {"3.5",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {update, megaco_config, {advanced, downgrade_to_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.4.6",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
     {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
     {update, megaco_tcp, soft, soft_purge, soft_purge, 
      [megaco_tcp_connection]},
     {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
     {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
-    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, upgrade_from_pre_3_5_1_b}, 
+     soft_purge, soft_purge, []},
     {update, megaco_monitor, soft, soft_purge, soft_purge, []},
     {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
    ]
   },
-  {"3.4.3",
+  {"3.4.5",
    [
-    {load_module, megaco_messenger, soft_purge, soft_purge, []},
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
     {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
     {update, megaco_tcp, soft, soft_purge, soft_purge, 
      [megaco_tcp_connection]},
@@ -55,7 +119,41 @@
     {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
     {update, megaco_config, soft, soft_purge, soft_purge, []},
     {update, megaco_monitor, soft, soft_purge, soft_purge, []},
-    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []}
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, downgrade_to_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.4.4",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, downgrade_to_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
+   ]
+  },
+  {"3.4.3",
+   [
+    {load_module, megaco_messenger, soft_purge, soft_purge, [megaco_config]},
+    {load_module, megaco_messenger_misc, soft_purge, soft_purge, []},
+    {update, megaco_tcp, soft, soft_purge, soft_purge, 
+     [megaco_tcp_connection]},
+    {update, megaco_tcp_connection, soft, soft_purge, soft_purge, []},
+    {update, megaco_udp_server, soft, soft_purge, soft_purge, []},
+    {update, megaco_flex_scanner_handler, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, soft, soft_purge, soft_purge, []},
+    {update, megaco_monitor, soft, soft_purge, soft_purge, []},
+    {update, megaco_trans_sender, soft, soft_purge, soft_purge, []},
+    {update, megaco_config, {advanced, downgrade_to_pre_3_5_1_a},
+     soft_purge, soft_purge, []}
    ]
   }
  ]

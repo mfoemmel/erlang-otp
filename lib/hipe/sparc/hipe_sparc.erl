@@ -281,6 +281,7 @@
 	 multimove_create/2, multimove_dest/1, %% multimove_dest_update/2,
 	 multimove_src/1, %% multimove_src_update/2,
 	 nop_create/0,
+	 rdy_create/1, rdy_dest/1,
  	 sethi_const/1, %% sethi_const_update/2,
 	 sethi_dest/1, %% sethi_dest_update/2,
 	 sethi_create/2]).
@@ -736,6 +737,11 @@ alu_cc_src1_update(Alu,NewSource1) -> Alu#alu_cc{src1=NewSource1}.
 alu_cc_src2_update(Alu,NewSource2) -> Alu#alu_cc{src2=NewSource2}.
 %% %% @spec (sparc_instruction()) -> bool()
 %% is_alu_cc(Insn) -> case Insn of #alu_cc{} -> true; _ -> false end.
+
+%% rd %y,Rd %%
+rdy_create(Dest) -> #rdy{dst=Dest}.
+rdy_dest(#rdy{dst=Dst}) -> Dst.
+rdy_dest_update(Rdy,NewDest) -> Rdy#rdy{dst=NewDest}.
 
 %% Sethi %%
 sethi_create(Dest,Const) -> #sethi{dst=Dest,const=Const}.
@@ -1398,6 +1404,7 @@ icc_reg() -> mk_reg(hipe_sparc_registers:icc()).
 xcc_reg() -> mk_reg(hipe_sparc_registers:xcc()).
 %% %% @spec (N::fcc_reg()) -> reg()
 %% fcc_reg(N) -> mk_reg(hipe_sparc_registers:fcc(N)).
+y_reg() -> mk_reg(hipe_sparc_registers:y()).
 
 
 %% %% @spec (sparc_instruction()) -> [reg()]
@@ -1427,6 +1434,7 @@ all_uses(Ins) ->
 %%  #cmov_r{} -> [cmov_r_src(Ins), cmov_r_reg(Ins)];
     #alu{} -> [alu_src1(Ins), alu_src2(Ins)];
     #alu_cc{} -> [alu_cc_src1(Ins), alu_cc_src2(Ins)];
+    #rdy{} -> [y_reg()];
     #sethi{} -> [sethi_const(Ins)];
     #load{} -> [load_src(Ins), load_off(Ins)];
     #store{} -> [store_dest(Ins), store_src(Ins), store_off(Ins)];
@@ -1512,6 +1520,7 @@ all_defines(Ins)->
 %%  #cmov_r{} -> [cmov_r_dest(Ins)];
     #alu{} -> [alu_dest(Ins)];
     #alu_cc{} -> [icc_reg(), xcc_reg(), alu_cc_dest(Ins)];
+    #rdy{} -> [rdy_dest(Ins)];
     #sethi{} -> [sethi_dest(Ins)];
     #load{} -> [load_dest(Ins)];
     #store{} -> [];
@@ -1575,6 +1584,9 @@ all_def_uses(I) ->
     #alu_cc{} ->
 	{[icc_reg(), xcc_reg(), alu_cc_dest(I)],
 	 [alu_cc_src1(I), alu_cc_src2(I)]};
+    #rdy{} ->
+	{[rdy_dest(I)],
+	 [y_reg()]};
     #sethi{} ->
 	{[sethi_dest(I)], 
 	 [sethi_const(I)]};
@@ -1796,6 +1808,9 @@ subst(Ins, Subst) ->
     #comment{} -> Ins;
     #b{} -> Ins;
     #goto{} -> Ins;
+    #rdy{} ->
+      NewDst = subst1(Subst, rdy_dest(Ins)),
+      rdy_dest_update(Ins, NewDst);
     #sethi{} ->
       NewDst = subst1(Subst, sethi_dest(Ins)),
       sethi_dest_update(Ins, NewDst);
@@ -1967,6 +1982,9 @@ subst_defines(Ins, Subst) ->
     #goto{} -> Ins;
     #jmp{} -> Ins;
 %%  #br{} -> Ins;
+    #rdy{} ->
+      NewDst = subst1(Subst, rdy_dest(Ins)),
+      rdy_dest_update(Ins, NewDst);
     #sethi{} ->
       NewDst = subst1(Subst, sethi_dest(Ins)),
       sethi_dest_update(Ins, NewDst);
@@ -2049,6 +2067,7 @@ subst_uses(Ins, Subst) ->
     #comment{} -> Ins;
     #b{} -> Ins;
     #goto{} -> Ins;
+    #rdy{} -> Ins;
     #sethi{} -> Ins;
     #call_link{} -> 
       case call_link_is_known(Ins) of

@@ -2407,12 +2407,6 @@ trace_port_control(Port, flush) ->
 	{ok, [0]} -> ok;
 	{ok, _}   -> {error, not_supported_by_trace_driver};
 	Other     -> Other
-    end;
-trace_port_control(Port, get_listen_port) ->
-    case trace_port_control(Port ,$p, "") of
-	{ok, <<0, IpPort:16>>} -> {ok, IpPort};
-	{ok, _Other}           -> {error, not_supported_by_trace_driver};
-	Other                  -> Other
     end.
 
 trace_port_control(Port, Command, Arg) when is_port(Port)->

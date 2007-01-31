@@ -130,8 +130,8 @@ lookup(ObjRef, Search_name) ->
 
 contents(ObjRef, Limit_type, Exclude_inherited) ->
     Contents = 
-	get_field(ObjRef, contents) ++
-	inherited_contents(ObjRef,Exclude_inherited),
+	flatten(get_field(ObjRef, contents) ++
+		inherited_contents(ObjRef,Exclude_inherited)),
     AllContents = 
 	Contents ++
 	flatten(subcontents(Limit_type,Contents)),

@@ -711,12 +711,33 @@ compile_options([{attribute,_L,compile,C}|Fs]) ->
 compile_options([_F|Fs]) -> compile_options(Fs);
 compile_options([]) -> [].
 
+ clean_parse_transforms(Fs) ->
+    clean_parse_transforms_1(Fs, []).
+
+clean_parse_transforms_1([{attribute,L,compile,C0}|Fs], Acc) when is_list(C0) ->
+    C = filter(fun({parse_transform,_}) -> false;
+		  (_) -> true
+	       end, C0),
+    clean_parse_transforms_1(Fs, [{attribute,L,compile,C}|Acc]);
+clean_parse_transforms_1([{attribute,_,compile,{parse_transform,_}}|Fs], Acc) ->
+    clean_parse_transforms_1(Fs, Acc);
+clean_parse_transforms_1([F|Fs], Acc) ->
+    clean_parse_transforms_1(Fs, [F|Acc]);
+clean_parse_transforms_1([], Acc) -> reverse(Acc).
+
 transforms(Os) -> [ M || {parse_transform,M} <- Os ]. 
 
-transform_module(St) ->
+transform_module(#compile{options=Opt,code=Code0}=St0) ->
     %% Extract compile options from code into options field.
-    Ts = transforms(St#compile.options ++ compile_options(St#compile.code)),
-    foldl_transform(St, Ts).
+    case transforms(Opt ++ compile_options(Code0)) of
+	[] -> {ok,St0};				%No parse transforms.
+	Ts ->
+	    %% Remove parse_transform attributes from the abstract code to
+	    %% prevent parse transforms to be run more than once.
+	    Code = clean_parse_transforms(Code0),
+	    St = St0#compile{code=Code},
+	    foldl_transform(St, Ts)
+    end.
 
 foldl_transform(St, [T|Ts]) ->
     Name = "transform " ++ atom_to_list(T),

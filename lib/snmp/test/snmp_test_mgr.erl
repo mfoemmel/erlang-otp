@@ -78,9 +78,9 @@ g(Oids) ->
 s(VarsAndValues) ->
     ?SERVER ! {set, VarsAndValues}, ok.
 
-gn(Oids) when list(Oids) ->
+gn(Oids) when is_list(Oids) ->
     ?SERVER ! {get_next, Oids}, ok;
-gn(N) when integer(N) ->
+gn(N) when is_integer(N) ->
     ?SERVER ! {iter_get_next, N}, ok.
 gn() ->
     ?SERVER ! iter_get_next, ok.
@@ -138,7 +138,7 @@ receive_response() ->
 receive_response(Timeout) ->
     d("await response within ~w ms",[Timeout]),
     receive
-	{snmp_pdu, PDU} when record(PDU, pdu) ->
+	{snmp_pdu, PDU} when is_record(PDU, pdu) ->
 	    d("received PDU: ~n\t~p",[PDU]),
 	    PDU
     after Timeout ->
@@ -165,7 +165,7 @@ get_timeout(_)       -> 3500.
 receive_trap(Timeout) ->
     d("await trap within ~w ms",[Timeout]),
     receive
-	{snmp_pdu, PDU} when record(PDU, trappdu) ->
+	{snmp_pdu, PDU} when is_record(PDU, trappdu) ->
 	    d("received trap-PDU: ~n\t~p",[PDU]),
 	    PDU
     after Timeout ->
@@ -190,16 +190,27 @@ init({Options, CallerPid}) ->
 	    put(debug,get_value(debug,Options,false)),
 	    d("init -> (~p) extract options",[self()]),
  	    PacksDbg    = get_value(packet_server_debug, Options, false),
+	    io:format("[~w] ~p -> PacksDbg: ~p~n", [?MODULE, self(), PacksDbg]),
 	    RecBufSz    = get_value(recbuf,            Options, 1024),
+	    io:format("[~w] ~p -> RecBufSz: ~p~n", [?MODULE, self(), RecBufSz]),
 	    Mibs        = get_value(mibs,              Options, []),
+	    io:format("[~w] ~p -> Mibs: ~p~n", [?MODULE, self(), Mibs]),
 	    Udp         = get_value(agent_udp,         Options, 4000),
+	    io:format("[~w] ~p -> Udp: ~p~n", [?MODULE, self(), Udp]),
 	    User        = get_value(user,              Options, "initial"),
+	    io:format("[~w] ~p -> User: ~p~n", [?MODULE, self(), User]),
 	    EngineId    = get_value(engine_id,         Options, "agentEngine"),
+	    io:format("[~w] ~p -> EngineId: ~p~n", [?MODULE, self(), EngineId]),
 	    CtxEngineId = get_value(context_engine_id, Options, EngineId),
+	    io:format("[~w] ~p -> CtxEngineId: ~p~n", [?MODULE, self(), CtxEngineId]),
 	    TrapUdp     = get_value(trap_udp,          Options, 5000),
+	    io:format("[~w] ~p -> TrapUdp: ~p~n", [?MODULE, self(), TrapUdp]),
 	    Dir         = get_value(dir,               Options, "."),
+	    io:format("[~w] ~p -> Dir: ~p~n", [?MODULE, self(), Dir]),
 	    SecLevel    = get_value(sec_level,         Options, noAuthNoPriv),
+	    io:format("[~w] ~p -> SecLevel: ~p~n", [?MODULE, self(), SecLevel]),
 	    MiniMIB     = snmp_mini_mib:create(Mibs),
+	    io:format("[~w] ~p -> MiniMIB: ~p~n", [?MODULE, self(), MiniMIB]),
 	    Version     = case lists:member(v2, Options) of
 			      true -> 'version-2';
 			      false -> 
@@ -208,22 +219,27 @@ init({Options, CallerPid}) ->
 				      false -> 'version-1'
 				  end
 			  end,
+	    io:format("[~w] ~p -> Version: ~p~n", [?MODULE, self(), Version]),
 	    Com = case Version of
 		      'version-3' ->
 			  get_value(context, Options, "");
 		      _ ->
 			  get_value(community, Options, "public")
 		  end,
+	    io:format("[~w] ~p -> Com: ~p~n", [?MODULE, self(), Com]),
 	    VsnHdrD = 
 		{Com, User, EngineId, CtxEngineId, mk_seclevel(SecLevel)},
+	    io:format("[~w] ~p -> VsnHdrD: ~p~n", [?MODULE, self(), VsnHdrD]),
 	    AgIp = case snmp_misc:assq(agent, Options) of
-		       {value, Tuple4} when tuple(Tuple4),size(Tuple4)==4 ->
+		       {value, Tuple4} when is_tuple(Tuple4),size(Tuple4)==4 ->
 			   Tuple4;
-		       {value, Host} when list(Host) ->
+		       {value, Host} when is_list(Host) ->
 			   {ok, Ip} = snmp_misc:ip(Host),
 			   Ip
 		   end,
+	    io:format("[~w] ~p -> AgIp: ~p~n", [?MODULE, self(), AgIp]),
 	    Quiet = lists:member(quiet, Options),
+	    io:format("[~w] ~p -> Quiet: ~p~n", [?MODULE, self(), Quiet]),
 	    PackServ = start_packet_server(Quiet, Options, CallerPid, 
 					   AgIp, Udp, TrapUdp, 
 					   VsnHdrD, Version, Dir, RecBufSz, 
@@ -259,19 +275,19 @@ start_packet_server(true, Options, CallerPid, AgIp, Udp, TrapUdp,
 				    VsnHdrD, Version, Dir, RecBufSz,
 				    PacksDbg).
 
-is_options_ok([{mibs,List}|Opts]) when list(List) ->
+is_options_ok([{mibs,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
 is_options_ok([quiet|Opts])  ->
     is_options_ok(Opts);
 is_options_ok([{agent,_}|Opts]) ->
     is_options_ok(Opts);
-is_options_ok([{agent_udp,Int}|Opts]) when integer(Int) ->
+is_options_ok([{agent_udp,Int}|Opts]) when is_integer(Int) ->
     is_options_ok(Opts);
-is_options_ok([{trap_udp,Int}|Opts]) when integer(Int) ->
+is_options_ok([{trap_udp,Int}|Opts]) when is_integer(Int) ->
     is_options_ok(Opts);
-is_options_ok([{community,List}|Opts]) when list(List) ->
+is_options_ok([{community,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
-is_options_ok([{dir,List}|Opts]) when list(List) ->
+is_options_ok([{dir,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
 is_options_ok([{sec_level,noAuthNoPriv}|Opts]) ->
     is_options_ok(Opts);
@@ -279,13 +295,13 @@ is_options_ok([{sec_level,authNoPriv}|Opts]) ->
     is_options_ok(Opts);
 is_options_ok([{sec_level,authPriv}|Opts]) ->
     is_options_ok(Opts);
-is_options_ok([{context,List}|Opts]) when list(List) ->
+is_options_ok([{context,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
-is_options_ok([{user,List}|Opts]) when list(List) ->
+is_options_ok([{user,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
-is_options_ok([{engine_id,List}|Opts]) when list(List) ->
+is_options_ok([{engine_id,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
-is_options_ok([{context_engine_id,List}|Opts]) when list(List) ->
+is_options_ok([{context_engine_id,List}|Opts]) when is_list(List) ->
     is_options_ok(Opts);
 is_options_ok([v1|Opts]) ->
     is_options_ok(Opts);
@@ -307,7 +323,7 @@ is_options_ok([{packet_server_debug,Bool}|Opts]) ->
 	error ->
 	    {error, {bad_option, packet_server_debug, Bool}}
     end;
-is_options_ok([{recbuf,Sz}|Opts]) when 0 < Sz, Sz =< 65535 ->
+is_options_ok([{recbuf,Sz}|Opts]) when (0 < Sz) and (Sz =< 65535) ->
     is_options_ok(Opts);
 is_options_ok([InvOpt|_]) ->
     {error,{invalid_option,InvOpt}};
@@ -369,7 +385,7 @@ handle_info(resend_pdu, State) ->
     {noreply, State};
 
 handle_info(iter_get_next, State)
-  when record(State#state.last_received_pdu, pdu) ->
+  when is_record(State#state.last_received_pdu, pdu) ->
     d("handle_info -> iter_get_next request",[]),
     PrevPDU = State#state.last_received_pdu,
     Oids    = [get_oid_from_varbind(Vb) || Vb <- PrevPDU#pdu.varbinds], 
@@ -467,7 +483,7 @@ execute_request(Operation, Data, State) ->
 	    State;
 	{error, _Reason} -> 
 	    State;
-	PDU when record(PDU, pdu) ->
+	PDU when is_record(PDU, pdu) ->
 	    send_pdu(PDU, State#state.mini_mib, State#state.packet_server),
 	    State#state{last_sent_pdu = PDU}
     end.
@@ -489,7 +505,7 @@ send_pdu(PDU, _MiniMIB, PackServ) ->
 %%          [1,2,3,3,4,104,101,106,45]
 %%----------------------------------------------------------------------
 
-purify_oid([A|T], MiniMib) when atom(A) ->
+purify_oid([A|T], MiniMib) when is_atom(A) ->
     Oid2 = 
 	case snmp_mini_mib:oid(MiniMib, A) of
 	    false ->
@@ -498,7 +514,7 @@ purify_oid([A|T], MiniMib) when atom(A) ->
 		lists:flatten([Oid|T])
 	end,
     {ok, verify_pure_oid(Oid2)};
-purify_oid(L, _) when list(L) ->
+purify_oid(L, _) when is_list(L) ->
     {ok, verify_pure_oid(lists:flatten(L))};
 purify_oid(X, _) ->
     {error, {invalid_oid, X}}.
@@ -512,9 +528,9 @@ verify_pure_oid([H | _]) ->
     
 flatten_oid(XOid, DB)  ->
     Oid = case XOid of
-	       [A|T] when atom(A) -> 
+	       [A|T] when is_atom(A) -> 
 		   [remove_atom(A, DB)|T];
-	       L when list(L) -> 
+	       L when is_list(L) -> 
 		   XOid;
 	       Shit -> 
 		   throw({error,
@@ -522,7 +538,7 @@ flatten_oid(XOid, DB)  ->
 	   end,
     check_is_pure_oid(lists:flatten(Oid)).
 
-remove_atom(AliasName, DB) when atom(AliasName) ->
+remove_atom(AliasName, DB) when is_atom(AliasName) ->
     case snmp_mini_mib:oid(DB, AliasName) of
 	false ->
 	    throw({error, {"Unknown aliasname in oid: ~w", [AliasName]}});
@@ -536,7 +552,7 @@ remove_atom(X, _DB) ->
 %% Throws if not a list of integers
 %%----------------------------------------------------------------------
 check_is_pure_oid([]) -> [];
-check_is_pure_oid([X | T]) when integer(X), X >= 0 ->
+check_is_pure_oid([X | T]) when is_integer(X) and (X >= 0) ->
     [X | check_is_pure_oid(T)];
 check_is_pure_oid([X | _T]) ->
     throw({error, {"Invalid oid, it contains a non-integer: ~w", [X]}}).
@@ -553,7 +569,7 @@ get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ) ->
 	    get_next_iter_impl(N, PrevPDU, MiniMIB, PackServ);
 	{error, _Reason} ->
 	    PrevPDU;
-	RPDU when record(RPDU, pdu) ->
+	RPDU when is_record(RPDU, pdu) ->
 	    io:format("(~w)", [N]),
 	    echo_pdu(RPDU, MiniMIB),
 	    get_next_iter_impl(N-1, RPDU, MiniMIB, PackServ)
@@ -677,21 +693,21 @@ get_response_impl(Id, Vars) ->
 expect_impl(Id, any) -> 
     io:format("expect_impl(~w, any) -> entry ~n", [Id]),
     case receive_response() of
-	PDU when record(PDU, pdu) -> ok;
+	PDU when is_record(PDU, pdu) -> ok;
 	{error, Reason} -> format_reason(Id, Reason)
     end;
 
 expect_impl(Id, return) -> 
     io:format("expect_impl(~w, return) -> entry ~n", [Id]),
     case receive_response() of
-	PDU when record(PDU, pdu) -> {ok, PDU};
+	PDU when is_record(PDU, pdu) -> {ok, PDU};
 	{error, Reason} -> format_reason(Id, Reason)
     end;
 
 expect_impl(Id, trap) -> 
     io:format("expect_impl(~w, trap) -> entry ~n", [Id]),
     case receive_trap(3500) of
-	PDU when record(PDU, trappdu) -> ok;
+	PDU when is_record(PDU, trappdu) -> ok;
 	{error, Reason} -> format_reason(Id, Reason)
     end;
 
@@ -706,7 +722,7 @@ expect_impl(Id, timeout) ->
 	    ok
     end;
 
-expect_impl(Id, Err) when atom(Err) ->
+expect_impl(Id, Err) when is_atom(Err) ->
     io:format("expect_impl(~w, ~w) -> entry ~n", [Id, Err]),
     case receive_response() of
 	#pdu{error_status = Err} -> 
@@ -724,7 +740,7 @@ expect_impl(Id, Err) when atom(Err) ->
 	    format_reason(Id, Reason)
     end;
 
-expect_impl(Id, ExpectedVarbinds) when list(ExpectedVarbinds) ->
+expect_impl(Id, ExpectedVarbinds) when is_list(ExpectedVarbinds) ->
     io:format("expect_impl(~w) -> entry with"
 	      "~n   ExpectedVarbinds: ~p~n", [Id, ExpectedVarbinds]),
     case receive_response() of
@@ -754,7 +770,7 @@ expect_impl(Id, ExpectedVarbinds) when list(ExpectedVarbinds) ->
 	    format_reason(Id, Reason)
     end.
 
-expect_impl(Id, v2trap, ExpectedVarbinds) when list(ExpectedVarbinds) ->
+expect_impl(Id, v2trap, ExpectedVarbinds) when is_list(ExpectedVarbinds) ->
     io:format("expect_impl(~w, v2trap) -> entry with"
 	      "~n   ExpectedVarbinds: ~p~n", [Id, ExpectedVarbinds]),
     case receive_response() of
@@ -784,7 +800,7 @@ expect_impl(Id, v2trap, ExpectedVarbinds) when list(ExpectedVarbinds) ->
 	    format_reason(Id, Reason)
     end;
 
-expect_impl(Id, report, ExpectedVarbinds) when list(ExpectedVarbinds) ->
+expect_impl(Id, report, ExpectedVarbinds) when is_list(ExpectedVarbinds) ->
     io:format("expect_impl(~w, report) -> entry with"
 	      "~n   ExpectedVarbinds: ~p~n", [Id, ExpectedVarbinds]),
     case receive_response() of
@@ -814,8 +830,8 @@ expect_impl(Id, report, ExpectedVarbinds) when list(ExpectedVarbinds) ->
 	    format_reason(Id, Reason)
     end;
 
-expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
-  list(ExpectedVarbinds) ->
+expect_impl(Id, {inform, Reply}, ExpectedVarbinds) 
+  when is_list(ExpectedVarbinds) ->
     io:format("expect_impl(~w, inform) -> entry with"
 	      "~n   Reply:            ~p"
 	      "~n   ExpectedVarbinds: ~p"
@@ -829,7 +845,7 @@ expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
 	    io:format("expect_impl(~w, inform) -> received pdu with"
 		      "~n   VBs: ~p~n", [Id, VBs]),
 	    case check_vars(Id, find_pure_oids(ExpectedVarbinds), VBs) of
-		ok when Reply == true ->
+		ok when (Reply == true) ->
 		    io:format("expect_impl(~w, inform) -> send ok response"
 			      "~n", [Id]),
 		    RespPDU = Resp#pdu{type = 'get-response',
@@ -837,7 +853,7 @@ expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
 				       error_index = 0},
 		    ?MODULE:rpl(RespPDU),
 		    ok;
-		ok when element(1, Reply) == error ->
+		ok when (element(1, Reply) == error) ->
 		    io:format("expect_impl(~w, inform) -> send error response"
 			      "~n", [Id]),
 		    {error, Status, Index} = Reply,
@@ -846,7 +862,7 @@ expect_impl(Id, {inform, Reply}, ExpectedVarbinds) when
 				       error_index = Index},
 		    ?MODULE:rpl(RespPDU),
 		    ok;
-		ok when Reply == false ->
+		ok when (Reply == false) ->
 		    io:format("expect_impl(~w, inform) -> no response sent"
 			      "~n", [Id]),
 		    ok;
@@ -891,7 +907,7 @@ expect_impl(Id, Err, Index, any) ->
 		      "~n", [Id]),
 	    ok;
 
-	#pdu{type = 'get-response', error_status = Err} when Index == any -> 
+	#pdu{type = 'get-response', error_status = Err} when (Index == any) -> 
 	    io:format("expect_impl(~w, any) -> received expected pdu (any)"
 		      "~n", [Id]),
 	    ok;
@@ -899,7 +915,7 @@ expect_impl(Id, Err, Index, any) ->
 	#pdu{type         = 'get-response', 
 	     request_id   = ReqId, 
 	     error_status = Err, 
-	     error_index  = Idx} when list(Index) ->
+	     error_index  = Idx} when is_list(Index) ->
 	    io:format("expect_impl(~w, any) -> received pdu: "
 		      "~n   ReqId: ~p"
 		      "~n   Err:   ~p"
@@ -948,14 +964,14 @@ expect_impl(Id, Err, Index, ExpectedVarbinds) ->
 
 	#pdu{type         = 'get-response', 
 	     error_status = Err, 
-	     varbinds     = VBs} when Index == any ->
+	     varbinds     = VBs} when (Index == any) ->
 	    check_vars(Id, PureVBs, VBs);
 
 	#pdu{type         = 'get-response', 
 	     request_id   = ReqId, 
 	     error_status = Err, 
 	     error_index  = Idx,
-	     varbinds     = VBs} when list(Index) ->
+	     varbinds     = VBs} when is_list(Index) ->
 	    case lists:member(Idx, Index) of
 		true ->
 		    check_vars(Id, PureVBs, VBs);
@@ -1058,7 +1074,7 @@ find_pure_oid(XOid) ->
 	{error, {Format, Data}} ->
 	    ok = io:format(Format, Data),
 	    exit(malformed_oid);
-	Oid when list(Oid) -> Oid
+	Oid when is_list(Oid) -> Oid
     end.
 
 get_value(Opt, Opts, Default) ->
@@ -1072,9 +1088,9 @@ get_value(Opt, Opts, Default) ->
 %% Debug
 %%----------------------------------------------------------------------
 
-sizeOf(L) when list(L) ->
+sizeOf(L) when is_list(L) ->
     length(lists:flatten(L));
-sizeOf(B) when binary(B) ->
+sizeOf(B) when is_binary(B) ->
     size(B).
 
 d(F,A) -> d(get(debug),F,A).

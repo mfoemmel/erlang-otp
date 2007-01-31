@@ -306,7 +306,7 @@ find_pid(State, Id, X, Y) ->
 find_pid2([Id | Ids], All, DG, State) ->
     case search_for_pid(All, DG, Id) of
 	{ok, _KeyStr, Pid} ->
-	    catch handle_proc_press(mode(), Pid, State);
+	    handle_proc_press(mode(), Pid, State);
 	_ -> find_pid2(Ids, All, DG, State)
     end;
 find_pid2([], _All, _DG, _State) -> ok.
@@ -327,9 +327,25 @@ handle_proc_press(info, Pid, State) ->
     appmon_info:pinfo(State#astate.client, Pid, true, 
 		      [{timeout, at_most_once}]);
 handle_proc_press(send, Pid, _State) -> 
-    {P, Msg} = two_entries(winroot(), 250, 70, "Send", "To: ", "Msg: ", 
-			   pid_to_list(Pid), "", bg()),
-    list_to_pid(P) ! list_to_term(Msg);
+    {P, RawStr} = two_entries(winroot(), 250, 70,
+			      "Send", "To: ", "Msg: ", 
+			      pid_to_list(Pid), "", bg()),
+    Str = case lists:last(RawStr) of
+	       46 -> RawStr;
+	       _ -> RawStr++"."
+	   end,
+    case erl_scan:string(Str) of
+	{ok, Tokens, _} ->
+	    case erl_parse:parse_term(Tokens) of
+		{ok, Term} ->
+		    case catch list_to_pid(P) of
+			To when is_pid(To) -> To ! Term;
+			_ -> error
+		    end;
+		_Error -> error
+	    end;
+	_Error -> error
+    end;
 handle_proc_press(trace, Pid, _State) -> 
     case trace_state(Pid) of
 	true ->
@@ -423,7 +439,7 @@ add_procs([{Pid, Str}|Vs], DG, Ref) ->
 	known	-> add_procs(Vs, DG, Ref);
 	updated -> add_procs(Vs, DG, Ref);
 	_	-> 
-	    case lists:member($@, Str) of
+	    case lists:member(32, Str) of
 		true -> 
 		    appmon_dg:set(x, DG, Str, foreign), % UNHOLY!
 		    add_procs(Vs, DG, Ref);	% Don't add foreign
@@ -440,7 +456,7 @@ add_procs([], _DG, _Ref) -> [].
 %% OTP-1970: Check that linked-to processes really exist.
 %%
 add_links([{V1, V2}|Ls], DG, Ref, Weight) ->
-    L = case lists:member($@, V2) of
+    L = case lists:member(32, V2) of
 	    true -> {V1, V2, foreign};
 	    _ ->    {V1, V2, Weight}
 	end,
@@ -868,23 +884,6 @@ two_entries_loop(E1, E2, Ok, Cn) ->
 	{gs, Cn, click, _, _} ->
 	    true
     end.
-
-%%
-%% Expected behaviour is to return the wanted 
-%% term or die.
-%%
-list_to_term(RawList) ->
-    List = fix(RawList),
-    {ok, Tokens, _} = erl_scan:string(List, []),
-    {ok, Term} = erl_parse:parse_term(Tokens),
-    Term.
-
-fix([]) -> ". ";
-fix(". ") -> ". ";
-fix(".") -> ". ";
-fix([A|As]) ->
-    [A|fix(As)].
-
 
 %%--------------------------------------------------------------------
 %%

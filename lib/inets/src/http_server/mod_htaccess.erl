@@ -18,7 +18,6 @@
 -module(mod_htaccess).
 
 -export([do/1, load/2]).
--export([debug/0]).
 
 -include("httpd.hrl").
 
@@ -1071,59 +1070,3 @@ getRootPath(PresumtiveRootPath, [Part], _Info)->
 	false ->
 	    {error,Part}
     end.
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%Debug methods                                                     %%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%      
-%----------------------------------------------------------------------
-% Simulate the webserver by calling do/1 with apropiate parameters
-%----------------------------------------------------------------------
-debug()->
-    Conf=getConfigData(),
-    Uri=getUri(),
-    {_Proceed,Data}=getDataFromAlias(Conf,Uri),
-    Init_data=#init_data{peername={socket,"127.0.0.1"}},
-    ParsedHeader=headerparts(),
-    do(#mod{init_data=Init_data,
-	    data=Data,
-	    config_db=Conf,
-	    request_uri=Uri,
-	    parsed_header=ParsedHeader,
-	   method="GET"}).
-	    
-%----------------------------------------------------------------------
-%Add authenticate data to the fake http-request header
-%----------------------------------------------------------------------
-headerparts()->
-    [{"authorization","Basic " ++ http_base_64:encode("lotta:potta")}].
-
-getDataFromAlias(Conf,Uri)->
-    mod_alias:do(#mod{config_db=Conf,request_uri=Uri}).
-
-getUri()->
-    "/appmon/test/test.html".
-
-getConfigData()->
-    Tab=ets:new(test_inets,[bag,public]),
-    ets:insert(Tab,{server_name,"localhost"}),
-    ets:insert(Tab,{bind_addresss,{127,0,0,1}}),
-    ets:insert(Tab,{erl_script_alias,{"/webcover/erl",["webcover"]}}),
-    ets:insert(Tab,{erl_script_alias,{"/erl",["webappmon"]}}),
-    ets:insert(Tab,{com_type,ip_comm}),
-    ets:insert(Tab,{modules,[mod_alias,mod_auth,mod_header]}),
-    ets:insert(Tab,{default_type,"text/plain"}),
-    ets:insert(Tab,{server_root,
-		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
-    ets:insert(Tab,{port,8888}),
-    ets:insert(Tab,{document_root,
-		    "/home/gandalf/marting/exjobb/webtool-1.0/priv/root"}),
-    ets:insert(Tab,
-	       {alias,
-		{"/appmon"
-		 ,"/home/gandalf/marting/exjobb/webappmon-1.0/priv"}}),
-    ets:insert(Tab,{alias,
-		    {"/webcover"
-		     ,"/home/gandalf/marting/exjobb/webcover-1.0/priv"}}),
-    ets:insert(Tab,{access_file,[".htaccess","kalle","pelle"]}),
-    Tab.

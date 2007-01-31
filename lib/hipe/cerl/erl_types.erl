@@ -32,11 +32,20 @@
 
 -define(WIDENING_LIMIT, 5).
 
+-define(TAG_IMMED1_SIZE, 4).
+-define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
+
 %-define(widening_debug, fun(X, Y) -> io:format("widening: ~s ~p~n", [X, Y]) end).
 -define(widening_debug, fun(_, _) -> ok end).
 
 -export([
+	 lookup_record/3,
+	 max/2,
+	 min/2,
+	 number_max/1,
+	 number_min/1,
 	 t_any/0,
+	 t_arity/0,
 	 t_atom/0,
 	 t_atom/1,
 	 t_atom_vals/1,
@@ -50,7 +59,11 @@
 	 t_cons_hd/1,
 	 t_cons_tl/1,
 	 t_constant/0,
+	 t_fixnum/0,
+	 t_fixnum_non_neg/0,
+	 t_fixnum_pos/0,
 	 t_float/0,
+	 t_from_form/2,
 	 t_from_range/2,
 	 t_from_term/1,
 	 t_fun/0,
@@ -66,28 +79,31 @@
 	 t_inf_lists/2,
 	 t_integer/0,
 	 t_integer/1,
+	 t_integer_non_neg/0,
+	 t_integer_pos/0,
 	 t_integers/1,
 	 t_is_any/1,
 	 t_is_atom/1,
 	 t_is_atom/2,
 	 t_is_binary/1,
+	 t_is_bitwidth/1,
 	 t_is_bool/1,
 	 t_is_byte/1,
 	 t_is_char/1,
 	 t_is_cons/1,
 	 t_is_constant/1,
 	 t_is_equal/2,
+	 t_is_fixnum/1,
 	 t_is_float/1,
 	 t_is_fun/1,
-	 t_is_pos_improper_list/1,
 	 t_is_integer/1,
-	 t_is_fixnum/1,
 	 t_is_list/1,
 	 t_is_nil/1,
 	 t_is_none/1,
 	 t_is_number/1,	 
 	 t_is_pid/1,
 	 t_is_port/1,
+	 t_is_pos_improper_list/1,
 	 t_is_ref/1,
 	 t_is_subtype/2,
 	 t_is_tuple/1,
@@ -96,6 +112,7 @@
 	 t_list/0,
 	 t_list/1,
 	 t_list_elements/1,
+	 t_mfa/0,
 	 t_nil/0,	 
 	 t_none/0,
 	 t_nonempty_list/0,
@@ -111,7 +128,9 @@
 	 t_ref/0,
 	 t_string/0,
 	 t_subst/2,
+	 t_subst_form/2,
 	 t_subtract/2,
+	 t_subtract_list/2,
 	 t_sup/1,
 	 t_sup/2,
 	 t_to_string/1,
@@ -125,21 +144,16 @@
 	 t_unify/2,
 	 t_var/1,
 	 t_var_name/1,
-	 number_max/1,
-	 number_min/1,
-	 min/2,
-	 max/2,
 	 widening/3
 	]).
 
--define(ENABLE_TEST, true).
+%% -define(DO_ERL_TYPES_TEST, true).
 
--ifdef(ENABLE_TEST).
+-ifdef(DO_ERL_TYPES_TEST).
 -export([test/0]).
 -else.
 -define(NO_UNUSED, true).
 -endif.
-
 
 -ifndef(NO_UNUSED).
 -export([t_is_identifier/1]).
@@ -199,7 +213,7 @@
 -define(atom(Set),                 #c{tag=?atom_tag, elements=Set}).
 -define(binary,                    #c{tag=?binary_tag}).
 -define(float,                     ?number(?any,  ?float_tag)).
--define(function(Domain,Range),    #c{tag=?function_tag, 
+-define(function(Domain, Range),   #c{tag=?function_tag, 
 				      elements=[Domain, Range]}).
 -define(identifier(Types),         #c{tag=?identifier_tag, elements=Types}).
 -define(integer(Types),            ?number(Types, ?int_tag)).
@@ -220,6 +234,9 @@
 
 -define(byte,                      ?int_range(0, ?MAX_BYTE)).
 -define(char,                      ?int_range(0, ?MAX_CHAR)).
+-define(integer_pos,               ?int_range(1, pos_inf)).
+-define(integer_non_neg,           ?int_range(0, pos_inf)).
+-define(integer_neg,               ?int_range(neg_inf, -1)).
 
 
 %%-----------------------------------------------------------------------------
@@ -243,11 +260,11 @@
 -define(nil_union(T),         ?list_union(T)).
 
 
-%%============================================================================
+%%=============================================================================
 %% 
 %% Primitive operations such as type construction and type tests.
 %%
-%%============================================================================
+%%=============================================================================
 
 %%-----------------------------------------------------------------------------
 %% Top and bottom
@@ -354,7 +371,7 @@ t_is_fun(_) -> false.
 t_identifier() ->
   ?identifier(?any).
 
--ifdef(ENABLE_TEST).
+-ifdef(DO_ERL_TYPES_TEST).
 t_is_identifier(?identifier(_)) -> true;
 t_is_identifier(_) -> false.
 -endif.
@@ -640,14 +657,38 @@ reduce_tuple_tags([], T, Acc) ->
 
 
 %%-----------------------------------------------------------------------------
-%% Non-primitive types
+%% Non-primitive types, including some handy syntactic-sugar types
 %%
 
 t_constant() ->
   t_sup([t_number(), t_identifier(), t_atom(), t_fun(), t_binary()]).
 
 t_is_constant(X) ->
-  not t_is_none(t_inf(t_constant(), X)).
+  t_is_subtype(X, t_constant()).
+
+t_arity() ->
+  t_from_range(0, 255).	% was t_byte().
+
+t_integer_pos() ->
+  t_from_range(1, pos_inf).
+
+t_integer_non_neg() ->
+  t_from_range(0, pos_inf).
+
+t_integer_neg() ->
+  t_from_range(neg_inf, -1).
+
+t_fixnum() ->
+  t_integer(). % Gross over-approximation
+
+t_fixnum_pos() ->
+  t_integer_pos().  % Gross over-approximation
+
+t_fixnum_non_neg() ->
+  t_integer_non_neg().  % Gross over-approximation
+
+t_mfa() ->
+  t_tuple([t_atom(), t_atom(), t_arity()]).
 
 %%------------------------------------
 
@@ -713,10 +754,9 @@ t_from_term(T) when is_reference(T) -> t_ref();
 t_from_term(T) when is_tuple(T) ->     t_tuple([t_from_term(E) 
 						|| E <- tuple_to_list(T)]).
 
-
 %%-----------------------------------------------------------------------------
 %% Integer types from a range.
-%%
+%%-----------------------------------------------------------------------------
 
 %%-define(USE_RANGES, true).
 
@@ -729,27 +769,38 @@ t_from_range(X, Y) when is_integer(X), is_integer(Y), X =< Y ->
   if (Y - X) < ?SET_LIMIT -> t_integers(lists:seq(X, Y));
      true -> ?int_range(X, Y)
   end;
-t_from_range(X, Y) when is_integer(X), is_integer(Y) -> t_none().
+t_from_range(X, Y) when is_integer(X), is_integer(Y) -> t_none();
+t_from_range(pos_inf, neg_inf) -> t_none().
 
 -else.
 
-t_from_range(neg_inf, _) -> t_integer();
-t_from_range(_, pos_inf) -> t_integer();
+t_from_range(neg_inf, pos_inf) -> t_integer();
+t_from_range(neg_inf, Y) when is_integer(Y), Y < 0  -> ?integer_neg;
+t_from_range(neg_inf, Y) when is_integer(Y), Y >= 0 -> t_integer();
+t_from_range(X, pos_inf) when is_integer(X), X >= 1 -> ?integer_pos;
+t_from_range(X, pos_inf) when is_integer(X), X >= 0 -> ?integer_non_neg;
+t_from_range(X, pos_inf) when is_integer(X), X < 0  -> t_integer();
 t_from_range(X, Y) when is_integer(X), is_integer(Y), X > Y -> t_none();
 t_from_range(X, Y) when is_integer(X), is_integer(Y) ->
   case ((Y - X) < ?SET_LIMIT) of 
     true -> t_integers(lists:seq(X, Y));
     false ->
       case X >= 0 of
-	false -> t_integer();
-	true ->
-	  if Y =< ?MAX_BYTE -> t_byte();
-	     Y =< ?MAX_CHAR -> t_char();
+	false -> 
+	  if Y < 0 -> ?integer_neg;
 	     true -> t_integer()
+	  end;
+	true ->
+	  if Y =< ?MAX_BYTE, X >= 1 -> ?int_range(1, ?MAX_BYTE);
+	     Y =< ?MAX_BYTE -> t_byte();
+	     Y =< ?MAX_CHAR, X >= 1 -> ?int_range(1, ?MAX_CHAR);
+	     Y =< ?MAX_CHAR -> t_char();
+	     X >= 1         -> ?integer_pos;
+	     X >= 0         -> ?integer_non_neg
 	  end
       end
-  end.
-
+  end;
+t_from_range(pos_inf, neg_inf) -> t_none().
 
 -endif.
 
@@ -762,6 +813,20 @@ t_is_fixnum(?int_set(Set)) ->
     andalso hipe_tagscheme:is_fixnum(set_max(Set));
 t_is_fixnum(_) -> false.
 
+infinity_geq(pos_inf, _) -> true;
+infinity_geq(_, pos_inf) -> false;
+infinity_geq(_, neg_inf) -> true;
+infinity_geq(neg_inf, _) -> false;
+infinity_geq(A, B) -> A >= B.
+
+t_is_bitwidth(?int_range(neg_inf, _)) -> false;
+t_is_bitwidth(?int_range(_, pos_inf)) -> false;
+t_is_bitwidth(?int_range(From, To)) ->
+  infinity_geq(From, 0) andalso infinity_geq(?BITS, To);
+t_is_bitwidth(?int_set(Set)) ->
+  infinity_geq(set_min(Set), 0) andalso infinity_geq(?BITS, set_max(Set));
+t_is_bitwidth(_) -> false.
+
 
 number_min(?int_range(From, _)) -> From;
 number_min(?int_set(Set)) -> set_min(Set);
@@ -771,10 +836,14 @@ number_max(?int_range(_, To)) -> To;
 number_max(?int_set(Set)) -> set_max(Set);
 number_max(?number(?any, _Tag)) -> pos_inf.
 
+%%-----------------------------------------------------------------------------
+%% Widening of ranges
+%%-----------------------------------------------------------------------------
+
 widening(?any, _, _) -> ?any;
 widening(Type, ?any, _) -> Type;
 widening(?function(Domain, Range), ?function(OldDomain, OldRange), Version) 
-  when length(Domain) == length(OldDomain) ->
+  when length(Domain) =:= length(OldDomain) ->
   ?widening_debug("function", {{Domain, Range}, {OldDomain, OldRange}}),
   NewDomain = lists:zipwith(
 		fun(Type, OldType) -> widening(Type, OldType, Version) end,
@@ -791,7 +860,7 @@ widening(?list(Contents, Termination, Size),
   ?list(NewContent, NewTermination, Size);
 %%  t_list(NewContent);
 widening(?product(Types), ?product(OldTypes), Version) 
-  when length(Types) == length(OldTypes) ->
+  when length(Types) =:= length(OldTypes) ->
   %?widening_debug("Product", {Types, OldTypes}),
   t_product(lists:zipwith(
 	      fun(Type, OldType) -> widening(Type, OldType, Version) end,
@@ -935,18 +1004,8 @@ t_sup(?integer(_), T = ?integer(?any)) -> T;
 t_sup(?int_set(Set1), ?int_set(Set2)) ->
   case set_union(Set1, Set2) of
     ?any ->
-      L1 = set_to_list(Set1),
-      L2 = set_to_list(Set2),
-      ByteFun = fun(X) -> (X >= 0) andalso (X =< ?MAX_BYTE) end,
-      case lists:all(ByteFun, L1) andalso lists:all(ByteFun, L2) of
-	true -> t_byte();
-	false ->
-	  CharFun = fun(X) -> (X >= 0) andalso (X =< ?MAX_CHAR) end,
-	  case lists:all(CharFun, L1) andalso lists:all(CharFun, L2) of
-	    true -> t_char();
-	    false -> t_integer()
-	  end
-      end;
+      t_from_range(min(set_min(Set1), set_min(Set2)), 
+		   max(set_max(Set1), set_max(Set2)));
     Set -> ?int_set(Set)
   end;
 t_sup(?int_range(From1, To1), ?int_range(From2, To2)) ->
@@ -1375,6 +1434,11 @@ unify_lists([], [], Dict, Acc) ->
 %%                          = {a,c}|{b,c}|{b,d} = {a|b,c|d}
 %%
 
+t_subtract_list(T1, [T2|Left]) ->
+  t_subtract_list(t_subtract(T1, T2), Left);
+t_subtract_list(T, []) ->
+  T.
+
 t_subtract(_, ?any) -> ?none;
 t_subtract(?any, _) -> ?any;
 t_subtract(?none, _) -> ?none;
@@ -1502,6 +1566,12 @@ t_subtract(?tuple_set(List1), T2 = ?tuple_set(_)) ->
     [Tuple] -> Tuple;
     NewList1 -> t_sup(NewList1)
   end;  
+t_subtract(?product(P1), ?product(P2)) ->
+  case t_subtract(t_tuple(P1), t_tuple(P2)) of
+    ?none -> ?none;
+    ?tuple(Es, _Arity, _Tag) ->
+      ?product(Es)
+  end;
 t_subtract(?union(U1), ?union(U2)) ->
   subtract_union(U1, U2);
 t_subtract(T1, T2) ->  
@@ -1590,7 +1660,7 @@ t_limit(?function(Domain, Range), K) ->
 t_limit(?product(Elements), K) ->
   ?product([t_limit(X, K - 1) || X <- Elements]);
 t_limit(?union(Elements), K) ->
-  Elements1 = [t_limit(X, K - 1) || X <- Elements],
+  Elements1 = [t_limit(X, K) || X <- Elements],
   case all_any(Elements1) of
     true -> ?any;
     false -> ?union([t_limit(X, K) || X <- Elements])
@@ -1699,8 +1769,11 @@ t_to_string(?int_set(Set), _RecDict) ->
   set_to_string(Set);  
 t_to_string(?byte, _RecDict) -> "byte()";
 t_to_string(?char, _RecDict) -> "char()";
+t_to_string(?integer_pos, _RecDict) -> "pos_integer()";
+t_to_string(?integer_non_neg, _RecDict) -> "non_neg_integer()";
+t_to_string(?integer_neg, _RecDict) -> "neg_integer()";
 t_to_string(?int_range(From, To), _RecDict) ->
-  lists:flatten(io_lib:format("range(~w, ~w)", [From, To]));
+  lists:flatten(io_lib:format("(~w..~w)", [From, To]));
 t_to_string(?integer(?any), _RecDict) -> "integer()";
 t_to_string(?float, _RecDict) -> "float()";
 t_to_string(?number(?any, ?number_tag), _RecDict) -> "number()";
@@ -1711,7 +1784,7 @@ t_to_string(?tuple(Elements, _Arity, ?any), RecDict) ->
   "{" ++ comma_sequence(Elements, RecDict) ++ "}";
 t_to_string(?tuple(Elements, Arity, Tag), RecDict) ->
   [TagAtom] = t_atom_vals(Tag),
-  case dict:find({TagAtom, Arity-1}, RecDict) of
+  case lookup_record(TagAtom, Arity-1, RecDict) of
     error -> "{" ++ comma_sequence(Elements, RecDict) ++ "}";
     {ok, FieldNames} ->
       record_to_string(TagAtom, Elements, FieldNames, RecDict)
@@ -1727,12 +1800,22 @@ record_to_string(Tag, [_|Fields], FieldNames, RecDict) ->
   FieldStrings = record_fields_to_string(Fields, FieldNames, RecDict, []),
   "#" ++ atom_to_list(Tag)++"{" ++ sequence(FieldStrings, [], ",") ++ "}".
 
-record_fields_to_string([?any|Left1], [_|Left2], RecDict, Acc) ->
-  record_fields_to_string(Left1, Left2, RecDict, Acc);
-record_fields_to_string([Field|Left1], [FieldName|Left2], RecDict, Acc) ->
-  case t_is_atom(undefined, Field) of
-    true -> record_fields_to_string(Left1, Left2, RecDict, Acc);
-    false ->
+record_fields_to_string([Field|Left1], [FieldName0|Left2], RecDict, Acc) ->
+  {FieldName, PrintType} =
+    case FieldName0 of
+      {FN, DeclaredType} when is_atom(FN) ->
+	case t_is_equal(Field, DeclaredType) of
+	  true -> {FN, false};
+	  false ->
+	    TmpType = t_subtract(DeclaredType, t_atom(undefined)),
+	    {FN, not t_is_equal(Field, TmpType)}
+	end;
+      FN when is_atom(FN) -> 
+	{FN, not (t_is_atom(undefined, Field) orelse t_is_any(Field))}
+    end,
+  case PrintType of
+    false -> record_fields_to_string(Left1, Left2, RecDict, Acc);
+    true ->
       String = atom_to_list(FieldName) ++ "=" ++ t_to_string(Field, RecDict),
       record_fields_to_string(Left1, Left2, RecDict, [String|Acc])
   end;
@@ -1760,6 +1843,130 @@ sequence([T|Left], Acc, Delimiter) ->
 
 %%============================================================================
 %% 
+%% Build a type from parse forms.
+%%
+%%============================================================================
+
+t_from_form({type, any, []}, _RecDict) -> t_any();
+t_from_form({type, atom, []}, _RecDict) -> t_atom();
+t_from_form({type, atom, [Atom]}, _RecDict) -> t_atom(Atom);
+t_from_form({type, binary, []}, _RecDict) -> t_binary();
+t_from_form({type, bool, []}, _RecDict) -> t_bool();
+t_from_form({type, byte, []}, _RecDict) -> t_byte();
+t_from_form({type, char, []}, _RecDict) -> t_char();
+t_from_form({type, float, []}, _RecDict) -> t_float();
+t_from_form({type, 'fun', []}, _RecDict) -> t_fun();
+t_from_form({type, 'fun', [Domain, Range]}, RecDict) -> 
+  t_fun([t_from_form(D, RecDict) || D <- Domain], t_from_form(Range, RecDict));
+t_from_form({type, identifier, []}, _RecDict) -> t_identifier();
+t_from_form({type, integer, []}, _RecDict) -> t_integer();
+t_from_form({type, integer, [Integer]}, _RecDict) -> t_integer(Integer);
+t_from_form({type, list, []}, _RecDict) -> t_list();
+t_from_form({type, list, [Type]}, RecDict) -> 
+  t_list(t_from_form(Type, RecDict));
+t_from_form({type, mfa, []}, _RecDict) -> t_mfa();
+t_from_form({type, nil, []}, _RecDict) -> t_nil();
+t_from_form({type, neg_integer, []}, _RecDict) -> t_integer_neg();
+t_from_form({type, non_neg_integer, []}, _RecDict) -> t_integer_non_neg();
+t_from_form({type, none, []}, _RecDict) -> t_none();
+t_from_form({type, nonempty_list, []}, _RecDict) -> t_nonempty_list();
+t_from_form({type, nonempty_list, [Type]}, RecDict) -> 
+  t_nonempty_list(t_from_form(Type, RecDict));
+t_from_form({type, nonempty_possibly_improper_list, []}, _RecDict) -> t_cons();
+t_from_form({type, nonempty_possibly_improper_list, 
+	     [Content, Termination]}, RecDict) ->
+  t_cons(t_from_form(Content, RecDict), t_from_form(Termination, RecDict));
+t_from_form({type, number, []}, _RecDict) -> t_number();
+t_from_form({type, pid, []}, _RecDict) -> t_pid();
+t_from_form({type, port, []}, _RecDict) -> t_port();
+t_from_form({type, pos_integer, []}, _RecDict) -> t_integer_pos();
+t_from_form({type, possibly_improper_list, []}, _RecDict) -> 
+  t_pos_improper_list();
+t_from_form({type, possibly_improper_list, [Content, Termination]}, RecDict) ->
+  t_pos_improper_list(t_from_form(Content, RecDict), 
+		      t_from_form(Termination, RecDict));
+t_from_form({type, product, Elements}, RecDict) ->
+  t_product([t_from_form(E, RecDict) || E <- Elements]);
+t_from_form({type, range, [From, To]}, _RecDict) -> t_from_range(From, To);
+t_from_form({type, record, [Name|Fields]}, RecDict) -> 
+  record_from_form(Name, Fields, RecDict);
+t_from_form({type, ref, []}, _RecDict) -> t_ref();
+t_from_form({type, string, []}, _RecDict) -> t_string();
+t_from_form({type, tuple, []}, _RecDict) -> t_tuple();
+t_from_form({type, tuple, Args}, RecDict) -> 
+  t_tuple([t_from_form(A, RecDict) || A <- Args]);
+t_from_form({type, union, Args}, RecDict) -> 
+  t_sup([t_from_form(A, RecDict) || A <- Args]).
+
+record_from_form(Name, ModFields, RecDict) ->
+  case lookup_record(Name, RecDict) of
+    {ok, DeclFields} ->
+      ModFields1 = orddict:from_list([{Name, t_from_form(Form, RecDict)}
+				      || {Name, Form} <- ModFields]),
+      case get_mod_record(ModFields1, DeclFields) of
+	{error, FieldName} ->
+	  throw({error, io_lib:format("Illegal declaration of ~w#{~w}\n", 
+				      [Name, FieldName])});
+	{ok, NewFields} ->
+	  t_tuple([t_atom(Name)|[Type || {_FieldName, Type} <- NewFields]])
+      end;
+    error -> 
+      throw({error, 
+	     erlang:fault(io_lib:format("Unknown record  ~w#{}\n", [Name]))})
+  end.
+
+get_mod_record([], DeclFields) ->
+  {ok, DeclFields};
+get_mod_record(ModFields, DeclFields) ->
+  SortedDeclFields = orddict:from_list(DeclFields),
+  case get_mod_record(SortedDeclFields, ModFields, []) of
+    {error, _FieldName} = Error -> Error;
+    {ok, FinalOrdDict} ->
+      {ok, [{FieldName, orddict:fetch(FieldName, FinalOrdDict)}
+	    || {FieldName, _} <- DeclFields]}
+  end.
+
+get_mod_record([{FieldName, DeclType}|Left1], 
+	       [{FieldName, ModType}|Left2], Acc) ->
+  case t_is_subtype(ModType, DeclType) of
+    false -> {error, FieldName};
+    true -> get_mod_record(Left1, Left2, [{FieldName, ModType}|Acc])
+  end;
+get_mod_record([{FieldName1, _DeclType} = DT|Left1], 
+	       [{FieldName2, _ModType}|_] = List2, 
+	       Acc) when FieldName1 < FieldName2 ->
+  get_mod_record(Left1, List2, [DT|Acc]);
+get_mod_record(DeclFields, [], Acc) ->
+  {ok, Acc ++ DeclFields};
+get_mod_record(_, [{FieldName2, _ModType}|_], _Acc) ->
+  {error, FieldName2}.
+
+t_subst_form(Type, Dict) ->
+  try {ok, t_subst_form_1(Type, Dict)}
+  catch
+    throw:{unknown_record, Name} -> {unknown_record, Name}
+  end.
+
+t_subst_form_1({type, record, [Name]}, Dict) ->
+  case dict:find(Name, Dict) of
+    {ok, Fields} -> 
+      {type, tuple, [{type, atom, [Name]}|[Form || {_FName, Form} <- Fields]]};
+    error -> throw({unknown_record, Name})
+  end;
+t_subst_form_1({type, _, []} = Type, _Dict) -> 
+  %% Does not contain any subtypes
+  Type;
+%% ---- Types with non-subtypes in the argument
+t_subst_form_1({type, atom, [_]} = Type, _Dict) -> Type;
+t_subst_form_1({type, integer, [_]} = Type, _Dict) -> Type;
+%% ---- Types with subtypes in the argument
+t_subst_form_1({type, Tag, Subtypes}, Dict) -> 
+  {type, Tag, [t_subst_form_1(ST, Dict) || ST <- Subtypes]}.
+
+  
+
+%%============================================================================
+%% 
 %% Utilities
 %%
 %%============================================================================
@@ -1775,7 +1982,25 @@ all_any([?any|Left]) -> all_any(Left);
 all_any([]) -> true;
 all_any([_|_]) -> false.
   
-  
+lookup_record(Tag, RecDict) ->  
+  case dict:find(Tag, RecDict) of
+    {ok, [{_Arity, Fields}]} -> {ok, Fields};
+    {ok, List} when is_list(List) ->
+      %% This will have to do, since we do not know which record we
+      %% are looking for.
+      error;
+    error ->
+      error
+  end.
+
+lookup_record(Tag, Arity, RecDict) ->  
+  case dict:find(Tag, RecDict) of
+    {ok, [{Arity, Fields}]} -> {ok, Fields};
+    {ok, OrdDict} -> orddict:find(Arity, OrdDict);
+    error ->
+      error
+  end.
+      
 %% -----------------------------------
 %% Set
 %%
@@ -1849,12 +2074,10 @@ set_max(Set) ->
   hd(lists:reverse(Set)).
 
 %%============================================================================
-%% 
-%% Test
-%%
+%% Consistency-testing function(s) below
 %%============================================================================
 
--ifdef(ENABLE_TEST).		  
+-ifdef(DO_ERL_TYPES_TEST).		  
 
 test() ->
   Atom1  = t_atom(),
@@ -1917,8 +2140,6 @@ test() ->
   true  = t_is_bool(t_cons_hd(List5)),
   true  = t_is_list(List5),
   false = t_is_list(List4),
-  
-
 
   Product1 = t_product([Atom1, Atom2]),
   Product2 = t_product([Atom3, Atom1]),
@@ -1954,7 +2175,6 @@ test() ->
 
   RecDict = dict:store({foo, 2}, [bar, baz], dict:new()),
   Record1 = t_from_term({foo, [1,2], {1,2,3}}),
-    
   
   Types = [
 	   Atom1,

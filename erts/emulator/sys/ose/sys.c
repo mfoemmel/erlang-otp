@@ -443,6 +443,10 @@ char *getenv_string(GETENV_STATE *state0) {
   }
 }
     
+void fini_getenv_state(GETENV_STATE *state)
+{
+   *state = NULL;
+}
       
 /************************** Port I/O *******************************/
 
@@ -491,7 +495,7 @@ static ErlDrvData fd_start(ErlDrvPort, char*, SysDriverOpts*);
 static void fd_ready_input(ErlDrvData, ErlDrvEvent);
 static void fd_output(ErlDrvData, char*, int);
 
-const struct erl_drv_entry fd_driver_entry = {
+struct erl_drv_entry fd_driver_entry = {
     NULL,
     fd_start,
     stop_driver,
@@ -513,7 +517,7 @@ static int spawn_init(void);
 static void ready_input(ErlDrvData, ErlDrvEvent);
 static void output(ErlDrvData, char*, int);
 
-const struct erl_drv_entry spawn_driver_entry = {
+struct erl_drv_entry spawn_driver_entry = {
   spawn_init,			/* init */
   spawn_start,			/* port opened */
   stop_driver,			/* port closed */
@@ -2129,5 +2133,5 @@ int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
 }
 
 /* vanilla driver - dummy for now */
-const struct erl_drv_entry vanilla_driver_entry;
+struct erl_drv_entry vanilla_driver_entry;
   

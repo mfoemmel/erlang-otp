@@ -293,6 +293,7 @@ assemble_alu(Instr) ->
 	    '>>?64' -> hipe_sparc_op:sraix(Src1,Src2,Dst);
 	    '<<' -> hipe_sparc_op:slli(Src1,Src2,Dst);
 	    '<<64' -> hipe_sparc_op:sllix(Src1,Src2,Dst);
+	    'smul' -> hipe_sparc_op:smuli(Src1,Src2,Dst);
 	    _ -> exit([{problem,{not_handled,{aluop,AluOp}}},{at,Instr}])
 	  end;
 	false -> %% Not reg or imm
@@ -317,6 +318,7 @@ assemble_alu(Instr) ->
 	'>>64' -> hipe_sparc_op:srlx(Src1,Src2,Dst);
 	'>>?64' -> hipe_sparc_op:srax(Src1,Src2,Dst);
 	'<<64' -> hipe_sparc_op:sllx(Src1,Src2,Dst);
+	'smul' -> hipe_sparc_op:smul(Src1,Src2,Dst);
 	_ -> exit([{problem,{not_handled,{aluop,AluOp}}},{at,Instr}])
       end
   end.
@@ -505,6 +507,10 @@ assemble_jmp(Jmp)->
   Link = hipe_sparc_registers:zero(),
   Off = hipe_sparc:jmp_off(Jmp),
   assemble_jlink(Jmp, Target, Off, Link).
+
+assemble_rdy(Instr) ->
+  Dest = hipe_sparc:reg_nr(hipe_sparc:rdy_dest(Instr)),
+  hipe_sparc_op:rdy(Dest).
 
 assemble_sethi(Instr)->
   Dest = hipe_sparc:reg_nr(hipe_sparc:sethi_dest(Instr)),
@@ -798,6 +804,7 @@ link8([I|Is],MFA,Addr,Map,ConstMap,Refs,Code) ->
       #conv_fp{} -> {assemble_conv_fp(I),Addr+4,Refs};
       #jmp{} -> {assemble_jmp(I),Addr+4,Refs};
       #nop{} -> {assemble_nop(I),Addr+4,Refs};
+      #rdy{} -> {assemble_rdy(I),Addr+4,Refs};
       #sethi{} -> {assemble_sethi(I),Addr+4,Refs};
       Other -> exit({bad_sparc_instruction,Other})
     end of

@@ -481,6 +481,11 @@ char *getenv_string(GETENV_STATE *state0)
    return NULL;
 }
 
+void fini_getenv_state(GETENV_STATE *state)
+{
+   *state = NULL;
+}
+
 /************************** Port I/O *******************************/
 
 
@@ -543,7 +548,7 @@ static void ready_input(ErlDrvData fd, ErlDrvEvent ready_fd);
 static void ready_output(ErlDrvData fd, ErlDrvEvent ready_fd);
 static void output(ErlDrvData fd, char *buf, int len);
 
-const struct erl_drv_entry spawn_driver_entry = {
+struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
     spawn_start,
     stop,
@@ -558,7 +563,7 @@ const struct erl_drv_entry spawn_driver_entry = {
     NULL,
     NULL
 };
-const struct erl_drv_entry fd_driver_entry = {
+struct erl_drv_entry fd_driver_entry = {
     NULL,
     fd_start,
     fd_stop,
@@ -573,7 +578,7 @@ const struct erl_drv_entry fd_driver_entry = {
     NULL,
     NULL
 };
-const struct erl_drv_entry vanilla_driver_entry = {
+struct erl_drv_entry vanilla_driver_entry = {
     NULL,
     vanilla_start,
     stop,

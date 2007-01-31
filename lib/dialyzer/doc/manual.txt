@@ -165,7 +165,8 @@ The exit status of the command line version is:
 Usage: dialyzer [--otp OTP_DIR] [--help] [--version] [--shell]
 		 [-pa dir]* [-plt plt] [-Ddefine]* [-I include_dir]* 
 		 [--output_plt file] [-Wwarn]*  [--src] 
-		 [-c applications] [-r applications] [-o outfile] [-q]
+		 [-c applications] [-r applications] [-o outfile] 
+                 [-q] [--verbose]
 
 Options: 
    -c applications (or --command-line applications)
@@ -198,6 +199,9 @@ Options:
    -Wwarn
        a family of option which selectively turn on/off warnings.
 	(for help on the names of warnings use dialyzer -Whelp)
+   --check_init_plt
+      Only checks if the init plt is up to date. For installed systems 
+      this also forces the rebuilding of the plt if this is not the case.
    --otp OTP_DIR 
        overrides the default location of the Erlang/OTP system to use
    --shell
@@ -208,6 +212,8 @@ Options:
        prints this message and exits
    -q
        makes Dialyzer a bit more quiet
+   --verbose
+       makes Dialyzer a bit more verbose
 
 Note:
   * denotes that multiple occurrences of these options are possible.
@@ -242,6 +248,57 @@ Note:
    *** This is the only option that turns on warnings rather than 
        turning them off.
 
+
+-----------------------------------------------
+--
+-- Using the Dialyzer from Erlang
+--
+-----------------------------------------------
+
+You can also use Dialyzer directly from Erlang. Both the gui and the
+command line version is available. The options are similar to the ones
+given from the command line, so please refer to the sections above for
+a description of these.
+
+Interface:
+
+dialyzer:gui() -> ok
+	        | {error, Msg}
+
+dialyzer:gui(OptList) -> ok.
+		       | {error, Msg}
+
+dialyzer:run(OptList) -> {ok, Warnings, Errors}
+		       | {ok, Warnings}
+		       | {error, Message}
+
+Warnings : [{MFA, string()}]
+MFA      : {Module : atom(), Function : atom(), Arity : integer()}
+Errors   : [string()]
+Message  : string()
+
+OptList  : [Option]
+Option   : {files,          [Filename : string()]}
+	 | {files_rec,      [DirName : string()]}
+	 | {defines,        [{Macro: atom(), Value : term()}]}
+	 | {from,           src_code | byte_code} %% Defaults to byte_code
+	 | {init_plt,       FileName : string()}  %% If changed from default
+	 | {include_dirs,   [DirName : string()]} 
+	 | {output_file,    FileName : string()}
+	 | {supress_inline, bool()}               %% Defaults to true
+	 | {warnings,       [WarnOpts]}
+
+WarnOpts : no_return
+	 | no_unused
+	 | no_improper_lists
+	 | no_tuple_as_fun
+	 | no_fun_app
+	 | no_match
+	 | no_comp
+	 | no_guards
+	 | no_unsafe_beam
+	 | no_fail_call
+	 | error_handling
 
 -----------------------------------------------
 --

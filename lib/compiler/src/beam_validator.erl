@@ -307,6 +307,19 @@ valfun_1({test_heap,Heap,Live}, Vst) ->
 valfun_1({bif,_Op,nofail,Src,Dst}, Vst) ->
     validate_src(Src, Vst),
     set_type_reg(term, Dst, Vst);
+valfun_1({bif,Op,{f,_},Src,Dst}=I, Vst) ->
+    case is_bif_safe(Op, length(Src)) of
+	false ->
+	    %% Since the BIF can fail, make sure that any catch state
+	    %% is updated.
+	    valfun_2(I, Vst);
+	true ->
+	    %% It can't fail, so we finish handling it here (not updating
+	    %% catch state).
+	    validate_src(Src, Vst),
+	    Type = bif_type(Op, Src, Vst),
+	    set_type_reg(Type, Dst, Vst)
+    end;
 %% Put instructions.
 valfun_1({put_list,A,B,Dst}, Vst0) ->
     assert_term(A, Vst0),
@@ -616,6 +629,9 @@ valfun_4({bs_add,{f,Fail},[A,B,_],Dst}, Vst) ->
     assert_term(A, Vst),
     assert_term(B, Vst),
     set_type_reg({integer,[]}, Dst, branch_state(Fail, Vst));
+valfun_4({bs_bits_to_bytes2,Src,Dst}, Vst) ->
+    assert_term(Src, Vst),
+    set_type_reg({integer,[]}, Dst, Vst);
 valfun_4({bs_bits_to_bytes,{f,Fail},Src,Dst}, Vst) ->
     assert_term(Src, Vst),
     set_type_reg({integer,[]}, Dst, branch_state(Fail, Vst));
@@ -647,6 +663,9 @@ valfun_4({bs_need_buf,_}, Vst) -> Vst;
 valfun_4({bs_final,{f,Fail},Dst}, Vst0) ->
     Vst = branch_state(Fail, Vst0),
     set_type_reg(binary, Dst, Vst);
+valfun_4({bs_final2,Src,Dst}, Vst0) ->
+    assert_term(Src, Vst0),
+    set_type_reg(binary, Dst, Vst0);
 valfun_4(_, _) ->
     error(unknown_instruction).
 
@@ -833,8 +852,10 @@ bs_start_match(Vst) ->
     %% to a previous binary.
     Vst.
 
-bs_save(Reg, #vst{current=#st{bsm=Saved}=St}=Vst) ->
-    Vst#vst{current=St#st{bsm=gb_sets:add(Reg, Saved)}}.
+bs_save(Reg, #vst{current=#st{bsm=Saved}=St}=Vst)
+  when is_integer(Reg), Reg < ?MAXREG  ->
+    Vst#vst{current=St#st{bsm=gb_sets:add(Reg, Saved)}};
+bs_save(_, _) -> error(limit).
 
 bs_assert_savepoint(Reg, #vst{current=#st{bsm=Saved}}) ->
     case gb_sets:is_member(Reg, Saved) of
@@ -1348,6 +1369,30 @@ bif_type(tl, [_], _) -> term;
 bif_type(get, [_], _) -> term;
 bif_type(raise, [_,_], _) -> exception;
 bif_type(Bif, _, _) when is_atom(Bif) -> term.
+
+is_bif_safe('/=', 2) -> true;
+is_bif_safe('<', 2) -> true;
+is_bif_safe('=/=', 2) -> true;
+is_bif_safe('=:=', 2) -> true;
+is_bif_safe('=<', 2) -> true;
+is_bif_safe('==', 2) -> true;
+is_bif_safe('>', 2) -> true;
+is_bif_safe('>=', 2) -> true;
+is_bif_safe(is_atom, 1) -> true;
+is_bif_safe(is_boolean, 1) -> true;
+is_bif_safe(is_binary, 1) -> true;
+is_bif_safe(is_constant, 1) -> true;
+is_bif_safe(is_float, 1) -> true;
+is_bif_safe(is_function, 1) -> true;
+is_bif_safe(is_integer, 1) -> true;
+is_bif_safe(is_list, 1) -> true;
+is_bif_safe(is_number, 1) -> true;
+is_bif_safe(is_pid, 1) -> true;
+is_bif_safe(is_port, 1) -> true;
+is_bif_safe(is_reference, 1) -> true;
+is_bif_safe(is_tuple, 1) -> true;
+is_bif_safe(get, 1) -> true;
+is_bif_safe(_, _) -> false.
 
 arith_type([A,B], Vst) ->
     case {get_term_type(A, Vst),get_term_type(B, Vst)} of

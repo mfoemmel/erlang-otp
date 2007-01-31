@@ -16,8 +16,8 @@
 %%
 %% $Id$
 %%
-%% @copyright 2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
+%% @copyright 2003-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @see edoc
 %% @end
 %% =====================================================================
@@ -26,10 +26,10 @@
 
 %% Note that this is written so that it is *not* depending on edoc.hrl!
 
-%% @TODO copy "doc-files" subdirectories, recursively.
-%% @TODO generate summary page of TODO-notes
-%% @TODO generate summary page of deprecated things
-%% @TODO generate decent indexes over modules, methods, records, etc.
+%% TODO: copy "doc-files" subdirectories, recursively.
+%% TODO: generate summary page of TODO-notes
+%% TODO: generate summary page of deprecated things
+%% TODO: generate decent indexes over modules, methods, records, etc.
 
 -module(edoc_doclet).
 
@@ -49,6 +49,7 @@
 -define(PACKAGES_FRAME, "packages-frame.html").
 -define(MODULES_FRAME, "modules-frame.html").
 -define(STYLESHEET, "stylesheet.css").
+-define(IMAGE, "erlang.png").
 -define(NL, "\n").
 
 -include("xmerl.hrl").
@@ -139,6 +140,7 @@ gen(Sources, App, Packages, Modules, FileMap, Ctxt) ->
     index_file(Dir, length(Packages) > 1, Title),
     edoc_lib:write_info_file(App, Packages, Modules1, Dir),
     copy_stylesheet(Dir, Options),
+    copy_image(Dir),
     %% handle postponed error during processing of source files
     case Error of
 	true -> exit(error);
@@ -256,6 +258,7 @@ package(P, Dir, FileMap, Env, Opts) ->
 
 
 %% Creating an index file, with some frames optional.
+%% TODO: get rid of frames, or change doctype to Frameset
 
 index_file(Dir, Packages, Title) ->
     Frame1 = {frame, [{src,?PACKAGES_FRAME},
@@ -296,13 +299,17 @@ index_file(Dir, Packages, Title) ->
 
 packages_frame(Dir, Ps, Title, CSS) ->
     Body = [?NL,
-	    {h2, ["Packages"]},
+	    {h2, [{class, "indextitle"}], ["Packages"]},
 	    ?NL,
-	    {table, [{width, "100%"}, {border, 0}],
-	     [{tr, [{td, [], [{a, [{href, package_ref(P)},
-				   {target,"overviewFrame"}],
-			       [atom_to_list(P)]}]}]}
-	      || P <- Ps]},
+	    {table, [{width, "100%"}, {border, 0},
+		     {summary, "list of packages"}],
+	     lists:concat(
+	       [[?NL,
+		 {tr, [{td, [], [{a, [{href, package_ref(P)},
+				      {target,"overviewFrame"},
+				      {class, "package"}],
+				  [atom_to_list(P)]}]}]}]
+		|| P <- Ps])},
 	    ?NL],
     XML = xhtml(Title, CSS, Body),
     Text = xmerl:export_simple([XML], xmerl_html, []),
@@ -310,14 +317,18 @@ packages_frame(Dir, Ps, Title, CSS) ->
 
 modules_frame(Dir, Ms, Title, CSS) ->
     Body = [?NL,
-	    {h2, ["Modules"]},
+	    {h2, [{class, "indextitle"}], ["Modules"]},
 	    ?NL,
-	    {table, [{width, "100%"}, {border, 0}],
-	     [{tr, [{td, [],
-		     [{a, [{href, module_ref(M)},
-			   {target,"overviewFrame"}],
-		       [atom_to_list(M)]}]}]}
-	      || M <- Ms]},
+	    {table, [{width, "100%"}, {border, 0},
+		     {summary, "list of modules"}],
+	     lists:concat(
+	       [[?NL,
+		 {tr, [{td, [],
+			[{a, [{href, module_ref(M)},
+			      {target, "overviewFrame"},
+			      {class, "module"}],
+			  [atom_to_list(M)]}]}]}]
+		 || M <- Ms])},
 	    ?NL],
     XML = xhtml(Title, CSS, Body),
     Text = xmerl:export_simple([XML], xmerl_html, []),
@@ -358,6 +369,16 @@ overview(Dir, Title, Env, Opts) ->
     Text = edoc_lib:run_layout(F, Opts),
     edoc_lib:write_file(Text, Dir, ?OVERVIEW_SUMMARY).
 
+
+copy_image(Dir) ->
+    case code:priv_dir(?EDOC_APP) of
+	PrivDir when list(PrivDir) ->
+	    From = filename:join(PrivDir, ?IMAGE),
+	    edoc_lib:copy_file(From, filename:join(Dir, ?IMAGE));
+	_ ->
+	    report("cannot find default image file.", []),
+	    exit(error)
+    end.
 
 %% NEW-OPTIONS: stylesheet_file
 %% DEFER-OPTIONS: run/2
@@ -405,7 +426,8 @@ stylesheet(Options) ->
 		  end,
 	    [{link, [{rel, "stylesheet"},
 		     {type, "text/css"},
-		     {href, Ref}], []},
+		     {href, Ref},
+		     {title, "EDoc"}], []},
 	     ?NL]
     end.
 
@@ -448,7 +470,7 @@ read_file(File, Context, Env, Opts) ->
     end.
 
 
-%% @TODO FIXME: meta-level index generation
+%% TODO: FIXME: meta-level index generation
 
 %% Creates a Table of Content from a list of Paths (ie paths to applications)
 %% and an overview file.
@@ -463,7 +485,7 @@ toc(Paths, Ctxt) ->
     Env = Ctxt#context.env,
     app_index_file(Paths, Dir, Env, Opts).
 
-%% @TODO FIXME: it's unclear how much of this is working at all
+%% TODO: FIXME: it's unclear how much of this is working at all
 
 %% NEW-OPTIONS: title
 %% INHERIT-OPTIONS: overview/4
@@ -485,10 +507,11 @@ application_frame(Dir, Apps, Title, CSS) ->
 	    {h2, ["Applications"]},
 	    ?NL,
 	    {table, [{width, "100%"}, {border, 0}],
-	     [{tr, [{td, [], [{a, [{href,app_ref(Path,App)},
-				   {target,"_top"}],
-			       [App]}]}]}
-	      || {Path,App} <- Apps]},
+	     lists:concat(
+	       [[{tr, [{td, [], [{a, [{href,app_ref(Path,App)},
+				      {target,"_top"}],
+				  [App]}]}]}]
+		|| {Path,App} <- Apps])},
 	    ?NL],
     XML = xhtml(Title, CSS, Body),
     Text = xmerl:export_simple([XML], xmerl_html, []),

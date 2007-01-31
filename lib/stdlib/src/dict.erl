@@ -276,7 +276,7 @@ update_bkt(Key, F, I, []) when is_function(F, 1) -> {[?kv(Key,I)],1}.
 
 %% update_counter(Key, Incr, Dictionary) -> Dictionary.
 
-update_counter(Key, Incr, D0) when is_integer(Incr) ->
+update_counter(Key, Incr, D0) when is_number(Incr) ->
     Slot = get_slot(D0, Key),
     {D1,Ic} = on_bucket(fun (B0) -> counter_bkt(Key, Incr, B0) end,
 			D0, Slot),

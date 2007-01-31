@@ -427,9 +427,6 @@ ptxt_1([C=$\t | Cs], As, Ss) ->
 ptxt_1([C=$\n | Cs], As, Ss) ->
     %% blank line detected
     ptxt_2(Cs, As, [C | Ss]);
-ptxt_1(Cs, As, []) ->
-    %% fast path; just a single newline, keep scanning
-    ptxt(Cs, As);
 ptxt_1(Cs, As, Ss) ->
     %% not a blank line
     ptxt(Cs, lists:reverse(Ss, As)).

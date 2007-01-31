@@ -152,8 +152,19 @@ extern erts_mtx_t erts_bin_alloc_mtx;
 
 byte* erts_get_aligned_binary_bytes(Eterm, byte**);
 
+#if defined(__i386__) || !defined(__GNUC__)
+/*
+ * Doubles aren't required to be 8-byte aligned on intel x86.
+ * (if not gnuc we don't know if __i386__ is defined on x86;
+ *  therefore, assume intel x86...)
+ */
+#  define ERTS_BIN_ALIGNMENT_MASK ((Uint) 3)
+#else
+#  define ERTS_BIN_ALIGNMENT_MASK ((Uint) 7)
+#endif
+
 #define ERTS_CHK_BIN_ALIGNMENT(B) \
-  ASSERT((((Uint) &((Binary *)(B))->orig_bytes[0]) & ((Uint)7)) == ((Uint)0))
+  ASSERT((((Uint) &((Binary *)(B))->orig_bytes[0]) & ERTS_BIN_ALIGNMENT_MASK) == ((Uint) 0))
 
 ERTS_GLB_INLINE void erts_free_aligned_binary_bytes(byte* buf);
 ERTS_GLB_INLINE Uint erts_get_binaries_size(void);

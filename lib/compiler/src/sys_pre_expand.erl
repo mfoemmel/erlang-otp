@@ -339,6 +339,10 @@ expr({lc,Line,E0,Qs0}, St0) ->
     {Qs1,St1} = lc_tq(Line, Qs0, St0),
     {E1,St2} = expr(E0, St1),
     {{lc,Line,E1,Qs1},St2};
+expr({bc,Line,E0,Qs0}, St0) ->
+    {Qs1,St1} = lc_tq(Line, Qs0, St0),
+    {E1,St2} = expr(E0, St1),
+    {{bc,Line,E1,Qs1},St2};
 expr({tuple,Line,Es0}, St0) ->
     {Es1,St1} = expr_list(Es0, St0),
     {{tuple,Line,Es1},St1};
@@ -464,6 +468,12 @@ lc_tq(Line, [{generate,Lg,P0,G0} | Qs0], St0) ->
     {P1,St2} = pattern(P0, St1),
     {Qs1,St3} = lc_tq(Line, Qs0, St2),
     {[{generate,Lg,P1,G1} | Qs1],St3};
+
+lc_tq(Line, [{b_generate,Lg,P0,G0}|Qs0], St0) ->
+    {G1,St1} = expr(G0, St0),
+    {P1,St2} = pattern(P0, St1),
+    {Qs1,St3} = lc_tq(Line, Qs0, St2),
+    {[{b_generate,Lg,P1,G1}|Qs1],St3};
 lc_tq(Line, [F0 | Qs0], St0) ->
     case erl_lint:is_guard_test(F0) of
         true ->
@@ -477,6 +487,7 @@ lc_tq(Line, [F0 | Qs0], St0) ->
     end;
 lc_tq(_Line, [], St0) ->
     {[],St0}.
+
 
 %% fun_tq(Line, Body, State) ->
 %%      {Fun,State'}

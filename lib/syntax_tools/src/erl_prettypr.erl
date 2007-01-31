@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Pretty printing of abstract Erlang syntax trees
-%%
-%% Copyright (C) 1997-2002 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,17 +14,18 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
 %%
+%% @copyright 1997-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Pretty printing of abstract Erlang syntax trees.
 %%
-%% <p>This module is a front end to the pretty-printing library module
-%% <code>prettypr</code>, for text formatting of abstract syntax trees
-%% defined by the module <code>erl_syntax</code>.</p>
+%% This module is a front end to the pretty-printing library module
+%% `prettypr', for text formatting of abstract syntax trees defined by
+%% the module `erl_syntax'.
 
 -module(erl_prettypr).
 
@@ -76,10 +73,9 @@ get_ctxt_precedence(Ctxt) ->
 %% @spec (context(), integer()) -> context()
 %%
 %% @doc Updates the operator precedence field of the prettyprinter
-%% context. See the <code>erl_parse</code> module for operator
-%% precedences.
+%% context. See the {@link erl_parse} module for operator precedences.
 %%
-%% @see erl_parse
+%% @see //stdlib/erl_parse
 %% @see get_ctxt_precedence/1
 
 set_ctxt_precedence(Ctxt, Prec) ->
@@ -102,9 +98,9 @@ get_ctxt_paperwidth(Ctxt) ->
 %%
 %% @doc Updates the paper widh field of the prettyprinter context.
 %%
-%% <p> Note: changing this value (and passing the resulting context to a
+%% Note: changing this value (and passing the resulting context to a
 %% continuation function) does not affect the normal formatting, but may
-%% affect user-defined behaviour in hook functions.</p>
+%% affect user-defined behaviour in hook functions.
 %%
 %% @see get_ctxt_paperwidth/1
 
@@ -122,9 +118,9 @@ get_ctxt_linewidth(Ctxt) ->
 %%
 %% @doc Updates the line widh field of the prettyprinter context.
 %%
-%% <p> Note: changing this value (and passing the resulting context to a
+%% Note: changing this value (and passing the resulting context to a
 %% continuation function) does not affect the normal formatting, but may
-%% affect user-defined behaviour in hook functions.</p>
+%% affect user-defined behaviour in hook functions.
 %%
 %% @see get_ctxt_linewidth/1
 
@@ -175,21 +171,20 @@ format(Node) ->
 %% @type hook() = (syntaxTree(), context(), Continuation) -> document()
 %%	    Continuation = (syntaxTree(), context()) -> document().
 %%
-%% A call-back function for user-controlled formatting. See <a
-%% href="#format-2"><code>format/2</code></a>.
+%% A call-back function for user-controlled formatting. See {@link
+%% format/2}.
 %%
 %% @type context(). A representation of the current context of the
 %% pretty-printer. Can be accessed in hook functions.
 %%
 %% @doc Prettyprint-formats an abstract Erlang syntax tree as text.
 %%
-%% <p>Available options:
+%% Available options:
 %% <dl>
-%%   <dt>{hook, none | <a href="#type-hook">hook()</a>}</dt>
-%%       <dd>Unless the value is <code>none</code>, the given function
-%%       is called for each node whose list of annotations is not empty;
-%%       see below for details. The default value is
-%%       <code>none</code>.</dd>
+%%   <dt>{hook, none | {@link hook()}}</dt>
+%%       <dd>Unless the value is `none', the given function is called
+%%       for each node whose list of annotations is not empty; see below
+%%       for details. The default value is `none'.</dd>
 %%
 %%   <dt>{paper, integer()}</dt>
 %%       <dd>Specifies the preferred maximum number of characters on any
@@ -201,34 +196,32 @@ format(Node) ->
 %%
 %%   <dt>{user, term()}</dt>
 %%       <dd>User-specific data for use in hook functions. The default
-%%       value is <code>undefined</code>.</dd>
-%% </dl></p>
+%%       value is `undefined'.</dd>
+%% </dl>
 %%
-%% <p>A hook function (cf. the <a
-%% href="#type-hook"><code>hook()</code></a> type) is passed the current
+%% A hook function (cf. the {@link hook()} type) is passed the current
 %% syntax tree node, the context, and a continuation. The context can be
-%% examined and manipulated by functions such as
-%% <code>get_ctxt_user/1</code> and <code>set_ctxt_user/2</code>. The
-%% hook must return a "document" data structure (see
-%% <code>layout/2</code> and <code>best/2</code>); this may be
-%% constructed in part or in whole by applying the continuation
-%% function. For example, the following is a trivial hook:
-%% <pre>
+%% examined and manipulated by functions such as `get_ctxt_user/1' and
+%% `set_ctxt_user/2'. The hook must return a "document" data structure
+%% (see {@link layout/2} and {@link best/2}); this may be constructed in
+%% part or in whole by applying the continuation function. For example,
+%% the following is a trivial hook:
+%% ```
 %%     fun (Node, Ctxt, Cont) -> Cont(Node, Ctxt) end
-%% </pre>
+%% '''
 %% which yields the same result as if no hook was given.
 %% The following, however:
-%% <pre>
+%% ```
 %%     fun (Node, Ctxt, Cont) ->
 %%         Doc = Cont(Node, Ctxt),
-%%         prettypr:beside(prettypr:text("&lt;b>"),
+%%         prettypr:beside(prettypr:text("<b>"),
 %%                         prettypr:beside(Doc,
-%%                                         prettypr:text("&lt;/b>")))
+%%                                         prettypr:text("</b>")))
 %%     end
-%% </pre>
+%% '''
 %% will place the text of any annotated node (regardless of the
 %% annotation data) between HTML "boldface begin" and "boldface end"
-%% tags.</p>
+%% tags.
 %%
 %% @see erl_syntax
 %% @see format/1
@@ -256,16 +249,15 @@ best(Node) ->
 %%           empty | document()
 %%
 %% @doc Creates a fixed "best" abstract layout for a syntax tree. This
-%% is similar to the <code>layout/2</code> function, except that here,
-%% the final layout has been selected with respect to the given options.
-%% The atom <code>empty</code> is returned if no such layout could be
-%% produced. For information on the options, see the
-%% <code>format/2</code> function.
+%% is similar to the `layout/2' function, except that here, the final
+%% layout has been selected with respect to the given options. The atom
+%% `empty' is returned if no such layout could be produced. For
+%% information on the options, see the `format/2' function.
 %%
 %% @see best/1
 %% @see layout/2
 %% @see format/2
-%% @see prettypr:best/2
+%% @see prettypr:best/3
 
 best(Node, Options) ->
     W = proplists:get_value(paper, Options, ?PAPER),
@@ -286,18 +278,16 @@ layout(Node) ->
 %%	    document() = prettypr:document()
 %%
 %% @doc Creates an abstract document layout for a syntax tree. The
-%% result represents a set of possible layouts (cf. module
-%% <code>prettypr</code>). For information on the options, see
-%% <code>format/2</code>; note, however, that the <code>paper</code> and
-%% <code>ribbon</code> options are ignored by this function.
+%% result represents a set of possible layouts (cf. module `prettypr').
+%% For information on the options, see {@link format/2}; note, however,
+%% that the `paper' and `ribbon' options are ignored by this function.
 %%
-%% <p>This function provides a low-level interface to the pretty
-%% printer, returning a flexible representation of possible layouts,
-%% independent of the paper width eventually to be used for formatting.
-%% This can be included as part of another document and/or further
-%% processed directly by the functions in the <code>prettypr</code>
-%% module, or used in a hook function (see <code>format/2</code> for
-%% details).</p>
+%% This function provides a low-level interface to the pretty printer,
+%% returning a flexible representation of possible layouts, independent
+%% of the paper width eventually to be used for formatting. This can be
+%% included as part of another document and/or further processed
+%% directly by the functions in the `prettypr' module, or used in a hook
+%% function (see `format/2' for details).
 %%
 %% @see prettypr
 %% @see format/2
@@ -498,6 +488,9 @@ lay_2(Node, Ctxt) ->
 	    As = seq(erl_syntax:application_arguments(Node),
 		     floating(text(",")), reset_prec(Ctxt),
 		     fun lay/2),
+%% 	    D1 = beside(D, beside(text("("),
+%% 				  beside(par(As),
+%% 					 floating(text(")"))))),
 	    D1 = beside(D, beside(text("("),
 				  beside(par(As),
 					 floating(text(")"))))),

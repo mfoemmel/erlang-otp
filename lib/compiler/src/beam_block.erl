@@ -25,21 +25,22 @@
 -export([is_killed/2]).				%Used by beam_dead, beam_type, beam_bool.
 -export([is_not_used/2]).			%Used by beam_bool.
 -export([merge_blocks/2]).			%Used by beam_jump.
--import(lists, [map/2,mapfoldr/3,reverse/1,reverse/2,foldl/3,
+-import(lists, [map/2,mapfoldl/3,mapfoldr/3,reverse/1,reverse/2,foldl/3,
 		member/2,sort/1,all/2]).
 -define(MAXREG, 1024).
 
-module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
-    {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
+module({Mod,Exp,Attr,Fs0,Lc0}, _Opt) ->
+    {Fs,Lc} = mapfoldl(fun function/2, Lc0, Fs0),
+    {ok,{Mod,Exp,Attr,Fs,Lc}}.
 
-function({function,Name,Arity,CLabel,Is0}) ->
+function({function,Name,Arity,CLabel,Is0}, Lc0) ->
     %% Collect basic blocks and optimize them.
     Is1 = beam_jump:remove_unused_labels(Is0),	%Extra labels may thwart optimizations.
     Is2 = blockify(Is1),
-    Is = bsm_opt(Is2),
+    {Is,Lc} = bsm_opt(Is2, Lc0),
 
     %% Done.
-    {function,Name,Arity,CLabel,Is}.
+    {{function,Name,Arity,CLabel,Is},Lc}.
 
 %% blockify(Instructions0) -> Instructions
 %%  Collect sequences of instructions to basic blocks and
@@ -639,40 +640,50 @@ bs_split_int_1(_, _, _, _, Acc) -> Acc.
 %%%
 %%% Optimization of new bit syntax matching: get rid
 %%% of redundant bs_restore2/2 instructions across select_val
-%%% instructions.
+%%% instructions and a few other simple peep-hole optimizations.
 %%%
 
-bsm_opt(Is0) ->
-    D0 = bsm_scan(Is0, []),
-    D = gb_trees:from_orddict(ordsets:from_list(D0)),
-    Is1 = bsm_opt_1(Is0, D, []),
-    Is = beam_clean:bs_clean_saves(Is1),
-    bsm_opt_2(Is, []).
+bsm_opt(Is0, Lc0) ->
+    Is1 = beam_clean:bs_clean_saves(Is0),
+    {Is2,D0,Lc} = bsm_scan(Is1, [], Lc0, []),
+    Is = case D0 of
+	     [] ->
+		 Is2;
+	     _ ->
+		 D = gb_trees:from_orddict(orddict:from_list(D0)),
+		 bsm_reroute(Is2, D, [])
+	 end,
+    {bsm_opt_2(Is, []),Lc}.
 
-bsm_scan([{bs_save2,_,Save},{test,is_integer,{f,F0},[_]},
-	  {select_val,_,{f,F1},{list,Lbls}}|Is], Acc0) ->
-    Acc = [{F,Save} || {f,F} <- Lbls] ++ [{F0,Save},{F1,Save}|Acc0],
-    bsm_scan(Is, Acc);
-bsm_scan([{bs_save2,_,Save},{test,bs_test_tail2,{f,F},[_,_]}|Is], Acc) ->
-    bsm_scan(Is, [{F,Save}|Acc]);
-bsm_scan([_|Is], Acc) ->
-    bsm_scan(Is, Acc);
-bsm_scan([], Acc) -> Acc.
+bsm_scan([{label,L}=Lbl,{bs_restore2,_,Save}=R|Is], D0, Lc, Acc0) ->
+    D = [{{L,Save},Lc}|D0],
+    Acc = [{label,Lc},R,Lbl|Acc0],
+    bsm_scan(Is, D, Lc+1, Acc);
+bsm_scan([I|Is], D, Lc, Acc) ->
+    bsm_scan(Is, D, Lc, [I|Acc]);
+bsm_scan([], D, Lc, Acc) ->
+    {reverse(Acc),D,Lc}.
 
-bsm_opt_1([{label,L}=I,{bs_restore2,_,Save}=R|Is], D, [PrevI|_]=Acc) ->
-    %% The call to beam_jump:is_unreachable_after/1 is probably
-    %% over-conservative. We want to be absolutely sure that the label
-    %% L cannot be reached in any other way (the way the code is generated
-    %% should ensure that anyway, but better safe than sorry).
-    case {beam_jump:is_unreachable_after(PrevI),gb_trees:lookup(L, D)} of
-	{true,{value,Save}} ->
-	    bsm_opt_1(Is, D, [I|Acc]);
-	_ ->
-	    bsm_opt_1(Is, D, [R,I|Acc])
-    end;
-bsm_opt_1([I|Is], D, Acc) ->
-    bsm_opt_1(Is, D, [I|Acc]);
-bsm_opt_1([], _, Acc) -> reverse(Acc).
+bsm_reroute([{bs_save2,_,Save}=I,{test,is_integer,Fa0,TestArgs},
+	     {select_val,Reg,Fb0,{list,Lbls0}}|Is], D, Acc0) ->
+    [Fa,Fb|Lbls] = bsm_subst_labels([Fa0,Fb0|Lbls0], Save, D),
+    Acc = [{select_val,Reg,Fb,{list,Lbls}},
+	   {test,is_integer,Fa,TestArgs},I|Acc0],
+    bsm_reroute(Is, D, Acc);
+bsm_reroute([{bs_save2,_,_}=I,{test,bs_get_float2,_,_}=T|Is], D, Acc0) ->
+    %% Bug in the emulator: bs_get_float2 will advance the position in the
+    %% binary if the field contain a NaN or other illegal float.
+    %% The emulator bug will be corrected in R11B-3. This clause should be removed
+    %% no later than in R12B-0.
+    Acc = [T,I|Acc0],
+    bsm_reroute(Is, D, Acc);
+bsm_reroute([{bs_save2,_,Save}=I,{test,TestOp,F0,TestArgs}|Is], D, Acc0) ->
+    F = bsm_subst_label(F0, Save, D),
+    Acc = [{test,TestOp,F,TestArgs},I|Acc0],
+    bsm_reroute(Is, D, Acc);
+bsm_reroute([I|Is], D, Acc) ->
+    bsm_reroute(Is, D, [I|Acc]);
+bsm_reroute([], _, Acc) -> reverse(Acc).
 
 bsm_opt_2([{test,bs_test_tail2,F,[Ctx,Bits]}|Is],
 	  [{test,bs_skip_bits2,F,[Ctx,{integer,I},Unit,_Flags]}|Acc]) ->
@@ -701,3 +712,18 @@ bsm_opt_2([I|Is], Acc) ->
     bsm_opt_2(Is, [I|Acc]);
 bsm_opt_2([], Acc) -> reverse(Acc).
 
+bsm_subst_labels(Fs, Save, D) ->
+    bsm_subst_labels_1(Fs, Save, D, []).
+
+bsm_subst_labels_1([F|Fs], Save, D, Acc) ->
+    bsm_subst_labels_1(Fs, Save, D, [bsm_subst_label(F, Save, D)|Acc]);
+bsm_subst_labels_1([], _, _, Acc) ->
+    reverse(Acc).
+
+bsm_subst_label({f,Lbl0}=F, Save, D) ->
+    case gb_trees:lookup({Lbl0,Save}, D) of
+	{value,Lbl} -> {f,Lbl};
+	none -> F
+    end;
+bsm_subst_label(Other, _, _) -> Other.
+    

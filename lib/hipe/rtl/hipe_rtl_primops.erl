@@ -10,6 +10,7 @@
 %%
 %% $Id$
 %%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_primops). 
 
@@ -19,6 +20,7 @@
 %% --------------------------------------------------------------------
 
 -include("../main/hipe.hrl").
+-include("../icode/hipe_icode_primops.hrl").
 -include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
 
@@ -158,11 +160,14 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	  '-' ->
 	    gen_add_sub_2(Dst, Args, Cont, Fail, Op, sub);
 	  '*' ->
-	    %% BIF call: am_Times -> nbif_mul_2 -> erts_mixed_times
-	    [hipe_rtl:mk_call(Dst, '*', Args, Cont, Fail, not_remote)];
+	    gen_mul_2(Dst, Args, Cont, Fail);
 	  '/' ->
 	    %% BIF call: am_Div -> nbif_div_2 -> erts_mixed_div
 	    [hipe_rtl:mk_call(Dst, '/', Args, Cont, Fail, not_remote)];
+          'gen_add' ->
+            gen_general_add_sub(Dst, Args, Cont, Fail, '+');
+          'gen_sub' ->
+            gen_general_add_sub(Dst, Args, Cont, Fail, '-');
 	  'unsafe_add' ->
 	    %gen_extra_unsafe_add_2(Dst, Args, Cont);
 	    gen_unsafe_add_sub_2(Dst, Args, Cont, Fail, '+', add);
@@ -195,19 +200,21 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	  'bsl' -> 
 	    %% BIF call: am_bsl -> nbif_bsl_2 -> bsl_2
 	    [hipe_rtl:mk_call(Dst, 'bsl', Args, Cont, Fail, not_remote)];
-	  'unsafe_band' ->
+	  unsafe_band ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'and');
-	  'unsafe_bor' -> 
+	  unsafe_bor -> 
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'or');
-	  'unsafe_bxor' ->
+	  unsafe_bxor ->
 	    gen_unsafe_bitop_2(Dst, Args, Cont, 'xor');
-	  'unsafe_bnot' ->
+	  unsafe_bnot ->
 	    gen_unsafe_bnot_2(Dst, Args, Cont);
-	  'unsafe_bsr' ->
+	  unsafe_bsr ->
 	    gen_unsafe_bsr_2(Dst, Args, Cont);
-          'unsafe_bsl' ->
+          unsafe_bsl ->
 	    gen_unsafe_bsl_2(Dst, Args, Cont);
+	  %%---------------------------------------------
 	  %% List handling
+	  %%---------------------------------------------
 	  cons ->
 	    case Dst of
 	      [] -> %% The result is not used.
@@ -229,8 +236,9 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	      [Dst1] ->	 
 		[gen_unsafe_tl(Dst1, Args),GotoCont]
 	    end;
-
+	  %%---------------------------------------------
 	  %% Tuple handling
+	  %%---------------------------------------------
 	  mktuple ->
 	    case Dst of
 	      [] -> %% The result is not used.
@@ -238,7 +246,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	      [Dst1] ->
 		[gen_mk_tuple(Dst1, Args),GotoCont]
 	    end;
-	  {unsafe_element,N} ->
+	  #unsafe_element{index=N} ->
 	    case Dst of
 	      [] -> %% The result is not used.
 		[GotoCont];
@@ -246,13 +254,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 		[Tuple] = Args,
 		[gen_unsafe_element(Dst1, hipe_rtl:mk_imm(N), Tuple),GotoCont]
 	    end;
-	  {unsafe_update_element,N} ->
+	  #unsafe_update_element{index=N} ->
 	    [Dst1] = Dst,
 	    [Tuple, Value] = Args,
 	    [gen_unsafe_update_element(Tuple, hipe_rtl:mk_imm(N), Value),
 	     hipe_rtl:mk_move(Dst1, Tuple),
 	     GotoCont];
-	  {element,TypeInfo} ->
+	  {element, TypeInfo} ->
 	    Dst1 =
 	      case Dst of
 		[] -> %% The result is not used.
@@ -264,19 +272,26 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    [gen_element_1(Dst1, Index, Tuple, IsGuard, Cont, Fail,
 			   TupleInfo, IndexInfo)];
 
+	  %%---------------------------------------------
 	  %% Apply-fixarity
-	  {apply_N,Arity} ->
+	  %%---------------------------------------------
+	  #apply_N{arity=Arity} ->
 	    gen_apply_N(Dst, Arity, Args, Cont, Fail);
 
+	  %%---------------------------------------------
 	  %% GC test
-	  {gc_test,Need} ->
+	  %%---------------------------------------------
+	  #gc_test{need=Need} ->
 	    [hipe_rtl:mk_gctest(Need),GotoCont];
 
-	  %% Process handling.
+	  %%---------------------------------------------
+	  %% Process handling
+	  %%---------------------------------------------
 	  redtest ->
 	    [gen_redtest(1),GotoCont];
-
+	  %%---------------------------------------------
 	  %% Receives
+	  %%---------------------------------------------
 	  check_get_msg ->
 	    gen_check_get_msg(Dst, GotoCont, Fail);
 	  next_msg ->
@@ -290,18 +305,19 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	    [hipe_rtl:mk_call(Dst, set_timeout, Args, Cont, Fail, not_remote)];
 	  suspend_msg ->
 	    gen_suspend_msg(Dst, Cont);
-
+	  %%---------------------------------------------
 	  %% Closures
+	  %%---------------------------------------------
 	  call_fun ->
 	    gen_call_fun(Dst, Args, Cont, Fail);
-	  {mkfun,MFA,MagicNum,Index} ->
+	  #mkfun{mfa=MFA, magic_num=MagicNum, index=Index} ->
 	    case Dst of
 	      [] -> %% The result is not used.
 		[GotoCont];
 	      _ ->
 		[gen_mkfun(Dst, MFA, MagicNum, Index, Args), GotoCont]
 	    end;
-	  {closure_element,N} ->
+	  #closure_element{n=N} ->
 	    case Dst of
 	      [] -> %% The result is not used.
 		[GotoCont];
@@ -310,8 +326,9 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 		[gen_closure_element(Dst1, hipe_rtl:mk_imm(N), Closure),
 		 GotoCont]
 	    end;
-
+	  %%---------------------------------------------
 	  %% Floating point instructions.
+	  %%---------------------------------------------
 	  fp_add ->
 	    [Arg1, Arg2] = Args,
 	    case Dst of
@@ -396,7 +413,7 @@ gen_enter_primop({Op, Args}, IsGuard, ConstTab, Options) ->
       Code = gen_call_fun([], Args, [], []),
       {Code, ConstTab};
 
-    {apply_N,Arity} ->
+    #apply_N{arity=Arity} ->
       %% Tail-call to a closure must preserve tail-callness!
       %% (Passing Continuation = [] to gen_apply_N/5 does this.)
       Code = gen_apply_N([], Arity, Args, [], []),
@@ -415,11 +432,20 @@ gen_enter_primop({Op, Args}, IsGuard, ConstTab, Options) ->
 
 %% --------------------------------------------------------------------
 %% ARITHMETIC
-%%
+%% --------------------------------------------------------------------
 
 %%
 %% Inline addition & subtraction
 %%
+
+gen_general_add_sub(Dst, Args, Cont, Fail, Op) ->
+  case Dst of
+    [] ->
+      [hipe_rtl:mk_call([hipe_rtl:mk_new_var()],
+                                Op, Args, Cont, Fail, not_remote)];
+    [Res] ->
+      [hipe_rtl:mk_call([Res], Op, Args, Cont, Fail, not_remote)]
+  end.
 
 gen_add_sub_2(Dst, Args, Cont, Fail, Op, AluOp) ->
   [Arg1, Arg2] = Args,
@@ -478,8 +504,23 @@ gen_op_general_case(Res, Op, Args, Cont, Fail, GenCaseLabel) ->
    hipe_rtl:mk_call([Res], Op, Args, Cont, Fail, not_remote)].
 
 %%
-%% We don't inline multiplication at the moment
+%% Inline multiplication
 %%
+
+gen_mul_2(Dst, Args, Cont, Fail) ->
+  [Arg1,Arg2] = Args,
+  GenCaseLabel = hipe_rtl:mk_new_label(),
+  {Res1,I2} =
+    case Dst of
+      [] ->
+	{hipe_rtl:mk_new_var(), []};
+      [Res0] ->
+	{Res0, hipe_tagscheme:fixnum_mul(Arg1, Arg2, Res0, GenCaseLabel)}
+    end,
+  [hipe_tagscheme:test_two_fixnums(Arg1, Arg2, hipe_rtl:label_name(GenCaseLabel)),
+   I2,
+   %% BIF call: am_Times -> nbif_mul_2 -> erts_mixed_times
+   gen_op_general_case(Res1, '*', Args, Cont, Fail, GenCaseLabel)].
 
 %% gen_unsafe_mul_2([Res], Args, Cont, Fail, Op) ->
 %%    [Arg1, Arg2] = Args,

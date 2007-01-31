@@ -147,7 +147,7 @@ Eterm hipe_bifs_test_reschedule_1(BIF_ALIST_1)
     // fflush(stdout);
     if( !flag && BIF_ARG_1 != am_false ) {
 	flag = 1;
-	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NIL);
+	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NULL);
 	BIF_ERROR(BIF_P, RESCHEDULE);
     }
     flag = !flag;

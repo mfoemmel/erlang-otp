@@ -33,9 +33,9 @@
 %%----------------------------------------------------------------------
 %% External exports
 %%----------------------------------------------------------------------
--export([wait_for_tables/1, wait_for_tables/2,
+-export([wait_for_tables/1, wait_for_tables/2, wait_for_tables/3,
 	 is_loaded/0, is_loaded/1, is_running/0, is_running/1, 
-	 info/2, error/2, unique/1]).
+	 info/2, error/2, unique/1, keysearch/2, keysearch/3]).
 
 %%----------------------------------------------------------------------
 %% Internal exports
@@ -76,6 +76,26 @@ find_application([{Appl, _, _} |_], Appl) ->
 find_application([_ |As], Appl) ->
     find_application(As, Appl).
   
+%%----------------------------------------------------------------------
+%% function : keysearch/2/3
+%% Arguments: KeyValue - [{Key, Value}]
+%%            Key      - term()
+%%            Value    - term()
+%%            Default  - term()
+%% Returns  : Value | Default
+%% Exception: 
+%% Effect   : 
+%%----------------------------------------------------------------------
+keysearch(Key, KeyValue) ->
+    keysearch(Key, KeyValue, undefined).
+keysearch(Key, KeyValue, Default) ->
+    case lists:keysearch(Key, 1, KeyValue) of
+	{value, {Key, Value}} ->
+	    Value;
+	_ ->
+	    Default
+    end.
+
 %%----------------------------------------------------------------------
 %% function : wait_for_tables/1
 %% Arguments: Tables  - list of mnesia tables

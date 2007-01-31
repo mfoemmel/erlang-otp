@@ -63,6 +63,7 @@ update_type({unit,Sz}, Type) when integer(Sz), Sz > 0, Sz =< 256 ->
 update_type(integer,      Type) -> Type#bittype { type   = integer};
 update_type(float,        Type) -> Type#bittype { type   = float};
 update_type(binary,       Type) -> Type#bittype { type   = binary};
+update_type(bitstr,       Type) -> Type#bittype { type   = binary,unit=1};
 update_type(big,          Type) -> Type#bittype { endian = big };
 update_type(little,       Type) -> Type#bittype { endian = little };
 update_type(native,       Type) -> Type#bittype { endian = native };
@@ -101,8 +102,8 @@ apply_defaults(undefined, Size, Unit, Sign, Endian) -> %default type
     apply_defaults(integer, Size, Unit, Sign, Endian);
 
 apply_defaults(binary, default, Unit, Sign, Endian) -> %default size
-    check_unit(Unit),
-    apply_defaults(binary, all, 8, Sign, Endian);
+    %check_unit(Unit), removed to allow bitlevel binaries
+    apply_defaults(binary, all, Unit, Sign, Endian);
 apply_defaults(integer, default, Unit, Sign, Endian) ->
     check_unit(Unit),
     apply_defaults(integer, 8, 1, Sign, Endian);

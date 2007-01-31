@@ -50,6 +50,7 @@
 #include "erl_mseg.h"
 
 extern char **environ;
+erts_smp_rwmtx_t environ_rwmtx;
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
 				 * vector sock_sendv().
@@ -93,8 +94,23 @@ extern char **environ;
  * child_waiter().
  */
 
-extern void input_ready(int, int);
-extern void output_ready(int, int);
+typedef struct ErtsSysReportExit_ ErtsSysReportExit;
+struct ErtsSysReportExit_ {
+    ErtsSysReportExit *next;
+    Eterm port;
+    int pid;
+    int ifd;
+    int ofd;
+#if CHLDWTHR && !defined(ERTS_SMP)
+    int status;
+#endif
+};
+
+static ErtsSysReportExit *report_exit_list;
+#if CHLDWTHR && !defined(ERTS_SMP)
+static ErtsSysReportExit *report_exit_transit_list;
+#endif
+
 extern int  check_async_ready(void);
 extern int  driver_interrupt(int, int);
 /*EXTERN_FUNCTION(void, increment_time, (int));*/
@@ -194,10 +210,9 @@ int erts_use_kernel_poll = 0;
 struct {
     int (*select)(ErlDrvPort, ErlDrvEvent, int, int);
     int (*event)(ErlDrvPort, ErlDrvEvent, ErlDrvEventData);
+    void (*check_io_interrupt)(int);
+    void (*check_io_interrupt_tmd)(int, long);
     void (*check_io)(int);
-#ifdef ERTS_SMP
-    void (*wake_io_thread)(void);
-#endif
     Uint (*size)(void);
     Eterm (*info)(void *);
     int (*check_io_debug)(void);
@@ -216,14 +231,6 @@ driver_event(ErlDrvPort port, ErlDrvEvent event, ErlDrvEventData event_data)
     return (*io_func.event)(port, event, event_data);
 }
 
-#ifdef ERTS_SMP
-void
-erts_wake_io_thread(void)
-{
-    (*io_func.wake_io_thread)();
-}
-#endif
-
 Eterm erts_check_io_info(void *p)
 {
     return (*io_func.info)(p);
@@ -239,35 +246,35 @@ static void
 init_check_io(void)
 {
     if (erts_use_kernel_poll) {
-	io_func.select		= driver_select_kp;
-	io_func.event		= driver_event_kp;
-	io_func.check_io	= erts_check_io_kp;
-#ifdef ERTS_SMP
-	io_func.wake_io_thread	= erts_wake_io_thread_kp;
-#endif
-	io_func.size		= erts_check_io_size_kp;
-	io_func.info		= erts_check_io_info_kp;
-	io_func.check_io_debug	= erts_check_io_debug_kp;
+	io_func.select			= driver_select_kp;
+	io_func.event			= driver_event_kp;
+	io_func.check_io_interrupt	= erts_check_io_interrupt_kp;
+	io_func.check_io_interrupt_tmd	= erts_check_io_interrupt_timed_kp;
+	io_func.check_io		= erts_check_io_kp;
+	io_func.size			= erts_check_io_size_kp;
+	io_func.info			= erts_check_io_info_kp;
+	io_func.check_io_debug		= erts_check_io_debug_kp;
 	erts_init_check_io_kp();
 	max_files = erts_check_io_max_files_kp();
     }
     else {
-	io_func.select		= driver_select_nkp;
-	io_func.event		= driver_event_nkp;
-	io_func.check_io	= erts_check_io_nkp;
-#ifdef ERTS_SMP
-	io_func.wake_io_thread	= erts_wake_io_thread_nkp;
-#endif
-	io_func.size		= erts_check_io_size_nkp;
-	io_func.info		= erts_check_io_info_nkp;
-	io_func.check_io_debug	= erts_check_io_debug_nkp;
+	io_func.select			= driver_select_nkp;
+	io_func.event			= driver_event_nkp;
+	io_func.check_io_interrupt	= erts_check_io_interrupt_nkp;
+	io_func.check_io_interrupt_tmd	= erts_check_io_interrupt_timed_nkp;
+	io_func.check_io		= erts_check_io_nkp;
+	io_func.size			= erts_check_io_size_nkp;
+	io_func.info			= erts_check_io_info_nkp;
+	io_func.check_io_debug		= erts_check_io_debug_nkp;
 	erts_init_check_io_nkp();
 	max_files = erts_check_io_max_files_nkp();
     }
 }
 
-#define ERTS_CHK_IO	(*io_func.check_io)
-#define ERTS_CHK_IO_SZ	(*io_func.size)
+#define ERTS_CHK_IO_INTR	(*io_func.check_io_interrupt)
+#define ERTS_CHK_IO_INTR_TMD	(*io_func.check_io_interrupt_tmd)
+#define ERTS_CHK_IO		(*io_func.check_io)
+#define ERTS_CHK_IO_SZ		(*io_func.size)
 
 #else /* !ERTS_ENABLE_KERNEL_POLL */
 
@@ -278,9 +285,25 @@ init_check_io(void)
     max_files = erts_check_io_max_files();
 }
 
-#define ERTS_CHK_IO	erts_check_io
-#define ERTS_CHK_IO_SZ	erts_check_io_size
+#define ERTS_CHK_IO_INTR	erts_check_io_interrupt
+#define ERTS_CHK_IO_INTR_TMD	erts_check_io_interrupt_timed
+#define ERTS_CHK_IO		erts_check_io
+#define ERTS_CHK_IO_SZ		erts_check_io_size
 
+#endif
+
+#ifdef ERTS_SMP
+void
+erts_sys_schedule_interrupt(int set)
+{
+    ERTS_CHK_IO_INTR(set);
+}
+
+void
+erts_sys_schedule_interrupt_timed(int set, long msec)
+{
+    ERTS_CHK_IO_INTR_TMD(set, msec);
+}
 #endif
 
 Uint
@@ -378,7 +401,12 @@ erts_sys_pre_init(void)
 #endif
 
     erts_thr_init(&eid);
+
+    report_exit_list = NULL;
 #if CHLDWTHR
+#ifndef ERTS_SMP
+    report_exit_transit_list = NULL;
+#endif
     erts_mtx_init(&chld_stat_mtx, "child_status");
     erts_cnd_init(&chld_stat_cnd);
     children_alive = 0;
@@ -386,6 +414,7 @@ erts_sys_pre_init(void)
     }
 #endif
     erts_smp_atomic_init(&sys_misc_mem_sz, 0);
+    erts_smp_rwmtx_init(&environ_rwmtx, "environ");
 }
 
 void
@@ -720,6 +749,7 @@ int* pBuild;			/* Pointer to build number. */
 
 void init_getenv_state(GETENV_STATE *state)
 {
+   erts_smp_rwmtx_rlock(&environ_rwmtx);
    *state = NULL;
 }
 
@@ -727,6 +757,8 @@ char *getenv_string(GETENV_STATE *state0)
 {
    char **state = (char **) *state0;
    char *cp;
+
+   ERTS_SMP_LC_ASSERT(erts_smp_lc_rwmtx_is_rlocked(&environ_rwmtx));
 
    if (state == NULL)
       state = environ;
@@ -736,6 +768,13 @@ char *getenv_string(GETENV_STATE *state0)
 
    return cp;
 }
+
+void fini_getenv_state(GETENV_STATE *state)
+{
+   *state = NULL;
+   erts_smp_rwmtx_runlock(&environ_rwmtx);
+}
+
 
 /************************** Port I/O *******************************/
 
@@ -754,7 +793,7 @@ char *getenv_string(GETENV_STATE *state0)
 /* This data is shared by these drivers - initialized by spawn_init() */
 static struct driver_data {
     int port_num, ofd, packet_bytes;
-    int report_exit;
+    ErtsSysReportExit *report_exit;
     int pid;
     int alive;
     int status;
@@ -773,7 +812,7 @@ static void output(ErlDrvData, char*, int);
 static void outputv(ErlDrvData, ErlIOVec*);
 
 
-const struct erl_drv_entry spawn_driver_entry = {
+struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
     spawn_start,
     stop,
@@ -786,9 +825,16 @@ const struct erl_drv_entry spawn_driver_entry = {
     NULL,
     NULL,
     NULL,
-    NULL
+    NULL,
+    NULL,
+    NULL,
+    NULL,
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING
 };
-const struct erl_drv_entry fd_driver_entry = {
+struct erl_drv_entry fd_driver_entry = {
     NULL,
     fd_start,
     fd_stop,
@@ -803,7 +849,7 @@ const struct erl_drv_entry fd_driver_entry = {
     outputv,
     NULL
 };
-const struct erl_drv_entry vanilla_driver_entry = {
+struct erl_drv_entry vanilla_driver_entry = {
     NULL,
     vanilla_start,
     stop,
@@ -866,10 +912,28 @@ static int set_driver_data(int port_num,
 			   int exit_status,
 			   int pid)
 {
+    ErtsSysReportExit *report_exit;
+
+    if (!exit_status)
+	report_exit = NULL;
+    else {
+	report_exit = erts_alloc(ERTS_ALC_T_PRT_REP_EXIT,
+				 sizeof(ErtsSysReportExit));
+	report_exit->next = report_exit_list;
+	report_exit->port = erts_port[port_num].id;
+	report_exit->pid = pid;
+	report_exit->ifd = read_write & DO_READ ? ifd : -1;
+	report_exit->ofd = read_write & DO_WRITE ? ofd : -1;
+#if CHLDWTHR && !defined(ERTS_SMP)
+	report_exit->status = 0;
+#endif
+	report_exit_list = report_exit;
+    }
+
     if (read_write & DO_READ) {
 	driver_data[ifd].packet_bytes = packet_bytes;
 	driver_data[ifd].port_num = port_num;
-	driver_data[ifd].report_exit = exit_status;
+	driver_data[ifd].report_exit = report_exit;
 	driver_data[ifd].pid = pid;
 	driver_data[ifd].alive = 1;
 	driver_data[ifd].status = 0;
@@ -885,7 +949,7 @@ static int set_driver_data(int port_num,
     } else {			/* DO_WRITE only */
 	driver_data[ofd].packet_bytes = packet_bytes;
 	driver_data[ofd].port_num = port_num;
-	driver_data[ofd].report_exit = exit_status;
+	driver_data[ofd].report_exit = report_exit;
 	driver_data[ofd].ofd = ofd;
 	driver_data[ofd].pid = pid;
 	driver_data[ofd].alive = 1;
@@ -950,6 +1014,8 @@ static char **build_unix_environment(char *block)
     char **cpp;
     char** old_env;
     
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_rwmtx_is_rlocked(&environ_rwmtx));
+
     cp = block;
     len = 0;
     while (*cp != '\0') {
@@ -1088,11 +1154,14 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     memcpy((void *) (cmd_line + CMD_LINE_PREFIX_STR_SZ), (void *) name, len);
     cmd_line[CMD_LINE_PREFIX_STR_SZ + len] = '\0';
 
+    erts_smp_rwmtx_rlock(&environ_rwmtx);
+
     if (opts->envir == NULL) {
 	new_environ = environ;
     } else if ((new_environ = build_unix_environment(opts->envir)) == NULL) {
-	errno = ENOMEM;
+	erts_smp_rwmtx_runlock(&environ_rwmtx);
 	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
+	errno = ENOMEM;
 	return ERL_DRV_ERROR_ERRNO;
     } 
 
@@ -1227,6 +1296,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     if (pid == -1) {
         saved_errno = errno;
 	CHLD_STAT_UNLOCK;
+	erts_smp_rwmtx_runlock(&environ_rwmtx);
 	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
         unblock_signals();
         close_pipes(ifd, ofd, opts->read_write);
@@ -1255,6 +1325,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
                       (char *) 0)) < 0) {
 	erts_free(ERTS_ALC_T_TMP, (void *) cmd_line);
         reset_qnx_spawn();
+	erts_smp_rwmtx_runlock(&environ_rwmtx);
 	close_pipes(ifd, ofd, opts->read_write);
 	return ERL_DRV_ERROR_GENERAL;
     }
@@ -1295,6 +1366,8 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     /* Don't unlock chld_stat_mtx until now of the same reason as above */
     CHLD_STAT_UNLOCK;
 #endif
+
+    erts_smp_rwmtx_runlock(&environ_rwmtx);
 
     return (ErlDrvData)res;
 #undef CMD_LINE_PREFIX_STR
@@ -1535,13 +1608,12 @@ static void stop(ErlDrvData fd)
 
     prt = driver_data[(int)(long)fd].port_num;
     nbio_stop_fd(prt, (int)(long)fd);
-    close((int)(long)fd);
 
     ofd = driver_data[(int)(long)fd].ofd;
-    if (ofd != (int)(long)fd && (int)(long)ofd != -1) {
+    if (ofd != (int)(long)fd && (int)(long)ofd != -1)
 	nbio_stop_fd(prt, ofd);
-	(void) close(ofd);
-    }
+    else
+	ofd = -1;
 
     CHLD_STAT_LOCK;
 
@@ -1549,6 +1621,12 @@ static void stop(ErlDrvData fd)
     driver_data[(int)(long)fd].pid = -1;
 
     CHLD_STAT_UNLOCK;
+
+    /* SMP note: Close has to be last thing done (open file descriptors work
+       as locks on driver_data[] entries) */
+    close((int)(long)fd);
+    if (ofd >= 0)
+	(void) close(ofd);
 }
 
 static void outputv(ErlDrvData e, ErlIOVec* ev)
@@ -1657,36 +1735,37 @@ static int port_inp_failure(int port_num, int ready_fd, int res)
 				/* Result: 0 (eof) or -1 (error) */
 {
     int err = errno;
-    int status;
-    int alive;
-    
-    CHLD_STAT_LOCK;
-
-    alive = driver_data[ready_fd].alive;
-    status = driver_data[ready_fd].status;
-
-    CHLD_STAT_UNLOCK;
 
     ASSERT(res <= 0);
     (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 0); 
     clear_fd_data(ready_fd);
     if (res == 0) {
-       if (!alive && driver_data[ready_fd].report_exit) {
-	  /* We need not be prepared for stopped/continued processes. */
-	  if (WIFSIGNALED(status))
-	     status = 128 + WTERMSIG(status);
-	  else
-	     status = WEXITSTATUS(status);
+	if (driver_data[ready_fd].report_exit) {
+	    CHLD_STAT_LOCK;
 
-	  driver_report_exit(driver_data[ready_fd].port_num,
-			     status);
-       }
-       else if (driver_data[ready_fd].report_exit) {
-	   /* We have eof and want to report exit status, but the process
-	      hasn't exited yet. Select the fd again, so we come back
-	      here. */
-	   (void) driver_select(port_num, ready_fd, DO_READ|DO_WRITE, 1);
-	   return 0;
+	    if (driver_data[ready_fd].alive) {
+		/*
+		 * We have eof and want to report exit status, but the process
+		 * hasn't exited yet. When it does report_exit_status() will
+		 * driver_select() this fd which will make sure that we get
+		 * back here with driver_data[ready_fd].alive == 0 and
+		 * driver_data[ready_fd].status set.
+		 */
+		CHLD_STAT_UNLOCK;
+		return 0;
+	    }
+	    else {
+		int status = driver_data[ready_fd].status;
+		CHLD_STAT_UNLOCK;
+
+		/* We need not be prepared for stopped/continued processes. */
+		if (WIFSIGNALED(status))
+		    status = 128 + WTERMSIG(status);
+		else
+		    status = WEXITSTATUS(status);
+
+		driver_report_exit(driver_data[ready_fd].port_num, status);
+	    }
        }
        driver_failure_eof(port_num);
     } else {
@@ -1942,6 +2021,17 @@ void erts_do_break_handling(void)
     struct termios temp_mode;
     int saved = 0;
     
+    /*
+     * Most functions that do_break() calls are intentionally not thread safe;
+     * therefore, make sure that all threads but this one are blocked before
+     * proceeding!
+     */
+    erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
+    /*
+     * NOTE: since we allow gc we are not allowed to lock
+     *       (any) process main locks while blocking system...
+     */
+
     /* during break we revert to initial settings */
     /* this is done differently for oldshell */
     if (using_oldshell && !replace_intr) {
@@ -1965,6 +2055,8 @@ void erts_do_break_handling(void)
     else if (saved) {
       tcsetattr(0,TCSANOW,&temp_mode);
     }
+
+    erts_smp_release_system();
 }
 
 /* Fills in the systems representation of the jam/beam process identifier.
@@ -1978,12 +2070,17 @@ void sys_get_pid(char *buffer){
     sprintf(buffer,"%lu",(unsigned long) p);
 }
 
-int sys_putenv(char *buffer){
+int sys_putenv(char *buffer)
+{
+    int res;
     Uint sz = strlen(buffer)+1;
     char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
     erts_smp_atomic_add(&sys_misc_mem_sz, sz);
     strcpy(env,buffer);
-    return(putenv(env));
+    erts_smp_rwmtx_rwlock(&environ_rwmtx);
+    res = putenv(env);
+    erts_smp_rwmtx_rwunlock(&environ_rwmtx);
+    return res;
 }
 
 void
@@ -2013,7 +2110,7 @@ sys_init_io(void)
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");
-	erts_port[ret].status |= ERTS_IMMORTAL_PORT;
+	erts_port[ret].status |= ERTS_PORT_SFLG_IMMORTAL;
     }
 #endif
 #endif
@@ -2154,15 +2251,124 @@ erl_debug(char* fmt, ...)
 
 #endif /* DEBUG */
 
+static ERTS_INLINE void
+report_exit_status(ErtsSysReportExit *rep, int status)
+{
+    Port *pp;
+#ifdef ERTS_SMP
+    CHLD_STAT_UNLOCK;
+#endif
+    pp = erts_id2port_sflgs(rep->port,
+			    NULL,
+			    0,
+			    ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP);
+#ifdef ERTS_SMP
+    CHLD_STAT_LOCK;
+#endif
+    if (pp) {
+	if (rep->ifd >= 0) {
+	    driver_data[rep->ifd].alive = 0;
+	    driver_data[rep->ifd].status = status;
+	    (void) driver_select((ErlDrvPort) internal_port_index(pp->id),
+				 rep->ifd,
+				 DO_READ,
+				 1);
+	}
+	if (rep->ofd >= 0) {
+	    driver_data[rep->ofd].alive = 0;
+	    driver_data[rep->ofd].status = status;
+	    (void) driver_select((ErlDrvPort) internal_port_index(pp->id),
+				 rep->ofd,
+				 DO_WRITE,
+				 1);
+	}
+	erts_port_release(pp);
+    }
+    erts_free(ERTS_ALC_T_PRT_REP_EXIT, rep);
+}
+
+#if !CHLDWTHR || defined(ERTS_SMP)
+
+#define ERTS_REPORT_EXIT_STATUS report_exit_status
+
+#ifdef ERTS_SMP
+
+#define check_children() (0)
+
+#else
+
+static int check_children(void)
+{
+    int res = 0;
+    int pid;
+    int status;
+
+    if (children_died) {
+      sys_sigblock(SIGCHLD);
+      while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	note_child_death(pid, status);
+      children_died = 0;
+      sys_sigrelease(SIGCHLD);
+      res = 1;
+    }
+    return res;
+}
+
+#endif
+
+#else /* CHLDWTHR && !defined(ERTS_SMP) */
+
+#define ERTS_REPORT_EXIT_STATUS initiate_report_exit_status
+
+static ERTS_INLINE void
+initiate_report_exit_status(ErtsSysReportExit *rep, int status)
+{
+    rep->next = report_exit_transit_list;
+    rep->status = status;
+    report_exit_transit_list = rep;
+    /*
+     * We need the scheduler thread to call check_children().
+     * If the scheduler thread is sleeping in a poll with a
+     * timeout, we need to wake the scheduler thread. We use the
+     * functionality of the async driver to do this, instead of
+     * implementing yet another driver doing the same thing. A
+     * little bit ugly, but it works...
+     */
+    sys_async_ready(async_fd[1]);
+}
+
+static int check_children(void)
+{
+    int res;
+    ErtsSysReportExit *rep;
+    CHLD_STAT_LOCK;
+    rep = report_exit_transit_list;
+    res = rep != NULL;
+    while (rep) {
+	ErtsSysReportExit *curr_rep = rep;
+	rep = rep->next;
+	report_exit_status(curr_rep, curr_rep->status);
+    }
+    report_exit_transit_list = NULL;
+    CHLD_STAT_UNLOCK;
+    return res;
+}
+
+#endif
+
 static void note_child_death(int pid, int status)
 {
-  int i;
+    ErtsSysReportExit **repp = &report_exit_list;
+    ErtsSysReportExit *rep = report_exit_list;
 
-  for (i = 0; i < max_files; i++)
-    if (driver_data[i].pid == pid) {
-      driver_data[i].alive = 0;
-      driver_data[i].status = status;
-      break;
+    while (rep) {
+	if (pid == rep->pid) {
+	    *repp = rep->next;
+	    ERTS_REPORT_EXIT_STATUS(rep, status);
+	    break;
+	}
+	repp = &rep->next;
+	rep = rep->next;
     }
 }
 
@@ -2203,25 +2409,6 @@ child_waiter(void *unused)
   return NULL;
 }
 
-#define check_children()
-
-#else
-
-static void check_children(void)
-{
-    int pid;
-    int status;
-
-    if (children_died) {
-      sys_sigblock(SIGCHLD);
-      while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-	note_child_death(pid, status);
-      children_died = 0;
-      sys_sigrelease(SIGCHLD);
-    }
-
-}
-
 #endif
 
 /*
@@ -2233,27 +2420,81 @@ void
 erl_sys_schedule(int runnable)
 {
 #ifdef ERTS_SMP
-    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
-    erts_smp_io_lock();
-    while (1) {
-	ERTS_CHK_IO(1);
-#if !CHLDWTHR
-	check_children();
-#endif
-    }
-    /* Not reached ... */
-    erts_smp_io_unlock();
-    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+    ERTS_CHK_IO(!runnable);
+    ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
 #else
     if (runnable) {
 	ERTS_CHK_IO(0);		/* Poll for I/O */
 	check_async_ready();	/* Check async completions */
     } else {
-	ERTS_CHK_IO(check_async_ready() ? 0 : 1);
+	int wait_for_io = !check_async_ready();
+	if (wait_for_io)
+	    wait_for_io = !check_children();
+	ERTS_CHK_IO(wait_for_io);
     }
-    check_children();
+    (void) check_children();
 #endif
 }
+
+
+#ifdef ERTS_SMP
+
+#ifdef ERTS_SMP_USE_IO_THREAD
+static void *io_thread_func(void *unused)
+{
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("io");
+#endif
+    erts_register_blockable_thread();
+    erts_thread_init_fp_exception();
+    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+    while (1) {
+	ERTS_CHK_IO(1);
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+    }
+    /* Not reached ... */
+    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
+    return NULL;
+}
+#endif /* ERTS_SMP_USE_IO_THREAD */
+
+
+void
+erts_sys_main_thread(void)
+{
+#ifdef ERTS_SMP_USE_IO_THREAD
+    /* Start I/O thread... */
+    erts_smp_thr_create(&erts_io_thr_tid, io_thread_func, NULL, 1);
+#endif
+
+    /* Become break handler thread... */
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("break_handler");
+#endif
+    erts_register_blockable_thread();
+    erts_thread_init_fp_exception();
+    while (1) {
+#ifdef DEBUG
+	int res;
+#endif
+	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	/* Wait for a signal to arrive... */
+#ifdef DEBUG
+	res =
+#else
+	(void)
+#endif
+	    select(0, NULL, NULL, NULL, NULL);
+	ASSERT(res < 0);
+	ASSERT(errno == EINTR);
+	erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
+	if (erts_break_requested)
+	    erts_do_break_handling();
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+    }
+}
+
+#endif /* ERTS_SMP */
 
 #ifdef ERTS_ENABLE_KERNEL_POLL /* get_value() is currently only used when
 				  kernel-poll is enabled */
@@ -2398,11 +2639,11 @@ static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
 	perror("FUTEX_WAKE");
 }
 
-#elif defined(ERTS_USE_POLL)
+#else	/* using poll() or select() */
 
 /*
  * This is an implementation of the interruptible wait facility on
- * top of pipe(), poll(), read(), and write().
+ * top of pipe(), poll() or select(), read(), and write().
  */
 struct erts_iwait {
     erts_smp_atomic_t state;
@@ -2422,22 +2663,49 @@ static void iwait_lowlevel_init(struct erts_iwait *iwait)
     iwait->write_fd = fds[1];
 }
 
-static void iwait_lowlevel_wait(struct erts_iwait *iwait, struct timeval *delay)
+#if defined(ERTS_USE_POLL)
+
+#include <sys/poll.h>
+#define PERROR_POLL "poll()"
+
+static int iwait_lowlevel_poll(int read_fd, struct timeval *delay)
 {
     struct pollfd pollfd;
     int timeout;
-    int res;
-    char buf[64];
 
-    pollfd.fd = iwait->read_fd;
+    pollfd.fd = read_fd;
     pollfd.events = POLLIN;
     pollfd.revents = 0;
     timeout = delay->tv_sec * 1000 + delay->tv_usec / 1000;
-    res = poll(&pollfd, 1, timeout);
+    return poll(&pollfd, 1, timeout);
+}
+
+#else	/* !ERTS_USE_POLL */
+
+#include <sys/select.h>
+#define PERROR_POLL "select()"
+
+static int iwait_lowlevel_poll(int read_fd, struct timeval *delay)
+{
+    fd_set readfds;
+
+    FD_ZERO(&readfds);
+    FD_SET(read_fd, &readfds);
+    return select(read_fd + 1, &readfds, NULL, NULL, delay);
+}
+
+#endif	/* !ERTS_USE_POLL */
+
+static void iwait_lowlevel_wait(struct erts_iwait *iwait, struct timeval *delay)
+{
+    int res;
+    char buf[64];
+
+    res = iwait_lowlevel_poll(iwait->read_fd, delay);
     if (res > 0)
 	(void)read(iwait->read_fd, buf, sizeof buf);
     else if (res < 0 && errno != EINTR)
-	perror("poll()");
+	perror(PERROR_POLL);
 }
 
 static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
@@ -2447,9 +2715,9 @@ static void iwait_lowlevel_interrupt(struct erts_iwait *iwait)
 	perror("write()");
 }
 
-#else /* not using POLL */
+#endif	/* using poll() or select() */
 
-#warning "erts_iwait: using pthread_cond_timedwait()"
+#if 0	/* not using poll() or select() */
 /*
  * This is an implementation of the interruptible wait facility on
  * top of pthread_cond_timedwait(). This has two problems:

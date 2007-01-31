@@ -129,7 +129,7 @@ static ERTS_INLINE long time_gettimeofday(SysTimeval *now)
 {
     long elapsed;
 
-    sys_gettimeofday(now);
+    erts_get_timeval(now);
     now->tv_usec = 1000 * (now->tv_usec / 1000); /* ms resolution */
     elapsed = (1000 * (now->tv_sec - time_start.tv_sec) +
 	       (now->tv_usec - time_start.tv_usec) / 1000);
@@ -391,6 +391,10 @@ init_time(void)
 {
     int i;
 
+    /* system dependent init; must be done before do_time_init()
+       if timer thread is enabled */
+    itime = erts_init_time_sup();
+
     tiw_init_lock();
 
     tiw = (ErlTimer**) erts_alloc(ERTS_ALC_T_TIMER_WHEEL,
@@ -399,9 +403,6 @@ init_time(void)
 	tiw[i] = NULL;
     do_time_init();
     tiw_pos = tiw_nto = 0;
-
-    /* system dependent init */
-    itime = erts_init_time_sup();
 
     timer_thread_init();
 }
@@ -453,7 +454,8 @@ erl_set_timer(ErlTimer* p, ErlTimeoutProc timeout, ErlCancelProc cancel,
     insert_timer(p, t);
     tiw_write_unlock();
 #if defined(ERTS_SMP) && !defined(ERTS_TIMER_THREAD)
-    erts_wake_io_thread();
+    if (t <= (Uint) LONG_MAX)
+	erts_sys_schedule_interrupt_timed(1, (long) t);
 #endif
 }
 

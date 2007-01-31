@@ -46,7 +46,8 @@
 %% Func: start/2
 %%-----------------------------------------------------------------
 start(Type, Listen, Ref) ->
-    Pid = proc_lib:spawn_link(?MODULE, net_accept, [Type, Listen, self(), Ref]),
+    Pid = proc_lib:spawn_link(?MODULE, net_accept, 
+			      [Type, Listen, self(), Ref]),
     {ok, Pid}.
 
 %%-----------------------------------------------------------------
@@ -62,7 +63,7 @@ net_accept(Type, ListenFd, Parent, Ref) ->
 	{ok, Pid, ReadyToGo} ->
 	    case orber_socket:controlling_process(Type, S, Pid) of
 		ok ->
-		    ok;
+		    orber_iiop_inproxy:post_accept(Pid, Type, S);
 		_Reason ->
 		    orber_socket:close(Type, S),
 		    gen_server:cast(Pid, stop),
@@ -85,3 +86,4 @@ ready_to_go(Ref) ->
 	{Ref, ok} ->
 	    ok
     end.
+

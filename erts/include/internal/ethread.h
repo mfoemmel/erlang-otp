@@ -129,7 +129,7 @@ struct ethr_rwmutex_ {
 #  define ETHR_HAVE_ETHR_REC_MUTEX_INIT 1
 #  ifdef PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP
 #    define ETHR_REC_MUTEX_INITER \
-            {PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP, 1, NULL, NULL}
+            {PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP, 1, NULL, NULL ETHR_MUTEX_XCHK_INITER}
 #  endif
 #else
 #  undef ETHR_HAVE_ETHR_REC_MUTEX_INIT
@@ -348,6 +348,21 @@ typedef long ethr_atomic_t;
 
 #endif
 
+#ifndef ETHR_HAVE_OPTIMIZED_LOCKS
+
+typedef struct {
+    /* zero: unlocked, non-zero: locked */
+    ethr_atomic_t flag;
+} ethr_spinlock_t;
+
+typedef struct {
+    /* 0: unlocked, >0: read-locked, <0: write-locked */
+    ethr_atomic_t counter;
+} ethr_rwlock_t;
+#define ETHR_RWLOCK_OFFSET	(1<<24)
+
+#endif
+
 #ifdef ETHR_TRY_INLINE_FUNCS
 
 static ETHR_INLINE int
@@ -549,6 +564,89 @@ ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
     
 #endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */
 
+#ifndef ETHR_HAVE_OPTIMIZED_LOCKS
+
+static ETHR_INLINE int
+ethr_spinlock_init(ethr_spinlock_t *lock)
+{
+    return ethr_atomic_init(&lock->flag, 0);
+}
+
+static ETHR_INLINE int
+ethr_spin_unlock(ethr_spinlock_t *lock)
+{
+    return ethr_atomic_set(&lock->flag, 0);
+}
+
+static ETHR_INLINE int
+ethr_spin_lock(ethr_spinlock_t *lock)
+{
+    long old;
+    int res;
+
+    do {
+	res = ethr_atomic_xchg(&lock->flag, 1, &old);
+	if (res != 0)
+	    return res;
+    } while (old != 0);
+    return 0;
+}
+
+static ETHR_INLINE int
+ethr_rwlock_init(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_init(&lock->counter, 0);
+}
+
+static ETHR_INLINE int
+ethr_read_unlock(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_dec(&lock->counter);
+}
+
+static ETHR_INLINE int
+ethr_read_lock(ethr_rwlock_t *lock)
+{
+    long value;
+    int res;
+
+    for(;;) {
+	res = ethr_atomic_inctest(&lock->counter, &value);
+	if (res != 0)
+	    return res;
+	if (!(value < 0))	/* wasn't write-locked */
+	    return 0;
+	res = ethr_atomic_dec(&lock->counter);
+	if (res != 0)
+	    return res;
+    }
+}
+
+static ETHR_INLINE int
+ethr_write_unlock(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+}
+
+static ETHR_INLINE int
+ethr_write_lock(ethr_rwlock_t *lock)
+{
+    long value;
+    int res;
+
+    for(;;) {
+	res = ethr_atomic_addtest(&lock->counter, -ETHR_RWLOCK_OFFSET, &value);
+	if (res != 0)
+	    return res;
+	if (value == -ETHR_RWLOCK_OFFSET)	/* was unlocked */
+	    return 0;
+	res = ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+	if (res != 0)
+	    return res;
+    }
+}
+
+#endif /* ETHR_HAVE_OPTIMIZED_LOCKS */
 
 #endif /* #ifdef ETHR_TRY_INLINE_FUNCS */
 
@@ -778,7 +876,20 @@ int ethr_atomic_add(ethr_atomic_t *, long);
 int ethr_atomic_and_old(ethr_atomic_t *, long, long *);
 int ethr_atomic_or_old(ethr_atomic_t *, long, long *);
 int ethr_atomic_xchg(ethr_atomic_t *, long, long *);
+
+#if defined(ETHR_PTHREADS)
+int ethr_spinlock_init(ethr_spinlock_t *);
+int ethr_spin_unlock(ethr_spinlock_t *);
+int ethr_spin_lock(ethr_spinlock_t *);
+
+int ethr_rwlock_init(ethr_rwlock_t *);
+int ethr_read_unlock(ethr_rwlock_t *);
+int ethr_read_lock(ethr_rwlock_t *);
+int ethr_write_unlock(ethr_rwlock_t *);
+int ethr_write_lock(ethr_rwlock_t *);
 #endif
+#endif
+
 int ethr_time_now(ethr_timeval *);
 int ethr_tsd_key_create(ethr_tsd_key *);
 int ethr_tsd_key_delete(ethr_tsd_key);

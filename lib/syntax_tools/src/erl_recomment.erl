@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Inserting comments into abstract Erlang syntax trees
-%%
-%% Copyright (C) 1997-2001 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,12 +14,13 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% $Id$
 %%
-%% $Id: erl_recomment.erl,v 1.26 2004/11/08 17:25:23 richardc Exp $
-%%
+%% @copyright 1997-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Inserting comments into abstract Erlang syntax trees
 %%
 %% <p>This module contains functions for inserting comments, described

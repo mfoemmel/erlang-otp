@@ -231,6 +231,8 @@ conv_insn(I, Map, Data) ->
 %%% Finalise the conversion of a 3-address ALU operation, taking
 %%% care to not introduce more temps and moves than necessary.
 
+conv_alu(Dst, Src1, 'imul', Src2, Tail) ->
+  mk_imul(Src1, Src2, Dst, Tail);
 conv_alu(Dst, Src1, BinOp, Src2, Tail) ->
   case same_opnd(Dst, Src1) of
     true ->		% x = x op y
@@ -250,6 +252,47 @@ conv_alu(Dst, Src1, BinOp, Src2, Tail) ->
 	       hipe_x86:mk_alu(BinOp, Src2, Tmp),	% t op= y
 	       hipe_x86:mk_move(Tmp, Dst) | Tail]	% y = t
 	  end
+      end
+  end.
+
+mk_imul(Src1, Src2, Dst, Tail) ->
+  case hipe_x86:is_imm(Src1) of
+    true ->
+      case hipe_x86:is_imm(Src2) of
+	true ->
+	  mk_imul_iit(Src1, Src2, Dst, Tail);
+	_ ->
+	  mk_imul_itt(Src1, Src2, Dst, Tail)
+      end;
+    _ ->
+      case hipe_x86:is_imm(Src2) of
+	true ->
+	  mk_imul_itt(Src2, Src1, Dst, Tail);
+	_ ->
+	  mk_imul_ttt(Src1, Src2, Dst, Tail)
+      end
+  end.
+
+mk_imul_iit(Src1, Src2, Dst, Tail) ->
+  io:format("~w: RTL mul with two immediates\n", [?MODULE]),
+  Tmp2 = new_untagged_temp(),
+  [hipe_x86:mk_move(Src2, Tmp2) |
+   mk_imul_itt(Src1, Tmp2, Dst, Tail)].
+
+mk_imul_itt(Src1, Src2, Dst, Tail) ->
+  [hipe_x86:mk_imul(Src1, Src2, Dst) | Tail].
+
+mk_imul_ttt(Src1, Src2, Dst, Tail) ->
+  case same_opnd(Dst, Src1) of
+    true ->
+      [hipe_x86:mk_imul([], Src2, Dst) | Tail];
+    false ->
+      case same_opnd(Dst, Src2) of
+	true ->
+	  [hipe_x86:mk_imul([], Src1, Dst) | Tail];
+	false ->
+	  [hipe_x86:mk_move(Src1, Dst),
+	   hipe_x86:mk_imul([], Src2, Dst) | Tail]
       end
   end.
 
@@ -316,7 +359,8 @@ conv_binop(BinOp) ->
     'sll'	-> 'shl';
     'srl'	-> 'shr';
     'sra'	-> 'sar';
-    %% mul, andnot ???
+    'mul'	-> 'imul';
+    %% andnot ???
     _		-> exit({?MODULE, {"unknown binop", BinOp}})
   end.
 

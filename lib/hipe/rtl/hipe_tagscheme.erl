@@ -26,6 +26,7 @@
 -export([test_two_fixnums/3, test_fixnums/4, unsafe_fixnum_add/3,
 	 unsafe_fixnum_sub/3,
 	 fixnum_gt/5, fixnum_lt/5, fixnum_ge/5, fixnum_le/5, fixnum_val/1,
+	 fixnum_mul/4,
 	 fixnum_addsub/5, fixnum_andorxor/4, fixnum_not/2, fixnum_bsr/3, fixnum_bsl/3]).
 -export([unsafe_car/2, unsafe_cdr/2,
 	 unsafe_constant_element/3, unsafe_update_element/3, element/6]).
@@ -253,6 +254,7 @@ test_ref(X, TrueLab, FalseLab, Pred) ->
 		      TrueLab, FalseLab, Pred)
   ].
 
+-ifdef(EFT_NATIVE_ADDRESS).
 test_closure(X, TrueLab, FalseLab, Pred) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
@@ -261,6 +263,7 @@ test_closure(X, TrueLab, FalseLab, Pred) ->
    get_header(Tmp, X),
    mask_and_compare(Tmp, ?TAG_HEADER_MASK, ?TAG_HEADER_FUN,
 		    TrueLab, FalseLab, Pred)].
+-endif.
 
 test_fun(X, TrueLab, FalseLab, Pred) ->
   Hdr = hipe_rtl:mk_new_reg_gcsafe(),
@@ -472,17 +475,17 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
   end.
 
 %%% ((16X+tag) div 16) * ((16Y+tag)-tag) + tag = X*16Y+tag = 16(XY)+tag
-%% fixnum_mul(Arg1, Arg2, Res, OtherLab) ->
-%%   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
-%%   U1 = hipe_rtl:mk_new_reg_gcsafe(),
-%%   U2 = hipe_rtl:mk_new_reg_gcsafe(),
-%%   NoOverflowLab = hipe_rtl:mk_new_label(),
-%%   [untag_fixnum(U1, Arg1),
-%%    hipe_rtl:mk_alu(U2, Arg2, 'sub', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
-%%    hipe_rtl:mk_alub(Tmp, U1, 'mul', U2, overflow, hipe_rtl:label_name(OtherLab),
-%%  		    hipe_rtl:label_name(NoOverflowLab), 0.01),
-%%    NoOverflowLab,
-%%    hipe_rtl:mk_alu(Res, Tmp, 'add', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
+fixnum_mul(Arg1, Arg2, Res, OtherLab) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  U1 = hipe_rtl:mk_new_reg_gcsafe(),
+  U2 = hipe_rtl:mk_new_reg_gcsafe(),
+  NoOverflowLab = hipe_rtl:mk_new_label(),
+  [untag_fixnum(U1, Arg1),
+   hipe_rtl:mk_alu(U2, Arg2, 'sub', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+   hipe_rtl:mk_alub(Tmp, U1, 'mul', U2, overflow, hipe_rtl:label_name(OtherLab),
+		    hipe_rtl:label_name(NoOverflowLab), 0.01),
+   NoOverflowLab,
+   hipe_rtl:mk_alu(Res, Tmp, 'add', hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
 
 fixnum_andorxor(AluOp, Arg1, Arg2, Res) ->
   case AluOp of

@@ -5,9 +5,9 @@
 %%  Notes    : 
 %%  History  :	* 1997-04-14 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
-%%    $Author: richardc $
-%%    $Date: 2004/04/04 21:07:10 $
-%%    $Revision: 1.8 $
+%%    $Author: mikpe $
+%%    $Date: 2006/12/19 17:11:52 $
+%%    $Revision: 1.9 $
 %% ====================================================================
 %% Exported functions (short description):
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -17,6 +17,7 @@
 	 %% bits_10/1, bits_high/1, bits_low/1, high22/1,
 	 %% sti/3, st/3,
 	 ldi/3, ld/3, call/1, jumpli/3, nop/0, sethi/2,
+	 rdy/1,
 	 %% savei/3, restorei/3,
 
 	 stb/3, sth/3, stw/3, stx/3, stbi/3, sthi/3, stwi/3, stxi/3,
@@ -48,6 +49,9 @@
 	 xnor_op/3, xnori/3,
 	 xorcc/3, xoricc/3,
 	 %% taddcc/3, taddcci/3, tsubcc/3, tsubcci/3,
+
+	 smul/3, smuli/3, % smulcc/3, smulicc/3,
+
 	 %% fxtos/2, fxtod/2, fxtoq/2,
 	 fitos/2, fitod/2, fitoq/2,
 	 %% fstox/2, fdtox/2, fqtox/2,
@@ -183,6 +187,7 @@ call(Addr)  ->            format1(Addr).
 jumpli(To, Offs, Rd) ->   format3b(2, Rd, 16#38, To, Offs).
 nop()   ->                format2a(0, 16#4, 0).
 sethi(High22, Reg) ->     format2a(Reg, 16#4, High22).
+rdy(Rd) ->		  format3a(2, Rd, 2#101000, 0, 0, 0).
 %% savei(Rs1, Imm, Rd) ->    format3b(2, Rd, 16#3c, Rs1, Imm).
 %% restorei(Rs1, Imm, Rd)->  format3b(2, Rd, 16#3d, Rs1, Imm).
 
@@ -333,6 +338,11 @@ xoricc(Op1, Imm, Res) ->  format3b(2, Res, 16#13, Op1, Imm).
 %% taddcci(Rs1, Simm13, Rd) ->	format3b(2, Rd, 16#20, Rs1, Simm13).
 %% tsubcc(Rs1, Rs2, Rd) ->		format3a(2, Rd, 16#21, Rs1, 0, Rs2).
 %% tsubcci(Rs1, Simm13, Rd) ->	format3b(2, Rd, 16#21, Rs1, Simm13).
+
+smul(Rs1, Rs2, Rd) -> format3a(2, Rd, 2#001011, Rs1, 0, Rs2).
+smuli(Rs1, Simm13, Rd) -> format3b(2, Rd, 2#001011, Rs1, Simm13).
+%% smulcc(Rs1, Rs2, Rd) -> format3a(2, Rd, 2#011011, Rs1, 0, Rs2).
+%% smulicc(Rs1, Simm13, Rd) -> format3b(2, Rd, 2#011011, Rs1, Simm13).
 
 fpop1(Rs1,Opf,Rs2,Rd) ->        format3a(2#10, Rd, 2#110100, Rs1, Opf, Rs2).
 %% fpop2(Rs1,Opf,Rs2,Rd) ->        format3a(2#10, Rd, 2#110101, Rs1, Opf, Rs2).

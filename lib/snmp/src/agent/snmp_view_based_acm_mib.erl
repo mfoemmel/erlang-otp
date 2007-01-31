@@ -762,7 +762,7 @@ verify_vacmViewTreeFamilyTable_col(?vacmViewTreeFamilyMask, Mask) ->
 	[]   -> [];
 	_ ->
 	    case (catch snmp_conf:check_oid(Mask)) of
-		true ->
+		ok ->
 		    Mask;
 	        _ ->
 		    wrongValue(?vacmViewTreeFamilyMask)

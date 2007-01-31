@@ -48,6 +48,13 @@
 %% encoding. If the ChunkedBody is not compleate it returns {Module,
 %% Function, Args} so that decoding can be continued when more of the
 %% data has been received by calling Module:Function([NewData | Args]).
+%%
+%% Note: In the case of pipelining a call to decode might contain data
+%% that belongs to the next request/response and will be returned as
+%% part of the body, hence functions calling http_chunk:decode must
+%% look at the returned content-length header to make sure that they
+%% split the actual body and data that possible should be passed along to 
+%% the next pass in the loop. 
 %%-------------------------------------------------------------------------
 decode(ChunkedBody, MaxBodySize, MaxHeaderSize) ->
     decode(ChunkedBody, MaxBodySize, MaxHeaderSize, false).
@@ -224,10 +231,12 @@ decode_data(ChunkSize, TotalChunk, Info) ->
 decode_trailer(<<>>, Header, Headers, MaxHeaderSize, Body, BodyLength) ->
     {?MODULE, decode_trailer, [<<>>, Header, Headers, MaxHeaderSize, Body, 
 			       BodyLength]};
-decode_trailer(<<?CR,?LF,?CR,?LF>>, [], [], _, Body, BodyLength) ->
-    {ok, {["content-length:" ++ BodyLength], Body}};
-decode_trailer(<<?CR,?LF,?CR,?LF>>, Header, Headers, MaxHeaderSize, Body, 
-	       BodyLength) ->
+
+%% Note: If Bin is not empty it is part of a pipelined request/response. 
+decode_trailer(<<?CR,?LF,?CR,?LF, Bin/binary>>, [], [], _, Body, BodyLength) ->
+    {ok, {["content-length:" ++ BodyLength], <<Body/binary, Bin/binary>>}};
+decode_trailer(<<?CR,?LF,?CR,?LF, Bin/binary>>, 
+	       Header, Headers, MaxHeaderSize, Body, BodyLength) ->
     NewHeaders = case Header of
 		     [] ->
 			 Headers;
@@ -240,7 +249,8 @@ decode_trailer(<<?CR,?LF,?CR,?LF>>, Header, Headers, MaxHeaderSize, Body,
 	    throw({error, {header_too_long, MaxHeaderSize, 
 			   MaxHeaderSize-Length}});
 	false ->
-	    {ok, {["content-length:" ++ BodyLength | NewHeaders], Body}}
+	    {ok, {["content-length:" ++ BodyLength | NewHeaders], 
+		  <<Body/binary, Bin/binary>>}}
     end;
 decode_trailer(<<?CR,?LF,?CR>> = Data, Header, Headers, MaxHeaderSize, 
 	       Body, BodyLength) ->

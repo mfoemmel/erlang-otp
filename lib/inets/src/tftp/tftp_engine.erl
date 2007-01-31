@@ -582,12 +582,12 @@ wait_for_msg(Config, Callback, Req) ->
 		end,
 	    Pid ! {info, self(), internal_info(Config, Type)},
 	    wait_for_msg(Config, Callback, Req);
-	{udp, Socket, Host, Port, Bin} when  binary(Bin),
+	{udp, Socket, RemoteHost, RemotePort, Bin} when  binary(Bin),
 	                                     Callback#callback.block_no == undefined ->
 	    %% Client prepare
 	    inet:setopts(Socket, [{active, once}]),
-	    Config2 = Config#config{udp_host = Host,
-				    udp_port = Port},
+	    Config2 = Config#config{udp_host = RemoteHost,
+				    udp_port = RemotePort},
 	    DecodedMsg = (catch tftp_lib:decode_msg(Bin)),
 	    print_debug_info(Config2, Req, recv, DecodedMsg),
 	    {Config2, DecodedMsg};
@@ -682,18 +682,41 @@ do_callback({open, Type}, Config, Callback, Req)
        record(Callback, callback),
        record(Req, tftp_msg_req) ->
     {Access, Filename} = local_file_access(Req),
-    {Oper, BlockNo} =
+    {Fun, BlockNo} =
 	case Type of
 	    client_prepare -> {prepare, undefined};
 	    client_open    -> {open, 0};
 	    server_open    -> {open, 0}
 	end,
+    Mod = Callback#callback.module,
     Args = [Access,
 	    Filename,
 	    Req#tftp_msg_req.mode,
 	    Req#tftp_msg_req.options,
 	    Callback#callback.state],
-    case catch apply(Callback#callback.module, Oper, Args) of
+    Host = Config#config.udp_host,
+    PeerInfo =
+	if
+	    tuple(Host), size(Host) == 4 ->
+		{inet, 
+		 tftp_lib:host_to_string(Host),
+		 Config#config.udp_port};
+	    tuple(Host), size(Host) == 8 ->
+		{inet6, 
+		 tftp_lib:host_to_string(Host),
+		 Config#config.udp_port};
+	    true ->
+		{undefined,
+		 Host, 
+		 Config#config.udp_port}
+	end,
+    code:ensure_loaded(Mod),
+    Args2 =
+	case erlang:function_exported(Mod, Fun, length(Args)) of
+	    true  -> Args;
+	    false -> [PeerInfo | Args]
+	end,
+    case catch apply(Mod, Fun, Args2) of
 	{ok, AcceptedOptions, NewState} ->
 	    Callback2 = Callback#callback{state    = NewState, 
 					  block_no = BlockNo, 
@@ -779,7 +802,7 @@ internal_info(Config, Type) ->
     {ok, ActualPort} = inet:port(Config#config.udp_socket),
     [
      {type, Type},
-     {host, Config#config.udp_host},
+     {host, tftp_lib:host_to_string(Config#config.udp_host)},
      {port, Config#config.udp_port},
      {local_port, ActualPort},
      {port_policy, Config#config.port_policy},

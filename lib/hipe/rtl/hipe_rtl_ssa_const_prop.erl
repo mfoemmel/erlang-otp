@@ -314,6 +314,7 @@ partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sll') or (Op =:= 'srl') ->
   partial_eval_shift(BitSize, Val1, Val2);
 partial_eval_alu(Val1, Op, Val2) when (Op =:= 'sllx') or (Op =:= 'srlx') ->
   partial_eval_shift(64, Val1, Val2);
+partial_eval_alu(Val1, mul, Val2) -> lattice_meet(Val1, Val2); % XXX: suboptimal
 
 % arithmetic shifts are more tricky, shifting something unknown can
 % generate all_ones() and 0 depenging on the sign of Val1.

@@ -20,10 +20,10 @@
 -export([key1search/2, key1search/3,
 	 to_upper/1, to_lower/1, convert_netscapecookie_date/1,
 	 hexlist_to_integer/1, integer_to_hexlist/1, 
-	 convert_month/1, is_hostname/1, verbose_output/3]).
+	 convert_month/1, is_hostname/1]).
 
 %%%=========================================================================
-%%%  API
+%%%  Internal application API
 %%%=========================================================================
 key1search(TupleList,Key) ->
     key1search(TupleList,Key,undefined).
@@ -169,15 +169,3 @@ convert_to_ascii([Num | Reversed], Number) when Num > -1, Num < 10 ->
     convert_to_ascii(Reversed, [Num + 48 | Number]);
 convert_to_ascii([Num | Reversed], Number) when Num > 9, Num < 16 ->
     convert_to_ascii(Reversed, [Num + 55 | Number]).
-
-
-verbose_output(true,Term,Action) when list(Term) ->
-    erlang:display(Action),
-    erlang:display(Term);
-verbose_output(true,Term,Action) when binary(Term) ->
-    verbose_output(true,binary_to_list(Term),Action);
-verbose_output(true,Term,Action) ->
-    erlang:display(Action),
-    erlang:display(Term);
-verbose_output(_,_,_) ->
-    ok.

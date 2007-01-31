@@ -2436,19 +2436,6 @@ set_clause_bodies([C | Cs], B) ->
 set_clause_bodies([], _) ->
     [].
 
-filename([C | T]) when integer(C), C > 0, C =< 255 ->
-    [C | filename(T)];
-filename([H|T]) ->
-    filename(H) ++ filename(T);
-filename([]) ->
-    [];
-filename(N) when atom(N) ->
-    atom_to_list(N);
-filename(N) ->
-    report_error("bad filename: `~P'.", [N, 25]),
-    exit(error).
-
-
 %% =====================================================================
 %% Abstract datatype: renaming()
 
@@ -2748,15 +2735,7 @@ format({error, D}, Vs) ->
     ["error: ", format(D, Vs)];
 format({warning, D}, Vs) ->
     ["warning: ", format(D, Vs)];
-format({"", L, D}, Vs) when integer(L), L > 0 ->
-    [io_lib:fwrite("~w: ", [L]), format(D, Vs)];
-format({"", _L, D}, Vs) ->
-    format(D, Vs);
-format({F, L, D}, Vs) when integer(L), L > 0 ->
-    [io_lib:fwrite("~s:~w: ", [filename(F), L]), format(D, Vs)];
-format({F, _L, D}, Vs) ->
-    [io_lib:fwrite("~s: ", [filename(F)]), format(D, Vs)];
-format(S, Vs) when list(S) ->
+format(S, Vs) when is_list(S) ->
     [io_lib:fwrite(S, Vs), $\n].
 
 

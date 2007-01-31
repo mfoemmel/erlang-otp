@@ -590,41 +590,12 @@ sz(B) when binary(B) -> {binary,size(B)};
 sz(L) when list(L)   -> {list,length(L)};
 sz(_)                -> undefined.
 
-
 %% send_error - Handle failure to send the file
 %%
-send_error({open,Reason},Info,Path) -> open_error(Reason,Info,Path);
-send_error({read,Reason},Info,Path) -> read_error(Reason,Info,Path).
-
-
-%% open_error - Handle file open failure
-%%
-open_error(eacces,Info,Path) ->
-    open_error(403,Info,Path,"");
-open_error(enoent,Info,Path) ->
-    open_error(404,Info,Path,"");
-open_error(enotdir,Info,Path) ->
-    open_error(404,Info,Path,
-	       ": A component of the file name is not a directory");
-open_error(emfile,_Info,Path) ->
-    open_error(500,none,Path,": To many open files");
-open_error({enfile,_},_Info,Path) ->
-    open_error(500,none,Path,": File table overflow");
-open_error(_Reason,_Info,Path) ->
-    open_error(500,none,Path,"").
-	    
-open_error(StatusCode,none,Path,Reason) ->
-    {StatusCode,none,?NICE("Can't open "++Path++Reason)};
-open_error(StatusCode,Info,Path,Reason) ->
-    {StatusCode,Info#mod.request_uri,?NICE("Can't open "++Path++Reason)}.
-
-read_error(_Reason,_Info,Path) -> 
-    read_error(500,none,Path,"").
-
-read_error(StatusCode,none,Path,Reason) ->
-    {StatusCode,none,?NICE("Can't read "++Path++Reason)};
-read_error(StatusCode,Info,Path,Reason) ->
-    {StatusCode,Info#mod.request_uri,?NICE("Can't read "++Path++Reason)}.
+send_error({open,Reason},Info,Path) -> 
+    httpd_file:handle_error(Reason, "open", Info, Path);
+send_error({read,Reason},Info,Path) -> 
+    httpd_file:handle_error(Reason, "read", Info, Path).
 
 
 

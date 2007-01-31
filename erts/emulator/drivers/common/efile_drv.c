@@ -114,13 +114,16 @@ extern void erl_exit(int n, char *fmt, _DOTS_);
 
 #ifdef USE_THREADS
 #define IF_THRDS if (erts_async_max_threads > 0)
-#define MUTEX_INIT(m, p) erts_mtx_init(m, "efile_drv")
-#define MUTEX_DESTROY(m) erts_mtx_destroy(m)
-#define MUTEX_LOCK(m)    do { IF_THRDS { erts_mtx_lock(m);   } } while (0)
-#define MUTEX_UNLOCK(m)  do { IF_THRDS { erts_mtx_unlock(m); } } while (0)
+#ifdef HARDDEBUG /* HARDDEBUG in io.c is expected too */
+#define TRACE_DRIVER fprintf(stderr, "Efile: ")
+#else
+#define TRACE_DRIVER
+#endif
+#define MUTEX_INIT(m, p) do { IF_THRDS { TRACE_DRIVER; (m = driver_pdl_create(p)); } } while (0)
+#define MUTEX_LOCK(m)    do { IF_THRDS { TRACE_DRIVER; driver_pdl_lock(m);   } } while (0)
+#define MUTEX_UNLOCK(m)  do { IF_THRDS { TRACE_DRIVER; driver_pdl_unlock(m); } } while (0)
 #else
 #define MUTEX_INIT(m, p)
-#define MUTEX_DESTROY(m)
 #define MUTEX_LOCK(m)
 #define MUTEX_UNLOCK(m)
 #endif
@@ -199,8 +202,8 @@ typedef struct {
     unsigned long   write_delay;
     int             write_error;
     Efile_error     write_errInfo;
-    erts_mtx_t      q_mtx;    /* Mutex for the driver queue,
-			       * and the fields below. */
+    ErlDrvPDL       q_mtx;    /* Mutex for the driver queue, known by the emulator. Also used for
+				 mutual exclusion when accessing field(s) below. */
     size_t          write_buffered;
 } file_descriptor;
 
@@ -221,7 +224,14 @@ struct erl_drv_entry efile_driver_entry = {
     file_timeout,
     file_outputv,
     file_async_ready,
-    file_flush
+    file_flush,
+    NULL,
+    NULL,
+    ERL_DRV_EXTENDED_MARKER,
+    ERL_DRV_EXTENDED_MAJOR_VERSION,
+    ERL_DRV_EXTENDED_MINOR_VERSION,
+    ERL_DRV_FLAG_USE_PORT_LOCKING,
+    NULL
 };
 
 
@@ -245,7 +255,7 @@ struct t_pbuf_spec {
 
 struct t_pwritev {
     ErlDrvPort         port;
-    erts_mtx_t        *q_mtxp;
+    ErlDrvPDL          q_mtx;
     size_t             size;
     size_t             free_size;
     unsigned           cnt;
@@ -302,7 +312,7 @@ struct t_data
 	} lseek;
 	struct {
 	    ErlDrvPort    port;
-	    erts_mtx_t   *q_mtxp;
+	    ErlDrvPDL     q_mtx;
 	    size_t        size;
 	    size_t        free_size;
 	    size_t        reply_size;
@@ -575,7 +585,7 @@ file_start(ErlDrvPort port, char* command)
     desc->write_delay = 0L;
     desc->write_bufsize = 0;
     desc->write_error = 0;
-    MUTEX_INIT(&desc->q_mtx, port);
+    MUTEX_INIT(desc->q_mtx, port); /* Refc is one, referenced by emulator now */
     desc->write_buffered = 0;
     return (ErlDrvData) desc;
 }
@@ -618,7 +628,6 @@ file_stop(ErlDrvData e)
     if (desc->read_binp) {
 	driver_free_binary(desc->read_binp);
     }
-    MUTEX_DESTROY(&desc->q_mtx);
     EF_FREE(desc);
 }
 
@@ -1113,7 +1122,7 @@ static void invoke_writev(void *data) {
     } else {
 	size = d->c.writev.size;
     }
-    MUTEX_LOCK(d->c.writev.q_mtxp);
+    MUTEX_LOCK(d->c.writev.q_mtx); /* Lock before accessing the port queue */
     iov = driver_peekq(d->c.writev.port, &iovlen);
     ASSERT(driver_sizeq(d->c.writev.port) >= size);
     /* Calculate iovcnt */
@@ -1152,7 +1161,7 @@ static void invoke_writev(void *data) {
     } else {
 	d->result_ok = 1;
     }
-    MUTEX_UNLOCK(d->c.writev.q_mtxp);
+    MUTEX_UNLOCK(d->c.writev.q_mtx);
     d->c.writev.free_size = size;
     d->c.writev.size -= size;
     if (! d->result_ok) {
@@ -1169,9 +1178,9 @@ static void invoke_writev(void *data) {
 static void free_writev(void *data) {
     struct t_data *d = data;
 
-    MUTEX_LOCK(d->c.writev.q_mtxp);
+    MUTEX_LOCK(d->c.writev.q_mtx);
     driver_deq(d->c.writev.port, d->c.writev.size + d->c.writev.free_size);
-    MUTEX_UNLOCK(d->c.writev.q_mtxp);
+    MUTEX_UNLOCK(d->c.writev.q_mtx);
     EF_FREE(d);
 }
 
@@ -1226,7 +1235,7 @@ static void invoke_pwritev(void *data) {
     }
     d->result_ok = !0;
     p = 0;
-    MUTEX_LOCK(c->q_mtxp);
+    MUTEX_LOCK(c->q_mtx);
     iov = driver_peekq(c->port, &iovlen);
     for (iovcnt = 0, c->free_size = 0;
 	 c->cnt < c->n && iovcnt < iovlen && c->free_size < size;
@@ -1287,15 +1296,15 @@ static void invoke_pwritev(void *data) {
 	}
     }
  done:
-    MUTEX_UNLOCK(c->q_mtxp);
+    MUTEX_UNLOCK(c->q_mtx);
 }
 
 static void free_pwritev(void *data) {
     struct t_data *d = data;
 
-    MUTEX_LOCK(d->c.writev.q_mtxp);
+    MUTEX_LOCK(d->c.writev.q_mtx);
     driver_deq(d->c.pwritev.port, d->c.pwritev.free_size + d->c.pwritev.size);
-    MUTEX_UNLOCK(d->c.writev.q_mtxp);
+    MUTEX_UNLOCK(d->c.writev.q_mtx);
     EF_FREE(d);
 }
 
@@ -1495,14 +1504,14 @@ static int try_again(file_descriptor *desc, struct t_data *d) {
     }
     switch (d->command) {
     case FILE_WRITE:
-	MUTEX_LOCK(d->c.writev.q_mtxp);
+	MUTEX_LOCK(d->c.writev.q_mtx);
 	driver_deq(d->c.writev.port, d->c.writev.free_size);
-	MUTEX_UNLOCK(d->c.writev.q_mtxp);
+	MUTEX_UNLOCK(d->c.writev.q_mtx);
 	break;
     case FILE_PWRITEV:
-	MUTEX_LOCK(d->c.writev.q_mtxp);
+	MUTEX_LOCK(d->c.writev.q_mtx);
 	driver_deq(d->c.pwritev.port, d->c.pwritev.free_size);
-	MUTEX_UNLOCK(d->c.writev.q_mtxp);
+	MUTEX_UNLOCK(d->c.writev.q_mtx);
 	break;
     }
     if (desc->timer_state != timer_idle) {
@@ -1542,7 +1551,7 @@ static int async_write(file_descriptor *desc, int *errp,
     d->fd = desc->fd;
     d->flags = desc->flags;
     d->c.writev.port = desc->port;
-    d->c.writev.q_mtxp = &desc->q_mtx;
+    d->c.writev.q_mtx = desc->q_mtx;
     d->c.writev.size = desc->write_buffered;
     d->reply = reply;
     d->c.writev.free_size = 0;
@@ -1557,13 +1566,13 @@ static int async_write(file_descriptor *desc, int *errp,
 
 static int flush_write(file_descriptor *desc, int *errp) {
     int    result;
-    MUTEX_LOCK(&desc->q_mtx);
+    MUTEX_LOCK(desc->q_mtx);
     if (desc->write_buffered > 0) {
 	result = async_write(desc, errp, 0, 0);
     } else {
 	result = 0;
     }
-    MUTEX_UNLOCK(&desc->q_mtx);
+    MUTEX_UNLOCK(desc->q_mtx);
     return result;
 }
 
@@ -2379,15 +2388,15 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    reply_Uint(desc, size);
 	    goto done;
 	}
-	MUTEX_LOCK(&desc->q_mtx);
+	MUTEX_LOCK(desc->q_mtx);
 	if (driver_enqv(desc->port, ev, skip)) {
-	    MUTEX_UNLOCK(&desc->q_mtx);
+	    MUTEX_UNLOCK(desc->q_mtx);
 	    reply_posix_error(desc, ENOMEM);
 	    goto done;
 	}
 	desc->write_buffered += size;
 	if (desc->write_buffered < desc->write_bufsize) {
-	    MUTEX_UNLOCK(&desc->q_mtx);
+	    MUTEX_UNLOCK(desc->q_mtx);
 	    reply_Uint(desc, size);
 	    if (desc->timer_state == timer_idle) {
 		desc->timer_state = timer_write;
@@ -2395,11 +2404,11 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    }
 	} else {
 	    if (async_write(desc, &err, !0, size) != 0) {
-		MUTEX_UNLOCK(&desc->q_mtx);
+		MUTEX_UNLOCK(desc->q_mtx);
 		reply_posix_error(desc, err);
 		goto done;
 	    } else {
-		MUTEX_UNLOCK(&desc->q_mtx);
+		MUTEX_UNLOCK(desc->q_mtx);
 	    }
 	}
     } goto done; /* case FILE_WRITE */
@@ -2447,7 +2456,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	d->fd = desc->fd;
 	d->flags = desc->flags;
 	d->c.pwritev.port = desc->port;
-	d->c.pwritev.q_mtxp = &desc->q_mtx;
+	d->c.pwritev.q_mtx = desc->q_mtx;
 	d->c.pwritev.n = n;
 	d->c.pwritev.cnt = 0;
 	total = 0;
@@ -2509,9 +2518,9 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 		reply_Uint_posix_error(desc, 0, EINVAL);
 	    } else {
 		/* Enqueue the data */
-		MUTEX_LOCK(&desc->q_mtx);
+		MUTEX_LOCK(desc->q_mtx);
 		driver_enqv(desc->port, ev, skip);
-		MUTEX_UNLOCK(&desc->q_mtx);
+		MUTEX_UNLOCK(desc->q_mtx);
 		/* Execute the command */
 		d->invoke = invoke_pwritev;
 		d->free = free_pwritev;

@@ -165,7 +165,7 @@ layout_module(#xmlElement{name = module, content = Es}=E, _Opts) ->
     {Short,Long} = find_first_p(FullDesc,[]),
     Description = {description, [?NL,{p,Short}|Long]++[?NL|types(SortedTs)]},
     Funcs = functions(SortedFs),
-    Authors = authors(Es),
+    Authors = {authors, authors(Es)},
     See = sees1(Es),
     {erlref, [
 	      ?NL,Header,
@@ -471,6 +471,7 @@ sees1(Es) ->
 	Es1 ->
 	    {section,[{title,["See also"]},{p,seq(fun see/1, Es1, [])}]}
     end.
+
 sees(Es) ->
     case get_elem(see, Es) of
 	[] -> [];

@@ -74,6 +74,7 @@ is_bif(erlang, atom_to_list, 1) -> true;
 is_bif(erlang, binary_to_list, 1) -> true;
 is_bif(erlang, binary_to_list, 3) -> true;
 is_bif(erlang, binary_to_term, 1) -> true;
+is_bif(erlang, bitsize, 1) -> true;
 is_bif(erlang, cancel_timer, 1) -> true;
 is_bif(erlang, concat_binary, 1) -> true;
 is_bif(erlang, date, 0) -> true;
@@ -443,7 +444,10 @@ is_pure(_, _, _) -> false.
 %%	effect free, i.e., if its evaluation always completes normally
 %%	and does not affect the state (although the value it returns
 %%	might depend on the state).
-
+%%
+%%      Note: is_function/2 and is_record/3 are NOT safe: is_function(X, foo)
+%%      and is_record(X, foo, bar) will fail.
+%%
 is_safe(erlang, '/=', 2) -> true;
 is_safe(erlang, '<', 2) -> true;
 is_safe(erlang, '=/=', 2) -> true;
@@ -470,7 +474,6 @@ is_safe(erlang, is_list, 1) -> true;
 is_safe(erlang, is_number, 1) -> true;
 is_safe(erlang, is_pid, 1) -> true;
 is_safe(erlang, is_port, 1) -> true;
-is_safe(erlang, is_record, 3) -> true;
 is_safe(erlang, is_reference, 1) -> true;
 is_safe(erlang, is_tuple, 1) -> true;
 is_safe(erlang, make_ref, 0) -> true;

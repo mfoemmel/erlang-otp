@@ -35,6 +35,8 @@
 	 terminate/2,
 	 code_change/3]).
 
+-include_lib("stdlib/include/qlc.hrl").
+
 -import(lists, [flatten/1,reverse/1,keysort/2]).
 
 
@@ -87,44 +89,57 @@ profile(Rs) ->
 
 init(_) ->
     process_flag(trap_exit, true),
-    process_flag(priority, max), 
+    process_flag(priority, max),
+    put(three_one, {3,1}),			%To avoid building garbage.
     {ok, #state{}}.
 
 subtr({X1,Y1,Z1}, {X1,Y1,Z2}) ->
     Z1 - Z2;
 subtr({X1,Y1,Z1}, {X2,Y2,Z2}) ->
-    (((X1 * 1000000) + Y1) * 1000000 + Z1) -
-	(((X2 * 1000000) + Y2) * 1000000 + Z2).
+    (((X1-X2) * 1000000) + Y1 - Y2) * 1000000 + Z1 - Z2.
 
+update_call_statistics(Tab, Key, Time) ->
+    try ets:update_counter(Tab, Key, Time) of
+	NewTime when is_integer(NewTime) ->
+	    ets:update_counter(Tab, Key, get(three_one))
+    catch
+	error:badarg ->
+	    ets:insert(Tab, {Key,Time,1})
+    end.
 
-into_tab(Tab, Key, call, Time) ->
-    case catch ets:update_counter(Tab, Key, Time) of
-	{'EXIT',{badarg,_}} ->
-	    ets:insert(Tab, {Key,Time,1});
-	NewTime when integer(NewTime) ->
-	    ets:update_counter(Tab, Key, {3,1})
-    end;
-into_tab(Tab, Key, _Op, Time) ->
-    case catch ets:update_counter(Tab, Key, Time) of
-	{'EXIT',{badarg,_}} ->
-	    ets:insert(Tab, {Key,Time,0});
-	NewTime when integer(NewTime) ->
-	    ok
+update_other_statistics(Tab, Key, Time) ->
+    try
+	ets:update_counter(Tab, Key, Time)
+    catch
+	error:badarg ->
+	    ets:insert(Tab, {Key,Time,0})
     end.
 
 do_messages({trace_ts,From,Op,Mfa,Time}, Tab, undefined,_PrevOp0,_PrevTime0) ->
-    PrevFunc = {From,Mfa},
+    PrevFunc = [From|Mfa],
     receive
 	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
     after 0 ->
 	    {PrevFunc,Op,Time}
     end;
-do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, PrevOp0, PrevTime0) ->
-    into_tab(Tab, PrevFunc0, PrevOp0, subtr(Time, PrevTime0)),
+do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, call, PrevTime0) ->
+    update_call_statistics(Tab, PrevFunc0, subtr(Time, PrevTime0)),
     PrevFunc = case Op of
 		   exit -> undefined;
 		   out -> undefined;
-		   _ -> {From,Mfa}
+		   _ -> [From|Mfa]
+	       end,
+    receive
+	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
+    after 0 ->
+	    {PrevFunc,Op,Time}
+    end;
+do_messages({trace_ts,From,Op,Mfa,Time}, Tab, PrevFunc0, _PrevOp0, PrevTime0) ->
+    update_other_statistics(Tab, PrevFunc0, subtr(Time, PrevTime0)),
+    PrevFunc = case Op of
+		   exit -> undefined;
+		   out -> undefined;
+		   _ -> [From|Mfa]
 	       end,
     receive
 	{trace_ts,_,_,_,_}=Ts -> do_messages(Ts, Tab, PrevFunc, Op, Time)
@@ -166,6 +181,7 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
 	false ->
 	    {reply, error,  #state{}};
 	true ->
+	    uni_schedule(),
 	    call_trace_for_all(true),
 	    erase(replyto),
 	    {reply, profiling, #state{table = Tab,
@@ -177,6 +193,7 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
 handle_call(stop_profiling, _FromTag, S) when S#state.profiling == true ->
     ptrac(S#state.rootset, false, all()),
     call_trace_for_all(false),
+    multi_schedule(),
     io:format("eprof: Stop profiling~n",[]),
     ets:delete(S#state.table, nofunc),
     {reply, profiling_stopped, S#state{profiling = false}};
@@ -194,6 +211,7 @@ handle_call({profile, Rootset, M, F, A}, FromTag, S) ->
     P = spawn_link(eprof, call, [self(), M, F, A]),
     case ptrac([P|Rootset], true, all()) of
 	true ->
+	    uni_schedule(),
 	    call_trace_for_all(true),
 	    P ! {self(),go},
 	    {noreply, #state{table     = Tab, 
@@ -215,6 +233,7 @@ handle_call(total_analyse, _FromTag, S) ->
     {reply, total_analyse(S), S};
 
 handle_call(stop, _FromTag, S) ->
+    multi_schedule(),
     {stop, normal, stopped, S}.
 
 %%%%%%%%%%%%%%%%%%%
@@ -239,14 +258,16 @@ handle_info({_P, {answer, A}}, S) ->
     catch unlink(From),
     ets:delete(S#state.table, nofunc),
     gen_server:reply(erase(replyto), {ok, A}),
+    multi_schedule(),
     {noreply, S#state{profiling = false,
 		      rootset = []}};
 
-handle_info({'EXIT', P, Reason}, S) when S#state.profiling == true,
-                                         S#state.proc == P  ->
-    maybe_delete(S#state.table),
-    ptrac(S#state.rootset, false, all()),
-    io:format("eprof: Fail profiling~n",[]),
+handle_info({'EXIT', P, Reason},
+	    #state{profiling=true,proc=P,table=T,rootset=RootSet}) ->
+    maybe_delete(T),
+    ptrac(RootSet, false, all()),
+    multi_schedule(),
+    io:format("eprof: Profiling failed\n",[]),
     case erase(replyto) of
 	undefined ->
 	    {noreply, #state{}};
@@ -257,6 +278,12 @@ handle_info({'EXIT', P, Reason}, S) when S#state.profiling == true,
 
 handle_info({'EXIT',_P,_Reason}, S) ->
     {noreply, S}.
+
+uni_schedule() ->
+    erlang:system_flag(multi_scheduling, block).
+
+multi_schedule() ->
+    erlang:system_flag(multi_scheduling, unblock).
 
 %%%%%%%%%%%%%%%%%%
 
@@ -313,7 +340,9 @@ total_analyse(#state{table=notable}) ->
     nothing_to_analyse;
 total_analyse(S) ->
     #state{table = T, overhead = Overhead} = S,
-    Pcalls = reverse(keysort(2, replicas(ets:tab2list(T)))),
+    QH = qlc:q([{{From,Mfa},Time,Count} ||
+		   {[From|Mfa],Time,Count} <- ets:table(T)]),
+    Pcalls = reverse(keysort(2, replicas(qlc:eval(QH)))),
     Time = collect_times(Pcalls),
     format("FUNCTION~44s      TIME ~n", ["CALLS"]),   
     printit(Pcalls, Time),
@@ -324,7 +353,7 @@ analyse(#state{table=notable}) ->
     nothing_to_analyse;
 analyse(S) ->
     #state{table = T, overhead = Overhead} = S,
-    Pids = ordsets:from_list(flatten(ets:match(T, {{'$1','_'},'_', '_'}))),
+    Pids = ordsets:from_list(flatten(ets:match(T, {['$1'|'_'],'_', '_'}))),
     Times = sum(ets:match(T, {'_','$1', '_'})),
     format("FUNCTION~44s      TIME ~n", ["CALLS"]),     
     do_pids(Pids, T, 0, Times),
@@ -333,7 +362,7 @@ analyse(S) ->
 
 do_pids([Pid|Tail], T, AckTime, Total) ->
     Pcalls = 
-     reverse(keysort(2, to_tups(ets:match(T, {{Pid,'$1'}, '$2','$3'})))),
+     reverse(keysort(2, to_tups(ets:match(T, {[Pid|'$1'], '$2','$3'})))),
     Time = collect_times(Pcalls),
     PercentTotal = 100 * (divide(Time, Total)),
     format("~n****** Process ~w    -- ~s % of profiled time *** ~n", 
@@ -397,9 +426,8 @@ format(F, A) ->
 	Fd -> io:format(Fd, F,A)
     end.
 
-maybe_delete({T,Ref}) when reference(Ref) ->
-    ets:delete({T, Ref});
-maybe_delete(_) -> ok.
+maybe_delete(T) ->
+    catch ets:delete(T).
 
 sum([[H]|T]) -> H + sum(T);
 sum([]) -> 0.

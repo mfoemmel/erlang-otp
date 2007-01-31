@@ -27,8 +27,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2006/09/14 15:33:58 $
-%%              $Revision: 1.19 $
+%%              $Date: 2006/11/04 19:07:57 $
+%%              $Revision: 1.20 $
 %% ====================================================================
 %%  Exports  : cfg/1 - Takes a SPARC CFG and rewrites it.
 %%
@@ -175,7 +175,6 @@ prop_bbs([BB|BBs], CFG, GEnv,Vis) ->
   prop_bbs(BBs++Succs, CFG0, GEnv0, NewVis).
   
   
-
 %%
 %% If Lbl is a member of the extended block Ebb. Then propagate info 
 %% and continue with its successors.
@@ -197,11 +196,11 @@ prop_bb(Lbl, GEnv, CFG, Vis) ->
   end.
 
 
-% prop_succ([], GEnv, CFG, Vis) ->
-%   {CFG,GEnv, Vis};
-% prop_succ([BB|BBs], GEnv, CFG, Vis) ->
-%   {NewCFG,NewGEnv, NewVis} = prop_bb(BB, GEnv, CFG, Vis),
-%   prop_succ(BBs, NewGEnv, NewCFG, NewVis).
+%% prop_succ([], GEnv, CFG, Vis) ->
+%%   {CFG,GEnv, Vis};
+%% prop_succ([BB|BBs], GEnv, CFG, Vis) ->
+%%   {NewCFG,NewGEnv, NewVis} = prop_bb(BB, GEnv, CFG, Vis),
+%%   prop_succ(BBs, NewGEnv, NewCFG, NewVis).
 
 
 prop_instrs([], GEnv) ->
@@ -216,11 +215,7 @@ prop_instrs([I|Is], GEnv) ->
 %%  end,
   GEnv0 = hipe_sparc_prop_env:genv__env_update(Env0,GEnv),
   {NewIs, NewEnv} = prop_instrs(Is, GEnv0),
-
-  case NewI of %% This is not realy necessary...
-    [_|_] -> {NewI++NewIs, NewEnv};	
-    _ -> {[NewI|NewIs], NewEnv}
-  end.
+  {[NewI|NewIs], NewEnv}.
 
 
 %%
@@ -241,7 +236,7 @@ prop_instr(I, Env) ->
       Srcs = hipe_sparc:multimove_src(I),
       Dsts = hipe_sparc:multimove_dest(I),
       {_I0,Env0} = bind_all(Srcs, Dsts, I, NewEnv),
-      {I,Env0};
+      {I, Env0};
     _ ->
       eval(I, hipe_sparc_prop_env:genv__env(Env))
   end.

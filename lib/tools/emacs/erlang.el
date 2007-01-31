@@ -1360,7 +1360,7 @@ Please see the function `tempo-define-template'.")
     "%% Function: init_per_suite(Config) -> Config" n
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
-    "%% Description: Initiation before the whole suite" n
+    "%% Description: Initialization before the whole suite" n
     "%%" n
     "%% Note: This function is free to add any key/value pairs to the Config" n
     "%% variable, but should NOT alter/remove any existing entries." n
@@ -1384,11 +1384,11 @@ Please see the function `tempo-define-template'.")
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
     "%%" n
-    "%% Description: Initiation before each test case" n
+    "%% Description: Initialization before each test case" n
     "%%" n
     "%% Note: This function is free to add any key/value pairs to the Config" n
     "%% variable, but should NOT alter/remove any existing entries." n
-    "%% Description: Initiation before each test case" n
+    "%% Description: Initialization before each test case" n
     (erlang-skel-separator 2)
     "init_per_testcase(_TestCase, Config) ->" n >
     "Config." n n
@@ -1430,19 +1430,29 @@ Please see the function `tempo-define-template'.")
 Please see the function `tempo-define-template'.")
 (defvar erlang-skel-ct-test-suite
  '((erlang-skel-include erlang-skel-large-header)
-   "-suite_defaults([{timetrap, {minutes, 10}}])." n n
-
    "%% Note: This directive should only be used in test suites." n
     "-compile(export_all)." n n
 
     "-include(\"ct.hrl\")." n n
-    
+
     "%% Test server callback functions" n
+    (erlang-skel-separator 2)
+    "%% Function: suite() -> Info" n
+    "%% Info - [tuple()]" n
+    "%%   List of key/value pairs, default data parameters for the suite." n
+    "%% Description:  Return list of tuples to set default data for the suite." n
+    "%%" n
+    "%% Note: The suite/0 function is only meant to be used to return the" n
+    "%% default data list, not perform any other operations." n  
+    (erlang-skel-separator 2) 
+    "suite() ->" n >
+    "[{timetrap, {minutes, 10}}]." n n
+
     (erlang-skel-separator 2)
     "%% Function: init_per_suite(Config) -> Config" n
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
-    "%% Description: Initiation before the whole suite" n
+    "%% Description: Initialization before the whole suite." n
     "%%" n
     "%% Note: This function is free to add any key/value pairs to the Config" n
     "%% variable, but should NOT alter/remove any existing entries." n
@@ -1454,34 +1464,32 @@ Please see the function `tempo-define-template'.")
     "%% Function: end_per_suite(Config) -> _" n
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
-    "%% Description: Cleanup after the whole suite" n
+    "%% Description: Cleanup after the whole suite." n
     (erlang-skel-separator 2)
     "end_per_suite(_Config) ->" n >
     "ok." n n
 
     (erlang-skel-separator 2)
     "%% Function: init_per_testcase(TestCase, Config) -> Config" n
-    "%% Case - atom()" n
+    "%% TestCase - atom()" n
     "%%   Name of the test case that is about to be run." n
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
-    "%%" n
-    "%% Description: Initiation before each test case" n
+    "%% Description: Initialization before each test case." n
     "%%" n
     "%% Note: This function is free to add any key/value pairs to the Config" n
     "%% variable, but should NOT alter/remove any existing entries." n
-    "%% Description: Initiation before each test case" n
     (erlang-skel-separator 2)
     "init_per_testcase(_TestCase, Config) ->" n >
     "Config." n n
 
     (erlang-skel-separator 2)
     "%% Function: end_per_testcase(TestCase, Config) -> _" n
-    "%% Case - atom()" n
+    "%% TestCase - atom()" n
     "%%   Name of the test case that is about to be run." n
     "%% Config - [tuple()]" n
     "%%   A list of key/value pairs, holding the test case configuration." n
-    "%% Description: Cleanup after each test case" n
+    "%% Description: Cleanup after each test case." n
     (erlang-skel-separator 2)
     "end_per_testcase(_TestCase, _Config) ->" n >
     "ok."n n
@@ -1491,15 +1499,15 @@ Please see the function `tempo-define-template'.")
     "%% TestCases - [Case] " n
     "%% Case - atom()" n
     "%%   Name of a test case." n
-    "%% Description: Returns a list of all test cases in this test suite" n
+    "%% Description: Returns a list of all test cases in this test suite." n
     (erlang-skel-separator 2)
     "all() -> " n >
     "[]." n n
     
-    "%% Test cases starts here." n
+    "%% Test cases start here." n
     (erlang-skel-separator 2)
     "test_case() -> " n >
-    "[{doc, \"Describe the main purpose of this test case\"}]." n n
+    "[]." n n
     "test_case(Config) when is_list(Config) -> " n >
     "ok." n
     )

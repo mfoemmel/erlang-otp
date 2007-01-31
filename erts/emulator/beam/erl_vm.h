@@ -22,7 +22,7 @@
 /* # define CHECK_FOR_HOLES */
 #endif
 
-#if defined(DEBUG) && !defined(CHECK_FOR_HOLES)
+#if defined(DEBUG) && !defined(CHECK_FOR_HOLES) && !defined(__WIN32__)
 # define CHECK_FOR_HOLES
 #endif
 
@@ -51,9 +51,7 @@
  */
 #define ERTS_X_REGS_ALLOCATED (MAX_REG+2)
 
-#ifndef ERTS_SMP
 #define INPUT_REDUCTIONS (2 * CONTEXT_REDS)
-#endif
 
 #define H_DEFAULT_SIZE  233     /* default (heap + stack) min size */
 

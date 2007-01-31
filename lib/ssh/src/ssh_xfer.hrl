@@ -17,7 +17,7 @@
 %%
 
 %%% Description: SFTP defines
-
+-define(SSH_SFTP_PROTOCOL_VERSION, 6).		
 %%%----------------------------------------------------------------------
 %%% #   SSH_FXP_xxx
 %%% Description: Request and initialization packet types for file transfer
@@ -76,6 +76,7 @@
 -define(SSH_FX_LOCK_CONFlICT,           17).
 -define(SSH_FX_DIR_NOT_EMPTY,           18).
 -define(SSH_FX_NOT_A_DIRECTORY,         19).
+-define(SSH_FX_FILE_IS_A_DIRECTORY,     24). 
 
 %%%----------------------------------------------------------------------
 %%% #   SSH_FILEXFER_xxx

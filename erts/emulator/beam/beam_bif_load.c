@@ -300,8 +300,8 @@ check_process_code(Process* rp, Module* modp)
     Eterm* sp;
 #ifndef HYBRID /* FIND ME! */
     ErlFunThing* funp;
-#endif
     int done_gc = 0;
+#endif
 
 #define INSIDE(a) (start <= (a) && (a) < end)
     if (modp == NULL) {		/* Doesn't exist. */

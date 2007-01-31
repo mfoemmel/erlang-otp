@@ -203,8 +203,8 @@ load("BindAddress " ++ Address, []) ->
     %% url specific part e.i. "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     %% -> "FEDC:BA98:7654:3210:FEDC:BA98:7654:3210"
     NewAddress = string:strip(string:strip(clean(Address), 
-					   left, "["), 
-			      right, "]"),
+					   left, $[), 
+			      right, $]),
     case NewAddress of
 	"*" ->
 	    {ok, [], {bind_address,any}};

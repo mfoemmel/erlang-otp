@@ -610,7 +610,7 @@ fix_beam_exports([], Exports) ->
 
 get_beam_icode({M,_F,_A} = MFA, {BeamCode, Exports}, _File, Options) ->
   ?option_time({ok,Icode} = 
-	       (catch {ok,hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
+	       (catch {ok, hipe_beam_to_icode:mfa(BeamCode, MFA, Options)}),
 	       "BEAM-to-Icode", Options),
   {{M, Exports, Icode}, false};
 get_beam_icode(Mod, {BeamCode, Exports}, File, Options) ->
@@ -856,8 +856,7 @@ finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
 	{[SCC], NewCallGraph} ->
 	  %% One function
           [Res] = finalize_fun([SCC], Opts),
-	  finalize_fun_fixpoint(NewCallGraph, Opts, 
-				[Res|Acc]);
+	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc]);
 	{SCC, NewCallGraph} ->	  
 	  plt_fixpoint_loop(SCC, Opts),
 	  %% Now generate the result.
@@ -1142,7 +1141,7 @@ help_options() ->
 	    "   ~p.\n\n" ++
 	    " Non-boolean options:\n" ++
 	    "   {'O', Level}, where 0 =< Level =< 3:\n" ++
-	    "       Select optimization level (the default is 2).\n\n" ++
+	    "     Select optimization level (the default is 2).\n\n" ++
 	    " Further options can be found below; " ++
 	    "use `hipe:help_option(Name)' for details.\n\n" ++
 	    " Aliases:\n" ++
@@ -1172,55 +1171,59 @@ option_text('O') ->
   "    At the moment levels 0 - 3 are implemented.\n" ++
   "    Aliases: o1, o2, o3, 'O1', 'O2', O3'.";
 option_text(debug) ->
-  "Outputs internal debugging information during compilation.";
+  "Outputs internal debugging information during compilation";
 option_text(fill_delayslot) ->
-  "Try to optimize Sparc delay slots.";
+  "Try to optimize Sparc delay slots";
 option_text(icode_ssa_check) ->
-  "Checks wheter Icode is on SSA form or not\n";
+  "Checks whether Icode is on SSA form or not\n";
 option_text(icode_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on Icode SSA";
 option_text(load) ->
-  "Automatically load the produced code into memory.";
+  "Automatically load the produced code into memory";
 option_text(peephole) ->
-  "Enables peephole optimizations.";
+  "Enables peephole optimizations";
+option_text(pmatch) ->
+  "Enables pattern matching compilation when compiling from Core; " ++
+  "has no effect when compiling from BEAM bytecode";
 option_text(pp_asm) ->
-  "Displays assembly listing with addresses and bytecode.\n" ++
-  "Currently available for x86 only.";
+  "Displays assembly listing with addresses and bytecode\n" ++
+  "Currently available for x86 only";
 option_text(pp_beam) ->
-  "Display the input Beam code.";
+  "Display the input BEAM code";
 option_text(pp_icode) ->
-  "Display the intermediate HiPE-ICode.";
+  "Display the intermediate HiPE-ICode";
 option_text(pp_rtl) ->
-  "Display the intermediate HiPE-RTL code.";
+  "Display the intermediate HiPE-RTL code";
 option_text(pp_rtl_lcm) ->
-  "Display the intermediate HiPE-RTL lazy code motion sets.";
+  "Display the intermediate HiPE-RTL lazy code motion sets";
 option_text(pp_rtl_ssapre) ->
-  "Display the intermediate HiPE-RTL A-SSAPRE sets.";
+  "Display the intermediate HiPE-RTL A-SSAPRE sets";
 option_text(pp_native) ->
-  "Display the generated (back-end specific) native code.";
+  "Display the generated (back-end specific) native code";
 option_text(regalloc) ->
   "Select register allocation algorithm. Used as {regalloc, METHOD}.\n" ++
-  "    Currently available methods:\n" ++
-  "        naive - spills everything (for debugging and testing).\n" ++
-  "        linear_scan - fast; not so good if few registers available.\n" ++
-  "        graph_color - slow, but gives better performance.\n" ++
-  "        coalescing - tries hard to use registers.";
+  "  Currently available methods:\n" ++
+  "    naive - spills everything (for debugging and testing)\n" ++
+  "    linear_scan - fast; not so good if few registers available\n" ++
+  "    graph_color - slow, but gives OK performance\n" ++
+  "    coalescing - slower, tries hard to use registers\n" ++
+  "    optimistic - another variant of a coalescing allocator";
 option_text(remove_comments) ->
-  "Strip comments from intermediate code.";
+  "Strip comments from intermediate code";
 option_text(rtl_ssa) ->
   "Perform SSA conversion on the RTL level -- default starting at O2";
 option_text(rtl_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on RTL SSA";
 option_text(rtl_prop) ->
-  "Perform RTL-level constant propagation.";
+  "Perform RTL-level constant propagation";
 option_text(rtl_lcm) ->
-  "Perform Lazy Code Motion on RTL.";
+  "Perform Lazy Code Motion on RTL";
 option_text(rtl_ssapre) ->
-  "Perform A-SSAPRE on RTL.";
+  "Perform A-SSAPRE on RTL";
 option_text(sparc_peephole) ->
-  "Perform Sparc peephole optimization.";
+  "Perform Sparc peephole optimization";
 option_text(sparc_prop) ->
-  "Perform Sparc-level optimization.";
+  "Perform Sparc-level optimization";
 option_text(time) ->
   "Reports the compilation times for the different stages\n" ++
   "of the compiler.\n" ++
@@ -1233,8 +1236,8 @@ option_text(timeout) ->
   "    The limit must be a non-negative integer or the atom 'infinity'.\n" ++
   "    The current default limit is 15 minutes (900000 ms).";
 option_text(type_only) ->
-  "Breaks the compilation after the icode type pass. No native code will " ++
-  "  be produced and no code will be loaded.";
+  "Breaks the compilation after the ICode type pass.\n" ++
+  "No native code will be produced and no code will be loaded.";
 option_text(type_warnings) ->
   "Turns on warnings from the icode type propagator";
 option_text(use_indexing) ->
@@ -1244,7 +1247,7 @@ option_text(use_callgraph) ->
   "sorted order to gain more information when using a persistent lookup " ++
   "table for storing intra-modular type information.";
 option_text(verbose) ->
-  "Output information about what is being done.";
+  "Output information about what is being done";
 option_text(Opt) when is_atom(Opt) ->
   "".
 
@@ -1255,8 +1258,8 @@ help_option(Opt) ->
   set_architecture([]), %% needed for target-specific option expansion
   case expand_options([Opt]) of
     [Opt] ->
-      Name = if is_tuple(Opt), size(Opt) >= 1 -> element(1, Opt);
-		true -> Opt
+      Name = if is_atom(Opt) -> Opt;
+		is_tuple(Opt), size(Opt) =:= 2 -> element(1, Opt)
 	     end,
       case option_text(Name) of
 	"" ->  
@@ -1280,10 +1283,10 @@ help_option(Opt) ->
 %% output.
 help_debug_options() ->
   io:format("HiPE compiler debug options:\n" ++
-	    "Might require that some modules have been compiled " ++ 
+	    "  Might require that some modules have been compiled " ++ 
 	    "with the debug flag.\n" ++
-	    "   rtl_show_translation - Prints each step in the\n" ++
-	    "                          translation from Icode to RTL\n",
+	    "    rtl_show_translation - Prints each step in the\n" ++
+	    "                           translation from Icode to RTL\n",
 	    []),
   ok.
 
@@ -1350,7 +1353,8 @@ opt_keys() ->
      frame_x86,
      get_called_modules,
      hot,
-     icode_split_arith,
+     split_arith,
+     split_arith_unsafe,
      icode_ssa_check,
      icode_ssa_copy_prop,
      icode_ssa_const_prop,
@@ -1371,6 +1375,7 @@ opt_keys() ->
      pp_beam,
      pp_icode,
      pp_icode_ssa,
+     pp_icode_split_arith,
      pp_opt_icode,
      pp_typed_icode,
      pp_icode_liveness,
@@ -1380,6 +1385,7 @@ opt_keys() ->
      pp_rtl_ssa,
      pp_rtl_lcm,
      pp_rtl_ssapre,
+     pp_rtl_linear,
      regalloc,
      remove_comments,
      rtl_ssa,
@@ -1479,6 +1485,7 @@ opt_negations() ->
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
    {no_get_called_modules, get_called_modules},
+   {no_split_arith, split_arith},
    {no_concurrent_comp, concurrent_comp},
    {no_icode_split_arith, icode_split_arith},
    {no_icode_ssa_check, icode_ssa_check},

@@ -115,7 +115,13 @@ connect(Host) ->
 connect(Host, Opts) ->
     connect(Host, ?SSH_DEFAULT_PORT, Opts).
 connect(Host, Port, Opts) ->
-    gen_server:start_link(?MODULE, [client, self(), Host, Port, Opts], []).
+    {ok, CM} = gen_server:start_link(?MODULE, [client, Opts], []),
+    case gen_server:call(CM, {connect, self(), Host, Port}) of
+	ok ->
+	    {ok, CM};
+	Error ->
+	    {error, Error}
+    end.
 
 %%--------------------------------------------------------------------
 %% Function: listen(...) -> Pid | {error,Error}
@@ -197,26 +203,11 @@ init([server, _Caller, UserFun, SSH, Opts]) ->
 		   requests = []},
     NewState = add_user(User, State),  %% add inital user
     {ok, NewState};
-init([client, User, Host, Port, Opts]) ->
-    case ssh_transport:connect(Host, Port, Opts) of
-	{ok, SSH} ->
-	    case user_auth(SSH, Opts) of
-		ok ->
-		    SSH ! {ssh_install, connect_messages()},
- 		    process_flag(trap_exit, true),
-		    CTab = ets:new(cm_tab, [set,{keypos,#channel.local_id}]),
-		    State = #state{role = client, ctab = CTab, ssh = SSH,
-				   opts = Opts, requests = []},
-		    NewState = add_user(User, State),  %% add inital user
-		    {ok, NewState};
-		Error ->
-		    ssh_transport:disconnect(
-		      SSH, ?SSH_DISCONNECT_BY_APPLICATION),
-		    {stop, Error}
-	    end;
-	Error ->
-	    {stop, Error}
-    end.
+init([client, Opts]) ->
+    CTab = ets:new(cm_tab, [set,{keypos,#channel.local_id}]),
+    State = #state{role = client, ctab = CTab, ssh = undefined,
+		   opts = Opts, requests = []},
+    {ok, State}.
 
 i(CM) ->
     i(CM, all).
@@ -602,6 +593,23 @@ handle_info(_Info, State)                                                   ->
 %%                                      {stop, Reason, State}
 %% Description: Handling call messages
 %%--------------------------------------------------------------------
+handle_call({connect, User, Host, Port}, _From, State) ->
+    case ssh_transport:connect(Host, Port, State#state.opts) of
+	{ok, SSH} ->
+	    case user_auth(SSH, State#state.opts) of
+		ok ->
+		    SSH ! {ssh_install, connect_messages()},
+ 		    process_flag(trap_exit, true),
+		    State1 = State#state{ssh=SSH},
+		    State2 = add_user(User, State1),  %% add inital user process
+		    {reply, ok, State2};
+		Error ->
+		    ssh_transport:disconnect(SSH, ?SSH_DISCONNECT_BY_APPLICATION),
+		    {stop, normal, Error, State}
+	    end;
+	Error ->
+	    {stop, normal, Error, State}
+    end;
 handle_call({attach, User}, _From, State) ->
     {reply, ok, add_user(User, State)};
 handle_call({detach, User}, _From, State) ->

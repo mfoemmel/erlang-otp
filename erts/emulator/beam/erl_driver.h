@@ -75,6 +75,16 @@ typedef struct {
 #define DO_STOP  (1 << 3)
 #endif /* _OSE_ */
 
+#define ERL_DRV_EXTENDED_MARKER		(0xfeeeeeed)
+#define ERL_DRV_EXTENDED_MAJOR_VERSION	1
+#define ERL_DRV_EXTENDED_MINOR_VERSION	0
+
+/*
+ * The emulator will refuse to load a driver with different major
+ * version than the one used by the emulator.
+ */
+
+
 /* Values for set_port_control_flags() */
 
 #define PORT_CONTROL_FLAG_BINARY	(1 << 0)
@@ -85,6 +95,8 @@ typedef struct {
 #define PORT_FLAG_BINARY                (1 << 0)
 #define PORT_FLAG_LINE                  (1 << 1)
 
+
+#define ERL_DRV_FLAG_USE_PORT_LOCKING	(1 << 0)
 
 /*
  * A binary as seen in a driver. Note that a binary should never be
@@ -116,6 +128,37 @@ struct erl_drv_event_data {
 #endif
 typedef struct erl_drv_event_data *ErlDrvEventData; /* Event data */
 
+/* 
+ * Used in monitors...
+ */
+typedef unsigned long ErlDrvTermData;
+/*
+ * A driver monitor
+ */
+typedef struct {
+    unsigned char data[sizeof(void *)*4];
+} ErlDrvMonitor;
+
+
+/*
+ * System info
+ */
+
+typedef struct {
+    int driver_major_version;
+    int driver_minor_version;
+    char *erts_version;
+    char *otp_release;
+    int thread_support;
+    int smp_support;
+}  ErlDrvSysInfo;
+
+typedef struct {
+    unsigned long megasecs;
+    unsigned long secs;
+    unsigned long microsecs;
+} ErlDrvNowData;
+
 /*
  * Error codes that can be return from driver.
  */
@@ -143,6 +186,11 @@ typedef struct erl_io_vec {
     SysIOVec* iov;
     ErlDrvBinary** binv;
 } ErlIOVec;
+
+/*
+ * 
+ */
+typedef struct erl_drv_port_data_lock * ErlDrvPDL;
 
 /*
  * This structure defines a driver.
@@ -177,7 +225,7 @@ typedef struct erl_drv_entry {
 				   in open_port XXX ? */
     void (*finish)(void);        /* called before unloading the driver -
 				   DYNAMIC DRIVERS ONLY */
-    void *handle;		/* not used -- here for backwards compatibility */
+    void *handle;		/* Reserved -- Used by emulator internally */
     int (*control)(ErlDrvData drv_data, unsigned int command, char *buf, 
 		   int len, char **rbuf, int rlen); 
 				/* "ioctl" for drivers - invoked by 
@@ -200,6 +248,14 @@ typedef struct erl_drv_entry {
 		  ErlDrvEventData event_data);
                                 /* Called when an event selected by 
 				   driver_event() has occurred */
+    int extended_marker;	/* ERL_DRV_EXTENDED_MARKER */
+    int major_version;		/* ERL_DRV_EXTENDED_MAJOR_VERSION */
+    int minor_version;		/* ERL_DRV_EXTENDED_MINOR_VERSION */
+    int driver_flags;		/* ERL_DRV_FLAGs */
+    void *handle2;              /* Reserved -- Used by emulator internally */
+    void (*process_exit)(ErlDrvData drv_data, ErlDrvMonitor *monitor);
+                                /* Called when a process monitor fires */
+    /* When adding entries here, dont forget to pad in obsolete/driver.h */
 } ErlDrvEntry;
 
 /*
@@ -262,6 +318,31 @@ EXTERN int driver_failure_posix(ErlDrvPort port, int error);
 EXTERN int driver_failure(ErlDrvPort port, int error);
 EXTERN int driver_exit (ErlDrvPort port, int err);
 
+
+/*
+ * Port Data Lock
+ */
+
+EXTERN ErlDrvPDL driver_pdl_create(ErlDrvPort);
+EXTERN void driver_pdl_lock(ErlDrvPDL);
+EXTERN void driver_pdl_unlock(ErlDrvPDL);
+EXTERN long driver_pdl_get_refc(ErlDrvPDL);
+EXTERN long driver_pdl_inc_refc(ErlDrvPDL);
+EXTERN long driver_pdl_dec_refc(ErlDrvPDL);
+
+/*
+ * Process monitors
+ */
+EXTERN int 
+driver_monitor_process(ErlDrvPort port, ErlDrvTermData process, 
+		       ErlDrvMonitor *monitor);
+EXTERN int 
+driver_demonitor_process(ErlDrvPort port, const ErlDrvMonitor *monitor);
+EXTERN ErlDrvTermData 
+driver_get_monitored_process(ErlDrvPort port, const ErlDrvMonitor *monitor);
+EXTERN int driver_compare_monitors(const ErlDrvMonitor *monitor1,
+				   const ErlDrvMonitor *monitor2);
+
 /*
  * Port attributes
  */
@@ -314,6 +395,11 @@ EXTERN void add_driver_entry(ErlDrvEntry *de);
 EXTERN int remove_driver_entry(ErlDrvEntry *de);
 
 /*
+ * System info
+ */
+EXTERN void driver_system_info(ErlDrvSysInfo *sip, size_t si_size);
+
+/*
  * Misc.
  */
 EXTERN int null_func(void);
@@ -337,8 +423,6 @@ EXTERN int null_func(void);
  *  }       
  *             
  */
-
-typedef unsigned long ErlDrvTermData;
 
 #define TERM_DATA(x) ((ErlDrvTermData) (x))
 
@@ -366,7 +450,7 @@ EXTERN ErlDrvTermData driver_connected(ErlDrvPort);
 EXTERN ErlDrvTermData driver_caller(ErlDrvPort);
 extern const ErlDrvTermData driver_term_nil;
 EXTERN ErlDrvTermData driver_mk_term_nil(void);
-EXTERN ErlDrvPort driver_create_port(ErlDrvEntry* driver, 
+EXTERN ErlDrvPort driver_create_port(ErlDrvPort creator_port, 
 				     ErlDrvTermData connected, /* pid */
 				     char* name, /* driver name */
 				     ErlDrvData drv_data);
@@ -393,6 +477,10 @@ EXTERN int driver_async_cancel(unsigned int key);
    port towards the driver locks it until the port is closed, why unexpected
    unloading "never" happens. */
 EXTERN int driver_lock_driver(ErlDrvPort ix);
+
+/* Get the current 'now' timestamp (analogue to erlang:now()) */
+EXTERN int driver_get_now(ErlDrvNowData *now);
+
 
 /* These were removed from the ANSI version, now they're back. */
 

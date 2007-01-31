@@ -69,6 +69,9 @@ os_getenv_0(Process* p)
 	str = buf_to_intlist(&hp, cp, len, NIL);
 	ret = CONS(hp, str, ret);
     }
+
+    fini_getenv_state(&state);
+
     return ret;
 }
 

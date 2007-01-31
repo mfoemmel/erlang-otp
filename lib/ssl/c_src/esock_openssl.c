@@ -291,12 +291,18 @@ int esock_ssl_accept_init(Connection *cp, void *listenssl)
     RESET_ERRSTR();
     MAYBE_SET_ERRSTR("esslacceptinit");
 
-    if(!listenssl)
+    if(!listenssl) {
+	DEBUGF(("esock_ssl_accept_init: listenssl null\n"));
 	return -1;
-    if (!(listenctx = SSL_get_SSL_CTX(listenssl)))
+    }
+    if (!(listenctx = SSL_get_SSL_CTX(listenssl))) {
+	DEBUGF(("esock_ssl_accept_init: SSL_get_SSL_CTX\n"));
 	return -1;
-    if (!(ssl = cp->opaque = SSL_new(listenctx)))
+    }
+    if (!(ssl = cp->opaque = SSL_new(listenctx))) {
+	DEBUGF(("esock_ssl_accept_init: SSL_new(listenctx)\n"));
 	return -1;
+    }
     SSL_set_fd(ssl, cp->fd);
     return 0;
 
@@ -371,14 +377,20 @@ int esock_ssl_accept(Connection *cp)
     DEBUGF(("esock_ssl_accept: calling SSL_accept fd = %d\n"
 	    "  state before: %s\n", cp->fd, SSL_state_string(ssl)));
     ret = SSL_accept(ssl);
+    DEBUGF(("  sock_errno %d errno %d \n", sock_errno(), errno));
     ssl_error = SSL_get_error(ssl, ret);
     DEBUGF(("  SSL_accept = %d\n"
 	    "  ssl_error: %s\n"
 	    "  state after: %s\n", 
 	    ret, ssl_error_str(ssl_error), SSL_state_string(ssl)));
+    DEBUGF(("    ret %d os error %s\n", ret, strerror(errno)));
     if (ret > 0)
 	return ret;
     else if (ret == 0) {
+	const char* f; int l; unsigned int e;
+	while ((e = ERR_get_error_line(&f, &l))) {
+	    DEBUGF(("    error %s:%d  %s\n", f, l, ssl_error_str(e)));
+	}
 	/* permanent accept error */
 	sock_set_errno(ERRNO_NONE);
 	MAYBE_SET_ERRSTR("esslaccept");
@@ -695,8 +707,10 @@ void check_shutdown(Connection *cp)
     sd_mode = SSL_get_shutdown(ssl);
     if (sd_mode & SSL_RECEIVED_SHUTDOWN)
 	cp->eof = 1;
-    if (sd_mode & SSL_SENT_SHUTDOWN)
+    if (sd_mode & SSL_SENT_SHUTDOWN) {
+	DEBUGF(("check_shutdown SSL_SENT_SHUTDOWN\n"));
 	cp->bp = 1;
+    }
 }
 
 /* 

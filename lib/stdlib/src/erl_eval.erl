@@ -1164,9 +1164,6 @@ line(Expr) -> element(2, Expr).
 
 %% In syntax trees, module/package names are atoms or lists of atoms.
 
-package_to_string(A) when atom(A) -> atom_to_list(A);
-package_to_string(L) when list(L) -> packages:concat(L).
-
 expand_module_name({atom,L,A} = M, Bs) ->
     case binding({module,A}, Bs) of
 	{value, A1} ->
@@ -1191,7 +1188,7 @@ expand_module_name(M, _) ->
 	    M;
 	M1 ->
 	    L = element(2,M),
-	    Mod = package_to_string(M1),
+	    Mod = packages:concat(M1),
 	    case packages:is_valid(Mod) of
 		true ->
 		    {atom,L,list_to_atom(Mod)};

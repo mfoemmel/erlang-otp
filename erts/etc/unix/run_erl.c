@@ -28,6 +28,7 @@
 #  include "config.h"
 #endif
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/types.h>
@@ -44,6 +45,22 @@
 #include <time.h>
 #if !defined(NO_SYSLOG)
 #include <syslog.h>
+#endif
+#ifdef HAVE_PTY_H
+#include <pty.h>
+#endif
+#ifdef HAVE_UTMP_H
+#include <utmp.h>
+#endif
+#ifdef HAVE_UTIL_H
+#include <util.h>
+#endif
+
+#ifndef HAVE_STRLCPY
+size_t strlcpy(char *dst, const char *src, size_t siz);
+#endif
+#ifndef HAVE_STRLCAT
+size_t strlcat(char *dst, const char *src, size_t siz);
 #endif
 
 #if defined(O_NONBLOCK)
@@ -97,6 +114,7 @@ static void exec_shell(char **);
 static void status(const char *format,...);
 static void stderr_error(int priority, const char *format,...);
 static void catch_sigpipe(int);
+static void catch_sigchild(int);
 static int next_log(int log_num);
 static int prev_log(int log_num);
 static int find_next_log_num(void);
@@ -203,13 +221,11 @@ int main(int argc, char **argv)
   }
 
   off_argv = i;
-  strncpy(pipename, argv[i++], FILENAME_BUFSIZ);
-  pipename[FILENAME_BUFSIZ - 1] = '\0';
-  strncpy(log_dir, argv[i], FILENAME_BUFSIZ);
-  log_dir[FILENAME_BUFSIZ - 1] = '\0';
-  strcpy(statusfile, log_dir);
+  strlcpy(pipename, argv[i++], sizeof(pipename));
+  strlcpy(log_dir, argv[i], sizeof(log_dir));
+  strlcpy(statusfile, log_dir, sizeof(statusfile));
   CHECK_BUFFER(strlen(statusfile)+strlen(STATUSFILENAME));
-  strcat(statusfile, STATUSFILENAME);
+  strlcat(statusfile, STATUSFILENAME, sizeof(statusfile));
 
 #ifdef DEBUG
   status("%s: pid is : %d\n", argv[0], getpid());
@@ -239,9 +255,9 @@ int main(int argc, char **argv)
 	  ERROR((LOG_ERR, "RUN_ERL_LOG_ALIVE_FORMAT can contain a maximum of "
 		 "%d characters\n", ALIVE_BUFFSIZ));
       }
-      strcpy(log_alive_format,p);
+      strlcpy(log_alive_format, p, sizeof(log_alive_format));
   } else {
-      strcpy(log_alive_format,DEFAULT_LOG_ALIVE_FORMAT);
+      strlcpy(log_alive_format, DEFAULT_LOG_ALIVE_FORMAT, sizeof(log_alive_format));
   }
   if ((p = getenv("RUN_ERL_LOG_ALIVE_IN_UTC")) && strcmp(p,"0")) {
       ++log_alive_in_gmt;
@@ -251,13 +267,13 @@ int main(int argc, char **argv)
     if (log_generations < LOG_MIN_GENERATIONS)
       ERROR((LOG_ERR,"Minumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MIN_GENERATIONS));
     if (log_generations > LOG_MAX_GENERATIONS)
-      ERROR((LOG_ERR,"Maxumum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MAX_GENERATIONS));
+      ERROR((LOG_ERR,"Maximum RUN_ERL_LOG_GENERATIONS is %d\n", LOG_MAX_GENERATIONS));
   }
 
   if ((p = getenv("RUN_ERL_LOG_MAXSIZE"))) {
     log_maxsize = atoi(p);
     if (log_maxsize < LOG_MIN_MAXSIZE)
-      ERROR((LOG_ERR,"Minumum RUN_ERL_LOG_MAXSIZE is %d\n", LOG_MIN_MAXSIZE));
+      ERROR((LOG_ERR,"Minimum RUN_ERL_LOG_MAXSIZE is %d\n", LOG_MIN_MAXSIZE));
   }
 
   /*
@@ -293,17 +309,18 @@ int main(int argc, char **argv)
   } /* if */
 
   /* write FIFO - is read FIFO for `to_erl' program */
-  strcpy(fifo1, pipename);
+  strlcpy(fifo1, pipename, sizeof(fifo1));
   CHECK_BUFFER(strlen(fifo1)+2);
-  strcat(fifo1, ".r");
+  strlcat(fifo1, ".r", sizeof(fifo1));
   if (create_fifo(fifo1, PERM) < 0) {
     ERROR((LOG_ERR,"Cannot create FIFO %s for writing.\n", fifo1));
     exit(1);
   }
 
   /* read FIFO - is write FIFO for `to_erl' program */
-  strcpy(fifo2, pipename);
-  strcat(fifo2, ".w");
+  strlcpy(fifo2, pipename, sizeof(fifo2));
+  strlcat(fifo2, ".w", sizeof(fifo2));
+
   /* Check that nobody is running run_erl already */
   if ((fd = open (fifo2, O_WRONLY|DONT_BLOCK_PLEASE, 0)) >= 0) {
     /* Open as client succeeded -- run_erl is already running! */
@@ -387,6 +404,11 @@ int main(int argc, char **argv)
     sig_act.sa_handler = catch_sigpipe;
     sigaction(SIGPIPE, &sig_act, (struct sigaction *)NULL);
 
+    sigemptyset(&sig_act.sa_mask);
+    sig_act.sa_flags = SA_NOCLDSTOP;
+    sig_act.sa_handler = catch_sigchild;
+    sigaction(SIGCHLD, &sig_act, (struct sigaction *)NULL);
+
     /*
      * read and write: enter the workloop
      */
@@ -437,6 +459,7 @@ static void pass_on(pid_t childpid, int mfd)
     /* Enter the work loop */
     
     while (1) {
+	int exit_status;
 	maxfd = MAX(rfd, mfd);
 	maxfd = MAX(wfd, maxfd);
 	FD_ZERO(&readfds);
@@ -454,12 +477,31 @@ static void pass_on(pid_t childpid, int mfd)
 	timeout.tv_usec = 0;
 	ready = select(maxfd + 1, &readfds, writefds_ptr, NULL, &timeout);
 	if (ready < 0) {
-	    /* Some error occured */
-	    ERROR((LOG_ERR,"Error in select."));
-	    exit(1);
+	    if (errno == EINTR) {
+		if (waitpid(childpid, &exit_status, WNOHANG) == childpid) {
+		    /*
+		     * The Erlang emulator has terminated. Give us some more
+		     * time to write out any pending data before we terminate too.
+		     */
+		    alarm(5);
+		}
+		FD_ZERO(&readfds);
+		FD_ZERO(&writefds);
+	    } else {
+		/* Some error occured */
+		ERROR((LOG_ERR,"Error in select."));
+		exit(1);
+	    }
 	} else {
-	    /* Check how long time we've been inactive */
 	    time_t now;
+
+	    if (waitpid(childpid, &exit_status, WNOHANG) == childpid) {
+		alarm(5);
+		FD_ZERO(&readfds);
+		FD_ZERO(&writefds);
+	    }
+
+	    /* Check how long time we've been inactive */
 	    time(&now);
 	    if(!ready || now - last_activity > log_activity_minutes*60) {
 		/* Either a time out: 15 minutes without action, */
@@ -473,9 +515,9 @@ static void pass_on(pid_t childpid, int mfd)
 		}
 		if (!strftime(log_alive_buffer, ALIVE_BUFFSIZ, log_alive_format,
 			      tmptr)) {
-		    strcpy(log_alive_buffer,
-			   "(could not format time in 256 positions "
-			   "with current format string.)");
+		    strlcpy(log_alive_buffer,
+			    "(could not format time in 256 positions "
+			    "with current format string.)", sizeof(log_alive_buffer));
 		}
 		log_alive_buffer[ALIVE_BUFFSIZ] = '\0';
 
@@ -632,6 +674,10 @@ static void catch_sigpipe(int sig)
   }
 }
 
+static void catch_sigchild(int sig)
+{
+}
+
 /*
  * next_log:
  * Returns the index number that follows the given index number.
@@ -741,9 +787,9 @@ static int open_log(int log_num, int flags) {
   }
   if (!strftime(log_buffer, ALIVE_BUFFSIZ, log_alive_format,
 		tmptr)) {
-      strcpy(log_buffer,
-	     "(could not format time in 256 positions "
-	     "with current format string.)");
+      strlcpy(log_buffer,
+	      "(could not format time in 256 positions "
+	      "with current format string.)", sizeof(log_buffer));
   }
   log_buffer[ALIVE_BUFFSIZ] = '\0';
 
@@ -797,12 +843,35 @@ static int create_fifo(char *name, int perm)
 
 
 /* open_pty_master()
- * Find a master device, open and return fd and slave device name
+ * Find a master device, open and return fd and slave device name.
  */
 
 static int open_pty_master(char **ptyslave)
 {
   int mfd;
+#ifdef HAVE_OPENPTY
+# ifdef PATH_MAX
+#  define SLAVE_SIZE PATH_MAX
+#else
+#  define SLAVE_SIZE 1024
+#endif
+    static char slave[SLAVE_SIZE];
+    int sfd;
+#  undef SLAVE_SIZE
+  /*
+   * The modern way to find the ptys.
+   */
+
+  if (openpty(&mfd, &sfd, slave, NULL, NULL) == 0) {
+      close(sfd);
+      *ptyslave = slave;
+  }
+  return mfd;
+#else
+  /*
+   * The traditional way to find ptys. We only try it if openpty()
+   * is not available.
+   */
   char *major, *minor;
 
   static char majorchars[] = "pqrstuvwxyzabcdePQRSTUVWXYZABCDE";
@@ -871,6 +940,7 @@ static int open_pty_master(char **ptyslave)
   }
 
   return -1;
+#endif
 }
 
 static int open_pty_slave(char *name)
@@ -914,6 +984,9 @@ static void exec_shell(char **argv)
   status("Args before exec of shell:\n");
   for (vp = argv, i = 0; *vp; vp++, i++)
     status("argv[%d] = %s\n", i, *vp);
+  if (stdstatus) {
+      fclose(stdstatus);
+  }
   execv(sh, argv);
   if (run_daemon) {
       OPEN_SYSLOG();
@@ -1110,4 +1183,98 @@ static void show_terminal_settings(struct termios *t)
 
 #endif /* DEBUG */
 
-/* END */
+/*
+ * Copyright (c) 1998 Todd C. Miller <Todd.Miller@courtesan.com>
+ *
+ * Permission to use, copy, modify, and distribute this software for any
+ * purpose with or without fee is hereby granted, provided that the above
+ * copyright notice and this permission notice appear in all copies.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+ * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+ * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+ * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+ * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+ */
+
+#ifndef HAVE_STRLCPY
+
+#include <sys/types.h>
+#include <string.h>
+
+/*
+ * Copy src to string dst of size siz.  At most siz-1 characters
+ * will be copied.  Always NUL terminates (unless siz == 0).
+ * Returns strlen(src); if retval >= siz, truncation occurred.
+ */
+size_t
+strlcpy(char *dst, const char *src, size_t siz)
+{
+	char *d = dst;
+	const char *s = src;
+	size_t n = siz;
+
+	/* Copy as many bytes as will fit */
+	if (n != 0 && --n != 0) {
+		do {
+			if ((*d++ = *s++) == 0)
+				break;
+		} while (--n != 0);
+	}
+
+	/* Not enough room in dst, add NUL and traverse rest of src */
+	if (n == 0) {
+		if (siz != 0)
+			*d = '\0';		/* NUL-terminate dst */
+		while (*s++)
+			;
+	}
+
+	return(s - src - 1);	/* count does not include NUL */
+}
+
+#endif /* !HAVE_STRLCPY */
+
+#ifndef HAVE_STRLCAT
+
+#include <sys/types.h>
+#include <string.h>
+
+/*
+ * Appends src to string dst of size siz (unlike strncat, siz is the
+ * full size of dst, not space left).  At most siz-1 characters
+ * will be copied.  Always NUL terminates (unless siz <= strlen(dst)).
+ * Returns strlen(src) + MIN(siz, strlen(initial dst)).
+ * If retval >= siz, truncation occurred.
+ */
+size_t
+strlcat(char *dst, const char *src, size_t siz)
+{
+	char *d = dst;
+	const char *s = src;
+	size_t n = siz;
+	size_t dlen;
+
+	/* Find the end of dst and adjust bytes left but don't go past end */
+	while (n-- != 0 && *d != '\0')
+		d++;
+	dlen = d - dst;
+	n = siz - dlen;
+
+	if (n == 0)
+		return(dlen + strlen(s));
+	while (*s != '\0') {
+		if (n != 1) {
+			*d++ = *s;
+			n--;
+		}
+		s++;
+	}
+	*d = '\0';
+
+	return(dlen + (s - src));	/* count does not include NUL */
+}
+
+#endif /* !HAVE_STRLCAT */

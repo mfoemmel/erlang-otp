@@ -41,7 +41,7 @@
 		timeout,  %% infinity | integer() > 0
 		timer,     %% ref() - Request timer
 		headers,  %% #http_request_h{}
-		body      %% string()
+		body      %% binary()
 	       }).
 
 %%====================================================================
@@ -147,11 +147,11 @@ handle_cast(Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({Proto, _Socket, Data}, State = 
+handle_info({Proto, Socket, Data}, State = 
 	    #state{mfa = {Module, Function, Args},
 		   mod = #mod{socket_type = SockType, 
 			      socket = Socket} = ModData} 
-	    = State) when Proto == tcp; Proto == ssl ->
+	    = State) when Proto == tcp; Proto == ssl; Proto == dummy ->
   
     case Module:Function([Data | Args]) of
         {ok, Result} ->
@@ -294,14 +294,9 @@ handle_http_msg({Method, Uri, Version, {RecordHeaders, Headers}, Body},
 handle_http_msg({ChunkedHeaders, Body}, 
 		State = #state{headers = Headers}) ->
     NewHeaders = http_chunk:handle_headers(Headers, ChunkedHeaders),
-    handle_response(State#state{headers = NewHeaders, body = if_binary_to_list(Body)});
+    handle_response(State#state{headers = NewHeaders, body = Body});
 handle_http_msg(Body, State) ->
-    handle_response(State#state{body = if_binary_to_list(Body)}).
-
-if_binary_to_list(B) when binary(B) ->
-    binary_to_list(B);
-if_binary_to_list(B) ->
-    B.
+    handle_response(State#state{body = Body}).
 
 handle_manager_busy(#state{mod = #mod{config_db = ConfigDB}} = State) ->
     MaxClients = httpd_util:lookup(ConfigDB, max_clients, 150),
@@ -351,8 +346,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
 		    NewHeaders = 
 			http_chunk:handle_headers(Headers, ChunkedHeaders),
 		    handle_response(State#state{headers = NewHeaders,
-						body = 
-						binary_to_list(NewBody)})
+						body = NewBody})
 	    end;
 	Encoding when list(Encoding) ->
 	    httpd_response:send_status(ModData, 501, 
@@ -377,8 +371,7 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
 			{ok, NewBody} ->
 			    handle_response(
 			      State#state{headers = Headers,
-					  body = 
-					  binary_to_list(NewBody)})
+					  body = NewBody})
 		    end;
 		false ->
 		    httpd_response:send_status(ModData, 413, "Body too big"),
@@ -438,19 +431,22 @@ expect(Headers, _, ConfigDB) ->
 	    end
     end.
 
-handle_response(#state{body = Body, mod = ModData, 
+handle_response(#state{body = Body, mod = ModData, headers = Headers,
 		       max_keep_alive_request = Max} = State) when Max > 0 ->
+    {NewBody, Data} = httpd_request:body_data(Headers, Body),
     ok = httpd_response:generate_and_send_response(
-	   ModData#mod{entity_body = Body}),
-    handle_next_request(State#state{response_sent = true});
-handle_response(#state{body = Body, mod = ModData} = State) ->
+	   ModData#mod{entity_body = NewBody}),
+    handle_next_request(State#state{response_sent = true}, Data);
+
+handle_response(#state{body = Body, headers = Headers, 
+		       mod = ModData} = State) ->
+    {NewBody, _} = httpd_request:body_data(Headers, Body),
     ok = httpd_response:generate_and_send_response(
-	   ModData#mod{entity_body = Body}),
+	   ModData#mod{entity_body = NewBody}),
     {stop, normal, State#state{response_sent = true}}.
 
-
 handle_next_request(#state{mod = #mod{connection = true} = ModData,
-			  max_keep_alive_request = Max} = State) ->
+			  max_keep_alive_request = Max} = State, Data) ->
     NewModData = #mod{socket_type = ModData#mod.socket_type, 
  		      socket = ModData#mod.socket, 
  		      config_db = ModData#mod.config_db, 
@@ -458,21 +454,25 @@ handle_next_request(#state{mod = #mod{connection = true} = ModData,
     MaxHeaderSize =
 	httpd_util:lookup(ModData#mod.config_db, 
 			  max_header_size, ?HTTP_MAX_HEADER_SIZE),
-    
-    http_transport:setopts(ModData#mod.socket_type,
-			   ModData#mod.socket, [binary,{packet, 0},
-						{active, once}]),
-    
-    TmpState = State#state{mod = NewModData,
+   
+     TmpState = State#state{mod = NewModData,
 			   mfa = {httpd_request, parse, [MaxHeaderSize]},
-			   max_keep_alive_request = decrease(Max),
+			    max_keep_alive_request = decrease(Max),
 			   headers = undefined, body = undefined,
 			   response_sent = false},
     
     NewState = activate_request_timeout(TmpState),
-    
-    {noreply, NewState};
-handle_next_request(State) ->
+
+    case Data of
+	<<>> ->
+	    http_transport:setopts(ModData#mod.socket_type,
+				   ModData#mod.socket, [{active, once}]),
+	    {noreply, NewState};
+	_ ->
+	    handle_info({dummy, ModData#mod.socket, Data}, NewState)
+    end;
+
+handle_next_request(State, _) ->
     {stop, normal, State}.
 
 activate_request_timeout(#state{timeout = Time} = State) ->

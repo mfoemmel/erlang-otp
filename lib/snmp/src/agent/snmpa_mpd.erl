@@ -168,7 +168,7 @@ v1_v2c_proc(Vsn, NoteStore, Community, snmpUDPDomain, {Ip, Udp},
 		_ -> AgentMS - HS
 	    end,
     case (catch snmp_pdus:dec_pdu(Data)) of
-	Pdu when record(Pdu, pdu) ->
+	Pdu when is_record(Pdu, pdu) ->
 	    Log(Pdu#pdu.type, Packet),
 	    inc_snmp_in_vars(Pdu),
 	    #pdu{request_id = ReqId} = Pdu,
@@ -252,7 +252,7 @@ v3_proc(NoteStore, Packet, _TDomain, _TAddress, V3Hdr, Data, Log) ->
 	       contextName = ContextName,
 	       data = PDU} =
 	case catch snmp_pdus:dec_scoped_pdu(ScopedPDUBytes) of
-	    ScopedPDU when record(ScopedPDU, scopedPdu) -> 
+	    ScopedPDU when is_record(ScopedPDU, scopedPdu) -> 
 		ScopedPDU;
 	    {'EXIT', Reason} ->
 		inc(snmpInASNParseErrs),
@@ -403,7 +403,7 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable, Log) ->
 	    throw({discarded, {securityError, Else}})
     end.
 
-get_scoped_pdu(D) when list(D) ->
+get_scoped_pdu(D) when is_list(D) ->
     (catch snmp_pdus:dec_scoped_pdu(D));
 get_scoped_pdu(D) ->
     D.
@@ -493,7 +493,7 @@ generate_response_msg(Vsn, RePdu, Type,
 		{error, Reason} ->
 		    config_err("~p (message: ~p)", [Reason, Message]),
 		    {discarded, Reason};
-		OutMsg when list(OutMsg) ->
+		OutMsg when is_list(OutMsg) ->
 		    %% Check the packet size.  Send the msg even
 		    %% if it's larger than the mgr can handle - it
 		    %% will be dropped.  Just check against the
@@ -652,7 +652,7 @@ generate_msg('version-3', NoteStore, Pdu,
 	    {discarded, Reason};
 	ScopedPDUBytes -> 
 	    {ok, mk_v3_packet_list(NoteStore, To, ScopedPDUBytes, Pdu, 
-			   ContextEngineID, ContextName)}
+				   ContextEngineID, ContextName)}
     end.
 
 mk_v1_v2_packet_list([{?snmpUDPDomain, [A,B,C,D,U1,U2]} | T],
@@ -667,8 +667,9 @@ mk_v1_v2_packet_list([{TDomain, TAddr} | T], Packet, Len, Pdu) ->
 mk_v1_v2_packet_list([], _Packet, _Len, _Pdu) ->
     [].
 
-mk_v3_packet_list(NoteStore, [{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
-			       {SecModel, SecName, SecLevel, TargetAddrName}} | T], 
+mk_v3_packet_list(NoteStore, 
+		  [{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
+		    {SecModel, SecName, SecLevel, TargetAddrName}} | T], 
 		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
     %% 7.1.7
     PduType = Pdu#pdu.type,
@@ -705,7 +706,7 @@ mk_v3_packet_list(NoteStore, [{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
 			"" % this will trigger error in secmodule
 		end
 	end,
-    ?vdebug("secEngineID: ~p", [SecEngineID]),
+    ?vdebug("mk_v3_packet_list -> secEngineID: ~p", [SecEngineID]),
     %% 7.1.9b
     case catch SecModule:generate_outgoing_msg(Message, SecEngineID,
 					       SecName, [], SecLevel) of
@@ -717,14 +718,26 @@ mk_v3_packet_list(NoteStore, [{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
 	    ?vlog("~n   ~w error ~p\n", [SecModule, Reason]),
 	    mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu, 
 			      ContextEngineID, ContextName);
-	Packet ->
+	OutMsg when is_list(OutMsg) ->
 	    %% 7.1.9c
 	    %% Store in cache for 150 sec.
+	    Packet = list_to_binary(OutMsg),
+	    ?vdebug("mk_v3_packet_list -> generated: ~w bytes", 
+		    [size(Packet)]),
+	    Data = 
+		if
+		    SecLevel == 3 -> 
+			%% encrypted - log decrypted pdu
+			{Packet, {V3Hdr, ScopedPDUBytes}};
+		    true -> 
+			%% otherwise log the entire msg
+			Packet
+		end,
 	    CacheVal = {SecEngineID, SecModel, SecName, SecLevel,
 			ContextEngineID, ContextName},
 	    snmp_note_store:set_note(NoteStore, 1500, {agent,MsgID}, CacheVal),
 	    inc_snmp_out_vars(Pdu),
-	    [{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Packet} |
+	    [{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Data} |
 	     mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu,
 			       ContextEngineID, ContextName)]
     end;
@@ -848,7 +861,7 @@ inc_snmp_out_vars(#pdu{type         = Type,
     inc(snmpOutPkts),
     inc_out_err(ErrorStatus),
     inc_out_vars_2(Type);
-inc_snmp_out_vars(TrapPdu) when record(TrapPdu, trappdu) ->
+inc_snmp_out_vars(TrapPdu) when is_record(TrapPdu, trappdu) ->
     inc(snmpOutPkts),
     inc(snmpOutTraps).
 

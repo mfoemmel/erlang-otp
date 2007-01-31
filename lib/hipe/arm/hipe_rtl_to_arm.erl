@@ -81,6 +81,7 @@ conv_arith(RtlAluOp) -> % RtlAluOp \ RtlShiftOp -> ArmArithOp
   case RtlAluOp of
     'add' -> 'add';
     'sub' -> 'sub';
+    'mul' -> 'mul';
     'or'  -> 'orr';
     'and' -> 'and';
     'xor' -> 'eor'
@@ -168,11 +169,32 @@ mk_arith_ir(S, Dst, Src1, ArithOp, Src2) ->
   mk_arith_ri(S, Dst, Src2, commute_arithop(ArithOp), Src1).
 
 mk_arith_ri(S, Dst, Src1, ArithOp, Src2) ->
-  {FixAm1,NewArithOp,Am1} = fix_aluop_imm(ArithOp, Src2),
-  FixAm1 ++ [hipe_arm:mk_alu(NewArithOp, S, Dst, Src1, Am1)].
+  case ArithOp of
+    'mul' -> % mul/smull only take reg/reg operands
+      Tmp = new_untagged_temp(),
+      mk_li(Tmp, Src2,
+	    mk_arith_rr(S, Dst, Src1, ArithOp, Tmp));
+    _ -> % add/sub/orr/and/eor have reg/am1 operands
+      {FixAm1,NewArithOp,Am1} = fix_aluop_imm(ArithOp, Src2),
+      FixAm1 ++ [hipe_arm:mk_alu(NewArithOp, S, Dst, Src1, Am1)]
+  end.
 
 mk_arith_rr(S, Dst, Src1, ArithOp, Src2) ->
-  [hipe_arm:mk_alu(ArithOp, S, Dst, Src1, Src2)].
+  case {ArithOp,S} of
+    {'mul',true} ->
+      %% To check for overflow in 32x32->32 multiplication:
+      %% smull Dst,TmpHi,Src1,Src2
+      %% mov TmpSign,Dst,ASR #31
+      %% cmp TmpSign,TmpHi
+      %% [bne OverflowLabel]
+      TmpHi = new_untagged_temp(),
+      TmpSign = new_untagged_temp(),
+      [hipe_arm:mk_smull(Dst, TmpHi, Src1, Src2),
+       hipe_arm:mk_move(TmpSign, {Dst,'asr',31}),
+       hipe_arm:mk_cmp('cmp', TmpSign, TmpHi)];
+    _ ->
+      [hipe_arm:mk_alu(ArithOp, S, Dst, Src1, Src2)]
+  end.
 
 fix_aluop_imm(AluOp, Imm) -> % {FixAm1,NewAluOp,Am1}
   case hipe_arm:try_aluop_imm(AluOp, Imm) of
@@ -187,13 +209,20 @@ conv_alub(I, Map, Data) ->
   {Dst, Map0} = conv_dst(hipe_rtl:alub_dst(I), Map),
   {Src1, Map1} = conv_src(hipe_rtl:alub_src1(I), Map0),
   {Src2, Map2} = conv_src(hipe_rtl:alub_src2(I), Map1),
-  Cond = conv_alub_cond(hipe_rtl:alub_cond(I)),
+  RtlAluOp = hipe_rtl:alub_op(I),
+  Cond0 = conv_alub_cond(hipe_rtl:alub_cond(I)),
+  Cond =
+    case {RtlAluOp,Cond0} of
+      {'mul','vs'} -> 'ne';	% overflow becomes not-equal
+      {'mul','vc'} -> 'eq';	% no-overflow becomes equal
+      {'mul',_} -> exit({?MODULE,I});
+      {_,_} -> Cond0
+    end,
   I2 = mk_pseudo_bc(
 	  Cond,
 	  hipe_rtl:alub_true_label(I),
 	  hipe_rtl:alub_false_label(I),
 	  hipe_rtl:alub_pred(I)),
-  RtlAluOp = hipe_rtl:alub_op(I),
   S = true,
   I1 = mk_alu(S, Dst, Src1, RtlAluOp, Src2),
   {I1 ++ I2, Map2, Data}.
@@ -453,8 +482,8 @@ mk_ldrsb_ri(Dst, Base, Offset) ->
      true ->
       Index = new_untagged_temp(),
       Am3 = hipe_arm:mk_am3(Base, Sign, Index),
-      [mk_li(Index, AbsOffset),
-       hipe_arm:mk_ldrsb(Dst, Am3)]
+      mk_li(Index, AbsOffset,
+	    [hipe_arm:mk_ldrsb(Dst, Am3)])
   end.
 
 mk_ldrsb_rr(Dst, Base1, Base2) ->

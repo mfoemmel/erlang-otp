@@ -397,7 +397,7 @@ do_handle_msg(Msg,State) ->
 	    From ! {init,values_to_atoms_again(Flags)};
 	{From,{notify_when_started,Pid}} ->
 	    case Status of
-		{InS,PS} when InS == started ; PS == started ->
+		{InS,PS} when InS =:= started ; PS =:= started ->
 		    From ! {init,started};
 		_ ->
 		    From ! {init,ok},
@@ -655,7 +655,7 @@ sleep(T) -> receive after T -> ok end.
 
 start_prim_loader(Init,Id,Pgm,Nodes,Path,{Pa,Pz}) ->
     case erl_prim_loader:start(Id,Pgm,Nodes) of
-	{ok,Pid} when Path == false ->
+	{ok,Pid} when Path =:= false ->
 	    InitPath = append(Pa,["."|Pz]),
 	    erl_prim_loader:set_path(InitPath),
 	    add_to_kernel(Init,Pid),
@@ -708,7 +708,7 @@ do_boot(Init,Flags,Start) ->
     Deb = b2a(get_flag('-init_debug',Flags,false)),
     BootVars = get_flag_args('-boot_var',Flags),
     ParallelLoad = 
-	(Pgm == "efile") and (erlang:system_info(thread_pool_size) > 0),
+	(Pgm =:= "efile") and (erlang:system_info(thread_pool_size) > 0),
     eval_script(BootList,Init,PathFls,{Root,BootVars},Path,
 		{true,Embedded,ParallelLoad},Deb),
 
@@ -787,7 +787,7 @@ eval_script([{kernel_load_completed}|CfgL],Init,PathFs,Vars,P,{_,E,Par},Deb) ->
 eval_script([{primLoad,Mods}|CfgL],Init,PathFs,Vars,P,{true,E,Par},Deb)
   when is_list(Mods) ->
     if 
-	Par == true ->
+	Par =:= true ->
 	    par_load_modules(Mods,Init);
 	true ->
 	    load_modules(Mods)

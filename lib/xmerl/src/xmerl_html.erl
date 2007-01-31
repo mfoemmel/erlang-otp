@@ -39,7 +39,7 @@
 	 '#text#'/1,
 	 p/4]).
 
--import(xmerl_lib, [markup/3, start_tag/2, is_empty_data/1,
+-import(xmerl_lib, [start_tag/2, end_tag/1, is_empty_data/1,
 		    find_attribute/2, export_text/1]).
 
 -include("xmerl.hrl").
@@ -76,17 +76,25 @@
     ["<!DOCTYPE HTML PUBLIC \"", Ver, "\"", URI, ">\n", Data].
 
 
-%% Note that HTML does not have the <Tag/> empty-element form.
-%% Furthermore, for some element types, the end tag is forbidden. (In
-%% all other cases, we always generate the end tag, to make sure that
-%% the scope of a markup is not extended by mistake.)
+%% HTML does not have the <Tag/> empty-element form of XML/XHTML.
+markup(Tag, Attrs, Data) ->
+    [start_tag(Tag, Attrs), Data, end_tag(Tag)].
+
+%% Some HTML elements must not have an end tag at all.
+markup_noend(Tag, Attrs, Data) ->
+    [start_tag(Tag, Attrs), Data].
+
+
+%% For some element types, the end tag is forbidden. (In all other
+%% cases, we always generate the end tag, to make sure that the scope of
+%% a markup is not extended by mistake.)
 
 '#element#'(Tag, Data, Attrs, _Parents, _E) ->
     case forbid_end(Tag) of
 	false ->
 	    markup(Tag, Attrs, Data);
 	true ->
-	    [start_tag(Tag, Attrs), Data]
+	    markup_noend(Tag, Attrs, Data)
     end.
 
 

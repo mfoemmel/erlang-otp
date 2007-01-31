@@ -183,6 +183,8 @@ translate_insn(I, Context, Options) ->
 	      []
 	  end
       end;
+    #imul{} ->
+      translate_imul(I, Context);
     #jcc{} ->
       Cc = {cc,?HIPE_X86_ENCODE:cc(hipe_x86:jcc_cc(I))},
       Label = translate_label(hipe_x86:jcc_label(I)),
@@ -360,6 +362,22 @@ translate_ret(I) ->
   [{ret, Arg, I}].
 
 -endif. % X86_SIMULATE_NSP
+
+translate_imul(I, Context) ->
+  Temp = temp_to_regArch(hipe_x86:imul_temp(I)),
+  Src = temp_or_mem_to_rmArch(hipe_x86:imul_src(I)),
+  Args =
+    case hipe_x86:imul_imm_opt(I) of
+      [] -> {Temp,Src};
+      Imm -> {Temp,Src,translate_imm(Imm, Context, true)}
+    end,
+  [{'imul', Args, I}].
+
+temp_or_mem_to_rmArch(Src) ->
+  case Src of
+    #x86_temp{} -> temp_to_rmArch(Src);
+    #x86_mem{} -> mem_to_rmArch(Src)
+  end.
 
 translate_label(Label) when is_integer(Label) ->
   {label,Label}.	% symbolic, since offset is not yet computable

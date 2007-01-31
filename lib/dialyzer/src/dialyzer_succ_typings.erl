@@ -11,7 +11,7 @@
 
 %% These are only intended as debug functions.
 -export([doit/1,
-	 get_top_level_signatures/1]).
+	 get_top_level_signatures/2]).
 
 -define(TYPE_LIMIT, 4).
 
@@ -58,7 +58,9 @@ refine_succ_typings([[M]|Left], Callgraph, Codeserver, Plt, Fixpoint) ->
   {ok, Tree} = dialyzer_codeserver:lookup(M, core, Codeserver),
   AllFuns = traverse_tree_list([Tree]),
   FunTypes = get_fun_types_from_plt(AllFuns, Callgraph, Plt),
-  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, FunTypes, Callgraph, Plt),
+  Records = dialyzer_codeserver:lookup_records(M, Codeserver),
+  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, Plt, Callgraph, 
+						Plt, Records),
   FP = 
     case reached_fixpoint(FunTypes, NewFunTypes) of
       true -> Fixpoint;
@@ -167,10 +169,12 @@ find_succ_typings(Callgraph, Codeserver, Plt, NotFixpoint) ->
 
 analyze_scc(SCC, Callgraph, Codeserver, Plt) ->
   NextLabel = dialyzer_codeserver:next_core_label(Codeserver),
-  SCC1 = [{MFA, dialyzer_codeserver:lookup(MFA, core, Codeserver)}
-	  || MFA = {_,_,_} <- SCC],
-  false = lists:any(fun({_, X}) -> X =:= error end, SCC1),
-  SCC2 = [{MFA, Def} || {MFA, {ok, Def}} <- SCC1],
+  SCC1 = [{MFA, 
+	   dialyzer_codeserver:lookup(MFA, core, Codeserver),
+	   dialyzer_codeserver:lookup_records(M, Codeserver)}
+	  || MFA = {M,_,_} <- SCC],
+  false = lists:any(fun({_, X, _}) -> X =:= error end, SCC1),
+  SCC2 = [{MFA, Def, Rec} || {MFA, {ok, Def}, Rec} <- SCC1],  
   {SuccTypes, NotFixpoint} = 
     find_succ_types_for_scc(SCC2, NextLabel, Callgraph, Plt),
   insert_into_plt(SuccTypes, Callgraph, Plt),
@@ -178,7 +182,7 @@ analyze_scc(SCC, Callgraph, Codeserver, Plt) ->
 
 find_succ_types_for_scc(SCC, NextLabel, Callgraph, Plt) ->  
   %% Assume that the Plt contains the current propagated types.
-  AllFuns = traverse_tree_list([Fun || {_MFA, {_Var, Fun}} <- SCC]),
+  AllFuns = traverse_tree_list([Fun || {_MFA, {_Var, Fun}, _Rec} <- SCC]),
   PropTypes = get_fun_types_from_plt(AllFuns, Callgraph, Plt),
   FunTypes = dialyzer_typesig:analyze_scc_get_all_fun_types(SCC, NextLabel, 
 							    Callgraph, Plt, 
@@ -273,8 +277,10 @@ lookup_name(F, CG) ->
 %%% ============================================================================
 
 doit(Module) ->
-  {ok, _, Code} = compile:file(Module,[to_core,binary,strict_record_tests]),
-  Sigs0 = get_top_level_signatures(Code),
+  AbstrCode = dialyzer_utils:get_abstract_code_from_src(Module),
+  Code = dialyzer_utils:get_core_from_abstract_code(AbstrCode),
+  {ok, Records} = dialyzer_utils:get_record_info(AbstrCode),
+  Sigs0 = get_top_level_signatures(Code, Records),
   M = 
     if is_atom(Module) ->  
 	list_to_atom(filename:basename(atom_to_list(Module)));
@@ -284,15 +290,15 @@ doit(Module) ->
   Sigs1 = [{{M, F, A}, Type} || {{F, A}, Type} <- Sigs0],
   Sigs = ordsets:from_list(Sigs1),
   io:nl(),
-  pp_signatures(Sigs),
+  pp_signatures(Sigs, Records),
   ok.
 
-get_top_level_signatures(Code) ->
+get_top_level_signatures(Code, Records) ->
   Tree = cerl:from_records(Code),
   {LabeledTree, NextLabel} = cerl_trees:label(Tree),
   Plt = get_def_plt(),
   dialyzer_plt:delete_module(Plt, cerl:atom_val(cerl:module_name(LabeledTree))),
-  analyze_module(LabeledTree, NextLabel, Plt),
+  analyze_module(LabeledTree, NextLabel, Plt, Records),
   M = cerl:concrete(cerl:module_name(Tree)),
   Functions = [{M, cerl:fname_id(V), cerl:fname_arity(V)} 
 	       || {V, _F} <- cerl:module_defs(LabeledTree)],
@@ -307,22 +313,23 @@ get_def_plt() ->
 			   filename:join([code:lib_dir(dialyzer),
 					  "plt","dialyzer_init_plt"]))
   catch
-    error:no_such_file -> ets:new(dialyzer_typesig_plt, [])
+    error:no_such_file -> ets:new(dialyzer_typesig_plt, []);
+    throw:{dialyzer_error, _} -> ets:new(dialyzer_typesig_plt, [])
   end.
 
-pp_signatures([{{_, module_info, 0}, _}|Left]) -> 
-  pp_signatures(Left);
-pp_signatures([{{_, module_info, 1}, _}|Left]) -> 
-  pp_signatures(Left);
-pp_signatures([{{M, F, A}, Type}|Left]) ->
+pp_signatures([{{_, module_info, 0}, _}|Left], Records) -> 
+  pp_signatures(Left, Records);
+pp_signatures([{{_, module_info, 1}, _}|Left], Records) -> 
+  pp_signatures(Left, Records);
+pp_signatures([{{M, F, A}, Type}|Left], Records) ->
   TypeString =
     case cerl:is_literal(Type) of
       true -> io_lib:format("~w", [cerl:concrete(Type)]);
-      false -> erl_types:t_to_string(Type)
+      false -> erl_types:t_to_string(Type, Records)
     end,
   io:format("~w:~w/~w :: ~s\n", [M, F, A, TypeString]),
-  pp_signatures(Left);
-pp_signatures([]) ->
+  pp_signatures(Left, Records);
+pp_signatures([], _Records) ->
   ok.
       
 
@@ -352,18 +359,21 @@ debug_pp(_Tree, _Map) ->
 %%% Analysis of one module.
 %%%
 
-analyze_module(LabeledTree, NextLabel, Plt) ->
+analyze_module(LabeledTree, NextLabel, Plt, Records) ->
   debug_pp(LabeledTree, dict:new()),
   Callgraph1 = dialyzer_callgraph:new(),
   Callgraph2 = dialyzer_callgraph:scan_core_tree(LabeledTree, Callgraph1),
   {Callgraph3, _Ext} = dialyzer_callgraph:remove_external(Callgraph2),
   Callgraph4 = dialyzer_callgraph:finalize(Callgraph3),
   Codeserver1 = dialyzer_codeserver:new(),
-  Insert = [{cerl:concrete(cerl:module_name(LabeledTree)), LabeledTree}],
+  ModuleName = cerl:concrete(cerl:module_name(LabeledTree)),
+  Insert = [{ModuleName, LabeledTree}],
   Codeserver2 = dialyzer_codeserver:insert(Insert, core, Codeserver1),
   Codeserver3 = 
     dialyzer_codeserver:update_next_core_label(NextLabel, Codeserver2),
-  Res = analyze_callgraph(Callgraph4, Plt, Codeserver3),
+  Codeserver4 = 
+    dialyzer_codeserver:store_records(ModuleName, Records, Codeserver3),
+  Res = analyze_callgraph(Callgraph4, Plt, Codeserver4),
   dialyzer_callgraph:delete(Callgraph4),
-  dialyzer_codeserver:delete(Codeserver3),
+  dialyzer_codeserver:delete(Codeserver4),
   Res.

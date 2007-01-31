@@ -20,5 +20,6 @@
 #define ERL_MISC_UTILS_H_
 
 int erts_no_of_cpus(void);
+int erts_milli_sleep(long);
 
 #endif /* #ifndef ERL_MISC_UTILS_H_ */

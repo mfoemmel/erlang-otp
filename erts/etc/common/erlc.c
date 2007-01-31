@@ -209,7 +209,11 @@ main(int argc, char** argv)
 		}
 		break;
 	    case 'h':
-		usage();
+		if (strcmp(argv[1], "-hybrid") == 0) {
+		    UNSHIFT(argv[1]);
+		} else {
+		    usage();
+		}
 		break;
 	    case 'I':
 		PUSH2("@i", process_opt(&argc, &argv, 0));
@@ -247,10 +251,14 @@ main(int argc, char** argv)
 		}
 		break;
 	    case 's':
-		if (argv[1][2] == '\0') {
-		    ;
-		} else
+		if (argv[1][2] == 0) {
+		    fprintf(stderr, "The -s option is DEPRECATED and "
+			    "will be REMOVED in R12B.\n\n");
+		} else if (strcmp(argv[1], "-smp") == 0) {
+		    UNSHIFT(argv[1]);
+		} else {
 		    goto error;
+		}
 		break;
 	    case 'v':		/* Verbose. */
 		PUSH2("@verbose", "true");
@@ -366,8 +374,7 @@ process_opt(int* pArgc, char*** pArgv, int offset)
 }
 
 static void
-push_words(src)
-char* src;
+push_words(char* src)
 {
     char sbuf[1024];
     char* dst;
@@ -387,7 +394,7 @@ char* src;
 	PUSH(strsave(sbuf));
 }
 #ifdef __WIN32__
- char *make_commandline(char **argv)
+char *make_commandline(char **argv)
 {
     static char *buff = NULL;
     static int siz = 0;
@@ -461,9 +468,7 @@ int my_spawnvp(char **argv)
 
 
 static int
-run_erlang(progname, argv)
-char* progname;
-char** argv;
+run_erlang(char* progname, char** argv)
 {
 #ifdef __WIN32__
     int status;
@@ -512,11 +517,13 @@ usage(void)
 	{"-d", "turn on debugging of erlc itself"},
 	{"-Dname", "define name"},
 	{"-Dname=value", "define name to have value"},
+	{"-hybrid", "compile using hybrid-heap emulator"},
 	{"-help", "shows this help text"},
 	{"-I path", "where to search for include files"},
 	{"-o name", "name output directory or file"},
 	{"-pa path", "add path to the front of Erlang's code path"},
 	{"-pa path", "add path to the end of Erlang's code path"},
+	{"-smp", "compile using SMP emulator"},
 	{"-v", "verbose compiler output"},
 	{"-W0", "disable warnings"},
 	{"-Wnumber", "set warning level to number"},

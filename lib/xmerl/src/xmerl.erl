@@ -242,13 +242,14 @@ export_element(#xmlDecl{}, _CBs) ->
 export_element(E, CB,CBstate) when atom(CB) ->
     export_element(E, callbacks(CB), CBstate);
 export_element(#xmlText{value = Text},CBs,CBstate) ->
-    apply_cb(CBs, '#text#', '#text#', [Text,CBstate]);
-export_element(#xmlElement{name = Tag,
+%%    apply_cb(CBs, '#text#', '#text#', [Text,CBstate]);
+    apply_text_cb(CBs,Text);
+export_element(E=#xmlElement{name = Tag,
 			   pos = Pos,
 			   parents = Parents,
 			   attributes = Attributes,
 			   content = Content},CBs,CBstate) ->
-    Args = [Content, Attributes,CBstate],
+    Args = [Content, Attributes,CBstate,E],
     tagdef(Tag,Pos,Parents,Args,CBs);
 export_element(#xmlPI{},_CBs,CBstate) ->
     CBstate;

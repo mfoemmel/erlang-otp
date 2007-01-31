@@ -21,54 +21,54 @@
 
 %% do
 
-do(ModData) ->
+do(Info) ->
     ?DEBUG("do -> entry",[]),
-    case ModData#mod.method of
+    case Info#mod.method of
 	"GET" ->
-	    case httpd_util:key1search(ModData#mod.data,status) of
+	    case httpd_util:key1search(Info#mod.data,status) of
 		%% A status code has been generated!
 		{_StatusCode, _PhraseArgs, _Reason} ->
-		    {proceed,ModData#mod.data};
+		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
-		    case httpd_util:key1search(ModData#mod.data,response) of
+		    case httpd_util:key1search(Info#mod.data,response) of
 			%% No response has been generated!
 			undefined ->
-			    do_get(ModData);
+			    do_get(Info);
 			%% A response has been generated or sent!
 			_Response ->
-			    {proceed,ModData#mod.data}
+			    {proceed,Info#mod.data}
 		    end
 	    end;
 	%% Not a GET method!
 	_ ->
-	    {proceed,ModData#mod.data}
+	    {proceed,Info#mod.data}
     end.
 
 
-do_get(ModData) ->
-    ?DEBUG("do_get -> Request URI: ~p",[ModData#mod.request_uri]),
-    Path = mod_alias:path(ModData#mod.data, ModData#mod.config_db, 
-			  ModData#mod.request_uri),
+do_get(Info) ->
+    ?DEBUG("do_get -> Request URI: ~p",[Info#mod.request_uri]),
+    Path = mod_alias:path(Info#mod.data, Info#mod.config_db, 
+			  Info#mod.request_uri),
     {FileInfo, LastModified} = get_modification_date(Path),
 
-    send_response(ModData#mod.socket,ModData#mod.socket_type, Path, ModData, 
+    send_response(Info#mod.socket,Info#mod.socket_type, Path, Info, 
 		  FileInfo, LastModified).
 
 
 %% The common case when no range is specified
-send_response(_Socket, _SocketType, Path, ModData, FileInfo, LastModified)->
+send_response(_Socket, _SocketType, Path, Info, FileInfo, LastModified)->
     %% Send the file!
     %% Find the modification date of the file
     case file:open(Path,[raw,binary]) of
 	{ok, FileDescriptor} ->
 	    ?DEBUG("do_get -> FileDescriptor: ~p",[FileDescriptor]),
 	    Suffix = httpd_util:suffix(Path),
-	    MimeType = httpd_util:lookup_mime_default(ModData#mod.config_db,
+	    MimeType = httpd_util:lookup_mime_default(Info#mod.config_db,
 						      Suffix,"text/plain"),
 	    %% FileInfo = file:read_file_info(Path),
 	    Size = integer_to_list(FileInfo#file_info.size),
-	    Headers = case ModData#mod.http_version of
+	    Headers = case Info#mod.http_version of
 			 "HTTP/1.1" ->
 			      [{content_type, MimeType},
 			       {etag, httpd_util:create_etag(FileInfo)},
@@ -79,22 +79,23 @@ send_response(_Socket, _SocketType, Path, ModData, FileInfo, LastModified)->
 			      [{content_type, MimeType},
 			       {content_length, Size}|LastModified]
 			  end,
-	    send(ModData, 200, Headers, FileDescriptor),
+	    send(Info, 200, Headers, FileDescriptor),
 	    file:close(FileDescriptor),
 	    {proceed,[{response,{already_sent,200,
 				 FileInfo#file_info.size}},
-		      {mime_type,MimeType}|ModData#mod.data]};
+		      {mime_type,MimeType}|Info#mod.data]};
 	{error, Reason} ->
+	    Status = httpd_file:handle_error(Reason, "open", Info, Path),
 	    {proceed,
-	     [{status,open_error(Reason,ModData,Path)}|ModData#mod.data]}
+	     [{status, Status}| Info#mod.data]}
     end.
 
 %% send
 
-send(#mod{socket = Socket, socket_type = SocketType} = ModData,
+send(#mod{socket = Socket, socket_type = SocketType} = Info,
      StatusCode, Headers, FileDescriptor) ->
     ?DEBUG("send -> send header",[]),
-    httpd_response:send_header(ModData, StatusCode, Headers),
+    httpd_response:send_header(Info, StatusCode, Headers),
     send_body(SocketType,Socket,FileDescriptor).
 
 
@@ -113,33 +114,12 @@ send_body(SocketType,Socket,FileDescriptor) ->
 	    ?DEBUG("send_body -> done with this file",[]),
 	    eof
     end.
-    
-
-%% open_error - Handle file open failure
-%%
-open_error(eacces,ModData,Path) ->
-    open_error(403,ModData,Path,"");
-open_error(enoent,ModData,Path) ->
-    open_error(404,ModData,Path,"");
-open_error(enotdir,ModData,Path) ->
-    open_error(404,ModData,Path,
-	       ": A component of the file name is not a directory");
-open_error(emfile,_ModData,Path) ->
-    open_error(500,none,Path,": To many open files");
-open_error({enfile,_},_ModData,Path) ->
-    open_error(500,none,Path,": File table overflow");
-open_error(_Reason,_ModData,Path) ->
-    open_error(500,none,Path,"").
-	    
-open_error(StatusCode,none,Path,Reason) ->
-    {StatusCode,none,?NICE("Can't open "++Path++Reason)};
-open_error(StatusCode,ModData,Path,Reason) ->
-    {StatusCode,ModData#mod.request_uri,?NICE("Can't open "++Path++Reason)}.
 
 get_modification_date(Path)->
     {ok, FileInfo0} = file:read_file_info(Path), 
-    LastModified = case catch httpd_util:rfc1123_date(FileInfo0#file_info.mtime) of
-		       Date when is_list(Date) -> [{last_modified, Date}];
-		       _ -> []
-		   end,
+    LastModified = 
+	case catch httpd_util:rfc1123_date(FileInfo0#file_info.mtime) of
+	    Date when is_list(Date) -> [{last_modified, Date}];
+	    _ -> []
+	end,
     {FileInfo0, LastModified}.

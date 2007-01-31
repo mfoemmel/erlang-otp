@@ -2,7 +2,7 @@
 
 {application, stdlib,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "1.14.2"},
+  {vsn, "1.14.3"},
   {modules, [beam_lib,
 	     c,
 	     calendar,

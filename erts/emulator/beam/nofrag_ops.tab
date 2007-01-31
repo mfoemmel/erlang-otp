@@ -125,6 +125,9 @@ gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => \
 gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => \
 	gen_guard_bif(Fail, I, Bif, Src, Dst)
 
+gc_bif1 Fail I Bif=u$bif:erlang:bitsize/1 Src Dst=d => \
+	gen_guard_bif(Fail, I, Bif, Src, Dst)
+
 gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => \
 	gen_guard_bif(Fail, I, Bif, Src, Dst)
 

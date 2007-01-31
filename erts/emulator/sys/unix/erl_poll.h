@@ -29,6 +29,10 @@
 
 #include "sys.h"
 
+#if 0
+#define ERTS_POLL_COUNT_AVOIDED_WAKEUPS
+#endif
+
 #ifdef ERTS_ENABLE_KERNEL_POLL
 #  if defined(ERTS_KERNEL_POLL_VERSION)
 #    define ERTS_POLL_EXPORT(FUNC) FUNC ## _kp
@@ -217,10 +221,18 @@ typedef struct {
     int batch_updates;
     int concurrent_updates;
     int max_fds;
+#ifdef ERTS_POLL_COUNT_AVOIDED_WAKEUPS
+    long no_avoided_wakeups;
+    long no_avoided_interrupts;
+    long no_interrupt_timed;
+#endif
 } ErtsPollInfo;
 
 void		ERTS_POLL_EXPORT(erts_poll_interrupt)(ErtsPollSet,
 						      int);
+void		ERTS_POLL_EXPORT(erts_poll_interrupt_timed)(ErtsPollSet,
+							    int,
+							    long);
 ErtsPollEvents	ERTS_POLL_EXPORT(erts_poll_control)(ErtsPollSet,
 						    int,
 						    ErtsPollEvents,

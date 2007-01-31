@@ -89,8 +89,23 @@ WDD_TYPEDEF(unsigned long, erts_alc_test, (unsigned long,
 WDD_TYPEDEF(long, driver_binary_get_refc, (ErlDrvBinary *dbp));
 WDD_TYPEDEF(long, driver_binary_inc_refc, (ErlDrvBinary *dbp));
 WDD_TYPEDEF(long, driver_binary_dec_refc, (ErlDrvBinary *dbp));
-
-
+WDD_TYPEDEF(ErlDrvPDL, driver_pdl_create, (ErlDrvPort));
+WDD_TYPEDEF(void, driver_pdl_lock, (ErlDrvPDL));
+WDD_TYPEDEF(void, driver_pdl_unlock, (ErlDrvPDL));
+WDD_TYPEDEF(long, driver_pdl_get_refc, (ErlDrvPDL));
+WDD_TYPEDEF(long, driver_pdl_inc_refc, (ErlDrvPDL));
+WDD_TYPEDEF(long, driver_pdl_dec_refc, (ErlDrvPDL));
+WDD_TYPEDEF(int, driver_system_info, (ErlDrvSysInfo *, size_t));
+WDD_TYPEDEF(int, driver_get_now, (ErlDrvNowData *));
+WDD_TYPEDEF(int, driver_monitor_process, (ErlDrvPort port, 
+					  ErlDrvTermData process, 
+					  ErlDrvMonitor *monitor));
+WDD_TYPEDEF(int, driver_demonitor_process, (ErlDrvPort port,
+					    const ErlDrvMonitor *monitor));
+WDD_TYPEDEF(ErlDrvTermData,  driver_get_monitored_process, 
+	    (ErlDrvPort port, const ErlDrvMonitor *monitor));
+WDD_TYPEDEF(int,  driver_compare_monitors, 
+	    (const ErlDrvMonitor *, const ErlDrvMonitor *));
 
 typedef struct {
     WDD_FTYPE(null_func) *null_func;
@@ -149,6 +164,18 @@ typedef struct {
     WDD_FTYPE(driver_binary_get_refc) *driver_binary_get_refc;
     WDD_FTYPE(driver_binary_inc_refc) *driver_binary_inc_refc;
     WDD_FTYPE(driver_binary_dec_refc) *driver_binary_dec_refc;
+    WDD_FTYPE(driver_pdl_create) *driver_pdl_create;
+    WDD_FTYPE(driver_pdl_lock) *driver_pdl_lock;
+    WDD_FTYPE(driver_pdl_unlock) *driver_pdl_unlock;
+    WDD_FTYPE(driver_pdl_get_refc) *driver_pdl_get_refc;
+    WDD_FTYPE(driver_pdl_inc_refc) *driver_pdl_inc_refc;
+    WDD_FTYPE(driver_pdl_dec_refc) *driver_pdl_dec_refc;
+    WDD_FTYPE(driver_system_info) *driver_system_info;
+    WDD_FTYPE(driver_get_now) *driver_get_now;
+    WDD_FTYPE(driver_monitor_process) *driver_monitor_process;
+    WDD_FTYPE(driver_demonitor_process) *driver_demonitor_process;
+    WDD_FTYPE(driver_get_monitored_process) *driver_get_monitored_process;
+    WDD_FTYPE(driver_compare_monitors) *driver_compare_monitors;
   /* Add new calls here */
 } TWinDynDriverCallbacks;   
 
@@ -213,6 +240,22 @@ extern TWinDynDriverCallbacks WinDynDriverCallbacks;
 #define driver_binary_get_refc (WinDynDriverCallbacks.driver_binary_get_refc)
 #define driver_binary_inc_refc (WinDynDriverCallbacks.driver_binary_inc_refc)
 #define driver_binary_dec_refc (WinDynDriverCallbacks.driver_binary_dec_refc)
+#define driver_pdl_create (WinDynDriverCallbacks.driver_pdl_create)
+#define driver_pdl_lock (WinDynDriverCallbacks.driver_pdl_lock)
+#define driver_pdl_unlock (WinDynDriverCallbacks.driver_pdl_unlock)
+#define driver_pdl_get_refc (WinDynDriverCallbacks.driver_pdl_get_refc)
+#define driver_pdl_inc_refc (WinDynDriverCallbacks.driver_pdl_inc_refc)
+#define driver_pdl_dec_refc (WinDynDriverCallbacks.driver_pdl_dec_refc)
+#define driver_system_info (WinDynDriverCallbacks.driver_system_info)
+#define driver_get_now (WinDynDriverCallbacks.driver_get_now)
+#define driver_monitor_process \
+(WinDynDriverCallbacks.driver_monitor_process)
+#define driver_demonitor_process \
+(WinDynDriverCallbacks.driver_demonitor_process)
+#define driver_get_monitored_process \
+(WinDynDriverCallbacks.driver_get_monitored_process)
+#define driver_compare_monitors \
+(WinDynDriverCallbacks.driver_compare_monitors)
 
 /* The only variable in the interface... */
 #define driver_term_nil (driver_mk_term_nil())
@@ -294,6 +337,18 @@ do {				                        \
 ((W).driver_binary_get_refc) = driver_binary_get_refc;	\
 ((W).driver_binary_inc_refc) = driver_binary_inc_refc;	\
 ((W).driver_binary_dec_refc) = driver_binary_dec_refc;	\
+((W).driver_pdl_create) = driver_pdl_create;		\
+((W).driver_pdl_lock) = driver_pdl_lock;		\
+((W).driver_pdl_unlock) = driver_pdl_unlock;		\
+((W).driver_pdl_get_refc) = driver_pdl_get_refc;	\
+((W).driver_pdl_inc_refc) = driver_pdl_inc_refc;	\
+((W).driver_pdl_dec_refc) = driver_pdl_dec_refc;	\
+((W).driver_system_info) = driver_system_info;		\
+((W).driver_get_now) = driver_get_now;		        \
+((W).driver_monitor_process) = driver_monitor_process;    \
+((W).driver_demonitor_process) = driver_demonitor_process;  \
+((W).driver_get_monitored_process) = driver_get_monitored_process;      \
+((W).driver_compare_monitors) = driver_compare_monitors; \
 } while (0)
 
 

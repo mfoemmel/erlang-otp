@@ -833,7 +833,7 @@ Eterm erts_debug_dump_links_1(Process *p, Eterm pid)
 	    erts_printf("Dumping port links----------------------\n");
 	    erts_dump_links(rport->nlinks,0);
 	    erts_printf("Links dumped----------------------------\n");
-	    erts_smp_io_unlock();
+	    erts_smp_port_unlock(rport);
 	    BIF_RET(am_true);
 	} else {
 	    BIF_ERROR(p,BADARG);

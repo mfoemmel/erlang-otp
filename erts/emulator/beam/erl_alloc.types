@@ -213,6 +213,18 @@ type	DDLL_PROCESS	STANDARD	SYSTEM		ddll_processes
 type	DDLL_HANDLE	STANDARD	SYSTEM		ddll_handle
 type	DDLL_ERRCODES	LONG_LIVED	SYSTEM		ddll_errcodes
 type	DDLL_TMP_BUF	TEMPORARY	SYSTEM		ddll_tmp_buf
+type	PORT_TASK	SHORT_LIVED	SYSTEM		port_task
+type	PORT_TASKQ	SHORT_LIVED	SYSTEM		port_task_queue
+type	MISC_OP_LIST	SHORT_LIVED	SYSTEM		misc_op_list
+type	PORT_NAMES	SHORT_LIVED	SYSTEM		port_names
+type	PORT_DATA_LOCK	STANDARD	SYSTEM		port_data_lock
+
++if smp
+type	PORT_LOCK	STANDARD	SYSTEM		port_lock
+type	DRIVER_LOCK	STANDARD	SYSTEM		driver_lock
+type	XPORTS_LIST	SHORT_LIVED	SYSTEM		extra_port_list
++endif
+
 #
 # Types used for special emulators
 #
@@ -284,8 +296,10 @@ type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
 type	POLL_RES_EVS	LONG_LIVED	SYSTEM		poll_result_events
 type	FD_STATUS	LONG_LIVED	SYSTEM		fd_status
 type	DRV_EV_STATE	LONG_LIVED	SYSTEM		driver_event_state
-type	DRV_EV_D_STATE	STANDARD	SYSTEM		driver_event_data_state
+type	DRV_EV_D_STATE	FIXED_SIZE	SYSTEM		driver_event_data_state
+type	DRV_SEL_D_STATE	FIXED_SIZE	SYSTEM		driver_select_data_state
 type	POLLSET_UPDREQ	SHORT_LIVED	SYSTEM		pollset_update_req
+type	PRT_REP_EXIT	STANDARD	SYSTEM		port_report_exit
 
 +endif
 

@@ -67,29 +67,7 @@ do_head(Info) ->
 		 {content_length, Length}, {code,200}],
 	    {proceed,[{response, {response, Head,  nobody}} | Info#mod.data]};
 	{error, Reason} ->
+	    Status = httpd_file:handle_error(Reason, "access", Info, Path),
 	    {proceed,
-	     [{status, read_file_info_error(Reason, Info, Path)} 
-	      | Info#mod.data]}
+	     [{status, Status} | Info#mod.data]}
     end.
-
-%% read_file_info_error - Handle file info read failure
-%%
-read_file_info_error(eacces,Info,Path) ->
-    read_file_info_error(403,Info,Path,"");
-read_file_info_error(enoent,Info,Path) ->
-    read_file_info_error(404,Info,Path,"");
-read_file_info_error(enotdir,Info,Path) ->
-    read_file_info_error(404,Info,Path,
-			 ": A component of the file name is not a directory");
-read_file_info_error(emfile,_Info,Path) ->
-    read_file_info_error(500,none,Path,": To many open files");
-read_file_info_error({enfile,_},_Info,Path) ->
-    read_file_info_error(500,none,Path,": File table overflow");
-read_file_info_error(_Reason,_Info,Path) ->
-    read_file_info_error(500,none,Path,"").
-
-read_file_info_error(StatusCode,none,Path,Reason) ->
-    {StatusCode,none,?NICE("Can't access "++Path++Reason)};
-read_file_info_error(StatusCode,Info,Path,Reason) ->
-    {StatusCode,Info#mod.request_uri,
-     ?NICE("Can't access "++Path++Reason)}.

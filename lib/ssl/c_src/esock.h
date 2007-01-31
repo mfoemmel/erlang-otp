@@ -101,9 +101,10 @@
 #define ESOCK_WAIT_CONNECT	4
 #define ESOCK_SSL_CONNECT	5
 #define ESOCK_SSL_ACCEPT	6
-#define ESOCK_JOINED		7
-#define ESOCK_SSL_SHUTDOWN	8
-#define ESOCK_DEFUNCT		9
+#define ESOCK_TRANSPORT_ACCEPT  7
+#define ESOCK_JOINED		8
+#define ESOCK_SSL_SHUTDOWN	9
+#define ESOCK_DEFUNCT	       10
 
 #ifdef __WIN32__
     typedef SOCKET FD;
@@ -148,10 +149,12 @@ typedef struct Connection {
     int clean;			/* Clean SSL shutdown initiated */
     int close;			/* Close if set */
     int origin;			/* listen, accept or connect */
+    int encrypted;		/* 1 = SSL encrypted, 0 = normal, unencrypted tcp */
     char *flags;		/* ssl parameters */
     FILE *logfp;		/* connection log file (not used) */
     WriteQueue wq;
     struct Connection* next;
+    const char* errstr; 	/* only used to report errors from ssl_accept_init in SSL_ACCEPT */
 } Connection;
 
 struct _proxy {
@@ -178,10 +181,10 @@ struct _proxy {
 #define ESOCK_LISTEN_REP	8
 #define ESOCK_LISTEN_ERR	9
 
-#define ESOCK_ACCEPT_CMD        10
+#define ESOCK_TRANSPORT_ACCEPT_CMD 10
 #define ESOCK_NOACCEPT_CMD      11
-#define ESOCK_ACCEPT_REP	12
-#define ESOCK_ACCEPT_ERR	13
+#define ESOCK_TRANSPORT_ACCEPT_REP 12
+#define ESOCK_TRANSPORT_ACCEPT_ERR 13
 
 #define ESOCK_FROMNET_CLOSE_REP 14
 
@@ -217,6 +220,10 @@ struct _proxy {
 #define ESOCK_GETCONNINFO_CMD   42
 #define ESOCK_GETCONNINFO_REP   43
 #define ESOCK_GETCONNINFO_ERR   44
+
+#define ESOCK_SSL_ACCEPT_CMD     45
+#define ESOCK_SSL_ACCEPT_REP     46
+#define ESOCK_SSL_ACCEPT_ERR     47
 
 /* Option codes  for ESOCK_SET_SOCKOPT_CMD */
 #define ESOCK_SET_TCP_NODELAY	1

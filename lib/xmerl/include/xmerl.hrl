@@ -160,7 +160,8 @@
 	  fetch_path=[], % [string()] List with additional, user
                          % defined, paths
 	  filename=file_name_unknown,
-	  validation = false,
+	  validation = off, %% off (default) | dtd | schema (true, false are obsolete)
+	  schemaLocation = [],
 	  space = preserve,
 	  event_fun,
 	  hook_fun,

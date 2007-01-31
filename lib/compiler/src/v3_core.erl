@@ -358,6 +358,8 @@ expr({cons,L,H0,T0}, St0) ->
     {#c_cons{anno=lineno_anno(L, St2),hd=H1,tl=T1},Hps ++ Tps,St2};
 expr({lc,L,E,Qs}, St) ->
     lc_tq(L, E, Qs, {nil,L}, St);
+expr({bc,L,E,Qs}, St) ->
+    bc_tq(L, E, Qs, {nil,L}, St);
 expr({tuple,L,Es0}, St0) ->
     {Es1,Eps,St1} = safe_list(Es0, St0),
     {#c_tuple{anno=lineno_anno(L, St1),es=Es1},Eps,St1};
@@ -673,6 +675,49 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
 				   op=#c_fname{anno=LA,id=Name,arity=1},
 				   args=[Gc]}]},
      [],St10};
+lc_tq(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
+  {Gs,Qs1} =  splitwith(fun is_guard_test/1, Qs0),
+  {Name,St1} = new_fun_name("blc", St0),
+  {Tname,St2} = new_var_name(St1),
+  LA = [Line],
+  LAnno = #a{anno=LA},
+  HeadBinPattern = pattern(P,St2),
+  #c_binary{segments=Ps} = HeadBinPattern,
+  {EPs,St3} = emasculate_semgments(Ps,St2),
+  Tail = #c_var{anno=LA,name=Tname},
+  TailSegment = #c_bitstr{val=Tail,size=core_lib:make_literal(all),
+			  unit=core_lib:make_literal(1),
+			  type=core_lib:make_literal(binary),
+			  flags=core_lib:make_literal([big,unsigned])},
+  Pattern = HeadBinPattern#c_binary{segments=Ps ++ [TailSegment]},
+   EPattern = HeadBinPattern#c_binary{segments=EPs ++ [TailSegment]},
+  {Arg,St4} = new_var(St3),
+  {Guardc,St5} = lc_guard_tests(Gs, St4),	%These are always flat!
+  NewMore = {call,Lg,{atom,Lg,Name},[{var,Lg,Tname}]},
+  {Bc,Bps,St6} = lc_tq(Line, E, Qs1, NewMore, St5),
+  {Mc,Mps,St7} = expr(More, St6),
+  {Gc,Gps,St10} = safe(G, St7),		%Will be a function argument!
+  Fc = fail_clause([Arg], #c_tuple{anno=LA,
+				   es=[#c_atom{val=function_clause},Arg]}),
+  Cs = [#iclause{anno=#a{anno=[compiler_generated|LA]},
+		 pats=[Pattern],
+		 guard=Guardc,
+		 body=Bps ++ [Bc]},
+	#iclause{anno=#a{anno=[compiler_generated|LA]},
+		 pats=[EPattern],
+		 guard=[],
+		 body=[#iapply{anno=LAnno,
+			       op=#c_fname{anno=LA,id=Name,arity=1},
+			       args=[Tail]}]},
+	#iclause{anno=LAnno,
+		 pats=[#c_binary{anno=LA, segments=[TailSegment]}],guard=[],
+		 body=Mps ++ [Mc]}],
+  Fun = #ifun{anno=LAnno,id=[],vars=[Arg],clauses=Cs,fc=Fc},
+  {#iletrec{anno=LAnno,defs=[{Name,Fun}],
+	    body=Gps ++ [#iapply{anno=LAnno,
+				 op=#c_fname{anno=LA,id=Name,arity=1},
+				 args=[Gc]}]},
+   [],St10};
 lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
     %% Special case sequences guard tests.
     LA = [Line],
@@ -729,6 +774,190 @@ lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
 lc_tq(Line, E, [], More, St) ->
     expr({cons,Line,E,More}, St).
 
+%% bc_tq(Line, Exp, [Qualifier], More, State) -> {LetRec,[PreExp],State}.
+%%  This TQ from Gustafsson ERLANG'05.  
+%%  This gets a bit messy as we must transform all directly here.  We
+%%  recognise guard tests and try to fold them together and join to a
+%%  preceding generators, this should give us better and more compact
+%%  code.
+%%  More could be transformed before calling bc_tq.
+
+bc_tq(Line, Exp, Qualifiers, More, St0) ->
+    {LetRec,PreExp,St1} = bc_tq1(Line, Exp, Qualifiers, More, St0),
+    LineAnno = lineno_anno(Line, St1),
+    {Arg,St2} = new_var(St1),
+    {#icall{anno=#a{anno=LineAnno},
+	    module=#c_atom{anno=LineAnno,val=erlang},
+	    name=#c_atom{anno=LineAnno,val=list_to_binary},
+	    args=[Arg]}, 
+      PreExp++[#iset{anno=#a{anno=LineAnno},var=Arg,arg=LetRec}], St2}.
+
+bc_tq1(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
+    {Gs,Qs1} =  splitwith(fun is_guard_test/1, Qs0),
+    {Name,St1} = new_fun_name("lbc", St0),
+    {Head,St2} = new_var(St1),
+    {Tname,St3} = new_var_name(St2),
+    LA = [Line],
+    LAnno = #a{anno=LA},
+    Tail = #c_var{anno=LA,name=Tname},
+    {Arg,St4} = new_var(St3),
+    NewMore = {call,Lg,{atom,Lg,Name},[{var,Lg,Tname}]},
+    {Guardc,St5} = lc_guard_tests(Gs, St4),	%These are always flat!
+    {Lc,Lps,St6} = bc_tq1(Line, E, Qs1, NewMore, St5),
+    {Mc,Mps,St7} = expr(More, St6),
+    {Nc,Nps,St8} = expr(NewMore, St7),
+    case catch pattern(P,St8) of
+	{'EXIT',_}=Exit ->
+	    St9 = St8,
+	    Pc = nomatch,
+	    exit(Exit);		%Propagate error
+	nomatch ->
+	    St9 = add_warning(Line, nomatch, St8),
+	    Pc = nomatch;
+	Pc ->
+	    St9 = St8
+    end,
+    {Gc,Gps,St10} = safe(G, St9),		%Will be a function argument!
+    Fc = fail_clause([Arg], #c_tuple{anno=LA,
+				     es=[#c_atom{val=function_clause},Arg]}),
+  case {Guardc, Pc} of
+    {[], #c_var{}} ->
+      Cs0 = [#iclause{anno=LAnno,
+		      pats=[#c_nil{anno=LA}],guard=[],
+		      body=Mps ++ [Mc]}];
+    _ ->
+      Cs0 = [#iclause{anno=#a{anno=[compiler_generated|LA]},
+		      pats=[#c_cons{anno=LA,hd=Head,tl=Tail}],
+		      guard=[],
+		      body=Nps ++ [Nc]},
+	     #iclause{anno=LAnno,
+		      pats=[#c_nil{anno=LA}],guard=[],
+		      body=Mps ++ [Mc]}]
+  end,
+  Cs = case Pc of
+	 nomatch -> Cs0;
+	 _ ->
+	   [#iclause{anno=LAnno,
+		     pats=[#c_cons{anno=LA,hd=Pc,tl=Tail}],
+		     guard=Guardc,
+		     body=Lps ++ [Lc]}|Cs0]
+       end,
+  Fun = #ifun{anno=LAnno,id=[],vars=[Arg],clauses=Cs,fc=Fc},
+  {#iletrec{anno=LAnno,defs=[{Name,Fun}],
+	    body=Gps ++ [#iapply{anno=LAnno,
+				 op=#c_fname{anno=LA,id=Name,arity=1},
+				 args=[Gc]}]},
+   [],St10};   
+bc_tq1(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
+  {Gs,Qs1} =  splitwith(fun is_guard_test/1, Qs0),
+  {Name,St1} = new_fun_name("bc", St0),
+  {Tname,St2} = new_var_name(St1),
+  LA = [Line],
+  LAnno = #a{anno=LA},
+  HeadBinPattern = pattern(P,St2),
+  #c_binary{segments=Ps} = HeadBinPattern,
+  {EPs,St3} = emasculate_semgments(Ps,St2),
+  Tail = #c_var{anno=LA,name=Tname},
+  TailSegment = #c_bitstr{val=Tail,size=core_lib:make_literal(all),
+			  unit=core_lib:make_literal(1),
+			  type=core_lib:make_literal(binary),
+			  flags=core_lib:make_literal([big,unsigned])},
+  Pattern = HeadBinPattern#c_binary{segments=Ps ++ [TailSegment]},
+  EPattern = HeadBinPattern#c_binary{segments=EPs ++ [TailSegment]},
+  {Arg,St4} = new_var(St3),
+  {Guardc,St5} = lc_guard_tests(Gs, St4),	%These are always flat!
+  NewMore = {call,Lg,{atom,Lg,Name},[{var,Lg,Tname}]},
+  {Bc,Bps,St6} = bc_tq1(Line, E, Qs1, NewMore, St5),
+  {Mc,Mps,St7} = expr(More, St6),
+  {Gc,Gps,St10} = safe(G, St7),		%Will be a function argument!
+  Fc = fail_clause([Arg], #c_tuple{anno=LA,
+				   es=[#c_atom{val=function_clause},Arg]}),
+  Cs = [#iclause{anno=#a{anno=[compiler_generated|LA]},
+		 pats=[Pattern],
+		 guard=Guardc,
+		 body=Bps ++ [Bc]},
+	#iclause{anno=#a{anno=[compiler_generated|LA]},
+		 pats=[EPattern],
+		 guard=[],
+		 body=[#iapply{anno=LAnno,
+			       op=#c_fname{anno=LA,id=Name,arity=1},
+			       args=[Tail]}]},
+	#iclause{anno=LAnno,
+		 pats=[#c_binary{anno=LA, segments=[TailSegment]}],guard=[],
+		 body=Mps ++ [Mc]}],
+  Fun = #ifun{anno=LAnno,id=[],vars=[Arg],clauses=Cs,fc=Fc},
+  {#iletrec{anno=LAnno,defs=[{Name,Fun}],
+	    body=Gps ++ [#iapply{anno=LAnno,
+				 op=#c_fname{anno=LA,id=Name,arity=1},
+				 args=[Gc]}]},
+   [],St10};
+bc_tq1(Line, E, [Fil0|Qs0], More, St0) ->
+    %% Special case sequences guard tests.
+    LA = [Line],
+    LAnno = #a{anno=LA},
+    case is_guard_test(Fil0) of
+	true ->
+	    {Gs0,Qs1} = splitwith(fun is_guard_test/1, Qs0),
+	    {Bc,Bps,St1} = bc_tq1(Line, E, Qs1, More, St0),
+	    {Mc,Mps,St2} = expr(More, St1),
+	    {Gs,St3} = lc_guard_tests([Fil0|Gs0], St2), %These are always flat!
+	    {#icase{anno=LAnno,
+		    args=[],
+		    clauses=[#iclause{anno=LAnno,pats=[],
+				      guard=Gs,body=Bps ++ [Bc]}],
+		    fc=#iclause{anno=LAnno,pats=[],guard=[],body=Mps ++ [Mc]}},
+	     [],St3};
+	false ->
+	    {Bc,Bps,St1} = bc_tq1(Line, E, Qs0, More, St0),
+	    {Mc,Mps,St2} = expr(More, St1),
+	    {Fpat,St3} = new_var(St2),
+	    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=case_clause},Fpat]}),
+	    %% Do a novars little optimisation here.
+	    case Fil0 of
+		{op,_,'not',Fil1} ->
+		    {Filc,Fps,St4} = novars(Fil1, St3),
+		    {#icase{anno=LAnno,
+			    args=[Filc],
+			    clauses=[#iclause{anno=LAnno,
+					      pats=[#c_atom{anno=LA,val=true}],
+					      guard=[],
+					      body=Mps ++ [Mc]},
+				     #iclause{anno=LAnno,
+					      pats=[#c_atom{anno=LA,val=false}],
+					      guard=[],
+					      body=Bps ++ [Bc]}],
+			    fc=Fc},
+		     Fps,St4};
+		_Other ->
+		    {Filc,Fps,St4} = novars(Fil0, St3),
+		    {#icase{anno=LAnno,
+			    args=[Filc],
+			    clauses=[#iclause{anno=LAnno,
+					      pats=[#c_atom{anno=LA,val=true}],
+					      guard=[],
+					      body=Bps ++ [Bc]},
+				     #iclause{anno=LAnno,
+					      pats=[#c_atom{anno=LA,val=false}],
+					      guard=[],
+					      body=Mps ++ [Mc]}],
+			    fc=Fc},
+		     Fps,St4}
+	    end
+    end;
+bc_tq1(Line, Bin = {bin,_Line,_Elements} , [], More, St) ->
+  expr({cons,Line,Bin,More}, St).
+
+emasculate_semgments(Segs,St) ->
+  emasculate_semgments(Segs,St,[]).
+
+emasculate_semgments([#c_bitstr{val=#c_var{}}=B|Rest],St,Acc) ->
+  emasculate_semgments(Rest,St,[B|Acc]);
+emasculate_semgments([B|Rest],St0,Acc) ->
+  {Var,St1} = new_var(St0),
+  emasculate_semgments(Rest,St1,[B#c_bitstr{val=Var}|Acc]);
+emasculate_semgments([],St,Acc) ->
+  {lists:reverse(Acc),St}.
+
 lc_guard_tests([], St) -> {[],St};
 lc_guard_tests(Gs0, St) ->
     Gs = guard_tests(Gs0),
@@ -751,7 +980,6 @@ novars(E0, St0) ->
 
 force_novars(#iapply{}=App, St) -> {App,[],St};
 force_novars(#icall{}=Call, St) -> {Call,[],St};
-force_novars(#iprimop{}=Prim, St) -> {Prim,[],St};
 force_novars(#ifun{}=Fun, St) -> {Fun,[],St};	%These are novars too
 force_novars(#ibinary{}=Bin, St) -> {Bin,[],St};
 force_novars(Ce, St) ->

@@ -35,6 +35,7 @@
 -record(cmov_r, {dst, src, reg, rcc}).
 -record(alu, {dst, src1, op, src2}).
 -record(alu_cc, {dst, src1, op, src2}).
+-record(rdy, {dst}).
 -record(sethi, {dst, const}).
 -record(load, {dst, type, src, off}).
 -record(store, {dst, off, type, src}).

@@ -124,13 +124,12 @@
 %%    <dt>`call {[dst], fun, [arg], type, continuation, fail,
 %%               in_guard}'</dt>
 %%    <dd>
-%%        Where `type' is one of {`local', `remote',
-%%        `primop'} and `in_guard' is either `true' or `false'.</dd>
+%%        Where `type' is one of {`local', `remote', `primop'}
+%%        and `in_guard' is either `true' or `false'.</dd>
 %%    <dt>`enter {fun, [arg], type}'</dt>
 %%    <dd>
-%%        Where `type' is one of {`local', `remote',
-%%        `primop'} and `in_guard' is either
-%%        `true' or `false'.</dd>
+%%        Where `type' is one of {`local', `remote', `primop'}
+%%         and `in_guard' is either `true' or `false'.</dd>
 %%    <dt>`return {[var]}'</dt>
 %%    <dd>
 %%        <strong>WARNING:</strong> Multiple return values are yet not
@@ -164,7 +163,7 @@
 %%      Classification of primops should be like this:
 %%      <ul>
 %%      <li> `erlang:exit/1, erlang:throw/1, erlang:error/1,
-%%           erlang:error/2, erlang:fault/1',
+%%            erlang:error/2, erlang:fault/1',
 %%           and `erlang:fault/2' should use the
 %%           {@link fail(). fail-instruction} in Icode.</li>
 %%      <li> Calls or tail-recursive calls to BIFs, operators, or internal
@@ -183,7 +182,7 @@
 %%    mktuple                    - [Element1, Element2, ..., ElementN]
 %%    call_fun                   - [BoundArg1, ..., BoundArgN, Fun]
 %%    enter_fun                  - [BoundArg1, ..., BoundArgN, Fun]
-%%    {mkfun,MFA,MagicNum,Index} - [FreeVar1, FreeVar2, ..., FreeVarN]
+%%    #mkfun{}                   - [FreeVar1, FreeVar2, ..., FreeVarN]
 %%
 %%  Binaries:
 %%    bs_init
@@ -191,17 +190,16 @@
 %%    bs_final
 %%
 %%  Selectors:
-%%    element              - [Index, Tuple]
-%%    unsafe_hd            - [List]
-%%    unsafe_tl            - [List]
-%%    {unsafe_element, N}  - [Tuple], N:integer
-%%    {unsafe_update_element, N}  - [Tuple, Val], N:integer
-%%    {closure_element, N} - [Fun], N:integer
+%%    element                    - [Index, Tuple]
+%%    unsafe_hd                  - [List]
+%%    unsafe_tl                  - [List]
+%%    #unsafe_element{}          - [Tuple]
+%%    #unsafe_update_element{}   - [Tuple, Val]
+%%    #closure_element{}         - [Fun]
 %%
 %%  Arithmetic:       [Arg1, Arg2]
-%%    '+','-','*','/','div','rem',
-%%    'band','bor','bxor','bnot'
-%%    'bsl','bsr',
+%%    '+', '-', '*', '/', 'div', 'rem',
+%%    'band', 'bor', 'bxor', 'bnot', 'bsl', 'bsr'
 %%
 %%  Receive:         
 %%    check_get_msg - []
@@ -216,19 +214,18 @@
 %% <h4>Guardops: (primops that can be used in guards and can fail)</h4>
 %%  <pre>
 %%  Selectors:
-%%    element - [Index, Tuple]
-%%    unsafe_hd -[List]
-%%    unsafe_tl -[List]
-%%    {unsafe_element, N} - [Tuple], N:integer
+%%    unsafe_hd         - [List]
+%%    unsafe_tl         - [List]
+%%    #element{}        - [Index, Tuple]
+%%    #unsafe_element{} - [Tuple]
 %%
 %%  Arithmetic:       [Arg1, Arg2]
-%%    '+','-','*','/','div','rem',
-%%   'band','bor','bxor','bnot'
-%%   'bsl','bsr',
+%%    '+', '-', '*', '/', 'div', 'rem',
+%%   'band', 'bor', 'bxor', 'bnot', 'bsl', 'bsr',
 %%    fix_add, fix_sub               %% Do these exist?
 %%
 %%  Concurrency:
-%%    {erlang,self,0}          - [] 
+%%    {erlang,self,0}          - []
 %% </pre>
 %%
 %%
@@ -267,23 +264,24 @@
 %%=====================================================================
 
 -module(hipe_icode).
+
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
 
 %% @type icode(Fun, Params, IsClosure, IsLeaf, Code, Data, VarRange,LabelRange)
-%%           Fun = mfa()
-%%           Params = [var()]
-%%           IsClosure = bool()
-%%           IsLeaf = bool()
-%%           Code = [icode_instruction()]
-%%           Data = data()
-%%           VarRange = {integer(),integer()}
-%%           LabelRange = {integer(),integer()}
+%%    Fun = mfa()
+%%    Params = [var()]
+%%    IsClosure = bool()
+%%    IsLeaf = bool()
+%%    Code = [icode_instruction()]
+%%    Data = data()
+%%    VarRange = {integer(),integer()}
+%%    LabelRange = {integer(),integer()}
 %%
 %% @type icode_instruction(I) 
-%%   I = if() | switch_val() | switch_tuple_arity() | type() | goto() | label()
-%%        | move() | fmove() | phi() | call() | enter() | return() 
-%%        | begin_try() | end_try() | begin_handler() | fail() | comment()
+%%    I = if() | switch_val() | switch_tuple_arity() | type() | goto()
+%%      | label() | move() | fmove() | phi() | call() | enter() | return() 
+%%      | begin_try() | end_try() | begin_handler() | fail() | comment()
 %%
 %% @type if(Cond, Args, TrueLabel, FalseLabel)
 %%    Cond = cond()
@@ -311,42 +309,43 @@
 %%
 %% @type goto(Label) Label = label_name()
 %%
-%% @type label(Name) Name=label_name()
+%% @type label(Name) Name = label_name()
 %%
 %% @type move(Dst, Src) Dst = var() Src = arg()
 %%
 %% @type fmove(Dst, Src) Dst = fvar() Src = farg()
 %%
 %% @type phi(Dst, Id, Arglist) 
-%%           Dst = var()|fvar()
-%%           Id = var()|fvar()
-%%           Arglist=[{Pred, Src}]
-%%           Pred = label_name()
-%%           Var = var | fvar() 
+%%    Dst = var() | fvar()
+%%    Id = var() | fvar()
+%%    Arglist = [{Pred, Src}]
+%%    Pred = label_name()
+%%    Src = var() | fvar() 
 %%
 %% @type call(Dst, Fun, Arg, Type, Continuation, InGuard)
-%%                   Dst = [var()]
-%%                   Fun = mfa() | primop() | closure() 
-%%                   Arg = [var()]
-%%                   Type = call_type()
-%%                   Continuation = [] | label_name()
-%%                   Fail = []  | label_name()
-%%                   InGuard = bool()
+%%    Dst = [var()]
+%%    Fun = mfa() | primop() | closure() 
+%%    Arg = [var()]
+%%    Type = call_type()
+%%    Continuation = [] | label_name()
+%%    Fail = [] | label_name()
+%%    InGuard = bool()
 %%
 %% @type enter(Fun, Arg, Type)
-%%                   Fun = mfa() | primop() | closure() 
-%%                   Arg = [var()] 
-%%                   Type = call_type()
+%%    Fun = mfa() | primop() | closure() 
+%%    Arg = [var()] 
+%%    Type = call_type()
 %%
 %% @type return (Vars) Vars = [var()]
 %%
 %% @type begin_try(Fail, Successor) 
-%%           Fail = label_name() Successor = label_name()
+%%    Fail = label_name()
+%%    Successor = label_name()
 %%
 %% @type end_try()
 %%
 %% @type begin_handler(Dst) 
-%%           Dst = [var()]
+%%    Dst = [var()]
 %%
 %% @type fail(Args,Class,Label)
 %%    Args = [var()]
@@ -380,12 +379,12 @@
 %%    | binary
 %%    | function
 %%
-%% @type mfa(Mod,Fun,Arity) = {atom(),atom(),integer()}
+%% @type mfa(Mod,Fun,Arity) = {atom(),atom(),byte()}
 
 %% @type arg() = var() | const()
 %% @type farg() = fvar() | float()
-%% @type var(Name) Name=integer()
-%% @type fvar(Name) Name=integer()
+%% @type var(Name) Name = integer()
+%% @type fvar(Name) Name = integer()
 %% @type label_name(Name) Name = integer()
 %% @type symbol(S) = atom() | number()
 %% @type const(C)  C = const_fun() | immediate()
@@ -515,7 +514,7 @@
 	 mk_new_label/0,         %% mk_new_label()
 	 mk_comment/1,           %% mk_comment(Text)
 	 mk_const/1,             %% mk_const(Const)
-	 %% mk_const_fun/4,	 %% mk_const_fun(MFA,U,I,Args)
+	 %% mk_const_fun/4,	 %% mk_const_fun(MFA, U, I, Args)
 	 mk_var/1,               %% mk_var(Id)
 	 annotate_var/2,         %% annotate_var(Var, Type)
 	 unannotate_var/1,	 %% unannotate_var(Var)
@@ -607,7 +606,7 @@
 	 is_branch/1
 	]).
 
--export([highest_var/1,highest_label/1]).
+-export([highest_var/1, highest_label/1]).
 
 %%---------------------------------------------------------------------
 %% 
@@ -618,7 +617,7 @@
 %% @spec mk_icode(Fun::mfa(), Params::[var()], Closure::bool(), 
 %%                Leaf::bool(), Code::[icode_instruction()],
 %%                VarRange::{integer(),integer()}, 
-%%                LabelRange::{integer(),integer()}) -> icode()
+%%                LabelRange::{integer(),integer()}) -> #icode{}
 %%
 mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
@@ -627,16 +626,17 @@ mk_icode(Fun, Params, Closure, Leaf, Code, VarRange, LabelRange) ->
 	 data=hipe_consttab:new(),
 	 var_range=VarRange,
 	 label_range=LabelRange}.
+
 %% @spec mk_icode(Fun::mfa(), Params::[var()], Closure::bool(), Leaf::bool(), 
 %%                Code::[icode_instruction()],  Data::data(),
 %%                VarRange::{integer(),integer()}, 
-%%                LabelRange::{integer(),integer()}) -> icode()
+%%                LabelRange::{integer(),integer()}) -> #icode{}
 %%
 mk_icode(Fun, Params, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
   #icode{'fun'=Fun, params=Params, code=Code,
 	 data=Data, is_closure=Closure, is_leaf=Leaf,
-	 var_range=VarRange,
-	 label_range=LabelRange}.
+	 var_range=VarRange, label_range=LabelRange}.
+
 mk_typed_icode(Fun, Params, Closure, Leaf, Code, VarRange, 
 	       LabelRange, ArgType) ->
   #icode{'fun'=Fun, 
@@ -648,27 +648,28 @@ mk_typed_icode(Fun, Params, Closure, Leaf, Code, VarRange,
 	 var_range=VarRange,
 	 label_range=LabelRange,
 	 info=[{arg_type, ArgType}]}.
-%% @spec icode_fun(I::icode()) -> mfa()
+
+%% @spec icode_fun(I::#icode{}) -> mfa()
 icode_fun(#icode{'fun'=MFA}) -> MFA.
-%% @spec icode_params(I::icode()) -> [var()]
+%% @spec icode_params(I::#icode{}) -> [var()]
 icode_params(#icode{params=Params}) -> Params.
-%% @spec icode_params_update(I::icode(),[var()]) -> icode()
+%% @spec icode_params_update(I::#icode{}, [var()]) -> #icode{}
 icode_params_update(Icode, Params) -> 
   Icode#icode{params=Params}.
-%% @spec icode_is_closure(I::icode()) -> bool()
+%% @spec icode_is_closure(I::#icode{}) -> bool()
 icode_is_closure(#icode{is_closure=Closure}) -> Closure.
-%% @spec icode_is_leaf(I::icode()) -> bool()
+%% @spec icode_is_leaf(I::#icode{}) -> bool()
 icode_is_leaf(#icode{is_leaf=Leaf}) -> Leaf.
-%% @spec icode_code(I::icode()) -> [icode_instruction()]
+%% @spec icode_code(I::#icode{}) -> [icode_instruction()]
 icode_code(#icode{code=Code}) -> Code.
-%% @spec icode_code_update(I::icode(), [icode_instruction()]) -> icode()
+%% @spec icode_code_update(I::#icode{}, [icode_instruction()]) -> #icode{}
 icode_code_update(Icode, NewCode) -> 
   Vmax = highest_var(NewCode),
   Lmax = highest_label(NewCode),
   Icode#icode{code=NewCode, var_range={0,Vmax}, label_range={0,Lmax}}.
-%% @spec icode_data(I::icode()) -> data()
+%% @spec icode_data(I::#icode{}) -> data()
 icode_data(#icode{data=Data}) -> Data.
-%% %% @spec icode_data_update(I::icode(),data()) -> icode()
+%% %% @spec icode_data_update(I::#icode{}, data()) -> #icode{}
 %% icode_data_update(Icode, NewData) -> Icode#icode{data=NewData}.
 icode_var_range(#icode{var_range=VarRange}) -> VarRange.
 icode_label_range(#icode{label_range=LabelRange}) -> LabelRange.
@@ -677,7 +678,6 @@ icode_info_update(Icode, Info) -> Icode#icode{info=Info}.
 icode_closure_arity_update(Icode, Arity) -> Icode#icode{closure_arity=Arity}.
 icode_closure_arity(#icode{closure_arity=Arity}) -> Arity.
   
-
 
 %% ____________________________________________________________________
 %% Instructions
@@ -739,7 +739,7 @@ switch_tuple_arity_cases_update(Cond, NewCases) ->
 
 mk_type(X, Type, TrueLbl, FalseLbl) -> 
   #type{type=Type, args=X, true_label=TrueLbl, false_label=FalseLbl, p=0.5}.
-mk_type(X, Type, TrueLbl, FalseLbl, P) -> 
+mk_type(X, Type, TrueLbl, FalseLbl, P) ->
   #type{type=Type, args=X, true_label=TrueLbl, false_label=FalseLbl, p=P}.
 type_type(#type{type=Type}) -> Type.
 type_args(#type{args=Args}) -> Args.
@@ -768,7 +768,6 @@ return_vars(#return{vars=Vars}) -> Vars.
 is_return(#return{}) -> true;
 is_return(_) -> false.
   
-
 %%
 %% fail
 %%
@@ -816,8 +815,8 @@ phi_arglist(#phi{arglist=ArgList}) -> ArgList.
 phi_args(P) -> [X || {_,X} <- phi_arglist(P)].
 phi_arg(P, Pred) -> 
   case lists:keysearch(Pred, 1, phi_arglist(P)) of
-    false -> exit({'No such predecessor to phi', {Pred, P}});
-    {value, {_, Var}} -> Var
+    {value, {_, Var}} -> Var;
+    false -> exit({'No such predecessor to phi', {Pred, P}})
   end.
 is_phi(#phi{}) -> true;
 is_phi(_) -> false.
@@ -871,7 +870,8 @@ op_type(Fun) ->
     false -> primop
   end.
 
-is_mfa({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 -> true;
+is_mfa({M,F,A}) when is_atom(M), is_atom(F), 
+		     is_integer(A), 0 =< A, A =< 255 -> true;
 is_mfa(_) -> false.
 
 
@@ -903,9 +903,8 @@ mk_call(DstList, M, F, ArgList, Type, Continuation, Fail, Guard)
 %% generating any additional exception information - it isn't needed.
 %%
 make_call(DstList, Fun, ArgList, Type, Continuation, Fail, InGuard) ->
-  #call{dstlist=DstList, 'fun'=Fun, args=ArgList,
-	type=Type, continuation=Continuation, fail_label=Fail,
-	in_guard=InGuard}.
+  #call{dstlist=DstList, 'fun'=Fun, args=ArgList, type=Type,
+	continuation=Continuation, fail_label=Fail, in_guard=InGuard}.
 call_dstlist(#call{dstlist=DstList}) -> DstList.
 call_dstlist_update(C,Dest) -> C#call{dstlist=Dest}.
 call_type(#call{type=Type}) -> Type.
@@ -930,9 +929,9 @@ call_set_continuation(I, Continuation) ->
 call_set_fail_label(I=#call{}, Fail) ->
   case Fail of
     [] ->
-      I#call{fail_label = Fail, in_guard=false};
+      I#call{fail_label=Fail, in_guard=false};
     _  ->
-      I#call{fail_label = Fail}
+      I#call{fail_label=Fail}
   end.
 is_call(#call{}) -> true;
 is_call(_) -> false.
@@ -1000,7 +999,7 @@ is_begin_handler(_) -> false.
 %% label
 %%
 
-mk_label(Name) -> #label{name=Name}.
+mk_label(Name) when is_integer(Name) -> #label{name=Name}.
 label_name(#label{name=Name}) -> Name.
 is_label(#label{}) ->true;
 is_label(_) -> false.
@@ -1009,7 +1008,7 @@ is_label(_) -> false.
 %% comment
 %%
 
-%% @spec mk_comment(Txt::term()) -> comment()
+%% @spec mk_comment(Txt::term()) -> #comment{}
 %% @doc If `Txt' is a list of characters (possibly deep), it will be
 %% printed as a string; otherwise, `Txt' will be printed as a term.
 mk_comment(Txt) -> #comment{text=Txt}.
@@ -1104,7 +1103,7 @@ fmove_src(#fmove{src=Src}) -> Src.
 uses(Instr) ->
   remove_constants(args(Instr)).
 
-%% @spec args(I::icode_instruction()) -> [var()]
+%% @spec args(icode_instruction()) -> [var()]
 args(I) ->
   case I of
     #'if'{} -> if_args(I);
@@ -1118,13 +1117,12 @@ args(I) ->
     #return{} -> return_vars(I);
     #fmove{} -> [fmove_src(I)];
     #phi{} -> phi_args(I);
-    %%    #goto{} -> [];
-    %%    #begin_try{} -> [];
-    %%    #begin_handler{} -> [];
-    %%    #end_try{} -> [];
-    %%    #comment{} -> [];
-    %%    #label{} -> []
-    _ -> []
+    #goto{} -> [];
+    #begin_try{} -> [];
+    #begin_handler{} -> [];
+    #end_try{} -> [];
+    #comment{} -> [];
+    #label{} -> []
   end.
 
 defines(I) ->
@@ -1134,19 +1132,18 @@ defines(I) ->
     #call{} -> remove_constants(call_dstlist(I));
     #begin_handler{} -> remove_constants(begin_handler_dstlist(I));
     #phi{} -> remove_constants([phi_dst(I)]);
-    %%    #'if'{} -> [];
-    %%    #switch_val{} -> [];
-    %%    #switch_tuple_arity{} -> [];
-    %%    #type{} -> [];
-    %%    #goto{} -> [];
-    %%    #fail{} -> [];
-    %%    #enter{} -> [];
-    %%    #return{} -> [];
-    %%    #begin_try{} -> [];
-    %%    #end_try{} -> [];
-    %%    #comment{} -> [];
-    %%    #label{} -> []
-    _ -> []
+    #'if'{} -> [];
+    #switch_val{} -> [];
+    #switch_tuple_arity{} -> [];
+    #type{} -> [];
+    #goto{} -> [];
+    #fail{} -> [];
+    #enter{} -> [];
+    #return{} -> [];
+    #begin_try{} -> [];
+    #end_try{} -> [];
+    #comment{} -> [];
+    #label{} -> []
   end.
 
 
@@ -1463,7 +1460,7 @@ mk_moves([X|Xs], [Y|Ys]) ->
 %% mk_elements(_, []) -> 
 %%   [];
 %% mk_elements(Tuple, [X|Xs]) ->
-%%   [mk_primop([X], {unsafe_element, length(Xs)+1}, [Tuple]) | 
+%%   [mk_primop([X], #unsafe_element{index=length(Xs)+1}, [Tuple]) | 
 %%    mk_elements(Tuple, Xs)].
 
 %%
@@ -1486,10 +1483,12 @@ no_comments([I|Xs]) ->
 %% @spec is_safe(icode_instruction()) -> bool()
 %%
 %% @doc True if an Icode instruction is safe (can be removed if the
-%% result is not used).
+%% result is not used). Note that pure control flow instructions
+%% cannot be reguarded as safe, as they are not defining anything.
 
 is_safe(Instr) ->
   case Instr of
+    %% Instructions that are safe, or might be safe to remove.
     #move{} -> true;
     #fmove{} -> true;
     #phi{} -> true;
@@ -1501,7 +1500,22 @@ is_safe(Instr) ->
 	Op ->
 	  hipe_icode_primops:is_safe(Op)
       end;
-    _ -> false
+    %% Control flow instructions.
+    #'if'{} -> false;
+    #switch_val{} -> false;
+    #switch_tuple_arity{} -> false;
+    #type{} -> false;
+    #goto{} -> false;
+    #label{} -> false;
+    %% Returning instructions without defines.
+    #return{} -> false;
+    #fail{} -> false;
+    #enter{} -> false;
+    %% Internal auxilary instructions that should not be removed
+    %% unless you really know what you are doing.
+    #comment{} -> false;
+    #begin_try{} -> false;
+    #end_try{} -> false
   end.
 
 %%-----------------------------------------------------------------------
@@ -1512,7 +1526,7 @@ highest_var(Code) ->
 highest_var([I|Is], Max) ->
   Defs = defines(I),
   Uses = uses(I),
-  highest_var(Is, new_max(Defs++Uses,Max));
+  highest_var(Is, new_max(Defs++Uses, Max));
 highest_var([], Max) ->
   Max.
 
@@ -1534,7 +1548,7 @@ new_max([V|Vs], Max) ->
      true ->
       new_max(Vs, Max)
   end;
-new_max([], Max) ->
+new_max([], Max) when is_integer(Max) ->
   Max.
 
 %%-----------------------------------------------------------------------
@@ -1551,7 +1565,7 @@ highest_label([I|Is], Max) ->
     false ->
       highest_label(Is, Max)
   end;
-highest_label([], Max) ->
+highest_label([], Max) when is_integer(Max) ->
   Max.
 
 %%-----------------------------------------------------------------------

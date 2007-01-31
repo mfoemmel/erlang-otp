@@ -14,7 +14,8 @@
 
 -behaviour(tftp).
 
--export([prepare/5, open/5, read/1, write/2, abort/3]).
+-export([prepare/6, open/6, read/1, write/2, abort/3]).
+-export([prepare/5, open/5]).
 
 -record(read_state,  {options, blksize, bin,  is_network_ascii, count}).
 -record(write_state, {options, blksize, list, is_network_ascii}).
@@ -22,6 +23,10 @@
 %%-------------------------------------------------------------------
 %% Prepare
 %%-------------------------------------------------------------------
+
+prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
+    %% Kept for backwards compatibility 
+    prepare(Access, Filename, Mode, SuggestedOptions, Initial).
 
 prepare(Access, Bin, Mode, SuggestedOptions, []) ->
     %% Client side
@@ -48,6 +53,10 @@ prepare(_Access, _Bin, _Mode, _SuggestedOptions, _Initial) ->
 %%-------------------------------------------------------------------
 %% Open
 %%-------------------------------------------------------------------
+
+open(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
+    %% Kept for backwards compatibility 
+    open(Access, Filename, Mode, SuggestedOptions, Initial).
 
 open(Access, Bin, Mode, SuggestedOptions, []) ->
     %% Server side

@@ -38,11 +38,13 @@ do_insn(I, TempMap, Strategy) ->
     #load{} -> do_load(I, TempMap, Strategy);
     #ldrsb{} -> do_ldrsb(I, TempMap, Strategy);
     #move{} -> do_move(I, TempMap, Strategy);
+    #mul{} -> do_mul(I, TempMap, Strategy);
     #pseudo_call{} -> do_pseudo_call(I, TempMap, Strategy);
     #pseudo_li{} -> do_pseudo_li(I, TempMap, Strategy);
     #pseudo_move{} -> do_pseudo_move(I, TempMap, Strategy);
     #pseudo_switch{} -> do_pseudo_switch(I, TempMap, Strategy);
     #pseudo_tailcall{} -> do_pseudo_tailcall(I, TempMap, Strategy);
+    #smull{} -> do_smull(I, TempMap, Strategy);
     #store{} -> do_store(I, TempMap, Strategy);
     _ -> {[I], false}
   end.
@@ -80,6 +82,14 @@ do_move(I=#move{dst=Dst,am1=Am1}, TempMap, Strategy) ->
   NewI = I#move{dst=NewDst,am1=NewAm1},
   {FixAm1 ++ [NewI | FixDst], DidSpill1 or DidSpill2}.
 
+do_mul(I=#mul{dst=Dst,src1=Src1,src2=Src2}, TempMap, Strategy) ->
+  %% ARM requires that Dst and Src1 are different registers.
+  {FixDst,NewDst,DidSpill1} = fix_dst(Dst, TempMap, Strategy),		% temp1
+  {FixSrc1,NewSrc1,DidSpill2} = fix_src2(Src1, TempMap, Strategy),	% temp2
+  {FixSrc2,NewSrc2,DidSpill3} = fix_src1(Src2, TempMap, Strategy),	% temp1
+  NewI = I#mul{dst=NewDst,src1=NewSrc1,src2=NewSrc2},
+  {FixSrc1 ++ FixSrc2 ++ [NewI | FixDst], DidSpill1 or DidSpill2 or DidSpill3}.
+
 do_pseudo_call(I=#pseudo_call{funv=FunV}, TempMap, Strategy) ->
   {FixFunV,NewFunV,DidSpill} = fix_funv(FunV, TempMap, Strategy),
   NewI = I#pseudo_call{funv=NewFunV},
@@ -114,6 +124,17 @@ do_pseudo_tailcall(I=#pseudo_tailcall{funv=FunV}, TempMap, Strategy) ->
   {FixFunV,NewFunV,DidSpill} = fix_funv(FunV, TempMap, Strategy),
   NewI = I#pseudo_tailcall{funv=NewFunV},
   {FixFunV ++ [NewI], DidSpill}.
+
+do_smull(I=#smull{dstlo=DstLo,dsthi=DstHi,src1=Src1,src2=Src2}, TempMap, Strategy) ->
+  %% ARM requires that DstLo, DstHi, and Src1 are distinct.
+  %% We furthermore require Src1 and Src2 to be different in the fixed strategy.
+  {FixDstLo,NewDstLo,DidSpill1} = fix_dst(DstLo, TempMap, Strategy),	% temp1
+  {FixDstHi,NewDstHi,DidSpill2} = fix_dst2(DstHi, TempMap, Strategy),	% temp3
+  {FixSrc1,NewSrc1,DidSpill3} = fix_src2(Src1, TempMap, Strategy),	% temp2
+  {FixSrc2,NewSrc2,DidSpill4} = fix_src1(Src2, TempMap, Strategy),	% temp1; temp3 would be OK
+  NewI = I#smull{dstlo=NewDstLo,dsthi=NewDstHi,src1=NewSrc1,src2=NewSrc2},
+  {FixSrc1 ++ FixSrc2 ++ [NewI | FixDstLo ++ FixDstHi],
+   DidSpill1 or DidSpill2 or DidSpill3 or DidSpill4}.
 
 do_store(I=#store{src=Src,am2=Am2}, TempMap, Strategy) ->
   {FixSrc,NewSrc,DidSpill1} = fix_src1(Src, TempMap, Strategy),
@@ -212,9 +233,15 @@ fix_src(Src, TempMap, RegOpt) ->
   end.
 
 fix_dst(Dst, TempMap, Strategy) ->
+  fix_dst_common(Dst, TempMap, temp1(Strategy)).
+
+fix_dst2(Dst, TempMap, Strategy) -> % only used for smull's DstHi
+  fix_dst_common(Dst, TempMap, temp3(Strategy)).
+
+fix_dst_common(Dst, TempMap, RegOpt) ->
   case temp_is_spilled(Dst, TempMap) of
     true ->
-      NewDst = clone(Dst, temp1(Strategy)),
+      NewDst = clone(Dst, RegOpt),
       {[hipe_arm:mk_pseudo_move(Dst, NewDst)],
        NewDst,
        true};

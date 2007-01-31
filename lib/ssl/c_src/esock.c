@@ -430,12 +430,12 @@ static int loop(void)
 		    break;
 		} else {
 		    /* Get peer port number */
-		    length = sizeof(iserv_addr);
-		    if (getpeername(proxysock, (struct sockaddr *)&iserv_addr, 
-				    &length) < 0) {
-			DEBUGF(("Can't get peername of proxy socket"));
-			safe_close(proxysock);
-		    } else {
+/* 		    length = sizeof(iserv_addr); */
+/* 		    if (getpeername(proxysock, (struct sockaddr *)&iserv_addr,  */
+/* 				    &length) < 0) { */
+/* 			DEBUGF(("Can't get peername of proxy socket")); */
+/* 			safe_close(proxysock); */
+/* 		    } else { */
 			/* Add to pending proxy connections */
 			SET_NONBLOCKING(proxysock);
 			pp = new_proxy(proxysock);
@@ -444,7 +444,7 @@ static int loop(void)
 			DEBUGF(("[PROXY_LISTEN_SOCK] conn accepted: "
 				"proxyfd = %d, "
 			       "peer port = %d\n", proxysock, pp->peer_port));
-		    }
+/* 		    } */
 		}
 	    }
 	}
@@ -702,12 +702,12 @@ static int loop(void)
 			  ntohs(iserv_addr.sin_port));
 		    break;
 
-		case ESOCK_ACCEPT_CMD:
+		case ESOCK_TRANSPORT_ACCEPT_CMD:
 		    /* 
 		     * ebuf =  { op(1), fd(4), flags(N), 0(1)} 
 		     */
 		    input("4s", &fd, &flags);
-		    DEBUGF(("[ACCEPT_CMD] listenfd = %d, flags = %s\n", fd, 
+		    DEBUGF(("[TRANSPORT_ACCEPT_CMD] listenfd = %d, flags = %s\n", fd, 
 			   flags));
 		    cp = get_connection(fd);
 		    if (cp) {
@@ -730,7 +730,16 @@ static int loop(void)
 			}
 			DEBUGF(("ERROR: flags empty\n"));
 		    }
-		    reply(ESOCK_ACCEPT_ERR, "4s", fd, "ebadf");
+		    reply(ESOCK_TRANSPORT_ACCEPT_ERR, "4s", fd, "ebadf");
+		    break;
+
+		case ESOCK_SSL_ACCEPT_CMD:
+		    input("4s", &fd, &flags);
+		    DEBUGF(("[SSL_ACCEPT_CMD] fd = %d, flags = %s\n", fd, flags));
+		    cp = get_connection(fd);
+		    if (cp)
+			cp->state = ESOCK_SSL_ACCEPT;
+		    //reply(ESOCK_SSL_ACCEPT_REP, "4", fd);
 		    break;
 
 		case ESOCK_NOACCEPT_CMD:
@@ -829,7 +838,7 @@ static int loop(void)
 				    (int*)&length);
 		if(msgsock == INVALID_FD)  {
 		    DEBUGF(("accept error: %s\n", psx_errstr()));
-		    reply(ESOCK_ACCEPT_ERR, "4s", cp->fd, psx_errstr());
+		    reply(ESOCK_TRANSPORT_ACCEPT_ERR, "4s", cp->fd, psx_errstr());
 		    break;
 		}
 		SET_NONBLOCKING(msgsock);
@@ -839,19 +848,16 @@ static int loop(void)
 		    DEBUGF(("-> PASSIVE_LISTENING\n"));
 		}
 		DEBUGF(("server accepted connection on fd %d\n", msgsock));
-		newcp = new_connection(ESOCK_SSL_ACCEPT, msgsock);
+		newcp = new_connection(ESOCK_TRANSPORT_ACCEPT, msgsock);
 		newcp->origin = ORIG_ACCEPT;
-		DEBUGF(("(new) -> SSL_ACCEPT on fd %d\n", msgsock));
+		reply(ESOCK_TRANSPORT_ACCEPT_REP, "44", cp->fd, msgsock);
 		newcp->listen_fd = cp->fd; /* Needed for ESOCK_ACCEPT_ERR  */
 		length = strlen(cp->flags);
 		/* XXX new flags are not needed */
 		newcp->flags = esock_malloc(length + 1);
 		strcpy(newcp->flags, cp->flags); /* XXX Why? */
 		if (esock_ssl_accept_init(newcp, cp->opaque) < 0) {
-		    /* N.B.: The *listen fd* is reported. */
-		    reply(ESOCK_ACCEPT_ERR, "4s", newcp->listen_fd,
-			  ssl_errstr());
-		    close_and_remove_connection(newcp);
+		    cp->errstr = ssl_errstr();
 		    break;
 		}
 		newcp->ssl_want = ESOCK_SSL_WANT_READ;
@@ -862,17 +868,23 @@ static int loop(void)
 		msgsock = cp->fd;
 		DEBUGF(("-----------------------------------\n"));
 		DEBUGF(("SSL_ACCEPT fd = %d\n", msgsock));
+		if (cp->errstr != NULL) { /* this means we got an error in ssl_accept_init */
+		    /* N.B.: The *listen fd* is reported. */
+		    reply(ESOCK_SSL_ACCEPT_ERR, "4s", cp->listen_fd, cp->errstr);
+		    close_and_remove_connection(cp);
+		    break;
+		}
 		if (esock_ssl_accept(cp) < 0) {
 		    if (sock_errno() != ERRNO_BLOCK) {
 			/* Handshake failed. */
-			reply(ESOCK_ACCEPT_ERR, "4s", cp->listen_fd,
+			reply(ESOCK_TRANSPORT_ACCEPT_ERR, "4s", cp->listen_fd,
 			      ssl_errstr());
 			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
 			close_and_remove_connection(cp);
 		    }
 		} else {
 		    /* SSL handshake successful: publish */
-		    reply(ESOCK_ACCEPT_REP, "44", cp->listen_fd, msgsock);
+		    reply(ESOCK_SSL_ACCEPT_REP, "4", msgsock);
 		    DEBUGF(("-> CONNECTED\n"));
 		    DEBUGF((" Session was %sreused.\n", 
 			    (esock_ssl_session_reused(cp)) ? "" : "NOT "));
@@ -1271,7 +1283,8 @@ static Connection *next_polled_conn(Connection *cp, Connection **cpnext,
 	    || esock_poll_fd_isset_exception(ep, cp->fd) /* Connect failure in WIN32 */
 #endif
 	    || (set_wq_fds && (cp->wq.len || 
-			       (cp->proxy && cp->proxy->wq.len)))) {
+			       (cp->proxy && cp->proxy->wq.len)))
+	    || cp->errstr != NULL) {
 	    *cpnext = cp->next;
 	    return cp;
 	}
@@ -1621,6 +1634,7 @@ static Connection *new_connection(int state, FD fd)
     cp->wq.len = 0;
     cp->wq.offset = 0;
     cp->next = connections;
+    cp->errstr = NULL;
     connections = cp;
     return cp;
 }

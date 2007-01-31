@@ -95,9 +95,9 @@ do_dir(Info) ->
 	{error,Reason} ->
 	    ?LOG("do_dir -> failed reading file info (~p) for: ~p",
 		 [Reason,DefaultPath]),
-	    {proceed,
-	     [{status,read_file_info_error(Reason,Info,DefaultPath)}|
-	      Info#mod.data]}
+	    Status = httpd_file:handle_error(Reason, "access", Info,
+					     DefaultPath),
+	    {proceed, [{status, Status}| Info#mod.data]}
     end.
 
 dir(Path,RequestURI,ConfigDB) ->
@@ -279,20 +279,3 @@ icon("core") -> "/icons/tex.gif";
 icon(_) -> undefined.
 
 
-read_file_info_error(eacces,Info,Path) ->
-    read_file_info_error(403,Info,Path,
-			 ": Missing search permissions for one "
-			 "of the parent directories");
-read_file_info_error(enoent,Info,Path) ->
-    read_file_info_error(404,Info,Path,"");
-read_file_info_error(enotdir,Info,Path) ->
-    read_file_info_error(404, Info, Path,
-			 ": A component of the file name is not a directory");
-read_file_info_error(_, _, Path) ->
-    read_file_info_error(500,none,Path,"").
-
-read_file_info_error(StatusCode,none,Path,Reason) ->
-    {StatusCode,none,?NICE("Can't access "++Path++Reason)};
-read_file_info_error(StatusCode,Info,Path,Reason) ->
-    {StatusCode,Info#mod.request_uri,
-     ?NICE("Can't access "++Path++Reason)}.

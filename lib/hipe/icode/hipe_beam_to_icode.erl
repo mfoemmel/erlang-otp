@@ -29,6 +29,7 @@
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 
 -define(no_debug_msg(Str,Xs),ok).
 %%-define(no_debug_msg(Str,Xs),msg(Str,Xs)).
@@ -86,7 +87,7 @@ exclude_module_info_code([FunCode|FunCodes], Acc) ->
     [{label,L},{label,_},{func_info,M,F,A}|Insns] ->
       NewFunCode = [{label,L},{func_info,M,F,A}|Insns],
       exclude_module_info_code([NewFunCode|FunCodes], Acc);
-    [{label,_},{func_info,_,{atom,module_info},A}|_] when A =< 1->
+    [{label,_},{func_info,_,{atom,module_info},A}|_] when A =:= 0; A =:= 1->
       exclude_module_info_code(FunCodes, Acc);
     _Other ->
       exclude_module_info_code(FunCodes, [FunCode|Acc])
@@ -106,7 +107,7 @@ exclude_module_info_code([], Acc) ->
 %% @end
 %%-----------------------------------------------------------------------
 
-mfa(_, {_,module_info,A}, _) when A =< 1 ->
+mfa(_, {_,module_info,A}, _) when A =:= 0 orelse A =:= 1 ->
   [];  % the module_info/[0,1] functions are just stubs in a BEAM file
 mfa(BeamFuns, MFA, Options) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
@@ -160,7 +161,6 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
   ?IF_DEBUG_LEVEL(5,
 		  {Code3,_Env3} = ?mk_debugcode({M,F,A}, Env2,Code2),
 		  {Code3,_Env3} = {Code2,Env1}), % Code3 = fix_gotos(Code2),
-
   %% For stack optimization
   Leafness = leafness(Code3),
   IsLeaf = is_sparc_leaf_code(Leafness),
@@ -170,17 +170,14 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
        false -> Code3;
        true -> [mk_redtest()|Code3]
      end],
-
   IsClosure = case get_closure_info({M,F,A}, ClosureInfo) of
 		not_a_closure -> false;
 		_ -> true
 	      end,
-
   Code5 = hipe_icode:mk_icode({M,F,A},FunArgs,IsClosure,IsLeaf,
 			      remove_dead_code(Code4),
 			      hipe_gensym:var_range(icode),
 			      hipe_gensym:label_range(icode)),
-
   Icode = %% If this function is the code for a closure ...
     case get_closure_info({M,F,A}, ClosureInfo) of
       not_a_closure -> Code5;
@@ -188,7 +185,6 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
 	%% get the free_vars from the closure
 	patch_closure_entry(Code5,CI)
     end,
-
   ?no_debug_msg("ok~n", []),
   Icode.
 
@@ -219,7 +215,7 @@ leafness([I|Is], Leafness) ->
 	  case hipe_icode:call_fun(I) of
 	    call_fun -> false;		% Calls closure
 	    enter_fun -> false;		% Calls closure
-	    {apply_N,_} -> false;
+	    #apply_N{} -> false;
 	    _ -> leafness(Is, Leafness)	% Other primop calls are ok
 	  end;
 	_ ->
@@ -234,7 +230,7 @@ leafness([I|Is], Leafness) ->
 	primop ->
 	  case hipe_icode:enter_fun(I) of
 	    enter_fun -> false;
-	    {apply_N,_} -> false;
+	    #apply_N{} -> false;
 	    _ ->
 	      %% All primops should be ok except those excluded above,
 	      %% except we don't actually tailcall them...
@@ -346,12 +342,11 @@ trans_fun([{call_ext_last,_N,{extfunc,M,F,A},_}|Instructions], Env) ->
   Args = extract_fun_args(A),
   %% Dst = [mk_var({r,0})],
   I = trans_enter({M,F,A},Args,remote),
-  [hipe_icode:mk_comment(call_ext_last), I
-   | trans_fun(Instructions,Env)];
+  [hipe_icode:mk_comment(call_ext_last), I | trans_fun(Instructions,Env)];
 %%--- bif0 ---
 trans_fun([{bif,BifName,nofail,[],Reg}|Instructions], Env) ->
-  BifInsts = trans_bif0(BifName,Reg),
-  [hipe_icode:mk_comment({bif0,BifName}),BifInsts|trans_fun(Instructions,Env)];
+  BifInst = trans_bif0(BifName,Reg),
+  [hipe_icode:mk_comment({bif0,BifName}),BifInst|trans_fun(Instructions,Env)];
 %%--- bif1 ---
 trans_fun([{bif,BifName,{f,Lbl},[_] = Args,Reg}|Instructions], Env) ->
   {BifInsts,Env1} = trans_bif(1,BifName,Lbl,Args,Reg,Env),
@@ -406,7 +401,7 @@ trans_fun([{loop_rec,{_,Lbl},Reg}|Instructions], Env) ->
 %%--- loop_rec_end ---
 trans_fun([{loop_rec_end,{_,Lbl}}|Instructions], Env) ->
   Loop = hipe_icode:mk_goto(map_label(Lbl)),
-  [hipe_icode:mk_primop([],next_msg,[]),Loop | trans_fun(Instructions,Env)];
+  [hipe_icode:mk_primop([],next_msg,[]), Loop | trans_fun(Instructions,Env)];
 %%--- wait ---
 trans_fun([{wait,{_,Lbl}}|Instructions], Env) ->
   Susp = hipe_icode:mk_primop([],suspend_msg,[]),
@@ -419,8 +414,7 @@ trans_fun([{wait_timeout,{_,Lbl},Reg}|Instructions], Env) ->
   DoneLbl = mk_label(new),
   SuspTmout = hipe_icode:mk_if(suspend_msg_timeout,[],
 			       map_label(Lbl),hipe_icode:label_name(DoneLbl)),
-  Movs ++ [SetTmout,SuspTmout,DoneLbl
-	   | trans_fun(Instructions,Env1)];
+  Movs ++ [SetTmout, SuspTmout, DoneLbl | trans_fun(Instructions,Env1)];
 %%--------------------------------------------------------------------
 %%--- Translation of arithmetics {bif,ArithOp, ...} ---
 %%--------------------------------------------------------------------
@@ -598,18 +592,17 @@ trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
 %%--- get_tuple_element ---
 trans_fun([{get_tuple_element,Xreg,Index,Dst}|Instructions], Env) ->
   I = hipe_icode:mk_primop([mk_var(Dst)],
-			   {unsafe_element,Index+1},
+			   #unsafe_element{index=Index+1},
 			   [mk_var(Xreg)]),
   [I | trans_fun(Instructions,Env)];
 %%--- set_tuple_element ---
 trans_fun([{set_tuple_element,Elem,Tuple,Index}|Instructions], Env) ->
-  %% io:format("BEAM_2_ICODE ~p ~p ~p\n", [Elem,Tuple,Index]),
   Elem1 = case is_var(Elem) of
 	    true -> mk_var(Elem);
 	    false -> trans_const(Elem)
 	  end,
   I = hipe_icode:mk_primop([mk_var(Tuple)],
-			   {unsafe_update_element,Index+1},
+			   #unsafe_update_element{index=Index+1},
 			   [mk_var(Tuple),Elem1]),
   [I | trans_fun(Instructions,Env)];
 %%--- put_string ---
@@ -670,7 +663,9 @@ trans_fun([{call_fun,N}|Instructions], Env) ->
 trans_fun([{patched_make_fun,MFA,Magic,FreeVarNum,Index}|Instructions], Env) ->
   Args = extract_fun_args(FreeVarNum),
   Dst = [mk_var({r,0})],
-  Fun = hipe_icode:mk_primop(Dst,{mkfun,MFA,Magic,Index},Args),
+  Fun = hipe_icode:mk_primop(Dst,
+			     #mkfun{mfa=MFA,magic_num=Magic,index=Index},
+			     Args),
   ?no_debug_msg("mkfun translates to: ~p~n",[Fun]),
   [Fun | trans_fun(Instructions,Env)];
 %%--- is_function ---
@@ -681,8 +676,7 @@ trans_fun([{test,is_function,{f,Lbl},[Arg]}|Instructions], Env) ->
 trans_fun([{call_ext_only,_N,{extfunc,M,F,A}}|Instructions], Env) ->
   Args = extract_fun_args(A),
   I = trans_enter({M,F,A}, Args, remote),
-  [hipe_icode:mk_comment(call_ext_only), I
-   | trans_fun(Instructions,Env)];
+  [hipe_icode:mk_comment(call_ext_only), I | trans_fun(Instructions,Env)];
 %%--------------------------------------------------------------------
 %%--- Translation of binary instructions ---
 %%--------------------------------------------------------------------
@@ -821,12 +815,12 @@ trans_fun([{bs_final,{f,_Lbl},Dst}|Instructions], Env) ->
 trans_fun([{bs_start_match,{f,Lbl},X}|Instructions], Env) ->
   Bin = mk_var(X),
   trans_op_call({hipe_bs_primop, bs_start_match}, Lbl, [Bin],
-		    [], Env, Instructions);
+		[], Env, Instructions);
 trans_fun([{test,bs_start_match2,{f,Lbl},[X,_Live, Max, Ms]}|Instructions], Env) ->
   Bin = mk_var(X),
   MsVar = mk_var(Ms),
   trans_op_call({hipe_bs_primop2, {bs_start_match_2, Max}}, Lbl, [Bin],
-		    [MsVar], Env, Instructions);
+		[MsVar], Env, Instructions);
 %%--- bs_get_integer --- changed
 trans_fun([{test,bs_get_integer,{f,Lbl},[Size,Unit,{field_flags,Flags0},X]}|
 	   Instructions], Env) ->
@@ -916,11 +910,11 @@ trans_fun([{bs_save2,Ms,Index}| Instructions], Env) ->
 %%--- bs_restore ---
 trans_fun([{bs_restore,Index}| Instructions], Env) ->
   [hipe_icode:mk_primop([],{hipe_bs_primop,{bs_restore,Index}},[]) |
-	 trans_fun(Instructions, Env)];
+   trans_fun(Instructions, Env)];
 trans_fun([{bs_restore2,Ms,Index}| Instructions], Env) ->
   MsVar = mk_var(Ms),
   [hipe_icode:mk_primop([MsVar],{hipe_bs_primop2,{bs_restore_2,Index}},[MsVar]) |
-	 trans_fun(Instructions, Env)];
+   trans_fun(Instructions, Env)];
 %%--- bs_test_tail ---
 trans_fun([{test,bs_test_tail,{f,Lbl},[Numbits]}| Instructions], Env) ->
   trans_op_call({hipe_bs_primop,{bs_test_tail,Numbits}}, 
@@ -1004,8 +998,8 @@ trans_fun([{bs_init2,{f,Lbl},Size,_Words,_LiveRegs,{field_flags,Flags0},X}|
 	   Instructions], Env) ->
   Dst = mk_var(X),
   Flags = resolve_native_endianess(Flags0),
-  Offset=mk_var(reg),
-  Base=mk_var(reg),
+  Offset = mk_var(reg),
+  Base = mk_var(reg),
   {Name, Args} =
     case Size of
       NoBytes when is_integer(NoBytes) ->
@@ -1058,7 +1052,7 @@ trans_fun([fclearerror|Instructions], Env) ->
     true ->  
       [hipe_icode:mk_primop([], fclearerror, []) | 
        trans_fun(Instructions,Env)];
-    _ -> 
+    _ ->
       trans_fun(Instructions,Env)
   end;
 %%--- fcheckerror ---
@@ -1170,13 +1164,13 @@ trans_fun([{apply,Arity}|Instructions], Env) ->
   {Args,[M,F]} = lists:split(Arity,BeamArgs),
   Dst = [mk_var({r,0})],
   [hipe_icode:mk_comment(apply),
-   hipe_icode:mk_primop(Dst, {apply_N,Arity}, [M,F|Args])
+   hipe_icode:mk_primop(Dst, #apply_N{arity=Arity}, [M,F|Args])
    | trans_fun(Instructions,Env)];
 trans_fun([{apply_last,Arity,_N}|Instructions], Env) -> % N is StackAdjustment?
   BeamArgs = extract_fun_args(Arity+2), %% +2 is for M and F
   {Args,[M,F]} = lists:split(Arity,BeamArgs),
   [hipe_icode:mk_comment(apply_last),
-   hipe_icode:mk_enter_primop({apply_N,Arity}, [M,F|Args])
+   hipe_icode:mk_enter_primop(#apply_N{arity=Arity}, [M,F|Args])
    | trans_fun(Instructions,Env)];
 %%--------------------------------------------------------------------
 %% New test instruction added in April 2004 (R10B).
@@ -1256,8 +1250,7 @@ handle_fail(MFA, Args, F) ->
 trans_bif0(BifName, DestReg) ->
   ?no_debug_msg("  found BIF0: ~p() ...~n", [BifName]),
   BifRes = mk_var(DestReg),
-  I = hipe_icode:mk_call([BifRes],erlang,BifName,[],remote),
-  [I].
+  hipe_icode:mk_call([BifRes],erlang,BifName,[],remote).
 
 trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
   ?no_debug_msg("  found BIF: ~p(~p) ...~n", [BifName,Args]),
@@ -1727,7 +1720,7 @@ mk_move_and_var(Var, Env) ->
 %% Find names of closures and number of free vars.
 %%-----------------------------------------------------------------------
 
--record(closure_info, {mfa, arity::byte(), fv_arity::byte()}).
+-record(closure_info, {mfa::mfa(), arity::byte(), fv_arity::byte()}).
 
 closure_info_mfa(#closure_info{mfa=MFA}) -> MFA.
 closure_info_arity(#closure_info{arity=Arity}) -> Arity.
@@ -1800,7 +1793,7 @@ get_free_vars([V|Vs], Closure, No, MoveCode) ->
   %% TempV = hipe_icode:mk_new_var(),
   get_free_vars(Vs, Closure, No+1,
 		[%% hipe_icode:mk_move(TempV,hipe_icode:mk_const(No)),
-		 hipe_icode:mk_primop([V],{closure_element, No}, [Closure])
+		 hipe_icode:mk_primop([V], #closure_element{n=No}, [Closure])
 		 |MoveCode]);
 get_free_vars([],_,_,MoveCode) ->
   MoveCode.
@@ -1811,7 +1804,7 @@ split_params(1, [Closure|OrgArgs], Args) ->
   {lists:reverse([Closure|Args]), Closure, [Closure|OrgArgs]};
 split_params(1, [], Args) ->
   Closure = hipe_icode:mk_new_var(),
-  {lists:reverse([Closure|Args]),  Closure, []};
+  {lists:reverse([Closure|Args]), Closure, []};
 split_params(N, [ArgN|OrgArgs], Args) ->
   split_params(N-1, OrgArgs, [ArgN|Args]).
 
@@ -1859,7 +1852,7 @@ patch_make_funs([], FunIndex, Acc) ->
 find_mfa([{label,_}|Code]) ->
   find_mfa(Code);
 find_mfa([{func_info,{atom,M},{atom,F},A}|_]) 
-  when is_atom(M), is_atom(F), is_integer(A) ->
+  when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
   {M, F, A}.
 
 %%-----------------------------------------------------------------------
@@ -2284,14 +2277,14 @@ print_instr(Stream, Op) ->
   io:format(Stream, "    ~p\n", [Op]).
 
 put_nl(Stream) ->
-  io:format(Stream,"\n",[]).
+  io:format(Stream, "\n", []).
 
 %%-----------------------------------------------------------------------
 %% Handling of environments -- used to process local tail calls.
 %%-----------------------------------------------------------------------
 
 %% Environment 
--record(environment, {mfa, entry}).
+-record(environment, {mfa::mfa(), entry}).
 
 %% Constructor!
 env__mk_env() ->

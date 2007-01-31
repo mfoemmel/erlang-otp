@@ -1800,7 +1800,10 @@ Eterm big_times_small(Eterm x, Uint y, Eterm *r)
 Uint32 big_to_uint32(Eterm b)
 {
     Uint u;
-    (void) term_to_Uint(b, &u);
+    if (!term_to_Uint(b, &u)) {
+	ASSERT(0);
+        return 0;
+    }
     return u;
 }
 

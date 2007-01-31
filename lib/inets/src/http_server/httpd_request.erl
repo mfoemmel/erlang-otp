@@ -20,7 +20,8 @@
 -include("http_internal.hrl").
 -include("httpd.hrl").
 
--export([parse/1, whole_body/2, validate/3, update_mod_data/5]).
+-export([parse/1, whole_body/2, validate/3, update_mod_data/5,
+	 body_data/2]).
 
 %% Callback API - used for example if the header/body is received a
 %% little at a time on a socket. 
@@ -50,8 +51,21 @@ parse_headers([Bin, Rest, Header, Headers, MaxHeaderSize, Result]) ->
 		  Header, Headers, MaxHeaderSize, Result).
 
 whole_body([Bin, Body, Length])  ->
-    whole_body(<<Body/binary, Bin/binary>>, Length).
-    
+    whole_body(<<Body/binary, Bin/binary>>, Length).    
+
+
+%% Separate the body for this request from a possible piplined new 
+%% request and convert the body data to "string" format.
+body_data(Headers, Body) ->    
+    ContentLength = list_to_integer(Headers#http_request_h.'content-length'),
+    case size(Body) - ContentLength of
+ 	0 ->
+ 	    {binary_to_list(Body), <<>>};
+ 	_ ->
+ 	    <<BodyThisReq:ContentLength/binary, Next/binary>> = Body,   
+ 	    {binary_to_list(BodyThisReq), Next}
+    end.
+
 %%-------------------------------------------------------------------------
 %% validate(Method, Uri, Version) -> ok | {error, {bad_request, Reason} |
 %%			     {error, {not_supported, {Method, Uri, Version}}
@@ -175,18 +189,15 @@ parse_headers(<<Octet, Rest/binary>>, Header, Headers,
 
 whole_body(Body, Length) ->
     case size(Body) of
-	N when N < Length ->
+	N when N < Length, Length > 0 ->
 	  {?MODULE, whole_body, [Body, Length]};
-	0 ->
-	    {ok, Body};
-	_ ->
-	    %% PotentialGarbage will normaly be <<>> but some badly
-	    %% implemented http clients may have some trailing garbage.
-	    %% See also: OTP-4550
-	    <<NewBody:Length/binary, _PotentialGarbage/binary>> = Body,
-	    {ok, NewBody}
-    end.
-
+	N when N >= Length, Length >= 0 ->  
+	    %% When a client uses pipelining trailing data
+	    %% may be part of the next request!
+	    %% Trailing data will be separated from 
+	    %% the actual body in body_data/2.
+	    {ok, Body}
+	end.
 
 %% Prevent people from trying to access directories/files
 %% relative to the ServerRoot.

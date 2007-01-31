@@ -117,8 +117,8 @@ $(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl ../icode/hipe_icode.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_rtl.hrl hipe_literals.hrl
-$(EBIN)/hipe_rtl_primops.beam: hipe_rtl.hrl hipe_literals.hrl ../main/hipe.hrl
-$(EBIN)/hipe_rtl_prop.beam: ../main/hipe.hrl
+$(EBIN)/hipe_rtl_primops.beam: hipe_rtl.hrl ../icode/hipe_icode_primops.hrl hipe_literals.hrl ../main/hipe.hrl
+$(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_arith_64.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl
@@ -127,8 +127,7 @@ $(EBIN)/hipe_rtl_exceptions.beam: hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_inline_bs_ops.beam: hipe_rtl.hrl hipe_literals.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_mk_switch.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_lcm.beam: hipe_rtl.hrl
-$(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl
-$(EBIN)/hipe_rtl_symbolic.beam: hipe_rtl.hrl
+$(EBIN)/hipe_rtl_symbolic.beam: hipe_rtl.hrl hipe_literals.hrl ../icode/hipe_icode_primops.hrl
 $(EBIN)/hipe_rtl_varmap.beam: ../main/hipe.hrl
 $(EBIN)/hipe_rtl_binary.beam: hipe_literals.hrl
 

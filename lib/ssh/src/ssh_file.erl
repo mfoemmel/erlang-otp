@@ -27,7 +27,7 @@
 -export([public_host_dsa_key/2,private_host_dsa_key/2,
 	 public_host_rsa_key/2,private_host_rsa_key/2,
 	 public_host_key/2,private_host_key/2,
-	 lookup_host_key/3, add_host_key/3, del_host_key/2,
+	 lookup_host_key/3, add_host_key/3, % del_host_key/2,
 	 lookup_user_key/3, ssh_dir/2, file_name/3]).
 
 -export([private_identity_key/2]).
@@ -95,17 +95,8 @@ replace_localhost(Host) ->
 %%
 
 lookup_host_key(Host, Alg, Opts) ->
-    case replace_localhost(Host) of
-	Host ->
-	    do_lookup_host_key(Host, Alg, Opts);
-	Host1 ->
-	    case do_lookup_host_key(Host, Alg, Opts) of
-		{error, not_found} ->
-		    do_lookup_host_key(Host1, Alg, Opts);
-		Other ->
-		    Other
-	    end
-    end.
+    Host1 = replace_localhost(Host),
+    do_lookup_host_key(Host1, Alg, Opts).
 	    
 do_lookup_host_key(Host, Alg, Opts) ->
     case file:open(file_name(user, "known_hosts", Opts), [read]) of
@@ -128,16 +119,16 @@ add_host_key(Host, Key, Opts) ->
    	    Error
     end.
 
-del_host_key(Host, Opts) ->
-    Host1 = replace_localhost(Host),
-    case file:open(file_name(user, "known_hosts", Opts),[write,read]) of
-	{ok, Fd} ->
-	    Res = del_key_fd(Fd, Host1),
-	    file:close(Fd),
-	    Res;
-	Error ->
-	    Error
-    end.
+%% del_host_key(Host, Opts) ->
+%%     Host1 = replace_localhost(Host),
+%%     case file:open(file_name(user, "known_hosts", Opts),[write,read]) of
+%% 	{ok, Fd} ->
+%% 	    Res = del_key_fd(Fd, Host1),
+%% 	    file:close(Fd),
+%% 	    Res;
+%% 	Error ->
+%% 	    Error
+%%     end.
 
 identity_key_filename("ssh-dss") -> "id_dsa";
 identity_key_filename("ssh-rsa") -> "id_rsa".
@@ -345,45 +336,45 @@ lookup_host_key_fd(Fd, Host, Alg) ->
 
 
 
-del_key_fd(Fd, Host) ->
-    del_key_fd(Fd, Host, 0, 0).
+%% del_key_fd(Fd, Host) ->
+%%     del_key_fd(Fd, Host, 0, 0).
 
-del_key_fd(Fd, Host, ReadPos0, WritePos0) ->
-    case io:get_line(Fd, '') of
-	eof ->
-	    if ReadPos0 == WritePos0 ->
-		    ok;
-	       true ->
-		    file:truncate(Fd)
-	    end;
-	Line ->
-	    {ok,ReadPos1} = file:position(Fd, cur),
-	    case string:tokens(Line, " ") of
-		[HostList, _Type, _KeyData] ->
-		    case lists:member(Host, string:tokens(HostList, ",")) of
-			true ->
-			    del_key_fd(Fd, Host, ReadPos1, WritePos0);
-			false ->
-			    if ReadPos0 == WritePos0 ->
-				    del_key_fd(Fd, Host, ReadPos1, ReadPos1);
-			       true ->
-				    file:position(Fd, WritePos0),
-				    file:write(Fd, Line),
-				    {ok,WritePos1} = file:position(Fd,cur),
-				    del_key_fd(Fd, Host, ReadPos1, WritePos1)
-			    end
-		    end;
-		_ ->
-		    if ReadPos0 == WritePos0 ->
-			    del_key_fd(Fd, Host, ReadPos1, ReadPos1);
-		       true ->
-			    file:position(Fd, WritePos0),
-			    file:write(Fd, Line),
-			    {ok,WritePos1} = file:position(Fd,cur),
-			    del_key_fd(Fd, Host, ReadPos1, WritePos1)
-		    end		    
-	    end
-    end.
+%% del_key_fd(Fd, Host, ReadPos0, WritePos0) ->
+%%     case io:get_line(Fd, '') of
+%% 	eof ->
+%% 	    if ReadPos0 == WritePos0 ->
+%% 		    ok;
+%% 	       true ->
+%% 		    file:truncate(Fd)
+%% 	    end;
+%% 	Line ->
+%% 	    {ok,ReadPos1} = file:position(Fd, cur),
+%% 	    case string:tokens(Line, " ") of
+%% 		[HostList, _Type, _KeyData] ->
+%% 		    case lists:member(Host, string:tokens(HostList, ",")) of
+%% 			true ->
+%% 			    del_key_fd(Fd, Host, ReadPos1, WritePos0);
+%% 			false ->
+%% 			    if ReadPos0 == WritePos0 ->
+%% 				    del_key_fd(Fd, Host, ReadPos1, ReadPos1);
+%% 			       true ->
+%% 				    file:position(Fd, WritePos0),
+%% 				    file:write(Fd, Line),
+%% 				    {ok,WritePos1} = file:position(Fd,cur),
+%% 				    del_key_fd(Fd, Host, ReadPos1, WritePos1)
+%% 			    end
+%% 		    end;
+%% 		_ ->
+%% 		    if ReadPos0 == WritePos0 ->
+%% 			    del_key_fd(Fd, Host, ReadPos1, ReadPos1);
+%% 		       true ->
+%% 			    file:position(Fd, WritePos0),
+%% 			    file:write(Fd, Line),
+%% 			    {ok,WritePos1} = file:position(Fd,cur),
+%% 			    del_key_fd(Fd, Host, ReadPos1, WritePos1)
+%% 		    end		    
+%% 	    end
+%%     end.
 
 
 add_key_fd(Fd, Host, Key) ->
@@ -499,15 +490,22 @@ encode_public_key(#ssh_key{type = dsa, public = {P,Q,G,Y}}) ->
 ssh_dir({remoteuser, User}, Opts) ->
     case proplists:get_value(user_dir_fun, Opts) of
 	undefined ->
-	    filename:join(["/home/",User,".ssh"]);
+	    case proplists:get_value(user_dir, Opts) of
+		undefined ->
+		    filename:join(["/", "home",User,".ssh"]);
+		Dir ->
+		    Dir
+	    end;
 	FUN ->
 	    FUN(User)
     end;
 
 %% client use this to find client ssh keys
 ssh_dir(user, Opts) ->
-    Default = filename:join(os:getenv("HOME"), ".ssh"),
-    proplists:get_value(user_dir, Opts, Default);
+    case proplists:get_value(user_dir, Opts, false) of
+	false -> filename:join(os:getenv("HOME"), ".ssh");
+	D -> D
+    end;
 %% server use this to find server host keys
 ssh_dir(system, Opts) ->
     proplists:get_value(system_dir, Opts, "/etc/ssh").

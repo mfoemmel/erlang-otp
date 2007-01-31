@@ -75,7 +75,6 @@ extern int null_func();
 /* This structure MUST match Binary in global.h exactly!!! */
 typedef struct driver_binary {
     int orig_size;        /* total length of binary */
-    int refc;             /* number of references to this binary */
     char orig_bytes[1];   /* the data (char instead of byte!) */
 } DriverBinary;
 
@@ -113,8 +112,9 @@ typedef struct driver_entry {
     F_PTR timeout;       /* Reserved */
     F_PTR outputv;       /* Reserved */
     F_PTR ready_async;   /* Completion routine for driver_async */
-    F_PTR padding1;
-    F_PTR padding2;
+    F_PTR padding1[3];   /* pad to match size of modern driver struct */
+    int padding2[4];     /* more pad */
+    F_PTR padding3[2];   /* even more padding */
 } DriverEntry;
 
 

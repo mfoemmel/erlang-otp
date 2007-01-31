@@ -29,17 +29,20 @@
 	 insert_exports/2,	 
 	 is_exported/2,
 	 lookup/3, 
+	 lookup_records/2,
 	 new/0,
 	 next_core_label/1,
+	 store_records/3,
 	 update_next_core_label/2]).
 
 
--record(dialyzer_codeserver, {table, exports, next_core_label}).
+-record(dialyzer_codeserver, {table, exports, next_core_label, records}).
 
 new() ->
   Table = table__new(),
   Exports = sets:new(),
-  #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0}.
+  #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0,
+		       records=dict:new()}.
 
 delete(#dialyzer_codeserver{table=Table}) ->
   table__delete(Table).
@@ -72,7 +75,7 @@ lookup({M,F,A}, core, CS) ->
       end;
     error -> error
   end;
-lookup(M, core, CS) ->
+lookup(M, core, CS) when is_atom(M) ->
   table__lookup(CS#dialyzer_codeserver.table, {M, core});
 lookup(MFA = {_,_,_}, icode, CS) ->
   table__lookup(CS#dialyzer_codeserver.table, {MFA, icode}).      
@@ -82,6 +85,21 @@ next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
 
 update_next_core_label(NCL, CS = #dialyzer_codeserver{}) ->
   CS#dialyzer_codeserver{next_core_label=NCL}.
+
+store_records(Module, Dict, 
+	      CS=#dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
+  case dict:size(Dict) =:= 0 of
+    true -> CS;
+    false ->
+      CS#dialyzer_codeserver{records=dict:store(Module, Dict, RecDict)}
+  end.
+
+lookup_records(Module, 
+	       #dialyzer_codeserver{records=RecDict}) when is_atom(Module) ->
+  case dict:find(Module, RecDict) of
+    error -> dict:new();
+    {ok, Dict} -> Dict
+  end.
 
 table__new() ->
   ets:new(dialyzer_codeserver, []).

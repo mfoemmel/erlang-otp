@@ -81,20 +81,6 @@
 -define(OS_ACORN,  13).
 -define(OS_UNKNOWN,255).
 
--record(gzip, 
-	{
-	  method = ?Z_DEFLATED, 
-	  flags = 0,         %% :8
-	  mtime = 0,         %% :32/little
-	  xflags = 0,        %% :8
-	  ostype = ?OS_UNIX, %% :8 = unix
-	  extra,
-	  name,
-	  comment,
-	  crc
-	 }).
-	  
-
 -define(DEFLATE_INIT,    1).
 -define(DEFLATE_INIT2,   2).
 -define(DEFLATE_SETDICT, 3).
@@ -266,139 +252,24 @@ unzip(Binary) ->
     close(Z),
     list_to_binary(Bs).
     
-gzip(Data) ->
-    Bin0 = if list(Data) -> 
-		   list_to_binary(Data);
-	      binary(Data) ->
-		   Data;
-	      true -> 
-		   erlang:error(badarg)
-	   end,
+gzip(Data) when is_binary(Data); is_list(Data) ->
     Z = open(),
-    deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
-    Bs = deflate(Z, Bin0, finish),
+    deflateInit(Z, default, deflated, 16+?MAX_WBITS, 8, default),
+    Bs = deflate(Z, Data, finish),
     deflateEnd(Z),
-    Crc = crc32(Z, Bin0),
     close(Z),
-    %% add header and crc
-    Head = write_gzip_header(#gzip {}),
-    Tail = <<Crc:32/little, (size(Bin0)):32/little>>,
-    list_to_binary([Head,Bs,Tail]).
+    iolist_to_binary(Bs);
+gzip(_) -> erlang:error(badarg).
 
-gunzip(Bin0 = <<?ID1, ?ID2, Method, Flags, MTime:32, 
-	       XFlags, OsType, _/binary>>) ->
-    Gz0 = #gzip { method = Method,
-		  flags = Flags, 
-		  mtime = MTime, 
-		  xflags = XFlags, 
-		  ostype = OsType },
-    {_,Bin1} = read_gzip_header(Flags, Bin0, 10, Gz0),
-    %% io:format("gunzip header = ~p\n", [Gz1]),
+gunzip(Data) when is_binary(Data); is_list(Data) ->
     Z = open(),
-    inflateInit(Z, -?MAX_WBITS),
-    Bs = inflate(Z, Bin1),
-    Crc = crc32(Z),
-    Remain = getQSize(Z),
+    inflateInit(Z, 16+?MAX_WBITS),
+    Bs = inflate(Z, Data),
     inflateEnd(Z),
     close(Z),
-    Offset = size(Bin1) - Remain,
-    Bin2 = list_to_binary(Bs),
-    <<_:Offset/binary, Crc32:32/little, Length:32/little, _/binary>> = Bin1,
-    if Crc32 =/= Crc ->
-	    erlang:error(bad_crc);
-       Length =/= size(Bin2) ->
-	    erlang:error(bad_length);
-       true ->
-	    Bin2
-    end;
-gunzip(_) -> 
-    erlang:error(badarg).
-    
+    iolist_to_binary(Bs);
+gunzip(_) -> erlang:error(badarg).
 
-write_gzip_header(Gz) ->
-    {D1,F1} = 
-	if Gz#gzip.extra == undefined ->
-		{<<>>, 0};
-	   true ->
-		Extra = list_to_binary([Gz#gzip.extra]),
-		{ <<(size(Extra)):16/little, Extra/binary>>, ?FEXTRA}
-	end,
-    {D2,F2} =
-	if Gz#gzip.name == undefined ->
-		{<<>>, 0};
-	   true ->
-		Name = list_to_binary([Gz#gzip.name, 0]),
-		{ Name, ?FNAME }
-	end,
-    {D3,F3} =
-	if Gz#gzip.comment == undefined ->
-		{<<>>, 0};
-	   true ->
-		Comment = list_to_binary([Gz#gzip.comment, 0]),
-		{ Comment, ?FCOMMENT }
-	end,
-    {D4,F4} =
-	if Gz#gzip.crc == undefined ->
-		{<<>>, 0};
-	   true ->
-		{ <<(Gz#gzip.crc):16/little >>, ?FHCRC }
-	end,
-    << ?ID1, ?ID2, 
-     (Gz#gzip.method):8,
-     (F1 bor F2 bor F3 bor F4):8,
-     (Gz#gzip.mtime):32/little,
-     (Gz#gzip.xflags):8,
-     (Gz#gzip.ostype):8,
-     D1/binary, D2/binary, D3/binary, D4/binary>>.
-
-
-%% read the variable part of the gzip header
-read_gzip_header(Flags, Binary, Offs0, Gz0) ->
-    {Gz1,Offs1} =
-	if (Flags band ?FEXTRA) =/= 0 ->
-		<<_:Offs0/binary, Len:16/little, _/binary>> = Binary,
-		Offs00 = Offs0+2,
-		<<_:Offs00/binary, Extra:Len/binary,_/binary>> = Binary,
-		{Gz0#gzip{extra = Extra}, Offs0 + 2 + Len};
-	   true -> 
-		{Gz0,Offs0}
-	end,
-     {Gz2,Offs2} = 
-	if (Flags band ?FNAME) =/= 0 ->
-		Name = cname(Binary, Offs1),
-		{Gz1#gzip{name = Name}, Offs1 + length(Name)+1};
-	   true ->
-		{Gz1, Offs1}
-	end,
-    {Gz3, Offs3} = 
-	if (Flags band ?FCOMMENT) =/= 0 ->
-		Comment = cname(Binary, Offs2),
-		{Gz2#gzip{comment = Comment}, Offs2 + length(Comment)+1};
-	   true ->
-		{Gz2, Offs2}
-	end,
-    {Gz4, Offs4} = 
-	if (Flags band ?FHCRC) =/= 0 ->
-		<<_:Offs3, Crc:16/little, _/binary>> = Binary,
-		{Gz3#gzip{crc = Crc}, Offs3+2};
-	   true ->
-		{Gz3, Offs3}
-	end,
-    <<_:Offs4/binary, Body/binary>> = Binary,
-    {Gz4, Body}.
-
-
-cname(Binary, Offs) ->
-    case Binary of
-	<<_:Offs/binary, C, _/binary>> ->
-	    if C =:= 0 -> [];
-	       true -> [C|cname(Binary, Offs+1)]
-	    end;
-	<<_:Offs/binary>> ->
-	    []
-    end.    
-    
-	    
 collect(Z) -> 
     collect(Z,[]).
 
@@ -440,7 +311,10 @@ arg_strategy(_) -> erlang:error(badarg).
 arg_method(deflated) -> ?Z_DEFLATED;
 arg_method(_) -> erlang:error(badarg).
 
-arg_bitsz(Bits) when is_integer(Bits), 8 < abs(Bits), abs(Bits) =< 15 -> Bits;
+arg_bitsz(Bits) when is_integer(Bits) andalso
+		     ((8 < Bits andalso Bits < 48) orelse
+		      (-15 =< Bits andalso Bits < -8)) ->
+    Bits;
 arg_bitsz(_) -> erlang:error(badarg).
 
 arg_mem(Level) when is_integer(Level), 1 =< Level, Level =< 9 -> Level;

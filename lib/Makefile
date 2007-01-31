@@ -59,7 +59,7 @@ else
           $(SSL_APP) toolbar tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
           cosFileTransfer cosEventDomain et megaco webtool syntax_tools \
-	  xmerl edoc ssh inviso
+	  xmerl edoc ssh inviso typer
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe
       else # BUILD_ALL on unix
@@ -69,7 +69,7 @@ else
           pman $(SSL_APP) toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
-	  syntax_tools xmerl edoc ssh inviso
+	  syntax_tools xmerl edoc ssh inviso typer
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe $(TSP_APP)
       endif

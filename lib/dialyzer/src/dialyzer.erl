@@ -31,125 +31,160 @@
 %%% NOTE: Only functions exported by this module are available to
 %%%       other applications.
 %%%-------------------------------------------------------------------
--export([plain_cl/0, cl/1, run/1, gui/1]).
+-export([plain_cl/0, 
+	 run/1, 
+	 gui/0,
+	 gui/1]).
 
--include("dialyzer.hrl").	  %% file is automatically generated
+-include("dialyzer.hrl").
 
 %%--------------------------------------------------------------------
 %% Interfaces:
-%%  - cl/1 : to be run from the OS' command line
-%%  - run/1: to be run from within the Erlang shell
-%%  - gui/1: to be used by the GUI version
+%%  - plain_cl/0 : to be used ONLY by the dialyzer C program.
+%%  - run/1:       Erlang interface for a command line-like analysis
+%%  - gui/0/1:     Erlang interface for the gui.
 %%--------------------------------------------------------------------
 
 plain_cl() ->
-  dialyzer_cl_parse:start().
+  case dialyzer_cl_parse:start() of
+    {check_init, Opts} -> 
+      cl_return(cl_check_init(Opts, true), Opts);
+    {gui, Opts} ->
+      case cl_check_init(Opts) of
+	{error, _} = Error -> gui_return(Error, Opts);
+	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+	  if Opts#options.quiet -> ok;
+	     true  -> io:put_chars("  Proceeding with startup...\n")
+	  end,
+	  gui_return(internal_gui(Opts), Opts)
+      end;
+    {cl, Opts} -> 
+      case cl_check_init(Opts) of
+	{error, _} = Error -> cl_return(Error, Opts);
+	{ok, ?RET_NOTHING_SUSPICIOUS} ->
+	  if Opts#options.quiet -> ok;
+	     true  -> io:put_chars("  Proceeding with analysis... ")
+	  end,
+	  cl_return(cl(Opts), Opts)
+      end;
+    {error, Msg} -> 
+      cl_error(Msg)
+  end.
 
-cl(Args) ->
-  F = fun () ->
-	  case parse_args(Args) of
-	    [Opts] when is_list(Opts) ->
-	      OptsRecord = dialyzer_options:build(Opts),
-	      dialyzer_cl:start(OptsRecord);
-	    Other ->
-	      invalid_args("dialyzer:cl/1", Other)
-	  end
-      end,
-  R = doit(F),
-  halt(R).   %% halt with result as a return value
+cl_check_init(Opts) ->
+  cl_check_init(Opts, false).
 
-run(Opts) ->
-  F = fun () ->
-	  OptsRecord = dialyzer_options:build(Opts),
-	  dialyzer_cl:start(OptsRecord)
-      end,
-  doit(F).  %% return result to the caller (in Erlang)
-
-gui(Args) ->
-  F = fun () ->
-	  case parse_args(Args) of
-	    [Opts] when is_list(Opts) ->
-	      OptsRecord = dialyzer_options:build(Opts),
-	      dialyzer_gui:start(OptsRecord);
-	    Other ->
-	      invalid_args("dialyzer:gui/1", Other)
-	  end
+cl_check_init(Opts, Force) ->
+  if Opts#options.quiet -> ok;
+     true -> io:put_chars("  Checking whether the initial "
+			  "PLT exists and is up-to-date...")
+  end,
+  F = fun() ->
+	    dialyzer_cl:check_init_plt(Opts, Force)
       end,
   doit(F).
+
+cl(Opts) ->
+  F = fun() ->
+	  dialyzer_cl:start(Opts)
+      end,
+  doit(F).
+
+run(Opts) when length(Opts) > 0 ->
+  try
+    case dialyzer_options:build([{quiet, true}, {erlang_mode, true}|Opts]) of
+      {error, Msg} -> throw({dialyzer_error, Msg});
+      OptsRecord ->
+	case cl_check_init(OptsRecord) of
+	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
+	    case dialyzer_cl:start(OptsRecord) of
+	      {?RET_DISCREPANCIES_FOUND, Warnings, []} -> {ok, Warnings};
+	      {?RET_NOTHING_SUSPICIOUS, [], []}    -> {ok, []};
+	      {?RET_INTERNAL_ERROR, Warnings, Errors} -> {error, Warnings, 
+							  Errors};
+	      {error, Msg} -> throw({dialyzer_error, lists:flatten(Msg)})
+	    end;
+	  {error, ErrorMsg1} ->
+	    throw({dialyzer_error, ErrorMsg1})
+	end
+    end
+  catch
+    throw:{dialyzer_error, ErrorMsg} -> 
+      erlang:fault({dialyzer_error, lists:flatten(ErrorMsg)})
+  end.
+
+internal_gui(OptsRecord) ->
+  F = fun() ->
+	  dialyzer_gui:start(OptsRecord),
+	  ?RET_NOTHING_SUSPICIOUS
+      end,
+  doit(F).
+
+gui() ->
+  gui([]).
+
+gui(Opts) ->  
+  try
+    case dialyzer_options:build([{quiet, true}|Opts]) of
+      {error, Msg} -> throw({dialyzer_error, Msg});
+      OptsRecord ->
+	case cl_check_init(OptsRecord) of
+	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
+	    F = fun() ->
+		    dialyzer_gui:start(OptsRecord)
+		end,
+	    case doit(F) of
+	      {ok, _} -> ok;
+	      {error, Msg} -> throw({dialyzer_error, Msg})
+	    end;
+	  {error, ErrorMsg1} ->
+	    throw({dialyzer_error, ErrorMsg1})
+	end
+    end
+  catch
+    throw:{dialyzer_error, ErrorMsg} ->
+      erlang:fault({dialyzer_error, lists:flatten(ErrorMsg)})
+  end.
 
 %%-----------
 %% Machinery
 %%-----------
 
 doit(F) ->
-  wait_init(),
-  case catch {ok, F()} of
-    {ok, Result} ->
-      Result;
-    {'EXIT', E} ->
-      report("terminated abnormally: ~P.", [E, 10]),
-      ?RET_INTERNAL_ERROR;
-    Thrown ->
-      report("throw without catch: ~P.", [Thrown, 15]),
-      ?RET_INTERNAL_ERROR
+  try 
+    {ok, F()}
+  catch
+    throw:{dialyzer_error, Msg} ->
+      {error, lists:flatten(Msg)}
   end.
 
-wait_init() ->
-  case erlang:whereis(code_server) of
-    undefined ->
-      erlang:yield(),
-      wait_init();
-    _ ->
-      ok
-  end.
+cl_error(Msg) ->
+  cl_return({error, Msg}, #options{}).
 
-invalid_args(Where, Args) ->
-  report("invalid arguments to ~s: ~w.", [Where, Args]),
-  exit(error).
+gui_return(R, Opts) ->
+  cl_return(R, Opts#options{quiet=true}).
 
-parse_args([A | As]) when is_atom(A) ->
-  [parse_arg(atom_to_list(A)) | parse_args(As)];
-parse_args([A | As]) ->
-  [parse_arg(A) | parse_args(As)];
-parse_args([]) ->
-  [].
+cl_return({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{quiet=true}) -> halt(R);
+cl_return({ok, R = ?RET_DISCREPANCIES_FOUND}, #options{quiet=true}) -> halt(R);
+cl_return({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{}) ->
+  io:put_chars("done (passed successfully)\n"),
+  halt(R);
+cl_return({ok, R = ?RET_DISCREPANCIES_FOUND},  #options{output_file=Output}) ->
+  io:put_chars("done (warnings were emitted)\n"),
+  cl_check_log(Output),
+  halt(R);
+cl_return({ok, R = ?RET_INTERNAL_ERROR},  #options{output_file=Output}) ->
+  Msg = "dialyzer: Internal problems were encountered in the analysis.",
+  io:format("~s\n", [Msg]),
+  cl_check_log(Output),
+  halt(R);  
+cl_return({error, Msg1}, #options{output_file=Output}) ->
+  Msg2 = "dialyzer: Internal problems were encountered in the analysis.",
+  io:format("\n~s\n~s\n", [Msg1, Msg2]),
+  cl_check_log(Output),
+  halt(?RET_INTERNAL_ERROR).
 
-parse_arg(A) ->
-  case catch {ok, parse(A)} of
-    {ok, Expr} ->
-      case catch erl_parse:normalise(Expr) of
-	{'EXIT', _} ->
-	  report("bad argument: '~s':", [A]),
-	  exit(error);
-	Term ->
-	  Term
-      end;
-    {error, S} ->
-      report("error parsing argument '~s'", [A]),
-      report(S, []),
-      exit(error)
-  end.
-
-parse(S) ->
-  case erl_scan:string(S ++ ".", 1) of
-    {ok, Ts, _} ->
-      case erl_parse:parse_exprs(Ts) of
-	{ok, [Expr]} ->
-	  Expr;
-	{error, E} ->
-	  parse_error(E)
-      end;
-    {error, E, _} ->
-      parse_error(E)
-  end.
-
-parse_error({_L, M, D}) ->
-  throw({error,M:format_error(D)});
-parse_error(E) ->
-  %% Just in case we get some other error descriptor.
-  S = io_lib:fwrite("error parsing expression: ~P.",[E,15]),
-  throw({error,S}).
-
-report(S, As) ->
-  io:fwrite(S, As),
-  io:nl().
+cl_check_log("") ->
+  ok;
+cl_check_log(Output) ->
+  io:format("  Check output file `~s' for details\n", [Output]).

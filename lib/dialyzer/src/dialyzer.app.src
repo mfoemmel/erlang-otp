@@ -14,7 +14,8 @@
 	     dialyzer_icode,
 	     dialyzer_options,
 	     dialyzer_plt,
-	     dialyzer_typesig]},
+	     dialyzer_typesig,
+	     dialyzer_utils]},
   {registered, []},
   {applications, [compiler, gs, hipe, kernel, stdlib]},
   {env, []}]}.

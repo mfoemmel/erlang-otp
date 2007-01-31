@@ -74,7 +74,7 @@ static const char dashes[PTR_SIZE+3] = {
 };
 #endif
 
-#ifdef DEBUG
+#if defined(DEBUG) && defined(__GNUC__)
 
 /*
  * This file defines functions for use within a debugger like gdb

@@ -16,34 +16,35 @@
 %%
 %% $Id$
 %%
-%% @copyright 2001-2003 Richard Carlsson
-%% @author Richard Carlsson <richardc@csd.uu.se>
-%%   [http://www.csd.uu.se/~richardc/]
+%% @copyright 2001-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
 %% @version {@vsn}
 %% @end
 %% =====================================================================
 
-%% @TODO check weirdness in name generation for @spec f(TypeName, ...) -> ...
-%% @TODO option for ignoring functions matching some pattern ('..._test_'/0)
-%% @TODO @private_type tag, opaque unless generating private docs?
-%% @TODO document the record type syntax
-%% @TODO document the @docfile and @headerfile tags, with includes-option
-%% @TODO some 'skip' option for ignoring particular modules/packages?
-%% @TODO intermediate-level packages: document even if no local sources.
-%% @TODO multiline comment support (needs modified comment representation)
-%% @TODO config-file for default settings
-%% @TODO config: locations of all local docdirs; generate local doc-index page
-%% @TODO config: URL:s of offline packages/apps
-%% @TODO config: default stylesheet
-%% @TODO config: default header/footer, etc.
-%% @TODO offline linkage
+%% TODO: check weirdness in name generation for @spec f(TypeName, ...) -> ...
+%% TODO: don't stop for undefined macros, just warn?
+%% TODO: option for ignoring functions matching some pattern ('..._test_'/0)
+%% TODO: @private_type tag, opaque unless generating private docs?
+%% TODO: document the record type syntax
+%% TODO: document the @docfile and @headerfile tags, with includes-option
+%% TODO: some 'skip' option for ignoring particular modules/packages?
+%% TODO: intermediate-level packages: document even if no local sources.
+%% TODO: multiline comment support (needs modified comment representation)
+%% TODO: config-file for default settings
+%% TODO: config: locations of all local docdirs; generate local doc-index page
+%% TODO: config: URL:s of offline packages/apps
+%% TODO: config: default stylesheet
+%% TODO: config: default header/footer, etc.
+%% TODO: offline linkage
+%% TODO: including source code, explicitly and/or automatically
 
 %% @doc EDoc - the Erlang program documentation generator.
 %%
 %% This module provides the main user interface to EDoc.
 %% <ul>
 %%   <li><a href="overview-summary.html">EDoc User Manual</a></li>
-%%   <li><a href="overview-summary.html#usage">Running EDoc</a></li>
+%%   <li><a href="overview-summary.html#Running_EDoc">Running EDoc</a></li>
 %% </ul>
 
 -module(edoc).
@@ -126,7 +127,7 @@ file(Name, Options) ->
     edoc_lib:write_file(Text, Dir, BaseName ++ Suffix).
 
 
-%% @TODO better documentation of files/1/2, packages/1/2, application/1/2/3
+%% TODO: better documentation of files/1/2, packages/1/2, application/1/2/3
 
 %% @spec (Files::[filename() | {package(), [filename()]}]) -> ok
 %% @equiv packages(Packages, [])
@@ -137,7 +138,7 @@ files(Files) ->
 %% @spec (Files::[filename() | {package(), [filename()]}],
 %%        Options::option_list()) -> ok
 %% @doc Runs EDoc on a given set of source files. See {@link run/3} for
-%% details.
+%% details, including options.
 %% @equiv run([], Files, Options)
 
 files(Files, Options) ->
@@ -153,8 +154,9 @@ packages(Packages) ->
 %% @type package() = atom() | string()
 %%
 %% @doc Runs EDoc on a set of packages. The `source_path' option is used
-%% to locate the files; see {@link run/3} for details. This function
-%% automatically appends the current directory to the source path.
+%% to locate the files; see {@link run/3} for details, including
+%% options. This function automatically appends the current directory to
+%% the source path.
 %%
 %% @equiv run(Packages, [], Options)
 
@@ -204,7 +206,7 @@ application(App, Options) when atom(App) ->
 %%   </li>
 %% </ul>
 %%
-%% See {@link run/3} for details.
+%% See {@link run/3} for details, including options.
 %%
 %% @see application/2
 
@@ -265,8 +267,8 @@ opt_negations() ->
 %% that the doclet plugin module has its own particular options; see the
 %% `doclet' option below.
 %% 
-%% Also see {@link edoc:layout/2} for layout-related options, and
-%% {@link edoc:get_doc/2} for options related to reading source
+%% Also see {@link layout/2} for layout-related options, and
+%% {@link get_doc/2} for options related to reading source
 %% files.
 %%
 %% Options:
@@ -562,6 +564,7 @@ layout(Doc) ->
 %% </dl>
 %%
 %% @see layout/1
+%% @see run/3
 %% @see read/2
 %% @see file/2
 
@@ -717,7 +720,7 @@ get_doc(File) ->
 %%       <li>`Macro' = {@type {Name::atom(), Text::string()@}}</li>
 %%      </ul>
 %%    Specifies a set of EDoc macro definitions. See
-%%    <a href="overview-summary.html#macros">Inline macro expansion</a>
+%%    <a href="overview-summary.html#Macro_expansion">Inline macro expansion</a>
 %%    for details.
 %%  </dd>
 %%  <dt>{@type {hidden, bool()@}}
@@ -742,6 +745,7 @@ get_doc(File) ->
 %% edoc_lib:get_doc_env/4} for further options.
 %%
 %% @see get_doc/3
+%% @see run/3
 %% @see edoc_extract:source/5
 %% @see read/2
 %% @see layout/2

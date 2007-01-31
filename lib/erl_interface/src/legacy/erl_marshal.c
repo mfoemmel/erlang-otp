@@ -20,33 +20,6 @@
  */  
 #include "eidef.h"
 
-/* Try to find a good alloca() */
-/* AIX requires this to be the first thing in the file. */
-#ifndef alloca
-# ifdef __GNUC__
-#  define alloca __builtin_alloca
-# else
-#  ifdef __DECC
-#   define alloca(x) __ALLOCA(x)
-#  else
-#   ifdef _MSC_VER
-#    include <malloc.h>
-#    define alloca _alloca
-#   else
-#    if HAVE_ALLOCA_H
-#     include <alloca.h>
-#    else
-#     if defined (_AIX) || defined (_IBMR2)
- #pragma alloca
-#     else
-       char *alloca ();
-#     endif
-#    endif
-#   endif
-#  endif
-# endif
-#endif
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -91,7 +64,7 @@ static int init_cmp_array_p=1; /* initialize array, the first time */
 #  define INLINE
 #endif
 
-static INLINE int cmp_floats(double f1, double f2);
+static int cmp_floats(double f1, double f2);
 static INLINE double to_float(long l);
 
 #define ERL_NUM_CMP 1
@@ -601,6 +574,17 @@ cp = (char *) *(ext) + 2; \
 *ext += (i + 2); \
 len = i
 
+#define STATIC_NODE_BUF_SZ 30
+
+#define SET_NODE(node,node_buf,cp,len) \
+if (len >= STATIC_NODE_BUF_SZ) node = malloc(len+1); \
+else node = node_buf; \
+memcpy(node, cp, len); \
+node[len] = '\0'
+
+#define RESET_NODE(node,len) \
+if (len >= STATIC_NODE_BUF_SZ) free(node)
+
 /*
  * The actual DECODE engine.
  * Returns NULL in case of failure.
@@ -695,14 +679,14 @@ static ETERM *erl_decode_it(unsigned char **ext)
     case ERL_PID_EXT:
 	erl_free_term(ep);
 	{			/* Why not use the constructors? */
-	    char * node;
+	    char *node;
+	    char node_buf[STATIC_NODE_BUF_SZ];
 	    unsigned int number, serial;
 	    unsigned char creation;
+	    ETERM *eterm_p;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
-	    memcpy(node, cp, len);
-	    node[len] = '\0';
+	    SET_NODE(node,node_buf,cp,len);
 
 	    /* get the integers */
 #if 0
@@ -723,19 +707,21 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    *ext += 4;
 #endif
 	    creation =  *(*ext)++; 
-	    return erl_mk_pid(node, number, serial, creation);
+	    eterm_p = erl_mk_pid(node, number, serial, creation);
+	    RESET_NODE(node,len);
+	    return eterm_p;
 	}
     case ERL_REFERENCE_EXT:
 	erl_free_term(ep);
 	{
-	    char * node;
+	    char *node;
+	    char node_buf[STATIC_NODE_BUF_SZ];
 	    unsigned int number;
 	    unsigned char creation;
+	    ETERM *eterm_p;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
-	    memcpy(node, cp, len);
-	    node[len] = '\0';
+	    SET_NODE(node,node_buf,cp,len);
 
 	    /* get the integers */
 #if 0
@@ -746,16 +732,20 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    *ext += 4;
 #endif
 	    creation =  *(*ext)++; 
-	    return erl_mk_ref(node, number, creation);
+	    eterm_p = erl_mk_ref(node, number, creation);
+	    RESET_NODE(node,len);
+	    return eterm_p;
 	}
 
     case ERL_NEW_REFERENCE_EXT: 
 	erl_free_term(ep);
 	{
-	    char * node;
+	    char *node;
+	    char node_buf[STATIC_NODE_BUF_SZ];
 	    size_t cnt, i;
 	    unsigned int n[3];
 	    unsigned char creation;
+	    ETERM *eterm_p;
 
 #if 0
 	    cnt = ntohs(*((unsigned short *)*ext)++);
@@ -765,9 +755,7 @@ static ETERM *erl_decode_it(unsigned char **ext)
 #endif
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
-	    memcpy(node, cp, len);
-	    node[len] = '\0';
+	    SET_NODE(node,node_buf,cp,len);
 
 	    /* get the integers */
 	    creation =  *(*ext)++; 
@@ -781,20 +769,22 @@ static ETERM *erl_decode_it(unsigned char **ext)
 		*ext += 4;
 #endif
 	    }
-	    return __erl_mk_reference(node, cnt, n, creation);
+	    eterm_p = __erl_mk_reference(node, cnt, n, creation);
+	    RESET_NODE(node,len);
+	    return eterm_p;
 	}
 
     case ERL_PORT_EXT:
 	erl_free_term(ep);
 	{
-	    char * node;
+	    char *node;
+	    char node_buf[STATIC_NODE_BUF_SZ];
 	    unsigned int number;
 	    unsigned char creation;
+	    ETERM *eterm_p;
 
 	    READ_THE_NODE(ext,cp,len,i);
-	    node = alloca(len+1);
-	    memcpy(node, cp, len);
-	    node[len] = '\0';
+	    SET_NODE(node,node_buf,cp,len);
 
 	    /* get the integers */
 #if 0
@@ -805,7 +795,9 @@ static ETERM *erl_decode_it(unsigned char **ext)
 	    *ext += 4;
 #endif
 	    creation =  *(*ext)++; 
-	    return erl_mk_port(node, number, creation);
+	    eterm_p = erl_mk_port(node, number, creation);
+	    RESET_NODE(node,len);
+	    return eterm_p;
 	}
 
     case ERL_NIL_EXT:
@@ -1557,7 +1549,7 @@ static int cmp_exe2(unsigned char **e1, unsigned char **e2)
 
 /* Number compare */
 
-static INLINE int cmp_floats(double f1, double f2)
+static int cmp_floats(double f1, double f2)
 {
 #if defined(VXWORKS) && CPU == PPC860
       return erl_fp_compare((unsigned *) &f1, (unsigned *) &f2);

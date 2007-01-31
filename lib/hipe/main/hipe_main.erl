@@ -106,7 +106,12 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
 
 compile_icode_2(MFA, IcodeCfg3, Options, DebugState) ->  
   IcodeCfg4 = icode_split_arith(IcodeCfg3, MFA, Options),
-  %%hipe_icode_cfg:pp(IcodeCfg4),
+  case proplists:get_bool(pp_icode_split_arith, Options) of
+    true ->
+      hipe_icode_cfg:pp(IcodeCfg4);
+    _ ->
+      ok
+  end,
   IcodeCfg5 = icode_heap_test(IcodeCfg4, Options),
   %%hipe_icode_cfg:pp(IcodeCfg5),
   IcodeCfg6 = icode_remove_trivial_bbs(IcodeCfg5, Options),
@@ -171,11 +176,12 @@ icode_range_analysis(IcodeSSA, Options, Server, MFA) ->
      IcodeSSA
   end.
 
-icode_split_arith(IcodeCfg, MFA, Options) ->  
-  case proplists:get_bool(icode_split_arith, Options) of
+icode_split_arith(IcodeCfg, MFA, Options) ->
+  case proplists:get_bool(split_arith, Options) orelse
+                   proplists:get_bool(split_arith_unsafe, Options) of
     true ->
-      ?option_time(hipe_icode_split_arith:cfg(IcodeCfg, MFA),
-		   "Icode split arith", Options);
+      ?option_time(hipe_icode_split_arith:cfg(IcodeCfg, MFA, Options),
+                  "Icode split arith", Options);
     _ ->
       IcodeCfg
   end.
@@ -374,7 +380,12 @@ icode_ssa_unconvert(IcodeSSA, Options) ->
 icode_to_rtl(MFA, Icode, Options) ->
   debug("ICODE -> RTL: ~w, ~w~n", [MFA, hash(Icode)], Options),
   LinearRTL = translate_to_rtl(Icode, Options),
-  %% hipe_rtl:pp(standard_io, LinearRTL),
+  case proplists:get_value(pp_rtl_linear, Options) of
+    true ->
+      hipe_rtl:pp(standard_io, LinearRTL);
+    _ ->
+      ok
+  end,
   RtlCfg  = initialize_rtl_cfg(LinearRTL, Options),
   %% hipe_rtl_cfg:pp(RtlCfg),
   RtlCfg0 = hipe_rtl_cfg:remove_unreachable_code(RtlCfg),

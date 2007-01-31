@@ -197,6 +197,7 @@ i_int_bnot j s d
 #
 gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => bif1 Fail Bif Src Dst
 gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => bif1 Fail Bif Src Dst
+gc_bif1 Fail I Bif=u$bif:erlang:bitsize/1 Src Dst=d => bif1 Fail Bif Src Dst
 gc_bif1 Fail I Bif=u$bif:erlang:abs/1 Src Dst=d => bif1 Fail Bif Src Dst
 gc_bif1 Fail I Bif=u$bif:erlang:float/1 Src Dst=d => bif1 Fail Bif Src Dst
 gc_bif1 Fail I Bif=u$bif:erlang:round/1 Src Dst=d => bif1 Fail Bif Src Dst

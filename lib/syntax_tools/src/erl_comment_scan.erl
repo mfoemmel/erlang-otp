@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Reading comment lines from Erlang source code.
-%% 
-%% Copyright (C) 1997-2001 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,12 +14,13 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
-%%
 %% $Id$
 %%
+%% @copyright 1997-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Functions for reading comment lines from Erlang source code.
 
 -module(erl_comment_scan).
@@ -42,27 +39,25 @@
 %%
 %% @doc Extracts comments from an Erlang source code file. Returns a
 %% list of entries representing <em>multi-line</em> comments, listed in
-%% order of increasing line-numbers. For each entry, <code>Text</code>
+%% order of increasing line-numbers. For each entry, `Text'
 %% is a list of strings representing the consecutive comment lines in
 %% top-down order; the strings contain <em>all</em> characters following
-%% (but not including) the first comment-introducing "<code>%</code>"
+%% (but not including) the first comment-introducing `%'
 %% character on the line, up to (but not including) the line-terminating
 %% newline.
 %%
-%% <p>Furthermore, <code>Line</code> is the line number and
-%% <code>Column</code> the left column of the comment (i.e., the column
-%% of the comment-introducing <code>%</code> character).
-%% <code>Indent</code> is the indentation (or padding), measured in
+%% Furthermore, `Line' is the line number and
+%% `Column' the left column of the comment (i.e., the column
+%% of the comment-introducing `%' character).
+%% `Indent' is the indentation (or padding), measured in
 %% character positions between the last non-whitespace character before
 %% the comment (or the left margin), and the left column of the comment.
-%% <code>Line</code> and <code>Column</code> are always positive
-%% integers, and <code>Indentation</code> is a nonnegative integer.</p>
+%% `Line' and `Column' are always positive
+%% integers, and `Indentation' is a nonnegative integer.
 %%
-%% <p>Evaluation exits with reason <code>{read, Reason}</code> if a read
-%% error occurred, where <code>Reason</code> is an atom corresponding to
-%% a Posix error code; see the module <code>file</code> for details.</p>
-%%
-%% @see file
+%% Evaluation exits with reason `{read, Reason}' if a read
+%% error occurred, where `Reason' is an atom corresponding to
+%% a Posix error code; see the module {@link //kernel/file} for details.
 
 file(Name) ->
     Name1 = filename(Name),
@@ -95,7 +90,7 @@ file(Name) ->
 %%
 %% @doc Extracts comments from a string containing Erlang source code.
 %% Except for reading directly from a string, the behaviour is the same
-%% as for <code>file/1</code>.
+%% as for {@link file/1}.
 %%
 %% @see file/1
 
@@ -115,14 +110,11 @@ string(Text) ->
 %% @doc Extracts individual comment lines from a source code string.
 %% Returns a list of comment lines found in the text, listed in order of
 %% <em>decreasing</em> line-numbers, i.e., the last comment line in the
-%% input is first in the resulting list. <code>Text</code> is a single
+%% input is first in the resulting list. `Text' is a single
 %% string, containing all characters following (but not including) the
-%% first comment-introducing "<code>%</code>" character on the line, up
+%% first comment-introducing `%' character on the line, up
 %% to (but not including) the line-terminating newline. For details on
-%% <code>Line</code>, <code>Column</code> and <code>Indent</code>, see
-%% <code>file/1</code>.
-%%
-%% @see file/1
+%% `Line', `Column' and `Indent', see {@link file/1}.
 
 scan_lines(Text) ->
     scan_lines(Text, 1, 0, 0, []).
@@ -231,10 +223,10 @@ scan_char([], _L, _Col, Ack) ->
 %% @doc Joins individual comment lines into multi-line comments. The
 %% input is a list of entries representing individual comment lines,
 %% <em>in order of decreasing line-numbers</em>; see
-%% <code>scan_lines/1</code> for details. The result is a list of
+%% {@link scan_lines/1} for details. The result is a list of
 %% entries representing <em>multi-line</em> comments, <em>still listed
 %% in order of decreasing line-numbers</em>, but where for each entry,
-%% <code>Text</code> is a list of consecutive comment lines in order of
+%% `Text' is a list of consecutive comment lines in order of
 %% <em>increasing</em> line-numbers (i.e., top-down).
 %%
 %% @see scan_lines/1
@@ -267,13 +259,13 @@ join_lines([], Txt, L, Col, Ind) ->
 %% =====================================================================
 %% Utility functions for internal use
 
-filename([C | T]) when integer(C), C > 0, C =< 255 ->
+filename([C|T]) when is_integer(C), C > 0, C =< 255 ->
     [C | filename(T)];
 filename([H|T]) ->
     filename(H) ++ filename(T);
 filename([]) ->
     [];
-filename(N) when atom(N) ->
+filename(N) when is_atom(N) ->
     atom_to_list(N);
 filename(N) ->
     report_error("bad filename: `~P'.", [N, 25]),
@@ -283,8 +275,6 @@ error_read_file(Name) ->
     report_error("error reading file `~s'.", [Name]).
 
 report_error(S, Vs) ->
-    error_logger:error_msg(lists:concat([?MODULE, ": ", S, "\n"]),
-			   Vs).
-
+    error_logger:error_msg(lists:concat([?MODULE, ": ", S, "\n"]), Vs).
 
 %% =====================================================================

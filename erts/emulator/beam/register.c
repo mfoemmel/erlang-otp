@@ -84,23 +84,6 @@ reg_safe_write_lock(Process *c_p, Uint32 *c_p_locks)
 
     reg_write_lock();
 }
-
-static ERTS_INLINE void
-io_safe_lock(Process *c_p, Uint32 *c_p_locks)
-{
-    ASSERT(c_p_locks);
-    if (*c_p_locks) {
-	ASSERT(c_p);
-	if (erts_smp_io_trylock() != EBUSY)
-	    return;
-
-	/* Release process locks in order to avoid deadlock */
-	erts_smp_proc_unlock(c_p, *c_p_locks);
-	*c_p_locks = 0;
-    }
-
-    erts_smp_io_lock();
-}
 #endif
 
 void register_info(int to, void *to_arg)
@@ -167,52 +150,54 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
 {
     int res = 0;
     Process *proc = NULL;
-    Port *port;
+    Port *port = NULL;
     RegProc r, *rp;
-#ifdef ERTS_SMP
-    Uint32 proc_locks = c_p ? ERTS_PROC_LOCK_MAIN : 0;
-#endif
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
 
     if (is_not_atom(name) || name == am_undefined)
 	return res;
 
-#ifdef ERTS_SMP
-    if (is_internal_port(id))
-	io_safe_lock(c_p, &proc_locks);
-    reg_safe_write_lock(c_p, &proc_locks);
-
-    if (c_p && !proc_locks) {
-        erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
+    if (c_p->id == id) /* A very common case I think... */
+	proc = c_p;
+    else {
+	if (is_not_internal_pid(id) && is_not_internal_port(id))
+	    return res;
+	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MAIN);
+	if (is_internal_port(id)) {
+	    port = erts_id2port(id, NULL, 0);
+	    if (!port)
+		goto done;
+	}
     }
-    else
-	proc_locks = 0;
-    /* proc_locks is now used for looked-up process... */
+
+#ifdef ERTS_SMP
+    {
+	Uint32 proc_locks = proc ? ERTS_PROC_LOCK_MAIN : 0;
+	reg_safe_write_lock(proc, &proc_locks);
+
+	if (proc && !proc_locks)
+	    erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
+    }
 #endif
 
     if (is_internal_pid(id)) {
-	r.p = proc = erts_pid2proc(c_p, ERTS_PROC_LOCK_MAIN,
-				   id, ERTS_PROC_LOCK_MAIN);
+	if (!proc)
+	    proc = erts_pid2proc(NULL, 0, id, ERTS_PROC_LOCK_MAIN);
+	r.p = proc;
 	if (!proc)
 	    goto done;
-#ifdef ERTS_SMP
-	proc_locks = ERTS_PROC_LOCK_MAIN;
-#endif
 	if (proc->reg)
 	    goto done;
-	r.pt = port = NULL;
+	r.pt = NULL;
     }
-    else if (is_internal_port(id)) {
-	int ix = internal_port_index(id);
-	if (INVALID_PORT(&erts_port[ix], id))
-	    goto done;
-	r.pt = port = &erts_port[ix];
+    else {
+	ASSERT(!INVALID_PORT(port, id));
+	ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(port));
+	r.pt = port;
 	if (r.pt->reg)
 	    goto done;
-	r.p = proc = NULL;
+	r.p = NULL;
     }
-    else
-	goto done;
 
     r.name = name;
     
@@ -232,13 +217,14 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
     }
 
  done:
-#ifdef ERTS_SMP
-    if (c_p != proc && proc_locks)
-	erts_smp_proc_unlock(proc, proc_locks);
-    if (is_internal_port(id))
-	erts_smp_io_unlock();
-#endif
     reg_write_unlock();
+    if (port)
+	erts_smp_port_unlock(port);
+    if (c_p != proc) {
+	if (proc)
+	    erts_smp_proc_unlock(proc, ERTS_PROC_LOCK_MAIN);
+	erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
+    }
     return res;
 }
 
@@ -302,7 +288,6 @@ erts_whereis_name_to_id(Process *c_p, Eterm name)
 
 void
 erts_whereis_name(Process *c_p, Uint32 c_p_locks,
-		  int have_io_lock,
 		  Eterm name,
 		  Process** proc, Uint32 need_locks, int allow_proc_exiting,
 		  Port** port)
@@ -313,7 +298,7 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
     HashBucket* b;
 #ifdef ERTS_SMP
     Uint32 current_c_p_locks;
-    int locked_io_lock = 0;
+    Port *pending_port = NULL;
 
     if (!c_p)
 	c_p_locks = 0;
@@ -324,7 +309,7 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
     reg_safe_read_lock(c_p, &current_c_p_locks);
 
     /* Locked locks:
-     * - io lock if port != NULL
+     * - port lock on pending_port if pending_port != NULL
      * - read reg lock
      * - current_c_p_locks (either c_p_locks or 0) on c_p
      */
@@ -384,29 +369,39 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
 	    *port = NULL;
 	else {
 #ifdef ERTS_SMP
-	    if (!have_io_lock) {
-		locked_io_lock = 1;
-		have_io_lock = 1; /* One way or the other... */
-		if (erts_smp_io_trylock() == EBUSY) {
-		    /* Unlock all locks, acquire io lock, and restart... */
+	    if (pending_port == rp->pt)
+		pending_port = NULL;
+	    else {
+		if (pending_port) {
+		    /* Ahh! Registered port changed while reg lock
+		       was unlocked... */
+		    erts_smp_port_unlock(pending_port);
+		    pending_port = NULL;
+		}
+		    
+		if (erts_smp_port_trylock(rp->pt) == EBUSY) {
+		    Eterm id = rp->pt->id; /* id read only... */
+		    /* Unlock all locks, acquire port lock, and restart... */
 		    if (current_c_p_locks) {
-			erts_smp_proc_unlock(c_p,
-					     current_c_p_locks);
+			erts_smp_proc_unlock(c_p, current_c_p_locks);
 			current_c_p_locks = 0;
 		    }
 		    reg_read_unlock();
-		    erts_smp_io_lock();
+		    pending_port = erts_id2port(id, NULL, 0);
 		    goto restart;
 		}
 	    }
 #endif
 	    *port = rp->pt;
+	    ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(*port));
 	}
     }
 
 #ifdef ERTS_SMP
     if (c_p && !current_c_p_locks)
 	erts_smp_proc_lock(c_p, c_p_locks);
+    if (pending_port)
+	erts_smp_port_unlock(pending_port);
 #endif
 
     reg_read_unlock();
@@ -420,10 +415,7 @@ erts_whereis_process(Process *c_p,
 		     int allow_exiting)
 {
     Process *proc;
-    erts_whereis_name(c_p, c_p_locks,
-		      0, /* Only important when looking up ports */
-		      name, &proc, need_locks, allow_exiting,
-		      NULL);
+    erts_whereis_name(c_p,c_p_locks,name,&proc,need_locks,allow_exiting,NULL);
     return proc;
 }
 
@@ -434,19 +426,26 @@ erts_whereis_process(Process *c_p,
  * Otherwise returns 1
  *
  */
-int erts_unregister_name(Process *c_p, Uint32 c_p_locks, int have_io_lock,
+int erts_unregister_name(Process *c_p,
+			 Uint32 c_p_locks,
+			 Port *c_prt,
 			 Eterm name)
 {
     int res = 0;
     RegProc r, *rp;
+    Port *port = c_prt;
 #ifdef ERTS_SMP
     Uint32 current_c_p_locks;
-    int unlock_io_lock = !have_io_lock;
+
+    /*
+     * SMP note: If 'c_prt != NULL' and 'c_prt->reg->name == name',
+     *           we are *not* allowed to temporarily release the lock
+     *           on c_prt.
+     */
 
     if (!c_p)
 	c_p_locks = 0;
     current_c_p_locks = c_p_locks;
-    ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
 
  restart:
 
@@ -455,27 +454,33 @@ int erts_unregister_name(Process *c_p, Uint32 c_p_locks, int have_io_lock,
     
     r.name = name;
     if ((rp = (RegProc*) hash_get(&process_reg, (void*) &r)) != NULL) {
-	Process* p = rp->p;
-	Port* pt = rp->pt;
-	if (pt != NULL) {
+	if (rp->pt) {
 #ifdef ERTS_SMP
-	    if (!have_io_lock) {
-		have_io_lock = 1; /* One way or the other... */
-		if (erts_smp_io_trylock() == EBUSY) {
-		    /* Unlock all locks, acquire io lock, and restart... */
+	    if (port != rp->pt) {
+		if (port) {
+		    ERTS_SMP_LC_ASSERT(port != c_prt);
+		    erts_smp_port_unlock(port);
+		    port = NULL;
+		}
+
+		if (erts_smp_port_trylock(rp->pt) == EBUSY) {
+		    Eterm id = rp->pt->id; /* id read only... */
+		    /* Unlock all locks, acquire port lock, and restart... */
 		    if (current_c_p_locks) {
-			erts_smp_proc_unlock(c_p,
-					     current_c_p_locks);
+			erts_smp_proc_unlock(c_p, current_c_p_locks);
 			current_c_p_locks = 0;
 		    }
-		    reg_write_unlock();
-		    erts_smp_io_lock();
+		    reg_read_unlock();
+		    port = erts_id2port(id, NULL, 0);
 		    goto restart;
 		}
+		port = rp->pt;
 	    }
 #endif
-	    pt->reg = NULL;
-	} else if (p != NULL) {
+	    ERTS_SMP_LC_ASSERT(rp->pt == port && erts_lc_is_port_locked(port));
+	    rp->pt->reg = NULL;
+	} else if (rp->p) {
+	    Process* p = rp->p;
 #ifdef ERTS_SMP
 #ifdef DEBUG
 	    int lock_res =
@@ -509,9 +514,13 @@ int erts_unregister_name(Process *c_p, Uint32 c_p_locks, int have_io_lock,
     }
 
     reg_write_unlock();
+    if (c_prt != port) {
+	if (port)
+	    erts_smp_port_unlock(port);
+	if (c_prt)
+	    erts_smp_port_lock(c_prt);
+    }
 #ifdef ERTS_SMP
-    if (have_io_lock && unlock_io_lock)
-	erts_smp_io_unlock();
     if (c_p && !current_c_p_locks)
 	erts_smp_proc_lock(c_p, c_p_locks);
 #endif

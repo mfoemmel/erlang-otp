@@ -56,7 +56,7 @@ int atom_static_put(byte*, int);
 void init_atom_table(void);
 void atom_info(int, void *);
 void dump_atoms(int, void *);
-int erts_atom_get(byte* name, int len, Eterm* ap);
+int erts_atom_get(const char* name, int len, Eterm* ap);
 void erts_atom_get_text_space_sizes(Uint *reserved, Uint *used);
 #endif
 

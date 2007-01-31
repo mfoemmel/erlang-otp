@@ -1,8 +1,4 @@
 %% =====================================================================
-%% Igor, the Module Merger
-%%
-%% Copyright (C) 1998-2001 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or modify
 %% it under the terms of the GNU Lesser General Public License as
 %% published by the Free Software Foundation; either version 2 of the
@@ -18,52 +14,50 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% $Id$
 %%
-%% $Id: igor.erl,v 1.58 2004/11/22 07:25:01 richardc Exp $
-%%
+%% @copyright 1998-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Igor: the Module Merger and Renamer.
 %%
-%% <p>The program Igor merges the source code of one or more Erlang
+%% The program Igor merges the source code of one or more Erlang
 %% modules into a single module, which can then replace the original set
 %% of modules. Igor is also able to rename a set of (possibly
 %% interdependent) modules, without joining them into a single
-%% module.</p>
+%% module.
 %%
-%% <p>The main user interface consists of the functions <a
-%% href="#merge-3"><code>merge</code></a> and <a
-%% href="#rename-3"><code>rename</code></a>. See also the <a
-%% href="#parse_transform-2"><code>parse_transform</code></a>
-%% function</p>
+%% The main user interface consists of the functions {@link merge/3} and
+%% {@link rename/3}. See also the function {@link parse_transform/2}.
 %%
-%% <p>A note of warning: Igor cannot do anything about the case when the
+%% A note of warning: Igor cannot do anything about the case when the
 %% name of a remote function is passed to the built-in functions
-%% <code>apply</code> and <code>spawn</code> <em>unless</em> the module
+%% `apply' and `spawn' <em>unless</em> the module
 %% and function names are explicitly stated in the call, as in e.g.
-%% <code>apply(lists, reverse, [Xs])</code>. In all other cases, Igor
+%% `apply(lists, reverse, [Xs])'. In all other cases, Igor
 %% leaves such calls unchanged, and warns the user that manual editing
-%% might be necessary.</p>
+%% might be necessary.
 %%
-%% <p>Also note that Erlang records will be renamed as necessary to
+%% Also note that Erlang records will be renamed as necessary to
 %% avoid non-equivalent definitions using the same record name. This
 %% does not work if the source code accesses the name field of such
-%% record tuples by <code>element/2</code> or similar methods. Always
-%% use the record syntax to handle record tuples, if possible.</p>
+%% record tuples by `element/2' or similar methods. Always
+%% use the record syntax to handle record tuples, if possible.
 %%
-%% <p>Disclaimer: the author of this program takes no responsibility for
+%% Disclaimer: the author of this program takes no responsibility for
 %% the correctness of the produced output, or for any effects of its
 %% execution. In particular, the author may not be held responsible
-%% should Igor include the code of a deceased madman in the result.</p>
+%% should Igor include the code of a deceased madman in the result.
 %%
-%% <p>For further information on Igors in general, see e.g. "Young
+%% For further information on Igors in general, see e.g. "Young
 %% Frankenstein", Mel Brooks, 1974, and "The Fifth Elephant", Terry
-%% Pratchett, 1999.</p>
+%% Pratchett, 1999.
 %% @end
-%% 
 %% =====================================================================
-%%
+
+
 %% This program is named after the character Igor, assistant to Dr.
 %% Frankenstein, in the 1939 film "Son of Frankenstein" (with Boris
 %% Karloff playing The Monster for the last time; Igor was played by
@@ -84,7 +78,7 @@
 %% folding, specialisation, etc. This task is left to the Doctor.
 %% (Luckily, Igor can call on Inga to do some cleanup; cf. 'erl_tidy'.)
 
-%% FIXME: don't remove module qualifier if name is (auto-)imported!
+%% TODO: FIXME: don't remove module qualifier if name is (auto-)imported!
 %% TODO: handle merging of parameterized modules (somehow).
 %% TODO: check for redefinition of macros; check equivalence; comment out.
 %% TODO: {export, [E]}, E = atom() | {atom(), atom(), integer()}.
@@ -152,28 +146,28 @@ default_printer(Tree, Options) ->
 %%         syntaxTree() = erl_syntax:syntaxTree()
 %%
 %% @doc Allows Igor to work as a component of the Erlang compiler.
-%% Including the term <code>{parse_transform, igor}</code> in the
+%% Including the term `{parse_transform, igor}' in the
 %% compile options when compiling an Erlang module (cf.
-%% <code>compile:file/2</code>), will call upon Igor to process the
+%% `compile:file/2'), will call upon Igor to process the
 %% source code, allowing automatic inclusion of other source files. No
 %% files are created or overwritten when this function is used.
 %%
-%% <p>Igor will look for terms <code>{igor, List}</code> in the compile
-%% options, where <code>List</code> is a list of Igor-specific options,
+%% Igor will look for terms `{igor, List}' in the compile
+%% options, where `List' is a list of Igor-specific options,
 %% as follows:
 %% <dl>
-%%  <dt><code>{files, [filename()]}</code></dt>
+%%  <dt>`{files, [filename()]}'</dt>
 %%    <dd>The value specifies a list of source files to be merged with
-%%    the file being compiled; cf. <code>merge_files/4</code>.</dd>
+%%    the file being compiled; cf. `merge_files/4'.</dd>
 %% </dl>
 %%
-%% See <code>merge_files/4</code> for further options. Note, however,
+%% See `merge_files/4' for further options. Note, however,
 %% that some options are preset by this function and cannot be
 %% overridden by the user; in particular, all cosmetic features are
-%% turned off, for efficiency. Preprocessing is turned on.</p>
+%% turned off, for efficiency. Preprocessing is turned on.
 %%
 %% @see merge_files/4
-%% @see compile:file/2
+%% @see //compiler/compile:file/2
 
 parse_transform(Forms, Options) ->
     M = get_module_info(Forms),
@@ -207,113 +201,113 @@ merge(Name, Files) ->
 %%
 %%	    filename() = file:filename()
 %%
-%% @doc Merges source code files to a single file. <code>Name</code>
+%% @doc Merges source code files to a single file. `Name'
 %% specifies the name of the resulting module - not the name of the
-%% output file. <code>Files</code> is a list of file names and/or module
+%% output file. `Files' is a list of file names and/or module
 %% names of source modules to be read and merged (see
-%% <code>merge_files/4</code> for details). All the input modules must
+%% `merge_files/4' for details). All the input modules must
 %% be distinctly named.
 %%
-%% <p>The resulting source code is written to a file named
-%% "<code><em>Name</em>.erl</code>" in the current directory, unless
-%% otherwise specified by the options <code>dir</code> and
-%% <code>outfile</code> described below.</p>
+%% The resulting source code is written to a file named
+%% "`<em>Name</em>.erl'" in the current directory, unless
+%% otherwise specified by the options `dir' and
+%% `outfile' described below.
 %%
-%% <p>Examples:
+%% Examples:
 %% <ul>
-%%   <li>given a module <code>m</code> in file "<code>m.erl</code>"
-%%   which uses the standard library module <code>lists</code>, calling
-%%   <code>igor:merge(m, [m, lists])</code> will create a new file
-%%   "<code>m.erl</code> which contains the code from <code>m</code> and
+%%   <li>given a module `m' in file "`m.erl'"
+%%   which uses the standard library module `lists', calling
+%%   `igor:merge(m, [m, lists])' will create a new file
+%%   "`m.erl' which contains the code from `m' and
 %%   exports the same functions, and which includes the referenced code
-%%   from the <code>lists</code> module. The original file will be
-%%   renamed to "<code>m.erl.bak</code>".</li>
+%%   from the `lists' module. The original file will be
+%%   renamed to "`m.erl.bak'".</li>
 %%
-%%   <li>given modules <code>m1</code> and <code>m2</code>, in
-%%   corresponding files, calling <code>igor:merge(m, [m1, m2])</code>
-%%   will create a file "<code>m.erl</code>" which contains the code
-%%   from <code>m1</code> and <code>m2</code> and exports the functions
-%%   of <code>m1</code>.</li>
-%% </ul></p>
+%%   <li>given modules `m1' and `m2', in
+%%   corresponding files, calling `igor:merge(m, [m1, m2])'
+%%   will create a file "`m.erl'" which contains the code
+%%   from `m1' and `m2' and exports the functions
+%%   of `m1'.</li>
+%% </ul>
 %%
-%% <p>Stub module files are created for those modules that are to be
-%% exported by the target module (see options <code>export</code>,
-%% <code>stubs</code> and <code>stub_dir</code>).</p>
+%% Stub module files are created for those modules that are to be
+%% exported by the target module (see options `export',
+%% `stubs' and `stub_dir').
 %%
-%% <p>The function returns the list of file names of all created
+%% The function returns the list of file names of all created
 %% modules, including any automatically created stub modules. The file
-%% name of the target module is always first in the list.</p>
+%% name of the target module is always first in the list.
 %%
-%% <p>Note: If you get a "syntax error" message when trying to merge
+%% Note: If you get a "syntax error" message when trying to merge
 %% files (and you know those files to be correct), then try the
-%% <code>preprocess</code> option. It typically means that your code
+%% `preprocess' option. It typically means that your code
 %% contains too strange macros to be handled without actually performing
-%% the preprocessor expansions.</p>
+%% the preprocessor expansions.
 %% 
-%% <p>Options:
+%% Options:
 %% <dl>
-%%   <dt><code>{backup_suffix, string()}</code></dt>
+%%   <dt>`{backup_suffix, string()}'</dt>
 %%
 %%     <dd>Specifies the file name suffix to be used when a backup file
-%%     is created; the default value is <code>".bak"</code>.</dd>
+%%     is created; the default value is `".bak"'.</dd>
 %%
-%%   <dt><code>{backups, bool()}</code></dt>
+%%   <dt>`{backups, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, existing files will be
+%%     <dd>If the value is `true', existing files will be
 %%     renamed before new files are opened for writing. The new names
 %%     are formed by appending the string given by the
-%%     <code>backup_suffix</code> option to the original name. The
-%%     default value is <code>true</code>.</dd>
+%%     `backup_suffix' option to the original name. The
+%%     default value is `true'.</dd>
 %%
-%%   <dt><code>{dir, filename()}</code></dt>
+%%   <dt>`{dir, filename()}'</dt>
 %%
 %%     <dd>Specifies the name of the directory in which the output file
 %%     is to be written. An empty string is interpreted as the current
 %%     directory. By default, the current directory is used.</dd>
 %%
-%%   <dt><code>{outfile, filename()}</code></dt>
+%%   <dt>`{outfile, filename()}'</dt>
 %%
 %%     <dd>Specifies the name of the file (without suffix) to which the
 %%     resulting source code is to be written. By default, this is the
-%%     same as the <code>Name</code> argument.</dd>
+%%     same as the `Name' argument.</dd>
 %%
-%%   <dt><code>{preprocess, bool()}</code></dt>
+%%   <dt>`{preprocess, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, preprocessing will be done
-%%     when reading the source code. See <code>merge_files/4</code> for
+%%     <dd>If the value is `true', preprocessing will be done
+%%     when reading the source code. See `merge_files/4' for
 %%     details.</dd>
 %%
-%%   <dt><code>{printer, Function}</code></dt>
+%%   <dt>`{printer, Function}'</dt>
 %%     <dd><ul>
-%%       <li><code>Function = (syntaxTree()) -> string()</code></li>
+%%       <li>`Function = (syntaxTree()) -> string()'</li>
 %%     </ul>
 %%     Specifies a function for prettyprinting Erlang syntax trees.
 %%     This is used for outputting the resulting module definition, as
 %%     well as for creating stub files. The function is assumed to
 %%     return formatted text for the given syntax tree, and should raise
 %%     an exception if an error occurs. The default formatting function
-%%     calls <code>erl_prettypr:format/2</code>.</dd>
+%%     calls `erl_prettypr:format/2'.</dd>
 %%
-%%   <dt><code>{stub_dir, filename()}</code></dt>
+%%   <dt>`{stub_dir, filename()}'</dt>
 %%
 %%     <dd>Specifies the name of the directory to which any generated
 %%     stub module files are written. The default value is
-%%     <code>"stubs"</code>.</dd>
+%%     `"stubs"'.</dd>
 %%
-%%   <dt><code>{stubs, bool()}</code></dt>
+%%   <dt>`{stubs, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, stub module files will be
+%%     <dd>If the value is `true', stub module files will be
 %%     automatically generated for all exported modules that do not have
 %%     the same name as the target module. The default value is
-%%     <code>true</code>.</dd>
+%%     `true'.</dd>
 %%
-%%   <dt><code>{suffix, string()}</code></dt>
+%%   <dt>`{suffix, string()}'</dt>
 %%
 %%     <dd>Specifies the suffix to be used for the output file names;
-%%     the default value is <code>".erl"</code>.</dd>
+%%     the default value is `".erl"'.</dd>
 %% </dl>
 %%
-%% See <code>merge_files/4</code> for further options.</p>
+%% See `merge_files/4' for further options.
 %%
 %% @see merge/2
 %% @see merge_files/4
@@ -357,91 +351,91 @@ merge_files(Name, Files, Options) ->
 %%
 %% @doc Merges source code files and syntax trees to a single syntax
 %% tree. This is a file-reading front end to
-%% <code>merge_sources/3</code>. <code>Name</code> specifies the name of
+%% `merge_sources/3'. `Name' specifies the name of
 %% the resulting module - not the name of the output file.
-%% <code>Sources</code> is a list of syntax trees and/or lists of
+%% `Sources' is a list of syntax trees and/or lists of
 %% "source code form" syntax trees, each entry representing a module
-%% definition. <code>Files</code> is a list of file names and/or module
+%% definition. `Files' is a list of file names and/or module
 %% names of source modules to be read and included. All the input
 %% modules must be distinctly named.
 %%
-%% <p>If a name in <code>Files</code> is not the name of an existing
+%% If a name in `Files' is not the name of an existing
 %% file, Igor assumes it represents a module name, and tries to locate
 %% and read the corresponding source file. The parsed files are appended
-%% to <code>Sources</code> and passed on to
-%% <code>merge_sources/3</code>, i.e., entries in <code>Sources</code>
-%% are listed before entries read from files.</p>
+%% to `Sources' and passed on to
+%% `merge_sources/3', i.e., entries in `Sources'
+%% are listed before entries read from files.
 %%
-%% <p>If no exports are listed by an <code>export</code> option (see
-%% <code>merge_sources/3</code> for details), then if <code>Name</code>
+%% If no exports are listed by an `export' option (see
+%% `merge_sources/3' for details), then if `Name'
 %% is also the name of one of the input modules, that module will be
 %% exported; otherwise, the first listed module will be exported. Cf.
-%% the examples under <code>merge/3</code>.</p>
+%% the examples under `merge/3'.
 %%
-%% <p>The result is a pair <code>{Tree, Stubs}</code>, where
-%% <code>Tree</code> represents the source code that is the result of
-%% merging all the code in <code>Sources</code> and <code>Files</code>,
-%% and <code>Stubs</code> is a list of stub module descriptors (see
-%% <code>merge_sources/3</code> for details).</p>
+%% The result is a pair `{Tree, Stubs}', where
+%% `Tree' represents the source code that is the result of
+%% merging all the code in `Sources' and `Files',
+%% and `Stubs' is a list of stub module descriptors (see
+%% `merge_sources/3' for details).
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
-%%   <dt><code>{comments, bool()}</code></dt>
+%%   <dt>`{comments, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, source code comments in
+%%     <dd>If the value is `true', source code comments in
 %%     the original files will be preserved in the output. The default
-%%     value is <code>true</code>.</dd>
+%%     value is `true'.</dd>
 %%
-%%   <dt><code>{find_src_rules, [{string(), string()}]}</code></dt>
+%%   <dt>`{find_src_rules, [{string(), string()}]}'</dt>
 %%
 %%     <dd>Specifies a list of rules for associating object files with
 %%     source files, to be passed to the function
-%%     <code>filename:find_src/2</code>. This can be used to change the
+%%     `filename:find_src/2'. This can be used to change the
 %%     way Igor looks for source files. If this option is not specified,
 %%     the default system rules are used. The first occurrence of this
 %%     option completely overrides any later in the option list.</dd>
 %%
-%%   <dt><code>{includes, [filename()]}</code></dt>
+%%   <dt>`{includes, [filename()]}'</dt>
 %%
 %%     <dd>Specifies a list of directory names for the Erlang
 %%     preprocessor, if used, to search for include files (cf. the
-%%     <code>preprocess</code> option). The default value is the empty
+%%     `preprocess' option). The default value is the empty
 %%     list. The directory of the source file and the current directory
 %%     are automatically appended to the list.</dd>
 %%
-%%   <dt><code>{macros, [{atom(), term()}]}</code></dt>
+%%   <dt>`{macros, [{atom(), term()}]}'</dt>
 %%
 %%     <dd>Specifies a list of "pre-defined" macro definitions for the
-%%     Erlang preprocessor, if used (cf. the <code>preprocess</code>
+%%     Erlang preprocessor, if used (cf. the `preprocess'
 %%     option). The default value is the empty list.</dd>
 %%
-%%   <dt><code>{preprocess, bool()}</code></dt>
+%%   <dt>`{preprocess, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>false</code>, Igor will read source
+%%     <dd>If the value is `false', Igor will read source
 %%     files without passing them through the Erlang preprocessor
-%%     (<code>epp</code>), in order to avoid expansion of preprocessor
-%%     directives such as <code>-include(...).</code>,
-%%     <code>-define(...).</code> and <code>-ifdef(...)</code>, and
-%%     macro calls such as <code>?LINE</code> and <code>?MY_MACRO(x,
-%%     y)</code>. The default value is <code>false</code>, i.e.,
+%%     (`epp'), in order to avoid expansion of preprocessor
+%%     directives such as `-include(...).',
+%%     `-define(...).' and `-ifdef(...)', and
+%%     macro calls such as `?LINE' and `?MY_MACRO(x,
+%%     y)'. The default value is `false', i.e.,
 %%     preprocessing is not done. (See the module
-%%     <code>epp_dodger</code> for details.)
+%%     `epp_dodger' for details.)
 %%
-%%     <p>Notes: If a file contains too exotic definitions or uses of
+%%     Notes: If a file contains too exotic definitions or uses of
 %%     macros, it will not be possible to read it without preprocessing.
 %%     Furthermore, Igor does not currently try to sort out multiple
 %%     inclusions of the same file, or redefinitions of the same macro
 %%     name. Therefore, when preprocessing is turned off, it may become
 %%     necessary to edit the resulting source code, removing such
-%%     re-inclusions and redefinitions.</p></dd>
+%%     re-inclusions and redefinitions.</dd>
 %% </dl>
 %%
-%% See <code>merge_sources/3</code> for further options.</p>
+%% See `merge_sources/3' for further options.
 %%
 %% @see merge/3
 %% @see merge_files/3
 %% @see merge_sources/3
-%% @see filename:find_src/2
+%% @see //stdlib/filename:find_src/2
 %% @see epp_dodger
 
 merge_files(_, _Trees, [], _) ->
@@ -477,104 +471,104 @@ merge_files(Name, Trees, Files, Opts) ->
 %%      described by key-value pairs.
 %%
 %% @doc Merges syntax trees to a single syntax tree. This is the main
-%% code merging "engine". <code>Name</code> specifies the name of the
-%% resulting module. <code>Sources</code> is a list of syntax trees of
-%% type <code>form_list</code> and/or lists of "source code form" syntax
+%% code merging "engine". `Name' specifies the name of the
+%% resulting module. `Sources' is a list of syntax trees of
+%% type `form_list' and/or lists of "source code form" syntax
 %% trees, each entry representing a module definition. All the input
 %% modules must be distinctly named.
 %%
-%% <p>Unless otherwise specified by the options, all modules are assumed
+%% Unless otherwise specified by the options, all modules are assumed
 %% to be at least "static", and all except the target module are assumed
-%% to be "safe". See the <code>static</code> and <code>safe</code>
-%% options for details.</p>
+%% to be "safe". See the `static' and `safe'
+%% options for details.
 %%
-%% <p>If <code>Name</code> is also the name of one of the input modules,
+%% If `Name' is also the name of one of the input modules,
 %% the code from that module will occur at the top of the resulting
 %% code, and no extra "header" comments will be added. In other words,
-%% the look of that module will be preserved.</p>
+%% the look of that module will be preserved.
 %%
-%% <p>The result is a pair <code>{Tree, Stubs}</code>, where
-%% <code>Tree</code> represents the source code that is the result of
-%% merging all the code in <code>Sources</code>, and <code>Stubs</code>
-%% is a list of stub module descriptors (see below).</p>
+%% The result is a pair `{Tree, Stubs}', where
+%% `Tree' represents the source code that is the result of
+%% merging all the code in `Sources', and `Stubs'
+%% is a list of stub module descriptors (see below).
 %%
-%% <p><code>Stubs</code> contains one entry for each exported input
-%% module (cf. the <code>export</code> option), each entry describing a
+%% `Stubs' contains one entry for each exported input
+%% module (cf. the `export' option), each entry describing a
 %% stub module that redirects calls of functions in the original module
 %% to the corresponding (possibly renamed) functions in the new module.
 %% The stub descriptors can be used to automatically generate stub
-%% modules; see <code>create_stubs/2</code>.</p>
+%% modules; see `create_stubs/2'.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
-%%   <dt><code>{export, [atom()]}</code></dt>
+%%   <dt>`{export, [atom()]}'</dt>
 %%
 %%     <dd>Specifies a list of names of input modules whose interfaces
 %%     should be exported by the output module. A stub descriptor is
 %%     generated for each specified module, unless its name is
-%%     <code>Name</code>. If no modules are specified, then if
-%%     <code>Name</code> is also the name of an input module, that
+%%     `Name'. If no modules are specified, then if
+%%     `Name' is also the name of an input module, that
 %%     module will be exported; otherwise the first listed module in
-%%     <code>Sources</code> will be exported. The default value is the
+%%     `Sources' will be exported. The default value is the
 %%     empty list.</dd>
 %%
-%%   <dt><code>{export_all, bool()}</code></dt>
+%%   <dt>`{export_all, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, this is equivalent to
-%%     listing all of the input modules in the <code>export</code>
-%%     option. The default value is <code>false</code>.</dd>
+%%     <dd>If the value is `true', this is equivalent to
+%%     listing all of the input modules in the `export'
+%%     option. The default value is `false'.</dd>
 %%
-%% <dt><code>{file_attributes, Preserve}</code></dt>
+%% <dt>`{file_attributes, Preserve}'</dt>
 %%     <dd><ul>
-%%       <li><code>Preserve = yes | comment | no</code></li>
+%%       <li>`Preserve = yes | comment | no'</li>
 %%     </ul>
-%%     If the value is <code>yes</code>, all file attributes
-%%     <code>-file(...)</code> in the input sources will be preserved in
-%%     the resulting code. If the value is <code>comment</code>, they
+%%     If the value is `yes', all file attributes
+%%     `-file(...)' in the input sources will be preserved in
+%%     the resulting code. If the value is `comment', they
 %%     will be turned into comments, but remain in their original
 %%     positions in the code relative to the other source code forms. If
-%%     the value is <code>no</code>, all file attributes will be removed
+%%     the value is `no', all file attributes will be removed
 %%     from the code, unless they have attached comments, in which case
-%%     they will be handled as in the <code>comment</code> case. The
-%%     default value is <code>no</code>.</dd>
+%%     they will be handled as in the `comment' case. The
+%%     default value is `no'.</dd>
 %%
-%% <dt><code>{no_banner, bool()}</code></dt>
+%% <dt>`{no_banner, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, no banner comment will be
+%%     <dd>If the value is `true', no banner comment will be
 %%     added at the top of the resulting module, even if the target
 %%     module does not have the same name as any of the input modules.
 %%     Instead, Igor will try to preserve the look of the module whose
 %%     code is at the top of the output. The default value is
-%%     <code>false</code>.</dd>
+%%     `false'.</dd>
 %%
-%% <dt><code>{no_headers, bool()}</code></dt>
+%% <dt>`{no_headers, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, no header comments will be
+%%     <dd>If the value is `true', no header comments will be
 %%     added to the resulting module at the beginning of each section of
 %%     code that originates from a particular input module. The default
-%%     value is <code>false</code>, which means that section headers are
+%%     value is `false', which means that section headers are
 %%     normally added whenever more than two or more modules are
 %%     merged.</dd>
 %%
-%% <dt><code>{no_imports, bool()}</code></dt>
+%% <dt>`{no_imports, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, all
-%%     <code>-import(...)</code> declarations in the original code will
+%%     <dd>If the value is `true', all
+%%     `-import(...)' declarations in the original code will
 %%     be expanded in the result; otherwise, as much as possible of the
 %%     original import declarations will be preserved. The default value
-%%     is <code>false</code>.</dd>
+%%     is `false'.</dd>
 %%
-%% <dt><code>{notes, Notes}</code></dt>
+%% <dt>`{notes, Notes}'</dt>
 %%     <dd><ul>
-%%       <li><code>Notes = always | yes | no</code></li>
+%%       <li>`Notes = always | yes | no'</li>
 %%     </ul>
-%%     If the value is <code>yes</code>, comments will be inserted where
+%%     If the value is `yes', comments will be inserted where
 %%     important changes have been made in the code. If the value is
-%%     <code>always</code>, <em>all</em> changes to the code will be
-%%     commented. If the value is <code>no</code>, changes will be made
-%%     without comments. The default value is <code>yes</code>.</dd>
+%%     `always', <em>all</em> changes to the code will be
+%%     commented. If the value is `no', changes will be made
+%%     without comments. The default value is `yes'.</dd>
 %%
-%% <dt><code>{redirect, [{atom(), atom()}]}</code></dt>
+%% <dt>`{redirect, [{atom(), atom()}]}'</dt>
 %%
 %%     <dd>Specifies a list of pairs of module names, representing a
 %%     mapping from old names to new. <em>The set of old names may not
@@ -583,10 +577,10 @@ merge_files(Name, Trees, Files, Opts) ->
 %%     corresponding new modules. <em>The redirected calls will not be
 %%     further processed, even if the new destination is in one of the
 %%     input modules.</em> This option mainly exists to support module
-%%     renaming; cf. <code>rename/3</code>. The default value is the
+%%     renaming; cf. `rename/3'. The default value is the
 %%     empty list.</dd>
 %%
-%% <dt><code>{safe, [atom()]}</code></dt>
+%% <dt>`{safe, [atom()]}'</dt>
 %%
 %%     <dd>Specifies a list of names of input modules such that calls to
 %%     these "safe" modules may be turned into direct local calls, that
@@ -596,7 +590,7 @@ merge_files(Name, Trees, Files, Opts) ->
 %%     default, all involved modules <em>except the target module</em>
 %%     are considered "safe".</dd>
 %%
-%% <dt><code>{static, [atom()]}</code></dt>
+%% <dt>`{static, [atom()]}'</dt>
 %%
 %%     <dd>Specifies a list of names of input modules which will be
 %%     assumed never to be replaced (reloaded) unless the target module
@@ -605,22 +599,22 @@ merge_files(Name, Trees, Files, Opts) ->
 %%     regarded as "static", regardless of the value of this option. By
 %%     default, all involved modules are assumed to be static.</dd>
 %%
-%% <dt><code>{tidy, bool()}</code></dt>
+%% <dt>`{tidy, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, the resulting code will be
-%%     processed using the <code>erl_tidy</code> module, which removes
+%%     <dd>If the value is `true', the resulting code will be
+%%     processed using the `erl_tidy' module, which removes
 %%     unused functions and does general code cleanup. (See
-%%     <code>erl_tidy:module/2</code> for additional options.) The
-%%     default value is <code>true</code>.</dd>
+%%     `erl_tidy:module/2' for additional options.) The
+%%     default value is `true'.</dd>
 %%
-%% <dt><code>{verbose, bool()}</code></dt>
+%% <dt>`{verbose, bool()}'</dt>
 %%
-%%     <dd>If the value is <code>true</code>, progress messages will be
+%%     <dd>If the value is `true', progress messages will be
 %%     output while the program is running; the default value is
-%%     <code>false</code>.</dd>
-%% </dl></p>
+%%     `false'.</dd>
+%% </dl>
 %%
-%% <p>Note: The distinction between "static" and "safe" modules is
+%% Note: The distinction between "static" and "safe" modules is
 %% necessary in order not to break the semantics of dynamic code
 %% replacement. A "static" source module will not be replaced unless the
 %% target module also is. Now imagine a state machine implemented by
@@ -635,14 +629,14 @@ merge_files(Name, Trees, Files, Opts) ->
 %% replacement of the merged state machine - it could run forever
 %% without detecting the code change. Therefore, all such calls must
 %% remain remote-calls (detecting code changes), but may call the target
-%% module directly.</p>
+%% module directly.
 %%
-%% <p>If we are sure that this kind of situation cannot ensue, we may
+%% If we are sure that this kind of situation cannot ensue, we may
 %% specify the involved modules as "safe", and all calls between them
 %% will become local. Note that if the target module itself is specified
 %% as safe, "remote" calls to itself will be turned into local calls.
 %% This would destroy the code replacement properties of e.g. a typical
-%% server loop.</p>
+%% server loop.
 %%
 %% @see create_stubs/2
 %% @see rename/3
@@ -2297,19 +2291,20 @@ maybe_modified_1({value, Node1}, Node, Depth, Message, Notes) ->
 %%
 %% @doc Creates stub module source files corresponding to the given stub
 %% descriptors. The returned value is the list of names of the created
-%% files. See <code>merge_sources/3</code> for more information about
+%% files. See `merge_sources/3' for more information about
 %% stub descriptors.
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
-%%   <dt><code>{backup_suffix, string()}</code></dt>
-%%   <dt><code>{backups, bool()}</code></dt>
-%%   <dt><code>{printer, Function}</code></dt>
-%%   <dt><code>{stub_dir, filename()}</code></dt>
-%%   <dt><code>{suffix, string()}</code></dt>
-%%   <dt><code>{verbose, bool()}</code></dt>
+%%   <dt>`{backup_suffix, string()}'</dt>
+%%   <dt>`{backups, bool()}'</dt>
+%%   <dt>`{printer, Function}'</dt>
+%%   <dt>`{stub_dir, filename()}'</dt>
+%%   <dt>`{suffix, string()}'</dt>
+%%   <dt>`{verbose, bool()}'</dt>
 %% </dl>
-%% See <code>merge/3</code> for details on these options.</p>
+%% 
+%% See `merge/3' for details on these options.
 %%
 %% @see merge/3
 %% @see merge_sources/3
@@ -2388,71 +2383,71 @@ rename(Files, Renamings) ->
 %%     Renamings = [{atom(), atom()}]
 %%
 %% @doc Renames a set of possibly interdependent source code modules.
-%% <code>Files</code> is a list of file names of source modules to be
-%% processed. <code>Renamings</code> is a list of pairs of <em>module
+%% `Files' is a list of file names of source modules to be
+%% processed. `Renamings' is a list of pairs of <em>module
 %% names</em>, representing a mapping from old names to new. The
 %% returned value is the list of output file names.
 %%
-%% <p>Each file in the list will be read and processed separately. For
+%% Each file in the list will be read and processed separately. For
 %% every file, each reference to some module M, such that there is an
-%% entry <code>{<em>M</em>, <em>M1</em>}</code> in
-%% <code>Renamings</code>, will be changed to the corresponding M1.
+%% entry `{<em>M</em>, <em>M1</em>}' in
+%% `Renamings', will be changed to the corresponding M1.
 %% Furthermore, if a file F defines module M, and there is an entry
-%% <code>{<em>M</em>, <em>M1</em>}</code> in <code>Renamings</code>, a
-%% new file named <code><em>M1</em>.erl</code> will be created in the
+%% `{<em>M</em>, <em>M1</em>}' in `Renamings', a
+%% new file named `<em>M1</em>.erl' will be created in the
 %% same directory as F, containing the source code for module M, renamed
-%% to M1. If M does not have an entry in <code>Renamings</code>, the
+%% to M1. If M does not have an entry in `Renamings', the
 %% module is not renamed, only updated, and the resulting source code is
-%% written to <code><em>M</em>.erl</code> (typically, this overwrites
-%% the original file). The <code>suffix</code> option (see below) can be
-%% used to change the default "<code>.erl</code>" suffix for the
-%% generated files.</p>
+%% written to `<em>M</em>.erl' (typically, this overwrites
+%% the original file). The `suffix' option (see below) can be
+%% used to change the default "`.erl'" suffix for the
+%% generated files.
 %%
-%% <p>Stub modules will automatically be created (see the
-%% <code>stubs</code> and <code>stub_dir</code> options below) for each
+%% Stub modules will automatically be created (see the
+%% `stubs' and `stub_dir' options below) for each
 %% module that is renamed. These can be used to redirect any calls still
 %% using the old module names. The stub files are created in the same
 %% directory as the source file (typically overwriting the original
-%% file).</p>
+%% file).
 %%
-%% <p>Options:
+%% Options:
 %% <dl>
-%%   <dt><code>{backup_suffix, string()}</code></dt>
-%%   <dt><code>{backups, bool()}</code></dt>
-%%   <dt><code>{printer, Function}</code></dt>
-%%   <dt><code>{stubs, bool()}</code></dt>
-%%   <dt><code>{suffix, string()}</code></dt>
+%%   <dt>`{backup_suffix, string()}'</dt>
+%%   <dt>`{backups, bool()}'</dt>
+%%   <dt>`{printer, Function}'</dt>
+%%   <dt>`{stubs, bool()}'</dt>
+%%   <dt>`{suffix, string()}'</dt>
 %% </dl>
-%% See <code>merge/3</code> for details on these options.</p>
+%% See `merge/3' for details on these options.
 %%
-%% <p><dl>
-%%   <dt><code>{comments, bool()}</code></dt>
-%%   <dt><code>{preprocess, bool()}</code></dt>
+%% <dl>
+%%   <dt>`{comments, bool()}'</dt>
+%%   <dt>`{preprocess, bool()}'</dt>
 %% </dl>
-%% See <code>merge_files/4</code> for details on these options.</p>
+%% See `merge_files/4' for details on these options.
 %%
-%% <p><dl>
-%%   <dt><code>{no_banner, bool()}</code></dt>
+%% <dl>
+%%   <dt>`{no_banner, bool()}'</dt>
 %% </dl>
-%% For the <code>rename</code> function, this option is
-%% <code>true</code> by default. See <code>merge_sources/3</code> for
-%% details.</p>
+%% For the `rename' function, this option is
+%% `true' by default. See `merge_sources/3' for
+%% details.
 %%
-%% <p><dl>
-%%   <dt><code>{tidy, bool()}</code></dt>
+%% <dl>
+%%   <dt>`{tidy, bool()}'</dt>
 %% </dl>
-%% For the <code>rename</code> function, this option is
-%% <code>false</code> by default. See <code>merge_sources/3</code> for
-%% details.</p>
+%% For the `rename' function, this option is
+%% `false' by default. See `merge_sources/3' for
+%% details.
 %%
-%% <p><dl>
-%%   <dt><code>{no_headers, bool()}</code></dt>
-%%   <dt><code>{stub_dir, filename()}</code></dt>
+%% <dl>
+%%   <dt>`{no_headers, bool()}'</dt>
+%%   <dt>`{stub_dir, filename()}'</dt>
 %% </dl>
-%% These options are preset by the <code>rename</code> function and
-%% cannot be overridden by the user.</p>
+%% These options are preset by the `rename' function and
+%% cannot be overridden by the user.
 %%
-%% <p>See <code>merge_sources/3</code> for further options.</p>
+%% See `merge_sources/3' for further options.
 %%
 %% @see merge/3
 %% @see merge_sources/3

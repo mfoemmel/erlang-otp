@@ -20,15 +20,34 @@
 #include "config.h"
 #endif
 
-#ifdef HAVE_UNISTD_H
-# include <unistd.h>
-#endif
-
-#if (defined(NO_SYSCONF) || !defined(_SC_NPROCESSORS_CONF)) \
-    && defined(HAVE_SYS_SYSCTL_H)
-#include <sys/types.h> /* Needed on Darwin */
-#include <sys/param.h> /* Needed on OpenBSD */
-#include <sys/sysctl.h>
+#ifdef __WIN32__
+#  include <windows.h>
+#else
+#  include <sys/types.h>
+#  include <sys/param.h>
+#  ifdef SYS_SELECT_H
+#    include <sys/select.h>
+#  endif
+#  if TIME_WITH_SYS_TIME
+#     include <sys/time.h>
+#     include <time.h>
+#  else
+#     if HAVE_SYS_TIME_H
+#         include <sys/time.h>
+#     else
+#         include <time.h>
+#     endif
+#  endif
+#  include <string.h>
+#  ifdef HAVE_UNISTD_H
+#    include <unistd.h>
+#  endif
+#  if (defined(NO_SYSCONF) || !defined(_SC_NPROCESSORS_CONF))
+#    ifdef HAVE_SYS_SYSCTL_H
+#      include <sys/sysctl.h>
+#    endif
+#  endif
+#  include <errno.h>
 #endif
 
 #include "erl_misc_utils.h"
@@ -37,18 +56,38 @@ int
 erts_no_of_cpus(void)
 {
     int ncpus;
-#if !defined(NO_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
+#ifdef __WIN32__
+    SYSTEM_INFO sys_info;
+    GetSystemInfo(&sys_info);
+    ncpus = (int) sys_info.dwNumberOfProcessors;
+#elif !defined(NO_SYSCONF) && defined(_SC_NPROCESSORS_CONF)
     ncpus = (int) sysconf(_SC_NPROCESSORS_CONF);
 #elif defined(HAVE_SYS_SYSCTL_H) && defined(CTL_HW) && defined(HW_NCPU)
     {
 	int mib[2] = {CTL_HW, HW_NCPU};
 	size_t ncpus_len = sizeof(int);
 	if (sysctl(&mib[0], 2, &ncpus, &ncpus_len, NULL, 0) < 0)
-	    ncpus = 1;
+	    ncpus = -1;
     }
 #else
-    ncpus = 1;
+    ncpus = -1;
 #endif
     return ncpus;
 }
 
+int
+erts_milli_sleep(long ms)
+{
+    if (ms > 0) {
+#ifdef __WIN32__
+	Sleep((DWORD) ms);
+#else
+	struct timeval tv;
+	tv.tv_sec = ms / 1000;
+	tv.tv_usec = (ms % 1000) * 1000;
+	if (select(0, NULL, NULL, NULL, &tv) < 0)
+	    return errno == EINTR ? 1 : -1;
+#endif
+    }
+    return 0;
+}

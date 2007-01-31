@@ -535,7 +535,7 @@ loop(NodeInfo) ->
 	{stop,nofetch,Sender} ->
 	    dict:fold(
 	      fun(Node,{_,MetaPid},_) -> 
-		      rpc:cast(Node,observer_backend,ttb_stop,[MetaPid])
+		      rpc:call(Node,observer_backend,ttb_stop,[MetaPid])
 	      end,
 	      ok,
 	      NodeInfo),
@@ -554,7 +554,7 @@ loop(NodeInfo) ->
 	    AllNodesAndMeta = 
 		dict:fold(
 		  fun(Node,{MetaFile,MetaPid},Nodes) -> 
-			  rpc:cast(Node,observer_backend,ttb_stop,[MetaPid]),
+			  rpc:call(Node,observer_backend,ttb_stop,[MetaPid]),
 			  [{Node,MetaFile}|Nodes]
 		  end,
 		  [],
@@ -710,7 +710,14 @@ format(Files,Out,Handler) when list(Files), list(hd(Files)) ->
 prepare(File,Handler) ->
     {Traci,Proci} = read_traci(File),
     Node = get_node(Traci),
-    lists:foreach(fun({Pid,PI}) -> ets:insert(?MODULE,{Pid,PI,Node}) end,Proci),
+    lists:foreach(fun({Pid,PI}) ->
+			  %% The last definition for a Pid will overwrite
+			  %% any previous definitions. That should be what
+			  %% we want (we will get the registered name for
+			  %% the process, rather than the initial call if
+			  %% both are present in the list).
+			  ets:insert(?MODULE,{Pid,PI,Node})
+		  end,Proci),
     FileOrWrap = get_file(File,Traci),
     Handler1 = get_handler(Handler,Traci),
     {FileOrWrap,Traci,Handler1}.
@@ -745,7 +752,7 @@ get_metafile(File) ->
 
 
 interpret_binary(<<>>,Dict,P) ->
-    {Dict,P};
+    {Dict,lists:reverse(P)};
 interpret_binary(B,Dict,P) ->
     {Term,Rest} = get_term(B),
     {Dict1,P1} = 

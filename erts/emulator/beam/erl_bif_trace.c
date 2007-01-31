@@ -82,12 +82,9 @@ suspend_process_1(Process* p, Eterm pid)
     }
 
 #ifdef ERTS_SMP
-    erts_smp_io_safe_lock(p, ERTS_PROC_LOCK_MAIN);
-
     tracee = erts_suspend_another_process(p, ERTS_PROC_LOCK_MAIN,
 					  pid, ERTS_PROC_LOCKS_ALL);
     if (!tracee) {
-	erts_smp_io_unlock();
 	ERTS_SMP_BIF_CHK_RESCHEDULE(p);
 	BIF_ERROR(p, BADARG);
     }
@@ -100,7 +97,7 @@ suspend_process_1(Process* p, Eterm pid)
 	ASSERT(p->suspendee == pid);
 	p->suspendee = NIL; /* Hand over suspender responsibilities to user */
 #else
-	erts_suspend(tracee, ERTS_PROC_LOCKS_ALL, NIL);
+	erts_suspend(tracee, ERTS_PROC_LOCKS_ALL, NULL);
 #endif
 	ERTS_BIF_PREP_RET(ret, am_true);
     }
@@ -117,8 +114,6 @@ suspend_process_1(Process* p, Eterm pid)
     if (tracee)
 	erts_smp_proc_unlock(tracee, ERTS_PROC_LOCKS_ALL);
 
-    erts_smp_io_unlock();
-
     return ret;
 }
 
@@ -132,10 +127,8 @@ resume_process_1(Process* p, Eterm pid)
 	BIF_ERROR(p, BADARG);
     }
 
-    erts_smp_io_safe_lock(p, ERTS_PROC_LOCK_MAIN);
     tracee = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN, pid, ERTS_PROC_LOCKS_ALL);
     if (!tracee) {
-	erts_smp_io_unlock();
 	BIF_ERROR(p, BADARG);
     }
 
@@ -147,7 +140,6 @@ resume_process_1(Process* p, Eterm pid)
 	ERTS_BIF_PREP_ERROR(ret, p, BADARG);
     }
 
-    erts_smp_io_unlock();
     erts_smp_proc_unlock(tracee, ERTS_PROC_LOCKS_ALL);
 
     return ret;
@@ -503,13 +495,11 @@ erts_trace_flags(Eterm List,
 Eterm
 trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 {
-    /*#if 0    Eterm item;*/
     int on;
     Process *tracer_p = NULL;
     Eterm tracer = NIL;
     int matches = 0;
     Uint mask = 0;
-    /*#if 0    Uint res;*/
     int cpu_ts = 0;
 
     if (! erts_trace_flags(list, &mask, &tracer, &cpu_ts)) {
@@ -551,45 +541,6 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
     default: 
 	goto error;
     }
-
-#if 0
-    while (is_list(list)) {
-	item = CAR(list_val(list));
-	if (is_atom(item) && (res = erts_trace_flag2bit(item)) != 0) {
-	    mask |= res;
-#ifdef HAVE_ERTS_NOW_CPU
-	} else if (item == am_cpu_timestamp) {
-	    cpu_ts = !0;
-#endif
-	} else if (is_tuple(item)) {
-	    Eterm* tp = tuple_val(item);
-	    
-	    if (arityval(tp[0]) != 2 || tp[1] != am_tracer)
-		goto error;
-	    tracer = tp[2];
-	    if (is_internal_pid(tracer)) {
-		if (internal_pid_index(tracer) >= erts_max_processes)
-		    goto error;
-		tracer_p = process_tab[internal_pid_index(tracer)];
-		if (INVALID_PID(tracer_p, tracer))
-		    goto error;
-		tracer_port = NULL;
-	    } else if (is_internal_port(tracer)) {
-		if (internal_port_index(tracer) >= erts_max_ports)
-		    goto error;
-		tracer_port = &erts_port[internal_port_index(tracer)];
-		if (INVALID_TRACER_PORT(tracer_port, tracer))
-		    goto error;
-		tracer_p = NULL;
-	    } else
-		goto error;
-	} else
-	    goto error;
-	list = CDR(list_val(list));
-    }
-    if (is_not_nil(list))
-	goto error;
-#endif
 
     /*
      * Set/reset the call trace flag for the given Pids.
@@ -761,7 +712,6 @@ static int already_traced(Process *c_p, Process *tracee_p, Eterm tracer)
 {
     /*
      * SMP build assumes that either system is blocked or:
-     * * io lock is held
      * * main lock is held on c_p
      * * all locks multiple are held on tracee_p
      */
@@ -770,8 +720,7 @@ static int already_traced(Process *c_p, Process *tracee_p, Eterm tracer)
 	/* This tracee is already being traced, and not by the 
 	 * tracer to be */
 	if (is_internal_port(tracee_p->tracer_proc)) {
-	    Port *tprt = &erts_port[internal_port_index(tracee_p->tracer_proc)];
-	    if (INVALID_TRACER_PORT(tprt, tracee_p->tracer_proc)) {
+	    if (!erts_is_valid_tracer_port(tracee_p->tracer_proc)) {
 		/* Current trace port now invalid 
 		 * - discard it and approve the new. */
 		goto remove_tracer;
@@ -809,7 +758,6 @@ check_tracee(Process *c_p, Eterm tracer, Process *traceep)
     if (!traceep || tracer == traceep->id)
 	return 0;
 
-    ERTS_SMP_LC_ASSERT(erts_smp_lc_io_is_locked());
     ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCKS_ALL
 			& erts_proc_lc_my_proc_locks(traceep))
 		       == ERTS_PROC_LOCKS_ALL);
@@ -857,18 +805,10 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
     } else if (is_internal_pid(pid_spec)
 	       && internal_pid_index(pid_spec) < erts_max_processes) {
 	Process *tracee;
-#ifdef ERTS_SMP
-	int have_io_lock = 0;
-    restart:
-#endif
 	tracee = erts_pid2proc(p, ERTS_PROC_LOCK_MAIN,
 			       pid_spec, ERTS_PROC_LOCKS_ALL);
 
 	if (!tracee) {
-#ifdef ERTS_SMP
-	    if (have_io_lock)
-		erts_smp_io_unlock();
-#endif
 	    return am_undefined;
 	} else {
 	    tracer = tracee->tracer_proc;
@@ -884,20 +824,7 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 	    }
 	}
 	else if (is_internal_port(tracer)) {
-#ifdef ERTS_SMP
-	    if (!have_io_lock && erts_smp_io_trylock() == EBUSY) {
-		erts_smp_proc_unlock(tracee, ERTS_PROC_LOCKS_ALL);
-		if (p != tracee)
-		    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
-		erts_smp_io_lock();
-		have_io_lock = 1;
-		erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN);
-		goto restart;
-	    }
-	    have_io_lock = 1;
-#endif
-	    if (INVALID_TRACER_PORT(&erts_port[internal_port_index(tracer)],
-				    tracer))
+	    if (!erts_is_valid_tracer_port(tracer))
 		goto reset_tracer;
 	}
 #ifdef ERTS_SMP
@@ -905,8 +832,6 @@ trace_info_pid(Process* p, Eterm pid_spec, Eterm key)
 			     (tracee == p
 			      ? ERTS_PROC_LOCKS_ALL_MINOR
 			      : ERTS_PROC_LOCKS_ALL));
-	if (have_io_lock)
-	    erts_smp_io_unlock();
 #endif
     } else if (is_external_pid(pid_spec)
 	       && external_pid_dist_entry(pid_spec) == erts_this_dist_entry) {

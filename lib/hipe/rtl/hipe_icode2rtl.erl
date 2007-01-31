@@ -498,10 +498,12 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;
-gen_type_test([X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
+gen_type_test(Z = [X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
   case Type of
     function2 ->
       {hipe_tagscheme:test_fun2(X, Y, TrueLbl, FalseLbl, Pred), ConstTab};
+    fixnum ->
+      {hipe_tagscheme:test_fixnums(Z, TrueLbl, FalseLbl, Pred), ConstTab};
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;

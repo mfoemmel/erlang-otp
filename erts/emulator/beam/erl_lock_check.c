@@ -74,20 +74,24 @@ static erts_lc_lock_order_t erts_lock_order[] = {
      *						 the lock name)"
      */
 #ifdef ERTS_SMP
-    {	"io",					NULL			},
+    {	"driver_lock",				"driver_name"		},
+    {	"port_lock",				"port_id"		},
+#endif
+    {	"port_data_lock",			"address"		},
+#ifdef ERTS_SMP
     {	"bif_timers",				NULL			},
     {	"reg_tab",				NULL			},
     {	"proc_main",				"pid"			},
+    {   "driver_list",                          NULL                    },
     {	"proc_link",				"pid"			},
     {	"proc_msgq",				"pid"			},
+    {	"dist_entry",				"address"		},
     {	"proc_status",				"pid"			},
     {	"proc_tab",				NULL			},
-    {	"schdlq",				NULL			},
     {	"db_tab",				"address"		},
     {	"meta_pid_to_tab",			NULL 			},
     {	"meta_pid_to_fixed_tab",		NULL 			},
     {	"db_tables",				NULL 			},
-    {	"dist_entry",				"address"		},
     {	"node_table",				NULL			},
     {	"dist_table",				NULL			},
     {	"sys_tracers",				NULL			},
@@ -95,6 +99,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"module_tab",				NULL			},
     {	"export_tab",				NULL			},
     {	"fun_tab",				NULL			},
+    {	"environ",				NULL			},
 #endif
     {	"asyncq",				"address"		},
 #ifndef ERTS_SMP
@@ -105,7 +110,10 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"child_status",				NULL			},
 #endif
     {	"drv_ev_state",				NULL			},
+    {	"schdlq",				NULL			},
+    {	"multi_scheduling_block",		NULL			},
     {	"pollset",				"address"		},
+    {	"pdl_refc_mtx",				NULL			},
     {	"binary_alloc",				NULL			},
     {	"alcu_init_atoms",			NULL			},
     {	"mseg_init_atoms",			NULL			},
@@ -124,6 +132,12 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"alcu_allocator",			"index"			},
     {	"mseg",					NULL			},
 #ifdef ERTS_SMP
+#ifdef ERTS_USE_PORT_TASKS
+    {	"port_tasks_lock",			NULL			},
+#endif
+    {	"port_tab_lock",			NULL			},
+    {	"xports_list_alloc_lock",		NULL			},
+    {	"inet_buffer_stack_lock",		NULL			},
     {	"gc_info",				NULL			},
     {	"io_wake",				NULL			},
     {	"timer_wheel",				NULL			},
@@ -774,10 +788,12 @@ void
 erts_lc_check_exact(erts_lc_lock_t *have, int have_len)
 {
     erts_lc_locked_locks_t *l_lcks = get_my_locked_locks();
-    if (!l_lcks && have && have_len > 0)
-	lock_mismatch(NULL, 1,
-		      -1, have, have_len,
-		      -1, NULL, 0);
+    if (!l_lcks) {
+	if (have && have_len > 0)
+	    lock_mismatch(NULL, 1,
+			  -1, have, have_len,
+			  -1, NULL, 0);
+    }
     else {
 	int i;
 	erts_lc_locked_lock_t *l_lck = l_lcks->first;

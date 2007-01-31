@@ -28,6 +28,8 @@
 	     opts = [], 	% options
 	     thissock = nil,    % this sslsocket
 	     proxysock = nil, 	% local proxy socket within Erlang
+	     proxyport = nil,   % local port for proxy within Erlang
 	     status = nil,	% open | closing | closed 
+	     encrypted = false, %
 	     debug = false	%
 	    }).

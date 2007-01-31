@@ -311,14 +311,12 @@ int* pBuild;			/* Pointer to build number. */
   *pBuild = int_os_version.dwBuildNumber;
 }
 
-void init_getenv_state(state)
-GETENV_STATE *state;
+void init_getenv_state(GETENV_STATE *state)
 {
    *state = NULL;
 }
 
-char *getenv_string(state0)
-GETENV_STATE *state0;
+char *getenv_string(GETENV_STATE *state0)
 {
    char *state = (char *) *state0;
    char *cp;
@@ -337,6 +335,11 @@ GETENV_STATE *state0;
    *state0 = (GETENV_STATE) state;
 
    return cp;
+}
+
+void fini_getenv_state(GETENV_STATE *state)
+{
+   *state = NULL;
 }
 
 /************************** Port I/O *******************************/
@@ -435,7 +438,7 @@ static void output(ErlDrvData, char*, int);
 static void ready_input(ErlDrvData, ErlDrvEvent);
 static void ready_output(ErlDrvData, ErlDrvEvent);
 
-const struct erl_drv_entry spawn_driver_entry = {
+struct erl_drv_entry spawn_driver_entry = {
     spawn_init,
     spawn_start,
     stop,
@@ -452,7 +455,7 @@ const struct erl_drv_entry spawn_driver_entry = {
 
 extern int null_func(void);
 
-const struct erl_drv_entry fd_driver_entry = {
+struct erl_drv_entry fd_driver_entry = {
     null_func,
     fd_start,
     fd_stop,
@@ -467,7 +470,7 @@ const struct erl_drv_entry fd_driver_entry = {
     NULL /* ready_async */
 };
 
-const struct erl_drv_entry vanilla_driver_entry = {
+struct erl_drv_entry vanilla_driver_entry = {
     null_func,
     vanilla_start,
     stop,
@@ -2125,7 +2128,7 @@ sys_init_io(void)
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");
-	erts_port[ret].status |= ERTS_IMMORTAL_PORT;
+	erts_port[ret].status |= ERTS_PORT_SFLG_IMMORTAL;
     }
 #endif
 }

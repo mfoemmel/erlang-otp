@@ -1621,7 +1621,7 @@ write_agent_snmp_target_addr_conf(Dir, ManagerIp, UDP,
 "%% The data is inserted into the snmpTargetAddrTable defined\n"
 "%% in SNMP-TARGET-MIB, and in the snmpTargetAddrExtTable defined\n"
 "%% in SNMP-COMMUNITY-MIB.\n"
-"%% Each row is a 9-tuple:\n"
+"%% Each row is a 10-tuple:\n"
 "%% {Name, Ip, Udp, Timeout, RetryCount, TagList, ParamsName, EngineId,\n"
 "%%        TMask, MaxMessageSize}.\n"
 "%% The EngineId value is only used if Inform-Requests are sent to this\n"

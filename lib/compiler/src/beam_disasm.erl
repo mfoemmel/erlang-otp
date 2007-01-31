@@ -105,7 +105,7 @@ pp(Stream, Disasm) when is_pid(Stream), is_list(Disasm) ->
       end, Disasm),
     ok;
 pp(File, Disasm) when is_list(Disasm) ->
-    case file:open(File, write) of
+    case file:open(File, [write]) of
 	{ok,F} ->
 	    Result = pp(F, Disasm),
 	    file:close(F),
@@ -938,9 +938,16 @@ resolve_inst({gc_bif2,Args},Imports,_,_) ->
     {gc_bif,BifName,F,Live,[A1,A2],Reg};
 
 %%
+%% New instructions for creating non-byte aligned binaries .
+%%
+resolve_inst({bs_bits_to_bytes2,[Arg2,Arg3]},_,_,_) ->
+    [A2,A3] = resolve_args([Arg2,Arg3]),
+    {bs_bits_to_bytes2,A2,A3};
+resolve_inst({bs_final2,[X,Y]},_,_,_) ->
+    {bs_final2,X,Y};
+%%
 %% Catches instructions that are not yet handled.
 %%
-
 resolve_inst(X,_,_,_) -> ?exit({resolve_inst,X}).
 
 %%-----------------------------------------------------------------------

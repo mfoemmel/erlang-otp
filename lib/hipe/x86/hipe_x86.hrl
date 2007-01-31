@@ -31,7 +31,7 @@
 %%% arg		::= src
 %%% args	::= <list of arg>
 %%%
-%%% mfa		::= {x86_mfa, atom, atom, integer}
+%%% mfa		::= {x86_mfa, atom, atom, byte}
 %%% prim	::= {x86_prim, atom}
 %%% fun		::= mfa | prim | temp | mem
 %%%
@@ -47,9 +47,9 @@
 -record(x86_imm, {value}).
 -record(x86_mem, {base, off, type}).
 -record(x86_fpreg, {reg, pseudo}).
--record(x86_mfa, {m, f, a}).
+-record(x86_mfa, {m::atom(), f::atom(), a::byte()}).
 -record(x86_prim, {prim}).
--record(x86_sdesc, {exnlab, fsize, arity, live}).
+-record(x86_sdesc, {exnlab, fsize, arity, live::tuple()}).
 
 %%% Basic instructions.
 %%% These follow the AT&T convention, i.e. op src,dst (dst := dst op src)
@@ -65,6 +65,7 @@
 -record(fmove, {src, dst}).
 -record(fp_binop, {op, src, dst}).
 -record(fp_unop, {op, arg}).		% arg may be [] :-(
+-record(imul, {imm_opt, src, temp}).	% imm_opt:[]|imm, src:temp|mem
 -record(jcc, {cc, label}).
 -record(jmp_fun, {'fun', linkage}).	% tailcall, direct or indirect
 -record(jmp_label, {label}).		% local jmp, direct
@@ -87,5 +88,6 @@
 
 %%% Function definitions.
 
--record(defun, {mfa, formals, code, data, isclosure, isleaf,
+-record(defun, {mfa, formals, code, data,
+	       	isclosure::bool(), isleaf::bool(),
 		var_range, label_range}).

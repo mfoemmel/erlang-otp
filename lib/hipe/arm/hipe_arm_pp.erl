@@ -86,6 +86,14 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ", ", []),
       pp_am1(Dev, Am1),
       io:format(Dev, "\n", []);
+    #mul{dst=Dst, src1=Src1, src2=Src2} ->
+      io:format(Dev, "\tmul ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src1),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src2),
+      io:format(Dev, "\n", []);
     #pseudo_bc{'cond'=Cond, true_label=TrueLab, false_label=FalseLab, pred=Pred} ->
       io:format(Dev, "\tpseudo_bc ~w, .~s_~w # .~s_~w ~.2f\n",
 		[cond_name(Cond), Pre, TrueLab, Pre, FalseLab, Pred]);
@@ -138,6 +146,16 @@ pp_insn(Dev, I, Pre) ->
       io:format(Dev, ") ~w\n", [Linkage]);
     #pseudo_tailcall_prepare{} ->
       io:format(Dev, "\tpseudo_tailcall_prepare\n", []);
+    #smull{dstlo=DstLo, dsthi=DstHi, src1=Src1, src2=Src2} ->
+      io:format(Dev, "\tsmull ", []),
+      pp_temp(Dev, DstLo),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, DstHi),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src1),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Src2),
+      io:format(Dev, "\n", []);
     #store{stop=StOp, src=Src, am2=Am2} ->
       io:format(Dev, "\tstr~s ", [stop_suffix(StOp)]),
       pp_temp(Dev, Src),

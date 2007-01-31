@@ -31,6 +31,8 @@
 -export([dlink/1, dunlink/1, dsend/2, dsend/3, dgroup_leader/2,
 	 dexit/2, dmonitor_node/3, dmonitor_p/2]).
 
+-export([delay_trap/2]).
+
 -export([set_cookie/2, get_cookie/0]).
 
 -export([nodes/0]).
@@ -294,7 +296,7 @@ dlink(Pid) ->
 dunlink(Pid) ->
     case net_kernel:connect(node(Pid)) of
 	true -> unlink(Pid);
-	false -> true  %% dist_unlink ??
+	false -> true
     end.
 
 dmonitor_node(Node, Flag, []) ->
@@ -377,6 +379,13 @@ dmonitor_p(process, ProcSpec) ->
 	    self() ! {'DOWN', Ref, process, ProcSpec, noconnection},
 	    Ref
     end.
+
+%%
+%% Trap function used when modified timing has been enabled.
+%%
+
+delay_trap(Result, 0) -> erlang:yield(), Result;
+delay_trap(Result, Timeout) -> receive after Timeout -> Result end.
 
 %%
 %% The business with different in and out cookies represented

@@ -46,7 +46,7 @@
 		    t_is_tuple/1,
 		    t_is_none/1, t_limit/2, t_list/0, t_nil/0,
 		    t_number/0, t_number/1, t_number_vals/1, t_pid/0,
-		    t_port/0, t_ref/0, t_subtract/2, 
+		    t_port/0, t_product/1, t_ref/0, t_subtract/2, 
 		    t_sup/1, t_sup/2,
 		    t_to_string/1, t_tuple/0, t_tuple/1,
 		    t_tuple_arities/1, t_none/0]).
@@ -213,7 +213,7 @@ analyze_insn(I, Info) ->
       %% Just an assert
       case defines(I) of
 	[] -> Info;
-	_ -> exit({"Instruction with destination not analyzed", I})
+	_ -> erlang:fault({"Instruction with destination not analyzed", I})
       end
   end.
 
@@ -716,7 +716,7 @@ test_type0(nil, T)->
 test_type0(constant, T) ->
   t_is_constant(T);
 test_type0(T, _) ->
-  exit({unknown_typetest, T}).
+  erlang:fault({unknown_typetest, T}).
 
 
 true_branch_info(integer) ->
@@ -756,7 +756,7 @@ true_branch_info(boolean) ->
 true_branch_info(constant) ->
   t_constant();
 true_branch_info(T) ->
-  exit({?MODULE,unknown_typetest,T}).
+  erlang:fault({unknown_typetest,T}).
 
 
 %% _________________________________________________________________
@@ -1321,11 +1321,11 @@ call_always_fails(I, Info) ->
   {Args, Type, Fun} = 
   case I of
     #call{} ->
-      {safe_lookup_list(hipe_icode:call_args(I), Info),
+      {hipe_icode:call_args(I),
        hipe_icode:call_type(I),
        hipe_icode:call_fun(I)};
     #enter{} ->
-      {safe_lookup_list(hipe_icode:enter_args(I), Info),
+      {hipe_icode:enter_args(I),
        hipe_icode:enter_type(I),
        hipe_icode:enter_fun(I)}
   end,
@@ -1341,13 +1341,9 @@ call_always_fails(I, Info) ->
     {erlang, raise, 3} -> false;
     {erlang, throw, 1} -> false;    
     {erlang, hibernate, 3} -> false;
-    _Other ->
-      case Type of
-	primop -> 
-	  ReturnType = primop_type(Fun, Args),
-	  t_is_none(ReturnType);
-	_ -> t_is_none(find_plt_return(Fun, Args))
-      end
+    _Other ->      
+      {ReturnType, _} = call_or_enter_type(I, Fun, Args, Info, Type),
+      t_is_none(ReturnType)
   end.
 
 %% The call might be using the old fun-notation, that is a 2-tuple.
@@ -1385,14 +1381,13 @@ warn_on_return_val(FinalLabels, FinalState, IcodeFun) ->
       case (not HasReturn) andalso (not IsExplicit) of
 	true ->
 	  [{?WARN_RETURN_NO_RETURN, 
-	    io_lib:format("~w: Function has no local return\n",
-			  [IcodeFun])}];
+	    {IcodeFun, "Function has no local return\n"}}];
 	false ->
 	  case IsExplicit andalso not HasReturn of
 	    true ->
 	      [{?WARN_RETURN_ONLY_EXIT, 
-		io_lib:format("~w: Function only terminates with "
-			      "explicit exception\n", [IcodeFun])}];
+		{IcodeFun, 
+		 "Function only terminates with explicit exception\n"}}];
 	    false ->
 	      []
 	  end
@@ -1428,9 +1423,7 @@ warn_on_args(IcodeFun, Cfg) ->
     {value, {_, ArgType}} when length(ArgType) > 0 ->
       case any_is_none(ArgType) of
 	true -> 
-	  [{?WARN_NOT_CALLED,
-	    io_lib:format("~w: Function will never be called!\n", 
-			  [IcodeFun])}];
+	  [{?WARN_NOT_CALLED, {IcodeFun, "Function will never be called!\n"}}];
 	false ->
 	  []
       end;
@@ -1540,24 +1533,28 @@ warn_on_type(I, Info, IcodeFun) ->
       W = 
 	case Test of
 	  'nil' ->
-	    io_lib:format("~w: Pattern matching with [] will always fail "
+	    io_lib:format("Pattern matching with [] will always fail "
 			  "since variable has type ~s!\n",
-			  [IcodeFun, ArgType]);
+			  [ArgType]);
+	  {atom, Atom} ->
+	    io_lib:format("Pattern matching with '~s' will always fail "
+			  "since variable has type ~s!\n",
+			  [Atom, ArgType]);
 	  {tuple, N} ->
 	    Tuple = construct_n_tuple(N),
-	    io_lib:format("~w: Pattern matching with ~s will always fail "
+	    io_lib:format("Pattern matching with ~s will always fail "
 			  "since variable has type ~s!\n",
-			  [IcodeFun, Tuple, ArgType]);
+			  [Tuple, ArgType]);
 	  {record, Atom, _Size} ->
-	    io_lib:format("~w: Pattern matching with #~w{} will always fail "
+	    io_lib:format("Pattern matching with #~w{} will always fail "
 			  "since variable has type ~s!\n",
-			  [IcodeFun, Atom, ArgType]);
+			  [Atom, ArgType]);
 	  _ ->
-	    io_lib:format("~w: Type guard ~w will always fail "
+	    io_lib:format("Type guard ~w will always fail "
 			  "since variable has type ~s!\n",
-			  [IcodeFun, Test, ArgType])
+			  [Test, ArgType])
 	end,
-      {?WARN_MATCHING, W};
+      {?WARN_MATCHING, {IcodeFun, W}};
     _ ->
       none
   end.
@@ -1578,10 +1575,10 @@ warn_on_cons(Args, Info, IcodeFun) ->
     true ->
       none;
     false ->
-      W = io_lib:format("~w: Cons will produce"
+      W = io_lib:format("Cons will produce"
 			" a non-proper list since its 2nd arg is ~s!\n",
-			[IcodeFun, format_type(Tail)]),
-      {?WARN_NON_PROPER_LIST, W}
+			[format_type(Tail)]),
+      {?WARN_NON_PROPER_LIST, {IcodeFun, W}}
   end.
 
 'warn_on_++'(I, Info, IcodeFun) ->
@@ -1595,10 +1592,10 @@ warn_on_cons(Args, Info, IcodeFun) ->
 	true ->
 	  none;
 	false ->
-	  W = io_lib:format("~w: Call to '++'/2 will produce"
+	  W = io_lib:format("Call to '++'/2 will produce"
 			    " a non-proper list; 2nd arg is ~s!\n",
-			    [IcodeFun, format_type(Tail)]),
-	  {?WARN_NON_PROPER_LIST, W}
+			    [format_type(Tail)]),
+	  {?WARN_NON_PROPER_LIST, {IcodeFun, W}}
       end
   end.
 
@@ -1613,23 +1610,21 @@ warn_on_call_fun(Args0, Info, IcodeFun) ->
     true ->
       case t_is_fun(Fun) of
 	true ->
-	  {?WARN_FUN_APP, 
-	   io_lib:format("~w: Trying to use fun with type ~s "
-			 "with arguments ",
-			 [IcodeFun, format_type(Fun)]) ++
-	   pp_args(TailArgs) ++
-	   io_lib:format("!\n", [])};
+	  ArgString = lists:flatten(pp_args(TailArgs)),
+	  Msg = io_lib:format("Trying to use fun with type ~s "
+			      "with arguments ~s\n",
+			      [format_type(Fun), ArgString]),
+	  {?WARN_FUN_APP, {IcodeFun, Msg}};
 	false ->
  	  case t_is_tuple(Fun) of
 	    true ->
-	      {?WARN_TUPLE_AS_FUN,  
-	       io_lib:format("~w: Tuple used as fun will fail in "
-			     "native compiled code.\n", [IcodeFun])};
+	      Msg = io_lib:format("Tuple used as fun will fail in "
+				  "native compiled code.\n", []),
+	      {?WARN_TUPLE_AS_FUN, {IcodeFun, Msg}};
 	    false ->
-	      {?WARN_FUN_APP,
-	       io_lib:format("~w: Fun application using type ~s "
-			     "instead of a fun!\n",
-			     [IcodeFun, format_type(Fun)])}
+	      Msg = io_lib:format("Fun application using type ~s "
+				  "instead of a fun!\n", [format_type(Fun)]),
+	      {?WARN_FUN_APP, {IcodeFun, Msg}}
 	  end
       end
   end.
@@ -1700,15 +1695,14 @@ warn_on_call(I, Ins, Info, IcodeFun) ->
 		  W = 
 		    case Type of
 		      {'fun', Name} ->
-			io_lib:format("~w: Matching on newly created fun "
+			io_lib:format("Matching on newly created fun "
 				      "~w will never succeed\n",
-				      [IcodeFun, Name]);
+				      [Name]);
 		      ref ->
-			io_lib:format("~w: Matching on newly created reference "
-				      "will never succeed\n",
-				      [IcodeFun])
+			"Matching on newly created reference "
+			  "will never succeed\n"
 		    end,
-		  {{?WARN_MATCHING, W}, []};
+		  {{?WARN_MATCHING, {IcodeFun, W}}, []};
 		_ -> {none, Ins}
 	      end;
 	    _ -> {none, Ins}
@@ -1736,9 +1730,9 @@ warn_on_call_1(I, Info, IcodeFun) ->
       case (hipe_icode:call_type(I) =/= primop) andalso 
 	check_for_tuple_as_fun(Fun, Args) of
 	true -> 
-	  W = io_lib:format("~w: Unsafe use of tuple as a fun"
-			    " in call to ~w\n", [IcodeFun, Fun]),
-	  {?WARN_TUPLE_AS_FUN, W};
+	  W = io_lib:format("Unsafe use of tuple as a fun"
+			    " in call to ~w\n", [Fun]),
+	  {?WARN_TUPLE_AS_FUN, {IcodeFun, W}};
 	false ->
 	  call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
       end
@@ -1752,9 +1746,9 @@ warn_on_enter(I, Info, IcodeFun) ->
       case (hipe_icode:enter_type(I) =/= primop) andalso 
 	check_for_tuple_as_fun(Fun, Args) of
 	true -> 
-	  W = io_lib:format("~w: Unsafe use of tuple as a fun in call "
-			    "to ~w\n", [IcodeFun, Fun]),
-	  {?WARN_TUPLE_AS_FUN, W};
+	  W = io_lib:format("Unsafe use of tuple as a fun in call "
+			    "to ~w\n", [Fun]),
+	  {?WARN_TUPLE_AS_FUN, {IcodeFun, W}};
 	false ->
 	  call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
       end;
@@ -1773,10 +1767,10 @@ warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
       ArgType1 = format_type(ArgType),
       IllegalCases = [X || X <- Cases, not lists:member(X, LegalCases)],
       Arities = [hipe_icode:const_value(X) || {X, _} <- IllegalCases],
-      Ws = [io_lib:format("~w: The clause matching on tuple with"
-			  " arity ~w will never match;"
-			  " argument is of type ~s!\n", 
-			  [IcodeFun, X, ArgType1])|| X <- Arities],
+      Ws = [{IcodeFun, io_lib:format("The clause matching on tuple with"
+				     " arity ~w will never match;"
+				     " argument is of type ~s!\n", 
+				     [X, ArgType1])}|| X <- Arities],
       [{?WARN_MATCHING, X} || X <- Ws]
   end.
 
@@ -1791,9 +1785,9 @@ warn_on_switch_val(I, Info, IcodeFun) ->
       IllegalCases = [X || X <- Cases, not lists:member(X, LegalCases)],
       Vals = [t_from_term(hipe_icode:const_value(X)) || {X, _} <- IllegalCases],
       ArgTypeString = format_type(ArgType),
-      Ws = [io_lib:format("~w: The clause matching on ~s will"
-			  " never match; argument is of type ~s\n", 
-			  [IcodeFun, format_type(X), ArgTypeString])
+      Ws = [{IcodeFun, io_lib:format("The clause matching on ~s will"
+				     " never match; argument is of type ~s\n", 
+				     [format_type(X), ArgTypeString])}
 	    || X <- Vals],
       [{?WARN_MATCHING, X} || X <- Ws]
   end.
@@ -1810,26 +1804,26 @@ warn_on_if(I, Info, IcodeFun) ->
 	case Op of
 	  '=:=' ->
 	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
-	    io_lib:format("~w: =:= between ~s and ~s will"
+	    io_lib:format("=:= between ~s and ~s will"
 			  " always fail!\n",
-			  [IcodeFun, format_type(Arg1), format_type(Arg2)]);
+			  [format_type(Arg1), format_type(Arg2)]);
 	  '=/=' ->
 	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
-	    io_lib:format("~w: =/= between ~s and ~s will"
+	    io_lib:format("=/= between ~s and ~s will"
 			  "always fail!\n",
-			  [IcodeFun, format_type(Arg1), format_type(Arg2)])
+			  [format_type(Arg1), format_type(Arg2)])
 	end,
-      {?WARN_COMP, W};
+      {?WARN_COMP, {IcodeFun, W}};
     [{TrueLab, _}] ->
       none
   end.
 
 warn_on_guard(I, IcodeFun, Args) ->
   Fun = hipe_icode:call_fun(I),  
-  W = io_lib:format("~w: The guard ~w will always fail since "
+  W = io_lib:format("The guard ~w will always fail since "
 		    "the arguments are of type ~s!\n", 
-		    [IcodeFun, Fun, pp_args(Args)]),
-  {?WARN_GUARDS, W}.
+		    [Fun, pp_args(Args)]),
+  {?WARN_GUARDS, {IcodeFun, W}}.
 
 call_warning(Fun, IcodeFun, Args) ->
   case hipe_icode_primops:fails(Fun) of
@@ -1840,17 +1834,28 @@ call_warning(Fun, IcodeFun, Args) ->
       case any_is_none([RetType|ArgTypes]) of
 	true -> none;
 	false ->
-	  W = io_lib:format("~w: Call to function ~w with signature ~s will "
+	  Bif = 
+	    case t_is_subtype(t_product(Args), t_product(ArgTypes)) of
+	      true ->
+		%% This must be because of some hard-coded information.
+		{M, F, A} = Fun,
+		case erl_bif_types:is_known(M, F, A) of
+		  true -> "built-in ";
+		  false ->
+		    erlang:fault({assert_failed, {not_known, Fun}})
+		end;
+	      false ->
+		""
+	    end,
+	  W = io_lib:format("Call to ~sfunction ~w with signature ~s will "
 			    "fail since the arguments are of type ~s!\n",
-			    [IcodeFun, Fun, t_to_string(Signature),
+			    [Bif, Fun, t_to_string(Signature),
 			     pp_args(Args)]),
-	  {?WARN_FAILING_CALL, W}
+	  {?WARN_FAILING_CALL, {IcodeFun, W}}
       end;
     false ->
-      W = io_lib:format("~w: Unsafe BEAM code! "
-			"Please recompile with a newer BEAM compiler.\n",
-			[IcodeFun]),
-      {?WARN_OLD_BEAM, W}
+      W = "Unsafe BEAM code! Please recompile with a newer BEAM compiler.\n",
+      {?WARN_OLD_BEAM, {IcodeFun, W}}
   end.
 
 %% _________________________________________________________________

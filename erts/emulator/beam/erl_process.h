@@ -19,6 +19,14 @@
 #ifndef __PROCESS_H__
 #define __PROCESS_H__
 
+#undef ERTS_INCLUDE_SCHEDULER_INTERNALS
+#if (defined(ERL_PROCESS_C__) \
+     || defined(ERL_PORT_TASK_C__) \
+     || (ERTS_GLB_INLINE_INCL_FUNC_DEF \
+	 && defined(ERTS_DO_INCL_GLB_INLINE_FUNC_DEF)))
+#define ERTS_INCLUDE_SCHEDULER_INTERNALS
+#endif
+
 #include "sys.h"
 #include "erl_vm.h"
 #include "erl_message.h"
@@ -38,6 +46,8 @@
 #ifdef HIPE
 #include "hipe_process.h"
 #endif
+
+struct port;
 
 #define ERTS_MAX_NO_OF_SCHEDULERS 1024
 
@@ -77,6 +87,7 @@ struct saved_calls {
 };
 
 extern Export exp_send, exp_receive, exp_timeout;
+extern Uint erts_no_of_schedulers;
 
 #ifdef ERTS_SMP
 
@@ -438,6 +449,7 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 #define F_HEAP_GROW          (1 << 17)
 #define F_NEED_FULLSWEEP     (1 << 18) /* If process has old binaries & funs. */
 #define F_USING_DDLL         (1 << 24) /* Process has used the DDLL interface */
+#define F_HAVE_BLCKD_MSCHED  (1 << 25) /* Process have blocked multi-scheduling */
 
 /* process trace_flags */
 #define F_TRACE_SEND         (1 << 4)   
@@ -541,6 +553,9 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 
 void erts_pre_init_process(void);
 #ifdef ERTS_SMP
+int erts_block_multi_scheduling(Process *, Uint32, int, int);
+int erts_is_multi_scheduling_blocked(void);
+Eterm erts_multi_scheduling_blockers(Process *);
 void erts_start_schedulers(Uint);
 #endif
 void erts_init_process(void);
@@ -548,6 +563,7 @@ Eterm erts_process_status(Process *, Uint32, Process *, Eterm);
 int  sched_q_len(void);
 void add_to_schedule_q(Process*);
 Process *schedule(Process*, int);
+void erts_schedule_misc_op(void (*)(void *), void *);
 Eterm erl_create_process(Process*, Eterm, Eterm, Eterm, ErlSpawnOpts*);
 void erts_do_exit_process(Process*, Eterm);
 void set_timer(Process*, Uint);
@@ -569,7 +585,7 @@ Uint erts_get_total_context_switches(void);
 void erts_get_total_reductions(Uint *, Uint *);
 void erts_get_exact_total_reductions(Process *, Uint *, Uint *);
 
-void erts_suspend(Process*, Uint32, Eterm);
+void erts_suspend(Process*, Uint32, struct port*);
 void erts_resume(Process*, Uint32);
 int erts_send_exit_signal(Process *, Eterm, Process *, Uint32 *, Eterm, Eterm,
 			  Process *, Uint32);
@@ -747,9 +763,6 @@ Eterm erts_get_current_pid(void)
 
 #define ERTS_CHK_HAVE_NO_PROC_LOCKS
 #define ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(PID)
-
-Uint erts_get_no_schedulers(void);
-int erts_set_no_schedulers(Process *, Uint *, Uint *, Uint, int *);
 
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
 #define ERTS_SMP_CHK_NO_PROC_LOCKS \
@@ -1094,6 +1107,22 @@ ERTS_GLB_INLINE int  erts_smp_proc_trylock(Process *p, Uint32 locks);
 ERTS_GLB_INLINE void erts_smp_proc_tab_lock(void);
 ERTS_GLB_INLINE void erts_smp_proc_tab_unlock(void);
 
+#ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
+/* Scheduling lock */
+extern erts_smp_mtx_t schdlq_mtx;
+#ifdef ERTS_SMP
+extern int erts_all_schedulers_waiting;
+#endif
+ERTS_GLB_INLINE int  erts_smp_sched_trylock(void);
+ERTS_GLB_INLINE void erts_smp_sched_lock(void);
+ERTS_GLB_INLINE void erts_smp_sched_unlock(void);
+ERTS_GLB_INLINE void erts_smp_notify_inc_runq(void);
+#if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
+int erts_smp_is_sched_locked(void);
+#endif
+void erts_wake_one_scheduler(void);
+#endif /* ERTS_INCLUDE_SCHEDULER_INTERNALS */
+
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE void
@@ -1143,7 +1172,51 @@ erts_smp_proc_tab_unlock(void)
 #endif
 }
 
+#ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
+
+ERTS_GLB_INLINE int
+erts_smp_sched_trylock(void)
+{
+#ifdef ERTS_SMP
+    return erts_smp_mtx_trylock(&schdlq_mtx);
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_sched_lock(void)
+{
+#ifdef ERTS_SMP
+    erts_smp_mtx_lock(&schdlq_mtx);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_sched_unlock(void)
+{
+#ifdef ERTS_SMP
+    erts_smp_mtx_unlock(&schdlq_mtx);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_notify_inc_runq(void)
+{
+#ifdef ERTS_SMP
+    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+    if (erts_all_schedulers_waiting)
+	erts_wake_one_scheduler();
+#endif
+}
+
+#endif /* ERTS_INCLUDE_SCHEDULER_INTERNALS */
+
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
+#undef ERTS_INCLUDE_SCHEDULER_INTERNALS
+
 #endif
+
+
 

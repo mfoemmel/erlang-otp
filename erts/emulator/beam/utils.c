@@ -2999,34 +2999,38 @@ ptimer_cancelled(ErtsSmpPTimer *ptimer)
 static void
 ptimer_timeout(ErtsSmpPTimer *ptimer)
 {
-    if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
-	if (is_internal_pid(ptimer->timer.id)) {
-	    Process *p;
-	    p = erts_pid2proc(NULL,
+    if (is_internal_pid(ptimer->timer.id)) {
+	Process *p;
+	p = erts_pid2proc_opt(NULL,
 			      0,
 			      ptimer->timer.id,
-			      ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
-	    if (p) {
-		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
-		    ASSERT(*ptimer->timer.timer_ref == ptimer);
-		    *ptimer->timer.timer_ref = NULL;
-		    (*ptimer->timer.timeout_func)(p);
-		}
-		erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+			      ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS,
+			      ERTS_P2P_FLG_ALLOW_OTHER_X);
+	if (p) {
+	    if (!p->is_exiting
+		&& !(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+		ASSERT(*ptimer->timer.timer_ref == ptimer);
+		*ptimer->timer.timer_ref = NULL;
+		(*ptimer->timer.timeout_func)(p);
 	    }
+	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 	}
-	else {
-	    Port *p;
-	    ASSERT(is_internal_port(ptimer->timer.id));
-	    p = erts_id2port(ptimer->timer.id, NULL, 0);
-	    if (p) {
-		if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
-		    ASSERT(*ptimer->timer.timer_ref == ptimer);
-		    *ptimer->timer.timer_ref = NULL;
-		    (*ptimer->timer.timeout_func)(p);
-		}
-		erts_smp_io_unlock();
+    }
+    else {
+	Port *p;
+	ASSERT(is_internal_port(ptimer->timer.id));
+	p = erts_id2port_sflgs(ptimer->timer.id,
+			       NULL,
+			       0,
+			       ERTS_PORT_SFLGS_DEAD);
+	if (p) {
+	    if (!(p->status & ERTS_PORT_SFLGS_INVALID_LOOKUP)
+		&& !(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+		ASSERT(*ptimer->timer.timer_ref == ptimer);
+		*ptimer->timer.timer_ref = NULL;
+		(*ptimer->timer.timeout_func)(p);
 	    }
+	    erts_port_release(p);
 	}
     }
     free_ptimer(ptimer);
@@ -3202,6 +3206,18 @@ is_blocker(void)
 	    && erts_smp_equal_tids(system_block_state.blocker_tid,
 				   erts_smp_thr_self()));
 }
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+int
+erts_lc_is_blocking(void)
+{
+    int res;
+    erts_smp_mtx_lock(&system_block_state.mtx);
+    res = erts_smp_pending_system_block() && is_blocker();
+    erts_smp_mtx_unlock(&system_block_state.mtx);
+    return res;
+}
+#endif
 
 static ERTS_INLINE void
 block_me(void (*prepare)(void *),

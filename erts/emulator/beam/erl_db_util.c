@@ -175,7 +175,7 @@ set_match_trace(Process *tracee_p, Eterm fail_term, Eterm tracer,
 	    if (! INVALID_TRACER_PORT(tracer_port, tracer)) {
 		ret = set_tracee_flags(tracee_p, tracer, d_flags, e_flags);
 	    }
-	    erts_smp_io_unlock();
+	    erts_smp_port_unlock(tracer_port);
 	}
     } else {
 	ASSERT(is_nil(tracer));
@@ -617,6 +617,12 @@ static DMCGuardBif guard_tab[] =
     {
 	am_size,
 	&size_1,
+	1,
+	DBIF_ALL
+    },
+    {
+	am_bitsize,
+	&bitsize_1,
 	1,
 	DBIF_ALL
     },

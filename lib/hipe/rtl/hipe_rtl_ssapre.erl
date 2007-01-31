@@ -41,29 +41,29 @@
 %% Records / Structures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(xsi_link,{number}). %% Number is the index of the temporary (a Key into the Xsi Tree)
--record(temp,{key,var}).
--record(bottom,{key,var}).
--record(xsi, { inst,   %% Associated instruction
-                def,   %% Hypothetical temporary variable
-	               %% that stores the result of the computation
-                label, %% Block Label where the xsi is inserted
-                opList,%% List of operands
-                cba,   %%
-                later, %%
-                wba
-               }).
+-record(xsi_link, {num}). %% Number is the index of the temporary (a Key into the Xsi Tree)
+-record(temp, {key, var}).
+-record(bottom, {key, var}).
+-record(xsi, {inst,   %% Associated instruction
+              def,    %% Hypothetical temporary variable
+	              %% that stores the result of the computation
+              label,  %% Block Label where the xsi is inserted
+              opList, %% List of operands
+              cba,    %%
+              later,  %%
+              wba
+             }).
 
--record(pre_candidate, {alu,def}).
--record(xsi_op, {pred,op}).
+-record(pre_candidate, {alu, def}).
+-record(xsi_op, {pred, op}).
 
--record(mp, {xsis,maps,preds,defs,uses,ndsSet}).
--record(block, {type,attributes}).
+-record(mp, {xsis, maps, preds, defs, uses, ndsSet}).
+-record(block, {type, attributes}).
 
--record(eop, {expr,var,stopped_by}).
--record(insertion, {code,from}).
+-record(eop, {expr, var, stopped_by}).
+-record(insertion, {code, from}).
 
--record(const_expr, {var,value}).
+-record(const_expr, {var, value}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Main function
@@ -186,7 +186,7 @@ find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,
           Def = Xsi#xsi.def,
     	  Key = Def#temp.key,
  	  NewInst = #pre_candidate{alu=Inst,def=Def},
-          XsiLink = #xsi_link{number=Key},
+          XsiLink = #xsi_link{num=Key},
 
           %% Add a vertex to the Xsi Graph
           ?GRAPH:add_vertex(XsiGraph,Key,Xsi),
@@ -286,7 +286,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
     #move{} ->
       %% It's a move, we emend E, and continue the definition search
       DST = ?RTL:move_dst(CC),
-      F = case SRC1==DST orelse SRC2==DST of
+      F = case SRC1 =:= DST orelse SRC2 =:= DST of
 	    true ->
 	      SRC = ?RTL:move_src(CC),
 	      emend(E,DST,SRC);
@@ -295,7 +295,7 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
 	  end,
       check_definition(F,Rest,BlockLabel,Cfg,XsiGraph); %% Continue the search
     #xsi_link{} ->
-      {_K,Xsi} = ?GRAPH:vertex(XsiGraph,CC#xsi_link.number),
+      {_K,Xsi} = ?GRAPH:vertex(XsiGraph,CC#xsi_link.num),
       C = Xsi#xsi.inst,
       case check_match(C,E) of
  	true -> %% There is a Xsi already with a computation of E!
@@ -449,24 +449,24 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
       %% Go along the edge P
       RevCode = lists:reverse(hipe_bb:code(?CFG:bb(Cfg,P))),
       case check_one_operand(E_prime,RevCode,P,Cfg,K,XsiGraph) of
- 	{def_found,Def}->
+ 	{def_found,Def} ->
  	  NewXsi = xsi_arg_update(Xsi,P,Def),
           ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
           determine_operands(NewXsi,Ps,Cfg,K,XsiGraph,ActiveAcc);
 
- 	{expr_found,ChildExpr}->
+ 	{expr_found,ChildExpr} ->
  	  NewXsi = xsi_arg_update(Xsi,P,ChildExpr),
           ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
           determine_operands(NewXsi,Ps,Cfg,K,XsiGraph,ActiveAcc);
 
- 	{expr_is_constant,Op}->
+ 	{expr_is_constant,Op} ->
           %% We detected that the expression is of the form: 'N op M'
           %% where N and M are constant.
  	  NewXsi = xsi_arg_update(Xsi,P,Op),
           ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
           determine_operands(NewXsi,Ps,Cfg,K,XsiGraph,ActiveAcc);
 
- 	{merge_point,XsiChild}->
+ 	{merge_point,XsiChild} ->
  	  %% Update that Xsi, give its definition as Operand for the
  	  %% search, and go on
           XsiChildDef = XsiChild#xsi.def,
@@ -474,7 +474,7 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
           ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
 
  	  KeyChild = XsiChildDef#temp.key,
- 	  XsiChildLink = #xsi_link{number=KeyChild},
+ 	  XsiChildLink = #xsi_link{num=KeyChild},
           ?GRAPH:add_vertex(XsiGraph,KeyChild,XsiChild),
 
  	  %% Should not be the same block !!!!!!!
@@ -523,7 +523,7 @@ emend_with_processed_xsis(EmendedE, [], _, _) ->
 emend_with_processed_xsis(E, [I|Rest], Pred, XsiGraph) ->
   case I of
     #xsi_link{} ->
-      Key = I#xsi_link.number,
+      Key = I#xsi_link.num,
       {_KK,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
       Def = Xsi#xsi.def,
       UE = ?RTL:uses(E), %% Should we get SRC1 and SRC2 instead?
@@ -571,7 +571,7 @@ get_visited_instructions(Xsi,[I|Rest]) ->
     #xsi_link{} ->
       XsiDef = Xsi#xsi.def,
       Key = XsiDef#temp.key,
-      case I#xsi_link.number == Key of
+      case I#xsi_link.num =:= Key of
  	true ->
  	  Rest;
  	false ->
@@ -685,7 +685,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
  	  check_one_operand(E,Rest,BlockLabel,Cfg,XsiKey,XsiGraph) %% Continue the search
       end;
     #xsi_link{} ->
-      Key = CC#xsi_link.number,
+      Key = CC#xsi_link.num,
       %% Is Key a family member of XsiDef ?
       {_KK,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
       C = Xsi#xsi.inst,
@@ -830,7 +830,7 @@ get_info_in_merge_block([Inst|Rest],XsiGraph,Defs,Xsis,Maps,Uses) ->
           get_info_in_merge_block(Rest,XsiGraph,Defs,Xsis,Maps,Uses)
       end;
     #xsi_link{} ->
-      Key = Inst#xsi_link.number,
+      Key = Inst#xsi_link.num,
       {_Key,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
       OpList = xsi_oplist(Xsi),
       {NewMaps,NewUses} = add_map_and_uses(OpList,Key,Maps,Uses),
@@ -1175,7 +1175,7 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
       end,
       code_motion_in_block(L,Insts,Cfg,XsiG,[InstToAdd|Visited],InsertionsAcc);
     #xsi_link{} ->
-      Key = Inst#xsi_link.number,
+      Key = Inst#xsi_link.num,
       {_V,Xsi} = ?GRAPH:vertex(XsiG,Key),      
       case Xsi#xsi.wba of
         true ->
@@ -1467,7 +1467,7 @@ pp_xsi(Xsi) ->
   io:format(standard_io, ") (", []), pp_xsi_def(Xsi#xsi.def),
   io:format(standard_io, ") cba=~w, later=~w | wba=~w~n", [Xsi#xsi.cba,Xsi#xsi.later,Xsi#xsi.wba]).
 
-pp_instr(I,Graph) ->
+pp_instr(I, Graph) ->
   case I of
     #alu{} ->
       io:format(standard_io, "    ", []),
@@ -1484,7 +1484,7 @@ pp_instr(I,Graph) ->
  	    #xsi{} ->
  	      pp_xsi(I);
  	    #xsi_link{} ->
- 	      pp_xsi_link(I#xsi_link.number,Graph);
+ 	      pp_xsi_link(I#xsi_link.num, Graph);
  	    _->
  	      io:format(standard_io,"*** ~w ***~n", [I])
  	  end;

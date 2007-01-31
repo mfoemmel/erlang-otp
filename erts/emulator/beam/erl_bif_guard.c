@@ -205,6 +205,43 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
     BIF_ERROR(BIF_P, BADARG);
 }
 
+/**********************************************************************/
+/* returns the bitsize of a binary */
+
+BIF_RETTYPE bitsize_1(BIF_ALIST_1)
+{
+  Uint low_bits;
+  Uint bytesize;
+  Uint high_bits;
+  if (is_binary(BIF_ARG_1)) {
+    bytesize = binary_size(BIF_ARG_1);
+    high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
+    low_bits = (bytesize << 3) + binary_bitsize(BIF_ARG_1);
+    if (high_bits == 0) {
+      if (IS_USMALL(0,low_bits)) {
+	BIF_RET(make_small(low_bits));
+      }
+      else {
+	Eterm* hp = ArithAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+	BIF_RET(uint_to_big(low_bits, hp));
+      }
+    }
+    else {
+      Uint sz =  BIG_NEED_SIZE(4);
+      Eterm* hp = ArithAlloc(BIF_P, sz);
+      hp[0] = make_pos_bignum_header(sz-1);
+      BIG_DIGIT(hp,0) = DLOW(low_bits);
+      BIG_DIGIT(hp,1) = DHIGH(low_bits);
+      BIG_DIGIT(hp,2) = DLOW(high_bits);
+      BIG_DIGIT(hp,3) = DHIGH(high_bits);
+      BIF_RET(make_big(hp));
+    }
+  }
+  else {
+    BIF_ERROR(BIF_P, BADARG);
+  }
+}
+
 /*
  * Generate the integer part from a double.
  */
@@ -315,6 +352,47 @@ Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live)
 	}
     }
     BIF_ERROR(p, BADARG);
+}
+
+Eterm erts_gc_bitsize_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg = reg[live];
+    if (is_binary(BIF_ARG_1)) {
+      Uint low_bits;
+      Uint bytesize;
+      Uint high_bits;
+      bytesize = binary_size(BIF_ARG_1);
+      high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
+      low_bits = (bytesize << 3) + binary_bitsize(BIF_ARG_1);
+      if (high_bits == 0) {
+	if (IS_USMALL(0,low_bits)) {
+	  return make_small(low_bits);
+	}
+	else {
+	  Eterm* hp; 
+	  if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
+	    erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live);
+	  }
+	  hp = p->htop;
+	  p->htop += BIG_UINT_HEAP_SIZE;
+	  return uint_to_big(low_bits, hp);
+	}
+      }
+      else {
+	Uint sz =  BIG_NEED_SIZE(4);
+	Eterm* hp;
+	if (ERTS_NEED_GC(p, sz)) {
+	    erts_garbage_collect(p, sz, reg, live);
+	}
+	hp[0] = make_pos_bignum_header(sz-1);
+	BIG_DIGIT(hp,0) = DLOW(low_bits);
+	BIG_DIGIT(hp,1) = DHIGH(low_bits);
+	BIG_DIGIT(hp,2) = DLOW(high_bits);
+	BIG_DIGIT(hp,3) = DHIGH(high_bits);
+	return make_big(hp);
+      }
+     BIF_ERROR(p, BADARG);
+    }
 }
 
 Eterm erts_gc_abs_1(Process* p, Eterm* reg, Uint live)

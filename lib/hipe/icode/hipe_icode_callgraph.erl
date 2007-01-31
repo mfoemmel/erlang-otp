@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%-------------------------------------------------------------------
 %%% File    : hipe_icode_callgraph.erl
 %%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
@@ -23,6 +24,7 @@
 -endif.
 
 -include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 
 -record(callgraph, {codedict, scc_order}).
 
@@ -42,7 +44,6 @@ to_list(#callgraph{scc_order=SCCs, codedict=Dict})->
 pp(#callgraph{scc_order=SCCs})->
   io:format("Callgraph ~p\n", [SCCs]).
 -endif.
-
 
 construct(List) ->
   Calls = get_local_calls(List),
@@ -121,7 +122,7 @@ get_local_calls_1([I|Left], Set) ->
 	    ordsets:add_element(Fun, Set);
 	  primop ->
 	    case hipe_icode:call_fun(I) of
-	      {mkfun, Fun, _, _} ->
+	      #mkfun{mfa=Fun} ->
 		ordsets:add_element(Fun, Set);
 	      _ ->
 		Set
@@ -136,7 +137,7 @@ get_local_calls_1([I|Left], Set) ->
 	    ordsets:add_element(Fun, Set);
 	  primop ->
 	    case hipe_icode:enter_fun(I) of
-	      {mkfun, Fun, _, _} ->
+	      #mkfun{mfa=Fun} ->
 		ordsets:add_element(Fun, Set);
 	      _ ->
 		Set
@@ -157,7 +158,6 @@ get_local_calls_1([], Set) ->
 
 get_edges(Calls) ->
   get_edges(Calls, []).
-
 
 get_edges([{MFA, []}|Left], Edges) ->  
   %% Add en self-edge to ensure that the function is not lost

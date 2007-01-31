@@ -10,6 +10,38 @@
   
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>HiPE runtime system:</p>
+	    <p>* added notes about supported systems to README</p>
+	    <p>* support 32-bit x86 on FreeBSD</p>
+	    <p>* autoenable HiPE on FreeBSD (32-bit x86) and Solaris
+	    (64-bit x86)</p>
+	    <p>* updated x86 runtime system to support glibc-2.5</p>
+	    <p>* work around probable gcc-4.1.1 bug affecting the x86
+	    runtime system</p>
+	    <p>HiPE compiler:
+	    <p>* improved performance of integer multiplications on
+	    all platforms</p>
+	    <p>* corrected a code optimisation error in R11B-2 that
+	    broke some bsl/bsr operations on all platforms</p>
+	    <p>* corrected a type error in the ARM backend which
+	    could cause the compiler to crash</p>
+	    <p>* corrected an error in the SPARC backend's naive
+	    register allocator which could throw the compiler into an
+	    infinite loop</p>
+          <p>
+	    Own Id: OTP-6423</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Hipe 3.6.0</title>
 
     <section><title>Improvements and New Features</title>

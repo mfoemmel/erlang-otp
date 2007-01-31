@@ -48,30 +48,31 @@
 %% open/closing/closed === any  etc.
 %%
 %%
-%%	function/	valid			mode		new
-%%	message		status					state
+%%	function/	 valid			mode		new
+%%	message		 status					state
 %%								
 %%	calls							
 %%	-----							
-%%	recv		open			passive		ditto
-%%	send		open			any		ditto
-%%	accept		nil			any		open
-%%	connect		nil			any		open
-%%	listen		nil			any		open
-%%	peername	open/closing		any		ditto
-%%	setopts		open/closing		any		ditto
-%%	getopts		open/closing		any		ditto
-%%	sockname	open/closing		any		ditto
-%%	peercert	open/closing		any		ditto
-%%	inhibit		any			any		ditto
-%%	release		any			any		ditto
-%%	close		any			any		closed (1)
+%%	recv		 open			passive		ditto
+%%	send		 open			any		ditto
+%%	transport_accept nil			any		open
+%%      ssl_accept       nil                    any             open
+%%	connect		 nil			any		open
+%%	listen		 nil			any		open
+%%	peername	 open/closing		any		ditto
+%%	setopts		 open/closing		any		ditto
+%%	getopts		 open/closing		any		ditto
+%%	sockname	 open/closing		any		ditto
+%%	peercert	 open/closing		any		ditto
+%%	inhibit		 any			any		ditto
+%%	release		 any			any		ditto
+%%	close		 any			any		closed (1)
 %%
 %%	info							
 %%	----							
-%%	tcp		open			active		ditto
-%%	tcp_closed	open | closing		active		closing
-%%	tcp_error	open | closing		active		closing
+%%	tcp		 open			active		ditto
+%%	tcp_closed	 open | closing		active		closing
+%%	tcp_error	 open | closing		active		closing
 %%
 %%	(1) We just terminate.
 %%
@@ -81,21 +82,23 @@
 %%
 %% XXX The collector thing is not gen_server compliant.
 %%
-%% NOTE: There are two different "modes": (a) passive or active mode,
+%% NOTE: There are three different "modes": (a) passive or active mode,
 %% specified as {active, bool()}, and (b) list or binary mode, specified 
-%% as {mode, list | binary}.
+%% as {mode, list | binary}, and (c) encrypted or clear mode
 %%
 
 -include("ssl_int.hrl").
 
 %% External exports 
 
--export([start_broker/1, start_broker/2, start_link/3, accept/3,
+-export([start_broker/1, start_broker/2, start_link/3,
+	 transport_accept/3, ssl_accept/2,
 	 close/1, connect/5, connection_info/1, controlling_process/2,
 	 listen/3, recv/3, send/2, getopts/2, getopts/3, setopts/2,
 	 sockname/1, peername/1, peercert/1]).
 
--export([listen_prim/5, connect_prim/8, accept_prim/7]).
+-export([listen_prim/5, connect_prim/8,
+	 transport_accept_prim/5, ssl_accept_prim/6]).
 
 %% Internal exports 
 
@@ -149,10 +152,34 @@ start_link(Client, Type, GenOpts) ->
 %%          ListenSocket = Socket = sslsocket()
 %% 	    Timeout = integer() | infinity
 %%
-accept(Pid, ListenSocket, Timeout) 
+%% accept(Pid, ListenSocket, Timeout) 
+%%   when is_pid(Pid), is_record(ListenSocket, sslsocket) ->
+%%     Req = {accept, self(), ListenSocket, Timeout},
+%%     gen_server:call(Pid, Req, infinity).
+
+%% transport_accept(Pid, ListenSocket, Timeout) -> {ok, Socket} | 
+%% 						   {error, Reason}
+%%  
+%% Types:   Pid = pid() of acceptor
+%%          ListenSocket = Socket = sslsocket()
+%% 	    Timeout = integer() | infinity
+%%
+transport_accept(Pid, ListenSocket, Timeout) 
   when is_pid(Pid), is_record(ListenSocket, sslsocket) ->
-    Req = {accept, self(), ListenSocket, Timeout},
-    gen_server:call(Pid, Req, infinity).
+     Req = {transport_accept, self(), ListenSocket, Timeout},
+     gen_server:call(Pid, Req, infinity).
+
+%% ssl_accept(Pid, Socket, Timeout) -> {ok, Socket} | 
+%%				       {error, Reason}
+%%
+%% Types:   Pid = pid() of acceptor
+%%          ListenSocket = Socket = sslsocket()
+%% 	    Timeout = integer() | infinity
+%%
+ssl_accept(Socket, Timeout) 
+  when is_record(Socket, sslsocket) ->
+    Req = {ssl_accept, self(), Socket, Timeout},
+    gen_server:call(Socket#sslsocket.pid, Req, infinity).
 
 %% close(Socket) -> ok | {error, Reason}
 %%  
@@ -360,18 +387,18 @@ handle_call({send, Client, Data}, _From, St) ->
 	    end
     end;
 
-%% accept 
+%% transport_accept 
 %% 
 %% Client = pid of client 
 %% ListenSocket = sslsocket()
 %%
-handle_call({accept, Client, ListenSocket, Timeout}, _From, St) ->
-    debug(St, "accept: client = ~w, listensocket = ~w~n", 
+handle_call({transport_accept, Client, ListenSocket, Timeout}, _From, St) ->
+    debug(St, "transport_accept: client = ~w, listensocket = ~w~n", 
 	  [Client, ListenSocket]),
     case getopts(ListenSocket, tcp_listen_opt_tags(), ?DEF_TIMEOUT) of 
 	{ok, LOpts} ->
-	    case accept_prim(ssl_server, gen_tcp, Client, 
-			     ListenSocket#sslsocket.fd, LOpts, Timeout, St) of
+	    case transport_accept_prim(
+		   ssl_server, ListenSocket#sslsocket.fd, LOpts, Timeout, St) of
 		{ok, ThisSocket, NSt} ->
 		    {reply, {ok, ThisSocket}, NSt};
 		{error, Reason, St} ->
@@ -379,6 +406,21 @@ handle_call({accept, Client, ListenSocket, Timeout}, _From, St) ->
 		    {stop, normal, {error, What}, St}
 	    end;
 	{error, Reason} ->
+	    What = what(Reason),
+	    {stop, normal, {error, What}, St}
+    end;
+
+%% ssl_accept 
+%% 
+%% Client = pid of client 
+%% ListenSocket = sslsocket()
+%%
+handle_call({ssl_accept, Client, Socket, Timeout}, _From, St) ->
+    debug(St, "ssl_accept: client = ~w, socket = ~w~n", [Client, Socket]),
+    case ssl_accept_prim(ssl_server, gen_tcp, Client, Socket, Timeout, St) of
+	{ok, Socket, NSt} ->
+	    {reply, ok, NSt};
+	{error, Reason, St} ->
 	    What = what(Reason),
 	    {stop, normal, {error, What}, St}
     end;
@@ -724,32 +766,59 @@ connect_prim(ServerName, TcpModule, Client, FAddress, FPort, Opts,
 	    {error, Reason, St}
     end.
 
-accept_prim(ServerName, TcpModule, Client, ListenFd, LOpts, Timeout, St) -> 
+transport_accept_prim(ServerName, ListenFd, LOpts, Timeout, St) -> 
     AOpts = get_tcp_accept_opts(LOpts),
-    {FlagStr, SSLOpts} = {[], []},
+    FlagStr = "",
     %% Timeout is gen_server timeout - hence catch.
-    case (catch ssl_server:accept_prim(ServerName, ListenFd, FlagStr, 
-				       Timeout)) of 
+    case (catch ssl_server:transport_accept_prim(ServerName, ListenFd,
+						 FlagStr, Timeout)) of 
 	{ok, Fd, ProxyPort} ->
-	    case connect_proxy(ServerName, TcpModule, Fd, 
-			       ProxyPort, AOpts, Timeout) of
-		{ok, Socket} ->
-		    ThisSocket = #sslsocket{fd = Fd, pid = self()}, 
+	    ThisSocket = #sslsocket{fd = Fd, pid = self()}, 
+	    NSt = St#st{fd = Fd, 
+			active = get_active(AOpts),
+			opts = AOpts,
+			thissock = ThisSocket,
+			proxyport = ProxyPort,
+			encrypted = false},
+	    debug(St, "transport_accept: ok: fd = ~w~n", [Fd]),
+	    {ok, ThisSocket, NSt};
+	{'EXIT', Reason} ->
+	    debug(St, "transport_accept: EXIT: Reason = ~w~n", [Reason]),
+	    {error, Reason, St};
+	{error, Reason} ->
+	    debug(St, "transport_accept: error: Reason = ~w~n", [Reason]),
+	    {error, Reason, St}
+    end.
+
+ssl_accept_prim(ServerName, TcpModule, Client, Socket, Timeout, St) -> 
+    FlagStr = [],
+    SSLOpts = [],
+    %% Timeout is gen_server timeout - hence catch.
+    debug(St, "ssl_accept_prim: self() ~w Client ~w~n", [self(), Client]),
+    Fd = Socket#sslsocket.fd,
+    A = (catch ssl_server:ssl_accept_prim(ServerName, Fd, FlagStr, Timeout)),
+    debug(St, "ssl_accept_prim: ~w~n", [A]),
+    case A of 
+	ok ->
+	    AOpts = St#st.opts,
+	    B = connect_proxy(ServerName, TcpModule, Fd, 
+			       St#st.proxyport, AOpts, Timeout),
+	    debug(St, "ssl_accept_prim: connect_proxy ~w~n", [B]),
+	    case B of
+		{ok, Socket2} ->
 		    StOpts = add_default_tcp_accept_opts(AOpts) ++
 			add_default_ssl_opts(SSLOpts),
-		    NSt = St#st{fd = Fd, 
-				active = get_active(AOpts),
-				opts = StOpts,
-				thissock = ThisSocket,
-				proxysock = Socket, 
+		    NSt = St#st{opts = StOpts,
+				proxysock = Socket2,
+				encrypted = true,
 				status = open},
 		    case get_nodelay(AOpts) of
 			true -> setnodelay(ServerName, NSt, true);
 			_ -> ok
 		    end,
-		    debug(St, "accept: ok: client = ~w, fd = ~w~n",
+		    debug(St, "transport_accept: ok: client = ~w, fd = ~w~n",
 			  [Client, Fd]),
-		    {ok, ThisSocket, NSt};
+		    {ok, St#st.thissock, NSt};
 		{error, Reason} ->
 		    {error, Reason, St}
 	    end;
@@ -771,8 +840,9 @@ accept_prim(ServerName, TcpModule, Client, ListenFd, LOpts, Timeout, St) ->
 connect_proxy(ServerName, TcpModule, Fd, ProxyPort, TOpts, Timeout) ->
     case TcpModule:connect({127, 0, 0, 1}, ProxyPort, TOpts, Timeout) of
 	{ok, Socket} ->
-	    {ok, Port} = inet:port(Socket), 
-	    case ssl_server:proxy_join_prim(ServerName, Fd, Port) of
+	    {ok, Port} = inet:port(Socket),
+	    A = ssl_server:proxy_join_prim(ServerName, Fd, Port),
+	    case A of
 		ok ->
 		    {ok, Socket};
 		Error ->
@@ -1015,7 +1085,7 @@ is_listen_opt(Opt) ->
     is_tcp_listen_opt(Opt) or is_ssl_opt(Opt).
 
 is_tcp_accept_opt(Opt) ->
-    is_tcp_gen_opt(Opt).
+    is_tcp_gen_opt(Opt) or is_ssl_opt(Opt).
 
 is_tcp_connect_opt(Opt) ->
     is_tcp_gen_opt(Opt) or is_tcp_connect_only_opt(Opt).
@@ -1042,6 +1112,8 @@ is_tcp_gen_opt({nodelay, false}) -> true;
 is_tcp_gen_opt({active, true}) -> true;
 is_tcp_gen_opt({active, false}) -> true;
 is_tcp_gen_opt({active, once}) -> true;
+is_tcp_gen_opt({keepalive, true}) -> true;
+is_tcp_gen_opt({keepalive, false}) -> true;
 is_tcp_gen_opt({ip, Addr}) -> is_ip_address(Addr);
 is_tcp_gen_opt(_Opt) -> false.
 

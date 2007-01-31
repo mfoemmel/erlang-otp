@@ -1,0 +1,33 @@
+<!doctype chapter PUBLIC "-//Stork//DTD chapter//EN">
+<chapter>
+  <header>
+    <title>Syntax_Tools Release Notes</title>
+    <prepared>otp_appnotes</prepared>
+    <docno>nil</docno>
+    <date>nil</date>
+    <rev>nil</rev>
+  </header>
+  
+  <p>This document describes the changes made to the Syntax_Tools
+    application.</p>
+
+  <section><title>Syntax_Tools 1.5.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Fixed some broken links in the documentation.</p>
+          <p>
+            Own Id: OTP-6420</p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section><title>Syntax_Tools 1.5.1</title>
+    <p>Miscellaneous changes.</p>
+  </section>
+</chapter>
+
+

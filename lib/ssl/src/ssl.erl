@@ -20,7 +20,9 @@
 
 -module(ssl).
 
--export([start/0, stop/0, accept/1, accept/2, ciphers/0, close/1,
+-export([start/0, stop/0, accept/1, accept/2,
+	 transport_accept/1, transport_accept/2, ssl_accept/1, ssl_accept/2,
+	 ciphers/0, close/1,
 	 connect/3, connect/4, connection_info/1,
 	 controlling_process/2, listen/2, pid/1, port/1, peername/1,
 	 recv/2, recv/3, send/2, getopts/2, setopts/2, seed/1,
@@ -42,8 +44,36 @@ accept(ListenSocket) ->
     accept(ListenSocket, infinity).
 
 accept(ListenSocket, Timeout) when record(ListenSocket, sslsocket) ->
+    case transport_accept(ListenSocket, Timeout) of
+	{ok, NewSocket} ->
+	    case ssl_accept(NewSocket, Timeout) of
+		ok ->
+		    {ok, NewSocket};
+		Error ->
+		    Error
+	    end;
+	Error ->
+	    Error
+    end.
+
+%% transport_accept(ListenSocket) -> {ok, Socket}.
+%% transport_accept(ListenSocket, Timeout) -> {ok, Socket}.
+%%
+transport_accept(ListenSocket) ->
+    transport_accept(ListenSocket, infinity).
+
+transport_accept(ListenSocket, Timeout) when record(ListenSocket, sslsocket) ->
     {ok, Pid} = ssl_broker:start_broker(acceptor),
-    ssl_broker:accept(Pid, ListenSocket, Timeout).
+    ssl_broker:transport_accept(Pid, ListenSocket, Timeout).
+
+%% ssl_accept(ListenSocket) -> {ok, Socket}.
+%% ssl_accept(ListenSocket, Timeout) -> {ok, Socket}.
+%%
+ssl_accept(Socket) ->
+    ssl_accept(Socket, infinity).
+
+ssl_accept(Socket, Timeout) when record(Socket, sslsocket) ->
+    ssl_broker:ssl_accept(Socket, Timeout).
 
 ciphers() ->
     case (catch ssl_server:ciphers()) of

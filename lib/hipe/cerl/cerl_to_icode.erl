@@ -44,23 +44,25 @@
 
 %% Icode primitive operation names
 
+-include("../icode/hipe_icode_primops.hrl").
+
 -define(OP_REDTEST, redtest).
 -define(OP_CONS, cons).
 -define(OP_TUPLE, mktuple).
 -define(OP_ELEMENT, {erlang,element,2}).  %% This has an MFA name
 -define(OP_UNSAFE_HD, unsafe_hd).
 -define(OP_UNSAFE_TL, unsafe_tl).
--define(OP_UNSAFE_ELEMENT(N), {unsafe_element, N}).
--define(OP_UNSAFE_SETELEMENT(N), {unsafe_update_element, N}).
+-define(OP_UNSAFE_ELEMENT(N), #unsafe_element{index=N}).
+-define(OP_UNSAFE_SETELEMENT(N), #unsafe_update_element{index=N}).
 -define(OP_CHECK_GET_MESSAGE, check_get_msg).
 -define(OP_NEXT_MESSAGE, next_msg).
 -define(OP_SELECT_MESSAGE, select_msg).
 -define(OP_SET_TIMEOUT, set_timeout).
 -define(OP_CLEAR_TIMEOUT, clear_timeout).
 -define(OP_WAIT_FOR_MESSAGE, suspend_msg).
--define(OP_APPLY_FIXARITY(N), {apply_N, N}).
--define(OP_MAKE_FUN(M, F, A, H, I), {mkfun, {M, F, A}, H, I}).
--define(OP_FUN_ELEMENT(N), {closure_element, N}).
+-define(OP_APPLY_FIXARITY(N), #apply_N{arity=N}).
+-define(OP_MAKE_FUN(M, F, A, U, I), #mkfun{mfa={M,F,A}, magic_num=U, index=I}).
+-define(OP_FUN_ELEMENT(N), #closure_element{n=N}).
 
 %% Icode conditional tests
 

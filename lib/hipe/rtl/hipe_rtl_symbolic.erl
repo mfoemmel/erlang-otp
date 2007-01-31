@@ -1,11 +1,11 @@
-%%%-------------------------------------------------------------------
-%%% File    : hipe_rtl_symbolic.erl
-%%% Author  : Per Gustafsson <pergu@dhcp-12-245.it.uu.se>
-%%% Description : Does optimization and expansion of symbolic 
-%%%               instructions.
-%%%
-%%% Created : 18 May 2004 by Per Gustafsson <pergu@dhcp-12-245.it.uu.se>
-%%%-------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%-------------------------------------------------------------------
+%% File        : hipe_rtl_symbolic.erl
+%% Author      : Per Gustafsson <pergu@it.uu.se>
+%% Description : Optimization and expansion of symbolic instructions.
+%%
+%% Created     : 18 May 2004 by Per Gustafsson <pergu@it.uu.se>
+%%-------------------------------------------------------------------
 
 -module(hipe_rtl_symbolic).
 
@@ -13,6 +13,7 @@
 
 -include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
+-include("../icode/hipe_icode_primops.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% find_and_replace(Cfg::cfg()) -> cfg()
@@ -199,7 +200,7 @@ add_instr(Instr, AvList) ->
 %%================================================================
 
 %% XXX: Is this first clause needed? - Kostis
-binbase_replace_rules({gc_test,_} = Instr, Fun, _AvList, Acc, N) ->
+binbase_replace_rules(#gc_test{} = Instr, Fun, _AvList, Acc, N) ->
   {[Instr|Acc],gb_sets:empty(),Fun,N};
 binbase_replace_rules(Instr, Fun, AvList, Acc, N) ->
   case Instr of

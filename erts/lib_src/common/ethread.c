@@ -1480,6 +1480,90 @@ ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
     
 #endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */
 
+#ifndef ETHR_HAVE_OPTIMIZED_LOCKS
+
+int
+ethr_spinlock_init(ethr_spinlock_t *lock)
+{
+    return ethr_atomic_init(&lock->flag, 0);
+}
+
+int
+ethr_spin_unlock(ethr_spinlock_t *lock)
+{
+    return ethr_atomic_set(&lock->flag, 0);
+}
+
+int
+ethr_spin_lock(ethr_spinlock_t *lock)
+{
+    long old;
+    int res;
+
+    do {
+	res = ethr_atomic_xchg(&lock->flag, 1, &old);
+	if (res != 0)
+	    return res;
+    } while (old != 0);
+    return 0;
+}
+
+int
+ethr_rwlock_init(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_init(&lock->counter, 0);
+}
+
+int
+ethr_read_unlock(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_dec(&lock->counter);
+}
+
+int
+ethr_read_lock(ethr_rwlock_t *lock)
+{
+    long value;
+    int res;
+
+    for(;;) {
+	res = ethr_atomic_inctest(&lock->counter, &value);
+	if (res != 0)
+	    return res;
+	if (!(value < 0))	/* wasn't write-locked */
+	    return 0;
+	res = ethr_atomic_dec(&lock->counter);
+	if (res != 0)
+	    return res;
+    }
+}
+
+int
+ethr_write_unlock(ethr_rwlock_t *lock)
+{
+    return ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+}
+
+int
+ethr_write_lock(ethr_rwlock_t *lock)
+{
+    long value;
+    int res;
+
+    for(;;) {
+	res = ethr_atomic_addtest(&lock->counter, -ETHR_RWLOCK_OFFSET, &value);
+	if (res != 0)
+	    return res;
+	if (value == -ETHR_RWLOCK_OFFSET)	/* was unlocked */
+	    return 0;
+	res = ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+	if (res != 0)
+	    return res;
+    }
+}
+
+#endif /* ETHR_HAVE_OPTIMIZED_LOCKS */
+
 /*
  * Current time
  */
@@ -1951,7 +2035,7 @@ condwait(ethr_cond *cnd,
     }
 
     if (!mtx
-	|| mtx->initialized != ETHR_MTX_INITIALIZED
+	|| mtx->initialized != ETHR_MUTEX_INITIALIZED
 	|| !cnd
 	|| (cnd->initialized && cnd->initialized != ETHR_COND_INITIALIZED)
 	|| (with_timeout && !timeout)) {
@@ -2095,10 +2179,6 @@ ethr_init(ethr_init_data *id)
 	return ENOTSUP;
 #endif
 
-    err = init_common(id);
-    if (err)
-	goto error;
-
     ASSERT(ETHR_MAX_THREADS > 0);
     for (i = ETHR_MAX_THREADS - 1, serial_shift = 0;
 	 i;
@@ -2145,9 +2225,14 @@ ethr_init(ethr_init_data *id)
 #endif
     ethr_not_inited = 0;
 
+    err = init_common(id);
+    if (err)
+	goto error;
+
     return 0;
 
  error:
+    ethr_not_inited = 1;
     if (err == 0)
 	err = get_errno();
     ASSERT(err != 0);
@@ -2922,7 +3007,7 @@ ethr_tsd_get(ethr_tsd_key key)
 #if ETHR_XCHK
     if (ethr_not_inited || !OWN_THR_DATA) {
 	ASSERT(0);
-	return EACCES;
+	return NULL;
     }
 #endif
     return (void *) TlsGetValue((DWORD) key);

@@ -61,6 +61,12 @@ GIF_FILES = \
 
 # ----------------------------------------------------
 
+TEXT_FILES = \
+	../about.txt \
+	../manual.txt \
+	../overview.txt \
+	../warnings.txt
+
 HTML_FILES = $(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
 	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
 
@@ -152,6 +158,7 @@ release_docs_spec: docs
 	$(INSTALL_DATA) $(INFO_FILE) $(RELSYSDIR)
 	$(INSTALL_DIR) $(RELEASE_PATH)/man/man3
 	$(INSTALL_DATA) $(MAN3_FILES) $(RELEASE_PATH)/man/man3
+	$(INSTALL_DATA) $(TEXT_FILES) $(RELSYSDIR)/doc
 endif
 endif
 

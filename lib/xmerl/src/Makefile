@@ -54,27 +54,33 @@ EDOC_MODULES = \
 	xmerl \
 	xmerl_xs \
 	xmerl_eventp \
-	xmerl_xpath
+	xmerl_xpath \
+	xmerl_xsd
+
 
 
 MODULES = $(EDOC_MODULES) \
-	xmerl_lib \
-	xmerl_xlate \
-	xmerl_xml \
+	xmerl_b64Bin \
+	xmerl_b64Bin_scan \
 	xmerl_html \
+	xmerl_lib \
 	xmerl_otpsgml \
-	xmerl_text \
+	xmerl_regexp \
 	xmerl_sgml \
 	xmerl_simple \
+	xmerl_text \
+	xmerl_ucs \
+	xmerl_uri \
 	xmerl_validate \
+	xmerl_xlate \
+	xmerl_xml \
 	xmerl_xpath_parse \
 	xmerl_xpath_pred \
 	xmerl_xpath_scan \
-	xmerl_ucs \
-	xmerl_uri
+	xmerl_xsd_type
 
 
-HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl
+HRL_FILES = ../include/xmerl.hrl ../include/xmerl_xlink.hrl ../include/xmerl_xpath.hrl ../include/xmerl_xsd.hrl
 INCLUDE_DIR = ../include
 
 INTERNAL_HRL_FILES  = 
@@ -97,7 +103,6 @@ TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 # ----------------------------------------------------
 ERL_FLAGS +=
 ERL_COMPILE_FLAGS += \
-		$(DEBUG) \
 		-I ../include \
 		+warn_unused_vars
 
@@ -114,6 +119,7 @@ docs:
 clean:
 	$(RM) $(TARGET_FILES)
 	$(RM) xmerl_xpath_parse.erl
+	$(RM) xmerl_b64Bin.erl
 	$(RM) core *~
 
 info:
@@ -143,6 +149,9 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 xmerl_xpath_parse.erl:	xmerl_xpath_parse.yrl
 	$(ERLC) $(ERL_FLAGS) -o  $(ESRC) $<
 
+xmerl_b64Bin.erl: xmerl_b64Bin.yrl
+	$(ERLC) $(ERL_FLAGS) -o  $(ESRC) $<
+
 
 $(EBIN)/%.beam:	%.erl
 	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o $(EBIN) $<
@@ -167,9 +176,11 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_src:
 	$(INSTALL_DATA) $(MODULES:%=%.erl) $(RELSYSDIR)/src
 	rm -f $(RELSYSDIR)/src/xmerl_xpath_parse.erl
+	rm -f $(RELSYSDIR)/src/xmerl_b64Bin.erl
 	$(INSTALL_DATA) Makefile $(RELSYSDIR)/src
 	$(INSTALL_DATA) $(APP_SRC) $(APPUP_SRC) $(RELSYSDIR)/src
 	$(INSTALL_DATA) xmerl_xpath_parse.yrl $(RELSYSDIR)/src
+	$(INSTALL_DATA) xmerl_b64Bin.yrl $(RELSYSDIR)/src
 
 
 release_spec: opt
@@ -198,5 +209,7 @@ $(EBIN)/xmerl_simple.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath_pred.beam:../include/xmerl.hrl
 $(EBIN)/xmerl_xpath_scan.beam:../include/xmerl.hrl
+#$(EBIN)/xmerl_xsd.beam:../include/xmerl_xsd.hrl
+#$(EBIN)/xmerl_xsd.beam:../include/xmerl.hrl
 
 

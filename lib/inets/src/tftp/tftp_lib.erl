@@ -19,7 +19,8 @@
 	 decode_msg/1,
 	 encode_msg/1,
 	 replace_val/3,
-	 to_lower/1
+	 to_lower/1,
+	 host_to_string/1
 	]).
 
 %%-------------------------------------------------------------------
@@ -43,49 +44,71 @@
 parse_config(Options) ->
     parse_config(Options, #config{}).
 
-parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
+parse_config(Options, Config) ->
+    do_parse_config(Options, Config).
+
+do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
     case Key of
 	debug ->
 	    case Val of
 		none ->
-		    parse_config(Tail, Config#config{debug_level = Val});
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		brief ->
-		    parse_config(Tail, Config#config{debug_level = Val});
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		normal ->
-		    parse_config(Tail, Config#config{debug_level = Val});
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		verbose ->
-		    parse_config(Tail, Config#config{debug_level = Val});
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		all ->
-		    parse_config(Tail, Config#config{debug_level = Val});
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		_ ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	host ->
 	    if
 		list(Val) ->
-		    parse_config(Tail, Config#config{udp_host = Val});
+		    do_parse_config(Tail, Config#config{udp_host = Val});
+		tuple(Val), size(Val) == 4 ->
+		    do_parse_config(Tail, Config#config{udp_host = Val});
+		tuple(Val), size(Val) == 8 ->
+		    do_parse_config(Tail, Config#config{udp_host = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	port ->
 	    if
 		integer(Val), Val >= 0 ->
-		    parse_config(Tail, Config#config{udp_port = Val});
+		    InitArg = list_to_atom("tftpd_" ++ integer_to_list(Val)),
+		    UdpOptions =
+			case init:get_argument(InitArg) of
+			    {ok, [[FdStr]] = Badarg} when list(FdStr) ->
+				case catch list_to_integer(FdStr) of
+				    Fd when integer(Fd) ->
+					[{fd, Fd} | Config#config.udp_options];
+				    {'EXIT', _} ->
+					exit({badarg, {prebound_fd, InitArg, Badarg}})
+				end;
+			    {ok, Badarg} ->
+				exit({badarg, {prebound_fd, InitArg, Badarg}});
+			    error ->
+				Config#config.udp_options
+			end,
+		    do_parse_config(Tail, Config#config{udp_port = Val, udp_options = UdpOptions});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	port_policy ->
 	    case Val of
 		random ->
-		    parse_config(Tail, Config#config{port_policy = Val});
+		    do_parse_config(Tail, Config#config{port_policy = Val});
 		0 ->
-		    parse_config(Tail, Config#config{port_policy = random});
+		    do_parse_config(Tail, Config#config{port_policy = random});
 		MinMax when integer(MinMax), MinMax > 0 ->
-		    parse_config(Tail, Config#config{port_policy = {range, MinMax, MinMax}});
+		    do_parse_config(Tail, Config#config{port_policy = {range, MinMax, MinMax}});
 		{range, Min, Max} when Max >= Min, 
 		integer(Min), Min > 0,
 		integer(Max), Max > 0 ->
-		    parse_config(Tail, Config#config{port_policy = Val});
+		    do_parse_config(Tail, Config#config{port_policy = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
@@ -99,31 +122,31 @@ parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 			exit({badarg, {udp, [V]}})
 		end,
 	    UdpOptions = lists:foldl(Fun, Config#config.udp_options, Val),
-	    parse_config(Tail, Config#config{udp_options = UdpOptions});
+	    do_parse_config(Tail, Config#config{udp_options = UdpOptions});
 	use_tsize ->
 	    case Val of
 		true ->
-		    parse_config(Tail, Config#config{use_tsize = Val});
+		    do_parse_config(Tail, Config#config{use_tsize = Val});
 		false ->
-		    parse_config(Tail, Config#config{use_tsize = Val});
+		    do_parse_config(Tail, Config#config{use_tsize = Val});
 		_ ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	max_tsize ->
 	    if
 		Val == infinity ->
-		    parse_config(Tail, Config#config{max_tsize = Val});
+		    do_parse_config(Tail, Config#config{max_tsize = Val});
 		integer(Val), Val >= 0 ->
-		    parse_config(Tail, Config#config{max_tsize = Val});
+		    do_parse_config(Tail, Config#config{max_tsize = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	max_conn ->
 	    if
 		Val == infinity ->
-		    parse_config(Tail, Config#config{max_conn = Val});
+		    do_parse_config(Tail, Config#config{max_conn = Val});
 		integer(Val), Val > 0 ->
-		    parse_config(Tail, Config#config{max_conn = Val});
+		    do_parse_config(Tail, Config#config{max_conn = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
@@ -131,18 +154,18 @@ parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    Key2 = to_lower(Key),
 	    Val2 = to_lower(Val),
 	    TftpOptions = replace_val(Key2, Val2, Config#config.user_options),
-	    parse_config(Tail, Config#config{user_options = TftpOptions});
+	    do_parse_config(Tail, Config#config{user_options = TftpOptions});
 	reject ->
 	    case Val of
 		read ->
 		    Rejected = [Val | Config#config.rejected],
-		    parse_config(Tail, Config#config{rejected = Rejected});
+		    do_parse_config(Tail, Config#config{rejected = Rejected});
 		write ->
 		    Rejected = [Val | Config#config.rejected],
-		    parse_config(Tail, Config#config{rejected = Rejected});
+		    do_parse_config(Tail, Config#config{rejected = Rejected});
 		_ when list(Val) ->
 		    Rejected = [Val | Config#config.rejected],
-		    parse_config(Tail, Config#config{rejected = Rejected});
+		    do_parse_config(Tail, Config#config{rejected = Rejected});
 		_ ->
 		    exit({badarg, {Key, Val}})
 	    end;
@@ -156,7 +179,7 @@ parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 						 module   = Mod,
 						 state    = State},
 			    Callbacks = Config#config.callbacks ++ [Callback],
-			    parse_config(Tail, Config#config{callbacks = Callbacks});
+			    do_parse_config(Tail, Config#config{callbacks = Callbacks});
 			{error, Reason} ->
 			    exit({badarg, {Key, Val}, Reason})
 		    end;
@@ -166,12 +189,68 @@ parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	_ ->
 	    exit({badarg, {Key, Val}})
     end;
-parse_config([], Config) when record(Config, config) ->
-    UdpOptions  = lists:reverse(Config#config.udp_options),
+do_parse_config([], Config) when record(Config, config) ->
+    UdpOptions = Config#config.udp_options,
+    IsInet6 = lists:member(inet6, UdpOptions),
+    IsInet  = lists:member(inet, UdpOptions),
+    Host    = Config#config.udp_host,
+    Host2 = 
+	if
+	    (IsInet and not IsInet6); (not IsInet and not IsInet6) -> 
+		case inet:getaddr(Host, inet) of
+		    {ok, Addr} ->
+			Addr;
+		    {error, Reason} ->
+			exit({badarg, {host, Reason}})
+		end;
+	    (IsInet6 and not IsInet)  ->
+		case inet:getaddr(Host, inet6) of
+		    {ok, Addr} ->
+			Addr;
+		    {error, Reason} ->
+			exit({badarg, {host, Reason}})
+		end;
+	    true ->
+		%% Conflicting options
+		exit({badarg, {udp, [inet]}})
+	end,
+    UdpOptions2 = lists:reverse(UdpOptions),
     TftpOptions = lists:reverse(Config#config.user_options),
-    Config#config{udp_options = UdpOptions, user_options = TftpOptions};
-parse_config(Options, Config) when record(Config, config) ->
+    Config#config{udp_host = Host2, udp_options = UdpOptions2, user_options = TftpOptions};
+do_parse_config(Options, Config) when record(Config, config) ->
     exit({badarg, Options}).
+
+host_to_string(Host) ->
+    case Host of
+	String when list(String) ->
+	    String;
+	{A1, A2, A3, A4} -> % inet
+	    lists:concat([A1, ".", A2, ".", A3, ".",A4]);
+	{A1, A2, A3, A4, A5, A6, A7, A8} -> % inet6
+	    lists:concat([
+			  int16_to_hex(A1), "::",
+			  int16_to_hex(A2), "::",
+			  int16_to_hex(A3), "::",
+			  int16_to_hex(A4), "::",
+			  int16_to_hex(A5), "::",
+			  int16_to_hex(A6), "::",
+			  int16_to_hex(A7), "::",
+			  int16_to_hex(A8)
+			 ])
+    end.
+
+int16_to_hex(0) ->
+    [$0];
+int16_to_hex(I) ->
+    N1 = ((I bsr 8) band 16#ff),
+    N2 = (I band 16#ff),
+    [code_character(N1 div 16), code_character(N1 rem 16),
+     code_character(N2 div 16), code_character(N2 rem 16)].
+
+code_character(N) when N < 10 ->
+    $0 + N;
+code_character(N) ->
+    $A + (N - 10).
 
 %%-------------------------------------------------------------------
 %% Decode

@@ -103,16 +103,21 @@ result(Response = {{_, 300, _}, _, _},
 					true}}) ->
     redirect(Response, Request);
 
-%% temporary redirect
-result(Response = {{_, 307, _}, _, _}, 
+result(Response = {{_, Code, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = head}) ->
+			  method = head}) when Code == 301;
+					       Code == 302;
+					       Code == 303;
+					       Code == 307 ->
     redirect(Response, Request);
-result(Response = {{_, 307, _}, _, _}, 
+result(Response = {{_, Code, _}, _, _}, 
        Request = #request{settings = 
 			  #http_options{autoredirect = true},
-			  method = get}) ->
+			  method = get}) when Code == 301;
+					      Code == 302;
+					      Code == 303;
+					      Code == 307 ->
     redirect(Response, Request);
 
 

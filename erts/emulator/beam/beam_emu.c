@@ -58,8 +58,14 @@
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
 #  ifdef ERTS_SMP
-#    define PROCESS_MAIN_CHK_LOCKS(P) \
-do { if ((P)) erts_proc_lc_chk_only_proc_main((P)); } while (0)
+#    define PROCESS_MAIN_CHK_LOCKS(P)					\
+do {									\
+    if ((P))								\
+	erts_proc_lc_chk_only_proc_main((P));				\
+    else								\
+	erts_lc_check_exact(NULL, 0);					\
+    ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);				\
+} while (0)
 #  else
 #    define PROCESS_MAIN_CHK_LOCKS(P) erts_lc_check_exact(NULL, 0)
 #  endif
@@ -927,7 +933,9 @@ extern int count_instructions;
     _mb = ms_matchbuffer(Ms);                                   \
    if (_mb->size - _mb->offset < 32) { Fail; }	                \
    if ((_mb->offset & 7) != 0) {				\
+     SWAPOUT;							\
      _result = erts_bs_get_integer_2(c_p, 32, 0, _mb);		\
+     HTOP = HEAP_TOP(c_p);					\
    }	                                                        \
    else {							\
      _integer = get_int32(_mb->base + _mb->offset/8);	        \
@@ -3532,7 +3540,7 @@ void process_main(void)
 	 ProcBin* pb;
 
 	 erts_bin_offset = 0;
-	 TestHeap(tmp_arg2 + PROC_BIN_SIZE, Arg(1));
+	 TestHeap(tmp_arg2 + PROC_BIN_SIZE + ERL_SUB_BIN_SIZE, Arg(1));
 
 	 /*
 	  * Allocate the binary struct itself.
@@ -3578,7 +3586,7 @@ void process_main(void)
 
 	     bin_need = heap_bin_size(tmp_arg1);
 	     erts_bin_offset = 0;
-	     TestHeap(bin_need+tmp_arg2, Arg(1));
+	     TestHeap(bin_need+tmp_arg2+ERL_SUB_BIN_SIZE, Arg(1));
 	     hb = (ErlHeapBin *) HTOP;
 	     HTOP += bin_need;
 	     hb->thing_word = header_heap_bin(tmp_arg1);
@@ -3652,7 +3660,9 @@ void process_main(void)
 
  do_bs_final2:
      { 
+       SWAPOUT;
        tmp_arg1 = erts_bs_final2(c_p, tmp_arg1);
+       HTOP = HEAP_TOP(c_p);
        StoreBifResult(0, tmp_arg1);
      }
  }
@@ -4555,7 +4565,11 @@ translate_gc_bif(void* gcf)
 	return length_1;
     } else if (gcf == erts_gc_size_1) {
 	return size_1;
-    } else if (gcf == erts_gc_abs_1) {
+    } 
+    else if (gcf == erts_gc_bitsize_1) {
+	return bitsize_1;
+    } 
+    else if (gcf == erts_gc_abs_1) {
 	return abs_1;
     } else if (gcf == erts_gc_float_1) {
 	return float_1;

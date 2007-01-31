@@ -91,7 +91,7 @@ dist_table_alloc(void *dep_tmpl)
     dist_entries++;
 
     dep->prev       = NULL;
-    erts_refc_init(&dep->refc, 0);
+    erts_refc_init(&dep->refc, -1);
     dep->sysname    = ((DistEntry *) dep_tmpl)->sysname;
     dep->cid        = NIL;
     dep->nlinks     = NULL;
@@ -213,8 +213,11 @@ erts_sysname_to_connected_dist_entry(Eterm sysname)
 
     erts_smp_mtx_lock(&erts_dist_table_mtx);
     res_dep = (DistEntry *) hash_get(&erts_dist_table, (void *) &de);
-    if (res_dep)
-	erts_refc_inc(&res_dep->refc, 1);
+    if (res_dep) {
+	long refc = erts_refc_inctest(&res_dep->refc, 1);
+	if (refc < 2) /* Pending delete */
+	    erts_refc_inc(&res_dep->refc, 1);
+    }
     erts_smp_mtx_unlock(&erts_dist_table_mtx);
     if (res_dep) {
 	erts_smp_mtx_t *mtxp;
@@ -237,10 +240,13 @@ DistEntry *erts_find_or_insert_dist_entry(Eterm sysname)
 {
     DistEntry *res;
     DistEntry de;
+    long refc;
     de.sysname = sysname;
     erts_smp_mtx_lock(&erts_dist_table_mtx);
     res = hash_put(&erts_dist_table, (void *) &de);
-    erts_refc_inc(&res->refc, 1);
+    refc = erts_refc_inctest(&res->refc, 0);
+    if (refc < 2) /* New or pending delete */
+	erts_refc_inc(&res->refc, 1);
     erts_smp_mtx_unlock(&erts_dist_table_mtx);
     return res;
 }
@@ -252,8 +258,11 @@ DistEntry *erts_find_dist_entry(Eterm sysname)
     de.sysname = sysname;
     erts_smp_mtx_lock(&erts_dist_table_mtx);
     res = hash_get(&erts_dist_table, (void *) &de);
-    if (res)
-	erts_refc_inc(&res->refc, 1);
+    if (res) {
+	long refc = erts_refc_inctest(&res->refc, 1);
+	if (refc < 2) /* Pending delete */
+	    erts_refc_inc(&res->refc, 1);
+    }
     erts_smp_mtx_unlock(&erts_dist_table_mtx);
     return res;
 }
@@ -263,11 +272,15 @@ void erts_delete_dist_entry(DistEntry *dep)
     ASSERT(dep != erts_this_dist_entry);
     if(dep != erts_this_dist_entry) {
 	erts_smp_mtx_lock(&erts_dist_table_mtx);
-	if (erts_refc_read(&dep->refc, 0) == 0)
-	    (void) hash_erase(&erts_dist_table, (void *) dep);
-	/* else: Someone looked up this dist entry (and incremented refc)
-	 *       after we decided to delete it.
+	/*
+	 * Another thread might have looked up this dist entry after
+	 * we decided to delete it (refc became zero). If so, the other
+	 * thread incremented refc twice. Once for the new reference
+	 * and once for this thread. Therefore, delete dist entry if
+	 * refc is 0 or -1 after a decrement.
 	 */
+	if (erts_refc_dectest(&dep->refc, -1) <= 0)
+	    (void) hash_erase(&erts_dist_table, (void *) dep);
 	erts_smp_mtx_unlock(&erts_dist_table_mtx);
     }
 }
@@ -483,7 +496,7 @@ node_table_alloc(void *venp_tmpl)
 
     node_entries++;
 
-    erts_refc_init(&enp->refc, 0);
+    erts_refc_init(&enp->refc, -1);
     enp->creation = ((ErlNode *) venp_tmpl)->creation;
     enp->sysname = ((ErlNode *) venp_tmpl)->sysname;
     enp->dist_entry = erts_find_or_insert_dist_entry(((ErlNode *) venp_tmpl)->sysname);
@@ -550,8 +563,11 @@ ErlNode *erts_find_or_insert_node(Eterm sysname, Uint creation)
     erts_smp_mtx_lock(&erts_node_table_mtx);
     res = hash_put(&erts_node_table, (void *) &ne);
     ASSERT(res);
-    if (res != erts_this_node)
-	erts_refc_inc(&res->refc, 1);
+    if (res != erts_this_node) {
+	long refc = erts_refc_inctest(&res->refc, 0);
+	if (refc < 2) /* New or pending delete */
+	    erts_refc_inc(&res->refc, 1);
+    }
     erts_smp_mtx_unlock(&erts_node_table_mtx);
     return res;
 }
@@ -561,11 +577,15 @@ void erts_delete_node(ErlNode *enp)
     ASSERT(enp != erts_this_node);
     if(enp != erts_this_node) {
 	erts_smp_mtx_lock(&erts_node_table_mtx);
-	if (erts_refc_read(&enp->refc, 0) == 0)
-	    (void) hash_erase(&erts_node_table, (void *) enp);
-	/* else: Someone looked up this node (and incremented refc)
-	 *       after we decided to delete it.
+	/*
+	 * Another thread might have looked up this node after we
+	 * decided to delete it (refc became zero). If so, the other
+	 * thread incremented refc twice. Once for the new reference
+	 * and once for this thread. Therefore, delete node if refc
+	 * is 0 or -1 after a decrement.
 	 */
+	if (erts_refc_dectest(&enp->refc, -1) <= 0)
+	    (void) hash_erase(&erts_node_table, (void *) enp);
 	erts_smp_mtx_unlock(&erts_node_table_mtx);
     }
 }
@@ -741,6 +761,13 @@ erts_unlock_node_tables_and_entries(void)
     for (i = ERTS_NO_OF_DIST_ENTRY_MUTEXES-1; i >= 0; i--)
 	erts_smp_mtx_unlock(&dist_entry_mutexes[i]);
 }
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+int erts_lc_is_dist_entry_locked(DistEntry *dep)
+{
+    return erts_smp_lc_mtx_is_locked(dep->mtxp);
+}
+#endif
 #endif
 
 /* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *\
@@ -1258,7 +1285,7 @@ setup_reference_table(void)
 
     /* Insert all ports */
     for (i = 0; i < erts_max_ports; i++) {
-	if (erts_port[i].status == FREE)
+	if (erts_port[i].status & ERTS_PORT_SFLGS_DEAD)
 	    continue;
 
 	/* Insert links */
@@ -1436,7 +1463,7 @@ reference_table_term(Uint **hpp, Uint *szp)
 		    nrid = copy_struct(nrp->id, nrid_sz, hpp, NULL);
 	    }
 
-	    if (is_internal_pid(nrid)) {
+	    if (is_internal_pid(nrid) || nrid == am_error_logger) {
 		ASSERT(!nrp->ets_ref && !nrp->bin_ref && !nrp->system_ref);
 		tup = MK_2TUP(AM_process, nrid);
 	    }

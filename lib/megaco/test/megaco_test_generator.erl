@@ -456,6 +456,11 @@ do_tcp({expect_nothing, To}, #tcp{connection = Sock} = Tcp) ->
 	    Tcp
     end;
 
+do_tcp({trigger, Trigger}, Tcp) when is_function(Trigger) ->
+    p("trigger"),
+    Trigger(),
+    Tcp;
+
 do_tcp({sleep, To}, Tcp) ->
     p("sleep ~p", [To]),
     sleep(To),
@@ -574,6 +579,11 @@ parse_tcp([{expect_receive, Desc, {Verify, To}}|Instrs], RevInstrs)
   when is_list(Desc) and is_function(Verify) and 
        is_integer(To) and (To > 0) ->
     ExpRecv = {expect_receive, Desc, {Verify, To}},
+    parse_tcp(Instrs, [ExpRecv|RevInstrs]);
+
+parse_tcp([{trigger, Trigger}|Instrs], RevInstrs) 
+  when is_function(Trigger) ->
+    ExpRecv = {trigger, Trigger},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
 parse_tcp([Instr|_], _RevInstrs) ->
@@ -864,14 +874,14 @@ do_megaco({megaco_callback, nocall, Timeout}, State) ->
 	    State
     end;
 
-do_megaco({megaco_callback, Tag, Verify}, State) ->
+do_megaco({megaco_callback, Tag, Verify}, State) when is_function(Verify) ->
     p("megaco_callback [~w]", [Tag]),
     receive
 	{handle_megaco_callback, Type, Msg, Pid} ->
 	    d("received megaco callback: ~n~p", [Msg]),
 	    case Verify(Msg) of
 		{VRes, Res, Reply} ->
-		    d("megaco_callback [~w] ~w",[Tag,VRes]),
+		    d("megaco_callback [~w] ~w",[Tag, VRes]),
 		    handle_megaco_callback_reply(Pid, Type, Reply),
 		    validate(VRes, Tag, Res, State);
 		{VRes, Delay, Res, Reply} ->
@@ -881,7 +891,8 @@ do_megaco({megaco_callback, Tag, Verify}, State) ->
 	    end
     end;
 
-do_megaco({megaco_callback, Tag, Verify, Timeout}, State) ->
+do_megaco({megaco_callback, Tag, Verify, Timeout}, State) 
+  when is_function(Verify) and (is_integer(Timeout) and (Timeout > 0)) ->
     p("megaco_callback [~w]", [Tag]),
     receive
 	{handle_megaco_callback, Type, Msg, Pid} ->
@@ -905,6 +916,22 @@ do_megaco({megaco_callback, Tag, Verify, Timeout}, State) ->
 do_megaco({megaco_callback, Verifiers}, State) ->
     p("megaco_callback"),
     (catch megaco_callback_verify(Verifiers, State));
+
+do_megaco({megaco_cancel, Reason}, #megaco{conn_handle = CH} = State) ->
+    p("megaco_cancel [~w]", [Reason]),
+    case megaco:cancel(CH, Reason) of
+	ok ->
+	    State;
+	Error ->
+	    d("failed cancel: ~n~p", [Error]), 
+	    #megaco{result = Acc} = State,
+	    {error, State#megaco{result = [Error|Acc]}}
+    end;
+
+do_megaco({trigger, Trigger}, State) when is_function(Trigger) ->
+    p("trigger"),
+    Trigger(),
+    State;
 
 do_megaco({sleep, To}, State) ->
     p("sleep ~p", [To]),
@@ -1193,8 +1220,8 @@ parse_megaco([{megaco_cast, Mid, ARs, Opts}|Instrs], RevInstrs)
     Cast = {megaco_cast, Mid, ARs, Opts},
     parse_megaco(Instrs, [Cast|RevInstrs]);
 
-parse_megaco([{megaco_cancel, CH, Reason}|Instrs], RevInstrs) ->
-    Cancel = {megaco_cancel, CH, Reason},
+parse_megaco([{megaco_cancel, Reason}|Instrs], RevInstrs) ->
+    Cancel = {megaco_cancel, Reason},
     parse_megaco(Instrs, [Cancel|RevInstrs]);
 
 parse_megaco([{megaco_callback, nocall = Tag, Timeout}|Instrs], RevInstrs)  
@@ -1210,6 +1237,11 @@ parse_megaco([{megaco_callback, Tag, Verify}|Instrs], RevInstrs)
 parse_megaco([{megaco_callback, Verifiers}|Instrs], RevInstrs)  
   when is_list(Verifiers) ->
     C = {megaco_callback, Verifiers},
+    parse_megaco(Instrs, [C|RevInstrs]);
+
+parse_megaco([{trigger, Trigger}|Instrs], RevInstrs)  
+  when is_function(Trigger) ->
+    C = {trigger, Trigger},
     parse_megaco(Instrs, [C|RevInstrs]);
 
 parse_megaco([Instr|_], _RevInstrs) ->

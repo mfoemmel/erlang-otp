@@ -96,7 +96,9 @@ pi(P,Key) ->
 %%
 ttb_init_node(MetaFile,PI,Traci) ->
     file:delete(MetaFile),
-    MetaPid = spawn(fun() -> ttb_meta_tracer(MetaFile,PI) end),
+    Self = self(),
+    MetaPid = spawn(fun() -> ttb_meta_tracer(MetaFile,PI,Self) end),
+    receive {MetaPid,started} -> ok end,
     MetaPid ! {metadata,Traci},
     case PI of
 	true ->
@@ -111,7 +113,7 @@ ttb_write_trace_info(MetaPid,Key,What) ->
     MetaPid ! {metadata,Key,What},
     ok.
 
-ttb_meta_tracer(MetaFile,PI) ->
+ttb_meta_tracer(MetaFile,PI,Parent) ->
     case PI of
 	true ->
 	    ReturnMS = [{'_',[],[{return_trace}]}],
@@ -123,6 +125,7 @@ ttb_meta_tracer(MetaFile,PI) ->
 	false ->
 	    ok
     end,
+    Parent ! {self(),started},
     ttb_meta_tracer_loop(MetaFile,PI,dict:new()).
 
 ttb_meta_tracer_loop(MetaFile,PI,Acc) ->
@@ -186,7 +189,7 @@ ttb_meta_tracer_loop(MetaFile,PI,Acc) ->
 	stop when PI=:=true ->
 	    erlang:trace_pattern({erlang,spawn,3},false,[meta]),
 	    erlang:trace_pattern({erlang,spawn_link,3},false,[meta]),
-	    erlang:trace_pattern({erlang,spawn_opt,4},false,[meta]),
+	    erlang:trace_pattern({erlang,spawn_opt,1},false,[meta]),
 	    erlang:trace_pattern({erlang,register,2},false,[meta]),
 	    erlang:trace_pattern({global,register_name,2},false,[meta]);
 	stop ->

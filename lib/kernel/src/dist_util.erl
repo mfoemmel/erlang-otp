@@ -110,7 +110,8 @@ make_this_flags(RequestType, OtherNode) ->
 	 ?DFLAG_FUN_TAGS bor
 	 ?DFLAG_DIST_MONITOR_NAME bor
 	 ?DFLAG_HIDDEN_ATOM_CACHE bor
-	 ?DFLAG_NEW_FUN_TAGS).
+	 ?DFLAG_NEW_FUN_TAGS bor
+	 ?DFLAG_BIT_BINARIES).
 
 handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
     {PreOtherFlags,Node,Version} = recv_name(HSData0),
@@ -330,31 +331,27 @@ connection(#hs_data{other_node = Node,
 		    f_setopts_post_nodeup = FPostNodeup}= HSData) ->
     cancel_timer(HSData#hs_data.timer),
     PType = publish_type(HSData#hs_data.other_flags), 
-    case do_setnode(HSData) of
-	error ->
-	    ?shutdown(Node);
-	ok ->
-	    case FPreNodeup(Socket) of
-		ok -> 
-		    Address = FAddress(Socket,Node),
-		    mark_nodeup(HSData,Address),
-		    case FPostNodeup(Socket) of
-			ok ->
-			    con_loop(HSData#hs_data.kernel_pid, 
-				     Node, 
-				     Socket, 
-				     Address,
-				     HSData#hs_data.this_node, 
-				     PType,
-				     #tick{},
-				     HSData#hs_data.mf_tick,
-				     HSData#hs_data.mf_getstat);
-			_ ->
-			    ?shutdown2(Node, connection_setup_failed)
-		    end;
+    do_setnode(HSData),				%Succeeds or exits the process.
+    case FPreNodeup(Socket) of
+	ok -> 
+	    Address = FAddress(Socket,Node),
+	    mark_nodeup(HSData,Address),
+	    case FPostNodeup(Socket) of
+		ok ->
+		    con_loop(HSData#hs_data.kernel_pid, 
+			     Node, 
+			     Socket, 
+			     Address,
+			     HSData#hs_data.this_node, 
+			     PType,
+			     #tick{},
+			     HSData#hs_data.mf_tick,
+			     HSData#hs_data.mf_getstat);
 		_ ->
-		    ?shutdown(Node)
-	    end
+		    ?shutdown2(Node, connection_setup_failed)
+	    end;
+	_ ->
+	    ?shutdown(Node)
     end.
 
 %% Generate a message digest from Challenge number and Cookie	
@@ -390,6 +387,7 @@ get_cookies(Node) ->
 	    erlang:fault("Corrupt cookie database")
     end.    
 
+%% No error return; either succeeds or terminates the process.
 do_setnode(#hs_data{other_node = Node, socket = Socket, 
 		    other_flags = Flags, other_version = Version,
 		    f_getll = GetLL}) ->

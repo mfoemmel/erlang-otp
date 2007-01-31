@@ -302,21 +302,35 @@ NAME##_free(TYPE *p)							\
 	erts_free(ALCT, (void *) p);					\
 }
 
+#ifdef DEBUG
+#define ERTS_PRE_ALLOC_SIZE(SZ) 2
+#define ERTS_PRE_ALLOC_CLOBBER(P, T) memset((void *) (P), 0xfd, sizeof(T))
+#else
+#define ERTS_PRE_ALLOC_SIZE(SZ) ((SZ) > 1 ? (SZ) : 1)
+#define ERTS_PRE_ALLOC_CLOBBER(P, T)
+#endif
+
 #define ERTS_PRE_ALLOC_IMPL(NAME, TYPE, PASZ, ILCK, LCK, ULCK)		\
 union erts_qa_##NAME##__ {						\
     TYPE type;								\
     union erts_qa_##NAME##__ *next;					\
 };									\
-static union erts_qa_##NAME##__ qa_prealcd_##NAME[(PASZ)];		\
+static union erts_qa_##NAME##__						\
+    qa_prealcd_##NAME[ERTS_PRE_ALLOC_SIZE((PASZ))];			\
 static union erts_qa_##NAME##__ *qa_freelist_##NAME;			\
 static void								\
 init_##NAME##_alloc(void)						\
 {									\
     int i;								\
     qa_freelist_##NAME = &qa_prealcd_##NAME[0];				\
-    for (i = 1; i < (PASZ); i++)					\
+    for (i = 1; i < ERTS_PRE_ALLOC_SIZE((PASZ)); i++) {			\
+	ERTS_PRE_ALLOC_CLOBBER(&qa_prealcd_##NAME[i-1],			\
+			       union erts_qa_##NAME##__);		\
 	qa_prealcd_##NAME[i-1].next = &qa_prealcd_##NAME[i];		\
-    qa_prealcd_##NAME[(PASZ)-1].next = NULL;				\
+    }									\
+    ERTS_PRE_ALLOC_CLOBBER(&qa_prealcd_##NAME[ERTS_PRE_ALLOC_SIZE((PASZ))-1],\
+			   union erts_qa_##NAME##__);			\
+    qa_prealcd_##NAME[ERTS_PRE_ALLOC_SIZE((PASZ))-1].next = NULL;	\
     ILCK;								\
 }									\
 static ERTS_INLINE TYPE *						\
@@ -340,10 +354,12 @@ NAME##_free(TYPE *p)							\
     up = ((union erts_qa_##NAME##__ *)					\
 	  (((char *) p)							\
 	   - ((char *) &((union erts_qa_##NAME##__ *) 0)->type)));	\
-    if (up < &qa_prealcd_##NAME[0] || up > &qa_prealcd_##NAME[(PASZ)-1])\
+    if (up > &qa_prealcd_##NAME[ERTS_PRE_ALLOC_SIZE((PASZ))-1]		\
+	|| up < &qa_prealcd_##NAME[0])					\
 	return 0;							\
     else {								\
 	LCK;								\
+	ERTS_PRE_ALLOC_CLOBBER(up, union erts_qa_##NAME##__);		\
 	up->next = qa_freelist_##NAME;					\
 	qa_freelist_##NAME = up;					\
 	ULCK;								\

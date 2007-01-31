@@ -7,10 +7,10 @@
 %%----------------------------------------------------------------------
 
 -module(hipe_icode_mulret).
--author('chvi3471@it.uu.se').
+-export([mult_ret/4]).
 
 -include("hipe_icode.hrl").
--export([mult_ret/4]).
+-include("hipe_icode_primops.hrl").
 
 %%>----------------------------------------------------------------------<
 %% Procedure : mult_ret/3
@@ -167,7 +167,7 @@ skipToLabel2([], _) -> noLabel.
 %% Notes     : 
 %%>----------------------------------------------------------------------<
 lookForUnElems(Code, Var) -> lookForUnElems(Code, Var, []).
-lookForUnElems([#call{'fun'={unsafe_element,Nr}, args=Var, 
+lookForUnElems([#call{'fun'=#unsafe_element{index=Nr}, args=Var, 
 		      dstlist=[Ret]}|Code], Var, Res) ->
     lookForUnElems(Code, Var, [{Nr, Ret}|Res]);
 lookForUnElems([#move{dst=Var}|_], [Var], Res) -> 
@@ -1251,9 +1251,9 @@ printCallList([]) -> io:format("~n").
 %%     findDefine(Code, Var, NewCode, Vs);
 %% findDefine([I=#move{dst=Var, src=Src}|Code], [Var], NewCode, _) ->
 %%     case Src of
-%% 	{var, _} ->
+%% 	#var{} ->
 %% 	    findDefine(Code, [Src], [I|NewCode], [Src]);
-%% 	{const, {flat, Tuple}} ->
+%% 	#const{value={flat, Tuple}} ->
 %% 	    findDefine(Code, [Var], [I|NewCode], []) %% Check this case! [Var]
 %%     end;
 %% findDefine([I|Code], Var, NewCode, Vars) ->

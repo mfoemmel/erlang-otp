@@ -94,7 +94,7 @@ erts_put_fun_entry(Eterm mod, int uniq, int index)
 {
     ErlFunEntry template;
     ErlFunEntry* fe;
-
+    long refc;
     ASSERT(is_atom(mod));
     template.old_uniq = uniq;
     template.old_index = index;
@@ -103,7 +103,9 @@ erts_put_fun_entry(Eterm mod, int uniq, int index)
     fe = (ErlFunEntry *) hash_put(&erts_fun_table, (void*) &template);
     sys_memset(fe->uniq, 0, sizeof(fe->uniq));
     fe->index = 0;
-    erts_refc_inc(&fe->refc, 1);
+    refc = erts_refc_inctest(&fe->refc, 0);
+    if (refc < 2) /* New or pending delete */
+	erts_refc_inc(&fe->refc, 1);
     erts_fun_write_unlock();
     return fe;
 }
@@ -114,6 +116,7 @@ erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
 {
     ErlFunEntry template;
     ErlFunEntry* fe;
+    long refc;
 
     ASSERT(is_atom(mod));
     template.old_uniq = old_uniq;
@@ -124,7 +127,9 @@ erts_put_fun_entry2(Eterm mod, int old_uniq, int old_index,
     sys_memcpy(fe->uniq, uniq, sizeof(fe->uniq));
     fe->index = index;
     fe->arity = arity;
-    erts_refc_inc(&fe->refc, 1);
+    refc = erts_refc_inctest(&fe->refc, 0);
+    if (refc < 2) /* New or pending delete */
+	erts_refc_inc(&fe->refc, 1);
     erts_fun_write_unlock();
     return fe;
 }
@@ -148,7 +153,11 @@ erts_get_fun_entry(Eterm mod, int uniq, int index)
     template.module = mod;
     erts_fun_read_lock();
     ret = (ErlFunEntry *) hash_get(&erts_fun_table, (void*) &template);
-    erts_refc_inc(&ret->refc, 1);
+    if (ret) {
+	long refc = erts_refc_inctest(&ret->refc, 1);
+	if (refc < 2) /* Pending delete */
+	    erts_refc_inc(&ret->refc, 1);
+    }
     erts_fun_read_unlock();
     return ret;
 }
@@ -168,7 +177,7 @@ erts_erase_fun_entry(ErlFunEntry* fe)
      * We have to check refc again since someone might have looked up
      * the fun entry and incremented refc after last check.
      */
-    if (erts_refc_read(&fe->refc, 0) == 0)
+    if (erts_refc_dectest(&fe->refc, -1) <= 0)
 #endif
     {
 	if (fe->address != unloaded_fun)
@@ -290,7 +299,7 @@ fun_alloc(ErlFunEntry* template)
     obj->old_uniq = template->old_uniq;
     obj->old_index = template->old_index;
     obj->module = template->module;
-    erts_refc_init(&obj->refc, 0);
+    erts_refc_init(&obj->refc, -1);
     obj->address = unloaded_fun;
 #ifdef HIPE
     obj->native_address = NULL;

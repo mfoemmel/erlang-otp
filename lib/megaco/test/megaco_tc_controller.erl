@@ -125,17 +125,25 @@ loop(Parent) ->
 	    Parent ! {stop, self(), ok},
 	    exit(normal);
 
-	{UnknownRequest, Parent, UnknownData} ->
+	{'EXIT', Parent, Reason} when is_pid(Parent) ->
+	    p("loop -> received exit signal from parent"
+	      "~n   Reason: ~p", [Reason]),
+	    exit(Reason);
+
+	{UnknownRequest, Parent, UnknownData} when is_pid(Parent) ->
 	    p("loop -> received unknown request when"
 	      "~n   UnknownRequest: ~p"
 	      "~n   UnknownData:    ~p", [UnknownRequest, UnknownData]),
 	    Error = {error, {unknown_request, {UnknownRequest, UnknownData}}},
 	    Parent ! {UnknownRequest, self(), Error};
 
-	{'EXIT', Parent, Reason} ->
-	    p("loop -> received exit signal from parent"
-	      "~n   Reason: ~p", [Reason]),
-	    exit(Reason);
+	{Request, From, Data} when is_pid(From) ->
+	    p("loop -> received request from unknown when"
+	      "~n   Request: ~p"
+	      "~n   From:    ~p"
+	      "~n   Data:    ~p", [Request, From, Data]),
+	    Error = {error, {unknown_request, {Request, Data}}},
+	    Parent ! {Request, self(), Error};
 
 	Crap ->
 	    p("loop -> received crap: "

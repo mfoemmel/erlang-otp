@@ -1608,7 +1608,7 @@ pat_list_vars(Ps) ->
 %%  Number of bits correct modulo 8.
 
 aligned(B, S, U, Fs) when B rem 8 =:= 0 ->
-    {incr_bits(B, S, U),[aligned|Fs]};
+    {incr_bits(B, S, U),Fs}; %No more aligned annotations: [aligned|Fs]
 aligned(B, S, U, Fs) ->
     {incr_bits(B, S, U),Fs}.
 

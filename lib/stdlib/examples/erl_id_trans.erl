@@ -69,6 +69,7 @@ form({rule,Line,Name,Arity,Body}) ->
     {rule,Line,Name,Arity,Body}; % Dont dig into this
 %% Extra forms from the parser.
 form({error,E}) -> {error,E};
+form({warning,W}) -> {warning,W};
 form({eof,Line}) -> {eof,Line}.
 
 %% -type farity_list([Farity]) -> [Farity] when Farity <= {atom(),integer()}.
@@ -125,11 +126,6 @@ patterns([]) -> [].
 %% -type pattern(Pattern) -> Pattern.
 %%  N.B. Only valid patterns are included here.
 
-string_to_conses([], _Line, Tail) ->
-    Tail;
-string_to_conses([E|Rest], Line, Tail) ->
-    {cons, Line, {integer, Line, E}, string_to_conses(Rest, Line, Tail)}.
-
 pattern({var,Line,V}) -> {var,Line,V};
 pattern({match,Line,L0,R0}) ->
     L1 = pattern(L0),
@@ -169,14 +165,6 @@ pattern({record_field,Line,Rec0,Field0}) ->
 pattern({bin,Line,Fs}) ->
     Fs2 = pattern_grp(Fs),
     {bin,Line,Fs2};
-pattern({op,_Line,'++',{nil,_},R}) ->
-    pattern(R);
-pattern({op,_Line,'++',{cons,Li,{char,C2,I},T},R}) ->
-    pattern({cons,Li,{char,C2,I},{op,Li,'++',T,R}});
-pattern({op,_Line,'++',{cons,Li,{integer,L2,I},T},R}) ->
-    pattern({cons,Li,{integer,L2,I},{op,Li,'++',T,R}});
-pattern({op,_Line,'++',{string,Li,L},R}) ->
-    pattern(string_to_conses(L, Li, R));
 pattern({op,Line,Op,A}) ->
     {op,Line,Op,A};
 pattern({op,Line,Op,L,R}) ->
@@ -368,9 +356,13 @@ expr({cons,Line,H0,T0}) ->
     T1 = expr(T0),				%They see the same variables
     {cons,Line,H1,T1};
 expr({lc,Line,E0,Qs0}) ->
-    Qs1 = lc_quals(Qs0),
+    Qs1 = lc_bc_quals(Qs0),
     E1 = expr(E0),
     {lc,Line,E1,Qs1};
+expr({bc,Line,E0,Qs0}) ->
+    Qs1 = lc_bc_quals(Qs0),
+    E1 = expr(E0),
+    {bc,Line,E1,Qs1};
 expr({tuple,Line,Es0}) ->
     Es1 = expr_list(Es0),
     {tuple,Line,Es1};
@@ -502,17 +494,21 @@ icr_clauses([C0|Cs]) ->
     [C1|icr_clauses(Cs)];
 icr_clauses([]) -> [].
 
-%% -type lc_quals([Qualifier]) -> [Qualifier].
+%% -type lc_bc_quals([Qualifier]) -> [Qualifier].
 %%  Allow filters to be both guard tests and general expressions.
 
-lc_quals([{generate,Line,P0,E0}|Qs]) ->
+lc_bc_quals([{generate,Line,P0,E0}|Qs]) ->
     E1 = expr(E0),
     P1 = pattern(P0),
-    [{generate,Line,P1,E1}|lc_quals(Qs)];
-lc_quals([E0|Qs]) ->
+    [{generate,Line,P1,E1}|lc_bc_quals(Qs)];
+lc_bc_quals([{b_generate,Line,P0,E0}|Qs]) ->
     E1 = expr(E0),
-    [E1|lc_quals(Qs)];
-lc_quals([]) -> [].
+    P1 = pattern(P0),
+    [{b_generate,Line,P1,E1}|lc_bc_quals(Qs)];
+lc_bc_quals([E0|Qs]) ->
+    E1 = expr(E0),
+    [E1|lc_bc_quals(Qs)];
+lc_bc_quals([]) -> [].
 
 %% -type fun_clauses([Clause]) -> [Clause].
 

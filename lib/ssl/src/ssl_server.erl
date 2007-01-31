@@ -30,13 +30,15 @@
 %% External exports 
 -export([start_link/0]).  
 
--export([accept/2, accept/3, ciphers/0, connect/5, connect/6,
+-export([transport_accept/2, transport_accept/3, ssl_accept/2, ssl_accept/3,
+	 ciphers/0, connect/5, connect/6,
 	 connection_info/1, close/1, listen/3, listen/4, peercert/1,
 	 peername/1, proxy_join/2, seed/1, setnodelay/2, sockname/1,
 	 version/0]).
 
 -export([start_link_prim/0]).
--export([accept_prim/4, connect_prim/7, close_prim/2, 
+-export([ssl_accept_prim/4, transport_accept_prim/4,
+	 connect_prim/7, close_prim/2, 
 	 listen_prim/5, proxy_join_prim/3, peername_prim/2, setnodelay_prim/3, 
 	 sockname_prim/2]).
 
@@ -76,16 +78,29 @@ start_link_prim() ->
     gen_server:start_link({local, ssl_server_prim}, ssl_server, [], []).
 
 %%
-%% accept(ListenFd, Flags) -> {ok, Fd, ProxyLLPort} |
+%% transport_accept(ListenFd, Flags) -> {ok, Fd, ProxyLLPort} |
 %%			      {error, Reason}
 %%
-accept(ListenFd, Flags) ->
-    accept(ListenFd, Flags, infinity).
-accept(ListenFd, Flags, Timeout) ->
-    accept_prim(ssl_server,ListenFd, Flags, Timeout).
+transport_accept(ListenFd, Flags) ->
+    transport_accept(ListenFd, Flags, infinity).
+transport_accept(ListenFd, Flags, Timeout) ->
+    transport_accept_prim(ssl_server,ListenFd, Flags, Timeout).
 
-accept_prim(ServerName, ListenFd, Flags, Timeout) ->
-    Req = {accept, self(), ListenFd, Flags}, 
+transport_accept_prim(ServerName, ListenFd, Flags, Timeout) ->
+    Req = {transport_accept, self(), ListenFd, Flags}, 
+    gen_server:call(ServerName, Req, Timeout).
+
+%%
+%% ssl_accept(ListenFd, Flags) -> {ok, Fd, ProxyLLPort} |
+%%			      {error, Reason}
+%%
+ssl_accept(ListenFd, Flags) ->
+    ssl_accept(ListenFd, Flags, infinity).
+ssl_accept(ListenFd, Flags, Timeout) ->
+    ssl_accept_prim(ssl_server, ListenFd, Flags, Timeout).
+
+ssl_accept_prim(ServerName, Fd, Flags, Timeout) ->
+    Req = {ssl_accept, Fd, Flags}, 
     gen_server:call(ServerName, Req, Timeout).
 
 %%
@@ -247,19 +262,32 @@ init([]) ->
     end.
 
 %%
-%% accept
+%% transport_accept
 %%
-handle_call({accept, Broker, ListenFd, Flags}, From, St) ->
-    debug(St, "accept: broker = ~w, listenfd = ~w~n", 
+handle_call({transport_accept, Broker, ListenFd, Flags}, From, St) ->
+    debug(St, "transport_accept: broker = ~w, listenfd = ~w~n", 
 	  [Broker, ListenFd]),
     case get_by_fd(ListenFd, St#st.cons) of
 	{ok, {ListenFd, _, _}} ->
-	    send_cmd(St#st.port, ?ACCEPT, [int32(ListenFd), Flags, 0]),
+	    send_cmd(St#st.port, ?TRANSPORT_ACCEPT, [int32(ListenFd), Flags, 0]),
 	    PAccepts = add({ListenFd, Broker, From}, St#st.paccepts),
 	    %%
-	    %% We reply when we get ACCEPT_REP or ASYNC_ACCEPT_ERR
+	    %% We reply when we get TRANSPORT_ACCEPT_REP or ASYNC_ACCEPT_ERR
 	    %% 
 	    {noreply, St#st{paccepts = PAccepts}};
+	_Other ->
+	    {reply, {error, ebadf}, St}
+    end;
+
+%%
+%% ssl_accept
+%%
+handle_call({ssl_accept, Fd, Flags}, From, St) ->
+    case replace_from_by_fd(Fd, St#st.cons, From) of
+	{ok, _, Cons} ->
+	    send_cmd(St#st.port, ?SSL_ACCEPT, [int32(Fd), Flags, 0]),
+	    %% We reply when we get SSL_ACCEPT_REP or ASYNC_ACCEPT_ERR
+	    {noreply, St#st{cons = Cons}};
 	_Other ->
 	    {reply, {error, ebadf}, St}
     end;
@@ -281,9 +309,9 @@ handle_call({connect, Broker, LIP, LPort, FIP, FPort, Flags}, From, St) ->
     LIPStr = ip_to_string(LIP),
     FIPStr = ip_to_string(FIP),
     IntRef = new_intref(St),
-    send_cmd(Port, ?CONNECT, [int32(IntRef), 
-			      int16(LPort), LIPStr, 0, 
-			      int16(FPort), FIPStr, 0, 
+    send_cmd(Port, ?CONNECT, [int32(IntRef),
+			      int16(LPort), LIPStr, 0,
+			      int16(FPort), FIPStr, 0,
 			      Flags, 0]),
     Cons = add({{intref, IntRef}, Broker, From}, St#st.cons),
     %% We reply when we have got CONNECT_SYNC_ERR, or CONNECT_WAIT 
@@ -296,7 +324,7 @@ handle_call({connect, Broker, LIP, LPort, FIP, FPort, Flags}, From, St) ->
 handle_call({connection_info, Broker, Fd}, From, St) ->
     debug(St, "connection_info: broker = ~w, fd = ~w~n",
 	  [Broker, Fd]),
-    case replace_from_by_fd(Fd, St#st.cons, From) of 
+    case replace_from_by_fd(Fd, St#st.cons, From) of
 	{ok, _, Cons} ->
 	    send_cmd(St#st.port, ?GETCONNINFO, [int32(Fd)]),
 	    %% We reply when we get GETCONNINFO_REP or GETCONNINFO_ERR.
@@ -314,18 +342,18 @@ handle_call({close, Broker, Fd}, _From, St) ->
     #st{port = Port, cons = Cons0, paccepts = PAccepts0} = St,
     case delete_by_fd(Fd, Cons0) of
 	%% Must match Broker pid; fd may be reused already.
-	{ok, {Fd, Broker, _}, Cons} ->			
-	    send_cmd(Port, ?CLOSE, int32(Fd)), 
+	{ok, {Fd, Broker, _}, Cons} ->
+	    send_cmd(Port, ?CLOSE, int32(Fd)),
 	    %% If Fd is a listen socket fd, there might be pending
 	    %% accepts for that fd.
 	    case delete_all_by_fd(Fd, PAccepts0) of
 		{ok, DelAccepts, RemAccepts} ->
 		    %% Reply {error, closed} to all pending accepts
 		    lists:foreach(fun({_, _, AccFrom}) ->
-					  gen_server:reply(AccFrom, 
-							   {error, closed}) 
+					  gen_server:reply(AccFrom,
+							   {error, closed})
 				  end, DelAccepts),
-		    {reply, ok, 
+		    {reply, ok,
 		     St#st{cons = Cons, paccepts = RemAccepts}};
 		_ ->
 		    {reply, ok, St#st{cons = Cons}}
@@ -343,8 +371,8 @@ handle_call({listen, Broker, IP, LPort, Flags, BackLog}, From, St) ->
     Port = St#st.port,
     IPStr = ip_to_string(IP),
     IntRef = new_intref(St),
-    send_cmd(Port, ?LISTEN, [int32(IntRef), int16(LPort), IPStr, 0, 
-			     int16(BackLog), Flags, 0]), 
+    send_cmd(Port, ?LISTEN, [int32(IntRef), int16(LPort), IPStr, 0,
+			     int16(BackLog), Flags, 0]),
     Cons = add({{intref, IntRef}, Broker, From}, St#st.cons),
     %% We reply when we have got LISTEN_REP.
     {noreply, St#st{cons = Cons, intref = IntRef}};
@@ -479,11 +507,11 @@ handle_info({Port, {data, Bin}}, St)
     case OpCode of
 	
 	%%
-	%% accept
+	%% transport_accept
 	%%
-	?ACCEPT_ERR when size(Bin) >= 5 ->
+	?TRANSPORT_ACCEPT_ERR when size(Bin) >= 5 ->
 	    {ListenFd, Reason} = decode_msg(Bin, [int32, atom]),
-	    debug(St, "accept_err: listenfd = ~w, "
+	    debug(St, "transport_accept_err: listenfd = ~w, "
 		  "reason = ~w~n", [ListenFd, Reason]),
 	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
 		{ok, {_, _, From}, PAccepts} ->
@@ -493,18 +521,46 @@ handle_info({Port, {data, Bin}}, St)
 		    %% Already closed
 		    {noreply, St}
 	    end;
-	?ACCEPT_REP when size(Bin) >= 9 ->
+	?TRANSPORT_ACCEPT_REP when size(Bin) >= 9 ->
 	    {ListenFd, Fd} = decode_msg(Bin, [int32, int32]),
-	    debug(St, "accept_rep: listenfd = ~w, "
+	    debug(St, "transport_accept_rep: listenfd = ~w, "
 		  "fd = ~w~n", [ListenFd, Fd]),
 	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
 		{ok, {_, Broker, From}, PAccepts} ->
 		    Reply = {ok, Fd, St#st.proxylsport},
 		    gen_server:reply(From, Reply),
-		    Cons = add({Fd, Broker, []}, St#st.cons),
+		    debug(St, "transport_accept_rep: From = ~w\n", [From]),
+		    Cons = add({Fd, Broker, From}, St#st.cons),
 		    {noreply, St#st{cons = Cons, paccepts = PAccepts}};
 		_Other ->
 		    %% Already closed
+		    {noreply, St}
+	    end;
+	
+	%%
+	%% ssl_accept
+	%%
+	?SSL_ACCEPT_ERR when size(Bin) >= 5 ->
+	    {ListenFd, Reason} = decode_msg(Bin, [int32, atom]),
+	    debug(St, "ssl_accept_err: listenfd = ~w, "
+		  "reason = ~w~n", [ListenFd, Reason]),
+	    %% JC: remove this?
+	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
+		{ok, {_, _, From}, PAccepts} ->
+		    gen_server:reply(From, {error, Reason}),
+		    {noreply, St#st{paccepts = PAccepts}};
+		_Other ->
+		    %% Already closed
+		    {noreply, St}
+	    end;
+	?SSL_ACCEPT_REP when size(Bin) >= 5 ->
+	    Fd = decode_msg(Bin, [int32]),
+	    debug(St, "ssl_accept_rep: Fd = ~w\n", [Fd]),
+	    case replace_from_by_fd(Fd, St#st.cons, []) of
+		{ok, {_, _, From}, Cons} ->
+		    gen_server:reply(From, ok),
+		    {noreply, St#st{cons = Cons}};
+		_ ->
 		    {noreply, St}
 	    end;
 
@@ -627,10 +683,10 @@ handle_info({Port, {data, Bin}}, St)
 	    Fd = decode_msg(Bin, [int32]),
 	    debug(St, "proxy_join_rep: fd = ~w~n",
 		  [Fd]),
-	    case replace_from_by_fd(Fd, St#st.cons, []) of
-		{ok, {_, _, From}, Cons} ->
+	    case get_by_fd(Fd, St#st.cons) of
+		{ok, {_, _, From}} ->
 		    gen_server:reply(From, ok),
-		    {noreply, St#st{cons = Cons}};
+		    {noreply, St};
 		_Other ->
 		    %% Already closed
 		    {noreply, St}

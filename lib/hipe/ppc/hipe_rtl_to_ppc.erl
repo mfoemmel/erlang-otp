@@ -260,6 +260,8 @@ mk_alu_ri(Dst, Src1, RtlAluOp, Src2) ->
       mk_alu_ri_addi(Dst, Src1, -Src2);
     'add' ->	% 'addi' has a 16-bit simm operand
       mk_alu_ri_addi(Dst, Src1, Src2);
+    'mul' ->	% 'mulli' has a 16-bit simm operand
+      mk_alu_ri_simm16(Dst, Src1, RtlAluOp, 'mulli', Src2);
     'and' ->	% 'andi.' has a 16-bit uimm operand
       case rlwinm_mask(Src2) of
 	{MB,ME} ->
@@ -322,11 +324,14 @@ hweight16(Word) -> % PRE: 0 <= Word <= 16#ffff
          (Res3 band 16#00FF) + ((Res3 bsr 8) band 16#00FF).
 
 mk_alu_ri_addi(Dst, Src1, Src2) ->
+  mk_alu_ri_simm16(Dst, Src1, 'add', 'addi', Src2).
+
+mk_alu_ri_simm16(Dst, Src1, RtlAluOp, AluOp, Src2) ->
   if Src2 < 32768, Src2 >= -32768 ->
-      [hipe_ppc:mk_alu('addi', Dst, Src1,
+      [hipe_ppc:mk_alu(AluOp, Dst, Src1,
 		       hipe_ppc:mk_simm16(Src2))];
      true ->
-      mk_alu_ri_rr(Dst, Src1, 'add', Src2)
+      mk_alu_ri_rr(Dst, Src1, RtlAluOp, Src2)
   end.
 
 mk_alu_ri_bitop(Dst, Src1, RtlAluOp, AluOp, Src2) ->
@@ -364,6 +369,7 @@ mk_alu_rr(Dst, Src1, RtlAluOp, Src2) ->
       AluOp =
 	case RtlAluOp of
 	  'add' -> 'add';
+	  'mul' -> 'mullw';
 	  'or'  -> 'or';
 	  'and' -> 'and';
 	  'xor' -> 'xor';
@@ -445,8 +451,8 @@ mk_alub_ri(Dst, Src1, RtlAluOp, Src2, BCond) ->
   end.
 
 mk_alub_ri_OE(Dst, Src1, RtlAluOp, Src2) ->
-  %% Only 'add' and 'sub' apply here, and 'sub' becomes 'add'.
-  %% There doesn't seem to be anything like an 'addic.' with OE.
+  %% Only 'add', 'sub', and 'mul' apply here, and 'sub' becomes 'add'.
+  %% 'add' and 'mul' have no immediate+Rc+OE forms.
   %% Rewrite to reg/reg form. Sigh.
   Tmp = new_untagged_temp(),
   mk_li(Tmp, Src2,
@@ -458,6 +464,8 @@ mk_alub_ri_Rc(Dst, Src1, RtlAluOp, Src2) ->
       mk_alub_ri_Rc_addi(Dst, Src1, -Src2);
     'add' ->	% 'addic.' has a 16-bit simm operand
       mk_alub_ri_Rc_addi(Dst, Src1, Src2);
+    'mul' ->	% there is no 'mulli.'
+      mk_alub_ri_Rc_rr(Dst, Src1, 'mullw.', Src2);
     'or' ->	% there is no 'ori.'
       mk_alub_ri_Rc_rr(Dst, Src1, 'or.', Src2);
     'xor' ->	% there is no 'xori.'
@@ -478,7 +486,7 @@ mk_alub_ri_Rc_addi(Dst, Src1, Src2) ->
       [hipe_ppc:mk_alu('addic.', Dst, Src1,
 		       hipe_ppc:mk_simm16(Src2))];
      true ->
-      mk_alub_ri_Rc_rr(Dst, Src1, 'add', Src2)
+      mk_alub_ri_Rc_rr(Dst, Src1, 'add.', Src2)
   end.
 
 mk_alub_ri_Rc_andi(Dst, Src1, Src2) ->
@@ -526,7 +534,9 @@ mk_alub_rr_OE(Dst, Src1, RtlAluOp, Src2) ->
     'sub' -> % PPC weirdness
       [hipe_ppc:mk_alu('subfo.', Dst, Src2, Src1)];
     'add' ->
-      [hipe_ppc:mk_alu('addo.', Dst, Src1, Src2)]
+      [hipe_ppc:mk_alu('addo.', Dst, Src1, Src2)];
+    'mul' ->
+      [hipe_ppc:mk_alu('mullwo.', Dst, Src1, Src2)]
       %% fail for or, and, xor, sll, srl, sra
   end.
 
@@ -539,6 +549,7 @@ mk_alub_rr_Rc(Dst, Src1, RtlAluOp, Src2) ->
       AluOp =
 	case RtlAluOp of
 	  'add' -> 'add.';
+	  'mul' -> 'mullw.';
 	  'or'  -> 'or.';
 	  'and' -> 'and.';
 	  'xor' -> 'xor.';
@@ -994,6 +1005,7 @@ mk_li(Dst, Value, Tail) ->
 rtl_aluop_commutes(RtlAluOp) ->
   case RtlAluOp of
     'add' -> true;
+    'mul' -> true;
     'or'  -> true;
     'and' -> true;
     'xor' -> true;

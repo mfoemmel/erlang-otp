@@ -98,7 +98,11 @@ ERTS_GLB_INLINE void erts_smp_rec_mtx_init(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_mtx_init_x(erts_smp_mtx_t *mtx,
 					 char *name,
 					 Eterm extra);
+ERTS_GLB_INLINE void erts_smp_mtx_init_locked_x(erts_smp_mtx_t *mtx,
+						char *name,
+						Eterm extra);
 ERTS_GLB_INLINE void erts_smp_mtx_init(erts_smp_mtx_t *mtx, char *name);
+ERTS_GLB_INLINE void erts_smp_mtx_init_locked(erts_smp_mtx_t *mtx, char *name);
 ERTS_GLB_INLINE void erts_smp_mtx_destroy(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_mtx_set_forksafe(erts_smp_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_smp_mtx_unset_forksafe(erts_smp_mtx_t *mtx);
@@ -268,10 +272,26 @@ erts_smp_mtx_init_x(erts_smp_mtx_t *mtx, char *name, Eterm extra)
 }
 
 ERTS_GLB_INLINE void
+erts_smp_mtx_init_locked_x(erts_smp_mtx_t *mtx, char *name, Eterm extra)
+{
+#ifdef ERTS_SMP
+    erts_mtx_init_locked_x(mtx, name, extra);
+#endif
+}
+
+ERTS_GLB_INLINE void
 erts_smp_mtx_init(erts_smp_mtx_t *mtx, char *name)
 {
 #ifdef ERTS_SMP
     erts_mtx_init(mtx, name);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_mtx_init_locked(erts_smp_mtx_t *mtx, char *name)
+{
+#ifdef ERTS_SMP
+    erts_mtx_init_locked(mtx, name);
 #endif
 }
 

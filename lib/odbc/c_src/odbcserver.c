@@ -26,7 +26,9 @@
 
   Erlang will start this c-process as a port-program and send information
   regarding inet-port nummbers through the erlang-port.
-  After that c-process will communicate via sockets with erlang. 
+  After that c-process will communicate via sockets with erlang. The
+  reason for this is that some odbc-drivers do unexpected things with
+  stdin/stdout messing up the erlang-port communication.
   
   
   Command protocol between Erlang and C
@@ -92,9 +94,11 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <stdio.h>
 
 #if defined WIN32
-#include <winsock2.h>
+#include <winsock2.h> 
+/*  #include <ws2tcpip.h >  When we can support a newer c-compiler*/
 #include <windows.h> 
 #include <fcntl.h>
 #include <sql.h>
@@ -113,15 +117,14 @@
 #include "odbcserver.h"
 
 /* ---------------- Main functions ---------------------------------------*/
-
-static void spawn_odbc_connection(int port);
+static void spawn_sup(const char *port);
 #ifdef WIN32
-DWORD WINAPI database_handler(int port);
+DWORD WINAPI database_handler(const char *port);
 #else
-void database_handler(int port);
+void database_handler(const char *port);
 #endif
 static db_result_msg handle_db_request(byte *reqstring, db_state *state);
-
+static void supervise(const char *port);
 /* ----------------- ODBC functions --------------------------------------*/
 
 static db_result_msg db_connect(byte *connStrIn, db_state *state);
@@ -168,19 +171,18 @@ static byte * receive_erlang_port_msg(void);
 /* ------------- Socket communication functions --------------------------*/
 
 #ifdef WIN32
-static void connect_to_erlang(SOCKET socket, int port); 
-static SOCKET create_socket(void);
+static SOCKET connect_to_erlang(const char *port); 
 static void send_msg(db_result_msg *msg, SOCKET socket);
-static byte * receive_msg(SOCKET socket);
-static Boolean receive_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
+static byte *receive_msg(SOCKET socket);
+static Boolean receive_msg_part(SOCKET socket,
+				byte * buffer, size_t msg_len);
 static Boolean send_msg_part(SOCKET socket, byte * buffer, size_t msg_len);
 static void close_socket(SOCKET socket);
 static void init_winsock(void);
 #elif UNIX
-static void connect_to_erlang(int socket, int port);
-static int create_socket(void);
+static int connect_to_erlang(const char *port);
 static void send_msg(db_result_msg *msg, int socket);
-static byte * receive_msg(int socket);
+static byte *receive_msg(int socket);
 static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len);
 static Boolean send_msg_part(int socket, byte * buffer, size_t msg_len);
 static void close_socket(int socket); 
@@ -203,9 +205,10 @@ static void init_driver(int erl_auto_commit_mode, int erl_trace_driver,
 static void init_param_column(param_array *params, byte *buffer, int *index,
 			      int num_param_values);
 
-static param_status init_param_statement(int cols,
-					   int num_param_values, 
-					   db_state *state);
+static void init_param_statement(int cols,
+				 int num_param_values, 
+				 db_state *state,
+				 param_status *status);
 
 static void map_dec_num_2_c_column(col_type *type, int precision,
 				   int scale);
@@ -245,82 +248,95 @@ static Boolean sql_success(SQLRETURN result);
 int main(void)
 {
     byte *msg = NULL;
-    int reason, msg_len, supervisor_port, odbc_port;
+    char *temp = NULL, *supervisor_port = NULL, *odbc_port = NULL;
+    size_t length;
 #ifdef WIN32
-    SOCKET socket;
-    init_winsock();
     _setmode(_fileno( stdin),  _O_BINARY);
-#elif UNIX
-    int socket;
 #endif
     
     msg = receive_erlang_port_msg();
-  
-    supervisor_port = atoi(strtok(msg, ";"));
-    odbc_port =  atoi(strtok(NULL, ";"));
+
+    temp = strtok(msg, ";");
+    length = strlen(temp);
+    supervisor_port = safe_malloc(length + 1);
+    strcpy(supervisor_port, temp);
+
+    temp = strtok(NULL, ";");
+    length = strlen(temp);
+    odbc_port = safe_malloc(length + 1);
+    strcpy(odbc_port, temp);
     
     free(msg);
 
-    socket = create_socket();
-  
-    connect_to_erlang(socket, supervisor_port);
-
-    spawn_odbc_connection(odbc_port);
-    
-    msg = receive_msg(socket);
-  
-    if(msg[0] == SHUTDOWN) {
-	reason = EXIT_SUCCESS;
-    } else {
-	reason = EXIT_FAILURE; /* Should not happen */
-    }
-    free(msg);
-    close_socket(socket);
-    clean_socket_lib();
-    DO_EXIT(reason);
+    spawn_sup(supervisor_port);
+    database_handler(odbc_port);
 }
-  
 
 #ifdef WIN32
-static void spawn_odbc_connection(int port)
+static void spawn_sup(const char *port)
 {
     DWORD threadId;
-    (HANDLE)_beginthreadex(NULL, 0, database_handler, port, 0, &threadId);
+    (HANDLE)_beginthreadex(NULL, 0, supervise, port, 0, &threadId);
 }
 #elif UNIX
-static void spawn_odbc_connection(int port)
+static void spawn_sup(const char *port)
 {
     pthread_t thread;
     int result;
     
     result = pthread_create(&thread, NULL,
-			    (void *(*)(void *))database_handler,
+			    (void *(*)(void *))supervise,
 			    (void *)port);
     if (result != 0)
 	DO_EXIT(EXIT_THREAD);
 }
 #endif   
 
+void supervise(const char *port) {
+    byte *msg = NULL;
+    int reason;
+#ifdef WIN32
+    SOCKET socket;
+    init_winsock();
+#elif UNIX
+    int socket; 
+#endif
+    
+    socket = connect_to_erlang(port);
+    msg = receive_msg(socket);
+
+    if(msg[0] == SHUTDOWN) {
+	reason = EXIT_SUCCESS;
+    } else {
+	reason = EXIT_FAILURE; /* Should not happen */
+    }
+
+    free(msg);
+    close_socket(socket);
+    clean_socket_lib();
+    DO_EXIT(reason);    
+}
 
 #ifdef WIN32
-DWORD WINAPI database_handler(int port)
+DWORD WINAPI database_handler(const char *port)
 #else
-    void database_handler(int port) 
+    void database_handler(const char *port) 
 #endif
 { 
     db_result_msg msg;
     byte *request_buffer = NULL;
     db_state state =
-    {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0}, FALSE, FALSE, FALSE, FALSE};
+    {NULL, NULL, NULL, NULL, 0, {NULL, 0, 0},
+     FALSE, FALSE, FALSE, FALSE, FALSE};
     byte request_id;
 #ifdef WIN32
     SOCKET socket;
+    init_winsock();
 #elif UNIX
     int socket;
 #endif
 
-    socket = create_socket();
-    connect_to_erlang(socket, port);
+    socket = connect_to_erlang(port);
   
     do {      
 	request_buffer = receive_msg(socket);
@@ -336,7 +352,7 @@ DWORD WINAPI database_handler(int port)
 	    free(msg.buffer);
 	    msg.buffer = NULL;
 	}   
-    
+	
 	free(request_buffer);
 	request_buffer = NULL;
     
@@ -534,10 +550,9 @@ static db_result_msg db_query(byte *sql, db_state *state)
 
     ei_x_new_with_version(&dynamic_buffer(state));
 
-    if (result == SQL_NO_DATA_FOUND) { /* OTP-5759, fails when 0 rows deleted */
-	ei_x_encode_tuple_header(&dynamic_buffer(state), 2);
-	ei_x_encode_atom(&dynamic_buffer(state), "updated");
-	ei_x_encode_long(&dynamic_buffer(state), 0);
+    /* OTP-5759, fails when 0 rows deleted */
+    if (result == SQL_NO_DATA_FOUND) {
+	msg = encode_result(state);
     } else {
 	/* Handle multiple result sets */
 	do {
@@ -563,7 +578,7 @@ static db_result_msg db_query(byte *sql, db_state *state)
 	ei_x_free(&(dynamic_buffer(state))); 
 	return msg;
     } else {
-	msg.buffer = (byte *)dynamic_buffer(state).buff;
+	msg.buffer = dynamic_buffer(state).buff;
 	msg.length = dynamic_buffer(state).index;
 	msg.dyn_alloc = TRUE;
 	return msg;
@@ -687,8 +702,8 @@ static db_result_msg db_select(byte *args, db_state *state)
 	ei_x_free(&(dynamic_buffer(state))); 
 	return msg;
     } else {
-	msg.buffer = (byte *)dynamic_buffer(state).buff;
-	msg.length = dynamic_buffer(state).index;
+	msg.buffer = dynamic_buffer(state).buff;
+  	msg.length = dynamic_buffer(state).index; 
 	msg.dyn_alloc = TRUE;
 	return msg;
     }
@@ -700,38 +715,41 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 {
     byte *sql; 
     db_result_msg msg; 
-    int i,j, ver, num_param_values,
+    int i, num_param_values, ver = 0,
 	erl_type = 0, index = 0, size = 0, cols = 0; 
     long long_num_param_values;  
     param_status param_status;
     diagnos diagnos;
     param_array *params; 
-    
+
     if (associated_result_set(state)) {
 	clean_state(state);
     }
     associated_result_set(state) = FALSE;
-    
+    param_query(state) = TRUE;
+
     msg = encode_empty_message();
-    
+
     ei_decode_version(buffer, &index, &ver);
-    ei_decode_tuple_header(buffer, &index, &size);
     
-    ei_get_type(buffer, &index, &erl_type, &size); 
+    ei_decode_tuple_header(buffer, &index, &size);
+
+    ei_get_type(buffer, &index, &erl_type, &size);
+
     sql = (byte*)safe_malloc((sizeof(byte) * (size + 1)));
     ei_decode_string(buffer, &index, sql); 
 
     ei_decode_long(buffer, &index, &long_num_param_values);
+
     num_param_values = (int)long_num_param_values;
     ei_decode_list_header(buffer, &index, &cols);
 
-
-    param_status =
-	init_param_statement(cols, num_param_values, state);
     
+    init_param_statement(cols, num_param_values, state, &param_status);
+
     params = bind_parameter_arrays(buffer, &index, cols,  
   				   num_param_values, state);  
-
+    
     if(params != NULL) {
 	if(!sql_success(SQLExecDirect(statement_handle(state),
 				      sql, SQL_NTS))) {
@@ -755,8 +773,8 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 		ei_x_new_with_version(&dynamic_buffer(state));
 		msg = encode_result(state);
 		if(msg.length == 0) {
-		    msg.buffer = (byte *)dynamic_buffer(state).buff;
-		    msg.length = dynamic_buffer(state).index;
+		    msg.buffer = dynamic_buffer(state).buff;
+  		    msg.length = dynamic_buffer(state).index; 
 		    msg.dyn_alloc = TRUE;
 		} else { /* Error occurred */
 		    ei_x_free(&(dynamic_buffer(state)));
@@ -782,7 +800,8 @@ static db_result_msg db_param_query(byte *buffer, db_state *state)
 				  statement_handle(state)))){
 	DO_EXIT(EXIT_FREE);
     }
-    statement_handle(state) = NULL;   
+    statement_handle(state) = NULL;
+    param_query(state) = FALSE;
     return msg;
 }
 
@@ -847,8 +866,8 @@ static db_result_msg db_describe_table(byte *sql, db_state *state)
     ei_x_encode_empty_list(&dynamic_buffer(state));
     
     clean_state(state);
-    msg.buffer = (byte *)dynamic_buffer(state).buff;
-    msg.length = dynamic_buffer(state).index;
+    msg.buffer = dynamic_buffer(state).buff;
+    msg.length = dynamic_buffer(state).index; 
     msg.dyn_alloc = TRUE;
     return msg;
 }
@@ -918,10 +937,10 @@ static db_result_msg encode_atom_message(char* atom)
    term to be returned to the erlang client. */
 static db_result_msg encode_result(db_state *state)
 {
-    SQLSMALLINT num_of_columns;
-    SQLINTEGER RowCountPtr;
+    SQLSMALLINT num_of_columns = 0;
+    SQLINTEGER RowCountPtr = 0, paramBatch = 0;
     db_result_msg msg;
-    int elements, update, num_of_rows;
+    int elements, update, num_of_rows = 0;
     char *atom;
 
     msg = encode_empty_message();
@@ -945,8 +964,39 @@ static db_result_msg encode_result(db_state *state)
 	DO_EXIT(EXIT_ROWS); 
     }
 
-    num_of_rows = (int)RowCountPtr;
-    
+    if(param_query(state) && update) {
+	if(!sql_success(SQLGetInfo(connection_handle(state),
+				   SQL_PARAM_ARRAY_ROW_COUNTS,
+				   (SQLPOINTER)&paramBatch,
+				   sizeof(paramBatch),
+				   NULL))) {
+	    DO_EXIT(EXIT_DRIVER_INFO);
+	}
+	
+	if(paramBatch == SQL_PARC_BATCH ) {
+	    /* Individual row counts (one for each parameter set)
+	       are available, sum them up */
+	    do {
+		num_of_rows = num_of_rows + (int)RowCountPtr;
+		msg = more_result_sets(state);
+		/* We don't want to continue if an error occured */
+		if (msg.length != 0) { 
+		    return msg;
+		}
+		if(exists_more_result_sets(state)) {
+		    if(!sql_success(SQLRowCount(statement_handle(state),
+						&RowCountPtr))) { 
+			DO_EXIT(EXIT_ROWS); 
+		    }
+		}
+	    } while (exists_more_result_sets(state));
+	} else {
+	    /* Row counts are rolled up into one (SQL_PARC_NO_BATCH) */
+	    num_of_rows = (int)RowCountPtr;
+	}    
+    } else { 
+	num_of_rows = (int)RowCountPtr;
+    }
     ei_x_encode_tuple_header(&dynamic_buffer(state), elements);
     ei_x_encode_atom(&dynamic_buffer(state), atom);
     if (update) {
@@ -958,7 +1008,6 @@ static db_result_msg encode_result(db_state *state)
     } else {
 	msg = encode_result_set(num_of_columns, state);
     }
-    
     return msg;
 }
  
@@ -967,7 +1016,6 @@ static db_result_msg encode_result(db_state *state)
 static db_result_msg encode_result_set(SQLSMALLINT num_of_columns,
 				       db_state *state)
 {
-
     db_result_msg msg;
 
     columns(state) = alloc_column_buffer(num_of_columns);
@@ -1466,42 +1514,69 @@ static byte * receive_erlang_port_msg(void)
 }
  
 /* ------------- Socket communication functions --------------------------*/
-
 #ifdef WIN32
-static SOCKET create_socket(void)
+/* Currently only an old windows compiler is supported so we do not have ipv6
+  capabilities */
+static SOCKET connect_to_erlang(const char *port)
 {
-    return socket(AF_INET, SOCK_STREAM, 0);
-    
-}
-#elif UNIX
-static int create_socket(void)
-{
-    struct protoent *protocol;
-    
-    protocol = getprotobyname("tcp");
-    return socket(AF_INET, SOCK_STREAM, protocol->p_proto);
-}
-#endif   
-
-
-#ifdef WIN32
-static void connect_to_erlang(SOCKET socket, int port)
-#elif UNIX
-static void connect_to_erlang(int socket, int port)
-#endif
-{
+    SOCKET sock;
     struct sockaddr_in sin;
     
+    sock = socket(AF_INET, SOCK_STREAM, 0);
+    
     memset(&sin, 0, sizeof(sin));
-    sin.sin_port = htons ((unsigned short)port);
+    sin.sin_port = htons ((unsigned short)atoi(port));
     sin.sin_family = AF_INET;
     sin.sin_addr.s_addr = inet_addr("127.0.0.1");
     
-    if (connect(socket, (struct sockaddr*)&sin, sizeof(sin)) != 0) {
-	close_socket(socket);
-	DO_EXIT(EXIT_SOCKET_CONNECT);
-    }    
+    if (connect(sock, (struct sockaddr*)&sin, sizeof(sin)) != 0) {
+        close_socket(sock);
+        DO_EXIT(EXIT_SOCKET_CONNECT);
+    }
+    return sock;
 }
+#elif UNIX
+static int connect_to_erlang(const char *port)
+{
+    int sock;
+    
+    struct addrinfo hints;
+    struct addrinfo *erlang_ai, *first;
+    
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = PF_UNSPEC; /* PF_INET or PF_INET6 */
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    
+    if (getaddrinfo("localhost", port, &hints, &first) != 0) {
+  	DO_EXIT(EXIT_FAILURE);
+    }
+    
+    for (erlang_ai = first; erlang_ai; erlang_ai = erlang_ai->ai_next) {
+	
+	sock = socket(erlang_ai->ai_family, erlang_ai->ai_socktype,
+		      erlang_ai->ai_protocol);
+	if (sock < 0)
+	    continue;
+	if (connect(sock,  (struct sockaddr*)erlang_ai->ai_addr,
+		    erlang_ai->ai_addrlen) < 0) {
+	    close(sock); 
+	    sock = -1;
+	    continue;
+	} else {
+	    break;
+	}
+    }
+    freeaddrinfo(first); 
+    
+    if (sock < 0){
+	close_socket(sock); 
+	DO_EXIT(EXIT_SOCKET_CONNECT); 
+    }
+    
+    return sock;
+}
+#endif
 
 #ifdef WIN32
 static void close_socket(SOCKET socket)
@@ -1518,13 +1593,13 @@ static void close_socket(int socket)
 #ifdef WIN32
 static byte * receive_msg(SOCKET socket) 
 #elif UNIX
-    static byte * receive_msg(int socket) 
+static byte * receive_msg(int socket) 
 #endif
 {
     byte lengthstr[LENGTH_INDICATOR_SIZE];
     size_t msg_len = 0;
     int i;
-    byte * buffer;
+    byte *buffer = NULL;
     
     if(!receive_msg_part(socket, lengthstr, LENGTH_INDICATOR_SIZE)) {
 	close_socket(socket);
@@ -1572,13 +1647,12 @@ static Boolean receive_msg_part(int socket, byte * buffer, size_t msg_len)
 #ifdef WIN32
 static void send_msg(db_result_msg *msg, SOCKET socket)
 #elif UNIX   
-    static void send_msg(db_result_msg *msg, int socket)
+static void send_msg(db_result_msg *msg, int socket)
 #endif
 {
     byte lengthstr[LENGTH_INDICATOR_SIZE];
     int len;
-
-    len = msg->length;
+    len = msg ->length;
     
     lengthstr[0] = (len >> 24) & 0x000000FF;
     lengthstr[1] = (len >> 16) & 0x000000FF;
@@ -1900,14 +1974,12 @@ static void init_param_column(param_array *params, byte *buffer, int *index,
     params->offset = 0;
 }
 
-static param_status  init_param_statement(int cols, int num_param_values, 
-					   db_state *state)
+static void init_param_statement(int cols, int num_param_values, 
+				 db_state *state, param_status *status)
 {
-    param_status status;
-    
-    status.param_status_array =
-	(SQLUSMALLINT *)malloc(num_param_values * sizeof(SQLUSMALLINT));
-    status.params_processed = 0;
+    status -> param_status_array =
+	(SQLUSMALLINT *)safe_malloc(num_param_values * sizeof(SQLUSMALLINT));
+    status -> params_processed = 0;
     
     if(!sql_success(SQLAllocHandle(SQL_HANDLE_STMT,
 				   connection_handle(state),
@@ -1921,7 +1993,9 @@ static param_status  init_param_statement(int cols, int num_param_values,
 				   SQL_PARAM_BIND_BY_COLUMN, 0))) {
 	DO_EXIT(EXIT_PARAM_ARRAY);
     }
-    
+
+    /* Note the (int *) cast is correct as the API function SQLSetStmtAttr
+       takes either an interger or a pointer depending on the attribute */
     if(!sql_success(SQLSetStmtAttr(statement_handle(state),
 				   SQL_ATTR_PARAMSET_SIZE,
 				   (int *)num_param_values,
@@ -1931,17 +2005,15 @@ static param_status  init_param_statement(int cols, int num_param_values,
     
     if(!sql_success(SQLSetStmtAttr(statement_handle(state),
 				   SQL_ATTR_PARAM_STATUS_PTR,
-				   status.param_status_array, 0))) {
+				   (status -> param_status_array), 0))) {
 	DO_EXIT(EXIT_PARAM_ARRAY);
     }
     
     if(!sql_success(SQLSetStmtAttr(statement_handle(state),
 				   SQL_ATTR_PARAMS_PROCESSED_PTR,
-				   &status.params_processed, 0))) {
+				   &(status -> params_processed), 0))) {
 	DO_EXIT(EXIT_PARAM_ARRAY);
     }
-    
-    return status;
 }
 
 static void map_dec_num_2_c_column(col_type *type, int precision, int scale)
@@ -2193,10 +2265,9 @@ static db_result_msg retrive_scrollable_cursor_support_info(db_state *state)
     } else { /* Scrollable cursors disabled by the user */
 	ei_x_encode_atom(&dynamic_buffer(state), "false");  
 	ei_x_encode_atom(&dynamic_buffer(state), "false");
-    }
-  
-    msg.buffer = (byte *)dynamic_buffer(state).buff;
-    msg.length = dynamic_buffer(state).index;
+    } 
+    msg.buffer = dynamic_buffer(state).buff;
+    msg.length = dynamic_buffer(state).index; 
     msg.dyn_alloc = TRUE;
     return msg;
 }

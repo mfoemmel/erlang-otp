@@ -93,11 +93,14 @@ compile(File,Options) when list(Options) ->
 	{multiple_files_file,SetBase,FileName} ->
 	    FileList = get_file_list(FileName,Includes),
 	    io:format("FileList: ~p~n",[FileList]),
-	    case [X||{inline,X}<-Options2] of
-		[] ->
+%%	    case [X||{inline,X}<-Options2] of
+	    case is_inline(Options2) of
+		false ->
 		    (catch compile_set(SetBase,filename:dirname(FileName),
 				       FileList,Options2));
-		[OutputName] -> 
+%		[OutputName] -> 
+		_ ->
+		    OutputName = inline_output(Options2,SetBase),
 		    NewFileList=
 			[filename:rootname(filename:basename(X))||X<-FileList],
 		    (catch compile_inline(OutputName,filename:dirname(FileName),NewFileList,Options2))
@@ -1159,6 +1162,21 @@ includes(File,Options) ->
 	    end
     end.
 
+is_inline(Options) ->
+    case lists:member(inline,Options) of
+	true -> true;
+	_ ->
+	    lists:keymember(inline,1,Options)
+    end.
+inline_output(Options,Default) ->
+    case [X||{inline,X}<-Options] of
+	[OutputName] ->
+	    OutputName;
+	_ -> 
+	    Default
+    end.
+		    
+		    
 %% compile(AbsFileName, Options)
 %%   Compile entry point for erl_compile.
 

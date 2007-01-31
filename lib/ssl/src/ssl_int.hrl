@@ -30,10 +30,10 @@
 -define(LISTEN_REP,	8).
 -define(LISTEN_ERR,	9).
 
--define(ACCEPT,		10).
+-define(TRANSPORT_ACCEPT, 10).
 -define(NOACCEPT,	11).
--define(ACCEPT_REP,  	12).
--define(ACCEPT_ERR,  	13).
+-define(TRANSPORT_ACCEPT_REP, 12).
+-define(TRANSPORT_ACCEPT_ERR, 13).
 
 -define(FROMNET_CLOSE,	14).
 
@@ -69,6 +69,10 @@
 -define(GETCONNINFO, 42).
 -define(GETCONNINFO_REP, 43).
 -define(GETCONNINFO_ERR, 44).
+
+-define(SSL_ACCEPT, 45).
+-define(SSL_ACCEPT_REP, 46).
+-define(SSL_ACCEPT_ERR, 47).
 
 %% --------------
 

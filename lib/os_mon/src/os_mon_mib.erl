@@ -168,15 +168,26 @@ update_disk_table() ->
 %%% Exported for internal use via rpc
 %%%========================================================================
 get_load(Node) ->
-    {Total, Allocated, {Pid, PidAllocated}} = memsup:get_memory_data(),
-    #loadTable{loadErlNodeName = atom_to_list(Node),
-	       loadSystemTotalMemory = Total,
-	       loadSystemUsedMemory = Allocated,
-	       loadLargestErlProcess = pid_to_str(Pid),
-	       loadLargestErlProcessUsedMemory = PidAllocated,
-	       loadCpuLoad = get_cpu_load(avg1),
-	       loadCpuLoad5 = get_cpu_load(avg5),
-	       loadCpuLoad15 = get_cpu_load(avg15)}.
+    case memsup:get_memory_data() of
+	{Total, Allocated, {Pid, PidAllocated}} ->
+	    #loadTable{loadErlNodeName = atom_to_list(Node),
+		       loadSystemTotalMemory = Total,
+		       loadSystemUsedMemory = Allocated,
+		       loadLargestErlProcess = pid_to_str(Pid),
+		       loadLargestErlProcessUsedMemory = PidAllocated,
+		       loadCpuLoad = get_cpu_load(avg1),
+		       loadCpuLoad5 = get_cpu_load(avg5),
+		       loadCpuLoad15 = get_cpu_load(avg15)};
+	{Total, Allocated, undefined} ->
+	    #loadTable{loadErlNodeName = atom_to_list(Node),
+		       loadSystemTotalMemory = Total,
+		       loadSystemUsedMemory = Allocated,
+		       loadLargestErlProcess = "undefined",
+		       loadLargestErlProcessUsedMemory = 0,
+		       loadCpuLoad = get_cpu_load(avg1),
+		       loadCpuLoad5 = get_cpu_load(avg5),
+		       loadCpuLoad15 = get_cpu_load(avg15)}
+    end.
 
 get_disks(NodeId) ->
     element(1,

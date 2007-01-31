@@ -15,18 +15,30 @@
 -export([init/4]).
 -export([to_string/1]).
 
+-include("../main/hipe.hrl").
+-include("hipe_icode.hrl").
+-include("hipe_icode_primops.hrl").
 
 -define(LABELITERATIONS, 10).
--define(PHIWIDENING, 4). %< LABELITERATIONS
+-define(PHIWIDENING, 4).
 -define(FUNCTION_FIXPOINT_DEPTH, 5).
 
-%-define(not_done_debug, fun(X, Y) -> io:format(X, Y) end).
+%%-define(not_done_debug, fun(X, Y) -> io:format(X, Y) end).
 -define(not_done_debug, fun(_, _) -> ok end).
 
-%-define(call_or_enter_debug, fun(X, Y) -> io:format(X, Y) end).
+%% -define(MFA_debug, fun(MFA, X, Y) -> 
+%%   		       if MFA =:= {epp,scan_toks,3} ->
+%%   			   io:format("~s ~p~n", [X, Y]);
+%%   			  true  ->
+%%   			   ok
+%%   		       end
+%%   		   end).
+-define(MFA_debug, fun(_, _, _) -> ok end).
+
+%%-define(call_or_enter_debug, fun(X, Y) -> io:format(X, Y) end).
 -define(call_or_enter_debug, fun(_, _) -> ok end).
 
-%todo snodd
+%%todo snodd
 -define(TAG_IMMED1_SIZE, 4).
 
 -define(BITS, (hipe_rtl_arch:word_size() bsl 3) - ?TAG_IMMED1_SIZE).
@@ -35,12 +47,15 @@
 -define(MAX_BYTE, 255).
 -define(MAX_CHAR, 16#10ffff).
 
--include("hipe_icode.hrl").
--include("../main/hipe.hrl").
+%%-define(DEBUG, false).
 
+-define(DO_RANGE_TEST, true).
 
-%-define(DEBUG, false).
-
+-ifdef(DO_RANGE_TEST).
+-export([test/0]).
+-else.
+-define(NO_UNUSED, true).
+-endif.
 
 %% This record is used when returning information
 -record(range_info, {live_labels, 
@@ -112,11 +127,12 @@ init(IC, Options, Server, MFA) ->
 	    true ->
 	      Old = hipe_icode_instruction_counter:cfg(IC, MFA, Options),
 	      New = hipe_icode_instruction_counter:cfg(SpecIC, MFA, Options),
+	      %%io:format("Old insn count ~p ~n", [gb_trees:to_list(Old)]),
 	      hipe_icode_instruction_counter:compare(MFA, Old, New);
 	    false ->
 	      ok
 	  end,	  
-	  SpecIC
+	  SpecIC 
       end
   end.
 
@@ -132,13 +148,10 @@ server__update_return_value(Info) ->
   MFA = info_struct__current_mfa(Info),
   Not_done = info_struct__current_mfa_not_done(Info),
   Server = info_struct__server(Info),
+  ?MFA_debug(MFA, "return range", Return_range),
   %%io:format("MFA ~p ~p ~n", [MFA, Return_range]),
   if not Return_range_is_not_set ->
-      %% We are performing an update
-
-
       Wideningvalues = info_struct__wideningvalues(Info),
-
       Fun = fun (MessageTree) ->
 		Key = {MFA, return_range},
 		{State, Prev_return_range} = 
@@ -157,30 +170,26 @@ server__update_return_value(Info) ->
 		  end, 
 		Is_not_updated = var_range__is_equal(Fixed_return_range, 
 						     Prev_return_range),
-		A= 
 		if Is_not_updated -> 
 		    MessageTree;
 		   true -> 
 		    gb_trees:enter(Key, {Fixed_return_range, State + 1}, 
 				   MessageTree)
-		end,
-		%%io:format("A ~p ~n", [A]),
-		A
+		end
 	    end,
       Server ! {self(), {transaction, Fun}};
-    not Not_done ->
+     not Not_done ->
       Fun = fun(MessageTree) ->
-		
 		Key = {MFA, return_range},
 		Any = range_init(return_range, {neginf, posinf}, true),
-		  case gb_trees:lookup(Key, MessageTree) of
-		    none ->
-		      %%io:format("no returnpoints ~p ~n", [MFA]),
-		      gb_trees:enter(Key, {Any, 1}, 
-				     MessageTree);
-		    {value, _Val} ->
-		      MessageTree
-		  end
+		case gb_trees:lookup(Key, MessageTree) of
+		  none ->
+		    %%io:format("no returnpoints ~p ~n", [MFA]),
+		    gb_trees:enter(Key, {Any, 1}, 
+				   MessageTree);
+		  {value, _Val} ->
+		    MessageTree
+		end
 	    end,
       Server ! {self(), {transaction, Fun}};
      true ->
@@ -211,11 +220,12 @@ server__update_call_args(MFA, Args, Info) -> %% TODO Needs comments
 	if Lookup_state > ?FUNCTION_FIXPOINT_DEPTH ->
 	    Widening_range_list = lists:zip(Lookup_args, Union_args),
 	    Wideningvalues = info_struct__wideningvalues(Info),
-	    Widened_ranges = lists:map(
-		  fun({Old_range, New_range}) ->
-		      range_widening(Old_range, New_range, Wideningvalues)
-		  end,
-		  Widening_range_list),
+	    Widened_ranges = 
+	      lists:map(
+		fun({Old_range, New_range}) ->
+		    range_widening(Old_range, New_range, Wideningvalues)
+		end,
+		Widening_range_list),
 	    %% io:format("New_wided ~p ~n", [R]),
 	    Widened_ranges;
 	   true ->
@@ -229,13 +239,11 @@ server__update_call_args(MFA, Args, Info) -> %% TODO Needs comments
 		       false,
 		       Range_tuple_list)
   end,
-  %% io:format("~p Insert_args: ~p ~n Args_updated ~p ~n", [MFA, Insert_args, Args_updated]),
   New_info=
     if Args_updated ->
-	?not_done_debug("server_update_args break ~n", []),
-	%%io:format("~p insert args ~p ~n", [MFA, Insert_args]),
+	%%?not_done_debug("server_update_args break ~n", []),
 	Server ! {self(), {message, {MFA, args}, {Insert_args, Lookup_state + 1}}},
-	
+
 	info_struct__set_current_mfa_not_done(Info, true);
        true ->
 	Info
@@ -276,7 +284,6 @@ get_range_from_args(Arglist, Info) ->
   lists:map(fun (Arg) -> get_range_from_arg(Arg, Info) end, Arglist).
 
 get_range_from_arg(Arg, Info) ->
-  %% TODO: Constants annotated ??
   UnannoArg = unannotate_var(Arg),
   case hipe_icode:is_const(UnannoArg) of
     true ->
@@ -287,7 +294,7 @@ get_range_from_arg(Arg, Info) ->
 	false ->
 	  range_init(const, empty, true)
       end;
-    false -> % It is a variable
+    false -> % It's a variable
       case hipe_icode:is_fvar(Arg) of
 	true ->
 	  range_init(Arg, empty, true);
@@ -296,7 +303,7 @@ get_range_from_arg(Arg, Info) ->
 	  info_struct__get_range(Var_name, Info)
       end
   end.
-	
+
 int_range_from_number_val(Number) ->
   case Number of 
     any ->
@@ -339,24 +346,24 @@ get_range_from_annotation(Arg_info, Key) ->
   Is_char = erl_types:t_is_char(Arg_info),
   Is_integer = erl_types:t_is_integer(Arg_info),
   {Int_range, Other} = 
-  if Is_byte ->
-      {{0, ?MAX_BYTE}, false};
-     Is_char ->
-      {{0, ?MAX_CHAR}, false};
-     Is_integer ->
-      {{neginf, posinf}, false};
-     true ->
-      Number_vals = erl_types:t_number_vals(Arg_info),
-      Arg = 
-	case Arg_info of 
-	  [_|_] ->
-	    [erl_types:t_integer()|Arg_info];
-	  _ ->
-	    [erl_types:t_integer(),Arg_info]
-	end,
-      Is_only_int = erl_types:t_is_integer(erl_types:t_sup(Arg)),
-      {int_range_from_number_vals(Number_vals), not Is_only_int} 
-  end,
+    if Is_byte ->
+	{{0, ?MAX_BYTE}, false};
+       Is_char ->
+	{{0, ?MAX_CHAR}, false};
+       Is_integer ->
+	{{neginf, posinf}, false};
+       true ->
+	Number_vals = erl_types:t_number_vals(Arg_info),
+	Arg = 
+	  case Arg_info of 
+	    [_|_] ->
+	      [erl_types:t_integer()|Arg_info];
+	    _ ->
+	      [erl_types:t_integer(),Arg_info]
+	  end,
+	Is_only_int = erl_types:t_is_integer(erl_types:t_sup(Arg)),
+	{int_range_from_number_vals(Number_vals), not Is_only_int} 
+    end,
   range_init(Key, Int_range, Other).
 
 keep_vars(Vars)->
@@ -404,7 +411,7 @@ analyse_BB([Last], Info) ->
 analyse_BB([Insn|InsnList], Info) ->
   case analyse_insn(Insn, Info) of
     {break, NewInfo} ->
-      ?not_done_debug("analyse_BB break ~n", []),
+      %%?not_done_debug("analyse_BB break ~n", []),
       info_struct__set_current_mfa_not_done(NewInfo, true); 
     NewInfo = #info_struct{} ->
       analyse_BB(InsnList, NewInfo)
@@ -422,27 +429,26 @@ analyse_insn(Insn, Info) ->
 
 analyse_last_insn(Insn, Info) ->
   %% hipe_icode_pp:pp_block([Insn]),
-  Case_return = case Insn of 
-		  #return{} -> analyse_return(Insn, Info);
-		  #enter{} -> analyse_enter(Insn, Info);
-		  #switch_val{} -> analyse_switch_val(Insn, Info);
-		  #'if'{} -> analyse_if(Insn, Info);
-		  #goto{} -> analyse_goto(Insn, Info);	
-		  #type{} -> analyse_type(Insn, Info);
-		  #fail{} -> analyse_fail(Insn, Info);
-		  #call{} -> analyse_last_call(Insn, Info);
-		  #switch_tuple_arity{} -> 
-		    analyse_switch_tuple_arity(Insn, Info);
-		  #begin_try{} -> analyse_begin_try(Insn, Info)
-%%		  #begin_handler{} -> analyse_begin_handler(Insn, Info) %% last insn??
-		end,
+  Case_return = 
+    case Insn of 
+      #return{} -> analyse_return(Insn, Info);
+      #enter{} -> analyse_enter(Insn, Info);
+      #switch_val{} -> analyse_switch_val(Insn, Info);
+      #'if'{} -> analyse_if(Insn, Info);
+      #goto{} -> analyse_goto(Insn, Info);	
+      #type{} -> analyse_type(Insn, Info);
+      #fail{} -> analyse_fail(Insn, Info);
+      #call{} -> analyse_last_call(Insn, Info);
+      #switch_tuple_arity{} -> 
+	analyse_switch_tuple_arity(Insn, Info);
+      #begin_try{} -> analyse_begin_try(Insn, Info)
+    end,
   case Case_return of
     {break, Updated_info} ->
-      ?not_done_debug("analyse_last_insn break ~p ~n", [Insn]),
+      %%?not_done_debug("analyse_last_insn break ~p ~n", [Insn]),
       info_struct__set_current_mfa_not_done(Updated_info, true);
     Updated_info = #info_struct{} -> %TODO ordning på labelar ... vad??
       {_, Return_info} = info_struct__save_current_range_tree({out_tree, info_struct__current_label(Updated_info)}, Updated_info),
-
       Return_info
   end.
 
@@ -468,7 +474,7 @@ analyse_call(Call, Info) ->
     {break, Analyse_info} ->
       {break, Analyse_info};
     Dst_range = #var_range{} ->
-%      info_struct__insert_range(Dst_range, Info);
+      %%info_struct__insert_range(Dst_range, Info);
       if Key =/= undef ->
 	  Annotation_range = get_range_from_dst_annotation(Key, Dsts),
 	  Cut_range = range_cut(Key, [Dst_range, Annotation_range]),
@@ -476,8 +482,8 @@ analyse_call(Call, Info) ->
 	  if Is_different ->
 	      Warn = info_struct__warn(Info),
 	      warning(Cut_range, Dst_range, Warn);
-	  true ->
-	    ok
+	     true ->
+	      ok
 	  end,
 	  info_struct__insert_range(Cut_range, Info);
 	 true ->
@@ -486,7 +492,7 @@ analyse_call(Call, Info) ->
     New_Info = #info_struct{} -> New_Info
   end.
 
-%Analyses a call that is last in an BB.
+%%Analyses a call that is last in an BB.
 analyse_last_call(Call, Info) ->
   %% hipe_icode_pp:pp_block([Insn]),
   case analyse_call(Call, Info) of
@@ -541,12 +547,12 @@ phi_widening(Union_range, Info) ->
 	posinf
     end,
   Range_range = 
-  case (Min =:= empty) or (Max =:= empty) of
-    true ->
-      empty;
-    false ->
-      {Min, Max}
-  end,
+    case (Min =:= empty) or (Max =:= empty) of
+      true ->
+	empty;
+      false ->
+	{Min, Max}
+    end,
   range_init(Name, Range_range, var_range__other(Union_range)).
 
 
@@ -555,17 +561,17 @@ analyse_phi(Phi, Info) ->
   Dst = hipe_icode:phi_dst(Phi),
   Dst_name = name_from_icode_var(Dst),
   Arg_ranges = get_range_from_args(Args, Info),
-  %io:format("Phi-Arg_ranges: ~p ~n", [Arg_ranges]),
+  %%io:format("Phi-Arg_ranges: ~p ~n", [Arg_ranges]),
   Temp_dst_range = range_union(Dst_name, Arg_ranges),
   Label = info_struct__current_label(Info),
   Counter = info_struct__counter_from_label(Info, Label),
   Dst_range = 
     if Counter > ?PHIWIDENING ->
-      phi_widening(Temp_dst_range, Info);
-    true ->
-      Temp_dst_range
+	phi_widening(Temp_dst_range, Info);
+       true ->
+	Temp_dst_range
     end,
-  %io:format("Phi_Dst_range: ~p ~n", [Dst_range]),
+  %%io:format("Phi_Dst_range: ~p ~n", [Dst_range]),
   Info2 = info_struct__set_phi_range(Dst_range, Info),	
   info_struct__insert_range(Dst_range, Info2).
 
@@ -583,7 +589,7 @@ analyse_enter(Insn, Info) ->
   %% io:format("Enter ~p ~n", [Insn]),
   Args = hipe_icode:enter_args(Insn),
   Fun = hipe_icode:enter_fun(Insn),
-  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, [undef], Info, local), 
+  Analysis_result = analyse_call_or_enter_fun(Fun, Args, Key, Key, Info, local), 
   case Analysis_result of
     {break, Analyse_info} ->
       {break, Analyse_info};
@@ -631,7 +637,7 @@ analyse_switch_tuple_arity(Switch, Info) ->
 analyse_switch_val(Switch, Info) -> 
   Switch_range = get_range_from_arg(hipe_icode:switch_val_arg(Switch), Info),
   Cases = hipe_icode:switch_val_cases(Switch),
-  %io:format("switch ~p ~p ~n", [Switch, Cases]), 
+  %%io:format("switch ~p ~p ~n", [Switch, Cases]), 
   {_, Labels} = lists:unzip(Cases),
   {Fail_range, Range_label_list} = get_range_label_list(Switch_range, Cases, Info, [], []),
   Fail_label = hipe_icode:switch_val_fail_label(Switch), 
@@ -675,25 +681,16 @@ analyse_sane_if(If, Info, [Range_1, Range_2]) ->
       False_range_2 = var_range__set_other(Temp_false_range_2, 
 					   var_range__other(Range_2))
   end,
-  
+
   %% io:format("~nrange_1: ~p, ~nrange_2: ~p ~n if op: ~p ~ntrue_1: ~p, ~ntrue_2: ~p, ~nfalse_1: ~p, ~nfalse_2: ~p ~n", [Range_1, Range_2, hipe_icode:if_op(If), True_range_1, True_range_2, False_range_1, False_range_2]),
 
   True_label = hipe_icode:if_true_label(If),
   False_label = hipe_icode:if_false_label(If),
-  
+
   Substitute_list = [{True_range_1, True_label}, {True_range_2, True_label}, 
 		     {False_range_1, False_label}, {False_range_2, False_label}],
   {Updated_edges, Info2} = info_struct__save_spec_range_trees(Info, Substitute_list, [True_label, False_label]),
   {_, To_labels} = lists:unzip(Updated_edges),
-  %% io:format("If ~p ~n", [To_labels]),
-  
-%%  Old_vals = [var_range__min(Range_1), var_range__max(Range_1), var_range__min(Range_2), var_range__max(Range_2)], 
-	
-%%   Info3 = lists:foldl(fun (Val, Info) ->
-%% 			  info_struct__add_wideningvalue(Val, Info)
-%% 		      end,
-%% 		      Info2,
-%% 		      Old_vals),
   info_struct__add_work(Info2, To_labels).
 
 analyse_if(If, Info) ->
@@ -736,38 +733,36 @@ analyse_type(Type, Info) ->
 			      Old_var_range]),
       %% False range
       False_int_range = 
-      case var_range__range(Old_var_range) of
-	{Min, Max} ->
-	  New_small = inf_geq(Min, N),
-	  New_large = inf_geq(N, Max),
-	  if New_small ->
-	    {N + 1, Max};
-	  New_large ->
-	    {Min, N - 1};
-	  true -> 
-	    {Min, Max}
-	  end;
-	Not_tuple ->
-	  Not_tuple
-      end,
-      
+	case var_range__range(Old_var_range) of
+	  {Min, Max} ->
+	    New_small = inf_geq(Min, N),
+	    New_large = inf_geq(N, Max),
+	    if New_small ->
+		{N + 1, Max};
+	       New_large ->
+		{Min, N - 1};
+	       true -> 
+		{Min, Max}
+	    end;
+	  Not_tuple ->
+	    Not_tuple
+	end,
+
       False_range = 
 	range_init(
 	  Var_name,
 	  False_int_range, 
 	  var_range__other(Old_var_range)
-	);
+	 );
 
-%%      info_struct__add_wideningvalue(N, Info);
-    
     integer -> 
       True_range = var_range__set_other(Old_var_range, false),
-      False_range = range_init(Var_name, empty, var_range__other(Old_var_range));
+      False_range = range_init(Var_name,empty,var_range__other(Old_var_range));
     _ -> 
-      True_range = var_range__set_other(Old_var_range, true), %%Todo assert, cut
+      True_range = var_range__set_other(Old_var_range, true), 
       False_range = Old_var_range
   end,
-  
+
   True_label = hipe_icode:type_true_label(Type),
   False_label = hipe_icode:type_false_label(Type),
   Updates = [{True_range, True_label}, {False_range, False_label}], 
@@ -788,7 +783,6 @@ analyse_fail(_Fail, Info) ->
 %%---------------------------------------------------------------------------
 
 analyse_other_module_fcall(Key, {M,F,A}, Info, Args) -> 
-  %% io:format("fcall to other module ~p ~n", [{M,F,A}]),
   Mfa_type = erl_bif_types:type(M,F,A),
   Info2 = 
     case erl_bif_types:arg_types(M,F,A) of
@@ -814,26 +808,27 @@ analyse_other_module_fcall(Key, {M,F,A}, Info, Args) ->
   info_struct__insert_range(Return_range, Info2).
 
 analyse_fcall(Key, {M,F,A}, Info, Args) ->
-  %io:format("~p fcall ~p ~n", [self(), {M,F,A}]),
+  %%io:format("~p fcall ~p ~n", [self(), {M,F,A}]),
   Current_mfa = info_struct__current_mfa(Info), 
   Server = info_struct__server(Info),
   Info2 = 
-  if (Current_mfa =:= {M,F,A}) ->
-    info_struct__set_is_recursive(true, Info);
-  true ->
-    Info
-  end,
+    if (Current_mfa =:= {M,F,A}) ->
+	info_struct__set_is_recursive(true, Info);
+       true ->
+	Info
+    end,
   Server ! {self(), {load, message, {{M,F,A}, return_range}}},
   receive
     none ->
       case Current_mfa of
+	{M,F,A} ->
+	  Info3 = server__update_call_args({M,F,A}, Args, Info2),
+	  {break, Info3};	  
 	{M,_,_} ->
-	  %% is_recursive här??
-	  %?not_done_debug("need info ~p ~n", [{M,F,A}]),
+	  %%?not_done_debug("need info ~p in ~p ~n", [{M,F,A}, Current_mfa]),
 	  Info3 = server__update_call_args({M,F,A}, Args, Info2),
 	  Range = range_init(Key, {neginf, posinf}, true),
 	  info_struct__insert_range(Range, Info3);
-	  %{break, Info3};
 	_ -> 
 	  %% doesn't save args info about function in other module
 	  analyse_other_module_fcall(Key, {M,F,A}, Info2, Args)
@@ -859,18 +854,24 @@ analyse_bs_get_integer_funs(_Size, _Flags, false) -> {neginf, posinf}.
 
 
 get_range_from_dst_annotation(Key, Dsts) ->
+  GetAnno = fun(Dst) ->
+		case hipe_icode:is_annotated_var(Dst) of
+		  true ->
+		    get_range_from_annotation(
+		      hipe_icode:var_annotation(Dst), Key);		  
+		  false ->
+		    range_init(Key, {neginf, posinf}, true)
+		end
+	    end,
   case Dsts of
     [undef] ->
       range_init(Key, {neginf, posinf}, true);
     [] -> 
       range_init(Key, {neginf, posinf}, true);
     [Dst|_] -> %todo the others are what??
-      case hipe_icode:is_annotated_var(Dst) of
-        true ->
-          get_range_from_annotation(hipe_icode:var_annotation(Dst), Key);
-        false ->
-          range_init(Key, {neginf, posinf}, true)
-      end
+      GetAnno(Dst);
+    Dst ->
+      GetAnno(Dst)
   end.
 
 lasy_type(Fun) ->
@@ -915,16 +916,10 @@ analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info, CallType) ->
 	  end;
 	remote ->
 	  analyse_other_module_fcall(Key, {M,F,A}, Info, Args)
-%	primops ->
-%	  get_range_from_dst_annotation(Key, Dsts)
       end;
     not_int ->
       ?call_or_enter_debug("not int", []),
       range_init(Key, empty, true);
-%%    range_cut(Key, 
-%%		[range_init(Key, empty, true), 
-%%		 get_range_from_dst_annotation(Key, Dsts)]);
-      
     not_analysed -> 
       ?call_or_enter_debug("not analysed", []),
       get_range_from_dst_annotation(Key, Dsts);
@@ -1006,47 +1001,47 @@ basic_type({hipe_bsi_primop,{bs_get_binary,_A,_B}}) -> not_analysed;
 
 %% Unknown, other
 basic_type(call_fun) -> not_analysed;
-basic_type({closure_element, _N}) -> not_analysed; 
-basic_type('redtest') -> not_analysed;
-basic_type({gc_test, _}) -> not_analysed;
 basic_type(clear_timeout) -> not_analysed;
+basic_type(redtest) -> not_analysed;
 basic_type(set_timeout) -> not_analysed;
-basic_type({apply_N, _N}) -> not_analysed;
+basic_type(#apply_N{}) -> not_analysed;
+basic_type(#closure_element{}) -> not_analysed; 
+basic_type(#gc_test{}) -> not_analysed;
 
 %% Message handling
 basic_type(check_get_msg) -> not_analysed; 
-basic_type(select_msg) -> not_analysed; 
 basic_type(next_msg) -> not_analysed; 
+basic_type(select_msg) -> not_analysed; 
 basic_type(suspend_msg) -> not_analysed;
 
 %% Functions
-basic_type({mkfun, _Fun, _N1, _N2}) -> not_int;
-basic_type({M,F,A}) -> {fcall, {M,F,A}}; 
 basic_type(enter_fun) -> not_analysed;
+basic_type(#mkfun{}) -> not_int;
+basic_type({M,F,A}) -> {fcall, {M,F,A}}; 
 
 %% Floats
 basic_type(conv_to_float) -> not_int;
 basic_type(fclearerror) -> not_analysed;
-basic_type(fp_add) -> not_int;
-basic_type(fp_mul) -> not_int;
-basic_type(fp_div) -> not_int;
 basic_type(fcheckerror) -> not_analysed;
+basic_type(fnegate) -> not_int;
+basic_type(fp_add) -> not_int;
+basic_type(fp_div) -> not_int;
+basic_type(fp_mul) -> not_int;
+basic_type(fp_sub) -> not_int;
 basic_type(unsafe_tag_float) -> not_int;
 basic_type(unsafe_untag_float) -> not_int;
-basic_type(fp_sub) -> not_int;
-basic_type(fnegate) -> not_int;
 
 %% Lists, tuples, records
-basic_type(mktuple) -> not_int;
 basic_type(cons) -> not_int;
-basic_type({unsafe_element, _N}) -> not_analysed;
+basic_type(mktuple) -> not_int;
 basic_type(unsafe_hd) -> not_analysed;
 basic_type(unsafe_tl) -> not_int;
-basic_type({element, _Elems}) -> not_analysed;
-basic_type({unsafe_update_element, _N}) -> not_analysed.
+basic_type(#element{}) -> not_analysed;
+basic_type(#unsafe_element{}) -> not_analysed;
+basic_type(#unsafe_update_element{}) -> not_analysed.
 
 
-%% todo rename switch_val
+%% TODO: rename switch_val
 get_range_label_list(Range, [], _Info, Range_label_list, []) ->
   {Range, Range_label_list};
 get_range_label_list(Range, [], _Info, Range_label_list, Constants_to_cut) ->
@@ -1062,30 +1057,29 @@ get_range_label_list(Range, [], _Info, Range_label_list, Constants_to_cut) ->
   New_temp_range = 
     lists:foldl(
       fun(Const, Acc_range) ->
-        Const_range = range_init(const, {Const, Const}, false),
-        range_remove_constant(Acc_range, Const_range)
+	  Const_range = range_init(const, {Const, Const}, false),
+	  range_remove_constant(Acc_range, Const_range)
       end,
       Range,
       Sorted_constants_to_cut),
   New_range_range = 
-  case var_range__range(New_temp_range) of 
-    {Min, Max} ->
-      New_small = inf_geq(Smallest, Max),
-      New_large = inf_geq(Min, Largest),
-      New_max = 
-	if New_small -> Smallest - 1;
-	   true-> Max
-	end,
-      New_min =
-	if New_large -> Largest + 1;
-	   true -> Min
-	end,
-      {New_min, New_max};
-    Not_tuple ->
-      Not_tuple
-  end,
-      
-  %io:format("Range ~p ~n", [New_range_range]),
+    case var_range__range(New_temp_range) of 
+      {Min, Max} ->
+	New_small = inf_geq(Smallest, Max),
+	New_large = inf_geq(Min, Largest),
+	New_max = 
+	  if New_small -> Smallest - 1;
+	     true-> Max
+	  end,
+	New_min =
+	  if New_large -> Largest + 1;
+	     true -> Min
+	  end,
+	{New_min, New_max};
+      Not_tuple ->
+	Not_tuple
+    end,
+  %%io:format("Range ~p ~n", [New_range_range]),
   New_range = range_init(var_range__name(Range), New_range_range, var_range__other(Range)), 
   {New_range, Range_label_list}; 
 get_range_label_list(Range, [Case|Cases], Info, Range_label_list, Constants_to_cut) ->
@@ -1153,8 +1147,8 @@ annotate_insn(Insn, Range_info, Current_label) ->
 			    any
 			end
 	     end,
-  DefSubst = [{X, Fun(X, {Old_anno(X), Lookup_def(Range_info, Current_label, X)})}||X<-Def],
-  UseSubst = [{X, Fun(X, {Old_anno(X), Lookup_use(Range_info, Current_label, X)})}||X<-Use],
+  DefSubst = [{X, Fun(X, {Old_anno(X), Lookup_def(Range_info, Current_label, X)})} || X <- Def],
+  UseSubst = [{X, Fun(X, {Old_anno(X), Lookup_use(Range_info, Current_label, X)})}|| X <- Use],
   case DefSubst ++ UseSubst of
     [] ->
       Insn;
@@ -1249,16 +1243,16 @@ specialize_BB(Insts, Range_info, Label) ->
 specialize_insn(Insn, Range_info, Label) ->
   %% hipe_icode_pp:pp_block([Insn]),
   New_insn = 
-  case Insn of
-    #call{} ->
-      specialize_call(Insn, Range_info, Label);
-    #enter{} ->
-      specialize_enter(Insn, Range_info, Label);
-    #'if'{} ->
-      specialize_if(Insn, Range_info, Label);
-    Other ->
-      Other
-  end,
+    case Insn of
+      #call{} ->
+	specialize_call(Insn, Range_info, Label);
+      #enter{} ->
+	specialize_enter(Insn, Range_info, Label);
+      #'if'{} ->
+	specialize_if(Insn, Range_info, Label);
+      Other ->
+	Other
+    end,
   New_insn.
 
 %% specialized_op(op, specialization)
@@ -1267,13 +1261,11 @@ specialized_op('+', unsafe, _) -> 'unsafe_add';
 specialized_op('+', extra_unsafe, _) -> 'extra_unsafe_add';
 
 specialized_op('-', safe, _) -> '-';
-specialized_op('-', unsafe, _) -> 'unsafe_sub'; %%??
-specialized_op('-', extra_unsafe, _) -> 'extra_unsafe_sub'; %extra
+specialized_op('-', unsafe, _) -> 'unsafe_sub'; 
+specialized_op('-', extra_unsafe, _) -> 'extra_unsafe_sub'; 
 
 specialized_op('*', safe, _) -> '*';
-specialized_op('*', unsafe, Warn) -> 
-  warning('could be unsafe_mult', '*', Warn),
-  '*';
+specialized_op('*', unsafe, _) -> '*';
 specialized_op('*', extra_unsafe, Warn) -> 
   warning('could be extra_unsafe_mult', '*', Warn),
   '*';
@@ -1294,7 +1286,7 @@ specialized_op('bxor', unsafe, _) ->
 specialized_op('bxor', extra_unsafe, _) -> 'unsafe_bxor';
 
 specialized_op('bnot', safe, _) -> 'bnot';
-specialized_op('bnot', unsafe, _) -> 'bnot'; %% todo correct?
+specialized_op('bnot', unsafe, _) -> 'bnot'; %% TODO: correct?
 specialized_op('bnot', extra_unsafe, _) -> 'unsafe_bnot';
 
 specialized_op('bsl', safe, _) -> 'bsl';
@@ -1313,7 +1305,7 @@ specialized_op('unsafe_add', extra_unsafe, _) -> 'extra_unsafe_add';
 specialized_op('unsafe_sub', safe, Warn) ->
   warning('unsafe_sub', safe, Warn), 'unsafe_sub';
 specialized_op('unsafe_sub', unsafe, _) -> 'unsafe_sub';
-specialized_op('unsafe_sub', extra_unsafe, _) -> 'unsafe_sub';
+specialized_op('unsafe_sub', extra_unsafe, _) -> 'extra_unsafe_sub';
 
 %% TODO: remove when not needed
 specialized_op('extra_unsafe_add', safe, Warn) ->
@@ -1350,15 +1342,12 @@ specialize_if(If, Range_info, Label) ->
   Use_constants = lists:map(fun (Const) ->
 				make_const(Const, Range_info, Label)
 			    end, consts(If)), 
-  RangeFun = fun(Range) -> 
-		 var_range__is_fixnum(Range) andalso
-		 (var_range__other(Range) =:= false) 
-	     end,
+  RangeFun = fun(Range) -> specialize_is_fixnum(Range) end,
   New_if_op = specialized_if_op(IfOp, 
-			     lists:all(RangeFun, Use_ranges ++ Use_constants)),
+				lists:all(RangeFun, Use_ranges ++ Use_constants)),
   hipe_icode:if_op_update(If, New_if_op).
-  
-  
+
+
 
 specialize_call(Call, Range_info, Label) ->
   Fun = hipe_icode:call_fun(Call),
@@ -1370,54 +1359,92 @@ specialize_enter(Enter, Range_info, Label) ->
   New_fun = specialize_call_or_enter(Fun, Enter, Range_info, Label),
   hipe_icode:enter_fun_update(Enter, New_fun).
 
-%% todo dont do unnecessary work
+%%-define(ALL_FIXNUMS, true).
+-ifdef(ALL_FIXNUMS).
+specialize_is_fixnum(Range) -> not var_range__other(Range).
+-else.
+specialize_is_fixnum(Range) -> var_range__is_fixnum(Range).
+-endif.
+
+specialize_is_bitwidth(Range) -> var_range__is_bitwidth(Range).
+
+use_range([], _, _) -> [];
+use_range([Use|UseTail], Info, Label) ->
+  NewRange = 
+    case hipe_icode:is_const(Use) of
+      true  -> make_const(Use, Info, Label);
+      false -> range_info__use_range(Info, Label, name_from_icode_var(Use))
+    end,
+  [NewRange|use_range(UseTail, Info, Label)].
+
+all_safe(Op, Args, [Res]) ->
+  specialize_is_fixnum(Res) and args_safe(Op, Args).
+
+args_safe('bsl', [Left,Right]) -> 
+  specialize_is_fixnum(Left) and specialize_is_bitwidth(Right);
+args_safe('bsr', [Left,Right]) -> 
+  specialize_is_fixnum(Left) and specialize_is_bitwidth(Right);
+args_safe('bnot', [Arg]) -> 
+  specialize_is_fixnum(Arg);
+args_safe(_, [Left,Right]) -> 
+  specialize_is_fixnum(Left) and specialize_is_fixnum(Right).
+
+
+get_safety_class(Operation, Use_ranges, []) ->
+  case args_safe(Operation, Use_ranges) of
+    true  -> unsafe;
+    false -> safe
+  end;
+get_safety_class(Operation, Use_ranges, Def_ranges) ->
+  case all_safe(Operation, Use_ranges, Def_ranges) of
+    true  -> extra_unsafe;
+    false -> case args_safe(Operation, Use_ranges) of
+	       true  -> unsafe;
+	       false -> safe
+	     end
+  end.
+
+
+is_arith_op('+') -> true;
+is_arith_op('-') -> true;
+is_arith_op('*') -> true;
+is_arith_op('band') -> true;
+is_arith_op('bor') -> true;
+is_arith_op('bxor') -> true;
+is_arith_op('bnot') -> true;
+is_arith_op('bsl') -> true;
+is_arith_op('bsr') -> true;
+is_arith_op('unsafe_add') -> true;
+is_arith_op('unsafe_sub') -> true;
+is_arith_op('extra_unsafe_add') -> true;
+is_arith_op(_) -> false.
+
+
+%% TODO: don't do unnecessary work
 specialize_call_or_enter(Fun, Operation, Range_info, Label) ->
   Warn = range_info__warn(Range_info),
-  Use_ranges = lists:map(fun (Var) ->
-			     range_info__use_range(Range_info, Label,
-						   name_from_icode_var(Var))
-			 end, uses(Operation)),
-  Use_constants = lists:map(fun (Const) ->
-				make_const(Const, Range_info, Label)
-			    end, consts(Operation)), 
-  Def_ranges = lists:map(fun (Var) ->
-			     range_info__def_range(Range_info, Label,
-						   name_from_icode_var(Var))
-			 end, defines(Operation)),
-  %% Range_list = Use_ranges ++ Def_ranges,
-  %% io:format("Fun ~p, ~nRange_list: ~p ~n", [Fun, Use_ranges ++ Def_ranges]),
-  %% pp_range_list(Range_list),
-  RangeFun = fun(Range) -> 
-		 var_range__is_fixnum(Range) andalso
-		 (var_range__other(Range) =:= false) 
-	     end,
-  Use_fixnum = lists:all(RangeFun, Use_ranges ++ Use_constants),
-  Def_fixnum = lists:all(RangeFun, Def_ranges),
-  %% todo remove when tired of it.
-  lists:map(fun(Range) -> 
-		case var_range__is_constant(Range) of
-		  true ->
-		    warning('Found constant range', {Range, Label}, Warn);
-		  false ->
-		    ok
-		end
-	    end,
-	    Use_ranges ++ Def_ranges),
-  Fixnums = 
-    if Use_fixnum and Def_fixnum ->
-	extra_unsafe;
-       Use_fixnum ->
-	unsafe;
-       true ->
-	safe
+  Use = hipe_icode:args(Operation),
+  %%  io:format("Op ~p ~nUse ~p ~n", [Operation, Use]),
+  Use_ranges = use_range(Use, Range_info, Label),
+  Def_ranges = 
+    case hipe_icode:is_enter(Operation) of
+      true ->
+	[range_info__def_range(Range_info, Label, enter_return)];
+      false ->
+	lists:map(fun (Var) ->
+		      range_info__def_range(Range_info, Label,
+					    name_from_icode_var(Var))
+		  end, defines(Operation))
     end,
-  New_fun = specialized_op(Fun, Fixnums, Warn),
-  if New_fun =/= Fun ->
-    info(New_fun, Fun, Warn);
-  true ->
-    ok
-  end,
-  New_fun.
+  case is_arith_op(Fun) of
+    true  -> Safety_class = get_safety_class(Fun, Use_ranges, Def_ranges),
+	     New_fun = specialized_op(Fun, Safety_class, Warn),
+	     if New_fun =/= Fun -> info(New_fun, Fun, Warn);
+		true -> ok
+	     end,
+	     New_fun;
+    false -> Fun
+  end.
 
 
 %%
@@ -1458,7 +1485,6 @@ info_struct__init(IC, Server, Options, Current_mfa = {_M, F, A}) ->
       {value, {Lookup_args, _Lookup_state}} ->
 	Lookup_args
     end,
-  %% io:format("MFA: ~p Params: ~p Args: ~p ~n", [info_struct__current_mfa(Info), Params, Arg_ranges]),
   case info_struct__add_params(Params, Info, Arg_ranges, Is_exported, Is_closure) of
     break ->
       break;
@@ -1497,7 +1523,7 @@ info_struct__server(#info_struct{server=Server}) -> Server.
 
 info_struct__live_vars(#info_struct{liveness=Liveness}, Label) -> 
   hipe_icode_liveness:livein(Liveness, Label).
- 
+
 info_struct__increment_label_counter(Info = #info_struct{label_counters = Counters}, Label) ->
   case gb_trees:lookup(Label, Counters) of
     none ->
@@ -1534,25 +1560,23 @@ info_struct__set_current_mfa_not_done(Info, Bool) ->
   Info#info_struct{current_mfa_not_done=Bool}.
 
 info_struct__current_mfa_not_done(#info_struct{current_mfa_not_done=NotDone, 
-				  current_mfa = MFA,
-				  server = Server,
-				  is_recursive = Recursive} = Info) ->
-
-
+					   current_mfa = MFA,
+					   server = Server,
+					   is_recursive = Recursive} = Info) ->
   NotDone and 
-  if Recursive ->
-    Server ! {self(), {load, message, {MFA, return_range}}},
-    Old_return = 
-    receive
-      none ->
-	range_init(return_range, empty, false);
-      {value, {Lookup_range, _Final}} ->
-	Lookup_range
-    end,
-    not var_range__is_equal(return_range(Info), Old_return);
-  true ->
-    true
-  end.
+    if Recursive ->
+	Server ! {self(), {load, message, {MFA, return_range}}},
+	Old_return = 
+	  receive
+	    none ->
+	      range_init(return_range, empty, false);
+	    {value, {Lookup_range, _Final}} ->
+	      Lookup_range
+	  end,
+	not var_range__is_equal(return_range(Info), Old_return);
+       true ->
+	true
+    end.
 
 info_struct__predmap(#info_struct{predmap=Pred}) -> Pred.
 
@@ -1601,7 +1625,7 @@ info_struct__add_params([Param|ParamList], Info, Arg_range_list,
 	    New_arg_range = range_init(Key, Int_range, Other),
 	    {Arg_range_tail, New_arg_range};
 	  [] ->
-	    ?not_done_debug("In add params ~n", []),
+	    %%?not_done_debug("In add params ~n", []),
 	    {[], break}
 	end
     end,
@@ -1609,7 +1633,7 @@ info_struct__add_params([Param|ParamList], Info, Arg_range_list,
     break ->
       break;
     Range ->
-      %% `io:format("MFA: ~p arg: ~p ~n", [info_struct__current_mfa(Info), New_range]), 
+      %% io:format("MFA: ~p arg: ~p ~n", [info_struct__current_mfa(Info), New_range]), 
       %% io:format("Param ~p range: ~p ~n", [Param, New_range]),
       NewInfo = info_struct__insert_range(Range, Info),
       info_struct__add_params(ParamList, NewInfo, List, Is_exported, Is_closure)
@@ -1634,8 +1658,7 @@ info_struct__get_range(Var, Info) ->
       Range
   end.
 
-%info_struct__is_recursive(#info_struct{is_recursive = Bool}) -> Bool.
-
+%%info_struct__is_recursive(#info_struct{is_recursive = Bool}) -> Bool.
 
 info_struct__set_is_recursive(Bool, Info) -> 
   Info#info_struct{is_recursive = Bool}.
@@ -1649,12 +1672,12 @@ info_struct__warn(#info_struct{warn = Warn}) ->
 
 info_struct__set_new_current_tree(Label, Info) ->
   New_range_tree = 
-  case info_struct__pred_tree(Label, Info) of
-    none ->
-      [];
-    {value, Tree} ->
-      Tree
-  end,
+    case info_struct__pred_tree(Label, Info) of
+      none ->
+	[];
+      {value, Tree} ->
+	Tree
+    end,
   Range_list = gb_trees:values(New_range_tree),
   No_not_set = lists:all(
 		 fun (Range) ->
@@ -1676,7 +1699,7 @@ info_struct__set_new_current_tree(Label, Info) ->
       end,
       Info#info_struct{current_range_tree = New_range_tree};
     false ->
-      ?not_done_debug("set new current tree ~n", []),
+      %%?not_done_debug("set new current tree ~n", []),
       break
   end.
 
@@ -1694,12 +1717,12 @@ info_struct__save_spec_range_tree(Info, {Range, To_label}, Update_list) ->
     false ->
       [{{Range_name, Edge}, Range}|Update_list]
   end.
-  
 
-%
-% Update_list is a list of ranges that has been updated on 
-%
-%
+
+%%
+%% Update_list is a list of ranges that has been updated on 
+%%
+%%
 save_other_ranges(Info, _Update_list, [], Updated_edges) -> 
   {Updated_edges, Info};
 save_other_ranges(Info, Update_list, [Label|Labels], Updated_edges_list) ->
@@ -1744,7 +1767,7 @@ live_ranges({_From_label, To_label}, Range_tree, Info) ->
   Range_list = gb_trees:to_list(Range_tree),
   Live_range_list  =
     lists:filter(
-      fun({Name, _Range}) -> %%TODO assert:Name should be same as var_range_name
+      fun({Name, _Range}) -> 
 	  gb_sets:is_element({var, Name}, Liveset)
       end,
       Range_list),
@@ -1752,7 +1775,7 @@ live_ranges({_From_label, To_label}, Range_tree, Info) ->
 
 info_struct__pred_tree(Label, #info_struct{pred_trees = Trees}) ->
   gb_trees:lookup(Label, Trees).
- 
+
 info_struct__set_pred_tree(Label, Pred_tree, #info_struct{pred_trees = Trees} = Info) ->
   Info#info_struct{pred_trees = gb_trees:enter(Label, Pred_tree, Trees)}.
 
@@ -1769,10 +1792,10 @@ info_struct__save_range_tree(Edge, Insert_tree, Info) ->
 	{true, Live_tree, Live_tree};
       {value, Old_pred_tree} ->
 	Union_pred_tree = range_tree_union([Old_pred_tree, 
-					Live_tree]),
+					    Live_tree]),
 	{range_tree_is_different(Old_pred_tree, Union_pred_tree), Insert_tree, Union_pred_tree}
     end,
-  
+
   Final_range_trees = gb_trees:enter(Edge, New_range_tree, info_struct__range_trees(Info)),
   Info2 = Info#info_struct{range_trees = Final_range_trees},
   if Update_value =:= true ->
@@ -1796,7 +1819,7 @@ range_tree_is_different(Range_tree1, Range_tree2) ->
       lists:any(
 	fun({Range1, Range2}) -> not var_range__is_equal(Range1, Range2) end, 
 	Range_tuple_list
-      );
+       );
     false ->
       true
   end.
@@ -1804,13 +1827,13 @@ range_tree_is_different(Range_tree1, Range_tree2) ->
 get_edge_tree_list(PredList, Label, Version, Info) ->
   lists:map(
     fun(Pred) ->
-      Search_pattern = 
-        if Version =:= old ->
-	  {old, {Pred, Label}};
-	true ->
-	  {Pred, Label}
-	end,
-      info_struct__get_range_tree(Search_pattern, Info)
+	Search_pattern = 
+	  if Version =:= old ->
+	      {old, {Pred, Label}};
+	     true ->
+	      {Pred, Label}
+	  end,
+	info_struct__get_range_tree(Search_pattern, Info)
     end,
     PredList).
 
@@ -1862,8 +1885,6 @@ out_range_trees_from_info_struct_1(_Info, [], Label_range_tree) ->
   Label_range_tree;
 out_range_trees_from_info_struct_1(Info, [Label|Labels], Label_range_tree) ->
   Range_tree = info_struct__get_range_tree({out_tree, Label}, Info),
-  %% io:format("Label ~p, ~nOut_range_tree ~p ~n", [Label, gb_trees:values(Range_tree)]),
-  %% info_struct__merge_succ_range_trees(Label, Info),
   New_label_range_tree = gb_trees:insert(Label, Range_tree, Label_range_tree),
   out_range_trees_from_info_struct_1(Info, Labels, New_label_range_tree).
 
@@ -1945,18 +1966,16 @@ var_range__is_correct(#var_range{range={Min, Max}}) when (Min =/= empty),
   true.
 -endif.
 
-is_max(posinf) -> true;
-is_max(N) when is_integer(N) -> true.
+%% is_max(posinf) -> true;
+%% is_max(N) when is_integer(N) -> true.
 
-is_min(neginf) -> true;
-is_min(N) when is_integer(N) -> true.
-    
+%% is_min(neginf) -> true;
+%% is_min(N) when is_integer(N) -> true.
+
 
 range_init_1(Name, empty) ->
   #var_range{var_name = Name, range=empty};
 range_init_1(Name, {Min, Max}) -> 
-  true = is_max(Max),
-  true = is_min(Min),
   IsNotEmpty = inf_geq(Max, Min),
   if not IsNotEmpty ->
       #var_range{var_name=Name, range=empty};
@@ -2029,10 +2048,18 @@ var_range__is_fixnum(Range) ->
   Min = var_range__min(Range),
   Max = var_range__max(Range),
   if is_integer(Min), is_integer(Max) ->
-      hipe_tagscheme:is_fixnum(Min) andalso hipe_tagscheme:is_fixnum(Max);
+      hipe_tagscheme:is_fixnum(Min) and 
+	hipe_tagscheme:is_fixnum(Max) and (var_range__other(Range) =:= false);
      true ->
       false
   end.
+
+var_range__is_bitwidth(Range) ->
+  Min = var_range__min(Range),
+  Max = var_range__max(Range),
+  Bits = ?BITS,
+  inf_geq(Min, 0) and inf_geq(Bits, Max) and (var_range__other(Range) =:= false).
+
 
 %%---------------------------------------------------------------------------
 %% Range operations
@@ -2048,8 +2075,10 @@ range_add(Name, Range1, Range2) ->
 
 
 range_sub(Name, Range1, Range2) ->
-  Min_sub = inf_min([inf_inv(var_range__max(Range2)), inf_inv(var_range__min(Range2))]),
-  Max_sub = inf_max([inf_inv(var_range__max(Range2)), inf_inv(var_range__min(Range2))]),
+  Min_sub = inf_min([inf_inv(var_range__max(Range2)), 
+		     inf_inv(var_range__min(Range2))]),
+  Max_sub = inf_max([inf_inv(var_range__max(Range2)), 
+		     inf_inv(var_range__min(Range2))]),
   NewMin = inf_add(var_range__min(Range1), Min_sub),
   NewMax = inf_add(var_range__max(Range1), Max_sub),
   Other = var_range__other(Range1) orelse var_range__other(Range2),
@@ -2070,13 +2099,10 @@ range_mult(Name, Range1, Range2) ->
   GreaterMax1 = inf_greater_zero(Max1),
   GreaterMax2 = inf_greater_zero(Max2),
   Range = 
-    if GreaterMin1 -> % Kolumn 3
-	if GreaterMin2 -> % <3,3>
-	    {inf_mult(Min1, Min2), inf_mult(Max1, Max2)};
-	   GreaterMax2 -> % <3,2>
-	    {inf_mult(Min2, Max1), inf_mult(Max2, Max1)};
-	   true -> % <3,1>
-	    {inf_mult(Min2, Max1), inf_mult(Max2, Min1)}
+    if GreaterMin1 -> 
+	if GreaterMin2 -> {inf_mult(Min1, Min2), inf_mult(Max1, Max2)};
+	   GreaterMax2 -> {inf_mult(Min2, Max1), inf_mult(Max2, Max1)};
+	   true        -> {inf_mult(Min2, Max1), inf_mult(Max2, Min1)}
 	end;
        %% Kolumn 1 eller 2
        GreaterMin2 -> % Kolumn 1 eller 2 rad 3
@@ -2092,7 +2118,7 @@ range_mult(Name, Range1, Range2) ->
        GreaterMax2 -> % Kolumn 1 Rad 2	
 	var_range__range(range_mult(Name, Range2, Range1));
        true -> % Kolumn 1 Rad 1 
-	inf_mult(Min2, Max1)
+	{inf_mult(Max1, Max2), inf_mult(Min2, Min1)}
     end,
   Other = var_range__other(Range1) orelse var_range__other(Range2),
   range_init(Name, Range, Other).
@@ -2116,13 +2142,15 @@ range_div(Name, _, #var_range{range={0,0}}) ->
   range_init(Name, empty, false);
 range_div(Name, #var_range{range=empty}, _) ->
   range_init(Name, empty, false);
+range_div(Name, _, #var_range{range=empty}) ->
+  range_init(Name, empty, false);
 range_div(Name, Range1, Den) ->
   Min1 = var_range__min(Range1),
   Max1 = var_range__max(Range1),
   {Min2, Max2} = extreme_divisors(Den),
   Min_max_list = [inf_div(Min1, Min2), inf_div(Min1, Max2), inf_div(Max1, Min2), inf_div(Max1, Max2)],
   range_init(Name, {inf_min(Min_max_list), inf_max(Min_max_list)}, false).
-  
+
 range_rem(Name, Range1, Range2) ->
   %% Range1 desides the sign of the answer.
   Min1 = var_range__min(Range1),
@@ -2134,26 +2162,20 @@ range_rem(Name, Range1, Range2) ->
   Max_range2 = inf_max([inf_abs(Min2), inf_abs(Max2)]),
   Max_range2_leq_zero = inf_geq(0, Max_range2),
   New_min = 
-    if Min1_geq_zero ->
-	0;
-       Max_range2_leq_zero ->
-	Max_range2;
-       true ->
-	inf_inv(Max_range2)
+    if Min1_geq_zero ->	0;
+       Max_range2_leq_zero -> Max_range2;
+       true -> inf_inv(Max_range2)
     end,
   New_max = 
-    if Max1_leq_zero ->
-	0;
-       Max_range2_leq_zero -> %% Max_range2 =:= 0 ??
-	inf_inv(Max_range2);
-       true ->
-	Max_range2
+    if Max1_leq_zero -> 0;
+       Max_range2_leq_zero -> inf_inv(Max_range2);
+       true -> Max_range2
     end,
   range_init(Name, {New_min, New_max}, false).
 
 %% Bit operations	
 
-range_bsr(Name, Range1, Range2=#var_range{range={Min, Max}}) -> %% todo do not match on {Min, Max}, or??
+range_bsr(Name, Range1, Range2=#var_range{range={Min, Max}}) -> 
   New_Range2 = range_init(var_range__name(Range2), {inf_inv(Max), inf_inv(Min)}, var_range__other(Range2)), 
   range_bsl(Name, Range1, New_Range2).
 
@@ -2162,21 +2184,16 @@ range_bsl(Name, Range1, Range2) ->
   Min2 = var_range__min(Range2),
   Max1 = var_range__max(Range1),
   Max2 = var_range__max(Range2),
-  %%TODO inte >= 0 !!!
-  %% io:format("Min1 ~p, Max1 ~p, Min2 ~p, Max2 ~p~n", [Min1, Max1, Min2, Max2]),
-  %% Not_fixed_return_range = 
+  Min1Geq0 = inf_geq(Min1, 0),
+  Max1Less0 = not inf_geq(Max1, 0),
   {Min, Max} = 
-    if Min1 >= 0 ->
+    if Min1Geq0 ->
 	{inf_bsl(Min1, Min2), inf_bsl(Max1, Max2)};
        true ->
-	if Max1 < 0 ->
-	    {inf_bsl(Min1, Max2), inf_bsl(Max1, Min2)};
-	   true ->
-	    {inf_bsl(Min1, Max2), inf_bsl(Max1, Max2)}
+	if Max1Less0 -> {inf_bsl(Min1, Max2), inf_bsl(Max1, Min2)};
+	   true -> {inf_bsl(Min1, Max2), inf_bsl(Max1, Max2)}
 	end
     end,
-  true = is_min(Min),
-  true = is_max(Max),
   range_init(Name, {Min, Max}, false).
 
 range_bnot(Name, Range) ->
@@ -2186,93 +2203,80 @@ range_bnot(Name, Range) ->
 width({Min, Max}) -> inf_max([width(Min), width(Max)]);
 width(posinf) -> posinf;
 width(neginf) -> posinf;
-width(X) when X >= 0 ->
-  poswidth(X, 0);
-width(X) when X < 0 ->
-  negwidth(X, 0).
+width(X) when X >= 0 -> poswidth(X, 0);
+width(X) when X < 0 -> negwidth(X, 0).
 
 poswidth(X, N) ->
   case X < (1 bsl N) of
-    true ->
-      N;
-    false ->
-      poswidth(X, N+1)
+    true  -> N;
+    false -> poswidth(X, N+1)
   end.
 
 negwidth(X, N) ->
   case X > (-1 bsl N) of
-    true ->
-      N;
-    false ->
-      negwidth(X, N+1)
+    true  -> N;
+    false -> negwidth(X, N+1)
   end.
+
+band_if_constant({Min, Max}, Range) ->
+  case var_range__range(Range) of 
+    {Const, Const} when is_integer(Const) ->
+      {Min band Const, Max band Const};
+    _ ->
+      {Min, Max}
+  end.
+
 
 range_band(Name, R1, R2) ->
   {Min1, Max1} = var_range__range(R1),
   {Min2, Max2} = var_range__range(R2),
   Width = inf_min([width({Min1, Max1}), width({Min2, Max2})]),
-  true = inf_geq(Width, 0),
   Min =
-    case inf_geq(0, Min1) and inf_geq(0, Min2) of
-      true ->
-	inf_bsl(-1, Width);
-      false ->
-	0
+    case inf_geq(Min1, 0) or inf_geq(Min2, 0) of
+      true  -> 0;
+      false -> inf_bsl(-1, Width)
     end,
   Max =
-    case inf_geq(0, Max1) and inf_geq(0, Max2) of
-      true ->
-	0;
-      false ->
-	inf_bsl(1, Width)
+    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
+      true  -> inf_add(inf_bsl(1, Width),-1);
+      false -> 0
     end,
-  true = is_min(Min),
-  true = is_max(Max),
-  range_init(Name, {Min, Max}, false).
+  DstRange = band_if_constant(band_if_constant({Min, Max}, R1), R2),
+  Ans = range_init(Name, DstRange, false),
+  case (var_range__is_fixnum(R1) or var_range__is_fixnum(R2)) and not var_range__is_fixnum(Ans) of
+    true ->
+      warning("band", {R1, R2, Ans}, true);
+    false ->
+      ok
+  end,
+  Ans.
 
 range_bor(Name, R1, R2) ->
   {Min1, Max1} = var_range__range(R1),
   {Min2, Max2} = var_range__range(R2),
-  Width = width({width({Min1, Max1}), width({Min2, Max2})}),
+  Width = inf_max([width({Min1, Max1}), width({Min2, Max2})]),
   Min =
-    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
-      true ->
-	0;
-      false ->
-	inf_bsl(-1, Width)
+    case inf_geq(Min1, 0) and inf_geq(Min2, 0) of
+      true  -> 0;
+      false -> inf_bsl(-1, Width)
     end,	  
   Max =
-    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
-      true ->
-	inf_bsl(1, Width);
-      false ->
-	-1
+    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
+      true  -> inf_add(inf_bsl(1, Width), -1);
+      false -> -1
     end,
-  true = is_min(Min),
-  true = is_max(Max),
-  range_init(Name, {Min, Max}, false).
+  Ans = range_init(Name, {Min, Max}, false),
+  case (var_range__is_fixnum(R1) and var_range__is_fixnum(R2)) and not var_range__is_fixnum(Ans) of
+    true ->
+      warning("bor", {R1, R2, Ans}, true);
+    false ->
+      ok
+  end,
+  Ans.
+
 
 range_bxor(Name, R1, R2) ->
-  {Min1, Max1} = var_range__range(R1),
-  {Min2, Max2} = var_range__range(R2),
-  Width = width({width({Min1, Max1}), width({Min2, Max2})}),
-  Min =
-    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
-      true ->
-	0;
-      false ->
-	inf_bsl(-1, Width)
-    end,	  
-  Max =
-    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
-      true ->
-	inf_bsl(1, Width);
-      false ->
-	-1
-    end,
-  true = is_min(Min),
-  true = is_max(Max),
-  range_init(Name, {Min, Max}, false).
+  range_bor(Name, R1, R2). %% overapproximation 
 
 %% Propagation
 
@@ -2297,44 +2301,8 @@ range_remove_constant(Range1, #var_range{range={Const, Const}}) when is_integer(
        true ->
 	{New_min, New_max}
     end,
-  %%TODO
   range_init(var_range__name(Range1), Range_range, var_range__other(Range1)).
 
-
-%% range_diff(Name, Range1, #var_range{range = empty}) ->
-%%	var_range__copy(Range1, Name);	
-%% range_diff(Name, Range1, Range2) ->
-%%	Min1 = var_range__min(Range1),
-%%	Max1 = var_range__max(Range1),
-%%	Min2 = var_range__min(Range2),
-%%	Max2 = var_range__max(Range2),	
-%%	%io:format("Min1 ~p, Max1 ~p, Min2 ~p, Max2 ~p ~n", [Min1, Max1, Min2, Max2]),
-%%	if (Min1 =:= empty) ->
-%%		Int_range = empty;
-%%	true ->
-%%		case inf_geq(Min1, Min2) of
-%%			true ->
-%%				Min = inf_max([Min1, inf_add(Max2,1)]);
-%%			false ->
-%%				Min = Min1
-%%		end,
-%%		case inf_geq(Max2, Max1) of
-%%			true ->
-%%				Max = inf_min([Max1, inf_add(Min2,-1)]);
-%%			false ->
-%%				Max = Max1
-%%		end,
-%%		Int_range = {Min, Max}
-%%	end,
-%%	Other = var_range__other(Range1),
-%%	
-%%	Min_fixed = var_range__min_fixed(Range1) and var_range__min_fixed(Range2),
-%%	Max_fixed = var_range__max_fixed(Range1) and var_range__max_fixed(Range2),
-%%	R = range_init(Name, Int_range, {Min_fixed, Max_fixed}, Other),
-%%	io:format("range diff ~p ~p ~n", [R, Int_range]),
-%%	R.
-
-%% todo ska det första fallet finnas?
 %% range_cut(Name, []) -> #var_range{var_name=Name};
 range_cut(Name, [#var_range{range=empty, other=false}|_]) ->
   range_init(Name, empty, false);
@@ -2418,7 +2386,6 @@ range_equality_propagation(Range_1, Range_2) ->
 
 %% Range1 < Range2
 range_inequality_propagation(Range1, Range2) ->
-  %% io:format("Range1 ~p, Range2 ~p ~n", [Range1, Range2]),
   R1_name = var_range__name(Range1),
   R2_name = var_range__name(Range2),
   R1_min = var_range__min(Range1),
@@ -2427,40 +2394,32 @@ range_inequality_propagation(Range1, Range2) ->
   R2_max = var_range__max(Range2),
   R1_other = var_range__other(Range1),
   R2_other = var_range__other(Range2),
-  
+
   R1_is_empty = var_range__is_empty(Range1),
   R2_is_empty = var_range__is_empty(Range2),
-  
+
   {R1_true_range, R1_false_range} = 
-    if R1_is_empty ->
-	{empty, empty};
-       R2_is_empty ->
-	Range1_range = var_range__range(Range1),
-	{Range1_range, Range1_range};
-       true ->
-	R1_true_max = inf_min([R1_max, inf_add(R2_max, -1)]),
-	R1_false_min = inf_max([R1_min, R2_min]),
-	{{R1_min, R1_true_max}, {R1_false_min, R1_max}}
+    if R1_is_empty -> {empty, empty};
+       R2_is_empty -> Range1_range = var_range__range(Range1),
+		      {Range1_range, Range1_range};
+       true        -> R1_true_max = inf_min([R1_max, inf_add(R2_max, -1)]),
+		      R1_false_min = inf_max([R1_min, R2_min]),
+		      {{R1_min, R1_true_max}, {R1_false_min, R1_max}}
     end,	
-  
+
   {R2_true_range, R2_false_range} = 
-    if R2_is_empty ->
-	{empty, empty};
-       R1_is_empty ->
-	Range2_range = var_range__range(Range2),
-	{Range2_range, Range2_range};
-       true ->
-	R2_true_min = inf_max([inf_add(R1_min,1),R2_min]),
-	R2_false_max = inf_min([R1_max, R2_max]),
-	{{R2_true_min, R2_max}, {R2_min, R2_false_max}}
+    if R2_is_empty -> {empty, empty};
+       R1_is_empty -> Range2_range = var_range__range(Range2),
+		      {Range2_range, Range2_range};
+       true        -> R2_true_min = inf_max([inf_add(R1_min,1),R2_min]),
+		      R2_false_max = inf_min([R1_max, R2_max]),
+		      {{R2_true_min, R2_max}, {R2_min, R2_false_max}}
     end,	
-  
+
   R1_true = range_init(R1_name, R1_true_range, R1_other),
   R2_true = range_init(R2_name, R2_true_range, R2_other),
   R1_false = range_init(R1_name, R1_false_range, R1_other),
   R2_false = range_init(R2_name, R2_false_range, R2_other),
-  %% io:format("R1T ~p, R1F ~p ~n, R2T ~p, R2F ~p  ~n", [R1_true_range, R1_false_range, R2_true_range, R2_false_range]),
-	
   {R1_true, R2_true, R1_false, R2_false}.
 
 %% Range widening
@@ -2472,10 +2431,8 @@ get_larger_value(Value, List) ->
 get_larger_value_1(Value, []) -> Value;
 get_larger_value_1(Value, [Head|Tail]) ->
   case inf_geq(Head, Value) of
-    true ->
-      Head;
-    false ->
-      get_larger_value_1(Value, Tail)
+    true  -> Head;
+    false -> get_larger_value_1(Value, Tail)
   end.
 
 get_smaller_value(Value, List) ->
@@ -2484,16 +2441,14 @@ get_smaller_value(Value, List) ->
 get_smaller_value_1(Value, []) -> Value;
 get_smaller_value_1(Value, [Head|Tail]) ->
   case inf_geq(Head, Value) and (Head =/= Value) of
-    true ->
-      get_smaller_value_1(Value, Tail);
-    false ->
-      Head
+    true  -> get_smaller_value_1(Value, Tail);
+    false -> Head
   end.
 
 range_widening(Old_range, New_range, Wideningvalues) ->
-New_min_fixed = inf_geq(var_range__min(New_range), var_range__min(Old_range)),
-New_max_fixed = inf_geq(var_range__max(Old_range), var_range__max(New_range)), 
-  
+  New_min_fixed = inf_geq(var_range__min(New_range), var_range__min(Old_range)),
+  New_max_fixed = inf_geq(var_range__max(Old_range), var_range__max(New_range)), 
+
   Old_empty = var_range__is_empty(Old_range),
 
   New_min = 
@@ -2518,7 +2473,7 @@ New_max_fixed = inf_geq(var_range__max(Old_range), var_range__max(New_range)),
     end,
   New_other = var_range__other(New_range),
   R = range_init(var_range__name(New_range), Range_range, New_other),
-%  io:format("Range widening ~p~n", [R]),
+						%  io:format("Range widening ~p~n", [R]),
   R.
 
 %%---------------------------------------------------------------------------
@@ -2589,38 +2544,28 @@ inf_greater_zero(Number) when Number < 0 -> false.
 
 inf_div(Number, 0) ->
   Greater = inf_greater_zero(Number),
-  if Greater ->
-      posinf;
-	true ->
-      neginf
+  if Greater -> posinf;
+     true -> neginf
   end;
 inf_div(posinf, Number) ->
   Greater = inf_greater_zero(Number),
-  if Greater ->
-      posinf;
-     true ->
-      neginf
+  if Greater -> posinf;
+     true -> neginf
   end;
 inf_div(neginf, Number) ->
   Greater = inf_greater_zero(Number),
-  if Greater ->
-      neginf;
-     true ->
-      posinf
+  if Greater -> neginf;
+     true -> posinf
   end;
 inf_div(Number, posinf) -> 
   Greater = inf_greater_zero(Number),
-  if Greater ->
-      posinf;
-     true ->
-      neginf
+  if Greater -> posinf;
+     true -> neginf
   end;
 inf_div(Number, neginf) ->
   Greater = inf_greater_zero(Number),
-  if Greater ->
-      neginf;
-     true ->
-      posinf
+  if Greater -> neginf;
+     true -> posinf
   end;
 inf_div(Number1, Number2) -> Number1 div Number2.
 
@@ -2646,12 +2591,9 @@ inf_bsl(Number, neginf) when Number >= 0 -> 0;
 inf_bsl(_Number, neginf) -> -1;
 inf_bsl(Number1, Number2) -> 
   Bits = ?BITS,
-  if Number2 > (Bits bsl 1) ->	% (Bits * 2)
-      inf_bsl(Number1, posinf);
-     Number2 < (-Bits bsl 1) ->	% (-Bits * 2)
-      inf_bsl(Number1, neginf);
-     true ->
-      Number1 bsl Number2
+  if Number2 > (Bits bsl 1) -> inf_bsl(Number1, posinf);
+     Number2 < (-Bits bsl 1) ->	inf_bsl(Number1, neginf);
+     true -> Number1 bsl Number2
   end.
 
 %%---------------------------------------------------------------------------
@@ -2660,8 +2602,6 @@ inf_bsl(Number1, Number2) ->
 
 range_info_from_info_struct(Info) ->
   Live_labels = info_struct__live_labels(Info),
-  %% io:format("in_label_range_trees = ~p ~n", [in_range_trees_from_info_struct(Info, Live_labels)]),
-  %% io:format("out_label_range_trees = ~p ~n", [out_range_trees_from_info_struct(Info, Live_labels)]),
   #range_info{live_labels = Live_labels,
 	      in_label_range_trees = in_range_trees_from_info_struct(Info, Live_labels), 
 	      out_label_range_trees = out_range_trees_from_info_struct(Info, Live_labels),		
@@ -2673,22 +2613,16 @@ range_info__def_range(#range_info{out_label_range_trees = Label_tree}, Label, Va
   %% io:format("Def: Label ~p, Var ~p ~n", [Label, Variable]),
   Range_tree = gb_trees:get(Label, Label_tree),
   case gb_trees:lookup(Variable, Range_tree) of
-    {value, Range} ->
-      %% io:format("use_range ~p ~n", [Range]),
-      Range;
-    none ->
-      range_init(Variable, empty, false)
+    {value, Range} -> Range;
+    none -> range_init(Variable, empty, false)
   end.
 
 range_info__use_range(Range_info = #range_info{in_label_range_trees = Label_tree}, Label, Variable) ->
   %% io:format("Use: Label ~p, Var ~p ~n", [Label, Variable]),
   Range_tree = gb_trees:get(Label, Label_tree),
   case gb_trees:lookup(Variable, Range_tree) of
-    {value, Range} ->
-      %% io:format("use_range ~p ~n", [Range]),
-      Range;
-    none ->
-      range_info__def_range(Range_info, Label, Variable)
+    {value, Range} -> Range;
+    none -> range_info__def_range(Range_info, Label, Variable)
   end. 
 
 range_info__is_live(#range_info{live_labels = Labels}, Label) ->
@@ -2715,11 +2649,45 @@ info(New, Old, true) ->
 info(_, _, false) ->
   ok. 
 
-%%---------------------------------------------------------------------------
-%% Print out messages
-%%---------------------------------------------------------------------------
-
 test() ->
-  ok.
+  put(hipe_target_arch, amd64),
+  %% Bnot
+  A = range_init(a, {11, 17}, false),
+  Ainv = range_init(a, {-18, -12}, false),
+  A = range_bnot(a, Ainv),
+  Ainv = range_bnot(a, A),
 
-% vim: set tabstop=2 ft=erlang
+  B = range_init(b, {-3, 4}, true),
+  Binv = range_init(b, {-5, 2}, true),
+  Binv = range_bnot(b, B),
+  B = range_bnot(b, Binv),
+
+  %% Band
+  C = range_init(a, {0, 31}, false),
+  C = range_band(a, A, Ainv),
+  D = range_init(a, {-8, 7}, false),
+  D = range_band(a, Ainv, Binv),
+
+  %% Bor
+  E = range_bnot(a, C),
+  E = range_bor(a, A, Ainv),
+  F = range_init(a, {-32, 31}, false),
+  F = range_bor(a, A, Binv),
+
+  %% Add
+  G = range_init(a, {-7, 5}, false),
+  G = range_add(a, A, Ainv),
+  H = range_init(a, {-8, 6}, true),
+  H = range_add(a, B, Binv),
+
+  %% Bsl
+  I = range_init(a, {1, 272}, false),
+  I = range_bsl(a, A, B),
+  J = range_init(a, {-12,16}, false),
+  J = range_bsl(a, B, Binv),
+
+  %% Bsr
+  K = range_init(a, {-96,128}, false),
+  K = range_bsr(a, B, Binv).
+
+%% vim: set tabstop=2 ft=erlang

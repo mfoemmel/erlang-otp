@@ -58,7 +58,12 @@ open(File, Path, Pdm) ->
     epp_request(Epp).
 
 close(Epp) ->
-    epp_request(Epp, close).
+    %% Make sure that close is synchronous as a courtesy to test
+    %% cases that test for resource leaks.
+    Ref = erlang:monitor(process, Epp),
+    R = epp_request(Epp, close),
+    receive {'DOWN',Ref,_,_,_} -> ok end,
+    R.
 
 scan_erl_form(Epp) ->
     epp_request(Epp, scan_erl_form).
@@ -126,16 +131,14 @@ parse_file(Epp, Options) ->
     case parse_erl_form(Epp) of
 	{ok,Form} ->
 	    case Form of
-		{attribute,La,typed_record,{Record, Val}} ->
+		{attribute,La,record,{Record, Val}} ->
 		    case lists:member(typed_record,Options) of
 			false ->
 			    [{attribute, La, record,
 			      {Record, normalize_typed_record_fields(Val)}}
-			     | parse_file(Epp, Options)];
+			     |parse_file(Epp, Options)];
 			true ->
-			    [{attribute, La, record,
-			      {Record, normalize_typed_record_fields(Val)}},
-                            Form | parse_file(Epp, Options)]
+			    [Form|parse_file(Epp, Options)]
 		    end;
 		_ ->
 		    [Form|parse_file(Epp, Options)]
@@ -151,12 +154,12 @@ normalize_typed_record_fields([{typed_record_field,Field,_}|Rest]) ->
     [Field|normalize_typed_record_fields(Rest)];
 normalize_typed_record_fields([Field|Rest]) ->
     [Field|normalize_typed_record_fields(Rest)].
-
+
 %% server(StarterPid, FileName, Path, PreDefMacros)
 
 server(Pid, Name, Path, Pdm) ->
     process_flag(trap_exit, true),
-    case file:open(Name, read) of
+    case file:open(Name, [read]) of
 	{ok,File} ->
 	    Ms0 = predef_macros(Name),
 	    case user_predef(Pdm, Ms0) of
@@ -223,6 +226,7 @@ wait_request(St) ->
 	    epp_reply(From, dict:to_list(St#epp.macs)),
 	    wait_request(St);
 	{epp_request,From,close} ->
+	    file:close(St#epp.file),
 	    epp_reply(From, ok),
 	    exit(normal);
 	{'EXIT',_,R} ->
@@ -529,7 +533,7 @@ scan_include_lib([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li,
 	    case catch find_lib_dir(NewName) of
 		{LibDir, Rest} when is_list(LibDir) ->
 		    LibName = filename:join([LibDir | Rest]),
-		    case file:open(LibName, read) of
+		    case file:open(LibName, [read]) of
 			{ok,NewF} ->
 			    ExtraPath = [filename:dirname(LibName)],
 			    wait_req_scan(enter_file2(NewF, LibName, From, 

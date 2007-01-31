@@ -233,15 +233,9 @@ convert_request_date([D,A,Y,DateType| Rest])->
 	_Error->
 	    bad_date
     end.
-convert_rfc850_date(DateStr)->
-    case string:tokens(DateStr," ") of
-	[_WeekDay,Date,Time,_TimeZone|_Rest]->
-	    convert_rfc850_date(Date,Time);
-	bad_date ->
-	    bad_date;
-	_Error->
-	    bad_date
-    end.
+convert_rfc850_date(DateStr) ->
+    [_WeekDay,Date,Time,_TimeZone|_Rest] = string:tokens(DateStr," "), 
+    convert_rfc850_date(Date,Time).
 
 convert_rfc850_date([D1,D2,_,
 		     M,O,N,_,
@@ -252,9 +246,7 @@ convert_rfc850_date([D1,D2,_,
     Hour=list_to_integer([H1,H2]),
     Min=list_to_integer([M1,M2]),
     Sec=list_to_integer([S1,S2]),
-    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
-convert_rfc850_date(_BadDate,_BadTime) ->
-    bad_date.
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}}.
 
 convert_ascii_date([_D,_A,_Y,_SP,
 		    M,O,N,_SP,
@@ -274,9 +266,7 @@ convert_ascii_date([_D,_A,_Y,_SP,
     Hour=list_to_integer([H1,H2]),
     Min=list_to_integer([M1,M2]),
     Sec=list_to_integer([S1,S2]),
-    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
-convert_ascii_date(_BadDate)->
-    bad_date.
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}}.
 
 convert_rfc1123_date([_D,_A,_Y,_C,_SP,
 		      D1,D2,_SP,
@@ -291,9 +281,7 @@ convert_rfc1123_date([_D,_A,_Y,_C,_SP,
     Hour=list_to_integer([H1,H2]),
     Min=list_to_integer([M1,M2]),
     Sec=list_to_integer([S1,S2]),
-    {ok,{{Year,Month,Day},{Hour,Min,Sec}}};
-convert_rfc1123_date(_BadDate)->    
-    bad_date.
+    {ok,{{Year,Month,Day},{Hour,Min,Sec}}}.
 
 convert_netscapecookie_date(Date)->
     case (catch http_util:convert_netscapecookie_date(Date)) of
@@ -302,8 +290,6 @@ convert_netscapecookie_date(Date)->
 	_ ->
 	    {error,bad_date}
     end.
-
-
 
 
 %% rfc1123_date
@@ -615,7 +601,7 @@ hexlist_to_integer(List)->
 encode_hex(Num)->
     integer_to_hexlist(Num).
 
-integer_to_hexlist(Num)->
+integer_to_hexlist(Num) when is_integer(Num) ->
     http_util:integer_to_hexlist(Num).
 	    	      
 create_etag(FileInfo)->

@@ -2,6 +2,16 @@
 	Major features, additions and changes between Dialyzer versions
 		(in reversed chronological order)
 ==============================================================================
+NOT RELEASED
+------------
+
+- Added the option --check_init_plt that can be used to force the re-building 
+  of the initial plt for installed systems.
+- Fixed some bugs in the handling of guards in the dataflow analysis after
+  a report from Fredrik Thulin.
+- Cleaned up the error handling and the interface so that we can have an 
+  Erlang interface.
+
 
 Version 1.5.0 (in Erlang/OTP R11B-2)
 -------------------------------------

@@ -42,7 +42,7 @@
 %% Internal exports
 %%-----------------------------------------------------------------
 -export([connect/7, 
-	 disconnect/2, disconnect/3,
+	 close_connection/1, close_connection/2,
 	 list_existing_connections/0, 
 	 list_setup_connections/0, 
 	 list_all_connections/0,
@@ -244,11 +244,13 @@ check_options([_|Options], Local, Proxy) ->
 check_options([], Local, Proxy) ->
     {Local, Proxy}.
 
-disconnect(Host, Port) ->
-    gen_server:call(orber_iiop_pm, {disconnect, Host, Port, 0}).
 
-disconnect(Host, Port, Interface) ->
-    gen_server:call(orber_iiop_pm, {disconnect, Host, Port, Interface}).
+close_connection(PeerData) ->
+    close_connection(PeerData, 0).
+
+close_connection(PeerData, Interface) ->
+    gen_server:call(orber_iiop_pm, {disconnect, PeerData, Interface}, infinity).
+
 
 list_existing_connections() ->
     transform(
@@ -380,24 +382,8 @@ handle_call({connect, Host, Port, SocketType, SocketOptions, Chars, Wchars, Key}
 		     State}
 	    end
     end;
-handle_call({disconnect, Host, Port, Interface}, _From, State) ->
-    case ets:lookup(?PM_CONNECTION_DB, {Host, Port, Interface}) of
-	[] ->
-	    ok;
-	[#connection{child = connecting, interceptors = I}] ->
-	    ets:delete(?PM_CONNECTION_DB, {Host, Port, Interface}),
-	    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
-	    send_reply_to_queue(ets:lookup(State#state.queue, 
-					   {Host, Port, Interface}), Exc),
-	    ets:delete(State#state.queue, {Host, Port, Interface}),
-	    invoke_connection_closed(I);
-	[#connection{child = P, interceptors = I}] ->
-	    unlink(P),
-	    catch orber_iiop_outproxy:stop(P),
-	    ets:delete(?PM_CONNECTION_DB, {Host, Port, Interface}),
-	    invoke_connection_closed(I)
-    end,
-    {reply, ok, State};
+handle_call({disconnect, PeerData, Interface}, _From, State) ->
+    {reply, do_disconnect(PeerData, Interface, State), State};
 handle_call({reconfigure, Options, Host, Port, Interface}, 
 	    _From, State) ->
     case ets:lookup(?PM_CONNECTION_DB, {Host, Port, Interface}) of
@@ -452,6 +438,27 @@ update_connection(Connection, [H|T]) ->
     update_connection(Connection, T);
 update_connection(Connection, []) ->
     Connection.
+
+do_disconnect([], _Interface, _State) ->
+    ok;
+do_disconnect([{Host, Port}|T], Interface, State) ->
+    case ets:lookup(?PM_CONNECTION_DB, {Host, Port, Interface}) of
+	[] ->
+	    ok;
+	[#connection{child = connecting, interceptors = I}] ->
+	    ets:delete(?PM_CONNECTION_DB, {Host, Port, Interface}),
+	    Exc = {'EXCEPTION',#'INTERNAL'{completion_status = ?COMPLETED_NO}},
+	    send_reply_to_queue(ets:lookup(State#state.queue, 
+					   {Host, Port, Interface}), Exc),
+	    ets:delete(State#state.queue, {Host, Port, Interface}),
+	    invoke_connection_closed(I);
+	[#connection{child = P, interceptors = I}] ->
+	    unlink(P),
+	    catch orber_iiop_outproxy:stop(P),
+	    ets:delete(?PM_CONNECTION_DB, {Host, Port, Interface}),
+	    invoke_connection_closed(I)
+    end,
+    do_disconnect(T, Interface, State).
 
 %%-----------------------------------------------------------------
 %% Func: handle_cast/2

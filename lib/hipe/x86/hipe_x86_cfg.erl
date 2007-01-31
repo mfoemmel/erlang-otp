@@ -24,7 +24,7 @@ init(Defun) ->
     StartLab = hipe_x86:label_label(hd(Code)),
     Data = hipe_x86:defun_data(Defun),
     IsClosure = hipe_x86:defun_is_closure(Defun),
-    Name = hipe_x86:defun_mfa(Defun),
+    Name = mfa_to_tuple(hipe_x86:defun_mfa(Defun)),
     IsLeaf = hipe_x86:defun_is_leaf(Defun),
     Formals = hipe_x86:defun_formals(Defun),
     Extra = [],
@@ -103,7 +103,7 @@ mk_label(Name) ->
 %%   hipe_x86:is_jmp_label(I).
 
 linearise(CFG) ->	% -> defun, not insn list
-  Fun = function(CFG),
+  Fun = mfa_from_tuple(function(CFG)),
   Formals = params(CFG),
   Code = linearize_cfg(CFG),
   Data = data(CFG),
@@ -115,8 +115,14 @@ linearise(CFG) ->	% -> defun, not insn list
 		    Code, Data, VarRange, LabelRange).
 
 arity(CFG) ->
-  #x86_mfa{a=Arity} = function(CFG),
+  #x86_mfa{a=Arity} = mfa_from_tuple(function(CFG)),
   Arity.
+
+%% x86 has one and only one representation for MFAs, but the typing
+%% police wants enforce the use of a different representation in x86
+%% CFGs, even though nothing outside of this module depends on it.
+mfa_to_tuple(MFA) -> hipe_x86:mfa_mfa(MFA).
+mfa_from_tuple({M,F,A}) -> hipe_x86:mk_mfa(M, F, A).
 
 %% init_gensym(CFG) ->
 %%   HighestVar = find_highest_var(CFG),

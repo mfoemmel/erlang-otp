@@ -14,7 +14,8 @@
 
 -behaviour(tftp).
 
--export([prepare/5, open/5, read/1, write/2, abort/3]).
+-export([prepare/6, open/6, read/1, write/2, abort/3]).
+-export([prepare/5, open/5]).
 
 %%%-------------------------------------------------------------------
 %%% Defines
@@ -32,9 +33,13 @@
 		buffer}).
 
 %%-------------------------------------------------------------------
-%% prepare(Access, Filename, Mode, SuggestedOptions, InitialState) -> 
+%% prepare(Peer, Access, Filename, Mode, SuggestedOptions, InitialState) -> 
 %%    {ok, AcceptedOptions, NewState} | {error, Code, Text}
-%%    
+%%
+%% Peer             = {PeerType, PeerHost, PeerPort}
+%% PeerType         = inet | inet6
+%% PeerHost         = ip_address()
+%% PeerPort         = integer()
 %% Acess            = read | write
 %% Filename         = string()
 %% Mode             = string()
@@ -61,6 +66,10 @@
 %% in the AcceptedOptions.
 %%-------------------------------------------------------------------
 
+prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
+    %% Kept for backwards compatibility 
+    prepare(Access, Filename, Mode, SuggestedOptions, Initial).
+
 prepare(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
     %% Client side
     case catch handle_options(Access, Filename, Mode, SuggestedOptions, Initial) of
@@ -77,9 +86,13 @@ prepare(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
     end.
 
 %% ---------------------------------------------------------
-%% open(Access, Filename, Mode, SuggestedOptions, State) -> 
+%% open(Peer, Access, Filename, Mode, SuggestedOptions, State) -> 
 %%    {ok, AcceptedOptions, NewState} | {error, Code, Text}
-%%    
+%%
+%% Peer             = {PeerType, PeerHost, PeerPort}
+%% PeerType         = inet | inet6
+%% PeerHost         = ip_address()
+%% PeerPort         = integer()
 %% Acess            = read | write
 %% Filename         = string()
 %% Mode             = string()
@@ -104,6 +117,10 @@ prepare(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
 %% SuggestedOptions may be omitted or replaced with new values
 %% in the AcceptedOptions.
 %%-------------------------------------------------------------------
+
+open(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
+    %% Kept for backwards compatibility 
+    open(Access, Filename, Mode, SuggestedOptions, Initial).
 
 open(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
     %% Server side

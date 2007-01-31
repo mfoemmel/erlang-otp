@@ -44,6 +44,14 @@ eval_alu(Op, Arg1, Arg2)
       C = (Sign1 and Sign2)
 	or 
 	  ((not N) and (Sign1 or Sign2));
+    'mul' ->
+      FullRes = Arg1 * Arg2,
+      Res = FullRes band ?WORDMASK,
+      ResHi = FullRes bsr ?BITS,
+      N = sign_bit(Res),
+      Z = zero(Res),
+      V = (N and (ResHi =/= -1)) or ((not N) and (ResHi =/= 0)),
+      C = V;
     'sra' ->
       Res = (Arg1 bsr Arg2) band ?WORDMASK,
       N = sign_bit(Res),

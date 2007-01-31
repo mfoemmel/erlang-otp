@@ -1,9 +1,4 @@
 %% =====================================================================
-%% Tidies Erlang source code, removing unused functions, updating
-%% obsolete constructs and function calls, etc.
-%%
-%% Copyright (C) 1999-2002 Richard Carlsson
-%%
 %% This library is free software; you can redistribute it and/or
 %% modify it under the terms of the GNU Lesser General Public License
 %% as published by the Free Software Foundation; either version 2 of
@@ -19,29 +14,30 @@
 %% Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA 02111-1307
 %% USA
 %%
-%% Author contact: richardc@csd.uu.se
+%% $Id$
 %%
-%% $Id: erl_tidy.erl,v 1.39 2004/11/22 07:24:12 richardc Exp $
-%%
+%% @copyright 1999-2006 Richard Carlsson
+%% @author Richard Carlsson <richardc@it.uu.se>
+%% @end
 %% =====================================================================
-%%
+
 %% @doc Tidies and pretty-prints Erlang source code, removing unused
 %% functions, updating obsolete constructs and function calls, etc.
 %%
-%% <p>Caveats: It is possible that in some intricate uses of macros,
+%% Caveats: It is possible that in some intricate uses of macros,
 %% the automatic addition or removal of parentheses around uses or
 %% arguments could cause the resulting program to be rejected by the
 %% compiler; however, we have found no such case in existing
 %% code. Programs defining strange macros can usually not be read by
-%% this program, and in those cases, no changes will be made.</p>
+%% this program, and in those cases, no changes will be made.
 %%
-%% <p>If you really, really want to, you may call it "Inga".</p>
+%% If you really, really want to, you may call it "Inga".
 %%
-%% <p>Disclaimer: The author accepts no responsibility for errors
+%% Disclaimer: The author accepts no responsibility for errors
 %% introduced in code that has been processed by the program. It has
 %% been reasonably well tested, but the possibility of errors remains.
 %% Keep backups of your original code safely stored, until you feel
-%% confident that the new, modified code can be trusted.</p>
+%% confident that the new, modified code can be trusted.
 
 -module(erl_tidy).
 
@@ -81,46 +77,45 @@ dir(Dir) ->
 %% @doc Tidies Erlang source files in a directory and its
 %% subdirectories.
 %%
-%% <p>Available options:
+%% Available options:
 %% <dl>
 %%   <dt>{follow_links, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, symbolic directory
+%%       <dd>If the value is `true', symbolic directory
 %%       links will be followed.  The default value is
-%%       <code>false</code>.</dd>
+%%       `false'.</dd>
 %%
 %%   <dt>{recursive, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, subdirectories will be
+%%       <dd>If the value is `true', subdirectories will be
 %%       visited recursively.  The default value is
-%%       <code>true</code>.</dd>
+%%       `true'.</dd>
 %%
 %%   <dt>{regexp, string()}</dt>
 %%
 %%       <dd>The value denotes a regular expression (see module
-%%       <code>regexp</code>).  Tidying will only be applied to those
+%%       `regexp').  Tidying will only be applied to those
 %%       regular files whose names match this pattern. The default
-%%       value is <code>".*\\.erl$"</code>, which matches normal
+%%       value is `".*\\.erl$"', which matches normal
 %%       Erlang source file names.</dd>
 %%
 %%   <dt>{test, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, no files will be
-%%       modified. The default value is <code>false</code>.</dd>
+%%       <dd>If the value is `true', no files will be
+%%       modified. The default value is `false'.</dd>
 %%
 %%   <dt>{verbose, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, progress messages will
+%%       <dd>If the value is `true', progress messages will
 %%       be output while the program is running, unless the
-%%       <code>quiet</code> option is <code>true</code>. The default
-%%       value when calling <code>dir/2</code> is
-%%       <code>true</code>.</dd>
+%%       `quiet' option is `true'. The default
+%%       value when calling {@link dir/2} is `true'.</dd>
 %%
-%% </dl></p>
+%% </dl>
 %%
-%% <p>See the function <code>file/2</code> for further options.</p>
+%% See the function {@link file/2} for further options.
 %%
-%% @see regexp
+%% @see //stdlib/regexp
 %% @see file/2
 
 -record(dir, {follow_links = false, recursive = true, options}).
@@ -215,21 +210,21 @@ file(Name) ->
 %%
 %% @doc Tidies an Erlang source code file.
 %%
-%% <p>Available options are:
+%% Available options are:
 %% <dl>
 %%   <dt>{backup_suffix, string()}</dt>
 %%
 %%       <dd>Specifies the file name suffix to be used when a backup
-%%       file is created; the default value is <code>".bak"</code>
-%%       (cf. the <code>backups</code> option).</dd>
+%%       file is created; the default value is `".bak"'
+%%       (cf. the `backups' option).</dd>
 %%
 %%   <dt>{backups, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, existing files will be
+%%       <dd>If the value is `true', existing files will be
 %%       renamed before new files are opened for writing. The new
 %%       names are formed by appending the string given by the
-%%       <code>backup_suffix</code> option to the original name. The
-%%       default value is <code>true</code>.</dd>
+%%       `backup_suffix' option to the original name. The
+%%       default value is `true'.</dd>
 %%
 %%   <dt>{dir, filename()}</dt>
 %%
@@ -242,30 +237,30 @@ file(Name) ->
 %%
 %%       <dd>Specifies the name of the file (without suffix) to which
 %%       the resulting source code is to be written. If this option is
-%%       not specified, the <code>Name</code> argument is used.</dd>
+%%       not specified, the `Name' argument is used.</dd>
 %%
 %%   <dt>{printer, Function}</dt>
 %%       <dd><ul>
-%%         <li><code>Function = (syntaxTree()) -> string()</code></li>
+%%         <li>`Function = (syntaxTree()) -> string()'</li>
 %%       </ul>
 %%
-%%       <p>Specifies a function for prettyprinting Erlang syntax trees.
+%%       Specifies a function for prettyprinting Erlang syntax trees.
 %%       This is used for outputting the resulting module definition.
 %%       The function is assumed to return formatted text for the given
 %%       syntax tree, and should raise an exception if an error occurs.
 %%       The default formatting function calls
-%%       <code>erl_prettypr:format/2</code>.</p></dd>
+%%       `erl_prettypr:format/2'.</dd>
 %%
 %%   <dt>{test, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, no files will be
+%%       <dd>If the value is `true', no files will be
 %%       modified; this is typically most useful if the
-%%       <code>verbose</code> flag is enabled, to generate reports
+%%       `verbose' flag is enabled, to generate reports
 %%       about the program files without affecting them. The default
-%%       value is <code>false</code>.</dd>
-%% </dl></p>
+%%       value is `false'.</dd>
+%% </dl>
 %%
-%% <p>See the function <code>module/2</code> for further options.</p>
+%% See the function `module/2' for further options.
 %%
 %% @see erl_prettypr:format/2
 %% @see module/2
@@ -485,27 +480,26 @@ module(Forms) ->
 %%          syntaxTree() = erl_syntax:syntaxTree()
 %%
 %% @doc Tidies a syntax tree representation of a module
-%% definition. The given <code>Forms</code> may be either a single
-%% syntax tree of type <code>form_list</code>, or a list of syntax
+%% definition. The given `Forms' may be either a single
+%% syntax tree of type `form_list', or a list of syntax
 %% trees representing "program forms". In either case,
-%% <code>Forms</code> must represents a single complete module
+%% `Forms' must represents a single complete module
 %% definition. The returned syntax tree has type
-%% <code>form_list</code> and represents a tidied-up version of the
+%% `form_list' and represents a tidied-up version of the
 %% same source code.
 %%
-%% <p>Available options are:
+%% Available options are:
 %% <dl>
 %%   <dt>{auto_export_vars, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, all matches
-%%       "<code>{V1, ..., Vn} = E</code>" where <code>E</code> is a
+%%       <dd>If the value is `true', all matches
+%%       "`{V1, ..., Vn} = E'" where `E' is a
 %%       case-, if- or receive-expression whose branches all return
 %%       n-tuples (or explicitly throw exceptions) will be rewritten
-%%       to bind and export the variables <code>V1</code>, ...,
-%%       <code>Vn</code> directly. The default value is
-%%       <code>false</code>.
+%%       to bind and export the variables `V1', ...,
+%%       `Vn' directly. The default value is `false'.
 %%
-%%       <p>For example:
+%%       For example:
 %%       <pre>
 %%                {X, Y} = case ... of
 %%                             ... -> {17, foo()};
@@ -518,14 +512,14 @@ module(Forms) ->
 %%                    ... -> X = 17, Y = foo(), {X, Y};
 %%                    ... -> X = 42, Y = bar(), {X, Y}
 %%                end
-%%       </pre></p></dd>
+%%       </pre></dd>
 %%
 %%   <dt>{auto_list_comp, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, calls to
-%%       <code>lists:map/2</code> and <code>lists:filter/2</code> will
+%%       <dd>If the value is `true', calls to
+%%       `lists:map/2' and `lists:filter/2' will
 %%       be rewritten using list comprehensions. The default value is
-%%       <code>true</code>.</dd>
+%%       `true'.</dd>
 %%
 %%   <dt>{file, string()}</dt>
 %%
@@ -535,80 +529,80 @@ module(Forms) ->
 %%
 %%   <dt>{idem, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, all options that affect
+%%       <dd>If the value is `true', all options that affect
 %%       how the code is modified are set to "no changes". For example,
 %%       to only update guard tests, and nothing else, use the options
-%%       <code>[new_guard_tests, idem]</code>. (Recall that options
+%%       `[new_guard_tests, idem]'. (Recall that options
 %%       closer to the beginning of the list have higher
 %%       precedence.)</dd>
 %%
 %%   <dt>{keep_unused, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, unused functions will
+%%       <dd>If the value is `true', unused functions will
 %%       not be removed from the code. The default value is
-%%       <code>false</code>.</dd>
+%%       `false'.</dd>
 %%
 %%   <dt>{new_guard_tests, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, guard tests will be
-%%       updated to use the new names, e.g. "<code>is_integer(X)</code>"
-%%       instead of "<code>integer(X)</code>". The default value is
-%%       <code>true</code>. See also <code>old_guard_tests</code>.</dd>
+%%       <dd>If the value is `true', guard tests will be
+%%       updated to use the new names, e.g. "`is_integer(X)'"
+%%       instead of "`integer(X)'". The default value is
+%%       `true'. See also `old_guard_tests'.</dd>
 %%
 %%   <dt>{no_imports, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, all import statements
+%%       <dd>If the value is `true', all import statements
 %%       will be removed and calls to imported functions will be
 %%       expanded to explicit remote calls. The default value is
-%%       <code>false</code>.</dd>
+%%       `false'.</dd>
 %%
 %%   <dt>{old_guard_tests, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, guard tests will be
+%%       <dd>If the value is `true', guard tests will be
 %%       changed to use the old names instead of the new ones,
-%%       e.g. "<code>integer(X)</code>" instead of
-%%       "<code>is_integer(X)</code>". The default value is
-%%       <code>false</code>. This option overrides the
-%%       <code>new_guard_tests</code> option.</dd>
+%%       e.g. "`integer(X)'" instead of
+%%       "`is_integer(X)'". The default value is
+%%       `false'. This option overrides the
+%%       `new_guard_tests' option.</dd>
 %%
 %%   <dt>{quiet, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, all information
+%%       <dd>If the value is `true', all information
 %%       messages and warning messages will be suppressed. The default
-%%       value is <code>false</code>.</dd>
+%%       value is `false'.</dd>
 %%
 %%   <dt>{rename, [{{atom(), atom(), integer()},
 %%                  {atom(), atom()}}]}</dt>
 %%
 %%       <dd>The value is a list of pairs, associating tuples
-%%       <code>{Module, Name, Arity}</code> with tuples
-%%       <code>{NewModule, NewName}</code>, specifying renamings of
+%%       `{Module, Name, Arity}' with tuples
+%%       `{NewModule, NewName}', specifying renamings of
 %%       calls to remote functions. By default, the value is the empty
 %%       list.
 %%
-%%       <p>The renaming affects only remote calls (also when
+%%       The renaming affects only remote calls (also when
 %%       disguised by import declarations); local calls within a
 %%       module are not affected, and no function definitions are
 %%       renamed. Since the arity cannot change, the new name is
-%%       represented by <code>{NewModule, NewName}</code> only. Only
+%%       represented by `{NewModule, NewName}' only. Only
 %%       calls matching the specified arity will match; multiple
 %%       entries are necessary for renaming calls to functions that
 %%       have the same module and function name, but different
-%%       arities.</p>
+%%       arities.
 %%
-%%       <p>This option can also be used to override the default
-%%       renaming of calls which use obsolete function names.</p></dd>
+%%       This option can also be used to override the default
+%%       renaming of calls which use obsolete function names.</dd>
 %%
 %%   <dt>{verbose, bool()}</dt>
 %%
-%%       <dd>If the value is <code>true</code>, progress messages
+%%       <dd>If the value is `true', progress messages
 %%       will be output while the program is running, unless the
-%%       <code>quiet</code> option is <code>true</code>. The default
-%%       value is <code>false</code>.</dd>
+%%       `quiet' option is `true'. The default
+%%       value is `false'.</dd>
 %%
-%% </dl></p>
+%% </dl>
 
-module(Forms, Opts) when list(Forms) ->
+module(Forms, Opts) when is_list(Forms) ->
     module(erl_syntax:form_list(Forms), Opts);
 module(Forms, Opts) ->
     Opts1 = proplists:expand(module__expansions(), Opts)
@@ -702,7 +696,7 @@ get_module_imports(List) ->
     end.
 
 compile_attrs(As) ->
-    lists:append([if list(T) -> T; true -> [T] end
+    lists:append([if is_list(T) -> T; true -> [T] end
                   || {compile, T} <- As]).
 
 flatten_imports(Is) ->
@@ -907,7 +901,7 @@ hidden_uses_2(Tree, Used) ->
             F = erl_syntax:implicit_fun_name(Tree),
             case catch {ok, erl_syntax_lib:analyze_function_name(F)} of
                 {ok, {Name, Arity} = N}
-                when atom(Name), integer(Arity) ->
+                when is_atom(Name), is_integer(Arity) ->
                     ordsets:add_element(N, Used);
                 _ ->
                     Used
@@ -1017,7 +1011,7 @@ visit_implicit_fun(Tree, _Env, St0) ->
     F = erl_syntax:implicit_fun_name(Tree),
     case catch {ok, erl_syntax_lib:analyze_function_name(F)} of
         {ok, {Name, Arity} = N}
-        when atom(Name), integer(Arity) ->
+        when is_atom(Name), is_integer(Arity) ->
             Used = sets:add_element(N, St0#st.used),
             {Tree, St0#st{used = Used}};
         _ ->
@@ -1217,7 +1211,7 @@ visit_spawn_call(_, F, Ps, As, Tree, _Env, St0) ->
 visit_named_fun_application(F, As, Tree, Env, St0) ->
     Name = erl_syntax:implicit_fun_name(F),
     case catch {ok, erl_syntax_lib:analyze_function_name(Name)} of
-        {ok, {A, N}} when atom(A), integer(N), N == length(As) ->
+        {ok, {A, N}} when is_atom(A), is_integer(N), N == length(As) ->
             case is_nonlocal({A, N}, Env) of
                 true ->
                     %% Making this a direct call would be an error.
@@ -1289,7 +1283,7 @@ visit_nonlocal_application(F, As, Tree, Env, St0) ->
             end;
         module_qualifier ->
             case catch {ok, erl_syntax_lib:analyze_function_name(F)} of
-                {ok, {M, N}} when atom(M), atom(N) ->
+                {ok, {M, N}} when is_atom(M), is_atom(N) ->
                     visit_remote_application({M, N, length(As)}, F, As,
                                              Tree, Env, St0);
                 _ ->
@@ -1680,10 +1674,10 @@ reverse_guard_test(N, _A) -> N.
 %% =====================================================================
 %% Utility functions
 
-is_remote_name({M,F,A}) when atom(M), atom(F), integer(A) -> true;
+is_remote_name({M,F,A}) when is_atom(M), is_atom(F), is_integer(A) -> true;
 is_remote_name(_) -> false.
 
-is_atom_pair({M,F}) when atom(M), atom(F) -> true;
+is_atom_pair({M,F}) when is_atom(M), is_atom(F) -> true;
 is_atom_pair(_) -> false.
 
 replace_last([_E], Xs) ->
@@ -1763,13 +1757,13 @@ get_free_vars_1([{free, B} | _Bs]) -> B;
 get_free_vars_1([_ | Bs]) -> get_free_vars_1(Bs);
 get_free_vars_1([]) -> [].
 
-filename([C | T]) when integer(C), C > 0, C =< 255 ->
+filename([C | T]) when is_integer(C), C > 0, C =< 255 ->
     [C | filename(T)];
 filename([H|T]) ->
     filename(H) ++ filename(T);
 filename([]) ->
     [];
-filename(N) when atom(N) ->
+filename(N) when is_atom(N) ->
     atom_to_list(N);
 filename(N) ->
     report_error("bad filename: `~P'.", [N, 25]),
@@ -1816,7 +1810,7 @@ verbosity(Opts) ->
         false ->
             case proplists:get_value(verbose, Opts) of
                 true -> 2;
-                N when integer(N) -> N; 
+                N when is_integer(N) -> N; 
                 _ -> 1
             end
     end.
@@ -1849,11 +1843,11 @@ report(D, Vs) ->
 report(D, Vs, N) ->
     report(1, D, Vs, N).
 
-report(Level, _D, _Vs, N) when integer(N), N < Level ->
+report(Level, _D, _Vs, N) when is_integer(N), N < Level ->
     ok;
-report(_Level, D, Vs, N) when integer(N) ->
+report(_Level, D, Vs, N) when is_integer(N) ->
     io:put_chars(format(D, Vs));
-report(Level, D, Vs, Options) when list(Options) ->
+report(Level, D, Vs, Options) when is_list(Options) ->
     report(Level, D, Vs, verbosity(Options)).
 
 format({error, D}, Vs) ->
@@ -1862,15 +1856,15 @@ format({warning, D}, Vs) ->
     ["warning: ", format(D, Vs)];
 format({recommend, D}, Vs) ->
     ["recommendation: ", format(D, Vs)];
-format({"", L, D}, Vs) when integer(L), L > 0 ->
+format({"", L, D}, Vs) when is_integer(L), L > 0 ->
     [io_lib:fwrite("~w: ", [L]), format(D, Vs)];
 format({"", _L, D}, Vs) ->
     format(D, Vs);
-format({F, L, D}, Vs) when integer(L), L > 0 ->
+format({F, L, D}, Vs) when is_integer(L), L > 0 ->
     [io_lib:fwrite("~s:~w: ", [filename(F), L]), format(D, Vs)];
 format({F, _L, D}, Vs) ->
     [io_lib:fwrite("~s: ", [filename(F)]), format(D, Vs)];
-format(S, Vs) when list(S) ->
+format(S, Vs) when is_list(S) ->
     [io_lib:fwrite(S, Vs), $\n].
 
 

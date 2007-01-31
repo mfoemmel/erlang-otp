@@ -84,7 +84,7 @@ sys_times(SysTimes *buffer) {
     user /= (LONGLONG)(10000000 / SYS_CLK_TCK);
     
     buffer->tms_utime = (clock_t) (user & LL_LITERAL(0x7FFFFFFF));
-    buffer->tms_utime = (clock_t) (system & LL_LITERAL(0x7FFFFFFF));
+    buffer->tms_stime = (clock_t) (system & LL_LITERAL(0x7FFFFFFF));
     return kernel_ticks;
 }
 

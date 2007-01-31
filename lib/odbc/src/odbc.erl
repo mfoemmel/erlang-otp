@@ -412,11 +412,22 @@ init(Args) ->
     
     erlang:monitor(process, ClientPid),
     
+    Inet = case inet:getaddr("localhost", inet6) of
+	       {ok, {_,_,_,_}} ->
+		   inet;
+	       {ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+		   inet;
+	       {ok, {_,_,_,_,_,_,_,_}} ->
+		   inet6;
+	       _ ->
+		   inet
+	   end,
+
     {ok, ListenSocketSup} =
-	gen_tcp:listen(0, [binary, {packet, ?LENGTH_INDICATOR_SIZE},
+	gen_tcp:listen(0, [Inet, binary, {packet, ?LENGTH_INDICATOR_SIZE},
 			   {active, false}, {nodelay, true}]),
     {ok, ListenSocketOdbc} =
-	gen_tcp:listen(0, [binary, {packet, ?LENGTH_INDICATOR_SIZE},
+	gen_tcp:listen(0, [Inet, binary, {packet, ?LENGTH_INDICATOR_SIZE},
 			   {active, false}, {nodelay, true}]),
 
     %% Start the port program (a c program) that utilizes the odbc driver 

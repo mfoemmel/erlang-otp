@@ -25,10 +25,16 @@ insn_def_gpr(I) ->
     #load{dst=Dst} -> [Dst];
     #ldrsb{dst=Dst} -> [Dst];
     #move{dst=Dst} -> [Dst];
+    #mul{dst=Dst} -> [Dst];
     #pseudo_call{} -> call_clobbered_gpr();
     #pseudo_li{dst=Dst} -> [Dst];
     #pseudo_move{dst=Dst} -> [Dst];
     #pseudo_tailcall_prepare{} -> tailcall_clobbered_gpr();
+    #smull{dstlo=DstLo,dsthi=DstHi,src1=Src1} ->
+      %% ARM requires DstLo, DstHi, and Src1 to be distinct.
+      %% Add fake DEF of Src1 to prevent regalloc from reusing
+      %% it as DstLo or DstHi.
+      [DstLo, DstHi, Src1];
     _ -> []
   end.
 
@@ -50,6 +56,7 @@ insn_use_gpr(I) ->
     #load{am2=Am2} -> am2_use(Am2, []);
     #ldrsb{am3=Am3} -> am3_use(Am3, []);
     #move{am1=Am1} -> am1_use(Am1, []);
+    #mul{src1=Src1,src2=Src2} -> addtemp(Src1, [Src2]);
     #pseudo_blr{} ->
       LR = hipe_arm:mk_temp(hipe_arm_registers:lr(), 'untagged'),
       RV = hipe_arm:mk_temp(hipe_arm_registers:return_value(), 'tagged'),
@@ -63,6 +70,7 @@ insn_use_gpr(I) ->
     #pseudo_switch{jtab=JTabR,index=IndexR} -> addtemp(JTabR, [IndexR]);
     #pseudo_tailcall{funv=FunV,arity=Arity,stkargs=StkArgs} ->
       addargs(StkArgs, addtemps(tailcall_clobbered_gpr(), funv_use(FunV, arity_use_gpr(Arity))));
+    #smull{src1=Src1,src2=Src2} -> addtemp(Src1, [Src2]);
     #store{src=Src,am2=Am2} -> am2_use(Am2, [Src]);
     _ -> []
   end.

@@ -290,16 +290,25 @@ info(QH, Options) ->
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [QH, Options]);
         {[GUnique, GCache, Flat, Format, NElements, TmpDir, MaxList], H} ->
-            Prep = prepare_qlc(H, [], GUnique, GCache, TmpDir, MaxList),
-            Info = le_info(Prep),
-            AbstractCode = abstract(Info, Flat, NElements),
-            case Format of
-                abstract_code ->
-                    AbstractCode;
-                string ->
-                    lists:flatten(erl_pp:expr(AbstractCode, 0, none));
-                debug -> % Not documented. Intended for testing only.
-                    Info
+            try
+                Prep = prepare_qlc(H, [], GUnique, GCache, TmpDir, MaxList),
+                Info = le_info(Prep),
+                AbstractCode = abstract(Info, Flat, NElements),
+                case Format of
+                    abstract_code ->
+                        AbstractCode;
+                    string ->
+                        lists:flatten(erl_pp:expr(AbstractCode, 0, none));
+                    debug -> % Not documented. Intended for testing only.
+                        Info
+                end
+            catch Term ->
+                case erlang:get_stacktrace() of
+                    [?THROWN_ERROR | _] ->
+                        Term;
+                    Stacktrace ->
+                        erlang:raise(throw, Term, Stacktrace)
+                end
             end
     end.
 
@@ -1322,10 +1331,10 @@ prep_gen(#prepared{qh = LE0}=Prep0, PosFun, {MS, Fs}, Opt) ->
                           MS
                   end,
             Prep = Prep0#prepared{qh = LE0#qlc_table{lu_vals = LuV,ms = MS1}},
-            {replace, Fs, LU, may_create_simple(Opt, Prep)};
+            {replace, Fs, LU, Prep};
         #qlc_table{} when LU ->
             Prep = Prep0#prepared{qh = LE0#qlc_table{lu_vals = LuV}},
-            {skip, SkipFils, LU, may_create_simple(Opt, Prep)};
+            {skip, SkipFils, LU, Prep};
         #qlc_table{trav_MS = true} when MS =/= no_match_spec ->
             Prep = Prep0#prepared{qh = LE0#qlc_table{ms = MS}},
             {replace, Fs, false, may_create_simple(Opt, Prep)};
@@ -1463,7 +1472,9 @@ orders(yes) ->
 
 sort_unique(true, #qlc_sort{opts = SortOptions, keypos = sort}=Sort) ->
     Sort#qlc_sort{unique = false, 
-                  opts = lists:keydelete(unique, 1, SortOptions)};
+                  opts = lists:keydelete(unique, 
+                                         1, 
+                                         lists:delete(unique, SortOptions))};
 sort_unique(_, Sort) ->
     Sort.
 
@@ -2025,18 +2036,16 @@ table_handle(#qlc_table{trav_fun = TraverseFun, trav_MS = TravMS,
     _ = call(PreFun, PreFunArgs, ok, Post),
     case LuVals of
         {Pos, Vals} when MS =:= no_match_spec ->
-            fun() -> LuF(Pos, Vals) end;
+            LuF(Pos, Vals);
         {Pos, Vals} ->
-            fun() ->
-                    case LuF(Pos, Vals) of
-                        [] -> 
-                            [];
-                        Objs when is_list(Objs) -> 
-                            ets:match_spec_run(Objs, 
-                                               ets:match_spec_compile(MS));
-                        Error ->
-                            Error
-                    end
+            case LuF(Pos, Vals) of
+                [] -> 
+                    [];
+                Objs when is_list(Objs) -> 
+                    ets:match_spec_run(Objs, 
+                                       ets:match_spec_compile(MS));
+                Error ->
+                    throw_error(Error)
             end;
         _ when not TravMS ->
             TraverseFun;
@@ -2466,16 +2475,16 @@ lcache(H, Ref, PostL, TmpDir, MaxList) ->
             L
     end.
     
-lcache1([]=Cont, {Key, PostL, _TmpDir, _MaxList}, _Sz, Ack) ->
+lcache1([]=Cont, {Key, PostL, _TmpDir, _MaxList}, _Sz, Acc) ->
     local_post(PostL),
     case get(Key) of
         undefined -> 
-            put(Key, lists:reverse(Ack));
+            put(Key, lists:reverse(Acc));
         {file, Fd, TmpFile, _F} ->
-            lcache_write(Fd, TmpFile, Ack)
+            lcache_write(Fd, TmpFile, Acc)
     end,
     Cont;
-lcache1(H, State, Sz, Ack) when Sz < 0 ->
+lcache1(H, State, Sz, Acc) when Sz < 0 ->
     {Key, PostL, TmpDir, MaxList} = State,
     {FileName, Fd} = 
         case get(Key) of
@@ -2487,14 +2496,14 @@ lcache1(H, State, Sz, Ack) when Sz < 0 ->
                 put(Key, {file, Fd0, FName, F}),
                 {FName, Fd0}
         end,
-    lcache_write(Fd, FileName, Ack),
+    lcache_write(Fd, FileName, Acc),
     lcache1(H, State, MaxList, []);
-lcache1([Object | Cont], State, Sz0, Ack) ->
+lcache1([Object | Cont], State, Sz0, Acc) ->
     Sz = decr_list_size(Sz0, Object),
-    [Object | fun() -> lcache1(Cont, State, Sz, [Object | Ack]) end];
-lcache1(F, State, Sz, Ack) when is_function(F) ->
-    lcache1(F(), State, Sz, Ack);
-lcache1(Term, _State, _Sz, _Ack) ->
+    [Object | fun() -> lcache1(Cont, State, Sz, [Object | Acc]) end];
+lcache1(F, State, Sz, Acc) when is_function(F) ->
+    lcache1(F(), State, Sz, Acc);
+lcache1(Term, _State, _Sz, _Acc) ->
     throw_error(Term).
     
 lcache_write(Fd, FileName, L) ->

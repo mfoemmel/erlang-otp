@@ -311,19 +311,19 @@ expand_expr({'receive',L,Cs,To,ToEs}, C) ->
     {'receive',L,expand_cs(Cs, C), expand_expr(To, C), expand_exprs(ToEs, C)};
 expand_expr({call,L,{atom,_,e},[N]}, C) ->
     case get_cmd(N, C) of
-        {undefined,_} ->
+        {undefined,_,_} ->
 	    no_command(N);
-	{[Ce],_V} ->
+	{[Ce],_V,_CommandN} ->
 	    Ce;
-	{Ces,_V} when is_list(Ces) ->
+	{Ces,_V,_CommandN} when is_list(Ces) ->
 	    {block,L,Ces}
     end;
-expand_expr({call,L,{atom,_,v},[N]}, C) ->
+expand_expr({call,_L,{atom,_,v},[N]}, C) ->
     case get_cmd(N, C) of
-        {_,undefined} ->
+        {_,undefined,_} ->
 	    no_command(N);
-	{Ces,V} when is_list(Ces) ->
-            {value,L,V}
+	{Ces,V,CommandN} when is_list(Ces) ->
+            {value,CommandN,V}
     end;
 expand_expr({call,L,F,Args}, C) ->
     {call,L,expand_expr(F, C),expand_exprs(Args, C)};
@@ -373,13 +373,13 @@ add_cmd(N, Es, V) ->
     put({result,N}, V).
 
 getc(N) ->
-    {get({command,N}), get({result,N})}.
+    {get({command,N}), get({result,N}), N}.
 
 get_cmd(Num, C) ->
     case catch erl_eval:expr(Num, []) of
 	{value,N,_} when N < 0 -> getc(C+N);
 	{value,N,_} -> getc(N);
-	_Other -> {undefined,undefined}
+	_Other -> {undefined,undefined,undefined}
     end.
 
 del_cmd(_Type, N, N0, HasBin) when N < N0 ->
@@ -688,9 +688,9 @@ not_restricted(_, _) ->
 prep_check({call,Line,{atom,_,f},[{var,_,_Name}]}) ->
     %% Do not emit a warning for f(V) when V is unbound.
     {atom,Line,ok};
-prep_check({value,Line,_Val}) ->
+prep_check({value,_CommandN,_Val}) ->
     %% erl_lint cannot handle the history expansion {value,_,_}.
-    {atom,Line,ok};
+    {atom,0,ok};
 prep_check(T) when is_tuple(T) ->
     list_to_tuple(prep_check(tuple_to_list(T)));
 prep_check([E | Es]) ->
@@ -709,12 +709,12 @@ expand_records(UsedRecords, E0) ->
         erl_expand_records:module(Forms, [strict_record_tests]), 
     prep_rec(NE).
 
-prep_rec({value,L,V}) ->
+prep_rec({value,CommandN,V}) ->
     %% erl_expand_records cannot handle the history expansion {value,_,_}.
-    {atom,{value,L,V},ok};
-prep_rec({atom,{value,L,V},ok}) -> 
+    {atom,{value,CommandN,V},ok};
+prep_rec({atom,{value,CommandN,V},ok}) -> 
     %% Undo the effect of the previous clause...
-    {value,L,V};
+    {value,CommandN,V};
 prep_rec(T) when is_tuple(T) -> list_to_tuple(prep_rec(tuple_to_list(T)));
 prep_rec([E | Es]) -> [prep_rec(E) | prep_rec(Es)];
 prep_rec(E) -> E.
@@ -747,7 +747,8 @@ local_func(f, [{var,_,Name}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,ok,erl_eval:del_binding(Name, Bs)};
 local_func(f, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
     exit({function_clause,[{shell,f,1}]});
-local_func(rd, [{atom,_,RecName},RecDef], Bs, _Shell, RT, _Lf, _Ef) ->
+local_func(rd, [{atom,_,RecName},RecDef0], Bs, _Shell, RT, _Lf, _Ef) ->
+    RecDef = expand_value(RecDef0),
     RDs = lists:flatten(erl_pp:expr(RecDef)),
     Attr = lists:concat(["-record('", RecName, "',", RDs, ")."]),
     {ok, Tokens, _} = erl_scan:string(Attr),
@@ -805,7 +806,7 @@ local_func(import, [M], Bs, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(M) of
 	error -> exit({function_clause,[{shell,import,1}]});
 	M1 ->
-	    Mod = package_to_string(M1),
+	    Mod = packages:concat(M1),
 	    case packages:is_valid(Mod) of
 		true ->
 		    Key = list_to_atom(packages:last(Mod)),
@@ -819,7 +820,7 @@ local_func(import_all, [P], Bs0, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(P) of
 	error -> exit({function_clause,[{shell,import_all,1}]});
 	P1 ->
-	    Name = package_to_string(P1),
+	    Name = packages:concat(P1),
 	    case packages:is_valid(Name) of
 		true ->
 		    Bs1 = import_all(Name, Bs0),
@@ -1088,15 +1089,23 @@ shell_req(Shell, Req) ->
 	{shell_rep,Shell,Rep} -> Rep
     end.
 
-list_commands([{{N,command},Es}, {{N,result}, V} |Ds], RT) ->
+list_commands([{{N,command},Es0}, {{N,result}, V} |Ds], RT) ->
+    Es = prep_list_commands(Es0),
     VS = io_lib_pretty:print(V, 4, 80, ?LINEMAX, record_print_fun(RT)),
-    io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]},
+    Ns = io_lib:fwrite("~w: ", [N]),
+    I = iolist_size(Ns),
+    io:requests([{put_chars, Ns},
+                 {format,"~s~n",[erl_pp:exprs(Es, I, none)]},
 		 {format,"-> ",[]},
                  {put_chars, VS},
                  nl]),
     list_commands(Ds, RT);
-list_commands([{{N,command},Es} |Ds], RT) ->
-    io:requests([{format,"~w: ~s~n",[N,erl_pp:exprs(Es)]}]),
+list_commands([{{N,command},Es0} |Ds], RT) ->
+    Es = prep_list_commands(Es0),
+    Ns = io_lib:fwrite("~w: ", [N]),
+    I = iolist_size(Ns),
+    io:requests([{put_chars, Ns},
+                 {format,"~s~n",[erl_pp:exprs(Es, I, none)]}]),
     list_commands(Ds, RT);
 list_commands([_D|Ds], RT) ->
     list_commands(Ds, RT);
@@ -1107,7 +1116,8 @@ list_bindings([{{module,M},Val}|Bs], RT) ->
     list_bindings(Bs, RT);
 list_bindings([{Name,Val}|Bs], RT) ->
     case erl_eval:fun_data(Val) of
-        {fun_data,_FBs,FCs} ->
+        {fun_data,_FBs,FCs0} ->
+            FCs = expand_value(FCs0), % looks nicer
             F = {'fun',0,{clauses,FCs}},
             M = {match,0,{var,0,Name},F},
             io:fwrite("~s~n", [erl_pp:expr(M)]);
@@ -1132,6 +1142,25 @@ list_records(Records) ->
 record_defs(RT, Names) ->
     lists:flatmap(fun(Name) -> ets:lookup(RT, Name)
                   end, Names).
+
+expand_value(E) ->
+    substitute_v1(fun({value,_CommandN,V}) -> erl_parse:abstract(V) 
+                  end, E).
+
+%% Rather than listing possibly huge results the calls to v/1 are shown.
+prep_list_commands(E) ->
+    substitute_v1(fun({value,CommandN,_V}) -> 
+                          {call,0,{atom,0,v},[{integer,0,CommandN}]}
+                  end, E).
+
+substitute_v1(F, {value,_,_}=Value) ->
+    F(Value);
+substitute_v1(F, T) when is_tuple(T) -> 
+    list_to_tuple(substitute_v1(F, tuple_to_list(T)));
+substitute_v1(F, [E | Es]) -> 
+    [substitute_v1(F, E) | substitute_v1(F, Es)];
+substitute_v1(_F, E) -> 
+    E.
 
 min(X, Y) when X < Y ->
     X;
@@ -1172,8 +1201,3 @@ history(L) when is_integer(L), L >= 0 ->
 
 results(L) when is_integer(L), L >= 0 ->
     set_env(stdlib, shell_saved_results, L, ?DEF_RESULTS).
-
-%% In syntax trees, module/package names are atoms or lists of atoms.
-
-package_to_string(A) when is_atom(A) -> atom_to_list(A);
-package_to_string(L) when is_list(L) -> packages:concat(L).

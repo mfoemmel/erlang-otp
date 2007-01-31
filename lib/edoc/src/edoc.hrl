@@ -38,7 +38,7 @@
 -define(EBIN_DIR, "ebin").
 -define(EDOC_DIR, "doc").
 
--include("../include/edoc_doclet.hrl").
+-include("edoc_doclet.hrl").
 
 %% Module information
 

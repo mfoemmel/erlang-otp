@@ -91,6 +91,8 @@ do_insn(I, LiveOut, Context, FPoff) ->
       {do_fp_binop(I, Context, FPoff), FPoff};
     #fmove{} ->
       {[do_fmove(I, Context, FPoff)], FPoff};
+    #imul{} ->
+      {[do_imul(I, Context, FPoff)], FPoff};
     #move{} ->
       {[do_move(I, Context, FPoff)], FPoff};
     #movsx{} ->
@@ -144,6 +146,11 @@ do_fmove(I, Context, FPoff) ->
   Src = conv_opnd(Src0, FPoff, Context),
   Dst = conv_opnd(Dst0, FPoff, Context),
   I#fmove{src=Src,dst=Dst}.
+
+do_imul(I, Context, FPoff) ->
+  #imul{src=Src0} = I,
+  Src = conv_opnd(Src0, FPoff, Context),
+  I#imul{src=Src}.
 
 do_move(I, Context, FPoff) ->
   #move{src=Src0,dst=Dst0} = I,

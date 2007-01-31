@@ -1945,7 +1945,6 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
     int res;
     Eterm least = 0;
     Eterm most = 0;
-    TreeDbTerm *this;
 
     mpi->some_limitation = 1;
     mpi->got_partial = 0;
@@ -1995,12 +1994,11 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
 	++i;
 
 	partly_bound = NIL;
-	res = key_given(tb, tpl, &this, &partly_bound);
+	res = key_given(tb, tpl, &mpi->save_term, &partly_bound);
 	if ( res >= 0 ) {   /* Can match something */
 	    key = 0;
 	    mpi->something_can_match = 1;
 	    if (res > 0) {
-		mpi->save_term = this;
 		key = GETKEY(tb,tuple_val(tpl)); 
 	    } else if (partly_bound != NIL) {
 		mpi->got_partial = 1;
@@ -2010,13 +2008,11 @@ static int analyze_pattern(DbTableTree *tb, Eterm pattern,
 	    }
 	    if (key != 0) {
 		if (least == 0 || 
-		    partly_bound_can_match_lesser
-		    (key,least)) {
+		    partly_bound_can_match_lesser(key,least)) {
 		    least = key;
 		}
 		if (most == 0 || 
-		    partly_bound_can_match_greater
-		    (key,most)) {
+		    partly_bound_can_match_greater(key,most)) {
 		    most = key;
 		}
 	    }
@@ -2635,8 +2631,7 @@ static void traverse_forward(DbTableTree *tb,
 
 /*
  * Returns 0 if not given 1 if given and -1 on no possible match
- * if key is given and ret != NULL, *ret is set to point 
- * to the object concerned;
+ * if key is given; *ret is set to point to the object concerned.
  */
 static int key_given(DbTableTree *tb, Eterm pattern, TreeDbTerm **ret, 
 		     Eterm *partly_bound)
@@ -2644,16 +2639,17 @@ static int key_given(DbTableTree *tb, Eterm pattern, TreeDbTerm **ret,
     TreeDbTerm *this;
     Eterm key;
 
+    ASSERT(ret != NULL);
     if (pattern == am_Underscore || db_is_variable(pattern) != -1)
 	return 0;
     key = db_getkey(tb->common.keypos, pattern);
     if (is_non_value(key))
 	return -1;  /* can't possibly match anything */
     if (!db_has_variable(key)) {   /* Bound key */
-	if(( this = find_node(tb, key) ) == NULL)
+	if (( this = find_node(tb, key) ) == NULL) {
 	    return -1;
-	if (ret != NULL) 
-	    *ret = this; 
+	}
+	*ret = this; 
 	return 1;
     } else if (partly_bound != NULL && key != am_Underscore && 
 	       db_is_variable(key) < 0)
@@ -2703,7 +2699,7 @@ static Sint do_cmp_partly_bound(Eterm a, Eterm b, int *done)
 	    return cmp(a,b);
 	}
 	a_hdr = ((*boxed_val(a)) & _TAG_HEADER_MASK) >> _TAG_PRIMARY_SIZE;
-	b_hdr = ((*boxed_val(a)) & _TAG_HEADER_MASK) >> _TAG_PRIMARY_SIZE;
+	b_hdr = ((*boxed_val(b)) & _TAG_HEADER_MASK) >> _TAG_PRIMARY_SIZE;
 	if (a_hdr != b_hdr) {
 	    return cmp(a, b);
 	}

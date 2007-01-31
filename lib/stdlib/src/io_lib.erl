@@ -137,7 +137,7 @@ write([H|T], D) ->
     if
 	D =:= 1 -> "[...]";
 	true ->
-	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
+	    [$[,[write(H, D-1)|write_tail(T, D-1, $|)],$]]
     end;
 write(F, _D) when is_function(F) ->
     erlang:fun_to_list(F);
@@ -146,19 +146,20 @@ write(T, D) when is_tuple(T) ->
 	D =:= 1 -> "{...}";
 	true ->
 	    [${,
-	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
+	     [write(element(1, T), D-1)|
+              write_tail(tl(tuple_to_list(T)), D-1, $,)],
 	     $}]
     end.
 
-%% write_tail(List, Depth)
+%% write_tail(List, Depth, CharacterBeforeDots)
 %%  Test the terminating case first as this looks better with depth.
 
-write_tail([], _D) -> "";
-write_tail(_, 1) -> "|...";
-write_tail([H|T], D) ->
-    [$,,write(H, D-1)|write_tail(T, D-1)];
-write_tail(Other, D) ->
-    [$|,write(Other, D-1)].
+write_tail([], _D, _S) -> "";
+write_tail(_, 1, S) -> [S | "..."];
+write_tail([H|T], D, S) ->
+    [$,,write(H, D-1)|write_tail(T, D-1, S)];
+write_tail(Other, D, S) ->
+    [S,write(Other, D-1)].
 
 write_port(Port) ->
     erlang:port_to_list(Port).

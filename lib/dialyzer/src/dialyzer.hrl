@@ -19,7 +19,7 @@
 -define(HIPE_DEF_OPTS, 
 	[no_inline_fp, {pmatch, no_duplicates}, {target, x86}]).
 
--record(analysis, {analysis_pid, core_transform=cerl_typean,
+-record(analysis, {analysis_pid, core_transform=dataflow,
 		   defines=[], doc_plt,
 		   files, fixpoint, granularity, include_dirs=[],
 		   init_plt, mcg=none, plt_info=none, 
@@ -27,13 +27,14 @@
 
 -record(options, {files=[],
 		  files_rec=[],
-		  core_transform=cerl_typean,
+		  core_transform=dataflow,
 		  defines=[],
 		  from=byte_code, %% default is to start from byte code	  
 		  init_plt,
 		  include_dirs=[],
 		  output_plt,
 		  legal_warnings,
-		  plt_libs=none,
+		  quiet=false,
+		  erlang_mode=false,
 		  supress_inline=false,
 		  output_file=""}).

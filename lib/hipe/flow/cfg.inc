@@ -36,11 +36,11 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(cfg_info, {'fun',         % mfa()  % i.e. {atom(),atom(),byte()}
+-record(cfg_info, {'fun'         :: mfa(),
 		   start_label,
-		   is_closure,    % bool()
-		   closure_arity, % byte() | 'undefined'
-		   is_leaf,       % bool()
+		   is_closure    :: bool(),
+		   closure_arity :: byte(),
+		   is_leaf       :: bool(),
 		   params,        % list()
 		   extra,
 		   info=[]}).

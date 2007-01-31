@@ -279,6 +279,40 @@ do_lazy_configure_clean ()
 
 }
 
+do_lazy_configure_target_clean ()
+{
+    setup_make
+    case $TARGET in
+	vxworks_*|ose_*)
+	    echo "Not supported for target: $TARGET" >&2
+	    exit 1
+	    ;;
+	*)
+	    ;;
+    esac
+    for c_dir in $AUTOCONF_SUBDIRS; do
+	if test -f $ERL_TOP/$c_dir/configure.in; then
+	    dir=$ERL_TOP/$c_dir
+	    echo ""
+	    echo "=== Begin target cleaning configure in $dir"
+	    xc_dep= ;
+	    xcs_dep= ;
+	    test -d $dir/$TARGET || mkdir $dir/$TARGET
+	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
+	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
+	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
+		MAKE="$MAKE" TARGET=$TARGET                                  \
+		ERL_TOP=$ERL_TOP                                             \
+		CONFIGURE_DIR=$dir                                           \
+		EXPECTED_AUTOCONF_VERSION=$EXPECTED_AUTOCONF_VERSION         \
+		lazy_configure_target_clean
+	    echo "=== Done target cleaning configure in $dir"
+	    echo ""
+	fi
+    done
+
+}
 
 echo_setenv ()
 {
@@ -696,6 +730,9 @@ case "$1" in
 	lazy_configure_clean)
 		shift;
 		do_lazy_configure_clean;;
+	lazy_configure_target_clean)
+		shift;
+		do_lazy_configure_target_clean;;
 	opt|plain|smp|hybrid|nofrag)
 		if [ $minus_a_flag = false ]; then 
 		    TYPE=opt

@@ -31,7 +31,7 @@
 -export([ignore/2]).
 -export([disconnect/2, disconnect/3, disconnect/4]).
 
--export([client_init/4, server_init/4]).
+-export([client_init/4, server_init/5]).
 
 -export([ssh_init/3]). % , server_hello/4]).
 
@@ -235,8 +235,10 @@ listen(UserFun, Port, Opts) ->
     listen(UserFun, any, Port, Opts).
 
 listen(UserFun, Addr, Port, Opts) ->
-    case spawn_link(?MODULE, server_init, [UserFun, Addr, Port, Opts]) of
-	Pid when is_pid(Pid) -> {ok, Pid};
+    case spawn_link(?MODULE, server_init,
+		    [UserFun, Addr, Port, Opts, self()]) of
+	Pid when is_pid(Pid) ->
+	    receive ok -> {ok, Pid} end;
 	Error -> Error
     end.
 
@@ -321,7 +323,7 @@ client_init(User, Host, Port, Opts) ->
     end.
 
 
-server_init(UserFun, Addr, Port, Opts) ->
+server_init(UserFun, Addr, Port, Opts, From) ->
     Serv = fun(S) ->
 		   SSH = ssh_init(S, server, Opts),
 		   Self = self(),
@@ -334,7 +336,7 @@ server_init(UserFun, Addr, Port, Opts) ->
     ssh_tcp_wrap:server(Port, [{packet,line}, {active,once},
 			       {ifaddr,Addr}, {reuseaddr,true},
 			       {nodelay, NoDelay}],
-			Serv).
+			Serv, From).
 
 %%
 %% Initialize basic ssh system
@@ -778,7 +780,6 @@ ssh_main(S, User, SSH) ->
 
 	{ssh_call, From, peername} ->
 	    P = inet:peername(S),
-	    io:format("peername~p\n", [P]),
 	    reply(From, P),
 	    ssh_main(S, User, SSH);
 

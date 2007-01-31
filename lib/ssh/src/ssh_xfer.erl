@@ -83,7 +83,7 @@ open_xfer(CM, Opts) ->
 
 init(CM, Channel) ->
     XF = #ssh_xfer { cm = CM, channel = Channel},
-    xf_request(XF, ?SSH_FXP_INIT, <<?UINT32(6)>>),
+    xf_request(XF, ?SSH_FXP_INIT, <<?UINT32(?SSH_SFTP_PROTOCOL_VERSION)>>),
     case reply(CM, Channel) of
 	{ok, <<?SSH_FXP_VERSION, ?UINT32(Version), Ext/binary>>, Rest} ->
 	    ?dbg(true, "init: Version=~p\n", [Version]),

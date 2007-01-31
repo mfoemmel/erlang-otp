@@ -25,9 +25,9 @@
 
 %% @doc EDoc tag scanning.
 
-%% @TODO tag/macro for including the code of a function as `<pre>'-text.
-%% @TODO consider new tag: @arg name, description
-%% @TODO consider new tag: @license text
+%% TODO: tag/macro for including the code of a function as `<pre>'-text.
+%% TODO: consider new tag: @arg name, description
+%% TODO: consider new tag: @license text
 
 -module(edoc_tags).
 
@@ -108,10 +108,12 @@ scan_lines([], _L, As) ->
     As.
 
 %% Looking for a leading '@', skipping whitespace.
+%% Also accept "TODO:" at start of line as equivalent to "@TODO".
 
 scan_lines([$\s | Cs], Ss, L, As) -> scan_lines(Cs, Ss, L, As);
 scan_lines([$\t | Cs], Ss, L, As) -> scan_lines(Cs, Ss, L, As);
 scan_lines([$@ | Cs], Ss, L, As) -> scan_tag(Cs, Ss, L, As, []);
+scan_lines(("TODO:"++_)=Cs, Ss, L, As) -> scan_tag(Cs, Ss, L, As, []);
 scan_lines(_, Ss, L, As) -> scan_lines(Ss, L + 1, As).
 
 %% Scanning chars following '@', accepting only nonempty valid names.
@@ -144,11 +146,13 @@ scan_tag_1([$_ | Cs], Ss, L, As, Ts) ->
 scan_tag_1(Cs, Ss, L, As, Ts) ->
     scan_tag_2(Cs, Ss, L, As, {Ts, L}).
 
-%% Check that the tag is followed by whitespace or linebreak.
+%% Check that the tag is followed by whitespace, linebreak, or colon.
 
 scan_tag_2([$\s | Cs], Ss, L, As, T) ->
     scan_tag_lines(Ss, T, [Cs], L + 1, As);
 scan_tag_2([$\t | Cs], Ss, L, As, T) ->
+    scan_tag_lines(Ss, T, [Cs], L + 1, As);
+scan_tag_2([$: | Cs], Ss, L, As, T) ->
     scan_tag_lines(Ss, T, [Cs], L + 1, As);
 scan_tag_2([], Ss, L, As, T) ->
     scan_tag_lines(Ss, T, [[]], L + 1, As);
@@ -176,6 +180,8 @@ scan_tag_lines([$@, C | _Cs], S, Ss, {Ts, L1}, Ss1, L, As)
     scan_lines(S, Ss, L, [make_tag(Ts, L1, Ss1) | As]);
 scan_tag_lines([$@, C | _Cs], S, Ss, {Ts, L1}, Ss1, L, As)
   when C >= $\300, C =< $\377, C =/= $\327, C =/= $\367 ->
+    scan_lines(S, Ss, L, [make_tag(Ts, L1, Ss1) | As]);
+scan_tag_lines("TODO:"++_, S, Ss, {Ts, L1}, Ss1, L, As) ->
     scan_lines(S, Ss, L, [make_tag(Ts, L1, Ss1) | As]);
 scan_tag_lines(_Cs, S, Ss, T, Ss1, L, As) ->
     scan_tag_lines(Ss, T, [S | Ss1], L + 1, As).

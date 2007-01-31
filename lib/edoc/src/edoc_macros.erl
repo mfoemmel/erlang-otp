@@ -69,14 +69,10 @@ check_defs([]) ->
 %% together with the file name etc. The expanded text must be flat!
 
 date_macro(_S, _Line, _Env) ->
-    {Y,M,D} = date(),
-    Ms = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
-	  "Oct", "Nov", "Dec"],
-    lists:flatten(io_lib:fwrite("~s ~w ~w",[lists:nth(M, Ms),D,Y])).
+    edoc_lib:datestr(date()).    
 
 time_macro(_S, _Line, _Env) ->
-    {H,M,Sec} = time(),
-    lists:flatten(io_lib:fwrite("~2.2.0w:~2.2.0w:~2.2.0w",[H,M,Sec])).
+    edoc_lib:timestr(time()).
 
 link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),

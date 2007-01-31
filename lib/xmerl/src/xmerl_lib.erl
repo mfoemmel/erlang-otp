@@ -46,6 +46,7 @@
 -export([is_facet/1,is_builtin_simple_type/1]).
 
 -include("xmerl.hrl").
+-include("xmerl_xsd.hrl").
 
 
 %% Escape special characters `<' and `&', flattening the text.
@@ -217,11 +218,13 @@ expand_content(Content, Pos, Parents) ->
 
 expand_content([{H} | T], Pos, Parents, Norm) ->
     expand_content(H ++ T, Pos, Parents, Norm);
-expand_content([H | T], Pos, Parents, Norm) ->
+expand_content([H | T], Pos, Parents, Norm) when is_tuple(H) ->
     [expand_element(H, Pos, Parents, Norm)
      | expand_content(T, Pos+1, Parents, Norm)];
 expand_content([], _Pos, _Parents, _Norm) ->
-    [].
+    [];
+expand_content(Content,Pos,Parents,Norm) ->
+    [expand_element(Content, Pos, Parents, Norm)].
 
 expand_attributes(Attrs) ->
     expand_attributes(Attrs, 1, []).
@@ -952,6 +955,12 @@ is_facet(fractionDigits) -> true;
 is_facet(_) -> false.
     
 
+is_builtin_simple_type({Type,_,?XSD_NAMESPACE}) when is_atom(Type) ->
+    is_builtin_simple_type(atom_to_list(Type));
+is_builtin_simple_type({Type,_,?XSD_NAMESPACE}) ->
+    is_builtin_simple_type(Type);
+is_builtin_simple_type({_,_,_}) ->
+    false;
 is_builtin_simple_type("string") -> true;
 is_builtin_simple_type("normalizedString") -> true;
 is_builtin_simple_type("token") -> true;

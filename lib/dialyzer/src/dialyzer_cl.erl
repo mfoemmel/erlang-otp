@@ -26,68 +26,115 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_cl).
 
--export([start/1, check_init_plt/1]).
+-export([start/1, check_init_plt/2]).
 
--include("dialyzer.hrl").	  %% file is automatically generated
+-include("dialyzer.hrl").
 -include("hipe_icode_type.hrl").
 
 -record(cl_state, {backend_pid,
-		   legal_warnings=[],
 		   init_plt,
+		   legal_warnings=[],
+		   nof_warnings=0::integer(),
 		   output=standard_io,
 		   output_plt,
-		   user_plt,
-		   nof_warnings=0::integer(),
-		   return_status=0::integer()
+		   quiet::bool(),
+		   return_status=?RET_NOTHING_SUSPICIOUS::integer(),
+		   stored_errors=do_not_store,
+		   stored_warnings=do_not_store,
+		   user_plt
 		  }).
 
-start(Options) when is_list(Options) ->
-  start(dialyzer_options:build(Options));
 start(#options{} = DialyzerOptions) ->
   process_flag(trap_exit, true),
+  StoreWarningsAndErrors =
+    case DialyzerOptions#options.erlang_mode of
+      true -> [];
+      false -> do_not_store
+    end,
   State = new_state(DialyzerOptions#options.init_plt),
-  NewState1 = init_output(State, DialyzerOptions),
+  NewState1 = init_output(State, DialyzerOptions),  
   NewState2 = 
     NewState1#cl_state{legal_warnings=DialyzerOptions#options.legal_warnings,
-		       output_plt=DialyzerOptions#options.output_plt},
+		       output_plt=DialyzerOptions#options.output_plt,
+		       stored_errors=StoreWarningsAndErrors,
+		       stored_warnings=StoreWarningsAndErrors,
+		       quiet=DialyzerOptions#options.quiet},
   InitAnalysis = build_analysis_record(NewState2, DialyzerOptions),
   NewState3 = run_analysis(NewState2, InitAnalysis),
   cl_loop(NewState3).
 
-check_init_plt(Opts) ->
+check_init_plt(Opts, Force) ->
   process_flag(trap_exit, true),
-  Quiet = get(dialyzer_options_quiet),
-  case dialyzer_plt:check_init_plt(Opts#options.plt_libs,
-				   Opts#options.init_plt) of
-    {fail, MD5, Libs, InitPlt} ->      
+  Quiet = Opts#options.quiet,
+  case dialyzer_plt:check_init_plt(Opts#options.init_plt) of
+    {fail, MD5, DiffMd5, Libs, InitPlt} ->      
       if Quiet -> ok;
-	 true  -> io:format(" no\n", [])
+	 true  -> 
+	  io:format(" no\n", []),
+	  case Quiet =:= verbose of
+	    true -> print_md5_diff(DiffMd5);
+	    false -> ok
+	  end
       end,
-      case check_if_installed() of
+      case (not Force) andalso check_if_installed() of
 	true -> 
 	  Msg = "    The initial PLT is not up-to-date.\n"
 	    "    Since Dialyzer is installed no new PLT will be built.\n"
-	    "    Please refer to the manual.\n",
-	  io:format("~s", [Msg]),
-	  error;
+	    "    To force the rebuilding use the option --check_init_plt\n",
+	  error(Msg);
 	false ->
 	  Msg = "    Creating initial PLT"
 	    " (will take several minutes; please be patient)\n",
 	  io:format("~s", [Msg]),
-	  case create_init_plt(MD5, Libs, InitPlt, Opts#options.include_dirs) of
-	    ?RET_INTERNAL_ERROR -> error;
-	    ?RET_NOTHING_SUSPICIOUS -> ok;
-	    ?RET_DISCREPANCIES_FOUND -> ok
-	  end
+	  InclDirs = Opts#options.include_dirs,
+	  {T1, _} = statistics(wall_clock),
+	  Ret =
+	    case create_init_plt(MD5, Libs, InitPlt, InclDirs) of
+	      ?RET_INTERNAL_ERROR ->
+		error("Problems during consistency check of initial PLT");
+	      ?RET_NOTHING_SUSPICIOUS -> ?RET_NOTHING_SUSPICIOUS;
+	      ?RET_DISCREPANCIES_FOUND -> ?RET_NOTHING_SUSPICIOUS
+	    end,
+	  {T2, _} = statistics(wall_clock),
+	  if Quiet -> ok;
+	     true -> print_elapsed_time(T1, T2)
+	  end,
+	  Ret
       end;
     {ok, _InitPlt} ->
       if Quiet -> ok;
 	 true  -> io:format(" yes\n")
       end,
-      ok;
+      ?RET_NOTHING_SUSPICIOUS;
     {error, Msg} ->
-      io:format(" no\n~s\n", [Msg]),
-      error
+      if Quiet -> ok;
+	 true  -> io:format(" no\n")
+      end,
+      error(Msg)
+  end.
+
+print_elapsed_time(T1, T2) ->
+  ElapsedTime = T2 - T1,
+  Mins = ElapsedTime div 60000,
+  Secs = (ElapsedTime rem 60000) / 1000,
+  io:format("  Done building PLT in ~wm~.2fs\n", [Mins, Secs]).
+
+
+print_md5_diff(none) ->
+  io:format("    Could not find the old PLT information\n", []);
+print_md5_diff(List) ->
+  io:format("    The PLT information is not up to date:\n", []),
+  case [Mod || {new, Mod} <- List] of
+    [] -> ok;
+    NewMods -> io:format("    New modules: ~p\n", [NewMods])
+  end,
+  case [Mod || {removed, Mod} <- List] of
+    [] -> ok;
+    RemovedMods -> io:format("    Removed modules: ~p\n", [RemovedMods])
+  end,
+  case [Mod || {diff, Mod} <- List] of
+    [] -> ok;
+    ChangedMods -> io:format("    Changed modules: ~p\n", [ChangedMods])
   end.
 
 check_if_installed() ->
@@ -97,6 +144,7 @@ check_if_installed() ->
   end.  
 
 create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->  
+  hipe_compile(),
   State = new_state_no_init(),
   State1 = State#cl_state{output_plt=InitPlt},
   Files = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
@@ -111,6 +159,22 @@ create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->
 		       user_plt=State1#cl_state.user_plt,
 		       supress_inline=true},
   cl_loop(run_analysis(State1, Analysis)).
+
+hipe_compile() ->
+  case erlang:system_info(hipe_architecture) of
+    undefined -> ok;
+    _ ->
+      {ok, dialyzer_succ_typings}       = hipe:c(dialyzer_succ_typings),
+      {ok, dialyzer_analysis_callgraph} = hipe:c(dialyzer_analysis_callgraph),
+      {ok, dialyzer_typesig}            = hipe:c(dialyzer_typesig),
+      {ok, dialyzer_dataflow}           = hipe:c(dialyzer_dataflow),
+      {ok, erl_types}                   = hipe:c(erl_types),
+      {ok, erl_bif_types}               = hipe:c(erl_bif_types),
+      {ok, cerl}                        = hipe:c(cerl),
+      {ok, dict}                        = hipe:c(dict),
+      {ok, lists}                       = hipe:c(lists),
+      ok
+  end.
 
 new_state(InitPlt) ->
   NewInitPlt = dialyzer_plt:from_file(dialyzer_init_plt, InitPlt),
@@ -132,9 +196,9 @@ init_output(State, DialyzerOptions) ->
 	{ok, File} ->
 	  State#cl_state{output=File};
 	{error, Reason} ->
-	  io:format("Could not open output file ~p, Reason ~p\n",
-		    [OutputFile, Reason]),
-	  exit(error)
+	  Msg = io_lib:format("Could not open output file ~p, Reason: ~p\n",
+			      [OutputFile, Reason]),
+	  error(State, lists:flatten(Msg))
       end
   end.
 
@@ -151,25 +215,22 @@ maybe_close_output_file(State) ->
 
 cl_loop(State) ->
   BackendPid = State#cl_state.backend_pid,
-  Output = State#cl_state.output,
   receive
     {BackendPid, log, _LogMsg} ->
-      %io:format(Output,"Log: ~s", [_LogMsg]),
+      %io:format(State#cl_state.output ,"Log: ~s", [_LogMsg]),
       cl_loop(State);
     {BackendPid, warnings, Warnings} ->
-      NewState = print_warnings(State, Warnings),
+      NewState = store_warnings(State, Warnings),
       cl_loop(NewState);
     {BackendPid, error, Msg} ->
-      io:format(Output, "~s", [Msg]),
-      cl_loop(State#cl_state{return_status=-1});
+      State1 = store_error(State, Msg),
+      cl_loop(State1#cl_state{return_status=?RET_INTERNAL_ERROR});
     {BackendPid, done} ->
       return_value(State);
     {BackendPid, ext_calls, ExtCalls} ->
-      Quiet = get(dialyzer_options_quiet),
-      if Quiet -> ok;
-	 true  -> io:format("\nUnknown functions: ~p\n", [ExtCalls])
-      end,
-      cl_loop(State);
+      Msg = io_lib:format("\nUnknown functions: ~p\n", [ExtCalls]),
+      NewState = print_ext_calls(State, Msg),
+      cl_loop(NewState);
     {'EXIT', BackendPid, {error, Reason}} ->
       Msg = failed_anal_msg(Reason),
       error(State, Msg);
@@ -183,44 +244,84 @@ cl_loop(State) ->
   end.
 
 failed_anal_msg(Reason) ->
-  io_lib:format("Analysis failed with error report: ~p\n", [Reason]).
+  io_lib:format("Analysis failed with error report:\n\t~p", [Reason]).
 
-print_warnings(State = #cl_state{output=Output}, Warnings) ->
-  NofOldWarnings = State#cl_state.nof_warnings,
-  case NofOldWarnings of
-    0 ->
-      io:format(Output, "\n", []); %% warnings are just starting to appaer
-    _ ->
-      ok
+print_ext_calls(State = #cl_state{quiet=true}, _Msg) ->
+  State;
+print_ext_calls(State = #cl_state{}, Msg) ->
+  print_warning_string(State, Msg),
+  State.
+
+store_error(State = #cl_state{stored_errors=StoredErrors}, Msg) ->
+  NewStoredErrors =
+    case StoredErrors =:= do_not_store of
+      true ->
+	error(State, Msg);
+      false ->
+	StoredErrors ++ [Msg]
+    end,
+  State#cl_state{stored_errors=NewStoredErrors}.
+
+store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
+				 stored_warnings=StoredWarnings}, Warnings) ->
+  NewStoredWarnings =
+    case StoredWarnings =:= do_not_store of
+      true -> 
+	WarningString = lists:flatten([io_lib:format("~w: ~s", [Fun, W])
+				       || {Fun, W} <- Warnings]),
+	print_warning_string(State, WarningString),
+	StoredWarnings;
+      false ->
+	StoredWarnings ++ Warnings
+    end,
+  NofNewWarning = length(Warnings),
+  State#cl_state{nof_warnings=NofOldWarnings+NofNewWarning, 
+		 stored_warnings=NewStoredWarnings}.
+
+print_warning_string(#cl_state{nof_warnings=NofWarn, output=Output}, String) ->
+  case NofWarn of
+    0 -> io:format(Output, "\n", []); %% warnings are just starting to appear
+    _ -> ok
   end,
-  io:format(Output, "~s", [Warnings]),
-  NofNewWarning = length(string:tokens(lists:flatten(Warnings), "\n")),
-  State#cl_state{nof_warnings=NofOldWarnings+NofNewWarning}.
+  io:format(Output, "~s", [String]).
+
+error(Msg) ->
+  throw({dialyzer_error, Msg}).
 
 error(State, Msg) ->
-  io:format(State#cl_state.output, "~s", [Msg]),
-  return_value(State#cl_state{return_status=-1}).
-
-return_value(State = #cl_state{return_status=-1}) ->
-  maybe_close_output_file(State),
-  ?RET_INTERNAL_ERROR;
-return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
-			       user_plt=UserPlt, init_plt=InitPlt}) ->
-  if OutputPlt =/= undefined ->
-      case dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], OutputPlt) of
-	ok -> ok;
-	{error, What} -> 
-	  error(State, io_lib:format("Error while writing plt to file: ~w\n", 
-				     [What]))
-      end;
-     true ->
-      ok
+  case State#cl_state.output of
+    standard_io -> ok;
+    Outfile -> io:format(Outfile, "\n~s\n", [Msg])
   end,
+  throw({dialyzer_error, Msg}).
+
+return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
+			       stored_errors=StoredErrors,
+			       stored_warnings=StoredWarnings,
+			       user_plt=UserPlt, init_plt=InitPlt}) ->
   maybe_close_output_file(State),
-  if NofWarnings =:= 0 ->
-      ?RET_NOTHING_SUSPICIOUS;
-     true ->
-      ?RET_DISCREPANCIES_FOUND
+  RetValue =
+    case State#cl_state.return_status of
+      ?RET_INTERNAL_ERROR -> ?RET_INTERNAL_ERROR;
+      _ ->      
+	case OutputPlt =:= undefined of
+	  true -> ok;
+	  false -> dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], 
+						     OutputPlt)
+	end,
+	if NofWarnings =:= 0 -> ?RET_NOTHING_SUSPICIOUS;
+	   true              -> ?RET_DISCREPANCIES_FOUND
+	end
+    end,
+  case StoredWarnings =:= do_not_store of
+    true ->
+      %% Assert
+      do_not_store = StoredErrors,
+      RetValue;
+    false ->
+      %% Assert
+      false = StoredErrors =:= do_not_store,
+      {RetValue, StoredWarnings, StoredErrors}
   end.
 
 
@@ -236,7 +337,8 @@ build_analysis_record(State, DialyzerOptions) ->
   Defines = DialyzerOptions#options.defines,
   SupressInline = DialyzerOptions#options.supress_inline,
   Files0 = ordsets:from_list(DialyzerOptions#options.files),
-  Files1 = ordsets:from_list(lists:concat([filelib:wildcard(F) || F <- Files0])),
+  Files1 = ordsets:from_list(lists:concat([filelib:wildcard(F) 
+					   || F <- Files0])),
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
   CoreTransform = DialyzerOptions#options.core_transform,

@@ -20,7 +20,7 @@
 
 -module(ssh_tcp_wrap).
 
--export([spawn_server/3, server/3]).
+-export([spawn_server/3, server/4]).
 -export([server_init/4, server_loop/3, accept_loop/4]). %% helper
 
 -define(ACCEPT_TIMEOUT, 10000).
@@ -62,9 +62,10 @@ server_init(Starter, Port, Opts, Fun) ->
 
 
 %% Run the server loop
-server(Port, Opts, Fun) ->
+server(Port, Opts, Fun, From) ->
     case gen_tcp:listen(Port, Opts) of
 	{ok, Listen} ->
+	    From ! ok,
 	    server_loop(self(), Listen, Fun);
 	Error ->
 	    error_logger:format(
