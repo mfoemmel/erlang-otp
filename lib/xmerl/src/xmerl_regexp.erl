@@ -379,8 +379,7 @@ matches_comp([_|Cs]=S0, RE, P0) ->
 	    [{P0,0}|matches_comp(tl(S1), RE, P0+1)];
 	{match,P1,S1} ->
 	    [{P0,P1-P0}|matches_comp(S1, RE, P1)];
-	nomatch -> matches_comp(Cs, RE, P0+1);
-	never_match -> []
+	nomatch -> matches_comp(Cs, RE, P0+1)
     end;
 matches_comp([], _RE, _P) -> [].
 
@@ -430,8 +429,7 @@ sub_comp([C|Cs]=S0, P0, RE, Bef, Rep) ->
 	    sub_comp(Cs, P0+1, RE, [C|Bef], Rep);
 	{match,P1,Rest} ->
 	    {yes,reverse(Bef, sub_repl(Rep, substr(S0, 1, P1-P0), Rest))};
-	nomatch -> sub_comp(Cs, P0+1, RE, [C|Bef], Rep);
-	never_match -> no			%No need to go on
+	nomatch -> sub_comp(Cs, P0+1, RE, [C|Bef], Rep)
     end;
 sub_comp([], _P, _RE, _Bef, _Rep) -> no.
 
@@ -500,8 +498,7 @@ gsub_comp([C|Cs]=S0, P0, RE, Bef, Rep) ->
 		    {reverse(Bef, sub_repl(Rep, substr(S0, 1, P1-P0), S1)),1}
 	    end;
 	%%No match so step forward saving C on Bef.
-	nomatch -> gsub_comp(Cs, P0+1, RE, [C|Bef], Rep);
-	never_match -> no			%No need to go on
+	nomatch -> gsub_comp(Cs, P0+1, RE, [C|Bef], Rep)
     end;
 gsub_comp([], _P, _RE, _Bef, _Rep) -> no.
 
@@ -540,7 +537,7 @@ split_apply_re([C|Cs]=S, P0, RE, T, Sub) ->
 
 split_apply_comp(S, RE, Trim) -> split_apply_comp(S, 1, RE, Trim, []).
 
-split_apply_comp([], _P, _RE, true, []) -> [];
+%%split_apply_comp([], _P, _RE, true, []) -> [];
 split_apply_comp([], _P, _RE, _T, Sub) -> [reverse(Sub)];
 split_apply_comp([C|Cs]=S, P0, RE, T, Sub) ->
     case comp_apply(S, P0, RE) of
@@ -549,8 +546,7 @@ split_apply_comp([C|Cs]=S, P0, RE, T, Sub) ->
 	{match,P1,S1} ->
 	    [reverse(Sub)|split_apply_comp(S1, P1, RE, T, [])];
 	nomatch ->
-	    split_apply_comp(Cs, P0+1, RE, T, [C|Sub]);
-	never_match -> [reverse(Sub, S)]	%No need to go on
+	    split_apply_comp(Cs, P0+1, RE, T, [C|Sub])
     end.
 
 %% sub_match(String, RegExp) ->
@@ -939,10 +935,10 @@ expand_opt(RE, N) ->
 %% if PrefixStr is a prefix of Str then return {ok,RemainingStr}
 %% otherwise return false
 
-find_prefix([C|Prest], [C|Rest]) ->
-    find_prefix(Prest, Rest);
-find_prefix([], Rest) -> {yes,Rest};
-find_prefix(_, _) -> no.
+%% find_prefix([C|Prest], [C|Rest]) ->
+%%     find_prefix(Prest, Rest);
+%% find_prefix([], Rest) -> {yes,Rest};
+%% find_prefix(_, _) -> no.
 
 %% in_char_class(Char, Class) -> bool().
 

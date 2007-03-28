@@ -25,8 +25,10 @@
 %% API
 -export([start_flex_scanner/0, stop_flex_scanner/1,
 	 read_messages/1,
-	 expand_dirs/1,
-	 display_os_info/0, display_system_info/0, display_app_info/0,
+	 expand_dirs/2,
+	 display_os_info/0, 
+	 display_system_info/0, 
+	 display_app_info/0,
 	 detect_version/3]).
 
 %% Internal exports
@@ -90,10 +92,35 @@ display_os_info() ->
 
 display_system_info() ->
     SysArch = string:strip(erlang:system_info(system_architecture),right,$\n),
+    OtpRel  = otp_release(),
     SysVer  = string:strip(erlang:system_info(system_version),right,$\n),
+    SysHT   = erlang:system_info(heap_type),
+    SysGHSz = erlang:system_info(global_heaps_size),
+    SysSMP  = erlang:system_info(smp_support),
+    SysNumSched  = erlang:system_info(schedulers),
+    SysProcLimit = erlang:system_info(process_limit),
+    SysThreads   = erlang:system_info(threads),
+    SysTPSz      = erlang:system_info(thread_pool_size),
     io:format("System architecture: ~s~n", [SysArch]),
+    io:format("OTP release:         ~s~n", [OtpRel]),
     io:format("System version:      ~s~n", [SysVer]),
+    io:format("Heap type:           ~w~n", [SysHT]),
+    io:format("Global heap size:    ~w~n", [SysGHSz]),
+    io:format("Thread support:      ~w~n", [SysThreads]),
+    io:format("Thread pool size:    ~w~n", [SysTPSz]),
+    io:format("SMP support:         ~w~n", [SysSMP]),
+    io:format("Num schedulers:      ~w~n", [SysNumSched]),
+    io:format("Process limit:       ~w~n", [SysProcLimit]),
     ok.
+
+
+otp_release() ->
+    case (catch erlang:system_info(otp_release)) of
+	R when is_list(R) ->
+	    R;
+	_ ->
+	    "-"
+    end.
 
 
 %%----------------------------------------------------------------------
@@ -132,19 +159,77 @@ display_asn1_info() ->
 %% 
 %%----------------------------------------------------------------------
 
-expand_dirs(Dirs) ->
-    expand_dirs(Dirs, []).
+expand_dirs(Dirs, DrvInclude) ->
+    expand_dirs(Dirs, DrvInclude, []).
 
-expand_dirs([], EDirs) ->
+expand_dirs([], _, EDirs) ->
     lists:reverse(lists:flatten(EDirs));
-expand_dirs([Dir|Dirs], EDirs) when atom(Dir) ->
-    EDir = expand_dir(atom_to_list(Dir)),
-    expand_dirs(Dirs, [EDir|EDirs]);
-expand_dirs([Dir|Dirs], EDirs) when list(Dir) ->
-    EDir = expand_dir(Dir),
-    expand_dirs(Dirs, [EDir|EDirs]).
+expand_dirs([Dir|Dirs], DrvInclude, EDirs) when atom(Dir) ->
+    EDir = expand_dir(atom_to_list(Dir), DrvInclude),
+    expand_dirs(Dirs, DrvInclude, [EDir|EDirs]);
+expand_dirs([Dir|Dirs], DrvInclude, EDirs) when list(Dir) ->
+    EDir = expand_dir(Dir, DrvInclude),
+    expand_dirs(Dirs, DrvInclude, [EDir|EDirs]).
 
-expand_dir(Dir) ->
+expand_dir(Dir, only_drv) ->
+    case Dir of
+	"pretty" ->
+	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},
+	     {Dir, megaco_pretty_text_encoder, [flex_scanner]}];
+	"compact" ->
+	    [{Dir, megaco_compact_text_encoder, [flex_scanner]},
+	     {Dir, megaco_compact_text_encoder, [flex_scanner]}];
+	"ber" ->
+	    [{Dir, megaco_ber_bin_encoder, [driver,native]},
+	     {Dir, megaco_ber_bin_encoder, [driver]},
+	     {Dir, megaco_ber_bin_encoder, [driver,native]},
+	     {Dir, megaco_ber_bin_encoder, [driver]}];
+	"per" ->
+	    [{Dir, megaco_per_bin_encoder, [driver,native]},
+	     {Dir, megaco_per_bin_encoder, [native]},
+	     {Dir, megaco_per_bin_encoder, [driver,native]},
+	     {Dir, megaco_per_bin_encoder, [native]}];
+	"erlang" ->
+	    Encoder = megaco_erl_dist_encoder,
+	    [
+	     {Dir, Encoder, [megaco_compressed,compressed]},
+	     {Dir, Encoder, [compressed]},
+	     {Dir, Encoder, [megaco_compressed,compressed]},
+	     {Dir, Encoder, [compressed]}
+	    ];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
+expand_dir(Dir, no_drv) ->
+    case Dir of
+	"pretty" ->
+	    [{Dir, megaco_pretty_text_encoder, []},
+	     {Dir, megaco_pretty_text_encoder, []}];
+	"compact" ->
+	    [{Dir, megaco_compact_text_encoder, []},
+	     {Dir, megaco_compact_text_encoder, []}];
+	"ber" ->
+	    [{Dir, megaco_ber_bin_encoder, [native]},
+	     {Dir, megaco_ber_bin_encoder, []},
+	     {Dir, megaco_ber_bin_encoder, [native]},
+	     {Dir, megaco_ber_bin_encoder, []}];
+	"per" ->
+	    [{Dir, megaco_per_bin_encoder, [native]},
+	     {Dir, megaco_per_bin_encoder, []},
+	     {Dir, megaco_per_bin_encoder, [native]},
+	     {Dir, megaco_per_bin_encoder, []}];
+	"erlang" ->
+	    Encoder = megaco_erl_dist_encoder,
+	    [
+	     {Dir, Encoder, [megaco_compressed]},
+ 	     {Dir, Encoder, []},
+	     {Dir, Encoder, [megaco_compressed]},
+ 	     {Dir, Encoder, []}
+	    ];
+	Else ->
+	    error({invalid_codec, Else})
+    end;
+expand_dir(Dir, _) ->
     case Dir of
 	"pretty" ->
 	    [{Dir, megaco_pretty_text_encoder, [flex_scanner]},

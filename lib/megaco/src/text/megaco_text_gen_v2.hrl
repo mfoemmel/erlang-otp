@@ -1958,25 +1958,33 @@ enc_embeddedSignalsDescriptor(Val, State) ->
     
 enc_EventBufferDescriptor({'EventBufferDescriptor',Val}, State) ->
     enc_EventBufferDescriptor(Val, State);
-enc_EventBufferDescriptor([Mand | Opt], State) ->
+enc_EventBufferDescriptor([], _State) ->
+    [
+     ?EventBufferToken
+    ];
+enc_EventBufferDescriptor(EventSpecs, State) 
+  when is_list(EventSpecs) and (length(EventSpecs) >= 1) ->
     [
      ?EventBufferToken,
      ?LBRKT_INDENT(State),
-     enc_eventSpecs([Mand | Opt], ?INC_INDENT(State)),
+     enc_eventSpecs(EventSpecs, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)   
-    ].
+    ];
+enc_EventBufferDescriptor(EventSpecs, _State) ->
+    error({bad_eventSpecs, EventSpecs}).
 
 enc_eventSpecs([Mand | Opt], State) ->
-    [enc_eventSpecs(Mand, State),
+    [enc_eventSpec(Mand, State),
      [[?COMMA_INDENT(State), enc_eventSpec(Val, State)] || Val <- Opt]].
 
-enc_eventSpec(Val, State)
-  when record(Val, 'EventSpec') ->
+enc_eventSpec(#'EventSpec'{eventName    = Name,
+			   streamID     = SID,
+			   eventParList = EPL}, State) ->
     [
-     enc_EventName(Val#'EventSpec'.eventName, State),
+     enc_EventName(Name, State),
      enc_opt_brackets(
-       enc_list([{[Val#'EventSpec'.streamID],   fun enc_eventStream/2},
-		 {Val#'EventSpec'.eventParList, fun enc_eventOther/2}],
+       enc_list([{[SID], fun enc_eventStream/2}, 
+		 {EPL,   fun enc_eventOther/2}],
 		?INC_INDENT(State)),
        State)
     ].
@@ -2486,14 +2494,16 @@ enc_integer(Val, _State, Min, Max) ->
 %% Encodes a list of elements with separator tokens between
 %% the elements. Optional asn1_NOVALUE values are ignored.
 
+%% enc_list(asn1_NOVALUE, _State) ->
+%%     [];
+%% enc_list([], _State) ->
+%%     [];
 enc_list(List, State) ->
-%     d("enc_list -> entry"),
     enc_list(List, State, fun(_S) -> ?COMMA_INDENT(_S) end, false).
 
+enc_list([], _State, _SepEncoder, _NeedsSep) ->
+    [];
 enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
-%     d("enc_list -> entry with"
-%       "~n   Elems:       ~p"
-%       "~n   ElemEncoder: ~p", [Elems, ElemEncoder]),
     case do_enc_list(Elems, State, ElemEncoder, SepEncoder, NeedsSep) of
 	[] ->
 	    enc_list(Tail, State, SepEncoder, NeedsSep);
@@ -2501,31 +2511,17 @@ enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
 	    [List,
 	     enc_list(Tail, State, SepEncoder, true)]
     end;
-enc_list([], _State, _SepEncoder, _NeedsSep) ->
-%     d("enc_list -> entry when done with []"),
-    [];
-enc_list(asn1_NOVALUE, _State, _SepEncoder, _NeedsSep) ->
-%     d("enc_list -> entry when done with asn1_NOVALUE"),
-    [];
 enc_list(A, B, C, D) ->
     error({invlid_list, A, B, C, D}).
 
 do_enc_list(asn1_NOVALUE, _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
-%     d("do_enc_list -> entry when done with asn1_NOVALUE"),
     [];
 do_enc_list([], _State, _ElemEncoder, _SepEncoder, _NeedsSep) ->
-%     d("do_enc_list -> entry when done with []"),
     [];
 do_enc_list([asn1_NOVALUE | T], State, ElemEncoder, SepEncoder, NeedsSep) ->
-%     d("do_enc_list -> entry with asn1_NOVALUE"),
     do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);
 do_enc_list([H | T], State, ElemEncoder, SepEncoder, NeedsSep)
   when function(ElemEncoder), function(SepEncoder) ->
-%     d("do_enc_list -> entry with"
-%       "~n   H:           ~p"
-%       "~n   NeedsSep:    ~p"
-%       "~n   ElemEncoder: ~p"
-%       "~n   SepEncoder:  ~p", [H, NeedsSep, ElemEncoder, SepEncoder]),
     case ElemEncoder(H, State) of
 	[] ->
 	    do_enc_list(T, State, ElemEncoder, SepEncoder, NeedsSep);

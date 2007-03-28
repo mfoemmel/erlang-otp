@@ -18,7 +18,7 @@
 -module(inet_config).
 
 -include("inet_config.hrl").
--include_lib("kernel/include/inet.hrl").
+-include("inet.hrl").
 
 -import(lists, [foreach/2, member/2, reverse/1, flatten/1]).
 

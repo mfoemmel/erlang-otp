@@ -417,7 +417,9 @@ literal(#k_bin_end{}, Ctxt) ->
 	false -> {bin_end,Ctxt}
     end;
 literal(#k_tuple{es=Es}, Ctxt) ->
-    {tuple,literal_list(Es, Ctxt)}.
+    {tuple,literal_list(Es, Ctxt)};
+literal(#k_literal{val=V}, _Ctxt) ->
+    {literal,V}.
 
 literal_list(Ks, Ctxt) ->
     map(fun(K) -> literal(K, Ctxt) end, Ks).

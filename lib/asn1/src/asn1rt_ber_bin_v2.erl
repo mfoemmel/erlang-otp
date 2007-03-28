@@ -388,23 +388,13 @@ decode_primitive_incomplete([[parts,TagNo]|_RestTag],Bin) ->
 	    {error,{asn1,"tag failure",TagNo,Err}}
     end;
 decode_primitive_incomplete([mandatory|RestTag],Bin) ->
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,RestTag,Rest);
-	 _ ->
-	    {error,{asn1,"partial incomplete decode failure"}}
-    end;
+    {{Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
+    decode_incomplete2(Form,TagNo,Len,V,RestTag,Rest);
 %% A choice that is a toptype or a mandatory component of a
 %% SEQUENCE or SET.
 decode_primitive_incomplete([[mandatory|Directives]],Bin) ->
-    case decode_tlv(Bin) of
-	{{Form,TagNo,Len,V},Rest} ->
-	    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
-	 _ ->
-	    {error,{asn1,"partial incomplete decode failure"}}
-    end;
-%decode_primitive_incomplete([L],Bin) when list(L) ->
-%    decode_primitive_incomplete(L,Bin);
+    {{Form,TagNo,Len,V},Rest} = decode_tlv(Bin),
+    decode_incomplete2(Form,TagNo,Len,V,Directives,Rest);
 decode_primitive_incomplete([],Bin) ->
     decode_primitive(Bin).
 
@@ -442,34 +432,22 @@ decode_constructed_incomplete([mandatory|RestTag],Bin) ->
     [Tlv|decode_constructed_incomplete(RestTag,Rest)];
 decode_constructed_incomplete(Directives=[[Alt,_]|_],Bin) 
   when Alt == alt_undec; Alt == alt; Alt == alt_parts ->
-%    io:format("Directives: ~p~n",[Directives]),
-    case decode_tlv(Bin) of
-	{{_Form,TagNo,_Len,V},Rest} ->
-	    case incomplete_choice_alt(TagNo,Directives) of
-		{alt_undec,_} ->
-		    LenA = size(Bin)-size(Rest),
-		    <<A:LenA/binary,Rest/binary>> = Bin,
-		    A;
-%		    {UndecBin,_}=decode_incomplete_bin(Bin),
-%		    UndecBin;
-%		    [{TagNo,V}];
-		{alt,InnerDirectives} ->
-		    {Tlv,Rest} = decode_primitive_incomplete(InnerDirectives,V),
-		    {TagNo,Tlv};
-%		    {Tlv,_} = decode_primitive(V),
-%		    [{TagNo,Tlv}];
-		{alt_parts,_} ->
-		    %{{TagNo,decode_parts_incomplete(V)},Rest}; % maybe wrong
-		    [{TagNo,decode_parts_incomplete(V)}];
-		no_match -> % if a choice alternative was encoded that
-                            % was not specified in the config file,
-                            % thus decode component anonomous.
-%		    {error,{asn1,"partial incomplete decode failure",Err}}
-		    {Tlv,_}=decode_primitive(Bin),
-		    Tlv
-	    end;
-	_ ->
-	    {error,{asn1,"partial incomplete decode failure"}}
+    {{_Form,TagNo,_Len,V},Rest} = decode_tlv(Bin),
+    case incomplete_choice_alt(TagNo,Directives) of
+	{alt_undec,_} ->
+	    LenA = size(Bin)-size(Rest),
+	    <<A:LenA/binary,Rest/binary>> = Bin,
+	    A;
+	{alt,InnerDirectives} ->
+	    {Tlv,Rest} = decode_primitive_incomplete(InnerDirectives,V),
+	    {TagNo,Tlv};
+	{alt_parts,_} ->
+	    [{TagNo,decode_parts_incomplete(V)}];
+	no_match -> %% if a choice alternative was encoded that
+	    %% was not specified in the config file,
+	    %% thus decode component anonomous.
+	    {Tlv,_}=decode_primitive(Bin),
+	    Tlv
     end;
 decode_constructed_incomplete([TagNo|RestTag],Bin) ->
 %%    {Tlv,Rest} = decode_primitive_incomplete([TagNo],Bin),

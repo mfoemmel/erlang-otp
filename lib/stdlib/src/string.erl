@@ -23,6 +23,7 @@
 	 sub_word/2,sub_word/3,left/2,left/3,right/2,right/3,
 	 sub_string/2,sub_string/3,centre/2,centre/3]).
 -export([re_sh_to_awk/1,re_parse/1,re_match/2,re_sub/3,re_gsub/3,re_split/2]).
+-export([to_upper/1, to_lower/1]).
 
 -deprecated([{re_sh_to_awk,1},{re_parse,1},{re_match,2},{re_sub,3},
              {re_gsub,3},{re_split,2},{index,2}]).
@@ -324,3 +325,35 @@ re_gsub(String, RegExp, New) ->
     end.
 
 re_split(String, RegExp) -> regexp:split(String, RegExp).
+
+%% The long awaited to_upper and to_lower
+%% ISO/IEC 8859-1 (latin1) letters are converted, others are ignored
+%%
+
+to_lower_char(C) when is_integer(C),  C >= $A, C =< $Z ->
+    C + 32;
+to_lower_char(C) when is_integer(C),  C >= 16#C1, C =< 16#D6 ->
+    C + 32;
+to_lower_char(C) when is_integer(C),  C >= 16#D8, C =< 16#DE ->
+    C + 32;
+to_lower_char(C) ->
+    C.
+
+to_upper_char(C) when is_integer(C),  C >= $a, C =< $z ->
+    C - 32;
+to_upper_char(C) when is_integer(C),  C >= 16#E1, C =< 16#F6 ->
+    C - 32;
+to_upper_char(C) when is_integer(C),  C >= 16#F8, C =< 16#FE ->
+    C - 32;
+to_upper_char(C) ->
+    C.
+
+to_lower(S) when is_list(S) ->
+    [to_lower_char(C) || C <- S];
+to_lower(C) when is_integer(C) ->
+    to_lower_char(C).
+
+to_upper(S) when is_list(S) ->
+    [to_upper_char(C) || C <- S];
+to_upper(C) when is_integer(C) ->
+    to_upper_char(C).

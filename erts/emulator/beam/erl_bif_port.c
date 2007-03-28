@@ -43,7 +43,7 @@ extern ErlDrvEntry fd_driver_entry;
 extern ErlDrvEntry vanilla_driver_entry;
 extern ErlDrvEntry spawn_driver_entry;
 
-static int open_port(Process* p, Eterm name, Eterm settings);
+static int open_port(Process* p, Eterm name, Eterm settings, int *err_nump);
 static byte* convert_environment(Process* p, Eterm env);
 
 BIF_RETTYPE open_port_2(BIF_ALIST_2)
@@ -51,16 +51,17 @@ BIF_RETTYPE open_port_2(BIF_ALIST_2)
     int port_num;
     Eterm port_val;
     char *str;
+    int err_num;
 
     erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_MAIN);
 
-    if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2)) < 0) {
+    if ((port_num = open_port(BIF_P, BIF_ARG_1, BIF_ARG_2, &err_num)) < 0) {
        erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
        if (port_num == -3) {
 	  BIF_ERROR(BIF_P, BADARG);
        }
        if (port_num == -2)
-	  str = erl_errno_id(errno);
+	  str = erl_errno_id(err_num);
        else
 	  str = "einval";
        BIF_P->fvalue = am_atom_put(str, strlen(str));
@@ -432,7 +433,7 @@ BIF_RETTYPE port_get_data_1(BIF_ALIST_1)
  * -3 if argument parsing failed.
  */
 static int
-open_port(Process* p, Eterm name, Eterm settings)
+open_port(Process* p, Eterm name, Eterm settings, int *err_nump)
 {
 #define OPEN_PORT_ERROR(VAL) do { port_num = (VAL); goto do_return; } while (0)
     int i, port_num;
@@ -464,6 +465,8 @@ open_port(Process* p, Eterm name, Eterm settings)
     binary_io = 0;
     soft_eof = 0;
     linebuf = 0;
+
+    *err_nump = 0;
 
     if (is_not_list(settings) && is_not_nil(settings))
 	OPEN_PORT_ERROR(-3);
@@ -661,10 +664,11 @@ open_port(Process* p, Eterm name, Eterm settings)
 
     if (driver != &spawn_driver_entry && opts.exit_status) {
 	OPEN_PORT_ERROR(-3);
-   }
+    }
 
-    if ((port_num = open_driver(driver, p->id, name_buf, &opts)) < 0) {
-	DEBUGF(("open_driver returned %d\n", port_num));
+    port_num = erts_open_driver(driver, p->id, name_buf, &opts, err_nump);
+    if (port_num < 0) {
+	DEBUGF(("open_driver returned %d(%d)\n", port_num, *err_nump));
 	OPEN_PORT_ERROR(port_num);
     }
 

@@ -1,7 +1,7 @@
 #! /bin/sh
 
 # Expected autoconf version
-EXPECTED_AUTOCONF_VERSION=2.13
+EXPECTED_AUTOCONF_VERSION=2.59
 
 # clearmake command to use
 clearmake=false
@@ -18,7 +18,7 @@ AUTOCONF_SUBDIRS="$AUTOCONF_SUBDIRS erts ."
 usage ()
 {
     echo "Available options:"
-    echo "setup [-a] - does autoconf, configure and opt."
+    echo "setup [-a] [<configure parameters>] - does autoconf, configure and opt."
     echo "all [-a] <dir> - does autoconf, configure, primary, boot, release"
     echo "autoconf - (re)build the configure scripts"
     echo "configure [<configure parameters>] - does the actual configuration"
@@ -89,6 +89,12 @@ set_config_flags ()
 	
 do_autoconf ()		
 {
+        if target_contains win32; then
+	    # Select the correct autoconf on cygwin
+	    save_want_autoconf_ver=$WANT_AUTOCONF_VER
+	    WANT_AUTOCONF_VER=$EXPECTED_AUTOCONF_VERSION
+	    export WANT_AUTOCONF_VER
+	fi
 	exp_ac_vsn=$EXPECTED_AUTOCONF_VERSION
 	ac_vsn_blob=`autoconf --version`
 	ac_vsn=`echo x$ac_vsn_blob | sed "s|[^0-9]*\([0-9][^ \t\n]*\).*|\1|"`
@@ -106,6 +112,12 @@ do_autoconf ()
 		echo "***************************************************" 1>&2
 		;;
 	esac
+
+	if [ -d erts/autom4te.cache ]; then
+	    echo "Cleaning erts/autom4te.cache"
+	    rm -f erts/autom4te.cache/*
+	fi
+
 	save_ot="$OVERRIDE_TARGET"
 	save_t="$TARGET"
 	if [ ! -z "$OVERRIDE_CONFIGURE" ]; then
@@ -140,7 +152,7 @@ do_autoconf ()
 			echo "=== running autoconf in $d"
 			( cd $d && autoconf ) || exit 1
 		fi
-		if [ -f $d/acconfig.h ]; then
+		if [ x$d = x"erts" ]; then
 			echo "=== running autoheader in $d"
 			( cd $d && autoheader configure.in > config.h.in ) \
 			    || exit 1
@@ -149,6 +161,10 @@ do_autoconf ()
 	OVERRIDE_TARGET="$save_ot"
 	export OVERRIDE_TARGET
 	TARGET="$save_t"
+        if target_contains win32; then
+	    WANT_AUTOCONF_VER=$save_want_autoconf_ver
+	    export WANT_AUTOCONF_VER
+	fi
 }
 
 mk_targetdir ()
@@ -228,7 +244,7 @@ do_lazy_configure ()
 	    test -d $dir/$TARGET || mkdir $dir/$TARGET
 	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
 	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
-	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    test x$c_dir = x"erts" && xcs_dep="$xcs_dep $dir/config.h.in"
 	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
 		MAKE="$MAKE" TARGET=$TARGET                                  \
 		ERL_TOP=$ERL_TOP                                             \
@@ -265,7 +281,7 @@ do_lazy_configure_clean ()
 	    test -d $dir/$TARGET || mkdir $dir/$TARGET
 	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
 	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
-	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    test x$c_dir = x"erts" && xcs_dep="$xcs_dep $dir/config.h.in"
 	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
 		MAKE="$MAKE" TARGET=$TARGET                                  \
 		ERL_TOP=$ERL_TOP                                             \
@@ -300,7 +316,7 @@ do_lazy_configure_target_clean ()
 	    test -d $dir/$TARGET || mkdir $dir/$TARGET
 	    test -f $dir/aclocal.m4 && xc_dep="$xcs_dep $dir/aclocal.m4"
 	    test -f $dir/acsite.m4 && xc_dep="$xcs_dep $dir/acsite.m4"
-	    test -f $dir/acconfig.h && xcs_dep="$xcs_dep $dir/config.h.in"
+	    test x$c_dir = x"erts" && xcs_dep="$xcs_dep $dir/config.h.in"
 	    $MAKE -f $ERL_TOP/make/lazy_configure.mk                         \
 		MAKE="$MAKE" TARGET=$TARGET                                  \
 		ERL_TOP=$ERL_TOP                                             \
@@ -712,12 +728,25 @@ case "$1" in
 		fi;
 		do_release "$2";;
 	setup)
-		if [ $minus_a_flag = false ]; then 
+		shift;
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		else
 		    TYPE=opt
 		fi;
 		FLAVOR=plain
 		do_autoconf; 
-		do_configure; 
+		do_configure "$@";
+		do_noboot_lib_and_erts;;
+	lazy_setup)
+		shift;
+		if [ $minus_a_flag = true ]; then
+		    shift
+		else
+		    TYPE=opt
+		fi;
+		FLAVOR=plain
+		do_lazy_configure "$@";
 		do_noboot_lib_and_erts;;
 	autoconf)
 		do_autoconf;;

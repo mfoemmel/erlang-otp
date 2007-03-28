@@ -65,7 +65,7 @@
 
 fix_catches(CFG) ->
   {Map, State} = build_mapping(find_catches(init_state(CFG))),
-  get_cfg(rewrite(State, Map)).
+  hipe_icode_cfg:remove_unreachable_code(get_cfg(rewrite(State, Map))).
 
 %% This finds the set of possible catch-stacks for each basic block
 

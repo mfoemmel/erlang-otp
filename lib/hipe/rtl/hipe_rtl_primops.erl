@@ -14,7 +14,7 @@
 
 -module(hipe_rtl_primops). 
 
--export([gen_primop/4, gen_enter_primop/4, gen_call_builtin/6,
+-export([gen_primop/3, gen_enter_primop/3, gen_call_builtin/6,
 	 gen_enter_builtin/2]).
 
 %% --------------------------------------------------------------------
@@ -113,7 +113,7 @@ fp_fail_code(TmpFailLbl, FailLbl) ->
 %%   Tail calls to primops (enter_fun, apply, etc.) are not handled here!
 %% @end
 
-gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
+gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab) ->
   GotoCont = hipe_rtl:mk_goto(Cont),
   case Op of
     %%
@@ -122,31 +122,9 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
     {hipe_bs_primop, BsOP} ->
       {FailLabelName, FailCode} = 
 	gen_fail_code(Fail, badarg, IsGuard),
-      case proplists:get_bool(inline_bs, Options) of
-	true ->	
-	  {Code1, NewTab} =
-	    hipe_rtl_inline_bs_ops:gen_rtl(BsOP, Args, Dst, Cont,
-					   FailLabelName, ConstTab);
-	false ->
-	  {Code1, NewTab} =
-	    hipe_rtl_bs_ops:gen_rtl(BsOP, Args, Dst, Cont,
-				    FailLabelName, ConstTab)
-      end,
-      {[Code1,FailCode], NewTab};
-    {hipe_bs_primop2, BsOP} ->
-      {FailLabelName, FailCode} = 
-	gen_fail_code(Fail, badarg, IsGuard),
-      Code1 =
-	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName),
-      {[Code1,FailCode], ConstTab};
-    
-    {hipe_bsi_primop, BsOP} ->
-      {FailLabelName, FailCode} = 
-	gen_fail_code(Fail, badarg, IsGuard),
-      Code1 = hipe_rtl_cerl_bs_ops:gen_rtl(BsOP, Args, Dst, Cont,
-					   FailLabelName),
-      {[Code1,FailCode], ConstTab};
-    
+      {Code1,NewConstTab} = 
+	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName, ConstTab),
+      {[Code1,FailCode], NewConstTab};
     %%
     %% Other primops
     %%
@@ -282,13 +260,13 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
 	  %% GC test
 	  %%---------------------------------------------
 	  #gc_test{need=Need} ->
-	    [hipe_rtl:mk_gctest(Need),GotoCont];
+	    [hipe_rtl:mk_gctest(Need), GotoCont];
 
 	  %%---------------------------------------------
 	  %% Process handling
 	  %%---------------------------------------------
 	  redtest ->
-	    [gen_redtest(1),GotoCont];
+	    [gen_redtest(1), GotoCont];
 	  %%---------------------------------------------
 	  %% Receives
 	  %%---------------------------------------------
@@ -405,7 +383,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab, Options) ->
       {Code, ConstTab}
   end.
 
-gen_enter_primop({Op, Args}, IsGuard, ConstTab, Options) ->
+gen_enter_primop({Op, Args}, IsGuard, ConstTab) ->
   case Op of
     enter_fun ->
       %% Tail-call to a closure must preserve tail-callness!
@@ -425,7 +403,7 @@ gen_enter_primop({Op, Args}, IsGuard, ConstTab, Options) ->
       OkLab = hipe_rtl:mk_new_label(),
       {Code,ConstTab1} = 
 	gen_primop({Op,Dst,Args,hipe_rtl:label_name(OkLab),[]}, 
-		   IsGuard, ConstTab, Options),
+		   IsGuard, ConstTab),
       {Code ++ [OkLab, hipe_rtl:mk_return(Dst)], ConstTab1}
   end.
 
@@ -1039,9 +1017,9 @@ gen_tuple_header(Ptr, Arity) ->
 %%% Receives
 
 gen_check_get_msg(Dsts, GotoCont, Fail) ->
-  case ?ERTS_IS_SMP of
-    0 -> gen_check_get_msg_notsmp(Dsts, GotoCont, Fail);
-    1 -> gen_check_get_msg_smp(Dsts, GotoCont, Fail)
+  case (?ERTS_IS_SMP + ?ERTS_IS_NOFRAG) of
+    0 -> gen_check_get_msg_inline(Dsts, GotoCont, Fail);
+    _ -> gen_check_get_msg_outofline(Dsts, GotoCont, Fail)
   end.
 
 gen_clear_timeout([], GotoCont) ->
@@ -1058,7 +1036,7 @@ gen_clear_timeout([], GotoCont) ->
 %%%	ErlMessage *msg = *save;
 %%%	if (!msg) goto Fail;
 %%%	Dst = msg->m[0];
-gen_check_get_msg_notsmp(Dsts, GotoCont, Fail) ->
+gen_check_get_msg_inline(Dsts, GotoCont, Fail) ->
   Save = hipe_rtl:mk_new_reg(),
   Msg = hipe_rtl:mk_new_reg(),
   TrueLbl = hipe_rtl:mk_new_label(),
@@ -1085,26 +1063,12 @@ gen_check_get_msg_notsmp(Dsts, GotoCont, Fail) ->
 gen_next_msg([], GotoCont) ->
   Save = hipe_rtl:mk_new_reg(),
   Msg = hipe_rtl:mk_new_reg(),
-  Rest1 = [GotoCont],
-  %%
-  Rest2 =
-    case ?MSG_NEXT of
-      0 ->
-	%% offsetof(ErlMessage,next) is normally 0, so "&msg->next"
-	%% becomes an add with 0. Unfortunately RTL doesn't optimise
-	%% that away; hence this special case.
-	[store_p_field(Msg, ?P_MSG_SAVE) |
-	 Rest1];
-      _ ->
-	Next = hipe_rtl:mk_new_reg(),
-	[hipe_rtl:mk_alu(Next, Msg, 'add', hipe_rtl:mk_imm(?MSG_NEXT)),
-	 store_p_field(Next, ?P_MSG_SAVE) |
-	 Rest1]
-    end,
-  %%
+  Next = hipe_rtl:mk_new_reg(),
   [load_p_field(Save, ?P_MSG_SAVE),
-   load_struct_field(Msg, Save, 0) |
-   Rest2].
+   load_struct_field(Msg, Save, 0),
+   hipe_rtl:mk_alu(Next, Msg, 'add', hipe_rtl:mk_imm(?MSG_NEXT)),
+   store_p_field(Next, ?P_MSG_SAVE),
+   GotoCont].
 
 %%% clear_timeout is:
 %%%	p->flags &= ~F_TIMO; JOIN_MESSAGE(p);
@@ -1122,7 +1086,7 @@ gen_clear_timeout_notsmp(GotoCont) ->
    store_p_field(First, ?P_MSG_SAVE),
    GotoCont].
 
-gen_check_get_msg_smp(Dsts, GotoCont, Fail) ->
+gen_check_get_msg_outofline(Dsts, GotoCont, Fail) ->
   RetLbl = hipe_rtl:mk_new_label(),
   TrueLbl = hipe_rtl:mk_new_label(),
   Tmp = hipe_rtl:mk_new_reg(),

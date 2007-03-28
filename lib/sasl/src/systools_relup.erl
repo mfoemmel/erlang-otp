@@ -225,49 +225,43 @@ foreach_baserel_up(TopRel, TopApps, BaseRelDcs, Path, Opts, Ws) ->
 foreach_baserel_up(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts, 
 	       Ws, Acc) ->
     BaseRelFile = extract_filename(BaseRelDc),
-    %% io:format("Rel file (up): ~p~n", [BaseRelFile]),
-    case systools_make:read_release(BaseRelFile, Path) of
-	{ok, BaseRel} ->
-	    %%
-	    %% BaseRel = #release
-	    %%
-	    %% RUs = (release upgrade scripts). We really get separate
-	    %% scripts, one for emulator restart, one for each
-	    %% application, one for each added applications, and one for
-	    %% each removed applications.
-	    %%
-	    {RUs1, Ws1} = 
-		collect_appup_scripts(up, TopApps, BaseRel, Ws, []),
 
-	    {RUs2, Ws2} = create_add_app_scripts(BaseRel, TopRel,
-						 RUs1, Ws1),
+    {ok, BaseRel} = systools_make:read_release(BaseRelFile, Path),
 
-	    {RUs3, Ws3} = create_remove_app_scripts(BaseRel, TopRel,
-						    RUs2, Ws2),
+    %%
+    %% BaseRel = #release
+    %%
+    %% RUs = (release upgrade scripts). We really get separate
+    %% scripts, one for emulator restart, one for each
+    %% application, one for each added applications, and one for
+    %% each removed applications.
+    %%
+    {RUs1, Ws1} = collect_appup_scripts(up, TopApps, BaseRel, Ws, []),
 
-	    {RUs4, Ws4} = 
-		check_for_emulator_restart(TopRel, BaseRel, RUs3, Ws3, Opts),
+    {RUs2, Ws2} = create_add_app_scripts(BaseRel, TopRel, RUs1, Ws1),
 
-	    ModTest = false,
-	    BaseApps =
-		case systools_make:get_release(BaseRelFile, Path, ModTest) of
-		    {ok, _, NameVsnApps, _Warns} ->
-			lists:map(fun({_,App}) -> App end, NameVsnApps);
-		    Other1 ->
-			throw(Other1)
-		end,
+    {RUs3, Ws3} = create_remove_app_scripts(BaseRel, TopRel, RUs2, Ws2),
 
-	    %% io:format("Scripts: ~p~n", [RUs4]),
-	    case systools_rc:translate_scripts(up, RUs4, TopApps, BaseApps) of
-		{ok, RUs} ->
-		    VDR = {BaseRel#release.vsn, 
-			   extract_description(BaseRelDc), RUs},
-		    foreach_baserel_up(TopRel, TopApps, BaseRelDcs, Path, 
-				      Opts, Ws4, [VDR| Acc]);
-		XXX -> 
-		    throw(XXX)
-	    end;
-	Other -> throw({error, ?MODULE, {no_rel_file, BaseRelDc, Other}})
+    {RUs4, Ws4} = 
+	check_for_emulator_restart(TopRel, BaseRel, RUs3, Ws3, Opts),
+
+    ModTest = false,
+    BaseApps =
+	case systools_make:get_release(BaseRelFile, Path, ModTest) of
+	    {ok, _, NameVsnApps, _Warns} ->
+		lists:map(fun({_,App}) -> App end, NameVsnApps);
+	    Other1 ->
+		throw(Other1)
+	end,
+
+    case systools_rc:translate_scripts(up, RUs4, TopApps, BaseApps) of
+	{ok, RUs} ->
+	    VDR = {BaseRel#release.vsn,
+		   extract_description(BaseRelDc), RUs},
+	    foreach_baserel_up(TopRel, TopApps, BaseRelDcs, Path, 
+			       Opts, Ws4, [VDR| Acc]);
+	XXX ->
+	    throw(XXX)
     end;
 foreach_baserel_up( _, _, [], _, _, Ws, Acc) -> 
     {Acc, Ws}.
@@ -279,53 +273,46 @@ foreach_baserel_dn(TopRel, TopApps, BaseRelDcs, Path, Opts, Ws) ->
 foreach_baserel_dn(TopRel, TopApps, [BaseRelDc|BaseRelDcs], Path, Opts, 
 	       Ws, Acc) ->
     BaseRelFile = extract_filename(BaseRelDc),
-    %% io:format("Rel file (down): ~p~n", [BaseRelFile]),
-    case systools_make:read_release(BaseRelFile, Path) of
-	{ok, BaseRel} ->
-	    %% BaseRel = #release
 
-	    %% RUs = (release upgrade scripts)
+    {ok, BaseRel} = systools_make:read_release(BaseRelFile, Path),
+
+    %% BaseRel = #release
+
+    %% RUs = (release upgrade scripts)
+    %%
+    {RUs1, Ws1} = collect_appup_scripts(dn, TopApps, BaseRel, Ws, []),
+
+    ModTest = false,
+    {BaseApps, Ws2} =
+	case systools_make:get_release(BaseRelFile, Path, ModTest) of
 	    %%
-	    {RUs1, Ws1} =
-		collect_appup_scripts(dn, TopApps, BaseRel, Ws, []),
+	    %% NameVsnApps = [{{Name, Vsn}, #application}]
+	    {ok, _, NameVsnApps, Warns} ->
+		%%
+		%% NApps = [#application]
+		NApps = lists:map(fun({_,App}) -> App end, NameVsnApps),
+		{NApps, Warns ++ Ws1};
+	    Other ->
+		throw(Other)
+	end,
 
-	    ModTest = false,
-	    {BaseApps, Ws2} =
-		case systools_make:get_release(BaseRelFile, Path, ModTest) of
-		    %%
-		    %% NameVsnApps = [{{Name, Vsn}, #application}]
-		    {ok, _, NameVsnApps, Warns} ->
-			%%
-			%% NApps = [#application]
-			NApps = lists:map(fun({_, App}) -> App end, 
-					  NameVsnApps),
-			{NApps, Warns ++ Ws1};
-		    Other -> 
-			throw(Other)
-		end,
+    RUs2 = RUs1,
 
-	    RUs2 = RUs1,
+    {RUs3, Ws3} = create_add_app_scripts(TopRel, BaseRel, RUs2, Ws2),
 
-	    {RUs3, Ws3} = create_add_app_scripts(TopRel, BaseRel,
-						 RUs2, Ws2),
+    {RUs4, Ws4} = create_remove_app_scripts(TopRel, BaseRel, RUs3, Ws3),
 
-	    {RUs4, Ws4} = create_remove_app_scripts(TopRel, BaseRel,
-						    RUs3, Ws3),
+    {RUs5, Ws5} = check_for_emulator_restart(TopRel, BaseRel,
+					     RUs4, Ws4, Opts),
 
-	    {RUs5, Ws5} = check_for_emulator_restart(TopRel, BaseRel,
-						     RUs4, Ws4, Opts),
-
-	    %% io:format("Scripts: ~p~n", [RUs5]),
-	    case systools_rc:translate_scripts(dn, RUs5, BaseApps, TopApps) of
-		{ok, RUs} ->
-		    VDR = {BaseRel#release.vsn, 
-			   extract_description(BaseRelDc), RUs},
-		    foreach_baserel_dn(TopRel, TopApps, BaseRelDcs, Path, 
-				   Opts, Ws5, [VDR| Acc]);
-		XXX -> 
-		    throw(XXX)
-	    end;
-	Other -> throw({error, ?MODULE, {no_rel_file, BaseRelDc, Other}})
+    case systools_rc:translate_scripts(dn, RUs5, BaseApps, TopApps) of
+	{ok, RUs} ->
+	    VDR = {BaseRel#release.vsn,
+		   extract_description(BaseRelDc), RUs},
+	    foreach_baserel_dn(TopRel, TopApps, BaseRelDcs, Path, 
+			       Opts, Ws5, [VDR| Acc]);
+	XXX -> 
+	    throw(XXX)
     end;
 foreach_baserel_dn( _, _, [], _, _, Ws, Acc) -> 
     {Acc, Ws}.
@@ -532,9 +519,6 @@ format_error({file_problem, {"relup", _Posix}}) ->
     io_lib:format("Could not open file relup~n", []);
 format_error({file_problem, {File, What}}) ->
     io_lib:format("Could not ~p file ~p~n", [get_reason(What), File]);
-format_error({no_rel_file, N, What}) ->
-    io_lib:format("No release file for ~p, reason: ~p~n", [extract_filename(N),
-							   get_reason(What)]);
 format_error({no_relup, File, App, Vsn}) ->
     io_lib:format("No release upgrade script entry for ~p-~s to ~p-~s "
 		  "in file ~p~n",

@@ -59,13 +59,15 @@ TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
 
 COVER_SPEC_FILE = megaco.cover
 
+CODEC_CASES = codec1 codec2 codec3a codec3b codec3c
+
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
 
 ifeq ($(USE_MEGACO_TEST_CODE),true)
-ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE
+ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE=mona_lisa_spelar_doom
 endif
 
 ifeq ($(USE_MEGACO_HIPE),true)
@@ -123,9 +125,19 @@ info:
 	@echo "MERL = $(MERL)"
 	@echo ""
 
+
 # ----------------------------------------------------
 # Special Targets
 # ----------------------------------------------------
+
+call: make
+	@echo "make sure epmd is new"
+	@epmd -kill > /dev/null
+	@echo "Running all codec sub-suites separatelly"
+	@for i in $(CODEC_CASES); do \
+            echo "SUITE: $$i"; \
+            clearmake -V $$i > $$i.log; \
+        done
 
 make: $(TARGET_FILES)
 

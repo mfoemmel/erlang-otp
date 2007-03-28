@@ -211,8 +211,8 @@ decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	%% 	{error, Reason, Tokens, Line} ->
+	%% 	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -231,8 +231,8 @@ decode_message([{version3,prev3c},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	%% 	{error, Reason, Tokens, Line} ->
+	%% 	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->
 	    parse_error(Reason, Line, [], Bin)
@@ -251,8 +251,8 @@ decode_message([{version3,prev3b},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	%% 	{error, Reason, Tokens, Line} ->
+	%% 	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -271,8 +271,8 @@ decode_message([{version3,prev3a},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	%% 	{error, Reason, Tokens, Line} ->
+	%% 	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
@@ -291,8 +291,8 @@ decode_message([{version3,v3},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
+	%% 	{error, Reason, Tokens, Line} ->
+	%% 	    parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007

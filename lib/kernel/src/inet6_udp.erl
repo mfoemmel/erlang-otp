@@ -44,7 +44,7 @@ open(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
 	    BAddr    = R#udp_opts.ifaddr,
 	    BPort    = R#udp_opts.port,
 	    SockOpts = R#udp_opts.opts,
-	    inet:open(Fd,BAddr,BPort,SockOpts,dgram,inet6,?MODULE)
+	    inet:open(Fd,BAddr,BPort,SockOpts,udp,inet6,?MODULE)
     end.
 
 send(S, Addr = {A,B,C,D,E,F,G,H}, P, Data) 

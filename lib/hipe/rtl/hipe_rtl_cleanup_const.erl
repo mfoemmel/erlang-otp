@@ -7,10 +7,10 @@
 %%%-------------------------------------------------------------------
 
 %% Big constants (floats, bignums) can be used as arguments to
-%% arbitrary instructions in rtl. Since these are located in the
-%% constants area and the only intruction that currently can access
-%% them is load_address, the constants has to be moved out of the
-%% intruction and loaded into a temporary variable before the
+%% arbitrary instructions in RTL. Since these are located in the
+%% constants area and the only instruction that currently can access
+%% them is load_address, the constants have to be moved out of the
+%% instruction and loaded into temporary variables before the
 %% instruction.
 %%
 %% Some backends can make use of the information that the arguments
@@ -44,7 +44,7 @@ cleanup_instr(Consts, I) ->
 
 cleanup_instr([Const|Left], I, Acc) ->
   case I of
-    X when is_record(X, fp_unop) ; is_record(X, fp) ->
+    X when is_record(X, fp_unop) orelse is_record(X, fp) ->
       Dst = hipe_rtl:mk_new_var(),
       ConstLabel = hipe_rtl:const_label_label(Const),
       Load = hipe_rtl:mk_load_address(Dst, ConstLabel, constant),

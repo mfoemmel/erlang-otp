@@ -577,6 +577,8 @@ bind_arg(L, X, Vars, Ch) ->
 
 %% This handles escapes from things like primops and remote calls.
 
+%% escape(none, St) ->
+%%    St;
 escape([X], St) ->
     Vars = St#state.vars,
     X0 = dict:fetch(escape, Vars),
@@ -592,9 +594,7 @@ escape([X], St) ->
 				    St#state.work, Vars1,
 				    St#state.funs),
 	    St#state{work = add_work([external], W), vars = Vars2}
-    end;
-escape(none, St) ->
-    St.
+    end.
 
 %% For all escaping lambdas, since they might be called from outside the
 %% program, all their arguments may be an external lambda. (Note that we

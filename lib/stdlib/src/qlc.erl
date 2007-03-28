@@ -253,6 +253,8 @@ format_error(not_a_query_list_comprehension) ->
 format_error({used_generator_variable, V}) ->
     io_lib:format("generated variable ~w must not be used in list expression",
                   [V]);
+format_error(binary_generator) ->
+    io_lib:format("cannot handle binary generators", []);
 format_error(too_complex_join) ->
     io_lib:format("cannot handle join of three or more generators efficiently",
                   []);
@@ -272,9 +274,6 @@ format_error({file_error, FileName, Reason}) ->
 format_error({premature_eof, FileName}) ->
     io_lib:format("\"~s\": end-of-file was encountered inside some binary term", 
                   [FileName]);
-format_error({not_a_directory, FileName}) ->
-    io_lib:format("\"~s\": the file supplied with the tmpdir option "
-                  "is not a directory", [FileName]);
 format_error({error, Module, Reason}) ->
     Module:format_error(Reason);
 format_error(E) ->
@@ -1759,7 +1758,7 @@ maybe_sort(LE, QNum, DoSort, Opt) ->
             TmpDir = Opt#qlc_opt.tmpdir,
             Opts = [{tmpdir,Dir} || Dir <- [TmpDir], Dir =/= ""],
             Sort = #qlc_sort{h = LE, keypos = {keysort, Col}, unique = false,
-                             compressed = false, order = ascending,
+                             compressed = [], order = ascending,
                              opts = Opts, tmpdir = TmpDir},
             #prepared{qh = Sort, sorted = no, join = no};
         false ->

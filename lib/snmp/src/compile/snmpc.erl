@@ -229,13 +229,6 @@ update_options([{Key,DefVal}|DefOpts], Options) ->
 	    Options1 = 
 		lists:keyreplace(Key, 1, Options, {Key, Val}),
 	    update_options(DefOpts, Options1)
-    end;
-update_options([Opt|DefOpts], Options) ->
-    case lists:member(Opt, Options) of
-	true ->
-	    update_options(DefOpts, Options);
-	false ->
-	    update_options(DefOpts, [Opt|Options])
     end.
 
 check_options([]) -> ok;

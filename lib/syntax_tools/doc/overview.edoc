@@ -1,7 +1,7 @@
 
 @author Richard Carlsson <richardc@csd.uu.se>
 @copyright 1997-2004 Richard Carlsson
-@version {@vsn}
+@version {@version}
 @title Erlang Syntax Tools
 
 @doc This package contains modules for handling abstract Erlang syntax

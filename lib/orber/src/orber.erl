@@ -270,7 +270,7 @@ start(Type) when Type == permanent; Type == temporary ->
 	true ->
 	    exit({error,"Orber Mnesia Table(s) missing. Orber not properly installed."});
 	_->
-	    try_starting(Type, false)
+	    try_starting(Type)
     end.
 
 start_lightweight() ->
@@ -830,7 +830,7 @@ check_options([H|_], _) ->
 
   
 
-try_starting(Type, Exit) ->
+try_starting(Type) ->
     case application:start(orber, Type) of
 	ok ->
 	    case partial_security() of
@@ -855,12 +855,6 @@ try_starting(Type, Exit) ->
 		false ->
 		    ok
 	    end;
-	{error,{already_started,orber}} when Exit == true ->
-	    exit("Orber already started on this node.");
-	Reason when Exit == true ->
-	    dbg("[~p] orber:try_starting(~p) failed: ~n~p", 
-		[?LINE, Type, Reason], ?DEBUG_LEVEL),
-	    exit("Unable to start Orber. Is the listen port vacant?");
 	{error,{already_started,orber}} ->
 	    {error,{already_started,orber}};
 	Reason ->

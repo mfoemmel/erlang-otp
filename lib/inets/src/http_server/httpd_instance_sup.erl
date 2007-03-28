@@ -73,15 +73,10 @@ start_link(ConfigFile, AcceptTimeout, Debug) ->
 	    SupName = {local, Name},
 	    supervisor:start_link(SupName, ?MODULE, 
 				  [ConfigFile, ConfigList ,AcceptTimeout ,
-				   Debug, Addr, Port]);
-	
+				   Debug, Addr, Port]);	
 	{error, Reason} ->
 	    error_logger:error_report(Reason),
-	    {stop, Reason};
-
-	Else ->
-	    error_logger:error_report(Else),
-	    {stop, Else}
+	    {stop, Reason}
     end.
 
     

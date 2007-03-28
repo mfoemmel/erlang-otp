@@ -995,12 +995,6 @@ emit_decoder_prototypes(G, Fd, N, Xs) ->
 %%  InOrOut = in | out | [in | out]
 %%  TypesOrArgs = types | args | [types | args]
 %%------------------------------------------------------------
-mk_par_type_list(G, N, X, 
-		 InOrOut, TypesOrArgs, Types, Args) when atom(InOrOut) ->
-    mk_par_type_list(G, N, X, [InOrOut], TypesOrArgs, Types, Args);
-mk_par_type_list(G, N, X, InOrOut, 
-		 TypesOrArgs, Types, Args) when atom(TypesOrArgs) ->
-    mk_par_type_list(G, N, X, InOrOut, [TypesOrArgs], Types, Args);
 mk_par_type_list(G, N, X, InOrOut, TypesOrArgs, Types, Args) ->
     TypeAttrArgs = 
 	filterzip(

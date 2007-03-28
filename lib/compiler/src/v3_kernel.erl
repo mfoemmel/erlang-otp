@@ -115,15 +115,18 @@ copy_anno(Kdst, Ksrc) ->
 	       funs=[],				%Fun functions
 	       free=[],				%Free variables
 	       ws=[],				%Warnings.
-	       extinstr=false}).		%Generate extended instructions
+	       extinstr=false,	                %Generate extended instructions
+	       lit=false}).			%Constant pool for literals.
 
 module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
     ExtInstr = not member(no_new_apply, Options),
-    {Kfs,St} = mapfoldl(fun function/2, #kern{extinstr=ExtInstr}, Fs),
+    Lit = member(constant_pool, Options),
+    St0 = #kern{extinstr=ExtInstr,lit=Lit},
+    {Kfs,St} = mapfoldl(fun function/2, St0, Fs),
     Kes = map(fun (#c_fname{id=N,arity=Ar}) -> {N,Ar} end, Es),
-    Kas = map(fun (#c_def{name=#c_atom{val=N},val=V}) ->
+    Kas = map(fun (#c_def{name=#c_literal{val=N},val=V}) ->
 		      {N,core_lib:literal_value(V)} end, As),
-    {ok,#k_mdef{anno=A,name=M#c_atom.val,exports=Kes,attributes=Kas,
+    {ok,#k_mdef{anno=A,name=M#c_literal.val,exports=Kes,attributes=Kas,
 		body=Kfs ++ St#kern.funs},lists:sort(St#kern.ws)}.
 
 function(#c_def{anno=Af,name=#c_fname{id=F,arity=Arity},val=Body}, St0) ->
@@ -168,7 +171,7 @@ wrap_guard(#c_try{}=Try, St) -> {Try,St};
 wrap_guard(Core, St0) ->
     {VarName,St} = new_var_name(St0),
     Var = #c_var{name=VarName},
-    Try = #c_try{arg=Core,vars=[Var],body=Var,evars=[],handler=#c_atom{val=false}},
+    Try = #c_try{arg=Core,vars=[Var],body=Var,evars=[],handler=#c_literal{val=false}},
     {Try,St}.
     
 %% gexpr_test(Kexpr, State) -> {Kexpr,State}.
@@ -210,18 +213,21 @@ gexpr_test_add(Ke, St0) ->
 
 expr(#c_var{anno=A,name=V}, Sub, St) ->
     {#k_var{anno=A,name=get_vsub(V, Sub)},[],St};
-expr(#c_char{anno=A,val=C}, _Sub, St) ->
-    {#k_int{anno=A,val=C},[],St};		%Convert to integers!
-expr(#c_int{anno=A,val=I}, _Sub, St) ->
-    {#k_int{anno=A,val=I},[],St};
-expr(#c_float{anno=A,val=F}, _Sub, St) ->
-    {#k_float{anno=A,val=F},[],St};
-expr(#c_atom{anno=A,val=At}, _Sub, St) ->
-    {#k_atom{anno=A,val=At},[],St};
-expr(#c_string{anno=A,val=S}, _Sub, St) ->
-    {#k_string{anno=A,val=S},[],St};
-expr(#c_nil{anno=A}, _Sub, St) ->
-    {#k_nil{anno=A},[],St};
+expr(#c_literal{anno=A,val=V}, Sub, #kern{lit=LitFlag}=St) ->
+    Core = handle_literal(V, A, LitFlag),
+    expr(Core, Sub, St);
+expr(#k_literal{}=V, _Sub, St) ->
+    {V,[],St};
+expr(#k_nil{}=V, _Sub, St) ->
+    {V,[],St};
+expr(#k_int{}=V, _Sub, St) ->
+    {V,[],St};
+expr(#k_float{}=V, _Sub, St) ->
+    {V,[],St};
+expr(#k_atom{}=V, _Sub, St) ->
+    {V,[],St};
+expr(#k_string{}=V, _Sub, St) ->
+    {V,[],St};
 expr(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub, St0) ->
     %% Do cons in two steps, first the expressions left to right, then
     %% any remaining literals right to left.
@@ -239,9 +245,9 @@ expr(#c_binary{anno=A,segments=Cv}, Sub, St0) ->
 	    {#k_binary{anno=A,segs=Kv},Ep,St1}
     catch
 	throw:bad_element_size ->
-	    Erl = #c_atom{val=erlang},
-	    Name = #c_atom{val=error},
-	    Args = [#c_atom{val=badarg}],
+	    Erl = #c_literal{val=erlang},
+	    Name = #c_literal{val=error},
+	    Args = [#c_literal{val=badarg}],
 	    Error = #c_call{module=Erl,name=Name,args=Args},
 	    expr(Error, Sub, St0)
     end;
@@ -322,7 +328,7 @@ expr(#c_receive{anno=A,clauses=Ccs0,timeout=Ce,action=Ca}, Sub, St0) ->
 	       end, Ccs0),
     {Mpat,St3} = new_var_name(St2),
     Rc = #c_clause{anno=[compiler_generated|A],
-		   pats=[#c_var{name=Mpat}],guard=#c_atom{anno=A,val=true},
+		   pats=[#c_var{name=Mpat}],guard=#c_literal{anno=A,val=true},
 		   body=#ireceive_next{anno=A}},
     {Km,St4} = kmatch([Rvar], Ccs1 ++ [Rc], Sub, add_var_def(Rvar, St3)),
     {Ka,Pa,St5} = body(Ca, Sub, St4),
@@ -330,12 +336,13 @@ expr(#c_receive{anno=A,clauses=Ccs0,timeout=Ce,action=Ca}, Sub, St0) ->
      Pe,St5};
 expr(#c_apply{anno=A,op=Cop,args=Cargs}, Sub, St) ->
     c_apply(A, Cop, Cargs, Sub, St);
-expr(#c_call{anno=A,module=#c_atom{val=erlang},name=#c_atom{val=is_record},
+expr(#c_call{anno=A,module=#c_literal{val=erlang},name=#c_literal{val=is_record},
 	     args=[_,Tag,Sz]=Args0}, Sub, St0) ->
     {Args,Ap,St} = atomic_list(Args0, Sub, St0),
     Remote = #k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=is_record},arity=3},
     case {Tag,Sz} of
-	{#c_atom{},#c_int{}} ->
+	{#c_literal{val=Atom},#c_literal{val=Int}}
+	when is_atom(Atom), is_integer(Int) ->
 	    %% Tag and size are literals. Make it a BIF, which will actually
 	    %% be expanded out in a later pass.
 	    {#k_bif{anno=A,op=Remote,args=Args},Ap,St};
@@ -360,8 +367,8 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) 
     case Type of
 	old_apply ->
 	    Call = #c_call{anno=A,
-			   module=#c_atom{val=erlang},
-			   name=#c_atom{val=apply},
+			   module=#c_literal{val=erlang},
+			   name=#c_literal{val=apply},
 			   args=[M0,F0,make_list(Cargs)]},
 	    expr(Call, Sub, St1);
 	_ ->
@@ -379,13 +386,15 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) 
 		   end,
 	    {Call,Ap,St}
     end;
-expr(#c_primop{anno=A,name=#c_atom{val=match_fail},args=Cargs}, Sub, St0) ->
+expr(#c_primop{anno=A,name=#c_literal{val=match_fail},args=Cargs}, Sub,
+     #kern{lit=LitFlag}=St0) ->
     %% This special case will disappear.
-    {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0),
+    {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0#kern{lit=false}),
+    St = St1#kern{lit=LitFlag},
     Ar = length(Cargs),
     Call = #k_call{anno=A,op=#k_internal{name=match_fail,arity=Ar},args=Kargs},
-    {Call,Ap,St1};
-expr(#c_primop{anno=A,name=#c_atom{val=N},args=Cargs}, Sub, St0) ->
+    {Call,Ap,St};
+expr(#c_primop{anno=A,name=#c_literal{val=N},args=Cargs}, Sub, St0) ->
     {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0),
     Ar = length(Cargs),
     {#k_bif{anno=A,op=#k_internal{name=N,arity=Ar},args=Kargs},Ap,St1};
@@ -416,13 +425,13 @@ expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St}.
 
 %% call_type(Module, Function, Arity) -> call | bif | apply | error.
 %%  Classify the call.
-call_type(#c_atom{val=M}, #c_atom{val=F}, Ar) ->
+call_type(#c_literal{val=M}, #c_literal{val=F}, Ar) when is_atom(M), is_atom(F) ->
     case is_remote_bif(M, F, Ar) of
 	false -> call;
 	true -> bif
     end;
-call_type(#c_var{}, #c_atom{}, _) -> apply;
-call_type(#c_atom{}, #c_var{}, _) -> apply;
+call_type(#c_var{}, #c_literal{val=A}, _) when is_atom(A) -> apply;
+call_type(#c_literal{val=A}, #c_var{}, _) when is_atom(A) -> apply;
 call_type(#c_var{}, #c_var{}, _) -> apply;
 call_type(_, _, _) -> error.
 
@@ -560,20 +569,8 @@ pattern(#c_var{anno=A,name=V}, _Isub, Osub, St0) ->
 	    {#k_var{anno=A,name=V},Osub,
 	     St0#kern{ds=sets:add_element(V, St0#kern.ds)}}
     end;
-pattern(#c_char{anno=A,val=C}, _Isub, Osub, St) ->
-    {#k_int{anno=A,val=C},Osub,St};		%Convert to integers!
-pattern(#c_int{anno=A,val=I}, _Isub, Osub, St) ->
-    {#k_int{anno=A,val=I},Osub,St};
-pattern(#c_float{anno=A,val=F}, _Isub, Osub, St) ->
-    {#k_float{anno=A,val=F},Osub,St};
-pattern(#c_atom{anno=A,val=At}, _Isub, Osub, St) ->
-    {#k_atom{anno=A,val=At},Osub,St};
-pattern(#c_string{val=S}, _Isub, Osub, St) ->
-    L = foldr(fun (C, T) -> #k_cons{hd=#k_int{val=C},tl=T} end,
-	      #k_nil{}, S),
-    {L,Osub,St};
-pattern(#c_nil{anno=A}, _Isub, Osub, St) ->
-    {#k_nil{anno=A},Osub,St};
+pattern(#c_literal{anno=A,val=V}, _Isub, Osub, St) ->
+    {expand_pat_literal(V, A),Osub,St};
 pattern(#c_cons{anno=A,hd=Ch,tl=Ct}, Isub, Osub0, St0) ->
     {Kh,Osub1,St1} = pattern(Ch, Isub, Osub0, St0),
     {Kt,Osub2,St2} = pattern(Ct, Isub, Osub1, St1),
@@ -882,18 +879,18 @@ is_false_guard(G) -> guard_value(G) == false.
 
 %% guard_value(Guard) -> true | false | unknown.
 
-guard_value(#c_atom{val=true}) -> true;
-guard_value(#c_atom{val=false}) -> false;
-guard_value(#c_call{module=#c_atom{val=erlang},
-		    name=#c_atom{val='not'},
+guard_value(#c_literal{val=true}) -> true;
+guard_value(#c_literal{val=false}) -> false;
+guard_value(#c_call{module=#c_literal{val=erlang},
+		    name=#c_literal{val='not'},
 		    args=[A]}) ->
     case guard_value(A) of
 	true -> false;
 	false -> true;
 	unknown -> unknown
     end;
-guard_value(#c_call{module=#c_atom{val=erlang},
-		    name=#c_atom{val='and'},
+guard_value(#c_call{module=#c_literal{val=erlang},
+		    name=#c_literal{val='and'},
 		    args=[Ca,Cb]}) ->
     case guard_value(Ca) of
 	true -> guard_value(Cb);
@@ -904,8 +901,8 @@ guard_value(#c_call{module=#c_atom{val=erlang},
 		_Other -> unknown
 	    end
     end;
-guard_value(#c_call{module=#c_atom{val=erlang},
-		    name=#c_atom{val='or'},
+guard_value(#c_call{module=#c_literal{val=erlang},
+		    name=#c_literal{val='or'},
 		    args=[Ca,Cb]}) ->
     case guard_value(Ca) of
 	true -> true;
@@ -917,7 +914,7 @@ guard_value(#c_call{module=#c_atom{val=erlang},
 	    end
     end;
 guard_value(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
-		   handler=#c_atom{val=false}}) ->
+		   handler=#c_literal{val=false}}) ->
     guard_value(E);
 guard_value(_) -> unknown.
 
@@ -1569,7 +1566,8 @@ lit_vars(#k_bin_end{}) -> [];
 lit_vars(#k_bin_seg{size=Size,seg=S,next=N}) ->
     union(lit_vars(Size), union(lit_vars(S), lit_vars(N)));
 lit_vars(#k_tuple{es=Es}) ->
-    lit_list_vars(Es).
+    lit_list_vars(Es);
+lit_vars(#k_literal{}) -> [].
 
 lit_list_vars(Ps) ->
     foldl(fun (P, Vs) -> union(lit_vars(P), Vs) end, [], Ps).
@@ -1603,6 +1601,95 @@ pat_list_vars(Ps) ->
 		  {union(Used0, Used),union(New0, New)} end,
 	  {[],[]}, Ps).
 
+%% handle_literal(Literal, Anno, UseConstantPool) -> Kernel
+%%  Handle literals; if UseConstantPool is true, complex literals (literals
+%%  conses or tuples) will translated to #k_literal{}; otherwise,
+%%  it will be translated to the old format.
+
+handle_literal(V, Anno, false) ->
+    %% Unconditionally expand the literal.
+    expand_literal(V, Anno);
+handle_literal(V, Anno, true) ->
+    %% Complex literals should be put in a constant pool. Simple literals
+    %% (e.g. integer and atoms) should be converted.
+    case V of
+	[_|_] -> complex_literal(V, Anno);
+	V when is_tuple(V) -> complex_literal(V, Anno);
+	_ -> expand_literal(V, Anno)
+    end.
+	
+%% complex_literal(V, Anno) -> Kernel
+%%  Make sure that the literal does not contain lists that can be
+%%  expressed as #k_string{} (except fairly short lists) to avoid
+%%  an explosion in literal pools size.
+
+complex_literal(V, Anno) ->
+    Expanded = expand_literal(V, Anno),
+    case string_size(Expanded) of
+	Sz when Sz > 5 -> Expanded;
+	_ -> #k_literal{anno=Anno,val=V}
+    end.
+
+expand_literal([H|T]=V, A) when is_integer(H), 0 =< H, H =< 255 ->
+    case is_print_char_list(T) of
+	false ->
+	    #c_cons{anno=A,hd=#k_int{anno=A,val=H},tl=expand_literal(T, A)};
+	true ->
+	    #k_string{anno=A,val=V}
+    end;
+expand_literal([H|T], A) ->
+    #c_cons{anno=A,hd=expand_literal(H, A),tl=expand_literal(T, A)};
+expand_literal([], A) ->
+    #k_nil{anno=A};
+expand_literal(V, A) when is_tuple(V) ->
+    #c_tuple{anno=A,es=expand_literal_list(tuple_to_list(V), A)};
+expand_literal(V, A) when is_integer(V) ->
+    #k_int{anno=A,val=V};
+expand_literal(V, A) when is_float(V) ->
+    #k_float{anno=A,val=V};
+expand_literal(V, A) when is_atom(V) ->
+    #k_atom{anno=A,val=V}.
+
+expand_literal_list([H|T], A) ->
+    [expand_literal(H, A)|expand_literal_list(T, A)];
+expand_literal_list([], _) -> [].
+
+string_size(V) ->    
+    string_size_1(V, 0).
+
+string_size_1(#k_string{val=S}, N) ->
+    N+length(S);
+string_size_1(#c_cons{hd=H,tl=T}, N) ->
+    string_size_1(H, string_size_1(T, N));
+string_size_1(#c_tuple{es=Es}, N) ->
+    string_size_1(Es, N);
+string_size_1(_, N) -> N.
+
+is_print_char_list([H|T]) when is_integer(H), 0 =< H, H =< 255 ->
+    is_print_char_list(T);
+is_print_char_list([]) -> true;
+is_print_char_list(_) -> false.
+
+%% expand_pat_literal(Literal, Anno) -> Kernel
+%%  Expand a literal used as a pattern (the result will not #k_string{}).
+
+expand_pat_literal([H|T], A) ->
+    #k_cons{anno=A,hd=expand_pat_literal(H, A),tl=expand_pat_literal(T, A)};
+expand_pat_literal([], A) ->
+    #k_nil{anno=A};
+expand_pat_literal(V, A) when is_tuple(V) ->
+    #k_tuple{anno=A,es=expand_pat_literal_list(tuple_to_list(V), A)};
+expand_pat_literal(V, A) when is_integer(V) ->
+    #k_int{anno=A,val=V};
+expand_pat_literal(V, A) when is_float(V) ->
+    #k_float{anno=A,val=V};
+expand_pat_literal(V, A) when is_atom(V) ->
+    #k_atom{anno=A,val=V}.
+
+expand_pat_literal_list([H|T], A) ->
+    [expand_pat_literal(H, A)|expand_pat_literal_list(T, A)];
+expand_pat_literal_list([], _) -> [].
+
 %% aligned(Bits, Size, Unit, Flags) -> {Size,Flags}
 %%  Add 'aligned' to the flags if the current field is aligned.
 %%  Number of bits correct modulo 8.
@@ -1618,7 +1705,9 @@ incr_bits(B, _, 8) -> B;
 incr_bits(_, _, _) -> unknown.
 
 make_list(Es) ->
-    foldr(fun (E, Acc) -> #c_cons{hd=E,tl=Acc} end, #c_nil{}, Es).
+    foldr(fun(E, Acc) ->
+ 		  #c_cons{hd=E,tl=Acc}
+ 	  end, #c_literal{val=[]}, Es).
 
 %% List of integers in interval [N,M]. Empty list if N > M.
 

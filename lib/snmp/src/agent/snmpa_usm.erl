@@ -63,7 +63,8 @@ process_incoming_msg(Packet, Data, SecParams, SecLevel) ->
 	end,
     #usmSecurityParameters{msgAuthoritativeEngineID = MsgAuthEngineID,
 			   msgUserName = MsgUserName} = UsmSecParams,
-    ?vlog("~n   authEngineID: \"~s\", userName: \"~s\"",
+    ?vlog("process_incoming_msg -> "
+	  "~n   authEngineID: \"~s\", userName: \"~s\"",
 	  [MsgAuthEngineID, MsgUserName]),
     %% 3.2.3
     ?vtrace("process_incoming_msg -> check engine id: 3.2.3",[]),
@@ -302,7 +303,11 @@ try_decrypt(?usmAesCfb128Protocol,
 
 generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
     %% 3.1.1
-    ?vtrace("generate_outgoing_msg -> entry [3.1.1]",[]),
+    ?vtrace("generate_outgoing_msg -> [3.1.1] entry with"
+	    "~n   SecEngineID: ~p"
+	    "~n   SecName:     ~p"
+	    "~n   SecLevel:    ~w", 
+	    [SecEngineID, SecName, SecLevel]),
     {UserName, AuthProtocol, PrivProtocol, AuthKey, PrivKey} =
 	case SecData of
 	    [] -> % 3.1.1b
@@ -331,7 +336,11 @@ generate_outgoing_msg(Message, SecEngineID, SecName, SecData, SecLevel) ->
 		SecData
 	end,
     %% 3.1.4
-    ?vtrace("generate_outgoing_msg -> [3.1.4]",[]),
+    ?vtrace("generate_outgoing_msg -> [3.1.4]"
+	    "~n   UserName:     ~p"
+	    "~n   AuthProtocol: ~p"
+	    "~n   PrivProtocol: ~p", 
+	    [UserName, AuthProtocol, PrivProtocol]),
     ScopedPduBytes = Message#message.data,
     {ScopedPduData, MsgPrivParams} =
 	encrypt(ScopedPduBytes, PrivProtocol, PrivKey, SecLevel),
@@ -373,7 +382,7 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 	    {Data, []};
 	true -> % 3.1.4a
 	    ?vtrace("encrypt -> 3.1.4a",[]),
-	    case try_encrypt(PrivProtocol, PrivKey, Data) of
+	    case (catch try_encrypt(PrivProtocol, PrivKey, Data)) of
 		{ok, ScopedPduData, MsgPrivParams} ->
 		    ?vtrace("encrypt -> encode tag",[]),
 		    {snmp_pdus:enc_oct_str_tag(ScopedPduData), MsgPrivParams};

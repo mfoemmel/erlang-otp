@@ -65,7 +65,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
--include("megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 %% N.B. Update cancel/1 with '_' when a new field is added
 -record(request,
@@ -139,7 +139,8 @@
 		    {Tag, Pid} ->
 			ok
 		end;
-	    _ ->
+	    _Whatever ->
+		%% io:format("Whatever: ~p~n", [Whatever]),
 		ok
 	end).
 -else.
@@ -800,8 +801,25 @@ prepare_error(Error) ->
             Code   = ED#'ErrorDescriptor'.errorCode,
             Reason = ED#'ErrorDescriptor'.errorText,
             {Code, Reason, Error};
+        {error, [{reason, {bad_token, [BadToken, _Acc]}, Line}]} when is_integer(Line) ->
+            Reason = 
+		lists:flatten(
+		  io_lib:format("Illegal token (~p) on line ~w", [BadToken, Line])),
+            Code = ?megaco_bad_request,
+            {Code, Reason, Error};
         {error, [{reason, {bad_token, _}, Line}]} when is_integer(Line) ->
             Reason = lists:concat(["Illegal token on line ", Line]),
+            Code = ?megaco_bad_request,
+            {Code, Reason, Error};
+        {error, [{reason, {Line, _ParserMod, RawReasonString}} | _]} when is_integer(Line) and is_list(RawReasonString) ->
+	    Reason = 
+		case RawReasonString of
+		    [[$s, $y, $n, $t, $a, $x | _], TokenString] ->
+			lists:flatten(
+			  io_lib:format("Syntax error on line ~w before token ~s", [Line, TokenString]));
+		    _ ->
+			lists:flatten(io_lib:format("Syntax error on line ~w", [Line]))
+		end,
             Code = ?megaco_bad_request,
             {Code, Reason, Error};
         {error, [{reason, {Line, _, _}} | _]} when is_integer(Line) ->
@@ -1076,8 +1094,6 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
             ?report_trace(ConnData2, 
 			  "re-send trans reply", [T | {bytes, Bin}]),
             case megaco_messenger_misc:send_message(ConnData2, Bin) of
-		ok ->
-		    ok;
 		{ok, _} ->
 		    ok;
 		{error, Reason} ->
@@ -2193,7 +2209,7 @@ call_or_cast(CallOrCast, ConnHandle, ActionsList, Options)
 		    case CallOrCast of
 			call -> 
 			    TransIds = to_local_trans_id(ConnData, TRs),
-			    wait_for_reply(TransIds);
+			    wait_for_reply(ConnData, TransIds);
 			cast -> 
 			    ok
 		    end;
@@ -2214,25 +2230,34 @@ return_error(Action, Version, Error) ->
 	cast -> Error
     end.
 
-wait_for_reply(TransIds) ->
-    wait_for_reply(TransIds, []).
+wait_for_reply(CD, TransIds) ->
+    wait_for_reply(CD, TransIds, []).
 
-wait_for_reply([], Replies0) ->
+wait_for_reply(_CD, [], Replies0) ->
     % Make sure they come in the same order as the requests where sent
     Replies1 = lists:keysort(2,Replies0), 
     %% Must all be the same version
     [{Version,_,_}|_] = Replies1,
     Replies2 = [Result || {_Version, _TransId, Result} <- Replies1],
     {Version, Replies2};
-wait_for_reply(TransIds, Replies) -> 
+wait_for_reply(CD, TransIds, Replies) -> 
     receive
         {?MODULE, TransId, Version, Result} ->
-	    TransIds2 = lists:delete(TransId, TransIds), 
-	    wait_for_reply(TransIds2, [{Version, TransId, Result}|Replies])% ;
-% 	Any ->
-% 	    d("wait_for_reply -> received unexpected: ~n   ~p", [Any]),
-% 	    wait_for_reply(TransIds, Replies)
-	    
+	    ?rt2("received reply message", [TransId, Version, Result]),
+	    case lists:delete(TransId, TransIds) of
+		TransIds ->
+		    ?rt3("not a reply we expected"),
+		    %% Unexpected transaction, pass it on
+		    CD2 = CD#conn_data{protocol_version = Version}, 
+		    return_unexpected_trans_reply(CD2, TransId, Result),
+		    wait_for_reply(CD, TransIds, Replies);
+		TransIds2 ->
+		    Replies2 = [{Version, TransId, Result}|Replies], 
+		    wait_for_reply(CD, TransIds2, Replies2)
+	    end
+%%% 	Any ->
+%%% 	    d("wait_for_reply -> received unexpected: ~n   ~p", [Any]),
+%%% 	    wait_for_reply(TransIds, Replies)
     end.
 
 
@@ -3123,8 +3148,6 @@ do_reply_timeout(ConnHandle, TransId, ConnData, Timer,
 %%       "~n", [ConnHandle, TransId, Timer, Rep]),
 
     case megaco_messenger_misc:send_message(CD, Bytes) of
-	ok ->
-	    ignore;
 	{ok, _} ->
 	    ignore;
 	{error, Reason} ->

@@ -410,7 +410,9 @@ get_target_addrs(Key, {Tab, _} = TabDb, Acc) ->
 	    case get_target_addr(TabDb, NextKey) of
 		{ok, Targ} ->
 		    get_target_addrs(NextKey, TabDb, [Targ| Acc]);
-		_ ->
+		{error, Reason} ->
+		    ?vlog("failed getting target address: "
+			  "~n   Reason: ~p", [Reason]),
 		    get_target_addrs(NextKey, TabDb, Acc)
 	    end
     end.
@@ -425,24 +427,37 @@ get_target_addr({Tab, mnesia}, Key) ->
 	   snmpTargetAddrTagList    = TagList,
 	   snmpTargetAddrParams     = Params,
 	   snmpTargetAddrRowStatus  = ?'RowStatus_active'}} ->
-	    TargetParams = get_target_params(Params),
-	    Targ = {TagList, {TDomain, TAddress}, Key,
-		    TargetParams, Timeout, RetryCount},
-	    {ok, Targ};
+	    case get_target_params(Params) of
+		undefined ->
+		    config_err("Failed retreiving target params [~p]"
+			       "~n   for ~p [~p]", [Params, Key, TAddress]),
+		    {error, {not_found, {target_params, Key, Params}}};
+		TargetParams ->
+		    Targ = {TagList, {TDomain, TAddress}, Key,
+			    TargetParams, Timeout, RetryCount},
+		    {ok, Targ}
+	    end;
 	_ ->
-	    not_found
+	    {error, {not_found, {target_addr, Key}}}
     end;
 get_target_addr(TabDb, Key) ->
     case snmpa_local_db:table_get_row(TabDb, Key) of
 	{_Key, TDomain, TAddress, Timeout, RetryCount, TagList, Params,
 	 _Storage, ?'RowStatus_active', _TargetEngineId,_TMask,_MMS} ->
-	    TargetParams = get_target_params(Params),
-	    Targ = {TagList, {TDomain, TAddress}, Key,
-		    TargetParams, Timeout, RetryCount},
-	    {ok, Targ};
+	    case get_target_params(Params) of
+		undefined ->
+		    config_err("Failed retreiving target params [~p]"
+			       "~n   for target ~p [~p]", 
+			       [Params, Key, TAddress]),
+		    {error, {not_found, {target_params, Key, Params}}};
+		TargetParams ->
+		    Targ = {TagList, {TDomain, TAddress}, Key,
+			    TargetParams, Timeout, RetryCount},
+		    {ok, Targ}
+	    end;
 	_ ->
-	    not_found
-    end.
+	    {error, {not_found, {target_addr, Key}}}
+     end.
     
 
 get_target_params(Params) ->
@@ -520,6 +535,7 @@ snmpTargetAddrTable(get, RowIndex, Cols) ->
 snmpTargetAddrTable(get_next, RowIndex, Cols) ->
     next(snmpTargetAddrTable, RowIndex, Cols);
 snmpTargetAddrTable(set, RowIndex, Cols0) ->
+    %% BMK BMK BMK
     case (catch verify_targetAddrTable_cols(Cols0, [])) of
 	{ok, Cols} ->
 	    snmp_notification_mib:invalidate_cache(),
@@ -614,10 +630,13 @@ snmpTargetParamsTable(Op) ->
 
 %% Op == get | is_set_ok | set | get_next
 snmpTargetParamsTable(get, RowIndex, Cols) ->
+    %% BMK BMK BMK
     get(snmpTargetParamsTable, RowIndex, Cols);
 snmpTargetParamsTable(get_next, RowIndex, Cols) ->
+    %% BMK BMK BMK
     next(snmpTargetParamsTable, RowIndex, Cols);
 snmpTargetParamsTable(set, RowIndex, Cols0) ->
+    %% BMK BMK BMK
     case (catch verify_snmpTargetParamsTable_cols(Cols0, [])) of
 	{ok, Cols} ->
 	    snmp_notification_mib:invalidate_cache(),

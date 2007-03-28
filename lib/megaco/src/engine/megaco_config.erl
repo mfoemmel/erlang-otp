@@ -40,6 +40,8 @@
          incr_trans_id_counter/1,
          incr_trans_id_counter/2,
          verify_val/2,
+         verify_int/2,
+         verify_strict_int/2,
 
 	 %% Pending limit counter
 	 cre_pending_counter/3,
@@ -72,7 +74,7 @@
 -record(state, {parent_pid}).
 
 -include_lib("megaco/include/megaco.hrl").
--include("megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 
 -ifdef(MEGACO_TEST_CODE).
@@ -786,12 +788,24 @@ terminate(_Reason, _State) ->
 %% Returns: {ok, NewState}
 %%----------------------------------------------------------------------
 
-code_change(_Vsn, S, upgrade_from_pre_3_5_1_a) ->
+%% code_change(_Vsn, S, upgrade_from_3_5_1_1) ->
+%%     {ok, S};
+
+%% code_change(_Vsn, S, upgrade_from_3_5_1) ->
+%%     {ok, S};
+
+code_change(_Vsn, S, upgrade_from_pre_3_5_1) ->
     upgrade_user_info(),
     upgrade_conn_data(),
     {ok, S};
 
-code_change(_Vsn, S, downgrade_to_pre_3_5_1_a) ->
+%% code_change(_Vsn, S, downgrade_to_3_5_1_1) ->
+%%     {ok, S};
+
+%% code_change(_Vsn, S, downgrade_to_3_5_1) ->
+%%     {ok, S};
+
+code_change(_Vsn, S, downgrade_to_pre_3_5_1) ->
     downgrade_user_info(),
     downgrade_conn_data(),
     {ok, S};

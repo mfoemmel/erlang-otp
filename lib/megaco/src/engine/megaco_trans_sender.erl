@@ -40,7 +40,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
--include("megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 
 -record(state, 

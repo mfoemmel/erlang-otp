@@ -245,13 +245,11 @@ file(F, Options) ->
 	    Close(S), % for side effects only - final state is dropped
 	    {Res,Tail};
 	{error, Reason} ->
-	    {error, Reason};
-	Other ->
-	    {error, Other}
+	    {error, Reason}
     end.
 
 int_file(F, Options,_ExtCharset) ->
-%     io:format("int_file F=~p~n",[F]),
+     %%io:format("int_file F=~p~n",[F]),
     case file:read_file(F) of
 	{ok, Bin} ->
 	    int_string(binary_to_list(Bin), Options, filename:dirname(F),F);
@@ -278,13 +276,10 @@ string(Str) ->
 %%   Rest = list()
 %%% @doc Parse string containing an XML document
 string(Str, Options) ->
-    case int_string(Str, Options,file_name_unknown) of
-	{Res, Tail, S=#xmerl_scanner{close_fun = Close}} ->
-	    Close(S),    % for side effects only - final state is dropped
-	    {Res,Tail};
-	Other ->
-	    {error, Other}
-    end.
+     {Res, Tail, S=#xmerl_scanner{close_fun = Close}} =
+	int_string(Str, Options,file_name_unknown),
+    Close(S),    % for side effects only - final state is dropped
+    {Res,Tail}.
 
 int_string(Str, Options,FileName) ->
     {ok,  XMLBase} = file:get_cwd(),
@@ -293,6 +288,7 @@ int_string(Str, Options,FileName) ->
 int_string(Str, Options, XMLBase, FileName) ->
     S0=initial_state0(Options,XMLBase),
     S = S0#xmerl_scanner{filename=FileName},
+    %%io:format("int_string1, calling xmerl_lib:detect_charset~n",[]),
     case xmerl_lib:detect_charset(S#xmerl_scanner.encoding,Str) of
 	{auto,'iso-10646-utf-1',Str2} ->
 	    scan_document(Str2, S#xmerl_scanner{encoding="iso-10646-utf-1"});
@@ -521,6 +517,7 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
     %% attribute in a XML declaration that one will be used later
     Str=if
 	    Charset=/=undefined -> % Default character set is UTF-8
+		%%io:format("scan_document 1, calling xmerl_ucs:to_unicode~n",[]),
 		xmerl_ucs:to_unicode(Str0,list_to_atom(Charset));
 	    true -> %% Charset is undefined if no external input is
                     %% given, and no auto detection of character
@@ -529,6 +526,7 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
 	end,
 
     {T1, S2} = scan_prolog(Str, S1, _StartPos = 1),
+    %%io:format("scan_document 2, prolog parsed~n",[]),
     T2 = scan_mandatory("<",T1,S2,expected_element_start_tag),
     {Res, T3, S3} =scan_element(T2,S2,_StartPos = 1),
     {Tail, S4}=scan_misc(T3, S3, _StartPos = 1),
@@ -563,7 +561,7 @@ scan_document(Str0, S=#xmerl_scanner{event_fun = Event,
 		 case schemaLocations(Res,S5) of
 		     {ok,Schemas} ->
 			 cleanup(S5),
-			 io:format("Schemas: ~p~nRes: ~p~ninhertih_options(S): ~p~n",[Schemas,Res,inherit_options(S5)]),
+			 %%io:format("Schemas: ~p~nRes: ~p~ninhertih_options(S): ~p~n",[Schemas,Res,inherit_options(S5)]),
 			 XSDRes = xmerl_xsd:process_validate(Schemas,Res,inherit_options(S5)),
 			 handle_schema_result(XSDRes,S5);
 		     _ ->
@@ -601,9 +599,7 @@ scan_decl(Str, S=#xmerl_scanner{event_fun = Event,
 %%% [22] Prolog
 %%% prolog    ::=    XMLDecl? Misc* (doctypedecl Misc*)?
 %%%
-%% Text declaration may be empty
-scan_prolog([], S=#xmerl_scanner{text_decl=true},_Pos) ->
-    {[],S};
+%% empty text declarations are handled by the first function clause.
 scan_prolog([], S=#xmerl_scanner{continuation_fun = F}, Pos) ->
     ?dbg("cont()...~n", []),
     F(fun(MoreBytes, S1) -> scan_prolog(MoreBytes, S1, Pos) end,
@@ -1311,7 +1307,7 @@ check_notations(Tab,S) ->
     end.
 
 check_elements(Tab,S) ->
-    case ets:match(Tab,{{elem_def,'_'},'$2'},10) of
+    case catch ets:match(Tab,{{elem_def,'_'},'$2'},10) of
 	{_,_}=M ->
 	    Fun = fun({Match,'$end_of_table'},_F) ->
 			  lists:foreach(fun(X)->check_elements2(X,S) end,
@@ -2029,6 +2025,7 @@ scan_element(">" ++ T, S0 = #xmerl_scanner{event_fun = Event,
 					       line = StartL,
 					       col = StartC,
 					       data = E0}, S),
+    %%io:format("scan_element 1, processed_whole_element finished ~p~n",[E0]),
 
     {Content, T1, S2} = scan_content(T, S1, Name, Attrs, XMLSpace, 
 				     E0#xmlElement.language,
@@ -3133,9 +3130,7 @@ vc_ID_Attribute_Default({_,'ID',_,Def,_},_S)
   when Def=='#IMPLIED';Def=='#REQUIRED' ->
     ok;
 vc_ID_Attribute_Default({_,'ID',_,Def,_},S) ->
-    ?fatal({error,{validity_constraint_error_ID_Attribute_Default,Def}},S);
-vc_ID_Attribute_Default(_,_) ->
-    ok.
+    ?fatal({error,{validity_constraint_error_ID_Attribute_Default,Def}},S).
 
 vc_Enumeration({_Name,{_,NameList},DefaultVal,_,_},S) 
   when list(DefaultVal) ->    
@@ -3832,24 +3827,24 @@ schemaLocations(#xmlElement{attributes=Atts,xmlbase=Base}) ->
 				fun([],_Fun) ->
 					[];
 				   ([SLNS,SLLoc|Rest],Fun) ->
-					[{SLNS,filename:join(Base,SLLoc)}|Fun(Rest,Fun)]
+					[{SLNS,SLLoc}|Fun(Rest,Fun)]
 				end,
 			    {ok,PairList(L,PairList)};
 			_ ->
 			    {error,{schemaLocation_attribute,namespace_location_not_in_pair}}
 		    end;
 		_ ->
-		    {error,{missing_scheamaLocation}}
+		    {error,{missing_schemaLocation}}
 	    end;
 	[] ->
 	    {error,{missing_scheamaLocation}}
     end.
 
 inherit_options(S) ->
-    io:format("xsdbase: ~p~n",[S#xmerl_scanner.xmlbase]),
+    %%io:format("xsdbase: ~p~n",[S#xmerl_scanner.xmlbase]),
     [{xsdbase,S#xmerl_scanner.xmlbase}].
 
-handle_schema_result({XSDRes=#xmlElement{},_},S5) ->
+handle_schema_result({ok,{XSDRes=#xmlElement{},_},_},S5) ->
     {XSDRes,S5};
 handle_schema_result({error,Reason},S5) ->
     ?fatal({failed_schema_validation,Reason},S5).
@@ -3864,25 +3859,11 @@ fatal(Reason, S) ->
 
 %% preformat formats tokens in L1 and L2, L2 separated by Sep into a
 %% list
-preformat(L1,L2,Sep) when list(L1),list(L2) ->
-    Format1=
-	case L1 of
-	    [] -> [];
-	    _ ->
-		lists:flatten(lists:duplicate(length(L1)-1,"~s ")++"~s")
-	end,
-    Separator=
-	if
-	    atom(Sep) -> atom_to_list(Sep);
-	    true -> Sep
-	end,
-    Format2 =
-	case L2 of
-	    [] -> [];
-	    _ ->
-		lists:flatten(lists:duplicate(length(L2)-1,
-					      " ~s"++Separator)++" ~s")
-	end,
+preformat(L1,L2,Sep) ->
+    Format1= lists:flatten(lists:duplicate(length(L1)-1,"~s ")++"~s"),
+    Format2 = lists:flatten(lists:duplicate(length(L2)-1,
+					    " ~s"++Sep)++" ~s"),
+
     lists:flatten(io_lib:format(Format1++Format2,L1++L2)).
 
 

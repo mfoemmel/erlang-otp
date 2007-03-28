@@ -107,6 +107,7 @@
 	 cre_PropertyParm/2, cre_PropertyParm/4, 
 	 cre_Name/1, 
 	 cre_PkgdName/1, 
+	 cre_PkgdName/2, 
 	 cre_Relation/1, 
 	 cre_LocalRemoteDescriptor/1, 
 	 cre_PropertyGroup/1, 
@@ -466,22 +467,30 @@ cre_AmmRequest(TermIDs, Descs) when list(TermIDs), list(Descs) ->
     #'AmmRequest'{terminationID = TermIDs,
 		  descriptors   = Descs}.
 
-cre_AmmDescriptor(D) when record(D, 'MediaDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'MediaDescriptor') ->
     {mediaDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'ModemDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'ModemDescriptor') ->
     {modemDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'MuxDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'MuxDescriptor') ->
     {muxDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'EventsDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'EventsDescriptor') ->
     {eventsDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'DigitMapDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'DigitMapDescriptor') ->
     {digitMapDescriptor, D};
-cre_AmmDescriptor(D) when record(D, 'AuditDescriptor') ->
+cre_AmmDescriptor(D) when is_record(D, 'AuditDescriptor') ->
     {auditDescriptor, D};
-cre_AmmDescriptor([H|_] = D) when record(H, 'EventSpec') ->
-    {eventBufferDescriptor, D};
-cre_AmmDescriptor([H|_] = D) when tuple(H) ->
-    {signalsDescriptor, D}.
+cre_AmmDescriptor(D) when is_list(D) ->
+    case is_EventBufferDescriptor(D) of
+	true ->
+	    {eventBufferDescriptor, D};
+	false ->
+	    case is_SignalsDescriptor(D) of
+		true ->
+		    {signalsDescriptor, D};
+		false ->
+		    error({invalid_AmmDescriptor, D})
+	    end
+    end.
 
 cre_AmmsReply(TermIDs) when list(TermIDs) ->
     #'AmmsReply'{terminationID = TermIDs}.
@@ -773,8 +782,8 @@ cre_ObservedEvent(EN, SID, EPL, TN)
 		     eventParList = EPL,
 		     timeNotation = TN}.
 
-cre_EventName(N) ->
-    cre_PkgdName(N).
+cre_EventName(N) when is_list(N) ->
+    N.
 
 cre_EventParameter(N, V) when list(N), list(V) ->
     #'EventParameter'{eventParameterName = N, 
@@ -928,8 +937,24 @@ cre_PropertyParm(N, [H|_] = V, sublist = Tag, B)
 cre_Name(N) when list(N), length(N) == 2 ->
     N.
 
-cre_PkgdName(N) when list(N), length(N) == 4 ->
-    N.
+cre_PkgdName(N) when is_list(N) ->
+    case string:tokens(N, [$\\]) of
+	[_PkgName, _ItemID] ->
+	    N;
+	_ ->
+	    error({invalid_PkgdName, N})
+    end.
+cre_PkgdName(root, root) ->
+    "*/*";
+cre_PkgdName(PackageName, root) 
+  when is_list(PackageName) and (length(PackageName) =< 64) ->
+    PackageName ++ "/*";
+cre_PkgdName(PackageName, ItemID) 
+  when ((is_list(PackageName) and (length(PackageName) =< 64)) and
+	(is_list(ItemID)      and (length(ItemID) =< 64))) ->
+    PackageName ++ "/" ++ ItemID;
+cre_PkgdName(PackageName, ItemID) ->
+    error({invalid_PkgdName, {PackageName, ItemID}}).
 
 cre_Relation(greaterThan = R) ->
     R;
@@ -4716,10 +4741,29 @@ chk_Name(N1, N2) ->
 %% -- PkgdName --
 
 %% PkgdName is either "AB/CD" or just plain "ABCD"
+%% Note that in ASN.1 the parts is exactly 2 char
+%% each, unless you don't use the native config 
+%% option. In text and in binary without the native
+%% option, it is 63 + 1 chars for each.
 is_PkgdName(N) -> 
+    d("is_PkgdName -> entry with"
+      "~n   N: ~p", [N]),
     case string:tokens(N, "/") of
-	[N1, N2] ->
-	    is_Name(N1) andalso is_Name(N2);
+	["*" = PackageName, "*" = ItemID] ->
+	    d("is_PkgdName -> tokenized (0): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    true; 
+	[PackageName, "*" = ItemID] ->
+	    d("is_PkgdName -> tokenized (1): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    is_Name(PackageName);
+	[PackageName, ItemID] ->
+	    d("is_PkgdName -> tokenized (2): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    is_Name(PackageName) andalso is_Name(ItemID);
 	_ ->
 	    is_Name(N)
     end.

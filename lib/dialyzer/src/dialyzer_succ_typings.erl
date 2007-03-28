@@ -7,17 +7,19 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_succ_typings).
 
--export([analyze_callgraph/3]).
+-export([analyze_callgraph/3,
+	 get_warnings/5]).
 
 %% These are only intended as debug functions.
 -export([doit/1,
+	 analyze_callgraph_only_typesig/3,
+	 analyze_callgraph_only_dataflow/3,
 	 get_top_level_signatures/2]).
 
 -define(TYPE_LIMIT, 4).
 
 %-define(DEBUG, true).
 %-define(DEBUG_PP, true).
-%-define(NO_DATAFLOW, true).
 
 -ifdef(DEBUG).
 -define(debug(X__, Y__), io:format(X__, Y__)).
@@ -25,18 +27,27 @@
 -define(debug(X__, Y__), ok).
 -endif.
 
--ifdef(NO_DATAFLOW).
-analyze_callgraph(Callgraph, Plt, Codeserver) ->  
-  find_succ_typings(Callgraph, Codeserver, Plt).
--else.
-analyze_callgraph(Callgraph, Plt, Codeserver) ->  
+analyze_callgraph(Callgraph, Plt, Codeserver) ->
+  get_refined_success_typings(Callgraph, Plt, Codeserver).
+
+analyze_callgraph_only_dataflow(Callgraph, Plt, Codeserver) ->
+  ModulePostorder = dialyzer_callgraph:module_postorder(Callgraph),
+  refine_succ_typings(ModulePostorder, Callgraph, Codeserver, true, Plt),
+  Plt.
+
+analyze_callgraph_only_typesig(Callgraph, Plt, Codeserver) ->
+  find_succ_typings(Callgraph, Codeserver, Plt),
+  Plt.
+
+get_refined_success_typings(Callgraph, Plt, Codeserver) ->  
   case find_succ_typings(Callgraph, Codeserver, Plt) of
     fixpoint -> Plt;
     {not_fixpoint, Callgraph1, NotFixpoint1} ->
       NotFixpoint2 = [lookup_name(F, Callgraph) || F <- NotFixpoint1],
       ModulePostorder = 
 	dialyzer_callgraph:module_postorder_from_funs(NotFixpoint2, Callgraph),
-      case refine_succ_typings(ModulePostorder, Callgraph1, Codeserver, Plt) of
+      case refine_succ_typings(ModulePostorder, Callgraph1, 
+			       Codeserver, false, Plt) of
 	fixpoint ->
 	  Plt;
 	{not_fixpoint, NotFixpoint3} ->
@@ -44,44 +55,72 @@ analyze_callgraph(Callgraph, Plt, Codeserver) ->
 	  NotFixpoint4 = [lookup_name(F, Callgraph1) || F <- NotFixpoint3],
 	  Callgraph2 = 
 	    dialyzer_callgraph:reset_from_funs(NotFixpoint4, Callgraph1),
-	  analyze_callgraph(Callgraph2, Plt, Codeserver)
+	  get_refined_success_typings(Callgraph2, Plt, Codeserver)
       end
   end.
--endif.
 
-refine_succ_typings(ModulePostorder, Callgraph, Codeserver, Plt) ->
+get_warnings(Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused) ->
+  analyze_callgraph_only_dataflow(Callgraph, Plt, Codeserver),
+  Modules = dialyzer_callgraph:modules(Callgraph),
+  get_warnings(Modules, Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, []).
+
+get_warnings([M|Left], Callgraph, Plt, DocPlt, Codeserver, NoWarnUnused, Acc) ->
+  {ok, Tree} = dialyzer_codeserver:lookup(M, core, Codeserver),
+  Records = dialyzer_codeserver:lookup_records(M, Codeserver),
+  {Warnings, FunTypes} = 
+    dialyzer_dataflow:get_warnings(Tree, Plt, Callgraph, Records, NoWarnUnused),
+  if DocPlt =:= undefined -> ok;
+     true -> insert_into_plt(FunTypes, Callgraph, DocPlt)
+  end,
+  get_warnings(Left, Callgraph, Plt, DocPlt, Codeserver, 
+	       NoWarnUnused, [Warnings|Acc]);
+get_warnings([], _Callgraph, _Plt, _DocPlt, _Codeserver, _NoWarnUnused, Acc) ->
+  lists:flatten(Acc).
+
+refine_succ_typings(ModulePostorder, Callgraph, Codeserver, StoreAll, Plt) ->
   ?debug("Module postorder: ~p\n", [ModulePostorder]),
-  refine_succ_typings(ModulePostorder, Callgraph, Codeserver, Plt, []).
+  refine_succ_typings(ModulePostorder, Callgraph, 
+		      Codeserver, Plt, StoreAll, []).
 
-refine_succ_typings([[M]|Left], Callgraph, Codeserver, Plt, Fixpoint) ->
+refine_succ_typings([[M]|Left], Callgraph, Codeserver, Plt, StoreAll, 
+		    Fixpoint) ->
   ?debug("Dataflow of one module: ~w\n", [M]),
   {ok, Tree} = dialyzer_codeserver:lookup(M, core, Codeserver),
   AllFuns = traverse_tree_list([Tree]),
   FunTypes = get_fun_types_from_plt(AllFuns, Callgraph, Plt),
   Records = dialyzer_codeserver:lookup_records(M, Codeserver),
-  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, Plt, Callgraph, 
-						Plt, Records),
+  NewFunTypes = dialyzer_dataflow:get_fun_types(Tree, Plt, Callgraph, Records),
+						
   FP = 
     case reached_fixpoint(FunTypes, NewFunTypes) of
       true -> Fixpoint;
       {false, NotFixpoint} ->
 	?debug("Not fixpoint\n", []),
 	NotFixpoint1 = [Fun || {Fun, _Type} <- NotFixpoint],
-	insert_into_plt(dict:from_list(NotFixpoint), Callgraph, Plt),
+	case StoreAll of
+	  true ->
+	    insert_into_plt(NewFunTypes, Callgraph, Plt);
+	  false ->
+	    insert_into_plt(dict:from_list(NotFixpoint), Callgraph, Plt)
+	end,
 	ordsets:union(ordsets:from_list(NotFixpoint1), Fixpoint)
     end,
-  refine_succ_typings(Left, Callgraph, Codeserver, Plt, FP);
-refine_succ_typings(Mods = [SCC|Left], Callgraph, Codeserver, Plt, Fixpoint) ->
+  refine_succ_typings(Left, Callgraph, Codeserver, Plt, StoreAll, FP);
+refine_succ_typings(Mods = [SCC|Left], Callgraph, Codeserver, 
+		    Plt, StoreAll, Fixpoint) ->
   ?debug("Dataflow of one SCC: ~w\n", [SCC]),
-  AnsList = [refine_succ_typings([[M]], Callgraph, Codeserver, Plt, [])
+  AnsList = [refine_succ_typings([[M]], Callgraph, Codeserver, 
+				 Plt, StoreAll, [])
 	     || M <- SCC],
   case lists:flatten([Set || {not_fixpoint, Set} <- AnsList]) of
-    [] -> refine_succ_typings(Left, Callgraph, Codeserver, Plt, Fixpoint);
+    [] -> 
+      refine_succ_typings(Left, Callgraph, Codeserver, Plt, StoreAll, Fixpoint);
     NotFixpoint ->
       NewFixpoint = ordsets:union(ordsets:from_list(NotFixpoint), Fixpoint),
-      refine_succ_typings(Mods, Callgraph, Codeserver, Plt, NewFixpoint)
+      refine_succ_typings(Mods, Callgraph, Codeserver, Plt, 
+			  StoreAll, NewFixpoint)
   end;
-refine_succ_typings([], _Callgraph, _Codeserver, _Plt, Fixpoint) ->
+refine_succ_typings([], _Callgraph, _Codeserver, _Plt, _StoreAll, Fixpoint) ->
   case Fixpoint of
     [] -> fixpoint;
     List -> {not_fixpoint, List}
@@ -105,7 +144,7 @@ reached_fixpoint(OldTypes0, NewTypes0, Strict) ->
   compare_types(OldTypes, NewTypes, Strict).
 
 is_failed_or_not_called_fun(Type) ->
-  erl_types:t_is_none(Type) orelse any_none(erl_types:t_fun_args(Type)).
+  any_none([erl_types:t_fun_range(Type)|erl_types:t_fun_args(Type)]).
 
 any_none([T|Ts]) ->
   case erl_types:t_is_none(T) of
@@ -121,6 +160,9 @@ compare_types(Dict1, Dict2, Strict) ->
   compare_types_1(List1, List2, Strict, []).
 
 compare_types_1([{X, _Type1}|Left1], [{X, failed_fun}|Left2], 
+		Strict, NotFixpoint) ->
+  compare_types_1(Left1, Left2, Strict, NotFixpoint);
+compare_types_1([{X, failed_fun}|Left1], [{X, _Type2}|Left2], 
 		Strict, NotFixpoint) ->
   compare_types_1(Left1, Left2, Strict, NotFixpoint);
 compare_types_1([{X, Type1}|Left1], [{X, Type2}|Left2], false, NotFixpoint) ->
@@ -241,13 +283,7 @@ format_succ_types(SuccTypes, Callgraph) ->
 format_succ_types([{Label, Type0}|Left], Callgraph, Acc) ->
   Type = erl_types:t_limit(Type0, ?TYPE_LIMIT+1),
   Id = lookup_name(Label, Callgraph),
-  NewTuple =
-    case erl_types:t_is_fun(Type) of
-      true -> {Id, erl_types:t_fun_range(Type), erl_types:t_fun_args(Type)};
-      false ->
-	true = erl_types:t_is_none(Type),
-	{Id, erl_types:t_none(), erl_types:t_none()}
-    end,
+  NewTuple = {Id, erl_types:t_fun_range(Type), erl_types:t_fun_args(Type)},
   format_succ_types(Left, Callgraph, [NewTuple|Acc]);
 format_succ_types([], _Callgraph, Acc) ->
   Acc.
@@ -277,8 +313,8 @@ lookup_name(F, CG) ->
 %%% ============================================================================
 
 doit(Module) ->
-  AbstrCode = dialyzer_utils:get_abstract_code_from_src(Module),
-  Code = dialyzer_utils:get_core_from_abstract_code(AbstrCode),
+  AbstrCode = dialyzer_utils:get_abstract_code_from_src(Module, [no_copt]),
+  Code = dialyzer_utils:get_core_from_abstract_code(AbstrCode, [no_copt]),
   {ok, Records} = dialyzer_utils:get_record_info(AbstrCode),
   Sigs0 = get_top_level_signatures(Code, Records),
   M = 

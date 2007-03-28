@@ -452,7 +452,7 @@ connect_nodes2(Father, Ns) ->
     Msg = {schema_is_merged, [], late_merge, []},
     multicall([node()|Ns], Msg),
     After = val({current, db_nodes}),    
-    Father ! {?MODULE, self(), Res, mnesia_lib:intersect(Ns,After--Current)},
+    Father ! {?MODULE, self(), Res, mnesia_lib:intersect(Ns,After)},
     unlink(Father),
     ok.
     
@@ -1795,8 +1795,8 @@ info([Tab | Tail]) ->
 			"words of mem")
     end,
     info(Tail);
-info([]) -> ok;
-info(Tab) -> info([Tab]).
+info([]) -> ok.
+
 
 info_format(Tab, Size, Mem, Media) ->
     StrT = mnesia_lib:pad_name(atom_to_list(Tab), 15, []),
@@ -1809,17 +1809,16 @@ info_format(Tab, Size, Mem, Media) ->
 handle_early_msgs([Msg | Msgs], State) ->
     %% The messages are in reverse order
     case handle_early_msg(Msg, State) of
-        {stop, Reason, Reply, State2} ->
-	    {stop, Reason, Reply, State2};
+%%         {stop, Reason, Reply, State2} ->  % Will not happen according to dialyzer
+%% 	    {stop, Reason, Reply, State2};
         {stop, Reason, State2} ->
 	    {stop, Reason, State2};
 	{noreply, State2} ->
 	    handle_early_msgs(Msgs, State2);
-	{noreply, State2, _Timeout} ->
-	    handle_early_msgs(Msgs, State2);
-	Else ->  
-	    dbg_out("handle_early_msgs case clause ~p ~n", [Else]),
-	    erlang:fault(Else, [[Msg | Msgs], State])
+ 	{reply, Reply, State2} ->
+	    {call, _Call, From} = Msg,
+	    reply(From, Reply),
+ 	    handle_early_msgs(Msgs, State2)
     end;
 handle_early_msgs([], State) ->
     noreply(State).

@@ -195,7 +195,7 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   ?debug_msg("Build mapping ~w\n",[Node_sets2_O]),
   Coloring_O = build_namelist_O(Node_sets2_O,SpillIndex,Alias0_O,Color1_O),
   ?debug_msg("Coloring_O ~p\n",[Coloring_O]),
-  SortedColoring_O = { sort_stack(element(1, Coloring_O)), element(2, Coloring_O)},
+  SortedColoring_O = {sort_stack(element(1, Coloring_O)), element(2, Coloring_O)},
   ?debug_msg("SortedColoring_O ~p\n",[SortedColoring_O]),
   sanity_compare(SortedColoring_O, SortedColoring),
   Coloring.
@@ -531,7 +531,7 @@ decrement_degree_O([Node|Nodes], IG, Worklists, Moves, K) ->
   case PrevDegree =:= K of
     true ->
       AdjList = hipe_ig:node_adj_list(Node, IG0),
-      %% Ok since Node (a) is still in IG, and (b) cannot be adjacent to itself.
+      %% OK since Node (a) is still in IG, and (b) cannot be adjacent to itself.
       Moves00 = enable_moves_active_to_worklist(hipe_moves:node_movelist(Node, Moves),
 						Moves),
       Moves0 = enable_moves(AdjList, Worklists, Moves00),
@@ -726,13 +726,10 @@ build_spillist([Node|Nodes],Index,List) ->
 
 build_coalescedlist([],_Color,_Alias,List) ->
   List;
-build_coalescedlist([Node|Ns],Color,Alias,List)
-when is_integer(Node) ->
+build_coalescedlist([Node|Ns],Color,Alias,List) when is_integer(Node) ->
   ?debug_msg("Alias of ~p is ~p~n",[Node,getAlias(Node,Alias)]),
   AC = getColor(getAlias(Node,Alias),Color),
-  build_coalescedlist(Ns,Color,Alias,[{Node,{reg,AC}}|List]);
-build_coalescedlist([_Node|Ns],Color,Alias,List) ->
-  build_coalescedlist(Ns,Color,Alias,List).
+  build_coalescedlist(Ns,Color,Alias,[{Node,{reg,AC}}|List]).
 
 -ifdef(COMPARE_ITERATED_OPTIMISTIC).
 build_reglist_O([],_Color,List) -> 

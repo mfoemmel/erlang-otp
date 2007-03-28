@@ -178,6 +178,7 @@ validate_error_1(Error, Module, Name, Ar) ->
 	 numy=none,			%Number of y registers.
 	 h=0,				%Available heap size.
 	 hf=0,				%Available heap size for floats.
+	 hlit=[],			%Literals that have been tested for.
 	 fls=undefined,			%Floating point state.
 	 ct=[],				%List of hot catch/try labels
 	 bsm=undefined,			%Bit syntax matching state.
@@ -238,7 +239,10 @@ labels_1(Is, R) ->
 init_state(Arity) ->
     Xs = init_regs(Arity, term),
     Ys = init_regs(0, initialized),
-    #st{x=Xs,y=Ys,numy=none,h=0,hf=0,ct=[]}.
+    kill_heap_allocation(#st{x=Xs,y=Ys,numy=none,ct=[]}).
+
+kill_heap_allocation(St) ->
+    St#st{h=0,hf=0,hlit=[]}.
 
 init_regs(0, _) ->
     gb_trees:empty();
@@ -335,6 +339,9 @@ valfun_1({put,Src}, Vst) ->
 valfun_1({put_string,Sz,_,Dst}, Vst0) when is_integer(Sz) ->
     Vst = eat_heap(2*Sz, Vst0),
     set_type_reg(cons, Dst, Vst);
+valfun_1({put_literal,{literal,Lit},Dst}, Vst0) ->
+    Vst = eat_heap_literal(Lit, Vst0),
+    set_type_reg(term, Dst, Vst);
 %% Misc.
 valfun_1({'%live',Live}, Vst) ->
     verify_live(Live, Vst),
@@ -505,7 +512,7 @@ valfun_4({bif,Op,{f,Fail},Src,Dst}, Vst0) ->
     Type = bif_type(Op, Src, Vst),
     set_type_reg(Type, Dst, Vst);
 valfun_4({gc_bif,Op,{f,Fail},Live,Src,Dst}, #vst{current=St0}=Vst0) ->
-    St = St0#st{h=0,hf=0},
+    St = kill_heap_allocation(St0),
     Vst1 = Vst0#vst{current=St},
     verify_live(Live, Vst1),
     Vst2 = prune_x_regs(Live, Vst1),
@@ -750,23 +757,27 @@ test_heap(Heap, Live, Vst0) ->
     Vst = prune_x_regs(Live, Vst0),
     heap_alloc(Heap, Vst).
 
-heap_alloc(Heap, #vst{current=St}=Vst) ->
-    Words = heap_alloc_1(Heap),
-    Floats = heap_float_alloc(Heap),
-    Vst#vst{current=St#st{h=Words,hf=Floats,bsm=undefined}}.
+heap_alloc(Heap, #vst{current=St0}=Vst) ->
+    St1 = kill_heap_allocation(St0#st{bsm=undefined}),
+    St = heap_alloc_1(Heap, St1),
+    Vst#vst{current=St}.
+
+heap_alloc_1({alloc,Alloc}, St) ->
+    heap_alloc_2(Alloc, St);
+heap_alloc_1(HeapWords, St) when is_integer(HeapWords) ->
+    St#st{h=HeapWords}.
+
+heap_alloc_2([{words,HeapWords}|T], St0) ->
+    St = St0#st{h=HeapWords},
+    heap_alloc_2(T, St);
+heap_alloc_2([{floats,Floats}|T], St0) ->
+    St = St0#st{hf=Floats},
+    heap_alloc_2(T, St);
+heap_alloc_2([{literal,Lit}|T], #st{hlit=Hlit}=St0) ->
+    St = St0#st{hlit=[Lit|Hlit]},
+    heap_alloc_2(T, St);
+heap_alloc_2([], St) -> St.
     
-heap_alloc_1({alloc,Alloc}) ->
-    {value,{_,Heap}} = lists:keysearch(words, 1, Alloc),
-    Heap;
-heap_alloc_1(Heap) when is_integer(Heap) -> Heap.
-
-heap_float_alloc({alloc,Alloc}) ->
-    case lists:keysearch(floats, 1, Alloc) of
-	false -> 0;
-	{value,{_,Floats}} -> Floats
-    end;
-heap_float_alloc(Words) when is_integer(Words) -> 0.
-
 prune_x_regs(Live, #vst{current=#st{x=Xs0}=St0}=Vst) when is_integer(Live) ->
     Xs1 = gb_trees:to_list(Xs0),
     Xs = [P || {R,_}=P <- Xs1, R < Live],
@@ -1307,6 +1318,17 @@ eat_heap_float(#vst{current=#st{hf=HeapFloats0}=St}=Vst) ->
 	HeapFloats ->
 	    Vst#vst{current=St#st{hf=HeapFloats}}
     end.
+
+eat_heap_literal(Lit, #vst{current=#st{hlit=Hlit0}=St}=Vst) ->
+    Hlit = eat_heap_literal_1(Lit, Hlit0),
+    Vst#vst{current=St#st{hlit=Hlit}}.
+
+eat_heap_literal_1(Lit, [L|Ls]) when Lit =:= L ->
+    Ls;
+eat_heap_literal_1(Lit, [L|Ls]) ->
+    [L|eat_heap_literal_1(Lit, Ls)];
+eat_heap_literal_1(Lit, []) ->
+    error({heap_overflow,{wanted,{literal,Lit}}}).
 
 bif_type('-', Src, Vst) ->
     arith_type(Src, Vst);

@@ -1002,8 +1002,11 @@ add_recs([{{Tab, Key}, Val, update_counter} | Rest], N) ->
     case catch ets:update_counter(Tab, Key, Incr) of
 	CounterVal when integer(CounterVal) ->
 	    ok;
-	_ ->
+	_ when Incr < 0 ->
 	    Zero = {RecName, Key, 0},
+	    true = ets:insert(Tab, Zero);
+	_ ->
+	    Zero = {RecName, Key, Incr},
 	    true = ets:insert(Tab, Zero)
     end,
     add_recs(Rest, N+1);

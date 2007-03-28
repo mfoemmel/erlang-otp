@@ -30,7 +30,7 @@
 
 -module(erl_types).
 
--define(WIDENING_LIMIT, 5).
+-define(WIDENING_LIMIT, 7).
 
 -define(TAG_IMMED1_SIZE, 4).
 -define(BITS, (hipe_rtl_arch:word_size() * 8) - ?TAG_IMMED1_SIZE).
@@ -60,8 +60,8 @@
 	 t_cons_tl/1,
 	 t_constant/0,
 	 t_fixnum/0,
-	 t_fixnum_non_neg/0,
-	 t_fixnum_pos/0,
+	 t_non_neg_fixnum/0,
+	 t_pos_fixnum/0,
 	 t_float/0,
 	 t_from_form/2,
 	 t_from_range/2,
@@ -79,8 +79,8 @@
 	 t_inf_lists/2,
 	 t_integer/0,
 	 t_integer/1,
-	 t_integer_non_neg/0,
-	 t_integer_pos/0,
+	 t_non_neg_integer/0,
+	 t_pos_integer/0,
 	 t_integers/1,
 	 t_is_any/1,
 	 t_is_atom/1,
@@ -105,6 +105,7 @@
 	 t_is_port/1,
 	 t_is_pos_improper_list/1,
 	 t_is_ref/1,
+	 t_is_string/1,
 	 t_is_subtype/2,
 	 t_is_tuple/1,
 	 t_is_var/1,
@@ -205,14 +206,15 @@
 -define(any, any).
 -define(none, none).
 
--record(c, {tag, elements=[], qualifier=?any}). %% Generic constructor.
--record(int_set, {set}).
--record(int_range, {from, to}).
+-record(c, {tag::atom(), elements=[], qualifier=?any}). %% Generic constructor.
+-record(int_set, {set :: list()}).
+-record(int_range, {from :: 'pos_inf' | 'neg_inf' | integer(),
+		    to   :: 'pos_inf' | 'neg_inf' | integer()}).
 
 
 -define(atom(Set),                 #c{tag=?atom_tag, elements=Set}).
 -define(binary,                    #c{tag=?binary_tag}).
--define(float,                     ?number(?any,  ?float_tag)).
+-define(float,                     ?number(?any, ?float_tag)).
 -define(function(Domain, Range),   #c{tag=?function_tag, 
 				      elements=[Domain, Range]}).
 -define(identifier(Types),         #c{tag=?identifier_tag, elements=Types}).
@@ -243,7 +245,6 @@
 %% Unions
 %%
 
--define(UNION_SIZE, 5).
 -define(union(List),        #c{tag=?union_tag, elements=List}).
 
 -define(atom_union(T),        ?union([T,?none,?none,?none,?none,?none,?none])).
@@ -319,7 +320,7 @@ t_is_bool(?atom(Set)) ->
   case set_size(Set) of
     1 -> set_is_element(true, Set) orelse set_is_element(false, Set);
     2 -> set_is_element(true, Set) andalso set_is_element(false, Set);
-    N when N > 2 -> false
+    N when is_integer(N), N > 2 -> false
   end;
 t_is_bool(_) -> false.
 
@@ -423,7 +424,7 @@ t_number_vals(Other) ->
   case t_is_none(Inf) of
     true -> [];
     false -> t_number_vals(Inf)
-  end.      
+  end.
 
 %%------------------------------------
 
@@ -524,9 +525,7 @@ t_list(?none) -> ?none;
 t_list(Contents) ->
   ?list(Contents, ?nil, ?any).
 
-t_list_elements(?list(Contents, ?nil, _)) -> Contents;
-t_list_elements(?list(Contents, Termination, _)) -> 
-  t_sup(Contents, Termination);
+t_list_elements(?list(Contents, _, _)) -> Contents;
 t_list_elements(?nil) -> ?none.
 
 t_is_list(?list(_Contents, ?nil, _)) -> true;
@@ -541,6 +540,9 @@ t_nonempty_list(Type) ->
 
 t_string() ->
   t_list(t_char()).
+
+t_is_string(X) ->
+  t_is_list(X) andalso (t_is_char(t_list_elements(X))).
 
 t_pos_improper_list() ->
   ?list(?any, ?any, ?any).
@@ -560,7 +562,7 @@ t_improper_list(Content, Termination) ->
   %% Safety check
   false = t_is_subtype(t_nil(), Termination),
   ?list(Content, Termination, ?any).  
-  
+
 %%-----------------------------------------------------------------------------
 %% Tuples
 %%
@@ -669,23 +671,23 @@ t_is_constant(X) ->
 t_arity() ->
   t_from_range(0, 255).	% was t_byte().
 
-t_integer_pos() ->
+t_pos_integer() ->
   t_from_range(1, pos_inf).
 
-t_integer_non_neg() ->
+t_non_neg_integer() ->
   t_from_range(0, pos_inf).
 
-t_integer_neg() ->
+t_neg_integer() ->
   t_from_range(neg_inf, -1).
 
 t_fixnum() ->
   t_integer(). % Gross over-approximation
 
-t_fixnum_pos() ->
-  t_integer_pos().  % Gross over-approximation
+t_pos_fixnum() ->
+  t_pos_integer().  % Gross over-approximation
 
-t_fixnum_non_neg() ->
-  t_integer_non_neg().  % Gross over-approximation
+t_non_neg_fixnum() ->
+  t_non_neg_integer().  % Gross over-approximation
 
 t_mfa() ->
   t_tuple([t_atom(), t_atom(), t_arity()]).
@@ -826,7 +828,6 @@ t_is_bitwidth(?int_range(From, To)) ->
 t_is_bitwidth(?int_set(Set)) ->
   infinity_geq(set_min(Set), 0) andalso infinity_geq(?BITS, set_max(Set));
 t_is_bitwidth(_) -> false.
-
 
 number_min(?int_range(From, _)) -> From;
 number_min(?int_set(Set)) -> set_min(Set);
@@ -1660,11 +1661,7 @@ t_limit(?function(Domain, Range), K) ->
 t_limit(?product(Elements), K) ->
   ?product([t_limit(X, K - 1) || X <- Elements]);
 t_limit(?union(Elements), K) ->
-  Elements1 = [t_limit(X, K) || X <- Elements],
-  case all_any(Elements1) of
-    true -> ?any;
-    false -> ?union([t_limit(X, K) || X <- Elements])
-  end;
+  ?union([t_limit(X, K) || X <- Elements]);
 t_limit(T, _K) -> T.
 
 
@@ -1807,8 +1804,12 @@ record_fields_to_string([Field|Left1], [FieldName0|Left2], RecDict, Acc) ->
 	case t_is_equal(Field, DeclaredType) of
 	  true -> {FN, false};
 	  false ->
-	    TmpType = t_subtract(DeclaredType, t_atom(undefined)),
-	    {FN, not t_is_equal(Field, TmpType)}
+	    case t_is_any(DeclaredType) andalso t_is_atom(undefined, Field) of
+	      true -> {FN, false};
+	      false ->
+		TmpType = t_subtract(DeclaredType, t_atom(undefined)),
+		{FN, not t_is_equal(Field, TmpType)}
+	    end
 	end;
       FN when is_atom(FN) -> 
 	{FN, not (t_is_atom(undefined, Field) orelse t_is_any(Field))}
@@ -1866,8 +1867,8 @@ t_from_form({type, list, [Type]}, RecDict) ->
   t_list(t_from_form(Type, RecDict));
 t_from_form({type, mfa, []}, _RecDict) -> t_mfa();
 t_from_form({type, nil, []}, _RecDict) -> t_nil();
-t_from_form({type, neg_integer, []}, _RecDict) -> t_integer_neg();
-t_from_form({type, non_neg_integer, []}, _RecDict) -> t_integer_non_neg();
+t_from_form({type, neg_integer, []}, _RecDict) -> t_neg_integer();
+t_from_form({type, non_neg_integer, []}, _RecDict) -> t_non_neg_integer();
 t_from_form({type, none, []}, _RecDict) -> t_none();
 t_from_form({type, nonempty_list, []}, _RecDict) -> t_nonempty_list();
 t_from_form({type, nonempty_list, [Type]}, RecDict) -> 
@@ -1879,7 +1880,7 @@ t_from_form({type, nonempty_possibly_improper_list,
 t_from_form({type, number, []}, _RecDict) -> t_number();
 t_from_form({type, pid, []}, _RecDict) -> t_pid();
 t_from_form({type, port, []}, _RecDict) -> t_port();
-t_from_form({type, pos_integer, []}, _RecDict) -> t_integer_pos();
+t_from_form({type, pos_integer, []}, _RecDict) -> t_pos_integer();
 t_from_form({type, possibly_improper_list, []}, _RecDict) -> 
   t_pos_improper_list();
 t_from_form({type, possibly_improper_list, [Content, Termination]}, RecDict) ->
@@ -1978,10 +1979,6 @@ any_none([?none|_]) -> true;
 any_none([_|Left]) -> any_none(Left);
 any_none([]) -> false.
 
-all_any([?any|Left]) -> all_any(Left);
-all_any([]) -> true;
-all_any([_|_]) -> false.
-  
 lookup_record(Tag, RecDict) ->  
   case dict:find(Tag, RecDict) of
     {ok, [{_Arity, Fields}]} -> {ok, Fields};
@@ -2039,7 +2036,7 @@ set_subtract(S1, S2) ->
     S -> S
   end.
 
-set_from_list(List)  ->
+set_from_list(List) ->
   case length(List) of
     L when L =< ?SET_LIMIT -> ordsets:from_list(List);
     L when L > ?SET_LIMIT -> ?any

@@ -26,7 +26,7 @@
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v1.hrl").
--include("megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 -include_lib("et/include/et.hrl").
 
 start() ->

@@ -36,7 +36,7 @@
 	]).  
 
 %% Debug support
--export([ms/0, nc/0, nc/1, ni/0, ni/1, kill/0, lkill/0]).
+-export([ms/0]).
 
 
 -define(default_min, 10).
@@ -211,7 +211,7 @@ collect_all_answers(ExecC, Nmin, Nmax, Acc) ->
 
 
 %%%----------------------------------------------------------------
-%%% Debug support
+%%% Debug support (still used by mnesia as of mnesia-4.3.3).
 
 ms() ->
     [
@@ -232,29 +232,3 @@ ms() ->
      mnemosyne_transform,
      mnemosyne_unify
     ].
-
-nc() ->
-    Mods = ms(),
-    nc(Mods).
-nc([Mod | Tail]) ->
-    io:format( " ~w ", [Mod]),
-    c:nc(Mod, [{d, debug}]),
-    nc(Tail);
-nc([]) ->
-    io:format( " DONE~n",[]).
-
-ni() ->
-    Mods = ms(),
-    ni(Mods).
-ni([Mod | Tail]) ->
-    io:format( " ~w ", [Mod]),
-    int:ni(Mod, [{d, debug}]),
-    ni(Tail);
-ni([]) ->
-    io:format( " DONE~n",[]).
-
-kill() -> 
-    rpc:multicall(mnemosyne_sup, kill, []).
-lkill() -> 
-    mnemosyne_sup:kill().
-

@@ -195,11 +195,15 @@ subcontents(_) -> [].
 describe_contents(ObjRef, Limit_type, Exclude_inherited,
 		  Max_returned_objs) ->
     Limited_contents = contents(ObjRef,Limit_type,Exclude_inherited),
-    Descriptions = map({orber_ifr_contained,describe},Limited_contents),
-    describe_contents(Descriptions,Max_returned_objs).
+    describe_contents(Limited_contents, Max_returned_objs, []).
 
-describe_contents(Desc,-1) -> Desc;
-describe_contents(Desc,Max) -> sublist(Desc,Max).
+describe_contents(_, 0, Acc) ->
+    Acc;
+describe_contents([], _Max_returned_objs, Acc) ->
+    Acc;
+describe_contents([H|T], Max_returned_objs, Acc) ->
+    Desc = orber_ifr_contained:describe(H),
+    describe_contents(T, Max_returned_objs-1, [Desc|Acc]).
 
 
 %% This is a kludge. Se p. 6-11 in CORBA 2.0.

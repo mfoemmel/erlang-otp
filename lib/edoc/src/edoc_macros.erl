@@ -29,7 +29,7 @@
 
 -export([expand_tags/3, std_macros/1, check_defs/1]).
 
--import(edoc_report, [report/2, error/3]).
+-import(edoc_report, [report/2, error/3, warning/4]).
 
 -include("edoc.hrl").
 -include("edoc_types.hrl").
@@ -46,12 +46,13 @@ std_macros(Env) ->
 	true -> [{package, atom_to_list(Env#env.package)}]
      end
      ++
-     [{docRoot, Env#env.root},
-      {date, fun date_macro/3},
+     [{date, fun date_macro/3},
+      {docRoot, Env#env.root},
       {link, fun link_macro/3},
       {section, fun section_macro/3},
       {time, fun time_macro/3},
-      {type, fun type_macro/3}]).
+      {type, fun type_macro/3},
+      {version, fun version_macro/3}]).
 
 
 %% Check well-formedness of user-specified list of macro definitions.
@@ -73,6 +74,10 @@ date_macro(_S, _Line, _Env) ->
 
 time_macro(_S, _Line, _Env) ->
     edoc_lib:timestr(time()).
+
+version_macro(S, Line, Env) ->
+    date_macro(S, Line, Env)
+	++ " " ++ time_macro(S, Line, Env).
 
 link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),
@@ -105,7 +110,7 @@ type_macro(S, Line, Env) ->
 %% Expand inline macros in tag content.
 
 expand_tags(Ts, Env, Where) ->
-    Defs = dict:from_list(Env#env.macros),
+    Defs = dict:from_list(lists:reverse(Env#env.macros)),
     expand_tags(Ts, Defs, Env, Where).
 
 expand_tags([#tag{data = Cs, line = L} = T | Ts], Defs, Env, Where) ->
@@ -117,7 +122,7 @@ expand_tags([], _, _, _) ->
     [].
 
 expand_tag(Cs, L, Defs, Env, Where) ->
-    case catch {ok, expand(Cs, L, Defs, Env)} of
+    case catch {ok, expand_text(Cs, L, Defs, Env, Where)} of
  	{ok, Cs1} ->
 	    lists:reverse(Cs1);
  	{'EXIT', R} ->
@@ -132,8 +137,13 @@ expand_tag(Cs, L, Defs, Env, Where) ->
 %% Expand macros in arbitrary lines of text.
 %% The result is in reverse order.
 
-expand(Cs, L, Defs, Env) ->
-    expand(Cs, L, Defs, Env, sets:new(), []).
+-record(state, {where, env, seen}).
+
+expand_text(Cs, L, Defs, Env, Where) ->
+    St = #state{where = Where,
+		env = Env,
+		seen = sets:new()},
+    expand(Cs, L, Defs, St, []).
 
 %% Inline macro syntax: "{@name content}"
 %%   where 'content' is optional, and separated from 'name' by one or
@@ -146,26 +156,26 @@ expand(Cs, L, Defs, Env) ->
 %%   "@}" -> "}"
 %%   "@@" -> "@"
 
-expand([$@, $@ | Cs], L, Defs, Env, Set, As) ->
-    expand(Cs, L, Defs, Env, Set, [$@ | As]);
-expand([$@, ${ | Cs], L, Defs, Env, Set, As) ->
-    expand(Cs, L, Defs, Env, Set, [${ | As]);
-expand([$@, $} | Cs], L, Defs, Env, Set, As) ->
-    expand(Cs, L, Defs, Env, Set, [$} | As]);
-expand([${, $@ | Cs], L, Defs, Env, Set, As) ->
-    expand_macro(Cs, L, Defs, Env, Set, As);
-expand([$\n = C | Cs], L, Defs, Env, Set, As) ->
-    expand(Cs, L + 1, Defs, Env, Set, [C | As]);
-expand([C | Cs], L, Defs, Env, Set, As) ->
-    expand(Cs, L, Defs, Env, Set, [C | As]);
-expand([], _, _, _, _, As) ->
+expand([$@, $@ | Cs], L, Defs, St, As) ->
+    expand(Cs, L, Defs, St, [$@ | As]);
+expand([$@, ${ | Cs], L, Defs, St, As) ->
+    expand(Cs, L, Defs, St, [${ | As]);
+expand([$@, $} | Cs], L, Defs, St, As) ->
+    expand(Cs, L, Defs, St, [$} | As]);
+expand([${, $@ | Cs], L, Defs, St, As) ->
+    expand_macro(Cs, L, Defs, St, As);
+expand([$\n = C | Cs], L, Defs, St, As) ->
+    expand(Cs, L + 1, Defs, St, [C | As]);
+expand([C | Cs], L, Defs, St, As) ->
+    expand(Cs, L, Defs, St, [C | As]);
+expand([], _, _, _, As) ->
     As.
 
-expand_macro(Cs, L, Defs, Env, Set, As) ->
+expand_macro(Cs, L, Defs, St, As) ->
     {M, Cs1, L1} = macro_name(Cs, L),
     {Arg, Cs2, L2} = macro_content(Cs1, L1),
-    As1 = expand_macro_def(M, Arg, L, Defs, Env, Set, As),
-    expand(Cs2, L2, Defs, Env, Set, As1).
+    As1 = expand_macro_def(M, Arg, L, Defs, St, As),
+    expand(Cs2, L2, Defs, St, As1).
 
 %% The macro argument (the "content") is expanded in the environment of
 %% the call, and the result is bound to the '{@?}' parameter. The result
@@ -174,25 +184,28 @@ expand_macro(Cs, L, Defs, Env, Set, As) ->
 %% '{@?}', and makes it easier to write handler functions for special
 %% macros such as '{@link ...}', since the argument is already expanded.
 
-expand_macro_def(M, Arg, L, Defs, Env, Set, As) ->
-    case sets:is_element(M, Set) of
+expand_macro_def(M, Arg, L, Defs, St, As) ->
+    Seen = St#state.seen,
+    case sets:is_element(M, Seen) of
 	true ->
 	    throw_error(L, {"recursive macro expansion of {@~s}.",
 			    [M]});
 	false ->
-	    Set1 = sets:add_element(M, Set),
-	    Arg1 = lists:reverse(expand(Arg, L, Defs, Env, Set, [])),
+	    Arg1 = lists:reverse(expand(Arg, L, Defs, St, [])),
 	    Defs1 = dict:store('?', Arg1, Defs),
+	    St1 = St#state{seen = sets:add_element(M, Seen)},
 	    case dict:find(M, Defs) of
 		{ok, Def} ->
 		    Txt = if function(Def) ->
-				  Def(Arg1, L, Env);
+				  Def(Arg1, L, St1#state.env);
 			     list(Def) ->
 				  Def
 			  end,
-		    expand(Txt, L, Defs1, Env, Set1, As);
+		    expand(Txt, L, Defs1, St1, As);
 		error ->
-		    throw_error(L, {"undefined macro {@~s}.", [M]})
+		    warning(L, St1#state.where,
+			    "undefined macro {@~s}.", [M]),
+		    "??"
 	    end
     end.
 

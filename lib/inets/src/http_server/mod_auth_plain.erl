@@ -70,29 +70,20 @@ get_user(DirData, User) ->
 
 list_users(DirData) ->
     PWDB = httpd_util:key1search(DirData, auth_user_file),
-    case ets:match(PWDB, '$1') of
-	Records when list(Records) ->
-	    {ok, lists:foldr(fun({User, _PassWd, _Data}, A) -> [User | A] end, 
-			     [], lists:flatten(Records))};
-	_ ->
-	    {ok, []}
-    end.
+    Records = ets:match(PWDB, '$1'), 
+    {ok, lists:foldr(fun({User, _PassWd, _Data}, A) -> [User | A] end, 
+		     [], lists:flatten(Records))}.
 
 delete_user(DirData, UserName) ->
     PWDB = httpd_util:key1search(DirData, auth_user_file),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, _SomePassword, _SomeData}] ->
 	    ets:delete(PWDB, UserName),
-	    case list_groups(DirData) of
-		{ok,Groups}->
-		    lists:foreach(fun(Group) -> 
-					  delete_group_member(DirData, 
-							      Group, UserName) 
-				  end,Groups),
-		    true;
-		_->
-		    true
-	    end;
+	    {ok, Groups}  = list_groups(DirData),
+	    lists:foreach(fun(Group) -> 
+				  delete_group_member(DirData, 
+						      Group, UserName) 
+			  end, Groups);
 	_ ->
 	    {error, no_such_user}
     end.
@@ -131,20 +122,14 @@ list_group_members(DirData, Group) ->
 
 list_groups(DirData) ->
     GDB = httpd_util:key1search(DirData, auth_group_file),
-    case ets:match(GDB, '$1') of
-	[] ->
-	    {ok, []};
-	Groups0 when list(Groups0) ->
-	    {ok, httpd_util:uniq(lists:foldr(fun({G, _}, A) -> [G|A] end,
-					     [], lists:flatten(Groups0)))};
-	_ ->
-	    {ok, []}
-    end.
+    Groups = ets:match(GDB, '$1'), 
+    {ok, httpd_util:uniq(lists:foldr(fun({G, _}, A) -> [G|A] end,
+				     [], lists:flatten(Groups)))}.
 
 delete_group_member(DirData, Group, User) ->
     GDB = httpd_util:key1search(DirData, auth_group_file),
     case ets:lookup(GDB, Group) of
-	[{Group, Users}] when list(Users) ->
+	[{Group, Users}] when is_list(Users) ->
 	    case lists:member(User, Users) of
 		true ->
 		    ets:delete(GDB, Group),

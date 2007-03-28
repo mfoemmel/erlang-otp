@@ -33,6 +33,7 @@
 	 lookup_call_site/2,
 	 lookup_label/2,
 	 lookup_name/2,
+	 modules/1,
 	 module_postorder/1,
 	 module_postorder_from_funs/2,
 	 in_neighbours/2,
@@ -164,6 +165,9 @@ find_non_local_calls([{Label1, Label2}|Left], Set) when is_integer(Label1),
   find_non_local_calls(Left, Set);
 find_non_local_calls([], Set) ->
   sets:to_list(Set).
+
+modules(#dialyzer_callgraph{digraph=DG}) ->
+  ordsets:from_list([M || {M,_F,_A} <- digraph_vertices(DG)]).
 
 module_postorder(#dialyzer_callgraph{digraph=DG}) ->
   Edges = digraph_edges(DG),

@@ -1,5 +1,35 @@
 {"%VSN%",	
- [		
+ [
+  {"4.7.10",
+   [
+   {load_module, http_chunk, soft_purge, soft_purge, []},
+   {load_module, httpc_manager, soft_purge, soft_purge, []},
+   {load_module, httpd, soft_purge, soft_purge, []},
+   {load_module, httpd_instance_sup, soft_purge, soft_purge, []},
+   {load_module, mod_auth, soft_purge, soft_purge, []},
+   {load_module, mod_auth_plain, soft_purge, soft_purge, []},
+   {load_module, mod_cgi, soft_purge, soft_purge, []},
+   {load_module, mod_htaccess, soft_purge, soft_purge, []},	
+   {load_module, mod_security_server, soft_purge, soft_purge, []}
+   ]			 		    
+  },	
+  		
+  {"4.7.9",
+   [
+   {load_module, httpd_acceptor, soft_purge, soft_purge, []},
+   {load_module, tftp_lib, soft_purge, soft_purge, []},
+   {load_module, tftp_engine, soft_purge, soft_purge, []}
+   ]			 		    
+  },		
+ 		
+  {"4.7.8",	
+   [
+   {load_module, httpc_handler, soft_purge, soft_purge, []},
+   {load_module, mod_esi, soft_purge, soft_purge, []},
+   {load_module, mod_include, soft_purge, soft_purge, []}
+   ]			 		    
+  },					    	
+
   {"4.7.7",	
    [
    {load_module, httpd_util, soft_purge, soft_purge, []},
@@ -12,8 +42,36 @@
    {load_module, tftp_engine, soft_purge, soft_purge, []}
    ]			 		    
   }					    
- ],					    
- [					    
+ ],
+ [
+ 
+ {"4.7.10",
+   [            
+   {load_module, http_chunk, soft_purge, soft_purge, []},
+   {load_module, httpc_manager, soft_purge, soft_purge, []},
+   {load_module, httpd, soft_purge, soft_purge, []},
+   {load_module, httpd_instance_sup, soft_purge, soft_purge, []},
+   {load_module, mod_auth, soft_purge, soft_purge, []},
+   {load_module, mod_auth_plain, soft_purge, soft_purge, []},
+   {load_module, mod_cgi, soft_purge, soft_purge, []},
+   {load_module, mod_htaccess, soft_purge, soft_purge, []},	
+   {load_module, mod_security_server, soft_purge, soft_purge, []}
+   ]			 		    
+  },	
+ 
+  {"4.7.9",	
+   [
+   {load_module, httpd_acceptor, soft_purge, soft_purge, []}
+   ]			 		    
+  },		
+ 					    
+  {"4.7.8",				    
+   [
+   {load_module, httpc_handler, soft_purge, soft_purge, []},
+   {load_module, mod_esi, soft_purge, soft_purge, []},
+   {load_module, mod_include, soft_purge, soft_purge, []}
+   ]					    
+  },					    	
   {"4.7.7",				    
    [
    {load_module, httpd_util, soft_purge, soft_purge, []},

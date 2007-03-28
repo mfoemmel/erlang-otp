@@ -126,6 +126,7 @@ image_of_sname(ns)        -> "A-NOTE-STORE";
 image_of_sname(ss)        -> "A-SYMBOLIC-STORE";
 image_of_sname(asup)      -> "A-SUPERVISOR";
 image_of_sname(ms)        -> "A-MIB-SERVER";
+image_of_sname(tcs)       -> "A-TARGET-CACHE-SERVER";
 image_of_sname(conf)      -> "A-CONF";
 
 image_of_sname(abs)       -> "A-BKP";

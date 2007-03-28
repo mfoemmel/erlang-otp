@@ -655,23 +655,13 @@ effective_constraint(integer,C) ->
     CRange = greatest_common_range(SV,VR),
     pre_encode(integer,CRange);
 effective_constraint(bitstring,C) ->
-%     Constr=get_constraints(C,'SizeConstraint'),
-%     case Constr of
-% 	[] -> no;
-% 	[{'SizeConstraint',Val}] -> Val;
-% 	Other -> Other
-%     end;
-    get_constraint(C,'SizeConstraint');
-effective_constraint(Type,C) ->
-    io:format("Effective constraint for ~p, not implemented yet.~n",[Type]),
-    C.
+    get_constraint(C,'SizeConstraint').
 
 effective_constr(_,[]) ->
     [];
 effective_constr('SingleValue',List) ->
     SVList = lists:flatten(lists:map(fun(X)->element(2,X)end,List)),
     % sort and remove duplicates
-%    SortedSVList = lists:sort(SVList),
     RemoveDup = fun([],_) ->[];
 		   ([H],_) -> [H];
 		   ([H,H|T],F) -> F([H|T],F);
@@ -720,60 +710,6 @@ greatest_Ub(L) ->
 	_ -> lists:max(L)
     end.
 
-% effective_constraint1('SingleValue',List) ->
-%     SVList = lists:map(fun(X)->element(2,X)end,List),
-%     sv_effective_constraint(hd(SVList),tl(SVList));
-% effective_constraint1('ValueRange',List) ->
-%     VRList = lists:map(fun(X)->element(2,X)end,List),
-%     vr_effective_constraint(lists:map(fun(X)->element(1,X)end,VRList),
-% 			    lists:map(fun(X)->element(2,X)end,VRList)).
-
-%% vr_effective_constraint/2
-%% Gets all LowerEndPoints and UpperEndPoints as arguments
-%% Returns {'ValueRange',{Lb,Ub}} where Lb is the highest value of
-%% the LowerEndPoints and Ub is the lowest value of the UpperEndPoints,
-%% i.e. the intersection of all value ranges.
-% vr_effective_constraint(Mins,Maxs) ->
-%     Lb=lists:foldl(fun(X,'MIN') when integer(X) -> X;
-% 		      (X,'MIN') -> 'MIN';
-% 		      (X,AccIn) when integer(X),X >= AccIn -> X;
-% 		      (X,AccIn) -> AccIn
-% 		   end,hd(Mins),tl(Mins)),
-%     Ub = lists:min(Maxs),
-%     {'ValueRange',{Lb,Ub}}.
-			   
-
-% sv_effective_constraint(SV,[]) ->
-%     {'SingleValue',SV};
-% sv_effective_constraint([],_) ->
-%     exit({error,{asn1,{illegal_single_value_constraint}}});
-% sv_effective_constraint(SV,[SV|Rest]) ->
-%     sv_effective_constraint(SV,Rest);
-% sv_effective_constraint(Int,[SV|Rest]) when integer(Int),list(SV) ->
-%     case lists:member(Int,SV) of
-% 	true ->
-% 	    sv_effective_constraint(Int,Rest);
-% 	_ ->
-% 	    exit({error,{asn1,{illegal_single_value_constraint}}})
-%     end;
-% sv_effective_constraint(SV,[Int|Rest]) when integer(Int),list(SV) ->
-%     case lists:member(Int,SV) of
-% 	true ->
-% 	    sv_effective_constraint(Int,Rest);
-% 	_ ->
-% 	    exit({error,{asn1,{illegal_single_value_constraint}}})
-%     end;
-% sv_effective_constraint(SV1,[SV2|Rest]) when list(SV1),list(SV2) ->
-%     sv_effective_constraint(common_set(SV1,SV2),Rest);
-% sv_effective_constraint(_,_) ->
-%     exit({error,{asn1,{illegal_single_value_constraint}}}).
-
-%% common_set/2
-%% Two lists as input
-%% Returns the list with all elements that are common for both
-%% input lists
-% common_set(SV1,SV2) ->
-%     lists:filter(fun(X)->lists:member(X,SV1) end,SV2).
 
 
 
@@ -827,7 +763,6 @@ gen_obj_code(Erules,_Module,Obj) when record(Obj,typedef) ->
     gen_encode_constr_type(Erules,EncConstructed),
     emit(nl),
     DecConstructed =
-%	gen_decode_objectfields(Class#classdef.typespec,ObjName,Fields,[]),
 	gen_decode_objectfields(ClassName,get_class_fields(Class),
 				ObjName,Fields,[]),
     emit(nl),
@@ -926,63 +861,7 @@ gen_encode_objectfields(ClassName,[_C|Cs],O,OF,Acc) ->
 gen_encode_objectfields(_,[],_,_,Acc) ->
     Acc.
 
-% gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-%     Fields = Class#objectclass.fields,
 
-%     MaybeConstr =
-%     case is_typefield(Fields,FieldName) of
-% 	true ->
-% 	    Def = Type#typedef.typespec,
-% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Dummy) ->",nl}),
-
-% 	    CAcc =
-% 	    case Type#typedef.name of
-% 		{primitive,bif} ->
-% 		    gen_encode_prim(per,Def,"false","Val"),
-% 		    [];
-% 		{constructed,bif} ->
-% 		    emit({"   'enc_",ObjName,'_',FieldName,
-% 			  "'(Val)"}),
-% 			[{['enc_',ObjName,'_',FieldName],Def}];
-% 		{ExtMod,TypeName} ->
-% 		    emit({"   '",ExtMod,"':'enc_",TypeName,"'(Val)"}),
-% 		    [];
-% 		TypeName ->
-% 		    emit({"   'enc_",TypeName,"'(Val)"}),
-% 		    []
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    CAcc;
-% 	{false,objectfield} ->
-% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, [H|T]) ->",nl}),
-% 	    case Type#typedef.name of
-% 		{ExtMod,TypeName} ->
-% 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
-% 			  "'(H, Val, T)"});
-% 		TypeName ->
-% 		    emit({indent(3),"'enc_",TypeName,"'(H, Val, T)"})
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    [];
-% 	{false,_} -> []
-%     end,
-%     gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-% gen_encode_objectfields(C,O,[_|T],Acc) ->
-%     gen_encode_objectfields(C,O,T,Acc);
-% gen_encode_objectfields(_,_,[],Acc) ->
-%     Acc.
 
 gen_encode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(enc,TypeDef#typedef.name) of
@@ -1187,72 +1066,7 @@ gen_decode_default_call(ClassName,FieldName,Bytes,Type) ->
 
 %%%%%%%%%%%%%%%
 
-% gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-%     Fields = Class#objectclass.fields,
 
-%     MaybeConstr =
-%     case is_typefield(Fields,FieldName) of
-% 	true ->
-% 	    Def = Type#typedef.typespec,
-% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Telltype, RestPrimFieldName) ->",nl}),
-
-% 	    CAcc =
-% 	    case Type#typedef.name of
-% 		{primitive,bif} ->
-% 		    gen_dec_prim(per,Def,"Val"),
-% 		    [];
-% 		{constructed,bif} ->
-% 		    emit({"   'dec_",ObjName,'_',FieldName,
-% 			  "'(Val, Telltype)"}),
-% 		    [{['dec_',ObjName,'_',FieldName],Def}];
-% 		{ExtMod,TypeName} ->
-% 		    emit({"   '",ExtMod,"':'dec_",TypeName,
-% 			  "'(Val, Telltype)"}),
-% 		    [];
-% 		TypeName ->
-% 		    emit({"   'dec_",TypeName,"'(Val, Telltype)"}),
-% 		    []
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    CAcc;
-% 	{false,objectfield} ->
-% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Telltype, [H|T]) ->",nl}),
-% 	    case Type#typedef.name of
-% 		{ExtMod,TypeName} ->
-% 		    emit({indent(3),"'",ExtMod,"':'dec_",TypeName,
-% 			  "'(H, Val, Telltype, T)"});
-% 		TypeName ->
-% 		    emit({indent(3),"'dec_",TypeName,
-% 			  "'(H, Val, Telltype, T)"})
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    [];
-% 	{false,_} ->
-% 	    []
-%     end,
-%     gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-% gen_decode_objectfields(C,O,[_|T],CAcc) ->
-%     gen_decode_objectfields(C,O,T,CAcc);
-% gen_decode_objectfields(_,_,[],CAcc) ->
-%     CAcc.
-
-gen_decode_constr_type(Erules,[{Name,Def}|Rest]) ->
-    emit({Name,"(Bytes,_) ->",nl}),
-    InnerType = asn1ct_gen:get_inner(Def#type.def),
-    asn1ct_gen:gen_decode_constructed(Erules,Name,InnerType,Def),
-    gen_decode_constr_type(Erules,Rest);
 gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(dec,TypeDef#typedef.name) of
 	true -> ok;
@@ -1263,18 +1077,6 @@ gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
 gen_decode_constr_type(_,[]) ->
     ok.
 
-% is_typefield(Fields,FieldName) ->
-%     case lists:keysearch(FieldName,2,Fields) of
-% 	{value,Field} ->
-% 	    case element(1,Field) of
-% 		typefield ->
-% 		    true;
-% 		Other ->
-% 		    {false,Other}
-% 	    end;
-% 	_ ->
-% 	    false
-%     end.
 %% Object Set code generating for encoding and decoding
 %% ----------------------------------------------------
 gen_objectset_code(Erules,ObjSet) ->
@@ -1957,23 +1759,9 @@ emit_dec_enumerated_end() ->
 	_ -> ok
     end.
 
-% dec_enumerated_cases(NNL,Tmpremain,No) ->
-%     Cases=dec_enumerated_cases1(NNL,Tmpremain,0),
-%     lists:flatten(io_lib:format("(case ~s "++Cases++
-% 		  "~s when atom(~s)->exit({error,{asn1,{namednumber,~s}}});_->~s end)",[Value,"TmpVal","TmpVal","TmpVal",Value])).
 
 dec_enumerated_cases([Name|Rest],Tmpremain,No) ->
     io_lib:format("~w->{~w,~s};",[No,Name,Tmpremain])++
 	dec_enumerated_cases(Rest,Tmpremain,No+1);
 dec_enumerated_cases([],_,_) ->
     "".
-
-
-% more_genfields(_Fields,[]) ->
-%     false;
-% more_genfields(Fields,[{FieldName,_}|T]) ->
-%     case is_typefield(Fields,FieldName) of
-% 	true -> true;
-% 	{false,objectfield} -> true;
-% 	{false,_} -> more_genfields(Fields,T)
-%     end.

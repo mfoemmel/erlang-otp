@@ -416,14 +416,14 @@ strict_record_access(E0, St0) ->
 conj([], _E) ->
     empty;
 conj([{{Name,_Rp},L,R,Sz} | AL], E) ->
-    T1 = {op,L,'orelse',
-          {call,L,{atom,L,is_record},[R,{atom,L,Name},{integer,L,Sz}]},
-          {atom,L,fail}},
+    T1 = {op,-L,'orelse',
+          {call,-L,{atom,-L,is_record},[R,{atom,-L,Name},{integer,-L,Sz}]},
+          {atom,-L,fail}},
     T2 = case conj(AL, none) of
         empty -> T1;
-        C -> {op,L,'and',C,T1}
+        C -> {op,-L,'and',C,T1}
     end,
-    if E =:= none -> T2; true -> {op,L,'and',T2,E} end.
+    if E =:= none -> T2; true -> {op,-L,'and',T2,E} end.
 
 %% lc_tq(Line, Qualifiers, State) ->
 %%      {[TransQual],State'}
@@ -513,13 +513,13 @@ strict_get_record_field(Line, R, {atom,_,F}=Index, Name, St0) ->
             Fs = record_fields(Name, St),
             I = index_expr(F, Fs, 2),
             P = record_pattern(2, I, Var, length(Fs)+1, Line, [{atom,Line,Name}]),
-	    E = {'case',Line,R,
-		     [{clause,Line,[{tuple,Line,P}],[],[Var]},
-		      {clause,Line,[{var,Line,'_'}],[],
-		       [{call,Line,{remote,Line,
-				    {atom,Line,erlang},
-				    {atom,Line,error}},
-			 [{tuple,Line,[{atom,Line,badrecord},{atom,Line,Name}]}]}]}]},
+	    E = {'case',-Line,R,
+		     [{clause,-Line,[{tuple,-Line,P}],[],[Var]},
+		      {clause,-Line,[{var,-Line,'_'}],[],
+		       [{call,-Line,{remote,-Line,
+				    {atom,-Line,erlang},
+				    {atom,-Line,error}},
+			 [{tuple,-Line,[{atom,-Line,badrecord},{atom,-Line,Name}]}]}]}]},
             expr(E, St);
         true ->                                 %In a guard.
             Fs = record_fields(Name, St0),
@@ -619,8 +619,8 @@ record_match(R, Name, Fs, Us, St0) ->
     {{'case',Lr,R,
       [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name} | Ps]}],[],
         [{tuple,Lr,[{atom,Lr,Name} | News]}]},
-       {clause,Lr,[{var,Lr,'_'}],[],
-        [call_error(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}
+       {clause,-Lr,[{var,-Lr,'_'}],[],
+        [call_error(-Lr, {tuple,-Lr,[{atom,-Lr,badrecord},{atom,-Lr,Name}]})]}
       ]},
      St1}.
 
@@ -650,8 +650,8 @@ record_setel(R, Name, Fs, Us0) ->
        [foldr(fun ({I,Lf,Val}, Acc) ->
                       {call,Lf,{atom,Lf,setelement},[I,Acc,Val]} end,
               R, Us)]},
-      {clause,Lr,[{var,Lr,'_'}],[],
-       [call_error(Lr, {tuple,Lr,[{atom,Lr,badrecord},{atom,Lr,Name}]})]}]}.
+      {clause,-Lr,[{var,-Lr,'_'}],[],
+       [call_error(-Lr, {tuple,-Lr,[{atom,-Lr,badrecord},{atom,-Lr,Name}]})]}]}.
 
 %% Expand a call to record_info/2. We have checked that it is not
 %% shadowed by an import.

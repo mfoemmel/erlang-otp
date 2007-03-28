@@ -206,12 +206,15 @@ noproc_primop_interface_2(nbif_eq_2, eq)
  * XXX: all of the _2 versions cons on the ordinary heap
  * XXX: the non-_2 versions only cons on the arithmetic heap
  * XXX: all of them can cons and thus update FCALLS
+ * The non-_2 versions disappear when HEAP_FRAG_ELIM_TEST is enabled.
  */
+ifelse(HEAP_FRAG_ELIM_TEST,1,,`
 nofail_primop_interface_2(nbif_bs_get_integer, erts_bs_get_integer)
 nofail_primop_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
 nofail_primop_interface_2(nbif_bs_get_float, erts_bs_get_float)
 nofail_primop_interface_0(nbif_bs_get_binary_all, erts_bs_get_binary_all)
 nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
+')dnl
 nofail_primop_interface_3(nbif_bs_get_integer_2, erts_bs_get_integer_2)
 nofail_primop_interface_3(nbif_bs_get_binary_2, erts_bs_get_binary_2)
 nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
@@ -228,35 +231,21 @@ noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
  * When ERTS_SMP is disabled, noproc_primop_interface_N()
  * should be used instead.
  */
-nocons_nofail_primop_interface_3(nbif_bs_put_float, erts_bs_put_float)
 nocons_nofail_primop_interface_5(nbif_bs_put_small_float, hipe_bs_put_small_float)
 noproc_primop_interface_5(nbif_bs_put_bits, hipe_bs_put_bits)
 ifelse(ERTS_SMP,1,`
-nocons_nofail_primop_interface_1(nbif_bs_start_match, hipe_bs_start_match)
-nocons_nofail_primop_interface_1(nbif_bs_skip_bits, hipe_bs_skip_bits)
-nocons_nofail_primop_interface_0(nbif_bs_skip_bits_all, hipe_bs_skip_bits_all)
-nocons_nofail_primop_interface_1(nbif_bs_test_tail, hipe_bs_test_tail)
-nocons_nofail_primop_interface_1(nbif_bs_save, hipe_bs_save)
-nocons_nofail_primop_interface_1(nbif_bs_restore, hipe_bs_restore)
-nocons_nofail_primop_interface_0(nbif_bs_init, hipe_bs_init)
-nocons_nofail_primop_interface_3(nbif_bs_put_integer, hipe_bs_put_integer)
-nocons_nofail_primop_interface_2(nbif_bs_put_binary, hipe_bs_put_binary)
-nocons_nofail_primop_interface_1(nbif_bs_put_binary_all, hipe_bs_put_binary_all)
-nocons_nofail_primop_interface_2(nbif_bs_put_string, hipe_bs_put_string)
 nocons_nofail_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
 ',`
-noproc_primop_interface_1(nbif_bs_start_match, erts_bs_start_match)
-noproc_primop_interface_1(nbif_bs_skip_bits, erts_bs_skip_bits)
-noproc_primop_interface_0(nbif_bs_skip_bits_all, erts_bs_skip_bits_all)
-noproc_primop_interface_1(nbif_bs_test_tail, erts_bs_test_tail)
-noproc_primop_interface_1(nbif_bs_save, erts_bs_save)
-noproc_primop_interface_1(nbif_bs_restore, erts_bs_restore)
-noproc_primop_interface_0(nbif_bs_init, erts_bs_init)
-noproc_primop_interface_3(nbif_bs_put_integer, erts_bs_put_integer)
-noproc_primop_interface_2(nbif_bs_put_binary, erts_bs_put_binary)
-noproc_primop_interface_1(nbif_bs_put_binary_all, erts_bs_put_binary_all)
-noproc_primop_interface_2(nbif_bs_put_string, erts_bs_put_string)
 noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
+')dnl
+
+/* crap crap crap */
+ifelse(ERTS_SMP,1,`
+nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
+',`
+ifelse(HEAP_FRAG_ELIM_TEST,1,`
+nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
+',)dnl
 ')dnl
 
 /*
@@ -264,7 +253,6 @@ noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
  */
 ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_0(nbif_clear_timeout, hipe_clear_timeout)
-nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
 noproc_primop_interface_1(nbif_atomic_inc, hipe_atomic_inc)
 ',)dnl
 

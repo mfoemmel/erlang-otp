@@ -23,9 +23,6 @@
 
 -export([start/0, start/2, stop/1, init/1]).
 
-%% debug
--export([kill/0, supervisor_timeout/1]).
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% application and supervisor callback functions
 
@@ -65,45 +62,6 @@ init() ->
 worker_spec(Name, KillAfter, Modules) ->
     KA = supervisor_timeout(KillAfter),
     {Name, {Name, start, []}, permanent, KA, worker, [Name] ++ Modules}.
-
-    
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% debug functions
-
-kill() ->
-    Appl = get_application(),
-    Modules = mnemosyne:ms(),
-    Kill = fun(Name) -> catch exit(whereis(Name), kill) end,
-    lists:foreach(Kill, Modules),
-    lists:foreach(fun ensure_dead/1, Modules),
-    timer:sleep(10),
-    case lists:keymember(Appl, 1, application:which_applications()) of
-	true -> kill();
-	false -> ok
-    end.
-
-get_application() ->
-    case whereis(mnemosyne_catalog) of
-	undefined ->
-	    mnemosyne;
-	Pid ->
-	    case application:get_application(Pid) of
-		{ok, Appl} ->
-		    Appl;
-		undefined ->
-		    mnemosyne
-	    end
-    end.
-
-ensure_dead(Name) ->
-    case whereis(Name) of
-	undefined ->
-	    ok;
-	Pid when pid(Pid) ->
-	    exit(Pid, kill),
-	    timer:sleep(10),
-	    ensure_dead(Name)
-    end.
 
 -ifdef(debug_shutdown).
 supervisor_timeout(_KillAfter) -> timer:hours(500).

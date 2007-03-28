@@ -55,22 +55,22 @@
 
 -include("../sparc/hipe_sparc.hrl").
 
-%-define(debug1,true).
+%%-define(debug1,true).
 
-%-define(debug2,true).
--define(debug2,false).
+-define(debug2(Str,Args),ok).
+%%-define(debug2(Str,Args),io:format(Str,Args)).
 
 -define(debug3(Str,Args),ok).
-%-define(debug3(Str,Args),io:format(Str,Args)).
+%%-define(debug3(Str,Args),io:format(Str,Args)).
 
-%-define(debug4,true).
--define(debug4,false).
+-define(debug4(Str,Args),ok).
+%%-define(debug4(Str,Args),io:format(Str,Args)).
 
 -define(debug5(Str,Args),ok).
-%-define(debug5(Str,Args),io:format(Str,Args)).
+%%-define(debug5(Str,Args),io:format(Str,Args)).
 
 -define(debug(Str,Args),ok).
-%-define(debug(Str,Args),io:format(Str,Args)).
+%%-define(debug(Str,Args),io:format(Str,Args)).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -190,9 +190,10 @@ block(_L,Blk) ->
 %%               branches/jumps. If one is found fill_del tries to find
 %%               an instr to fill the delayslot.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 fill_delays(Sch, IxBlk, DAG) ->
     NewIxBlk =  hipe_vectors:list_to_vector(IxBlk),
-%    NewSch   = hipe_vectors:list_to_vector(Sch),
+    %% NewSch = hipe_vectors:list_to_vector(Sch),
     NewSch = fill_del(length(Sch), hipe_vectors:list_to_vector(Sch), 
 		      NewIxBlk, DAG),
     {NewSch, NewIxBlk}.
@@ -208,15 +209,12 @@ fill_delays(Sch, IxBlk, DAG) ->
 %% Description : If a call/jump is found fill_branch_delay/fill_call_delay
 %%                 is called to find a delay-filler.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 fill_del(N, Sch, _IxBlk, _DAG) when N < 1 -> Sch;
 fill_del(N, Sch, IxBlk, DAG) ->
     Index = get_index(Sch, N),
-    case ?debug2 of 
-	true -> 
-	    io:format("Index för ~p: ~p~n",[N, Index]),
-	    io:format("Instr: ~p~n", [get_instr(IxBlk, Index)]);
-	false -> ok
-    end,
+    ?debug2("Index for ~p: ~p~nInstr: ~p~n",
+	    [N, Index, get_instr(IxBlk, Index)]),
     NewSch = 
 	case get_instr(IxBlk, Index) of
 	    #call_link{} ->
@@ -248,8 +246,8 @@ fill_del(N, Sch, IxBlk, DAG) ->
 %% Description : Searches backwards through the schedule trying to find an 
 %%               instr without conflicts with the Call-instr.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-fill_call_delay(Cand, _Call, Sch, _IxBlk, _DAG) when Cand < 1 -> Sch;
 
+fill_call_delay(Cand, _Call, Sch, _IxBlk, _DAG) when Cand < 1 -> Sch;
 fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
     CandIndex = get_index(Sch, Cand),
     CallIndex = get_index(Sch, Call),
@@ -264,8 +262,8 @@ fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
 		    CallI = get_instr(IxBlk, CallIndex),
 		    
 		    CandDefs = ordsets:from_list(hipe_sparc:defines(CandI)),
-		    CandUses = ordsets:from_list(hipe_sparc:uses(CandI)),
-		    CallDefs = ordsets:from_list(hipe_sparc:defines(CallI)),
+		    %% CandUses = ordsets:from_list(hipe_sparc:uses(CandI)),
+		    %% CallDefs = ordsets:from_list(hipe_sparc:defines(CallI)),
 		    CallUses = ordsets:from_list(hipe_sparc:uses(CallI)),
 		    
 		    Args = case CallI of
@@ -280,18 +278,12 @@ fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
 			   end,
 		    CallUses2 = ordsets:subtract(CallUses, Args),
 		    Conflict = ordsets:intersection(CandDefs, CallUses2),
-		    case ?debug2 of
-			true ->
-			    io:format("single_depend -> true:~n ~p~n, ~p~n,~p~n",
-				      [CandI, CallI, DAG]),
-			    io:format("Cand = ~p~nCall = ~p~n",[CandI,CallI]),
-			    io:format("CandDefs = ~p~nCallDefs = ~p~n",[CandDefs,CallDefs]),
-			    io:format("CandUses = ~p~nCallUses = ~p~n",[CandUses,CallUses]),
-			    io:format("Args = ~p~nCallUses2 = ~p~n",[Args,CallUses2]),
-			    
-			    io:format("Conflict = ~p~n",[Conflict]);
-			false -> ok
-		    end,
+		    %% io:format("single_depend -> true:~n ~p~n, ~p~n,~p~n",[CandI,CallI,DAG]),
+		    %% io:format("Cand = ~p~nCall = ~p~n",[CandI,CallI]),
+		    %% io:format("CandDefs = ~p~nCallDefs = ~p~n",[CandDefs,CallDefs]),
+		    %% io:format("CandUses = ~p~nCallUses = ~p~n",[CandUses,CallUses]),
+		    %% io:format("Args = ~p~nCallUses2 = ~p~n",[Args,CallUses2]),
+		    %% io:format("Conflict = ~p~n",[Conflict]),
 		    
 		    case Conflict of 
 			[] -> % No conflicts ==> Cand can fill delayslot after Call
@@ -316,6 +308,7 @@ fill_call_delay(Cand, Call, Sch, IxBlk, DAG) ->
 %% Description : Searches backwards through the schedule trying to find an 
 %%               instr without conflicts with the Branch-instr.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 fill_branch_delay(Cand, _Br, Sch, _IxBlk, _DAG) when Cand < 1 -> Sch;
 fill_branch_delay(Cand, Br, Sch, IxBlk, DAG) -> 
     CandIndex = get_index(Sch, Cand),
@@ -330,21 +323,16 @@ fill_branch_delay(Cand, Br, Sch, IxBlk, DAG) ->
 		true ->
 		    BrI      = get_instr(IxBlk, BrIndex),
 		    CandDefs = ordsets:from_list(hipe_sparc:defines(CandI)),
-		    CandUses = ordsets:from_list(hipe_sparc:uses(CandI)),
-		    BrDefs   = ordsets:from_list(hipe_sparc:defines(BrI)),
+		    %% CandUses = ordsets:from_list(hipe_sparc:uses(CandI)),
+		    %% BrDefs   = ordsets:from_list(hipe_sparc:defines(BrI)),
 		    BrUses   = ordsets:from_list(hipe_sparc:uses(BrI)),
 		    
 		    Conflict = ordsets:intersection(CandDefs, BrUses),
-		    case ?debug2 of
-			true ->
-			    io:format("single_depend -> true: ~p~n, ~p~n,~p~n",
-				      [CandI, BrI, DAG]),
-			    io:format("Cand = ~p~nBr = ~p~n",[CandI,BrI]),
-			    io:format("CandDefs = ~p~nBrDefs = ~p~n",[CandDefs,BrDefs]),
-			    io:format("CandUses = ~p~nBrUses = ~p~n",[CandUses,BrUses]),
-			    io:format("Conflict = ~p~n",[Conflict]);
-			false -> ok
-		    end,
+		    %% io:format("single_depend -> true: ~p~n, ~p~n,~p~n", [CandI, BrI, DAG]),
+		    %% io:format("Cand = ~p~nBr = ~p~n",[CandI,BrI]),
+		    %% io:format("CandDefs = ~p~nBrDefs = ~p~n",[CandDefs,BrDefs]),
+		    %% io:format("CandUses = ~p~nBrUses = ~p~n",[CandUses,BrUses]),
+		    %% io:format("Conflict = ~p~n",[Conflict]);
 		    
 		    case Conflict of 
 			[] -> % No conflicts ==> 
@@ -489,13 +477,7 @@ bb(N,IxBlk,{DAG, Preds}) ->
     
     Prio = hipe_schedule_prio:init_instr_prio(N,DAG),
     Rsrc = init_resources(BigArray),
-    case ?debug4 of
-	true ->
-	    io:format("I_res: ~n~p~n",[I_res]),
-	    io:format("Prio: ~n~p~n",[Prio]),
-	    io:format("Rsrc: ~n~p~n",[Rsrc]);
-	false -> ok
-    end,
+    ?debug4("I_res: ~n~p~nPrio: ~n~p~nRsrc: ~n~p~n", [I_res,Prio,Rsrc]),
     ?debug('cycle 1~n',[]),
     Sch = empty_schedule(),
     cycle_sched(1,Ready,DAG,Preds,Earliest,Rsrc,I_res,Prio,Sch,N,IxBlk).

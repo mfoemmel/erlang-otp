@@ -118,23 +118,11 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
-ifeq ($(MEGACO_DEBUG),true)
-ERL_COMPILE_FLAGS += -Dmegaco_debug
-endif
+include ../app/megaco.mk
 
-ifeq ($(WARN_UNUSED_WARS),true)
-ERL_COMPILE_FLAGS += +warn_unused_vars
-endif
+ERL_FLAGS += $(MEGACO_ERL_FLAGS)
 
-ifeq ($(USE_MEGACO_HIPE),true)
-ERL_COMPILE_FLAGS += +native
-endif
-
-
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include \
-                     +'{parse_transform,sys_pre_attributes}' \
-                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
+ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 
 # ----------------------------------------------------

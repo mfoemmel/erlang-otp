@@ -80,9 +80,6 @@ dump_process_info(int to, void *to_arg, Process *p)
     Eterm* sp;
     ErlMessage* mp;
     int yreg = -1;
-#ifndef HYBRID
-    ErlFunThing* fptr;
-#endif
 
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
 
@@ -117,20 +114,6 @@ dump_process_info(int to, void *to_arg, Process *p)
     }
 
     erts_print(to, to_arg, "=proc_heap:%T\n", p->id);
-
-#ifndef HYBRID /* FIND ME! */
-    /*
-     * We dump funs in the external format. Therefore, we must be sure
-     * sure that any part of the heap referenced by the funs's environments
-     * have not been destroyed. Dump the funs now.
-     */
-    for (fptr = MSO(p).funs; fptr != 0; fptr = fptr->next) {
-	erts_print(to, to_arg, ADDR_FMT ":", fptr);
-	dump_externally(to, to_arg, make_fun((Eterm)fptr));
-	erts_putc(to, to_arg, '\n');
-	* (Eterm *) fptr = OUR_NIL;
-    }
-#endif
 
     for (sp = p->stop; sp < STACK_START(p); sp++) {
 	Eterm term = *sp;
@@ -402,6 +385,30 @@ dump_externally(int to, void *to_arg, Eterm term)
     byte sbuf[1024]; /* encode and hope for the best ... */
     byte* s; 
     byte* p;
+
+    if (is_fun(term)) {
+	/*
+	 * The fun's environment used to cause trouble. There were
+	 * two kind of problems:
+	 *
+	 * 1. A term used in the environment could already have been
+	 *    dumped and thus destroyed (since dumping is destructive).
+	 *
+	 * 2. A term in the environment could be too big, so that
+	 *    the buffer for external format overflowed (allocating
+	 *    memory is not really a solution, as it could be exhausted).
+	 *
+	 * Simple solution: Set all variables in the environment to NIL.
+	 * The crashdump_viewer does not allow inspection of them anyway.
+	 */
+	ErlFunThing* funp = (ErlFunThing *) fun_val(term);
+	Uint num_free = funp->num_free;
+	Uint i;
+
+	for (i = 0; i < num_free; i++) {
+	    funp->env[i] = NIL;
+	}
+    }
 
     s = p = sbuf;
     erts_to_external_format(NULL, term, &p, NULL, NULL);

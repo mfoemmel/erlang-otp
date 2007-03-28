@@ -432,7 +432,7 @@ is_running(Pid) ->
 is_pid_or_shell({shell,_Spec}) ->			%(???) Check the Pid ?
     true;
 
-is_pid_or_shell(P) when pid(P) ->
+is_pid_or_shell(P) when is_pid(P) ->
     true;
 
 is_pid_or_shell(_) ->
@@ -451,7 +451,7 @@ is_pid_or_shell(_) ->
 
 get_pid({shell,Pid}) ->
     Pid;
-get_pid(Pid) when pid(Pid) ->
+get_pid(Pid) when is_pid(Pid) ->
     Pid.
 
 
@@ -469,7 +469,7 @@ get_pid(Pid) when pid(Pid) ->
 %%   true	if the process is a system process
 %%   false	if the process in not a system process
 %%
-is_system_process(Pid) when pid(Pid)->
+is_system_process(Pid) when is_pid(Pid)->
 
     
     %% Test if the start specification is a "system start function"
@@ -521,7 +521,7 @@ initial_call(Pid)  ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% is_started_by/2
 
-is_started_by(Pid, Funcspec) when pid(Pid)->
+is_started_by(Pid, Funcspec) when is_pid(Pid)->
     case (catch initial_call(Pid)) of
 	{'EXIT', _Reason} ->
 	    false;
@@ -536,7 +536,7 @@ is_started_by(_Pid, _Funcspec) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% is_registered_as/2
 
-is_registered_as(Pid, Funcspec) when pid(Pid) ->
+is_registered_as(Pid, Funcspec) when is_pid(Pid) ->
     case (catch pman_process:pinfo(Pid, registered_name)) of
 	{registered_name, Name} ->
 	    Name==Funcspec;
@@ -553,7 +553,7 @@ is_registered_as(_Pid, _Funcspec) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% is_running_in/2
 
-is_running_in(Pid, Funcspec) when pid(Pid) ->
+is_running_in(Pid, Funcspec) ->
     case (catch pman_process:pinfo(Pid, current_function )) of
 	{current_function, Name} ->
 	    Name==Funcspec;
@@ -561,10 +561,7 @@ is_running_in(Pid, Funcspec) when pid(Pid) ->
 	    false;
 	_Catchall ->
 	    false
-    end;
-
-is_running_in(_Pid, _Funcspec) ->
-    false.
+    end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -597,7 +594,7 @@ is_hidden_by_module(Pid, OSModuleExcluded) ->
 %% ---------------------------------------------------------------
 %% Help functions for the grid function info
 %% ---------------------------------------------------------------
-msg(P) when pid(P) -> 
+msg(P) when is_pid(P) -> 
     case (catch pman_process:pinfo(P, messages)) of
 	{'EXIT', undefined} ->
 	    0;
@@ -622,7 +619,7 @@ msg(_) -> 0.
 %%  a bit difficult to reuse by others that need a different error handling
 %%  mechanism. 
 
-get_name(P) when pid(P) ->
+get_name(P) when is_pid(P) ->
     case (catch pman_process:pinfo(P, registered_name)) of
 	{registered_name, Name} ->
 	    Name;

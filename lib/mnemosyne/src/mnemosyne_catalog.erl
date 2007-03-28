@@ -793,7 +793,6 @@ mk_hdr(Data, Hdr1L, Hdr2Rec) ->
 mk_format(MaxL, Hdr1Def) -> 
     case Hdr1Def of
 	[{N,_}|_] when N>1 -> "| ";
-	[] -> "| ";
 	_ -> ""
     end ++ lists:concat(mk_format(MaxL,Hdr1Def,1))++"\n".
 

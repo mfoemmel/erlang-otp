@@ -105,7 +105,7 @@ clean:
 # Special Build Targets
 # ----------------------------------------------------
 
-$(DIALYZER_DIR)/plt/dialyzer_init_plt: ../../hipe/ebin/erl_types.beam ../../hipe/ebin/erl_bif_types.beam
+$(DIALYZER_DIR)/plt/dialyzer_init_plt: ../../hipe/ebin/erl_types.beam ../../hipe/ebin/erl_bif_types.beam Makefile
 	@echo "Dialyzer will now build auxiliary information needed for subsequent analyses..."
 	@echo "A PLT for following libs will be built:"
 	@echo "  [$(DIALYZER_DEF_LIBS)]"
@@ -134,14 +134,15 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 $(EBIN)/dialyzer.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis_callgraph.beam: dialyzer.hrl
-$(EBIN)/dialyzer_cl.beam: dialyzer.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
+$(EBIN)/dialyzer_cl.beam: dialyzer.hrl
 $(EBIN)/dialyzer_cl_parse.beam: dialyzer.hrl
 $(EBIN)/dialyzer_dataflow.beam: dialyzer.hrl
-$(EBIN)/dialyzer_gui.beam: dialyzer.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
-$(EBIN)/dialyzer_icode.beam: $(HIPE_ICODE_DIR)/hipe_icode.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
-$(EBIN)/dialyzer_options.beam: dialyzer.hrl $(HIPE_ICODE_DIR)/hipe_icode_type.hrl
+$(EBIN)/dialyzer_gui.beam: dialyzer.hrl
+$(EBIN)/dialyzer_icode.beam: $(HIPE_ICODE_DIR)/hipe_icode.hrl dialyzer.hrl
+$(EBIN)/dialyzer_options.beam: dialyzer.hrl
 $(EBIN)/dialyzer_plt.beam: dialyzer.hrl
 $(EBIN)/dialyzer_typesig.beam: dialyzer.hrl dialyzer_bif_constraints.inc
+$(EBIN)/dialyzer_utils.beam: dialyzer.hrl
 
 # ----------------------------------------------------
 # Release Target

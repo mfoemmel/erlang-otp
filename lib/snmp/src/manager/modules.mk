@@ -7,6 +7,7 @@ BEHAVIOUR_MODULES = \
 MODULES = \
 	$(BEHAVIOUR_MODULES) \
 	snmpm \
+	snmpm_conf \
 	snmpm_config \
 	snmpm_mpd \
 	snmpm_misc_sup \

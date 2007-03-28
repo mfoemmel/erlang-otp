@@ -14,6 +14,7 @@ MODULES = \
 	snmpa_agent \
 	snmpa_agent_sup \
 	snmpa_app \
+	snmpa_conf \
 	snmpa_error \
 	snmpa_error_io \
 	snmpa_error_logger \
@@ -30,6 +31,7 @@ MODULES = \
 	snmpa_supervisor \
 	snmpa_svbl \
 	snmpa_symbolic_store \
+	snmpa_target_cache \
 	snmpa_trap \
 	snmpa_usm \
 	snmpa_vacm \

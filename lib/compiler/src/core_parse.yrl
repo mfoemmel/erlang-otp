@@ -78,7 +78,7 @@ Rootsymbol module_definition.
 
 module_definition ->
     'module' atom module_export module_attribute module_defs 'end' :
-	#c_module{name=#c_atom{val=tok_val('$2')},exports='$3',
+	#c_module{name=#c_literal{val=tok_val('$2')},exports='$3',
 		  attrs='$4',defs='$5'}.
 module_definition ->
     '(' 'module' atom module_export module_attribute module_defs 'end'
@@ -101,7 +101,7 @@ attribute_list -> attribute ',' attribute_list : ['$1' | '$3'].
 attribute_list -> attribute : ['$1'].
 
 attribute -> atom '=' literal :
-	#c_def{name=#c_atom{val=tok_val('$1')},val='$3'}.
+	#c_def{name=#c_literal{val=tok_val('$1')},val='$3'}.
 
 module_defs -> function_definitions : '$1'.
 
@@ -179,7 +179,7 @@ tuple_pattern -> '{' anno_patterns '}' : #c_tuple{es='$2'}.
 cons_pattern -> '[' anno_pattern tail_pattern :
 		    #c_cons{hd='$2',tl='$3'}.
 
-tail_pattern -> ']' : #c_nil{}.
+tail_pattern -> ']' : #c_literal{val=[]}.
 tail_pattern -> '|' anno_pattern ']' : '$2'.
 tail_pattern -> ',' anno_pattern tail_pattern :
 		    #c_cons{hd='$2',tl='$3'}.
@@ -248,19 +248,19 @@ literal -> cons_literal : '$1'.
 literals -> literal ',' literals : ['$1' | '$3'].
 literals -> literal : ['$1'].
 
-atomic_literal -> char : #c_char{val=tok_val('$1')}.
-atomic_literal -> integer : #c_int{val=tok_val('$1')}.
-atomic_literal -> float : #c_float{val=tok_val('$1')}.
-atomic_literal -> atom : #c_atom{val=tok_val('$1')}.
-atomic_literal -> string : #c_string{val=tok_val('$1')}.
-atomic_literal -> nil : #c_nil{}.
+atomic_literal -> char : #c_literal{val=tok_val('$1')}.
+atomic_literal -> integer : #c_literal{val=tok_val('$1')}.
+atomic_literal -> float : #c_literal{val=tok_val('$1')}.
+atomic_literal -> atom : #c_literal{val=tok_val('$1')}.
+atomic_literal -> string : #c_literal{val=tok_val('$1')}.
+atomic_literal -> nil : #c_literal{val=[]}.
 
 tuple_literal -> '{' '}' : #c_tuple{es=[]}.
 tuple_literal -> '{' literals '}' : #c_tuple{es='$2'}.
 
 cons_literal -> '[' literal tail_literal : #c_cons{hd='$2',tl='$3'}.
 
-tail_literal -> ']' : #c_nil{}.
+tail_literal -> ']' : #c_literal{val=[]}.
 tail_literal -> '|' literal ']' : '$2'.
 tail_literal -> ',' literal tail_literal : #c_cons{hd='$2',tl='$3'}.
 
@@ -269,7 +269,7 @@ tuple -> '{' anno_expressions '}' : #c_tuple{es='$2'}.
 
 cons -> '[' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
 
-tail -> ']' : #c_nil{}.
+tail -> ']' : #c_literal{val=[]}.
 tail -> '|' anno_expression ']' : '$2'.
 tail -> ',' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
 
@@ -338,7 +338,7 @@ call_expr ->
 	#c_call{module='$2',name='$4',args='$5'}.
 
 primop_expr -> 'primop' atom arg_list :
-	Name = #c_atom{val=tok_val('$2')},	%Keep it abstract
+	Name = #c_literal{val=tok_val('$2')},	%Keep it abstract
 	#c_primop{name=Name,args='$3'}.
 
 arg_list -> '(' ')' : [].

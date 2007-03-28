@@ -106,7 +106,7 @@ start_portprogram() ->
     check_start_heart(),
     HeartCmd = "heart -pid " ++ os:getpid() ++ " " ++ 
 	get_heart_timeouts(),
-    case open_port({spawn, HeartCmd}, [{packet, 2}]) of
+    case catch open_port({spawn, HeartCmd}, [{packet, 2}]) of
 	Port when port(Port) ->
 	    case wait_ack(Port) of
 		ok ->

@@ -763,6 +763,9 @@ efile_fsync(errInfo, fd)
 Efile_error* errInfo;		/* Where to return error codes. */
 int fd;				/* File descriptor for file to sync. */
 {
+    if (!FlushFileBuffers((HANDLE) fd)) {
+	return check_error(-1, errInfo);
+    }
     return 1;
 }
 

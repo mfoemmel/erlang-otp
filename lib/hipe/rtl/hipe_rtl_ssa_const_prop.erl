@@ -88,8 +88,6 @@ visit_expression(Instruction, Environment) ->
       visit_alu(Instruction, Environment);
     #alub{} ->
       visit_alub(Instruction, Environment);
-    #binbase{} ->
-      visit_binbase(Instruction, Environment);
     #branch{} ->
       visit_branch(Instruction, Environment);
     #call{} ->
@@ -198,6 +196,29 @@ evaluate_relop(Val1, RelOp, Val2) ->
     (Val1==top) or (Val2==top)       ->  top;
     true ->  hipe_rtl_arch:eval_cond(RelOp, Val1, Val2)
   end.
+
+%%-----------------------------------------------------------------------------
+%% Procedure : evaluate_fixnumop/2 
+%% Purpose   : try to evaluate a fixnumop.
+%% Arguments : Val1 - operand (an integer, 'top' or 'bottom')
+%%             Op - the operation.
+%% Returns   : Result
+%%              where result is an integer, 'top' or 'bottom'
+%%-----------------------------------------------------------------------------
+
+evaluate_fixnumop(Val1, Op) ->
+  if Val1 =:= top ->
+      top;
+     Val1 =:= bottom ->
+      bottom;
+     is_integer(Val1) ->
+      case Op of
+	tag ->
+	  hipe_tagscheme:mk_fixnum(Val1);
+	untag ->
+	  hipe_tagscheme:fixnum_val(Val1)
+      end
+  end.	
 
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_alu/2
@@ -408,35 +429,25 @@ visit_alub(Inst, Env) ->
   {Labels, NewSSA, NewEnv}.
       
 %%-----------------------------------------------------------------------------
-%% Procedure : visit_binbase/2
-%% Purpose   : do symbolic exection of a binbase instruction.
-%%             binbase is like a specilized load.
-%% Arguments : Inst - The instruction
-%%             Env  - The environment
-%% Returns   : { FlowWorkList, SSAWorkList, NewEnvironment}
-%%-----------------------------------------------------------------------------
-
-visit_binbase(Inst, Env) ->
-  set_to(hipe_rtl:binbase_dst(Inst), bottom, Env).
-
-%%-----------------------------------------------------------------------------
 %% Procedure : visit_fixnumop/2
-%% Purpose   : do symbolic exection of a binbase instruction.
-%%             binbase is like a specialized alu.
+%% Purpose   : do symbolic exection of a fixnumop instruction.
+%%             fixnumop is like a specialized alu.
 %% Arguments : Inst - The instruction
 %%             Env  - The environment
 %% Returns   : { FlowWorkList, SSAWorkList, NewEnvironment}
 %%-----------------------------------------------------------------------------
 
 visit_fixnumop(Inst, Env) ->
-  set_to(hipe_rtl:fixnumop_dst(Inst), bottom, Env).
+  Val = lookup_lattice_value(hipe_rtl:fixnumop_src(Inst), Env),
+  Res = evaluate_fixnumop(Val, hipe_rtl:fixnumop_type(Inst)),
+  set_to(hipe_rtl:fixnumop_dst(Inst), Res, Env).
 
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_f*
-%% Purpose   : do symbolic exection of a floating point instructions.
+%% Purpose   : Do symbolic execution of floating point instructions.
 %%             All floating-point hitngs are mapped to bottom. In order to 
 %%             implement them we would have to add hipe_rtl_arch:eval_f* 
-%%             istructions since floatingpoint is no exact sience.
+%%             instructions since floating point is no exact science.
 %% Arguments : Inst - The instruction
 %%             Env  - The environment
 %% Returns   : {FlowWorkList, SSAWorkList, NewEnvironment}

@@ -280,6 +280,12 @@ void sys_sigrelease(int sig)
   sigprocmask(SIG_UNBLOCK, &mask, (sigset_t *)NULL);
 }
 
+void
+erts_sys_prepare_crash_dump(void)
+{
+    
+}
+
 /* register signal handlers XXX - they don't work, need to find out why... */
 /* set up signal handlers for break and quit */
 static void request_break(void)

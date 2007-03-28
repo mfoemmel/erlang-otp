@@ -57,6 +57,8 @@ static int node_is_alive;
 
 static int clear_dist_entry(DistEntry*);
 static int pack_and_send(Process*, Uint32, DistEntry*, Eterm, Eterm, int);
+static void send_nodes_mon_msgs(Process *, Eterm, Eterm, Eterm, Eterm);
+static void init_nodes_monitors(void);
 
 static Uint no_caches;
 
@@ -351,9 +353,14 @@ static void doit_node_link_net_exits(ErtsLink *lnk, void *vnecp)
 /*
  * proc is currently running or exiting process.
  */
-int erts_do_net_exits(DistEntry *dep)
+int erts_do_net_exits(DistEntry *dep, Eterm reason)
 {
+    Eterm nodename;
+
     if (dep == erts_this_dist_entry) {  /* Net kernel has died (clean up!!) */
+	Eterm nd_reason = (reason == am_no_network
+			   ? am_no_network
+			   : am_net_kernel_terminated);
 	erts_smp_mtx_lock(&erts_dist_table_mtx);
 
 	/* KILL all port controllers */
@@ -374,7 +381,7 @@ int erts_do_net_exits(DistEntry *dep)
 		ASSERT(prt->status & ERTS_PORT_SFLG_DISTRIBUTION);
 		ASSERT(prt->dist_entry);
 		/* will call do_net_exists !!! */
-		erts_do_exit_port(prt, prt_id, am_killed);
+		erts_do_exit_port(prt, prt_id, nd_reason);
 		erts_port_release(prt);
 	    }
 
@@ -383,9 +390,11 @@ int erts_do_net_exits(DistEntry *dep)
 
 	erts_smp_mtx_unlock(&erts_dist_table_mtx);
 
+	nodename = erts_this_dist_entry->sysname;
 	erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
 	erts_set_this_node(am_Noname, 0);
 	set_not_alive();
+	send_nodes_mon_msgs(NULL, am_nodedown, nodename, am_visible, nd_reason);
 	erts_smp_release_system();
 
     }
@@ -394,12 +403,19 @@ int erts_do_net_exits(DistEntry *dep)
 	ErtsLink *nlinks;
 	ErtsLink *node_links;
 	ErtsMonitor *monitors;
-
+	Uint32 flags;
 
 	erts_smp_dist_entry_lock(dep);
 
 	ERTS_SMP_LC_ASSERT(is_internal_port(dep->cid)
 			   && erts_lc_is_port_locked(&erts_port[internal_port_index(dep->cid)]));
+
+	/*
+	 * NOTE: We are *not* allowed to release the port lock between
+	 *       this point and the call to clear_dist_entry()
+	 *       (setnode_3 depends on it).
+	 */
+	dep->status |= ERTS_DE_SFLG_EXITING;
 
 	monitors	= dep->monitors;
         nlinks		= dep->nlinks;
@@ -408,12 +424,20 @@ int erts_do_net_exits(DistEntry *dep)
         dep->nlinks	= NULL;
 	dep->node_links	= NULL;
 
+	nodename = dep->sysname;
+	flags = dep->flags;
+
 	erts_smp_dist_entry_unlock(dep);
 
 	erts_sweep_monitors(monitors, &doit_monitor_net_exits, (void *) &nec);
 	erts_sweep_links(nlinks, &doit_link_net_exits, (void *) &nec);
 	erts_sweep_links(node_links, &doit_node_link_net_exits, (void *) &nec);
 
+	send_nodes_mon_msgs(NULL,
+			    am_nodedown,
+			    nodename,
+			    flags & DFLAG_PUBLISHED ? am_visible : am_hidden,
+			    reason == am_normal ? am_connection_closed : reason);
 	clear_dist_entry(dep);
     }
     return 1;
@@ -428,6 +452,7 @@ trap_function(Eterm func, int arity)
 void init_dist(void)
 {
     init_alive();
+    init_nodes_monitors();
 
     no_caches = 0;
 
@@ -445,13 +470,16 @@ void init_dist(void)
 
 static int clear_dist_entry(DistEntry *dep)
 {
+    erts_smp_dist_entry_lock(dep);
     clear_cache(dep);
     erts_set_dist_entry_not_connected(dep);
-    erts_smp_dist_entry_lock(dep);
     dep->nlinks = NULL;
     dep->node_links = NULL;
     dep->monitors = NULL;
-    dep->status = 0;
+    dep->status &= ERTS_DE_SFLG_INITIALIZING; /* Someone else might be
+						 initializing so we are
+						 not allowed to clear
+						 the initializing flag */
     erts_smp_dist_entry_unlock(dep);
     return 0;
 }
@@ -460,8 +488,8 @@ static int clear_dist_entry(DistEntry *dep)
  * SMP NOTE on dist_*() functions:
  *
  * Requirements for usage of dist_*() functions:
- *   I/O lock, lock on dep has to be held, and if c_p != NULL, at least
- *   main lock has to be held on c_p.
+ *   Port lock on controlling port, and lock on dep has to be held,
+ *   and if c_p != NULL, at least main lock has to be held on c_p.
  *
  * Also note that lock on dep will be released and reacquired,
  * and that lock(s) on c_p may be released and reacquired.
@@ -681,6 +709,27 @@ int dist_group_leader(Process* c_p, Uint32 c_p_locks,
     return pack_and_send(c_p, c_p_locks, dep, ctl, THE_NON_VALUE, 0);
 }
 
+#if defined(PURIFY)
+#  define PURIFY_MSG(msg) \
+    purify_printf("%s, line %d: %s", __FILE__, __LINE__, msg)
+#elif defined(VALGRIND)
+#include <valgrind/valgrind.h>
+#include <valgrind/memcheck.h>
+
+#  define PURIFY_MSG(msg)                                                \
+    do {								 \
+	if (getenv("VALGRIND_LOG_XML") != NULL) {			 \
+	    VALGRIND_PRINTF("<erlang_error_log>"			 \
+			    "%s, line %d: %s</erlang_error_log>\n",	 \
+			    __FILE__, __LINE__, msg);			 \
+	} else {							 \
+	    VALGRIND_PRINTF("%s, line %d: %s", __FILE__, __LINE__, msg); \
+	}								 \
+    } while (0)
+#else
+#  define PURIFY_MSG(msg)
+#endif
+
 /*
 ** Input from distribution port.
 **  Input follows the distribution protocol v4.5
@@ -742,16 +791,6 @@ int erts_net_message(Port *prt,
 	return 0;
     t = buf+1;     /* Skip PASS_THROUGH */
 
-#if defined(PURIFY)
-#  define PURIFY_MSG(msg) \
-    purify_printf("%s, line %d: %s", __FILE__, __LINE__, msg)
-#elif defined(VALGRIND)
-#  define PURIFY_MSG(msg) \
-    VALGRIND_PRINTF("%s, line %d: %s", __FILE__, __LINE__, msg)
-#  define PURIFY_MSG
-#else
-#  define PURIFY_MSG(msg)
-#endif
 
     if (len == 1) {
 	PURIFY_MSG("data error");
@@ -1345,7 +1384,7 @@ static int pack_and_send(Process *c_p, Uint32 c_p_locks,
 	return -1;
     if (cid == NIL)
 	return 0;
-    if (dep->status & D_EXITING) /* ??? */
+    if (dep->status & ERTS_DE_SFLG_EXITING)
 	return 0; /* Ignore it */
 
     ASSERT(is_internal_port(cid));
@@ -1730,6 +1769,7 @@ BIF_RETTYPE setnode_2(BIF_ALIST_2)
     erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
     erts_set_this_node(BIF_ARG_1, (Uint32) creation);
     set_alive();
+    send_nodes_mon_msgs(NULL, am_nodeup, BIF_ARG_1, am_visible, NIL);
     erts_smp_release_system();
     erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);
 
@@ -1756,7 +1796,6 @@ BIF_RETTYPE setnode_2(BIF_ALIST_2)
 
 BIF_RETTYPE setnode_3(BIF_ALIST_3)
 {
-    BIF_RETTYPE res;
     Uint flags;
     unsigned long version;
     Eterm ic, oc;
@@ -1814,17 +1853,48 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
     else if (!dep)
 	goto system_limit; /* Should never happen!!! */
 
-    if (dep->cid == BIF_ARG_2) {
-	erts_deref_dist_entry(dep);
-	goto done;
-    }
-    /* We may have a sync problem here ?? */
-    if (dep->cid != NIL)
-	goto error;
+    erts_smp_dist_entry_lock(dep);
 
+    if (dep->status & ERTS_DE_SFLG_INITIALIZING) {
+	/* This should normally never happen. If it happen,
+	   reschedule until not initializing and decide then
+	   if we should succeed or fail. */
+	goto reschedule;
+    }
+
+    if (dep->cid == BIF_ARG_2)
+	goto already_set;
+
+    dep->status |= ERTS_DE_SFLG_INITIALIZING;
+
+    if (dep->cid != NIL) {
+#ifdef ERTS_SMP
+	if (dep->status & ERTS_DE_SFLG_EXITING) {
+	    /*
+	     * Current controller port is currently exiting; wait for
+	     * it to finish (the port has it's lock locked during the
+	     * whole exiting phase).
+	     */
+	    Port *epp = erts_de2port(dep, BIF_P, ERTS_PROC_LOCK_MAIN);
+	    if (epp)
+		erts_smp_port_unlock(epp);
+	    ASSERT(!(dep->status & ERTS_DE_SFLG_EXITING));
+	    ASSERT(dep->cid == NIL);
+	}
+	else
+#endif	
+	    goto error_de;
+    }
+
+    erts_smp_dist_entry_unlock(dep);
     pp = erts_id2port(BIF_ARG_2, BIF_P, ERTS_PROC_LOCK_MAIN);
-    if (!pp || (pp->status & ERTS_PORT_SFLG_EXITING) || pp->dist_entry)
-	goto error;
+    erts_smp_dist_entry_lock(dep);
+
+    if (!pp || (pp->status & ERTS_PORT_SFLG_EXITING) || pp->dist_entry) {
+	if (pp)
+	    erts_smp_port_unlock(pp);
+	goto error_de;
+    }
 
     erts_port_status_bor_set(pp, ERTS_PORT_SFLG_DISTRIBUTION);
 
@@ -1844,27 +1914,36 @@ BIF_RETTYPE setnode_3(BIF_ALIST_3)
 
     erts_set_dist_entry_connected(dep, BIF_ARG_2, flags);
 
- done:
-    ERTS_BIF_PREP_RET(res, am_true);
+    dep->status &= ~ERTS_DE_SFLG_INITIALIZING;
+    erts_smp_dist_entry_unlock(dep);
+    send_nodes_mon_msgs(BIF_P,
+			am_nodeup,
+			BIF_ARG_1,
+			flags & DFLAG_PUBLISHED ? am_visible : am_hidden,
+			NIL);
+    erts_smp_port_unlock(pp);
 
- done_error:
+    BIF_RET(am_true);
 
-    if (pp)
-	erts_smp_port_unlock(pp);
+ already_set:
+    erts_smp_dist_entry_unlock(dep);
+    erts_deref_dist_entry(dep);
+    BIF_RET(am_true);
 
-    return res;
+ reschedule:
+    erts_smp_dist_entry_unlock(dep);
+    erts_deref_dist_entry(dep);
+    BIF_ERROR(BIF_P, RESCHEDULE);
 
-    /* Errors ... */
-
+ error_de:
+    dep->status &= ~ERTS_DE_SFLG_INITIALIZING;
+    erts_smp_dist_entry_unlock(dep);
+    erts_deref_dist_entry(dep);
  error:
-    ERTS_BIF_PREP_ERROR(res, BIF_P, BADARG);
-    if (dep)
-	erts_deref_dist_entry(dep);
-    goto done_error;
+    BIF_ERROR(BIF_P, BADARG);
 
  system_limit:
-    ERTS_BIF_PREP_ERROR(res, BIF_P, SYSTEM_LIMIT);
-    goto done_error;
+    BIF_ERROR(BIF_P, SYSTEM_LIMIT);
 }
 
 
@@ -2138,3 +2217,517 @@ BIF_RETTYPE monitor_node_2(BIF_ALIST_2)
     BIF_RET(monitor_node_3(BIF_P,BIF_ARG_1,BIF_ARG_2,NIL));
 }
 
+/*
+ * The major part of the implementation of net_kernel:monitor_nodes/[1,2]
+ * follows.
+ *
+ * Currently net_kernel:monitor_nodes/[1,2] calls process_flag/2 which in
+ * turn calls erts_monitor_nodes(). If the process_flag() call fails (with
+ * badarg), the code in net_kernel determines what type of error to return.
+ * This in order to simplify the task of being backward compatible.
+ */
+
+#define ERTS_NODES_MON_OPT_TYPE_VISIBLE		(((Uint16) 1) << 0)
+#define ERTS_NODES_MON_OPT_TYPE_HIDDEN		(((Uint16) 1) << 1)
+#define ERTS_NODES_MON_OPT_DOWN_REASON		(((Uint16) 1) << 2)
+
+#define ERTS_NODES_MON_OPT_TYPES \
+  (ERTS_NODES_MON_OPT_TYPE_VISIBLE|ERTS_NODES_MON_OPT_TYPE_HIDDEN)
+
+typedef struct ErtsNodesMonitor_ ErtsNodesMonitor;
+struct ErtsNodesMonitor_ {
+    ErtsNodesMonitor *prev;
+    ErtsNodesMonitor *next;
+    Process *proc;
+    Uint16 opts;
+    Uint16 no;
+};
+
+static erts_smp_mtx_t nodes_monitors_mtx;
+static ErtsNodesMonitor *nodes_monitors;
+static ErtsNodesMonitor *nodes_monitors_end;
+
+/*
+ * Nodes monitors are stored in a double linked list. 'nodes_monitors'
+ * points to the beginning of the list and 'nodes_monitors_end' points
+ * to the end of the list.
+ *
+ * There might be more than one entry per process in the list. If so,
+ * they are located in sequence. The 'nodes_monitors' field of the
+ * process struct refers to the first element in the sequence
+ * corresponding to the process in question.
+ */
+
+static void
+init_nodes_monitors(void)
+{
+    erts_smp_mtx_init(&nodes_monitors_mtx, "nodes_monitors");
+    nodes_monitors = NULL;
+    nodes_monitors_end = NULL;
+}
+
+static ERTS_INLINE Uint
+nodes_mon_msg_sz(ErtsNodesMonitor *nmp, Eterm what, Eterm reason)
+{
+    Uint sz;
+    if (!nmp->opts) {
+	sz = 3;
+    }
+    else {
+	sz = 0;
+
+	if (nmp->opts & ERTS_NODES_MON_OPT_TYPES)
+	    sz += 2 + 3;
+
+	if (what == am_nodedown
+	    && (nmp->opts & ERTS_NODES_MON_OPT_DOWN_REASON)) {
+	    if (is_not_immed(reason))
+		sz += size_object(reason);
+	    sz += 2 + 3;
+	}
+
+	sz += 4;
+    }
+    return sz;
+}
+
+static ERTS_INLINE void
+send_nodes_mon_msg(Process *rp,
+		   Uint32 *rp_locksp,
+		   ErtsNodesMonitor *nmp,
+		   Eterm node,
+		   Eterm what,
+		   Eterm type,
+		   Eterm reason,
+		   Uint sz)
+{
+    Eterm msg;
+    ErlHeapFragment* bp;
+    ErlOffHeap *ohp;
+    Eterm *hp = erts_alloc_message_heap(sz, &bp, &ohp, rp, rp_locksp);
+#ifdef DEBUG
+    Eterm *hend = hp + sz;
+#endif
+
+    if (!nmp->opts) {
+	msg = TUPLE2(hp, what, node);
+#ifdef DEBUG
+	hp += 3;
+#endif
+    }
+    else {
+	Eterm tup;
+	Eterm info = NIL;
+
+	if (nmp->opts & (ERTS_NODES_MON_OPT_TYPE_VISIBLE
+			 | ERTS_NODES_MON_OPT_TYPE_HIDDEN)) {
+
+	    tup = TUPLE2(hp, am_node_type, type);
+	    hp += 3;
+	    info = CONS(hp, tup, info);
+	    hp += 2;
+	}
+
+	if (what == am_nodedown
+	    && (nmp->opts & ERTS_NODES_MON_OPT_DOWN_REASON)) {
+	    Eterm rsn_cpy;
+	    
+	    if (is_immed(reason))
+		rsn_cpy = reason;
+	    else {
+		Eterm rsn_sz = size_object(reason);
+		rsn_cpy = copy_struct(reason, rsn_sz, &hp, ohp);
+	    }
+
+	    tup = TUPLE2(hp, am_nodedown_reason, rsn_cpy);
+	    hp += 3;
+	    info = CONS(hp, tup, info);
+	    hp += 2;
+	}
+
+	msg = TUPLE3(hp, what, node, info);
+#ifdef DEBUG
+	hp += 4;
+#endif
+    }
+
+    ASSERT(hend == hp);
+    erts_queue_message(rp, *rp_locksp, bp, msg, NIL);
+}
+
+static void
+send_nodes_mon_msgs(Process *c_p, Eterm what, Eterm node, Eterm type, Eterm reason)
+{
+    ErtsNodesMonitor *nmp;
+    Uint32 rp_locks;
+    Process *rp = NULL;
+
+    ASSERT(is_immed(what));
+    ASSERT(is_immed(node));
+    ASSERT(is_immed(type));
+
+    ERTS_SMP_LC_ASSERT(!c_p
+		       || (erts_proc_lc_my_proc_locks(c_p)
+			   == ERTS_PROC_LOCK_MAIN));
+    erts_smp_mtx_lock(&nodes_monitors_mtx);
+
+    for (nmp = nodes_monitors; nmp; nmp = nmp->next) {
+
+	ASSERT(nmp->proc != NULL);
+
+	if (!nmp->opts) {
+	    if (type != am_visible)
+		continue;
+	}
+	else {
+	    switch (type) {
+	    case am_hidden:
+		if (!(nmp->opts & ERTS_NODES_MON_OPT_TYPE_HIDDEN))
+		    continue;
+		break;
+	    case am_visible:
+		if ((nmp->opts & ERTS_NODES_MON_OPT_TYPES)
+		    && !(nmp->opts & ERTS_NODES_MON_OPT_TYPE_VISIBLE))
+		    continue;
+		break;
+	    default:
+		erl_exit(ERTS_ABORT_EXIT, "Bad node type found\n");
+	    }
+	}
+
+	if (rp != nmp->proc) {
+	    if (rp) {
+		if (rp == c_p)
+		    rp_locks &= ~ERTS_PROC_LOCK_MAIN;
+		erts_smp_proc_unlock(rp, rp_locks);
+	    }
+
+	    rp = nmp->proc;
+	    rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
+	    erts_smp_proc_lock(rp, rp_locks);
+	    if (rp == c_p)
+		rp_locks |= ERTS_PROC_LOCK_MAIN;
+	}
+
+	ASSERT(rp);
+
+	if (!ERTS_PROC_IS_EXITING(rp)) {
+	    Uint sz = nodes_mon_msg_sz(nmp, what, reason);
+	    Uint16 i, no;
+
+	    for (i = 0, no = nmp->no; i < no; i++)
+		send_nodes_mon_msg(rp,
+				   &rp_locks,
+				   nmp,
+				   node,
+				   what,
+				   type,
+				   reason,
+				   sz);
+	}
+    }
+
+    if (rp) {
+	if (rp == c_p)
+	    rp_locks &= ~ERTS_PROC_LOCK_MAIN;
+	erts_smp_proc_unlock(rp, rp_locks);
+    }
+
+    erts_smp_mtx_unlock(&nodes_monitors_mtx);
+}
+
+static Eterm
+insert_nodes_monitor(Process *c_p, Uint32 opts)
+{
+    Uint16 no = 1;
+    Eterm res = am_false;
+    ErtsNodesMonitor *xnmp, *nmp;
+
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_mtx_is_locked(&nodes_monitors_mtx));
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) & ERTS_PROC_LOCK_MAIN);
+
+    xnmp = c_p->nodes_monitors;
+    if (xnmp) {
+	ASSERT(!xnmp->prev || xnmp->prev->proc != c_p);
+
+	while (1) {
+	    ASSERT(xnmp->proc == c_p);
+	    if (xnmp->opts == opts)
+		break;
+	    if (!xnmp->next || xnmp->next->proc != c_p)
+		break;
+	    xnmp = xnmp->next;
+	}
+	ASSERT(xnmp);
+	ASSERT(xnmp->proc == c_p);
+	ASSERT(xnmp->opts == opts
+	       || !xnmp->next
+	       || xnmp->next->proc != c_p);
+
+	if (xnmp->opts != opts)
+	    goto alloc_new;
+	else {
+	    res = am_true;
+	    no = xnmp->no++;
+	    if (!xnmp->no) {
+		/*
+		 * 'no' wrapped; transfer all prevous monitors to new
+		 * element (which will be the next element in the list)
+		 * and set this to one...
+		 */
+		xnmp->no = 1;
+		goto alloc_new;
+	    }
+	}
+    }
+    else {
+    alloc_new:
+	nmp = erts_alloc(ERTS_ALC_T_NODES_MON, sizeof(ErtsNodesMonitor));
+	nmp->proc = c_p;
+	nmp->opts = opts;
+	nmp->no = no;
+
+	if (xnmp) {
+	    ASSERT(nodes_monitors);
+	    ASSERT(c_p->nodes_monitors);
+	    nmp->next = xnmp->next;
+	    nmp->prev = xnmp;
+	    xnmp->next = nmp;
+	    if (nmp->next) {
+		ASSERT(nodes_monitors_end != xnmp);
+		ASSERT(nmp->next->prev == xnmp);
+		nmp->next->prev = nmp;
+	    }
+	    else {
+		ASSERT(nodes_monitors_end == xnmp);
+		nodes_monitors_end = nmp;
+	    }
+	}
+	else {
+	    ASSERT(!c_p->nodes_monitors);
+	    c_p->nodes_monitors = nmp;
+	    nmp->next = NULL;
+	    nmp->prev = nodes_monitors_end;
+	    if (nodes_monitors_end) {
+		ASSERT(nodes_monitors);
+		nodes_monitors_end->next = nmp;
+	    }
+	    else {
+		ASSERT(!nodes_monitors);
+		nodes_monitors = nmp;
+	    }
+	    nodes_monitors_end = nmp;
+	}
+    }
+    return res;
+}
+
+static Eterm
+remove_nodes_monitors(Process *c_p, Uint32 opts, int all)
+{
+    Eterm res = am_false;
+    ErtsNodesMonitor *nmp;
+
+    ERTS_SMP_LC_ASSERT(erts_smp_lc_mtx_is_locked(&nodes_monitors_mtx));
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) & ERTS_PROC_LOCK_MAIN);
+
+    nmp = c_p->nodes_monitors;
+    ASSERT(!nmp || !nmp->prev || nmp->prev->proc != c_p);
+
+    while (nmp && nmp->proc == c_p) {
+	if (!all && nmp->opts != opts)
+	    nmp = nmp->next;
+	else { /* if (all || nmp->opts == opts) */
+	    ErtsNodesMonitor *free_nmp;
+	    res = am_true;
+	    if (nmp->prev) {
+		ASSERT(nodes_monitors != nmp);
+		nmp->prev->next = nmp->next;
+	    }
+	    else {
+		ASSERT(nodes_monitors == nmp);
+		nodes_monitors = nmp->next;
+	    }
+	    if (nmp->next) {
+		ASSERT(nodes_monitors_end != nmp);
+		nmp->next->prev = nmp->prev;
+	    }
+	    else {
+		ASSERT(nodes_monitors_end == nmp);
+		nodes_monitors_end = nmp->prev;
+	    }
+	    free_nmp = nmp;
+	    nmp = nmp->next;
+	    if (c_p->nodes_monitors == free_nmp)
+		c_p->nodes_monitors = nmp && nmp->proc == c_p ? nmp : NULL;
+	    erts_free(ERTS_ALC_T_NODES_MON, free_nmp);
+	}
+    }
+    
+    ASSERT(!all || !c_p->nodes_monitors);
+    return res;
+}
+
+void
+erts_delete_nodes_monitors(Process *c_p, Uint32 locks)
+{
+    if (erts_smp_mtx_trylock(&nodes_monitors_mtx) == EBUSY) {
+	Uint32 unlock_locks = locks & ~ERTS_PROC_LOCK_MAIN;
+	if (c_p && unlock_locks)
+	    erts_smp_proc_unlock(c_p, unlock_locks);
+	erts_smp_mtx_lock(&nodes_monitors_mtx);
+	if (c_p && unlock_locks)
+	    erts_smp_proc_lock(c_p, unlock_locks);
+    }
+    remove_nodes_monitors(c_p, 0, 1);
+    erts_smp_mtx_unlock(&nodes_monitors_mtx);
+}
+
+Eterm
+erts_monitor_nodes(Process *c_p, Eterm on, Eterm olist)
+{
+    Eterm res;
+    Eterm opts_list = olist;
+    Uint16 opts = (Uint16) 0;
+
+    ASSERT(c_p);
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) == ERTS_PROC_LOCK_MAIN);
+
+    if (on != am_true && on != am_false)
+	return THE_NON_VALUE;
+
+    if (is_not_nil(opts_list)) {
+	int all = 0, visible = 0, hidden = 0;
+
+	while (is_list(opts_list)) {
+	    Eterm *cp = list_val(opts_list);
+	    Eterm opt = CAR(cp);
+	    opts_list = CDR(cp);
+	    if (opt == am_nodedown_reason)
+		opts |= ERTS_NODES_MON_OPT_DOWN_REASON;
+	    else if (is_tuple(opt)) {
+		Eterm* tp = tuple_val(opt);
+		if (arityval(tp[0]) != 2)
+		    return THE_NON_VALUE;
+		switch (tp[1]) {
+		case am_node_type:
+		    switch (tp[2]) {
+		    case am_visible:
+			if (hidden || all)
+			    return THE_NON_VALUE;
+			opts |= ERTS_NODES_MON_OPT_TYPE_VISIBLE;
+			visible = 1;
+			break;
+		    case am_hidden:
+			if (visible || all)
+			    return THE_NON_VALUE;
+			opts |= ERTS_NODES_MON_OPT_TYPE_HIDDEN;
+			hidden = 1;
+			break;
+		    case am_all:
+			if (visible || hidden)
+			    return THE_NON_VALUE;
+			opts |= ERTS_NODES_MON_OPT_TYPES;
+			all = 1;
+			break;
+		    default:
+			return THE_NON_VALUE;
+		    }
+		    break;
+		default:
+		    return THE_NON_VALUE;
+		}
+	    }
+	    else {
+		return THE_NON_VALUE;
+	    }
+	}
+
+	if (is_not_nil(opts_list))
+	    return THE_NON_VALUE;
+    }
+
+    erts_smp_mtx_lock(&nodes_monitors_mtx);
+
+    if (on == am_true)
+	res = insert_nodes_monitor(c_p, opts);
+    else
+	res = remove_nodes_monitors(c_p, opts, 0);
+
+    erts_smp_mtx_unlock(&nodes_monitors_mtx);
+
+    return res;
+}
+
+/*
+ * Note, this function is only used for debuging.
+ */
+
+Eterm
+erts_processes_monitoring_nodes(Process *c_p)
+{
+    ErtsNodesMonitor *nmp;
+    Eterm res;
+    Eterm *hp;
+    Eterm **hpp;
+    Uint sz;
+    Uint *szp;
+#ifdef DEBUG
+    Eterm *hend;
+#endif
+
+    ASSERT(c_p);
+    ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) == ERTS_PROC_LOCK_MAIN);
+    erts_smp_mtx_lock(&nodes_monitors_mtx);
+
+    sz = 0;
+    szp = &sz;
+    hpp = NULL;
+
+ bld_result:
+    res = NIL;
+
+    for (nmp = nodes_monitors_end; nmp; nmp = nmp->prev) {
+	Uint16 i;
+	for (i = 0; i < nmp->no; i++) {
+	    Eterm olist = NIL;
+	    if (nmp->opts & ERTS_NODES_MON_OPT_TYPES) {
+		Eterm type;
+		switch (nmp->opts & ERTS_NODES_MON_OPT_TYPES) {
+		case ERTS_NODES_MON_OPT_TYPES:        type = am_all;     break;
+		case ERTS_NODES_MON_OPT_TYPE_VISIBLE: type = am_visible; break;
+		case ERTS_NODES_MON_OPT_TYPE_HIDDEN:  type = am_hidden;  break;
+		default: erl_exit(ERTS_ABORT_EXIT, "Bad node type found\n");
+		}
+		olist = erts_bld_cons(hpp, szp, 
+				      erts_bld_tuple(hpp, szp, 2,
+						     am_node_type,
+						     type),
+				      olist);
+	    }
+	    if (nmp->opts & ERTS_NODES_MON_OPT_DOWN_REASON)
+		olist = erts_bld_cons(hpp, szp, am_nodedown_reason, olist);
+	    res = erts_bld_cons(hpp, szp,
+				erts_bld_tuple(hpp, szp, 2,
+					       nmp->proc->id,
+					       olist),
+				res);
+	}
+    }
+
+    if (!hpp) {
+	hp = HAlloc(c_p, sz);
+#ifdef DEBUG
+	hend = hp + sz;
+#endif
+	hpp = &hp;
+	szp = NULL;
+	goto bld_result;
+    }
+
+    ASSERT(hp == hend);
+
+    erts_smp_mtx_unlock(&nodes_monitors_mtx);
+
+    return res;
+}

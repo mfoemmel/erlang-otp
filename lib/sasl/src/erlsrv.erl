@@ -143,9 +143,7 @@ get_service(EVer, ServiceName) ->
 	    {error, no_such_service};
 	{port_error, Reason} ->
 	    {error, {port_error, Reason}};
-	{error, Reason} ->
-	    {error, Reason};
-	{ok , Data} ->
+	{ok, Data} ->
 	    Table = [{"Service name",servicename,[]},
 		     {"StopAction",stopaction, []},
 		     {"OnFail",onfail, "ignore"},

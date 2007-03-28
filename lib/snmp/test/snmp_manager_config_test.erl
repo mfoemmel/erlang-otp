@@ -17,6 +17,12 @@
 %%
 %%----------------------------------------------------------------------
 %% Purpose:
+%% 
+%% Test:
+%% ts:run().
+%% ts:run(snmp, [batch]).
+%% ts:run(snmp, snmp_manager_config_test, [batch]).
+%% 
 %%----------------------------------------------------------------------
 -module(snmp_manager_config_test).
 
@@ -1213,7 +1219,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm12]),
     ?line {error, Reason12} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason12]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason12,
+    ?line {failed_check, _, _, _, {bad_usm_engine_id, _}} = Reason12,
     await_config_not_running(),
 
     %% --
@@ -1222,7 +1228,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm13]),
     ?line {error, Reason13} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason13]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason13,
+    ?line {failed_check, _, _, _, {bad_usm_engine_id, _}} = Reason13,
     await_config_not_running(),
 
     %% --
@@ -1231,7 +1237,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm21]),
     ?line {error, Reason21} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason21]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason21,
+    ?line {failed_check, _, _, _, {bad_usm_user_name, _}} = Reason21,
     await_config_not_running(),
 
     %% --
@@ -1240,7 +1246,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm22]),
     ?line {error, Reason22} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason22]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason22,
+    ?line {failed_check, _, _, _, {bad_usm_user_name, _}} = Reason22,
     await_config_not_running(),
 
     %% --
@@ -1249,7 +1255,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm31]),
     ?line {error, Reason31} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason31]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason31,
+    ?line {failed_check, _, _, _, {bad_usm_sec_name, _}} = Reason31,
     await_config_not_running(),
 
     %% --
@@ -1258,7 +1264,7 @@ start_with_invalid_usm_conf_file1(Conf) when list(Conf) ->
     write_usm_conf(ConfDir, [Usm32]),
     ?line {error, Reason32} = config_start(Opts),
     p("start failed (as expected): ~p", [Reason32]),
-    ?line {failed_check, _, _, _, {invalid_string, _}} = Reason32,
+    ?line {failed_check, _, _, _, {bad_usm_sec_name, _}} = Reason32,
     await_config_not_running(),
 
     %% --

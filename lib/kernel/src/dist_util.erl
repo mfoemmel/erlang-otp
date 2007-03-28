@@ -111,7 +111,8 @@ make_this_flags(RequestType, OtherNode) ->
 	 ?DFLAG_DIST_MONITOR_NAME bor
 	 ?DFLAG_HIDDEN_ATOM_CACHE bor
 	 ?DFLAG_NEW_FUN_TAGS bor
-	 ?DFLAG_BIT_BINARIES).
+	 ?DFLAG_BIT_BINARIES bor
+	 ?DFLAG_NEW_FLOATS).
 
 handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
     {PreOtherFlags,Node,Version} = recv_name(HSData0),
@@ -331,9 +332,9 @@ connection(#hs_data{other_node = Node,
 		    f_setopts_post_nodeup = FPostNodeup}= HSData) ->
     cancel_timer(HSData#hs_data.timer),
     PType = publish_type(HSData#hs_data.other_flags), 
-    do_setnode(HSData),				%Succeeds or exits the process.
     case FPreNodeup(Socket) of
 	ok -> 
+	    do_setnode(HSData), % Succeeds or exits the process.
 	    Address = FAddress(Socket,Node),
 	    mark_nodeup(HSData,Address),
 	    case FPostNodeup(Socket) of

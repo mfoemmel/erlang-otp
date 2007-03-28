@@ -427,11 +427,15 @@ get_bif_constr({erlang, '==', 2}, Dst, Args = [Arg1, Arg2], _State) ->
 		    end
 		end;
 	      false ->
-		case t_is_number(VarType) of
+		case t_is_atom(true, DstType) of
 		  true ->
-		    case t_is_atom(true, DstType) of
+		    case t_is_number(VarType) of
 		      true -> t_number();
-		      false -> t_any()
+		      false -> 
+			case t_is_atom(VarType) of
+			  true -> VarType;
+			  false -> t_any()
+			end
 		    end;
 		  false ->
 		    t_any()

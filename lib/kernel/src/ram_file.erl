@@ -385,12 +385,12 @@ mode_list(write) ->
     [write];
 mode_list(read_write) ->
     [read, write];
-mode_list({binary, Mode}) when atom(Mode) ->
+mode_list({binary, Mode}) when is_atom(Mode) ->
     [binary | mode_list(Mode)];
-mode_list({character, Mode}) when atom(Mode) ->
+mode_list({character, Mode}) when is_atom(Mode) ->
     mode_list(Mode);
 mode_list(_) ->
-    [{error, einval}].
+    {error, einval}.
 
 
 

@@ -1,7 +1,7 @@
 %%%----------------------------------------------------------------------
 %%% File    : hipe_sparc_peephole.erl
 %%% Author  : Christoffer Vikstrom <chvi3471@student.uu.se>
-%%% Purpose : Contain peephole optimisations for sparc-assembler code.
+%%% Purpose : Do peephole optimisations on SPARC assembler code.
 %%% Created : 16 Feb 2004 by Christoffer Vikström <chvi3471@student.uu.se>
 %%%----------------------------------------------------------------------
 
@@ -12,35 +12,29 @@
 
 -include("hipe_sparc.hrl").
 
--define(DO_PEEP, true).
 %%-define(DO_LOGGING, true).  % Uncomment this to get peephole opts logged to..
 -define(LOG_FILE, "peepcount.txt"). % ..this file..
 -define(LOG_DIR, "/home/chvi3471/otp/tests/"). % ..in this dir
 
 
 %%>----------------------------------------------------------------------<
-%  Procedure : peep/1
-%  Purpose   : Function that does peephole optimizations. It works by 
-%              moving a window over the code and looking at a sequence of 
-%              a few instructions. Replaces long sequences of instructions
-%              with shorter ones and removes unnecesary ones.
-%  Arguments : LinearCode  - List of pseudo sparc-assembler records.
-%              Res     - Returned list of pseudo sparc-assembler records. 
-%                        Kept reversed, until it is returned.
-%              Lst     - List of optimizations done. For debuging.
-%  Return    : An optimized list of pseudo sparc-assembler records with 
-%              (hopefully) fewer or faster instructions.
-%  Notes     : Creates a file in the users home directory that contain 
-%              analysis information, if macro ?DO_LOGGING is defined.
+%% Procedure : peep/1
+%% Purpose   : Function that does peephole optimizations. It works by 
+%%             moving a window over the code and looking at a sequence of 
+%%             a few instructions. Replaces long sequences of instructions
+%%             with shorter ones and removes unnecesary ones.
+%% Arguments : LinearCode  - List of pseudo sparc-assembler records.
+%%             Res     - Returned list of pseudo sparc-assembler records. 
+%%                       Kept reversed, until it is returned.
+%%             Lst     - List of optimizations done. For debuging.
+%% Return    : An optimized list of pseudo sparc-assembler records with 
+%%             (hopefully) fewer or faster instructions.
+%% Notes     : Creates a file in the users home directory that contain 
+%%             analysis information, if macro ?DO_LOGGING is defined.
 %%>----------------------------------------------------------------------<
-peep(LinearCode) -> 
-    case ?DO_PEEP of
-	true ->
-	    peep(LinearCode, [], []);
-	_ ->
-	    LinearCode
-    end.
 
+peep(LinearCode) -> 
+    peep(LinearCode, [], []).
 
 %% MoveSelfSimple
 %% --------------
@@ -66,8 +60,8 @@ peep([#fmove{dst=Dst, src=Src},
 %% --------------
 peep([M=#move{dst=Dst, src=SrcImm}, 
       A=#alu{dst=Dst, src1=Dst, op=Op, src2=Src2}|Insns], Ack, Lst) -> 
-    case (Op=='+') or (Op=='and') or (Op=='or') or (Op=='xor') or
-	(Op=='xnor') or (Op=='andn') of
+    case (Op =:= '+') orelse (Op =:= 'and') orelse (Op =:= 'or') orelse
+	 (Op =:= 'xor') orelse (Op =:= 'xnor') orelse (Op =:= 'andn') of
 	true -> 
 	    case hipe_sparc:is_imm(SrcImm) of
 		true ->
@@ -81,8 +75,8 @@ peep([M=#move{dst=Dst, src=SrcImm},
     end;
 peep([M=#move{dst=Dst, src=SrcImm},  
       A=#alu{dst=Dst, src1=Src1, op=Op, src2=Dst}|Insns], Ack, Lst) -> 
-    case (Op=='+') or (Op=='and') or (Op=='or') or (Op=='xor') or
-	(Op=='xnor') or (Op=='andn') of
+    case (Op =:= '+') orelse (Op =:= 'and') orelse (Op =:= 'or') orelse
+	 (Op =:= 'xor') orelse (Op =:= 'xnor') orelse (Op =:= 'andn') of
 	true -> 
 	    case hipe_sparc:is_imm(SrcImm) of
 		true ->
@@ -99,7 +93,7 @@ peep([M=#move{dst=Dst, src=SrcImm},
 %% ElimBinALMDouble
 %% ----------------
 peep([M=#move{dst=Dst}, I=#alu{dst=Dst,src1=Src1,src2=Src2}|Insns],Ack,Lst) ->
-    case (Dst/=Src1) and (Dst/=Src2) of
+    case (Dst =/= Src1) andalso (Dst =/= Src2) of
 	true ->
 	    peep(Insns, [I|Ack], [elimBinALMDouble|Lst]);
 	false ->
@@ -116,7 +110,7 @@ peep([#b{true_label=Label, false_label=Label}|Insns], Ack, Lst) ->
 %% ElimSet0
 %% --------
 peep([I=#move{dst=Dst, src={sparc_imm, Val}}|Insns], Ack, Lst) ->
-    case (Val==0) of
+    case (Val =:= 0) of
 	true ->
 	    peep(Insns, 
 		 [#alu{dst=Dst, src1=Dst, op='xor', src2=Dst}|Ack], 
@@ -189,7 +183,9 @@ peep([], Ack, Lst) -> printLst(Lst), lists:reverse(Ack).
 %% -------------
 %% Used by ElimMDPow2 clause of peep(..)
 log2(Nr) -> log2(Nr, 0).
-log2(0, _) -> {false, 0, positive};
+
+log2(0, _) ->
+    {false, 0, positive};
 log2(Nr, I) ->
     case (Nr band 1) =:= 1 of
 	false ->

@@ -802,7 +802,6 @@ finalize_fun(MfaIcodeList, Opts) ->
       hipe_main:concurrent_icode_ssa(MfaIcodeList, Opts)
   end.
 
-
 finalize_fun_sequential({MFA, Icode}, Opts) ->
   {T1,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts, ?debug_msg("Compiling ~w",[MFA])),
@@ -1339,6 +1338,7 @@ hipe_timers() ->
 
 opt_keys() ->
     ['O',
+     bitlevel_binaries,
      concurrent_comp,
      check_for_inlining,
      core,
@@ -1364,7 +1364,6 @@ opt_keys() ->
      icode_range_analysis_warn,
      icode_range_analysis_insn_count,
      icode_multret,
-     inline_bs,
      inline_fp,
      ls_order,
      load,
@@ -1422,7 +1421,7 @@ opt_keys() ->
 %% Definitions: 
 
 o1_opts() ->
-  Common = [rtl_prop, inline_fp, inline_bs, pmatch, peephole],
+  Common = [rtl_prop, inline_fp, pmatch, peephole],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_peephole, fill_delayslot | Common];
@@ -1481,7 +1480,8 @@ o3_opts() ->
 %% "if 'x' ..." instead of "if not 'no_x' ...".
 
 opt_negations() ->
-  [{no_core, core},
+  [{no_bitlevel_binaries, bitlevel_binaries},
+   {no_core, core},
    {no_debug, debug},
    {no_fill_delayslot, fill_delayslot},
    {no_get_called_modules, get_called_modules},
@@ -1492,7 +1492,6 @@ opt_negations() ->
    {no_icode_ssa_copy_prop, icode_ssa_copy_prop},
    {no_icode_ssa_const_prop, icode_ssa_const_prop},
    {no_icode_type, icode_type},
-   {no_inline_bs, inline_bs},
    {no_inline_fp, inline_fp},
    {no_load, load},
    {no_peephole, peephole},

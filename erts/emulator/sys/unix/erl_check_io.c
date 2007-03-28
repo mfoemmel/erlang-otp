@@ -859,10 +859,8 @@ ERTS_CIO_EXPORT(erts_check_io)(int do_wait)
 
     bump_timers();
 
-#ifndef ERTS_SMP
-    if (erts_break_requested)
+    if (ERTS_BREAK_REQUESTED)
 	erts_do_break_handling();
-#endif
 
     if (poll_ret != 0) {
 	erts_smp_atomic_set(&in_poll_wait, 0);

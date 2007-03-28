@@ -100,7 +100,7 @@ module(M) -> module(M, []).
 
 module(#c_module{name=M,exports=Es,attrs=As,defs=Ds}, _Opts) ->
     Defined = defined_funcs(Ds),
-    St0 = #lint{module=M#c_atom.val},
+    St0 = #lint{module=M#c_literal.val},
     St1 = check_exports(Es, St0),
     St2 = check_attrs(As, St1),
     St3 = module_defs(Ds, Defined, St2),
@@ -143,7 +143,7 @@ check_exports(Es, St) ->
     end.
 
 check_attrs(As, St) ->
-    case all(fun (#c_def{name=#c_atom{},val=V}) -> core_lib:is_literal(V);
+    case all(fun (#c_def{name=#c_literal{},val=V}) -> core_lib:is_literal(V);
 		 (_) -> false
 	     end, As) of
 	true -> St;
@@ -220,12 +220,7 @@ gbody(E, Def, Rt, St0) ->
     end.
 
 gexpr(#c_var{name=N}, Def, _Rt, St) -> expr_var(N, Def, St);
-gexpr(#c_int{}, _Def, _Rt, St) -> St;
-gexpr(#c_float{}, _Def, _Rt, St) -> St;
-gexpr(#c_atom{}, _Def, _Rt, St) -> St;
-gexpr(#c_char{}, _Def, _Rt, St) -> St;
-gexpr(#c_string{}, _Def, _Rt, St) -> St;
-gexpr(#c_nil{}, _Def, _Rt, St) -> St;
+gexpr(#c_literal{}, _Def, _Rt, St) -> St;
 gexpr(#c_cons{hd=H,tl=T}, Def, _Rt, St) ->
     gexpr_list([H,T], Def, St);
 gexpr(#c_tuple{es=Es}, Def, _Rt, St) ->
@@ -239,14 +234,14 @@ gexpr(#c_let{vars=Vs,arg=Arg,body=B}, Def, Rt, St0) ->
     St1 = gbody(Arg, Def, let_varcount(Vs), St0), %This is a guard body
     {Lvs,St2} = variable_list(Vs, St1),
     gbody(B, union(Lvs, Def), Rt, St2);
-gexpr(#c_call{module=#c_atom{val=erlang},
-	      name=#c_atom{},
+gexpr(#c_call{module=#c_literal{val=erlang},
+	      name=#c_literal{},
 	      args=As}, Def, 1, St) ->
     gexpr_list(As, Def, St);
-gexpr(#c_primop{name=N,args=As}, Def, _Rt, St0) when record(N, c_atom) ->
+gexpr(#c_primop{name=#c_literal{val=A},args=As}, Def, _Rt, St0) when is_atom(A) ->
     gexpr_list(As, Def, St0);
 gexpr(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
-	     evars=[#c_var{},#c_var{},#c_var{}],handler=#c_atom{val=false}},
+	     evars=[#c_var{},#c_var{},#c_var{}],handler=#c_literal{val=false}},
       Def, Rt, St) ->
     gbody(E, Def, Rt, St);
 gexpr(_, _, _, St) ->
@@ -269,12 +264,7 @@ gbitstr(#c_bitstr{val=V,size=S,unit=U,type=T,flags=Fs}, Def, St0) ->
 %% expr(Expr, Defined, RetCount, State) -> State.
 
 expr(#c_var{name=N}, Def, _Rt, St) -> expr_var(N, Def, St);
-expr(#c_int{}, _Def, _Rt, St) -> St;
-expr(#c_float{}, _Def, _Rt, St) -> St;
-expr(#c_atom{}, _Def, _Rt, St) -> St;
-expr(#c_char{}, _Def, _Rt, St) -> St;
-expr(#c_string{}, _Def, _Rt, St) -> St;
-expr(#c_nil{}, _Def, _Rt, St) -> St;
+expr(#c_literal{}, _Def, _Rt, St) -> St;
 expr(#c_cons{hd=H,tl=T}, Def, _Rt, St) ->
     expr_list([H,T], Def, St);
 expr(#c_tuple{es=Es}, Def, _Rt, St) ->
@@ -312,7 +302,7 @@ expr(#c_call{module=M,name=N,args=As}, Def, _Rt, St0) ->
     St1 = expr(M, Def, 1, St0),
     St2 = expr(N, Def, 1, St1),
     expr_list(As, Def, St2);
-expr(#c_primop{name=N,args=As}, Def, _Rt, St0) when record(N, c_atom) ->
+expr(#c_primop{name=#c_literal{val=A},args=As}, Def, _Rt, St0) when is_atom(A) ->
     expr_list(As, Def, St0);
 expr(#c_catch{body=B}, Def, Rt, St) ->
     return_match(Rt, 1, body(B, Def, 1, St));
@@ -422,12 +412,7 @@ variable_list(Vs, Ps, St) ->
 
 pattern(#c_var{name=N}, Def, Ps, St) ->
     pat_var(N, Def, Ps, St);
-pattern(#c_int{}, _Def, Ps, St) -> {Ps,St};
-pattern(#c_float{}, _Def, Ps, St) -> {Ps,St};
-pattern(#c_atom{}, _Def, Ps, St) -> {Ps,St};
-pattern(#c_char{}, _Def, Ps, St) -> {Ps,St};
-pattern(#c_string{}, _Def, Ps, St) -> {Ps,St};
-pattern(#c_nil{}, _Def, Ps, St) -> {Ps,St};
+pattern(#c_literal{}, _Def, Ps, St) -> {Ps,St};
 pattern(#c_cons{hd=H,tl=T}, Def, Ps, St) ->
     pattern_list([H,T], Def, Ps, St);
 pattern(#c_tuple{es=Es}, Def, Ps, St) ->
@@ -460,10 +445,10 @@ pat_segment(_, _, Ps, St) ->
 %% pat_bit_expr(SizePat, Type, Defined, State) -> State.
 %%  Check the Size pattern, this is an input!  Be a bit tough here.
 
-pat_bit_expr(#c_int{val=I}, _, _, St) when I >= 0 -> St;
+pat_bit_expr(#c_literal{val=I}, _, _, St) when is_integer(I), I >= 0 -> St;
 pat_bit_expr(#c_var{name=N}, _, Def, St) ->
     expr_var(N, Def, St);
-pat_bit_expr(#c_atom{val=all}, binary, _Def, St) -> St;
+pat_bit_expr(#c_literal{val=all}, binary, _Def, St) -> St;
 pat_bit_expr(_, _, _, St) ->
     add_error({illegal_expr,St#lint.func}, St).
 

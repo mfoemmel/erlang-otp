@@ -115,12 +115,7 @@ handle_error(undistributed) ->
 		   "system anymore."],
 	    tv_utils:notify(errorwin, "TV Notification", Msg)
     end,
-    gs:destroy(errorwin);
-handle_error({unexpected_error,Cause}) ->
-    io:format("Unexpected error:  ~p~n", [Cause]).
-
-
-
+    gs:destroy(errorwin).
 
 get_node_lists(CurrNode) ->
     NodeDataList = lists:sort([node() | nodes()]),

@@ -25,8 +25,8 @@
 %% Parameters:
 %%   CFG         -- A control flow graph
 %%   SpillIndex  -- Last index of spill variable
-%%   SpillLimit  -- Temporaris with numbers higher than this have
-%%                  infinit spill cost. 
+%%   SpillLimit  -- Temporaries with numbers higher than this have
+%%                  infinite spill cost. 
 %%                  Consider changing this to a set.
 %%   Target      -- The module containing the target-specific functions.
 %%
@@ -52,13 +52,13 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   Move_sets = hipe_moves:new(IG),
 
   ?debug_msg("Build Worklist\n",[]),
-  Worklists = hipe_reg_worklists:new(IG, Target, CFG, Move_sets, K, No_temporaries),
+  Worklists = 
+    hipe_reg_worklists:new(IG, Target, CFG, Move_sets, K, No_temporaries),
   Alias = initAlias(No_temporaries),
 
   ?debug_msg("Do coloring\n~p~n",[Worklists]),
   {_IG0, Worklists0, _Moves0, Alias0} = 
-    do_coloring(IG, Worklists, Move_sets, Alias,
-		K, SpillLimit, Target),
+    do_coloring(IG, Worklists, Move_sets, Alias, K, SpillLimit, Target),
   %% io:format("SelStk0 ~w\n",[SelStk0]),
   ?debug_msg("Init node sets\n",[]),
   Node_sets = hipe_node_sets:new(),
@@ -207,7 +207,7 @@ decrement_degree([Node|Nodes], IG, Worklists, Moves, K) ->
   IG0 = hipe_ig:dec_node_degree(Node, IG),
   if PrevDegree =:= K ->
       AdjList = hipe_ig:node_adj_list(Node, IG0),
-      %% Ok since Node (a) is still in IG, and (b) cannot be adjacent to itself.
+      %% Ok since Node (a) is still in IG, and (b) cannot be adjacent to itself
       Moves00 = enable_moves_active_to_worklist(hipe_moves:node_movelist(Node, Moves),
 						Moves),
       Moves0 = enable_moves(AdjList, Worklists, Moves00),
@@ -252,63 +252,59 @@ enable_moves([Node|Nodes], Worklists, Moves) ->
 %%----------------------------------------------------------------------
 %% Function:    enable_moves_active_to_worklist
 %%
-%% Description: Make (move-related) nodes that are not yeat considered for
-%%               coalescing, ready for possible coalescing.
+%% Description: Make (move-related) nodes that are not yet considered for
+%%              coalescing, ready for possible coalescing.
 %%               
 %% Parameters:
 %%   [Node|Nodes]   --  A list of move nodes
-%%   Moves          --  The moves data-structure
+%%   Moves          --  The moves data structure
 %%
 %%   Returns: 
-%%     An updated moves data-structure
+%%     An updated moves data structure
 %%----------------------------------------------------------------------
 
 enable_moves_active_to_worklist([], Moves) -> Moves;
 enable_moves_active_to_worklist([Node|Nodes], Moves) ->
-  case hipe_moves:member_active(Node, Moves) of
-    true ->
-      New_moves = hipe_moves:add_worklist(Node,
-				 hipe_moves:remove_active(Node, Moves)),
-      enable_moves_active_to_worklist(Nodes, New_moves);
-    _ ->
-      enable_moves_active_to_worklist(Nodes, Moves)
-  end.
+  NewMoves =
+    case hipe_moves:member_active(Node, Moves) of
+      true ->
+	hipe_moves:add_worklist(Node, hipe_moves:remove_active(Node, Moves));
+      _ ->
+	Moves
+    end,
+  enable_moves_active_to_worklist(Nodes, NewMoves).
 
 %% Build the namelists, these functions are fast hacks, they use knowledge 
 %% about data representation that they shouldn't know, bad abstraction.
 
-build_namelist(NodeSets,Index,Alias,Color) ->
+build_namelist(NodeSets, Index, Alias, Color) ->
   ?debug_msg("Building mapping\n",[]),
   ?debug_msg("Vector to list\n",[]),
-  AliasList = 
-    build_alias_list(aliasToList(Alias),
-		     0, %% The first temporary has index 0
-		     []), %% Accumulator
+  AliasList = build_alias_list(aliasToList(Alias),
+			       0,   %% The first temporary has index 0
+			       []), %% Accumulator
   ?debug_msg("Alias list:~p\n",[AliasList]),
   ?debug_msg("Coalesced\n",[]),
-  NL1 = build_coalescedlist(AliasList,Color,Alias,[]),
+  NL1 = build_coalescedlist(AliasList, Color, Alias, []),
   ?debug_msg("Coalesced list:~p\n",[NL1]),
   ?debug_msg("Regs\n",[]),
-  NL2 = build_reglist(hipe_node_sets:colored(NodeSets),Color,NL1),
+  NL2 = build_reglist(hipe_node_sets:colored(NodeSets), Color, NL1),
   ?debug_msg("Regs list:~p\n",[NL2]),
   ?debug_msg("Spills\n",[]),
-  build_spillist(hipe_node_sets:spilled(NodeSets),Index,NL2).
+  build_spillist(hipe_node_sets:spilled(NodeSets), Index, NL2).
 
-build_spillist([],Index,List) ->
+build_spillist([], Index, List) ->
   {List,Index};
-build_spillist([Node|Nodes],Index,List) ->
+build_spillist([Node|Nodes], Index, List) ->
   ?debug_msg("[~p]: Spill ~p to ~p\n", [?MODULE,Node,Index]),
-  build_spillist(Nodes,Index+1,[{Node,{spill,Index}}|List]).
+  build_spillist(Nodes, Index+1, [{Node,{spill,Index}}|List]).
 
-build_coalescedlist([],_Color,_Alias,List) ->
+build_coalescedlist([], _Color, _Alias, List) ->
   List;
-build_coalescedlist([Node|Ns],Color,Alias,List)
-when is_integer(Node) ->
-  ?debug_msg("Alias of ~p is ~p~n",[Node,getAlias(Node,Alias)]),
-  AC = getColor(getAlias(Node,Alias),Color),
-  build_coalescedlist(Ns,Color,Alias,[{Node,{reg,AC}}|List]);
-build_coalescedlist([_Node|Ns],Color,Alias,List) ->
-  build_coalescedlist(Ns,Color,Alias,List).
+build_coalescedlist([Node|Ns], Color, Alias, List) when is_integer(Node) ->
+  ?debug_msg("Alias of ~p is ~p~n", [Node, getAlias(Node,Alias)]),
+  AC = getColor(getAlias(Node, Alias), Color),
+  build_coalescedlist(Ns, Color, Alias, [{Node,{reg,AC}}|List]).
 
 build_reglist([],_Color,List) -> 
   List;
@@ -454,6 +450,7 @@ colset_smallest(ColSet) ->
 %%-ifdef(notdef). % new bitmask-based implementation
 colset_from_list(Allocatable) ->
   colset_from_list(Allocatable, 0).
+
 colset_from_list([], ColSet) ->
   ColSet;
 colset_from_list([Colour|Allocatable], ColSet) ->
@@ -517,6 +514,7 @@ setAlias(Node, AliasNode, {alias,AliasMap}) ->
 
 aliasToList({alias,AliasMap}) ->
   aliasToList(AliasMap, hipe_bifs:array_length(AliasMap), []).
+
 aliasToList(AliasMap, I1, Tail) ->
   I0 = I1 - 1,
   if I0 >= 0 ->
@@ -667,8 +665,10 @@ combine(U, V, IG, Worklists, Moves, Alias, K, Target) ->
     combine_edges(AdjV, U, IG, Worklists11, Moves2, K, Target),
 
   New_worklists = case (not(hipe_ig:is_trivially_colourable(U, K, IG1))
-			andalso hipe_reg_worklists:member_freeze(U, Worklists2)) of
-		    true -> hipe_reg_worklists:transfer_freeze_spill(U, Worklists2);
+			andalso
+			hipe_reg_worklists:member_freeze(U, Worklists2)) of
+		    true -> 
+		      hipe_reg_worklists:transfer_freeze_spill(U, Worklists2);
 		    false -> Worklists2
 		  end,
   {IG1, New_worklists, Moves3, Alias1}.
@@ -984,8 +984,7 @@ freezeEm(_U,[],_K,WorkLists,Moves,_IG,_Alias) ->
   {WorkLists,Moves};
 freezeEm(U,[M|Ms],K,WorkLists,Moves,IG,Alias) ->
   V = moves(U, M, Alias, Moves),
-  {WorkLists2,Moves2} = freezeEm2(U,V,M,K,WorkLists,
-				  Moves,IG,Alias),
+  {WorkLists2,Moves2} = freezeEm2(U,V,M,K,WorkLists,Moves,IG,Alias),
   freezeEm(U,Ms,K,WorkLists2,Moves2,IG,Alias).
 
 freezeEm2(U,V,M,K,WorkLists,Moves,IG,Alias) ->

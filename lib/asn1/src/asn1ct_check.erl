@@ -884,9 +884,7 @@ extensionmark(L) ->
 
 class_fields_optional_check(S,#classdef{typespec=ClassSpec}) ->
     Fields = ClassSpec#objectclass.fields,
-    class_fields_optional_check1(S,Fields);
-class_fields_optional_check(_S,C) ->
-    exit({error,{unexpected_class,C}}).
+    class_fields_optional_check1(S,Fields).
 
 class_fields_optional_check1(_S,[]) ->
     ok;
@@ -2042,14 +2040,10 @@ validate_objectidentifier(S,ERef,C)
   when record(ERef,'Externalvaluereference') ->
     validate_objectidentifier(S,[ERef],C);
 validate_objectidentifier(S,L,_) ->
-    case is_space_list(L,[]) of
-	NewL when list(NewL) ->
-	    case validate_objectidentifier1(S,NewL) of
-		NewL2 when list(NewL2) ->{ok,list_to_tuple(NewL2)};
-		Other -> {ok,Other}
-	    end;
-	{error,_} ->
-	    error({value, "illegal OBJECT IDENTIFIER", S})
+    NewL = is_space_list(L,[]),
+    case validate_objectidentifier1(S,NewL) of
+	NewL2 when is_list(NewL2) ->{ok,list_to_tuple(NewL2)};
+	Other -> {ok,Other}
     end.
 
 validate_objectidentifier1(S, [Id|T]) when record(Id,'Externalvaluereference') ->
@@ -3145,9 +3139,7 @@ get_innertag(_S,#'ObjectClassFieldType'{type=Type}) ->
 	{fixedtypevaluefield,_,#type{tag=Tag}} -> Tag;
 	{TypeFieldName,_} when atom(TypeFieldName) -> [];
 	_ -> []
-    end;
-get_innertag(_S,_) ->
-    [].
+    end.
     
 is_class(_S,#classdef{}) ->
     true;
@@ -3222,8 +3214,6 @@ maybe_open_type(S,ClassSpec=#objectclass{fields=Fs},
 is_open_type(#'ObjectClassFieldType'{type='ASN1_OPEN_TYPE'}) ->
     true;
 is_open_type(#'ObjectClassFieldType'{}) ->
-    false;
-is_open_type(_) ->
     false.
 
 
@@ -3455,14 +3445,9 @@ check_constraint(S,Ext) when record(Ext,'Externaltypereference') ->
 
 check_constraint(S,{'SizeConstraint',{Lb,Ub}}) 
   when list(Lb);tuple(Lb),size(Lb)==2 ->
-    case Lb of
-	#'Externalvaluereference'{} ->
-	    check_constraint(S,{'SizeConstraint',{resolv_value(S,Lb),Ub}});
-	_ ->
-	    NewLb = range_check(resolv_tuple_or_list(S,Lb)),
-	    NewUb = range_check(resolv_tuple_or_list(S,Ub)),
-	    {'SizeConstraint',{NewLb,NewUb}}
-    end;
+    NewLb = range_check(resolv_tuple_or_list(S,Lb)),
+    NewUb = range_check(resolv_tuple_or_list(S,Ub)),
+    {'SizeConstraint',{NewLb,NewUb}};
 check_constraint(S,{'SizeConstraint',{Lb,Ub}}) ->
     case {resolv_value(S,Lb),resolv_value(S,Ub)} of
 	{FixV,FixV} ->
@@ -3506,13 +3491,11 @@ check_constraint(S,{simpletable,Type}) ->
     C = match_parameters(S,Def,S#state.parameters),
     case C of
 	#'Externaltypereference'{} ->
-%	     Type#type{def=check_externaltypereference(S,C)},
 	    ERef = check_externaltypereference(S,C),
-%	    {simpletable,OSName};
 	    {simpletable,ERef#'Externaltypereference'.type};
-	#type{def=#'Externaltypereference'{}} ->
+	#type{def=#'Externaltypereference'{type=T}} ->
 	    check_externaltypereference(S,C#type.def),
-	    {simpletable,C#'Externaltypereference'.type};
+	    {simpletable,T};
 	{valueset,#type{def=ERef=#'Externaltypereference'{}}} -> % this is an object set
 	    {_,TDef} = get_referenced_type(S,ERef),
 	    case TDef#typedef.typespec of 
@@ -3691,10 +3674,6 @@ constraint_union_vr([{_,{_,Ub2}}|Rest],A=[{_,{_,Ub1}}|_Acc]) when Ub2=<Ub1->
 constraint_union_vr([VR|Rest],Acc) ->
     constraint_union_vr(Rest,[VR|Acc]).
 
-union_sv_vr(_S,[],B) ->
-    [B];
-union_sv_vr(_S,A,[]) ->
-    [A];
 union_sv_vr(_S,C1={'SingleValue',SV},C2={'ValueRange',VR={Lb,Ub}}) 
   when integer(SV) ->
     case is_int_in_vr(SV,C2) of
@@ -3786,8 +3765,6 @@ keysearch_allwithkey(Key,Ix,L) ->
 %% returns a list with the intersection of all extension roots
 %% and only the extension of the last constraint kept if any 
 %% extension in the last constraint
-filter_extensions([]) ->
-    [];
 filter_extensions(C=[_H]) ->
     C;
 filter_extensions(C) when list(C) ->
@@ -3865,10 +3842,6 @@ combine_constraints(S,SV,VR,CComb) ->
     C ++ CComb.
 %    combine_combined_cnstr(S,C,CComb).
 
-intersection_sv_vr(_,[],_VR) ->
-    [];
-intersection_sv_vr(_,_SV,[]) ->
-    [];
 intersection_sv_vr(_S,[C1={'SingleValue',SV}],[C2={'ValueRange',{_Lb,_Ub}}]) 
   when integer(SV) ->
     case is_int_in_vr(SV,C2) of
@@ -5038,9 +5011,9 @@ check_unique2([_|T],Pos,Acc) ->
 check_unique2([],_,Acc) ->
     lists:reverse(Acc).
 
-check_each_component(S,Type,{Rlist,ExtList}) ->
-    {check_each_component(S,Type,Rlist),
-     check_each_component(S,Type,ExtList)};
+%% check_each_component(S,Type,{Rlist,ExtList}) ->
+%%     {check_each_component(S,Type,Rlist),
+%%      check_each_component(S,Type,ExtList)};
 check_each_component(S,Type,Components) ->
     check_each_component(S,Type,Components,[],[],[],root1).
 
@@ -5090,9 +5063,9 @@ check_each_component(_S,_,[],Acc1,ExtAcc,Acc2,root2) ->
 check_each_component(_S,_,[],Acc,_,_,root1) ->
     lists:reverse(Acc).
 
-check_each_alternative(S,Type,{Rlist,ExtList}) ->
-    {check_each_alternative(S,Type,Rlist),
-     check_each_alternative(S,Type,ExtList)};
+%% check_each_alternative(S,Type,{Rlist,ExtList}) ->
+%%     {check_each_alternative(S,Type,Rlist),
+%%      check_each_alternative(S,Type,ExtList)};
 check_each_alternative(S,Type,[C|Ct]) ->
     check_each_alternative(S,Type,[C|Ct],[],[],noext).
 

@@ -657,20 +657,9 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     int fd;
     time_t now;
     char* dumpname;
-    char* e;
-#if !defined(VXWORKS) && !defined(__WIN32__)
-    int i, max;
-#endif
 
     if (ERTS_IS_CRASH_DUMPING)
 	return;
-
-    /* Allow us to pass certain places without locking... */
-#ifdef ERTS_SMP
-    erts_smp_atomic_inc(&erts_writing_erl_crash_dump);
-#else
-    erts_writing_erl_crash_dump = 1;
-#endif
 
     /* Wait for all threads to block. If all threads haven't blocked
      * after a minute, we go anyway and hope for the best...
@@ -687,41 +676,19 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
     default:		/* Should not happen; give up... */	abort();
     }
 
-#ifndef VXWORKS
-    close(3);			/* Make sure we have a free descriptor */
-#ifndef __WIN32__
-    max = sys_max_files();
-    if (max < 1024)
-	max = 1024;
-    for (i = 4; i < max; i++)
-	close(i);
+    /* Allow us to pass certain places without locking... */
+#ifdef ERTS_SMP
+    erts_smp_atomic_inc(&erts_writing_erl_crash_dump);
+#else
+    erts_writing_erl_crash_dump = 1;
 #endif
-#endif
+
+    erts_sys_prepare_crash_dump();
 
     dumpname = getenv("ERL_CRASH_DUMP");
     if (!dumpname) {
 	dumpname = "erl_crash.dump";
     }
-
-#ifdef UNIX
-    e = getenv("ERL_CRASH_DUMP_NICE");
-    if (e) {
-	int nice_val;
-	nice_val = atoi(e);
-	if (nice_val > 39) {
-	    nice_val = 39;
-	}
-	nice(nice_val);
-    }
-    
-    e = getenv("ERL_CRASH_DUMP_SECONDS");
-    if (e) {
-	unsigned sec;
-	sec = (unsigned) atoi(e);
-	alarm(sec);
-    }
-
-#endif
 
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
     if (fd < 0) 

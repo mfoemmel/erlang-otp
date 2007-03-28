@@ -894,9 +894,9 @@ insertLine(_BadDirectiveOrComment,FileData)->
 
 getAllowOverRideData(OverRideData)->
    case string:tokens(OverRideData," \r\n") of
-       "all" ++ _ ->
+       ["all" ++ _] ->
 	   all;
-       "none" ++ _->
+       ["none" ++ _]->
 	   none;
        Directives ->
 	   getOverRideDirectives(Directives)

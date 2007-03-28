@@ -165,9 +165,7 @@ gen_includes_loop(Fd,[I|Is],Type) ->
 		c_client ->
 		    ic_codegen:emit(Fd, "#include \"~s.h\"\n", [File]);
 		c_server ->
-		    ic_codegen:emit(Fd, "#include \"~s__s.h\"\n", [File]);
-		_ ->
-		    ok
+		    ic_codegen:emit(Fd, "#include \"~s__s.h\"\n", [File])
 	    end,
 	    gen_includes_loop(Fd,Is,Type)
     end.
@@ -214,7 +212,8 @@ type_expand_op_exec(G,N,X,Fd) ->
 	true ->
 	    ic_codegen:emit(Fd,"%%~n",[]),
 	    RaisesList=["%% Raises: " ++ 
-			mk_list(lists:map({ic_util, to_colon}, X#op.raises))],
+			mk_list(lists:map(fun(E) -> ic_util:to_colon(E) end, 
+					  X#op.raises))],
 	    ic_codegen:emit(Fd,RaisesList,[]),
 	    ic_codegen:nl(Fd)
     end,

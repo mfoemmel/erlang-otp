@@ -148,8 +148,10 @@ process_chunks(F) ->
 	    Atoms = mk_atoms(AtomsList),
 	    LambdaBin = optional_chunk(F, "FunT"),
 	    Lambdas = beam_disasm_lambdas(LambdaBin, Atoms),
+	    LiteralBin = optional_chunk(F, "LitT"),
+	    Literals = beam_disasm_literals(LiteralBin),
 	    Code = beam_disasm_code(CodeBin, Atoms, mk_imports(ImportsList),
-				    StrBin, Lambdas, Module),
+				    StrBin, Lambdas, Literals, Module),
 	    Attributes = optional_chunk(F, attributes),
 	    CompInfo = 
 		case optional_chunk(F, "CInf") of
@@ -191,6 +193,19 @@ disasm_lambdas(<<F:32,A:32,Lbl:32,Index:32,NumFree:32,OldUniq:32,More/binary>>,
 disasm_lambdas(<<>>, _, _) -> [].
 
 %%-----------------------------------------------------------------------
+%% Disassembles the literal table (contanst pool) of a BEAM file.
+%%-----------------------------------------------------------------------
+
+beam_disasm_literals(none) -> none;
+beam_disasm_literals(<<_:32,Compressed/binary>>) ->
+    <<_:32,Tab/binary>> = zlib:uncompress(Compressed),
+    gb_trees:from_orddict(disasm_literals(Tab, 0)).
+
+disasm_literals(<<Sz:32,Ext:Sz/binary,T/binary>>, Index) ->
+    [{Index,binary_to_term(Ext)}|disasm_literals(T, Index+1)];
+disasm_literals(<<>>, _) -> [].
+
+%%-----------------------------------------------------------------------
 %% Disassembles the code chunk of a BEAM file:
 %%   - The code is first disassembled into a long list of instructions.
 %%   - This list is then split into functions and all names are resolved.
@@ -200,9 +215,10 @@ beam_disasm_code(<<_SS:32, % Sub-Size (length of information before code)
 		  _IS:32,  % Instruction Set Identifier (always 0)
 		  _OM:32,  % Opcode Max
 		  _L:32,_F:32,
-		  CodeBin/binary>>, Atoms, Imports, Str, Lambdas, M) ->
+		  CodeBin/binary>>, Atoms, Imports,
+		 Str, Lambdas, Literals, M) ->
     Code = binary_to_list(CodeBin),
-    case catch disasm_code(Code, Atoms) of
+    case catch disasm_code(Code, Atoms, Literals) of
 	{'EXIT',Rsn} ->
 	    ?NO_DEBUG('code disasm failed: ~p~n',[Rsn]),
 	    ?exit(Rsn);
@@ -211,16 +227,16 @@ beam_disasm_code(<<_SS:32, % Sub-Size (length of information before code)
 	    Labels = mk_labels(local_labels(Functions)),
 	    [function__code_update(Function,
 				   resolve_names(Is, Imports, Str,
-						 Labels, Lambdas, M))
+						 Labels, Lambdas, Literals, M))
 	     || Function = #function{code=Is} <- Functions]
     end.
 
 %%-----------------------------------------------------------------------
 
-disasm_code([B|Bs], Atoms) ->
-    {Instr,RestBs} = disasm_instr(B, Bs, Atoms),
-    [Instr|disasm_code(RestBs, Atoms)];
-disasm_code([], _) -> [].
+disasm_code([B|Bs], Atoms, Literals) ->
+    {Instr,RestBs} = disasm_instr(B, Bs, Atoms, Literals),
+    [Instr|disasm_code(RestBs, Atoms, Literals)];
+disasm_code([], _, _) -> [].
 
 %%-----------------------------------------------------------------------
 %% Splits the code stream into chunks representing the code of functions.
@@ -300,15 +316,15 @@ local_labels_2(_, R, _, _, _) -> R.
 %% in a generic way; indexing instructions are handled separately.
 %%-----------------------------------------------------------------------
 
-disasm_instr(B, Bs, Atoms) ->
+disasm_instr(B, Bs, Atoms, Literals) ->
     {SymOp,Arity} = beam_opcodes:opname(B),
     case SymOp of
 	select_val ->
-	    disasm_select_inst(select_val, Bs, Atoms);
+	    disasm_select_inst(select_val, Bs, Atoms, Literals);
 	select_tuple_arity ->
-	    disasm_select_inst(select_tuple_arity, Bs, Atoms);
+	    disasm_select_inst(select_tuple_arity, Bs, Atoms, Literals);
 	_ ->
-	    case catch decode_n_args(Arity, Bs, Atoms) of
+	    case catch decode_n_args(Arity, Bs, Atoms, Literals) of
 		{'EXIT',Rsn} ->
 		    ?NO_DEBUG("decode_n_args(~p,~p) failed~n",[Arity,Bs]),
 		    {{'EXIT',{SymOp,Arity,Rsn}},[]};
@@ -327,13 +343,13 @@ disasm_instr(B, Bs, Atoms) ->
 %%   where each case is of the form [symbol,{f,Label}].
 %%-----------------------------------------------------------------------
 
-disasm_select_inst(Inst, Bs, Atoms) ->
-    {X, Bs1} = decode_arg(Bs, Atoms),
-    {F, Bs2} = decode_arg(Bs1, Atoms),
-    {Z, Bs3} = decode_arg(Bs2, Atoms),
-    {U, Bs4} = decode_arg(Bs3, Atoms),
+disasm_select_inst(Inst, Bs, Atoms, Literals) ->
+    {X, Bs1} = decode_arg(Bs, Atoms, Literals),
+    {F, Bs2} = decode_arg(Bs1, Atoms, Literals),
+    {Z, Bs3} = decode_arg(Bs2, Atoms, Literals),
+    {U, Bs4} = decode_arg(Bs3, Atoms, Literals),
     {u,Len} = U,
-    {List, RestBs} = decode_n_args(Len, Bs4, Atoms),
+    {List, RestBs} = decode_n_args(Len, Bs4, Atoms, Literals),
     {{Inst,[X,F,{Z,U,List}]},RestBs}.
 
 %%-----------------------------------------------------------------------
@@ -350,18 +366,18 @@ decode_arg([B|Bs]) ->
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n',[Tag,B,Bs]),
     case Tag of
 	z ->
-	    decode_z_tagged(Tag, B, Bs);
+	    decode_z_tagged(Tag, B, Bs, no_literals);
 	_ ->
 	    %% all other cases are handled as if they were integers
 	    decode_int(Tag, B, Bs)
     end.
 
-decode_arg([B|Bs0], Atoms) ->
+decode_arg([B|Bs0], Atoms, Literals) ->
     Tag = decode_tag(B band 2#111),
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n',[Tag,B,Bs]),
     case Tag of
 	z ->
-	    decode_z_tagged(Tag, B, Bs0);
+	    decode_z_tagged(Tag, B, Bs0, Literals);
 	a ->
 	    %% atom or nil
 	    case decode_int(Tag, B, Bs0) of
@@ -432,7 +448,7 @@ decode_negative(N, Len) ->
 %% Decodes lists and floating point numbers.
 %%-----------------------------------------------------------------------
 
-decode_z_tagged(Tag,B,Bs) when (B band 16#08) =:= 0 ->
+decode_z_tagged(Tag,B,Bs,Literals) when (B band 16#08) =:= 0 ->
     N = B bsr 4,
     case N of
 	0 -> % float
@@ -442,11 +458,11 @@ decode_z_tagged(Tag,B,Bs) when (B band 16#08) =:= 0 ->
 	2 -> % fr
 	    decode_fr(Bs);
 	3 -> % allocation list
-	    decode_alloc_list(Bs);
+	    decode_alloc_list(Bs, Literals);
 	_ ->
 	    ?exit({decode_z_tagged,{invalid_extended_tag,N}})
     end;
-decode_z_tagged(_,B,_) ->
+decode_z_tagged(_,B,_,_) ->
     ?exit({decode_z_tagged,{weird_value,B}}).
 
 decode_float(Bs) ->
@@ -458,19 +474,21 @@ decode_fr(Bs) ->
     {{u,Fr},RestBs} = decode_arg(Bs),
     {{fr,Fr},RestBs}.
 
-decode_alloc_list(Bs) ->
+decode_alloc_list(Bs, Literals) ->
     {{u,N},RestBs} = decode_arg(Bs),
-    decode_alloc_list_1(N, RestBs, []).
+    decode_alloc_list_1(N, Literals, RestBs, []).
 
-decode_alloc_list_1(0, RestBs, Acc) ->
+decode_alloc_list_1(0, _Literals, RestBs, Acc) ->
     {{u,{alloc,lists:reverse(Acc)}},RestBs};
-decode_alloc_list_1(N, Bs0, Acc) ->
+decode_alloc_list_1(N, Literals, Bs0, Acc) ->
     {{u,Type},Bs1} = decode_arg(Bs0),
     {{u,Val},Bs} = decode_arg(Bs1),
-    case Type of
-	0 -> decode_alloc_list_1(N-1, Bs, [{words,Val}|Acc]);
-	1 -> decode_alloc_list_1(N-1, Bs, [{floats,Val}|Acc])
-    end.
+    Res = case Type of
+	      0 -> {words,Val};
+	      1 -> {floats,Val};
+	      2 -> {literal,gb_trees:get(Val, Literals)}
+	  end,
+    decode_alloc_list_1(N-1, Literals, Bs, [Res|Acc]).
 
 %%-----------------------------------------------------------------------
 %% take N bytes from a stream, return {Taken_bytes, Remaining_bytes}
@@ -501,13 +519,13 @@ build_arg([], N) ->
 %% Decodes a bunch of arguments and returns them in a list
 %%-----------------------------------------------------------------------
 
-decode_n_args(N, Bs, Atoms) when N >= 0 ->
-    decode_n_args(N, [], Bs, Atoms).
+decode_n_args(N, Bs, Atoms, Literals) when N >= 0 ->
+    decode_n_args(N, [], Bs, Atoms, Literals).
 
-decode_n_args(N, Acc, Bs0, Atoms) when N > 0 ->
-    {A1,Bs} = decode_arg(Bs0, Atoms),
-    decode_n_args(N-1, [A1|Acc], Bs, Atoms);
-decode_n_args(0, Acc, Bs, _) ->
+decode_n_args(N, Acc, Bs0, Atoms, Literals) when N > 0 ->
+    {A1,Bs} = decode_arg(Bs0, Atoms, Literals),
+    decode_n_args(N-1, [A1|Acc], Bs, Atoms, Literals);
+decode_n_args(0, Acc, Bs, _, _) ->
     {lists:reverse(Acc),Bs}.
 
 %%-----------------------------------------------------------------------
@@ -540,21 +558,24 @@ decode_tag(X) -> ?exit({unknown_tag,X}).
 %%  representation means it is simpler to iterate over all args, etc.
 %%-----------------------------------------------------------------------
 
-resolve_names(Fun, Imports, Str, Lbls, Lambdas, M) ->
-    [resolve_inst(Instr, Imports, Str, Lbls, Lambdas, M) || Instr <- Fun].
+resolve_names(Fun, Imports, Str, Lbls, Lambdas, Literals, M) ->
+    [resolve_inst(Instr, Imports, Str, Lbls, Lambdas, Literals, M) || Instr <- Fun].
 
 %%
 %% New make_fun2/4 instruction added in August 2001 (R8).
-%% We handle it specially here to avoid adding an argument to
+%% New put_literal/2 instruction added in Feb 2006 R11B-4.
+%% We handle them specially here to avoid adding an argument to
 %% the clause for every instruction.
 %%
 
-resolve_inst({make_fun2,Args}, _, _, _, Lambdas, M) ->
+resolve_inst({make_fun2,Args}, _, _, _, Lambdas, _, M) ->
     [OldIndex] = resolve_args(Args),
     {value,{OldIndex,{F,A,_Lbl,_Index,NumFree,OldUniq}}} =
 	lists:keysearch(OldIndex, 1, Lambdas),
     {make_fun2,{M,F,A},OldIndex,OldUniq,NumFree};
-resolve_inst(Instr, Imports, Str, Lbls, _Lambdas, _M) ->
+resolve_inst({put_literal,[{u,Index},Dst]},_,_,_,_,Literals,_) ->
+    {put_literal,{literal,gb_trees:get(Index, Literals)},Dst};
+resolve_inst(Instr, Imports, Str, Lbls, _Lambdas, _Literals, _M) ->
     %% io:format(?MODULE_STRING":resolve_inst ~p.~n", [Instr]),
     resolve_inst(Instr, Imports, Str, Lbls).
 
@@ -945,6 +966,7 @@ resolve_inst({bs_bits_to_bytes2,[Arg2,Arg3]},_,_,_) ->
     {bs_bits_to_bytes2,A2,A3};
 resolve_inst({bs_final2,[X,Y]},_,_,_) ->
     {bs_final2,X,Y};
+
 %%
 %% Catches instructions that are not yet handled.
 %%

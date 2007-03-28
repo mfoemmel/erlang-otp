@@ -45,6 +45,10 @@
 
 #define ERST_INTERNAL_CHANNEL_NO 0
 
+#define ERTS_DE_SFLG_INITIALIZING			(((Uint32) 1) <<  0)
+#define ERTS_DE_SFLG_CONNECTED				(((Uint32) 1) <<  1)
+#define ERTS_DE_SFLG_EXITING				(((Uint32) 1) <<  2)
+
 /*
  * Lock order:
  *   1. dist_entry->mtxp

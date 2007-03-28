@@ -22,7 +22,7 @@
 -module(megaco_binary_name_resolver_prev3a).
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
--include_lib("megaco/src/engine/megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 
 -define(LOWER(Char),
@@ -628,7 +628,6 @@ encode_item(Scope, Package, Item) ->
         "nt"      -> encode_nt(Scope, Item);
         "rtp"     -> encode_rtp(Scope, Item);
         "tdmc"    -> encode_tdmc(Scope, Item);
-        ""        -> encode_native(Scope, Item);
         "swb"     -> encode_swb(Scope, Item)
     end.
 

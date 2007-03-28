@@ -2580,7 +2580,7 @@ t() ->
 %%----------------------------------------------------------------------
 
 is_started(#state{net_if = _Pid, net_if_mod = _Mod}) ->
-    %% Mod:is_started(Pid) andalso snmpm_config:is_started().
+    %% Mod:is_started(Pid) and snmpm_config:is_started().
     case snmpm_config:is_started() of
 	true ->
 	    true;

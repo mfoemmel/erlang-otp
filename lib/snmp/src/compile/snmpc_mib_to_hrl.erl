@@ -125,7 +125,7 @@ insert_oids2([], _Fd) ->
 
 insert_notifs(Traps, Fd) ->
     d("insert notifications"),
-    Notifs = [Notif || #notification{} = Notif <- Traps],
+    Notifs = [Notif || Notif <- Traps, is_record(Notif, notification)],
     case Notifs of
 	[] ->
 	    ok;
@@ -139,9 +139,8 @@ insert_notifs2([], _Fd) ->
 insert_notifs2([#notification{trapname = Name, oid = Oid}|T], Fd) ->
     t("insert notification ~p - ~w", [Name, Oid]),
     io:format(Fd, "-define(~w, ~w).~n", [Name, Oid]),
-    insert_notifs2(T, Fd);
-insert_notifs2([_|T], Fd) -> % Crap
     insert_notifs2(T, Fd).
+
 
 %%-----------------------------------------------------------------
 %% There's nothing strange with this function!  Enums can be

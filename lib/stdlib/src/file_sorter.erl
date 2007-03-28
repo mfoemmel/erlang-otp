@@ -189,20 +189,19 @@ options([{format, Format} | L], Opts) when Format =:= binary;
     options(L, Opts#opts{format = Format});
 options([{format, binary_term} | L], Opts) ->
     options(L, Opts#opts{format = binary_term_fun()});
-options([{size, Size} | L], Opts) 
-            when is_integer(Size), Size > 0, Size < ?MAXSIZE ->
-    options(L, Opts#opts{size = Size});
+options([{size, Size} | L], Opts) when is_integer(Size), Size >= 0 ->
+    options(L, Opts#opts{size = max(Size, 1)});
 options([{no_files, NoFiles} | L], Opts) when is_integer(NoFiles), 
                                               NoFiles > 1 ->
     options(L, Opts#opts{no_files = NoFiles});
 options([{tmpdir, ""} | L], Opts) ->
     options(L, Opts#opts{tmpdir = default});
 options([{tmpdir, Dir} | L],  Opts) ->
-    case is_directory(Dir) of
-        {true, Directory} ->
-            options(L, Opts#opts{tmpdir = {dir, Directory}});
-        Error ->
-            Error
+    case catch filename:absname(Dir) of
+        {'EXIT', _} ->
+            {badarg, Dir};
+        FileName -> 
+            options(L, Opts#opts{tmpdir = {dir, FileName}})
     end;
 options([{order, Fun} | L], Opts) when is_function(Fun), is_function(Fun, 2) ->
     options(L, Opts#opts{order = Fun});
@@ -1271,16 +1270,6 @@ maybe_output(File) ->
             {true, FileName}
     end.
 
-is_directory(File) ->
-    case read_file_info(File) of
-        {ok, FileName, #file_info{type=directory}} ->
-            {true, FileName};
-        {ok, _FileName, _FileInfo} ->
-            {error, {not_a_directory, File}};
-        Error ->
-            Error
-    end.
-
 read_file_info(File) ->
     %% Absolute names in case some process should call file:set_cwd/1.
     case catch filename:absname(File) of
@@ -1456,7 +1445,7 @@ file_wterms(W, F, Args) ->
     end.
 
 write_terms(Fd, F, [B | Bs], Args) ->
-    case io:format(Fd, "~p.~n", [binary_to_term(B)]) of
+    case io:request(Fd, {format, "~p.~n", [binary_to_term(B)]}) of
         ok -> 
             write_terms(Fd, F, Bs, Args);
         {error, Reason} ->

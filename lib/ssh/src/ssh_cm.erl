@@ -116,7 +116,9 @@ connect(Host, Opts) ->
     connect(Host, ?SSH_DEFAULT_PORT, Opts).
 connect(Host, Port, Opts) ->
     {ok, CM} = gen_server:start_link(?MODULE, [client, Opts], []),
-    case gen_server:call(CM, {connect, self(), Host, Port}) of
+    %% Timeout shall be infinity, OTP-6488. This call to an internal process
+    %% will get an answer unless the process dies! 
+    case gen_server:call(CM, {connect, self(), Host, Port}, infinity) of
 	ok ->
 	    {ok, CM};
 	Error ->
@@ -528,7 +530,7 @@ handle_cast(_Cast, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({ssh_msg,SSH,#ssh_msg_service_request{name="ssh-userauth"}},
+handle_info({ssh_msg, SSH,#ssh_msg_service_request{name="ssh-userauth"}},
 	    State) when State#state.role == server->
     case ssh_userauth:auth_remote(SSH, "ssh-connection", State#state.opts) of
 	{ok, Handle} ->
@@ -1378,12 +1380,8 @@ encode_pty_opts([]) ->
     [?TTY_OP_END].
 
 
-decode_ip(Addr) when tuple(Addr) ->
-    Addr;
-decode_ip(Addr) when binary(Addr) ->
-    decode_ip(binary_to_list(Addr));
-decode_ip(Addr) when list(Addr) ->
-    case inet_parse:address(Addr) of
+decode_ip(Addr) when is_binary(Addr) ->
+    case inet_parse:address(binary_to_list(Addr)) of
 	{error,_} -> Addr;
 	{ok,A}    -> A
     end.
@@ -1444,8 +1442,8 @@ del_binds_by_user(User, State) ->
     State#state{binds = Binds}.
 
 get_bind(IP, Port, State) ->
-    case lists:keysearch({IP, Port}, 1, State) of
-	{value, User} -> User;
+    case lists:keysearch({IP, Port}, 1, State#state.binds) of
+	{value, {{IP, Port}, User}} -> User;
 	_ -> undefined
     end.
 

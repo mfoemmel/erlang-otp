@@ -31,11 +31,13 @@ typedef struct erl_bin_match_buffer {
 } ErlBinMatchBuffer;
 
 struct erl_bits_state {
+#if !defined(HEAP_FRAG_ELIM_TEST)
     /*
      * Used for matching.
      */
     ErlBinMatchBuffer erts_mb_;	/* Current match buffer. */
     ErlBinMatchBuffer erts_save_mb_[MAX_REG]; /* Saved match buffers. */
+#endif
     /*
      * Used for building binaries.
      */
@@ -50,12 +52,14 @@ struct erl_bits_state {
      * buffer (old instruction set).
      */
     unsigned erts_bin_offset_;
+#if !defined(HEAP_FRAG_ELIM_TEST)
     /*
      * The following variables are only used for building binaries
      * using the old instructions.
      */
     byte* erts_bin_buf_;
     unsigned erts_bin_buf_len_;
+#endif
 };
 
 typedef struct erl_bin_match_struct{
@@ -129,13 +133,17 @@ extern struct erl_bits_state ErlBitsState;
 #endif	/* ERL_BITS_REENTRANT */
 
 #if !defined(HEAP_FRAG_ELIM_TEST)
+# define erts_mb		(ErlBitsState.erts_mb_)
+# define erts_save_mb		(ErlBitsState.erts_save_mb_)
+#endif
 
-#define erts_mb			(ErlBitsState.erts_mb_)
-#define erts_save_mb		(ErlBitsState.erts_save_mb_)
 #define erts_bin_offset		(ErlBitsState.erts_bin_offset_)
 #define erts_current_bin	(ErlBitsState.erts_current_bin_)
+
+#if !defined(HEAP_FRAG_ELIM_TEST)
 #define erts_bin_buf		(ErlBitsState.erts_bin_buf_)
 #define erts_bin_buf_len	(ErlBitsState.erts_bin_buf_len_)
+
 
 #define erts_InitMatchBuf(Src, Fail)					\
 do {									\

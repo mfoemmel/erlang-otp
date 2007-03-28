@@ -67,8 +67,8 @@
   label CDATA #IMPLIED>
 
 <!ELEMENT functions (function+)>
-<!ELEMENT function (args, typespec?, throws?, equiv?, description?,
-                    since?, deprecated?, see*, todo?)>
+<!ELEMENT function (args, typespec?, returns?, throws?, equiv?,
+                    description?, since?, deprecated?, see*, todo?)>
 <!ATTLIST function
   name CDATA #REQUIRED
   arity CDATA #REQUIRED
@@ -76,10 +76,11 @@
   label CDATA #IMPLIED>
 
 <!ELEMENT args (arg*)>
-<!ELEMENT arg (description?)>
-<!ATTLIST arg name CDATA #REQUIRED>
+<!ELEMENT arg (argName, description?)>
+<!ELEMENT argName (#PCDATA)>
 
 <!ELEMENT throws (type, localdef*)>
+<!ELEMENT returns (description)>
 
 <!ELEMENT equiv (expr, see?)>
 <!ELEMENT expr (#PCDATA)>

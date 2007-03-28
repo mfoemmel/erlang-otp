@@ -224,15 +224,13 @@ send_drv_reqs(Drv, Rs) ->
 setopts(Opts0,_Drv, Buf) ->
     Opts = proplists:substitute_negations([{list,binary}], Opts0),
     put(expand_fun, proplists:get_value(expand_fun, Opts, get(expand_fun))),
-    case proplists:get_value(binary, Opts) of
+    case proplists:get_bool(binary, Opts) of
 	true ->
-	    put(read_mode,binary),
+	    put(read_mode, binary),
 	    {ok,ok,Buf};
 	false ->
-	    put(read_mode,list),
-	    {ok,ok,Buf};
-	_ ->
-	    {error,{error,badarg},Buf}
+	    put(read_mode, list),
+	    {ok,ok,Buf}
     end.
 
 %% get_chars(Prompt, Module, Function, XtraArgument, Drv, Buffer)

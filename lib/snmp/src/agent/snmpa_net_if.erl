@@ -486,7 +486,8 @@ handle_reply_pdu(#state{log = Log} = S, Vsn, #pdu{request_id = Rid} = Pdu,
 	    (catch udp_send(S#state.usock, Ip, Port, Packet)),
 	    S1;
 	{discarded, Reason} ->
-	    ?vlog("~n   reply discarded for reason: ~s", 
+	    ?vlog("handle_reply_pdu -> "
+		  "~n   reply discarded for reason: ~s", 
 		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
 	    S1;
 	{'EXIT', Reason} ->
@@ -501,7 +502,8 @@ handle_send_pdu(#state{note_store = NS} = S, Vsn, Pdu, MsgData, To, From) ->
 	{ok, Addresses} ->
 	    handle_send_pdu(S,Pdu,Addresses);
 	{discarded, Reason} ->
-	    ?vlog("~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
+	    ?vlog("handle_send_pdu -> "
+		  "~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
 	    ok;
         {'EXIT', Reason} ->
             user_err("failed generating message: "
@@ -512,7 +514,7 @@ handle_send_pdu(#state{note_store = NS} = S, Vsn, Pdu, MsgData, To, From) ->
 	undefined ->
 	    S;
 	Pid ->
-	    ?vtrace("~n   link to ~p and add to request list", [Pid]),
+	    ?vtrace("link to ~p and add to request list", [Pid]),
 	    link(Pid),
 	    NReqs = snmp_misc:keyreplaceadd(Pid, 2, S#state.reqs, 
 					    {Pdu#pdu.request_id, From}),
@@ -575,10 +577,12 @@ handle_send_pdu1(#state{log = Log, usock = Sock}, Type, Addresses) ->
 handle_response(Vsn, Pdu, From, S) ->
     case lists:keysearch(Pdu#pdu.request_id, 1, S#state.reqs) of
 	{value, {_, Pid}} ->
-	    ?vdebug("~n   send response to receiver ~p", [Pid]),
+	    ?vdebug("handle_response -> "
+		    "~n   send response to receiver ~p", [Pid]),
 	    Pid ! {snmp_response_received, Vsn, Pdu, From};
 	_ ->
-	    ?vdebug("~n   No receiver available for response pdu", [])
+	    ?vdebug("handle_response -> "
+		    "~n   No receiver available for response pdu", [])
     end.
 
 
@@ -791,47 +795,52 @@ get_info(#state{usock = Id, reqs = Reqs}) ->
     PortInfo = get_port_info(Id),
     [{reqs, Reqs}, {process_memory, ProcSize}, {port_info, PortInfo}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
-    end;
-proc_mem(_) ->
-    undefined.
+    end.
+%% proc_mem(_) ->
+%%     undefined.
 
 get_port_info(Id) ->
-    PortInfo = case (catch erlang:port_info(Id)) of
-		   PI when list(PI) ->
-		       [{port_info, PI}];
-		   _ ->
-		       []
-	       end,
-    PortStatus = case (catch prim_inet:getstatus(Id)) of
-		     {ok, PS} ->
-			 [{port_status, PS}];
-		     _ ->
-			 []
-		 end,
-    PortAct = case (catch inet:getopts(Id, [active])) of
-		  {ok, PA} ->
-		      [{port_act, PA}];
-		  _ ->
-		      []
-	      end,
-    PortStats = case (catch inet:getstat(Id)) of
-		    {ok, Stat} ->
-			[{port_stats, Stat}];
-		    _ ->
-			[]
-		end,
-    IfList = case (catch inet:getif(Id)) of
-		 {ok, IFs} ->
-		     [{interfaces, IFs}];
-		 _ ->
-		     []
-	     end,
+    PortInfo = 
+	case (catch erlang:port_info(Id)) of
+	    PI when is_list(PI) ->
+		[{port_info, PI}];
+	    _ ->
+		[]
+	end,
+    PortStatus = 
+	case (catch prim_inet:getstatus(Id)) of
+	    {ok, PS} ->
+		[{port_status, PS}];
+	    _ ->
+		[]
+	end,
+    PortAct = 
+	case (catch inet:getopts(Id, [active])) of
+	    {ok, PA} ->
+		[{port_act, PA}];
+	    _ ->
+		[]
+	end,
+    PortStats = 
+	case (catch inet:getstat(Id)) of
+	    {ok, Stat} ->
+		[{port_stats, Stat}];
+	    _ ->
+		[]
+	end,
+    IfList = 
+	case (catch inet:getif(Id)) of
+	    {ok, IFs} ->
+		[{interfaces, IFs}];
+	    _ ->
+		[]
+	end,
     [{socket, Id}] ++ IfList ++ PortStats ++ PortInfo ++ PortStatus ++ PortAct.
 
 

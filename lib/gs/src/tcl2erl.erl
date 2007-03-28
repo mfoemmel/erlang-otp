@@ -77,7 +77,7 @@ fw([Char|R],Ack) ->
 %% ---------------------------------------------
 %% str_to_term(Str)
 %% Transforms a string to the corresponding Erlang
-%% term. Note that the string "Hello" will be 
+%% term. Note that the string "Hello" will be
 %% transformed to an Erlang atom: 'Hello' .
 %% If it is impossible to convert the string into
 %% a term the original string is just returned.
@@ -85,17 +85,14 @@ fw([Char|R],Ack) ->
 %% 'so that we can be able to tell if conversion succeded or not.'
 %%
 
-str_to_term(Str) -> 
-    case scan(Str) of
-	{tokens,Tokens} -> 
-	    case catch parse_term(Tokens) of
-		{_Type, Term,[]} -> {term,Term};
-		_ -> {string, Str}
-	    end;
+str_to_term(Str) ->
+    {tokens,Tokens} = scan(Str),
+    case catch parse_term(Tokens) of
+	{_Type, Term,[]} -> {term,Term};
 	_ -> {string, Str}
     end.
 
- 
+
 %% ---------------------------------------------
 %% Simple Parser.  ;-)
 %% Parses tokens or fails.
@@ -131,9 +128,9 @@ parse_list(['['|R]) ->
 list_args(Toks,Ack) ->
     cont_list(parse_term(Toks),Ack).
 
-cont_list({_Tag, Term,[','|C]},Ack) -> 
+cont_list({_Tag, Term,[','|C]},Ack) ->
     list_args(C,[Term|Ack]);
-cont_list({_Tag, Term,[']'|C]},Ack) -> 
+cont_list({_Tag, Term,[']'|C]},Ack) ->
     {list,lists:reverse([Term|Ack]),C}.
 
 %%--- parse tuple ---
@@ -145,7 +142,7 @@ parse_tuple(['{'|R]) ->
 tuple_args(Toks,Ack) ->
     cont_tuple(parse_term(Toks),Ack).
 
-cont_tuple({_Tag, Term,[','|C]},Ack) -> 
+cont_tuple({_Tag, Term,[','|C]},Ack) ->
     tuple_args(C,[Term|Ack]);
 cont_tuple({_Tag, Term,['}'|C]},Ack) ->
     {tuple,list_to_tuple(lists:reverse([Term|Ack])),C}.
@@ -155,7 +152,7 @@ parse_term_seq(Toks) ->
     p_term_seq(Toks,[]).
 
 p_term_seq([],Ack) ->
-    {term_seq, lists:reverse(Ack)};    % never any continuation left  
+    {term_seq, lists:reverse(Ack)};    % never any continuation left 
 p_term_seq(Toks,Ack) ->
     {_Type,Term,C} = parse_term(Toks),
     p_term_seq(C,[Term|Ack]).
@@ -172,53 +169,53 @@ scan([],Ack) ->
     lists:reverse(Ack);
 scan([$ |R],Ack) ->       % delete whitespace
     scan(R,Ack);
-scan([X|R],Ack) when integer(X),X>=$a,X=<$z ->
+scan([X|R],Ack) when is_integer(X),X>=$a,X=<$z ->
     scan_atom(R,[X],Ack);
-scan([X|R],Ack) when integer(X),X>=$A,X=<$Z ->
+scan([X|R],Ack) when is_integer(X),X>=$A,X=<$Z ->
     scan_var(R,[X],Ack);
-scan([X|R],Ack) when integer(X),X>=$0,X=<$9 ->
+scan([X|R],Ack) when is_integer(X),X>=$0,X=<$9 ->
     scan_number(R,[X],Ack);
 scan([$"|R],Ack) ->
     scan_string(R,[],Ack);
-scan([X|R],Ack) when integer(X) ->
+scan([X|R],Ack) when is_integer(X) ->
     scan(R,[list_to_atom([X])|Ack]).
-	 
-scan_atom([X|R],Ack1,Ack2) when integer(X),X>=$a,X=<$z ->
+
+scan_atom([X|R],Ack1,Ack2) when is_integer(X),X>=$a,X=<$z ->
     scan_atom(R,[X|Ack1],Ack2);
-scan_atom([X|R],Ack1,Ack2) when integer(X),X>=$A,X=<$Z ->
+scan_atom([X|R],Ack1,Ack2) when is_integer(X),X>=$A,X=<$Z ->
     scan_atom(R,[X|Ack1],Ack2);
-scan_atom([X|R],Ack1,Ack2) when integer(X),X>=$0,X=<$9 ->
+scan_atom([X|R],Ack1,Ack2) when is_integer(X),X>=$0,X=<$9 ->
     scan_atom(R,[X|Ack1],Ack2);
 scan_atom([$_|R],Ack1,Ack2) ->
     scan_atom(R,[$_|Ack1],Ack2);
 scan_atom(L,Ack1,Ack2) ->
     scan(L,[{atom,list_to_atom(lists:reverse(Ack1))}|Ack2]).
 
-scan_var([X|R],Ack1,Ack2) when integer(X),X>=$a,X=<$z ->
+scan_var([X|R],Ack1,Ack2) when is_integer(X),X>=$a,X=<$z ->
     scan_var(R,[X|Ack1],Ack2);
-scan_var([X|R],Ack1,Ack2) when integer(X),X>=$A,X=<$Z ->
+scan_var([X|R],Ack1,Ack2) when is_integer(X),X>=$A,X=<$Z ->
     scan_var(R,[X|Ack1],Ack2);
-scan_var([X|R],Ack1,Ack2) when integer(X),X>=$0,X=<$9 ->
+scan_var([X|R],Ack1,Ack2) when is_integer(X),X>=$0,X=<$9 ->
     scan_var(R,[X|Ack1],Ack2);
 scan_var([$_|R],Ack1,Ack2) ->
     scan_var(R,[$_|Ack1],Ack2);
 scan_var(L,Ack1,Ack2) ->
     scan(L,[{var,list_to_atom(lists:reverse(Ack1))}|Ack2]).
 
-scan_number([X|R],Ack1,Ack2) when integer(X),X>=$0,X=<$9 ->
+scan_number([X|R],Ack1,Ack2) when is_integer(X),X>=$0,X=<$9 ->
     scan_number(R,[X|Ack1],Ack2);
 scan_number([$.|R],Ack1,Ack2) ->
     scan_float(R,[$.|Ack1],Ack2);
 scan_number(L,Ack1,Ack2) ->
     scan(L,[{integer,list_to_integer(lists:reverse(Ack1))}|Ack2]).
 
-scan_float([X|R],Ack1,Ack2) when integer(X),X>=$0,X=<$9 ->
+scan_float([X|R],Ack1,Ack2) when is_integer(X),X>=$0,X=<$9 ->
     scan_float(R,[X|Ack1],Ack2);
 scan_float(L,Ack1,Ack2) ->
     Float = list_to_float(lists:reverse(Ack1)),
     Int = trunc(Float),
     if
-	Int==Float -> 
+	Int==Float ->
 	    scan(L,[{integer,Int}|Ack2]);
 	true ->
 	    scan(L,[{float,Float}|Ack2])
@@ -227,7 +224,7 @@ scan_float(L,Ack1,Ack2) ->
 
 scan_string([$"|R],Ack1,Ack2) ->
     scan(R,[{string,lists:reverse(Ack1)}|Ack2]);
-scan_string([X|R],Ack1,Ack2) when integer(X) ->
+scan_string([X|R],Ack1,Ack2) when is_integer(X) ->
     scan_string(R,[X|Ack1],Ack2);
 scan_string([],_Ack1,_Ack2) ->
     throw({error,"unterminated string."}).
@@ -240,20 +237,16 @@ scan_string([],_Ack1,_Ack2) ->
 ret_int(Str) ->
     case gstk:call(Str) of
 	{result, Result} ->
-	    case str_to_term(Result) of
-		{_,Value} -> Value;
-		Bad_result -> Bad_result
-	    end;
+	    {_,Value} = str_to_term(Result),
+	    Value;
 	Bad_result -> Bad_result
     end.
 
 ret_atom(Str) ->
     case gstk:call(Str) of
 	{result, Result} ->
-	    case str_to_term(Result) of
-		{_,Value} -> Value;
-		Bad_result -> Bad_result
-	    end;
+	    {_,Value} = str_to_term(Result),
+	    Value;
 	Bad_result -> Bad_result
     end.
 
@@ -266,16 +259,12 @@ ret_str(Str) ->
 ret_tuple(Str) ->
     case gstk:call(Str) of
 	{result,S} ->
-	    case scan(S) of
-		{tokens,Toks} ->
-		    {term_seq,Seq} = parse_term_seq(Toks),
-		    list_to_tuple(Seq);
-		_Other -> 
-		    {error,'bad result from ret_tuple.'}
-	    end;
+	    {tokens,Toks} = scan(S),
+	    {term_seq,Seq} = parse_term_seq(Toks),
+	    list_to_tuple(Seq);
 	Bad_result -> Bad_result
     end.
- 
+
 %%----------------------------------------------------------------------
 %% Returns: Coords or error.
 %%----------------------------------------------------------------------
@@ -322,31 +311,27 @@ ret_height(Str) ->
 
 ret_geometry(Str) ->
     case ret_tuple(Str) of
-	{W,H,X,Y} when atom(H) ->
+	{W,H,X,Y} when is_atom(H) ->
 	    [_|Height]=atom_to_list(H),
 	    {W,list_to_integer(Height),X,Y};
 	Other -> Other
     end.
 
-ret_list(Str) ->    
+ret_list(Str) ->
     case gstk:call(Str) of
 	{result,S} ->
-	    case scan(S) of
-		{tokens,Toks} ->
-		    {term_seq,Seq} = parse_term_seq(Toks),
-		    Seq;
-		_Other -> 
-		    {error,'bad result from ret_list'}
-	    end;
+	    {tokens,Toks} = scan(S),
+	    {term_seq,Seq} = parse_term_seq(Toks),
+	    Seq;
 	Bad_result -> Bad_result
     end.
-    
+
 ret_str_list(Str) ->
     case gstk:call(Str) of
 	{result,S} ->
 	    mk_quotes0(S,[]);
 	Bad_result -> Bad_result
-    end.    
+    end.
 
 
 ret_label(Str) ->
@@ -403,7 +388,7 @@ ret_enable(Str) ->
 	disabled   -> false;
 	Bad_Result -> Bad_Result
     end.
-    
+
 
 
 ret_color(Str) ->

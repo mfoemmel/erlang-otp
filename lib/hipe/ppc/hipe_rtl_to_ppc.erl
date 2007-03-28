@@ -239,7 +239,8 @@ mk_alu(Dst, Src1, RtlAluOp, Src2) ->
   end.
 
 mk_alu_ii(Dst, Src1, RtlAluOp, Src2) ->
-  io:format("~w: RTL alu with two immediates\n", [?MODULE]),
+  io:format("~w: RTL alu with two immediates (~w ~w ~w)\n",
+	    [?MODULE, Src1, RtlAluOp, Src2]),
   Tmp = new_untagged_temp(),
   mk_li(Tmp, Src1,
 	mk_alu_ri(Dst, Tmp, RtlAluOp, Src2)).

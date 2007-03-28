@@ -618,8 +618,6 @@ i(Tab, Height, Width) ->
 display_items(Height, Width, Tab, '$end_of_table', Turn, Opos) -> 
     P = 'EOT  (q)uit (p)Digits (k)ill /Regexp -->',
     choice(Height, Width, P, eot, Tab, '$end_of_table', Turn, Opos);
-display_items(Height, Width, Tab, _Key, Turn, _Opos) when Turn < 0 ->
-    i(Tab, Height, Width);
 display_items(Height, Width, Tab, Key, Turn, Opos) when Turn < Height ->
     do_display(Height, Width, Tab, Key, Turn, Opos);
 display_items(Height, Width, Tab, Key, Turn, Opos) when Turn >=  Height ->

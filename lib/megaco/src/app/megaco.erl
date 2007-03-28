@@ -90,8 +90,6 @@
 -deprecated([{format_versions, 1, eventually}]).
 
 
--include_lib("megaco/include/megaco.hrl").
--include("megaco_message_internal.hrl").
 -include("megaco_internal.hrl").
 
 

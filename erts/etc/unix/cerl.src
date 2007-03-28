@@ -107,6 +107,16 @@ while [ $# -gt 0 ]; do
 	    cargs="$cargs -smp"
 	    EMU_TYPE=.smp
 	    ;;
+	"-nofrag")
+	    shift
+	    cargs="$cargs -nofrag"
+	    EMU_TYPE=.nofrag
+	    ;;
+	"-smp_nofrag")
+	    shift
+	    cargs="$cargs -smp_nofrag"
+	    EMU_TYPE=.smp_nofrag
+	    ;;
 	"-gprof")
 	    shift
 	    cargs="$cargs -gprof"
@@ -187,7 +197,13 @@ if [ "x$GDB" = "x" ]; then
 	if [ "x$VALGRIND_LOG_DIR" = "x" ]; then
 	    valgrind_log=
 	else
-	    valgrind_log="--log-file=$VALGRIND_LOG_DIR/$EMU.log"
+	    valgrind_log="--log-file=$VALGRIND_LOG_DIR/$VALGRIND_LOGFILE_PREFIX$VALGRIND_LOGFILE_INFIX$EMU.log"
+	fi
+	if [ "x$VALGRIND_LOG_XML" = "x" ]; then
+	    valgrind_xml=
+	else
+	    export VALGRIND_LOG_XML
+	    valgrind_xml="--xml=yes"
 	fi
 	if [ "x$VALGRIND_MISC_FLAGS" = "x" ]; then
 	    valgrind_misc_flags=
@@ -199,7 +215,7 @@ if [ "x$GDB" = "x" ]; then
 	early_beam_args=`echo $beam_args | sed "s|^\(.*-progname\).*$|\1|g"`
 	late_beam_args=`echo $beam_args | sed "s|^$pre_beam_args.*\(--.*\)$|\1|g"`
 	
-	exec valgrind $valgrind_log $valgrind_misc_flags $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
+	exec valgrind $valgrind_xml $valgrind_log $valgrind_misc_flags $BINDIR/$EMU $emu_xargs $early_beam_args "$PROGNAME" $late_beam_args
     else
 	exec $EXEC $xargs ${1+"$@"}
     fi

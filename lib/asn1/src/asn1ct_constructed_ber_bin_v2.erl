@@ -889,9 +889,9 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 	 {componentrelation,_,_}} ->
 	    {_LeadingAttrName,Fun} = EncObj,
 	    case RefedFieldName of
-		{notype,T} ->
-		    throw({error,{notype,type_from_object,T}});
-		{Name,RestFieldNames} when atom(Name) ->
+%% 		{notype,T} ->
+%% 		    throw({error,{notype,type_from_object,T}});
+		{Name,RestFieldNames} when atom(Name), Name =/= notype ->
 		    case OptOrMand of
 			mandatory -> ok;
 			_ ->
@@ -917,17 +917,17 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 			    emit(IndDeep),
 			    emit(["{",{next,tmpBytes},", ",{curr,tmpLen},"}"])
 		    end;
-		_ ->
-		    throw({asn1,{'internal error'}})
+		Err ->
+		    throw({asn1,{'internal error',Err}})
 	    end;
-	{{#'ObjectClassFieldType'{type={objectfield,PrimFieldName1,
-					PFNList}},_},
-	 {componentrelation,_,_}} ->
-	    %% this is when the dotted list in the FieldName has more
-	    %% than one element
-	    {_LeadingAttrName,Fun} = EncObj,
-	    emit(["?RT_BER:encode_open_type(",Fun,"(",{asis,PrimFieldName1},
-		  ", ",Element,", ",{asis,PFNList},"))"]);
+%% 	{{#'ObjectClassFieldType'{type={objectfield,PrimFieldName1,
+%% 					PFNList}},_},
+%% 	 {componentrelation,_,_}} ->
+%% 	    %% this is when the dotted list in the FieldName has more
+%% 	    %% than one element
+%% 	    {_LeadingAttrName,Fun} = EncObj,
+%% 	    emit(["?RT_BER:encode_open_type(",Fun,"(",{asis,PrimFieldName1},
+%% 		  ", ",Element,", ",{asis,PFNList},"))"]);
 	_ ->
 	    case WhatKind of
 		{primitive,bif} ->
@@ -940,8 +940,8 @@ gen_enc_line(Erules,TopType,Cname,Type,Element,Indent,OptOrMand,Assign,EncObj)
 			end,
 		    ?ASN1CT_GEN_BER:gen_encode_prim(ber,EncType,{asis,Tag},
 						   Element);
-		{notype,_} ->
-		    emit(["'enc_",InnerType,"'(",Element,", ",{asis,Tag},")"]);
+%% 		{notype,_} ->
+%% 		    emit(["'enc_",InnerType,"'(",Element,", ",{asis,Tag},")"]);
 		'ASN1_OPEN_TYPE' ->
 		    case Type#type.def of
 			#'ObjectClassFieldType'{} -> %Open Type

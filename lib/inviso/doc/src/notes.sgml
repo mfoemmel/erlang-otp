@@ -10,6 +10,62 @@
   
   <p>This document describes the changes made to the Inviso application.
   </p>
+<section><title>Inviso 0.2.1</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            Misc improvements.</p>
+          <p>
+            Own Id: OTP-6576</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Inviso 0.2</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            This ticket includes several improvements and bugfixes to
+            both runtime_tools and inviso. The overload mechanism can
+            now also react to incomming messages. This is useful if
+            an external overload watch-dog is used. Some improvements
+            of variable bindings has been done to the default
+            autostart mechanism - inviso_autostart_server. Autostart
+            "jobs" can now be done in paralell, allowing for some
+            jobs to hang waiting for some parts of the traced system
+            to become ready before proceeding. Previously when using
+            named meta-match-specs (tpm_ms) ending up with zero
+            match-specs still kept the meta trace pattern active.
+            This caused zero match-specs to be equal to unlimited
+            meta tracing on that particular function. If the internal
+            database becomes empty of meta match specs, meta trace
+            pattern is removed for that function. Standard public
+            loop data in the inviso runtime meta tracer process is
+            now extended to a 2-tuple. The functions ctp/1 and ctpl/1
+            are added making it possible to remove trace patterns for
+            a list of functions rather than one by one.
+            Inviso_rt_meta will now accept a list of binaries to be
+            output into the trace information file, in additions to a
+            single binary. Further it is also possible to make own
+            output to the trace information file using the write_ti/1
+            function. An error was discovered in inviso_rt making the
+            inviso_rt_meta remain rather than terminate if the
+            inviso_rt terminated due to "running alone" (not allowed
+            to run without a control component). A new tool,
+            inviso_tool, has been added to the inviso application.</p>
+          <p>
+            Own Id: OTP-6426</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 
   <section><title>Inviso 0.1</title>
     <p>First version.</p>

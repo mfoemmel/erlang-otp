@@ -408,9 +408,6 @@ eval(#mod{method = Method} = ModData, ESIBody, Modules)
 				      ModData#mod.data]};
 			{proceed, AbsPath} ->
 			    {proceed, [{real_name, AbsPath} | 
-				       ModData#mod.data]};
-			{error,Reason} ->
-			    {proceed, [{status, {400, none, Reason}} | 
 				       ModData#mod.data]}
 		    end
 	    end;

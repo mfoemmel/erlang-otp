@@ -62,7 +62,7 @@ do {									\
 
 typedef struct erl_mesg {
     struct erl_mesg* next;	/* Next message */
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
     ErlHeapFragment *bp;
 #endif
     Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
@@ -169,7 +169,7 @@ void erts_deliver_exit_message(Eterm, struct process*, Uint32 *, Eterm, Eterm);
 void erts_send_message(struct process*, struct process*, Uint32 *, Eterm, unsigned);
 void erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp);
 
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 void erts_move_msg_mbuf_to_heap(Eterm**, ErlOffHeap*, ErlMessage *);
 void erts_move_msg_mbuf_to_proc_mbufs(struct process*, ErlMessage *);
 #endif

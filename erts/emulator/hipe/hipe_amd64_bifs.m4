@@ -19,6 +19,15 @@ include(`hipe/hipe_amd64_asm.m4')
 #define TEST_GOT_EXN	cmpq	$THE_NON_VALUE, %rax
 #endif'
 
+`#if defined(HEAP_FRAG_ELIM_TEST)
+#define TEST_GOT_MBUF		movq P_MBUF(P), %rdx; testq %rdx, %rdx; jnz 3f; 2:
+#define JOIN3(A,B,C)		A##B##C
+#define HANDLE_GOT_MBUF(ARITY)	3: call JOIN3(nbif_,ARITY,_gc_after_bif); jmp 2b
+#else
+#define TEST_GOT_MBUF		/*empty*/
+#define HANDLE_GOT_MBUF(ARITY)	/*empty*/
+#endif'
+
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
@@ -42,12 +51,14 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
 	TEST_GOT_EXN
 	jz	nbif_1_simple_exception
 	NBIF_RET(1)
+	HANDLE_GOT_MBUF(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -68,12 +79,14 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
 	TEST_GOT_EXN
 	jz	nbif_2_simple_exception
 	NBIF_RET(2)
+	HANDLE_GOT_MBUF(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -95,12 +108,14 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
 	TEST_GOT_EXN
 	jz	nbif_3_simple_exception
 	NBIF_RET(3)
+	HANDLE_GOT_MBUF(3)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -130,6 +145,7 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
@@ -139,6 +155,7 @@ $1:
 1:
 	movq	`$'$1, %rdx	/* resumption address */
 	jmp	nbif_1_hairy_exception
+	HANDLE_GOT_MBUF(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -162,6 +179,7 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* throw exception if failure, otherwise return */
@@ -171,6 +189,7 @@ $1:
 1:
 	movq	`$'$1, %rdx	/* resumption address */
 	jmp	nbif_2_hairy_exception
+	HANDLE_GOT_MBUF(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -199,10 +218,12 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(0)
+	HANDLE_GOT_MBUF(0)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -222,10 +243,12 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(1)
+	HANDLE_GOT_MBUF(1)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -246,10 +269,12 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(2)
+	HANDLE_GOT_MBUF(2)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')
@@ -271,10 +296,12 @@ $1:
 	/* make the call on the C stack */
 	SWITCH_ERLANG_TO_C
 	call	$2
+	TEST_GOT_MBUF
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(3)
+	HANDLE_GOT_MBUF(3)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')

@@ -39,15 +39,16 @@
 %% Process structure
 %% =================
 %%
-%%             _______________ supervisor __________________
-%%            /                    |              \         \ 
-%%      __misc_sup____        symbolic_store  local_db   agent_sup
-%%     /     |        \                                    |   | 
-%%    mib  net_if  note_store                             MA - SA
+%%             ___________________ supervisor __________________
+%%            /              |              |          \         \ 
+%%   ___misc_sup___    target_cache  symbolic_store   local_db   agent_sup
+%%  /     |        \                                               |   | 
+%% mib  net_if  note_store                                        MA - SA
 %%
 %%  The supervisor (one at each node) starts:
 %%    snmpa_symbolic_store (one at each node)
 %%    snmpa_local_db (one at each node)
+%%    snmpa_target_cache (one at each node) 
 %%    MA - which starts
 %%      own mib (hangs it under misc_sup)
 %%      net_if (hangs it under misc_sup) 
@@ -258,21 +259,32 @@ init([AgentType, Opts]) ->
     ?vdebug("[agent table] store local db options: ~w",[LdbOpts]),
     ets:insert(snmp_agent_table, {local_db, LdbOpts}),
 
+    %% -- Target cache options --
+    TargetCacheOpts = get_opt(target_cache, Opts, []),
+    ?vdebug("[agent table] store target cache options: ~w",[TargetCacheOpts]),
+    ets:insert(snmp_agent_table, {target_cache, TargetCacheOpts}),
+
     %% -- Specs --
     SupFlags = {one_for_all, 0, 3600},
 
     MiscSupSpec = 
 	sup_spec(snmpa_misc_sup, [], Restart, infinity),
+
     SymStoreOpts = [{mib_storage, MibStorage} | SsOpts], 
     SymStoreArgs = [Prio, SymStoreOpts],
     SymStoreSpec = 
 	worker_spec(snmpa_symbolic_store, SymStoreArgs, Restart, 2000),
+
     LdbArgs = [Prio, DbDir, LdbOpts],
     LocalDbSpec = 
 	worker_spec(snmpa_local_db, LdbArgs, Restart, 5000),
 
     ?vdebug("init VACM",[]),
     snmpa_vacm:init(DbDir, DbInitError),
+
+    TargetCacheArgs = [Prio, TargetCacheOpts],
+    TargetCacheSpec = 
+	worker_spec(snmpa_target_cache, TargetCacheArgs, transient, 2000, []),
 
     Rest =
 	case AgentType of
@@ -377,7 +389,8 @@ init([AgentType, Opts]) ->
 		[AgentSupSpec]
 	end,
     ?vdebug("init done",[]),
-    {ok, {SupFlags, [MiscSupSpec, SymStoreSpec, LocalDbSpec | Rest]}}.
+    {ok, {SupFlags, [MiscSupSpec, SymStoreSpec, LocalDbSpec, TargetCacheSpec | 
+		     Rest]}}.
 
 
 get_mibs(Mibs, Vsns) ->
@@ -490,8 +503,8 @@ sup_spec(Name, Args, Type, Time) ->
 worker_spec(Name, Args, Type, Time) ->
     worker_spec(Name, Name, Args, Type, Time, []).
 
-% worker_spec(Name, Args, Type, Time, Modules) ->
-%     worker_spec(Name, Name, Args, Type, Time, Modules).
+worker_spec(Name, Args, Type, Time, Modules) ->
+    worker_spec(Name, Name, Args, Type, Time, Modules).
 
 worker_spec(Name, Mod, Args, Type, Time, Modules) ->
     worker_spec(Name, Mod, start_link, Args, Type, Time, Modules).

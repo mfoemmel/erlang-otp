@@ -82,11 +82,11 @@ inhibit_autostart(Node) ->
 	    case rpc:call(Node,file,open,[FileName,write]) of
 		{ok,RemoteFD} ->
 		    String=lists:flatten(lists:map(fun(_)->"~w.~n" end,NewTerms)),
-		    case io:format(RemoteFD,String,NewTerms) of
+		    case catch io:format(RemoteFD,String,NewTerms) of
 			ok ->
 			    file:close(RemoteFD),
 			    ok;
-			{error,Reason} ->
+			{'EXIT',Reason} ->
 			    file:close(RemoteFD),
 			    {error,{format,Reason}}
 		    end;
@@ -107,11 +107,11 @@ set_repeat(Node,N) ->
 	    case rpc:call(Node,file,open,[FileName,write]) of
 		{ok,RemoteFD} ->
 		    String=lists:flatten(lists:map(fun(_)->"~w.~n" end,NewTerms)),
-		    case io:format(RemoteFD,String,NewTerms) of
+		    case catch io:format(RemoteFD,String,NewTerms) of
 			ok ->
 			    file:close(RemoteFD),
 			    ok;
-			{error,Reason} ->
+			{'EXIT',Reason} ->
 			    file:close(RemoteFD),
 			    {error,{format,Reason}}
 		    end;

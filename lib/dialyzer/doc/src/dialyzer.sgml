@@ -32,7 +32,7 @@
     <p>The Dialyzer is a static analysis tool that identifies software discrepancies
       such as type errors, unreachable code, unnecessary tests, etc in single Erlang
       modules or entire (sets of) applications. Currently, Dialyzer starts its
-      analysis for either BEAM bytecode or from Erlang source code and reports
+      analysis from either BEAM bytecode or from Erlang source code and reports
       to its user the functions where the discrepancies occur and an indication
       of what the discrepancy is about. Dialyzer currently supports various modes
       of operation and its analysis is precise (in particular, there are no false
@@ -65,10 +65,10 @@
 
     <p>Usage:</p>
     <code>
-      dialyzer [--otp OTP_DIR] [--help] [--version] [--shell]
+      dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
                [-pa dir]* [-plt plt] [-Ddefine]* [-I include_dir]* 
                [--output_plt file] [-Wwarn]*  [--src] 
-               [-c applications] [-r applications] [-o outfile] [-q]
+               [-c applications] [-r applications] [-o outfile]
     </code>
 
     <p>Options:</p>
@@ -103,6 +103,11 @@
       <item>
 	when analyzing from source, pass the <c>include_dir</c> to Dialyzer (**)
       </item>
+      <tag><c>-pa dir</c></tag>
+      <item>
+	Include <c>dir</c> in the path for Erlang. Useful when analyzing files
+	that have <c>-include_lib()</c> directives.
+      </item>
       <tag><c>--output_plt file</c></tag>
       <item>
 	Store the plt at the specified location after building it.
@@ -116,11 +121,6 @@
 	Use the specified plt as the initial plt. If the plt was built 
 	during setup the files will be checked for consistency.
       </item>
-      <tag><c>-pa dir</c></tag>
-      <item>
-	Include <c>dir</c> in the path for Erlang. Useful when analyzing files
-	that have <c>-include_lib()</c> directives.
-      </item>
       <tag><c>-Wwarn</c></tag>
       <item>
 	a family of option which selectively turn on/off warnings.
@@ -130,10 +130,6 @@
       <item>
 	Only checks if the init plt is up to date. For installed systems
 	this also forces the rebuilding of the plt if this is not the case.
-      </item>
-      <tag><c>--otp OTP_DIR</c></tag>
-      <item>
-	overrides the default location of the Erlang/OTP system to use
       </item>
       <tag><c>--shell</c></tag>
       <item>
@@ -147,13 +143,13 @@
       <item>
 	prints this message and exits
       </item>
-      <tag><c>-q</c></tag>
+      <tag><c>--quiet (or -q)</c></tag>
       <item>
 	makes Dialyzer a bit more quiet
       </item>
-      <tag><c>--verbose</c>
+      <tag><c>--verbose</c></tag>
       <item>
-       makes Dialyzer a bit more verbose
+	makes Dialyzer a bit more verbose
       </item>
     </taglist>
 

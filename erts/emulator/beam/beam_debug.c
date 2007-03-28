@@ -278,61 +278,71 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
     Uint args[8];		/* Arguments for this instruction. */
     Uint* ap;			/* Pointer to arguments. */
 
-    /*
-     * Copy all arguments to a local buffer.
-     */
-
-    ASSERT(size <= sizeof(args)/sizeof(args[0]));
-    ap = args;
-    for (i = 0; i < size; i++) {
-	*ap++ = addr[i];
-    }
-
-    /*
-     * Undo any packing done by the loader.  This is easily done by running
-     * the packing program backwards and in reverse.
-     */
-
     start_prog = opc[op].pack;
-    prog = start_prog + strlen(start_prog);
-    while (start_prog < prog) {
-	prog--;
-	switch (*prog) {
-	case 'g':
-	    *ap++ = *--sp;
-	    break;
-	case 'i':	/* Initialize packing accumulator. */
-	    *ap++ = packed;
-	    break;
-	case 's':
-	    *ap++ = packed & 0x3ff;
-	    packed >>= 10;
-	    break;
-	case '0':	/* Tight shift */
-	    *ap++ = packed & (BEAM_TIGHT_MASK / sizeof(Eterm));
-	    packed >>= BEAM_TIGHT_SHIFT;
-	    break;
-	case '6':	/* Shift 16 steps */
-	    *ap++ = packed & 0xffff;
-	    packed >>= 16;
-	    break;
-	case 'p':
-	    *sp++ = *--ap;
-	    break;
-	case 'P':
-	    packed = *--sp;
-	    break;
-	default:
-	    ASSERT(0);
+
+    if (start_prog[0] == '\0') {
+	/*
+	 * There is no pack program.
+	 * Avoid copying because instructions containing bignum operands
+	 * are bigger than actually declared.
+	 */
+	ap = (Uint *) addr;
+    } else {
+	/*
+	 * Copy all arguments to a local buffer for the unpacking.
+	 */
+
+	ASSERT(size <= sizeof(args)/sizeof(args[0]));
+	ap = args;
+	for (i = 0; i < size; i++) {
+	    *ap++ = addr[i];
 	}
+
+	/*
+	 * Undo any packing done by the loader.  This is easily done by running
+	 * the packing program backwards and in reverse.
+	 */
+
+	prog = start_prog + strlen(start_prog);
+	while (start_prog < prog) {
+	    prog--;
+	    switch (*prog) {
+	    case 'g':
+		*ap++ = *--sp;
+		break;
+	    case 'i':		/* Initialize packing accumulator. */
+		*ap++ = packed;
+		break;
+	    case 's':
+		*ap++ = packed & 0x3ff;
+		packed >>= 10;
+		break;
+	    case '0':		/* Tight shift */
+		*ap++ = packed & (BEAM_TIGHT_MASK / sizeof(Eterm));
+		packed >>= BEAM_TIGHT_SHIFT;
+		break;
+	    case '6':		/* Shift 16 steps */
+		*ap++ = packed & 0xffff;
+		packed >>= 16;
+		break;
+	    case 'p':
+		*sp++ = *--ap;
+		break;
+	    case 'P':
+		packed = *--sp;
+		break;
+	    default:
+		ASSERT(0);
+	    }
+	}
+	ap = args;
     }
-    
+
     /*
      * Print the name and all operands of the instructions.
      */
 	
     erts_print(to, to_arg, "%s ", opc[op].name);
-    ap = args;
     sign = opc[op].sign;
     while (*sign) {
 	switch (*sign) {

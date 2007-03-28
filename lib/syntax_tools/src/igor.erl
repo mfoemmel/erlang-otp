@@ -685,7 +685,7 @@ merge_sources(Name, Sources, Opts) ->
 		    report_error("no sources to merge."),
 		    exit(badarg);
 		_ ->
-		    [if list(M) -> erl_syntax:form_list(M);
+		    [if is_list(M) -> erl_syntax:form_list(M);
 			true -> M
 		     end
 		     || M <- Sources]
@@ -735,11 +735,8 @@ merge_sources_1(Name, Modules, Trees, Opts) ->
 		     false ->
 			 [hd(Ns)]
 		 end;
-	     Es1 when list(Es1) ->
-		 ordsets:from_list(Es1);
-	     Es1 ->
-		 report_error("bad value for `export' option: ~P.",
-			      [Es1, 5])
+	     Es1 when is_list(Es1) ->
+		 ordsets:from_list(Es1)
 	 end,
     Export = case proplists:get_bool(export_all, Opts) of
 		 false ->
@@ -823,7 +820,7 @@ merge_sources_1(Name, Modules, Trees, Opts) ->
 		 options = Opts},
     merge_sources_2(Env, Modules, Trees, Opts).
 
-is_atom_map([{A1, A2} | As]) when atom(A1), atom(A2) ->
+is_atom_map([{A1, A2} | As]) when is_atom(A1), is_atom(A2) ->
     is_atom_map(As);
 is_atom_map([]) ->
     true;
@@ -1033,7 +1030,7 @@ filter_forms_2(Forms, Env) ->
 				     [FileAttrsOpt]),
 			exit(error)
 		end,
-    Attrs = if length(Env#merge.sources) == 1 ->
+    Attrs = if length(Env#merge.sources) =:= 1 ->
 		    delete;    %% keeping the originals looks weird
 	       true ->
 		    kill
@@ -1207,7 +1204,7 @@ merge_namespaces_3(Modules, Acc) ->
 add_function_renamings(Module, New, Names, Map) ->
     Clashes = sets:to_list(sets:intersection(New, Names)),
     lists:foldl(
-      fun (F = {_, A}, {Names, Map}) when integer(A) ->
+      fun (F = {_, A}, {Names, Map}) when is_integer(A) ->
 	      F1 = new_function_name(Module, F, Names),
 	      {sets:add_element(F1, Names), dict:store(F, F1, Map)}
       end,
@@ -1423,7 +1420,7 @@ join_attributes(Env, Name, Source, Target) ->
     if Env#merge.target == Name ->
 	    ordsets:union(Source, Target);
        true ->
-	    if length(Env#merge.sources) == 1 ->
+	    if length(Env#merge.sources) =:= 1 ->
 		    ordsets:union(Source, Target);
 	       true ->
 		    Target
@@ -1844,15 +1841,15 @@ transform_application_1(Name, F, As, T, Env, St) ->
 %% `Message' are to be passed to `maybe_modified'.
 
 transform_application_2(Name, Arity, F, As, Env, St)
-  when atom(Name) ->
+  when is_atom(Name) ->
     transform_atom_application(Name, Arity, F, As, Env, St);
 transform_application_2({M, N}, Arity, F, As, Env, St)
-  when atom(M), atom(N) ->
+  when is_atom(M), is_atom(N) ->
     transform_qualified_application(M, N, Arity, F, As, Env, St);
 transform_application_2(_Name, _Arity, _F, _As, _Env, St) ->
     {none, St}.    % strange name - do nothing.
 
-expand_operator(Name, Arity, _F, Env) when atom(Name) ->
+expand_operator(Name, Arity, _F, Env) when is_atom(Name) ->
     %% An unqualified function name - must be looked up. However, we
     %% must first check that it is not an auto-imported name - these
     %% have precedence over normal imports. We do a sanity check on the
@@ -1862,7 +1859,7 @@ expand_operator(Name, Arity, _F, Env) when atom(Name) ->
 	    {Name, none};    % auto-import - never expand.
 	false ->
 	    case dict:find({Name, Arity}, Env#code.expand) of
-		{ok, {M, {N, A}}} when A == Arity ->
+		{ok, {M, {N, A}}} when A =:= Arity ->
 		    %% Expand to a qualified name.
 		    F1 = erl_syntax:module_qualifier(
 			   erl_syntax:atom(M),
@@ -1909,10 +1906,10 @@ transform_atom_application(Name, Arity, F, As, Env, St) ->
 		    {none, St};    % auto-import - do not change.
 		false ->
 		    case (Env#code.map)({Name, Arity}) of
-			{N, A} when N == Name, A == Arity ->
+			{N, A} when N == Name, A =:= Arity ->
 			    %% Not changed.
 			    {none, St};
-			{N, A} when A == Arity ->
+			{N, A} when A =:= Arity ->
 			    %% The callee (in the current module)
 			    %% was renamed.
 			    F1 = rewrite(F, erl_syntax:atom(N)),
@@ -2093,7 +2090,7 @@ localise(Module, Name, Arity, MakeLocal, MakeRemote, MakeDynamic,
 	    %% check on the arity.
 	    Map = (Env#code.renaming)(Module),
 	    Name1 = case Map({Name, Arity}) of
-			{N, A} when A == Arity ->
+			{N, A} when A =:= Arity ->
 			    N
 		    end,
 
@@ -2612,9 +2609,9 @@ report_warnings([], _) ->
 
 error_text(D, Name) ->
     case D of
-	{L, M, E} when integer(L), atom(M) ->
+	{L, M, E} when is_integer(L), is_atom(M) ->
 	    case catch M:format_error(E) of
-		S when list(S) ->
+		S when is_list(S) ->
 		    io_lib:fwrite("`~w', line ~w: ~s.",
 				  [Name, L, S]);
 		_ ->
@@ -2902,13 +2899,13 @@ timestamp() ->
 				"~2.2.0w:~2.2.0w:~2.2.0w.",
 				[Yr, Mth, Dy, Hr, Mt, Sc])).
 
-filename([C | T]) when integer(C), C > 0, C =< 255 ->
+filename([C | T]) when is_integer(C), C > 0, C =< 255 ->
     [C | filename(T)];
 filename([H|T]) ->
     filename(H) ++ filename(T);
 filename([]) ->
     [];
-filename(N) when atom(N) ->
+filename(N) when is_atom(N) ->
     atom_to_list(N);
 filename(N) ->
     report_error("bad filename: `~P'.", [N, 25]),

@@ -172,9 +172,6 @@ check_protocol([{badrpc, _Reason} | Tail], Protocols) ->
     check_protocol(Tail, Protocols);
 check_protocol([], [Protocol | _Protocols]) ->
     set(protocol_version, Protocol),
-    [];
-check_protocol([], []) ->
-    set(protocol_version, protocol_version()),
     [].
 
 protocol_version() -> 
@@ -362,15 +359,8 @@ handle_call({unsafe_open_dets, Tab, Args}, _From, State) ->
     end;
 
 handle_call({close_dets, Tab}, _From, State) ->
-    case mnesia_lib:dets_sync_close(Tab) of
-	ok ->
-	    {reply, ok, State};
-        {error, Reason} ->
-	    Msg = "Cannot close dets table",
-            Error = {error, {Msg, Tab, Reason}},
-	    fatal("~p~n", [Error]),
-	    {noreply, State}
-    end;
+    ok = mnesia_lib:dets_sync_close(Tab),
+    {reply, ok, State};
 
 handle_call({unsafe_close_dets, Tab}, _From, State) ->
     mnesia_lib:dets_sync_close(Tab),
@@ -686,7 +676,8 @@ env() ->
      schema_location,
      core_dir,
      pid_sort_order,
-     no_table_loaders
+     no_table_loaders,
+     dc_dump_limit
     ].
 
 default_env(access_module) -> 
@@ -727,7 +718,9 @@ default_env(core_dir) ->
 default_env(pid_sort_order) ->
     false;
 default_env(no_table_loaders) ->
-    2.
+    2;
+default_env(dc_dump_limit) ->
+    4.
 
 check_type(Env, Val) ->
     case catch do_check_type(Env, Val) of
@@ -772,8 +765,8 @@ do_check_type(pid_sort_order, "r9b_plain") -> r9b_plain;
 do_check_type(pid_sort_order, standard) -> standard;
 do_check_type(pid_sort_order, "standard") -> standard;
 do_check_type(pid_sort_order, _) -> false;
-do_check_type(no_table_loaders, N) when is_integer(N), N > 0 -> N.
-
+do_check_type(no_table_loaders, N) when is_integer(N), N > 0 -> N;
+do_check_type(dc_dump_limit,N) when is_number(N), N > 0 -> N.
 
 bool(true) -> true;
 bool(false) -> false.

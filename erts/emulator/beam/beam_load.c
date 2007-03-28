@@ -33,6 +33,7 @@
 #include "erl_bits.h"
 #include "beam_catches.h"
 #include "erl_binary.h"
+#include "zlib.h"
 
 #ifdef HIPE
 #include "hipe_bif0.h"
@@ -154,8 +155,9 @@ typedef struct {
 #define NUM_MANDATORY 5
 
 #define LAMBDA_CHUNK 5
-#define ATTR_CHUNK 6
-#define COMPILE_CHUNK 7
+#define LITERAL_CHUNK 6
+#define ATTR_CHUNK 7
+#define COMPILE_CHUNK 8
 
 #define NUM_CHUNK_TYPES (sizeof(chunk_types)/sizeof(chunk_types[0]))
 
@@ -177,8 +179,9 @@ static Uint chunk_types[] = {
      * Optional chunk types -- the loader will use them if present.
      */
     MakeIffId('F', 'u', 'n', 'T'), /* 5 */
-    MakeIffId('A', 't', 't', 'r'), /* 6 */
-    MakeIffId('C', 'I', 'n', 'f'), /* 7 */
+    MakeIffId('L', 'i', 't', 'T'), /* 6 */
+    MakeIffId('A', 't', 't', 'r'), /* 7 */
+    MakeIffId('C', 'I', 'n', 'f'), /* 8 */
 };
 
 /*
@@ -192,6 +195,16 @@ typedef struct {
     Eterm function;		/* Name of local function. */
     int arity;			/* Arity (including free variables). */
 } Lambda;
+
+/*
+ * This structure keeps load-time information about a literal.
+ */
+
+typedef struct {
+    byte* ext;			/* Pointer to external format. */
+    Eterm term;			/* The tagged term (in the literal heap). */
+    Uint heap_size;		/* (Exact) size on the heap. */
+} Literal;
 
 /*
  * This structure contains all information about the module being loaded.
@@ -244,6 +257,7 @@ typedef struct {
     Uint bs_put_strings;	/* Linked list of i_bs_put_string instructions. */
 #endif
     Uint new_bs_put_strings;	/* Linked list of i_new_bs_put_string instructions. */
+    Uint put_literals;		/* Linked list of i_put_literal instructions. */
     Uint catches;		/* Linked list of catch_yf instructions. */
     unsigned loaded_size;	/* Final size of code when loaded. */
     byte mod_md5[16];		/* MD5 for module code. */
@@ -285,6 +299,15 @@ typedef struct {
     Lambda* lambdas;		/* Pointer to lambdas. */
     Lambda def_lambdas[16];	/* Default storage for lambda table. */
     char* lambda_error;		/* Delayed missing 'FunT' error. */
+
+    /*
+     * Literals (constant pool).
+     */
+
+    int num_literals;		/* Number of literals in table. */
+    Literal* literals;		/* Array of literals. */
+    Eterm* literal_heap;	/* Heap for literal terms. */
+    Uint literal_heap_size;
 
     /*
      * Bit syntax.
@@ -440,6 +463,7 @@ static int load_atom_table(LoaderState* stp);
 static int load_import_table(LoaderState* stp);
 static int read_export_table(LoaderState* stp);
 static int read_lambda_table(LoaderState* stp);
+static int read_literal_table(LoaderState* stp);
 static int read_code_header(LoaderState* stp);
 static int load_code(LoaderState* stp);
 static GenOp* gen_element(LoaderState* stp, GenOpArg Fail, GenOpArg Index,
@@ -619,6 +643,17 @@ bin_load(Process *c_p, Uint32 c_p_locks,
     }
 
     /*
+     * Read the literal table.
+     */
+
+    if (state.chunks[LITERAL_CHUNK].size > 0) {
+	define_file(&state, "literals table (constant pool)", LITERAL_CHUNK);
+	if (!read_literal_table(&state)) {
+	    goto load_error;
+	}
+    }
+
+    /*
      * Load the code chunk.
      */
 
@@ -680,6 +715,12 @@ bin_load(Process *c_p, Uint32 c_p_locks,
     if (state.lambdas != state.def_lambdas) {
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
     }
+    if (state.literals != NULL) {
+	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literals);
+    }
+    if (state.literal_heap != NULL) {
+	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literal_heap);
+    }
     while (state.genop_blocks) {
 	GenOpBlock* next = state.genop_blocks->next;
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.genop_blocks);
@@ -711,6 +752,10 @@ init_state(LoaderState* stp)
     stp->lambdas_allocated = sizeof(stp->def_lambdas)/sizeof(Lambda);
     stp->lambdas = stp->def_lambdas;
     stp->lambda_error = NULL;
+    stp->num_literals = 0;
+    stp->literals = 0;
+    stp->literal_heap = 0;
+    stp->literal_heap_size = 0;
     stp->new_float_instructions = 0;
 }
 
@@ -893,9 +938,40 @@ scan_iff_file(LoaderState* stp, Uint* chunk_types, Uint num_types, Uint num_mand
 	    LoadError1(stp, "mandatory chunk of type '%s' not found\n", sbuf);
 	}
     }
-    if (num_mandatory >= LAMBDA_CHUNK && stp->chunks[LAMBDA_CHUNK].start != 0) {
-	MD5Update(&context, stp->chunks[LAMBDA_CHUNK].start,
-		  stp->chunks[LAMBDA_CHUNK].size);
+    if (LITERAL_CHUNK < num_types) {
+	if (stp->chunks[LAMBDA_CHUNK].start != 0) {
+	    byte* start = stp->chunks[LAMBDA_CHUNK].start;
+	    Uint left = stp->chunks[LAMBDA_CHUNK].size;
+
+	    /*
+	     * The idea here is to ignore the OldUniq field for the fun; it is
+	     * based on the old broken hash function, which can be different
+	     * on little endian and big endian machines.
+	     */
+	    if (left >= 4) {
+		static byte zero[4];
+		MD5Update(&context, start, 4);
+		start += 4;
+		left -= 4;
+		
+		while (left >= 24) {
+		    /* Include: Function Arity Index NumFree */
+		    MD5Update(&context, start, 20);
+		    /* Set to zero: OldUniq */
+		    MD5Update(&context, zero, 4);
+		    start += 24;
+		    left -= 24;
+		}
+	    }
+	    /* Can't happen for a correct 'FunT' chunk */
+	    if (left > 0) {
+		MD5Update(&context, start, left);
+	    }
+	}
+	if (stp->chunks[LITERAL_CHUNK].start != 0) {
+	    MD5Update(&context, stp->chunks[LITERAL_CHUNK].start,
+		      stp->chunks[LITERAL_CHUNK].size);
+	}
     }
     MD5Final(stp->mod_md5, &context);
     return 1;
@@ -1122,6 +1198,68 @@ read_lambda_table(LoaderState* stp)
     return 0;
 }
 
+static int
+read_literal_table(LoaderState* stp)
+{
+    int i;
+    Uint total_heap_sz = 0;
+    Eterm* hp;
+    Uint uncompressed_sz;
+    byte* uncompressed = 0;
+
+    GetInt(stp, 4, uncompressed_sz);
+    uncompressed = erts_alloc(ERTS_ALC_T_TMP, uncompressed_sz);
+    if (uncompress(uncompressed, &uncompressed_sz,
+		   stp->file_p, stp->file_left) != Z_OK) {
+	LoadError0(stp, "failed to uncompress literal table (constant pool)");
+    }
+    stp->file_p = uncompressed;
+    stp->file_left = uncompressed_sz;
+    GetInt(stp, 4, stp->num_literals);
+    stp->literals = (Literal *) erts_alloc(ERTS_ALC_T_LOADER_TMP,
+					   stp->num_literals * sizeof(Literal));
+    for (i = 0; i < stp->num_literals; i++) {
+	int sz;
+	int heap_size;
+	byte* p;
+
+	GetInt(stp, 4, sz);	/* Size of external term format. */
+	stp->literals[i].ext = stp->file_p;
+	GetString(stp, p, sz);
+	if ((heap_size = decode_size(p, sz)) < 0) {
+	    LoadError1(stp, "literal %d: bad external format", i);
+	}
+	total_heap_sz += heap_size;
+    }
+
+    hp = stp->literal_heap = (Eterm *) erts_alloc(ERTS_ALC_T_LOADER_TMP,
+						    total_heap_sz*sizeof(Eterm));
+    for (i = 0; i < stp->num_literals; i++) {
+	Eterm val;
+	Eterm* prev_hp = hp;
+
+	val = erts_from_external_format(NULL, &hp, &stp->literals[i].ext, NULL);
+	if (is_non_value(val)) {
+	    LoadError1(stp, "literal %d: bad external format", i);
+	}
+	stp->literals[i].term = val;
+	stp->literals[i].heap_size = hp - prev_hp;
+    }
+    stp->literal_heap_size = hp - stp->literal_heap;
+    if (stp->literal_heap_size > total_heap_sz) {
+	erl_exit(1,  "overrun by %d word(s) for literals heap",
+		 stp->literal_heap_size - total_heap_sz);
+    }
+    erts_free(ERTS_ALC_T_TMP, uncompressed);
+    return 1;
+
+ load_error:
+    if (uncompressed) {
+	erts_free(ERTS_ALC_T_TMP, uncompressed);
+    }
+    return 0;
+}
+
 
 static int
 read_code_header(LoaderState* stp)
@@ -1201,6 +1339,7 @@ read_code_header(LoaderState* stp)
     stp->bs_put_strings = 0;
 #endif
     stp->new_bs_put_strings = 0;
+    stp->put_literals = 0;
     stp->catches = 0;
     return 1;
 
@@ -1439,6 +1578,16 @@ load_code(LoaderState* stp)
 				    break;
 				case 1:
 				    words += FLOAT_SIZE_OBJECT*val;
+				    break;
+				case 2:
+				    if (val >= stp->num_literals) {
+					LoadError1(stp, "alloc list: bad literal "
+						   "index %d", val);
+				    }
+
+#if !defined(HEAP_FRAG_ELIM_TEST)
+				    words += stp->literals[val].heap_size;
+#endif
 				    break;
 				default:
 				    LoadError1(stp, "alloc list: bad allocation descriptor %d", type);
@@ -1972,6 +2121,36 @@ load_code(LoaderState* stp)
 	    }
 	    break;
 
+	case op_i_put_literal_IId:
+	    {
+		/*
+		 * At entry:
+		 *
+		 * code[ci-4]	&&lb_put_literal_cId
+		 * code[ci-3]   index of literal in literal table
+		 * code[ci-2]	0
+		 * code[ci-1]   destination register
+		 *
+		 * Since we don't know the final address of the literal heap,
+		 * use the instruction field as a link field to link all put_literal
+		 * instructions into a single linked list.  At exit:
+		 *
+		 * code[ci-4]	pointer to next put_literal instruction (or 0
+		 *		if this is the last)
+		 * code[ci-3]   tagged pointer to literal
+		 * code[ci-2]   size of term on heap
+		 */
+		Uint index = code[ci-3];
+		if (index >= stp->num_literals) {
+		    LoadError1(stp, "invalid literal index %d", index);
+		}
+		code[ci-2] = (Eterm) stp->literals[index].heap_size;
+		code[ci-3] = (Eterm) stp->literals[index].term;
+		code[ci-4] = stp->put_literals;
+		stp->put_literals = ci - 4;
+	    }
+	    break;
+
 	case op_catch_yf:
 	    /* code[ci-3]	&&lb_catch_yf
 	     * code[ci-2]	y-register offset in E
@@ -1981,6 +2160,7 @@ load_code(LoaderState* stp)
 	    stp->catches = ci-3;
 	    break;
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
 	    /*
 	     * Validate operand.
 	     * code[ci-1]	Index (0 <= Index < MAX_REG)
@@ -1991,6 +2171,7 @@ load_code(LoaderState* stp)
 		LoadError1(stp, "index %d out of range", code[ci-1]);
 	    }
 	    break;
+#endif
 
 	    /*
 	     * End of code found.
@@ -3244,6 +3425,22 @@ gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
 }
 #endif
 
+static GenOp*
+gen_put_literal(LoaderState* stp, GenOpArg Lit, GenOpArg Dst)
+{
+    GenOp* op;
+    NEW_GENOP(stp, op);
+    op->op = genop_i_put_literal_3;
+    op->arity = 3;
+    op->a[0] = Lit;
+    op->a[1].type = TAG_u;
+    op->a[1].val = 0;
+    op->a[2] = Dst;
+    op->next = NULL;
+    return op;
+}
+
+
 
 /*
  * Freeze the code in memory, move the string table into place,
@@ -3278,19 +3475,81 @@ freeze_code(LoaderState* stp)
      * Calculate the final size of the code.
      */
 
-    size = stp->ci * sizeof(Eterm) + strtab_size + attr_size + compile_size;
+    size = (stp->ci + stp->literal_heap_size) * sizeof(Eterm) +
+	strtab_size + attr_size + compile_size;
 
     /*
-     * Move the code to its final location and place the string table
-     * and, optionally, attributes, after the code.
+     * Move the code to its final location.
      */
 
     code = (Eterm *) erts_realloc(ERTS_ALC_T_CODE, (void *) code, size);
-    memcpy(code+stp->ci, stp->chunks[STR_CHUNK].start, strtab_size);
+
+    /*
+     * Place a pointer to the op_int_code_end instruction in the
+     * function table in the beginning of the file.
+     */
+
+    code[MI_FUNCTIONS+stp->num_functions] = (Eterm) (code + stp->ci - 1);
+
+
+    /*
+     * Place the literal heap directly after the code and fix up all
+     * put_literal instructions that refer to it.
+     */
+    {
+	Eterm* ptr;
+	Eterm* low;
+	Eterm* high;
+	Uint offset;
+
+	low = code+stp->ci;
+	high = low + stp->literal_heap_size;
+	code[MI_LITERALS_START] = (Eterm) low;
+	code[MI_LITERALS_END] = (Eterm) high;
+	sys_memcpy(low, stp->literal_heap, stp->literal_heap_size*sizeof(Eterm));
+	offset = low - stp->literal_heap;
+	ptr = low;
+	while (ptr < high) {
+	    Eterm val = *ptr;
+	    switch (primary_tag(val)) {
+	    case TAG_PRIMARY_LIST:
+	    case TAG_PRIMARY_BOXED:
+		*ptr++ = offset_ptr(val, offset);
+		break;
+	    case TAG_PRIMARY_HEADER:
+		ptr++;
+		if (header_is_thing(val)) {
+		    ptr += thing_arityval(val);
+		}
+		break;
+	    default:
+		ptr++;
+		break;
+	    }
+	}
+	index = stp->put_literals;
+	while (index != 0) {
+	    Uint literal;
+	    Uint next = code[index];
+	    code[index] = BeamOpCode(op_i_put_literal_IId);
+	    literal = code[index+1];
+	    if (is_boxed(literal) || is_list(literal)) {
+		code[index+1] = offset_ptr(literal, offset);
+	    }
+	    index = next;
+	}
+	stp->ci += stp->literal_heap_size;
+    }
+    
+    /*
+     * Place the string table and, optionally, attributes, after the literal heap.
+     */
+
+    sys_memcpy(code+stp->ci, stp->chunks[STR_CHUNK].start, strtab_size);
     str_table = (byte *) (code+stp->ci);
     if (attr_size) {
 	byte* attr = str_table + strtab_size;
-	memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
+	sys_memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
 	code[MI_ATTR_PTR] = (Eterm) attr;
 	code[MI_ATTR_SIZE] = (Eterm) stp->chunks[ATTR_CHUNK].size;
 	decoded_size = decode_size(attr, attr_size);
@@ -3301,7 +3560,7 @@ freeze_code(LoaderState* stp)
     }
     if (compile_size) {
 	byte* compile_info = str_table + strtab_size + attr_size;
-	memcpy(compile_info, stp->chunks[COMPILE_CHUNK].start,
+	sys_memcpy(compile_info, stp->chunks[COMPILE_CHUNK].start,
 	       stp->chunks[COMPILE_CHUNK].size);
 	code[MI_COMPILE_PTR] = (Eterm) compile_info;
 	code[MI_COMPILE_SIZE] = (Eterm) stp->chunks[COMPILE_CHUNK].size;
@@ -3312,13 +3571,6 @@ freeze_code(LoaderState* stp)
 	code[MI_COMPILE_SIZE_ON_HEAP] = decoded_size;
     }
 
-
-    /*
-     * Place a pointer to the op_int_code_end instruction in the
-     * function table in the beginning of the file.
-     */
-
-    code[MI_FUNCTIONS+stp->num_functions] = (Eterm) (code + stp->ci - 1);
 
     /*
      * Go through all put_strings instructions, restore the pointer to

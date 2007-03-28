@@ -3368,31 +3368,8 @@ list_to_records([T | Ts]) ->
 list_to_records([]) ->
     [].
 
-lit_to_records(V, A) when is_integer(V) ->
-    #c_int{anno = A, val = V};
-lit_to_records(V, A) when is_float(V) ->
-    #c_float{anno = A, val = V};
-lit_to_records(V, A) when is_atom(V) ->
-    #c_atom{anno = A, val = V};
-lit_to_records([H | T] = V, A) ->
-    case is_print_char_list(V) of
-	true ->
-	    #c_string{anno = A, val = V};
-	false ->
-	    #c_cons{anno = A,
-		    hd = lit_to_records(H, []),
-		    tl = lit_to_records(T, [])}
-    end;
-lit_to_records([], A) ->
-    #c_nil{anno = A};
-lit_to_records(V, A) when is_tuple(V) ->
-    #c_tuple{anno = A, es = lit_list_to_records(tuple_to_list(V))}.
-
-lit_list_to_records([T | Ts]) ->
-    [lit_to_records(T, []) | lit_list_to_records(Ts)];
-lit_list_to_records([]) ->
-    [].
-
+lit_to_records(V, A) ->
+    #c_literal{anno = A, val = V}.
 
 %% @spec from_records(Tree::record(record_types())) -> cerl()
 %%
@@ -3414,18 +3391,8 @@ lit_list_to_records([]) ->
 %% @see type/1
 %% @see to_records/1
 
-from_records(#c_int{val = V, anno = As}) ->
-    ann_c_int(As, V);
-from_records(#c_float{val = V, anno = As}) ->
-    ann_c_float(As, V);
-from_records(#c_atom{val = V, anno = As}) ->
-    ann_c_atom(As, V);
-from_records(#c_char{val = V, anno = As}) ->
-    ann_c_char(As, V);
-from_records(#c_string{val = V, anno = As}) ->
-    ann_c_string(As, V);
-from_records(#c_nil{anno = As}) ->
-    ann_c_nil(As);
+from_records(#c_literal{val = V, anno = As}) ->
+    #literal{val = V, ann = As};
 from_records(#c_binary{segments = Ss, anno = As}) ->
     ann_c_binary(As, from_records_list(Ss));
 from_records(#c_bitstr{val = V, size = S, unit = U, type = T,

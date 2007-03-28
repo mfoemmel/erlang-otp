@@ -39,6 +39,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/stdlib-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES= \
+	base64 \
 	beam_lib \
 	c \
 	calendar \
@@ -67,6 +68,7 @@ MODULES= \
 	erl_tar \
 	error_logger_file_h \
 	error_logger_tty_h \
+	escript \
 	ets \
 	eval_bits \
 	file_sorter \

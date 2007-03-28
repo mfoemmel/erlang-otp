@@ -110,12 +110,14 @@ slg_answer(Akey, G, PosNegMin) ->
 		    reset_negs(Akey),
 		    slg_answer_cont(poss(Akey), G, no_delayed, PosNegMin);
 		_  ->
-		    case 'no other has the same head'(anss(Akey),G) of
-			true -> 
-			    slg_answer_cont(poss(Akey), G, delayed, PosNegMin);
-			false ->
-			    PosNegMin
-		    end
+                    'no other has the same head'(anss(Akey),G)
+%% OTP-6496 (dialyzer):
+%%		    case 'no other has the same head'(anss(Akey),G) of
+%%			true -> 
+%%			    slg_answer_cont(poss(Akey), G, delayed, PosNegMin);
+%%			false ->
+%%			    PosNegMin
+%%		    end
 	    end
     end.
 		    
@@ -124,8 +126,9 @@ slg_answer_cont([{B,H,Li}|BHs], G, ND, PosNegMin) ->
     NewPosNegMin = 
 	slg_newclause(key(B), 
 		      case ND of
-			  no_delayed -> slg_resolvent(H,Li,G);
-			  delayed -> slg_factor(H,Li,G)
+			  no_delayed -> slg_resolvent(H,Li,G)
+%% OTP-6496 (dialyzer):
+%%			  delayed -> slg_factor(H,Li,G)
 		      end,
 		      PosNegMin),
     slg_answer_cont(BHs, G, ND, NewPosNegMin);

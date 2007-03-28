@@ -554,8 +554,6 @@ pragma_version_cover(PragmaTab,Name,Scope,LineNr) ->
 			    default_version();
 			MostLocalList ->
 			    case dominant_version(MostLocalList,LineNr) of
-				none ->
-				    default_version();
 				DV ->
 				    element(4,element(2,DV))
 			    end
@@ -589,8 +587,6 @@ pragma_id_cover(PragmaTab,Name,Scope,LineNr) ->
 			    none;
 			MostLocalList ->	    
 			    case dominant_id(MostLocalList,LineNr) of
-				none ->
-				    "";
 				PI ->
 				    element(3,element(4,element(2,PI)))
 			    end
@@ -680,8 +676,6 @@ most_local( SList, Current, Scope, AllFound ) ->
 %% on the file. 
 dominant_prefix(SList,LineNr) ->
     case SList of 
-	[] ->
-	    none;  % Just for BUG-secutiry
 	[First|Rest] ->
 	    dominant_prefix(Rest,First,LineNr)
     end.
@@ -716,8 +710,6 @@ dominant_prefix([{prefix,FX,FPLNr,FN,F1,T1}|Rest],{prefix,CX,CPLNr,CN,F2,T2},Lin
 %% on the file. 
 dominant_version(SList,LineNr) ->
     case SList of 
-	[] ->
-	    none;  % Just for BUG-secutiry
 	[First|Rest] ->
 	    dominant_version(Rest,First,LineNr)
     end.
@@ -741,8 +733,6 @@ dominant_version([{version,FX,FPLNr,FN,F1,T1}|Rest],{version,CX,CPLNr,CN,F2,T2},
 %% on the file. 
 dominant_id(SList,LineNr) ->
     case SList of 
-	[] ->
-	    none;  % Just for BUG-secutiry
 	[First|Rest] ->
 	    dominant_id(Rest,First,LineNr)
     end.
@@ -1613,8 +1603,6 @@ remove_inheriters(S,RS,InheriterList) ->
 		     inherits(RS,X,CleanList)]
     end.
 
-remove_inheriters2(_,[],_) ->
-    [];
 remove_inheriters2(_,[A],_) ->
     [A];
 remove_inheriters2(_S,[A,B],EtsList) ->

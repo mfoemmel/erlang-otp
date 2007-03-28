@@ -213,7 +213,7 @@ cont2(F, Exception, Sofar, Fd, Fname, T, S) ->
     end.
     
 read_chunk(Fd, _Fname, _Sofar) ->
-    file:read(Fd, 512).
+    file:read(Fd, 8192).
 
 -ifndef(no_bitsyntax).
 

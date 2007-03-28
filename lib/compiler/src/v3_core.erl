@@ -110,7 +110,7 @@ module({Mod,Exp,Forms}, _Opts) ->
     {Kfs0,As0,Ws,_File} = foldl(fun form/2, {[],[],[],[]}, Forms),
     Kfs = reverse(Kfs0),
     As = reverse(As0),
-    {ok,#c_module{name=#c_atom{val=Mod},exports=Cexp,attrs=As,defs=Kfs},Ws}.
+    {ok,#c_module{name=#c_literal{val=Mod},exports=Cexp,attrs=As,defs=Kfs},Ws}.
 
 form({function,_,_,_,_}=F0, {Fs,As,Ws0,File}) ->
     {F,Ws} = function(F0, Ws0, File),
@@ -142,7 +142,7 @@ body(Cs0, Arity, St0) ->
     {Args,St1} = new_vars(Anno, Arity, St0),
     {Cs1,St2} = clauses(Cs0, St1),
     {Ps,St3} = new_vars(Arity, St2),    %Need new variables here
-    Fc = fail_clause(Ps, #c_tuple{es=[#c_atom{val=function_clause}|Ps]}),
+    Fc = fail_clause(Ps, #c_tuple{es=[#c_literal{val=function_clause}|Ps]}),
     {#ifun{anno=#a{anno=Anno},id=[],vars=Args,clauses=Cs1,fc=Fc},St3}.
 
 %% clause(Clause, State) -> {Cclause,State} | noclause.
@@ -246,7 +246,8 @@ gexpr({op,Line,Op,L,R}=Call, Bools0, St0) ->
 	    {Rl,Rlps,St4} = force_safe(Re, St3),
 	    Anno = lineno_anno(Line, St4),
 	    {#icall{anno=#a{anno=Anno},	%Must have an #a{}
-		    module=#c_atom{anno=Anno,val=erlang},name=#c_atom{anno=Anno,val=Op},
+		    module=#c_literal{anno=Anno,val=erlang},
+		    name=#c_literal{anno=Anno,val=Op},
 		    args=[Ll,Rl]},Lps ++ Llps ++ Rps ++ Rlps,Bools,St4};
 	false ->
 	    gexpr_test(Call, Bools0, St0)
@@ -258,7 +259,8 @@ gexpr({op,Line,Op,A}=Call, Bools0, St0) ->
 	    {Al,Alps,St2} = force_safe(Ae, St1),
 	    Anno = lineno_anno(Line, St2),
 	    {#icall{anno=#a{anno=Anno},	%Must have an #a{}
-		    module=#c_atom{anno=Anno,val=erlang},name=#c_atom{anno=Anno,val=Op},
+		    module=#c_literal{anno=Anno,val=erlang},
+		    name=#c_literal{anno=Anno,val=Op},
 		    args=[Al]},Aps ++ Alps,Bools,St2};
 	false ->
 	    gexpr_test(Call, Bools0, St0)
@@ -272,14 +274,14 @@ gexpr(E0, Bools, St0) ->
 %%  don't know, i.e. if it is not a comparison or a type test.
 
 gexpr_test({atom,L,true}, Bools, St0) ->
-    {#c_atom{anno=lineno_anno(L, St0),val=true},[],Bools,St0};
+    {#c_literal{anno=lineno_anno(L, St0),val=true},[],Bools,St0};
 gexpr_test({atom,L,false}, Bools, St0) ->
-    {#c_atom{anno=lineno_anno(L, St0),val=false},[],Bools,St0};
+    {#c_literal{anno=lineno_anno(L, St0),val=false},[],Bools,St0};
 gexpr_test(E0, Bools0, St0) ->
     {E1,Eps0,St1} = expr(E0, St0),
     %% Generate "top-level" test and argument calls.
     case E1 of
-	#icall{anno=Anno,module=#c_atom{val=erlang},name=#c_atom{val=N},args=As} ->
+	#icall{anno=Anno,module=#c_literal{val=erlang},name=#c_literal{val=N},args=As} ->
 	    Ar = length(As),
 	    case erl_internal:type_test(N, Ar) orelse
 		erl_internal:comp_op(N, Ar) of
@@ -289,9 +291,9 @@ gexpr_test(E0, Bools0, St0) ->
 		    {New,St2} = new_var(Lanno, St1),
 		    Bools = [New|Bools0],
 		    {#icall{anno=Anno,	%Must have an #a{}
-			    module=#c_atom{anno=Lanno,val=erlang},
-			    name=#c_atom{anno=Lanno,val='=:='},
-			    args=[New,#c_atom{anno=Lanno,val=true}]},
+			    module=#c_literal{anno=Lanno,val=erlang},
+			    name=#c_literal{anno=Lanno,val='=:='},
+			    args=[New,#c_literal{anno=Lanno,val=true}]},
 		     Eps0 ++ [#iset{anno=Anno,var=New,arg=E1}],Bools,St2}
 	    end;
 	_ ->
@@ -301,16 +303,16 @@ gexpr_test(E0, Bools0, St0) ->
 		true ->
 		    Bools = [E1|Bools0],
 		    {#icall{anno=Anno,	%Must have an #a{}
-			    module=#c_atom{anno=Lanno,val=erlang},
-			    name=#c_atom{anno=Lanno,val='=:='},
-			    args=[E1,#c_atom{anno=Lanno,val=true}]},Eps0,Bools,St1};
+			    module=#c_literal{anno=Lanno,val=erlang},
+			    name=#c_literal{anno=Lanno,val='=:='},
+			    args=[E1,#c_literal{anno=Lanno,val=true}]},Eps0,Bools,St1};
 		false ->
 		    {New,St2} = new_var(Lanno, St1),
 		    Bools = [New|Bools0],
 		    {#icall{anno=Anno,	%Must have an #a{}
-			    module=#c_atom{anno=Lanno,val=erlang},
-			    name=#c_atom{anno=Lanno,val='=:='},
-			    args=[New,#c_atom{anno=Lanno,val=true}]},
+			    module=#c_literal{anno=Lanno,val=erlang},
+			    name=#c_literal{anno=Lanno,val='=:='},
+			    args=[New,#c_literal{anno=Lanno,val=true}]},
 		     Eps0 ++ [#iset{anno=Anno,var=New,arg=E1}],Bools,St2}
 	    end
     end.
@@ -321,14 +323,14 @@ force_booleans([V|Vs], E0, Eps0, St0) ->
     {E1,Eps1,St1} = force_safe(E0, St0),
     Lanno = element(2, V),
     Anno = #a{anno=Lanno},
-    Call = #icall{anno=Anno,module=#c_atom{anno=Lanno,val=erlang},
-		  name=#c_atom{anno=Lanno,val=is_boolean},
+    Call = #icall{anno=Anno,module=#c_literal{anno=Lanno,val=erlang},
+		  name=#c_literal{anno=Lanno,val=is_boolean},
 		  args=[V]},
     {New,St} = new_var(Lanno, St1),
     Iset = #iset{anno=Anno,var=New,arg=Call},
     Eps = Eps0 ++ Eps1 ++ [Iset],
     E = #icall{anno=Anno,
-	       module=#c_atom{anno=Lanno,val=erlang},name=#c_atom{anno=Lanno,val='and'},
+	       module=#c_literal{anno=Lanno,val=erlang},name=#c_literal{anno=Lanno,val='and'},
 	       args=[E1,New]},
     force_booleans(Vs, E, Eps, St).
 
@@ -345,24 +347,37 @@ exprs([], St) -> {[],St}.
 %%  Generate an internal core expression.
 
 expr({var,L,V}, St) -> {#c_var{anno=lineno_anno(L, St),name=V},[],St};
-expr({char,L,C}, St) -> {#c_char{anno=lineno_anno(L, St),val=C},[],St};
-expr({integer,L,I}, St) -> {#c_int{anno=lineno_anno(L, St),val=I},[],St};
-expr({float,L,F}, St) -> {#c_float{anno=lineno_anno(L, St),val=F},[],St};
-expr({atom,L,A}, St) -> {#c_atom{anno=lineno_anno(L, St),val=A},[],St};
-expr({nil,L}, St) -> {#c_nil{anno=lineno_anno(L, St)},[],St};
-expr({string,L,[]}, St) -> {#c_nil{anno=lineno_anno(L, St)},[],St};
-expr({string,L,S}, St) -> {#c_string{anno=lineno_anno(L, St),val=S},[],St};
+expr({char,L,C}, St) -> {#c_literal{anno=lineno_anno(L, St),val=C},[],St};
+expr({integer,L,I}, St) -> {#c_literal{anno=lineno_anno(L, St),val=I},[],St};
+expr({float,L,F}, St) -> {#c_literal{anno=lineno_anno(L, St),val=F},[],St};
+expr({atom,L,A}, St) -> {#c_literal{anno=lineno_anno(L, St),val=A},[],St};
+expr({nil,L}, St) -> {#c_literal{anno=lineno_anno(L, St),val=[]},[],St};
+expr({string,L,S}, St) -> {#c_literal{anno=lineno_anno(L, St),val=S},[],St};
 expr({cons,L,H0,T0}, St0) ->
     {H1,Hps,St1} = safe(H0, St0),
     {T1,Tps,St2} = safe(T0, St1),
-    {#c_cons{anno=lineno_anno(L, St2),hd=H1,tl=T1},Hps ++ Tps,St2};
+    A = lineno_anno(L, St2),
+    case {H1,T1,Hps,Tps} of
+	{#c_literal{val=H2},#c_literal{val=T2},[],[]} ->
+	    {#c_literal{anno=A,val=[H2|T2]},[],St2};
+	_ ->
+	    {#c_cons{anno=A,hd=H1,tl=T1},Hps ++ Tps,St2}
+    end;
 expr({lc,L,E,Qs}, St) ->
     lc_tq(L, E, Qs, {nil,L}, St);
 expr({bc,L,E,Qs}, St) ->
     bc_tq(L, E, Qs, {nil,L}, St);
 expr({tuple,L,Es0}, St0) ->
     {Es1,Eps,St1} = safe_list(Es0, St0),
-    {#c_tuple{anno=lineno_anno(L, St1),es=Es1},Eps,St1};
+    A = lineno_anno(L, St1),
+    case Eps =:= [] andalso lists:all(fun(#c_literal{}) -> true;
+					 (_) -> false end, Es1) of
+	true ->
+	    Tuple = list_to_tuple([V || #c_literal{val=V} <- Es1]),
+	    {#c_literal{anno=A,val=Tuple},[],St1};
+	false ->
+	    {#c_tuple{anno=A,es=Es1},Eps,St1}
+    end;
 expr({bin,L,Es0}, St0) ->
     try expr_bin(Es0, St0) of
 	{Es1,Eps,St1} ->
@@ -371,10 +386,10 @@ expr({bin,L,Es0}, St0) ->
 	throw:bad_binary ->
 	    St1 = add_warning(L, bad_binary, St0),
 	    LineAnno = lineno_anno(L, St1),
-	    As = [#c_atom{anno=LineAnno,val=badarg}],
+	    As = [#c_literal{anno=LineAnno,val=badarg}],
 	    {#icall{anno=#a{anno=LineAnno},	%Must have an #a{}
-		    module=#c_atom{anno=LineAnno,val=erlang},
-		    name=#c_atom{anno=LineAnno,val=error},
+		    module=#c_literal{anno=LineAnno,val=erlang},
+		    name=#c_literal{anno=LineAnno,val=error},
 		    args=As},[],St1}
     end;
 expr({block,_,Es0}, St0) ->
@@ -384,14 +399,14 @@ expr({block,_,Es0}, St0) ->
     {E1,Es1 ++ Eps,St2};
 expr({'if',L,Cs0}, St0) ->
     {Cs1,St1} = clauses(Cs0, St0),
-    Fc = fail_clause([], #c_atom{val=if_clause}),
+    Fc = fail_clause([], #c_literal{val=if_clause}),
     Lanno = lineno_anno(L, St1),
     {#icase{anno=#a{anno=Lanno},args=[],clauses=Cs1,fc=Fc},[],St1};
 expr({'case',L,E0,Cs0}, St0) ->
     {E1,Eps,St1} = novars(E0, St0),
     {Cs1,St2} = clauses(Cs0, St1),
     {Fpat,St3} = new_var(St2),
-    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=case_clause},Fpat]}),
+    Fc = fail_clause([Fpat], #c_tuple{es=[#c_literal{val=case_clause},Fpat]}),
     Lanno = lineno_anno(L, St3),
     {#icase{anno=#a{anno=Lanno},args=[E1],clauses=Cs1,fc=Fc},Eps,St3};
 expr({'receive',L,Cs0}, St0) ->
@@ -418,7 +433,7 @@ expr({'try',L,Es0,Cs0,Ecs,[]}, St0) ->
     {V,St2} = new_var(St1),		%This name should be arbitrary
     {Cs1,St3} = clauses(Cs0, St2),
     {Fpat,St4} = new_var(St3),
-    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=try_clause},Fpat]}),
+    Fc = fail_clause([Fpat], #c_tuple{es=[#c_literal{val=try_clause},Fpat]}),
     {Evs,Hs,St5} = try_exception(Ecs, St4),
     Lanno = lineno_anno(L, St1),
     {#itry{anno=#a{anno=lineno_anno(L, St5)},args=Es1,
@@ -470,7 +485,7 @@ expr({match,L,P0,E0}, St0) ->
     {E2,Eps,St1} = novars(E1, St0),
     P2 = (catch pattern(P1, St1)),
     {Fpat,St2} = new_var(St1),
-    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=badmatch},Fpat]}),
+    Fc = fail_clause([Fpat], #c_tuple{es=[#c_literal{val=badmatch},Fpat]}),
     Lanno = lineno_anno(L, St2),
     case P2 of
 	{'EXIT',_}=Exit -> exit(Exit);		%Propagate error
@@ -505,14 +520,14 @@ expr({op,L,Op,A0}, St0) ->
     {A1,Aps,St1} = safe(A0, St0),
     LineAnno = lineno_anno(L, St1),
     {#icall{anno=#a{anno=LineAnno},		%Must have an #a{}
-	    module=#c_atom{anno=LineAnno,val=erlang},
-	    name=#c_atom{anno=LineAnno,val=Op},args=[A1]},Aps,St1};
+	    module=#c_literal{anno=LineAnno,val=erlang},
+	    name=#c_literal{anno=LineAnno,val=Op},args=[A1]},Aps,St1};
 expr({op,L,Op,L0,R0}, St0) ->
     {As,Aps,St1} = safe_list([L0,R0], St0),
     LineAnno = lineno_anno(L, St1),
     {#icall{anno=#a{anno=LineAnno},		%Must have an #a{}
-	    module=#c_atom{anno=LineAnno,val=erlang},
-	    name=#c_atom{anno=LineAnno,val=Op},args=As},Aps,St1}.
+	    module=#c_literal{anno=LineAnno,val=erlang},
+	    name=#c_literal{anno=LineAnno,val=Op},args=As},Aps,St1}.
 
 make_bool_switch(L, E, V, T, F, #core{in_guard=true}) ->
     make_bool_switch_guard(L, E, V, T, F);
@@ -547,9 +562,9 @@ try_exception(Ecs0, St0) ->
     {Ecs1,St2} = clauses(Ecs0, St1),
     [_,Value,Info] = Evs,
     Ec = #iclause{anno=#a{anno=[compiler_generated]},
-		  pats=[#c_tuple{es=Evs}],guard=[#c_atom{val=true}],
+		  pats=[#c_tuple{es=Evs}],guard=[#c_literal{val=true}],
 		  body=[#iprimop{anno=#a{},       %Must have an #a{}
-				 name=#c_atom{val=raise},
+				 name=#c_literal{val=raise},
 				 args=[Info,Value]}]},
     Hs = [#icase{anno=#a{},args=[#c_tuple{es=Evs}],clauses=Ecs1,fc=Ec}],
     {Evs,Hs,St2}.
@@ -559,10 +574,10 @@ try_after(As, St0) ->
     {Evs,St1} = new_vars(3, St0), % Tag, Value, Info
     [_,Value,Info] = Evs,
     B = As ++ [#iprimop{anno=#a{},       %Must have an #a{}
-			 name=#c_atom{val=raise},
+			 name=#c_literal{val=raise},
 			 args=[Info,Value]}],
     Ec = #iclause{anno=#a{anno=[compiler_generated]},
-		  pats=[#c_tuple{es=Evs}],guard=[#c_atom{val=true}],
+		  pats=[#c_tuple{es=Evs}],guard=[#c_literal{val=true}],
 		  body=B},
     Hs = [#icase{anno=#a{},args=[#c_tuple{es=Evs}],clauses=[],fc=Ec}],
     {Evs,Hs,St1}.
@@ -581,11 +596,8 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
     {Size1,Eps2,St2} = safe(Size0, St1),
     case {Type,E1} of
 	{_,#c_var{}} -> ok;
-	{integer,#c_int{}} -> ok;
-	{integer,#c_char{}} -> ok;
-	{float,#c_float{}} -> ok;
-	{float,#c_int{}} -> ok;
-	{float,#c_char{}} -> ok;
+	{integer,#c_literal{val=I}} when is_integer(I) -> ok;
+	{float,#c_literal{val=V}} when is_number(V) -> ok;
 	{_,_} -> throw(bad_binary)
     end,
     {#c_bitstr{val=E1,size=Size1,
@@ -601,7 +613,7 @@ fun_tq(Id, Cs0, L, St0) ->
     {Cs1,St1} = clauses(Cs0, St0),
     {Args,St2} = new_vars(Arity, St1),
     {Ps,St3} = new_vars(Arity, St2),		%Need new variables here
-    Fc = fail_clause(Ps, #c_tuple{es=[#c_atom{val=function_clause}|Ps]}),
+    Fc = fail_clause(Ps, #c_tuple{es=[#c_literal{val=function_clause}|Ps]}),
     Fun = #ifun{anno=#a{anno=lineno_anno(L, St3)},
 		id=[{id,Id}],				%We KNOW!
 		vars=Args,clauses=Cs1,fc=Fc},
@@ -620,7 +632,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     {Name,St1} = new_fun_name("lc", St0),
     {Head,St2} = new_var(St1),
     {Tname,St3} = new_var_name(St2),
-    LA = [Line],
+    LA = lineno_anno(Line, St2),
     LAnno = #a{anno=LA},
     Tail = #c_var{anno=LA,name=Tname},
     {Arg,St4} = new_var(St3),
@@ -642,7 +654,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     end,
     {Gc,Gps,St10} = safe(G, St9),		%Will be a function argument!
     Fc = fail_clause([Arg], #c_tuple{anno=LA,
-				     es=[#c_atom{val=function_clause},Arg]}),
+				     es=[#c_literal{val=function_clause},Arg]}),
     %% Avoid constructing a default clause if the list comprehension
     %% only has a variable as generator and there are no guard
     %% tests. In other words, if the comprehension is equivalent to
@@ -650,7 +662,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     case {Guardc, Pc} of
 	{[], #c_var{}} ->
 	    Cs0 = [#iclause{anno=LAnno,
-			    pats=[#c_nil{anno=LA}],guard=[],
+			    pats=[#c_literal{anno=LA,val=[]}],guard=[],
 			    body=Mps ++ [Mc]}];
 	_ ->
 	    Cs0 = [#iclause{anno=#a{anno=[compiler_generated|LA]},
@@ -658,7 +670,7 @@ lc_tq(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
 			    guard=[],
 			    body=Nps ++ [Nc]},
 		   #iclause{anno=LAnno,
-			    pats=[#c_nil{anno=LA}],guard=[],
+			    pats=[#c_literal{anno=LA,val=[]}],guard=[],
 			    body=Mps ++ [Mc]}]
     end,
     Cs = case Pc of
@@ -679,7 +691,7 @@ lc_tq(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
   {Gs,Qs1} =  splitwith(fun is_guard_test/1, Qs0),
   {Name,St1} = new_fun_name("blc", St0),
   {Tname,St2} = new_var_name(St1),
-  LA = [Line],
+  LA = lineno_anno(Line, St2),
   LAnno = #a{anno=LA},
   HeadBinPattern = pattern(P,St2),
   #c_binary{segments=Ps} = HeadBinPattern,
@@ -698,7 +710,7 @@ lc_tq(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
   {Mc,Mps,St7} = expr(More, St6),
   {Gc,Gps,St10} = safe(G, St7),		%Will be a function argument!
   Fc = fail_clause([Arg], #c_tuple{anno=LA,
-				   es=[#c_atom{val=function_clause},Arg]}),
+				   es=[#c_literal{val=function_clause},Arg]}),
   Cs = [#iclause{anno=#a{anno=[compiler_generated|LA]},
 		 pats=[Pattern],
 		 guard=Guardc,
@@ -720,7 +732,7 @@ lc_tq(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
    [],St10};
 lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
     %% Special case sequences guard tests.
-    LA = [Line],
+    LA = lineno_anno(Line, St0),
     LAnno = #a{anno=LA},
     case is_guard_test(Fil0) of
 	true ->
@@ -738,7 +750,7 @@ lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
 	    {Lc,Lps,St1} = lc_tq(Line, E, Qs0, More, St0),
 	    {Mc,Mps,St2} = expr(More, St1),
 	    {Fpat,St3} = new_var(St2),
-	    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=case_clause},Fpat]}),
+	    Fc = fail_clause([Fpat], #c_tuple{es=[#c_literal{val=case_clause},Fpat]}),
 	    %% Do a novars little optimisation here.
 	    case Fil0 of
 		{op,_,'not',Fil1} ->
@@ -746,11 +758,11 @@ lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
 		    {#icase{anno=LAnno,
 			    args=[Filc],
 			    clauses=[#iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=true}],
+					      pats=[#c_literal{anno=LA,val=true}],
 					      guard=[],
 					      body=Mps ++ [Mc]},
 				     #iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=false}],
+					      pats=[#c_literal{anno=LA,val=false}],
 					      guard=[],
 					      body=Lps ++ [Lc]}],
 			    fc=Fc},
@@ -760,11 +772,11 @@ lc_tq(Line, E, [Fil0|Qs0], More, St0) ->
 		    {#icase{anno=LAnno,
 			    args=[Filc],
 			    clauses=[#iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=true}],
+					      pats=[#c_literal{anno=LA,val=true}],
 					      guard=[],
 					      body=Lps ++ [Lc]},
 				     #iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=false}],
+					      pats=[#c_literal{anno=LA,val=false}],
 					      guard=[],
 					      body=Mps ++ [Mc]}],
 			    fc=Fc},
@@ -787,8 +799,8 @@ bc_tq(Line, Exp, Qualifiers, More, St0) ->
     LineAnno = lineno_anno(Line, St1),
     {Arg,St2} = new_var(St1),
     {#icall{anno=#a{anno=LineAnno},
-	    module=#c_atom{anno=LineAnno,val=erlang},
-	    name=#c_atom{anno=LineAnno,val=list_to_binary},
+	    module=#c_literal{anno=LineAnno,val=erlang},
+	    name=#c_literal{anno=LineAnno,val=list_to_binary},
 	    args=[Arg]}, 
       PreExp++[#iset{anno=#a{anno=LineAnno},var=Arg,arg=LetRec}], St2}.
 
@@ -797,7 +809,7 @@ bc_tq1(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     {Name,St1} = new_fun_name("lbc", St0),
     {Head,St2} = new_var(St1),
     {Tname,St3} = new_var_name(St2),
-    LA = [Line],
+    LA = lineno_anno(Line, St3),
     LAnno = #a{anno=LA},
     Tail = #c_var{anno=LA,name=Tname},
     {Arg,St4} = new_var(St3),
@@ -819,11 +831,11 @@ bc_tq1(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
     end,
     {Gc,Gps,St10} = safe(G, St9),		%Will be a function argument!
     Fc = fail_clause([Arg], #c_tuple{anno=LA,
-				     es=[#c_atom{val=function_clause},Arg]}),
+				     es=[#c_literal{val=function_clause},Arg]}),
   case {Guardc, Pc} of
     {[], #c_var{}} ->
       Cs0 = [#iclause{anno=LAnno,
-		      pats=[#c_nil{anno=LA}],guard=[],
+		      pats=[#c_literal{anno=LA,val=[]}],guard=[],
 		      body=Mps ++ [Mc]}];
     _ ->
       Cs0 = [#iclause{anno=#a{anno=[compiler_generated|LA]},
@@ -831,7 +843,7 @@ bc_tq1(Line, E, [{generate,Lg,P,G}|Qs0], More, St0) ->
 		      guard=[],
 		      body=Nps ++ [Nc]},
 	     #iclause{anno=LAnno,
-		      pats=[#c_nil{anno=LA}],guard=[],
+		      pats=[#c_literal{anno=LA,val=[]}],guard=[],
 		      body=Mps ++ [Mc]}]
   end,
   Cs = case Pc of
@@ -852,7 +864,7 @@ bc_tq1(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
   {Gs,Qs1} =  splitwith(fun is_guard_test/1, Qs0),
   {Name,St1} = new_fun_name("bc", St0),
   {Tname,St2} = new_var_name(St1),
-  LA = [Line],
+  LA = lineno_anno(Line, St2),
   LAnno = #a{anno=LA},
   HeadBinPattern = pattern(P,St2),
   #c_binary{segments=Ps} = HeadBinPattern,
@@ -871,7 +883,7 @@ bc_tq1(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
   {Mc,Mps,St7} = expr(More, St6),
   {Gc,Gps,St10} = safe(G, St7),		%Will be a function argument!
   Fc = fail_clause([Arg], #c_tuple{anno=LA,
-				   es=[#c_atom{val=function_clause},Arg]}),
+				   es=[#c_literal{val=function_clause},Arg]}),
   Cs = [#iclause{anno=#a{anno=[compiler_generated|LA]},
 		 pats=[Pattern],
 		 guard=Guardc,
@@ -893,7 +905,7 @@ bc_tq1(Line, E, [{b_generate,Lg,P,G}|Qs0], More, St0) ->
    [],St10};
 bc_tq1(Line, E, [Fil0|Qs0], More, St0) ->
     %% Special case sequences guard tests.
-    LA = [Line],
+    LA = lineno_anno(Line, St0),
     LAnno = #a{anno=LA},
     case is_guard_test(Fil0) of
 	true ->
@@ -911,7 +923,7 @@ bc_tq1(Line, E, [Fil0|Qs0], More, St0) ->
 	    {Bc,Bps,St1} = bc_tq1(Line, E, Qs0, More, St0),
 	    {Mc,Mps,St2} = expr(More, St1),
 	    {Fpat,St3} = new_var(St2),
-	    Fc = fail_clause([Fpat], #c_tuple{es=[#c_atom{val=case_clause},Fpat]}),
+	    Fc = fail_clause([Fpat], #c_tuple{es=[#c_literal{val=case_clause},Fpat]}),
 	    %% Do a novars little optimisation here.
 	    case Fil0 of
 		{op,_,'not',Fil1} ->
@@ -919,11 +931,11 @@ bc_tq1(Line, E, [Fil0|Qs0], More, St0) ->
 		    {#icase{anno=LAnno,
 			    args=[Filc],
 			    clauses=[#iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=true}],
+					      pats=[#c_literal{anno=LA,val=true}],
 					      guard=[],
 					      body=Mps ++ [Mc]},
 				     #iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=false}],
+					      pats=[#c_literal{anno=LA,val=false}],
 					      guard=[],
 					      body=Bps ++ [Bc]}],
 			    fc=Fc},
@@ -933,11 +945,11 @@ bc_tq1(Line, E, [Fil0|Qs0], More, St0) ->
 		    {#icase{anno=LAnno,
 			    args=[Filc],
 			    clauses=[#iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=true}],
+					      pats=[#c_literal{anno=LA,val=true}],
 					      guard=[],
 					      body=Bps ++ [Bc]},
 				     #iclause{anno=LAnno,
-					      pats=[#c_atom{anno=LA,val=false}],
+					      pats=[#c_literal{anno=LA,val=false}],
 					      guard=[],
 					      body=Mps ++ [Mc]}],
 			    fc=Fc},
@@ -1060,13 +1072,12 @@ fold_match(E, P) -> {P,E}.
 %% aliases in patterns to standard form, {alias,Pat,[Var]}.
 
 pattern({var,L,V}, St) -> #c_var{anno=lineno_anno(L, St),name=V};
-pattern({char,L,C}, St) -> #c_char{anno=lineno_anno(L, St),val=C};
-pattern({integer,L,I}, St) -> #c_int{anno=lineno_anno(L, St),val=I};
-pattern({float,L,F}, St) -> #c_float{anno=lineno_anno(L, St),val=F};
-pattern({atom,L,A}, St) -> #c_atom{anno=lineno_anno(L, St),val=A};
-pattern({string,L,[]}, St) -> #c_nil{anno=lineno_anno(L, St)};
-pattern({string,L,S}, St) -> #c_string{anno=lineno_anno(L, St),val=S};
-pattern({nil,L}, St) -> #c_nil{anno=lineno_anno(L, St)};
+pattern({char,L,C}, St) -> #c_literal{anno=lineno_anno(L, St),val=C};
+pattern({integer,L,I}, St) -> #c_literal{anno=lineno_anno(L, St),val=I};
+pattern({float,L,F}, St) -> #c_literal{anno=lineno_anno(L, St),val=F};
+pattern({atom,L,A}, St) -> #c_literal{anno=lineno_anno(L, St),val=A};
+pattern({string,L,S}, St) -> #c_literal{anno=lineno_anno(L, St),val=S};
+pattern({nil,L}, St) -> #c_literal{anno=lineno_anno(L, St),val=[]};
 pattern({cons,L,H,T}, St) ->
     #c_cons{anno=lineno_anno(L, St),hd=pattern(H, St),tl=pattern(T, St)};
 pattern({tuple,L,Ps}, St) ->
@@ -1093,24 +1104,16 @@ pat_segment({bin_element,_,Term,Size,[Type,{unit,Unit}|Flags]}, St) ->
 
 pat_alias(#c_var{name=V1}, P2) -> #c_alias{var=#c_var{name=V1},pat=P2};
 pat_alias(P1, #c_var{name=V2}) -> #c_alias{var=#c_var{name=V2},pat=P1};
-pat_alias(#c_cons{}=Cons, #c_string{anno=A,val=[H|T]}=S) ->
-    pat_alias(Cons, #c_cons{anno=A,hd=#c_char{anno=A,val=H},
-			    tl=S#c_string{val=T}});
-pat_alias(#c_string{anno=A,val=[H|T]}=S, #c_cons{}=Cons) ->
-    pat_alias(#c_cons{anno=A,hd=#c_char{anno=A,val=H},
-		      tl=S#c_string{val=T}}, Cons);
-pat_alias(#c_nil{}=Nil, #c_string{val=[]}) ->
-    Nil;
-pat_alias(#c_string{val=[]}, #c_nil{}=Nil) ->
-    Nil;
+pat_alias(#c_cons{}=Cons, #c_literal{anno=A,val=[H|T]}=S) ->
+    pat_alias(Cons, #c_cons{anno=A,hd=#c_literal{anno=A,val=H},
+			    tl=S#c_literal{val=T}});
+pat_alias(#c_literal{anno=A,val=[H|T]}=S, #c_cons{}=Cons) ->
+    pat_alias(#c_cons{anno=A,hd=#c_literal{anno=A,val=H},
+		      tl=S#c_literal{val=T}}, Cons);
 pat_alias(#c_cons{anno=A,hd=H1,tl=T1}, #c_cons{hd=H2,tl=T2}) ->
     #c_cons{anno=A,hd=pat_alias(H1, H2),tl=pat_alias(T1, T2)};
 pat_alias(#c_tuple{es=Es1}, #c_tuple{es=Es2}) ->
     #c_tuple{es=pat_alias_list(Es1, Es2)};
-pat_alias(#c_char{val=C}=Char, #c_int{val=C}) ->
-    Char;
-pat_alias(#c_int{val=C}, #c_char{val=C}=Char) ->
-    Char;
 pat_alias(#c_binary{segments=Segs1}=Bin, #c_binary{segments=Segs2}) ->
     Bin#c_binary{segments=pat_alias_list(Segs1, Segs2)};
 pat_alias(#c_bitstr{val=P1,size=Sz,unit=U,type=T,flags=F}=Bitstr,
@@ -1190,7 +1193,7 @@ new_vars_1(0, _, St, Vs) -> {Vs,St}.
 fail_clause(Pats, A) ->
     #iclause{anno=#a{anno=[compiler_generated]},
 	     pats=Pats,guard=[],
-	     body=[#iprimop{anno=#a{},name=#c_atom{val=match_fail},args=[A]}]}.
+	     body=[#iprimop{anno=#a{},name=#c_literal{val=match_fail},args=[A]}]}.
 
 ubody(B, St) -> uexpr(B, [], St).
 
@@ -1236,8 +1239,8 @@ uguard(Pg, Gs0, Ks, St0) ->
 			      {[#iset{var=L,arg=T}] ++ first(Gs1) ++
 			       [#iset{var=R,arg=last(Gs1)},
 				#icall{anno=#a{}, %Must have an #a{}
-				       module=#c_atom{val=erlang},
-				       name=#c_atom{val='and'},
+				       module=#c_literal{val=erlang},
+				       name=#c_literal{val='and'},
 				       args=[L,R]}],
 			       St3}
 		      end, {Gs0,St0}, Pg),
@@ -1349,6 +1352,9 @@ uexpr(#iprotect{anno=A,body=Es0}, Ks, St0) ->
 uexpr(#ibinary{anno=A,segments=Ss}, _, St) ->
     Used = bitstr_vars(Ss),
     {#ibinary{anno=A#a{us=Used},segments=Ss},St};
+uexpr(#c_literal{}=Lit, _, St) ->
+    Anno = core_lib:get_anno(Lit),
+    {core_lib:set_anno(Lit, #a{us=[],anno=Anno}),St};
 uexpr(Lit, _, St) ->
     true = core_lib:is_simple(Lit),		%Sanity check!
     Vs = lit_vars(Lit),
@@ -1383,8 +1389,8 @@ upattern(#c_var{name=V}=Var, Ks, St0) ->
 	    {N,St1} = new_var_name(St0),
 	    New = #c_var{name=N},
 	    Test = #icall{anno=#a{us=add_element(N, [V])},
-			  module=#c_atom{val=erlang},
-			  name=#c_atom{val='=:='},
+			  module=#c_literal{val=erlang},
+			  name=#c_literal{val='=:='},
 			  args=[New,Var]},
 	    %% Test doesn't need protecting.
 	    {New,[Test],[N],[],St1};
@@ -1493,7 +1499,7 @@ cclause(#iclause{anno=#a{anno=Anno},pats=Ps,guard=G0,body=B0}, Exp, St0) ->
 cclauses(Lcs, Es, St0) ->
     mapfoldl(fun (Lc, St) -> cclause(Lc, Es, St) end, St0, Lcs).
 
-cguard([], St) -> {#c_atom{val=true},St};
+cguard([], St) -> {#c_literal{val=true},St};
 cguard(Gs, St0) ->
     {G,_,St1} = cexprs(Gs, [], St0),
     {G,St1}.
@@ -1562,7 +1568,7 @@ cexpr(#ireceive1{anno=A,clauses=Lcs}, As, St0) ->
     {Ccs,St1} = cclauses(Lcs, Exp, St0),
     {#c_receive{anno=A#a.anno,
 		clauses=Ccs,
-	       timeout=#c_atom{val=infinity},action=#c_atom{val=true}},
+	       timeout=#c_literal{val=infinity},action=#c_literal{val=true}},
      Exp,A#a.us,St1};
 cexpr(#ireceive2{anno=A,clauses=Lcs,timeout=Lto,action=Les}, As, St0) ->
     Exp = intersection(A#a.ns, As),		%Exports
@@ -1602,10 +1608,14 @@ cexpr(#iprotect{anno=A,body=Es}, _As, St0) ->
     V = #c_var{name='Try'},		%The names are arbitrary
     Vs = [#c_var{name='T'},#c_var{name='R'}],
     {#c_try{anno=A#a.anno,arg=Ce,vars=[V],body=V,
-	    evars=Vs,handler=#c_atom{val=false}},
+	    evars=Vs,handler=#c_literal{val=false}},
      [],A#a.us,St1};
 cexpr(#ibinary{anno=#a{anno=Anno,us=Us},segments=Segs}, _As, St) ->
     {#c_binary{anno=Anno,segments=Segs},[],Us,St};
+cexpr(#c_literal{}=Lit, _As, St) ->
+    Anno = core_lib:get_anno(Lit),
+    Vs = Anno#a.us,
+    {core_lib:set_anno(Lit, Anno#a.anno),[],Vs,St};
 cexpr(Lit, _As, St) ->
     true = core_lib:is_simple(Lit),		%Sanity check!
     Anno = core_lib:get_anno(Lit),
@@ -1613,7 +1623,7 @@ cexpr(Lit, _As, St) ->
     %%Vs = lit_vars(Lit),
     {core_lib:set_anno(Lit, Anno#a.anno),[],Vs,St}.
 
-%% Kill the id annoations for any fun inside the expression.
+%% Kill the id annotations for any fun inside the expression.
 %% Necessary when duplicating code in try ... after.
 
 kill_id_anns(#ifun{clauses=Cs0}=Fun) ->

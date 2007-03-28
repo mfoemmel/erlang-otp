@@ -235,11 +235,11 @@ listen(UserFun, Port, Opts) ->
     listen(UserFun, any, Port, Opts).
 
 listen(UserFun, Addr, Port, Opts) ->
-    case spawn_link(?MODULE, server_init,
-		    [UserFun, Addr, Port, Opts, self()]) of
-	Pid when is_pid(Pid) ->
-	    receive ok -> {ok, Pid} end;
-	Error -> Error
+    Pid = spawn_link(?MODULE, server_init,
+		     [UserFun, Addr, Port, Opts, self()]),
+    receive 
+	ok -> 
+	    {ok, Pid} 
     end.
 
 stop_listener(Pid) when is_pid(Pid) ->
@@ -515,30 +515,21 @@ kex_negotiate(S, User, SSH, UserAck, SendAlg, SendPdu, RecvAlg, RecvPdu) ->
     case SSH#ssh.role of
 	client ->
 	    SSH1 = SSH#ssh { c_keyinit = SendPdu, s_keyinit = RecvPdu },
-	    case select_algorithm(SSH1, #alg {}, SendAlg, RecvAlg) of
-		{ok, SSH2} ->
-		    ALG = SSH2#ssh.algorithms,
-		    case client_kex(S, SSH2, ALG#alg.kex) of
-			{ok, SSH3} ->
-			    newkeys(S, User, SSH3, UserAck);
-			Error ->
-			    kexfailed(S, User, UserAck, Error)
-		    end;
+	    {ok, SSH2} = select_algorithm(SSH1, #alg {}, SendAlg, RecvAlg),
+	    ALG = SSH2#ssh.algorithms,
+	    case client_kex(S, SSH2, ALG#alg.kex) of
+		{ok, SSH3} ->
+		    newkeys(S, User, SSH3, UserAck);
 		Error ->
 		    kexfailed(S, User, UserAck, Error)
 	    end;
-
 	server ->
 	    SSH1 = SSH#ssh { c_keyinit = RecvPdu, s_keyinit = SendPdu }, 
-	    case select_algorithm(SSH1, #alg {}, RecvAlg, SendAlg) of
-		{ok,SSH2} ->
-		    ALG = SSH2#ssh.algorithms,
-		    case server_kex(S, SSH2, ALG#alg.kex) of
-			{ok, SSH3} ->
-			    newkeys(S, User, SSH3, UserAck);
-			Error ->
-			    kexfailed(S, User, UserAck, Error)
-		    end;
+	    {ok,SSH2} = select_algorithm(SSH1, #alg {}, RecvAlg, SendAlg),
+	    ALG = SSH2#ssh.algorithms,
+	    case server_kex(S, SSH2, ALG#alg.kex) of
+		{ok, SSH3} ->
+		    newkeys(S, User, SSH3, UserAck);
 		Error ->
 		    kexfailed(S, User, UserAck, Error)
 	    end
@@ -671,10 +662,9 @@ server_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
     end;
 server_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
     ssh_bits:install_messages(kex_dh_gex_messages()),
-    R0 = recv_msg(S, SSH),
-    #ssh_msg_kex_dh_gex_request { min = Min,
-				  n   = NBits,
-				  max = Max } = R0,
+    {ok,  #ssh_msg_kex_dh_gex_request { min = Min,
+					n   = NBits,
+					max = Max }} = recv_msg(S, SSH),
     {G,P} = dh_group1(), %% FIX ME!!!
     send_msg(S, SSH, #ssh_msg_kex_dh_gex_group { p = P, g = G }),
     {Private, Public} = dh_gen_key(G,P,1024),
@@ -726,10 +716,17 @@ ssh_main(S, User, SSH) ->
 		{ok,M} when record(M, ssh_msg_kexinit) ->
 		    recv_negotiate(S, User, SSH, M, false);
 
+		{ok,M} when is_record(M, ssh_msg_service_request) ->
+		    User ! {ssh_msg, self(), M},
+		    await_user(User),
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH);
+
 		{ok,M} ->
 		    User ! {ssh_msg, self(), M},
 		    inet:setopts(S, [{active, once}]),
 		    ssh_main(S, User, SSH);
+
 		{error, unimplemented} ->
 		    send_msg(S, SSH, 
 			     #ssh_msg_unimplemented { sequence =
@@ -1773,3 +1770,11 @@ fmt_bin(X) when binary(X) ->
 get_session_id(SSH) ->
     {ok, SessionID} = call(SSH, get_session_id),
     SessionID.
+
+await_user(User) ->
+    receive
+	{User, ok} ->
+	    ok
+    after ?DEFAULT_TIMEOUT ->
+	    error
+    end.

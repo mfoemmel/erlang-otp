@@ -75,7 +75,7 @@ module(E, Opts) ->
 			      ren__new()),
     M = cerl:module_name(E),
     S0 = s__new(cerl:atom_val(M)),    	    
-    S = s__set_pmatch(proplists:get_value(pmatch, Opts), S0),
+    S = s__set_pmatch(proplists:get_value(pmatch, Opts, true), S0),
     {Ds1, _} = defs(Ds, true, Env, Ren, S),
     cerl:update_c_module(E, M, cerl:module_exports(E),
 			 cerl:module_attrs(E), Ds1).
@@ -120,9 +120,7 @@ expr(E0, Env, Ren, Ctxt, S0) ->
 	    N = cerl:primop_name(E),
 	    {rewrite_primop(E, N, As, S1), S1};
  	'case' ->
-	    {A, S1} = expr(cerl:case_arg(E), Env, Ren, Ctxt, S0),
-	    {E1, Vs, S2} = clauses(cerl:case_clauses(E), Env, Ren, Ctxt, S1),
- 	    {cerl:c_let(Vs, A, E1), S2};
+	    case_expr(E, Env, Ren, Ctxt, S0);
  	'fun' ->
 	    Vs = cerl:fun_vars(E),
 	    {Vs1, Env1, Ren1} = add_vars(Vs, Env, Ren),
@@ -226,27 +224,45 @@ defs([{V, F} | Ds], Ds1, Top, Env, Ren, S0) ->
 defs([], Ds, _Top, _Env, _Ren, S) ->
     {lists:reverse(Ds), S}.
 
-clauses([C|_]=Cs, Env, Ren, Ctxt, S) ->
-    {Cs1, S1} = clause_list(Cs, Env, Ren, Ctxt, S),
-    %% Perform pattern matching compilation on the clauses.
-    {E, Vs} = case s__get_pmatch(S) of
+case_expr(E, Env, Ren, Ctxt, S0) ->
+    {A, S1} = expr(cerl:case_arg(E), Env, Ren, Ctxt, S0),
+    {Cs, S2} = clause_list(cerl:case_clauses(E), Env, Ren, Ctxt, S1),
+    case s__get_revisit(S2) of
+	false ->
+	    {E1, Vs, S3} = pmatch(Cs, Env, Ren, Ctxt, S2),
+	    {cerl:c_let(Vs, A, E1), S3};
+	true ->
+	    {cerl:c_case(A, Cs), S2}
+    end.
+
+%% Note: There is an ordering problem with switch-clauses and pattern
+%% matching compilation. We must process any receive-clauses first,
+%% making the message queue operations explicit, before we can do
+%% pattern matching compilation. However, the latter can introduce new
+%% expressions - in particular new guards - which also need processing.
+%% Hence, we must process the clauses, then do pattern matching
+%% compilation, and then re-visit the resulting expression with pattern
+%% matching compilation disabled.
+
+pmatch(Cs, Env, _Ren, Ctxt, S0) ->
+    {E, Vs} = case s__get_pmatch(S0) of
 		  true ->
-		      cerl_pmatch:clauses(Cs1, Env);
+		      cerl_pmatch:clauses(Cs, Env);
 		  no_duplicates ->
 		      put('cerl_pmatch_duplicate_code', never),
-		      cerl_pmatch:clauses(Cs1, Env);
+		      cerl_pmatch:clauses(Cs, Env);
 		  duplicate_all ->
 		      put('cerl_pmatch_duplicate_code', always),
-		      cerl_pmatch:clauses(Cs1, Env);
-		  Other when Other =:= false; Other =:= undefined ->
-		      Vs0 = new_vars(cerl:clause_arity(C), Env),
-		      {cerl:c_case(cerl:c_values(Vs0), Cs1), Vs0}
+		      cerl_pmatch:clauses(Cs, Env);
+		  Other when Other =:= false ->
+		      Vs0 = new_vars(cerl:clause_arity(hd(Cs)), Env),
+		      {cerl:c_case(cerl:c_values(Vs0), Cs), Vs0}
 	      end,
-    %% We must make sure that we also visit any clause guards generated
-    %% by the pattern matching compilation. We pass an empty renaming,
-    %% so we do not rename any variables twice.
-    {E1, S2} = revisit_expr(E, Env, ren__new(), Ctxt, S1),
-    {E1, Vs, S2}.
+    %% Revisit the resulting expression. Pass an empty renaming, since
+    %% all variables in E have already been properly renamed and must
+    %% not be renamed again by accident.
+    {E1, S1} = expr(E, Env, ren__new(), Ctxt, s__set_revisit(true, S0)),
+    {E1, Vs, s__set_revisit(false, S1)}.
 
 clause_list(Cs, Env, Ren, Ctxt, S) ->
     list(Cs, Env, Ren, Ctxt, S, fun clause/5).
@@ -259,41 +275,6 @@ clause(E, Env, Ren, Ctxt, S0) ->
     {G, S1} = guard_expr(cerl:clause_guard(E), Env1, Ren1, Ctxt, S0),
     {B, S2} = expr(cerl:clause_body(E), Env1, Ren1, Ctxt, S1),
     {cerl:update_c_clause(E, Ps, G, B), S2}.
-
-%% This does what 'expr' does, but only recurses into clause guard
-%% expressions, 'case'-expressions, and the bodies of lets and letrecs.
-%% Note that revisiting should not add further renamings, and we simply
-%% ignore making any bindings at all at this level.
-
-revisit_expr(E, Env, Ren, Ctxt, S0) ->
-    %% Also enable peephole optimizations here.
-    revisit_expr_1(cerl_lib:reduce_expr(E), Env, Ren, Ctxt, S0).
-
-revisit_expr_1(E, Env, Ren, Ctxt, S0) ->
-    case cerl:type(E) of
- 	'case' ->
-	    {Cs, S1} = revisit_clause_list(cerl:case_clauses(E), Env,
-					   Ren, Ctxt, S0),
-	    {cerl:update_c_case(E, cerl:case_arg(E), Cs), S1};
-	'let' ->
-	    {B, S1} = revisit_expr(cerl:let_body(E), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_let(E, cerl:let_vars(E), cerl:let_arg(E), B),
-	     S1};
-	'letrec' ->
-	    {B, S1} = revisit_expr(cerl:letrec_body(E), Env, Ren, Ctxt, S0),
-	    {cerl:update_c_letrec(E, cerl:letrec_defs(E), B), S1};
-	_ ->
-	    {E, S0}
-    end.
-
-revisit_clause_list(Cs, Env, Ren, Ctxt, S) ->
-    list(Cs, Env, Ren, Ctxt, S, fun revisit_clause/5).
-
-revisit_clause(E, Env, Ren, Ctxt, S0) ->
-    %% Ignore the bindings.
-    {G, S1} = guard_expr(cerl:clause_guard(E), Env, Ren, Ctxt, S0),
-    {B, S2} = revisit_expr(cerl:clause_body(E), Env, Ren, Ctxt, S1),
-    {cerl:update_c_clause(E, cerl:clause_pats(E), G, B), S2}.
 
 %% We use the no-shadowing strategy, renaming variables on the fly and
 %% only when necessary to uphold the invariant.
@@ -568,12 +549,18 @@ catch_expr(E, Env, Ren, Ctxt, S) ->
 %%	after T -> A end
 
 receive_expr(E, Env, Ren, Ctxt, S0) ->
-    Cs = cerl:receive_clauses(E),
-    {B, Vs, S1} = clauses(receive_clauses(Cs), Env, Ren, Ctxt, S0),
-    {T, S2} = expr(cerl:receive_timeout(E), Env, Ren, Ctxt, S1),
-    {A, S3} = expr(cerl:receive_action(E), Env, Ren, Ctxt, S2),
-    Cs1 = [cerl:c_clause(Vs, B)],
-    {cerl:update_c_receive(E, Cs1, T, A), S3}.
+    case s__get_revisit(S0) of
+	false ->
+	    Cs = receive_clauses(cerl:receive_clauses(E)),
+	    {Cs1, S1} = clause_list(Cs, Env, Ren, Ctxt, S0),
+	    {B, Vs, S2} = pmatch(Cs1, Env, Ren, Ctxt, S1),
+	    {T, S3} = expr(cerl:receive_timeout(E), Env, Ren, Ctxt, S2),
+	    {A, S4} = expr(cerl:receive_action(E), Env, Ren, Ctxt, S3),
+	    {cerl:update_c_receive(E, [cerl:c_clause(Vs, B)], T, A), S4};
+	true ->
+	    %% we should never enter a receive-expression twice
+	    {E, S0}
+    end.
 
 receive_clauses([C | Cs]) ->
     Call = cerl:c_primop(cerl:c_atom(?PRIMOP_RECEIVE_SELECT), []),
@@ -636,9 +623,10 @@ ren__map(Key, Ren) ->
 %% ---------------------------------------------------------------------
 %% State
 
-%%-type(t_pmatch(), 'true' | 'false' | 'no_duplicates' | 'duplicate_all').
+%% pmatch = 'true' | 'false' | 'no_duplicates' | 'duplicate_all'
 
--record(state, {module::atom(), function::atom(), pmatch=true}).
+-record(state, {module::atom(), function::atom(), pmatch=true,
+		revisit = false}).
 
 s__new(Module) ->
     #state{module = Module}.
@@ -657,3 +645,9 @@ s__set_pmatch(V, S) ->
 
 s__get_pmatch(S) ->
     S#state.pmatch.
+
+s__set_revisit(V, S) ->
+    S#state{revisit = V}.
+
+s__get_revisit(S) ->
+    S#state.revisit.

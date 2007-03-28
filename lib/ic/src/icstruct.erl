@@ -251,8 +251,6 @@ extract_dim({tk_array, _, D}) ->
     [integer_to_list(D)].
 
 %% Makes the array name
-mk_array_name(Name,[]) ->
-    Name ++ "[]";
 mk_array_name(Name,Dim) ->
     Name ++ mk_array_name(Dim).
 
@@ -1785,9 +1783,7 @@ mkFileRecObj(G,N,X,erlang) ->
 	    end;
 	_ ->
 	    true
-    end;
-mkFileRecObj(_,_,_,_) ->
-    true.
+    end.
 
 
 %%------------------------------------------------------------
@@ -1815,9 +1811,8 @@ mkFileArrObj(G,N,X,erlang) ->
 	    file:close(Fd);
 	Other -> 
 	    exit(Other)
-    end;
-mkFileArrObj(_,_,_,_) ->
-    true.
+    end.
+
 
 
 

@@ -26,6 +26,15 @@ include(`hipe/hipe_x86_asm.m4')
 #define TEST_GOT_EXN	cmpl	$THE_NON_VALUE,%eax
 #endif'
 
+`#if defined(HEAP_FRAG_ELIM_TEST)
+#define TEST_GOT_MBUF		movl P_MBUF(P), %edx; testl %edx, %edx; jnz 3f; 2:
+#define JOIN3(A,B,C)		A##B##C
+#define HANDLE_GOT_MBUF(ARITY)	3: call JOIN3(nbif_,ARITY,_gc_after_bif); jmp 2b
+#else
+#define TEST_GOT_MBUF		/*empty*/
+#define HANDLE_GOT_MBUF(ARITY)	/*empty*/
+#endif'
+
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
@@ -52,6 +61,7 @@ ASYM($1):
 	NBIF_ARG_REG(0,P)
 	NBIF_ARG(1,1,0)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -60,6 +70,7 @@ ASYM($1):
 	TEST_GOT_EXN
 	jz	nbif_1_simple_exception
 	NBIF_RET(1)
+	HANDLE_GOT_MBUF(1)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -83,6 +94,7 @@ ASYM($1):
 	NBIF_ARG(1,2,0)
 	NBIF_ARG(2,2,1)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -91,6 +103,7 @@ ASYM($1):
 	TEST_GOT_EXN
 	jz	nbif_2_simple_exception
 	NBIF_RET(2)
+	HANDLE_GOT_MBUF(2)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -115,6 +128,7 @@ ASYM($1):
 	NBIF_ARG(2,3,1)
 	NBIF_ARG(3,3,2)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -123,6 +137,7 @@ ASYM($1):
 	TEST_GOT_EXN
 	jz	nbif_3_simple_exception
 	NBIF_RET(3)
+	HANDLE_GOT_MBUF(3)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -155,6 +170,7 @@ ASYM($1):
 	NBIF_ARG_REG(0,P)
 	NBIF_ARG(1,1,0)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -166,6 +182,7 @@ ASYM($1):
 1:
 	movl	`$'ASYM($1), %edx	/* resumption address */
 	jmp	nbif_1_hairy_exception
+	HANDLE_GOT_MBUF(1)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -192,6 +209,7 @@ ASYM($1):
 	NBIF_ARG(1,2,0)
 	NBIF_ARG(2,2,1)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
@@ -203,6 +221,7 @@ ASYM($1):
 1:
 	movl	`$'ASYM($1), %edx	/* resumption address */
 	jmp	nbif_2_hairy_exception
+	HANDLE_GOT_MBUF(2)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -231,12 +250,14 @@ ASYM($1):
 	/* make the call on the C stack */
 	NBIF_ARG_REG(0,P)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(0)
+	HANDLE_GOT_MBUF(0)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -259,12 +280,14 @@ ASYM($1):
 	NBIF_ARG_REG(0,P)
 	NBIF_ARG(1,1,0)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(1)
+	HANDLE_GOT_MBUF(1)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -288,12 +311,14 @@ ASYM($1):
 	NBIF_ARG(1,2,0)
 	NBIF_ARG(2,2,1)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(2)
+	HANDLE_GOT_MBUF(2)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')
@@ -318,12 +343,14 @@ ASYM($1):
 	NBIF_ARG(2,3,1)
 	NBIF_ARG(3,3,2)
 	call	CSYM($2)
+	TEST_GOT_MBUF
 
 	/* switch to native stack */
 	SWITCH_C_TO_ERLANG
 
 	/* return */
 	NBIF_RET(3)
+	HANDLE_GOT_MBUF(3)
 	SET_SIZE(ASYM($1))
 	TYPE_FUNCTION(ASYM($1))
 #endif')

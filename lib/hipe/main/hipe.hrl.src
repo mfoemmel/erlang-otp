@@ -6,9 +6,9 @@
 %%              
 %%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: dalu7049 $
-%%              $Date: 2005/02/22 15:12:55 $
-%%              $Revision: 1.4 $
+%%              $Author: kostis $
+%%              $Date: 2007/03/08 16:42:29 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%
 %% Defines:
@@ -20,8 +20,8 @@
 %%  WARNING_MSG/2      - Prints a tagged warning.
 %%  error_msg/2        - Logs a tagged error.
 %%  debug_msg/2        - Prints a tagged msg if DEBUG is defined.
-%%  IF_DEBUG(A,B)      - Excutes A if DEBUG is defined B otherwise.    
-%%  IF_DEBUG(Lvl, A,B) - Excutes A if DEBUG is defined to a value >= Lvl 
+%%  IF_DEBUG(A,B)      - Executes A if DEBUG is defined B otherwise.    
+%%  IF_DEBUG(Lvl,A,B)  - Executes A if DEBUG is defined to a value >= Lvl 
 %%                       otherwise B is executed.    
 %%  EXIT               - Exits with added module and line info.
 %%  ASSERT             - Exits if the expresion does not evaluate to true.

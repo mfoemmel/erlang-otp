@@ -56,7 +56,7 @@
 -export([parse/1, eval/1, eval/2, report/2, test/2]). % Public
 -export([test_eval/2]).                               % Internal
 
--include("megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 -include("megaco_message_internal.hrl").
 -include_lib("megaco/src/text/megaco_text_tokens.hrl").
 
@@ -68,6 +68,7 @@
 		 long  	    = timer_to_millis(9),
 		 duration   = 100,      % (not used) 100 ms <-> 9.9 sec
 		 unexpected = reject}). % ignore | reject
+
 
 %%----------------------------------------------------------------------
 %% Parses a digit map body, represented as a list of chars,

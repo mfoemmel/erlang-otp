@@ -764,9 +764,9 @@ encode_As(Vsn, [{AName, X}|As], Flags, Acc) ->
 	     encode_As(Vsn, As,Flags bor ?SSH_FILEXFER_ATTR_UIDGID,
 		       [?uint32(X) | Acc]);
 	ownergroup when Vsn>=5 ->
-	    X1 = integer_to_list(X),		% KOLLA ÄGARE OCH GRUPPNAMN HÄR
+	    X1 = list_to_binary(integer_to_list(X)),		% KOLLA ÄGARE OCH GRUPPNAMN HÄR
 	    encode_As(Vsn, As,Flags bor ?SSH_FILEXFER_ATTR_OWNERGROUP,
-		      [?string(X1) | Acc]);
+		      [?binary(X1) | Acc]);
 	permissions ->
 	    encode_As(Vsn, As,Flags bor ?SSH_FILEXFER_ATTR_PERMISSIONS,
 		      [?uint32(X) | Acc]);
@@ -948,7 +948,7 @@ encode_acl_items([]) ->
     [].
 
 
-decode_acl(<<?UINT32(Count), Tail>>) ->
+decode_acl(<<?UINT32(Count), Tail/binary>>) ->
     decode_acl_items(Count, Tail, []).
 
 decode_acl_items(0, Tail, Acc) -> 
@@ -963,8 +963,6 @@ decode_acl_items(I, <<?UINT32(Type),
 				      flag = decode_ace_flag(Flag),
 				      mask = decode_ace_mask(Mask),
 				      who = binary_to_list(BWho)} | Acc]).
-
-
 
 encode_extensions(Exts) ->
     Count = length(Exts),

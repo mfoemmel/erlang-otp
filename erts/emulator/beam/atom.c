@@ -304,7 +304,7 @@ init_atom_table(void)
 void
 dump_atoms(int to, void *to_arg)
 {
-    int i = erts_atom_table.size;
+    int i = erts_atom_table.entries;
 
     /*
      * Print out the atom table starting from the end.

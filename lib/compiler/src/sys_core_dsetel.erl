@@ -216,27 +216,27 @@ restore_vars([], _, Env1) ->
 %%       X1
 
 rewrite(#c_let{vars=[#c_var{name=X}=V]=Vs,
-	       arg=#c_call{module=#c_atom{val='erlang'},
-			   name=#c_atom{val='setelement'},
-			   args=[#c_int{val=Index1}, _Tuple, _Val1]
+	       arg=#c_call{module=#c_literal{val='erlang'},
+			   name=#c_literal{val='setelement'},
+			   args=[#c_literal{val=Index1}, _Tuple, _Val1]
 			  }=A,
- 	       body=#c_call{anno=Banno,module=#c_atom{val='erlang'},
- 			    name=#c_atom{val='setelement'},
-  			    args=[#c_int{val=Index2},
+ 	       body=#c_call{anno=Banno,module=#c_literal{val='erlang'},
+ 			    name=#c_literal{val='setelement'},
+  			    args=[#c_literal{val=Index2},
 				  #c_var{name=X},
 				  Val2]
   			   }
 	      }=R,
 	_BodyEnv, FinalEnv)
-  when integer(Index1), integer(Index2), Index2 > 0, Index1 > Index2 ->
+  when is_integer(Index1), is_integer(Index2), Index2 > 0, Index1 > Index2 ->
     case is_safe(Val2) of
 	true ->
 	    {R#c_let{vars=Vs,
 		     arg=A,
 		     body=#c_seq{arg=#c_primop{
 				   anno=Banno,
-				   name=#c_atom{val='dsetelement'},
-				   args=[#c_int{val=Index2},
+				   name=#c_literal{val='dsetelement'},
+				   args=[#c_literal{val=Index2},
 					 V,
 					 Val2]},
 				 body=V}
@@ -256,15 +256,15 @@ rewrite(#c_let{vars=[#c_var{name=X}=V]=Vs,
 %% if X1 is used exactly once.
 
 rewrite(#c_let{vars=[#c_var{name=X1}],
-	       arg=#c_call{module=#c_atom{val='erlang'},
-			   name=#c_atom{val='setelement'},
-			   args=[#c_int{val=Index1}, _Tuple, _Val1]
+	       arg=#c_call{module=#c_literal{val='erlang'},
+			   name=#c_literal{val='setelement'},
+			   args=[#c_literal{val=Index1}, _Tuple, _Val1]
 			  }=A,
 	       body=#c_let{vars=[#c_var{}=V]=Vs,
 			   arg=#c_call{anno=Banno,
-				       module=#c_atom{val='erlang'},
-				       name=#c_atom{val='setelement'},
-				       args=[#c_int{val=Index2},
+				       module=#c_literal{val='erlang'},
+				       name=#c_literal{val='setelement'},
+				       args=[#c_literal{val=Index2},
 					     #c_var{name=X1},
 					     Val2]},
 			   body=B}
@@ -277,8 +277,8 @@ rewrite(#c_let{vars=[#c_var{name=X1}],
 		     arg=A,
 		     body=#c_seq{arg=#c_primop{
 				   anno=Banno,
-				   name=#c_atom{val='dsetelement'},
-				   args=[#c_int{val=Index2},
+				   name=#c_literal{val='dsetelement'},
+				   args=[#c_literal{val=Index2},
 					 V,
 					 Val2]},
 				 body=B}
@@ -293,11 +293,8 @@ rewrite(R, _, FinalEnv) ->
 
 is_safe(#c_var{}) -> true;
 is_safe(#c_fname{}) -> true;
-is_safe(#c_int{}) -> true;
-is_safe(#c_float{}) -> true;
-is_safe(#c_atom{}) -> true;
-is_safe(#c_char{}) -> true;
-is_safe(#c_nil{}) -> true;
+is_safe(#c_literal{val=[_|_]}) -> false;
+is_safe(#c_literal{val=V}) -> not is_tuple(V);
 is_safe(_) -> false.
 
 is_single_use(V, Env) ->

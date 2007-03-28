@@ -1498,10 +1498,12 @@ evaluate_answer(Unknown, Rhead, Vote, Exc, _Log, Local)->
 
 test_exc(#exc{mixed = true}, _, _, {Env, Local}) ->
     {reply, {'EXCEPTION', ?tr_mixed}, {Env, ?etr_set_exc(Local, ?tr_mixed)}};
-test_exc(#exc{rollback = true}, commit, _, {Env, Local}) ->
-    {reply, {'EXCEPTION', ?tr_mixed}, {Env, ?etr_set_exc(Local, ?tr_mixed)}};
-test_exc(#exc{commit = true}, rollback, _, {Env, Local}) ->
-    {reply, {'EXCEPTION', ?tr_mixed}, {Env, ?etr_set_exc(Local, ?tr_mixed)}};
+% Left out for now to avoid dialyzer warning.
+%test_exc(#exc{rollback = true}, commit, _, {Env, Local}) ->
+%    {reply, {'EXCEPTION', ?tr_mixed}, {Env, ?etr_set_exc(Local, ?tr_mixed)}};
+% Left out for now to avoid dialyzer warning.
+%test_exc(#exc{commit = true}, rollback, _, {Env, Local}) ->
+%    {reply, {'EXCEPTION', ?tr_mixed}, {Env, ?etr_set_exc(Local, ?tr_mixed)}};
 test_exc(#exc{hazard = true}, _, _, {Env, Local}) ->
     {reply, {'EXCEPTION', ?tr_hazard}, {Env, ?etr_set_exc(Local, ?tr_hazard)}};
 test_exc(_, _, {'EXCEPTION', E}, {Env, Local}) 

@@ -77,7 +77,7 @@ typedef struct {
 
 #define ERL_DRV_EXTENDED_MARKER		(0xfeeeeeed)
 #define ERL_DRV_EXTENDED_MAJOR_VERSION	1
-#define ERL_DRV_EXTENDED_MINOR_VERSION	0
+#define ERL_DRV_EXTENDED_MINOR_VERSION	1
 
 /*
  * The emulator will refuse to load a driver with different major
@@ -151,6 +151,8 @@ typedef struct {
     char *otp_release;
     int thread_support;
     int smp_support;
+    int async_threads;
+    int scheduler_threads;
 }  ErlDrvSysInfo;
 
 typedef struct {

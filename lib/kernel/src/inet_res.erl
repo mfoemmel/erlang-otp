@@ -92,11 +92,8 @@ nslookup2(Name, Class, Type, Timer) ->
 nslookup1(Name, Class, Type, Ns, Timer) ->
     case nsdname(Name) of
 	{ok, Nm} ->
-	    case res_mkquery(Nm, Class, Type) of
-		{ok, Id, Buffer} ->
-		    res_send2(Id, Buffer, Ns, Timer);
-		Error -> Error
-	    end;
+	    {ok, Id, Buffer} = res_mkquery(Nm, Class, Type),
+	    res_send2(Id, Buffer, Ns, Timer);
 	Error -> Error
     end.
 
@@ -150,21 +147,18 @@ gethostbyaddr_tm(_,_) -> {error, formerr}.
 %%  2. the list of alternaive name servers
 %%
 res_gethostbyaddr(Addr, IP, Timer) ->
-    case res_mkquery(Addr, in, ptr) of
-	{ok, Id, Buffer} ->
-	    case res_send2(Id, Buffer, res_option(nameserver),Timer) of
-		{ok, Rec} ->
-		    if length(Rec#dns_rec.anlist) == 0 ->
-			    alt_gethostbyaddr(Id, Buffer, IP, 
-					      {error, nxdomain}, Timer);
-		       true ->
-			    inet_db:res_gethostbyaddr(IP, Rec)
-		    end;
-		{error, nxdomain} ->
+    {ok, Id, Buffer} = res_mkquery(Addr, in, ptr),
+    case res_send2(Id, Buffer, res_option(nameserver),Timer) of
+	{ok, Rec} ->
+	    if length(Rec#dns_rec.anlist) == 0 ->
 		    alt_gethostbyaddr(Id, Buffer, IP, 
 				      {error, nxdomain}, Timer);
-		Error -> Error
+	       true ->
+		    inet_db:res_gethostbyaddr(IP, Rec)
 	    end;
+	{error, nxdomain} ->
+	    alt_gethostbyaddr(Id, Buffer, IP, 
+			      {error, nxdomain}, Timer);
 	Error -> Error
     end.
 
@@ -335,13 +329,10 @@ alt_query(Name, ErrReason,Type,Timer) ->
     end.
 
 res_getby_query(Name, Ns, Type, Timer) ->
-    case res_mkquery(Name, in, Type) of
-	{ok, Id, Buffer} ->
-	    case res_send2(Id, Buffer, Ns,Timer) of
-		{ok, Rec} ->
-		    inet_db:res_hostent_by_domain(Name, Type, Rec);
-		Error -> Error
-	    end;
+    {ok, Id, Buffer} = res_mkquery(Name, in, Type),
+    case res_send2(Id, Buffer, Ns,Timer) of
+	{ok, Rec} ->
+	    inet_db:res_hostent_by_domain(Name, Type, Rec);
 	Error -> Error
     end.
 
@@ -356,10 +347,8 @@ res_mkquery(Dname, Class, Type) ->
 					   type = Type, 
 					   class = Class } ] },
     ?dbg("Query: ~p~n", [Rec]),
-    case inet_dns:encode(Rec) of
-	{ok, Buffer} -> {ok, ID, Buffer};
-	Error -> Error
-    end.
+    {ok, Buffer} = inet_dns:encode(Rec),
+    {ok, ID, Buffer}.
 
 %%
 %% Send a query to the nameserver and return a reply

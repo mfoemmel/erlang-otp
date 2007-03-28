@@ -30,7 +30,6 @@
 -export([start/1]).
 
 -include("dialyzer.hrl").
--include("hipe_icode_type.hrl").
 
 -record(gui_state, {add_all, add_file, add_rec,
 		    chosen_box, analysis_pid, del_file,
@@ -59,7 +58,8 @@ start(DialyzerOptions = #options{}) ->
 
   {ok,Host} = inet:gethostname(),
   %% --------- Top Window --------------
-  TopWin = gs:window(GS, [{title, "Dialyzer "++?VSN++" @ "++Host}, {configure, true},
+  TopWin = gs:window(GS, [{title, "Dialyzer "++?VSN++" @ "++Host},
+			  {configure, true},
 			  {default, listbox, {bg, white}},
 			  {default, editor, {bg, white}},
 			  {default, entry, {bg, white}},
@@ -400,6 +400,7 @@ gui_loop(State = #gui_state{}) ->
   Stop = State#gui_state.stop,
   Log = State#gui_state.log,
   BackendPid = State#gui_state.backend_pid,
+  Options = State#gui_state.options,
 
   %% --- Menu ---
   Menu = State#gui_state.menu,
@@ -474,16 +475,16 @@ gui_loop(State = #gui_state{}) ->
 	false -> gui_loop(State)
       end;
     {gs, Overview, click, _, _} ->
-      spawn_link(fun()->overview(State)end),
+      spawn_link(fun() -> overview(State) end),
       gui_loop(State);
     {gs, Manual, click, _, _} ->
-      spawn_link(fun()->manual(State)end),
+      spawn_link(fun() -> manual(State) end),
       gui_loop(State);
     {gs, HelpWarnings, click, _, _} ->
-      spawn_link(fun()->help_warnings(State)end),
+      spawn_link(fun() -> help_warnings(State) end),
       gui_loop(State);
     {gs, About, click, _, _} ->
-      spawn_link(fun()->about(State)end),
+      spawn_link(fun() -> about(State) end),
       gui_loop(State);
     {gs, SaveLog, click, _, _} ->
       save_log(State),
@@ -492,18 +493,18 @@ gui_loop(State = #gui_state{}) ->
       save_warn(State),
       gui_loop(State);
     {gs, SearchPlt, click, _, _} ->
-      spawn_link(fun()->search_doc_plt(State)end),
+      spawn_link(fun() -> search_doc_plt(State) end),
       gui_loop(State);
     {gs, ShowPlt, click, _, _} ->
-      spawn_link(fun()->show_doc_plt(State)end),
+      spawn_link(fun() -> show_doc_plt(State) end),
       gui_loop(State);
     {gs, Macros, click, _, _} ->
       Self = self(),
-      spawn_link(fun()->macro_dialog(State, Self)end),
+      spawn_link(fun() -> macro_dialog(State, Self) end),
       gui_loop(State);
     {gs, Includes, click, _, _} ->
       Self = self(),
-      spawn_link(fun()->include_dialog(State, Self)end),
+      spawn_link(fun() -> include_dialog(State, Self) end),
       gui_loop(State);
     {new_options, NewOptions} ->
       NewState = State#gui_state{options=NewOptions},
@@ -521,8 +522,16 @@ gui_loop(State = #gui_state{}) ->
       update_editor(State#gui_state.log, LogMsg),
       gui_loop(State);
     {BackendPid, warnings, Warnings} ->
-      WarningString = lists:flatten([io_lib:format("~w: ~s", [Fun, W])
-				     || {Fun, W} <- Warnings]),
+      WarningString = 
+	case Options#options.core_transform of
+	  dataflow ->
+	    lists:flatten([io_lib:format("~w: ~s", [Fun, W])
+			   || {Fun, W} <- Warnings]);
+	  core_warnings ->
+	    lists:flatten([io_lib:format("~s:~w: ~s", 
+					 [filename:basename(File), Line, W])
+			   || {{File, Line}, W} <- Warnings])
+	end,
       update_editor(State#gui_state.warnings_box, WarningString),
       gui_loop(State);
     {BackendPid, inline_warnings, Warnings} ->
@@ -603,7 +612,7 @@ handle_add_rec_click(#gui_state{chosen_box=ChosenBox, file_box=File,
       gs:config(File, [{selection, clear}]),
       Dirs1 = [gs:read(File, {get, X}) || X <- List],
       Dirs2 = ordsets:from_list([filename:join(FWD, X) || X <- Dirs1]),
-      Dirs3 = ordsets:filter(fun(X)->filelib:is_dir(X)end, Dirs2),
+      Dirs3 = ordsets:filter(fun(X) -> filelib:is_dir(X) end, Dirs2),
       TargetDirs = ordsets:union(Dirs3, all_subdirs(Dirs3)),
       case gs:read(Mode#mode.start_byte_code, select) of
       true -> 
@@ -635,7 +644,7 @@ handle_add_files(#gui_state{chosen_box=ChosenBox, file_box=File,
 
 filter_mods(Mods, Extension) ->
   Fun = fun(X) -> 
-	    filename:extension(X)==Extension 
+	    filename:extension(X) =:= Extension
 	      orelse 
 		(filelib:is_dir(X) andalso
 		 contains_files(X, Extension))
@@ -644,7 +653,7 @@ filter_mods(Mods, Extension) ->
 
 contains_files(Dir, Extension) ->
   {ok, Files} = file:list_dir(Dir),
-  lists:any(fun(X)->filename:extension(X)==Extension end,Files).
+  lists:any(fun(X) -> filename:extension(X) =:= Extension end,Files).
 
 add_files(Add, ChosenBox, Type) ->
   Set = gs:read(ChosenBox, items),
@@ -657,7 +666,7 @@ add_files(Add, ChosenBox, Type) ->
   gs:config(ChosenBox, [{items, Files}]),
   ok.
 
-handle_file_delete(#gui_state{chosen_box=ChosenBox})->
+handle_file_delete(#gui_state{chosen_box=ChosenBox}) ->
   case gs:read(ChosenBox, selection) of
     [] ->
       ok;
@@ -701,13 +710,12 @@ change_dir_or_add_file(S = #gui_state{file_wd=FWD, mode=Mode},
       S
   end.
 
-butlast([H1, H2 | T])->
+butlast([H1, H2 | T]) ->
   [H1 | butlast([H2|T])];
 butlast([_]) ->
   [];
 butlast([]) ->
   ["/"].
-  
 
 change_dir_absolute(S = #gui_state{file_wd=FWD, dir_entry=DirEntry,
 				   file_box=File}, 
@@ -874,7 +882,7 @@ dialog_loop(Ok, Cancel, Win, TopWin) ->
       dialog_loop(Ok, Cancel, Win, TopWin)
   end.
 
-maybe_quit(State=#gui_state{top=TopWin})->
+maybe_quit(State=#gui_state{top=TopWin}) ->
   case dialog(State, "Do you really want to quit?", "Yes", "No") of
     true ->
       flush(),
@@ -1505,7 +1513,7 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
       true -> EmptyPlt;
       false -> InitPlt0
     end,
-  CoreTransform = dataflow,
+  CoreTransform = Options#options.core_transform,
 %%    case gs:read(Mode#mode.dataflow, select) of
 %%      true -> dataflow;
 %%      false -> succ_typings
@@ -1521,7 +1529,7 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
 	    start_from=StartFrom}.
 	    
 
-get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom)->
+get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
   Files = gs:read(ChosenBox, items),
   FilteredMods =
     case StartFrom of

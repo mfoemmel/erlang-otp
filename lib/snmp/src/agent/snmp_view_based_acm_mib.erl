@@ -674,7 +674,7 @@ spx(0, _L1, L2) -> L2;
 spx(N, L1, [H | L2]) -> spx(N-1, [H | L1], L2).
 
 mk_row(Cols) -> 
-    ch_row(Cols, {noinit, "", "", "", ?'StorageType_volatile', noinit}).
+    ch_row(Cols, {noinit, "", "", "", ?'StorageType_nonVolatile', noinit}).
 
 ch_row([], Row) -> Row;
 ch_row([{Col, Val} | T], Row) -> ch_row(T, setelement(Col-3, Row, Val)).

@@ -924,21 +924,13 @@ analyse_call_or_enter_fun(Fun, Args, Key, Dsts, Info, CallType) ->
       ?call_or_enter_debug("not analysed", []),
       get_range_from_dst_annotation(Key, Dsts);
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
-      ?call_or_enter_debug("bs1", []),
-      {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, length(Args) =:= 4),
-      range_init(Key, {Min, Max}, false);
-    {hipe_bs_primop, {bs_get_integer_2, Size, Flags}} ->
       ?call_or_enter_debug("bs2", []),
       {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, length(Args) =:= 1),					
       range_init(Key, {Min, Max}, false);
     {hipe_bs_primop, _} = Primop ->
       ?call_or_enter_debug("bs3 ~p ~n", [Primop]),
       Type = hipe_icode_primops:type(Primop),
-      get_range_from_annotation(Type, Key);
-    {hipe_bsi_primop, {bs_get_integer, Size, Flags}} ->
-      ?call_or_enter_debug("bs4", []),
-      {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, true),
-      range_init(Key, {Min, Max}, false)
+      get_range_from_annotation(Type, Key)
   end.
 
 %% @doc
@@ -984,20 +976,7 @@ basic_type('extra_unsafe_sub') ->
 
 %% Binaries
 basic_type({hipe_bs_primop, Todo}) -> {hipe_bs_primop, Todo};
-basic_type({hipe_bs_primop2, Todo}) -> {hipe_bs_primop, Todo};
-basic_type({hipe_bsi_primop,{bs_get_integer, Size, _B, Flags}}) -> 
-  {hipe_bsi_primop,{bs_get_integer, Size, Flags}}; 
-basic_type({hipe_bsi_primop,bs_get_orig}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_get_orig_offset}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_get_size}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_add}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_div_test}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_size_test_all}) -> not_analysed;
-basic_type({hipe_bsi_primop,{bs_get_binary_all,_A,_B}}) -> not_analysed;
-basic_type({hipe_bsi_primop,{bs_make_size,_A}}) -> not_analysed;
-basic_type({hipe_bsi_primop,bs_size_test}) -> not_analysed;
-basic_type({hipe_bsi_primop,{bs_get_binary,_A,_B,_C}}) -> not_analysed;
-basic_type({hipe_bsi_primop,{bs_get_binary,_A,_B}}) -> not_analysed;
+
 
 %% Unknown, other
 basic_type(call_fun) -> not_analysed;
@@ -1824,27 +1803,21 @@ range_tree_is_different(Range_tree1, Range_tree2) ->
       true
   end.
 
-get_edge_tree_list(PredList, Label, Version, Info) ->
+get_edge_tree_list(PredList, Label, Info) ->
   lists:map(
     fun(Pred) ->
-	Search_pattern = 
-	  if Version =:= old ->
-	      {old, {Pred, Label}};
-	     true ->
-	      {Pred, Label}
-	  end,
-	info_struct__get_range_tree(Search_pattern, Info)
+	info_struct__get_range_tree({Pred, Label}, Info)
     end,
     PredList).
 
-info_struct__merge_pred_range_trees(Label, Version, Info) ->
+info_struct__merge_pred_range_trees(Label, Info) ->
   StartLabel = info_struct__startlabel(Info),
   Predmap = info_struct__predmap(Info),
   %% io:format("PredMap: ~p, Label: ~p,", [Predmap, Label]),
   Pred = hipe_icode_cfg:pred(Predmap, Label),
-  Pred_range_trees = get_edge_tree_list(Pred, Label, Version, Info),
+  Pred_range_trees = get_edge_tree_list(Pred, Label, Info),
   if Label =:= StartLabel ->
-      [Params] = get_edge_tree_list([params], Label, Version, Info),
+      [Params] = get_edge_tree_list([params], Label, Info),
       New_pred_range_trees = [Params|Pred_range_trees];
      true ->
       New_pred_range_trees = Pred_range_trees
@@ -1872,7 +1845,7 @@ range_tree_range_list_union([{Name, Range}|Range_list], Tree) ->
 in_range_trees_from_info_struct_1(_Info, [], Label_range_tree) ->
   Label_range_tree;
 in_range_trees_from_info_struct_1(Info, [Label|Labels], Label_range_tree) ->
-  Range_tree = info_struct__merge_pred_range_trees(Label, new, Info),
+  Range_tree = info_struct__merge_pred_range_trees(Label, Info),
   %% io:format("Label ~p, ~nIn_Range_tree ~p ~n", [Label, gb_trees:values(Range_tree)]),
   New_label_range_tree = gb_trees:insert(Label, Range_tree, Label_range_tree),
   in_range_trees_from_info_struct_1(Info, Labels, New_label_range_tree).
@@ -1943,7 +1916,7 @@ input_range(Info) ->
 return_range(Info) ->
   Return_info = info_struct__return_vars(Info),
   {Return_variables, Return_labels} = lists:unzip(Return_info),
-  Trees = get_edge_tree_list(Return_labels, return, new, Info), 
+  Trees = get_edge_tree_list(Return_labels, return, Info), 
   Return_ranges = return_ranges(Return_variables, Trees, Info),
   range_union(return_range, Return_ranges).	
 
@@ -2218,66 +2191,128 @@ negwidth(X, N) ->
     false -> negwidth(X, N+1)
   end.
 
-band_if_constant({Min, Max}, Range) ->
-  case var_range__range(Range) of 
-    {Const, Const} when is_integer(Const) ->
-      {Min band Const, Max band Const};
-    _ ->
-      {Min, Max}
-  end.
-
-
 range_band(Name, R1, R2) ->
   {Min1, Max1} = var_range__range(R1),
   {Min2, Max2} = var_range__range(R2),
-  Width = inf_min([width({Min1, Max1}), width({Min2, Max2})]),
-  Min =
-    case inf_geq(Min1, 0) or inf_geq(Min2, 0) of
-      true  -> 0;
-      false -> inf_bsl(-1, Width)
+  Width1 = width({Min1, Max1}),
+  Width2 = width({Min2, Max2}),
+  Range = 
+    case {classify_range(R1), classify_range(R2)} of
+      {minus_minus, minus_minus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), -1};
+      {minus_minus, minus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), Max2};
+      {minus_minus, plus_plus} ->
+	{0, Max2};
+      {minus_plus,  minus_minus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), Max1};
+      {minus_plus,  minus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), inf_max([Max1,Max2])};
+      {minus_plus,  plus_plus} ->
+	{0, Max2};
+      {plus_plus,   minus_minus} ->
+	{0, Max1};
+      {plus_plus,   minus_plus} ->
+	{0, Max1};
+      {plus_plus,   plus_plus} ->
+	{0, inf_min([Max1, Max2])}
     end,
-  Max =
-    case inf_geq(Max1, 0) or inf_geq(Max2, 0) of
-      true  -> inf_add(inf_bsl(1, Width),-1);
-      false -> 0
-    end,
-  DstRange = band_if_constant(band_if_constant({Min, Max}, R1), R2),
-  Ans = range_init(Name, DstRange, false),
-  case (var_range__is_fixnum(R1) or var_range__is_fixnum(R2)) and not var_range__is_fixnum(Ans) of
-    true ->
-      warning("band", {R1, R2, Ans}, true);
-    false ->
-      ok
-  end,
-  Ans.
+  range_init(Name, Range, false).  
 
 range_bor(Name, R1, R2) ->
   {Min1, Max1} = var_range__range(R1),
   {Min2, Max2} = var_range__range(R2),
-  Width = inf_max([width({Min1, Max1}), width({Min2, Max2})]),
-  Min =
-    case inf_geq(Min1, 0) and inf_geq(Min2, 0) of
-      true  -> 0;
-      false -> inf_bsl(-1, Width)
-    end,	  
-  Max =
-    case inf_geq(Max1, 0) and inf_geq(Max2, 0) of
-      true  -> inf_add(inf_bsl(1, Width), -1);
-      false -> -1
+  Width1 = width({Min1, Max1}),
+  Width2 = width({Min2, Max2}),
+  Range = 
+    case {classify_range(R1), classify_range(R2)} of
+      {minus_minus, minus_minus} ->
+	{inf_max([Min1, Min2]), -1};
+      {minus_minus, minus_plus} ->
+	{Min1, -1};
+      {minus_minus, plus_plus} ->
+	{Min1, -1};
+      {minus_plus,  minus_minus} ->
+	{Min2, -1};
+      {minus_plus,  minus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_min([Min1, Min2]), inf_add(-1,inf_bsl(1, Width))};
+      {minus_plus,  plus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{Min1, inf_add(-1,inf_bsl(1, Width))};
+      {plus_plus,   minus_minus} ->
+	{Min2, -1};
+      {plus_plus,   minus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{Min2, inf_add(-1,inf_bsl(1, Width))};
+      {plus_plus,   plus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{0, inf_add(-1,inf_bsl(1, Width))}
     end,
-  Ans = range_init(Name, {Min, Max}, false),
-  case (var_range__is_fixnum(R1) and var_range__is_fixnum(R2)) and not var_range__is_fixnum(Ans) of
-    true ->
-      warning("bor", {R1, R2, Ans}, true);
-    false ->
-      ok
-  end,
-  Ans.
+  range_init(Name, Range, false).  
 
+classify_range(Range) ->
+  case var_range__range(Range) of
+    {neginf, Number} when is_integer(Number), Number < 0 -> minus_minus;
+    {neginf, Number} when is_integer(Number), Number >= 0 -> minus_plus;
+    {Number, posinf} when is_integer(Number), Number < 0 -> minus_plus;
+    {Number, posinf} when is_integer(Number), Number >= 0 -> plus_plus;
+    {neginf, posinf} -> minus_plus;
+    {Number1,Number2} when is_integer(Number1), is_integer(Number2) ->
+      classify_int_range(Number1, Number2)
+  end.
 
+classify_int_range(Number1,_Number2) when Number1 >= 0 ->
+  plus_plus;
+classify_int_range(_Number1,Number2) when Number2 < 0 ->
+  minus_minus;
+classify_int_range(_Number1,_Number2) ->
+  minus_plus.
+       
 range_bxor(Name, R1, R2) ->
-  range_bor(Name, R1, R2). %% overapproximation 
-
+  {Min1, Max1} = var_range__range(R1),
+  {Min2, Max2} = var_range__range(R2),
+  Width1 = width({Min1, Max1}),
+  Width2 = width({Min2, Max2}),
+  Range = 
+    case {classify_range(R1), classify_range(R2)} of
+      {minus_minus, minus_minus} ->
+	Width = inf_max([Width1, Width2]),
+	{0, inf_add(-1,inf_bsl(1, Width))};
+      {minus_minus, minus_plus} ->
+	MinWidth = inf_max([Width1,width({0,Max2})]),
+	MaxWidth = inf_max([Width1,width({Min2,-1})]),
+	{inf_bsl(-1, MinWidth), inf_add(-1,inf_bsl(1, MaxWidth))};
+      {minus_minus, plus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), -1};
+      {minus_plus,  minus_minus} ->
+	MinWidth = inf_max([Width2,width({0,Max1})]),
+	MaxWidth = inf_max([Width2,width({Min1,-1})]),
+	{inf_bsl(-1, MinWidth), inf_add(-1,inf_bsl(1, MaxWidth))};
+      {minus_plus,  minus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), inf_add(-1,inf_bsl(1, Width))};
+      {minus_plus,  plus_plus} ->
+	MinWidth = inf_max([Width2,width({Min1,-1})]),
+	MaxWidth = inf_max([Width2,width({0,Max1})]),
+	{inf_bsl(-1, MinWidth), inf_add(-1,inf_bsl(1, MaxWidth))};
+      {plus_plus,   minus_minus} ->
+	Width = inf_max([Width1, Width2]),
+	{inf_bsl(-1, Width), -1};
+      {plus_plus,   minus_plus} ->
+	MinWidth = inf_max([Width1,width({Min2,-1})]),
+	MaxWidth = inf_max([Width1,width({0,Max2})]),
+	{inf_bsl(-1, MinWidth), inf_add(-1,inf_bsl(1, MaxWidth))};
+      {plus_plus,   plus_plus} ->
+	Width = inf_max([Width1, Width2]),
+	{0, inf_add(-1,inf_bsl(1, Width))}
+    end,
+  range_init(Name, Range, false).  
 %% Propagation
 
 range_remove_constant(Range1, #var_range{range=empty}) ->
@@ -2590,6 +2625,8 @@ inf_bsl(_, posinf) -> neginf;
 inf_bsl(Number, neginf) when Number >= 0 -> 0;
 inf_bsl(_Number, neginf) -> -1;
 inf_bsl(Number1, Number2) -> 
+  %% We can not shift left with a number which is not a fixnum. We
+  %% don't have enough memory.
   Bits = ?BITS,
   if Number2 > (Bits bsl 1) -> inf_bsl(Number1, posinf);
      Number2 < (-Bits bsl 1) ->	inf_bsl(Number1, neginf);
@@ -2649,45 +2686,136 @@ info(New, Old, true) ->
 info(_, _, false) ->
   ok. 
 
+perform_ops2(Op,R1,R2) ->
+  {Min1, Max1} = var_range__range(R1),
+  {Min2, Max2} = var_range__range(R2),
+  List = [Op(X,Y) || X <- lists:seq(Min1,Max1),
+		     Y <- lists:seq(Min2,Max2)],
+  {lists:min(List),lists:max(List)}.
+
+perform_ops1(Op,R1) ->
+  {Min1, Max1} = var_range__range(R1),
+  List = [Op(X) || X <- lists:seq(Min1,Max1)],
+  {lists:min(List),lists:max(List)}.
+
+compare(Range,{Min2,Max2},OpName,Input) ->		     
+  {Min1, Max1} = var_range__range(Range),
+  if is_atom(Min1)  ->
+      io:format("Lower Limit overapproximated by infinity for operation ~p~nInput: ~p~n",
+		[OpName,Input]);
+     is_atom(Max1)  ->
+      io:format("Upper Limit overapproximated by infinity for operation ~p~nInput: ~p~n",
+		[OpName,Input]);
+     true ->
+      Diff = Min2-Min1,
+      if Diff > 0 ->
+	  %%io:format("Lower limit overapproximated ~p units for operation ~p~n",
+	  %%	    [Diff,OpName]),
+	  ok;
+	 Diff == 0 ->
+	  ok;
+	 Diff < 0 ->
+	  io:format("ERROR:~nIllegal Range for operation ~p~nReal value ~p with lower limit ~p~nInput: ~p~n",
+		    [OpName,Min2,Min1,Input])
+      end,
+      Diff2 = Max1-Max2,
+      if Diff2 > 0 ->
+	  %%io:format("Upper limit overapproximated ~p units for operation ~p~n",
+	  %%	    [Diff2,OpName]),
+	  ok;
+	 Diff2 == 0 ->
+	  ok;
+	 Diff2 < 0 ->
+	  io:format("Illegal Range for operation ~p~nReal value ~p with upper limit ~p~nInput: ~p~n",
+		    [OpName,Max2,Max1,Input])
+      end
+  end.
+
+one_test({Fun1,Fun2,Name},Range) ->
+  R = range_init(a, Range, false),
+  compare(Fun2(R),perform_ops1(Fun1, R), Name,Range).
+
+two_test({Fun1,Fun2,Name},Range1,Range2) ->
+  R1 = range_init(a, Range1, false),
+  R2 = range_init(a, Range2, false),
+  compare(Fun2(R1, R2),perform_ops2(Fun1, R1, R2), Name,{Range1,Range2}).
+
+tests('bnot') ->
+  {fun(X) -> bnot X end,
+   fun(X) -> range_bnot(a,X) end,
+   "bnot"};
+tests('band') ->
+  {fun(X,Y) -> X band Y end,
+   fun(X,Y) -> range_band(a,X,Y) end,
+   "band"};
+tests('bor') ->
+  {fun(X,Y) -> X bor Y end,
+   fun(X,Y) -> range_bor(a,X,Y) end,
+   "bor"};
+tests('bxor') ->
+  {fun(X,Y) -> X bxor Y end,
+   fun(X,Y) -> range_bxor(a,X,Y) end,
+   "bxor"};
+tests('bsl') ->
+  {fun(X,Y) -> X bsl Y end,
+   fun(X,Y) -> range_bsl(a,X,Y) end,
+   "bsl"};
+tests('bsr') ->
+  {fun(X,Y) -> X bsr Y end,
+   fun(X,Y) -> range_bsr(a,X,Y) end,
+   "bsr"};
+tests('add') ->
+  {fun(X,Y) -> X + Y end,
+   fun(X,Y) -> range_add(a,X,Y) end,
+   "add"};
+tests('rem') ->
+  {fun(X,Y) -> X rem Y end,
+   fun(X,Y) -> range_rem(a,X,Y) end,
+   "rem"};
+tests('div') ->
+  {fun(X,Y) -> X div Y end,
+   fun(X,Y) -> range_div(a,X,Y) end,
+   "div"}.
+
+variety(Test) ->
+  non_zero(Test),
+  two_test(tests(Test), {0,23}, {-13,3}),
+  two_test(tests(Test), {-7,23}, {-13,3}),
+  two_test(tests(Test), {-89,-60}, {-13,3}),
+  two_test(tests(Test), {0,0}, {-13,3}),
+  two_test(tests(Test), {22,22}, {-13,3}),
+  two_test(tests(Test), {-7894,-7894}, {-13,3}),
+  two_test(tests(Test), {0,23}, {0,0}),
+  two_test(tests(Test), {-7,23}, {0,0}),
+  two_test(tests(Test), {-89,-60}, {0,0}).
+
+non_zero(Test) ->
+  two_test(tests(Test), {0,23}, {12,47}),
+  two_test(tests(Test), {-7,23}, {12,47}),
+  two_test(tests(Test), {-89,-60}, {12,47}),
+  two_test(tests(Test), {0,23}, {-13,-7}),
+  two_test(tests(Test), {-7,23}, {-13,-7}),
+  two_test(tests(Test), {-89,-60}, {-13,-7}),
+  two_test(tests(Test), {0,0}, {12,47}),
+  two_test(tests(Test), {22,22}, {12,47}),
+  two_test(tests(Test), {-7894,-7894}, {12,47}),
+  two_test(tests(Test), {0,0}, {-13,-7}),
+  two_test(tests(Test), {22,22}, {-13,-7}),
+  two_test(tests(Test), {-7894,-7894}, {-13,-7}),
+  two_test(tests(Test), {12,47}, {22,22} ),
+  two_test(tests(Test), {12,47}, {-7894,-7894}),
+  two_test(tests(Test), {-13,-7}, {22,22} ),
+  two_test(tests(Test), {-13,-7}, {-7894,-7894}),
+  two_test(tests(Test), {-13,3}, {22,22}),
+  two_test(tests(Test), {-13,3}, {-7894,-7894}).
+
 test() ->
   put(hipe_target_arch, amd64),
-  %% Bnot
-  A = range_init(a, {11, 17}, false),
-  Ainv = range_init(a, {-18, -12}, false),
-  A = range_bnot(a, Ainv),
-  Ainv = range_bnot(a, A),
-
-  B = range_init(b, {-3, 4}, true),
-  Binv = range_init(b, {-5, 2}, true),
-  Binv = range_bnot(b, B),
-  B = range_bnot(b, Binv),
-
-  %% Band
-  C = range_init(a, {0, 31}, false),
-  C = range_band(a, A, Ainv),
-  D = range_init(a, {-8, 7}, false),
-  D = range_band(a, Ainv, Binv),
-
-  %% Bor
-  E = range_bnot(a, C),
-  E = range_bor(a, A, Ainv),
-  F = range_init(a, {-32, 31}, false),
-  F = range_bor(a, A, Binv),
-
-  %% Add
-  G = range_init(a, {-7, 5}, false),
-  G = range_add(a, A, Ainv),
-  H = range_init(a, {-8, 6}, true),
-  H = range_add(a, B, Binv),
-
-  %% Bsl
-  I = range_init(a, {1, 272}, false),
-  I = range_bsl(a, A, B),
-  J = range_init(a, {-12,16}, false),
-  J = range_bsl(a, B, Binv),
-
-  %% Bsr
-  K = range_init(a, {-96,128}, false),
-  K = range_bsr(a, B, Binv).
-
+  one_test(tests('bnot'), {11,23}),
+  one_test(tests('bnot'), {-15,42}),
+  one_test(tests('bnot'), {-34,-5}),
+  [variety(Test) || Test <- ['band', 'bor', 'bsl', 'bsr', 'add', 'bxor']],
+  [non_zero(Test) || Test <- ['div','rem']],
+  ok.
+ 
 %% vim: set tabstop=2 ft=erlang

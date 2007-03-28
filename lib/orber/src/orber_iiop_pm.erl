@@ -209,9 +209,7 @@ reconfigure(Options, Host, Port, Interface) ->
 		{Local, Proxy} ->
 		    reconfigure_proxy(Proxy, [P]),
 		    gen_server:call(orber_iiop_pm, {reconfigure, Local, 
-						    Host, Port, Interface}, infinity);
-		_ ->
-		    ok
+						    Host, Port, Interface}, infinity)
 	    end;
 	_ ->
 	    {error, "No proxy matched the supplied reference"}

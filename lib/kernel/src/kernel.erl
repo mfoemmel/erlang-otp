@@ -27,20 +27,17 @@
 %%% The kernel is the first application started.
 %%% Callback functions for the kernel application.
 %%%-----------------------------------------------------------------
--record(state, {error_logger_type}).
-
 start(_, []) ->
-    Type = get_error_logger_type(),
     case supervisor:start_link({local, kernel_sup}, kernel, []) of
 	{ok, Pid} ->
-	    swap_error_logger(Type),
-	    {ok, Pid, #state{error_logger_type = Type}};
+	    Type = get_error_logger_type(),
+	    error_logger:swap_handler(Type),
+	    {ok, Pid, []};
 	Error -> Error
     end.
 
 stop(_State) ->
     ok.
-
 
 %%-------------------------------------------------------------------
 %% Some configuration parameters for kernel are changed
@@ -50,22 +47,15 @@ config_change(Changed, New, Removed) ->
     do_global_groups_change(Changed, New, Removed),
     ok.
 
-
 get_error_logger_type() ->
     case application:get_env(kernel, error_logger) of
-	{ok, false} -> undefined;
-	{ok, {file, File}} when list(File) -> {file, File};
 	{ok, tty} -> tty;
-	{ok, Bad} -> exit({bad_config, {kernel, {error_logger, Bad}}});
-	_ -> undefined
+	{ok, {file, File}} when is_list(File) -> {logfile, File};
+	{ok, false} -> false;
+	{ok, silent} -> silent;
+	undefined -> tty; % default value
+	{ok, Bad} -> exit({bad_config, {kernel, {error_logger, Bad}}})
     end.
-
-swap_error_logger(undefined) -> ok;
-swap_error_logger(Type) ->
-    error_logger:swap_handler(args(Type)).
-
-args({file, File}) -> {logfile, File};
-args(X) -> X.
 
 %%%-----------------------------------------------------------------
 %%% The process structure in kernel is as shown in the figure.

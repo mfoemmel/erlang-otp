@@ -3124,13 +3124,17 @@ inform_swarm(Config) when list(Config) ->
 			    p("send notification ~w", [N]),
 			    agent_send_notif(AgentNode, 
 					     testTrapv22, 
-					     {inform2_tag1, Collector},
+					     {{inform2_tag1, N}, Collector},
 					     "standard inform",
 					     []),
-			    %% Sleep 100 ms every tenth notification
+			    %% Sleep some [(N div 10)*100 ms] 
+			    %% every tenth notification
 			    if 
 				N rem 10 == 0 ->
-				    ?SLEEP(100);
+				    %% Time to sleep some
+				    Sleep = (N div 10) * 50,
+				    p("sleep ~w [~w]", [Sleep, N]),
+				    ?SLEEP(Sleep);
 				true ->
 				    ok
 			    end
@@ -3170,7 +3174,25 @@ inform_swarm(Config) when list(Config) ->
 inform_swarm_collector(N) ->
     inform_swarm_collector(N, 0, 0, 0, 10000).
 
-inform_swarm_collector(N, N, N, N, _) ->
+%% Note that we need to deal with re-transmissions!
+%% That is, the agent did not receive the ack in time,
+%% and therefor did a re-transmit. This means that we 
+%% expect to receive more inform's then we actually 
+%% sent. So for sucess we assume: 
+%% 
+%%     SentAckCnt =  N
+%%     RespCnt    =  N
+%%     RecvCnt    >= N
+%% 
+inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, _) 
+  when ((N == SentAckCnt) and 
+	(N == RespCnt)    and
+	(N >= RecvCnt)) ->
+    p("inform_swarm_collector -> done when"
+      "~n   N:          ~w"
+      "~n   SentAckCnt: ~w"
+      "~n   RecvCnt:    ~w"
+      "~n   RespCnt:    ~w", [N, SentAckCnt, RecvCnt, RespCnt]),
     ok;
 inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
     p("inform_swarm_collector -> entry with"
@@ -3179,11 +3201,12 @@ inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
       "~n   RecvCnt:    ~w"
       "~n   RespCnt:    ~w", [N, SentAckCnt, RecvCnt, RespCnt]),
     receive
-	{snmp_targets, inform2_tag1, [_Addr]} ->
-	    p("received inform-sent acknowledgement", []),
+	{snmp_targets, {inform2_tag1, Id}, [_Addr]} ->
+	    p("received inform-sent acknowledgement for ~w", [Id]),
 	    inform_swarm_collector(N, SentAckCnt+1, RecvCnt, RespCnt, 
 				   Timeout);
 
+	%% The manager has received the actual inform
 	{async_event, From, {inform, Pid, Inform}} ->
 	    p("received inform"),
 	    case Inform of
@@ -3200,14 +3223,16 @@ inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt, Timeout) ->
 		    {error, Reason}
 	    end;
 
-	{snmp_notification, inform2_tag1, {got_response, Addr}} ->
-	    p("received expected \"got response\" "
+	%% The agent has received ack from the manager 
+	{snmp_notification, {inform2_tag1, Id}, {got_response, Addr}} ->
+	    p("received expected \"got response\" for ~w"
 	      "notification from: "
 	      "~n   ~p", 
-	      [Addr]),
+	      [Id, Addr]),
 	    inform_swarm_collector(N, SentAckCnt, RecvCnt, RespCnt+1, 
 				   Timeout);
 
+	%% The agent did not received ack from the manager in time 
 	{snmp_notification, inform2_tag1, {no_response, Addr}} ->
 	    p("<ERROR> received expected \"no response\" notification "
 	      "from: "

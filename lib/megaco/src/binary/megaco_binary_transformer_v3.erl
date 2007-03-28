@@ -24,7 +24,7 @@
 -include_lib("megaco/include/megaco.hrl").
 %% -include_lib("megaco/include/megaco_message.hrl").
 -include_lib("megaco/include/megaco_message_v3.hrl").
--include_lib("megaco/src/engine/megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 -export([tr_message/3, tr_transaction/3]).
 

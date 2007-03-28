@@ -22,7 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 #
 
-SUB_DIRECTORIES = src doc/src
+SUB_DIRECTORIES = src examples doc/src
 
 include vsn.mk
 VSN = $(SYNTAX_TOOLS_VSN)
@@ -41,7 +41,7 @@ APP_DIR = $(APP_RELEASE_DIR)/$(DIR_NAME)
 
 APPNAME = syntax_tools
 # BINDIR = ebin
-DOC_OPTS = [{def,{vsn,"$(VSN)"}}]
+DOC_OPTS = [{def,{version,"$(VSN)"}}]
 
 SPECIAL_TARGETS = 
 

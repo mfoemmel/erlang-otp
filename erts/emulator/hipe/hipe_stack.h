@@ -94,8 +94,12 @@ extern void hipe_update_stack_trap(Process*, const struct sdesc*);
 /*
  * GC support procedures
  */
+#ifdef HEAP_FRAG_ELIM_TEST
+extern void fullsweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
+#else
 extern Eterm *fullsweep_nstack(Process *p, Eterm *n_htop);
-extern void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj);
+#endif
+extern void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
 
 #ifdef HYBRID
 #ifdef INCREMENTAL
@@ -103,7 +107,7 @@ extern Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop, Eterm *n_hend);
 #else
 extern Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop);
 #endif
-extern void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj);
+extern void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
 #endif /* HYBRID */
 
 #endif /* HIPE_STACK_H */

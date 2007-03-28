@@ -58,12 +58,14 @@
 		 name=[]}).
 
 %% The following records all have 'a=[]' as their first field.
-%% This is used for name annotations; in particular, the fun-argument
-%% types of a function specification (t_spec) are often annotated with
-%% the names of the corresponding formal parameters.
+%% This is used for name and usage annotations; in particular, the
+%% fun-argument types of a function specification (t_spec) are often
+%% annotated with the names of the corresponding formal parameters,
+%% and/or usage summaries.
 
 -define(t_ann(X), element(2, X)).
 -define(set_t_ann(X, Y), setelement(2, X, Y)).
+-define(add_t_ann(X, Y), ?set_t_ann(X, [Y | ?t_ann(X)])).
 
 %% @type t_var() = #t_var{a = list(), name = [] | atom()}
 

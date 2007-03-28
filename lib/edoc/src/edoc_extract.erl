@@ -36,9 +36,10 @@
 
 %% @type filename() = file:filename()
 
-%% @spec source(File::filename(), Env::edoc_env(), Options::option_list())
+%% @spec source(File::filename(), Env::edoc_env(), Options::proplist())
 %%             -> {ModuleName, edoc_module()}
 %%    ModuleName = atom()
+%%    proplist() = [term()]
 %%
 %% @doc Like {@link source/5}, but reads the syntax tree and the
 %% comments from the specified file.
@@ -53,7 +54,7 @@ source(File, Env, Opts) ->
     source(Forms, Comments, File, Env, Opts).
 
 %% @spec source(Forms, Comments::[comment()], File::filename(),
-%%              Env::edoc_env(), Options::option_list()) ->
+%%              Env::edoc_env(), Options::proplist()) ->
 %%           {ModuleName, edoc_module()}
 %%
 %%    Forms = syntaxTree() | [syntaxTree()]
@@ -82,7 +83,7 @@ source(Forms, Comments, File, Env, Opts) ->
     source(Tree, File, Env, Opts).
 
 %% @spec source(Forms, File::filename(), Env::edoc_env(),
-%%              Options::option_list()) ->
+%%              Options::proplist()) ->
 %%           {ModuleName, edoc_module()}
 %%
 %%	    Forms = syntaxTree() | [syntaxTree()]
@@ -130,7 +131,7 @@ source(Tree, File0, Env, Opts) ->
     {Name, Data}.
 
 
-%% @spec header(File::filename(), Env::edoc_env(), Options::option_list())
+%% @spec header(File::filename(), Env::edoc_env(), Options::proplist())
 %%             -> {ok, Tags} | {error, Reason}
 %%   Tags = [term()]
 %%   Reason = term()
@@ -148,7 +149,7 @@ header(File, Env, Opts) ->
     header(Forms, Comments, File, Env, Opts).
 
 %% @spec header(Forms, Comments::[comment()], File::filename(),
-%%              Env::edoc_env(), Options::option_list()) ->
+%%              Env::edoc_env(), Options::proplist()) ->
 %%       {ok, Tags} | {error, Reason}
 %%   Forms = syntaxTree() | [syntaxTree()]
 %%   Tags = [term()]
@@ -170,7 +171,7 @@ header(Forms, Comments, File, Env, Opts) ->
     header(Tree, File, Env, Opts).
 
 %% @spec header(Forms, File::filename(), Env::edoc_env(),
-%%              Options::option_list()) ->
+%%              Options::proplist()) ->
 %%       {ok, Tags} | {error, Reason}
 %%   Forms = syntaxTree() | [syntaxTree()]
 %%   Tags = [term()]
@@ -216,7 +217,7 @@ add_macro_defs(Defs0, Opts, Env) ->
 
 
 %% @spec file(File::filename(), Context, Env::edoc_env(),
-%%            Options::option_list()) -> {ok, Tags} | {error, Reason}
+%%            Options::proplist()) -> {ok, Tags} | {error, Reason}
 %%   Context = overview | package
 %%   Tags = [term()]
 %%   Reason = term()
@@ -241,7 +242,7 @@ file(File, Context, Env, Opts) ->
 
 
 %% @spec (Text::string(), Context, Env::edoc_env(),
-%%        Options::option_list()) -> Tags
+%%        Options::proplist()) -> Tags
 %%     Context = overview | package
 %%     Tags = [term()]
 %%

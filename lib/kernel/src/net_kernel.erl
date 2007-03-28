@@ -40,32 +40,6 @@
 -define(connect_failure(Node,Term),noop).
 -endif.
 
-
-%-define(mn_debug,1).
-%-define(mn_hard_debug,1).
-
--ifdef(mn_debug).
--define(send_nodeup(Ms, N, T),
-	erlang:display({?LINE, 'NODEUP', N, T}),
-	send_nodeup(Ms, N, T)).
--define(send_nodedown(Ms, N, T, R),
-	erlang:display({?LINE, 'NODEDOWN', N, T, R}),
-	send_nodedown(Ms, N, T, R)).
--ifdef(mn_hard_debug).
--define(mn_send(P, M),
-	erlang:display({P, M}),
-	safesend(P, M)).
--else.
--define(mn_send(P, M), safesend(P, M)).
--endif.
--else.
--define(send_nodeup(Ms, N, T), send_nodeup(Ms, N, T)).
--define(send_nodedown(Ms, N, T, R), send_nodedown(Ms, N, T, R)).
--define(mn_send(P, M), safesend(P, M)).
--endif.
-
-
-
 %% Default ticktime change transition period in seconds
 -define(DEFAULT_TRANSITION_PERIOD, 60).
 
@@ -102,7 +76,6 @@
 	 spawn_func/6,
 	 ticker/2,
 	 ticker_loop/2,
-	 do_nodeup/2,
 	 aux_ticker/4]).
 
 -export([init/1,handle_call/3,handle_cast/2,handle_info/2,
@@ -122,8 +95,6 @@
 	  conn_owners = [], %% List of connection owner pids,
 	  pend_owners = [], %% List of potential owners 
 	  listen,       %% list of  #listen
-	  monitor,      %% list of monitors (#nmon{}) for nodeup/nodedown
-	  pending_nodeup = [],
 	  allowed,       %% list of allowed nodes in a restricted system
 	  verbose = 0,   %% level of verboseness
 	  publish_on_nodes = undefined
@@ -138,9 +109,6 @@
 
 -define(LISTEN_ID, #listen.listen).
 -define(ACCEPT_ID, #listen.accept).
-
--record(pend_nodeup, {node,
-		      pid}).
 
 -record(connection, {
 		     node,          %% remote node name
@@ -166,14 +134,6 @@
 		      how     %% What type of change        : atom()
 		     }).
 
-
--record(nmon, {proc,                       % Process monitoring nodes
-	       want_type = visible,        % Node type(s) monitored
-	       info = false,               % Include info element
-	       node_type = false,          % Node type in info element
-	       nodedown_reason = false}).  % Nodedown reason in info element
-
-
 %% Default connection setup timeout in milliseconds.
 %% This timeout is set for every distributed action during
 %% the connection setup.
@@ -185,8 +145,6 @@
 
 kernel_apply(M,F,A) ->         request({apply,M,F,A}).
 allow(Nodes) ->                request({allow, Nodes}).
-monitor_nodes(Flag) ->         monitor_nodes(Flag, []).
-monitor_nodes(Flag, Opts) ->   request({monitor_nodes, Flag, Opts}).
 longnames() ->                 request(longnames).
 stop() ->                      erl_distribution:stop().
 
@@ -205,6 +163,26 @@ set_net_ticktime(T) when integer(T) ->
     set_net_ticktime(T, ?DEFAULT_TRANSITION_PERIOD).
 get_net_ticktime() ->
     ticktime_res(request(ticktime)).
+
+
+%% The monitor_nodes() feature has been moved into the emulator.
+%% The feature is reached via (intentionally) undocumented process
+%% flags (we may want to move it elsewhere later). In order to easily
+%% be backward compatible, errors are created here when process_flag()
+%% fails.
+monitor_nodes(Flag) ->
+    case catch process_flag(monitor_nodes, Flag) of
+	true -> ok;
+	false -> ok;
+	_ -> mk_monitor_nodes_error(Flag, [])
+    end.
+
+monitor_nodes(Flag, Opts) ->
+    case catch process_flag({monitor_nodes, Opts}, Flag) of
+	true -> ok;
+	false -> ok;
+	_ -> mk_monitor_nodes_error(Flag, Opts)
+    end.
 
 %% ...
 ticktime_res({A, I}) when atom(A), integer(I) -> {A, I div 250};
@@ -337,8 +315,6 @@ init({Name, LongOrShortNames, TickT}) ->
 	    Ticker = spawn_link(net_kernel, ticker, [self(), Ticktime]),
 	    case auth:get_cookie(Node) of
 		Cookie when atom(Cookie) ->
-		    Monitor = std_monitors(),
-		    ?send_nodeup(Monitor, Node, visible),
 		    {ok, #state{name = Name,
 				node = Node,
 				type = LongOrShortNames,
@@ -349,7 +325,6 @@ init({Name, LongOrShortNames, TickT}) ->
 						      protected,
 						      {keypos, 2}]),
 				listen = Listeners,
-				monitor = Monitor,
 				allowed = [],
 				verbose = 0
 			       }};
@@ -436,14 +411,6 @@ handle_call({allow, Nodes}, _From, State) ->
 	false ->
 	    {reply,error,State}
     end;
-
-%% 
-%% Toggle monitor of all nodes. Pid receives {nodeup, Node}
-%% and {nodedown, Node} whenever a node appears/disappears.
-%% 
-handle_call({monitor_nodes, Flag, Opts}, {Pid, _}, State0) ->
-    {Res, State} = monitor_nodes(Flag, Pid, Opts, State0),
-    {reply,Res,State};
 
 %% 
 %% authentication, used by auth. Simply works as this:
@@ -551,9 +518,8 @@ terminate(no_network, State) ->
 	      case Type of
 		  normal -> ?nodedown(Node, State);
 		  _ -> ok
-	      end,
-	      ?send_nodedown(State#state.monitor, Node, Type, no_network)
-      end, get_nodes_with_type(up) ++ [{node(), normal}]);
+	      end
+      end, get_up_nodes() ++ [{node(), normal}]);
 terminate(_Reason, State) ->
     lists:foreach(
       fun(#listen {listen = Listen,module = Mod}) ->
@@ -564,12 +530,8 @@ terminate(_Reason, State) ->
 	      case Type of
 		  normal -> ?nodedown(Node, State);
 		  _ -> ok
-	      end,
-	      ?send_nodedown(State#state.monitor,
-			    Node,
-			    Type,
-			    net_kernel_terminated)
-      end, get_nodes_with_type(up) ++ [{node(), normal}]).
+	      end
+      end, get_up_nodes() ++ [{node(), normal}]).
 
 
 %% ------------------------------------------------------------
@@ -600,50 +562,19 @@ handle_info({accept,AcceptPid,Socket,Family,Proto}, State) ->
 %%
 handle_info({SetupPid, {nodeup,Node,Address,Type,Immediate}}, 
 	    State) ->
-    case ets:lookup(sys_dist, Node) of
-	[Conn] when Conn#connection.state == pending,
-	            Conn#connection.owner == SetupPid ->
+    case {Immediate, ets:lookup(sys_dist, Node)} of
+	{true, [Conn]} when Conn#connection.state == pending,
+			    Conn#connection.owner == SetupPid ->
 	    ets:insert(sys_dist, Conn#connection{state = up,
 						 address = Address,
 						 waiting = [],
 						 type = Type}),
 	    SetupPid ! {self(), inserted},
 	    reply_waiting(Node,Conn#connection.waiting, true),
-	    case Type of
-		normal ->
-		    case Immediate of
-			true ->
-			    ?send_nodeup(State#state.monitor, Node, visible),
-			    {noreply, State};
-			_ ->
-			    Pid = spawn_link(net_kernel, 
-					     do_nodeup, [self(),
-							 Node]),
-			    Pending = State#state.pending_nodeup,
-			    {noreply, 
-			     State#state{pending_nodeup =
-					 [#pend_nodeup{node = Node,
-						       pid = Pid} |
-					  Pending]}}
-		    end;
-		hidden ->
-		    ?send_nodeup(State#state.monitor, Node, hidden),
-		    {noreply, State}
-	    end;
+	    {noreply, State};
 	_ ->
 	    SetupPid ! {self(), bad_request},
 	    {noreply, State}
-    end;
-
-handle_info({From,nodeup,Node}, State) ->
-    Pending = State#state.pending_nodeup,
-    case lookup_pend(Node, Pending) of
-        {ok, NodeUp} when NodeUp#pend_nodeup.pid == From ->
-            ?nodeup(Node, State),
-            ?send_nodeup(State#state.monitor, Node, visible),
-            {noreply, State#state{pending_nodeup = del_pend(Node, Pending)}};
-        _ ->
-            {noreply,State}
     end;
 
 %%
@@ -751,11 +682,6 @@ handle_info(transition_period_end,
     end,
     {noreply,State#state{tick = #tick{ticker = Tckr, time = T}}};
 
-handle_info({From, {set_monitors, ProcList}}, State) ->
-    NewState = set_monitors(ProcList, State),
-    From ! {net_kernel, done},
-    {noreply, NewState};
-
 handle_info(X, State) ->
     error_msg("Net kernel got ~w~n",[X]),
     {noreply,State}.
@@ -767,10 +693,8 @@ handle_info(X, State) ->
 %%    1. The Listen process.
 %%    2. The Accept process.
 %%    3. Connection owning processes.
-%%    4. Pending check nodeup processes.
-%%    5. Processes monitoring nodeup/nodedown.
-%%    6. The ticker process.
-%%   (7. Garbage pid.)
+%%    4. The ticker process.
+%%   (5. Garbage pid.)
 %%
 %% The process type function that handled the process throws 
 %% the handle_info return value !
@@ -783,8 +707,6 @@ do_handle_exit(Pid, Reason, State) ->
     listen_exit(Pid, State),
     accept_exit(Pid, State),
     conn_own_exit(Pid, Reason, State),
-    nodeup_exit(Pid, State),
-    monitor_exit(Pid, State),
     pending_own_exit(Pid, State),
     ticker_exit(Pid, State),
     {noreply,State}.
@@ -819,24 +741,6 @@ conn_own_exit(Pid, Reason, State) ->
 	    throw({noreply, nodedown(Pid, Node, Reason, State)});
 	_ ->
 	    false
-    end.
-
-nodeup_exit(Pid, State) ->
-    Pending = State#state.pending_nodeup,
-    case del_pend(Pid, Pending) of
-	Pending ->
-	    false;
-	NewPend ->
-	    throw({noreply, State#state{pending_nodeup = NewPend}})
-    end.
-
-monitor_exit(Pid, State) ->
-    Monitor = State#state.monitor,
-    case monitor_delete_all(Pid, Monitor) of
-	Monitor ->
-	    false;
-	NewMonitor ->
-	    throw({noreply, State#state{monitor = NewMonitor}})
     end.
 
 pending_own_exit(Pid, State) ->
@@ -917,11 +821,10 @@ pending_nodedown(Conn, Node, Type, State) ->
     end,
     State.
 
-up_pending_nodedown(Conn, Node, Reason, Type, State) ->
+up_pending_nodedown(Conn, Node, _Reason, _Type, State) ->
     AcceptPid = Conn#connection.pending_owner,
     Owners = State#state.conn_owners,
     Pend = lists:keydelete(AcceptPid, 1, State#state.pend_owners),
-    ?send_nodedown(State#state.monitor, Node, Type, Reason),
     Conn1 = Conn#connection { owner = AcceptPid,
 			      pending_owner = undefined,
 			      state = pending },
@@ -930,26 +833,13 @@ up_pending_nodedown(Conn, Node, Reason, Type, State) ->
     State#state{conn_owners = [{AcceptPid,Node}|Owners], pend_owners = Pend}.
 
 
-up_nodedown(_Conn, Node, Reason, Type, State) ->
+up_nodedown(_Conn, Node, _Reason, Type, State) ->
     mark_sys_dist_nodedown(Node),
-    ?send_nodedown(State#state.monitor, Node, Type, Reason),
     case Type of
-	normal ->
-	    ?nodedown(Node, State),
-	    Pending = State#state.pending_nodeup,
-	    case lookup_pend(Node, Pending) of
-		{ok, NodeUp} ->
-		    Pid = NodeUp#pend_nodeup.pid, 
-		    unlink(Pid),
-		    exit(Pid, kill),
-		    State#state{pending_nodeup =
-				del_pend(Pid, Pending)};
-		_ ->
-		    State
-	    end;
-	_ ->
-	    State
-    end.
+	normal -> ?nodedown(Node, State);
+	_ -> ok
+    end,
+    State.
 
 mark_sys_dist_nodedown(Node) ->
     case application:get_env(kernel, dist_auto_connect) of
@@ -965,7 +855,7 @@ mark_sys_dist_nodedown(Node) ->
 
 
 %% -----------------------------------------------------------
-%% node monitoring.
+%% monitor_nodes/[1,2] errors
 %% -----------------------------------------------------------
 
 check_opt(Opt, Opts) ->
@@ -997,148 +887,43 @@ check_opt({Opt, value},
 check_opt(Opt, [OtherOpt | RestOpts], TORes, OtherOpts) ->
     check_opt(Opt, RestOpts, TORes, [OtherOpt | OtherOpts]).
 
-mk_nmon(Proc, Opts) when list(Opts) ->
-    NMon0 = #nmon{proc = Proc},
-    {NMon1, RestOpts1} = case check_opt({node_type, value}, Opts) of
-			     {true, {node_type,Type}, RO1} when Type == visible;
-								Type == hidden;
-								Type == all ->
-				 {NMon0#nmon{want_type = Type,
-					     info = true,
-					     node_type = true}, RO1};
-			     {true, {node_type, _Type} = Opt, _RO1} ->
-				 throw({error, {bad_option_value, Opt}});
-			     false ->
-				 {NMon0, Opts}
-			 end,
-    {NMon2, RestOpts2} = case check_opt(nodedown_reason, RestOpts1) of
-			     {true, nodedown_reason, RO2} ->
-				 {NMon1#nmon{info = true,
-					     nodedown_reason = true}, RO2};
-			     false ->
-				 {NMon1, RestOpts1}
-			 end,
+check_options(Opts) when list(Opts) ->
+    RestOpts1 = case check_opt({node_type, value}, Opts) of
+		    {true, {node_type,Type}, RO1} when Type == visible;
+						       Type == hidden;
+						       Type == all ->
+			RO1;
+		    {true, {node_type, _Type} = Opt, _RO1} ->
+			throw({error, {bad_option_value, Opt}});
+		    false ->
+			Opts
+		end,
+    RestOpts2 = case check_opt(nodedown_reason, RestOpts1) of
+		    {true, nodedown_reason, RO2} ->
+			RO2;
+		    false ->
+			RestOpts1
+		end,
     case RestOpts2 of
-	[] -> NMon2;
-	_ -> {error, {unknown_options, RestOpts2}}
+	[] ->
+	    %% This should never happen since we only call this function
+	    %% when we know there is an error in the option list
+	    {error, internal_error};
+	_ ->
+	    {error, {unknown_options, RestOpts2}}
     end;
-mk_nmon(_Pid, Opts) ->
+check_options(Opts) ->
     {error, {options_not_a_list, Opts}}.
 
-monitor_member(_P, []) -> false;
-monitor_member(P, [#nmon{proc = P}|_]) -> true;
-monitor_member(P, [_|T]) -> monitor_member(P, T).
-
-check_monitor_link(true, Pid, _Monitor) when pid(Pid) ->
-    link(Pid);
-check_monitor_link(false, Pid, Monitor) when pid(Pid) ->
-    %% do unlink if we have no more references to Pid.
-    case monitor_member(Pid, Monitor) of
-	true -> ok;
-	_ -> unlink(Pid)
-    end;
-check_monitor_link(_Flag, _Proc, _Monitor) ->
-    ok.
-
-monitor_nodes(Flag, _Proc, _Opts, State) when Flag /= true,
-					     Flag /= false ->
-    %% Bad flag
-    {error, State};
-monitor_nodes(Flag, Proc, Opts, State) ->
-    case catch mk_nmon(Proc, Opts) of
-	#nmon{} = NMon ->
-	    NewMonitor = case Flag of
-			     true -> [NMon | State#state.monitor];
-			     false -> delete_all(NMon, State#state.monitor)
-			 end,
-	    check_monitor_link(Flag, Proc, NewMonitor),
-	    {ok, State#state{monitor = NewMonitor}};
+mk_monitor_nodes_error(Flag, _Opts) when Flag /= true, Flag /= false ->
+    error;
+mk_monitor_nodes_error(_Flag, Opts) ->
+    case catch check_options(Opts) of
 	{error, _} = Error ->
-	    {Error, State};
+	    Error;
 	UnexpectedError ->
-	    {{error, {internal_error, UnexpectedError}}, State}
+	    {error, {internal_error, UnexpectedError}}
     end.
-
-set_monitors(ProcList, State) when list(ProcList) ->
-    lists:foreach(fun (#nmon{proc = Pid}) when pid(Pid) -> unlink(Pid);
-		      (_) -> ok
-		  end,
-		  State#state.monitor),
-    lists:foldl(fun (Proc, StateAcc) when pid(Proc); atom(Proc) ->
-			{_, NewStateAcc} = monitor_nodes(true,Proc,[],StateAcc),
-			NewStateAcc;
-		    ({Name, Node} = Proc, StateAcc) when atom(Name),
-							 atom(Node)->
-			{_, NewStateAcc} = monitor_nodes(true,Proc,[],StateAcc),
-			NewStateAcc;
-		    (_, StateAcc) ->
-			StateAcc
-		end,
-		State#state{monitor = []},
-		ProcList);
-set_monitors(_, State) ->
-    State#state{monitor = []}.
-
-send_nodeup([], _Node, _Type) ->
-    ok;
-send_nodeup([#nmon{proc = Proc,
-		   want_type = Type,
-		   info = false}|Mons],
-	    Node,
-	    Type) ->
-    ?mn_send(Proc, {nodeup, Node}),
-    send_nodeup(Mons, Node, Type);
-send_nodeup([#nmon{proc = Proc,
-		   want_type = WantType,
-		   info = true,
-		   node_type = GetNodeType}|Mons],
-	    Node,
-	    Type) when WantType == all; WantType == Type ->
-    Info0 = case GetNodeType of
-		true -> [{node_type, Type}];
-		false -> []
-	    end,
-    ?mn_send(Proc, {nodeup, Node, Info0}),
-    send_nodeup(Mons, Node, Type);
-send_nodeup([#nmon{}|Mons], Node, Type) ->
-    send_nodeup(Mons, Node, Type).
-
-send_nodedown([], _Node, _Type, _Reason) ->
-    ok;
-send_nodedown(Mons, Node, normal, Reason) -> % visible also known as normal
-    send_nodedown(Mons, Node, visible, Reason);
-send_nodedown([#nmon{proc = Proc,
-		     want_type = Type,
-		     info = false} | Mons],
-	      Node,
-	      Type,
-	      Reason) ->
-    ?mn_send(Proc, {nodedown, Node}),
-    send_nodedown(Mons, Node, Type, Reason);
-send_nodedown([#nmon{proc = Proc,
-		     want_type = WantType,
-		     info = true,
-		     node_type = GetNodeType,
-		     nodedown_reason = GetNodedownReason} | Mons],
-	      Node,
-	      Type,
-	      Reason) when WantType == all; WantType == Type ->
-    Info0 = case GetNodeType of
-		true -> [{node_type, Type}];
-		false -> []
-	    end,
-    Info1 = case GetNodedownReason of
-	       true -> [{nodedown_reason, Reason}|Info0];
-	       false -> Info0
-	    end,
-    ?mn_send(Proc, {nodedown, Node, Info1}),
-    send_nodedown(Mons, Node, Type, Reason);
-send_nodedown([#nmon{} | Mons], Node, Type, Reason) ->
-    send_nodedown(Mons, Node, Type, Reason).
-
-monitor_delete_all(Proc, [#nmon{proc = Proc}|Tail]) -> delete_all(Proc, Tail);
-monitor_delete_all(Proc, [Head|Tail]) ->  [Head | delete_all(Proc, Tail)];
-monitor_delete_all(_, []) -> [].
 
 % -------------------------------------------------------------
 
@@ -1182,21 +967,17 @@ get_nodes(Key, Which) ->
 	    get_nodes(ets:next(sys_dist, Key), Which)
     end.
 
-get_nodes_with_type(Which) ->
-    get_nodes_with_type(ets:first(sys_dist), Which).
+%% Return a list of all nodes that are 'up'.
+get_up_nodes() ->
+    get_up_nodes(ets:first(sys_dist)).
 
-get_nodes_with_type('$end_of_table', _) ->
-    [];
-get_nodes_with_type(Key, Which) ->
+get_up_nodes('$end_of_table') -> [];
+get_up_nodes(Key) ->
     case ets:lookup(sys_dist, Key) of
- 	[Conn = #connection{state = up}] ->
- 	    [{Conn#connection.node, Conn#connection.type}
-	     | get_nodes_with_type(ets:next(sys_dist, Key), Which)];
- 	[Conn = #connection{}] when Which == all ->
- 	    [{Conn#connection.node, Conn#connection.type}
-	     | get_nodes_with_type(ets:next(sys_dist, Key), Which)];
+ 	[#connection{state=up,node=Node,type=Type}] ->
+ 	    [{Node,Type}|get_up_nodes(ets:next(sys_dist, Key))];
  	_ ->
- 	    get_nodes_with_type(ets:next(sys_dist, Key), Which)
+ 	    get_up_nodes(ets:next(sys_dist, Key))
     end.
 
 ticker(Kernel, Tick) when integer(Tick) ->
@@ -1260,6 +1041,8 @@ send(_From,To,Mess) ->
 	    P ! Mess
     end.
 
+-ifdef(UNUSED).
+
 safesend(Name,Mess) when atom(Name) ->
     case whereis(Name) of 
 	undefined ->
@@ -1268,6 +1051,8 @@ safesend(Name,Mess) when atom(Name) ->
 	    P ! Mess
     end;
 safesend(Pid, Mess) -> Pid ! Mess.
+
+-endif.
 
 do_spawn(SpawnFuncArgs, SpawnOpts, State) ->
     case catch spawn_opt(?MODULE, spawn_func, SpawnFuncArgs, SpawnOpts) of
@@ -1354,41 +1139,6 @@ get_proto_mod(Family,Protocol,[L|Ls]) ->
     end;
 get_proto_mod(_Family, _Protocol, []) ->    
     error.
-
-%% -----------------------------------------------------------
-%% Check if we are authorized after a second.
-%% -----------------------------------------------------------
-
-do_nodeup(Kernel, Node) ->
-    receive
-	after 1000 -> ok   %% sleep a sec, 
-    end,
-    case lists:member(Node, nodes()) of
-	false -> exit(normal);
-	true -> ok
-    end,
-%    We will certainly be authenticated if the node is up.
-%    case auth:is_auth(Node) of
-%	yes ->   Kernel ! {self(), nodeup, Node};
-%	Other -> exit(normal)
-%    end.
-    Kernel ! {self(), nodeup, Node}.
-
-lookup_pend(Node, [NodeUp|_]) when NodeUp#pend_nodeup.node == Node ->
-    {ok, NodeUp};
-lookup_pend(Node, [_|Pending]) ->
-    lookup_pend(Node, Pending);
-lookup_pend(_Node, []) ->
-    false.
-
-del_pend(Node, [NodeUp|T]) when NodeUp#pend_nodeup.node == Node ->
-    T;
-del_pend(Pid, [NodeUp|T]) when NodeUp#pend_nodeup.pid == Pid ->
-    T;
-del_pend(Key, [NodeUp|T]) ->
-    [NodeUp|del_pend(Key, T)];
-del_pend(_, []) ->
-    [].
 
 %% -------- Initialisation functions ------------------------
 
@@ -1561,8 +1311,6 @@ set_node(Node, Creation) when node() == nonode@nohost ->
 set_node(Node, _Creation) when node() == Node ->
     ok.
 
-std_monitors() -> [#nmon{proc = global_group}].
-
 connecttime() ->
     case application:get_env(kernel, net_setuptime) of
 	{ok,Time} when is_number(Time), Time >= 120 ->
@@ -1657,9 +1405,14 @@ reply_waiting1([From|W], Rep) ->
 reply_waiting1([], _) ->
     ok.
 
+
+-ifdef(UNUSED).
+
 delete_all(From, [From |Tail]) -> delete_all(From, Tail);
 delete_all(From, [H|Tail]) ->  [H|delete_all(From, Tail)];
 delete_all(_, []) -> [].
+
+-endif.
 
 all_atoms([]) -> true;
 all_atoms([N|Tail]) when atom(N) ->

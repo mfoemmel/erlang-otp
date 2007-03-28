@@ -177,6 +177,7 @@ do_perform_dump(Cont, InPlace, InitBy, Regulator, OldVersion) ->
 	    end;
 	eof ->
 	    close_files(InPlace, ok, InitBy),
+	    erase(mnesia_dumper_dets),
 	    ok
     end.
 
@@ -312,28 +313,92 @@ disc_insert(_Tid, Storage, Tab, Key, Val, Op, InPlace, InitBy) ->
 		    mnesia_log:append({?MODULE,Tab}, {{Tab, Key}, Val, Op}),
 		    ok;
 		_ ->
-		    case Op of
-			write ->
-			    ok = dets:insert(Tab, Val);
-			delete ->
-			    ok = dets:delete(Tab, Key);
-			update_counter ->
-			    {RecName, Incr} = Val,
-			    case catch dets:update_counter(Tab, Key, Incr) of
-				CounterVal when integer(CounterVal) ->
-				    ok;
-				_ ->
-				    Zero = {RecName, Key, 0},
-				    ok = dets:insert(Tab, Zero)
-			    end;
-			delete_object ->
-			    ok = dets:delete_object(Tab, Val);
-			clear_table ->
-			    ok = dets:match_delete(Tab, '_')
-		    end
+		    dets_insert(Op,Tab,Key,Val)
 	    end;
 	false ->
 	    ignore
+    end.
+
+%% To fix update_counter so that it behaves better.
+%% i.e. if nothing have changed in tab except update_counter
+%% trust that the value in the dets file is correct. 
+%% Otherwise we will get a double increment.
+%% This is perfect but update_counter is a dirty op.
+
+dets_insert(Op,Tab,Key,Val) ->
+    case Op of
+	write ->
+	    dets_updated(Tab,Key),
+	    ok = dets:insert(Tab, Val);
+	delete ->
+	    dets_updated(Tab,Key),
+	    ok = dets:delete(Tab, Key);
+	update_counter ->
+	    case dets_incr_counter(Tab,Key) of
+		true ->
+		    {RecName, Incr} = Val,
+		    case catch dets:update_counter(Tab, Key, Incr) of
+			CounterVal when integer(CounterVal) ->
+			    ok;
+			_ when Incr < 0 ->
+			    Zero = {RecName, Key, 0},
+			    ok = dets:insert(Tab, Zero);
+			_ -> 
+			    Init = {RecName, Key, Incr},
+			    ok = dets:insert(Tab, Init)
+		    end;
+		false ->  ok
+	    end;				    
+	delete_object ->
+	    dets_updated(Tab,Key),
+	    ok = dets:delete_object(Tab, Val);
+	clear_table ->
+	    dets_cleared(Tab),
+	    ok = dets:match_delete(Tab, '_')
+    end.
+	    
+dets_updated(Tab,Key) -> 
+    case get(mnesia_dumper_dets) of
+	undefined -> 
+	    Empty = gb_trees:empty(),
+	    Tree = gb_trees:insert(Tab, gb_sets:singleton(Key), Empty),
+	    put(mnesia_dumper_dets, Tree);
+	Tree ->
+	    case gb_trees:lookup(Tab,Tree) of
+		{value, cleared} -> ignore;
+		{value, Set} -> 
+		    T = gb_trees:update(Tab, gb_sets:add(Key, Set), Tree),
+		    put(mnesia_dumper_dets, T);
+		none ->
+		    T = gb_trees:insert(Tab, gb_sets:singleton(Key), Tree),
+		    put(mnesia_dumper_dets, T)
+	    end
+    end.
+
+dets_incr_counter(Tab,Key) ->
+    case get(mnesia_dumper_dets) of
+	undefined -> false;
+	Tree ->
+	    case gb_trees:lookup(Tab,Tree) of
+		{value, cleared} -> true;
+		{value, Set} -> gb_sets:is_member(Key, Set);
+		none -> false
+	    end
+    end.
+
+dets_cleared(Tab) ->
+    case get(mnesia_dumper_dets) of
+	undefined -> 
+	    Empty = gb_trees:empty(),
+	    Tree = gb_trees:insert(Tab, cleared, Empty),
+	    put(mnesia_dumper_dets, Tree);
+	Tree ->
+	    case gb_trees:lookup(Tab,Tree) of
+		{value, cleared} -> ignore;
+		_ -> 
+		    T = gb_trees:enter(Tab, cleared, Tree),
+		    put(mnesia_dumper_dets, T)
+	    end
     end.
 
 insert(Tid, Storage, Tab, Key, [Val | Tail], Op, InPlace, InitBy) ->
@@ -884,9 +949,11 @@ open_disc_copies(Tab, InitBy) ->
 					   [DcdF, Reason]),
 			true;
 		    {ok, DcdInfo} -> 
-			DcdInfo#file_info.size =< 
-			    (DclInfo#file_info.size * 
-			     ?DumpToEtsMultiplier)
+			Mul = case ?catch_val(dc_dump_limit) of
+				  {'EXIT', _} -> ?DumpToEtsMultiplier;
+				  Val -> Val
+			      end,
+			DcdInfo#file_info.size =< (DclInfo#file_info.size * Mul)
 		end
 	end,
     if 

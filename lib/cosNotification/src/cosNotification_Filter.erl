@@ -66,15 +66,11 @@
 %% Effect   : 
 %%------------------------------------------------------------
 create_filter(Str) ->
-    case cosNotification_Scanner:scan(Str) of
-	{ok, Tokens} ->
-	    case cosNotification_Grammar:parse(Tokens) of
-		{ok, Filter} ->
-		    {ok, Filter};
-		_->
-		    corba:raise(#'CosNotifyFilter_InvalidConstraint'{constr = Str})
-	    end;
-	_ ->
+    {ok, Tokens} = cosNotification_Scanner:scan(Str),
+    case cosNotification_Grammar:parse(Tokens) of
+	{ok, Filter} ->
+	    {ok, Filter};
+	_->
 	    corba:raise(#'CosNotifyFilter_InvalidConstraint'{constr = Str})
     end.
 
@@ -541,9 +537,7 @@ lookup([{uint, ID} |T], S, Op) when tuple(S) ->
 				    lookup(T, element(3, S), Op);
 				_->
 				    throw({error, {bad_id, "Bad Union ID"}})
-			    end;
-			_->
-			    throw({error, {bad_id, "Bad Union"}})
+			    end
 		    end
 	    end
     end;
@@ -739,6 +733,8 @@ switch2alias([], _Switch) ->
     {ok, [], undefined};
 switch2alias([{Sw, ID, TC}|UList], Switch) ->
     switch2alias([{Sw, ID, TC}|UList], Switch, [], ID, false).
+
+
 switch2alias([{default, ID, _}], _, _, _, false) ->
     {ok, default, ID};
 switch2alias([], _, _Acc, _, false) ->

@@ -1540,14 +1540,7 @@ get_cmd_env(Name) ->
     end.
 
 conv([Key, Val | T]) ->
-    case make_term(Key) of
-	{ok, K} ->
-	    case make_term(Val) of
-		{ok, V} -> [{K, V} | conv(T)];
-		_ -> conv(T)
-	    end;
-	_ -> conv(T)
-    end;
+    [{make_term(Key), make_term(Val)} | conv(T)];
 conv(_) -> [].
 
 %%% Fix some day: eliminate the duplicated code here
@@ -1556,7 +1549,7 @@ make_term(Str) ->
 	{ok, Tokens, _} ->		  
 	    case erl_parse:parse_term(Tokens ++ [{dot, 1}]) of
 		{ok, Term} ->
-		    {ok, Term};
+		    Term;
 		{error, {_,M,Reason}} ->
 		    error_logger:format("application_controller: ~s: ~s~n",
 					[M:format_error(Reason), Str]),

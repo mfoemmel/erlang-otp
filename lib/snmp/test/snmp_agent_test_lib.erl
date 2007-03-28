@@ -298,9 +298,12 @@ call(N,M,F,A) ->
     end.
 
 wait(From, Env, M, F, A) ->
-    ?DBG("wait -> entry with ~n"
-	   "\tFrom: ~p~n"
-	   "\tEnv:  ~p",[From,Env]),
+    ?DBG("wait -> entry with"
+	 "~n   From: ~p"
+	 "~n   Env:  ~p"
+	 "~n   M:    ~p"
+	 "~n   F:    ~p"
+	 "~n   A:    ~p", [From, Env, M, F, A]),
     lists:foreach(fun({K,V}) -> put(K,V) end, Env),
     Rn = (catch apply(M, F, A)),
     ?DBG("wait -> Rn: ~n~p", [Rn]),
@@ -308,6 +311,11 @@ wait(From, Env, M, F, A) ->
     exit(Rn).
 
 run(Mod, Func, Args, Opts) ->
+    ?DBG("run -> entry with"
+	 "~n   Mod:  ~p"
+	 "~n   Func: ~p"
+	 "~n   Args: ~p"
+	 "~n   Opts: ~p", [Mod, Func, Args, Opts]),
     M = get(mib_dir),
     Dir = get(mgr_dir),
     User = snmp_misc:get_option(user, Opts, "all-rights"),
@@ -322,7 +330,7 @@ run(Mod, Func, Args, Opts) ->
 		 _ ->
 		     ?CRYPTO_START()
 	     end,
-    ?DBG("run -> Crypto: ~p",[Crypto]),
+    ?DBG("run -> Crypto: ~p", [Crypto]),
     catch snmp_test_mgr:stop(), % If we had a running mgr from a failed case
     StdM = filename:join(code:priv_dir(snmp), "mibs") ++ "/",
     ?DBG("run -> config:"
@@ -355,7 +363,7 @@ run(Mod, Func, Args, Opts) ->
 	    case (catch apply(Mod, Func, Args)) of
 		{'EXIT', Reason} ->
 		    catch snmp_test_mgr:stop(),
-		    ?FAIL({apply_failed, Reason});
+		    ?FAIL({apply_failed, {Mod, Func, Args}, Reason});
 		Res ->
 		    Res
 	    end;

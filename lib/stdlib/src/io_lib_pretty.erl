@@ -169,6 +169,9 @@ pp_binary([BS, $, | S], N, N0, Ind) ->
         N1 ->
             [BS, $, | pp_binary(S, N1, N0, Ind)]
     end;
+pp_binary([BS1, $:, BS2]=S, N, _N0, Ind) 
+         when length(BS1) + length(BS2) + 1 > N ->
+    [$\n, Ind, S];
 pp_binary(S, N, _N0, Ind) when length(S) > N ->
     [$\n, Ind, S];
 pp_binary(S, _N, _N0, _Ind) ->
@@ -256,18 +259,24 @@ print_length(<<>>, _D, _RF) ->
 print_length(Bin, 1, _RF) when is_binary(Bin) ->
     {"<<...>>", 7};
 print_length(Bin, D, _RF) when is_binary(Bin) ->
-    D1 = D - 1, 
-    case printable_bin(Bin, D1) of
-        List when is_list(List) ->
-            S = io_lib:write_string(List, $"),  %"
-            {[$<,$<,S,$>,$>], 4 + length(S)};
-        {true, Prefix} -> 
-            S = io_lib:write_string(Prefix, $"),  %"
-            {[$<,$<, S | "...>>"], 4 + length(S)};
-        false ->
+    case erlang:bitsize(Bin) rem 8 of
+        0 ->
+	    D1 = D - 1, 
+	    case printable_bin(Bin, D1) of
+	        List when is_list(List) ->
+                    S = io_lib:write_string(List, $"),					
+	            {[$<,$<,S,$>,$>], 4 + length(S)};
+	        {true, Prefix} -> 
+	            S = io_lib:write_string(Prefix, $"), 
+	            {[$<,$<, S | "...>>"], 4 + length(S)};
+	        false ->
+	            S = io_lib:write(Bin, D),
+	            {{bin,S}, iolist_size(S)}
+	    end;
+        _ ->
             S = io_lib:write(Bin, D),
-            {{bin,S}, iolist_size(S)}
-    end;
+	   {{bin,S}, iolist_size(S)}
+    end;    
 print_length(Term, _D, _RF) ->
     S = io_lib:write(Term),
     {S, iolist_size(S)}.

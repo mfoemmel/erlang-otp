@@ -38,7 +38,7 @@
 -endif.
 
 
--record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs,no_temps}).
+-record(igraph, {adj_set, adj_list, ig_moves, degree, spill_costs, no_temps}).
 
 %%-ifndef(DEBUG).
 %%-define(DEBUG,true).
@@ -644,9 +644,9 @@ remove_edge(U, V, IG, Target) ->
   end.
 
 %%----------------------------------------------------------------------
-%% Function:    interfere_if_uncolored
+%% Function:    remove_if_uncolored
 %%
-%% Description: Let a not precoloured temporary interfere with another.
+%% Description:
 %%
 %% Parameters:
 %%   Temporary            --  A temporary that is added to the adjacent 
@@ -660,17 +660,17 @@ remove_edge(U, V, IG, Target) ->
 %%                            functions
 %%
 %% Returns: 
-%%   Adj_list  --  An updated adj_list data-structure
-%%   Degree    --  An updated degree data-structure (via side-effects)
+%%   Adj_list  --  An updated adj_list data structure
+%%   Degree    --  An updated degree data structure (via side-effects)
 %%----------------------------------------------------------------------
 
 remove_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 
-		       Target) ->
+		    Target) ->
   case Target:is_precoloured(Temporary) of
     false ->
       New_adj_list = hipe_adj_list:remove_edge(Temporary, Interfere_temporary, 
-					    Adj_list),
-      degree_inc(Temporary, Degree),
+					       Adj_list),
+      degree_dec(Temporary, Degree),
       New_adj_list;
     true ->
       Adj_list
@@ -693,8 +693,8 @@ remove_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree,
 %%                            functions
 %%
 %% Returns: 
-%%   Adj_list  --  An updated adj_list data-structure
-%%   Degree    --  An updated degree data-structure (via side-effects)
+%%   Adj_list  --  An updated adj_list data structure
+%%   Degree    --  An updated degree data structure (via side-effects)
 %%----------------------------------------------------------------------
 
 interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree, 

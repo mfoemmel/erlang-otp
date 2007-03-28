@@ -40,6 +40,7 @@
 
 #define NEED_CHILD_SETUP_DEFINES
 #define ERTS_WANT_BREAK_HANDLING
+#define ERTS_WANT_GOT_SIGUSR1
 #define WANT_NONBLOCKING    /* must define this to pull in defs from sys.h */
 #include "sys.h"
 
@@ -150,22 +151,49 @@ static char *child_setup_prog;
 static int debug_log = 0;
 #endif
 
-volatile int erts_got_sigusr1 = 0;
+#ifdef ERTS_SMP
+erts_smp_atomic_t erts_got_sigusr1;
+#define ERTS_SET_GOT_SIGUSR1 \
+  erts_smp_atomic_set(&erts_got_sigusr1, 1)
+#define ERTS_UNSET_GOT_SIGUSR1 \
+  erts_smp_atomic_set(&erts_got_sigusr1, 0)
+static erts_smp_atomic_t have_prepared_crash_dump;
+#define ERTS_PREPARED_CRASH_DUMP \
+  ((int) erts_smp_atomic_xchg(&have_prepared_crash_dump, 1))
+#else
+volatile int erts_got_sigusr1;
+#define ERTS_SET_GOT_SIGUSR1 (erts_got_sigusr1 = 1)
+#define ERTS_UNSET_GOT_SIGUSR1 (erts_got_sigusr1 = 0)
+static volatile int have_prepared_crash_dump;
+#define ERTS_PREPARED_CRASH_DUMP \
+  (have_prepared_crash_dump++)
+#endif
 
 static erts_smp_atomic_t sys_misc_mem_sz;
 
+#ifdef ERTS_SMP
+static void smp_sig_notify(char c);
+static int sig_notify_fds[2] = {-1, -1};
+#endif
+
+#if CHLDWTHR || defined(ERTS_SMP)
+erts_mtx_t chld_stat_mtx;
+#endif
 #if CHLDWTHR
 static erts_tid_t child_waiter_tid;
 /* chld_stat_mtx is used to protect against concurrent accesses
    of the driver_data fields pid, alive, and status. */
-erts_mtx_t chld_stat_mtx;
 erts_cnd_t chld_stat_cnd;
 static long children_alive;
 #define CHLD_STAT_LOCK		erts_mtx_lock(&chld_stat_mtx)
 #define CHLD_STAT_UNLOCK	erts_mtx_unlock(&chld_stat_mtx)
 #define CHLD_STAT_WAIT		erts_cnd_wait(&chld_stat_cnd, &chld_stat_mtx)
 #define CHLD_STAT_SIGNAL	erts_cnd_signal(&chld_stat_cnd)
-#else
+#elif defined(ERTS_SMP) /* ------------------------------------------------- */
+#define CHLD_STAT_LOCK		erts_mtx_lock(&chld_stat_mtx)
+#define CHLD_STAT_UNLOCK	erts_mtx_unlock(&chld_stat_mtx)
+
+#else /* ------------------------------------------------------------------- */
 #define CHLD_STAT_LOCK
 #define CHLD_STAT_UNLOCK
 static volatile int children_died;
@@ -196,7 +224,17 @@ static int max_files = -1;
 /* 
  * a few variables used by the break handler 
  */
+#ifdef ERTS_SMP
+erts_smp_atomic_t erts_break_requested;
+#define ERTS_SET_BREAK_REQUESTED \
+  erts_smp_atomic_set(&erts_break_requested, (long) 1)
+#define ERTS_UNSET_BREAK_REQUESTED \
+  erts_smp_atomic_set(&erts_break_requested, (long) 0)
+#else
 volatile int erts_break_requested = 0;
+#define ERTS_SET_BREAK_REQUESTED (erts_break_requested = 1)
+#define ERTS_UNSET_BREAK_REQUESTED (erts_break_requested = 0)
+#endif
 /* set early so the break handler has access to initial mode */
 static struct termios initial_tty_mode;
 static int replace_intr = 0;
@@ -403,15 +441,30 @@ erts_sys_pre_init(void)
     erts_thr_init(&eid);
 
     report_exit_list = NULL;
+
+#if CHLDWTHR || defined(ERTS_SMP)
+    erts_mtx_init(&chld_stat_mtx, "child_status");
+#endif
 #if CHLDWTHR
 #ifndef ERTS_SMP
     report_exit_transit_list = NULL;
 #endif
-    erts_mtx_init(&chld_stat_mtx, "child_status");
     erts_cnd_init(&chld_stat_cnd);
     children_alive = 0;
 #endif
     }
+#ifdef ERTS_SMP
+    erts_smp_atomic_init(&erts_break_requested, 0);
+    erts_smp_atomic_init(&erts_got_sigusr1, 0);
+    erts_smp_atomic_init(&have_prepared_crash_dump, 0);
+#else
+    erts_break_requested = 0;
+    erts_got_sigusr1 = 0;
+    have_prepared_crash_dump = 0;
+#endif
+#if !CHLDWTHR && !defined(ERTS_SMP)
+    children_died = 0;
+#endif
 #endif
     erts_smp_atomic_init(&sys_misc_mem_sz, 0);
     erts_smp_rwmtx_init(&environ_rwmtx, "environ");
@@ -545,6 +598,71 @@ static RETSIGTYPE break_handler(int sig)
 }
 #endif /* 0 */
 
+static ERTS_INLINE void
+prepare_crash_dump(void)
+{
+    int i, max;
+    char* env;
+
+    if (ERTS_PREPARED_CRASH_DUMP)
+	return; /* We have already been called */
+
+    /* Make sure we unregister at epmd (unknown fd) and get at least
+       one free filedescriptor (for erl_crash.dump) */
+    max = max_files;
+    if (max < 1024)
+	max = 1024;
+    for (i = 3; i < max; i++) {
+#ifdef ERTS_SMP
+	/* We don't want to close the signal notification pipe... */
+	if (i == sig_notify_fds[0] || i == sig_notify_fds[1])
+	    continue;
+#endif
+	close(i);
+    }
+
+    env = getenv("ERL_CRASH_DUMP_NICE");
+    if (env) {
+	int nice_val;
+	nice_val = atoi(env);
+	if (nice_val > 39) {
+	    nice_val = 39;
+	}
+	nice(nice_val);
+    }
+    
+    env = getenv("ERL_CRASH_DUMP_SECONDS");
+    if (env) {
+	unsigned sec;
+	sec = (unsigned) atoi(env);
+	alarm(sec);
+    }
+
+}
+
+void
+erts_sys_prepare_crash_dump(void)
+{
+    prepare_crash_dump();
+}
+
+static ERTS_INLINE void
+break_requested(void)
+{
+  /*
+   * just set a flag - checked for and handled by
+   * scheduler threads erts_check_io() (not signal handler).
+   */
+#ifdef DEBUG			
+  fprintf(stderr,"break!\n");
+#endif
+  if (ERTS_BREAK_REQUESTED)
+      erl_exit(ERTS_INTR_EXIT, "");
+
+  ERTS_SET_BREAK_REQUESTED;
+  ERTS_CHK_IO_INTR(1); /* Make sure we don't sleep in poll */
+}
+
 /* set up signal handlers for break and quit */
 #if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
 static RETSIGTYPE request_break(void)
@@ -552,18 +670,23 @@ static RETSIGTYPE request_break(void)
 static RETSIGTYPE request_break(int signum)
 #endif
 {
-  /* just set a flag - checked for and handled 
-   * in main thread (not signal handler).
-   * see check_io() 
-   */
-#ifdef DEBUG			
-  fprintf(stderr,"break!\n");
+#ifdef ERTS_SMP
+    smp_sig_notify('I');
+#else
+    break_requested();
 #endif
-  if (erts_break_requested > 0)
-      erl_exit(ERTS_INTR_EXIT, "");
+}
 
-  erts_break_requested = 1;
-
+static ERTS_INLINE void
+sigusr1_exit(void)
+{
+   /* We do this at interrupt level, since the main reason for
+      wanting to generate a crash dump in this way is that the emulator
+      is hung somewhere, so it won't be able to poll any flag we set here.
+      */
+    ERTS_SET_GOT_SIGUSR1;
+    prepare_crash_dump();
+    erl_exit(1, "Received SIGUSR1\n");
 }
 
 #ifdef ETHR_UNUSABLE_SIGUSRX
@@ -578,22 +701,11 @@ static RETSIGTYPE user_signal1(void)
 static RETSIGTYPE user_signal1(int signum)
 #endif
 {
-   int i, max;
-   /* We do this at interrupt level, since the main reason for
-      wanting to generate a crash dump in this way is that the emulator
-      is hung somewhere, so it won't be able to poll any flag we set here.
-      */
-
-   erts_got_sigusr1 = 1;
-
-   /* First make sure we unregister at epmd... */
-   max = max_files;
-   if (max < 1024)
-       max = 1024;
-   for (i = 3; i < max; i++)
-       close(i);
-
-   erl_exit(1, "Received SIGUSR1\n");
+#ifdef ERTS_SMP
+   smp_sig_notify('1');
+#else
+   sigusr1_exit();
+#endif
 }
 
 #ifdef QUANTIFY
@@ -603,11 +715,21 @@ static RETSIGTYPE user_signal2(void)
 static RETSIGTYPE user_signal2(int signum)
 #endif
 {
+#ifdef ERTS_SMP
+   smp_sig_notify('2');
+#else
    quantify_save_data();
+#endif
 }
 #endif
 
 #endif /* #ifndef ETHR_UNUSABLE_SIGUSRX */
+
+static void
+quit_requested(void)
+{
+    erl_exit(ERTS_INTR_EXIT, "");
+}
 
 #if (defined(SIG_SIGSET) || defined(SIG_SIGNAL))
 static RETSIGTYPE do_quit(void)
@@ -615,7 +737,11 @@ static RETSIGTYPE do_quit(void)
 static RETSIGTYPE do_quit(int signum)
 #endif
 {
-    erl_exit(ERTS_INTR_EXIT, "");
+#ifdef ERTS_SMP
+    smp_sig_notify('Q');
+#else
+    quit_requested();
+#endif
 }
 
 /* Disable break */
@@ -665,9 +791,11 @@ static void block_signals(void)
 #if !CHLDWTHR
    sys_sigblock(SIGCHLD);
 #endif
+#ifndef ERTS_SMP
    sys_sigblock(SIGINT);
 #ifndef ETHR_UNUSABLE_SIGUSRX
    sys_sigblock(SIGUSR1);
+#endif
 #endif
 }
 
@@ -677,11 +805,31 @@ static void unblock_signals(void)
 #if !CHLDWTHR
    sys_sigrelease(SIGCHLD);
 #endif
+#ifndef ERTS_SMP
    sys_sigrelease(SIGINT);
 #ifndef ETHR_UNUSABLE_SIGUSRX
    sys_sigrelease(SIGUSR1);
 #endif /* #ifndef ETHR_UNUSABLE_SIGUSRX */
+#endif
 }
+/************************** Time stuff **************************/
+#ifdef HAVE_GETHRTIME
+#ifdef GETHRTIME_WITH_CLOCK_GETTIME
+
+SysHrTime sys_gethrtime(void)
+{
+    struct timespec ts;
+    long long result;
+    if (clock_gettime(CLOCK_MONOTONIC,&ts) != 0) {
+	erl_exit(1,"Fatal, could not get clock_monotonic value!, "
+		 "errno = %d\n", errno);
+    }
+    result = ((long long) ts.tv_sec) * 1000000000LL + 
+	((long long) ts.tv_nsec);
+    return (SysHrTime) result;
+}
+#endif
+#endif
 
 /************************** OS info *******************************/
 
@@ -899,8 +1047,11 @@ static RETSIGTYPE onchld(int signum)
 {
 #if CHLDWTHR
     ASSERT(0); /* We should *never* catch a SIGCHLD signal */
+#elif defined(ERTS_SMP)
+    smp_sig_notify('C');
 #else
     children_died = 1;
+    ERTS_CHK_IO_INTR(1); /* Make sure we don't sleep in poll */
 #endif
 }
 
@@ -1363,9 +1514,9 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     if (!(children_alive++))
 	CHLD_STAT_SIGNAL; /* Wake up child waiter thread if no children
 			     was alive before we fork()ed ... */
+#endif
     /* Don't unlock chld_stat_mtx until now of the same reason as above */
     CHLD_STAT_UNLOCK;
-#endif
 
     erts_smp_rwmtx_runlock(&environ_rwmtx);
 
@@ -2045,7 +2196,9 @@ void erts_do_break_handling(void)
     
     /* call the break handling function, reset the flag */
     do_break();
-    erts_break_requested = 0;
+
+    ERTS_UNSET_BREAK_REQUESTED;
+
     fflush(stdout);
     
     /* after break we go back to saved settings */
@@ -2106,7 +2259,7 @@ sys_init_io(void)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	ret = open_driver(&async_driver_entry, NIL, "async", &dopts);
+	ret = erts_open_driver(&async_driver_entry, NIL, "async", &dopts, NULL);
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");
@@ -2287,15 +2440,9 @@ report_exit_status(ErtsSysReportExit *rep, int status)
     erts_free(ERTS_ALC_T_PRT_REP_EXIT, rep);
 }
 
-#if !CHLDWTHR || defined(ERTS_SMP)
+#if !CHLDWTHR  /* ---------------------------------------------------------- */
 
 #define ERTS_REPORT_EXIT_STATUS report_exit_status
-
-#ifdef ERTS_SMP
-
-#define check_children() (0)
-
-#else
 
 static int check_children(void)
 {
@@ -2303,20 +2450,42 @@ static int check_children(void)
     int pid;
     int status;
 
-    if (children_died) {
-      sys_sigblock(SIGCHLD);
-      while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
-	note_child_death(pid, status);
-      children_died = 0;
-      sys_sigrelease(SIGCHLD);
-      res = 1;
+#ifndef ERTS_SMP
+    if (children_died)
+#endif
+    {
+	sys_sigblock(SIGCHLD);
+	CHLD_STAT_LOCK;
+	while ((pid = waitpid(-1, &status, WNOHANG)) > 0)
+	    note_child_death(pid, status);
+#ifndef ERTS_SMP
+	children_died = 0;
+#endif
+	CHLD_STAT_UNLOCK;
+	sys_sigrelease(SIGCHLD);
+	res = 1;
     }
     return res;
 }
 
+#ifdef ERTS_SMP
+
+void
+erts_check_children(void)
+{
+    (void) check_children();
+}
+
 #endif
 
-#else /* CHLDWTHR && !defined(ERTS_SMP) */
+#elif CHLDWTHR && defined(ERTS_SMP) /* ------------------------------------- */
+
+#define ERTS_REPORT_EXIT_STATUS report_exit_status
+
+#define check_children() (0)
+
+
+#else /* CHLDWTHR && !defined(ERTS_SMP) ------------------------------------ */
 
 #define ERTS_REPORT_EXIT_STATUS initiate_report_exit_status
 
@@ -2354,7 +2523,7 @@ static int check_children(void)
     return res;
 }
 
-#endif
+#endif /* ------------------------------------------------------------------ */
 
 static void note_child_death(int pid, int status)
 {
@@ -2423,6 +2592,7 @@ erl_sys_schedule(int runnable)
     ERTS_CHK_IO(!runnable);
     ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
 #else
+    ERTS_CHK_IO_INTR(0);
     if (runnable) {
 	ERTS_CHK_IO(0);		/* Poll for I/O */
 	check_async_ready();	/* Check async completions */
@@ -2458,39 +2628,153 @@ static void *io_thread_func(void *unused)
 }
 #endif /* ERTS_SMP_USE_IO_THREAD */
 
+static erts_smp_tid_t sig_dispatcher_tid;
+
+static void
+smp_sig_notify(char c)
+{
+    int res;
+    do {
+	/* write() is async-signal safe (according to posix) */
+	res = write(sig_notify_fds[1], &c, 1);
+    } while (res < 0 && errno == EINTR);
+    if (res != 1) {
+	char msg[] =
+	    "smp_sig_notify(): Failed to notify signal-dispatcher thread "
+	    "about received signal";
+	(void) write(2, msg, sizeof(msg));
+	abort();
+    }
+}
+
+static void *
+signal_dispatcher_thread_func(void *unused)
+{
+    int initialized = 0;
+#if !CHLDWTHR
+    int notify_check_children = 0;
+#endif
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("signal_dispatcher");
+#endif
+    erts_thread_init_fp_exception();
+    while (1) {
+	char buf[32];
+	int res, i;
+	/* Block on read() waiting for a signal notification to arrive... */
+	res = read(sig_notify_fds[0], (void *) &buf[0], 32);
+	if (res < 0) {
+	    if (errno == EINTR)
+		continue;
+	    erl_exit(ERTS_ABORT_EXIT,
+		     "signal-dispatcher thread got unexpected error: %s (%d)\n",
+		     erl_errno_id(errno),
+		     errno);
+	}
+	for (i = 0; i < res; i++) {
+	    /*
+	     * NOTE 1: The signal dispatcher thread should not do work
+	     *         that takes a substantial amount of time (except
+	     *         perhaps in test and debug builds). It needs to
+	     *         be responsive, i.e, it should only dispatch work
+	     *         to other threads.
+	     *
+	     * NOTE 2: The signal dispatcher thread is not a blockable
+	     *         thread (i.e., it hasn't called 
+	     *         erts_register_blockable_thread()). This is
+	     *         intentional. We want to be able to interrupt
+	     *         writing of a crash dump by hitting C-c twice.
+	     *         Since it isn't a blockable thread it is important
+	     *         that it doesn't change the state of any data that
+	     *         a blocking thread expects to have exclusive access
+	     *         to (unless the signal dispatcher itself explicitly
+	     *         is blocking all blockable threads).
+	     */
+	    switch (buf[i]) {
+	    case 0: /* Emulator initialized */
+		initialized = 1;
+#if !CHLDWTHR
+		if (!notify_check_children)
+#endif
+		    break;
+#if !CHLDWTHR
+	    case 'C': /* SIGCHLD */
+		if (initialized)
+		    erts_smp_notify_check_children_needed();
+		else
+		    notify_check_children = 1;
+		break;
+#endif
+	    case 'I': /* SIGINT */
+		break_requested();
+		break;
+	    case 'Q': /* SIGQUIT */
+		quit_requested();
+		break;
+	    case '1': /* SIGUSR1 */
+		sigusr1_exit();
+		break;
+#ifdef QUANTIFY
+	    case '2': /* SIGUSR2 */
+		quantify_save_data(); /* Might take a substantial amount of
+					 time, but this is a test/debug
+					 build */
+		break;
+#endif
+	    default:
+		erl_exit(ERTS_ABORT_EXIT,
+			 "signal-dispatcher thread received unknown "
+			 "signal notification: '%c'\n",
+			 buf[i]);
+	    }
+	}
+	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+    }
+    return NULL;
+}
+
+static void
+init_smp_sig_notify(void)
+{
+    if (pipe(sig_notify_fds) < 0) {
+	erl_exit(ERTS_ABORT_EXIT,
+		 "Failed to create signal-dispatcher pipe: %s (%d)\n",
+		 erl_errno_id(errno),
+		 errno);
+    }
+
+    /* Start signal handler thread */
+    erts_smp_thr_create(&sig_dispatcher_tid,
+			signal_dispatcher_thread_func,
+			NULL,
+			1);
+}
 
 void
 erts_sys_main_thread(void)
 {
+
 #ifdef ERTS_SMP_USE_IO_THREAD
     /* Start I/O thread... */
     erts_smp_thr_create(&erts_io_thr_tid, io_thread_func, NULL, 1);
 #endif
 
-    /* Become break handler thread... */
+    /* Become signal receiver thread... */
 #ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_set_thread_name("break_handler");
+    erts_lc_set_thread_name("signal_receiver");
 #endif
-    erts_register_blockable_thread();
-    erts_thread_init_fp_exception();
+
+    smp_sig_notify(0); /* Notify initialized */
     while (1) {
-#ifdef DEBUG
-	int res;
-#endif
-	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
 	/* Wait for a signal to arrive... */
 #ifdef DEBUG
-	res =
+	int res =
 #else
 	(void)
 #endif
 	    select(0, NULL, NULL, NULL, NULL);
 	ASSERT(res < 0);
 	ASSERT(errno == EINTR);
-	erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
-	if (erts_break_requested)
-	    erts_do_break_handling();
-	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
     }
 }
 
@@ -2574,6 +2858,10 @@ erl_sys_args(int* argc, char** argv)
 #endif
 
     init_check_io();
+
+#ifdef ERTS_SMP
+    init_smp_sig_notify();
+#endif
 
     /* Handled arguments have been marked with NULL. Slide arguments
        not handled towards the beginning of argv. */

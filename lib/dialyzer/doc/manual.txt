@@ -38,37 +38,12 @@ The parameters are:
 * Analyze:
     - Byte code:
 	The analysis starts from .beam bytecode files.
-	Whenever the .beam file has been generated with the +debug_info
-	compiler option on, analysis automatically starts from abstract
-	code (via Core Erlang) and the results are identical to those
-	obtained starting from source code.
+	The files must be compiled with +debug_info. If this is not 
+	the case you must provide the option --old_style to Dialyzer. 
+	Note that this analysis is more imprecise, so we strongly recommend
+	compiling with +debug_info.
     - Source code:
 	The analysis starts from .erl files. 
-
-* Granularity:
-    You can choose to Analyze each module locally, or to make the
-    analysis global over all modules. The default (and recommended
-    mode) is a global analysis, but the module-local variant can be
-    handy when the interfaces between modules are not yet fully
-    implemented and you are simply interested in some quick-and-dirty
-    feedback.
-
-* Iteration:
-    Here you can specify if the analysis should perform a fixpoint
-    iteration over the chosen granularity, or make just one pass.
-
-    - One Pass: 
-	One pass iteration analyzes all modules in an unspecified
-	order. Each module is still analyzed to fixpoint, but no
-	fixpoint iteration is performed over module boundaries.
-
-    - Fixpoint: 
-        All specified modules are analyzed until fixpoint. To speed up
-        the iteration, a static call graph for inter-modular calls is
-        constructed after the first pass of the analysis. This
-        call graph is then used to order the modules for the second
-        (and final) run of the analysis.
-
 
 Controlling the discrepancies reported by the Dialyzer
 ======================================================
@@ -162,58 +137,58 @@ The exit status of the command line version is:
 
 
 
-Usage: dialyzer [--otp OTP_DIR] [--help] [--version] [--shell]
-		 [-pa dir]* [-plt plt] [-Ddefine]* [-I include_dir]* 
-		 [--output_plt file] [-Wwarn]*  [--src] 
+Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
+		 [-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
+		 [--old_style] [--output_plt file] [-Wwarn]* [--src] 
 		 [-c applications] [-r applications] [-o outfile] 
-                 [-q] [--verbose]
 
 Options: 
    -c applications (or --command-line applications)
-       use Dialyzer from the command line (no GUI) to detect defects in the
+       Use Dialyzer from the command line (no GUI) to detect defects in the
        specified applications (directories or .erl or .beam files)
    -r applications
-       same as -c only that directories are searched recursively for 
+       Same as -c only that directories are searched recursively for 
        subdirectories containing .erl or .beam files (depending on the 
        type of analysis)
    -o outfile (or --output outfile)
-       when using Dialyzer from the command line, send the analysis
-       results in the specified "outfile" rather than in stdout
+       When using Dialyzer from the command line, send the analysis
+       results in the specified \"outfile\" rather than in stdout
    --src
-       overwrite the default, which is to analyze BEAM bytecode, and
+       Overwrite the default, which is to analyze BEAM bytecode, and
        analyze starting from Erlang source code instead
    -Dname (or -Dname=value)
-       when analyzing from source, pass the define to Dialyzer (**)
+       When analyzing from source, pass the define to Dialyzer (**)
    -I include_dir
-       when analyzing from source, pass the include_dir to Dialyzer (**)
+       When analyzing from source, pass the include_dir to Dialyzer (**)
+   --old_style
+       Gives the warnings in the old style without line numbers.
+       Can also be handy when analyzing byte code compiled without +debug_info.
    --output_plt file
-       Store the plt at the specified location after building it.
+       Store the plt at the specified file after building it
    --no_warn_on_inline
-       Suppress warnings when analyzing an inline compiled bytecode file.
-   -plt plt
-       Use the specified plt as the initial plt. If the plt was built 
-       during setup the files will be checked for consistency.
+       Suppress warnings when analyzing an inline compiled bytecode file
+   --plt plt
+       Use the specified plt as the initial plt (if the plt was built 
+       during setup the files will be checked for consistency)
    -pa dir
-       Include dir in the path for Erlang. Useful when analyzing files
-       that have '-include_lib()' directives.
+       Include dir in the path for Erlang (useful when analyzing files
+       that have '-include_lib()' directives)
    -Wwarn
-       a family of option which selectively turn on/off warnings.
-	(for help on the names of warnings use dialyzer -Whelp)
+       A family of options which selectively turn on/off warnings
+       (for help on the names of warnings use dialyzer -Whelp)
    --check_init_plt
-      Only checks if the init plt is up to date. For installed systems 
-      this also forces the rebuilding of the plt if this is not the case.
-   --otp OTP_DIR 
-       overrides the default location of the Erlang/OTP system to use
+       Only checks if the initial plt is up to date. For installed systems 
+       this also forces the rebuilding of the plt if this is not the case
    --shell
-       do not disable the Erlang shell while running the GUI
+       Do not disable the Erlang shell while running the GUI
    --version (or -v)
-       prints the Dialyzer version and some more information and exits
+       Prints the Dialyzer version and some more information and exits
    --help (or -h)
-       prints this message and exits
-   -q
-       makes Dialyzer a bit more quiet
+       Prints this message and exits
+   --quiet (or -q)
+       Makes Dialyzer a bit more quiet
    --verbose
-       makes Dialyzer a bit more verbose
+       Makes Dialyzer a bit more verbose
 
 Note:
   * denotes that multiple occurrences of these options are possible.
@@ -284,6 +259,7 @@ Option   : {files,          [Filename : string()]}
 	 | {from,           src_code | byte_code} %% Defaults to byte_code
 	 | {init_plt,       FileName : string()}  %% If changed from default
 	 | {include_dirs,   [DirName : string()]} 
+	 | {old_style,      bool()}               %% Defaults to false
 	 | {output_file,    FileName : string()}
 	 | {supress_inline, bool()}               %% Defaults to true
 	 | {warnings,       [WarnOpts]}

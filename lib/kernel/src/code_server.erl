@@ -481,11 +481,9 @@ vsn_to_num(Vsn) ->
 	    false
     end.
 
-is_vsn(Str) when list(Str) ->
+is_vsn(Str) when is_list(Str) ->
     Vsns = split(Str, "."),
-    lists:all(fun is_numstr/1, Vsns);
-is_vsn(_) ->
-    false.
+    lists:all(fun is_numstr/1, Vsns).
 
 is_numstr(Cs) ->
     lists:all(fun (C) when $0 =< C, C =< $9 -> 

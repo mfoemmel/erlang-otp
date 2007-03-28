@@ -38,9 +38,9 @@ MODULES= \
 	inviso_c \
 	inviso_lfm \
 	inviso_lfm_tpfreader \
-#	inviso_tool \
-#	inviso_tool_lib \
-#	inviso_tool_sh
+	inviso_tool \
+	inviso_tool_lib
+
 
 #HRL_FILES= ../include/
 

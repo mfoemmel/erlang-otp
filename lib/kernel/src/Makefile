@@ -85,6 +85,7 @@ MODULES = \
 	file_server \
 	gen_tcp \
 	gen_udp \
+	gen_sctp \
 	global \
 	global_group \
 	global_search \
@@ -105,6 +106,7 @@ MODULES = \
 	inet_tcp \
 	inet_tcp_dist \
 	inet_udp \
+	inet_sctp \
 	kernel \
 	kernel_config \
 	net \
@@ -227,12 +229,14 @@ $(EBIN)/erl_prim_loader.beam: inet_boot.hrl
 $(EBIN)/file.beam: ../include/file.hrl
 $(EBIN)/gen_tcp.beam: inet_int.hrl
 $(EBIN)/gen_udp.beam: inet_int.hrl
+$(EBIN)/gen_sctp.beam: ../include/inet_sctp.hrl
 $(EBIN)/global.beam: ../../stdlib/include/ms_transform.hrl
 $(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
 $(EBIN)/inet.beam: ../include/inet.hrl inet_int.hrl
 $(EBIN)/inet6_tcp.beam: inet_int.hrl
 $(EBIN)/inet6_tcp_dist.beam: net_address.hrl dist.hrl dist_util.hrl
 $(EBIN)/inet6_udp.beam: inet_int.hrl
+$(EBIN)/inet6_sctp.beam: inet_int.hrl
 $(EBIN)/inet_config.beam: inet_config.hrl ../include/inet.hrl
 $(EBIN)/inet_db.beam: ../include/inet.hrl inet_int.hrl inet_res.hrl inet_dns.hrl inet_config.hrl
 $(EBIN)/inet_dns.beam: inet_int.hrl inet_dns.hrl
@@ -243,6 +247,7 @@ $(EBIN)/inet_res.beam: ../include/inet.hrl inet_res.hrl inet_dns.hrl inet_int.hr
 $(EBIN)/inet_tcp.beam: inet_int.hrl
 $(EBIN)/inet_udp_dist.beam: net_address.hrl dist.hrl dist_util.hrl
 $(EBIN)/inet_udp.beam: inet_int.hrl
+$(EBIN)/inet_sctp.beam: inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/net_kernel.beam: net_address.hrl
 $(EBIN)/os.beam: ../include/file.hrl
 $(EBIN)/prim_file.beam: ../include/file.hrl

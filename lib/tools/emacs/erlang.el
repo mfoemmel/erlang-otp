@@ -3,7 +3,7 @@
 ;; Copyright (C) 1995-1998,2000  Ericsson Telecom AB
 ;; Copyright (C) 2004  Free Software Foundation, Inc.
 ;; Author:   Anders Lindgren
-;; Version:  2.5.2
+;; Version:  2.5.3
 ;; Keywords: erlang, languages, processes
 ;; Date:     2000-09-11
 
@@ -77,7 +77,7 @@
 
 ;; Variables:
 
-(defconst erlang-version "2.5.2"
+(defconst erlang-version "2.5.3"
   "The version number of Erlang mode.")
 
 (defvar erlang-root-dir nil
@@ -4566,7 +4566,9 @@ This function is designed to be a member of a criteria list."
 (defvar erlang-tags-orig-regexp-search-function nil
   "Temporary storage for `find-tag-regexp-search-function'.")
 (defvar erlang-tags-orig-format-hooks nil
-  "Temporary storage for `tags-table-format-hooks'.")
+  "Temporary storage for `tags-table-format-hooks'.") ;v19
+(defvar erlang-tags-orig-format-functions nil
+  "Temporary storage for `tags-table-format-functions'.") ;v > 19
 
 (defun erlang-tags-init ()
   "Install an alternate version of tags, aware of Erlang modules.
@@ -4838,19 +4840,29 @@ Tags can be given on the forms `tag', `module:', `module:tag'."
 ;; search.  The situation is complicated by the fact that new TAGS
 ;; files can be loaded during the search.
 ;;
-;; This code is Emacs 19 `etags' specific.
 
 (defun erlang-tags-install-module-check ()
   "Install our own tag search functions."
   ;; Make sure our functions are installed in TAGS files loaded
   ;; into Emacs while searching.
-  ;; ?? tags-table-format-hooks isn't in Emacs 21 or XEmacs etags.
-  (setq erlang-tags-orig-format-hooks
-	(symbol-value 'tags-table-format-hooks))
-  (funcall (symbol-function 'set) 'tags-table-format-hooks
-	   (cons 'erlang-tags-recognize-tags-table
-		 erlang-tags-orig-format-hooks))
-  (setq erlang-tags-buffer-list '())
+  (cond
+   (( >= erlang-emacs-major-version 20)
+    (setq erlang-tags-orig-format-functions
+	  (symbol-value 'tags-table-format-functions))
+    (funcall (symbol-function 'set) 'tags-table-format-functions
+	     (cons 'erlang-tags-recognize-tags-table
+		   erlang-tags-orig-format-functions))
+    (setq erlang-tags-buffer-list '())
+    )
+   (t
+    (setq erlang-tags-orig-format-hooks
+	  (symbol-value 'tags-table-format-hooks)))
+   (funcall (symbol-function 'set) 'tags-table-format-hooks
+	    (cons 'erlang-tags-recognize-tags-table
+		  erlang-tags-orig-format-hooks))
+   (setq erlang-tags-buffer-list '())
+   )
+   
   ;; Install our functions in the TAGS files already resident.
   (save-excursion
     (let ((files (symbol-value 'tags-table-computed-list)))
@@ -4895,9 +4907,18 @@ Tags can be given on the forms `tag', `module:', `module:tag'."
 
 (defun erlang-tags-remove-module-check ()
   "Remove our own tags search functions."
-  (funcall (symbol-function 'set)
-	   'tags-table-format-hooks
-	   erlang-tags-orig-format-hooks)
+  (cond
+   ((>= erlang-emacs-major-version 20)
+    (funcall (symbol-function 'set)
+	     'tags-table-format-functions
+	     erlang-tags-orig-format-functions)
+    )
+   (t 
+    (funcall (symbol-function 'set)
+	     'tags-table-format-hooks
+	     erlang-tags-orig-format-hooks)
+    ))
+
   ;; Remove our functions from the TAGS files.  (Note that
   ;; `tags-table-computed-list' need not be the same list as when
   ;; the search was started.)
@@ -4930,7 +4951,7 @@ Tags can be given on the forms `tag', `module:', `module:tag'."
 (defun erlang-tags-recognize-tags-table ()
   "Install our functions in all loaded TAGS files.
 
-This function is added to `tags-table-format-hooks' when searching
+This function is added to `tags-table-format-hooks/functions' when searching
 for a tag on the form `module:tag'."
   (if (null (funcall (symbol-function 'etags-recognize-tags-table)))
       nil

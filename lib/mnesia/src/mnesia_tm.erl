@@ -51,7 +51,7 @@
 -import(mnesia_lib, [set/2]).
 -import(mnesia_lib, [fatal/2, verbose/2, dbg_out/2]).
 
--record(state, {coordinators = [], participants = [], supervisor,
+-record(state, {coordinators = gb_trees:empty(), participants = gb_trees:empty(), supervisor,
 		blocked_tabs = [], dirty_queue = [], fixed_tabs = []}).
 %% Format on coordinators is [{Tid, EtsTabList} .....
 
@@ -193,8 +193,7 @@ block_tab(Tab) ->
 unblock_tab(Tab) ->
     req({unblock_tab, Tab}).
 
-doit_loop(#state{coordinators = Coordinators, participants = Participants, supervisor = Sup} 
-	  = State) ->
+doit_loop(#state{coordinators=Coordinators,participants=Participants,supervisor=Sup}=State) ->
     receive
 	{_From, {async_dirty, Tid, Commit, Tab}} ->
 	    case lists:member(Tab, State#state.blocked_tabs) of
@@ -229,7 +228,7 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 		    C = mnesia_recover:incr_trans_tid_serial(),
 		    ?ets_insert(Etab, {nodes, node()}),
 		    Tid = #tid{pid = tmpid(From), counter = C},
-		    A2 = [{Tid , [Etab]} | Coordinators],
+		    A2 = gb_trees:insert(Tid,[Etab],Coordinators),
 		    S2 = State#state{coordinators = A2},
 		    reply(From, {new_tid, Tid, Etab}, S2)
 	    end;
@@ -253,18 +252,16 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 			     disc_nodes = DiscNs,
 			     ram_nodes = RamNs,
 			     protocol = Protocol},
-	    State2 = State#state{participants = [P | Participants]},
+	    State2 = State#state{participants = gb_trees:insert(Tid,P,Participants)},
 	    doit_loop(State2);
 	
 	{Tid, do_commit} ->
-	    case mnesia_lib:key_search_delete(Tid, #participant.tid, Participants) of
-		{none, _} ->
-		    verbose("Tried to commit a non participant transaction ~p~n",
-			    [Tid]),
+	    case gb_trees:lookup(Tid, Participants) of
+		none ->
+		    verbose("Tried to commit a non participant transaction ~p~n",[Tid]),
 		    doit_loop(State);
-		{P, Participants2} ->
-		    ?eval_debug_fun({?MODULE, do_commit, pre}, 
-				    [{tid, Tid}, {participant, P}]),
+		{value, P} ->
+		    ?eval_debug_fun({?MODULE,do_commit,pre},[{tid,Tid},{participant,P}]),
 		    case P#participant.pid of
 			nopid ->
 			    Commit = P#participant.commit,
@@ -286,8 +283,9 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 			    end,
 			    mnesia_locker:release_tid(Tid),
 			    transaction_terminated(Tid),
-			    ?eval_debug_fun({?MODULE, do_commit, post}, [{tid, Tid}, {pid, nopid}]),
-			    doit_loop(State#state{participants = Participants2});
+			    ?eval_debug_fun({?MODULE,do_commit,post},[{tid,Tid},{pid,nopid}]),
+			    doit_loop(State#state{participants=
+						  gb_trees:delete(Tid,Participants)});
 			Pid when pid(Pid) ->
 			    Pid ! {Tid, committed},
 			    ?eval_debug_fun({?MODULE, do_commit, post}, [{tid, Tid}, {pid, Pid}]),
@@ -303,13 +301,13 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	
 	{Tid, {do_abort, Reason}} ->
 	    ?eval_debug_fun({?MODULE, do_abort, pre}, [{tid, Tid}]),
-	    case mnesia_lib:key_search_delete(Tid, #participant.tid, Participants) of
-		{none, _} ->
+	    case gb_trees:lookup(Tid, Participants) of
+		none ->
 		    verbose("Tried to abort a non participant transaction ~p: ~p~n",
 			    [Tid, Reason]),
 		    mnesia_locker:release_tid(Tid),
 		    doit_loop(State);
-		{P, Participants2} ->
+		{value, P} ->
 		    case P#participant.pid of
 			nopid ->
 			    Commit = P#participant.commit,
@@ -324,7 +322,8 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 			    transaction_terminated(Tid),
 			    mnesia_locker:release_tid(Tid),
 			    ?eval_debug_fun({?MODULE, do_abort, post}, [{tid, Tid}, {pid, nopid}]),
-			    doit_loop(State#state{participants = Participants2});
+			    doit_loop(State#state{participants=
+						  gb_trees:delete(Tid,Participants)});
 			Pid when pid(Pid) ->
 			    Pid ! {Tid, {do_abort, Reason}},
 			    ?eval_debug_fun({?MODULE, do_abort, post},
@@ -363,22 +362,23 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	{delete_transaction, Tid} ->
 	    %% used to clear transactions which are committed
 	    %% in coordinator or participant processes
-	    case mnesia_lib:key_search_delete(Tid, #participant.tid, Participants) of
-		{none, _} ->
-		    case mnesia_lib:key_search_delete(Tid, 1, Coordinators) of
-			{none, _} ->
+	    case gb_trees:is_defined(Tid, Participants) of
+		false ->
+		    case gb_trees:lookup(Tid, Coordinators) of
+			none ->
 			    verbose("** ERROR ** Tried to delete a non transaction ~p~n",
-				  [Tid]),
+				    [Tid]),
 			    doit_loop(State);
-			{{_Tid, Etabs}, A2} ->
+			{value, Etabs} ->
 			    clear_fixtable(Etabs),
 			    erase_ets_tabs(Etabs),
 			    transaction_terminated(Tid),
-			    doit_loop(State#state{coordinators = A2})
+			    doit_loop(State#state{coordinators = 
+						  gb_trees:delete(Tid,Coordinators)})
 		    end;
-		{_P, Participants2} ->
+		true ->
 		    transaction_terminated(Tid),
-		    State2 = State#state{participants = Participants2},
+		    State2 = State#state{participants=gb_trees:delete(Tid,Participants)},
 		    doit_loop(State2)
 	    end;
 	
@@ -388,14 +388,15 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	    doit_loop(State);
 	    
 	{From, info} ->
-	    reply(From, {info, Participants, Coordinators}, State);
+	    reply(From, {info, gb_trees:values(Participants), 
+			 gb_trees:to_list(Coordinators)}, State);
 	
 	{mnesia_down, N} ->
 	    verbose("Got mnesia_down from ~p, reconfiguring...~n", [N]),
-	    reconfigure_coordinators(N, Coordinators),
-
-	    Tids = [P#participant.tid || P <- Participants],
-	    reconfigure_participants(N, Participants),
+	    reconfigure_coordinators(N, gb_trees:to_list(Coordinators)),
+	    
+	    Tids = gb_trees:keys(Participants),
+	    reconfigure_participants(N, gb_trees:values(Participants)),
 	    NewState = clear_fixtable(N, State),
 	    mnesia_monitor:mnesia_down(?MODULE, {N, Tids}),
 	    doit_loop(NewState);
@@ -435,8 +436,8 @@ doit_loop(#state{coordinators = Coordinators, participants = Participants, super
 	    Res = mnesia_checkpoint:tm_prepare(Cp),
 	    case Res of
 		{ok, _Name, IgnoreNew, _Node} ->
-		    prepare_pending_coordinators(Coordinators, IgnoreNew),
-		    prepare_pending_participants(Participants, IgnoreNew);
+		    prepare_pending_coordinators(gb_trees:to_list(Coordinators), IgnoreNew),
+		    prepare_pending_participants(gb_trees:values(Participants), IgnoreNew);
 		{error, _Reason} ->
 		    ignore
 	    end,
@@ -523,10 +524,8 @@ prepare_pending_participants([Part | Parts], IgnoreNew) ->
 prepare_pending_participants([], _IgnoreNew) ->
     ok.
 
-handle_exit(Pid, Reason, State) when node(Pid) /= node() ->
+handle_exit(Pid, _Reason, State) when node(Pid) /= node() ->
     %% We got exit from a remote fool
-    dbg_out("~p got remote EXIT from unknown ~p~n",  
-	    [?MODULE, {Pid, Reason}]),
     doit_loop(State);
 
 handle_exit(Pid, _Reason, State) when Pid == State#state.supervisor ->
@@ -535,24 +534,19 @@ handle_exit(Pid, _Reason, State) when Pid == State#state.supervisor ->
 
 handle_exit(Pid, Reason, State) ->
     %% Check if it is a coordinator
-    case pid_search_delete(Pid, State#state.coordinators) of 
+    case pid_search_delete(Pid, gb_trees:to_list(State#state.coordinators)) of 
 	{none, _} ->
 	    %% Check if it is a participant
-	    case mnesia_lib:key_search_delete(Pid, #participant.pid, State#state.participants) of
-		{none, _} when Reason =:= normal ->
-		    %% We got exit from a local fool
-		    dbg_out("** ERROR ** ~p got local EXIT from unknown process: ~p~n",  
-			    [?MODULE, {Pid, Reason}]),
-		    doit_loop(State);
+	    Ps = gb_trees:values(State#state.participants),
+	    case mnesia_lib:key_search_delete(Pid,#participant.pid,Ps) of
 		{none, _} ->
 		    %% We got exit from a local fool
-		    verbose("** ERROR ** ~p got local EXIT from unknown process: ~p~n",  
-			    [?MODULE, {Pid, Reason}]),
-		    doit_loop(State);		
-		{P, RestP} when record(P, participant) ->
+		    doit_loop(State);
+		{P, _RestP} when record(P, participant) ->
 		    fatal("Participant ~p in transaction ~p died ~p~n",
 			  [P#participant.pid, P#participant.tid, Reason]),
-		    doit_loop(State#state{participants = RestP})
+		    NewPs = gb_trees:delete(P#participant.tid,State#state.participants),
+		    doit_loop(State#state{participants = NewPs})
 	    end;
 	
 	{{Tid, Etabs}, RestC} ->
@@ -621,31 +615,25 @@ recover_coordinator(Tid, asym_trans, aborted, Local, DiscNs, RamNs) ->
     mnesia_recover:log_decision(D),
     do_abort(Tid, Local).
 
-restore_stores([{Tid, Etstabs} | Tail], Tid, Store) ->
+restore_stores(Coords, Tid, Store) ->
+    Etstabs = gb_trees:get(Tid,Coords),
     Remaining  = lists:delete(Store, Etstabs),
     erase_ets_tabs(Remaining),
-    [{Tid, [Store]} | Tail];
-restore_stores([H | T], Tid, Store) ->
-    [H | restore_stores(T, Tid, Store)].
-%% No NIL case on purpose
+    gb_trees:update(Tid,[Store],Coords).
 
-add_coord_store([{Tid, Stores} | Coordinators], Tid, Etab) ->
-    [{Tid, [Etab | Stores]} | Coordinators];
-add_coord_store([H | T], Tid, Etab) ->
-    [H | add_coord_store(T, Tid, Etab)].
-%% no NIL case on purpose
+add_coord_store(Coords, Tid, Etab) ->
+    Stores = gb_trees:get(Tid, Coords),
+    gb_trees:update(Tid, [Etab|Stores], Coords).
 
-del_coord_store([{Tid, Stores} | Coordinators], Tid, Current, Obsolete) ->
+del_coord_store(Coords, Tid, Current, Obsolete) ->
+    Stores = gb_trees:get(Tid, Coords),
     Rest = 
-	case Stores of
-	    [Obsolete, Current | Tail] -> Tail;
-	    [Current, Obsolete | Tail] -> Tail
-	end,
+    	case Stores of
+    	    [Obsolete, Current | Tail] -> Tail;
+    	    [Current, Obsolete | Tail] -> Tail
+    	end,
     ?ets_delete_table(Obsolete),
-    [{Tid, [Current | Rest]} | Coordinators];
-del_coord_store([H | T], Tid, Current, Obsolete) ->
-    [H | del_coord_store(T, Tid, Current, Obsolete)].
-%% no NIL case on purpose
+    gb_trees:update(Tid, [Current|Rest], Coords).
 
 erase_ets_tabs([H | T]) ->
     ?ets_delete_table(H),
@@ -698,7 +686,7 @@ manage_fixtable(Tab,false,Requester,State = #state{fixed_tabs = FT0}) ->
     end.
 
 %% Deletes a pid from a list of participants
-%% or from a list of coordinators and returns
+%% or from a gb_trees of coordinators
 %% {none, All} or {Tr, Rest} 
 pid_search_delete(Pid, Trs) ->
     pid_search_delete(Pid, Trs, none, []).
@@ -708,23 +696,7 @@ pid_search_delete(Pid, [Tr | Trs], Val, Ack) ->
     pid_search_delete(Pid, Trs, Val, [Tr | Ack]);
 
 pid_search_delete(_Pid, [], Val, Ack) ->
-    {Val, Ack}.
-
-%% When TM gets an EXIT sig, we must also check to see 
-%% if the crashing transaction is in the Participant list
-%% 
-%% search_participant_for_pid([Participant | Tail], Pid) ->
-%%     Tid = Participant#participant.tid,
-%%     if
-%% 	   Tid#tid.pid == Pid  ->
-%% 	       {coordinator, Participant};
-%% 	   Participant#participant.pid == Pid  ->
-%% 	       {participant, Participant};
-%% 	   true ->
-%% 	       search_participant_for_pid(Tail, Pid)
-%%     end;
-%% search_participant_for_pid([], _) ->
-%%     fool.
+    {Val, gb_trees:from_orddict(lists:reverse(Ack))}.
  
 transaction_terminated(Tid)  ->
     mnesia_checkpoint:tm_exit_pending(Tid),
@@ -839,6 +811,7 @@ execute_transaction(Fun, Args, Factor, Retries, Type) ->
 	    %% no need to clear locks, already done by commit ...
 	    %% Flush any un processed mnesia_down messages we might have 
 	    flush_downs(),
+	    catch unlink(whereis(?MODULE)),
 	    {atomic, Value};
 	{nested_atomic, Value} ->
 	    mnesia_lib:incr_counter(trans_commits),
@@ -968,8 +941,9 @@ return_abort(Fun, Args, Reason)  ->
 	Level == 1 ->
 	    mnesia_locker:async_release_tid(Nodes, Tid),
 	    ?MODULE ! {delete_transaction, Tid},
-	    erase(mnesia_activity_state),
+	    erase(mnesia_activity_state),	    
 	    flush_downs(),
+	    catch unlink(whereis(?MODULE)),
 	    {aborted, mnesia_lib:fix_error(Reason)};
 	true ->
 	    %% Nested transaction
@@ -2271,7 +2245,7 @@ tell_outcome(Tid, Protocol, Node, CheckNodes, TellNodes) ->
 
 do_stop(#state{coordinators = Coordinators}) ->
     Msg = {mnesia_down, node()},
-    lists:foreach(fun({Tid, _}) -> Tid#tid.pid ! Msg end, Coordinators),
+    lists:foreach(fun({Tid, _}) -> Tid#tid.pid ! Msg end, gb_trees:to_list(Coordinators)),
     mnesia_checkpoint:stop(),
     mnesia_log:stop(),
     exit(shutdown).
@@ -2293,5 +2267,23 @@ system_continue(_Parent, _Debug, State) ->
 system_terminate(_Reason, _Parent, _Debug, State) ->
     do_stop(State).
 
-system_code_change(State, _Module, _OldVsn, _Extra) ->
-    {ok, State}.
+system_code_change(State=#state{coordinators=Cs0,participants=Ps0},_Module,_OldVsn,downgrade) ->
+    case is_tuple(Cs0) of
+	true -> 
+	    Cs = gb_trees:to_list(Cs0),	    
+	    Ps = gb_trees:values(Ps0),
+	    {ok, State#state{coordinators=Cs,participants=Ps}};
+	false ->
+	    {ok, State}
+    end;
+
+system_code_change(State=#state{coordinators=Cs0,participants=Ps0},_Module,_OldVsn,_Extra) ->
+    case is_list(Cs0) of
+	true -> 
+	    Cs = gb_trees:from_orddict(lists:sort(Cs0)),
+	    Ps1 = [{P#participant.tid,P}|| P <- Ps0],
+	    Ps = gb_trees:from_orddict(lists:sort(Ps1)),
+	    {ok, State#state{coordinators=Cs,participants=Ps}};
+	false ->
+	    {ok, State}
+    end.

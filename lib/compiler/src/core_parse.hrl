@@ -25,17 +25,7 @@
 %% -define(get_ann(X), element(2, X)).
 %% -define(set_ann(X, Y), setelement(2, X, Y)).
 
--record(c_int, {anno=[], val}).		% val :: integer()
-
--record(c_float, {anno=[], val}).	% val :: float()
-
--record(c_atom, {anno=[], val}).	% val :: atom()
-
--record(c_char, {anno=[], val}).	% val :: char()
-
--record(c_string, {anno=[], val}).	% val :: string()
-
--record(c_nil, {anno=[]}).
+-record(c_literal, {anno=[], val}).	% val :: literal()
 
 -record(c_binary, {anno=[], segments}).	% segments :: [#c_bitstr{}]
 

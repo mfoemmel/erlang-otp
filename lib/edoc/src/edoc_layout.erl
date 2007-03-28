@@ -299,16 +299,14 @@ label_href(Content, F) ->
 	Ref -> [{a, [{href, local_label(Ref)}], Content}]
     end.
 
-%% <!ELEMENT function (args, typespec?, throws?, equiv?, description?,
-%%                     since?, deprecated?, see*, todo?)>
+%% <!ELEMENT function (args, typespec?, returns?, throws?, equiv?,
+%%                     description?, since?, deprecated?, see*, todo?)>
 %% <!ATTLIST function
 %%   name CDATA #REQUIRED
 %%   arity CDATA #REQUIRED
 %%   exported NMTOKEN(yes | no) #REQUIRED
 %%   label CDATA #IMPLIED>
 %% <!ELEMENT args (arg*)>
-%% <!ELEMENT arg description?>
-%% <!ATTLIST arg name CDATA #REQUIRED>
 %% <!ELEMENT equiv (expr, see?)>
 %% <!ELEMENT expr (#PCDATA)>
 
@@ -327,13 +325,23 @@ function(Name, E=#xmlElement{content = Es}) ->
        label_anchor(function_header(Name, E, " *"), E)},
       ?NL]
      ++ [{'div',  [{class, "spec"}],
-	  [{p,
+	  [?NL,
+	   {p,
 	    case typespec(get_content(typespec, Es)) of
 		[] ->
 		    signature(get_content(args, Es),
 			      get_attrval(name, E));
 		Spec -> Spec
-	    end}]}]
+	    end},
+	   ?NL]
+	  ++ case params(get_content(args, Es)) of
+		 [] -> [];
+		 Ps -> [{p, Ps}, ?NL]
+	     end
+	  ++ case returns(get_content(returns, Es)) of
+		 [] -> [];
+		 Rs -> [{p, Rs}, ?NL]
+	     end}]
      ++ throws(Es)
      ++ equiv_p(Es)
      ++ deprecated(Es, "function")
@@ -374,6 +382,28 @@ signature(Es, Name) ->
 
 arg(#xmlElement{content = Es}) ->
     [get_text(argName, Es)].
+
+%% parameter and return value descriptions (if any)
+
+params(Es) ->
+    As = [{get_text(argName, Es1),
+	   get_content(fullDescription, get_content(description, Es1))}
+	  || #xmlElement{content = Es1} <- Es],
+    As1 = [A || A <- As, element(2, A) /= []],
+    if As1 == [] ->
+	    [];
+       true ->
+	    [ { [{tt, [A]}, ": "] ++  D ++ [br, ?NL] }
+	      || {A, D} <- As1]
+    end.
+
+returns(Es) ->
+    case get_content(fullDescription, get_content(description, Es)) of
+	[] ->
+	    [];
+	D ->
+	    ["returns: "] ++  D
+    end.
 
 %% <!ELEMENT throws (type, localdef*)>
 

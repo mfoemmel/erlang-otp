@@ -2534,16 +2534,19 @@ enc_EventBufferDescriptor([], _State) ->
     [
      ?EventBufferToken
     ];
-enc_EventBufferDescriptor(EvSpecs, State) when is_list(EvSpecs) ->
+enc_EventBufferDescriptor(EvSpecs, State) 
+  when is_list(EvSpecs) and (length(EvSpecs) >= 1) ->
     [
      ?EventBufferToken,
      ?LBRKT_INDENT(State),
      enc_eventSpecs(EvSpecs, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)   
-    ].
+    ];
+enc_EventBufferDescriptor(EvSpecs, _State) ->
+    error({bad_eventSpecs, EvSpecs}).
 
 enc_eventSpecs([Mand | Opt], State) ->
-    [enc_eventSpecs(Mand, State),
+    [enc_eventSpec(Mand, State),
      [[?COMMA_INDENT(State), enc_eventSpec(Val, State)] || Val <- Opt]].
 
 enc_eventSpec(#'EventSpec'{eventName    = N,
@@ -3105,20 +3108,16 @@ enc_integer(Val, _State, Min, Max) ->
 %% Encodes a list of elements with separator tokens between
 %% the elements. Optional asn1_NOVALUE values are ignored.
 
-enc_list(asn1_NOVALUE, _State) ->
-    [];
-enc_list([], _State) ->
-    [];
+%% enc_list(asn1_NOVALUE, _State) ->
+%%     [];
+%% enc_list([], _State) ->
+%%     [];
 enc_list(List, State) ->
     enc_list(List, State, fun(_S) -> ?COMMA_INDENT(_S) end, false).
 
 enc_list([], _State, _SepEncoder, _NeedsSep) ->
     [];
 enc_list([{Elems, ElemEncoder} | Tail], State, SepEncoder, NeedsSep) ->
-%%     d("enc_list -> entry with"
-%%       "~n   Elems:       ~p"
-%%       "~n   ElemEncoder: ~p"
-%%       "~n   State:       ~p", [Elems, ElemEncoder, State]),
     case do_enc_list(Elems, State, ElemEncoder, SepEncoder, NeedsSep) of
 	[] ->
 	    enc_list(Tail, State, SepEncoder, NeedsSep);

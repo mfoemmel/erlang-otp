@@ -238,9 +238,7 @@ deliver_webpage(#mod{config_db = Db} = ModData, Port) ->
 					   "chunked"} | HTTPHeaders])
 		    end,
 		    handle_body(Port, ModData, Body, Timeout, size(Body),
-				IsDisableChunkedSend);
-		Other ->
-		    exit(Other)
+				IsDisableChunkedSend)
 	    end;
 	{'EXIT', Port, Reason} ->
 	    process_flag(trap_exit, false),

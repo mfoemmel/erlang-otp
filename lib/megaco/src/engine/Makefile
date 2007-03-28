@@ -46,13 +46,6 @@ ERL_FILES = $(MODULES:%=%.erl)
 TARGET_FILES =  \
 	$(MODULES:%=$(EBIN)/%.$(EMULATOR))
 
-APP_FILE   = megaco.app
-APP_SRC    = $(APP_FILE).src
-APP_TARGET = $(EBIN)/$(APP_FILE)
-
-APPUP_FILE   = megaco.appup
-APPUP_SRC    = $(APPUP_FILE).src
-APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 
 # ----------------------------------------------------
 # FLAGS
@@ -61,36 +54,11 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
-ifeq ($(MEGACO_TRACE), io)
-ERL_COMPILE_FLAGS += -Dmegaco_trace_io
-endif
+include ../app/megaco.mk
 
-ifeq ($(MEGACO_EXTENDED_TRACE), true)
-ERL_COMPILE_FLAGS += -Dmegaco_extended_trace
-endif
+ERL_FLAGS += $(MEGACO_ERL_FLAGS)
 
-ifeq ($(USE_MEGACO_TEST_CODE),true)
-ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE
-endif
-
-ifeq ($(MEGACO_DEBUG),true)
-ERL_COMPILE_FLAGS += -Dmegaco_debug
-endif
-
-ifeq ($(USE_MEGACO_HIPE),true)
-ERL_COMPILE_FLAGS += +native
-endif
-
-ifeq ($(WARN_UNUSED_WARS),true)
-ERL_COMPILE_FLAGS += +warn_unused_vars
-endif
-
-ERL_FLAGS += -pa $(ERL_TOP)/lib/et/ebin \
-             -pa $(ERL_TOP)/lib/megaco/ebin
-
-ERL_COMPILE_FLAGS += -I../../include \
-                     +'{parse_transform,sys_pre_attributes}' \
-                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
+ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 
 # ----------------------------------------------------
@@ -99,7 +67,7 @@ ERL_COMPILE_FLAGS += -I../../include \
 debug:
 	@${MAKE} TYPE=debug opt
 
-opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
+opt: $(TARGET_FILES) 
 
 clean:
 	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET)
@@ -113,18 +81,6 @@ info:
 
 
 # ----------------------------------------------------
-# Special Build Targets
-# ----------------------------------------------------
-
-$(APP_TARGET): $(APP_SRC) ../../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
-
-$(APPUP_TARGET): $(APPUP_SRC) ../../vsn.mk
-	sed -e 's;%VSN%;$(VSN);' $< > $@
-
-
-
-# ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
 include $(ERL_TOP)/make/otp_release_targets.mk
@@ -133,12 +89,10 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 release_spec: opt
 	$(INSTALL_DIR)  $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
-	$(INSTALL_DATA) $(APP_TARGET) $(APPUP_TARGET) $(RELSYSDIR)/ebin
 	$(INSTALL_DIR)  $(RELSYSDIR)/src
 	$(INSTALL_DIR)  $(RELSYSDIR)/src/engine
 	$(INSTALL_DATA) $(ERL_FILES) $(INTERNAL_HRL_FILES) $(RELSYSDIR)/src/engine
 	$(INSTALL_DIR)  $(RELSYSDIR)/include
-	$(INSTALL_DATA) $(EXTERNAL_HRL_FILES) $(RELSYSDIR)/include
 
 
 release_docs_spec:

@@ -19,7 +19,6 @@
 -record(fp_unop, {dst, src, op}).
 -record(fstore, {base, offset, src}).
 -record(gctest, {words}).
--record(binbase, {dst, orig, offset}).
 -record(goto, {label}).
 -record(goto_index, {block, index, labels}).
 -record(label, {name}).

@@ -94,8 +94,9 @@
 %% Grammar
 -define(get_Grammar(S),         S#state.constraint_grammar).
 %% Callbacks
--define(get_Callback(S,I),      find_obj(lists:keysearch(I, 1, S#state.callbacks),
-					 callback)).
+% Left out for now to avoid dialyzer warning.
+%-define(get_Callback(S,I),      find_obj(lists:keysearch(I, 1, S#state.callbacks),
+%					 callback)).
 -define(get_AllCallback(S),     lists:map(fun({_V, C}) -> C end, 
 					  S#state.callbacks)).
 -define(get_AllCallbackID(S),   lists:map(fun({V, _C}) -> V end, 
@@ -373,7 +374,8 @@ find_obj({value, {_, Obj}},_) -> Obj;
 find_obj({value, {Id, Con, _, _, _, Types}}, _) -> 
     ?create_ConstraintInfo(Types, Con, Id);
 find_obj([{_, Tree, tree}|_], tree) -> Tree;
-find_obj(_,callback) -> {'EXCEPTION', #'CosNotifyFilter_CallbackNotFound'{}};
+% Left out for now to avoid dialyzer warning.
+%find_obj(_,callback) -> {'EXCEPTION', #'CosNotifyFilter_CallbackNotFound'{}};
 find_obj(_,tree) -> undefined;
 find_obj(_,constraint) -> error.
 

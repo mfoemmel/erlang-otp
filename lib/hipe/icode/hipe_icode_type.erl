@@ -1301,12 +1301,12 @@ transform_arith(I, Op = '-', Info) ->
 transform_arith(I, Op, Info) ->
   Args = safe_lookup_list(args(I), Info),
   NewInfo = analyse_insn(I, Info),
-  [TempDst] = case hipe_icode:is_call(I) of
+  List = case hipe_icode:is_call(I) of
 	      true -> safe_lookup_list(call_dstlist(I), NewInfo);
 	      false -> [erl_bif_types:type(erlang, Op, length(Args), Args)]
 	     end,
   %% the t_is_fixnum(TempDst) check is unnecessary for bitwise boolean Ops.
-  case valid_unsafe_args(Args, Op) and t_is_fixnum(TempDst) of
+  case valid_unsafe_args(Args, Op) and all_fixnums(List) of
     true -> 
       update_call_or_enter(I, arithop_to_unsafe(Op));
     false -> I

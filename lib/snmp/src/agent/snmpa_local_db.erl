@@ -41,6 +41,8 @@
          table_next/2,
 	 table_max_col/2]).
 
+-export([get_elements/2]).
+
 -export([match/2]).
 
 %% Debug exports
@@ -958,7 +960,7 @@ notify_clients(Event, Clients) ->
     lists:foreach(F, Clients).
 
 notify_client({Client,Module}, Event) ->
-    catch Module:notify(Client,Event).
+    (catch Module:notify(Client,Event)).
 
 
 %%------------------------------------------------------------------
@@ -990,10 +992,15 @@ table_construct_row(Name, RowIndex, Status, Cols) ->
 table_get_elements(NameDb, RowIndex, Cols, _FirstOwnIndex) ->
     get_elements(Cols, table_get_row(NameDb, RowIndex)).
 
-get_elements(_Cols, undefined) -> undefined;
-get_elements([Col | Cols], Row) ->
+get_elements(_Cols, undefined) -> 
+    undefined;
+get_elements([Col | Cols], Row) when is_tuple(Row) and (size(Row) >= Col) ->
     [element(Col, Row) | get_elements(Cols, Row)];
-get_elements([], _Row) -> [].
+get_elements([], _Row) -> 
+    [];
+get_elements(Cols, Row) ->
+    erlang:error({bad_arguments, Cols, Row}).
+
 
 %%----------------------------------------------------------------------
 %% This should/could be a generic function, but since Mnesia implements
@@ -1111,19 +1118,19 @@ get_info(Dets, Ets) ->
     [{process_memory, ProcSize},
      {db_memory, [{dets, DetsSz}, {ets, EtsSz}]}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
 	{memory, Sz} ->
 	    Sz;
 	_ ->
 	    undefined
-    end;
-proc_mem(_) ->
-    undefined.
+    end.
+%% proc_mem(_) ->
+%%     undefined.
 
 dets_size(T) ->
     case (catch dets:info(T, file_size)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
@@ -1131,7 +1138,7 @@ dets_size(T) ->
 
 ets_size(T) ->
     case (catch ets:info(T, memory)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined

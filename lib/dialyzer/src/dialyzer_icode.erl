@@ -28,7 +28,8 @@
 -export([run_analysis/5]).
 
 -include("hipe_icode.hrl").
--include("hipe_icode_type.hrl").
+-include("dialyzer.hrl").
+-define(TYPE_DEPTH, 3).
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bool/0, t_cons/0, t_constant/0, 
@@ -37,7 +38,8 @@
 		    t_fun_args/1, t_fun_arity/1,
 		    t_fun_range/1,t_inf/2, t_inf_lists/2, 
 		    t_integer/0,
-		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
+		    t_integer/1, t_is_atom/1, t_is_atom/2, 
+		    t_is_any/1, t_is_binary/1,
 		    t_is_bool/1, t_is_cons/1, t_is_constant/1,
 		    t_is_pos_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
@@ -72,14 +74,7 @@ run_analysis(Cfg, IcodeFun, Plt, NoWarnUnused, SendWarn) ->
 
 cfg_loop(State) ->
   Labels = hipe_icode_cfg:reverse_postorder(state__cfg(State)),  
-  case simplify_controlflow(Labels, State, false) of
-    {dirty, NewCfg} ->
-      NewCfg1 = hipe_icode_cfg:remove_unreachable_code(NewCfg),
-      NewState = analyze(NewCfg1),
-      cfg_loop(NewState);
-    NewState ->
-      NewState
-  end.
+  simplify_controlflow(Labels, State).
 
 
 return(State, IcodeFun, OldSig, Warnings) ->
@@ -169,7 +164,12 @@ analyze_block(Label, InfoIn, State) ->
       UpdateInfo =
 	case Fail of
 	  [] ->
-	    [{Cont, ContInfo}];
+	    case call_always_fails(Last, InfoOut) of
+	       true ->
+		[];
+	      false ->
+		[{Cont, ContInfo}]
+	    end;
 	  _ ->
 	    case call_always_fails(Last, InfoOut) of
 	      true ->
@@ -303,8 +303,16 @@ do_if(I, Info) ->
 		  [{FalseLab, enter(Arg1, Inf, enter(Arg2, Inf, Info))}, 
 		   {TrueLab, Info}]
 	      end;
-	    _ ->
-	      [{TrueLab, Info}, {FalseLab, Info}]
+	    Op ->
+	      Eval = erl_bif_types:type(erlang, Op, 2, [Type1, Type2]),
+	      case t_is_atom(true, Eval) of
+		true -> [{TrueLab, Info}];
+		false ->
+		  case t_is_atom(false, Eval) of
+		    true -> [{FalseLab, Info}];
+		    false -> [{TrueLab, Info}, {FalseLab, Info}]
+		  end
+	      end
 	  end
       end;
     _ ->
@@ -405,12 +413,10 @@ do_type(I, Info, Var) ->
 	  test_cons_or_nil(t_nil(), Var, VarInfo, TrueLab, FalseLab, Info);
 	{atom, A} ->
 	  test_number_or_atom(fun(X) -> t_atom(X) end,
-			      fun(X) -> t_atom_vals(X) end,
 			      A, Var, VarInfo, {atom, A}, 
 			      TrueLab, FalseLab, Info);
 	{integer, N} ->
 	  test_number_or_atom(fun(X) -> t_number(X) end, 
-			      fun(X) -> t_number_vals(X) end,
 			      N, Var, VarInfo, {integer, N}, 
 			      TrueLab, FalseLab, Info);
 	{record, Atom, Size} ->
@@ -504,7 +510,7 @@ switch_tuple_arity_update_info([], Var, _TupleType,
   {{FailLabel, enter(Var, FailType, Info)}, Acc}.
 
 
-do_switch_val(I, Info)->
+do_switch_val(I, Info) ->
   Arg = hipe_icode:switch_val_arg(I),
   ArgType = lookup(Arg, Info),
   Cases = hipe_icode:switch_val_cases(I),
@@ -563,7 +569,7 @@ test_cons_or_nil(Type, Var, VarInfo, TrueLab, FalseLab, Info) ->
       end
   end.
 
-test_number_or_atom(Fun, FunVals, X, Var, VarInfo, TypeTest,
+test_number_or_atom(Fun, X, Var, VarInfo, TypeTest,
 		    TrueLab, FalseLab, Info) ->
   case t_is_any(VarInfo) of
     true ->
@@ -576,15 +582,9 @@ test_number_or_atom(Fun, FunVals, X, Var, VarInfo, TypeTest,
 	true ->
 	  [{TrueLab, Info}];
 	maybe ->
-	  case FunVals(VarInfo) =:= any of
-	    true ->
-	      [{TrueLab, enter(Var, Fun(X), Info)},
-	       {FalseLab, Info}];
-	    false ->
-	      FalseType = t_subtract(VarInfo, Fun(X)),
-	      [{TrueLab, enter(Var, Fun(X), Info)},
-	       {FalseLab, enter(Var, FalseType, Info)}]
-	  end
+	  FalseType = t_subtract(VarInfo, Fun(X)),
+	  [{TrueLab, enter(Var, Fun(X), Info)},
+	   {FalseLab, enter(Var, FalseType, Info)}]
       end
   end.
 
@@ -711,7 +711,7 @@ test_type0(list, T) ->
   t_is_pos_improper_list(T);
 test_type0(cons, T) ->
   t_is_cons(T);
-test_type0(nil, T)->
+test_type0(nil, T) ->
   t_is_nil(T);
 test_type0(constant, T) ->
   t_is_constant(T);
@@ -772,10 +772,10 @@ true_branch_info(T) ->
 %% of the simplification of the cfg.
 %%
 
-simplify_controlflow([Label|Left], State, Dirty)->
+simplify_controlflow([Label|Left], State) ->
   case state__bb(State, Label) of
     not_found ->
-      simplify_controlflow(Left, State, Dirty);
+      simplify_controlflow(Left, State);
     BB ->
       I = hipe_bb:last(BB),
       case I of
@@ -784,9 +784,9 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	  case do_if(I, Info) of
 	    [{Lab, _}] ->
 	      NewState = mk_goto(State, BB, Label, Lab),
-	      simplify_controlflow(Left, NewState, true);
+	      simplify_controlflow(Left, NewState);
 	    [_,_] ->
-	      simplify_controlflow(Left, State, Dirty)
+	      simplify_controlflow(Left, State)
 	  end;
 	#type{} ->
 	  Info = state__info_out(State, Label),
@@ -795,17 +795,17 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	    FalseLab ->
 	      %% true label = false label, this can occur!
 	      NewState = mk_goto(State, BB, Label, FalseLab),
-	      simplify_controlflow(Left, NewState, true);
+	      simplify_controlflow(Left, NewState);
 	    TrueLab ->
 	      case do_type(I, Info) of
 		[{TrueLab, _}] -> 
 		  NewState = mk_goto(State, BB, Label, TrueLab),
-		  simplify_controlflow(Left, NewState, true);
+		  simplify_controlflow(Left, NewState);
 		[{FalseLab, _}] -> 
 		  NewState = mk_goto(State, BB, Label, FalseLab),
-		  simplify_controlflow(Left, NewState, true);
+		  simplify_controlflow(Left, NewState);
 		[_,_] -> %% Maybe
-		  simplify_controlflow(Left, State, Dirty)
+		  simplify_controlflow(Left, State)
 	      end
 	  end;
 	#switch_tuple_arity{} ->
@@ -817,11 +817,11 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	    [] ->
 	      Fail = hipe_icode:switch_tuple_arity_fail_label(I),
 	      NewState = mk_goto(State, BB, Label, Fail),
-	      simplify_controlflow(Left, NewState, true);
+	      simplify_controlflow(Left, NewState);
 	    Cases -> 
 	      %% Nothing changed.
 	      case switch_tuple_arity_can_fail(Cases, Type) of
-		true -> simplify_controlflow(Left, State, Dirty);
+		true -> simplify_controlflow(Left, State);
 		false ->
 		  NewCases = butlast(Cases),
 		  {_Arity, NewFail} = lists:last(Cases),
@@ -831,7 +831,7 @@ simplify_controlflow([Label|Left], State, Dirty)->
 		    hipe_icode:switch_tuple_arity_cases_update(TmpI, NewCases),
 		  NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB)++[NewI]),
 		  NewState = state__bb_add(State, Label, NewBB),
-		  simplify_controlflow(Left, NewState, true)
+		  simplify_controlflow(Left, NewState)
 	      end;
 	    LegalCases ->
 	      NewI =
@@ -848,7 +848,7 @@ simplify_controlflow([Label|Left], State, Dirty)->
 		end,
 	      NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB) ++ [NewI]),
 	      NewState = state__bb_add(State, Label, NewBB),
-	      simplify_controlflow(Left, NewState, true)
+	      simplify_controlflow(Left, NewState)
 	  end;
 	#switch_val{} ->
 	  Cases = hipe_icode:switch_val_cases(I),
@@ -859,17 +859,17 @@ simplify_controlflow([Label|Left], State, Dirty)->
 	    [] ->
 	      Fail = hipe_icode:switch_val_fail_label(I),
 	      NewState = mk_goto(State, BB, Label, Fail),
-	      simplify_controlflow(Left, NewState, true);
+	      simplify_controlflow(Left, NewState);
 	    Cases ->
 	      %% Nothing changed!
-	      simplify_controlflow(Left, State, Dirty);
+	      simplify_controlflow(Left, State);
 	    %% TODO: Find out whether switch_val can fail 
 	    %% just as switch_tuple_arity
 	    LegalCases ->
 	      NewI = hipe_icode:switch_val_cases_update(I, LegalCases),
 	      NewBB = hipe_bb:code_update(BB, hipe_bb:butlast(BB) ++ [NewI]),
 	      NewState = state__bb_add(State, Label, NewBB),
-	      simplify_controlflow(Left, NewState, true)
+	      simplify_controlflow(Left, NewState)
 	  end;
 	#call{} ->
 	  Info = state__info_out(State, Label),
@@ -880,33 +880,30 @@ simplify_controlflow([Label|Left], State, Dirty)->
 		false ->
 		  case hipe_icode:call_fail_label(I) of
 		    [] ->
-		      simplify_controlflow(Left, State, Dirty);
+		      simplify_controlflow(Left, State);
 		    _ ->
 		      NewState = unset_fail(State, BB, Label, I),
-		      simplify_controlflow(Left, NewState, true)
+		      simplify_controlflow(Left, NewState)
 		  end;
 		true ->
-		  simplify_controlflow(Left, State, Dirty)
+		  simplify_controlflow(Left, State)
 	      end;
 	    true ->
 	      case hipe_icode:call_in_guard(I) of
 		false ->
-		  simplify_controlflow(Left, State, Dirty);
+		  simplify_controlflow(Left, State);
 		true ->
 		  FailLabel = hipe_icode:call_fail_label(I),
 		  NewState = mk_goto(State, BB, Label, FailLabel),
-		  simplify_controlflow(Left, NewState, true)
+		  simplify_controlflow(Left, NewState)
 	      end
 	  end;
 	_ ->
-	  simplify_controlflow(Left, State, Dirty)
+	  simplify_controlflow(Left, State)
       end
   end;
-simplify_controlflow([], State, true) ->
-  %% Redo the type analysis since the cfg has changed.
-  {dirty, state__cfg(State)};
-simplify_controlflow([], State, _) ->
-  State.
+simplify_controlflow([], State) ->
+  state__remove_unreachable(State).
 
 mk_goto(State, BB, Label, Succ) ->
   NewI = hipe_icode:mk_goto(Succ),
@@ -1176,7 +1173,7 @@ args(I) ->
   hipe_icode:args(I).
 
 keep_vars(Vars) ->
-  lists:filter(fun(X)->hipe_icode:is_var(X)end, Vars).
+  lists:filter(fun(X) -> hipe_icode:is_var(X) end, Vars).
 
 butlast([_]) ->
   [];
@@ -1231,6 +1228,10 @@ new_state(Cfg) ->
 
 state__cfg(#state{cfg=Cfg}) ->
   Cfg.
+
+state__remove_unreachable(State = #state{cfg=Cfg}) ->
+  State#state{cfg=hipe_icode_cfg:remove_unreachable_code(Cfg)}.
+  
 
 state__succ(#state{succmap=SM}, Label) ->
   hipe_icode_cfg:succ(SM, Label).
@@ -1804,13 +1805,35 @@ warn_on_if(I, Info, IcodeFun) ->
 	case Op of
 	  '=:=' ->
 	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
-	    io_lib:format("=:= between ~s and ~s will"
-			  " always fail!\n",
+	    io_lib:format("=:= between ~s and ~s will always fail!\n",
 			  [format_type(Arg1), format_type(Arg2)]);
 	  '=/=' ->
 	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
-	    io_lib:format("=/= between ~s and ~s will"
-			  "always fail!\n",
+	    io_lib:format("=/= between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '==' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format("== between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '/=' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format("/= between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '<' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format("< between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '=<' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format("=< between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '>=' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format(">= between ~s and ~s will always fail!\n",
+			  [format_type(Arg1), format_type(Arg2)]);
+	  '>' ->
+	    [Arg1, Arg2] = safe_lookup_list(hipe_icode:if_args(I), Info),
+	    io_lib:format("> between ~s and ~s will always fail!\n",
 			  [format_type(Arg1), format_type(Arg2)])
 	end,
       {?WARN_COMP, {IcodeFun, W}};

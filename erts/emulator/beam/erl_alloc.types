@@ -218,6 +218,7 @@ type	PORT_TASKQ	SHORT_LIVED	SYSTEM		port_task_queue
 type	MISC_OP_LIST	SHORT_LIVED	SYSTEM		misc_op_list
 type	PORT_NAMES	SHORT_LIVED	SYSTEM		port_names
 type	PORT_DATA_LOCK	STANDARD	SYSTEM		port_data_lock
+type	NODES_MON	STANDARD	PROCESSES	nodes_monitor
 
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock

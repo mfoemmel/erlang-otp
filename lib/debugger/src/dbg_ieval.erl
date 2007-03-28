@@ -1527,8 +1527,7 @@ match1({bin,_,Fs}, B, Bs0, BBs0) when is_binary(B) ->
 			     fun(L, R, Bs) -> match1(L, R, Bs, BBs) end,
 			     fun(E, Bs) -> expr(E, Bs, #ieval{}) end,
 			     false) of
-	{match,_}=Match -> Match;
-	_ -> throw(nomatch)
+	Match -> Match
     catch
 	_:_ -> throw(nomatch)
     end;

@@ -300,8 +300,7 @@ updateCell(Value, Field, WD) ->
     ancestor -> WD#workDataCell{ancestor= Value}; 
     best     -> WD#workDataCell{best    = Value}; 
     samedom  -> WD#workDataCell{samedom = Value}; 
-    bucket   -> WD#workDataCell{bucket  = Value};
-    _Other   -> erlang:fault({?MODULE, update, 3})
+    bucket   -> WD#workDataCell{bucket  = Value}
   end.
 
 %%>----------------------------------------------------------------------<

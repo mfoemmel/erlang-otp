@@ -325,11 +325,7 @@ do_restart(State, eof, Phase) ->
 				    {ok, NewState};
 				true ->
 				    {ok, ?tr_set_reportH(NewState, Exc)}
-			    end;
-			Reason ->
-			    ?tr_error_msg("CosTransactions_Terminator (~p) failed. Unknown error: ~p~n",
-					  [?tr_get_terminator(State), Reason]),
-			    {stop, Reason}
+			    end
 		    end
 	    end;
         {heuristic, Exc} ->

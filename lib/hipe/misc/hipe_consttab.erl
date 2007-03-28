@@ -1,10 +1,11 @@
+%% -*- erlang-indent-level: 2 -*-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% @doc
 %% CONSTTAB - maps labels to constants.
 %% <p>
 %% <strong> Note:</strong> 'constant' is a misnomer throughout this code.</p>
 %% <p>
-%%  There are two different types of constants that can be stored:
+%% There are two different types of constants that can be stored:
 %%  <ul>
 %%     <li>Erlang terms</li>
 %%     <li>Blocks of binary data</li>
@@ -22,7 +23,7 @@
 %% word (8 bytes) size) or a list of references to code.
 %% These references will then be threated as word sized addresses
 %% and can be used for jumptables.
-%% The list of references can have an optiona ordering, so that 
+%% The list of references can have an optional ordering, so that 
 %% you can create a jumptable that will be sorted on the load-time
 %% representation of e.g. atoms.
 %% </p>
@@ -59,16 +60,16 @@
 -export([new/0,             % new() -> ConstTab
 	 insert_term/2,     % insert_term(ConstTab, Term) -> {NewTab, Lbl}
 	 insert_fun/2,      % insert_term(ConstTab, Fun) -> {NewTab, Lbl}
-	 %% insert_word/2,     % insert_word(ConstTab, Value) -> {NewTab, Lbl}
-	 insert_sorted_block/2,     % insert_word(ConstTab, ValueList) -> 
+	 %% insert_word/2,  % insert_word(ConstTab, Value) -> {NewTab, Lbl}
+	 insert_sorted_block/2,    % insert_word(ConstTab, ValueList) -> 
 	                           % {NewTab, Lbl}
 	 insert_sorted_block/4,
 	 insert_block/3,
 	 %% insert_global_word/2,     
 	 %% insert_global_block/4,
-	 %% update_word/3,     % update_word(ConstTab, Value) -> {NewTab, Lbl}
+	 %% update_word/3,  % update_word(ConstTab, Value) -> {NewTab, Lbl}
 	 %% update_block/5,
-	 %% update_global_word/3,     
+	 %% update_global_word/3,
 	 %% update_global_block/5,
 	 lookup/2,          % lookup(Key, ConstTab) -> [Term|Block]
 	 labels/1,          % labels(ConstTab) -> LabelList
@@ -81,8 +82,7 @@
 	 const_exported/1,
 	 const_data/1,
 	 const_size/1
-	 %% block_size/1,      % size of a block in bytes 
-	 %% repeat/2
+	 %% block_size/1    % size of a block in bytes 
 	]).
 
 
@@ -97,13 +97,13 @@ new() -> {tree_empty(), [], 0}.
 %% @doc Inserts an erlang term into the const table if the term was not 
 %% present before, otherwise do nothing.
 insert_term(ConstTab, Term) ->
-   case lookup_const(ConstTab, term, word_size(), false, Term) of
-      {value, Label} -> 
-	 {ConstTab, Label};
-      none -> 
-	 insert_const(ConstTab, term, word_size(), false, Term)
-   end.
-	 
+  case lookup_const(ConstTab, term, word_size(), false, Term) of
+    {value, Label} ->
+      {ConstTab, Label};
+    none ->
+      insert_const(ConstTab, term, word_size(), false, Term)
+  end.
+
 
 %% @spec insert_fun(ConstTab::const_tab(), Term::term()) -> {NewTab, Lbl}
 %% NewTab = const_tab()
@@ -111,7 +111,7 @@ insert_term(ConstTab, Term) ->
 %% @doc Inserts a Fun into the const table.
 %% Don't ask me what this is for...
 insert_fun(ConstTab, Fun) ->
-   insert_const(ConstTab, term, word_size(), false, Fun).
+  insert_const(ConstTab, term, word_size(), false, Fun).
 
 
 %% @spec (ConstTab::const_tab(), TermList::[term()]) -> {NewTab, Lbl}
@@ -119,8 +119,7 @@ insert_fun(ConstTab, Fun) ->
 %% Lbl = lbl()
 %% @doc Inserts a list of terms into the const table.
 insert_sorted_block(CTab, TermList) ->
-  insert_const(CTab, sorted_block, 
-	       word_size(), false, TermList).
+  insert_const(CTab, sorted_block, word_size(), false, TermList).
 
 %% %% @spec (ConstTab::const_tab(), InitVal::integer()) -> {NewTab, Lbl}
 %% %% NewTab = const_tab()
@@ -148,12 +147,12 @@ insert_sorted_block(CTab, TermList) ->
 %% The block can consist of references to labels in the code.
 %% This is used for jump tables. These references should be tracked 
 %% and the corresponding BBs should not be considered dead.
-insert_block({ConstTab, RefToLabels, NextLabel}, 
-	     ElementType, InitList) ->
+insert_block({ConstTab, RefToLabels, NextLabel}, ElementType, InitList) ->
   ReferredLabels = get_labels(InitList, []),
   NewRefTo = ReferredLabels ++ RefToLabels,
   {NewTa, Id} = insert_const({ConstTab, NewRefTo, NextLabel}, 
-	       block, word_size(), false, {ElementType,InitList}),
+			     block, word_size(), false,
+			     {ElementType,InitList}),
   {insert_backrefs(NewTa, Id, ReferredLabels), Id}.
 
 
@@ -170,9 +169,9 @@ insert_sorted_block({ConstTab, RefToLabels, NextLabel},
   ReferredLabels = get_labels(InitList, []),
   NewRefTo = ReferredLabels ++ RefToLabels,
   {NewTa, Id} = insert_const({ConstTab, NewRefTo, NextLabel}, 
-	       block, word_size(), false, {ElementType,InitList,SortOrder}),
+			     block, word_size(), false,
+			     {ElementType,InitList,SortOrder}),
   {insert_backrefs(NewTa, Id, ReferredLabels), Id}.
-
 
 
 insert_backrefs(Tbl, From, ToLabels) ->
@@ -183,15 +182,13 @@ insert_backrefs(Tbl, From, ToLabels) ->
 insert_ref({Table, RefToLabels, NextLblNr}, From, To) ->
   case tree_lookup({To,ref}, Table) of
     none ->
-      {tree_insert({To,ref},[From], Table), RefToLabels,
-       NextLblNr};
+      {tree_insert({To,ref}, [From], Table), RefToLabels, NextLblNr};
     {value, RefList} ->
-      {tree_update({To,ref},[From|RefList], Table), RefToLabels,
-       NextLblNr}
+      {tree_update({To,ref}, [From|RefList], Table), RefToLabels, NextLblNr}
   end.
 
 find_refs(To, {Table,_,_}) ->
- %% returns 'none' or {value, V}
+  %% returns 'none' or {value, V}
   tree_lookup({To,ref}, Table).
 
 
@@ -206,16 +203,18 @@ delete_ref(To, {ConstTab, RefToLabels, NextLabel}) ->
 
 get_labels([{label, L}| Rest], Acc) ->
   get_labels(Rest, [L|Acc]);
-get_labels([I|Rest],Acc) when is_number(I) -> 
+get_labels([I|Rest], Acc) when is_integer(I) -> 
   get_labels(Rest, Acc);
-get_labels([],Acc) ->
+get_labels([], Acc) ->
   Acc.
   
 %% @spec (element_type()) -> integer()
 %% @doc Returns the size in bytes of an element_type.
+%%  The is_atom/1 guard in the clause handling arrays
+%%  constraints the argument to 'byte' | 'word'
 size_of(byte) -> 1;
 size_of(word) -> word_size();
-size_of({array,S,N}) when is_integer(N), N > 0 ->
+size_of({array,S,N}) when is_atom(S), is_integer(N), N > 0 ->
     N * size_of(S).
 
 %% @spec ({element_type(), block()}) -> [byte()]
@@ -229,8 +228,7 @@ decompose(_Bytes, []) ->
 decompose(Bytes, [X|Xs]) ->
    number_to_bytes(Bytes, X, decompose(Bytes, Xs)).
 
-
-number_to_bytes(0, _, Bytes) ->
+number_to_bytes(0, X, Bytes) when is_integer(X) ->
    Bytes;
 number_to_bytes(N, X, Bytes) ->
    Byte = X band 255,
@@ -253,7 +251,7 @@ block_size({ElementType,Block,_SortOrder}) ->
 %% TODO: Remove RefsTOfrom overwitten labels...
 %% update_word(ConstTab, Label, InitVal) ->
 %%    update_block(ConstTab, Label, word_size(), word, [InitVal]).
-
+%%
 %% update_global_word(ConstTab, Label, InitVal) ->
 %%    update_global_block(ConstTab, Label, word_size(),word, [InitVal]).
 
@@ -262,7 +260,7 @@ block_size({ElementType,Block,_SortOrder}) ->
 %%
 %% Returns NewTable
 %%
-
+%%
 %% update_block(ConstTab, Label, Align, ElementType, InitList) ->
 %%   ByteList = decompose(size_of(ElementType), InitList),
 %%   update_const(ConstTab, Label, block, Align, false, {ElementType,ByteList}).
@@ -313,25 +311,25 @@ update({Table, RefToLabels, NextLblNr}, Label, NewConst) ->
 %% @spec (lbl(), const_tab()) -> ctdata()
 %% @doc Lookup a label.
 lookup(Lbl, {Table,_RefToLabels,_NextLblNr}) ->
-   tree_get(Lbl, Table).
+  tree_get(Lbl, Table).
 
 
 %% Find out if a constant term is present in the constant table.
 lookup_const({Table,_RefToLabels,_NextLblNr}, 
 	     Type, Alignment, Exported, Data)->
-   Const = mk_const(Type, Alignment, Exported, Data),
-   tree_lookup_key_for_value(Const, Table).
+  Const = mk_const(Type, Alignment, Exported, Data),
+  tree_lookup_key_for_value(Const, Table).
 
 %% @spec (const_tab()) -> [lbl()]
 %% @doc Return the labels bound in a table.
 labels({Table,_RefToLabels,_NextLblNr}) ->
-    tree_keys(Table).
+  tree_keys(Table).
 
 
 %% @spec (const_tab()) -> [label_ref()]
 %% @doc Return the referred labels bound in a table.
 referred_labels({_Table, RefToLabels,_NextLblNr}) ->
-    RefToLabels.
+  RefToLabels.
 
 
 %%
@@ -349,13 +347,13 @@ update_referred_labels(Table, LabelMap) ->
 	      %% A label may be referred several times.
 	      UniqueLbls = ordsets:from_list(DataLbls),
 	      lists:foldl(fun(DataLbl, AccTbl) ->
-			     insert_ref(
-			       delete_ref(OldLbl,
-					  update_block_labels(AccTbl, DataLbl, OldLbl, NewLbl)),
-			       DataLbl, NewLbl)
-			 end,
-			 Tbl,
-			 UniqueLbls)
+			      insert_ref(
+				delete_ref(OldLbl,
+					   update_block_labels(AccTbl, DataLbl, OldLbl, NewLbl)),
+				DataLbl, NewLbl)
+			  end,
+			  Tbl,
+			  UniqueLbls)
 	  end
       end,
       Table,
@@ -399,13 +397,6 @@ const_size(Constant) ->
     sorted_block -> length(const_data(Constant))*word_size()
   end.
 
-%% %% @spec (N::integer,E::term()) -> [E]
-%% %% @doc Create a list of length N with the element E.
-%% repeat(N,E) -> repeat(N,E,[]).
-%% 
-%% repeat(0,_E,Acc) -> Acc;
-%% repeat(N,E,Acc) when N > 0 ->
-%%     repeat(N-1,E,[E|Acc]).
 
 word_size() ->
   hipe_rtl_arch:word_size().

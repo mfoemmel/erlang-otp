@@ -1899,10 +1899,7 @@ may_grow(Head, N, How) ->
 
 may_grow1(Head, Extra, many_times) when Extra > ?SEGSZP ->
     Reply = grow(Head, 1, undefined),
-    case Reply of
-	{_, ok} -> self() ! ?DETS_CALL(self(), may_grow);
-	_ -> ok
-    end,
+    self() ! ?DETS_CALL(self(), may_grow),
     Reply;
 may_grow1(Head, Extra, _How) ->    
     grow(Head, Extra, undefined).

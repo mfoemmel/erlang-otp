@@ -48,7 +48,6 @@
 #define FILE_EXT     ".so"    /* extension appended to the filename */
 
 #if !defined(HAVE_MACH_O_DYLD_H)
-/* XXX:PaN Critical section! */
 static char **errcodes = NULL;
 static int num_errcodes = 0;
 static int num_errcodes_allocated = 0;
@@ -82,8 +81,16 @@ static int find_errcode(char *string)
 }
 #endif
 void erl_sys_ddll_init(void) {
-    /* XXX:PaN Initialize mutex */
-
+#if defined(HAVE_DLOPEN) && defined(ERTS_NEED_DLOPEN_BEFORE_DLERROR)
+    /*
+     * dlopen() needs to be called before we make the first call to
+     * dlerror(); otherwise, dlerror() might dump core. At least
+     * some versions of linuxthread suffer from this bug.
+     */
+    void *handle = dlopen("/nonexistinglib", RTLD_NOW);
+    if (handle)
+	dlclose(handle);
+#endif    
     return;
 }
 /* 
@@ -136,7 +143,6 @@ int erts_sys_ddll_open(char *full_name, void **handle)
 #else
     {
 	char *str;
-	/* XXX:PaN Lock me! */
 	dlerror();
 	*handle = dlopen(dlname, RTLD_NOW);
 	if ((str = dlerror()) == NULL) {
@@ -155,7 +161,6 @@ int erts_sys_ddll_open(char *full_name, void **handle)
 	    }
 	    ret = ERL_DE_DYNAMIC_ERROR_OFFSET - find_errcode(str);
 	}
-	/* XXX:PaN Unlock me! */
 	goto done;
     }
 #endif
@@ -186,7 +191,6 @@ int erts_sys_ddll_sym(void *handle, char *func_name, void **function)
 	void *sym;
 	char *e;
 	int ret;
-	/* XXX:PaN Lock me! */
 	dlerror();
 	sym = dlsym(handle, func_name);
 	if ((e = dlerror()) != NULL) {
@@ -195,7 +199,6 @@ int erts_sys_ddll_sym(void *handle, char *func_name, void **function)
 	    *function = sym;
 	    ret = ERL_DE_NO_ERROR;
 	}
-	/* XXX:PaN Unlock me! */
 	return ret;
     }
 #else
@@ -242,7 +245,6 @@ int erts_sys_ddll_close(void *handle)
     {
 	int ret;
 	char *s;
-	/* XXX:PaN Lock me! */
 	dlerror();
 	if (dlclose(handle) == 0) {
 	    ret = ERL_DE_NO_ERROR;
@@ -253,7 +255,6 @@ int erts_sys_ddll_close(void *handle)
 		ret = ERL_DE_DYNAMIC_ERROR_OFFSET - find_errcode(s);
 	    }
 	}
-	/* XXX:PaN Unlock me! */	
 	return ret;
     }
 #else
@@ -292,13 +293,11 @@ char *erts_sys_ddll_error(int code)
     {
 	char *msg;
 
-	/* XXX:PaN lock me */
 	if (actual_code >= num_errcodes) {
 	    msg = "Unknown dlload error";
 	} else {
 	    msg = errcodes[actual_code];
 	}
-	/* XXX:PaN unlock me */
 	return msg;
     }
 #endif

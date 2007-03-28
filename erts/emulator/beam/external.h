@@ -30,6 +30,7 @@
 #define REFERENCE_EXT     'e'
 #define NEW_REFERENCE_EXT 'r'
 #define PORT_EXT          'f'
+#define NEW_FLOAT_EXT     'F'
 #define PID_EXT           'g'
 #define SMALL_TUPLE_EXT   'h'
 #define LARGE_TUPLE_EXT   'i'

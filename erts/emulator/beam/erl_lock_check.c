@@ -82,6 +82,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"bif_timers",				NULL			},
     {	"reg_tab",				NULL			},
     {	"proc_main",				"pid"			},
+    {	"nodes_monitors",			NULL			},
     {   "driver_list",                          NULL                    },
     {	"proc_link",				"pid"			},
     {	"proc_msgq",				"pid"			},
@@ -106,7 +107,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"async_ready",				NULL			},
 #endif
     {	"efile_drv",				"address"		},
-#ifdef ENABLE_CHILD_WAITER_THREAD
+#if defined(ENABLE_CHILD_WAITER_THREAD) || defined(ERTS_SMP)
     {	"child_status",				NULL			},
 #endif
     {	"drv_ev_state",				NULL			},
@@ -145,6 +146,7 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"system_block",				NULL			},
     {	"breakpoints",				NULL			},
     {	"pollsets_lock",			NULL			},
+    {	"async_id",				NULL			},
 #endif
     {	"mtrace_buf",				NULL			}
 };

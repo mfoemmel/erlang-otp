@@ -22,6 +22,15 @@ changecom(`/*', `*/')dnl
  * - Replace "subcc ARG0,0,%g0; bz,pn" with "brz,pn ARG0"
  */
 
+`#if defined(HEAP_FRAG_ELIM_TEST)
+#define TEST_GOT_MBUF		ld [P+P_MBUF],%o1; cmp %o1,0; bne 3f; nop; 2:
+#define JOIN3(A,B,C)		A##B##C
+#define HANDLE_GOT_MBUF		3: st TEMP3,[P+P_NRA]; st NSP,[P+P_NSP]; mov %o0,%o1; mov P,%o0; call erts_gc_after_bif_call; nop; ld [P+P_HP_LIMIT],HP_LIMIT; b 2b; nop
+#else
+#define TEST_GOT_MBUF		/*empty*/
+#define HANDLE_GOT_MBUF		/*empty*/
+#endif'
+
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
@@ -46,6 +55,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	subcc %o0,THE_NON_VALUE,%g0
@@ -53,6 +63,7 @@ $1:
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -73,6 +84,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	subcc %o0,THE_NON_VALUE,%g0
@@ -80,6 +92,7 @@ $1:
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -100,6 +113,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	subcc %o0,THE_NON_VALUE,%g0
@@ -107,6 +121,7 @@ $1:
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -137,6 +152,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	subcc %o0,THE_NON_VALUE,%g0
@@ -148,6 +164,7 @@ $1:
 	set $1,TEMP0
 	b nbif_hairy_exception
 	mov 1,ARG4
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -174,6 +191,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	subcc %o0,THE_NON_VALUE,%g0
@@ -185,6 +203,7 @@ $1:
 	set $1,TEMP0
 	b nbif_hairy_exception
 	mov 2,ARG4
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -252,6 +271,7 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st NSP,[P+P_NSP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and test for success/failure
 	ld [P+P_HP_LIMIT],HP_LIMIT
@@ -260,6 +280,7 @@ $1:
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -289,11 +310,13 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -315,11 +338,13 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -342,11 +367,13 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')
@@ -369,11 +396,13 @@ $1:
 	mov RA,TEMP3
 	call $2
 	st HP,[P+P_HP]
+	TEST_GOT_MBUF
 
 	!! Restore registers and return
 	ld [P+P_FCALLS],FCALLS
 	jmpl TEMP3+8,%g0
 	ld [P+P_HP],HP
+	HANDLE_GOT_MBUF
 	.size $1,.-$1
 	.type $1,#function
 #endif')

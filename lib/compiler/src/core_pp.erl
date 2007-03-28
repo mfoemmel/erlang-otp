@@ -92,12 +92,11 @@ get_line([]) ->
 format(Node, Ctxt) ->
     maybe_anno(Node, fun format_1/2, Ctxt).
 
-format_1(#c_char{val=C}, _) -> io_lib:write_char(C);
-format_1(#c_int{val=I}, _) -> integer_to_list(I);
-format_1(#c_float{val=F}, _) -> float_to_list(F);
-format_1(#c_atom{val=A}, _) -> core_atom(A);
-format_1(#c_nil{}, _) -> "[]";
-format_1(#c_string{val=S}, _) -> io_lib:write_string(S);
+format_1(#c_literal{val=[]}, _) -> "[]";
+format_1(#c_literal{val=I}, _) when is_integer(I) -> integer_to_list(I);
+format_1(#c_literal{val=F}, _) when is_float(F) -> float_to_list(F);
+format_1(#c_literal{val=A}, _) when is_atom(A) -> core_atom(A);
+format_1(#c_literal{val=L}, _) -> io_lib:format("LITERAL<~p>", [L]);
 format_1(#c_var{name=V}, _) ->
     %% Internal variable names may be:
     %%     - atoms representing proper Erlang variable names, or
@@ -378,7 +377,7 @@ format_vseq([H|T], Pre, Suf, Ctxt, Fun) ->
      format_vseq(T, Pre, Suf, Ctxt, Fun)];
 format_vseq([], _, _, _, _) -> "".
 
-format_list_tail(#c_nil{anno=[]}, _) -> "]";
+format_list_tail(#c_literal{anno=[],val=[]}, _) -> "]";
 format_list_tail(#c_cons{anno=[],hd=H,tl=T}, Ctxt) ->
     Txt = [$,|format(H, Ctxt)],
     Ctxt1 = add_indent(Ctxt, width(Txt, Ctxt)),
@@ -451,5 +450,6 @@ is_simple_term(#c_values{es=Es}) ->
 is_simple_term(#c_tuple{es=Es}) ->
     length(Es) < 4 andalso lists:all(fun is_simple_term/1, Es);
 is_simple_term(#c_var{}) -> true;
-is_simple_term(#c_string{}) -> false;
+is_simple_term(#c_literal{val=[_|_]}) -> false;
+is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
 is_simple_term(Term) -> core_lib:is_atomic(Term).

@@ -483,6 +483,9 @@ lay_var(Node, Ctxt) ->
 		[C | _] when C >= $\300, C =< $\336, C /= $\327 ->
 		    %% These are also uppercase (ISO 8859-1).
 		    text(S);
+		[$_| _] ->
+		    %% If the name starts with '_' we keep the name as is.
+		    text(S);
 		_ ->
 		    %% Plain atom names are prefixed with a single "_".
 		    %% E.g. 'foo' => "_foo".
@@ -494,7 +497,7 @@ lay_var(Node, Ctxt) ->
 	    text([$_ | integer_to_list(V)]);
 	{N, A} when is_atom(N), is_integer(A) ->
 	    %% Function names have no overlap problem.
-	    beside(lay_noann(c_atom(to_string(N)), Ctxt),
+	    beside(lay_noann(c_atom(atom_to_list(N)), Ctxt),
 		   beside(text("/"), lay_noann(c_int(A), Ctxt)))
     end.
 
@@ -815,11 +818,6 @@ vertical([]) ->
 %     beside(D, horizontal(Ds));
 % horizontal([]) ->
 %     [].
-
-to_string(Atom) when is_atom(Atom) ->
-    atom_to_list(Atom);
-to_string(String) ->
-    String.
 
 tidy_float([$., C | Cs]) ->
     [$., C | tidy_float_1(Cs)];  % preserve first decimal digit

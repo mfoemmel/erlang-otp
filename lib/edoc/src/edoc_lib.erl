@@ -27,16 +27,16 @@
 
 -module(edoc_lib).
 
--export([count/2, lines/1, split_at/2, split_at_stop/1, filename/1,
-	 transpose/1, segment/2, get_first_sentence/1, is_space/1,
-	 strip_space/1, parse_expr/2, parse_contact/2, escape_uri/1,
-	 join_uri/2, is_relative_uri/1, is_name/1, to_label/1,
-	 find_doc_dirs/0, find_sources/2, find_sources/3, find_file/3,
-	 try_subdir/2, unique/1, write_file/3, write_file/4,
-	 write_info_file/4, read_info_file/1, get_doc_env/1,
-	 get_doc_env/4, copy_file/2, copy_dir/2, uri_get/1,
-	 run_doclet/2, run_layout/2, simplify_path/1, timestr/1,
-	 datestr/1]).
+-export([count/2, lines/1, split_at/2, split_at_stop/1,
+	 split_at_space/1, filename/1, transpose/1, segment/2,
+	 get_first_sentence/1, is_space/1, strip_space/1, parse_expr/2,
+	 parse_contact/2, escape_uri/1, join_uri/2, is_relative_uri/1,
+	 is_name/1, to_label/1, find_doc_dirs/0, find_sources/2,
+	 find_sources/3, find_file/3, try_subdir/2, unique/1,
+	 write_file/3, write_file/4, write_info_file/4,
+	 read_info_file/1, get_doc_env/1, get_doc_env/4, copy_file/2,
+	 uri_get/1, run_doclet/2, run_layout/2,
+	 simplify_path/1, timestr/1, datestr/1]).
 
 -import(edoc_report, [report/2, warning/2]).
 
@@ -101,6 +101,20 @@ split_at_stop([$.], As) ->
 split_at_stop([C | Cs], As) ->
     split_at_stop(Cs, [C | As]);
 split_at_stop([], As) ->
+    {lists:reverse(As), []}.
+
+split_at_space(Cs) ->
+    split_at_space(Cs, []).
+
+split_at_space([$\s | Cs], As) ->
+    {lists:reverse(As), Cs};
+split_at_space([$\t | Cs], As) ->
+    {lists:reverse(As), Cs};
+split_at_space([$\n | Cs], As) ->
+    {lists:reverse(As), Cs};
+split_at_space([C | Cs], As) ->
+    split_at_space(Cs, [C | As]);
+split_at_space([], As) ->
     {lists:reverse(As), []}.
 
 is_space([$\s | Cs]) -> is_space(Cs);
@@ -596,29 +610,29 @@ simplify_path(P) ->
 
 %% The directories From and To are assumed to exist.
 
-copy_dir(From, To) ->
-    Es = list_dir(From, true),    % error if listing fails
-    lists:foreach(fun (E) -> copy_dir(From, To, E) end, Es).
+%% copy_dir(From, To) ->
+%%     Es = list_dir(From, true),    % error if listing fails
+%%     lists:foreach(fun (E) -> copy_dir(From, To, E) end, Es).
 
-copy_dir(From, To, Entry) ->
-    From1 = filename:join(From, Entry),
-    To1 = filename:join(To, Entry),
-    case filelib:is_dir(From1) of
-	true ->
-	    make_dir(To1),
-	    copy_dir(From1, To1);
-	false ->
-	    copy_file(From1, To1)
-    end.
+%% copy_dir(From, To, Entry) ->
+%%     From1 = filename:join(From, Entry),
+%%     To1 = filename:join(To, Entry),
+%%     case filelib:is_dir(From1) of
+%% 	true ->
+%% 	    make_dir(To1),
+%% 	    copy_dir(From1, To1);
+%% 	false ->
+%% 	    copy_file(From1, To1)
+%%     end.
 
-make_dir(Dir) ->
-    case file:make_dir(Dir) of
-	{ok, _} -> ok;
-	{error, R} ->
-	    R1 = file:format_error(R),
-	    report("cannot create directory '~s': ~s.", [Dir, R1]),
-	    exit(error)
-    end.
+%% make_dir(Dir) ->
+%%     case file:make_dir(Dir) of
+%% 	ok -> ok;
+%% 	{error, R} ->
+%% 	    R1 = file:format_error(R),
+%% 	    report("cannot create directory '~s': ~s.", [Dir, R1]),
+%% 	    exit(error)
+%%     end.
 
 try_subdir(Dir, Subdir) ->
     D = filename:join(Dir, Subdir),
@@ -887,16 +901,17 @@ add_new(K, V, D) ->
 	    dict:store(K, V, D)
     end.
 
-%% @spec (Options::edoc:option_list()) -> edoc_env()
+%% @spec (Options::proplist()) -> edoc_env()
 %% @equiv get_doc_env([], [], [], Opts)
 
 get_doc_env(Opts) ->
     get_doc_env([], [], [], Opts).
 
-%% @spec (App, Packages, Modules, Options::edoc:option_list()) -> edoc_env()
+%% @spec (App, Packages, Modules, Options::proplist()) -> edoc_env()
 %%     App = [] | atom()
 %%     Packages = [atom()]
 %%     Modules = [atom()]
+%%     proplist() = [term()]
 %%
 %% @type edoc_env(). Environment information needed by EDoc for
 %% generating references. The data representation is not documented.

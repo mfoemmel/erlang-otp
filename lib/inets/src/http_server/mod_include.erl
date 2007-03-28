@@ -174,17 +174,9 @@ document_name(Data,ConfigDB,RequestURI) ->
 
 document_uri(ConfigDB, RequestURI) ->
     Aliases = httpd_util:multi_lookup(ConfigDB, alias),
-    {Path, AfterPath} = 
-	case mod_alias:real_name(ConfigDB, RequestURI, Aliases) of
-	    {_, Name, {[], []}} ->
-		{Name, ""};
-	    {_, Name, {PathInfo, []}} ->
-		{Name, "/"++PathInfo};
-	    {_, Name, {PathInfo, QueryString}} ->
-		{Name, "/"++PathInfo++"?"++QueryString};
-	    {_, Name, _} ->
-		{Name, ""}
-	end,
+    
+    {_, Path, AfterPath}  = mod_alias:real_name(ConfigDB, RequestURI, Aliases),
+    
     VirtualPath = string:substr(RequestURI, 1, 
 				length(RequestURI)-length(AfterPath)),
     {match, Start, Length} = regexp:match(Path,"[^/]*\$"),
@@ -460,7 +452,7 @@ send_in(Info, Path, Head, {ok,FileInfo}) ->
 	{ok, Bin} ->
 	    send_in1(Info, binary_to_list(Bin), Head, FileInfo);
 	{error, Reason} ->
-	    {error, {open,Reason}}
+	    {error, {read,Reason}}
     end;
 send_in(_Info , _Path, _Head,{error,Reason}) ->
     {error, {open,Reason}}.

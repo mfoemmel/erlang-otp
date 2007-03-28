@@ -73,7 +73,7 @@ do {									\
 #  define PROCESS_MAIN_CHK_LOCKS(P)
 #endif
 
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 
 #if defined(HEAP_FRAG_ELIM_TEST) /* Shallow copy to heap if possible;
 				    otherwise, move to heap via garbage
@@ -83,7 +83,7 @@ do {									\
 do {									\
     if ((M)->bp) {							\
 	Uint need = (M)->bp->size;					\
-	if (E - HTOP >= need) {						\
+ 	if (E - HTOP >= need) {						\
 	    Uint *htop = HTOP;						\
 	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
 	    ASSERT(htop - HTOP == need);				\
@@ -1577,6 +1577,7 @@ void process_main(void)
      *	  2) There is no pointer to the send_2 function stored in
      *       the instruction.
      */
+
  OpCase(send): {
      Eterm* next;
      Eterm result;
@@ -3820,7 +3821,48 @@ void process_main(void)
      NextPF(2, next);
  }
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+OpCase(i_put_literal_IId): {
+    Eterm lit = Arg(0);
+    StoreBifResult(2, lit);
+}
+#else
+OpCase(i_put_literal_IId): {
+    Eterm lit = Arg(0);
+    Eterm n = Arg(1);
+    Eterm* src = ptr_val(lit);
+    Uint offset = HTOP - src;
+    Eterm result;
+
+    result = ((Eterm) HTOP) | (lit & _TAG_PRIMARY_MASK);
+    while (n-- > 0) {
+	Eterm val = *src++;
+	switch (primary_tag(val)) {
+	case TAG_PRIMARY_LIST:
+	case TAG_PRIMARY_BOXED:
+	    *HTOP++ = offset_ptr(val, offset);
+	    break;
+	case TAG_PRIMARY_HEADER:
+	    *HTOP++ = val;
+	    if (header_is_thing(val)) {
+		Uint tari = thing_arityval(val);
+		n -= tari;
+		while (tari-- > 0) {
+		    *HTOP++ = *src++;
+		}
+	    }
+	    break;
+	default:
+	    *HTOP++ = val;
+	    break;
+	}
+    }
+    StoreBifResult(2, result);
+}
+#endif
+
 #include "beam_cold.h"
+
 
  /*
   * This instruction is probably never used (because it is combined with a
@@ -5404,7 +5446,6 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 {
     int arity;
     Eterm tmp;
-    int new_sz;
 
     if (is_not_atom(module) || is_not_atom(function)) {
 	/*
@@ -5470,14 +5511,10 @@ hibernate(Process* c_p, Eterm module, Eterm function, Eterm args, Eterm* reg)
 	add_to_schedule_q(c_p);
     } else {
 	erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
-	FLAGS(c_p) |= F_NEED_FULLSWEEP;
 	c_p->fvalue = NIL;
 	PROCESS_MAIN_CHK_LOCKS(c_p);
-	erts_garbage_collect(c_p, 0, c_p->arg_reg, c_p->arity);
+	erts_garbage_collect_hibernate(c_p);
 	PROCESS_MAIN_CHK_LOCKS(c_p);
-	new_sz = HEAP_TOP(c_p) - HEAP_START(c_p);
-	if (new_sz == 0) new_sz = 1; /* We want a heap... */
-	erts_shrink_new_heap(c_p, new_sz, c_p->arg_reg, c_p->arity);
 	erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MSGQ|ERTS_PROC_LOCK_STATUS);
 	ASSERT(!ERTS_PROC_IS_EXITING(c_p));
 	c_p->status = P_WAITING;

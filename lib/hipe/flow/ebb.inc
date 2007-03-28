@@ -11,9 +11,6 @@
 	 node_label/1,
 	 node_successors/1
 	]).
--ifdef(RTL_EBB).
--export([leaf_next/1]).
--endif.
 -ifdef(DEBUG_EBB).
 -export([pp/1]).
 -endif.
@@ -184,9 +181,7 @@ node_label({node, Label, _Successors}) -> Label.
 node_successors({node, _Label, Successors}) -> Successors.
 
 mk_leaf(NextEbb) -> {leaf, NextEbb}.
--ifdef(RTL_EBB).
-leaf_next({leaf, NextEbb}) -> NextEbb.
--endif.
+%% leaf_next({leaf, NextEbb}) -> NextEbb.
 
 type({node, _Label, _SuccessorNodes}) -> node;
 type({leaf, _SuccessorEbb}) -> leaf.

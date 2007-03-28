@@ -24,7 +24,9 @@
 
 
 %% API
--export([start/0, start/1]).
+-export([start/0,          start/1,
+	 start_no_drv/0,   start_no_drv/1, 
+	 start_only_drv/0, start_only_drv/1]).
 
 %% Internal exports
 -export([mstone_runner_init/4]).
@@ -49,11 +51,7 @@
 %% -define(VERBOSE_STATS,true).
 
 -ifndef(MSTONE_RUNNER_MIN_HEAP_SZ).
-%% -define(MSTONE_RUNNER_MIN_HEAP_SZ,  16#7fff).
 -define(MSTONE_RUNNER_MIN_HEAP_SZ,  16#ffff).
-%% -define(MSTONE_RUNNER_MIN_HEAP_SZ, 16#17ffe).
-%% -define(MSTONE_RUNNER_MIN_HEAP_SZ, 16#1ffff).
-%% -define(MSTONE_RUNNER_OPTS, [link]).
 -endif.
 -define(MSTONE_RUNNER_OPTS, 
         [link, {min_heap_size, ?MSTONE_RUNNER_MIN_HEAP_SZ}]).
@@ -62,25 +60,39 @@
 
 
 start() ->
-    t(1, ?MSTONE_CODECS).
+    start(1).
 
-start(Factor) when is_integer(Factor) and (Factor > 0) ->
-    t(Factor, ?MSTONE_CODECS);
-%% start([Driver]) 
-%%   when is_atom(Driver) and ((Driver == false) or (Driver == true)) ->
-%%     t(1, Driver, ?MSTONE_CODECS);
-start([FactorAtom]) when is_atom(FactorAtom) ->
+start(Factor) ->
+    do_start(Factor, ignore).
+
+
+start_only_drv() ->
+    start_only_drv(1).
+
+start_only_drv(Factor) ->
+    do_start(Factor, only_drv).
+
+
+start_no_drv() ->
+    start_no_drv(1).
+
+start_no_drv(Factor) ->
+    do_start(Factor, no_drv).
+
+
+do_start(Factor, DrvInclude) when is_integer(Factor) and (Factor > 0) ->
+    t(Factor, ?MSTONE_CODECS, DrvInclude);
+do_start([FactorAtom], DrvInclude) when is_atom(FactorAtom) ->
     case (catch list_to_integer(atom_to_list(FactorAtom))) of
 	Factor when is_integer(Factor) ->
-	    t(Factor, ?MSTONE_CODECS);
+	    t(Factor, ?MSTONE_CODECS, DrvInclude);
 	_ ->
 	    io:format("ERROR: Invalid factor value: ~p~n", [FactorAtom]),
 	    ok
     end;
-start(Crap) ->    
+do_start(Crap, _) ->    
     io:format("ERROR: Invalid argument: ~p~n", [Crap]),
     ok.
-
 
 %% Dirs is a list of directories containing files,
 %% each with a single megaco message. 
@@ -92,7 +104,7 @@ start(Crap) ->
 %%    pretty | compact | ber | per | erlang
 %%
 
-t(Factor, Dirs) ->
+t(Factor, Dirs, DrvInclude) ->
     io:format("~n", []),
     ?LIB:display_os_info(),
     ?LIB:display_system_info(),
@@ -100,16 +112,13 @@ t(Factor, Dirs) ->
     io:format("~n", []),
     {Pid, Conf} = ?LIB:start_flex_scanner(),
     put(flex_scanner_conf, Conf),
-    EDirs  = duplicate(Factor, ?LIB:expand_dirs(Dirs)),
+    EDirs  = duplicate(Factor, ?LIB:expand_dirs(Dirs, DrvInclude)),
     MStone = t1(EDirs),
     ?LIB:stop_flex_scanner(Pid),
+    io:format("~n", []),
     io:format("MStone: ~p~n", [MStone]).
 
 duplicate(N, Elements) ->
-%%     io:format("duplicate -> entry with"
-%% 	      "~n   N:                ~w"
-%% 	      "~n   length(Elements): ~w"
-%% 	      "~n", [N, length(Elements)]),
     duplicate(N, Elements, []).
 
 duplicate(_N, [], Acc) ->

@@ -38,7 +38,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = cerl_lib cerl_to_icode cerl_cconv cerl_hipeify cerl_pmatch \
-	cerl_binary_pattern_match cerl_messagean \
+	cerl_messagean \
 	erl_types erl_bif_types cerl_closurean cerl_typean \
 	cerl_hybrid_transform cerl_prettypr
 

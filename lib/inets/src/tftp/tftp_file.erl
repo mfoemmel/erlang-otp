@@ -194,8 +194,7 @@ read(#state{access = read} = State) ->
 	    Count = State#state.count + size(Bin),
 	    {last, Bin, Count};
 	eof ->
-	    file:close(State#state.fd),
-	    {error, file_error(eof)};
+	    {last, <<>>, State#state.count};
 	{error, Reason} ->
 	    file:close(State#state.fd),
 	    {error, file_error(Reason)}

@@ -180,6 +180,7 @@ stop() -> gen_server:call(global_group, stop, infinity).
 
 init([]) ->
     process_flag(priority, max),
+    ok = net_kernel:monitor_nodes(true),
     put(registered_names, [undefined]),
     put(send, [undefined]),
     put(whereis_name, [undefined]),

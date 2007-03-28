@@ -41,7 +41,7 @@ DOC_MODULES = hipe_beam_to_icode \
 	hipe_icode hipe_icode_cfg hipe_icode_liveness \
 	hipe_icode_heap_test \
 	hipe_icode_exceptions hipe_icode_primops \
-	hipe_icode_binary_pass hipe_icode_bincomp \
+	hipe_icode_bincomp \
 	hipe_icode_range_an \
 	hipe_icode_ssa hipe_icode_ssa_const_prop hipe_icode_ssa_copy_prop \
 	hipe_icode_type hipe_icode_pp hipe_icode_fp \

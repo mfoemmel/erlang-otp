@@ -332,7 +332,7 @@ erts_dist_table_size(void)
 void
 erts_set_dist_entry_not_connected(DistEntry *dep)
 {
-    erts_smp_dist_entry_lock(dep);
+    ERTS_SMP_LC_ASSERT(erts_lc_is_dist_entry_locked(dep));
     erts_smp_mtx_lock(&erts_dist_table_mtx);
 
     ASSERT(dep != erts_this_dist_entry);
@@ -368,6 +368,7 @@ erts_set_dist_entry_not_connected(DistEntry *dep)
     if(dep->next)
 	dep->next->prev = dep->prev;
 
+    dep->status &= ~ERTS_DE_SFLG_CONNECTED;
     dep->flags = 0;
     dep->prev = NULL;
     dep->cid = NIL;
@@ -380,13 +381,12 @@ erts_set_dist_entry_not_connected(DistEntry *dep)
     erts_not_connected_dist_entries = dep;
     erts_no_of_not_connected_dist_entries++;
     erts_smp_mtx_unlock(&erts_dist_table_mtx);
-    erts_smp_dist_entry_unlock(dep);
 }
 
 void
 erts_set_dist_entry_connected(DistEntry *dep, Eterm cid, Uint flags)
 {
-    erts_smp_dist_entry_lock(dep);
+    ERTS_SMP_LC_ASSERT(erts_lc_is_dist_entry_locked(dep));
     erts_smp_mtx_lock(&erts_dist_table_mtx);
 
     ASSERT(dep != erts_this_dist_entry);
@@ -408,6 +408,7 @@ erts_set_dist_entry_connected(DistEntry *dep, Eterm cid, Uint flags)
     ASSERT(erts_no_of_not_connected_dist_entries > 0);
     erts_no_of_not_connected_dist_entries--;
 
+    dep->status |= ERTS_DE_SFLG_CONNECTED;
     dep->flags = flags;
     dep->cid = cid;
     dep->prev = NULL;
@@ -431,7 +432,6 @@ erts_set_dist_entry_connected(DistEntry *dep, Eterm cid, Uint flags)
 	erts_no_of_hidden_dist_entries++;
     }
     erts_smp_mtx_unlock(&erts_dist_table_mtx);
-    erts_smp_dist_entry_unlock(dep);
 }
 
 /* -- Node table --------------------------------------------------------- */

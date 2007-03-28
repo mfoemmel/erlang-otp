@@ -10,8 +10,6 @@
 #include "global.h"
 #include "erl_threads.h"
 
-extern  int erts_async_max_threads;
-
 typedef struct _erl_async {
     struct _erl_async* next;
     struct _erl_async* prev;
@@ -39,6 +37,7 @@ typedef struct {
 #endif
 } AsyncQueue;
 
+static erts_smp_spinlock_t async_id_lock;
 static long async_id = 0;
 
 
@@ -79,6 +78,7 @@ int init_async(int hndl)
 #endif
 
     async_id = 0;
+    erts_smp_spinlock_init(&async_id_lock, "async_id");
 
     async_q = q = (AsyncQueue*)
 	(erts_async_max_threads
@@ -383,15 +383,18 @@ long driver_async(ErlDrvPort ix, unsigned int* key,
     a->async_invoke = async_invoke;
     a->async_free = async_free;
 
+    erts_smp_spin_lock(&async_id_lock);
     async_id = (async_id + 1) & 0x7fffffff;
     if (async_id == 0)
 	async_id++;
     id = async_id;
+    erts_smp_spin_unlock(&async_id_lock);
+
     a->async_id = id;
 
     if (key == NULL) {
 	qix = (erts_async_max_threads > 0)
-	    ? (async_id % erts_async_max_threads) : 0;
+	    ? (id % erts_async_max_threads) : 0;
     }
     else {
 	qix = (erts_async_max_threads > 0) ? 

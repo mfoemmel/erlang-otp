@@ -1493,7 +1493,7 @@ printable(debug,warning)   -> warning;
 printable(debug,info)      -> info;
 printable(debug,log)       -> log;
 printable(debug,debug)     -> debug;
-printable(trace,S)         -> S;
+printable(trace,trace)     -> trace;
 printable(_V,_S)           -> false.
 
 

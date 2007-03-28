@@ -5,7 +5,7 @@
 
 @author Richard Carlsson <richardc@it.uu.se>
 @copyright 2003-2006 Richard Carlsson
-@version {@vsn}
+@version {@version}
 @title Welcome to EDoc
 
 @doc EDoc is the Erlang program documentation generator. Inspired by the
@@ -19,6 +19,7 @@ Javadoc.
 <ol>
   <li>{@section Introduction}</li>
   <li>{@section Running EDoc}</li>
+  <li>{@section The overview page}</li>
   <li>{@section Generic tags}</li>
   <li>{@section Overview tags}</li>
   <li>{@section Module tags}</li>
@@ -87,6 +88,36 @@ Note that the function {@link edoc:file/2} belongs to the old, deprecated
 interface (from EDoc version 0.1), and should not be used.
 
 
+== The overview page ==
+
+When documentation is generated for an entire application, an overview
+page, or "front page", is generated. (The page you are now reading is an
+overview page.) This should contain the high-level description or user
+manual for the application, leaving the finer details to the
+documentation for individual modules. By default, the overview page is
+generated from the file `overview.edoc' in the target directory
+(typically, this is the `doc' subdirectory of the application
+directory); see {@link edoc_doclet} for details.
+
+The format of the overview file is the same as for EDoc documentation
+comments (see {@section Introduction}), except that the lines do not
+have leading '`%'' characters. Furthermore, all lines before the first
+tag line are ignored, and can be used as a comment. All tags in the
+overview file, such as `@@doc', `@@version', etc., refer to the
+application as a whole; see {@section Overview tags} for details.
+
+Here is an example of the contents of an overview file:
+```** this is the overview.doc file for the application 'frob' **
+
+   @@author R. J. Hacker <rjh@acme.com>
+   @@copyright 2007 R. J. Hacker
+   @@version 1.0.0
+   @@title Welcome to the `frob' application!
+   @@doc `frob' is a highly advanced frobnicator with low latency,
+   ...
+'''
+
+
 == Generic tags ==
 
 The following tags can be used anywhere within a module:
@@ -114,6 +145,14 @@ The following tags can be used anywhere within a module:
 	`@doc' tag "really" belongs to, since preprocessing
 	strips away all such information.)</dd>
 
+  <dt><a name="gtag-docfile">`@docfile'</a></dt>
+      <dd>Reads a plain documentation file (on the same format as an
+      overview file - see {@section The overview page} for details), and
+      uses the tags in that file as if they had been written in place of
+      the `@docfile' tag. The content is the name of the file to be
+      read; leading and trailing whitespace is ignored. See also <a
+      href="#gtag-headerfile">`@headerfile'</a>.</dd>
+
   <dt><a name="gtag-end">`@end'</a></dt>
       <dd>The text following this tag is always ignored. Use this to
       mark the end of the previous tag, when necessary, as e.g. in:
@@ -131,6 +170,19 @@ The following tags can be used anywhere within a module:
       EDoc, but is not guaranteed to.  Always use `@end'
       to ensure future compatibility.</em></dd>
 
+  <dt><a name="gtag-headerfile">`@headerfile'</a></dt>
+      <dd>Similar to the <a href="#gtag-docfile">`@docfile' tag</a>, but
+      reads a file containing Erlang source code - generally this should
+      be a header file (with the extension `.hrl'). If the file turns
+      out to contain one or more function definitions or a module
+      declaration, all tags that occur above the last such definition or
+      module declaration are ignored, and EDoc will print a
+      warning. This tag allows you to write documentation in a header
+      file and insert it at a specific place in the documentation, even
+      if the header file is used (i.e., included) by several
+      modules. The `includes' option can be used to specify a search
+      path (see {@link edoc:read_source/2}).</dd>
+
   <dt><a name="gtag-todo">`@todo' (or `@TODO')</a></dt>
       <dd>Attaches a To-Do note to a function, module, package, or
       overview-page. The content can be any XHTML text describing
@@ -138,31 +190,63 @@ The following tags can be used anywhere within a module:
 ```%% @TODO Finish writing the documentation.'''
       or
 ```%% @todo Implement <a href="http://www.ietf.org/rfc/rfc2549.txt">RFC 2549</a>.'''
-      To-Do notes are normally not shown unless the `todo' option is
-      turned on (see {@link edoc:get_doc/2}).</dd>
+      These tags can also be written as "`TODO:'", e.g.:
+```%% TODO: call your mother'''
+      see {@section Wiki notation} for more information. To-Do notes are
+      normally not shown unless the `todo' option is turned on (see
+      {@link edoc:get_doc/2}).</dd>
 
   <dt><a name="gtag-type">`@type'</a></dt>
       <dd>Documents an abstract data type or type alias. The content
       consists of a type declaration or definition, optionally
       followed by a period ('`.'') separator and XHTML
       text describing the type (i.e., its purpose, use, etc.). There
-      must be at least one whitespace character between the
-      '`.'' and the text. See {@section Type specifications} below
-      for syntax and examples.
+      must be at least one whitespace character between the '`.'' and
+      the text. See {@section Type specifications} for syntax and
+      examples.
       All data type descriptions are placed in a separate section of
       the documentation, regardless of where the tags occur.</dd>
 
 </dl>
 
 
-
 == Overview tags ==
 
-The following tags can only be used in an overview file:
+The following tags can be used in an overview file.
 <dl>
+  <dt><a name="otag-author">`@author'</a></dt>
+      <dd>See the <a href="#mtag-author">`@author' module tag</a> for
+      details.</dd>
+
+  <dt><a name="otag-copyright">`@copyright'</a></dt>
+      <dd>See the <a href="#mtag-copyright">`@copyright' module tag</a>
+      for details.</dd>
+
+  <dt><a name="otag-doc">`@doc'</a></dt>
+      <dd>See the <a href="#mtag-doc">`@doc' module tag</a> for
+      details.</dd>
+
+  <dt><a name="otag-reference">`@reference'</a></dt>
+      <dd>See the <a href="#mtag-reference">`@reference' module tag</a>
+      for details.</dd>
+
+  <dt><a name="otag-see">`@see'</a></dt>
+      <dd>See the <a href="#mtag-see">`@see' module tag</a> for
+      details.</dd>
+
+  <dt><a name="otag-since">`@since'</a></dt>
+      <dd>See the <a href="#mtag-since">`@since' module tag</a> for
+      details.</dd>
+
   <dt><a name="otag-title">`@title'</a></dt>
-      <dd>Specifies a title for the overview page. The content
-      can be arbitrary text.</dd>
+      <dd>Specifies a title for the overview page. This tag can
+      <em>only</em> be used in an overview file. The content can be
+      arbitrary text.</dd>
+
+  <dt><a name="otag-version">`@version'</a></dt>
+      <dd>See the <a href="#mtag-version">`@version' module
+      tag</a> for details.</dd>
+
 </dl>
 
 
@@ -216,8 +300,8 @@ The following tags can be used before a module declaration:
   <dt><a name="mtag-doc">`@doc'</a></dt>
       <dd>Describes the module, using well-formed XHTML text. The
       first sentence is used as a summary (see the
-      <a href="#ftag-doc">`@doc' function tag</a> below
-      for details). For example.:
+      <a href="#ftag-doc">`@doc' function tag</a> for details). For
+      example.:
 ```%% @doc This is a <em>very</em> useful module. It is ...'''</dd>
 
   <dt><a name="mtag-hidden">`@hidden'</a></dt>
@@ -246,7 +330,7 @@ The following tags can be used before a module declaration:
 
   <dt><a name="mtag-see">`@see'</a></dt>
       <dd>See the <a href="#ftag-see">`@see' function tag</a>
-      below for details.</dd>
+      for details.</dd>
 
   <dt><a name="mtag-since">`@since'</a></dt>
       <dd>Specifies when the module was introduced, with respect to
@@ -302,7 +386,7 @@ The following tags can be used before a function definition:
 
   <dt><a name="ftag-see">`@see'</a></dt>
       <dd>Make a reference to a module, function, datatype, or
-      application. (See {@section References} below.)
+      application. (See {@section References}.)
       The content consists of a reference, optionally followed by a
       period ('`.''), one or more whitespace characters, and
       XHTML text to be used for the label; for example "`@see edoc'" or
@@ -317,7 +401,7 @@ The following tags can be used before a function definition:
 
   <dt><a name="ftag-spec">`@spec'</a></dt>
       <dd>Used to specify the function type; see {@section Type
-      specifications} below for syntax. If the function name is
+      specifications} for syntax details. If the function name is
       included in the specification, it must match the name in the
       actual code. When parameter names are not given in the
       specification, suitable names will be taken from the source
@@ -411,12 +495,12 @@ abbreviated form `<br/>'.
 Since the purpose of EDoc is to document programs, there is also a
 limited form of "wiki"-syntax available for making program code easier
 to write inline (and to make the doc-comments easier to read).
-See {@section Wiki notation} below for details.
+See {@section Wiki notation} for details.
 
 The HTML heading tags `h1' and `h2' are reserved for use by EDoc.
 Headings in documentation source code should start at `h3'. There is
 however a special syntax for writing headings which avoids using
-specific level numbers altogether; see {@section Headings} below for details.
+specific level numbers altogether; see {@section Headings} for details.
 
 EDoc uses {@link //xmerl. XMerL} to parse and export XML markup.
 
@@ -488,6 +572,12 @@ for the destination and the label of the reference, equivalent to writing
 short-hand keeps external URL references short and readable. The
 recognized protocols are `http', `ftp', and `file'. This expansion takes
 place before XML parsing.
+
+ === TODO-notes ===
+
+Lines that begin with the text "`TODO:'" (the colon is required) are
+recognized as tags, as if they had been written as "`@todo ...'" (see <a
+href="#gtag-todo">@todo tags</a> for further details).
 
  === Verbatim quoting ===
 
@@ -577,7 +667,7 @@ macro expansions are not allowed.
 
 Users can define their own macros by using the `def' EDoc
 option; see {@link edoc:file/2} and {@link edoc:get_doc/2} for more
-information.
+information. User-defined macros override predefined macros.
 
  === Predefined macros ===
 
@@ -619,17 +709,23 @@ information.
       <dd>Expands to a hypertext link to the specified section heading;
       see {@section Headings} for more information.</dd>
 
+  <dt><a name="predefmacro-time"><code>@{@time}</code></a></dt>
+      <dd>Expands to the current time, as "<tt>Hr:Min:Sec</tt>",
+      e.g. "{@time}".</dd>
+
   <dt><a name="predefmacro-type"><code>@{@type
       <em>type-expression</em>}</code></a></dt>
       <dd>Formats a type expression within `<code>...</code>'
       markup and with hypertext links for data types. For example,
       <code>@{@type {options, List::edoc:option_list()@@}}</code>
       generates "{@type {options, List::edoc:option_list()@}}". (Cf.
-      {@section Escape sequences} below.)</dd>
+      {@section Escape sequences}.)</dd>
 
-  <dt><a name="predefmacro-time"><code>@{@time}</code></a></dt>
-      <dd>Expands to the current time, as "<tt>Hr:Min:Sec</tt>",
-      e.g. "{@time}".</dd>
+  <dt><a name="predefmacro-version"><code>@{@version}</code></a></dt>
+      <dd>Intended for use in <a href="#mtag-version">`@version'
+      tags</a>. Defaults to a timestamp using `@{@date}' and `@{@time}'.
+      Typically, this macro is redefined by the user when an official
+      release of the application is generated.</dd>
 </dl>
 
  === Escape sequences ===
@@ -667,15 +763,19 @@ following escape sequences may be used: <dl>
 
  === Function specifications ===
 
-The following grammar describes the form of the specifications  
-following a `@spec' tag:
+The following grammar describes the form of the specifications following
+a `@spec' tag. A '`?'' suffix implies that the element is optional.
+Function types have higher precedence than union types; e.g., "`(atom())
+-> atom() | integer()'" is parsed as `((atom()) -> atom()) | integer()',
+not as `(atom()) -> (atom() | integer())'.
 
 <table summary="specification syntax grammar">
+<tbody valign="baseline">
   <tr>
     <td><code>Spec</code></td>
     <td>::=</td>
-    <td><code>FunType Def*
-	  <br/>| FunctionName FunType Def*</code></td>
+    <td><code>FunType "where"? DefList?
+	  <br/>| FunctionName FunType "where"? DefList?</code></td>
   </tr>
   <tr>
     <td><code>FunctionName</code></td>
@@ -722,6 +822,7 @@ following a `@spec' tag:
 	  <br/>| "{" UnionTypes? "}"
 	  <br/>| "[" "]"
 	  <br/>| "[" UnionType "]"
+	  <br/>| "(" UnionType ")"
 	  <br/>| TypeName "(" UnionTypes? ")"
 	  <br/>| ModuleName ":" TypeName "(" UnionTypes? ")"
 	  <br/>| "//" AppName "/" ModuleName ":" TypeName "(" UnionTypes? ")"</code></td>
@@ -748,6 +849,13 @@ following a `@spec' tag:
     <td><code>Atom</code></td>
   </tr>
   <tr>
+    <td><code>DefList</code></td>
+    <td>::=</td>
+    <td><code>Def
+	  <br/>| DefList Def
+	  <br/>| DefList "," Def</code></td>
+  </tr>
+  <tr>
     <td><code>Def</code></td>
     <td>::=</td>
     <td><code>TypeVariable "=" UnionType
@@ -759,6 +867,7 @@ following a `@spec' tag:
     <td><code>TypeVariable
 	  <br/>| TypeVariable "," TypeVariables</code></td>
   </tr>
+</tbody>
 </table>
 
 
@@ -773,13 +882,16 @@ Examples:
     %% @spec pair(S, T) -> {S, T}'''
 ```
     %% @spec append(List, List) -> List
-    %%           List = [term()]'''
+    %%       List = [term()]'''
 ```
     %% @spec append(A::List, B::List) -> List
-    %%           List = [term()]'''
+    %%       List = [Item]
+    %%       Item = term()'''
 ```
-    %% @spec open(File::filename()) -> file_descriptor()
-    %%           filename() = string() + atom()'''
+    %% @spec open(File::filename()) -> FileDescriptor
+    %% where
+    %%       filename() = string() + atom(),
+    %%       FileDescriptor = term()'''
 ```
     %% @spec close(graphics:window()) -> ok'''
 
@@ -792,7 +904,9 @@ definitions. It is also possible to give definitions for named types,
 which means that the name is simply an alias. (Use the
 `@type' tag to document abstract data types.) If a named type
 is defined in another module, it can be referred to as
-`Module:TypeName(...)'.
+`Module:TypeName(...)'. Note that the keyword '`where'' is optional
+before a list of definitions, and that the definitions in the list may
+optionally be separated by '`,''.
 
 Both the '`|'' and the '`+'' character may be
 used to separate alternatives in union types; there is no semantic
@@ -820,12 +934,14 @@ The following grammar (see above for auxiliary definitions) describes
 the form of the definitions that may follow a `@type' tag:
 
 <table summary="type definition grammar">
+<tbody valign="baseline">
   <tr>
     <td><code>Typedef</code></td>
     <td>::=</td>
-    <td><code>TypeName "(" TypeVariables? ")" Def*
-	  <br/>| TypeName "(" TypeVariables? ")" "=" UnionType Def*</code></td>
+    <td><code>TypeName "(" TypeVariables? ")" DefList?
+	  <br/>| TypeName "(" TypeVariables? ")" "=" UnionType DefList?</code></td>
   </tr>
+</tbody>
 </table>
 
 (For a truly abstract data type, no equivalence is specified.) The main

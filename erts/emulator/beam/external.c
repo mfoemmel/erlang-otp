@@ -78,7 +78,7 @@ static byte* dec_atom(DistEntry*, byte*, Eterm*);
 static byte* dec_pid(DistEntry*, Eterm**, byte*, ErlOffHeap*, Eterm*);
 static byte* dec_hashed_atom(DistEntry*, byte*, Eterm*);
 static byte* dec_and_insert_hashed_atom(DistEntry*, byte*, Eterm*);
-static Eterm term_to_binary(Process* p, Eterm Term, int compressed);
+static Eterm term_to_binary(Process* p, Eterm Term, int level, Uint flags);
 static int decode_size2(byte *ep, byte* endp);
 
 static Uint encode_size_struct2(Eterm, unsigned);
@@ -89,18 +89,44 @@ static Uint encode_size_struct2(Eterm, unsigned);
 Eterm
 term_to_binary_1(Process* p, Eterm Term)
 {
-    return term_to_binary(p, Term, 0);
+    return term_to_binary(p, Term, 0, TERM_TO_BINARY_DFLAGS);
 }
 
 Eterm
 term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
 {
-    int compressed = 0;
+    int level = 0;
+    Uint flags = TERM_TO_BINARY_DFLAGS;
 
     while (is_list(Flags)) {
 	Eterm arg = CAR(list_val(Flags));
+	Eterm* tp;
 	if (arg == am_compressed) {
-	    compressed = 1;
+	    level = Z_DEFAULT_COMPRESSION;
+	} else if (is_tuple(arg) && *(tp = tuple_val(arg)) == make_arityval(2)) {
+	    if (tp[1] == am_minor_version && is_small(tp[2])) {
+		switch (signed_val(tp[2])) {
+		case 0:
+		    flags = TERM_TO_BINARY_DFLAGS;
+		    break;
+		case 1:
+		    flags = TERM_TO_BINARY_DFLAGS|DFLAG_NEW_FLOATS;
+		    break;
+		default:
+		    goto error;
+		}
+	    } else if (tp[1] == am_compressed && is_small(tp[2])) {
+		Uint level_term = tp[2];
+		if (is_not_small(level_term)) {
+		    goto error;
+		}
+		level = unsigned_val(level_term);
+		if (!(0 <= level && level < 10)) {
+		    goto error;
+		}
+	    } else {
+		goto error;
+	    }
 	} else {
 	error:
 	    BIF_ERROR(p, BADARG);
@@ -111,7 +137,7 @@ term_to_binary_2(Process* p, Eterm Term, Eterm Flags)
 	goto error;
     }
 
-    return term_to_binary(p, Term, compressed);
+    return term_to_binary(p, Term, level, flags);
 }
 
 
@@ -188,16 +214,16 @@ external_size_1(Process* p, Eterm Term)
 }
 
 static Eterm
-term_to_binary(Process* p, Eterm Term, int compressed)
+term_to_binary(Process* p, Eterm Term, int level, Uint flags)
 {
     int size;
     Eterm bin;
     size_t real_size;
     byte* endp;
 
-    size = encode_size_struct(Term, TERM_TO_BINARY_DFLAGS);
+    size = encode_size_struct(Term, flags);
 
-    if (compressed) {
+    if (level != 0) {
 	byte buf[256];
 	byte* bytes = buf;
 	byte* out_bytes;
@@ -207,7 +233,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	    bytes = erts_alloc(ERTS_ALC_T_TMP, size);
 	}
 
-	if ((endp = enc_term(NULL, Term, bytes, TERM_TO_BINARY_DFLAGS))
+	if ((endp = enc_term(NULL, Term, bytes, flags))
 	    == NULL) {
 	    erl_exit(1, "%s, line %d: bad term: %x\n",
 		     __FILE__, __LINE__, Term);
@@ -234,7 +260,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	bin = new_binary(p, NULL, real_size+1);
 	out_bytes = binary_bytes(bin);
 	out_bytes[0] = VERSION_MAGIC;
-	if (compress(out_bytes+6, &dest_len, bytes, real_size) != Z_OK) {
+	if (compress2(out_bytes+6, &dest_len, bytes, real_size, level) != Z_OK) {
 	    sys_memcpy(out_bytes+1, bytes, real_size);
 	    bin = erts_realloc_binary(bin, real_size+1);
 	} else {
@@ -252,7 +278,7 @@ term_to_binary(Process* p, Eterm Term, int compressed)
 	bin = new_binary(p, (byte *)NULL, size);
 	bytes = binary_bytes(bin);
 	bytes[0] = VERSION_MAGIC;
-	if ((endp = enc_term(NULL, Term, bytes+1, TERM_TO_BINARY_DFLAGS))	
+	if ((endp = enc_term(NULL, Term, bytes+1, flags))	
 	    == NULL) {
 	    erl_exit(1, "%s, line %d: bad term: %x\n",
 		     __FILE__, __LINE__, Term);
@@ -593,18 +619,31 @@ enc_term(DistEntry *dep, Eterm obj, byte* ep, Uint32 dflags)
 	return ep;
 
     case FLOAT_DEF:
-	*ep++ = FLOAT_EXT;
 	GET_DOUBLE(obj, f);
+	if (dflags & DFLAG_NEW_FLOATS) {
+	    *ep++ = NEW_FLOAT_EXT;
+#ifdef WORDS_BIGENDIAN
+	    put_int32(f.fw[0], ep);
+	    ep += 4;
+	    put_int32(f.fw[1], ep);
+#else
+	    put_int32(f.fw[1], ep);
+	    ep += 4;
+	    put_int32(f.fw[0], ep);
+#endif		
+	    return ep+4;
+	} else {
+	    *ep++ = FLOAT_EXT;
 
-	/* now the sprintf which does the work */
-	i = sys_double_to_chars(f.fd, (char*) ep);
+	    /* now the sprintf which does the work */
+	    i = sys_double_to_chars(f.fd, (char*) ep);
 
-	/* Don't leave garbage after the float!  (Bad practice in general,
-	 * and Purify complains.)
-	 */
-	sys_memset(ep+i, 0, 31-i);
-
-	return ep + 31;
+	    /* Don't leave garbage after the float!  (Bad practice in general,
+	     * and Purify complains.)
+	     */
+	    sys_memset(ep+i, 0, 31-i);
+	    return ep + 31;
+	}
 
     case BINARY_DEF:
 	{
@@ -1041,6 +1080,29 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		hp += FLOAT_SIZE_OBJECT;
 		break;
 	    }
+	case NEW_FLOAT_EXT:
+	    {
+		FloatDef ff;
+		volatile int *fpexnp = erts_get_current_fp_exception();
+
+#ifdef WORDS_BIGENDIAN
+		ff.fw[0] = get_int32(ep);
+		ep += 4;
+		ff.fw[1] = get_int32(ep);
+		ep += 4;
+#else
+		ff.fw[1] = get_int32(ep);
+		ep += 4;
+		ff.fw[0] = get_int32(ep);
+		ep += 4;
+#endif		
+		__ERTS_FP_CHECK_INIT(fpexnp);
+		__ERTS_FP_ERROR_THOROUGH(fpexnp, ff.fd, return NULL);
+		*objp = make_float(hp);
+		PUT_DOUBLE(ff, hp);
+		hp += FLOAT_SIZE_OBJECT;
+		break;
+	    }
 	case PID_EXT:
 	    if ((ep = dec_pid(dep, &hp, ep, off_heap, objp)) == NULL) {
 		return NULL;
@@ -1286,6 +1348,8 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		ErlFunThing* funp = (ErlFunThing *) hp;
 		Uint arity;
 		Eterm module;
+		byte* uniq;
+		int index;
 		Sint old_uniq;
 		Sint old_index;
 		unsigned num_free;
@@ -1294,10 +1358,12 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		Eterm** hpp = &temp_hp;
 		Eterm temp;
 
-
 		ep += 4;	/* Skip total size in bytes */
 		arity = *ep++;
-		ep += 20;
+		uniq = ep;
+		ep += 16;
+		index = get_int32(ep);
+		ep += 4;
 		num_free = get_int32(ep);
 		ep += 4;
 		hp += ERL_FUN_SIZE + num_free;
@@ -1339,8 +1405,8 @@ dec_term(DistEntry *dep, Eterm** hpp, byte* ep, ErlOffHeap* off_heap, Eterm* obj
 		off_heap->funs = funp;
 #endif
 
-		funp->fe = erts_put_fun_entry(module, old_uniq, old_index);
-		funp->fe->arity = arity;
+		funp->fe = erts_put_fun_entry2(module, old_uniq, old_index,
+					       uniq, index, arity);
 		funp->arity = arity;
 #ifdef HIPE
 		if (funp->fe->native_address == NULL) {
@@ -1527,7 +1593,11 @@ encode_size_struct2(Eterm obj, unsigned dflags)
 	    sum += encode_size_struct2(*(tuple_val(obj) + i + 1), dflags);
 	return sum;
     case FLOAT_DEF:
-	return 32;   /* Yes, including the tag */
+	if (dflags & DFLAG_NEW_FLOATS) {
+	    return 9;
+	} else {
+	    return 32;   /* Yes, including the tag */
+	}
     case BINARY_DEF:
 	return 1 + 4 + binary_size(obj) +
 	    5;			/* For unaligned binary */
@@ -1733,6 +1803,10 @@ decode_size2(byte *ep, byte* endp)
 		break;
 	    case FLOAT_EXT:
 		SKIP(31);
+		heap_size += FLOAT_SIZE_OBJECT;
+		break;
+	    case NEW_FLOAT_EXT:
+		SKIP(8);
 		heap_size += FLOAT_SIZE_OBJECT;
 		break;
 	    case BINARY_EXT:

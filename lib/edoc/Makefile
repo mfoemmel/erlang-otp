@@ -22,7 +22,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 # Macros
 #
 
-SUB_DIRECTORIES = src priv doc/src
+SUB_DIRECTORIES = src include priv doc/src
 
 include vsn.mk
 VSN = $(EDOC_VSN)
@@ -80,7 +80,7 @@ version:
 APPNAME=edoc
 BINDIR=$(ERL_TOP)/lib/edoc/ebin
 DOCDIR=$(ERL_TOP)/lib/edoc/doc
-DOC_OPTS=[{def,{vsn,"$(VSN)"}}]
+DOC_OPTS=[{def,{version,"$(VSN)"}},todo]
 
 SYNTAX_TOOLS_DIR=$(ERL_TOP)/lib/syntax_tools
 XMERL_DIR=$(ERL_TOP)/lib/xmerl

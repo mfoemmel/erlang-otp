@@ -159,19 +159,20 @@ record_attributes(Forms) ->
 %% the parse transformation.
 %%
 compile_messages(Forms, FormsNoShadows, Options, State) ->
+    %% QLC cannot handle binary generators.
+    BGenF = fun(_QId,{b_generate,Line,_P,_LE}=BGen, GA, A) ->
+                    M = {Line,?APIMOD,binary_generator},
+                    {BGen,[{get(?QLC_FILE),[M]}|GA],A};
+               (_QId, Q, GA, A) ->
+                    {Q,GA,A}
+            end,
+    {_,BGens} = qual_fold(BGenF, [], [], FormsNoShadows, State),
     GenForm = used_genvar_check(FormsNoShadows, State),
     ?DEBUG("GenForm = ~s~n", [catch erl_pp:form(GenForm)]),
     WarnFun = fun(Id, LC, A) -> {tag_lines(LC, get_lcid_no(Id)), A} end,
     {WForms,ok} = qlc_mapfold(WarnFun, ok, Forms, State),
-    {Es, Ws} =
-        case compile_forms(WForms ++ [GenForm], Options) of
-            {[], Warnings} ->
-                ?DEBUG("Warnings = ~p~n", [Warnings]),
-                {[],tagged_messages(Warnings)};
-            {Errors, Warnings} ->
-                {tagged_messages(Errors),tagged_messages(Warnings)}
-    end,
-    {badarg(Forms, State),Es,Ws}.
+    {Es,Ws} = compile_forms(WForms ++ [GenForm], Options),
+    {badarg(Forms, State),tagged_messages(Es)++BGens,tagged_messages(Ws)}.
 
 badarg(Forms, State) ->
     F = fun(_Id, {lc,_L,_E,_Qs}=LC, Es) -> 
@@ -225,7 +226,8 @@ untag(E) ->
 %% variables (unless they are unsafe).
 %%
 intro_variables(Forms, State) ->
-    Fun = fun(QId, {generate,_L,P0,_E0}=Q, {GVs,QIds}, Foo) ->
+    Fun = fun(QId, {T,_L,P0,_E0}=Q, {GVs,QIds}, Foo) when T =:= b_generate;
+                                                          T =:= generate ->
                   PVs = var_ufold(fun({var,_,V}) -> {QId,V} end, P0),
                   {Q,{ordsets:to_list(PVs) ++ GVs,[{QId,[]} | QIds]},Foo};
              (QId, Filter0, {GVs,QIds}, Foo) ->
@@ -276,7 +278,7 @@ compile_forms(Forms0, Options) ->
         end
     catch _:_ ->
         %% The compiler is not available. Use the linter instead.
-        case erl_lint:module(Forms, Options) of
+        case erl_lint:module(Forms, lint_options(Options)) of
             {ok, Warnings} ->
                 {[], Warnings};
             {error, Errors, Warnings} ->
@@ -292,8 +294,17 @@ no_qlc_transform([]) ->
     [].
 
 compile_options(Options) ->
-    No = [report,report_errors,report_warnings,'P','E'],
-    [strong_validation,return | [O || O <- Options, not lists:member(O, No)]].
+    No = [report,report_errors,report_warnings,'P','E' | bitstr_options()],
+    [strong_validation,return | skip_options(No, Options)].
+
+lint_options(Options) ->
+    skip_options(bitstr_options(), Options).
+
+skip_options(Skip, Options) ->
+    [O || O <- Options, not lists:member(O, Skip)].
+
+bitstr_options() ->
+    [binary_comprehension,bitlevel_binaries].    
 
 %% In LCs it is possible to use variables introduced in filters and
 %% generator patterns in the right hand side of generators (ListExpr),
@@ -308,7 +319,8 @@ compile_options(Options) ->
 %% original variable name and V is the name invented by no_shadows/2.
 %%
 used_genvar_check(Forms, State) ->
-    F = fun(QId, {generate, Ln, _P, LE}=Q, {QsIVs0, Exprs0}, IVsSoFar0) ->
+    F = fun(QId, {T, Ln, _P, LE}=Q, {QsIVs0, Exprs0}, IVsSoFar0) 
+                                   when T =:= b_generate; T =:= generate ->
                 F = fun({var, _, V}=Var) -> 
                             {var, L, OrigVar} = undo_no_shadows(Var),
                             {var, {extra, L, get(?QLC_FILE), OrigVar}, V} 
@@ -2020,10 +2032,10 @@ nos({lc,L,E0,Qs0}, S) ->
     %% QLCs as well as LCs. It is OK to modify LCs as long as they
     %% occur within QLCs--the warning messages have already been found
     %% by compile_errors.
-    F = fun({generate,Ln,P0,LE0}, QS0) -> 
+    F = fun({T,Ln,P0,LE0}, QS0) when T =:= b_generate; T =:= generate -> 
                 {LE, _} = nos(LE0, QS0),
                 {P, QS} = nos_pattern(P0, QS0),
-                {{generate,Ln,P,LE}, QS};
+                {{T,Ln,P,LE}, QS};
            (Filter, QS) -> 
                 nos(Filter, QS)
         end,

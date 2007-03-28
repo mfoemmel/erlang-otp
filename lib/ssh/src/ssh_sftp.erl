@@ -59,7 +59,16 @@
 	  xf,
 	  rep_buf = <<>>,
 	  req_id,
-	  req_list = []  %% {ReqId, Fun}
+	  req_list = [],  %% {ReqId, Fun}
+	  inf   %% list of fileinf
+	 }).
+
+-record(fileinf,
+	{
+	  handle,
+	  offset,
+	  size,
+	  mode
 	 }).
 
 -define(FILEOP_TIMEOUT, 60000).
@@ -127,12 +136,17 @@ write_file_info(Pid, Name, Info) ->
 read_link_info(Pid, Name) ->
     gen_server:call(Pid, {read_link_info,false,Name}, ?FILEOP_TIMEOUT).
 
-read_link(Pid, Name) ->
-    gen_server:call(Pid, {read_link,false,Name}, ?FILEOP_TIMEOUT).
+read_link(Pid, LinkName) ->
+    case gen_server:call(Pid, {read_link,false,LinkName}, ?FILEOP_TIMEOUT) of
+	 {ok, [{Name, _Attrs}]} ->
+	    {ok, Name};
+	ErrMsg ->
+	    ErrMsg
+    end.
 
-make_symlink(Pid, Old, New) ->
-    gen_server:call(Pid, {make_symlink,false,Old,New}, ?FILEOP_TIMEOUT).    
-
+make_symlink(Pid, Name, Target) ->
+    gen_server:call(Pid, {make_symlink,false, Name, Target}, ?FILEOP_TIMEOUT).
+ 
 rename(Pid, FromFile, ToFile) ->
     gen_server:call(Pid, {rename,false,FromFile, ToFile}, ?FILEOP_TIMEOUT).
 
@@ -278,7 +292,8 @@ connect(Host, Port, Opts) ->
 init([CM]) ->
     case ssh_xfer:attach(CM, ?FILEOP_TIMEOUT) of
 	{ok,Xf,RBuf} ->
-	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf }};
+	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf,
+			  inf = new_inf()}};
 	Error ->
 	    {stop, Error }
     end;
@@ -287,7 +302,8 @@ init([Host,Port,Opts]) ->
     case ssh_xfer:connect(Host, Port, Opts) of
 	{ok, Xf, RBuf} ->
 	    process_flag(trap_exit, SaveFlag),
-	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf }};
+	    {ok, #state { req_id = 0, xf = Xf, rep_buf=RBuf,
+			  inf = new_inf()}};
 	Error ->
 	    {stop, Error}
     end.
@@ -302,222 +318,225 @@ init([Host,Port,Opts]) ->
 %%          {stop, Reason, Reply, State}   | (terminate/2 is called)
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_call({open,Async,FileName,Mode}, From, St) ->
-    XF = St#state.xf,
+handle_call({open,Async,FileName,Mode}, From, State) ->
+    XF = State#state.xf,
     {Access,Flags,Attrs} = open_mode(XF#ssh_xfer.vsn, Mode),
-    ReqID = St#state.req_id,
+    ReqID = State#state.req_id,
     ssh_xfer:open(XF, ReqID, FileName, Access, Flags, Attrs),
     case Async of
 	true ->
 	    {reply, {async,ReqID},
-	     wait_req(ReqID, St,
-		      fun({ok,Handle},St1) ->
-			      open2(ReqID,FileName,Handle,Mode,Async,From,St1);
-			 (Rep,St1) ->
-			      async_reply(ReqID, Rep, From, St1)
+	     wait_req(ReqID, State,
+		      fun({ok,Handle},State1) ->
+			      open2(ReqID,FileName,Handle,Mode,Async,
+				    From,State1);
+			 (Rep,State1) ->
+			      async_reply(ReqID, Rep, From, State1)
 		      end)};
 	false ->
 	    {noreply,
-	     wait_req(ReqID, St,
-		      fun({ok,Handle},St1) ->
-			      open2(ReqID,FileName,Handle,Mode,Async,From,St1);
-			 (Rep,St1) ->
-			      sync_reply(Rep, From, St1)
+	     wait_req(ReqID, State,
+		      fun({ok,Handle},State1) ->
+			      open2(ReqID,FileName,Handle,Mode,Async,
+				    From,State1);
+			 (Rep,State1) ->
+			      sync_reply(Rep, From, State1)
 		      end)}
     end;
 
-handle_call({opendir,Async,Path}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:opendir(?XF(St), ReqID, Path),
-    make_reply(ReqID, Async, From, St);
+handle_call({opendir,Async,Path}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:opendir(?XF(State), ReqID, Path),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({readdir,Async,Handle}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:readdir(?XF(St), ReqID, Handle),
-    make_reply(ReqID, Async, From, St);
+handle_call({readdir,Async,Handle}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:readdir(?XF(State), ReqID, Handle),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({close,_Async,Handle}, From, St) ->
+handle_call({close,_Async,Handle}, From, State) ->
     %% wait until all operations on handle are done
-    case get({size, Handle}) of
+    case get_size(Handle, State) of
 	undefined ->
-	    ReqID = St#state.req_id,
-	    ssh_xfer:close(?XF(St), ReqID, Handle),
-	    make_reply_post(ReqID, false, From, St,
-			    fun(Rep) ->
-				    erase({offset,Handle}),
-				    erase({size,Handle}),
-				    erase({mode,Handle}),
-				    Rep
+	    ReqID = State#state.req_id,
+	    ssh_xfer:close(?XF(State), ReqID, Handle),
+	    make_reply_post(ReqID, false, From, State,
+			    fun(Rep, State1) ->
+				    {Rep, erase_handle(Handle, State1)}
 			    end);
 	_ ->
-	    case lseek_position(Handle, cur) of
+	    case lseek_position(Handle, cur, State) of
 		{ok,_} ->
-		    ReqID = St#state.req_id,
-		    ssh_xfer:close(?XF(St), ReqID, Handle),
-		    make_reply_post(ReqID, false, From, St,
-				    fun(Rep) ->
-					    erase({offset,Handle}),
-					    erase({size,Handle}),
-					    erase({mode,Handle}),
-				    Rep
+		    ReqID = State#state.req_id,
+		    ssh_xfer:close(?XF(State), ReqID, Handle),
+		    make_reply_post(ReqID, false, From, State,
+				    fun(Rep, State1) ->
+					    {Rep, erase_handle(Handle, State1)}
 				    end);
 		Error ->
-		    {reply,Error, St}
+		    {reply, Error, State}
 	    end
     end;
 
-handle_call({pread,Async,Handle,At,Length}, From, St) ->
-    case lseek_position(Handle, At) of
+handle_call({pread,Async,Handle,At,Length}, From, State) ->
+    case lseek_position(Handle, At, State) of
 	{ok,Offset} ->
-	    ReqID = St#state.req_id,
-	    ssh_xfer:read(?XF(St),ReqID,Handle,Offset,Length),
+	    ReqID = State#state.req_id,
+	    ssh_xfer:read(?XF(State),ReqID,Handle,Offset,Length),
 	    %% To get multiple async read to work we must update the offset
 	    %% before the operation begins
-	    update_offset(Handle, Offset+Length),
-	    make_reply_post(ReqID,Async,From,St,
-			    fun({ok,Data}) ->
-				    case get({mode,Handle}) of
-					binary -> {ok,Data};
-					text -> {ok,binary_to_list(Data)}
+	    State1 = update_offset(Handle, Offset+Length, State),
+	    make_reply_post(ReqID,Async,From,State1,
+			    fun({ok,Data}, State2) ->
+				    io:format("get_mode ~p\n", [Handle]),
+				    case get_mode(Handle, State2) of
+					binary -> {{ok,Data}, State2};
+					text ->
+					    {{ok,binary_to_list(Data)}, State2}
 				    end;
-			       (Rep) -> 
-				    Rep
+			       (Rep, State2) -> 
+				    {Rep, State2}
 			    end);
 	Error ->
-	    {reply, Error, St}
+	    {reply, Error, State}
     end;
 
-handle_call({read,Async,Handle,Length}, From, St) ->
-    case lseek_position(Handle,cur) of
+handle_call({read,Async,Handle,Length}, From, State) ->
+    case lseek_position(Handle, cur, State) of
 	{ok,Offset} ->
-	    ReqID = St#state.req_id,
-	    ssh_xfer:read(?XF(St),ReqID,Handle,Offset,Length),
+	    ReqID = State#state.req_id,
+	    ssh_xfer:read(?XF(State),ReqID,Handle,Offset,Length),
 	    %% To get multiple async read to work we must update the offset
 	    %% before the operation begins
-	    update_offset(Handle, Offset+Length),
-	    make_reply_post(ReqID,Async,From,St,
-			    fun({ok,Data}) ->
-				    case get({mode,Handle}) of
-					binary -> {ok,Data};
-					text -> {ok,binary_to_list(Data)}
+	    State1 = update_offset(Handle, Offset+Length, State),
+	    make_reply_post(ReqID,Async,From,State1,
+			    fun({ok,Data}, State2) ->
+				    case get_mode(Handle, State2) of
+					binary -> {{ok,Data}, State2};
+					text ->
+					    {{ok,binary_to_list(Data)}, State2}
 				    end;
-			       (Rep) -> Rep
+			       (Rep, State2) -> {Rep, State2}
 			    end);
 	Error ->
-	    {reply, Error, St}
+	    {reply, Error, State}
     end;
 
-handle_call({pwrite,Async,Handle,At,Data0}, From, St) ->
-    case lseek_position(Handle, At) of
+handle_call({pwrite,Async,Handle,At,Data0}, From, State) ->
+    case lseek_position(Handle, At, State) of
 	{ok,Offset} ->
 	    Data = if binary(Data0) -> Data0;
 		      list(Data0) -> list_to_binary(Data0)
 		   end,
-	    ReqID = St#state.req_id,
+	    ReqID = State#state.req_id,
 	    Size = size(Data),
-	    ssh_xfer:write(?XF(St),ReqID,Handle,Offset,Data),
-	    update_size(Handle, Offset+Size),
-	    make_reply(ReqID, Async, From, St);
+	    ssh_xfer:write(?XF(State),ReqID,Handle,Offset,Data),
+	    State1 = update_size(Handle, Offset+Size, State),
+	    make_reply(ReqID, Async, From, State1);
 	Error ->
-	    {reply, Error, St}
+	    {reply, Error, State}
     end;
 
-handle_call({write,Async,Handle,Data0}, From, St) ->
-    case lseek_position(Handle, cur) of
+handle_call({write,Async,Handle,Data0}, From, State) ->
+    case lseek_position(Handle, cur, State) of
 	{ok,Offset} ->
 	    Data = if binary(Data0) -> Data0;
 		      list(Data0) -> list_to_binary(Data0)
 		   end,
-	    ReqID = St#state.req_id,
+	    ReqID = State#state.req_id,
 	    Size = size(Data),
-	    ssh_xfer:write(?XF(St),ReqID,Handle,Offset,Data),
-	    update_offset(Handle, Offset+Size),
-	    make_reply(ReqID, Async, From, St);
+	    ssh_xfer:write(?XF(State),ReqID,Handle,Offset,Data),
+	    State1 = update_offset(Handle, Offset+Size, State),
+	    make_reply(ReqID, Async, From, State1);
 	Error ->
-	    {reply, Error, St}
+	    {reply, Error, State}
     end;
 
-handle_call({position,Handle,At}, _From, St) ->
+handle_call({position,Handle,At}, _From, State) ->
     %% We could make this auto sync when all request to Handle is done?
-    case lseek_position(Handle, At) of
+    case lseek_position(Handle, At, State) of
 	{ok,Offset} ->
-	    update_offset(Handle, Offset),
-	    {reply, {ok, Offset}, St};
+	    {reply, {ok, Offset}, update_offset(Handle, Offset, State)};
 	Error ->
-	    {reply, Error, St}
+	    {reply, Error, State}
     end;
 
-handle_call({rename,Async,FromFile,ToFile}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:rename(?XF(St),ReqID,FromFile,ToFile,[overwrite]),
-    make_reply(ReqID, Async, From, St);
+handle_call({rename,Async,FromFile,ToFile}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:rename(?XF(State),ReqID,FromFile,ToFile,[overwrite]),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({delete,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:remove(?XF(St), ReqID, Name),
-    make_reply(ReqID, Async, From, St);
+handle_call({delete,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:remove(?XF(State), ReqID, Name),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({make_dir,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:mkdir(?XF(St), ReqID, Name,
+handle_call({make_dir,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:mkdir(?XF(State), ReqID, Name,
 		   #ssh_xfer_attr{ type = directory }),
-    make_reply(ReqID, Async, From, St);
+    make_reply(ReqID, Async, From, State);
 
-handle_call({del_dir,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:rmdir(?XF(St), ReqID, Name),
-    make_reply(ReqID, Async, From, St);
+handle_call({del_dir,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:rmdir(?XF(State), ReqID, Name),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({real_path,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:realpath(?XF(St), ReqID, Name),
-    make_reply(ReqID, Async, From, St);
+handle_call({real_path,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:realpath(?XF(State), ReqID, Name),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({read_file_info,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:stat(?XF(St), ReqID, Name, all),
-    make_reply(ReqID, Async, From, St);
+handle_call({read_file_info,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:stat(?XF(State), ReqID, Name, all),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({get_file_info,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:fstat(?XF(St), ReqID, Name, all),
-    make_reply(ReqID, Async, From, St);
+handle_call({get_file_info,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:fstat(?XF(State), ReqID, Name, all),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({read_link_info,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:lstat(?XF(St), ReqID, Name, all),
-    make_reply(ReqID, Async, From, St);
+handle_call({read_link_info,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:lstat(?XF(State), ReqID, Name, all),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({read_link,Async,Name}, From, St) ->
-    ReqID = St#state.req_id,
-    ssh_xfer:readlink(?XF(St), ReqID, Name),
-    make_reply(ReqID, Async, From, St);
+handle_call({read_link,Async,Name}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:readlink(?XF(State), ReqID, Name),
+    make_reply(ReqID, Async, From, State);
 
-handle_call({write_file_info,Async,Name,Info}, From, St) ->
-    ReqID = St#state.req_id,
+handle_call({make_symlink, Async, Path, TargetPath}, From, State) ->
+    ReqID = State#state.req_id,
+    ssh_xfer:symlink(?XF(State), ReqID, Path, TargetPath),
+    make_reply(ReqID, Async, From, State);
+
+handle_call({write_file_info,Async,Name,Info}, From, State) ->
+    ReqID = State#state.req_id,
     A = info_to_attr(Info),
-    ssh_xfer:setstat(?XF(St), ReqID, Name, A),
-    make_reply(ReqID, Async, From, St);
+    ssh_xfer:setstat(?XF(State), ReqID, Name, A),
+    make_reply(ReqID, Async, From, State);
 
-handle_call(send_window, _From, St) ->
-    XF = St#state.xf,
+handle_call(send_window, _From, State) ->
+    XF = State#state.xf,
     {reply, ssh_cm:send_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel,
-			      ?FILEOP_TIMEOUT), St};
+			      ?FILEOP_TIMEOUT), State};
 
-handle_call(recv_window, _From, St) ->
-    XF = St#state.xf,
+handle_call(recv_window, _From, State) ->
+    XF = State#state.xf,
     {reply, ssh_cm:recv_window(XF#ssh_xfer.cm, XF#ssh_xfer.channel,
-			       ?FILEOP_TIMEOUT), St};
+			       ?FILEOP_TIMEOUT), State};
 
-handle_call(stop, _From, St) ->
-    XF = St#state.xf,
+handle_call(stop, _From, State) ->
+    XF = State#state.xf,
     #ssh_xfer{cm = CM, channel = Channel} = XF,
     ssh_cm:close(CM, Channel),
     ssh_cm:stop(CM),
-    {stop, normal, ok, St};
+    {stop, normal, ok, State};
 
-handle_call(Call, _From, St) ->    
-    {reply, {error, bad_call, Call}, St}.
+handle_call(Call, _From, State) ->    
+    {reply, {error, bad_call, Call}, State}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_cast/2
@@ -526,8 +545,8 @@ handle_call(Call, _From, St) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_cast(_Msg, St) ->
-    {noreply, St}.
+handle_cast(_Msg, State) ->
+    {noreply, State}.
 
 %%--------------------------------------------------------------------
 %% Function: handle_info/2
@@ -536,34 +555,35 @@ handle_cast(_Msg, St) ->
 %%          {noreply, State, Timeout} |
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {data,Channel,Type,Data}}, St) ->
+handle_info({ssh_cm, CM, {data,Channel,Type,Data}}, State) ->
     ssh_cm:adjust_window(CM, Channel, size(Data)),
     if Type == 0 ->
-	    Data0 = St#state.rep_buf,
-	    St1 = handle_reply(St,CM,Channel,<<Data0/binary,Data/binary>>),
-	    {noreply, St1};
+	    Data0 = State#state.rep_buf,
+	    State1 = handle_reply(State,CM,Channel,
+				  <<Data0/binary,Data/binary>>),
+	    {noreply, State1};
        true ->
 	    error_logger:format("ssh: STDERR: ~s\n", [binary_to_list(Data)]),
-	    {noreply, St}
+	    {noreply, State}
     end;
-handle_info({ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}},St) ->
+handle_info({ssh_cm, CM, {exit_signal,Channel,_SIG,Err,_Lang}},State) ->
     ssh_cm:close(CM, Channel),
-    St1 = reply_all(St, CM, Channel, {error, Err}),
+    State1 = reply_all(State, CM, Channel, {error, Err}),
     ?dbg(true, "handle_info: exit_signal ~p ~p ~p\n", [_SIG, Err, _Lang]),
-    {stop, normal, St1};
-handle_info({ssh_cm, CM, {exit_status,Channel,_Status}},St) ->
+    {stop, normal, State1};
+handle_info({ssh_cm, CM, {exit_status,Channel,_Status}},State) ->
     ssh_cm:close(CM, Channel),
-    St1 = reply_all(St, CM, Channel, eof),
+    State1 = reply_all(State, CM, Channel, eof),
     ?dbg(true, "handle_info: exit_status ~p\n", [_Status]),
-    {stop, normal, St1};
-handle_info({ssh_cm, CM, {eof, Channel}},St) ->
-    St1 = reply_all(St, CM, Channel, eof),
+    {stop, normal, State1};
+handle_info({ssh_cm, CM, {eof, Channel}},State) ->
+    State1 = reply_all(State, CM, Channel, eof),
     ?dbg(true, "handle_info: eof \n", []),
-    {stop, normal, St1};
-handle_info({ssh_cm, CM, {closed, Channel}},St) ->
-    St1 = reply_all(St, CM, Channel, {error, closed}),
+    {stop, normal, State1};
+handle_info({ssh_cm, CM, {closed, Channel}},State) ->
+    State1 = reply_all(State, CM, Channel, {error, closed}),
     ?dbg(true, "handle_info: closed\n", []),
-    {stop, normal, St1};
+    {stop, normal, State1};
 handle_info(_Info, State) ->
     ?dbg(true, "sftp: got info ~p\n", [_Info]),
     {noreply, State}.
@@ -587,131 +607,133 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
-open2(OrigReqID,FileName,Handle,Mode,Async,From,St) ->
-    put({offset,Handle}, 0),
-    put({size,Handle}, 0),
-    case member(binary, Mode) orelse member(raw, Mode) of
-	true -> put({mode,Handle}, binary);
-	false -> put({mode,Handle}, text)
-    end,
-    ReqID = St#state.req_id,
-    ssh_xfer:stat(St#state.xf, ReqID, FileName, [size]),
+open2(OrigReqID,FileName,Handle,Mode,Async,From,State) ->
+    I0 = State#state.inf,
+    FileMode = case member(binary, Mode) orelse member(raw, Mode) of
+		   true -> binary;
+		   false -> text
+	       end,
+    I1 = add_new_handle(Handle, FileMode, I0),
+    State0 = State#state{inf = I1},
+    ReqID = State0#state.req_id,
+    ssh_xfer:stat(State0#state.xf, ReqID, FileName, [size]),
     case Async of
 	true ->
-	    wait_req(ReqID, St,
-		     fun({ok,FI},St1) ->
-			     if integer(FI#file_info.size) ->
-				     put({size,Handle}, FI#file_info.size);
-				true ->
-				     ok
-			     end,
-			     async_reply(OrigReqID, {ok,Handle}, From, St1);
-			(_, St1) ->
-			     async_reply(OrigReqID, {ok,Handle}, From, St1)
+	    wait_req(ReqID, State0,
+		     fun({ok,FI},State1) ->
+			     Size = FI#file_info.size,
+			     State2 = if is_integer(Size) ->
+					      put_size(Handle, Size, State1);
+					 true ->
+					      State1
+				      end,
+			     async_reply(OrigReqID, {ok,Handle}, From, State2);
+			(_, State1) ->
+			     async_reply(OrigReqID, {ok,Handle}, From, State1)
 		     end);
 	false ->
-	    wait_req(ReqID, St,
-		     fun({ok,FI},St1) ->
-			     if is_integer(FI#file_info.size) ->
-				     put({size,Handle}, FI#file_info.size);
-				true ->
-				     ok
-			     end,
-			     sync_reply({ok,Handle}, From,St1);
-			 (_, St1) ->
-			     sync_reply({ok,Handle}, From,St1)
+	    wait_req(ReqID, State0,
+		     fun({ok,FI},State1) ->
+			     Size = FI#file_info.size,
+			     State2 = if is_integer(Size) ->
+					      put_size(Handle, Size, State1);
+					 true ->
+					      State1
+				      end,
+			     sync_reply({ok,Handle}, From, State2);
+			(_, State1) ->
+			     sync_reply({ok,Handle}, From, State1)
 		     end)
     end.
 
 
-
-async_reply(ReqID, Reply, _From={To,_}, St) ->
+async_reply(ReqID, Reply, _From={To,_}, State) ->
     To ! {async_reply, ReqID, Reply},
-    St.
+    State.
 
 
-sync_reply(Reply, From, St) ->
+sync_reply(Reply, From, State) ->
     gen:reply(From, Reply),
-    St.
+    State.
 
 
-reply_all(St, _Cm, _Channel, Reply) ->
-    List = St#state.req_list,
+reply_all(State, _Cm, _Channel, Reply) ->
+    List = State#state.req_list,
     foreach(fun({_ReqID,Fun}) ->
-		    catch Fun(Reply,St)
+		    catch Fun(Reply,State)
 	    end, List),
-    St#state { req_list = []}.
+    State#state { req_list = []}.
 
 
-make_reply(ReqID, true, From, St) ->
+make_reply(ReqID, true, From, State) ->
     {reply, {async, ReqID},
-     wait_req(ReqID, St,
-	      fun(Reply,St1) -> 
-		      async_reply(ReqID,Reply,From,St1)
+     wait_req(ReqID, State,
+	      fun(Reply,State1) -> 
+		      async_reply(ReqID,Reply,From,State1)
 	      end)};
-make_reply(ReqID, false, From, St) ->
+make_reply(ReqID, false, From, State) ->
     {noreply, 
-     wait_req(ReqID, St,
-	      fun(Reply,St1) -> 
-		      sync_reply(Reply, From, St1) 
+     wait_req(ReqID, State,
+	      fun(Reply,State1) -> 
+		      sync_reply(Reply, From, State1) 
 	      end)}.
 
-make_reply_post(ReqID, true, From, St, PostFun) ->
+make_reply_post(ReqID, true, From, State, PostFun) ->
     {reply, {async, ReqID},
-     wait_req(ReqID, St,
-	      fun(Reply,St1) ->
-		      case catch PostFun(Reply) of
+     wait_req(ReqID, State,
+	      fun(Reply,State1) ->
+		      case catch PostFun(Reply, State1) of
 			  {'EXIT',_} ->
-			      async_reply(ReqID,Reply, From, St1);
-			  Reply1 ->
-			      async_reply(ReqID,Reply1, From, St1)
+			      async_reply(ReqID,Reply, From, State1);
+			  {Reply1, State2} ->
+			      async_reply(ReqID,Reply1, From, State2)
 		      end
 	      end)};
-make_reply_post(ReqID, false, From, St, PostFun) ->
+make_reply_post(ReqID, false, From, State, PostFun) ->
     {noreply,
-     wait_req(ReqID, St,
-	      fun(Reply,St1) ->
-		      case catch PostFun(Reply) of
+     wait_req(ReqID, State,
+	      fun(Reply,State1) ->
+		      case catch PostFun(Reply, State1) of
 			  {'EXIT',_} ->
-			      sync_reply(Reply, From, St1);
-			  Reply1 ->
-			      sync_reply(Reply1, From, St1)
+			      sync_reply(Reply, From, State1);
+			  {Reply1, State2} ->
+			      sync_reply(Reply1, From, State2)
 		      end
 	      end)}.
 
 
-wait_req(ReqID, St, Fun) ->
-    List = [{ReqID,Fun} | St#state.req_list],
-    ID = (St#state.req_id + 1) band 16#ffffffff,
-    St#state { req_list = List, req_id = ID }.
+wait_req(ReqID, State, Fun) ->
+    List = [{ReqID,Fun} | State#state.req_list],
+    ID = (State#state.req_id + 1) band 16#ffffffff,
+    State#state { req_list = List, req_id = ID }.
 
-handle_reply(St, Cm, Channel, Data) ->
+handle_reply(State, Cm, Channel, Data) ->
     case Data of
 	<<?UINT32(Len), RData:Len/binary, RBuf/binary>> ->
-	    case catch ssh_xfer:xf_reply(?XF(St), RData) of
+	    case catch ssh_xfer:xf_reply(?XF(State), RData) of
 		{'EXIT', _Reason} ->
 		    ?dbg(true, "handle_reply: error ~p\n", [_Reason]),
-		    handle_reply(St, Cm, Channel, RBuf);
+		    handle_reply(State, Cm, Channel, RBuf);
 		XfReply={_, ReqID, _} ->
-		    St1 = handle_req_reply(St, ReqID, XfReply),
-		    handle_reply(St1, Cm, Channel, RBuf)
+		    State1 = handle_req_reply(State, ReqID, XfReply),
+		    handle_reply(State1, Cm, Channel, RBuf)
 	    end;
 	RBuf ->
-	    St#state { rep_buf = RBuf }
+	    State#state { rep_buf = RBuf }
     end.
 
-handle_req_reply(St, ReqID, XfReply) ->
-    case lists:keysearch(ReqID, 1, St#state.req_list) of
+handle_req_reply(State, ReqID, XfReply) ->
+    case lists:keysearch(ReqID, 1, State#state.req_list) of
 	false ->
 	    error_logger:format("handle_req_reply: req_id=~p not found\n",
 				[ReqID]),
-	    St;
+	    State;
 	{value,{_,Fun}} ->
-	    List = lists:keydelete(ReqID, 1, St#state.req_list),
-	    St1 = St#state { req_list = List },
-	    case catch Fun(xreply(XfReply),St1) of
-		{'EXIT', _} ->  St1;
-		St2 -> St2
+	    List = lists:keydelete(ReqID, 1, State#state.req_list),
+	    State1 = State#state { req_list = List },
+	    case catch Fun(xreply(XfReply),State1) of
+		{'EXIT', _} ->  State1;
+		State2 -> State2
 	    end
     end.
 
@@ -843,26 +865,89 @@ open_mode3(Modes) ->
 %%     {Access, Flags, Attrs}.
 
 
-update_size(Handle, NewSize) ->
-    OldSize = get({size,Handle}),
+
+%% accessors for inf dict
+new_inf() -> dict:new().
+
+add_new_handle(Handle, FileMode, Inf) ->
+    dict:store(Handle, #fileinf{offset=0, size=0, mode=FileMode}, Inf).
+
+update_size(Handle, NewSize, State) ->
+    OldSize = get_size(Handle, State),
     if NewSize > OldSize ->
-	    put({size,Handle}, NewSize);
+	    put_size(Handle, NewSize, State);
        true ->
-	    ok
+	    State
     end.
 
 %% set_offset(Handle, NewOffset) ->
 %%     put({offset,Handle}, NewOffset).
 
-update_offset(Handle, NewOffset) ->
-    put({offset,Handle}, NewOffset),
-    update_size(Handle, NewOffset).
+update_offset(Handle, NewOffset, State0) ->
+    State1 = put_offset(Handle, NewOffset, State0),
+    update_size(Handle, NewOffset, State1).
+
+
+
+%% access size and offset for handle
+put_size(Handle, Size, State) ->
+    Inf0 = State#state.inf,
+    case dict:find(Handle, Inf0) of
+	{ok, FI} ->
+	    State#state{inf=dict:store(Handle, FI#fileinf{size=Size}, Inf0)};
+	_ ->
+	    State#state{inf=dict:store(Handle, #fileinf{size=Size,offset=0},
+				       Inf0)}
+    end.
+
+put_offset(Handle, Offset, State) ->
+    Inf0 = State#state.inf,
+    case dict:find(Handle, Inf0) of
+	{ok, FI} ->
+	    State#state{inf=dict:store(Handle, FI#fileinf{offset=Offset},
+				       Inf0)};
+	_ ->
+	    State#state{inf=dict:store(Handle, #fileinf{size=Offset,
+							offset=Offset}, Inf0)}
+    end.
+
+get_size(Handle, State) ->
+    case dict:find(Handle, State#state.inf) of
+	{ok, FI} ->
+	    FI#fileinf.size;
+	_ ->
+	    undefined
+    end.
+
+%% get_offset(Handle, State) ->
+%%     {ok, FI} = dict:find(Handle, State#state.inf),
+%%     FI#fileinf.offset.
+
+get_mode(Handle, State) ->
+    io:format("Mode\n"),
+    case dict:find(Handle, State#state.inf) of
+	{ok, FI} ->
+	    io:format("Mode for ~p - ~p\n", [Handle, FI#fileinf.mode]),
+	    FI#fileinf.mode;
+	_ ->
+	    io:format("undefined mode for ~p\n", [Handle]),
+	    undefined
+    end.
+
+erase_handle(Handle, State) ->
+    FI = dict:erase(Handle, State#state.inf),
+    State#state{inf = FI}.
 
 %%
 %% Caluclate a integer offset
 %%
-lseek_position(Handle, Pos) ->
-    lseek_pos(Pos, get({offset,Handle}), get({size,Handle})).
+lseek_position(Handle, Pos, State) ->
+    case dict:find(Handle, State#state.inf) of
+	{ok, #fileinf{offset=O, size=S}} ->
+	    lseek_pos(Pos, O, S);
+	_ ->
+	    {error, einval}
+    end.
 
 lseek_pos(_Pos, undefined, _) ->
     {error, einval};

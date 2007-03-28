@@ -94,34 +94,37 @@ xm(Mod)         -> c:xm(Mod).
 y(File)         -> c:y(File).
 y(File, Opts)   -> c:y(File, Opts).
 
-iaa(Flag)       -> i:iaa(Flag).
-iaa(Flag,Fnk)   -> i:iaa(Flag,Fnk).
-ist(Flag)       -> i:ist(Flag).
-ia(Pid)         -> i:ia(Pid).
-ia(X,Y,Z)       -> i:ia(X,Y,Z).
-ia(Pid,Fnk)     -> i:ia(Pid,Fnk).
-ia(X,Y,Z,Fnk)   -> i:ia(X,Y,Z,Fnk).
-ib(Mod,Line)    -> i:ib(Mod,Line).
-ib(Mod,Fnk,Arity) -> i:ib(Mod,Fnk,Arity).
-ibd(Mod,Line)   -> i:ibd(Mod,Line).
-ibe(Mod,Line)   -> i:ibe(Mod,Line).
-iba(M,L,Action) -> i:iba(M,L,Action).
-ibc(M,L,Cond)   -> i:ibc(M,L,Cond).
-ic()            -> i:ic().
-ih()            -> i:help().
-ii(Mod)         -> i:ii(Mod).
-ii(Mod,Op)      -> i:ii(Mod,Op).
-il()            -> i:il().
-im()            -> i:im().
-ini(Mod)        -> i:ini(Mod).
-ini(Mod,Op)     -> i:ini(Mod,Op).
-inq(Mod)        -> i:inq(Mod).
-ip()            -> i:ip().
-ipb()           -> i:ipb().
-ipb(Mod)        -> i:ipb(Mod).
-iq(Mod)         -> i:iq(Mod).
-ir(Mod,Line)    -> i:ir(Mod,Line).
-ir(Mod,Fnk,Arity) -> i:ir(Mod,Fnk,Arity).
-ir(Mod)         -> i:ir(Mod).
-ir()            -> i:ir().
-iv()            -> i:iv().
+iaa(Flag)       -> calli(iaa, [Flag]).
+iaa(Flag,Fnk)   -> calli(iaa, [Flag,Fnk]).
+ist(Flag)       -> calli(ist, [Flag]).
+ia(Pid)         -> calli(ia, [Pid]).
+ia(X,Y,Z)       -> calli(ia, [X,Y,Z]).
+ia(Pid,Fnk)     -> calli(ia, [Pid,Fnk]).
+ia(X,Y,Z,Fnk)   -> calli(ia, [X,Y,Z,Fnk]).
+ib(Mod,Line)    -> calli(ib, [Mod,Line]).
+ib(Mod,Fnk,Arity) -> calli(ib, [Mod,Fnk,Arity]).
+ibd(Mod,Line)   -> calli(ibd, [Mod,Line]).
+ibe(Mod,Line)   -> calli(ibe, [Mod,Line]).
+iba(M,L,Action) -> calli(iba, [M,L,Action]).
+ibc(M,L,Cond)   -> calli(ibc, [M,L,Cond]).
+ic()            -> calli(ic, []).
+ih()            -> calli(help, []).
+ii(Mod)         -> calli(ii, [Mod]).
+ii(Mod,Op)      -> calli(ii, [Mod,Op]).
+il()            -> calli(il, []).
+im()            -> calli(im, []).
+ini(Mod)        -> calli(ini, [Mod]).
+ini(Mod,Op)     -> calli(ini, [Mod,Op]).
+inq(Mod)        -> calli(inq, [Mod]).
+ip()            -> calli(ip, []).
+ipb()           -> calli(ipb, []).
+ipb(Mod)        -> calli(ipb, [Mod]).
+iq(Mod)         -> calli(iq, [Mod]).
+ir(Mod,Line)    -> calli(ir, [Mod,Line]).
+ir(Mod,Fnk,Arity) -> calli(ir, [Mod,Fnk,Arity]).
+ir(Mod)         -> calli(ir, [Mod]).
+ir()            -> calli(ir, []).
+iv()            -> calli(iv, []).
+
+calli(F, Args) ->
+    c:appcall(debugger, i, F, Args).

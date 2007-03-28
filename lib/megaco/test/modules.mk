@@ -33,6 +33,7 @@ MODULES = \
 	megaco_test_generator \
 	megaco_test_mgc \
 	megaco_test_mg \
+	megaco_test_msg_v1_lib \
 	megaco_test_msg_v2_lib \
 	megaco_test_msg_prev3a_lib \
 	megaco_test_msg_prev3b_lib \

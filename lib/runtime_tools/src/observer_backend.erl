@@ -95,7 +95,13 @@ pi(P,Key) ->
 %% ttb backend
 %%
 ttb_init_node(MetaFile,PI,Traci) ->
-    file:delete(MetaFile),
+    if
+	is_list(MetaFile);
+	is_atom(MetaFile) ->
+	    file:delete(MetaFile);
+	true -> 				% {local,_,_}
+	    ok
+    end,
     Self = self(),
     MetaPid = spawn(fun() -> ttb_meta_tracer(MetaFile,PI,Self) end),
     receive {MetaPid,started} -> ok end,

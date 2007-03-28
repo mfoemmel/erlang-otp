@@ -304,14 +304,15 @@ do_work(Key, State) ->
     WorkStore = State#state.work,
     {Cmd, Aux, From, _OldRef, Old, Opts} = retrieve(WorkStore, Key),
     {ok, Result} = do_work2(Cmd, Aux, From, Old, Opts),
-    if  Result==Old -> ok;
+    if
+	Result==Old -> ok;
 	true ->
 	    From ! {delivery, self(), Cmd, Aux, Result}
     end,
     case get_opt(timeout, Opts) of
 	at_most_once ->
 	    del_task(Key, WorkStore);
-	T when integer(T) ->
+	T when is_integer(T) ->
 	    {ok, Ref} = timer:send_after(T, ?MK_DOIT(Key)),
 	    store(WorkStore, Key, Ref, Result, Opts)
     end,
@@ -388,7 +389,8 @@ del_task(Key, WorkStore) ->
     ets:delete(WorkStore, Key),
     case OldStuff of
 	{_Cmd, _Aux, _From, Ref, _Old, Opts} ->
-	    if  Ref /= nil ->
+	    if
+		Ref /= nil ->
 		    timer:cancel(Ref),
 		    receive
 			{do_it, Key} ->
@@ -439,7 +441,7 @@ del_task(Key, WorkStore) ->
 calc_app_tree(Name, Opts) ->
     Mode = get_opt(info_type, Opts),
     case application_controller:get_master(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    DB = new_db(Mode, Pid),
 	    GL = groupl(Pid),
 	    R = case catch do_find_proc(Mode, DB, GL, find_avoid()) of
@@ -461,9 +463,9 @@ calc_app_tree(Name, Opts) ->
 	    {ok, {[], [], [], []}}
     end.
 
-get_pid(P) when pid(P) -> P;
-get_pid(P) when port(P) -> P;
-get_pid(X) when tuple(X) -> element(2, X).
+get_pid(P) when is_pid(P) -> P;
+get_pid(P) when is_port(P) -> P;
+get_pid(X) when is_tuple(X) -> element(2, X).
 
 
 %----------------------------------------------------------------------
@@ -500,13 +502,13 @@ do_find_proc2(X, Mode, DB, GL, Avoid) ->
 %% processes that must be treated differently, notably the application
 %% master.
 %% 
-find_children(X, sup) when pid(X) ->
+find_children(X, sup) when is_pid(X) ->
     %% This is the first (root) process of a supervision tree and it
     %% better be a supervisor, we are smoked otherwise
     supervisor:which_children(X);
-find_children(X, link) when pid(X), node(X) /= node() ->
+find_children(X, link) when is_pid(X), node(X) /= node() ->
     [];
-find_children(X, link) when pid(X) ->
+find_children(X, link) when is_pid(X) ->
     case process_info(X, links) of
 	{links, Links} ->
 	    lists:reverse(Links); % OTP-4082
@@ -514,18 +516,19 @@ find_children(X, link) when pid(X) ->
     end;
 find_children({master, X}, sup) -> 
     case application_master:get_child(X) of
-	{Pid, _Name} when pid(Pid) -> [Pid];
-	Pid when pid(Pid)	  -> [Pid]
+	{Pid, _Name} when is_pid(Pid) -> [Pid];
+	Pid when is_pid(Pid) -> [Pid]
     end;
 find_children({_, _X, worker, _}, sup) -> [];
 find_children({_, X, supervisor, _}, sup) ->
     lists:filter(fun(Thing) -> 
 			 Pid = get_pid(Thing),
-			 if  pid(Pid) -> true;
-			     true ->false end end,
+			 if
+			     is_pid(Pid) -> true;
+			     true -> false
+			 end
+		 end,
 		 supervisor:which_children(X)).
-
-
 
 
 %% Add links to primary (L1) or secondary (L2) sets and return an
@@ -534,7 +537,7 @@ find_children({_, X, supervisor, _}, sup) ->
 add_children(CList, Paren, DB, _GL, _Avoid, sup) ->
     lists:foldr(fun(C, DB2) -> 
 			case get_pid(C) of
-			    P when pid(P) -> 
+			    P when is_pid(P) -> 
 				add_prim(C, Paren, DB2);
 			    _ -> DB2 end end,
 		DB, CList);
@@ -554,7 +557,8 @@ maybe_add_child(C, Paren, DB, GL, Avoid) ->
 
 %% Check if process on this node
 maybe_add_child_node(C, Paren, DB, GL, Avoid) ->
-    if  node(C) /= node() -> 
+    if
+	node(C) /= node() -> 
 	    add_foreign(C, Paren, DB);
 	true -> 
 	    maybe_add_child_avoid(C, Paren, DB, GL, Avoid)
@@ -570,7 +574,8 @@ maybe_add_child_avoid(C, Paren, DB, GL, Avoid) ->
 
 %% Check if it is a port, then it is added
 maybe_add_child_port(C, Paren, DB, GL) ->
-    if  port(C) ->
+    if
+	is_port(C) ->
 	    add_prim(C, Paren, DB);
 	true ->
 	    maybe_add_child_sasl(C, Paren, DB, GL)
@@ -607,15 +612,17 @@ maybe_add_child_sec(C, Paren, DB) ->
 check_sasl_ancestor(Paren, C) ->
     case lists:keysearch('$ancestors', 1, 
 			 element(2,process_info(C, dictionary))) of
-	{value, {_, L}} when list(L) ->
-	    H = if  atom(hd(L)) -> whereis(hd(L));
-		    true -> hd(L) end,
-	    if  H == Paren -> yes;
+	{value, {_, L}} when is_list(L) ->
+	    H = if
+		    is_atom(hd(L)) -> whereis(hd(L));
+		    true -> hd(L)
+		end,
+	    if
+		H == Paren -> yes;
 		true -> no
 	    end;
 	_ -> dont_know
     end.
-
 
 
 %----------------------------------------------------------------------
@@ -628,8 +635,9 @@ new_db(Mode, Pid) ->
     P  = ets:new(processes, [set, public]),
     L1 = ets:new(links, [bag, public]),
     L2 = ets:new(extralinks, [bag, public]),
-    Q = if  Mode==sup -> queue:in({master, Pid}, queue:new());
-	    true ->queue:in(Pid, queue:new())
+    Q = if
+	    Mode==sup -> queue:in({master, Pid}, queue:new());
+	    true -> queue:in(Pid, queue:new())
 	end,
     #db{q=Q, p=P, links=L1, links2=L2}.
 
@@ -658,8 +666,8 @@ is_in_queue(#db{q={L1,L2}}, P) -> % Should really be in queue.erl
 %% added when group leaders differ. Note that catch all is needed
 %% because net_sup is undefined when not networked but still present
 %% in the kerenl_sup child list. Blahh, didn't like that.
-groupl(P) when port(P) -> nil;
-groupl(P) when pid(P) ->
+groupl(P) when is_port(P) -> nil;
+groupl(P) when is_pid(P) ->
     case process_info(P, group_leader) of
 	{group_leader, GL} -> GL;
 	_Other -> nil
@@ -674,7 +682,7 @@ cmp_groupl(_, _) -> false.
 find_avoid() ->
     lists:foldr(fun(X, Accu) -> 
 		       case whereis(X) of
-			   P when pid(P) ->
+			   P when is_pid(P) ->
 			       [P|Accu];
 			   _ -> Accu end end,
 		[undefined],
@@ -693,21 +701,18 @@ format([{P} | Fs]) ->				% Process or port
 format([{P1, P2} | Fs]) ->			% Link
     [{format(P1), format(P2)} | format(Fs)];
 format([]) -> [];
-format(P) when pid(P), node(P) /= node() ->
-    pid_to_list(P) ++ " " ++ to_list(node(P));
-format(P) when pid(P) ->
+format(P) when is_pid(P), node(P) /= node() ->
+    pid_to_list(P) ++ " " ++ atom_to_list(node(P));
+format(P) when is_pid(P) ->
     case process_info(P, registered_name) of
 	{registered_name, Name} -> atom_to_list(Name);
 	_ -> pid_to_list(P)
     end;
-format(P) when port(P) ->
-    "port " ++ to_list(element(2, erlang:port_info(P, id)));
-format(X) -> io:format("What: ~p~n", [X]),
-"???".
-
-to_list(X) when atom(X) -> atom_to_list(X);
-to_list(X) when integer(X) -> integer_to_list(X);
-to_list(X) -> X.
+format(P) when is_port(P) ->
+    "port " ++ integer_to_list(element(2, erlang:port_info(P, id)));
+format(X) ->
+    io:format("What: ~p~n", [X]),
+    "???".
 
 
 %%----------------------------------------------------------------------
@@ -742,7 +747,7 @@ calc_app_on_node() ->
 reality_check([E|Es]) ->
     N = element(1, E),
     case catch application_controller:get_master(N) of
-        P when pid(P) -> [{P, N, E} | reality_check(Es)];
+        P when is_pid(P) -> [{P, N, E} | reality_check(Es)];
         _ -> reality_check(Es)
     end;
 reality_check([]) -> [].
@@ -880,11 +885,11 @@ load_range() -> 16.
 %%**********************************************************************
 %%----------------------------------------------------------------------
 
-calc_pinfo(pinfo, Pid) when pid(Pid) ->
+calc_pinfo(pinfo, Pid) when is_pid(Pid) ->
     Info = process_info(Pid),
     {ok, io_lib:format("Node: ~p, Process: ~p~n~p~n~n",
 		       [node(), Pid, Info])};
-calc_pinfo(pinfo, Pid) when port(Pid) ->
+calc_pinfo(pinfo, Pid) when is_port(Pid) ->
     Info = lists:map(fun(Key) ->erlang:port_info(Pid, Key) end,
 		     [id, name, connected, links, input, output]),
     

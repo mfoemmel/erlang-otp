@@ -26,7 +26,7 @@
 -export([encode/2, encode/3, decode/3]).
 -export([test/1, test/2, test/3, value/2]).
 %% Application internal exports
--export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,compile_inline/4,
+-export([compile_asn/3,compile_asn1/3,compile_py/3,compile/3,
 	 value/1,vsn/0,
 	 create_ets_table/2,get_name_of_def/1,get_pos_of_def/1]).
 -export([read_config_data/1,get_gen_state_field/1,get_gen_state/0,
@@ -79,12 +79,7 @@ compile(File) ->
     compile(File,[]).
 
 compile(File,Options) when list(Options) ->
-    Options1 =
-	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
-	    {true,true} -> 
-		[ber_bin_v2|Options--[ber_bin]];
-	    _ -> Options
-	end,
+    Options1 = optimize_ber_bin(Options),
     Options2 = includes(File,Options1),
     Includes=[I||{i,I}<-Options2],
     case (catch input_file_type(File,Includes)) of
@@ -92,18 +87,12 @@ compile(File,Options) when list(Options) ->
  	    (catch compile1(SuffixedFile,Options2));
 	{multiple_files_file,SetBase,FileName} ->
 	    FileList = get_file_list(FileName,Includes),
-	    io:format("FileList: ~p~n",[FileList]),
-%%	    case [X||{inline,X}<-Options2] of
-	    case is_inline(Options2) of
-		false ->
-		    (catch compile_set(SetBase,filename:dirname(FileName),
-				       FileList,Options2));
-%		[OutputName] -> 
-		_ ->
-		    OutputName = inline_output(Options2,SetBase),
-		    NewFileList=
-			[filename:rootname(filename:basename(X))||X<-FileList],
-		    (catch compile_inline(OutputName,filename:dirname(FileName),NewFileList,Options2))
+%%	    io:format("FileList: ~p~n",[FileList]),
+	    case FileList of
+		L when is_list(L) ->
+		    (catch compile_set(SetBase,FileList,Options2));
+		Err ->
+		    Err
 	    end;
 	Err = {input_file_error,_Reason} ->
 	    {error,Err};
@@ -127,7 +116,15 @@ compile1(File,Options) when list(Options) ->
 		      DbFile,Options,[]),
     Continue4 = generate(Continue3,OutFile,EncodingRule,Options),
     delete_tables([asn1_functab]),
-    compile_erl(Continue4,OutFile,Options).
+    Ret = compile_erl(Continue4,OutFile,Options),
+    case inline(is_inline(Options),
+		inline_output(Options,filename:rootname(File)),
+		[OutFile++".erl"],Options) of
+	false ->
+	    Ret;
+	InlineRet ->
+	    InlineRet
+    end.
 
 			  
 %%****************************************************************************%%
@@ -135,8 +132,8 @@ compile1(File,Options) when list(Options) ->
 %%****************************************************************************%%
 
 %%%
-%% compile_inline/3
-%% compiles a number of modules, merges the resulting erlang modules with
+%% inline/4
+%% merges the resulting erlang modules with
 %% the appropriate run-time modules so the resulting module contains all
 %% run-time asn1 functionality. Then compiles the resulting file to beam code.
 %% The merging is done by the igor module. If this function is used in older
@@ -147,35 +144,32 @@ compile1(File,Options) when list(Options) ->
 %%     Modules -> [filename()]
 %%     Options -> [term()]
 %%     filename() -> file:filename()
-compile_inline(Name,DirName,Modules,Options) ->
-    Options1 =
-	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
-	    {true,true} -> 
-		[ber_bin_v2|Options--[ber_bin]];
-	    _ -> Options
-	end,
-
-    Fun = fun(M)-> compile(filename:join([DirName,M]),Options1) end,
-    lists:foreach(Fun,Modules),
-    RTmodule = get_runtime_mod(Options1),
-    IgorOptions = igorify_options(remove_asn_flags(Options1)),
-    io:format("*****~nName: ~p~nModules: ~p~nIgorOptions: ~p~n*****",
-	      [Name,Modules++RTmodule,IgorOptions]),
-    case catch igor:merge(Name,Modules++RTmodule,[{preprocess,true},{stubs,false}]++IgorOptions) of
+inline(true,Name,Modules,Options) ->
+    RTmodule = get_runtime_mod(Options),
+    IgorOptions = igorify_options(remove_asn_flags(Options)),
+    IgorName = filename:rootname(filename:basename(Name)),
+%    io:format("*****~nName: ~p~nModules: ~p~nIgorOptions: ~p~n*****~n",
+%	      [IgorName,Modules++RTmodule,IgorOptions]),
+    io:format("Inlining modules: ~p in ~p~n",[Modules++RTmodule,IgorName]),
+    case catch igor:merge(IgorName,Modules++RTmodule,[{preprocess,true},{stubs,false},{backups,false}]++IgorOptions) of
 	{'EXIT',{undef,Reason}} -> %% module igor first in R10B
 	    io:format("Module igor in syntax_tools must be available:~n~p~n",
 		      [Reason]),
 	    {error,'no_compilation'};
-	{'EXIT',_Reason} ->
+	{'EXIT',Reason} ->
+	    io:format("Merge by igor module failed due to ~p~n",[Reason]),
 	    {error,'no_compilation'};
 	_ ->
-	    io:format("compiling output module: ~p~n",[Name]),
-	    erl_compile(generated_file(Name,IgorOptions),Options1)
-    end.
+%%	    io:format("compiling output module: ~p~n",[generated_file(Name,IgorOptions)]),
+	    erl_compile(generated_file(Name,IgorOptions),Options)
+    end;
+inline(_,_,_,_) ->
+    false.
 
-%% compile_set/4 merges and compiles a number of asn1 modules
+%% compile_set/3 merges and compiles a number of asn1 modules
 %% specified in a .set.asn file to one .erl file.
-compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
+compile_set(SetBase,Files,Options) 
+  when is_list(hd(Files)),is_list(Options) ->
     %% case when there are several input files in a list
     io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,Files]),    
     io:format("Compiler Options: ~p~n",[Options]),
@@ -184,7 +178,7 @@ compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
     Includes = [I || {i,I} <- Options],
     EncodingRule = get_rule(Options),
     create_ets_table(asn1_functab,[named_table]),
-    ScanRes = scan_set(DirName,Files,Options),
+    ScanRes = scan_set(Files,Options),
     ParseRes = parse_set(ScanRes,Options),
     Result = 
 	case [X||X <- ParseRes,element(1,X)==true] of
@@ -203,7 +197,7 @@ compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
 		      end,
 		      Files),
 		check_set(ParseRes,SetBase,OutFile,Includes,
-			  EncodingRule,DbFile,Options,InputModules,DirName);
+			  EncodingRule,DbFile,Options,InputModules);
 	    Other ->
 		{error,{'unexpected error in scan/parse phase',
 			lists:map(fun(X)->element(3,X) end,Other)}}
@@ -212,11 +206,8 @@ compile_set(SetBase,DirName,Files,Options) when list(hd(Files)),list(Options) ->
     Result.
 
 check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
-	  Options,InputModules,Dir) ->
-    lists:foreach(fun({_T,M,File})->
-			  cmp(M#module.name,filename:join([Dir,File]))
-		  end,
-		  ParseRes),
+	  Options,InputModules) ->
+
     MergedModule = merge_modules(ParseRes,SetBase),
     SetM = MergedModule#module{name=SetBase},
     Continue1 = check({true,SetM},SetBase,OutFile,Includes,EncRule,DbFile,
@@ -225,7 +216,15 @@ check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
 
     delete_tables([renamed_defs,original_imports,automatic_tags]),
 
-    compile_erl(Continue2,OutFile,Options).
+    Ret = compile_erl(Continue2,OutFile,Options),
+    case inline(is_inline(Options),
+		inline_output(Options,filename:rootname(OutFile)),
+		[OutFile++".erl"],Options) of
+	false ->
+	    Ret;
+	InlineRet ->
+	    InlineRet
+    end.
 
 %% merge_modules/2 -> returns a module record where the typeorval lists are merged,
 %% the exports lists are merged, the imports lists are merged when the 
@@ -691,10 +690,11 @@ delete_double_of_symbol1([],Acc) ->
     Acc.
 
 
-scan_set(DirName,Files,Options) ->
+scan_set(Files,Options) ->
+    %% The files in Files already have their relative path and extension
     lists:map(
       fun(F)->
-	      case scan(filename:join([DirName,F]),Options) of
+	      case scan(F,Options) of
 		  {false,{error,Reason}} ->
 		      throw({error,{'scan error in file:',F,Reason}});
 		  {TrueOrFalse,Res} ->
@@ -772,12 +772,7 @@ parse({false,Tokens},_,_) ->
     {false,Tokens}.
 
 check({true,M},File,OutFile,Includes,EncodingRule,DbFile,Options,InputMods) ->
-    case InputMods of
-	[] ->
-	    cmp(M#module.name,File);
-	_ -> ok
-    end,
-%    start(["."|Includes]),
+
     start(Includes),
     case asn1ct_check:storeindb(M) of 
 	ok   ->
@@ -824,7 +819,7 @@ generate({true,{M,_Module,GenTOrV}},OutFile,EncodingRule,Options) ->
 	{error, enoent} -> ok;
 	{error, Reason} -> io:format("WARNING: Error in configuration"
 				     "file: ~n~p~n",[Reason]);
-	{'EXIT',Reason} -> io:format("WARNING: Internal error when ",
+	{'EXIT',Reason} -> io:format("WARNING: Internal error when "
 				     "analyzing configuration"
 				     "file: ~n~p~n",[Reason]);
 	_ -> ok
@@ -853,12 +848,7 @@ parse_and_save(Module,S) ->
     Options = S#state.options,
     SourceDir = S#state.sourcedir,
     Includes = [I || {i,I} <-Options],
-    Options1 =
-	case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
-	    {true,true} -> 
-		[ber_bin_v2|Options--[ber_bin]];
-	    _ -> Options
-	end,
+    Options1 = optimize_ber_bin(Options),
     
     case get_input_file(Module,[SourceDir|Includes]) of 
 	%% search for asn1 source
@@ -1080,6 +1070,7 @@ erl_compile(OutFile,Options) ->
 	    ok;
 	_ ->
 	    ErlOptions = remove_asn_flags(Options),
+	   %% io:format("~n~nc:c(~p,~p)~n~n",[OutFile,ErlOptions]),
 	    case c:c(OutFile,ErlOptions) of
 		{ok,_Module} ->
 		    ok;
@@ -1146,20 +1137,23 @@ outfile(Base, Ext, Opts) ->
 	    lists:concat([Obase,".",Ext])
     end.
 
+optimize_ber_bin(Options) ->
+    case {lists:member(optimize,Options),lists:member(ber_bin,Options)} of
+	{true,true} -> 
+	    [ber_bin_v2|Options--[ber_bin]];
+	_ -> Options
+    end.
+
 includes(File,Options) -> 
-    case filename:dirname(File) of
-	[] ->
-	    Options;
-	Dir ->
-	    Options2 =
-		case lists:member({i,"."},Options) of
-		    false -> Options ++ [{i,"."}];
-		    _ -> Options
-		end,
-	    case lists:member({i,Dir}, Options) of
-		false -> Options2 ++ [{i,Dir}];
-		_ -> Options2
-	    end
+    Dir = filename:dirname(File),
+    Options2 =
+	case lists:member({i,"."},Options) of
+	    false -> Options ++ [{i,"."}];
+	    _ -> Options
+	end,
+    case lists:member({i,Dir}, Options2) of
+	false -> Options2 ++ [{i,Dir}];
+	_ -> Options2
     end.
 
 is_inline(Options) ->
@@ -1421,74 +1415,10 @@ value(Module,Type) ->
 	    {ok,Result}
     end.
 
-cmp(Module,InFile) ->
-    %% This test must care for both case sensitive and non case
-    %% sensitive OS.
-    Base = filename:basename(InFile),
-    Dir = filename:dirname(InFile),
-    Ext = filename:extension(Base),
-    Finfo = file:read_file_info(InFile),
-    Minfo = file:read_file_info(filename:join(Dir,lists:concat([Module,Ext]))),
-    case {cmp_case_sensitive(Base,lists:concat([Module,Ext])),
-	  cmp_f_inode(Finfo,Minfo)} of
-	{true,true} ->
-	    ok;
-	_ ->
-	    io:format("asn1error: Modulename and filename must be equal~n",[]),
-	    throw(error)
-    end.
-
 vsn() ->
     ?vsn.
 
-cmp_f_inode({ok,#file_info{inode=I}},{ok,#file_info{inode=I}}) ->
-    true;
-cmp_f_inode(_,_) ->
-    false.
 
-cmp_case_sensitive(Name1,Name2) when list(Name1),list(Name2) ->
-    cmp_cs(Name1,Name2);
-cmp_case_sensitive(Name1,Name2) ->
-    NewName1 =
-	case Name1 of
-	    N1 when atom(N1) ->
-		atom_to_list(N1);
-	    _ -> Name1
-	end,
-    NewName2 =
-	case Name2 of
-	    N2 when atom(N2) ->
-		atom_to_list(N2);
-	    _ -> Name2
-	end,
-    cmp_case_sensitive(NewName1,NewName2).
-cmp_cs([],[]) ->
-    true;
-cmp_cs([H1|T1],[H2|T2]) ->
-    case cmp_char_cs(H1,H2) of
-	true ->
-	    cmp_cs(T1,T2);
-	_ -> false
-    end;
-cmp_cs(_,_) ->
-    false.
-
-cmp_char_cs(H,H) ->
-    true;
-cmp_char_cs(H1,H2) when H1=<$Z,H1>=$A ->
-    if
-	H1+32 == H2 ->
-	    true;
-	true -> false
-    end;
-cmp_char_cs(H1,H2) when H2=<$Z,H2>=$A ->
-    if
-	H2+32 == H1 ->
-	    true;
-	true -> false
-    end;
-cmp_char_cs(_,_) ->
-    false.
 
 print_error_message([got,H|T]) when list(H) ->
     io:format(" got:"),
@@ -1548,15 +1478,6 @@ delete_tables([]) ->
 
 
 specialized_decode_prepare(Erule,M,TsAndVs,Options) ->
-%     Asn1confMember = 
-% 	fun([{asn1config,File}|_],_) ->
-% 		{true,File};
-% 	   ([],_) -> false;
-% 	   ([_H|T],Fun) ->
-% 		Fun(T,Fun)
-% 	end,
-%     case Asn1confMember(Options,Asn1confMember) of
-%	{true,File} ->
     case lists:member(asn1config,Options) of
 	true ->
 	    partial_decode_prepare(Erule,M,TsAndVs,Options);
@@ -1567,8 +1488,14 @@ specialized_decode_prepare(Erule,M,TsAndVs,Options) ->
 %% about partial decode and incomplete decode
 partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
     %% read configure file
-%    Types = element(1,TsAndVs),
-    CfgList = read_config_file(M#module.name),
+
+    ModName =
+	case lists:keysearch(asn1config,1,Options) of
+	    {value,{_,MName}} -> MName;
+	    _ -> M#module.name
+	end,
+%%    io:format("ModName: ~p~nM#module.name: ~p~n~n",[ModName,M#module.name]),
+    CfgList = read_config_file(ModName),
     SelectedDecode = get_config_info(CfgList,selective_decode),
     ExclusiveDecode = get_config_info(CfgList,exclusive_decode),
     CommandList = 
@@ -1584,7 +1511,7 @@ partial_decode_prepare(ber_bin_v2,M,TsAndVs,Options) when tuple(TsAndVs) ->
     CommandList2 = 
 	create_partial_inc_decode_gen_info(M#module.name,ExclusiveDecode),
 %    io:format("partial_incomplete_decode = ~p~n",[CommandList2]),
-    Part_inc_tlv_tags = tag_format(ber_bin_v2,Options,CommandList2),
+    Part_inc_tlv_tags = tlv_tags(CommandList2),
 %    io:format("partial_incomplete_decode: tlv_tags = ~p~n",[Part_inc_tlv_tags]),
     save_config(partial_incomplete_decode,Part_inc_tlv_tags),
     save_gen_state(exclusive_decode,ExclusiveDecode,Part_inc_tlv_tags);
@@ -1857,14 +1784,9 @@ create_pdec_command(ModName,{'CHOICE',[#'ComponentType'{}|Comps]},TNL,Acc) ->
     create_pdec_command(ModName,{'CHOICE',Comps},TNL,Acc);
 create_pdec_command(ModName,#'Externaltypereference'{module=M,type=C1},
 		    TypeNameList,Acc) ->
-    case get_referenced_type(M,C1) of
-	#type{def=Def} ->
-	    create_pdec_command(ModName,get_components(Def),TypeNameList,
-				Acc);
-	Err ->
-	    throw({error,{"unexpected result when fetching "
-			  "referenced element",Err}})
-    end;
+     #type{def=Def} = get_referenced_type(M,C1),
+    create_pdec_command(ModName,get_components(Def),TypeNameList,
+			Acc);
 create_pdec_command(ModName,TS=#type{def=Def},[C1|Cs],Acc) ->
     %% This case when we got the "components" of a SEQUENCE/SET OF
     case C1 of
@@ -2015,13 +1937,6 @@ get_referenced_type(M,Name) ->
 			  "referenced type",T}})
     end.
 
-tag_format(EncRule,_Options,CommandList) ->
-    case EncRule of
-	ber_bin_v2 ->
-	    tlv_tags(CommandList);
-	_ ->
-	    CommandList
-    end.
 
 tlv_tags([]) ->
     [];

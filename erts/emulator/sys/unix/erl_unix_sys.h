@@ -46,10 +46,10 @@
 #include <signal.h>
 
 
-#if HAVE_SOCKETIO_H
+#if HAVE_SYS_SOCKETIO_H
 #   include <sys/socketio.h>
 #endif
-#if HAVE_SOCKIO_H
+#if HAVE_SYS_SOCKIO_H
 #   include <sys/sockio.h>
 #endif
 
@@ -109,6 +109,10 @@
 /*
  * Make sure that MAXPATHLEN is defined.
  */
+#ifdef GETHRTIME_WITH_CLOCK_GETTIME
+#undef HAVE_GETHRTIME
+#define HAVE_GETHRTIME 1
+#endif
 
 #ifndef MAXPATHLEN
 #   ifdef PATH_MAX
@@ -118,13 +122,18 @@
 #   endif
 #endif
 
-#ifdef ERTS_WANT_BREAK_HANDLING
-extern volatile int erts_break_requested;
-void erts_do_break_handling(void);
-#endif
-
 #define HAVE_ERTS_CHECK_IO_DEBUG
 int erts_check_io_debug(void);
+
+
+#ifndef ENABLE_CHILD_WAITER_THREAD
+#  undef ERTS_POLL_NEED_ASYNC_INTERRUPT_SUPPORT
+#  define ERTS_POLL_NEED_ASYNC_INTERRUPT_SUPPORT
+#  ifdef ERTS_SMP
+#    define ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+void erts_check_children(void);
+#  endif
+#endif
 
 /*
 ** For the erl_timer_sup module.
@@ -138,8 +147,6 @@ typedef struct tms SysTimes;
 
 extern int erts_ticks_per_sec;
 
-extern volatile int erts_got_sigusr1;
-
 #define SYS_CLK_TCK (erts_ticks_per_sec)
 
 #define sys_times(Arg) times(Arg)
@@ -150,11 +157,20 @@ extern int erts_ticks_per_sec_wrap;
 extern clock_t sys_times_wrap(void);
 
 #ifdef HAVE_GETHRTIME
+#ifdef GETHRTIME_WITH_CLOCK_GETTIME
+typedef long long SysHrTime;
+
+extern SysHrTime sys_gethrtime(void);
+#define sys_init_hrtime() /* Nothing */
+
+#else /* Real gethrtime (Solaris) */
+
 typedef hrtime_t SysHrTime;
 
 #define sys_gethrtime() gethrtime()
 #define sys_init_hrtime() /* Nothing */
 
+#endif /* GETHRTIME_WITH_CLOCK_GETTIME */
 #endif /* HAVE_GETHRTIME */
 
 #if (defined(HAVE_GETHRVTIME) || defined(HAVE_CLOCK_GETTIME))

@@ -980,13 +980,10 @@ ext_file_open(FName, NewFile, OldFile, OldCnt, Head) ->
 
 ext_file_open(FName, NewFile, OldFile, OldCnt, Head, Repair, Mode) ->
     FileName = add_ext(FName, NewFile),
-    case ext_open(FileName, Repair, Mode, Head) of
-	{ok, {_Alloc, FdC, HeadSize, FileSize}} ->
-	    Lost = write_index_file(Mode, FName, NewFile, OldFile, OldCnt),
-	    {ok, FdC, FileName, Lost, HeadSize, FileSize};
-	Error ->
-	    file_error(FileName, Error)
-    end.
+    {ok, {_Alloc, FdC, HeadSize, FileSize}} = 
+        ext_open(FileName, Repair, Mode, Head),
+    Lost = write_index_file(Mode, FName, NewFile, OldFile, OldCnt),
+    {ok, FdC, FileName, Lost, HeadSize, FileSize}.
 
 %%-----------------------------------------------------------------
 %% The old file format for index file (CurFileNo > 0), Version 0:

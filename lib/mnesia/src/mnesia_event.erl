@@ -71,14 +71,8 @@ handle_info(Msg, State) ->
 
 handle_call(Msg, State) ->
     Reply = ok,
-    case handle_any_event(Msg, State) of
-	{ok, NewState} ->
-	    {ok, Reply, NewState};
-	remove_handler ->
-	    {remove_handler, Reply};
-	{swap_handler,Args1, State1, Mod2, Args2} ->
-	    {swap_handler, Reply, Args1, State1, Mod2, Args2}
-    end.
+    {ok, NewState} = handle_any_event(Msg, State),
+    {ok, Reply, NewState}.
 
 %%-----------------------------------------------------------------
 %% terminate(Reason, State) ->

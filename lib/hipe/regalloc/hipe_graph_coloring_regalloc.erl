@@ -10,7 +10,7 @@
 %% - select colors
 %%
 %% Emits a coloring: a list of {TempName,Location}
-%%  where Location is {reg,N} or {spill,M}.
+%%  where Location is {reg,N} or {spill,M}
 %%   and {reg,N} denotes some register N
 %%   and {spill,M} denotes the Mth spilled node
 %% You have to figure out how to rewrite the code yourself.
@@ -58,13 +58,15 @@
 %% that the coloring agrees with the interference graph (that is, that
 %% no neighbors have the same register or spill location).
 
+%% @spec regalloc(#cfg{}, non_neg_fixnum(), non_neg_fixnum(), atom(), list()) -> {, non_neg_fixnum()}
+
 regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   PhysRegs = Target:allocatable(),
   ?report2("building IG~n", []),
   {IG, Spill} = build_ig(CFG, Target),
 
   %% check_ig(IG),
-  ?report3("graph: ~p~nphysical regs: ~p~n",[list_ig(IG), PhysRegs]),
+  ?report3("graph: ~p~nphysical regs: ~p~n", [list_ig(IG), PhysRegs]),
 
   %% These nodes *can't* be allocated to registers. 
   NotAllocatable = [Target:reg_nr(X) || X <- Target:non_alloc(CFG)],
@@ -72,10 +74,10 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
   ?report2("Nonalloc ~w~n", [NotAllocatable]),
 
   {Cols, NewSpillIndex} = 
-    color(IG, Spill, 
+    color(IG, Spill,
 	  ordsets:from_list(PhysRegs), 
 	  SpillIndex,
-	  SpillLimit, 
+	  SpillLimit,
 	  Target:number_of_temporaries(CFG),
 	  Target, NotAllocatable),
   Coloring = [{X, {reg, X}} || X <- NotAllocatable] ++ Cols,
@@ -94,7 +96,7 @@ regalloc(CFG, SpillIndex, SpillLimit, Target, _Options) ->
 build_ig(CFG, Target) ->
   case catch build_ig0(CFG, Target) of
     {'EXIT',Rsn} ->
-      exit({regalloc, build_ig, Rsn});
+      exit({?MODULE, build_ig, Rsn});
     Else ->
       Else
   end.
@@ -114,8 +116,8 @@ build_ig_bbs([], _CFG, _Live, IG, Spill, _Target) ->
   {IG, Spill};
 build_ig_bbs([L|Ls], CFG, Live, IG, Spill, Target) ->
   Xs = bb(CFG, L, Target),
-  {_, NewIG, NewSpill} = 
-    build_ig_bb(Xs, liveout(Live,L, Target), IG, Spill, Target),
+  {_, NewIG, NewSpill} =
+    build_ig_bb(Xs, liveout(Live, L, Target), IG, Spill, Target),
   build_ig_bbs(Ls, CFG, Live, NewIG, NewSpill, Target).
 
 build_ig_bb([], LiveOut, IG, Spill, _Target) ->
@@ -132,7 +134,7 @@ build_ig_bb([X|Xs], LiveOut, IG, Spill, Target) ->
 
 build_ig_instr(X, Live, IG, Spill, Target) ->
   {Def, Use} = def_use(X, Target),
-  ?report3("Live ~w\n~w : Def: ~w Use ~w\n",[Live, X, Def,Use]),
+  ?report3("Live ~w\n~w : Def: ~w Use ~w\n", [Live, X, Def,Use]),
   DefList = ordsets:to_list(Def),
   NewSpill = inc_spill_costs(DefList, 
 			     inc_spill_costs(ordsets:to_list(Use), Spill)),
@@ -143,32 +145,31 @@ build_ig_instr(X, Live, IG, Spill, Target) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 interference_arcs([], _Live, IG) -> 
-   IG;
-interference_arcs([X|Xs],Live,IG) ->
-   interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
+  IG;
+interference_arcs([X|Xs], Live, IG) ->
+  interference_arcs(Xs, Live, i_arcs(X, Live, IG)).
 
 i_arcs(_X, [], IG) -> 
-   IG;
+  IG;
 i_arcs(X, [Y|Ys], IG) ->
-   i_arcs(X, Ys, add_edge(X,Y, IG)).
+  i_arcs(X, Ys, add_edge(X,Y, IG)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-inc_spill_costs([],Spill) -> Spill;
-inc_spill_costs([X|Xs],Spill) ->
-   inc_spill_costs(Xs,inc_spill_cost(X,Spill)).
+inc_spill_costs([], Spill) -> Spill;
+inc_spill_costs([X|Xs], Spill) ->
+  inc_spill_costs(Xs, inc_spill_cost(X, Spill)).
 
-inc_spill_cost(X,Spill) ->
-   set_spill_cost(X,get_spill_cost(X,Spill)+1,Spill).
+inc_spill_cost(X, Spill) ->
+  set_spill_cost(X, get_spill_cost(X, Spill)+1, Spill).
 
-get_spill_cost(X,Spill) ->
-   spill_cost_lookup(X,Spill).
+get_spill_cost(X, Spill) ->
+  spill_cost_lookup(X, Spill).
 
-set_spill_cost(X,N,Spill) ->
-   spill_cost_update(X,N,Spill).
+set_spill_cost(X, N, Spill) ->
+  spill_cost_update(X, N, Spill).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -195,7 +196,7 @@ color(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target, NotAllocatable
    case catch color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit,
 		      NumNodes, Target, NotAllocatable) of
       {'EXIT',Rsn} ->
-	 ?error_msg("Coloring failed with ~p~n",[Rsn]),
+	 ?error_msg("Coloring failed with ~p~n", [Rsn]),
 	 ?EXIT(Rsn);
       Else ->
 	 Else
@@ -203,7 +204,7 @@ color(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target, NotAllocatable
 
 color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,
 	NotAllocatable) -> 
-  ?report("simplification of IG~n",[]),
+  ?report("simplification of IG~n", []),
   K = ordsets:size(PhysRegs),
   Nodes = list_ig(IG),
 
@@ -211,7 +212,7 @@ color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,
 
   %% Any nodes above the spillimit must be colored first...
   MustNotSpill = 
-    if NumNodes > SpillLimit +1 -> 
+    if NumNodes > SpillLimit+1 ->
 	sort_on_degree(lists:seq(SpillLimit+1,NumNodes-1) -- Low,IG);
        true -> []
     end,
@@ -230,7 +231,7 @@ color_0(IG, Spill, PhysRegs, SpillIx, SpillLimit, NumNodes, Target,
 sort_on_degree(Nodes, IG) ->
   [ Node3 || {_,Node3} <- 
 	       lists:sort([{degree(Info),Node2} || 
-			    {Info,Node2} <- [{ hipe_vectors:get(IG, Node),
+			    {Info,Node2} <- [{hipe_vectors:get(IG, Node),
 					      Node} || Node <-
 							 Nodes]])].
 
@@ -275,8 +276,8 @@ simplify(Low, NumNodes, PreC, IG, Spill, K, Ix, Stk, SpillLimit,
   %% Make sure that the registers that must not be spilled
   %%  get a degree less than K by spilling other regs.
   {Stk2, Ix2, Vis2, Low2} =  
-    handle_non_spill(MustNotSpill,  IG, Spill, K, Ix, Stk, Vis1, Low,
-	       SpillLimit, Target),
+    handle_non_spill(MustNotSpill, IG, Spill, K, Ix, Stk, Vis1, Low,
+		     SpillLimit, Target),
   simplify_ig(Low2, ActualNumNodes-length(Stk2), IG, Spill, K, Ix2, Stk2, Vis2,
 	      SpillLimit, Target).
 
@@ -307,9 +308,8 @@ simplify_ig([], 0, _IG, _Spill, _K, Ix, Stk, _Vis, _SpillLimit, _Target) ->
   {Stk, Ix};
 simplify_ig([], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) 
   when N > 0 ->
-  ?report3("N: ~w Stk: ~w N+Stk ~w\n",[N,length(Stk),N+length(Stk)]),
-
-  ?report("  *** spill required (N<~w)***~n",[SpillLimit]),
+  ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
+  ?report("  *** spill required (N<~w)***~n", [SpillLimit]),
   {X, Low, NewIG} = spill(IG, Vis, Spill, K, SpillLimit, Target),
   NewVis = visit(X,Vis),
   {NewStk, NewIx} = push_spill_node(X, Ix, Stk),
@@ -317,8 +317,7 @@ simplify_ig([], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target)
   simplify_ig(Low, N-1, NewIG, Spill, K, NewIx, NewStk, NewVis,
 	      SpillLimit, Target);
 simplify_ig([X|Xs], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) ->
-  ?report3("N: ~w Stk: ~w N+Stk ~w\n",[N,length(Stk),N+length(Stk)]),
-
+  ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
   case is_visited(X,Vis) of
     true ->
       ?report("  node ~p already visited~n",[X]),
@@ -326,7 +325,7 @@ simplify_ig([X|Xs], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) ->
     false ->
       ?report("Stack ~w\n", [Stk]),
       {NewLow, NewIG} = decrement_neighbors(X, Xs, IG, Vis, K),
-      ?report("  node ~w pushed\n(~w now ready)~n",[X,NewLow]),
+      ?report("  node ~w pushed\n(~w now ready)~n", [X,NewLow]),
       NewStk = push_colored(X, Stk),
       simplify_ig(NewLow, N-1, NewIG, Spill, K, Ix, NewStk, visit(X,Vis),
 		  SpillLimit, Target)
@@ -337,8 +336,8 @@ simplify_ig([X|Xs], N, IG, Spill, K, Ix, Stk, Vis, SpillLimit, Target) ->
 decrement_neighbors(X, Xs, IG, Vis, K) ->
   Ns = unvisited_neighbors(X, Vis, IG),
   ?report("  node ~p has neighbors ~w\n(unvisited ~p)~n",
-	  [X, neighbors(X,IG),Ns]),
-  decrement_each(Ns,Xs,IG,Vis,K).
+	  [X, neighbors(X, IG), Ns]),
+  decrement_each(Ns, Xs, IG, Vis, K).
 
 %% For each node, decrement its degree and check if it is now
 %% a low-degree node. In that case, add it to the 'low list'.
@@ -349,15 +348,15 @@ decrement_each([N|Ns], OldLow, IG, Vis, K) ->
   {Low, CurrIG} = decrement_each(Ns, OldLow, IG, Vis, K),
   case is_visited(N, Vis) of
     true ->
-	 {Low, CurrIG};
+      {Low, CurrIG};
     false ->
-	 {D, NewIG} = decrement_degree(N, CurrIG),
-	 if
-	    D =:= K-1 ->
-	       {[N|Low], NewIG};
-	    true ->
-	       {Low, NewIG}
-	 end
+      {D, NewIG} = decrement_degree(N, CurrIG),
+      if
+	D =:= K-1 ->
+	  {[N|Low], NewIG};
+	true ->
+	  {Low, NewIG}
+      end
   end.
 
 %%%%%%%%%%%%%%%%%%%%
@@ -471,13 +470,13 @@ select_color(X, IG, Cols, PhysRegs) ->
 
 %%%%%%%%%%%%%%%%%%%%
 
-get_colors([],_Cols) -> [];
-get_colors([X|Xs],Cols) ->
-  case color_of(X,Cols) of
+get_colors([], _Cols) -> [];
+get_colors([X|Xs], Cols) ->
+  case color_of(X, Cols) of
     uncolored ->
-      get_colors(Xs,Cols);
+      get_colors(Xs, Cols);
     {color,R} ->
-      [R|get_colors(Xs,Cols)]
+      [R|get_colors(Xs, Cols)]
   end.
 
 select_unused_color(UsedColors, PhysRegs) ->
@@ -494,29 +493,25 @@ select_unused_color(UsedColors, PhysRegs) ->
 %%   order (some may be occupied).
 %% - When a color has been selected, put it at the end of the LRU.
 
-% select_avail_reg(Regs) ->
-%     case get(seeded) of
-% 	undefined ->
-% 	    random:seed(),
-% 	    put(seeded,true);
-% 	true ->
-% 	    ok
-%     end,
-%     NReg = length(Regs),
-%     RegNo = random:uniform(NReg),
-%     nth(RegNo, Regs).
-
-%Nth(1,[R|_]) -> R;
-%nth(N,[_|Rs]) when N > 1 ->
-%    nth(N-1,Rs).
+%% select_avail_reg(Regs) ->
+%%   case get(seeded) of
+%%     undefined ->
+%% 	 random:seed(),
+%% 	 put(seeded,true);
+%%     true ->
+%% 	 ok
+%%   end,
+%%   NReg = length(Regs),
+%%   RegNo = random:uniform(NReg),
+%%   lists:nth(RegNo, Regs).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-push_spill_node(X,M,Stk) ->
-   {[{X,{spill,M}}|Stk], M+1}.
+push_spill_node(X, M, Stk) ->
+  {[{X,{spill,M}}|Stk], M+1}.
 
-push_colored(X,Stk) ->
-    [{X, colorable} | Stk].
+push_colored(X, Stk) ->
+  [{X, colorable} | Stk].
 
 %%%%%%%%%%%%%%%%%%%%
 
@@ -530,26 +525,25 @@ low_degree_nodes([{N,Info}|Xs], K, NotAllocatable) ->
       Deg = degree(Info),
       if
 	Deg < K ->
-	  [N|low_degree_nodes(Xs,K, NotAllocatable)];
+	  [N|low_degree_nodes(Xs, K, NotAllocatable)];
 	true ->
-	  low_degree_nodes(Xs,K, NotAllocatable)
+	  low_degree_nodes(Xs, K, NotAllocatable)
       end
   end.
 
 %%%%%%%%%%%%%%%%%%%%
 
-unvisited_neighbors(X,Vis,IG) ->
-    ordsets:from_list(unvisited(neighbors(X,IG),Vis)).
+unvisited_neighbors(X, Vis, IG) ->
+  ordsets:from_list(unvisited(neighbors(X,IG), Vis)).
 
-unvisited([],_Vis) -> [];
-unvisited([X|Xs],Vis) ->
-   case is_visited(X,Vis) of
-      true ->
-	 unvisited(Xs,Vis);
-      false ->
-	 [X|unvisited(Xs,Vis)]
-   end.
-
+unvisited([], _Vis) -> [];
+unvisited([X|Xs], Vis) ->
+  case is_visited(X, Vis) of
+    true ->
+      unvisited(Xs, Vis);
+    false ->
+      [X|unvisited(Xs, Vis)]
+  end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -566,10 +560,10 @@ unvisited([X|Xs],Vis) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info,{neighbors=[],degree=0}).
+-record(ig_info, {neighbors=[], degree=0 :: integer()}).
 
 empty_ig(NumNodes) ->
-  hipe_vectors:new(NumNodes,#ig_info{neighbors=[],degree=0}).
+  hipe_vectors:new(NumNodes, #ig_info{neighbors=[], degree=0}).
 
 degree(Info) ->
   Info#ig_info.degree.
@@ -577,16 +571,15 @@ degree(Info) ->
 neighbors(Info) ->
   Info#ig_info.neighbors.
 
-add_edge(X,X,IG) -> IG;
-add_edge(X,Y,IG) ->
-  add_arc(X,Y,add_arc(Y,X,IG)).
+add_edge(X, X, IG) -> IG;
+add_edge(X, Y, IG) ->
+  add_arc(X, Y, add_arc(Y, X, IG)).
 
 add_arc(X, Y, IG) ->
   Info = hipe_vectors:get(IG, X),
   Old = neighbors(Info),
   New = Info#ig_info{neighbors=[Y|Old]},
-  hipe_vectors:set(IG,X,New).
-
+  hipe_vectors:set(IG, X, New).
 
 normalize_ig(IG) ->
   Size = hipe_vectors:size(IG),
@@ -613,7 +606,7 @@ decrement_degree(X, IG) ->
   Degree = degree(Info),
   NewDegree = Degree-1,
   NewInfo = Info#ig_info{degree=NewDegree},
-  {NewDegree,hipe_vectors:set(IG,X,NewInfo)}.
+  {NewDegree, hipe_vectors:set(IG,X,NewInfo)}.
 
 list_ig(IG) ->
   hipe_vectors:list(IG).
@@ -638,7 +631,7 @@ spill_cost_update(X, N, Spill) ->
   hipe_vectors:set(Spill, X, N).
 
 %%list_spill_costs(Spill) ->
-%%   hipe_vectors:list(Spill).
+%%  hipe_vectors:list(Spill).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -661,105 +654,103 @@ list_coloring(Cols) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Note: there might be a slight gain in separating the two versions
-%% of visit/2 and visited/2. (So that {var,X} selects X and calls
-%% the integer version.
+%% of visit/2 and visited/2. (So that {var,X} selects X and calls the
+%% integer version.
 
 none_visited(NumNodes) ->
-  hipe_vectors:new(NumNodes,false).
+  hipe_vectors:new(NumNodes, false).
 
 visit(X,Vis) ->
-  hipe_vectors:set(Vis,X,true).
+  hipe_vectors:set(Vis, X, true).
 
 is_visited(X,Vis) ->
-  hipe_vectors:get(Vis,X).
+  hipe_vectors:get(Vis, X).
 
-visit_all([],Vis) -> Vis;
-visit_all([X|Xs],Vis) ->
-  visit_all(Xs,visit(X,Vis)).
+visit_all([], Vis) -> Vis;
+visit_all([X|Xs], Vis) ->
+  visit_all(Xs, visit(X, Vis)).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Check that all arcs in IG are bidirectional + degree is correct
 
-% check_ig(IG) ->
-%    check_ig(list_ig(IG),IG).
+%% check_ig(IG) ->
+%%   check_ig(list_ig(IG),IG).
 
-% check_ig([],IG) -> 
-%    ok;
-% check_ig([{N,Info}|Xs],IG) ->
-%    Ns = neighbors(Info),
-%    NumNs = length(Ns),
-%    D = degree(Info),
-%    if
-%       D =:= NumNs ->
-% 	 ok;
-%       true ->
-% 	 ?WARNING_MSG('node ~p has degree ~p but ~p neighbors~n',[N,D,NumNs])
-%    end,
-%    check_neighbors(N,Ns,IG),
-%    check_ig(Xs,IG).
+%% check_ig([],IG) -> 
+%%   ok;
+%% check_ig([{N,Info}|Xs],IG) ->
+%%   Ns = neighbors(Info),
+%%   NumNs = length(Ns),
+%%   D = degree(Info),
+%%   if
+%%      D =:= NumNs ->
+%%        ok;
+%%      true ->
+%% 	 ?WARNING_MSG('node ~p has degree ~p but ~p neighbors~n',[N,D,NumNs])
+%%   end,
+%%   check_neighbors(N,Ns,IG),
+%%   check_ig(Xs,IG).
 
-% check_neighbors(N,[],IG) -> 
-%    ok;
-% check_neighbors(N,[M|Ms],IG) ->
-%    Ns = neighbors(M,IG),
-%    case member(N,Ns) of
-%       true ->
-% 	 ok;
-%       true ->
-% 	 ?WARNING_MSG('node ~p should have ~p as neighbor (has ~p)~n',[M,N,Ns])
-%    end,
-%    check_neighbors(N,Ms,IG).
+%% check_neighbors(N,[],IG) -> 
+%%   ok;
+%% check_neighbors(N,[M|Ms],IG) ->
+%%   Ns = neighbors(M,IG),
+%%   case member(N,Ns) of
+%%     true ->
+%% 	 ok;
+%%     true ->
+%% 	 ?WARNING_MSG('node ~p should have ~p as neighbor (has ~p)~n',[M,N,Ns])
+%%   end,
+%%   check_neighbors(N,Ms,IG).
 
 -ifdef(DO_ASSERT).
 %%%%%%%%%%%%%%%%%%%%
 %% Check that the coloring is correct (if the IG is correct):
 %%
 
-check_coloring(Coloring,IG, Target) ->
-   ?report0("checking coloring ~p~n",[Coloring]),
-   check_cols(list_ig(IG),init_coloring(Coloring, Target)).
+check_coloring(Coloring, IG, Target) ->
+  ?report0("checking coloring ~p~n",[Coloring]),
+  check_cols(list_ig(IG),init_coloring(Coloring, Target)).
 
 init_coloring(Xs, Target) ->
   hipe_temp_map:cols2tuple(Xs, Target).
 
-check_color_of(X,Cols) ->
+check_color_of(X, Cols) ->
 %%    if
 %%	is_precoloured(X) ->
 %%	    phys_reg_color(X,Cols);
 %%	true ->
-   case hipe_temp_map:find(X,Cols) of
-     unknown ->
-	 ?WARNING_MSG("node ~p: color not found~n",[X]),
-	 uncolored;
-     C ->
-	 C
-   end.
+  case hipe_temp_map:find(X, Cols) of
+    unknown ->
+      ?WARNING_MSG("node ~p: color not found~n", [X]),
+      uncolored;
+    C ->
+      C
+  end.
 
-check_cols([],Cols) ->
-    ?report("coloring valid~n",[]),
-    true;
-check_cols([{X,Info}|Xs],Cols) ->
-    Cs = [ {N,check_color_of(N,Cols)} || N <- neighbors(Info) ],
-    C = check_color_of(X,Cols),
-    case valid_coloring(X,C,Cs) of
-       yes ->
- 	 check_cols(Xs,Cols);
-       {no,Invalids} ->
- 	 ?WARNING_MSG("node ~p has same color (~p) as ~p~n",
- 		 [X,C,Invalids]),
- 	 check_cols(Xs,Cols)
-    end.
+check_cols([], Cols) ->
+  ?report("coloring valid~n",[]),
+  true;
+check_cols([{X,Info}|Xs], Cols) ->
+  Cs = [{N, check_color_of(N, Cols)} || N <- neighbors(Info)],
+  C = check_color_of(X, Cols),
+  case valid_coloring(X, C, Cs) of
+    yes ->
+      check_cols(Xs, Cols);
+    {no,Invalids} ->
+      ?WARNING_MSG("node ~p has same color (~p) as ~p~n", [X,C,Invalids]),
+      check_cols(Xs, Cols)
+  end.
 
- valid_coloring(X,C,[]) ->
-    yes;
- valid_coloring(X,C,[{Y,C}|Ys]) ->
-    case valid_coloring(X,C,Ys) of
-       yes -> {no,[Y]};
-       {no,Zs} -> {no,[Y|Zs]}
-
-    end;
- valid_coloring(X,C,[_|Ys]) ->
-    valid_coloring(X,C,Ys).
+valid_coloring(X, C, []) ->
+  yes;
+valid_coloring(X, C, [{Y,C}|Ys]) ->
+  case valid_coloring(X, C, Ys) of
+    yes -> {no, [Y]};
+    {no,Zs} -> {no, [Y|Zs]}
+  end;
+valid_coloring(X, C, [_|Ys]) ->
+  valid_coloring(X, C, Ys).
 -endif.
 
 
@@ -768,18 +759,18 @@ check_cols([{X,Info}|Xs],Cols) ->
 %% *** INTERFACES TO OTHER MODULES ***
 %%
 
-liveout(CFG,L, Target) ->
-  ordsets:from_list(reg_names(Target:liveout(CFG,L), Target)).
+liveout(CFG, L, Target) ->
+  ordsets:from_list(reg_names(Target:liveout(CFG, L), Target)).
 
-bb(CFG,L,Target) ->
-   hipe_bb:code(Target:bb(CFG,L)).
+bb(CFG, L, Target) ->
+  hipe_bb:code(Target:bb(CFG, L)).
 
 def_use(X, Target) ->
-   {ordsets:from_list(reg_names(Target:defines(X), Target)), 
-    ordsets:from_list(reg_names(Target:uses(X), Target))}.
+  {ordsets:from_list(reg_names(Target:defines(X), Target)), 
+   ordsets:from_list(reg_names(Target:uses(X), Target))}.
 
 reg_names(Rs, Target) ->
-   Regs = 
+  Regs = 
     case Target of
       hipe_sparc_specific ->
 	hipe_sparc:keep_registers(Rs);
@@ -794,18 +785,17 @@ reg_names(Rs, Target) ->
 %%
 
 precolor(Xs, Cols, Target) ->
-   ?report("precoloring ~p~n",[Xs]),
-   {Cs,NewCol} = precolor0(Xs, Cols, Target),
-   ?report("    yielded ~p~n", [Cs]),
-   {Cs,NewCol}.
+  ?report("precoloring ~p~n", [Xs]),
+  {Cs,NewCol} = precolor0(Xs, Cols, Target),
+  ?report("    yielded ~p~n", [Cs]),
+  {Cs,NewCol}.
 
 precolor0([], Cols, _Target) ->
-   {[], Cols};
+  {[], Cols};
 precolor0([R|Rs], Cols, Target) ->
-   {Cs, Cols1} = precolor0(Rs, Cols, Target),
-   {[{R,{reg,physical_name(R, Target)}}|Cs], 
-    set_color(R,physical_name(R, Target),Cols1)}.
+  {Cs, Cols1} = precolor0(Rs, Cols, Target),
+  {[{R, {reg, physical_name(R, Target)}}|Cs], 
+   set_color(R, physical_name(R, Target), Cols1)}.
 
 physical_name(X, Target) ->
-   Target:physical_name(X).
-
+  Target:physical_name(X).

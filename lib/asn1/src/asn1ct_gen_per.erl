@@ -277,18 +277,7 @@ effective_constraint(integer,C) ->
     SV = effective_constr('SingleValue',SVs),
     VRs = get_constraints(C,'ValueRange'),
     VR = effective_constr('ValueRange',VRs),
-    greatest_common_range(SV,VR);
-% effective_constraint(bitstring,C) ->
-%     Constr=get_constraints(C,'SizeConstraint'),
-%     case Constr of
-% 	[] -> no;
-% 	[{'SizeConstraint',Val}] -> Val;
-% 	Other -> Other
-%     end;
-%     get_constraint(C,'SizeConstraint');
-effective_constraint(Type,C) ->
-    io:format("Effective constraint for ~p, not implemented yet.~n",[Type]),
-    C.
+    greatest_common_range(SV,VR).
 
 effective_constr(_,[]) ->
     [];
@@ -477,69 +466,6 @@ gen_encode_objectfields(_,[],_,_,Acc) ->
     Acc.
 
 
-% gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-%     Fields = Class#objectclass.fields,
-
-%     MaybeConstr =
-%     case is_typefield(Fields,FieldName) of
-% 	true ->
-% 	    Def = Type#typedef.typespec,
-% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Dummy) ->",nl}),
-
-% 	    CAcc =
-% 	    case Type#typedef.name of
-% 		{primitive,bif} ->
-% 		    gen_encode_prim(per,Def,"false","Val"),
-% 		    [];
-% 		{constructed,bif} ->
-% 		    emit({"   'enc_",ObjName,'_',FieldName,
-% 			  "'(Val)"}),
-% 			[{['enc_',ObjName,'_',FieldName],Def}];
-% 		{ExtMod,TypeName} ->
-% 		    emit({"   '",ExtMod,"':'enc_",TypeName,"'(Val)"}),
-% 		    [];
-% 		TypeName ->
-% 		    emit({"   'enc_",TypeName,"'(Val)"}),
-% 		    []
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    CAcc;
-% 	{false,objectfield} ->
-% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, [H|T]) ->",nl}),
-% 	    case Type#typedef.name of
-% 		{ExtMod,TypeName} ->
-% 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
-% 			  "'(H, Val, T)"});
-% 		TypeName ->
-% 		    emit({indent(3),"'enc_",TypeName,"'(H, Val, T)"})
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    [];
-% 	{false,_} -> []
-%     end,
-%     gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-% gen_encode_objectfields(C,O,[H|T],Acc) ->
-%     gen_encode_objectfields(C,O,T,Acc);
-% gen_encode_objectfields(_,_,[],Acc) ->
-%     Acc.
-
-% gen_encode_constr_type(Erules,[{Name,Def}|Rest]) ->
-%     emit({Name,"(Val) ->",nl}),
-%     InnerType = asn1ct_gen:get_inner(Def#type.def),
-%     asn1ct_gen:gen_encode_constructed(Erules,Name,InnerType,Def),
-%     gen_encode_constr_type(Erules,Rest);
 gen_encode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(enc,TypeDef#typedef.name) of
 	true -> ok;
@@ -689,66 +615,6 @@ gen_decode_objectfields(_,[],_,_,CAcc) ->
     CAcc.
 
 
-% gen_decode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-%     Fields = Class#objectclass.fields,
-
-%     MaybeConstr =
-%     case is_typefield(Fields,FieldName) of
-% 	true ->
-% 	    Def = Type#typedef.typespec,
-% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Telltype, RestPrimFieldName) ->",nl}),
-
-% 	    CAcc =
-% 	    case Type#typedef.name of
-% 		{primitive,bif} ->
-% 		    gen_dec_prim(per,Def,"Val"),
-% 		    [];
-% 		{constructed,bif} ->
-% 		    emit({"   'dec_",ObjName,'_',FieldName,
-% 			  "'(Val, Telltype)"}),
-% 		    [{['dec_',ObjName,'_',FieldName],Def}];
-% 		{ExtMod,TypeName} ->
-% 		    emit({"   '",ExtMod,"':'dec_",TypeName,
-% 			  "'(Val, Telltype)"}),
-% 		    [];
-% 		TypeName ->
-% 		    emit({"   'dec_",TypeName,"'(Val, Telltype)"}),
-% 		    []
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    CAcc;
-% 	{false,objectfield} ->
-% 	    emit({"'dec_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val, Telltype, [H|T]) ->",nl}),
-% 	    case Type#typedef.name of
-% 		{ExtMod,TypeName} ->
-% 		    emit({indent(3),"'",ExtMod,"':'dec_",TypeName,
-% 			  "'(H, Val, Telltype, T)"});
-% 		TypeName ->
-% 		    emit({indent(3),"'dec_",TypeName,
-% 			  "'(H, Val, Telltype, T)"})
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    [];
-% 	{false,_} ->
-% 	    []
-%     end,
-%     gen_decode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
-% gen_decode_objectfields(C,O,[H|T],CAcc) ->
-%     gen_decode_objectfields(C,O,T,CAcc);
-% gen_decode_objectfields(_,_,[],CAcc) ->
-%     CAcc.
 
 gen_decode_field_call(_ObjName,_FieldName,Bytes,
 		      #'Externaltypereference'{module=M,type=T}) ->
@@ -800,11 +666,6 @@ gen_decode_default_call(ClassName,FieldName,Bytes,Type) ->
     end.
 
 
-gen_decode_constr_type(Erules,[{Name,Def}|Rest]) ->
-    emit({Name,"(Bytes,_) ->",nl}),
-    InnerType = asn1ct_gen:get_inner(Def#type.def),
-    asn1ct_gen:gen_decode_constructed(Erules,Name,InnerType,Def),
-    gen_decode_constr_type(Erules,Rest);
 gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(dec,TypeDef#typedef.name) of
 	true -> ok;
@@ -815,14 +676,6 @@ gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
 gen_decode_constr_type(_,[]) ->
     ok.
 
-% more_genfields(Fields,[]) ->
-%     false;
-% more_genfields(Fields,[{FieldName,_}|T]) ->
-%     case is_typefield(Fields,FieldName) of
-% 	true -> true;
-% 	{false,objectfield} -> true;
-% 	{false,_} -> more_genfields(Fields,T)
-%     end.
 
 more_genfields([]) ->
     false;
@@ -836,18 +689,6 @@ more_genfields([Field|Fields]) ->
 	    more_genfields(Fields)
     end.
 
-% is_typefield(Fields,FieldName) ->
-%     case lists:keysearch(FieldName,2,Fields) of
-% 	{value,Field} ->
-% 	    case element(1,Field) of
-% 		typefield ->
-% 		    true;
-% 		Other ->
-% 		    {false,Other}
-% 	    end;
-% 	_ ->
-% 	    false
-%     end.
 %% Object Set code generating for encoding and decoding
 %% ----------------------------------------------------
 gen_objectset_code(Erules,ObjSet) ->

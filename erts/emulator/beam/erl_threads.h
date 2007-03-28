@@ -42,7 +42,8 @@ typedef struct {
 typedef ethr_cond erts_cnd_t;
 typedef ethr_tsd_key erts_tsd_key_t;
 typedef ethr_timeval erts_thr_timeval_t;
-void erts_thr_fatal_error(int, char *); /* implemented in erl_init.c */
+void  __noreturn erts_thr_fatal_error(int, char *); /* implemented in
+						       erl_init.c */
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
 #define ERTS_REC_MTX_INITER \

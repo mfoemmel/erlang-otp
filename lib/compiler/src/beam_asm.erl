@@ -101,9 +101,24 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, SourceFile, Opts) ->
 			  chunk(<<"FunT">>, <<NumLambdas:32>>, LambdaTab)
 		  end,
 
+    %% Create the literal table chunk. It is important not to build an empty chunk,
+    %% as that would change the MD5.
+
+    LiteralChunk = case beam_dict:literal_table(Dict) of
+		       {0,[]} -> [];
+		       {NumLiterals,LitTab0} ->
+			   LitTab1 = iolist_to_binary(LitTab0),
+			   LitTab2 = <<NumLiterals:32,LitTab1/binary>>,
+			   LitTab = iolist_to_binary(zlib:compress(LitTab2)),
+			   chunk(<<"LitT">>, <<(size(LitTab2)):32>>, LitTab)
+		   end,
+    
+
     %% Create the attributes and compile info chunks.
 
-    Essentials = [AtomChunk,CodeChunk,StringChunk,ImportChunk,ExpChunk,LambdaChunk],
+    Essentials0 = [AtomChunk,CodeChunk,StringChunk,ImportChunk,
+		   ExpChunk,LambdaChunk,LiteralChunk],
+    Essentials = [iolist_to_binary(C) || C <- Essentials0],
     {Attributes,Compile} = build_attributes(Opts, SourceFile, Attr, Essentials),
     AttrChunk = chunk(<<"Attr">>, Attributes),
     CompileChunk = chunk(<<"CInf">>, Compile),
@@ -172,13 +187,32 @@ build_attributes(Opts, SourceFile, Attr, Essentials) ->
 %% We'll not change an existing 'vsn' attribute.
 %%
 
-calc_vsn(Attr, Essentials) ->
+calc_vsn(Attr, Essentials0) ->
     case keymember(vsn, 1, Attr) of
 	true -> Attr;
 	false ->
+	    Essentials = filter_essentials(Essentials0),
 	    <<Number:128>> = erlang:md5(Essentials),
 	    [{vsn,[Number]}|Attr]
     end.
+
+%% filter_essentials([Chunk]) -> [Chunk']
+%%  Filter essentials so that we obtain the same MD5 as code:module_md5/1 and
+%%  beam_lib:md5/1 would calculate for this module.
+
+filter_essentials([<<"FunT",_Sz:4/binary,Entries:4/binary,Table0/binary>>|T]) ->
+    Table = filter_funtab(Table0, <<0:32>>),
+    [Entries,Table|filter_essentials(T)];
+filter_essentials([<<_Tag:4/binary,Sz:32,Data:Sz/binary,_Padding/binary>>|T]) ->
+    [Data|filter_essentials(T)];
+filter_essentials([<<>>|T]) ->
+    filter_essentials(T);
+filter_essentials([]) -> [].
+
+filter_funtab(<<Important:20/binary,_OldUniq:4/binary,T/binary>>, Zero) ->
+    [Important,Zero|filter_funtab(T, Zero)];
+filter_funtab(<<>>, _) -> [].
+
 
 bif_type('-', 1)    -> negate;
 bif_type('+', 2)    -> {op, m_plus};
@@ -291,12 +325,15 @@ encode_arg({list, List}, Dict0) ->
 encode_arg({float, Float}, Dict) when is_float(Float) ->
     {[encode(?tag_z, 0),<<Float:64/float>>], Dict};
 encode_arg({fr,Fr}, Dict) ->
-    {[encode(?tag_z, 2),encode(?tag_u,Fr)], Dict};
+    {[encode(?tag_z, 2),encode(?tag_u, Fr)], Dict};
 encode_arg({field_flags,Flags0}, Dict) ->
     Flags = lists:foldl(fun (F, S) -> S bor flag_to_bit(F) end, 0, Flags0),
     {encode(?tag_u, Flags), Dict};
 encode_arg({alloc,List}, Dict) ->
-    {encode_alloc_list(List),Dict};
+    encode_alloc_list(List, Dict);
+encode_arg({literal,Lit}, Dict0) ->
+    {Index,Dict} = beam_dict:literal(Lit, Dict0),
+    {encode(?tag_u, Index),Dict};
 encode_arg(Int, Dict) when is_integer(Int) ->
     {encode(?tag_u, Int),Dict}.
 
@@ -315,15 +352,22 @@ encode_list([H|T], Dict0, Acc) ->
     encode_list(T, Dict, [Acc,Enc]);
 encode_list([], Dict, Acc) -> {Acc,Dict}.
 
-encode_alloc_list(L0) ->
-    L = encode_alloc_list_1(L0),
-    [encode(?tag_z, 3),encode(?tag_u, length(L0))|L].
+encode_alloc_list(L0, Dict0) ->
+    {L,Dict} = encode_alloc_list_1(L0, Dict0, []),
+    {[encode(?tag_z, 3),encode(?tag_u, length(L0))|L],Dict}.
 
-encode_alloc_list_1([{words,Words}|T]) ->
-    [encode(?tag_u, 0),encode(?tag_u, Words)|encode_alloc_list_1(T)];
-encode_alloc_list_1([{floats,Floats}|T]) ->
-    [encode(?tag_u, 1),encode(?tag_u, Floats)|encode_alloc_list_1(T)];
-encode_alloc_list_1([]) -> [].
+encode_alloc_list_1([{words,Words}|T], Dict, Acc0) ->
+    Acc = [Acc0,encode(?tag_u, 0),encode(?tag_u, Words)],
+    encode_alloc_list_1(T, Dict, Acc);
+encode_alloc_list_1([{floats,Floats}|T], Dict, Acc0) ->
+    Acc = [Acc0,encode(?tag_u, 1),encode(?tag_u, Floats)],
+    encode_alloc_list_1(T, Dict, Acc);
+encode_alloc_list_1([{literal,Lit}|T], Dict0, Acc0) ->
+    {Index,Dict} = beam_dict:literal(Lit, Dict0),
+    Acc = [Acc0,encode(?tag_u, 2),encode(?tag_u, Index)],
+    encode_alloc_list_1(T, Dict, Acc);
+encode_alloc_list_1([], Dict, Acc) ->
+    {iolist_to_binary(Acc),Dict}.
 
 encode(Tag, N) when N < 0 ->
     encode1(Tag, negative_to_bytes(N, []));

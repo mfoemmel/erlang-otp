@@ -580,38 +580,22 @@ mark_cell_and_notify(CellId, RealCol, RealRow, ProcVars) ->
     VirtualCol = FirstColShown + RealCol - 1,
     VirtualRow = FirstRowShown + RealRow - 1,
 
-       % Right now, when the table tool only is passive, i.e., we cannot edit
-       % the table content, we don't want to be able to mark empty cells.
+    %% Right now, when the table tool only is passive, i.e., we cannot edit
+    %% the table content, we don't want to be able to mark empty cells.
     
     {text, CellText} = gs:read(CellId, label),
 
-    {CellMarked, Notify} = case CellText of 
-			       "" ->
-				   case OldCellId of
-				       undefined ->
-					   {false, true};
-				       _AnyId ->
-					   {false, true}
-				   end;
-			       _AnyText ->
-				   case CellId of 
-				       OldCellId ->
-					   {false, true};
-				       _Other ->
-					   {true, true}
-				   end
-			   end,
-    
+    CellMarked = case CellText of
+		     "" -> false;
+		     _AnyText when CellId==OldCellId -> false;
+		     _AnyText -> true
+		 end,
+
     remove_marks(ProcVars),
     update_marked_cells(CellId, OldCellId, CellMarked),
 
-    case Notify of
-	true ->
-	    notify_about_cell_marked(ParentPid, CellMarked, RealCol, RealRow, 
-				     VirtualCol, VirtualRow, CellText);
-	false ->
-	    done
-    end,
+    notify_about_cell_marked(ParentPid, CellMarked, RealCol, RealRow, 
+			     VirtualCol, VirtualRow, CellText),
     
     NewMarkP = case CellMarked of
 		   true ->

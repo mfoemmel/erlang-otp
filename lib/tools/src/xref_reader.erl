@@ -162,7 +162,10 @@ expr({cons, _Line, H, T}, S) ->
     S1 = expr(H, S),
     expr(T, S1);
 expr({lc, _Line, E, Qs}, S) ->
-    S1 = lc_quals(Qs, S),
+    S1 = lc_bc_quals(Qs, S),
+    expr(E, S1);
+expr({bc, _Line, E, Qs}, S) ->
+    S1 = lc_bc_quals(Qs, S),
     expr(E, S1);
 expr({tuple, _Line, Es}, S) ->
     expr_list(Es, S);
@@ -243,13 +246,16 @@ expr_list([E | Es], S) ->
 expr_list([], S) -> 
     S.
 
-lc_quals([{generate, _Line, _P, E} | Qs], S) ->
+lc_bc_quals([{generate, _Line, _P, E} | Qs], S) ->
     S1 = expr(E, S),
-    lc_quals(Qs, S1);
-lc_quals([E | Qs], S) ->
+    lc_bc_quals(Qs, S1);
+lc_bc_quals([{b_generate, _Line, _P, E} | Qs], S) ->
     S1 = expr(E, S),
-    lc_quals(Qs, S1);
-lc_quals([], S) ->
+    lc_bc_quals(Qs, S1);
+lc_bc_quals([E | Qs], S) ->
+    S1 = expr(E, S),
+    lc_bc_quals(Qs, S1);
+lc_bc_quals([], S) ->
     S.
 
 %% Mod and Fun may not correspond to something in the abstract code,

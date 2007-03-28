@@ -23,6 +23,7 @@
 
 %% User interface
 -export([
+	 %% 
 	 %% Management API
 	 start/0, start/1, 
 	 start_link/0, start_link/1, 
@@ -61,9 +62,11 @@
 	 as/3, as/4, as/5, as/6, as/7, 
 	 cancel_async_request/2, 
 	 
+	 %% 
 	 %% Extended SNMP API
 	 discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
 
+	 %% 
 	 %% Logging
 	 log_to_txt/2, log_to_txt/3, log_to_txt/4,
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7, 
@@ -476,13 +479,13 @@ agn(UserId, Addr, Oids, Expire) when list(Oids), integer(Expire) ->
     agn(UserId, Addr, ?DEFAULT_AGENT_PORT, ?DEFAULT_CONTEXT, Oids, Expire).
 
 agn(UserId, Addr, Port, CtxName, Oids) 
-  when integer(Port), list(CtxName), list(Oids) ->
+  when is_integer(Port) and is_list(CtxName) and is_list(Oids) ->
     snmpm_server:async_get_next(UserId, Addr, Port, CtxName, Oids);
 agn(UserId, Addr, Port, Oids, Expire) 
-  when integer(Port), list(Oids), integer(Expire) ->
+  when is_integer(Port) and is_list(Oids) and is_integer(Expire) ->
     agn(UserId, Addr, Port, ?DEFAULT_CONTEXT, Oids, Expire);
 agn(UserId, Addr, CtxName, Oids, Expire) 
-  when list(Expire), list(CtxName), integer(Expire) ->
+  when is_list(CtxName) and is_list(CtxName) and is_integer(Expire) ->
     agn(UserId, Addr, ?DEFAULT_AGENT_PORT, CtxName, Oids, Expire).
 
 agn(UserId, Addr, Port, CtxName, Oids, Expire) ->

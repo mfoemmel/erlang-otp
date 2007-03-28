@@ -50,7 +50,7 @@ open(Port, Opts) when Port >= 0, Port =< 16#ffff ->
 	    BAddr    = R#udp_opts.ifaddr,
 	    BPort    = R#udp_opts.port,
 	    SockOpts = R#udp_opts.opts,
-	    inet:open(Fd,BAddr,BPort,SockOpts,dgram,inet,?MODULE)
+	    inet:open(Fd,BAddr,BPort,SockOpts,udp,inet,?MODULE)
     end.
 
 send(S,{A,B,C,D},P,Data) when ?ip(A,B,C,D), P>=0,P=<16#ffff ->

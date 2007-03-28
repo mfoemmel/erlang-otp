@@ -843,73 +843,12 @@ gen_encode_objectfields(ClassName,[{objectfield,Name,_,_,OptOrMand}|Rest],
     end,
     gen_encode_objectfields(ClassName,Rest,ObjName,ObjectFields,ConstrAcc);
     
-% gen_encode_objectfields(Class,ObjName,[{FieldName,Type}|Rest],ConstrAcc) ->
-%     Fields = Class#objectclass.fields,
-%     MaybeConstr=
-% 	case is_typefield(Fields,FieldName) of
-% 	    true ->
-% 		Def = Type#typedef.typespec,
-% 		emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		      ", Val, RestPrimFieldName) ->",nl}),
-% 		CAcc=
-% 		case Type#typedef.name of
-% 		    {primitive,bif} -> %%tag should be the primitive tag
-% 			OTag = Def#type.tag,
-% 			Tag = [encode_tag_val(decode_class(X#tag.class),
-% 					      X#tag.form,X#tag.number)||
-% 				  X <- OTag],
-% 			gen_encode_prim(ber,Def,{asis,lists:reverse(Tag)},
-% 					"Val"),
-% 			[];
-% 		    {constructed,bif} ->
-% 			emit({"   'enc_",ObjName,'_',FieldName,
-% 			      "'(Val)"}),
-% 			[Type#typedef{name=list_to_atom(lists:concat([ObjName,'_',FieldName]))}];
-% 		    {ExtMod,TypeName} ->
-% 			emit({"   '",ExtMod,"':'enc_",TypeName,
-% 			      "'(Val)"}),
-% 			[];
-% 		    TypeName ->
-% 			emit({"   'enc_",TypeName,"'(Val)"}),
-% 			[]
-% 		end,
-% 		case more_genfields(Fields,Rest) of
-% 		    true ->
-% 			emit({";",nl});
-% 		    false ->
-% 			emit({".",nl})
-% 		end,
-% 		CAcc;
-% 	{false,objectfield} ->
-% 	    emit({"'enc_",ObjName,"'(",{asis,FieldName},
-% 		  ", Val,[H|T]) ->",nl}),
-% 	    case Type#typedef.name of
-% 		{ExtMod,TypeName} ->
-% 		    emit({indent(3),"'",ExtMod,"':'enc_",TypeName,
-% 			  "'(H, Val, T)"});
-% 		TypeName ->
-% 		    emit({indent(3),"'enc_",TypeName,"'(H, Val, T)"})
-% 	    end,
-% 	    case more_genfields(Fields,Rest) of
-% 		true ->
-% 		    emit({";",nl});
-% 		false ->
-% 		    emit({".",nl})
-% 	    end,
-% 	    [];
-% 	{false,_} -> []
-%     end,
-%     gen_encode_objectfields(Class,ObjName,Rest,MaybeConstr ++ ConstrAcc);
+
 gen_encode_objectfields(ClassName,[_C|Cs],O,OF,Acc) ->
     gen_encode_objectfields(ClassName,Cs,O,OF,Acc);
 gen_encode_objectfields(_,[],_,_,Acc) ->
     Acc.
 
-% gen_encode_constr_type(Erules,[{Name,Def}|Rest]) ->
-%     emit({Name,"(Val,TagIn) ->",nl}),
-%     InnerType = asn1ct_gen:get_inner(Def#type.def),
-%     asn1ct_gen:gen_encode_constructed(Erules,Name,InnerType,Def),
-%     gen_encode_constr_type(Erules,Rest);
 gen_encode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(enc,TypeDef#typedef.name) of
 	true -> ok;
@@ -1116,11 +1055,6 @@ emit_tlv_format_function1() ->
 	  "  Bytes.",nl]).
 
 
-gen_decode_constr_type(Erules,[{Name,Def}|Rest]) ->
-    emit([Name,"(Tlv, TagIn) ->",nl]),
-    InnerType = asn1ct_gen:get_inner(Def#type.def),
-    asn1ct_gen:gen_decode_constructed(Erules,Name,InnerType,Def),
-    gen_decode_constr_type(Erules,Rest);
 gen_decode_constr_type(Erules,[TypeDef|Rest]) when record(TypeDef,typedef) ->
     case is_already_generated(dec,TypeDef#typedef.name) of
 	true -> ok;

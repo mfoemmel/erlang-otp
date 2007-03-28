@@ -64,6 +64,10 @@ ifeq ($(SNMP_DEBUG),d)
   SNMP_FLAGS += -Dsnmp_debug
 endif
 
+ifeq ($(SNMP_QC),true)
+  SNMP_FLAGS += -Dsnmp_qc
+endif
+
 ifeq ($(SNMP_EXT_VERBOSITY),true)
   SNMP_FLAGS += -Dsnmp_extended_verbosity
 endif

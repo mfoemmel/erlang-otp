@@ -186,6 +186,11 @@ void erl_sys_args(int* argc, char** argv)
 #endif
 }
 
+void
+erts_sys_prepare_crash_dump(void)
+{
+    close(3);			/* Make sure we have a free descriptor */
+}
 
 static void
 init_console()
@@ -2124,7 +2129,7 @@ sys_init_io(void)
 
 	sys_memset((void*)&dopts, 0, sizeof(SysDriverOpts));
 	add_driver_entry(&async_driver_entry);
-	ret = open_driver(&async_driver_entry, NIL, "async", &dopts);
+	ret = erts_open_driver(&async_driver_entry, NIL, "async", &dopts, NULL);
 	DEBUGF(("open_driver = %d\n", ret));
 	if (ret < 0)
 	    erl_exit(1, "Failed to open async driver\n");

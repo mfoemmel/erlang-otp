@@ -42,11 +42,10 @@
 %% replaced by a space and all "backslash-newline" sequences are removed.
 %% 
 %% In the second phase all macros are expanded.
-%%
-%%
-%% NOTE: #if, #else, and #elif are not yet implemented. 
-%%       Only '#if 0' is implemented to be possible to keep old code as a comment for 
-%%       future refence by putting '#if 0' before it and '#endif' after it.
+
+%% %% %% NOTE: #if, #else, and #elif are not yet implemented.  
+%% Only '#if 0' is implemented to be possible to keep old code as a comment for
+%% future refence by putting '#if 0' before it and '#endif' after it.  
 %%
 %%======================================================================================
 %%======================================================================================
@@ -607,11 +606,7 @@ detokenise_pragma([], Result) ->
     lists:flatten(Result);
 detokenise_pragma([space], Result) ->
     lists:flatten(Result);
-detokenise_pragma([space_exp], Result) ->
-    lists:flatten(Result);
 detokenise_pragma([space|Rem], Result) ->
-    detokenise_pragma(Rem, Result++[?space]);
-detokenise_pragma([space_exp|Rem], Result) ->
     detokenise_pragma(Rem, Result++[?space]);
 detokenise_pragma([nl|Rem], Result) ->
     detokenise_pragma(Rem, Result++[$\n]);
@@ -1046,8 +1041,6 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	    case define(File, Err, War, L, FN) of
 		{error, Rem, Err2, War2, Nl} ->
 		    {define, Rem, Defs, Err2, War2, Nl};
-		{warning, Rem, Err2, War2, Nl} ->
-		    {define, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Name, No_of_para, Parameters, Macro, Err2, War2, Nl} ->
 		    case is_define_ok(Name, No_of_para, Parameters, Macro, Defs) of
 			{yes, Defs2} ->
@@ -1102,8 +1095,6 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	    case define(File, Err, War, L, FN) of
 		{error, Rem, Err2, War2, Nl} ->
 		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
-		{warning, Rem, Err2, War2, Nl} ->
-		    {{ifdef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
 			yes ->
@@ -1128,8 +1119,6 @@ pp_command(Command, File, Defs, IncDir, Err, War, L, FN) ->
 	"ifndef" ->
 	    case define(File, Err, War, L, FN) of
 		{error, Rem, Err2, War2, Nl} ->
-		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
-		{warning, Rem, Err2, War2, Nl} ->
 		    {{ifndef, false}, Rem, Defs, Err2, War2, Nl};
 		{warning, Rem, Name, No_of_para, _Parameters, _Macro, Err2, War2, Nl} ->
 		    case is_defined_before(Name, No_of_para, Defs) of
@@ -1309,13 +1298,7 @@ define(File, Err, War, L, FN) ->
 	    {Removed, Rem, Nl} = read_to_nl(File),
 	    RemovedS = detokenise(Removed),
 	    Text = lists:flatten(io_lib:format("Invalid argument list ~s",[RemovedS])),
-	    {error, Rem, [{FN, L, Text}|Err], War, Nl};
-	{{error, no_macro_arg_name}, Rem} ->
-	    Text = "`#' operator is not followed by a macro argument name",
-	    {error, Rem, [{FN, L, Text}|Err], War, 1};
-	{{warning, no_macro}, Rem} ->
-	    Text = "invalid macro name ",
-	    {warning, Rem, Err, [{FN, L, Text}|War], 1}
+	    {error, Rem, [{FN, L, Text}|Err], War, Nl}
     end.
 
 

@@ -1,56 +1,6 @@
-{"%VSN%",
- [
-  {"4.3.2", 
-   [
-    {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_controller, soft, soft_purge, soft_purge, []}
-   ]
-  },
-  {"4.3.1", 
-   [
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []}
-   ]
-  },
-  {"4.3", 
-   [
-    {update, mnesia_controller, soft, soft_purge, soft_purge, []}
-   ]
-  },
-  {"4.2.5", 
-   [
-    {update, mnesia, soft, soft_purge, soft_purge, []},
-    {update, mnesia_checkpoint, soft, soft_purge, soft_purge, []},
-    {update, mnesia_lib, soft, soft_purge, soft_purge, []},
-    {update, mnesia_locker, soft, soft_purge, soft_purge, []},
-    {update, mnesia_monitor, soft, soft_purge, soft_purge, []},
-    {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-    {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-    {update, mnesia_controller, {advanced, "4.3"}, soft_purge, soft_purge, []}
-   ]
-  }
+{"%VSN%",  %% No soft uppgrades supported in this release
+ [  
  ],
- [ 
-   {"4.3.2", 
-    [
-     {update, mnesia_loader, soft, soft_purge, soft_purge, []},
-     {update, mnesia_locker, soft, soft_purge, soft_purge, []},
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []},
-     {update, mnesia_schema, soft, soft_purge, soft_purge, []},
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.3.1", 
-    [
-     {update, mnesia_tm, soft, soft_purge, soft_purge, []}
-    ]
-   },
-   {"4.3", 
-    [
-     {update, mnesia_controller, soft, soft_purge, soft_purge, []}
-    ]
-   }
-  ]
+ [
+ ]
 }.

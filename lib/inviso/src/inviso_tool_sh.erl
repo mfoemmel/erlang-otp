@@ -52,7 +52,8 @@
 -export([reactivate/1,reactivate/2]).
 -export([tpl/5,tpl/6,tpl/7,
 	 tf/2,tf/3,
-	 tpm_localnames/2,tpm/7,tpm/10
+	 tpm_localnames/2,init_tpm/6,init_tpm/9,tpm/6,tpm/7,tpm/10,
+	 tpm_ms/7,ctpm_ms/6,ctpm/5
 	]).
 %% ------------------------------------------------------------------------------
 
@@ -170,16 +171,28 @@ ctpl(SID,Nodes,Mod,Func,Arity) ->
 tpm_localnames(SID,Nodes) ->
     gen_server:call(SID,{tpm_localnames,Nodes}).
 tpm_globalnames(SID,Nodes) ->
-    gen_server:call(SID,{tmp_globalnames,Nodes}).
+    gen_server:call(SID,{tpm_globalnames,Nodes}).
+
 init_tpm(SID,Nodes,Mod,Func,Arity,CallFunc) ->
     gen_server:call(SID,{init_tpm,Nodes,Mod,Func,Arity,CallFunc}).
 init_tpm(SID,Nodes,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
     gen_server:call(SID,
 		    {init_tpm,Nodes,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc}).
-tpm(SID,Nodes,Mod,Func,Arity,MS,C) ->
+tpm(SID,Nodes,Mod,Func,Arity,MS) ->
+    gen_server:call(SID,{tpm,Nodes,Mod,Func,Arity,MS}).
+tpm(SID,Nodes,Mod,Func,Arity,MS,CallFunc) ->
     gen_server:call(SID,{tpm,Nodes,Mod,Func,Arity,MS,CallFunc}).
 tpm(SID,Nodes,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
     gen_server:call(SID,{tpm,Nodes,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc}).
+
+tpm_ms(SID,Nodes,Mod,Func,Arity,MSname,MS) ->
+    gen_server:call(SID,{tpm_ms,Nodes,Mod,Func,Arity,MSname,MS}).
+
+ctpm_ms(SID,Nodes,Mod,Func,Arity,MSname) ->
+    gen_server:call(SID,{tpm_ms,Nodes,Mod,Func,Arity,MSname}).
+
+ctpm(SID,Nodes,Mod,Func,Arity) ->
+    gen_server:call(SID,{ctpm,Nodes,Mod,Func,Arity}).
 %% ------------------------------------------------------------------------------
 
 
@@ -391,12 +404,12 @@ handle_call({init_tpm,Nodes,Mod,Func,Arity,CallFunc},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),
-	      Nodes2,
-	      init_tpm,
-	      [Mod,Func,Arity,CallFunc],
-	      RTStates,
-	      ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  init_tpm,
+		  [Mod,Func,Arity,CallFunc],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -406,12 +419,12 @@ handle_call({init_tpm,Nodes,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFu
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),
-	      Nodes2,
-	      init_tpm,
-	      [Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc],
-	      RTStates,
-	      ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  init_tpm,
+		  [Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -421,7 +434,7 @@ handle_call({tpm,Nodes,Mod,Func,Arity,MS},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),Nodes2,tpm,[Mod,Func,Arity,MS],RTStates,ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),Nodes2,tpm,[Mod,Func,Arity,MS],RTStates,ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -431,7 +444,12 @@ handle_call({tpm,Nodes,Mod,Func,Arity,MS,CallFunc},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),Nodes2,tpm,[Mod,Func,Arity,MS,CallFunc],RTStates,ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  tpm,
+		  [Mod,Func,Arity,MS,CallFunc],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -441,12 +459,12 @@ handle_call({tpm,Nodes,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),
-	      Nodes2,
-	      tpm,
-	      [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc],
-	      RTStates,
-	      ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  tpm,
+		  [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -456,7 +474,12 @@ handle_call({tpm_ms,Nodes,Mod,Func,Arity,MSname,MS},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),Nodes2,tpm_ms,[Mod,Func,Arity,MSname,MS],RTStates,ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  tpm_ms,
+		  [Mod,Func,Arity,MSname,MS],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -466,7 +489,12 @@ handle_call({ctpm_ms,Nodes,Mod,Func,Arity,MSname},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),Nodes2,ctpm_ms,[Mod,Func,Arity,MSname],RTStates,ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),
+		  Nodes2,
+		  ctpm_ms,
+		  [Mod,Func,Arity,MSname],
+		  RTStates,
+		  ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 
@@ -476,7 +504,7 @@ handle_call({ctpm,Nodes,Mod,Func,Arity},_From,LD) ->
     {Nodes2,NotOurNodes}=remove_nodes_not_ours(Nodes,OurNodes),
     ACTstorage=get_actstorage_ld(LD),
     {Reply,NewACTstorage}=
-	h_tpm(get_ctrlnode_ld(LD),Nodes2,ctpm,[Mod,Func,Arity],RTStates,ACTstorage),
+	h_all_tpm(get_ctrlnode_ld(LD),Nodes2,ctpm,[Mod,Func,Arity],RTStates,ACTstorage),
     ErrorReply=lists:map(fun(N)->{N,{error,not_in_session}} end,NotOurNodes),
     {reply,ErrorReply++Reply,put_actstorage_ld(NewACTstorage,LD)};
 %% ------------------------------------------------------------------------------
@@ -903,7 +931,7 @@ h_tpm_localnames(CtrlNode,Nodes,RTStates,ACTstorage) ->
 h_all_tpm(CtrlNode,Nodes,TpmCmd,InvisoCmdParams,RTStates,ACTstorage) ->
     AvailableNodes=get_all_available_nodes_rtstates(RTStates),
     {Nodes3,FaultyNodes}=remove_nodes_not_ours(Nodes,AvailableNodes),
-    case inviso_tool_lib:inviso_cmd(CtrlNode,TmpCmd,[Nodes3|InvisoCmdParams]) of
+    case inviso_tool_lib:inviso_cmd(CtrlNode,TpmCmd,[Nodes3|InvisoCmdParams]) of
 	{ok,Result} ->                       % That good we want to modify tpmstorage!
 	    NewACTstorage=add_tpm_actstorage(Result,TpmCmd,InvisoCmdParams,ACTstorage),
 	    ErrorResult=lists:map(fun(N)->{N,{error,not_available}} end,FaultyNodes),

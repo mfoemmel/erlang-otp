@@ -117,9 +117,9 @@ expand_opt(r7, Os) ->
 expand_opt(r8, Os) ->
     expand_opt(r9, Os);
 expand_opt(r9, Os) ->
-    [no_topt,no_new_binaries,no_new_apply,no_gc_bifs|Os];
+    [no_topt,no_new_binaries,no_new_apply,no_gc_bifs,no_constant_pool|Os];
 expand_opt(r10, Os) ->
-    [no_topt,no_new_binaries,no_gc_bifs|Os];
+    [no_topt,no_new_binaries,no_gc_bifs,no_constant_pool|Os];
 expand_opt({debug_info_key,_}=O, Os) ->
     [encrypt_debug_info,O|Os];
 expand_opt(no_new_binaries=O, Os) ->
@@ -689,7 +689,7 @@ parse_core(St) ->
 		{ok,Toks,_} ->
 		    case core_parse:parse(Toks) of
 			{ok,Mod} ->
-			    Name = (Mod#c_module.name)#c_atom.val,
+			    Name = (Mod#c_module.name)#c_literal.val,
 			    {ok,St#compile{module=Name,code=Mod}};
 			{error,E} ->
 			    Es = [{St#compile.ifile,[E]}],

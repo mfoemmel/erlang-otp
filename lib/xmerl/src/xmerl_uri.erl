@@ -340,11 +340,11 @@ scan_host(C0) ->
     case scan_host2(C0,[],0,[],[]) of
 	{C1,IPv4address,[?DIGIT,?DIGIT,?DIGIT,?DIGIT]} ->
 	    {C1,lists:reverse(lists:append(IPv4address))};
-	{C1,IPv6address,[$[,Hex1,Hex2,Hex3,Hex4,$]]} when Hex1=<?HEX;
-							  Hex2=<?HEX;
-							  Hex3=<?HEX;
-							  Hex4=<?HEX ->
-	    {C1,lists:reverse(lists:append(IPv6address))};
+%% 	{C1,IPv6address,[$[,Hex1,Hex2,Hex3,Hex4,$]]} when Hex1=<?HEX;
+%% 							  Hex2=<?HEX;
+%% 							  Hex3=<?HEX;
+%% 							  Hex4=<?HEX ->
+%% 	    {C1,lists:reverse(lists:append(IPv6address))};
 	{C1,Hostname,[Alpha|_HostF]} when Alpha==?ALPHA ->
 	    {C1,lists:reverse(lists:append(Hostname))};
 	_ ->

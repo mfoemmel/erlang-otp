@@ -443,9 +443,9 @@ sent_resend_late_reply(Config) when list(Config) ->
     ?MGC_REQ_DISC(Mgc, 11000),
 
     d("[MG] send the notify"),
-    ?line {ok, Reply} = (catch ?MG_NOTIF_RAR(Mg)),
+    {ok, Reply} = (catch ?MG_NOTIF_RAR(Mg)),
     d("[MG] Reply: ~p", [Reply]),
-    ?line {_Version, {ok, [_ActionReply]}} = Reply,
+    {_Version, {ok, [_ActionReply]}} = Reply,
 
     %% Tell MG to stop
     i("[MG] stop"),
@@ -540,7 +540,7 @@ sent_resend_exceeded(Config) when list(Config) ->
     ED = (catch ?MG_NOTIF_RAR(Mg)),
     d("[MG] ED: ~p", [ED]),
     ErrorCode = ?megaco_number_of_transactionpending_exceeded,
-    ?line #'ErrorDescriptor'{errorCode = ErrorCode} = ED,
+    #'ErrorDescriptor'{errorCode = ErrorCode} = ED,
 
     %% Tell MG to stop
     i("[MG] stop"),

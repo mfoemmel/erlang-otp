@@ -27,7 +27,6 @@
 -export([build/1]).
 
 -include("dialyzer.hrl").
--include("hipe_icode_type.hrl").
 
 build(Opts) ->
   DefaultWarns = [?WARN_RETURN_NO_RETURN,
@@ -80,6 +79,13 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
       OldVal = Options#options.include_dirs,
       NewVal = ordsets:union(ordsets:from_list(Value), OldVal),
       build_options(Rest, Options#options{include_dirs=NewVal});
+    old_style ->
+      case Value of
+	true ->
+	  build_options(Rest, Options#options{core_transform=dataflow});
+	false ->
+	  build_options(Rest, Options)
+      end;
     output_file ->
       assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_file=Value});

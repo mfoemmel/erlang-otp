@@ -208,7 +208,7 @@ read_private_key_v2(File, Type) ->
     end.
 
 decode_private_key_v2(Private,"ssh-rsa") ->
-    case asn1rt:decode('PKCS-1', 'RSAPrivateKey', Private) of
+    case 'PKCS-1':decode( 'RSAPrivateKey', Private) of
 	{ok,RSA} -> %% FIXME Check for two-prime version
 	    {ok, #ssh_key { type = rsa,
 			    public = {RSA#'RSAPrivateKey'.modulus,
@@ -220,7 +220,7 @@ decode_private_key_v2(Private,"ssh-rsa") ->
 	    Error
     end;
 decode_private_key_v2(Private, "ssh-dss") ->
-    case asn1rt:decode('DSS', 'DSAPrivateKey', Private) of
+    case 'DSS':decode('DSAPrivateKey', Private) of
 	{ok,DSA} -> %% FIXME Check for two-prime version
 	    {ok, #ssh_key { type = dsa,
 			    public = {DSA#'DSAPrivateKey'.p,

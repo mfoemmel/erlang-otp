@@ -357,7 +357,7 @@ encrypt(Data, PrivProtocol, PrivKey, SecLevel) ->
 	false -> % 3.1.4b
 	    {Data, []};
 	true -> % 3.1.4a
-	    case try_encrypt(PrivProtocol, PrivKey, Data) of
+	    case (catch try_encrypt(PrivProtocol, PrivKey, Data)) of
 		{ok, ScopedPduData, MsgPrivParams} ->
 		    {snmp_pdus:enc_oct_str_tag(ScopedPduData), MsgPrivParams};
 		{error, Reason} ->

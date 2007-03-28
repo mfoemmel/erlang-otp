@@ -129,6 +129,9 @@ connect_nodes(Ns) ->
 disconnect(Node) ->
     call({disconnect, Node}).
 
+log_decision(D) ->
+    cast({log_decision, D}).
+
 val(Var) ->
     case ?catch_val(Var) of
 	{'EXIT', Reason} -> mnesia_lib:other_val(Var, Reason); 
@@ -191,15 +194,14 @@ note_outcome(D) when D#decision.disc_nodes /= [] ->
 %%    ?DBG("~w: note_decision: ~w~n", [node(), D]),
     ?ets_insert(mnesia_decision, D).
 
-log_decision(D) when D#decision.outcome /= unclear ->
+do_log_decision(D) when D#decision.outcome /= unclear ->
     OldD = decision(D#decision.tid),
     MergedD = merge_decisions(node(), OldD, D),
-    do_log_decision(MergedD, true);
-log_decision(D) ->
-    do_log_decision(D, false).
+    do_log_decision(MergedD, true, D);
+do_log_decision(D) ->
+    do_log_decision(D, false, undefined).
 
-do_log_decision(D, DoTell) ->
-    RamNs = D#decision.ram_nodes,
+do_log_decision(D, DoTell, NodeD) ->
     DiscNs = D#decision.disc_nodes -- [node()],
     Outcome = D#decision.outcome,
     D2 =
@@ -214,8 +216,8 @@ do_log_decision(D, DoTell) ->
 	    mnesia_log:append(latest_log, D2),
 	    if
 		DoTell == true, Outcome /= unclear ->
-		    tell_im_certain(DiscNs, D2),
-		    tell_im_certain(RamNs, D2);
+		    tell_im_certain(NodeD#decision.disc_nodes--[node()],D2),
+		    tell_im_certain(NodeD#decision.ram_nodes--[node()], D2);
 		true ->
 		    ignore
 	    end;
@@ -227,7 +229,7 @@ tell_im_certain([], _D) ->
     ignore;
 tell_im_certain(Nodes, D) ->
     Msg = {im_certain, node(), D},
-%%    ?DBG("~w: ~w: tell: ~w~n", [node(), Msg, Nodes]),
+  %%  mnesia_lib:verbose("~w: tell: ~w~n", [Msg, Nodes]), 
     abcast(Nodes, Msg).
 
 log_mnesia_up(Node) ->
@@ -487,25 +489,17 @@ note_log_decision(NewD, InitBy) when NewD#decision.outcome == pre_commit ->
 note_log_decision(NewD, _InitBy) when record(NewD, decision) ->
     Tid = NewD#decision.tid,
     sync_trans_tid_serial(Tid),
-    OldD = decision(Tid),
-    MergedD = merge_decisions(node(), OldD, NewD),
-    note_outcome(MergedD);
-
+    note_outcome(NewD);
 note_log_decision({trans_tid, serial, _Serial}, startup) ->
     ignore;
-
 note_log_decision({trans_tid, serial, Serial}, _InitBy) ->
     sync_trans_tid_serial(Serial);
-
 note_log_decision({mnesia_up, Node, Date, Time}, _InitBy) ->
     note_up(Node, Date, Time);
-
 note_log_decision({mnesia_down, Node, Date, Time}, _InitBy) ->
     note_down(Node, Date, Time);
-
 note_log_decision({master_nodes, Tab, Nodes}, _InitBy) ->
     note_master_nodes(Tab, Nodes);
-
 note_log_decision(H, _InitBy) when H#log_header.log_kind == decision_log ->
     V = mnesia_log:decision_log_version(),
     if
@@ -518,7 +512,6 @@ note_log_decision(H, _InitBy) when H#log_header.log_kind == decision_log ->
 	true ->
 	    fatal("Bad version of decision log: ~p~n", [H])
     end;
-
 note_log_decision(H, _InitBy) when H#log_header.log_kind == decision_tab ->
     V = mnesia_log:decision_tab_version(),
     if
@@ -752,7 +745,11 @@ handle_cast(Msg, State) when State#state.initiated == false ->
 handle_cast({im_certain, Node, NewD}, State) ->
     OldD = decision(NewD#decision.tid),
     MergedD = merge_decisions(Node, OldD, NewD),    
-    do_log_decision(MergedD, false),
+    do_log_decision(MergedD, false, undefined),
+    {noreply, State};
+
+handle_cast({log_decision, D}, State) ->
+    do_log_decision(D),
     {noreply, State};
 
 handle_cast(allow_garb, State) ->
@@ -897,8 +894,8 @@ handle_early_msgs(State, From) ->
 do_handle_early_msgs([Msg | Msgs], State) ->
     %% The messages are in reverted order
     case do_handle_early_msgs(Msgs, State) of
-        {stop, Reason, Reply, State2} ->
-	    {stop, Reason, Reply, State2};
+%%         {stop, Reason, Reply, State2} ->
+%% 	    {stop, Reason, Reply, State2};
         {stop, Reason, State2} ->
 	    {stop, Reason, State2};
 	{noreply, State2} ->
@@ -1072,7 +1069,7 @@ add_remote_decision(Node, NewD, State) ->
     Tid = NewD#decision.tid,
     OldD = decision(Tid),
     D = merge_decisions(Node, OldD, NewD),
-    do_log_decision(D, false),
+    do_log_decision(D, false, undefined),
     Outcome = D#decision.outcome,
     if
 	OldD == no_decision ->
@@ -1100,7 +1097,7 @@ add_remote_decision(Node, NewD, State) ->
 					  ram_nodes = []},
 		    tell_im_certain(D#decision.disc_nodes, CertainD),
 		    tell_im_certain(D#decision.ram_nodes, CertainD),
-		    do_log_decision(CertainD, false),
+		    do_log_decision(CertainD, false, undefined),
 		    verbose("Decided to abort transaction ~p "
 			    "since everybody are uncertain ~p~n",
 			    [Tid, CertainD]),
@@ -1152,18 +1149,6 @@ arrange([To | ToNodes], D, Acc, ForceSend) when record(D, decision) ->
 	false ->
 	    arrange(ToNodes, D, Acc, ForceSend)
     end;
-
-arrange([To | ToNodes], C, Acc, ForceSend) when record(C, transient_decision) ->
-    Acc2 = add_decision(To, C, Acc),
-    arrange(ToNodes, C, Acc2, ForceSend);
-
-arrange([_To | _ToNodes], {mnesia_down, _Node, _Date, _Time}, Acc, _ForceSend) ->
-    %% The others have their own info about this
-    Acc;
-
-arrange([_To | _ToNodes], {master_nodes, _Tab, _Nodes}, Acc, _ForceSend) ->
-    %% The others have their own info about this
-    Acc;
 
 arrange([To | ToNodes], {trans_tid, serial, Serial}, Acc, ForceSend) ->
     %% Do the lamport thing plus release the others

@@ -117,16 +117,14 @@ create(DB, Gstkid, Opts) ->
 	    case gstk_generic:make_command(NewOpts, NGstkid, MainW, SimplePreCmd,
 					  PlacePreCmd, DB,Editor) of
 		{error,Reason} -> {error,Reason};
-		Cmd when list(Cmd) ->
+		Cmd ->
 		    gstk:exec(Cmd),
 		    gstk:exec(
 		      [Editor," conf -bo 2 -relief sunken -highlightth 2;",
 		       MainW,".sy conf -rel sunken -bo 2;",
 		       MainW,".pad.sx conf -rel sunken -bo 2;",
 		       Editor, " tag co c1 -for white;"]),
-		    ok;
-		Bad_Result ->
-		    {error, Bad_Result}
+		    ok
 	    end
     end.
 
@@ -201,7 +199,7 @@ event(DB, Gstkid, Etype, Edata, Args) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 option(Option, Gstkid, _MainW, DB, Editor) ->
     case Option of
-	{font,Font} when tuple(Font) ->   
+	{font,Font} when is_tuple(Font) ->   
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    {c, [Editor, " conf -font ", gstk_font:choose_ascii(DB,Font)]};
 	{font_style, {{Start,End},Font}} -> % should be only style

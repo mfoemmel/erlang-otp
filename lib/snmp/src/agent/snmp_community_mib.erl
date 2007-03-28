@@ -220,21 +220,18 @@ gc_tabs() ->
 %% indirection.
 %%-----------------------------------------------------------------
 community2vacm(Community, Addr) ->
-    case ets:lookup(snmp_community_cache, Community) of
-	Found when list(Found) ->
-	    Fs = lists:keysort(2, Found),
-	    loop_c2v_rows(Fs, Addr);
-	_ ->
-	    undefined
-    end.
+    Idxs = ets:lookup(snmp_community_cache, Community),
+    loop_c2v_rows(lists:keysort(2, Idxs), Addr).
 
 loop_c2v_rows([{_, CommunityIndex} | T], Addr) ->
+    ?vtrace("loop_c2v_rows -> entry with"
+	    "~n   CommunityIndex: ~p", [CommunityIndex]),
     case get_row(CommunityIndex) of
 	{_Community, VacmParams, Tag} ->
 	    {TDomain, TAddr} = Addr,
 	    case snmp_target_mib:is_valid_tag(Tag, TDomain, TAddr) of
 		true ->
-		    ?vtrace("loop_c2v_rows -> "
+		    ?vdebug("loop_c2v_rows -> "
 			    "~p valid tag for community index ~p", 
 			    [Tag, CommunityIndex]),
 		    VacmParams;
@@ -260,18 +257,19 @@ loop_c2v_rows([], _Addr) ->
 %%          in a notification.
 %%-----------------------------------------------------------------
 vacm2community(Vacm, Addr) ->
-    case ets:lookup(snmp_community_cache, Vacm) of
-	Found when list(Found) ->
-	    Fs = lists:keysort(2, Found),
-	    loop_v2c_rows(Fs, Addr);
-	_ ->
-	    undefined
-    end.
+    Names = ets:lookup(snmp_community_cache, Vacm),
+    loop_v2c_rows(lists:keysort(2, Names), Addr).
     
 loop_v2c_rows([{_, {CommunityName, Tag}} | T], Addr) ->
+    ?vtrace("loop_v2c_rows -> entry with"
+	    "~n   CommunityName: ~p"
+	    "~n   Tag:           ~p", [CommunityName, Tag]),
     {TDomain, TAddr} = Addr,
     case snmp_target_mib:is_valid_tag(Tag, TDomain, TAddr) of
 	true ->
+	    ?vdebug("loop_v2c_rows -> "
+		    "~p valid tag for community name ~p", 
+		    [Tag, CommunityName]),
 	    {ok, CommunityName};
 	false ->
 	    loop_v2c_rows(T, Addr)

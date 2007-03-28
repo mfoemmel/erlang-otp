@@ -35,7 +35,7 @@
 #endif
 
 #if defined(HEAP_FRAG_ELIM_TEST) && defined(HIPE)
-#error Heap-fragment elimination (nofrag) cannot be combined with HIPE yet
+#warning Heap-fragment elimination (nofrag) is not supported with HIPE yet
 #endif
 
 #define BEAM 1

@@ -138,7 +138,7 @@ server(StartSync) ->
     case init:get_argument(async_shell_start) of
 	{ok,_} -> 
 	    ok;					% no sync with init
-	_ when StartSync == false ->
+	_ when not StartSync ->
 	    ok;
 	_ ->
 	    case init:notify_when_started(self()) of
@@ -609,7 +609,7 @@ local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
 		{Result,{RShShSt,RShExprSt}} ->
 		    put(restricted_shell_state, RShShSt),
 		    put(restricted_expr_state, RShExprSt),
-		    if Result == false -> 
+		    if not Result -> 
 			    shell_req(Shell, {update_dict,get()}),
 			    exit({disallowed,{F,AsEv}});
 		       true -> 
@@ -627,10 +627,13 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
 	{Result,{RShShSt,RShExprSt}} ->
 	    put(restricted_shell_state, RShShSt),
 	    put(restricted_expr_state, RShExprSt),
-	    if Result == false -> 
+            case Result of 
+                false -> 
 		    shell_req(Shell, {update_dict,get()}),
 		    exit({disallowed,{MForFun,As}});
-	       true -> 
+                {redirect, NewMForFun, NewAs} ->
+                    apply(NewMForFun, NewAs);
+                _ -> 
 		    apply(MForFun, As)
 	    end;
 	Unexpected ->				% the user didn't read the manual

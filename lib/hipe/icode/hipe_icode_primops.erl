@@ -27,114 +27,95 @@
 %% correctly introduced in the code, most of them are also OK to remove
 %% if the result is not used.
 
-is_safe('+') -> false;           % XXX: Correct?
-is_safe(call_fun) -> false;      % XXX: Correct?
-is_safe(check_get_msg) -> false; % XXX: Correct?
-is_safe(clear_timeout) -> false; % XXX: Correct?
+is_safe('+') -> false;
+is_safe('/') -> false;
+is_safe('*') -> false;
+is_safe('-') -> false;
+is_safe('bsr') -> false;
+is_safe('band') -> false;
+is_safe(call_fun) -> false;
+is_safe(check_get_msg) -> false;
+is_safe(clear_timeout) -> false;
 is_safe(cons) -> true;
-%% is_safe(conv_to_float) -> false; % XXX: Correct?
+%% is_safe(conv_to_float) -> false;
 is_safe(extra_unsafe_add) -> true;
 is_safe(extra_unsafe_sub) -> true;
-is_safe(fcheckerror) -> false;   % XXX: Correct?
-is_safe(fclearerror) -> false;   % XXX: Correct?
-is_safe(fp_add) -> false;        % XXX: Correct?
-is_safe(fp_div) -> false;        % XXX: Correct?
-is_safe(fp_mul) -> false;        % XXX: Correct?
-is_safe(fp_sub) -> false;        % XXX: Correct?
+is_safe(fcheckerror) -> false;
+is_safe(fclearerror) -> false;
+is_safe(fp_add) -> false;
+is_safe(fp_div) -> false;
+is_safe(fp_mul) -> false;
+is_safe(fp_sub) -> false;
 is_safe(mktuple) -> true;
-is_safe(next_msg) -> false;      % XXX: Correct?
-is_safe(redtest) -> false;       % XXX: Correct?
-is_safe(select_msg) -> false;    % XXX: Correct?
+is_safe(next_msg) -> false;
+is_safe(redtest) -> false;
+is_safe(select_msg) -> false;
 is_safe(self) -> true;
-is_safe(set_timeout) -> false;   % XXX: Correct?
-is_safe(suspend_msg) -> false;   % XXX: Correct?
+is_safe(set_timeout) -> false;
+is_safe(suspend_msg) -> false;
 is_safe(unsafe_add) -> true;
 is_safe(unsafe_band) -> true;
 is_safe(unsafe_bnot) -> true;
 is_safe(unsafe_bor) -> true;
-%% is_safe(unsafe_bsl) -> true;  % XXX: Correct?
-%% is_safe(unsafe_bsr) -> true;  % XXX: Correct?
+is_safe(unsafe_bsl) -> true;
+is_safe(unsafe_bsr) -> true;
 is_safe(unsafe_bxor) -> true;
 is_safe(unsafe_hd) -> true;
 is_safe(unsafe_sub) -> true;
 is_safe(unsafe_tag_float) -> true;
 is_safe(unsafe_tl) -> true;
 is_safe(unsafe_untag_float) -> true;
-is_safe(#apply_N{}) -> false;    % XXX: Correct?
+is_safe(#apply_N{}) -> false;
 is_safe(#closure_element{}) -> true;
-%% is_safe(#element{}) -> false;                            % XXX: Correct?
-%% is_safe({hipe_bs_primop, bs_bits_to_bytes}) -> false;    % XXX: Correct?
-%% is_safe({hipe_bs_primop, bs_bits_to_bytes2}) -> false;   % XXX: Correct?
-is_safe({hipe_bs_primop, bs_final2}) -> true;
-%% is_safe({hipe_bs_primop, bs_start_match}) -> false;	    % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_add,_}}) -> false;          % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_add,_,_}}) -> false;        % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_get_binary,_,_}}) -> false; % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_get_binary_all,_}}) -> false; % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_get_integer,_,_}}) -> false; % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_create_space,_,_}}) -> false;  % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_init2,_}}) -> true;            % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_init2,_,_}}) -> true;          % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_binary,_,_}}) -> false;    % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_binary_all,_}}) -> false;  % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_float,_,_,_}}) -> false;   % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> false; % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_string,_,_}}) -> false;    % XXX: Correct?
-is_safe({hipe_bs_primop, {bs_put_string,_,_,_}}) -> false;  % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_skip_bits,_}}) -> false;    % XXX: Correct?
-%% is_safe({hipe_bs_primop, {bs_skip_bits_all,_}}) -> false;% XXX: Correct?
-is_safe({hipe_bs_primop, {bs_test_tail,_}}) -> false;       % XXX: Correct?
-is_safe({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> false; % XXX: Correct?
-%% is_safe({hipe_bs_primop2,{bs_get_binary_2,_,_}}) -> false; % XXX: Correct?
-is_safe({hipe_bs_primop2,{bs_get_binary_all_2,_,_}}) -> false; % XXX: Correct?
-%% is_safe({hipe_bs_primop2,{bs_get_float_2,_,_}}) -> false; % XXX: Correct?
-is_safe({hipe_bs_primop2,{bs_get_integer_2,_,_}}) -> false; % XXX: Correct?
-is_safe({hipe_bs_primop2,{bs_restore_2,_}}) -> true;
-is_safe({hipe_bs_primop2,{bs_save_2,_}}) -> true;
-is_safe({hipe_bs_primop2,{bs_skip_bits_2,_}}) -> false;     % XXX: Correct?
-is_safe({hipe_bs_primop2,{bs_skip_bits_all_2,_,_}}) -> false; % XXX: Correct?
-%% is_safe({hipe_bs_primop2,{bs_start_match_2,_}}) -> false;  % XXX: Correct?
-is_safe({hipe_bs_primop2,{bs_test_tail_2,_}}) -> false;     % XXX: Correct?
-is_safe({hipe_bsi_primop, bs_add}) -> false;                % XXX: Correct?
-is_safe({hipe_bsi_primop, bs_div_test}) -> true;            % XXX: Correct?
-is_safe({hipe_bsi_primop, bs_get_orig}) -> true;            % XXX: Correct?
-is_safe({hipe_bsi_primop, bs_get_orig_offset}) -> true;
-is_safe({hipe_bsi_primop, bs_get_size}) -> true;
-is_safe({hipe_bsi_primop, bs_size_test}) -> false;          % XXX: Correct?
-is_safe({hipe_bsi_primop, bs_size_test_all}) -> false;      % XXX: Correct?
-is_safe({hipe_bsi_primop,{bs_get_binary,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_binary,_Size,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_binary_all,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_float,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_float,_Size,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_integer,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_get_integer,_Size,_Offset,_Flags}}) -> true;
-is_safe({hipe_bsi_primop,{bs_make_size,_Size}}) -> false;   % XXX: Correct?
+%% is_safe(#element{}) -> false;
+is_safe({hipe_bs_primop, {bs_start_match,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_binary,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_integer,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_get_float,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_skip_bits,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_skip_bits_all,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_test_tail,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_restore,_}}) -> true;
+is_safe({hipe_bs_primop, {bs_save,_}}) -> true;
+is_safe({hipe_bs_primop, {bs_add,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_add,_,_}}) -> false;
+is_safe({hipe_bs_primop, bs_bits_to_bytes}) -> false;
+is_safe({hipe_bs_primop, bs_bits_to_bytes2}) -> false;
+is_safe({hipe_bs_primop, {bs_init,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_init,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_binary,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_binary_all,_}}) -> false;  
+is_safe({hipe_bs_primop, {bs_put_float,_,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> false;
+is_safe({hipe_bs_primop, {bs_put_string,_,_}}) -> false;  
+is_safe({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> false;
+is_safe({hipe_bs_primop, bs_final}) -> true;
 is_safe(#mkfun{}) -> true;
 is_safe(#unsafe_element{}) -> true;
 is_safe(#unsafe_update_element{}) -> true.
 
 
-fails('+') -> true;               % XXX: Correct?
-fails('-') -> true;               % XXX: Correct?
-fails('*') -> true;               % XXX: Correct?
-fails('/') -> true;               % XXX: Correct?
-fails('bnot') -> true;            % XXX: Correct?
-fails('band') -> true;            % XXX: Correct?
-fails('bor') -> true;             % XXX: Correct?
-fails('bsl') -> true;             % XXX: Correct?
-fails('bsr') -> true;             % XXX: Correct?
-fails('bxor') -> true;            % XXX: Correct?
-fails('div') -> true;             % XXX: Correct?
-fails('rem') -> true;             % XXX: Correct?
-fails(call_fun) -> true;          % XXX: Correct?
-fails(check_get_msg) -> true;     % XXX: Correct?
-fails(clear_timeout) -> true;     % XXX: Correct?
+fails('+') -> true;
+fails('-') -> true;
+fails('*') -> true;
+fails('/') -> true;
+fails('bnot') -> true;
+fails('band') -> true;
+fails('bor') -> true;
+fails('bsl') -> true;
+fails('bsr') -> true;
+fails('bxor') -> true;
+fails('div') -> true;
+fails('rem') -> true;
+fails(call_fun) -> true;
+fails(check_get_msg) -> true;
+fails(clear_timeout) -> false;
 fails(cons) -> false;
-fails(conv_to_float) -> true;     % XXX: Correct?
-fails(extra_unsafe_add) -> false; % XXX: Correct?
-fails(extra_unsafe_sub) -> false; % XXX: Correct?
-fails(fcheckerror) -> true;       % XXX: Correct?
+fails(conv_to_float) -> true;
+fails(extra_unsafe_add) -> false;
+fails(extra_unsafe_sub) -> false;
+fails(fcheckerror) -> true;
 fails(fclearerror) -> false;
 fails(fp_add) -> false;
 fails(fp_div) -> false;
@@ -142,11 +123,11 @@ fails(fp_mul) -> false;
 fails(fp_sub) -> false;
 fails(mktuple) -> false;
 fails(next_msg) -> false;
-fails(redtest) -> true;           % XXX: Correct?
-fails(select_msg) -> true;        % XXX: Correct?
+fails(redtest) -> false;
+fails(select_msg) -> false;
 fails(self) -> false;
-fails(set_timeout) -> true;       % XXX: Correct?
-fails(suspend_msg) -> true;       % XXX: Correct?
+fails(set_timeout) -> true;
+fails(suspend_msg) -> false;
 fails(unsafe_untag_float) -> false;
 fails(unsafe_tag_float) -> false;
 fails(unsafe_add) -> false;
@@ -158,67 +139,44 @@ fails(unsafe_bsr) -> false;
 fails(unsafe_bxor) -> false;
 fails(unsafe_hd) -> false;
 fails(unsafe_sub) -> false;
-%% fails(unsafe_tag_float) -> true;  % XXX: Correct?
+%% fails(unsafe_tag_float) -> false;
 fails(unsafe_tl) -> false;
-%% fails(unsafe_untag_float) -> true;  % XXX: Correct?
-fails(#apply_N{}) -> true;        % XXX: Correct?
+%% fails(unsafe_untag_float) -> false;
+fails(#apply_N{}) -> true;
 fails(#closure_element{}) -> false;
-fails(#element{}) -> true;      % XXX: Correct?
-fails({hipe_bs_primop, bs_bits_to_bytes}) -> true;           % XXX: Correct?
-fails({hipe_bs_primop, bs_bits_to_bytes2}) -> true;          % XXX: Correct?
-fails({hipe_bs_primop, bs_final2}) -> true;                  % XXX: Correct?
-fails({hipe_bs_primop, bs_start_match}) -> true;             % XXX: Correct?
-fails({hipe_bs_primop, {bs_add,_}}) -> true;                 % XXX: Correct?
-fails({hipe_bs_primop, {bs_add,_,_}}) -> true;               % XXX: Correct?
-%% fails({hipe_bs_primop, {bs_create_space,_,_}}) -> true;   % XXX: Correct?
-fails({hipe_bs_primop, {bs_get_binary,_,_}}) -> true;        % XXX: Correct?
-fails({hipe_bs_primop, {bs_get_binary_all,_}}) -> true;      % XXX: Correct?
-fails({hipe_bs_primop, {bs_get_integer,_,_}}) -> true;       % XXX: Correct?
-fails({hipe_bs_primop, {bs_init2,_}}) -> true;               % XXX: Correct?
-fails({hipe_bs_primop, {bs_init2,_,_}}) -> true;             % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_binary,_,_}}) -> true;        % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_binary_all,_}}) -> true;      % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_float,_,_,_}}) -> true;       % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> true;     % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_string,_,_}}) -> true;        % XXX: Correct?
-fails({hipe_bs_primop, {bs_put_string,_,_,_}}) -> true;      % XXX: Correct?
-%% fails({hipe_bs_primop, {bs_test_tail,_}}) -> true;	     % XXX: Correct?
-fails({hipe_bs_primop, {bs_skip_bits,_}}) -> true;	     % XXX: Correct?
-fails({hipe_bs_primop, {bs_skip_bits_all,_}}) -> true;	     % XXX: Correct?
-fails({hipe_bs_primop, {bs_test_tail,_}}) -> true;	     % XXX: Correct?
-fails({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> true; % XXX: Correct?
-fails({hipe_bs_primop2, {bs_get_binary_2,_,_}}) -> true;     % XXX: Correct?
-fails({hipe_bs_primop2, {bs_get_binary_all_2,_,_}}) -> true; % XXX: Correct?
-fails({hipe_bs_primop2, {bs_get_float_2,_,_}}) -> true;      % XXX: Correct?
-fails({hipe_bs_primop2, {bs_get_integer_2,_,_}}) -> true;    % XXX: Correct?
-fails({hipe_bs_primop2, {bs_restore_2,_}}) -> true;          % XXX: Correct?
-fails({hipe_bs_primop2, {bs_save_2,_}}) -> true;             % XXX: Correct?
-fails({hipe_bs_primop2, {bs_skip_bits_2,_}}) -> true;        % XXX: Correct?
-fails({hipe_bs_primop2, {bs_skip_bits_all_2,_,_}}) -> true;  % XXX: Correct?
-fails({hipe_bs_primop2, {bs_start_match_2,_}}) -> true;      % XXX: Correct?
-fails({hipe_bs_primop2, {bs_test_tail_2,_}}) -> true;        % XXX: Correct?
-fails({hipe_bsi_primop, bs_add}) -> true;                    % XXX: Correct?
-fails({hipe_bsi_primop, bs_div_test}) -> true;               % XXX: Correct?
-fails({hipe_bsi_primop, bs_get_orig}) -> true;               % XXX: Correct?
-fails({hipe_bsi_primop, bs_get_orig_offset}) -> true;        % XXX: Correct?
-fails({hipe_bsi_primop, bs_get_size}) -> true;               % XXX: Correct?
-fails({hipe_bsi_primop, bs_size_test}) -> true;              % XXX: Correct?
-fails({hipe_bsi_primop, bs_size_test_all}) -> true;          % XXX: Correct?
-fails({hipe_bsi_primop,{bs_get_binary,_,_}}) -> true;        % XXX: Correct?
-fails({hipe_bsi_primop,{bs_get_binary,_,_,_}}) -> true;      % XXX: Correct?
-fails({hipe_bsi_primop,{bs_get_binary_all,_,_}}) -> true;    % XXX: Correct?
-%% fails({hipe_bsi_primop,{bs_get_float,_,_}}) -> true;      % XXX: Correct?
-%% fails({hipe_bsi_primop,{bs_get_float,_,_,_}}) -> true;    % XXX: Correct?
-%% fails({hipe_bsi_primop,{bs_get_integer,_,_}}) -> true;    % XXX: Correct?
-fails({hipe_bsi_primop,{bs_get_integer,_,_,_}}) -> true;     % XXX: Correct?
-fails({hipe_bsi_primop,{bs_make_size,_}}) -> true;           % XXX: Correct?
+fails(#element{}) -> true;
+fails({hipe_bs_primop, {bs_start_match,_}}) -> true;
+fails({hipe_bs_primop, {bs_get_binary,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_get_integer,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_get_float,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_skip_bits,_}}) -> true;
+fails({hipe_bs_primop, {bs_skip_bits_all,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_test_tail,_}}) -> true;
+fails({hipe_bs_primop, {bs_restore,_}}) -> false;
+fails({hipe_bs_primop, {bs_save,_}}) -> false;
+fails({hipe_bs_primop, {bs_add,_}}) -> true;
+fails({hipe_bs_primop, {bs_add,_,_}}) -> true;
+fails({hipe_bs_primop, bs_bits_to_bytes}) -> true;
+fails({hipe_bs_primop, bs_bits_to_bytes2}) -> true;
+fails({hipe_bs_primop, {bs_init,_}}) -> false;
+fails({hipe_bs_primop, {bs_init,_,_}}) -> false;
+fails({hipe_bs_primop, {bs_put_binary,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_put_binary_all,_}}) -> true;  
+fails({hipe_bs_primop, {bs_put_float,_,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_put_integer,_,_,_}}) -> true;
+fails({hipe_bs_primop, {bs_put_string,_,_}}) -> true;  
+fails({hipe_bs_primop, {unsafe_bs_put_integer,_,_,_}}) -> true;
+fails({hipe_bs_primop, bs_final}) -> false;
 fails(#mkfun{}) -> false;
 fails(#unsafe_element{}) -> false;
 fails(#unsafe_update_element{}) -> false;
 %% Apparently, we are calling fails/1 for all MFAs which are compiled.
 %% This is weird and we should restructure the compiler to avoid
 %% calling fails/1 for things that are not primops.
-fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 -> true.
+fails({M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 0 =< A, A =< 255 ->
+  %% Yes, we should move this.
+  not erl_bifs:is_safe(M, F, A).
 
 %%=====================================================================
 %% Pretty printing
@@ -230,10 +188,8 @@ pp(Op, Dev) ->
       io:format(Dev, "apply_N<~w>/", [N]);
     #closure_element{n=N} ->
       io:format(Dev, "closure_element<~w>", [N]);
-    {X, BsOp} when X =:= hipe_bs_primop; X =:= hipe_bs_primop2 ->
+    {hipe_bs_primop, BsOp}  ->
       case BsOp of
-	{bs_create_space, Size, _} ->
-	  io:format(Dev, "bs_create_space<~w>", [Size]);
 	{bs_put_binary_all, Flags} -> 
 	  io:format(Dev, "bs_put_binary_all<~w>", [Flags]);
 	{bs_put_binary, Size} ->
@@ -248,17 +204,11 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_put_integer<~w, ~w>", [Bits, Flags]);
 	{unsafe_bs_put_integer, Bits, Flags, _ConstInfo} ->
 	  io:format(Dev, "unsafe_bs_put_integer<~w, ~w>", [Bits, Flags]);
-	{bs_skip_bits_all, Flags} ->
-	  io:format(Dev, "bs_skip_bits_all<~w>", [Flags]);
+	{bs_skip_bits_all, Unit, Flags} ->
+	  io:format(Dev, "bs_skip_bits_all<~w,~w>", [Unit,Flags]);
 	{bs_skip_bits, Unit} ->
 	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
-	{bs_skip_bits_all_2, Unit, Flags} ->
-	  io:format(Dev, "bs_skip_bits_all<~w,~w>", [Unit,Flags]);
-	{bs_skip_bits_2, Unit} ->
-	  io:format(Dev, "bs_skip_bits<~w>", [Unit]);
-	bs_start_match ->
-	  io:format(Dev, "bs_start_match", []);
-	{bs_start_match_2, Max} ->
+	{bs_start_match, Max} ->
 	  io:format(Dev, "bs_start_match<~w>", [Max]);
 	{bs_get_integer, Size, Flags} ->
 	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
@@ -266,79 +216,28 @@ pp(Op, Dev) ->
 	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
 	{bs_get_binary, Size, Flags} ->
 	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_all, Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w>", [Flags]);
-	{bs_test_tail, NumBits} ->
+	{bs_get_binary_all,Unit,Flags} ->
+	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit,Flags]);
+	{bs_test_tail,NumBits} ->
 	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
 	{bs_restore, Index} ->
 	  io:format(Dev, "bs_restore<~w>", [Index]);
 	{bs_save, Index} ->
 	  io:format(Dev, "bs_save<~w>", [Index]);
-	{bs_get_integer_2, Size, Flags} ->
-	  io:format(Dev, "bs_get_integer<~w, ~w>", [Size, Flags]);
-	{bs_get_float_2, Size, Flags} ->
-	  io:format(Dev, "bs_get_float<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_2, Size, Flags} ->
-	  io:format(Dev, "bs_get_binary<~w, ~w>", [Size, Flags]);
-	{bs_get_binary_all_2,Unit,Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w,~w>", [Unit,Flags]);
-	{bs_test_tail_2,NumBits} ->
-	  io:format(Dev, "bs_test_tail<~w>", [NumBits]);
-	{bs_restore_2, Index} ->
-	  io:format(Dev, "bs_restore<~w>", [Index]);
-	{bs_save_2, Index} ->
-	  io:format(Dev, "bs_save<~w>", [Index]);
-	{bs_init, _, _} ->
-	  io:format(Dev, "bs_init", []);
-	{bs_init, _} ->
-	  io:format(Dev, "bs_init", []);
-	{bs_init2, Size, Flags} ->
-	  io:format(Dev, "bs_init2<~w, ~w>", [Size, Flags]);
-	{bs_init2,Flags} ->
-	  io:format(Dev, "bs_init2<~w>", [Flags]);
-	{bs_need_buf, Need} ->
-	  io:format(Dev, "bs_need_buf<~w>", [Need]);
+	{bs_init, Size, Flags} ->
+	  io:format(Dev, "bs_init<~w, ~w>", [Size, Flags]);
+	{bs_init,Flags} ->
+	  io:format(Dev, "bs_init<~w>", [Flags]);
 	{bs_add, Unit} ->
 	  io:format(Dev, "bs_add<~w>", [Unit]);
 	{bs_add, Const, Unit} ->
 	  io:format(Dev, "bs_add<~w, ~w>", [Const, Unit]);
 	bs_bits_to_bytes ->
 	  io:format(Dev, "bs_bits_to_bytes", []);
+	bs_bits_to_bytes2 ->
+	  io:format(Dev, "bs_bits_to_bytes2", []);
 	bs_final ->
 	  io:format(Dev, "bs_final", [])
-      end;
-    {hipe_bsi_primop, BsOp} ->
-      case BsOp of
-	bs_add ->
-	  io:format(Dev, "bs_add", []);
-	bs_div_test ->
-	  io:format(Dev, "bs_div_test", []);
-	bs_get_orig ->
-	  io:format(Dev, "bs_get_orig", []);
-	bs_get_orig_offset ->
-	  io:format(Dev, "bs_get_orig_offset", []);
-	bs_get_size ->
-	  io:format(Dev, "bs_get_size", []);
-	bs_size_test ->
-	  io:format(Dev, "bs_size_test", []);
-	bs_size_test_all ->
-	  io:format(Dev, "bs_size_test_all", []);
-	{bs_get_binary, Offset, Flags} ->
-	  io:format(Dev, "bs_get_binary<~w, ~w>", [Offset, Flags]);
-	{bs_get_binary, Size, Offset, Flags} ->
-	  io:format(Dev, "bs_get_binary<~w, ~w, ~w>", [Size, Offset, Flags]);
-	{bs_get_binary_all, Offset, Flags} ->
-	  io:format(Dev, "bs_get_binary_all<~w, ~w>", [Offset, Flags]);
-	{bs_get_integer, Offset, Flags} ->
-	  io:format(Dev, "bs_get_integer<~w, ~w>", [Offset, Flags]);
-	{bs_get_integer, Size, Offset, Flags} ->
-	  io:format(Dev, "bs_get_integer<~w, ~w, ~w>", [Size, Offset, Flags]);
-	{bs_get_float, Offset, Flags} ->
-	  io:format(Dev, "bs_get_float<~w, ~w>", [Offset, Flags]);
-	{bs_get_float, Size, Offset, Flags} ->
-	  io:format(Dev, "bs_get_float<~w, ~w, ~w>", [Size, Offset, Flags]);
-	{bs_make_size, Unit} ->
-	   io:format(Dev, "bs_make_size<~w>", [Unit])
       end;
     #mkfun{mfa={Mod, Fun, Arity}, magic_num=Unique, index=I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, Unique, I]);
@@ -456,73 +355,35 @@ type(Primop, Args) ->
     fnegate ->
       erl_types:t_any();
 %%% -----------------------------------------------------
-%%% Binaries    
+%%% 
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
       Signed = Flags band 4,
-      if (length(Args) =:= 4) and (Signed =:= 0) -> 
-	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
+      if (length(Args) =:= 1) and (Signed =:= 0) -> 
 	  %% No variable part of the size parameter.
-%% 	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-%% 	     Size < 21, Signed =:= 0 -> erl_types:t_char();
-%% 	     true -> erl_types:t_integer()
-%%	  end;
+	  erl_types:t_from_range(0, 1 bsl Size - 1);
 	 true -> erl_types:t_integer()
       end;
     {hipe_bs_primop, {bs_get_float, _, _}} ->
       erl_types:t_float();
     {hipe_bs_primop, {bs_get_binary, _, _}} ->
       erl_types:t_binary();
-    {hipe_bs_primop, {bs_get_binary_all, _}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop2, {bs_get_integer_2, Size, Flags}} ->
-      Signed = Flags band 4,
-      if (length(Args) =:= 1) and (Signed =:= 0) -> 
-	  %% No variable part of the size parameter.
-	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
-%% 	  if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-%% 	     Size < 21, Signed =:= 0 -> erl_types:t_char();
-%% 	     true -> erl_types:t_integer()
-%% 	  end;
-	 true -> erl_types:t_integer()
-      end;
-    {hipe_bs_primop2, {bs_get_float_2, _, _}} ->
-      erl_types:t_float();
-    {hipe_bs_primop2, {bs_get_binary_2, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop2, {bs_get_binary_all_2,_, _}} ->
+    {hipe_bs_primop, {bs_get_binary_all,_, _}} ->
       erl_types:t_binary();
     {hipe_bs_primop, bs_final} ->
       erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_integer, _, _}} ->
+    {hipe_bs_primop, {bs_init,_,_}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init,_}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_add, _, _}} ->
       erl_types:t_integer();
-    {hipe_bsi_primop, {bs_get_integer, Size, _, Flags}} ->
-      Signed = Flags band 4,
-      if Signed =:= 0 ->
-	  erl_types:t_from_range(0, round(math:pow(2, Size)) - 1);
-%%       if Size < 9, Signed =:= 0 -> erl_types:t_byte();
-%% 	 Size < 21, Signed =:= 0 -> erl_types:t_char();
-%% 	 true -> erl_types:t_integer()
-%%       end;
-	 true ->
-	  erl_types:t_integer()
-      end;
-    {hipe_bsi_primop, {bs_get_float, _, _}} ->
-      erl_types:t_float();
-    {hipe_bsi_primop, {bs_get_float, _, _, _}} ->
-      erl_types:t_float();
-    {hipe_bsi_primop, {bs_get_binary, _, _}} ->
-	erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_binary, _, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_binary_all, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2,_,_}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2,_}} ->
-      erl_types:t_binary();
-    {X, _BsOp} when X =:= hipe_bs_primop;
-		    X =:= hipe_bs_primop2;
-		    X =:= hipe_bsi_primop ->
+    {hipe_bs_primop, {bs_add, _}} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, bs_bits_to_bytes} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, bs_bits_to_bytes2} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, _BsOp} ->
       erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Funs
@@ -666,31 +527,23 @@ type(Primop) ->
       erl_types:t_float();
     {hipe_bs_primop, {bs_get_binary, _, _}} ->
       erl_types:t_binary();
-    {hipe_bs_primop, {bs_get_binary_all, _}} ->
+    {hipe_bs_primop, {bs_get_binary_all, _, _}} ->
       erl_types:t_binary();
     {hipe_bs_primop, bs_final} ->
       erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_integer, _, _}} ->
+    {hipe_bs_primop, {bs_init, _, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_init, _}} ->
+      erl_types:t_binary();
+    {hipe_bs_primop, {bs_add, _, _}} ->
       erl_types:t_integer();
-    {hipe_bsi_primop, {bs_get_integer, _Size, _, _Flags}} ->
+    {hipe_bs_primop, {bs_add, _}} ->
       erl_types:t_integer();
-    {hipe_bsi_primop, {bs_get_float, _, _}} ->
-      erl_types:t_float();
-    {hipe_bsi_primop, {bs_get_float, _, _, _}} ->
-      erl_types:t_float();
-    {hipe_bsi_primop, {bs_get_binary, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_binary, _, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bsi_primop, {bs_get_binary_all, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2, _, _}} ->
-      erl_types:t_binary();
-    {hipe_bs_primop, {bs_init2, _}} ->
-      erl_types:t_binary();
-    {X, _BsOp} when X =:= hipe_bs_primop; 
-		    X =:= hipe_bs_primop2;
-		    X =:= hipe_bsi_primop ->
+    {hipe_bs_primop, bs_bits_to_bytes} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, bs_bits_to_bytes2} ->
+      erl_types:t_integer();
+    {hipe_bs_primop, _BsOp} ->
       erl_types:t_any();
 %%% -----------------------------------------------------
 %%% Funs

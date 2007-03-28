@@ -218,9 +218,9 @@ init_select(Tid,Opaque,Tab,Pat,Limit,LockKind) ->
 			  mnesia:lock(Tid, Opaque, {table, Name}, LockKind),
 			  {Name, Node, Storage}
 		  end,
-	    [{Tab,Node,Type}|NameNodes] = lists:map(Fun, FragNumbers),
-	    InitFun = fun(FixedSpec) -> mnesia:dirty_sel_init(Node,Tab,FixedSpec,Limit,Type) end,
-	    Res = mnesia:fun_select(Tid,Opaque,Tab,Pat,LockKind,Tab,InitFun,Limit,Node,Type),
+	    [{FTab,Node,Type}|NameNodes] = lists:map(Fun, FragNumbers),
+	    InitFun = fun(FixedSpec) -> mnesia:dirty_sel_init(Node,FTab,FixedSpec,Limit,Type) end,
+	    Res = mnesia:fun_select(Tid,Opaque,FTab,Pat,LockKind,FTab,InitFun,Limit,Node,Type),
 	    frag_sel_cont(Res, NameNodes, {Pat,LockKind,Limit})
     end.
 
@@ -563,6 +563,9 @@ set_frag_node(Cs, Pos, Head) ->
 	    BadNode ->
 		mnesia:abort({bad_type, Cs#cstruct.name, BadNode})
 	end,
+    mnesia_schema:verify(true, 
+ 			 lists:member(Node, val({current,db_nodes})),
+ 			 {not_active, Cs#cstruct.name, Node}),
     Cs2 = setelement(Pos, Cs, [Node | Ns]),
     {Cs2, {Node, Count2}}.
 
@@ -728,6 +731,7 @@ make_add_frag(Tab, SortedNs) ->
 		       ram_copies = [],
 		       disc_copies = [],
 		       disc_only_copies = []},
+    
     {NewCs2, _, _} = set_frag_nodes(NR, ND, NDO, NewCs, SortedNs, []),
     [NewOp] = mnesia_schema:make_create_table(NewCs2),
 

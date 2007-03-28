@@ -47,6 +47,7 @@
 #include "hipe_process.h"
 #endif
 
+struct ErtsNodesMonitor_;
 struct port;
 
 #define ERTS_MAX_NO_OF_SCHEDULERS 1024
@@ -117,6 +118,12 @@ struct ErtsSchedulerData_ {
 #endif
 
     struct process *current_process;
+
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+    /* NOTE: These fields are modified under held mutexes by other threads */
+    int check_children; /* schdlq mutex */
+    int blocked_check_children; /* multi_scheduling_block mutex */
+#endif
 };
 
 #ifndef ERTS_SMP
@@ -199,6 +206,8 @@ typedef struct process {
     struct reg_proc *reg;	/* NULL iff not registered */
     ErtsLink *nlinks;
     ErtsMonitor *monitors;      /* The process monitors, both ends */
+
+    struct ErtsNodesMonitor_ *nodes_monitors;
 
     ErlMessageQueue msg;	/* Message queue */
 
@@ -557,6 +566,7 @@ int erts_block_multi_scheduling(Process *, Uint32, int, int);
 int erts_is_multi_scheduling_blocked(void);
 Eterm erts_multi_scheduling_blockers(Process *);
 void erts_start_schedulers(Uint);
+void erts_smp_notify_check_children_needed(void);
 #endif
 void erts_init_process(void);
 Eterm erts_process_status(Process *, Uint32, Process *, Eterm);

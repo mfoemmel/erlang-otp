@@ -191,9 +191,8 @@ make_block(Bl, Acc) -> [{block,Bl}|Acc].
 
 extend_block(BlAcc, Fail, [{protected,_,_,_}=Prot|OldAcc]) ->
     extend_block([Prot|BlAcc], Fail, OldAcc);
-extend_block(BlAcc0, Fail, [{block,Is0}|OldAcc]=OldAcc0) ->
+extend_block(BlAcc0, Fail, [{block,Is0}|OldAcc]) ->
     case extend_block_1(reverse(Is0), Fail, BlAcc0) of
-	{[],_} -> {BlAcc0,OldAcc0};
 	{BlAcc,[]} -> extend_block(BlAcc, Fail, OldAcc);
 	{BlAcc,Is} -> {BlAcc,[{block,Is}|OldAcc]}
     end;

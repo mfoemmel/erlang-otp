@@ -407,7 +407,7 @@ static const struct rts_param {
 #endif
     },
     { 13, "SCHED_DATA_ERTS_MB_OFFS",
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
       1, offsetof(ErtsSchedulerData, erl_bits_state.erts_mb_)
 #endif
     },
@@ -428,6 +428,20 @@ static const struct rts_param {
     /* This parameter is always defined, but its value depends on ERTS_SMP. */
     { 19, "MSG_MESSAGE",
       1, offsetof(struct erl_mesg, m[0])
+    },
+    /* This flag is always defined, but its value is configuration-dependent. */
+    { 20, "ERTS_IS_NOFRAG",
+      1,
+#if defined(HEAP_FRAG_ELIM_TEST)
+      1
+#else
+      0
+#endif
+    },
+    { 21, "P_MBUF",
+#if defined(HEAP_FRAG_ELIM_TEST)
+      1, offsetof(struct process, mbuf)
+#endif
     },
 };
 

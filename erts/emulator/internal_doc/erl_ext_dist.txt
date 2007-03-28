@@ -76,8 +76,11 @@ signed 32 bit integer in big endian format (i.e MSB first)
 +----+----------------+
 
 A float is stored in string format. the format used in sprintf to
-format the float is "%.20e"  (there are more byte allocated than neccessary)
-To unpack the float use sscanf with format "%lf"
+format the float is "%.20e"  (there are more bytes allocated than neccessary).
+To unpack the float use sscanf with format "%lf".
+
+This term is used in minor version 0 of the external format; it has been
+superseded by 2.24.
 
 2.5. ATOM_EXT          (100)
 
@@ -350,6 +353,17 @@ The Bits field is the number of bits that are used in the last byte in
 the data field, counting from the most significant bit towards the least
 significant.
 
+
+2.24. FLOAT_EXT         (70)
+
+  1         8
++----+-----------+
+| 70 |IEEE float |
++----+-----------+
+
+A float is stored as 8 bytes in big-endian IEEE format.
+
+This term is used in minor version 1 of the external format.
 
 3. EPMD protocol
 

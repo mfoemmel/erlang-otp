@@ -29,7 +29,7 @@
 %% Include files
 %%-----------------------------------------------------------------
 -include_lib("megaco/src/udp/megaco_udp.hrl").
--include_lib("megaco/src/engine/megaco_internal.hrl"). 
+-include_lib("megaco/src/app/megaco_internal.hrl"). 
 
 
 %%-----------------------------------------------------------------

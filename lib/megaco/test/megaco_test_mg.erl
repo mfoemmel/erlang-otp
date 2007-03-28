@@ -87,12 +87,45 @@ start(Node, Mid, Encoding, Transport, Verbosity) ->
 
 start(Node, Mid, Encoding, Transport, Conf, Verbosity) ->
     d("start mg[~p]: ~p", [Node, Mid]),
-    RI1 = encoding_config(Encoding),
-    RI2 = transport_config(Transport),
-    RI = {receive_info, RI1 ++ RI2},
+    RI1    = encoding_config(Encoding),
+    RI2    = transport_config(Transport),
+    RI     = {receive_info, RI1 ++ RI2},
     Config = [{local_mid, Mid}, RI] ++ Conf,
-    Pid = spawn_link(Node, ?MODULE, mg, [self(), Verbosity, Config]),
-    await_started(Pid).
+    Self   = self(),
+    Fun    = 
+	fun() ->
+		io:format("LOADER(~p,~p) started~n", [self(),node()]),
+		case (catch mg(Self, Verbosity, Config)) of
+		    {'EXIT', Reason} ->
+			io:format("LOADER(~p,~p) terminating with exit"
+				  "~n~p"
+				  "~n", [self(), node(), Reason]),
+			exit(Reason);
+		    Else ->
+			io:format("LOADER(~p,~p) terminating with"
+				  "~n~p"
+				  "~n", [self(), node(), Else]),
+			Else
+		end
+	end,
+    Pid = spawn_link(Node, Fun),
+    %% Pid = spawn_link(Node, ?MODULE, mg, [self(), Verbosity, Config]),
+    MonRef = (catch erlang:monitor(process, Pid)),
+    i("start -> "
+      "~n   self():           ~p"
+      "~n   node():           ~p"
+      "~n   net_adm:ping(~p): ~p" 
+      "~n   Loader:           ~p"
+      "~n   Monitor ref:      ~p"
+      "~n   Process info:     ~p", 
+      [self(), node(), 
+       Node, net_adm:ping(Node), 
+       Pid, 
+       MonRef, (catch proc_info(Pid))]),
+    await_started(MonRef, Pid).
+
+proc_info(Pid) ->
+    rpc:call(node(Pid), erlang, process_info, [Pid]).
 
 encoding_config({Encoding, EC}) when atom(Encoding), list(EC) ->
     {Mod, Port} = select_encoding(Encoding),
@@ -125,16 +158,29 @@ transport_config(tcp) ->
 transport_config(udp) ->
     [{transport_module, megaco_udp}].
 
-await_started(Pid) ->
+await_started(MonRef, Pid) ->
+    i("await_started -> entry with"
+      "~n   MonRef: ~p"
+      "~n   Pid:    ~p", [MonRef, Pid]),
     receive
 	{started, Pid} ->
-	    d("await_started ~p: ok", [Pid]),
+	    d("await_started ~p: "
+	      "~n   Process info: ~p", [Pid, (catch proc_info(Pid))]),
+	    erlang:demonitor(MonRef),
 	    {ok, Pid};
+
+	{'DOWN', MonRef, process, Pid, Info} ->
+	    i("await_started ~p: received down signal: ~p", 
+	      [Pid, Info]),
+	    exit({failed_starting, Pid, Info});
+
 	{'EXIT', Pid, Reason} ->
 	    i("await_started ~p: received exit signal: ~p", [Pid, Reason]),
 	    exit({failed_starting, Pid, Reason})
+
     after 10000 ->
-	    i("await_started ~p: timeout", [Pid]),
+	    i("await_started ~p: timeout: "
+	      "~n~p", [Pid, process_info(Pid)]),
 	    exit({error, timeout})
     end.
 
@@ -256,6 +302,7 @@ server_reply(Pid, ReplyTag, Reply) ->
 mg(Parent, Verbosity, Config) ->
     process_flag(trap_exit, true),
     put(verbosity, Verbosity),
+    %% put(verbosity, debug),
     put(sname,   "MG"),
     i("mg -> starting"),
     case (catch init(Config)) of

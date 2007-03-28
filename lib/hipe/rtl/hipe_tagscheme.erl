@@ -288,8 +288,7 @@ test_fun2(X, Arity, TrueLab, FalseLab, Pred) ->
 		    hipe_rtl:label_name(HalfTrueLab), FalseLab, 'not_remote'),
    HalfTrueLab,
    hipe_rtl:mk_load_atom(TFalse, 'false'),
-   hipe_rtl:mk_branch(Tmp, 'ne', TFalse,
-		      TrueLab, FalseLab, Pred)].
+   hipe_rtl:mk_branch(Tmp, 'ne', TFalse, TrueLab, FalseLab, Pred)].
 
 flonum_header() ->
   mk_header(8 div hipe_rtl_arch:word_size(), ?TAG_HEADER_FLOAT).
@@ -364,7 +363,6 @@ test_constant(X, TrueLab, FalseLab, Pred) ->
    Lab2,
    test_tuple(X, FalseLab, TrueLab, Pred1)].
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 tag_fixnum(DestVar, SrcReg) ->
@@ -376,7 +374,6 @@ realtag_fixnum(DestVar, SrcReg) ->
   [hipe_rtl:mk_alu(DestVar, SrcReg, sll, hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
    hipe_rtl:mk_alu(DestVar, DestVar, add, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
 
-
 untag_fixnum(DestReg, SrcVar) ->
   hipe_rtl:mk_fixnumop(DestReg, SrcVar, untag).
 %%  hipe_rtl:mk_alu(DestReg, SrcVar, 'sra', hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)).
@@ -387,14 +384,14 @@ realuntag_fixnum(DestReg, SrcVar) ->
 fixnum_val(Fixnum) ->
   Fixnum bsr ?TAG_IMMED1_SIZE.
 
-test_fixnums(Args, TrueLab, FalseLab, Pred)->
+test_fixnums(Args, TrueLab, FalseLab, Pred) ->
   {Reg, Ands} = test_fixnums_1(Args, []),
   Ands ++ [test_fixnum(Reg, TrueLab, FalseLab, Pred)].
 
-test_fixnums_1([Arg1, Arg2], Acc)->
+test_fixnums_1([Arg1, Arg2], Acc) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   {Tmp, lists:reverse([hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2)|Acc])};
-test_fixnums_1([Arg1, Arg2|Args], Acc)->
+test_fixnums_1([Arg1, Arg2|Args], Acc) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   test_fixnums_1([Tmp|Args], [hipe_rtl:mk_alu(Tmp, Arg1, 'and', Arg2)|Acc]).
 
@@ -435,15 +432,13 @@ fixnum_le(Arg1, Arg2, TrueLab, FalseLab, Pred) ->
 %% We know the answer will be a fixnum
 unsafe_fixnum_add(Arg1, Arg2, Res) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
-  [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
-		   hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+  [hipe_rtl:mk_alu(Tmp, Arg2, sub, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
    hipe_rtl:mk_alu(Res, Arg1, add, Tmp)].
 
 %% We know the answer will be a fixnum
 unsafe_fixnum_sub(Arg1, Arg2, Res) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
-  [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
-		   hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+  [hipe_rtl:mk_alu(Tmp, Arg2, sub, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
    hipe_rtl:mk_alu(Res, Arg1, sub, Tmp)].
 
 %%% (16X+tag)+((16Y+tag)-tag) = 16X+tag+16Y = 16(X+Y)+tag
@@ -455,8 +450,7 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
     true -> 
       %% Args differ from res.
       NoOverflowLab = hipe_rtl:mk_new_label(),
-      [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
-		       hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+      [hipe_rtl:mk_alu(Tmp, Arg2, sub, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
        hipe_rtl:mk_alub(Res, Arg1, AluOp, Tmp, not_overflow,
 			hipe_rtl:label_name(NoOverflowLab), 
 			hipe_rtl:label_name(OtherLab), 0.99),
@@ -465,8 +459,7 @@ fixnum_addsub(AluOp, Arg1, Arg2, Res, OtherLab) ->
       %% At least one of the arguments is the same as Res.
       Tmp2 = hipe_rtl:mk_new_var(), % XXX: shouldn't this var be a reg?
       NoOverflowLab = hipe_rtl:mk_new_label(),
-      [hipe_rtl:mk_alu(Tmp, Arg2, sub, 
-		       hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
+      [hipe_rtl:mk_alu(Tmp, Arg2, sub, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL)),
        hipe_rtl:mk_alub(Tmp2, Arg1, AluOp, Tmp, not_overflow,
 			hipe_rtl:label_name(NoOverflowLab), 
 			hipe_rtl:label_name(OtherLab), 0.99),
@@ -537,20 +530,20 @@ unsafe_update_element(Tuple, Index, Value) ->   % Index is an immediate
   hipe_rtl:mk_store(Tuple, hipe_rtl:mk_imm(Offset), Value).
 
 %%% wrong semantics
-% unsafe_variable_element(Dst, Index, Tuple) ->	% Index is an unknown fixnum
-%     %% Load word at (Tuple - 2) + ((Index >> 4) << 2).
-%     %% Offset = ((Index >> 4) << 2) - 2.
-%     %% Index = x..x1111 (fixnum tag is 2#1111).
-%     %% (Index >> 2) = 00x..x11 and ((Index >> 4) << 2) = 00x..x00.
-%     %% Therefore, ((Index >> 4) << 2) = (Index >> 2) - 3.
-%     %% So Offset = ((Index >> 4) << 2) - 2 = (Index >> 2) - (3 + 2).
-%     Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
-%     Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
-%     Shift = ?TAG_IMMED1_SIZE - 2,
-%     OffAdj = (?TAG_IMMED1_SMALL bsr Shift) + ?TAG_PRIMARY_BOXED,
-%     [hipe_rtl:mk_alu(Tmp1, Index, 'srl', hipe_rtl:mk_imm(Shift)),
-%      hipe_rtl:mk_alu(Tmp2, Tmp1, 'sub', hipe_rtl:mk_imm(OffAdj)),
-%      hipe_rtl:mk_load(Dst, Tuple, Tmp2)].
+%% unsafe_variable_element(Dst, Index, Tuple) -> % Index is an unknown fixnum
+%%     %% Load word at (Tuple - 2) + ((Index >> 4) << 2).
+%%     %% Offset = ((Index >> 4) << 2) - 2.
+%%     %% Index = x..x1111 (fixnum tag is 2#1111).
+%%     %% (Index >> 2) = 00x..x11 and ((Index >> 4) << 2) = 00x..x00.
+%%     %% Therefore, ((Index >> 4) << 2) = (Index >> 2) - 3.
+%%     %% So Offset = ((Index >> 4) << 2) - 2 = (Index >> 2) - (3 + 2).
+%%     Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+%%     Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+%%     Shift = ?TAG_IMMED1_SIZE - 2,
+%%     OffAdj = (?TAG_IMMED1_SMALL bsr Shift) + ?TAG_PRIMARY_BOXED,
+%%     [hipe_rtl:mk_alu(Tmp1, Index, 'srl', hipe_rtl:mk_imm(Shift)),
+%%      hipe_rtl:mk_alu(Tmp2, Tmp1, 'sub', hipe_rtl:mk_imm(OffAdj)),
+%%      hipe_rtl:mk_load(Dst, Tuple, Tmp2)].
 
 element(Dst, Index, Tuple, FailLabName, {tuple, A}, IndexInfo) ->
   FixnumOkLab = hipe_rtl:mk_new_label(),
@@ -560,7 +553,6 @@ element(Dst, Index, Tuple, FailLabName, {tuple, A}, IndexInfo) ->
   Arity = hipe_rtl:mk_imm(A),
   InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
   Offset = hipe_rtl:mk_new_reg_gcsafe(),
-
   case IndexInfo of
     valid ->
       %% This is no branch, 1 load and 3 alus = 4 instr
@@ -594,7 +586,6 @@ element(Dst, Index, Tuple, FailLabName, tuple, IndexInfo) ->
   Arity = hipe_rtl:mk_new_reg_gcsafe(),
   InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
   Offset = hipe_rtl:mk_new_reg_gcsafe(),
-  
   case IndexInfo of
     fixnums ->
       %% This is 1 branch, 2 loads and 5 alus = 8 instr
@@ -611,9 +602,8 @@ element(Dst, Index, Tuple, FailLabName, tuple, IndexInfo) ->
 			Offset, UIndex, FailLabName, IndexOkLab)];
     _ ->
       %% This is 2 branches, 2 loads and 6 alus = 10 instr
-      [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab),
-		   FailLabName, 0.99),
-       FixnumOkLab,      
+      [test_fixnum(Index, hipe_rtl:label_name(FixnumOkLab), FailLabName, 0.99),
+       FixnumOkLab,
        hipe_rtl:mk_alu(Ptr, Tuple, 'sub', hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
        hipe_rtl:mk_load(Header, Ptr, hipe_rtl:mk_imm(0)),
        untag_fixnum(UIndex, Index),
@@ -633,7 +623,6 @@ element(Dst, Index, Tuple, FailLabName, _TupleInfo, IndexInfo) ->
   Arity = hipe_rtl:mk_new_reg_gcsafe(),
   InvIndex = hipe_rtl:mk_new_reg_gcsafe(),
   Offset = hipe_rtl:mk_new_reg_gcsafe(),
-
   case IndexInfo of
     fixnums ->
       %% This is 3 branches, 2 loads and 5 alus = 10 instr
@@ -651,7 +640,6 @@ element(Dst, Index, Tuple, FailLabName, _TupleInfo, IndexInfo) ->
 		       hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))|
        gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, 
 			UIndex, FailLabName, IndexOkLab)];
-
     Num when is_integer(Num) ->
       %% This is 3 branches, 2 loads and 4 alus = 9 instr
       [test_is_boxed(Tuple, hipe_rtl:label_name(BoxedOkLab),
@@ -689,7 +677,7 @@ element(Dst, Index, Tuple, FailLabName, _TupleInfo, IndexInfo) ->
   end.
 
 gen_element_tail(Dst, Ptr, InvIndex, Arity, Offset, 
-		 UIndex, FailLabName, IndexOkLab)->
+		 UIndex, FailLabName, IndexOkLab) ->
   %% now check that 1 <= UIndex <= Arity
   %% if UIndex < 1, then (Arity - UIndex) >= Arity
   %% if UIndex > Arity, then (Arity - UIndex) < 0, which is >=u Arity

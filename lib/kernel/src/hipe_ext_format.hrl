@@ -14,10 +14,6 @@
 -define(BLOCK,1).
 -define(SORTEDBLOCK,2).
 
--define(TRUE,1).
--define(FALSE,0).
-
-
 -define(CONST_TYPE2EXT(T),
 	case T of
 	    term -> ?TERM;
@@ -31,28 +27,6 @@
 	    ?SORTEDBLOCK -> sorted_block;
 	    ?BLOCK -> block
 	end).
-
--define(BOOL2EXT(B),
-	case B of
-	    true -> ?TRUE;
-	    false -> ?FALSE
-        end).
-
--define(EXT2BOOL(E),
-	case E of
-	    ?TRUE -> true;
-	    ?FALSE -> false
-	end).
-
--define(PATCH_TYPE2EXT(A),
-	case A of
-	    load_atom -> ?LOAD_ATOM;
-	    load_address -> ?LOAD_ADDRESS;
-	    sdesc -> ?SDESC;
-	    x86_abs_pcrel -> ?X86ABSPCREL;
-	    call_local -> ?CALL_LOCAL;
-	    call_remote -> ?CALL_REMOTE
-        end).
 
 -define(EXT2PATCH_TYPE(E),
 	case E of

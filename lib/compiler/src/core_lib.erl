@@ -41,17 +41,13 @@ set_anno(C, A) -> setelement(2, C, A).
 
 %% is_atomic(Expr) -> true | false.
 
-is_atomic(#c_char{}) -> true;
-is_atomic(#c_int{}) -> true;
-is_atomic(#c_float{}) -> true;
-is_atomic(#c_atom{}) -> true;
-is_atomic(#c_string{}) -> true;
-is_atomic(#c_nil{}) -> true;
+is_atomic(#c_literal{val=V}) -> not is_tuple(V);
 is_atomic(#c_fname{}) -> true;
 is_atomic(_) -> false.
 
 %% is_literal(Expr) -> true | false.
 
+is_literal(#c_literal{}) -> true;
 is_literal(#c_cons{hd=H,tl=T}) ->
     case is_literal(H) of
 	true -> is_literal(T); 
@@ -99,12 +95,7 @@ is_simple_top(E) -> is_atomic(E).
 %% literal_value(LitExpr) -> Value.
 %%  Return the value of LitExpr.
 
-literal_value(#c_char{val=C}) -> C;
-literal_value(#c_int{val=I}) -> I;
-literal_value(#c_float{val=F}) -> F;
-literal_value(#c_atom{val=A}) -> A;
-literal_value(#c_string{val=S}) -> S;
-literal_value(#c_nil{}) -> [];
+literal_value(#c_literal{val=V}) -> V;
 literal_value(#c_binary{segments=Es}) ->
     list_to_binary([literal_value_bin(Bit) || Bit <- Es]);
 literal_value(#c_cons{hd=H,tl=T}) ->
@@ -127,14 +118,23 @@ literal_value_bin(#c_bitstr{val=Val,size=Sz,unit=U,type=T,flags=Fs}) ->
 %% make_literal(Value) -> LitExpr.
 %%  Make a literal expression from an Erlang value.
 
-make_literal([]) -> #c_nil{};
-make_literal([H|T]) ->
-    #c_cons{hd=make_literal(H),tl=make_literal(T)};
-make_literal(I) when is_integer(I) -> #c_int{val=I};
-make_literal(F) when is_float(F) -> #c_float{val=F};
-make_literal(A) when is_atom(A) -> #c_atom{val=A};
-make_literal(T) when is_tuple(T) ->
-    #c_tuple{es=make_literal_list(tuple_to_list(T))};
+make_literal([]) -> #c_literal{val=[]};
+make_literal([H0|T0]) ->
+    case {make_literal(H0),make_literal(T0)} of
+	{#c_literal{val=H},#c_literal{val=T}} ->
+	    #c_literal{val=[H|T]};
+	{H,T} ->
+	    #c_cons{hd=H,tl=T}
+    end;
+make_literal(I) when is_integer(I) -> #c_literal{val=I};
+make_literal(F) when is_float(F) -> #c_literal{val=F};
+make_literal(A) when is_atom(A) -> #c_literal{val=A};
+make_literal(T0) when is_tuple(T0) ->
+    T = make_literal_list(tuple_to_list(T0)),
+    case is_literal_list(T) of
+	false -> #c_tuple{es=T};
+	true -> #c_literal{val=list_to_tuple(concrete_list(T))}
+    end;
 make_literal(Bs) when is_binary(Bs) ->
     Template = #c_bitstr{type=make_literal(integer),size=make_literal(8),
 			 unit=make_literal(1),flags=make_literal([unsigned,big])},
@@ -142,6 +142,9 @@ make_literal(Bs) when is_binary(Bs) ->
     #c_binary{segments=Es}.
 
 make_literal_list(Vals) -> lists:map(fun make_literal/1, Vals). 
+
+concrete_list([#c_literal{val=V}|T]) -> [V|concrete_list(T)];
+concrete_list([]) -> [].
 
 %% make_values([CoreExpr] | CoreExpr) -> #c_values{} | CoreExpr.
 %%  Make a suitable values structure, expr or values, depending on
@@ -534,12 +537,7 @@ free_vars(E) ->
     gb_sets:to_list(Free).
 
 free(#c_fname{}, _, Free) -> Free;
-free(#c_atom{}, _, Free) -> Free;
-free(#c_char{}, _, Free) -> Free;
-free(#c_float{}, _, Free) -> Free;
-free(#c_int{}, _, Free) -> Free;
-free(#c_nil{}, _, Free) -> Free;
-free(#c_string{}, _, Free) -> Free;
+free(#c_literal{}, _, Free) -> Free;
 free(#c_tuple{es=Es}, Scope, Free) ->
     free_list(Es, Scope, Free);
 free(#c_values{es=Es}, Scope, Free) ->
@@ -580,7 +578,7 @@ free(#c_letrec{defs=Defs,body=B}, Scope0, Free0) ->
 free(#c_def{name=_Name,val=Val}, Scope0, Free0) ->
     free(Val, Scope0, Free0);
 free(#c_fun{vars=Vs,body=B}, Scope, Free) ->
-    free(#c_let{arg=#c_nil{},vars=Vs,body=B}, Scope, Free);
+    free(#c_let{arg=#c_literal{val=[]},vars=Vs,body=B}, Scope, Free);
 free(#c_try{arg=Arg,vars=Vs,body=B,evars=Evs,handler=H}, Scope, Free) ->
     free(#c_let{vars=Vs,arg=Arg,body=#c_let{arg=B,vars=Evs,body=H}}, Scope, Free);
 free(#c_catch{body=B}, Scope, Free) ->
@@ -620,14 +618,9 @@ free_pat(#c_var{name=V}, Scope, Free) ->
     {gb_sets:add(V, Scope),Free};
 free_pat(#c_alias{var=#c_var{name=V},pat=Pat}, Scope, Free) ->
     free_pat(Pat, gb_sets:add(V, Scope), Free);
-free_pat(#c_atom{}, Scope, Free) -> {Scope,Free};
+free_pat(#c_literal{}, Scope, Free) -> {Scope,Free};
 free_pat(#c_binary{segments=Ss}, Scope, Free) ->
     free_seg_pats(Ss, Scope, Free);
-free_pat(#c_char{}, Scope, Free) -> {Scope,Free};
-free_pat(#c_float{}, Scope, Free) -> {Scope,Free};
-free_pat(#c_int{}, Scope, Free) -> {Scope,Free};
-free_pat(#c_nil{}, Scope, Free) -> {Scope,Free};
-free_pat(#c_string{}, Scope, Free) -> {Scope,Free};
 free_pat(#c_cons{hd=Hd,tl=Tl}, Scope0, Free0) ->
     {Scope,Free} = free_pat(Hd, Scope0, Free0),
     free_pat(Tl, Scope, Free);

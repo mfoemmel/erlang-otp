@@ -22,16 +22,24 @@
 #  define NO_FPE_SIGNALS
 #endif
 
+/* Never use elib-malloc when purify-memory-tracing */
+#if defined(PURIFY)
+#undef ENABLE_ELIB_MALLOC
+#undef ELIB_HEAP_SBRK
+#undef ELIB_ALLOC_IS_CLIB
+#endif
+
+
 /* xxxP __VXWORKS__ */
 #ifdef VXWORKS
 #include <vxWorks.h>
 #endif
 
-#ifdef ERTS_SMP
-/*
- * Currently we always need the child waiter thread when smp support
- * is enabled...
- */
+#ifdef DISABLE_CHILD_WAITER_THREAD
+#undef ENABLE_CHILD_WAITER_THREAD
+#endif
+
+#if defined(ERTS_SMP) && !defined(DISABLE_CHILD_WAITER_THREAD)
 #undef ENABLE_CHILD_WAITER_THREAD
 #define ENABLE_CHILD_WAITER_THREAD 1
 #endif
@@ -292,6 +300,31 @@ typedef unsigned char byte;
 #include "erl_lock_check.h"
 #include "erl_smp.h"
 
+#ifdef UNIX
+
+#ifdef ERTS_WANT_BREAK_HANDLING
+#ifdef ERTS_SMP
+extern erts_smp_atomic_t erts_break_requested;
+#define ERTS_BREAK_REQUESTED ((int) erts_smp_atomic_read(&erts_break_requested))
+#else
+extern volatile int erts_break_requested;
+#define ERTS_BREAK_REQUESTED erts_break_requested
+#endif
+void erts_do_break_handling(void);
+#endif
+
+#ifdef ERTS_WANT_GOT_SIGUSR1
+#ifdef ERTS_SMP
+extern erts_smp_atomic_t erts_got_sigusr1;
+#define ERTS_GOT_SIGUSR1 ((int) erts_smp_atomic_read(&erts_got_sigusr1))
+#else
+extern volatile int erts_got_sigusr1;
+#define ERTS_GOT_SIGUSR1 erts_got_sigusr1
+#endif
+#endif
+
+#endif /* UNIX */
+
 #ifdef ERTS_SMP
 extern erts_smp_atomic_t erts_writing_erl_crash_dump;
 #define ERTS_IS_CRASH_DUMPING \
@@ -533,6 +566,7 @@ void erts_sys_main_thread(void);
 #define erts_sys_schedule_interrupt(Set)
 #endif
 
+extern void erts_sys_prepare_crash_dump(void);
 extern void erts_sys_pre_init(void);
 extern void erl_sys_init(void);
 extern void erl_sys_args(int *argc, char **argv);

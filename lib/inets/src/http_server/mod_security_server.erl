@@ -292,7 +292,7 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     case ets:match_object(ETS, {failed, {Key, '_', '_'}}) of
 	[] ->
 	    no;
-	List when list(List) ->
+	List ->
 	    ExpireTime = httpd_util:key1search(SDirData, 
 					       fail_expire_time, 30)*60,
 	    lists:map(fun({failed, {TheKey, LS, Gen}}) ->
@@ -309,9 +309,7 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
 				      ok
 			      end
 		      end,
-		      List);
-	_ ->
-	    no
+		      List)
     end,
 
     %% Insert the new failure..
@@ -470,7 +468,7 @@ list_auth([{_Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
     case ets:match_object(ETS, {success, {{'_', Dir, Addr, Port}, '_'}}) of
 	[] ->
 	    list_auth(Tables, Addr, Port, Dir, Acc);
-	List when list(List) ->
+	List ->
 	    TN = universal_time(),
 	    NewAcc = lists:foldr(fun({success,{{U,Ad,P,D},T}},Ac) -> 
 					 if
@@ -485,9 +483,7 @@ list_auth([{_Name, {ETS, DETS}}|Tables], Addr, Port, Dir, Acc) ->
 					 end
 				 end,
 				 Acc, List),
-	    list_auth(Tables, Addr, Port, Dir, NewAcc);
-	_ ->
-	    list_auth(Tables, Addr, Port, Dir, Acc)
+	    list_auth(Tables, Addr, Port, Dir, NewAcc)
     end.
 
 
@@ -505,17 +501,14 @@ list_blocked([], _Addr, _Port, _Dir, Acc) ->
 		end, 
 		[], Acc);
 list_blocked([{_Name, {ETS, _DETS}}|Tables], Addr, Port, Dir, Acc) ->
-    NewBlocked = 
-	case ets:match_object(ETS, {blocked_user, 
-				    {'_',Addr,Port,Dir,'_'}}) of
-	    List when list(List) ->
-		lists:foldl(fun({blocked_user, X}, A) -> 
-				    [X|A] end, Acc, List);
-	    _ ->
-		Acc
-	end,
-    list_blocked(Tables, Addr, Port, Dir, NewBlocked).
+    List = ets:match_object(ETS, {blocked_user, 
+				  {'_',Addr,Port,Dir,'_'}}),
     
+    NewBlocked = lists:foldl(fun({blocked_user, X}, A) -> 
+				     [X|A] end, Acc, List),
+    
+    list_blocked(Tables, Addr, Port, Dir, NewBlocked).
+
 
 %%
 %% sync_dets_to_ets/2
@@ -539,15 +532,12 @@ sync_dets_to_ets(DETS, ETS) ->
 %%
 check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule) ->
     TN = universal_time(),
-    case ets:match_object(ETS, {blocked_user, {User, '_', '_', '_', '_'}}) of
-	List when list(List) ->
-	    Blocked = lists:foldl(fun({blocked_user, X}, A) ->
-					  [X|A] end, [], List),
-	    check_blocked_user(Info,User,Dir,
-			       Addr,Port,ETS,DETS,TN,Blocked,CBModule);
-	_ ->
-	    false
-    end.
+    BlockList = ets:match_object(ETS, {blocked_user, {User, '_', '_', '_', '_'}}), 
+    Blocked = lists:foldl(fun({blocked_user, X}, A) ->
+				  [X|A] end, [], BlockList),
+    check_blocked_user(Info,User,Dir,
+		       Addr,Port,ETS,DETS,TN,Blocked,CBModule).
+
 check_blocked_user(_Info, _User, _Dir, _Addr, _Port, _ETS, _DETS, _TN,
 		   [], _CBModule) ->
     false;

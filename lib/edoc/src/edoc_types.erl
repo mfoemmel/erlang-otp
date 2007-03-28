@@ -28,7 +28,7 @@
 -module(edoc_types).
 
 -export([is_predefined/1, to_ref/1, to_xml/2, to_label/1, arg_names/1,
-	 set_arg_names/2]).
+	 set_arg_names/2, arg_descs/1, range_desc/1]).
 
 %% @headerfile "edoc_types.hrl"
 
@@ -148,27 +148,57 @@ wrap_type(T, Env) ->
 
 wrap_utype(T, Env) ->
     E = to_xml(T, Env),
-    case ?t_ann(T) of
-	[] -> {type, [E]};
+    case arg_name(T) of
+	'_' -> {type, [E]};
 	A -> {type, [{name, atom_to_list(A)}], [E]}
     end.
 
 map(F, Xs, Env) ->
     [F(X, Env) || X <- Xs].
 
-arg_names(#t_spec{type = #t_fun{args = As}}) ->
-    [arg_name(A) || A <- As].
+is_name(A) when is_atom(A) -> true;
+is_name(_) -> false.
+
+is_desc(A) when is_list(A) -> true;
+is_desc(_) -> false.
 
 arg_name(T) ->
-    case ?t_ann(T) of
-	[] -> '_';
-	N -> N
-    end.
+    find(?t_ann(T), fun is_name/1, '_').
 
-set_arg_names(#t_spec{type = #t_fun{args = As}=F}=S, As1) ->
-    S#t_spec{type = F#t_fun{args = set_arg_names_1(As, As1)}}.
+arg_names(S) ->
+    arg_anns(S, fun is_name/1, '_').
 
-set_arg_names_1([A | As], [A1 | As1]) ->
-    [?set_t_ann(A, A1) | set_arg_names_1(As, As1)];
-set_arg_names_1([], []) ->
-    [].
+arg_descs(S) ->
+    arg_anns(S, fun is_desc/1, "").
+
+range_desc(#t_spec{type = #t_fun{range = T}}) ->
+    find(?t_ann(T), fun is_desc/1, "").
+
+arg_anns(#t_spec{type = #t_fun{args = As}}, F, Def) ->
+    [find(?t_ann(A), F, Def) || A <- As].
+
+find([A| As], F, Def) ->
+    case F(A) of
+	true -> A;
+	false -> find(As, F, Def)
+    end;
+find([], _, Def) -> Def.
+
+set_arg_names(S, Ns) ->
+    set_arg_anns(S, Ns, fun is_name/1).
+
+set_arg_descs(S, Ns) ->
+    set_arg_anns(S, Ns, fun is_desc/1).
+
+set_arg_anns(#t_spec{type = #t_fun{args = As}=T}=S, Ns, F) ->
+    Zip = fun (A, N) ->
+		  ?set_t_ann(A, update(?t_ann(A), N, F))
+	  end,
+    S#t_spec{type = T#t_fun{args = lists:zipwith(Zip, As, Ns)}}.
+
+update([A| As], N, F) ->
+    case F(A) of
+	true -> [N | As];
+	false -> [A| update(As, N, F)]
+    end;
+update([], N, _) -> [N].

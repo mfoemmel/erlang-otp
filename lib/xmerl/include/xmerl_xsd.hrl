@@ -46,7 +46,7 @@
 	  targetNamespace,
 	  namespace_nodes=[{"xml",'http://www.w3.org/XML/1998/namespace'}],
 	  global_namespace_nodes=[],
-	  checked_namespace_nodes=[{"xml",'http://www.w3.org/XML/1998/namespace'}],
+	  checked_namespace_nodes=[{"xml",[],'http://www.w3.org/XML/1998/namespace'}],
 	  table,
 	  tab2file=false, %% for debuging of abstract syntax
 	  redefine=false,
@@ -74,7 +74,7 @@
 	  blockDefault=[],
 	  finalDefault=[],
 	  id,
-	  content
+	  content=[]
 	 }).
 -record(schema_element,{
 	  name,             %% QName

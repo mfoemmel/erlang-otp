@@ -181,11 +181,11 @@ check_instructions(UpDown, [Instr|Instrs], AllInstr, Good, Bad, Modules) ->
 check_instructions(UpDown, Instructions, _, _, _, _) ->
     fail({bad_instructions, {UpDown, Instructions}}).
 
-%% A new module is added
 check_instruction(_, {restart_application, ?APPLICATION}, _, _Modules) ->
     d("check_instruction -> entry when restart_application instruction"),
     ok;
 
+%% A new module is added
 check_instruction(up, {add_module, Module}, _, Modules) 
   when is_atom(Module) ->
     d("check_instruction -> entry when up-add_module instruction with"

@@ -22,7 +22,7 @@
 -module(megaco_binary_name_resolver_v3).
 
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
--include_lib("megaco/src/engine/megaco_internal.hrl").
+-include_lib("megaco/src/app/megaco_internal.hrl").
 
 
 -define(LOWER(Char),

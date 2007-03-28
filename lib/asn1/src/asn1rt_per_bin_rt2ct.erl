@@ -440,9 +440,7 @@ decode_fragmented_bits(<<0:1,0:7,Bin/binary>>,C,Acc) ->
 	Int when integer(Int),C == size(BinBits) ->
 	    {BinBits,{0,Bin}};
 	Int when integer(Int) ->
-	    exit({error,{asn1,{illegal_value,C,BinBits}}});
-	_ ->
-	    {BinBits,{0,Bin}}
+	    exit({error,{asn1,{illegal_value,C,BinBits}}})
     end;
 decode_fragmented_bits(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
     Result = {BinBits,{Used,_Rest}} =
@@ -461,16 +459,14 @@ decode_fragmented_bits(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
 	 Int when integer(Int),C == (size(BinBits) - ((8 - Used) rem 8)) ->
 	    Result;
 	Int when integer(Int) ->
-	    exit({error,{asn1,{illegal_value,C,BinBits}}});
-	_ ->
-	    Result
+	    exit({error,{asn1,{illegal_value,C,BinBits}}})
     end.
 
 
 decode_fragmented_octets({0,Bin},C) ->
-    decode_fragmented_octets(Bin,C,[]);
-decode_fragmented_octets({_N,<<_B,Bs/binary>>},C) ->
-    decode_fragmented_octets(Bs,C,[]).
+    decode_fragmented_octets(Bin,C,[]).
+%% decode_fragmented_octets({_N,<<_B,Bs/binary>>},C) ->
+%%     decode_fragmented_octets(Bs,C,[]).
 
 decode_fragmented_octets(<<3:2,Len:6,Bin/binary>>,C,Acc) ->
     {Value,Bin2} = split_binary(Bin,Len * ?'16K'),
@@ -481,9 +477,7 @@ decode_fragmented_octets(<<0:1,0:7,Bin/binary>>,C,Acc) ->
 	Int when integer(Int), C == size(Octets) ->
 	    {Octets,{0,Bin}};
 	Int when integer(Int) ->
-	    exit({error,{asn1,{illegal_value,C,Octets}}});
-	_ ->
-	    {Octets,{0,Bin}}
+	    exit({error,{asn1,{illegal_value,C,Octets}}})
     end;
 decode_fragmented_octets(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
     <<Value:Len/binary-unit:8,Bin2/binary>> = Bin,
@@ -492,9 +486,7 @@ decode_fragmented_octets(<<0:1,Len:7,Bin/binary>>,C,Acc) ->
 	Int when integer(Int),size(BinOctets) == Int ->
 	    {BinOctets,Bin2};
 	Int when integer(Int) ->
-	    exit({error,{asn1,{illegal_value,C,BinOctets}}});
-	_ ->
-	    {BinOctets,Bin2}
+	    exit({error,{asn1,{illegal_value,C,BinOctets}}})
     end.
 
 

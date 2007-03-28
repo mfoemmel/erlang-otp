@@ -394,19 +394,24 @@ $(EBIN)/megaco_binary_encoder.$(EMULATOR): megaco_binary_encoder.erl \
         $(MEGACO_ENGINEDIR)/megaco_message_internal.hrl
 
 $(EBIN)/megaco_binary_name_resolver_v1.$(EMULATOR): \
-	megaco_binary_name_resolver_v1.erl
+	megaco_binary_name_resolver_v1.erl \
+	../app/megaco_internal.hrl
 
 $(EBIN)/megaco_binary_name_resolver_v2.$(EMULATOR): \
-	megaco_binary_name_resolver_v2.erl
+	megaco_binary_name_resolver_v2.erl \
+	../app/megaco_internal.hrl
 
 $(EBIN)/megaco_binary_name_resolver_prev3a.$(EMULATOR): \
-	megaco_binary_name_resolver_prev3a.erl
+	megaco_binary_name_resolver_prev3a.erl \
+	../app/megaco_internal.hrl
 
 $(EBIN)/megaco_binary_name_resolver_prev3b.$(EMULATOR): \
-	megaco_binary_name_resolver_prev3b.erl
+	megaco_binary_name_resolver_prev3b.erl \
+	../app/megaco_internal.hrl
 
 $(EBIN)/megaco_binary_name_resolver_prev3c.$(EMULATOR): \
-	megaco_binary_name_resolver_prev3c.erl
+	megaco_binary_name_resolver_prev3c.erl \
+	../app/megaco_internal.hrl
 
 $(EBIN)/megaco_binary_term_id.$(EMULATOR): megaco_binary_term_id.erl
 
@@ -414,26 +419,31 @@ $(EBIN)/megaco_binary_term_id_gen.$(EMULATOR): megaco_binary_term_id_gen.erl
 
 $(EBIN)/megaco_binary_transformer_v1.$(EMULATOR): \
 	megaco_binary_transformer_v1.erl \
+	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_v1.hrl
 
 $(EBIN)/megaco_binary_transformer_v2.$(EMULATOR): \
 	megaco_binary_transformer_v2.erl \
+	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_v2.hrl
 
 $(EBIN)/megaco_binary_transformer_prev3a.$(EMULATOR): \
 	megaco_binary_transformer_prev3a.erl \
+	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_prev3a.hrl
 
 $(EBIN)/megaco_binary_transformer_prev3b.$(EMULATOR): \
 	megaco_binary_transformer_prev3b.erl \
+	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_prev3b.hrl
 
 $(EBIN)/megaco_binary_transformer_prev3c.$(EMULATOR): \
 	megaco_binary_transformer_prev3c.erl \
+	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_prev3c.hrl
 

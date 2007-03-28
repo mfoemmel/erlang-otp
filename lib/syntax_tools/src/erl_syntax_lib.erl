@@ -804,21 +804,21 @@ is_fail_expr(E) ->
             case catch {ok, analyze_function_name(F)} of
                 syntax_error ->
                     false;
-                {ok, exit} when N == 1 ->
+                {ok, exit} when N =:= 1 ->
                     true;
-                {ok, throw} when N == 1 ->
+                {ok, throw} when N =:= 1 ->
                     true;
-                {ok, {erlang, exit}} when N == 1 ->
+                {ok, {erlang, exit}} when N =:= 1 ->
                     true;
-                {ok, {erlang, throw}} when N == 1 ->
+                {ok, {erlang, throw}} when N =:= 1 ->
                     true;
-                {ok, {erlang, error}} when N == 1 ->
+                {ok, {erlang, error}} when N =:= 1 ->
                     true;
-                {ok, {erlang, error}} when N == 2 ->
+                {ok, {erlang, error}} when N =:= 2 ->
                     true;
-                {ok, {erlang, fault}} when N == 1 ->
+                {ok, {erlang, fault}} when N =:= 1 ->
                     true;
-                {ok, {erlang, fault}} when N == 2 ->
+                {ok, {erlang, fault}} when N =:= 2 ->
                     true;
                 _ ->
                     false
@@ -1648,8 +1648,8 @@ analyze_file_attribute(Node) ->
         attribute ->
             case erl_syntax:attribute_arguments(Node) of
                 [F, N] ->
-                    case (erl_syntax:type(F) == string)
-                        and (erl_syntax:type(N) == integer) of
+                    case (erl_syntax:type(F) =:= string)
+                        and (erl_syntax:type(N) =:= integer) of
                         true ->
                             {erl_syntax:string_value(F),
                              erl_syntax:integer_value(N)};
@@ -1966,7 +1966,7 @@ limit_1(Tree, Depth, Node) ->
                     rewrite(Tree,
                             erl_syntax:make_tree(erl_syntax:type(Tree),
                                                  Gs1));
-               Depth == 0 ->
+               Depth =:= 0 ->
                     %% Depth is zero, and this is not a leaf node
                     %% so we always replace it.
                     Node;

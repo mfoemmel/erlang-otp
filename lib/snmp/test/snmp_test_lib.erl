@@ -263,7 +263,7 @@ watchdog(Case, Timeout0, Pid) ->
 		    ok;
 		ProcInfo ->
 		    Line = 
-			case lists:keysearch(dictionary,1, ProcInfo) of
+			case lists:keysearch(dictionary, 1, ProcInfo) of
 			    {value, {_, Dict}} when is_list(Dict) ->
 				case lists:keysearch(test_server_loc, 1, Dict) of
 				    {value, {_, {_Mod, L}}} when is_integer(L) ->
@@ -293,14 +293,22 @@ warning_msg(F, A) ->
     (catch error_logger:warning_msg(F ++ "~n", A)).
 
 timeout(T) ->
-    trunc(timeout(T,os:type())).
+    trunc(timeout(T, os:type())).
 
-timeout(T,vxworks) ->
-    5 * T;
-timeout(T,_) ->
-    T.
+timeout(T, vxworks) ->
+    5 * T * timetrap_scale_factor();
+timeout(T, _) ->
+    T * timetrap_scale_factor().
             
+timetrap_scale_factor() ->
+    case (catch test_server:timetrap_scale_factor()) of
+	{'EXIT', _} ->
+	    1;
+	N ->
+	    N
+    end.
 
+    
 %% ----------------------------------------------------------------------
 %% file & dir functions
 %%

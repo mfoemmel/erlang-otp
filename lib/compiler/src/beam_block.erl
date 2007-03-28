@@ -143,6 +143,7 @@ collect({put_list,S1,S2,D})  -> {set,[D],[S1,S2],put_list};
 collect({put_tuple,A,D})     -> {set,[D],[],{put_tuple,A}};
 collect({put,S})             -> {set,[],[S],put};
 collect({put_string,L,S,D})  -> {set,[D],[],{put_string,L,S}};
+collect({put_literal,L,D})   -> {set,[D],[],{put_literal,L}};
 collect({get_tuple_element,S,I,D}) -> {set,[D],[S],{get_tuple_element,I}};
 collect({set_tuple_element,S,D,I}) -> {set,[],[S,D],{set_tuple_element,I}};
 collect({get_list,S,D1,D2})  -> {set,[D1,D2],[S],get_list};
@@ -202,12 +203,14 @@ alloc_may_pass({set,_,_,put}) -> false;
 alloc_may_pass({set,_,_,{put_string,_,_}}) -> false;
 alloc_may_pass({set,_,_,_}) -> true.
     
-combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]}) ->
-    {zero,Ns,Nh1+Nh2,Init}.
+combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]})  ->
+    {zero,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}.
 
 merge_blocks([{set,[],[],{allocate,R,{Attr,Ns,Nh1,Init}}}|B1],
 	     [{set,[],[],{allocate,_,{_,nostack,Nh2,[]}}}|B2]) ->
-    Alloc = {set,[],[],{allocate,R,{Attr,Ns,Nh1+Nh2,Init}}},
+    Alloc = {set,[],[],
+	     {allocate,R,
+	      {Attr,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}}},
     [Alloc|merge_blocks(B1, B2)];
 merge_blocks(B1, B2) -> merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
 

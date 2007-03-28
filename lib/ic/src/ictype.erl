@@ -58,7 +58,7 @@ scoped_lookup(G, S, N, X) ->
 	false ->
 	    lookup(G, S, N, X, Id)
     end.
-    
+
 
 %%--------------------------------------------------------------------
 %% maybe_array
@@ -112,7 +112,7 @@ member2type( G, SName, MName ) ->
 				error ->
 				    %% Last resort: seek in pragma table
 				    lookup_type_in_pragmatab(G, SName);
-				
+
 				Other ->
 				    Other
 			    end;		
@@ -157,7 +157,7 @@ lookup_type_in_pragmatab(G, SName) ->
 	[] ->
 	    %% No match, seek included
 	    case ets:match(S,{file_data_included,'_','_','$2','_','_',SName,'_','_'}) of 
-		
+
 		[] ->
 		    error;
 		[[Type]] ->
@@ -360,12 +360,12 @@ check(G, S, N, X) when record(X, op) ->
     tktab_add(G, S, N, X),
     N2 = [ic_forms:get_id2(X) | N],
     Ps = lists:map(fun(P) -> 
-		     tktab_add(G, S, N2, P),
-		     P#param{tk=tk_base(G, S, N, ic_forms:get_type(P))} end,
-	     X#op.params),
+			   tktab_add(G, S, N2, P),
+			   P#param{tk=tk_base(G, S, N, ic_forms:get_type(P))} end,
+		   X#op.params),
     %% Check for exception defs.
     Raises = lists:map(fun(E) -> name_lookup(G, S, N, E) end,
-		 X#op.raises),
+		       X#op.raises),
     case ic_forms:is_oneway(X) of
 	true ->
 	    if  TK /= tk_void ->
@@ -592,16 +592,14 @@ tk_base(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) ->
 	_ ->
 	    case scoped_lookup(G, S, N, {scoped_id,V1,V2,["TypeCode","CORBA"]}) of
 		T when element(1, T) == error -> T;
-		T when tuple(T) -> element(3, T);
-		_ -> invalid_tk
+		T when tuple(T) -> element(3, T)
 	    end 
     end;
 
 tk_base(G, S, N, X) when element(1, X) == scoped_id ->
     case scoped_lookup(G, S, N, X) of
 	T when element(1, T) == error -> T;
-	T when tuple(T) -> element(3, T);
-	_ -> invalid_tk
+	T when tuple(T) -> element(3, T)
     end;
 tk_base(_G, _S, _N, {long, _})			-> tk_long;
 tk_base(_G, _S, _N, {'long long', _})		-> tk_longlong;  %% LLONG
@@ -630,35 +628,35 @@ tk_base(_G, _S, _N, {'Object', _})		-> {tk_objref, "", "Object"}.
 %%
 tk_memberlist(G, S, N, [X | Xs]) ->
     BaseTK = tk(G, S, N, ic_forms:get_type(X)),
-    
+
     XX = #id_of{type=X},
     lists:foldr(fun(Id, Acc) ->
-		  [tk_member(G, S, N, XX#id_of{id=Id}, BaseTK) | Acc] end, 
-	  tk_memberlist(G, S, N, Xs), 
-	  ic_forms:get_idlist(X));
+			[tk_member(G, S, N, XX#id_of{id=Id}, BaseTK) | Acc] end, 
+		tk_memberlist(G, S, N, Xs), 
+		ic_forms:get_idlist(X));
 tk_memberlist(_G, _S, _N, []) -> [].
 
 %% same as above but for case dcls
 tk_caselist(G, S, N, DiscrTK, Xs) ->
     lists:foldl(fun(Case, Acc) ->
-		  BaseTK = tk(G, S, N, ic_forms:get_type(Case)),
-		  %% tktab_add for the uniqueness check of the declarator
-		  tktab_add(G, S, N, Case),
-		  lists:foldl(fun(Id, Acc2) ->
-				case tk_case(G, S, N, Case, BaseTK,
-					     DiscrTK, Id) of
-				    Err when element(1, Err)==error ->
-					Acc2;
-				    TK ->
-					unique_add_case_label(G, S, N, Id, 
-							      TK, Acc2)
-				end
-			end, 
-			Acc,
-			ic_forms:get_idlist(Case))
-	  end,
-	  [],
-	  Xs).
+			BaseTK = tk(G, S, N, ic_forms:get_type(Case)),
+			%% tktab_add for the uniqueness check of the declarator
+			tktab_add(G, S, N, Case),
+			lists:foldl(fun(Id, Acc2) ->
+					    case tk_case(G, S, N, Case, BaseTK,
+							 DiscrTK, Id) of
+						Err when element(1, Err)==error ->
+						    Acc2;
+						TK ->
+						    unique_add_case_label(G, S, N, Id, 
+									  TK, Acc2)
+					    end
+				    end, 
+				    Acc,
+				    ic_forms:get_idlist(Case))
+		end,
+		[],
+		Xs).
 
 
 %% Handling of the things that can be in an idlist or caselist
@@ -690,7 +688,7 @@ tk_case(G, S, N, X, BaseTK, DiscrTK, Id) ->
 		     maybe_array(G, S, N, X#case_dcl.id, BaseTK)};
 		false ->
 		    ic_error:error(G, {bad_case_type, DiscrTK, X, 
-				    iceval:get_val(Val)})
+				       iceval:get_val(Val)})
 	    end
     end.
 
@@ -712,12 +710,10 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,enumerator) ->
 		   [Id | N];
 	       false ->
 		   [Id | tl(N)]
-		 end,
+	   end,
 
     UName = mk_uppercase(Name),
     case ets:lookup(S, Name) of
-	[{_, forward, _, _}] when record(X, interface) -> ok;
-	[XX] when record(X, forward), element(2, XX)==interface -> ok;
 	[_] -> ic_error:error(G, {multiply_defined, X});
 	[] ->
 	    case ets:lookup(S, UName) of
@@ -781,8 +777,6 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) when record(X,module) ->
 	    Name = [Id | N],
 	    UName = mk_uppercase(Name),
 	    case ets:lookup(S, Name) of
-		[{_, forward, _, _}] when record(X, interface) -> ok;
-		[XX] when record(X, forward), element(2, XX)==interface -> ok;
 		[_] -> ic_error:error(G, {multiply_defined, X});
 		[] ->
 		    case ets:lookup(S, UName) of
@@ -823,7 +817,7 @@ tktab_add_id(G, S, N, X, Id, TK, Aux) ->
 %%
 enum_body(G, S, N, [Enum | EnumList]) -> 
     tktab_add(G, S, N, Enum), %%%, enum_val, Enum),
-%%    tktab_add(G, S, N, X, TK, V),
+    %%    tktab_add(G, S, N, X, TK, V),
     [ic_forms:get_id2(Enum) | enum_body(G, S, N, EnumList)];
 enum_body(_G, _S, _N, []) -> [].
 
@@ -863,7 +857,7 @@ len_eval(G, S, N, X) -> %%iceval:eval_const(G, S, N, positive_int, X).
 %%
 
 case_eval(G, S, N, DiscrTK, X) when element(1, DiscrTK) == tk_enum,
-element(1, X) == scoped_id -> 
+				    element(1, X) == scoped_id -> 
     {tk_enum, _, _, Cases} = DiscrTK,
     Id = get_case_id_and_check(G, S, N, X, X),
     %%io:format("Matching: ~p to ~p~n", [Id, Cases]),
@@ -886,7 +880,7 @@ do_special_enum(_G, _S, _N, _X) ->
 
 
 unique_add_case_label(G, _S, _N, Id, TK, TKList) ->
-    %%%io:format("check_case_labels: TK:~p TKLIST:~p ~n", [TK, TKList]),
+%%%io:format("check_case_labels: TK:~p TKLIST:~p ~n", [TK, TKList]),
     if  element(1, TK) == error -> 
 	    TKList;
 	true ->
@@ -898,7 +892,7 @@ unique_add_case_label(G, _S, _N, Id, TK, TKList) ->
 		    [TK | TKList]
 	    end
     end.
-				
+
 
 %%--------------------------------------------------------------------
 %% default_count
@@ -956,15 +950,14 @@ check_switch_tk(_G, _S, _N, _X, tk_char) -> true;
 check_switch_tk(_G, _S, _N, _X, tk_wchar) -> true;  %% WCHAR
 check_switch_tk(_G, _S, _N, _X, TK) when element(1, TK) == tk_enum -> true;
 check_switch_tk(G, _S, _N, X, TK) -> ic_error:error(G, {illegal_switch_t, X, TK}),
-				   false.
+				     false.
 
 
 
 %% Lookup a name
 name_lookup(G, S, N, X) ->
     case scoped_lookup(G, S, N, X) of
-	T when tuple(T) -> element(1, T);
-	_ -> []
+	T when tuple(T) -> element(1, T)
     end.
 
 
@@ -975,20 +968,16 @@ lookup(G, S, N, X, Id) ->
 	[] ->	    
 	    case look_for_interface(G, S, [hd(N2)], tl(N2)) of
 
-		%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% First attempt: filtering inherited members !
+		%% First attempt: filtering inherited members !
 		[{_, member, _, _}] ->	    
 		    case look_for_interface(G, S, [hd(N)], tl(N2)) of
 			[T] -> 
 			    ?DBG("    --  found ~p~n", [T]), 
 			    T;
 			_ ->
-			    if  N == [] -> 
-				    ic_error:error(G, {tk_not_found, X});
-				true ->
-				    lookup(G, S, tl(N), X, Id)
-			    end
+			    lookup(G, S, tl(N), X, Id)
 		    end;
-		%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+		%%
 
 		[T] -> 
 		    ?DBG("    --  found ~p~n", [T]), 
@@ -1003,7 +992,7 @@ lookup(G, S, N, X, Id) ->
 
 	    end;
 
-	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Second attempt: filtering members !
+	%% Second attempt: filtering members !
 	[{_, member, _, _}] ->	    
 	    case look_for_interface(G, S, [hd(N2)], tl(N2)) of
 		[T] -> 
@@ -1016,8 +1005,7 @@ lookup(G, S, N, X, Id) ->
 			    lookup(G, S, tl(N), X, Id)
 		    end
 	    end;
-	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+	%%
 	[T] -> 
 	    ?DBG("    --  found ~p~n", [T]),
 	    T
@@ -1175,17 +1163,17 @@ is_equal(G, XPath, X, YPath, Y) ->
 %% Y and Y shadows X.
 collision(G, XPath, X, YPath, Y) ->
     I1 = get_beef(X),
-%    I2 = get_beef(Y),
+						%    I2 = get_beef(Y),
     if record(I1, op) -> %%, record(I2, op) ->
 	    ic_error:error(G, {inherit_name_collision, 
-			    {YPath, Y}, {XPath, X}});
+			       {YPath, Y}, {XPath, X}});
        record(I1, attr) -> %%, record(I2, attr) ->
 	    ic_error:error(G, {inherit_name_collision, 
-			    {YPath, Y}, {XPath, X}});
+			       {YPath, Y}, {XPath, X}});
        true ->
 	    ?ifopt(G, warn_name_shadow, 
 		   ic_error:warn(G, {inherit_name_shadow, 
-				  {YPath, Y}, {XPath, X}}))
+				     {YPath, Y}, {XPath, X}}))
     end.
 
 has_idlist(X) when record(X, typedef) -> true;
@@ -1290,7 +1278,7 @@ filter( [I | Is ] ) ->
 
 	{ _, spellcheck } ->
 	    filter( Is );
-	
+
 	_ ->
 	    error
     end.

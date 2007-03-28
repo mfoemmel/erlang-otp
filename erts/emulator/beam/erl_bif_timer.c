@@ -352,6 +352,8 @@ bif_timer_timeout(ErtsBifTimer* btm)
 		    Uint *hp;
 		    Uint wrap_size = REF_THING_SIZE + 4;
 		    message = btm->message;
+
+#ifndef HEAP_FRAG_ELIM_TEST
 #ifdef ERTS_SMP
 		    if (erts_smp_proc_trylock(rp, ERTS_PROC_LOCK_MAIN) == 0) {
 			rp_locks |= ERTS_PROC_LOCK_MAIN;
@@ -363,10 +365,18 @@ bif_timer_timeout(ErtsBifTimer* btm)
 			hp = HAlloc(rp, wrap_size);
 #ifdef ERTS_SMP
 		    }
-		    else if (!bp) {
+		    else
+#endif
+#endif /* #ifndef HEAP_FRAG_ELIM_TEST */
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
+			if (!bp) {
+			ErlOffHeap *ohp;
 			ASSERT(is_immed(message));
-			bp = new_message_buffer(wrap_size);
-			hp = bp->mem;
+			hp = erts_alloc_message_heap(wrap_size,
+						     &bp,
+						     &ohp,
+						     rp,
+						     &rp_locks);
 		    }
 		    else {
 			Eterm old_size = bp->size;

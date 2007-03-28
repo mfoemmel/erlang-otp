@@ -30,6 +30,7 @@
 #define DFLAG_EXTENDED_PIDS_PORTS 0x100
 #define DFLAG_EXPORT_PTR_TAG      0x200
 #define DFLAG_BIT_BINARIES        0x400
+#define DFLAG_NEW_FLOATS          0x800
 
 /* All flags that should be enabled when term_to_binary/1 is used. */
 #define TERM_TO_BINARY_DFLAGS (DFLAG_EXTENDED_REFERENCES	\

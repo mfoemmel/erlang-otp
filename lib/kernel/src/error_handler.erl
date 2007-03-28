@@ -50,7 +50,13 @@ undefined_lambda(Module, Fun, Args) ->
     end.
 
 breakpoint(Module, Func, Args) ->
-    int:eval(Module, Func, Args).
+    (int()):eval(Module, Func, Args).
+
+%% Used to make the call to the 'int' module a "weak" one, to avoid
+%% building strong components in xref or dialyzer.
+
+int() -> int.
+    
 
 %%
 %% Crash providing a beautiful stack backtrace.

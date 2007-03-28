@@ -20,7 +20,9 @@
 -module(beam_flatten).
 
 -export([module/2]).
--import(lists, [reverse/1,reverse/2,map/2]).
+-export([combine_heap_needs/2]).
+
+-import(lists, [reverse/1,reverse/2,map/2,sort/1]).
 
 module({Mod,Exp,Attr,Fs,Lc}, _Opt) ->
     {ok,{Mod,Exp,Attr,map(fun function/1, Fs),Lc}}.
@@ -57,6 +59,7 @@ norm({set,[D],[S1,S2],put_list})  -> {put_list,S1,S2,D};
 norm({set,[D],[],{put_tuple,A}})  -> {put_tuple,A,D};
 norm({set,[],[S],put})            -> {put,S};
 norm({set,[D],[],{put_string,L,S}})       -> {put_string,L,S,D};
+norm({set,[D],[],{put_literal,L}})        -> {put_literal,L,D};
 norm({set,[D],[S],{get_tuple_element,I}}) -> {get_tuple_element,S,I,D};
 norm({set,[],[S,D],{set_tuple_element,I}}) -> {set_tuple_element,S,D,I};
 norm({set,[D1,D2],[S],get_list})          -> {get_list,S,D1,D2};
@@ -85,22 +88,14 @@ norm_allocate({nozero,Ns,0,Inits}, Regs) ->
 norm_allocate({nozero,Ns,0,0,Inits}, Regs) ->
     [{allocate,Ns,Regs}|Inits];
 norm_allocate({nozero,Ns,Nh,Inits}, Regs) ->
-    [{allocate_heap,Ns,Nh,Regs}|Inits];
-norm_allocate({nozero,Ns,Nh,Floats,Inits}, Regs) ->
-    [{allocate_heap,Ns,alloc_list(Nh, Floats),Regs}|Inits];
-norm_allocate({zero,Ns,Nh,Floats,Inits}, Regs) ->
-    [{allocate_heap_zero,Ns,alloc_list(Nh, Floats),Regs}|Inits].
+    [{allocate_heap,Ns,Nh,Regs}|Inits].
 
 %% insert_alloc_in_bs_init(ReverseInstructionStream, AllocationInfo) ->
 %%                                  not_possible | ReverseInstructionStream'
 %%   A bs_init2/6 instruction must not be followed by a test heap instruction.
 %%   Given the AllocationInfo from a test heap instruction, merge the
 %%   allocation amounts into the previous bs_init2/6 instruction (if any).
-insert_alloc_in_bs_init(Is, {Z,T,Nh,L}) ->
-    %% This situation is rare. It can happen if a test heap
-    %% instruction have been moved upwards past a 'catch'
-    %% by the block optimizer.
-    insert_alloc_in_bs_init(Is, {Z,T,Nh,0,L});
+
 insert_alloc_in_bs_init([I|_]=Is, Alloc) ->
     %% Common case. The test heap instruction was introduced by
     %% a floating point optimization.
@@ -111,8 +106,8 @@ insert_alloc_in_bs_init([I|_]=Is, Alloc) ->
 	    insert_alloc_1(Is, Alloc, [])
     end.
 
-insert_alloc_1([{bs_init2,Fail,Bs,Ws,Regs,F,Dst}|Is], {_,nostack,Nh,Nf,[]}, Acc) ->
-    Al = alloc_list(Ws+Nh, Nf),
+insert_alloc_1([{bs_init2,Fail,Bs,Ws1,Regs,F,Dst}|Is], {_,nostack,Ws2,[]}, Acc) ->
+    Al = combine_heap_needs(Ws1, Ws2),
     I = {bs_init2,Fail,Bs,Al,Regs,F,Dst},
     reverse(Acc, [I|Is]);
 insert_alloc_1([I|Is], Alloc, Acc) ->
@@ -128,6 +123,35 @@ is_bs_constructor(_) -> false.
 alloc_list(Words, 0) -> Words;
 alloc_list(Words, Floats) ->
     {alloc,[{words,Words},{floats,Floats}]}.
+
+%% combine_heap_needs(HeapNeed1, HeapNeed2) -> HeapNeed
+%%  Combine the heap need for two allocation instructions.
+
+combine_heap_needs({alloc,Alloc1}, {alloc,Alloc2}) ->
+    {alloc,combine_alloc_lists(Alloc1, Alloc2)};
+combine_heap_needs({alloc,Alloc}, Words) when is_integer(Words) ->
+    {alloc,combine_alloc_lists(Alloc, [{words,Words}])};
+combine_heap_needs(Words, {alloc,Alloc}) when is_integer(Words) ->
+    {alloc,combine_alloc_lists(Alloc, [{words,Words}])};
+combine_heap_needs(H1, H2) when is_integer(H1), is_integer(H2) ->
+    H1+H2.
+
+combine_alloc_lists(Al1, Al2) ->
+    combine_alloc_lists_1(sort(Al1++Al2)).
+
+combine_alloc_lists_1([{words,W1},{words,W2}|T])
+  when is_integer(W1), is_integer(W2) ->
+    [{words,W1+W2}|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{floats,F1},{floats,F2}|T])
+  when is_integer(F1), is_integer(F2) ->
+    [{floats,F1+F2}|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{words,_}=W|T]) ->
+    [W|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{floats,_}=F|T]) ->
+    [F|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([{literal,_}=Lit|T]) ->
+    [Lit|combine_alloc_lists_1(T)];
+combine_alloc_lists_1([]) -> [].
 
 
 %% opt(Is0) -> Is

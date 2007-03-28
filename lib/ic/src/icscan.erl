@@ -339,9 +339,7 @@ scan_preproc(G, BE, Str, Line, Out) ->
     NewLine = get_new_line_nr(strip(List), Line+1, []),
     case scan_number(G, BE, List, [], Line, [{'#', Line} | Out]) of
 	L when list(L) ->
-	    scan(G, BE, Rest, NewLine, [{'#', Line} | L]);
-	_X ->
-	    scan(G, BE, Rest, NewLine, [{'#', Line}, {'#', Line} | Out])
+	    scan(G, BE, Rest, NewLine, [{'#', Line} | L])
     end.
 
 get_new_line_nr([C|R], Line, Acc) when C>=$0, C=<$9 ->

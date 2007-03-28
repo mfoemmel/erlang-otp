@@ -33,4 +33,5 @@
   <include file="inviso_lfm">
   <include file="inviso_lfm_tpfreader">
   <include file="inviso_rt">
+  <include file="inviso_rt_meta">
 </application>

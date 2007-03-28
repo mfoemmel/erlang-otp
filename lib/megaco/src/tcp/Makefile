@@ -55,22 +55,11 @@ ifeq ($(TYPE),debug)
 ERL_COMPILE_FLAGS += -Ddebug
 endif
 
-ifeq ($(MEGACO_DEBUG),true)
-ERL_COMPILE_FLAGS += -Dmegaco_debug
-endif
+include ../app/megaco.mk
 
-ifeq ($(WARN_UNUSED_WARS),true)
-ERL_COMPILE_FLAGS += +warn_unused_vars
-endif
+ERL_FLAGS += $(MEGACO_ERL_FLAGS)
 
-ifeq ($(USE_MEGACO_HIPE),true)
-ERL_COMPILE_FLAGS += +native
-endif
-
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include \
-                     +'{parse_transform,sys_pre_attributes}' \
-                     +'{attribute,insert,app_vsn,$(APP_VSN)}'
+ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 
 # ----------------------------------------------------
@@ -113,21 +102,5 @@ release_docs_spec:
 # Include dependencies
 # ----------------------------------------------------
 
-$(EBIN)/megaco_tcp.$(EMULATOR): megaco_tcp.erl \
-	megaco_tcp.hrl $(MEGACO_INCLUDEDIR)/megaco.hrl
-
-$(EBIN)/megaco_tcp_accept.$(EMULATOR): megaco_tcp_accept.erl \
-	$(MEGACO_INCLUDEDIR)/megaco.hrl
-
-$(EBIN)/megaco_tcp_connection.$(EMULATOR): megaco_tcp_connection.erl \
-	megaco_tcp.hrl $(MEGACO_INCLUDEDIR)/megaco.hrl
-
-$(EBIN)/megaco_tcp_sup.$(EMULATOR): megaco_tcp_sup.erl \
-	$(MEGACO_INCLUDEDIR)/megaco.hrl
-
-$(EBIN)/megaco_tcp_connection_sup.$(EMULATOR): megaco_tcp_connection_sup.erl \
-	$(MEGACO_INCLUDEDIR)/megaco.hrl
-
-$(EBIN)/megaco_tcp_accept_sup.$(EMULATOR): megaco_tcp_accept_sup.erl \
-	$(MEGACO_INCLUDEDIR)/megaco.hrl
+include depend.mk
 

@@ -33,8 +33,6 @@
 
 -export([t/0, t/1]).
 
--export([tickets/0, tickets/1]).
-
 -export([all/1, 
 
 	 text/1, 
@@ -85,6 +83,7 @@
 	 erl_dist_m/1,
 	 erl_dist_m_test_msgs/1,
 
+	 tickets/0, 
 	 tickets/1, 
 
 	 compact_tickets/1, 
@@ -162,6 +161,12 @@
          pretty_otp5601_msg1/1,
 	 pretty_otp5793_msg01/1,
 	 pretty_otp5882_msg01/1, 
+	 pretty_otp6490_msg01/1, 
+	 pretty_otp6490_msg02/1, 
+	 pretty_otp6490_msg03/1, 
+	 pretty_otp6490_msg04/1, 
+	 pretty_otp6490_msg05/1, 
+	 pretty_otp6490_msg06/1, 
 
 	 flex_pretty_tickets/1, 
 	 flex_pretty_otp5042_msg1/1, 
@@ -479,7 +484,13 @@ pretty_tickets(suite) ->
      pretty_otp5600_msg2,
      pretty_otp5601_msg1,
      pretty_otp5793_msg01,
-     pretty_otp5882_msg01
+     pretty_otp5882_msg01,
+     pretty_otp6490_msg01,
+     pretty_otp6490_msg02,
+     pretty_otp6490_msg03,
+     pretty_otp6490_msg04,
+     pretty_otp6490_msg05,
+     pretty_otp6490_msg06
     ].
 
 flex_pretty_tickets(suite) ->
@@ -3558,6 +3569,189 @@ pretty_otp5882_msg01() ->
     Mid        = ?MG1_MID,
     Mess       = cre_Msg(Mid, [Trans]),
     cre_MegacoMessage(Mess).
+    
+
+%% --------------------------------------------------------------
+%% 
+pretty_otp6490_msg01(suite) ->
+    [];
+pretty_otp6490_msg01(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg01 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg01(), [] ),
+    %% erase(dbg),
+    %% erase(severity),
+    ok.
+    
+pretty_otp6490_msg02(suite) ->
+    [];
+pretty_otp6490_msg02(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg02 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg02(), [] ),
+    %% erase(severity),
+    %% erase(dbg),
+    ok.
+    
+pretty_otp6490_msg03(suite) ->
+    [];
+pretty_otp6490_msg03(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg03 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg03(), [] ),
+    %% erase(severity),
+    %% erase(dbg),
+    ok.
+    
+pretty_otp6490_msg04(suite) ->
+    [];
+pretty_otp6490_msg04(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg04 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg04(), [] ),
+    %% erase(severity),
+    %% erase(dbg),
+    ok.
+    
+pretty_otp6490_msg05(suite) ->
+    [];
+pretty_otp6490_msg05(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg05 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg05(), [] ),
+    %% erase(severity),
+    %% erase(dbg),
+    ok.
+    
+pretty_otp6490_msg06(suite) ->
+    [];
+pretty_otp6490_msg06(Config) when is_list(Config) ->
+    %% put(severity, trc),
+    %% put(dbg,      true),
+    d("pretty_otp6490_msg06 -> entry", []),
+    %% ?ACQUIRE_NODES(1, Config),
+    ok = pretty_otp6490( pretty_otp6490_msg06(), [] ),
+    %% erase(severity),
+    %% erase(dbg),
+    ok.
+    
+pretty_otp6490(Msg, Conf) ->
+    pretty_otp6490(Msg, Conf, ok).
+
+pretty_otp6490(Msg, Conf, ExpectedEncode) ->
+    pretty_otp6490(Msg, Conf, ExpectedEncode, ok).
+
+pretty_otp6490(Msg, Conf, ExpectedEncode, ExpectedDecode) ->
+    otp6490(Msg, megaco_pretty_text_encoder, Conf, 
+	    ExpectedEncode, ExpectedDecode).
+
+otp6490(Msg, Codec, Conf, ExpectedEncode, ExpectedDecode) ->		 
+    case (catch encode_message(Codec, [?EC_V3|Conf], Msg)) of
+	{error, _Reason} when ExpectedEncode == error ->
+	    ok;
+	{error, Reason} when ExpectedEncode == ok ->
+	    exit({unexpected_encode_failure, Reason});
+	{ok, Bin} when ExpectedEncode == error ->
+	    exit({unexpected_encode_success, Msg, binary_to_list(Bin)});
+	{ok, Bin} when ExpectedEncode == ok ->
+	    case decode_message(Codec, false, [?EC_V3|Conf], Bin) of
+		{ok, Msg} when ExpectedDecode == ok ->
+		    ok;
+		{ok, Msg} when ExpectedDecode == error ->
+		    exit({unexpected_decode_success, Msg});
+		{ok, Msg2} when ExpectedDecode == ok ->
+		    exit({unexpected_decode_result, Msg, Msg2});
+		{ok, Msg2} when ExpectedDecode == error ->
+		    exit({unexpected_decode_success, Msg, Msg2});
+		{error, _Reason} when ExpectedDecode == error ->
+		    ok;
+		{error, Reason} when ExpectedDecode == ok ->
+		    exit({unexpected_decode_failure, Msg, Reason})
+	    end
+    end.
+    
+
+pretty_otp6490_msg(EBD) ->
+    AmmDesc    = ?MSG_LIB:cre_AmmDescriptor(EBD),
+    AmmReq     = cre_AmmReq([#megaco_term_id{id = ?A4445}], [AmmDesc]),
+    CmdReq     = cre_CmdReq({modReq, AmmReq}),
+    CID        = cre_CtxID(64901),
+    ActReq     = cre_ActReq(CID, [CmdReq]),
+    Actions    = [ActReq],
+    TransId    = cre_TransId(64902),
+    TransReq   = cre_TransReq(TransId, Actions),
+    Trans      = cre_Trans(TransReq),
+    Mid        = ?MG1_MID,
+    Mess       = cre_Msg(Mid, [Trans]),
+    cre_MegacoMessage(Mess).
+
+pretty_otp6490_msg01() ->
+    EvSpecs = [], % This will result in an error
+    EBD     = EvSpecs, % This is because the lib checks that the size is valid
+    pretty_otp6490_msg(EBD).
+    
+pretty_otp6490_msg02() ->
+    EvPar    = ?MSG_LIB:cre_EventParameter("sune", ["mangs"]),
+    PkgdName = ?MSG_LIB:cre_PkgdName("foo", "a"),
+    EvName   = ?MSG_LIB:cre_EventName(PkgdName),
+    EvSpec   = ?MSG_LIB:cre_EventSpec(EvName, [EvPar]),
+    EvSpecs  = [EvSpec], 
+    EBD      = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
+    pretty_otp6490_msg(EBD).
+    
+pretty_otp6490_msg03() ->
+    EvPar1   = ?MSG_LIB:cre_EventParameter("sune",   ["mangs"]),
+    EvPar2   = ?MSG_LIB:cre_EventParameter("kalle",  ["anka"]),
+    EvPar3   = ?MSG_LIB:cre_EventParameter("flippa", ["ur"]),
+    PkgdName = ?MSG_LIB:cre_PkgdName("foo", "a"),
+    EvName   = ?MSG_LIB:cre_EventName(PkgdName),
+    EvSpec   = ?MSG_LIB:cre_EventSpec(EvName, [EvPar1,EvPar2,EvPar3]),
+    EvSpecs  = [EvSpec], 
+    EBD      = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
+    pretty_otp6490_msg(EBD).
+    
+pretty_otp6490_msg04() ->
+    EvPar1    = ?MSG_LIB:cre_EventParameter("sune",   ["mangs"]),
+    EvPar2    = ?MSG_LIB:cre_EventParameter("kalle",  ["anka"]),
+    EvPar3    = ?MSG_LIB:cre_EventParameter("flippa", ["ur"]),
+    PkgdName1 = ?MSG_LIB:cre_PkgdName("foo", "a"),
+    EvName1   = ?MSG_LIB:cre_EventName(PkgdName1),
+    EvSpec1   = ?MSG_LIB:cre_EventSpec(EvName1, [EvPar1,EvPar2,EvPar3]),
+    EvPar4    = ?MSG_LIB:cre_EventParameter("hej",    ["hopp"]),
+    PkgdName2 = ?MSG_LIB:cre_PkgdName("bar", "b"),
+    EvName2   = ?MSG_LIB:cre_EventName(PkgdName2),
+    EvSpec2   = ?MSG_LIB:cre_EventSpec(EvName2, [EvPar4]),
+    EvSpecs   = [EvSpec1,EvSpec2], 
+    EBD       = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
+    pretty_otp6490_msg(EBD).
+    
+pretty_otp6490_msg05() ->
+    EvPar    = ?MSG_LIB:cre_EventParameter("sune", ["mangs"]),
+    PkgdName = ?MSG_LIB:cre_PkgdName("foo", root),
+    EvName   = ?MSG_LIB:cre_EventName(PkgdName),
+    EvSpec   = ?MSG_LIB:cre_EventSpec(EvName, [EvPar]),
+    EvSpecs  = [EvSpec], 
+    EBD      = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
+    pretty_otp6490_msg(EBD).
+    
+pretty_otp6490_msg06() ->
+    EvPar    = ?MSG_LIB:cre_EventParameter("sune", ["mangs"]),
+    PkgdName = ?MSG_LIB:cre_PkgdName(root, root),
+    EvName   = ?MSG_LIB:cre_EventName(PkgdName),
+    EvSpec   = ?MSG_LIB:cre_EventSpec(EvName, [EvPar]),
+    EvSpecs  = [EvSpec], 
+    EBD      = ?MSG_LIB:cre_EventBufferDescriptor(EvSpecs),
+    pretty_otp6490_msg(EBD).
     
 
 

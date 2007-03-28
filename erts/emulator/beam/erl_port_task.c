@@ -653,6 +653,7 @@ erts_port_task_free_port(Port *pp)
 	erts_smp_port_tab_lock();
 	ASSERT(erts_ports_alive > 0);
 	erts_ports_alive--;
+	pp->status &= ~ERTS_PORT_SFLG_CLOSING;
 	pp->status |= ERTS_PORT_SFLG_FREE_SCHEDULED;
 	erts_smp_port_tab_unlock();
 	ERTS_SMP_LC_ASSERT(erts_smp_atomic_read(&pp->refc) > 1);
@@ -671,6 +672,7 @@ erts_port_task_free_port(Port *pp)
 	    dequeue_port(pp);
 	erts_smp_port_tab_lock();
 	erts_ports_alive--;
+	pp->status &= ~ERTS_PORT_SFLG_CLOSING;
 	pp->status |= ERTS_PORT_SFLG_FREE_SCHEDULED;
 	erts_smp_port_tab_unlock();
 	erts_smp_atomic_dec(&pp->refc); /* Not alive */

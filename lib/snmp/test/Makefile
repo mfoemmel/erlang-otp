@@ -92,7 +92,6 @@ ifeq ($(DONT_USE_TS),true)
   SNMP_FLAGS += -DDONT_USE_TEST_SERVER
 endif
 
-
 SNMP_MIB_FLAGS += -pa ../ebin +version 
 
 ifneq ($(MIBS_VERBOSITY),) 
@@ -159,6 +158,7 @@ docs:
 appup: snmp_appup_mgr.$(EMULATOR)
 
 mib: $(MIB_TARGETS)
+
 
 # ----------------------------------------------------
 # Release Target

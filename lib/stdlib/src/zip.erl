@@ -40,7 +40,8 @@
 	  input,       % input object (fun)
 	  file_filter, % file filter (boolean fun)
 	  open_opts,   % options passed to file:open
-	  feedback     % feeback (fun)
+	  feedback,    % feeback (fun)
+	  cwd          % directory to relate paths to
 	 }).
 
 -record(zip_opts, {
@@ -48,7 +49,8 @@
 	  input,       % input object (fun)
 	  comment,     % zip-file comment
 	  open_opts,   % options passed to file:open
-	  feedback     % feeback (fun)
+	  feedback,    % feeback (fun)
+	  cwd          % directory to relate paths to
 	 }).
 
 -record(list_dir_opts, {
@@ -59,17 +61,19 @@
 
 -record(openzip_opts, {
 	  output,      % output object (fun)
-	  open_opts    % file:open options
+	  open_opts,   % file:open options
+	  cwd	       % directory to relate paths to	  
 	 }).
 
 % openzip record, state for an open zip-file
 -record(openzip, {
 	  zip_comment, % zip archive comment
-	  files = [],  % filenames, infos, comments and offsets
+	  files,       % filenames, infos, comments and offsets
 	  in,          % archive handle
 	  input,       % archive io object (fun)
 	  output,      % output io object (fun)
-	  zlib	       % handle to open zlib
+	  zlib,	       % handle to open zlib
+	  cwd	       % directory to relate paths to	  
 	 }).
 
 %% import BIFs
@@ -191,7 +195,7 @@ openzip_open(F, Options) ->
 
 do_openzip_open(F, Options) ->
     Opts = get_openzip_options(Options),
-    #openzip_opts{output = Output, open_opts = OpO} = Opts,
+    #openzip_opts{output = Output, open_opts = OpO, cwd = CWD} = Opts,
     Input = get_zip_input(F),
     In0 = Input({open, F, OpO -- [write]}, []),
     {[#zip_comment{comment = C} | Files], In1} =
@@ -202,7 +206,8 @@ do_openzip_open(F, Options) ->
 		  in = In1,
 		  input = Input,
 		  output = Output,
-		  zlib = Z}}.
+		  zlib = Z,
+		  cwd = CWD}}.
 
 %% retrieve all files from an open archive
 openzip_get(OpenZip) ->
@@ -212,8 +217,11 @@ openzip_get(OpenZip) ->
     end.
 
 do_openzip_get(#openzip{files = Files, in = In0, input = Input,
-			output = Output, zlib = Z}) ->
-    R = get_z_files(Files, In0, Z, Input, Output, [], fun all/1, fun silent/1, []),
+			output = Output, zlib = Z, cwd = CWD}) ->
+    ZipOpts = #unzip_opts{output = Output, input = Input,
+			  file_filter = fun all/1, open_opts = [],
+			  feedback = fun silent/1, cwd = CWD},
+    R = get_z_files(Files, Z, In0, ZipOpts, []),
     {ok, R};
 do_openzip_get(_) ->
     throw(einval).
@@ -226,11 +234,11 @@ openzip_get(FileName, OpenZip) ->
     end.
 
 do_openzip_get(F, #openzip{files = Files, in = In0, input = Input,
-			   output = Output, zlib = Z}) ->
+			   output = Output, zlib = Z, cwd = CWD}) ->
     case lists:keysearch(F, #zip_file.name, Files) of
 	{value, #zip_file{offset = Offset}} ->
 	    In1 = Input({seek, bof, Offset}, In0),
-	    {R, _In2} = get_z_file(In1, Z, Input, Output, [], fun silent/1),
+	    {R, _In2} = get_z_file(In1, Z, Input, Output, [], fun silent/1, CWD),
 	    {ok, R};
 	_ -> throw(file_not_found)
     end;
@@ -289,15 +297,13 @@ unzip(F, Options) ->
 
 do_unzip(F, Options) ->
     Opts = get_unzip_options(F, Options),
-    #unzip_opts{input = Input, output = Output, open_opts = OpO,
-		file_filter = Filter, feedback = FB} = Opts,
+    #unzip_opts{input = Input, open_opts = OpO} = Opts,
     In0 = Input({open, F, OpO -- [write]}, []),
     RawIterator = fun raw_file_info_etc/5,
     {Info, In1} = get_central_dir(In0, RawIterator, Input),
     %% get rid of zip-comment
     Z = zlib:open(),
-    Files = get_z_files(Info, In1, Z, Input, Output, OpO,
-			Filter, FB, []),
+    Files = get_z_files(Info, Z, In1, Opts, []),
     zlib:close(Z),
     Input(close, In1),
     {ok, Files}.
@@ -320,7 +326,7 @@ do_zip(F, Files, Options) ->
     #zip_opts{output = Output, open_opts = OpO} = Opts,
     Out0 = Output({open, F, OpO}, []),
     Z = zlib:open(),
-    {Out1, LHS, Pos} = zip_files_loop(Files, Z, Out0, 0, Opts, []),
+    {Out1, LHS, Pos} = put_z_files(Files, Z, Out0, 0, Opts, []),
     zlib:close(Z),
     Out2 = put_central_dir(LHS, Pos, Out1, Opts),
     Out3 = Output({close, F}, Out2),
@@ -341,7 +347,7 @@ list_dir(F, Options) ->
 
 do_list_dir(F, Options) ->
     Opts = get_list_dir_options(F, Options),
-    #list_dir_opts{input = Input, open_opts = OpO,
+    #list_dir_opts{input = Input, open_opts = OpO, 
 		   raw_iterator = RawIterator} = Opts,
     In0 = Input({open, F, OpO}, []),
     {Info, In1} = get_central_dir(In0, RawIterator, Input),
@@ -384,6 +390,8 @@ get_unzip_opt([cooked | Rest], #unzip_opts{open_opts = OpO} = Opts) ->
     get_unzip_opt(Rest, Opts#unzip_opts{open_opts = OpO -- [raw]});
 get_unzip_opt([memory | Rest], Opts) ->
     get_unzip_opt(Rest, Opts#unzip_opts{output = fun binary_io/2});
+get_unzip_opt([{cwd, CWD} | Rest], Opts) ->
+    get_unzip_opt(Rest, Opts#unzip_opts{cwd = CWD});
 get_unzip_opt([{file_filter, F} | Rest], Opts) ->
     Filter = fun_and_1(F, Opts#unzip_opts.file_filter),
     get_unzip_opt(Rest, Opts#unzip_opts{file_filter = Filter});
@@ -420,6 +428,8 @@ get_zip_opt([cooked | Rest], #zip_opts{open_opts = OpO} = Opts) ->
     get_zip_opt(Rest, Opts#zip_opts{open_opts = OpO -- [raw]});
 get_zip_opt([memory | Rest], Opts) ->
     get_zip_opt(Rest, Opts#zip_opts{output = fun binary_io/2});
+get_zip_opt([{cwd, CWD} | Rest], Opts) ->
+    get_zip_opt(Rest, Opts#zip_opts{cwd = CWD});
 get_zip_opt([{comment, C} | Rest], Opts) ->
     get_zip_opt(Rest, Opts#zip_opts{comment = C});
 get_zip_opt([Unknown | _Rest], _Opts) ->
@@ -456,7 +466,9 @@ get_zip_options(Files, Options) ->
 		     input = get_zip_input(hd(Files)),
 		     open_opts = [raw, write],
 		     comment = "",
-		     feedback = fun silent/1},
+		     feedback = fun silent/1,
+		     cwd = ""
+		    },
     get_zip_opt(Options, Opts).
 
 get_unzip_options(F, Options) ->
@@ -464,12 +476,15 @@ get_unzip_options(F, Options) ->
 		       output = fun file_io/2,
 		       input = get_input(F),
 		       open_opts = [raw],
-		       feedback = fun silent/1},
+		       feedback = fun silent/1,
+		       cwd = ""
+		      },
     get_unzip_opt(Options, Opts).
 
 get_openzip_options(Options) ->
     Opts = #openzip_opts{open_opts = [raw, read],
-			 output = fun file_io/2},
+			 output = fun file_io/2,
+			 cwd = ""},
     get_openzip_opt(Options, Opts).
 
 get_input(F) when is_binary(F) ->
@@ -529,60 +544,73 @@ put_eocd(N, Pos, Sz, Comment, Output, Out0) ->
     B = [<<?END_OF_CENTRAL_DIR_MAGIC:32/little>>, BEOCD, Comment], % BComment],
     Output({write, B}, Out0).
 
-get_filename({F, _}) -> F;
-get_filename(F) -> F.
+get_filename({Name, _}) -> Name;
+get_filename(Name) -> Name.
+
+add_cwd(_CWD, {_Name, _} = F) -> F;
+add_cwd("", F) -> F;
+add_cwd(CWD, F) -> filename:join(CWD, F).
 
 %% already compressed data should be stored as is in archive,
 %% a simple name-match is used to check for this
-get_comp_method(L) ->
+%% files smaller than 10 bytes are also stored, not compressed
+get_comp_method(_, N) when is_integer(N), N < 10 ->
+    ?STORED;
+get_comp_method(L, _) ->
     case lists:member(L, [".Z", ".zip", ".zoo", ".arc", ".lzh", ".arj"]) of
 	true -> ?STORED;
 	_ -> ?DEFLATED
     end.
 
-zip_files_loop([], _Z, Out, Pos, _Opts, Acc) ->
+put_z_files([], _Z, Out, Pos, _Opts, Acc) ->
     {Out, lists:reverse(Acc, []), Pos};
-zip_files_loop([F | Rest], Z, Out0, Pos0,
+put_z_files([F | Rest], Z, Out0, Pos0,
 	       #zip_opts{input = Input, output = Output, open_opts = OpO,
-			 feedback = FB} = Opts, Acc) ->
+			 feedback = FB, cwd = CWD} = Opts, Acc) ->
     In0 = [],
-    FileInfo = Input({file_info, F}, In0),
+    F1 = add_cwd(CWD, F),
+    FileInfo = Input({file_info, F1}, In0),
+    UncompSize = FileInfo#file_info.size,
     FileName = get_filename(F),
-    CompMethod = get_comp_method(filename:extension(FileName)),
+    CompMethod = get_comp_method(filename:extension(FileName), UncompSize),
     LH = local_file_header_from_info_method_name(FileInfo, CompMethod,
 						 FileName),
     BLH = local_file_header_to_bin(LH),
     B = [<<?LOCAL_FILE_MAGIC:32/little>>, BLH],
     Out1 = Output({write, B}, Out0),
     Out2 = Output({write, FileName}, Out1),
-    Pos1 = Pos0 + ?LOCAL_FILE_HEADER_SZ + LH#local_file_header.file_name_length,
-    UncompSize = FileInfo#file_info.size,
-    {Out3, CompSize, CRC} =
-	put_z_file(CompMethod, UncompSize, Out2, F, 0, Input, Output, OpO, Z),
+    Pos1 = Pos0 + ?LOCAL_FILE_HEADER_SZ
+	+ LH#local_file_header.file_name_length,
+    {Out3, CompSize, CRC} = put_z_file(CompMethod, UncompSize, Out2, F1,
+				       0, Input, Output, OpO, Z),
     FB(FileName),
     Patch = <<CRC:32/little, CompSize:32/little>>,
     Out4 = Output({pwrite, Pos0 + ?LOCAL_FILE_HEADER_CRC32_OFFSET, Patch},
 		  Out3),
     Out5 = Output({seek, eof, 0}, Out4),
-    zip_files_loop(Rest, Z, Out5, Pos1 + CompSize, Opts,
+    put_z_files(Rest, Z, Out5, Pos1 + CompSize, Opts,
 		   [{LH#local_file_header{comp_size = CompSize, crc32 = CRC},
 		     FileName, Pos0} | Acc]).
 
 %% flag for zlib
 -define(MAX_WBITS, 15).
 
-%% translate zip method to zlib level
-level_from_method(?STORED) -> none;
-level_from_method(?DEFLATED) -> default.
-
 %% compress a file
 put_z_file(_Method, 0, Out, _F, Pos, _Input, _Output, _OpO, _Z) ->
     {Out, Pos, 0};
-put_z_file(Method, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
+put_z_file(?STORED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
     In0 = [],
     In1 = Input({open, F, OpO -- [write]}, In0),
-    ok = zlib:deflateInit(Z, level_from_method(Method), deflated,
-			  -?MAX_WBITS, 8, default),
+    CRC0 = zlib:crc32(Z, <<>>),
+    {Data, In2} = Input({read, UncompSize}, In1),
+    Out1 = Output({write, Data}, Out0),
+    CRC = zlib:crc32(Z, CRC0, Data),
+    Input(close, In2),
+    {Out1, Pos0+erlang:iolist_size(Data), CRC};
+put_z_file(?DEFLATED, UncompSize, Out0, F, Pos0, Input, Output, OpO, Z) ->
+    In0 = [],
+    In1 = Input({open, F, OpO -- [write]}, In0),
+    ok = zlib:deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
     {Out1, Pos1} =
 	put_z_data_loop(UncompSize, In1, Out0, Pos0, Input, Output, Z),
     CRC = zlib:crc32(Z),
@@ -903,6 +931,8 @@ get_openzip_opt([cooked | Rest], #openzip_opts{open_opts = OO} = Opts) ->
     get_openzip_opt(Rest, Opts#openzip_opts{open_opts = OO -- [raw]});
 get_openzip_opt([memory | Rest], Opts) ->
     get_openzip_opt(Rest, Opts#openzip_opts{output = fun binary_io/2});
+get_openzip_opt([{cwd, CWD} | Rest], Opts) ->
+    get_openzip_opt(Rest, Opts#openzip_opts{cwd = CWD});
 get_openzip_opt([Unknown | _Rest], _Opts) ->
     throw({bad_option, Unknown}).
 
@@ -1017,28 +1047,29 @@ add_extra_info(FI, _) ->
 
 %% get all files using file list
 %% (the offset list is already filtered on which file to get... isn't it?)
-get_z_files([], _In, _Z, _Input, _Output, _OpO, _Filter, _FB, Acc) ->
+get_z_files([], _Z, _In, _Opts, Acc) ->
     lists:reverse(Acc, []);
-get_z_files([#zip_comment{comment = _} | Rest], In, Z, Input, Output,
-	    OpO, Filter, FB, Acc) ->
-    get_z_files(Rest, In, Z, Input, Output, OpO, Filter, FB, Acc);
-get_z_files([#zip_file{offset = Offset} = ZipFile | Rest],
-	    In0, Z, Input, Output, OpO, Filter, FB, Acc0) ->
+get_z_files([#zip_comment{comment = _} | Rest], Z, In, Opts, Acc) ->
+    get_z_files(Rest, Z, In, Opts, Acc);
+get_z_files([#zip_file{offset = Offset} = ZipFile | Rest], Z, In0,
+	    #unzip_opts{input = Input, output = Output, open_opts = OpO,
+			file_filter = Filter, feedback = FB,
+			cwd = CWD} = Opts, Acc0) ->
     case Filter(ZipFile) of
 	true ->
 	    In1 = Input({seek, bof, Offset}, In0),
 	    {In2, Acc1} = 
-		case get_z_file(In1, Z, Input, Output, OpO, FB) of
+		case get_z_file(In1, Z, Input, Output, OpO, FB, CWD) of
 		    {GZD, Inx} -> {Inx, [GZD | Acc0]};
 		    Inx -> {Inx, Acc0}
 		end,
-	    get_z_files(Rest, In2, Z, Input, Output, OpO, Filter, FB, Acc1);
+	    get_z_files(Rest, Z, In2, Opts, Acc1);
 	_ ->
-	    get_z_files(Rest, In0, Z, Input, Output, OpO, Filter, FB, Acc0)
+	    get_z_files(Rest, Z, In0, Opts, Acc0)
     end.
 
 %% get a file from the archive, reading chunks
-get_z_file(In0, Z, Input, Output, OpO, FB) ->
+get_z_file(In0, Z, Input, Output, OpO, FB, CWD) ->
     case Input({read, ?LOCAL_FILE_HEADER_SZ}, In0) of
 	{eof, In1} ->
 	    In1;
@@ -1054,16 +1085,17 @@ get_z_file(In0, Z, Input, Output, OpO, FB) ->
 	    {BFileN, In2} = Input({read, FileNameLen + ExtraLen}, In1),
 	    In3 = skip_z_data_descriptor(GPFlag, Input, In2),
 	    {FileName, _} = get_file_name_extra(FileNameLen, ExtraLen, BFileN),
+	    FileName1 = add_cwd(CWD, FileName),
 	    case lists:last(FileName) of
 		$/ ->
 		    %% perhaps this should always be done?
-		    filelib:ensure_dir(FileName), 
+		    filelib:ensure_dir(FileName1),
 		    In3;
 		_ ->
 		    %% FileInfo = local_file_header_to_file_info(LH)
 		    %%{Out, In4, CRC, UncompSize} = 
 		    {Out, In4, CRC, _UncompSize} = 
-			get_z_data(CompMethod, In3, FileName,
+			get_z_data(CompMethod, In3, FileName1,
 				   CompSize, Input, Output, OpO, Z),
 		    In5 = In4,
 		    %% TODO This should be fixed some day:
@@ -1178,8 +1210,6 @@ split_iolist(L, Pos) when is_list(L) ->
 
 splitter(Left, Right, 0) ->
     {Left, Right};
-splitter(<<>>, Right, RelPos) ->
-    split_iolist(Right, RelPos);
 splitter(Left, [A | Right], RelPos) when is_list(A) or is_binary(A) ->
     Sz = erlang:iolist_size(A),
     case Sz > RelPos of

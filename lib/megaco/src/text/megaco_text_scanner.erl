@@ -132,9 +132,7 @@ guess_version(Str) when is_list(Str) ->
 	    {ok, I};
 	_ ->
 	    {error, {invalid_version, Str}}
-    end;
-guess_version(V) ->
-    {error, {invalid_version, V}}.
+    end.
 
 
 %% Returns {token,     Token, Rest, LatestLine}
@@ -160,7 +158,8 @@ any_chars([Char | Rest], Line) ->
 	end_of_line ->
 	    sep_chars(Rest, Line);
 	bad_char ->
-	    {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    %% {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    {bad_token, {'AnyChars', Line, Char}, Rest, Line}
     end;
 any_chars([] = All, Line) ->
     {token, {'SEP', Line, end_of_input}, All, Line}.
@@ -178,7 +177,8 @@ comment_chars([Char | Rest], Line) ->
 	_ when Char == 22 ->
 	    comment_chars(Rest, Line);
 	_ ->
-	    {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    %% {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    {bad_token, {'CommentChars', Line, Char}, Rest, Line}
     end;
 comment_chars([] = All, Line) ->
     {token, {'SEP', Line}, All, Line}.
@@ -199,7 +199,8 @@ sep_chars([Char | Rest] = All, Line) ->
 	end_of_line ->
 	    sep_chars(Rest, Line + 1);
 	_ ->
-	    {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    %% {bad_token, {'SEP', Line, Char}, Rest, Line}
+	    {bad_token, {'SepChars', Line, Char}, Rest, Line}
     end;
 sep_chars([] = All, Line) ->
     {token, {'SEP', Line}, All, Line}.

@@ -9,8 +9,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2005/12/12 21:58:04 $
-%%              $Revision: 1.4 $
+%%              $Date: 2007/02/21 20:54:28 $
+%%              $Revision: 1.5 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -134,11 +134,11 @@ prof_module(Mod) ->
     Funs),
   ok.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% @spec (Mod) -> ok    
 %%       Mod = mod()
 %% @doc	 Turns off profiling of the module Mod. 
-%@ ____________________________________________________________________
+%@ --------------------------------------------------------------------
 prof_module_off(Mod) ->
   Funs = Mod:module_info(functions),
   lists:foreach(
@@ -148,11 +148,11 @@ prof_module_off(Mod) ->
     Funs),
   ok.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% @spec (Mod)->ok
 %%       Mod = mod()
 %% @doc  Clears the call counters for all functions in module Mod.
-%@ ____________________________________________________________________
+%@ --------------------------------------------------------------------
 clear_module(Mod) ->
   Funs = Mod:module_info(functions),
   lists:foreach(
@@ -162,36 +162,36 @@ clear_module(Mod) ->
     Funs),
   ok.
 
-%% ____________________________________________________________________
+%% --------------------------------------------------------------------
 %% @spec (Mod)->[{MFA,calls()}]    
 %%        Mod = mod()
 %%        MFA = mfa()
 %% @doc	  Returns the number of profiled calls to each function (MFA) 
 %%        in the module Mod.
-%@ ____________________________________________________________________
+%@ --------------------------------------------------------------------
 
 res_module(Mod) ->
   Funs = Mod:module_info(functions),
   lists:reverse(lists:keysort(2,lists:map(
     fun ({F,A}) ->
 	MFA = {Mod,F,A},
-	{MFA,case catch hipe_bifs:call_count_get(MFA) of 
-	       N when is_integer(N) -> N; 
-	       _ -> 0 end
+	{MFA, case catch hipe_bifs:call_count_get(MFA) of 
+	        N when is_integer(N) -> N; 
+	        _ -> 0
+	      end
 	}
     end,
     Funs))).
 
-
 total_calls(Mod) ->
   Funs = Mod:module_info(functions),
-  Sum = fun({F,A},Acc) -> 
+  SumF = fun ({F,A}, Acc) -> 
 	    MFA = {Mod,F,A},
 	    case catch hipe_bifs:call_count_get(MFA) of 
 	      N when is_integer(N) -> N+Acc; 
-	       _ -> Acc 
+	      _ -> Acc 
 	    end;
-	   (_,Acc) -> Acc
+	     (_, Acc) -> Acc
 	end,
-  lists:foldl(Sum,0,Funs).
+  lists:foldl(SumF, 0, Funs).
 

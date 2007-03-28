@@ -643,19 +643,19 @@ get_info(DB) ->
     DbSz     = tab_size(DB),
     [{process_memory, ProcSize}, {db_memory, DbSz}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
-    end;
-proc_mem(_) ->
-    undefined.
+    end.
+%% proc_mem(_) ->
+%%     undefined.
 
 tab_size(DB) ->
     case (catch snmpa_general_db:info(DB, memory)) of
-        Sz when integer(Sz) ->
+        Sz when is_integer(Sz) ->
             Sz;
         _ ->
             undefined

@@ -96,8 +96,9 @@
 #include <ctype.h>
 #include <sys/types.h>
 
-extern int erts_async_max_threads;
 extern void erl_exit(int n, char *fmt, _DOTS_);
+
+static ErlDrvSysInfo sys_info;
 
 
 /*#define TRACE 1*/
@@ -113,7 +114,7 @@ extern void erl_exit(int n, char *fmt, _DOTS_);
 
 
 #ifdef USE_THREADS
-#define IF_THRDS if (erts_async_max_threads > 0)
+#define IF_THRDS if (sys_info.async_threads > 0)
 #ifdef HARDDEBUG /* HARDDEBUG in io.c is expected too */
 #define TRACE_DRIVER fprintf(stderr, "Efile: ")
 #else
@@ -554,6 +555,7 @@ file_init(void)
 {
     char *p = getenv("ERL_EFILE_THREAD_SHORT_CIRCUIT");
     thread_short_circuit = p ? atoi(p) : 0;
+    driver_system_info(&sys_info, sizeof(ErlDrvSysInfo));
     return 0;
 }
 
@@ -1535,7 +1537,7 @@ static void cq_execute(file_descriptor *desc) {
     if (! (d = cq_deq(desc)))
 	return;
     TRACE_F(("x%i", (int) d->command));
-    d->again = erts_async_max_threads == 0;
+    d->again = sys_info.async_threads == 0;
     DRIVER_ASYNC(d->level, desc, d->invoke, void_ptr=d, d->free);
 }
 
@@ -1959,7 +1961,7 @@ file_output(ErlDrvData e, char* buf, int count)
 
     case FILE_READDIR: 
 #ifdef USE_THREADS
-	if (erts_async_max_threads > 0)
+	if (sys_info.async_threads > 0)
 	{
 	    d = EF_SAFE_ALLOC(sizeof(struct t_data) - 1 + strlen(name) + 1);
 	
@@ -2211,6 +2213,7 @@ file_timeout(ErlDrvData e) {
 	 */
 	ASSERT(r == 0); 
 	r = 0; /* Avoiding warning */
+	cq_execute(desc);
     } break;
     } /* case */
 }

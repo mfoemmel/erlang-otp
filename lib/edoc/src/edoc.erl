@@ -16,18 +16,16 @@
 %%
 %% $Id$
 %%
-%% @copyright 2001-2006 Richard Carlsson
+%% @copyright 2001-2007 Richard Carlsson
 %% @author Richard Carlsson <richardc@it.uu.se>
-%% @version {@vsn}
+%% @version {@version}
 %% @end
 %% =====================================================================
 
 %% TODO: check weirdness in name generation for @spec f(TypeName, ...) -> ...
-%% TODO: don't stop for undefined macros, just warn?
 %% TODO: option for ignoring functions matching some pattern ('..._test_'/0)
 %% TODO: @private_type tag, opaque unless generating private docs?
 %% TODO: document the record type syntax
-%% TODO: document the @docfile and @headerfile tags, with includes-option
 %% TODO: some 'skip' option for ignoring particular modules/packages?
 %% TODO: intermediate-level packages: document even if no local sources.
 %% TODO: multiline comment support (needs modified comment representation)
@@ -72,10 +70,10 @@
 file(Name) ->
     file(Name, []).
 
-%% @spec file(filename(), option_list()) -> ok 
+%% @spec file(filename(), proplist()) -> ok 
 %%
 %% @type filename() = //kernel/file:filename()
-%% @type option_list() = [term()]
+%% @type proplist() = [term()]
 %%
 %% @deprecated This is part of the old interface to EDoc and is mainly
 %% kept for backwards compatibility. The preferred way of generating
@@ -136,7 +134,7 @@ files(Files) ->
     files(Files, []).
 
 %% @spec (Files::[filename() | {package(), [filename()]}],
-%%        Options::option_list()) -> ok
+%%        Options::proplist()) -> ok
 %% @doc Runs EDoc on a given set of source files. See {@link run/3} for
 %% details, including options.
 %% @equiv run([], Files, Options)
@@ -150,7 +148,7 @@ files(Files, Options) ->
 packages(Packages) ->
     packages(Packages, []).
 
-%% @spec (Packages::[package()], Options::option_list()) -> ok
+%% @spec (Packages::[package()], Options::proplist()) -> ok
 %% @type package() = atom() | string()
 %%
 %% @doc Runs EDoc on a set of packages. The `source_path' option is used
@@ -169,7 +167,7 @@ packages(Packages, Options) ->
 application(App) ->
     application(App, []).
 
-%% @spec (Application::atom(), Options::option_list()) -> ok
+%% @spec (Application::atom(), Options::proplist()) -> ok
 %% @doc Run EDoc on an application in its default app-directory. See
 %% {@link application/3} for details.
 %% @see application/1
@@ -184,7 +182,7 @@ application(App, Options) when atom(App) ->
  	    exit(error)
     end.
 
-%% @spec (Application::atom(), Dir::filename(), Options::option_list())
+%% @spec (Application::atom(), Dir::filename(), Options::proplist())
 %%        -> ok
 %% @doc Run EDoc on an application located in the specified directory.
 %% Tries to automatically set up good defaults. Unless the user
@@ -262,7 +260,7 @@ opt_negations() ->
 
 %% @spec run(Packages::[package()],
 %%           Files::[filename() | {package(), [filename()]}],
-%%           Options::option_list()) -> ok
+%%           Options::proplist()) -> ok
 %% @doc Runs EDoc on a given set of source files and/or packages. Note
 %% that the doclet plugin module has its own particular options; see the
 %% `doclet' option below.
@@ -526,7 +524,7 @@ toc(Dir, Paths, Opts0) ->
 read(File) ->
     read(File, []).
 
-%% @spec read(File::filename(), Options::option_list()) -> string()
+%% @spec read(File::filename(), Options::proplist()) -> string()
 %%
 %% @doc Reads and processes a source file and returns the resulting
 %% EDoc-text as a string. See {@link get_doc/2} and {@link layout/2} for
@@ -547,7 +545,7 @@ read(File, Opts) ->
 layout(Doc) ->
     layout(Doc, []).
 
-%% @spec layout(Doc::edoc_module(), Options::option_list()) -> string()
+%% @spec layout(Doc::edoc_module(), Options::proplist()) -> string()
 %%
 %% @doc Transforms EDoc module documentation data to text. The default
 %% layout creates an HTML document.
@@ -583,13 +581,13 @@ layout(Doc, Opts) ->
 read_comments(File) ->
     read_comments(File, []).
 
-%% @spec read_comments(File::filename(), Options::option_list()) ->
+%% @spec read_comments(File::filename(), Options::proplist()) ->
 %%           [comment()]
-%%
-%%   comment() = {Line, Column, Indentation, Text}
-%%   Line = integer()
-%%   Column = integer()
-%%   Indentation = integer()
+%% where
+%%   comment() = {Line, Column, Indentation, Text},
+%%   Line = integer(),
+%%   Column = integer(),
+%%   Indentation = integer(),
 %%   Text = [string()]
 %%
 %% @doc Extracts comments from an Erlang source code file. See the
@@ -606,7 +604,7 @@ read_comments(File, _Opts) ->
 read_source(Name) ->
     read_source(Name, []).
 
-%% @spec read_source(File::filename(), Options::option_list()) ->
+%% @spec read_source(File::filename(), Options::proplist()) ->
 %%           [syntaxTree()]
 %%
 %% @type syntaxTree() = //syntax_tools/erl_syntax:syntaxTree()
@@ -631,9 +629,10 @@ read_source(Name) ->
 %%  <dt>{@type {includes, Path::[string()]@}}
 %%  </dt>
 %%  <dd>Specifies a list of directory names to be searched for include
-%%      files, if the `preprocess' option is turned on. The default
-%%      value is the empty list. The directory of the source file is
-%%      always automatically appended to the search path.
+%%      files, if the `preprocess' option is turned on. Also used with
+%%      the `@headerfile' tag. The default value is the empty list. The
+%%      directory of the source file is always automatically appended to
+%%      the search path.
 %%  </dd>
 %%  <dt>{@type {macros, [{atom(), term()@}]@}}
 %%  </dt>
@@ -699,7 +698,7 @@ check_forms(Fs, Name) ->
 get_doc(File) ->
     get_doc(File, []).
 
-%% @spec get_doc(File::filename(), Options::option_list()) ->
+%% @spec get_doc(File::filename(), Options::proplist()) ->
 %%           {ModuleName, edoc_module()}
 %%	ModuleName = atom()
 %%
@@ -758,7 +757,7 @@ get_doc(File, Opts) ->
     get_doc(File, Env, Opts).
 
 %% @spec get_doc(File::filename(), Env::edoc_lib:edoc_env(),
-%%        Options::option_list()) -> {ModuleName, edoc_module()}
+%%        Options::proplist()) -> {ModuleName, edoc_module()}
 %%     ModuleName = atom()
 %%
 %% @doc Like {@link get_doc/2}, but for a given environment

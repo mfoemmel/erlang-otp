@@ -192,8 +192,8 @@ init([CookiesConf|_Options]) ->
 %%--------------------------------------------------------------------
 handle_call({request, Request}, _, State) ->
     case (catch handle_request(Request, State)) of
-	{reply, Msg, State} ->
-	    {reply, Msg, State};
+	{reply, Msg, NewState} ->
+	    {reply, Msg, NewState};
 	Error ->
 	    {stop, Error, httpc_response:error(Request, Error), State}
     end;
@@ -237,13 +237,14 @@ handle_cast({retry_or_redirect_request, {Time, Request}}, State) ->
     {noreply, State};
 
 handle_cast({retry_or_redirect_request, Request}, State) ->
-    case handle_request(Request, State) of
+    case (catch handle_request(Request, State)) of
 	{reply, {ok, _}, NewState} ->
 	    {noreply, NewState};
-	{reply, Error, NewState} ->
+	Error  ->
 	    httpc_response:error(Request, Error),
-	    {noreply, NewState}
+	    {stop, Error, State}
     end;
+
 handle_cast({request_canceled, RequestId}, State) ->
     ets:delete(State#state.handler_db, RequestId),
     case lists:keysearch(RequestId, 1, State#state.cancel) of

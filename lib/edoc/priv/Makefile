@@ -25,7 +25,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/edoc-$(EDOC_VSN)
 
 GEN_SCRIPT_SRC = edoc_generate.src
 GEN_SCRIPT = edoc_generate
-PRIV_FILES = stylesheet.css
+PRIV_FILES = stylesheet.css erlang.png edoc.dtd
 
 debug opt:
 	sed -e "s/%EDOC_VSN%/$(EDOC_VSN)/g" \

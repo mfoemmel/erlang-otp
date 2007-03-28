@@ -58,7 +58,8 @@
 
 %% Defines for inet as prim_loader
 -define(IDLE_TIMEOUT, 60000).  %% tear connection after 1 minutes
--define(INET_PROTO, inet).
+-define(INET_FAMILY, inet).
+-define(INET_ADDRESS, {0,0,0,0}).
 
 -ifdef(DEBUG).
 -define(dbg(Tag, Data), erlang:display({Tag,Data})).
@@ -674,8 +675,8 @@ udp_options() ->
 %% INET version IPv4 addresses
 %%
 ll_tcp_connect(LocalPort, IP, RemotePort) ->
-    case ll_open_set_bind(stream, ?INET_PROTO, tcp_options(),
-			  {0,0,0,0}, LocalPort) of
+    case ll_open_set_bind(tcp, ?INET_FAMILY, tcp_options(),
+			  ?INET_ADDRESS, LocalPort) of
 	{ok,S} ->
 	    case prim_inet:connect(S, IP, RemotePort, tcp_timeout()) of
 		ok -> {ok, S};
@@ -688,11 +689,11 @@ ll_tcp_connect(LocalPort, IP, RemotePort) ->
 %% Open and initialize an udp port for broadcast
 %%
 ll_udp_open(P) ->
-    ll_open_set_bind(dgram, ?INET_PROTO, udp_options(), {0,0,0,0}, P).
+    ll_open_set_bind(udp, ?INET_FAMILY, udp_options(), ?INET_ADDRESS, P).
 
 
-ll_open_set_bind(Type, Proto, SOpts, IP, Port) ->
-    case prim_inet:open(Type, Proto) of
+ll_open_set_bind(Protocol, Family, SOpts, IP, Port) ->
+    case prim_inet:open(Protocol, Family) of
 	{ok, S} ->
 	    case prim_inet:setopts(S, SOpts) of
 		ok ->

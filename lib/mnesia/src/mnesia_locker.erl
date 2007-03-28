@@ -224,7 +224,7 @@ loop(State) ->
 	    verbose("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
 	    Parent = State#state.supervisor,
 	    sys:handle_system_msg(Msg, From, Parent, ?MODULE, [], State);
-	    
+	
 	Msg ->
 	    error("~p got unexpected message: ~p~n", [?MODULE, Msg]),
 	    loop(State)
@@ -393,12 +393,11 @@ check_lock(Tid, Oid, [], TabLocks, X, AlreadyQ, Type) ->
 %% True if  WaitForTid > Tid -> % Important order
 allowed_to_be_queued(WaitForTid, Tid) ->
     case get(pid_sort_order) of
+	undefined -> WaitForTid > Tid;
 	r9b_plain -> 
-	    cmp_tid(true, WaitForTid, Tid) == 1;
+	    cmp_tid(true, WaitForTid, Tid) =:= 1;
 	standard  -> 
-	    cmp_tid(false, WaitForTid, Tid) == 1;
-	_ -> 
-	    WaitForTid > Tid
+	    cmp_tid(false, WaitForTid, Tid) =:= 1
     end.	    
 	    
 %% Check queue for conflicting locks
@@ -408,23 +407,21 @@ check_queue(Tid, Tab, X, AlreadyQ) ->
     TabLocks = ets:lookup(mnesia_lock_queue, {Tab,?ALL}),
     Greatest = max(TabLocks),
     case Greatest of
-	empty -> 
-	    X;
-	Tid ->
-	    X; 
+	empty ->  X;
+	Tid ->    X; 
 	WaitForTid -> 
 	    case allowed_to_be_queued(WaitForTid,Tid) of
 		true ->
 		    {queue, WaitForTid};
-		false when AlreadyQ == {no, bad_luck} -> 
-		    {no, WaitForTid};
-		_ ->  
-		    erlang:fault({mnesia_locker, assert, AlreadyQ})
+		false when AlreadyQ =:= {no, bad_luck} -> 
+		    {no, WaitForTid}
 	    end
     end.
 
 sort_queue(QL) ->
     case get(pid_sort_order) of
+	undefined -> 
+	    lists:reverse(lists:keysort(#queue.tid, QL));
 	r9b_plain -> 
 	    lists:sort(fun(#queue{tid=X},#queue{tid=Y}) -> 
 			       cmp_tid(true, X, Y) == 1
@@ -432,13 +429,11 @@ sort_queue(QL) ->
 	standard  -> 
 	    lists:sort(fun(#queue{tid=X},#queue{tid=Y}) ->
 			       cmp_tid(false, X, Y) == 1
-		       end, QL);
-	_ -> 
-	    lists:reverse(lists:keysort(#queue.tid, QL))
+		       end, QL)
     end.
 
-max([]) ->
-    empty;
+max([]) ->                 empty;
+max([#queue{tid=Max}]) ->  Max;
 max(L) ->
     [#queue{tid=Max}|_] = sort_queue(L),
     Max.
@@ -520,24 +515,12 @@ release_locks([]) ->
 release_lock({Tid, Oid, {queued, _}}) ->
     ?ets_match_delete(mnesia_lock_queue, #queue{oid=Oid, tid = Tid, op = '_',
 						pid = '_', lucky = '_'});
-%% case     ?ets_match_object(mnesia_lock_queue, #queue{oid=Oid, tid = Tid, op = '_',
-%% 							    pid = '_', lucky = '_'}) of
-
-%% 	[] ->  ok;
-%% 	Objs -> 
-%% 	    lists:foreach(fun(Q=#queue{pid=Pid,op=Op,oid=Oid,lucky=L}) -> 
-%% 				  ets:delete_object(mnesia_lock_queue,Q),
-%% 				  Reply = {not_granted,
-%% 					   #cyclic{op=Op,lock=Op,oid=Oid,lucky=Lucky}},
-%% 				  Pid ! {?MODULE,node(),Reply}
-%% 			  end, Objs)
-%%     end;
 release_lock({Tid, Oid, Op}) ->
     if
 	Op == write ->
 	    ?ets_delete(mnesia_held_locks, Oid);
 	Op == read ->
-	    ?ets_match_delete(mnesia_held_locks, {Oid, Op, Tid})
+	    ets:delete_object(mnesia_held_locks, {Oid, Op, Tid})
     end.
 
 rearrange_queue([{_Tid, {Tab, Key}, _} | Locks]) ->
@@ -716,12 +699,13 @@ sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 
 do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
     ?MODULE ! {self(), {test_set_sticky, Tid, Oid, Lock}},
+    N = node(),
     receive
-	{?MODULE, _N, granted} ->
+	{?MODULE, N, granted} ->
 	    ?ets_insert(Store, {{locks, Tab, Key}, write}),
 	    [?ets_insert(Store, {nodes, Node}) || Node <- w_nodes(Tab)],
 	    granted;
-	{?MODULE, _N, {granted, Val}} -> %% for rwlocks
+	{?MODULE, N, {granted, Val}} -> %% for rwlocks
 	    case opt_lookup_in_client(Val, Oid, write) of
 		C when record(C, cyclic) ->
 		    exit({aborted, C});
@@ -730,13 +714,14 @@ do_sticky_lock(Tid, Store, {Tab, Key} = Oid, Lock) ->
 		    [?ets_insert(Store, {nodes, Node}) || Node <- w_nodes(Tab)],
 		    Val2
 	    end;
-	{?MODULE, _N, {not_granted, Reason}} ->
+	{?MODULE, N, {not_granted, Reason}} ->
 	    exit({aborted, Reason});
 	{?MODULE, N, not_stuck} ->
 	    not_stuck(Tid, Store, Tab, Key, Oid, Lock, N),
 	    dirty_sticky_lock(Tab, Key, [N], Lock);
-	{mnesia_down, N} ->
-	    exit({aborted, {node_not_running, N}});
+	{mnesia_down, Node} ->
+	    EMsg = {aborted, {node_not_running, Node}},
+	    flush_remaining([N], Node, EMsg);
 	{?MODULE, N, {stuck_elsewhere, _N2}} ->
 	    stuck_elsewhere(Tid, Store, Tab, Key, Oid, Lock),
 	    dirty_sticky_lock(Tab, Key, [N], Lock)

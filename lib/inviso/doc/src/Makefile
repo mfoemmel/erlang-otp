@@ -44,7 +44,8 @@ SGML_REF3_FILES = \
 	inviso_as_lib.sgml \
 	inviso_lfm.sgml \
 	inviso_lfm_tpfreader.sgml \
-	inviso_rt.sgml
+	inviso_rt.sgml \
+	inviso_rt_meta.sgml
 
 SGML_PART_FILES = part.sgml part_notes.sgml
 SGML_CHAPTER_FILES = inviso_chapter.sgml notes.sgml

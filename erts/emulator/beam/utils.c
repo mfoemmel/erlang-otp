@@ -3024,8 +3024,7 @@ ptimer_timeout(ErtsSmpPTimer *ptimer)
 			       0,
 			       ERTS_PORT_SFLGS_DEAD);
 	if (p) {
-	    if (!(p->status & ERTS_PORT_SFLGS_INVALID_LOOKUP)
-		&& !(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
+	    if (!(ptimer->timer.flags & ERTS_PTMR_FLG_CANCELLED)) {
 		ASSERT(*ptimer->timer.timer_ref == ptimer);
 		*ptimer->timer.timer_ref = NULL;
 		(*ptimer->timer.timeout_func)(p);
@@ -3471,7 +3470,7 @@ threads_not_under_control(void)
 {
     int res = system_block_state.threads_to_block;
 
-    /* Waiting is allways an allowed activity... */
+    /* Waiting is always an allowed activity... */
     res -= erts_smp_atomic_read(&erts_system_block_state.in_activity.wait);
 
     if (system_block_state.allowed_activities & ERTS_BS_FLG_ALLOW_GC)

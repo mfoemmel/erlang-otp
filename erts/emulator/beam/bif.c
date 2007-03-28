@@ -1367,7 +1367,8 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
 	   ERTS_PROC_UNSET_TRAP_EXIT(BIF_P);
        erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_STATUS);
        BIF_RET(old_value);
-   } else if (BIF_ARG_1 == am_min_heap_size) {
+   }
+   else if (BIF_ARG_1 == am_min_heap_size) {
        Sint i;
        if (!is_small(BIF_ARG_2)) {
 	   goto error;
@@ -1383,9 +1384,35 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
 	   BIF_P->min_heap_size = erts_next_heap_size(i, 0);
        }
        BIF_RET(old_value);
-   } else {
-       BIF_RET(process_flag_aux(BIF_P, BIF_P, BIF_ARG_1, BIF_ARG_2));
    }
+   else if (BIF_ARG_1 == am_monitor_nodes) {
+       /*
+	* This argument is intentionally *not* documented. It is intended
+	* to be used by net_kernel:monitor_nodes/1.
+	*/
+       old_value = erts_monitor_nodes(BIF_P, BIF_ARG_2, NIL);
+       if (old_value == THE_NON_VALUE)
+	   goto error;
+       BIF_RET(old_value);
+   }
+   else if (is_tuple(BIF_ARG_1)) {
+       /*
+	* This argument is intentionally *not* documented. It is intended
+	* to be used by net_kernel:monitor_nodes/2.
+	*/
+       Eterm *tp = tuple_val(BIF_ARG_1);
+       if (arityval(tp[0]) == 2) {
+	   if (tp[1] == am_monitor_nodes) {
+	       old_value = erts_monitor_nodes(BIF_P, BIF_ARG_2, tp[2]);
+	       if (old_value == THE_NON_VALUE)
+		   goto error;
+	       BIF_RET(old_value);
+	   }
+       }
+       /* Fall through and try process_flag_aux() ... */
+   }
+
+   BIF_RET(process_flag_aux(BIF_P, BIF_P, BIF_ARG_1, BIF_ARG_2));
  error:
    BIF_ERROR(BIF_P, BADARG);
 }

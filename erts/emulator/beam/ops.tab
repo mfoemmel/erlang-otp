@@ -1213,3 +1213,14 @@ fmove_new l d
 
 apply I
 apply_last I P
+
+#
+# New instruction in R11B-4.
+#
+
+put_literal Lit=u Dest=d => gen_put_literal(Lit, Dest)
+
+i_put_literal/3
+i_put_literal I I d
+
+

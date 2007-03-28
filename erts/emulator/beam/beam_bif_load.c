@@ -38,6 +38,7 @@ static void delete_export_references(Eterm module);
 static int purge_module(int module);
 static int is_native(Eterm* code);
 #if defined(HEAP_FRAG_ELIM_TEST)
+static int any_heap_ref_ptrs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size);
 static int any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size);
 #endif
 
@@ -400,10 +401,14 @@ check_process_code(Process* rp, Module* modp)
     for (;;) {
 	ErlMessage* mp;
 
-	if (any_heap_refs(rp->stop, rp->hend, mod_start, mod_size)) {
+	if (any_heap_ref_ptrs(rp->stop, rp->hend, mod_start, mod_size)) {
 	    goto need_gc;
 	}
 	if (any_heap_refs(rp->heap, rp->htop, mod_start, mod_size)) {
+	    goto need_gc;
+	}
+
+	if (any_heap_refs(rp->old_heap, rp->old_htop, mod_start, mod_size)) {
 	    goto need_gc;
 	}
 
@@ -411,13 +416,13 @@ check_process_code(Process* rp, Module* modp)
 	    Eterm* start = rp->dictionary->data;
 	    Eterm* end = start + rp->dictionary->used;
 
-	    if (any_heap_refs(start, end, mod_start, mod_size)) {
+	    if (any_heap_ref_ptrs(start, end, mod_start, mod_size)) {
 		goto need_gc;
 	    }
 	}
 
 	for (mp = rp->msg.first; mp != NULL; mp = mp->next) {
-	    if (any_heap_refs(mp->m, mp->m+2, mod_start, mod_size)) {
+	    if (any_heap_ref_ptrs(mp->m, mp->m+2, mod_start, mod_size)) {
 		goto need_gc;
 	    }
 	}
@@ -427,6 +432,9 @@ check_process_code(Process* rp, Module* modp)
 	if (done_gc) {
 	    return am_true;
 	} else {
+	    Eterm* literals;
+	    Uint lit_size;
+
 	    /*
 	     * Try to get rid of constants by by garbage collecting.
 	     * Clear both fvalue and ftrace.
@@ -437,6 +445,9 @@ check_process_code(Process* rp, Module* modp)
 	    done_gc = 1;
 	    FLAGS(rp) |= F_NEED_FULLSWEEP;
 	    (void) erts_garbage_collect(rp, 0, rp->arg_reg, rp->arity);
+	    literals = (Eterm *) modp->old_code[MI_LITERALS_START];
+	    lit_size = (Eterm *) modp->old_code[MI_LITERALS_END] - literals;
+	    erts_garbage_collect_literals(rp, literals, lit_size);
 	}
     }
 #endif
@@ -445,11 +456,12 @@ check_process_code(Process* rp, Module* modp)
 }
 
 #if defined(HEAP_FRAG_ELIM_TEST)
-static int
-any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
-{
 #define in_area(ptr,start,nbytes) \
     ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
+
+static int
+any_heap_ref_ptrs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
+{
     Eterm* p;
     Eterm val;
 
@@ -465,8 +477,40 @@ any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
 	}
     }
     return 0;
-#undef in_area
 }
+
+static int
+any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
+{
+    Eterm* p;
+    Eterm val;
+
+    for (p = start; p < end; p++) {
+	val = *p;
+	switch (primary_tag(val)) {
+	case TAG_PRIMARY_BOXED:
+	case TAG_PRIMARY_LIST:
+	    if (in_area(val, mod_start, mod_size)) {
+		return 1;
+	    }
+	    break;
+	case TAG_PRIMARY_HEADER: {
+	      Uint tari;
+
+	      if (header_is_transparent(val)) {
+		  p++;
+		  continue;
+	      }
+	      tari = thing_arityval(val);
+	      p += tari;
+	  }
+	}
+    }
+    return 0;
+}
+
+#undef in_area
+
 #endif
 
 static int

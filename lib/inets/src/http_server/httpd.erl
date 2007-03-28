@@ -502,8 +502,6 @@ read_mfile(Error) ->
 
 read_mfile(eof, _Fd, SoFar) ->
     {ok,lists:reverse(SoFar)};
-read_mfile({error,Reason} ,_Fd, _SoFar) ->
-    {error,Reason};
 read_mfile([$# | _Comment], Fd, SoFar) ->
     read_mfile(read_line(Fd), Fd, SoFar);
 read_mfile([], Fd, SoFar) ->

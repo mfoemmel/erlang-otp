@@ -1,5 +1,5 @@
-# next version to use 1.1.1|1.2
-XMERL_VSN = 1.1
+# next version to use 1.1.3|1.2
+XMERL_VSN = 1.1.2
 
 TICKETS_1.0 = \
         OTP-5174 \
@@ -31,3 +31,6 @@ TICKETS_1.1 = \
 	OTP-6043 \
 	OTP-6099 \
 	OTP-6401
+
+TICKETS_1.1.1 = \
+	OTP-6402

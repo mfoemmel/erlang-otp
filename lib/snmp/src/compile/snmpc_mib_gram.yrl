@@ -872,8 +872,9 @@ bits_to_bytes([_BadChar | _T], _N, _Byte) ->
 %% klacke@erix.ericsson.se
 %% I didn't want to ship the entire asn1-compiler so I used cut-and-paste.
 %%----------------------------------------------------------------------
-hex_to_bytes(HexNumber) when atom(HexNumber) ->
-    hex_to_bytes(atom_to_list(HexNumber));
+
+%% hex_to_bytes(HexNumber) when is_atom(HexNumber) ->
+%%     hex_to_bytes(atom_to_list(HexNumber));
 
 hex_to_bytes(HexNumber) ->
     case length(HexNumber) rem 2 of

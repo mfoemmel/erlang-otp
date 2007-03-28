@@ -15,6 +15,8 @@
 %% 
 %%     $Id$
 %%
+%% ts:run(snmp, snmp_agent_test, [batch]).
+%% 
 -module(snmp_test_mgr_misc).
 
 %% API
@@ -98,6 +100,7 @@ init_packet(Parent, SnmpMgr,
 init_debug(Dbg) when atom(Dbg) ->
     put(debug,Dbg),
     put(verbosity,silence);
+    %% put(verbosity,trace);
 init_debug(DbgOptions) when list(DbgOptions) ->
     case lists:keysearch(debug, 1, DbgOptions) of
 	{value, {_, Dbg}} when atom(Dbg) ->
@@ -320,12 +323,15 @@ getSysDescr([_|T]) ->
     getSysDescr(T).
     
 handle_v3_msg(Packet, #message{vsn_hdr = V3Hdr, data = Data}) ->
+    d("handle_v3_msg -> entry"),
     %% Code copied from snmp_mpd.erl
     #v3_hdr{msgID = MsgId, msgFlags = MsgFlags,
 	    msgSecurityModel = MsgSecurityModel,
 	    msgSecurityParameters = SecParams} = V3Hdr,
-    SecModule = get_security_module(MsgSecurityModel),
+    SecModule = get_security_module(MsgSecurityModel), 
+    d("handle_v3_msg -> SecModule: ~p", [SecModule]),
     SecLevel = hd(MsgFlags) band 3,
+    d("handle_v3_msg -> SecLevel: ~p", [SecLevel]),
     IsReportable = snmp_misc:is_reportable(MsgFlags),
     SecRes = (catch SecModule:process_incoming_msg(list_to_binary(Packet), 
 						   Data,SecParams,SecLevel)),
@@ -344,6 +350,8 @@ get_security_module(SecModel) ->
     throw({error, {unknown_sec_model, SecModel}}).
 
 check_sec_module_result(Res, V3Hdr, Data, IsReportable) ->
+    d("check_sec_module_result -> entry with"
+      "~n   Res: ~p", [Res]),
     case Res of
 	{ok, X} -> 
 	    X;
@@ -364,6 +372,8 @@ check_sec_module_result(Res, V3Hdr, Data, IsReportable) ->
     end.
 
 generate_v3_report_msg(_MsgID, _MsgSecurityModel, Data, ErrorInfo) ->
+    d("generate_v3_report_msg -> entry with"
+      "~n   ErrorInfo: ~p", [ErrorInfo]),
     {Varbind, SecName, Opts} = ErrorInfo,
     ReqId =
 	if record(Data, scopedPdu) -> (Data#scopedPdu.data)#pdu.request_id;
@@ -383,7 +393,7 @@ generate_v3_report_msg(_MsgID, _MsgSecurityModel, Data, ErrorInfo) ->
 
 
 error(Format, Data) ->
-    io:format("* Error: "),
+    io:format("*** Error ***~n"),
     ok = io:format(Format, Data),
     io:format("~n").
 
@@ -434,6 +444,14 @@ mk_discovery_msg(Version, Pdu, {Com, _, _, _, _}, _UserName) ->
 
 mk_msg('version-3', Pdu, {Context, User, EngineID, CtxEngineId, SecLevel}, 
        MsgData) ->
+    d("mk_msg(version-3) -> entry with"
+      "~n   Pdu:         ~p"
+      "~n   Context:     ~p"
+      "~n   User:        ~p"
+      "~n   EngineID:    ~p"
+      "~n   CtxEngineID: ~p"
+      "~n   SecLevel:    ~p", 
+      [Pdu, Context, User, EngineID, CtxEngineId, SecLevel]),
     %% Code copied from snmp_mpd.erl
     {MsgId, SecName, SecData} =
 	if
@@ -530,7 +548,7 @@ init_usm('version-3', Dir) ->
     snmpa_local_db:start_link(normal, Dir, [{verbosity,trace}]),
     NameDb = snmpa_agent:db(snmpEngineID),
     R = snmp_generic:variable_set(NameDb, "mgrEngine"),
-    io:format("init_usm -> engine-id set result: ~p~n", [R]),
+    io:format("~w:init_usm -> engine-id set result: ~p~n", [?MODULE,R]),
     snmp_framework_mib:set_engine_boots(1),
     snmp_framework_mib:set_engine_time(1),
     snmp_user_based_sm_mib:reconfigure(Dir);

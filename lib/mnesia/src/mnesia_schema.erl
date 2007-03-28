@@ -125,7 +125,7 @@
 %% in a table called schema !!
 
 init(IgnoreFallback) ->
-    Res = read_schema(true, false, IgnoreFallback),
+    Res = read_schema(true, IgnoreFallback),
     {ok, Source, _CreateList} = exit_on_error(Res),
     verbose("Schema initiated from: ~p~n", [Source]),
     set({schema, tables}, []),
@@ -217,7 +217,7 @@ read_nodes() ->
     %% application_controller to get into deadlock
     case mnesia_lib:ensure_loaded(?APPLICATION) of
 	ok ->
-	    case read_schema(false, false) of
+	    case read_schema(false) of
 		{ok, _Source, CreateList} ->
 		    Cs = list2cs(CreateList),
 		    {ok, Cs#cstruct.disc_copies ++ Cs#cstruct.ram_copies};
@@ -230,7 +230,7 @@ read_nodes() ->
 
 %% Returns Version from the tuple {Version,MasterNodes}
 version() ->
-    case read_schema(false, false) of
+    case read_schema(false) of
         {ok, Source, CreateList} when Source /= default ->
 	    Cs = list2cs(CreateList),
             {Version, _Details} = Cs#cstruct.version,
@@ -376,9 +376,9 @@ remote_read_schema() ->
 	ok ->
 	    case mnesia_monitor:get_env(schema_location) of
 		opt_disc ->
-		    read_schema(false, true);
+		    read_schema(false);
 		_ ->
-		    read_schema(false, false)
+		    read_schema(false)
 	    end;
 	{error, Reason} ->
 	    {error, Reason}
@@ -428,8 +428,8 @@ lock_schema() ->
 unlock_schema() ->
     mnesia_lib:unlock_table(schema).
 
-read_schema(Keep, _UseDirAnyway) ->
-    read_schema(Keep, false, false).
+read_schema(Keep) ->
+    read_schema(Keep, false).
 
 %% The schema may be read for several reasons.
 %% If Mnesia is not already started the read intention
@@ -441,7 +441,7 @@ read_schema(Keep, _UseDirAnyway) ->
 %% Returns {ok, Source, SchemaCstruct} or {error, Reason}
 %% Source may be: default | ram | disc | fallback
 
-read_schema(Keep, UseDirAnyway, IgnoreFallback) ->
+read_schema(Keep, IgnoreFallback) ->
     lock_schema(),
     Res = 
         case mnesia:system_info(is_running) of
@@ -450,8 +450,6 @@ read_schema(Keep, UseDirAnyway, IgnoreFallback) ->
             _IsRunning ->
                     case mnesia_monitor:use_dir() of
                         true ->
-                            read_disc_schema(Keep, IgnoreFallback);
-                        false when UseDirAnyway == true ->
                             read_disc_schema(Keep, IgnoreFallback);
                         false when Keep == true ->
                             Args = [{keypos, 2}, public, named_table, set],
@@ -1708,8 +1706,6 @@ prepare_ops(Tid, [Op | Ops], WaitFor, Changed, Acc, DumperMode) ->
 	    prepare_ops(Tid, Ops, WaitFor, true, Ops2 ++ Acc, mandatory);
         {true, Ops2, optional} -> 
 	    prepare_ops(Tid, Ops, WaitFor, true, Ops2 ++ Acc, DumperMode);
-	{false, mandatory} -> 
-	    prepare_ops(Tid, Ops, WaitFor, true, Acc, mandatory);
 	{false, optional} -> 
 	    prepare_ops(Tid, Ops, WaitFor, true, Acc, DumperMode)
     end;
@@ -2527,8 +2523,7 @@ arrange_restore(R, Fun, Recs) ->
     R2 = R#r{insert_op = Fun, recs = Recs},
     case mnesia_bup:iterate(R#r.module, fun restore_items/4, R#r.opaque, R2) of
 	{ok, R3} -> R3#r.recs;
-	{error, Reason} -> mnesia:abort(Reason);
-	Reason -> mnesia:abort(Reason)
+	{error, Reason} -> mnesia:abort(Reason)
     end.
 
 restore_items([Rec | Recs], Header, Schema, R) ->

@@ -370,7 +370,6 @@ is_expr(I) ->
 %% 	  end;
 	       
         #alub{} -> false; %% TODO: Split instruction to consider alu expression?
-	#binbase{} -> false;
         #branch{} -> false;
         #call{} -> false; %% We cannot prove that a call has no side-effects
         #comment{} -> false;

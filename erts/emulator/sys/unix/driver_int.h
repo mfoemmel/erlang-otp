@@ -21,7 +21,7 @@
 #ifndef __DRIVER_INT_H__
 #define __DRIVER_INT_H__
 
-#ifdef HAVE_UIO_H
+#ifdef HAVE_SYS_UIO_H
 #include <sys/types.h>
 #include <sys/uio.h>
 

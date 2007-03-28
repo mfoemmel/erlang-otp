@@ -29,15 +29,16 @@
 %% =====================================================================
 
 Nonterminals
-start spec fun_type utype_list utype_tuple utypes utype ptypes ptype
-function_name defs def typedef etype throws qname ref aref mref lref pref
-var_list vars fields field.
+start spec func_type utype_list utype_tuple utypes utype ptypes ptype
+nutype function_name where_defs defs def typedef etype throws qname ref
+aref mref lref pref var_list vars fields field.
 
 Terminals
-atom float integer var start_spec start_typedef start_throws start_ref
+atom float integer var string start_spec start_typedef start_throws
+start_ref
 
 '(' ')' ',' '.' '->' '{' '}' '[' ']' '|' '+' ':' '::' '=' '/' '//' '*'
-'#'.
+'#' 'where'.
 
 Rootsymbol start.
 
@@ -50,19 +51,23 @@ start -> start_ref ref: '$2'.
 qname -> atom: [tok_val('$1')].
 qname -> qname '.' atom: [tok_val('$3') | '$1'].
 
-spec -> fun_type defs:
+spec -> func_type where_defs:
     #t_spec{type = '$1', defs = lists:reverse('$2')}.
-spec -> function_name fun_type defs:
+spec -> function_name func_type where_defs:
     #t_spec{name = '$1', type = '$2', defs = lists:reverse('$3')}.
+
+where_defs -> 'where' defs: '$2'.
+where_defs -> defs: '$1'.
 
 function_name -> atom: #t_name{name = tok_val('$1')}.
 
-fun_type -> utype_list '->' utype:
-    #t_fun{args = '$1', range = '$3'}.
+func_type -> utype_list '->' utype:
+    #t_fun{args = element(1, '$1'), range = '$3'}.
 
 
-utype_list -> '(' ')' : [].
-utype_list -> '(' utypes ')' : lists:reverse('$2').
+%% Paired with line number, for later error reporting
+utype_list -> '(' ')' : {[], tok_line('$1')}.
+utype_list -> '(' utypes ')' : {lists:reverse('$2'), tok_line('$1')}.
 
 utype_tuple -> '{' '}' : [].
 utype_tuple -> '{' utypes '}' : lists:reverse('$2').
@@ -71,8 +76,11 @@ utype_tuple -> '{' utypes '}' : lists:reverse('$2').
 utypes -> utype : ['$1'].
 utypes -> utypes ',' utype : ['$3' | '$1'].
 
-utype -> var '::' ptypes: ann(union('$3'), tok_val('$1')).
-utype -> ptypes: union('$1').
+utype -> nutype string: annotate('$1', tok_val('$2')).
+utype -> nutype: '$1'.
+
+nutype -> var '::' ptypes: annotate(union('$3'), tok_val('$1')).
+nutype -> ptypes: union('$1').
 
 %% Produced in reverse order.
 ptypes -> ptype : ['$1'].
@@ -83,10 +91,20 @@ ptype -> var : #t_var{name = tok_val('$1')}.
 ptype -> atom : #t_atom{val = tok_val('$1')}.
 ptype -> integer: #t_integer{val = tok_val('$1')}.
 ptype -> float: #t_float{val = tok_val('$1')}.
-ptype -> fun_type: '$1'.
 ptype -> utype_tuple : #t_tuple{types = '$1'}.
 ptype -> '[' ']' : #t_nil{}.
 ptype -> '[' utype ']' : #t_list{type = '$2'}.
+ptype -> utype_list:
+	if length(element(1, '$1')) == 1 -> 
+		%% there must be exactly one utype in the list
+		hd(element(1, '$1'));
+	   length(element(1, '$1')) == 0 ->
+		return_error(element(2, '$1'), "syntax error before: ')'");
+	   true ->
+		return_error(element(2, '$1'), "syntax error before: ','")
+	end.
+ptype -> utype_list '->' ptype:
+	#t_fun{args = element(1, '$1'), range = '$3'}.
 ptype -> '#' atom '{' '}' :
         #t_record{name = #t_atom{val = tok_val('$2')}}.
 ptype -> '#' atom '{' fields '}' :
@@ -94,16 +112,16 @@ ptype -> '#' atom '{' fields '}' :
 		  fields = lists:reverse('$4')}.
 ptype -> atom utype_list:
 	#t_type{name = #t_name{name = tok_val('$1')},
-		args = '$2'}.
+		args = element(1, '$2')}.
 ptype -> qname ':' atom utype_list : 
 	#t_type{name = #t_name{module = qname('$1'),
 			       name = tok_val('$3')},
-		args = '$4'}.
+		args = element(1, '$4')}.
 ptype -> '//' atom '/' qname ':' atom utype_list : 
 	#t_type{name = #t_name{app = tok_val('$2'),
 			       module = qname('$4'),
 			       name = tok_val('$6')},
-		args = '$7'}.
+		args = element(1, '$7')}.
 
 %% Produced in reverse order.
 fields -> field : ['$1'].
@@ -115,6 +133,7 @@ field -> atom '=' utype :
 %% Produced in reverse order.
 defs -> '$empty' : [].
 defs -> defs def : ['$2' | '$1'].
+defs -> defs ',' def : ['$3' | '$1'].
 
 def -> var '=' utype:
        #t_def{name =  #t_var{name = tok_val('$1')},
@@ -131,11 +150,11 @@ var_list -> '(' vars ')' : lists:reverse('$2').
 vars -> var : [#t_var{name = tok_val('$1')}].
 vars -> vars ',' var : [#t_var{name = tok_val('$3')} | '$1'].
 
-typedef -> atom var_list defs:
+typedef -> atom var_list where_defs:
        #t_typedef{name = #t_name{name = tok_val('$1')},
 		  args = '$2',
 		  defs = lists:reverse('$3')}.
-typedef -> atom var_list '=' utype defs:
+typedef -> atom var_list '=' utype where_defs:
        #t_typedef{name = #t_name{name = tok_val('$1')},
 		  args = '$2',
 		  type = '$4',
@@ -172,9 +191,9 @@ lref -> atom '(' ')':
 
 %% Exception declarations
 
-etype -> ptypes: union('$1').
+etype -> utype: '$1'.
 
-throws -> etype defs:
+throws -> etype where_defs:
 	#t_throws{type = '$1',
 		  defs = lists:reverse('$2')}.
 
@@ -203,7 +222,7 @@ Erlang code.
 %% ====================================================================
 
 -export([parse_spec/2, parse_typedef/2, parse_throws/2, parse_ref/2,
-	 parse_see/2]).
+	 parse_see/2, parse_param/2]).
 
 -include("edoc_types.hrl").
 
@@ -236,6 +255,8 @@ run_parser(Ts, L, Start) ->
 
 tok_val(T) -> element(3, T).
 
+tok_line(T) -> element(2, T).
+
 qname([A]) ->
     A;    % avoid unnecessary call to packages:concat/1.
 qname(List) ->
@@ -247,8 +268,8 @@ union(Ts) ->
 	_ -> #t_union{types = lists:reverse(Ts)}
     end.
 
-ann(T, A) -> ?set_t_ann(T, A).
-
+annotate(T, A) -> ?add_t_ann(T, A).
+    
 %% ---------------------------------------------------------------------
 
 %% @doc EDoc type specification parsing. Parses the content of
@@ -324,6 +345,19 @@ parse_see(S, L) ->
 
 %% ---------------------------------------------------------------------
 
+%% @doc Parses the content of
+%% <a href="overview-summary.html#ftag-param">`@param'</a> tags.
+parse_param(S, L) ->
+    {S1, S2} = edoc_lib:split_at_space(edoc_lib:strip_space(S)),
+    case edoc_lib:strip_space(S1) of
+	"" -> throw_error(parse_param, L);
+	Name -> 
+	    Text = edoc_lib:strip_space(S2),
+	    {list_to_atom(Name), edoc_wiki:parse_xml(Text, L)}
+    end.
+
+%% ---------------------------------------------------------------------
+
 %% @doc EDoc exception specification parsing. Parses the content of
 %% <a href="overview-summary.html#ftag-throws">`@throws'</a> declarations.
 
@@ -352,6 +386,8 @@ throw_error({parse_ref, E}, L) ->
     throw_error({"reference", E}, L);
 throw_error({parse_throws, E}, L) ->
     throw_error({"throws-declaration", E}, L);
+throw_error(parse_param, L) ->
+    throw({error, L, "missing parameter name"});
 throw_error({Where, E}, L) when is_list(Where) ->
     throw({error,L,{"unknown error parsing ~s: ~P.",[Where,E,15]}});
 throw_error(E, L) ->

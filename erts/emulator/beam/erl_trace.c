@@ -581,9 +581,9 @@ trace_sched(Process *p, Eterm what)
 	}
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	ASSERT(is_internal_pid(p->tracer_proc)
@@ -592,6 +592,7 @@ trace_sched(Process *p, Eterm what)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(9 + TS_SIZE(p));
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
 	tracer = process_tab[internal_pid_index(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc) 
@@ -601,8 +602,7 @@ trace_sched(Process *p, Eterm what)
 	    return;
 	}
 
-	hp = HAlloc(tracer, 9 + TS_SIZE(p));
-
+	hp = erts_alloc_message_heap(9 + TS_SIZE(p), &bp, &off_heap, tracer, 0);
 #endif
 	
 	if (p->current == NULL) {
@@ -628,9 +628,8 @@ trace_sched(Process *p, Eterm what)
 				 p->id, p->tracer_proc, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
-
     }
 }
 
@@ -678,9 +677,10 @@ trace_send(Process *p, Eterm to, Eterm msg)
 	send_to_port(p, mess, &p->tracer_proc, &p->trace_flags);
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
-#ifdef ERTS_SMP
+	Uint need;
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 
@@ -700,33 +700,24 @@ trace_send(Process *p, Eterm to, Eterm msg)
 
 	sz_msg = size_object(msg);
 	sz_to  = size_object(to);
-
-
+	need = sz_msg + sz_to + 6 + TS_SIZE(p);
+	
 #ifdef ERTS_SMP
-	bp = new_message_buffer(sz_msg + sz_to + 6 + TS_SIZE(p));
+	bp = new_message_buffer(need);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, sz_msg + sz_to + 6 + TS_SIZE(p));
+	hp = erts_alloc_message_heap(need, &bp, &off_heap, tracer, 0);
 #endif
 
 	to = copy_struct(to,
 			 sz_to,
 			 &hp,
-#ifdef ERTS_SMP
-			 &bp->off_heap
-#else
-			 &MSO(tracer)
-#endif
-	    );
+			 off_heap);
 	msg = copy_struct(msg,
 			  sz_msg,
 			  &hp,
-#ifdef ERTS_SMP
-			  &bp->off_heap
-#else
-			  &MSO(tracer)
-#endif
-	    );
+			  off_heap);
 	mess = TUPLE5(hp, am_trace, p->id/* Local pid */, operation, msg, to);
 	hp += 6;
 
@@ -740,9 +731,8 @@ trace_send(Process *p, Eterm to, Eterm msg)
 	enqueue_sys_msg_unlocked(SYS_MSG_TYPE_TRACE, p->id, p->tracer_proc, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
-
     }
 }
 
@@ -769,9 +759,9 @@ trace_receive(Process *rp, Eterm msg)
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
 	Uint hsz;
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 
@@ -795,19 +785,12 @@ trace_receive(Process *rp, Eterm msg)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(hsz);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, hsz);
+	hp = erts_alloc_message_heap(hsz, &bp, &off_heap, tracer, 0);
 #endif
 
-	msg = copy_struct(msg,
-			  sz_msg,
-			  &hp,
-#ifdef ERTS_SMP
-			  &bp->off_heap
-#else
-			  &MSO(tracer)
-#endif
-	    );
+	msg = copy_struct(msg, sz_msg, &hp, off_heap);
 	mess = TUPLE4(hp, am_trace, rp->id/* Local pid */, am_receive, msg);
 	hp += 5;
 
@@ -822,7 +805,7 @@ trace_receive(Process *rp, Eterm msg)
 				   rp->id, rp->tracer_proc, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
 }
@@ -1048,9 +1031,9 @@ erts_trace_return_to(Process *p, Uint *pc)
     if (is_internal_port(p->tracer_proc)) {
 	send_to_port(p, mess, &p->tracer_proc, &p->trace_flags);
     } else {
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	unsigned size;
@@ -1070,7 +1053,6 @@ erts_trace_return_to(Process *p, Uint *pc)
 	    p->tracer_proc = NIL;
 	    return;
 	}
-	
 #endif
 
 	size = size_object(mess);
@@ -1078,25 +1060,20 @@ erts_trace_return_to(Process *p, Uint *pc)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(size);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, size);
+	hp = erts_alloc_message_heap(size, &bp, &off_heap, tracer, 0);
 #endif
 	
 	/*
 	 * Copy the trace message into the buffer and enqueue it.
 	 */
-	mess = copy_struct(mess, size, &hp,
-#ifdef ERTS_SMP
-			   &bp->off_heap
-#else
-			   &MSO(tracer)
-#endif
-	    );
+	mess = copy_struct(mess, size, &hp, off_heap);
 #ifdef ERTS_SMP
 	enqueue_sys_msg_unlocked(SYS_MSG_TYPE_TRACE,
 				 p->id, p->tracer_proc, mess, bp);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
     erts_smp_mtx_unlock(&smq_mtx);
@@ -1178,9 +1155,9 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 	send_to_port(p, mess, tracer_pid, tracee_flags);
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	unsigned size;
@@ -1210,8 +1187,9 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(size);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, size);
+	hp = erts_alloc_message_heap(size, &bp, &off_heap, tracer, 0);
 #endif
 #ifdef DEBUG
 	limit = hp + size;
@@ -1223,13 +1201,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 	
 	mfa = TUPLE3(hp, mod, name, make_small(arity));
 	hp += 4;
-	retval = copy_struct(retval, retval_size, &hp,
-#ifdef ERTS_SMP
-			     &bp->off_heap
-#else
-			     &MSO(tracer)
-#endif
-	    );
+	retval = copy_struct(retval, retval_size, &hp, off_heap);
 	mess = TUPLE5(hp, am_trace, p->id/* Local pid */, am_return_from, mfa, retval);
 	hp += 6;
 
@@ -1246,7 +1218,7 @@ erts_trace_return(Process* p, Eterm* fi, Eterm retval, Eterm *tracer_pid)
 				 tracee, *tracer_pid, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
 }
@@ -1330,9 +1302,9 @@ erts_trace_exception(Process* p, Eterm mfa[3], Eterm class, Eterm value,
 	send_to_port(p, mess, tracer_pid, tracee_flags);
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	unsigned size;
@@ -1362,8 +1334,9 @@ erts_trace_exception(Process* p, Eterm mfa[3], Eterm class, Eterm value,
 #ifdef ERTS_SMP
 	bp = new_message_buffer(size);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, size);
+	hp = erts_alloc_message_heap(size, &bp, &off_heap, tracer, 0);
 #endif
 #ifdef DEBUG
 	limit = hp + size;
@@ -1375,13 +1348,7 @@ erts_trace_exception(Process* p, Eterm mfa[3], Eterm class, Eterm value,
 	
 	mfa_tuple = TUPLE3(hp, mfa[0], mfa[1], make_small(mfa[2]));
 	hp += 4;
-	value = copy_struct(value, value_size, &hp,
-#ifdef ERTS_SMP
-			     &bp->off_heap
-#else
-			     &MSO(tracer)
-#endif
-	    );
+	value = copy_struct(value, value_size, &hp, off_heap);
 	cv = TUPLE2(hp, class, value);
 	hp += 3;
 	mess = TUPLE5(hp, am_trace, p->id/* Local pid */, 
@@ -1401,7 +1368,7 @@ erts_trace_exception(Process* p, Eterm mfa[3], Eterm class, Eterm value,
 				 tracee, *tracer_pid, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
 }
@@ -1580,9 +1547,10 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 
     } else {
 #ifdef ERTS_SMP
-	ErlHeapFragment *bp;
 	Eterm tpid;
 #endif
+	ErlHeapFragment *bp;
+	ErlOffHeap *off_heap;
 	Process *tracer;
 	unsigned size;
 	unsigned sizes[256];
@@ -1689,8 +1657,9 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 #ifdef ERTS_SMP
 	bp = new_message_buffer(size);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, size);
+	hp = erts_alloc_message_heap(size, &bp, &off_heap, tracer, 0);
 #endif
 #ifdef DEBUG
 	limit = hp + size;
@@ -1710,7 +1679,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 #ifdef ERTS_SMP
 					 &bp->off_heap
 #else
-					 &MSO(tracer)
+					 off_heap
 #endif
 );
 		mfa_tuple = CONS(hp, term, mfa_tuple);
@@ -1725,13 +1694,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	 */
 	
 	if (pam_result != am_true) {
-	    pam_result = copy_struct(pam_result, pam_result_size, &hp,
-#ifdef ERTS_SMP
-				     &bp->off_heap
-#else
-				     &MSO(tracer)
-#endif
-		);
+	    pam_result = copy_struct(pam_result, pam_result_size, &hp, off_heap);
 	}
 
 	erts_match_set_release_result(p);
@@ -1758,7 +1721,7 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	enqueue_sys_msg_unlocked(SYS_MSG_TYPE_TRACE, tracee, tpid, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
 	return return_flags;
     }
@@ -1800,9 +1763,9 @@ trace_proc(Process *c_p, Process *t_p, Eterm what, Eterm data)
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
 	Eterm tmp;
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	size_t sz_data;
@@ -1827,17 +1790,12 @@ trace_proc(Process *c_p, Process *t_p, Eterm what, Eterm data)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(need);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, need);
+	hp = erts_alloc_message_heap(need, &bp, &off_heap, tracer, 0);
 #endif
 
-	tmp = copy_struct(data, sz_data, &hp,
-#ifdef ERTS_SMP
-			  &bp->off_heap
-#else
-			  &MSO(tracer)
-#endif
-	    );
+	tmp = copy_struct(data, sz_data, &hp, off_heap);
 	mess = TUPLE4(hp, am_trace, t_p->id/* Local pid */, what, tmp);
 	hp += 5;
 
@@ -1852,7 +1810,7 @@ trace_proc(Process *c_p, Process *t_p, Eterm what, Eterm data)
 				 t_p->id, t_p->tracer_proc, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
 }
@@ -1888,12 +1846,13 @@ trace_proc_spawn(Process *p, Eterm pid,
 	erts_smp_mtx_unlock(&smq_mtx);
     } else {
 	Eterm tmp;
-#ifdef ERTS_SMP
 	ErlHeapFragment *bp;
-#else
+	ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
 	Process *tracer;
 #endif
 	size_t sz_args, sz_pid;
+	Uint need;
 
 	ASSERT(is_internal_pid(p->tracer_proc)
 	       && internal_pid_index(p->tracer_proc) < erts_max_processes);
@@ -1910,30 +1869,19 @@ trace_proc_spawn(Process *p, Eterm pid,
 
 	sz_args = size_object(args);
 	sz_pid = size_object(pid);
-
+	need = sz_args + 4 + 6 + TS_SIZE(p);
 #ifdef ERTS_SMP
-	bp = new_message_buffer(sz_args + 4 + 6 + TS_SIZE(p));
+	bp = new_message_buffer(need);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
-	hp = HAlloc(tracer, sz_args + 4 + 6 + TS_SIZE(p));
+	hp = erts_alloc_message_heap(need, &bp, &off_heap, tracer, 0);
 #endif
 
-	tmp = copy_struct(args, sz_args, &hp,
-#ifdef ERTS_SMP
-			  &bp->off_heap
-#else
-			  &MSO(tracer)
-#endif
-	    );
+	tmp = copy_struct(args, sz_args, &hp, off_heap);
 	mfa = TUPLE3(hp, mod, func, tmp);
 	hp += 4;
-	tmp = copy_struct(pid, sz_pid, &hp,
-#ifdef ERTS_SMP
-			  &bp->off_heap
-#else
-			  &MSO(tracer)
-#endif
-	    );
+	tmp = copy_struct(pid, sz_pid, &hp, off_heap);
 	mess = TUPLE5(hp, am_trace, p->id, am_spawn, tmp, mfa);
 	hp += 6;
 
@@ -1948,7 +1896,7 @@ trace_proc_spawn(Process *p, Eterm pid,
 				 p->id, p->tracer_proc, mess, bp);
 	erts_smp_mtx_unlock(&smq_mtx);
 #else
-	erts_queue_message(tracer, 0, NULL, mess, NIL);
+	erts_queue_message(tracer, 0, bp, mess, NIL);
 #endif
     }
 }
@@ -2158,9 +2106,9 @@ void
 trace_gc(Process *p, Eterm what)
 {
 #define HEAP_WORDS_NEEDED 40
-#ifdef ERTS_SMP
     ErlHeapFragment *bp = NULL;
-#else
+    ErlOffHeap *off_heap;
+#ifndef ERTS_SMP
     Process* tracer = NULL;	/* Initialized to eliminate compiler warning */
 #endif
     Eterm* hp;
@@ -2187,6 +2135,7 @@ trace_gc(Process *p, Eterm what)
 #ifdef ERTS_SMP
 	bp = new_message_buffer(size);
 	hp = bp->mem;
+	off_heap = &bp->off_heap;
 #else
 	tracer = process_tab[internal_pid_index(p->tracer_proc)];
 	if (INVALID_PID(tracer, p->tracer_proc)
@@ -2195,7 +2144,7 @@ trace_gc(Process *p, Eterm what)
 	    p->tracer_proc = NIL;
 	    return;
 	}
-	hp = HAlloc(tracer, size);
+	hp = erts_alloc_message_heap(size, &bp, &off_heap, tracer, 0);
 #endif
     }
 #undef HEAP_WORDS_NEEDED
@@ -2229,7 +2178,7 @@ trace_gc(Process *p, Eterm what)
 	enqueue_sys_msg_unlocked(SYS_MSG_TYPE_TRACE,
 				 p->id, p->tracer_proc, msg, bp);
 #else
-	erts_queue_message(tracer, 0, NULL, msg, NIL);
+	erts_queue_message(tracer, 0, bp, msg, NIL);
 #endif
     }
     erts_smp_mtx_unlock(&smq_mtx);
@@ -2240,9 +2189,9 @@ trace_gc(Process *p, Eterm what)
 
 void
 monitor_long_gc(Process *p, Uint time) {
-#ifdef ERTS_SMP
     ErlHeapFragment *bp;
-#else
+#ifndef ERTS_SMP
+    ErlOffHeap *off_heap;
     Process *monitor_p;
 #endif
     Uint hsz;
@@ -2269,7 +2218,7 @@ monitor_long_gc(Process *p, Uint time) {
     bp = new_message_buffer(hsz);
     hp = bp->mem;
 #else
-    hp = HAlloc(monitor_p, hsz);
+    hp = erts_alloc_message_heap(hsz, &bp, &off_heap, monitor_p, 0);
 #endif
     if (IS_USMALL(0, time)) {
 	timeout = make_small(time);
@@ -2290,16 +2239,16 @@ monitor_long_gc(Process *p, Uint time) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, NULL, msg, NIL);
+    erts_queue_message(monitor_p, 0, bp, msg, NIL);
 #endif
 #undef CONS_PAIR
 }
 
 void
 monitor_large_heap(Process *p) {
-#ifdef ERTS_SMP
     ErlHeapFragment *bp;
-#else
+#ifndef ERTS_SMP
+    ErlOffHeap *off_heap;
     Process *monitor_p;
 #endif
     Eterm *hp, tuple, list, msg;
@@ -2322,8 +2271,7 @@ monitor_large_heap(Process *p) {
     bp = new_message_buffer(25);
     hp = bp->mem;
 #else
-    /* XXX Multi-thread note: Perhaps allocating on another process's heap. */
-    hp = HAlloc(monitor_p, 25);
+    hp = erts_alloc_message_heap(25, &bp, &off_heap, monitor_p, 0);
 #endif
 
     list = NIL;
@@ -2337,16 +2285,16 @@ monitor_large_heap(Process *p) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, NULL, msg, NIL);
+    erts_queue_message(monitor_p, 0, bp, msg, NIL);
 #endif
 #undef CONS_PAIR
 }
 
 void
 monitor_generic(Process *p, Eterm type, Eterm spec) {
-#ifdef ERTS_SMP
     ErlHeapFragment *bp;
-#else
+#ifndef ERTS_SMP
+    ErlOffHeap *off_heap;
     Process *monitor_p;
 #endif
     Eterm *hp, msg;
@@ -2364,7 +2312,7 @@ monitor_generic(Process *p, Eterm type, Eterm spec) {
     bp = new_message_buffer(5);
     hp = bp->mem;
 #else
-    hp = HAlloc(monitor_p, 5);
+    hp = erts_alloc_message_heap(5, &bp, &off_heap, monitor_p, 0);
 #endif
 
     msg = TUPLE4(hp, am_monitor, p->id/* Local pid */, type, spec); 
@@ -2373,7 +2321,7 @@ monitor_generic(Process *p, Eterm type, Eterm spec) {
 #ifdef ERTS_SMP
     enqueue_sys_msg(SYS_MSG_TYPE_SYSMON, p->id, NIL, msg, bp);
 #else
-    erts_queue_message(monitor_p, 0, NULL, msg, NIL);
+    erts_queue_message(monitor_p, 0, bp, msg, NIL);
 #endif
 
 }

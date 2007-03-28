@@ -524,9 +524,7 @@ emit_c_union_loop(G, N, X, Fd, CaseList, Case) ->
 emit_c_union_loop(G, N, X, Fd, [], GotDefaultCase, Case) ->
     case GotDefaultCase of
 	false ->
-	    emit_c_union_valueless_discriminator(G, N, X, Fd, Case);
-	_ ->
-	    ok
+	    emit_c_union_valueless_discriminator(G, N, X, Fd, Case)
     end;
 emit_c_union_loop(G, N, X, Fd, [CU|CUs], GotDefaultCase, Case) ->
     case CU of

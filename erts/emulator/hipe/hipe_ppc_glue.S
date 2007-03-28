@@ -437,6 +437,38 @@ ASYM(nbif_fail):
 	li	r3, HIPE_MODE_SWITCH_RES_THROW
 	b	.flush_exit	/* no need to save RA */
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+	GLOBAL(CSYM(nbif_0_gc_after_bif))
+	GLOBAL(CSYM(nbif_1_gc_after_bif))
+	GLOBAL(CSYM(nbif_2_gc_after_bif))
+	GLOBAL(CSYM(nbif_3_gc_after_bif))
+CSYM(nbif_0_gc_after_bif):
+	li	r4, 0
+	b	.gc_after_bif
+CSYM(nbif_1_gc_after_bif):
+	li	r4, 1
+	b	.gc_after_bif
+CSYM(nbif_2_gc_after_bif):
+	li	r4, 2
+	b	.gc_after_bif
+CSYM(nbif_3_gc_after_bif):
+	li	r4, 3
+	/*FALLTHROUGH*/
+.gc_after_bif:
+	stw	r4, P_NARITY(P)		# Note: narity is a 32-bit field
+	STORE	TEMP_LR, P_NRA(P)
+	STORE	NSP, P_NSP(P)
+	mflr	TEMP_LR
+	mr	r4, r3
+	mr	r3, P
+	bl	CSYM(erts_gc_after_bif_call)
+	mtlr	TEMP_LR
+	LOAD	TEMP_LR, P_NRA(P)
+	li	r4, 0
+	stw	r4, P_NARITY(P)		# Note: narity is a 32-bit field
+	blr
+#endif
+
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.

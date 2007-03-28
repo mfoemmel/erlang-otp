@@ -612,8 +612,9 @@ find_field([{I,_,_}|T], 1, Acc) ->
     find_field(T, 1, [I|Acc]);
 find_field([{_,O,_}|T], 2, Acc) -> 
     find_field(T, 2, [O|Acc]);
-find_field([{_,_,P}|T], 3, Acc) -> 
-    find_field(T, 3, [P|Acc]);
+% Left out for now to avoid dialyzer warning.
+%find_field([{_,_,P}|T], 3, Acc) -> 
+%    find_field(T, 3, [P|Acc]);
 find_field(What, _, _) -> 
     orber:dbg("[~p] CosNotifyChannelAdmin_EventChannel:find_field();~n"
 	      "Data corrupt: ~p", [?LINE, What], ?DEBUG_LEVEL),

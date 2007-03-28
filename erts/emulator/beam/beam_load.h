@@ -96,13 +96,19 @@ extern Uint erts_total_code_size;
 #define MI_NUM_BREAKPOINTS      7
 
 /*
+ * Literal area (constant pool).
+ */
+#define MI_LITERALS_START	8
+#define MI_LITERALS_END		9
+
+/*
  * Start of function pointer table.  This table contains pointers to
- * all functions in the module plus an additional pointer just beyoynd
- * the end of the last functioin.
+ * all functions in the module plus an additional pointer just beyond
+ * the end of the last function.
  *
  * The actual loaded code (for the first function) start just beyond
  * this table.
  */
 
-#define MI_FUNCTIONS         8
+#define MI_FUNCTIONS         10
 #endif /* _BEAM_LOAD_H */

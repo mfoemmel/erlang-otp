@@ -34,16 +34,16 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 ifdef HIPE_ENABLED
-HIPE_MODULES = hipe_rtl hipe_rtl_cfg hipe_rtl_ebb \
-	  hipe_rtl_liveness hipe_rtl_prop \
+HIPE_MODULES = hipe_rtl hipe_rtl_cfg \
+	  hipe_rtl_liveness \
 	  hipe_icode2rtl hipe_rtl_mk_switch \
 	  hipe_rtl_primops \
 	  hipe_rtl_varmap hipe_rtl_exceptions \
-	  hipe_rtl_bs_ops hipe_rtl_cerl_bs_ops hipe_rtl_inline_bs_ops\
+	  hipe_rtl_binary_match hipe_rtl_binary_construct \
 	  hipe_rtl_arith_32 hipe_rtl_arith_64 \
-	  hipe_rtl_ssa hipe_rtl_ssa_const_prop hipe_rtl_bin_util \
+	  hipe_rtl_ssa hipe_rtl_ssa_const_prop \
 	  hipe_rtl_cleanup_const hipe_rtl_symbolic hipe_rtl_lcm \
-	  hipe_rtl_ssapre hipe_rtl_binary
+	  hipe_rtl_ssapre hipe_rtl_binary hipe_rtl_ssa_avail_expr
 else
 HIPE_MODULES =
 endif
@@ -113,12 +113,10 @@ $(EBIN)/hipe_rtl.beam: hipe_rtl.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arch.beam: hipe_literals.hrl
 $(EBIN)/hipe_rtl_cfg.beam: hipe_rtl.hrl ../flow/cfg.inc ../main/hipe.hrl
 $(EBIN)/hipe_rtl_cleanup_const.beam: hipe_rtl.hrl
-$(EBIN)/hipe_rtl_ebb.beam: ../flow/ebb.inc
 $(EBIN)/hipe_rtl_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_icode2rtl.beam: hipe_literals.hrl ../main/hipe.hrl ../icode/hipe_icode.hrl
 $(EBIN)/hipe_tagscheme.beam: hipe_rtl.hrl hipe_literals.hrl
 $(EBIN)/hipe_rtl_primops.beam: hipe_rtl.hrl ../icode/hipe_icode_primops.hrl hipe_literals.hrl ../main/hipe.hrl
-$(EBIN)/hipe_rtl_prop.beam: hipe_rtl.hrl ../main/hipe.hrl
 $(EBIN)/hipe_rtl_arith_32.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_arith_64.beam: ../main/hipe.hrl hipe_rtl_arith.inc
 $(EBIN)/hipe_rtl_bs_ops.beam: hipe_literals.hrl ../main/hipe.hrl

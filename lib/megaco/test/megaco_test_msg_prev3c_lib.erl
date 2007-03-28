@@ -160,6 +160,7 @@
 	 cre_PackagesDescriptor/1, 
 	 cre_PackagesItem/2, 
 	 cre_PkgdName/1, 
+	 cre_PkgdName/2, 
 	 cre_PropertyGroup/1, 
 	 cre_PropertyParm/2, 
 	 cre_PropertyParm/4, 
@@ -1268,8 +1269,8 @@ cre_ObservedEvent(EN, SID, EPL, TN)
 		     eventParList = EPL,
 		     timeNotation = TN}.
 
-cre_EventName(N) ->
-    cre_PkgdName(N).
+cre_EventName(N) when is_list(N) ->
+    N.
 
 cre_EventParameter(N, V) when list(N), list(V) ->
     #'EventParameter'{eventParameterName = N, 
@@ -1439,11 +1440,27 @@ cre_PropertyParm(N, [H|_] = V, sublist = Tag, B)
     #'PropertyParm'{name = N, value = V, extraInfo = EI}.
 
 
-cre_Name(N) when list(N), length(N) == 2 ->
+cre_Name(N) when is_list(N) and (length(N) == 2) ->
     N.
 
-cre_PkgdName(N) when list(N), length(N) == 4 ->
-    N.
+cre_PkgdName(N) when is_list(N) ->
+    case string:tokens(N, [$\\]) of
+	[_PkgName, _ItemID] ->
+	    N;
+	_ ->
+	    error({invalid_PkgdName, N})
+    end.
+cre_PkgdName(root, root) ->
+    "*/*";
+cre_PkgdName(PackageName, root) 
+  when is_list(PackageName) and (length(PackageName) =< 64) ->
+    PackageName ++ "/*";
+cre_PkgdName(PackageName, ItemID) 
+  when ((is_list(PackageName) and (length(PackageName) =< 64)) and
+	(is_list(ItemID)      and (length(ItemID) =< 64))) ->
+    PackageName ++ "/" ++ ItemID;
+cre_PkgdName(PackageName, ItemID) ->
+    error({invalid_PkgdName, {PackageName, ItemID}}).
 
 cre_Relation(greaterThan = R) ->
     R;
@@ -6083,15 +6100,23 @@ is_PkgdName(N) ->
     d("is_PkgdName -> entry with"
       "~n   N: ~p", [N]),
     case string:tokens(N, "/") of
-	[N1, N2] ->
-	    d("is_PkgdName -> entry with"
-	      "~n   N1: ~p"
-	      "~n   N2: ~p", [N1, N2]),
-	    is_Name(N1) andalso is_Name(N2);
-	%% is_OCTET_STRING(N1 ++ N2, {exact, 4});
+	["*" = PackageName, "*" = ItemID] ->
+	    d("is_PkgdName -> tokenized (0): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    true; 
+	[PackageName, "*" = ItemID] ->
+	    d("is_PkgdName -> tokenized (1): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    is_Name(PackageName);
+	[PackageName, ItemID] ->
+	    d("is_PkgdName -> tokenized (2): "
+	      "~n   PackageName: ~p"
+	      "~n   ItemID:      ~p", [PackageName, ItemID]),
+	    is_Name(PackageName) andalso is_Name(ItemID);
 	_ ->
 	    is_Name(N)
-	    %% is_OCTET_STRING(N, {exact, 4})
     end.
 
 chk_PkgdName(N, N) ->

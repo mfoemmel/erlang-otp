@@ -42,6 +42,7 @@
 
 
 #define WANT_NONBLOCKING
+#define ERTS_WANT_GOT_SIGUSR1
 
 #include "erl_poll.h"
 #if ERTS_POLL_USE_KQUEUE
@@ -100,6 +101,15 @@
 #define FDS_STATUS_EXTRA_FREE_SIZE 128
 #define POLL_FDS_EXTRA_FREE_SIZE 128
 
+#ifdef ERTS_POLL_NEED_ASYNC_INTERRUPT_SUPPORT
+#  define ERTS_POLL_ASYNC_INTERRUPT_SUPPORT 1
+#else
+#  define ERTS_POLL_ASYNC_INTERRUPT_SUPPORT 0
+#endif
+
+#define ERTS_POLL_USE_WAKEUP_PIPE \
+   (ERTS_POLL_ASYNC_INTERRUPT_SUPPORT || defined(ERTS_SMP))
+
 #ifdef ERTS_SMP
 
 #define ERTS_POLLSET_LOCK(PS) \
@@ -130,10 +140,29 @@
 #define ERTS_POLLSET_SET_POLLED_CHK(PS) 0
 #define ERTS_POLLSET_UNSET_POLLED(PS)
 #define ERTS_POLLSET_IS_POLLED(PS) 0
+
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT
+
+/*
+ * Ideally, the ERTS_POLLSET_SET_POLLER_WOKEN_CHK(PS) operation would
+ * be atomic. This operation isn't, but we will do okay anyway. The
+ * "woken check" is only an optimization. The only requirement we have:
+ * If (PS)->woken is set to a value != 0 when interrupting, we have to
+ * write on the the wakeup pipe at least once. Multiple writes are okay.
+ */
+#define ERTS_POLLSET_SET_POLLER_WOKEN_CHK(PS) ((PS)->woken++)
+#define ERTS_POLLSET_SET_POLLER_WOKEN(PS) ((PS)->woken = 1, (void) 0)
+#define ERTS_POLLSET_UNSET_POLLER_WOKEN(PS) ((PS)->woken = 0, (void) 0)
+#define ERTS_POLLSET_IS_POLLER_WOKEN(PS) ((PS)->woken)
+
+#else
+
 #define ERTS_POLLSET_SET_POLLER_WOKEN_CHK(PS) 1
 #define ERTS_POLLSET_SET_POLLER_WOKEN(PS)
 #define ERTS_POLLSET_UNSET_POLLER_WOKEN(PS)
 #define ERTS_POLLSET_IS_POLLER_WOKEN(PS) 1
+
+#endif
 
 #endif
 
@@ -150,14 +179,25 @@
 #define ERTS_POLLSET_HAVE_UPDATE_REQUESTS(PS) 0
 #endif
 
-#define ERTS_POLLSET_IS_INTERRUPTED(PS) \
-  ((int) erts_smp_atomic_read(&(PS)->interrupt))
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT && !defined(ERTS_SMP)
+
+#define ERTS_POLLSET_UNSET_INTERRUPTED_CHK(PS) unset_interrupted_chk((PS))
+#define ERTS_POLLSET_UNSET_INTERRUPTED(PS) ((PS)->interrupt = 0, (void) 0)
+#define ERTS_POLLSET_SET_INTERRUPTED(PS) ((PS)->interrupt = 1, (void) 0)
+#define ERTS_POLLSET_IS_INTERRUPTED(PS) ((PS)->interrupt)
+
+#else
+
 #define ERTS_POLLSET_UNSET_INTERRUPTED_CHK(PS) \
   ((int) erts_smp_atomic_xchg(&(PS)->interrupt, (long) 0))
 #define ERTS_POLLSET_UNSET_INTERRUPTED(PS) \
   erts_smp_atomic_set(&(PS)->interrupt, (long) 0)
 #define ERTS_POLLSET_SET_INTERRUPTED(PS) \
-  erts_smp_atomic_xchg(&(PS)->interrupt, (long) 1)
+  erts_smp_atomic_set(&(PS)->interrupt, (long) 1)
+#define ERTS_POLLSET_IS_INTERRUPTED(PS) \
+  ((int) erts_smp_atomic_read(&(PS)->interrupt))
+
+#endif
 
 #if ERTS_POLL_USE_FALLBACK
 #  if ERTS_POLL_USE_POLL
@@ -268,12 +308,20 @@ struct ErtsPollSet_ {
     erts_smp_atomic_t polled;
     erts_smp_atomic_t woken;
     erts_smp_mtx_t mtx;
+#elif ERTS_POLL_ASYNC_INTERRUPT_SUPPORT
+    volatile int woken;
+#endif
+#if ERTS_POLL_USE_WAKEUP_PIPE
     int wake_fds[2];
 #endif
 #if ERTS_POLL_USE_FALLBACK
     int fallback_used;
 #endif
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT && !defined(ERTS_SMP)
+    volatile int interrupt;
+#else
     erts_smp_atomic_t interrupt;
+#endif
     erts_smp_atomic_t timeout;
 #ifdef ERTS_POLL_COUNT_AVOIDED_WAKEUPS
     erts_smp_atomic_t no_avoided_wakeups;
@@ -282,7 +330,22 @@ struct ErtsPollSet_ {
 #endif
 };
 
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT && !defined(ERTS_SMP)
+
+static ERTS_INLINE int
+unset_interrupted_chk(ErtsPollSet ps)
+{
+    /* This operation isn't atomic, but we have no need at all for an
+       atomic operation here... */
+    int res = ps->interrupt;
+    ps->interrupt = 0;
+    return res;
+}
+
+#endif
+
 static void fatal_error(char *format, ...);
+static void fatal_error_async_signal_safe(char *error_str);
 
 static int max_fds = -1;
 static ErtsPollSet pollsets;
@@ -340,25 +403,28 @@ static void print_misc_debug_info(void);
  * --- Wakeup pipe -----------------------------------------------------------
  */
 
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 
 static ERTS_INLINE void
 wake_poller(ErtsPollSet ps)
 {
+    /*
+     * NOTE: This function might be called from signal handlers in the
+     *       non-smp case; therefore, it has to be async-signal safe in
+     *       the non-smp case.
+     */
     if (!ERTS_POLLSET_SET_POLLER_WOKEN_CHK(ps)) {
 	ssize_t res;
 	if (ps->wake_fds[1] < 0)
 	    return; /* Not initialized yet */
-	do {	
+	do {
+	    /* write() is async-signal safe (according to posix) */
 	    res = write(ps->wake_fds[1], "!", 1);
 	} while (res < 0 && errno == EINTR);
 	if (res <= 0 && errno != ERRNO_BLOCK) {
-	    fatal_error("%s:%d:wake_poller(): "
-			"Failed to write on wakeup pipe fd=%d: "
-			"%s (%d)\n",
-			__FILE__, __LINE__,
-			ps->wake_fds[1],
-			erl_errno_id(errno), errno);
+	    fatal_error_async_signal_safe(__FILE__
+					  ":XXX:wake_poller(): "
+					  "Failed to write on wakeup pipe\n");
 	}
     }
 }
@@ -421,7 +487,7 @@ create_wakeup_pipe(ErtsPollSet ps)
     ps->wake_fds[1] = wake_fds[1];
 }
 
-#endif /* ERTS_SMP */
+#endif /* ERTS_POLL_USE_WAKEUP_PIPE */
 
 /*
  * --- Poll set update requests ----------------------------------------------
@@ -1304,7 +1370,7 @@ poll_control(ErtsPollSet ps, int fd, ErtsPollEvents events, int on,
 	    goto done;
 	}
 #endif
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 	if (fd == ps->wake_fds[0] || fd == ps->wake_fds[1]) {
 	    new_events = ERTS_POLL_EV_NVAL;
 	    goto done;
@@ -1477,7 +1543,7 @@ save_kp_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res, int chk_fds_res)
     int res = 0;
     int i;
     int n = chk_fds_res < max_res ? chk_fds_res : max_res;
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
     int wake_fd = ps->wake_fds[0];
 #endif
 
@@ -1489,7 +1555,7 @@ save_kp_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res, int chk_fds_res)
 	    int fd = ps->res_events[i].data.fd;
 	    int ix;
 	    ErtsPollEvents revents;
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 	    if (fd == wake_fd) {
 		cleanup_wakeup_pipe(ps);
 		continue;
@@ -1536,7 +1602,7 @@ save_kp_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res, int chk_fds_res)
 	}
 
 	if (ev->filter == EVFILT_READ) {
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 	    if (fd == wake_fd) {
 		cleanup_wakeup_pipe(ps);
 		continue;
@@ -1565,7 +1631,7 @@ save_kp_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res, int chk_fds_res)
 	if (ps->res_events[i].revents) {
 	    int fd = ps->res_events[i].fd;
 	    ErtsPollEvents revents;
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 	    if (fd == wake_fd) {
 		cleanup_wakeup_pipe(ps);
 		continue;
@@ -1641,7 +1707,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 
 #if ERTS_POLL_USE_POLL	/* --- poll -------------------------------- */
 	int res = 0;
-#if defined(ERTS_SMP) && !ERTS_POLL_USE_FALLBACK 
+#if ERTS_POLL_USE_WAKEUP_PIPE && !ERTS_POLL_USE_FALLBACK 
 	int wake_fd = ps->wake_fds[0];
 #endif
 	int i, first_ix, end_ix;
@@ -1666,7 +1732,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 			i++;
 			continue;
 		    }
-#elif defined(ERTS_SMP)
+#elif ERTS_POLL_USE_WAKEUP_PIPE
 		    if (fd == wake_fd) {
 			cleanup_wakeup_pipe(ps);
 			i++;
@@ -1693,7 +1759,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 
 #elif ERTS_POLL_USE_SELECT	/* --- select ------------------------------ */
 	int res = 0;
-#if defined(ERTS_SMP) && !ERTS_POLL_USE_FALLBACK 
+#if ERTS_POLL_USE_WAKEUP_PIPE && !ERTS_POLL_USE_FALLBACK 
 	int wake_fd = ps->wake_fds[0];
 #endif
 	int fd, first_fd, end_fd;
@@ -1717,7 +1783,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 			    fd++;
 			    continue;
 			}
-#elif defined(ERTS_SMP)
+#elif ERTS_POLL_USE_WAKEUP_PIPE
 			if (fd == wake_fd) {
 			    cleanup_wakeup_pipe(ps);
 			    fd++;
@@ -1782,7 +1848,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 				fd++;
 				continue;
 			    }
-#elif  defined(ERTS_SMP)
+#elif ERTS_POLL_USE_WAKEUP_PIPE
 			    if (fd == wake_fd) {
 				cleanup_wakeup_pipe(ps);
 				fd++;
@@ -1805,7 +1871,7 @@ save_poll_result(ErtsPollSet ps, ErtsPollResFd pr[], int max_res,
 				    fd++;
 				    continue;
 				}
-#elif  defined(ERTS_SMP)
+#elif ERTS_POLL_USE_WAKEUP_PIPE
 				if (fd == wake_fd) {
 				    cleanup_wakeup_pipe(ps);
 				    fd++;
@@ -2056,12 +2122,14 @@ ERTS_POLL_EXPORT(erts_poll_wait)(ErtsPollSet ps,
 void
 ERTS_POLL_EXPORT(erts_poll_interrupt)(ErtsPollSet ps, int set)
 {
-#ifdef ERTS_POLL_DEBUG_PRINT
-    erts_printf("erts_poll_interrupt(%p, %d)\n", (void *) ps, set);
-#endif
+    /*
+     * NOTE: This function might be called from signal handlers in the
+     *       non-smp case; therefore, it has to be async-signal safe in
+     *       the non-smp case.
+     */
     if (set) {
 	ERTS_POLLSET_SET_INTERRUPTED(ps);
-#ifdef ERTS_SMP
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT || defined(ERTS_SMP)
 	wake_poller(ps);
 #endif
     }
@@ -2078,13 +2146,10 @@ ERTS_POLL_EXPORT(erts_poll_interrupt)(ErtsPollSet ps, int set)
 void
 ERTS_POLL_EXPORT(erts_poll_interrupt_timed)(ErtsPollSet ps, int set, long msec)
 {
-#ifdef ERTS_POLL_DEBUG_PRINT
-    erts_printf("erts_poll_interrupt(%p, %d)\n", (void *) ps, set);
-#endif
     if (set) {
 	if (erts_smp_atomic_read(&ps->timeout) > msec) {
 	    ERTS_POLLSET_SET_INTERRUPTED(ps);
-#ifdef ERTS_SMP
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT || defined(ERTS_SMP)
 	    wake_poller(ps);
 #endif
 	}
@@ -2210,10 +2275,15 @@ ERTS_POLL_EXPORT(erts_poll_create_pollset)(void)
     erts_smp_atomic_init(&ps->polled, 0);
     erts_smp_atomic_init(&ps->woken, 0);
     erts_smp_mtx_init(&ps->mtx, "pollset");
+#elif ERTS_POLL_ASYNC_INTERRUPT_SUPPORT
+    ps->woken = 0;
+#endif
+#if ERTS_POLL_USE_WAKEUP_PIPE
     create_wakeup_pipe(ps);
 #endif
 #if ERTS_POLL_USE_FALLBACK
-    grow_fds_status(ps, kp_fd);
+    if (kp_fd >= ps->fds_status_len)
+	grow_fds_status(ps, kp_fd);
     /* Force kernel poll fd into fallback (poll/select) set */
     ps->fds_status[kp_fd].flags
 	|= ERTS_POLL_FD_FLG_INFLBCK|ERTS_POLL_FD_FLG_USEFLBCK;
@@ -2224,7 +2294,11 @@ ERTS_POLL_EXPORT(erts_poll_create_pollset)(void)
 	ps->internal_fd_limit = kp_fd + 1;
     ps->kp_fd = kp_fd;
 #endif
+#if ERTS_POLL_ASYNC_INTERRUPT_SUPPORT && !defined(ERTS_SMP)
+    ps->interrupt = 0;
+#else
     erts_smp_atomic_init(&ps->interrupt, 0);
+#endif
     erts_smp_atomic_init(&ps->timeout, LONG_MAX);
 #ifdef ERTS_POLL_COUNT_AVOIDED_WAKEUPS
     erts_smp_atomic_init(&ps->no_avoided_wakeups, 0);
@@ -2281,6 +2355,8 @@ ERTS_POLL_EXPORT(erts_poll_destroy_pollset)(ErtsPollSet ps)
 #endif
 #ifdef ERTS_SMP
     erts_smp_mtx_destroy(&ps->mtx);
+#endif
+#if ERTS_POLL_USE_WAKEUP_PIPE
     if (ps->wake_fds[0] >= 0)
 	close(ps->wake_fds[0]);
     if (ps->wake_fds[1] >= 0)
@@ -2456,7 +2532,7 @@ fatal_error(char *format, ...)
 {
     va_list ap;
 
-    if (ERTS_IS_CRASH_DUMPING || erts_got_sigusr1) {
+    if (ERTS_IS_CRASH_DUMPING || ERTS_GOT_SIGUSR1) {
 	/*
 	 * Crash dump writing and reception of sigusr1 (which will
 	 * result in a crash dump) closes all file descriptors. This
@@ -2470,6 +2546,23 @@ fatal_error(char *format, ...)
     va_start(ap, format);
     erts_vfprintf(stderr, format, ap);
     va_end(ap);
+    abort();
+}
+
+static void
+fatal_error_async_signal_safe(char *error_str)
+{
+    if (ERTS_IS_CRASH_DUMPING || ERTS_GOT_SIGUSR1) {
+	/* See comment above in fatal_error() */
+	return;
+    }
+    if (error_str) {
+	int len = 0;
+	while (error_str[len])
+	    len++;
+	if (len)
+	    (void) write(2, error_str, len); /* async signal safe */
+    }
     abort();
 }
  
@@ -2489,7 +2582,7 @@ ERTS_POLL_EXPORT(erts_poll_get_selected_events)(ErtsPollSet ps,
 	    ev[fd] = 0;
 	else {
 	    ev[fd] = ps->fds_status[fd].events;
-#ifdef ERTS_SMP
+#if ERTS_POLL_USE_WAKEUP_PIPE
 	    if (fd == ps->wake_fds[0] || fd == ps->wake_fds[1])
 		ev[fd] |= ERTS_POLL_EV_NVAL;
 #endif

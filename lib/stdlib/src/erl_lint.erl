@@ -24,7 +24,7 @@
 -module(erl_lint).
 
 -export([module/1,module/2,module/3,format_error/1]).
--export([exprs/2,used_vars/2]). % Used from erl_eval.erl.
+-export([exprs/2,exprs_opt/3,used_vars/2]). % Used from erl_eval.erl.
 -export([is_pattern_expr/1,is_guard_test/1,is_guard_test/2]).
 -export([is_guard_expr/1]).
 -export([bool_option/4,value_option/3,value_option/7]).
@@ -257,14 +257,16 @@ pseudolocals() ->
 %%
 %% Used by erl_eval.erl to check commands.
 %% 
-
 exprs(Exprs, BindingsList) ->
+    exprs_opt(Exprs, BindingsList, []).
+
+exprs_opt(Exprs, BindingsList, Opts) ->
     {St0,Vs} = foldl(fun({{record,_SequenceNumber,_Name},Attr0}, {St1,Vs1}) ->
                              Attr = zip_file_and_line(Attr0, "none"),
 			     {attribute_state(Attr, St1),Vs1};
                         ({V,_}, {St1,Vs1}) -> 
 			     {St1,[{V,{bound,unused,[]}} | Vs1]}
-		     end, {start(),[]}, BindingsList),
+		     end, {start("nofile",Opts),[]}, BindingsList),
     Vt = orddict:from_list(Vs),
     {_Evt,St} = exprs(zip_file_and_line(Exprs, "nofile"), Vt, St0),
     return_status(St).

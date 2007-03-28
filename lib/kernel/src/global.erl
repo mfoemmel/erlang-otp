@@ -102,41 +102,51 @@
 %% {prot_vsn, Node}    = Vsn - the exchange protocol version (not used now)
 %% {sync_tag_my, Node} =  My tag, used at synchronization with Node
 %% {sync_tag_his, Node} = The Node's tag, used at synchronization
+%% {lock_id, Node} = The resource locking the partitions
 %%-----------------------------------------------------------------
 -record(state, {connect_all, known = [], synced = [],
 		resolvers = [], syncers = [], node_name = node(),
-		the_locker, the_deleter, trace
+		the_locker, the_deleter, the_registrar, trace,
+                global_lock_down = false
                }).
 
 %%% There are also ETS tables used for bookkeeping of locks and names
 %%% (the first position is the key):
 %%%
-%%% global_locks (set): {ResourceId, LockRequesterId, [{pid(),ref()]}
+%%% global_locks (set): {ResourceId, LockRequesterId, [{Pid,RPid,ref()]}
 %%%   pid() is locking ResourceId, ref() is the monitor ref.
-%%% global_names (set):  {Name, Pid, Method}
-%%%   Registered names.
+%%%   RPid =/= Pid if there is an extra process calling erlang:monitor().
+%%% global_names (set):  {Name, Pid, Method, RPid, ref()}
+%%%   Registered names. ref() is the monitor ref.
+%%%   RPid =/= Pid if there is an extra process calling erlang:monitor().
 %%% global_names_ext (set): {Name, Pid, RegNode}
 %%%   External registered names (C-nodes).
+%%%   (The RPid:s can be removed when/if erlang:monitor() returns before 
+%%%    trying to connect to the other node.)
 %%% 
 %%% Helper tables:
-%%% global_pid_names (bag): {Pid, Name}
+%%% global_pid_names (bag): {Pid, Name} | {ref(), Name}
 %%%   Name(s) registered for Pid.
-%%% global_pid_ids (bag): {Pid, ResourceId}
+%%%   There is one {Pid, Name} and one {ref(), Name} for every Pid.
+%%%   ref() is the same ref() as in global_names.
+%%% global_pid_ids (bag): {Pid, ResourceId} | {ref(), ResourceId}
 %%%   Resources locked by Pid.
-%%% global_node_pids (duplicated_bag): {{lock, node(Pid)}, Pid} or 
-%%%                                    {{name, Node},Pid}, 
-%%%                     where Node is a node where some name is registered
-%%%   Pids affected by a nodedown.
+%%%   ref() is the same ref() as in global_locks.
 %%%
 %%% global_pid_names is a 'bag' for backward compatibility.
-%%% global_node_pids is a 'duplicate_bag' for the same reason.
 %%% (Before vsn 5 more than one name could be registered for a process.)
 %%%
 %%% R11B-3 (OTP-6341): The list of pids in the table 'global_locks'
 %%% was replaced by a list of {Pid, Ref}, where Ref is a monitor ref.
 %%% It was necessary to use monitors to fix bugs regarding locks that
-%%% were never removed. The old code (async_del_lock) has been kept
-%%% for backward compatibility. It can be removed later.
+%%% were never removed. The signal {async_del_lock, ...} has been
+%%% kept for backward compatibility. It can be removed later.
+%%% 
+%%% R11B-4 (OTP-6428): Monitors are used for registered names.
+%%% The signal {delete_name, ...} has been kept for backward compatibility.
+%%% It can be removed later as can the deleter process.
+%%% An extra process calling erlang:monitor() is sometimes created.
+%%% The new_nodes messages has been augmented with the global lock id.
 
 start() -> 
     gen_server:start({local, global_name_server}, ?MODULE, [], []).
@@ -199,7 +209,7 @@ register_name(Name, Pid) when is_pid(Pid) ->
     register_name(Name, Pid, {?MODULE, random_exit_name}).
 
 register_name(Name, Pid, Method) when is_pid(Pid) ->
-    trans_all_known(fun(Nodes) ->
+    Fun = fun(Nodes) ->
         case (where(Name) =:= undefined) andalso check_dupname(Name, Pid) of
             true ->
                 gen_server:multi_call(Nodes,
@@ -209,7 +219,9 @@ register_name(Name, Pid, Method) when is_pid(Pid) ->
             _ ->
                 no
         end
-    end).
+    end,
+    ?trace({register_name, self(), Name, Pid, Method}),
+    gen_server:call(global_name_server, {registrar, Fun}, infinity).
 
 check_dupname(Name, Pid) ->
     case ets:lookup(global_pid_names, Pid) of
@@ -232,27 +244,32 @@ unregister_name(Name) ->
 	undefined ->
 	    ok;
 	_ ->
-	    trans_all_known(fun(Nodes) ->
+	    Fun = fun(Nodes) ->
 			  gen_server:multi_call(Nodes,
 						global_name_server,
 						{unregister, Name}),
 			  ok
-		  end)
+		  end,
+            ?trace({unregister_name, self(), Name}),
+            gen_server:call(global_name_server, {registrar, Fun}, infinity)
     end.
 
 re_register_name(Name, Pid) when is_pid(Pid) ->
     re_register_name(Name, Pid, {?MODULE, random_exit_name}).
 
 re_register_name(Name, Pid, Method) when is_pid(Pid) ->
-    trans_all_known(fun(Nodes) ->
+    Fun = fun(Nodes) ->
 		  gen_server:multi_call(Nodes,
 					global_name_server,
 					{register, Name, Pid, Method}),
 		  yes
-	  end).
+	  end,
+    ?trace({re_register_name, self(), Name, Pid, Method}),
+    gen_server:call(global_name_server, {registrar, Fun}, infinity).
 
 registered_names() ->
-    ets:select(global_names, ets:fun2ms(fun({Name,_Pid,_Meth}) -> Name end)).
+    MS = ets:fun2ms(fun({Name,_Pid,_M,_RP,_R}) -> Name end),
+    ets:select(global_names, MS).
 
 %%-----------------------------------------------------------------
 %% The external node (e.g. a C-node) registers the name on an Erlang
@@ -266,13 +283,14 @@ registered_names() ->
 %%
 %% Note: if the Erlang node dies an EXIT signal is also sent to the
 %% C-node due to the link between the global_name_server and the
-%% registered process.
+%% registered process. [This is why the link has been kept despite
+%% the fact that monitors do the job now.]
 %%-----------------------------------------------------------------
 register_name_external(Name, Pid) when is_pid(Pid) ->
     register_name_external(Name, Pid, {?MODULE, random_exit_name}).
 
 register_name_external(Name, Pid, Method) when is_pid(Pid) ->
-    trans_all_known(fun(Nodes) ->
+    Fun = fun(Nodes) ->
 		  case where(Name) of
 		      undefined ->
 			  gen_server:multi_call(Nodes,
@@ -282,7 +300,9 @@ register_name_external(Name, Pid, Method) when is_pid(Pid) ->
 			  yes;
 		      _Pid -> no
 		  end
-	  end).
+	  end,
+    ?trace({register_name_external, self(), Name, Pid, Method}),
+    gen_server:call(global_name_server, {registrar, Fun}, infinity).
 
 unregister_name_external(Name) ->
     unregister_name(Name).
@@ -354,20 +374,21 @@ init([]) ->
 
     _ = ets:new(global_pid_names, [bag, named_table, protected]),
     _ = ets:new(global_pid_ids, [bag, named_table, protected]),
-    _ = ets:new(global_node_pids, [duplicate_bag, named_table, protected]),
 
     %% This is for troubleshooting only.
-    T0 = case os:getenv("GLOBAL_HIGH_LEVEL_TRACE") of
-             "TRUE" -> 
-                 send_again(high_level_trace),
+    DoTrace = os:getenv("GLOBAL_HIGH_LEVEL_TRACE") =:= "TRUE",
+    T0 = case DoTrace of
+             true -> 
+                 send_high_level_trace(),
                  [];
-             _ -> 
+             false -> 
                  no_trace
          end,
 
-    S = #state{the_locker = start_the_locker(),
+    S = #state{the_locker = start_the_locker(DoTrace),
                trace = T0,
-	       the_deleter = start_the_deleter(self())},
+	       the_deleter = start_the_deleter(self()),
+               the_registrar = start_the_registrar()},
     S1 = trace_message(S, {init, node()}, []),
 
     case init:get_argument(connect_all) of
@@ -480,7 +501,7 @@ init([]) ->
 %%          then send to global_name_server {lock_is_set, Node, Tag}
 %% 3. Connecting node's global_name_server informs other nodes in the same 
 %%    partition about hitherto unknown nodes in the other partition
-%%    {new_nodes, _Node, Ops, ListOfNamesExt, NewNodes, _Unused}
+%%    {new_nodes, Node, Ops, ListOfNamesExt, NewNodes, ExtraInfo}
 %% 4. Between global_name_server and resolver
 %%    {resolve, NameList, Node} to resolver
 %%    {exchange_ops, Node, Tag, Ops, Resolved} from resolver
@@ -493,18 +514,22 @@ handle_call({whereis, Name}, From, S) ->
     do_whereis(Name, From),
     {noreply, S};
 
+handle_call({registrar, Fun}, From, S) ->
+    S#state.the_registrar ! {trans_all_known, Fun, From},
+    {noreply, S};
+
 %% The pattern {register,'_','_','_'} is traced by the inviso
 %% application. Do not change.
-handle_call({register, Name, Pid, Method}, _From, S0) ->
-    S = ins_name(Name, Pid, Method, S0),
+handle_call({register, Name, Pid, Method}, {FromPid, _Tag}, S0) ->
+    S = ins_name(Name, Pid, Method, FromPid, [], S0),
     {reply, yes, S};
 
 handle_call({unregister, Name}, _From, S0) ->
     S = delete_global_name2(Name, S0),
     {reply, ok, S};
 
-handle_call({register_ext, Name, Pid, Method, RegNode}, _F, S0) ->
-    S = ins_name_ext(Name, Pid, Method, RegNode, S0),
+handle_call({register_ext, Name, Pid, Method, RegNode}, {FromPid,_Tag}, S0) ->
+    S = ins_name_ext(Name, Pid, Method, RegNode, FromPid, [], S0),
     {reply, yes, S};
 
 handle_call({set_lock, Lock}, {Pid, _Tag}, S0) ->
@@ -539,13 +564,26 @@ handle_call(info, _From, S) ->
 
 %% "High level trace". For troubleshooting only.
 handle_call(high_level_trace_start, _From, S) ->
-    send_again(high_level_trace),
+    S#state.the_locker ! {do_trace, true},
+    send_high_level_trace(),
     {reply, ok, trace_message(S#state{trace = []}, {init, node()}, [])};
-handle_call(high_level_trace_stop, _From, #state{trace = Trace}=S) ->
+handle_call(high_level_trace_stop, _From, S) ->
+    #state{the_locker = TheLocker, trace = Trace} = S,
+    TheLocker ! {do_trace, false},
+    wait_high_level_trace(),
     {reply, Trace, S#state{trace = no_trace}};
+handle_call(high_level_trace_get, _From, #state{trace = Trace}=S) ->
+    {reply, Trace, S#state{trace = []}};
 
 handle_call(stop, _From, S) ->
-    {stop, normal, stopped, S}.
+    {stop, normal, stopped, S};
+
+handle_call(Request, From, S) ->
+    error_logger:warning_msg("The global_name_server "
+                             "received an unexpected message:\n"
+                             "handle_call(~p, ~p, _)\n", 
+                             [Request, From]),
+    {noreply, S}.
 
 %%========================================================================
 %% init_connect
@@ -579,12 +617,12 @@ handle_cast({init_connect, Vsn, Node, InitMsg}, S) ->
 %%
 %% Ok, the lock is now set on both partitions. Send our names to other node.
 %%=======================================================================
-handle_cast({lock_is_set, Node, MyTag}, S) ->
+handle_cast({lock_is_set, Node, MyTag, LockId}, S) ->
     %% Sent from the_locker at node().
     ?trace({'####', lock_is_set , {node,Node}}),
     case get({sync_tag_my, Node}) of
 	MyTag ->
-            lock_is_set(Node, S#state.resolvers),
+            lock_is_set(Node, S#state.resolvers, LockId),
             {noreply, S};
 	_ -> %% Illegal tag, delete the old sync session.
 	    NewS = cancel_locker(Node, S, MyTag),
@@ -613,10 +651,11 @@ handle_cast({exchange, Node, NameList, _NameExtList, MyTag}, S) ->
 %% resolve operations. Otherwise we have to save the operations and
 %% wait for {resolve, ...}. This is very much like {lock_is_set, ...}
 %% and {exchange, ...}.
-handle_cast({exchange_ops, Node, MyTag, Ops, Resolved}, S) ->
+handle_cast({exchange_ops, Node, MyTag, Ops, Resolved}, S0) ->
     %% Sent from the resolver for Node at node().
     ?trace({exchange_ops, {node,Node}, {ops,Ops},{resolved,Resolved},
             {mytag,MyTag}}),
+    S = trace_message(S0, {exit_resolver, Node}, [MyTag]),
     case get({sync_tag_my, Node}) of
 	MyTag ->
             Known = S#state.known,
@@ -668,10 +707,10 @@ handle_cast({resolved, Node, HisResolved, HisKnown, _HisKnown_v2,
 %%
 %% We get to know the other node's known nodes.
 %%========================================================================
-handle_cast({new_nodes, _Node, Ops, Names_ext, Nodes, _Nodes_v2}, S) ->
-    %% Sent from global_name_server at _Node.
-    ?trace({new_nodes, {node,_Node}, {ops,Ops}, {nodes,Nodes}}),
-    NewS = new_nodes(Ops, Names_ext, Nodes, S),
+handle_cast({new_nodes, Node, Ops, Names_ext, Nodes, ExtraInfo}, S) ->
+    %% Sent from global_name_server at Node.
+    ?trace({new_nodes, {node,Node},{ops,Ops},{nodes,Nodes},{x,ExtraInfo}}),
+    NewS = new_nodes(Ops, Node, Names_ext, Nodes, ExtraInfo, S),
     {noreply, NewS};
 
 %%========================================================================
@@ -692,31 +731,34 @@ handle_cast({in_sync, Node, _IsKnown}, S) ->
     {noreply, NewS#state{synced = NSynced}};
 
 %% Called when Pid on other node crashed
-handle_cast({async_del_name, Name, Pid}, S0) ->
+handle_cast({async_del_name, _Name, _Pid}, S) ->
     %% Sent from the_deleter at some node in the partition but node().
-    S = case ets:lookup(global_names, Name) of
-            [{Name, Pid, _}] ->
-                delete_global_name2(Name, Pid, S0);
-            _ -> 
-                S0
-        end,
+    %% The DOWN message deletes the name.
     {noreply, S};
 
 handle_cast({async_del_lock, _ResourceId, _Pid}, S) ->
     %% Sent from global_name_server at some node in the partition but node().
     %% The DOWN message deletes the lock.
+    {noreply, S};
+
+handle_cast(Request, S) ->
+    error_logger:warning_msg("The global_name_server "
+                             "received an unexpected message:\n"
+                             "handle_cast(~p, _)\n", [Request]),
     {noreply, S}.
 
 handle_info({'EXIT', Deleter, _Reason}=Exit, #state{the_deleter=Deleter}=S) ->
     {stop, {deleter_died,Exit}, S#state{the_deleter=undefined}};
 handle_info({'EXIT', Locker, _Reason}=Exit, #state{the_locker=Locker}=S) ->
     {stop, {locker_died,Exit}, S#state{the_locker=undefined}};
-handle_info({'EXIT', Pid, _Reason}, S0) when is_pid(Pid) ->
+handle_info({'EXIT', Registrar, _}=Exit, #state{the_registrar=Registrar}=S) ->
+    {stop, {registrar_died,Exit}, S#state{the_registrar=undefined}};
+handle_info({'EXIT', Pid, _Reason}, S) when is_pid(Pid) ->
     ?trace({global_EXIT,_Reason,Pid}),
-    %% The process that died was either a synch process started by
-    %% start_sync, a registered process, or an owner of a lock.
-    #state{the_deleter=Deleter, known = Known} = S0,
-    S = check_exit(Deleter, Pid, Known, S0),
+    %% The process that died was a synch process started by start_sync
+    %% or a registered process running on an external node (C-node).
+    %% Links to external names are ignored here (there are also DOWN
+    %% signals).
     Syncers = lists:delete(Pid, S#state.syncers),
     {noreply, S#state{syncers = Syncers}};
 
@@ -748,10 +790,10 @@ handle_info({nodeup, Node}, S0) when S0#state.connect_all ->
               %% This one is only for double nodeups (shouldn't occur!)
               lists:keymember(Node, 1, S0#state.resolvers),
     ?trace({'####', nodeup, {node,Node}, {isknown,IsKnown}}),
-    S = trace_message(S0, {nodeup, Node}, []),
+    S1 = trace_message(S0, {nodeup, Node}, []),
     case IsKnown of
 	true ->
-	    {noreply, S};
+	    {noreply, S1};
 	false ->
 	    resend_pre_connect(Node),
 
@@ -762,20 +804,21 @@ handle_info({nodeup, Node}, S0) when S0#state.connect_all ->
 	    MyTag = now(),
 	    put({sync_tag_my, Node}, MyTag),
             ?trace({sending_nodeup_to_locker, {node,Node},{mytag,MyTag}}),
-	    S#state.the_locker ! {nodeup, Node, MyTag},
+	    S1#state.the_locker ! {nodeup, Node, MyTag},
 
             %% In order to be compatible with unpatched R7 a locker
             %% process was spawned. Vsn 5 is no longer comptabible with
             %% vsn 3 nodes, so the locker process is no longer needed.
             %% The permanent locker takes its place.
             NotAPid = no_longer_a_pid,
-            Locker = {locker, NotAPid, S#state.known, S#state.the_locker},
+            Locker = {locker, NotAPid, S1#state.known, S1#state.the_locker},
 	    InitC = {init_connect, {?vsn, MyTag}, node(), Locker},
-	    Rs = S#state.resolvers,
+	    Rs = S1#state.resolvers,
             ?trace({casting_init_connect, {node,Node},{initmessage,InitC},
                     {resolvers,Rs}}),
 	    gen_server:cast({global_name_server, Node}, InitC),
             Resolver = start_resolver(Node, MyTag),
+            S = trace_message(S1, {new_resolver, Node}, [MyTag, Resolver]),
 	    {noreply, S#state{resolvers = [{Node, MyTag, Resolver} | Rs]}}
     end;
 
@@ -788,26 +831,40 @@ handle_info(known, S) ->
     {noreply, S};
 
 %% "High level trace". For troubleshooting only.
-handle_info(high_level_trace, 
-            #state{trace = [{Node, _Time, _M, Nodes, _X} | _]}=S) ->
-    send_again(high_level_trace),
-    CNode = node(),
-    CNodes = nodes(),
-    case {CNode, CNodes} of
-        {Node, Nodes} ->
-            {noreply, S};
+handle_info(high_level_trace, S) ->
+    case S of 
+        #state{trace = [{Node, _Time, _M, Nodes, _X} | _]} ->
+            send_high_level_trace(),
+            CNode = node(),
+            CNodes = nodes(),
+            case {CNode, CNodes} of
+                {Node, Nodes} ->
+                    {noreply, S};
+                _ ->
+                    {New, _, Old} = 
+                        sofs:symmetric_partition(sofs:set([CNode|CNodes]),
+                                                 sofs:set([Node|Nodes])),
+                    M = {nodes_changed, {sofs:to_external(New),
+                                         sofs:to_external(Old)}},
+                    {noreply, trace_message(S, M, [])}
+            end;
         _ ->
-            {New,_,Old} = sofs:symmetric_partition(sofs:set([CNode|CNodes]),
-                                                   sofs:set([Node|Nodes])),
-            M = {nodes_changed,{sofs:to_external(New),sofs:to_external(Old)}},
-            {noreply, trace_message(S, M, [])}
+            {noreply, S}
     end;
+handle_info({trace_message, M}, S) ->
+    {noreply, trace_message(S, M, [])};
+handle_info({trace_message, M, X}, S) ->
+    {noreply, trace_message(S, M, X)};
 
-handle_info({'DOWN', _MonitorRef, process, Pid, _Info}, S0) ->
-    S = async_del_lock(Pid, S0),
+handle_info({'DOWN', MonitorRef, process, _Pid, _Info}, S0) ->
+    S1 = delete_lock(MonitorRef, S0),
+    S = del_name(MonitorRef, S1),
     {noreply, S};
 
-handle_info(_Message, S) ->
+handle_info(Message, S) ->
+    error_logger:warning_msg("The global_name_server "
+                             "received an unexpected message:\n"
+                             "handle_info(~p, _)\n", [Message]),
     {noreply, S}.
 
 
@@ -816,6 +873,19 @@ handle_info(_Message, S) ->
 %%=============================== Internal Functions =====================
 %%========================================================================
 %%========================================================================
+
+-define(HIGH_LEVEL_TRACE_INTERVAL, 500). % ms
+
+wait_high_level_trace() ->
+    receive
+        high_level_trace ->
+            ok
+    after ?HIGH_LEVEL_TRACE_INTERVAL+1 ->
+            ok
+    end.
+
+send_high_level_trace() ->
+    erlang:send_after(?HIGH_LEVEL_TRACE_INTERVAL, self(), high_level_trace).
 
 -define(GLOBAL_RID, global).
 
@@ -828,13 +898,13 @@ trans_all_known(Fun) ->
     try
         Fun(Nodes)
     after
-        del_lock(Id, Nodes)
+        delete_global_lock(Id, Nodes)
     end.
 
 set_lock_known(Id, Times) -> 
     Known = get_known(),
     Nodes = [node() | Known],
-    Boss = lists:max(Nodes),
+    Boss = the_boss(Nodes),
     %% Use the  same convention (a boss) as lock_nodes_safely. Optimization.
     case set_lock_on_nodes(Id, [Boss]) of
         true ->
@@ -930,10 +1000,11 @@ init_connect(Vsn, Node, InitMsg, HisTag, Resolvers, S) ->
 %% the exchange instead. In the lock_is_set we must first check if
 %% exchange info is stored, in that case we take care of it.
 %%========================================================================
-lock_is_set(Node, Resolvers) ->
+lock_is_set(Node, Resolvers, LockId) ->
     gen_server:cast({global_name_server, Node},
                     {exchange, node(), get_names(), _ExtNames = [],
                      get({sync_tag_his, Node})}),
+    put({lock_id, Node}, LockId),
     %% If both have the lock, continue with exchange.
     case get({wait_lock, Node}) of
 	{exchange, NameList} ->
@@ -965,27 +1036,41 @@ resolved(Node, HisResolved, HisKnown, Names_ext, S0) ->
     Synced = S0#state.synced,
     NewNodes = [Node | HisKnown],
     sync_others(HisKnown),
-    S = do_ops(Ops, Names_ext, S0),
-    gen_server:abcast(Known, global_name_server,
-		      {new_nodes, node(), Ops, Names_ext, NewNodes,NewNodes}),
+    ExtraInfo = [{vsn,get({prot_vsn, Node})}, {lock, get({lock_id, Node})}],
+    S = do_ops(Ops, node(), Names_ext, ExtraInfo, S0),
     %% I am synced with Node, but not with HisKnown yet
     lists:foreach(fun(Pid) -> Pid ! {synced, [Node]} end, S#state.syncers),
     S3 = lists:foldl(fun(Node1, S1) -> 
-                             Tag1 = get({sync_tag_my, Node1}),
-                             ?trace({calling_cancel_locker,Tag1,get()}),
-                             S2 = cancel_locker(Node1, S1, Tag1),
-                             reset_node_state(Node1),
-                             S2
-                     end, S, NewNodes),
+                             F = fun(Tag) -> cancel_locker(Node1,S1,Tag) end,
+                             cancel_resolved_locker(Node1, F)
+                     end, S, HisKnown),
+    %% The locker that took the lock is asked to send 
+    %% the {new_nodes, ...} message. This ensures that
+    %% {del_lock, ...} is received after {new_nodes, ...} 
+    %% (except when abcast spawns process(es)...).
+    NewNodesF = fun() ->
+                        gen_server:abcast(Known, global_name_server,
+                                          {new_nodes, node(), Ops, Names_ext,
+                                           NewNodes, ExtraInfo})
+                end,
+    F = fun(Tag) -> cancel_locker(Node, S3, Tag, NewNodesF) end,
+    S4 = cancel_resolved_locker(Node, F),
     %% See (*) below... we're node b in that description
     AddedNodes = (NewNodes -- Known),
     NewKnown = Known ++ AddedNodes,
-    S3#state.the_locker ! {add_to_known, AddedNodes},
-    NewS = trace_message(S3, {added, AddedNodes}, 
+    S4#state.the_locker ! {add_to_known, AddedNodes},
+    NewS = trace_message(S4, {added, AddedNodes}, 
                          [{new_nodes, NewNodes}, {abcast, Known}, {ops,Ops}]),
     NewS#state{known = NewKnown, synced = [Node | Synced]}.
 
-new_nodes(Ops, Names_ext, Nodes, S0) ->
+cancel_resolved_locker(Node, CancelFun) ->
+    Tag = get({sync_tag_my, Node}),
+    ?trace({calling_cancel_locker,Tag,get()}),
+    S = CancelFun(Tag),
+    reset_node_state(Node),
+    S.
+
+new_nodes(Ops, ConnNode, Names_ext, Nodes, ExtraInfo, S0) ->
     Known = S0#state.known,
     %% (*) This one requires some thought...
     %% We're node a, other nodes b and c:
@@ -994,14 +1079,14 @@ new_nodes(Ops, Names_ext, Nodes, S0) ->
     %% Therefore, we make sure we never get duplicates in Known.
     AddedNodes = lists:delete(node(), Nodes -- Known),
     sync_others(AddedNodes),
-    S = do_ops(Ops, Names_ext, S0),
+    S = do_ops(Ops, ConnNode, Names_ext, ExtraInfo, S0),
     ?trace({added_nodes_in_sync,{added_nodes,AddedNodes}}),
     S#state.the_locker ! {add_to_known, AddedNodes},
     S1 = trace_message(S, {added, AddedNodes}, [{ops,Ops}]),
     S1#state{known = Known ++ AddedNodes}.
 
 do_whereis(Name, From) ->
-    case is_lock_set(?GLOBAL_RID) of
+    case is_global_lock_set() of
 	false ->
 	    gen_server:reply(From, where(Name));
 	true ->
@@ -1013,8 +1098,7 @@ terminate(_Reason, _S) ->
     true = ets:delete(global_names_ext),
     true = ets:delete(global_locks),
     true = ets:delete(global_pid_names),
-    true = ets:delete(global_pid_ids),
-    true = ets:delete(global_node_pids).
+    true = ets:delete(global_pid_ids).
 
 code_change(_OldVsn, S, _Extra) ->
     {ok, S}.
@@ -1046,24 +1130,23 @@ resend_pre_connect(Node) ->
 	    ok
     end.
 
-ins_name(Name, Pid, Method, S0) ->
+ins_name(Name, Pid, Method, FromPidOrNode, ExtraInfo, S0) ->
     ?trace({ins_name,insert,{name,Name},{pid,Pid}}),
-    S = delete_global_name2(Name, S0),
-    dolink(Pid),
-    insert_global_name(Name, Pid, Method, node(Pid)),
-    trace_message(S, {ins_name, node(Pid)}, [Name, Pid]).
+    S1 = delete_global_name_keep_pid(Name, S0),
+    S = trace_message(S1, {ins_name, node(Pid)}, [Name, Pid]),
+    insert_global_name(Name, Pid, Method, FromPidOrNode, ExtraInfo, S).
 
-ins_name_ext(Name, Pid, Method, RegNode, S0) ->
+ins_name_ext(Name, Pid, Method, RegNode, FromPidOrNode, ExtraInfo, S0) ->
     ?trace({ins_name_ext, {name,Name}, {pid,Pid}}),
-    S = delete_global_name2(Name, S0),
+    S1 = delete_global_name_keep_pid(Name, S0),
     dolink_ext(Pid, RegNode),
-    insert_global_name(Name, Pid, Method, RegNode),
+    S = trace_message(S1, {ins_name_ext, node(Pid)}, [Name, Pid]),
     true = ets:insert(global_names_ext, {Name, Pid, RegNode}),
-    trace_message(S, {ins_name_ext, node(Pid)}, [Name, Pid]).
+    insert_global_name(Name, Pid, Method, FromPidOrNode, ExtraInfo, S).
 
 where(Name) ->
     case ets:lookup(global_names, Name) of
-	[{_, Pid, _}] -> Pid;
+	[{_Name, Pid, _Method, _RPid, _Ref}] -> Pid;
 	[] -> undefined
     end.
 
@@ -1092,52 +1175,64 @@ can_set_lock({ResourceId, LockRequesterId}) ->
     end.
 
 insert_lock({ResourceId, LockRequesterId}=Id, Pid, PidRefs, S) ->
-    dolink(Pid),
-    Ref = erlang:monitor(process, Pid),
+    {RPid, Ref} = do_monitor(Pid),
     true = ets:insert(global_pid_ids, {Pid, ResourceId}),
-    true = ets:insert(global_node_pids, {{lock,node(Pid)}, Pid}),
-    Lock = {ResourceId, LockRequesterId, [{Pid,Ref} | PidRefs]},
+    true = ets:insert(global_pid_ids, {Ref, ResourceId}),
+    Lock = {ResourceId, LockRequesterId, [{Pid,RPid,Ref} | PidRefs]},
     true = ets:insert(global_locks, Lock),
     trace_message(S, {ins_lock, node(Pid)}, [Id, Pid]).
+
+is_global_lock_set() ->
+    is_lock_set(?GLOBAL_RID).
 
 is_lock_set(ResourceId) ->
     ets:member(global_locks, ResourceId).
 
-handle_del_lock({ResourceId, LockRequesterId}, Pid, S0) ->
-    ?trace({handle_del_lock, {pid,Pid},{id,{ResourceId, LockRequesterId}}}),
+handle_del_lock({ResourceId, LockReqId}, Pid, S0) ->
+    ?trace({handle_del_lock, {pid,Pid},{id,{ResourceId, LockReqId}}}),
     case ets:lookup(global_locks, ResourceId) of
-	[{ResourceId, LockRequesterId, PidRefs}]->
-            S = remove_lock(ResourceId, LockRequesterId, Pid, PidRefs, S0),
-	    dounlink(Pid),
-            S;
+	[{ResourceId, LockReqId, PidRefs}]->
+            remove_lock(ResourceId, LockReqId, Pid, PidRefs, false, S0);
 	_ -> S0
     end.
 
-remove_lock(ResourceId, LockRequesterId, Pid, [{Pid,Ref}], S) ->
+remove_lock(ResourceId, LockRequesterId, Pid, [{Pid,RPid,Ref}], Down, S0) ->
     ?trace({remove_lock_1, {id,ResourceId},{pid,Pid}}),
     true = erlang:demonitor(Ref, [flush]),
+    kill_monitor_proc(RPid, Pid),
     true = ets:delete(global_locks, ResourceId),
-    true = ets:delete_object(global_node_pids, {{lock,node(Pid)}, Pid}),
     true = ets:delete_object(global_pid_ids, {Pid, ResourceId}),
+    true = ets:delete_object(global_pid_ids, {Ref, ResourceId}),
+    S = case ResourceId of
+            ?GLOBAL_RID -> S0#state{global_lock_down = Down};
+            _ -> S0
+        end,
     trace_message(S, {rem_lock, node(Pid)}, 
                   [{ResourceId, LockRequesterId}, Pid]);
-remove_lock(ResourceId, LockRequesterId, Pid, PidRefs0, S) ->
+remove_lock(ResourceId, LockRequesterId, Pid, PidRefs0, _Down, S) ->
     ?trace({remove_lock_2, {id,ResourceId},{pid,Pid}}),
     PidRefs = case lists:keysearch(Pid, 1, PidRefs0) of
-                  {value, {Pid, Ref}} ->
+                  {value, {Pid, RPid, Ref}} ->
                       true = erlang:demonitor(Ref, [flush]),
+                      kill_monitor_proc(RPid, Pid),
+                      true = ets:delete_object(global_pid_ids, 
+                                               {Ref, ResourceId}),
                       lists:keydelete(Pid, 1, PidRefs0);
                   false ->
                       PidRefs0
               end,
     Lock = {ResourceId, LockRequesterId, PidRefs},
     true = ets:insert(global_locks, Lock),
-    true = ets:delete_object(global_node_pids, {{lock,node(Pid)}, Pid}),
     true = ets:delete_object(global_pid_ids, {Pid, ResourceId}),
     trace_message(S, {rem_lock, node(Pid)}, 
                   [{ResourceId, LockRequesterId}, Pid]).
 
-do_ops(Ops, Names_ext, S0) ->
+kill_monitor_proc(Pid, Pid) ->
+    ok;
+kill_monitor_proc(RPid, _Pid) ->
+    exit(RPid, kill).
+
+do_ops(Ops, ConnNode, Names_ext, ExtraInfo, S0) ->
     ?trace({do_ops, {ops,Ops}}),
 
     XInserts = [{Name, Pid, RegNode, Method} || 
@@ -1145,7 +1240,8 @@ do_ops(Ops, Names_ext, S0) ->
                    {insert, {Name, Pid, Method}} <- Ops,
                    Name =:= Name2, Pid =:= Pid2],
     S1 = lists:foldl(fun({Name, Pid, RegNode, Method}, S1) ->
-                             ins_name_ext(Name, Pid, Method, RegNode, S1)
+                             ins_name_ext(Name, Pid, Method, RegNode, 
+                                          ConnNode, ExtraInfo, S1)
                      end, S0, XInserts),
 
     XNames = [Name || {Name, _Pid, _RegNode, _Method} <- XInserts],
@@ -1153,7 +1249,8 @@ do_ops(Ops, Names_ext, S0) ->
                   {insert, {Name, Pid, Method}} <- Ops,
                   not lists:member(Name, XNames)],
     S2 = lists:foldl(fun({Name, Pid, _RegNode, Method}, S2) ->
-                            ins_name(Name, Pid, Method, S2)
+                            ins_name(Name, Pid, Method, ConnNode, 
+                                     ExtraInfo, S2)
                     end, S1, Inserts),
 
     DelNames = [Name || {delete, Name} <- Ops],
@@ -1200,34 +1297,128 @@ sync_other(Node, N) ->
     % monitor_node(Node, false),
     % exit(normal).
 
-insert_global_name(Name, Pid, Method, Node) ->
+insert_global_name(Name, Pid, Method, FromPidOrNode, ExtraInfo, S) ->
+    {RPid, Ref} = do_monitor(Pid),
+    true = ets:insert(global_names, {Name, Pid, Method, RPid, Ref}),
     true = ets:insert(global_pid_names, {Pid, Name}),
-    true = ets:insert(global_names, {Name, Pid, Method}),
-    true = ets:insert(global_node_pids, {{name,Node}, Pid}).
+    true = ets:insert(global_pid_names, {Ref, Name}),
+    case lock_still_set(FromPidOrNode, ExtraInfo, S) of
+        true -> 
+            S;
+        false ->
+            %% The node that took the lock has gone down and then up
+            %% again. The {register, ...} or {new_nodes, ...} message
+            %% was delayed and arrived after nodeup (maybe it caused
+            %% the nodeup). The DOWN signal from the monitor of the
+            %% lock has removed the lock. 
+            %% Note: it is assumed here that the DOWN signal arrives
+            %% _before_ nodeup and any message that caused nodeup.
+            %% This is true of Erlang/OTP.
+            delete_global_name2(Name, S)
+    end.
 
-delete_global_name2(Name, S) ->
-    case ets:lookup(global_names, Name) of
-        [{Name, Pid, _}] ->
-            delete_global_name2(Name, Pid, S);
+lock_still_set(PidOrNode, ExtraInfo, S) ->
+    case ets:lookup(global_locks, ?GLOBAL_RID) of
+        [{?GLOBAL_RID, _LockReqId, PidRefs}] when is_pid(PidOrNode) -> 
+            %% Name registration.
+            lists:keymember(PidOrNode, 1, PidRefs);
+        [{?GLOBAL_RID, LockReqId, PidRefs}] when is_atom(PidOrNode) ->
+            case extra_info(lock, ExtraInfo) of
+                {?GLOBAL_RID, LockId} -> % R11B-4 or later
+                    LockReqId =:= LockId;
+                undefined ->
+                    lock_still_set_old(PidOrNode, LockReqId, PidRefs)
+            end;
+        [] ->
+            %% If the global lock was not removed by a DOWN message
+            %% then we have a node that do not monitor locking pids
+            %% (pre R11B-3), or an R11B-3 node (which does not ensure
+            %% that {new_nodes, ...} arrives before {del_lock, ...}).
+            not S#state.global_lock_down
+    end.
+
+%%% The following is probably overkill. It is possible that this node
+%%% has been locked again, but it is a rare occasion.
+lock_still_set_old(_Node, ReqId, _PidRefs) when is_pid(ReqId) ->
+    %% Cannot do better than return true.
+    true;
+lock_still_set_old(Node, ReqId, PidRefs) when is_list(ReqId) ->
+    %% Connection, version > 4, but before R11B-4.
+    [P || {P, _RPid, _Ref} <- PidRefs, node(P) =:= Node] =/= [].
+
+extra_info(Tag, ExtraInfo) ->
+    %% ExtraInfo used to be a list of nodes (vsn 2).
+    case catch lists:keysearch(Tag, 1, ExtraInfo) of
+        {value, {Tag, Info}} ->
+            Info;
+        _ ->
+            undefined
+    end.
+
+del_name(Ref, S) ->
+    NameL = [{Name, Pid} || 
+                {_, Name} <- ets:lookup(global_pid_names, Ref),
+                {_, Pid, _Method, _RPid, Ref1} <- 
+                    ets:lookup(global_names, Name),
+                Ref1 =:= Ref],
+    ?trace({async_del_name, self(), NameL, Ref}),
+    case NameL of
+        [{Name, Pid}] ->
+            del_names(Name, Pid, S),
+            delete_global_name2(Name, S);
         [] ->
             S
     end.
 
-delete_global_name2(Name, Pid, S) ->
+%% Send {async_del_name, ...} to old nodes (pre R11B-3).
+del_names(Name, Pid, S) ->
+    Send = case ets:lookup(global_names_ext, Name) of
+               [{Name, Pid, RegNode}] ->
+                   RegNode =:= node();
+               [] ->
+                   node(Pid) =:= node()
+           end,
+    if 
+        Send ->
+            ?trace({del_names, {pid,Pid}, {name,Name}}),
+            S#state.the_deleter ! {delete_name, self(), Name, Pid};
+        true ->
+            ok
+    end.
+
+%% Keeps the entry in global_names for whereis_name/1.
+delete_global_name_keep_pid(Name, S) ->
+    case ets:lookup(global_names, Name) of
+        [{Name, Pid, _Method, RPid, Ref}] ->
+            delete_global_name2(Name, Pid, RPid, Ref, S);
+        [] ->
+            S
+    end.
+
+delete_global_name2(Name, S) ->
+    case ets:lookup(global_names, Name) of
+        [{Name, Pid, _Method, RPid, Ref}] ->
+            true = ets:delete(global_names, Name),
+            delete_global_name2(Name, Pid, RPid, Ref, S);
+        [] ->
+            S
+    end.
+
+delete_global_name2(Name, Pid, RPid, Ref, S) ->
+    true = erlang:demonitor(Ref, [flush]),
+    kill_monitor_proc(RPid, Pid),
     delete_global_name(Name, Pid),
     ?trace({delete_global_name,{item,Name},{pid,Pid}}),
-    true = ets:delete(global_names, Name),
     true = ets:delete_object(global_pid_names, {Pid, Name}),
+    true = ets:delete_object(global_pid_names, {Ref, Name}),
     case ets:lookup(global_names_ext, Name) of
 	[{Name, Pid, RegNode}] ->
             true = ets:delete(global_names_ext, Name),
             ?trace({delete_global_name, {name,Name,{pid,Pid},{RegNode,Pid}}}),
-            true = ets:delete_object(global_node_pids, {{name,RegNode}, Pid}),
 	    dounlink_ext(Pid, RegNode);
 	[] ->
             ?trace({delete_global_name,{name,Name,{pid,Pid},{node(Pid),Pid}}}),
-            true = ets:delete_object(global_node_pids,{{name,node(Pid)},Pid}),
-            dounlink(Pid)
+            ok
     end,
     trace_message(S, {del_name, node(Pid)}, [Name, Pid]).
 
@@ -1254,23 +1445,26 @@ delete_global_name(_Name, _Pid) ->
 -define(locker_vsn, 2).
 
 -record(multi, 
-        {local = [],         % Requests from nodes on the local host.
-         remote = [],        % Other requests.
-         known = [],         % Copy of global_name_server's known nodes. It's
-                             % faster to keep a copy of known than to asking 
-                             % for it when needed.
-         the_boss,           % max([node() | 'known'])
-         just_synced = false % true if node() synced just a moment ago
+        {local = [],          % Requests from nodes on the local host.
+         remote = [],         % Other requests.
+         known = [],          % Copy of global_name_server's known nodes. It's
+                              % faster to keep a copy of known than asking 
+                              % for it when needed.
+         the_boss,            % max([node() | 'known'])
+         just_synced = false, % true if node() synced just a moment ago
+                              %% Statistics:
+         do_trace             % bool()
         }).
 
 -record(him, {node, locker, vsn, my_tag}).
 
-start_the_locker() ->
-    spawn_link(fun() -> init_the_locker() end).
+start_the_locker(DoTrace) ->
+    spawn_link(fun() -> init_the_locker(DoTrace) end).
 
-init_the_locker() ->
+init_the_locker(DoTrace) ->
     process_flag(trap_exit, true),    % needed?
-    S1 = update_locker_known({add, get_known()}, #multi{}),
+    S0 = #multi{do_trace = DoTrace},
+    S1 = update_locker_known({add, get_known()}, S0),
     loop_the_locker(S1),
     erlang:error(locker_exited).
 
@@ -1304,7 +1498,7 @@ loop_the_locker(S) ->
                 Message when element(1, Message) =/= nodeup ->
                     the_locker_message(Message, S1)
             after Timeout ->
-                    case is_lock_set(?GLOBAL_RID) of
+                    case is_global_lock_set() of
                         true -> 
                             loop_the_locker(S1);
                         false -> 
@@ -1328,7 +1522,7 @@ the_locker_message({his_the_locker, HisTheLocker, HisKnown0, _MyKnown}, S) ->
             Him = #him{node = node(HisTheLocker), my_tag = MyTag,
                        locker = HisTheLocker, vsn = HisVsn},
             loop_the_locker(add_node(Him, S));
-        {cancel, Node, _Tag} when node(HisTheLocker) =:= Node ->
+        {cancel, Node, _Tag, no_fun} when node(HisTheLocker) =:= Node ->
             loop_the_locker(S)
     after 60000 ->
             ?trace({nodeupnevercame, node(HisTheLocker)}),
@@ -1336,13 +1530,13 @@ the_locker_message({his_the_locker, HisTheLocker, HisKnown0, _MyKnown}, S) ->
                                    [node(), node(HisTheLocker)]),
             loop_the_locker(S#multi{just_synced = false})
     end;
-the_locker_message({cancel, _Node, undefined}, S) ->
+the_locker_message({cancel, _Node, undefined, no_fun}, S) ->
     ?trace({cancel_the_locker, undefined, {node,_Node}}),
     %% If we actually cancel something when a cancel message with the
     %% tag 'undefined' arrives, we may be acting on an old nodedown,
     %% to cancel a new nodeup, so we can't do that.
     loop_the_locker(S);
-the_locker_message({cancel, Node, Tag}, S) ->
+the_locker_message({cancel, Node, Tag, no_fun}, S) ->
     ?trace({the_locker, cancel, {multi,S}, {tag,Tag},{node,Node}}),
     receive
         {nodeup, Node, Tag} ->
@@ -1369,7 +1563,7 @@ the_locker_message({lock_set, Pid, true, _HisKnown}, S) ->
             case IsLockSet of
                 true ->
                     gen_server:cast(global_name_server, 
-                                    {lock_is_set, Node, MyTag}),
+                                    {lock_is_set, Node, MyTag, LockId}),
                     ?trace({lock_sync_done, {pid,Pid}, 
                             {node,node(Pid)}, {me,self()}}),
                     %% Wait for global to tell us to remove lock.
@@ -1377,9 +1571,10 @@ the_locker_message({lock_set, Pid, true, _HisKnown}, S) ->
                     %% global_name_server will receive nodedown, and
                     %% then send {cancel, Node, Tag}.
                     receive
-                        {cancel, Node, _Tag} ->
+                        {cancel, Node, _Tag, Fun} ->
                             ?trace({cancel_the_lock,{node,Node}}),
-                            del_lock(LockId, Known2)
+                            call_fun(Fun),
+                            delete_global_lock(LockId, Known2)
                     end,
                     S2 = S1#multi{just_synced = true},
                     loop_the_locker(remove_node(Node, S2));
@@ -1397,8 +1592,11 @@ the_locker_message({add_to_known, Nodes}, S) ->
 the_locker_message({remove_from_known, Node}, S) ->
     S1 = update_locker_known({remove, Node}, S),
     loop_the_locker(S1);
-the_locker_message(_Other, S) ->
-    ?trace({the_locker, {other_msg, _Other}}),
+the_locker_message({do_trace, DoTrace}, S) ->
+    loop_the_locker(S#multi{do_trace = DoTrace});
+the_locker_message(Other, S) ->
+    unexpected_message(Other, locker),
+    ?trace({the_locker, {other_msg, Other}}),
     loop_the_locker(S).
 
 %% Requests from nodes on the local host are chosen before requests
@@ -1452,31 +1650,44 @@ locker_lock_id(Pid, Vsn) when Vsn > 4 ->
     {?GLOBAL_RID, lists:sort([self(), Pid])}.
 
 lock_nodes_safely(LockId, Extra, S0) ->
-    %% Locking the boss first is an optimization.
+    %% Locking node() could stop some node that has already locked the
+    %% boss, so just check if it is possible to lock node().
     First = delete_nonode([S0#multi.the_boss]),
-    case set_lock(LockId, First, 0) of
+    case ([node()] =:= First) orelse (can_set_lock(LockId) =/= false) of
         true ->
-            S = update_locker_known(S0),
-            %% The boss may have changed, but don't bother.
-            Second = delete_nonode([node() | Extra]),
-            case set_lock(LockId, Second, 0) of
+            %% Locking the boss first is an optimization.
+            case set_lock(LockId, First, 0) of
                 true ->
-                    case set_lock(LockId, S#multi.known, 0) of
+                    S = update_locker_known(S0),
+                    %% The boss may have changed, but don't bother.
+                    Second = delete_nonode([node() | Extra] -- First),
+                    case set_lock(LockId, Second, 0) of
                         true ->
-                            {true, S};
+                            Known = S#multi.known,
+                            case set_lock(LockId, Known -- First, 0) of
+                                true ->
+                                    locker_trace(S, ok, {First, Known}),
+                                    {true, S};
+                                false ->
+                                    %% Since the boss is locked we should have
+                                    %% gotten the lock, at least if there are
+                                    %% no version 4 nodes in the partition or
+                                    %% someone else is locking 'global'. 
+                                    %% Calling set_lock with Retries > 0 does
+                                    %% not seem to speed things up.
+                                    SoFar = First ++ Second,
+                                    del_lock(LockId, SoFar),
+                                    locker_trace(S, not_ok, {Known,SoFar}),
+                                    {false, S}
+                            end;
                         false ->
-                            %% Since the boss is locked we should have
-                            %% gotten the lock, at least if there are
-                            %% no version 4 nodes in the partition or
-                            %% someone else is locking 'global'. 
-                            %% Calling set_lock with Retries > 0 does
-                            %% not seem to speed things up.
-                            del_lock(LockId, First ++ Second),
+                            del_lock(LockId, First),
+                            locker_trace(S, not_ok, {Second, First}),
                             {false, S}
                     end;
                 false ->
-                    del_lock(LockId, First),
-                    {false, S}
+                    locker_trace(S0, not_ok, {First, []}),
+                    {false, S0}
             end;
         false ->
             {false, S0}
@@ -1484,6 +1695,16 @@ lock_nodes_safely(LockId, Extra, S0) ->
 
 delete_nonode(L) ->
     lists:delete(nonode@nohost, L).
+
+%% Let the server add timestamp.
+locker_trace(#multi{do_trace = false}, _, _Nodes) ->
+    ok;
+locker_trace(#multi{do_trace = true}, ok, Ns) ->
+    global_name_server ! {trace_message, {locker_succeeded, node()}, Ns};
+locker_trace(#multi{do_trace = true}, not_ok, Ns) ->
+    global_name_server ! {trace_message, {locker_failed, node()}, Ns};
+locker_trace(#multi{do_trace = true}, rejected, Ns) ->
+    global_name_server ! {trace_message, {lock_rejected, node()}, Ns}.
 
 update_locker_known(S) ->
     receive
@@ -1502,7 +1723,7 @@ update_locker_known(Upd, S) ->
                 {add, Nodes} -> Nodes ++ S#multi.known;
                 {remove, Node} -> lists:delete(Node, S#multi.known)
             end,
-    TheBoss = lists:max([node() | Known]), 
+    TheBoss = the_boss([node() | Known]), 
     S#multi{known = Known, the_boss = TheBoss}.
 
 random_element(L) ->
@@ -1521,31 +1742,37 @@ lock_set_loop(S, Him, MyTag, Known1, LockId) ->
               end,
     receive
 	{lock_set, P, true, _} when node(P) =:= Node ->
-	    gen_server:cast(global_name_server, {lock_is_set, Node, MyTag}),
+	    gen_server:cast(global_name_server, 
+                            {lock_is_set, Node, MyTag, LockId}),
 	    ?trace({lock_sync_done, {p,P, node(P)}, {me,self()}}),
 
 	    %% Wait for global to tell us to remove lock. Should the
             %% other locker's node die, global_name_server will
-            %% receive nodedown, and then send {cancel, Node, Tag}.
+            %% receive nodedown, and then send {cancel, Node, Tag, Fun}.
 	    receive
-		{cancel, Node, _} ->
+		{cancel, Node, _, Fun} ->
                     ?trace({lock_set_loop, {known1,Known1}}),
-		    del_lock(LockId, Known1)
+                    call_fun(Fun),
+		    delete_global_lock(LockId, Known1)
 	    end,
             S#multi{just_synced = true,
                     local = lists:delete(Him, S#multi.local),
                     remote = lists:delete(Him, S#multi.remote)};
 	{lock_set, P, false, _} when node(P) =:= Node ->
             ?trace({not_both_set, {node,Node},{p, P},{known1,Known1}}),
-	    del_lock(LockId, Known1),
+            locker_trace(S, rejected, Known1),
+	    delete_global_lock(LockId, Known1),
 	    S;
-	{cancel, Node, _} ->
+	{cancel, Node, _, Fun} ->
 	    ?trace({the_locker, cancel2, {node,Node}}),
-	    del_lock(LockId, Known1),
+            call_fun(Fun),
+            locker_trace(S, rejected, Known1),
+	    delete_global_lock(LockId, Known1),
             remove_node(Node, S);
 	{'EXIT', _, _} ->
 	    ?trace({the_locker, exit, {node,Node}}),
-	    del_lock(LockId, Known1),
+            locker_trace(S, rejected, Known1),
+	    delete_global_lock(LockId, Known1),
 	    S
     after
 	%% OTP-4902
@@ -1576,6 +1803,23 @@ reject_lock_set() ->
 	0 ->
 	    true
     end.
+
+%% The locker does the {new_nodes, ...} call before removing the lock.
+call_fun(no_fun) ->
+    ok;
+call_fun(Fun) ->
+    Fun().
+
+%% The lock on the boss is removed last. The purpose is to reduce the
+%% risk of failing to lock the known nodes after having locked the
+%% boss. (Assumes the boss occurs only once.)
+delete_global_lock(LockId, Nodes) ->
+    TheBoss = the_boss(Nodes),
+    del_lock(LockId, lists:delete(TheBoss, Nodes)),
+    del_lock(LockId, [TheBoss]).
+
+the_boss(Nodes) ->
+    lists:max(Nodes).
 
 find_node_tag(Node, S) ->
     case find_node_tag2(Node, S#multi.local) of
@@ -1625,7 +1869,10 @@ split_node([H|T], Chr, Ack)   -> split_node(T, Chr, [H|Ack]);
 split_node([], _, Ack)        -> [lists:reverse(Ack)].
 
 cancel_locker(Node, S, Tag) ->
-    S#state.the_locker ! {cancel, Node, Tag},
+    cancel_locker(Node, S, Tag, no_fun).
+
+cancel_locker(Node, S, Tag, ToBeRunOnLockerF) ->
+    S#state.the_locker ! {cancel, Node, Tag, ToBeRunOnLockerF},
     Resolvers = S#state.resolvers,
     ?trace({cancel_locker, {node,Node},{tag,Tag},
             {sync_tag_my, get({sync_tag_my, Node})},{resolvers,Resolvers}}),
@@ -1633,7 +1880,8 @@ cancel_locker(Node, S, Tag) ->
 	{value, {_, Tag, Resolver}} ->
             ?trace({{resolver, Resolver}}),
             exit(Resolver, kill),
-	    S#state{resolvers = lists:keydelete(Node, 1, Resolvers)};
+            S1 = trace_message(S, {kill_resolver, Node}, [Tag, Resolver]),
+	    S1#state{resolvers = lists:keydelete(Node, 1, Resolvers)};
 	_ ->
 	    S
     end.
@@ -1645,16 +1893,17 @@ reset_node_state(Node) ->
     erase({pre_connect, Node}),
     erase({prot_vsn, Node}),
     erase({sync_tag_my, Node}),
-    erase({sync_tag_his, Node}).
+    erase({sync_tag_his, Node}),
+    erase({lock_id, Node}).
 
 %% Some node sent us his names. When a name clash is found, the resolve
 %% function is called from the smaller node => all resolve funcs are called
 %% from the same partition.
 exchange_names([{Name, Pid, Method} | Tail], Node, Ops, Res) ->
     case ets:lookup(global_names, Name) of
-	[{Name, Pid, _}] ->
+	[{Name, Pid, _Method, _RPid2, _Ref2}] ->
 	    exchange_names(Tail, Node, Ops, Res);
-	[{Name, Pid2, Method2}] when node() < Node ->
+	[{Name, Pid2, Method2, _RPid2, _Ref2}] when node() < Node ->
 	    %% Name clash!  Add the result of resolving to Res(olved).
 	    %% We know that node(Pid) =/= node(), so we don't
 	    %% need to link/unlink to Pid.
@@ -1683,7 +1932,7 @@ exchange_names([{Name, Pid, Method} | Tail], Node, Ops, Res) ->
 		    Op = {delete, Name},
 		    exchange_names(Tail, Node, [Op | Ops], [Op | Res])
 	    end;
-	[{Name, _Pid2, _}] ->
+	[{Name, _Pid2, _Method, _RPid, _Ref}] ->
 	    %% The other node will solve the conflict.
 	    exchange_names(Tail, Node, Ops, Res);
 	_ ->
@@ -1718,20 +1967,9 @@ notify_all_name(Name, Pid, Pid2) ->
     Pid2 ! {global_name_conflict, Name, Pid},
     none.
 
-%% Only link to pids on our own node
-dolink(Pid) when node(Pid) =:= node() ->
-    link(Pid);
-dolink(_) -> ok.
-
-%% Only link to pids on our own node
 dolink_ext(Pid, RegNode) when RegNode =:= node() -> 
     link(Pid);
 dolink_ext(_, _) -> 
-    ok.
-
-dounlink(Pid) when node(Pid) =:= node() ->
-    unlink_pid(Pid);
-dounlink(_Pid) ->
     ok.
 
 dounlink_ext(Pid, RegNode) when RegNode =:= node() ->
@@ -1752,45 +1990,45 @@ unlink_pid(Pid) ->
             ok
     end.
 
-%% check_exit/3 removes the Pid from affected tables.
-%% This function needs to abcast the thingie since only the local
-%% server is linked to the registered process (or the owner of the
-%% lock). All the other servers rely on the nodedown mechanism.
-check_exit(Deleter, Pid, KnownNodes, S0) ->
-    S = del_names(Deleter, Pid, S0),
-    del_locks(pid_locks(Pid), Pid, KnownNodes, S).
-
-del_names(Deleter, Pid, S0) ->
-    lists:foldl(fun({_Pid,Name}, S) ->
-                        %% The local name is deleted immediately,
-                        %% before the lock is taken. It is not known
-                        %% exactly why, but it may have something to
-                        %% do with supervisors...
-                        ?trace({del_names, {pid,Pid}, {name,Name}}),
-                        S1 = delete_global_name2(Name, Pid, S),
-                        Deleter ! {delete_name, self(), Name, Pid},
-                        S1
-                end, S0, ets:lookup(global_pid_names, Pid)).
-
-pid_locks(Pid) ->
-    L = lists:flatmap(fun({_Pid, ResourceId}) ->
-                              ets:lookup(global_locks, ResourceId)
-                      end, ets:lookup(global_pid_ids, Pid)),
-    [Lock || Lock = {_Id, _Req, PidRefs} <- L, pid_is_locking(Pid, PidRefs)].
-
 pid_is_locking(Pid, PidRefs) ->
     lists:keysearch(Pid, 1, PidRefs) =/= false.
 
-del_locks([{ResourceId, LockReqId, PidRefs} | Tail], Pid, KnownNodes, S0) ->
-    S = remove_lock(ResourceId, LockReqId, Pid, PidRefs, S0),
-    gen_server:abcast(KnownNodes, global_name_server,
-                      {async_del_lock, ResourceId, Pid}),
-    del_locks(Tail, Pid, KnownNodes, S);
-del_locks([], _Pid, _KnownNodes, S) -> 
-    S.
+delete_lock(Ref, S0) ->
+    Locks = pid_locks(Ref),
+    del_locks(Locks, Ref, S0#state.known),
+    F = fun({ResourceId, LockRequesterId, PidRefs}, S) -> 
+                {value, {Pid, _RPid, Ref}} = 
+                    lists:keysearch(Ref, 3, PidRefs),
+                remove_lock(ResourceId, LockRequesterId, Pid, PidRefs, true,S)
+        end,
+    lists:foldl(F, S0, Locks).
 
-handle_nodedown(Node, S0) ->
-    S = do_node_down(Node, S0),
+pid_locks(Ref) ->
+    L = lists:flatmap(fun({_, ResourceId}) ->
+                              ets:lookup(global_locks, ResourceId)
+                      end, ets:lookup(global_pid_ids, Ref)),
+    [Lock || Lock = {_Id, _Req, PidRefs} <- L, 
+             rpid_is_locking(Ref, PidRefs)].
+
+rpid_is_locking(Ref, PidRefs) ->
+    lists:keysearch(Ref, 3, PidRefs) =/= false.
+
+%% Send {async_del_lock, ...} to old nodes (pre R11B-3).
+del_locks([{ResourceId, _LockReqId, PidRefs} | Tail], Ref, KnownNodes) ->
+    {value, {Pid, _RPid, Ref}} = lists:keysearch(Ref, 3, PidRefs),
+    case node(Pid) =:= node()  of
+        true -> 
+            gen_server:abcast(KnownNodes, global_name_server,
+                              {async_del_lock, ResourceId, Pid});
+        false -> 
+            ok
+    end,
+    del_locks(Tail, Ref, KnownNodes);
+del_locks([], _Ref, _KnownNodes) -> 
+    ok.
+
+handle_nodedown(Node, S) ->
+    %% DOWN signals from monitors have removed locks and registered names.
     #state{known = Known, synced = Syncs} = S,
     NewS = cancel_locker(Node, S, get({sync_tag_my, Node})),
     NewS#state.the_locker ! {remove_from_known, Node},
@@ -1798,35 +2036,11 @@ handle_nodedown(Node, S0) ->
     NewS#state{known = lists:delete(Node, Known),
                synced = lists:delete(Node, Syncs)}.
 
-%% Unregister all Name/Pid pairs such that node(Pid) =:= Node
-%% and delete all locks where node(Pid) =:= Node
-do_node_down(Node, S0) ->
-    ?trace({do_node_down, Node}),
-    S1 = do_node_down_names(Node, S0),
-    do_node_down_locks(Node, S1).
-
-do_node_down_names(Node, S0) ->
-    NamePids = [{Name,Pid} || 
-                   {_, Pid} <- ets:lookup(global_node_pids, {name,Node}),
-                   {_, Name} <- ets:lookup(global_pid_names, Pid)],
-    lists:foldl(fun({Name, Pid}, S) ->
-                        delete_global_name2(Name, Pid, S)
-                end, S0, NamePids).
-
-do_node_down_locks(Node, S0) ->
-    NodePids = ets:lookup(global_node_pids, {lock, Node}),
-    ?trace({do_node_down_locks, {node_pids, NodePids}}),
-    Pids = lists:usort([Pid || {_Node, Pid} <- NodePids]),
-    lists:foldl(fun(Pid, S) -> async_del_lock(Pid, S) end, S0, Pids).
-
-async_del_lock(Pid, S0) ->
-    F = fun({ResourceId, LockRequesterId, PidRefs}, S) -> 
-                remove_lock(ResourceId, LockRequesterId, Pid, PidRefs, S)
-        end,
-    lists:foldl(F, S0, pid_locks(Pid)).
-
 get_names() ->
-    ets:tab2list(global_names).
+    ets:select(global_names, 
+               ets:fun2ms(fun({Name, Pid, Method, _RPid, _Ref}) -> 
+                                  {Name, Pid, Method} 
+                          end)).
 
 get_names_ext() ->
     ets:tab2list(global_names_ext).
@@ -1871,8 +2085,10 @@ change_our_node_name(NewNode, S) ->
 trace_message(#state{trace = no_trace}=S, _M, _X) ->
     S;
 trace_message(S, M, X) ->
-    T = {node(), now(), M, nodes(), X},
-    S#state{trace = [T | S#state.trace]}.
+    S#state{trace = [trace_message(M, X) | S#state.trace]}.
+
+trace_message(M, X) ->
+    {node(), now(), M, nodes(), X}.
 
 %%-----------------------------------------------------------------
 %% Each sync process corresponds to one call to sync. Each such
@@ -1949,10 +2165,7 @@ get_own_nodes() ->
 %%-----------------------------------------------------------------
 
 start_the_deleter(Global) ->
-    spawn_link(
-      fun () -> 
-	      loop_the_deleter(Global)
-      end).
+    spawn_link(fun() -> loop_the_deleter(Global) end).
 
 loop_the_deleter(Global) ->
     Deletions = collect_deletions(Global, []),
@@ -1968,7 +2181,7 @@ loop_the_deleter(Global) ->
     trans_all_known(
       fun(Known) ->
               lists:map(
-                fun ({Name,Pid}) ->
+                fun({Name,Pid}) ->
                         gen_server:abcast(Known, global_name_server,
                                           {async_del_name, Name, Pid})
                 end, Deletions)
@@ -1980,9 +2193,7 @@ collect_deletions(Global, Deletions) ->
 	{delete_name, Global, Name, Pid} ->
 	    collect_deletions(Global, [{Name,Pid} | Deletions]);
 	Other ->
-	    error_logger:error_msg("The global_name_server deleter process "
-                                   "received an unexpected message:\n~p\n", 
-                                   [Other]),
+            unexpected_message(Other, deleter),
 	    collect_deletions(Global, Deletions)
     after case Deletions of
 	      [] -> infinity;
@@ -1991,7 +2202,51 @@ collect_deletions(Global, Deletions) ->
 	    lists:reverse(Deletions)
     end.
 
+%% The registrar is a helper process that registers and unregisters
+%% names. Since it never dies it assures that names are registered and
+%% unregistered on all known nodes. It is started by and linked to
+%% global_name_server.
+
+start_the_registrar() ->
+    spawn_link(fun() -> loop_the_registrar() end).
+                       
+loop_the_registrar() ->
+    receive 
+        {trans_all_known, Fun, From} ->
+            ?trace({loop_the_registrar, self(), Fun, From}),
+            gen_server:reply(From, trans_all_known(Fun));
+	Other ->
+            unexpected_message(Other, register)
+    end,
+    loop_the_registrar().
+
+unexpected_message({'EXIT', _Pid, _Reason}, _What) ->
+    %% global_name_server died
+    ok;
+unexpected_message(Message, What) -> 
+    error_logger:warning_msg("The global_name_server ~w process "
+                             "received an unexpected message:\n~p\n", 
+                             [What, Message]).
+
 %%% Utilities
+
+%% When/if erlang:monitor() returns before trying to connect to the
+%% other node this function can be removed.
+do_monitor(Pid) ->
+    case (node(Pid) =:= node()) orelse lists:member(node(Pid), nodes()) of
+        true ->
+            %% Assume the node is still up
+            {Pid, erlang:monitor(process, Pid)};
+        false ->
+            F = fun() -> 
+                        Ref = erlang:monitor(process, Pid),
+                        receive 
+                            {'DOWN', Ref, process, Pid, _Info} ->
+                                exit(normal)
+                        end
+                end,
+            erlang:spawn_monitor(F)
+    end.
 
 intersection(_, []) -> 
     [];

@@ -109,6 +109,7 @@ atom compile
 atom compressed
 atom connect
 atom connected
+atom connection_closed
 atom cons
 atom const
 atom context_switches
@@ -248,11 +249,13 @@ atom messages
 atom meta
 atom meta_match_spec
 atom min_heap_size
+atom minor_version
 atom Minus='-'
 atom module
 atom module_info
 atom monitored_by
 atom monitor
+atom monitor_nodes
 atom monitors
 atom more
 atom multi_scheduling
@@ -262,6 +265,7 @@ atom native_addresses
 atom Neq='=/='
 atom Neqeq='/='
 atom net_kernel
+atom net_kernel_terminated
 atom new
 atom new_index
 atom new_uniq
@@ -270,7 +274,10 @@ atom noconnect
 atom noconnection
 atom nocookie
 atom node
+atom node_type
 atom nodedown
+atom nodedown_reason
+atom nodeup
 atom noeol
 atom nofile
 atom noproc
@@ -278,6 +285,7 @@ atom normal
 atom nosuspend
 atom no_float
 atom no_integer
+atom no_network
 atom not
 atom not_a_list
 atom not_loaded

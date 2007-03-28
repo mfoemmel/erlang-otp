@@ -543,9 +543,6 @@ exp3(G, N, Op, NocType, Acc)  when record(Op, op) ->
 		    [{FuncName, Arity} | Acc];
 		spo ->
 		    Arity = length(ic:filter_params([in, inout], Op#op.params)) + TA + 1,
-		    [{FuncName, Arity} | Acc];
-		_ ->
-		    Arity = length(ic:filter_params([in, inout], Op#op.params)) + TA + 1,
 		    [{FuncName, Arity} | Acc]
 	    end;
 	_ ->

@@ -21,6 +21,7 @@ include ../vsn.mk
 ENABLE_ALLOC_TYPE_VARS = @ENABLE_ALLOC_TYPE_VARS@
 HIPE_ENABLED=@HIPE_ENABLED@
 NO_INLINE_FUNCTIONS=false
+OPCODE_TABLES = $(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
 
 #
 # Run this make file with TYPE set to the type of emulator you want.
@@ -104,25 +105,39 @@ FLAVOR_MARKER=.smp
 FLAVOR_FLAGS=-DERTS_SMP
 ENABLE_ALLOC_TYPE_VARS += smp
 M4FLAGS += -DERTS_SMP=1
+OPCODE_TABLES += beam/frag_ops.tab
 else
 
 ifeq ($(FLAVOR),hybrid)
 FLAVOR_MARKER=.hybrid
 FLAVOR_FLAGS=-DHYBRID
 ENABLE_ALLOC_TYPE_VARS += hybrid
+OPCODE_TABLES += beam/frag_ops.tab
 else
 
 ifeq ($(FLAVOR),nofrag)
 FLAVOR_MARKER=.nofrag
 FLAVOR_FLAGS=-DHEAP_FRAG_ELIM_TEST
 ENABLE_ALLOC_TYPE_VARS += nofrag
+M4FLAGS += -DHEAP_FRAG_ELIM_TEST=1
+OPCODE_TABLES += beam/nofrag_ops.tab
+else
+
+ifeq ($(FLAVOR),smp_nofrag)
+FLAVOR_MARKER=.smp_nofrag
+FLAVOR_FLAGS=-DERTS_SMP -DHEAP_FRAG_ELIM_TEST
+ENABLE_ALLOC_TYPE_VARS += smp nofrag
+M4FLAGS += -DERTS_SMP=1 -DHEAP_FRAG_ELIM_TEST=1
+OPCODE_TABLES += beam/nofrag_ops.tab
 else
 
 # If flavor isn't one of the above, it *is* plain flavor...
 override FLAVOR=plain
 FLAVOR_MARKER=
 FLAVOR_FLAGS=
+OPCODE_TABLES += beam/frag_ops.tab
 
+endif
 endif
 endif
 endif
@@ -247,6 +262,10 @@ else
 ifdef USE_PERFCTR
 LIBS += -lperfctr
 endif
+endif
+WITH_SCTP=@WITH_SCTP@
+ifdef WITH_SCTP
+LIBS += -lsctp
 endif
 
 ORG_THR_LIBS=@EMU_THR_LIBS@
@@ -423,16 +442,6 @@ GENERATE=
 endif
 
 generate: $(GENERATE)
-
-# opcode table
-
-OPCODE_TABLES = $(ERL_TOP)/lib/compiler/src/genop.tab beam/ops.tab
-ifeq ($(FLAVOR),nofrag)
-  OPCODE_TABLES += beam/nofrag_ops.tab
-else
-  OPCODE_TABLES += beam/frag_ops.tab
-endif
-
 
 ifdef HIPE_ENABLED
 OPCODE_TABLES += hipe/hipe_ops.tab

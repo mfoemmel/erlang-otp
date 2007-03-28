@@ -25,6 +25,9 @@
 
 -export([do_gen/3]).
 
+%% Silly dialyzer.
+-export([filterzip/3]).
+
 %%------------------------------------------------------------
 %%
 %% Internal stuff
@@ -1336,8 +1339,6 @@ mk_type_attr_arg_list(Types, Args) ->
 %% Filter type argument list
 %%------------------------------------------------------------
 
-filter_type_attr_arg_list(G, X, InOrOut, TypeAttrArgs) when atom(InOrOut) ->
-    filter_type_attr_arg_list(G, X, [InOrOut], TypeAttrArgs);
 filter_type_attr_arg_list(G, X, InOrOut, TypeAttrArgs) ->
     lists:filter(
 
@@ -2209,8 +2210,6 @@ emit_decoding_stmt(G, N, Fd, T, LName, IndOp, InBuffer, _Align, NextPos,
 	false ->
 	    emit(Fd, "    {\n"), 
 	    case DecType of
-		generator ->
-		    true;
 		caller -> %% No malloc used, define oe_first anyhow.  
 		    emit(Fd, "      void *oe_first = NULL;\n"), 
 		    emit(Fd, "      int oe_outindex = 0;\n\n");

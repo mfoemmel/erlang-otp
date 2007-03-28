@@ -79,7 +79,7 @@ public_key(SSH, Service, User, Opts, AlgM) ->
 	    PubKeyBlob = ssh_file:encode_public_key(PrivKey),
 	    SigData = build_sig_data(SSH, User, Service, Alg, PubKeyBlob),
 	    Sig = AlgM:sign(PrivKey, SigData),
-	    SigBlob = list_to_binary([?string(Alg), ?string(Sig)]),
+	    SigBlob = list_to_binary([?string(Alg), ?binary(Sig)]),
 	    SSH ! {ssh_msg, self(),
 		   #ssh_msg_userauth_request{
 				  user = User,
@@ -87,8 +87,8 @@ public_key(SSH, Service, User, Opts, AlgM) ->
 				  method = "publickey",
 				  data = [?TRUE,
 					  ?string(Alg),
-					  ?string(PubKeyBlob),
-					  ?string(SigBlob)]}},
+					  ?binary(PubKeyBlob),
+					  ?binary(SigBlob)]}},
 	    public_key_reply(SSH);
 	{error, enoent} ->
 	    {failure, enoent};
@@ -198,14 +198,7 @@ do_password(SSH, Service, User, Opts) ->
 				       data =
 				       <<?BOOLEAN(?FALSE),
 					?STRING(list_to_binary(Password))>> }},
-    case passwd_reply(SSH) of
-	ok -> ok;
-	{error, E} -> {error, E};
-	{failure, F} -> {failure, F};
-	_Other  ->
-	    ?dbg(true, "do_password: Other=~w\n", [_Other]),
-	    do_password(SSH, Service, User, Opts)
-    end.	    
+    passwd_reply(SSH).
 
 public_key_reply(SSH) ->
     receive
@@ -247,6 +240,7 @@ passwd_reply(SSH) ->
 auth_remote(SSH, Service, Opts) ->
     SSH ! {ssh_install, 
 	   userauth_messages() ++ userauth_passwd_messages()},
+    SSH ! {self(), ok},
     ssh_transport:service_accept(SSH, "ssh-userauth"),
     do_auth_remote(SSH, Service, Opts).
 
@@ -451,7 +445,10 @@ get_user_from_cm(CM) ->
     end.
 
 reg_user_auth_server() ->
-    is_pid(whereis(?MODULE)) andalso unregister(?MODULE),
+    case whereis(?MODULE) of
+	undefined -> ok;
+	_ -> unregister(?MODULE)
+    end,
     Pid = spawn(fun() -> reg_user_auth_server_loop([]) end),
     register(?MODULE, Pid).
 

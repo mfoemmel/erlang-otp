@@ -671,14 +671,14 @@ sys_chars_to_double(char* buf, double* fp)
 #endif
     __ERTS_FP_CHECK_INIT(fpexnp);
     *fp = strtod(buf, &t);
-    __ERTS_FP_ERROR(fpexnp, *fp, return -1);
+    __ERTS_FP_ERROR_THOROUGH(fpexnp, *fp, return -1);
     if (t != s) {		/* Whole string not scanned */
 	/* Try again with other radix char */
 	*dp = (*dp == '.') ? ',' : '.';
 	errno = 0;
 	__ERTS_FP_CHECK_INIT(fpexnp);
 	*fp = strtod(buf, &t);
-	__ERTS_FP_ERROR(fpexnp, *fp, return -1);
+	__ERTS_FP_ERROR_THOROUGH(fpexnp, *fp, return -1);
     }
 
 #ifdef DEBUG

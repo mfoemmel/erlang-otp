@@ -127,36 +127,36 @@ guard(Expr, Sub) ->
     ?ASSERT(verify_scope(Expr, Sub)),
     guard_1(Expr, Sub).
 
-guard_1(#c_call{module=#c_atom{val=erlang},
-	      name=#c_atom{val='not'},
+guard_1(#c_call{module=#c_literal{val=erlang},
+	      name=#c_literal{val='not'},
 	      args=[A]}=Call, Sub) ->
     case guard_1(A, Sub) of
-	#c_atom{val=true} -> #c_atom{val=false};
-	#c_atom{val=false} -> #c_atom{val=true};
+	#c_literal{val=true} -> #c_literal{val=false};
+	#c_literal{val=false} -> #c_literal{val=true};
 	Arg -> Call#c_call{args=[Arg]}
     end;
-guard_1(#c_call{module=#c_atom{val=erlang},
-	      name=#c_atom{val='and'},
+guard_1(#c_call{module=#c_literal{val=erlang},
+	      name=#c_literal{val='and'},
 	      args=[A1,A2]}=Call, Sub) ->
     case {guard_1(A1, Sub),guard_1(A2, Sub)} of
-	{#c_atom{val=true},Arg2} -> Arg2;
-	{#c_atom{val=false},_} -> #c_atom{val=false};
-	{Arg1,#c_atom{val=true}} -> Arg1;
-	{_,#c_atom{val=false}} -> #c_atom{val=false};
+	{#c_literal{val=true},Arg2} -> Arg2;
+	{#c_literal{val=false},_} -> #c_literal{val=false};
+	{Arg1,#c_literal{val=true}} -> Arg1;
+	{_,#c_literal{val=false}} -> #c_literal{val=false};
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
-guard_1(#c_call{module=#c_atom{val=erlang},
-	      name=#c_atom{val='or'},
+guard_1(#c_call{module=#c_literal{val=erlang},
+	      name=#c_literal{val='or'},
 	      args=[A1,A2]}=Call, Sub) ->
     case {guard_1(A1, Sub),guard_1(A2, Sub)} of
-	{#c_atom{val=true},_} -> #c_atom{val=true};
-	{#c_atom{val=false},Arg2} -> Arg2;
-	{_,#c_atom{val=true}} -> #c_atom{val=true};
-	{Arg1,#c_atom{val=false}} -> Arg1;
+	{#c_literal{val=true},_} -> #c_literal{val=true};
+	{#c_literal{val=false},Arg2} -> Arg2;
+	{_,#c_literal{val=true}} -> #c_literal{val=true};
+	{Arg1,#c_literal{val=false}} -> Arg1;
 	{Arg1,Arg2} -> Call#c_call{args=[Arg1,Arg2]}
     end;
 guard_1(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
-	     handler=#c_atom{val=false}=False}=Prot, Sub) ->
+	     handler=#c_literal{val=false}=False}=Prot, Sub) ->
     E1 = body(E0, Sub),
     case will_fail(E1) of
 	false ->
@@ -172,7 +172,7 @@ guard_1(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
 guard_1(E0, Sub) ->
     E = expr(E0, Sub),
     case will_fail(E) of
-	true -> #c_atom{val=false};
+	true -> #c_literal{val=false};
 	false -> E
     end.
 
@@ -180,12 +180,7 @@ guard_1(E0, Sub) ->
 
 expr(#c_var{}=V, Sub) ->
     sub_get_var(V, Sub);
-expr(#c_char{}=C, _) -> C;
-expr(#c_int{}=I, _) -> I;
-expr(#c_float{}=F, _) -> F;
-expr(#c_atom{}=A, _) -> A;
-expr(#c_string{}=S, _) -> S;
-expr(#c_nil{}=N, _) -> N;
+expr(#c_literal{}=L, _Sub) -> L;
 expr(#c_cons{hd=H0,tl=T0}=Cons, Sub) ->
     H1 = expr(H0, Sub),
     T1 = expr(T0, Sub),
@@ -265,7 +260,7 @@ expr(#c_catch{body=B0}=Catch, Sub) ->
 	false -> Catch#c_catch{body=B1}
     end;
 expr(#c_try{arg=E0,vars=[#c_var{name=X}],body=#c_var{name=X},
-	    handler=#c_atom{val=false}=False}=Prot, Sub) ->
+	    handler=#c_literal{val=false}=False}=Prot, Sub) ->
     %% Since guard may call expr/2, we must do some optimization of
     %% the kind of try's that occur in guards.
     E1 = body(E0, Sub),
@@ -323,38 +318,33 @@ is_safe_simple_list(Es) -> all(fun is_safe_simple/1, Es).
 
 will_fail(#c_let{arg=A,body=B}) ->
     will_fail(A) orelse will_fail(B);
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=exit},args=[_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=exit},args=[_]}) ->
     true;
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=throw},args=[_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=throw},args=[_]}) ->
     true;
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=error},args=[_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=error},args=[_]}) ->
     true;
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=error},args=[_,_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=error},args=[_,_]}) ->
     true;
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=fault},args=[_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=fault},args=[_]}) ->
     true;
-will_fail(#c_call{module=#c_atom{val=erlang},name=#c_atom{val=fault},args=[_,_]}) ->
+will_fail(#c_call{module=#c_literal{val=erlang},name=#c_literal{val=fault},args=[_,_]}) ->
     true;
-will_fail(#c_primop{name=#c_atom{val=match_fail},args=[_]}) ->
+will_fail(#c_primop{name=#c_literal{val=match_fail},args=[_]}) ->
     true;
 will_fail(_) -> false.
 
 %% eval_cons(Cons, Head, Tail) -> Expr.
 %%  Evaluate constant part of a cons expression.
 
-eval_cons(_Cons, #c_char{val=C}, #c_string{val=S}) ->
-    #c_string{val=[C|S]};
-eval_cons(_Cons, #c_char{val=C}, #c_nil{}) -> #c_string{val=[C]};
-eval_cons(_Cons, #c_int{val=I}, #c_string{val=S}) when I >=0, I < 256 ->
-    #c_string{val=[I|S]};
-eval_cons(_Cons, #c_int{val=I}, #c_nil{}) when I >=0, I < 256 ->
-    #c_string{val=[I]};
+eval_cons(_Cons, #c_literal{val=C}, #c_literal{val=S}) ->
+    #c_literal{val=[C|S]};
 eval_cons(Cons, H, T) ->
     Cons#c_cons{hd=H,tl=T}.			%Rebuild cons arguments
 
 %% Handling remote calls. The module/name fields have been processed.
 
-call(#c_call{args=As}=Call, #c_atom{val=M}=M0, #c_atom{val=N}=N0, Sub) ->
+call(#c_call{args=As}=Call, #c_literal{val=M}=M0, #c_literal{val=N}=N0, Sub) ->
     case get(no_inline_list_funcs) of
   	true ->
  	    call_0(Call, M0, N0, As, Sub);
@@ -376,22 +366,22 @@ call_1(_Call, lists, all, [Arg1,Arg2], Sub) ->
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
-    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
-    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
+    Err1 = #c_tuple{es=[#c_literal{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_literal{val=true}], guard=#c_literal{val=true},
 		    body=#c_apply{op=Loop, args=[Xs]}},
-    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
-		    body=#c_atom{val=false}},
-    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
-		    body=#c_primop{name=#c_atom{val='match_fail'},
+    CC2 = #c_clause{pats=[#c_literal{val=false}], guard=#c_literal{val=true},
+		    body=#c_literal{val=false}},
+    CC3 = #c_clause{pats=[X], guard=#c_literal{val=true},
+		    body=#c_primop{name=#c_literal{val='match_fail'},
 				   args=[Err1]}},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_case{arg=#c_apply{op=F, args=[X]},
 				clauses = [CC1, CC2, CC3]}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_atom{val=true}},
-    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=true}},
+    Err2 = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err2]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -405,22 +395,22 @@ call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
-    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
-    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
-		    body=#c_atom{val=true}},
-    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
+    Err1 = #c_tuple{es=[#c_literal{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_literal{val=true}], guard=#c_literal{val=true},
+		    body=#c_literal{val=true}},
+    CC2 = #c_clause{pats=[#c_literal{val=false}], guard=#c_literal{val=true},
 		    body=#c_apply{op=Loop, args=[Xs]}},
-    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
-		    body=#c_primop{name=#c_atom{val='match_fail'},
+    CC3 = #c_clause{pats=[X], guard=#c_literal{val=true},
+		    body=#c_primop{name=#c_literal{val='match_fail'},
 				   args=[Err1]}},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_case{arg=#c_apply{op=F, args=[X]},
 				clauses = [CC1, CC2, CC3]}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_atom{val=false}},
-    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=false}},
+    Err2 = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err2]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -434,14 +424,14 @@ call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
     F = #c_var{name='F'},
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_seq{arg=#c_apply{op=F, args=[X]},
 			       body=#c_apply{op=Loop, args=[Xs]}}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_atom{val=ok}},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=ok}},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -456,16 +446,16 @@ call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
     H = #c_var{name='H'},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_let{vars=[H], arg=#c_apply{op=F, args=[X]},
 			       body=#c_cons{hd=H,
 					    tl=#c_apply{op=Loop,
 							args=[Xs]}}}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_nil{}},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=[]}},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -480,19 +470,19 @@ call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
     H = #c_var{name='H'},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_let{vars=[H],
 			       arg=#c_apply{op=F, args=[X]},
-			       body=#c_call{module=#c_atom{val=erlang},
-					    name=#c_atom{val='++'},
+			       body=#c_call{module=#c_literal{val=erlang},
+					    name=#c_literal{val='++'},
 					    args=[H,
 						  #c_apply{op=Loop,
 							   args=[Xs]}]}}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_nil{}},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=[]}},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -507,27 +497,27 @@ call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
     B = #c_var{name='B'},
-    Err1 = #c_tuple{es=[#c_atom{val='case_clause'}, X]},
-    CC1 = #c_clause{pats=[#c_atom{val=true}], guard=#c_atom{val=true},
+    Err1 = #c_tuple{es=[#c_literal{val='case_clause'}, X]},
+    CC1 = #c_clause{pats=[#c_literal{val=true}], guard=#c_literal{val=true},
 		    body=#c_cons{hd=X, tl=Xs}},
-    CC2 = #c_clause{pats=[#c_atom{val=false}], guard=#c_atom{val=true},
+    CC2 = #c_clause{pats=[#c_literal{val=false}], guard=#c_literal{val=true},
 		    body=Xs},
-    CC3 = #c_clause{pats=[X], guard=#c_atom{val=true},
-		    body=#c_primop{name=#c_atom{val='match_fail'},
+    CC3 = #c_clause{pats=[X], guard=#c_literal{val=true},
+		    body=#c_primop{name=#c_literal{val='match_fail'},
 				   args=[Err1]}},
     Case = #c_case{arg=B, clauses = [CC1, CC2, CC3]},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_let{vars=[B],
 			       arg=#c_apply{op=F, args=[X]},
 			       body=#c_let{vars=[Xs],
 					   arg=#c_apply{op=Loop,
 							args=[Xs]},
 					   body=Case}}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
-		   body=#c_nil{}},
-    Err2 = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
+		   body=#c_literal{val=[]}},
+    Err2 = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err2]}},
     Fun = #c_fun{vars=[Xs],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -542,13 +532,13 @@ call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
     A = #c_var{name='A'},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_apply{op=Loop,
 				 args=[Xs, #c_apply{op=F, args=[X, A]}]}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true}, body=A},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true}, body=A},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs, A],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -563,13 +553,13 @@ call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
     Xs = #c_var{name='Xs'},
     X = #c_var{name='X'},
     A = #c_var{name='A'},
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=#c_apply{op=F, args=[X, #c_apply{op=Loop,
 							 args=[Xs, A]}]}},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true}, body=A},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true}, body=A},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs, A],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -586,14 +576,14 @@ call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
     Avar = #c_var{name='A'},
     Match =
 	fun (A, P, E) ->
-		C1 = #c_clause{pats=[P], guard=#c_atom{val=true}, body=E},
-		Err = #c_tuple{es=[#c_atom{val='badmatch'}, X]},
-		C2 = #c_clause{pats=[X], guard=#c_atom{val=true},
-			       body=#c_primop{name=#c_atom{val='match_fail'},
+		C1 = #c_clause{pats=[P], guard=#c_literal{val=true}, body=E},
+		Err = #c_tuple{es=[#c_literal{val='badmatch'}, X]},
+		C2 = #c_clause{pats=[X], guard=#c_literal{val=true},
+			       body=#c_primop{name=#c_literal{val='match_fail'},
 					      args=[Err]}},
 		#c_case{arg=A, clauses=[C1, C2]}
 	end,
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 		   body=Match(#c_apply{op=F, args=[X, Avar]},
 			      #c_tuple{es=[X, Avar]},
 %%% Tuple passing version
@@ -608,14 +598,14 @@ call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
 %%% 				     body=#c_values{es=[#c_cons{hd=X, tl=Xs},
 %%% 							A]}}
 			     )},
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
 %%% Tuple passing version
-		   body=#c_tuple{es=[#c_nil{}, Avar]}},
+		   body=#c_tuple{es=[#c_literal{val=[]}, Avar]}},
 %%% Multiple-value version
-%%% 		   body=#c_values{es=[#c_nil{}, A]}},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+%%% 		   body=#c_values{es=[#c_literal{val=[]}, A]}},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs, Avar],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -638,14 +628,14 @@ call_1(_Call, lists, mapfoldr, [Arg1,Arg2,Arg3], Sub) ->
     Avar = #c_var{name='A'},
     Match =
 	fun (A, P, E) ->
-		C1 = #c_clause{pats=[P], guard=#c_atom{val=true}, body=E},
-		Err = #c_tuple{es=[#c_atom{val='badmatch'}, X]},
-		C2 = #c_clause{pats=[X], guard=#c_atom{val=true},
-			       body=#c_primop{name=#c_atom{val='match_fail'},
+		C1 = #c_clause{pats=[P], guard=#c_literal{val=true}, body=E},
+		Err = #c_tuple{es=[#c_literal{val='badmatch'}, X]},
+		C2 = #c_clause{pats=[X], guard=#c_literal{val=true},
+			       body=#c_primop{name=#c_literal{val='match_fail'},
 					      args=[Err]}},
 		#c_case{arg=A, clauses=[C1, C2]}
 	end,
-    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_atom{val=true},
+    C1 = #c_clause{pats=[#c_cons{hd=X, tl=Xs}], guard=#c_literal{val=true},
 %%% Tuple passing version
 		   body=Match(#c_apply{op=Loop, args=[Xs, Avar]},
 			      #c_tuple{es=[Xs, Avar]},
@@ -661,14 +651,14 @@ call_1(_Call, lists, mapfoldr, [Arg1,Arg2,Arg3], Sub) ->
 %%% 					  #c_values{es=[#c_cons{hd=X, tl=Xs},
 %%% 						        A]})}
 		  },
-    C2 = #c_clause{pats=[#c_nil{}], guard=#c_atom{val=true},
+    C2 = #c_clause{pats=[#c_literal{val=[]}], guard=#c_literal{val=true},
 %%% Tuple passing version
-		   body=#c_tuple{es=[#c_nil{}, Avar]}},
+		   body=#c_tuple{es=[#c_literal{val=[]}, Avar]}},
 %%% Multiple-value version
-%%% 		   body=#c_values{es=[#c_nil{}, A]}},
-    Err = #c_tuple{es=[#c_atom{val='function_clause'}, Xs]},
-    C3 = #c_clause{pats=[Xs], guard=#c_atom{val=true},
-		   body=#c_primop{name=#c_atom{val='match_fail'},
+%%% 		   body=#c_values{es=[#c_literal{val=[]}, A]}},
+    Err = #c_tuple{es=[#c_literal{val='function_clause'}, Xs]},
+    C3 = #c_clause{pats=[Xs], guard=#c_literal{val=true},
+		   body=#c_primop{name=#c_literal{val='match_fail'},
 				  args=[Err]}},
     Fun = #c_fun{vars=[Xs, Avar],
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
@@ -699,7 +689,7 @@ call_1(#c_call{module=M, name=N}=Call, _, _, As, Sub) ->
 %%
 %%  We evalute '++' if the first operand is a literal (or partly literal).
 
-fold_call(Call, #c_atom{val=M}, #c_atom{val=F}, Args) ->
+fold_call(Call, #c_literal{val=M}, #c_literal{val=F}, Args) ->
     fold_call_1(Call, M, F, Args);
 fold_call(Call, _M, _N, _Args) -> Call.
 
@@ -751,7 +741,7 @@ eval_erlang_call_1(Call, N, Args) ->
 
 eval_rel_op(Call, Op, [#c_var{name=V},#c_var{name=V}]) ->
     Bool = erlang:Op(same, same),
-    #c_atom{anno=core_lib:get_anno(Call),val=Bool};
+    #c_literal{anno=core_lib:get_anno(Call),val=Bool};
 eval_rel_op(Call, _, _) -> Call.
 
 %% eval_length(Call, List) -> Val.
@@ -760,27 +750,28 @@ eval_rel_op(Call, _, _) -> Call.
 
 eval_length(Call, Core) -> eval_length(Call, Core, 0).
     
-eval_length(Call, #c_nil{}, Len) -> #c_int{anno=Call#c_call.anno,val=Len};
+eval_length(Call, #c_literal{val=[]}, Len) ->
+    #c_literal{anno=Call#c_call.anno,val=Len};
 eval_length(Call, #c_cons{tl=T}, Len) ->
     eval_length(Call, T, Len+1);
 eval_length(Call, _List, 0) -> Call;		%Could do nothing
 eval_length(Call, List, Len) ->
-    #c_call{anno=Call#c_call.anno,
-	    module=#c_atom{val=erlang},
-	    name=#c_atom{val='+'},
-	    args=[#c_int{val=Len},Call#c_call{args=[List]}]}.
+    A = Call#c_call.anno,
+    #c_call{anno=A,
+	    module=#c_literal{anno=A,val=erlang},
+	    name=#c_literal{anno=A,val='+'},
+	    args=[#c_literal{anno=A,val=Len},Call#c_call{args=[List]}]}.
 
 %% eval_append(Call, FirstList, SecondList) -> Val.
 %%  Evaluates the constant part of '++' expression.
 
-eval_append(_Call, #c_string{val=Cs1}=S1, #c_string{val=Cs2}) ->
-    S1#c_string{val=Cs1 ++ Cs2};
-eval_append(Call, #c_string{val=Cs}, List) when length(Cs) =< 4 ->
+eval_append(_Call, #c_literal{val=Cs1}=S1, #c_literal{val=Cs2}) ->
+    S1#c_literal{val=Cs1 ++ Cs2};
+eval_append(Call, #c_literal{val=Cs}, List) when length(Cs) =< 4 ->
     Anno = Call#c_call.anno,
     foldr(fun (C, L) ->
-		  #c_cons{anno=Anno,hd=#c_int{val=C},tl=L}
+		  #c_cons{anno=Anno,hd=#c_literal{val=C},tl=L}
 	  end, List, Cs);
-eval_append(_Call, #c_nil{}, List) -> List;
 eval_append(Call, #c_cons{tl=T}=Cons, List) ->
     Cons#c_cons{tl=eval_append(Call, T, List)};
 eval_append(Call, X, Y) ->
@@ -789,7 +780,7 @@ eval_append(Call, X, Y) ->
 %% eval_element(Pos, Tuple) -> Val.
 %%  Evaluates element/2 if Pos and Tuple are literals.
 
-eval_element(Call, #c_int{val=Pos}, #c_tuple{es=Es}) ->
+eval_element(Call, #c_literal{val=Pos}, #c_tuple{es=Es}) when is_integer(Pos) ->
     if
 	1 =< Pos, Pos =< length(Es) ->
 	    lists:nth(Pos, Es);
@@ -798,7 +789,7 @@ eval_element(Call, #c_int{val=Pos}, #c_tuple{es=Es}) ->
     end;
 eval_element(Call, Pos, Tuple) ->
     case {Pos,Tuple} of
-	{#c_int{},#c_var{}} -> Call;
+	{#c_literal{val=I},#c_var{}} when is_integer(I) -> Call;
 	{#c_var{},#c_tuple{}} -> Call;
 	{#c_var{},#c_var{}} -> Call;
 	{_,_} -> eval_failure(Call, badarg)
@@ -807,7 +798,8 @@ eval_element(Call, Pos, Tuple) ->
 %% eval_setelement(Pos, Tuple, NewVal) -> Val.
 %%  Evaluates setelement/3 if Pos and Tuple are literals.
 
-eval_setelement(#c_int{val=Pos}, #c_tuple{es=Es}=Tuple, NewVal) ->
+eval_setelement(#c_literal{val=Pos}, #c_tuple{es=Es}=Tuple, NewVal)
+  when is_integer(Pos) ->
     Tuple#c_tuple{es=eval_setelement1(Pos, Es, NewVal)}.
 
 eval_setelement1(1, [_|T], NewVal) ->
@@ -817,8 +809,8 @@ eval_setelement1(Pos, [H|T], NewVal) when Pos > 1 ->
 
 eval_failure(Call, Reason) ->
     add_warning(Call, {eval_failure,Reason}),
-    #c_call{module=#c_atom{val=erlang},
-	    name=#c_atom{val=error},
+    #c_call{module=#c_literal{val=erlang},
+	    name=#c_literal{val=error},
 	    args=[core_lib:make_literal(Reason)]}.
 
 %% simplify_apply(Call0, Mod, Func, Args) -> Call
@@ -831,13 +823,13 @@ simplify_apply(Call, Mod, Func, Args) ->
 	false -> Call
     end.
 
-simplify_apply_1(#c_nil{}, Call, Mod, Func, Args) ->
+simplify_apply_1(#c_literal{val=[]}, Call, Mod, Func, Args) ->
     Call#c_call{module=Mod,name=Func,args=reverse(Args)};
 simplify_apply_1(#c_cons{hd=Arg,tl=T}, Call, Mod, Func, Args) ->
     simplify_apply_1(T, Call, Mod, Func, [Arg|Args]);
 simplify_apply_1(_, Call, _, _, _) -> Call.
 
-is_atom_or_var(#c_atom{}) -> true;
+is_atom_or_var(#c_literal{}) -> true;
 is_atom_or_var(#c_var{}) -> true;
 is_atom_or_var(_) -> false.
 
@@ -926,12 +918,7 @@ pattern(#c_var{name=V0}=Pat, Isub, Osub) ->
 	false ->
 	    {Pat,sub_del_var(Pat, scope_add([V0], Osub))}
     end;
-pattern(#c_char{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_int{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_float{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_atom{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_string{}=Pat, _, Osub) -> {Pat,Osub};
-pattern(#c_nil{}=Pat, _, Osub) -> {Pat,Osub};
+pattern(#c_literal{}=Pat, _, Osub) -> {Pat,Osub};
 pattern(#c_cons{hd=H0,tl=T0}=Pat, Isub, Osub0) ->
     {H1,Osub1} = pattern(H0, Isub, Osub0),
     {T1,Osub2} = pattern(T0, Isub, Osub1),
@@ -955,7 +942,7 @@ bin_pattern(#c_bitstr{val=E0,size=Size0}=Pat, {Isub0,Osub0}) ->
     Size1 = expr(Size0, Isub0),
     {E1,Osub} = pattern(E0, Isub0, Osub0),
     Isub = case E0 of
-	       #c_var{} -> sub_del_var(E0, Isub0);
+	       #c_var{} -> sub_set_var(E0, E1, Isub0);
 	       _ -> Isub0
 	   end,
     {Pat#c_bitstr{val=E1,size=Size1},{Isub,Osub}}.
@@ -970,8 +957,8 @@ pattern_list(Ps0, Isub, Osub0) ->
 
 is_subst(#c_tuple{es=[]}) -> true;		%The empty tuple
 is_subst(#c_fname{}) -> false;			%Fun implementaion needs this
-is_subst(#c_string{}) -> false;			%Better not.
 is_subst(#c_var{}) -> true;
+is_subst(#c_literal{val=[_|_]}) -> false;	%Better not.
 is_subst(E) -> core_lib:is_atomic(E).
 
 %% sub_new() -> #sub{}.
@@ -1092,8 +1079,8 @@ shadow_warning([], _) -> ok.
 %%  Test if we know whether a guard will succeed/fail or just don't
 %%  know.  Be VERY conservative!
 
-will_succeed(#c_atom{val=true}) -> yes;
-will_succeed(#c_atom{val=false}) -> no;
+will_succeed(#c_literal{val=true}) -> yes;
+will_succeed(#c_literal{val=false}) -> no;
 will_succeed(_Guard) -> maybe.
 
 %% will_match(Expr, [Pattern]) -> yes | maybe | no.
@@ -1164,9 +1151,9 @@ will_match_list(_, _, _) -> no.			%Different length
 %%    A =:= B.
 %%
 
-move_to_guard(#c_case{arg=#c_call{module=#c_atom{val=erlang}}=Call}=Case) ->
+move_to_guard(#c_case{arg=#c_call{module=#c_literal{val=erlang}}=Call}=Case) ->
      case Call of
-	 #c_call{name=#c_atom{val=Name},args=Args} ->
+	 #c_call{name=#c_literal{val=Name},args=Args} ->
 	     NumArgs = length(Args),
 	     case erl_internal:comp_op(Name, NumArgs) orelse
 		 erl_internal:new_type_test(Name, NumArgs) of
@@ -1192,14 +1179,14 @@ move_to_guard_1(_, Case) -> Case.
 
 move_to_guard_2(Call, #c_case{clauses=[A,B|Cs]}=Case) ->
     case {A,B} of
-	{#c_clause{pats=[#c_atom{val=true}],guard=#c_atom{val=true}},
-	 #c_clause{pats=[#c_atom{val=false}],guard=#c_atom{val=true}}} ->
+	{#c_clause{pats=[#c_literal{val=true}],guard=#c_literal{val=true}},
+	 #c_clause{pats=[#c_literal{val=false}],guard=#c_literal{val=true}}} ->
 	    True = A#c_clause{pats=[],guard=Call},
 	    False = B#c_clause{pats=[]},
 	    Case#c_case{arg=#c_values{anno=core_lib:get_anno(Call),es=[]},
 			clauses=[True,False|Cs]};
-	{#c_clause{pats=[#c_atom{val=false}],guard=#c_atom{val=true}},
-	 #c_clause{pats=[#c_atom{val=true}],guard=#c_atom{val=true}}} ->
+	{#c_clause{pats=[#c_literal{val=false}],guard=#c_literal{val=true}},
+	 #c_clause{pats=[#c_literal{val=true}],guard=#c_literal{val=true}}} ->
 	    True = B#c_clause{pats=[],guard=Call},
 	    False = A#c_clause{pats=[]},
 	    Case#c_case{arg=#c_values{anno=core_lib:get_anno(Call),es=[]},
@@ -1254,7 +1241,7 @@ is_var_pat(Ps) ->
 
 will_match_type(#c_tuple{es=Es}, #c_tuple{es=Ps}) ->
     will_match_list_type(Es, Ps);
-will_match_type(#c_atom{val=Atom}, #c_atom{val=Atom}) -> yes;
+will_match_type(#c_literal{val=Atom}, #c_literal{val=Atom}) -> yes;
 will_match_type(#c_var{}, _) -> yes;
 will_match_type(_, _) -> no.
 
@@ -1307,26 +1294,26 @@ case_opt_cs([#c_clause{pats=Ps0,guard=G,body=B}=C|Cs], Arity) ->
     end;
 case_opt_cs([], _) -> [].
 
-letify_guard(Flet, Avs, #c_call{module=#c_atom{val=erlang},
-			       name=#c_atom{val='not'},
+letify_guard(Flet, Avs, #c_call{module=#c_literal{val=erlang},
+			       name=#c_literal{val='not'},
 			       args=[A]}=Call) ->
     Arg = letify_guard(Flet, Avs, A),
     Call#c_call{args=[Arg]};
-letify_guard(Flet, Avs, #c_call{module=#c_atom{val=erlang},
-			       name=#c_atom{val='and'},
+letify_guard(Flet, Avs, #c_call{module=#c_literal{val=erlang},
+			       name=#c_literal{val='and'},
 			       args=[A1,A2]}=Call) ->
     Arg1 = letify_guard(Flet, Avs, A1),
     Arg2 = letify_guard(Flet, Avs, A2),
     Call#c_call{args=[Arg1,Arg2]};
-letify_guard(Flet, Avs, #c_call{module=#c_atom{val=erlang},
-			       name=#c_atom{val='or'},
+letify_guard(Flet, Avs, #c_call{module=#c_literal{val=erlang},
+			       name=#c_literal{val='or'},
 			       args=[A1,A2]}=Call) ->
     Arg1 = letify_guard(Flet, Avs, A1),
     Arg2 = letify_guard(Flet, Avs, A2),
     Call#c_call{args=[Arg1,Arg2]};
 letify_guard(Flet, Avs, #c_try{arg=B,
 			       vars=[#c_var{name=X}],body=#c_var{name=X},
-			       handler=#c_atom{val=false}}=Prot) ->
+			       handler=#c_literal{val=false}}=Prot) ->
     Prot#c_try{arg=foldl(Flet, B, Avs)};
 letify_guard(Flet, Avs, E) -> foldl(Flet, E, Avs).
 
@@ -1394,7 +1381,7 @@ opt_case_in_let([#c_var{name=V}], Arg,
 
 opt_case_in_let_1(V, Arg0,
 		  [#c_clause{pats=[#c_tuple{es=Es}],
-			     guard=#c_atom{val=true},body=B}|_]) ->
+			     guard=#c_literal{val=true},body=B}|_]) ->
 
     %%  In {V1,V2,...} = case E of P -> ... {Val1,Val2,...}; ... end.
     %%  avoid building tuples, by converting tuples to multiple values.
@@ -1425,9 +1412,9 @@ is_bool_case([A,B|_]) ->
     (is_bool_clause(true, A) andalso is_bool_clause(false, B))
 	orelse (is_bool_clause(false, A) andalso is_bool_clause(true, B)).
 
-is_bool_clause(Bool, #c_clause{pats=[#c_atom{val=Bool}],
-			       guard=#c_atom{val=true},
-			       body=#c_atom{val=Bool}}) ->
+is_bool_clause(Bool, #c_clause{pats=[#c_literal{val=Bool}],
+			       guard=#c_literal{val=true},
+			       body=#c_literal{val=Bool}}) ->
     true;
 is_bool_clause(_, _) -> false.
 
@@ -1435,8 +1422,8 @@ is_bool_clause(_, _) -> false.
 %%  Check whether the Core expression only can return a boolean
 %%  (or throw an exception).
 
-is_bool_expr(#c_call{module=#c_atom{val=erlang},
-		     name=#c_atom{val=Name},args=Args}=Call) ->
+is_bool_expr(#c_call{module=#c_literal{val=erlang},
+		     name=#c_literal{val=Name},args=Args}=Call) ->
     NumArgs = length(Args),
     erl_internal:comp_op(Name, NumArgs) orelse
 	erl_internal:new_type_test(Name, NumArgs) orelse
@@ -1447,9 +1434,9 @@ is_bool_expr(#c_clause{body=B}) ->
     is_bool_expr(B);
 is_bool_expr(#c_let{body=B}) ->
     is_bool_expr(B);
-is_bool_expr(#c_atom{val=false}) ->
+is_bool_expr(#c_literal{val=false}) ->
     true;
-is_bool_expr(#c_atom{val=true}) ->
+is_bool_expr(#c_literal{val=true}) ->
     true;
 is_bool_expr(_) -> false.
 
@@ -1460,36 +1447,36 @@ is_bool_expr_list([]) -> true.
 %% tuple_to_values(Expr, TupleArity) -> Expr' | exception
 %%  Convert tuples in return position of arity TupleArity to values.
 
-tuple_to_values(#c_primop{name=#c_atom{val=match_fail},args=[_]}=Prim,
+tuple_to_values(#c_primop{name=#c_literal{val=match_fail},args=[_]}=Prim,
 		_Arity) ->
     Prim;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=exit},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=exit},
 			args=Args}=Call,
 		_Arity) when length(Args) == 1 ->
     Call;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=throw},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=throw},
 			args=Args}=Call,
 		_Arity) when length(Args) == 1 ->
     Call;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=error},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=error},
 			args=Args}=Call,
 		_Arity) when length(Args) == 1 ->
     Call;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=error},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=error},
 			args=Args}=Call,
 		_Arity) when length(Args) == 2 ->
     Call;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=fault},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=fault},
 			args=Args}=Call,
 		_Arity) when length(Args) == 1 ->
     Call;
-tuple_to_values(#c_call{module=#c_atom{val=erlang},
-			name=#c_atom{val=fault},
+tuple_to_values(#c_call{module=#c_literal{val=erlang},
+			name=#c_literal{val=fault},
 			args=Args}=Call,
 		_Arity) when length(Args) == 2 ->
     Call;

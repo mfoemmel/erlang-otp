@@ -175,7 +175,7 @@ MC_OUTPUTS= \
 	MT_FLAG="-MD"
 endif
 INET_GETHOST = $(BINDIR)/inet_gethost.exe
-INSTALL_EMBEDDED_PROGS += $(BINDIR)/typer.exe $(BINDIR)/dialyzer.exe $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe
+INSTALL_EMBEDDED_PROGS += $(BINDIR)/typer.exe $(BINDIR)/dialyzer.exe $(BINDIR)/erlc.exe $(BINDIR)/start_erl.exe $(BINDIR)/escript.exe
 INSTALL_SRC = $(WINETC)/start_erl.c $(WINETC)/Nmakefile.start_erl
 ERLEXECDIR=.
 INSTALL_LIBS =
@@ -208,7 +208,7 @@ ERLSRV_OBJECTS=
 MC_OUTPUTS=
 INET_GETHOST = $(BINDIR)/inet_gethost@EXEEXT@
 INSTALL_EMBEDDED_PROGS += $(BINDIR)/typer@EXEEXT@ $(BINDIR)/dialyzer@EXEEXT@ \
- $(BINDIR)/erlc@EXEEXT@ $(BINDIR)/run_erl $(BINDIR)/to_erl
+ $(BINDIR)/erlc@EXEEXT@ $(BINDIR)/escript@EXEEXT@ $(BINDIR)/run_erl $(BINDIR)/to_erl
 INSTALL_EMBEDDED_DATA = ../unix/start.src ../unix/start_erl.src
 INSTALL_TOP = Install
 INSTALL_TOP_BIN = 
@@ -248,6 +248,7 @@ clean:
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erl_io.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/erlc.o
+	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/escript.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/heart.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/heart_config.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/inet_gethost.o
@@ -322,6 +323,12 @@ $(BINDIR)/typer@EXEEXT@: $(OBJDIR)/typer.o
 
 $(OBJDIR)/typer.o: typer.c
 	$(CC) $(CFLAGS) -o $@ -c typer.c
+
+$(BINDIR)/escript@EXEEXT@: $(OBJDIR)/escript.o
+	$(PURIFY) $(LD) $(LDFLAGS) -o $@ $(OBJDIR)/escript.o -L$(OBJDIR) $(LIBS)
+
+$(OBJDIR)/escript.o: escript.c
+	$(CC) $(CFLAGS) -o $@ -c escript.c
 
 #------------------------------------------------------------------------
 # Windows specific targets

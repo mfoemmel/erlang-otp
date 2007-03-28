@@ -331,8 +331,10 @@ var_to_record(Type, Names, Fields, Var) ->
       [Type | lists:foldr(
 		fun(Name,T) ->
 			case lists:keysearch(Name,1,Fields) of
-			    {value, {FieldName,Line,FieldVal}} ->
-				[FieldVal|T];
+%% OTP-6496. Dialyzer warning. Obviously something is wrong here,
+%% but don't bother to fix the bug... (there are no values!?)
+%			    {value, {FieldName,Line,FieldVal}} ->
+%				[FieldVal|T];
 			    false ->
 				[{'#var',{Var,Name}}|T]
 			end

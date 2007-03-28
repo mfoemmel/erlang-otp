@@ -215,7 +215,11 @@ traverse(Tree, DefinedVars, State) ->
 	end,
       State3 = 
 	case cerl:concrete(cerl:bitstr_type(Tree)) of
-	  float -> state__store_conj(ValType, sub, t_float(), State2);
+	  float ->
+	    case state__is_in_match(State2) of
+	      true -> state__store_conj(ValType, sub, t_float(), State2);
+	      false -> state__store_conj(ValType, sub, t_number(), State2)
+	    end;
 	  binary -> state__store_conj(ValType, sub, t_binary(), State2);
 	  integer ->
 	    case state__is_in_match(State2) of
@@ -293,7 +297,9 @@ traverse(Tree, DefinedVars, State) ->
       Vars = cerl:fun_vars(Tree),
       DefinedVars1 = add_def_list(Vars, DefinedVars),
       State0 = state__new_constraint_context(State),
-      FunFailType = t_fun(duplicate(length(Vars), t_none()), t_none()),
+      %% HERE
+      %%FunFailType = t_fun(duplicate(length(Vars), t_none()), t_none()),
+      FunFailType = t_fun(length(Vars), t_none()),
       State2 = 
 	try
 	  State1 = case state__add_prop_constrs(Tree, State0) of
@@ -717,28 +723,148 @@ handle_clauses_1([], _TopVar, _Arg, _DefinedVars, State, _SubtrType, Acc) ->
   {state__new_constraint_context(State), Acc}.
 
 get_safe_underapprox(Pats, Guard) ->
-  case cerl:is_c_atom(Guard) andalso (cerl:concrete(Guard) =:= true) of
-    true -> 
-      try
-	t_product(get_safe_underapprox_1(Pats, []))
-      catch
-	throw:dont_know -> t_none()
-      end;
-    false -> t_none()
+  try
+    Map1 = cerl_trees:fold(fun(X, Acc) ->
+			       case cerl:is_c_var(X) of
+				 true -> 
+				   dict:store(cerl_trees:get_label(X), t_any(),
+					      Acc);
+				 false -> Acc
+			       end
+			   end, dict:new(), cerl:c_values(Pats)),
+    {Type, Map2} = get_underapprox_from_guard(Guard, Map1),
+    Map3 = case t_is_none(t_inf(t_from_term(true), Type)) of
+	     true -> throw(dont_know);
+	     false ->
+	       case cerl:is_c_var(Guard) of
+		 false -> Map2;
+		 true -> 
+		   dict:store(cerl_trees:get_label(Guard), 
+			      t_from_term(true), Map2)
+	       end
+	   end,
+    {Ts, _Map4} = get_safe_underapprox_1(Pats, [], Map3),
+    t_product(Ts)
+  catch
+    throw:dont_know -> t_none()
   end.
 
-get_safe_underapprox_1([Pat|Left], Acc) ->
+get_underapprox_from_guard(Tree, Map) ->
+  True = t_from_term(true),
+  case cerl:type(Tree) of
+    call ->
+      case {cerl:concrete(cerl:call_module(Tree)), 
+	    cerl:concrete(cerl:call_name(Tree)), 
+	    length(cerl:call_args(Tree))} of
+	{erlang, is_function, 2} ->
+	  [Fun, Arity] = cerl:call_args(Tree),
+	  case cerl:is_c_int(Arity) of
+	    false -> throw(dont_know);
+	    true -> 
+	      {FunType, Map1} = get_underapprox_from_guard(Fun, Map),
+	      Inf = t_inf(FunType, t_fun(cerl:int_val(Arity), t_any())),
+	      case t_is_none(Inf) of
+		true -> throw(dont_know);
+		false -> {True, dict:store(cerl_trees:get_label(Fun), Inf, Map1)}
+	      end
+	  end;
+	MFA ->
+	  case get_type_test(MFA) of
+	    {ok, Type} ->
+	      [Arg] = cerl:call_args(Tree),
+	      {ArgType, Map1} = get_underapprox_from_guard(Arg, Map),
+	      Inf = t_inf(Type, ArgType),
+	      case t_is_none(Inf) of
+		true -> throw(dont_know);
+		false -> {True, dict:store(cerl_trees:get_label(Arg), Inf, Map1)}
+	      end;
+	    error ->
+	      case MFA of
+		{erlang, '=:=', 2} -> throw(dont_know);
+		{erlang, '==', 2} -> throw(dont_know);
+		{erlang, 'and', 2} ->
+		  [Arg1, Arg2] = cerl:call_args(Tree),
+		  case ((cerl:is_c_var(Arg1) orelse cerl:is_literal(Arg1)) 
+			andalso
+			(cerl:is_c_var(Arg2) orelse cerl:is_literal(Arg2))) of
+		    true ->
+		      {Arg1Type, _} = get_underapprox_from_guard(Arg1, Map),
+		      {Arg2Type, _} = get_underapprox_from_guard(Arg1, Map),
+		      case (t_is_equal(True, Arg1Type) andalso 
+			    t_is_equal(True, Arg2Type)) of
+			true -> {True, Map}; 
+			false -> throw(dont_know)
+		      end;
+		    false ->
+		      throw(dont_know)
+		  end;
+		{erlang, 'or', 2} -> throw(dont_know);
+		_ -> throw(dont_know)
+	      end
+	  end
+      end;
+    var ->
+      Type = 
+	case dict:find(cerl_trees:get_label(Tree), Map) of
+	  error -> throw(dont_know);
+	  {ok, T} -> T
+	end,
+      {Type, Map};
+    literal ->
+      case cerl:unfold_literal(Tree) of
+	Tree ->
+	  Type =
+	    case cerl:concrete(Tree) of
+	      Int when is_integer(Int) -> t_from_term(Int);
+	      Atom when is_atom(Atom) -> t_from_term(Atom);
+	      _Other -> throw(dont_know)
+	    end,
+	  {Type, Map};
+	OtherTree ->
+	  get_underapprox_from_guard(OtherTree, Map)
+      end;
+    _ ->
+      throw(dont_know)
+  end.
+
+get_type_test({erlang, is_atom, 1}) ->      {ok, t_atom()};
+get_type_test({erlang, is_boolean, 1}) ->   {ok, t_bool()};
+get_type_test({erlang, is_binary, 1}) ->    {ok, t_binary()};
+get_type_test({erlang, is_float, 1}) ->     {ok, t_float()};
+get_type_test({erlang, is_function, 1}) ->  {ok, t_fun()};
+get_type_test({erlang, is_integer, 1}) ->   {ok, t_integer()};
+get_type_test({erlang, is_list, 1}) ->      {ok, t_list()};
+get_type_test({erlang, is_number, 1}) ->    {ok, t_number()};
+get_type_test({erlang, is_pid, 1}) ->       {ok, t_pid()};
+get_type_test({erlang, is_port, 1}) ->      {ok, t_port()};
+get_type_test({erlang, is_reference, 1}) -> {ok, t_ref()};
+get_type_test({erlang, is_tuple, 1}) ->     {ok, t_tuple()};
+get_type_test({M, F, A}) when is_atom(M), is_atom(F), is_integer(A) -> error.
+
+	
+
+get_safe_underapprox_1([Pat|Left], Acc, Map) ->
   case cerl:type(Pat) of
     alias ->
-      get_safe_underapprox_1([cerl:alias_pat(Pat)|Left], Acc);
+      APat = cerl:alias_pat(Pat),
+      AVar = cerl:alias_var(Pat),
+      {[VarType], Map1} = get_safe_underapprox_1([AVar], [], Map),
+      {[PatType], Map2} = get_safe_underapprox_1([APat], [], Map1),
+      Inf = t_inf(VarType, PatType),
+      case t_is_none(Inf) of
+	true -> throw(dont_know);
+	false ->
+	  Map3 = dict:store(cerl_trees:get_label(AVar), Inf, Map2),
+	  get_safe_underapprox_1(Left, [Inf|Acc], Map3)
+      end;
     binary ->
       %% TODO: Can maybe do something here
       throw(dont_know);      
     cons ->
-      [Hd, Tl] = 
-	get_safe_underapprox_1([cerl:cons_hd(Pat), cerl:cons_tl(Pat)], []),
+      {[Hd, Tl], Map1} = 
+	get_safe_underapprox_1([cerl:cons_hd(Pat), cerl:cons_tl(Pat)], [], Map),
       case t_is_any(Tl) of
-	true -> get_safe_underapprox_1(Left, [t_nonempty_list(Hd)|Acc]);
+	true -> get_safe_underapprox_1(Left, [t_nonempty_list(Hd)|Acc], Map1);
 	false -> throw(dont_know)
       end;
     literal ->
@@ -748,24 +874,30 @@ get_safe_underapprox_1([Pat|Left], Acc) ->
 	    case cerl:concrete(Pat) of
 	      Int when is_integer(Int) -> t_from_term(Int);
 	      Atom when is_atom(Atom) -> t_from_term(Atom);
+	      [] -> t_from_term([]);
 	      _Other -> throw(dont_know)
 	    end,
-	  get_safe_underapprox_1(Left, [Type|Acc]);
+	  get_safe_underapprox_1(Left, [Type|Acc], Map);
 	OtherPat ->
-	  get_safe_underapprox_1([OtherPat|Left], Acc)
+	  get_safe_underapprox_1([OtherPat|Left], Acc, Map)
       end;
     tuple ->
       Es = cerl:tuple_es(Pat),
-      Type = t_tuple(get_safe_underapprox_1(Es, [])),
-      get_safe_underapprox_1(Left, [Type|Acc]);
+      {Ts, Map1} = get_safe_underapprox_1(Es, [], Map),
+      Type = t_tuple(Ts),
+      get_safe_underapprox_1(Left, [Type|Acc], Map1);
     values ->
-      Type = t_product(get_safe_underapprox_1(Pat, [])),
-      get_safe_underapprox_1(Left, [Type|Acc]);
+      {Ts, Map1} = get_safe_underapprox_1(Pat, [], Map),
+      Type = t_product(Ts),
+      get_safe_underapprox_1(Left, [Type|Acc], Map1);
     var ->
-      get_safe_underapprox_1(Left, [t_any()|Acc])
+      case dict:find(cerl_trees:get_label(Pat), Map) of
+	error -> throw(dont_know);
+	{ok, VarType} -> get_safe_underapprox_1(Left, [VarType|Acc], Map)
+      end
   end;
-get_safe_underapprox_1([], Acc) ->
-  lists:reverse(Acc).
+get_safe_underapprox_1([], Acc, Map) ->
+  {lists:reverse(Acc), Map}.
 
 %%________________________________________
 %%
@@ -870,8 +1002,8 @@ solve_ref_or_list(#constraint_ref{id=Id, deps=Deps, type='fun'},
 	  ?debug("Error solving for function ~p\n", [debug_lookup_name(Id)]),
 	  Arity = state__fun_arity(Id, State),
 	  %% HERE
-	  FunType = t_fun(duplicate(Arity, t_none()), t_none()),
-	  %%FunType = t_fun(Arity, t_none()),
+	  %%FunType = t_fun(duplicate(Arity, t_none()), t_none()),
+	  FunType = t_fun(Arity, t_none()),
 	  NewMap1 = enter_type(Id, FunType, Map),
 	  NewMap2 =
 	    case state__get_rec_var(Id, State) of

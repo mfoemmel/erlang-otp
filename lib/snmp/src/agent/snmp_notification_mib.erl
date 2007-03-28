@@ -189,32 +189,22 @@ gc_tabs() ->
 %%          name is returned.
 %%-----------------------------------------------------------------
 get_targets() ->
-    [Target || {_NotifyName, Target} <- get_targets1()].
-
-get_targets1() ->
-    case ets:lookup(snmp_agent_table, snmp_targets_cache) of
-	[{_, Targets}] ->
-	    Targets;
-	 _ ->
-	    Targets = find_targets(),
-	    update_cache(Targets),
-	    Targets
-    end.
+    TargetsFun = fun find_targets/0,
+    snmpa_target_cache:targets(TargetsFun).
 
 get_targets(NotifyName) ->
-    [Target || {N, Target} <- get_targets1(),
-	       N == NotifyName].
+    TargetsFun = fun find_targets/0,
+    snmpa_target_cache:targets(TargetsFun, NotifyName).
+
 
 %%-----------------------------------------------------------------
 %% We use a cache of targets to avoid searching the tables each
 %% time a trap is sent.  When some of the 3 tables (notify,
 %% targetAddr, targetParams) is modified, the cache is invalidated.
 %%-----------------------------------------------------------------
-update_cache(Targets) ->
-    ets:insert(snmp_agent_table, {snmp_targets_cache, Targets}).
 
 invalidate_cache() ->
-    ets:delete(snmp_agent_table, snmp_targets_cache).
+    snmpa_target_cache:invalidate().
     
 
 %% Ret: [{NotifyName, {DestAddr, TargetName, TargetParams, NotifyType}}]
@@ -236,24 +226,43 @@ find_targets(Key, TargAddrs, Db, Res) ->
                    snmpNotifyTag = Tag,
                    snmpNotifyType = Type,
                    snmpNotifyRowStatus = ?'RowStatus_active'}} ->
-                    ?vtrace("find targets for ~w"
+                    ?vtrace("found notify entry for ~w"
                             "~n   Tag:     ~w"
                             "~n   Type:    ~w", [NextKey, Tag, Type]),
                     Targs = get_targets(TargAddrs, Tag, Type, NextKey),
                     find_targets(NextKey, TargAddrs, Db, Targs ++ Res);
+                {ok, #snmpNotifyTable{
+                   snmpNotifyTag       = Tag,
+                   snmpNotifyType      = Type,
+                   snmpNotifyRowStatus = RowStatus}} ->
+                    ?vtrace("found invalid notify entry for ~w"
+                            "~n   Tag:       ~w"
+                            "~n   Type:      ~w"
+			    "~n   RowStatus: ~p", 
+			    [NextKey, Tag, Type, RowStatus]), 
+                    find_targets(NextKey, TargAddrs, Db, Res);
                 _ ->
+                    ?vtrace("notify entry not found for ~w", [NextKey]),
                     find_targets(NextKey, TargAddrs, Db, Res)
             end;
  	NextKey -> 
 	    Elements = [?snmpNotifyTag, ?snmpNotifyType, ?snmpNotifyRowStatus],
 	    case snmpNotifyTable(get, NextKey, Elements) of
 		[{value, Tag}, {value, Type}, {value, ?'RowStatus_active'}] ->
-		    ?vtrace("find targets for ~w"
+		    ?vtrace("found notify entry for ~w"
 			    "~n   Tag:     ~w"
 			    "~n   Type:    ~w", [NextKey, Tag, Type]),
 		    Targs = get_targets(TargAddrs, Tag, Type, NextKey),
 		    find_targets(NextKey, TargAddrs, Db, Targs ++ Res);
+		[{value, Tag1}, {value, Type1}, {value, RowStatus}] ->
+		    ?vtrace("found invalid notify entry for ~w"
+			    "~n   Tag:       ~w"
+			    "~n   Type:      ~w"
+			    "~n   RowStatus: ~w", 
+			    [NextKey, Tag1, Type1, RowStatus]),
+		    find_targets(NextKey, TargAddrs, Db, Res);
 		_ ->
+                    ?vtrace("notify entry not found for ~w", [NextKey]),
 		    find_targets(NextKey, TargAddrs, Db, Res)
 	    end
     end.
@@ -284,13 +293,17 @@ snmpNotifyTable(Op) ->
 
 %% Op == get | is_set_ok | set | get_next
 snmpNotifyTable(get, RowIndex, Cols) ->
+    %% BMK BMK BMK BMK
     get(snmpNotifyTable, RowIndex, Cols);
 snmpNotifyTable(get_next, RowIndex, Cols) ->
+    %% BMK BMK BMK BMK
     next(snmpNotifyTable, RowIndex, Cols);
 snmpNotifyTable(set, RowIndex, Cols0) ->
+    %% BMK BMK BMK BMK
     case (catch verify_snmpNotifyTable_cols(Cols0, [])) of
 	{ok, Cols} ->
 	    invalidate_cache(),
+	    %% invalidate_cache(RowIndex),
 	    Db = db(snmpNotifyTable),
 	    snmp_generic:table_func(set, RowIndex, Cols, Db);
 	Error ->

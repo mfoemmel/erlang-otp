@@ -13,7 +13,7 @@
 %% AB. Portions created by Ericsson are Copyright 1999, Ericsson
 %% Utvecklings AB. All Rights Reserved.''
 %%
-%% $Id: edoc_scanner.erl,v 1.8 2004/11/30 00:39:34 richardc Exp $
+%% $Id$
 %%
 %% @private
 %% @copyright Richard Carlsson 2001-2003. Portions created by Ericsson
@@ -59,6 +59,10 @@ format_error({base,Base}) -> io_lib:fwrite("illegal base '~w'", [Base]);
 format_error(float) -> "bad float";
 
 format_error(Other) -> io_lib:write(Other).
+
+%% Reserved words, not atoms:
+reserved('where') -> true;
+reserved(_) -> false.
 
 %% scan(CharList, StartPos)
 %%  This takes a list of characters and tries to tokenise them.
@@ -169,7 +173,12 @@ scan_atom(C, Cs, Toks, Pos) ->
     W = [C|reverse(Wcs)],
     case catch list_to_atom(W) of
 	A when atom(A) ->
-	    scan1(Cs1, [{atom,Pos,A}|Toks], Pos);
+	    case reserved(A) of
+		true ->
+		    scan1(Cs1, [{A,Pos}|Toks], Pos);
+		false ->
+		    scan1(Cs1, [{atom,Pos,A}|Toks], Pos)
+	    end;
 	_ ->
 	    scan_error({illegal,token}, Pos)
     end.

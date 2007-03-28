@@ -58,7 +58,8 @@ MIBS_A = \
 	SNMP-COMMUNITY-MIB \
 	SNMP-USER-BASED-SM-MIB \
 	SNMP-VIEW-BASED-ACM-MIB \
-	SNMP-USM-AES-MIB
+	SNMP-USM-AES-MIB \
+	INET-ADDRESS-MIB
 
 MIBS_B = OTP-SNMPEA-MIB
 
@@ -104,7 +105,6 @@ TARGET_FILES = \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-#SNMP_FLAGS = -I $(ERL_TOP)/lib/sasl/priv/mibs -I ../priv/mibs
 
 SNMP_FLAGS += -pa ../ebin +version 
 
@@ -132,6 +132,9 @@ clean:
 	rm -f $(TARGET_FILES)
 
 docs:
+
+conf:
+	cd ..; $(MAKE) conf
 
 info:
 	@echo "MIBS            = $(MIBS)"

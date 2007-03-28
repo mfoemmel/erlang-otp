@@ -246,12 +246,8 @@ check_float(Value) ->
 %%     end.
 
 check_double(Value) ->
-    case check_float(Value) of
-	{error,_} ->
-	    {error,{value_not_double,Value}};
-	_ ->
-	    {ok,Value}
-    end.
+    check_float(Value).
+
 
 %% format PnYnMnDTnHnMnS
 %% P is always present
@@ -910,7 +906,6 @@ maxExclusive_fun(T,V) when T==duration ->
 	    case ?MODULE:compare_durations(Val,V) of
 		lt ->
 		    {ok,Val};
-		Err={error,_} -> Err;
 		_ ->
 		    {error,{maxExclusive,Val,not_less_than,V}}
 	    end
@@ -920,7 +915,6 @@ maxExclusive_fun(T,V) when T==dateTime ->
 	    case ?MODULE:compare_dateTime(Val,V) of
 		lt ->
 		    {ok,Val};
-		Err={error,_} -> Err;
 		_ ->
 		    {error,{maxExclusive,Val,not_less_than,V}}
 	    end
@@ -956,7 +950,6 @@ minExclusive_fun(T,V) when T==duration ->
 	    case ?MODULE:compare_durations(Val,V) of
 		gt ->
 		    {ok,Val};
-		Err={error,_} -> Err;
 		_ ->
 		    {error,{minExclusive,Val,not_greater_than,V}}
 	    end
@@ -966,7 +959,6 @@ minExclusive_fun(T,V) when T==dateTime ->
 	    case ?MODULE:compare_dateTime(Val,V) of
 		gt ->
 		    {ok,Val};
-		Err={error,_} -> Err;
 		_ ->
 		    {error,{minExclusive,Val,not_greater_than,V}}
 	    end
@@ -1002,7 +994,6 @@ minInclusive_fun(T,V) when T==duration ->
 	    case ?MODULE:compare_durations(Val,V) of
 		lt ->
 		    {error,{minInclusive,Val,not_greater_than_or_equal_with,V}};
-		Err={error,_} -> Err;
 		_ ->
 		    {ok,Val}
 	    end
@@ -1012,7 +1003,6 @@ minInclusive_fun(T,V) when T==dateTime ->
 	    case ?MODULE:compare_dateTime(Val,V) of
 		lt ->
 		    {error,{minInclusive,Val,not_greater_than_or_equal_with,V}};
-		Err={error,_} -> Err;
 		_ ->
 		    {ok,Val}
 	    end
@@ -1326,14 +1316,10 @@ monthValue(_M,Y) ->
 %% result is E dateTime, end of time period with start S and duration
 %% D. E = S + D.
 add_duration2dateTime(S,D) when is_list(S),is_list(D) ->
-    case dateTime_atoms(S) of
-	Satoms = {_,_,_,_,_,_,_} ->
-	    case duration_atoms(D) of
-		Datoms = {_,_,_,_,_,_} ->
-		    add_duration2dateTime2(Satoms,Datoms);
-		Err ->
-		    {error,Err}
-	    end;
+    Satoms = dateTime_atoms(S),
+    case duration_atoms(D) of
+	Datoms = {_,_,_,_,_,_} ->
+	    add_duration2dateTime2(Satoms,Datoms);
 	Err ->
 	    {error,Err}
     end;

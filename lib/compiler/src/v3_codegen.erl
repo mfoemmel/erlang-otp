@@ -158,34 +158,49 @@ cg_list(Kes, I, Vdb, Bef, St0) ->
 %%  collect them together as much as possible.
 
 need_heap(Kes0, I) ->
-    {Kes,H} = flatmapfoldr(fun (Ke, H0) ->
-				    {Ns,H1} = need_heap_1(Ke, H0),
-				    {[Ke|Ns],H1}
-			    end, 0, Kes0),
-    %% Prepend need_heap if necessary.
-    need_heap_need(I, H) ++ Kes.
+    {Kes,H,Lit} = need_heap_0(reverse(Kes0), 0, [], []),
+%%     {Kes,H} = flatmapfoldr(fun (Ke, H0) ->
+%% 				    {Ns,H1} = need_heap_1(Ke, H0),
+%% 				    {[Ke|Ns],H1}
+%% 			    end, 0, Kes0),
 
-need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H) ->
-    {need_heap_need(I, H),0};
-need_heap_1(#l{ke={set,_,Val}}, H) ->
+    %% Prepend need_heap if necessary.
+    need_heap_need(I, H, Lit) ++ Kes.
+
+need_heap_0([Ke|Kes], H0, Lit0, Acc) ->
+    {Ns,H,Lit} = need_heap_1(Ke, H0, Lit0),
+    need_heap_0(Kes, H, Lit, [Ke|Ns]++Acc);
+need_heap_0([], H, Lit, Acc) ->
+    {Acc,H,Lit}.
+
+need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H, Lit) ->
+    {need_heap_need(I, H, Lit),0,[]};
+need_heap_1(#l{ke={set,_,Val}}, H, Lit) ->
     %% Just pass through adding to needed heap.
     {[],H + case Val of
 		{cons,_} -> 2;
 		{tuple,Es} -> 1 + length(Es);
 		{string,S} -> 2 * length(S);
 		_Other -> 0
-	    end};
-need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H) ->
-    {need_heap_need(I, H),0};
-need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H) ->
-    {need_heap_need(I, H),0};
-need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H) ->
-    {[],H};
-need_heap_1(#l{i=I}, H) ->
-    {need_heap_need(I, H),0}.
+	    end,
+     case Val of
+	 {literal,L} -> [L|Lit];
+	 _ -> Lit
+     end};
+need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H, Lit) ->
+    {need_heap_need(I, H, Lit),0,[]};
+need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H, Lit) ->
+    {need_heap_need(I, H, Lit),0,[]};
+need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H, Lit) ->
+    {[],H,Lit};
+need_heap_1(#l{i=I}, H, Lit) ->
+    {need_heap_need(I, H, Lit),0,[]}.
 
-need_heap_need(_I, 0) -> [];
-need_heap_need(I, H) -> [#l{ke={need_heap,H},i=I}].
+need_heap_need(_I, 0, []) -> [];
+need_heap_need(I, H, []) -> [#l{ke={need_heap,H},i=I}];
+need_heap_need(I, H, Lit0) ->
+    Lit = [{literal,L} || L <- Lit0],
+    [#l{ke={need_heap,{alloc,[{words,H}|Lit]}},i=I}].
 
 %% match_cg(Match, [Ret], Le, Vdb, StackReg, State) ->
 %%	{[Ainstr],StackReg,State}.
@@ -1284,6 +1299,8 @@ set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
 		  [{move,fetch_var(V, Int),Ret}];
 	      {string,Str} ->
 		  [{put_string,length(Str),{string,Str},Ret}];
+	      {literal,_}=Lit ->
+		  [{put_literal,Lit,Ret}];
 	      Other ->
 		  [{move,Other,Ret}]
 	  end,
@@ -1947,11 +1964,11 @@ flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {R++Rs,Accu2};
 flatmapfoldl(_, Accu, []) -> {[],Accu}.
 
-flatmapfoldr(F, Accu0, [Hd|Tail]) ->
-    {Rs,Accu1} = flatmapfoldr(F, Accu0, Tail),
-    {R,Accu2} = F(Hd, Accu1),
-    {R++Rs,Accu2};
-flatmapfoldr(_, Accu, []) -> {[],Accu}.
+%% flatmapfoldr(F, Accu0, [Hd|Tail]) ->
+%%     {Rs,Accu1} = flatmapfoldr(F, Accu0, Tail),
+%%     {R,Accu2} = F(Hd, Accu1),
+%%     {R++Rs,Accu2};
+%% flatmapfoldr(_, Accu, []) -> {[],Accu}.
 
 %% Utility functions for generating different code depending on wether 
 %% the bitlevel_binaries option is given or not

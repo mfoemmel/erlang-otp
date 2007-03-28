@@ -48,8 +48,8 @@
 	 tpm_ms_tracer/5,tpm_ms_tracer/6,
 	 ctpm_ms/4,ctpm_ms/5,ctpm/3,ctpm/4,
 	 ctpm_localnames/0,ctpm_localnames/1,ctpm_globalnames/0,ctpm_globalnames/1,
-	 ctp/3, ctp/4,
-	 ctpl/3, ctpl/4,
+	 ctp/1,ctp/2,ctp/3,ctp/4,
+	 ctpl/1,ctpl/2,ctpl/3,ctpl/4,
 	 tf/1, tf/2, tf/3,
 	 ctf/1, ctf/2, ctf/3,
 	 ctp_all/0, ctp_all/1, ctf_all/0, ctf_all/1,
@@ -381,7 +381,10 @@ tpl(PatternList) ->
 
 %% ctp(Nodes,Module,Function,Arity)={ok,NodeResults}|{error,Reason}
 %% ctp(Module,Function,Arity)={ok,NodeResults}|NodeResult|{error,Reason}
-%%   see tp/X for argument descriptions.
+%% ctp(Nodes,PatternList)={ok,NodeResults}|{error,Reason}
+%% ctp(PatternList)={ok,NodeResults}|NodeResult|{error,Reason}
+%%   PatternList=[{Mod,Func,Arity},...]
+%%   see tp/X for other argument descriptions.
 %%
 %% Clear trace pattern (global) on specified or all Nodes. The integer replied
 %% if the call was successfully describes the matched number of functions.
@@ -393,11 +396,23 @@ ctp(Nodes,Module,Function,Arity) ->
 
 ctp(Module,Function,Arity) ->
     trace_pattern(all,[{Module,Function,Arity,false,[only_loaded]}],[global]).
+
+ctp(Nodes,PatternList) when list(PatternList) ->
+    trace_pattern(Nodes,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [global]).
+
+ctp(PatternList) when list(PatternList) ->
+    trace_pattern(all,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [global]).
 %% -----------------------------------------------------------------------------
 
 %% ctpl(Nodes,Module,Function,Arity)={ok,NodeResults}|{error,Reason}
 %% ctpl(Module,Function,Arity)={ok,NodeResults}|NodeResult|{error,Reason}
-%%   see tp/X for argument description.
+%% ctpl(Nodes,PatternList)={ok,NodeResults}|{error,Reason}
+%% ctpl(PatternList)={ok,NodeResults}|NodeResult|{error,Reason}
+%%   see ctp/X for argument description.
 %%
 %% Clear trace pattern (local) on specified or all Nodes. The integer replied
 %% if the call was successfully describes the matched number of functions.
@@ -409,6 +424,16 @@ ctpl(Nodes,Module,Function,Arity) ->
 
 ctpl(Module,Function,Arity) ->
     trace_pattern(all,[{Module,Function,Arity,false,[only_loaded]}],[local]).
+
+ctpl(Nodes,PatternList) when list(PatternList) ->
+    trace_pattern(Nodes,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [local]).
+
+ctpl(PatternList) when list(PatternList) ->
+    trace_pattern(all,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [local]).
 %% -----------------------------------------------------------------------------
 
 %% Help function doing the control component calling for all tp/X, tpl/X, ctp/X

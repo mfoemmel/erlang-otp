@@ -10,6 +10,36 @@
   
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Miscellanous improvements.</p>
+          <p>
+	    Own Id: OTP-6577</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+<section><title>Hipe 3.6.1.1</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+            Dialyzer could fail to analyze certain beam files that
+            used try/catch.</p>
+          <p>
+            Own Id: OTP-6449 Aux Id: seq10563 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
 <section><title>Hipe 3.6.1</title>
 
     <section><title>Improvements and New Features</title>

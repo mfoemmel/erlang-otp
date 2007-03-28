@@ -45,7 +45,11 @@
 -export([tpm_ms/6,tpm_ms_tracer/6,ctpm_ms/5,ctpm/4]).
 -export([local_register/1,global_register/1]).
 -export([remove_local_register/1,remove_global_register/1]).
--export([get_tracer/0]).
+
+-export([write_ti/1]).
+
+-export([get_tracer/0,tpm_ms/5,tpm_ms_tracer/5,list_tpm_ms/3,ctpm_ms/4]).
+
 -export([metacast_call/5,metacast_return_from/6]).
 -export([get_state/1]).
 %% -----------------------------------------------------------------------------
@@ -55,13 +59,14 @@
 %% -----------------------------------------------------------------------------
 
 -export([init/6]).
--export([init_std_publld/1,clean_std_publld/1]).
+-export([init_std_publld/2,clean_std_publld/1]).
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
 %% Constants.
 %% -----------------------------------------------------------------------------
 
+-define(NAMED_MS_TAB,inviso_rt_meta_named_ms).
 
 %% -----------------------------------------------------------------------------
 
@@ -98,7 +103,7 @@ start(TiData,Tracer) ->
 		   [self(),
 		    TiData,
 		    Tracer,
-		    {?MODULE,init_std_publld,[2]},
+		    {?MODULE,init_std_publld,[2,[]]},
 		    void,
 		    {?MODULE,clean_std_publld}]),
     wait_for_reply(Pid).
@@ -335,10 +340,28 @@ reply(To,Ref,Reply) ->
     To ! {inviso_rt_meta_reply,Ref,Reply}.
 %% -----------------------------------------------------------------------------
 
+%% =============================================================================
+%% Special API.
+%% =============================================================================
+
+%% write_ti(OutPut)=
+%%   OutPut=binary()
+%% Makes an extra entry into the trace information file (ti-file). This is useful
+%% if a pid-alias association is learned in another way than through a meta traced
+%% function call. Note that this API can only be used locally at the node in
+%% question.
+write_ti(OutPut) ->
+    catch ?MODULE ! {write_ti,OutPut}.
+%% -----------------------------------------------------------------------------
+
 
 %% =============================================================================
-%% Call-back API
+%% API intended to be used on CallFuncs and RemoveFuncs.
 %% =============================================================================
+
+%% The reason there must be a special API for CallFuncs and RemoveFuncs are is
+%% that those functions are executed inside *this* process context. Hence they
+%% can not make function calls requiering this process to receive messages.
 
 %% Returns the tracer used for regular tracing. The reason this is implemented
 %% in this way is that this function is intended to be used in meta trace call-
@@ -348,22 +371,57 @@ get_tracer() ->
     get(tracer).
 %% -----------------------------------------------------------------------------
 
+%% Function equivalent to inviso_rt:tpm_ms/6. This function can *only* be used
+%% inside a CallFunc or a RemoveFunc.
+tpm_ms(Mod,Func,Arity,MSname,MS) ->
+    case check_mfarity_exists(Mod,Func,Arity) of
+	yes ->                               % Ok, and args must be ok then also.
+	    {ok,h_tpm_ms(Mod,Func,Arity,MSname,MS)};
+	no ->
+	    {error,not_initiated}
+    end.
+%% -----------------------------------------------------------------------------
+
+tpm_ms_tracer(Mod,Func,Arity,MSname,MS) ->
+    case check_mfarity_exists(Mod,Func,Arity) of
+	yes ->                               % Ok, and args must be ok then also.
+	    NewMS=add_tracer(MS,get_tracer()),
+	    {ok,h_tpm_ms(Mod,Func,Arity,MSname,NewMS)};
+	no ->
+	    {error,not_initiated}
+    end.
+%% -----------------------------------------------------------------------------
+
+%% Function that returns all MSname in use for Mod:Func/Arity
+list_tpm_ms(Mod,Func,Arity) ->
+    {ok,h_list_tpm_ms(Mod,Func,Arity)}.
+%% -----------------------------------------------------------------------------
+
+%% Function equivalent to inviso_rt:ctpm_ms/5. This function can *only* be used
+%% inside a CallFunc or a RemoveFunc.
+ctpm_ms(Mod,Func,Arity,MSname) ->
+    h_ctpm_ms(Mod,Func,Arity,MSname),
+    ok.
+%% -----------------------------------------------------------------------------
+
 
 %% =============================================================================
 %% The server implemenation.
 %% =============================================================================
 
 init(Parent,TiData,Tracer,InitPublLDmfa,RemovePublLDmf,CleanPublLDmf) ->
+    process_flag(priority,high),            % Since we may receive from many procs.
     register(?MODULE,self()),               % So we can act as relay receiver.
     case open_traceinfo_file(TiData) of
 	{ok,TI} ->                          % The ti.-file.
+	    TId=ets:new(?NAMED_MS_TAB,[named_table,set,protected]),
 	    PublLD=do_init_publ_ld(InitPublLDmfa),
 	    Parent ! {self(),ok},
 	    put(tracer,Tracer),             % Uggly quick fix!
 	    loop(Parent,
 		 Tracer,
 		 TI,
-		 mk_new_ld(InitPublLDmfa,RemovePublLDmf,CleanPublLDmf),
+		 mk_new_ld(InitPublLDmfa,RemovePublLDmf,CleanPublLDmf,TId),
 		 PublLD,
 		 now());
 	{error,Reason} ->
@@ -375,7 +433,7 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
     {PublLD,CleanTime}=throw_old_failed(get_cleanpublldmf_ld(LD),PrevPublLD,PrevCleanTime),
     receive
 	{{init_tpm,{Mod,Func,Arity},InitFunc,CallFunc,ReturnFunc,RemoveFunc},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		no ->                       % Good then we can add it!
 		    case check_tpm_args(Mod,Func,Arity) of
 			true ->             % Args are ok.
@@ -394,7 +452,7 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm,{Mod,Func,Arity,MS},InitFunc,CallFunc,ReturnFunc,RemoveFunc},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		no ->                       % Good then we can add it!
 		    case check_tpm_args(Mod,Func,Arity) of
 			true ->             % Args are ok.
@@ -413,7 +471,7 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm,{Mod,Func,Arity,MS}},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		yes ->                      % Ok, and args must be ok then also.
 		    {NewLD,N}=h_tpm(Mod,Func,Arity,MS,LD),
 		    reply(Parent,Ref,{ok,N}),
@@ -423,7 +481,7 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm_tracer,{Mod,Func,Arity,MS},InitFunc,CallFunc,ReturnFunc,RemoveFunc},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		no ->                       % Good then we can add it!
 		    case check_tpm_args(Mod,Func,Arity) of
 			true ->             % Args are ok.
@@ -443,7 +501,7 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm_tracer,{Mod,Func,Arity,MS}},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		yes ->                      % Ok, and args must be ok then also.
 		    NewMS=add_tracer(MS,Tracer),
 		    {NewLD,N}=h_tpm(Mod,Func,Arity,NewMS,LD),
@@ -454,29 +512,28 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm_ms,{Mod,Func,Arity},MSname,MS},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		yes ->                      % Ok, and args must be ok then also.
-		    {NewLD,N}=h_tpm_ms(Mod,Func,Arity,MSname,MS,LD),
-		    reply(Parent,Ref,{ok,N}),
-		    loop(Parent,Tracer,TI,NewLD,PublLD,CleanTime);
+		    reply(Parent,Ref,{ok,h_tpm_ms(Mod,Func,Arity,MSname,MS)}),
+		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime);
 		no ->
 		    reply(Parent,Ref,{error,not_initiated}),
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{tpm_ms_tracer,{Mod,Func,Arity},MSname,MS},Ref,Parent} ->
-	    case check_mfarity_exists(Mod,Func,Arity,LD) of
+	    case check_mfarity_exists(Mod,Func,Arity) of
 		yes ->                      % Ok, and args must be ok then also.
 		    NewMS=add_tracer(MS,Tracer),
-		    {NewLD,N}=h_tpm_ms(Mod,Func,Arity,MSname,NewMS,LD),
-		    reply(Parent,Ref,{ok,N}),
-		    loop(Parent,Tracer,TI,NewLD,PublLD,CleanTime);
+		    reply(Parent,Ref,{ok,h_tpm_ms(Mod,Func,Arity,MSname,NewMS)}),
+		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime);
 		no ->
 		    reply(Parent,Ref,{error,not_initiated}),
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
 	{{ctpm_ms,{Mod,Func,Arity},MSname},Ref,Parent} ->
 	    reply(Parent,Ref,ok),
-	    loop(Parent,Tracer,TI,h_ctpm_ms(Mod,Func,Arity,MSname,LD),PublLD,CleanTime);
+	    h_ctpm_ms(Mod,Func,Arity,MSname),
+	    loop(Parent,Tracer,TI,LD,PublLD,CleanTime);
 	{{ctpm,{Mod,Func,Arity}},Ref,Parent} ->
 	    case get_remove_func_ld(Mod,Func,Arity,LD) of
 		false ->                    % Incorrect Mod:Func/Arity!
@@ -520,6 +577,9 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 	    end;
 	{relayed_meta,Bin} ->
 	    write_output(TI,Bin),
+	    loop(Parent,Tracer,TI,LD,PublLD,CleanTime);
+	{write_ti,OutPut} ->
+	    write_output(TI,OutPut),
 	    loop(Parent,Tracer,TI,LD,PublLD,CleanTime);
 	{get_state,Ref,From} ->             % Debug function.
 	    reply(From,Ref,{ok,LD,PublLD}),
@@ -604,33 +664,61 @@ h_tpm(Mod,Func,Arity,MS,LD) ->
 %% in which order the match-specs will be given to the BIF.
 %% Note that if an MS with the same name as an exiting is inserted, the previous
 %% match-spec will be removed.
-%% Returns a NewLD.
-h_tpm_ms(Mod,Func,Arity,MSname,MS,LD) ->
-    MSsNames=get_ms_ld(Mod,Func,Arity,LD),  % Fetch all previous match-specs.
+%% Very important to realise is that the empty meta match spec [] imposes no
+%% restrictions what so ever on the generating of meta trace call messages.
+%% Uncontrolled sending of such messages may quickly drain power from the system.
+%% Since an empty match-spec will "disappear" when added to other match specs,
+%% the empty match is transformed to what it actually is: [{'_',[],[]}].
+%% Returns 0 or 1 indicating failure or success.
+h_tpm_ms(Mod,Func,Arity,MSname,MS) ->
+    MSsNames=get_ms_ld(Mod,Func,Arity),     % Fetch all previous match-specs.
+    TransformedMS=h_tpm_ms_convert_null_ms(MS),
     MSsNames1=lists:keydelete(MSname,1,MSsNames), % If it already existed, it is gone!
-    NewMSs=lists:flatten([MS,lists:map(fun({_Name,MSx})->MSx end,MSsNames1)]),
+    NewMSs=lists:flatten([TransformedMS,lists:map(fun({_Name,MSx})->MSx end,MSsNames1)]),
     case set_meta_tracing(Mod,Func,Arity,NewMSs) of
 	true ->                             % We only save the MS if it was good.
-	    {put_ms_ld(Mod,Func,Arity,MSname,MS,MSsNames1,LD),1};
+	    put_ms_ld(Mod,Func,Arity,MSname,TransformedMS,MSsNames1),
+	    1;
 	false ->
-	    {LD,0}
+	    0
     end.
+
+%% Help function converting the null match spec into, still a null match spec,
+%% on a proper match spec format. This because it will otherwise be difficult
+%% to see the difference between no active tpm_ms and all a set of null ms.
+h_tpm_ms_convert_null_ms([]) ->
+    [{'_',[],[]}];
+h_tpm_ms_convert_null_ms(MS) ->
+    MS.
 %% -----------------------------------------------------------------------------
 
-%% Function that removes a named match-spec. Returns a new loop data structure.
-h_ctpm_ms(Mod,Func,Arity,MSname,LD) ->
-    case get_ms_ld(Mod,Func,Arity,LD) of
+%% Help function returning a list of all names used for match-functions for
+%% the Mod:Func/Arity in question.
+h_list_tpm_ms(Mod,Func,Arity) ->
+    MSsNames=get_ms_ld(Mod,Func,Arity),     % A list of {MSname,MS}.
+    lists:map(fun({MSname,_})->MSname end,MSsNames).
+%% -----------------------------------------------------------------------------
+
+%% Function that removes a named match-spec. Returns nothing significant.
+%% Note that if we end up with no match-specs, we must remove the meta trace
+%% patten all together. That is bringing the function back to just initiated.
+h_ctpm_ms(Mod,Func,Arity,MSname) ->
+    case get_ms_ld(Mod,Func,Arity) of
 	[] ->                               % The name does certainly not exist!
-	    LD;                             % We don't have to do anything.
+	    true;                           % We don't have to do anything.
 	MSsNames ->
 	    case lists:keysearch(MSname,1,MSsNames) of
 		{value,{_,_MS}} ->          % Ok, we must do something!
 		    NewMSsNames=lists:keydelete(MSname,1,MSsNames),
-		    NewMSs=lists:flatten(lists:map(fun({_Name,MS})->MS end,NewMSsNames)),
-		    set_meta_tracing(Mod,Func,Arity,NewMSs),
-		    set_ms_ld(Mod,Func,Arity,NewMSsNames,LD);
+		    case lists:flatten(lists:map(fun({_Name,MS})->MS end,NewMSsNames)) of
+			[] ->               % This means stop meta tracing.
+			    set_meta_tracing(Mod,Func,Arity,false);
+			NewMSs ->
+			    set_meta_tracing(Mod,Func,Arity,NewMSs)
+		    end,
+		    set_ms_ld(Mod,Func,Arity,NewMSsNames);
 		false ->                    % But this name does not exist.
-		    LD                      % So we do not have to do anything.
+		    true                    % So we do not have to do anything.
 	    end
     end.
 %% -----------------------------------------------------------------------------
@@ -701,6 +789,11 @@ handle_meta(_,_,_,_) ->                     % Don't know how to do this.
     false.
 %% -----------------------------------------------------------------------------
 
+%% Help function writing output from a callback function to the ti-file.
+%% Output can be a binary or a list of binaries.
+write_output(TI,[OutPut|Rest]) ->
+    write_output(TI,OutPut),
+    write_output(TI,Rest);
 write_output({file,FD},Bin) when binary(Bin) -> % Plain direct-binary file
     Size=size(Bin),
     file:write(FD,list_to_binary([<<0,Size:32>>,Bin]));
@@ -849,17 +942,18 @@ add_tracer_3(FaultyBody,_Tracer) ->
 -record(ld,{init_publ_ld_mfa,               % {M,F,Args}
 	    remove_publ_ld_mf,              % {M,F} | void
 	    clean_publ_ld_mf,               % {Mod,Func}
-	    ms_mfarities=[],
+	    ms_mfarities=notable,           % ETS holding names match functions.
 	    call_mfarities=[],              % [{{M,F,Arity},2-TupleOrFun},...]
 	    return_mfarities=[],            % [{{M,F,Arity},2-TupleOrFun},...]
 	    remove_mfarities=[]
 	   }).
 
-mk_new_ld(InitPublLDmfa,RemovePublLDmf,CleanPublLDmf) ->
+mk_new_ld(InitPublLDmfa,RemovePublLDmf,CleanPublLDmf,TId) ->
     #ld{
 	   init_publ_ld_mfa=InitPublLDmfa,
 	   remove_publ_ld_mf=RemovePublLDmf,
-	   clean_publ_ld_mf=CleanPublLDmf
+	   clean_publ_ld_mf=CleanPublLDmf,
+	   ms_mfarities=TId
        }.
 %% -----------------------------------------------------------------------------
 
@@ -888,6 +982,7 @@ get_cleanpublldmf_ld(#ld{clean_publ_ld_mf=CleanPublLDmf}) ->
 %% Help function adding data associated with a meta traced function to the
 %% internal loopdata. Called when meta tracing is activated for M:F/Arity.
 init_tpm_ld(M,F,Arity,CallFunc,ReturnFunc,RemoveFunc,LD) ->
+    ets:insert(LD#ld.ms_mfarities,{{M,F,Arity},[]}),
     CallFuncs=LD#ld.call_mfarities,
     ReturnFuncs=LD#ld.return_mfarities,
     RemoveFuncs=LD#ld.remove_mfarities,
@@ -897,56 +992,60 @@ init_tpm_ld(M,F,Arity,CallFunc,ReturnFunc,RemoveFunc,LD) ->
 %% -----------------------------------------------------------------------------
 
 %% Help function which answers the question if we have already initiated the
-%% function. It is done by looking at if we have removefunc defined for it.
+%% function. It is done by looking in the ETS-table with named match-functions.
+%% If there is an entry in the set-type table for M:F/Arity, the function is
+%% initiated.
 %% Returns 'yes' or 'no'.
-check_mfarity_exists(M,F,Arity,LD) ->
-    case lists:keysearch({M,F,Arity},1,LD#ld.remove_mfarities) of
-	{value,_} ->
-	    yes;
-	false ->
-	    no
+check_mfarity_exists(M,F,Arity) ->
+    case ets:lookup(?NAMED_MS_TAB,{M,F,Arity}) of
+	[] ->
+	    no;
+	[_] ->
+	    yes
     end.
 %% -----------------------------------------------------------------------------
 
-%% Help function adding an entry with [{MSname,MSlist},...] for M:F/Arity.
+%% Help function adding an entry with [{MSname,MSlist}|MSsNames] for M:F/Arity.
 %% Note that any already existing entry is removed.
-put_ms_ld(M,F,Arity,MSname,MS,MSsNames,LD) ->
-    NewMSmfarities=lists:keydelete({M,F,Arity},1,LD#ld.ms_mfarities),
-    LD#ld{ms_mfarities=[{{M,F,Arity},[{MSname,MS}|MSsNames]}|NewMSmfarities]}.
+%% Returns nothing significant.
+put_ms_ld(M,F,Arity,MSname,MS,MSsNames) ->
+    ets:insert(?NAMED_MS_TAB,{{M,F,Arity},[{MSname,MS}|MSsNames]}).
 %% -----------------------------------------------------------------------------
 
 %% Help function taking a list of {MSname,MSs} and storing them in the
-%% internal loop data structure.
-set_ms_ld(M,F,Arity,MSsNames,LD) ->
-    NewMSmfarities=lists:keydelete({M,F,Arity},1,LD#ld.ms_mfarities),
-    LD#ld{ms_mfarities=[{{M,F,Arity},MSsNames}|NewMSmfarities]}.
+%% internal loop data structure. The storage is actually implemented as an ETS
+%% table. Any previous list of {MSname,MSs} associated with this {M,F,Arity} will
+%% be lost. Returns nothing significant.
+set_ms_ld(M,F,Arity,MSsNames) ->
+    ets:insert(?NAMED_MS_TAB,{{M,F,Arity},MSsNames}).
 %% -----------------------------------------------------------------------------
 
-%% Help function fetching a list of {MSname,MatchSpecs} for a M:F/Arity.
-get_ms_ld(M,F,Arity,LD) ->
-    case lists:keysearch({M,F,Arity},1,LD#ld.ms_mfarities) of
-	{value,{_,MSsNames}} ->
+%% Help function fetching a list of {MSname,MatchSpecs} for a M:F/Arity. The
+%% match-functions are stored in an ETS table searchable on {M,F,Arity}.
+get_ms_ld(M,F,Arity) ->
+    case ets:lookup(?NAMED_MS_TAB,{M,F,Arity}) of
+	[{_MFArity,MSsNames}] ->
 	    MSsNames;
-	false ->
+	[] ->
 	    []
     end.
 %% -----------------------------------------------------------------------------
 
 %% Help function removing all saved match-specs for a certain M:F/Arity.
+%% Returns a new loopdata structure.
 remove_ms_ld(M,F,Arity,LD) ->
-    NewMSmfarities=lists:keydelete({M,F,Arity},1,LD#ld.ms_mfarities),
-    LD#ld{ms_mfarities=NewMSmfarities}.
+    ets:delete(LD#ld.ms_mfarities,{M,F,Arity}),
+    LD.
 %% -----------------------------------------------------------------------------
 
 %% Help function which removes all information about a meta traced function from
 %% the internal loopdata. Returns a new loopdata structure.
 ctpm_ld(M,F,Arity,LD) ->
-    NewMSsNames=lists:keydelete({M,F,Arity},1,LD#ld.ms_mfarities),
+    ets:delete(LD#ld.ms_mfarities,{M,F,Arity}),
     NewCallFuncs=lists:keydelete({M,F,Arity},1,LD#ld.call_mfarities),
     NewReturnFuncs=lists:keydelete({M,F,Arity},1,LD#ld.return_mfarities),
     NewRemoveFuncs=lists:keydelete({M,F,Arity},1,LD#ld.remove_mfarities),
-    LD#ld{ms_mfarities=NewMSsNames,
-          call_mfarities=NewCallFuncs,
+    LD#ld{call_mfarities=NewCallFuncs,
 	  return_mfarities=NewReturnFuncs,
 	  remove_mfarities=NewRemoveFuncs}.
 %% -----------------------------------------------------------------------------
@@ -989,24 +1088,25 @@ get_all_meta_funcs_ld(#ld{call_mfarities=CallFuncs}) ->
 %% =============================================================================
 %% Functions for the standard PublLD structure.
 %%
-%% It is tuple of length at least 2.
-%% {erlang:register/2 data, For your use data}
+%% It is tuple {Part1,GlobalData} where Part1 is of length at least 2.
 %% Where each field is a list of tuples. The last item in each tuple shall be
 %% a now tuple, making it possible to clean it away should it be too old to be
 %% relevant (there was no return_from message due to a failure).
 %% Other fields can be used for other functions.
+%% The GlobalData is not cleaned but instead meant to store data must be passed
+%% to each CallFunc when a meta trace message arrives.
 %% =============================================================================
 		      
 %% Function returning our standard priv-loopdata structure.
-init_std_publld(Size) ->
-    list_to_tuple(lists:duplicate(Size,[])).
+init_std_publld(Size,GlobalData) ->
+    {list_to_tuple(lists:duplicate(Size,[])),GlobalData}.
 %% -----------------------------------------------------------------------------
 
 %% Function capable of cleaning out a standard publ-ld. The last element of each
 %% tuple must be the now item.
-%% Returns a publ-ld structure.
-clean_std_publld(PublLD) ->
-    clean_std_publld_2(PublLD,now(),size(PublLD),[]).
+%% Returns a new publ-ld structure.
+clean_std_publld({Part1,GlobalData}) ->
+    {clean_std_publld_2(Part1,now(),size(Part1),[]),GlobalData}.
 
 clean_std_publld_2(_,_,0,Accum) ->
     list_to_tuple(Accum);
@@ -1033,10 +1133,8 @@ clean_std_publld_3([],_) ->
 
 %% Call-back for initializing the meta traced functions there are quick functions
 %% for. Returns a new public loop data structure.
-metafunc_init(erlang,register,2,PublLD) ->
-    setelement(1,PublLD,[]);
-metafunc_init(global,register_name,_,PublLD) ->
-    setelement(2,PublLD,[]).
+metafunc_init(erlang,register,2,{Part1,GlobalData}) ->
+    {setelement(1,Part1,[]),GlobalData}.
 %% -----------------------------------------------------------------------------
 
 %% Call-function for erlang:register/2.
@@ -1045,20 +1143,24 @@ metafunc_init(global,register_name,_,PublLD) ->
 %% still in structure it means a failed register/2 call. It must first be removed
 %% so it can not be mixed up with this one. Since meta-trace message will arrive
 %% in order, there was no return_from message for that call if we are here now.
-local_register_call(CallingPid,[Alias,Pid],PublLD) ->
-    TupleList=element(1,PublLD),            % The register/2 entry in a std. priv-ld.
+local_register_call(CallingPid,[Alias,Pid],{Part1,GlobalData}) ->
+    TupleList=element(1,Part1),             % The register/2 entry in a std. priv-ld.
     NewTupleList=lists:keydelete(CallingPid,1,TupleList), % If present, remove previous call.
-    {ok,setelement(1,PublLD,[{CallingPid,{Alias,Pid},now()}|NewTupleList]),void}.
+    {ok,
+     {setelement(1,Part1,[{CallingPid,{Alias,Pid},now()}|NewTupleList]),GlobalData},
+     void}.
 
 %% Return-function for the erlang:register/2 BIF.
 %% This function formulates the output and removes the corresponding call entry
 %% from the standard priv-ld structure.
-local_register_return(CallingPid,_Value,PublLD) ->
-    TupleList=element(1,PublLD),            % The register/2 entry in a std. priv-ld.
+local_register_return(CallingPid,_Value,PublLD={Part1,GlobalData}) ->
+    TupleList=element(1,Part1),             % The register/2 entry in a std. priv-ld.
     case lists:keysearch(CallingPid,1,TupleList) of
 	{value,{_,{Alias,Pid},Now}} ->
 	    NewTupleList=lists:keydelete(CallingPid,1,TupleList),
-	    {ok,setelement(1,PublLD,NewTupleList),term_to_binary({Pid,Alias,alias,Now})};
+	    {ok,
+	     {setelement(1,Part1,NewTupleList),GlobalData},
+	     term_to_binary({Pid,Alias,alias,Now})};
 	false ->                            % Strange, then don't know what to do.
 	    {ok,PublLD,void}                % Do nothing seems safe.
     end.

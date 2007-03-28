@@ -11,7 +11,7 @@ if test "x$no_recursion" != "xyes"; then
     if test "x$cache_file" != "x$default_cache_file"; then
 	echo "Ignoring the --cache-file argument since it can cause the system to be erroneously configured"
     fi
-    echo "Disabeling caching"
+    echo "Disabling caching"
     if test -f $cache_file; then
 	echo "Removing cache file $cache_file"
 	rm -f $cache_file
@@ -78,7 +78,7 @@ MAKE_PROG=x
 if test X"$CLEARCASE_MAKE_COMPAT" = X"gnu" -a X"$CLEARCASE_ROOT" != X"" ; then
   eval clearmake -version 2>&1 | grep clearmake > /dev/null 2>&1
   case $? in
-	0) MAKE_PROG="clearmake -V"; break;;
+	0) MAKE_PROG="clearmake -V";;
 	*);;
   esac
 fi

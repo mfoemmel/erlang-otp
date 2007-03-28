@@ -129,7 +129,7 @@ version_check(Version, Mod) when is_atom(Mod) ->
   Ver = ?VERSION_STRING(),
   case Version < Ver of
     true -> 
-      ?msg("WARNING: Module (~w) has version ~w\n", [Mod, Version]);
+      ?msg("WARNING: Module (~w) has version ~s\n", [Mod, Version]);
     _ -> true
   end.
 
@@ -464,10 +464,10 @@ patch_offset(Type, Data, Address, ConstAndZone, Addresses) ->
     sdesc ->
       patch_sdesc(Data, Address, ConstAndZone);
     x86_abs_pcrel ->
-      patch_instr(Address, Data, x86_abs_pcrel);
-    _ ->
-      ?error_msg("Unknown ref ~w ~w ~w\n", [Type, Address, Data]),
-      exit({unknown_reference, Type, Address, Data})
+      patch_instr(Address, Data, x86_abs_pcrel)
+    %% _ ->
+    %%   ?error_msg("Unknown ref ~w ~w ~w\n", [Type, Address, Data]),
+    %%   exit({unknown_reference, Type, Address, Data})
   end.
 
 patch_atom(Address, Atom) ->
@@ -850,26 +850,29 @@ mfa_to_address(_, [], _) -> false.
 %% ____________________________________________________________________
 %% 
 
+-ifdef(DO_ASSERT).
+
+-define(init_assert_patch(Base, Size), put(hipe_assert_code_area,{Base,Base+Size})).
+
+assert_local_patch(Address) when is_integer(Address) ->
+  {First,Last} = get(hipe_assert_code_area),
+  Address >= First andalso Address < (Last).
+
+-else.
+
+-define(init_assert_patch(Base, Size), ok).
+
+-endif.
+
+%% ____________________________________________________________________
+%% 
+
 %% Beam: t_nil() | t_binary()  (used as a flag)
 
 enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam) ->
   true = size(CodeBinary) =:= CodeSize,
   hipe_bifs:update_code_size(Mod, Beam, CodeSize),
   {CodeAddress,Trampolines} = hipe_bifs:enter_code(CodeBinary, CalleeMFAs),
-  ?ASSERT(init_assert_patch(CodeAddress, size(CodeBinary))),
+  ?init_assert_patch(CodeAddress, size(CodeBinary)),
   {CodeAddress,Trampolines}.
 
-%% ____________________________________________________________________
-%% 
-
--ifdef(DO_ASSERT).
-
-init_assert_patch(Base, Size) ->
-  put(hipe_assert_code_area,{Base,Base+Size}),
-  true.
-
-assert_local_patch(Address) when is_integer(Address) ->
-  {First,Last} = get(hipe_assert_code_area),
-  Address >= First andalso Address < (Last).
-
--endif.

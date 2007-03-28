@@ -175,22 +175,23 @@ callback({N, A}, _Env, _Opts) ->
 		{arity, integer_to_list(A)}],
      []}.
 
-%% <!ELEMENT function (args, typespec?, throws?, equiv?, description?,
-%%                     since?, deprecated?, see*, todo?)>
+%% <!ELEMENT function (args, typespec?, returns?, throws?, equiv?,
+%%                     description?, since?, deprecated?, see*, todo?)>
 %% <!ATTLIST function
 %%   name CDATA #REQUIRED
 %%   arity CDATA #REQUIRED
 %%   exported NMTOKEN(yes | no) #REQUIRED
 %%   label CDATA #IMPLIED>
 %% <!ELEMENT args (arg*)>
-%% <!ELEMENT arg description?>
-%% <!ATTLIST arg name CDATA #REQUIRED>
-%% <!ELEMENT equiv (expr, see?)>
+%% <!ELEMENT arg (argName, description?)>
+%% <!ELEMENT argName (#PCDATA)>
+%% <!ELEMENT returns (description)>
+%% <!ELEMENT throws (type, localdef*)>
 %% <!ELEMENT equiv (expr, see?)>
 %% <!ELEMENT expr (#PCDATA)>
 
 function({N, A}, As, Export, Ts, Env, Opts) ->
-    {As1, Spec} = signature(Ts, As, Env),
+    {Args, Ret, Spec} = signature(Ts, As, Env),
     {function, [{name, atom_to_list(N)},
 		{arity, integer_to_list(A)},
       		{exported, case Export of
@@ -198,8 +199,13 @@ function({N, A}, As, Export, Ts, Env, Opts) ->
 			       false -> "no"
 			   end},
 		{label, edoc_refs:to_label(edoc_refs:function(N, A))}],
-     [{args, [{arg, [{argName, [atom_to_list(A)]}]} || A <- As1]}]
+     [{args, [{arg, [{argName, [atom_to_list(A)]}] ++ description(D)}
+	      || {A, D} <- Args]}]
      ++ Spec
+     ++ case Ret of
+	    [] -> [];
+	    _ -> [{returns, description(Ret)}]
+	end
      ++ get_throws(Ts, Env)
      ++ get_equiv(Ts, Env)
      ++ get_doc(Ts)
@@ -376,29 +382,63 @@ signature(Ts, As, Env) ->
     case get_tags(spec, Ts) of
 	[T] ->
 	    Spec = T#tag.data,
+	    R = merge_returns(Spec, Ts),
 	    As0 = edoc_types:arg_names(Spec),
-	    As1 = merge_argnames(As0, As),  % choose spec before code
-	    Spec1 = edoc_types:set_arg_names(Spec, As1),
-	    {As1, [edoc_types:to_xml(Spec1, Env)]};
+	    Ds0 = edoc_types:arg_descs(Spec),
+	    %% choose names in spec before names in code
+	    P = dict:from_list(params(Ts)),
+	    As1 = merge_args(As0, As, Ds0, P),
+	    %% check_params(As1, P),
+	    Spec1 = edoc_types:set_arg_names(Spec, [A || {A,_} <- As1]),
+	    {As1, R, [edoc_types:to_xml(Spec1, Env)]};
 	[] ->
 	    S = sets:new(),
-	    {fix_argnames(As, S, 1), []}
+	    {fix_argnames(As, S, 1), [], []}
     end.
 
-%% Names are chosen from the first list if possible.
+params(Ts) ->
+    [T#tag.data || T <- get_tags(param, Ts)].
 
-merge_argnames(As, As1) ->
-    merge_argnames(As, As1, sets:new(), 1).
+%% check_params(As, P) ->
+%%     case dict:keys(P) -- [N || {N,_} <- As] of
+%% 	[] -> ok;
+%% 	Ps -> error  %% TODO: report @param declarations with no match
+%%     end.
 
-merge_argnames(['_' | As], ['_' | As1], S, N) ->
-    A = make_name(N, S),
-    [A | merge_argnames(As, As1, sets:add_element(A, S), N + 1)];
-merge_argnames(['_' | As], [A | As1], S, N) ->
-    [A | merge_argnames(As, As1, sets:add_element(A, S), N + 1)];
-merge_argnames([A | As], [_ | As1], S, N) ->
-    [A | merge_argnames(As, As1, sets:add_element(A, S), N + 1)];
-merge_argnames([], [], _S, _N) ->
-    [].
+merge_returns(Spec, Ts) ->
+    case get_tags(return, Ts) of
+	[] ->
+	    case edoc_types:range_desc(Spec) of
+		"" -> [];
+		Txt -> [Txt]
+	    end;
+	[T] -> T#tag.data
+    end.
+
+%% Names are chosen from the first list (the specification) if possible.
+%% Descriptions specified with @param (in P dict) override descriptions
+%% from the spec (in Ds).
+
+merge_args(As, As1, Ds, P) ->
+    merge_args(As, As1, Ds, [], P, sets:new(), 1).
+
+merge_args(['_' | As], ['_' | As1], [D | Ds], Rs, P, S, N) ->
+    merge_args(As, As1, Ds, Rs, P, S, N, make_name(N, S), D);
+merge_args(['_' | As], [A | As1], [D | Ds], Rs, P, S, N) ->
+    merge_args(As, As1, Ds, Rs, P, S, N, A, D);
+merge_args([A | As], [_ | As1], [D | Ds], Rs, P, S, N) ->
+    merge_args(As, As1, Ds, Rs, P, S, N, A, D);
+merge_args([], [], [], Rs, _P, _S, _N) ->
+    lists:reverse(Rs).
+
+merge_args(As, As1, Ds, Rs, P, S, N, A, D0) ->
+    D = case dict:find(A, P) of
+	    {ok, D1} -> D1;
+	    error when D0 == [] -> [];  % no description
+	    error -> [D0]  % a simple-xml text element
+	end,
+    merge_args(As, As1, Ds, [{A, D} | Rs], P,
+	       sets:add_element(A, S), N + 1).
 
 fix_argnames(['_' | As], S, N) ->
     A = make_name(N, S),

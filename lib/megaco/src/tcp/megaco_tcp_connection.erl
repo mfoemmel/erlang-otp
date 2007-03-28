@@ -33,7 +33,7 @@
 %%-----------------------------------------------------------------
 
 -include_lib("megaco/src/tcp/megaco_tcp.hrl").
--include_lib("megaco/src/engine/megaco_internal.hrl"). 
+-include_lib("megaco/src/app/megaco_internal.hrl"). 
 
 
 %%-----------------------------------------------------------------

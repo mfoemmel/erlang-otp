@@ -1325,14 +1325,9 @@ remove_file(File) ->
 do_write_file(File, Str) ->
     case file:open(File, write) of
 	{ok, Fd} ->
-	    case io:put_chars(Fd, Str) of
-		ok ->
-		    file:close(Fd),
-		    ok;
-		{error, Reason} ->
-		    file:close(Fd),
-		    {error, {Reason, File}}
-	    end;
+	    io:put_chars(Fd, Str),
+	    file:close(Fd),
+	    ok;
 	{error, Reason} ->
 	    {error, {Reason, File}}
     end.

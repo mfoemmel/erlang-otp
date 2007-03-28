@@ -80,7 +80,7 @@ if test $ac_cv_prog_emu_cc != no; then
 fi
 ])
 if test $ac_cv_prog_emu_cc = no; then
-	AC_DEFINE(NO_JUMP_TABLE)
+	AC_DEFINE(NO_JUMP_TABLE,[],[Defined if no found C compiler can handle jump tables])
 	EMU_CC=$CC
 else
 	EMU_CC=$ac_cv_prog_emu_cc
@@ -166,7 +166,8 @@ AC_TRY_COMPILE([#include <sys/socket.h>], [int i = SO_BSDCOMPAT;],
                ac_cv_decl_so_bsdcompat=no))
 
 case "${ac_cv_decl_so_bsdcompat}" in
-  "yes" ) AC_DEFINE(HAVE_SO_BSDCOMPAT) ;;
+  "yes" ) AC_DEFINE(HAVE_SO_BSDCOMPAT,[],
+		[Define if you have SO_BSDCOMPAT flag on sockets]) ;;
   * ) ;;
 esac
 ])
@@ -197,7 +198,8 @@ if test ${ac_cv_decl_inaddr_loopback} = no; then
 
    case "${ac_cv_decl_inaddr_loopback_rpc}" in
      "yes" )
-        AC_DEFINE(DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H) ;;
+        AC_DEFINE(DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H,[],
+		[Define if you need to include rpc/types.h to get INADDR_LOOPBACK defined]) ;;
       * )
   	AC_CACHE_CHECK([for INADDR_LOOPBACK in winsock2.h],
                    ac_cv_decl_inaddr_loopback_winsock2,
@@ -208,10 +210,12 @@ if test ${ac_cv_decl_inaddr_loopback} = no; then
                                    ac_cv_decl_inaddr_loopback_winsock2=no))
 	case "${ac_cv_decl_inaddr_loopback_winsock2}" in
      		"yes" )
-			AC_DEFINE(DEF_INADDR_LOOPBACK_IN_WINSOCK2_H) ;;
+			AC_DEFINE(DEF_INADDR_LOOPBACK_IN_WINSOCK2_H,[],
+				[Define if you need to include winsock2.h to get INADDR_LOOPBACK defined]) ;;
 		* )
 			# couldn't find it anywhere
-        		AC_DEFINE(HAVE_NO_INADDR_LOOPBACK) ;;
+        		AC_DEFINE(HAVE_NO_INADDR_LOOPBACK,[],
+				[Define if you don't have a definition of INADDR_LOOPBACK]) ;;
 	esac;;
    esac
 fi
@@ -234,7 +238,7 @@ AC_TRY_COMPILE([#include <sys/types.h>
 
 dnl FIXME convbreak
 case ${ac_cv_struct_sockaddr_sa_len} in
-  "no" ) AC_DEFINE(NO_SA_LEN) ;;
+  "no" ) AC_DEFINE(NO_SA_LEN,[1],[Define if you dont have salen]) ;;
   *) ;;
 esac
 ])
@@ -255,7 +259,7 @@ AC_TRY_COMPILE([#include <math.h>],
   ac_cv_struct_exception=yes, ac_cv_struct_exception=no))
 
 case "${ac_cv_struct_exception}" in
-  "yes" ) AC_DEFINE(USE_MATHERR) ;;
+  "yes" ) AC_DEFINE(USE_MATHERR,[1],[Define if you have matherr() function and struct exception type]) ;;
   *  ) ;;
 esac
 ])
@@ -287,15 +291,19 @@ else
 fi
 ])dnl
 
+dnl
+dnl Have to use old style AC_DEFINE due to BC with old autoconf.
+dnl
+
 case ${ac_cv_sys_ipv6_support} in
   yes)
     AC_MSG_RESULT(yes)
-    AC_DEFINE(HAVE_IN6)
+    AC_DEFINE(HAVE_IN6,[1],[Define if ipv6 is present])
     ;;
   in_addr6)
     AC_MSG_RESULT([yes (but I am redefining in_addr6 to in6_addr)])
-    AC_DEFINE(HAVE_IN6)
-    AC_DEFINE(HAVE_IN_ADDR6_STRUCT)
+    AC_DEFINE(HAVE_IN6,[1],[Define if ipv6 is present])
+    AC_DEFINE(HAVE_IN_ADDR6_STRUCT,[],[Early linux used in_addr6 instead of in6_addr, define if you have this])
     ;;
   *)
     AC_MSG_RESULT(no)
@@ -324,7 +332,8 @@ yes
 #endif
 ], ac_cv_sys_multicast_support=yes, ac_cv_sys_multicast_support=no)])
 if test $ac_cv_sys_multicast_support = yes; then
-  AC_DEFINE(HAVE_MULTICAST_SUPPORT)
+  AC_DEFINE(HAVE_MULTICAST_SUPPORT,[1],
+	[Define if setsockopt() accepts multicast options])
 fi
 ])dnl
 
@@ -344,7 +353,8 @@ AC_DEFUN(LM_DECL_SYS_ERRLIST,
 #include <errno.h>], [char *msg = *(sys_errlist + 1);],
   ac_cv_decl_sys_errlist=yes, ac_cv_decl_sys_errlist=no)])
 if test $ac_cv_decl_sys_errlist = yes; then
-  AC_DEFINE(SYS_ERRLIST_DECLARED)
+  AC_DEFINE(SYS_ERRLIST_DECLARED,[],
+	[define if the variable sys_errlist is declared in a system header file])
 fi
 ])
 
@@ -358,12 +368,9 @@ dnl Checks if the declaration "declaration" of "funname" conflicts
 dnl with the header files idea of how the function should be
 dnl declared. It is useful on systems which lack prototypes and you
 dnl need to provide your own (e.g. when you want to take the address
-dnl of a function). If the declaration conflicts define the
-dnl preprocessor symbol HAVE_CONFLICTING_funname_DECLARATION is
-dnl defined.
+dnl of a function). The 4'th argument is expanded if conflicting, 
+dnl the 5'th argument otherwise
 dnl
-dnl XXX Sigh. It doesn't work together with autoheader (which has
-dnl special definitions for the other _CHECK_ macros).
 dnl
 
 AC_DEFUN(LM_CHECK_FUNC_DECL,
@@ -375,10 +382,6 @@ char *c = (char *)$1;
 ], eval "ac_cv_func_decl_$1=no", eval "ac_cv_func_decl_$1=yes")])
 if eval "test \"`echo '$ac_cv_func_decl_'$1`\" = yes"; then
   AC_MSG_RESULT(yes)
-changequote(, )dnl
-  ac_tr_func=HAVE_CONFLICTING_`echo $1 | tr 'abcdefghijklmnopqrstuvwxyz' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'`_DECLARATION
-changequote([, ])dnl
-  AC_DEFINE_UNQUOTED($ac_tr_func)
   ifelse([$4], , :, [$4])
 else
   AC_MSG_RESULT(no)
@@ -614,8 +617,9 @@ dnl On ofs1 the '-pthread' switch should be used
 	AC_CHECK_FUNC(pthread_mutexattr_setkind_np, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_MUTEXATTR_SETKIND_NP, 1, \
 [Define if you have the pthread_mutexattr_setkind_np function.]))
-
-
+	AC_CHECK_FUNC(pthread_spin_lock, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_SPIN_LOCK, 1, \
+[Define if you have the pthread_spin_lock function.]))
 
 	dnl Restore LIBS
 	LIBS=$saved_libs
@@ -663,24 +667,180 @@ AC_DEFUN(ERL_TIME_CORRECTION,
 [if test x$ac_cv_func_gethrtime = x; then
   AC_CHECK_FUNC(gethrtime)
 fi
+if test x$clock_gettime_correction = xunknown; then
+	AC_TRY_COMPILE([#include <time.h>],
+			[struct timespec ts;
+     			 long long result;
+			 clock_gettime(CLOCK_MONOTONIC,&ts);
+                         result = ((long long) ts.tv_sec) * 1000000000LL + 
+			 ((long long) ts.tv_nsec);],
+			clock_gettime_compiles=yes,
+			clock_gettime_compiles=no)
+else
+	clock_gettime_compiles=no
+fi
+			
+
 AC_CACHE_CHECK([how to correct for time adjustments], erl_cv_time_correction,
-[case $ac_cv_func_gethrtime in
-  yes)
-    erl_cv_time_correction=hrtime ;;
-  no)
-    case $host_os in
-      linux*)
-        erl_cv_time_correction=times ;;
-      *)
-        erl_cv_time_correction=none ;;
-    esac
-    ;;
+[
+case $clock_gettime_correction in
+    yes)
+	erl_cv_time_correction=clock_gettime;;	
+    no|unknown)
+	case $ac_cv_func_gethrtime in
+  	    yes)
+    		erl_cv_time_correction=hrtime ;;
+  	    no)
+    		case $host_os in
+        	    linux*)
+			case $clock_gettime_correction in
+			    unknown)
+				if test x$clock_gettime_compiles = xyes; then
+				    linux_kernel_vsn_=`uname -r`
+				    case $linux_kernel_vsn_ in
+					[[0-1]].*|2.[[0-5]]|2.[[0-5]].*)
+					    erl_cv_time_correction=times ;;
+					*)
+					    erl_cv_time_correction=clock_gettime;;
+				    esac
+				else
+				    erl_cv_time_correction=times
+				fi
+				;;
+			     *)				
+        			erl_cv_time_correction=times ;;
+			esac
+			;;
+            	    *)
+        		erl_cv_time_correction=none ;;
+    		esac
+    		;;
+	esac
+	;;
 esac
 ])
+xrtlib=""
 case $erl_cv_time_correction in
   times)
-    AC_DEFINE(CORRECT_USING_TIMES)
+    AC_DEFINE(CORRECT_USING_TIMES,[],
+	[Define if you do not have a high-res. timer & want to use times() instead])
     ;;
+  clock_gettime)
+    xrtlib="-lrt"
+    AC_DEFINE(GETHRTIME_WITH_CLOCK_GETTIME,[1],
+	[Define if you want to use clock_gettime to simulate gethrtime])
+    ;;
+esac
+dnl
+dnl Check if gethrvtime is working, and if to use procfs ioctl
+dnl or (yet to be written) write to the procfs ctl file.
+dnl
+
+AC_MSG_CHECKING([if gethrvtime works and how to use it])
+AC_TRY_RUN([
+/* gethrvtime procfs ioctl test */
+/* These need to be undef:ed to not break activation of
+ * micro level process accounting on /proc/self 
+ */
+#ifdef _LARGEFILE_SOURCE
+#  undef _LARGEFILE_SOURCE
+#endif
+#ifdef _FILE_OFFSET_BITS
+#  undef _FILE_OFFSET_BITS
+#endif
+#include <stdlib.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+#include <sys/time.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/signal.h>
+#include <sys/fault.h>
+#include <sys/syscall.h>
+#include <sys/procfs.h>
+#include <fcntl.h>
+
+int main() {
+    long msacct = PR_MSACCT;
+    int fd;
+    long long start, stop;
+    int i;
+    pid_t pid = getpid();
+    char proc_self[30] = "/proc/";
+
+    sprintf(proc_self+strlen(proc_self), "%lu", (unsigned long) pid);
+    if ( (fd = open(proc_self, O_WRONLY)) == -1)
+	exit(1);
+    if (ioctl(fd, PIOCSET, &msacct) < 0)
+	exit(2);
+    if (close(fd) < 0)
+	exit(3);
+    start = gethrvtime();
+    for (i = 0; i < 100; i++)
+	stop = gethrvtime();
+    if (start == 0)
+	exit(4);
+    if (start == stop)
+	exit(5);
+    exit(0); return 0;
+}
+], erl_gethrvtime=procfs_ioctl, erl_gethrvtime=false, erl_gethrvtime=false)
+case $erl_gethrvtime in
+  procfs_ioctl)
+	AC_DEFINE(HAVE_GETHRVTIME_PROCFS_IOCTL,[1],
+		[define if gethrvtime() works and uses ioctl() to /proc/self])
+	AC_MSG_RESULT(uses ioctl to procfs)
+	;;
+  *)
+	AC_MSG_RESULT(not working)
+
+	dnl
+	dnl Check if clock_gettime (linux) is working
+	dnl
+
+	AC_MSG_CHECKING([if clock_gettime can be used to get process CPU time])
+	save_libs=$LIBS
+	LIBS="-lrt"
+	AC_TRY_RUN([
+	#include <stdlib.h>
+	#include <unistd.h>
+	#include <string.h>
+	#include <stdio.h>
+	#include <time.h>
+	int main() {
+	    long long start, stop;
+	    int i;
+	    struct timespec tp;
+
+	    if (clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp) < 0)
+	      exit(1);
+	    start = ((long long)tp.tv_sec * 1000000000LL) + (long long)tp.tv_nsec;
+	    for (i = 0; i < 100; i++)
+	      clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp);
+	    stop = ((long long)tp.tv_sec * 1000000000LL) + (long long)tp.tv_nsec;
+	    if (start == 0)
+	      exit(4);
+	    if (start == stop)
+	      exit(5);
+	    exit(0); return 0;
+	  }
+	], erl_clock_gettime=true, erl_clock_gettime=false, erl_clock_gettime=false)
+	LIBS=$save_libs
+	case $erl_clock_gettime in
+	  true)
+		AC_DEFINE(HAVE_CLOCK_GETTIME,[],
+			[define if clock_gettime() works for getting process time])
+		AC_MSG_RESULT(using clock_gettime)
+		LIBRT=-lrt
+		;;
+	  *)
+		AC_MSG_RESULT(not working)
+		LIBRT=$xrtlib
+		;;
+	esac
+	AC_SUBST(LIBRT)
+	;;
 esac
 ])dnl
 

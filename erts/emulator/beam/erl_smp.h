@@ -150,6 +150,7 @@ ERTS_GLB_INLINE void erts_smp_spinlock_init_x(erts_smp_spinlock_t *lock,
 					      Eterm extra);
 ERTS_GLB_INLINE void erts_smp_spinlock_init(erts_smp_spinlock_t *lock,
 					    char *name);
+ERTS_GLB_INLINE void erts_smp_spinlock_destroy(erts_smp_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_spin_unlock(erts_smp_spinlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_spin_lock(erts_smp_spinlock_t *lock);
 ERTS_GLB_INLINE int erts_smp_lc_spinlock_is_locked(erts_smp_spinlock_t *lock);
@@ -158,6 +159,7 @@ ERTS_GLB_INLINE void erts_smp_rwlock_init_x(erts_smp_rwlock_t *lock,
 					    Eterm extra);
 ERTS_GLB_INLINE void erts_smp_rwlock_init(erts_smp_rwlock_t *lock,
 					  char *name);
+ERTS_GLB_INLINE void erts_smp_rwlock_destroy(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_read_unlock(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_read_lock(erts_smp_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_smp_write_unlock(erts_smp_rwlock_t *lock);
@@ -778,6 +780,22 @@ erts_smp_spinlock_init(erts_smp_spinlock_t *lock, char *name)
 }
 
 ERTS_GLB_INLINE void
+erts_smp_spinlock_destroy(erts_smp_spinlock_t *lock)
+{
+#ifdef ERTS_SMP
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_destroy_lock(&lock->lc);
+#endif
+    res = ethr_spinlock_destroy(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "destroy spinlock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
 erts_smp_spin_unlock(erts_smp_spinlock_t *lock)
 {
 #ifdef ERTS_SMP
@@ -848,6 +866,22 @@ erts_smp_rwlock_init(erts_smp_rwlock_t *lock, char *name)
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_init_lock(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK);
 #endif
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_rwlock_destroy(erts_smp_rwlock_t *lock)
+{
+#ifdef ERTS_SMP
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_destroy_lock(&lock->lc);
+#endif
+    res = ethr_rwlock_destroy(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "destroy rwlock");
 #else
     (void)lock;
 #endif

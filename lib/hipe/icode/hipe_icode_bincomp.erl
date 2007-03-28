@@ -9,7 +9,103 @@
 
 -module(hipe_icode_bincomp).
 
--export([cfg/1]).
+-export([cfg/1, simple/1]).
+
+simple(Cfg) ->
+  Start = hipe_icode_cfg:start_label(Cfg),
+  NewCfg = find_bs_get_integer(ordsets:from_list([Start]),Cfg,
+			       ordsets:from_list([Start])),
+  hipe_icode_cfg:remove_unreachable_code(
+    hipe_icode_cfg:remove_trivial_bbs(NewCfg)).
+
+find_bs_get_integer([Lbl|Rest],Cfg,Visited) ->
+  BB = hipe_icode_cfg:bb(Cfg,Lbl),
+  Last = hipe_bb:last(BB),
+  NewCfg = 
+     try 
+       {Type,FailLbl,SuccLbl,MsIn,MsOut} = ok(Last),
+       {Cont,Info,LastMsOut} = 
+       collect_info(SuccLbl,Cfg,[Type],FailLbl,MsOut),
+       update_code(Lbl,Cfg,Info,Cont,FailLbl,MsIn,LastMsOut)
+     catch error:_Err -> Cfg
+     end,
+  Succs = ordsets:from_list(hipe_icode_cfg:succ(NewCfg,Lbl)),
+  NewSuccs = ordsets:subtract(Succs,Visited),
+  NewLbls = ordsets:union(NewSuccs,Rest),
+  NewVisited = ordsets:union(NewSuccs,Visited),
+  find_bs_get_integer(NewLbls,NewCfg,NewVisited);
+find_bs_get_integer([],Cfg,_) ->
+  Cfg.
+
+ok(I) ->
+  {hipe_bs_primop,{bs_get_integer,Size,Flags}} =
+    hipe_icode:call_fun(I),
+  0 = Flags band 6,
+  [MsIn] = hipe_icode:call_args(I),
+  [Dst,MsOut] = hipe_icode:call_dstlist(I),
+  Cont = hipe_icode:call_continuation(I),
+  Fail = hipe_icode:call_fail_label(I),
+  {{Dst,Size},Fail,Cont,MsIn,MsOut}.
+
+collect_info(Lbl,Cfg,Acc,FailLbl,MsOut) ->
+  case  try do_collect_info(Lbl,Cfg,Acc,FailLbl) 
+	catch error:_Err ->
+	    {done,Acc,Lbl}
+	end of
+    {cont,NewAcc,NewLbl,NewMsOut} ->
+      collect_info(NewLbl,Cfg,NewAcc,FailLbl,NewMsOut);
+    {done,Res,Cont} ->
+      {Cont,Res,MsOut}
+  end.
+
+do_collect_info(Lbl,Cfg,Acc,FailLbl) ->
+  BB = hipe_icode_cfg:bb(Cfg,Lbl),
+  [I] = hipe_bb:code(BB),
+  [_] = hipe_icode_cfg:pred(Cfg,Lbl),
+  {Type,FailLbl,SuccLbl,_,NewMsOut} = ok(I),
+  NewAcc = [Type|Acc],
+  case calc_size(NewAcc) of
+    Size when Size < 21 ->
+      {cont,NewAcc,SuccLbl,NewMsOut}
+  end.
+
+calc_size([{_,Size}|Rest]) ->
+  Size+calc_size(Rest);
+calc_size([]) -> 0.
+
+update_code(_Lbl,Cfg,[_Info],_Cont,_FailLbl,_MsIn,_MsOut) ->
+  Cfg;
+update_code(Lbl,Cfg,Info,Cont,FailLbl,MsIn,MsOut) ->
+  BB = hipe_icode_cfg:bb(Cfg,Lbl),
+  ButLast = hipe_bb:butlast(BB),
+  NewVar = hipe_icode:mk_new_var(),
+  NewLbl = hipe_icode:label_name(hipe_icode:mk_new_label()),
+  Size = calc_size(Info),
+  NewLast = 
+    hipe_icode:mk_primop([NewVar,MsOut],
+			 {hipe_bs_primop,{bs_get_integer,Size,0}},
+			 [MsIn],
+			 NewLbl,
+			 FailLbl),
+  NewBB = hipe_bb:mk_bb(ButLast++[NewLast]),
+  NewCfg = hipe_icode_cfg:bb_add(Cfg,Lbl,NewBB),
+  fix_rest(Info,NewVar,NewLbl,Cont,NewCfg).
+
+fix_rest(Info,Var,Lbl,Cont,Cfg) ->
+  ButLast = make_butlast(Info,Var),
+  Last = hipe_icode:mk_goto(Cont),
+  NewBB = hipe_bb:mk_bb(ButLast++[Last]),
+  hipe_icode_cfg:bb_add(Cfg,Lbl,NewBB).
+
+make_butlast([{Res,_Size}],Var) ->
+  [hipe_icode:mk_move(Res,Var)];
+make_butlast([{Res,Size}|Rest],Var) ->
+  NewVar = hipe_icode:mk_new_var(),
+  [hipe_icode:mk_primop([Res],'band',
+			[Var,hipe_icode:mk_const((1 bsl Size)-1)]),
+   hipe_icode:mk_primop([NewVar],'bsr',
+			[Var,hipe_icode:mk_const(Size)])|
+   make_butlast(Rest,NewVar)].
 
 cfg(Cfg) ->
   {_,FunName,_} =  hipe_icode_cfg:function(Cfg),
@@ -134,11 +230,11 @@ ending(I) ->
   case hipe_icode:is_call(I) of
     true ->
       case hipe_icode:call_fun(I) of
-	{hipe_bs_primop2,{bs_get_binary_all_2,_Flags}} ->
+	{hipe_bs_primop,{bs_get_binary_all,_Flags}} ->
 	  true;
-	{hipe_bs_primop2,{bs_test_tail_2,_NumBits}} ->
+	{hipe_bs_primop,{bs_test_tail,_NumBits}} ->
 	  true;
-	{hipe_bs_primop2,{bs_skip_bits_all_2,_Flags}} ->
+	{hipe_bs_primop,{bs_skip_bits_all,_Flags}} ->
 	  true;
 	_ ->
 	  false
@@ -151,7 +247,7 @@ get_state_from_bs(I) ->
   case hipe_icode:is_call(I) of
     true ->
       case hipe_icode:call_fun(I) of
-	{hipe_bs_primop2,Name} ->
+	{hipe_bs_primop,Name} ->
 	  case matching_bs(Name) of
 	    true ->
 	      [MS|_] = hipe_icode:args(I),
@@ -172,15 +268,15 @@ change_bs_state(I,NS) ->
   I1 = hipe_icode:call_args_update(I,[NS|RestArgs]),
   hipe_icode:call_dstlist_update(I1,lists:reverse([NS|RestDst])).
 
-matching_bs({bs_get_integer_2,_Size,_Flags}) -> true;
-matching_bs({bs_get_float_2,_Size,_Flags}) -> true; 
-matching_bs({bs_get_binary_2,_Size,_Flags}) -> true; 
-matching_bs({bs_get_binary_all_2,_Flags}) -> true; 
-matching_bs({bs_test_tail_2,_NumBits}) -> true; 
-matching_bs({bs_restore_2, _Index}) -> true;
-matching_bs({bs_save_2, _Index}) -> true; 
-matching_bs({bs_skip_bits_all_2, _Flags}) -> true;
-matching_bs({bs_skip_bits_2, _Unit}) -> true;
+matching_bs({bs_get_integer,_Size,_Flags}) -> true;
+matching_bs({bs_get_float,_Size,_Flags}) -> true; 
+matching_bs({bs_get_binary,_Size,_Flags}) -> true; 
+matching_bs({bs_get_binary_all,_Flags}) -> true; 
+matching_bs({bs_test_tail,_NumBits}) -> true; 
+matching_bs({bs_restore, _Index}) -> true;
+matching_bs({bs_save, _Index}) -> true; 
+matching_bs({bs_skip_bits_all, _Flags}) -> true;
+matching_bs({bs_skip_bits, _Unit}) -> true;
 matching_bs(_) -> false.
 		  
 find_bs_start_match_labels(Cfg) ->
@@ -231,15 +327,15 @@ rewrite_bs_get(Instr) ->
     true ->
       FunName = 
 	case hipe_icode:call_fun(Instr) of
-	  {hipe_bs_primop2,Name} ->
+	  {hipe_bs_primop,Name} ->
 	    NewName = 
 	      case Name of
-		{bs_get_integer_2,Size,Flags} -> {bs_get_integer_2,Size,Flags band 6};
-		{bs_get_float_2,Size,Flags} -> {bs_get_float_2,Size,Flags band 6};
-		{bs_get_binary_2,Size,Flags} -> {bs_get_binary_2,Size,Flags band 6};
+		{bs_get_integer,Size,Flags} -> {bs_get_integer,Size,Flags band 6};
+		{bs_get_float,Size,Flags} -> {bs_get_float,Size,Flags band 6};
+		{bs_get_binary,Size,Flags} -> {bs_get_binary,Size,Flags band 6};
 		Old -> Old
 	      end,
-	    {hipe_bs_primop2,NewName};
+	    {hipe_bs_primop,NewName};
 	  OldFun ->
 	    OldFun
 	end,
@@ -299,7 +395,7 @@ remove_unnecessary([],Cfg,Succs,_Visited,Flag) ->
 
 is_not_aligned(BsGetAll) ->
   case BsGetAll of
-    {hipe_bs_primop2,{bs_get_binary_all_2,Flags}} ->
+    {hipe_bs_primop,{bs_get_binary_all,Flags}} ->
       (Flags band 1) == 0
   end.
 	
@@ -402,7 +498,7 @@ is_correct_goto(Last, Lbl) ->
 is_bs_test_tail(Last) ->
   hipe_icode:is_call(Last) andalso correct_testtail(hipe_icode:call_fun(Last)).
 
-correct_testtail({hipe_bs_primop2, {bs_test_tail_2,_}}) ->
+correct_testtail({hipe_bs_primop, {bs_test_tail,_}}) ->
   true;
 correct_testtail(_) ->
   false.
@@ -410,7 +506,7 @@ correct_testtail(_) ->
 is_bs_final2(Instr) ->
    hipe_icode:is_call(Instr) andalso  correct_bs_final2(hipe_icode:call_fun(Instr)).
 
-correct_bs_final2({hipe_bs_primop, bs_final2}) ->
+correct_bs_final2({hipe_bs_primop, bs_final}) ->
   true;
 correct_bs_final2(_) ->
   false.
@@ -418,7 +514,7 @@ correct_bs_final2(_) ->
 is_bs_get_binary_all(Last) ->
   hipe_icode:is_call(Last) andalso correct_binall(hipe_icode:call_fun(Last)).
 
-correct_binall({hipe_bs_primop2, {bs_get_binary_all_2,_}}) ->
+correct_binall({hipe_bs_primop, {bs_get_binary_all,_}}) ->
   true;
 correct_binall(_) ->
   false.
@@ -440,7 +536,7 @@ rewrite_cfg([Label|Rest], Cfg, SelfRecLbl, FunName, {Offset,RetVal}) ->
 	case hipe_icode:is_return(Last) of
 	  true -> 
 	    hipe_bb:butlast(BB) ++
-	      [hipe_icode:mk_primop([RetVal],{hipe_bs_primop, bs_final2},
+	      [hipe_icode:mk_primop([RetVal],{hipe_bs_primop, bs_final},
 				    [RetVal,Offset]), 
 	       hipe_icode:mk_return([RetVal])];
 	  false ->
@@ -544,9 +640,9 @@ update_init(Init, RetVal, MaxIterVar) ->
   Dst = hipe_icode:mk_new_var(),
   [_OldRet|Rest] = hipe_icode:call_dstlist(Init),
   Init0 = hipe_icode:call_dstlist_update(Init, [RetVal|Rest]),
-  {hipe_bs_primop, {bs_init2, Size, Flags}} = 
+  {hipe_bs_primop, {bs_init, Size, Flags}} = 
     hipe_icode:call_fun(Init0), 
-  Init1 = hipe_icode:call_fun_update(Init0,{hipe_bs_primop, {bs_init2, Flags}}),
+  Init1 = hipe_icode:call_fun_update(Init0,{hipe_bs_primop, {bs_init, Flags}}),
   Init2 = hipe_icode:call_args_update(Init1,[Dst]),
    [hipe_icode:mk_primop([Dst],{hipe_bs_primop,{bs_add,Size}},
 			 [hipe_icode:mk_const(0), MaxIterVar]),
@@ -591,7 +687,7 @@ is_start_match(Instr) ->
   case hipe_icode:is_call(Instr) of
     true ->
       case hipe_icode:call_fun(Instr) of
-	{hipe_bs_primop2, {bs_start_match_2,_}} ->
+	{hipe_bs_primop, {bs_start_match,_}} ->
 	  true;
 	_ ->
 	  false
@@ -636,17 +732,17 @@ calculate_consumption(Label, Cfg, Acc) ->
   end.
 	  
 
-get_consumption({hipe_bs_primop2,Name}, Arity) ->					 
+get_consumption({hipe_bs_primop,Name}, Arity) ->					 
   case {Name, Arity} of
-    {{bs_get_integer_2,Size,_Flags}, 1} ->
+    {{bs_get_integer,Size,_Flags}, 1} ->
       Size;
-    {{bs_get_float_2,Size,_Flags}, 1} ->
+    {{bs_get_float,Size,_Flags}, 1} ->
       Size;
-    {{bs_get_binary_2,Size,_Flags}, 1} ->
+    {{bs_get_binary,Size,_Flags}, 1} ->
       Size;
-    {{bs_get_binary_all_2, _Flags}, 1} ->
+    {{bs_get_binary_all, _Flags}, 1} ->
       done;
-    {bs_test_tail_2, _NumBits} ->
+    {bs_test_tail, _NumBits} ->
       done
   end.
 					 
@@ -693,7 +789,7 @@ find_bs_init([Instr|Rest], Acc) ->
   case hipe_icode:is_call(Instr) of
     true ->
       case hipe_icode:call_fun(Instr) of
-	{hipe_bs_primop, {bs_init2, _, _}} ->
+	{hipe_bs_primop, {bs_init, _, _}} ->
 	  {Instr, lists:reverse(Acc)++
 	   remove_spurious_move(Rest, hd(hipe_icode:call_dstlist(Instr)))};
 	_ ->
@@ -724,9 +820,9 @@ find_bs_test_tail_cont(Next, Cfg) ->
     true ->
       Cont = hipe_icode:call_continuation(MatchCall),
       case hipe_icode:call_fun(MatchCall) of
-	{hipe_bs_primop2, {bs_test_tail_2, _}} ->
+	{hipe_bs_primop, {bs_test_tail, _}} ->
 	  Cont;
-	{hipe_bs_primop2, {bs_get_binary_all_2, _}} ->
+	{hipe_bs_primop, {bs_get_binary_all, _}} ->
 	  Cont;
 	_ ->
 	  find_bs_test_tail_cont(Cont, Cfg)

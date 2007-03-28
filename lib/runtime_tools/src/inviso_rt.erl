@@ -49,7 +49,7 @@
 %% apis not available doing local function calls.
 -export([init_tracing/1,tp/4,tp/5,tp/1,tpg/4,tpg/5,tpg/1,
 	 tpl/4,tpl/5,tpl/1,
-	 ctp/3,ctpg/3,ctpl/3,
+	 ctp/1,ctp/3,ctpg/1,ctpg/3,ctpl/1,ctpl/3,
 	 init_tpm/4,init_tpm/7,
 	 tpm/4,tpm/5,tpm/8,tpm_tracer/4,tpm_tracer/5,tpm_tracer/8,
 	 tpm_ms/5,tpm_ms_tracer/5,
@@ -91,6 +91,7 @@
 	    tracerdata,             % undefined|{fun(),term()}|{file,Param}|{ip,Param}
 	    tracer_port,            % port() | undefined
 	    handler,                % {fun(), term()} | undefined
+	    auto_starter,           % pid() | undefined; proc starting interpreters.
 	    meta_tracer,            % undefined | pid()
 	    fetchers=[],            % [pid(),...] processes transfering logfiles.
 %	     spies = [],
@@ -189,7 +190,7 @@ start_link_man(Ctrl,Options,Tag) ->
 %% without control component.
 start(Node, Options, Tag, Condition) when Node == node() ->
     ChildSpec = {?MODULE, {?MODULE, start_link_man, [self(), Options, Tag]}, 
-		 temporary, brutal_kill, worker, [?MODULE]},
+		 temporary, 5000, worker, [?MODULE]},
     case catch supervisor:start_child(?RT_SUP, ChildSpec) of
 	{ok, Pid} when is_pid(Pid) ->
 	    {node_info, _Node, Pid, VSN, State, Status, _Tag} = 
@@ -212,7 +213,7 @@ start(Node, Options, Tag, Condition) ->
 	_VSN ->
 	    ChildSpec = {?MODULE, {?MODULE, start_link_man, 
 				    [self(), Options, Tag]}, 
-			 temporary, brutal_kill, worker, [?MODULE]},
+			 temporary, 5000, worker, [?MODULE]},
 	    case catch rpc:call(Node, supervisor, start_child, 
 				[?RT_SUP, ChildSpec]) of
 		{ok, Pid} when is_pid(Pid) ->
@@ -601,9 +602,11 @@ tpl(PatternList) ->
 %% ------------------------------------------------------------------------------
 
 %% ctp(Module,Function,Arity) ->
+%% ctp(PatternList)=
 %%   Module = atom()|'_'|RegExpMod|{RegExpDir,RegExpMod}
 %%   Function == atom() | '_'
 %%   Arity = integer() | '_'
+%%   PatternList=[{Mod,Func,Arity},...]
 %% Clear trace pattern (global).
 %% Note that it is possible to clear patterns using regexps. But we can for
 %% natural reasons only clear patterns for loaded modules. Further more there
@@ -611,19 +614,32 @@ tpl(PatternList) ->
 %% for deleted modules. Therefore we use the only_loaded option.
 ctp(Module,Function,Arity) ->
     call_regname(?MODULE,{tp,[{Module,Function,Arity,false,[only_loaded]}],[global]}). 
+ctp(PatternList) ->
+    call_regname(?MODULE,
+		 {tp,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [global]}).
 %% ------------------------------------------------------------------------------
 
 ctpg(Mod,Func,Arity) ->
     ctp(Mod,Func,Arity).
+ctpg(PatternList) ->
+    ctp(PatternList).
 %% ------------------------------------------------------------------------------
 
 %% ctpl(Module,Function,Arity) ->
 %%   Module = atom()|'_'|RegExpMod|{RegExpDir,RegExpMod}
 %%   Function == atom() | '_'
 %%   Arity = integer() | '_'
+%%   PatternList=[{Mod,Func,Arity},...]
 %% Clear trace pattern (local).
 ctpl(Module,Function,Arity) ->
     call_regname(?MODULE,{tp,[{Module,Function,Arity,false,[only_loaded]}],[local]}). 
+ctpl(PatternList) ->
+    call_regname(?MODULE,
+		 {tp,
+		  lists:map(fun({M,F,A})->{M,F,A,false,[only_loaded]} end,PatternList),
+		  [local]}).
 %% ------------------------------------------------------------------------------
 
 init_tpm(Mod,Func,Arity,CallFunc) ->
@@ -740,10 +756,8 @@ call(Node,Request) when atom(Node) ->
 call(To,_Request) ->
     {error,{badarg,To}}.
 
-call_regname(Name,Request) when atom(Name) ->       % To a registered name.
-    call_2(Name,Request);
-call_regname(To,_Request) ->
-    {error,{badarg,To}}.
+call_regname(Name,Request) when atom(Name) -> % To a registered name.
+    call_2(Name,Request).
 
 call_2(To,Request) ->
     MRef=erlang:monitor(process,To),        % Use a monitor to avoid waiting for ever.
@@ -892,16 +906,16 @@ auto_init(AutoModArgs,Parent) ->
 					     parent=Parent,
 					     vsn=get_application_vsn(),
 					     tag=Tag}),
-	    case MFA of
-		{M,F,A} when atom(M),atom(F),list(A) ->
-		    spawn_link(M,F,A);       % May init tracing set flags/patt. etc.
-		_ ->
-		    true
-	    end,
 	    case auto_init_connect_control(LD1) of
 		{ok,LD2} ->                  % Either connected or running_alone.
 		    OverloadData=initialize_overload(LD2),
-		    loop1(LD2#rt{overload_data=OverloadData});
+		    case auto_init_check_mfa(MFA) of
+			{ok,{M,F,A}} ->      % We shall start somekind of tracing!
+			    P=spawn_link(M,F,A), % It lives its own life, only link!
+			    loop1(LD2#rt{auto_starter=P,overload_data=OverloadData});
+			false ->
+			    loop1(LD2#rt{overload_data=OverloadData})
+		    end;
 		stop ->                      % Not allowed to run alone!
 		    true                     % Simply terminate.
 	    end;
@@ -926,6 +940,13 @@ auto_init_connect_find_pid({_TimeOut,Node}) when atom(Node) ->
     rpc:call(Node,erlang,whereis,[?CTRL]);
 auto_init_connect_find_pid(_) ->             % Node is not a proper node.
     undefined.                               % Act as could not find control comp.
+
+%% Help function checking that the parameter is reasonable to be used as
+%% spawn_link argument.
+auto_init_check_mfa({M,F,A}) when atom(M),atom(F),list(A) ->
+    {ok,{M,F,A}};
+auto_init_check_mfa(_) ->
+    false.
 
 %% Help function to init_auto which finds out which module to call for
 %% guidance on how to proceed. Returns an atom.
@@ -953,9 +974,9 @@ loop1(LD=#rt{overload=Overload}) ->
 		LD#rt.status==running,
 		LD#rt.state==tracing,
 		Now>LD#rt.next_loadcheck ->  % Do loadcheck only then!
-		    {NewLD,TimeOut}=do_check_overload(LD,LD#rt.overload_data),
+		    {NewLD,TimeOut}=do_check_overload(LD,{timeout,LD#rt.overload_data}),
 		    loop(NewLD,TimeOut);
-		LD#rt.state==running,LD#rt.state==tracing ->
+		LD#rt.status==running,LD#rt.state==tracing ->
 		    Timeout=calc_diff_to_now(Now,LD#rt.next_loadcheck),
 		    loop(LD,Timeout);
 		true ->                      % Do not spend CPU on this! :-)
@@ -1119,9 +1140,9 @@ loop(LoopData,Timeout) ->
 		true ->                      % We already have a control component.
 		    reply_and_loop({error,refused},From,MRef,LoopData)
 	    end;
-	{{confirm_connection,_Tag},From={FromPid,_CallRef},MRef} ->
+	{{confirm_connection,_Tag},From,MRef} ->
 	    if
-		LoopData#rt.ctrl==FromPid -> % It must be from this process!
+		LoopData#rt.ctrl==From ->    % It must be from this process!
 		    Reply=collect_node_info(LoopData),
 		    reply_and_loop(Reply,From,MRef,LoopData);
 		true ->                      % Strange, some one is joking?
@@ -1150,8 +1171,9 @@ loop(LoopData,Timeout) ->
 
 	{'DOWN',CtrlRef,process,_,_} when CtrlRef==LoopData#rt.ctrl_ref ->
 	    case do_down_message(LoopData) of
-		stop ->
-		    terminate_overload(LoopData);
+		stop ->                      % inviso_c gone and we must stop!
+		    terminate_overload(LoopData),
+		    exit(running_alone);
 		{ok,NewLoopData} ->
 		    loop1(NewLoopData)
 	    end;
@@ -1161,7 +1183,9 @@ loop(LoopData,Timeout) ->
 		    terminate_overload(LoopData),
 		    exit(Reason);
 		NewLoopData when record(NewLoopData,rt) ->
-		    loop1(NewLoopData)
+		    loop1(NewLoopData);
+		{NewLoopData,NewTimeOut} when record(NewLoopData,rt) ->
+		    loop(NewLoopData,NewTimeOut)
 	    end;
 	Other ->                            % Check if it concerns overload.
 	    if
@@ -1169,7 +1193,8 @@ loop(LoopData,Timeout) ->
 		LoopData#rt.status==running,
 		LoopData#rt.state==tracing ->
 		    {NewLD,NewTimeOut}=
-			do_check_overload(LoopData,{Other,LoopData#rt.overload_data}),
+			do_check_overload(LoopData,
+					  {msg,{Other,LoopData#rt.overload_data}}),
 		    loop(NewLD,NewTimeOut);
 		true ->
 		    NewTimeOut=calc_diff_to_now(now(),LoopData#rt.next_loadcheck),
@@ -1302,6 +1327,8 @@ fetch_incomplete(CollectPid) ->
 %% loadcheck turns out negative.
 do_check_overload(LD,Data) ->
     case do_check_overload_2(LD#rt.overload,Data) of
+	ignore ->                            % Load check not performed.
+	    {LD,calc_diff_to_now(now(),LD#rt.next_loadcheck)};
 	{ok,Interval} ->                     % No problem, continue.
 	    NextLoadCheck=add_to_now(now(),Interval),
 	    {LD#rt{next_loadcheck=NextLoadCheck},Interval};
@@ -1313,7 +1340,7 @@ do_check_overload(LD,Data) ->
     end.
 
 %% Help function performing an overload check. Returns {ok,Interval},
-%% {suspend,Reason} or 'error'.
+%% {suspend,Reason}, 'error' ir 'ignore'.
 do_check_overload_2({{Mod,Func},Interval,_,_},Data) ->
     do_check_overload_3(Interval,catch Mod:Func(Data));
 do_check_overload_2({Fun,Interval,_,_},Data) when function(Fun) ->
@@ -1325,6 +1352,8 @@ do_check_overload_3(Interval,ok) ->
     {ok,Interval};
 do_check_overload_3(_Interval,{suspend,Reason}) ->
     {suspend,Reason};
+do_check_overload_3(_Interval,ignore) ->     % Loadcheck not triggered.
+    ignore;
 do_check_overload_3(_Interval,_) ->          % Failure or other return value.
     error.                                   % Stop doing loadchecks from now on.
 %% ------------------------------------------------------------------------------
@@ -1376,8 +1405,9 @@ do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when list(M) -
 				    Flags,
 				    [{error,{bad_trace_args,{M,F,Arity,MS}}}|Replies])
     end;
-do_set_trace_patterns_2([{{Dir,M},F,Arity,MS,Opts}|Rest],Flags,Replies) ->
-    case check_pattern_parameters(M,F,Arity,MS) of % We don't want to repeat bad params.
+do_set_trace_patterns_2([{{Dir,M},F,Arity,MS,Opts}|Rest],Flags,Replies)
+  when list(Dir),list(M) ->
+    case check_pattern_parameters(void,F,Arity,MS) of % We don't want to repeat bad params.
 	ok ->
 	    case inviso_rt_lib:expand_regexp(Dir,M,Opts) of % Get a list of real modulnames.
 		Mods when list(Mods) ->
@@ -1547,25 +1577,27 @@ do_init_metatracing({Type,Arg,{InitPublLDmfa,RemovePublLDmf,CleanPublLDmf}},Trac
 	{error,Reason} ->
 	    {error,Reason}
     end;
-do_init_metatracing(void,_) ->               % Means no meta tracer.
-    false;
-do_init_metatracing(OtherArgs,_) ->
-    {error,{badarg,OtherArgs}}.
+do_init_metatracing(void,_) ->              % Means no meta tracer.
+    false.
 %% -----------------------------------------------------------------------------
 
 %% Function that stops all tracing and closes all open files. This function
 %% can't fail :-) It tries as hard as it can.
+%% This function also kills the autostarter process if one exists. Otherwise it
+%% will not be possible from a control component to end an ongoing autostarted
+%% tracing.
 %% Returns a new loopdata structure since stopping tracing involves updating it.
 do_stop_tracing(LoopData) ->
-    do_clear_trace_flags(),                  % Do not generate any more traces.
+    do_stop_tracing_kill_autostarter(LoopData#rt.auto_starter),
+    do_clear_trace_flags(),                 % Do not generate any more traces.
     NewLoopData1=do_stop_tracing_tracelog(LoopData),
     NewLoopData2=do_stop_tracing_metatracing(NewLoopData1),
-    NewLoopData3=NewLoopData2#rt{state=idle},
+    NewLoopData3=NewLoopData2#rt{state=idle,auto_starter=undefined},
     send_event(state_change,NewLoopData3),
     NewLoopData3.
 
 do_stop_tracing_tracelog(LoopData=#rt{tracer_port=Port}) when port(Port) ->
-    trace_port_control(Port,flush),          % Write buffered trace messages.
+    trace_port_control(Port,flush),         % Write buffered trace messages.
     catch port_close(Port),
     LoopData#rt{tracer_port=undefined};
 do_stop_tracing_tracelog(LoopData) ->
@@ -1574,8 +1606,14 @@ do_stop_tracing_tracelog(LoopData) ->
 do_stop_tracing_metatracing(LoopData=#rt{meta_tracer=MPid}) when pid(MPid) ->
     inviso_rt_meta:stop(MPid),
     LoopData#rt{meta_tracer=undefined};
-do_stop_tracing_metatracing(LoopData) ->     % No meta tracer running!
+do_stop_tracing_metatracing(LoopData) ->    % No meta tracer running!
     LoopData.
+
+%% Help function killing the autostarter, if one is active.
+do_stop_tracing_kill_autostarter(P) when pid(P) ->
+    exit(P,stop_tracing);
+do_stop_tracing_kill_autostarter(_) ->      % No autostarter, do nothing.
+    true.
 %% -----------------------------------------------------------------------------
 
 %% Help function implementing suspending the runtime component.
@@ -1584,7 +1622,8 @@ do_suspend(LD,Reason) ->
     do_clear_trace_flags(),                 % If no process flags, no output!
     do_suspend_metatracer(LD#rt.meta_tracer),
     do_suspend_fetchers(LD#rt.fetchers),
-    NewLD=LD#rt{fetchers=[],status={suspended,Reason}},
+    do_stop_tracing_kill_autostarter(LD#rt.auto_starter),
+    NewLD=LD#rt{fetchers=[],status={suspended,Reason},auto_starter=undefined},
     send_event(state_change,NewLD),         % Notify subscribers.
     NewLD.
 
@@ -1859,16 +1898,19 @@ do_down_message(LoopData) ->
 %% -----------------------------------------------------------------------------
 
 %% Function handling incomming exit signals. We can expect exit signals from the
-%% following: Our parent supervisor (runtime_tools_sup), a meta-tracer process, or
-%% a logfile fetcher process. A trace-port may also generate an exit signal.
+%% following: Our parent supervisor (runtime_tools_sup), a meta-tracer process,
+%% a logfile fetcher process, or the auto_starter.
+%% A trace-port may also generate an exit signal.
+%% In addition it is possible that an overload mechanism generates exit-signals.
 %% We can also get the running_alone exit signal from our self. This is the
 %% situation if our control component has terminated and this runtime component
 %% is not allowed to exist on its own for ever.
 %% Also note that after we have stopped tracing, for any reason, it is not
-%% impossible that we  receive the EXIT signals from still working parts that
+%% impossible that we receive the EXIT signals from still working parts that
 %% we are now shuting down. This is no problem, the code will mearly update
 %% the loopdata structure once again.
-%% Returns 'exit' indicating that the runtime component shall terminate now, or
+%% Returns 'exit' indicating that the runtime component shall terminate now,
+%% {NewLoopData,NewTimeOut} if the exit-signal resulted in an overload check, or
 %% a new loopdata structure shall we ignore the exit, or it simply resulted in
 %% a state-change.
 act_on_exit(Parent,_Reason,#rt{parent=Parent}) ->
@@ -1880,11 +1922,27 @@ act_on_exit(MetaTracer,_Reason,LoopData=#rt{meta_tracer=MetaTracer}) ->
 act_on_exit(Port,Reason,LoopData=#rt{tracer_port=Port}) -> 
     send_event({port_down,node(),Reason},LoopData),
     _NewLoopData=do_stop_tracing(LoopData);
-act_on_exit(Pid,_Reason,LoopData) ->
+act_on_exit(AutoStarter,_Reason,LoopData=#rt{auto_starter=AutoStarter}) ->
+    LoopData#rt{auto_starter=undefined};    % The autostarter has terminated.
+act_on_exit(Pid,Reason,LoopData) ->
     case remove_fetcher_ld(Pid,LoopData) of
 	{true,NewLoopData} ->               % Yes it really was a fetcher.
 	    NewLoopData;
 	false ->                            % No it was not a fetcher.
+	    act_on_exit_overload(Pid,Reason,LoopData)
+    end.
+
+%% Help function checking if this exit has anything to do with an overload
+%% mechanism. Note that here we run the overload mechanism regardless of
+%% if we are tracing or not. This because an exit signal from the overload
+%% must most likely always be handled.
+act_on_exit_overload(Pid,Reason,LoopData) ->
+    if
+	LoopData#rt.overload/=?NO_LOADCHECK ->
+	    {_NewLD,_NewTimeOut}=
+		do_check_overload(LoopData,
+				  {'EXIT',{Pid,Reason,LoopData#rt.overload_data}});
+	true ->                             % Overload not in use.
 	    LoopData
     end.
 %% -----------------------------------------------------------------------------
@@ -1911,7 +1969,7 @@ act_on_exit(Pid,_Reason,LoopData) ->
 %% ==============================================================================
 
 %% Help function which calculates a new now-tuple by adding Interval milliseconds
-%% the the first argument. Note that Interval may be 'infinity' too.
+%% to the first argument. Note that Interval may be 'infinity' too.
 %% Returns a new now-tuple or "bigvalue" which is greater than any now-tuple.
 add_to_now({MegSec,Sec,MicroSec},Interval) when integer(Interval) ->
     NewSec=Sec+(Interval div 1000),
@@ -1940,7 +1998,7 @@ calc_diff_to_now(_T1,_) ->                   % Next loadcheck is not activated.
     infinity.                                % The the after timeout is infinity.
 %% ------------------------------------------------------------------------------
 
-    
+
 %% Help function returning information about this runtime component.
 collect_node_info(#rt{vsn=VSN,state=State,status=Status,tag=Tag}) -> 
     {node_info,node(),self(),VSN,State,Status,Tag}.

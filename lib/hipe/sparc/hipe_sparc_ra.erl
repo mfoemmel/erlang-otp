@@ -113,9 +113,9 @@ cols2tuple(Map) ->
 
 count_caller_saves(CFG) ->
   Liveness = hipe_sparc_liveness:analyze(CFG),
-  count_caller_saves(CFG, Liveness, hipe_sparc_specific).
+  count_caller_saves(CFG, Liveness).
 
-count_caller_saves(CFG, Liveness, T) ->
+count_caller_saves(CFG, Liveness) ->
   %% Count how many temps are live over a call.
   length(
     %% Fold the count for each basic block.
@@ -131,8 +131,8 @@ count_caller_saves(CFG, Liveness, T) ->
 		%% For each instruction
 		fun(I,{LiveOut,CS}) ->
 		    %% Calculate live-in
-		    UsesSet = ordsets:from_list(uses(I,T)),
-		    DefsSet = ordsets:from_list(defines(I,T)),
+		    UsesSet = ordsets:from_list(uses(I)),
+		    DefsSet = ordsets:from_list(defines(I)),
 		    LiveOverI = ordsets:subtract(LiveOut, DefsSet),      
 		      NewCS = 
 			case I of
@@ -146,35 +146,29 @@ count_caller_saves(CFG, Liveness, T) ->
 		    {NewLiveOut,NewCS}
 		end,
 		%% Start with live out of the BB
-		{ordsets:from_list(liveout(Liveness,L,T)),
+		{ordsets:from_list(liveout(Liveness,L)),
 		 CallerSaves},
 		%% Get the instructions in the BB.
-		hipe_bb:code(T:bb(CFG,L)))),
+		hipe_bb:code(hipe_sparc_specific:bb(CFG,L)))),
 	    %% Filter
-	    not T:is_precoloured(X)]	
+	    not hipe_sparc_specific:is_precoloured(X)]	
       end,
       [],
       %% Get BBs
-      T:labels(CFG))).
+      hipe_sparc_specific:labels(CFG))).
 
-liveout(Liveness, L, Target)->
-  regnames(Target:liveout(Liveness, L), Target).
+liveout(Liveness, L) ->
+  regnames(hipe_sparc_specific:liveout(Liveness, L)).
 
-uses(I, Target)->
-  regnames(Target:uses(I), Target).
+uses(I) ->
+  regnames(hipe_sparc_specific:uses(I)).
 
-defines(I, Target) ->
-  regnames(Target:defines(I), Target).
+defines(I) ->
+  regnames(hipe_sparc_specific:defines(I)).
 
-regnames(Regs2, Target) ->
-  Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(Regs2);
-      _ ->
-	Regs2
-    end,
-  [Target:reg_nr(X) || X <- Regs].
+regnames(Regs2) ->
+  Regs = hipe_sparc:keep_registers(Regs2),
+  [hipe_sparc_specific:reg_nr(X) || X <- Regs].
 
 %%--------------------------------------------------------------------- 
 %% The following is needed for taking measurements.

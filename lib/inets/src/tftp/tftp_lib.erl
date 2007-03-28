@@ -53,6 +53,8 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    case Val of
 		none ->
 		    do_parse_config(Tail, Config#config{debug_level = Val});
+		error ->
+		    do_parse_config(Tail, Config#config{debug_level = Val});
 		brief ->
 		    do_parse_config(Tail, Config#config{debug_level = Val});
 		normal ->
@@ -78,22 +80,8 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	port ->
 	    if
 		integer(Val), Val >= 0 ->
-		    InitArg = list_to_atom("tftpd_" ++ integer_to_list(Val)),
-		    UdpOptions =
-			case init:get_argument(InitArg) of
-			    {ok, [[FdStr]] = Badarg} when list(FdStr) ->
-				case catch list_to_integer(FdStr) of
-				    Fd when integer(Fd) ->
-					[{fd, Fd} | Config#config.udp_options];
-				    {'EXIT', _} ->
-					exit({badarg, {prebound_fd, InitArg, Badarg}})
-				end;
-			    {ok, Badarg} ->
-				exit({badarg, {prebound_fd, InitArg, Badarg}});
-			    error ->
-				Config#config.udp_options
-			end,
-		    do_parse_config(Tail, Config#config{udp_port = Val, udp_options = UdpOptions});
+		    Config2 = Config#config{udp_port = Val, udp_options = Config#config.udp_options},
+		    do_parse_config(Tail, Config2);
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;

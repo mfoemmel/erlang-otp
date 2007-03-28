@@ -41,15 +41,12 @@ open(Name, Mode) ->
 	    {error, {Name, Reason}}
     end.
 
-open1({binary,Bin}, read, _Raw, Opts0) ->
-    Opts = [Opt || Opt <- Opts0, Opt =/= compressed],
-    case file:open(Bin, [ram,binary,read|Opts]) of
+open1({binary,Bin}, read, _Raw, Opts) ->
+    case file:open(Bin, [ram,binary,read]) of
 	{ok,File} ->
-	    case lists:member(compressed, Opts0) of
-		false ->
-		    ok;
-		true ->
-		    ram_file:uncompress(File)
+	    case Opts of
+		[compressed] -> ram_file:uncompress(File);
+		[] -> ok
 	    end,
 	    {ok,{read,File}};
 	Error ->
@@ -789,12 +786,8 @@ make_dirs1([], _) ->
 %% Prints the message on if the verbose option is given (for reading).
 
 read_verbose(#read_opts{verbose=true}, Format, Args) ->
-    case io:format(Format, Args) of
-	ok ->
-	    io:nl();
-	{error, _} ->
-	    io:format("Format=~p, Args=~p~n", [Format, Args])
-    end;
+    io:format(Format, Args),
+    io:nl();
 read_verbose(_, _, _) ->
     ok.
 

@@ -791,48 +791,53 @@ get_info(#state{sock = Id}) ->
     PortInfo = get_port_info(Id),
     [{process_memory, ProcSize}, {port_info, PortInfo}].
 
-proc_mem(P) when pid(P) ->
+proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
-    end;
-proc_mem(_) ->
-    undefined.
+    end.
+%% proc_mem(_) ->
+%%     undefined.
 
 
 get_port_info(Id) ->
-    PortInfo = case (catch erlang:port_info(Id)) of
-		   PI when list(PI) ->
-		       [{port_info, PI}];
-		   _ ->
-		       []
-	       end,
-    PortStatus = case (catch prim_inet:getstatus(Id)) of
-		     {ok, PS} ->
-			 [{port_status, PS}];
-		     _ ->
-			 []
-		 end,
-    PortAct = case (catch inet:getopts(Id, [active])) of
-		  {ok, PA} ->
-		      [{port_act, PA}];
-		  _ ->
-		      []
-	      end,
-    PortStats = case (catch inet:getstat(Id)) of
-		    {ok, Stat} ->
-			[{port_stats, Stat}];
-		    _ ->
-			[]
-		end,
-    IfList = case (catch inet:getif(Id)) of
-		 {ok, IFs} ->
-		     [{interfaces, IFs}];
-		 _ ->
-		     []
-	     end,
+    PortInfo = 
+	case (catch erlang:port_info(Id)) of
+	    PI when is_list(PI) ->
+		[{port_info, PI}];
+	    _ ->
+		[]
+	end,
+    PortStatus = 
+	case (catch prim_inet:getstatus(Id)) of
+	    {ok, PS} ->
+		[{port_status, PS}];
+	    _ ->
+		[]
+	end,
+    PortAct = 
+	case (catch inet:getopts(Id, [active])) of
+	    {ok, PA} ->
+		[{port_act, PA}];
+	    _ ->
+		[]
+	end,
+    PortStats = 
+	case (catch inet:getstat(Id)) of
+	    {ok, Stat} ->
+		[{port_stats, Stat}];
+	    _ ->
+		[]
+	end,
+    IfList = 
+	case (catch inet:getif(Id)) of
+	    {ok, IFs} ->
+		[{interfaces, IFs}];
+	    _ ->
+		[]
+	end,
     [{socket, Id}] ++ IfList ++ PortStats ++ PortInfo ++ PortStatus ++ PortAct.
 
 

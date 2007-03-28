@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -24,8 +26,6 @@
 %%%-------------------------------------------------------------------
 -module(dialyzer_plt).
 
--include("dialyzer.hrl").
-
 -export([
 	 check_init_plt/1,
 	 copy/2,
@@ -45,8 +45,10 @@
 	 to_edoc/4
 	]).
 
-%% Debug utility
--export([find_non_returning/0]).
+%% Debug utilities
+-export([pp_non_returning/0, pp_mod/1]).
+
+-include("dialyzer.hrl").
 
 -record(dialyzer_plt, {version, libs, md5, tab}).
 
@@ -66,14 +68,15 @@ delete_list(_Plt, []) ->
   ok.
 
 copy(From, To) ->
-  List = ets:match_object(From, '_'),
+  List = ets:tab2list(From),
   ets:delete_all_objects(To),
   ets:insert_new(To, List).
 
 insert(Plt, Object) ->
   ets:insert(Plt, Object).
 
-lookup(Plt, MFA={M, F, A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
+lookup(Plt, MFA={M, F, A}) when is_atom(M), is_atom(F),
+				is_integer(A), 0 =< A, A =< 255 ->
   lookup_1(Plt, MFA);
 lookup(Plt, Label) when is_integer(Label) ->
   lookup_1(Plt, Label).
@@ -159,34 +162,36 @@ to_file(Plt, FileName) ->
 check_init_plt(FileName) ->
   case get_record_from_file(FileName) of
     {ok, Rec = #dialyzer_plt{libs=FileLibs, md5=Md5}} ->
-      Libs = 
-	case FileLibs =:= none of
-	  true -> ?DEFAULT_LIBS;
-	  false -> FileLibs
-	end,
-      case check_version(Rec) of
-	ok -> 
-	  case compute_md5(Libs) of
-	    Md5 -> {ok, FileName};
-	    NewMd5 ->
-	      DiffMd5 = 
-		if is_list(Md5) -> find_diffs_in_md5(NewMd5, Md5);
-		   %% The Md5 was calculated in the old fashion.
-		   true -> none
-		end,
-	      {fail, NewMd5, DiffMd5, Libs, FileName}
-	  end;
-	{error, Vsn} ->
-	  case Md5 =:= none of
-	    true ->
-	      %% This is a user defined plt. No md5 check.
-	      Msg = io_lib:format("    The plt ~s was built with Dialyzer ~s\n"
-				  "    Please rebuild it using the current "
-				  "version (~s)\n", [FileName, Vsn, ?VSN]),
-	      {error, Msg};
-	    false ->
-	      NewMd5 = compute_md5(Libs),
-	      {fail, NewMd5, none, Libs, FileName}
+      case (FileLibs =:= ?DEFAULT_LIBS) or (Md5 =:= none) of
+	false -> 
+	  {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
+	true -> 
+	  Libs = ?DEFAULT_LIBS,
+	  case check_version(Rec) of
+	    ok -> 
+	      case compute_md5(Libs) of
+		Md5 -> {ok, FileName};
+		NewMd5 ->
+		  DiffMd5 = 
+		    if is_list(Md5) -> find_diffs_in_md5(NewMd5, Md5);
+		       %% The Md5 was calculated in the old fashion.
+		       true -> none
+		    end,
+		  {fail, NewMd5, DiffMd5, Libs, FileName}
+	      end;
+	    {error, Vsn} ->
+	      case Md5 =:= none of
+		true ->
+		  %% This is a user defined plt. No md5 check.
+		  Msg = io_lib:format("    The plt ~s was built with "
+				      "Dialyzer ~s\n"
+				      "    Please rebuild it using the current "
+				      "version (~s)\n", [FileName, Vsn, ?VSN]),
+		  {error, Msg};
+		false ->
+		  NewMd5 = compute_md5(Libs),
+		  {fail, NewMd5, none, Libs, FileName}
+	      end
 	  end
       end;
     {error, dets_plt} ->
@@ -196,9 +201,8 @@ check_init_plt(FileName) ->
       {ok, Dets} = dets:open_file(FileName, [{access, read}]),
       case dets:lookup(Dets, md5) of
 	[{md5, _}] -> 
-	  [{libs, PltLibs}] = dets:lookup(Dets, libs),
 	  ok = dets:close(Dets),
-	  {fail, compute_md5(PltLibs), none, PltLibs, FileName};
+	  {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
 	[] ->
 	  %% This is a user-defined plt.
 	  ok = dets:close(Dets),
@@ -230,17 +234,9 @@ compute_md5(Libs) ->
   end.
 
 compute_md5_from_file(File) ->
-  %% Avoid adding stuff like compile time etc.
-  ChunkNames = ["Atom", "Code", "StrT", "ImpT", "ExpT"],
-  case beam_lib:chunks(File, ChunkNames) of
-    {ok, {Module, Chunks1}} ->
-      %% Check if funt is available, it might not be but this is not a problem
-      FinalChunks =
-	case beam_lib:chunks(File, ["FunT"]) of
-	  {ok, {Module, Chunks2}} -> Chunks2 ++ Chunks1;
-	  {error, beam_lib, {missing_chunk, _, _}} -> Chunks1
-	end,
-      {Module, erlang:md5(term_to_binary(FinalChunks))};
+  case beam_lib:md5(File) of
+    {ok, {_Module, _Chunks}=Ret} ->
+      Ret;
     {error, beam_lib, Reason} ->
       throw({dialyzer_error, 
 	     io_lib:format("Could not compute md5 for file: ~s\nReason: ~p\n", 
@@ -349,12 +345,24 @@ error(Msg) ->
 %%---------------------------------------------------------------------------
 %% Debug utilities.
 
-find_non_returning() ->
+pp_non_returning() ->
   PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
   Plt = from_file(foo, PltFile),
   List = ets:tab2list(Plt),
   NonRet = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
-			   erl_types:t_is_none(Range)],
-  [io:format("~w :: ~s\n", [MFA, erl_types:t_to_string(Type)])
-   || {MFA, Type} <- NonRet],
+						  erl_types:t_is_none(Range)],
+  [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
+   || {{M,F,A}, Type} <- lists:sort(NonRet)],
+  ets:delete(Plt),
   ok.
+
+pp_mod(Mod) when is_atom(Mod) ->
+  PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
+  Plt = from_file(foo, PltFile),
+  List = ets:match_object(Plt, {{Mod, '_', '_'}, '_', '_'}),
+  [io:format("~w:~w/~p :: ~s\n", 
+	     [M, F, A, erl_types:t_to_string(erl_types:t_fun(Args, Ret))])
+   || {{M,F,A}, Ret, Args} <- lists:sort(List)],
+  ets:delete(Plt),
+  ok.
+  

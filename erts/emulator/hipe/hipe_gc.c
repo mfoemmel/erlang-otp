@@ -5,14 +5,23 @@
 #include "config.h"
 #endif
 #include "global.h"
+
+#ifdef HEAP_FRAG_ELIM_TEST
+#include "erl_gc.h"
+#else
 #include "ggc.h"
 #include "erl_nmgc.h"
+#endif
 
 #include "hipe_stack.h"
 #include "hipe_gc.h"
 #include "hipe_bif0.h"		/* for hipe_constants_{start,next} */
 
+#ifdef HEAP_FRAG_ELIM_TEST
+void fullsweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop)
+#else
 Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
+#endif
 {
     /* known nstack walk state */
     Eterm *nsp;
@@ -26,11 +35,21 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
     struct nstack_walk_state walk_state;
 
     /* fullsweep-specific state */
+#ifdef HEAP_FRAG_ELIM_TEST
+    Eterm *n_htop, *old_htop;
+    char *src, *oh;
+    Uint src_size, oh_size;
+#else
     char *const_start;
     unsigned long const_size;
+#endif
 
     if( !nstack_walk_init_check(p) )
+#ifdef HEAP_FRAG_ELIM_TEST
+	return;
+#else
 	return n_htop;
+#endif
 
     nsp = nstack_walk_nsp_begin(p);
     nsp_end = p->hipe.nstgraylim;
@@ -40,8 +59,17 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 
     sdesc = nstack_walk_init_sdesc(p, &walk_state);
 
+#ifdef HEAP_FRAG_ELIM_TEST
+    old_htop = *ptr_old_htop;
+    n_htop = *ptr_n_htop;
+    src = (char*)HEAP_START(p);
+    src_size = (char*)HEAP_TOP(p) - src;
+    oh = (char*)OLD_HEAP(p);
+    oh_size = (char*)OLD_HTOP(p) - oh;
+#else
     const_start = (char*)hipe_constants_start;
     const_size = (char*)hipe_constants_next - const_start;
+#endif
 
     for(;;) {
 	if( nstack_walk_nsp_reached_end(nsp, nsp_end) ) {
@@ -51,7 +79,13 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 		    p->hipe.nstblacklim = nsp; /* nsp == nsp_end */
 		    nstack_walk_update_trap(p, walk_state.sdesc0);
 		}
+#ifdef HEAP_FRAG_ELIM_TEST
+		*ptr_old_htop = old_htop;
+		*ptr_n_htop = n_htop;
+		return;
+#else
 		return n_htop;
+#endif
 	    }
 	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
 	    break;
@@ -66,6 +100,16 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 		if( is_boxed(gval) ) {
 		    Eterm *ptr = boxed_val(gval);
 		    Eterm val = *ptr;
+#ifdef HEAP_FRAG_ELIM_TEST
+		    if (IS_MOVED(val)) {
+			ASSERT(is_boxed(val));
+			*nsp_i = val;
+		    } else if (in_area(ptr, src, src_size)) {
+			MOVE_BOXED(ptr,val,n_htop,nsp_i);
+		    } else if (in_area(ptr, oh, oh_size)) {
+			MOVE_BOXED(ptr,val,old_htop,nsp_i);
+		    }
+#else	/* !HEAP_FRAG_ELIM_TEST */
 		    if( MY_IS_MOVED(val) ) {
 			*nsp_i = val;
 		    } else if( in_area(ptr, const_start, const_size) ) {
@@ -78,9 +122,20 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 			ASSERT(within(ptr, p));
 			MOVE_BOXED(ptr,val,n_htop,nsp_i);
 		    }
+#endif	/* !HEAP_FRAG_ELIM_TEST */
 		} else if( is_list(gval) ) {
 		    Eterm *ptr = list_val(gval);
 		    Eterm val = *ptr;
+#ifdef HEAP_FRAG_ELIM_TEST
+		    if (is_non_value(val)) {
+			*nsp_i = ptr[1];
+		    } else if (in_area(ptr, src, src_size)) {
+			ASSERT(within(ptr, p));
+			MOVE_CONS(ptr,val,n_htop,nsp_i);
+		    } else if (in_area(ptr, oh, oh_size)) {
+			MOVE_CONS(ptr,val,old_htop,nsp_i);
+		    }
+#else	/* !HEAP_FRAG_ELIM_TEST */
 		    if( is_non_value(val) ) {
 			*nsp_i = ptr[1];
 		    } else if( in_area(ptr, const_start, const_size) ) {
@@ -93,6 +148,7 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 			ASSERT(within(ptr, p));
 			MOVE_CONS(ptr,val,n_htop,nsp_i);
 		    }
+#endif	/* !HEAP_FRAG_ELIM_TEST */
 		}
 	    }
 	    if( ++i >= sdesc_size )
@@ -109,7 +165,7 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
     abort();
 }
 
-void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj)
+void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop)
 {
     /* known nstack walk state */
     Eterm *nsp;
@@ -123,12 +179,16 @@ void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm
     struct nstack_walk_state walk_state;
 
     /* gensweep-specific state */
+    Eterm *old_htop, *n_htop;
+#ifdef HEAP_FRAG_ELIM_TEST
+    char *heap;
+    Uint heap_size, mature_size;
+#else
     Eterm *oh_start, *oh_end;
     Eterm *low_water, *high_water;
-    Eterm *n_htop;
-    Eterm *old_htop;
     char *const_start;
     unsigned long const_size;
+#endif
 
     if( !nstack_walk_init_check(p) )
 	return;
@@ -146,14 +206,20 @@ void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm
 
     sdesc = nstack_walk_init_sdesc(p, &walk_state);
 
+    old_htop = *ptr_old_htop;
+    n_htop = *ptr_n_htop;
+#ifdef HEAP_FRAG_ELIM_TEST
+    heap = (char*)HEAP_START(p);
+    heap_size = (char*)HEAP_TOP(p) - heap;
+    mature_size = (char*)HIGH_WATER(p) - heap;
+#else
     const_start = (char*)hipe_constants_start;
     const_size = (char*)hipe_constants_next - const_start;
     oh_start = OLD_HEAP(p);
     oh_end = OLD_HEND(p);
-    old_htop = *ptr_old_htop;
     low_water = HEAP_START(p);
     high_water = HIGH_WATER(p);
-    n_htop = *ptr_n_htop;
+#endif
 
     for(;;) {
 	if( nstack_walk_nsp_reached_end(nsp, nsp_end) ) {
@@ -189,6 +255,17 @@ void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm
 		if( is_boxed(gval) ) {
 		    Eterm *ptr = boxed_val(gval);
 		    Eterm val = *ptr;
+#ifdef HEAP_FRAG_ELIM_TEST
+		    if (IS_MOVED(val)) {
+			ASSERT(is_boxed(val));
+			*nsp_i = val;
+		    } else if (in_area(ptr, heap, mature_size)) {
+			MOVE_BOXED(ptr,val,old_htop,nsp_i);
+		    } else if (in_area(ptr, heap, heap_size)) {
+			ASSERT(within(ptr, p));
+			MOVE_BOXED(ptr,val,n_htop,nsp_i);
+		    }
+#else	/* !HEAP_FRAG_ELIM_TEST */
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
 		    } else if( in_area(ptr, const_start, const_size) ) {
 #ifdef HYBRID
@@ -203,9 +280,19 @@ void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm
 			ASSERT(within(ptr, p));
 			MOVE_BOXED(ptr,val,n_htop,nsp_i);
 		    }
+#endif	/* !HEAP_FRAG_ELIM_TEST */
 		} else if( is_list(gval) ) {
 		    Eterm *ptr = list_val(gval);
 		    Eterm val = *ptr;
+#ifdef HEAP_FRAG_ELIM_TEST
+		    if (is_non_value(val)) {
+			*nsp_i = ptr[1];
+		    } else if (in_area(ptr, heap, mature_size)) {
+			MOVE_CONS(ptr,val,old_htop,nsp_i);
+		    } else if (in_area(ptr, heap, heap_size)) {
+			MOVE_CONS(ptr,val,n_htop,nsp_i);
+		    }
+#else	/* !HEAP_FRAG_ELIM_TEST */
 		    if( ptr_within(ptr, oh_start, oh_end) ) {
 		    } else if( in_area(ptr, const_start, const_size) ) {
 #ifdef HYBRID
@@ -220,6 +307,7 @@ void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm
 			ASSERT(within(ptr, p));
 			MOVE_CONS(ptr,val,n_htop,nsp_i);
 		    }
+#endif	/* !HEAP_FRAG_ELIM_TEST */
 		}
 	    }
 	    if( ++i >= sdesc_size )
@@ -300,7 +388,7 @@ Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop, Eterm *n_hend)
     abort();
 }
 
-void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj)
+void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop)
 {
     /* known nstack walk state */
     Eterm *nsp;
@@ -470,7 +558,7 @@ Eterm *ma_fullsweep_nstack(Process *p, Eterm *n_htop)
     abort();
 }
 
-void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop, Eterm *objv, int nobj)
+void ma_gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop)
 {
     /* known nstack walk state */
     Eterm *nsp;

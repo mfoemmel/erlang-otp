@@ -30,6 +30,7 @@
 %% Literals
 %% NO CHARACTERS YET.
 %%-record(k_char, {anno=[],val}).
+-record(k_literal, {anno=[],val}).		%Only used for complex literals.
 -record(k_int, {anno=[],val}).
 -record(k_float, {anno=[],val}).
 -record(k_atom, {anno=[],val}).

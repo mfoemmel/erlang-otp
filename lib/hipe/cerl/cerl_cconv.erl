@@ -224,7 +224,6 @@ pattern(E, Env, Ren) ->
 	    E4 = cerl:bitstr_type(E),
 	    E5 = cerl:bitstr_flags(E),
 	    cerl:update_c_bitstr(E, E1, E2, E3, E4, E5);
-
 	alias ->
 	    V = pattern(cerl:alias_var(E), Env, Ren),
 	    P = pattern(cerl:alias_pat(E), Env, Ren),
@@ -458,7 +457,7 @@ bind_vars([V | Vs], Vs1, Env, Ren) ->
     Name = cerl:var_name(V),
     {Name1, Ren1} = rename_var(Name, Env, Ren),
     bind_vars(Vs, [cerl:update_c_var(V, Name1) | Vs1],
-	     env__bind(Name1, variable, Env), Ren1);
+	      env__bind(Name1, variable, Env), Ren1);
 bind_vars([], Vs, Env, Ren) ->
     {lists:reverse(Vs), Env, Ren}.
 
@@ -717,7 +716,7 @@ ren__map(Key, Ren) ->
 %% ---------------------------------------------------------------------
 %% State
 
--record(state, {module, function, names, refs, defs = []}).
+-record(state, {module, function :: {atom(), byte()}, names, refs, defs = []}).
 
 s__new(Module) ->
     #state{module = Module, names = sets:new(), refs = dict:new()}.

@@ -22,6 +22,7 @@
 	 cmp/2,
 	 cmp_dirs/2,
 	 chunks/2,
+	 chunks/3,
 	 all_chunks/1,
 	 diff_dirs/2,
 	 strip/1,
@@ -29,6 +30,7 @@
 	 strip_release/1,
 	 build_module/1,
 	 version/1,
+	 md5/1,
 	 format_error/1]).
 
 %% The following functions implement encrypted debug info.
@@ -55,6 +57,9 @@ info(File) ->
 
 chunks(File, Chunks) ->
     catch read_chunk_data(File, Chunks).
+
+chunks(File, Chunks, Options) ->
+    catch read_chunk_data(File, Chunks, Options).
 
 all_chunks(File) ->
     catch read_all_chunks(File).
@@ -86,6 +91,15 @@ version(File) ->
 	    Error
     end.
 
+md5(File) ->
+    case catch read_significant_chunks(File) of
+	{ok, {Module, Chunks0}} ->
+	    Chunks = filter_funtab(Chunks0),
+	    {ok, {Module, erlang:md5([C || {_Id, C} <- Chunks])}};
+	Error ->
+	    Error
+    end.
+
 format_error({error, Error}) ->
     format_error(Error);
 format_error({error, Module, Error}) ->
@@ -110,6 +124,8 @@ format_error({chunk_too_big, File, ChunkId, Size, Len}) ->
 		  [File, ChunkId, Size, Len]);
 format_error({chunks_different, Id}) ->
     io_lib:format("Chunk \"~s\" differs in the two files~n", [Id]);
+format_error(different_chunks) ->
+    "The two files have different chunks\n";
 format_error({modules_different, Module1, Module2}) ->
     io_lib:format("Module names ~p and ~p differ in the two files~n", 
 		  [Module1, Module2]);
@@ -195,26 +211,28 @@ beam_files(Dir) ->
 
 %% -> ok | throw(Error)
 cmp_files(File1, File2) ->
-    Chunks = ["Code", "ExpT", "ImpT", "StrT", "Atom"],
-    {ok, {M1, L1}} = read_chunk_data(File1, Chunks),
-    {ok, {M2, L2}} = read_chunk_data(File2, Chunks),
+    {ok, {M1, L1}} = read_significant_chunks(File1),
+    {ok, {M2, L2}} = read_significant_chunks(File2),
     if
-	M1 == M2 ->
-	    cmp_lists(L1, L2);
+	M1 =:= M2 ->
+	    List1 = filter_funtab(L1),
+	    List2 = filter_funtab(L2),
+	    cmp_lists(List1, List2);
 	true ->
 	    error({modules_different, M1, M2})
     end.
 
-%% It is assumed that all chunks are present in both files.
 cmp_lists([], []) ->
     ok;
 cmp_lists([{Id, C1} | R1], [{Id, C2} | R2]) ->
     if
-	C1 == C2 ->
+	C1 =:= C2 ->
 	    cmp_lists(R1, R2);
 	true ->
 	    error({chunks_different, Id})
-    end.
+    end;
+cmp_lists(_, _) ->
+    error(different_chunks).
     
 strip_rel(Root) ->
     ok = assert_directory(Root),
@@ -228,17 +246,7 @@ strip_fils(Files) ->
 
 %% -> {ok, {Mod, FileName}} | {ok, {Mod, binary()}} | throw(Error)
 strip_file(File) ->
-    OldEssential = ["Atom", "Code", "StrT", "ImpT", "ExpT"],
-    Attributes = ["Attr", "CInf"],
-    Ids0 = OldEssential ++ ["FunT"|Attributes],
-    Chunks = case catch read_chunk_data(File, Ids0) of
-		 {ok, {Mod, Chunks0}} ->
-		     Chunks0;
-		 _ ->
-		     Ids = OldEssential ++ Attributes,
-		     {ok, {Mod, Chunk0}} = read_chunk_data(File, Ids),
-		     Chunk0
-	     end,
+    {ok, {Mod, Chunks}} = read_significant_chunks(File),
     {ok, Stripped0} = build_module(Chunks),
     Stripped = compress(Stripped0),
     case File of
@@ -281,6 +289,39 @@ pad(Size) ->
 	Rem -> lists:duplicate(4 - Rem, 0)
     end.
 
+%% -> {ok, {Module, Chunks}} | throw(Error)
+read_significant_chunks(File) ->
+    case read_chunk_data(File, significant_chunks(), [allow_missing_chunks]) of
+	{ok, {Module, Chunks0}} ->
+	    Mandatory = mandatory_chunks(),
+	    Chunks = filter_significant_chunks(Chunks0, Mandatory, File, Module),
+	    {ok, {Module, Chunks}}
+    end.
+
+filter_significant_chunks([{_, Data}=Pair|Cs], Mandatory, File, Mod)
+  when is_binary(Data) ->
+    [Pair|filter_significant_chunks(Cs, Mandatory, File, Mod)];
+filter_significant_chunks([{Id, missing_chunk}|Cs], Mandatory, File, Mod) ->
+    case member(Id, Mandatory) of
+	false ->
+	    filter_significant_chunks(Cs, Mandatory, File, Mod);
+	true ->
+	    error({missing_chunk, File, Id})
+    end;
+filter_significant_chunks([], _, _, _) -> [].
+
+filter_funtab([{"FunT"=Tag, <<L:4/binary, Data0/binary>>}|Cs]) ->
+    Data = filter_funtab_1(Data0, <<0:32>>),
+    Funtab = <<L/binary, (iolist_to_binary(Data))/binary>>,
+    [{Tag, Funtab}|filter_funtab(Cs)];
+filter_funtab([H|T]) ->
+    [H|filter_funtab(T)];
+filter_funtab([]) -> [].
+
+filter_funtab_1(<<Important:20/binary,_OldUniq:4/binary,T/binary>>, Zero) ->
+    [Important,Zero|filter_funtab_1(T, Zero)];
+filter_funtab_1(Tail, _) when is_binary(Tail) -> [Tail].
+
 read_all_chunks(File0) when atom(File0);
 			    list(File0); 
 			    binary(File0) ->
@@ -291,12 +332,16 @@ read_all_chunks(File0) when atom(File0);
     {ok, Module, lists:reverse(Chunks)}.
 
 %% -> {ok, {Module, Symbols}} | throw(Error)
-read_chunk_data(File0, ChunkNames0) when atom(File0); 
-					 list(File0); 
-					 binary(File0) ->
+read_chunk_data(File0, ChunkNames) ->
+    read_chunk_data(File0, ChunkNames, []).
+
+%% -> {ok, {Module, Symbols}} | throw(Error)
+read_chunk_data(File0, ChunkNames0, Options)
+  when is_atom(File0); is_list(File0); is_binary(File0) ->
     File = beam_filename(File0),
     {ChunkIds, Names} = check_chunks(ChunkNames0, File, [], []),
-    {ok, Module, Chunks} = scan_beam(File, ChunkIds),
+    AllowMissingChunks = member(allow_missing_chunks, Options),
+    {ok, Module, Chunks} = scan_beam(File, ChunkIds, AllowMissingChunks),
     AT = ets:new(beam_symbols, []),
     T = {empty, AT},
     R = (catch chunks_to_data(Names, Chunks, File, Chunks, Module, T, [])),
@@ -314,9 +359,24 @@ check_chunks([], _File, IL, L) ->
 
 %% -> {ok, Module, Data} | throw(Error)
 scan_beam(File, What) ->
+    scan_beam(File, What, false).
+
+%% -> {ok, Module, Data} | throw(Error)
+scan_beam(File, What0, AllowMissingChunks) ->
+    case scan_beam1(File, What0) of
+	{missing, _FD, Mod, Data, What} when AllowMissingChunks ->
+	    {ok, Mod, [{Id, missing_chunk} || Id <- What] ++ Data};
+	{missing, FD, _Mod, _Data, What} ->
+	    error({missing_chunk, filename(FD), hd(What)});
+	R ->
+	    R
+    end.
+
+%% -> {ok, Module, Data} | throw(Error)
+scan_beam1(File, What) ->
     FD = open_file(File),
     case catch scan_beam2(FD, What) of
-	Error when error == element(1, Error) ->
+	Error when error =:= element(1, Error) ->
 	    throw(Error);
 	R ->
 	    R
@@ -338,8 +398,8 @@ scan_beam(FD, Pos, What, Mod, Data) ->
 	    error({missing_chunk, filename(FD), "Atom"});	    
 	{_NFD, eof} when What =:= info ->
 	    {ok, Mod, reverse(Data)};
-	{_NFD, eof} ->
-	    error({missing_chunk, filename(FD), hd(What)});
+	{NFD, eof} ->
+	    {missing, NFD, Mod, Data, What};
 	{NFD, {ok, <<IdL:4/binary, Sz:32>>}} ->
 	    Id = binary_to_list(IdL),
 	    Pos1 = Pos + 8,
@@ -601,6 +661,19 @@ file_error(FileName, {error, Error}) ->
 
 error(Reason) ->
     throw({error, ?MODULE, Reason}).
+
+
+%% The following chunks are significant when calculating the MD5 for a module,
+%% and also the modules that must be retained when stripping a file.
+%% They are listed in the order that they should be MD5:ed.
+
+significant_chunks() ->
+    ["Atom", "Code", "StrT", "ImpT", "ExpT", "FunT", "LitT"].
+
+%% The following chunks are mandatory in every Beam file.
+
+mandatory_chunks() ->
+    ["Code", "ExpT", "ImpT", "StrT", "Atom"].
 
 %%% ====================================================================
 %%% The rest of the file handles encrypted debug info.

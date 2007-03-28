@@ -265,19 +265,25 @@ BIF_RETTYPE binary_to_list_1(BIF_ALIST_1)
     if (bitsize == 0) {
 	hp = HAlloc(BIF_P, 2 * size);
     } else {
-	ErlSubBin* last;
-
-	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE+2+2*size);
-	last = (ErlSubBin *) hp;
-	last->thing_word = HEADER_SUB_BIN;
-	last->size = 0;
-	last->bitsize = bitsize;
-	last->offs = offset+size;
-	last->bitoffs = bitoffs;
-	last->orig = real_bin;
-	hp += ERL_SUB_BIN_SIZE;
-	previous = CONS(hp, make_binary(last), previous);
-	hp += 2;
+      if (size == 0) {
+	hp = HAlloc(BIF_P, 2);
+	BIF_RET(CONS(hp,BIF_ARG_1,NIL));
+      }
+      else
+	{
+	  ErlSubBin* last;
+	  hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE+2+2*size);
+	  last = (ErlSubBin *) hp;
+	  last->thing_word = HEADER_SUB_BIN;
+	  last->size = 0;
+	  last->bitsize = bitsize;
+	  last->offs = offset+size;
+	  last->bitoffs = bitoffs;
+	  last->orig = real_bin;
+	  hp += ERL_SUB_BIN_SIZE;
+	  previous = CONS(hp, make_binary(last), previous);
+	  hp += 2;
+	}
     }
     BIF_RET(bin_bytes_to_list(previous, hp, bytes, size, bitoffs));
 }

@@ -495,7 +495,7 @@ erts_init_process(void)
 
     block_multi_scheduling = 0;
     is_setting_block_multi_scheduling = 0;
-    block_multi_scheduling_procs = 0;
+    block_multi_scheduling_procs = NULL;
 
 #ifdef ERTS_SMP
     erts_no_of_schedulers = 0;
@@ -587,6 +587,27 @@ wake_all_schedulers(void)
     erts_smp_cnd_broadcast(&schdlq_cnd);
 }
 
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+void
+erts_smp_notify_check_children_needed(void)
+{
+    ErtsSchedulerData *esdp;
+    erts_smp_sched_lock();
+    for (esdp = schedulers; esdp; esdp = esdp->next)
+	esdp->check_children = 1;
+    if (block_multi_scheduling) {
+	/* Also blocked schedulers need to check children */
+	erts_smp_mtx_lock(&msched_blk_mtx);
+	for (esdp = schedulers; esdp; esdp = esdp->next)
+	    esdp->blocked_check_children = 1;
+	erts_smp_cnd_broadcast(&msched_blk_cnd);
+	erts_smp_mtx_unlock(&msched_blk_mtx);
+    }
+    wake_all_schedulers();
+    erts_smp_sched_unlock();
+}
+#endif
+
 static void
 prepare_for_block(void *c_p)
 {
@@ -614,8 +635,10 @@ init_sched_thr_data(ErtsSchedulerData *esdp, Uint id)
     esdp->no = id;
     esdp->free_process = NULL;
 #endif
-
     esdp->current_process = NULL;
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+    esdp->check_children = 0;
+#endif
 
 }
 
@@ -703,17 +726,33 @@ resume_process(Process *p)
 #ifdef ERTS_SMP
 
 static void
-block_multi_scheduling_block(void)
+block_multi_scheduling_block(ErtsSchedulerData *esdp)
 {
     used_schedulers--;
     if (used_schedulers == 1)
 	erts_wake_one_scheduler(); /* The one performing the block */
     while (block_multi_scheduling) {
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+	if (esdp->check_children) {
+	    esdp->check_children = 0;
+	    erts_smp_sched_unlock();
+	    erts_check_children();
+	    erts_smp_sched_lock();
+	}
+#endif
 	erts_smp_sched_unlock();
 	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
 	erts_smp_mtx_lock(&msched_blk_mtx);
-	while (block_multi_scheduling)
+	while (block_multi_scheduling
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+	       && !esdp->blocked_check_children
+#endif
+	    ) {
 	    erts_smp_cnd_wait(&msched_blk_cnd, &msched_blk_mtx);
+	}
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+	esdp->blocked_check_children = 0;
+#endif
 	erts_smp_mtx_unlock(&msched_blk_mtx);
 	erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
 	erts_smp_sched_lock();
@@ -737,7 +776,11 @@ erts_block_multi_scheduling(Process *p, Uint32 plocks, int on, int all)
     int have_unlocked_plocks = 0;
 
     erts_smp_sched_lock();
-    if (on) {
+    if (is_setting_block_multi_scheduling) {
+	p->freason = RESCHEDULE;
+	res = -1; /* Reschedule */
+    }
+    else if (on) {
 	res = 1;
 
 	if (block_multi_scheduling) {
@@ -748,37 +791,31 @@ erts_block_multi_scheduling(Process *p, Uint32 plocks, int on, int all)
 	    p->flags |= F_HAVE_BLCKD_MSCHED;
 	}
 	else {
-	    if (is_setting_block_multi_scheduling) {
-		p->freason = RESCHEDULE;
-		res = -1; /* Reschedule */
+	    is_setting_block_multi_scheduling = 1;
+	    erts_smp_mtx_lock(&msched_blk_mtx);
+	    block_multi_scheduling = 1;
+	    erts_smp_mtx_unlock(&msched_blk_mtx);
+	    p->flags |= F_HAVE_BLCKD_MSCHED;
+	    if (plocks) {
+		have_unlocked_plocks = 1;
+		erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
 	    }
-	    else {
-		is_setting_block_multi_scheduling = 1;
-		erts_smp_mtx_lock(&msched_blk_mtx);
-		block_multi_scheduling = 1;
-		erts_smp_mtx_unlock(&msched_blk_mtx);
-		p->flags |= F_HAVE_BLCKD_MSCHED;
-		if (plocks) {
-		    have_unlocked_plocks = 1;
-		    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN);
-		}
-		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
-					prepare_for_block,
-					resume_after_block,
-					NULL);
-		wake_all_schedulers();
-		while (used_schedulers != 1)
-		    erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
-		erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
-				      prepare_for_block,
-				      resume_after_block,
-				      NULL);
-		plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
-		plp->pid = p->id;
-		plp->next = block_multi_scheduling_procs;
-		block_multi_scheduling_procs = plp;
-		is_setting_block_multi_scheduling = 0;
-	    }
+	    erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
+				    prepare_for_block,
+				    resume_after_block,
+				    NULL);
+	    wake_all_schedulers();
+	    while (used_schedulers != 1)
+		erts_smp_cnd_wait(&schdlq_cnd, &schdlq_mtx);
+	    erts_smp_activity_end(ERTS_ACTIVITY_WAIT,
+				  prepare_for_block,
+				  resume_after_block,
+				  NULL);
+	    plp = erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
+	    plp->pid = p->id;
+	    plp->next = block_multi_scheduling_procs;
+	    block_multi_scheduling_procs = plp;
+	    is_setting_block_multi_scheduling = 0;
 	}
     }
     else {
@@ -2208,6 +2245,15 @@ Process *schedule(Process *p, int calls)
 	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
 	ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
 
+#ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
+	if (esdp->check_children) {
+	    esdp->check_children = 0;
+	    erts_smp_sched_unlock();
+	    erts_check_children();
+	    erts_smp_sched_lock();
+	}
+#endif
+
 	if (misc_op_queue)
 	    exec_misc_ops();
 
@@ -2216,7 +2262,7 @@ Process *schedule(Process *p, int calls)
 
 #ifdef ERTS_SMP
 	if (block_multi_scheduling && used_schedulers != 1)
-	    block_multi_scheduling_block();
+	    block_multi_scheduling_block(esdp);
 	else
 	    erts_smp_chk_system_block(prepare_for_block,
 				      resume_after_block,
@@ -2238,6 +2284,8 @@ Process *schedule(Process *p, int calls)
 	if (tot_runq_len == 0) {
 	empty_runq:
 	    ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
+	    if (block_multi_scheduling && used_schedulers != 1)
+		goto check_activities_to_run;
 	    schedulers_waiting_on_runq++;
 	    if (used_schedulers == schedulers_waiting_on_runq)
 		erts_all_schedulers_waiting = 1;
@@ -2962,6 +3010,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->error_handler = am_error_handler;    /* default */
     p->nlinks = NULL;
     p->monitors = NULL;
+    p->nodes_monitors = NULL;
     p->ct = NULL;
 
     ASSERT(is_pid(parent->group_leader));
@@ -3193,6 +3242,7 @@ void erts_init_empty_process(Process *p)
     p->mbuf_sz = 0;
     p->monitors = NULL;
     p->nlinks = NULL;         /* List of links */
+    p->nodes_monitors = NULL;
     p->msg.first = NULL;
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
@@ -3305,6 +3355,7 @@ erts_debug_verify_clean_empty_process(Process* p)
 
     ASSERT(p->monitors == NULL);
     ASSERT(p->nlinks == NULL);
+    ASSERT(p->nodes_monitors == NULL);
     ASSERT(p->msg.first == NULL);
     ASSERT(p->msg.len == 0);
     ASSERT(p->bif_timers == NULL);
@@ -3460,6 +3511,7 @@ delete_process(Process* p)
 
     ASSERT(!p->monitors);
     ASSERT(!p->nlinks);
+    ASSERT(!p->nodes_monitors);
 
     if (p->ct != NULL) {
 	ERTS_PROC_LESS_MEM((sizeof(struct saved_calls)
@@ -3509,10 +3561,8 @@ set_proc_exiting(Process *p, Eterm reason, ErlHeapFragment *bp)
 #endif
     p->status = P_EXITING;
     p->fvalue = reason;
-    if (bp) {
-	bp->next = p->mbuf;
-	p->mbuf = bp;
-    }
+    if (bp)
+	erts_link_mbuf_to_proc(p, bp);
     p->freason = EXC_EXIT;
     KILL_CATCHES(p);
     cancel_timer(p);
@@ -4139,6 +4189,9 @@ erts_do_exit_process(Process* p, Eterm reason)
 	erts_ddll_proc_dead(p, ERTS_PROC_LOCKS_ALL);
     }
 
+    if (p->nodes_monitors)
+	erts_delete_nodes_monitors(p, ERTS_PROC_LOCKS_ALL);
+
     /*
      * The registered name *should* be the last "erlang resource" to
      * cleanup.
@@ -4206,7 +4259,7 @@ erts_do_exit_process(Process* p, Eterm reason)
     processes_busy--;
 
     if ((p->flags & F_DISTRIBUTION) && p->dist_entry)
-	erts_do_net_exits(p->dist_entry);
+	erts_do_net_exits(p->dist_entry, reason);
 
     /*
      * Pre-build the EXIT tuple if there are any links.

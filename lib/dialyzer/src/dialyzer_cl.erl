@@ -29,7 +29,6 @@
 -export([start/1, check_init_plt/2]).
 
 -include("dialyzer.hrl").
--include("hipe_icode_type.hrl").
 
 -record(cl_state, {backend_pid,
 		   init_plt,
@@ -163,6 +162,7 @@ create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->
 hipe_compile() ->
   case erlang:system_info(hipe_architecture) of
     undefined -> ok;
+    ultrasparc -> ok;
     _ ->
       {ok, dialyzer_succ_typings}       = hipe:c(dialyzer_succ_typings),
       {ok, dialyzer_analysis_callgraph} = hipe:c(dialyzer_analysis_callgraph),
@@ -244,7 +244,7 @@ cl_loop(State) ->
   end.
 
 failed_anal_msg(Reason) ->
-  io_lib:format("Analysis failed with error report:\n\t~p", [Reason]).
+  io_lib:format("Analysis failed with error report:\n\t~P", [Reason, 12]).
 
 print_ext_calls(State = #cl_state{quiet=true}, _Msg) ->
   State;
@@ -266,9 +266,8 @@ store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
 				 stored_warnings=StoredWarnings}, Warnings) ->
   NewStoredWarnings =
     case StoredWarnings =:= do_not_store of
-      true -> 
-	WarningString = lists:flatten([io_lib:format("~w: ~s", [Fun, W])
-				       || {Fun, W} <- Warnings]),
+      true ->
+	WarningString = format_warnings(Warnings),
 	print_warning_string(State, WarningString),
 	StoredWarnings;
       false ->
@@ -277,6 +276,16 @@ store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
   NofNewWarning = length(Warnings),
   State#cl_state{nof_warnings=NofOldWarnings+NofNewWarning, 
 		 stored_warnings=NewStoredWarnings}.
+
+format_warnings(Warnings) ->
+  MapFun =
+    fun({{M, F, A} = MFA, Msg}) when is_atom(M), is_atom(F), is_integer(A)-> 
+	io_lib:format("~w: ~s", [MFA, Msg]);
+       ({{File, Line}, Msg}) when is_list(File), is_integer(Line) ->
+	BaseName = filename:basename(File),
+	io_lib:format("~s:~w: ~s", [BaseName, Line, Msg])
+    end,
+  lists:flatten(lists:map(MapFun, lists:keysort(1, Warnings))).
 
 print_warning_string(#cl_state{nof_warnings=NofWarn, output=Output}, String) ->
   case NofWarn of

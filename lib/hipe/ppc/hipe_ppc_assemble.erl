@@ -410,14 +410,14 @@ encode_reloc(Data, Address, FunAddress, LabelMap) ->
       %% call from tailcall
       PatchTypeExt =
 	case Linkage of
-	  remote -> ?PATCH_TYPE2EXT(call_remote);
-	  not_remote -> ?PATCH_TYPE2EXT(call_local)
+	  remote -> ?CALL_REMOTE;
+	  not_remote -> ?CALL_LOCAL
 	end,
       {PatchTypeExt, Address, untag_mfa_or_prim(MFAorPrim)};
     {load_atom,Atom} ->
-      {?PATCH_TYPE2EXT(load_atom), Address, Atom};
+      {?LOAD_ATOM, Address, Atom};
     {load_address,X} ->
-      {?PATCH_TYPE2EXT(load_address), Address, X};
+      {?LOAD_ADDRESS, Address, X};
     {sdesc,SDesc} ->
       #ppc_sdesc{exnlab=ExnLab,fsize=FSize,arity=Arity,live=Live} = SDesc,
       ExnRA =
@@ -425,7 +425,7 @@ encode_reloc(Data, Address, FunAddress, LabelMap) ->
 	  [] -> [];	% don't cons up a new one
 	  ExnLab -> gb_trees:get(ExnLab, LabelMap) + FunAddress
 	end,
-      {?PATCH_TYPE2EXT(sdesc), Address,
+      {?SDESC, Address,
        ?STACK_DESC(ExnRA, FSize, Arity, Live)}
   end.
 

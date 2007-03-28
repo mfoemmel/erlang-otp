@@ -38,6 +38,8 @@
 
 fwrite(Format, Args) when is_atom(Format) ->
     fwrite(atom_to_list(Format), Args);
+fwrite(Format, Args) when is_binary(Format) ->
+    fwrite(binary_to_list(Format), Args);
 fwrite(Format, Args) ->
     Cs = collect(Format, Args),
     Pc = pcount(Cs),
@@ -167,44 +169,46 @@ control($w, [A], F, Adj, P, Pad, _I) ->
     term(io_lib:write(A, -1), F, Adj, P, Pad);
 control($p, [A], F, Adj, P, Pad, I) ->
     print(A, -1, F, Adj, P, Pad, I);
-control($W, [A,Depth], F, Adj, P, Pad, _I) when integer(Depth) ->
+control($W, [A,Depth], F, Adj, P, Pad, _I) when is_integer(Depth) ->
     term(io_lib:write(A, Depth), F, Adj, P, Pad);
-control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
+control($P, [A,Depth], F, Adj, P, Pad, I) when is_integer(Depth) ->
     print(A, Depth, F, Adj, P, Pad, I);
-control($s, [A], F, Adj, P, Pad, _I) when atom(A) ->
+control($s, [A], F, Adj, P, Pad, _I) when is_atom(A) ->
     string(atom_to_list(A), F, Adj, P, Pad);
 control($s, [L0], F, Adj, P, Pad, _I) ->
     L = iolist_to_chars(L0),
     string(L, F, Adj, P, Pad);
-control($e, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($e, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_e(A, F, Adj, P, Pad);
-control($f, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($f, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_f(A, F, Adj, P, Pad);
-control($g, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($g, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_g(A, F, Adj, P, Pad);
-control($b, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($b, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     unprefixed_integer(A, F, Adj, base(P), Pad, true);
-control($B, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($B, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     unprefixed_integer(A, F, Adj, base(P), Pad, false);
-control($x, [A,Prefix], F, Adj, P, Pad, _I) when integer(A), atom(Prefix) ->
+control($x, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A), 
+                                                 is_atom(Prefix) ->
     prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), true);
-control($x, [A,Prefix], F, Adj, P, Pad, _I) when integer(A) ->
+control($x, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A) ->
     true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
     prefixed_integer(A, F, Adj, base(P), Pad, Prefix, true);
-control($X, [A,Prefix], F, Adj, P, Pad, _I) when integer(A), atom(Prefix) ->
+control($X, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A), 
+                                                 is_atom(Prefix) ->
     prefixed_integer(A, F, Adj, base(P), Pad, atom_to_list(Prefix), false);
-control($X, [A,Prefix], F, Adj, P, Pad, _I) when integer(A) ->
+control($X, [A,Prefix], F, Adj, P, Pad, _I) when is_integer(A) ->
     true = io_lib:deep_char_list(Prefix), %Check if Prefix a character list
     prefixed_integer(A, F, Adj, base(P), Pad, Prefix, false);
-control($+, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($+, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     Base = base(P),
     Prefix = [integer_to_list(Base), $#],
     prefixed_integer(A, F, Adj, Base, Pad, Prefix, true);
-control($#, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($#, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     Base = base(P),
     Prefix = [integer_to_list(Base), $#],
     prefixed_integer(A, F, Adj, Base, Pad, Prefix, false);
-control($c, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($c, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     char(A band 255, F, Adj, P, Pad);
 control($~, [], F, Adj, P, Pad, _I) -> char($~, F, Adj, P, Pad);
 control($n, [], F, Adj, P, Pad, _I) -> newline(F, Adj, P, Pad);
@@ -448,12 +452,12 @@ min(_L, R) -> R.
 
 %% Flatten and truncate a deep list to at most N elements.
 
-flat_trunc(List, N) when integer(N), N >= 0 ->
+flat_trunc(List, N) when is_integer(N), N >= 0 ->
     flat_trunc(List, N, [], []).
 
-flat_trunc(L, 0, _, R) when list(L) ->
+flat_trunc(L, 0, _, R) when is_list(L) ->
     lists:reverse(R);
-flat_trunc([H|T], N, S, R) when list(H) ->
+flat_trunc([H|T], N, S, R) when is_list(H) ->
     flat_trunc(H, N, [T|S], R);
 flat_trunc([H|T], N, S, R) ->
     flat_trunc(T, N-1, S, [H|R]);

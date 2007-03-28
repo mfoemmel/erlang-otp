@@ -609,6 +609,7 @@ erl_start(int argc, char **argv)
     char* Parg = NULL;
     int have_break_handler = 1;
     char* tmpenvbuf;
+    int async_max_threads = erts_async_max_threads;
 
     early_init(&argc, argv);
 
@@ -626,7 +627,7 @@ erl_start(int argc, char **argv)
 
     tmpenvbuf = getenv("ERL_THREAD_POOL_SIZE");
     if (tmpenvbuf != NULL) {
-	erts_async_max_threads = atoi(tmpenvbuf);
+	async_max_threads = atoi(tmpenvbuf);
     }
     
 
@@ -878,8 +879,8 @@ erl_start(int argc, char **argv)
 	case 'A':
 	    /* set number of threads in thread pool */
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    if (((erts_async_max_threads = atoi(arg)) < 0) ||
-		(erts_async_max_threads > ERTS_MAX_NO_OF_ASYNC_THREADS)) {
+	    if (((async_max_threads = atoi(arg)) < 0) ||
+		(async_max_threads > ERTS_MAX_NO_OF_ASYNC_THREADS)) {
 		erts_fprintf(stderr, "bad number of async threads %s\n", arg);
 		erts_usage();
 	    }
@@ -923,6 +924,10 @@ erl_start(int argc, char **argv)
 	}
 	i++;
     }
+
+#ifdef USE_THREADS
+    erts_async_max_threads = async_max_threads;
+#endif
 
     /* Delayed check of +P flag */
     if (erts_max_processes < ERTS_MIN_PROCESSES

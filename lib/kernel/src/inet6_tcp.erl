@@ -90,7 +90,7 @@ do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when
 	    BAddr    = R#connect_opts.ifaddr,
 	    BPort    = R#connect_opts.port,
 	    SockOpts = R#connect_opts.opts,
-	    case inet:open(Fd,BAddr,BPort,SockOpts,stream,inet6,?MODULE) of
+	    case inet:open(Fd,BAddr,BPort,SockOpts,tcp,inet6,?MODULE) of
 		{ok, S} ->
 		    case prim_inet:connect(S, Addr, Port, Time) of
 			ok    -> {ok,S};
@@ -111,7 +111,7 @@ listen(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
 	    BAddr    = R#listen_opts.ifaddr,
 	    BPort    = R#listen_opts.port,
 	    SockOpts = R#listen_opts.opts,
-	    case inet:open(Fd,BAddr,BPort,SockOpts,stream,inet6,?MODULE) of
+	    case inet:open(Fd,BAddr,BPort,SockOpts,tcp,inet6,?MODULE) of
 		{ok, S} ->
 		    case prim_inet:listen(S, R#listen_opts.backlog) of
 			ok -> {ok, S};

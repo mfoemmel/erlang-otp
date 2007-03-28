@@ -24,7 +24,7 @@
 	 %% Start, stop and debugging
 	 start/0, start/1, stop/0,           % Not for public use
 	 set_debug_level/1, lkill/0, kill/0, % Not for public use
-	 ms/0, nc/0, nc/1, ni/0, ni/1,       % Not for public use
+	 ms/0, 
 	 change_config/2,
 
 	 %% Activity mgt
@@ -235,9 +235,17 @@ stop() ->
 
 change_config(extra_db_nodes, Ns) when list(Ns) ->
     mnesia_controller:connect_nodes(Ns);
+change_config(dc_dump_limit, N) when is_number(N), N > 0 ->
+    case mnesia_lib:is_running() of
+	yes ->  
+	    mnesia_lib:set(dc_dump_limit, N),
+	    {ok, N};
+	_ -> 
+	    {error, {not_started, ?APPLICATION}}
+    end;
 change_config(BadKey, _BadVal) ->
     {error, {badarg, BadKey}}.
-     
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Debugging
 
@@ -285,62 +293,6 @@ ms() ->
      mnesia_event
     ]. 
 
-nc() ->
-    Mods = ms(),
-    nc(Mods).
-
-nc(Mods) when list(Mods)->
-    [Mod || Mod <- Mods, ok /= load(Mod, compile)].
-
-ni() -> 
-    Mods = ms(),
-    ni(Mods).
-
-ni(Mods) when list(Mods) ->
-    [Mod || Mod <- Mods, ok /= load(Mod, interpret)].
-
-load(Mod, How) when atom(Mod) ->
-    case try_load(Mod, How) of
-	ok ->
-	    ok;
-	_ ->
-	    mnesia_lib:show( "~n RETRY ~p FROM: ", [Mod]),
-	    Abs = mod2abs(Mod),
-	    load(Abs, How)
-    end;
-load(Abs, How) ->
-    case try_load(Abs, How) of
-	ok ->
-	    ok;
-	{error, Reason} ->
-	    mnesia_lib:show( " *** ERROR *** ~p~n", [Reason]),
-	    {error, Reason}
-    end.
-
-try_load(Mod, How) ->
-    mnesia_lib:show( " ~p ", [Mod]),
-    Flags = [{d, debug}],
-    case How of
-	compile ->
-	    case catch c:nc(Mod, Flags) of
-		{ok, _} -> ok;
-		Other -> {error, Other}
-	    end;
-	interpret ->
-	    case catch int:ni(Mod, Flags) of
-		{module, _} -> ok;
-		Other -> {error, Other}
-	    end
-    end.
-
-mod2abs(Mod) ->
-    ModString = atom_to_list(Mod),
-    SubDir =
-	case lists:suffix("test", ModString) of
-	    true -> test;
-	    false -> src
-	end,
-    filename:join([code:lib_dir(?APPLICATION), SubDir, ModString]).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Activity mgt
@@ -913,7 +865,6 @@ get_ordered_tskey(Prev, [First|_], prev) when Prev > First -> First;
 get_ordered_tskey(Prev, [_|R],Op) ->  get_ordered_tskey(Prev,R,Op);
 get_ordered_tskey(_, [],_) ->    '$end_of_table'.
 
-get_next_tskey(_, [],_) -> '$end_of_table';
 get_next_tskey(Key,Keys,Tab) ->
     Next = 
 	if Key == '$end_of_table' -> hd(Keys);
@@ -2209,6 +2160,7 @@ system_info2(transaction_restarts) -> mnesia_lib:read_counter(trans_restarts);
 system_info2(transaction_log_writes) -> mnesia_dumper:get_log_writes();
 system_info2(core_dir) ->  mnesia_monitor:get_env(core_dir); 
 system_info2(no_table_loaders) ->  mnesia_monitor:get_env(no_table_loaders); 
+system_info2(dc_dump_limit) ->  mnesia_monitor:get_env(dc_dump_limit); 
 
 system_info2(Item) -> exit({badarg, Item}).
 
@@ -2252,6 +2204,7 @@ system_info_items(yes) ->
      use_dir,
      core_dir,
      no_table_loaders,
+     dc_dump_limit,
      version
     ];
 system_info_items(no) ->

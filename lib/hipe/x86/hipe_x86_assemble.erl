@@ -194,8 +194,8 @@ translate_insn(I, Context, Options) ->
       %% call from tailcall
       PatchTypeExt =
 	case hipe_x86:jmp_fun_linkage(I) of
-	  remote -> ?PATCH_TYPE2EXT(call_remote);
-	  not_remote -> ?PATCH_TYPE2EXT(call_local)
+	  remote -> ?CALL_REMOTE;
+	  not_remote -> ?CALL_LOCAL
 	end,
       Arg = translate_fun(hipe_x86:jmp_fun_fun(I), PatchTypeExt),
       [{jmp, {Arg}, I}];
@@ -268,8 +268,8 @@ translate_call(I) ->
   TempRA = hipe_x86:mk_temp(RegRA, untagged),
   PatchTypeExt =
     case hipe_x86:call_linkage(I) of
-      remote -> ?PATCH_TYPE2EXT(call_remote);
-      not_remote -> ?PATCH_TYPE2EXT(call_local)
+      remote -> ?CALL_REMOTE;
+      not_remote -> ?CALL_LOCAL
     end,
   JmpArg = translate_fun(Fun, PatchTypeExt),
   I4 = {'.sdesc', hipe_x86:call_sdesc(I), #comment{term=sdesc}},
@@ -300,8 +300,8 @@ translate_call(I) ->
     end,
   PatchTypeExt =
     case hipe_x86:call_linkage(I) of
-      remote -> ?PATCH_TYPE2EXT(call_remote);
-      not_remote -> ?PATCH_TYPE2EXT(call_local)
+      remote -> ?CALL_REMOTE;
+      not_remote -> ?CALL_LOCAL
     end,
   JmpArg = translate_fun(Fun, PatchTypeExt),
   I3 = {'.sdesc', hipe_x86:call_sdesc(I), #comment{term=sdesc}},
@@ -310,7 +310,7 @@ translate_call(I) ->
   I1 = {mov, {mem_to_rmArch(hipe_x86:mk_mem(TempSP,
 					  hipe_x86:mk_imm(0),
 					  untagged)),
-	      {imm32,{?PATCH_TYPE2EXT(x86_abs_pcrel),4+Size2}}},
+	      {imm32,{?X86ABSPCREL,4+Size2}}},
 	#comment{term=call}},
   I0 = {sub, {temp_to_rmArch(TempSP), {imm8,WordSize}}, I},
   [I0,I1,I2,I3].
@@ -346,8 +346,8 @@ translate_call(I) ->
   %% call from tailcall
   PatchTypeExt =
     case hipe_x86:call_linkage(I) of
-      remote -> ?PATCH_TYPE2EXT(call_remote);
-      not_remote -> ?PATCH_TYPE2EXT(call_local)
+      remote -> ?CALL_REMOTE;
+      not_remote -> ?CALL_LOCAL
     end,
   Arg = translate_fun(hipe_x86:call_fun(I), PatchTypeExt),
   SDesc = hipe_x86:call_sdesc(I),
@@ -407,7 +407,7 @@ translate_src(Src, Context) ->
 %%% the caller will widen the Imm8 to an Imm32 or Imm64.
 translate_imm(#x86_imm{value=Imm}, Context, MayTrunc8) ->
   if is_atom(Imm) ->
-      {imm32,{?PATCH_TYPE2EXT(load_atom),Imm}};
+      {imm32,{?LOAD_ATOM,Imm}};
      is_integer(Imm) ->
       case (Imm =< 127) and (Imm >= -128) of
 	true ->
@@ -432,7 +432,7 @@ translate_imm(#x86_imm{value=Imm}, Context, MayTrunc8) ->
 	  {Label,c_const} ->
 	    {c_const,Label}
 	end,
-      {imm32,{?PATCH_TYPE2EXT(load_address),Val}}
+      {imm32,{?LOAD_ADDRESS,Val}}
   end.
 
 translate_dst(Dst) ->
@@ -517,7 +517,7 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options)
 	  [] -> [];	% don't cons up a new one
 	  ExnLab -> gb_trees:get(ExnLab, LabelMap) + FunAddress
 	end,
-      Reloc = {?PATCH_TYPE2EXT(sdesc),Address,
+      Reloc = {?SDESC, Address,
 	       ?STACK_DESC(ExnRA, FSize, Arity, Live)},
       encode_insns(Insns, Address, FunAddress, LabelMap, [Reloc|Relocs], AccCode, Options);
     _ ->
@@ -699,7 +699,7 @@ resolve_jmp_switch_arg(I, _Context) ->
 -else.
 resolve_jmp_switch_arg(I, {MFA,ConstMap}) ->
   ConstNo = find_const({MFA,hipe_x86:jmp_switch_jtab(I)}, ConstMap),
-  Disp32 = {?PATCH_TYPE2EXT(load_address),{constant,ConstNo}},
+  Disp32 = {?LOAD_ADDRESS,{constant,ConstNo}},
   SINDEX = ?HIPE_X86_ENCODE:sindex(2, hipe_x86:temp_reg(hipe_x86:jmp_switch_temp(I))),
   EA = ?HIPE_X86_ENCODE:ea_disp32_sindex(Disp32, SINDEX), % this creates a SIB implicitly
   {rm32,?HIPE_X86_ENCODE:rm_mem(EA)}.
@@ -746,7 +746,7 @@ resolve_sse2_fmove_args(Src, Dst) ->
 resolve_sse2_fchs_arg(Dst=#x86_temp{type=double}) ->
   {temp_to_xmm(Dst),
    {rm64fp, {rm_mem, ?HIPE_X86_ENCODE:?EA_DISP32_ABSOLUTE(
-		       {?PATCH_TYPE2EXT(load_address),
+		       {?LOAD_ADDRESS,
 			{c_const, sse2_fnegate_mask}})}}}.
 
 %% mov mem, imm

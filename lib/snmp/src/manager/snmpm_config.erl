@@ -214,29 +214,52 @@ register_agent(UserId, Addr0, Port, Config) ->
     end.
 
 verify_agent_config(Conf) ->
-    case verify_mandatory(Conf, []) of
+    %%     case verify_mandatory(Conf, []) of
+    %% 	ok ->
+    %% 	    case verify_invalid(Conf, [user_id]) of
+    %% 		ok ->
+    %% 		    case verify_agent_config2(Conf) of
+    %% 			ok ->
+    %% 			    {ok, Vsns} = system_info(versions),
+    %% 			    Vsn = 
+    %% 				case lists:keysearch(version, 1, Conf) of
+    %% 				    {value, {version, V}} ->
+    %% 					V;
+    %% 				    false ->
+    %% 					v1
+    %% 				end,
+    %% 			    case lists:member(Vsn, Vsns) of
+    %% 				true ->
+    %% 				    ok;
+    %% 				false ->
+    %% 				    {error, {version_not_supported_by_manager, Vsn, Vsns}}
+    %% 			    end
+    %% 		    end;
+    %% 		Error ->
+    %% 		    Error
+    %% 	    end;
+    %% 	Error ->
+    %% 	    Error
+    %%     end.
+    ok = verify_mandatory(Conf, []),
+    case verify_invalid(Conf, [user_id]) of
 	ok ->
-	    case verify_invalid(Conf, [user_id]) of
+	    case verify_agent_config2(Conf) of
 		ok ->
-		    case verify_agent_config2(Conf) of
-			ok ->
-			    {ok, Vsns} = system_info(versions),
-			    Vsn = 
-				case lists:keysearch(version, 1, Conf) of
-				    {value, {version, V}} ->
-					V;
-				    false ->
-					v1
-				end,
-			    case lists:member(Vsn, Vsns) of
-				true ->
-				    ok;
-				false ->
-				    {error, {version_not_supported_by_manager, Vsn, Vsns}}
-			    end
-		    end;
-		Error ->
-		    Error
+		    {ok, Vsns} = system_info(versions),
+		    Vsn = 
+			case lists:keysearch(version, 1, Conf) of
+			    {value, {version, V}} ->
+				V;
+			    false ->
+				v1
+			end,
+		    case lists:member(Vsn, Vsns) of
+			true ->
+			    ok;
+			false ->
+			    {error, {version_not_supported_by_manager, Vsn, Vsns}}
+		    end
 	    end;
 	Error ->
 	    Error
@@ -446,14 +469,21 @@ unregister_usm_user(EngineID, Name) when list(EngineID), list(Name) ->
     call({unregister_usm_user, EngineID, Name}).
 
 verify_usm_user_config(EngineID, Name, Config) ->
-    case verify_mandatory(Config, []) of
+    %%     case verify_mandatory(Config, []) of
+    %% 	ok ->
+    %% 	    case verify_invalid(Config, [engine_id, name]) of
+    %% 		ok ->
+    %% 		    verify_usm_user_config2(EngineID, Name, Config);
+    %% 		Error ->
+    %% 		    Error
+    %% 	    end;
+    %% 	Error ->
+    %% 	    Error
+    %%     end.
+    ok = verify_mandatory(Config, []),
+    case verify_invalid(Config, [engine_id, name]) of
 	ok ->
-	    case verify_invalid(Config, [engine_id, name]) of
-		ok ->
-		    verify_usm_user_config2(EngineID, Name, Config);
-		Error ->
-		    Error
-	    end;
+	    verify_usm_user_config2(EngineID, Name, Config);
 	Error ->
 	    Error
     end.
@@ -1296,7 +1326,7 @@ read_agents_config_file(Dir) ->
     end.
 
 check_agent_config2(Agent) ->
-    case check_agent_config(Agent) of
+    case (catch check_agent_config(Agent)) of
 	{ok, {UserId, Addr, Port, Conf, Version}} ->
 	    {ok, Vsns} = system_info(versions),
 	    case lists:member(Version, Vsns) of
@@ -1530,7 +1560,7 @@ verify_usm_user({EngineID, Name, SecName, AuthP, AuthKey, PrivP, PrivKey}) ->
     {ok, User}.
 
 verify_usm_user_engine_id(EngineID) ->
-    case (snmp_conf:check_string(EngineID, {gt, 0})) of
+    case (catch snmp_conf:check_string(EngineID, {gt, 0})) of
 	ok ->
 	    ok;
 	_ ->
@@ -1538,7 +1568,7 @@ verify_usm_user_engine_id(EngineID) ->
     end.
 
 verify_usm_user_name(Name) ->
-    case (snmp_conf:check_string(Name, {gt, 0})) of
+    case (catch snmp_conf:check_string(Name, {gt, 0})) of
 	ok ->
 	    ok;
 	_ ->
@@ -1546,7 +1576,7 @@ verify_usm_user_name(Name) ->
     end.
 
 verify_usm_user_sec_name(Name) ->
-    case (snmp_conf:check_string(Name, {gt, 0})) of
+    case (catch snmp_conf:check_string(Name, {gt, 0})) of
 	ok ->
 	    ok;
 	_ ->
@@ -2282,12 +2312,14 @@ handle_update_usm_user_info(EngineID, Name, Item, Val) ->
     end.
 
 do_update_usm_user_info(Key, User, sec_name, Val) ->
-    case verify_usm_user_sec_name(Val) of
-	ok ->
-	    do_update_usm_user_info(Key, User#usm_user{sec_name = Val});
-	_ ->
-	    {error, {invalid_usm_sec_name, Val}}
-    end;
+    %% case verify_usm_user_sec_name(Val) of
+    %%     ok ->
+    %% 	do_update_usm_user_info(Key, User#usm_user{sec_name = Val});
+    %%     _ ->
+    %% 	{error, {invalid_usm_sec_name, Val}}
+    %% end;
+    ok = verify_usm_user_sec_name(Val),
+    do_update_usm_user_info(Key, User#usm_user{sec_name = Val});
 do_update_usm_user_info(Key, User, auth, Val) 
   when Val == usmNoAuthProtocol; 
        Val == usmHMACMD5AuthProtocol;
@@ -2402,14 +2434,14 @@ usm_key(EngineId, Name) ->
 %% ---------------------------------------------------------------------
 
 verify_mandatory(_, []) ->
-    ok;
-verify_mandatory(Conf, [Mand|Mands]) ->
-    case lists:member(Mand, Conf) of
-	true ->
-	    verify_mandatory(Conf, Mands);
-	false ->
-	    {error, {missing_mandatory_config, Mand}}
-    end.
+    ok.
+%% verify_mandatory(Conf, [Mand|Mands]) ->
+%%     case lists:member(Mand, Conf) of
+%% 	true ->
+%% 	    verify_mandatory(Conf, Mands);
+%% 	false ->
+%% 	    {error, {missing_mandatory_config, Mand}}
+%%     end.
 
 verify_invalid(_, []) ->
     ok;
@@ -2731,17 +2763,17 @@ get_info() ->
 
 proc_mem(P) when pid(P) ->
     case (catch erlang:process_info(P, memory)) of
-	{memory, Sz} when integer(Sz) ->
+	{memory, Sz} when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined
-    end;
-proc_mem(_) ->
-    undefined.
+    end.
+%% proc_mem(_) ->
+%%     undefined.
 
 tab_size(T) ->
     case (catch ets:info(T, memory)) of
-	Sz when integer(Sz) ->
+	Sz when is_integer(Sz) ->
 	    Sz;
 	_ ->
 	    undefined

@@ -271,8 +271,12 @@ erts_queue_message(Process* receiver,
 
 #ifdef ERTS_SMP
     if (receiver_locks & ERTS_PROC_LOCK_MAIN) {
+#if defined(HEAP_FRAG_ELIM_TEST)
+	mp->bp = bp;
+#else
 	mp->bp = NULL;
 	link_mbuf_to_proc(receiver, bp);
+#endif
 	/*
 	 * We move 'in queue' to 'private queue' and place
 	 * message at the end of 'private queue' in order
@@ -286,12 +290,15 @@ erts_queue_message(Process* receiver,
     }
     else {
 	mp->bp = bp;
-#else
-	link_mbuf_to_proc(receiver, bp);
-#endif
 	LINK_MESSAGE(receiver, mp);
-#ifdef ERTS_SMP
     }
+#else
+#if defined(HEAP_FRAG_ELIM_TEST)
+    mp->bp = bp;
+#else
+    link_mbuf_to_proc(receiver, bp);
+#endif
+    LINK_MESSAGE(receiver, mp);
 #endif
 
     ACTIVATE(receiver);
@@ -327,7 +334,7 @@ erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp)
 }
 
 
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 
 /*
  * Moves content of message buffer attached to a message into a heap.
@@ -703,7 +710,7 @@ erts_send_message(Process* sender,
 	/* Drop message if receiver has a pending exit ... */
 	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
 	    ErlMessage* mp = message_alloc();
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 	    mp->bp = NULL;
 #endif
 	    ERL_MESSAGE_TERM(mp) = message;
@@ -768,6 +775,9 @@ erts_send_message(Process* sender,
 	ERL_MESSAGE_TERM(mp) = message;
 	ERL_MESSAGE_TOKEN(mp) = NIL;
 	mp->next = NULL;
+#if defined(HEAP_FRAG_ELIM_TEST)
+	mp->bp = NULL;
+#endif
 	LINK_MESSAGE(receiver, mp);
 
 	if (receiver->status == P_WAITING) {

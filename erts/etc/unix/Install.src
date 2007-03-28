@@ -74,6 +74,8 @@ cd $ERL_ROOT/bin
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/erl .
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/erlc .
 cp -p $ERL_ROOT/erts-%I_VSN%/bin/dialyzer .
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/typer .
+cp -p $ERL_ROOT/erts-%I_VSN%/bin/escript .
 
 #
 # Set a soft link to epmd

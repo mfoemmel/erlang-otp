@@ -61,6 +61,9 @@ t(Case) -> megaco_test_lib:t({?MODULE, Case}).
 min(M) -> timer:minutes(M).
 
 %% Test server callbacks
+init_per_testcase(single_user_light_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(2)}|C]);
 init_per_testcase(single_user_medium_load = Case, Config) ->
     C = lists:keydelete(tc_timeout, 1, Config),
     do_init_per_testcase(Case, [{tc_timeout, min(5)}|C]);
@@ -70,6 +73,9 @@ init_per_testcase(single_user_heavy_load = Case, Config) ->
 init_per_testcase(single_user_extreme_load = Case, Config) ->
     C = lists:keydelete(tc_timeout, 1, Config),
     do_init_per_testcase(Case, [{tc_timeout, min(20)}|C]);
+init_per_testcase(multi_user_light_load = Case, Config) ->
+    C = lists:keydelete(tc_timeout, 1, Config),
+    do_init_per_testcase(Case, [{tc_timeout, min(2)}|C]);
 init_per_testcase(multi_user_medium_load = Case, Config) ->
     C = lists:keydelete(tc_timeout, 1, Config),
     do_init_per_testcase(Case, [{tc_timeout, min(5)}|C]);
@@ -102,7 +108,7 @@ all(suite) ->
  	 single_user_extreme_load,
  	 multi_user_light_load,
  	 multi_user_medium_load,
- 	 multi_user_heavy_load,
+  	 multi_user_heavy_load,
  	 multi_user_extreme_load
 	],
     Cases.
@@ -120,7 +126,11 @@ single_user_light_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    single_user_load(5),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( single_user_load(5) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -139,7 +149,11 @@ single_user_medium_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    single_user_load(15),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( single_user_load(15) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -157,7 +171,11 @@ single_user_heavy_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    single_user_load(25),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( single_user_load(25) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -175,7 +193,11 @@ single_user_extreme_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    single_user_load(100),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( single_user_load(100) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -193,7 +215,11 @@ multi_user_light_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    multi_user_load(3,1),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( multi_user_load(3,1) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -211,7 +237,11 @@ multi_user_medium_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    multi_user_load(3,5),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( multi_user_load(3,5) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -229,7 +259,11 @@ multi_user_heavy_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    multi_user_load(3,10),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( multi_user_load(3,10) ) 
+		    end),
 
     i("done", []),
     ok.
@@ -247,12 +281,53 @@ multi_user_extreme_load(Config) when list(Config) ->
     put(sname,     "TEST"),
     i("starting"),
 
-    multi_user_load(3,15),
+    load_controller(Config, 
+		    fun(Env) -> 
+			    populate(Env), 
+			    exit( multi_user_load(3,15) ) 
+		    end),
 
     i("done", []),
     ok.
 
 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+populate([]) ->
+    ok;
+populate([{Key,Val}|Env]) ->
+    put(Key, Val),
+    populate(Env).
+
+load_controller(Config, Fun) when is_list(Config) and is_function(Fun) ->
+    process_flag(trap_exit, true),
+    {value, {tc_timeout, TcTimeout}} = 
+	lists:keysearch(tc_timeout, 1, Config),
+    SkipTimeout = trunc(95*TcTimeout/100), % 95% of TcTimeout
+    Env = get(),
+    Loader = erlang:spawn_link(fun() -> Fun(Env) end),
+    receive
+	{'EXIT', Loader, normal} ->
+	    d("load_controller -> "
+	      "loader [~p] terminated with normal", [Loader]),
+	    ok;
+	{'EXIT', Loader, ok} ->
+	    d("load_controller -> "
+	      "loader [~p] terminated with ok~n", [Loader]),
+	    ok;
+	{'EXIT', Loader, Reason} ->
+	    i("load_controller -> "
+	      "loader [~p] terminated with"
+	      "~n   ~p", [Loader, Reason]),
+	    erlang:error({unexpected_loader_result, Reason})
+    after SkipTimeout ->
+	    i("load_controller -> "
+	      "loader [~p] timeout", [Loader]),
+	    exit(kill, Loader),
+	    ?SKIP({timeout, SkipTimeout, TcTimeout})
+    end.
+
+    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 single_user_load(NumLoaders) ->
@@ -379,7 +454,11 @@ multi_load(MGs, NumLoaders, NumReqs) ->
     end.
 
 do_multi_load(Pids, _NumLoaders, _NumReqs) ->
-    Fun = fun({P,_}) -> P ! {apply_multi_load, self()} end,
+    Fun = 
+	fun({P,_}) -> 
+		d("apply multi load for ~p", [P]),
+		P ! {apply_multi_load, self()} 
+	end,
     lists:foreach(Fun, Pids),
     await_multi_load_collectors(Pids, [], []).
 
@@ -416,6 +495,16 @@ multi_load_collector(Parent, Node, Mid, NumLoaders, NumReqs, Env) ->
     end.
 
 multi_load_collector_loop(Parent, Pid, Mid, NumLoaders, NumReqs) ->
+    d("multi_load_collector_loop -> entry with"
+      "~n   Parent:     ~p"
+      "~n   Pid:        ~p"
+      "~n   Mid:        ~p"
+      "~n   NumLoaders: ~p"
+      "~n   NumReqs:    ~p"
+      "~nwhen"
+      "~n   self():     ~p"
+      "~n   node():     ~p", 
+      [Parent, Pid, Mid, NumLoaders, NumReqs, self(), node()]),
     receive
 	{apply_multi_load, Parent} ->
 	    Res = ?MG_LOAD(Pid, NumLoaders, NumReqs),

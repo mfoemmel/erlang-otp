@@ -308,7 +308,7 @@ split_len([Hd|Tl]) ->
 	0 -> % Short form
 	    {Hd,Tl};
 	1 -> % Long form - at least one more octet
-	    No = clear(Hd,8),
+	    No = clear(Hd, 8),
 	    {DigList,Rest} = head(No,Tl),
 	    {[Hd | DigList], Rest}
     end.
@@ -336,23 +336,23 @@ head(0,L,Res) ->
 head(Int,[H|Tail],Res) ->
     head(Int-1,Tail,[H|Res]).
 
-clear(Byte,8) -> 
-    Byte band 127;
-clear(Byte,Pos) when Pos < 9 ->
-    Mask = bnot set(0,Pos),
-    Mask band Byte.
+clear(Byte, 8) -> 
+    Byte band 127.
+%% clear(Byte,Pos) when Pos < 9 ->
+%%     Mask = bnot bset(0,Pos),
+%%     Mask band Byte.
+
+%% bset(Byte, 8) -> 
+%%     Byte bor 2#10000000;
+%% bset(Byte, Pos) when (Pos < 9) ->
+%%     Mask = 1 bsl (Pos-1),
+%%     Byte bor Mask.
 
 is8set(Byte) ->
     if
 	Byte > 127 -> 1;
 	true -> 0
     end.
-
-set(Byte,8) -> 
-    Byte bor 2#10000000;
-set(Byte,Pos)  when Pos < 9 ->
-    Mask = 1  bsl (Pos-1),
-    Byte bor Mask.
 
 error(Reason) ->
     throw({error, Reason}).

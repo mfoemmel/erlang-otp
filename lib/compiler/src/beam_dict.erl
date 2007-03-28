@@ -15,27 +15,30 @@
 %% 
 %%     $Id$
 %%
-%% Purpose : Maintain atom, import, and export tables for assembler.
+%% Purpose : Maintain atom, import, export tables, and other tables for assembler.
 
 -module(beam_dict).
 
--export([new/0, opcode/2, highest_opcode/1,
-	 atom/2, local/4, export/4, import/4, string/2, lambda/5,
-	 atom_table/1, local_table/1, export_table/1, import_table/1,
-	 string_table/1,lambda_table/1]).
+-export([new/0,opcode/2,highest_opcode/1,
+	 atom/2,local/4,export/4,import/4,
+	 string/2,lambda/5,literal/2,
+	 atom_table/1,local_table/1,export_table/1,import_table/1,
+	 string_table/1,lambda_table/1,literal_table/1]).
 
 -import(lists, [map/2]).
 
 -record(asm,
-	{atoms = gb_trees:empty(),		% {Atom,Index}
-	 exports = [],				% [{F, A, Label}]
-	 locals = [],				% [{F, A, Label}]
-	 imports = gb_trees:empty(),		% {{M,F,A},Index}
-	 strings = [],				% Deep list of characters
-	 lambdas = [],				% [{...}]
+	{atoms = gb_trees:empty(),		%{Atom,Index}
+	 exports = [],				%[{F, A, Label}]
+	 locals = [],				%[{F, A, Label}]
+	 imports = gb_trees:empty(),		%{{M,F,A},Index}
+	 strings = [],				%String pool
+	 lambdas = [],				%[{...}]
+	 literals = dict:new(),			%Format: {Literal,Number}
 	 next_atom = 1,
 	 next_import = 0,
 	 string_offset = 0,
+	 next_literal = 0,			%Number of next literal
 	 highest_opcode = 0
 	}).
 
@@ -116,6 +119,19 @@ lambda(Lbl, Index, OldUniq, NumFree, #asm{lambdas=Lambdas0}=Dict) ->
     Lambdas = [{Lbl,{OldIndex,Lbl,Index,NumFree,OldUniq}}|Lambdas0],
     {OldIndex,Dict#asm{lambdas=Lambdas}}.
 
+%% Returns the index for a a literal (adding it to the atom table if necessary).
+%%    literal(Literal, Dict) -> {Index,Dict'}
+
+literal(Lit, #asm{literals=Tab0,next_literal=NextIndex}=Dict) ->
+    case dict:find(Lit, Tab0) of
+	{ok,Index} ->
+	    {Index,Dict};
+	error ->
+	    Tab = dict:store(Lit, NextIndex, Tab0),
+	    {NextIndex,Dict#asm{literals=Tab,next_literal=NextIndex+1}}
+    end.
+
+
 %% Returns the atom table.
 %%    atom_table(Dict) -> {LastIndex,[Length,AtomString...]}
 
@@ -159,6 +175,26 @@ lambda_table(#asm{locals=Loc0,lambdas=Lambdas0}) ->
 		  {{_,Lbl,Index,NumFree,OldUniq},{F,A}} <- sofs:to_external(Lambdas2)],
     {length(Lambdas),Lambdas}.
 
+%% Returns the literal table.
+%%  literal_table(Dict) -> {NumLiterals,[TermSize,TermInExternalFormat...]}
+
+literal_table(#asm{literals=Tab,next_literal=NumLiterals}) ->
+    L0 = dict:fold(fun(Lit, Num, Acc) ->
+			   [{Num,my_term_to_binary(Lit)}|Acc]
+		   end, [], Tab),
+    L1 = lists:sort(L0),
+    L = [[<<(size(Term)):32>>,Term] || {_,Term} <- L1],
+    {NumLiterals,L}.
+
+my_term_to_binary(Term) ->
+    try
+	term_to_binary(Term, [{minor_version,1}])
+    catch
+	%% The catch can be removed in R11B-4. Might be needed now to build
+	%% bootstrap compiler.
+	error:badarg ->
+	    term_to_binary(Term)
+    end.
 
 %% Search for string Str in the string pool Pool.
 %%   old_string(Str, Pool) -> none | Index

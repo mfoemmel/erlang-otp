@@ -84,12 +84,8 @@ port_please1(Node,HostName, Timeout) ->
   end.
 
 names() -> 
-    case inet:gethostname() of
-	{ok, H} ->
-	    names(H);
-	Err ->
-	    Err
-    end.
+    {ok, H} = inet:gethostname(),
+    names(H).
 
 names(HostName) when atom(HostName) ->
   names1(atom_to_list(HostName));

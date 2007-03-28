@@ -255,7 +255,7 @@ get_raises(X) when record(X, op) ->
     if  X#op.raises == [] -> [];
 	true ->
 	    ["  Raises:  " ++ 
-	     mk_list(lists:map({ic_util, to_colon}, X#op.raises))]
+	     mk_list(lists:map(fun(E) -> ic_util:to_colon(E) end, X#op.raises))]
     end;
 get_raises(_X) -> [].
 

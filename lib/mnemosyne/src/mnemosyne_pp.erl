@@ -202,5 +202,4 @@ da(conj, L, Acc) -> [body(L),Acc];
 da(What, L, Acc) -> ["<",atom_to_list(What),fmt(What,L),"> " | Acc].
 
 fmt(bs, L) -> ["[",bs(L),"]"];
-fmt(conj, L) -> body(L);
 fmt(_, L) -> x(L).

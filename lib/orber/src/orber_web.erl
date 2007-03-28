@@ -710,9 +710,9 @@ simple_table(Cols, Title, Data, Extra) ->
      Extra, "</TABLE>"].
 
 
-
-add_data([]) ->
-    "";
+% Temporarily removed to avoid a silly dialyzer warning
+%add_data([]) ->
+%    "";
 add_data([{C1, C2, C3, C4}|T]) ->
     add_data(T, ["<TR BGCOLOR=\"#FFFF00\"><TD><B>" ++ C1 ++ "</B></TD><TD><B>" 
 		 ++ C2 ++ "</B></TD><TD><B>" ++ C3 ++ "</B></TD><TD><B>"

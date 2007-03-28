@@ -29,8 +29,8 @@
 -define(snmp_error(C, F, A),   ?snmp_msg(error_msg, C, F, A)).
 
 -define(snmp_msg(Func, Component, Format, Args),
-	io:format("[ ~w : ~s : ~w : ~p ] ~n" ++ Format ++ "~n",
-		  [?APPLICATION, Component, ?MODULE, self() | Args]),
+%% 	io:format("[ ~w : ~s : ~w : ~p ] ~n" ++ Format ++ "~n",
+%% 		  [?APPLICATION, Component, ?MODULE, self() | Args]),
 	(catch error_logger:Func("[ ~w : ~s : ~w : ~p ] ~n" ++ Format ++ "~n",
 		[?APPLICATION, Component, ?MODULE, self() | Args]))).
 

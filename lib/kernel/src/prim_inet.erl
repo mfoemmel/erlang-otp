@@ -13,6 +13,11 @@
 %% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
 %% AB. All Rights Reserved.''
 %% 
+%% The SCTP protocol was added 2006
+%% by Leonid Timochouk <l.timochouk@gmail.com>
+%% and Serge Aleynikov  <serge@hq.idt.net>
+%% at IDT Corp. Adapted by the OTP team at Ericsson AB.
+%%
 %%     $Id$
 %%
 -module(prim_inet).
@@ -24,11 +29,12 @@
 -export([connect/3, connect/4, async_connect/4]).
 -export([accept/1, accept/2, async_accept/2]).
 -export([shutdown/2]).
--export([send/2, sendto/4]).
+-export([send/2, sendto/4, sendmsg/3]).
 -export([recv/2, recv/3, async_recv/3]).
 -export([unrecv/2]).
 -export([recvfrom/2, recvfrom/3]).
 -export([setopt/3, setopts/2, getopt/2, getopts/2, is_sockopt_val/2]).
+-export([chgopt/3, chgopts/2]).
 -export([getstat/2, getfd/1, getindex/1, getstatus/1, gettype/1, 
 	 getiflist/1, ifget/3, ifset/3,
 	 gethostname/1]).
@@ -37,40 +43,50 @@
 -export([sockname/1, setsockname/2]).
 -export([attach/1, detach/1]).
 
+-include("inet_sctp.hrl").
 -include("inet_int.hrl").
+
+%-define(DEBUG, 1).
+-ifdef(DEBUG).
+-define(DBG_FORMAT(Format, Args), (io:format((Format), (Args)))).
+-else.
+-define(DBG_FORMAT(Format, Args), ok).
+-endif.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% OPEN(stream | dgram, inet | inet6)  ->
+%% OPEN(tcp | udp | sctp, inet | inet6)  ->
 %%       {ok, insock()} |
 %%       {error, Reason}
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-open(Type)          -> open1(Type, ?INET_AF_INET).
+open(Protocol)          -> open1(Protocol, ?INET_AF_INET).
 
-open(Type,   inet)  -> open1(Type, ?INET_AF_INET);
-open(Type,  inet6)  -> open1(Type, ?INET_AF_INET6);
-open(_, _)          -> {error, einval}.
+open(Protocol,   inet)  -> open1(Protocol, ?INET_AF_INET);
+open(Protocol,  inet6)  -> open1(Protocol, ?INET_AF_INET6);
+open(_, _)              -> {error, einval}.
 
-fdopen(Type,Fd)         -> fdopen1(Type, ?INET_AF_INET, Fd).
+fdopen(Protocol, Fd)        -> fdopen1(Protocol, ?INET_AF_INET, Fd).
 
-fdopen(Type, Fd, inet)  -> fdopen1(Type, ?INET_AF_INET, Fd);
-fdopen(Type, Fd, inet6) -> fdopen1(Type, ?INET_AF_INET6, Fd);
-fdopen(_, _, _)         -> {error, einval}.
-    
-open1(Type, Family) ->
-    case open0(Type) of
+fdopen(Protocol, Fd, inet)  -> fdopen1(Protocol, ?INET_AF_INET, Fd);
+fdopen(Protocol, Fd, inet6) -> fdopen1(Protocol, ?INET_AF_INET6, Fd);
+fdopen(_, _, _)             -> {error, einval}.
+
+open1(Protocol, Family) ->
+    case open0(Protocol) of
 	{ok, S} ->
-	    case ctl_cmd(S,?INET_REQ_OPEN,[Family]) of
-		{ok, _} -> {ok,S};
-		Error -> close(S), Error
+	    case ctl_cmd(S, ?INET_REQ_OPEN, [Family]) of
+		{ok, _} ->
+		    {ok,S};
+		Error ->
+		    close(S), Error
 	    end;
 	Error -> Error
     end.
 
-fdopen1(Drv, Family, Fd) when integer(Fd) ->
-    case open0(Drv) of
+fdopen1(Protocol, Family, Fd) when integer(Fd) ->
+    case open0(Protocol) of
 	{ok, S} ->
 	    case ctl_cmd(S,?INET_REQ_FDOPEN,[Family,?int32(Fd)]) of
 		{ok, _} -> {ok,S};
@@ -79,23 +95,31 @@ fdopen1(Drv, Family, Fd) when integer(Fd) ->
 	Error -> Error
     end.
 
-open0(Type) ->
-    case catch case Type of
-		   stream -> erlang:open_port({spawn,tcp_inet}, [binary]);
-		   dgram  -> erlang:open_port({spawn, udp_inet}, [binary]);
-		   _  -> {error, einval}
-	       end of
-	Port when port(Port) -> {ok, Port};
-	{'EXIT', Reason} -> {error, Reason};
-	Error -> Error
+open0(Protocol) ->
+    try	erlang:open_port({spawn,protocol2drv(Protocol)}, [binary]) of
+	Port -> {ok,Port}
+    catch
+	error:Reason -> {error,Reason}
     end.
+
+protocol2drv(tcp)  -> tcp_inet;
+protocol2drv(udp)  -> udp_inet;
+protocol2drv(sctp) -> sctp_inet;
+protocol2drv(_) ->
+    erlang:error(eprotonosupport).
+
+drv2protocol("tcp_inet")  -> tcp;
+drv2protocol("udp_inet")  -> udp;
+drv2protocol("sctp_inet") -> sctp;
+drv2protocol(_)           -> undefined.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Shutdown(insock(), atom()) -> ok
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%% TODO: shutdown equivalent for SCTP
+%%
 shutdown(S, read) when is_port(S) ->
     shutdown_2(S, 0);
 shutdown(S, write) when is_port(S) ->
@@ -167,10 +191,38 @@ close_pend_loop(S, N) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-bind(S,IP,Port) when port(S), Port >= 0, Port =< 65535 ->
+bind(S,IP,Port) when port(S), is_integer(Port), Port >= 0, Port =< 65535 ->
     case ctl_cmd(S,?INET_REQ_BIND,[?int16(Port),ip_to_bytes(IP)]) of
 	{ok, [P1,P0]} -> {ok, ?u16(P1, P0)};
 	Error -> Error
+    end;
+
+%% Multi-homed "bind": sctp_bindx(). The Op is 'add' or 'remove'.
+%% If no addrs are specified, it just does nothing.
+%% Function returns {ok, S} on success, unlike TCP/UDP "bind":
+bind(S, Op, Addrs) when is_port(S), is_list(Addrs) ->
+    case Op of
+	add ->
+	    bindx(S, 1, Addrs);
+	remove ->
+	    bindx(S, 0, Addrs);
+	_ -> {error, einval}
+    end;
+bind(_, _, _) -> {error, einval}.
+
+bindx(S, AddFlag, Addrs) ->
+    case getprotocol(S) of
+	sctp ->
+	    %% Really multi-homed "bindx". Stringified args:
+	    %% [AddFlag, (Port, IP)+]:
+	    Args = ?int8(AddFlag) ++
+		lists:concat([?int16(Port)++ip_to_bytes(IP) ||
+				 {IP, Port} <- Addrs]),
+	    case ctl_cmd(S, ?SCTP_REQ_BINDX, Args) of
+		{ok,_} -> {ok, S};
+		Error  -> Error
+	    end;
+	_ -> {error, einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -189,7 +241,8 @@ bind(S,IP,Port) when port(S), Port >= 0, Port =< 65535 ->
 %%  a {inet_async,S,Ref,Status} will be sent on socket condition
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%% For TCP, UDP or SCTP sockets.
+%%
 connect(S, IP, Port) -> connect0(S, IP, Port, -1).
 
 connect(S, IP, Port, infinity) -> connect0(S, IP, Port, -1);
@@ -231,7 +284,8 @@ async_connect(S, IP, Port, Time) ->
 %%  socket condition
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%% For TCP sockets only.
+%%
 accept(L)            -> accept0(L, -1).
 
 accept(L, infinity)  -> accept0(L, -1);
@@ -274,13 +328,20 @@ async_accept(L, Time) ->
 %% set listen mode on socket
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% For TCP or SCTP sockets. For SCTP, Boolean backlog value (enable/disable
+%% listening) is also accepted:
 
 listen(S) -> listen(S, ?LISTEN_BACKLOG).
     
-listen(S, BackLog) when port(S), integer(BackLog) ->
+listen(S, BackLog) when is_port(S), is_integer(BackLog) ->
     case ctl_cmd(S, ?TCP_REQ_LISTEN, [?int16(BackLog)]) of
 	{ok, _} -> ok;
-	Error  -> Error
+	Error   -> Error
+    end;
+listen(S, Flag)   when is_port(S), is_boolean(Flag) ->
+    case ctl_cmd(S, ?SCTP_REQ_LISTEN, enc_value(set, bool8, Flag)) of
+	{ok,_} -> ok;
+	Error -> Error
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -290,15 +351,24 @@ listen(S, BackLog) when port(S), integer(BackLog) ->
 %% send Data on the socket (io-list)
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
+%% This is a generic "port_command" interface used by TCP, UDP, SCTP, depending
+%% on the driver it is mapped to, and the "Data". It actually sends out data,--
+%% NOT delegating this task to any back-end.  For SCTP, this function MUST NOT
+%% be called directly -- use "sendmsg" instead:
+%%
 send(S, Data) when port(S) ->
-    case catch erlang:port_command(S, Data) of
+    ?DBG_FORMAT("prim_inet:send(~p, ~p)~n", [S,Data]),
+    try erlang:port_command(S, Data) of
 	true ->
 	    receive
-		{inet_reply, S, Status} -> Status
-	    end;
-	{'EXIT', _Reason} -> 
-	    {error, einval}
+		{inet_reply,S,Status} ->
+		    ?DBG_FORMAT("prim_inet:send() -> ~p~n", [Status]),
+		    Status
+	    end
+    catch
+	error:_Error ->
+	    ?DBG_FORMAT("prim_inet:send() -> {error,einval}~n", []),
+	     {error,einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -308,26 +378,53 @@ send(S, Data) when port(S) ->
 %% send Datagram to the IP at port (Should add sync send!)
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% "sendto" is for UDP. IP and Port are set by the caller to 0 if the socket
+%% is known to be connected.
 
-sendto(S,IP,Port,Data) when port(S), Port >= 0, Port =< 65535 ->
-    case catch erlang:port_command(S, [?int16(Port), ip_to_bytes(IP), Data]) of
+sendto(S, IP, Port, Data) when port(S), Port >= 0, Port =< 65535 ->
+    ?DBG_FORMAT("prim_inet:sendto(~p, ~p, ~p, ~p)~n", [S,IP,Port,Data]),
+    try erlang:port_command(S, [?int16(Port),ip_to_bytes(IP),Data]) of
 	true -> 
 	    receive
-		{inet_reply, S, Reply} -> Reply
-	    end;
-	{'EXIT', _Reason} -> 
-	    {error, einval}
+		{inet_reply,S,Reply} ->
+		    ?DBG_FORMAT("prim_inet:send() -> ~p~n", [Reply]),
+		     Reply
+	    end
+    catch
+	error:_ ->
+	    ?DBG_FORMAT("prim_inet:send() -> {error,einval}~n", []),
+	     {error,einval}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% RECV(insock(), Lenth [Timeout]) -> {ok,Data} | {error, Reason}
+%% SENDMSG(insock(), IP, Port, InitMsg, Data)   or
+%% SENDMSG(insock(), SndRcvInfo,        Data)   -> ok | {error, Reason}
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% SCTP: Sending data over an existing association: no need for a destination
+%% addr; uses SndRcvInfo:
+%%
+sendmsg(S, #sctp_sndrcvinfo{}=SRI, Data) when is_port(S) ->
+    Type = type_opt(set, sctp_default_send_param),
+    try type_value(set, Type, SRI) of
+	true ->
+	    send(S, [enc_value(set, Type, SRI)|Data]);
+	false -> {error,einval}
+    catch
+	Reason -> {error,Reason}
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% RECV(insock(), Length, [Timeout]) -> {ok,Data} | {error, Reason}
 %%
 %% receive Length data bytes from a socket
 %% if 0 is given then a Data packet is requested (see setopt (packet))
 %%    N read N bytes
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% "recv" is for TCP:
 
 recv(S, Length) -> recv0(S, Length, -1).
 
@@ -356,32 +453,50 @@ async_recv(S, Length, Time) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% RECVFROM(insock(), Lenth [Timeout]) -> {ok,{IP,Port,Data}} | {error, Reason}
-%%
+%%                           For SCTP: -> {ok,{IP,Port,[AncData],Data}}
+%%                                                            | {error, Reason}
 %% receive Length data bytes from a datagram socket sent from IP at Port
 %% if 0 is given then a Data packet is requested (see setopt (packet))
 %%    N read N bytes
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% "recvfrom" is for both UDP and SCTP.
+%% NB: "Length" is actually ignored for these protocols, since they are msg-
+%% oriented: preserved here only for API compatibility.
+%%
+recvfrom(S, Length) ->
+    recvfrom0(S, Length, -1).
 
-recvfrom(S, Length) -> recvfrom0(S, Length, -1).
+recvfrom(S, Length, infinity) ->
+    recvfrom0(S, Length, -1);
+recvfrom(S, Length, Time) when integer(Time), Time < 16#ffffffff ->
+    recvfrom0(S, Length, Time);
+recvfrom(_, _, _) -> {error,einval}.
 
-recvfrom(S, Length, infinity)                -> recvfrom0(S, Length, -1);
-recvfrom(S, Length, Time) when integer(Time) -> recvfrom0(S, Length, Time).
-
-recvfrom0(S, Length, Time) when port(S), integer(Length), Length >= 0 ->
-    case ctl_cmd(S, ?UDP_REQ_RECV,[enc_time(Time),?int32(Length)]) of
+recvfrom0(S, Length, Time)
+  when port(S), integer(Length), Length >= 0, Length =< 16#ffffffff ->
+    case ctl_cmd(S, ?PACKET_REQ_RECV,[enc_time(Time),?int32(Length)]) of
 	{ok,[R1,R0]} ->
 	    Ref = ?u16(R1,R0),
 	    receive
+		% Success, UDP:
 		{inet_async, S, Ref, {ok, [F,P1,P0 | AddrData]}} ->
 		    {IP,Data} = get_ip(F, AddrData),
 		    {ok, {IP, ?u16(P1,P0), Data}};
-		{inet_async, S, Ref, Status} ->
-		    Status
+
+		% Success, SCTP:
+		{inet_async, S, Ref, {ok, {[F,P1,P0 | Addr], AncData, DE}}} ->
+		    {IP, _}   = get_ip(F, Addr),
+		    {ok, {IP, ?u16(P1,P0), AncData, DE}};
+
+		% Back-end error:
+		{inet_async, S, Ref, Error={error, _}} ->
+		    Error
 	    end;
 	Error ->
-	    Error
-    end.
+	    Error % Front-end error
+    end;
+recvfrom0(_, _, _) -> {error,einval}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -473,8 +588,41 @@ getopts(S, Opts) when port(S), list(Opts) ->
     case encode_opts(Opts) of
 	{ok,Buf} ->
 	    case ctl_cmd(S, ?INET_REQ_GETOPTS, Buf) of
-		{ok, Rep} -> decode_opt_val(Rep);
+		{ok,Rep} ->
+		    %% Non-SCTP: "Rep" contains the encoded option vals:
+		    decode_opt_val(Rep);
+		{error,sctp_reply} ->
+		    %% SCTP: Need to receive the full value:
+		    receive
+			{inet_reply,S,Res} -> Res
+		    end;
 		Error -> Error
+	    end;
+	Error -> Error
+    end.
+    
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% CHGOPT(insock(), Opt) -> {ok,Value} | {error, Reason}
+%% CHGOPTS(insock(), [Opt]) -> {ok, [{Opt,Value}]} | {error, Reason}
+%% change socket, ip and driver option
+%%
+%% Same as setopts except for record value options where undefined
+%% fields are read with getopts before setting.
+%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+chgopt(S, Opt, Value) when is_port(S) -> 
+    chgopts(S, [{Opt,Value}]).
+
+chgopts(S, Opts) when is_port(S), is_list(Opts) ->
+    case inet:getopts(S, need_template(Opts)) of
+	{ok,Templates} ->
+	    try merge_options(Opts, Templates) of
+		NewOpts ->
+		    setopts(S, NewOpts)
+	    catch
+		Reason -> {error,Reason}
 	    end;
 	Error -> Error
     end.
@@ -619,18 +767,32 @@ gettype(S) when port(S) ->
     case ctl_cmd(S, ?INET_REQ_GETTYPE, []) of
 	{ok, [F3,F2,F1,F0,T3,T2,T1,T0]} ->
 	    Family = case ?u32(F3,F2,F1,F0) of
-			 ?INET_AF_INET -> inet;
-			 ?INET_AF_INET6 -> inet6;
+			 ?INET_AF_INET  ->  inet;
+			 ?INET_AF_INET6 ->  inet6;
 			 _ -> undefined
 		     end,
 	    Type = case ?u32(T3,T2,T1,T0) of
-		       ?INET_TYPE_STREAM -> stream;
-		       ?INET_TYPE_DGRAM  -> dgram;
-		       _ -> undefined
+			?INET_TYPE_STREAM    -> stream;
+			?INET_TYPE_DGRAM     -> dgram;
+			?INET_TYPE_SEQPACKET -> seqpacket;
+			_		     -> undefined
 		   end,
 	    {ok, {Family, Type}};
 	Error -> Error
     end.
+
+getprotocol(S) when is_port(S) ->
+    {name,Drv} = erlang:port_info(S, name),
+    drv2protocol(Drv).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%  IS_SCTP(insock()) -> true | false
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% is_sctp(S) when port(S) ->
+%%     case gettype(S) of
+%% 	{ok, {_, seqpacket}} -> true;
+%% 	_		     -> false
+%%     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -748,9 +910,10 @@ detach(S) when port(S) ->
     ok.
 
 attach(S) when port(S) ->
-    case catch erlang:port_connect(S, self()) of
-	true -> link(S), ok;
-	{'EXIT', Reason} -> {error, Reason}
+    try erlang:port_connect(S, self()) of
+	true -> link(S), ok
+    catch
+	error:Reason -> {error,Reason}
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -760,13 +923,14 @@ attach(S) when port(S) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 is_sockopt_val(Opt, Val) ->
-    case type_opt(Opt) of
-	undefined -> false;
-	Type -> type_value(Type,Val)
+    Type = type_opt(set, Opt),
+    try type_value(set, Type, Val)
+    catch
+	_ -> false
     end.
 
 %%
-%% Socket options processing
+%% Socket options processing: Encoding option NAMES:
 %%
 enc_opt(reuseaddr)       -> ?INET_OPT_REUSEADDR;
 enc_opt(keepalive)       -> ?INET_OPT_KEEPALIVE;
@@ -796,9 +960,31 @@ enc_opt(bit8)            -> ?INET_LOPT_BIT8;
 enc_opt(send_timeout)    -> ?INET_LOPT_TCP_SEND_TIMEOUT;
 enc_opt(delay_send)      -> ?INET_LOPT_TCP_DELAY_SEND;
 enc_opt(packet_size)     -> ?INET_LOPT_PACKET_SIZE;
-enc_opt(read_packets)    -> ?INET_LOPT_UDP_READ_PACKETS;
-enc_opt(O) when is_atom(O) -> -1.
+enc_opt(read_packets)    -> ?INET_LOPT_READ_PACKETS;
+enc_opt(raw)             -> ?INET_OPT_RAW;
+% Names of SCTP opts:
+enc_opt(sctp_rtoinfo)	 	   -> ?SCTP_OPT_RTOINFO;
+enc_opt(sctp_associnfo)	 	   -> ?SCTP_OPT_ASSOCINFO;
+enc_opt(sctp_initmsg)	 	   -> ?SCTP_OPT_INITMSG;
+enc_opt(sctp_autoclose)	 	   -> ?SCTP_OPT_AUTOCLOSE;
+enc_opt(sctp_nodelay)		   -> ?SCTP_OPT_NODELAY;
+enc_opt(sctp_disable_fragments)	   -> ?SCTP_OPT_DISABLE_FRAGMENTS;
+enc_opt(sctp_i_want_mapped_v4_addr)-> ?SCTP_OPT_I_WANT_MAPPED_V4_ADDR;
+enc_opt(sctp_maxseg)		   -> ?SCTP_OPT_MAXSEG;
+enc_opt(sctp_set_peer_primary_addr)-> ?SCTP_OPT_SET_PEER_PRIMARY_ADDR;
+enc_opt(sctp_primary_addr)	   -> ?SCTP_OPT_PRIMARY_ADDR;
+enc_opt(sctp_adaption_layer)	   -> ?SCTP_OPT_ADAPTION_LAYER;
+enc_opt(sctp_peer_addr_params)	   -> ?SCTP_OPT_PEER_ADDR_PARAMS;
+enc_opt(sctp_default_send_param)   -> ?SCTP_OPT_DEFAULT_SEND_PARAM;
+enc_opt(sctp_events)		   -> ?SCTP_OPT_EVENTS;
+enc_opt(sctp_delayed_ack_time)	   -> ?SCTP_OPT_DELAYED_ACK_TIME;
+enc_opt(sctp_status)		   -> ?SCTP_OPT_STATUS;
+enc_opt(sctp_get_peer_addr_info)   -> ?SCTP_OPT_GET_PEER_ADDR_INFO.
+%%
 
+%%
+%% Decoding option NAMES:
+%%
 dec_opt(?INET_OPT_REUSEADDR)      -> reuseaddr;
 dec_opt(?INET_OPT_KEEPALIVE)      -> keepalive;
 dec_opt(?INET_OPT_DONTROUTE)      -> dontroute;
@@ -827,117 +1013,414 @@ dec_opt(?INET_LOPT_BIT8)          -> bit8;
 dec_opt(?INET_LOPT_TCP_SEND_TIMEOUT) -> send_timeout;
 dec_opt(?INET_LOPT_TCP_DELAY_SEND)   -> delay_send;
 dec_opt(?INET_LOPT_PACKET_SIZE)      -> packet_size;
-dec_opt(?INET_LOPT_UDP_READ_PACKETS) -> read_packets;
+dec_opt(?INET_LOPT_READ_PACKETS)     -> read_packets;
+dec_opt(?INET_OPT_RAW)              -> raw;
 dec_opt(I) when is_integer(I)     -> undefined.
 
-type_opt(reuseaddr)       -> bool;
-type_opt(keepalive)       -> bool;
-type_opt(dontroute)       -> bool;
-type_opt(linger)          -> {bool, int};
-type_opt(broadcast)       -> bool;
-type_opt(sndbuf)          -> int;
-type_opt(recbuf)          -> int;
-type_opt(priority)        -> int;
-type_opt(tos)             -> int;
-type_opt(nodelay)         -> bool;
+
+
+%% Metatypes:
+%% []              Value must be 'undefined' or nonexistent
+%%                 for setopts and getopts.
+%% [Type]          Value required for setopts and getopts,
+%%                 will be encoded for both.
+%% [Type,Default]  Default used if value is 'undefined'
+%% Type            Value must be 'undefined' or nonexistent for getops,
+%%                 required for setopts.
+%%
+
+type_opt(get, raw) -> [{[int],[int],[binary_or_uint]}];
+type_opt(_,   raw) -> {int,int,binary};
+%% NB: "sctp_status" and "sctp_get_peer_addr_info" are read-only options,
+%% so they should not be NOT encoded for use with "setopt".
+type_opt(get, sctp_status) ->
+    [{record,#sctp_status{
+	assoc_id = [sctp_assoc_id],
+	_        = []}}];
+type_opt(get, sctp_get_peer_addr_info) ->
+    [{record,#sctp_paddrinfo{
+	assoc_id = [[sctp_assoc_id,0]],
+	address  = [addr],
+	_        = []}}];
+type_opt(_,   Opt) ->
+    type_opt_1(Opt).
+
+%% Types of option values, by option name:
+%%
+type_opt_1(reuseaddr)       -> bool;
+type_opt_1(keepalive)       -> bool;
+type_opt_1(dontroute)       -> bool;
+type_opt_1(linger)          -> {bool,int};
+type_opt_1(broadcast)       -> bool;
+type_opt_1(sndbuf)          -> int;
+type_opt_1(recbuf)          -> int;
+type_opt_1(priority)        -> int;
+type_opt_1(tos)             -> int;
+type_opt_1(nodelay)         -> bool;
 %% multicast
-type_opt(multicast_ttl)   -> int;
-type_opt(multicast_loop)  -> bool;
-type_opt(multicast_if)    -> ip;
-type_opt(add_membership)  -> {ip,ip};
-type_opt(drop_membership) -> {ip,ip};
+type_opt_1(multicast_ttl)   -> int;
+type_opt_1(multicast_loop)  -> bool;
+type_opt_1(multicast_if)    -> ip;
+type_opt_1(add_membership)  -> {ip,ip};
+type_opt_1(drop_membership) -> {ip,ip};
 %% driver options
-type_opt(header)          -> uint;
-type_opt(buffer)          -> int;
-type_opt(active) ->
-    {enum, [{false, 0}, {true, 1}, {once, 2}]};
-type_opt(packet) -> 
-    {enum, [{0, ?TCP_PB_RAW},
-	    {1, ?TCP_PB_1},
-	    {2, ?TCP_PB_2},
-	    {4, ?TCP_PB_4},
-	    {raw,?TCP_PB_RAW},
-	    {sunrm, ?TCP_PB_RM},
-	    {asn1, ?TCP_PB_ASN1},
-	    {cdr, ?TCP_PB_CDR},
-	    {fcgi, ?TCP_PB_FCGI},
-	    {line, ?TCP_PB_LINE_LF},
-	    {tpkt, ?TCP_PB_TPKT},
-	    {http, ?TCP_PB_HTTP},
-	    {httph,?TCP_PB_HTTPH}]};
-type_opt(mode) ->
-    {enum, [{list, ?INET_MODE_LIST},
-	    {binary, ?INET_MODE_BINARY}]};
-type_opt(deliver) ->
-    {enum, [{port, ?INET_DELIVER_PORT},
-	    {term, ?INET_DELIVER_TERM}]};
-type_opt(exit_on_close)   -> bool;
-type_opt(low_watermark)   -> int;
-type_opt(high_watermark)  -> int;
-type_opt(bit8) ->
-    {enum, [{clear, ?INET_BIT8_CLEAR},
-	    {set,   ?INET_BIT8_SET},
-	    {on,    ?INET_BIT8_ON},
-	    {off,   ?INET_BIT8_OFF}]};
-type_opt(send_timeout)    -> time;
-type_opt(delay_send)      -> bool;
-type_opt(packet_size)     -> uint;
-type_opt(read_packets)    -> uint;
-type_opt(O) when is_atom(O) -> undefined.
+type_opt_1(header)          -> uint;
+type_opt_1(buffer)          -> int;
+type_opt_1(active) ->
+    {enum,[{false, ?INET_PASSIVE}, 
+	   {true, ?INET_ACTIVE}, 
+	   {once, ?INET_ONCE}]};
+type_opt_1(packet) -> 
+    {enum,[{0, ?TCP_PB_RAW},
+	   {1, ?TCP_PB_1},
+	   {2, ?TCP_PB_2},
+	   {4, ?TCP_PB_4},
+	   {raw,?TCP_PB_RAW},
+	   {sunrm, ?TCP_PB_RM},
+	   {asn1, ?TCP_PB_ASN1},
+	   {cdr, ?TCP_PB_CDR},
+	   {fcgi, ?TCP_PB_FCGI},
+	   {line, ?TCP_PB_LINE_LF},
+	   {tpkt, ?TCP_PB_TPKT},
+	   {http, ?TCP_PB_HTTP},
+	   {httph,?TCP_PB_HTTPH}]};
+type_opt_1(mode) ->
+    {enum,[{list, ?INET_MODE_LIST},
+	   {binary, ?INET_MODE_BINARY}]};
+type_opt_1(deliver) ->
+    {enum,[{port, ?INET_DELIVER_PORT},
+	   {term, ?INET_DELIVER_TERM}]};
+type_opt_1(exit_on_close)   -> bool;
+type_opt_1(low_watermark)   -> int;
+type_opt_1(high_watermark)  -> int;
+type_opt_1(bit8) ->
+    {enum,[{clear, ?INET_BIT8_CLEAR},
+	   {set,   ?INET_BIT8_SET},
+	   {on,    ?INET_BIT8_ON},
+	   {off,   ?INET_BIT8_OFF}]};
+type_opt_1(send_timeout)    -> time;
+type_opt_1(delay_send)      -> bool;
+type_opt_1(packet_size)     -> uint;
+type_opt_1(read_packets)    -> uint;
+%% 
+%% SCTP options (to be set). If the type is a record type, the corresponding
+%% record signature is returned, otherwise, an "elementary" type tag 
+%% is returned:
+%% 
+%% for SCTP_OPT_RTOINFO
+type_opt_1(sctp_rtoinfo) ->
+    [{record,#sctp_rtoinfo{
+	assoc_id = [[sctp_assoc_id,0]],
+	initial  = [uint32,0],
+	max      = [uint32,0],
+	min      = [uint32,0]}}];
+%% for SCTP_OPT_ASSOCINFO
+type_opt_1(sctp_associnfo) ->
+    [{record,#sctp_assocparams{
+	assoc_id                 = [[sctp_assoc_id,0]],
+	asocmaxrxt               = [uint16,0],
+	number_peer_destinations = [uint16,0],
+	peer_rwnd                = [uint32,0],
+	local_rwnd               = [uint32,0],
+	cookie_life              = [uint32,0]}}];
+%% for SCTP_OPT_INITMSG and SCTP_TAG_SEND_ANC_INITMSG (send*)
+type_opt_1(sctp_initmsg) ->
+    [{record,#sctp_initmsg{
+	num_ostreams   = [uint16,0],
+	max_instreams  = [uint16,0],
+	max_attempts   = [uint16,0],
+	max_init_timeo = [uint16,0]}}];
+%%
+type_opt_1(sctp_nodelay)	       -> bool;
+type_opt_1(sctp_autoclose)	       -> uint;
+type_opt_1(sctp_disable_fragments)     -> bool;
+type_opt_1(sctp_i_want_mapped_v4_addr) -> bool;
+type_opt_1(sctp_maxseg)		       -> uint;
+%% for SCTP_OPT_PRIMARY_ADDR
+type_opt_1(sctp_primary_addr) ->
+    [{record,#sctp_prim{
+	assoc_id = [sctp_assoc_id],
+	addr     = addr}}];
+%% for SCTP_OPT_SET_PEER_PRIMARY_ADDR
+type_opt_1(sctp_set_peer_primary_addr) ->
+    [{record,#sctp_setpeerprim{
+	assoc_id = [sctp_assoc_id],
+	addr     = addr}}];
+%% for SCTP_OPT_ADAPTION_LAYER
+type_opt_1(sctp_adaption_layer) ->
+    [{record,#sctp_setadaption{
+	adaption_ind = [uint32,0]}}];
+%% for SCTP_OPT_PEER_ADDR_PARAMS
+type_opt_1(sctp_peer_addr_params) ->
+    [{record,#sctp_paddrparams{
+	assoc_id          = [sctp_assoc_id],
+	address           = [addr],
+	hbinterval        = [uint32,0],
+	pathmaxrxt        = [uint16,0],
+	pathmtu           = [uint32,0],
+	sackdelay         = [uint32,0],
+	flags             =
+	[{bitenumlist,
+	  [{hb_enable,         ?SCTP_FLAG_HB_ENABLE},
+	   {hb_disable,        ?SCTP_FLAG_HB_DISABLE},
+	   {hb_demand,         ?SCTP_FLAG_HB_DEMAND},
+	   {pmtud_enable,      ?SCTP_FLAG_PMTUD_ENABLE},
+	   {pmtud_disable,     ?SCTP_FLAG_PMTUD_DISABLE},
+	   {sackdelay_enable,  ?SCTP_FLAG_SACKDELAY_ENABLE},
+	   {sackdelay_disable, ?SCTP_FLAG_SACKDELAY_DISABLE}],
+	  uint32},[]]}}];
+%% for SCTP_OPT_DEFAULT_SEND_PARAM and SCTP_TAG_SEND_ANC_PARAMS (on send*)
+type_opt_1(sctp_default_send_param) ->
+    [{record,#sctp_sndrcvinfo{
+	stream            = [uint16,0],
+	ssn               = [],
+	flags             =
+	[{bitenumlist,
+	  [{unordered,  ?SCTP_FLAG_UNORDERED},
+	   {addr_over,  ?SCTP_FLAG_ADDR_OVER},
+	   {abort,      ?SCTP_FLAG_ABORT},
+	   {eof,        ?SCTP_FLAG_EOF}],
+	  uint16},[]],
+	ppid              = [uint32,0],
+	context           = [uint32,0],
+	timetolive        = [uint32,0],
+	tsn               = [],
+	cumtsn            = [],
+	assoc_id          = [sctp_assoc_id,0]}}];
+%% for SCTP_OPT_EVENTS
+type_opt_1(sctp_events) ->
+    [{record,#sctp_event_subscribe{
+	data_io_event          = [bool8,true],
+        association_event      = [bool8,true], 
+	address_event          = [bool8,true], 
+	send_failure_event     = [bool8,true], 
+	peer_error_event       = [bool8,true], 
+	shutdown_event         = [bool8,true], 
+	partial_delivery_event = [bool8,true], 
+	adaption_layer_event   = [bool8,false]}}];
+%% for SCTP_OPT_DELAYED_ACK_TIME
+type_opt_1(sctp_delayed_ack_time) ->
+    [{record,#sctp_assoc_value{
+	assoc_id    = [[sctp_assoc_id,0]],
+	assoc_value = [uint32,0]}}];
+%%
+type_opt_1(undefined)         -> undefined;
+type_opt_1(O) when is_atom(O) -> undefined.
 
 
-type_value(bool, true)                     -> true;
-type_value(bool, false)                    -> true;
-type_value(int, X) when integer(X)         -> true;
-type_value(uint, X) when integer(X)        -> true;
-type_value(time, infinity)                 -> true;
-type_value(time, X) when integer(X), X>=0  -> true;
-type_value(ip,{A,B,C,D}) when ?ip(A,B,C,D) -> true;
-type_value(ether,[_X1,_X2,_X3,_X4,_X5,_X6]) -> true;
-type_value({X,Y},{XV,YV}) -> type_value(X,XV) and type_value(Y,YV);
-type_value({enum,List},Enum) -> 
+
+%% Get. No supplied value.
+type_value(get, undefined)        -> false; % Undefined type
+type_value(get, [])               -> true;  % Ignored
+type_value(get, [[Type,Default]]) ->        % Required field, default value
+    type_value(get, Type, Default);
+type_value(get, [{record,Types}]) ->        % Implied default value for record
+    type_value_record(get, Types, erlang:make_tuple(size(Types), undefined), 2);
+type_value(get, [_])              -> false; % Required value missing
+type_value(get, _)                -> true.  % Field is supposed to be undefined
+
+%% Get and set. Value supplied.
+type_value(_, undefined, _)   -> false;     % Undefined type
+type_value(_, [], undefined)  -> true;      % Ignored
+type_value(_, [], _)          -> false;     % Value should not be supplied
+type_value(Q, [Type], Value)  ->            % Required field, proceed
+    type_value_default(Q, Type, Value);
+type_value(set, Type, Value)  ->            % Required for setopts
+    type_value_default(set, Type, Value);
+type_value(_, _, undefined) -> true;        % Value should be undefined for
+type_value(_, _, _)         -> false.       %   other than setopts.
+
+type_value_default(Q, [Type,Default], undefined) ->
+    type_value_1(Q, Type, Default);
+type_value_default(Q, [Type,_], Value) ->
+    type_value_1(Q, Type, Value);
+type_value_default(Q, Type, Value) ->
+    type_value_1(Q, Type, Value).
+
+type_value_1(Q, {record,Types}, undefined) ->
+    type_value_record(Q, Types, erlang:make_tuple(size(Types), undefined), 2);
+type_value_1(Q, {record,Types}, Values)
+  when is_tuple(Values), size(Types) =:= size(Values) ->
+    type_value_record(Q, Types, Values, 2);
+type_value_1(Q, Types, Values)
+  when is_tuple(Types), is_tuple(Values), size(Types) =:= size(Values) ->
+    type_value_tuple(Q, Types, Values, 1);
+type_value_1(_, Type, Value) ->
+    type_value_2(Type, Value).
+
+type_value_tuple(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+    type_value(Q, element(N, Types), element(N, Values)) 
+	andalso type_value_tuple(Q, Types, Values, N+1);
+type_value_tuple(_, _, _, _) -> true.
+
+type_value_record(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+    case type_value(Q, element(N, Types), element(N, Values)) of
+	true -> type_value_record(Q, Types, Values, N+1);
+	false ->
+	    erlang:throw({type,{record,Q,Types,Values,N}})
+    end;
+type_value_record(_, _, _, _) -> true.
+
+%% Simple run-time type-checking of (option) values: type -vs- value:
+%% NB: the LHS is the TYPE, not the option name!
+%% 
+%% Returns true | false | throw(ErrorReason) only for record types
+%% 
+type_value_2(undefined, _)                            -> false;
+%% 
+type_value_2(bool, true)                              -> true;
+type_value_2(bool, false)                             -> true;
+type_value_2(bool8, true)                             -> true;
+type_value_2(bool8, false)                            -> true;
+type_value_2(int, X) when is_integer(X)               -> true;
+type_value_2(uint, X) when is_integer(X), X >= 0      -> true;
+type_value_2(uint32, X) when X band 16#ffffffff =:= X -> true;
+type_value_2(uint24, X) when X band 16#ffffff =:= X   -> true;
+type_value_2(uint16, X) when X band 16#ffff =:= X     -> true;
+type_value_2(uint8, X)  when X band 16#ff =:= X       -> true;
+type_value_2(time, infinity)                          -> true;
+type_value_2(time, X) when integer(X), X >= 0         -> true;
+type_value_2(ip,{A,B,C,D}) when ?ip(A,B,C,D)          -> true;
+type_value_2(addr, {{A,B,C,D},Port}) when ?ip(A,B,C,D) ->
+    type_value_2(uint16, Port);
+type_value_2(addr, {{A,B,C,D,E,F,G,H},Port}) when ?ip6(A,B,C,D,E,F,G,H) ->
+    type_value_2(uint16, Port);
+type_value_2(ether,[_X1,_X2,_X3,_X4,_X5,_X6])         -> true;
+type_value_2({enum,List}, Enum) -> 
     case enum_val(Enum, List) of
-	{value,_} -> true;
-	false -> false
+	{value,_} 				    -> true;
+	false                                       -> false
     end;
-type_value({bitenumlist,List},EnumList) -> 
+type_value_2({bitenumlist,List}, EnumList) -> 
     case enum_vals(EnumList, List) of
-	Ls when list(Ls) -> true;
-	false -> false
+	Ls when is_list(Ls)                         -> true;
+	false                                       -> false
     end;
-type_value(_, _) -> false.
+type_value_2({bitenumlist,List,_}, EnumList) -> 
+    case enum_vals(EnumList, List) of
+	Ls when is_list(Ls)                         -> true;
+	false                                       -> false
+    end;
+type_value_2(binary,Bin) when is_binary(Bin) -> true;
+type_value_2(binary_or_uint,Bin) when is_binary(Bin) -> true;
+type_value_2(binary_or_uint,Int) when is_integer(Int), Int >= 0 -> true;
+%% Type-checking of SCTP options
+type_value_2(sctp_assoc_id, X)
+  when X band 16#ffffffff =:= X                     -> true;
+type_value_2(_, _)         -> false.
 
 
-enc_value(bool, true)     -> [0,0,0,1];
-enc_value(bool, false)    -> [0,0,0,0];
-enc_value(int, Val)       -> ?int32(Val);
-enc_value(uint, Val)      -> ?int32(Val);
-enc_value(time, infinity) -> ?int32(-1);
-enc_value(time, Val)      -> ?int32(Val);
-enc_value(ip,{A,B,C,D})   -> [A,B,C,D];
-enc_value(ip,any)         -> [0,0,0,0];
-enc_value(ip,loopback)    -> [127,0,0,1];
-enc_value(ether,[X1,X2,X3,X4,X5,X6]) -> [X1,X2,X3,X4,X5,X6];
-enc_value({enum,List},Enum) ->
+
+%% Get. No supplied value.
+enc_value(get, [])               -> [];  % Ignored
+enc_value(get, [[Type,Default]]) ->      % Required field, default value
+    enc_value(get, Type, Default);
+enc_value(get, [{record,Types}]) ->      % Implied default value for record
+    enc_value_tuple(get, Types, erlang:make_tuple(size(Types), undefined), 2);
+enc_value(get, _)                -> [].
+    
+%% Get and set
+enc_value(_,   [], _)         -> [];     % Ignored
+enc_value(Q,   [Type], Value) ->         % Required field, proceed
+    enc_value_default(Q, Type, Value);
+enc_value(set, Type, Value)   ->         % Required for setopts
+    enc_value_default(set, Type, Value);
+enc_value(_, _, _)            -> [].     % Not encoded for other than setopts
+
+enc_value_default(Q, [Type,Default], undefined) ->
+    enc_value_1(Q, Type, Default);
+enc_value_default(Q, [Type,_], Value) ->
+    enc_value_1(Q, Type, Value);
+enc_value_default(Q, Type, Value) ->
+    enc_value_1(Q, Type, Value).
+
+enc_value_1(Q, {record,Types}, undefined) ->
+    enc_value_tuple(Q, Types, erlang:make_tuple(size(Types), undefined), 2);
+enc_value_1(Q, {record,Types}, Values)
+  when is_tuple(Values), size(Types) =:= size(Values) ->
+    enc_value_tuple(Q, Types, Values, 2);
+enc_value_1(Q, Types, Values)
+  when is_tuple(Types), is_tuple(Values), size(Types) =:= size(Values) ->
+    enc_value_tuple(Q, Types, Values, 1);
+enc_value_1(_, Type, Value) ->
+    enc_value_2(Type, Value).
+
+enc_value_tuple(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+    [enc_value(Q, element(N, Types), element(N, Values))
+     |enc_value_tuple(Q, Types, Values, N+1)];
+enc_value_tuple(_, _, _, _) -> [].
+
+%%
+%% Encoding of option VALUES:
+%%
+enc_value_2(bool, true)     -> [0,0,0,1];
+enc_value_2(bool, false)    -> [0,0,0,0];
+enc_value_2(bool8, true)    -> [1];
+enc_value_2(bool8, false)   -> [0];
+enc_value_2(int, Val)       -> ?int32(Val);
+enc_value_2(uint, Val)      -> ?int32(Val);
+enc_value_2(uint32, Val)    -> ?int32(Val);
+enc_value_2(uint24, Val)    -> ?int24(Val);
+enc_value_2(uint16, Val)    -> ?int16(Val);
+enc_value_2(uint8, Val)     -> ?int8(Val);
+enc_value_2(time, infinity) -> ?int32(-1);
+enc_value_2(time, Val)      -> ?int32(Val);
+enc_value_2(ip,{A,B,C,D})   -> [A,B,C,D];
+enc_value_2(ip, any)        -> [0,0,0,0];
+enc_value_2(ip, loopback)   -> [127,0,0,1];
+enc_value_2(addr, {any,Port}) ->
+    [?INET_AF_ANY|?int16(Port)];
+enc_value_2(addr, {loopback,Port}) ->
+    [?INET_AF_LOOPBACK|?int16(Port)];
+enc_value_2(addr, {IP,Port}) ->
+    case size(IP) of
+	4 ->
+	    [?INET_AF_INET,?int16(Port)|ip4_to_bytes(IP)];
+	8 ->
+	    [?INET_AF_INET6,?int16(Port)|ip6_to_bytes(IP)]
+    end;
+enc_value_2(ether, [X1,X2,X3,X4,X5,X6]) -> [X1,X2,X3,X4,X5,X6];
+enc_value_2(sctp_assoc_id, Val) -> ?int32(Val);
+%% enc_value_2(sctp_assoc_id, Bin) -> [size(Bin),Bin];
+enc_value_2({enum,List}, Enum) ->
     {value,Val} = enum_val(Enum, List),
     ?int32(Val);
-enc_value({bitenumlist,List},EnumList) ->
+enc_value_2({bitenumlist,List}, EnumList) ->
     Vs = enum_vals(EnumList, List),
     Val = borlist(Vs, 0),
     ?int32(Val);
-enc_value({X,Y},{XV,YV}) -> [enc_value(X,XV),enc_value(Y,YV)].
+enc_value_2({bitenumlist,List,Type}, EnumList) ->
+    Vs = enum_vals(EnumList, List),
+    Value = borlist(Vs, 0),
+    enc_value_2(Type, Value);
+enc_value_2(binary,Bin) -> [?int32(size(Bin)),Bin];
+enc_value_2(binary_or_uint,Datum) when is_binary(Datum) -> 
+    [1,enc_value_2(binary, Datum)];
+enc_value_2(binary_or_uint,Datum) when is_integer(Datum) -> 
+    [0,enc_value_2(uint, Datum)].
 
 
-dec_value(bool, [0,0,0,0 | T]) -> {false, T};
-dec_value(bool, [_,_,_,_ | T]) -> {true, T};
-dec_value(int,  [X3,X2,X1,X0|T]) -> {?i32(X3,X2,X1,X0), T};
-dec_value(uint, [X3,X2,X1,X0|T]) -> {?u32(X3,X2,X1,X0), T};
+
+%%
+%% Decoding of option VALUES receved from "getopt":
+%% NOT required for SCTP, as it always returns ready terms, not lists:
+%%
+dec_value(bool, [0,0,0,0|T])       -> {false,T};
+dec_value(bool, [_,_,_,_|T])       -> {true,T};
+dec_value(bool8, [0|T])            -> {false,T};
+dec_value(bool8, [_|T])            -> {true,T};
+dec_value(int,  [X3,X2,X1,X0|T])   -> {?i32(X3,X2,X1,X0),T};
+dec_value(uint, [X3,X2,X1,X0|T])   -> {?u32(X3,X2,X1,X0),T};
+dec_value(uint32, [X3,X2,X1,X0|T]) -> {?u32(X3,X2,X1,X0),T};
+dec_value(uint24, [X2,X1,X0|T])    -> {?u24(X2,X1,X0),T};
+dec_value(uint16, [X1,X0|T])       -> {?u16(X1,X0),T};
+dec_value(uint8,  [X0|T])          -> {?u8(X0),T};
 dec_value(time, [X3,X2,X1,X0|T]) ->
     case ?i32(X3,X2,X1,X0) of
 	-1 -> {infinity, T};
 	Val -> {Val, T}
     end;
-dec_value(ip, [A,B,C,D|T]) -> {{A,B,C,D}, T};
+dec_value(ip, [A,B,C,D|T])             -> {{A,B,C,D}, T};
 dec_value(ether,[X1,X2,X3,X4,X5,X6|T]) -> {[X1,X2,X3,X4,X5,X6],T};
 dec_value({enum,List}, [X3,X2,X1,X0|T]) ->
     Val = ?i32(X3,X2,X1,X0),
@@ -948,17 +1431,27 @@ dec_value({enum,List}, [X3,X2,X1,X0|T]) ->
 dec_value({bitenumlist,List}, [X3,X2,X1,X0|T]) ->
     Val = ?i32(X3,X2,X1,X0),
     {enum_names(Val, List), T};
-dec_value({X,Y}, T0) ->
-    case dec_value(X, T0) of
-	{XV, T1} ->
-	    case dec_value(Y, T1) of
-		{YV, T2} -> {{XV,YV}, T2};
-		Other -> Other
-	    end;
-	Other -> Other
-    end;
-dec_value(_, B) ->
-    {undefined, B}.
+%% Currently not used
+%% dec_value({bitenumlist,List,Type}, T0) ->
+%%     {Val,T} = dec_value(Type, T0),
+%%     {enum_names(Val, List), T};
+dec_value(binary,[L0,L1,L2,L3|List]) ->
+    Len = ?i32(L0,L1,L2,L3),
+    {X,T}=lists:split(Len,List),
+    {list_to_binary(X),T};
+dec_value(Types, List) when is_tuple(Types) ->
+    {L,T} = dec_value_tuple(Types, List, 1, []),
+    {list_to_tuple(L),T};
+dec_value(Type, Val) ->
+    erlang:error({decode,Type,Val}).
+%% dec_value(_, B) ->
+%%     {undefined, B}.
+
+dec_value_tuple(Types, List, N, Acc) when is_integer(N), N =< size(Types) ->
+    {Term,Tail} = dec_value(element(N, Types), List),
+    dec_value_tuple(Types, Tail, N+1, [Term|Acc]);
+dec_value_tuple(_, List, _, Acc) ->
+    {lists:reverse(Acc),List}.
 
 borlist([V|Vs], Value) ->
     borlist(Vs, V bor Value);
@@ -988,49 +1481,165 @@ enum_name(Val, [{Enum,Val}|_]) -> {name,Enum};
 enum_name(Val, [_|List]) -> enum_name(Val, List);
 enum_name(_, []) -> false.
 
+
+
+%% Encoding for setopts
+%%
 %% encode opt/val REVERSED since options are stored in reverse order
 %% i.e. the recent options first (we must process old -> new)
-encode_opt_val(Opts) -> enc_opt_val(Opts, []).
-
-enc_opt_val([{Opt,Val} | Opts], Acc) ->
-    Type = type_opt(Opt),
-    case type_value(Type, Val) of
-	true -> enc_opt_val(Opts, [enc_opt(Opt), enc_value(Type,Val) | Acc]);
-	false -> {error, einval}
-    end;
-enc_opt_val([binary | Opts], Acc) -> enc_opt_val([{mode,binary}|Opts], Acc);
-enc_opt_val([list   | Opts], Acc) -> enc_opt_val([{mode,list}|Opts], Acc);
-enc_opt_val([], Acc) -> {ok,Acc}.
-
-encode_opts(Opts) -> 
-    case catch enc_opts(Opts) of
-	{error, Error} -> {error, Error};
-	Buf -> {ok, Buf}
+encode_opt_val(Opts) -> 
+    try enc_opt_val(Opts, [])
+    catch
+	Reason -> {error,Reason}
     end.
 
-enc_opts([Opt | Opts]) ->
-    case enc_opt(Opt) of
-	-1 -> throw({error, einval});
-	B  -> [B | enc_opts(Opts)]
+enc_opt_val([{raw,P,O,B}|Opts], Acc) ->
+    enc_opt_val(Opts, Acc, raw, {P,O,B});
+enc_opt_val([{Opt,Val}|Opts], Acc) ->
+    enc_opt_val(Opts, Acc, Opt, Val);
+enc_opt_val([binary|Opts], Acc) ->
+    enc_opt_val(Opts, Acc, mode, binary);
+enc_opt_val([list|Opts], Acc) ->
+    enc_opt_val(Opts, Acc, mode, list);
+enc_opt_val([_|_], _) -> {error,einval};
+enc_opt_val([], Acc)  -> {ok,Acc}.
+
+enc_opt_val(Opts, Acc, Opt, Val) when is_atom(Opt) ->
+    Type = type_opt(set, Opt),
+    case type_value(set, Type, Val) of
+	true -> 
+	    enc_opt_val(Opts, [enc_opt(Opt),enc_value(set, Type, Val)|Acc]);
+	false -> {error,einval}
     end;
+enc_opt_val(_, _, _, _) -> {error,einval}.
+
+
+
+%% Encoding for getopts
+%%
+%% "encode_opts" is for "getopt" only, not setopt". But it uses "enc_opt" which
+%% is common for "getopt" and "setopt":
+encode_opts(Opts) -> 
+    try enc_opts(Opts) of
+	Buf -> {ok,Buf}
+    catch
+	Error -> {error,Error}
+    end.
+
+% Raw options are a special case, they need to be rewritten to be properly 
+% handled and the types need checking even when querying.
+enc_opts([{raw,P,O,S}|Opts]) ->
+    enc_opts(Opts, raw, {P,O,S});
+enc_opts([{Opt,Val}|Opts]) ->
+    enc_opts(Opts, Opt, Val);
+enc_opts([Opt|Opts]) ->
+    enc_opts(Opts, Opt);
 enc_opts([]) -> [].
 
+enc_opts(Opts, Opt) when is_atom(Opt) ->
+    Type = type_opt(get, Opt),
+    case type_value(get, Type) of
+	true -> 
+	    [enc_opt(Opt),enc_value(get, Type)|enc_opts(Opts)];
+	false ->
+	    throw(einval)
+    end;
+enc_opts(_, _) ->
+    throw(einval).
 
+enc_opts(Opts, Opt, Val) when is_atom(Opt) ->
+    Type = type_opt(get, Opt),
+    case type_value(get, Type, Val) of
+	true -> 
+	    [enc_opt(Opt),enc_value(get, Type, Val)|enc_opts(Opts)];
+	false ->
+	    throw(einval)
+    end;
+enc_opts(_, _, _) ->
+    throw(einval).
+
+
+
+%% Decoding of raw list data options
+%%
 decode_opt_val(Buf) ->
-    case catch dec_opt_val(Buf) of
-	List when list(List) -> {ok,List};
-	Error -> Error
+    try dec_opt_val(Buf) of
+	Result -> {ok,Result}
+    catch
+	Error  -> {error,Error}
     end.
 
-dec_opt_val([B | Buf]) ->
+dec_opt_val([B|Buf]=BBuf) ->
     case dec_opt(B) of
-	undefined -> throw({error, einval});
+	undefined ->
+	    erlang:error({decode,BBuf});
 	Opt ->
-	    {Val,T} = dec_value(type_opt(Opt), Buf),
-	    [{Opt,Val} | dec_opt_val(T)]
+	    Type = type_opt(dec, Opt),
+	    dec_opt_val(Buf, Opt, Type)
     end;
-dec_opt_val(_) -> [].
+dec_opt_val([]) -> [].
 
+dec_opt_val(Buf, raw, Type) ->
+    {{P,O,B},T} = dec_value(Type, Buf),
+    [{raw,P,O,B}|dec_opt_val(T)];
+dec_opt_val(Buf, Opt, Type) ->
+    {Val,T} = dec_value(Type, Buf),
+    [{Opt,Val}|dec_opt_val(T)].
+
+
+
+%% Pre-processing of options for chgopts
+%%
+%% Return list of option requests for getopts
+%% for all options that containing 'undefined' record fields.
+%%
+need_template([{Opt,undefined}=OV|Opts]) when is_atom(Opt) ->
+    [OV|need_template(Opts)];
+need_template([{Opt,Val}|Opts]) when is_atom(Opt) ->
+    case need_template(Val, 2) of
+	true ->
+	    [{Opt,undefined}|need_template(Opts)];
+	false ->
+	    need_template(Opts)
+    end;
+need_template([_|Opts]) ->
+    need_template(Opts);
+need_template([]) -> [].
+%%
+need_template(T, N) when is_tuple(T), is_integer(N), N =< size(T) ->
+    case element(N, T) of
+	undefined -> true;
+	_ ->
+	    need_template(T, N+1)
+    end;
+need_template(_, _) -> false.
+
+%% Replace 'undefined' record fields in option values with values
+%% from template records.
+%%
+merge_options([{Opt,Val}|Opts], [{Opt,Template}|Templates])
+  when is_atom(Opt), is_tuple(Val), size(Val) >= 2 ->
+    Key = element(1, Val),
+    Size = size(Val),
+    if Key =:= element(1, Template), Size =:= size(Template) ->
+	    [{Opt,list_to_tuple([Key|merge_fields(Val, Template, 2)])}
+	     |merge_options(Opts, Templates)];
+       true ->
+	    throw({merge,Val,Template})
+    end;
+merge_options([OptVal|Opts], Templates) ->
+    [OptVal|merge_options(Opts, Templates)];
+merge_options([], []) -> [].
+
+merge_fields(Opt, Template, N) when is_integer(N), N =< size(Opt) ->
+    case element(N, Opt) of
+	undefined ->
+	    [element(N, Template)|merge_fields(Opt, Template, N+1)];
+	Val ->
+	    [Val|merge_fields(Opt, Template, N+1)]
+    end;
+merge_fields(_, _, _) -> [].
+	    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% handle interface options
@@ -1090,18 +1699,20 @@ decode_ifopts(_,Acc) -> {ok,Acc}.
 %% encode if options return a reverse list
 encode_ifopts([Opt|Opts], Acc) ->
     case enc_ifopt(Opt) of
-	-1 -> {error, einval};
+	-1 -> {error,einval};
 	B  -> encode_ifopts(Opts,[B|Acc])
     end;
 encode_ifopts([],Acc) -> {ok,Acc}.
 
 	    
-encode_ifopt_val([{Opt,Val} | Opts], Buf) ->
+encode_ifopt_val([{Opt,Val}|Opts], Buf) ->
     Type = type_ifopt(Opt),
-    case type_value(Type, Val) of
+    try type_value(Type, Val) of
 	true -> encode_ifopt_val(Opts,
 				 [Buf,enc_ifopt(Opt),enc_value(Type,Val)]);
-	false -> {error, einval}
+	false -> {error,einval}
+    catch
+	Reason -> {error,Reason}
     end;
 encode_ifopt_val([], Buf) -> {ok,Buf}.
 
@@ -1113,30 +1724,32 @@ encode_ifopt_val([], Buf) -> {ok,Buf}.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 encode_subs(L) ->
-    case catch enc_subs(L) of
-	List when list(List) -> {ok, List};
-	Error -> Error
+    try enc_subs(L) of
+	Result -> {ok,Result}
+    catch        
+	Error  -> {error,Error}
     end.
 
 enc_subs([H|T]) ->
     case H of
-	subs_empty_out_q -> [?INET_SUBS_EMPTY_OUT_Q | enc_subs(T)];
-	_ -> throw({error, einval})
+	subs_empty_out_q -> [?INET_SUBS_EMPTY_OUT_Q|enc_subs(T)]%;
+	%%Dialyzer _ -> throw(einval)
     end;
 enc_subs([]) -> [].
 
 
 decode_subs(Bytes) -> 
-    case catch dec_subs(Bytes) of
-	List when list(List) -> {ok, List};
-	Error -> Error
+    try dec_subs(Bytes) of
+	Result -> {ok,Result}
+    catch
+	Error  -> {error,Error}
     end.
 
-dec_subs([X,X3,X2,X1,X0 | R]) ->
+dec_subs([X,X3,X2,X1,X0|R]) ->
     Val = ?u32(X3,X2,X1,X0),
     case X of
-	?INET_SUBS_EMPTY_OUT_Q  -> [{subs_empty_out_q,Val} | dec_subs(R)];
-	_  -> throw({error, einval})
+	?INET_SUBS_EMPTY_OUT_Q  -> [{subs_empty_out_q,Val}|dec_subs(R)];
+	_  -> throw(einval)
     end;
 dec_subs([]) -> [].
 
@@ -1147,53 +1760,55 @@ dec_subs([]) -> [].
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 encode_stats(L) ->
-    case catch enc_stats(L) of
-	List when list(List) -> {ok, List};
-	Error -> Error
+    try enc_stats(L) of
+	Result -> {ok,Result}
+    catch
+	Error  -> {error,Error}
     end.
 
 enc_stats([H|T]) ->
     case H of
-	recv_cnt  -> [?INET_STAT_RECV_CNT | enc_stats(T)];
-	recv_max  -> [?INET_STAT_RECV_MAX | enc_stats(T)];
-	recv_avg  -> [?INET_STAT_RECV_AVG | enc_stats(T)];
-	recv_dvi  -> [?INET_STAT_RECV_DVI | enc_stats(T)];
-	send_cnt  -> [?INET_STAT_SEND_CNT | enc_stats(T)];
-	send_max  -> [?INET_STAT_SEND_MAX | enc_stats(T)];
-	send_avg  -> [?INET_STAT_SEND_AVG  | enc_stats(T)];
-	send_pend -> [?INET_STAT_SEND_PEND | enc_stats(T)];
-	send_oct  -> [?INET_STAT_SEND_OCT  | enc_stats(T)];
-	recv_oct  -> [?INET_STAT_RECV_OCT  | enc_stats(T)];
-	_ -> throw({error, einval})
+	recv_cnt  -> [?INET_STAT_RECV_CNT |enc_stats(T)];
+	recv_max  -> [?INET_STAT_RECV_MAX |enc_stats(T)];
+	recv_avg  -> [?INET_STAT_RECV_AVG |enc_stats(T)];
+	recv_dvi  -> [?INET_STAT_RECV_DVI |enc_stats(T)];
+	send_cnt  -> [?INET_STAT_SEND_CNT |enc_stats(T)];
+	send_max  -> [?INET_STAT_SEND_MAX |enc_stats(T)];
+	send_avg  -> [?INET_STAT_SEND_AVG |enc_stats(T)];
+	send_pend -> [?INET_STAT_SEND_PEND|enc_stats(T)];
+	send_oct  -> [?INET_STAT_SEND_OCT |enc_stats(T)];
+	recv_oct  -> [?INET_STAT_RECV_OCT |enc_stats(T)];
+	_ -> throw(einval)
     end;
 enc_stats([]) -> [].
 
 
 decode_stats(Bytes) -> 
-    case catch dec_stats(Bytes) of
-	List when list(List) -> {ok, List};
-	Error -> Error
+    try dec_stats(Bytes) of
+	Result -> {ok,Result}
+    catch
+	Error  -> {error,Error}
     end.
 
 
-dec_stats([?INET_STAT_SEND_OCT,X7,X6,X5,X4,X3,X2,X1,X0 | R]) ->
+dec_stats([?INET_STAT_SEND_OCT,X7,X6,X5,X4,X3,X2,X1,X0|R]) ->
     Val = ?u64(X7,X6,X5,X4,X3,X2,X1,X0),
-    [{send_oct, Val} | dec_stats(R)];
-dec_stats([?INET_STAT_RECV_OCT,X7,X6,X5,X4,X3,X2,X1,X0 | R]) ->
+    [{send_oct, Val}|dec_stats(R)];
+dec_stats([?INET_STAT_RECV_OCT,X7,X6,X5,X4,X3,X2,X1,X0|R]) ->
     Val = ?u64(X7,X6,X5,X4,X3,X2,X1,X0),
-    [{recv_oct, Val} | dec_stats(R)];
-dec_stats([X,X3,X2,X1,X0 | R]) ->
+    [{recv_oct, Val}|dec_stats(R)];
+dec_stats([X,X3,X2,X1,X0|R]) ->
     Val = ?u32(X3,X2,X1,X0),
     case X of
-	?INET_STAT_RECV_CNT  -> [{recv_cnt,Val} | dec_stats(R)];
-	?INET_STAT_RECV_MAX  -> [{recv_max,Val} | dec_stats(R)];
-	?INET_STAT_RECV_AVG  -> [{recv_avg,Val} | dec_stats(R)];
-	?INET_STAT_RECV_DVI  -> [{recv_dvi,Val} | dec_stats(R)];
-	?INET_STAT_SEND_CNT  -> [{send_cnt,Val} | dec_stats(R)];
-	?INET_STAT_SEND_MAX  -> [{send_max,Val} | dec_stats(R)];
-	?INET_STAT_SEND_AVG  -> [{send_avg,Val} | dec_stats(R)];
-	?INET_STAT_SEND_PEND -> [{send_pend,Val} | dec_stats(R)];
-	_  -> throw({error, einval})
+	?INET_STAT_RECV_CNT  -> [{recv_cnt,Val} |dec_stats(R)];
+	?INET_STAT_RECV_MAX  -> [{recv_max,Val} |dec_stats(R)];
+	?INET_STAT_RECV_AVG  -> [{recv_avg,Val} |dec_stats(R)];
+	?INET_STAT_RECV_DVI  -> [{recv_dvi,Val} |dec_stats(R)];
+	?INET_STAT_SEND_CNT  -> [{send_cnt,Val} |dec_stats(R)];
+	?INET_STAT_SEND_MAX  -> [{send_max,Val} |dec_stats(R)];
+	?INET_STAT_SEND_AVG  -> [{send_avg,Val} |dec_stats(R)];
+	?INET_STAT_SEND_PEND -> [{send_pend,Val}|dec_stats(R)];
+	_  -> throw(einval)
     end;
 dec_stats([]) -> [].
 
@@ -1277,9 +1892,14 @@ get_ip6([X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16 | T]) ->
 
 %% Control command
 ctl_cmd(Port, Cmd, Args) ->
-    case catch erlang:port_control(Port, Cmd, Args) of
-	[?INET_REP_OK | Reply] -> {ok, Reply};
-	[?INET_REP_ERROR| Err] -> {error, list_to_atom(Err)};
-	{'EXIT', _} -> {error, einval};
-	_ -> {error, internal}
-    end.
+    ?DBG_FORMAT("prim_inet:ctl_cmd(~p, ~p, ~p)~n", [Port,Cmd,Args]),
+    Result =
+	try erlang:port_control(Port, Cmd, Args) of
+	    [?INET_REP_OK|Reply]  -> {ok,Reply};
+	    [?INET_REP_SCTP]  -> {error,sctp_reply};
+	    [?INET_REP_ERROR|Err] -> {error,list_to_atom(Err)}
+	catch
+	    error:_               -> {error,einval}
+	end,
+        ?DBG_FORMAT("prim_inet:ctl_cmd() -> ~p~n", [Result]),
+    Result.

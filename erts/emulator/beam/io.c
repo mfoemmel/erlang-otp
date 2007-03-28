@@ -168,6 +168,7 @@ kill_port(Port *pp)
     ASSERT(erts_ports_alive > 0);
     erts_ports_alive--;
 #ifdef ERTS_SMP
+    pp->status &= ~ERTS_PORT_SFLG_CLOSING;
     pp->status |= ERTS_PORT_SFLG_FREE_SCHEDULED;
     erts_smp_atomic_dec(&pp->refc); /* Not alive */
     ERTS_SMP_LC_ASSERT(erts_smp_atomic_read(&pp->refc) > 0); /* Lock */
@@ -501,20 +502,25 @@ erts_wake_process_later(Port *prt, Process *process)
    The driver start function must obey the same conventions.
 */
 int
-open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
-	    Eterm pid,			/* Current process. */
-	    char* name,			/* Driver name. */
-	    SysDriverOpts* opts)	/* Options. */
+erts_open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
+		 Eterm pid,		/* Current process. */
+		 char* name,		/* Driver name. */
+		 SysDriverOpts* opts,	/* Options. */
+		 int *error_number_ptr)	/* errno in case -2 is returned */
 {
     int port_num;
     ErlDrvData drv_data = 0;
     Uint32 xstatus = 0;
 
+    if (error_number_ptr)
+	*error_number_ptr = 0;
+
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
     if ((port_num = get_free_port()) < 0)
     {
-       errno = ENFILE;
+       if (error_number_ptr)
+	   *error_number_ptr = ENFILE;
        return -2;
     }
 
@@ -590,6 +596,8 @@ open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
     setup_port(port_num, pid, driver, drv_data, name, xstatus);
     if (driver->start) {
 	drv_data = (*driver->start)((ErlDrvPort)port_num, name, opts);
+	if (error_number_ptr && ((long) drv_data) == (long) -2)
+	    *error_number_ptr = errno;
 #ifdef ERTS_SMP
 	if (erts_port[port_num].xports)
 	    erts_smp_xports_unlock(&erts_port[port_num]);
@@ -600,7 +608,7 @@ open_driver(ErlDrvEntry* driver,	/* Pointer to driver entry. */
     if (((long)drv_data) == -1 || 
 	((long)drv_data) == -2 || 
 	((long)drv_data) == -3) {
-	int res = (int) drv_data;
+	int res = (int) ((long) drv_data);
 	/*
 	 * Must clean up the port.
 	 */
@@ -1817,6 +1825,8 @@ static void flush_port(Port *p)
 static void
 terminate_port(Port *prt)
 {
+    Eterm send_closed_port_id;
+    Eterm connected_id = NIL /* Initialize to silence compiler */;
     ErlDrvEntry *drv;
 
     ERTS_SMP_CHK_NO_PROC_LOCKS;
@@ -1827,8 +1837,13 @@ terminate_port(Port *prt)
 
     if (prt->status & ERTS_PORT_SFLG_SEND_CLOSED) {
 	erts_port_status_band_set(prt, ~ERTS_PORT_SFLG_SEND_CLOSED);
-	deliver_result(prt->id, prt->connected, am_closed);
+	send_closed_port_id = prt->id;
+	connected_id = prt->connected;
     }
+    else {
+	send_closed_port_id = NIL;
+    }
+
 #ifdef ERTS_SMP
     erts_cancel_smp_ptimer(prt->ptimer);
 #else
@@ -1861,6 +1876,13 @@ terminate_port(Port *prt)
     }
 
     kill_port(prt);
+
+    /*
+     * We don't want to send the closed message until after the
+     * port has been removed from the port table (in kill_port()).
+     */
+    if (is_internal_port(send_closed_port_id))
+	deliver_result(send_closed_port_id, connected_id, am_closed);
 
     ASSERT(prt->dist_entry == NULL);
 }
@@ -1908,7 +1930,7 @@ static void sweep_one_link(ErtsLink *lnk, void *vpsc)
 	    dist_exit(NULL, 0, dep, psc->port, lnk->pid, psc->reason);
 	}
     } else {
-	Uint32 rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
+	Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
 	ASSERT(is_internal_pid(lnk->pid));
 	rp = erts_pid2proc(NULL, 0, lnk->pid, rp_locks);
 	if (rp) {
@@ -1994,7 +2016,7 @@ erts_do_exit_port(Port *p, Eterm from, Eterm reason)
 
 
    if ((p->status & ERTS_PORT_SFLG_DISTRIBUTION) && p->dist_entry) {
-       erts_do_net_exits(p->dist_entry);
+       erts_do_net_exits(p->dist_entry, rreason);
        erts_deref_dist_entry(p->dist_entry); 
        p->dist_entry = NULL; 
        erts_port_status_band_set(p, ~ERTS_PORT_SFLG_DISTRIBUTION);
@@ -4432,13 +4454,19 @@ driver_system_info(ErlDrvSysInfo *sip, size_t si_size)
      * remember to increment ERL_DRV_EXTENDED_MINOR_VERSION
      */
 
-    /* smp_support is the last field in the first version and of type int */
+    /*
+     * 'smp_support' is the last field in the first version
+     * of ErlDrvSysInfo (introduced in driver version 1.0).
+     */
     if (!sip || si_size < ERL_DRV_SYS_INFO_SIZE(smp_support)) 
 	erl_exit(1,
 		 "driver_system_info(%p, %ld) called with invalid arguments\n",
 		 sip, si_size);
 
-    /* smp_support is the last field in the first version and of type int */
+    /*
+     * 'smp_support' is the last field in the first version
+     * of ErlDrvSysInfo (introduced in driver version 1.0).
+     */
     if (si_size >= ERL_DRV_SYS_INFO_SIZE(smp_support)) {
 	sip->driver_major_version = ERL_DRV_EXTENDED_MAJOR_VERSION;
 	sip->driver_minor_version = ERL_DRV_EXTENDED_MINOR_VERSION;
@@ -4461,6 +4489,14 @@ driver_system_info(ErlDrvSysInfo *sip, size_t si_size)
 
     }
 
+    /*
+     * 'scheduler_threads' is the last field in the second version
+     * of ErlDrvSysInfo (introduced in driver version 1.1).
+     */
+    if (si_size >= ERL_DRV_SYS_INFO_SIZE(scheduler_threads)) {
+	sip->async_threads = erts_async_max_threads;
+	sip->scheduler_threads = erts_no_of_schedulers;
+    }
 
 }
 

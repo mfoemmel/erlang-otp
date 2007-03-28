@@ -27,5 +27,7 @@
 -define(DEFAULT_NETMASKS,  "netmasks").
 -define(DEFAULT_NETWORKS,  "networks").
 
--define(DEFAULT_UDP_MODULE, inet_udp).
--define(DEFAULT_TCP_MODULE, inet_tcp).
+-define(DEFAULT_UDP_MODULE,  inet_udp).
+-define(DEFAULT_TCP_MODULE,  inet_tcp).
+-define(DEFAULT_SCTP_MODULE, inet_sctp).
+

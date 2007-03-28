@@ -131,7 +131,7 @@ ensure_dead(Name) ->
 
 mnemosyne_ms() ->
     case mnesia_monitor:get_env(embedded_mnemosyne) of
-	true -> mnemosyne:ms();
+	true -> apply(mnemosyne,ms,[]);
 	false -> []
     end.
 

@@ -39,10 +39,8 @@
 typedef struct port Port;
 #include "erl_port_task.h"
 
-#define D_EXITING           1   /* Status field vals  for dist_enntry's */
-#define D_REAL_BUSY         4
-
 #define ERTS_MAX_NO_OF_ASYNC_THREADS 1024
+extern int erts_async_max_threads;
 
 #define MAXINDX 255
 
@@ -727,7 +725,10 @@ extern void create_cache(DistEntry*);
 extern void delete_cache(DistEntry*);
 
 /* Utilities */
-extern int erts_do_net_exits(DistEntry*);
+extern void erts_delete_nodes_monitors(Process *, Uint32);
+extern Eterm erts_monitor_nodes(Process *, Eterm, Eterm);
+extern Eterm erts_processes_monitoring_nodes(Process *);
+extern int erts_do_net_exits(DistEntry*, Eterm);
 extern int distribution_info(int, void *);
 extern int is_node_name_atom(Eterm a);
 
@@ -805,8 +806,10 @@ typedef struct {
 void erts_gc_info(ErtsGCInfo *gcip);
 void erts_init_gc(void);
 int erts_garbage_collect(Process*, int, Eterm*, int);
+void erts_garbage_collect_hibernate(Process* p);
 #if defined(HEAP_FRAG_ELIM_TEST)
 Eterm erts_gc_after_bif_call(Process* p, Eterm result);
+void erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size);
 #endif
 Uint erts_next_heap_size(Uint, Uint);
 Eterm erts_heap_sizes(Process* p);
@@ -839,7 +842,7 @@ typedef struct {
 
 void erts_add_driver_entry(ErlDrvEntry *drv, int driver_list_locked);
 void erts_wake_process_later(Port*, Process*);
-int open_driver(ErlDrvEntry*, Eterm, char*, SysDriverOpts*);
+int erts_open_driver(ErlDrvEntry*, Eterm, char*, SysDriverOpts*, int *);
 void close_port(Eterm);
 void init_io(void);
 void cleanup_io(void);
@@ -989,7 +992,6 @@ erts_id2port_sflgs(Eterm id, Process *c_p, Uint32 c_p_locks, Uint32 sflgs)
 {
 #ifdef ERTS_SMP
     int no_proc_locks = !c_p || !c_p_locks;
-    int proc_locks_unlocked = 0;
 #endif
     Port *prt;
     int ix;
@@ -1018,8 +1020,8 @@ erts_id2port_sflgs(Eterm id, Process *c_p, Uint32 c_p_locks, Uint32 sflgs)
 	else if (erts_smp_mtx_trylock(prt->lock) == EBUSY) {
 	    /* Unlock process locks, and acquire locks in lock order... */
 	    erts_smp_proc_unlock(c_p, c_p_locks);
-	    proc_locks_unlocked = 1;
 	    erts_smp_mtx_lock(prt->lock);
+	    erts_smp_proc_lock(c_p, c_p_locks);
 	}
 
 	/* The id may not have changed... */
@@ -1030,9 +1032,6 @@ erts_id2port_sflgs(Eterm id, Process *c_p, Uint32 c_p_locks, Uint32 sflgs)
 	    prt = NULL;
 	}
     }
-
-    if (proc_locks_unlocked)
-	erts_smp_proc_lock(c_p, c_p_locks);
 #endif
 
     return prt;
@@ -1503,25 +1502,27 @@ erts_alloc_message_heap(Uint size,
 			Process *receiver,
 			Uint32 *receiver_locks)
 {
+#if !defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
+
+    *bpp = NULL;
+    *ohpp = &MSO(receiver);
+    return HAlloc(receiver, size);
+
+#else /* defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST) */
+
     Eterm *hp;
-#if defined(HEAP_FRAG_ELIM_TEST)
-    if (HEAP_LIMIT(receiver) - HEAP_TOP(receiver) >= size) {
-	hp = HEAP_TOP(receiver);
-	HEAP_TOP(receiver) = hp + size;
-	*bpp = NULL;
-	*ohpp = &MSO(receiver);
-    } else {
-	ErlHeapFragment* bp = new_message_buffer(size);
-	hp = bp->mem;
-	*bpp = bp;
-	*ohpp = &bp->off_heap;
-    }
-#else
-#ifdef ERTS_SMP
-    if (*receiver_locks & ERTS_PROC_LOCK_MAIN) {
-    allocate_on_heap:
+
+    if (
+#if defined(ERTS_SMP)
+	*receiver_locks & ERTS_PROC_LOCK_MAIN
+#elif defined(HEAP_FRAG_ELIM_TEST)
+	1
 #endif
-#if defined(ERTS_SMP) && defined(HEAP_FRAG_ELIM_TEST)
+	) {
+#ifdef ERTS_SMP
+    try_allocate_on_heap:
+#endif
+#ifdef HEAP_FRAG_ELIM_TEST
 	if (HEAP_LIMIT(receiver) - HEAP_TOP(receiver) <= size)
 	    goto allocate_in_mbuf;
 	hp = HEAP_TOP(receiver);
@@ -1531,12 +1532,13 @@ erts_alloc_message_heap(Uint size,
 #endif
 	*bpp = NULL;
 	*ohpp = &MSO(receiver);
-#ifdef ERTS_SMP
     }
+#ifdef ERTS_SMP
     else if (erts_proc_trylock(receiver, ERTS_PROC_LOCK_MAIN) == 0) {
 	*receiver_locks |= ERTS_PROC_LOCK_MAIN;
-	goto allocate_on_heap;
+	goto try_allocate_on_heap;
     }
+#endif
     else {
 	ErlHeapFragment *bp;
 #ifdef HEAP_FRAG_ELIM_TEST
@@ -1547,9 +1549,10 @@ erts_alloc_message_heap(Uint size,
 	*bpp = bp;
 	*ohpp = &bp->off_heap;
     }
-#endif
-#endif
+
     return hp;
+
+#endif
 }
 
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */

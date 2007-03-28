@@ -58,7 +58,7 @@ BINDIR      = $(INSTALL_PREFIX)@bindir@
 #
 # Erlang base public files
 #
-ERL_BASE_PUB_FILES=erl erlc epmd run_erl to_erl dialyzer
+ERL_BASE_PUB_FILES=erl erlc epmd run_erl to_erl dialyzer typer escript
 
 # The directory which will contain installed Erlang version.
 # (ILIBDIR is supposed to be LIBDIR *without* the install prefix)
@@ -195,7 +195,14 @@ ifeq ($(OTP_SMALL_BUILD),true)
 else
 	cd $(ERL_TOP)/lib  && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
 ifneq ($(findstring vxworks,$(TARGET)),vxworks)
-	cd $(ERL_TOP)/lib/dialyzer && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
+	if test -f lib/dialyzer/SKIP ; then			\
+		echo "=== Skipping dialyzer, reason:" ;		\
+		cat lib/dialyzer/SKIP ;				\
+		echo "===" ;					\
+	else							\
+		cd $(ERL_TOP)/lib/dialyzer &&			\
+		 $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release ; \
+	fi
 endif
 endif
 	cd $(ERL_TOP)/erts && $(MAKE) BUILD_ALL=1 TESTROOT=$(RELEASE_ROOT) release
@@ -245,9 +252,15 @@ hlib:
 
 dialyzer:
 ifneq ($(OTP_SMALL_BUILD),true)
-	cd lib/dialyzer && \
-	ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
-	    $(MAKE) opt BUILD_ALL=true
+	if test -f lib/dialyzer/SKIP ; then			\
+		echo "=== Skipping dialyzer, reason:" ;		\
+		cat lib/dialyzer/SKIP ;				\
+		echo "===" ;					\
+	else							\
+		cd lib/dialyzer &&				\
+		ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH}  \
+			$(MAKE) opt BUILD_ALL=true ;		\
+	fi
 endif
 
 typer:
@@ -523,6 +536,7 @@ TESTS +=					\
 	cosEventDomain_test			\
 	crypto_test				\
 	debugger_test				\
+	edoc_test                               \
 	hipe_test				\
 	odbc_test				\
 	parsetools_test				\
@@ -617,10 +631,16 @@ ifeq ($(OTP_SMALL_BUILD),true)
 else
 	cd lib && \
 	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
-	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
-	cd lib/dialyzer && \
-	  ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH} \
-	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release 
+	  $(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release
+	if test -f lib/dialyzer/SKIP ; then			\
+		echo "=== Skipping dialyzer, reason:" ;		\
+		cat lib/dialyzer/SKIP ;				\
+		echo "===" ;					\
+	else							\
+		cd lib/dialyzer && 				\
+	  	ERL_TOP=$(ERL_TOP) PATH=$(BOOT_PREFIX)$${PATH}	\
+		$(MAKE) TESTROOT=$(ERLANG_LIBDIR) BUILD_ALL=true release ; \
+	fi
 endif
 
 install.Install:

@@ -1117,13 +1117,17 @@ Eterm erts_bnot(Process* p, Eterm arg)
 static ERTS_INLINE void
 trim_heap(Process* p, Eterm* hp, Eterm res)
 {
-    ASSERT(p->heap <= hp && hp <= p->htop);
     if (is_immed(res)) {
+	ASSERT(p->heap <= hp && hp <= p->htop);
 	p->htop = hp;
     } else {
+	Eterm* new_htop;
 	ASSERT(is_big(res));
-	p->htop = hp + bignum_header_arity(*hp) + 1;
+	new_htop = hp + bignum_header_arity(*hp) + 1;
+	ASSERT(p->heap <= new_htop && new_htop <= p->htop);
+	p->htop = new_htop;
     }
+    ASSERT(p->heap <= p->htop && p->htop <= p->stop);
 }
 
 /*
@@ -1230,7 +1234,7 @@ erts_gc_mixed_plus(Process* p, Eterm* reg, Uint live)
 		    sz = MAX(sz1, sz2)+1;
 		    need_heap = BIG_NEED_SIZE(sz);
 		    if (ERTS_NEED_GC(p, need_heap)) {
-			erts_garbage_collect(p, 2, reg, live+2);
+			erts_garbage_collect(p, need_heap, reg, live+2);
 			if (arg1 != make_big(tmp_big1)) {
 			    arg1 = reg[live];
 			}

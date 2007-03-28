@@ -44,6 +44,9 @@
 /* Define if you have the pthread_atfork function. */
 #undef ETHR_HAVE_PTHREAD_ATFORK
 
+/* Define if you have the pthread_spin_lock function. */
+#undef ETHR_HAVE_PTHREAD_SPIN_LOCK
+
 /* Define if you want to turn on extra sanity checking in the ethread library */
 #undef ETHR_XCHK
 

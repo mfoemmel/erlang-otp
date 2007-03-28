@@ -32,7 +32,7 @@
 %%-----------------------------------------------------------------
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/src/tcp/megaco_tcp.hrl"). 
--include_lib("megaco/src/engine/megaco_internal.hrl"). 
+-include_lib("megaco/src/app/megaco_internal.hrl"). 
 
 
 -define(d1(F, A), ?d("~p " ++ F, [self()|A])).

@@ -1,184 +1,311 @@
+%% -*- erlang-indent-level: 4 -*-
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id $
+%%
 -module(eval_bits).
 
--export([expr_grp/5,match_bits/7]).
+-export([expr_grp/3,expr_grp/5,match_bits/6, 
+	 match_bits/7,bin_gen/6]).
 
--import(lists, [member/2,foldl/3]).
+%% EXPERIMENTAL.
+-export([bitlevel_binaries_enabled/0]).
 
-%%% BITS help functions.
+%% EXPERIMENTAL feature used here: Don't use in applications!
+-compile(bitlevel_binaries).
+-compile(binary_comprehension).
 
-%%% The primary point here is not efficiency, but clarity.
-%%% Bit sequences are represented as lists of 0 or 1.
-%%% In matching we convert to bit lists only as much as we
-%%% need, and keep the tail as a binary.
+%% Only to be used during development of bitlevel binaries to selectively
+%% skip test suites. Will be removed in the future.
 
-%%% expr_grp/5 returns {value, Binary, New_bindings} or exits with
-%%% {Reason,[{erl_eval,expr,3}]} (any other reply is a bug).
-%%% match_bits/6 returns either {match, New_bindings} or throws one of
-%%% 'nomatch' or 'invalid' (the latter if a pattern is illegal - this 
-%%% can only happen if lint hasn't been run).
-%%% Their last argument should be 'true' if type defaulting should be
-%%% done, 'false' otherwise (e.g., if sys_pre_expand has already done it).
-%%% However, it works to always use 'true' for the last argument, so 
-%%% this argument is could actually be removed.
+bitlevel_binaries_enabled() ->
+    %% For testing and future development of the EXPERIMENTAL feature
+    %% bitlevel binaries, the following line can be changed to true.
+    false.
 
-%% error(Reason) -> exception thrown
-%%  Throw a nice-looking exception, similar to exceptions from erl_eval.
-error(Reason) ->
-    exit({Reason,[{erl_eval,expr,3}]}).
+%% Types used in this module:
+%% @type bindings(). An abstract structure for bindings between
+%% variables and values (the environment)
+%%
+%% @type evalfun(). A closure which evaluates an expression given an
+%% environment
+%%
+%% @type matchfun(). A closure which performs a match given a value, a
+%% pattern and an environment
+%%
+%% @type field() represents a field in a "bin"
 
 %%% Part 1: expression evaluation (binary construction)
 
-expr_grp([], Bs0, _Lf, Bits0, _Call_maketype) ->
-    Bits = lists:reverse(Bits0),
-    Bits2 = lists:flatten(Bits),
-    %% bits_to_bytes crashes if not multiple of 8.
-    Bin = list_to_binary(bits_to_bytes(Bits2)),
-    {value, Bin, Bs0};
-expr_grp([Field | Fs], Bs0, Lf, Bits0, Call_maketype) ->
-    {Bitl, Bs1} = expr_bit(Field, Bs0, Lf, Call_maketype),
-    expr_grp(Fs, Bs1, Lf, [Bitl | Bits0], Call_maketype).
+%% @spec expr_grp(Fields::[field()], Bindings::bindings(), 
+%%                EvalFun::evalfun()) -> 
+%%                  {value, binary(), bindings()}
+%%
+%% @doc Returns a tuple with {value,Bin,Bs} where Bin is the binary
+%% constructed from form the Fields under the current Bindings. Bs
+%% contains the present bindings. This function can also throw an
+%% exception if the construction fails.
 
-binary_to_bits(Bin, Size) ->
-    sublist(binary_to_bits(Bin), Size).
+expr_grp(Fields, Bindings, EvalFun, [], _) ->
+    expr_grp(Fields, Bindings, EvalFun, <<>>);
+expr_grp(Fields, Bindings, EvalFun, ListOfBits, _) ->
+    Bin = convert_list(ListOfBits),
+    expr_grp(Fields, Bindings, EvalFun, Bin).
 
-binary_to_bits(Bin) ->
-    bytes_to_bits(binary_to_list(Bin)).
+convert_list(List) ->
+  << <<X:1>> || X <- List >>.
 
--define(GET_BIT(Byte, Bit), (if
-				 Byte band Bit =:= 0 -> 0;
-				 true -> 1
-			     end)).
+expr_grp(Fields, Bindings, EvalFun) ->
+    catch expr_grp(Fields, Bindings, EvalFun, <<>>).
 
-bytes_to_bits(L) ->
-    bytes_to_bits(lists:reverse(L), []).
+expr_grp([Field | FS], Bs0, Lf, Acc) ->
+    {Bin,Bs} = eval_field(Field, Bs0, Lf),
+    expr_grp(FS, Bs, Lf, <<Acc/binary-unit:1,Bin/binary-unit:1>>);
+expr_grp([], Bs0, _Lf, Acc) ->
+    case bitlevel_binaries_enabled() of
+	true -> ok;
+	false ->
+	    case erlang:bitsize(Acc) rem 8 of
+		0 -> ok;
+		_ -> error(badarg)
+	    end
+    end,
+    {value,Acc,Bs0}.
 
-bytes_to_bits([], Acc) -> Acc;
-bytes_to_bits([H|T], Acc0) ->
-    Acc = [?GET_BIT(H, 128),?GET_BIT(H, 64),?GET_BIT(H, 32),?GET_BIT(H, 16),
-	   ?GET_BIT(H, 8),?GET_BIT(H, 4),?GET_BIT(H, 2),?GET_BIT(H, 1)|Acc0],
-    bytes_to_bits(T, Acc).
-				     
-maketype(Size0, Options0, true) ->
-    make_bit_type(0, Size0, Options0);
-maketype(Size0, Options0, false) ->
-    {Size0, Options0}.
-
-expr_bit({bin_element, _, {string, _, S}, default, default}, Bs0, _Fun,
-	 _Call_maketype) ->
-    {bytes_to_bits(S), Bs0};
-expr_bit({bin_element, _Line, E, Size0, Options0}, Bs0, Fun, Call_maketype) ->
-    %%format("bit expr ~w~n", [{bin_element, _Line, E, Size0, Options0}]),
+eval_field({bin_element, _, {string, _, S}, default, default}, Bs0, _Fun) ->
+    {list_to_binary(S),Bs0};
+eval_field({bin_element,Line,E,Size0,Options0}, Bs0, Fun) ->
     {value, V, Bs1} = Fun(E, Bs0),
-    {Size1, Options} = maketype(Size0, Options0, Call_maketype),
+    {Size1, [Type,{unit,Unit},Sign,Endian]} = 
+        make_bit_type(Line, Size0, Options0),
     {value, Size, Bs} = Fun(Size1, Bs1),
-    %%format("bit expr ~w~n", [{bin_element, x, V, Size, Options}]),
-    Bitl = to_binary(V, Size, Options),
-    %%format("bit list ~w~n", [Bitl]),
-    {Bitl, Bs}.
+    {eval_exp_field1(V, Size, Unit, Type, Endian, Sign),Bs}.
 
-size_or_all(all, All) -> All;
-size_or_all(N, _All) when N >= 0 -> N;
-size_or_all(_N, _All) -> error(badarg).
-
-to_binary(B0, Size0, [binary,{unit,Unit}|_]) when is_binary(B0) ->
-    Size1 = size_or_all(Size0, size(B0)),
-    binary_to_bits(B0, Size1*Unit);
-to_binary(I, Size0, [integer,{unit,Unit}|Opts]) when is_integer(Size0),
-                                                     Size0 >= 0,
-                                                     is_integer(I) ->
-    Size = Size0*Unit,
-    L = i_to_bytes(I, Size),
-    Bits = binary_to_bits(list_to_binary(L), Size),
-    to_little_endian(Bits, Opts);
-to_binary(F, Size0, [float,{unit,Unit}|Opts]) when is_integer(Size0),
-                                                   Size0 >= 0,
-                                                   is_float(F) or 
-                                                       is_integer(F) ->
-    Size = Size0*Unit,
-    Bits = float_to_ieee(F, Size),
-    to_little_endian(Bits, Opts);
-to_binary(_, _Size0, _Options) ->
-    error(badarg).
-
-type_and_unit([Type,{unit,Unit}|_]) -> {Type,Unit}.
-
-mod(N, M) ->
-    case N rem M of
-	X when X < 0 ->
-	    X+M;
-	X ->
-	    X
+eval_exp_field1(V, Size, Unit, Type, Endian, Sign) ->
+    case catch eval_exp_field(V, Size, Unit, Type, Endian, Sign) of
+        <<Val/bitstr>> -> Val;
+        _ -> error(badarg)
     end.
 
-pick_bits(_I, 0, L) -> L;
-pick_bits(I, Size, L) ->
-    pick_bits(I bsr 1, Size-1, [I band 1 | L]).
+eval_exp_field(Val, Size, Unit, integer, little, signed) ->
+    <<Val:(Size*Unit)/little-signed>>;
+eval_exp_field(Val, Size, Unit, integer, little, unsigned) ->
+    <<Val:(Size*Unit)/little>>;
+eval_exp_field(Val, Size, Unit, integer, native, signed) ->
+    <<Val:(Size*Unit)/native-signed>>;
+eval_exp_field(Val, Size, Unit, integer, native, unsigned) ->
+    <<Val:(Size*Unit)/native>>;
+eval_exp_field(Val, Size, Unit, integer, big, signed) ->
+    <<Val:(Size*Unit)/signed>>;
+eval_exp_field(Val, Size, Unit, integer, big, unsigned) ->
+    <<Val:(Size*Unit)>>;
+eval_exp_field(Val, Size, Unit, float, little, _) ->
+    <<Val:(Size*Unit)/float-little>>;
+eval_exp_field(Val, Size, Unit, float, native, _) ->
+    <<Val:(Size*Unit)/float-native>>;
+eval_exp_field(Val, Size, Unit, float, big, _) ->
+    <<Val:(Size*Unit)/float>>;
+eval_exp_field(Val, all, _Unit, binary, _, _) ->
+    Size = erlang:bitsize(Val),
+    <<Val:Size/binary-unit:1>>;
+eval_exp_field(Val, Size, Unit, binary, _, _) ->
+    <<Val:(Size*Unit)/binary-unit:1>>.
 
-i_to_bytes(I, Size) ->
-    L = pick_bits(I, Size, lists:duplicate(mod(-Size, 8), 0)),
-    bits_to_bytes(L).
+%%% Part 2: matching in binary comprehensions
+%% @spec bin_gen(BinPattern::{bin,integer(),[field()]}, Bin::binary(),
+%%               GlobalEnv::bindings(), LocalEnv::bindings(),  
+%%               MatchFun::matchfun(), EvalFun::evalfun()) -> 
+%%                 {match, binary(), bindings()} | {nomatch, binary()} | done
+%%
+%% @doc Used to perform matching in a comprehension. If the match
+%% succeeds a new environment and what remains of the binary is
+%% returned. If the match fails what remains of the binary is returned.
+%% If nothing remains of the binary the atom 'done' is returned.
 
-bits_to_bytes(L) ->
-    bits_to_bytes(L, []).
+bin_gen({bin,_,Fs}, Bin, Bs0, BBs0, Mfun, Efun) ->
+    bin_gen(Fs, Bin, Bs0, BBs0, Mfun, Efun, true).
 
-bits_to_bytes([B7,B6,B5,B4,B3,B2,B1,B0|T], Acc) ->
-    Byte = (B7 bsl 7) bor (B6 bsl 6) bor
-	(B5 bsl 5) bor (B4 bsl 4) bor (B3 bsl 3) bor
-	(B2 bsl 2) bor (B1 bsl 1) bor B0,
-    bits_to_bytes(T, [Byte|Acc]);
-bits_to_bytes([], Acc) -> lists:reverse(Acc);
-bits_to_bytes(_, _) -> error(badarg).
+bin_gen([F|Fs], Bin, Bs0, BBs0, Mfun, Efun, Flag) ->
+    case bin_gen_field(F, Bin, Bs0, BBs0, Mfun, Efun) of
+        {match,Bs,BBs,Rest} ->
+            bin_gen(Fs, Rest, Bs, BBs, Mfun, Efun, Flag);
+        {nomatch,Rest} ->
+            bin_gen(Fs, Rest, Bs0, BBs0, Mfun, Efun, false);
+        done ->
+            done
+    end;
+bin_gen([], Bin, Bs0, _BBs0, _Mfun, _Efun, true) ->
+    {match, Bin, Bs0};
+bin_gen([], Bin, _Bs0, _BBs0, _Mfun, _Efun, false) ->
+    {nomatch, Bin}.
+  
+bin_gen_field({bin_element,_,{string,_,S},default,default},
+              Bin, Bs, BBs, _Mfun, _Efun) ->
+    Bits = list_to_binary(S),
+    Size = size(Bits),
+    case Bin of
+        <<Bits:Size/binary,Rest/bitstr>> ->
+            {match,Bs,BBs,Rest};
+        <<_:Size/binary,Rest/bitstr>> ->
+            {nomatch,Rest};
+        _ ->
+            done
+    end;
+bin_gen_field({bin_element,Line,VE,Size0,Options0}, 
+              Bin, Bs0, BBs0, Mfun, Efun) ->
+    {Size1, [Type,{unit,Unit},Sign,Endian]} = 
+        make_bit_type(Line, Size0, Options0),
+    V = erl_eval:partial_eval(VE),
+    match_check_size(Size1, BBs0),
+    {value, Size, _BBs} = Efun(Size1, BBs0),
+    case catch get_value(Bin, Type, Size, Unit, Sign, Endian) of
+        {Val,Rest} when is_binary(Rest) ->
+            NewV = coerce_to_float(V, Type),
+            case catch Mfun(NewV, Val, Bs0) of
+                {match,Bs} ->
+                    BBs = add_bin_binding(NewV, Bs, BBs0),
+                    {match,Bs,BBs,Rest};
+                _ ->
+                    {nomatch,Rest}
+            end;
+        _ ->
+            done
+    end.
 
-%%% Big-endian serves as our native format here (regardless of what
-%%% the endianness of the machine is). This is convenient, since the
-%%% bit order within a byte is big-endian always.
-%%% When a bit sequence consists of a number of 8-bit bytes, and a rest
-%%% with less than 8 bits, the rest is at the start of the sequence for
-%%% big-endian, at the end for little-endian.
+%%% Part 3: binary pattern matching 
+%% @spec match_bits(Fields::[field()], Bin::binary()
+%%                  GlobalEnv::bindings(), LocalEnv::bindings(),  
+%%                  MatchFun::matchfun(),EvalFun::evalfun()) -> 
+%%                  {match, bindings()} 
+%% @doc Used to perform matching. If the match succeeds a new
+%% environment is returned. If the match have some syntactic or
+%% semantic problem which would have been caught at compile time this
+%% function throws 'invalid', if the matching fails for other reasons
+%% the function throws 'nomatch'
 
-to_little_endian(B, Opts) ->
-    case is_little_endian(Opts) of
-	false -> B;
+match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun, _) ->
+    match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun).
+
+match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun) ->
+    case catch match_bits_1(Fs, Bin, Bs0, BBs, Mfun, Efun) of
+        {match,Bs} -> {match,Bs};
+        invalid -> throw(invalid);
+        _Error -> throw(nomatch)
+    end.
+
+match_bits_1([], <<>>,  Bs, _BBs, _Mfun, _Efun) -> 
+    {match,Bs};
+match_bits_1([F|Fs], Bits0, Bs0, BBs0, Mfun, Efun) ->
+    {Bs,BBs,Bits} = match_field_1(F, Bits0, Bs0, BBs0, Mfun, Efun),
+    match_bits_1(Fs, Bits, Bs, BBs, Mfun, Efun).
+
+match_field_1({bin_element,_,{string,_,S},default,default},
+              Bin, Bs, BBs, _Mfun, _Efun) ->
+    Bits = list_to_binary(S),
+    Size = size(Bits),
+    <<Bits:Size/binary,Rest/binary-unit:1>> = Bin,
+    {Bs,BBs,Rest};
+match_field_1({bin_element,Line,VE,Size0,Options0}, 
+              Bin, Bs0, BBs0, Mfun, Efun) ->
+    {Size1, [Type,{unit,Unit},Sign,Endian]} = 
+        make_bit_type(Line, Size0, Options0),
+    V = erl_eval:partial_eval(VE),
+    match_check_size(Size1,BBs0),
+    {value, Size, _BBs} = Efun(Size1, BBs0),
+    {Val,Rest} = get_value(Bin, Type, Size, Unit, Sign, Endian),
+    NewV = coerce_to_float(V, Type),
+    {match,Bs} = Mfun(NewV, Val, Bs0),
+    BBs = add_bin_binding(NewV, Bs, BBs0),
+    {Bs,BBs,Rest}.
+
+%% Almost identical to the one in sys_pre_expand.
+coerce_to_float({integer,L,I}=E, float) ->
+    try
+	{float,L,float(I)}
+    catch
+	error:badarg -> E;
+	error:badarith -> E
+    end;
+coerce_to_float(E, _Type) -> 
+    E.
+
+add_bin_binding({var,_,'_'}, _Bs, BBs) ->
+    BBs;
+add_bin_binding({var,_,Name}, Bs, BBs) ->
+    {value,Value} = erl_eval:binding(Name, Bs),
+    erl_eval:add_binding(Name, Value, BBs);
+add_bin_binding(_, _Bs, BBs) ->
+    BBs.
+
+get_value(Bin, integer, Size, Unit, Sign, Endian) ->
+    get_integer(Bin, Size*Unit, Sign, Endian);
+get_value(Bin, float, Size, Unit, _Sign, Endian) ->
+    get_float(Bin, Size*Unit, Endian);
+get_value(Bin, binary, all, Unit, _Sign, _Endian) ->
+    0 = (erlang:bitsize(Bin) rem Unit),
+    maybe_disallow_bitlevel_binary(Bin),
+    {Bin,<<>>};
+get_value(Bin, binary, Size, Unit, _Sign, _Endian) ->
+    TotSize = Size*Unit,
+    <<Val:TotSize/bitstr,Rest/bitstr>> = Bin,
+    maybe_disallow_bitlevel_binary(Val),
+    {Val,Rest}.
+
+maybe_disallow_bitlevel_binary(Bin) ->
+    case bitlevel_binaries_enabled() of
+	false ->
+	    0 = erlang:bitsize(Bin) rem 8;
 	true ->
-	    %% an incomplete byte is at the start in the input
-	    L = length(B),
-	    P = L rem 8,
-	    {Piece, Rest} = split_list(P, B),
-	    R_big = bits_to_bytes(Rest),
-	    R_little = lists:reverse(R_big),
-	    bytes_to_bits(R_little) ++ Piece
+	    ok
     end.
 
-from_little_endian(B, Opts) ->
-    case is_little_endian(Opts) of
-	false -> B;
-	true ->
-	    %% an incomplete byte is at the end in the input
-	    L = length(B),
-	    P = L rem 8,
-	    {Rest, Piece} = split_list(L-P, B),
-	    R_little = bits_to_bytes(Rest),
-	    R_big = lists:reverse(R_little),
-	    Piece ++ bytes_to_bits(R_big)
-    end.
+get_integer(Bin, Size, signed, little) ->
+    <<Val:Size/little-signed,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_integer(Bin, Size, unsigned, little) ->
+    <<Val:Size/little,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_integer(Bin, Size, signed, native) ->
+    <<Val:Size/native-signed,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_integer(Bin, Size, unsigned, native) ->
+    <<Val:Size/native,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_integer(Bin, Size, signed, big) ->
+    <<Val:Size/signed,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_integer(Bin, Size, unsigned, big) ->
+    <<Val:Size,Rest/binary-unit:1>> = Bin,
+    {Val,Rest}.
 
-is_little_endian(Opts) ->
-    member(little, Opts) orelse (erlang:system_info(endian) == little andalso
-				 member(native, Opts)).
-
-float_to_ieee(F, Size) ->
-    Bin = case catch <<F:Size/float>> of
-	      {'EXIT',{badarg,_}} -> error(badarg);
-	      {'EXIT',_}=Bad -> exit(Bad);
-	      Other -> Other
-	  end,
-    binary_to_bits(Bin).
+get_float(Bin, Size, little) -> 
+    <<Val:Size/float-little,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_float(Bin, Size, native) -> 
+    <<Val:Size/float-native,Rest/binary-unit:1>> = Bin,
+    {Val,Rest};
+get_float(Bin, Size, big) -> 
+    <<Val:Size/float,Rest/binary-unit:1>> = Bin,
+    {Val,Rest}.
 
 %% Identical to the one in sys_pre_expand.
 make_bit_type(Line, default, Type0) ->
     case erl_bits:set_bit_type(default, Type0) of
-	{ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
-	{ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)};
+        {ok,all,Bt} -> {{atom,Line,all},erl_bits:as_list(Bt)};
+        {ok,Size,Bt} -> {{integer,Line,Size},erl_bits:as_list(Bt)};
         {error,Reason} -> error(Reason)
     end;
 make_bit_type(_Line, Size, Type0) -> %Size evaluates to an integer or 'all'
@@ -187,136 +314,22 @@ make_bit_type(_Line, Size, Type0) -> %Size evaluates to an integer or 'all'
         {error,Reason} -> error(Reason)
     end.
 
-%%% Part 2: matching
-
-match_bits(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) ->
-    case catch match_bits1(Fs, Bin, Bs0, BBs, Mfun, Efun, Call_maketype) of
-	{match,Bs} -> {match,Bs};
-	invalid -> throw(invalid);
-	_Error -> throw(nomatch)
-    end.
-
-match_bits1([], <<>>, Bs, _BBs, _Mfun, _Efun, _Call_maketype) -> {match,Bs};
-match_bits1([F|Fs], Bits0, Bs0, BBs0, Mfun, Efun, Call_maketype) ->
-    %%format("matching ~w ~w~n", [F, Bits0]),
-    {Bs,BBs,Bits} = match_field(F, Bits0, Bs0, BBs0, Mfun, Efun, Call_maketype),
-    %%format("left ~w~n", [Bits]),
-    match_bits1(Fs, Bits, Bs, BBs, Mfun, Efun, Call_maketype).
-
-bits_to_int([1|_]=Bits, true) -> bits_to_int2(Bits, -1);
-bits_to_int(Bits, _) -> bits_to_int2(Bits, 0).
-
-bits_to_int2([], Acc) -> Acc;
-bits_to_int2([Bit|Rest], Acc) ->
-    bits_to_int2(Rest, Acc+Acc+Bit).
-
-match_field({bin_element,_,{string,_,S},default,default},
-	    Bin, Bs, BBs, _Mfun, _Efun, _Call_maketype) ->
-    Tail = foldl(fun(C, <<C:8,Tail/binary>>) -> Tail;
-		    (C, Bits0) ->
-			 {Bits,Tail} = get_bits(Bits0, 8),
-			 [C] = bits_to_bytes(Bits),
-			 Tail
-		 end, Bin, S),
-    {Bs,BBs,Tail};
-match_field({bin_element,L,E,default,[binary|_]=Opts}, Bin, Bs0, BBs, 
-            Mfun, Efun, Call_maketype) ->
-     match_field({bin_element,L,E,{atom,L,all},Opts}, Bin, Bs0, BBs, Mfun,
-                 Efun, Call_maketype);
-match_field({bin_element, _,E0,Size0,Options0}, Bin, Bs0, BBs, Mfun, Efun,
-	    Call_maketype) ->
-    {Size1,Options} = maketype(Size0, Options0, Call_maketype),
-    E = coerce_to_float(E0,Options),
-    match_check_size(Size1, BBs),
-    case Efun(Size1, BBs) of
-	{value,all,_} when binary(Bin) ->
-	    {match,Bs} = Mfun(E, Bin, Bs0),
-	    Val = <<>>,
-	    {Bs,add_bin_binding(E, Val, BBs),Val};
-	{value,Size,_} when Size >= 0 ->
-	    {Type,Unit} = type_and_unit(Options),
-	    {Val,Tail} = match_thing(Type, Options, Size*Unit, Bin),
-	    {match,Bs} = Mfun(E, Val, Bs0),
-	    {Bs,add_bin_binding(E, Val, BBs),Tail}
-    end.
-
-%% Identical to the one in sys_pre_expand.
-coerce_to_float({integer,L,I}=E, [float|_]) ->
-    try
-	{float,L,float(I)}
-    catch
-	error:badarg -> E;
-	error:badarith -> E
-    end;
-coerce_to_float(E, _) -> E.
-    
-add_bin_binding({var,_,Var}, Val, BBs) ->
-    erl_eval:add_binding(Var, Val, BBs);
-add_bin_binding(_, _, BBs) -> BBs.
-
-match_thing(binary, _Opts, Size, Bin) when Size rem 8 =:= 0, binary(Bin) ->
-    split_binary(Bin, Size div 8);
-match_thing(binary, _Opts, Size, Bin) ->
-    {Bits,Tail} = get_bits(Bin, Size),
-    {list_to_binary(bits_to_bytes(Bits)),Tail};
-match_thing(integer, Opts, Size, Bin) ->
-    {Bits0,Tail} = get_bits(Bin, Size),
-    Bits1 = from_little_endian(Bits0, Opts),
-    {bits_to_int(Bits1, member(signed, Opts)),Tail};
-match_thing(float, Opts, Size, Bin) ->
-    {Bits0,Tail} = get_bits(Bin, Size),
-    Bits1 = from_little_endian(Bits0, Opts),
-    <<Float:Size/float>> = list_to_binary(bits_to_bytes(Bits1)),
-    {Float,Tail};
-match_thing(_Type, _Opts, _Size, _Bin) ->
-    %%erlang:display({_Type,_Opts,_Size,_Bin}), "cannot happen"
-    error(badarg).
-
 match_check_size({var,_,V}, Bs) -> 
     case erl_eval:binding(V, Bs) of
         {value,_} -> ok;
 	unbound -> throw(invalid) % or, rather, error({unbound,V})
     end;
-match_check_size({atom,_,all}, _Bs) -> ok;
-match_check_size({integer,_,_}, _Bs) -> ok;
-match_check_size({value,_,_}, _Bs) -> ok;	%From the debugger.
-match_check_size(_, _Bs) -> throw(invalid).
+match_check_size({atom,_,all}, _Bs) ->
+    ok;
+match_check_size({integer,_,_}, _Bs) ->
+    ok;
+match_check_size({value,_,_}, _Bs) ->
+    ok;	%From the debugger.
+match_check_size(_, _Bs) -> 
+    throw(invalid).
 
-get_bits(Bin0, N) when binary(Bin0), N rem 8 =:= 0 ->
-    <<Bin:N/binary-unit:1,Tail/binary>> = Bin0,
-    {bytes_to_bits(binary_to_list(Bin)),Tail};
-get_bits(Bin, N) when binary(Bin) ->
-    get_bits({[],0,Bin}, N);
-get_bits({Bits,N,Bin}, N) -> {Bits,Bin};
-get_bits({Bits,N,Bin}, Need) when Need < N ->
-    {sublist(Bits, Need),{lists:nthtail(Need, Bits),N-Need,Bin}};
-get_bits({Bits0,N,Bin0}, Need) ->
-    BytesNeeded = (Need-N+7) div 8,
-    <<Bin:BytesNeeded/binary,Tail/binary>> = Bin0,
-    Bits = Bits0 ++ bytes_to_bits(binary_to_list(Bin)),
-    case 8*size(Bin)+N of
-	Need ->
-	    {Bits,Tail};
-	Have ->
-	    {sublist(Bits, Need),{lists:nthtail(Need, Bits),Have-Need,Tail}}
-    end.
+%% error(Reason) -> exception thrown
+%%  Throw a nice-looking exception, similar to exceptions from erl_eval.
+error(Reason) ->
+    erlang:raise(error, Reason, [{erl_eval,expr,3}]).
 
-split_list(N, List) ->
-    {sublist(List, N), lists:nthtail(N, List)}.
-
-%% sublist that doesn't allow longer N than the list.
-sublist([E|Rest], N) when integer(N), N > 0 ->
-    [E | sublist(Rest, N-1)];
-sublist([], 0) ->
-    [];
-sublist([_|_], 0) ->
-    [];
-sublist(_, _) ->
-    error(badarg).
-
--ifdef(debug).
-%%% Trace output.
-format(_Fmt, _Args) ->
-    io:format(_Fmt, _Args),
-    ok.
--endif.

@@ -310,7 +310,6 @@ voidpf zcalloc (opaque, items, size)
 {
     unsigned sz = items * size;
     voidpf* ptr = (voidpf) sys_alloc(sz);
-    memset(ptr, '\0', sz);
     if (opaque) items += size - size; /* make compiler happy */
     return ptr;
 }

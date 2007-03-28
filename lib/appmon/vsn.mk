@@ -1,2 +1,2 @@
-APPMON_VSN = 2.1.7
+APPMON_VSN = 2.1.8
 

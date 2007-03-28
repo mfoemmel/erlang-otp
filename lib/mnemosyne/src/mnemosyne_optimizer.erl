@@ -527,7 +527,9 @@ remove_common_set([], Set, Acc) ->
 disj_bs_to_set(C) ->
     Bs = 
 	case C of
-	    {'#bindings',_,X} -> X;
+            %% OTP-6496 (dialyzer). remove_obsolete_clauses does not handle
+            %% '#bindings'.
+%%	    {'#bindings',_,X} -> X;
 	    _ when record(C,disj_alt) -> C#disj_alt.bs
 	end,
     ordsets:from_list( mnemosyne_unify:bindings_to_list(Bs) ).
@@ -698,13 +700,11 @@ build_tree(Opr) ->
     Opr#optimizer_result{code=Code}.
 
 
-build_tree1([{'#bindings',C,Bs}|DisjBs]) ->
-    [{'#bindings',C,Bs} | build_tree1(DisjBs)];
+%% OTP-6496 (dialyzer):
+%%build_tree1([{'#bindings',C,Bs}|DisjBs]) ->
+%%    [{'#bindings',C,Bs} | build_tree1(DisjBs)];
 build_tree1([C|Alts]) when record(C,disj_alt) -> 
-    build_tree1(Alts, prepare(C));
-build_tree1([[]|Alts]) ->
-    build_tree1(Alts).
-
+    build_tree1(Alts, prepare(C)).
 
 build_tree1([C|Alts], Tree) when record(C,disj_alt) -> 
     build_tree1(Alts,  ins(prepare(C),Tree));
@@ -736,7 +736,6 @@ ins_key(X) -> X.
 
 
 insa([X|Xs], [[X|As]|Alts]) -> [[X|ins(Xs,As)]|Alts];
-insa([], Alts) -> Alts;
 insa(L, [Alt|Alts]) -> [Alt|insa(L,Alts)];
 insa(L, []) -> [L].
 

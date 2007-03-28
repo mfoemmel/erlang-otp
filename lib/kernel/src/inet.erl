@@ -17,7 +17,7 @@
 %%
 -module(inet).
 
--include_lib("kernel/include/inet.hrl").
+-include("inet.hrl").
 -include("inet_int.hrl").
 
 %% socket
@@ -29,7 +29,7 @@
 	 ip/1, stats/0, options/0, 
 	 pushf/3, popf/1, close/1, gethostname/0, gethostname/1]).
 
--export([connect_options/2, listen_options/2, udp_options/2]).
+-export([connect_options/2, listen_options/2, udp_options/2, sctp_options/2]).
 
 -export([i/0, i/1, i/2]).
 
@@ -49,6 +49,7 @@
 -export([getservbyname/2, getservbyport/2]).
 -export([getaddrs/2, getaddrs/3, getaddrs_tm/3,
 	 getaddr/2, getaddr/3, getaddr_tm/3]).
+-export([translate_ip/2]).
 
 -export([bytes_to_ip6/16, ip6_to_bytes/1, ip4_to_bytes/1, ip_to_bytes/1]).
 
@@ -60,10 +61,17 @@
 %% timer interface
 -export([start_timer/1, timeout/1, timeout/2, stop_timer/1]).
 
-
 %% imports
 -import(lists, [append/1, duplicate/2, member/2, filter/2,
 		map/2, foldl/3, foreach/2]).
+
+%% Record Signature
+-define(RS(Record),
+	{Record,record_info(size, Record)}).
+%% Record Signature Check (guard)
+-define(RSC(Record, RS),
+	element(1, Record) =:= element(1, RS),
+	size(Record) =:= element(2, RS)).
 
 
 get_rc() ->
@@ -303,7 +311,7 @@ connect_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, packet_size, buffer, mode, deliver,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
-     delay_send].
+     delay_send,raw].
     
 connect_options(Opts, Family) ->
     BaseOpts = 
@@ -326,6 +334,8 @@ connect_options(Opts, Family) ->
 	Error -> Error	    
     end.
 
+con_opt([{raw,A,B,C}|Opts],R,As) ->
+    con_opt([{raw,{A,B,C}}|Opts],R,As);
 con_opt([Opt | Opts], R, As) ->
     case Opt of
 	{ip,IP}     -> con_opt(Opts, R#connect_opts { ifaddr = IP }, As);
@@ -357,7 +367,7 @@ listen_options() ->
     [tos, priority, reuseaddr, keepalive, linger, sndbuf, recbuf, nodelay,
      header, active, packet, buffer, mode, deliver, backlog,
      exit_on_close, high_watermark, low_watermark, bit8, send_timeout,
-     delay_send, packet_size].
+     delay_send, packet_size,raw].
 
 listen_options(Opts, Family) ->
     BaseOpts = 
@@ -380,6 +390,8 @@ listen_options(Opts, Family) ->
 	Error -> Error
     end.
 	
+list_opt([{raw,A,B,C}|Opts], R, As) ->
+    list_opt([{raw,{A,B,C}}|Opts], R, As);
 list_opt([Opt | Opts], R, As) ->
     case Opt of
 	{ip,IP}      ->  list_opt(Opts, R#listen_opts { ifaddr = IP }, As);
@@ -408,12 +420,11 @@ list_add(Name, Val, R, Opts, As) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Available options for udp:open
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
 udp_options() ->
     [tos, priority, reuseaddr, sndbuf, recbuf, header, active, buffer, mode, 
      deliver,
      broadcast, dontroute, multicast_if, multicast_ttl, multicast_loop,
-     add_membership, drop_membership, read_packets].
+     add_membership, drop_membership, read_packets,raw].
 
 
 udp_options(Opts, Family) ->
@@ -425,6 +436,8 @@ udp_options(Opts, Family) ->
 	Error -> Error
     end.
 
+udp_opt([{raw,A,B,C}|Opts], R, As) ->
+    udp_opt([{raw,{A,B,C}}|Opts], R, As);
 udp_opt([Opt | Opts], R, As) ->
     case Opt of
 	{ip,IP}     ->  udp_opt(Opts, R#udp_opts { ifaddr = IP }, As);
@@ -450,6 +463,83 @@ udp_add(Name, Val, R, Opts, As) ->
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Available options for sctp:open
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%  Currently supported options include:
+%  (*) {mode,   list|binary}	 or just list|binary
+%  (*) {active, true|false|once}
+%  (*) {sctp_module, inet_sctp|inet6_sctp} or just inet|inet6
+%  (*) options set via setsockopt.
+%      The full list is below in sctp_options/0 .
+%  All other options are currently NOT supported. In particular:
+%  (*) multicast on SCTP is not (yet) supported, as it may be incompatible
+%      with automatic associations;
+%  (*) passing of open FDs ("fdopen") is not supported.
+sctp_options() ->
+[   % The following are generic inet options supported for SCTP sockets:
+    mode, active, buffer, tos, priority, dontroute, reuseaddr, linger, sndbuf,
+    recbuf,
+
+    % Other options are SCTP-specific (though they may be similar to their
+    % TCP and UDP counter-parts):
+    sctp_rtoinfo,   		 sctp_associnfo,	sctp_initmsg,
+    sctp_autoclose,		 sctp_nodelay,		sctp_disable_fragments,
+    sctp_i_want_mapped_v4_addr,  sctp_maxseg,		sctp_primary_addr,
+    sctp_set_peer_primary_addr,  sctp_adaption_layer,	sctp_peer_addr_params,
+    sctp_default_send_param,	 sctp_events,		sctp_delayed_ack_time,
+    sctp_status,	   	 sctp_get_peer_addr_info
+].
+
+sctp_options(Opts, Mod)  ->
+    case sctp_opt(Opts, Mod, #sctp_opts{}, sctp_options()) of
+	{ok,#sctp_opts{ifaddr=undefined}=SO} -> 
+	    {ok,SO#sctp_opts{ifaddr=Mod:translate_ip(?SCTP_DEF_IFADDR)}};
+	{ok,_}=OK ->
+	    OK;
+	Error -> Error
+    end.
+
+sctp_opt([Opt|Opts], Mod, R, As) ->
+    case Opt of
+	{ip,IP} ->
+	    sctp_opt_ifaddr(Opts, Mod, R, As, IP);
+	{ifaddr,IP} ->
+	    sctp_opt_ifaddr(Opts, Mod, R, As, IP);
+	{port,Port} ->
+	    case Mod:getserv(Port) of
+		{ok,P} ->
+		    sctp_opt(Opts, Mod, R#sctp_opts{port=P}, As);
+		Error -> Error
+	    end;
+	binary		-> sctp_opt (Opts, Mod, R, As, mode, binary);
+	list		-> sctp_opt (Opts, Mod, R, As, mode, list);
+	{sctp_module,_}	-> sctp_opt (Opts, Mod, R, As); % Done with
+	inet		-> sctp_opt (Opts, Mod, R, As); % Done with
+	inet6		-> sctp_opt (Opts, Mod, R, As); % Done with
+	{Name,Val}	-> sctp_opt (Opts, Mod, R, As, Name, Val);
+	_ -> {error,badarg}
+    end;
+sctp_opt([], _Mod, R, _SockOpts) ->
+    {ok, R}.
+
+sctp_opt(Opts, Mod, R, As, Name, Val) ->
+    case add_opt(Name, Val, R#sctp_opts.opts, As) of
+	{ok,SocketOpts} ->
+	    sctp_opt(Opts, Mod, R#sctp_opts{opts=SocketOpts}, As);
+	Error -> Error
+    end.
+
+sctp_opt_ifaddr(Opts, Mod, #sctp_opts{ifaddr=IfAddr}=R, As, Addr) ->
+    IP = Mod:translate_ip(Addr),
+    sctp_opt(Opts, Mod, 
+	     R#sctp_opts{
+	       ifaddr=case IfAddr of
+			  undefined              -> IP;
+			  _ when is_list(IfAddr) -> [IP|IfAddr];
+			  _                      -> [IP,IfAddr]
+		      end}, As).
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Util to check and insert option in option list
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -460,9 +550,9 @@ add_opt(Name, Val, Opts, As) ->
 		true ->
 		    Opts1 = lists:keydelete(Name, 1, Opts),
 		    {ok, [{Name,Val} | Opts1]};
-		false -> {error, badarg}
+		false -> {error,badarg}
 	    end;
-	false -> {error, badarg}
+	false -> {error,badarg}
     end.
 	
 
@@ -627,27 +717,39 @@ gethostbyaddr_tm(_Addr, _Timer, []) ->
     {error, nxdomain}.
 
 
-open(Fd, Addr, Port, Opts, Type, Family, Module) when Fd < 0 ->
-    case prim_inet:open(Type,Family) of
+open(Fd, Addr, Port, Opts, Protocol, Family, Module) when Fd < 0 ->
+    case prim_inet:open(Protocol, Family) of
 	{ok,S} ->
 	    case prim_inet:setopts(S, Opts) of
 		ok ->
-		    case prim_inet:bind(S, Addr, Port) of
+		    case if is_list(Addr) ->
+				 prim_inet:bind(S, add,
+						[case A of
+						     {_,_} -> A;
+						     _     -> {A,Port}
+						 end || A <- Addr]);
+			    true ->
+				 prim_inet:bind(S, Addr, Port)
+			 end of
 			{ok, _} -> 
 			    inet_db:register_socket(S, Module),
 			    {ok,S};
-			Error  -> prim_inet:close(S), Error
+			Error  ->
+			    prim_inet:close(S),
+			    Error
 		    end;
-		Error  -> prim_inet:close(S), Error
+		Error  ->
+		    prim_inet:close(S),
+		    Error
 	    end;
-	Error -> Error
+	Error ->
+	    Error
     end;
-open(Fd, _Addr, _Port, Opts, Type, Family, Module) ->
-    fdopen(Fd, Opts, Type, Family, Module).
+open(Fd, _Addr, _Port, Opts, Protocol, Family, Module) ->
+    fdopen(Fd, Opts, Protocol, Family, Module).
 
-
-fdopen(Fd, Opts, Type, Family, Module) ->
-    case prim_inet:fdopen(Type, Fd, Family) of
+fdopen(Fd, Opts, Protocol, Family, Module) ->
+    case prim_inet:fdopen(Protocol, Family, Fd) of
 	{ok, S} ->
 	    case prim_inet:setopts(S, Opts) of
 		ok ->
@@ -658,7 +760,6 @@ fdopen(Fd, Opts, Type, Family, Module) ->
 	    end;
 	Error -> Error
     end.
-    
 
 
 ip_to_bytes(IP) when size(IP) == 4 -> ip4_to_bytes(IP);
@@ -795,7 +896,7 @@ fmt_addr({error,enotconn}, _) -> "*:*";
 fmt_addr({error,_}, _)        -> " ";
 fmt_addr({ok,Addr}, Proto) ->
     case Addr of
-	{0,0}            -> "*:*";
+	%%Dialyzer {0,0}            -> "*:*";
 	{{0,0,0,0},Port} -> "*:" ++ fmt_port(Port, Proto);
 	{{0,0,0,0,0,0,0,0},Port} -> "*:" ++ fmt_port(Port, Proto);
 	{{127,0,0,1},Port} -> "localhost:" ++ fmt_port(Port, Proto);
@@ -898,7 +999,7 @@ tcp_sync_input(S, Owner, Flag) ->
 	    Flag
     end.
 
-%% Set controlling process for UDP socket.
+%% Set controlling process for UDP or SCTP socket.
 udp_controlling_process(S, NewOwner) when port(S), pid(NewOwner) ->
     case erlang:port_info(S, connected) of
 	{connected, Pid} when Pid /= self() ->
@@ -960,7 +1061,6 @@ timeout(Time, Timer) ->
        true -> Time
     end.
     
-
 stop_timer(false) -> false;
 stop_timer(Timer) ->
     case erlang:cancel_timer(Timer) of
@@ -972,3 +1072,4 @@ stop_timer(Timer) ->
 	    end;
 	T -> T
     end.
+

@@ -740,10 +740,11 @@ escape(_, _, _, St) ->
 %% yield exactly one value. This might have to be changed.)
 
 primop_call(F, A, Xs, _As, St0) ->
-    St1 = case is_escape_op(F, A) of
-	      [] -> St0;
-	      Ns -> escape(Xs, Ns, St0)
-	  end,
+    %% St1 = case is_escape_op(F, A) of
+    %%	      [] -> St0;
+    %%	      Ns -> escape(Xs, Ns, St0)
+    %%	  end,
+    St1 = St0,
     case is_imm_op(F, A) of
 	true ->
 	    {[empty()], St1};
@@ -1038,7 +1039,7 @@ get_deps(L, Dep) ->
 %% only send-operations are considered as causing escapement, and only
 %% in specific arguments.
 
-is_escape_op(_F, _A) -> [].
+%% is_escape_op(_F, _A) -> [].
 
 is_escape_op(erlang, '!', 2) -> [2];
 is_escape_op(erlang, send, 2) -> [2];

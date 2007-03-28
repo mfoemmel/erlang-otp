@@ -186,7 +186,7 @@ handle_call(Request, _, State = #state{session = Session =
             case State#state.request of
                 #request{} -> %% Old request no yet finished
 		    %% Make sure to use the new value of timers in state
-		    Timers = NewState#state.timers,
+		    NewTimers = NewState#state.timers,
                     NewPipeline = queue:in(Request, State#state.pipeline),
 		    NewSession = 
 			Session#tcp_session{pipeline_length = 
@@ -196,7 +196,7 @@ handle_call(Request, _, State = #state{session = Session =
 		    httpc_manager:insert_session(NewSession),
                     {reply, ok, State#state{pipeline = NewPipeline,
 					    session = NewSession,
-					    timers = Timers}};
+					    timers = NewTimers}};
 		undefined ->
 		    %% Note: tcp-message reciving has already been
 		    %% activated by handle_pipeline/2. Also
@@ -421,36 +421,40 @@ send_first_request(Address, Request, State) ->
 		    NewState = activate_request_timeout(TmpState),
 		    {ok, NewState};
 		{error, Reason} -> 
-		    case State#state.status of
-			new -> % Called from init/1
-			    self() ! {init_error, error_sending, 
-				      httpc_response:error(Request, Reason)},
-			    {ok, State#state{request = Request,
-					     session = 
-					     #tcp_session{socket = Socket}}};
-			ssl_tunnel -> % Not called from init/1
-			    NewState = 
-				answer_request(Request, 
-					       httpc_response:error(Request, 
-								    Reason),
-					       State),
-			    {stop, normal, NewState}
-		    end
-	    end;
-	{error, Reason} ->
-	    case State#state.status of
-		new -> % Called from init/1
-		    self() ! {init_error, error_connecting, 
+		    %% Commented out in wait of ssl support to avoid
+		    %% dialyzer warning
+		    %%case State#state.status of
+		    %%	new -> % Called from init/1
+		    self() ! {init_error, error_sending, 
 			      httpc_response:error(Request, Reason)},
-		    {ok, State#state{request = Request}};
-		ssl_tunnel -> % Not called from init/1
-			    NewState = 
-			answer_request(Request, 
-				       httpc_response:error(Request, 
-							    Reason),
-				       State),
-		    {stop, normal, NewState}
-	    end
+		    {ok, State#state{request = Request,
+				     session = 
+				     #tcp_session{socket = Socket}}}
+		    %%ssl_tunnel -> % Not called from init/1
+		    %%  NewState = 
+		    %%	answer_request(Request, 
+		    %%httpc_response:error(Request, 
+		    %%Reason),
+		    %%			       State),
+		    %%	    {stop, normal, NewState}
+		    %%    end
+	    end;
+	{error, Reason} -> 
+	    %% Commented out in wait of ssl support to avoid
+	    %% dialyzer warning
+	    %% case State#state.status of
+	    %%	new -> % Called from init/1
+	    self() ! {init_error, error_connecting, 
+		      httpc_response:error(Request, Reason)},
+	    {ok, State#state{request = Request}}
+	    %%	ssl_tunnel -> % Not called from init/1
+	    %%    NewState = 
+	    %%	answer_request(Request, 
+	    %%		       httpc_response:error(Request, 
+	    %%					    Reason),
+	    %%		       State),
+	    %%    {stop, normal, NewState}
+	    %%end
     end.
 
 handle_http_msg({Version, StatusCode, ReasonPharse, Headers, Body}, 

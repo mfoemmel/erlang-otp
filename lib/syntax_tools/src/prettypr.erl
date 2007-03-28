@@ -52,11 +52,11 @@
 -record(nest, {n, d}).
 -record(beside, {d1, d2}).
 -record(above, {d1, d2}).
--record(sep, {ds, i = 0, p = false}). %% i::integer(), p::bool()
+-record(sep, {ds, i = 0 :: integer(), p = false :: bool()}).
 
 
 %% ---------------------------------------------------------------------
-%% A small note of warning for hackers: it's fairly easy to break this
+%% A small warning for hackers: it's fairly easy to break this
 %% thing (in particular, to muck up the complexity) if you don't
 %% understand how it works.
 %% ---------------------------------------------------------------------
@@ -235,7 +235,7 @@ break(D) ->
 %% zero, in which case `D' is returned unchanged.
 
 nest(N, D) ->
-    if N == 0 ->
+    if N =:= 0 ->
 	    D;
        true ->
 	    #nest{n = N, d = D}
@@ -1243,6 +1243,5 @@ strwidth([_ | Cs], N) ->
     strwidth(Cs, N + 1);
 strwidth([], N) ->
     N.
-
 
 %% =====================================================================

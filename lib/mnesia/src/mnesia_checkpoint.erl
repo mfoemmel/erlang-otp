@@ -1016,12 +1016,8 @@ do_add_copy(Cp, Tab, Node) when Node /= node()->
 				    RS0 = val({schema, {retainer, Name}}),
 				    WS = RS0#retainer.writers,
 				    RS1 = RS0#retainer{writers = WS ++ [Node]},
-				    case send_retainer(Cp, RS1, Node) of
-					{ok, Cp1} ->
-					    send_retainer(Cp1, R, Node);
-					Error ->
-					    Error
-				    end;
+				    {ok, Cp1} = send_retainer(Cp, RS1, Node),
+				    send_retainer(Cp1, R, Node);
 				false ->
 				    send_retainer(Cp, R, Node)
 			    end;

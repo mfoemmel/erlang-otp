@@ -478,9 +478,7 @@ check_filename_present(_Dir,AuthFile,DirData) ->
 directive(auth_user_file) ->
     "AuthUserFile";
 directive(auth_group_file) ->
-    "AuthGroupFile";
-directive(_) ->
-    "".
+    "AuthGroupFile".
 
 %% store
 

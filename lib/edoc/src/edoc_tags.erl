@@ -26,7 +26,6 @@
 %% @doc EDoc tag scanning.
 
 %% TODO: tag/macro for including the code of a function as `<pre>'-text.
-%% TODO: consider new tag: @arg name, description
 %% TODO: consider new tag: @license text
 
 -module(edoc_tags).
@@ -69,8 +68,10 @@ tags() ->
      {equiv, fun parse_expr/4, [function,single]},
      {headerfile, fun parse_header/4, All},
      {hidden, text, [module,function,single]},
+     {param, fun parse_param/4, [function]},
      {private, text, [module,function,single]},
      {reference, xml, [module,footer,package,overview]},
+     {return, xml, [function,single]},
      {see, fun parse_see/4, [module,function,package,overview]},
      {since, text, [module,function,package,overview,single]},
      {spec, fun parse_spec/4, [function,single]},
@@ -78,7 +79,7 @@ tags() ->
      {title, text, [overview,single]},
      {'TODO', xml, All},
      {todo, xml, All},
-     {type, fun parse_type/4, [module,footer,function]},
+     {type, fun parse_typedef/4, [module,footer,function]},
      {version, text, [module,package,overview,single]}].
 
 aliases('TODO') -> todo;
@@ -304,6 +305,9 @@ parse_spec(Data, Line, _Env, {_, {F, A}} = _Where) ->
 	    end
     end.
 
+parse_param(Data, Line, _Env, {_, {_F, _A}} = _Where) ->
+    edoc_parser:parse_param(Data, Line).
+
 parse_throws(Data, Line, _Env, {_, {_F, _A}} = _Where) ->
     edoc_parser:parse_throws(Data, Line).
 
@@ -315,7 +319,7 @@ parse_contact(Data, Line, _Env, _Where) ->
 	    Info
     end.
 
-parse_type(Data, Line, _Env, _Where) ->
+parse_typedef(Data, Line, _Env, _Where) ->
     Def = edoc_parser:parse_typedef(Data, Line),
     {#t_typedef{name = #t_name{name = T}}, _} = Def,
     case edoc_types:is_predefined(T) of

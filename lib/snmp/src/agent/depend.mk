@@ -123,6 +123,13 @@ $(EBIN)/snmpa_symbolic_store.$(EMULATOR): \
 	../misc/snmp_verbosity.hrl \
 	../../include/snmp_types.hrl
 
+$(EBIN)/snmpa_target_cache.$(EMULATOR): \
+	snmpa_target_cache.erl \
+	../misc/snmp_verbosity.hrl \
+	../misc/snmp_debug.hrl \
+	snmpa_internal.hrl \
+	../app/snmp_internal.hrl
+
 $(EBIN)/snmpa_trap.$(EMULATOR): \
 	snmpa_trap.erl \
 	../misc/snmp_verbosity.hrl \

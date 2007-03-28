@@ -17,7 +17,7 @@
 #
 
 ifndef EXPECTED_AUTOCONF_VERSION
-EXPECTED_AUTOCONF_VERSION=2.13
+EXPECTED_AUTOCONF_VERSION=2.59
 endif
 SAVE_ARGS=$(ERL_TOP)/make/save_args
 CONFIG_STATUS=$(CONFIGURE_DIR)/$(TARGET)/config.status
@@ -52,13 +52,13 @@ $(CONFIGURE_DIR)/configure: $(CONFIGURE_DIR)/configure.in $(EXTRA_CONFIGURE_DEPE
 		echo "***************************************************"  1>&2 ; \
 		;;                                                                 \
 	esac
-	cd $(CONFIGURE_DIR) && autoconf
+	cd $(CONFIGURE_DIR) && autoconf -f
 
-$(CONFIGURE_DIR)/config.h.in: $(CONFIGURE_DIR)/configure $(CONFIGURE_DIR)/acconfig.h
+$(CONFIGURE_DIR)/config.h.in: $(CONFIGURE_DIR)/configure.in $(CONFIGURE_DIR)/aclocal.m4
 	cd $(CONFIGURE_DIR) && autoheader ./configure.in > ./config.h.in
 
 $(CONFIG_STATUS): $(SAVED_CONFIG_FLAGS_FILE) $(CONFIGURE_DIR)/configure $(EXTRA_CONFIG_STATUS_DEPENDENCIES)
-	 cd $(CONFIGURE_DIR) && CONFIG_STATUS=$(CONFIG_STATUS) ./configure $(ALL_CONFIG_FLAGS)
+	cd $(CONFIGURE_DIR) && CONFIG_STATUS=$(CONFIG_STATUS) ./configure $(ALL_CONFIG_FLAGS)
 
 lazy_configure_target_clean:
 	rm -f $(CONFIG_STATUS)

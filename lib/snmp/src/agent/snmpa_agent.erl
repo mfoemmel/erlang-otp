@@ -422,7 +422,27 @@ which_notification_filter(Agent) ->
 
 
 send_trap(Agent, Trap, NotifyName, CtxName, Recv, Varbinds) ->
-    Agent ! {send_trap, Trap, NotifyName, CtxName, Recv, Varbinds}.
+    ?d("send_trap -> entry with"
+       "~n   self():     ~p"
+       "~n   Agent:      ~p [~p]"
+       "~n   Trap:       ~p"
+       "~n   NotifyName: ~p"
+       "~n   CtxName:    ~p"
+       "~n   Recv:       ~p"
+       "~n   Varbinds:   ~p", 
+       [self(), Agent, wis(Agent), Trap, NotifyName, CtxName, Recv, Varbinds]),
+    Msg = {send_trap, Trap, NotifyName, CtxName, Recv, Varbinds}, 
+    case (wis(Agent) == self()) of
+	false ->
+	    call(Agent, Msg);
+	true ->
+	    Agent ! Msg
+    end.
+
+wis(Pid) when is_pid(Pid) ->
+    Pid;
+wis(Atom) when is_atom(Atom) ->
+    whereis(Atom).
 
 forward_trap(Agent, TrapRecord, NotifyName, CtxName, Recv, Varbinds) ->
     Agent ! {forward_trap, TrapRecord, NotifyName, CtxName, Recv, Varbinds}.
@@ -494,7 +514,7 @@ db(Tab) ->
 %%% 2. Main loop
 %%%--------------------------------------------------
 handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
-    ?vdebug("Received PDU: "
+    ?vdebug("[handle_info] Received PDU: "
 	    "~n   ~p"
 	    "~n   from: ~p", [Pdu, Address]),
     %% XXX OTP-3324
@@ -547,7 +567,7 @@ handle_info(worker_available, S) ->
     {noreply, S#state{worker_state = ready}};
 
 handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
-    ?vlog("send trap request:"
+    ?vlog("[handle_info] send trap request:"
 	  "~n   Trap:        ~p"
 	  "~n   NotifyName:  ~p"
 	  "~n   ContextName: ~p"
@@ -567,7 +587,7 @@ handle_info({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, S) ->
 
 handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
 	     Recv, Varbinds},S) ->
-    ?vlog("forward trap request:"
+    ?vlog("[handle_info] forward trap request:"
 	  "~n   TrapRecord:  ~p"
 	  "~n   NotifyName:  ~p"
 	  "~n   ContextName: ~p"
@@ -586,7 +606,7 @@ handle_info({forward_trap, TrapRecord, NotifyName, ContextName,
     end;
 
 handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
-    ?vlog("backup done:"
+    ?vlog("[handle_info] backup done:"
 	  "~n   Reply: ~p", [Reply]),
     gen_server:reply(From, Reply),
     {noreply, S#state{backup = undefined}};
@@ -652,15 +672,35 @@ handle_info(Info, S) ->
     warning_msg("received unexpected info: ~n~p", [Info]),
     {noreply, S}.
 
+handle_call({send_trap, Trap, NotifyName, ContextName, Recv, Varbinds}, 
+	    _From, S) ->
+    ?vlog("[handle_call] send trap request:"
+	  "~n   Trap:        ~p"
+	  "~n   NotifyName:  ~p"
+	  "~n   ContextName: ~p"
+	  "~n   Recv:        ~p" 
+	  "~n   Varbinds:    ~p", 
+	  [Trap,NotifyName,ContextName,Recv,Varbinds]),
+    case (catch handle_send_trap(S, Trap, NotifyName, ContextName,
+				 Recv, Varbinds)) of
+	{ok, NewS} ->
+	    {reply, ok, NewS};
+	{'EXIT', Reason} ->
+	    ?vinfo("Trap not sent:~n   ~p", [Reason]),
+	    {reply, {error, {send_failed, Reason}}, S};
+	_ ->
+	    ?vinfo("Trap not sent", []),
+	    {reply, {error, send_failed}, S}
+    end;
 handle_call({subagent_get, Varbinds, PduData, IsNotification}, _From, S) ->
-    ?vlog("subagent get:"
+    ?vlog("[handle_call] subagent get:"
 	  "~n   Varbinds: ~p"
 	  "~n   PduData:  ~p", 
 	  [Varbinds,PduData]),
     put_pdu_data(PduData),
     {reply, do_get(Varbinds, IsNotification), S};
 handle_call({subagent_get_next, MibView, Varbinds, PduData}, _From, S) ->
-    ?vlog("subagent get-next:"
+    ?vlog("[handle_call] subagent get-next:"
 	  "~n   MibView:  ~p"
 	  "~n   Varbinds: ~p"
 	  "~n   PduData:  ~p", 
@@ -668,7 +708,7 @@ handle_call({subagent_get_next, MibView, Varbinds, PduData}, _From, S) ->
     put_pdu_data(PduData),
     {reply, do_get_next(MibView, Varbinds), S};
 handle_call({subagent_set, Arguments, PduData}, _From, S) ->
-    ?vlog("subagent set:"
+    ?vlog("[handle_call] subagent set:"
 	  "~n   Arguments: ~p"
 	  "~n   PduData:   ~p", 
 	  [Arguments,PduData]),
@@ -676,7 +716,7 @@ handle_call({subagent_set, Arguments, PduData}, _From, S) ->
     {reply, do_subagent_set(Arguments), S};
 
 handle_call({get, Vars, Context}, _From, S) ->
-    ?vlog("get:"
+    ?vlog("[handle_call] get:"
 	  "~n   Vars:    ~p"
 	  "~n   Context: ~p", [Vars, Context]),
     put_pdu_data({undefined, undefined, undefined, undefined, Context}),
@@ -697,7 +737,7 @@ handle_call({get, Vars, Context}, _From, S) ->
     end;
 
 handle_call({get_next, Vars, Context}, _From, S) ->
-    ?vlog("get_next:"
+    ?vlog("[handle_call] get_next:"
           "~n   Vars:    ~p"
           "~n   Context: ~p",[Vars, Context]),
     put_pdu_data({undefined, undefined, undefined, undefined, Context}),
@@ -729,13 +769,13 @@ handle_call({register_subagent, SubTreeOid, SubagentPid}, _From, S) ->
 
 handle_call({unregister_subagent, SubagentPid}, _From, S) 
   when pid(SubagentPid) ->
-    ?vlog("unregister subagent ~p", [SubagentPid]),
+    ?vlog("[handle_call] unregister subagent ~p", [SubagentPid]),
     Reply = snmpa_mib:unregister_subagent(get(mibserver), SubagentPid),
     unlink(SubagentPid),
     {reply, Reply, S};
 
 handle_call({unregister_subagent, SubTreeOid}, _From, S) ->
-    ?vlog("unregister subagent ~p", [SubTreeOid]),
+    ?vlog("[handle_call] unregister subagent ~p", [SubTreeOid]),
     Reply = 
 	case snmpa_mib:unregister_subagent(get(mibserver), SubTreeOid) of
 	    {ok, DeletedSubagentPid} ->
@@ -2948,7 +2988,19 @@ dbg_apply(M,F,A) ->
 	_ ->
 	    ?vlog("~n   apply: ~w,~w,~p~n", [M,F,A]),
 	    Res = (catch apply(M,F,A)),
-	    ?vlog("~n   returned: ~p", [Res]),
+	    case Res of
+		{'EXIT', Reason} ->
+		    ?vinfo("Call to: "
+			   "~n   Module:   ~p"
+			   "~n   Function: ~p"
+			   "~n   Args:     ~p"
+			   "~n"
+			   "~nresulted in an exit"
+			   "~n"
+			   "~n   ~p", [M, F, A, Reason]);
+		_ ->
+		    ?vlog("~n   returned: ~p", [Res])
+	    end,
 	    Res
     end.
 

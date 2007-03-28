@@ -240,7 +240,7 @@ join_lines([]) ->
 %% Recall that the list is in reverse line-number order.
 
 join_lines([{L1, Col1, Ind1, Txt1} | Lines], Txt, L, Col, Ind) ->
-    if L1 == L - 1, Col1 == Col, Ind + 1 == Col ->
+    if L1 =:= L - 1, Col1 =:= Col, Ind + 1 =:= Col ->
 	    %% The last test above checks that the previous
 	    %% comment was alone on its line; otherwise it won't
 	    %% be joined with the current; this is not always what

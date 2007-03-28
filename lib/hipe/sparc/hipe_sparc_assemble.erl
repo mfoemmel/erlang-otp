@@ -190,7 +190,7 @@ assemble_instr(I) ->
 %%  #jmp{} ->
 %%    assemble_jmp(I);
     #sethi{} ->
-      assemble_sethi(I);
+      assemble_sethi(I)
 %%  #load_fp{} ->
 %%    assemble_load_fp(I);
 %%  #store_fp{} ->
@@ -206,9 +206,7 @@ assemble_instr(I) ->
 %%  #conv_fp{} ->
 %%    assemble_conv_fp(I);
 %%  #nop{} ->
-%%    assemble_nop(I);
-    _ ->
-      exit([{not_handled_instruction,I}])
+%%    assemble_nop(I)
   end.
 
 check_simm13(Val,I) ->
@@ -823,18 +821,18 @@ resolve_load_address(Instr,Addr,Refs,MFA,_Map,ConstMap)->
     case hipe_sparc:load_address_type(Instr) of
 %%      label ->
 %%	{hot,Offset} = find(Address, Map),
-%%	[{?PATCH_TYPE2EXT(load_address),Addr,{label,Offset}}];
+%%	[{?LOAD_ADDRESS,Addr,{label,Offset}}];
       local_function -> 
-	[{?PATCH_TYPE2EXT(load_address),Addr,{local_function,Address}}];
+	[{?LOAD_ADDRESS,Addr,{local_function,Address}}];
       remote_function -> 
-	[{?PATCH_TYPE2EXT(load_address),Addr,{remote_function,Address}}];
+	[{?LOAD_ADDRESS,Addr,{remote_function,Address}}];
       constant ->
 	ConstNo = find_const({MFA,Address},ConstMap),
-	[{?PATCH_TYPE2EXT(load_address),Addr,{constant,ConstNo}}];
+	[{?LOAD_ADDRESS,Addr,{constant,ConstNo}}];
       closure ->
-	[{?PATCH_TYPE2EXT(load_address),Addr,{closure,Address}}];
+	[{?LOAD_ADDRESS,Addr,{closure,Address}}];
       c_const ->
-	[{?PATCH_TYPE2EXT(load_address),Addr,{c_const,Address}}];
+	[{?LOAD_ADDRESS,Addr,{c_const,Address}}];
       Type ->     
 	exit([{problem,{not_handled,{address,Type}}},{at,Instr}])
     end,
@@ -874,7 +872,7 @@ resolve_load_atom(Instr,Addr,Refs)->
   I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
   I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
   {[assemble_instr(I2),assemble_instr(I1)],
-   Addr+8,[{?PATCH_TYPE2EXT(load_atom),Addr, Atom}|Refs]}.
+   Addr+8,[{?LOAD_ATOM, Addr, Atom}|Refs]}.
 
 %%resolve_load_word_index(_Instr,_Addr,_Refs,_MFA,_Map,_ConstMap) ->
 %%  ?EXIT({nyi,resolve_load_word_index}).
@@ -903,7 +901,7 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
 	    _ -> {hot,V} = find(ExnLab,Map), V
 	  end,
   %% The stack descriptor needs to be inserted into the system at load-time.
-  Refs = [{?PATCH_TYPE2EXT(sdesc),
+  Refs = [{?SDESC,
 	   Addr,
 	   ?STACK_DESC(ExnRA, FSize, Arity, Live)} | OldRefs],
   case hipe_sparc:call_link_is_known(Instr) of
@@ -918,8 +916,8 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
     true -> 
       Patch =
 	case hipe_sparc:call_link_type(Instr) of
-	  remote -> ?PATCH_TYPE2EXT(call_remote);
-	  not_remote -> ?PATCH_TYPE2EXT(call_local)
+	  remote -> ?CALL_REMOTE;
+	  not_remote -> ?CALL_LOCAL
 	end,
       NewRefs = [{Patch,Addr,Target} | Refs],
       NewI = hipe_sparc:call_link_target_update(Instr,0),

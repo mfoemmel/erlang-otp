@@ -112,7 +112,7 @@ cases() ->
 	    ];
 	_Else ->
   	    [
-     	     misc, 
+      	     misc, 
        	     test_v1, 
     	     test_v2, 
     	     test_v1_v2, 
@@ -990,7 +990,8 @@ finish_v1_v2(Config) when list(Config) ->
 test_v3(suite) -> {req, [], {conf, init_v3, v3_cases(), finish_v3}}.
 
 v3_cases() ->
-    [simple_3, 
+    [
+     simple_3, 
      v3_processing,
      big_3, 
      big2_3, 
@@ -1800,6 +1801,7 @@ v2_inform_i(Config) when list(Config) ->
 
     ?P1("Testing inform sending from master agent...  "
 	"~nNOTE! This test takes a few minutes (5) to complete."),
+
     try_test(ma_v2_inform1, [MA]),
 
     ?P1("unload TestTrap & TestTrapv2..."), 
@@ -3562,21 +3564,35 @@ bad_return() ->
 %%% already tested by the normal tests.
 %%%-----------------------------------------------------------------
 standard_mibs(suite) ->
-    [snmp_standard_mib, snmp_community_mib,
+    [
+     snmp_standard_mib, 
+     snmp_community_mib,
      snmp_framework_mib,
-     snmp_target_mib, snmp_notification_mib,
-     snmp_view_based_acm_mib].
+     snmp_target_mib, 
+     snmp_notification_mib,
+     snmp_view_based_acm_mib
+    ].
 
 standard_mibs_2(suite) ->
-    [snmpv2_mib_2, snmp_community_mib_2,
+    [
+     snmpv2_mib_2, 
+     snmp_community_mib_2,
      snmp_framework_mib_2,
-     snmp_target_mib_2, snmp_notification_mib_2,
-     snmp_view_based_acm_mib_2].
+     snmp_target_mib_2, 
+     snmp_notification_mib_2,
+     snmp_view_based_acm_mib_2
+    ].
 
 standard_mibs_3(suite) ->
-    [snmpv2_mib_3,snmp_framework_mib_3, snmp_mpd_mib_3,
-     snmp_target_mib_3, snmp_notification_mib_3,
-     snmp_view_based_acm_mib_3, snmp_user_based_sm_mib_3].
+    [
+     snmpv2_mib_3,
+     snmp_framework_mib_3, 
+     snmp_mpd_mib_3,
+     snmp_target_mib_3, 
+     snmp_notification_mib_3,
+     snmp_view_based_acm_mib_3, 
+     snmp_user_based_sm_mib_3
+    ].
 
 %%-----------------------------------------------------------------
 %% For this test, the agent is configured for v1.
@@ -4438,7 +4454,9 @@ loop_mib_3(Config) when list(Config) ->
     ?line load_master_std("SNMP-NOTIFICATION-MIB"),
     ?line load_master_std("SNMP-VIEW-BASED-ACM-MIB"),
     ?line load_master_std("SNMP-USER-BASED-SM-MIB"),
+
     try_test(loop_mib_2),
+
     ?DBG("loop_mib_3 -> unload mibs",[]),
     ?line unload_master("SNMP-TARGET-MIB"),
     ?line unload_master("SNMP-NOTIFICATION-MIB"),
@@ -4545,22 +4563,39 @@ loop_it_2(Oid, N) ->
 	     error_status = noError, 
 	     error_index  = 0,
 	     varbinds     = Vbs} ->
-	    exit({unexpected_vbs, ?LINE, Vbs});
+	    exit({unexpected_pdu, ?LINE, 
+		  [{varbinds,     Vbs},
+		   {get_next_oid, Oid},
+		   {counter,      N}]});
 
 	#pdu{type         = 'get-response', 
 	     error_status = ES, 
 	     error_index  = EI,
 	     varbinds     = Vbs} ->
-	    exit({unexpected_pdu, ?LINE, ES, EI, Vbs});
+	    exit({unexpected_pdu, ?LINE, 
+		  [{error_status, ES}, 
+		   {error_index,  EI},
+		   {varbinds,     Vbs},
+		   {get_next_oid, Oid},
+		   {counter,      N}]});
 
 	#pdu{type         = Type, 
 	     error_status = ES, 
 	     error_index  = EI,
 	     varbinds     = Vbs} ->
-	    exit({unexpected_pdu, ?LINE, Type, ES, EI, Vbs});
+	    exit({unexpected_pdu, ?LINE, 
+		  [{type,         Type}, 
+		   {error_status, ES}, 
+		   {error_index,  EI},
+		   {varbinds,     Vbs},
+		   {get_next_oid, Oid},
+		   {counter,      N}]});
 
 	{error, Reason} ->
-	    exit({error, Reason, N, ?LINE})
+	    exit({unexpected_result, ?LINE, 
+		  [{reason,       Reason}, 
+		   {get_next_oid, Oid},
+		   {counter,      N}]})
 
     end.
 	    

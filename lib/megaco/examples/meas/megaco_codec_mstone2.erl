@@ -18,6 +18,8 @@
 %%----------------------------------------------------------------------
 %% 
 %% megaco_codec_mstone2:start().
+%% megaco_codec_mstone2:start_no_drv().
+%% megaco_codec_mstone2:start_only_drv().
 %% 
 %%----------------------------------------------------------------------
 %% Purpose: mstone 2 measurement
@@ -48,7 +50,9 @@
 
 
 %% Exports
--export([start/0]).
+-export([start/0, 
+	 start_no_drv/0, 
+	 start_only_drv/0]).
 
 
 %%%----------------------------------------------------------------------
@@ -95,13 +99,22 @@
 %%% API
 %%%----------------------------------------------------------------------
 
+start_no_drv() ->
+    do_start(no_drv).
+
+start_only_drv() ->
+    do_start(only_drv).
+
 start() ->
+    do_start(ignore).
+
+do_start(DrvInclude) ->
     io:format("~n", []),
     ?LIB:display_os_info(),
     ?LIB:display_system_info(),
     ?LIB:display_app_info(),
     io:format("~n", []),
-    Ref = erlang:monitor(process, spawn(fun() -> loader() end)),
+    Ref = erlang:monitor(process, spawn(fun() -> loader(DrvInclude) end)),
     receive
 	{'DOWN', Ref, process, _Pid, {done, Result}} ->
 	    display_result(Result);
@@ -190,8 +203,8 @@ erl_image(Erl, Conf) ->
 
 %%%----------------------------------------------------------------------
 
-loader() ->
-    loader(?MSTONE_CODECS).
+loader(DrvInclude) ->
+    loader(?MSTONE_CODECS, DrvInclude).
 
 
 %% Dirs is a list of directories containing files,
@@ -204,21 +217,21 @@ loader() ->
 %%    pretty | compact | ber | per | erlang
 %%
 
-loader(Dirs) ->
+loader(Dirs, DrvInclude) ->
     process_flag(trap_exit, true),
-    case (catch init(Dirs)) of
+    case (catch init(Dirs, DrvInclude)) of
 	{ok, State} ->
 	    loader_loop(running, State);
 	Error ->
 	    exit(Error)
     end.
 
-init(Dirs) ->
+init(Dirs, DrvInclude) ->
     ets:new(mstone, [set, private, named_table, {keypos, 1}]),
     ets:insert(mstone, {worker_cnt, 0}),
     {Pid, FlexConf} = ?LIB:start_flex_scanner(),
     io:format("read messages", []),
-    CodecData = init_codec_data(?LIB:expand_dirs(Dirs), FlexConf),
+    CodecData = init_codec_data(?LIB:expand_dirs(Dirs, DrvInclude), FlexConf),
     Timer = erlang:send_after(?MSTONE_RUN_TIME, self(), mstone_finished), 
     io:format("~n~n", []),
     {ok, #state{timer = Timer, 

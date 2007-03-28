@@ -58,6 +58,8 @@
 
 -module(io_lib).
 
+-compile(bitlevel_binaries).
+
 -export([fwrite/2,fread/2,fread/3,format/2]).
 -export([print/1,print/4,indentation/2]).
 
@@ -167,31 +169,21 @@ write_port(Port) ->
 write_ref(Ref) ->
     erlang:ref_to_list(Ref).
 
-write_bin_tail([], _D, _L) -> "";
-write_bin_tail(_, 1, _L) -> ",...";
-write_bin_tail([H|T], D, L) ->
-    [$,,write(H, D-1)|write_bin_tail(T, D-1, L)].
+write_binary(B, D) when is_integer(D) ->
+    [$<,$<,write_binary_body(B, D),$>,$>].
 
-write_binary(B, D) ->
-    L = size(B),
-    if 
-        L =:= 0 ->
-	    "<<>>";
-        L =:= 1 ->
-	    [Byte] = binary_to_list(B),
-            ["<<", integer_to_list(Byte), ">>"];
-        D =:= 1 ->
-            "<<...>>";
-        true ->
-            [H|T] = bin_to_list_max(B, D),
-            [$<,$<, [write(H, D-1)|write_bin_tail(T, D-1, L)], $>, $>]
-    end. 
-
-bin_to_list_max(B, Max) ->
-    case catch binary_to_list(B, 1, Max) of
-	{'EXIT',_} -> binary_to_list(B);
-	Other -> Other
-    end.
+write_binary_body(_B, 1) ->
+    "...";
+write_binary_body(<<>>, _D) ->
+    "";
+write_binary_body(<<X:8>>, _D) ->
+    [integer_to_list(X)];
+write_binary_body(<<X:8,Rest/bitstr>>, D) ->
+    [integer_to_list(X),$,|write_binary_body(Rest, D-1)];
+write_binary_body(B, _D) ->
+    L = erlang:bitsize(B),
+    <<X:L>> = B,
+    [integer_to_list(X),$:,integer_to_list(L)].
 
 %% write_atom(Atom) -> [Char]
 %%  Generate the list of characters needed to print an atom.

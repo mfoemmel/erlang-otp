@@ -117,6 +117,13 @@ handle_error(closed, _, _) ->
 			     "badly."),
     exit(normal);
 
+%% This will only happen when the client is terminated abnormaly
+%% and is not a problem for the server, so we want
+%% to terminate normal so that we can restart without any 
+%% error messages.
+handle_error(econnreset,_,_) ->
+    exit(normal);
+
 handle_error(econnaborted, _, _) ->
     ok;
 

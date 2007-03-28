@@ -82,11 +82,15 @@ static erts_smp_atomic_t bits_bufs_size;
 Uint
 erts_bits_bufs_size(void)
 {
+#if defined(HEAP_FRAG_ELIM_TEST)
+    return 0;
+#else
 #ifdef ERTS_SMP
     return (Uint) erts_smp_atomic_read(&bits_bufs_size);
 #else
     ERL_BITS_DECLARE_STATEP;
     return (Uint) (byte_buf_len + erts_bin_buf_len);
+#endif
 #endif
 }
 
@@ -101,20 +105,24 @@ erts_bits_init_state(ERL_BITS_PROTO_0)
     byte_buf_len = 1;
     byte_buf = erts_alloc(ERTS_ALC_T_BITS_BUF, byte_buf_len);
 
+#if !defined(HEAP_FRAG_ELIM_TEST)
     erts_bin_buf_len = 1;
     erts_bin_buf = erts_alloc(ERTS_ALC_T_BITS_BUF, erts_bin_buf_len);
+#endif
     erts_bin_offset = 0;
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
     erts_smp_atomic_add(&bits_bufs_size, byte_buf_len + erts_bin_buf_len);
 #endif
 }
 
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP)
 void
 erts_bits_destroy_state(ERL_BITS_PROTO_0)
 {
     erts_free(ERTS_ALC_T_BITS_BUF, byte_buf);
+#if !defined(HEAP_FRAG_ELIM_TEST)
     erts_free(ERTS_ALC_T_BITS_BUF, erts_bin_buf);
+#endif
 }
 #endif
 

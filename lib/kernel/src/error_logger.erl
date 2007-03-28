@@ -22,8 +22,8 @@
 	 warning_report/2,error_info/1,
 	 info_msg/1,info_msg/2,warning_msg/1,warning_msg/2, 
 	 logfile/1,tty/1,swap_handler/1,
-	 simple_logger/0,simple_logger/1,add_report_handler/1,
-	 add_report_handler/2,delete_report_handler/1]).
+	 add_report_handler/1,add_report_handler/2,
+	 delete_report_handler/1]).
 
 -export([init/1,
 	 handle_event/2, handle_call/2, handle_info/2,
@@ -144,14 +144,19 @@ error_info(Error) ->
 notify(Msg) ->
     gen_event:notify(error_logger, Msg).
 
+swap_handler(tty) ->
+    gen_event:swap_handler(error_logger, {error_logger, swap},
+			   {error_logger_tty_h, []}),
+    simple_logger();
 swap_handler({logfile, File}) ->
     gen_event:swap_handler(error_logger, {error_logger, swap},
 			   {error_logger_file_h, File}),
     simple_logger();
-swap_handler(tty) ->
-    gen_event:swap_handler(error_logger, {error_logger, swap},
-			   {error_logger_tty_h, []}),
-    simple_logger().
+swap_handler(silent) ->
+    gen_event:delete_handler(error_logger, error_logger, delete),
+    simple_logger();
+swap_handler(false) ->
+    ok. % keep primitive event handler as-is
 
 add_report_handler(Module) when is_atom(Module) ->
     gen_event:add_handler(error_logger, Module, []).

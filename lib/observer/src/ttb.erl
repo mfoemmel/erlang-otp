@@ -49,19 +49,13 @@ tracer(Nodes) -> tracer(Nodes,[]).
 tracer(Nodes,Opt) ->
     start(),
     store(tracer,[Nodes,Opt]),
-    case opt(Opt) of
-	{ok,{PI,Client,Traci}} -> 
-	    do_tracer(Nodes,PI,Client,Traci);
-	Error -> 
-	    Error
-    end.
+    {PI,Client,Traci} = opt(Opt),
+    do_tracer(Nodes,PI,Client,Traci).
 
 do_tracer(Nodes0,PI,Client,Traci) ->
     Nodes = nods(Nodes0),
-    case clients(Nodes,Client) of
-	{ok,Clients} -> do_tracer(Clients,PI,Traci);
-	Error -> Error
-    end.
+    Clients = clients(Nodes,Client),
+    do_tracer(Clients,PI,Traci).
 
 do_tracer(Clients,PI,Traci) ->
     {ClientSucc,Succ} = 
@@ -113,7 +107,7 @@ opt([{file,Client}|O],{PI,_,Traci}) ->
 opt([{handler,Handler}|O],{PI,Client,Traci}) ->
     opt(O,{PI,Client,[{handler,Handler}|Traci]});
 opt([],Opt) ->
-    {ok,Opt}.
+    Opt.
 
 nods(all) ->
     Nodes1 = remove_active([node()|nodes()]),
@@ -164,25 +158,25 @@ clients(Nodes, {wrap,Name}) ->
 		TraceFile = name(Node,Name),
 		{Node,{TraceFile++".",wrap,".wrp"},TraceFile} 
 	end,
-    {ok,lists:map(F,Nodes)};
+    lists:map(F,Nodes);
 clients(Nodes, {wrap,Name,Size,Count}) ->
     F = fun(Node) -> 
 		TraceFile = name(Node,Name),
 		{Node,{TraceFile++".",wrap,".wrp",Size,Count},TraceFile} 
 	end,
-    {ok,lists:map(F,Nodes)};
+    lists:map(F,Nodes);
 clients(Nodes, {local,RealClient}) ->
-    {ok,WrapClients} = clients(Nodes,RealClient),
+    WrapClients = clients(Nodes,RealClient),
     F = fun({Node,Client,TraceFile}) -> 
 		{Node,{local,Client},TraceFile}
 	end,
-    {ok,lists:map(F,WrapClients)};
+    lists:map(F,WrapClients);
 clients(Nodes, Name) ->
     F = fun(Node) -> 
 		TraceFile = name(Node,Name),
 		{Node,TraceFile,TraceFile}
 	end,
-    {ok,lists:map(F,Nodes)}.
+    lists:map(F,Nodes).
     
 name(Node,Filename) ->
     Dir = filename:dirname(Filename), 

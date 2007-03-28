@@ -75,6 +75,9 @@ cl(["--output"]) ->
   error("No outfile specified");
 cl(["-o"]) ->
   error("No outfile specified");
+cl(["--old_style"|T]) ->
+  put(dialyzer_options_core_transform, dataflow),
+  cl(T);
 cl(["--output",Output|T]) ->
   put(dialyzer_output, Output),
   cl(T);
@@ -202,18 +205,19 @@ collect_args_1([], Acc) ->
   {lists:reverse(Acc),[]}.
 
 cl_opts() ->
-  [{core_transform, get(dialyzer_options_core_transform)},
-   {files,get(dialyzer_options_files)},
+  [{files,get(dialyzer_options_files)},
    {files_rec,get(dialyzer_options_files_rec)},
    {output_file,get(dialyzer_output)}
    |common_options()].
 
 common_options() ->
-  [{defines, get(dialyzer_options_defines)},
+  [{core_transform, get(dialyzer_options_core_transform)},
+   {defines, get(dialyzer_options_defines)},
    {from, get(dialyzer_options_from)},
    {include_dirs, get(dialyzer_include)},
    {init_plt, get(dialyzer_init_plt)},
    {output_plt, get(dialyzer_output_plt)},
+   {old_style, get(dialyzer_options_core_transform) =:= dataflow},
    {quiet, get(dialyzer_options_quiet)},
    {supress_inline, get(dialyzer_options_suppress_inline)},
    {warnings, get(dialyzer_warnings)}].
@@ -249,56 +253,63 @@ Note:
 help_message() ->
   S = "Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		[-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
-		[--output_plt file] [-Wwarn]* [--src] 
-		[-c applications] [-r applications] [-o outfile]
+	        [--old_style] [--output_plt file] [-Wwarn]* 
+                [--no_warn_on_inline] [--src] [-c applications] 
+                [-r applications] [-o outfile]
 
- Options: 
+Options: 
    -c applications (or --command-line applications)
-       use Dialyzer from the command line (no GUI) to detect defects in the
+       Use Dialyzer from the command line (no GUI) to detect defects in the
        specified applications (directories or .erl or .beam files)
-       Multiple applications, separated by spaces, can be specified
    -r applications
-       same as -c only that directories are searched recursively for 
+       Same as -c only that directories are searched recursively for 
        subdirectories containing .erl or .beam files (depending on the 
        type of analysis)
    -o outfile (or --output outfile)
-       when using Dialyzer from the command line, send the analysis
+       When using Dialyzer from the command line, send the analysis
        results in the specified \"outfile\" rather than in stdout
    --src
-       overwrite the default, which is to analyze BEAM bytecode, and
+       Overwrite the default, which is to analyze BEAM bytecode, and
        analyze starting from Erlang source code instead
    -Dname (or -Dname=value)
-       when analyzing from source, pass the define to Dialyzer (**)
+       When analyzing from source, pass the define to Dialyzer (**)
    -I include_dir
-       when analyzing from source, pass the include_dir to Dialyzer (**)
-   -pa dir
-       Include dir in the path for Erlang. Useful when analyzing files
-       that have '-include_lib()' directives.
-   -Wwarn
-       a family of options which selectively turn on/off warnings.
-       (for help on the names of warnings use dialyzer -Whelp)
-   --no_warn_on_inline
-       Suppress warnings when analyzing an inline compiled bytecode file.
-   --plt plt
-       Use the specified plt as the initial plt. If the plt was built 
-       during setup the files will be checked for consistency.
+       When analyzing from source, pass the include_dir to Dialyzer (**)
+   --old_style
+       Gives the warnings in the old style without line numbers.
+       Can also be handy when analyzing byte code compiled without +debug_info.
    --output_plt file
        Store the plt at the specified file after building it
+   --no_warn_on_inline
+       Suppress warnings when analyzing an inline compiled bytecode file
+   --plt plt
+       Use the specified plt as the initial plt (if the plt was built 
+       during setup the files will be checked for consistency)
+   -pa dir
+       Include dir in the path for Erlang (useful when analyzing files
+       that have '-include_lib()' directives)
+   -Wwarn
+       A family of options which selectively turn on/off warnings
+       (for help on the names of warnings use dialyzer -Whelp)
+   --check_init_plt
+       Only checks if the initial plt is up to date. For installed systems 
+       this also forces the rebuilding of the plt if this is not the case
    --shell
-       do not disable the Erlang shell while running the GUI
+       Do not disable the Erlang shell while running the GUI
    --version (or -v)
-       prints the Dialyzer version and some more information and exits
+       Prints the Dialyzer version and some more information and exits
    --help (or -h)
-       prints this message and exits
+       Prints this message and exits
    --quiet (or -q)
-       makes Dialyzer a bit more quiet
+       Makes Dialyzer a bit more quiet
    --verbose
-       makes Dialyzer a bit more verbose
+       Makes Dialyzer a bit more verbose
 
 Note:
   * denotes that multiple occurrences of these options are possible.
  ** options -D and -I work both from command-line and in the Dialyzer GUI;
     the syntax of defines and includes is the same as that used by \"erlc\".
+
 
 The exit status of the command line version is:
 

@@ -54,6 +54,13 @@ autostart(_AutoModArgs) ->
 	case application:get_env(inviso_autostart_conf) of
 	    {ok,FileName} when list(FileName) -> % Use this filename then.
 		FileName;
+	    {ok,{M,F}} ->                       % Use M:F(node())
+		case catch M:F(node()) of
+		    FileName when list(FileName) ->
+			FileName;
+		    _ ->
+			"inviso_autostart.config"
+		end;
 	    _ ->                            % Use a default name, in CWD!
 		"inviso_autostart.config"
 	end,
@@ -76,6 +83,14 @@ which_config_file() ->
     case application:get_env(runtime_tools,inviso_autostart_conf) of
 	{ok,FileName} when list(FileName) -> % Use this filename then.
 	    FileName;
+	{ok,{M,F}} ->                       % Use M:F(node())
+	    case catch M:F(node()) of
+		FileName when list(FileName) ->
+		    FileName;
+		_ ->
+		    {ok,CWD}=file:get_cwd(),
+		    filename:join(CWD,"inviso_autostart.config")
+	    end;
 	_ ->                                % Use a default name, in CWD!
 	    {ok,CWD}=file:get_cwd(),
 	    filename:join(CWD,"inviso_autostart.config")

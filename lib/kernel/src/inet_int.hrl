@@ -16,26 +16,37 @@
 %%     $Id$
 %%
 
-%% family codes to open
--define(INET_AF_INET,          1).
--define(INET_AF_INET6,         2).
+%%----------------------------------------------------------------------------
+%% Interface constants.
+%% 
+%% This section must be "identical" to the corresponding in inet_drv.c
+%% 
 
-%% type codes (gettype)
+%% family codes to open
+-define(INET_AF_INET,         1).
+-define(INET_AF_INET6,        2).
+-define(INET_AF_ANY,          3). % Fake for ANY in any address family
+-define(INET_AF_LOOPBACK,     4). % Fake for LOOPBACK in any address family
+
+%% type codes (gettype, INET_REQ_GETTYPE)
 -define(INET_TYPE_STREAM,     1).
 -define(INET_TYPE_DGRAM,      2).
+-define(INET_TYPE_SEQPACKET,  3).
 
-%% socket modes
--define(INET_MODE_LIST,   0).
--define(INET_MODE_BINARY, 1).
+%% socket modes, INET_LOPT_MODE
+-define(INET_MODE_LIST,	      0).
+-define(INET_MODE_BINARY,     1).
 
-%% deliver mode
+%% deliver mode, INET_LOPT_DELIVER
 -define(INET_DELIVER_PORT,    0).
 -define(INET_DELIVER_TERM,    1).
 
-%% 5 secs need more ???
--define(INET_CLOSE_TIMEOUT, 5000).
+%% active socket, INET_LOPT_ACTIVE
+-define(INET_PASSIVE, 0).
+-define(INET_ACTIVE,  1).
+-define(INET_ONCE,    2). % Active once then passive
 
-%% state codes (getstate)
+%% state codes (getstatus, INET_REQ_GETSTATUS)
 -define(INET_F_OPEN,         16#0001).
 -define(INET_F_BOUND,        16#0002).
 -define(INET_F_ACTIVE,       16#0004).
@@ -45,21 +56,7 @@
 -define(INET_F_LST,          16#0040).
 -define(INET_F_BUSY,         16#0080).
 
-%% interface stuff
--define(INET_IFNAMSIZ,          16).
--define(INET_IFF_UP,            16#0001).
--define(INET_IFF_BROADCAST,     16#0002).
--define(INET_IFF_LOOPBACK,      16#0004).
--define(INET_IFF_POINTTOPOINT,  16#0008).
--define(INET_IFF_RUNNING,       16#0010).
--define(INET_IFF_MULTICAST,     16#0020).
-
--define(INET_IFF_DOWN,          16#0100).
--define(INET_IFF_NBROADCAST,    16#0200).
--define(INET_IFF_NPOINTTOPOINT, 16#0800).
-
-
-%% request codes
+%% request codes (erlang:port_control/3)
 -define(INET_REQ_OPEN,          1).
 -define(INET_REQ_CLOSE,         2).
 -define(INET_REQ_CONNECT,       3).
@@ -69,7 +66,7 @@
 -define(INET_REQ_SETOPTS,       7).
 -define(INET_REQ_GETOPTS,       8).
 -define(INET_REQ_GETIX,         9).
-%% -define(INET_REQ_GETIF,         10). OBSOLETE
+%% -define(INET_REQ_GETIF,      10). OBSOLETE
 -define(INET_REQ_GETSTAT,       11).
 -define(INET_REQ_GETHOSTNAME,   12).
 -define(INET_REQ_FDOPEN,        13).
@@ -84,30 +81,26 @@
 -define(INET_REQ_IFGET,         22).
 -define(INET_REQ_IFSET,         23).
 -define(INET_REQ_SUBSCRIBE,     24).
+%% TCP requests
+-define(TCP_REQ_ACCEPT,         40).
+-define(TCP_REQ_LISTEN,         41).
+-define(TCP_REQ_RECV,           42).
+-define(TCP_REQ_UNRECV,         43).
+-define(TCP_REQ_SHUTDOWN,       44).
+%% UDP and SCTP requests
+-define(PACKET_REQ_RECV,        60).
+-define(SCTP_REQ_LISTEN,        61).
+-define(SCTP_REQ_BINDX,	        62). %% Multi-home SCTP bind
 
-%% subscribe codes
+%% subscribe codes, INET_REQ_SUBSCRIBE
 -define(INET_SUBS_EMPTY_OUT_Q,  1).
 
-%% reply codes
+%% reply codes for *_REQ_*
 -define(INET_REP_ERROR,    0).
 -define(INET_REP_OK,       1).
--define(INET_REP_DATA,     100).
+-define(INET_REP_SCTP,     2).
 
-%% tcp requests
--define(TCP_REQ_ACCEPT,    30).
--define(TCP_REQ_LISTEN,    31).
--define(TCP_REQ_RECV,      32).
--define(TCP_REQ_UNRECV,    33).
--define(TCP_REQ_SHUTDOWN,  34).
-
-
--define(LISTEN_BACKLOG, 5).     %% default backlog
-
-%% udp requests
--define(UDP_REQ_RECV,      30).
-
-
-%% options
+%% INET, TCP and UDP options:
 -define(INET_OPT_REUSEADDR,      0).
 -define(INET_OPT_KEEPALIVE,      1).
 -define(INET_OPT_DONTROUTE,      2).
@@ -124,6 +117,7 @@
 -define(UDP_OPT_MULTICAST_LOOP,  13).
 -define(UDP_OPT_ADD_MEMBERSHIP,  14).
 -define(UDP_OPT_DROP_MEMBERSHIP, 15).
+% "Local" options: codes start from 20:
 -define(INET_LOPT_BUFFER,        20).
 -define(INET_LOPT_HEADER,        21).
 -define(INET_LOPT_ACTIVE,        22).
@@ -136,10 +130,29 @@
 -define(INET_LOPT_BIT8,          29).
 -define(INET_LOPT_TCP_SEND_TIMEOUT, 30).
 -define(INET_LOPT_TCP_DELAY_SEND,   31).
--define(INET_LOPT_PACKET_SIZE,      32).
--define(INET_LOPT_UDP_READ_PACKETS, 33).
+-define(INET_LOPT_PACKET_SIZE,   32).
+-define(INET_LOPT_READ_PACKETS,  33).
+-define(INET_OPT_RAW,            34).
+% Specific SCTP options: separate range:
+-define(SCTP_OPT_RTOINFO,	 	100).
+-define(SCTP_OPT_ASSOCINFO,	 	101).
+-define(SCTP_OPT_INITMSG,	 	102).
+-define(SCTP_OPT_AUTOCLOSE,	 	103).
+-define(SCTP_OPT_NODELAY,		104).
+-define(SCTP_OPT_DISABLE_FRAGMENTS,	105).
+-define(SCTP_OPT_I_WANT_MAPPED_V4_ADDR, 106).
+-define(SCTP_OPT_MAXSEG,		107).
+-define(SCTP_OPT_SET_PEER_PRIMARY_ADDR, 108).
+-define(SCTP_OPT_PRIMARY_ADDR,		109).
+-define(SCTP_OPT_ADAPTION_LAYER,	110).
+-define(SCTP_OPT_PEER_ADDR_PARAMS,	111).
+-define(SCTP_OPT_DEFAULT_SEND_PARAM,	112).
+-define(SCTP_OPT_EVENTS,		113).
+-define(SCTP_OPT_DELAYED_ACK_TIME,	114).
+-define(SCTP_OPT_STATUS,		115).
+-define(SCTP_OPT_GET_PEER_ADDR_INFO,	116).
 
-%% interface options
+%% interface options, INET_REQ_IFGET and INET_REQ_IFSET
 -define(INET_IFOPT_ADDR,      1).
 -define(INET_IFOPT_BROADADDR, 2).
 -define(INET_IFOPT_DSTADDR,   3).
@@ -148,7 +161,7 @@
 -define(INET_IFOPT_FLAGS,     6).
 -define(INET_IFOPT_HWADDR,    7). %% where support (e.g linux)
 
-%% packet byte values
+%% packet byte values, INET_LOPT_PACKET
 -define(TCP_PB_RAW,     0).
 -define(TCP_PB_1,       1).
 -define(TCP_PB_2,       2).
@@ -162,13 +175,14 @@
 -define(TCP_PB_HTTP,    10).
 -define(TCP_PB_HTTPH,   11).
 
-%% bit options
+%% bit options, INET_LOPT_BIT8
 -define(INET_BIT8_CLEAR, 0).
 -define(INET_BIT8_SET,   1).
 -define(INET_BIT8_ON,    2).
 -define(INET_BIT8_OFF,   3).
 
 
+%% getstat, INET_REQ_GETSTAT
 -define(INET_STAT_RECV_CNT,  1).
 -define(INET_STAT_RECV_MAX,  2).
 -define(INET_STAT_RECV_AVG,  3).
@@ -179,6 +193,45 @@
 -define(INET_STAT_SEND_PEND, 8).
 -define(INET_STAT_RECV_OCT,  9).
 -define(INET_STAT_SEND_OCT,  10).
+
+%% interface stuff, INET_IFOPT_FLAGS
+-define(INET_IFNAMSIZ,          16).
+-define(INET_IFF_UP,            16#0001).
+-define(INET_IFF_BROADCAST,     16#0002).
+-define(INET_IFF_LOOPBACK,      16#0004).
+-define(INET_IFF_POINTTOPOINT,  16#0008).
+-define(INET_IFF_RUNNING,       16#0010).
+-define(INET_IFF_MULTICAST,     16#0020).
+%%
+-define(INET_IFF_DOWN,          16#0100).
+-define(INET_IFF_NBROADCAST,    16#0200).
+-define(INET_IFF_NPOINTTOPOINT, 16#0800).
+
+%% SCTP Flags for "sctp_sndrcvinfo":
+%% INET_REQ_SETOPTS:SCTP_OPT_DEFAULT_SEND_PARAM
+-define(SCTP_FLAG_UNORDERED, 1). 	% sctp_unordered
+-define(SCTP_FLAG_ADDR_OVER, 2). 	% sctp_addr_over
+-define(SCTP_FLAG_ABORT,     4). 	% sctp_abort
+-define(SCTP_FLAG_EOF,	     8). 	% sctp_eof
+-define(SCTP_FLAG_SNDALL,   16). 	% sctp_sndall, NOT YET IMPLEMENTED.
+
+%% SCTP Flags for "sctp_paddrparams", and the corresp Atoms:
+-define(SCTP_FLAG_HB_ENABLE,		1).	% sctp_hb_enable
+-define(SCTP_FLAG_HB_DISABLE,		2).	% sctp_hb_disable
+-define(SCTP_FLAG_HB_DEMAND,		4).	% sctp_hb_demand
+-define(SCTP_FLAG_PMTUD_ENABLE,		8).	% sctp_pmtud_enable
+-define(SCTP_FLAG_PMTUD_DISABLE,       16).	% sctp_pmtud_disable
+-define(SCTP_FLAG_SACKDELAY_ENABLE,    32).	% sctp_sackdelay_enable
+-define(SCTP_FLAG_SACKDELAY_DISABLE,   64).	% sctp_sackdelay_disable
+
+%%
+%% End of interface constants.
+%%----------------------------------------------------------------------------
+
+-define(LISTEN_BACKLOG, 5).     %% default backlog
+
+%% 5 secs need more ???
+-define(INET_CLOSE_TIMEOUT, 5000).
 
 %%
 %% Port/socket numbers: network standard functions
@@ -247,6 +300,9 @@
 	[((X) bsr 24) band 16#ff, ((X) bsr 16) band 16#ff,
 	 ((X) bsr 8) band 16#ff, (X) band 16#ff]).
 
+-define(intAID(X), % For SCTP AssocID
+        ?int32(X)).
+
 %% Bytes to unsigned
 -define(u64(X7,X6,X5,X4,X3,X2,X1,X0), 
 	( ((X7) bsl 56) bor ((X6) bsl 48) bor ((X5) bsl 40) bor
@@ -289,6 +345,10 @@
 	(((A) bor (B) bor (C) bor (D) bor (E) bor (F) bor (G) bor (H)) 
 	 band (bnot 16#ffff)) == 0).
 
+-define(ether(A,B,C,D,E,F), 
+	(((A) bor (B) bor (C) bor (D) bor (E) bor (F)) 
+	 band (bnot 16#ff)) == 0).
+
 %% default options (when inet_drv port is started)
 %%
 %% bufsz   = INET_MIN_BUFFER (8K)
@@ -298,7 +358,6 @@
 %% deliver = term
 %% active  = false
 %%
-
 -record(connect_opts, 
 	{ 
 	  ifaddr = any,     %% bind to interface address
@@ -324,3 +383,25 @@
 	  fd     = -1,
 	  opts   = [{active,true}]
 	 }).
+
+-define(SCTP_DEF_BUFSZ, 65536).
+-define(SCTP_DEF_IFADDR, any).
+-record(sctp_opts,
+	{
+	  ifaddr,
+	  port   = 0,
+	  fd	 = -1,
+	  opts   = [{mode,	  binary},
+		    {buffer,	  ?SCTP_DEF_BUFSZ},
+		    {sndbuf,	  ?SCTP_DEF_BUFSZ},
+		    {recbuf,	  1024},
+		    {sctp_events, undefined}%,
+		    %%{active,      true}
+		   ]
+        }).
+
+%% The following Tags are purely internal, used for marking items in the
+%% send buffer:
+-define(SCTP_TAG_SEND_ANC_INITMSG,	0).
+-define(SCTP_TAG_SEND_ANC_PARAMS,	1).
+-define(SCTP_TAG_SEND_DATA,		2).

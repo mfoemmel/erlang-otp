@@ -16,7 +16,7 @@
 
 %%-------------------------------------------------------------------------
 
--define(DEBUG,1).
+%% -define(DEBUG,1).	% used by hipe.hrl below
 
 -include("../main/hipe.hrl").
 -include("../icode/hipe_icode.hrl").
@@ -33,7 +33,7 @@
 %% linear form of RTL-code.
 %%
 translate(IcodeRecord, Options) ->
-  ?IF_DEBUG_LEVEL(2,put(hipe_mfa,hipe_icode:icode_fun(IcodeRecord)),true),  
+  ?IF_DEBUG_LEVEL(2, put(hipe_mfa,hipe_icode:icode_fun(IcodeRecord)), ok),  
   %% hipe_icode_pp:pp(Fun),
 
   %% Initialize gensym and varmap
@@ -86,10 +86,9 @@ translate_instrs([I|Is], VarMap, AccCode, ConstTab, Options) ->
   %% Translate one instruction. 
   {Code, VarMap0, ConstTab0} = 
     translate_instruction(I, VarMap, ConstTab, Options),
-  %%  ?IF_DEBUG_LEVEL(3,?msg("  To Instr: ~w~n",[Code]),no_debug),
+  %% ?IF_DEBUG_LEVEL(3,?msg("  To Instr: ~w~n",[Code]),no_debug),
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
-			 ?msg("  To Instr: ~w~n",[Code])),
-	    no_debug),
+			 ?msg("  To Instr: ~w~n", [Code])), ok),
   translate_instrs(Is, VarMap0, [AccCode,Code], ConstTab0, Options).
 
 %%
@@ -97,16 +96,16 @@ translate_instrs([I|Is], VarMap, AccCode, ConstTab, Options) ->
 %%
 
 translate_instruction(I, VarMap, ConstTab, Options) ->
-  %%  ?IF_DEBUG_LEVEL(3,?msg("From Instr: ~w~n",[I]),no_debug),
+  %% ?IF_DEBUG_LEVEL(3,?msg("From Instr: ~w~n",[I]),no_debug),
   ?IF_DEBUG(?when_option(rtl_show_translation, Options,
-			 ?msg("From Instr: ~w~n",[I])),no_debug),
+			 ?msg("From Instr: ~w~n", [I])), ok),
   case I of
     #call{} ->  
-      gen_call(I, VarMap, ConstTab, Options);
+      gen_call(I, VarMap, ConstTab);
     #comment{} ->
       {hipe_rtl:mk_comment(hipe_icode:comment_text(I)), VarMap, ConstTab};  
     #enter{} -> 
-      gen_enter(I, VarMap, ConstTab, Options);
+      gen_enter(I, VarMap, ConstTab);
     #fail{} ->
       gen_fail(I, VarMap, ConstTab);
     #fmove{} -> 
@@ -128,7 +127,7 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
     #switch_tuple_arity{} -> 
       gen_switch_tuple(I, VarMap, ConstTab, Options);
     #type{} -> 
-      gen_type(I, VarMap, ConstTab, Options);
+      gen_type(I, VarMap, ConstTab);
     X ->
       exit({?MODULE,{"unknown Icode instruction",X}})
   end.
@@ -138,7 +137,7 @@ translate_instruction(I, VarMap, ConstTab, Options) ->
 %%
 %% CALL
 %%
-gen_call(I, VarMap, ConstTab, Options) ->
+gen_call(I, VarMap, ConstTab) ->
   Fun = hipe_icode:call_fun(I),
   {Dst, VarMap0} = hipe_rtl_varmap:ivs2rvs(hipe_icode:call_dstlist(I), VarMap),
   Fail = hipe_icode:call_fail_label(I),
@@ -174,7 +173,7 @@ gen_call(I, VarMap, ConstTab, Options) ->
       primop ->
 	hipe_rtl_primops:gen_primop(
 	  {Fun, Dst, Args, ContLblName, FailLblName},
-	  IsGuard, ConstTab1, Options);
+	  IsGuard, ConstTab1);
       Type ->
 	Call = gen_call_1(Fun, Dst, Args, IsGuard, ContLblName,
 			  FailLblName, Type),
@@ -201,7 +200,7 @@ conv_call_type(local) -> not_remote.
 %%
 %% ENTER
 %%
-gen_enter(I, VarMap, ConstTab, Options) ->
+gen_enter(I, VarMap, ConstTab) ->
   Fun = hipe_icode:enter_fun(I),
 %%  IsGuard = hipe_icode:call_in_guard(I),
   IsGuard = false, %%Enter can not happen in a guard
@@ -212,8 +211,7 @@ gen_enter(I, VarMap, ConstTab, Options) ->
   {Code1, ConstTab3} =
     case hipe_icode:enter_type(I) of
       primop ->
-	hipe_rtl_primops:gen_enter_primop({Fun, Args}, IsGuard,
-					  ConstTab1, Options);
+	hipe_rtl_primops:gen_enter_primop({Fun, Args}, IsGuard, ConstTab1);
       Type ->
 	Call = gen_enter_1(Fun, Args, Type),
 	{Call, ConstTab}
@@ -381,7 +379,7 @@ gen_switch_tuple(I, Map, ConstTab, Options) ->
 %% TYPE
 %%
 
-gen_type(I, VarMap, ConstTab, Options)->
+gen_type(I, VarMap, ConstTab) ->
   {Vars, Map0, NewConstTab, Code1} = 
     args_to_vars(hipe_icode:type_args(I), VarMap, ConstTab),
   {TrueLbl, Map1} =
@@ -392,7 +390,7 @@ gen_type(I, VarMap, ConstTab, Options)->
 					hipe_rtl:label_name(TrueLbl),
 					hipe_rtl:label_name(FalseLbl),
 					hipe_icode:type_pred(I),
-					NewConstTab, Options),
+					NewConstTab),
   {Code1 ++ Code2, Map2, NewConstTab1}.
 
 %% --------------------------------------------------------------------
@@ -401,7 +399,7 @@ gen_type(I, VarMap, ConstTab, Options)->
 %% Generate code for a type test. If X is not of type Type then goto Label.
 %%
 
-gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
+gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
   case Type of
     nil ->
       {hipe_tagscheme:test_nil(X, TrueLbl, FalseLbl, Pred), ConstTab};
@@ -454,10 +452,10 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
       AtomLabName = hipe_rtl:label_name(AtomLab),
       TagVar = hipe_rtl:mk_new_var(),
       TmpAtomVar = hipe_rtl:mk_new_var(),
-      {UntagCode, ConstTab1} = hipe_rtl_primops:gen_primop(
-				 {{unsafe_element,1},[TagVar],[X],
-				  AtomLabName,[]},
-				 false, ConstTab, Options),
+      {UntagCode, ConstTab1} =
+	hipe_rtl_primops:gen_primop({{unsafe_element,1},[TagVar],[X],
+				     AtomLabName,[]},
+				    false, ConstTab),
       Code = 
 	hipe_tagscheme:test_tuple_N(X, S, TupleLblName, FalseLbl, Pred) ++	
 	[TupleLbl|UntagCode] ++
@@ -498,7 +496,7 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab, Options) ->
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;
-gen_type_test(Z = [X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
+gen_type_test(Z = [X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
   case Type of
     function2 ->
       {hipe_tagscheme:test_fun2(X, Y, TrueLbl, FalseLbl, Pred), ConstTab};
@@ -507,7 +505,7 @@ gen_type_test(Z = [X,Y], Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;
-gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab, _Options) ->
+gen_type_test(X, Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
   case Type of
     fixnum -> 
       {hipe_tagscheme:test_fixnums(X, TrueLbl, FalseLbl, Pred), ConstTab};

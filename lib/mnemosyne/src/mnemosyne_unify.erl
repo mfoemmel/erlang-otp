@@ -523,9 +523,7 @@ insert_bs_bs([{K1,V1}|L1], [{K2,V2}|L2], Acc) ->
     end;
 insert_bs_bs([], [], Acc) -> Acc;
 insert_bs_bs([], [{K,V}|L], Acc) -> insert_bs_bs([], L, mk_binding(K,V,Acc));
-insert_bs_bs([{K,V}|L], [], Acc) -> insert_bs_bs(L, [], mk_binding(K,V,Acc));
-insert_bs_bs(_, fail, _) -> fail;
-insert_bs_bs(fail, _, _) -> fail.
+insert_bs_bs([{K,V}|L], [], Acc) -> insert_bs_bs(L, [], mk_binding(K,V,Acc)).
 
 %%%================================================================
 %%%

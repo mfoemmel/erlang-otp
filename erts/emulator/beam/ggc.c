@@ -60,6 +60,11 @@ static void sweep_proc_funs(Process *p, int fullsweep);
 #endif
 static void sweep_proc_externals(Process *p, int fullsweep);
 
+#ifdef DEBUG
+static void check_mbuf_sz(Process *p);
+#endif
+
+
 #ifdef HARDDEBUG
 static void check_stack(Process*, char*);
 void check_bins(Process *p);
@@ -67,8 +72,11 @@ int chk_sys(void);
 
 #define CHECK(p)                \
     erts_check_stack(p);        \
-    check_bins(p);
+    check_bins(p);		\
+    check_mbuf_sz(p);
 
+#elif defined(DEBUG)
+# define CHECK(p) check_mbuf_sz(p)
 #else
 # define CHECK(p) ((void) 1)
 #endif /* HARDDEBUG */
@@ -249,7 +257,7 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
     Uint water_size = (char *)high - water_start;
 
     while (mp != NULL) {
-#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
+#if defined(ERTS_SMP)
 	if (!mp->bp)
 #endif
 	{
@@ -283,11 +291,11 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
  */
 #if defined(HIPE)
 
-#define GENSWEEP_NSTACK(p,old_htop,n_htop,objv,nobj)             	\
+#define GENSWEEP_NSTACK(p,old_htop,n_htop)				\
 	do {								\
 		Eterm *tmp_old_htop = old_htop;				\
 		Eterm *tmp_n_htop = n_htop;				\
-		gensweep_nstack((p), &tmp_old_htop, &tmp_n_htop,objv,nobj); \
+		gensweep_nstack((p), &tmp_old_htop, &tmp_n_htop);	\
 		old_htop = tmp_old_htop;				\
 		n_htop = tmp_n_htop;					\
 	} while(0)
@@ -309,7 +317,7 @@ offset_mqueue(Process *p, Sint offs, Eterm* low, Eterm* high)
 #else /* !HIPE */
 
 #define fullsweep_nstack(p,n_htop)		(n_htop)
-#define GENSWEEP_NSTACK(p,old_htop,n_htop,objv,nobj)	do{}while(0)
+#define GENSWEEP_NSTACK(p,old_htop,n_htop)	do{}while(0)
 #define offset_nstack(p,offs,low,high)		do{}while(0)
 
 #endif /* HIPE */
@@ -335,7 +343,7 @@ int setup_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset)
     mp = p->msg.first;
     v_ptr = rootset->v_msg;
     while (mp != NULL) {
-#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
+#if defined(ERTS_SMP)
 	if (mp->bp) {
 	    *v_ptr++ = NIL;
 	    *v_ptr++ = NIL;
@@ -484,7 +492,7 @@ void restore_this_rootset(Process *p, Rootset *rootset)
     mp = p->msg.first;
     v_ptr = rootset->v_msg;
     while (mp != NULL) {
-#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
+#if defined(ERTS_SMP)
 	if (mp->bp) {
 	    v_ptr += 2;
 	}
@@ -1132,16 +1140,6 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
     erts_smp_locked_activity_begin(ERTS_ACTIVITY_GC);
 
-#if defined(ERTS_SMP) && defined(HEAP_FRAG_ELIM_TEST)
-    {
-	ErlMessage *msgp;
-	for (msgp = p->msg.first; msgp; msgp = msgp->next) {
-	    if (msgp->bp)
-		erts_move_msg_mbuf_to_proc_mbufs(p, msgp);
-	}
-    }
-#endif
-
     CHECK(p);
     OverRunCheck();
 
@@ -1419,6 +1417,24 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 
     return ((int) (HEAP_TOP(p) - HEAP_START(p)) / 10);
 #undef OverRunCheck
+}
+
+/*
+ * Place all living data on a the new heap; deallocate any old heap.
+ * Meant to be used by hibernate/3.
+ */
+void
+erts_garbage_collect_hibernate(Process* p)
+{
+    Uint new_sz;
+
+    FLAGS(p) |= F_NEED_FULLSWEEP;
+    erts_garbage_collect(p, 0, p->arg_reg, p->arity);
+    new_sz = HEAP_TOP(p) - HEAP_START(p);
+    if (new_sz == 0) {
+	new_sz = 1; /* We want a heap... */
+    }
+    erts_shrink_new_heap(p, new_sz, p->arg_reg, p->arity);
 }
 
 static Eterm*
@@ -1772,7 +1788,7 @@ gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     n_htop = n_hstart;
     n = setup_rootset(p, objv, nobj, &rootset);
 
-    GENSWEEP_NSTACK(p, old_htop, n_htop, objv, nobj);
+    GENSWEEP_NSTACK(p, old_htop, n_htop);
     while (n--) {
         Eterm* g_ptr = rootset.v[n];
         Uint g_sz = rootset.sz[n];
@@ -2153,6 +2169,19 @@ erts_init_ggc(void) /*called from erl_gc.c:erts_init_gc() */
 /*  DEBUG routines                                              */
 /****************************************************************/
 
+#ifdef DEBUG
+
+static void
+check_mbuf_sz(Process *p)
+{
+    ErlHeapFragment *bp;
+    Uint sz;
+    for (sz = 0, bp = MBUF(p); bp; bp = bp->next)
+	sz += (Uint) bp->size;
+    ASSERT(sz == MBUF_SIZE(p));
+}
+
+#endif
 
 #ifdef HARDDEBUG
 
@@ -2430,11 +2459,11 @@ ma_offset_rootset(Process *cp, Sint offs,
 
 #if defined(HIPE)
 
-#define MA_GENSWEEP_NSTACK(p,old_htop,n_htop,objv,nobj)	                \
+#define MA_GENSWEEP_NSTACK(p,old_htop,n_htop)				\
 	do {								\
 		Eterm *tmp_old_htop = old_htop;				\
 		Eterm *tmp_n_htop = n_htop;				\
-		ma_gensweep_nstack((p),&tmp_old_htop,&tmp_n_htop,objv,nobj); \
+		ma_gensweep_nstack((p),&tmp_old_htop,&tmp_n_htop);	\
 		old_htop = tmp_old_htop;				\
 		n_htop = tmp_n_htop;					\
 	} while(0)
@@ -2455,7 +2484,7 @@ ma_offset_rootset(Process *cp, Sint offs,
 #else /* !HIPE */
 
 #define ma_fullsweep_nstack(p,n_htop)		(n_htop)
-#define MA_GENSWEEP_NSTACK(p,old_htop,n_htop,objv,nobj)   do{}while(0)
+#define MA_GENSWEEP_NSTACK(p,old_htop,n_htop)	do{}while(0)
 #define ma_offset_nstack(p,offs,low,high)                 do{}while(0)
 
 #endif /* HIPE */
@@ -3481,7 +3510,7 @@ ma_gen_gc(Process *p, int new_sz, Eterm* objv, int nobj)
     n_htop = n_hstart;
     n = collect_roots(p, objv, nobj, rootset);
     while (n--) {
-      MA_GENSWEEP_NSTACK(rootset[n].p, old_htop, n_htop, objv, nobj);
+      MA_GENSWEEP_NSTACK(rootset[n].p, old_htop, n_htop);
 
       while (rootset[n].n--) {
         Eterm *g_ptr = rootset[n].v[rootset[n].n];

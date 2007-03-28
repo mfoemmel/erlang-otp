@@ -230,7 +230,6 @@ map_spilled_temporaries0([{N, {spill, _}}|Xs]) ->
 map_spilled_temporaries0([_X|Xs]) ->
   map_spilled_temporaries0(Xs).
 
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 interference_arcs([], _Live, IG) -> 
@@ -376,15 +375,7 @@ select_colors([{X,colorable}|Xs], IG, Cols, PhysRegs) ->
 	MaxColor
     end,
 %% Since we are dealing with spills we label all our temporaries accordingly.
-  {[{X,{spill,Slot}} | Tail], NewMaxColor};
-
-%% Pessimistic coloring:
-select_colors([{_X,{spill,_M}}|_Xs], _IG, _Cols, _PhysRegs) ->
-  ?report("spilled: ~p~n",[X]),
-
-  %% We should never arrive here since we throw an exception already
-  %% in simplify if a temporary is spilled.
-  throw(foo).
+  {[{X,{spill,Slot}} | Tail], NewMaxColor}.
 
 select_color(X, IG, Cols, PhysRegs) ->
   UsedColors = get_colors(neighbors(X, IG), Cols),
@@ -465,7 +456,7 @@ init_stackslots(NumSlots, Acc) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info,{neighbors=[]::list(),degree=0::integer()}).
+-record(ig_info, {neighbors=[]::list(),degree=0::integer()}).
 
 empty_ig(NumNodes) ->
   hipe_vectors:new(NumNodes,#ig_info{neighbors=[],degree=0}).
@@ -497,7 +488,7 @@ normalize_ig(I, IG) ->
   Info = hipe_vectors:get(IG, I),
   N = ordsets:from_list(neighbors(Info)),
   NewIG = hipe_vectors:set(IG, I, Info#ig_info{neighbors=N,
-						       degree=length(N)}),
+					       degree=length(N)}),
   normalize_ig(I-1, NewIG).
 
 neighbors(X, IG) ->
@@ -509,7 +500,7 @@ decrement_degree(X, IG) ->
   Degree = degree(Info),
   NewDegree = Degree-1,
   NewInfo = Info#ig_info{degree=NewDegree},
-  {NewDegree,hipe_vectors:set(IG,X,NewInfo)}.
+  {NewDegree, hipe_vectors:set(IG,X,NewInfo)}.
 
 list_ig(IG) ->
   hipe_vectors:list(IG).
@@ -554,13 +545,10 @@ bb(CFG,L,Target) ->
    hipe_bb:code(Target:bb(CFG,L)).
 
 def_use(X, Target, TempMap) ->
-
-  Defines = [ Y || Y <- reg_names(Target:defines(X), Target), 
-		   hipe_temp_map:is_spilled(Y, TempMap)],
-
-  Uses = [ Z || Z <- reg_names(Target:uses(X), Target), 
-		   hipe_temp_map:is_spilled(Z, TempMap)],
-
+  Defines = [Y || Y <- reg_names(Target:defines(X), Target), 
+		  hipe_temp_map:is_spilled(Y, TempMap)],
+  Uses = [Z || Z <- reg_names(Target:uses(X), Target), 
+	       hipe_temp_map:is_spilled(Z, TempMap)],
   {Defines, Uses}.
 
 reg_names(Rs, Target) ->

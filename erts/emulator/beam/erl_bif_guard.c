@@ -357,41 +357,41 @@ Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live)
 Eterm erts_gc_bitsize_1(Process* p, Eterm* reg, Uint live)
 {
     Eterm arg = reg[live];
-    if (is_binary(BIF_ARG_1)) {
-      Uint low_bits;
-      Uint bytesize;
-      Uint high_bits;
-      bytesize = binary_size(BIF_ARG_1);
-      high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
-      low_bits = (bytesize << 3) + binary_bitsize(BIF_ARG_1);
-      if (high_bits == 0) {
-	if (IS_USMALL(0,low_bits)) {
-	  return make_small(low_bits);
+    if (is_binary(arg)) {
+	Uint low_bits;
+	Uint bytesize;
+	Uint high_bits;
+	bytesize = binary_size(arg);
+	high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
+	low_bits = (bytesize << 3) + binary_bitsize(arg);
+	if (high_bits == 0) {
+	    if (IS_USMALL(0,low_bits)) {
+		return make_small(low_bits);
+	    } else {
+		Eterm* hp; 
+		if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
+		    erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live);
+		}
+		hp = p->htop;
+		p->htop += BIG_UINT_HEAP_SIZE;
+		return uint_to_big(low_bits, hp);
+	    }
+	} else {
+	    Uint sz =  BIG_NEED_SIZE(4);
+	    Eterm* hp;
+	    if (ERTS_NEED_GC(p, sz)) {
+		erts_garbage_collect(p, sz, reg, live);
+	    }
+	    hp = p->htop;
+	    hp[0] = make_pos_bignum_header(sz-1);
+	    BIG_DIGIT(hp,0) = DLOW(low_bits);
+	    BIG_DIGIT(hp,1) = DHIGH(low_bits);
+	    BIG_DIGIT(hp,2) = DLOW(high_bits);
+	    BIG_DIGIT(hp,3) = DHIGH(high_bits);
+	    return make_big(hp);
 	}
-	else {
-	  Eterm* hp; 
-	  if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
-	    erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live);
-	  }
-	  hp = p->htop;
-	  p->htop += BIG_UINT_HEAP_SIZE;
-	  return uint_to_big(low_bits, hp);
-	}
-      }
-      else {
-	Uint sz =  BIG_NEED_SIZE(4);
-	Eterm* hp;
-	if (ERTS_NEED_GC(p, sz)) {
-	    erts_garbage_collect(p, sz, reg, live);
-	}
-	hp[0] = make_pos_bignum_header(sz-1);
-	BIG_DIGIT(hp,0) = DLOW(low_bits);
-	BIG_DIGIT(hp,1) = DHIGH(low_bits);
-	BIG_DIGIT(hp,2) = DLOW(high_bits);
-	BIG_DIGIT(hp,3) = DHIGH(high_bits);
-	return make_big(hp);
-      }
-     BIF_ERROR(p, BADARG);
+    } else {
+	BIF_ERROR(p, BADARG);
     }
 }
 

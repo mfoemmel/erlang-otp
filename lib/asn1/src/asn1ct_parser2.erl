@@ -279,9 +279,7 @@ parse_or(_Tokens,[],ErrList) ->
 	    %% chose to throw 1) the error with the highest line no,
 	    %% 2) the last error which is not a asn1_assignment_error or
 	    %% 3) the last error.
-	    throw(prioritize_error(ErrList));
-	Other ->
-	    throw({asn1_error,{parse_or,Other}})
+	    throw(prioritize_error(ErrList))
     end;
 parse_or(Tokens,[Fun|Frest],ErrList) ->
     case (catch Fun(Tokens)) of
@@ -533,12 +531,8 @@ parse_TypeWithConstraint([{'SEQUENCE',_},Lpar = {'(',_}|Rest]) ->
     end;
 parse_TypeWithConstraint([{'SEQUENCE',_},{'SIZE',_},Lpar = {'(',_}|Rest]) ->
     {Constraint,Rest2} = parse_Constraint([Lpar|Rest]),
-    Constraint2 =
-	case Constraint of
-	    #constraint{c=C} ->
-		Constraint#constraint{c={'SizeConstraint',C}};
-	    _ -> Constraint
-	end,
+    #constraint{c=C} = Constraint,
+    Constraint2 = Constraint#constraint{c={'SizeConstraint',C}},
     case Rest2 of
 	[{'OF',_}|Rest3] ->
 	    {Type,Rest4} = parse_Type(Rest3),
@@ -559,12 +553,8 @@ parse_TypeWithConstraint([{'SET',_},Lpar = {'(',_}|Rest]) ->
     end;
 parse_TypeWithConstraint([{'SET',_},{'SIZE',_},Lpar = {'(',_}|Rest]) ->
     {Constraint,Rest2} = parse_Constraint([Lpar|Rest]),
-    Constraint2 =
-	case Constraint of
-	    #constraint{c=C} ->
-		Constraint#constraint{c={'SizeConstraint',C}};
-	    _ -> Constraint
-	end,
+    #constraint{c=C} = Constraint,
+    Constraint2 = Constraint#constraint{c={'SizeConstraint',C}},
     case Rest2 of
 	[{'OF',_}|Rest3] ->
 	    {Type,Rest4} = parse_Type(Rest3),
@@ -2559,7 +2549,7 @@ parse_ValueAssignment([{identifier,L1,IdName}|Rest]) ->
     case Rest2 of
 	[{'::=',_}|Rest3] ->
 	    {Value,Rest4} = parse_Value(Rest3),
-	    case lookahead_assignment(Rest4) of
+	    case catch lookahead_assignment(Rest4) of
 		ok ->
 		    {#valuedef{pos=L1,name=IdName,type=Type,value=Value},Rest4};
 		_ ->

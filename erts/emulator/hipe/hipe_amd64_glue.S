@@ -302,6 +302,39 @@ nbif_fail:
 	movl	$HIPE_MODE_SWITCH_RES_THROW, %eax
 	jmp	.flush_exit
 	
+#if defined(HEAP_FRAG_ELIM_TEST)
+	.global	nbif_0_gc_after_bif
+	.global	nbif_1_gc_after_bif
+	.global	nbif_2_gc_after_bif
+	.global	nbif_3_gc_after_bif
+	.align	4
+nbif_0_gc_after_bif:
+	xorl	%edx, %edx
+	jmp	.gc_after_bif
+	.align	4
+nbif_1_gc_after_bif:
+	movl	$1, %edx
+	jmp	.gc_after_bif
+	.align	4
+nbif_2_gc_after_bif:
+	movl	$2, %edx
+	jmp	.gc_after_bif
+	.align	4
+nbif_3_gc_after_bif:
+	movl	$3, %edx
+	/*FALLTHROUGH*/
+	.align	4
+.gc_after_bif:
+	movl	%edx, P_NARITY(P)	# Note: narity is a 32-bit field
+	subq	$(16-8), %rsp
+	movq	P, %rdi
+	movq	%rax, %rsi
+	call	erts_gc_after_bif_call
+	addq	$(16-8), %rsp
+	movl	$0, P_NARITY(P)		# Note: narity is a 32-bit field
+	ret
+#endif
+
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.

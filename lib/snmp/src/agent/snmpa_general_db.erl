@@ -425,8 +425,8 @@ info({dets, Name}) ->
     dets:info(Name);
 info({ets, Name, _}) ->
     case ets:info(Name) of
-	T when tuple(T) ->
-	    tuple_to_list(T);
+	undefined ->
+	    [];
 	L ->
 	    L
     end.

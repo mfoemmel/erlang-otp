@@ -73,7 +73,7 @@ get_ctxt_precedence(Ctxt) ->
 %% @spec (context(), integer()) -> context()
 %%
 %% @doc Updates the operator precedence field of the prettyprinter
-%% context. See the {@link erl_parse} module for operator precedences.
+%% context. See the {@link //stdlib/erl_parse} module for operator precedences.
 %%
 %% @see //stdlib/erl_parse
 %% @see get_ctxt_precedence/1

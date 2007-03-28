@@ -817,8 +817,9 @@ find_property([{Name, Value, _}|_], Name, value) ->
     Value; 
 find_property([{Name, _, Mode}|_], Name, mode) ->
     Mode; 
-find_property([{Name, Value, Mode}|_], Name, all) ->
-    {Name, Value, Mode}; 
+% Left out for now to avoid dialyzer warning.
+%find_property([{Name, Value, Mode}|_], Name, all) ->
+%    {Name, Value, Mode}; 
 find_property([_|T], Name, Which) ->
     find_property(T, Name, Which).
 

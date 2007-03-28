@@ -51,9 +51,6 @@
 #define DECL_AM(S) Eterm AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 #define INIT_AM(S) AM_ ## S = am_atom_put(#S, sizeof(#S) - 1)
 
-#ifdef USE_THREADS
-extern int erts_async_max_threads;
-#endif
 /* Keep erts_system_version as a global variable for easy access from a core */
 static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 				     " emulator version " ERLANG_VERSION
@@ -922,6 +919,15 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 }
 #undef MI_INC
 
+#if defined(VALGRIND)
+static int check_if_xml(void)
+{
+    return (getenv("VALGRIND_LOG_XML") != NULL);
+}
+#else
+#define check_if_xml() 0
+#endif
+
 /*
  * This function takes care of calls to erlang:system_info/1 when the argument
  * is a tuple.
@@ -1028,7 +1034,12 @@ info_1_tuple(Process* BIF_P,	/* Pointer to current process. */
 		ASSERT(r == buf_size - 1);
 	    }
 	    buf[buf_size - 1 - r] = '\0';
-	    ERTS_ERROR_CHECKER_PRINTF("%s\n", buf);
+	    if (check_if_xml()) {
+		ERTS_ERROR_CHECKER_PRINTF("<erlang_info_log>"
+					  "%s</erlang_info_log>\n", buf);
+	    } else {
+		ERTS_ERROR_CHECKER_PRINTF("%s\n", buf);
+	    }
 	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
 	    BIF_RET(am_true);
 #undef ERTS_ERROR_CHECKER_PRINTF
@@ -2139,11 +2150,15 @@ BIF_RETTYPE erts_debug_get_internal_state_1(BIF_ALIST_1)
 	DECL_AM(next_port);
 	DECL_AM(check_io_debug);
 	DECL_AM(available_internal_state);
+	DECL_AM(monitoring_nodes);
 
 	if (BIF_ARG_1 == AM_node_and_dist_references) {
 	    /* Used by node_container_SUITE (emulator) */
 	    Eterm res = erts_get_node_and_dist_references(BIF_P);
 	    BIF_RET(res);
+	}
+	else if (BIF_ARG_1 == AM_monitoring_nodes) {
+	    BIF_RET(erts_processes_monitoring_nodes(BIF_P));
 	}
 	else if (BIF_ARG_1 == AM_next_pid || BIF_ARG_1 == AM_next_port) {
 	    /* Used by node_container_SUITE (emulator) */
@@ -2328,6 +2343,7 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 	DECL_AM(next_pid);
 	DECL_AM(next_port);
 	DECL_AM(send_fake_exit_signal);
+	DECL_AM(force_gc);
 	
 	if (BIF_ARG_1 == AM_block) {
 	    Sint ms;
@@ -2357,6 +2373,20 @@ BIF_RETTYPE erts_debug_set_internal_state_2(BIF_ALIST_2)
 		if (res < 0)
 		    BIF_RET(am_false);
 		BIF_RET(erts_make_integer(res, BIF_P));
+	    }
+	}
+	else if (BIF_ARG_1 == AM_force_gc) {
+	    /* Used by signal_SUITE (emulator) */
+	    Process *rp = erts_pid2proc(BIF_P, ERTS_PROC_LOCK_MAIN,
+					BIF_ARG_2, ERTS_PROC_LOCK_MAIN);
+	    if (!rp) {
+		BIF_RET(am_false);
+	    }
+	    else {
+		MSO(rp).overhead += HEAP_SIZE(rp); /* Force GC */
+		if (BIF_P != rp)
+		    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_MAIN);
+		BIF_RET(am_true);
 	    }
 	}
 	else if (BIF_ARG_1 == AM_send_fake_exit_signal) {

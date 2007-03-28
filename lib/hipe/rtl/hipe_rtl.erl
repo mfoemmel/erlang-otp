@@ -229,11 +229,6 @@
 
 	 mk_gctest/1,
 	 gctest_words/1,
- 
-	 mk_binbase/3,
-	 binbase_dst/1,
-	 binbase_orig/1,
-	 binbase_offset/1,
 	 
 	 mk_comment/1,
 	 comment_text/1,
@@ -708,17 +703,10 @@ mk_gctest(Reg) -> #gctest{words=Reg}.  % This handles rtl_regs and rtl_vars
 gctest_words(#gctest{words=Words}) -> Words.
 gctest_words_update(S, NewWords) -> S#gctest{words=NewWords}.
 
-%%
-%% binbase
-%%
 
-mk_binbase(Base, Orig, Offset) -> #binbase{dst=Base, orig=Orig, offset=Offset}.
-binbase_dst(#binbase{dst=Base}) -> Base.
-binbase_dst_update(S, Dst) -> S#binbase{dst=Dst}.
-binbase_orig(#binbase{orig=Orig}) -> Orig.
-binbase_orig_update(S, Orig) -> S#binbase{orig=Orig}.
-binbase_offset(#binbase{offset=Offset}) -> Offset.
-binbase_offset_update(S, Offset) -> S#binbase{offset=Offset}.
+%%
+%% fixnumop
+%%
 
 mk_fixnumop(Dst, Src, Type) ->
   #fixnumop{dst=Dst, src=Src, type=Type}.
@@ -892,7 +880,6 @@ args(I) ->
   case I of
     #alu{} -> [alu_src1(I), alu_src2(I)];
     #alub{} -> [alub_src1(I), alub_src2(I)];
-    #binbase{} -> [binbase_orig(I), binbase_offset(I)];
     #branch{} -> [branch_src1(I), branch_src2(I)];
     #call{} -> 
       case call_is_known(I) of
@@ -936,7 +923,6 @@ defines(Instr) ->
   Defs = case Instr of
 	   #alu{} -> [alu_dst(Instr)];
 	   #alub{} -> [alub_dst(Instr)];
-	   #binbase{} -> [binbase_dst(Instr)];
 	   #branch{} -> [];
 	   #call{} -> call_dstlist(Instr);
 	   #comment{} -> [];
@@ -991,9 +977,6 @@ subst_uses(Subst, I) ->
     #alub{} ->
       I0 = alub_src1_update(I, subst1(Subst, alub_src1(I))),
       alub_src2_update(I0, subst1(Subst, alub_src2(I)));
-    #binbase{} ->
-      I0 = binbase_orig_update(I,subst1(Subst, binbase_orig(I))),
-      binbase_offset_update(I0,subst1(Subst, binbase_offset(I0)));
     #branch{} ->
       I0 = branch_src1_update(I, subst1(Subst, branch_src1(I))),
       branch_src2_update(I0, subst1(Subst, branch_src2(I)));
@@ -1072,8 +1055,6 @@ subst_defines(Subst, I)->
       alu_dst_update(I, subst1(Subst, alu_dst(I)));
     #alub{} ->
       alub_dst_update(I, subst1(Subst, alub_dst(I)));
-    #binbase{} ->
-      binbase_dst_update(I, subst1(Subst, binbase_dst(I)));
     #branch{} ->
       I;
     #call{} ->
@@ -1142,7 +1123,6 @@ is_safe(Instr) ->
   case Instr of
     #alu{} -> true;
     #alub{} -> false;
-    #binbase{} -> true;
     #branch{} -> false;
     #call{} -> false;
     #comment{} -> false;
@@ -1506,12 +1486,6 @@ pp_instr(Dev, I) ->
       io:format(Dev, ")~n", []);
     #comment{} ->
       io:format(Dev, "    ;; ~p~n", [comment_text(I)]);
-    #binbase{} ->
-      pp_arg(Dev, binbase_dst(I)),
-      io:format(Dev, " <- ", []),
-      io:format(Dev, "binbase(", []),
-      pp_args(Dev, [binbase_orig(I), binbase_offset(I)]),
-      io:format(Dev, ")~n", []);
     #fixnumop{} ->
       io:format(Dev, "    ", []),
       pp_arg(Dev, fixnumop_dst(I)),

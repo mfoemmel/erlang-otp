@@ -146,7 +146,7 @@ dir_1(Dir, Regexp, Env) ->
     end.
 
 dir_2(Name, Regexp, Dir, Env) ->
-    File = if Dir == "" ->
+    File = if Dir =:= "" ->
                    Name;
               true ->
                    filename:join(Dir, Name)
@@ -154,11 +154,11 @@ dir_2(Name, Regexp, Dir, Env) ->
     case file_type(File) of
         {value, regular} ->
             dir_4(File, Regexp, Env);
-        {value, directory} when Env#dir.recursive == true ->
+        {value, directory} when Env#dir.recursive =:= true ->
             case is_symlink(Name) of
                 false ->
                     dir_3(Name, Dir, Regexp, Env);
-                true when Env#dir.follow_links == true ->
+                true when Env#dir.follow_links =:= true ->
                     dir_3(Name, Dir, Regexp, Env);
                 _ ->
                     ok
@@ -334,7 +334,7 @@ check_forms(Fs, Name) ->
 write_module(Tree, Name, Opts) ->
     Name1 = proplists:get_value(outfile, Opts, filename(Name)),
     Dir = filename(proplists:get_value(dir, Opts, "")),
-    File = if Dir == "" ->
+    File = if Dir =:= "" ->
                    Name1;
               true ->
                    case file_type(Dir) of
@@ -391,7 +391,7 @@ file_type(Name) ->
     file_type(Name, false).
 
 is_symlink(Name) ->
-    file_type(Name, true) == {value, symlink}.
+    file_type(Name, true) =:= {value, symlink}.
 
 file_type(Name, Links) ->
     V = case Links of
@@ -720,7 +720,7 @@ check_imports(Is, Opts, File) ->
             end
     end.
 
-check_imports_1([{F1, M1}, {F2, M2} | _Is]) when F1 == F2, M1 /= M2 ->
+check_imports_1([{F1, M1}, {F2, M2} | _Is]) when F1 =:= F2, M1 =/= M2 ->
     false;
 check_imports_1([_ | Is]) ->
     check_imports_1(Is);
@@ -843,7 +843,7 @@ update_attribute(F, Imports, Opts) ->
 			     || {N, A} <- Names]], Opts)
             end,
             Is = [make_fname(N) || N <- Ns1],
-            if Is == [] ->
+            if Is =:= [] ->
                     %% This will be filtered out later.
                     erl_syntax:warning_marker(deleted);
                true ->
@@ -1211,7 +1211,7 @@ visit_spawn_call(_, F, Ps, As, Tree, _Env, St0) ->
 visit_named_fun_application(F, As, Tree, Env, St0) ->
     Name = erl_syntax:implicit_fun_name(F),
     case catch {ok, erl_syntax_lib:analyze_function_name(Name)} of
-        {ok, {A, N}} when is_atom(A), is_integer(N), N == length(As) ->
+        {ok, {A, N}} when is_atom(A), is_integer(N), N =:= length(As) ->
             case is_nonlocal({A, N}, Env) of
                 true ->
                     %% Making this a direct call would be an error.
@@ -1232,7 +1232,7 @@ visit_named_fun_application(F, As, Tree, Env, St0) ->
 
 visit_lambda_application(F, As, Tree, Env, St0) ->
     A = erl_syntax:fun_expr_arity(F),
-    case A == length(As) of
+    case A =:= length(As) of
         true ->
             report({Env#env.file, erl_syntax:get_pos(F),
 		    "changing application of fun-expression "
@@ -1313,8 +1313,8 @@ visit_remote_application({lists, subtract, 2}, F, [A1, A2], Tree, Env,
 visit_remote_application({lists, filter, 2}, F, [A1, A2] = As, Tree,
                          Env, St0) ->
     case Env#env.auto_list_comp
-	and (get_var_exports(A1) == [])
-	and (get_var_exports(A2) == []) of
+	and (get_var_exports(A1) =:= [])
+	and (get_var_exports(A2) =:= []) of
         true ->
             report({Env#env.file, erl_syntax:get_pos(F),
 		    "replacing call to `lists:filter/2' "
@@ -1332,8 +1332,8 @@ visit_remote_application({lists, filter, 2}, F, [A1, A2] = As, Tree,
 visit_remote_application({lists, map, 2}, F, [A1, A2] = As, Tree, Env,
                          St0) ->
     case Env#env.auto_list_comp
-	and (get_var_exports(A1) == [])
-	and (get_var_exports(A2) == []) of
+	and (get_var_exports(A1) =:= [])
+	and (get_var_exports(A2) =:= []) of
         true ->
             report({Env#env.file, erl_syntax:get_pos(F),
 		    "replacing call to `lists:map/2' "
@@ -1552,7 +1552,7 @@ multival_clauses([C | Cs], N, Vs, Cs1) ->
             case erl_syntax:type(E) of
                 tuple ->
                     Ts = erl_syntax:tuple_elements(E),
-                    if length(Ts) == N ->
+                    if length(Ts) =:= N ->
                             Bs = make_matches(E, Vs, Ts),
                             Es1 = replace_last(Es, Bs),
                             Ps = erl_syntax:clause_patterns(C),
@@ -1686,10 +1686,10 @@ replace_last([E | Es], Xs) ->
     [E | replace_last(Es, Xs)].
 
 is_generator(E) ->
-    erl_syntax:type(E) == generator.
+    erl_syntax:type(E) =:= generator.
 
 is_variable(E) ->
-    erl_syntax:type(E) == variable.
+    erl_syntax:type(E) =:= variable.
 
 new_variables(N, St0) when N > 0 ->
     {V, St1} = new_variable(St0),

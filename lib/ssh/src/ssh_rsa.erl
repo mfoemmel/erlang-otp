@@ -207,8 +207,8 @@ emsa_pkcs1_v1_5_encode(M, EMLen) ->
     %% Must use speical xxNull types here!
     Alg = #'AlgorithmNull' { algorithm = ?'id-sha1',
 			     parameters = <<>> },
-    {ok,TCode} = asn1rt:encode('PKCS-1', 'DigestInfoNull',
-			       #'DigestInfoNull' { digestAlgorithm = Alg,
+    {ok,TCode} = 'PKCS-1':encode('DigestInfoNull',
+				#'DigestInfoNull'{ digestAlgorithm = Alg,
 						   digest = H }),
     T = list_to_binary(TCode),
     TLen = size(T),

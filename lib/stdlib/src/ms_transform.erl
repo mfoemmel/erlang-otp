@@ -759,6 +759,7 @@ new_bind(Name,{Next,L}) ->
 translate_language_element(Atom) ->
     Transtab = [
 		{lc,"list comprehension"},
+		{bc,"binary comprehension"},
 		{block, "begin/end block"},
 		{'if', "if"},
 		{'case', "case"},

@@ -223,7 +223,11 @@ static ethr_mutex no_ethrs_mtx;
 #endif
 
 #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+pthread_spinlock_t ethr_atomic_spinlock[1 << ETHR_ATOMIC_ADDR_BITS];
+#else
 pthread_mutex_t ethr_atomic_mutex[1 << ETHR_ATOMIC_ADDR_BITS];
+#endif
 #endif
 
 /*
@@ -475,7 +479,11 @@ ethr_init(ethr_init_data *id)
     {
 	int i;
 	for (i = 0; i < (1 << ETHR_ATOMIC_ADDR_BITS); i++) {
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+	    res = pthread_spin_init(&ethr_atomic_spinlock[i], 0);
+#else
 	    res = pthread_mutex_init(&ethr_atomic_mutex[i], NULL);
+#endif
 	    if (res != 0)
 		goto error;
 	}
@@ -1204,30 +1212,6 @@ ethr_rwmutex_rwunlock(ethr_rwmutex *rwmtx)
 int
 ethr_atomic_init(ethr_atomic_t *var, long i)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res;
-#if ETHR_XCHK
-    if (ethr_not_inited) {
-       ASSERT(0);
-       return EACCES;
-    }  
-    if (!var) {
-       ASSERT(0);
-       return EINVAL;
-    }  
-#endif 
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    *var = (ethr_atomic_t) i;
-    return pthread_mutex_unlock(mtxp);
-}
-
-int
-ethr_atomic_set(ethr_atomic_t *var, long i)
-{
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
        ASSERT(0);
@@ -1238,18 +1222,28 @@ ethr_atomic_set(ethr_atomic_t *var, long i)
        return EINVAL;
     }  
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    *var = (ethr_atomic_t) i;
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *var = (ethr_atomic_t) i);
+}
+
+int
+ethr_atomic_set(ethr_atomic_t *var, long i)
+{
+#if ETHR_XCHK
+    if (ethr_not_inited) {
+       ASSERT(0);
+       return EACCES;
+    }  
+    if (!var) {
+       ASSERT(0);
+       return EINVAL;
+    }  
+#endif
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *var = (ethr_atomic_t) i);
 }
 
 int
 ethr_atomic_read(ethr_atomic_t *var, long *i)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
        ASSERT(0);
@@ -1260,19 +1254,13 @@ ethr_atomic_read(ethr_atomic_t *var, long *i)
        return EINVAL;
     }  
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    *i = (long) *var;
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *i = (long) *var);
 }
 
 
 int
 ethr_atomic_addtest(ethr_atomic_t *var, long incr, long *testp)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
        ASSERT(0);
@@ -1282,19 +1270,13 @@ ethr_atomic_addtest(ethr_atomic_t *var, long incr, long *testp)
        ASSERT(0);
        return EINVAL;
     }  
-#endif 
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-       return res;
-    *testp = *var += incr; 
-    return pthread_mutex_unlock(mtxp);
+#endif
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *var += incr; *testp = *var);
 }   
     
 int
 ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1305,24 +1287,12 @@ ethr_atomic_inctest(ethr_atomic_t *incp, long *testp)
 	return EINVAL;
     }
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    *testp = ++(*incp);
-#ifdef DEBUG
-    if (*testp > 0)
-	*testp = 4711;
-    else if (*testp < 0)
-	*testp = -4711;
-#endif
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(incp, *testp = (long) ++(*incp));
 }
 
 int
 ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1333,24 +1303,12 @@ ethr_atomic_dectest(ethr_atomic_t *decp, long *testp)
 	return EINVAL;
     }
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    *testp = --(*decp);
-#ifdef DEBUG
-    if (*testp > 0)
-	*testp = 4711;
-    else if (*testp < 0)
-	*testp = -4711;
-#endif
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(decp, *testp = (long) --(*decp));
 }
 
 int
 ethr_atomic_add(ethr_atomic_t *var, long incr)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
        ASSERT(0);
@@ -1360,19 +1318,13 @@ ethr_atomic_add(ethr_atomic_t *var, long incr)
        ASSERT(0);
        return EINVAL;
     }  
-#endif 
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-       return res;
-    *var += incr; 
-    return pthread_mutex_unlock(mtxp);
+#endif
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *var += incr);
 }   
     
 int 
 ethr_atomic_inc(ethr_atomic_t *incp)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(incp);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1383,18 +1335,12 @@ ethr_atomic_inc(ethr_atomic_t *incp)
 	return EINVAL;
     }
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    ++(*incp);
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(incp, ++(*incp));
 }
 
 int
 ethr_atomic_dec(ethr_atomic_t *decp)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(decp);
-    int res;
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1405,18 +1351,12 @@ ethr_atomic_dec(ethr_atomic_t *decp)
 	return EINVAL;
     }
 #endif
-    res = pthread_mutex_lock(mtxp);
-    if (res != 0)
-	return res;
-    --(*decp);
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(decp, --(*decp));
 }
 
 int
 ethr_atomic_and_old(ethr_atomic_t *var, long mask, long *old)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res = pthread_mutex_lock(mtxp);
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1427,18 +1367,12 @@ ethr_atomic_and_old(ethr_atomic_t *var, long mask, long *old)
 	return EINVAL;
     }
 #endif
-    if (res != 0)
-	return res;
-    *old = *var;
-    *var &= mask;
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *old = *var; *var &= mask);
 }
 
 int
 ethr_atomic_or_old(ethr_atomic_t *var, long mask, long *old)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res = pthread_mutex_lock(mtxp);
 #if ETHR_XCHK
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1449,18 +1383,12 @@ ethr_atomic_or_old(ethr_atomic_t *var, long mask, long *old)
 	return EINVAL;
     }
 #endif
-    if (res != 0)
-	return res;
-    *old = *var;
-    *var |= mask;
-    return pthread_mutex_unlock(mtxp);
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *old = *var; *var |= mask);
 }
 
 int
 ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
 {
-    pthread_mutex_t *mtxp = ETHR_ATOMIC_PTR2MTX(var);
-    int res = pthread_mutex_lock(mtxp);
 #if ETHR_XCHK 
     if (ethr_not_inited) {
 	ASSERT(0);
@@ -1470,12 +1398,8 @@ ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
 	ASSERT(0);
 	return EINVAL;
     }  
-#endif 
-    if (res != 0)
-	return res;
-    *old = *var;  
-    *var = new;   
-    return pthread_mutex_unlock(mtxp);
+#endif
+    ETHR_ATOMIC_OP_FALLBACK_IMPL__(var, *old = *var; *var = new);
 }   
     
 #endif /* #ifndef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS */
@@ -1485,81 +1409,237 @@ ethr_atomic_xchg(ethr_atomic_t *var, long new, long *old)
 int
 ethr_spinlock_init(ethr_spinlock_t *lock)
 {
-    return ethr_atomic_init(&lock->flag, 0);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    return pthread_spin_init(&lock->spnlck, 0);
+#else
+    return pthread_mutex_init(&lock->mtx, NULL);
+#endif
 }
+
+int
+ethr_spinlock_destroy(ethr_spinlock_t *lock)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    return pthread_spin_destroy(&lock->spnlck);
+#else
+    return pthread_mutex_destroy(&lock->mtx);
+#endif
+}
+
 
 int
 ethr_spin_unlock(ethr_spinlock_t *lock)
 {
-    return ethr_atomic_set(&lock->flag, 0);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    return pthread_spin_unlock(&lock->spnlck);
+#else
+    return pthread_mutex_unlock(&lock->mtx);
+#endif
 }
 
 int
 ethr_spin_lock(ethr_spinlock_t *lock)
 {
-    long old;
-    int res;
-
-    do {
-	res = ethr_atomic_xchg(&lock->flag, 1, &old);
-	if (res != 0)
-	    return res;
-    } while (old != 0);
-    return 0;
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    return pthread_spin_lock(&lock->spnlck);
+#else
+    return pthread_mutex_lock(&lock->mtx);
+#endif
 }
 
 int
 ethr_rwlock_init(ethr_rwlock_t *lock)
 {
-    return ethr_atomic_init(&lock->counter, 0);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    lock->counter = 0;
+    return pthread_spin_init(&lock->spnlck, 0);
+#else
+    return pthread_rwlock_init(&lock->rwlck, NULL);
+#endif
+}
+
+int
+ethr_rwlock_destroy(ethr_rwlock_t *lock)
+{
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    return pthread_spin_destroy(&lock->spnlck);
+#else
+    return pthread_rwlock_destroy(&lock->rwlck);
+#endif
 }
 
 int
 ethr_read_unlock(ethr_rwlock_t *lock)
 {
-    return ethr_atomic_dec(&lock->counter);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    {
+	int res = pthread_spin_lock(&lock->spnlck);
+	if (res != 0)
+	    return res;
+	lock->counter--;
+	return pthread_spin_unlock(&lock->spnlck);
+    }
+#else
+    return pthread_rwlock_unlock(&lock->rwlck);
+#endif
 }
 
 int
 ethr_read_lock(ethr_rwlock_t *lock)
 {
-    long value;
-    int res;
-
-    for(;;) {
-	res = ethr_atomic_inctest(&lock->counter, &value);
-	if (res != 0)
-	    return res;
-	if (!(value < 0))	/* wasn't write-locked */
-	    return 0;
-	res = ethr_atomic_dec(&lock->counter);
-	if (res != 0)
-	    return res;
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
     }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    {
+	int locked = 0;
+	do {
+	    int res = pthread_spin_lock(&lock->spnlck);
+	    if (res != 0)
+		return res;
+	    if ((lock->counter & ETHR_RWLOCK_WRITERS) == 0) {
+		lock->counter++;
+		locked = 1;
+	    }
+	    res = pthread_spin_unlock(&lock->spnlck);
+	    if (res != 0)
+		return res;
+	} while (!locked);
+	return 0;
+    }
+#else
+    return pthread_rwlock_rdlock(&lock->rwlck);
+#endif
 }
 
 int
 ethr_write_unlock(ethr_rwlock_t *lock)
 {
-    return ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    ASSERT(lock->counter == ETHR_RWLOCK_WRITERS);
+    lock->counter = 0;
+    return pthread_spin_unlock(&lock->spnlck);
+#else
+    return pthread_rwlock_unlock(&lock->rwlck);
+#endif
 }
 
 int
 ethr_write_lock(ethr_rwlock_t *lock)
 {
-    long value;
-    int res;
-
-    for(;;) {
-	res = ethr_atomic_addtest(&lock->counter, -ETHR_RWLOCK_OFFSET, &value);
+#if ETHR_XCHK 
+    if (ethr_not_inited) {
+	ASSERT(0);
+	return EACCES;
+    }
+    if (!lock) {
+	ASSERT(0);
+	return EINVAL;
+    }
+#endif
+#ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
+    while (1) {
+	int res = pthread_spin_lock(&lock->spnlck);
 	if (res != 0)
 	    return res;
-	if (value == -ETHR_RWLOCK_OFFSET)	/* was unlocked */
+	lock->counter |= ETHR_RWLOCK_WRITERS;
+	if (lock->counter == ETHR_RWLOCK_WRITERS)
 	    return 0;
-	res = ethr_atomic_add(&lock->counter, ETHR_RWLOCK_OFFSET);
+	res = pthread_spin_unlock(&lock->spnlck);
 	if (res != 0)
 	    return res;
     }
+    return 0;
+#else
+    return pthread_rwlock_wrlock(&lock->rwlck);
+#endif
 }
 
 #endif /* ETHR_HAVE_OPTIMIZED_LOCKS */

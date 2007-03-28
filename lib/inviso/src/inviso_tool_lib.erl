@@ -3,7 +3,7 @@
 %% -----------------------------------------------------------------------------
 %% Exported library APIs
 %% -----------------------------------------------------------------------------
--export([inviso_cmd/3,expand_module_names/3,make_patterns/7]).
+-export([inviso_cmd/3,expand_module_names/3,make_patterns/7,std_tdg/2]).
 -export([debug/3]).
 
 %% -----------------------------------------------------------------------------
@@ -120,7 +120,7 @@ expand_module_names_2(Nodes,DirStr,ModStr,Opts) ->
 %% Always returns a regexp or {error,Reason}. 
 expand_module_names_special_regexp(Str) ->
     StrLen=length(Str),
-    case reg_exp:first_match(Str,"[0-9a-zA-Z_/]*") of
+    case regexp:first_match(Str,"[0-9a-zA-Z_/]*") of
 	{match,1,StrLen} ->                  % Ok, it is the special case.
 	    {ok,".*"++Str++".*"};            % Convert it to a proper regexp.
 	{match,_,_} ->
@@ -250,7 +250,26 @@ join_patterns_3(_,_,_,[]) ->
     [].
 %% -----------------------------------------------------------------------------
 
+
+%% =============================================================================
+%% Function for tracer data creation.
+%% =============================================================================
+
+-define(I2L(Arg),integer_to_list(Arg)).
+
+%% The inviso_tool uses a tracer-data generator function to create the tracer_data
+%% specification for each node that shall participate in tracing controlled
+%% through the inviso-tool. If no own tracer data generator function is specified,
+%% this function is used.
+std_tdg({{Y,Mo,D},{H,Mi,S}},Node) ->
+    NameStr=atom_to_list(Node)++"_"++?I2L(Y)++"-"++?I2L(Mo)++"-"++?I2L(D)++"_"++
+	?I2L(H)++"-"++?I2L(Mi)++"-"++?I2L(S),
+    LogTD={file,NameStr++".log"},
+    TiTD={file,NameStr++".ti"},
+    [{trace,LogTD},{ti,TiTD}].
 %% ------------------------------------------------------------------------------
+
+
 
 %% =============================================================================
 %% Various help functions.
@@ -283,7 +302,7 @@ get_disable_safety_opts(Opts) ->
 %% -----------------------------------------------------------------------------
 
 get_expand_regexp_at_opts(Opts) ->
-    case lists:keysearch(expand_regexp_at,1,Opts) of
+    case lists:keysearch(expand_only_at,1,Opts) of
 	{value,{_,Node}} when atom(Node) ->
 	    {ok,Node};
 	_ ->

@@ -20,9 +20,12 @@
 #include "config.h"
 #endif
 
-#ifdef __WIN32__
+#if defined(__WIN32__)
 #  include <windows.h>
-#else
+#elif defined(VXWORKS)
+#  include <selectLib.h>
+#  include <errno.h>
+#else /* UNIX */
 #  include <sys/types.h>
 #  include <sys/param.h>
 #  ifdef SYS_SELECT_H

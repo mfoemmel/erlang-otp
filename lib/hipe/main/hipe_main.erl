@@ -70,14 +70,12 @@ compile_icode(MFA, LinearIcode, Options) ->
 %% 2. linear_to_cfg, which turns linear form into a CFG, must be
 %%    performed before any of the passes on CFG form;
 %%
-%% 3. binary_pass must be performed before handle_exceptions;
+%% 3. handle_exceptions must be performed before icode_ssa;
 %%
-%% 4. handle_exceptions must be performed before icode_ssa;
-%%
-%% 5. split_arith should be performed after icode_ssa for
+%% 4. split_arith should be performed after icode_ssa for
 %%    effectiveness reasons (and perhaps to work at all);
 %%
-%% 6. remove_trivial_bbs should be performed last to tidy up the CFG.
+%% 5. remove_trivial_bbs should be performed last to tidy up the CFG.
 %%
 %%---------------------------------------------------------------------
 
@@ -92,11 +90,11 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
   ?opt_start_timer("Icode"),
   LinearIcode1 = icode_no_comment(LinearIcode0, Options),
   IcodeCfg0 = icode_linear_to_cfg(LinearIcode1, Options),
-  %%hipe_icode_cfg:pp(IcodeCfg0),
-  IcodeCfg1 = icode_binary_pass(IcodeCfg0, Options),
   %%hipe_icode_cfg:pp(IcodeCfg1),
-  IcodeCfg2 = icode_handle_exceptions(IcodeCfg1, MFA, Options),
+  IcodeCfg1 = icode_handle_exceptions(IcodeCfg0, MFA, Options),
+  IcodeCfg2 = icode_binary_pass(IcodeCfg1, Options),
   icode_pp(IcodeCfg2, MFA, proplists:get_value(pp_icode, Options)),
+  
   
   case icode_ssa(IcodeCfg2, MFA, Options) of
     {dialyzer, IcodeSSA} -> {dialyzer, IcodeSSA};
@@ -153,13 +151,8 @@ icode_linear_to_cfg(LinearIcode, Options) ->
 %% fail-label. This is no longer true after fixing up the catches.
 
 icode_binary_pass(IcodeCfg, Options) ->  
-  case proplists:get_bool(inline_bs, Options) of
-    true ->
-      ?option_time(hipe_icode_binary_pass:make_pass(IcodeCfg),
-		   "Icode binary pass", Options);
-    _ ->
-      IcodeCfg
-  end.
+  ?option_time(hipe_icode_bincomp:simple(IcodeCfg),
+	       "Icode binary pass", Options).
 
 icode_handle_exceptions(IcodeCfg, MFA, Options) ->
   debug("Icode fix catches: ~w~n", [MFA], Options),
@@ -208,11 +201,12 @@ icode_pp(IcodeCfg, MFA, PrintOption) ->
     {only,MFA} ->
        hipe_icode_cfg:pp(IcodeCfg);
     {file,FileName} ->
-      {ok,File} = file:open(FileName,[write,append]),
+      {ok,File} = file:open(FileName, [write,append]),
       hipe_icode_cfg:pp(File, IcodeCfg);
     _ ->
       ok
   end.
+
 icode_liveness_pp(IcodeCfg, MFA, Options) ->
   case proplists:get_value(pp_icode_liveness, Options) of
     true ->
@@ -248,8 +242,8 @@ icode_liveness_pp(IcodeCfg, MFA, Options) ->
 icode_ssa(IcodeCfg0, MFA, Options) ->
   ?opt_start_timer("Icode SSA-passes"),
   IcodeSSA0 = icode_ssa_convert(IcodeCfg0, Options),
-  IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
-  IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
+  IcodeSSA2 = icode_ssa_const_prop(IcodeSSA0, Options),
+  icode_pp(IcodeSSA0, MFA, proplists:get_value(pp_icode_ssa,Options)),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
   case proplists:get_bool(dialyzer, Options) of
     true ->
@@ -282,8 +276,9 @@ icode_ssa(IcodeCfg0, MFA, Options) ->
 	{type_only, _} -> TmpRes;
 	IcodeSSA4 ->
 	  IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
-	  %%icode_ssa_check(IcodeSSA5, Options), %% just for sanity
-	  icode_pp(IcodeSSA5, MFA, proplists:get_value(pp_icode_ssa,Options)),
+	  IcodeSSA6 = icode_remove_trivial_bbs(IcodeSSA5, Options),
+	  %%icode_ssa_check(IcodeSSA6, Options), %% just for sanity
+	  icode_pp(IcodeSSA6, MFA, proplists:get_value(pp_icode_ssa,Options)),
 	  IcodeCfg = icode_ssa_unconvert(IcodeSSA5, Options),
 	  ?opt_stop_timer("Icode SSA-passes"),
 	  IcodeCfg
@@ -294,14 +289,7 @@ icode_ssa_convert(IcodeCfg, Options) ->
   ?option_time(hipe_icode_ssa:convert(IcodeCfg),
 	       "Icode SSA conversion", Options).
 
-icode_ssa_binary_pass(IcodeSSA, Options) ->
-  case proplists:get_bool(inline_bs, Options) of
-    true ->
-      ?option_time(hipe_icode_binary_pass:remove_save_restore(IcodeSSA),
-		   "Icode binary pass", Options);
-    _ ->
-      IcodeSSA
-  end.
+
 
 icode_ssa_const_prop(IcodeSSA, Options) ->
   case proplists:get_bool(icode_ssa_const_prop,Options) of
@@ -392,19 +380,16 @@ icode_to_rtl(MFA, Icode, Options) ->
   RtlCfg1 = hipe_rtl_cfg:remove_trivial_bbs(RtlCfg0),
   %% hipe_rtl_cfg:pp(RtlCfg1),
 
-  %RtlCfg3 = rtl_ssa(RtlCfg1, Options),
-  {RtlCfg3,Options2} = rtl_ssa(RtlCfg1, Options),
+  RtlCfg2 = rtl_ssa(RtlCfg1, Options),
  
-  RtlCfg5 = rtl_symbolic(RtlCfg3, Options2),
-  %% hipe_rtl_cfg:pp(RtlCfg5),
- 
-  RtlCfg6 = rtl_prop(RtlCfg5, Options2),
-  rtl_liveness_pp(MFA,RtlCfg6, Options2),
+  RtlCfg5 = rtl_symbolic(RtlCfg2, Options),
+  %%hipe_rtl_cfg:pp(RtlCfg5),
+  rtl_liveness_pp(MFA,RtlCfg5, Options),
 
-  RtlCfg7 = rtl_lcm(RtlCfg6, Options2),
+  RtlCfg7 = rtl_lcm(RtlCfg5, Options),
 
   rtl_pp(MFA, RtlCfg7, Options),
-  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg7)], Options2),
+  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg7)], Options),
   LinearRTL1 = hipe_rtl_cfg:linearize(RtlCfg7),
   LinearRTL2 = hipe_rtl_cleanup_const:cleanup(LinearRTL1),
   %%hipe_rtl:pp(standard_io, LinearRTL2),
@@ -418,27 +403,9 @@ translate_to_rtl(Icode, Options) ->
 initialize_rtl_cfg(LinearRTL, Options) ->
   ?option_time(hipe_rtl_cfg:init(LinearRTL), "to cfg", Options).
 
-rtl_symbolic(RtlCfg, _Options) ->
-  RtlCfg1=
-    case hipe_rtl_arch:safe_handling_of_registers() of
-      true ->
-	hipe_rtl_symbolic:find_and_replace(RtlCfg);
-      false ->
-	RtlCfg
-    end,
-  hipe_rtl_symbolic:expand(RtlCfg1).
-
-rtl_prop(RtlCfg, Options) ->
-  case proplists:get_bool(rtl_prop, Options) of
-    true ->
-      ?opt_start_timer("RTL prop"),
-      RtlCfg2 = hipe_rtl_prop:do(RtlCfg),
-      ?opt_stop_timer("RTL prop"),
-      ?option_time(hipe_rtl_cfg:remove_trivial_bbs(RtlCfg2),
-		   "RTL trivial BB removal", Options);
-    false ->
-      RtlCfg
-  end.
+rtl_symbolic(RtlCfg, Options) ->
+  ?option_time(hipe_rtl_symbolic:expand(RtlCfg),
+	       "Expansion of symbolic instructions", Options).
 
 rtl_liveness_pp(MFA, RtlCfg, Options) ->
   case proplists:get_value(pp_rtl_liveness, Options) of
@@ -480,12 +447,12 @@ rtl_ssa(RtlCfg0, Options) ->
       ?opt_start_timer("RTL SSA-passes"),
       RtlSSA0 = rtl_ssa_convert(RtlCfg0, Options),
       RtlSSA1 = rtl_ssa_const_prop(RtlSSA0, Options),
-      %% RtlSSA2 = rtl_ssa_copy_prop(RtlSSA1, Options),
-      RtlSSA3 = rtl_ssa_dead_code_elimination(RtlSSA1, Options),
+      %% RtlSSA1a = rtl_ssa_copy_prop(RtlSSA1, Options),
+      RtlSSA2 = rtl_ssa_dead_code_elimination(RtlSSA1, Options),
+      RtlSSA3 = rtl_ssa_avail_expr(RtlSSA2, Options),
       RtlSSA4 = rtl_ssapre(RtlSSA3, Options),
       
       %% rtl_ssa_check(RtlSSA3, Options), %% just for sanity
-      %% rtl_pp(IcodeSSA5, MFA, proplists:get_value(pp_rtl_ssa,Options)),
       RtlCfg = rtl_ssa_unconvert(RtlSSA4, Options),
       case proplists:get_bool(pp_rtl_ssa, Options) of
 	true ->
@@ -495,9 +462,9 @@ rtl_ssa(RtlCfg0, Options) ->
 	  ok
       end,
       ?opt_stop_timer("RTL SSA-passes"),
-      {RtlCfg,Options};
+      RtlCfg;
     false ->
-      {RtlCfg0,Options}
+      RtlCfg0
   end.
 
 rtl_ssa_convert(RtlCfg, Options) ->
@@ -529,6 +496,10 @@ rtl_ssa_const_prop(RtlCfgSSA, Options) ->
 rtl_ssa_dead_code_elimination(RtlCfgSSA, Options) ->
   ?option_time(hipe_rtl_ssa:remove_dead_code(RtlCfgSSA),
 	       "RTL SSA dead code elimination", Options).
+
+rtl_ssa_avail_expr(RtlCfgSSA, Options) ->
+  ?option_time(hipe_rtl_ssa_avail_expr:cfg(RtlCfgSSA),
+	       "RTL SSA heap optimizations", Options).
 
 %%---------------------------------------------------------------------
 
@@ -666,10 +637,10 @@ concurrent_icode_ssa(IcodeCfgList, Options) ->
 
 handle_compile_icode_2(Icode, Opts, _Server, MFA) -> 
   case catch compile_icode_2(MFA, Icode, Opts, get(hipe_debug)) of
-    {native, Platform, {unprofiled,Code}} ->
- %     {T2,_} = erlang:statistics(runtime),
-   %   ?when_option(verbose, Opts,
-%                  ?debug_untagged_msg(" in ~.2f s\n", [(T2-T1)/1000])),
+    {native, Platform, {unprofiled, Code}} ->
+      %% {T2,_} = erlang:statistics(runtime),
+      %% ?when_option(verbose, Opts,
+      %%              ?debug_untagged_msg(" in ~.2f s\n", [(T2-T1)/1000])),
       case Platform of
         ultrasparc -> {Entry,Ct} = Code, {MFA,Entry,Ct};
         powerpc -> {MFA, Code};
@@ -686,19 +657,19 @@ handle_compile_icode_2(Icode, Opts, _Server, MFA) ->
     {dialyzer, IcodeSSA} ->
       {MFA, IcodeSSA};
     {native, X} ->
-      ?error_msg("ERROR: unknown native code format: ~P.\n",[X]),
+      ?error_msg("ERROR: unknown native code format: ~P.\n", [X]),
       ?EXIT(unknown_format);
     {'EXIT', Error} -> 
-      ?when_option(verbose, Opts,?debug_untagged_msg("\n",[])),
-      ?error_msg("ERROR: ~p~n",[Error]),
+      ?when_option(verbose, Opts, ?debug_untagged_msg("\n", [])),
+      ?error_msg("ERROR: ~p~n", [Error]),
       ?EXIT(Error)
   end.
 
 set_gensym(LinearIcode) ->
   {_LMin,LMax} = hipe_icode:icode_label_range(LinearIcode),
-  hipe_gensym:set_label(icode,LMax+1),
+  hipe_gensym:set_label(icode, LMax+1),
   {_VMin,VMax} = hipe_icode:icode_var_range(LinearIcode),
-  hipe_gensym:set_var(icode,VMax+1).
+  hipe_gensym:set_var(icode, VMax+1).
 
 icode_fp(AnnIcode, Options) ->
   case proplists:get_bool(inline_fp, Options) of
@@ -718,8 +689,7 @@ first_icode_passes(LinearIcode, Options, MFA) ->
 first_icode_ssa_passes(IcodeCfg, Options) ->
   ?opt_start_timer("Icode SSA-passes"),
   IcodeSSA0 = icode_ssa_convert(IcodeCfg, Options),
-  IcodeSSA1 = icode_ssa_binary_pass(IcodeSSA0, Options),
-  IcodeSSA2 = icode_ssa_const_prop(IcodeSSA1, Options),
+  IcodeSSA2 = icode_ssa_const_prop(IcodeSSA0, Options),
   icode_ssa_copy_prop(IcodeSSA2, Options).
 
 final_icode_ssa_passes(IcodeSSA, Options, MFA) ->
@@ -742,8 +712,7 @@ icode_type_analysis(IcodeSSA, Options, Server, MFA) ->
 %%     {type_only, fixpoint} -> IcodeSSA; %%What??
     {not_fixpoint, _} -> not_fixpoint;
     {none, _} -> none;
-    {fixpoint, AnnIcode} -> AnnIcode;
-    {ok, AnnIcode} -> AnnIcode
+    {fixpoint, AnnIcode} -> AnnIcode
 %%    AnnIcode -> AnnIcode
   end.
 
@@ -765,7 +734,6 @@ apply_compiler_pass(icode_range_analysis, [IcodeSSA, Options, Server, MFA]) ->
   icode_range_analysis(IcodeSSA, Options, Server, MFA);
 apply_compiler_pass(final_icode_ssa_passes, [IcodeSSA, Options, _Serv, MFA]) ->
   final_icode_ssa_passes(IcodeSSA, Options, MFA).
-
 
 is_fixpoint_pass(first_icode_passes) -> false;
 is_fixpoint_pass(first_icode_ssa_passes) -> false;
@@ -854,7 +822,6 @@ debug_server__loop(State) ->
       NewState
   end.
 
-
 server(Super, Clients_code_list, Worklist, Options) ->
   {MfaClients, CodeList} = lists:unzip(Clients_code_list),
   {MFAs, _} = lists:unzip(MfaClients),
@@ -866,7 +833,7 @@ server(Super, Clients_code_list, Worklist, Options) ->
 
 server__start_clients(Work, Clients_init_list, Options, State) ->
   lists:foreach(fun({Client, Code}) -> %Client == MFA
-		    %%io:format("Doing ~p ~n", [{Client, Work}]),
+		    %% io:format("Doing ~p ~n", [{Client, Work}]),
 		    state__pid_from_mfa(Client, State) !
 		      {self(), start, Work, [Code, Options, self(), Client]}
 	    end,
@@ -875,11 +842,11 @@ server__start_clients(Work, Clients_init_list, Options, State) ->
 server__loop(State) ->
   case server__clients_done(State) of
     {return, NewState} ->
-      %%io:format("done in sever"),
+      %% io:format("done in sever"),
       {state__work_name(NewState),
        state__return_to_super(NewState)};
     {new_work, {NewState, Work}} ->
-      %%io:format("New work ~p ~n", [Work]),
+      %% io:format("New work ~p ~n", [Work]),
       CodeList = state__return_list(NewState),
       Options = state__options(NewState),
       NewerState = state__new_work(NewState),
@@ -892,7 +859,7 @@ server__loop(State) ->
       server__start_clients(Work, CodeList, Options, NewState),
       server__loop(NewState);
     {not_done, _NotDone} ->
-%%      io:format("not done ~p ~n", [NotDone]),
+      %% io:format("not done ~p ~n", [NotDone]),
       case server__listen(State) of
 	{loop, NewState} ->
 	  server__loop(NewState);
@@ -926,17 +893,17 @@ server__listen(State) ->
     {_Client, {transaction, Fun}} ->
       Tree = state__current_message_board(State),
       NewTree = Fun(Tree),
-%%      io:format("NewTree ~p ~n", [gb_trees:size(NewTree)]),
+      %% io:format("NewTree ~p ~n", [gb_trees:size(NewTree)]),
       {loop, State#state{current_message_tree = NewTree}};
     {_Client, {message, Key, Value}} ->
-      %%io:format("message saved ~p ~p ~n", [Key, Value]),
+      %% io:format("message saved ~p ~p ~n", [Key, Value]),
       {loop, state__add_message({Key, Value}, State)};
     {Client, {load, Type, Key}} ->
-      %%io:format("asked for ~p ~n", [Key]),
+      %% io:format("asked for ~p ~n", [Key]),
       Client ! state__lookup_value(Type, Key, State),
       {loop, State};
     {_Client, {return, Key, Value}} ->
-      %%io:format("return value saved ~p ~p~n", [Key, Value]),
+      %% io:format("return value saved ~p ~p~n", [Key, Value]),
       State1 = state__client_return(Key, State),
       State2 = state__add_return_value({Key, Value}, State1),
       {clientreturn, State2}
@@ -1016,9 +983,12 @@ state__add_message({Key, Value}, State = #state{current_message_tree = Tree}) ->
   New_tree = gb_trees:enter(Key, Value, Tree),
   State#state{current_message_tree = New_tree}.
 
-state__add_return_value({Key, not_fixpoint}, State = #state{prev_return_tree = Prev_tree, current_return_tree = Tree, not_reach_fixpoint_clients=Not_fixpoint}) ->
-%%  io:format("not fixpoint ~p ~n", [Key]),
-  New_not_fixpoint=[Key|Not_fixpoint],
+state__add_return_value({Key, not_fixpoint},
+			State = #state{prev_return_tree = Prev_tree,
+				       current_return_tree = Tree,
+				       not_reach_fixpoint_clients=Not_fixpoint}) ->
+  %% io:format("not fixpoint ~p ~n", [Key]),
+  New_not_fixpoint = [Key|Not_fixpoint],
   New_tree = 
     case gb_trees:lookup(Key, Prev_tree) of
       none ->
@@ -1026,9 +996,12 @@ state__add_return_value({Key, not_fixpoint}, State = #state{prev_return_tree = P
       Prev_return ->
 	gb_trees:enter(Key, Prev_return, Tree)
     end,
-  State#state{current_return_tree = New_tree, not_reach_fixpoint_clients=New_not_fixpoint};
+  State#state{current_return_tree=New_tree,
+	      not_reach_fixpoint_clients=New_not_fixpoint};
 
-state__add_return_value({Key, none}, State = #state{prev_return_tree = Prev_tree, current_return_tree = Tree}) ->
+state__add_return_value({Key, none},
+			State = #state{prev_return_tree = Prev_tree,
+				       current_return_tree = Tree}) ->
   New_tree = 
     case gb_trees:lookup(Key, Prev_tree) of
       none ->
@@ -1037,7 +1010,8 @@ state__add_return_value({Key, none}, State = #state{prev_return_tree = Prev_tree
 	gb_trees:enter(Key, Prev_return, Tree)
     end,
   State#state{current_return_tree = New_tree};
-state__add_return_value({Key, Value}, State = #state{current_return_tree = Tree}) ->
+state__add_return_value({Key, Value},
+			State = #state{current_return_tree = Tree}) ->
   New_tree = gb_trees:enter(Key, Value, Tree),
   State#state{current_return_tree = New_tree}.
 

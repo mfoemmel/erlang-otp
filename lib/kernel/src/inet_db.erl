@@ -44,6 +44,7 @@
 -export([set_timeout/1, set_retry/1, set_inet6/1, set_usevc/1]).
 -export([tcp_module/0, set_tcp_module/1]).
 -export([udp_module/0, set_udp_module/1]).
+-export([sctp_module/0,set_sctp_module/1]).
 -export([register_socket/2, unregister_socket/1, lookup_socket/1]).
 
 %% Host name & domain
@@ -81,7 +82,7 @@
 	 cache_timer  %% timer reference for refresh
 	}).
 
--include_lib("kernel/include/inet.hrl").
+-include("inet.hrl").
 -include("inet_int.hrl").
 -include("inet_res.hrl").
 -include("inet_dns.hrl").
@@ -246,6 +247,10 @@ set_udp_module(Module) -> call({set_udp_module, Module}).
 
 udp_module() -> db_get(udp_module).
 
+set_sctp_module(Family)-> call({set_sctp_module,Family}).
+
+sctp_module()-> db_get(sctp_module).
+
 
 %% Add an inetrc file
 add_rc(File) -> 
@@ -305,6 +310,8 @@ add_rc_list_int(List) ->
 	      set_inet6(Bool);
 	 ({udp, Module}) ->
 	      set_udp_module(Module);
+	 ({sctp,Module}) ->
+	      set_sctp_module(Module);
 	 ({tcp, Module}) ->
 	      set_tcp_module(Module);
 	 (reset) ->
@@ -343,8 +350,8 @@ translate_lookup([]) -> [].
 get_rc() -> 
     get_rc([hosts, domain, nameserver, search, alt_nameserver,
 	    timeout, retry, inet6, usevc,
-	    socks5_server, socks5_port, socks5_methods, socks5_noproxy,
-	    udp, tcp, host, cache_size, cache_refresh, lookup], []).
+	    socks5_server,  socks5_port, socks5_methods, socks5_noproxy,
+	    udp, sctp, tcp, host, cache_size, cache_refresh, lookup], []).
 
 get_rc([K | Ks], Ls) ->
     case K of
@@ -354,11 +361,12 @@ get_rc([K | Ks], Ls) ->
 	alt_nameserver -> get_rc_ns(db_get(res_alt_ns),alt_nameserver,Ks,Ls);
 	search  -> get_rc(search, res_search, [], Ks, Ls);
 	timeout -> get_rc(timeout,res_timeout,?RES_TIMEOUT, Ks,Ls);
-	retry   -> get_rc(rety, res_retry, ?RES_RETRY, Ks, Ls);
+	retry   -> get_rc(retry, res_retry, ?RES_RETRY, Ks, Ls);
 	inet6   -> get_rc(inet6, res_inet6, false, Ks, Ls);
 	usevc   -> get_rc(usevc, res_usevc, false, Ks, Ls);
-	tcp     -> get_rc(tcp, tcp_module, ?DEFAULT_TCP_MODULE, Ks, Ls); 
-	udp     -> get_rc(udp, udp_module, ?DEFAULT_UDP_MODULE, Ks, Ls); 
+	tcp     -> get_rc(tcp,  tcp_module,  ?DEFAULT_TCP_MODULE,  Ks, Ls); 
+	udp     -> get_rc(udp,  udp_module,  ?DEFAULT_UDP_MODULE,  Ks, Ls);
+	sctp	-> get_rc(sctp, sctp_module, ?DEFAULT_SCTP_MODULE, Ks, Ls);
 	lookup  -> get_rc(lookup, res_lookup, [native,file], Ks, Ls);
 	cache_size -> get_rc(cache_size, cache_size, ?CACHE_LIMIT, Ks, Ls);
 	cache_refresh ->
@@ -636,18 +644,21 @@ dnt(_) ->
 %%
 %% Register socket Modules
 %%
-register_socket(Socket, Module) when port(Socket), atom(Module) ->
-    catch erlang:port_set_data(Socket,Module).
+register_socket(Socket, Module) when is_port(Socket), is_atom(Module) ->
+    try erlang:port_set_data(Socket, Module)
+    catch
+	error:badarg -> false
+    end.
 
-unregister_socket(Socket) when port(Socket) ->
+unregister_socket(Socket) when is_port(Socket) ->
     ok. %% not needed any more
 
-lookup_socket(Socket) when port(Socket) ->
-    case catch erlang:port_get_data(Socket) of
-	Module when atom(Module) ->
-	    {ok, Module};
-	_ ->
-	    {error, closed}
+lookup_socket(Socket) when is_port(Socket) ->
+    try erlang:port_get_data(Socket) of
+	Module when is_atom(Module) -> {ok,Module};
+	_                           -> {error,closed}
+    catch
+	error:badarg                -> {error,closed}
     end.
 
 %%%----------------------------------------------------------------------
@@ -688,8 +699,9 @@ lookup_socket(Socket) when port(Socket) ->
 %%
 %% Generic tcp/udp options
 %% -----------------------
-%% tcp_module     Module          - The default gen_tcp module
-%% udp_module     Module          - The default gen_udp module 
+%% tcp_module     Module          - The default gen_tcp  module
+%% udp_module     Module          - The default gen_udp  module
+%% sctp_module	  Module	  - The default gen_sctp module
 %%
 %% Distribution options
 %% --------------------
@@ -729,9 +741,9 @@ reset_db(Db) ->
     ets:insert(Db, {socks5_port, ?IPPORT_SOCKS}),
     ets:insert(Db, {socks5_methods, [none]}),
     ets:insert(Db, {socks5_noproxy, []}),
-    ets:insert(Db, {tcp_module, ?DEFAULT_TCP_MODULE}),
-    ets:insert(Db, {udp_module, ?DEFAULT_UDP_MODULE}).
-	       
+    ets:insert(Db, {tcp_module,  ?DEFAULT_TCP_MODULE}),
+    ets:insert(Db, {udp_module,  ?DEFAULT_UDP_MODULE}),
+    ets:insert(Db, {sctp_module, ?DEFAULT_SCTP_MODULE}).
 
 %%----------------------------------------------------------------------
 %% Func: handle_call/3
@@ -990,6 +1002,10 @@ handle_call(Request, _From, State) ->
 
 	{set_udp_module, Mod} when atom(Mod) ->
 	    ets:insert(Db, {udp_module, Mod}), %% check/load module ?
+	    {reply, ok, State};
+
+	{set_sctp_module, Fam} when atom(Fam) ->
+	    ets:insert(Db, {sctp_module, Fam}),
 	    {reply, ok, State};
 
 	{set_cache_size, Size} when integer(Size), Size >= 0 ->

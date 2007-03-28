@@ -28,6 +28,7 @@
 	 nregs/0,pwd/0,ls/0,ls/1,cd/1,memory/1,memory/0, xm/1]).
 
 -export([display_info/1]).
+-export([appcall/4]).
 
 -import(lists, [reverse/1,flatten/1,sublist/3,sort/1,keysearch/3,keysort/2,
 		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2,map/2]).
@@ -660,7 +661,7 @@ memory(TypeSpec) -> erlang:memory(TypeSpec).
 %% 
 
 xm(M) ->
-    xref:m(M).
+    appcall(tools, xref, m, [M]).
 
 %%
 %% Call yecc 
@@ -669,4 +670,26 @@ xm(M) ->
 y(File) -> y(File, []).
 
 y(File, Opts) ->
-    yecc:file(File, Opts).
+    appcall(parsetools, yecc, file, [File,Opts]).
+
+
+%%
+%% Avoid creating strong components in xref and dialyzer by making calls
+%% from helper functions to other applications indirect.
+%%
+
+appcall(App, M, F, Args) ->
+    try
+	apply(M, F, Args)
+    catch
+	error:undef ->
+	    case erlang:get_stacktrace() of
+		[{M,F,Args}|_] ->
+		    Arity = length(Args),
+		    io:format("Call to ~w:~w/~w in application ~w failed.\n",
+			      [M,F,Arity,App]);
+		Stk ->
+		    erlang:raise(error, undef, Stk)
+	    end
+    end.
+

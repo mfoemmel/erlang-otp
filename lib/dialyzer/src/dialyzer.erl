@@ -101,8 +101,7 @@ run(Opts) when length(Opts) > 0 ->
 	      {?RET_DISCREPANCIES_FOUND, Warnings, []} -> {ok, Warnings};
 	      {?RET_NOTHING_SUSPICIOUS, [], []}    -> {ok, []};
 	      {?RET_INTERNAL_ERROR, Warnings, Errors} -> {error, Warnings, 
-							  Errors};
-	      {error, Msg} -> throw({dialyzer_error, lists:flatten(Msg)})
+							  Errors}
 	    end;
 	  {error, ErrorMsg1} ->
 	    throw({dialyzer_error, ErrorMsg1})

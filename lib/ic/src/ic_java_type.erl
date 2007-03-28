@@ -871,7 +871,7 @@ getFullType(G, N, T)  ->
 
 
 %% In order to make a legal declaration 
-%% of an assignable array, the dimentions 
+%% of an assignable array, the dimensions 
 %% of empty array sequences are swifted to 
 %% the end of the type
 fixArrayDims(Cs) ->
@@ -886,7 +886,7 @@ fixArrayDims([C|Rest],Fulls,Emptys) ->
 
 
 %% In order to make a legal declaration 
-%% of an assignable array, the dimentions 
+%% of an assignable array, the dimensions 
 %% of empty array of sequences are swifted 
 %% to the end of the type
 fixSeqDims(Cs,Length) ->
@@ -896,9 +896,6 @@ fixSeqDims([],_Length,Found) ->
     lists:reverse(Found);
 fixSeqDims([91,93|Rest],Length,Found) when list(Length) ->
     lists:reverse([93|lists:reverse(Length)] ++ 
-		  [91|Found]) ++ Rest;
-fixSeqDims([91,93|Rest],Length,Found) when integer(Length) ->
-    lists:reverse([93|lists:reverse(integer_to_list(Length))] ++ 
 		  [91|Found]) ++ Rest;
 fixSeqDims([C|Rest],Length,Found) ->
     fixSeqDims(Rest,Length,[C|Found]).

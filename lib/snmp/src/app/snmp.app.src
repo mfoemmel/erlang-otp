@@ -22,6 +22,7 @@
              snmpa_agent_sup,
              snmpa_app,
              snmpa_authentication_service, 
+             snmpa_conf,
              snmpa_error,
              snmpa_error_io,
              snmpa_error_logger,
@@ -42,6 +43,7 @@
              snmpa_supervisor,
              snmpa_svbl,
              snmpa_symbolic_store,
+             snmpa_target_cache,
              snmpa_trap,
              snmpa_usm,
 	     snmpa_vacm,
@@ -59,6 +61,7 @@
 
              %% Manager modules:
              snmpm,
+             snmpm_conf,
              snmpm_config,
              snmpm_misc_sup,
              snmpm_mpd,
