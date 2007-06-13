@@ -83,7 +83,18 @@ LD_R_FLAG=@DED_LD_FLAG_RUNTIME_LIBRARY_PATH@
 ifeq ($(strip $(LD_R_FLAG)),)
 LD_R_OPT =
 else
+ifeq ($(DYNAMIC_CRYPTO_LIB),yes)
 LD_R_OPT = $(LD_R_FLAG)$(SSL_LIBDIR)
+else
+LD_R_OPT =
+endif
+endif
+DYNAMIC_CRYPTO_LIB=@SSL_DYNAMIC_ONLY@
+
+ifeq ($(DYNAMIC_CRYPTO_LIB),yes)
+CRYPTO_LINK_LIB=-L$(SSL_LIBDIR) -lcrypto
+else
+CRYPTO_LINK_LIB=$(SSL_LIBDIR)/libcrypto.a 
 endif
 
 # ----------------------------------------------------
@@ -103,9 +114,8 @@ $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $(ALL_CFLAGS) $<
 
 $(LIBDIR)/crypto_drv.so: $(OBJS)
-	$(INSTALL_DIR) $(LIBDIR)
-	$(LD) $(LDFLAGS) -L$(SSL_LIBDIR) $(LD_R_OPT) \
-			-o $@ $^ $(LDLIBS) -lcrypto
+	$(INSTALL_DIR) $(LIBDIR) 
+	$(LD) $(LDFLAGS) $(LD_R_OPT) -o $@ $^ $(LDLIBS) $(CRYPTO_LINK_LIB)
 
 $(LIBDIR)/crypto_drv.dll: $(OBJS)
 	$(INSTALL_DIR) $(LIBDIR)

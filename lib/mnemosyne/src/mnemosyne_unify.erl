@@ -97,7 +97,7 @@ deref_bindings(Bs) -> deref_bs(Bs,Bs).
 
 %%---- keep or remove the bindings which have the variable in OrdSet
 
-delete_bindings(Tree, KeepRemove, OrdSet) when tuple(Tree) ->
+delete_bindings(Tree, KeepRemove, OrdSet) when is_tuple(Tree) ->
     {L,Key,KeyVal,R} = Tree,
     case {KeepRemove,ordsets:is_element(Key,OrdSet)} of
 	{keep, false} -> remove(L,R,KeepRemove,OrdSet);
@@ -187,7 +187,7 @@ unif(U, {'#var',V}, Bs) ->		% U is non-var
 unif([U|Us], [V|Vs], Bs) -> 
     unif(Us, Vs, unif(U,V,Bs));
 
-unif(U, V, Bs) when tuple(U), tuple(V), size(U)==size(V) ->
+unif(U, V, Bs) when is_tuple(U), is_tuple(V), size(U)==size(V) ->
     unif(tuple_to_list(U), 
 	 tuple_to_list(V),
 	 Bs);
@@ -303,7 +303,7 @@ apply_bind_triggers(Triggers, Bs) ->
     apply_bind_triggers(Triggers, Bs, ordsets:new()).
 
 
-apply_bind_triggers([H|T], Bs, KeptTriggers) when list(H) ->
+apply_bind_triggers([H|T], Bs, KeptTriggers) when is_list(H) ->
     apply_bind_triggers(T, Bs, apply_bind_triggers(H,Bs,KeptTriggers));
 
 apply_bind_triggers([T|Ts], Bs, KeptTriggers) ->
@@ -328,7 +328,7 @@ variables({'#var',U}, Set) ->
 variables([U|Us], Set) -> 
     variables(Us, variables(U,Set));
 
-variables(U, Set) when tuple(U) ->
+variables(U, Set) when is_tuple(U) ->
     variables(tuple_to_list(U), Set);
 
 variables(_, Set) ->
@@ -344,7 +344,7 @@ count_variables({'#var',V}, Dict) ->
 count_variables([U|Us], Dict) -> 
     count_variables(Us, count_variables(U,Dict));
 
-count_variables(U, Dict) when tuple(U) ->
+count_variables(U, Dict) when is_tuple(U) ->
     count_variables(tuple_to_list(U), Dict);
 
 count_variables(_, Dict) ->
@@ -378,7 +378,7 @@ rename_variables([H|T], S) ->
     {Tp,Ts} = rename_variables(T, Hs),
     {[Hp|Tp], Ts};
 
-rename_variables(T, S) when tuple(T) ->
+rename_variables(T, S) when is_tuple(T) ->
     {Tp,Ts} = rename_variables(tuple_to_list(T), S),
     {list_to_tuple(Tp), Ts};
 
@@ -445,7 +445,7 @@ inst({'#var',V}, Bs) ->
 	Var -> Var
     end;
 
-inst(X, Bs) when tuple(X) -> 
+inst(X, Bs) when is_tuple(X) -> 
     list_to_tuple(inst(tuple_to_list(X), Bs));
 
 inst(X, Bs) ->
@@ -544,7 +544,7 @@ lookup_binding(Var, []) ->
 %% When the Var already is bound to Value there will be some unnecessary
 %% setelement
 
-mk_binding(Var, Value, Tree) when tuple(Tree) ->
+mk_binding(Var, Value, Tree) when is_tuple(Tree) ->
     {L,Key,KeyVal,R} = Tree,
     if
 	Var<Key -> setelement(1, Tree, mk_binding(Var,Value,L));
@@ -557,7 +557,7 @@ mk_binding(Var, Value, []) ->
 
 
 
-rebind(Var, Value, Tree) when tuple(Tree) ->
+rebind(Var, Value, Tree) when is_tuple(Tree) ->
     {L,Key,KeyVal,R} = Tree,
     if
 	Var<Key  -> setelement(1, Tree, rebind(Var,Value,L));
@@ -589,7 +589,7 @@ numbervars(T, N, Vars) ->
 
 numbervars1({'#variable',V}, D) ->
     {'#variable',{'#var',element(2,ok(lists:keysearch(V,1,D)))}};
-numbervars1(T, D) when tuple(T) ->
+numbervars1(T, D) when is_tuple(T) ->
     list_to_tuple(numbervars1(tuple_to_list(T), D));
 numbervars1([H|T], D) ->
     [numbervars1(H,D) | numbervars1(T,D)];

@@ -40,18 +40,18 @@ create(mnesia, _Node, _LocalNode, _TableName, _Options) ->
     error;
 create(ets, _Node, true, TabName, Options) ->
     case catch internal_create(ets, TabName, Options) of
-	{TabName, Pid} when pid(Pid) ->
+	{TabName, Pid} when is_pid(Pid) ->
 	    {ok, {TabName,Pid}};
-	{TabNo, Pid} when pid(Pid) ->
+	{TabNo, Pid} when is_pid(Pid) ->
 	    {ok, {TabNo,Pid}};
 	_OtherResult ->
 	    error
     end;
 create(ets, Node, false, TabName, Options) ->
     case catch rpc:block_call(Node, ?MODULE, internal_create, [ets, TabName, Options]) of
-	{TabName, Pid} when pid(Pid) ->
+	{TabName, Pid} when is_pid(Pid) ->
 	    {ok, {TabName,Pid}};
-	{TabNo, Pid} when pid(Pid) ->
+	{TabNo, Pid} when is_pid(Pid) ->
 	    {ok, {TabNo,Pid}};
 	_OtherResult ->
 	    error
@@ -89,7 +89,7 @@ start() ->
 		    timer:sleep(500),
 		    start()
 	    end;
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    ok
     end.
 

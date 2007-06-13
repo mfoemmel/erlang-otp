@@ -207,7 +207,7 @@ introduce_me(Nodes, Appls) ->
     filter(fun(Node) ->
 		   %% This handles nodes without DACs
 		   case rpc:call(Node, erlang, whereis, [?DIST_AC]) of
-		       Pid when pid(Pid) ->
+		       Pid when is_pid(Pid) ->
 			   Pid ! Msg,
 			   true;
 		       _ ->
@@ -218,7 +218,7 @@ introduce_me(Nodes, Appls) ->
 wait_dacs([Node | Nodes], KnownNodes, Appls, RStarted) ->
     monitor_node(Node, true),
     receive
-	%% HisAppls /= [] is the case when our node connects to a running system
+	%% HisAppls =/= [] is the case when our node connects to a running system
 	%%
 	%% It is always the responsibility of newer versions to understand
 	%% older versions of the protocol.  As we don't have any older
@@ -318,7 +318,7 @@ handle_call({load_application, AppName, DistNodes}, _From, S) ->
 handle_call({takeover_application, AppName, RestartType}, From, S) ->
     Appls = S#state.appls,
     case keysearch(AppName, #appl.name, Appls) of
-	{value, Appl} when element(1, Appl#appl.id) == distributed ->
+	{value, Appl} when element(1, Appl#appl.id) =:= distributed ->
 	    {distributed, Node} = Appl#appl.id,
 	    ac_takeover(req, AppName, Node, RestartType),
 	    NAppl = Appl#appl{id = takeover},
@@ -339,10 +339,10 @@ handle_call({permit_application, AppName, Bool, LockId, StartInfo}, From, S) ->
 	    %% applications.  This shouldn't be handled like this, and not
 	    %% here, but we have to be backwards-compatible.
 	    case application_controller:get_loaded(AppName) of
-		{true, _} when Bool == false ->
+		{true, _} when not Bool ->
 		    ac_stop_it(AppName),
 		    {reply, ok, S};
-		{true, _} when Bool == true ->
+		{true, _} when Bool ->
 		    ac_start_it(req, AppName),
 		    {reply, ok, S};
 		false ->
@@ -444,7 +444,7 @@ handle_info({ac_application_not_run, AppName}, S) ->
     %% if somebody called stop just before takeover was handled,
     NTReqs = del_t_reqs(AppName, S#state.t_reqs, {error, stopped}),
     %% Check if we have somebody waiting for stop to return
-    SReqs = filter(fun({Name, From2}) when Name == AppName ->
+    SReqs = filter(fun({Name, From2}) when Name =:= AppName ->
 			   gen_server:reply(From2, ok),
 			   false;
 		      (_) ->
@@ -472,7 +472,7 @@ handle_info({ac_application_stopped, AppName}, S) ->
     %% if somebody called stop just before takeover was handled,
     NTReqs = del_t_reqs(AppName, S#state.t_reqs, {error, stopped}),
     %% Check if we have somebody waiting for stop to return
-    SReqs = filter(fun({Name, From2}) when Name == AppName ->
+    SReqs = filter(fun({Name, From2}) when Name =:= AppName ->
 			   gen_server:reply(From2, ok),
 			   false;
 		      (_) ->
@@ -501,7 +501,7 @@ handle_info({ac_application_stopped, AppName}, S) ->
 %%-----------------------------------------------------------------
 handle_info({dist_ac_new_node, _Vsn, Node, HisAppls, []}, S) ->
     Appls = S#state.appls,
-    MyStarted = zf(fun(Appl) when Appl#appl.id == local ->
+    MyStarted = zf(fun(Appl) when Appl#appl.id =:= local ->
 			   {true, {node(), Appl#appl.name}};
 		      (_) ->
 			   false
@@ -515,7 +515,7 @@ handle_info({dist_ac_app_started, Node, Name, Res}, S) ->
 	{{value, Appl}, true} ->
 	    Appls = S#state.appls,
 	    NId = case Appl#appl.id of
-		      _ when element(1, Res) == error ->
+		      _ when element(1, Res) =:= error ->
 			  %% Start of appl on some node failed.
 			  %% Set Id to undefined.  That node will have
 			  %% to take some actions, e.g. reboot
@@ -612,11 +612,11 @@ handle_info({dist_ac_weight, Name, Weight, Node}, S) ->
 handle_info({nodedown, Node}, S) ->
     AppNames = dist_get_runnable(S#state.appls),
     HisAppls = filter(fun(#appl{name = Name, id = {distributed, N}}) 
-			 when Node == N -> lists:member(Name, AppNames);
+			 when Node =:= N -> lists:member(Name, AppNames);
 			 (_) -> false
 		      end,
 		      S#state.appls),
-    Appls2 = zf(fun(Appl) when Appl#appl.id == {distributed, Node} -> 
+    Appls2 = zf(fun(Appl) when Appl#appl.id =:= {distributed, Node} -> 
 			case lists:member(Appl#appl.name, AppNames) of
 			    true ->
 				{true, Appl#appl{id = {failover, Node}}};
@@ -628,7 +628,7 @@ handle_info({nodedown, Node}, S) ->
 			true
 		end,
 		S#state.appls),
-    RStarted = filter(fun({Node2, _Name}) when Node2 == Node -> false;
+    RStarted = filter(fun({Node2, _Name}) when Node2 =:= Node -> false;
 			 (_) -> true
 		      end,
 		      S#state.remote_started),
@@ -650,7 +650,7 @@ handle_info({dist_ac_app_loaded, Node, Name, HisNodes, Permission, HeKnowsMe},
 		true ->
 		    NAppls = dist_update_run(Appls, Name, Node, Permission),
 		    if
-			HeKnowsMe == false ->
+			not HeKnowsMe ->
 			    %% We've got it loaded, but he doesn't know -
 			    %% he's a new node connecting to us.
 			    Msg = {dist_ac_app_loaded, node(), Name,
@@ -678,7 +678,7 @@ handle_info({dist_ac_new_permission, Node, AppName, false, IsHisApp}, S) ->
     Appls = dist_update_run(S#state.appls, AppName, Node, false),
     NewS = S#state{appls =Appls},
     case dist_is_runnable(Appls, AppName) of
-	true when IsHisApp == true ->
+	true when IsHisApp ->
 	    case catch start_appl(AppName, NewS, req) of
 		{ok, NewS2, _}  ->
 		    {noreply, NewS2};
@@ -737,7 +737,7 @@ load(AppName, S) ->
 	  end, Appls1, DistLoaded),
     Load2 = del_dist_loaded(AppName, Load1),
     %% Tell all Nodes about the new appl loaded, and its permission.
-    foreach(fun(Node) when Node /= node() ->
+    foreach(fun(Node) when Node =/= node() ->
 		    Msg = {dist_ac_app_loaded, node(), AppName,
 			   Nodes, Permission, member(Node, LoadedNodes)},
 		    {?DIST_AC, Node} ! Msg;
@@ -809,13 +809,13 @@ start_appl(AppName, S, Type) ->
 
 start_distributed(Appl, Name, Nodes, PermittedNodes, S, Type) ->
     case find_start_node(Nodes, PermittedNodes, Name, S) of
-	{ok, Node} when Node == node() ->
+	{ok, Node} when Node =:= node() ->
 	    case Appl#appl.id of
-		{failover, FoNode} when Type == req ->
+		{failover, FoNode} when Type =:= req ->
 		    ac_failover(Name, FoNode, undefined);
-		{distributed, Node2} when Type == req ->
+		{distributed, Node2} when Type =:= req ->
 		    ac_takeover(req, Name, Node2, undefined);
-		_ when Type == reply ->
+		_ when Type =:= reply ->
 		    case lists:keysearch(Name, 2, S#state.remote_started) of
 			{value, {Node3, _}} ->
 			    ac_takeover(reply, Name, Node3, undefined);
@@ -869,8 +869,8 @@ wait_dist_start(Node, Appl, Name, Nodes, PermittedNodes, S, Type) ->
 	{nodedown, Node} ->
 	    monitor_node(Node, false),
 	    TmpLocals =
-		filter(fun({Name2, _Weight, Node2}) when Node2 == Node,
-							 Name2 == Name -> false;
+		filter(fun({Name2, _Weight, Node2}) when Node2 =:= Node,
+							 Name2 =:= Name -> false;
 			  (_) -> true
 		       end,
 		       S#state.tmp_locals),
@@ -891,8 +891,8 @@ wait_dist_start2(Appl, Name, Nodes, PermittedNodes, S, Type) ->
 	    %% A node went down, try to start the app again - there may not
 	    %% be any more nodes to wait for.
 	    TmpLocals =
-		filter(fun({Name2, _Weight, Node2}) when Node2 == Node,
-							 Name2 == Name -> false;
+		filter(fun({Name2, _Weight, Node2}) when Node2 =:= Node,
+							 Name2 =:= Name -> false;
 			  (_) -> true
 		       end,
 		       S#state.tmp_locals),
@@ -947,7 +947,7 @@ restart_appls(Appls) ->
 
 restart_appl(AppName, S) ->
     case keysearch(AppName, #appl.name, S#state.appls) of
-	{value, Appl} when element(1, Appl#appl.id) == failover ->
+	{value, Appl} when element(1, Appl#appl.id) =:= failover ->
 	    case catch start_appl(AppName, S, req) of
 		{ok, NewS, _} ->
 		    NewS;
@@ -964,7 +964,7 @@ restart_appl(AppName, S) ->
 permit(false, {value, #appl{id = undefined}}, _AppName, _From, S, _LockId) ->
    {reply, ok, S}; % It's not running
 permit(false, {value, #appl{id = Id}}, _AppName, _From, S, _LockId)
-  when element(1, Id) == distributed ->
+  when element(1, Id) =:= distributed ->
     %% It is running at another node already
     {reply, ok, S};
 permit(false, {value, _}, AppName, From, S, _LockId) ->
@@ -1038,7 +1038,7 @@ find_start_node(Nodes, PermittedNodes, Name, S) ->
 	    case keysearch(Name, 2, S#state.remote_started) of
 		{value, {Node, _Name}} ->
 		    {already_started, Node};
-		_ when AllNodes /= [] ->
+		_ when AllNodes =/= [] ->
 		    not_started;
 		_ ->
 		    no_permission
@@ -1046,7 +1046,7 @@ find_start_node(Nodes, PermittedNodes, Name, S) ->
     end.
 
 find_start_node([AnyNodes | Nodes], Name, S, Weight, AllNodes)
-  when tuple(AnyNodes) ->
+  when is_tuple(AnyNodes) ->
     case find_any_node(tuple_to_list(AnyNodes), Name, S, Weight, AllNodes) of
 	false -> find_start_node(Nodes, Name, S, Weight, AllNodes);
 	Res -> Res
@@ -1127,7 +1127,7 @@ find_alive_node([], _AliveNodes) ->
 %% dist_ac must *always* be prepared to get this messages, and to
 %% send it to us.
 %%-----------------------------------------------------------------
-collect_answers([Node | Nodes], Name, S, Res) when Node /= node() ->
+collect_answers([Node | Nodes], Name, S, Res) when Node =/= node() ->
     case keysearch(Node, 3, S#state.tmp_locals) of
 	{value, {Name, Weight, Node}} ->
 	    collect_answers(Nodes, Name, S, [{Weight, Node} | Res]);
@@ -1149,11 +1149,11 @@ collect_answers([], _Name, _S, Res) ->
 
 send_nodes(Nodes, Msg) ->
     FlatNodes = flat_nodes(Nodes),
-    foreach(fun(Node) when Node /= node() -> {?DIST_AC, Node} ! Msg;
+    foreach(fun(Node) when Node =/= node() -> {?DIST_AC, Node} ! Msg;
 	       (_ThisNode) -> ok
 	    end, FlatNodes).
 
-send_after(Time, Msg) when integer(Time), Time >= 0 ->
+send_after(Time, Msg) when is_integer(Time), Time >= 0 ->
     spawn_link(?MODULE, send_timeout, [self(), Time, Msg]);
 send_after(_,_) -> % infinity
     ok.
@@ -1164,7 +1164,7 @@ send_timeout(To, Time, Msg) ->
     end.
 
 send_msg(Msg, Nodes) ->
-    foreach(fun(Node) when Node /= node() -> {?DIST_AC, Node} ! Msg;
+    foreach(fun(Node) when Node =/= node() -> {?DIST_AC, Node} ! Msg;
 	       (_) -> ok
 	    end, Nodes).
 
@@ -1180,7 +1180,7 @@ keyreplaceadd(Key, Pos, List, New) ->
 	_ -> [New | List]
     end.
 
-keydelete_all(Key, N, [H|T]) when element(N, H) == Key ->
+keydelete_all(Key, N, [H|T]) when element(N, H) =:= Key ->
     keydelete_all(Key, N, T);
 keydelete_all(Key, N, [H|T]) ->
     [H|keydelete_all(Key, N, T)];
@@ -1190,7 +1190,7 @@ keydelete_all(_Key, _N, []) -> [].
 keysearchdelete(Key, Pos, List) ->
     ksd(Key, Pos, List, []).
 
-ksd(Key, Pos, [H | T], Rest) when element(Pos, H) == Key ->
+ksd(Key, Pos, [H | T], Rest) when element(Pos, H) =:= Key ->
     {value, H, Rest ++ T};
 ksd(Key, Pos, [H | T], Rest) ->
     ksd(Key, Pos, T, [H | Rest]);
@@ -1203,9 +1203,9 @@ get_new_appl(Name, [_ | T]) -> get_new_appl(Name, T);
 get_new_appl(Name, []) -> false.
 -endif.
 
-equal_nodes([H | T1], [H | T2]) when atom(H) ->
+equal_nodes([H | T1], [H | T2]) when is_atom(H) ->
     equal_nodes(T1, T2);
-equal_nodes([H1 | T1], [H2 | T2]) when tuple(H1), tuple(H2) ->
+equal_nodes([H1 | T1], [H2 | T2]) when is_tuple(H1), is_tuple(H2) ->
     case equal(tuple_to_list(H1), tuple_to_list(H2)) of
 	true -> equal_nodes(T1, T2);
 	false -> false
@@ -1221,9 +1221,9 @@ equal([H | T] , S) ->
 equal([], []) -> true;
 equal(_, _) -> false.
 
-flat_nodes(Nodes) when list(Nodes) ->
-    foldl(fun(Node, Res) when atom(Node) -> [Node | Res];
-	     (Tuple, Res) when tuple(Tuple) -> tuple_to_list(Tuple) ++ Res
+flat_nodes(Nodes) when is_list(Nodes) ->
+    foldl(fun(Node, Res) when is_atom(Node) -> [Node | Res];
+	     (Tuple, Res) when is_tuple(Tuple) -> tuple_to_list(Tuple) ++ Res
 	  end, [], Nodes);
 flat_nodes(Nodes) ->
     throw({error, {badarg, Nodes}}).
@@ -1254,7 +1254,7 @@ del_dist_loaded(_Name, []) ->
 
 req_start_app(State, Name) ->
     {ok, foldl(
-	   fun({false, AppName, true, Name2}, S) when Name == Name2 ->
+	   fun({false, AppName, true, Name2}, S) when Name =:= Name2 ->
 		   PR = keydelete(AppName, 2, S#state.p_reqs),
 		   NS = S#state{p_reqs = PR},
 		   case catch do_start_appls([AppName], NS) of
@@ -1272,7 +1272,7 @@ req_start_app(State, Name) ->
 
 
 req_del_permit_true(Reqs, Name) ->
-    filter(fun({From, Name2, true, _}) when Name2 == Name ->
+    filter(fun({From, Name2, true, _}) when Name2 =:= Name ->
 		   gen_server:reply(From, ok),
 		   false;
 	      (_) ->
@@ -1280,7 +1280,7 @@ req_del_permit_true(Reqs, Name) ->
 	   end, Reqs).
 
 req_del_permit_false(Reqs, Name) ->
-    filter(fun({From, Name2, false, _Nodes}) when Name2 == Name ->
+    filter(fun({From, Name2, false, _Nodes}) when Name2 =:= Name ->
 		   gen_server:reply(From, ok),
 		   false;
 	      (_) ->
@@ -1291,7 +1291,7 @@ req_del_node(S, Node, Appls) ->
     check_waiting(S#state.p_reqs, S, Node, Appls, [], S#state.s_reqs).
 
 del_t_reqs(AppName, TReqs, Res) ->
-    lists:filter(fun({AN, From}) when AppName == AN ->
+    lists:filter(fun({AN, From}) when AppName =:= AN ->
 			 gen_server:reply(From, Res),
 			 false;
 		    (_) ->
@@ -1347,7 +1347,7 @@ get_default_permission(AppName) ->
 dist_check([{AppName, Nodes} | T]) ->
     P = get_default_permission(AppName),
     [#appl{name = AppName, nodes = Nodes, run = [{node(), P}]} | dist_check(T)];
-dist_check([{AppName, Time, Nodes} | T]) when integer(Time), Time >= 0 ->
+dist_check([{AppName, Time, Nodes} | T]) when is_integer(Time), Time >= 0 ->
     P = get_default_permission(AppName),
     [#appl{name = AppName, restart_time = Time, nodes = Nodes,
 	   run = [{node(), P}]} | dist_check(T)];
@@ -1373,7 +1373,7 @@ dist_replace({AppName, Nodes}, AppName, Appls) ->
 		  #appl{name = AppName, restart_time = 0,
 			nodes = Nodes, run = Run});
 dist_replace({AppName, Time, Nodes}, AppName, Appls)
-  when integer(Time), Time >= 0 ->
+  when is_integer(Time), Time >= 0 ->
     Run = map(fun(Node) -> {Node, undefined} end, flat_nodes(Nodes)),
     keyreplaceadd(AppName, #appl.name, Appls,
 		  #appl{name = AppName, restart_time = Time,
@@ -1382,7 +1382,7 @@ dist_replace(Bad, _Name, _Appls) ->
     throw({error, {bad_distribution_spec, Bad}}).
 
 dist_update_run(Appls, AppName, Node, Permission) ->
-    map(fun(Appl) when Appl#appl.name == AppName ->
+    map(fun(Appl) when Appl#appl.name =:= AppName ->
 		Run = Appl#appl.run,
 		NRun = keyreplaceadd(Node, 1, Run, {Node, Permission}),
 		Appl#appl{run = NRun};
@@ -1402,7 +1402,7 @@ dist_change_update(Appls, [{AppName, NewTime, NewNodes} | NewDist]) ->
     dist_change_update(NewAppls, NewDist).
 
 do_dist_change_update(Appls, AppName, NewTime, NewNodes) ->
-    map(fun(Appl) when Appl#appl.name == AppName ->
+    map(fun(Appl) when Appl#appl.name =:= AppName ->
 		Appl#appl{restart_time = NewTime, nodes = NewNodes};
 	   (Appl) ->
 		Appl
@@ -1416,7 +1416,7 @@ dist_merge(MyAppls, HisAppls, HisNode) ->
 %	       HeIsMember = lists:member(HisNode, flat_nodes(Nodes)),
 	       HeIsMember = true,
 	       case keysearch(AppName, #appl.name, HisAppls) of
-		   {value, #appl{run = HisRun}} when HeIsMember == true ->
+		   {value, #appl{run = HisRun}} when HeIsMember ->
 		       case keysearch(HisNode, 1, HisRun) of
 			   {value, Val} -> % He has it loaded
 			       NRun = keyreplaceadd(HisNode, 1, Run, Val),
@@ -1504,7 +1504,7 @@ dist_flat_nodes(Appls, Name) ->
 
 dist_del_node(Appls, Node) ->
     map(fun(Appl) ->
-		NRun = filter(fun({N, _Runnable}) when N == Node -> false;
+		NRun = filter(fun({N, _Runnable}) when N =:= Node -> false;
 				 (_) -> true
 			      end, Appl#appl.run),
 		Appl#appl{run = NRun}
@@ -1520,14 +1520,14 @@ dist_mismatch(AppName, Node) ->
 	      [AppName, node(), Node]),
     exit({distribution_mismatch, AppName, Node}).
 
-%error_msg(Format) when list(Format) ->
+%error_msg(Format) when is_list(Format) ->
 %    error_msg(Format, []).
 
-error_msg(Format, ArgList) when list(Format), list(ArgList) ->
+error_msg(Format, ArgList) when is_list(Format), is_list(ArgList) ->
     error_logger:error_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).
 
-%info_msg(Format) when list(Format) ->
+%info_msg(Format) when is_list(Format) ->
 %    info_msg(Format, []).
 
-%info_msg(Format, ArgList) when list(Format), list(ArgList) ->
+%info_msg(Format, ArgList) when is_list(Format), is_list(ArgList) ->
 %    error_logger:info_msg("dist_ac on node ~p:~n" ++ Format, [node()|ArgList]).

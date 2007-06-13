@@ -91,12 +91,12 @@ new(Options) ->
 
 %% -> ok
 %% Need not be called by the server.
-delete(State) when State#xref.variables == not_set_up ->
+delete(State) when State#xref.variables =:= not_set_up ->
     ok;
 delete(State) ->
     Fun = fun({X, _}) ->
 		  case catch digraph:info(X) of
-		      Info when list(Info) ->
+		      Info when is_list(Info) ->
 			  true = digraph:delete(X);
 		      _Else ->
 			  ok
@@ -179,7 +179,7 @@ replace_application(State, Appl, Dir, Options) ->
     end.
 
 %% -> {ok, NewState} | Error
-remove_module(State, Mod) when atom(Mod) ->
+remove_module(State, Mod) when is_atom(Mod) ->
     remove_module(State, [Mod]);
 remove_module(State, [Mod | Mods]) ->
     case catch do_remove_module(State, Mod) of
@@ -192,7 +192,7 @@ remove_module(State, []) ->
     {ok, State}.
 
 %% -> {ok, NewState} | Error
-remove_application(State, Appl) when atom(Appl) ->
+remove_application(State, Appl) when is_atom(Appl) ->
     remove_application(State, [Appl]);
 remove_application(State, [Appl | Appls]) ->
     case catch do_remove_application(State, Appl) of
@@ -205,7 +205,7 @@ remove_application(State, []) ->
     {ok, State}.
 
 %% -> {ok, NewState} | Error
-remove_release(State, Rel) when atom(Rel) ->
+remove_release(State, Rel) when is_atom(Rel) ->
     remove_release(State, [Rel]);
 remove_release(State, [Rel | Rels]) ->
     case catch do_remove_release(State, Rel) of
@@ -272,7 +272,7 @@ q(S, Q) ->
     q(S, Q, []).
 
 %% -> {{ok, Answer}, NewState} | {Error, NewState}
-q(S, Q, Options) when atom(Q) ->
+q(S, Q, Options) when is_atom(Q) ->
     q(S, atom_to_list(Q), Options);
 q(S, Q, Options) ->
     case xref_utils:is_string(Q, 1) of
@@ -328,9 +328,9 @@ forget(State) ->
     {ok, foldl(fun(V, S) -> {ok, NS} = forget(S, V), NS end, State, U)}.
 
 %% -> {ok, NewState} | Error
-forget(State, Variable) when State#xref.variables == not_set_up ->
+forget(State, Variable) when State#xref.variables =:= not_set_up ->
     error({not_user_variable, Variable});
-forget(State, Variable) when atom(Variable) ->
+forget(State, Variable) when is_atom(Variable) ->
     forget(State, [Variable]);
 forget(State, Variables) ->
     Vars = State#xref.variables,
@@ -348,9 +348,9 @@ variables(State, Options) ->
 	    case do_set_up(State, OV) of
 		{ok, NewState} ->
 		    {U, P} = do_variables(NewState),
-		    R1 = if User == true -> [{user, U}]; true -> [] end,
+		    R1 = if User -> [{user, U}]; true -> [] end,
 		    R = if 
-			    Predef == true -> [{predefined,P} | R1]; 
+			    Predef -> [{predefined,P} | R1]; 
 			    true -> R1 
 			end,
 		    {{ok, R}, NewState};
@@ -367,12 +367,12 @@ analyze(State, Analysis) ->
 %% -> {{ok, Answer}, NewState} | {Error, NewState}
 analyze(State, Analysis, Options) ->
     case analysis(Analysis, State#xref.mode) of
-	P when list(P) -> 
+	P when is_list(P) -> 
 	    q(State, P, Options);
 	error ->
 	    R = case analysis(Analysis, functions) of
 		    error -> unknown_analysis;
-		    P when list(P) -> unavailable_analysis
+		    P when is_list(P) -> unavailable_analysis
 		end,
 	    Error = error({R, Analysis}),
 	    {Error, State}
@@ -519,7 +519,7 @@ format_error(E) ->
 %%  Local functions
 %%
 
-check_name([N]) when atom(N) -> true;
+check_name([N]) when is_atom(N) -> true;
 check_name(_) -> false.
 
 do_update(OV, OW, State) ->
@@ -537,7 +537,7 @@ updated_modules(State) ->
 		  RTime = XMod#xref_mod.mtime,
 		  File = module_file(XMod),
 		  case xref_utils:file_info(File) of
-		      {ok, {_, file, readable, MTime}} when MTime /= RTime ->
+		      {ok, {_, file, readable, MTime}} when MTime =/= RTime ->
 			  [{M,File} | L];
 		      _Else -> 
 			  L
@@ -701,10 +701,10 @@ do_add_module1(Dir, File, AppName, Builtins, Verbose, Warnings, State) ->
     Me = self(),
     Fun = fun() -> Me ! {self(), abst(File, Builtins, Mode)} end,
     case xref_utils:subprocess(Fun, [link, {min_heap_size,100000}]) of
-	{ok, _M, no_abstract_code} when Verbose == true ->
+	{ok, _M, no_abstract_code} when Verbose ->
 	    message(Verbose, skipped_beam, []),
 	    {ok, [], [], State};
-	{ok, _M, no_abstract_code} when Verbose == false ->
+	{ok, _M, no_abstract_code} when not Verbose ->
 	    message(Warnings, no_debug_info, [File]),
 	    {ok, [], [], State};
 	{ok, M, Data, UnresCalls0}  ->
@@ -731,9 +731,9 @@ do_add_module1(Dir, File, AppName, Builtins, Verbose, Warnings, State) ->
 	    throw(Error)
     end.
 
-abst(File, Builtins, Mode) when Mode == functions ->
+abst(File, Builtins, Mode) when Mode =:= functions ->
     case beam_lib:chunks(File, [abstract_code, exports, attributes]) of
-	{ok, {M,[{abstract_code,NoA},_X,_A]}} when NoA == no_abstract_code ->
+	{ok, {M,[{abstract_code,NoA},_X,_A]}} when NoA =:= no_abstract_code ->
 	    {ok, M, NoA};
 	{ok, {M, [{abstract_code, {abstract_v1, Forms}}, 
                   {exports,X0}, {attributes,A}]}} ->
@@ -755,10 +755,10 @@ abst(File, Builtins, Mode) when Mode == functions ->
 	    X = mfa_exports(X0, A, M),
             D = deprecated(A, X, M),
 	    xref_reader:module(M, Forms, Builtins, X, D);
-	Error when element(1, Error) == error ->
+	Error when element(1, Error) =:= error ->
 	    Error
     end;
-abst(File, Builtins, Mode) when Mode == modules ->
+abst(File, Builtins, Mode) when Mode =:= modules ->
     case beam_lib:chunks(File, [exports, imports, attributes]) of
 	{ok, {Mod, [{exports,X0}, {imports,I0}, {attributes,At}]}} ->
 	    X1 = mfa_exports(X0, At, Mod),
@@ -774,7 +774,7 @@ abst(File, Builtins, Mode) when Mode == modules ->
 			filter(Fun, I0)
 		end,
 	    {ok, Mod, {X, I, D}, []};
-	Error when element(1, Error) == error ->
+	Error when element(1, Error) =:= error ->
 	    Error
     end.
 
@@ -828,9 +828,9 @@ depr_cat(_D, _M, _X) ->
 
 depr_fa('_', '_', X, _M, I) ->
     {I, X};
-depr_fa(F, '_', X, _M, I) when atom(F) ->
+depr_fa(F, '_', X, _M, I) when is_atom(F) ->
     {I, filter(fun({_,F1,_}) -> F1 =:= F end, X)};
-depr_fa(F, A, _X, M, I) when atom(F), integer(A), A >= 0 ->
+depr_fa(F, A, _X, M, I) when is_atom(F), is_integer(A), A >= 0 ->
     {I, [{M,F,A}]};
 depr_fa(_F, _A, _X, _M, _I) ->
     undefined.
@@ -864,7 +864,7 @@ do_add_module(S, XMod, Unres, Data) ->
 
 %%do_add_module(S, M, _XMod, _Unres, Data)->
 %%    {ok, M, [], S};
-do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode == functions ->
+do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode =:= functions ->
     {DefAt0, LPreCAt0, XPreCAt0, LC0, XC0, X0, Attrs, Depr} = Data,
     %% Bad is a list of bad values of 'xref' attributes.
     {ALC0,AXC0,Bad0} = Attrs,
@@ -931,7 +931,7 @@ do_add_module(S, M, XMod, Unres0, Data) when S#xref.mode == functions ->
     XMod1 = XMod#xref_mod{data = T, info = Info},
     S1 = S#xref{modules = dict:store(M, XMod1, S#xref.modules)},
     {ok, [M], DBad++Bad, take_down(S1)};
-do_add_module(S, M, XMod, _Unres, Data) when S#xref.mode == modules ->
+do_add_module(S, M, XMod, _Unres, Data) when S#xref.mode =:= modules ->
     {X0, I0, Depr} = Data,
     X1 = xref_utils:xset(X0, [tspec(func)]),
     I1 = xref_utils:xset(I0, [tspec(func)]),
@@ -1087,7 +1087,7 @@ do_remove_module(S, Module) ->
 
 remove_rel(S, RelName) ->
     Rels = [RelName],
-    Fun = fun({A,XApp}, L) when XApp#xref_app.rel_name == Rels ->
+    Fun = fun({A,XApp}, L) when XApp#xref_app.rel_name =:= Rels ->
 		  [A | L];
 	     (_, L) -> L
 	  end,
@@ -1150,7 +1150,7 @@ check_file([], _L, [E | _], _Path, _State) ->
 
 %% -> {ok, NewState} | Error
 %% Finding libraries may fail.
-do_set_up(S, _VerboseOpt) when S#xref.variables /= not_set_up ->
+do_set_up(S, _VerboseOpt) when S#xref.variables =/= not_set_up ->
     {ok, S};
 do_set_up(S, VerboseOpt) ->
     message(VerboseOpt, set_up, []),
@@ -1170,7 +1170,7 @@ do_set_up(S, VerboseOpt) ->
 %% for all modules). U is derived from XU, so U is also partial.
 %% The inverse variables - LC_1, XC_1, E_1 and EE_1 - are all partial.
 %% B is also partial.
-do_set_up(S) when S#xref.mode == functions ->
+do_set_up(S) when S#xref.mode =:= functions ->
     ModDictList = dict:to_list(S#xref.modules),
     [DefAt0, L, X0, LCallAt, XCallAt, CallAt, LC, XC, LU, 
      EE0, ECallAt, UC, LPredefined,
@@ -1271,7 +1271,7 @@ do_set_up(S) when S#xref.mode == functions ->
 	  {def_at, DefAt}, {call_at, CallAt}, {e_call_at, ECallAt},
 	  {l_call_at, LCallAt}, {x_call_at, XCallAt}],
     finish_set_up(S1, Vs);
-do_set_up(S) when S#xref.mode == modules ->
+do_set_up(S) when S#xref.mode =:= modules ->
     ModDictList = dict:to_list(S#xref.modules),
     [X0, I0, Mod_DF, Mod_DF_1, Mod_DF_2, Mod_DF_3] = 
         make_families(ModDictList, 7),
@@ -1434,7 +1434,7 @@ make_libs(XU, F, AM, LibPath, LibDict) ->
     Fs = case is_empty_set(UM) of
 	     true ->
 		 [];
-	     false when LibPath == code_path ->
+	     false when LibPath =:= code_path ->
 		 BFun = fun(M, A) -> case xref_utils:find_beam(M) of
 					 {ok, File} -> [File | A];
 					 _ -> A
@@ -1510,7 +1510,7 @@ do_variables(State) ->
     {sort(P), sort(U)}.
 
 %% Throws away the variables derived from raw data.
-take_down(S) when S#xref.variables == not_set_up ->
+take_down(S) when S#xref.variables =:= not_set_up ->
     S;
 take_down(S) ->
     S#xref{variables = not_set_up}.
@@ -1565,29 +1565,29 @@ do_info(S, libraries) ->
 do_info(_S, I) ->
     error({no_such_info, I}).
 		      
-do_info(S, Type, E) when atom(E) ->
+do_info(S, Type, E) when is_atom(E) ->
     do_info(S, Type, [E]);
-do_info(S, modules, Modules0) when list(Modules0) ->
+do_info(S, modules, Modules0) when is_list(Modules0) ->
     Modules = to_external(set(Modules0)),
     XMods = find_info(Modules, S#xref.modules, no_such_module),
     map(fun(XMod) -> mod_info(XMod) end, XMods);
-do_info(S, applications, Applications) when list(Applications) ->
+do_info(S, applications, Applications) when is_list(Applications) ->
     _XA = find_info(Applications, S#xref.applications, no_such_application),
     AM = relation(app_mods(S)),
     App = set(Applications),
     AppMods_S = relation_to_family(restriction(AM, App)),
     AppSums = sum_mods(S, to_external(AppMods_S)),
     map(fun(AppSum) -> app_info(AppSum, S) end, AppSums);
-do_info(S, releases, Releases) when list(Releases) ->
+do_info(S, releases, Releases) when is_list(Releases) ->
     _XR = find_info(Releases, S#xref.releases, no_such_release),
     {AR, RRA} = rel_apps(S),
     AR_S = restriction(2, relation(AR), set(Releases)),
     rel_apps_sums(to_external(AR_S), RRA, S);
-do_info(S, libraries, Libraries0) when list(Libraries0) ->
+do_info(S, libraries, Libraries0) when is_list(Libraries0) ->
     Libraries = to_external(set(Libraries0)),
     XLibs = find_info(Libraries, S#xref.libraries, no_such_library),
     map(fun(XLib) -> lib_info(XLib) end, XLibs);
-do_info(_S, I, J) when list(J) ->
+do_info(_S, I, J) when is_list(J) ->
     throw_error({no_such_info, I}).
 
 find_info([E | Es], Dict, Error) ->
@@ -1671,9 +1671,9 @@ sum_mods(S, [{N, XMods} | NX], L) ->
 sum_mods(_S, [], L) ->
     reverse(L).
 
-no_sum(S, L) when S#xref.mode == functions ->
+no_sum(S, L) when S#xref.mode =:= functions ->
     no_sum(L, 0, 0, 0, 0, 0, 0, 0, 0, length(L));
-no_sum(S, L) when S#xref.mode == modules ->
+no_sum(S, L) when S#xref.mode =:= modules ->
     [{no_analyzed_modules, length(L)}].
 
 no_sum([XMod | D], C0, UC0, LC0, XC0, UFC0, L0, X0, EV0, NoM) ->
@@ -1690,7 +1690,7 @@ no_sum([], C, UC, LC, XC, UFC, L, X, EV, NoM) ->
      {no_inter_function_calls, EV}].
 
 %% -> ok | throw(Error)
-is_filename(F) when atom(F) ->
+is_filename(F) when is_atom(F) ->
     ok;
 is_filename(F) ->
     case xref_utils:is_string(F, 31) of
@@ -1727,20 +1727,20 @@ pack(T) ->
     map(fun({K,V}) -> put(K, V) end, PD),
     NT.
 
-pack1(C) when constant(C) ->
+pack1(C) when not is_tuple(C), not is_list(C) ->
     C;
 pack1([T | Ts]) ->
     %% don't store conscells...
     [pack1(T) | pack1(Ts)];
 %% Optimization.
-pack1(T={Mod,Fun,_}) when atom(Mod), atom(Fun) -> % MFA
+pack1(T={Mod,Fun,_}) when is_atom(Mod), is_atom(Fun) -> % MFA
     case get(T) of
 	undefined -> put(T, T), T;
 	NT -> NT
     end;
-pack1({C, L}) when list(L) -> % CallAt
+pack1({C, L}) when is_list(L) -> % CallAt
     {pack1(C), L};
-pack1({MFA, L}) when integer(L) -> % DefAt
+pack1({MFA, L}) when is_integer(L) -> % DefAt
     {pack1(MFA), L};
 %% End optimization.
 pack1([]) ->

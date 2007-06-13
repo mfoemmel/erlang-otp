@@ -68,10 +68,10 @@
 
 %% In erlang, IPV6 addresses are built as 8-tuples of 16bit values (not 16-tuples of octets).
 %% This macro, meant to be used in guards checks one such 16bit value in the 8-tuple.
--define(VALID_V6(Part), integer(Part), Part < 65536).
+-define(VALID_V6(Part), is_integer(Part), Part < 65536).
 %% The regular IPV4 addresses are represented as 4-tuples of octets, this macro,
 %% meant to be used in guards, check one such octet.
--define(VALID_V4(Part), integer(Part), Part < 256).
+-define(VALID_V4(Part), is_integer(Part), Part < 256).
 
 % Requests, one per unbique request to the PORT program, may be more than one client!!!
 -record(request, {
@@ -194,19 +194,19 @@ main_loop(State) ->
     end.
 
 handle_message({{Pid,_} = Client, {?OP_GETHOSTBYNAME, Proto, Name} = R}, 
-	       State) when pid(Pid) ->
+	       State) when is_pid(Pid) ->
     NewState = do_handle_call(R,Client,State,
 			      [<<?OP_GETHOSTBYNAME:8, Proto:8>>, Name,0]),
     main_loop(NewState);
 
 handle_message({{Pid,_} = Client, {?OP_GETHOSTBYADDR, Proto, Data} = R}, 
-	       State) when pid(Pid) ->
+	       State) when is_pid(Pid) ->
     NewState = do_handle_call(R,Client,State,
 			      <<?OP_GETHOSTBYADDR:8, Proto:8, Data/binary>>),
     main_loop(NewState);
 
 handle_message({{Pid,Ref}, {?OP_CONTROL, Ctl, Data}}, State)
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     catch port_command(State#state.port, 
 		       <<?INVALID_SERIAL:32, ?OP_CONTROL:8, 
 			Ctl:8, Data/binary>>),
@@ -214,7 +214,7 @@ handle_message({{Pid,Ref}, {?OP_CONTROL, Ctl, Data}}, State)
     main_loop(State);
 
 handle_message({{Pid,Ref}, restart_port}, State)
-  when pid(Pid) ->
+  when is_pid(Pid) ->
     NewPort=restart_port(State),
     Pid ! {Ref, ok},
     main_loop(State#state{port=NewPort});
@@ -397,7 +397,7 @@ get_extra_args() ->
 			""
 		end,
     case application:get_env(kernel, gethost_extra_args) of
-	{ok, L} when list(L) ->
+	{ok, L} when is_list(L) ->
 	    FirstPart++" "++L;
 	_ ->
 	    FirstPart++""
@@ -405,7 +405,7 @@ get_extra_args() ->
 
 get_poolsize() ->
     case application:get_env(kernel, gethost_poolsize) of
-	{ok,I} when integer(I) ->
+	{ok,I} when is_integer(I) ->
 	    I;
 	_ ->
 	    ?DEFAULT_POOLSIZE
@@ -432,11 +432,11 @@ system_code_change(State, _Module, _OldVsn, _Extra) ->
 gethostbyname(Name) ->
     gethostbyname(Name, inet).
 
-gethostbyname(Name, inet) when list(Name) ->
+gethostbyname(Name, inet) when is_list(Name) ->
     getit(?OP_GETHOSTBYNAME, ?PROTO_IPV4, Name);
-gethostbyname(Name, inet6) when list(Name) ->
+gethostbyname(Name, inet6) when is_list(Name) ->
     getit(?OP_GETHOSTBYNAME, ?PROTO_IPV6, Name);
-gethostbyname(Name, Type) when atom(Name) ->
+gethostbyname(Name, Type) when is_atom(Name) ->
     gethostbyname(atom_to_list(Name), Type);
 gethostbyname(_, _)  ->
     {error, formerr}.
@@ -446,12 +446,12 @@ gethostbyaddr({A,B,C,D}) when ?VALID_V4(A), ?VALID_V4(B), ?VALID_V4(C), ?VALID_V
 gethostbyaddr({A,B,C,D,E,F,G,H}) when ?VALID_V6(A), ?VALID_V6(B), ?VALID_V6(C), ?VALID_V6(D),
 				      ?VALID_V6(E), ?VALID_V6(F), ?VALID_V6(G), ?VALID_V6(H) ->
     getit(?OP_GETHOSTBYADDR, ?PROTO_IPV6, <<A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16>>);
-gethostbyaddr(Addr) when list(Addr) ->
+gethostbyaddr(Addr) when is_list(Addr) ->
     case inet_parse:address(Addr) of
         {ok, IP} -> gethostbyaddr(IP);
         _Error -> {error, formerr}
     end;
-gethostbyaddr(Addr) when atom(Addr) ->
+gethostbyaddr(Addr) when is_atom(Addr) ->
     gethostbyaddr(atom_to_list(Addr));
 gethostbyaddr(_) -> {error, formerr}.
 

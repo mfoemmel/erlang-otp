@@ -130,7 +130,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosTime/ebin \
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosTime/ebin \
 	-pa $(ERL_TOP)/lib/ic/ebin\
 	-pa $(ERL_TOP)/lib/orber/ebin \
 	-I$(ERL_TOP)/lib/cosEvent/src
@@ -138,6 +138,7 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosTime/ebin \
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-pa $(ERL_TOP)/lib/orber/include \
 	-pa $(ERL_TOP)/lib/cosTime/include \
 	-I$(ERL_TOP)/lib/cosTime/include \
@@ -174,15 +175,15 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_TIMEBASE_ERL_FILES) $(EXTERNAL_TIMEBASE_HRL_FILES): TimeBase.idl
-	erlc $(ERL_FLAGS) TimeBase.idl
+	erlc $(ERL_IDL_FLAGS) TimeBase.idl
 	mv $(GEN_TIMEBASE_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 $(GEN_COSTIME_ERL_FILES) $(EXTERNAL_COSTIME_HRL_FILES): CosTime.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosTime.cfg"}' CosTime.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosTime.cfg"}' CosTime.idl
 	mv $(GEN_COSTIME_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 $(GEN_COSTIMEREVENT_ERL_FILES) $(EXTERNAL_COSTIMEREVENT_HRL_FILES): CosTimerEvent.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosTimerEvent.cfg"}' CosTimerEvent.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosTimerEvent.cfg"}' CosTimerEvent.idl
 	mv $(GEN_COSTIMEREVENT_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

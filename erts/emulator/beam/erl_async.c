@@ -69,8 +69,12 @@ static void async_add(ErlAsync*, AsyncQueue*);
 
 int init_async(int hndl)
 {
+    erts_thr_opts_t thr_opts = ERTS_THR_OPTS_DEFAULT_INITER;
     AsyncQueue* q;
     int i;
+
+    thr_opts.detached = 0;
+    thr_opts.suggested_stack_size = erts_async_thread_suggested_stack_size;
 
 #ifndef ERTS_SMP
     erts_mtx_init(&async_ready_mtx, "async_ready");
@@ -97,7 +101,7 @@ int init_async(int hndl)
 #endif
 	erts_mtx_init(&q->mtx, "asyncq");
 	erts_cnd_init(&q->cv);
-	erts_thr_create(&q->thr, async_main, (void*)q, 0);
+	erts_thr_create(&q->thr, async_main, (void*)q, &thr_opts);
 	q++;
     }
     return 0;

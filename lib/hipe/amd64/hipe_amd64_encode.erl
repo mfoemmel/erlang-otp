@@ -145,25 +145,25 @@ cc(g) -> ?CC_G.
 
 %%% r/m operands
 
-sindex(Scale, Index) ->
+sindex(Scale, Index) when is_integer(Scale), is_integer(Index) ->
     ?ASSERT(sindex, Scale >= 0),
     ?ASSERT(sindex, Scale =< 3),
     ?ASSERT(sindex, Index =/= ?ESP),
     {sindex, Scale, Index}.
 
--record(sib, {sindex_opt, base}).
-sib(Base) -> #sib{sindex_opt=none, base=Base}.
-sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
+-record(sib, {sindex_opt, base :: integer()}).
+sib(Base) when is_integer(Base) -> #sib{sindex_opt=none, base=Base}.
+sib(Base, Sindex) when is_integer(Base) -> #sib{sindex_opt=Sindex, base=Base}.
 
-ea_disp32_base(Disp32, Base) ->
+ea_disp32_base(Disp32, Base) when is_integer(Base) ->
     ?ASSERT(ea_disp32_base, Base =/= ?ESP),
     {ea_disp32_base, Disp32, Base}.
 ea_disp32_sib(Disp32, SIB) -> {ea_disp32_sib, Disp32, SIB}.
-ea_disp8_base(Disp8, Base) ->
+ea_disp8_base(Disp8, Base) when is_integer(Base) ->
     ?ASSERT(ea_disp8_base, Base =/= ?ESP),
     {ea_disp8_base, Disp8, Base}.
 ea_disp8_sib(Disp8, SIB) -> {ea_disp8_sib, Disp8, SIB}.
-ea_base(Base) ->
+ea_base(Base) when is_integer(Base) ->
     ?ASSERT(ea_base, Base =/= ?ESP),
     ?ASSERT(ea_base, Base =/= ?EBP),
     {ea_base, Base}.
@@ -198,19 +198,20 @@ rex_([{r8, Reg8}| Rest]) ->             % 8 bit registers
     end;
 rex_([{w, REXW}| Rest]) ->              % 64-bit mode
     (REXW bsl 3) bor rex_(Rest);
-rex_([{r, ModRM_regRegister}| Rest]) -> % ModRM reg
+rex_([{r, ModRM_regRegister}| Rest]) when is_integer(ModRM_regRegister) ->
     REXR = if (ModRM_regRegister > 7) -> 1;
-              true           -> 0
+              true -> 0
            end,
     (REXR bsl 2) bor rex_(Rest);
-rex_([{x, SIB_indexRegister}| Rest]) -> % SIB index
+rex_([{x, SIB_indexRegister}| Rest]) when is_integer(SIB_indexRegister) ->
     REXX = if (SIB_indexRegister > 7) -> 1;
-              true           -> 0
+              true -> 0
            end,
     (REXX bsl 1) bor rex_(Rest);
-rex_([{b, OtherRegister}| Rest]) ->     % ModRM r/m, SIB base or opcode reg
+rex_([{b, OtherRegister}| Rest]) when is_integer(OtherRegister) ->
+    %% ModRM r/m, SIB base or opcode reg
     REXB = if (OtherRegister > 7) -> 1;
-              true           -> 0
+              true -> 0
            end,
     REXB bor rex_(Rest).
 

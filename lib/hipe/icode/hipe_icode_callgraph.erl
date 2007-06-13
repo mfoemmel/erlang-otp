@@ -17,7 +17,8 @@
 	 get_called_modules/1,
 	 is_empty/1,
 	 take_first/1,
-	 to_list/1]).
+	 to_list/1,
+	 construct_callgraph/1]).
 
 -ifndef(NO_UNUSED).
 -export([pp/1]).
@@ -53,6 +54,11 @@ construct(List) ->
   DiGraph = hipe_digraph:from_list(Edges),
   SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph),
   #callgraph{scc_order=SCCs, codedict=dict:from_list(List)}.
+
+construct_callgraph(List) ->
+  Calls = get_local_calls2(List),
+  Edges = get_edges(Calls),  
+  hipe_digraph:from_list(Edges).
 
 %%---------------------------------------------------------------------
 %% Get the modules called from this module
@@ -97,16 +103,21 @@ get_remote_calls_1([], Set) ->
 %% Find functions called (or entered) by each function.
 
 get_local_calls(List) ->
-  get_local_calls(List, []).
+  RemoveFun = fun ordsets:del_element/2,
+  get_local_calls(List, RemoveFun, []).
 
-get_local_calls([{MFA = {M, _F, _A}, Icode}|Left], Acc) ->
+get_local_calls2(List) ->
+  RemoveFun = fun(_,Set) -> Set end,
+  get_local_calls(List, RemoveFun, []).
+
+get_local_calls([{MFA = {M, _F, _A}, Icode}|Left], RemoveFun, Acc) ->
   CallSet = get_local_calls_1(hipe_icode:icode_code(Icode)),
   %% Exclude calls to your own module_info and recursive calls.
-  CallSet1 = ordsets:del_element(MFA, CallSet),
+  CallSet1 = RemoveFun(MFA, CallSet),
   CallSet2 = ordsets:del_element({M, module_info, 0}, CallSet1),
   CallSet3 = ordsets:del_element({M, module_info, 1}, CallSet2),
-  get_local_calls(Left, [{MFA, CallSet3}|Acc]);
-get_local_calls([], Acc) ->
+  get_local_calls(Left, RemoveFun, [{MFA, CallSet3}|Acc]);
+get_local_calls([], _RemoveFun, Acc) ->
   Acc.
 
 get_local_calls_1(Icode) ->

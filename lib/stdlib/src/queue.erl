@@ -35,14 +35,14 @@
 new() -> {[],[]}.
 
 %% Append to tail
-in(X, {R,F}=Q) when list(R), list(F) -> snoc(Q, X);
+in(X, {R,F}=Q) when is_list(R), is_list(F) -> snoc(Q, X);
 in(X, Q) ->
     erlang:fault(badarg, [X,Q]).
 
 %% Take from head
-out({In,[V]}) when list(In) ->
+out({In,[V]}) when is_list(In) ->
     {{value,V},r2f(In)};
-out({In,[V|Out]}) when list(In) ->
+out({In,[V|Out]}) when is_list(In) ->
     {{value,V},{In,Out}};
 out({[],[]}=Q) ->
     {empty,Q};
@@ -53,7 +53,7 @@ out({[_|_]=In,[]}) ->
 out(Q) ->
     erlang:fault(badarg, [Q]).
 
-to_list({In,Out}) when list(In), list(Out) ->
+to_list({In,Out}) when is_list(In), is_list(Out) ->
     Out++lists:reverse(In, []);
 to_list(Q) ->
     erlang:fault(badarg, [Q]).
@@ -62,14 +62,14 @@ to_list(Q) ->
 %% Some new "old style" functions for reversed queue handling.
 
 %% Prepend to head
-in_r(X, {R,F}=Q) when list(R), list(F) -> cons(X, Q);
+in_r(X, {R,F}=Q) when is_list(R), is_list(F) -> cons(X, Q);
 in_r(X, Q) ->
     erlang:fault(badarg, [X,Q]).
 
 %% Take from tail
-out_r({[V],Out}) when list(Out) ->
+out_r({[V],Out}) when is_list(Out) ->
     {{value,V},f2r(Out)};
-out_r({[V|In],Out}) when list(Out) ->
+out_r({[V|In],Out}) when is_list(Out) ->
     {{value,V},{In,Out}};
 out_r({[],[]}=Q) ->
     {empty,Q};
@@ -81,7 +81,7 @@ out_r(Q) ->
     erlang:fault(badarg, [Q]).
 
 %% Create queue from list
-from_list(L) when list(L) ->
+from_list(L) when is_list(L) ->
     {[],L};
 from_list(L) ->
     erlang:fault(badarg, [L]).
@@ -118,12 +118,12 @@ from_list(L) ->
 
 is_empty({[],[]}) ->
     true;
-is_empty({In,Out}) when list(In), list(Out) ->
+is_empty({In,Out}) when is_list(In), is_list(Out) ->
     false;
 is_empty(Q) ->
     erlang:fault(badarg, [Q]).
 
-len({In,Out}) when list(In), list(Out) ->
+len({In,Out}) when is_list(In), is_list(Out) ->
     erlang:length(In)+erlang:length(Out);
 len(Q) ->
     erlang:fault(badarg, [Q]).
@@ -137,13 +137,13 @@ cons(X, {[],[]}) ->
     {[], [X]};
 cons(X, {[], [_]=F}) ->
     {F,[X]};
-cons(X, {R,F}) when list(R), list(F) ->
+cons(X, {R,F}) when is_list(R), is_list(F) ->
     {R,[X|F]};
 cons(X, Q) ->
     erlang:fault(badarg, [X,Q]).
 
 %% Return head element
-head({R,[H|_]}) when list(R) ->
+head({R,[H|_]}) when is_list(R) ->
     H;
 head({[],[]}=Q) ->
     erlang:fault(empty, [Q]);
@@ -156,9 +156,9 @@ head(Q) ->
     erlang:fault(badarg, [Q]).
 
 %% Remove head element and return resulting queue
-tail({R, [_]}) when list(R) ->
+tail({R, [_]}) when is_list(R) ->
     r2f(R);
-tail({R, [_|F]}) when list(R) ->
+tail({R, [_|F]}) when is_list(R) ->
     {R,F};
 tail({[],[]}=Q) ->
     erlang:fault(empty, [Q]);
@@ -178,7 +178,7 @@ snoc({[],[]}, X) ->
     {[X], []};
 snoc({[_]=R, []}, X) ->
     {[X], R};
-snoc({R,F}, X) when list(R), list(F) ->
+snoc({R,F}, X) when is_list(R), is_list(F) ->
     {[X|R],F};
 snoc(Q, X) ->
     erlang:fault(badarg, [Q,X]).
@@ -186,7 +186,7 @@ snoc(Q, X) ->
 %% Return last element
 daeh(Q) -> last(Q).
 
-last({[H|_],F}) when list(F) ->
+last({[H|_],F}) when is_list(F) ->
     H;
 last({[],[]}=Q) ->
     erlang:fault(empty, [Q]);
@@ -201,9 +201,9 @@ last(Q) ->
 %% Remove tail element and return resulting queue
 lait(Q) -> init(Q).
 
-init({[_], F}) when list(F) ->
+init({[_], F}) when is_list(F) ->
     f2r(F);
-init({[_|R], F}) when list(F) ->
+init({[_|R], F}) when is_list(F) ->
     {R,F};
 init({[],[]}=Q) ->
     erlang:fault(empty, [Q]);
@@ -217,25 +217,25 @@ init(Q) ->
 
 
 %% Return reversed queue
-reverse({R,F}) when list(R), list(F) ->
+reverse({R,F}) when is_list(R), is_list(F) ->
     {F,R};
 reverse(Q) ->
     erlang:fault(badarg, [Q]).
 
 %% Join two queues (perhaps not very efficient)
-join({R,F}=Q, {[],[]}) when list(R), list(F) ->
+join({R,F}=Q, {[],[]}) when is_list(R), is_list(F) ->
     Q;
-join({[],[]}, {R,F}=Q) when list(R), list(F) ->
+join({[],[]}, {R,F}=Q) when is_list(R), is_list(F) ->
     Q;
-join({R1,F1}, {R2,F2}) when list(R1), list(F1), list(R2), list(F2) ->
+join({R1,F1}, {R2,F2}) when is_list(R1), is_list(F1), is_list(R2), is_list(F2) ->
     {R2,F1++lists:reverse(R1,F2)};
 join(Q1, Q2) ->
     erlang:fault(badarg, [Q1,Q2]).
 
 %% Split a queue in two (perhaps not very efficient)
-split(N, {R,F}=Q) when N =:= 0, list(R), list(F) ->
+split(N, {R,F}=Q) when N =:= 0, is_list(R), is_list(F) ->
     {{[],[]},Q};
-split(N, {R,F}=Q) when integer(N), N > 0, list(R), list(F) ->
+split(N, {R,F}=Q) when is_integer(N), N > 0, is_list(R), is_list(F) ->
     Lf = erlang:length(F),
     if  N < Lf ->
 	    {F1,F2} = lists:split(N, F),

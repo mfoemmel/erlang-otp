@@ -43,7 +43,7 @@ prefix_op mult_op add_op list_op comp_op
 rule rule_clauses rule_clause rule_body
 binary bin_elements bin_element bit_expr
 opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type
-top_type top_types type typed_expr typed_attr_val 
+top_type top_types type typed_expr typed_attr_val arg_types arg_type
 typed_exprs typed_record_fields.
 
 Terminals
@@ -72,9 +72,10 @@ form -> function dot : '$1'.
 form -> rule dot : '$1'.
 
 attribute -> '-' atom '(' attr_val ')' : build_attribute('$2', '$4').
-attribute -> '-' atom '(' typed_attr_val ')' : build_typed_record('$2', '$4').
+attribute -> '-' atom '(' typed_attr_val ')' : build_typed_attribute('$2','$4').
 
 typed_attr_val -> expr ',' typed_record_fields : ['$1' , '$3'].
+typed_attr_val -> expr '::' top_types          : ['$1' , '$3'].
 
 typed_record_fields -> '{' typed_exprs '}' : {tuple,line('$1'),'$2'}.
 
@@ -99,13 +100,19 @@ type -> '[' ']'                           : {type, nil, []}.
 type -> '[' top_type ']'                  : {type, list, ['$2']}.
 type -> '[' top_type ',' '.' '.' '.' ']'  : {type, nonempty_list, ['$2']}.
 type -> '(' '(' ')' '->' top_type ')'     : {type, 'fun', [[], '$5']}.
-type -> '(' '(' top_types ')' '->' top_type ')' : {type, 'fun', ['$3', '$6']}.
+type -> '(' '(' arg_types ')' '->' top_type ')' : {type, 'fun', ['$3', '$6']}.
 type -> '{' '}'                           : {type, tuple, []}.
 type -> '{' top_types '}'                 : {type, tuple, '$2'}.
 type -> '#' atom '{' '}'                  : {type, record, [normalise('$2')]}.
 type -> integer                           : {type, integer, [normalise('$1')]}.
 type -> '(' integer '.' '.' integer ')'   : 
 			{type, range, [normalise('$2'), normalise('$5')]}.
+
+arg_types -> arg_type                     : ['$1'].
+arg_types -> arg_type ',' arg_types       : ['$1'|'$3'].
+
+arg_type -> var '::' top_type             : '$3'.
+arg_type -> top_type                      : '$1'.
 
 attr_val -> exprs : '$1'.
 
@@ -513,12 +520,16 @@ build_type({atom,_,possibly_improper_list}, []) ->
 build_type({atom,_,ref}, []) -> {type, ref, []};
 build_type({atom,_,string}, []) -> {type, string, []};
 build_type({atom,_,tuple}, []) -> {type, tuple, []};
-build_type({atom,La,_}, _) -> error_bad_decl(La,type).
+build_type({atom,_,Other}, []) -> {type, var, [Other]}.
 
-build_typed_record({atom,La,record}, [{atom,_Ln,RecordName},RecTuple]) ->
+build_typed_attribute({atom,La,record}, [{atom,_Ln,RecordName},RecTuple]) ->
     {attribute,La,record,{RecordName,record_tuple(RecTuple)}};
-build_typed_record({atom,La,_},_) ->
-    error_bad_decl(La,record).
+build_typed_attribute({atom,La,spec}, [{op,_Lo,'/',{atom,_La,FunName},
+				                   {integer,_Li,FunArity}},
+				       	TypeSpec])  ->
+    {attribute,La,type_spec,{{FunName,FunArity},TypeSpec}};
+build_typed_attribute({atom,La,_},_) ->
+    error_bad_decl(La,spec).
 
 lift_unions(T1, {type, union, List}) ->
     {type, union, [T1|List]};

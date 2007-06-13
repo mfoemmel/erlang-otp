@@ -208,7 +208,7 @@ interpret_cmd_files_2(_,_,{eof,_},_,_) ->    % End of file.
 
 interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
     case catch inviso_rt_lib:transform(Exprs,Translations) of
-	NewExprs when list(NewExprs) ->     % We may have translated the API.
+	NewExprs when is_list(NewExprs) ->     % We may have translated the API.
 	    case catch erl_eval:exprs(NewExprs,Bindings) of
 		{'EXIT',Reason} ->
 		    inviso_rt_lib:debug(Dbg,exprs,[Exprs,Bindings,{'EXIT',Reason}]),
@@ -224,7 +224,7 @@ interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
 %% Help function adding variables to a bindings structure. If the variable already
 %% is assigned in the structure, it will be overridden. Returns a new
 %% bindings structure.
-join_local_and_global_vars([{Var,Val}|Rest],Bindings) when atom(Var) ->
+join_local_and_global_vars([{Var,Val}|Rest],Bindings) when is_atom(Var) ->
     join_local_and_global_vars(Rest,erl_eval:add_binding(Var,Val,Bindings));
 join_local_and_global_vars([_|Rest],Bindings) ->
     join_local_and_global_vars(Rest,Bindings);

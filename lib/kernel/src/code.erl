@@ -234,7 +234,7 @@ get_mode(Flags) ->
 %% In that case return the name of the file which contains
 %% the loaded object code
 
-which(Module) when atom(Module) ->
+which(Module) when is_atom(Module) ->
     case is_loaded(Module) of
 	false ->
 	    which2(Module);
@@ -251,7 +251,7 @@ which2(Module) ->
 which(_,_,[]) ->
     non_existing;
 which(File,Base,[Directory|Tail]) ->
-    Path = if Base == "." -> Directory;
+    Path = if Base =:= "." -> Directory;
 	      true -> filename:join(Directory, Base)
 	   end,
     case file:list_dir(Path) of
@@ -268,7 +268,7 @@ which(File,Base,[Directory|Tail]) ->
 
 %% Search the code path for a specific file. Try to locate
 %% it in the code path cache if possible.
-where_is_file(File) when list(File) ->
+where_is_file(File) when is_list(File) ->
     case call({is_cached,File}) of
 	no ->
 	    Path = get_path(),

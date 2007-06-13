@@ -194,7 +194,7 @@ create_menulist([], _Menu, _MaxLength) ->
 create_menulist([{Text, Type, Data, AccCharPos, ShortcutChar} | Rest], Menu, MaxLength) ->
     ShortcutCapitalChar = 
 	if
-	    ShortcutChar == no_char ->
+	    ShortcutChar =:= no_char ->
 		no_char;
 	    true ->
 		CharAsciiValue   = lists:nth(1, atom_to_list(ShortcutChar)),
@@ -203,7 +203,7 @@ create_menulist([{Text, Type, Data, AccCharPos, ShortcutChar} | Rest], Menu, Max
 	end,
     
     FinalText = if 
-		    ShortcutChar == no_char ->
+		    ShortcutChar =:= no_char ->
 			Text;
 		    true ->
 			Text ++ lists:duplicate(MaxLength - length(Text), " ") ++ 

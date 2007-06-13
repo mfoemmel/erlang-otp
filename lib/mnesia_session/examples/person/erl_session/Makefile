@@ -75,11 +75,8 @@ TARGET_FILES= \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += \
-	-pa $(ERL_TOP)/lib/mnesia_session/ebin \
-	-pa $(ERL_TOP)/lib/ic/ebin
-
-ERL_COMPILE_FLAGS += \
+ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/mnesia_session/ebin \
+		-pa $(ERL_TOP)/lib/ic/ebin \
 		-I ./$(GEN_OUT_DIR)
 
 
@@ -100,11 +97,11 @@ clean:
 docs:
 
 $(EBIN)/%.$(EMULATOR): $(GEN_OUT_DIR)/%.erl
-	$(ERLC) -b$(EMULATOR) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) -b$(EMULATOR) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 
 $(GEN_FILES): $(PERSON_IDL)
-	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
+	$(ERLC) $(ERL_COMPILE_FLAGS) \
 	+'{be,erl_genserv}' +'{outdir,"./gen_files"}' \
 	$(PERSON_IDL)
 

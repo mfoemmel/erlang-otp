@@ -149,17 +149,17 @@ req(Req, Arg) ->
 %% Time and Timeout is in milliseconds. Started is in microseconds.
 %%
 handle_call({apply_after, {Time, Op}, Started}, _From, Ts) 
-  when integer(Time), Time >= 0 ->
+  when is_integer(Time), Time >= 0 ->
     BRef = {Started + 1000*Time, make_ref()},
     Timer = {BRef, timeout, Op},
     {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), system_time()),
     {reply, {ok, BRef}, Ts0, Timeout};
 
 handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts) 
-  when integer(Time), Time >= 0 ->
+  when is_integer(Time), Time >= 0 ->
     %% To must be a pid or a registered name
     case get_pid(To) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    catch link(Pid),
 	    SysTime = system_time(),
 	    Ref = make_ref(),
@@ -174,7 +174,8 @@ handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts)
 	    {reply, {error, badarg}, Ts, next_timeout(Ts)}
     end;
 
-handle_call({cancel, BRef = {_Time, Ref}, _}, _From, Ts) when reference(Ref) ->
+handle_call({cancel, BRef = {_Time, Ref}, _}, _From, Ts) 
+                                           when is_reference(Ref) ->
     Ts0 = delete_ref(BRef, Ts),
     {reply, {ok, cancel}, Ts0, next_timeout(Ts0)};
 handle_call({cancel, _BRef, _}, _From, Ts) ->
@@ -367,11 +368,11 @@ system_time() ->
 send([Pid, Msg]) ->
     Pid ! Msg.
 
-get_pid(Name) when pid(Name) ->
+get_pid(Name) when is_pid(Name) ->
     Name;
 get_pid(undefined) ->
     undefined;
-get_pid(Name) when atom(Name) ->
+get_pid(Name) when is_atom(Name) ->
     get_pid(whereis(Name));
 get_pid(_) ->
     undefined.

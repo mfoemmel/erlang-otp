@@ -751,7 +751,7 @@ nods(Nods,TW) ->
 nodes_body(no_distribution,_TW) ->
     [heading("Distribution Information","distribution_info"),
      "Not alive\n"];
-nodes_body({Type,Info,Node},TW) when record(Node,nod) ->
+nodes_body({Type,Info,Node},TW) when is_record(Node,nod) ->
     %% Display only one node - used when a pid or port on a remote
     %% node is clicked.
     [heading("Remote Node","distribution_info"),

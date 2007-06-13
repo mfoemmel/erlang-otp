@@ -3,8 +3,10 @@
 
 -module(hipe_arm_frame).
 -export([frame/1]).
+
 -include("hipe_arm.hrl").
 -include("../rtl/hipe_literals.hrl").
+
 -define(LIVENESS_ALL, hipe_arm_liveness_gpr). % since we have no FP yet
 
 frame(Defun) ->

@@ -3,13 +3,13 @@
 %%----------------------------------------------------------------------
 %% File    : hipe_ssa.inc
 %% Authors : Christoffer Vikström, Daniel Deogun, and Jesper Bengtsson
-%% Created : Mar 2002
+%% Created : March 2002
 %% Purpose : Provides code which converts the code of a CFG into SSA
 %%           (Static Single Assignment) form and back.
 %%           A routine to check for SSA-ness is also provided.
 %%
 %% Major Modifications:
-%%   * Feb 2003: Per Gustafsson - added SSA checker
+%%   * Feb 2003: Per Gustafsson - added SSA checker.
 %%   * Aug 2003: Per Gustafsson - added removal of dead code.
 %%   * Feb 2004: Kostis Sagonas - made it work on RTL level too.
 %%   * Feb 2004: Tobias Lindahl - re-wrote the unconvert/1 function.
@@ -83,12 +83,12 @@ insertNewStartNode(CFG) ->
 %%----------------------------------------------------------------------
 
 place_phi(CFG, DF) ->
-    AssMap = insertParams(CFG),
-    AssMap2 = preProcess(CFG, AssMap),
-    VarList = gb_trees:to_list(AssMap2),
-    Liveness = ?LIVENESS:analyze(CFG),
-    variableTraverse(CFG, DF, gb_trees:empty(), gb_trees:empty(), 
-		     0, AssMap2, Liveness, VarList).
+  AssMap = insertParams(CFG),
+  AssMap2 = preProcess(CFG, AssMap),
+  VarList = gb_trees:to_list(AssMap2),
+  Liveness = ?LIVENESS:analyze(CFG),
+  variableTraverse(CFG, DF, gb_trees:empty(), gb_trees:empty(), 
+		   0, AssMap2, Liveness, VarList).
     
 %%----------------------------------------------------------------------
 %% Procedure : insertParams/1 
@@ -98,12 +98,12 @@ place_phi(CFG, DF) ->
 %%----------------------------------------------------------------------
 
 insertParams(CFG) ->
-    StartLabel = ?CFG:start_label(CFG),
-    Params = ?CFG:params(CFG),
-    insertParams(Params, StartLabel, gb_trees:empty()).
+  StartLabel = ?CFG:start_label(CFG),
+  Params = ?CFG:params(CFG),
+  insertParams(Params, StartLabel, gb_trees:empty()).
 
 insertParams([Param|T], StartLabel, AssMap) ->
-    insertParams(T, StartLabel, gb_trees:insert(Param, [StartLabel], AssMap));
+  insertParams(T, StartLabel, gb_trees:insert(Param, [StartLabel], AssMap));
 insertParams([], _, AssMap) -> AssMap.
 
 %%----------------------------------------------------------------------
@@ -115,7 +115,7 @@ insertParams([], _, AssMap) -> AssMap.
 %%----------------------------------------------------------------------
 
 preProcess(CFG, AssMap) -> 
-    traverseLabels(CFG, ?CFG:labels(CFG), AssMap).
+  traverseLabels(CFG, ?CFG:labels(CFG), AssMap).
 
 %%----------------------------------------------------------------------
 %% Procedure : traverseLabels/3
@@ -128,9 +128,9 @@ preProcess(CFG, AssMap) ->
 %%----------------------------------------------------------------------
 
 traverseLabels(CFG, [Label|T], AssMap) ->
-    Code = get_code_from_label(CFG, Label),
-    NewVarList = getAssignments(Code),
-    traverseLabels(CFG, T, updateAssMap(NewVarList, Label, AssMap)); 
+  Code = get_code_from_label(CFG, Label),
+  NewVarList = getAssignments(Code),
+  traverseLabels(CFG, T, updateAssMap(NewVarList, Label, AssMap)); 
 traverseLabels(_, [], AssMap) -> AssMap. 
 
 %%----------------------------------------------------------------------
@@ -145,7 +145,7 @@ traverseLabels(_, [], AssMap) -> AssMap.
 getAssignments(InstrList) -> getAssignments(InstrList, []).
 
 getAssignments([Instr|T], VarList) ->
-    getAssignments(T, defs_to_rename(Instr) ++ VarList);
+  getAssignments(T, defs_to_rename(Instr) ++ VarList);
 getAssignments([], VarList) -> VarList.
 
 %%----------------------------------------------------------------------
@@ -159,15 +159,15 @@ getAssignments([], VarList) -> VarList.
 %%----------------------------------------------------------------------
 
 updateAssMap([AssVar|T], Label, AssMap) ->
-    Lst = getAssMap(AssVar, AssMap),
-    updateAssMap(T, Label, gb_trees:enter(AssVar, [Label|Lst], AssMap));
+  Lst = getAssMap(AssVar, AssMap),
+  updateAssMap(T, Label, gb_trees:enter(AssVar, [Label|Lst], AssMap));
 updateAssMap([], _, AssMap) -> AssMap.    
 
 getAssMap(AssVar, AssMap) ->
-    case gb_trees:lookup(AssVar, AssMap) of
-	{value, L} -> L;
-	none -> []
-    end.
+  case gb_trees:lookup(AssVar, AssMap) of
+    {value, L} -> L;
+    none -> []
+  end.
 
 %%----------------------------------------------------------------------
 %% Procedure : variableTraverse/7
@@ -185,15 +185,15 @@ getAssMap(AssVar, AssMap) ->
 
 variableTraverse(CFG, DFMap, HasAlready, Work, 
 		 IterCount, AssMap, Liveness, [{Var,_}|VarLst]) ->
-    IterCount2 = IterCount + 1,	
-    DefLst = getAssMap(Var, AssMap),
-    {Work2, WorkLst2} = workListBuilder(DefLst, Work, [], IterCount2),
-    {CFG2, HasAlready2, Work3} =  doWork(CFG, DFMap, HasAlready, 
-					 Work2, IterCount2, WorkLst2,
-					 Var, Liveness),
-    variableTraverse(CFG2, DFMap, HasAlready2, Work3, 
-		     IterCount2, AssMap, Liveness, VarLst);
-variableTraverse(CFG,_,_,_,_,_,_,[]) -> CFG.
+  IterCount2 = IterCount + 1,	
+  DefLst = getAssMap(Var, AssMap),
+  {Work2, WorkLst2} = workListBuilder(DefLst, Work, [], IterCount2),
+  {CFG2, HasAlready2, Work3} = doWork(CFG, DFMap, HasAlready, 
+				      Work2, IterCount2, WorkLst2,
+				      Var, Liveness),
+  variableTraverse(CFG2, DFMap, HasAlready2, Work3, 
+		   IterCount2, AssMap, Liveness, VarLst);
+variableTraverse(CFG, _, _, _, _, _, _, []) -> CFG.
 
 %%----------------------------------------------------------------------
 %% Procedure : workListBuilder/4
@@ -206,22 +206,22 @@ variableTraverse(CFG,_,_,_,_,_,_,[]) -> CFG.
 %%----------------------------------------------------------------------
 
 workListBuilder([Node|T], Work, WorkLst, IterCount) ->
-    case getCount(Node, Work) of
-	0 ->
-	    Work2 = gb_trees:enter(Node, IterCount, Work),
-	    workListBuilder(T, Work2, [Node|WorkLst], IterCount);
-	_ ->
-	    Work2 = gb_trees:enter(Node, IterCount, Work),
-	    workListBuilder(T, Work2, [Node|WorkLst], IterCount)
-	end;
+  case getCount(Node, Work) of
+    0 ->
+      Work2 = gb_trees:enter(Node, IterCount, Work),
+      workListBuilder(T, Work2, [Node|WorkLst], IterCount);
+    _ ->
+      Work2 = gb_trees:enter(Node, IterCount, Work),
+      workListBuilder(T, Work2, [Node|WorkLst], IterCount)
+  end;
 workListBuilder([], Work, WorkLst, _IterCount) ->
-    {Work, WorkLst}.
+  {Work, WorkLst}.
 
 getCount(Key, Dict) ->
-    case gb_trees:lookup(Key, Dict) of
-	{value, V} -> V;
-	none -> 0
-    end.
+  case gb_trees:lookup(Key, Dict) of
+    {value, V} -> V;
+    none -> 0
+  end.
 
 %%----------------------------------------------------------------------
 %% Procedure : doWork/7
@@ -239,14 +239,14 @@ getCount(Key, Dict) ->
 
 doWork(CFG, DFMap, HasAlready, Work, IterCount,
        [Node|WorkLst], Var, Liveness) ->
-    DFofX = hipe_dominators:domFrontier_get(Node, DFMap),
-    {CFG2, HasAlready2, Work2, WorkLst2} =
-	checkPhiNeeds(CFG, DFofX, HasAlready, Work,
-		      IterCount, WorkLst, Var, Liveness),
-    doWork(CFG2, DFMap, HasAlready2, Work2,
-	   IterCount, WorkLst2, Var, Liveness);
+  DFofX = hipe_dominators:domFrontier_get(Node, DFMap),
+  {CFG2, HasAlready2, Work2, WorkLst2} =
+    checkPhiNeeds(CFG, DFofX, HasAlready, Work,
+		  IterCount, WorkLst, Var, Liveness),
+  doWork(CFG2, DFMap, HasAlready2, Work2,
+	 IterCount, WorkLst2, Var, Liveness);
 doWork(CFG, _, HasAlready, Work, _, [], _, _) ->
-    {CFG, HasAlready, Work}.    
+  {CFG, HasAlready, Work}.    
 
 %%----------------------------------------------------------------------
 %% Procedure : checkPhiNeeds/7
@@ -264,33 +264,33 @@ doWork(CFG, _, HasAlready, Work, _, [], _, _) ->
 
 checkPhiNeeds(CFG, [Node|DFofX], HasAlready, Work,
 	      IterCount, WorkLst, Var, Liveness) ->
-    case getCount(Node, HasAlready) < IterCount of
+  case getCount(Node, HasAlready) < IterCount of
+    true ->
+      LiveIn = ?LIVENESS:livein(Liveness, Node),
+      case lists:member(Var, LiveIn) of
 	true ->
-	    LiveIn = ?LIVENESS:livein(Liveness, Node),
-	    case lists:member(Var, LiveIn) of
-		true ->
-		    CFG2 = insertPhiCode(CFG, Node, Var),
-		    HasAlready2 = gb_trees:enter(Node, IterCount, HasAlready),
-		    case getCount(Node, Work) < IterCount of
-			true ->
-			    Work2 = gb_trees:enter(Node, IterCount, Work),
-			    WorkLst2 = [Node|WorkLst],
-			    checkPhiNeeds(CFG2, DFofX, HasAlready2, Work2, 
-					  IterCount, WorkLst2, Var, Liveness);
-			false ->
-			    checkPhiNeeds(CFG2, DFofX, HasAlready2, Work, 
-					  IterCount, WorkLst, Var, Liveness)
-		    end;
-		false ->
-		    checkPhiNeeds(CFG, DFofX, HasAlready, Work, IterCount, 
-				  WorkLst, Var, Liveness)
-	    end;
+	  CFG2 = insertPhiCode(CFG, Node, Var),
+	  HasAlready2 = gb_trees:enter(Node, IterCount, HasAlready),
+	  case getCount(Node, Work) < IterCount of
+	    true ->
+	      Work2 = gb_trees:enter(Node, IterCount, Work),
+	      WorkLst2 = [Node|WorkLst],
+	      checkPhiNeeds(CFG2, DFofX, HasAlready2, Work2, 
+			    IterCount, WorkLst2, Var, Liveness);
+	    false ->
+	      checkPhiNeeds(CFG2, DFofX, HasAlready2, Work, 
+			    IterCount, WorkLst, Var, Liveness)
+	  end;
 	false ->
-	    checkPhiNeeds(CFG, DFofX, HasAlready, Work, IterCount, 
-			  WorkLst, Var, Liveness)
-    end;
+	  checkPhiNeeds(CFG, DFofX, HasAlready, Work, IterCount, 
+			WorkLst, Var, Liveness)
+      end;
+    false ->
+      checkPhiNeeds(CFG, DFofX, HasAlready, Work, IterCount, 
+		    WorkLst, Var, Liveness)
+  end;
 checkPhiNeeds(CFG, [], HasAlready, Work, _, WorkLst, _, _) ->
-    {CFG, HasAlready, Work, WorkLst}.	
+  {CFG, HasAlready, Work, WorkLst}.	
 
 %%----------------------------------------------------------------------
 %% Procedure : insertPhiCode/3
@@ -398,7 +398,7 @@ renameUses(Statement, Current) ->
 %% Returns   : An updated statement.
 %%---------------------------------------------------------------------- 
 
-updateStatementUses([Var|Vars] = _VarList, Statement, Current) ->
+updateStatementUses([Var|Vars], Statement, Current) ->
   NewVar = {colored,gb_trees:get(Var, Current)},
   Statement2 = ?CODE:subst_uses([{Var,NewVar}], Statement),
   updateStatementUses(Vars, Statement2, Current);
@@ -434,12 +434,6 @@ unColor([], Statement) ->
 %%----------------------------------------------------------------------
 
 renameDefs(Statement, Current) ->
-%   case ?CODE of
-%     hipe_rtl ->
-%       io:format("Statement = ~w\n  Current = ~w\n",
-% 		[Statement,Current]);
-%     _ -> ok
-%   end,
   VarList = defs_to_rename(Statement),
   updateStatementDefs(VarList, Statement, Current).
 

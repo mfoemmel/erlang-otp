@@ -42,6 +42,10 @@
 	 listen_prim/5, proxy_join_prim/3, peername_prim/2, setnodelay_prim/3, 
 	 sockname_prim/2]).
 
+-export([dump/0, dump/1]).
+-export([enable_debug/0, disable_debug/0, set_debug/1]).
+-export([enable_debugmsg/0, disable_debugmsg/0, set_debugmsg/1]).
+
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 code_change/3, terminate/2]).
@@ -207,6 +211,40 @@ sockname_prim(ServerName, Fd) ->
 version() ->
     gen_server:call(ssl_server, version, infinity).
 
+
+enable_debug() ->
+    set_debug(true).
+
+disable_debug() ->
+    set_debug(false).
+
+set_debug(Bool) ->
+    set_debug(Bool, infinity).
+
+set_debug(Bool, Timeout) when is_boolean(Bool) ->
+    Req = {set_debug, Bool, self()},
+    gen_server:call(ssl_server, Req, Timeout).
+                
+enable_debugmsg() ->
+    set_debugmsg(true).
+
+disable_debugmsg() ->
+    set_debugmsg(false).
+
+set_debugmsg(Bool) ->
+    set_debugmsg(Bool, infinity).
+
+set_debugmsg(Bool, Timeout) when is_boolean(Bool) ->
+    Req = {set_debugmsg, Bool, self()},
+    gen_server:call(ssl_server, Req, Timeout).
+
+dump() ->
+    dump(infinity).
+
+dump(Timeout) ->
+    Req = {dump, self()}, 
+    gen_server:call(ssl_server, Req, Timeout).
+
 %%
 %% init
 %%
@@ -284,7 +322,7 @@ handle_call({transport_accept, Broker, ListenFd, Flags}, From, St) ->
 %%
 handle_call({ssl_accept, Fd, Flags}, From, St) ->
     case replace_from_by_fd(Fd, St#st.cons, From) of
-	{ok, _, Cons} ->
+	{ok, _, Cons} = _Rep ->
 	    send_cmd(St#st.port, ?SSL_ACCEPT, [int32(Fd), Flags, 0]),
 	    %% We reply when we get SSL_ACCEPT_REP or ASYNC_ACCEPT_ERR
 	    {noreply, St#st{cons = Cons}};
@@ -478,6 +516,45 @@ handle_call(version, From, St) ->
     debug(St, "version: from = ~w~n", [From]),
     {reply, {ok, {St#st.compvsn, St#st.libvsn}}, St};
 
+%%
+%% dump
+%%
+handle_call({dump, Broker}, _From, St) ->
+    debug(St, "dump: broker = ~w", [Broker]),
+    Port = St#st.port,
+    send_cmd(Port, ?DUMP_CMD, []),
+    {reply, ok, St};
+
+%%
+%% set_debug
+%%
+handle_call({set_debug, Bool, Broker}, _From, St) ->
+    debug(St, "set_debug: broker = ~w", [Broker]),
+   Value = case Bool of 
+                true ->
+                    1;
+                false ->
+                    0
+            end,
+    Port = St#st.port,
+    send_cmd(Port, ?DEBUG_CMD, [Value]),
+    {reply, ok, St};
+
+%%
+%% set_debugmsg
+%%
+handle_call({set_debugmsg, Bool, Broker}, _From, St) ->
+    debug(St, "set_debugmsg: broker = ~w", [Broker]),
+    Value = case Bool of 
+                true ->
+                    1;
+                false ->
+                    0
+            end,
+    Port = St#st.port,
+    send_cmd(Port, ?DEBUGMSG_CMD, [Value]),
+    {reply, ok, St};
+
 handle_call(Request, _From, St) ->
     debug(St, "unexpected call: ~w~n", [Request]),
     Reply = {error, {badcall, Request}},
@@ -541,14 +618,14 @@ handle_info({Port, {data, Bin}}, St)
 	%% ssl_accept
 	%%
 	?SSL_ACCEPT_ERR when size(Bin) >= 5 ->
-	    {ListenFd, Reason} = decode_msg(Bin, [int32, atom]),
+	    {Fd, Reason} = decode_msg(Bin, [int32, atom]),
 	    debug(St, "ssl_accept_err: listenfd = ~w, "
-		  "reason = ~w~n", [ListenFd, Reason]),
+		  "reason = ~w~n", [Fd, Reason]),
 	    %% JC: remove this?
-	    case delete_last_by_fd(ListenFd, St#st.paccepts) of
-		{ok, {_, _, From}, PAccepts} ->
+	    case delete_last_by_fd(Fd, St#st.cons) of
+		{ok, {_, _, From}, Cons} ->
 		    gen_server:reply(From, {error, Reason}),
-		    {noreply, St#st{paccepts = PAccepts}};
+		    {noreply, St#st{cons = Cons}};
 		_Other ->
 		    %% Already closed
 		    {noreply, St}

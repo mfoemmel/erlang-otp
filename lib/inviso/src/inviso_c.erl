@@ -163,10 +163,10 @@ handle_call(list_logs,_From,LD) ->
     {reply,adapt_reply(LD,do_list_logs(all,LD)),LD};
 handle_call({list_logs,TracerDataOrNodesList},_From,LD) ->
     {reply,adapt_reply(LD,do_list_logs(TracerDataOrNodesList,LD)),LD};
-handle_call({fetch_log,Spec,Dest,Prefix},From,LD) ->
+handle_call({fetch_log,ToNode,Spec,Dest,Prefix},From,LD) ->
     case LD#state.distributed of
 	true ->                              % It is a distributed system.
-	    do_fetch_log(Spec,Dest,Prefix,From,LD),
+	    do_fetch_log(ToNode,Spec,Dest,Prefix,From,LD),
 	    {noreply,LD};                    % Reply will come from collector pid.
 	false ->                             % Stupidity! you dont want this!
 	    {reply,{error,not_distributed},LD}
@@ -571,17 +571,17 @@ do_list_logs_2(Other,_LD,_Replies) ->
 %% Function fetching logfiles using distributed erlang. This function does not
 %% return anything significant. This since the reply to the client is always
 %% sent by the CollectPid unless there is badarg fault detected before the
-%% CollectPid is spawned.. Note that this function sends a list of fetchers from
+%% CollectPid is spawned. Note that this function sends a list of fetchers from
 %% which the CollectPid shall expect replies.
 %% We try to catch some bad arguments like Destination and Prefix not being
 %% strings. However the fact that they are lists does not guarantee they are
 %% proper strings.
-do_fetch_log(all,Dest,Prefix,From,LD) ->
-    do_fetch_log(started_trace_nodes(all,LD),Dest,Prefix,From,LD);
-do_fetch_log(Specs,Dest,Prefix,From,LD) when list(Dest),list(Prefix) ->
-    CollectPid=spawn_link(?MODULE,log_rec_init,[self(),Dest,Prefix,From]),
+do_fetch_log(ToNode,all,Dest,Prefix,From,LD) ->
+    do_fetch_log(ToNode,started_trace_nodes(all,LD),Dest,Prefix,From,LD);
+do_fetch_log(ToNode,Specs,Dest,Prefix,From,LD) when list(Dest),list(Prefix) ->
+    CollectPid=spawn_link(ToNode,?MODULE,log_rec_init,[self(),Dest,Prefix,From]),
     do_fetch_log_2(Specs,LD,CollectPid,[],[]);
-do_fetch_log(_,Dest,Prefix,From,_LD) ->
+do_fetch_log(_ToNode,_Specs,Dest,Prefix,From,_LD) ->
     gen_server:reply(From,{error,{badarg,[Dest,Prefix]}}).
 
 do_fetch_log_2([{Node,Spec}|Rest],LD,CollectPid,Fetchers,Replies) ->
@@ -967,9 +967,7 @@ is_started(_,_) ->
 %% Help function replacing or adding an entry for a node. Works on either a list
 %% of #node or a loopdata structure. Returns a new list of #node or a loopdata struct.
 set_node_rec(Rec,LD=#state{nodes=NodeList}) ->
-    LD#state{nodes=set_node_rec_2(Rec,NodeList)};
-set_node_rec(Rec,NodeList) when list(NodeList) ->
-    set_node_rec_2(Rec,NodeList).
+    LD#state{nodes=set_node_rec_2(Rec,NodeList)}.
 
 set_node_rec_2(Rec,[]) ->
     [Rec];
@@ -1018,6 +1016,12 @@ delete_node_rec_2(Node,[NRec|Tail]) ->
 %% It is responsible for sending the reply back to the control component
 %% client. If a runtime component becomes suspended, the CollectPid is
 %% alerted by the DOWN message.
+%% Note that it may take some time before this process responds back to the client.
+%% Therefore the client must wait for 'infinity'. The job of transferring the
+%% files can be costly. Therefore it is a good idea to stop if no one is really
+%% interested in the result. This collector process monitors the From client in
+%% order to learn if the job can be cancelled. That will also be a possibility
+%% for a client to willfully cancel a fetch job.
 %% =============================================================================
 
 %% Intitial function on which the control component spawns. Note that the start
@@ -1026,53 +1030,57 @@ delete_node_rec_2(Node,[NRec|Tail]) ->
 %% it can expect files from.
 %% InitialReplies: contains {Node,Result} for nodes from where there will be no
 %%   files, but which must be part of the final reply.
-log_rec_init(Parent,Dest,Prefix,From) ->
+log_rec_init(Parent,Dest,Prefix,From={ClientPid,_}) ->
     receive
 	{?MODULE,Parent,Fetchers,InitialReplies} ->
 	    RTs=lists:map(fun({N,F})->
 				  {N,erlang:monitor(process,F),void,void,void}
 			  end,
 			  Fetchers),
-	    case log_rec_loop(Dest,Prefix,RTs,InitialReplies) of
+	    CMRef=erlang:monitor(process,ClientPid), % Monitor the client.
+	    case log_rec_loop(Dest,Prefix,RTs,InitialReplies,CMRef) of
 		Reply when list(Reply) ->   % It is an ok value.
 		    gen_server:reply(From,{ok,Reply});
 		{error,Reason} ->
-		    gen_server:reply(From,{error,Reason})
+		    gen_server:reply(From,{error,Reason});
+		false ->                    % The client terminated, no response.
+		    true                    % Simply terminate, fetchers will notice.
 	    end
     end.
 
-log_rec_loop(_Dest,_Prefix,[],Replies) ->   % All nodes done!
+log_rec_loop(_Dest,_Prefix,[],Replies,_CMRef) -> % All nodes done!
     Replies;                                % This is the final reply.
-log_rec_loop(Dest,Prefix,RTs,Replies) ->
+log_rec_loop(Dest,Prefix,RTs,Replies,CMRef) ->
     receive
 	{Node,open,{FType,RemoteFName}} ->
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,MRef,_,_,_}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_open(Dest,Prefix,Node,MRef,FType,RemoteFName,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
-	{Node,payload,Bin} ->               % A chunk of data to the file.
+	{Node,payload,Bin,FPid} ->          % A chunk of data from a fetcher.
+	    FPid ! {self(),chunk_ack},      % For flow control.
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,_,_,_,void}} ->   % Node has no file open here.
-		    log_rec_loop(Dest,Prefix,RTs,Replies); % Simply ignore payload.
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef); % Simply ignore payload.
 		{value,{_Node,MRef,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_payload(Node,MRef,FType,FName,FD,Bin,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->                    % Node is not part of transfere.
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	{Node,end_of_file} ->
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,MRef,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_eof(Node,MRef,FType,FName,FD,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	{Node,end_of_transmission} ->       % This runtime is done!
 	    case lists:keysearch(Node,1,RTs) of
@@ -1080,9 +1088,10 @@ log_rec_loop(Dest,Prefix,RTs,Replies) ->
 		    erlang:demonitor(MRef),
 		    log_rec_loop(Dest,Prefix,
 				 lists:keydelete(Node,1,RTs),
-				 log_rec_mkreply(Node,complete,Replies));
+				 log_rec_mkreply(Node,complete,Replies),
+				 CMRef);
 		false ->                    % Strange, not one of our nodes.
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	{Node,incomplete} ->
 	    case lists:keysearch(Node,1,RTs) of
@@ -1090,42 +1099,33 @@ log_rec_loop(Dest,Prefix,RTs,Replies) ->
 		    erlang:demonitor(MRef),
 		    {NewRTs,NewReplies}=
 			log_rec_incomplete(Node,FType,FName,FD,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->                    % Not our, or not anylonger.
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	{Node,error,Reason} ->              % Remote file read_error.
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,MRef,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_error(Node,MRef,FType,FName,FD,RTs,Reason,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
-	{Node,open_error,FType,RemoteFName,Reason} ->
-	    case lists:keysearch(Node,1,RTs) of
-		{value,_} ->
-		    NewReplies=
-			log_rec_addreply(Node,
-					 FType,
-					 {error,{file_open,{Reason,RemoteFName}}},
-					 Replies),
-		    log_rec_loop(Dest,Prefix,RTs,NewReplies);
-		false ->
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
-	    end;
-	{'DOWN',MRef,process,_P,_Info} ->
-	    case lists:keysearch(MRef,2,RTs) of
+	{'DOWN',CMRef,process,_,_} ->       % The client got tired waiting.
+	    log_rec_cancel(Dest,RTs,Replies), % Close and remove all files.
+	    false;                          % Indicate no response message.
+	{'DOWN',Ref,process,_P,_Info} ->
+	    case lists:keysearch(Ref,2,RTs) of
 		{value,{Node,_,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_incomplete(Node,FType,FName,FD,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies);
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
 		false ->                    % Not our, or not anylonger.
-		    log_rec_loop(Dest,Prefix,RTs,Replies)
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	_ ->
-	    log_rec_loop(Dest,Prefix,RTs,Replies)
+	    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
     end.
 
 %% Help function opening a new target file on the receiver. It returns
@@ -1203,7 +1203,7 @@ log_rec_error(Node,MRef,FType,FName,FD,RTs,Reason,Replies) ->
     file:close(FD),
     NewRTs=lists:keyreplace(Node,1,RTs,{Node,MRef,void,void,void}),
     {NewRTs,log_rec_addreply(Node,FType,{error,{truncated,{Reason,FName}}},Replies)}.
-
+%% -----------------------------------------------------------------------------
 
 %% Help function adding a reply to the list of replies.
 %% Replies is a list {Node,FType,Reply} for each file handled, sucessfully or not.
@@ -1230,6 +1230,60 @@ log_rec_mkreply_node_ftype(Node,[Reply|Rest],Replies,Ti,Trace) ->
     log_rec_mkreply_node_ftype(Node,Rest,[Reply|Replies],Ti,Trace);
 log_rec_mkreply_node_ftype(_,[],Replies,Ti,Trace) ->
     {Replies,Ti,Trace}.
+%% -----------------------------------------------------------------------------
+
+%% If the fetching job shall be cancelled, we must close all open files and
+%% remove them including all already closed files. Returns nothing significant.
+log_rec_cancel(Dest,RTs,Replies) ->
+    log_rec_cancel_open(Dest,RTs),          % First close and remove all open files.
+    log_rec_cancel_finished(Dest,Replies).  % Remove all already closed files.
+
+log_rec_cancel_open(Dest,[{_Node,_MRef,_FType,_FName,void}|Rest]) ->
+    log_rec_cancel_open(Dest,Rest);         % There is no open file to close.
+log_rec_cancel_open(Dest,[{_Node,_MRef,_FType,FName,FD}|Rest]) ->
+    file:close(FD),
+    catch file:delete(filename:join(Dest,FName)), % Will just try to do my best.
+    log_rec_cancel_open(Dest,Rest);
+log_rec_cancel_open(_Dest,[]) ->
+    true.
+
+log_rec_cancel_finished(Dest,[{_N,_FT,Reply}|Rest]) ->
+    [FName]=log_rec_cancel_finished_get_fname([Reply]),
+    catch file:delete(filename:join(Dest,FName)),
+    log_rec_cancel_finished(Dest,Rest);
+log_rec_cancel_finished(Dest,[{_N,{_Conclusion,[{_,Replies1},{_,Replies2}]}}|Rest]) ->
+    FNames1=log_rec_cancel_finished_get_fname(Replies1),
+    lists:foreach(fun(FName)->
+			  catch file:delete(filename:join(Dest,FName))
+		  end,
+		  FNames1),
+    FNames2=log_rec_cancel_finished_get_fname(Replies2),
+    lists:foreach(fun(FName)->
+			  catch file:delete(filename:join(Dest,FName))
+		  end,
+		  FNames2),
+    log_rec_cancel_finished(Dest,Rest);
+log_rec_cancel_finished(_Dest,[]) ->
+    true.
+
+%% Help function going through all possible reply values for a file. So
+%% consequently there must be a clause here for every possible log_rec_addreply
+%% call above. Returns a list of filenames that shall be removed in order to
+%% restore the disk since the fetch job is cancelled.
+log_rec_cancel_finished_get_fname([{error,{file_open,{_,FName}}}|Rest]) ->
+    [FName|log_rec_cancel_finished_get_fname(Rest)];
+log_rec_cancel_finished_get_fname([{error,{file_write,{_,FName}}}|Rest]) ->
+    [FName|log_rec_cancel_finished_get_fname(Rest)];
+log_rec_cancel_finished_get_fname([{ok,FName}|Rest]) ->
+    [FName|log_rec_cancel_finished_get_fname(Rest)];
+log_rec_cancel_finished_get_fname([{error,{truncated,{_,FName}}}|Rest]) ->
+    [FName|log_rec_cancel_finished_get_fname(Rest)];
+log_rec_cancel_finished_get_fname([{error,{truncated,FName}}|Rest]) ->
+    [FName|log_rec_cancel_finished_get_fname(Rest)];
+log_rec_cancel_finished_get_fname([_|Rest]) ->       % This shall not happend.
+    log_rec_cancel_finished_get_fname(Rest);
+log_rec_cancel_finished_get_fname([]) ->
+    [].
 %% -----------------------------------------------------------------------------
 
 %% EOF

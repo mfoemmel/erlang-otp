@@ -602,7 +602,7 @@ record_update(R, Name, Fs, Us0, St0) ->
     %% Try to be intelligent about which method of updating record to use.
     {Update,St} =
         if
-            Nu == 0 -> {R,St2};                 %No fields updated
+            Nu =:= 0 -> {R,St2};                 %No fields updated
             Nu =< Nc ->                         %Few fields updated
                 {record_setel(Var, Name, Fs, Us), St2};
             true ->                           %The wide area inbetween
@@ -709,9 +709,9 @@ expr_bin(Es0, St) ->
 
 bin_element({bin_element,Line,Expr,Size,Type}, {Es,St0}) ->
     {Expr1,St1} = expr(Expr, St0),
-    {Size1,St2} = if Size == default -> {default,St1};
-                             true -> expr(Size, St1)
-                          end,
+    {Size1,St2} = if Size =:= default -> {default,St1};
+                     true -> expr(Size, St1)
+                  end,
     {[{bin_element,Line,Expr1,Size1,Type} | Es],St2}.
 
 new_var(L, St0) ->

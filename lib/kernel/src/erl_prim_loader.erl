@@ -71,11 +71,11 @@
 %%% Interface Functions. 
 %%% --------------------------------------------------------
 
-start(Id, Pgm, Hosts) when atom(Hosts) ->
+start(Id, Pgm, Hosts) when is_atom(Hosts) ->
     start(Id, Pgm, [Hosts]);
 start(Id, Pgm0, Hosts) ->
     Pgm = if
-	      atom(Pgm0) ->
+	      is_atom(Pgm0) ->
 		  atom_to_list(Pgm0);
 	      true ->
 		  Pgm0
@@ -140,7 +140,7 @@ init_ack(Pid) ->
     Pid ! {self(),ok}.
 
 %% -> ok
-set_path(Paths) when list(Paths) ->
+set_path(Paths) when is_list(Paths) ->
     request({set_path,Paths}).
 
 %% -> {ok,Paths}
@@ -148,7 +148,7 @@ get_path() ->
     request({get_path,[]}).
 
 %% -> {ok,BinFile,File} | error
-get_file(File) when atom(File) ->
+get_file(File) when is_atom(File) ->
     get_file(atom_to_list(File));
 get_file(File) ->
     check_file_result(get_file, File, request({get_file,File})).
@@ -207,8 +207,8 @@ check_file_result(Func, Target, {error,Reason}) ->
 			      ""
 		      end,
 	    TargetStr =
-		if atom(Target) -> atom_to_list(Target);
-		   list(Target) -> Target;
+		if is_atom(Target) -> atom_to_list(Target);
+		   is_list(Target) -> Target;
 		   true -> []
 		end,
 	    Report = 
@@ -236,7 +236,7 @@ check_file_result(_, _, Other) ->
 
 loop(State, Parent, Paths) ->
     receive
-	{Pid,Req} when pid(Pid) ->
+	{Pid,Req} when is_pid(Pid) ->
 	    {Resp,State2,Paths2} =
 		case Req of
 		    {set_path,NewPaths} ->
@@ -264,7 +264,7 @@ loop(State, Parent, Paths) ->
 		    _Other ->
 			{ignore,State,Paths}
 		end,
-	    if Resp == ignore -> ok;
+	    if Resp =:= ignore -> ok;
 	       true -> Pid ! {self(),Resp}
 	    end,
 	    loop(State2, Parent, Paths2);
@@ -413,7 +413,7 @@ get_from_port_efile1(State, File, Paths) ->
     case absolute_filename(File) of
 	true ->					% get absolute file name.
 	    get_from_port_efile(File, State);
-	false when Paths == [] ->		% get plain file name.
+	false when Paths =:= [] ->		% get plain file name.
 	    get_from_port_efile(File, State);
 	false ->				% use paths.
 	    get_from_port_efile2(File, Paths, State)
@@ -461,7 +461,7 @@ efile_stop_port(#state{data=Port}=State) ->
     prim_file:close(Port),
     State#state{data=noport}.
 
-efile_exit_port(State, Port, Reason) when State#state.data == Port ->
+efile_exit_port(State, Port, Reason) when State#state.data =:= Port ->
     exit({port_died,Reason});
 efile_exit_port(State, _Port, _Reason) ->
     State.
@@ -565,7 +565,7 @@ find_collect(U,Retry,AL,Delay,Acc) ->
 sleep(Time) ->
     receive after Time -> ok end.
 
-inet_exit_port(State, Port, _Reason) when State#state.data == Port ->
+inet_exit_port(State, Port, _Reason) when State#state.data =:= Port ->
     State#state { data = noport, timeout = infinity };
 inet_exit_port(State, _, _) ->
     State.
@@ -573,7 +573,7 @@ inet_exit_port(State, _, _) ->
 
 inet_timeout_handler(State, _Pid) ->
     Tcp = State#state.data,
-    if port(Tcp) -> ll_close(Tcp);
+    if is_port(Tcp) -> ll_close(Tcp);
        true -> ok
     end,
     State#state { timeout = infinity, data = noport }.
@@ -583,7 +583,7 @@ get_from_port_inet(State, File, Paths) ->
     case absolute_filename(File) of
 	true ->					% get absolute file name.
 	    inet_send_and_rcv({get,File}, File, State);
-	false when Paths == [] ->		% get plain file name.
+	false when Paths =:= [] ->		% get plain file name.
 	    inet_send_and_rcv({get,File}, File, State);
 	false ->				% use paths.
 	    get_from_port_inet1(File, Paths, State)
@@ -604,7 +604,7 @@ get_from_port_inet1(File, [P | Paths], State) ->
 get_from_port_inet1(_File, [], State) ->
     {{error,file_not_found},State}.
 
-inet_send_and_rcv(Msg, Tag, State) when State#state.data == noport ->
+inet_send_and_rcv(Msg, Tag, State) when State#state.data =:= noport ->
     {ok,Tcp} = find_master(State#state.hosts),     %% reconnect
     inet_send_and_rcv(Msg, Tag, State#state { data = Tcp,
 					      timeout = ?IDLE_TIMEOUT });
@@ -743,7 +743,7 @@ send_all(U, [IP | AL], Cmd) ->
     send_all(U, AL, Cmd);
 send_all(_U, [], _) -> ok.
 
-concat([A|T]) when atom(A) ->			%Atom
+concat([A|T]) when is_atom(A) ->			%Atom
     atom_to_list(A) ++ concat(T);
 concat([C|T]) when C >= 0, C =< 255 ->
     [C|concat(T)];
@@ -756,7 +756,7 @@ member(X, [X|_]) -> true;
 member(X, [_|Y]) -> member(X, Y);
 member(_X, [])    -> false.
 
-keymember(X, I, [Y | _]) when element(I,Y) == X -> true;
+keymember(X, I, [Y | _]) when element(I,Y) =:= X -> true;
 keymember(X, I, [_ | T]) -> keymember(X, I, T);
 keymember(_X, _I, []) -> false.
 
@@ -773,9 +773,9 @@ keyins(X, _I, []) -> [X].
 min(X, Y) when X < Y -> X;
 min(_X, Y) -> Y.
 
-to_strs([P|Paths]) when atom(P) ->
+to_strs([P|Paths]) when is_atom(P) ->
     [atom_to_list(P)|to_strs(Paths)];
-to_strs([P|Paths]) when list(P) ->
+to_strs([P|Paths]) when is_list(P) ->
     [P|to_strs(Paths)];
 to_strs([_|Paths]) ->
     to_strs(Paths);
@@ -784,8 +784,8 @@ to_strs([]) ->
 
 %% Parse list of ipv4 addresses 
 ipv4_list([H | T]) ->
-    IPV = if atom(H) -> ipv4_address(atom_to_list(H));
-	     list(H) -> ipv4_address(H);
+    IPV = if is_atom(H) -> ipv4_address(atom_to_list(H));
+	     is_list(H) -> ipv4_address(H);
 	     true -> {error,einal}
 	  end,
     case IPV of

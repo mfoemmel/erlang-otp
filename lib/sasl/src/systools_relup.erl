@@ -437,8 +437,8 @@ extract_filename(N) -> to_list(N).
 extract_description({_N, D}) -> D;
 extract_description(_) -> [].
 
-to_list(X) when atom(X) -> atom_to_list(X);
-to_list(X) when list(X) -> X.
+to_list(X) when is_atom(X) -> atom_to_list(X);
+to_list(X) when is_list(X) -> X.
 
 
 %% write_relup_file(Relup, Opts) -> {ok. Relup}
@@ -529,7 +529,7 @@ format_error(Error) ->
     io:format("~p~n", [Error]).
 
 
-print_warnings(Ws) when list(Ws) ->
+print_warnings(Ws) when is_list(Ws) ->
     lists:foreach(fun(W) -> print_warning(W) end, Ws);
 print_warnings(W) ->
     print_warning(W).

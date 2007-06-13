@@ -24,7 +24,6 @@ ra_insn(I, Map) ->
     #load{} -> ra_load(I, Map);
     #ldrsb{} -> ra_ldrsb(I, Map);
     #move{} -> ra_move(I, Map);
-    #mul{} -> ra_mul(I, Map);
     #pseudo_call{} -> ra_pseudo_call(I, Map);
     #pseudo_li{} -> ra_pseudo_li(I, Map);
     #pseudo_move{} -> ra_pseudo_move(I, Map);
@@ -60,12 +59,6 @@ ra_move(I=#move{dst=Dst,am1=Am1}, Map) ->
   NewDst = ra_temp(Dst, Map),
   NewAm1 = ra_am1(Am1, Map),
   I#move{dst=NewDst,am1=NewAm1}.
-
-ra_mul(I=#mul{dst=Dst,src1=Src1,src2=Src2}, Map) ->
-  NewDst = ra_temp(Dst, Map),
-  NewSrc1 = ra_temp(Src1, Map),
-  NewSrc2 = ra_temp(Src2, Map),
-  I#mul{dst=NewDst,src1=NewSrc1,src2=NewSrc2}.
 
 ra_pseudo_call(I=#pseudo_call{funv=FunV}, Map) ->
   NewFunV = ra_funv(FunV, Map),

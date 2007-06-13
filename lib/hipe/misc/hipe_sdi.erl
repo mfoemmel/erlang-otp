@@ -1,4 +1,5 @@
 %%% -*- erlang-indent-level: 2 -*-
+%%%======================================================================
 %%% $Id$
 %%%
 %%% An implementation of the algorithm described in:
@@ -15,11 +16,11 @@
 
 -include("hipe_sdi.hrl").
 
--record(label_data, {address, prevSdi}).
+-record(label_data, {address, prevSdi :: integer()}).
 
 -record(sdi_data, {address, label, si}).
 
--record(pass1, {prevSdi, preS, labelMap}).
+-record(pass1, {prevSdi :: integer(), preS, labelMap}).
 
 %%% "During the first pass we assign addresses to instructions
 %%% and build a symbol table of labels and their addresses

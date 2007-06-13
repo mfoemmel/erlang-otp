@@ -44,7 +44,7 @@ init([]) ->
     case sync_nodes() of
 	ok ->
 	    case whereis(dist_ac) of
-		DAC when pid(DAC) ->
+		DAC when is_pid(DAC) ->
 		    DAC ! {go, self()},
 		    receive
 			dist_ac_took_control ->
@@ -121,7 +121,7 @@ rec_nodes([], []) -> ok;
 rec_nodes(Mandatory, Optional) ->
     receive
 	{nodeup, Node} -> check_up(Node, Mandatory, Optional);
-	timeout when Mandatory == [] -> ok;
+	timeout when Mandatory =:= [] -> ok;
 	timeout -> {error, {mandatory_nodes_down, Mandatory}}
     end.
 	
@@ -150,7 +150,7 @@ get_sync_data() ->
 
 get_sync_timeout() ->
     case application:get_env(sync_nodes_timeout) of
-	{ok, Timeout} when integer(Timeout), Timeout > 0 -> Timeout;
+	{ok, Timeout} when is_integer(Timeout), Timeout > 0 -> Timeout;
 	{ok, infinity}  -> infinity;
 	undefined -> throw(undefined);
 	{ok, Else} -> throw({error, {badopt, {sync_nodes_timeout, Else}}})
@@ -158,14 +158,14 @@ get_sync_timeout() ->
 
 get_sync_mandatory_nodes() ->
     case application:get_env(sync_nodes_mandatory) of
-	{ok, Nodes} when list(Nodes) -> Nodes;
+	{ok, Nodes} when is_list(Nodes) -> Nodes;
 	undefined -> [];
 	{ok, Else} -> throw({error, {badopt, {sync_nodes_mandatory, Else}}})
     end.
 
 get_sync_optional_nodes() ->
     case application:get_env(sync_nodes_optional) of
-	{ok, Nodes} when list(Nodes) -> Nodes;
+	{ok, Nodes} when is_list(Nodes) -> Nodes;
 	undefined -> [];
 	{ok, Else} -> throw({error, {badopt, {sync_nodes_optional, Else}}})
     end.

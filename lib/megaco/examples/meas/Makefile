@@ -72,8 +72,9 @@ ifneq ($(MSTONE_TIME),)
 ERL_COMPILE_FLAGS += -DMSTONE_TIME=$(MSTONE_TIME)
 endif
 
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../include
+ERL_COMPILE_FLAGS += \
+	-pa $(ERL_TOP)/lib/megaco/ebin \
+	-I../include
 
 
 # ----------------------------------------------------
@@ -106,6 +107,7 @@ release_spec: opt
 	$(INSTALL_DIR)  $(EXAMPLE_RELSYSDIR)
 	$(INSTALL_DIR)  $(MEAS_RELSYSDIR)
 	$(INSTALL_DATA) time_test.tgz $(MEAS_RELSYSDIR)
+	$(INSTALL_DATA) $(SCRIPT_SKELETONS) $(MEAS_RELSYSDIR)
 	$(INSTALL_DATA) $(TARGET_FILES) $(MEAS_RELSYSDIR)
 	$(INSTALL_DATA) $(ERL_FILES) $(MEAS_RELSYSDIR)
 

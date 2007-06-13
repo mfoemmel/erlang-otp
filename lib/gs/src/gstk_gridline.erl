@@ -212,7 +212,7 @@ opts_for_col(_Col,[],ColOpts,RestOpts) -> {ColOpts,RestOpts}.
 transform_opts([], _Ncols) -> [];
 transform_opts([{{Key,Col},Val} | Opts],Ncols) ->
     [{{Key,Col},Val}|transform_opts(Opts,Ncols)];
-transform_opts([{Key,{Col,Val}}|Opts],Ncols) when integer(Col) ->
+transform_opts([{Key,{Col,Val}}|Opts],Ncols) when is_integer(Col) ->
     [{{Key,Col},Val}|transform_opts(Opts,Ncols)];
 transform_opts([{Key,Val}|Opts],Ncols) ->
     case lists:member(Key,[fg,bg,text,font]) of

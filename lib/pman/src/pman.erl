@@ -15,9 +15,9 @@
 %% 
 %%     $Id$
 %%
-%%%----------------------------------------------------------------------
-%%% Purpose : Exported API to the PMAN graphical tool
-%%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------
+%%% Purpose : Exported API to the Pman graphical tool
+%%----------------------------------------------------------------------
 
 -module(pman).
 
@@ -66,7 +66,7 @@ start_notimeout(LIModuleExcluded) ->
     start(LIModuleExcluded, infinity).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% start/2 - Spawns the main PMAN process, that will supervise
+%% start/2 - Spawns the main Pman process, that will supervise
 %%    all processes except those running code from the modules
 %%    specified in LIModuleExcluded
 %%
@@ -114,16 +114,16 @@ start(LIModuleExcluded, Timeout) ->
 proc(undefined) ->
     exit(undefined);
 
-proc({shell,P}) when pid(P) ->
+proc({shell,P}) when is_pid(P) ->
     pman_shell:start({{shell,P},self()});
 
-proc(P) when atom(P) ->
+proc(P) when is_atom(P) ->
     proc(whereis(P));
 
 proc({global, N}) ->
     proc(global:whereis_name(N));
 
-proc(P) when pid(P) ->
+proc(P) when is_pid(P) ->
     pman_shell:start({P,self()}).
 
 proc(X,Y,Z) ->

@@ -32,18 +32,7 @@
 -export([start_list/3,
 	 start/2,
 	 start/1,
-	 flags/0,
-	 mapfilter/2,
 	 find_shell/0]).
-
-%% ---------------------------------------------------------------
-%% Internal Exports
-%% ---------------------------------------------------------------
-
--export([internal/4]).
--export([safe_init/2]).
-
-
 
 %% ---------------------------------------------------------------
 %% Includes
@@ -117,12 +106,12 @@ start(Pid) ->
 %% start/2
 %%
 
-start(Pid,DefaultOptions) when pid(Pid) ->
+start(Pid,DefaultOptions) when is_pid(Pid) ->
     start({Pid,self()}, DefaultOptions);
 
 start(Var,DefaultOptions) ->
-    Db = db_start (),
-    spawn_link(?MODULE, internal, [Var,self(),DefaultOptions, Db]).
+    Db = db_start(),
+    spawn_link(fun() -> internal(Var, DefaultOptions, Db) end).
     
 %% ---------------------------------------------------------------
 %% Initialize the enviroment for tracing/viewing Object
@@ -133,7 +122,7 @@ start(Var,DefaultOptions) ->
 %% message windows die whenever their parent dies.
 %% ---------------------------------------------------------------
 
-internal({Object,Supervisor}, _Parent, DefaultOptions, Db) ->
+internal({Object,Supervisor}, DefaultOptions, Db) ->
 
     %% (???) This call will cause minor problems when the window has been
     %% invoked with proc/1 from for instance the shell.  The shell
@@ -259,15 +248,6 @@ init_monitor_loop(Win,Ed,Object,Supervisor, DefaultOptions, Db) ->
 				     db = Db})
     end.
 
-
-%% ---------------------------------------------------------------
-%% Return: A list of names on the trace functions
-%% ---------------------------------------------------------------
-
-flags() -> [send,'receive',call,procs,set_on_spawn,
-	       set_on_first_spawn, set_on_link, set_on_first_link].
-
-
 %% ----------------------------------------------------------------
 %% What is the Pid of the shell on our node?
 %%  ----------------------------------------------------------------
@@ -344,9 +324,9 @@ exit_cmd(Pid,_Reason, State) ->
 	    State#pman_shell{pid=undefined}
     end.
 
-	
-	
-    
+flags() ->
+    [send, 'receive', call, procs,
+     set_on_spawn, set_on_first_spawn, set_on_link, set_on_first_link].
 
 options_to_flaglists(Options) ->
     AssocList =
@@ -460,7 +440,7 @@ execute_cmd(Cmd,Shell_data) ->
             exit(Buffer#buffer.buffer,topquit),
 	    exit(quit);
 
-	'Clear' when pid(Shell) ->
+	'Clear' when is_pid(Shell) ->
 	    New_buffer = pman_buf:clear(Buffer,pman_win:display(Shell),
 				       TraceOptions#trace_options.file),
 	    Shell_data#pman_shell{buffer = New_buffer};
@@ -479,7 +459,7 @@ execute_cmd(Cmd,Shell_data) ->
 	    HelpFile = filename:join([code:lib_dir(pman), "doc", "html", "index.html"]),
 	    tool_utils:open_help(gs:start([{kernel, true}]), HelpFile),
 	    Shell_data;
-	'Kill' when pid(Shell)  ->		
+	'Kill' when is_pid(Shell)  ->		
 	    exit(Buffer#buffer.converter,killed),
             exit(Buffer#buffer.buffer,killed),
 	    lists:foreach(fun(X) -> gse:disable(X) end,
@@ -487,18 +467,18 @@ execute_cmd(Cmd,Shell_data) ->
 			   'Clear']),
 	    catch exit(Shell, kill),
 	    Shell_data#pman_shell{pid = undefined};
-	'All Links' when pid(Shell)  ->
-	    LIPid = pman_process:pinfo_notag(Shell, links),
+	'All Links' when is_pid(Shell)  ->
+	    LIPid = pman_process:pinfo(Shell, links),
 	    ?ALWAYS_ASSERT("Just a brutal test"),	    	    
 	    start_list(LIPid,
 		       Shell_data#pman_shell.father,
 		       Shell_data#pman_shell.trace_options), 
 	    Shell_data;
-	'Module' when pid(Shell) ->
+	'Module' when is_pid(Shell) ->
 	    {ModuleName,_,_} = pman_process:function_info(Shell),
 	    pman_module_info:start(ModuleName),
 	    Shell_data;
-	'Options' when pid(Shell) ->
+	'Options' when is_pid(Shell) ->
 	    case pman_options:dialog(Window,
                                      "Trace Options for Process",
                                      TraceOptions) of
@@ -509,7 +489,7 @@ execute_cmd(Cmd,Shell_data) ->
 		    Shell_data#pman_shell{trace_options=Options}
 	    end;
 	
-	{trac,Choice,Bool} when pid(Shell) ->
+	{trac,Choice,Bool} when is_pid(Shell) ->
 	    pman_relay:trac(Shell, Bool, [Choice]),
 	    Shell_data;
 
@@ -518,7 +498,7 @@ execute_cmd(Cmd,Shell_data) ->
 	    configure (Editor, X, Y),
 	    Shell_data;
 
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    pman_shell:start({Pid, Shell_data#pman_shell.father},
 			     Shell_data#pman_shell.trace_options),
 	    Shell_data;
@@ -528,7 +508,7 @@ execute_cmd(Cmd,Shell_data) ->
     end.
 	    
 
-default_file_name(Shell) when pid(Shell) ->
+default_file_name(Shell) when is_pid(Shell) ->
     [A,B,C] =  string:tokens(pid_to_list(Shell),[$.,$<,$>]),
     "pman_trace." ++ A ++ "_" ++ B ++ "_" ++ C;
 default_file_name(_OTHER) ->
@@ -596,7 +576,7 @@ monitor_loop(Shell_data) ->
 	    monitor_loop(Shell_data);
 
 	%% Handle incoming trace messages
-	Message when tuple(Message) , element(1,Message) == trace->
+	Message when is_tuple(Message) , element(1,Message) == trace->
 	    {L, Suspended} = collect_tracs([Message]),
 	    Buffer = Shell_data#pman_shell.buffer,
 	    Buffer#buffer.converter!{raw,L},
@@ -605,7 +585,7 @@ monitor_loop(Shell_data) ->
 
 
 	%% All other messages on the form {...,...,...}
-	Message when tuple(Message) ->
+	Message when is_tuple(Message) ->
 	    do_link_stuff(Shell_data),
 	    
 	    New_Shell_data = process_gs_event(Message,Shell_data),
@@ -692,11 +672,11 @@ do_link_stuff(Shell_data) ->
 	undefined ->
 	    ok;
 	Pid ->
-	    case catch pman_process:pinfo(Pid,links) of
-		{links,Links} ->
+	    case pman_process:pinfo(Pid, links) of
+		Links when is_list(Links) ->
 		    pman_win:links_menus(Links);
-		_FaultyProcess ->
-		    ok   
+		undefined ->
+		    ok
 	    end
     end.
 
@@ -711,15 +691,16 @@ do_link_stuff(Shell_data) ->
 %% that links to the Pid is small and simple, which is safer than if
 %% the calling process would link directly to the Pid.
 
-safe_link(Pid) when pid(Pid) ->
-    PidSafe = spawn_link(?MODULE, safe_init, [self(), Pid]),
+safe_link(Pid) when is_pid(Pid) ->
+    Self = self(),
+    PidSafe = spawn_link(fun() -> safe_init(Self, Pid) end),
     put(Pid, PidSafe).
     
 
 %% safe_unlink/1 - Removes a safe link
 %%
 
-safe_unlink(Pid) when pid(Pid) ->
+safe_unlink(Pid) when is_pid(Pid) ->
     PidSafe = get(Pid),
     PidSafe ! {unlink, self(), Pid},
     erase(Pid);
@@ -727,11 +708,9 @@ safe_unlink(Pid) when pid(Pid) ->
 safe_unlink(_Anything)->
     true.
 
-
 %% safe_init/2 - Initialize a simple receive loop that controls safe linking
 %%    to application processes.
 %% 
-
 safe_init(Caller, Pid) ->
 
     process_flag(trap_exit, true),
@@ -822,7 +801,7 @@ collect_tracs(Ack) -> collect_tracs(Ack, ordsets:new()).
     
 collect_tracs(Ack, Procs) ->
     receive
-	Trac when tuple(Trac), element(1, Trac) == trace ->
+	Trac when is_tuple(Trac), element(1, Trac) == trace ->
 	    P = suspend(Trac, Procs),
 	    collect_tracs([Trac | Ack], P)
     after 0 ->

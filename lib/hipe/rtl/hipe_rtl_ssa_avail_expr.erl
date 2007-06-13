@@ -18,7 +18,8 @@
 cfg(CFG) ->
   CFG1 = remove_loads(CFG),
   CFG2 = remove_stores(CFG1),
-  optimize_fixnums(CFG2).
+  CFG3 = optimize_fixnums(CFG2),
+  hipe_rtl_ssa:remove_dead_code(CFG3).
 
 %%%=============================================================================
 %%%

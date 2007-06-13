@@ -73,7 +73,7 @@ maybe_anno(Node, Fun, Ctxt, As) ->
 	    ]
     end.
 
-strip_line([A | As]) when integer(A) ->
+strip_line([A | As]) when is_integer(A) ->
     strip_line(As);
 strip_line([{file,_File} | As]) ->
     strip_line(As);
@@ -82,7 +82,7 @@ strip_line([A | As]) ->
 strip_line([]) ->
     [].
 
-get_line([L | _As]) when integer(L) ->
+get_line([L | _As]) when is_integer(L) ->
     L;
 get_line([_ | As]) ->
     get_line(As);
@@ -104,7 +104,7 @@ format_1(#c_var{name=V}, _) ->
     %%     - nonnegative integers.
     %% It is important that when printing variables, no two names
     %% should ever map to the same string.
-    if atom(V) ->
+    if is_atom(V) ->
 	    S = atom_to_list(V),
 	    case S of
 		[C | _] when C >= $A, C =< $Z ->
@@ -123,7 +123,7 @@ format_1(#c_var{name=V}, _) ->
 		    %% E.g. foo => "_foo".
 		    [$_ | S]
 	    end;
-       integer(V) ->
+       is_integer(V) ->
 	    %% Integers are also simply prefixed with "_".
 	    [$_ | integer_to_list(V)]
     end;
@@ -269,13 +269,6 @@ format_1(#c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}, Ctxt) ->
      nl_indent(Ctxt1)
      | format(H, Ctxt1)
     ];
-format_1(#c_def{name=N,val=V}, Ctxt) ->
-    Ctxt1 = add_indent(set_class(Ctxt, expr), Ctxt#ctxt.body_indent),
-    [format(N, Ctxt),
-     " =",
-     nl_indent(Ctxt1)
-     | format(V, Ctxt1)
-    ];
 format_1(#c_module{name=N,exports=Es,attrs=As,defs=Ds}, Ctxt) ->
     Mod = ["module ", format(N, Ctxt)],
     [Mod," [",
@@ -289,7 +282,7 @@ format_1(#c_module{name=N,exports=Es,attrs=As,defs=Ds}, Ctxt) ->
      format_vseq(As,
 		 "", ",",
 		 add_indent(set_class(Ctxt, def), 16),
-		 fun format/2),
+		 fun format_def/2),
      "]",
      nl_indent(Ctxt),
      format_funcs(Ds, Ctxt),
@@ -306,8 +299,17 @@ format_funcs(Fs, Ctxt) ->
     format_vseq(Fs,
 		"", "",
 		set_class(Ctxt, def),
-		fun format/2).
+		fun format_def/2).
 
+format_def({N,V}, Ctxt0) ->
+    Ctxt1 = add_indent(set_class(Ctxt0, expr), Ctxt0#ctxt.body_indent),
+    [format(N, Ctxt0),
+     " =",
+     nl_indent(Ctxt1)
+     | format(V, Ctxt1)
+    ].
+
+    
 format_values(Vs, Ctxt) ->
     [$<,
      format_hseq(Vs, ",", add_indent(Ctxt, 1), fun format/2),
@@ -409,7 +411,7 @@ unindent([$\t|T], N, Ctxt, C) ->
        true ->
 	    unindent([string:chars($\s, Tab - N)|T], 0, Ctxt, C)
     end;
-unindent([L|T], N, Ctxt, C) when list(L) ->
+unindent([L|T], N, Ctxt, C) when is_list(L) ->
     unindent(L, N, Ctxt, [T|C]);
 unindent([H|T], _, _, C) ->
     [H|[T|C]];
@@ -428,7 +430,7 @@ width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);
 width([$\n|T], _, Ctxt, C) ->
     width(unindent([T|C], Ctxt), Ctxt);
-width([H|T], A, Ctxt, C) when list(H) ->
+width([H|T], A, Ctxt, C) when is_list(H) ->
     width(H, A, Ctxt, [T|C]);
 width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);
@@ -452,4 +454,5 @@ is_simple_term(#c_tuple{es=Es}) ->
 is_simple_term(#c_var{}) -> true;
 is_simple_term(#c_literal{val=[_|_]}) -> false;
 is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
-is_simple_term(Term) -> core_lib:is_atomic(Term).
+is_simple_term(#c_fname{}) -> true;
+is_simple_term(_) -> false.

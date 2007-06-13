@@ -87,18 +87,30 @@ V3_SPECS = $(PREV3A_SPECS) $(PREV3B_SPECS) $(PREV3C_SPECS)
 
 SPECS = $(V1_SPECS) $(V2_SPECS) $(V3_SPECS)
 
-V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) $(V1_SPECS:%=%.asn1db)
-V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) $(V2_SPECS:%=%.asn1db)
+V1_SPEC_ASN1DB = $(V1_SPECS:%=%.asn1db)
+V2_SPEC_ASN1DB = $(V2_SPECS:%=%.asn1db)
+PREV3A_SPEC_ASN1DB = $(PREV3A_SPECS:%=%.asn1db)
+PREV3B_SPEC_ASN1DB = $(PREV3B_SPECS:%=%.asn1db)
+PREV3C_SPEC_ASN1DB = $(PREV3C_SPECS:%=%.asn1db)
+V3_SPEC_ASN1DB = $(V3_SPECS:%=%.asn1db) \
+                 $(PREV3A_SPEC_ASN1DB) \
+                 $(PREV3B_SPEC_ASN1DB) \
+                 $(PREV3C_SPEC_ASN1DB)
+SPEC_ASN1DB = $(V1_SPEC_ASN1DB) \
+              $(V2_SPEC_ASN1DB)\
+              $(V3_SPEC_ASN1DB)
+
+V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) 
+V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) 
 PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) \
-                   $(PREV3A_SPECS:%=%.hrl) \
-                   $(PREV3A_SPECS:%=%.asn1db)
+                   $(PREV3A_SPECS:%=%.hrl) 
 PREV3B_SPEC_BINS = $(PREV3B_SPECS:%=%.erl) \
-                   $(PREV3B_SPECS:%=%.hrl) \
-                   $(PREV3B_SPECS:%=%.asn1db)
+                   $(PREV3B_SPECS:%=%.hrl) 
 PREV3C_SPEC_BINS = $(PREV3C_SPECS:%=%.erl) \
-                   $(PREV3C_SPECS:%=%.hrl) \
-                   $(PREV3C_SPECS:%=%.asn1db)
-V3_SPEC_BINS = $(PREV3A_SPEC_BINS) $(PREV3B_SPEC_BINS)  $(PREV3C_SPEC_BINS) 
+                   $(PREV3C_SPECS:%=%.hrl) 
+V3_SPEC_BINS = $(PREV3A_SPEC_BINS) \
+               $(PREV3B_SPEC_BINS) \
+               $(PREV3C_SPEC_BINS) 
 SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) $(V3_SPEC_BINS) 
 
 ERL_FILES = $(MODULES:%=%.erl)	
@@ -120,9 +132,10 @@ endif
 
 include ../app/megaco.mk
 
-ERL_FLAGS += $(MEGACO_ERL_FLAGS)
-
-ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
+ERL_COMPILE_FLAGS += \
+	$(MEGACO_ERL_COMPILE_FLAGS) \
+	-I../../include             \
+	$(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 
 # ----------------------------------------------------
@@ -131,7 +144,18 @@ ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
 debug:
 	@${MAKE} TYPE=debug opt
 
-opt: $(TARGET_FILES) 
+opt: prebuild $(TARGET_FILES) 
+
+prebuild: prebuild.skip
+
+prebuild.skip: 
+	@echo "Building prebuild.skip\c"
+	@touch prebuild.skip
+	@for a in $(SPEC_ASN1DB); do \
+		echo ".\c"; \
+		echo $$a >> prebuild.skip; \
+	done
+	@echo ""
 
 v1: $(V2_SPEC_BINS)
 
@@ -144,7 +168,9 @@ specs: v1 v2 v3
 clean:
 	rm -f $(TARGET_FILES) 
 	rm -f $(SPEC_BINS)
-	rm -f errs core *~
+	rm -f $(SPEC_ASN1DB)
+	rm -f prebuild.skip
+	rm -f core *~
 
 docs:
 

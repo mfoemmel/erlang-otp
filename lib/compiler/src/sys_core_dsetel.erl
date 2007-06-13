@@ -71,9 +71,9 @@ visit_module(#c_module{defs=Ds0}=R) ->
     Ds = visit_module_1(Ds0, Env, []),
     R#c_module{defs=Ds}.
 
-visit_module_1([F0|Fs], Env, Acc) ->
+visit_module_1([{Name,F0}|Fs], Env, Acc) ->
     {F,_} = visit(Env, F0),
-    visit_module_1(Fs, Env, [F|Acc]);
+    visit_module_1(Fs, Env, [{Name,F}|Acc]);
 visit_module_1([], _, Acc) ->
     lists:reverse(Acc).
 
@@ -94,9 +94,6 @@ visit(Env0, #c_cons{hd=H0,tl=T0}=R) ->
 visit(Env0, #c_values{es=Es0}=R) ->
     {Es1,Env1} = visit_list(Env0, Es0),
     {R#c_values{es=Es1}, Env1};
-visit(Env0, #c_def{val=V0}=R) ->
-    {V1,Env1} = visit(Env0, V0),
-    {R#c_def{val=V1}, Env1};
 visit(Env0, #c_fun{vars=Vs, body=B0}=R) ->
     {Xs, Env1} = bind_vars(Vs, Env0),
     {B1,Env2} = visit(Env1, B0),
@@ -149,8 +146,8 @@ visit(Env0, #c_catch{body=B0}=R) ->
     {B1,Env1} = visit(Env0, B0),
     {R#c_catch{body=B1}, Env1};
 visit(Env0, #c_letrec{defs=Ds0,body=B0}=R) ->
-    {Xs, Env1} = bind_vars([V || #c_def{name=V} <- Ds0], Env0),
-    {Ds1,Env2} = visit_list(Env1, Ds0),
+    {Xs, Env1} = bind_vars([V || {V,_} <- Ds0], Env0),
+    {Ds1,Env2} = visit_def_list(Env1, Ds0),
     {B1,Env3} = visit(Env2, B0),
     {R#c_letrec{defs=Ds1,body=B1}, restore_vars(Xs, Env0, Env3)};
 %% The following general code for handling modules is slow if a module
@@ -164,6 +161,12 @@ visit(Env, T) ->    % constants
 
 visit_list(Env, L) ->
     lists:mapfoldl(fun (E, A) -> visit(A, E) end, Env, L).
+
+visit_def_list(Env, L) ->
+    lists:mapfoldl(fun ({Name,V0}, E0) ->
+			   {V1,E1} = visit(E0, V0),
+			   {{Name,V1}, E1}
+		   end, Env, L).
 
 bind_vars(Vs, Env) ->
     bind_vars(Vs, Env, []).
@@ -270,7 +273,7 @@ rewrite(#c_let{vars=[#c_var{name=X1}],
 			   body=B}
 	      }=R,
 	BodyEnv, FinalEnv)
-  when integer(Index1), integer(Index2), Index2 > 0, Index1 > Index2 ->
+  when is_integer(Index1), is_integer(Index2), Index2 > 0, Index1 > Index2 ->
     case is_single_use(X1, BodyEnv) andalso is_safe(Val2) of
 	true ->
 	    {R#c_let{vars=Vs,
@@ -294,7 +297,7 @@ rewrite(R, _, FinalEnv) ->
 is_safe(#c_var{}) -> true;
 is_safe(#c_fname{}) -> true;
 is_safe(#c_literal{val=[_|_]}) -> false;
-is_safe(#c_literal{val=V}) -> not is_tuple(V);
+is_safe(#c_literal{val=V}) -> not (is_tuple(V) orelse is_binary(V));
 is_safe(_) -> false.
 
 is_single_use(V, Env) ->

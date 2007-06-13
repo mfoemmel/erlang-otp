@@ -75,7 +75,7 @@ relay(undefined) ->
     error_msg(' ** exiting relay server ~w  **~n',
 			   [self()]),
     exit(undefined);
-relay(Pid) when pid(Pid) ->
+relay(Pid) when is_pid(Pid) ->
     relay1(Pid).
 
 relay1(Pid) ->
@@ -206,9 +206,9 @@ wait_for_slave(Parent, Host, Name, Node, Args, LinkTo, Prog) ->
 	    Parent ! {result, Other}
     end.
 
-slave_started(ReplyTo, no_link, Slave) when pid(Slave) ->
+slave_started(ReplyTo, no_link, Slave) when is_pid(Slave) ->
     ReplyTo ! {result, {ok, node(Slave)}};
-slave_started(ReplyTo, Master, Slave) when pid(Master), pid(Slave) ->
+slave_started(ReplyTo, Master, Slave) when is_pid(Master), is_pid(Slave) ->
     process_flag(trap_exit, true),
     link(Master),
     link(Slave),
@@ -320,8 +320,8 @@ strip_host_name([H|T]) -> [H|strip_host_name(T)].
 
 dns(H) -> {ok, Host} = net_adm:dns_hostname(H), Host.
 
-to_list(X) when list(X) -> X;
-to_list(X) when atom(X) -> atom_to_list(X).
+to_list(X) when is_list(X) -> X;
+to_list(X) when is_atom(X) -> atom_to_list(X).
 
 upto(_, []) -> [];
 upto(Char, [Char|_]) -> [];

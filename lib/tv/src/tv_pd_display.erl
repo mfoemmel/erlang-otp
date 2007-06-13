@@ -554,7 +554,7 @@ get_data_element(cell, DataList, RowNo, ColNo) ->
 	true ->
 	    DataItem = lists:nth(RowNo, DataList),
 	    if 
-		tuple(DataItem) ->
+		is_tuple(DataItem) ->
 		    if size(DataItem) < ColNo ->
 			    {notext, DataItem};
 		       true ->

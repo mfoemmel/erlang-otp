@@ -161,20 +161,20 @@ file(Args) ->
 
 invalid_args(Where, Args) ->
     report("invalid arguments to ~s: ~w.", [Where, Args]),
-    shutdown(error).
+    shutdown_error().
 
 run(F) ->
     wait_init(),
     case catch {ok, F()} of
 	{ok, _} ->
-	    shutdown(ok);
+	    shutdown_ok();
 	{'EXIT', E} ->
 	    report("edoc terminated abnormally: ~P.", [E, 10]),
-	    shutdown(error);
+	    shutdown_error();
 	Thrown ->
 	    report("internal error: throw without catch in edoc: ~P.",
 		   [Thrown, 15]),
-	    shutdown(error)
+	    shutdown_error()
     end.
 
 wait_init() ->
@@ -189,16 +189,17 @@ wait_init() ->
 %% When and if a function init:stop/1 becomes generally available, we
 %% can use that instead of delay-and-pray when there is an error.
 
-shutdown(ok) ->
+shutdown_ok() ->
     %% shut down emulator nicely, signalling "normal termination"
-    init:stop();
-shutdown(error) ->
+    init:stop().
+
+shutdown_error() ->
     %% delay 1 second to allow I/O to finish
     receive after 1000 -> ok end,
     %% stop emulator the hard way with a nonzero exit value
     halt(1).
 
-parse_args([A | As]) when atom(A) ->
+parse_args([A | As]) when is_atom(A) ->
     [parse_arg(atom_to_list(A)) | parse_args(As)];
 parse_args([A | As]) ->
     [parse_arg(A) | parse_args(As)];

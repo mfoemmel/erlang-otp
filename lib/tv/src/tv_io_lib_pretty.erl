@@ -28,14 +28,14 @@
 pretty_print(_, _, _, 0) -> "...";
 pretty_print([], _, _, _) -> "[]";
 pretty_print({}, _, _, _) -> "{}";
-pretty_print(List, Col, Ll, D) when list(List) ->
+pretty_print(List, Col, Ll, D) when is_list(List) ->
     case tv_io_lib:printable_list(List) of
 	true ->
 	    tv_io_lib:write_string(List, $");
 	false ->
 	    Len = write_length(List, D, 0, Ll - Col),
 	    if
-		D == 1 -> "[...]";
+		D =:= 1 -> "[...]";
 		Len + Col < Ll ->
 		    write(List, D);
 		true ->
@@ -45,15 +45,15 @@ pretty_print(List, Col, Ll, D) when list(List) ->
 		     $]]
 	    end
     end;
-pretty_print(Fun, _Col, _Ll, _D) when function(Fun) ->
+pretty_print(Fun, _Col, _Ll, _D) when is_function(Fun) ->
     tv_io_lib:write(Fun);
-pretty_print(Tuple, Col, Ll, D) when tuple(Tuple) ->
+pretty_print(Tuple, Col, Ll, D) when is_tuple(Tuple) ->
     Len = write_length(Tuple, D, 0, Ll - Col),
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	Len + Col < Ll ->
 	    write(Tuple, D);
-	atom(element(1, Tuple)), size(Tuple) > 1 ->
+	is_atom(element(1, Tuple)), size(Tuple) > 1 ->
 	    print_tag_tuple(Tuple, Col, Ll, D);
 	true ->
 	    [${,
@@ -103,23 +103,23 @@ pretty_print_tail(E, Col, Ll, D) ->
 write(_, 0) -> "...";
 write([], _) -> "[]";
 write({}, _) -> "{}";
-write(List, D) when list(List) ->
+write(List, D) when is_list(List) ->
     case tv_io_lib:printable_list(List) of
 	true ->
 	    tv_io_lib:write_string(List, $");
 	false ->
 	    if
-		D == 1 -> "[...]";
+		D =:= 1 -> "[...]";
 		true ->
 		    [$[,
 		     [write(hd(List), D-1)|write_tail(tl(List), D-1)],
 		     $]]
 	    end
     end;
-write(Fun, _D) when function(Fun) -> tv_io_lib:write(Fun); %Must catch this first
-write(T, D) when tuple(T) ->
+write(Fun, _D) when is_function(Fun) -> tv_io_lib:write(Fun); %Must catch this first
+write(T, D) when is_tuple(T) ->
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	true ->
 	    [${,
 	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
@@ -142,16 +142,16 @@ write_length(_T, _D, Acc, Max) when Acc > Max -> Acc;
 write_length(_T, 0, Acc, _Max) -> Acc + 3;
 write_length([], _, Acc, _) -> Acc + 2;
 write_length({}, _, Acc, _) -> Acc + 2;
-write_length(List, D, Acc, Max) when list(List) ->
+write_length(List, D, Acc, Max) when is_list(List) ->
     case tv_io_lib:printable_list(List) of
 	true ->
 	    Acc + length(tv_io_lib:write_string(List, $"));
 	false ->
 	    write_length_list(List, D, Acc, Max)
     end;
-write_length(Fun, _D, Acc, _Max) when function(Fun) ->
+write_length(Fun, _D, Acc, _Max) when is_function(Fun) ->
     Acc + length(tv_io_lib:write(Fun));
-write_length(Tuple, D, Acc, Max) when tuple(Tuple) ->
+write_length(Tuple, D, Acc, Max) when is_tuple(Tuple) ->
     write_length_list(tuple_to_list(Tuple), D, Acc, Max);
 write_length(Term, _D, Acc, _Max) ->
     Acc + length(tv_io_lib:write(Term)).

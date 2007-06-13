@@ -62,8 +62,10 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     files_rec ->
       assert_filenames(Term, Value),
       build_options(Rest, Options#options{files_rec=Value});
-    core_transform ->
-      build_options(Rest, Options#options{core_transform=Value});
+    analysis_type when Value =:= dataflow; 
+		       Value =:= succ_typings; 
+		       Value =:= old_style ->
+      build_options(Rest, Options#options{analysis_type=Value});
     defines ->
       assert_defines(Term, Value),
       OldVal = Options#options.defines,
@@ -82,7 +84,7 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     old_style ->
       case Value of
 	true ->
-	  build_options(Rest, Options#options{core_transform=dataflow});
+	  build_options(Rest, Options#options{analysis_type=old_style});
 	false ->
 	  build_options(Rest, Options)
       end;
@@ -154,6 +156,8 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:del_element(?WARN_FAILING_CALL, Warnings);
       error_handling ->
 	ordsets:add_element(?WARN_RETURN_ONLY_EXIT, Warnings);
+      kostis ->
+	ordsets:add_element(?WARN_TERM_COMP, Warnings);
       Other ->
 	bad_option(Other)
     end,

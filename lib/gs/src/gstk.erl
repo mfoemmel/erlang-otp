@@ -202,7 +202,7 @@ create_impl(DB, {Owner, {Objtype, Id, Parent, Opts}}) ->
 		{bad_result, BR} ->
 		    gstk_db:delete_gstkid(DB,GstkId),
 		    gs:creation_error(GstkId,{bad_result, BR});
-		Ngstkid when record(Ngstkid,gstkid) ->
+		Ngstkid when is_record(Ngstkid,gstkid) ->
 		    gstk_db:insert_widget(DB, Ngstkid),
 		    ok;
 		{error,Reason} -> {error,Reason};
@@ -314,7 +314,7 @@ destroy_wids([], _DB) -> [].
 
 to_color({R,G,B}) ->
     [$#,dec2hex(2,R),dec2hex(2,G),dec2hex(2,B)];
-to_color(Color) when atom(Color) -> atom_to_list(Color).
+to_color(Color) when is_atom(Color) -> atom_to_list(Color).
 
 %% ------------------------------------------------------------
 %% Decimal to Hex converter
@@ -332,12 +332,12 @@ d2h(N) -> N+$a-10.
 
 %% ----- Value to String -----
 
-to_ascii(V) when list(V)    -> [$",to_ascii(V,[],[]),$"];  %% it's a string
-to_ascii(V) when integer(V) -> integer_to_list(V);
-to_ascii(V) when float(V)   -> float_to_list(V);
-to_ascii(V) when atom(V)    -> to_ascii( atom_to_list(V));
-to_ascii(V) when tuple(V)   -> to_ascii(lists:flatten(io_lib:format("~w",[V])));
-to_ascii(V) when pid(V)     -> pid_to_list(V).
+to_ascii(V) when is_list(V)    -> [$",to_ascii(V,[],[]),$"];  %% it's a string
+to_ascii(V) when is_integer(V) -> integer_to_list(V);
+to_ascii(V) when is_float(V)   -> float_to_list(V);
+to_ascii(V) when is_atom(V)    -> to_ascii( atom_to_list(V));
+to_ascii(V) when is_tuple(V)   -> to_ascii(lists:flatten(io_lib:format("~w",[V])));
+to_ascii(V) when is_pid(V)     -> pid_to_list(V).
 
 						% FIXME: Currently we accept newlines in strings and handle this at
 						% the Tcl side. Is this the best way or should we translate to "\n"
@@ -349,7 +349,7 @@ to_ascii([${|R], Y, X) ->  to_ascii(R, Y, [${, $\\ | X]);
 to_ascii([$"|R], Y, X) ->  to_ascii(R, Y, [$", $\\ | X]);
 to_ascii([$$|R], Y, X) ->  to_ascii(R, Y, [$$, $\\ | X]);
 to_ascii([$\\|R], Y, X) ->  to_ascii(R, Y, [$\\, $\\ | X]);
-to_ascii([C|R], Y, X) when list(C) -> to_ascii(C, [R|Y], X);
+to_ascii([C|R], Y, X) when is_list(C) -> to_ascii(C, [R|Y], X);
 to_ascii([C|R], Y, X) -> to_ascii(R, Y, [C|X]);
 to_ascii([], [Y1|Y], X) -> to_ascii(Y1, Y, X);
 to_ascii([], [], X) -> lists:reverse(X).

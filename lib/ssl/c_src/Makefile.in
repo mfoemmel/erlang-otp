@@ -83,16 +83,22 @@ OBJS = 	$(OBJDIR)/esock$(obj) \
 
 PORT_PROGRAM = $(BINDIR)/ssl_esock$(exe)
 
-ifneq ($(TARGET),win32)
-SSL_MAKEFILE = $(OBJDIR)/Makefile
 SKIP_BUILDING_BINARIES := false
+
+# Try to be BC for R10
+ifeq ($(findstring @SSL_,@SSL_DYNAMIC_ONLY@),@SSL_)
+DYNAMIC_CRYPTO_LIB=yes
 else
-ifeq ($(HOST_OS),)
-HOST_OS := $(shell $(ERL_TOP)/erts/autoconf/config.guess)
+DYNAMIC_CRYPTO_LIB=@SSL_DYNAMIC_ONLY@
 endif
-ifeq ($(findstring solaris,$(HOST_OS)),solaris)
-SKIP_BUILDING_BINARIES := true
-endif
+
+
+ifeq ($(DYNAMIC_CRYPTO_LIB),yes)
+
+ifneq ($(findstring win32,$(TARGET)),win32)
+SSL_MAKEFILE = $(OBJDIR)/Makefile
+else
+SSL_MAKEFILE =
 endif
 
 CC_R_FLAG=@CFLAG_RUNTIME_LIBRARY_PATH@
@@ -109,7 +115,6 @@ else						# Default: -Wl,-R
 CC_R_FLAG = -Wl,-R
 endif
 endif
-
 endif
 
 ifeq ($(strip $(CC_R_FLAG)),)
@@ -118,16 +123,27 @@ else
 CC_R_OPT = $(CC_R_FLAG)$(SSL_LIBDIR)
 endif
 
+SSL_LINK_LIB=-L$(SSL_LIBDIR) -lssl -lcrypto
+else 
+# not dynamic crypto lib (default from R11B-5)
+NEED_KERBEROS=@SSL_LINK_WITH_KERBEROS@
+NEED_ZLIB=@SSL_LINK_WITH_ZLIB@
+SSL_MAKEFILE =
+CC_R_OPT =
+SSL_LINK_LIB = $(SSL_LIBDIR)/libssl.a $(SSL_LIBDIR)/libcrypto.a 
+ifeq ($(NEED_KERBEROS),yes)
+SSL_LINK_LIB += @STATIC_KERBEROS_LIBS@
+endif
+ifeq ($(NEED_ZLIB),yes)
+SSL_LINK_LIB += @STATIC_ZLIB_LIBS@
+endif
+endif
 
 # ----------------------------------------------------
 # Targets
 # ----------------------------------------------------
 
-ifeq ($(SKIP_BUILDING_BINARIES), true)
-debug opt:
-else
 debug opt: $(OBJDIR) $(BINDIR) $(OBJS) $(PORT_PROGRAM) $(SSL_MAKEFILE)
-endif
 
 $(OBJDIR):
 	-@mkdir -p $(OBJDIR)
@@ -143,14 +159,13 @@ $(OBJDIR)/%$(obj): %.c
 
 # Unix
 $(BINDIR)/ssl_esock: $(OBJS)
-	$(CC) -L$(SSL_LIBDIR) $(CC_R_OPT) -o $@ $^ \
-		$(LIBS) -lssl -lcrypto
+	$(CC) $(CC_R_OPT) -o $@ $^ $(LIBS) $(SSL_LINK_LIB)
 
 # Win32/Cygwin
 $(BINDIR)/ssl_esock.exe: $(OBJS)
 	$(LD) -L$(SSL_LIBDIR) -o $@ $^ -lwsock32 -llibeay32 -lssleay32
 
-# Unix only
+# Unix only, and only when linking statically
 $(SSL_MAKEFILE):
 	sed 	-e "s;%BINDIR%;../../bin/$(TARGET);" \
 		-e "s;%SSL_LIBDIR%;$(SSL_LIBDIR);" \
@@ -171,10 +186,10 @@ include $(ERL_TOP)/make/otp_release_targets.mk
 
 release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/bin
+	$(INSTALL_PROGRAM) $(PORT_PROGRAM) $(RELSYSDIR)/priv/bin
+ifneq ($(SSL_MAKEFILE),)
 	$(INSTALL_DIR) $(RELSYSDIR)/priv/obj
 	$(INSTALL_DATA) $(OBJS) $(RELSYSDIR)/priv/obj
-	$(INSTALL_PROGRAM) $(PORT_PROGRAM) $(RELSYSDIR)/priv/bin
-ifneq ($(TARGET),win32)
 	sed 	-e "s;%BINDIR%;../bin;" \
 		-e "s;%SSL_LIBDIR%;$(SSL_LIBDIR);" \
 		-e "s;%OBJS;$(OBJS);" \

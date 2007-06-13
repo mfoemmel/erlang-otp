@@ -105,7 +105,8 @@ create(Name, Filenames) ->
 %% Accepted options: verbose, compressed, cooked
 
 create(Name, FileList, Options) ->
-    Mode = lists:filter(fun(X) -> (X==compressed) or (X==cooked) end,Options),
+    Mode = lists:filter(fun(X) -> (X=:=compressed) or (X=:=cooked) 
+                        end, Options),
     case open(Name, [write|Mode]) of
 	{ok, TarFile} ->
 	    Add = fun(Nm) -> add(TarFile, Nm, Nm, Options) end,
@@ -184,7 +185,7 @@ type_to_string(_) -> "?".
 mode_to_string(Mode) ->
     mode_to_string(Mode, "xwrxwrxwr", []).
 
-mode_to_string(Mode, [C|T], Acc) when Mode band 1 == 1 ->
+mode_to_string(Mode, [C|T], Acc) when Mode band 1 =:= 1 ->
     mode_to_string(Mode bsr 1, T, [C|Acc]);
 mode_to_string(Mode, [_|T], Acc) ->
     mode_to_string(Mode bsr 1, T, [$-|Acc]);
@@ -287,10 +288,10 @@ format_error(Term) ->
 
 add1(TarFile, Name, NameInArchive, Opts) ->
     case read_file_and_info(Name, Opts) of
-	{ok, Bin, Info} when Info#file_info.type == regular ->
+	{ok, Bin, Info} when Info#file_info.type =:= regular ->
 	    Header = create_header(NameInArchive, Info),
 	    add1(TarFile, Name, Header, Bin, Opts);
-	{ok, PointsTo, Info} when Info#file_info.type == symlink ->
+	{ok, PointsTo, Info} when Info#file_info.type =:= symlink ->
 	    if
 		length(PointsTo) > 100 ->
 		    {error,{PointsTo,symbolic_link_too_long}};
@@ -299,7 +300,7 @@ add1(TarFile, Name, NameInArchive, Opts) ->
 		    Header = create_header(NameInArchive, Info2, PointsTo),
 		    add1(TarFile, Name, Header, list_to_binary([]), Opts)
 	    end;
-	{ok, _, Info} when Info#file_info.type == directory ->
+	{ok, _, Info} when Info#file_info.type =:= directory ->
 	    add_directory(TarFile, Name, NameInArchive, Info, Opts);
 	{ok, _, #file_info{type=Type}} ->
 	    {error, {bad_file_type, Name, Type}};
@@ -488,12 +489,13 @@ foldl_read1(Fun, Accu0, File, Opts) ->
 
 table1(eof, _, _, Result) ->
     {ok, lists:reverse(Result)};
-table1(Header, File, #read_opts{verbose=true}, Result) when record(Header, tar_header) ->
+table1(Header, File, #read_opts{verbose=true}, Result) 
+                                      when is_record(Header, tar_header) ->
     #tar_header{name=Name, size=Size, mtime=Mtime, typeflag=Type,
 		mode=Mode, uid=Uid, gid=Gid} = Header,
     skip(File, Size),
     {ok, [{Name, Type, Size, posix_to_erlang_time(Mtime), Mode, Uid, Gid}|Result]};
-table1(Header, File, _, Result) when record(Header, tar_header) ->
+table1(Header, File, _, Result) when is_record(Header, tar_header) ->
     Name = Header#tar_header.name,
     skip(File, Header#tar_header.size),
     {ok, [Name|Result]}.
@@ -520,7 +522,7 @@ get_header(File) ->
     case file:read(File, ?record_size) of
 	eof ->
 	    throw({error, eof});
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    convert_header(Bin);
 	{ok, List} ->
 	    convert_header(list_to_binary(List));
@@ -530,7 +532,7 @@ get_header(File) ->
 
 %% Converts the tar header to a record.
 
-convert_header(Bin) when size(Bin) == ?record_size ->
+convert_header(Bin) when size(Bin) =:= ?record_size ->
     case verify_checksum(Bin) of
 	ok ->
 	    Hd = #tar_header{name=get_name(Bin),
@@ -546,7 +548,7 @@ convert_header(Bin) when size(Bin) == ?record_size ->
 	eof ->
 	    eof
     end;
-convert_header(Bin) when size(Bin) == 0 ->
+convert_header(Bin) when size(Bin) =:= 0 ->
     eof;
 convert_header(_Bin) ->
     throw({error, eof}).
@@ -554,9 +556,9 @@ convert_header(_Bin) ->
 %% Basic sanity.  Better set the element size to zero here if the type
 %% always is of zero length.
 
-convert_header1(H) when H#tar_header.typeflag == symlink, H#tar_header.size =/= 0 ->
+convert_header1(H) when H#tar_header.typeflag =:= symlink, H#tar_header.size =/= 0 ->
     convert_header1(H#tar_header{size=0});
-convert_header1(H) when H#tar_header.typeflag == directory, H#tar_header.size =/= 0 ->
+convert_header1(H) when H#tar_header.typeflag =:= directory, H#tar_header.size =/= 0 ->
     convert_header1(H#tar_header{size=0});
 convert_header1(Header) ->
     Header.
@@ -612,7 +614,7 @@ from_octal([$\s|Rest]) ->
     from_octal(Rest);
 from_octal([Digit|Rest]) when $0 =< Digit, Digit =< $7 ->
     from_octal(Rest, Digit-$0);
-from_octal(Bin) when binary(Bin) ->
+from_octal(Bin) when is_binary(Bin) ->
     from_octal(binary_to_list(Bin));
 from_octal(Other) ->
     throw({error, {bad_header, "Bad octal number: ~p", [Other]}}).
@@ -870,14 +872,14 @@ posix_to_erlang_time(Sec) ->
 read_file_and_info(Name, Opts) ->
     ReadInfo = Opts#add_opts.read_info,
     case ReadInfo(Name) of
-	{ok,Info} when Info#file_info.type == regular ->
+	{ok,Info} when Info#file_info.type =:= regular ->
 	    case file:read_file(Name) of
 		{ok,Bin} ->
 		    {ok,Bin,Info};
 		Error ->
 		    Error
 	    end;
-	{ok,Info} when Info#file_info.type == symlink ->
+	{ok,Info} when Info#file_info.type =:= symlink ->
 	    case file:read_link(Name) of
 		{ok,PointsTo} ->
 		    {ok,PointsTo,Info};

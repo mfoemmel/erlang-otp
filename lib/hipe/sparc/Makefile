@@ -79,8 +79,7 @@ DOC_FILES= $(MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +warn_unused_import
+ERL_COMPILE_FLAGS += +warn_unused_import +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets

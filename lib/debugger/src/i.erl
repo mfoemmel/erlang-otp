@@ -208,9 +208,9 @@ ipb() ->
     bhformat("Module","Line","Status","Action","Condition"),
     pb_print(Bps).
 
-ipb(Module) when atom(Module) ->
+ipb(Module) when is_atom(Module) ->
     ipb1(Module);
-ipb(Module) when list(Module) ->
+ipb(Module) when is_list(Module) ->
     ipb1(list_to_atom(Module)).
 
 ipb1(Module) ->

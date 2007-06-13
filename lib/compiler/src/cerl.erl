@@ -675,7 +675,7 @@ ann_c_int(As, Value) ->
 %% integer literal, otherwise <code>false</code>.
 %% @see c_int/1
 
-is_c_int(#literal{val = V}) when integer(V) ->
+is_c_int(#literal{val = V}) when is_integer(V) ->
     true;
 is_c_int(_) ->
     false.
@@ -733,7 +733,7 @@ ann_c_float(As, Value) ->
 %% floating-point literal, otherwise <code>false</code>.
 %% @see c_float/1
 
-is_c_float(#literal{val = V}) when float(V) ->
+is_c_float(#literal{val = V}) when is_float(V) ->
     true;
 is_c_float(_) ->
     false.
@@ -866,7 +866,7 @@ atom_lit(Node) ->
 %% @see char_lit/1
 %% @see is_print_char/1
 
-c_char(Value) when integer(Value), Value >= 0 ->
+c_char(Value) when is_integer(Value), Value >= 0 ->
     #literal{val = Value}.
 
 
@@ -890,7 +890,7 @@ ann_c_char(As, Value) ->
 %% @see c_char/1
 %% @see is_print_char/1
 
-is_c_char(#literal{val = V}) when integer(V), V >= 0 ->
+is_c_char(#literal{val = V}) when is_integer(V), V >= 0 ->
     is_char_value(V);
 is_c_char(_) ->
     false.
@@ -908,7 +908,7 @@ is_c_char(_) ->
 %% @see c_char/1
 %% @see is_c_char/1
 
-is_print_char(#literal{val = V}) when integer(V), V >= 0 ->
+is_print_char(#literal{val = V}) when is_integer(V), V >= 0 ->
     is_print_char_value(V);
 is_print_char(_) ->
     false.
@@ -3301,8 +3301,7 @@ to_records(Node) ->
 		   body = to_records(let_body(Node))};
 	letrec ->
 	    #c_letrec{anno = A,
-		      defs = [#c_def{name = to_records(N),
-				     val = to_records(F)}
+		      defs = [{to_records(N), to_records(F)}
 			      || {N, F} <- letrec_defs(Node)],
 		      body = to_records(letrec_body(Node))};
 	'case' ->
@@ -3355,11 +3354,9 @@ to_records(Node) ->
 		      name = to_records(module_name(Node)),
 		      exports = list_to_records(
 				  module_exports(Node)),
-		      attrs = [#c_def{name = to_records(K),
-				      val = to_records(V)}
+		      attrs = [{to_records(K), to_records(V)}
 			       || {K, V} <- module_attrs(Node)],
-		      defs = [#c_def{name = to_records(N),
-				     val = to_records(F)}
+		      defs = [{to_records(N), to_records(F)}
 			      || {N, F} <- module_defs(Node)]}
     end.
 
@@ -3374,19 +3371,14 @@ lit_to_records(V, A) ->
 %% @spec from_records(Tree::record(record_types())) -> cerl()
 %%
 %%     record_types() = c_alias | c_apply | c_call | c_case | c_catch |
-%%                      c_clause | c_cons | c_def| c_fun | c_let |
-%%                      c_letrec |c_lit | c_module | c_primop |
+%%                      c_clause | c_cons | c_fun | c_let |
+%%                      c_letrec | c_lit | c_module | c_primop |
 %%                      c_receive | c_seq | c_try | c_tuple |
 %%                      c_values | c_var
 %%
 %% @doc Translates an explicit record representation to a
 %% corresponding abstract syntax tree.  The records are defined in the
-%% file "<code>cerl.hrl</code>".
-%%
-%% <p>Note: Compound constant literals are folded, discarding
-%% annotations on subtrees. There are no <code>c_def</code> nodes in
-%% the abstract representation; annotations on <code>c_def</code>
-%% records are discarded.</p>
+%% file "<code>core_parse.hrl</code>".
 %%
 %% @see type/1
 %% @see to_records/1
@@ -3418,7 +3410,7 @@ from_records(#c_let{vars = Vs, arg = A, body = B, anno = As}) ->
 	      from_records(B));
 from_records(#c_letrec{defs = Fs, body = B, anno = As}) ->
     ann_c_letrec(As, [{from_records(N), from_records(F)}
-		      || #c_def{name = N, val = F} <- Fs],
+		      || {N, F} <- Fs],
 		 from_records(B));
 from_records(#c_case{arg = A, clauses = Cs, anno = As}) ->
     ann_c_case(As, from_records(A), from_records_list(Cs));
@@ -3449,9 +3441,9 @@ from_records(#c_module{name = N, exports = Es, attrs = Ds, defs = Fs,
     ann_c_module(As, from_records(N),
 		 from_records_list(Es),
 		 [{from_records(K), from_records(V)}
-		  || #c_def{name = K, val = V} <- Ds],
+		  || {K, V} <- Ds],
 		 [{from_records(V), from_records(F)}
-		  || #c_def{name = V, val = F} <- Fs]).
+		  || {V, F} <- Fs]).
 
 from_records_list([T | Ts]) ->
     [from_records(T) | from_records_list(Ts)];

@@ -75,7 +75,7 @@ source(File, Env, Opts) ->
 %% @see source/4
 %% @see //syntax_tools/erl_recomment
 
-source(Forms, Comments, File, Env, Opts) when list(Forms) ->
+source(Forms, Comments, File, Env, Opts) when is_list(Forms) ->
     Forms1 = erl_syntax:form_list(Forms),
     source(Forms1, Comments, File, Env, Opts);
 source(Forms, Comments, File, Env, Opts) ->
@@ -113,7 +113,7 @@ source(Forms, Comments, File, Env, Opts) ->
 %% INHERIT-OPTIONS: add_macro_defs/3
 %% INHERIT-OPTIONS: edoc_data:module/4
 
-source(Forms, File, Env, Opts) when list(Forms) ->
+source(Forms, File, Env, Opts) when is_list(Forms) ->
     source(erl_syntax:form_list(Forms), File, Env, Opts);
 source(Tree, File0, Env, Opts) ->
     Forms = preprocess_forms(Tree),
@@ -163,7 +163,7 @@ header(File, Env, Opts) ->
 %% @see header/4
 %% @see //syntax_tools/erl_recomment
 
-header(Forms, Comments, File, Env, Opts) when list(Forms) ->
+header(Forms, Comments, File, Env, Opts) when is_list(Forms) ->
     Forms1 = erl_syntax:form_list(Forms),
     header(Forms1, Comments, File, Env, Opts);
 header(Forms, Comments, File, Env, Opts) ->
@@ -186,7 +186,7 @@ header(Forms, Comments, File, Env, Opts) ->
 %% @see header/5
 %% @see //syntax_tools/erl_recomment
 
-header(Forms, File, Env, Opts) when list(Forms) ->
+header(Forms, File, Env, Opts) when is_list(Forms) ->
     header(erl_syntax:form_list(Forms), File, Env, Opts);
 header(Tree, File0, Env, _Opts) ->
     Forms = preprocess_forms(Tree),
@@ -381,7 +381,7 @@ collect([F | Fs], Cs, As, Header, Mod) ->
 				    export = Export,
 				    data = comment_text(Cs)} | As],
 		    Header, Mod);
-	{attribute, {module, _}} when Header == undefined ->
+	{attribute, {module, _}} when Header =:= undefined ->
 	    L = erl_syntax:get_pos(F),
 	    collect(Fs, [], As, #entry{name = module, line = L,
 				       data = comment_text(Cs)},
@@ -393,7 +393,7 @@ collect([F | Fs], Cs, As, Header, Mod) ->
 collect([], Cs, As, Header, _Mod) ->
     Footer = #entry{name = footer, data = comment_text(Cs)},
     As1 = lists:reverse(As),
-    if Header == undefined ->
+    if Header =:= undefined ->
 	    {#entry{name = module, data = []}, Footer, As1};
        true ->
 	    {Header, Footer, As1}

@@ -145,13 +145,13 @@ do_alu(I) ->
     end,
   [{NewI, NewOpnds, I}].
 
-do_slwi_opnds(Dst, Src1, {uimm,N}) when N >= 0, N < 32 ->
+do_slwi_opnds(Dst, Src1, {uimm,N}) when is_integer(N), 0 =< N, N < 32 ->
   {Dst, Src1, {sh,N}, {mb,0}, {me,31-N}}.
 
-do_srwi_opnds(Dst, Src1, {uimm,N}) when N >= 0, N < 32 ->
+do_srwi_opnds(Dst, Src1, {uimm,N}) when is_integer(N), 0 =< N, N < 32 ->
   {Dst, Src1, {sh,32-N}, {mb,N}, {me,31}}.
 
-do_srawi_src2({uimm,N}) when N >= 0, N < 32 -> {sh,N}.
+do_srawi_src2({uimm,N}) when  is_integer(N), 0 =< N, N < 32 -> {sh,N}.
 
 do_b_fun(I) ->
   #b_fun{'fun'=Fun,linkage=Linkage} = I,
@@ -226,7 +226,7 @@ do_pseudo_li(I, MFA, ConstMap) ->
   #pseudo_li{dst=Dst,imm=Imm} = I,
   RelocData =
     case Imm of
-      Atom when atom(Atom) ->
+      Atom when is_atom(Atom) ->
 	{load_atom, Atom};
 %%%      {mfa,MFAorPrim,Linkage} ->
 %%%	Tag =
@@ -300,10 +300,11 @@ do_fp_unary(I) ->
   NewSrc = do_fpreg(Src),
   [{FpUnOp, {NewDst,NewSrc}, I}].
 
-do_fpreg(#ppc_temp{reg=Reg,type='double'}) when Reg >= 0, Reg < 32 ->
+do_fpreg(#ppc_temp{reg=Reg,type='double'}) when is_integer(Reg), 0 =< Reg, Reg < 32 ->
   {fr,Reg}.
 
-do_reg(#ppc_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 32, Type =/= 'double' ->
+do_reg(#ppc_temp{reg=Reg,type=Type})
+  when is_integer(Reg), 0 =< Reg, Reg < 32, Type =/= 'double' ->
   {r,Reg}.
   
 do_label_ref(Label) when is_integer(Label) ->
@@ -313,14 +314,14 @@ do_reg_or_imm(Src) ->
   case Src of
     #ppc_temp{} ->
       do_reg(Src);
-    #ppc_simm16{value=Value} when Value >= -32768, Value =< 32767 ->
-      {simm,Value band 16#ffff};
-    #ppc_uimm16{value=Value} when Value >= 0, Value =< 65535 ->
-      {uimm,Value}
+    #ppc_simm16{value=Value} when is_integer(Value), -32768 =< Value, Value =< 32767 ->
+      {simm, Value band 16#ffff};
+    #ppc_uimm16{value=Value} when is_integer(Value), 0 =< Value, Value =< 65535 ->
+      {uimm, Value}
   end.
 
-do_disp(Disp) when Disp >= -32768, Disp =< 32767 ->
-  {d,Disp band 16#ffff}.
+do_disp(Disp) when is_integer(Disp), -32768 =< Disp, Disp =< 32767 ->
+  {d, Disp band 16#ffff}.
 
 do_spr(SPR) ->
   SPR_NR =

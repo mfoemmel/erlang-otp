@@ -172,9 +172,9 @@ application(App) ->
 %% {@link application/3} for details.
 %% @see application/1
 
-application(App, Options) when atom(App) ->
+application(App, Options) when is_atom(App) ->
     case code:lib_dir(App) of
- 	Dir when list(Dir) ->
+ 	Dir when is_list(Dir) ->
  	    application(App, Dir, Options);
  	_ ->
  	    report("cannot find application directory for '~s'.",
@@ -208,7 +208,7 @@ application(App, Options) when atom(App) ->
 %%
 %% @see application/2
 
-application(App, Dir, Options) when atom(App) ->
+application(App, Dir, Options) when is_atom(App) ->
     Src = edoc_lib:try_subdir(Dir, ?SOURCE_DIR),
     Overview = filename:join(edoc_lib:try_subdir(Dir, ?EDOC_DIR),
 			     ?OVERVIEW_FILE),

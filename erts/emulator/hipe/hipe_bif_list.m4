@@ -244,7 +244,7 @@ ifelse(ERTS_SMP,1,`
 nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
 ',`
 ifelse(HEAP_FRAG_ELIM_TEST,1,`
-nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
+gc_bif_interface_0(nbif_check_get_msg, hipe_check_get_msg)
 ',)dnl
 ')dnl
 

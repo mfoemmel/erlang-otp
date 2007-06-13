@@ -34,6 +34,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/runtime_tools-$(VSN)
 # ----------------------------------------------------
 
 MODULES= \
+	erts_alloc_config \
 	inviso_rt \
 	inviso_rt_meta \
 	inviso_rt_lib \
@@ -63,8 +64,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +warn_unused_vars -I../include 
+ERL_COMPILE_FLAGS += +warn_unused_vars +warn_obsolete_guard -I../include 
 
 # ----------------------------------------------------
 # Targets

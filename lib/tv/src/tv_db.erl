@@ -145,7 +145,7 @@ deblocked_loop(ProcVars, SearchWinCreated, SearchData, RegExp) ->
 		    tv_db_search:destroy_window(SearchWinCreated),
 		    deblocked_loop(ProcVars, false, [], RegExp);
 		
-		{gs,listbox,click,_LbData,[Idx | _T]} when SearchData /= [] ->
+		{gs,listbox,click,_LbData,[Idx | _T]} when SearchData =/= [] ->
 		    tv_db_search:mark_busy(SearchWinCreated),
 		    {Row,_Obj} = lists:nth(Idx+1, SearchData),
 		    DbData     = ProcVars#process_variables.db_data,
@@ -314,11 +314,11 @@ update_sorting_mode(Msg, ProcVars, SearchWinCreated, OldSearchData, RegExp) ->
 	case Sorting of
 	    false ->
 		OldSearchData;
-	    OldSorting when Reverse == OldReverse,
-			    SortKeyNo == OldSortKeyNo ->
+	    OldSorting when Reverse =:= OldReverse,
+			    SortKeyNo =:= OldSortKeyNo ->
 		[];
-	    OldSorting when Reverse == OldReverse,
-			    OldSortKeyNo == undefined->
+	    OldSorting when Reverse =:= OldReverse,
+			    OldSortKeyNo =:= undefined->
 		[];
 	    _Other ->
 		ListAsStr = ProcVars#process_variables.lists_as_strings,
@@ -483,7 +483,7 @@ update_object(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 
        %% Don't update if there are no changes!
     case OldObj of
-	Obj when OldColor /= ?BLACK ->   %% Allow deleted objects to be inserted!
+	Obj when OldColor =/= ?BLACK ->   %% Allow deleted objects to be inserted!
 	    gs:window(dbwin, gs:start(), []),
 	    case get(error_msg_mode) of
 		normal ->
@@ -573,15 +573,15 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 	    set ->
 		case Key of
 		    OldKey ->
-			fun({Data,Color}, {Replaced,AccDb}) when element(KeyNo,Data) /= Key ->
+			fun({Data,Color}, {Replaced,AccDb}) when element(KeyNo,Data) =/= Key ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor == ?BLACK,
-								 Color == ?BLACK ->
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =:= ?BLACK,
+								 Color =:= ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor /= ?BLACK,
-								 Color /= ?BLACK ->
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =/= ?BLACK,
+								 Color =/= ?BLACK ->
 				{true, [{Obj,?GREEN1} | AccDb]};
 			   ({_Data,_Color}, {Replaced,AccDb}) ->
 				{Replaced, AccDb}
@@ -590,13 +590,13 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 			fun({Data,Color}, {Replaced,AccDb}) ->
 				ElemKey = element(KeyNo,Data),
 				case ElemKey of
-				    OldKey when Replaced == false,
-						OldColor == ?BLACK,
-						Color    == ?BLACK ->
+				    OldKey when not Replaced,
+						OldColor =:= ?BLACK,
+						Color    =:= ?BLACK ->
 					{true, [{Obj,?RED1} | AccDb]};
-				    OldKey when Replaced == false,
-						OldColor /= ?BLACK,
-						Color /= ?BLACK ->
+				    OldKey when not Replaced,
+						OldColor =/= ?BLACK,
+						Color =/= ?BLACK ->
 					{true, [{Obj,?GREEN1} | AccDb]};
 				    OldKey ->
 					{Replaced, AccDb};
@@ -611,36 +611,36 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 	    bag ->
 		case Key of
 		    OldKey ->
-			fun({Data,_Color}, {Replaced,AccDb}) when Data == Obj ->
+			fun({Data,_Color}, {Replaced,AccDb}) when Data =:= Obj ->
 				{Replaced, AccDb};
-			   ({Data,Color}, {Replaced,AccDb}) when Data /= OldObj ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =/= OldObj ->
 				{Replaced, [{Data,Color} | AccDb]};
-			      %% Clauses when Data == OldObj.
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor == ?BLACK,
-								 Color == ?BLACK ->
+			      %% Clauses when Data =:= OldObj.
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =:= ?BLACK,
+								 Color =:= ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor /= ?BLACK,
-								 Color /= ?BLACK ->
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =/= ?BLACK,
+								 Color =/= ?BLACK ->
 				{true, [{Obj,Color} | AccDb]};
 			   ({_Data,_Color}, {Replaced,AccDb}) ->
 				{Replaced, AccDb}
 			end;
 		    _NewKey ->
-			fun({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
-								 Replaced == false,
-								 OldColor == ?BLACK,
-								 Color == ?BLACK ->
+			fun({Data,Color}, {Replaced,AccDb}) when Data =:= OldObj,
+								 not Replaced,
+								 OldColor =:= ?BLACK,
+								 Color =:= ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
-								 Replaced == false,
-								 OldColor /= ?BLACK,
-								 Color /= ?BLACK ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =:= OldObj,
+								 not Replaced,
+								 OldColor =/= ?BLACK,
+								 Color =/= ?BLACK ->
 				{true, [{Obj,?GREEN1} | AccDb]};
-			   ({Data,_Color}, {Replaced,AccDb}) when Data == OldObj ->
+			   ({Data,_Color}, {Replaced,AccDb}) when Data =:= OldObj ->
 				{Replaced, AccDb};
-			   ({Data,_Color}, {Replaced,AccDb}) when Data == Obj ->
+			   ({Data,_Color}, {Replaced,AccDb}) when Data =:= Obj ->
 				{Replaced, AccDb};
 			   ({Data,Color}, {Replaced,AccDb}) ->
 				{Replaced, [{Data,Color} | AccDb]}
@@ -652,35 +652,35 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 		   %% remove anything, just replace one element.
 		case Key of
 		    OldKey ->
-			fun({Data,Color}, {Replaced,AccDb}) when Data == Obj ->
+			fun({Data,Color}, {Replaced,AccDb}) when Data =:= Obj ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data /= OldObj ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =/= OldObj ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor == ?BLACK,
-								 Color == ?BLACK ->
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =:= ?BLACK,
+								 Color =:= ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false,
-								 OldColor /= ?BLACK,
-								 Color /= ?BLACK ->
+			   ({_Data,Color}, {Replaced,AccDb}) when not Replaced,
+								 OldColor =/= ?BLACK,
+								 Color =/= ?BLACK ->
 				{true, [{Obj,Color} | AccDb]};
 			   ({Data,Color}, {Replaced,AccDb}) ->
 				{Replaced, [{Data,Color} | AccDb]}
 			end;
 		    _NewKey ->
-			fun({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
-								 Replaced == false,
-								 OldColor == ?BLACK,
-								 Color == ?BLACK ->
+			fun({Data,Color}, {Replaced,AccDb}) when Data =:= OldObj,
+								 not Replaced,
+								 OldColor =:= ?BLACK,
+								 Color =:= ?BLACK ->
 				{true, [{Obj,?RED1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == OldObj,
-								 Replaced == false,
-								 OldColor /= ?BLACK,
-								 Color /= ?BLACK ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =:= OldObj,
+								 not Replaced,
+								 OldColor =/= ?BLACK,
+								 Color =/= ?BLACK ->
 				{true, [{Obj,?GREEN1} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == OldObj ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =:= OldObj ->
 				{Replaced, [{Data,Color} | AccDb]};
-			   ({Data,Color}, {Replaced,AccDb}) when Data == Obj ->
+			   ({Data,Color}, {Replaced,AccDb}) when Data =:= Obj ->
 				{Replaced, [{Data,Color} | AccDb]};
 			   ({Data,Color}, {Replaced,AccDb}) ->
 				{Replaced, [{Data,Color} | AccDb]}
@@ -695,7 +695,7 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
     
     {Repl, TmpList} =
 	case split(ObjNo, DbList) of
-	    {L1, [{OldObj,OldColor} | T]} when OldColor /= ?BLACK ->
+	    {L1, [{OldObj,OldColor} | T]} when OldColor =/= ?BLACK ->
 		{true, 
 		 lists:reverse(element(2, FilterFun({true,[]}, L1))) ++ 
 		 [{Obj,?GREEN1} | lists:reverse(element(2, FilterFun({true,[]},T)))]};
@@ -711,7 +711,7 @@ update_object2(Obj, OldObj, OldColor, ObjNo, ProcVars) ->
 
     NewDbList = 
 	case Repl of
-	    true when Sorting == false ->
+	    true when not Sorting ->
 		TmpList;
 	    true ->
 		tv_db_sort:mergesort(SortKeyNo, TmpList, RevSorting);
@@ -800,10 +800,10 @@ delete_object(Obj, _ObjColor, ObjNo, ProcVars) ->
 			TmpList;
 		    false ->
 			Fun = fun({Data,TmpColor}, 
-				  {Removed,AccDb}) when Data /= Obj ->
+				  {Removed,AccDb}) when Data =/= Obj ->
 				      {Removed, [{Data,TmpColor} | AccDb]};
 				 ({_Data,TmpColor}, 
-				  {Removed,AccDb}) when Removed == false, TmpColor /= ?BLACK ->
+				  {Removed,AccDb}) when not Removed, TmpColor =/= ?BLACK ->
 				      {true, [{Obj,?BLACK} | AccDb]};
 				 ({Data,TmpColor}, 
 				  {Removed,AccDb}) ->
@@ -884,38 +884,38 @@ insert_new_object(EtsType,Key,KeyNo,Obj,DbList,Sorting,RevSorting,SortKeyNo) ->
     Fun = 
 	case basetype(EtsType) of
 	    set ->
-		fun({Data,Color}, {Replaced,AccDb}) when element(KeyNo,Data) /= Key ->
+		fun({Data,Color}, {Replaced,AccDb}) when element(KeyNo,Data) =/= Key ->
 			{Replaced, [{Data,Color} | AccDb]};
-		   ({Data,Color}, {Replaced,AccDb}) when Replaced == false, 
-							 Color /= ?BLACK,
-							 Data /= Obj->
+		   ({Data,Color}, {Replaced,AccDb}) when not Replaced, 
+							 Color =/= ?BLACK,
+							 Data =/= Obj->
 			{true, [{Obj,?GREEN1} | AccDb]};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
-							 Color /= ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when not Replaced, 
+							 Color =/= ?BLACK ->
 			{true, [{Obj,Color} | AccDb]};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
-							 Color == ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when not Replaced, 
+							 Color =:= ?BLACK ->
 			{true, [{Obj, ?RED1} | AccDb]};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
-							 Color == ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced, 
+							 Color =:= ?BLACK ->
 			{false, AccDb};
 		   ({_Data,_Color}, {Replaced,AccDb}) ->
 			{Replaced, AccDb}
 		end;
 	    bag ->
-		fun({Data,Color}, {Replaced,AccDb}) when Data /= Obj ->
+		fun({Data,Color}, {Replaced,AccDb}) when Data =/= Obj ->
 			{Replaced, [{Data,Color} | AccDb]};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
-							 Color /= ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when not Replaced, 
+							 Color =/= ?BLACK ->
 			{true, [{Obj,Color} | AccDb]};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
-							 Color /= ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced, 
+							 Color =/= ?BLACK ->
 			{true, AccDb};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == true, 
-							 Color == ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when Replaced, 
+							 Color =:= ?BLACK ->
 			{true, AccDb};
-		   ({_Data,Color}, {Replaced,AccDb}) when Replaced == false, 
-							 Color == ?BLACK ->
+		   ({_Data,Color}, {Replaced,AccDb}) when not Replaced, 
+							 Color =:= ?BLACK ->
 			{true, [{Obj, ?RED1} | AccDb]};
 		   ({_Data,_Color}, {Replaced,AccDb}) ->
 			{Replaced, AccDb}
@@ -963,7 +963,7 @@ max_size(L) ->
 
 max_size([], CurrMax) ->
     CurrMax;
-max_size([H | T], CurrMax) when tuple(H) ->
+max_size([H | T], CurrMax) when is_tuple(H) ->
     Size = size(H),
     if
 	Size >= CurrMax ->
@@ -1024,7 +1024,7 @@ mark_one_element_deleted(KeyNo, {tuple, KeyValue},
     OldKeyValue = tv_db_sort:get_compare_value(KeyNo, DataTuple),
        % Remember that the order of the original list has to be preserved!
     if
-	OldKeyValue == {tuple, KeyValue} ->
+	OldKeyValue =:= {tuple, KeyValue} ->
 	    Acc ++ [{Data, ?BLACK}] ++ Tail;
 	true ->
 	    mark_one_element_deleted(KeyNo, {tuple, KeyValue}, Data, Tail, 
@@ -1032,7 +1032,7 @@ mark_one_element_deleted(KeyNo, {tuple, KeyValue},
     end;
 mark_one_element_deleted(KeyNo, _KeyValue, Data, [{DataTuple, Color} | Tail], Acc) ->
     if
-	Data == DataTuple ->
+	Data =:= DataTuple ->
 	    Acc ++ [{Data, ?BLACK}] ++ Tail;
 	true ->
 	    mark_one_element_deleted(KeyNo, _KeyValue, Data, Tail, 
@@ -1068,7 +1068,7 @@ replace_one_element(KeyNo, {tuple, Key1}, Data, [{DataTuple, Color} | Tail], Acc
     Key2 = tv_db_sort:get_compare_value(KeyNo, DataTuple),
     % Remember that the order of the original list has to be preserved!
     if
-	Key2 == {tuple, Key1} ->
+	Key2 =:= {tuple, Key1} ->
 	    Acc ++ [{Data, ?GREEN1}] ++ Tail;
 	true ->
 	    replace_one_element(KeyNo, {tuple, Key1}, Data, Tail, 
@@ -1143,7 +1143,7 @@ searchdelete(_Key, _ElemNo, [], Acc) ->
 searchdelete(Key, ElemNo, [Tuple | Tail], Acc) ->
     % We don't use standard libraries, 'cause we want to make an 'atomic'
     % operation, i.e., we will not search the list two times...
-    case (element(ElemNo, Tuple) == Key) of
+    case (element(ElemNo, Tuple) =:= Key) of
 	true ->
 	    {true, Acc ++ Tail};   % Return the list without the matching element
 	_Other ->

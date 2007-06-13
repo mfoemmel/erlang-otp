@@ -3,7 +3,7 @@
 ;; Copyright (C) 1995-1998,2000  Ericsson Telecom AB
 ;; Copyright (C) 2004  Free Software Foundation, Inc.
 ;; Author:   Anders Lindgren
-;; Version:  2.5.3
+;; Version:  2.5.4
 ;; Keywords: erlang, languages, processes
 ;; Date:     2000-09-11
 
@@ -77,7 +77,7 @@
 
 ;; Variables:
 
-(defconst erlang-version "2.5.3"
+(defconst erlang-version "2.5.4"
   "The version number of Erlang mode.")
 
 (defvar erlang-root-dir nil
@@ -1942,7 +1942,9 @@ Other commands:
   (define-key map "<"         'erlang-electric-lt)
   (define-key map ">"         'erlang-electric-gt)
   (define-key map "\C-m"      'erlang-electric-newline)
-  (define-key map "\177"      'backward-delete-char-untabify)
+  (if erlang-xemacs-p
+    (define-key map [(backspace)]      'backward-delete-char-untabify)
+    (define-key map "\177"     'backward-delete-char-untabify))
   ;;(unless (boundp 'fill-paragraph-function)
   (define-key map "\M-q"      'erlang-fill-paragraph)
   (unless (boundp 'beginning-of-defun-function)
@@ -1988,6 +1990,7 @@ Other commands:
   (put 'bitsyntax-close-inner 'rear-nonsticky '(category))
   (put 'bitsyntax-close-outer 'syntax-table '(5 . ?<))
   (put 'bitsyntax-close-outer 'rear-nonsticky '(category))
+  (make-local-variable 'parse-sexp-lookup-properties)
   (setq parse-sexp-lookup-properties 't))
 
 
@@ -5599,8 +5602,10 @@ Return the position after the newly inserted command."
 	    (replace-match "" t t))))))
 
 
-(defun inferior-erlang-compile ()
+(defun inferior-erlang-compile (arg)
   "Compile the file in the current buffer.
+
+With prefix arg, compiles for debug.
 
 Should Erlang return `{error, nofile}' it could not load the object
 module after completing the compilation.  This is due to a bug in the
@@ -5613,7 +5618,7 @@ There exists two workarounds for this bug:
   2) Set the Emacs variable `erlang-compile-use-outdir' to nil.
      To do so, place the following line in your `~/.emacs'-file:
         (setq erlang-compile-use-outdir nil)"
-  (interactive)
+  (interactive "P")
   (save-some-buffers)
   (or (inferior-erlang-running-p)
       (save-excursion
@@ -5621,7 +5626,7 @@ There exists two workarounds for this bug:
   (or (inferior-erlang-running-p)
       (error "Error starting inferior Erlang shell"))
   (let ((dir (file-name-directory (buffer-file-name)))
-	;;; (file (file-name-nondirectory (buffer-file-name)))
+;;; (file (file-name-nondirectory (buffer-file-name)))
 	(noext (substring (buffer-file-name) 0 -4))
 	;; Hopefully, noone else will ever use these...
 	(tmpvar "Tmp7236")
@@ -5631,12 +5636,16 @@ There exists two workarounds for this bug:
     (inferior-erlang-wait-prompt)
     (setq end (inferior-erlang-send-command
 	       (if erlang-compile-use-outdir
-		   (format "c(\"%s\", [{outdir, \"%s\"}])." noext dir)
+		   (if current-prefix-arg 
+		       (format "c(\"%s\", [{outdir, \"%s\"}, debug_info, export_all])." noext dir)
+		     (format "c(\"%s\", [{outdir, \"%s\"}])." noext dir))
 		 (format
 		  (concat
 		   "f(%s), {ok, %s} = file:get_cwd(), "
 		   "file:set_cwd(\"%s\"), "
-		   "%s = c(\"%s\"), file:set_cwd(%s), f(%s), %s.")
+		   (if current-prefix-arg 
+		       "%s = c(\"%s\", [debug_info, export_all]), file:set_cwd(%s), f(%s), %s."
+		     "%s = c(\"%s\"), file:set_cwd(%s), f(%s), %s."))
 		  tmpvar2 tmpvar
 		  dir
 		  tmpvar2 noext tmpvar tmpvar tmpvar2))

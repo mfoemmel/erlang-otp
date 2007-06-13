@@ -50,7 +50,7 @@ assert_table_defined(Name, Line) ->
 
 	
 
-elements(N, L) when list(L) -> lists:map(fun(H) -> element(N,H) end, L).
+elements(N, L) when is_list(L) -> lists:map(fun(H) -> element(N,H) end, L).
 
 
 db_data(record_defs, Module) -> get_from_module(Module, {data,record_defs});
@@ -58,7 +58,7 @@ db_data(record_defs, Module) -> get_from_module(Module, {data,record_defs});
 db_data(argtypes, Module) -> get_from_module(Module, {data,argtypes}).
 
 
-db_read_clauses(P) when record(P,pred_sym), P#pred_sym.type==rule ->
+db_read_clauses(P) when is_record(P,pred_sym), P#pred_sym.type==rule ->
     Module = P#pred_sym.module,
     Name = P#pred_sym.functor,
     mk_bodies(get_from_module(Module,Name), P).

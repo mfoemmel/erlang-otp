@@ -275,7 +275,7 @@ sort_1(X, [Y | L], R) when X < Y ->
 sort_1(X, [Y | L], R) ->
     split_2(X, Y, L, R, []);
 sort_1(X, [], R) ->
-    [X | R].
+    lists:reverse(R, [X]).
 
 %% merge(List) -> L
 %%  merges a list of sorted lists
@@ -464,7 +464,7 @@ keysort_1(I, X, EX, [Y | L], R) ->
 	    keysplit_2(I, X, EX, Y, EY, L, R, [])
     end;
 keysort_1(_I, X, _EX, [], R) ->
-    [X | R].
+    lists:reverse(R, [X]).
 
 keymerge(Index, T1, L2) when is_integer(Index), Index > 0 -> 
     case L2 of

@@ -1,0 +1,14 @@
+{"0.9.9.1",
+ [
+ {"0.9.7", [{restart_application, ssh}]},	
+ {"0.9.6", [{restart_application, ssh}]},	
+ {"0.9.5", [{restart_application, ssh}]}	
+ ],
+ [
+ {"0.9.7", [{restart_application, ssh}]},	
+ {"0.9.6", [{restart_application, ssh}]},		
+ {"0.9.5", [{restart_application, ssh}]}
+ ] 
+}.
+
+

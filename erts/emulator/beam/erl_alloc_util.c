@@ -1596,7 +1596,7 @@ bld_unstable_uint(Uint **hpp, Uint *szp, Uint ui)
 {
     Eterm res = THE_NON_VALUE;
     if (szp)
-	szp += BIG_UINT_HEAP_SIZE;
+	*szp += BIG_UINT_HEAP_SIZE;
     if (hpp) {
 	if (IS_USMALL(0, ui))
 	    res = make_small(ui);

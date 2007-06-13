@@ -414,7 +414,7 @@ translate_dependent_instrs(Mode, Before, After, Appls) ->
     {Before ++ NBefore, NAfter}.
 
 translate_dep_loop(G, WCs, [I| Is], Appls, Before, After, Mode) 
-  when tuple(I), size(I) > 1 ->
+  when is_tuple(I), size(I) > 1 ->
     IName = element(1, I),
     case lists:member(IName, ?DEP_INSTRS) of 
 	true ->
@@ -444,7 +444,7 @@ translate_dep_loop(_G, _WCs, [], _Appls, Before, After, _Mode) ->
 %% %%-----------------------------------------------------------------
 make_dependency_graph(Instructions) ->
     %% Filter out dependent instructions
-    DepIs = lists:filter(fun(I) when tuple(I) ->
+    DepIs = lists:filter(fun(I) when is_tuple(I) ->
 			       IName = element(1, I),
 			       lists:member(IName, ?DEP_INSTRS);
 			    (_) ->
@@ -811,7 +811,7 @@ check_op({apply, {M, F, A}}) ->
 check_op(restart_new_emulator) -> ok;
 check_op(X) -> throw({error, {bad_instruction, X}}).
 
-check_mod(Mod) when atom(Mod) -> ok;
+check_mod(Mod) when is_atom(Mod) -> ok;
 check_mod(Mod) -> throw({error, {bad_module, Mod}}).
 
 check_change(soft) -> ok;
@@ -826,30 +826,30 @@ check_purge(soft_purge) -> ok;
 check_purge(brutal_purge) -> ok;
 check_purge(Purge) -> throw({error, {bad_purge_method, Purge}}).
 
-check_list(List) when list(List) -> ok;
+check_list(List) when is_list(List) -> ok;
 check_list(List) -> throw({error, {bad_list, List}}).
 
-check_args(Args) when list(Args) -> ok;
+check_args(Args) when is_list(Args) -> ok;
 check_args(Args) -> throw({error, {bad_args_list, Args}}).
 
-check_node(Node) when atom(Node) -> ok;
+check_node(Node) when is_atom(Node) -> ok;
 check_node(Node) -> throw({error, {bad_node, Node}}).
 
-check_appl(Appl) when atom(Appl) -> ok;
+check_appl(Appl) when is_atom(Appl) -> ok;
 check_appl(Appl) -> throw({error, {bad_application, Appl}}).
 
-check_func(Func) when atom(Func) -> ok;
+check_func(Func) when is_atom(Func) -> ok;
 check_func(Func) -> throw({error, {bad_func, Func}}).
 
-check_lib(Lib) when atom(Lib) -> ok;
+check_lib(Lib) when is_atom(Lib) -> ok;
 check_lib(Lib) -> throw({error, {bad_lib, Lib}}).
 
-check_lib_vsn(LibVsn) when list(LibVsn) -> ok;
+check_lib_vsn(LibVsn) when is_list(LibVsn) -> ok;
 check_lib_vsn(LibVsn) -> throw({error, {bad_lib_vsn, LibVsn}}).
 
 check_timeout(default) -> ok;
 check_timeout(infinity) -> ok;
-check_timeout(Int) when integer(Int), Int > 0 -> ok;
+check_timeout(Int) when is_integer(Int), Int > 0 -> ok;
 check_timeout(T) -> throw({error, {bad_timeout, T}}).
 
 check_mode(up) -> ok;

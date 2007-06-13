@@ -44,7 +44,7 @@ start_child(Args) ->
 %%%  Supervisor callback
 %%%=========================================================================
 
-init([Services]) when list(Services) ->
+init([Services]) when is_list(Services) ->
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
@@ -64,7 +64,7 @@ worker_spec(KillAfter, Options) ->
 
 unique_name(Options) ->
     case lists:keysearch(port, 1, Options) of
-	{value, {_, Port}} when integer(Port), Port > 0 -> 
+	{value, {_, Port}} when is_integer(Port), Port > 0 -> 
 	    {tftpd, Port};
 	_ ->
 	    {tftpd, erlang:now()}

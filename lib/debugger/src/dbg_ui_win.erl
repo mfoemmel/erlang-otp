@@ -147,7 +147,7 @@ create_item(Menu, MenuItem, Group) ->
     gs:menuitem(Name, Menu, [{label, {text,Name}},
 			     {font, font(normal)} | Options]),
     if
-	integer(N) -> gs:config(Name, {underline, N});
+	is_integer(N) -> gs:config(Name, {underline, N});
 	true -> ignore
     end.
 

@@ -17,9 +17,21 @@
 %%
 -module(escript).
 
+%% Useful functionst that can be called from scripts.
+-export([script_name/0]).
+
+%% Internal API.
 -export([start/0, start/1]).
 
--import(lists, [foldl/3,map/2,flatmap/2,member/2,reverse/1,foreach/2]).
+-import(lists, [foldl/3,flatmap/2,member/2,reverse/1,foreach/2]).
+
+script_name() ->
+    [ScriptName|_] = init:get_plain_arguments(),
+    ScriptName.
+
+%%
+%% Internal API.
+%%
 
 start() ->
     start([]).

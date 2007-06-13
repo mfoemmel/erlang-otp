@@ -79,7 +79,7 @@ create(DB, GstkId, Opts) ->
     PlacePreCmd = [";place ", TkW],
     case gstk_generic:make_command(Opts, NGstkid, TkW, "", PlacePreCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(["frame ", TkW,
 		      " -relief raised -bo 0",Cmd]),
 	    NGstkid
@@ -186,7 +186,7 @@ option(Option, Gstkid, _TkW, DB,_) ->
 xpack(W,DB,Gstkid) ->
     gstk_db:insert_opt(DB,Gstkid,{width,W}),
     case gstk_db:opt_or_not(DB,Gstkid,packer_x) of
-	{value,Pack} when list(Pack) ->
+	{value,Pack} when is_list(Pack) ->
 	    ColSiz = gs_packer:pack(W,Pack),
 	    pack_children(pack_x,x,width,DB,
 			  gstk_db:lookup_kids(DB,Gstkid#gstkid.id),
@@ -197,7 +197,7 @@ xpack(W,DB,Gstkid) ->
 ypack(H,DB,Gstkid) ->
     gstk_db:insert_opt(DB,Gstkid,{height,H}),
     case gstk_db:opt_or_not(DB,Gstkid,packer_y) of
-	{value,Pack} when list(Pack) ->
+	{value,Pack} when is_list(Pack) ->
 	    ColSiz = gs_packer:pack(H,Pack),
 	    pack_children(pack_y,y,height,DB,
 			  gstk_db:lookup_kids(DB,Gstkid#gstkid.id),

@@ -164,7 +164,7 @@ dirty_all_keys(State, TabName) ->
 
 % Not supported in corba
 dirty_match_object(State, Tab, Pattern)
-  when State#state.client_type /= corba_session ->   
+  when State#state.client_type =/= corba_session ->   
     Res = (catch mnesia:dirty_match_object(list_to_atom(Tab), Pattern)),
     handle_result(State, Res, reclist).
 
@@ -181,7 +181,7 @@ dirty_index_read(State, Tab, KeyObj, Pos) ->
 
 %% Not supported in corba
 dirty_index_match_object(State, Tab, Pattern, Pos) 
-  when State#state.client_type /= corba_session ->
+  when State#state.client_type =/= corba_session ->
     Res = (catch mnesia:dirty_index_match_object(list_to_atom(Tab), 
 						 Pattern, Pos)),
     handle_result(State, Res, reclist).
@@ -339,7 +339,7 @@ dump_to_textfile(State, Filename) ->
 
 table_info(State, TabName) -> 
     case catch mnesia:table_info(list_to_atom(TabName), all) of 
-	Res when list(Res) ->	    
+	Res when is_list(Res) ->	    
 	    Info = remap_tableinfo(Res, #mnesia_TableInfo{}),
 	    handle_result(State, Info, {val, table_info});
 	Else ->
@@ -348,7 +348,7 @@ table_info(State, TabName) ->
 
 system_info(State) ->
     case catch mnesia:system_info(all) of 
-	Res when list(Res) ->	    
+	Res when is_list(Res) ->	    
 	    Info = remap_systeminfo(Res, empty_systeminfo()),
 	    handle_result(State, Info, {val, system_info});
 	Else ->
@@ -357,19 +357,19 @@ system_info(State) ->
 
 %% Functions NOT supported in corba
 
-create_schema(State, Nodes) when State#state.client_type /= corba_session ->
+create_schema(State, Nodes) when State#state.client_type =/= corba_session ->
     Res = (catch mnesia:create_schema(strings_to_atomlist(Nodes))),
     handle_result(State, Res, noreturn).
 
-delete_schema(State, Nodes) when State#state.client_type /= corba_session ->
+delete_schema(State, Nodes) when State#state.client_type =/= corba_session ->
     Res = (catch mnesia:delete_schema(strings_to_atomlist(Nodes))),
     handle_result(State, Res, noreturn).
     
-start_mnesia(State) when State#state.client_type /= corba_session ->
+start_mnesia(State) when State#state.client_type =/= corba_session ->
     Res = (catch mnesia:start()),
     handle_result(State, Res, noreturn).
 
-stop_mnesia(State) when State#state.client_type /= corba_session ->
+stop_mnesia(State) when State#state.client_type =/= corba_session ->
     case (catch mnesia:stop()) of
 	stopped -> 
 	    handle_result(State, ok, noreturn);
@@ -399,13 +399,13 @@ handle_result(State, {atomic, ok}, noreturn) ->
 handle_result(State, end_of_table, reclist) ->
     {reply, {end_of_table, [], ""}, State};
 handle_result(State, end_of_table, any_null) 
-  when State#state.client_type == corba_session ->    
+  when State#state.client_type =:= corba_session ->    
     {reply, {end_of_table, #any{typecode = tk_null, value = null}, ""}, State};
 handle_result(State, end_of_table, any_null) 
-  when State#state.client_type == session ->    
+  when State#state.client_type =:= session ->    
     {reply, {end_of_table, null, ""}, State};
 handle_result(State, ResList, reclist) 
-  when list(ResList), State#state.client_type == corba_session ->
+  when is_list(ResList), State#state.client_type =:= corba_session ->
     case catch remap_anytype(ResList) of
 	{'EXIT', Reason} -> 
 	    handle_result(State, {'EXIT', Reason}, reclist);
@@ -413,14 +413,14 @@ handle_result(State, ResList, reclist)
 	    {reply, {ok, Result, ""}, State}
     end;
 handle_result(State, ResList, reclist) 
-  when list(ResList), State#state.client_type == session ->
+  when is_list(ResList), State#state.client_type =:= session ->
     {reply, {ok, ResList, ""}, State};
 
 handle_result(State, ResList, {keylist, _}) 
-  when list(ResList), State#state.client_type == session ->
+  when is_list(ResList), State#state.client_type =:= session ->
     {reply, {ok, ResList, ""}, State};
 handle_result(State, ResList, {keylist, TC}) 
-  when list(ResList), State#state.client_type == corba_session ->
+  when is_list(ResList), State#state.client_type =:= corba_session ->
     Res = [#any{typecode = TC, value = Val} || Val <- ResList],
     {reply, {ok, Res, ""}, State};
 
@@ -653,7 +653,7 @@ remap_systeminfo([{use_dir, Val} | R], S) ->
 remap_systeminfo([_ | R], S) ->
     remap_systeminfo(R, S).
 
-type_transform(Any, corba_session) when record(Any, any) ->
+type_transform(Any, corba_session) when is_record(Any, any) ->
     Any#any.value;
 type_transform(Type, session) ->
     Type.

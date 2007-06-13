@@ -22,14 +22,10 @@
 -define(dbg(Fmt, Args), no_debug).
 -endif.
 
--define('RT_BER',"asn1rt_ber_v1").
 -define('RT_BER_BIN',"asn1rt_ber_bin").
--define('RT_PER',"asn1rt_per_v1").
-%% change to this when we have this module -define('RT_PER_BIN',"asn1rt_per_bin").
+%%-define('RT_PER',"asn1rt_per_v1").
 -define('RT_PER_BIN',"asn1rt_per_bin").
 
- %% comment this def in later releases than r7b
-%-define(asn1_r7b_enable_driver,true).
 
 -record(module,{pos,name,defid,tagdefault='EXPLICIT',exports={exports,[]},imports={imports,[]}, extensiondefault=empty,typeorval}).
 

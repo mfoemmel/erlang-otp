@@ -6,8 +6,8 @@
 %%  History  :	* 2001-11-20 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/06/22 10:35:53 $
-%%              $Revision: 1.2 $
+%%              $Date: 2007/05/12 09:31:04 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %% Implements :
 %% 
@@ -58,21 +58,23 @@
 	 sdesc_arity/1, sdesc_arity_update/2,
 	 pp_sdesc/2]).
 
--record(stack_desc,{size=0,live_slots=[],arity=0}).
+-record(stack_desc, {size       = 0  :: integer(),
+		     live_slots = [] :: [integer()],
+		     arity      = 0  :: integer()}).
 
 %% @spec sdesc_mk_empty() -> sdesc()
 sdesc_mk_empty() ->
   #stack_desc{}.
 
-sdesc_size(#stack_desc{size=Size}) -> Size.
+sdesc_size(#stack_desc{size=Size}) when is_integer(Size), 0 =< Size -> Size.
 sdesc_live_slots(#stack_desc{live_slots=Slots}) -> Slots.
-sdesc_arity(#stack_desc{arity=Arity}) -> Arity.
+sdesc_arity(#stack_desc{arity=A}) when is_integer(A), 0 =< A -> A.
 
-sdesc_size_update(SD, FSize) ->
+sdesc_size_update(SD, FSize) when is_integer(FSize), 0 =< FSize ->
   SD#stack_desc{size=FSize}.
 sdesc_live_slots_update(SD, Live) ->
   SD#stack_desc{live_slots=Live}.
-sdesc_arity_update(SD, Exn) ->
+sdesc_arity_update(SD, Exn) when is_integer(Exn), 0 =< Exn ->
   SD#stack_desc{arity=Exn}.
 
 pp_sdesc(Dev,SD) ->

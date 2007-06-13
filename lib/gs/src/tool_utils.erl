@@ -423,7 +423,7 @@ handle_event({gs,_Obj,_Event,_Data,_Arg}, State) ->
 %% If Strings is a list of strings, return a string where all these
 %% strings are concatenated with newlines in between,otherwise return
 %% Strings.
-insert_newlines([String|Rest]) when list(String),Rest/=[]->
+insert_newlines([String|Rest]) when is_list(String),Rest/=[]->
     String ++ "\n" ++ insert_newlines(Rest);
 insert_newlines([Last]) ->
     [Last];

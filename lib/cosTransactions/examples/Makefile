@@ -82,9 +82,11 @@ LOCAL_CLASSPATH = $(ERL_TOP)/lib/cosTransactions/priv:$(ERL_TOP)/lib/cosTransact
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa /clearcase/otp/libraries/cosTransactions/ebin -pa /clearcase/otp/libraries/ic/ebin
+ERL_IDL_FLAGS += -pa /clearcase/otp/libraries/cosTransactions/ebin -pa /clearcase/otp/libraries/ic/ebin
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -pa /clearcase/otp/libraries/cosTransactions -I/clearcase/otp/libraries/cosTransactions
+ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
+	-pa /clearcase/otp/libraries/cosTransactions -I/clearcase/otp/libraries/cosTransactions
 YRL_FLAGS = 
 
 JAVA_OPTIONS = -classpath ../priv:/opt/local/pgm/OrbixWeb2.0.1
@@ -136,7 +138,7 @@ java_costransactions_idl:
 #	@touch java_hotel_resource
 
 #oe_travelAgency.erl: travelAgency.idl
-#	erlc $(ERL_FLAGS) travelAgency.idl
+#	erlc $(ERL_IDL_FLAGS) travelAgency.idl
 
 # ----------------------------------------------------
 # Release Target

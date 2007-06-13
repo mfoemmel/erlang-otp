@@ -304,7 +304,7 @@ call(Msg) ->
 %   Dirs - [string()] Directory names
 % Calls add_tools2/2 recursively for a number of directories
 %----------------------------------------
-add_tools(Window,[Dir|Rest]) when list(Dir) ->
+add_tools(Window,[Dir|Rest]) when is_list(Dir) ->
 
     %% Add all tools in the directory Dir
     NewWindow = add_tools2(Window,tool_files(Dir)),
@@ -415,7 +415,7 @@ tool_info(ToolFile) ->
 	    {error,nofile};
 	{error,read} ->
 	    {error,format};
-	{ok,[{version,Vsn},InfoTuple]} when tuple(InfoTuple)->
+	{ok,[{version,Vsn},InfoTuple]} when is_tuple(InfoTuple)->
 	    case toolbar_lib:tool_info_syntax(Vsn,InfoTuple) of
 		
 		%% Syntax check ok, start additional checks
@@ -428,7 +428,7 @@ tool_info(ToolFile) ->
 		Error ->
 		    Error
 	    end;
-	{ok,[{version,Vsn},ToolInfo]} when list(ToolInfo)->
+	{ok,[{version,Vsn},ToolInfo]} when is_list(ToolInfo)->
 	    case toolbar_lib:tool_info_syntax(Vsn,ToolInfo) of
 		
 		%% Syntax check ok, start additional checks

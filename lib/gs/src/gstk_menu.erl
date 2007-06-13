@@ -101,7 +101,7 @@ create(DB, GstkId, Opts) ->
 	    MPostCmd = [$;,PMW," entryco ",gstk:to_ascii(Index)," -menu ",TkW],
 	    case gstk_generic:make_command(Opts, Gstkid, TkW, "", "", DB) of
 		{error,Reason} -> {error,Reason};
-		Cmd when list(Cmd) ->
+		Cmd when is_list(Cmd) ->
 		    gstk:exec([MPreCmd,Cmd,MPostCmd]),
 		    Gstkid
 	    end;
@@ -119,7 +119,7 @@ create(DB, GstkId, Opts) ->
 		       end,
 	    case gstk_generic:make_command(Opts, Gstkid, TkW, "","", DB) of
 		{error,Reason} -> {error,Reason};
-		Cmd when list(Cmd) ->
+		Cmd when is_list(Cmd) ->
 		    gstk:exec([MPreCmd,Cmd,MPostCmd]),
 		    Gstkid
 	    end

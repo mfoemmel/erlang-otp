@@ -165,6 +165,7 @@ await_reply(Tag, Pid, Timeout) ->
     
 init(Name, Starter, Parent) ->
     put(name, Name ++ "-GEN"),
+    process_flag(trap_exit, true),    
     d("init -> entry with"
       "~n   Name:    ~s"
       "~n   Starter: ~p"
@@ -492,8 +493,24 @@ parse_tcp([{encode, Encode}|Instrs], RevInstrs)
   when is_function(Encode) ->
     parse_tcp(Instrs, [{encode, Encode}|RevInstrs]);
 
+parse_tcp([{encode, {Mod, Func, Args}}|Instrs], RevInstrs) 
+  when is_atom(Mod) and is_atom(Func) and is_list(Args) ->
+    Encode = 
+	fun(M) ->
+		apply(Mod, Func, [M|Args])
+	end,
+    parse_tcp(Instrs, [{encode, Encode}|RevInstrs]);
+
 parse_tcp([{decode, Decode}|Instrs], RevInstrs) 
   when is_function(Decode) ->
+    parse_tcp(Instrs, [{decode, Decode}|RevInstrs]);
+
+parse_tcp([{decode, {Mod, Func, Args}}|Instrs], RevInstrs) 
+  when is_atom(Mod) and is_atom(Func) and is_list(Args) ->
+    Decode = 
+	fun(M) ->
+		apply(Mod, Func, [M|Args])
+	end,
     parse_tcp(Instrs, [{decode, Decode}|RevInstrs]);
 
 parse_tcp([disconnect|Instrs], RevInstrs) ->
@@ -575,9 +592,30 @@ parse_tcp([{expect_receive, Desc, Verify}|Instrs], RevInstrs)
     ExpRecv = {expect_receive, Desc, {Verify, infinity}},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
+parse_tcp([{expect_receive, Desc, {Mod, Func, Args}}|Instrs], RevInstrs) 
+  when is_list(Desc) and 
+       is_atom(Mod) and is_atom(Func) and is_list(Args) ->
+    Verify = 
+	fun(M) ->
+		apply(Mod, Func, [M|Args])
+	end,
+    ExpRecv = {expect_receive, Desc, {Verify, infinity}},
+    parse_tcp(Instrs, [ExpRecv|RevInstrs]);
+
 parse_tcp([{expect_receive, Desc, {Verify, To}}|Instrs], RevInstrs) 
   when is_list(Desc) and is_function(Verify) and 
        is_integer(To) and (To > 0) ->
+    ExpRecv = {expect_receive, Desc, {Verify, To}},
+    parse_tcp(Instrs, [ExpRecv|RevInstrs]);
+
+parse_tcp([{expect_receive, Desc, {{Mod, Func, Args}, To}}|Instrs], RevInstrs) 
+  when is_list(Desc) and 
+       is_atom(Mod) and is_atom(Func) and is_list(Args) and
+       is_integer(To) and (To > 0) ->
+    Verify = 
+	fun(M) ->
+		apply(Mod, Func, [M|Args])
+	end,
     ExpRecv = {expect_receive, Desc, {Verify, To}},
     parse_tcp(Instrs, [ExpRecv|RevInstrs]);
 
@@ -766,6 +804,17 @@ do_megaco({connect, Host, Opts0},
 				 ctrl_pid    = ControlPid};
 		Error ->
 		    megaco_error({connect, udp, Host, Opts0}, Error)
+	    end;
+	megaco_test_generic_transport ->
+	    Opts = [{host, Host}, {port, Port}, {receive_handle, RH}|Opts0],
+	    case (catch megaco_test_generic_transport:connect(Sup, Opts)) of
+		{ok, SH, ControlPid} ->
+		    d("generic connected: ~p, ~p", [SH, ControlPid]),
+		    megaco_connector_start(RH, PrelMid, SH, ControlPid),
+		    State#megaco{send_handle = SH,
+				 ctrl_pid    = ControlPid};
+		Error ->
+		    megaco_error({connect, generic, Host, Opts0}, Error)
 	    end
     end;
 
@@ -880,6 +929,27 @@ do_megaco({megaco_callback, Tag, Verify}, State) when is_function(Verify) ->
 	{handle_megaco_callback, Type, Msg, Pid} ->
 	    d("received megaco callback: ~n~p", [Msg]),
 	    case Verify(Msg) of
+		{VRes, Res, Reply} ->
+		    d("megaco_callback [~w] ~w",[Tag, VRes]),
+		    handle_megaco_callback_reply(Pid, Type, Reply),
+		    validate(VRes, Tag, Res, State);
+		{VRes, Delay, Res, Reply} ->
+		    d("megaco_callback [~w] ~w, ~w",[Tag,Delay,VRes]),
+		    handle_megaco_callback_reply(Pid, Type, Delay, Reply),
+		    validate(VRes, Tag, Res, State)
+	    end
+    end;
+
+do_megaco({megaco_callback, Tag, {VMod, VFunc, VArgs}}, State) 
+  when is_atom(VMod) and is_atom(VFunc) and is_list(VArgs) ->
+    p("megaco_callback [~w]", [Tag]),
+    receive
+	{handle_megaco_callback, Type, Msg, Pid} ->
+	    d("received megaco callback: ~n~p"
+	      "~n   VMod:  ~w"
+	      "~n   VFunc: ~w"
+	      "~n   VArgs: ~p", [Msg, VMod, VFunc, VArgs]),
+	    case apply(VMod, VFunc, [Msg|VArgs]) of
 		{VRes, Res, Reply} ->
 		    d("megaco_callback [~w] ~w",[Tag, VRes]),
 		    handle_megaco_callback_reply(Pid, Type, Reply),
@@ -1234,8 +1304,22 @@ parse_megaco([{megaco_callback, Tag, Verify}|Instrs], RevInstrs)
     C = {megaco_callback, Tag, Verify},
     parse_megaco(Instrs, [C|RevInstrs]);
 
-parse_megaco([{megaco_callback, Verifiers}|Instrs], RevInstrs)  
-  when is_list(Verifiers) ->
+parse_megaco([{megaco_callback, Tag, {VMod, VFunc, VArgs}}|Instrs], RevInstrs) 
+  when is_atom(Tag) and
+       (is_atom(VMod) and is_atom(VFunc) and is_list(VArgs)) ->
+    Verify = fun(X) ->
+		     io:format("[megaco_callback ~w] calling ~w:~w with"
+			       "~n   X:     ~p"
+			       "~n   VArgs: ~w"
+			       "~n", [Tag, VMod, VFunc, X, VArgs]),
+		     (catch apply(VMod, VFunc, [X|VArgs]))
+	     end,
+    C = {megaco_callback, Tag, Verify},
+    parse_megaco(Instrs, [C|RevInstrs]);
+
+parse_megaco([{megaco_callback, Verifiers0}|Instrs], RevInstrs)  
+  when is_list(Verifiers0) ->
+    Verifiers = [make_verifier(Verifier) || Verifier <- Verifiers0],
     C = {megaco_callback, Verifiers},
     parse_megaco(Instrs, [C|RevInstrs]);
 
@@ -1248,7 +1332,24 @@ parse_megaco([Instr|_], _RevInstrs) ->
     throw({error, {invalid_instruction, Instr}}).
 
 
-
+make_verifier({Tag, No, VerifyFunc} = Verify) 
+  when is_atom(Tag) and is_integer(No) and is_function(VerifyFunc) ->
+    Verify;
+make_verifier({Tag, No, {VMod, VFunc, VArgs}}) 
+  when is_atom(Tag) and is_integer(No) and
+       (is_atom(VMod) and is_atom(VFunc) and is_list(VArgs)) ->
+    VerifyFunc = fun(X) ->
+			 io:format("[megaco_callback ~w] calling ~w:~w with"
+				   "~n   X: ~p"
+				   "~n   VArgs: ~w"
+				   "~n", [Tag, VMod, VFunc, X, VArgs]),
+			 (catch apply(VMod, VFunc, [X|VArgs]))
+		 end,
+    Verify = {Tag, No, VerifyFunc}, 
+    Verify;
+make_verifier(BadVerifier) ->
+    throw({error, {bad_verifier, BadVerifier}}).
+    
 %%% ----------------------------------------------------------------
 
 %% -- Megaco user callback interface --
@@ -1312,12 +1413,19 @@ handle_megaco_callback_call(P, Msg) ->
 	    p("handle_megaco_callback_call -> received reply: ~n~p", [Reply]),
 	    Reply;
 	{handle_megaco_callback_reply, Delay, Reply} when is_integer(Delay) ->
-	    p("handle_megaco_callback_call -> received reply [~w]: ~n~p", 
-	      [Delay, Reply]),
+	    p("handle_megaco_callback_call -> "
+	      "received reply [~w]: "
+	      "~n   ~p", [Delay, Reply]),
 	    sleep(Delay),
 	    p("handle_megaco_callback_call -> deliver reply after delay [~w]", 
 	      [Delay]),
-	    Reply
+	    Reply;
+	{'EXIT', SomePid, SomeReason} ->
+	    p("handle_megaco_callback_call -> "
+	      "received unexpected EXIT signal: "
+	      "~n   SomePid:    ~p"
+	      "~n   SomeReason: ~p", [SomePid, SomeReason]),
+	    exit({unexpected_EXIT_signal, SomePid, SomeReason})
     end.
 
 handle_megaco_callback_reply(P, call, Reply) ->

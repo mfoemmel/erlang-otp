@@ -28,6 +28,7 @@
 -export([des3_cbc_encrypt/5, des3_cbc_decrypt/5]).
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 -export([aes_cfb_128_encrypt/3, aes_cfb_128_decrypt/3]).
+-export([exor/2]).
 -export([rand_bytes/1,
 	 rand_bytes/3,
 	 rand_uniform/2,
@@ -65,6 +66,7 @@
 -define(RSA_VERIFY,	 23).
 -define(AES_CBC_128_ENCRYPT, 24).
 -define(AES_CBC_128_DECRYPT, 25).
+-define(XOR,		 26).
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -90,7 +92,8 @@
 		    dss_verify,
 		    rsa_verify,
 		    aes_cbc_128_encrypt,
-		    aes_cbc_128_decrypt]).
+		    aes_cbc_128_decrypt,
+		    exor]).
 
 start() ->
     application:start(crypto).
@@ -180,10 +183,10 @@ des_cbc_decrypt(Key, IVec, Data) ->
 %% Returns the IVec to be used in the next iteration of 
 %% des_cbc_[encrypt|decrypt].
 %%
-des_cbc_ivec(Data) when binary(Data) -> 
+des_cbc_ivec(Data) when is_binary(Data) -> 
     {_, IVec} = split_binary(Data, size(Data) - 8),
     IVec;
-des_cbc_ivec(Data) when list(Data) ->
+des_cbc_ivec(Data) when is_list(Data) ->
     des_cbc_ivec(list_to_binary(Data)).
 
 %%
@@ -221,18 +224,18 @@ rand_bytes(Bytes, Topmask, Bottommask) ->
 			  Topmask:8/integer,
 			  Bottommask:8/integer>>]).
 
-rand_uniform(From,To) when binary(From), binary(To) ->
+rand_uniform(From,To) when is_binary(From), is_binary(To) ->
     case control(?RAND_UNIFORM,[From,To]) of
 	<<Len:32/integer, MSB, Rest/binary>> when MSB > 127 ->
 	    <<(Len + 1):32/integer, 0, MSB, Rest/binary>>;
 	Whatever ->
 	    Whatever
     end;
-rand_uniform(From,To) when integer(From),integer(To) ->
+rand_uniform(From,To) when is_integer(From),is_integer(To) ->
     BinFrom = mpint(From),
     BinTo = mpint(To),
     case rand_uniform(BinFrom, BinTo) of
-        Result when binary(Result) ->
+        Result when is_binary(Result) ->
             erlint(Result);
         Other ->
             Other
@@ -242,7 +245,7 @@ rand_uniform(From,To) when integer(From),integer(To) ->
 %% mod_exp - utility for rsa generation
 %%
 mod_exp(Base, Exponent, Modulo)
-  when integer(Base), integer(Exponent), integer(Modulo) ->
+  when is_integer(Base), is_integer(Exponent), is_integer(Modulo) ->
     erlint(mod_exp(mpint(Base), mpint(Exponent), mpint(Modulo)));
 
 mod_exp(Base, Exponent, Modulo) ->
@@ -273,13 +276,19 @@ aes_cbc_128_encrypt(Key, IVec, Data) ->
 aes_cbc_128_decrypt(Key, IVec, Data) ->
     control(?AES_CBC_128_DECRYPT, [Key, IVec, Data]).
 
-
+%%
+%% XOR - xor to iolists and return a binary
+%% NB doesn't check that they are the same size, just concatenates
+%% them and sends them to the driver
+%%
+exor(A, B) ->
+    control(?XOR, [A, B]).
 
 %%
 %%  LOCAL FUNCTIONS
 %%
 control_bin(Cmd, Key, Data) ->
-    Sz = flen(Key),
+    Sz = iolist_size(Key),
     control(Cmd, [<<Sz:32/integer-unsigned>>, Key, Data]).
 
 control(Cmd, Data) ->
@@ -293,19 +302,19 @@ control(Cmd, Data) ->
 %%      N band 255].
 
 %% Flat length of IOlist (or binary)
-flen(L) when binary(L) ->
-    size(L);
-flen(L) ->
-    flen(L, 0).
+%% flen(L) when binary(L) ->
+%%     size(L);
+%% flen(L) ->
+%%     flen(L, 0).
 
-flen([H| T], N) when list(H) ->
-    flen(H, flen(T, N));
-flen([H| T], N) when binary(H) ->
-    flen(T, N + size(H));
-flen([H| T], N) when integer(H), 0 =< H, H =<  255 ->
-    flen(T, N + 1);
-flen([], N) ->
-    N.
+%% flen([H| T], N) when list(H) ->
+%%     flen(H, flen(T, N));
+%% flen([H| T], N) when binary(H) ->
+%%     flen(T, N + size(H));
+%% flen([H| T], N) when integer(H), 0 =< H, H =<  255 ->
+%%     flen(T, N + 1);
+%% flen([], N) ->
+%%     N.
 
 %% large integer in a binary with 32bit length
 %% MP representaion  (SSH2)

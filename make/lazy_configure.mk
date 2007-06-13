@@ -22,11 +22,15 @@ endif
 SAVE_ARGS=$(ERL_TOP)/make/save_args
 CONFIG_STATUS=$(CONFIGURE_DIR)/$(TARGET)/config.status
 SAVED_CONFIG_FLAGS_FILE=$(CONFIGURE_DIR)/$(TARGET)/lazy.config.flags
+SAVED_CONFIG_LOG=$(CONFIGURE_DIR)/$(TARGET)/config.log
 CONFIG_CACHE_FILE=$(CONFIGURE_DIR)/$(TARGET)/lazy.config.cache
 ALL_CONFIG_FLAGS=$(CONFIGURE_FLAGS) --no-create --no-recursion --cache-file=$(CONFIG_CACHE_FILE)
 
 lazy_configure: save_config_flags $(CONFIG_STATUS)
+	rm -f $(CONFIGURE_DIR)/config.log
 	cd $(CONFIGURE_DIR) && $(CONFIG_STATUS)
+	cat $(CONFIGURE_DIR)/config.log >> $(SAVED_CONFIG_LOG)
+	rm -f $(CONFIGURE_DIR)/config.log
 
 save_config_flags:
 	$(SAVE_ARGS) $(SAVED_CONFIG_FLAGS_FILE) --- $(ALL_CONFIG_FLAGS)
@@ -58,12 +62,16 @@ $(CONFIGURE_DIR)/config.h.in: $(CONFIGURE_DIR)/configure.in $(CONFIGURE_DIR)/acl
 	cd $(CONFIGURE_DIR) && autoheader ./configure.in > ./config.h.in
 
 $(CONFIG_STATUS): $(SAVED_CONFIG_FLAGS_FILE) $(CONFIGURE_DIR)/configure $(EXTRA_CONFIG_STATUS_DEPENDENCIES)
+	rm -f $(CONFIGURE_DIR)/config.log
 	cd $(CONFIGURE_DIR) && CONFIG_STATUS=$(CONFIG_STATUS) ./configure $(ALL_CONFIG_FLAGS)
+	rm -f $(SAVED_CONFIG_LOG)
+	mv $(CONFIGURE_DIR)/config.log $(SAVED_CONFIG_LOG)
 
 lazy_configure_target_clean:
 	rm -f $(CONFIG_STATUS)
 	rm -f $(CONFIG_CACHE_FILE)
 	rm -f $(SAVED_CONFIG_FLAGS_FILE)
+	rm -f $(SAVED_CONFIG_LOG)
 
 lazy_configure_clean: lazy_configure_target_clean
 	rm -f $(CONFIGURE_DIR)/configure

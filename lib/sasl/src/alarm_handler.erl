@@ -60,13 +60,13 @@ clear_alarm(AlarmId) ->
 get_alarms() ->
     gen_event:call(alarm_handler, alarm_handler, get_alarms).
 
-add_alarm_handler(Module) when atom(Module) ->
+add_alarm_handler(Module) when is_atom(Module) ->
     gen_event:add_handler(alarm_handler, Module, []).
 
-add_alarm_handler(Module, Args) when atom(Module) ->
+add_alarm_handler(Module, Args) when is_atom(Module) ->
     gen_event:add_handler(alarm_handler, Module, Args).
 
-delete_alarm_handler(Module) when atom(Module) ->
+delete_alarm_handler(Module) when is_atom(Module) ->
     gen_event:delete_handler(alarm_handler, Module, []).
 
 %%-----------------------------------------------------------------

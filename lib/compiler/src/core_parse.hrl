@@ -60,9 +60,6 @@
 -record(c_letrec, {anno=[], defs,	% defs :: [#c_def{}],
 		   body}).		% body :: Tree
 
--record(c_def, {anno=[], name,		% name :: Tree,
-		val}).			% val :: Tree,
-
 -record(c_case, {anno=[], arg,		% arg :: Tree,
 		 clauses}).		% clauses :: [Tree]
 

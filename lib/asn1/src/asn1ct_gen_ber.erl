@@ -1089,6 +1089,7 @@ gen_objset_code(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassDef)->
     gen_objset_dec(Erules,ObjSetName,UniqueFName,Set,ClassName,ClassFields,1),
     gen_internal_funcs(Erules,InternalFuncs).
 
+    
 %% gen_objset_enc iterates over the objects of the object set
 gen_objset_enc(_,{unique,undefined},_,_,_,_,_) ->
     %% There is no unique field in the class of this object set
@@ -1197,7 +1198,17 @@ gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 	    end,
 	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
 	false ->
-	    gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj)
+	    %% This field was not present in the object thus there were no
+	    %% type in the table and we therefore generate code that returns
+	    %% the input for application treatment.
+	    emit([indent(3),"fun(Type, Val, TagIn, _RestPrimFieldName) ->",nl,
+		  indent(6),"case Type of",nl]),
+	    emit([indent(9),{asis,Name}," ->",nl]),
+	    emit([indent(12),"Len = case Val of",nl,
+		  indent(15),"Bin when is_binary(Bin) -> size(Bin);",nl,
+		  indent(15),"_ -> length(Val)",nl,indent(12),"end,",nl,
+		  indent(12),"{Val,Len}"]),
+	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[])
     end;
 gen_inlined_enc_funs(Fields,[_H|Rest],ObjSetName,NthObj) ->
     gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj);
@@ -1233,6 +1244,14 @@ gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		end,
 		{Acc,0};
 	    false ->
+		%% This field was not present in the object thus there were no
+		%% type in the table and we therefore generate code that returns
+		%% the input for application treatment.
+		emit([";",nl,indent(9),{asis,Name}," ->",nl]),
+		emit([indent(12),"Len = case Val of",nl,
+		      indent(15),"Bin when is_binary(Bin) -> size(Bin);",nl,
+		      indent(15),"_ -> length(Val)",nl,indent(12),"end,",nl,
+		      indent(12),"{Val,Len}"]),
 		{Acc,0}
 	end,
     gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+NAdd,Acc2);
@@ -1326,7 +1345,7 @@ gen_objset_dec(Erules,ObjSetName,UniqueName,[{ObjName,Val,Fields}],_ClName,
     emit({"'getdec_",ObjSetName,"'(",{asis,UniqueName},",",{asis,Val},") ->",nl}),
     CurrMod = get(currmod),
     case ObjName of
-	{no_name,no_name} ->
+	{no_mod,no_name} ->
 	    gen_inlined_dec_funs(Erules,Fields,ClFields,ObjSetName,
 				 NthObj);
 	{CurrMod,Name} ->
@@ -1395,7 +1414,15 @@ gen_inlined_dec_funs(Erules,Fields,[{typefield,Name,Prop}|Rest],
 	    end,
 	    gen_inlined_dec_funs1(Erules,Fields,Rest,ObjSetName,NthObj);
 	false ->
-	    gen_inlined_dec_funs(Erules,Fields,Rest,ObjSetName,NthObj)
+	    emit([indent(3),"fun(Type, Bytes, TagIn, _RestPrimFieldName) ->",
+		  nl,indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," ->",nl,
+		  indent(12),"Len = case Bytes of",nl,
+		  indent(15),"B when is_binary(B) -> size(B);",nl,
+		  indent(15),"_ -> length(Bytes)",nl,
+		  indent(12),"end,",nl,
+		  indent(12),"{Bytes,[],Len}"]),
+	    gen_inlined_dec_funs1(Erules,Fields,Rest,ObjSetName,NthObj)
     end;
 gen_inlined_dec_funs(Erules,Fields,[_H|Rest],ObjSetName,NthObj) ->
     gen_inlined_dec_funs(Erules,Fields,Rest,ObjSetName,NthObj);
@@ -1434,6 +1461,13 @@ gen_inlined_dec_funs1(Erules,Fields,[{typefield,Name,Prop}|Rest],
 		end,
 		0;
 	    false ->
+		emit([";",nl,
+		      indent(9),{asis,Name}," ->",nl,
+		      indent(12),"Len = case Bytes of",nl,
+		      indent(15),"B when is_binary(B) -> size(B);",nl,
+		      indent(15),"_ -> length(Bytes)",nl,
+		      indent(12),"end,",nl,
+		      indent(12),"{Bytes,[],Len}"]),
 		0
 	end,
     gen_inlined_dec_funs1(Erules,Fields,Rest,ObjSetName,NthObj+N);

@@ -171,12 +171,31 @@ modules(#dialyzer_callgraph{digraph=DG}) ->
 
 module_postorder(#dialyzer_callgraph{digraph=DG}) ->
   Edges = digraph_edges(DG),
-  Nodes = [M || {M,_F,_A} <- digraph_vertices(DG)],
+  Nodes = ordsets:from_list([M || {M,_F,_A} <- digraph_vertices(DG)]),
   MDG = digraph_new(),
   MDG1 = digraph_confirm_vertices(Nodes, MDG),
-  PostOrder = digraph_finalize(create_module_digraph(Edges, MDG1)),
-  digraph_delete(MDG1),
-  PostOrder.
+  MDG2 = create_module_digraph(Edges, MDG1),
+  MDG3 = digraph_utils:condensation(MDG2),
+  PostOrder = digraph_utils:postorder(MDG3),
+  PostOrder1 = sort_sccs_internally(PostOrder, MDG2),
+  digraph:delete(MDG2),
+  digraph_delete(MDG3),
+  PostOrder1.
+
+sort_sccs_internally(PO, MDG) ->
+  sort_sccs_internally(PO, MDG, []).
+
+sort_sccs_internally([SCC|Left], MDG, Acc) ->
+  case length(SCC) >= 3 of
+    false -> sort_sccs_internally(Left, MDG, [SCC|Acc]);
+    true ->
+      TmpDG = digraph_utils:subgraph(MDG, SCC),
+      NewSCC = digraph_utils:postorder(TmpDG),
+      digraph_delete(TmpDG),
+      sort_sccs_internally(Left, MDG, [NewSCC|Acc])
+  end;
+sort_sccs_internally([], _MDG, Acc) ->
+  lists:reverse(Acc).
 
 create_module_digraph([{{M,_,_}, {M,_,_}}|Left], MDG) ->
   create_module_digraph(Left, MDG);
@@ -238,12 +257,7 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
 			  end, [], LabelEdges),
   SelfRecs = sets:union(sets:from_list(SelfRecs0), OldSelfRec),
   
-  %% Remove the 'top' but add self edges to the top function to ensure
-  %% that they are present in the callgraph. 
-  LabelEdges1 = lists:foldl(fun({top, X}, Acc) -> [{X, X}|Acc];
-			       (Edge, Acc)     -> [Edge|Acc]
-			    end, [], LabelEdges),
-  NamedEdges1 = name_edges(LabelEdges1, NewNameMap),
+  NamedEdges1 = name_edges(LabelEdges, NewNameMap),
   
   %% We need to scan for intermodular calls since this is not tracked
   %% by dialyzer_dep. Note that the caller is always recorded as the
@@ -252,8 +266,10 @@ scan_core_tree(Tree, CG=#dialyzer_callgraph{calls=OldCalls,
   NamedEdges2 = scan_core_funs(Tree),
 
   %% Confirm all nodes in the tree.
-  Names = lists:flatten([[X, Y] || {X, Y} <- NamedEdges1]),
-  CG1 = add_edges(NamedEdges2++NamedEdges1, Names, CG),
+  Names1 = lists:flatten([[X, Y] || {X, Y} <- NamedEdges1]),
+  Names2 = ordsets:from_list(Names1),
+  Names3 = ordsets:del_element(top, Names2),
+  CG1 = add_edges(NamedEdges2++NamedEdges1, Names3, CG),
   
   CG1#dialyzer_callgraph{calls=NewCalls,
 			 esc=NewEsc,
@@ -473,7 +489,52 @@ digraph_components(Digraph) ->
   Res.
 
 digraph_postorder(Digraph) ->
-  digraph_utils:postorder(Digraph).
+  %% Remove all self-edges for Sccs.
+  Edges = [digraph:edge(Digraph, E) || E <- digraph:edges(Digraph)],
+  SelfEdges = [E || {E, V, V, _} <- Edges],
+  true = digraph:del_edges(Digraph, SelfEdges),
+  digraph_postorder(Digraph, -1, []).
+
+
+%%% Pick all the independent nodes (leaves) from one module. Then try
+%%% to stay within the module until no more independent nodes can be
+%%% chosen. Then pick a new module and so on.
+%%%
+%%% Note that a SCC that range over more than one module is considered
+%%% to belong to all modules to make sure that we do not lose any
+%%% nodes.
+digraph_postorder(Digraph, LastModule, Acc) ->
+  Leaves = [V || V <- digraph:vertices(Digraph),
+		 digraph:out_degree(Digraph, V) =:= 0],
+  case Leaves =:= [] of
+    true -> lists:append(lists:reverse(Acc));
+    false ->
+      case [SCC || SCC <- Leaves, scc_belongs_to_module(SCC, LastModule)] of
+	[] ->
+	  %% Choose a new module.
+	  NewModule = find_module(hd(Leaves)),
+	  NewTaken = [SCC || SCC <- Leaves, 
+			     scc_belongs_to_module(SCC, NewModule)],
+	  true = digraph:del_vertices(Digraph, NewTaken),
+	  digraph_postorder(Digraph, NewModule, [NewTaken|Acc]);
+	NewTaken ->
+	  true = digraph:del_vertices(Digraph, NewTaken),
+	  digraph_postorder(Digraph, LastModule, [NewTaken|Acc])
+      end
+  end.
+
+scc_belongs_to_module([Label|Left], Module) when is_integer(Label) ->
+  scc_belongs_to_module(Left, Module);
+scc_belongs_to_module([{M, _, _}|Left], Module) ->
+  if M =:= Module -> true;
+     true -> scc_belongs_to_module(Left, Module)
+  end;
+scc_belongs_to_module([], _Module) ->
+  false.
+      
+find_module([{M, _, _}|_]) -> M;
+find_module([Label|Left]) when is_integer(Label) -> find_module(Left).
+  
 
 digraph_finalize(DG) ->
   DG1 = digraph_utils:condensation(DG),

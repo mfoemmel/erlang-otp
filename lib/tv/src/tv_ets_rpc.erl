@@ -50,18 +50,18 @@ info(Node, false, TabId, What) ->
 
 new(_Node, true, TabName, Options) ->
     case catch ets:new(TabName, Options) of
-	{TabName, Pid} when pid(Pid) ->
+	{TabName, Pid} when is_pid(Pid) ->
 	    {TabName,Pid};
-	{TabNo, Pid} when pid(Pid) ->
+	{TabNo, Pid} when is_pid(Pid) ->
 	    {TabNo,Pid};
 	OtherResult ->
 	    chk(OtherResult)
     end;
 new(Node, false, TabName, Options) ->
     case catch rpc:block_call(Node, ets, new, [TabName, Options]) of
-	{TabName, Pid} when pid(Pid) ->
+	{TabName, Pid} when is_pid(Pid) ->
 	    {TabName,Pid};
-	{TabNo, Pid} when pid(Pid) ->
+	{TabNo, Pid} when is_pid(Pid) ->
 	    {TabNo, Pid};
 	OtherResult ->
 	    chk(OtherResult)
@@ -106,13 +106,13 @@ chk(Result) ->
     case Result of
 	undefined ->
 	    throw(no_table);
-	_Anything when list(Result) ->
+	_Anything when is_list(Result) ->
 	    Result;
-	_Anything when atom(Result) ->
+	_Anything when is_atom(Result) ->
 	    Result;
-	_Anything when integer(Result) ->
+	_Anything when is_integer(Result) ->
 	    Result;
-	_Anything when pid(Result) ->
+	_Anything when is_pid(Result) ->
 	    Result;
 
 	%% Messages received when node is down.
@@ -135,7 +135,7 @@ chk(Result) ->
 	    throw(no_table);
 	{'EXIT', {badarg,_Reason}} ->
 	    throw(no_table);
-	Error when tuple(Error) ->   
+	Error when is_tuple(Error) ->   
 	    throw({unexpected_error,Error})
     end.
 	

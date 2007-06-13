@@ -25,7 +25,6 @@ insn_def_gpr(I) ->
     #load{dst=Dst} -> [Dst];
     #ldrsb{dst=Dst} -> [Dst];
     #move{dst=Dst} -> [Dst];
-    #mul{dst=Dst} -> [Dst];
     #pseudo_call{} -> call_clobbered_gpr();
     #pseudo_li{dst=Dst} -> [Dst];
     #pseudo_move{dst=Dst} -> [Dst];
@@ -56,7 +55,6 @@ insn_use_gpr(I) ->
     #load{am2=Am2} -> am2_use(Am2, []);
     #ldrsb{am3=Am3} -> am3_use(Am3, []);
     #move{am1=Am1} -> am1_use(Am1, []);
-    #mul{src1=Src1,src2=Src2} -> addtemp(Src1, [Src2]);
     #pseudo_blr{} ->
       LR = hipe_arm:mk_temp(hipe_arm_registers:lr(), 'untagged'),
       RV = hipe_arm:mk_temp(hipe_arm_registers:return_value(), 'tagged'),

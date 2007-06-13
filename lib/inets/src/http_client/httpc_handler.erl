@@ -49,9 +49,6 @@
 		timers = #timers{}           % #timers{}
                }).
 
-
-
-
 %%====================================================================
 %% External functions
 %%====================================================================
@@ -59,10 +56,19 @@
 %% Function: start() -> {ok, Pid}
 %%
 %% Description: Starts a http-request handler process. Intended to be
-%% called by the httpc manager process.
-%% %%--------------------------------------------------------------------
+%% called by the httpc manager process. 
+%%
+%% Note: Uses proc_lib and gen_server:enter_loop so that waiting
+%% for gen_tcp:connect to timeout in init/1 will not
+%% block the httpc manager process in odd cases such as trying to call
+%% a server that does not exist. (See OTP-6735) The only API function
+%% sending messages to the handler process that can be called before
+%% init has compleated is cancel and that is not a problem! (Send and
+%% stream will not be called before the first request has been sent and
+%% the reply or part of it has arrived.)
+%%--------------------------------------------------------------------
 start_link(Request, ProxyOptions) ->
-    gen_server:start_link(?MODULE, [Request, ProxyOptions], []).
+    {ok, proc_lib:spawn_link(?MODULE, init, [[Request, ProxyOptions]])}.
 
 %%--------------------------------------------------------------------
 %% Function: send(Request, Pid) -> ok 
@@ -139,26 +145,28 @@ stream(BodyPart, Request,_) -> % only 200 responses can be streamed
 %% httpc_manager process. We could make the httpc_manager more comlex
 %% but we do not want that so errors will be handled by the process
 %% sending an init_error message to itself.
-%% 
 %%--------------------------------------------------------------------
 init([Request, Options]) ->
     process_flag(trap_exit, true),
     handle_verbose(Options#options.verbose),
     Address = handle_proxy(Request#request.address, Options#options.proxy),
-    case {Address /= Request#request.address, Request#request.scheme} of
-	{true, https} ->
-	    Error = https_through_proxy_is_not_currently_supported,
-	    self() ! {init_error, Error, httpc_response:error(Request, Error)},
-	    {ok, #state{request = Request, options = Options,
-			status = ssl_tunnel}};
-	%% This is what we should do if and when ssl supports 
-	%% "socket upgrading"
-	%%send_ssl_tunnel_request(Address, Request,
-	%%		    #state{options = Options,
-	%%		   status = ssl_tunnel});
-	{_, _} ->
-	    send_first_request(Address, Request, #state{options = Options})
-    end.
+    {ok, State} =
+	case {Address /= Request#request.address, Request#request.scheme} of
+	    {true, https} ->
+		Error = https_through_proxy_is_not_currently_supported,
+		self() ! {init_error, 
+			  Error, httpc_response:error(Request, Error)},
+		{ok, #state{request = Request, options = Options,
+			    status = ssl_tunnel}};
+	    %% This is what we should do if and when ssl supports 
+	    %% "socket upgrading"
+	    %%send_ssl_tunnel_request(Address, Request,
+	    %%		    #state{options = Options,
+	    %%		   status = ssl_tunnel});
+	    {_, _} ->
+		send_first_request(Address, Request, #state{options = Options})
+	end,
+    gen_server:enter_loop(?MODULE, [], State).
 
 %%--------------------------------------------------------------------
 %% Function: handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -395,7 +403,8 @@ code_change(_, State, _Extra) ->
 send_first_request(Address, Request, State) ->
     Ipv6 = (State#state.options)#options.ipv6,
     SocketType = socket_type(Request),
-    case http_transport:connect(SocketType, Address, Ipv6) of
+    TimeOut = (Request#request.settings)#http_options.timeout,
+    case http_transport:connect(SocketType, Address, Ipv6, TimeOut) of
 	{ok, Socket} ->
 	    case httpc_request:send(Address, Request, Socket) of
 		ok ->

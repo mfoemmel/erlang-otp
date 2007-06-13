@@ -69,7 +69,6 @@ ODBC_FLAGS = -D'SERVER_SOFTWARE="odbc/$(VSN)"' \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=
 ERL_COMPILE_FLAGS += -I$(INCLUDE) \
 		     $(ODBC_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common SYSTEM "common.dtd" >
+%common;
+<!ENTITY % common.header SYSTEM "common.header.dtd" >
+%common.header;
+
+<!ELEMENT application         (header,description?,include+) >
+<!ELEMENT description	      (%block;|quote|br|marker|warning|note)* >
+<!ELEMENT include             EMPTY >
+<!ATTLIST include             file CDATA #REQUIRED>

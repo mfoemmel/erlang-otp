@@ -94,7 +94,7 @@ getBrowser1(Info) ->
     end.
 
 getBrowser(AgentString) ->
-    LAgentString = httpd_util:to_lower(AgentString),
+    LAgentString = http_util:to_lower(AgentString),
     case regexp:first_match(LAgentString,"^[^ ]*") of
 	{match,Start,Length} ->
 	    Browser = lists:sublist(LAgentString,Start,Length),

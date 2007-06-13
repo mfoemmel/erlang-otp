@@ -176,11 +176,11 @@ attribute(export, Es, St) ->
     St#expand{exports=union(from_list(Es), St#expand.exports)};
 attribute(import, Is, St) ->
     import(Is, St);
-attribute(compile, C, St) when list(C) ->
+attribute(compile, C, St) when is_list(C) ->
     St#expand{compile=St#expand.compile ++ C};
 attribute(compile, C, St) ->
     St#expand{compile=St#expand.compile ++ [C]};
-attribute(Name, Val, St) when list(Val) ->
+attribute(Name, Val, St) when is_list(Val) ->
     St#expand{attributes=St#expand.attributes ++ [{Name,Val}]};
 attribute(Name, Val, St) ->
     St#expand{attributes=St#expand.attributes ++ [{Name,[Val]}]}.
@@ -625,8 +625,8 @@ string_to_conses(Line, Cs, Tail) ->
 
 %% In syntax trees, module/package names are atoms or lists of atoms.
 
-package_to_string(A) when atom(A) -> atom_to_list(A);
-package_to_string(L) when list(L) -> packages:concat(L).
+package_to_string(A) when is_atom(A) -> atom_to_list(A);
+package_to_string(L) when is_list(L) -> packages:concat(L).
 
 expand_package({atom,L,A} = M, St) ->
     case dict:find(A, St#expand.mod_imports) of

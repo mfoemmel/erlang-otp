@@ -205,7 +205,7 @@ check_node(OldNode, LocalNode) ->
     case net_adm:ping(OldNode) of
 	pong ->
 	    OldNode;
-	pang when LocalNode == true ->  
+	pang when LocalNode ->  
 	       %% The system has gone either distributed or undistributed.
 	       %% No matter which, HomeNode tells the current correct node.
 	    HomeNode;

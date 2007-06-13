@@ -1052,7 +1052,7 @@ expr({apply_fun,Line,Fun0,As0}, Bs0, #ieval{level=Le}=Ieval0) ->
 	{value,Fun,Bs1} when is_function(Fun) ->
 	    {As,Bs} = eval_list(As0, Bs1, Ieval),
 	    eval_function(undefined, Fun, As, Bs, extern, Ieval);
-	{value,{M,F},Bs1} when atom(M),atom(F) ->
+	{value,{M,F},Bs1} when is_atom(M), is_atom(F) ->
 	    {As,Bs} = eval_list(As0, Bs1, Ieval),
 	    eval_function(M, F, As, Bs, extern, Ieval);
 	{value,BadFun,Bs1} ->
@@ -1211,7 +1211,7 @@ eval_receive1(Debugged, Cs, Bs0, Ieval) ->
 	    seq(B, Bs, Ieval)
     end.
 
-check_timeoutvalue(ToVal,_,_,_) when integer(ToVal),ToVal>=0 -> true;
+check_timeoutvalue(ToVal,_,_,_) when is_integer(ToVal), ToVal>=0 -> true;
 check_timeoutvalue(infinity,_,_,_) -> true;
 check_timeoutvalue(_ToVal, ToBs, To, Ieval) ->
     Line = element(2, To),

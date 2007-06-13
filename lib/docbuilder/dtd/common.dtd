@@ -1,0 +1,69 @@
+<!-- This file contains common stuff for all dtds. -->
+
+<!ENTITY % common.entities SYSTEM "common.entities.dtd" >
+%common.entities;
+
+<!ENTITY % block              "p|pre|code|list|taglist|codeinclude|
+                               erleval" >
+<!ENTITY % inline             "#PCDATA|c|em|term|cite|br|path|seealso|
+                               url|marker" >
+<!-- XXX --> 
+<!ELEMENT p                   (%inline;)* >
+<!ELEMENT pre                 (#PCDATA|seealso|url|input)* >
+<!ELEMENT input               (#PCDATA|seealso|url)* >
+<!ELEMENT code                (#PCDATA) >
+<!ATTLIST code                type (erl|c|none) "none" >
+<!ELEMENT quote               (p)* >
+<!ELEMENT warning             (%block;|quote|br|marker)* >
+<!ELEMENT note                (%block;|quote|br|marker)* >
+<!ELEMENT c                   (#PCDATA) >
+<!ELEMENT em                  (#PCDATA|c)* >
+
+<!-- XXX -->
+<!ELEMENT term                (termdef?) >
+<!ATTLIST term                id CDATA #REQUIRED >
+<!ELEMENT termdef             (#PCDATA) >
+<!ELEMENT cite                (citedef?) >
+<!ATTLIST cite                id CDATA #REQUIRED >
+<!ELEMENT citedef             (ctitle,cauthor,chowpublished) >
+<!ELEMENT ctitle              (#PCDATA) >
+<!ELEMENT cauthor             (#PCDATA) >
+<!ELEMENT chowpublished       (#PCDATA) >
+
+<!-- XXX --> 
+<!ELEMENT br                  EMPTY >
+
+<!-- Path -->
+
+<!ELEMENT path                (#PCDATA) >
+<!ATTLIST path                unix CDATA ""
+                              windows CDATA "" >
+
+<!-- List -->
+
+<!ELEMENT list                (item+) >
+<!ATTLIST list                 type (ordered|bulleted) "bulleted" >
+<!ELEMENT taglist             (tag,item)+ >
+<!ELEMENT tag                 (#PCDATA|c|em|seealso|url)* >
+<!ELEMENT item                (%inline;|%block;)* >
+
+<!-- References -->
+
+<!ELEMENT seealso             (#PCDATA) >
+<!ATTLIST seealso             marker CDATA #REQUIRED >
+<!ELEMENT url                 (#PCDATA) >
+<!ATTLIST url                 href CDATA #REQUIRED >
+<!ELEMENT marker              EMPTY >
+<!ATTLIST marker              id CDATA #REQUIRED >
+
+<!-- CodeInclude -->
+
+<!ELEMENT codeinclude          EMPTY >
+<!ATTLIST codeinclude          file CDATA #REQUIRED
+                               tag  CDATA ""
+                               type (erl|c|none) "none" >
+
+<!-- ErlEval -->
+
+<!ELEMENT erleval              EMPTY >
+<!ATTLIST erleval              expr CDATA #REQUIRED >

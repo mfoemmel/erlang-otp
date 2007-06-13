@@ -355,11 +355,11 @@ show_error_msg() ->
 get_entry_term(Id) ->
     EditedStr = gs:read(Id, text),
     case tv_db_search:string_to_term(EditedStr) of
-	{ok, NewTerm} when Id == node_entry, atom(NewTerm) ->
+	{ok, NewTerm} when Id =:= node_entry, is_atom(NewTerm) ->
 	    {ok,NewTerm};
-	{ok, NewTerm} when Id == name_entry, atom(NewTerm) ->
+	{ok, NewTerm} when Id =:= name_entry, is_atom(NewTerm) ->
 	    {ok,NewTerm};
-	{ok, NewTerm} when Id == keypos_entry, integer(NewTerm), NewTerm > 0 ->
+	{ok, NewTerm} when Id =:= keypos_entry, is_integer(NewTerm), NewTerm > 0 ->
 	    {ok,NewTerm};
 	_Other ->
 	    NewMsg =

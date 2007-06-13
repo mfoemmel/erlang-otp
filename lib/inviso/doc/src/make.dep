@@ -11,7 +11,7 @@
 
 book.dvi: application.tex book.tex inviso.tex inviso_as_lib.tex \
 		inviso_chapter.tex inviso_lfm.tex inviso_lfm_tpfreader.tex \
-		inviso_rt.tex part.tex
+		inviso_rt.tex inviso_rt_meta.tex part.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from SGML to LaTeX

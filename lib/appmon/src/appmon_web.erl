@@ -429,7 +429,7 @@ application_javascript(_)->
 %% name is the second arg in the first tuple                          %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%args is the list [{_,Appname},{_,Mode},{_Node}]
-application_body(Args)when list(Args),length(Args) >= 3 ->
+application_body(Args) when is_list(Args),length(Args) >= 3 ->
     App=element(2,lists:nth(1,Args)),
     Mode=element(2,lists:nth(2,Args)),
     Node=element(2,lists:nth(3,Args)),
@@ -663,7 +663,7 @@ process_body(_)->
 process_information_table(Pid_name,Node)->
     PidID=unurlify_pid(Pid_name),
     case catch list_to_pid(PidID) of
-	Pid when pid(Pid) -> 
+	Pid when is_pid(Pid) -> 
 	    get_process_table(Pid,Node);
 	_Other ->
 	    io_lib:format("Not a process id ~s",[PidID])
@@ -672,11 +672,11 @@ process_information_table(Pid_name,Node)->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Create the table that shoows the extended info about processes     %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-get_process_table(Pid,Node_name) when list(Node_name)->
+get_process_table(Pid,Node_name) when is_list(Node_name)->
     Node=list_to_atom(Node_name),
     get_process_table(Pid,Node);
 
-get_process_table(Pid,Node)when atom(Node)->
+get_process_table(Pid,Node) when is_atom(Node)->
     case lists:member(Node,[node()|nodes()]) of
 	true-> 
 	    Proc_data=process_info:get_process_data(Pid,Node),
@@ -840,16 +840,16 @@ print_links(Pids)->
 print_links([],Links)->
     htmlify_pid(Links,[]);
 
-print_links([Pid],Links)when pid(Pid) ->
+print_links([Pid],Links) when is_pid(Pid) ->
     print_links([],Links ++ pid_to_list(Pid));
 
-print_links([Pid],Links)when port(Pid) ->
+print_links([Pid],Links) when is_port(Pid) ->
     print_links([],Links ++ erlang:port_to_list(Pid));
 
-print_links([Pid|Rest],Links)when pid(Pid) ->
+print_links([Pid|Rest],Links) when is_pid(Pid) ->
     print_links(Rest,Links ++ pid_to_list(Pid) ++ ", ");
 
-print_links([Pid|Rest],Links)when port(Pid) ->
+print_links([Pid|Rest],Links) when is_port(Pid) ->
     print_links(Rest,Links ++ erlang:port_to_list(Pid) ++ ", ").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

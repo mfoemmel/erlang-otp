@@ -2025,37 +2025,6 @@ complete(L) ->
 
 -else.
 
--ifdef(asn1_r7b_enable_driver).
-complete(L) ->
-    Port = get_asn1_port(),
-    case catch port_control(Port,1,L) of
-	Bin when binary(Bin) ->
-	    Bin;
-	List when list(List) -> handle_error(List,L);
-	{'EXIT',{badarg,Reason}} ->
-	    exit({"failed to call driver probably due to bad asn1 value",Reason});
-	Reason -> exit(Reason)
-    end.
-
-get_asn1_port() ->
-    case catch ets:lookup(asn1_driver_table,asn1_port) of
-	{'EXIT',Reason} -> %table does not exist
-	    asn1rt_driver_handler:load_driver(),
-	    receive
-		{reply,Port} when port(Port) ->
-		    Port
-	    end;
-	[] -> 
-	    asn1_port_owner ! {request_port,self()},
-	    receive
-		{reply,Port} when port(Port) ->
-		    Port
-	    end;
-	[{_,Port}] -> Port
-    end.
-
--else.
-
 complete(L) ->
     case catch port_control(asn1_driver_port,1,L) of
 	Bin when binary(Bin) ->
@@ -2082,7 +2051,6 @@ complete(L) ->
 	    exit(Reason)
     end.
 
--endif.
 
 handle_error([],_)->
     exit({error,{asn1,{"memory allocation problem in driver"}}});

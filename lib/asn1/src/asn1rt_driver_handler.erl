@@ -22,56 +22,12 @@
 
 -export([init/1,load_driver/0,unload_driver/0]).
 
--ifdef(asn1_r7b_enable_driver).
-
-load_driver() ->
-    spawn(asn1rt_driver_handler, init, [self()]).
-
-init(From) ->
-    case whereis(asn1_port_owner) of
-	undefined -> %driver not loaded
-	    case catch register(asn1_port_owner,self()) of
-		{'EXIT',Reason} ->
-		    asn1_port_owner ! {request_port,From};
-		_ ->
-		    ets:new(asn1_driver_table,[named_table]),
-		    Dir = filename:join([code:priv_dir(asn1),"lib"]),
-		    erl_ddll:load_driver(Dir,"asn1_erl_drv"),
-		    Port = open_port({spawn,"asn1_erl_drv"},[]),
-		    ets:insert(asn1_driver_table,{asn1_port,Port}),
-		    From ! {reply,Port},
-		    loop(Port)
-	    end;
-	_ -> %driver loaded
-	    asn1_port_owner ! {request_port,From}
-    end.
-
-loop(Port) ->
-    receive
-	{request_port,Sender} ->
-	    Sender ! {reply,Port},
-	    loop(Port);
-	unload ->
-	    port_close(Port),
-	    erl_ddll:unload_driver("asn1_erl_drv")
-    end.
-
-
-unload_driver() ->
-    case whereis(asn1_port_owner) of
-	Pid when pid(Pid) ->
-	    asn1_port_owner ! unload,
-	    ok;
-	_ ->
-	    ok
-    end.
-
--else.
 
 load_driver() ->
     case is_driver_owner_registered() of %to prevent unecessary spawn
 	false ->
-	    spawn(asn1rt_driver_handler, init, [self()]);
+	    Self = self(),
+	    spawn(asn1rt_driver_handler, init, [Self]);
 	_ ->
 	    asn1_driver_owner ! {are_you_ready,self()},
 	    ok
@@ -86,9 +42,15 @@ init(From) ->
 		    case catch erl_ddll:load_driver(Dir,"asn1_erl_drv") of
 			ok ->
 			    open_named_port(From);
-			Error -> % if erl_ddll:load_driver fails
-			    asn1_driver_owner ! unload,
-			    From ! Error
+			_Error -> % if erl_ddll:load_driver fails
+			    OSDir = filename:join([Dir,erlang:system_info(system_architecture)]),
+			    case catch erl_ddll:load_driver(OSDir,"asn1_erl_drv") of
+				ok ->
+				    open_named_port(From);
+				Error2 ->
+				    asn1_driver_owner ! unload,
+				    From ! Error2
+			    end
 		    end,
 		    loop();
 		{'EXIT',{badarg,_}} ->
@@ -156,5 +118,3 @@ unload_driver() ->
 	_ -> 
 	    ok
     end.
-
--endif.

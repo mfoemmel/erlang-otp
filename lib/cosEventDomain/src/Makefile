@@ -96,7 +96,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += \
+ERL_IDL_FLAGS += \
 	-pa $(ERL_TOP)/lib/cosEventDomain/ebin \
 	-pa $(ERL_TOP)/lib/cosEventDomain/include \
 	-pa $(ERL_TOP)/lib/cosNotification/include \
@@ -110,6 +110,7 @@ ERL_FLAGS += \
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-pa $(ERL_TOP)/lib/cosEventDomain/include \
 	-pa $(ERL_TOP)/lib/cosNotification/ebin \
 	-pa $(ERL_TOP)/lib/cosNotification/include \
@@ -148,7 +149,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES) $(EXTERNAL_GEN_HRL_FILES): CosEventDomainAdmin.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosEventDomainAdmin.cfg"}' CosEventDomainAdmin.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosEventDomainAdmin.cfg"}' CosEventDomainAdmin.idl
 	mv $(GEN_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

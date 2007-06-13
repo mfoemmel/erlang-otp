@@ -51,13 +51,13 @@
 %% is not yet reached, we are on the first 'round' of filling the wrap
 %% files.
 
-open(File) when atom(File) ->
+open(File) when is_atom(File) ->
     open(atom_to_list(File));
-open(File) when list(File) ->
+open(File) when is_list(File) ->
     case read_index_file(File) of
 	%% The special case described above.
 	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
-	             when CurFileNo == NoOfFiles + 1 ->
+	             when CurFileNo =:= NoOfFiles + 1 ->
 	    FileNo = 1,
 	    ?FORMAT("open from ~p Cur = ~p, Sz = ~p, Tot = ~p, NoFiles = ~p~n",
 		    [FileNo, CurFileNo, _CurFileSz, _TotSz, NoOfFiles]),
@@ -74,9 +74,9 @@ open(File) when list(File) ->
 	    Error
     end.
 
-open(File, FileNo) when atom(File), integer(FileNo) ->
+open(File, FileNo) when is_atom(File), is_integer(FileNo) ->
     open(atom_to_list(File), FileNo);
-open(File, FileNo) when list(File), integer(FileNo) ->
+open(File, FileNo) when is_list(File), is_integer(FileNo) ->
     case read_index_file(File) of
 	{ok, {_CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
 	  when NoOfFiles >= FileNo ->
@@ -85,7 +85,7 @@ open(File, FileNo) when list(File), integer(FileNo) ->
 	    open_int(File, FileNo, one);
 	%% The special case described above.
 	{ok, {CurFileNo, _CurFileSz, _TotSz, NoOfFiles}} 
-	  when CurFileNo == FileNo, CurFileNo == NoOfFiles +1 ->
+	  when CurFileNo =:= FileNo, CurFileNo =:= NoOfFiles +1 ->
 	    ?FORMAT("open file ~p Cur = ~p, Sz = ~p, Tot = ~p, NoFiles = ~p~n",
 		    [FileNo, CurFileNo, _CurFileSz, _TotSz, NoOfFiles]),
 	    open_int(File, FileNo, one);
@@ -95,15 +95,15 @@ open(File, FileNo) when list(File), integer(FileNo) ->
 	    Error
     end.
 
-close(WR) when record(WR, wrap_reader) ->
+close(WR) when is_record(WR, wrap_reader) ->
     file:close(WR#wrap_reader.fd).
 
-chunk(WR) when record(WR, wrap_reader) ->
+chunk(WR) when is_record(WR, wrap_reader) ->
     chunk(WR, ?MAX_CHUNK_SIZE, 0). 
 
-chunk(WR, infinity) when record(WR, wrap_reader) ->
+chunk(WR, infinity) when is_record(WR, wrap_reader) ->
     chunk(WR, ?MAX_CHUNK_SIZE, 0);
-chunk(WR, N) when record(WR, wrap_reader), integer(N), N > 0 ->
+chunk(WR, N) when is_record(WR, wrap_reader), is_integer(N), N > 0 ->
     chunk(WR, N, 0). 
 
 %%
@@ -178,7 +178,7 @@ read_a_chunk(Fd, FileName, Pos, B, N) ->
     %% 'foo' will do here since Log is not used in read-only mode.
     Log = foo,
     case disk_log:ichunk_end(R, Log) of
-	{C, S} when record(C, continuation) ->
+	{C, S} when is_record(C, continuation) ->
 	    {C, S, 0};
 	Else ->
 	    Else
@@ -194,7 +194,7 @@ chunk_at_eof(WR, N, Bad) ->
 			    %% The special case described above.
 			    _ when CurFileNo > NoOfFiles -> 1;
 			    0 when NoOfFiles > 1 -> NoOfFiles;
-			    No when CurFileNo == NoOfFiles -> 
+			    No when CurFileNo =:= NoOfFiles -> 
 				FileName = add_ext(File, CurFileNo+1),
 				case file:read_file_info(FileName) of
 				    {ok, _} -> CurFileNo + 1;

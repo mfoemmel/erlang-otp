@@ -436,7 +436,7 @@
 	 mk_switch_val/4,
 	 %% mk_switch_val/5,
 	 switch_val_arg/1,
-	 switch_val_fail_label/1,
+	 switch_val_fail_label/1,	
 	 %% switch_val_length/1,
 	 switch_val_cases/1,
 	 switch_val_cases_update/2,
@@ -585,7 +585,6 @@
 	 %% info/1,
 	 fmove_dst/1,
 	 fmove_src/1
-	 %% fmove_src_update/2
 	]).
 
 %%
@@ -1048,8 +1047,8 @@ var_name(#var{name=Name}) -> Name.
 is_var(#var{}) -> true;
 is_var(_) -> false.
   
-%% This representation of a variable is used in the constraint based
-%% type pass and when pretty printing typed icode.
+%% This representation of a variable is used when pretty printing 
+%% typed icode.
 annotate_var({var, Name}, Type) -> {var, Name, Type};
 annotate_var({var, Name, _OldType}, Type) -> {var, Name, Type}.
 is_annotated_var({var, _Name, _Type}) -> true;
@@ -1091,8 +1090,8 @@ is_var_or_fvar_or_reg(_) -> false.
 mk_fmove(Dst, Src) -> #fmove{dst=Dst, src=Src}.
 fmove_dst(#fmove{dst=Dst}) -> Dst.
 fmove_src(#fmove{src=Src}) -> Src.
-%% fmove_src_update(M, NewSrc) -> M#fmove{src=NewSrc}.
-
+%%fmove_dst_update(M, NewDst) -> M#fmove{dst=NewDst}.
+%%fmove_src_update(M, NewSrc) -> M#fmove{src=NewSrc}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

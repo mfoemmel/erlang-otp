@@ -99,7 +99,7 @@ create(DB, GstkId, Opts) ->
     PlacePreCmd = [";place ", TkW],
     case gstk_generic:make_command(Opts, NGstkId, TkW, "", PlacePreCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(["menubutton ", TkW," -padx 4 -pady 3",Cmd]),
 	    NGstkId
     end.

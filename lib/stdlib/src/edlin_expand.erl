@@ -48,7 +48,7 @@ expand_function_name(ModStr, FuncPrefix) ->
     Mod = list_to_atom(ModStr),
     case erlang:module_loaded(Mod) of
  	true ->
- 	    L = apply(Mod, module_info, []),
+            L = Mod:module_info(),
  	    case keysearch(exports, 1, L) of
  		{value, {_, Exports}} ->
  		    match(FuncPrefix, Exports, "(");
@@ -93,7 +93,7 @@ format_col([A|T], Width, Len, Acc0) ->
     H = case A of
  	    %% If it's a tuple {string(), integer()}, we assume it's an
  	    %% arity, and meant to be printed.
-	    {H0, I} when integer(I) ->
+	    {H0, I} when is_integer(I) ->
 		H0 ++ "/" ++ integer_to_list(I);
 	    {H1, _} -> H1;
  	    H2 -> H2

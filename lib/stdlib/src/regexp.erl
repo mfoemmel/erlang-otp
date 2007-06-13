@@ -85,7 +85,7 @@ reg2(S0) ->
     {L,S1} = reg3(S0),
     reg2p(S1, L).
 
-reg2p([C|S0], L) when C /= $|, C /= $) ->
+reg2p([C|S0], L) when C =/= $|, C =/= $) ->
     {R,S1} = reg3([C|S0]),
     reg2p(S1, {concat,L,R});
 reg2p(S, L) -> {L,S}.
@@ -133,7 +133,7 @@ reg4([$[|S0]) ->
 %	{St,[$"|S1]} -> {St,S1};
 %	{St,S1} -> throw({error,{unterminated,"\""}})
 %    end;
-reg4([C|S]) when C /= $*, C /= $+, C /= $?, C /= $] -> {C,S};
+reg4([C|S]) when C =/= $*, C =/= $+, C =/= $?, C =/= $] -> {C,S};
 reg4([C|_S]) -> throw({error,{illegal,[C]}});
 reg4([]) -> {epsilon,[]}.
 
@@ -157,9 +157,9 @@ char($\\, [O1,O2,O3|S]) when
 char($\\, [C|S]) -> {escape_char(C),S};
 char(C, S) -> {C,S}.
 
-char_class([C1|S0], Cc) when C1 /= $] ->
+char_class([C1|S0], Cc) when C1 =/= $] ->
     case char(C1, S0) of
-	{Cf,[$-,C2|S1]} when C2 /= $] ->
+	{Cf,[$-,C2|S1]} when C2 =/= $] ->
 	    case char(C2, S1) of
 		{Cl,S2} when Cf < Cl -> char_class(S2, [{Cf,Cl}|Cc]); 
 		{Cl,_S2} -> throw({error,{char_class,[Cf,$-,Cl]}})
@@ -168,10 +168,10 @@ char_class([C1|S0], Cc) when C1 /= $] ->
     end;
 char_class(S, Cc) -> {Cc,S}.
 
-%char_string([C|S]) when C /= $" -> char_string(S, C);
+%char_string([C|S]) when C =/= $" -> char_string(S, C);
 %char_string(S) -> {epsilon,S}.
 
-%char_string([C|S0], L) when C /= $" ->
+%char_string([C|S0], L) when C =/= $" ->
 %    char_string(S0, {concat,L,C});
 %char_string(S, L) -> {L,S}.
 
@@ -223,7 +223,7 @@ re_apply({comp_class,Cc}, More, [C|S], P) ->
 	true -> nomatch;
 	false -> re_apply_more(More, S, P+1)
     end;
-re_apply(C, More, [C|S], P) when integer(C) ->
+re_apply(C, More, [C|S], P) when is_integer(C) ->
     re_apply_more(More, S, P+1);
 re_apply(_RE, _More, _S, _P) -> nomatch.
 
@@ -318,7 +318,7 @@ format_error({char_class,What}) ->
 %% -type match(String, RegExp) -> matchres().
 %%  Find the longest match of RegExp in String.
 
-match(S, RegExp) when list(RegExp) ->
+match(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> match(S, RE);
 	{error,E} -> {error,E}
@@ -343,7 +343,7 @@ match(RE, S, St, Pos, L) ->
 %% -type first_match(String, RegExp) -> matchres().
 %%  Find the first match of RegExp in String.
 
-first_match(S, RegExp) when list(RegExp) ->
+first_match(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> first_match(S, RE);
 	{error,E} -> {error,E}
@@ -355,7 +355,7 @@ first_match(S, RE) ->
 	nomatch -> nomatch
     end.
 
-first_match(RE, S, St) when S /= [] ->
+first_match(RE, S, St) when S =/= [] ->
     case re_apply(S, St, RE) of
 	{match,P,_Rest} -> {St,P-St};
 	nomatch -> first_match(RE, tl(S), St+1)
@@ -365,7 +365,7 @@ first_match(_RE, [], _St) -> nomatch.
 %% -type matches(String, RegExp) -> {match,[{Start,Length}]} | {error,E}.
 %%  Return the all the non-overlapping matches of RegExp in String.
 
-matches(S, RegExp) when list(RegExp) ->
+matches(S, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> matches(S, RE);
 	{error,E} -> {error,E}
@@ -385,7 +385,7 @@ matches(S, RE, St) ->
 %%  the string Replace in String. Accept pre-parsed regular
 %%  expressions.
 
-sub(String, RegExp, Rep) when list(RegExp) ->
+sub(String, RegExp, Rep) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> sub(String, RE, Rep);
 	{error,E} -> {error,E}
@@ -414,7 +414,7 @@ sub_repl([], _M, Rest) -> Rest.
 %%  Substitute every match of the regular expression RegExp with the
 %%  string New in String. Accept pre-parsed regular expressions.
 
-gsub(String, RegExp, Rep) when list(RegExp) ->
+gsub(String, RegExp, Rep) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> gsub(String, RE, Rep);
 	{error,E} -> {error,E}
@@ -433,7 +433,7 @@ split(String, " ") ->				%This is really special
 	[[]|Ss] -> {ok,Ss};
 	Ss -> {ok,Ss}
     end;
-split(String, RegExp) when list(RegExp) ->
+split(String, RegExp) when is_list(RegExp) ->
     case parse(RegExp) of
 	{ok,RE} -> {ok,split_apply(String, RE, false)};
 	{error,E} -> {error,E}

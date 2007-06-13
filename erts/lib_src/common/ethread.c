@@ -26,6 +26,8 @@
 #include "config.h"
 #endif
 
+#undef ETHR_STACK_GUARD_SIZE 
+
 #if defined(ETHR_PTHREADS)
 
 #ifdef ETHR_TIME_WITH_SYS_TIME
@@ -40,6 +42,12 @@
 #endif
 #include <sys/types.h>
 #include <unistd.h>
+#include <signal.h>
+#include <limits.h>
+
+#ifdef ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE
+#  define ETHR_STACK_GUARD_SIZE (pagesize)
+#endif
 
 #elif defined(ETHR_WIN32_THREADS)
 
@@ -105,6 +113,13 @@ struct ethr_xhndl_list_ {
     void (*funcp)(void);
 };
 
+static size_t pagesize;
+#define ETHR_PAGE_ALIGN(SZ) (((((size_t) (SZ)) - 1)/pagesize + 1)*pagesize)
+static size_t min_stack_size; /* kilo words */
+static size_t max_stack_size; /* kilo words */
+#define ETHR_B2KW(B) ((((size_t) (B)) - 1)/(sizeof(void *)*1024) + 1)
+#define ETHR_KW2B(KW) (((size_t) (KW))*sizeof(void *)*1024)
+
 ethr_mutex xhndl_mtx;
 ethr_xhndl_list *xhndl_list;
 
@@ -122,6 +137,54 @@ init_common(ethr_init_data *id)
     }
     if (!allocp || !reallocp || !freep)
 	return EINVAL;
+
+#ifdef _SC_PAGESIZE
+    pagesize = (size_t) sysconf(_SC_PAGESIZE);
+#elif defined(HAVE_GETPAGESIZE)
+    pagesize = (size_t) getpagesize();
+#else
+    pagesize = (size_t) 4*1024; /* Guess 4 KB */
+#endif
+
+    /* User needs at least 4 KB */
+    min_stack_size = 4*1024;
+#if SIZEOF_VOID_P == 8
+    /* Double that on 64-bit archs */
+    min_stack_size *= 2;
+#endif
+    /* On some systems as much as about 4 KB is used by the system */
+    min_stack_size += 4*1024;
+    /* There should be room for signal handlers */
+#ifdef SIGSTKSZ
+    min_stack_size += SIGSTKSZ;
+#else
+    min_stack_size += pagesize;
+#endif
+    /* The system may think that we need more stack */
+#if defined(PTHREAD_STACK_MIN)
+    if (min_stack_size < PTHREAD_STACK_MIN)
+	min_stack_size = PTHREAD_STACK_MIN;
+#elif defined(_SC_THREAD_STACK_MIN)
+    {
+	size_t thr_min_stk_sz = (size_t) sysconf(_SC_THREAD_STACK_MIN);
+	if (min_stack_size < thr_min_stk_sz)
+	    min_stack_size = thr_min_stk_sz;
+    }
+#endif
+    /* The guard is at least on some platforms included in the stack size
+       passed when creating threads */
+#ifdef ETHR_STACK_GUARD_SIZE
+    min_stack_size += ETHR_STACK_GUARD_SIZE;
+#endif
+    min_stack_size = ETHR_PAGE_ALIGN(min_stack_size);
+
+    min_stack_size = ETHR_B2KW(min_stack_size);
+
+    max_stack_size = 32*1024*1024;
+#if SIZEOF_VOID_P == 8
+    max_stack_size *= 2;
+#endif
+    max_stack_size = ETHR_B2KW(max_stack_size);
 
     xhndl_list = NULL;
 
@@ -498,9 +561,9 @@ ethr_init(ethr_init_data *id)
 
 }
 
-
 int
-ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
+ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
+		ethr_thr_opts *opts)
 {
     thr_wrap_data_ twd;
     pthread_attr_t attr;
@@ -542,9 +605,34 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
     res = pthread_attr_setscope(&attr, PTHREAD_SCOPE_SYSTEM);
     if (res != 0 && res != ENOTSUP)
 	goto cleanup_cond_destroy;
+
+    if (opts && opts->suggested_stack_size >= 0) {
+	size_t suggested_stack_size = (size_t) opts->suggested_stack_size;
+	size_t stack_size;
+#ifdef DEBUG
+	suggested_stack_size /= 2; /* Make sure we got margin */
+#endif
+#ifdef ETHR_STACK_GUARD_SIZE
+	/* The guard is at least on some platforms included in the stack size
+	   passed when creating threads */
+	suggested_stack_size += ETHR_B2KW(ETHR_STACK_GUARD_SIZE);
+#endif
+	if (suggested_stack_size < min_stack_size)
+	    stack_size = ETHR_KW2B(min_stack_size);
+	else if (suggested_stack_size > max_stack_size)
+	    stack_size = ETHR_KW2B(max_stack_size);
+	else
+	    stack_size = ETHR_PAGE_ALIGN(ETHR_KW2B(suggested_stack_size));
+	(void) pthread_attr_setstacksize(&attr, stack_size);
+    }
+
+#ifdef ETHR_STACK_GUARD_SIZE
+    (void) pthread_attr_setguardsize(&attr, ETHR_STACK_GUARD_SIZE);
+#endif
+
     /* Detached or joinable... */
     res = pthread_attr_setdetachstate(&attr,
-				      (detached
+				      (opts && opts->detached
 				       ? PTHREAD_CREATE_DETACHED
 				       : PTHREAD_CREATE_JOINABLE));
     if (res != 0)
@@ -2328,9 +2416,11 @@ ethr_init(ethr_init_data *id)
  */
 
 int
-ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
+ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
+		ethr_thr_opts *opts)
 {
     int err = 0;
+    unsigned stack_size = 0; /* 0 = system default */
     thr_wrap_data_ twd;
     thr_data_ *my_td, *child_td = NULL;
     ethr_tid child_tid, child_serial, child_ix;
@@ -2355,6 +2445,20 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
 	return EACCES;
     }
 #endif
+
+    if (opts && opts->suggested_stack_size >= 0) {
+	size_t suggested_stack_size = opts->suggested_stack_size;
+#ifdef DEBUG
+	suggested_stack_size /= 2; /* Make sure we got margin */
+#endif
+	if (suggested_stack_size < min_stack_size)
+	    stack_size = (unsigned) ETHR_KW2B(min_stack_size);
+	else if (suggested_stack_size > max_stack_size)
+	    stack_size = (unsigned) ETHR_KW2B(max_stack_size);
+	else
+	    stack_size =
+		(unsigned) ETHR_PAGE_ALIGN(ETHR_KW2B(suggested_stack_size));
+    }
 
     EnterCriticalSection(&thr_table_cs);
 
@@ -2406,7 +2510,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
     /* spawn the thr_wrapper function */
     child_td->thr_handle
 	= (HANDLE) _beginthreadex(NULL,
-				  0,
+				  stack_size,
 				  (LPTHREAD_START_ROUTINE) thr_wrapper, 
 				  (LPVOID) &twd,
 				  0,
@@ -2425,7 +2529,7 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg, int detached)
 	goto error;
     }
 
-    if (detached) {
+    if (opts && opts->detached) {
 	CloseHandle(child_td->thr_handle);
 	child_td->thr_handle = INVALID_HANDLE_VALUE;
     }

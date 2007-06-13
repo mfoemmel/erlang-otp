@@ -147,14 +147,12 @@ create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->
   State = new_state_no_init(),
   State1 = State#cl_state{output_plt=InitPlt},
   Files = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
-  Analysis = #analysis{fixpoint=first,
-		       files=Files, 
-		       granularity=all, 
+  Analysis = #analysis{files=Files, 
 		       init_plt=dialyzer_plt:new(dialyzer_empty_plt),
 		       include_dirs=IncludeDirs,
 		       plt_info={MD5, Libs},
 		       start_from=byte_code,
-		       core_transform=succ_typings,
+		       type=plt_build,
 		       user_plt=State1#cl_state.user_plt,
 		       supress_inline=true},
   cl_loop(run_analysis(State1, Analysis)).
@@ -164,15 +162,16 @@ hipe_compile() ->
     undefined -> ok;
     ultrasparc -> ok;
     _ ->
+      {ok, lists}                       = hipe:c(lists),
+      {ok, dict}                        = hipe:c(dict),
       {ok, dialyzer_succ_typings}       = hipe:c(dialyzer_succ_typings),
       {ok, dialyzer_analysis_callgraph} = hipe:c(dialyzer_analysis_callgraph),
       {ok, dialyzer_typesig}            = hipe:c(dialyzer_typesig),
       {ok, dialyzer_dataflow}           = hipe:c(dialyzer_dataflow),
+      {ok, dialyzer_codeserver}         = hipe:c(dialyzer_codeserver),
       {ok, erl_types}                   = hipe:c(erl_types),
       {ok, erl_bif_types}               = hipe:c(erl_bif_types),
-      {ok, cerl}                        = hipe:c(cerl),
-      {ok, dict}                        = hipe:c(dict),
-      {ok, lists}                       = hipe:c(lists),
+      {ok, cerl}                        = hipe:c(cerl, [no_concurrent_comp]),
       ok
   end.
 
@@ -217,7 +216,7 @@ cl_loop(State) ->
   BackendPid = State#cl_state.backend_pid,
   receive
     {BackendPid, log, _LogMsg} ->
-      %io:format(State#cl_state.output ,"Log: ~s", [_LogMsg]),
+      %% io:format(State#cl_state.output ,"Log: ~s", [_LogMsg]),
       cl_loop(State);
     {BackendPid, warnings, Warnings} ->
       NewState = store_warnings(State, Warnings),
@@ -228,7 +227,7 @@ cl_loop(State) ->
     {BackendPid, done} ->
       return_value(State);
     {BackendPid, ext_calls, ExtCalls} ->
-      Msg = io_lib:format("\nUnknown functions: ~p\n", [ExtCalls]),
+      Msg = io_lib:format("Unknown functions: ~p\n", [ExtCalls]),
       NewState = print_ext_calls(State, Msg),
       cl_loop(NewState);
     {'EXIT', BackendPid, {error, Reason}} ->
@@ -239,7 +238,7 @@ cl_loop(State) ->
       maybe_close_output_file(State),
       error(State, Msg);
     _Other ->
-      %% io:format(Output, "Received ~p\n", [Other]),
+      %% io:format("Received ~p\n", [_Other]),
       cl_loop(State)
   end.
 
@@ -315,8 +314,8 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
       _ ->      
 	case OutputPlt =:= undefined of
 	  true -> ok;
-	  false -> dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], 
-						     OutputPlt)
+	  false ->
+	    dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], OutputPlt)
 	end,
 	if NofWarnings =:= 0 -> ?RET_NOTHING_SUSPICIOUS;
 	   true              -> ?RET_DISCREPANCIES_FOUND
@@ -350,13 +349,12 @@ build_analysis_record(State, DialyzerOptions) ->
 					   || F <- Files0])),
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
-  CoreTransform = DialyzerOptions#options.core_transform,
+  AnalType = DialyzerOptions#options.analysis_type,
   InitPlt = State#cl_state.init_plt,
-  #analysis{fixpoint=first, core_transform=CoreTransform,
-	    defines=Defines, granularity=all,
+  #analysis{type=AnalType,
+	    defines=Defines,
 	    include_dirs=IncludeDirs, init_plt=InitPlt, user_plt=PLT, 
 	    files=Files, start_from=From, supress_inline=SupressInline}.
-
 
 add_files_rec(Files, From) ->
   Files1 = ordsets:from_list(Files), 
@@ -379,7 +377,7 @@ all_subdirs([Dir|T], Acc) ->
                          true -> {true, SubDir};
                          false -> false
                        end
-                   end, Files),
+		     end, Files),
   NewAcc = ordsets:union(ordsets:from_list(SubDirs), Acc),
   all_subdirs(T++SubDirs, NewAcc);
 all_subdirs([], Acc) ->

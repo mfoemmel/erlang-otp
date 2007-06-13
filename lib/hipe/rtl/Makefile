@@ -66,8 +66,7 @@ TARGET_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR))
 # FLAGS: Please keep +inline below
 # ----------------------------------------------------
 
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +inline
+ERL_COMPILE_FLAGS += +warn_obsolete_guard +inline
 
 # ----------------------------------------------------
 # Targets

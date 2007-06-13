@@ -243,7 +243,7 @@ mk_load(LDop, Dst, Disp, Base) ->
 mk_loadx(LdxOp, Dst, Base1, Base2) ->
   #loadx{ldxop=LdxOp, dst=Dst, base1=Base1, base2=Base2}.
 
-mk_load(LdOp, Dst, Offset, Base, Scratch, Rest) ->
+mk_load(LdOp, Dst, Offset, Base, Scratch, Rest) when is_integer(Offset) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_load(LdOp, Dst, Offset, Base) | Rest];
      true ->
@@ -337,7 +337,7 @@ mk_store(STop, Src, Disp, Base) ->
 mk_storex(StxOp, Src, Base1, Base2) ->
   #storex{stxop=StxOp, src=Src, base1=Base1, base2=Base2}.
 
-mk_store(StOp, Src, Offset, Base, Scratch, Rest) ->
+mk_store(StOp, Src, Offset, Base, Scratch, Rest)when is_integer(Offset) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_store(StOp, Src, Offset, Base) | Rest];
      true ->
@@ -358,7 +358,7 @@ mk_unary(UnOp, Dst, Src) -> #unary{unop=UnOp, dst=Dst, src=Src}.
 
 mk_lfd(Dst, Disp, Base) -> #lfd{dst=Dst, disp=Disp, base=Base}.
 mk_lfdx(Dst, Base1, Base2) -> #lfdx{dst=Dst, base1=Base1, base2=Base2}.
-mk_fload(Dst, Offset, Base, Scratch) ->
+mk_fload(Dst, Offset, Base, Scratch) when is_integer(Offset) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_lfd(Dst, Offset, Base)];
      true ->
@@ -368,7 +368,7 @@ mk_fload(Dst, Offset, Base, Scratch) ->
 
 mk_stfd(Src, Disp, Base) -> #stfd{src=Src, disp=Disp, base=Base}.
 mk_stfdx(Src, Base1, Base2) -> #stfdx{src=Src, base1=Base1, base2=Base2}.
-mk_fstore(Src, Offset, Base, Scratch) ->
+mk_fstore(Src, Offset, Base, Scratch) when is_integer(Offset) ->
   if Offset >= -32768, Offset =< 32767 ->
       [mk_stfd(Src, Offset, Base)];
      true ->

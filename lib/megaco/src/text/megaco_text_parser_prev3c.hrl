@@ -252,11 +252,14 @@ ensure_muxType({_TokenTag, _Line, Text} = Token) ->
 
 %% packagesItem      = NAME "-" UINT16
 %% NAME              = ALPHA *63(ALPHA / DIGIT / "_" )
-ensure_packagesItem({TokenTag, Line, Text}) ->
+ensure_packagesItem({_TokenTag, Line, Text} = Token) ->
     case string:tokens(Text, [$-]) of
         [Name, Version] ->
-            #'PackagesItem'{packageName    = ensure_NAME({TokenTag, Line, Name}),
-                            packageVersion = ensure_uint({TokenTag, Line, Version}, 0, 99)};
+            #'PackagesItem'{packageName    = ensure_NAME(
+					       setelement(3, Token, Name)), 
+                            packageVersion = ensure_uint(
+					       setelement(3, Token, Version), 
+					       0, 99)};
         _ ->
             return_error(Line, {bad_PackagesItem, Text})
     end.
@@ -264,11 +267,11 @@ ensure_packagesItem({TokenTag, Line, Text}) ->
 %% pkgdName          =  (PackageName / "*")  SLASH  (ItemID / "*" )
 %% PackageName       = NAME
 %% ItemID            = NAME
-ensure_pkgdName({TokenTag, Line, Text}) ->
+ensure_pkgdName({_TokenTag, Line, Text} = Token) ->
     case string:tokens(Text, [$/]) of
         [Name, Item] ->
-            ensure_name_or_star({TokenTag, Line, Name}),
-            ensure_name_or_star({TokenTag, Line, Item}),
+            ensure_name_or_star(setelement(3, Token, Name)),
+            ensure_name_or_star(setelement(3, Token, Item)),
             Text;
         _ ->
             return_error(Line, {bad_pkgdName, Text})
@@ -826,86 +829,34 @@ merge_topologyDescriptor([], TR, TRs) ->
 merge_topologyDescriptor(
   [{tid, From}|Comps], 
   #'TopologyRequest'{terminationFrom = undefined} = TR1, TRs) ->
-%%     d("merge_topologyDescriptor(1) -> entry with"
-%%       "~n   From: ~p"
-%%       "~n   TR1:  ~p", [From, TR1]),
     TR2 = TR1#'TopologyRequest'{terminationFrom = From},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor(
   [{tid, To}|Comps], 
   #'TopologyRequest'{terminationTo = undefined} = TR1, 
   TRs) ->
-%%     d("merge_topologyDescriptor(2) -> entry with"
-%%       "~n   To:  ~p"
-%%       "~n   TR1: ~p", [To, TR1]),
     TR2 = TR1#'TopologyRequest'{terminationTo = To},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor([{tid, From}|Comps], TR1, TRs) ->
-%%     d("merge_topologyDescriptor(3) -> entry with"
-%%       "~n   From: ~p"
-%%       "~n   TR1:  ~p", [From, TR1]),
     TR2 = #'TopologyRequest'{terminationFrom = From},
     merge_topologyDescriptor(Comps, TR2, [TR1 | TRs]);
 merge_topologyDescriptor([{direction, Dir}|Comps], TR1, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   Dir: ~p"
-%%       "~n   TR1: ~p", [Dir, TR1]),
     TR2 = TR1#'TopologyRequest'{topologyDirection = Dir},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor([{sid, SID}|Comps], TR1, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   SID: ~p"
-%%       "~n   TR1: ~p", [SID, TR1]),
     TR2 = TR1#'TopologyRequest'{streamID = SID},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor(
   [{direction_ext, EDir}|Comps], 
   #'TopologyRequest'{topologyDirection = asn1_NOVALUE} = TR1, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   EDir: ~p"
-%%       "~n   TR1:  ~p", [EDir, TR1]),
     TR2 = TR1#'TopologyRequest'{topologyDirection          = oneway,
 				topologyDirectionExtension = EDir},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor([{direction_ext, EDir}|Comps], TR1, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   EDir: ~p"
-%%       "~n   TR1:  ~p", [EDir, TR1]),
     TR2 = TR1#'TopologyRequest'{topologyDirectionExtension = EDir},
     merge_topologyDescriptor(Comps, TR2, TRs);
 merge_topologyDescriptor(Comps, TR, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   Comps: ~p"
-%%       "~n   TR:    ~p"
-%%       "~n   TRs:   ~p", [Comps, TR, TRs]),
     return_error(0, {bad_topologyDescriptor, Comps, TR, TRs}).
-
-
-%% merge_topologyDescriptor([{tid,       From}, 
-%% 			  {tid,       To},
-%% 			  {direction, Dir},
-%% 			  {sid,       SID}|Comps], TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   From: ~p"
-%%       "~n   To:   ~p"
-%%       "~n   Dir:  ~p"
-%%       "~n   SID:  ~p", [From, To, Dir, SID]),
-%%     TR = make_TopologyRequest(From, To, Dir, SID),
-%%     merge_topologyDescriptor(Comps, [TR | TRs]);
-%% merge_topologyDescriptor([{tid,       From}, 
-%% 			  {tid,       To},
-%% 			  {direction, Dir}|Comps], TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   From: ~p"
-%%       "~n   To:   ~p"
-%%       "~n   Dir:  ~p", [From, To, Dir]),
-%%     TR = make_TopologyRequest(From, To, Dir),
-%%     merge_topologyDescriptor(Comps, [TR | TRs]);
-%% merge_topologyDescriptor(Comps, TRs) ->
-%%     d("merge_topologyDescriptor -> entry with"
-%%       "~n   Comps: ~p"
-%%       "~n   TRs:   ~p", [Comps, TRs]),
-%%     return_error(0, {bad_topologyDescriptor, Comps, TRs}).
 
 
 ensure_TopologyRequest(#'TopologyRequest'{terminationFrom   = From,
@@ -919,30 +870,6 @@ ensure_TopologyRequest(R) ->
     return_error(0, {bad_TopologyRequest, R}).
 
        
-%% make_TopologyRequest(From, To, Dir, SID) ->
-%%     TR = #'TopologyRequest'{terminationFrom = From,
-%% 			    terminationTo   = To,
-%% 			    streamID        = SID},
-%%     make_TopologyRequest(TR, Dir).
-
-%% make_TopologyRequest(From, To, Dir) ->
-%%     TR = #'TopologyRequest'{terminationFrom = From,
-%% 			    terminationTo   = To},
-%%     make_TopologyRequest(TR, Dir).
-
-%% make_TopologyRequest(TR, bothway = Dir) ->
-%%     TR#'TopologyRequest'{topologyDirection = Dir};
-%% make_TopologyRequest(TR, isolate = Dir) ->
-%%     TR#'TopologyRequest'{topologyDirection = Dir};
-%% make_TopologyRequest(TR, oneway = Dir) ->
-%%     TR#'TopologyRequest'{topologyDirection = Dir};
-%% make_TopologyRequest(TR, onewayexternal = Dir) ->
-%%     TR#'TopologyRequest'{topologyDirection          = oneway,
-%% 			 topologyDirectionExtension = Dir};
-%% make_TopologyRequest(TR, onewayboth = Dir) ->
-%%     TR#'TopologyRequest'{topologyDirection          = oneway,
-%% 			 topologyDirectionExtension = Dir}.
-
 ensure_profile({_TokenTag, Line, Text}) ->
     case string:tokens(Text, [$/]) of
         [Name, Version] ->
@@ -1617,6 +1544,8 @@ parse_prop_name([] = All, Group, Groups) ->
 
 do_parse_prop_name([Char | Rest], Name, Group, Groups) ->
     case ?classify_char(Char) of
+        safe_char_upper ->
+            do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         safe_char ->
             do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         rest_char when Char == $=, Name /= [] ->

@@ -86,7 +86,7 @@ ensure_loaded(Module) ->
 	    Error = "The code server called the unloaded module `" ++
 		atom_to_list(Module) ++ "'",
 	    halt(Error);
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    code:ensure_loaded(Module);
 	_ ->
 	    init:ensure_loaded(Module)

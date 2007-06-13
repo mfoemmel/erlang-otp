@@ -104,8 +104,8 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += +inline
-ERL_COMPILE_FLAGS += -I../../stdlib/include -I$(EGEN) -W
+
+ERL_COMPILE_FLAGS += +inline +warn_obsolete_guard -I../../stdlib/include -I$(EGEN) -W
 
 # ----------------------------------------------------
 # Targets
@@ -135,12 +135,14 @@ $(EGEN)/beam_opcodes.erl $(EGEN)/beam_opcodes.hrl: genop.tab
 	$(PERL) $(ERL_TOP)/erts/emulator/utils/beam_makeops -compiler -outdir $(EGEN) $<
 
 $(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl $(EGEN)/beam_opcodes.hrl
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DCOMPILER_VSN='"$(VSN)"' -o$(EBIN) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) -DCOMPILER_VSN='"$(VSN)"' -o$(EBIN) $<
 
 $(EBIN)/cerl_inline.beam: $(ESRC)/cerl_inline.erl
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) +nowarn_shadow_vars -o$(EBIN) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) +nowarn_shadow_vars -o$(EBIN) $<
 
 $(EBIN)/beam_disasm.beam: $(EGEN)/beam_opcodes.hrl
+
+$(EBIN)/core_parse.beam: $(EGEN)/core_parse.erl
 
 # ----------------------------------------------------
 # Release Target

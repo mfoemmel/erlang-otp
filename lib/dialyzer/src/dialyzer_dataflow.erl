@@ -32,15 +32,15 @@
 	 t_cons_hd/1, t_cons_tl/1, t_components/1, t_float/0,
 	 t_from_range/2, t_fun/0, t_fun/2, t_fun_args/1, t_fun_range/1,
 	 t_inf/2, t_inf_lists/2, t_integer/0, t_is_integer/1, t_is_nil/1,
-	 t_is_atom/1, t_is_atom/2, t_is_bool/1, 
-	 t_atom_vals/1, t_is_equal/2, t_is_none/1,
+	 t_is_atom/1, t_is_atom/2, t_is_bool/1, t_is_unit/1,
+	 t_atom_vals/1, t_is_equal/2, t_is_none/1, t_is_none_or_unit/1,
 	 t_is_any/1, t_is_subtype/2, t_limit/2, t_list/0,
 	 t_non_neg_integer/0, t_number/0, t_number_vals/1, t_pid/0, t_port/0,
 	 t_pos_improper_list/0,
 	 t_product/1, t_ref/0, t_to_string/2, t_to_string/1,
 	 t_tuple/0, t_tuple/1, t_tuple_args/1,
 	 t_tuple_subtypes/1, t_sup/1, t_sup/2, t_subtract/2,
-	 t_from_term/1, t_none/0]).
+	 t_from_term/1, t_none/0, t_unit/0]).
 
 
 -export([annotate_module/2,
@@ -118,7 +118,7 @@ get_def_plt() ->
 			   filename:join([code:lib_dir(dialyzer),
 					  "plt","dialyzer_init_plt"]))
   catch
-    error:no_such_file -> ets:new(dialyzer_typesig_plt, [])
+    throw:{dialyzer_error, _} -> ets:new(dialyzer_typesig_plt, [])
   end.
 
 doit(Module) ->
@@ -212,18 +212,24 @@ delete_ann(_, []) ->
 
 analyze_module(Tree, Plt, Callgraph) ->
   analyze_module(Tree, Plt, Callgraph, dict:new(), false).
-		 
 
 analyze_module(Tree, Plt, Callgraph, Records, GetWarnings) ->
   debug_pp(Tree, false),
   TopFun =  cerl:ann_c_fun([{label, top}], [], Tree),
-  State = state__new(Callgraph, TopFun, Plt, Records, GetWarnings),
-  put(dialyzer_dataflow_send_warnings, GetWarnings),
-  analyze_loop(State).
+  case GetWarnings of
+    true ->
+      State = state__new(Callgraph, TopFun, Plt, Records, unconstrained),
+      State1 = analyze_loop(State),
+      State2 = state__set_warning_mode(State1),
+      analyze_loop(State2);
+    false ->
+      State = state__new(Callgraph, TopFun, Plt, Records, constrained),
+      analyze_loop(State)
+  end.
 
 analyze_loop(State) ->
   case state__get_work(State) of
-    none -> State;
+    none -> state__clean_not_called(State);
     {Fun, NewState} ->
       ArgTypes = state__get_args(Fun, NewState),
       case any_none(ArgTypes) of
@@ -240,21 +246,23 @@ analyze_loop(State) ->
 	      analyze_loop(NewState);
 	    {Map, DefVars} ->
 	      ?debug("Handling fun ~p: ~s\n", 
-		      [debug_lookup_name(get_label(Fun)), 
-		       t_to_string(state__fun_type(Fun, NewState))]),
+		     [debug_lookup_name(get_label(Fun)), 
+		      t_to_string(state__fun_type(Fun, NewState))]),
+	      NewState1 = state__mark_fun_as_handled(NewState, Fun),
 	      Vars = cerl:fun_vars(Fun),
 	      Map1 = enter_type_lists(Vars, ArgTypes, Map),
 	      Body = cerl:fun_body(Fun),
 	      DefVars1 = add_def_vars(Vars, DefVars),
-	      {State1, _Map2, BodyType} = 
-		traverse(Body, Map1, DefVars1, NewState),
+	      {NewState2, _Map2, BodyType} = 
+		traverse(Body, Map1, DefVars1, NewState1),
 	      ?debug("Done analyzing: ~w:~s\n", 
 		     [debug_lookup_name(get_label(Fun)),
 		      t_to_string(t_fun(ArgTypes, BodyType))]),
-	      State2 = state__update_fun_entry(Fun, ArgTypes, BodyType, State1),
+	      NewState3 =
+		state__update_fun_entry(Fun, ArgTypes, BodyType, NewState2),
 	      ?debug("done adding stuff for ~w\n", 
 		     [debug_lookup_name(get_label(Fun))]),
-	      analyze_loop(State2)
+	      analyze_loop(NewState3)
 	  end
       end
   end.
@@ -287,27 +295,32 @@ traverse(Tree, Map, DefVars, State) ->
 		Msg =
 		  case MFA of
 		    {M, F, A} ->
-		      io_lib:format("Call to ~w:~w/~w with signature ~s "
-				    "will fail since the arguments are ~s\n",
-				    [M, F, A, t_to_string(Sig), 
-				     format_args(ArgTypes, State)]);
+		      io_lib:format("The call ~w:~w~s "
+				    "will fail since the signature is "
+				    "~w:~w/~w :: ~s\n",
+				    [M, F, format_args(Args, ArgTypes, State),
+				     M, F, A, t_to_string(Sig)]);
 		    Label when is_integer(Label) ->
 		      io_lib:format("Fun application of function with "
 				    "signature ~s will fail since the "
 				    "arguments are ~s\n",
-				    [Sig, format_args(ArgTypes, State)])
+				    [Sig, format_args(Args, ArgTypes, State)])
 		  end,
 		state__add_warning(State1, ?WARN_FAILING_CALL, Tree, Msg)
 	    end,
 	  {State2, Map1, t_none()};
 	{NewArgTypes, Return} ->
-	  State2 = state__forward_args(Tree, NewArgTypes, State1),
-	  case t_is_none(Return) of
-	    true ->
-	      {State2, Map1, t_none()};
-	    false ->
-	      {State2, Map1, Return}
-	  end
+	  State2 =
+	    case state__warning_mode(State1) of
+	      true -> State1;
+	      false ->
+		case state__forward_mode(State1) of
+		  unconstrained -> state__forward_args(Tree, ArgTypes, State1);
+		  constrained -> state__forward_args(Tree, NewArgTypes, State1)
+		end
+	    end,
+	  Map2 = enter_type_lists(Args, NewArgTypes, Map1),
+	  {State2, Map2, Return}
       end;
     binary ->
       Segs = cerl:binary_segments(Tree),
@@ -355,7 +368,8 @@ traverse(Tree, Map, DefVars, State) ->
     call ->
       M = cerl:call_module(Tree),
       F = cerl:call_name(Tree),
-      MFAList = [M, F|cerl:call_args(Tree)],
+      Args = cerl:call_args(Tree),
+      MFAList = [M, F|Args],
       {State1, Map1, [MType0, FType0|As]} = 
 	traverse_list(MFAList, Map, DefVars, State),
       MType = t_inf(t_atom(), MType0),
@@ -372,10 +386,11 @@ traverse(Tree, Map, DefVars, State) ->
 		  {failed, Sig} ->
 		    A = length(As),
 		    Msg =
-		      io_lib:format("Call to ~w:~w/~w with signature ~s "
-				    "will fail since the arguments are ~s\n",
-				    [MAtom, FAtom, A, 
-				     t_to_string(Sig), format_args(As, State)]),
+		      io_lib:format("The call ~w:~w~s "
+				    "will fail since the signature is "
+				    "~w:~w/~w :: ~s\n",
+				    [MAtom, FAtom, format_args(Args, As, State),
+				     MAtom, FAtom, A, t_to_string(Sig)]),
 		    {state__add_warning(State1, ?WARN_FAILING_CALL, Tree, Msg),
 		     t_none(), duplicate(A, t_none())};
 		  {Ret, NewArgs0} -> {State1, Ret, NewArgs0}
@@ -390,15 +405,20 @@ traverse(Tree, Map, DefVars, State) ->
       Arg = cerl:case_arg(Tree),
       Clauses = filter_match_fail(cerl:case_clauses(Tree)),
       {State1, Map1, ArgType} = traverse(Arg, Map, DefVars, State),
-      case any_none(wrap_if_single(t_components(ArgType))) of
+      ArgComps = wrap_if_single(t_components(ArgType)),
+      case any_none(ArgComps) of
 	true -> {State1, Map1, t_none()};
 	false ->
-	  {MapList, State2, Type} = 
-	    handle_clauses(Clauses, Arg, ArgType, ArgType, State1, 
-			   [], Map1, DefVars, []),
-	  Map2 = join_maps(MapList, Map1),
-	  debug_pp_map(Map2),
-	  {State2, Map2, Type}
+	  case any_unit(ArgComps) of
+	    true -> {State1, Map1, t_unit()};
+	    false ->
+	      {MapList, State2, Type} = 
+		handle_clauses(Clauses, Arg, ArgType, ArgType, State1, 
+			       [], Map1, DefVars, []),
+	      Map2 = join_maps(MapList, Map1),
+	      debug_pp_map(Map2),
+	      {State2, Map2, Type}
+	  end
       end;
     'catch' ->
       {State1, _Map1, _} = traverse(cerl:catch_body(Tree), Map, DefVars, State),
@@ -422,9 +442,13 @@ traverse(Tree, Map, DefVars, State) ->
       {State3, Map2, Type};
     'fun' ->
       Type = state__fun_type(Tree, State),
-      State1 = state__add_work(get_label(Tree), State),
-      State2 = state__update_fun_env(Tree, {Map, DefVars}, State1),
-      {State2, Map, Type};
+      case state__warning_mode(State) of
+	true -> {State, Map, Type};
+	false ->
+	  State1 = state__add_work(get_label(Tree), State),
+	  State2 = state__update_fun_env(Tree, {Map, DefVars}, State1),
+	  {State2, Map, Type}
+      end;
     'let' ->
       Arg = cerl:let_arg(Tree),
       Vars = cerl:let_vars(Tree),
@@ -438,8 +462,8 @@ traverse(Tree, Map, DefVars, State) ->
 	end,
       Body = cerl:let_body(Tree),
       {State1, Map1, ArgTypes} = traverse(Arg, Map0, DefVars, State),
-      case t_is_none(ArgTypes) of
-	true -> {State1, Map1, t_none()};
+      case t_is_none_or_unit(ArgTypes) of
+	true -> {State1, Map1, ArgTypes};
 	false -> 
 	  VarTypes = wrap_if_single(t_components(ArgTypes)),
 	  Map2 = enter_type_lists(Vars, VarTypes, Map1),
@@ -513,9 +537,9 @@ traverse(Tree, Map, DefVars, State) ->
       Arg = cerl:seq_arg(Tree),
       Body = cerl:seq_body(Tree),
       {State1, Map1, ArgType} = traverse(Arg, Map, DefVars, State),
-      case t_is_none(ArgType) of
+      case t_is_none_or_unit(ArgType) of
 	true ->
-	  {State1, Map1, t_none()};
+	  {State1, Map1, ArgType};
 	false ->
 	  traverse(Body, Map1, DefVars, State1)
       end;
@@ -630,7 +654,7 @@ do_call(M, F, As, State) ->
 	  end,
 	{BifRet, BifArgs, t_fun(BifArgs, erl_bif_types:type(M, F, Arity))};
       false ->
-	{PltRet, PltArg} = state__lookup_non_local(M, F, Arity, State),
+	{PltRet, PltArg} = state__lookup_non_local(M, F, Arity, State, As),
 	{PltRet, PltArg, t_fun(PltArg, PltRet)}
     end,
   NewArgs = t_inf_lists(ArgCs, As),  
@@ -732,11 +756,14 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, DefVars, State) ->
 	  ?debug("Failed guard: ~s\n", 
 		 [cerl_prettypr:format(C, [{hook, cerl_typean:pp_hook()}])]),
 	  PatternString = format_patterns(Pats),
-	  DefaultMsg = io_lib:format("Clause guard cannot succeed. "
-				     "The ~s was matched"
-				     " against the type ~s\n",
-				     [PatternString, 
-				      format_type(ArgType0, State)]),
+	  DefaultMsg = 
+	    case Pats =:= [] of
+	      true -> "Clause guard cannot succeed.\n";
+	      false ->
+		io_lib:format("Clause guard cannot succeed. The ~s was matched"
+			      " against the type ~s\n",
+			      [PatternString, format_type(ArgType0, State)])
+	    end,
 	  State1 =
 	    case Reason of
 	      none -> state__add_warning(State, ?WARN_MATCHING, C, DefaultMsg);
@@ -745,7 +772,7 @@ do_clause(C, Arg, ArgType0, OrigArgType, Map, DefVars, State) ->
 		  false -> 
 		    state__add_warning(State, ?WARN_MATCHING, FailGuard, Msg);
 		  true ->
-		    state__add_warning(State, ?WARN_MATCHING, C, DefaultMsg)
+		    state__add_warning(State, ?WARN_MATCHING, C, Msg)
 		end
 	    end,
 	  {State1, Map, t_none(), NewArgType};
@@ -890,7 +917,7 @@ bind_pat_vars(Pats, Type, Acc, Map, State) ->
     true -> 
       bind_pat_vars(Pats, duplicate(length(Pats), t_any()), Acc, Map, State);
     false ->
-      case t_is_none(Type) of
+      case t_is_none_or_unit(Type) of
 	true -> error;
 	false -> erlang:fault({'Error binding pats', Pats, Type})
       end
@@ -1308,7 +1335,11 @@ bind_guard(Guard, Map, Env, Eval, State) ->
 		  dont_know -> BifRet
 		end,
 	      case t_is_none(Ret) of
-		true -> throw({fail, none});
+		true ->
+		  case Eval =:= pos of
+		    true -> signal_guard_fail(Guard, As, State);
+		    false -> throw({fail, none})
+		  end;
 		false -> {Map2, Ret}
 	      end
 	  end
@@ -1440,35 +1471,40 @@ bind_guard_list([], Map, _Env, _Eval, _State, Acc) ->
   {Map, lists:reverse(Acc)}.
 
 signal_guard_fail(Guard, ArgTypes, State) ->
-  Args = cerl:call_args(Guard),      
-  MFA = {cerl:atom_val(cerl:call_module(Guard)),
-	 cerl:atom_val(cerl:call_name(Guard)),
-	 length(Args)},
+  Args = cerl:call_args(Guard),
+  F = cerl:atom_val(cerl:call_name(Guard)),
+  MFA = {cerl:atom_val(cerl:call_module(Guard)), F, length(Args)},
   Msg =
-    case MFA of
-      {erlang, '=:=', 2} ->
-	[Arg1, Arg2] = ArgTypes,
-	io_lib:format("Guard test ~s =:= ~s can never succeed.\n",
-		      [format_type(Arg1, State), format_type(Arg2, State)]);
-      {erlang, '==', 2} ->
-	[Arg1, Arg2] = ArgTypes,
-	io_lib:format("Guard test ~s == ~s can never succeed.\n",
-		      [format_type(Arg1, State), format_type(Arg2, State)]);
-      {M, F, A} ->
-	io_lib:format("Guard test ~w:~w/~w can never succeed since the "
-		      "argument types are ~s\n", 
-		      [M, F, A, format_args(ArgTypes, State)])
+    case is_infix_op(MFA) of
+      true -> 
+	[ArgType1, ArgType2] = ArgTypes,
+	[Arg1, Arg2] = Args,
+	io_lib:format("Guard test ~s ~s ~s can never succeed.\n",
+		      [format_args_1([Arg1], [ArgType1], State), 
+		       atom_to_list(F),
+		       format_args_1([Arg2], [ArgType2], State)]);
+      false ->
+	io_lib:format("Guard test ~w~s can never succeed\n", 
+		      [F, format_args(Args, ArgTypes, State)])
     end,
   throw({fail, {Guard, Msg}}).
 
+is_infix_op({erlang, '=:=', 2}) -> true;
+is_infix_op({erlang, '==', 2}) -> true;
+is_infix_op({erlang, '=/=', 2}) -> true;
+is_infix_op({erlang, '=/', 2}) -> true;
+is_infix_op({erlang, '<', 2}) -> true;
+is_infix_op({erlang, '=<', 2}) -> true;
+is_infix_op({erlang, '>', 2}) -> true;
+is_infix_op({erlang, '>=', 2}) -> true;
+is_infix_op({_, _, _}) -> false.
+
+
 signal_guard_fatal_fail(Guard, ArgTypes, State) ->
   Args = cerl:call_args(Guard),      
-  M = cerl:atom_val(cerl:call_module(Guard)),
   F = cerl:atom_val(cerl:call_name(Guard)),
-  A = length(Args),
-  Msg = io_lib:format("Guard test ~w:~w/~w can never succeed since the "
-		      "argument types are ~s\n", 
-		      [M, F, A, format_args(ArgTypes, State)]),
+  Msg = io_lib:format("Guard test ~w~s can never succeed\n",
+		      [F, format_args(Args, ArgTypes, State)]),
   throw({fatal_fail, {Guard, Msg}}).
 
 bind_guard_case_clauses(Arg, Clauses, Map, Env, Eval, State) ->
@@ -1692,9 +1728,9 @@ lookup_fun_name(Fun, Callgraph) ->
     error -> Fun
   end.
 
-lookup_fun_sig(Fun, Callgraph, Plt) ->
+lookup_fun_sig(Fun, Callgraph, Plt, Args) ->
   MFAorLabel = lookup_fun_name(Fun, Callgraph),
-  dialyzer_plt:lookup(Plt, MFAorLabel).
+  dialyzer_plt:lookup(Plt, MFAorLabel, Args).
 
 literal_type(Lit) ->
   t_from_term(cerl:concrete(Lit)).
@@ -1753,6 +1789,16 @@ any_none([X|Xs]) ->
   end;
 any_none([]) -> false.
 
+any_unit([X|Xs]) ->
+  case t_is_unit(X) of
+    true ->
+      true;
+    false ->
+      any_unit(Xs)
+  end;
+any_unit([]) -> false.
+
+
 
 filter_match_fail([Clause]) ->
   Body = cerl:clause_body(Clause),
@@ -1779,43 +1825,58 @@ filter_match_fail([]) ->
 %%%
 %%% ============================================================================
 
--record(state, {callgraph, envs, fun_tab, plt, 
-		records, tree_map, warnings, work}).
+-record(state, {callgraph, envs, forward_mode, fun_tab, plt, 
+		records, tree_map, warning_mode, warnings, work}).
 
-state__new(Callgraph, Tree, Plt, Records, GetWarnings) -> 
+state__new(Callgraph, Tree, Plt, Records, ForwardMode) -> 
   TreeMap = build_tree_map(Tree),
   Funs = dict:fetch_keys(TreeMap),
-  FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Callgraph, Plt, GetWarnings),
-			
-  Work = case GetWarnings of
-	   true -> init_work([top|Funs--[top]]);
-	   false -> init_work([get_label(Tree)])
-	 end,
+  FunTab = init_fun_tab(Funs, dict:new(), TreeMap, Callgraph, Plt, ForwardMode),
+  
+  Work = init_work([get_label(Tree)]),
   Env = dict:store(top, {map__new(), []}, dict:new()),
-  #state{callgraph=Callgraph, envs=Env, fun_tab=FunTab,
-	 plt=Plt, records=Records, warnings=[],
+  #state{callgraph=Callgraph, envs=Env, fun_tab=FunTab, 
+	 forward_mode=ForwardMode,
+	 plt=Plt, records=Records, warning_mode=false, warnings=[],
 	 work=Work, tree_map=TreeMap}.
+
+state__mark_fun_as_handled(State = #state{fun_tab=FunTab}, Fun0) ->
+  Fun = get_label(Fun0),
+  case dict:find(Fun, FunTab) of
+    {ok, {not_handled, Entry}} -> 
+      State#state{fun_tab=dict:store(Fun, Entry, FunTab)};
+    {ok, {_, _}} ->
+      State
+  end.
+
+state__warning_mode(#state{warning_mode=WM}) ->
+  WM.
+
+state__set_warning_mode(State = #state{tree_map=TreeMap, fun_tab=FunTab}) ->
+  ?debug("Starting warning pass\n", []),
+  Funs = dict:fetch_keys(TreeMap),
+  State#state{work=init_work([top|Funs--[top]]), fun_tab=FunTab,
+	      warning_mode=true}.
 
 state__add_warning(State, Tag, Tree, Msg) ->
   state__add_warning(State, Tag, Tree, Msg, false).
 
-state__add_warning(State = #state{warnings=Warnings}, Tag, Tree, Msg, Force) ->
-  case get(dialyzer_dataflow_send_warnings) of
+state__add_warning(S = #state{warning_mode=false}, _Tag, _Tree, _Msg, _Force) ->
+  S;
+state__add_warning(State = #state{warnings=Warnings, warning_mode=true}, 
+		   Tag, Tree, Msg, Force) ->
+  Ann = cerl:get_ann(Tree),
+  case Force of
     true ->
-      Ann = cerl:get_ann(Tree),
-      case Force of
-	true ->
-	  Warn = {Tag, {{get_file(Ann), abs(get_line(Ann))}, Msg}},
-	  State#state{warnings=[Warn|Warnings]};
-	false ->
-	  case is_compiler_generated(Ann) of
+      Warn = {Tag, {{get_file(Ann), abs(get_line(Ann))}, Msg}},
+      State#state{warnings=[Warn|Warnings]};
+    false ->
+      case is_compiler_generated(Ann) of
 	    true -> State;
-	    false ->
-	      Warn = {Tag, {{get_file(Ann), get_line(Ann)}, Msg}},
-	      State#state{warnings=[Warn|Warnings]}
-	  end
-      end;
-    false -> State
+	false ->
+	  Warn = {Tag, {{get_file(Ann), get_line(Ann)}, Msg}},
+	  State#state{warnings=[Warn|Warnings]}
+      end
   end.
 
 state__get_warnings(State = #state{tree_map=TreeMap, 
@@ -1825,8 +1886,12 @@ state__get_warnings(State = #state{tree_map=TreeMap,
   FoldFun = 
     fun({top, _}, AccState) -> AccState;
        ({FunLbl, Fun}, AccState) ->
-	{Args, Ret} = dict:fetch(get_label(Fun), FunTab),
-	case any_none(Args) of
+	{NotCalled, Ret} =
+	  case dict:fetch(get_label(Fun), FunTab) of
+	    {not_handled, {_Args0, Ret0}} -> {true, Ret0};
+	    {Args0, Ret0} -> {any_none(Args0), Ret0}
+	  end,
+	case NotCalled of
 	  true ->
 	    {Warn, NameString} =
 	      case lookup_fun_name(FunLbl, Callgraph) of
@@ -1845,7 +1910,7 @@ state__get_warnings(State = #state{tree_map=TreeMap,
 		FunLbl -> "Function ";
 		{_M, F, A} -> io_lib:format("Function ~w/~w ", [F, A])
 	      end,
-	    case t_is_none(Ret) of
+	    case t_is_none_or_unit(Ret) of
 	      true ->
 		case classify_returns(Fun) of
 		  only_explicit ->
@@ -1897,7 +1962,7 @@ state__lookup_record(Tag, Arity, #state{records=Records}) ->
 state__get_args(Tree, #state{fun_tab=FunTab}) ->
   Fun = get_label(Tree),
   case dict:find(Fun, FunTab) of
-    error -> [];
+    {ok, {not_handled, {ArgTypes, _}}} -> ArgTypes;
     {ok, {ArgTypes, _}} -> ArgTypes
   end.
 
@@ -1913,46 +1978,32 @@ build_tree_map(Tree) ->
     end,
   cerl_trees:fold(Fun, dict:new(), Tree).
 
-init_fun_tab([Fun|Left], Dict, TreeMap, Callgraph, Plt, GetWarnings) ->
-  case GetWarnings andalso (Fun =/= top) of
-    true ->
-      NewDict =
-	case lookup_fun_sig(Fun, Callgraph, Plt) of
-	  {value, {RetType, ArgTypes}} ->
-	    dict:store(Fun, {ArgTypes, RetType}, Dict);
-	  none ->
-	    %% Must be a function with arity 1 that was never called
-	    dict:store(Fun, {[], t_none()}, Dict)
-	end,
-      init_fun_tab(Left, NewDict, TreeMap, Callgraph, Plt, GetWarnings);
-    false ->
-      case cerl:fun_arity(dict:fetch(Fun, TreeMap)) of
-	0 ->
-	  %% Ensure that this function will be analyzed once if it is
-	  %% called, by not entering anything.
-	  init_fun_tab(Left, Dict, TreeMap, Callgraph, Plt, GetWarnings);
-	Arity ->
-	  
-	  FunEntry =
-	    case dialyzer_callgraph:is_escaping(Fun, Callgraph) of
-	      true -> 
-		case lookup_fun_sig(Fun, Callgraph, Plt) of
-		  none -> 
-		    {duplicate(Arity, t_any()), t_none()};
-		  {value, {_RetType, ArgTypes}} -> 
-%		    case any_none([RetType|ArgTypes]) of
-		    case any_none(ArgTypes) of
-		      true -> {duplicate(Arity, t_none()), t_none()};
-		      false -> {ArgTypes, t_none()}
-		    end
-		end;
-	      false -> {duplicate(Arity, t_none()), t_none()}
-	    end,
-	  NewDict = dict:store(Fun, FunEntry, Dict),
-	  init_fun_tab(Left, NewDict, TreeMap, Callgraph, Plt, GetWarnings)
-      end
-  end;
-init_fun_tab([], Dict, _TreeMap, _Callgraph, _Plt, _GetWarnings) ->
+init_fun_tab([top|Left], Dict, TreeMap, Callgraph, Plt, ForwardMode) ->
+  NewDict = dict:store(top, {not_handled, {[], t_none()}}, Dict),
+  init_fun_tab(Left, NewDict, TreeMap, Callgraph, Plt, ForwardMode);
+init_fun_tab([Fun|Left], Dict, TreeMap, Callgraph, Plt, ForwardMode) ->
+  Arity = cerl:fun_arity(dict:fetch(Fun, TreeMap)),
+  FunEntry =
+    case dialyzer_callgraph:is_escaping(Fun, Callgraph) of
+      true -> 
+	case lookup_fun_sig(Fun, Callgraph, Plt, none) of
+	  none -> {duplicate(Arity, t_any()), t_unit()};
+	  {value, {RetType, ArgTypes0}} ->
+	    ArgTypes = 
+	      case ForwardMode of
+		unconstrained -> duplicate(Arity, t_any());
+		constrained -> ArgTypes0
+	      end,
+	    case t_is_none(RetType) of
+	      true -> {ArgTypes, t_none()};
+	      false -> {ArgTypes, t_unit()}
+	    end
+	end;
+      false -> {duplicate(Arity, t_none()), t_unit()}
+    end,
+  NewDict = dict:store(Fun, {not_handled, FunEntry}, Dict),
+  init_fun_tab(Left, NewDict, TreeMap, Callgraph, Plt, ForwardMode);
+init_fun_tab([], Dict, _TreeMap, _Callgraph, _Plt, _ForwardMode) ->
   Dict.
 
 state__update_fun_env(Tree, MapAndDef, State = #state{envs=Envs}) ->
@@ -1966,10 +2017,17 @@ state__fun_env(Tree, #state{envs=Envs}) ->
     {ok, MapAndDef} -> MapAndDef
   end.
 
+state__clean_not_called(State = #state{fun_tab=FunTab}) ->
+  NewFunTab =
+    dict:map(fun(top, Entry) -> Entry;
+		(_Fun, {not_handled, {Args, _}}) -> {Args, t_none()};
+		(_Fun, Entry) -> Entry
+	     end, FunTab),
+  State#state{fun_tab=NewFunTab}.
+
 state__all_fun_types(#state{fun_tab=FunTab}) ->
   Tab1 = dict:erase(top, FunTab),
   dict:map(fun(_Fun, {Args, Ret}) -> t_fun(Args, Ret)end, Tab1).
-		      
 
 state__fun_type(Fun, #state{fun_tab=FunTab}) ->
   Label = 
@@ -1977,23 +2035,31 @@ state__fun_type(Fun, #state{fun_tab=FunTab}) ->
        true -> get_label(Fun)
     end,
   case dict:find(Label, FunTab) of
-    error -> 
-      %% This is a function with no arguments that have not been analyzed.
-      t_fun(0, t_none());
+    {ok, {not_handled, {A, R}}} ->
+      t_fun(A, R);
     {ok, {A, R}} ->
       t_fun(A, R)
   end.
 
-state__update_fun_entry(Tree, ArgTypes, Out0, State = #state{fun_tab=FunTab}) ->
-  Out = t_limit(Out0, ?TYPE_LIMIT),
+state__update_fun_entry(Tree, ArgTypes, Out0, 
+			State = #state{fun_tab=FunTab, callgraph=CG, plt=Plt})->
   Fun = get_label(Tree),
+  Out1 = 
+    if Fun =:= top -> Out0;
+       true -> 
+	case lookup_fun_sig(Fun, CG, Plt, ArgTypes) of
+	  {value, {SigRet, _}} -> t_inf(SigRet, Out0);
+	  none -> Out0
+	end
+    end,
+  Out = t_limit(Out1, ?TYPE_LIMIT),
   case dict:find(Fun, FunTab) of
     {ok, {ArgTypes, OldOut}} ->
       case t_is_equal(OldOut, Out) of
 	true -> 
 	  ?debug("Fixpoint for ~w: ~s\n", 
-		  [debug_lookup_name(Fun), 
-		   t_to_string(t_fun(ArgTypes, Out))]),
+		 [debug_lookup_name(Fun), 
+		  t_to_string(t_fun(ArgTypes, Out))]),
 	  State;
 	false ->
 	  NewEntry = {ArgTypes, Out},
@@ -2012,17 +2078,11 @@ state__update_fun_entry(Tree, ArgTypes, Out0, State = #state{fun_tab=FunTab}) ->
 	      t_to_string(t_fun(NewArgTypes, Out))]),
       NewFunTab = dict:store(Fun, NewEntry, FunTab),
       State1 = State#state{fun_tab=NewFunTab},
-      state__add_work_from_fun(Tree, State1);
-    error -> 
-      NewEntry = {ArgTypes, Out},
-      ?debug("New Entry for ~w: ~s\n", 
-	      [debug_lookup_name(Fun), 
-	       t_to_string(t_fun(ArgTypes, Out))]),
-      NewFunTab = dict:store(Fun, NewEntry, FunTab),
-      State1 = State#state{fun_tab=NewFunTab},
       state__add_work_from_fun(Tree, State1)
   end.
 
+state__add_work_from_fun(_Tree, State = #state{warning_mode=true}) ->
+  State;
 state__add_work_from_fun(Tree, State = #state{callgraph=Callgraph, 
 					      tree_map=TreeMap}) ->
   case get_label(Tree) of
@@ -2111,7 +2171,7 @@ state__fun_apply(Fun, Args, #state{callgraph=Callgraph,
 				   plt=Plt, 
 				   fun_tab=FunTab}) ->
   {NewArgs, Sig} =
-    case lookup_fun_sig(Fun, Callgraph, Plt) of
+    case lookup_fun_sig(Fun, Callgraph, Plt, Args) of
       none -> {Args, t_fun()};
       {value, {ReturnType, ArgTypes}} ->
 	Sig0 = t_fun(ArgTypes, ReturnType),
@@ -2122,15 +2182,17 @@ state__fun_apply(Fun, Args, #state{callgraph=Callgraph,
       {failed, {lookup_fun_name(Fun, Callgraph), Sig}};
     false ->
       case dict:find(Fun, FunTab) of
-	error ->
-	  %% Fun without args that have not been analyzed yet
-	  {NewArgs, t_none()};
+	{ok, {not_handled, {_OldArgs, Out}}} ->
+	  {NewArgs, Out};
 	{ok, {_OldArgs, Out}} -> 
 	  %% Keep the old out value. If it changes this function will
 	  %% be envoked again.
 	  {NewArgs, Out}
       end
   end.
+
+state__forward_mode(#state{forward_mode=FM}) ->
+  FM.
 
 state__forward_args(Apply, ArgTypes0, State = #state{}) ->
   ArgTypes = [t_limit(T, ?TYPE_LIMIT) || T <- ArgTypes0],
@@ -2145,38 +2207,33 @@ state__forward_args(Apply, ArgTypes0, State = #state{}) ->
 forward_args([external|Left], ArgTypes, State) ->
   forward_args(Left, ArgTypes, State);
 forward_args([Fun|Left], ArgTypes, State = #state{work=Work, fun_tab=FunTab}) ->
-  case dict:find(Fun, FunTab) of
-    error ->
-      %% This must be a function without arguments that have not yet
-      %% been analyzed. Add it to the worklist.
-      %% For sanity,
-      [] = ArgTypes,
-      ?debug("~w: forwarding args ~s\n", 
-	     [debug_lookup_name(Fun), t_to_string(t_product(ArgTypes))]),
+  {OldArgTypes, OldOut, Fixpoint} =
+    case dict:find(Fun, FunTab) of
+      {ok, {not_handled, {OldArgTypes0, OldOut0}}} -> 
+	{OldArgTypes0, OldOut0, false};
+      {ok, {OldArgTypes0, OldOut0}} ->
+	{OldArgTypes0, OldOut0, 
+	 t_is_subtype(t_product(ArgTypes), t_product(OldArgTypes0))}
+    end,
+  case Fixpoint of
+    true -> 
+      forward_args(Left, ArgTypes, State);
+    false -> 
+      NewArgTypes = [t_sup(X, Y) || 
+		      {X, Y} <- lists:zip(ArgTypes, OldArgTypes)],
       NewWork = add_work(Fun, Work),
-      forward_args(Left, ArgTypes, State#state{work=NewWork});
-    {ok, {OldArgTypes, OldOut}} ->
-      case t_is_subtype(t_product(ArgTypes), t_product(OldArgTypes)) of
-	true -> 
-	  forward_args(Left, ArgTypes, State);
-	false -> 
-	  NewArgTypes = [t_sup(X, Y) || 
-			  {X, Y} <- lists:zip(ArgTypes, OldArgTypes)],
-	  NewWork = add_work(Fun, Work),
-	  ?debug("~w: forwarding args ~s\n", 
-		 [debug_lookup_name(Fun), 
-		  t_to_string(t_product(NewArgTypes))]),
-	  NewFunTab = dict:store(Fun, {NewArgTypes, OldOut}, FunTab),
-	  forward_args(Left, ArgTypes, State#state{work=NewWork, 
-						   fun_tab=NewFunTab})
-      end
+      ?debug("~w: forwarding args ~s\n", 
+	     [debug_lookup_name(Fun), 
+	      t_to_string(t_product(NewArgTypes))]),
+      NewFunTab = dict:store(Fun, {NewArgTypes, OldOut}, FunTab),
+      forward_args(Left, ArgTypes, State#state{work=NewWork, fun_tab=NewFunTab})
   end;
 forward_args([], _ArgTypes, State) ->
   State.
   
-state__lookup_non_local(M, F, A, #state{plt=Plt}) ->
+state__lookup_non_local(M, F, A, #state{plt=Plt}, As) ->
   Res = 
-    case dialyzer_plt:lookup(Plt, {M, F, A}) of
+    case dialyzer_plt:lookup(Plt, {M, F, A}, As) of
       none ->
 	{t_any(), duplicate(A, t_any())};
       {value, Ret}->
@@ -2234,27 +2291,52 @@ get_file([_|Tail]) -> get_file(Tail).
 is_compiler_generated(Ann) ->
   lists:member(compiler_generated, Ann) orelse (get_line(Ann) < 1).
 
-
-format_args([], _State) ->
+format_args([], [], _State) ->
   "()";
-format_args(List, State) ->
-  "(" ++ format_args_1(List, State) ++ ")".
+format_args(ArgList, TypeList, State) ->
+  "(" ++ format_args_1(ArgList, TypeList, State) ++ ")".
 
-format_args_1([Arg], State) ->
-  format_type(Arg, State);
-format_args_1([Arg|Left], State) ->
-  format_type(Arg, State) ++ "," ++ format_args_1(Left, State).
+format_args_1([Arg], [Type], State) ->
+  format_arg(Arg) ++ format_type(Type, State);
+format_args_1([Arg|Args], [Type|Types], State) ->
+  String =
+    case cerl:is_literal(Arg) of
+      true -> format_cerl(Arg);
+      false -> format_arg(Arg) ++ format_type(Type, State)
+    end,
+  String ++ "," ++ format_args_1(Args, Types, State).
+
+format_arg(Arg) ->
+  Default = "",
+  case cerl:is_c_var(Arg) of
+    true ->
+      case cerl:var_name(Arg) of
+	Atom when is_atom(Atom) ->
+	  case atom_to_list(Atom) of
+	    "cor"++_ -> Default;
+	    "rec"++_ -> Default;
+	    Name -> Name ++ "::"
+	  end;
+	_What -> Default
+      end;
+    false ->
+      Default
+  end.
   
 format_type(Type, #state{records=R}) ->
   t_to_string(Type, R).
 
+format_cerl(Tree) ->
+  cerl_prettypr:format(cerl:set_ann(Tree, []), 
+		       [{hook, dialyzer_utils:pp_hook()},
+			{noann, true},
+			{paper, 100000}, %% These guys strips
+			{ribbon, 100000} %% newlines.
+		       ]).
+
 format_patterns(Pats) ->
   NewPats = map_pats(cerl:c_values(Pats)),
-  String = cerl_prettypr:format(NewPats, [{hook, dialyzer_utils:pp_hook()},
-					  {noann, true},
-					  {paper, 10000}, %% These guys strips
-					  {ribbon, 10000} %% newlines.
-					 ]),
+  String = format_cerl(NewPats),
   case Pats of
     [PosVar] ->
       case cerl:is_c_var(PosVar) andalso (cerl:var_name(PosVar) =/= '') of
@@ -2321,13 +2403,16 @@ find_terminals(Tree) ->
     'let' -> find_terminals(cerl:let_body(Tree));
     letrec -> find_terminals(cerl:letrec_body(Tree));
     literal -> {false, true};
-    primop -> {false, false}; %% Don't consider "match fails" and such.
+    primop -> {false, false}; %% match_fail etc are not explicit exits.
     'receive' -> 
       Timeout = cerl:receive_timeout(Tree),
       Clauses = cerl:receive_clauses(Tree),
       case (cerl:is_literal(Timeout) andalso
 	    (cerl:concrete(Timeout) =:= infinity)) of
-	true -> find_terminals_list(Clauses);
+	true -> 
+	  if Clauses =:= [] -> {false, true}; %% An neverending receive.
+	     true -> find_terminals_list(Clauses)
+	  end;
 	false -> find_terminals_list([cerl:receive_action(Tree)|Clauses])
       end;
     seq -> find_terminals(cerl:seq_body(Tree));
@@ -2359,9 +2444,22 @@ debug_pp(Tree, true) ->
   io:nl(),
   ok;
 debug_pp(Tree, false) ->
-  io:put_chars(cerl_prettypr:format(Tree, [{noann, true}])),
+  io:put_chars(cerl_prettypr:format(strip_annotations(Tree))),
   io:nl(),
   ok.
+
+strip_annotations(Tree) ->
+  Fun = fun(T) ->
+	    case cerl:type(T) of
+	      var ->
+		cerl:set_ann(T, [{label, cerl_trees:get_label(T)}]);
+	      'fun' ->
+		cerl:set_ann(T, [{label, cerl_trees:get_label(T)}]);
+	      _ ->
+		cerl:set_ann(T, [])
+	    end
+	end,
+  cerl_trees:map(Fun, Tree).
 
 -else.
 

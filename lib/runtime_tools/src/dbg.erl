@@ -114,7 +114,7 @@ tp(Module, Function, Pattern) ->
     do_tp({Module, Function, '_'}, Pattern, []).
 tp(Module, Function, Arity, Pattern) ->
     do_tp({Module, Function, Arity}, Pattern, []).
-tp(Module, Pattern) when atom(Module) ->
+tp(Module, Pattern) when is_atom(Module) ->
     do_tp({Module, '_', '_'}, Pattern, []);
 tp({_Module, _Function, _Arity} = X, Pattern) ->
     do_tp(X,Pattern,[]).
@@ -122,23 +122,23 @@ tpl(Module, Function, Pattern) ->
     do_tp({Module, Function, '_'}, Pattern, [local]).
 tpl(Module, Function, Arity, Pattern) ->
     do_tp({Module, Function, Arity}, Pattern, [local]).
-tpl(Module, Pattern) when atom(Module) ->
+tpl(Module, Pattern) when is_atom(Module) ->
     do_tp({Module, '_', '_'}, Pattern, [local]);
 tpl({_Module, _Function, _Arity} = X, Pattern) ->
     do_tp(X,Pattern,[local]).
-do_tp({_Module, _Function, _Arity} = X, Pattern, Flags) when integer(Pattern) ->
+do_tp({_Module, _Function, _Arity} = X, Pattern, Flags) when is_integer(Pattern) ->
     case ets:lookup(get_pattern_table(), Pattern) of
 	[{_,NPattern}] ->
 	    do_tp(X, binary_to_term(NPattern), Flags);
 	_ ->
 	    {error, unknown_pattern}
     end;
-do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when list(Pattern) ->
+do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when is_list(Pattern) ->
     Nodes = req(get_nodes),
     case Module of
 	'_' -> 
 	    ok;
-	M when atom(M) ->
+	M when is_atom(M) ->
 	    %% Try to load M on all nodes
 	    lists:foreach(fun(Node) ->
 				  rpc:call(Node, M, module_info, [])
@@ -148,7 +148,7 @@ do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when list(Pattern) ->
     case lint_tp(Pattern) of
 	{ok,_} ->
 	    SaveInfo = case save_pattern(Pattern) of
-			   N when integer(N), N > 0 ->
+			   N when is_integer(N), N > 0 ->
 			       [{saved, N}];
 			   _ ->
 			       []
@@ -162,7 +162,7 @@ do_tp({Module, _Function, _Arity} = X, Pattern, Flags) when list(Pattern) ->
 do_tp_on_nodes(Nodes, MFA, P, Flags) ->
     lists:map(fun(Node) ->
 		      case rpc:call(Node,erlang,trace_pattern,[MFA,P, Flags]) of
-			  N when integer(N) ->
+			  N when is_integer(N) ->
 			      {matched, Node, N};
 			  Else ->
 			      {matched, Node, 0, Else}
@@ -182,7 +182,7 @@ ctp(Module, Function) ->
     do_ctp({Module, Function, '_'}, []).
 ctp(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, []).
-ctp(Module) when atom(Module) ->
+ctp(Module) when is_atom(Module) ->
     do_ctp({Module, '_', '_'}, []);
 ctp({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[]).
@@ -192,7 +192,7 @@ ctpl(Module, Function) ->
     do_ctp({Module, Function, '_'}, [local]).
 ctpl(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, [local]).
-ctpl(Module) when atom(Module) ->
+ctpl(Module) when is_atom(Module) ->
     do_ctp({Module, '_', '_'}, [local]);
 ctpl({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[local]).
@@ -202,7 +202,7 @@ ctpg(Module, Function) ->
     do_ctp({Module, Function, '_'}, [global]).
 ctpg(Module, Function, Arity) ->
     do_ctp({Module, Function, Arity}, [global]).
-ctpg(Module) when atom(Module) ->
+ctpg(Module) when is_atom(Module) ->
     do_ctp({Module, '_', '_'}, [global]);
 ctpg({_Module, _Function, _Arity} = X) ->
     do_ctp(X,[global]).
@@ -282,20 +282,20 @@ tracer(process) ->
 tracer(Type) ->
     tracer(Type, false).
 
-tracer(port, Fun) when function(Fun) ->
+tracer(port, Fun) when is_function(Fun) ->
     start(Fun);
 
-tracer(port, Port) when port(Port) ->
+tracer(port, Port) when is_port(Port) ->
     start(fun() -> Port end);
 
 tracer(process, {Handler,HandlerData}) ->
     start(fun() -> start_tracer_process(Handler, HandlerData) end).
 
 
-remote_tracer(port, Fun) when function(Fun) ->
+remote_tracer(port, Fun) when is_function(Fun) ->
     remote_start(Fun);
 
-remote_tracer(port, Port) when port(Port) ->
+remote_tracer(port, Port) when is_port(Port) ->
     remote_start(fun() -> Port end);
 
 remote_tracer(process, {Handler,HandlerData}) ->
@@ -364,7 +364,7 @@ trace_port_control(Node,get_listen_port) ->
 
 trace_port_control(Node, Command, Arg) ->
     case get_tracer(Node) of
-	{ok, Port} when port(Port) ->
+	{ok, Port} when is_port(Port) ->
 	    {ok, catch rpc:call(Node,erlang,port_control,[Port, Command, Arg])};
 	_ ->
 	    {error, no_trace_driver}
@@ -378,22 +378,22 @@ trace_port(file, {Filename, wrap, Tail}) ->
 trace_port(file, {Filename, wrap, Tail, WrapSize}) ->
     trace_port(file, {Filename, wrap, Tail, WrapSize, 8});
 trace_port(file, {Filename, wrap, Tail, WrapSize, WrapCnt})
-  when list(Tail), 
-       integer(WrapSize), WrapSize >= 0, WrapSize < (1 bsl 32),
-       integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
+  when is_list(Tail), 
+       is_integer(WrapSize), WrapSize >= 0, WrapSize < (1 bsl 32),
+       is_integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
     trace_port1(file, Filename, {wrap, Tail, WrapSize, WrapCnt, 0});
 trace_port(file, {Filename, wrap, Tail, {time, WrapTime}, WrapCnt})
-  when list(Tail), 
-       integer(WrapTime), WrapTime >= 1, WrapTime < (1 bsl 32),
-       integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
+  when is_list(Tail), 
+       is_integer(WrapTime), WrapTime >= 1, WrapTime < (1 bsl 32),
+       is_integer(WrapCnt), WrapCnt >= 1, WrapCnt < (1 bsl 32) ->
     trace_port1(file, Filename, {wrap, Tail, 0, WrapCnt, WrapTime});
 trace_port(file, Filename) ->
     trace_port1(file, Filename, nowrap);
 
-trace_port(ip, Portno) when integer(Portno) -> 
+trace_port(ip, Portno) when is_integer(Portno) -> 
     trace_port(ip,{Portno,50});
 
-trace_port(ip, {Portno, Qsiz}) when integer(Portno), integer(Qsiz) -> 
+trace_port(ip, {Portno, Qsiz}) when is_integer(Portno), is_integer(Qsiz) -> 
     fun() ->
 	    Driver = "trace_ip_drv",
 	    Dir1 = filename:join(code:priv_dir(runtime_tools), "lib"),
@@ -462,9 +462,9 @@ trace_client(file, Filename) ->
     trace_client(file, Filename, {fun dhandler/2,user});
 trace_client(follow_file, Filename) ->
     trace_client(follow_file, Filename, {fun dhandler/2,user});
-trace_client(ip, Portno) when integer(Portno) ->
+trace_client(ip, Portno) when is_integer(Portno) ->
     trace_client1(ip, {"localhost", Portno}, {fun dhandler/2,user});
-trace_client(ip, {Host, Portno}) when integer(Portno) ->
+trace_client(ip, {Host, Portno}) when is_integer(Portno) ->
     trace_client1(ip, {Host, Portno}, {fun dhandler/2,user}).
 
 trace_client(file, {Filename, wrap, Tail}, FD) ->
@@ -474,16 +474,16 @@ trace_client(file, {Filename, wrap, Tail, WrapSize}, FD) ->
 trace_client(file, 
 	     {_Filename, wrap, Tail, _WrapSize, WrapCnt} = WrapSpec, 
 	     {Fun, _Data} = FD)
-  when list(Tail), function(Fun), integer(WrapCnt), WrapCnt >= 1 ->
+  when is_list(Tail), is_function(Fun), is_integer(WrapCnt), WrapCnt >= 1 ->
     trace_client1(file, WrapSpec, FD);
-trace_client(file, Filename, {Fun, Data} ) when function(Fun) ->
+trace_client(file, Filename, {Fun, Data} ) when is_function(Fun) ->
     trace_client1(file, Filename, {Fun, Data});
-trace_client(follow_file, Filename, {Fun, Data} ) when function(Fun) ->
+trace_client(follow_file, Filename, {Fun, Data} ) when is_function(Fun) ->
     trace_client1(follow_file, Filename, {Fun, Data});
-trace_client(ip, Portno, {Fun, Data}) when integer(Portno), function(Fun) ->
+trace_client(ip, Portno, {Fun, Data}) when is_integer(Portno), is_function(Fun) ->
     trace_client1(ip, {"localhost", Portno}, {Fun, Data});
-trace_client(ip, {Host, Portno}, {Fun, Data}) when integer(Portno), 
-						   function(Fun) ->
+trace_client(ip, {Host, Portno}, {Fun, Data}) when is_integer(Portno), 
+						   is_function(Fun) ->
     trace_client1(ip, {Host, Portno}, {Fun, Data}).
 
 trace_client1(Type, OpenData, {Handler,HData}) ->
@@ -514,7 +514,7 @@ stop_trace_client(Pid)->
 p(Pid) ->
     p(Pid, [m]).
 
-p(Pid, Flags) when atom(Flags) ->
+p(Pid, Flags) when is_atom(Flags) ->
     p(Pid, [Flags]);
 p(Pid, Flags) ->
     req({p,Pid,Flags}).
@@ -524,7 +524,7 @@ i(Pid) -> req({i,Pid}).
 	
 c(M, F, A) ->
     c(M, F, A, all).
-c(M, F, A, Flags) when atom(Flags) ->
+c(M, F, A, Flags) when is_atom(Flags) ->
     c(M, F, A, [Flags]);
 c(M, F, A, Flags) ->
     case transform_flags(Flags) of
@@ -615,10 +615,10 @@ start(TracerFun) ->
 	    case TracerFun of
 		no_tracer ->
 		    {ok, Dbg};
-		Fun when function(Fun) ->
+		Fun when is_function(Fun) ->
 		    req({tracer,TracerFun})
 	    end;
-	Pid when pid(Pid), function(TracerFun) ->
+	Pid when is_pid(Pid), is_function(TracerFun) ->
 	    req({tracer,TracerFun})
     end.
 
@@ -645,13 +645,13 @@ loop({C,T}=SurviveLinks, Table) ->
 	{From,{p,Pid,Flags}} ->
 	    reply(From, trace_process(Pid, Flags)),
 	    loop(SurviveLinks, Table);
-	{From,{tracer,TracerFun}} when function(TracerFun) ->
+	{From,{tracer,TracerFun}} when is_function(TracerFun) ->
 	    case get(node()) of
 		undefined ->
 		    case (catch TracerFun()) of
 			{'EXIT', Reason} ->
 			    reply(From, {error, Reason});
-			Tracer when pid(Tracer); port(Tracer) ->
+			Tracer when is_pid(Tracer); is_port(Tracer) ->
 			    put(node(),{self(),Tracer}),
 			    reply(From, {ok,self()})
 		    end;
@@ -702,10 +702,10 @@ loop({C,T}=SurviveLinks, Table) ->
 		undefined -> 
 		    reply(From, {error, no_local_tracer}),
 		    loop(SurviveLinks, Table);
-		{_LocalRelay,Tracer} when port(Tracer) -> 
+		{_LocalRelay,Tracer} when is_port(Tracer) -> 
 		    reply(From, {error, cant_trace_remote_pid_to_local_port}),
 		    loop(SurviveLinks, Table);
-	        {_LocalRelay,Tracer} when pid(Tracer) ->
+	        {_LocalRelay,Tracer} when is_pid(Tracer) ->
 		    case (catch relay(Node, Tracer)) of
 			{ok,Relay} ->
 			    reply(From, {ok, Node}),
@@ -793,16 +793,16 @@ recv_all_traces(Trace, Handler, Hdata) ->
 
 recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
     receive
-	Trace when tuple(Trace), element(1, Trace) == trace ->
+	Trace when is_tuple(Trace), element(1, Trace) == trace ->
 	    Suspended = suspend(Trace, Suspended0),
 	    recv_all_traces(Suspended, Handler, Hdata, [Trace|Traces]);
-	Trace when tuple(Trace), element(1, Trace) == trace_ts ->
+	Trace when is_tuple(Trace), element(1, Trace) == trace_ts ->
 	    Suspended = suspend(Trace, Suspended0),
 	    recv_all_traces(Suspended, Handler, Hdata, [Trace|Traces]);
-	Trace when tuple(Trace), element(1, Trace) == seq_trace ->
+	Trace when is_tuple(Trace), element(1, Trace) == seq_trace ->
 	    Suspended = suspend(Trace, Suspended0),
 	    recv_all_traces(Suspended, Handler, Hdata, [Trace|Traces]);
-	Trace when tuple(Trace), element(1, Trace) == drop ->
+	Trace when is_tuple(Trace), element(1, Trace) == drop ->
 	    Suspended = suspend(Trace, Suspended0),
 	    recv_all_traces(Suspended, Handler, Hdata, [Trace|Traces]);
 	Other ->
@@ -848,7 +848,7 @@ resume([]) -> ok.
 
 %%% Utilities.
 
-trac(Pid, How, Flags) when atom(Pid) ->
+trac(Pid, How, Flags) when is_atom(Pid) ->
     %% Pid = all | new | existing | RegisteredName
     %% Must go to all nodes
     case get() of
@@ -868,7 +868,7 @@ trac_on_nodes(Nodes, AtomPid, How, Flags) ->
 	  fun({Node, {_Relay, Tracer}}) -> 
 		  case rpc:call(Node, ?MODULE, erlang_trace,
 				[AtomPid, How, [{tracer, Tracer} | Flags]]) of
-		      N when integer(N) ->
+		      N when is_integer(N) ->
 			  {matched, Node, N};
 		      {badrpc,Reason} ->
 			  {matched, Node, 0, Reason};
@@ -908,7 +908,7 @@ do_relay(Parent,RelP) ->
 	{Type,Data} -> 
 	    {ok,Tracer} = remote_tracer(Type,Data),
 	    Parent ! {started,Tracer};
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Parent ! {started,self()}
     end,
     do_relay_1(RelP).
@@ -919,7 +919,7 @@ do_relay_1(RelP) ->
     receive
 	{'EXIT', _P, _} ->
 	    exit(normal);
-	TraceInfo when pid(RelP) ->  % Here is the normal case for trace i/o
+	TraceInfo when is_pid(RelP) ->  % Here is the normal case for trace i/o
 	    RelP ! TraceInfo, 
 	    do_relay_1(RelP);
 	Other ->
@@ -1021,7 +1021,7 @@ dhandler1(Trace, Size, Out) ->
 
 %% {M,F,[A1, A2, ..., AN]} -> "M:F(A1, A2, ..., AN)"
 %% {M,F,A}                 -> "M:F/A"
-ffunc({M,F,Argl}) when list(Argl) ->
+ffunc({M,F,Argl}) when is_list(Argl) ->
     io_lib:format("~p:~p(~s)", [M, F, fargs(Argl)]);
 ffunc({M,F,Arity}) ->
     io_lib:format("~p:~p/~p", [M,F,Arity]);
@@ -1029,7 +1029,7 @@ ffunc(X) -> io_lib:format("~p", [X]).
 
 %% Integer           -> "Integer"
 %% [A1, A2, ..., AN] -> "A1, A2, ..., AN"
-fargs(Arity) when integer(Arity) -> integer_to_list(Arity);
+fargs(Arity) when is_integer(Arity) -> integer_to_list(Arity);
 fargs([]) -> [];
 fargs([A]) -> io_lib:format("~p", [A]);  %% last arg
 fargs([A|Args]) -> [io_lib:format("~p,", [A]) | fargs(Args)];
@@ -1068,7 +1068,7 @@ transform_flags([sol|Tail],Acc) -> transform_flags(Tail,[set_on_link|Acc]);
 transform_flags([sofs|Tail],Acc) -> transform_flags(Tail,[set_on_first_spawn|Acc]);
 transform_flags([sofl|Tail],Acc) -> transform_flags(Tail,[set_on_first_link|Acc]);
 transform_flags([all|_],_Acc) -> all();
-transform_flags([F|Tail]=List,Acc) when atom(F) ->
+transform_flags([F|Tail]=List,Acc) when is_atom(F) ->
     case lists:member(F, all()) of
 	true -> transform_flags(Tail,[F|Acc]);
 	false -> {error,{bad_flags,List}}
@@ -1138,17 +1138,17 @@ ts(Other) -> atom_to_list(Other).
 to_pid(new) -> new;
 to_pid(all) -> all;
 to_pid(existing) -> existing;
-to_pid(X) when pid(X) -> 
+to_pid(X) when is_pid(X) -> 
     case erlang:is_process_alive(X) of
 	true -> X;
 	false -> {badpid,X}
     end;
-to_pid(X) when atom(X) ->
+to_pid(X) when is_atom(X) ->
     case whereis(X) of
 	undefined -> {badpid,X};
 	Pid -> Pid
     end;
-to_pid(X) when integer(X) -> to_pid({0,X,1});
+to_pid(X) when is_integer(X) -> to_pid({0,X,1});
 to_pid({X,Y,Z}) ->
     list_to_pid(lists:concat(["<",integer_to_list(X),".",
 			      integer_to_list(Y),".",
@@ -1263,9 +1263,9 @@ mk_reader_wrap([_Hd | Tail] = WrapFiles, File) ->
 
 read_term(ReadFun, Source) ->
     case ReadFun(Source, 5) of
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    read_term(ReadFun, Source, Bin);
-	List when list(List) ->
+	List when is_list(List) ->
 	    read_term(ReadFun, Source, list_to_binary(List));
 	eof ->
 	    eof
@@ -1278,9 +1278,9 @@ read_term(ReadFun, Source, <<Op, Size:32>> = Tag) ->
 		eof ->
 		    exit({'trace term missing', 
 			  binary_to_list(Tag)});
-		Bin when binary(Bin) ->
+		Bin when is_binary(Bin) ->
 		    {ok, binary_to_term(Bin)};
-		List when list(List) ->
+		List when is_list(List) ->
 		    {ok, binary_to_term(list_to_binary(List))}
 	    end;
 	1 ->
@@ -1298,9 +1298,9 @@ read_term(ReadFun, Source, <<Op, Size:32>> = Tag) ->
 
 file_read(File, N) ->
     case file:read(File, N) of
-	{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
+	{ok, Bin} when is_binary(Bin), size(Bin) =:= N -> 
 	    Bin;
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    exit({'truncated file', binary_to_list(Bin)});
 	eof ->
 	    eof;
@@ -1315,9 +1315,9 @@ follow_read(File, N, Pos) ->
     case file:position(File, Pos) of
 	{ok, Offset} ->
 	    case file:read(File, N) of
-		{ok, Bin} when binary(Bin), size(Bin) =:= N -> 
+		{ok, Bin} when is_binary(Bin), size(Bin) =:= N -> 
 		    Bin;
-		{ok, Bin} when binary(Bin) ->
+		{ok, Bin} when is_binary(Bin) ->
 		    follow_read(File, N, Offset);
 		eof ->
 		    follow_read(File, N, Offset);
@@ -1330,11 +1330,11 @@ follow_read(File, N, Pos) ->
 
 ip_read(Socket, N) ->
     case gen_tcp:recv(Socket, N) of
-	{ok, Bin} when binary(Bin), size(Bin) < N ->
+	{ok, Bin} when is_binary(Bin), size(Bin) < N ->
 	    [Bin | ip_read(Socket, N-size(Bin))];
-	{ok, Bin} when binary(Bin), size(Bin) == N ->
+	{ok, Bin} when is_binary(Bin), size(Bin) == N ->
 	    [Bin];
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    exit({'socket read too much data', Bin});
 	{error, closed} ->
 	    eof;
@@ -1355,7 +1355,7 @@ save_pattern(P) ->
 
 save_pattern(Pattern, PT) ->
     Last = case ets:last(PT) of
-	       Int when integer(Int) ->
+	       Int when is_integer(Int) ->
 		   Int;
 	       '$end_of_table' ->
 		   0;
@@ -1523,9 +1523,9 @@ wrap_name({_C, N}) ->
 %% Returns what is left of ListA when removing all matching
 %% elements from ListB, or false if some element did not match,
 %% or if ListA runs out of elements before ListB.
-match_front(ListA, []) when list(ListA) ->
+match_front(ListA, []) when is_list(ListA) ->
     ListA;
-match_front([], ListB) when list(ListB) ->
+match_front([], ListB) when is_list(ListB) ->
     false;
 match_front([Hd|TlA], [Hd|TlB]) ->
     match_front(TlA,TlB);
@@ -1533,7 +1533,7 @@ match_front([_HdA|_], [_HdB|_]) ->
     false.
 
 %% Reversed version of match_front/2
-match_rear(ListA, ListB) when list(ListA), list(ListB) ->
+match_rear(ListA, ListB) when is_list(ListA), is_list(ListB) ->
     case match_front(lists:reverse(ListA), lists:reverse(ListB)) of
 	false ->
 	    false;
@@ -1545,11 +1545,11 @@ match_rear(ListA, ListB) when list(ListA), list(ListB) ->
 %% characters $0 .. $9.
 match_0_9([]) ->
     false;
-match_0_9([H]) when integer(H), $0 =< H, H =< $9 ->
+match_0_9([H]) when is_integer(H), $0 =< H, H =< $9 ->
     true;
-match_0_9([H|T]) when integer(H), $0 =< H, H =< $9 ->
+match_0_9([H|T]) when is_integer(H), $0 =< H, H =< $9 ->
     match_0_9(T);
-match_0_9(L) when list(L) ->
+match_0_9(L) when is_list(L) ->
     false.
 
 %%%%%%%%%%%%%%%%%%

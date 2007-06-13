@@ -281,7 +281,7 @@ makegridlines([#etop_proc_info{pid=Pid,
     update_gl(Grid, Count, [{{text, 1}, pid_to_list(Pid)},
 			    {{text, 2}, to_list(Name)},
 			    {{text, ?TimeCol}, 
-			     if integer(Time)->integer_to_list(Time);
+			     if is_integer(Time)->integer_to_list(Time);
 				true -> Time
 			     end},
 			    {{text, ?RedsCol}, integer_to_list(Reds)},
@@ -301,7 +301,7 @@ update_gl(Grid, Row, GL) ->
 	    gs:config(GridLine,GL)
     end.
 
-to_list(Name) when atom(Name) -> atom_to_list(Name);
+to_list(Name) when is_atom(Name) -> atom_to_list(Name);
 to_list({_M,_F,_A}=MFA) -> formatmfa(MFA).
 
 

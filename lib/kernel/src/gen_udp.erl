@@ -35,7 +35,7 @@ open(Port, Opts) ->
 close(S) ->
     inet:udp_close(S).
 
-send(S, Address, Port, Packet) when port(S) ->
+send(S, Address, Port, Packet) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    case Mod:getaddr(Address) of
@@ -52,7 +52,7 @@ send(S, Address, Port, Packet) when port(S) ->
 	    Error
     end.
 
-send(S, Packet) when port(S) ->
+send(S, Packet) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:send(S, Packet);
@@ -60,7 +60,7 @@ send(S, Packet) when port(S) ->
 	    Error
     end.
 
-recv(S,Len) when port(S), integer(Len) ->
+recv(S,Len) when is_port(S), is_integer(Len) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:recv(S, Len);
@@ -68,7 +68,7 @@ recv(S,Len) when port(S), integer(Len) ->
 	    Error
     end.
 
-recv(S,Len,Time) when port(S) ->
+recv(S,Len,Time) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:recv(S, Len,Time);
@@ -76,7 +76,7 @@ recv(S,Len,Time) when port(S) ->
 	    Error
     end.
 
-connect(S, Address, Port) when port(S) ->
+connect(S, Address, Port) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    case Mod:getaddr(Address) of    

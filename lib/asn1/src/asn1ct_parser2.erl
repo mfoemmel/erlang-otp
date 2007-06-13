@@ -1370,7 +1370,13 @@ parse_ObjectSet(Tokens) ->
 		       [got,get_token(hd(Tokens)),expected,'{']}}).
 
 parse_ObjectSetSpec([{'...',_}|Rest]) ->
-    {['EXTENSIONMARK'],Rest};
+    case Rest of
+	[{',',_}|Rest2] ->
+	    {Elements,Rest3}=parse_ElementSetSpecs(Rest2),
+	    {{[],Elements},Rest3};
+	_ ->
+	    {['EXTENSIONMARK'],Rest}
+    end;
 parse_ObjectSetSpec(Tokens) ->
     parse_ElementSetSpecs(Tokens).
 
@@ -1929,8 +1935,8 @@ parse_SimpleDefinedValue([{typereference,L1,ModuleName},{'.',_},
 			  {identifier,_,Value}|Rest]) ->
     {{simpledefinedvalue,#'Externalvaluereference'{pos=L1,module=ModuleName,
 						   value=Value}},Rest};
-parse_SimpleDefinedValue([{identifier,L2,Value}|Rest]) ->
-    {{simpledefinedvalue,L2,Value},Rest};
+parse_SimpleDefinedValue([Id={identifier,_,_Value}|Rest]) ->
+    {{simpledefinedvalue,identifier2Extvalueref(Id)},Rest};
 parse_SimpleDefinedValue(Tokens) ->
     throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
 		       [got,get_token(hd(Tokens)),expected,

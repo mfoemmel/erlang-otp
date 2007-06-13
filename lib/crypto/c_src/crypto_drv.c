@@ -112,9 +112,10 @@ static ErlDrvData driver_data = (ErlDrvData) &erlang_port; /* Anything goes */
 #define DRV_RSA_VERIFY		23
 #define DRV_CBC_AES128_ENCRYPT	24
 #define DRV_CBC_AES128_DECRYPT	25
+#define DRV_XOR			26
 
 
-#define NUM_CRYPTO_FUNCS       	25
+#define NUM_CRYPTO_FUNCS       	26
 
 #define MD5_CTX_LEN	(sizeof(MD5_CTX))
 #define MD5_LEN		16
@@ -173,7 +174,7 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
     int rsa_e_len, rsa_n_len;
     int or_mask;
     unsigned int rsa_s_len;
-    char *key, *key2, *key3, *dbuf, *ivec;
+    char *key, *key2, *key3, *dbuf, *ivec, *p;
     const_DES_cblock *des_key, *des_key2, *des_key3;
     const unsigned char *des_dbuf;
     BIGNUM *bn_from, *bn_to, *bn_rand, *bn_result;
@@ -591,6 +592,18 @@ static int control(ErlDrvData drv_data, unsigned int command, char *buf,
 		      AES_DECRYPT);
       return dlen;
       break;
+
+    case DRV_XOR:
+	/* buf = data1, data2 with same size */
+	dlen = len / 2;
+	if (len != dlen * 2)
+	    return -1;
+	*rbuf = p = (char *)(bin = driver_alloc_binary(dlen));
+	dbuf = buf + dlen;
+	for (key = buf, key2 = dbuf; key != dbuf; ++key, ++key2, ++p)
+	    *p = *key ^ *key2;
+	return dlen;
+	break;
 
     default:
 	break;

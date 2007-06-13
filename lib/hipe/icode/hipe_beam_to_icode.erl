@@ -711,13 +711,13 @@ trans_fun([{test,bs_get_float2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags0},
   Flags = resolve_native_endianess(Flags0),
   {Name, Args} = 
     case Size of
-      {integer, NoBits} when NoBits >= 0 -> 
-	{{bs_get_float, NoBits*Unit,Flags}, [MsVar]};
-      {integer, NoBits} when NoBits < 0 ->
+      {integer, NoBits} when is_integer(NoBits), NoBits >= 0 -> 
+	{{bs_get_float,NoBits*Unit,Flags}, [MsVar]};
+      {integer, NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg ->
 	Bits = mk_var(BitReg),
-	{{bs_get_float,Unit,Flags},[Bits,MsVar]}
+	{{bs_get_float,Unit,Flags}, [Bits,MsVar]}
     end,
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst,MsVar], Env, Instructions);
 trans_fun([{test,bs_get_integer2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags0},X]}|
@@ -727,13 +727,13 @@ trans_fun([{test,bs_get_integer2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags0
   Flags = resolve_native_endianess(Flags0),
   {Name, Args} = 
     case Size of
-      {integer,NoBits} when NoBits >= 0 -> 
+      {integer,NoBits} when is_integer(NoBits), NoBits >= 0 -> 
 	{{bs_get_integer,NoBits*Unit,Flags}, [MsVar]};
-      {integer,NoBits} when NoBits < 0 ->
+      {integer,NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg ->
 	Bits = mk_var(BitReg),
-	{{bs_get_integer,Unit,Flags},[MsVar,Bits]}
+	{{bs_get_integer,Unit,Flags}, [MsVar,Bits]}
     end,
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [Dst,MsVar], Env, Instructions);
 trans_fun([{test,bs_get_binary2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags},X]}| 
@@ -743,13 +743,13 @@ trans_fun([{test,bs_get_binary2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags},
     case Size of
       {atom, all} -> %% put all bits
 	{{bs_get_binary_all,Unit,Flags},[MsVar]};
-      {integer, NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	{{bs_get_binary,NoBits*Unit,Flags}, [MsVar]};
-      {integer, NoBits} when NoBits < 0 ->
+      {integer, NoBits} when is_integer(NoBits), NoBits >= 0 ->
+	{{bs_get_binary,NoBits*Unit,Flags}, [MsVar]};	%% Create a N*Unit bits subbinary
+      {integer, NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_get_binary,Unit,Flags},[MsVar,Bits]}
+	{{bs_get_binary,Unit,Flags}, [MsVar,Bits]}
     end,
   Dsts = [mk_var(X),MsVar],
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, Dsts, Env, Instructions);
@@ -761,9 +761,9 @@ trans_fun([{test,bs_skip_bits2,{f,Lbl},[Ms,Size,NumBits,{field_flags,Flags}]}|
     case Size of
       {atom, all} -> %% Skip all bits
 	{{bs_skip_bits_all,NumBits,Flags},[MsVar]};
-      {integer, BitSize} when BitSize >= 0-> %% Skip N bits
+      {integer, BitSize} when is_integer(BitSize), BitSize >= 0-> %% Skip N bits
 	{{bs_skip_bits,BitSize*NumBits}, [MsVar]};
-      {integer, BitSize} when BitSize < 0 ->
+      {integer, BitSize} when is_integer(BitSize), BitSize < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       X -> % Skip a number of bits only known at runtime.
 	Src = mk_var(X),
@@ -1116,13 +1116,14 @@ trans_bin([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
   %% Get type of put_float
   {Name,Args,Env2} = 
     case Size of
-      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits float
-	{{bs_put_float, NoBits*Unit, Flags, ConstInfo}, [Src, Base, Offset],Env};
-      {integer,NoBits} when NoBits < 0 ->
+      {integer,NoBits} when is_integer(NoBits), NoBits >= 0 ->
+	%% Create a N*Unit bits float
+	{{bs_put_float, NoBits*Unit, Flags, ConstInfo}, [Src, Base, Offset], Env};
+      {integer,NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_put_float, Unit, Flags, ConstInfo}, [Src,Bits,Base,Offset],Env}
+	{{bs_put_float, Unit, Flags, ConstInfo}, [Src,Bits,Base,Offset], Env}
     end,
   %% Generate code for calling the bs-op. 
   SourceInstrs ++ 
@@ -1144,14 +1145,15 @@ trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
   {Name, Args, Env2} =
     case Size of
       {atom,all} -> %% put all bits
-	{{bs_put_binary_all, Flags},[Src,Base,Offset],Env};
-      {integer,NoBits} when NoBits >= 0 -> %% Create a N*Unit bits subbinary
-	{{bs_put_binary, NoBits*Unit, Flags}, [Src,Base,Offset],Env};
-      {integer,NoBits} when NoBits < 0 ->
+	{{bs_put_binary_all, Flags}, [Src,Base,Offset], Env};
+      {integer,NoBits} when is_integer(NoBits), NoBits >= 0 ->
+	%% Create a N*Unit bits subbinary
+	{{bs_put_binary, NoBits*Unit, Flags}, [Src,Base,Offset], Env};
+      {integer,NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_put_binary, Unit, Flags},[Src, Bits,Base,Offset],Env}
+	{{bs_put_binary, Unit, Flags}, [Src, Bits,Base,Offset], Env}
     end,
   %% Generate code for calling the bs-op.
   SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 

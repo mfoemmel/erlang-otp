@@ -31,8 +31,8 @@
 -include("inet_int.hrl").
 
 %% inet_tcp port lookup
-getserv(Port) when integer(Port) -> {ok, Port};
-getserv(Name) when atom(Name)    -> inet:getservbyname(Name,tcp).
+getserv(Port) when is_integer(Port) -> {ok, Port};
+getserv(Name) when is_atom(Name)    -> inet:getservbyname(Name,tcp).
 
 %% inet_tcp address lookup
 getaddr(Address) -> inet:getaddr(Address, inet).
@@ -81,10 +81,11 @@ connect(Address, Port, Opts) ->
 
 connect(Address, Port, Opts, infinity) ->
     do_connect(Address, Port, Opts, infinity);
-connect(Address, Port, Opts, Timeout) when integer(Timeout), Timeout >= 0 ->
+connect(Address, Port, Opts, Timeout) when is_integer(Timeout), 
+                                           Timeout >= 0 ->
     do_connect(Address, Port, Opts, Timeout).
 
-do_connect({A,B,C,D}, Port, Opts, Time) when ?ip(A,B,C,D), integer(Port) ->
+do_connect({A,B,C,D}, Port, Opts, Time) when ?ip(A,B,C,D), is_integer(Port) ->
     case inet:connect_options(Opts, inet) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -145,4 +146,4 @@ accept(L,Timeout) ->
 %% Create a port/socket from a file descriptor 
 %%
 fdopen(Fd, Opts) ->
-    inet:fdopen(Fd, Opts, stream, inet, ?MODULE).
+    inet:fdopen(Fd, Opts, tcp, inet, ?MODULE).

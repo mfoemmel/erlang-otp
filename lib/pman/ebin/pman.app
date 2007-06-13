@@ -1,0 +1,22 @@
+{application, pman,
+ [{description, "pman The Process Manager"},
+  {vsn, "2.6"},
+  {modules, [
+	     pman,
+	     pman_buf,
+	     pman_buf_buffer,
+	     pman_buf_converter,
+	     pman_buf_printer,
+	     pman_buf_utils,
+	     pman_main,
+	     pman_module_info,
+	     pman_options,
+	     pman_process,
+	     pman_relay,
+	     pman_relay_server,
+	     pman_shell,
+	     pman_tool,
+	     pman_win
+	    ]},
+  {registered, []},
+  {applications, [kernel, stdlib]}]}.

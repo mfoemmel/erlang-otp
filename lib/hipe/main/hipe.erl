@@ -86,10 +86,17 @@
 %%
 %%   <dt><code>icode_ssa_const_prop</code></dt>
 %%     <dd>Performs sparse conditional constant propagation on the SSA
-%%     form on the Icode level. </dd>
+%%     form on the Icode level.</dd>
+%%
+%%   <dt><code>icode_ssa_struct_reuse</code></dt>
+%%     <dd>Tries to factor out identical structure and list constructions
+%%     on the Icode level.</dd>
 %%
 %%   <dt><code>icode_type</code></dt>
-%%     <dd>A type propagator on the Icode level. </dd>
+%%     <dd>A type propagator on the Icode level.</dd>
+%%
+%%   <dt><code>icode_range</code></dt>
+%%     <dd>Performs integer range analysis on the Icode level.</dd>
 %%
 %%   <dt><code>pp_all</code></dt>
 %%     <dd>Equivalent to <code>[pp_beam, pp_icode, pp_rtl,
@@ -140,9 +147,6 @@
 %%   <dt><code>rtl_ssa_const_prop</code></dt>
 %%     <dd>Performs sparse conditional constant propagation on the SSA
 %%     form on the RTL level. </dd>
-%%
-%%   <dt><code>rtl_prop</code></dt>
-%%     <dd>Propagation of constants on RTL.</dd>
 %%
 %%   <dt><code>rtl_lcm</code></dt>
 %%     <dd>Lazy Code Motion on RTL.</dd>
@@ -335,16 +339,9 @@ c(Name, Options) ->
 
 c(Name, File, Opts) ->
   %% No server if only one function is compiled
-  NewOpts = 
-    case Name of
-      {_M, _F, _A} ->
-	[no_concurrent_comp|Opts];
-      _ ->
-	Opts
-    end,
-  case compile(Name, File, user_compile_opts(NewOpts)) of
+  case compile(Name, File, user_compile_opts(Opts)) of
     {ok, Res} ->
-      case proplists:get_bool(dialyzer, NewOpts) of
+      case proplists:get_bool(dialyzer, Opts) of
 	true ->
 	  {ok, Res};
 	false ->
@@ -443,7 +440,14 @@ beam_file(Module) when is_atom(Module) ->
 %% @see compile/2
 
 compile(Name, File, Opts0) ->
-  Opts = expand_kt2(Opts0),
+  Opts1 = expand_kt2(Opts0),
+  Opts = 
+    case Name of
+      {_Mod, _Fun, _Arity} ->
+	[no_concurrent_comp|Opts1];
+      _ ->
+	Opts1
+    end,
   case proplists:get_value(core, Opts) of
     true when is_binary(File) ->
       ?error_msg("Cannot get Core Erlang code from BEAM binary.",[]),
@@ -483,8 +487,8 @@ compile(Name, File, Opts0) ->
 	    case Name of
 	      {_M,_F,_A} ->
 		%% There is no point in using the callgraph when
-		%% analyzing just one function.
-		[no_use_callgraph|Opts];
+		%% analyzing just one function. or to use concurrent comp
+		[no_use_callgraph,no_concurrent_comp|Opts];
 	      _ -> Opts
 	    end
 	end,
@@ -625,8 +629,7 @@ get_core_icode(Mod, Core, File, Options) ->
 	       (catch {ok, cerl_to_icode:module(Core, Options)}),
 	       "BEAM-to-Icode", Options),
   NeedBeamCode = 
-    proplists:get_bool(type_only, Options) 
-    orelse (not proplists:get_bool(load, Options)),
+    not proplists:get_bool(load, Options),
   BeamBin = 
     case NeedBeamCode of
       true -> [];
@@ -727,17 +730,7 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
 
 %% TODO: make the Exports info accessible to the compilation passes.
 finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
-  Opts1 = 
-    case {proplists:get_value(concurrent_comp, Opts0),
-	  proplists:get_value(icode_range_analysis, Opts0)} of
-      {false, _} ->
-	proplists:delete(icode_range_analysis, Opts0);
-      {_, true} ->
-	[concurrent_comp|Opts0];
-      _ ->
-	Opts0
-    end,
-  Opts = [{exports, Exports} |Opts1],
+  Opts = [{exports, Exports} |Opts0],
   List = icode_multret(OrigList, Mod, Opts, Exports),
   {T1Compile,_} = erlang:statistics(runtime),
   CompiledCode =
@@ -747,15 +740,6 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
 	CallGraph = hipe_icode_callgraph:construct(List),
 	OrdList = hipe_icode_callgraph:to_list(CallGraph),
 	finalize_fun(OrdList, Opts);
-      fixpoint ->
-	%% Check that there is a plt, otherwise make one.
-	NewOpts =
-	  case proplists:get_value(icode_type, Opts) of
-	    {plt, _Plt} -> Opts;
-	    _ -> [{icode_type, {plt, ets:new(hipe_icode_type_plt, [])}}|Opts]
-	  end,
-	CallGraph = hipe_icode_callgraph:construct(List),
-	finalize_fun_fixpoint(CallGraph, NewOpts);
       _ -> 
 	%% Compiling the functions bottom-up by reversing the list
 	OrdList = lists:reverse(List),
@@ -765,31 +749,26 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
   ?when_option(verbose, Opts,
 	       ?debug_msg("Compiled ~p in ~.2f s\n",
 			  [Mod,(T2Compile-T1Compile)/1000])),
-  case proplists:get_bool(type_only, Opts) of
+  case (proplists:get_bool(to_rtl, Opts) orelse 
+	proplists:get_bool(dialyzer, Opts)) of
     true ->
-      {ok, Mod};
+      {ok, CompiledCode};
     false ->
-      case (proplists:get_bool(to_rtl, Opts) orelse 
-	    proplists:get_bool(dialyzer, Opts)) of
-	true ->
-	  {ok, CompiledCode};
-	false ->
-	  Closures = 
-	    [MFA || {MFA, Icode} <- List,
-		    hipe_icode:icode_is_closure(Icode)],
-	  {T1,_} = erlang:statistics(runtime),
-	  ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
-	  case catch assemble(CompiledCode, Closures, Exports, Opts) of
-	    {'EXIT',Error} -> {error,Error};
-	    Bin ->
-	      {T2,_} = erlang:statistics(runtime),
-	      ?when_option(verbose, Opts,
-			   ?debug_untagged_msg(" in ~.2f s\n",
-					       [(T2-T1)/1000])),
-	      maybe_load(Mod, Bin, WholeModule, Opts),
-	      TargetArch = get(hipe_target_arch),
-	      {ok, {TargetArch,Bin}}
-	  end
+      Closures = 
+	[MFA || {MFA, Icode} <- List,
+		hipe_icode:icode_is_closure(Icode)],
+      {T1,_} = erlang:statistics(runtime),
+      ?when_option(verbose, Opts, ?debug_msg("Assembling ~w",[Mod])),
+      case catch assemble(CompiledCode, Closures, Exports, Opts) of
+	{'EXIT',Error} -> {error,Error};
+	Bin ->
+	  {T2,_} = erlang:statistics(runtime),
+	  ?when_option(verbose, Opts,
+		       ?debug_untagged_msg(" in ~.2f s\n",
+					   [(T2-T1)/1000])),
+	  maybe_load(Mod, Bin, WholeModule, Opts),
+	  TargetArch = get(hipe_target_arch),
+	  {ok, {TargetArch,Bin}}
       end
   end.
 
@@ -799,7 +778,66 @@ finalize_fun(MfaIcodeList, Opts) ->
     FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
       [finalize_fun_sequential({MFA, Icode}, Opts) || {MFA, Icode} <- MfaIcodeList];
     TrueVal when (TrueVal =:= true) or (TrueVal =:= debug) ->
-      hipe_main:concurrent_icode_ssa(MfaIcodeList, Opts)
+      finalize_fun_concurrent(MfaIcodeList, Opts)
+  end.
+
+finalize_fun_concurrent(MfaIcodeList, Opts) ->
+  Self = self(),
+  case MfaIcodeList of
+    [{{M,_,_},_}|_] ->
+      Exports = proplists:get_value(exports,Opts),
+      CallGraph = hipe_icode_callgraph:construct_callgraph(MfaIcodeList),
+      Closures = [{MFA,true} || {MFA, Icode} <- MfaIcodeList,
+				hipe_icode:icode_is_closure(Icode)],
+      Exported = [{{M,F,A},false} || {F,A} <- Exports, not ((F =:= module_info) 
+							    and ((A =:= 1) or (A =:= 0)))],
+      NonEscaping = [{M,F,A} || {{M,F,A}, Icode} <- MfaIcodeList, 
+				not lists:member({F,A},Exports),
+				not hipe_icode:icode_is_closure(Icode)],
+      Escaping = Closures++Exported, 
+      TypeServerFun = 
+	fun() -> 
+	    hipe_icode_coordinator:coordinate(
+	      CallGraph,Escaping,
+	      NonEscaping,hipe_icode_type) 
+	end,
+      TypeServer = spawn_link(TypeServerFun),
+      PPServerFun = 
+	fun() -> 
+	    pp_server_start(Opts) 
+	end,
+      PPServer = spawn_link(PPServerFun),
+      RangeServerFun = 
+	fun() -> 
+	    hipe_icode_coordinator:coordinate(
+	      CallGraph,Escaping,
+	      NonEscaping,hipe_icode_range) 
+	end,
+      RangeServer = spawn_link(RangeServerFun),
+      NewOpts = [{icode_range_server,RangeServer},
+		 {icode_type_server,TypeServer},
+		 {pp_server,PPServer}|Opts],
+      CompFuns = 
+	[fun() ->
+	     set_architecture(NewOpts),
+	     pre_init(NewOpts),
+	     init(NewOpts),
+	     Self ! finalize_fun_sequential(IcodeFun,NewOpts)
+	 end || IcodeFun <- MfaIcodeList],
+      [spawn_link(Fun) || Fun <- CompFuns],
+      Final = [receive Res when element(1,Res) =:= MFA -> Res end ||
+		{MFA,_} <- MfaIcodeList],
+      [stop_and_wait(Pid) || Pid <- [PPServer,TypeServer,RangeServer]],
+      Final;
+    [] ->
+      []
+  end.
+
+stop_and_wait(Pid) ->
+  Pid ! {stop,self()},
+  receive
+    _ -> 
+      ok
   end.
 
 finalize_fun_sequential({MFA, Icode}, Opts) ->
@@ -820,10 +858,6 @@ finalize_fun_sequential({MFA, Icode}, Opts) ->
     {rtl, LinearRtl} ->
       io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl};
-    {type_only, Fixpoint} ->
-      ?when_option(verbose, Opts,
-		   ?debug_untagged_msg("\n", [])),
-      {MFA, Fixpoint};
     {dialyzer, IcodeSSA} ->
       {MFA, IcodeSSA};
     {native, X} ->
@@ -835,6 +869,21 @@ finalize_fun_sequential({MFA, Icode}, Opts) ->
       ?EXIT(Error)
   end.
 
+pp_server_start(Opts) ->
+  set_architecture(Opts),
+  garbage_collect(),
+  pp_server().
+
+pp_server() ->
+  receive
+    {print,Fun} ->
+      Fun(),pp_server();
+    {stop,Pid} ->
+      Pid ! {done,self()};
+    _ -> 
+      pp_server()
+  end.
+
 icode_multret(List, Mod, Opts, Exports) ->
   case proplists:get_bool(icode_multret, Opts) of
     true ->
@@ -842,59 +891,6 @@ icode_multret(List, Mod, Opts, Exports) ->
     false ->
       List
   end.
-
-finalize_fun_fixpoint(CallGraph, Opts) ->
-  finalize_fun_fixpoint(CallGraph, Opts, []).
-
-finalize_fun_fixpoint(CallGraph, Opts, Acc) ->
-  case hipe_icode_callgraph:is_empty(CallGraph) of
-    true ->
-      lists:flatten(lists:reverse(Acc));
-    false ->
-      case hipe_icode_callgraph:take_first(CallGraph) of
-	{[SCC], NewCallGraph} ->
-	  %% One function
-          [Res] = finalize_fun([SCC], Opts),
-	  finalize_fun_fixpoint(NewCallGraph, Opts, [Res|Acc]);
-	{SCC, NewCallGraph} ->	  
-	  plt_fixpoint_loop(SCC, Opts),
-	  %% Now generate the result.
-	  Res = finalize_fun(SCC, Opts),
-	  finalize_fun_fixpoint(NewCallGraph, Opts, Res ++ Acc)
-      end
-  end.
-
-plt_fixpoint_loop(SCC, Opts) ->
-  case proplists:get_value(type_warnings, Opts) of
-    {pid, _Pid} ->
-      %% Ensure warnings are only sent once.
-      TmpOpts = proplists:normalize([no_type_warnings|Opts], 
-				    [{negations, opt_negations()}]),
-      Redo = plt_fixpoint_loop(SCC, false, TmpOpts),
-      case Redo of
-	true -> plt_fixpoint_loop(SCC, Opts);
-	false -> ok
-      end;
-    _ ->
-      %% Ensure that this is only used with the option type_only
-      Redo = plt_fixpoint_loop(SCC, false, [type_only|Opts]),
-      case Redo of
-	true -> plt_fixpoint_loop(SCC, Opts);
-	false -> ok
-      end
-  end.
-
-plt_fixpoint_loop([Fun = {MFA, _}|Left], Redo, Opts) ->
-  [Res] = finalize_fun([Fun], Opts),
-  case Res of
-    {MFA, fixpoint} ->
-      plt_fixpoint_loop(Left, Redo, Opts);
-    {MFA, not_fixpoint} -> 
-      plt_fixpoint_loop(Left, true, Opts)
-  end;
-plt_fixpoint_loop([], Redo, _Opts) ->
-  Redo.
-
 
 maybe_load(Mod, Bin, WholeModule, Opts) ->
   case proplists:get_bool(load, Opts) of
@@ -1175,8 +1171,12 @@ option_text(fill_delayslot) ->
   "Try to optimize Sparc delay slots";
 option_text(icode_ssa_check) ->
   "Checks whether Icode is on SSA form or not\n";
+option_text(icode_ssa_copy_prop) ->
+  "Performs copy propagation on Icode SSA";
 option_text(icode_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on Icode SSA";
+option_text(icode_ssa_struct_reuse) ->
+  "Factors out common structure and list constructions on Icode SSA";
 option_text(load) ->
   "Automatically load the produced code into memory";
 option_text(peephole) ->
@@ -1213,8 +1213,6 @@ option_text(rtl_ssa) ->
   "Perform SSA conversion on the RTL level -- default starting at O2";
 option_text(rtl_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on RTL SSA";
-option_text(rtl_prop) ->
-  "Perform RTL-level constant propagation";
 option_text(rtl_lcm) ->
   "Perform Lazy Code Motion on RTL";
 option_text(rtl_ssapre) ->
@@ -1234,9 +1232,6 @@ option_text(timeout) ->
   "Specify compilation time limit in ms. Used as {timeout, LIMIT}.\n" ++
   "    The limit must be a non-negative integer or the atom 'infinity'.\n" ++
   "    The current default limit is 15 minutes (900000 ms).";
-option_text(type_only) ->
-  "Breaks the compilation after the ICode type pass.\n" ++
-  "No native code will be produced and no code will be loaded.";
 option_text(type_warnings) ->
   "Turns on warnings from the icode type propagator";
 option_text(use_indexing) ->
@@ -1320,6 +1315,7 @@ hipe_timers() ->
 %%     fill_delayslot:
 %%     {hot, Functions}:
 %%     icode_type:
+%%     icode_range:
 %%     {ls_order, Order}:
 %%     {regalloc, Algorithm}:
 %%     remove_comments
@@ -1355,14 +1351,13 @@ opt_keys() ->
      hot,
      split_arith,
      split_arith_unsafe,
+     icode_inline_bifs,
      icode_ssa_check,
      icode_ssa_copy_prop,
      icode_ssa_const_prop,
+     icode_ssa_struct_reuse,
      icode_type,
-     icode_range_analysis,
-     icode_range_analysis_annotate,
-     icode_range_analysis_warn,
-     icode_range_analysis_insn_count,
+     icode_range,
      icode_multret,
      inline_fp,
      ls_order,
@@ -1376,6 +1371,7 @@ opt_keys() ->
      pp_icode_ssa,
      pp_icode_split_arith,
      pp_opt_icode,
+     pp_range_icode,
      pp_typed_icode,
      pp_icode_liveness,
      pp_native,
@@ -1389,7 +1385,6 @@ opt_keys() ->
      remove_comments,
      rtl_ssa,
      rtl_ssa_const_prop,
-     rtl_prop,
      rtl_lcm,
      rtl_ssapre,
      rtl_show_translation,
@@ -1408,7 +1403,6 @@ opt_keys() ->
      timers,
      to_rtl,
      type_warnings,
-     type_only,
      use_indexing,
      use_inline_atom_search,
      use_callgraph,
@@ -1421,16 +1415,16 @@ opt_keys() ->
 %% Definitions: 
 
 o1_opts() ->
-  Common = [rtl_prop, inline_fp, pmatch, peephole],
+  Common = [inline_fp, pmatch, peephole],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_peephole, fill_delayslot | Common];
     powerpc ->
       Common;
     arm ->
-      Common -- [inline_fp]; % it's pointless optimising for absent/emulated hardware
+      Common -- [inline_fp]; % Pointless optimising for absent hardware
     x86 ->
-      [x87 | Common]; %% XXX: Temporary until x86 has sse2
+      [x87 | Common];        % XXX: Temporary until x86 has sse2
     amd64 ->
       Common;
     Arch ->
@@ -1438,10 +1432,11 @@ o1_opts() ->
   end.
 
 o2_opts() ->
-  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_type,
-	    %% icode_range_analysis,
+  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, % icode_ssa_struct_reuse,
+	    icode_type, icode_inline_bifs,
 	    rtl_ssa, rtl_ssa_const_prop,
-	    spillmin_color, use_indexing, remove_comments | o1_opts()],
+	    spillmin_color, use_indexing, remove_comments, 
+	    concurrent_comp | o1_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
       [sparc_prop | Common];	% no rtl_lcm here; untagged values over GC...
@@ -1453,13 +1448,13 @@ o2_opts() ->
       [rtl_lcm | Common];
       % [rtl_ssapre | Common];
     amd64 ->
-      [rtl_lcm | Common];
+      [rtl_lcm, icode_range | Common]; % range analysis is effective on 64 bits
     Arch ->
       ?EXIT({executing_on_an_unsupported_architecture,Arch})
   end.
 
 o3_opts() ->
-  Common = [{regalloc,coalescing} | o2_opts()],
+  Common = [icode_range, {regalloc,coalescing} | o2_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
       Common;
@@ -1487,11 +1482,15 @@ opt_negations() ->
    {no_get_called_modules, get_called_modules},
    {no_split_arith, split_arith},
    {no_concurrent_comp, concurrent_comp},
+   {no_icode_inline_bifs, icode_inline_bifs},
+   {no_icode_range, icode_range},
    {no_icode_split_arith, icode_split_arith},
    {no_icode_ssa_check, icode_ssa_check},
    {no_icode_ssa_copy_prop, icode_ssa_copy_prop},
    {no_icode_ssa_const_prop, icode_ssa_const_prop},
+   {no_icode_ssa_struct_reuse, icode_ssa_struct_reuse},
    {no_icode_type, icode_type},
+   {no_icode_range, icode_range},
    {no_inline_fp, inline_fp},
    {no_load, load},
    {no_peephole, peephole},
@@ -1508,7 +1507,6 @@ opt_negations() ->
    {no_remove_comments, remove_comments},
    {no_rtl_ssa, rtl_ssa},
    {no_rtl_ssa_const_prop, rtl_ssa_const_prop},
-   {no_rtl_prop, rtl_prop},
    {no_rtl_lcm, rtl_lcm},
    {no_rtl_ssapre, rtl_ssapre},
    {no_rtl_show_translation, rtl_show_translation},
@@ -1519,7 +1517,6 @@ opt_negations() ->
    {no_sparc_prop, sparc_prop},
    {no_sparc_schedule, sparc_schedule},
    {no_time, time},
-   {no_type_only, type_only},
    {no_type_warnings, type_warnings},
    {no_use_callgraph, use_callgraph},
    {no_use_clusters, use_clusters},

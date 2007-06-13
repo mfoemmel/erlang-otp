@@ -171,6 +171,8 @@ format_error({call_to_redefined_bif,{F,A}}) ->
 
 format_error({deprecated, {M1, F1, A1}, {M2, F2, A2}}) ->
     io_lib:format("~p:~p/~p deprecated; use ~p:~p/~p", [M1, F1, A1, M2, F2, A2]);
+format_error({obsolete_guard, {F, A}}) ->
+    io_lib:format("~p/~p obsolete", [F, A]);
 format_error({deprecated, {M1, F1, A1}, String}) when is_list(String) ->
     io_lib:format("~p:~p/~p: ~s", [M1, F1, A1, String]);
 format_error({reserved_for_future,K}) ->
@@ -181,6 +183,10 @@ format_error(illegal_bin_pattern) ->
     "binary patterns cannot be matched in parallel using '='";
 format_error(illegal_expr) -> "illegal expression";
 format_error(illegal_guard_expr) -> "illegal guard expression";
+format_error({explicit_export,F,A}) ->
+    io_lib:format("in this release, the call to ~w/~w must be written "
+		  "like this: erlang:~w/~w",
+		  [F,A,F,A]);
 
 format_error({undefined_record,T}) ->
     io_lib:format("record ~w undefined", [T]);
@@ -343,7 +349,10 @@ start(File, Opts) ->
 	 {bitlevel_binaries,
 	  bool_option(bitlevel_binaries, nobit_level_binaries, false, Opts)},
 	 {binary_comprehension,
-	  bool_option(binary_comprehension, nobinary_comprehension, false, Opts)}
+	  bool_option(binary_comprehension, nobinary_comprehension, false, Opts)},
+         {obsolete_guard,
+          bool_option(warn_obsolete_guard, nowarn_obsolete_guard,
+                      false, Opts)}
 	],
     Enabled1 = [Category || {Category,true} <- Enabled0],
     Enabled = ordsets:from_list(Enabled1),
@@ -1081,7 +1090,7 @@ pattern_list(Ps, Vt, Old, Bvt0, St) ->
 
 %% reject_bin_alias(Pat1, Pat2, St) -> St'
 %%  Aliases of binary patterns, such as <<A:8>> = <<B:4,C:4>> or even
-%%  <<A:8>> == <<A:8>>, are not allowed. Traverse the patterns in parallel
+%%  <<A:8>> = <<A:8>>, are not allowed. Traverse the patterns in parallel
 %%  and generate an error if any error binary aliases are found.
 %%    We generate an error even if is obvious that the overall pattern can't
 %%  possibly match, for instance, {a,<<A:8>>,c}={x,<<A:8>>} WILL generate an
@@ -1190,7 +1199,7 @@ pattern_bin(Line, Es, Vt, Old, Bvt0, St0) ->
                                   pattern_element(E, Vt, Old, Acc)
                           end,
                           {0,[],Bvt0,St0}, Es),
-    St2 = if integer(Sz), Sz rem 8 =/= 0 -> 
+    St2 = if is_integer(Sz), Sz rem 8 =/= 0 -> 
 	      case bitlevel_binaries(St1) of
 		  true -> St1;
 		  false -> add_warning(Line,unaligned_bitpat, St1)
@@ -1363,17 +1372,21 @@ guard_tests([], _Vt, St) -> {[],St}.
 %%  expressions in guards including the new is_XXX type tests, but
 %%  only allow the old type tests at the top level.
 
+guard_test(G, Vt, St0) ->
+    St1 = obsolete_guard(G, St0),
+    guard_test2(G, Vt, St1).
+
 %% Specially handle record type test here.
-guard_test({call,Line,{atom,Lr,record},[E,A]}, Vt, St0) ->
+guard_test2({call,Line,{atom,Lr,record},[E,A]}, Vt, St0) ->
     gexpr({call,Line,{atom,Lr,is_record},[E,A]}, Vt, St0);
-guard_test({call,_Line,{atom,_La,F},As}=G, Vt, St0) ->
+guard_test2({call,_Line,{atom,_La,F},As}=G, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),       %Always check this.
     A = length(As),
     case erl_internal:type_test(F, A) of
         true when F =/= is_record -> {Asvt,St1};
         _ -> gexpr(G, Vt, St0)
     end;
-guard_test(G, Vt, St) ->
+guard_test2(G, Vt, St) ->
     %% Everything else is a guard expression.
     gexpr(G, Vt, St).
 
@@ -1442,7 +1455,12 @@ gexpr({call,Line,{atom,_La,F},As}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),
     A = length(As),
     case erl_internal:guard_bif(F, A) of
-        true -> {Asvt,St1};
+        true ->
+	    %% Also check that it is auto-imported.
+	    case erl_internal:bif(F, A) of
+		true -> {Asvt,St1};
+		false -> {Asvt,add_error(Line, {explicit_export,F,A}, St1)}
+	    end;
         false -> {Asvt,add_error(Line, illegal_guard_expr, St1)}
     end;
 gexpr({call,Line,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As}, Vt, St0) ->
@@ -1724,12 +1742,13 @@ expr({call,Line,{atom,La,F},As}, Vt, St0) ->
     A = length(As),
     case erl_internal:bif(F, A) of
         true ->
-	    {Asvt,case is_warn_enabled(bif_clash, St2) andalso 
-                       is_bif_clash(F, A, St2) of
+	    St3 = deprecated_function(Line, erlang, F, As, St2),
+	    {Asvt,case is_warn_enabled(bif_clash, St3) andalso 
+                       is_bif_clash(F, A, St3) of
 		      false ->
-			  St2;
+			  St3;
 		      true ->
-                          add_warning(Line, {call_to_redefined_bif,{F,A}}, St2)
+                          add_warning(Line, {call_to_redefined_bif,{F,A}}, St3)
 		  end};
         false ->
             {Asvt,case imported(F, A, St2) of
@@ -2556,7 +2575,7 @@ modify_line({Tag,L,E1,E2,E3,E4}, Mf) ->
 modify_line([H|T], Mf) ->
     [modify_line(H, Mf)|modify_line(T, Mf)];
 modify_line([], _Mf) -> [];
-modify_line(E, _Mf) when is_constant(E) -> E.
+modify_line(E, _Mf) when not is_tuple(E), not is_list(E) -> E.
 
 %% Check a record_info call. We have already checked that it is not
 %% shadowed by an import.
@@ -2582,7 +2601,7 @@ check_remote_function(Line, M, F, As, St0) ->
     format_function(Line, M, F, As, St2).
 
 %% check_qlc_hrl(Line, ModName, FuncName, [Arg], State) -> State
-%%  Add warning if qlc:q/1,2 has been called but qlc.hrl has not not
+%%  Add warning if qlc:q/1,2 has been called but qlc.hrl has not
 %%  been included.
 
 check_qlc_hrl(Line, M, F, As, St) ->
@@ -2620,6 +2639,28 @@ is_deprecated_function(Mod, Fun, Arity, St) ->
         false ->
             false
     end.
+
+obsolete_guard({call,Line,{atom,Lr,F},As}, St0) ->
+    Arity = length(As),
+    case erl_internal:old_type_test(F, Arity) of
+	false ->
+	    deprecated_function(Line, erlang, F, As, St0);
+	true ->
+	    St1 = case F of
+		      constant ->
+			  deprecated_function(Lr, erlang, is_constant, As, St0);
+		      _ ->
+			  St0
+		  end,
+	    case is_warn_enabled(obsolete_guard, St1) of
+		true ->
+		    add_warning(Lr,{obsolete_guard, {F, Arity}}, St1);
+		false ->
+		    St1
+	    end
+    end;
+obsolete_guard(_G, St) ->
+    St.
 
 %% keyword_warning(Line, Atom, State) -> State.
 %%  Add warning for atoms that will be reserved keywords in the future.

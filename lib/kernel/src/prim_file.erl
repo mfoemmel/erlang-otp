@@ -140,7 +140,9 @@
 
 %% Opens a file using the driver port Port. Returns {error, Reason}
 %% | {ok, FileDescriptor}
-open(Port, File, ModeList) when port(Port), list(File), list(ModeList) ->
+open(Port, File, ModeList) when is_port(Port), 
+                                is_list(File), 
+                                is_list(ModeList) ->
     case open_mode(ModeList) of
 	{error, _} = Error ->
 	    Error;
@@ -151,7 +153,7 @@ open(_,_,_) ->
     {error, einval}.
 
 %% Opens a file. Returns {error, Reason} | {ok, FileDescriptor}.
-open(File, ModeList) when is_list(File), list(ModeList) ->
+open(File, ModeList) when is_list(File), is_list(ModeList) ->
     case open_mode(ModeList) of
 	{error, _} = Error ->
 	    Error;
@@ -219,7 +221,7 @@ close(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
 	    Error
     end;
 %% Closes a port opened with open/1.
-close(Port) when port(Port) ->
+close(Port) when is_port(Port) ->
     drv_close(Port).
 
 
@@ -263,7 +265,7 @@ pwrite_int(Port, [{Offs, Bin} | T], N, Spec, Data)
 	       [Bin | Data]);
 pwrite_int(Port, [{Offs, Bytes} | T], N, Spec, Data)
   when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       list(Bytes) ->
+       is_list(Bytes) ->
     Bin = list_to_binary(Bytes), % Might throw badarg
     Size = size(Bin),
     pwrite_int(Port, T, N+1, 
@@ -391,7 +393,7 @@ copy(#file_descriptor{module = ?MODULE} = Source,
      #file_descriptor{module = ?MODULE} = Dest,
      Length)
   when is_integer(Length), Length >= 0;
-       atom(Length) ->
+       is_atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
     file:copy_opened(Source, Dest, Length);
 copy(#file_descriptor{module = ?MODULE},
@@ -433,7 +435,7 @@ read_file(File) ->
 %%% Specialized file contents operations.
 
 %% Takes a Port opened with open/1.
-read_file(Port, File) when port(Port) ->
+read_file(Port, File) when is_port(Port) ->
     case (catch list_to_binary([?FILE_READ_FILE | File])) of
 	{'EXIT', _} ->
 	    {error, einval};
@@ -485,7 +487,7 @@ start() ->
 	    {ok, Port}
     end.
 
-stop(Port) when port(Port) ->
+stop(Port) when is_port(Port) ->
     catch erlang:port_close(Port),
     ok.
 
@@ -502,7 +504,7 @@ stop(Port) when port(Port) ->
 get_cwd() ->
     get_cwd_int(0).
 
-get_cwd(Port) when port(Port) ->
+get_cwd(Port) when is_port(Port) ->
     get_cwd_int(Port, 0);
 get_cwd([]) ->
     get_cwd_int(0);
@@ -535,7 +537,7 @@ get_cwd_int(Port, Drive) ->
 set_cwd(Dir) ->
     set_cwd_int({?DRV, []}, Dir).
 
-set_cwd(Port, Dir) when port(Port) ->
+set_cwd(Port, Dir) when is_port(Port) ->
     set_cwd_int(Port, Dir).
 
 set_cwd_int(Port, Dir0) ->
@@ -573,7 +575,7 @@ set_cwd_int(Port, Dir0) ->
 delete(File) ->
     delete_int({?DRV, []}, File).
 
-delete(Port, File) when port(Port) ->
+delete(Port, File) when is_port(Port) ->
     delete_int(Port, File).
 
 delete_int(Port, File) ->
@@ -591,7 +593,7 @@ delete_int(Port, File) ->
 rename(From, To) ->
     rename_int({?DRV, []}, From, To).
 
-rename(Port, From, To) when port(Port) ->
+rename(Port, From, To) when is_port(Port) ->
     rename_int(Port, From, To).
 
 rename_int(Port, From, To) ->
@@ -609,7 +611,7 @@ rename_int(Port, From, To) ->
 make_dir(Dir) ->
     make_dir_int({?DRV, []}, Dir).
 
-make_dir(Port, Dir) when port(Port) ->
+make_dir(Port, Dir) when is_port(Port) ->
     make_dir_int(Port, Dir).
 
 make_dir_int(Port, Dir) ->
@@ -627,7 +629,7 @@ make_dir_int(Port, Dir) ->
 del_dir(Dir) ->
     del_dir_int({?DRV, []}, Dir).
 
-del_dir(Port, Dir) when port(Port) ->
+del_dir(Port, Dir) when is_port(Port) ->
     del_dir_int(Port, Dir).
 
 del_dir_int(Port, Dir) ->
@@ -645,7 +647,7 @@ del_dir_int(Port, Dir) ->
 read_file_info(File) ->
     read_file_info_int({?DRV, []}, File).
 
-read_file_info(Port, File) when port(Port) ->
+read_file_info(Port, File) when is_port(Port) ->
     read_file_info_int(Port, File).
 
 read_file_info_int(Port, File) ->
@@ -661,7 +663,7 @@ read_file_info_int(Port, File) ->
 altname(File) ->
     altname_int({?DRV, []}, File).
 
-altname(Port, File) when port(Port) ->
+altname(Port, File) when is_port(Port) ->
     altname_int(Port, File).
 
 altname_int(Port, File) ->
@@ -678,7 +680,7 @@ altname_int(Port, File) ->
 write_file_info(File, Info) ->
     write_file_info_int({?DRV, []}, File, Info).
 
-write_file_info(Port, File, Info) when port(Port) ->
+write_file_info(Port, File, Info) when is_port(Port) ->
     write_file_info_int(Port, File, Info).
 
 write_file_info_int(Port, 
@@ -717,7 +719,7 @@ write_file_info_int(Port,
 make_link(Old, New) ->
     make_link_int({?DRV, []}, Old, New).
 
-make_link(Port, Old, New) when port(Port) ->
+make_link(Port, Old, New) when is_port(Port) ->
     make_link_int(Port, Old, New).
 
 make_link_int(Port, Old, New) ->
@@ -735,7 +737,7 @@ make_link_int(Port, Old, New) ->
 make_symlink(Old, New) ->
     make_symlink_int({?DRV, []}, Old, New).
 
-make_symlink(Port, Old, New) when port(Port) ->
+make_symlink(Port, Old, New) when is_port(Port) ->
     make_symlink_int(Port, Old, New).
 
 make_symlink_int(Port, Old, New) ->
@@ -753,7 +755,7 @@ make_symlink_int(Port, Old, New) ->
 read_link(Link) ->
     read_link_int({?DRV, []}, Link).
 
-read_link(Port, Link) when port(Port) ->
+read_link(Port, Link) when is_port(Port) ->
     read_link_int(Port, Link).
 
 read_link_int(Port, Link) ->
@@ -771,7 +773,7 @@ read_link_int(Port, Link) ->
 read_link_info(Link) ->
     read_link_info_int({?DRV, []}, Link).
 
-read_link_info(Port, Link) when port(Port) ->
+read_link_info(Port, Link) when is_port(Port) ->
     read_link_info_int(Port, Link).
 
 read_link_info_int(Port, Link) ->
@@ -789,7 +791,7 @@ read_link_info_int(Port, Link) ->
 list_dir(Dir) ->
     list_dir_int({?DRV, []}, Dir).
 
-list_dir(Port, Dir) when port(Port) ->
+list_dir(Port, Dir) when is_port(Port) ->
     list_dir_int(Port, Dir).
 
 list_dir_int(Port, Dir) ->
@@ -841,7 +843,7 @@ drv_close(Port) ->
 drv_command(Port, Command) ->
     drv_command(Port, Command, []).
 
-drv_command(Port, Command, ExtraArgs) when port(Port) ->
+drv_command(Port, Command, ExtraArgs) when is_port(Port) ->
     case catch erlang:port_command(Port, Command) of
 	{'EXIT', _} ->
 	    {error, einval};
@@ -902,7 +904,7 @@ open_mode(List) when is_list(List) ->
     case open_mode(List, 0, [], []) of
 	{ok, Mode, Portopts, Setopts} when Mode band 
 			  (?EFILE_MODE_READ bor ?EFILE_MODE_WRITE) 
-			  == 0 ->
+			  =:= 0 ->
 	    {ok, Mode bor ?EFILE_MODE_READ, Portopts, Setopts};
 	Other ->
 	    Other

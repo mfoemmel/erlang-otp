@@ -127,12 +127,12 @@ is_fixed(Reg) ->
 
 nr_args() -> ?ARM_NR_ARG_REGS.
 
-args(Arity) ->
+args(Arity) when is_integer(Arity) ->
   Max = ?ARM_NR_ARG_REGS,
   N = if Arity > Max -> Max; true -> Arity end,
   args(N-1, []).
 
-args(I, Rest) when I < 0 -> Rest;
+args(-1, Rest) -> Rest;
 args(I, Rest) -> args(I-1, [arg(I) | Rest]).
 
 arg(N) ->

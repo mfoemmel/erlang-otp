@@ -459,7 +459,7 @@ maybe_expand_aux(T0, Ic) when T0#dict.size + Ic > T0#dict.exp_size ->
 	   segs=Segs2};
 maybe_expand_aux(T, Ic) -> T#dict{size=T#dict.size + Ic}.
 
-maybe_expand_segs(T) when T#dict.n == T#dict.maxn ->
+maybe_expand_segs(T) when T#dict.n =:= T#dict.maxn ->
     T#dict{maxn=2 * T#dict.maxn,
 	   bso=2 * T#dict.bso,
 	   segs=expand_segs(T#dict.segs, T#dict.empty)};
@@ -483,7 +483,7 @@ maybe_contract(T, Dc) when T#dict.size - Dc < T#dict.con_size,
 			       segs=Segs2});
 maybe_contract(T, Dc) -> T#dict{size=T#dict.size - Dc}.
 
-maybe_contract_segs(T) when T#dict.n == T#dict.bso ->
+maybe_contract_segs(T) when T#dict.n =:= T#dict.bso ->
     T#dict{maxn=T#dict.maxn div 2,
 	   bso=T#dict.bso div 2,
 	   segs=contract_segs(T#dict.segs)};

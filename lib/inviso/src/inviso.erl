@@ -58,7 +58,7 @@
 	 get_status/0, get_status/1,
 	 get_tracerdata/0, get_tracerdata/1,
 	 list_logs/0, list_logs/1,
-	 fetch_log/2, fetch_log/3,
+	 fetch_log/2, fetch_log/3, fetch_log/4,
 	 delete_log/0, delete_log/1, delete_log/2,
 	 subscribe/0, subscribe/1, 
 	 unsubscribe/0, unsubscribe/1]).
@@ -897,6 +897,8 @@ list_logs(TracerDataOrNodesList) when list(TracerDataOrNodesList) ->
 %%     {error,Reason} 
 %% fetch_log(DestDir,Prefix)={ok,NodeResults}|{error,not_distributed}|
 %%     {error,Reason} 
+%% fetch_log(ToNode,DestDir,Prefix)=
+%% fetch_log(ToNode,LogSpecList,DestDir,Prefix)=
 %%   DestDir=string(), to where the fetched files shall be placed.
 %%   Prefix=string(), prefix on locally saved fetched files.
 %%   LogSpecList=[LogSpec,...],
@@ -905,6 +907,7 @@ list_logs(TracerDataOrNodesList) when list(TracerDataOrNodesList) ->
 %%   FileSpecList=[{trace_log,Dir,FileList},{ti_log,Dir,FileList}]
 %%       where each tuple-item is optional.
 %%   FileList=[RemoteFileName,...]
+%%   ToNode=atom()
 %%   NodeResult={Conclusion,ResultFileSpec}|no_log|{error,NReason}
 %%     Conclusion=complete|incomplete
 %%     ResultFileSpec=[{trace_log,FileResults},{ti_log,FileResults}]
@@ -921,15 +924,25 @@ list_logs(TracerDataOrNodesList) when list(TracerDataOrNodesList) ->
 %%             Unix, and in the runtime libraries of most C compilers.
 %%             See module file in Kernel Reference manual.
 %%
-%% Copies logfiles over distributed erlang to the control component node. This
+%% Copies logfiles over distributed erlang to ToNode. This
 %% function can only be used in a distributed system.
 %% The resulting transfered files will have the prefix Prefix and will be 
 %% located in DestDir.
+%% Note that the client process using this function will wait until all files
+%% are moved. The job can be cancelled, causing any already copied files to be
+%% removed, by simply terminating the waiting client process.
 fetch_log(DestDir,Prefix) when list(DestDir),list(Prefix) ->
-    gen_server:call(?CONTROLLER,{fetch_log,DestDir,Prefix}).
+    gen_server:call(?CONTROLLER,{fetch_log,node(),all,DestDir,Prefix},infinity).
+
+fetch_log(ToNode,DestDir,Prefix) when atom(ToNode),list(DestDir),list(Prefix) ->
+    gen_server:call(?CONTROLLER,{fetch_log,ToNode,all,DestDir,Prefix},infinity);
 
 fetch_log(LogSpecList,DestDir,Prefix) when list(LogSpecList),list(DestDir),list(Prefix) ->
-    gen_server:call(?CONTROLLER,{fetch_log,LogSpecList,DestDir,Prefix},10000).
+    gen_server:call(?CONTROLLER,{fetch_log,node(),LogSpecList,DestDir,Prefix},infinity).
+
+fetch_log(ToNode,LogSpecList,DestDir,Prefix)
+  when atom(ToNode),list(LogSpecList),list(DestDir),list(Prefix) ->
+    gen_server:call(?CONTROLLER,{fetch_log,ToNode,LogSpecList,DestDir,Prefix},infinity).
 %% ------------------------------------------------------------------------------
 
 %% delete_log(Nodes,TracerData)={ok,NodeResults}|{error,Reason}

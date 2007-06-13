@@ -80,16 +80,14 @@
 
 #include "sys.h"
 #include "erl_driver.h"
+#include "zlib.h"
+#include "gzio.h"
 
 #ifndef NULL
 #define NULL ((void*)0)
 #endif
 
 #define BFILE_BLOCK  1024
-
-EXTERN_FUNCTION(ErlDrvBinary*, gzinflate_buffer, (char*, int));
-EXTERN_FUNCTION(ErlDrvBinary*, gzdeflate_buffer, (char*, int));
-
 
 #define get_int32(s) ((((unsigned char*) (s))[0] << 24) | \
                       (((unsigned char*) (s))[1] << 16) | \
@@ -531,8 +529,9 @@ static int ram_file_compress(RamFile *f)
     int size = f->end;
     ErlDrvBinary* bin;
 
-    if ((bin = gzdeflate_buffer(f->buf, size)) == NULL)
+    if ((bin = erts_gzdeflate_buffer(f->buf, size)) == NULL) {
 	return error_reply(f, EINVAL);
+    }
     driver_free_binary(f->bin);
     size = bin->orig_size;
     ram_file_set(f, bin, size, size);
@@ -548,9 +547,9 @@ static int ram_file_uncompress(RamFile *f)
     int size = f->end;
     ErlDrvBinary* bin;
 
-    if ((bin = gzinflate_buffer(f->buf, size)) == NULL)
+    if ((bin = erts_gzinflate_buffer(f->buf, size)) == NULL) {
 	return error_reply(f, EINVAL);
-
+    }
     driver_free_binary(f->bin);
     size = bin->orig_size;
     ram_file_set(f, bin, size, size);

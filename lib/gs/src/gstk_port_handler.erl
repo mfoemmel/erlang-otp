@@ -281,7 +281,7 @@ init(Gstk, Mode) ->
     % FIXME remove timing if not debugging
     Port =
 	case timer:tc(erlang,open_port,[{spawn, Cmd}, Options]) of
-	    {_T,Port1} when port(Port1) ->
+	    {_T,Port1} when is_port(Port1) ->
 		?DBG(1,"open_port takes ~p milliseconds\n",[_T/1000]),
 		link(Port1),
 		Port1;
@@ -455,7 +455,7 @@ output(#state{out = {port,Port}}, Cmd) ->
     Port ! {self(), {command, Cmd}}.
 
 % FIXME why test list?
-handle_event(GstkPid, Bytes) when list(Bytes) ->
+handle_event(GstkPid, Bytes) when is_list(Bytes) ->
     Event = tcl2erl:parse_event(Bytes),
     ?DBG(1,"Event = ~p\n",[Event]),
     gstk:event(GstkPid, Event). %% Event is {ID, Etag, Args}

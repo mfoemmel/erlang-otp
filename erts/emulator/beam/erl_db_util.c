@@ -128,17 +128,18 @@ get_proc(Process *cp, Uint32 cp_locks, Eterm id, Uint32 id_locks)
 static Eterm
 set_tracee_flags(Process *tracee_p, Eterm tracer, Uint d_flags, Uint e_flags) {
     Eterm ret;
-    Uint  flags = 0;
-    
-    if (tracer != NIL) {
-	flags = (tracee_p->trace_flags & ~d_flags) | e_flags;
+    Uint flags;
+
+    if (tracer == NIL) {
+	flags = tracee_p->trace_flags & ~TRACEE_FLAGS;
+    }  else {
+	flags = ((tracee_p->trace_flags & ~d_flags) | e_flags);
 	if (! flags) tracer = NIL;
     }
     ret = tracee_p->tracer_proc != tracer || tracee_p->trace_flags != flags
 	? am_true : am_false;
     tracee_p->tracer_proc = tracer;
     tracee_p->trace_flags = flags;
-    
     return ret;
 }
 /*

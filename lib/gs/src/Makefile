@@ -40,7 +40,7 @@ MODULES=    	gs gs_frontend gs_make gs_widgets gstk gstk_arc gstk_button\
                 gstk_gs gstk_image gstk_label gstk_line gstk_listbox gstk_menu\
                 gstk_menubar gstk_menubutton gstk_menuitem gstk_oval gstk_polygon \
                 gstk_port_handler gstk_radiobutton gstk_rectangle gstk_scale \
-                gstk_text gstk_widgets gstk_window tcl2erl tool_utils tool_genfd \
+                gstk_text gstk_widgets gstk_window tcl2erl tool_utils \
 		tool_file_dialog gse
 
 GSTK_GENERIC = gstk_generic.erl
@@ -63,12 +63,13 @@ APPUP_SRC= $(APPUP_FILE).src
 APP_TARGET= ../ebin/$(APP_FILE)
 APPUP_TARGET= ../ebin/$(APPUP_FILE)
 
+IMAGES=../priv/bitmap/fup.bm
+
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS +=
+ERL_COMPILE_FLAGS += +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets
@@ -106,6 +107,8 @@ release_spec: opt
 		$(GSTK_GENERIC) $(RELSYSDIR)/src
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
+	$(INSTALL_DIR) $(RELSYSDIR)/priv/bitmap
+	$(INSTALL_DATA) $(IMAGES) $(RELSYSDIR)/priv/bitmap
 
 
 release_docs_spec:

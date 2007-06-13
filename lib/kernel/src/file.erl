@@ -85,7 +85,7 @@ format_error({Line, Mod, Reason}) ->
 format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
-pid2name(Pid) when pid(Pid) ->
+pid2name(Pid) when is_pid(Pid) ->
     case whereis(?FILE_SERVER) of
 	undefined ->
 	    undefined;
@@ -125,7 +125,7 @@ read_link_info(Name) ->
     check_and_call(read_link_info, [file_name(Name)]).
 read_link(Name) ->
     check_and_call(read_link, [file_name(Name)]).
-write_file_info(Name, Info) when record(Info, file_info) ->
+write_file_info(Name, Info) when is_record(Info, file_info) ->
     check_and_call(write_file_info, [file_name(Name), Info]).
 list_dir(Name) ->
     check_and_call(list_dir, [file_name(Name)]).
@@ -142,9 +142,9 @@ write_file(Name, Bin) ->
 %% when it is time to change file server protocol again.
 %% Meanwhile, it is implemented here, slihtly less efficient.
 %%
-write_file(Name, Bin, ModeList) when list(ModeList) ->
+write_file(Name, Bin, ModeList) when is_list(ModeList) ->
     case check_binary(Bin) of
-	B when binary(B) ->
+	B when is_binary(B) ->
 	    case open(Name, [binary, write | 
 			     lists:delete(binary, 
 					  lists:delete(write, ModeList))]) of
@@ -207,7 +207,7 @@ raw_write_file_info(Name, #file_info{} = Info) ->
 %%% Stateful.
 
 %% Contemporary mode specification - list of options
-open(Item, ModeList) when list(ModeList) ->
+open(Item, ModeList) when is_list(ModeList) ->
     case lists:member(raw, ModeList) of
 	%% Raw file, use ?PRIM_FILE to handle this file
 	true ->
@@ -272,7 +272,7 @@ rawopen(Name, Mode) ->
 %%% The File argument must be either a Pid or a handle 
 %%% returned from ?PRIM_FILE:open.
 
-close(File) when pid(File) ->
+close(File) when is_pid(File) ->
     R = file_request(File, close),
     case wait_file_reply(File, R) of
 	{error, terminated} ->
@@ -288,31 +288,31 @@ close(#file_descriptor{module = Module} = Handle) ->
 close(_) ->
     {error, einval}.
 
-read(File, Sz) when pid(File), integer(Sz), Sz >= 0 ->
+read(File, Sz) when is_pid(File), is_integer(Sz), Sz >= 0 ->
     case io:get_chars(File, '', Sz) of
-	Data when list(Data); binary(Data) ->
+	Data when is_list(Data); is_binary(Data) ->
 	    {ok, Data};
 	Other ->
 	    Other
     end;
 read(#file_descriptor{module = Module} = Handle, Sz) 
-  when integer(Sz), Sz >= 0 ->
+  when is_integer(Sz), Sz >= 0 ->
     Module:read(Handle, Sz);
 read(_, _) ->
     {error, einval}.
 
 
 
-pread(File, L) when pid(File), list(L) ->
+pread(File, L) when is_pid(File), is_list(L) ->
     pread_int(File, L, []);
-pread(#file_descriptor{module = Module} = Handle, L) when list(L) ->
+pread(#file_descriptor{module = Module} = Handle, L) when is_list(L) ->
     Module:pread(Handle, L);
 pread(_, _) ->
     {error, einval}.
 
 pread_int(_File, [], R) ->
     {ok, lists:reverse(R)};
-pread_int(File, [{At, Sz} | T], R) when integer(Sz), Sz >= 0 ->
+pread_int(File, [{At, Sz} | T], R) when is_integer(Sz), Sz >= 0 ->
     case pread(File, At, Sz) of
 	{ok, Data} ->
 	    pread_int(File, T, [Data | R]);
@@ -324,19 +324,19 @@ pread_int(File, [{At, Sz} | T], R) when integer(Sz), Sz >= 0 ->
 pread_int(_, _, _) ->
     {error, einval}.
 
-pread(File, At, Sz) when pid(File), integer(Sz), Sz >= 0 ->
+pread(File, At, Sz) when is_pid(File), is_integer(Sz), Sz >= 0 ->
     R = file_request(File, {pread, At, Sz}),
     wait_file_reply(File, R);
 %% No Whence supported, only absolute positions
 pread(#file_descriptor{module = Module} = Handle, Offs, Sz) 
-  when integer(Offs), Offs >= 0, integer(Sz), Sz >= 0 ->
+  when is_integer(Offs), Offs >= 0, is_integer(Sz), Sz >= 0 ->
     Module:pread(Handle, Offs, Sz);
 pread(_, _, _) ->
     {error, einval}.
 
 
 
-write(File, Bytes) when pid(File) ->
+write(File, Bytes) when is_pid(File) ->
     io:put_chars(File, Bytes);
 write(#file_descriptor{module = Module} = Handle, Bytes) ->
     Module:write(Handle, Bytes);
@@ -345,9 +345,9 @@ write(_, _) ->
 
 
 
-pwrite(File, L) when pid(File), list(L) ->
+pwrite(File, L) when is_pid(File), is_list(L) ->
     pwrite_int(File, L, 0);
-pwrite(#file_descriptor{module = Module} = Handle, L) when list(L) ->
+pwrite(#file_descriptor{module = Module} = Handle, L) when is_list(L) ->
     Module:pwrite(Handle, L);
 pwrite(_, _) ->
     {error, einval}.
@@ -364,18 +364,18 @@ pwrite_int(File, [{At, Bytes} | T], R) ->
 pwrite_int(_, _, _) ->
     {error, einval}.
 
-pwrite(File, At, Bytes) when pid(File) ->
+pwrite(File, At, Bytes) when is_pid(File) ->
     R = file_request(File, {pwrite, At, Bytes}),
     wait_file_reply(File, R);
 pwrite(#file_descriptor{module = Module} = Handle, Offs, Bytes) 
-  when integer(Offs), Offs >= 0 ->
+  when is_integer(Offs), Offs >= 0 ->
     Module:pwrite(Handle, Offs, Bytes);
 pwrite(_, _, _) ->
     {error, einval}.
 
 
 
-sync(File) when pid(File) ->
+sync(File) when is_pid(File) ->
     R = file_request(File, sync),
     wait_file_reply(File, R);
 sync(#file_descriptor{module = Module} = Handle) ->
@@ -383,7 +383,7 @@ sync(#file_descriptor{module = Module} = Handle) ->
 sync(_) ->
     {error, einval}.
 
-position(File, At) when pid(File) ->
+position(File, At) when is_pid(File) ->
     R = file_request(File, {position,At}),
     wait_file_reply(File, R);
 position(#file_descriptor{module = Module} = Handle, At) ->
@@ -391,7 +391,7 @@ position(#file_descriptor{module = Module} = Handle, At) ->
 position(_, _) ->
     {error, einval}.
 
-truncate(File) when pid(File) ->
+truncate(File) when is_pid(File) ->
     R = file_request(File, truncate),
     wait_file_reply(File, R);
 truncate(#file_descriptor{module = Module} = Handle) ->
@@ -405,8 +405,8 @@ copy(Source, Dest) ->
     copy_int(Source, Dest, infinity).
 
 copy(Source, Dest, Length) 
-  when integer(Length), Length >= 0;
-       atom(Length) ->
+  when is_integer(Length), Length >= 0;
+       is_atom(Length) ->
     copy_int(Source, Dest, Length);
 copy(_, _, _) ->
     {error, einval}.
@@ -416,9 +416,9 @@ copy(_, _, _) ->
 %%
 %% Copy between open files. 
 copy_int(Source, Dest, Length) 
-  when pid(Source), pid(Dest);
-       pid(Source), record(Dest, file_descriptor);
-       record(Source, file_descriptor), pid(Dest) ->
+  when is_pid(Source), is_pid(Dest);
+       is_pid(Source), is_record(Dest, file_descriptor);
+       is_record(Source, file_descriptor), is_pid(Dest) ->
     copy_opened_int(Source, Dest, Length, 0);
 %% Copy between open raw files, both handled by the same module
 copy_int(#file_descriptor{module = Module} = Source,
@@ -431,15 +431,15 @@ copy_int(#file_descriptor{} = Source,
     copy_opened_int(Source, Dest, Length, 0);
 %% Copy between filenames, let the server do the copy
 copy_int({SourceName, SourceOpts}, {DestName, DestOpts}, Length) 
-  when list(SourceOpts), list(DestOpts) ->
+  when is_list(SourceOpts), is_list(DestOpts) ->
     check_and_call(copy, 
 		   [file_name(SourceName), SourceOpts,
 		    file_name(DestName), DestOpts,
 		    Length]);
 %% Filename -> open file; must open Source and do client copy
 copy_int({SourceName, SourceOpts}, Dest, Length) 
-  when list(SourceOpts), pid(Dest);
-       list(SourceOpts), record(Dest, file_descriptor) ->
+  when is_list(SourceOpts), is_pid(Dest);
+       is_list(SourceOpts), is_record(Dest, file_descriptor) ->
     case file_name(SourceName) of
 	{error, _} = Error ->
 	    Error;
@@ -455,8 +455,8 @@ copy_int({SourceName, SourceOpts}, Dest, Length)
     end;
 %% Open file -> filename; must open Dest and do client copy
 copy_int(Source, {DestName, DestOpts}, Length)
-  when pid(Source), list(DestOpts);
-       record(Source, file_descriptor), list(DestOpts) ->
+  when is_pid(Source), is_list(DestOpts);
+       is_record(Source, file_descriptor), is_list(DestOpts) ->
     case file_name(DestName) of
 	{error, _} = Error ->
 	    Error;
@@ -477,19 +477,19 @@ copy_int(Source, {DestName, DestOpts}, Length)
 %%
 %% If Source is not a bare filename; Dest must be
 copy_int(Source, Dest, Length) 
-  when pid(Source);
-       record(Source, file_descriptor) ->
+  when is_pid(Source);
+       is_record(Source, file_descriptor) ->
     copy_int(Source, {Dest, []}, Length);
 copy_int({_SourceName, SourceOpts} = Source, Dest, Length) 
-  when list(SourceOpts) ->
+  when is_list(SourceOpts) ->
     copy_int(Source, {Dest, []}, Length);
 %% If Dest is not a bare filename; Source must be
 copy_int(Source, Dest, Length) 
-  when pid(Dest);
-       record(Dest, file_descriptor) ->
+  when is_pid(Dest);
+       is_record(Dest, file_descriptor) ->
     copy_int({Source, []}, Dest, Length);
 copy_int(Source, {_DestName, DestOpts} = Dest, Length) 
-  when list(DestOpts) ->
+  when is_list(DestOpts) ->
     copy_int({Source, []}, Dest, Length);
 %% Both must be bare filenames. If they are not,
 %% the filename check in the copy operation will yell.
@@ -499,8 +499,8 @@ copy_int(Source, Dest, Length) ->
 
 
 copy_opened(Source, Dest, Length)
-  when integer(Length), Length >= 0;
-       atom(Length) ->
+  when is_integer(Length), Length >= 0;
+       is_atom(Length) ->
     copy_opened_int(Source, Dest, Length);
 copy_opened(_, _, _) ->
     {error, einval}.
@@ -509,16 +509,16 @@ copy_opened(_, _, _) ->
 %% (by the way, atoms > integers)
 
 copy_opened_int(Source, Dest, Length)
-  when pid(Source), pid(Dest) ->
+  when is_pid(Source), is_pid(Dest) ->
     copy_opened_int(Source, Dest, Length, 0);
 copy_opened_int(Source, Dest, Length)
-  when pid(Source), record(Dest, file_descriptor) ->
+  when is_pid(Source), is_record(Dest, file_descriptor) ->
     copy_opened_int(Source, Dest, Length, 0);
 copy_opened_int(Source, Dest, Length)
-  when record(Source, file_descriptor), pid(Dest) ->
+  when is_record(Source, file_descriptor), is_pid(Dest) ->
     copy_opened_int(Source, Dest, Length, 0);
 copy_opened_int(Source, Dest, Length)
-  when record(Source, file_descriptor), record(Dest, file_descriptor) ->
+  when is_record(Source, file_descriptor), is_record(Dest, file_descriptor) ->
     copy_opened_int(Source, Dest, Length, 0);
 copy_opened_int(_, _, _) ->
     {error, einval}.
@@ -533,8 +533,8 @@ copy_opened_int(Source, Dest, Length, Copied) ->
     N = if Length > 65536 -> 65536; true -> Length end, % atom() > integer() !
     case read(Source, N) of
 	{ok, Data} ->
-	    M = if binary(Data) -> size(Data);
-		   list(Data)   -> length(Data)
+	    M = if is_binary(Data) -> size(Data);
+		   is_list(Data)   -> length(Data)
 		end,
 	    case write(Dest, Data) of
 		ok ->
@@ -543,7 +543,7 @@ copy_opened_int(Source, Dest, Length, Copied) ->
 			    {ok, Copied+M};
 		       true ->
 			    %% Decrement Length (might be an atom (infinity))
-			    NewLength = if atom(Length) -> Length;
+			    NewLength = if is_atom(Length) -> Length;
 					   true         -> Length-M
 					end,
 			    copy_opened_int(Source, Dest, NewLength, Copied+M)
@@ -564,7 +564,7 @@ copy_opened_int(Source, Dest, Length, Copied) ->
 %% 32 bit big endian. Finally it preads the data from that pos and size 
 %% in the file.
 
-ipread_s32bu_p32bu(File, Pos, MaxSize) when pid(File) ->
+ipread_s32bu_p32bu(File, Pos, MaxSize) when is_pid(File) ->
     ipread_s32bu_p32bu_int(File, Pos, MaxSize);
 ipread_s32bu_p32bu(#file_descriptor{module = Module} = Handle, Pos, MaxSize) ->
     Module:ipread_s32bu_p32bu(Handle, Pos, MaxSize);
@@ -572,7 +572,7 @@ ipread_s32bu_p32bu(_, _, _) ->
     {error, einval}.
 
 ipread_s32bu_p32bu_int(File, Pos, MaxSize) 
-  when integer(MaxSize), MaxSize >= 0, MaxSize < (1 bsl 31) ->
+  when is_integer(MaxSize), MaxSize >= 0, MaxSize < (1 bsl 31) ->
     case pread(File, Pos, 8) of
 	{ok, Header} ->
 	    ipread_s32bu_p32bu_2(File, Header, MaxSize);
@@ -610,7 +610,7 @@ ipread_s32bu_p32bu_2(_File,
     eof;
 ipread_s32bu_p32bu_2(File,
 		    Header,
-		    MaxSize) when list(Header) ->
+		    MaxSize) when is_list(Header) ->
     ipread_s32bu_p32bu_2(File, list_to_binary(Header), MaxSize).
 
 
@@ -733,27 +733,27 @@ path_open(PathList, Name, Mode) ->
     end.
 
 change_mode(Name, Mode) 
-  when integer(Mode) ->
+  when is_integer(Mode) ->
     write_file_info(Name, #file_info{mode=Mode}).
 
 change_owner(Name, OwnerId) 
-  when integer(OwnerId) ->
+  when is_integer(OwnerId) ->
     write_file_info(Name, #file_info{uid=OwnerId}).
 
 change_owner(Name, OwnerId, GroupId) 
-  when integer(OwnerId), integer(GroupId) ->
+  when is_integer(OwnerId), is_integer(GroupId) ->
     write_file_info(Name, #file_info{uid=OwnerId, gid=GroupId}).
 
 change_group(Name, GroupId) 
-  when integer(GroupId) ->
+  when is_integer(GroupId) ->
     write_file_info(Name, #file_info{gid=GroupId}).
 
 change_time(Name, Time) 
-  when tuple(Time) ->
+  when is_tuple(Time) ->
     write_file_info(Name, #file_info{mtime=Time}).
 
 change_time(Name, Atime, Mtime) 
-  when tuple(Atime), tuple(Mtime) ->
+  when is_tuple(Atime), is_tuple(Mtime) ->
     write_file_info(Name, #file_info{atime=Atime, mtime=Mtime}).
 
 %%%-----------------------------------------------------------------
@@ -837,16 +837,16 @@ file_name(N) ->
         {error, einval}
     end.
 
-file_name_1([C|T]) when integer(C), C > 0, C =< 255 ->
+file_name_1([C|T]) when is_integer(C), C > 0, C =< 255 ->
     [C|file_name_1(T)];
 file_name_1([H|T]) ->
     file_name_1(H) ++ file_name_1(T);
 file_name_1([]) ->
     [];
-file_name_1(N) when atom(N) ->
+file_name_1(N) when is_atom(N) ->
     atom_to_list(N).
 
-check_binary(Bin) when binary(Bin) ->
+check_binary(Bin) when is_binary(Bin) ->
     Bin;
 check_binary(List) ->
     %% Convert the list to a binary in order to avoid copying a list
@@ -863,9 +863,9 @@ mode_list(write) ->
     [write];
 mode_list(read_write) ->
     [read, write];
-mode_list({binary, Mode}) when atom(Mode) ->
+mode_list({binary, Mode}) when is_atom(Mode) ->
     [binary | mode_list(Mode)];
-mode_list({character, Mode}) when atom(Mode) ->
+mode_list({character, Mode}) when is_atom(Mode) ->
     mode_list(Mode);
 mode_list(_) ->
     [{error, einval}].
@@ -875,10 +875,10 @@ mode_list(_) ->
 %%-----------------------------------------------------------------
 %% Functions for communicating with the file server
 
-call(Command, Args) when list(Args) ->
+call(Command, Args) when is_list(Args) ->
     gen_server:call(?FILE_SERVER, list_to_tuple([Command | Args]), infinity).
 
-check_and_call(Command, Args) when list(Args) ->
+check_and_call(Command, Args) when is_list(Args) ->
     case check_args(Args) of
 	ok ->
 	    call(Command, Args);

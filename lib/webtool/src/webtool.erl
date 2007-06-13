@@ -244,7 +244,7 @@ start(standard_path,Data)->
     Path=get_path(),
     start(Path,Data);
     
-start(Path,Port) when integer(Port)->
+start(Path,Port) when is_integer(Port)->
     Data = get_standard_data(Port),
     start(Path,Data);
 	
@@ -479,7 +479,7 @@ get_file_content(Tools)->
 			     case catch apply(M,F,A) of
 				 {'EXIT',_} ->
 				     bad_data;
-				 Data when tuple(Data) ->
+				 Data when is_tuple(Data) ->
 				     Data;
 				 _->
 				     bad_data  
@@ -504,7 +504,7 @@ insert_file_content(Content)->
 %Control that we got a a tuple of a atom and a list if so add the 
 %elements in the list to the ets:table
 %----------------------------------------------------------------------
-insert_app({Name,Key_val_list},Table)when list(Key_val_list),atom(Name)->
+insert_app({Name,Key_val_list},Table) when is_list(Key_val_list),is_atom(Name)->
     %%io:format("ToolData: ~p: ~p~n",[Name,Key_val_list]),
     lists:foreach(
       fun({alias,{erl_alias,Alias,Mods}}) ->
@@ -1083,7 +1083,7 @@ list_apps(Apps) ->
 get_tools1(Dirs)->
     get_tools1(Dirs,[]).
 
-get_tools1([Dir|Rest],Data) when list(Dir) ->
+get_tools1([Dir|Rest],Data) when is_list(Dir) ->
     Tools=case filename:basename(Dir) of
 	      %% Dir is an 'ebin' directory, check in '../priv' as well
 	      "ebin" ->
@@ -1131,7 +1131,7 @@ get_tools3(ToolFile) ->
 	    {error,nofile};
 	{error,read} ->
 	    {error,format};
-	{ok,[{version,"1.2"},ToolInfo]} when list(ToolInfo)->
+	{ok,[{version,"1.2"},ToolInfo]} when is_list(ToolInfo)->
 	    webdata(ToolInfo);
 	{ok,[{version,_Vsn},_Info]} ->
 	    {error,old_version};

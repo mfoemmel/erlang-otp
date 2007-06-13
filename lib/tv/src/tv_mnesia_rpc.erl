@@ -57,13 +57,13 @@ transaction(Node, false, Fun) ->
 
 chk(Result) ->
     case Result of
-	_Anything when list(Result) ->
+	_Anything when is_list(Result) ->
 	    Result;
-	_Anything when atom(Result) ->
+	_Anything when is_atom(Result) ->
 	    Result;
-	_Anything when integer(Result) ->
+	_Anything when is_integer(Result) ->
 	    Result;
-	_Anything when pid(Result) ->
+	_Anything when is_pid(Result) ->
 	    Result;
 
 	{aborted, {bad_type, _Rec}} ->
@@ -95,7 +95,7 @@ chk(Result) ->
 	{'EXIT', Reason} ->
 	    throw({unexpected_error, Reason});
 	
-	Other when tuple(Other) ->
+	Other when is_tuple(Other) ->
 	       %% For example wild_pattern requests return a tuple!
 	    Other;
 	

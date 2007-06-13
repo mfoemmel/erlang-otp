@@ -110,7 +110,7 @@ scan1([$'|Cs0], Toks, Pos) ->				% Quoted atom
     case scan_string(Cs0, $', Pos) of
 	{S,Cs1,Pos1} ->
 	    case catch list_to_atom(S) of
-		A when atom(A) ->
+		A when is_atom(A) ->
 		    scan1(Cs1, [{atom,Pos,A}|Toks], Pos1);
 		_Error -> scan_error({illegal,atom}, Pos)
 	    end;
@@ -161,7 +161,7 @@ scan_variable(C, Cs, Toks, Pos) ->
 	    scan_error({illegal,token}, Pos);
 	_ ->
 	    case catch list_to_atom(W) of
-		A when atom(A) ->
+		A when is_atom(A) ->
 		    scan1(Cs1, [{var,Pos,A}|Toks], Pos);
 		_ ->
 		    scan_error({illegal,variable}, Pos)
@@ -172,7 +172,7 @@ scan_atom(C, Cs, Toks, Pos) ->
     {Wcs,Cs1} = scan_name(Cs, []),
     W = [C|reverse(Wcs)],
     case catch list_to_atom(W) of
-	A when atom(A) ->
+	A when is_atom(A) ->
 	    case reserved(A) of
 		true ->
 		    scan1(Cs1, [{A,Pos}|Toks], Pos);
@@ -329,7 +329,7 @@ scan_after_fraction([$e|Cs], Ncs, Toks, SPos, CPos) ->
     scan_exponent(Cs, [$e|Ncs], Toks, SPos, CPos);
 scan_after_fraction(Cs, Ncs, Toks, SPos, CPos) ->
     case catch list_to_float(reverse(Ncs)) of
-	N when float(N) ->
+	N when is_float(N) ->
 	    scan1(Cs, [{float,SPos,N}|Toks], CPos);
 	_Error -> scan_error({illegal,float}, SPos)
     end.
@@ -347,7 +347,7 @@ scan_exponent(Cs, Ncs, Toks, SPos, CPos) ->
 scan_exponent1([C|Cs0], Ncs0, Toks, SPos, CPos) when C >= $0, C =< $9 ->
     {Ncs,Cs,CPos1} = scan_integer(Cs0, [C|Ncs0], CPos),
     case catch list_to_float(reverse(Ncs)) of
-	N when float(N) ->
+	N when is_float(N) ->
 	    scan1(Cs, [{float,SPos,N}|Toks], CPos1);
 	_Error -> scan_error({illegal,float}, SPos)
     end;

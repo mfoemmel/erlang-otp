@@ -150,12 +150,14 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa ../../ic/ebin 
+ERL_LOCAL_FLAGS += -pa ../../ic/ebin 
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += +'{parse_transform,sys_pre_attributes}' \
-		     +'{attribute,insert,app_vsn,"ic_$(VSN)"}' \
-                     -D'COMPILERVSN="$(VSN)"'
+ERL_COMPILE_FLAGS += \
+	$(ERL_LOCAL_FLAGS) \
+	+'{parse_transform,sys_pre_attributes}' \
+	+'{attribute,insert,app_vsn,"ic_$(VSN)"}' \
+	-D'COMPILERVSN="$(VSN)"'
 YRL_FLAGS = -Iicyeccpre.hrl
 
 # ----------------------------------------------------

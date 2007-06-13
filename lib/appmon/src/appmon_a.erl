@@ -296,7 +296,7 @@ find_pid(State, Id, X, Y) ->
     ObjList = case gs:read(Id, {find, {X, Y}}) of
 		  {error, _} ->
 		      gs:read(Id, {hit, {X, Y}}); % Try new format
-		  Num when integer(Num) -> [Num];
+		  Num when is_integer(Num) -> [Num];
 		  _Other -> []
 	      end,
     DG = State#astate.digraph,
@@ -513,12 +513,12 @@ del_links([], _DG, _Ref) -> [].
 %% Del deletes the GS objects of the list of should-be-deleted
 %% items. Returns nothing particular.
 del(L) ->
-    lists:foreach(fun({{V1, V2, Weight}, D}) when record(D, edata) ->
+    lists:foreach(fun({{V1, V2, Weight}, D}) when is_record(D, edata) ->
 			  if Weight== foreign ->
 				  dealloc_foreign({V1, V2, Weight});
 			     true -> ok end,
 			  destroy(D#edata.line);
-		     ({_I, D}) when record(D, vdata) ->
+		     ({_I, D}) when is_record(D, vdata) ->
 			  destroy(D#vdata.sym_obj),
 			  destroy(D#vdata.txt_obj)
 		  end, L).
@@ -557,7 +557,7 @@ move_edge(DG, E) ->
     VD2 = appmon_dg:get(data, DG, V2),
     Line = ED#edata.line,
     move_line(DG, VD1, VD2, Line, Weight).
-move_line(DG, VD1, VD2, Line, Weight) when list(Line) ->
+move_line(DG, VD1, VD2, Line, Weight) when is_list(Line) ->
     move_line(DG, VD1, VD2, hd(Line), Weight);
 move_line(_DG, VD1, VD2, Line, Weight) ->
     Coords = calc_coords(VD1, VD2, Weight),
@@ -1111,6 +1111,6 @@ scaley(Y)	-> 55*Y.
 radius()	-> 10.
 
 destroy(undefined)	-> true;
-destroy(L) when list(L) -> lists:foreach(fun(X) -> destroy(X) end , L);	
+destroy(L) when is_list(L) -> lists:foreach(fun(X) -> destroy(X) end , L);	
 destroy(Win)		-> gs:destroy(Win).
 

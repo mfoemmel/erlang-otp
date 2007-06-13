@@ -99,7 +99,7 @@ non_precoloured(Target, Current, Max_temporary, Initial) ->
 
 %% construct an empty initialized worklists data structure
 empty(No_temporaries, CoalescedTo) ->
-    #worklists{
+  #worklists{
        membership = hipe_bifs:array(No_temporaries, 'none'),
        coalesced_to = CoalescedTo, % only used by optimistic allocator
        simplify = ordsets:new(),
@@ -118,11 +118,11 @@ stack(Worklists)    -> Worklists#worklists.stack.
 %% Updating worklists records
 
 set_simplify(Simplify, Worklists) ->
-    Worklists#worklists{simplify = Simplify}.
+  Worklists#worklists{simplify = Simplify}.
 set_spill(Spill, Worklists) ->
-    Worklists#worklists{spill = Spill}.
+  Worklists#worklists{spill = Spill}.
 set_freeze(Freeze, Worklists) ->
-    Worklists#worklists{freeze = Freeze}.
+  Worklists#worklists{freeze = Freeze}.
 
 
 %%----------------------------------------------------------------------
@@ -308,7 +308,7 @@ transfer_freeze_spill(Element, Worklists) ->
 %%%----------------------------------------------------------------------
 
 member_coalesced_to(Element, Worklists) -> % only used by optimistic allocator
-    hipe_bifs:array_sub(Worklists#worklists.coalesced_to, Element) =:= 'coalesced_to'.
+  hipe_bifs:array_sub(Worklists#worklists.coalesced_to, Element) =:= 'coalesced_to'.
 
 member_freeze(Element, Worklists) ->
   hipe_bifs:array_sub(Worklists#worklists.membership, Element) =:= 'freeze'.

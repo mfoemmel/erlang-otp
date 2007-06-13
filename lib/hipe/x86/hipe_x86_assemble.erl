@@ -543,7 +543,7 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
     {jcc_sdi,{CC,{label,L}},OrigI} ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ShortOffset = LabelAddress - (InsnAddress + 2),
-      if ShortOffset >= -128, ShortOffset =< 127 ->
+      if is_integer(ShortOffset), ShortOffset >= -128, ShortOffset =< 127 ->
 	  {jcc,{CC,{rel8,ShortOffset band 16#FF}},OrigI};
 	 true ->
 	  LongOffset = LabelAddress - (InsnAddress + 6),
@@ -552,7 +552,7 @@ fix_jumps(I, InsnAddress, FunAddress, LabelMap) ->
     {jmp_sdi,{{label,L}},OrigI} ->
       LabelAddress = gb_trees:get(L, LabelMap) + FunAddress,
       ShortOffset = LabelAddress - (InsnAddress + 2),
-      if ShortOffset >= -128, ShortOffset =< 127 ->
+      if is_integer(ShortOffset), ShortOffset >= -128, ShortOffset =< 127 ->
 	  {jmp,{{rel8,ShortOffset band 16#FF}},OrigI};
 	 true ->
 	  LongOffset = LabelAddress - (InsnAddress + 5),

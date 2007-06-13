@@ -9,6 +9,13 @@ include(`hipe/hipe_arm_asm.m4')
 	.text
 	.p2align 2
 
+`#if defined(HEAP_FRAG_ELIM_TEST)
+#define JOIN3(A,B,C)		A##B##C
+#define TEST_GOT_MBUF(ARITY)	ldr r1, [P, #P_MBUF]; cmp r1, #0; blne JOIN3(nbif_,ARITY,_gc_after_bif)
+#else
+#define TEST_GOT_MBUF(ARITY)	/*empty*/
+#endif'
+
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
  * standard_bif_interface_2(nbif_name, cbif_name)
@@ -30,6 +37,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(1)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -54,6 +62,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(2)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -79,6 +88,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(3)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -112,6 +122,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(1)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -142,6 +153,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(2)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -176,6 +188,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_GC
 	bl	$2
+	TEST_GOT_MBUF(0)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_GC
@@ -197,6 +210,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_GC
 	bl	$2
+	TEST_GOT_MBUF(1)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -221,6 +235,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_GC
 	bl	$2
+	TEST_GOT_MBUF(2)
 
 	/* Restore registers. Check for exception. */
 	cmp	r0, #THE_NON_VALUE
@@ -281,6 +296,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(0)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_BIF
@@ -302,6 +318,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(1)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_BIF
@@ -324,6 +341,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(2)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_BIF
@@ -347,6 +365,7 @@ $1:
 	/* Save caller-save registers and call the C function. */
 	SAVE_CONTEXT_BIF
 	bl	$2
+	TEST_GOT_MBUF(3)
 
 	/* Restore registers. */
 	RESTORE_CONTEXT_BIF

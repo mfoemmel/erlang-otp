@@ -179,7 +179,7 @@ print_table(Device, Line, TableName, _TupleOfColumnNames, []) ->
     io:format(Device, "~n", []);
 
 print_table(Device, Line, TableName, TupleOfColumnNames, ListOfTuples) 
-                when list(ListOfTuples), tuple(TupleOfColumnNames) ->
+                when is_list(ListOfTuples), is_tuple(TupleOfColumnNames) ->
     case is_correct_column_length(size(TupleOfColumnNames),
 				  ListOfTuples) of
 	true -> 

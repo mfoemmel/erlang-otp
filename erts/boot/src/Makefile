@@ -26,7 +26,7 @@ ERLANG_BEAM=$(ERL_TOP)/lib/kernel/ebin/erlang.beam
 
 # We override settings in otp.mk
 ERL_COMPILE_FLAGS = -I $(STDLIB_INCLUDE)
-ERL_FLAGS = -W
+ECC_FLAGS = -W
 
 MODS = boot_tools coff boot_pds boot_code_loader bin_io boot_fprim\
        boot_linker ecc elink
@@ -58,7 +58,7 @@ escript: escript.beam
 	./elink -t unix -d -o escript -S escript -m escript.beam 
 
 escript.beam: escript.erl
-	./ecc $(ERL_FLAGS) escript.erl
+	./ecc $(ECC_FLAGS) escript.erl
 
 ## Build ear
 
@@ -71,10 +71,10 @@ esh: esh.beam shell.beam
 	./elink -t unix -d -o esh -S esh -m esh.beam shell.beam
 
 esh.beam: esh.erl
-	./ecc $(ERL_FLAGS) esh.erl
+	./ecc $(ECC_FLAGS) esh.erl
 
 shell.beam: shell.erl
-	./ecc $(ERL_FLAGS) shell.erl
+	./ecc $(ECC_FLAGS) shell.erl
 
 ##----------------------------------------------------------------------
 

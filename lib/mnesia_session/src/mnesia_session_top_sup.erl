@@ -195,7 +195,7 @@ ensure_dead(Name) ->
     case whereis(Name) of
 	undefined ->
 	    ok;
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    exit(Pid, kill),
 	    timer:sleep(10),
 	    ensure_dead(Name)

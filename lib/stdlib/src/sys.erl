@@ -135,7 +135,7 @@ handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc) ->
 	    suspend_loop(suspended, Parent, Mod, NDebug, NMisc);
 	{running, Reply, NDebug, NMisc} ->
 	    gen:reply(From, Reply),
-	    apply(Mod, system_continue, [Parent, NDebug, NMisc])
+            Mod:system_continue(Parent, NDebug, NMisc)
     end.
 
 %%-----------------------------------------------------------------
@@ -180,7 +180,7 @@ suspend_loop(SysState, Parent, Mod, Debug, Misc) ->
 	{system, From, Msg} ->
 	    handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc);
 	{'EXIT', Parent, Reason} ->
-	    apply(Mod, system_terminate, [Reason, Parent, Debug, Misc])
+            Mod:system_terminate(Reason, Parent, Debug, Misc)
     end.
 
 do_cmd(_, suspend, _Parent, _Mod, Debug, Misc) ->
@@ -218,7 +218,7 @@ debug_cmd({trace, false}, Debug) ->
 debug_cmd({log, true}, Debug) ->
     {_N, Logs} = get_debug(log, Debug, {0, []}),
     {ok, install_debug(log, {10, trim(10, Logs)}, Debug)};
-debug_cmd({log, {true, N}}, Debug) when integer(N), N > 0 ->
+debug_cmd({log, {true, N}}, Debug) when is_integer(N), N > 0 ->
     {_N, Logs} = get_debug(log, Debug, {0, []}),
     {ok, install_debug(log, {N, trim(N, Logs)}, Debug)};
 debug_cmd({log, false}, Debug) ->
@@ -258,7 +258,7 @@ debug_cmd(_Unknown, Debug) ->
 
 
 do_change_code(Mod, Module, Vsn, Extra, Misc) ->
-    case catch apply(Mod, system_code_change, [Misc, Module, Vsn, Extra])  of
+    case catch Mod:system_code_change(Misc, Module, Vsn, Extra) of
 	{ok, NMisc} -> {ok, NMisc};
 	Else -> {{error, Else}, Misc}
     end.
@@ -328,7 +328,7 @@ debug_options([trace | T], Debug) ->
     debug_options(T, install_debug(trace, true, Debug));
 debug_options([log | T], Debug) ->
     debug_options(T, install_debug(log, {10, []}, Debug));
-debug_options([{log, N} | T], Debug) when integer(N), N > 0 ->
+debug_options([{log, N} | T], Debug) when is_integer(N), N > 0 ->
     debug_options(T, install_debug(log, {N, []}, Debug));
 debug_options([statistics | T], Debug) ->
     debug_options(T, install_debug(statistics, init_stat(), Debug));

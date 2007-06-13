@@ -339,15 +339,15 @@
 
 %% macro for use in guard for checking ip address {A,B,C,D}
 -define(ip(A,B,C,D),
-	(((A) bor (B) bor (C) bor (D)) band (bnot 16#ff)) == 0).
+	(((A) bor (B) bor (C) bor (D)) band (bnot 16#ff)) =:= 0).
 
 -define(ip6(A,B,C,D,E,F,G,H), 
 	(((A) bor (B) bor (C) bor (D) bor (E) bor (F) bor (G) bor (H)) 
-	 band (bnot 16#ffff)) == 0).
+	 band (bnot 16#ffff)) =:= 0).
 
 -define(ether(A,B,C,D,E,F), 
 	(((A) bor (B) bor (C) bor (D) bor (E) bor (F)) 
-	 band (bnot 16#ff)) == 0).
+	 band (bnot 16#ff)) =:= 0).
 
 %% default options (when inet_drv port is started)
 %%

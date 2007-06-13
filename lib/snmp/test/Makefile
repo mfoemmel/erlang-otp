@@ -112,7 +112,6 @@ SNMP_MIB_FLAGS += $(GROUP_CHECK) $(USE_DESCRIPTION) -I$(SNMP_BIN_TARGET_DIR)
 # ----------------------------------------------------
 EBIN = .
 
-ERL_FLAGS += 
 ERL_COMPILE_FLAGS += -I../src \
                      -I$(ERL_TOP)/lib/test_server/include \
                      -I../include \
@@ -140,7 +139,7 @@ tests debug opt: $(BUILDTARGET)
 emakebuild: $(EMAKEFILE)
 
 targets: mib $(EMAKEFILE)
-	erl $(ERL_FLAGS) -make
+	erl -make
 
 old_targets: $(TARGET_FILES)
 
@@ -185,7 +184,6 @@ info:
 	@echo "MIB_TARGETS       = $(MIB_TARGETS)"
 	@echo "SNMP_MIB_FLAGS    = $(SNMP_MIB_FLAGS)"
 	@echo ""
-	@echo "ERL_FLAGS         = $(ERL_FLAGS)"
 	@echo "ERL_COMPILE_FLAGS = $(ERL_COMPILE_FLAGS)"
 	@echo ""
 	@echo "RELSYSDIR         = $(RELSYSDIR)"

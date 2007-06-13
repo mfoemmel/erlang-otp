@@ -1,0 +1,6 @@
+<!ENTITY % ISOlat1 SYSTEM "xhtml-lat1.ent" >
+%ISOlat1;
+
+<!ENTITY amp    "&#x0026;" >
+<!ENTITY gt     "&#x003E;" >
+<!ENTITY lt     "&#x003C;" >

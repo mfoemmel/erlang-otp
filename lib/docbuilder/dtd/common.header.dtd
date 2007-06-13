@@ -1,0 +1,12 @@
+<!ELEMENT header              (title,shorttitle?,prepared,responsible?,
+			       docno,approved?,checked?,date,rev,file?) >
+<!ELEMENT title               (#PCDATA) >
+<!ELEMENT shorttitle          (#PCDATA) >
+<!ELEMENT prepared            (#PCDATA) >
+<!ELEMENT responsible         (#PCDATA) >
+<!ELEMENT docno               (#PCDATA) >
+<!ELEMENT approved            (#PCDATA) >
+<!ELEMENT checked             (#PCDATA) >
+<!ELEMENT date                (#PCDATA) >
+<!ELEMENT rev                 (#PCDATA) >
+<!ELEMENT file                (#PCDATA) >

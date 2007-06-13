@@ -95,7 +95,7 @@ create(DB, Gstkid, Opts) ->
     case gstk_generic:make_command(transform_geometry_opts(Opts),
 				  NGstkid, TkW, "", ";", DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    BindCmd = gstk_generic:bind(DB, Gstkid, TkW, configure, true),
 %	    io:format("\nWINDOW1: ~p\n",[TkW]),
 %	    io:format("\nWINDOW1: ~p\n",[Cmd]),

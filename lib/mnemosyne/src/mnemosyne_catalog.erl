@@ -237,10 +237,10 @@ subscribe(Table) ->
 
 %%%----------------------------------------------------------------
 %%% T is table or a list of tables
-clear_statistics(Tab) when atom(Tab) ->
+clear_statistics(Tab) when is_atom(Tab) ->
     ets:match_delete(?CATALOG, {{'_',Tab},'_'});
 
-clear_statistics(Tabs) when list(Tabs) ->
+clear_statistics(Tabs) when is_list(Tabs) ->
     lists:foreach(fun(Tab) -> clear_statistics(Tab) end, Tabs).
 
 clear_statistics() ->
@@ -257,7 +257,7 @@ infoS() ->
     lists:flatten([
 		   io_lib:format("Mnemosyne catalog on ~w ", [node()]),
 		   case length(element(2,element(2,lists:keysearch(messages,1,process_info(whereis(?SERVER_NAME)))))) of
-		       N when integer(N), N>0 -> 
+		       N when is_integer(N), N>0 -> 
 			   io_lib:format(', ~w messages in queue\n', [N]);
 		       _ -> 
 			   io_lib:nl()
@@ -342,7 +342,7 @@ handle_cast(_,State) ->
 
 
 handle_info({mnesia_table_event,{delete,R,_}}, State) when element(1,R)==schema,
-							   atom(element(2,R))  ->
+							   is_atom(element(2,R))  ->
     clear_statistics (element (2,R)),
     {noreply,State};
 
@@ -360,13 +360,13 @@ handle_info({mnesia_table_event,{_,R,_}}, State) when element(1,R)==schema ->
       end, checked_tables()),
     {noreply,State};
 
-handle_info({mnesia_table_event,{_,R,_}}, State) when atom(element(1,R)) ->
+handle_info({mnesia_table_event,{_,R,_}}, State) when is_atom(element(1,R)) ->
     Table = element(1,R),
     %% Updating a Mnesia table.  Shall we re-calculate?
     case read_parameter(Table,do_local_upd) of
 	yes ->
 	    case update_counter(Table,limit,-1) of
-		N when integer(N),N=<0 -> %% Passed the update limit
+		N when is_integer(N),N=<0 -> %% Passed the update limit
 		    NowSecs = now_in_secs(),
 		    MinInterv = read_parameter(Table,min_upd_interval),
 		    case read_time_stamp(Table) of
@@ -505,7 +505,7 @@ parameter_default_value(Name) ->
     end.
 
 %%%----
-upd_stat(S, V) when record(S,stat) ->
+upd_stat(S, V) when is_record(S,stat) ->
     S#stat{latest = V,
 	   sum = S#stat.sum+V,
 	   n = S#stat.n+1};
@@ -695,7 +695,7 @@ traverse_dets_obj(_,_) ->
     ready.
 
 %%%---- common
-product(L) when list(L) -> lists:foldl(fun(E,Acc) -> E*Acc end, 1, L).
+product(L) when is_list(L) -> lists:foldl(fun(E,Acc) -> E*Acc end, 1, L).
 
 %%%================================================================
 -record(inf,
@@ -856,7 +856,7 @@ max_l([], MaxL) ->
 
 write_info(Info, Fmt) ->
     lists:map(
-      fun(L) when list(L) -> io_lib:format(Fmt, L);
+      fun(L) when is_list(L) -> io_lib:format(Fmt, L);
 	 (X) -> io_lib:format(" ???: ~w\n", [X])
       end, Info).
 	      
@@ -932,13 +932,13 @@ collect_info(Tables) ->
       end, Tables).
 
 
-stat(latest, S) when record(S,stat), integer(S#stat.latest) ->
+stat(latest, S) when is_record(S,stat), is_integer(S#stat.latest) ->
     S#stat.latest;
 
-stat(mean, S) when record(S,stat), integer(S#stat.sum), S#stat.n=/=0 ->
+stat(mean, S) when is_record(S,stat), is_integer(S#stat.sum), S#stat.n=/=0 ->
     S#stat.sum div S#stat.n;
 
-stat(n, S) when record(S,stat), integer(S#stat.n) -> 
+stat(n, S) when is_record(S,stat), is_integer(S#stat.n) -> 
     S#stat.n;
 
 stat(_, _) ->
@@ -947,19 +947,19 @@ stat(_, _) ->
 
 %% string(clock, {H,M,S}) -> ?str("~2..0w:~2..0w:~2..0w", [H,M,S]);
 %% string(date, {Y,M,D}) -> ?str("~w-~2..0w-~2..0w", [Y,M,D]);
-string(time_us, MicroSecs) when integer(MicroSecs) -> 
+string(time_us, MicroSecs) when is_integer(MicroSecs) -> 
     if
 	MicroSecs < 1000 -> ?str("~wus",[MicroSecs]);
 	MicroSecs < 3000 -> ?str("~4.2fms",[MicroSecs/1000]);
 	true -> string(time_ms, MicroSecs div 1000)
     end;
-string(time_ms, MilliSecs) when integer(MilliSecs) ->
+string(time_ms, MilliSecs) when is_integer(MilliSecs) ->
     if
 	MilliSecs < 1000 -> ?str("~wms",[MilliSecs]);
 	MilliSecs < 9000 -> ?str("~4.2fs",[MilliSecs/1000]);
 	true -> string(time_s, MilliSecs div 1000)
     end;
-string(time_s, TotSecs) when integer(TotSecs) ->
+string(time_s, TotSecs) when is_integer(TotSecs) ->
     Hrs = TotSecs div 3600,
     Mins= (TotSecs div 60) rem 60,
     Secs= TotSecs rem 60,
@@ -970,6 +970,6 @@ string(time_s, TotSecs) when integer(TotSecs) ->
 	Mins>0 -> ?str("~wm~2..0ws",[Mins,Secs]);
 	true -> ?str("~ws",[Secs])
     end;
-string(int, I) when integer(I) -> integer_to_list(I);
+string(int, I) when is_integer(I) -> integer_to_list(I);
 string(_,_) -> "".
 

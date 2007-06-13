@@ -729,7 +729,7 @@ get_frame_height(N) ->
 set_entry_values(TabType, [H | T], [VH | VT], ListsAsStr) ->
     EntryText = 
 	case VH of
-	    undefined when TabType == ets ->
+	    undefined when TabType =:= ets ->
 		"";
 	    _AnyValue ->
 		case ListsAsStr of

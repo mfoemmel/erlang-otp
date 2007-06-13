@@ -52,7 +52,7 @@ start(GS, Pos, Type, Mod, Line) ->
 init(GS, Pos, Type, Mod, Line) ->
     Win = dbg_ui_break_win:create_win(GS, Pos, Type, Mod, Line),
     if
-	Type==function, atom(Mod) ->
+	Type==function, is_atom(Mod) ->
 	    Win2 = gui_cmd({module, Mod}, Win),
 	    loop(Win2);
 	true ->
@@ -63,7 +63,7 @@ loop(Win) ->
     receive
 
 	%% From the GUI
-	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
+	GuiEvent when is_tuple(GuiEvent), element(1, GuiEvent)==gs ->
 	    Cmd = dbg_ui_break_win:handle_event(GuiEvent, Win),
 	    Win2 = gui_cmd(Cmd, Win),
 	    loop(Win2)

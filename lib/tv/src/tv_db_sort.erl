@@ -51,7 +51,7 @@ mergesort(KeyNo, X, ReverseOrder) ->
    %% If we want reverse order when just merging two lists,
    %% each of them has to be in reverse order first!
 
-merge(KeyNo, [{E1, C1} | T1], [{E2, C2} | T2], Reverse) when Reverse == false ->
+merge(KeyNo, [{E1, C1} | T1], [{E2, C2} | T2], Reverse) when not Reverse ->
     K1 = get_compare_value(KeyNo, E1),
     K2 = get_compare_value(KeyNo, E2),
     case get_correct_order(K1, E1, K2, E2) of
@@ -79,7 +79,7 @@ merge(_KeyNo, L1, [], _Reverse) ->       % L1 may be the empty list also!
 
 
 
-get_compare_value(KeyNo, E) when tuple(E) ->
+get_compare_value(KeyNo, E) when is_tuple(E) ->
     case catch element(KeyNo, E) of
 	{'EXIT', {badarg, {?MODULE, get_compare_value, [KeyNo, E]}}} ->
 	    short_tuple;

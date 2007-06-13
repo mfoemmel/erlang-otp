@@ -26,13 +26,16 @@
 -include_lib("megaco/src/engine/megaco_message_internal.hrl").
 -include("megaco_text_tokens.hrl").
 
--define(LOWER(Char),
+-define(LOWER1(Char),
 	if
 	    Char >= $A, Char =< $Z ->
 		Char - ($A - $a);
 	    true ->
 		Char
 	end).
+
+%% This is used when we _know_ it to be upper case
+-define(LOWER2(Char), Char - ($A - $a)).
 
 scan(Bin) when binary(Bin) ->
     Chars = erlang:binary_to_list(Bin),
@@ -142,8 +145,10 @@ any_chars([Char | Rest], Line) ->
 %     d("any_chars -> ~w of class ~w", [Char, Class]),
 %     case Class of
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    safe_chars(Rest, [Char], [?LOWER2(Char)], Line);
 	safe_char ->
-	    safe_chars(Rest, [Char], [?LOWER(Char)], Line);
+	    safe_chars(Rest, [Char], [Char], Line);
 	rest_char ->
 	    case Char of
 		?SemiColonToken ->
@@ -166,6 +171,8 @@ any_chars([] = All, Line) ->
 
 comment_chars([Char | Rest], Line) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    comment_chars(Rest, Line);
 	safe_char ->
 	    comment_chars(Rest, Line);
 	rest_char ->
@@ -185,6 +192,8 @@ comment_chars([] = All, Line) ->
     
 sep_chars([Char | Rest] = All, Line) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    {token, {'SEP', Line}, All, Line};
 	safe_char ->
 	    {token, {'SEP', Line}, All, Line};
 	rest_char ->
@@ -242,6 +251,8 @@ skip_sep_chars([] = All, Line) ->
 
 skip_comment_chars([Char | Rest] = All, Line) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    skip_comment_chars(Rest, Line);
 	safe_char ->
 	    skip_comment_chars(Rest, Line);
 	rest_char ->
@@ -260,6 +271,8 @@ skip_comment_chars([] = All, Line) ->
 
 quoted_chars([Char | Rest], Acc, Line) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    quoted_chars(Rest, [Char | Acc], Line);
 	safe_char ->
 	    quoted_chars(Rest, [Char | Acc], Line);
 	rest_char ->
@@ -276,8 +289,10 @@ quoted_chars([] = All, _Acc, Line) ->
     
 safe_chars([Char | Rest] = All, Acc, LowerAcc, Line) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    safe_chars(Rest, [Char | Acc], [?LOWER2(Char) | LowerAcc], Line);
 	safe_char ->
-	    safe_chars(Rest, [Char | Acc], [?LOWER(Char) | LowerAcc], Line);
+	    safe_chars(Rest, [Char | Acc], [Char | LowerAcc], Line);
 	_ ->
 	    LowerSafeChars = lists:reverse(LowerAcc),
 	    TokenTag = select_token(LowerSafeChars),
@@ -311,8 +326,10 @@ safe_chars([] = All, _Acc, LowerAcc, Line) ->
     
 collect_safe_chars([Char | Rest] = All, LowerAcc) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+	    collect_safe_chars(Rest, [?LOWER2(Char) | LowerAcc]);
 	safe_char ->
-	    collect_safe_chars(Rest, [?LOWER(Char) | LowerAcc]);
+	    collect_safe_chars(Rest, [Char | LowerAcc]);
 	_ ->
 	    {All, lists:reverse(LowerAcc)}
     end;
@@ -442,7 +459,7 @@ digit_map_value(Chars) ->
 %% Hopefully this is temporary...
 %% The values are swapped back later by the parser...
 digit_map_value([Char, ?ColonToken | Rest] = All, DMV) ->
-    case ?LOWER(Char) of
+    case ?LOWER1(Char) of
 	$t -> digit_map_timer(All, Rest, #'DigitMapValue'.startTimer, DMV);
 	$s -> digit_map_timer(All, Rest, #'DigitMapValue'.shortTimer, DMV);
 	$l -> digit_map_timer(All, Rest, #'DigitMapValue'.longTimer, DMV);

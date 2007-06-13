@@ -173,6 +173,7 @@ static FD do_connect(char *lipstring, int lport, char *fipstring, int fport);
 static FD do_listen(char *ipstring, int lport, int backlog, int *aport);
 static FD do_accept(FD listensock, struct sockaddr *saddr, int *len);
 static void print_connections(void);
+static void dump_connections(void);
 static int check_num_sock_fds(FD fd); 
 static void safe_close(FD fd);
 static Connection *new_connection(int state, FD fd);
@@ -203,6 +204,7 @@ static char *connstr[] = {
     "WAIT_CONNECT",
     "SSL_CONNECT",
     "SSL_ACCEPT",
+    "TRANSPORT_ACCEPT",
     "JOINED",
     "SSL_SHUTDOWN",
     "DEFUNCT"
@@ -639,8 +641,7 @@ static int loop(void)
 			    close_and_remove_connection(cp);
 			}
 		    } else 
-			DEBUGF(("%s[CLOSE_CMD]: ERROR: fd = %d not found\n",
-				connstr[cp->state], fd));
+			DEBUGF(("[CLOSE_CMD]: ERROR: fd = %d not found\n", fd));
 		    break;
 
 		case ESOCK_SET_SOCKOPT_CMD:
@@ -800,6 +801,24 @@ static int loop(void)
 		    }
 		    break;
 
+		case ESOCK_DUMP_STATE_CMD:
+		    dump_connections();
+		  break;
+ 
+                case ESOCK_SET_DEBUG_CMD:
+                  /* 
+                   * ebuf = {cmd(1), debug(1)}
+                   */
+                  input("1", &debug);
+                  break;
+		  
+		case ESOCK_SET_DEBUGMSG_CMD:
+                  /* 
+                   * ebuf = {cmd(1), debugmsg(1)}
+                   */
+                  input("1", &debugmsg);
+                  break;
+		  
 		default:
 		    fprintf(stderr, "esock: default value in loop %c\n", 
 			    *ebuf);
@@ -870,14 +889,14 @@ static int loop(void)
 		DEBUGF(("SSL_ACCEPT fd = %d\n", msgsock));
 		if (cp->errstr != NULL) { /* this means we got an error in ssl_accept_init */
 		    /* N.B.: The *listen fd* is reported. */
-		    reply(ESOCK_SSL_ACCEPT_ERR, "4s", cp->listen_fd, cp->errstr);
+		    reply(ESOCK_SSL_ACCEPT_ERR, "4s", msgsock, cp->errstr);
 		    close_and_remove_connection(cp);
 		    break;
 		}
 		if (esock_ssl_accept(cp) < 0) {
 		    if (sock_errno() != ERRNO_BLOCK) {
 			/* Handshake failed. */
-			reply(ESOCK_TRANSPORT_ACCEPT_ERR, "4s", cp->listen_fd,
+			reply(ESOCK_SSL_ACCEPT_ERR, "4s", msgsock,
 			      ssl_errstr());
 			DEBUGF(("ERROR: handshake: %s\n", ssl_errstr()));
 			close_and_remove_connection(cp);
@@ -1350,8 +1369,8 @@ static void do_shutdown(Connection *cp)
 
 static void close_and_remove_connection(Connection *cp)
 {
-	safe_close(cp->fd);
-	remove_connection(cp);
+    safe_close(cp->fd);
+    remove_connection(cp);
 }
 
 static int reply(int cmd, char *fmt, ...)
@@ -1642,8 +1661,7 @@ static Connection *new_connection(int state, FD fd)
 
 static void print_connections(void)
 {
-    if(debug) {
-    
+    if (debug) {
 	Connection *cp = connections;
 	DEBUGF(("CONNECTIONS:\n"));
 	while (cp) {
@@ -1667,6 +1685,62 @@ static void print_connections(void)
     }
 }
 
+static void dump_connections(void)
+{
+    Connection *cp = connections;
+    Proxy      *pp = proxies;
+    time_t t = time(NULL);
+    int length = 0;
+    struct sockaddr_in iserv_addr;
+
+    __debugprintf("CONNECTIONS %s", ctime(&t));
+    while (cp) {
+	if (cp->state == ESOCK_JOINED) {
+	    __debugprintf(" - %s [%8p] (origin = %s)\n"
+			  "       (fd = %d, eof = %d, wq = %d, bp = %d), close = %d\n"
+			  "       (proxyfd = %d, eof = %d, wq = %d, bp = %d)\n", 
+			  connstr[cp->state], cp, originstr[cp->origin],
+			  cp->fd, cp->eof, cp->wq.len, cp->bp, cp->close,
+			  cp->proxy->fd, cp->proxy->eof, cp->proxy->wq.len, 
+			  cp->proxy->bp);
+	} else if (cp->state == ESOCK_ACTIVE_LISTENING) {
+	    __debugprintf(" - %s [%8p] (fd = %d, acceptors = %d)\n", 
+			  connstr[cp->state], cp, cp->fd, cp->acceptors);
+	} else {
+	    __debugprintf(" - %s [%8p] (fd = %d)\n", connstr[cp->state], cp, 
+			  cp->fd);
+	}
+	length = sizeof(iserv_addr);
+	if ((cp->state == ESOCK_ACTIVE_LISTENING) ||
+	    (cp->state == ESOCK_PASSIVE_LISTENING)) {
+	    getsockname(cp->fd, (struct sockaddr *) &iserv_addr, &length);
+	    __debugprintf("       (ip = %s, port = %d)\n",
+			  inet_ntoa(iserv_addr.sin_addr),
+			  ntohs(iserv_addr.sin_port));
+	}
+	else {
+	    getsockname(cp->fd, (struct sockaddr *) &iserv_addr, &length);
+	    __debugprintf("       (local_ip = %s, local_port = %d)\n",
+			  inet_ntoa(iserv_addr.sin_addr),
+			  ntohs(iserv_addr.sin_port));
+	    length = sizeof(iserv_addr);
+	    getpeername(cp->fd, (struct sockaddr *) &iserv_addr, &length);
+	    __debugprintf("       (remote_ip = %s, remote_port = %d)\n",
+			  inet_ntoa(iserv_addr.sin_addr),
+			  ntohs(iserv_addr.sin_port));
+	}
+	cp=cp->next;
+    }
+  
+    __debugprintf("PROXIES\n");
+    while (pp) {
+	__debugprintf(" - fd = %d [%8p] (external_fd = %d, peer_port = %d,"
+		      " eof = %d)\n", pp->fd, pp, pp->conn->fd, pp->peer_port,
+		      pp->eof);
+    
+	pp= pp->next;
+    }
+}
 
 static Connection *get_connection(FD fd)
 {

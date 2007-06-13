@@ -134,9 +134,10 @@ endif
 
 include ../app/megaco.mk
 
-ERL_FLAGS += $(MEGACO_ERL_FLAGS)
-
-ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
+ERL_COMPILE_FLAGS += \
+	$(MEGACO_ERL_COMPILE_FLAGS) \
+	-I../../include             \
+	$(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 ifeq ($(MFS_DEBUG),true)
 CFLAGS += -DMFS_DEBUG=true
@@ -160,7 +161,7 @@ endif
 # ----------------------------------------------------
 
 ifeq ($(ENABLE_MEGACO_FLEX_SCANNER),true)
-debug opt: $(LIBDIR) $(TARGET_FILES) $(C_TARGETS) $(SOLIBS)
+debug opt: $(TARGET_FILES) $(C_TARGETS) solibs
 else
 debug opt: $(TARGET_FILES) 
 endif
@@ -231,6 +232,8 @@ endif
 
 megaco_flex_scanner_drv.c: megaco_flex_scanner_drv.flex
 	$(LEX) $(LEX_FLAGS) -P$* -o$@ $< 
+
+solibs: $(LIBDIR) $(SOLIBS) 
 
 # No need to link with -lfl as we have also defined %option noyywrap - 
 # and having -lfl doesn't work under Darwin for some reason. - Sean

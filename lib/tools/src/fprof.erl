@@ -39,9 +39,6 @@
 	 load_profile/0, load_profile/1, load_profile/2,
 	 code_change/0]).
 
-%% Imports
--import(lists, [flatten/1, flatten/2, reverse/1, reverse/2, sort/1, foldl/3]).
-
 %% Debug exports
 -export([call/1, just_call/1, reply/2]).
 -export([trace_off/0, trace_on/3]).
@@ -90,27 +87,27 @@ dbg(_, _, _) ->
 
 
 apply({M, F} = Function, Args) 
-  when atom(M), atom(F), list(Args) ->
+  when is_atom(M), is_atom(F), is_list(Args) ->
     apply_1(Function, Args, []);
 apply(Fun, Args) 
-  when function(Fun), list(Args) ->
+  when is_function(Fun), is_list(Args) ->
     apply_1(Fun, Args, []);
 apply(A, B) ->
     erlang:fault(badarg, [A, B]).
 
-apply(M, F, Args) when atom(M), atom(F), list(Args) ->
+apply(M, F, Args) when is_atom(M), is_atom(F), is_list(Args) ->
     apply_1({M, F}, Args, []);
 apply({M, F} = Function, Args, Options) 
-  when atom(M), atom(F), list(Args), list(Options) ->
+  when is_atom(M), is_atom(F), is_list(Args), is_list(Options) ->
     apply_1(Function, Args, Options);
 apply(Fun, Args, Options) 
-  when function(Fun), list(Args), list(Options) ->
+  when is_function(Fun), is_list(Args), is_list(Options) ->
     apply_1(Fun, Args, Options);
 apply(A, B, C) ->
     erlang:fault(badarg, [A, B, C]).
 
 apply(Module, Function, Args, Options) 
-  when atom(Module), atom(Function), list(Args), list(Options) ->
+  when is_atom(Module), is_atom(Function), is_list(Args), is_list(Options) ->
     apply_1({Module, Function}, Args, Options);
 apply(A, B, C, D) ->
     erlang:fault(badarg, [A, B, C, D]).
@@ -120,7 +117,7 @@ apply_1(Function, Args, Options) ->
     {[_, Procs, Continue], Options_1} =
 	getopts(Options, [start, procs, continue]),
     Procs_1 = case Procs of
-		  [{procs, P}] when list(P) ->
+		  [{procs, P}] when is_list(P) ->
 		      P;
 		  _ ->
 		      []
@@ -281,7 +278,7 @@ trace(start, Filename) ->
     trace([start, {file, Filename}]);
 trace(verbose, Filename) ->
     trace([start, verbose, {file, Filename}]);
-trace(Option, Value) when atom(Option) ->
+trace(Option, Value) when is_atom(Option) ->
     trace([{Option, Value}]);
 trace(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
@@ -296,11 +293,11 @@ trace([stop]) ->
     %% This shortcut is present to minimize the number of undesired
     %% function calls at the end of the trace.
     call(#trace_stop{});
-trace({Opt, _Val} = Option) when atom(Opt) ->
+trace({Opt, _Val} = Option) when is_atom(Opt) ->
     trace([Option]);
-trace(Option) when atom(Option) ->
+trace(Option) when is_atom(Option) ->
     trace([Option]);
-trace(Options) when list(Options) ->
+trace(Options) when is_list(Options) ->
     case getopts(Options, 
 		 [start, stop, procs, verbose, file, tracer, cpu_time]) of
 	{[[], [stop], [], [], [], [], []], []} ->
@@ -308,7 +305,7 @@ trace(Options) when list(Options) ->
 	{[[start], [], Procs, Verbose, File, Tracer, CpuTime], []} ->
 	    {Type, Dest} = case {File, Tracer} of
 			       {[], [{tracer, Pid} = T]} 
-			       when pid(Pid); port(Pid) ->
+			       when is_pid(Pid); is_port(Pid) ->
 				   T;
 			       {[file], []} ->
 				   {file, ?TRACE_FILE};
@@ -338,7 +335,7 @@ trace(Options) when list(Options) ->
 	    call(#trace_start{procs = case Procs of
 					  [] ->
 					      [self()];
-					  [{procs, P}] when list(P) ->
+					  [{procs, P}] when is_list(P) ->
 					      P;
 					  [{procs, P}] ->
 					      [P];
@@ -359,16 +356,16 @@ trace(Options) ->
 profile() ->
     profile([]).
 
-profile(Option, Value) when atom(Option) ->
+profile(Option, Value) when is_atom(Option) ->
     profile([{Option, Value}]);
 profile(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
 
-profile(Option) when atom(Option) ->
+profile(Option) when is_atom(Option) ->
     profile([Option]);
-profile({Opt, _Val} = Option) when atom(Opt) ->
+profile({Opt, _Val} = Option) when is_atom(Opt) ->
     profile([Option]);
-profile(Options) when list(Options) ->
+profile(Options) when is_list(Options) ->
     case getopts(Options, [start, stop, file, dump, append]) of
 	{[Start, [], File, Dump, Append], []} ->
 	    {Target, Flags} = 
@@ -381,7 +378,7 @@ profile(Options) when list(Options) ->
 			{?DUMP_FILE, []};
 		    {[{dump, []}], [append]} ->
 			{?DUMP_FILE, [append]};
-		    {[{dump, D}], [append]} when pid(D) ->
+		    {[{dump, D}], [append]} when is_pid(D) ->
 			erlang:fault(badarg, [Options]);
 		    {[{dump, D}], [append]} ->
 			{D, [append]};
@@ -429,16 +426,16 @@ profile(Options) ->
 analyse() ->
     analyse([]).
 
-analyse(Option, Value) when atom(Option) ->
+analyse(Option, Value) when is_atom(Option) ->
     analyse([{Option, Value}]);
 analyse(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
 
-analyse(Option) when atom(Option) ->
+analyse(Option) when is_atom(Option) ->
     analyse([Option]);
-analyse({Opt, _Val} = Option) when atom(Opt) ->
+analyse({Opt, _Val} = Option) when is_atom(Opt) ->
     analyse([Option]);
-analyse(Options) when list(Options) ->
+analyse(Options) when is_list(Options) ->
     case getopts(Options, 
 		 [dest, append, cols, callers, no_callers, 
 		  sort, totals, details, no_details]) of
@@ -454,7 +451,7 @@ analyse(Options) when list(Options) ->
 			{?ANALYSIS_FILE, []};
 		    {[{dest, []}], [append]} ->
 			{?ANALYSIS_FILE, [append]};
-		    {[{dest, F}], [append]} when pid(F) ->
+		    {[{dest, F}], [append]} when is_pid(F) ->
 			erlang:fault(badarg, [Options]);
 		    {[{dest, F}], [append]} ->
 			{F, [append]};
@@ -469,7 +466,7 @@ analyse(Options) when list(Options) ->
 			  cols = case Cols of
 				     [] ->
 					 80;
-				     [{cols, C}] when integer(C), C > 0 ->
+				     [{cols, C}] when is_integer(C), C > 0 ->
 					 C;
 				     _ ->
 					 erlang:fault(badarg, [Options])
@@ -546,14 +543,14 @@ get_state() ->
 save_profile() ->
     save_profile([]).
 
-save_profile(Option, Value) when atom(Option) ->
+save_profile(Option, Value) when is_atom(Option) ->
     save_profile([{Option, Value}]);
 save_profile(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
 
-save_profile(Option) when atom(Option) ->
+save_profile(Option) when is_atom(Option) ->
     save_profile([Option]);
-save_profile(Options) when list(Options) ->
+save_profile(Options) when is_list(Options) ->
     case getopts(Options, [file]) of
 	{[File], []} ->
 	    call(#save_profile{file = case File of
@@ -575,14 +572,14 @@ save_profile(Options) ->
 load_profile() ->
     load_profile([]).
 
-load_profile(Option, Value) when atom(Option) ->
+load_profile(Option, Value) when is_atom(Option) ->
     load_profile([{Option, Value}]);
 load_profile(Option, Value) ->
     erlang:fault(badarg, [Option, Value]).
 
-load_profile(Option) when atom(Option) ->
+load_profile(Option) when is_atom(Option) ->
     load_profile([Option]);
-load_profile(Options) when list(Options) ->
+load_profile(Options) when is_list(Options) ->
     case getopts(Options, [file]) of
 	{[File], []} ->
 	    call(#load_profile{file = case File of
@@ -755,7 +752,7 @@ just_call(Pid, Request) ->
 %%%------------------------
 
 %% Return the reply to the client's request.
-reply({Mref, Pid}, Reply) when reference(Mref), pid(Pid) ->
+reply({Mref, Pid}, Reply) when is_reference(Mref), is_pid(Pid) ->
     catch Pid ! {?FPROF_SERVER, Mref, Reply},
     ok.
 
@@ -764,11 +761,11 @@ reply({Mref, Pid}, Reply) when reference(Mref), pid(Pid) ->
 server_loop(State) ->    
     receive 
 	{?FPROF_SERVER, {Mref, Pid} = Tag, '$code_change'} 
-	when reference(Mref), pid(Pid) ->
+	when is_reference(Mref), is_pid(Pid) ->
 	    reply(Tag, ok),
 	    ?MODULE:'$code_change'(State);
 	{?FPROF_SERVER, {Mref, Pid} = Tag, Request} 
-	when reference(Mref), pid(Pid) ->
+	when is_reference(Mref), is_pid(Pid) ->
 	    server_loop(handle_req(Request, Tag, State));
 	Other ->
 	    server_loop(handle_other(Other, State))
@@ -1076,7 +1073,7 @@ handle_req(Request, Tag, State) ->
 %% Server handle_other
 %%--------------------
 
-handle_other({'EXIT', Pid, Reason} = Other, State) when pid(Pid); port(Pid) ->
+handle_other({'EXIT', Pid, Reason} = Other, State) when is_pid(Pid); is_port(Pid) ->
     case {get(trace_state), get(trace_pid)} of
 	{running, Pid} ->
 	    trace_off(),
@@ -1129,11 +1126,11 @@ result(normal) ->
 result(Reason) ->
     {error, Reason}.
 
-ensure_open(Pid, _Options) when pid(Pid) ->
+ensure_open(Pid, _Options) when is_pid(Pid) ->
     {already_open, Pid};
 ensure_open([], _Options) ->
     {already_open, undefined};
-ensure_open(Filename, Options) when atom(Filename); list(Filename) ->
+ensure_open(Filename, Options) when is_atom(Filename); is_list(Filename) ->
     file:open(Filename, Options).
 
 %%%---------------------------------
@@ -1167,7 +1164,7 @@ ensure_open(Filename, Options) when atom(Filename); list(Filename) ->
 %%         {[[a], [{b, 5}, b],[{c, 3, 4}], [{d, 2}]], 
 %%          [{f, 1}, e]}
 %%
-getopts(List, Options) when list(List), list(Options) ->
+getopts(List, Options) when is_list(List), is_list(Options) ->
     getopts_1(Options, List, []).
 
 getopts_1([], List, Result) ->
@@ -1181,7 +1178,7 @@ getopts_2([], _Option, Result, Remaining) ->
 getopts_2([Option | Tail], Option, Result, Remaining) ->
     getopts_2(Tail, Option, [Option | Result], Remaining);
 getopts_2([Optval | Tail], Option, Result, Remaining) 
-  when element(1, Optval) == Option ->
+  when element(1, Optval) =:= Option ->
     getopts_2(Tail, Option, [Optval | Result], Remaining);
 getopts_2([Other | Tail], Option, Result, Remaining) ->
     getopts_2(Tail, Option, Result, [Other | Remaining]).
@@ -1202,7 +1199,7 @@ getopts_2([Other | Tail], Option, Result, Remaining) ->
 %%     L2 = setopts(D) ++ R
 %% L2 will contain exactly the same terms as L, but not in the same order.
 %%
-setopts(Options) when list(Options) ->
+setopts(Options) when is_list(Options) ->
     lists:append(Options).
 
 
@@ -1214,7 +1211,7 @@ spawn_link_3step(FunPrelude, FunAck, FunBody) ->
     spawn_3step(spawn_link, FunPrelude, FunAck, FunBody).
 
 spawn_3step(Spawn, FunPrelude, FunAck, FunBody) 
-  when Spawn == spawn; Spawn == spawn_link ->
+  when Spawn =:= spawn; Spawn =:= spawn_link ->
     Parent = self(),
     Ref = make_ref(),
     Child = 
@@ -1334,7 +1331,7 @@ spawn_link_dbg_trace_client(File, Table, GroupLeader, Dump) ->
     case dbg:trace_client(file, File, 
 			  {fun handler/2, 
 			   {init, GroupLeader, Table, Dump}}) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    link(Pid),
 	    Pid;
 	Other ->
@@ -1361,9 +1358,9 @@ spawn_link_trace_client(Table, GroupLeader, Dump) ->
 
 tracer_loop(Parent, Handler, State) ->
     receive
-	Trace when element(1, Trace) == trace ->
+	Trace when element(1, Trace) =:= trace ->
 	    tracer_loop(Parent, Handler, Handler(Trace, State));
-	Trace when element(1, Trace) == trace_ts ->
+	Trace when element(1, Trace) =:= trace_ts ->
 	    tracer_loop(Parent, Handler, Handler(Trace, State));
 	{'EXIT', Parent, Reason} ->
 	    handler(end_of_trace, State),
@@ -1453,7 +1450,7 @@ end_of_trace(Table, TS) ->
     put(table, Table),
     ?dbg(2, "get() -> ~p~n", [Procs]),
     lists:map(
-      fun ({Pid, _}) when pid(Pid) ->
+      fun ({Pid, _}) when is_pid(Pid) ->
 	      trace_exit(Table, Pid, TS)
       end,
       Procs),
@@ -1465,11 +1462,11 @@ end_of_trace(Table, TS) ->
 info_dots(GroupLeader, GroupLeader, _) ->
     ok;
 info_dots(GroupLeader, _, N) ->
-    if (N rem 100000) == 0 ->
+    if (N rem 100000) =:= 0 ->
 	    io:format(GroupLeader, ",~n", []);
-       (N rem 50000) == 0 ->
+       (N rem 50000) =:= 0 ->
 	    io:format(GroupLeader, ".~n", []);
-       (N rem 1000) == 0 ->
+       (N rem 1000) =:= 0 ->
 	    io:put_chars(GroupLeader, ".");
        true ->
 	    ok
@@ -1528,7 +1525,7 @@ trace_handler({trace_ts, Pid, call, _MFA, _TS} = Trace,
 trace_handler({trace_ts, Pid, call, {_M, _F, Arity} = Func, 
 	       {cp, CP}, TS} = Trace,
 	      Table, GroupLeader, Dump)
-  when integer(Arity) ->
+  when is_integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     case Func of
 	{erlang, trace, 3} ->
@@ -1543,7 +1540,7 @@ trace_handler({trace_ts, Pid, call, {_M, _F, Arity} = Func,
 trace_handler({trace_ts, Pid, call, {_M, _F, Args} = MFArgs, 
 	       {cp, CP}, TS} = Trace,
 	      Table, _, Dump)
-  when list(Args) ->
+  when is_list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
     trace_call(Table, Pid, Func, TS, CP),
@@ -1557,13 +1554,13 @@ trace_handler({trace_ts, Pid, return_to, undefined, TS} = Trace,
     TS;
 trace_handler({trace_ts, Pid, return_to, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, _, Dump)
-  when integer(Arity) ->
+  when is_integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_return_to(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, return_to, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, _, Dump)
-  when list(Args) ->
+  when is_list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
     trace_return_to(Table, Pid, Func, TS),
@@ -1591,13 +1588,13 @@ trace_handler({trace_ts, Pid, out, 0, TS} = Trace,
     TS;
 trace_handler({trace_ts, Pid, out, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, _, Dump)
-  when integer(Arity) ->
+  when is_integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_out(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, out, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, _, Dump)
-  when list(Args) ->
+  when is_list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
     trace_out(Table, Pid, Func, TS),
@@ -1611,13 +1608,13 @@ trace_handler({trace_ts, Pid, in, 0, TS} = Trace,
     TS;
 trace_handler({trace_ts, Pid, in, {_M, _F, Arity} = Func, TS} = Trace,
 	      Table, _, Dump)
-  when integer(Arity) ->
+  when is_integer(Arity) ->
     dump_stack(Dump, get(Pid), Trace),
     trace_in(Table, Pid, Func, TS),
     TS;
 trace_handler({trace_ts, Pid, in, {_M, _F, Args} = MFArgs, TS} = Trace,
 	      Table, _, Dump)
-  when list(Args) ->
+  when is_list(Args) ->
     dump_stack(Dump, get(Pid), Trace),
     Func = mfarity(MFArgs),
     trace_in(Table, Pid, Func, TS),
@@ -1752,18 +1749,18 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	[] ->
 	    init_log(Table, Proc, Func),
 	    OldStack = 
-		if CP == undefined ->
+		if CP =:= undefined ->
 			Stack;
 		   true ->
 			[[{CP, TS}]]
 		end,
 	    put(Pid, trace_call_push(Table, Pid, Func, TS, OldStack));
-	[[{Func, FirstInTS}]] when InitCnt==2 ->
+	[[{Func, FirstInTS}]] when InitCnt=:=2 ->
 	    %% First call on this process. Take the timestamp for first
 	    %% time the process was scheduled in.
 	    init_log(Table, Proc, Func),
 	    OldStack = 
-		if CP == undefined ->
+		if CP =:= undefined ->
 			[];
 		   true ->
 			[[{CP, FirstInTS}]]
@@ -1811,7 +1808,7 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	    %% -> assume tail recursive call
 	    init_log(Table, Proc, Func),
 	    OldStack =
-		if CP == undefined ->
+		if CP =:= undefined ->
 			Stack;
 		   true ->
 			[Level0, [{CP, TS0}]]
@@ -1822,7 +1819,7 @@ trace_call(Table, Pid, Func, TS, CP) ->
 	    %% CP is not at stack top nor at previous stack top, 
 	    %% which is impossible, if we had a correct stack view.
 	    OldStack = 
-		if CP == undefined ->
+		if CP =:= undefined ->
 			%% Assume that CP is unknown because it is
 			%% the stack bottom for the process, and that 
 			%% the whole call stack is invalid. Waste it.
@@ -2122,7 +2119,7 @@ get_stack(Id) ->
 
 
 
-mfarity({M, F, Args}) when list(Args) ->
+mfarity({M, F, Args}) when is_list(Args) ->
     {M, F, length(Args)};
 mfarity(MFA) ->
     MFA.
@@ -2173,7 +2170,7 @@ trace_clock_1(Table, Pid, _, _, Caller, suspend, #clocks.own) ->
     clock_add(Table, {Pid, Caller, suspend}, #clocks.own, 0);
 trace_clock_1(Table, Pid, T, TS, Caller, Func, Clock) ->
     clock_add(Table, {Pid, Caller, Func}, Clock,
-	      if integer(T) ->
+	      if is_integer(T) ->
 		      T;
 		 true ->
 		      ts_sub(T, TS)
@@ -2309,7 +2306,7 @@ do_analyse_1(Table,
 	case {ets:lookup(ProcTable, first_ts), 
 	      ets:lookup(ProcTable, last_ts_n)} of
 	    {[#misc{data = FTS}], [#misc{data = {LTS, TC}}]} 
-	    when FTS /= undefined, LTS /= undefined ->
+	    when FTS =/= undefined, LTS =/= undefined ->
 		{FTS, LTS, TC};
 	    _ ->
 		throw({error,empty_trace})
@@ -2368,7 +2365,7 @@ do_analyse_1(Table,
 		      print_proc(Dest, ProcOrPid);
 		  totals ->
 		      println(Dest, "[{ ", Clocks, "}].", "%%%");
-		  _ when pid(ProcOrPid) ->
+		  _ when is_pid(ProcOrPid) ->
 		      println(Dest, "[{ ", Clocks, "}].", "%%")
 	      end,
 	      println(Dest),
@@ -2516,7 +2513,7 @@ println({undefined, _}, _Head,
     ok;
 println({Io, [W1, W2, W3, W4]}, Head,
 	#clocks{id = Pid, cnt = Cnt, acc = _, own = Own},
-	Tail, Comment) when pid(Pid) ->
+	Tail, Comment) when is_pid(Pid) ->
     io:put_chars(Io,
 		 [pad(Head, $ , 3),
 		  flat_format(parsify(Pid), $,, W1),
@@ -2622,7 +2619,7 @@ funcstat_sort_r(FuncstatList, Element) ->
     funcstat_sort_r_1(FuncstatList, Element, []).
 
 funcstat_sort_r_1([], _, R) ->
-    postsort_r(sort(R));
+    postsort_r(lists:sort(R));
 funcstat_sort_r_1([#funcstat{callers_sum = #clocks{} = Clocks,
 			     callers = Callers,
 			     called = Called} = Funcstat
@@ -2644,7 +2641,7 @@ clocks_sort_r(L, E) ->
     clocks_sort_r_1(L, E, []).
 
 clocks_sort_r_1([], _, R) ->
-    postsort_r(sort(R));
+    postsort_r(lists:sort(R));
 clocks_sort_r_1([#clocks{} = C | L], E, R) ->
     clocks_sort_r_1(L, E, [[element(E, C)|C] | R]).
 
@@ -2665,10 +2662,10 @@ postsort_r([[_|C] | L], R) ->
 %%%
 
 %% Standard format and flatten.
-flat_format(F, Trailer) when float(F) ->
-    flatten([io_lib:format("~.3f", [F]), Trailer]);
+flat_format(F, Trailer) when is_float(F) ->
+    lists:flatten([io_lib:format("~.3f", [F]), Trailer]);
 flat_format(W, Trailer) ->
-    flatten([io_lib:format("~p", [W]), Trailer]).
+    lists:flatten([io_lib:format("~p", [W]), Trailer]).
 
 %% Format, flatten, and pad.
 flat_format(Term, Trailer, Width) ->
@@ -2686,7 +2683,7 @@ flat_format(Term, Trailer, Width, {right, Filler}) ->
 
 
 %% Left pad a string using a given char.
-pad(Char, L, Size) when integer(Char), list(L), integer(Size) ->
+pad(Char, L, Size) when is_integer(Char), is_list(L), is_integer(Size) ->
     List = lists:flatten(L),
     Length = length(List),
     if Length >= Size ->
@@ -2695,7 +2692,7 @@ pad(Char, L, Size) when integer(Char), list(L), integer(Size) ->
 	    lists:append(lists:duplicate(Size - Length, Char), List)
     end;
 %% Right pad a string using a given char.
-pad(L, Char, Size) when list(L), integer(Char), integer(Size) ->
+pad(L, Char, Size) when is_list(L), is_integer(Char), is_integer(Size) ->
     List = lists:flatten(L),
     Length = length(List),
     if Length >= Size ->
@@ -2729,15 +2726,15 @@ parsify({A, B}) ->
     {parsify(A), parsify(B)};
 parsify({A, B, C}) ->
     {parsify(A), parsify(B), parsify(C)};
-parsify(Tuple) when tuple(Tuple) ->
+parsify(Tuple) when is_tuple(Tuple) ->
     list_to_tuple(parsify(tuple_to_list(Tuple)));
-parsify(Pid) when pid(Pid) ->
+parsify(Pid) when is_pid(Pid) ->
     erlang:pid_to_list(Pid);
-parsify(Port) when port(Port) ->
+parsify(Port) when is_port(Port) ->
     erlang:port_to_list(Port);
-parsify(Ref) when reference(Ref) -> 
+parsify(Ref) when is_reference(Ref) -> 
     erlang:ref_to_list(Ref);
-parsify(Fun) when function(Fun) ->
+parsify(Fun) when is_function(Fun) ->
     erlang:fun_to_list(Fun);
 parsify(Term) ->
     Term.
@@ -2750,7 +2747,7 @@ parsify(Term) ->
 %% its returned value (state) until 'Fun' returns 'Stop'. Then
 %% the last state value that was not 'Stop' is returned.
 
-% iterate(Start, Done, Fun) when function(Fun) ->
+% iterate(Start, Done, Fun) when is_function(Fun) ->
 %     iterate(Start, Done, Fun, Start).
 
 % iterate(Done, Done, Fun, I) ->

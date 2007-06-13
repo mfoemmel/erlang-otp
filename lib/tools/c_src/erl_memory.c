@@ -2788,7 +2788,7 @@ main(int argc, char *argv[])
     res = ethr_thr_create(&output_tid,
 			  output_thread_func,
 			  (void *) state,
-			  0);
+			  NULL);
     if (res != 0)
 	error_msg(res, "Output thread create");
 
@@ -2812,7 +2812,7 @@ main(int argc, char *argv[])
     res = ethr_thr_create(&input_tid,
 			  input_thread_func,
 			  (void *) state,
-			  0);
+			  NULL);
     if (res != 0)
 	error_msg(res, "Input thread create");
 

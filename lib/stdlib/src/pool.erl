@@ -54,11 +54,11 @@
 %% Start up using the .hosts.erlang file
 start(Name) ->    
     start(Name,[]).
-start(Name,Args) when atom(Name) ->
+start(Name,Args) when is_atom(Name) ->
     gen_server:start({global, pool_master}, pool, [], []),
     Hosts = net_adm:host_file(),
     Nodes = start_nodes(Hosts, Name, Args),
-    lists:map(fun ?MODULE:attach/1, Nodes),
+    lists:foreach(fun attach/1, Nodes),
     Nodes.
 
 %%

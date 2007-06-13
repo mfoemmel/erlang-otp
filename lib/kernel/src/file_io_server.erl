@@ -41,11 +41,11 @@ format_error(ErrorId) ->
     erl_posix_msg:message(ErrorId).
 
 start(Owner, FileName, ModeList) 
-  when pid(Owner), list(FileName), list(ModeList) ->
+  when is_pid(Owner), is_list(FileName), is_list(ModeList) ->
     do_start(spawn, Owner, FileName, ModeList).
 
 start_link(Owner, FileName, ModeList) 
-  when pid(Owner), list(FileName), list(ModeList) ->
+  when is_pid(Owner), is_list(FileName), is_list(ModeList) ->
     do_start(spawn_link, Owner, FileName, ModeList).
 
 %%%-----------------------------------------------------------------
@@ -101,7 +101,7 @@ do_start(Spawn, Owner, FileName, ModeList) ->
 
 server_loop(#state{mref = Mref} = State) ->
     receive
-	{file_request, From, ReplyAs, Request} when pid(From) ->
+	{file_request, From, ReplyAs, Request} when is_pid(From) ->
 	    case file_request(Request, State) of
 		{reply, Reply, NewState} ->
 		    file_reply(From, ReplyAs, Reply),
@@ -115,7 +115,7 @@ server_loop(#state{mref = Mref} = State) ->
 		    file_reply(From, ReplyAs, Reply),
 		    exit(Reason)
 	    end;
-	{io_request, From, ReplyAs, Request} when pid(From) ->
+	{io_request, From, ReplyAs, Request} when is_pid(From) ->
 	    case io_request(Request, State) of
 		{reply, Reply, NewState} ->
 		    io_reply(From, ReplyAs, Reply),
@@ -149,7 +149,7 @@ file_request({pread,At,Sz},
     case position(Handle, At, Buf) of
 	{ok,_Offs} ->
 	    case ?PRIM_FILE:read(Handle, Sz) of
-		{ok,Bin} when ReadMode==list ->
+		{ok,Bin} when ReadMode =:= list ->
 		    std_reply({ok,binary_to_list(Bin)}, State);
 		Reply ->
 		    std_reply(Reply, State)
@@ -214,7 +214,7 @@ io_request({put_chars,Chars}, % binary(Chars) new in R9C
 io_request({put_chars,Mod,Func,Args}, 
 	   #state{}=State) ->
     case catch apply(Mod, Func, Args) of
-	Chars when list(Chars); binary(Chars) ->
+	Chars when is_list(Chars); is_binary(Chars) ->
 	    io_request({put_chars,Chars}, State);
 	_ ->
 	    {error,{error,Func},State}
@@ -232,10 +232,10 @@ io_request({get_line,_Prompt}, % New in R9C
 	   #state{}=State) ->
     get_chars(io_lib, collect_line, [], State);
 io_request({setopts, Opts}, % New in R9C
-	   #state{}=State) when list(Opts) ->
+	   #state{}=State) when is_list(Opts) ->
     setopts(Opts, State);
 io_request({requests,Requests}, 
-	   #state{}=State) when list(Requests) ->
+	   #state{}=State) when is_list(Requests) ->
     io_request_loop(Requests, {reply,ok,State});
 io_request(Unknown, 
 	   #state{}=State) ->
@@ -276,11 +276,11 @@ put_chars(Chars, #state{handle=Handle}=State) ->
 get_chars(0, #state{read_mode=ReadMode}=State) ->
     {reply,cast(<<>>, ReadMode),State};
 get_chars(N, #state{buf=Buf,read_mode=ReadMode}=State) 
-  when integer(N), N > 0, N =< size(Buf) ->
+  when is_integer(N), N > 0, N =< size(Buf) ->
     {B1,B2} = split_binary(Buf, N),
     {reply,cast(B1, ReadMode),State#state{buf=B2}};
 get_chars(N, #state{handle=Handle,buf=Buf,read_mode=ReadMode}=State) 
-  when integer(N), N > 0 ->
+  when is_integer(N), N > 0 ->
     BufSize = size(Buf),
     NeedSize = N-BufSize,
     Size = max(NeedSize, ?READ_SIZE_BINARY),
@@ -292,7 +292,7 @@ get_chars(N, #state{handle=Handle,buf=Buf,read_mode=ReadMode}=State)
 		    {B1,B2} = split_binary(B, NeedSize),
 		    {reply,cat(Buf, B1, ReadMode),State#state{buf=B2}}
 	    end;
-	eof when BufSize==0 ->
+	eof when BufSize =:= 0 ->
 	    {reply,eof,State};
 	eof ->
 	    std_reply(cast(Buf, ReadMode), State);
@@ -321,7 +321,7 @@ get_chars_empty(Mod, Func, XtraArg, S,
 get_chars_apply(Mod, Func, XtraArg, S0, 
 		#state{read_mode=ReadMode}=State, Data0) ->
     Data1 = case ReadMode of
-	       list when binary(Data0) -> binary_to_list(Data0);
+	       list when is_binary(Data0) -> binary_to_list(Data0);
 	       _ -> Data0
 	    end,
     case catch Mod:Func(S0, Data1, XtraArg) of
@@ -370,9 +370,9 @@ cast(B, list) ->
     binary_to_list(B).
 
 %% Convert buffer to binary
-cast_binary(Binary) when binary(Binary) ->
+cast_binary(Binary) when is_binary(Binary) ->
     Binary;
-cast_binary(List) when list(List) ->
+cast_binary(List) when is_list(List) ->
     list_to_binary(List);
 cast_binary(_EOF) ->
     <<>>.
@@ -396,7 +396,7 @@ max(_, B) ->
 
 position(Handle, cur, Buf) ->
     position(Handle, {cur, 0}, Buf);
-position(Handle, {cur, Offs}, Buf) when binary(Buf) ->
+position(Handle, {cur, Offs}, Buf) when is_binary(Buf) ->
     ?PRIM_FILE:position(Handle, {cur, Offs-size(Buf)});
 position(Handle, At, _Buf) ->
     ?PRIM_FILE:position(Handle, At).

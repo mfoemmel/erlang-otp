@@ -7,7 +7,8 @@
 %%%-------------------------------------------------------------------
 -module(hipe_digraph).
 
--export([new/0, add_edge/3, add_node/2, from_list/1, to_list/1]).
+-export([new/0, add_edge/3, add_node/2, from_list/1, to_list/1,
+	get_parents/2, get_children/2]).
 
 -export([take_indep_scc/1, reverse_preorder_sccs/1]).
 
@@ -137,6 +138,18 @@ reverse_preorder_sccs(DG, Acc) ->
   case take_indep_scc(DG) of
     none -> lists:reverse(Acc);
     {ok, SCC, DG1} -> reverse_preorder_sccs(DG1, [SCC|Acc])
+  end.
+
+get_parents(Node,#digraph{rev_edges=RevEdges}) ->
+  case dict:is_key(Node,RevEdges) of
+    true -> dict:fetch(Node,RevEdges);
+    false -> []
+  end.
+
+get_children(Node,#digraph{edges=Edges}) ->
+  case dict:is_key(Node,Edges) of
+    true -> dict:fetch(Node,Edges);
+    false -> []
   end.
 
 %%---------------------------------------------------------------------

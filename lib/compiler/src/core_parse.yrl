@@ -101,7 +101,7 @@ attribute_list -> attribute ',' attribute_list : ['$1' | '$3'].
 attribute_list -> attribute : ['$1'].
 
 attribute -> atom '=' literal :
-	#c_def{name=#c_literal{val=tok_val('$1')},val='$3'}.
+	{#c_literal{val=tok_val('$1')},'$3'}.
 
 module_defs -> function_definitions : '$1'.
 
@@ -115,7 +115,7 @@ function_definitions ->
 
 function_definition ->
     anno_function_name '=' anno_fun :
-	#c_def{name='$1',val='$3'}.
+	{'$1','$3'}.
 
 anno_fun -> '(' fun_expr '-|' annotation ')' :
 	core_lib:set_anno('$2', '$4').
@@ -347,7 +347,7 @@ arg_list -> '(' anno_expressions ')' : '$2'.
 try_expr ->
     'try' anno_expression 'of' let_vars '->' anno_expression
 	'catch' let_vars '->' anno_expression :
-	if length('$8') == 2 ->
+	if length('$8') =:= 2 ->
 		#c_try{arg='$2',vars='$4',body='$6',evars='$8',handler='$10'};
 	   true ->
 		return_error(tok_line('$7'),

@@ -41,8 +41,7 @@
 #include "hipe_arch.h"
 #endif
 
-/* Imported from drv/gzio.c. Why not in any header file? */
-ErlDrvBinary* gzinflate_buffer(char*, int);
+ErlDrvBinary* erts_gzinflate_buffer(char*, int);
 
 #define MAX_OPARGS 8
 #define CALLED    0
@@ -504,6 +503,7 @@ static Eterm compilation_info_for_module(Process* p, Eterm mod);
 static Eterm native_addresses(Process* p, Eterm mod);
 int patch_funentries(Eterm Patchlist);
 int patch(Eterm Addresses, Uint fe);
+static int safe_mul(Uint a, Uint b, Uint* resp);
 
 static int must_swap_floats;
 
@@ -571,7 +571,7 @@ erts_load_module(Process *c_p,
 	/*
 	 * The BEAM module is compressed (or possibly invalid/corrupted).
 	 */
-	if ((bin = (ErlDrvBinary *) gzinflate_buffer((char*)code, size)) == NULL) {
+	if ((bin = (ErlDrvBinary *) erts_gzinflate_buffer((char*)code, size)) == NULL) {
 	    return -1;
 	}
 	result = bin_load(c_p, c_p_locks, group_leader, modp,
@@ -2362,30 +2362,24 @@ gen_get_integer2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_i) {
-      if ((Flags.val & BSF_SIGNED) == 0) {
-	Uint bits = Size.val * Unit.val;
-	if (bits == 8) {
-	  op->op = genop_i_bs_get_integer2_8_3;
-		op->arity = 3;
-		op->a[0] = Fail;
-		op->a[1] = Ms;
-		op->a[2] = Dst;
-	    } else if (bits == 16 && (Flags.val & BSF_LITTLE) == 0) {
-		op->op = genop_i_bs_get_integer2_16_3;
-		op->arity = 3;
-		op->a[0] = Fail;
-		op->a[1] = Ms;
-		op->a[2] = Dst;
-	    } else if (bits == 32 && (Flags.val & BSF_LITTLE) == 0) {
-		op->op = genop_i_bs_get_integer2_32_4;
-		op->arity = 4;
-		op->a[0] = Fail;
-		op->a[1] = Ms;
-		op->a[2] = Live;
-		op->a[3] = Dst;
-	    } else {
-		goto generic;
-	    }
+	Uint bits;
+	    
+	if (!safe_mul(Size.val, Unit.val, &bits)) {
+	    goto error;
+	} else if ((Flags.val & BSF_SIGNED) != 0) {
+	    goto generic;
+	} else if (bits == 8) {
+	    op->op = genop_i_bs_get_integer2_8_3;
+	    op->arity = 3;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms;
+	    op->a[2] = Dst;
+	} else if (bits == 16 && (Flags.val & BSF_LITTLE) == 0) {
+	    op->op = genop_i_bs_get_integer2_16_3;
+	    op->arity = 3;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms;
+	    op->a[2] = Dst;
 	} else {
 	generic:
 	    op->op = genop_i_bs_get_integer_imm2_6;
@@ -2394,7 +2388,28 @@ gen_get_integer2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 	    op->a[1] = Ms;
 	    op->a[2] = Live;
 	    op->a[3].type = TAG_u;
-	    op->a[3].val = Size.val * Unit.val;
+	    op->a[3].val = bits;
+	    op->a[4] = Flags;
+	    op->a[5] = Dst;
+	}
+    } else if (Size.type == TAG_w) {
+	Eterm* big = stp->temp_heap + Size.val;
+	Uint bigval;
+	if (!term_to_Uint(make_big(big), &bigval)) {
+	error:
+	    op->op = genop_jump_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
+	} else {
+	    op->op = genop_i_bs_get_integer_imm2_6;
+	    op->arity = 6;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms;
+	    op->a[2] = Live;
+	    op->a[3].type = TAG_u;
+	    if (!safe_mul(bigval, Unit.val, &op->a[3].val)) {
+		goto error;
+	    }
 	    op->a[4] = Flags;
 	    op->a[5] = Dst;
 	}
@@ -2441,9 +2456,32 @@ gen_get_binary2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 	op->a[1] = Ms;
 	op->a[2] = Live;
 	op->a[3].type = TAG_u;
-	op->a[3].val = Size.val * Unit.val;
+	if (!safe_mul(Size.val, Unit.val, &op->a[3].val)) {
+	    goto error;
+	}
 	op->a[4] = Flags;
 	op->a[5] = Dst;
+    } else if (Size.type == TAG_w) {
+	Eterm* big = stp->temp_heap + Size.val;
+	Uint bigval;
+	if (!term_to_Uint(make_big(big), &bigval)) {
+	error:
+	    op->op = genop_jump_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
+	} else {
+	    op->op = genop_i_bs_get_binary_imm2_6;
+	    op->arity = 6;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms;
+	    op->a[2] = Live;
+	    op->a[3].type = TAG_u;
+	    if (!safe_mul(bigval, Unit.val, &op->a[3].val)) {
+		goto error;
+	    }
+	    op->a[4] = Flags;
+	    op->a[5] = Dst;
+	}
     } else {
 	op->op = genop_i_bs_get_binary2_6;
 	op->arity = 6;
@@ -2468,6 +2506,17 @@ should_gen_heap_bin(LoaderState* stp, GenOpArg Src)
 {
     return Src.val <= ERL_ONHEAP_BIN_LIMIT;
 }
+
+/*
+ * Predicate to test whether a binary construction is too big.
+ */
+
+static int
+binary_too_big(LoaderState* stp, GenOpArg Size)
+{
+    return Size.type == TAG_u && ((Size.val >> (8*sizeof(Uint)-3)) != 0);
+}
+
 
 #if !defined(HEAP_FRAG_ELIM_TEST)
 static int
@@ -2516,6 +2565,19 @@ gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
 	op->a[1].type = TAG_u;
 	op->a[1].val = Size.val * Unit.val;
 	op->a[2] = Src;
+    } else if (Size.type == TAG_w && stp->new_instructions) {
+	Eterm* big = stp->temp_heap + Size.val;
+	Uint bigval;
+	if (!term_to_Uint(make_big(big), &bigval)) {
+	    ;
+	} else {
+	    op->op = genop_i_new_bs_put_binary_imm_3;
+	    op->arity = 3;
+	    op->a[0] = Fail;
+	    op->a[1].type = TAG_u;
+	    op->a[1].val = bigval * Unit.val;
+	    op->a[2] = Src;
+	}
     } else {
 	op->op = NEW_OR_OLD(genop_i_new_bs_put_binary_4,genop_i_bs_put_binary_4);
 	op->arity = 4;
@@ -2539,6 +2601,7 @@ gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_i && Size.val < 0) {
+    error:
 	/* Negative size must fail */
 	op->op = genop_badarg_1;
 	op->arity = 1;
@@ -2552,6 +2615,21 @@ gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 	op->a[2].type = Flags.type;
 	op->a[2].val = (Flags.val & 7);
 	op->a[3] = Src;
+    } else if (Size.type == TAG_w && stp->new_instructions) {
+	Eterm* big = stp->temp_heap + Size.val;
+	Uint bigval;
+	if (!term_to_Uint(make_big(big), &bigval)) {
+	    goto error;
+	} else {
+	    op->op = genop_i_new_bs_put_integer_imm_4;
+	    op->arity = 4;
+	    op->a[0] = Fail;
+	    op->a[1].type = TAG_u;
+	    op->a[1].val = bigval * Unit.val;
+	    op->a[2].type = Flags.type;
+	    op->a[2].val = (Flags.val & 7);
+	    op->a[3] = Src;
+	}
     } else {
 	op->op = NEW_OR_OLD(genop_i_new_bs_put_integer_4,genop_i_bs_put_integer_4);
 	op->arity = 4;
@@ -2578,9 +2656,14 @@ gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 	op->arity = 4;
 	op->a[0] = Fail;
 	op->a[1].type = TAG_u;
-	op->a[1].val = Size.val * Unit.val;
-	op->a[2] = Flags;
-	op->a[3] = Src;
+	if (!safe_mul(Size.val, Unit.val, &op->a[1].val)) {
+	    op->op = genop_badarg_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
+	} else {
+	    op->a[2] = Flags;
+	    op->a[3] = Src;
+	}
     } else {
 	op->op = NEW_OR_OLD(genop_i_new_bs_put_float_4,genop_i_bs_put_float_4);
 	op->arity = 4;
@@ -2643,7 +2726,27 @@ gen_skip_bits2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms,
 	op->a[0] = Fail;
 	op->a[1] = Ms; 
 	op->a[2].type = TAG_u;
-	op->a[2].val = Size.val * Unit.val;
+	if (!safe_mul(Size.val, Unit.val, &op->a[2].val)) {
+	    goto error;
+	}
+    } else if (Size.type == TAG_w) {
+	Eterm* big = stp->temp_heap + Size.val;
+	Uint bigval;
+	if (!term_to_Uint(make_big(big), &bigval)) {
+	error:
+	    op->op = genop_jump_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
+	} else {
+	    op->op = genop_i_bs_skip_bits_imm2_3;
+	    op->arity = 3;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms; 
+	    op->a[2].type = TAG_u;
+	    if (!safe_mul(bigval, Unit.val, &op->a[2].val)) {
+		goto error;
+	    }
+	}
     } else {
 	op->op = genop_i_bs_skip_bits2_4;
 	op->arity = 4;
@@ -5221,3 +5324,15 @@ erts_make_stub_module(Process* p, Eterm Mod, Eterm Beam, Eterm Info)
 }
 
 #undef WORDS_PER_FUNCTION
+
+static int safe_mul(Uint a, Uint b, Uint* resp)
+{
+    Uint res = a * b;
+    *resp = res;
+
+    if (b == 0) {
+	return 1;
+    } else {
+	return (res / b) == a;
+    }
+}

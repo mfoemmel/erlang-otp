@@ -156,7 +156,7 @@ start_it(State, Type) ->
 %%-----------------------------------------------------------------
 init_loop(Pid, Tag, State, Type) ->
     receive
- 	IoReq when element(1, IoReq) == io_request ->
+ 	IoReq when element(1, IoReq) =:= io_request ->
 	    State#state.gleader ! IoReq,
 	    init_loop(Pid, Tag, State, Type);
 	{Tag, Res} ->
@@ -173,12 +173,12 @@ init_loop(Pid, Tag, State, Type) ->
 
 main_loop(Parent, State) ->
     receive
-	IoReq when element(1, IoReq) == io_request ->
+	IoReq when element(1, IoReq) =:= io_request ->
 	    State#state.gleader ! IoReq,
 	    main_loop(Parent, State);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, State);
-	{'EXIT', Child, Reason} when State#state.child == Child ->
+	{'EXIT', Child, Reason} when State#state.child =:= Child ->
 	    terminate(Reason, State#state{child=undefined});
 	{'EXIT', _, timeout} ->
 	    terminate(normal, State);
@@ -196,7 +196,7 @@ main_loop(Parent, State) ->
 
 terminate_loop(Child, State) ->
     receive
- 	IoReq when element(1, IoReq) == io_request ->
+ 	IoReq when element(1, IoReq) =:= io_request ->
 	    State#state.gleader ! IoReq,
 	    terminate_loop(Child, State);
 	{'EXIT', Child, _} ->

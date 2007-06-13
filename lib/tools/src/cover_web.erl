@@ -159,7 +159,7 @@ group_leader_loop(Warnings) ->
 		true -> group_leader_loop(Warnings);
 		false -> group_leader_loop([Msg|Warnings])
 	    end;
-	IoReq when element(1,IoReq)== io_request ->
+	IoReq when element(1,IoReq)=:= io_request ->
 	    group_leader() ! IoReq,
 	    group_leader_loop(Warnings);
 	{From,get_warnings} ->

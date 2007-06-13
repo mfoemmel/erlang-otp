@@ -59,7 +59,6 @@ EBIN = ../ebin
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
 EXTRA_ERLC_FLAGS = 
 ERL_COMPILE_FLAGS += $(EXTRA_ERLC_FLAGS)
 

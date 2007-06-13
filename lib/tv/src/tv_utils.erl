@@ -98,7 +98,7 @@ notify(S,Title,Strings) ->
 
 
 
-insert_newlines([String|Rest]) when list(String), Rest/=[]->
+insert_newlines([String|Rest]) when is_list(String), Rest=/=[]->
     String ++ "\n" ++ insert_newlines(Rest);
 insert_newlines([Last]) ->
     [Last];
@@ -157,7 +157,7 @@ event_loop(Win,Entry) ->
 % which is the maximum of Min and the required width for Strings.
 % NOTE: Font dependant really!
 %----------------------------------------
-required_width([First|Rest],Min) when list(First) ->
+required_width([First|Rest],Min) when is_list(First) ->
     Req = 7*length(First), % 7 pixels per character
     if
         Req>Min ->

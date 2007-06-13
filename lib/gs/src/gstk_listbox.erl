@@ -111,7 +111,7 @@ create(DB, GstkId, Opts) ->
 	    case gstk_generic:make_command(NewOpts, Gstkid, MainW,SimplePreCmd,
 					  PlacePreCmd, DB,Listbox) of
 		{error,Reason} -> {error,Reason};
-		Cmd when list(Cmd) ->
+		Cmd when is_list(Cmd) ->
 		    gstk:exec(Cmd),
 		    gstk:exec([MainW,".sy conf -rel sunken -bo 2;",
 			      MainW,".pad.sx conf -rel sunken -bo 2;",Listbox,
@@ -214,16 +214,16 @@ wid_event(DB, Gstkid, Etype, Edata, _Args) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 option(Option, Gstkid, MainW,DB, Listbox) ->
     case Option of
-	{items,          Items} when list(Items) ->
+	{items,          Items} when is_list(Items) ->
 	    {c, [Listbox," del 0 end ;", Listbox," ins 0 ",item_list(Items)]};
-	{selection, {From, To}} when integer(From),integer(To) ->
+	{selection, {From, To}} when is_integer(From),is_integer(To) ->
 	    {c,[Listbox," sel set ",gstk:to_ascii(From)," " ,gstk:to_ascii(To)]};
-	{font,            Font} when tuple(Font) ->
+	{font,            Font} when is_tuple(Font) ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    {c, [Listbox," conf -font ",gstk_font:choose_ascii(DB,Font)]};
 	{selection,   clear} ->
 	    {c, [Listbox," sel clear 0 end"]};
-	{selection,     Idx} when integer(Idx) ->
+	{selection,     Idx} when is_integer(Idx) ->
 	    {c, [Listbox, " select set ", gstk:to_ascii(Idx)]};
 	{selectmode,   Mode} ->
 	    {c, [Listbox, " conf -selectm ", gstk:to_ascii(Mode)]};

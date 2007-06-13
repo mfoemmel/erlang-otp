@@ -67,7 +67,7 @@ sendw(To, Msg) ->
 
 -define(result(F,D), lists:flatten(io_lib:format(F, D))).
 
-eval_str(Str) when list(Str) ->
+eval_str(Str) when is_list(Str) ->
     case erl_scan:tokens([], Str, 0) of
 	{more, {['"'], _, _}} ->
 	    {error, "Unterminated (\") string"};
@@ -87,16 +87,15 @@ eval_str(Str) when list(Str) ->
 				    {error, ?result("*** eval: ~p", [Other])}
 			    end;
 			{error, {_Line, Mod, Args}} ->
-			    Msg = ?result("*** ~s",[apply(Mod,format_error,
-							     [Args])]),
-			    {error, Msg}
+                            Msg = ?result("*** ~s",[Mod:format_error(Args)]),
+                            {error, Msg}
 		    end;
 		false ->
 		    {error, ?result("Non-white space found after "
 				    "end-of-form :~s", [Rest])}
 		end
     end;
-eval_str(Bin) when binary(Bin) ->
+eval_str(Bin) when is_binary(Bin) ->
     eval_str(binary_to_list(Bin)).
 
 all_white([$\s|T]) -> all_white(T);

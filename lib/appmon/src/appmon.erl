@@ -811,7 +811,7 @@ draw_clear(GUI) ->
     draw_clear2(GUI#win.appobjs),
     gs:config(GUI#win.canvas, [{hscroll, false}]),
     GUI#win{appobjs=[]}.
-draw_clear2([CBtn | AppObjs]) when record(CBtn, canvasbutton) ->
+draw_clear2([CBtn | AppObjs]) when is_record(CBtn, canvasbutton) ->
     gs:destroy(CBtn#canvasbutton.text),
     gs:destroy(CBtn#canvasbutton.ul),
     gs:destroy(CBtn#canvasbutton.ll),

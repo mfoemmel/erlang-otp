@@ -33,7 +33,7 @@ translate(RTL) ->
   {Formals, Map1} = conv_formals(hipe_rtl:rtl_params(RTL), Map0),
   OldData = hipe_rtl:rtl_data(RTL),
   {Code0, NewData} = conv_insn_list(hipe_rtl:rtl_code(RTL), Map1, OldData),
-  {RegFormals,_} = split_args(Formals),
+  {RegFormals, _} = split_args(Formals),
   Code =
     case RegFormals of
       [] -> Code0;
@@ -328,7 +328,7 @@ mk_alu_ri_addi(Dst, Src1, Src2) ->
   mk_alu_ri_simm16(Dst, Src1, 'add', 'addi', Src2).
 
 mk_alu_ri_simm16(Dst, Src1, RtlAluOp, AluOp, Src2) ->
-  if Src2 < 32768, Src2 >= -32768 ->
+  if is_integer(Src2), -32768 =< Src2, Src2 < 32768 ->
       [hipe_ppc:mk_alu(AluOp, Dst, Src1,
 		       hipe_ppc:mk_simm16(Src2))];
      true ->
@@ -336,7 +336,7 @@ mk_alu_ri_simm16(Dst, Src1, RtlAluOp, AluOp, Src2) ->
   end.
 
 mk_alu_ri_bitop(Dst, Src1, RtlAluOp, AluOp, Src2) ->
-  if Src2 < 65536, Src2 >= 0 ->
+  if is_integer(Src2), 0 =< Src2, Src2 < 65536 ->
       [hipe_ppc:mk_alu(AluOp, Dst, Src1,
 		       hipe_ppc:mk_uimm16(Src2))];
      true ->
@@ -387,11 +387,10 @@ conv_alub(I, Map, Data) ->
   {Src1, Map1} = conv_src(hipe_rtl:alub_src1(I), Map0),
   {Src2, Map2} = conv_src(hipe_rtl:alub_src2(I), Map1),
   BCond = conv_alub_cond(hipe_rtl:alub_cond(I)),
-  I2 = mk_pseudo_bc(
-	  BCond,
-	  hipe_rtl:alub_true_label(I),
-	  hipe_rtl:alub_false_label(I),
-	  hipe_rtl:alub_pred(I)),
+  I2 = mk_pseudo_bc(BCond,
+		    hipe_rtl:alub_true_label(I),
+		    hipe_rtl:alub_false_label(I),
+		    hipe_rtl:alub_pred(I)),
   RtlAluOp = hipe_rtl:alub_op(I),
   I1 = mk_alub(Dst, Src1, RtlAluOp, Src2, BCond),
   {I1 ++ I2, Map2, Data}.
@@ -483,7 +482,7 @@ mk_alub_ri_Rc(Dst, Src1, RtlAluOp, Src2) ->
   end.
 
 mk_alub_ri_Rc_addi(Dst, Src1, Src2) ->
-  if Src2 < 32768, Src2 >= -32768 ->
+  if is_integer(Src2), -32768 =< Src2, Src2 < 32768 ->
       [hipe_ppc:mk_alu('addic.', Dst, Src1,
 		       hipe_ppc:mk_simm16(Src2))];
      true ->
@@ -623,14 +622,14 @@ mk_branch_ri(Src1, BCond, Sign, Src2, TrueLab, FalseLab, Pred) ->
   {FixSrc2,NewSrc2,CmpOp} =
     case Sign of
       'signed' ->
-	if Src2 < 32768, Src2 >= -32768 ->
+	if is_integer(Src2), -32768 =< Src2, Src2 < 32768 ->
 	    {[], hipe_ppc:mk_simm16(Src2), 'cmpi'};
 	   true ->
 	    Tmp = new_untagged_temp(),
 	    {mk_li(Tmp, Src2), Tmp, 'cmp'}
 	end;
       'unsigned' ->
-	if Src2 < 65536, Src2 >= 0 ->
+	if is_integer(Src2), 0 =< Src2, Src2 < 65536 ->
 	    {[], hipe_ppc:mk_uimm16(Src2), 'cmpli'};
 	   true ->
 	    Tmp = new_untagged_temp(),

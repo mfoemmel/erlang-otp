@@ -1,0 +1,25 @@
+#!/bin/sh
+#
+# Skeleton for a script intended to generate a full set
+# of megaco messages in the various formats used by the
+# mstone1(N) and meas tests.
+#
+
+ERL_HOME=<path to otp top dir>
+MEGACO_HOME=$ERL_HOME/lib/erlang/lib/<megaco dir>
+MEAS_HOME=$MEGACO_HOME/examples/meas
+PATH=$ERL_HOME/bin:$PATH
+
+TANSFORM_FROM_TEXT="-s megaco_codec_transform tt"
+#TANSFORM_FROM_BINARY="-s megaco_codec_transform tb"
+STOP="-s init stop"
+
+ERL="erl \
+     -noshell \
+     -pa $MEAS_HOME \
+     $TRANSFORM_FROM_TEXT \
+     $STOP"
+
+echo $ERL
+$ERL | tee trans.log
+

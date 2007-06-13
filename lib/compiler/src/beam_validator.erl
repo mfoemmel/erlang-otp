@@ -214,7 +214,7 @@ validate_2({Ls1,Is}, Name, Arity, _Entry) ->
 validate_3({Ls2,Is}, Name, Arity, Entry, Mod, Ls1) ->
     lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [{label,_L}]) end, Ls2),
     Offset = 1 + length(Ls1) + 1 + length(Ls2),
-    EntryOK = (Entry == undefined) orelse lists:member(Entry, Ls2),
+    EntryOK = (Entry =:= undefined) orelse lists:member(Entry, Ls2),
     if  EntryOK ->
 	    St = init_state(Arity),
 	    Vst = #vst{current=St,
@@ -524,10 +524,6 @@ valfun_4(return, #vst{current=#st{numy=none}}=Vst) ->
     kill_state(Vst);
 valfun_4(return, #vst{current=#st{numy=NumY}}) ->
     error({stack_frame,NumY});
-valfun_4({jump,{f,_}}, #vst{current=none}=Vst) ->
-    %% Must be an unreachable jump which was not optimized away.
-    %% Do nothing.
-    Vst;
 valfun_4({jump,{f,Lbl}}, Vst) ->
     kill_state(branch_state(Lbl, Vst));
 valfun_4({loop_rec,{f,Fail},Dst}, Vst0) ->
@@ -978,7 +974,7 @@ set_type_y(Type, {y,Y}=Reg, #vst{current=#st{y=Ys0,numy=NumY}=St}=Vst)
 	{_,_} when Y > NumY ->
 	    error({y_reg_out_of_range,Reg,NumY});
 	{_,_} ->
-	    Ys = if  Type == initialized_ct ->
+	    Ys = if  Type =:= initialized_ct ->
 			 gb_trees:enter(Y, initialized, Ys0);
 		     true ->
 			 case gb_trees:lookup(Y, Ys0) of
@@ -1167,7 +1163,7 @@ branch_state(L, #vst{current=St,branched=B}=Vst) ->
 merge_states(L, St, Branched) when L =/= 0 ->
     case gb_trees:lookup(L, Branched) of
 	none -> St;
-	{value,OtherSt} when St == none -> OtherSt;
+	{value,OtherSt} when St =:= none -> OtherSt;
 	{value,OtherSt} -> merge_states_1(St, OtherSt)
     end.
 
@@ -1237,15 +1233,15 @@ merge_types({trytag,T0},{trytag,T1}) ->
 merge_types({tuple,A}, {tuple,B}) ->
     {tuple,[min(tuple_sz(A), tuple_sz(B))]};
 merge_types({Type,A}, {Type,B}) 
-  when Type == atom; Type == integer; Type == float ->
+  when Type =:= atom; Type =:= integer; Type =:= float ->
     if A =:= B -> {Type,A};
        true -> {Type,[]}
     end;
 merge_types({Type,_}, number) 
-  when Type == integer; Type == float ->
+  when Type =:= integer; Type =:= float ->
     number;
 merge_types(number, {Type,_}) 
-  when Type == integer; Type == float ->
+  when Type =:= integer; Type =:= float ->
     number;
 merge_types(bool, {atom,A}) ->
     merge_bool(A);

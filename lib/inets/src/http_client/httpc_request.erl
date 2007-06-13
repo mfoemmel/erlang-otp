@@ -20,6 +20,10 @@
 -include("http_internal.hrl").
 -include("httpc_internal.hrl").
 
+%% We will not make the change to use base64 in stdlib in inets just yet.
+%% it will be included in the next major release of inets. 
+-compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
+
 %%% Internal API
 -export([send/3, is_idempotent/1, is_client_closing/1]).
 

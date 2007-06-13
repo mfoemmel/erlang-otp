@@ -123,25 +123,25 @@ call(Process, Label, Request) ->
 
 %% Local or remote by pid
 call(Pid, Label, Request, Timeout) 
-  when pid(Pid), Timeout == infinity;
-       pid(Pid), integer(Timeout), Timeout >= 0 ->
+  when is_pid(Pid), Timeout =:= infinity;
+       is_pid(Pid), is_integer(Timeout), Timeout >= 0 ->
     do_call(Pid, Label, Request, Timeout);
 %% Local by name
 call(Name, Label, Request, Timeout) 
-  when atom(Name), Timeout == infinity;
-       atom(Name), integer(Timeout), Timeout >= 0 ->
+  when is_atom(Name), Timeout =:= infinity;
+       is_atom(Name), is_integer(Timeout), Timeout >= 0 ->
     case whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    do_call(Pid, Label, Request, Timeout);
 	undefined ->
 	    exit(noproc)
     end;
 %% Global by name
 call({global, _Name}=Process, Label, Request, Timeout)
-  when Timeout == infinity;
-       integer(Timeout), Timeout >= 0 ->
+  when Timeout =:= infinity;
+       is_integer(Timeout), Timeout >= 0 ->
     case where(Process) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Node = node(Pid),
 	    case catch do_call(Pid, Label, Request, Timeout) of
 		{'EXIT', {nodedown, Node}} ->
@@ -160,15 +160,15 @@ call({global, _Name}=Process, Label, Request, Timeout)
     end;
 %% Local by name in disguise
 call({Name, Node}, Label, Request, Timeout)
-  when Node == node(), Timeout == infinity;
-       Node == node(), integer(Timeout), Timeout >= 0 ->
+  when Node =:= node(), Timeout =:= infinity;
+       Node =:= node(), is_integer(Timeout), Timeout >= 0 ->
     call(Name, Label, Request, Timeout);
 %% Remote by name
 call({_Name, Node}=Process, Label, Request, Timeout)
-  when atom(Node), Timeout == infinity;
-       atom(Node), integer(Timeout), Timeout >= 0 ->
+  when is_atom(Node), Timeout =:= infinity;
+       is_atom(Node), is_integer(Timeout), Timeout >= 0 ->
     if
- 	node() == nonode@nohost ->
+ 	node() =:= nonode@nohost ->
  	    exit({nodedown, Node});
  	true ->
  	    do_call(Process, Label, Request, Timeout)
@@ -178,19 +178,19 @@ do_call(Process, Label, Request, Timeout) ->
     %% We trust the arguments to be correct, i.e
     %% Process is either a local or remote pid,
     %% or a {Name, Node} tuple (of atoms) and in this 
-    %% case this node (node()) _is_ distributed and Node /= node().
+    %% case this node (node()) _is_ distributed and Node =/= node().
     Node = case Process of
 	       {_S, N} ->
 		   N;
-	       _ when pid(Process) ->
+	       _ when is_pid(Process) ->
 		   node(Process);
 	       _ ->
 		   node()
 	   end,
     case catch erlang:monitor(process, Process) of
-	Mref when reference(Mref) ->
+	Mref when is_reference(Mref) ->
 	    receive
-		{'DOWN', Mref, _, Pid1, noconnection} when pid(Pid1) ->
+		{'DOWN', Mref, _, Pid1, noconnection} when is_pid(Pid1) ->
 		    exit({nodedown, node(Pid1)});
 		{'DOWN', Mref, _, _, noconnection} ->
 		    exit({nodedown, Node});
@@ -225,10 +225,10 @@ wait_resp_mon(Process, Mref, Timeout) ->
     Node = case Process of
 	       {_S, N} ->
 		   N;
-	       _ when pid(Process) ->
+	       _ when is_pid(Process) ->
 		   node(Process);
 	       _ ->
-		   self()
+		   node()
 	   end,
     receive
 	{Mref, Reply} ->
@@ -239,7 +239,7 @@ wait_resp_mon(Process, Mref, Timeout) ->
 	    after 0 -> 
 		    {ok, Reply}
 	    end;
-	{'DOWN', Mref, _, Pid, Reason} when pid(Pid) ->
+	{'DOWN', Mref, _, Pid, Reason} when is_pid(Pid) ->
 	    receive
 		{'EXIT', Pid, noconnection} -> 
 		    exit({nodedown, Node});
@@ -261,7 +261,7 @@ wait_resp_mon(Process, Mref, Timeout) ->
 	    %% handled earlier (except for against rex) 
 	    %% by not using remote monitor by name.
 	    case Process of
-		_ when pid(Process) ->
+		_ when is_pid(Process) ->
 		    receive
 			{'EXIT', Process, noconnection} ->
 			    exit({nodedown, Node});

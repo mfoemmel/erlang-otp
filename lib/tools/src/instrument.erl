@@ -31,8 +31,8 @@
 -define(INFO_SIZE(H), element(3, H)).
 -define(TYPEMAP(H),   element(4, H)).
 
--define(IHDR(H), tuple(H), ?IHMARKER(H) == instr_hdr).
--define(IHDRVSN(H, V), ?IHDR(H), ?VSN(H) == V).
+-define(IHDR(H), is_tuple(H), ?IHMARKER(H) =:= instr_hdr).
+-define(IHDRVSN(H, V), ?IHDR(H), ?VSN(H) =:= V).
 
 memory_data() ->
     case catch erlang:system_info(allocated) of
@@ -54,7 +54,7 @@ store_memory_data(File) ->
 	    Res
     end.
 
-memory_status(Type) when atom(Type) ->
+memory_status(Type) when is_atom(Type) ->
     case catch erlang:system_info({allocated, status, Type}) of
 	{'EXIT',{Error,_}} ->
 	    erlang:fault(Error, [Type]);
@@ -66,7 +66,7 @@ memory_status(Type) when atom(Type) ->
 memory_status(Type) ->
     erlang:fault(badarg, [Type]).
 
-store_memory_status(File) when list(File) ->
+store_memory_status(File) when is_list(File) ->
     case catch erlang:system_info({allocated, status, File}) of
 	{'EXIT',{Error,_}} ->
 	    erlang:fault(Error, [File]);
@@ -78,20 +78,20 @@ store_memory_status(File) when list(File) ->
 store_memory_status(File) ->
     erlang:fault(badarg, [File]).
 
-read_memory_data(File) when list(File) ->
+read_memory_data(File) when is_list(File) ->
     case file:consult(File) of
 	{ok, [Hdr|MD]} when ?IHDR(Hdr) ->
 	    {Hdr, MD};
-	{ok, [{T,A,S,undefined}|_] = MD} when integer(T),
-					      integer(A),
-					      integer(S) ->
+	{ok, [{T,A,S,undefined}|_] = MD} when is_integer(T),
+					      is_integer(A),
+					      is_integer(S) ->
 	    {{instr_hdr, 1, ?OLD_INFO_SIZE}, MD};
-	{ok, [{T,A,S,{X,Y,Z}}|_] = MD} when integer(T),
-					    integer(A),
-					    integer(S),
-					    integer(X),
-					    integer(Y),
-					    integer(Z) ->
+	{ok, [{T,A,S,{X,Y,Z}}|_] = MD} when is_integer(T),
+					    is_integer(A),
+					    is_integer(S),
+					    is_integer(X),
+					    is_integer(Y),
+					    is_integer(Z) ->
 	    {{instr_hdr, 1, ?OLD_INFO_SIZE}, MD};
 	{ok, _} ->
 	    {error, eio};
@@ -101,7 +101,7 @@ read_memory_data(File) when list(File) ->
 read_memory_data(File) ->
     erlang:fault(badarg, [File]).
 
-read_memory_status(File) when list(File) ->
+read_memory_status(File) when is_list(File) ->
     case file:consult(File) of
 	{ok, [{instr_vsn, _}|Stat]} ->
 	    Stat;
@@ -172,30 +172,30 @@ block_header_size({Hdr, _}) when ?IHDR(Hdr) ->
     ?INFO_SIZE(Hdr).
 
 type_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2),
-				  integer(TypeNo) ->
+				  is_integer(TypeNo) ->
     case catch element(1, element(TypeNo, ?TYPEMAP(Hdr))) of
 	{'EXIT', _} -> invalid_type;
 	Type -> Type
     end;
 type_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1),
-				  integer(TypeNo) ->
+				  is_integer(TypeNo) ->
     type_string(TypeNo).
 
 
-allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), integer(TypeNo) ->
+allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), is_integer(TypeNo) ->
     case catch element(2, element(TypeNo, ?TYPEMAP(Hdr))) of
 	{'EXIT', _} -> invalid_type;
 	Type -> Type
     end;
-allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), integer(TypeNo) ->
+allocator_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), is_integer(TypeNo) ->
     "unknown".
 
-class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), integer(TypeNo) ->
+class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 2), is_integer(TypeNo) ->
     case catch element(3, element(TypeNo, ?TYPEMAP(Hdr))) of
 	{'EXIT', _} -> invalid_type;
 	Type -> Type
     end;
-class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), integer(TypeNo) ->
+class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), is_integer(TypeNo) ->
     "unknown".
 
 type_no_range({Hdr, _}) when ?IHDRVSN(Hdr, 2) ->

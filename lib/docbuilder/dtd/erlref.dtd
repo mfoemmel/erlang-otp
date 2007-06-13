@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common.refs SYSTEM "common.refs.dtd" >
+%common.refs;
+
+<!ELEMENT erlref              (header,module,modulesummary,description, 
+			       (section|funcs)*,authors) >
+<!ELEMENT module              (#PCDATA) >
+<!ELEMENT modulesummary       (#PCDATA) >
+
+<!-- `name' is used in common.refs.dtd and must therefore 
+      be defined in each *ref. dtd -->
+<!ELEMENT name                (#PCDATA) >

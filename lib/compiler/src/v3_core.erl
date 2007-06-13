@@ -72,7 +72,8 @@
 
 -export([module/2,format_error/1]).
 
--import(lists, [reverse/1,map/2,foldl/3,foldr/3,mapfoldl/3,splitwith/2]).
+-import(lists, [reverse/1,map/2,member/2,foldl/3,foldr/3,mapfoldl/3,
+		splitwith/2,any/2]).
 -import(ordsets, [add_element/2,del_element/2,is_element/2,
 		  union/1,union/2,intersection/2,subtract/2]).
 
@@ -121,8 +122,7 @@ form({attribute,_,_,_}=F, {Fs,As,Ws,File}) ->
     {Fs,[attribute(F)|As],Ws,File}.
 
 attribute({attribute,_,Name,Val}) ->
-    #c_def{name=core_lib:make_literal(Name),
-	   val=core_lib:make_literal(Val)}.
+    {core_lib:make_literal(Name),core_lib:make_literal(Val)}.
 
 function({function,_,Name,Arity,Cs0}, Ws0, File) ->
     %%ok = io:fwrite("~p - ", [{Name,Arity}]),
@@ -135,7 +135,7 @@ function({function,_,Name,Arity,Cs0}, Ws0, File) ->
     %%ok = io:fwrite("~w:~p~n", [?LINE,B1]),
     {B2,#core{ws=Ws}} = cbody(B1, St2),
     %%ok = io:fwrite("3~n", []),
-    {#c_def{name=#c_fname{id=Name,arity=Arity},val=B2},Ws}.
+    {{#c_fname{id=Name,arity=Arity},B2},Ws}.
 
 body(Cs0, Arity, St0) ->
     Anno = lineno_anno(element(2, hd(Cs0)), St0),
@@ -379,9 +379,8 @@ expr({tuple,L,Es0}, St0) ->
 	    {#c_tuple{anno=A,es=Es1},Eps,St1}
     end;
 expr({bin,L,Es0}, St0) ->
-    try expr_bin(Es0, St0) of
-	{Es1,Eps,St1} ->
-	    {#ibinary{anno=#a{anno=lineno_anno(L, St1)},segments=Es1},Eps,St1}
+    try expr_bin(Es0, #a{anno=lineno_anno(L, St0)}, St0) of
+	{_,_,_}=Res -> Res
     catch
 	throw:bad_binary ->
 	    St1 = add_warning(L, bad_binary, St0),
@@ -585,7 +584,47 @@ try_after(As, St0) ->
 %% expr_bin([ArgExpr], St) -> {[Arg],[PreExpr],St}.
 %%  Flatten the arguments of a bin. Do this straight left to right!
 
-expr_bin(Es, St) ->
+expr_bin(Es0, Anno, St0) ->
+    case constant_bin(Es0) of
+	error ->
+	    {Es,Eps,St} = expr_bin_1(Es0, St0),
+	    {#ibinary{anno=Anno,segments=Es},Eps,St};
+	Bin when is_binary(Bin) ->
+	    {#c_literal{anno=Anno,val=Bin},[],St0}
+    end.
+
+%% constant_bin([{bin_element,_,_,_,_}]) -> binary() | error
+%%  If the binary construction is truly constant (no variables,
+%%  no native fields), evaluate and return the binary; otherwise
+%%  return 'error'.
+%%
+%%  Note: bistrs are not literals yet, to avoid problems with
+%%  sequences such as '<<0:7>>, ok', which causes an exception with
+%%  bit-level binaries disabled and returns 'ok' if they are
+%%  enabled.
+
+constant_bin(Es) ->
+    IndefiniteEndian = fun({bin_element,_,_,_,Opts}) ->
+			       not(member(big, Opts) orelse
+				   member(little, Opts))
+		       end,
+    case any(IndefiniteEndian, Es) of
+	true -> error;
+	false ->
+	    EmptyBindings = erl_eval:new_bindings(),
+	    EvalFun = fun({integer,_,Sz}, B) -> {value,Sz,B} end,
+	    case eval_bits:expr_grp(Es, EmptyBindings, EvalFun) of
+		{value,Bin,EmptyBindings} when is_binary(Bin) ->
+		    case erlang:bitsize(Bin) rem 8 =:= 0 of
+			true -> Bin;
+			false -> error
+		    end;
+		_ ->
+		    error
+	    end
+    end.
+
+expr_bin_1(Es, St) ->
     foldr(fun (E, {Ces,Esp,St0}) ->
 		  {Ce,Ep,St1} = bitstr(E, St0),
 		  {[Ce|Ces],Ep ++ Esp,St1}
@@ -598,6 +637,7 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
 	{_,#c_var{}} -> ok;
 	{integer,#c_literal{val=I}} when is_integer(I) -> ok;
 	{float,#c_literal{val=V}} when is_number(V) -> ok;
+	{binary,#c_literal{val=V}} when is_binary(V) -> ok;
 	{_,_} -> throw(bad_binary)
     end,
     {#c_bitstr{val=E1,size=Size1,
@@ -800,7 +840,7 @@ bc_tq(Line, Exp, Qualifiers, More, St0) ->
     {Arg,St2} = new_var(St1),
     {#icall{anno=#a{anno=LineAnno},
 	    module=#c_literal{anno=LineAnno,val=erlang},
-	    name=#c_literal{anno=LineAnno,val=list_to_binary},
+	    name=#c_literal{anno=LineAnno,val=list_to_bitstr},
 	    args=[Arg]}, 
       PreExp++[#iset{anno=#a{anno=LineAnno},var=Arg,arg=LetRec}], St2}.
 
@@ -1027,37 +1067,9 @@ force_safe(Ce, St0) ->
 is_safe(#c_cons{}) -> true;
 is_safe(#c_tuple{}) -> true;
 is_safe(#c_var{}) -> true;
-is_safe(E) -> core_lib:is_atomic(E).
-
-%%% %% variable(Expr, State) -> {Variable,[PreExpr],State}.
-%%% %% force_variable(Expr, State) -> {Variable,[PreExpr],State}.
-%%% %%  Generate a variable.
-
-%%% variable(E0, St0) ->
-%%%     {E1,Eps,St1} = expr(E0, St0),
-%%%     {V,Vps,St2} = force_variable(E1, St1),
-%%%     {V,Eps ++ Vps,St2}.
-
-%%% force_variable(#c_var{}=Var, St) -> {Var,[],St}; 
-%%% force_variable(Ce, St0) ->
-%%%     {V,St1} = new_var(St0),
-%%%     {V,[#iset{var=V,arg=Ce}],St1}.
-
-%%% %% atomic(Expr, State) -> {Atomic,[PreExpr],State}.
-%%% %% force_atomic(Expr, State) -> {Atomic,[PreExpr],State}.
-
-%%% atomic(E0, St0) ->
-%%%     {E1,Eps,St1} = expr(E0, St0),
-%%%     {A,Aps,St2} = force_atomic(E1, St1),
-%%%     {A,Eps ++ Aps,St2}.
-
-%%% force_atomic(Ce, St0) ->
-%%%     case core_lib:is_atomic(Ce) of
-%%% 	true -> {Ce,[],St0};
-%%% 	false ->
-%%% 	    {V,St1} = new_var(St0),
-%%% 	    {V,[#iset{var=V,arg=Ce}],St1}
-%%%     end.
+is_safe(#c_literal{}) -> true;
+is_safe(#c_fname{}) -> true;
+is_safe(_) -> false.
 
 %% fold_match(MatchExpr, Pat) -> {MatchPat,Expr}.
 %%  Fold nested matches into one match with aliased patterns.
@@ -1121,7 +1133,7 @@ pat_alias(#c_bitstr{val=P1,size=Sz,unit=U,type=T,flags=F}=Bitstr,
     Bitstr#c_bitstr{val=pat_alias(P1, P2)};
 pat_alias(#c_alias{var=V1,pat=P1},
 	   #c_alias{var=V2,pat=P2}) ->
-    if V1 == V2 -> pat_alias(P1, P2);
+    if V1 =:= V2 -> pat_alias(P1, P2);
        true -> #c_alias{var=V1,pat=#c_alias{var=V2,pat=pat_alias(P1, P2)}}
     end;
 pat_alias(#c_alias{var=V1,pat=P1}, P2) ->
@@ -1258,7 +1270,7 @@ uexprs([#imatch{anno=A,pat=P0,arg=Arg,fc=Fc}|Les], Ks, St0) ->
 	_Other ->
 	    %% Throw our work away and set to icase.
 	    if
-		Les == [] ->
+		Les =:= [] ->
 		    %% Need to explicitly return match "value", make
 		    %% safe for efficiency.
 		    {La,Lps,St1} = force_safe(Arg, St0),
@@ -1356,6 +1368,12 @@ uexpr(#c_literal{}=Lit, _, St) ->
     Anno = core_lib:get_anno(Lit),
     {core_lib:set_anno(Lit, #a{us=[],anno=Anno}),St};
 uexpr(Lit, _, St) ->
+    case core_lib:is_simple(Lit) of
+	false ->
+	    io:format("~p\n", [Lit]);
+	true ->
+	    ok
+    end,
     true = core_lib:is_simple(Lit),		%Sanity check!
     Vs = lit_vars(Lit),
     Anno = core_lib:get_anno(Lit),
@@ -1515,7 +1533,7 @@ cexprs([Le], As, St0) ->
     {Ce,Es,Us,St1} = cexpr(Le, As, St0),
     Exp = make_vars(As),			%The export variables
     if
-	Es == [] -> {core_lib:make_values([Ce|Exp]),union(Us, As),St1};
+	Es =:= [] -> {core_lib:make_values([Ce|Exp]),union(Us, As),St1};
 	true ->
 	    {R,St2} = new_var(St1),
 	    {#c_let{anno=get_lineno_anno(Ce),
@@ -1532,7 +1550,7 @@ cexprs([Le|Les], As0, St0) ->
     {Ces,As1,St1} = cexprs(Les, As0, St0),
     {Ce,Es,Us,St2} = cexpr(Le, As1, St1),
     if
-	Es == [] ->
+	Es =:= [] ->
 	    {#c_seq{arg=Ce,body=Ces},union(Us, As1),St2};
 	true ->
 	    {R,St3} = new_var(St2),
@@ -1544,11 +1562,10 @@ cexprs([Le|Les], As0, St0) ->
 
 cexpr(#iletrec{anno=A,defs=Fs0,body=B0}, As, St0) ->
     {Fs1,{_,St1}} = mapfoldl(fun ({Name,F0}, {Used,S0}) ->
-					{F1,[],Us,S1} = cexpr(F0, [], S0),
-					{#c_def{name=#c_fname{id=Name,arity=1},
-						val=F1},
-					 {union(Us, Used),S1}}
-				end, {[],St0}, Fs0),
+				     {F1,[],Us,S1} = cexpr(F0, [], S0),
+				     {{#c_fname{id=Name,arity=1},F1},
+				      {union(Us, Used),S1}}
+			     end, {[],St0}, Fs0),
     Exp = intersection(A#a.ns, As),
     {B1,_Us,St2} = cexprs(B0, Exp, St1),
     {#c_letrec{anno=A#a.anno,defs=Fs1,body=B1},Exp,A#a.us,St2};

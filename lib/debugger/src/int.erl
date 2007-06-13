@@ -314,9 +314,9 @@ clear() ->
 %% continue(Pid) -> ok | {error, not_interpreted}
 %% continue(X, Y, Z) -> ok | {error, not_interpreted}
 %%--------------------------------------------------------------------
-continue(Pid) when pid(Pid) ->
+continue(Pid) when is_pid(Pid) ->
     case dbg_iserver:safe_call({get_meta, Pid}) of
-	{ok, Meta} when pid(Meta) ->
+	{ok, Meta} when is_pid(Meta) ->
 	    dbg_icmd:continue(Meta),
 	    ok;
 	Error ->

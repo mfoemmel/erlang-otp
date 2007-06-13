@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common SYSTEM "common.dtd" >
+%common;
+<!ENTITY % common.header SYSTEM "common.header.dtd" >
+%common.header;
+<!ENTITY % common.table SYSTEM "common.table.dtd" >
+%common.table;
+<!ENTITY % common.image SYSTEM "common.image.dtd" >
+%common.image;
+
+<!-- Structure -->
+
+<!ELEMENT chapter             (header,(%block;|quote|warning|note|br|
+                               image|marker|table)*,section+) >
+<!ELEMENT section             (marker*,title,
+                               (%block;|quote|warning|note|br|image|marker|
+                                table|section)*) >

@@ -61,7 +61,7 @@ standby(_PgName, _Node) ->
 %% Tell process group PgName that Pid is a new member of the group
 %% synchronously return a list of all old members in the group
 
-join(PgName,Pid)  when atom(PgName) -> 
+join(PgName,Pid)  when is_atom(PgName) -> 
     global:send(PgName, {join,self(),Pid}),
     receive
 	{_P,{members,Members}} ->
@@ -70,36 +70,36 @@ join(PgName,Pid)  when atom(PgName) ->
 
 %% Multi cast Mess to all members in the group
 
-send(PgName,Mess) when atom(PgName) ->
+send(PgName,Mess) when is_atom(PgName) ->
     global:send(PgName, {send, self(), Mess});
-send(Pg,Mess) when pid(Pg) ->
+send(Pg,Mess) when is_pid(Pg) ->
     Pg ! {send,self(),Mess}.
 
 
 %% multi cast a message to all members in the group but ourselves
 %% If we are a member
 
-esend(PgName,Mess) when atom(PgName) ->
+esend(PgName,Mess) when is_atom(PgName) ->
     global:send(PgName,{esend,self(),Mess});
-esend(Pg,Mess) when pid(Pg) ->
+esend(Pg,Mess) when is_pid(Pg) ->
     Pg ! {esend,self(),Mess}.
 
 %% Return the members of the group
 
-members(PgName) when atom(PgName) ->
+members(PgName) when is_atom(PgName) ->
     global:send(PgName, {self() ,members}),
     receive
 	{_P,{members,Members}} ->
 	    Members
     end;
-members(Pg) when pid(Pg) ->
+members(Pg) when is_pid(Pg) ->
     Pg ! {self,members},
     receive
 	{_P,{members,Members}} ->
 	    Members
     end.
 
-name_to_pid(PgName) when atom(PgName) ->
+name_to_pid(PgName) when is_atom(PgName) ->
     global:whereis_name(PgName).
 
 master(PgName) ->
@@ -146,7 +146,7 @@ send_all([P|Tail],M) ->
 
 check(PgName) ->
     case global:whereis_name(PgName) of
-        Pid when pid(Pid) -> 
+        Pid when is_pid(Pid) -> 
             throw({error,already_created});
         undefined ->
 	    ok

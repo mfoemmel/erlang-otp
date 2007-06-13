@@ -56,7 +56,7 @@ init(File, PrevHandler) ->
 	    Error
     end.
     
-handle_event({_Type, GL, _Msg}, State) when node(GL) /= node() ->
+handle_event({_Type, GL, _Msg}, State) when node(GL) =/= node() ->
     {ok, State};
 handle_event(Event, {Fd, File, PrevHandler}) ->
     write_event(Fd, tag_event(Event)),
@@ -116,7 +116,7 @@ write_events1(_, []) ->
 write_event(Fd, {Time, {error, _GL, {Pid, Format, Args}}}) ->
     T = write_time(maybe_utc(Time)),
     case catch io_lib:format(add_node(Format,Pid), Args) of
-	S when list(S) ->
+	S when is_list(S) ->
 	    io:format(Fd, T ++ S, []);
 	_ ->
 	    F = add_node("ERROR: ~p - ~p~n", Pid),
@@ -125,7 +125,7 @@ write_event(Fd, {Time, {error, _GL, {Pid, Format, Args}}}) ->
 write_event(Fd, {Time, {emulator, _GL, Chars}}) ->
     T = write_time(maybe_utc(Time)),
     case catch io_lib:format(Chars, []) of
-	S when list(S) ->
+	S when is_list(S) ->
 	    io:format(Fd, T ++ S, []);
 	_ ->
 	    io:format(Fd, T ++ "ERROR: ~p ~n", [Chars])
@@ -144,7 +144,7 @@ write_event(Fd, {Time, {info_report, _GL, {Pid, std_info, Rep}}}) ->
 write_event(Fd, {Time, {info_msg, _GL, {Pid, Format, Args}}}) ->
     T = write_time(maybe_utc(Time), "INFO REPORT"),
     case catch io_lib:format(add_node(Format,Pid), Args) of
-	S when list(S) ->
+	S when is_list(S) ->
 	    io:format(Fd, T ++ S, []);
 	_ ->
 	    F = add_node("ERROR: ~p - ~p~n", Pid),
@@ -157,7 +157,7 @@ write_event(Fd, {Time, {warning_report, _GL, {Pid, std_warning, Rep}}}) ->
 write_event(Fd, {Time, {warning_msg, _GL, {Pid, Format, Args}}}) ->
     T = write_time(maybe_utc(Time), "WARNING REPORT"),
     case catch io_lib:format(add_node(Format,Pid), Args) of
-	S when list(S) ->
+	S when is_list(S) ->
 	    io:format(Fd, T ++ S, []);
 	_ ->
 	    F = add_node("ERROR: ~p - ~p~n", Pid),
@@ -186,7 +186,7 @@ maybe_utc(Time) ->
             Time
     end.
 
-format_report(Rep) when list(Rep) ->
+format_report(Rep) when is_list(Rep) ->
     case string_p(Rep) of
 	true ->
 	    io_lib:format("~s~n",[Rep]);
@@ -203,9 +203,9 @@ format_rep([Other|Rep]) ->
 format_rep(_) ->
     [].
 
-add_node(X, Pid) when atom(X) ->
+add_node(X, Pid) when is_atom(X) ->
     add_node(atom_to_list(X), Pid);
-add_node(X, Pid) when node(Pid) /= node() ->
+add_node(X, Pid) when node(Pid) =/= node() ->
     lists:concat([X,"** at node ",node(Pid)," **~n"]);
 add_node(X, _) ->
     X.
@@ -215,7 +215,7 @@ string_p([]) ->
 string_p(Term) ->
     string_p1(Term).
 
-string_p1([H|T]) when integer(H), H >= $\s, H < 255 ->
+string_p1([H|T]) when is_integer(H), H >= $\s, H < 255 ->
     string_p1(T);
 string_p1([$\n|T]) -> string_p1(T);
 string_p1([$\r|T]) -> string_p1(T);
@@ -224,7 +224,7 @@ string_p1([$\v|T]) -> string_p1(T);
 string_p1([$\b|T]) -> string_p1(T);
 string_p1([$\f|T]) -> string_p1(T);
 string_p1([$\e|T]) -> string_p1(T);
-string_p1([H|T]) when list(H) ->
+string_p1([H|T]) when is_list(H) ->
     case string_p1(H) of
 	true -> string_p1(T);
 	_    -> false
@@ -241,7 +241,7 @@ write_time({{Y,Mo,D},{H,Mi,S}}, Type) ->
     io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s ===~n",
 		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S)]).
 
-t(X) when integer(X) ->
+t(X) when is_integer(X) ->
     t1(integer_to_list(X));
 t(_) ->
     "".

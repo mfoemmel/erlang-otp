@@ -58,7 +58,7 @@ interfaces(User) ->
     case process_info(User, dictionary) of
 	{dictionary,Dict} ->
 	    case lists:keysearch(shell, 1, Dict) of
-		{value,Sh={shell,Shell}} when pid(Shell) ->
+		{value,Sh={shell,Shell}} when is_pid(Shell) ->
 		    [Sh];
 		_ ->
 		    []
@@ -68,7 +68,7 @@ interfaces(User) ->
     end.
 
 
-server(Pid) when pid(Pid) ->
+server(Pid) when is_pid(Pid) ->
     process_flag(trap_exit, true),
     link(Pid),
     run(Pid).
@@ -138,7 +138,7 @@ server_loop(Port, Q) ->
 		_ ->
 		    server_loop(Port, queue:snoc(Q, Bytes))
 	    end;
-	{io_request,From,ReplyAs,Request} when pid(From) ->
+	{io_request,From,ReplyAs,Request} when is_pid(From) ->
 	    server_loop(Port, do_io_request(Request, From, ReplyAs, Port, Q));
 	{Port, eof} ->
 	    put(eof, true),
@@ -188,7 +188,7 @@ io_request({get_chars,Prompt,Mod,Func,XtraArg}, Port, Q) ->
 io_request({get_line,Prompt}, Port, Q) ->
 %    erlang:display({?MODULE,?LINE,Q}),
     get_chars(Prompt, io_lib, collect_line, [], Port, Q);
-io_request({setopts,Opts}, Port, Q) when list(Opts) ->
+io_request({setopts,Opts}, Port, Q) when is_list(Opts) ->
     setopts(Opts, Port, Q);
 %% End of new in R9C
 io_request({get_until,Prompt,M,F,As}, Port, Q) ->
@@ -228,12 +228,12 @@ io_reply(From, ReplyAs, Reply) ->
     From ! {io_reply,ReplyAs,Reply}.
 
 %% put_chars
-put_chars(Chars, Port, Q) when binary(Chars) ->
+put_chars(Chars, Port, Q) when is_binary(Chars) ->
     put_port(Chars, Port),
     {ok,ok,Q};
 put_chars(Chars, Port, Q) ->
     case catch list_to_binary(Chars) of
-	Binary when binary(Binary) ->
+	Binary when is_binary(Binary) ->
 	    put_chars(Binary, Port, Q);
 	_ ->
 	    {error,{error,put_chars},Q}
@@ -281,16 +281,16 @@ get_chars(Prompt, M, F, Xa, Port, Q, State) ->
 		{Port, eof} ->
 		    put(eof, true),
 		    {ok, eof, []};
-		%%{io_request,From,ReplyAs,Request} when pid(From) ->
+		%%{io_request,From,ReplyAs,Request} when is_pid(From) ->
 		%%    get_chars_req(Prompt, M, F, Xa, Port, queue:new(), State,
 		%%		  Request, From, ReplyAs);
-		{io_request,From,ReplyAs,{put_chars,Chars}} when pid(From) ->
+		{io_request,From,ReplyAs,{put_chars,Chars}} when is_pid(From) ->
 		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
 				  {put_chars,Chars}, From, ReplyAs);
-		{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when pid(From) ->
+		{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when is_pid(From) ->
 		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
 				  {put_chars,M1,F1,A1}, From, ReplyAs);
-		{'EXIT',From,What} when node(From) == node() ->
+		{'EXIT',From,What} when node(From) =:= node() ->
 		    {exit,What}
 	    end;
 	false ->
@@ -347,7 +347,7 @@ get_chars_more(State, M, F, Xa, Port, Q) ->
 			    put(eof, true),
 			    get_chars_apply(State, M, F, Xa, Port, 
 					    queue:snoc(Q, eof));
-			{'EXIT',From,What} when node(From) == node() ->
+			{'EXIT',From,What} when node(From) =:= node() ->
 			    {exit,What}
 		    end;
 		_ ->
@@ -361,7 +361,7 @@ get_chars_more(State, M, F, Xa, Port, Q) ->
 
 %% prompt(Port, Prompt)
 %%  Print Prompt onto port Port, special case just atoms and print unquoted.
-prompt(Port, Prompt) when atom(Prompt) ->
+prompt(Port, Prompt) when is_atom(Prompt) ->
     List = io_lib:format('~s', [Prompt]),
     put_port(List, Port);
 prompt(Port, {format,Format,Args}) ->
@@ -422,9 +422,9 @@ string_chr_list(_, [], _) ->
 cast(Data) ->
     cast(Data, get(read_mode)).
 
-cast(List, binary) when list(List) ->
+cast(List, binary) when is_list(List) ->
     list_to_binary(List);
-cast(Binary, list) when binary(Binary) ->
+cast(Binary, list) when is_binary(Binary) ->
     binary_to_list(Binary);
 cast(Data, _) ->
     Data.

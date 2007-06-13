@@ -458,13 +458,15 @@ watchdog(Pid, Time) ->
 	stop ->
 	    ok
     after Time ->
-	    case process_info(Pid) of
+	    case (catch process_info(Pid)) of
 		undefined ->
 		    ok;
-		_ ->
+		Info ->
 		    ?LOG("<ERROR> Watchdog in test case timed out "
-			"for ~p after ~p min~n",
-		    [Pid, Time div (1000*60)]),
+			"for ~p after ~p min"
+			 "~n~p"
+			 "~n",
+		    [Pid, Time div (1000*60), Info]),
 		    exit(Pid, kill)
 	    end
     end.

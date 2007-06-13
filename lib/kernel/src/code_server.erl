@@ -57,7 +57,7 @@ init(Ref, Parent, [Root,Mode]) ->
     register(?MODULE, self()),
     process_flag(trap_exit, true),
 
-    IPath = if Mode == interactive ; Mode == minimal ->
+    IPath = if Mode =:= interactive ; Mode =:= minimal ->
 		    LibDir = filename:append(Root, "lib"),
 		    {ok,Dirs} = erl_prim_loader:list_dir(LibDir),
 		    {Paths,_Libs} = make_path(LibDir, Dirs),
@@ -70,7 +70,7 @@ init(Ref, Parent, [Root,Mode]) ->
     foreach(fun (M) ->  ets:insert(Db, {M,preloaded}) end, erlang:pre_loaded()),
     foreach(fun (MF) -> ets:insert(Db, MF) end, init:fetch_loaded()),
     
-    Mode1 = if Mode == minimal -> interactive;
+    Mode1 = if Mode =:= minimal -> interactive;
 	       true -> Mode
 	    end,
 
@@ -344,7 +344,7 @@ handle_call({is_cached,File}, {_From,_Tag}, S=#state{cache=Cache}) ->
 	       ".app" -> app;
 	       _ -> undef
 	   end,
-    if Type == undef -> 
+    if Type =:= undef -> 
 	    {reply, no, S};
        true ->
 	    Key = {Type,list_to_atom(filename:rootname(File, Ext))},
@@ -372,7 +372,7 @@ do_mod_call(Action, Module, Error, St0) ->
     case catch list_to_atom(Module) of
 	{'EXIT',_} ->
 	    {reply,Error,St0};
-	Atom when atom(Atom) ->
+	Atom when is_atom(Atom) ->
 	    {St, Res} = Action(Atom, St0),
 	    {reply,Res,St}
     end.
@@ -640,8 +640,8 @@ get_arg(Arg) ->
 exclude(Dir,Path) ->
     Name = get_name(Dir),
     [D || D <- Path, 
-	  D /= Dir, 
-	  get_name(D) /= Name].
+	  D =/= Dir, 
+	  get_name(D) =/= Name].
 
 %%
 %% Get the "Name" of a directory. A directory in the code server path
@@ -680,9 +680,9 @@ check_path(_) ->
 %%
 %% Add new path(s).
 %%
-add_path(Where,Dir,Path,NameDb) when atom(Dir) ->
+add_path(Where,Dir,Path,NameDb) when is_atom(Dir) ->
     add_path(Where,atom_to_list(Dir),Path,NameDb);
-add_path(Where,Dir0,Path,NameDb) when list(Dir0) ->
+add_path(Where,Dir0,Path,NameDb) when is_list(Dir0) ->
     case int_list(Dir0) of
 	true ->
 	    Dir = filename:join([Dir0]), % Normalize
@@ -750,9 +750,9 @@ set_path(NewPath0, OldPath, NameDb) ->
 %% The check_path function catches erroneous path,
 %% thus it is ignored here.
 %%
-normalize([P|Path]) when atom(P) ->
+normalize([P|Path]) when is_atom(P) ->
     normalize([atom_to_list(P)|Path]);
-normalize([P|Path]) when list(P) ->
+normalize([P|Path]) when is_list(P) ->
     case int_list(P) of
 	true -> [filename:join([P])|normalize(Path)];
 	_    -> [P|normalize(Path)]
@@ -822,7 +822,7 @@ del_path1(Name,[P|Path],NameDb) ->
 	    delete_name(Name, NameDb),
 	    insert_old_shadowed(Name, Path, NameDb),
 	    Path;
-	_ when Name == P ->
+	_ when Name =:= P ->
 	    case delete_name_dir(Name, NameDb) of
 		true -> insert_old_shadowed(get_name(Name), Path, NameDb);
 		false -> ok
@@ -1001,7 +1001,7 @@ add_paths(_,_,Path,_) ->
 
 do_load_binary(Module,File,Binary,Db) ->
     case {modp(Module),modp(File)} of
-	{true, true} when binary(Binary) ->
+	{true, true} when is_binary(Binary) ->
 	    case erlang:module_loaded(code_aux:to_atom(Module)) of
 		true ->
 		    code_aux:do_purge(Module);
@@ -1013,16 +1013,16 @@ do_load_binary(Module,File,Binary,Db) ->
 	    {error, badarg}
     end.
 
-modp(Atom) when atom(Atom) -> true;
-modp(List) when list(List) -> int_list(List);
-modp(_)                    -> false.
+modp(Atom) when is_atom(Atom) -> true;
+modp(List) when is_list(List) -> int_list(List);
+modp(_)                       -> false.
 
 
 load_abs(File, Mod0, Db) ->
     Ext = code_aux:objfile_extension(),
     FileName0 = lists:concat([File, Ext]),
     FileName = absname(FileName0),
-    Mod = if Mod0 == [] ->
+    Mod = if Mod0 =:= [] ->
 		  list_to_atom(filename:basename(FileName0, Ext));
 	     true ->
 		  Mod0
@@ -1101,9 +1101,9 @@ post_beam_load(Mod) ->
 	true -> hipe_unified_loader:post_beam_load(Mod)
     end.
 
-int_list([H|T]) when integer(H) -> int_list(T);
-int_list([_|_])                 -> false;
-int_list([])                    -> true.
+int_list([H|T]) when is_integer(H) -> int_list(T);
+int_list([_|_])                    -> false;
+int_list([])                       -> true.
 
 
 load_file(Mod, St=#state{path=Path,moddb=Db,cache=no_cache}) ->

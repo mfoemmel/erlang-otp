@@ -151,8 +151,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # FLAGS
 # ----------------------------------------------------
 
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += -I../include
+ERL_COMPILE_FLAGS += +warn_obsolete_guard -I../include
 
 # ----------------------------------------------------
 # Targets
@@ -190,8 +189,7 @@ EPMD_FLAGS = -Depmd_port_no=$(EPMD_PORT_NO)	\
              -Derlang_daemon_port=$(EPMD_PORT_NO)
 
 $(EBIN)/erl_epmd.beam: $(ESRC)/erl_epmd.erl
-	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) \
-		-o$(EBIN) $<
+	$(ERLC) -bbeam $(ERL_COMPILE_FLAGS) $(EPMD_FLAGS) -o$(EBIN) $<
 
 # ----------------------------------------------------
 # Release Target

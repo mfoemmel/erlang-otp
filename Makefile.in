@@ -115,6 +115,9 @@ RANLIB          = @RANLIB@
 # PRIMARY_BOOTSTRAP_TOP would perhaps have been a better name...
 #
 override BOOTSTRAP_TOP = $(ERL_TOP)/bootstrap
+# BOOTSTRAP_SRC_TOP is normally the same as BOOTSTRAP_TOP but
+# it is allowed to be changed
+BOOTSTRAP_SRC_TOP = $(BOOTSTRAP_TOP)
 
 # Where to install the bootstrap directory.
 #
@@ -278,8 +281,19 @@ dep depend:
 # ----------------------------------------------------------------------
 # Bootstraps... 
 # ----------------------------------------------------------------------
-ifeq ($(TARGET),win32)
+
+#
+# If the source is a prebuild delivery, no $(ERL_TOP)/bootstrap
+# directory will exist. All applications part of the primary bootstrap
+# are delivered prebuilt though. Therefore, if no $(ERL_TOP)/bootstrap
+# exist, we begin by recreating the primary bootstrap, from the prebuild
+# result.
+#
+
 bootstrap_setup:
+	@test -d $(ERL_TOP)/bootstrap/lib \
+		|| ERL_TOP=$(ERL_TOP) $(MAKE) recreate_primary_bootstrap
+ifeq ($(TARGET),win32)
 	@rm -f $(BOOTSTRAP_ROOT)/bootstrap/bin/erl.exe \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erlc.exe \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erl.ini \
@@ -291,7 +305,6 @@ bootstrap_setup:
 	@cp $(ERL_TOP)/bin/$(TARGET)/erl.exe \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erl.exe
 else
-bootstrap_setup:
 	@rm -f $(BOOTSTRAP_ROOT)/bootstrap/bin/erl \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erlc
 	@sed	-e "s;%FINAL_ROOTDIR%;$(BOOTSTRAP_ROOT)/bootstrap;"   \
@@ -303,7 +316,6 @@ bootstrap_setup:
 	@chmod 755 $(BOOTSTRAP_ROOT)/bootstrap/bin/erl \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erlc
 endif
-
 
 secondary_bootstrap_build:
 	cd lib && \
@@ -350,6 +362,21 @@ fourth_bootstrap_copy:
 	cp -f lib/ic/include/*.idl lib/ic/include/*.h $(BOOTSTRAP_ROOT)/bootstrap/lib/ic/include
 	cp lib/sasl/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/sasl/ebin
 
+#
+# recreate_primary_bootstrap assumes that all build results needed already
+# exist in the application specific directories of all applications part of
+# the primary bootstrap.
+#
+recreate_primary_bootstrap:
+	@if test -d $(ERL_TOP)/bootstrap/lib ; then \
+		@echo "bootstrap already exist" ; \
+	else \
+		$(MAKE) ERL_TOP=$(ERL_TOP) \
+			BOOTSTRAP_SRC_TOP=$(ERL_TOP) \
+			BOOTSTRAP_ROOT=$(ERL_TOP) \
+			primary_bootstrap_to_bootstrap_root_copy ; \
+	fi
+
 # The first bootstrap build is rarely (never) used in open source, it's
 # used to build the shipped bootstrap directory. The Open source bootstrap 
 # stages start with secondary bootstrap.
@@ -385,9 +412,10 @@ primary_bootstrap: primary_bootstrap_check_make
 		$(MAKE) TESTROOT=$(BOOTSTRAP_TOP) \
 		BOOTSTRAP_TOP=$(BOOTSTRAP_TOP) bootstrap_scripts
 	test $(BOOTSTRAP_ROOT) = $(ERL_TOP) || \
-		$(MAKE) TESTROOT=$(BOOTSTRAP_ROOT)/bootstrap \
-		BOOTSTRAP_ROOT=$(BOOTSTRAP_ROOT) \
-		primary_bootstrap_to_bootstrap_root_copy
+		$(MAKE) ERL_TOP=$(ERL_TOP) \
+			BOOTSTRAP_SRC_TOP=$(BOOTSTRAP_TOP) \
+			BOOTSTRAP_ROOT=$(BOOTSTRAP_ROOT) \
+			primary_bootstrap_to_bootstrap_root_copy
 
 #
 # Dependencies are not complete in all makefiles; therefore, remove bootstrap
@@ -451,31 +479,38 @@ primary_bootstrap_to_bootstrap_root_copy:
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include
-	cp -f $(BOOTSTRAP_TOP)/lib/kernel/ebin/*.beam \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/ebin/*.beam \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
-	cp -f $(BOOTSTRAP_TOP)/lib/kernel/include/*.hrl \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/ebin/*.app* \
+		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/ebin
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/kernel/include/*.hrl \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/kernel/include
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include
-	cp -f $(BOOTSTRAP_TOP)/lib/stdlib/ebin/*.beam \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/ebin/*.beam \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
-	cp -f $(BOOTSTRAP_TOP)/lib/stdlib/include/*.hrl \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/ebin/*.app* \
+		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/ebin
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/stdlib/include/*.hrl \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/stdlib/include
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
-	cp -f $(BOOTSTRAP_TOP)/lib/compiler/ebin/*.beam \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/compiler/ebin/*.beam \
+		$(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/compiler/ebin/*.app* \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/compiler/ebin
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include
-	cp -f $(BOOTSTRAP_TOP)/lib/orber/include/* \
+	cp -f $(BOOTSTRAP_SRC_TOP)/lib/orber/include/* \
 		$(BOOTSTRAP_ROOT)/bootstrap/lib/orber/include
+ifneq ($(BOOTSTRAP_SRC_TOP),$(ERL_TOP))
 	test -d $(BOOTSTRAP_ROOT)/bootstrap/bin \
 		|| mkdir -p  $(BOOTSTRAP_ROOT)/bootstrap/bin
-	cp -f $(BOOTSTRAP_TOP)/bin/* \
+	cp -f $(BOOTSTRAP_SRC_TOP)/bin/* \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin
-
+endif
 
 # To remove modules left by the bootstrap building, but leave (restore)
 # the modules in kernel which are needed for an emulator build
@@ -506,6 +541,7 @@ TESTS +=					\
 	erl_interface_test			\
 	ic_test					\
 	inets_test				\
+	inviso_test				\
 	jinterface_test				\
 	kernel_test				\
 	megaco_test				\
@@ -671,7 +707,9 @@ install.dirs:
 # Clean targets
 #
 
-clean: bootstrap_clean
+clean:
+	@test -d $(ERL_TOP)/bootstrap/lib \
+		|| ERL_TOP=$(ERL_TOP) $(MAKE) recreate_primary_bootstrap
 	rm -f *~ *.bak config.log config.status
 	find . -type f -name SKIP -print | xargs $(RM)
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean

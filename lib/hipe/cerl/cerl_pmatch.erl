@@ -117,9 +117,7 @@ clauses(Cs, Env) ->
 clauses([C | _] = Cs, Else, Env) ->
     Vs = new_vars(cerl:clause_arity(C), Env),
     E = match(Vs, Cs, Else, add_vars(Vs, Env)),
-    {E, Vs};
-clauses([], _Else, _Env) ->
-    throw(no_clauses).
+    {E, Vs}.
 
 %% The implementation very closely follows that described in the book.
 
@@ -448,7 +446,7 @@ expr(E, Env) ->
  	'case' ->
 	    A = expr(cerl:case_arg(E), Env),
 	    Cs = expr_list(cerl:case_clauses(E), Env),
-	    {E1, Vs} = cerl_pmatch:clauses(Cs, Env),
+	    {E1, Vs} = clauses(Cs, Env),
  	    make_let(Vs, A, E1);
  	clause ->
 	    Vs = cerl:clause_vars(E),

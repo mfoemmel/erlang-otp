@@ -188,7 +188,9 @@ lookForUnElems([], _, Res) -> lists:flatten(Res).
 %% Return    : 
 %% Notes     : 
 %%>----------------------------------------------------------------------<
-fixDstLst(DstLst, Size) -> fixDstLst(DstLst, Size, 1, []).
+fixDstLst(DstLst, Size) when is_integer(Size) ->
+  fixDstLst(DstLst, Size, 1, []).
+
 fixDstLst(DstLst, Size, Cnt, Res) when Cnt =< Size ->
     case isInLst(Cnt, DstLst) of
 	{true, Var} ->

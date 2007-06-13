@@ -37,7 +37,7 @@
 -export([format_error/1]).
 
 -import(lists, 
-	[concat/1, foldl/3, map/2, nthtail/2, reverse/1, sort/1, sublist/2]).
+	[concat/1, foldl/3, nthtail/2, reverse/1, sort/1, sublist/2]).
 
 -import(sofs,
 	[composite/2, difference/2, empty_set/0, from_term/1,
@@ -117,7 +117,7 @@ statements([Stmt={assign, VarType, Name, E} | Stmts0], Table, L, UV) ->
 	    Val = #xref_var{name = Name, vtype = VarType, 
 			    otype = OType, type = Type},
 	    NewTable = dict:store(Name, Val, Table),
-	    Stmts = if Stmts0 == [] -> [{variable, Name}]; true -> Stmts0 end,
+	    Stmts = if Stmts0 =:= [] -> [{variable, Name}]; true -> Stmts0 end,
 	    Variable = {VarType, Name},
 	    Put = {put, Variable, NewE},
 	    statements(Stmts, NewTable, [Put | L], [{Variable,Val} | UV])
@@ -272,7 +272,7 @@ check_expr(Expr={set, SOp, E1, E2}, Table) ->
 	_Else -> % set
 	    {Type, NewE1, NewE2} = 
 		case {type_ord(Type1), type_ord(Type2)} of
-		    {T1, T2} when T1 == T2 ->
+		    {T1, T2} when T1 =:= T2 ->
 			%% Example: if Type1 = {line, line} and 
 			%% Type2 = {line, export_line}, then this is not
 			%% correct, but works:
@@ -299,13 +299,13 @@ check_expr(Expr={restr, ROp, E1, E2}, Table) ->
 	    ok
     end,
     case {OType1, OType2} of
-	{edge, vertex} when ROp == '|||' ->
+	{edge, vertex} when ROp =:= '|||' ->
 	    {expr, _, _, R1} = restriction('|', E1, Type1, NE1, Type2, NE2),
 	    {expr, _, _, R2} = restriction('||', E1, Type1, NE1, Type2, NE2),
 	    {expr, Type1, edge, {call, intersection, R1, R2}};
 	{edge, vertex} ->
 	    restriction(ROp, E1, Type1, NE1, Type2, NE2);
-	{edge_closure, vertex} when ROp == '|||' ->
+	{edge_closure, vertex} when ROp =:= '|||' ->
 	    {expr, _, _, R1} = 
 		closure_restriction('|', Type1, Type2, OType2, NE1, NE2),
 	    {expr, _, _, R2} = 
@@ -331,7 +331,7 @@ check_expr(Expr={path, E1, E2}, Table) ->
     {OType1, NE1} = path_arg(OType1a, E1a),
     NE2 = case {OType1, OType2} of 
 	      {path, edge} -> {convert, OType2, edge_closure, E2b};
-	      {path, edge_closure} when Type1 == Type2 -> E2b;
+	      {path, edge_closure} when Type1 =:= Type2 -> E2b;
 	      _ -> throw_error({type_error, xref_parser:t2s(Expr)})
 	  end,
     {expr, Type1, path, use_of_closure(path, NE2, NE1)};
@@ -370,14 +370,14 @@ check_conversion(OType, Type1, Type2, Expr) ->
 conversions(_OType, {line, LineType}, {line, LineType}) -> ok; 
 conversions(edge, {line, _}, {line, all_line_call}) -> ok;
 conversions(edge, From, {line, Line}) 
-                 when atom(From), Line /= all_line_call -> ok;
-conversions(vertex, From, {line, line}) when atom(From) -> ok;
-conversions(vertex, From, To) when atom(From), atom(To) -> ok;
-conversions(edge, From, To) when atom(From), atom(To) -> ok;
+                 when is_atom(From), Line =/= all_line_call -> ok;
+conversions(vertex, From, {line, line}) when is_atom(From) -> ok;
+conversions(vertex, From, To) when is_atom(From), is_atom(To) -> ok;
+conversions(edge, From, To) when is_atom(From), is_atom(To) -> ok;
 %% "Extra":
 conversions(edge, {line, Line}, To) 
-                 when atom(To), Line /= all_line_call -> ok;
-conversions(vertex, {line, line}, To) when atom(To) -> ok;
+                 when is_atom(To), Line =/= all_line_call -> ok;
+conversions(vertex, {line, line}, To) when is_atom(To) -> ok;
 conversions(_OType, _From, _To) -> not_ok.
 
 set_op(union, {line, _LineType}, edge) -> family_union;
@@ -399,9 +399,9 @@ ari_op(difference) -> fun(X, Y) -> X - Y end.
 restriction(ROp, E1, Type1, NE1, Type2, NE2) ->
     {Column, _} = restr_op(ROp),
     case NE1 of 
-	{call, union_of_family, _E} when ROp == '|' ->
+	{call, union_of_family, _E} when ROp =:= '|' ->
 	    restriction(Column, Type1, E1, Type2, NE2);
-	{call, union_of_family, _E} when ROp == '||' ->
+	{call, union_of_family, _E} when ROp =:= '||' ->
 	    E1p = {inverse, E1},
 	    restriction(Column, Type1, E1p, Type2, NE2);
 	_ ->
@@ -410,7 +410,7 @@ restriction(ROp, E1, Type1, NE1, Type2, NE2) ->
 	    {expr, Type1, edge, {call, restriction, Column, NE1, NE2b}}
     end.
 
-restriction(Column, Type1, VE, Type2, E2) when Type1 == function ->
+restriction(Column, Type1, VE, Type2, E2) when Type1 =:= function ->
     M = {convert, vertex, Type2, module, E2},
     Restr = {call, union_of_family, {call, restriction, VE, M}},
     C = {convert, vertex, Type2, Type1, E2},
@@ -449,8 +449,7 @@ check_constants(Cs=[C={constant, Type0, OType, _Con} | Cs1], Table) ->
 	    end,
     case split(Types, Cs, Table) of
 	[{TypeToBe, _Cs}] ->
-	    Fun = fun({constant, _T, _OT, Con}) -> Con end,
-	    S = from_term(map(Fun, Cs)),
+            S = from_term([Con || {constant, _T, _OT, Con} <- Cs]),
 	    Type = what_type(TypeToBe),
 	    E = function_vertices_to_family(Type, OType, {constants, S}),
 	    {expr, Type, OType, E};
@@ -463,7 +462,7 @@ check_constants(Cs=[C={constant, Type0, OType, _Con} | Cs1], Table) ->
 check_mix([C={constant, 'Fun', OType, _Con} | Cs], 'Fun', OType, _C0) ->
     check_mix(Cs, 'Fun', OType, C);
 check_mix([C={constant, Type, OType, _Con} | Cs], Type0, OType, _C0)
-         when Type /= 'Fun', Type0 /= 'Fun' ->
+         when Type =/= 'Fun', Type0 =/= 'Fun' ->
     check_mix(Cs, Type, OType, C);
 check_mix([C | _], _Type0, _OType0, C0) ->
     throw_error({type_mismatch, xref_parser:t2s(C0), xref_parser:t2s(C)});
@@ -540,7 +539,7 @@ convert({call, Op, E1, E2, E3}) ->
     {Op, convert(E1), convert(E2), convert(E3)};
 convert({constants, Constants}) ->
     ?Q(Constants);
-convert(I) when integer(I) ->
+convert(I) when is_integer(I) ->
     ?Q(I).
 
 var_name({predef, VarName}) -> VarName;
@@ -555,7 +554,7 @@ convert(E, OType, FromType, number) ->
     un_familiarize(FromType, OType, E);
 convert(E, OType, FromType, ToType) ->
     case {type_ord(FromType), type_ord(ToType)} of
-        {FT, To} when FT == To ->
+        {FT, To} when FT =:= To ->
             E;
 	{FT, ToT} when FT > ToT ->
             special(OType, FromType, ToType, E);
@@ -565,7 +564,7 @@ convert(E, OType, FromType, ToType) ->
 
 -define(T(V), {tmp, V}).
 
-general(_ObjectType, FromType, ToType, X) when FromType == ToType ->
+general(_ObjectType, FromType, ToType, X) when FromType =:= ToType ->
     X;
 general(edge, {line, _LineType}, ToType, LEs) -> 
     VEs = {projection, ?Q({external, fun({V1V2,_Ls}) -> V1V2 end}), LEs},
@@ -592,7 +591,7 @@ general(vertex, module, ToType, M) ->
 general(vertex, application, release, A) ->
     {image, {get, a2r}, A}.
 
-special(_ObjectType, FromType, ToType, X) when FromType == ToType ->
+special(_ObjectType, FromType, ToType, X) when FromType =:= ToType ->
     X;
 special(edge, {line, _LineType}, {line, all_line_call}, Calls) ->
    {put, ?T(mods), 
@@ -607,10 +606,10 @@ special(edge, {line, _LineType}, {line, all_line_call}, Calls) ->
 	           {get, ?T(def_at)}, Calls}}};
 special(edge, function, {line, LineType}, VEs) ->
     Var = if 
-	      LineType == line -> call_at;
-	      LineType == export_call -> e_call_at;
-	      LineType == local_call -> l_call_at;
-	      LineType == external_call -> x_call_at
+	      LineType =:= line -> call_at;
+	      LineType =:= export_call -> e_call_at;
+	      LineType =:= local_call -> l_call_at;
+	      LineType =:= external_call -> x_call_at
 	  end,
     line_edges(VEs, Var);
 special(edge, module, ToType, MEs) ->
@@ -721,7 +720,7 @@ find_nodes({put, Var, E1, E2}, I, T) ->
     %% Now NE1 is considered used once, which is wrong. Fixed below.
     NT = dict:store({var, Var}, NE1, T1),
     find_nodes(E2, I1, NT);
-find_nodes(Tuple, I, T) when tuple(Tuple) ->
+find_nodes(Tuple, I, T) when is_tuple(Tuple) ->
     [Tag0 | L] = tuple_to_list(Tuple),
     Fun = fun(A, {L0, I0, T0}) ->
 		  {NA, _E, NI, NT} = find_nodes(A, I0, T0),
@@ -729,8 +728,8 @@ find_nodes(Tuple, I, T) when tuple(Tuple) ->
 	  end,
     {NL, NI, T1} = foldl(Fun, {[], I, T}, L),
     Tag = case Tag0 of
-	      _ when function(Tag0) -> Tag0;
-	      _ when atom(Tag0) -> {sofs, Tag0}
+	      _ when is_function(Tag0) -> Tag0;
+	      _ when is_atom(Tag0) -> {sofs, Tag0}
 	  end,
     find_node({apply, Tag, NL}, NI, T1).
 
@@ -738,7 +737,7 @@ find_node(E, I, T) ->
     case dict:find(E, T) of
         {ok, {reuse, N}} ->
 	    {N, E, I, T};
-	{ok, N} when integer(N) ->
+	{ok, N} when is_integer(N) ->
 	    {N, E, I, dict:store(E, {reuse, N}, T)};
 	{ok, E1} ->
 	    find_node(E1, I, T);
@@ -750,7 +749,7 @@ find_node(E, I, T) ->
 %% evaluating) that are to be used after the result has been popped.
 save_vars([{I, {reuse,N}} | DL], D, Vs, UVs, L) ->
     save_vars(DL, D, [{N, {save, {tmp, N}}} | Vs], UVs, [{N, I} | L]);
-save_vars([{I, N} | DL], D, Vs, UVs, L) when integer(N) ->
+save_vars([{I, N} | DL], D, Vs, UVs, L) when is_integer(N) ->
     save_vars(DL, D, Vs, UVs, [{N, I} | L]);
 save_vars([{{var,V={user,_}}, I} | DL], D, Vs, UVs, L) ->
     N = case dict:fetch(I, D) of
@@ -842,7 +841,7 @@ evaluate([{apply, MF, NoAs} | P], T, S) ->
     evaluate(P, T, [apply(MF, Args) | NewS]);
 evaluate([{quote, Val} | P], T, S) ->
     evaluate(P, T, [Val | S]);
-evaluate([{get, Var} | P], T, S) when atom(Var) -> % predefined
+evaluate([{get, Var} | P], T, S) when is_atom(Var) -> % predefined
     Value = fetch_value(Var, T),
     Val = case Value of 
 	      {R, _} -> R; % relation
@@ -879,14 +878,14 @@ evaluate([], T, [R]) ->
 %% Use the same table for everything... Here: Reference counters for digraphs.
 update_graph_counter(Value, Inc, T) ->
     case catch digraph:info(Value) of
-	Info when list(Info) ->
+	Info when is_list(Info) ->
 	    case dict:find(Value, T) of
 		{ok, 1} when Inc =:= -1 ->
 		    true = digraph:delete(Value),
 		    dict:erase(Value, T);
 		{ok, C} ->
 		    dict:store(Value, C+Inc, T);
-		error when Inc == 1 ->
+		error when Inc =:= 1 ->
 		    dict:store(Value, 1, T)
 	    end;
 	_EXIT -> 
@@ -918,7 +917,7 @@ format_line(at_end) ->
     " at end of string";
 format_line(0) ->
     "";
-format_line(Line) when integer(Line) ->
+format_line(Line) when is_integer(Line) ->
     concat([" on line ", Line]).
 
 throw_error(Reason) ->

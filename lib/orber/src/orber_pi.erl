@@ -576,8 +576,8 @@ codefactory_create_codec(_) ->
 codec_encode(Version, Any) when record(Any, any) ->
     %% Encode ByteOrder
     {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    list_to_binary(lists:reverse(cdr_encode:enc_type('tk_any', Version, Any,
-						     Bytes, Len)));
+    {Bytes2, _Len2} = cdr_encode:enc_type('tk_any', Version, Any, Bytes, Len),
+    list_to_binary(lists:reverse(Bytes2));
 codec_encode(_Version, _Any) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 
@@ -592,7 +592,8 @@ codec_encode(_Version, _Any) ->
 codec_encode_value(Version, #any{typecode = TC, value = Val}) ->
     %% Encode ByteOrder
     {Bytes, Len} = cdr_encode:enc_type('tk_octet', Version, 0, [], 0),
-    list_to_binary(lists:reverse(cdr_encode:enc_type(TC, Version, Val, Bytes, Len)));
+    {Bytes2, _Len2} = cdr_encode:enc_type(TC, Version, Val, Bytes, Len),
+    list_to_binary(lists:reverse(Bytes2));
 codec_encode_value(_Version, _NotAnAny) ->
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
 

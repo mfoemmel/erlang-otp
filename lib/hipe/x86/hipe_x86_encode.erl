@@ -147,25 +147,25 @@ cc(g) -> ?CC_G.
 
 %%% r/m operands
 
-sindex(Scale, Index) ->
+sindex(Scale, Index) when is_integer(Scale), is_integer(Index) ->
     ?ASSERT(sindex, Scale >= 0),
     ?ASSERT(sindex, Scale =< 3),
     ?ASSERT(sindex, Index =/= ?ESP),
     {sindex, Scale, Index}.
 
--record(sib, {sindex_opt, base}).
-sib(Base) -> #sib{sindex_opt=none, base=Base}.
-sib(Base, Sindex) -> #sib{sindex_opt=Sindex, base=Base}.
+-record(sib, {sindex_opt, base :: integer()}).
+sib(Base) when is_integer(Base) -> #sib{sindex_opt=none, base=Base}.
+sib(Base, Sindex) when is_integer(Base) -> #sib{sindex_opt=Sindex, base=Base}.
 
-ea_disp32_base(Disp32, Base) ->
+ea_disp32_base(Disp32, Base) when is_integer(Base) ->
     ?ASSERT(ea_disp32_base, Base =/= ?ESP),
     {ea_disp32_base, Disp32, Base}.
 ea_disp32_sib(Disp32, SIB) -> {ea_disp32_sib, Disp32, SIB}.
-ea_disp8_base(Disp8, Base) ->
+ea_disp8_base(Disp8, Base) when is_integer(Base) ->
     ?ASSERT(ea_disp8_base, Base =/= ?ESP),
     {ea_disp8_base, Disp8, Base}.
 ea_disp8_sib(Disp8, SIB) -> {ea_disp8_sib, Disp8, SIB}.
-ea_base(Base) ->
+ea_base(Base) when is_integer(Base) ->
     ?ASSERT(ea_base, Base =/= ?ESP),
     ?ASSERT(ea_base, Base =/= ?EBP),
     {ea_base, Base}.

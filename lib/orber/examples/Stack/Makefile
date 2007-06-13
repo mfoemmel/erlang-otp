@@ -79,12 +79,12 @@ CPP_FILES = StackClient.cc
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
-
-JAVA_OPTIONS = -classpath ../../priv:/opt/local/pgm/OrbixWeb3.2/
+ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
+	-pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
 
 # ----------------------------------------------------
 # Targets
@@ -101,7 +101,7 @@ test: $(TEST_TARGET_FILES)
 
 
 $(GEN_ERL_MODULES:%=%.erl) $(GEN_HRL_FILES): stack.idl
-	erlc $(ERL_FLAGS) stack.idl
+	erlc $(ERL_IDL_FLAGS) stack.idl
 
 # ----------------------------------------------------
 # Release Target

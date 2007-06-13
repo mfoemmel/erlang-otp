@@ -75,13 +75,13 @@ format_1(#k_int{val=I}, _Ctxt) -> integer_to_list(I);
 format_1(#k_nil{}, _Ctxt) -> "[]";
 format_1(#k_string{val=S}, _Ctxt) -> io_lib:write_string(S);
 format_1(#k_var{name=V}, _Ctxt) ->
-    if atom(V) ->
+    if is_atom(V) ->
 	    case atom_to_list(V) of
 		[$_|Cs] -> "_X" ++ Cs;
 		[C|Cs] when C >= $A, C =< $Z -> [C|Cs];
 		Cs -> [$_|Cs]
 	    end;
-       integer(V) -> [$_|integer_to_list(V)]
+       is_integer(V) -> [$_|integer_to_list(V)]
     end;
 format_1(#k_cons{hd=H,tl=T}, Ctxt) ->
     Txt = ["["|format(H, ctxt_bump_indent(Ctxt, 1))],
@@ -362,7 +362,7 @@ format_fa_pair({F,A}, _Ctxt) -> [core_atom(F),$/,integer_to_list(A)].
 
 %% format_attribute({Name,Val}, Context) -> Txt.
 
-format_attribute({Name,Val}, Ctxt) when list(Val) ->
+format_attribute({Name,Val}, Ctxt) when is_list(Val) ->
     Txt = format(#k_atom{val=Name}, Ctxt),
     Ctxt1 = ctxt_bump_indent(Ctxt, width(Txt,Ctxt)+4),
     [Txt," = ",
@@ -436,7 +436,7 @@ unindent([$\t|T], N, Ctxt, C) ->
        true ->
 	    unindent([string:chars($\s, Tab - N)|T], 0, Ctxt, C)
     end;
-unindent([L|T], N, Ctxt, C) when list(L) ->
+unindent([L|T], N, Ctxt, C) when is_list(L) ->
     unindent(L, N, Ctxt, [T|C]);
 unindent([H|T], _N, _Ctxt, C) ->
     [H|[T|C]];
@@ -452,7 +452,7 @@ width([$\t|T], A, Ctxt, C) ->
     width(T, A + Ctxt#ctxt.tab_width, Ctxt, C);
 width([$\n|T], _A, Ctxt, C) ->
     width(unindent([T|C], Ctxt), Ctxt);
-width([H|T], A, Ctxt, C) when list(H) ->
+width([H|T], A, Ctxt, C) when is_list(H) ->
     width(H, A, Ctxt, [T|C]);
 width([_|T], A, Ctxt, C) ->
     width(T, A + 1, Ctxt, C);

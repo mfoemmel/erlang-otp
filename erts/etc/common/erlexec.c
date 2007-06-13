@@ -137,8 +137,9 @@ void error(char* format, ...);
 static void usage_notsup(const char *switchname);
 #endif
 static void usage_msg(const char *msg);
-static void mergeargs(int *argc, char ***argv, char **addargs);
 static char **build_args_from_env(char *env_var);
+static char **build_args_from_string(char *env_var);
+static void initial_argv_massage(int *argc, char ***argv);
 static void get_parameters(int argc, char** argv);
 static void add_arg(char *new_arg);
 static void add_args(char *first_arg, ...);
@@ -295,12 +296,12 @@ int main(int argc, char **argv)
 	goto skip_arg_massage;
     }   
 #endif
-    mergeargs(&argc, &argv, build_args_from_env("ERL_FLAGS"));
-    mergeargs(&argc, &argv,
-	      build_args_from_env("ERL_" OTP_SYSTEM_VERSION "_FLAGS"));
+
+    initial_argv_massage(&argc, &argv); /* Merge with env; expand -args_file */
 
     i = 1;
 #ifdef __WIN32__
+    /* Not used? /rickard */
     if ((argc > 2) && (strcmp(argv[i], "-regkey") == 0)) {
 	key_val_name = strsave(argv[i+1]);
 	i = 3;
@@ -624,6 +625,7 @@ int main(int argc, char **argv)
 	      case '+':
 		switch (argv[i][1]) {
 		  case '#':
+		  case 'a':
 		  case 'A':
 		  case 'b':
 		  case 'h':
@@ -834,7 +836,8 @@ usage_aux(void)
 	  "[-hybrid] "
 #endif
 	  "[-make] [-man [manopts] MANPAGE] [-x] [-emu_args] "
-	  "[+A THREADS] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
+	  "[-args_file FILENAME] "
+	  "[+A THREADS] [+a SIZE] [+B[c|d|i]] [+c] [+h HEAP_SIZE] [+K BOOLEAN] "
 	  "[+l] [+M<SUBSWITCH> <ARGUMENT>] [+P MAX_PROCS] [+R COMPAT_REL] "
 	  "[+r] [+S NO_OF_SCHEDULERS] [+T LEVEL] [+V] [+v] [+W<i|w>] "
 	  "[args ...]\n");
@@ -864,6 +867,15 @@ usage_msg(const char *msg)
     usage_aux();
 }
 
+static void
+usage_format(char *format, ...)
+{
+    va_list args;
+    va_start(args, format);
+    vfprintf(stderr, format, args);
+    va_end(args);
+    usage_aux();
+}
 
 void
 start_epmd(char *epmd)
@@ -1217,13 +1229,18 @@ get_home(void)
 
 static char **build_args_from_env(char *env_var)
 {
+    return build_args_from_string(getenv(env_var));
+}
+
+static char **build_args_from_string(char *string)
+{
     int argc = 0;
     char **argv = NULL;
     int alloced = 0;
     char **cur_s = NULL;	/* Initialized to avoid warning. */
     int s_alloced = 0;
     int s_pos = 0;
-    char *p;
+    char *p = string;
     enum {Start, Build, Build0, BuildSQuoted, BuildDQuoted, AcceptNext} state;
 
 #define ENSURE()					\
@@ -1236,7 +1253,7 @@ static char **build_args_from_env(char *env_var)
     }
 
 
-    if (!(p = getenv(env_var)))
+    if (!p)
 	return NULL;
     argv = emalloc(sizeof(char *) * (alloced = 10));
     state = Start;
@@ -1342,33 +1359,352 @@ done:
     return argv;
 #undef ENSURE
 }
-		
-void		
-mergeargs(int *argc, char ***argv, char **addargs)
-{
-    int add = 0;
-    char **tmp = addargs;
-    char **res;
-    char **rtmp;
 
-    if (!addargs) {
+static char *
+errno_string(void)
+{
+    char *str = strerror(errno);
+    if (!str)
+	return "unknown error";
+    return str;
+}
+
+static char **
+read_args_file(char *filename)
+{
+    int c, aix = 0, quote = 0, cmnt = 0, asize = 0;
+    char **res, *astr = NULL;
+    FILE *file;
+
+#undef EAF_CMNT
+#undef EAF_QUOTE
+#undef SAVE_CHAR
+
+#define EAF_CMNT	(1 << 8)
+#define EAF_QUOTE	(1 << 9)
+#define SAVE_CHAR(C)						\
+    do {							\
+	if (!astr)						\
+	    astr = emalloc(sizeof(char)*(asize = 20));		\
+	if (aix == asize)					\
+	    astr = erealloc(astr, sizeof(char)*(asize += 20));	\
+	if (' ' != (char) (C))					\
+	    astr[aix++] = (char) (C);				\
+	else if (aix > 0 && astr[aix-1] != ' ')			\
+	    astr[aix++] = ' ';					\
+   } while (0)
+
+    do {
+	errno = 0;
+	file = fopen(filename, "r");
+    } while (!file && errno == EINTR);
+    if (!file) {
+	usage_format("Failed to open arguments file \"%s\": %s\n",
+		     filename,
+		     errno_string());
+    }
+
+    while (1) {
+	c = getc(file);
+	if (c == EOF) {
+	    if (ferror(file)) {
+		if (errno == EINTR) {
+		    clearerr(file);
+		    continue;
+		}
+		usage_format("Failed to read arguments file \"%s\": %s\n",
+			     filename,
+			     errno_string());
+	    }
+	    break;
+	}
+
+	switch (quote | cmnt | c) {
+	case '\\':
+	    quote = EAF_QUOTE;
+	    break;
+	case '#':
+	    cmnt = EAF_CMNT;
+	    break;
+	case EAF_CMNT|'\n':
+	    cmnt = 0;
+	    /* Fall through... */
+	case '\n':
+	case '\f':
+	case '\r':
+	case '\t':
+	case '\v':
+	    if (!quote)
+		c = ' ';
+	    /* Fall through... */
+	default:
+	    if (!cmnt)
+		SAVE_CHAR(c);
+	    quote = 0;
+	    break;
+	}
+    }
+
+    SAVE_CHAR('\0');
+
+    fclose(file);
+
+    if (astr[0] == '\0')
+	res = NULL;
+    else
+	res = build_args_from_string(astr);
+
+    efree(astr);
+
+    return res;
+
+#undef EAF_CMNT
+#undef EAF_QUOTE
+#undef SAVE_CHAR
+}
+
+typedef struct {
+    char **argv;
+    int argc;
+    int size;
+} argv_buf;
+
+static void
+trim_argv_buf(argv_buf *abp)
+{
+    abp->argv = erealloc(abp->argv, sizeof(char *)*(abp->size = abp->argc));
+}
+
+static void
+save_arg(argv_buf *abp, char *arg)
+{
+    if (abp->size <= abp->argc) {
+	if (!abp->argv)
+	    abp->argv = emalloc(sizeof(char *)*(abp->size = 100));
+	else
+	    abp->argv = erealloc(abp->argv, sizeof(char *)*(abp->size += 100));
+    }
+    abp->argv[abp->argc++] = arg;
+}
+
+#define DEF_ARGV_STACK_SIZE 10
+#define ARGV_STACK_SIZE_INCR 50
+
+typedef struct {
+    char **argv;
+    int ix;
+} argv_stack_element;
+
+typedef struct {
+    int top_ix;
+    int size;
+    argv_stack_element *base;
+    argv_stack_element def_buf[DEF_ARGV_STACK_SIZE];
+} argv_stack;
+
+#define ARGV_STACK_INIT(S)		\
+do {					\
+    (S)->top_ix = 0;			\
+    (S)->size = DEF_ARGV_STACK_SIZE;	\
+    (S)->base = &(S)->def_buf[0];	\
+} while (0)
+
+static void
+push_argv(argv_stack *stck, char **argv, int ix)
+{
+    if (stck->top_ix == stck->size) {
+	if (stck->base != &stck->def_buf[0]) {
+	    stck->size += ARGV_STACK_SIZE_INCR;
+	    stck->base = erealloc(stck->base,
+				  sizeof(argv_stack_element)*stck->size);
+	}
+	else {
+	    argv_stack_element *base;
+	    base = emalloc(sizeof(argv_stack_element)
+			   *(stck->size + ARGV_STACK_SIZE_INCR));
+	    memcpy((void *) base,
+		   (void *) stck->base,
+		   sizeof(argv_stack_element)*stck->size);
+	    stck->base = base;
+	    stck->size += ARGV_STACK_SIZE_INCR;
+	}
+    }
+    stck->base[stck->top_ix].argv = argv;
+    stck->base[stck->top_ix++].ix = ix;
+}
+
+static void
+pop_argv(argv_stack *stck, char ***argvp, int *ixp)
+{
+    if (stck->top_ix == 0) {
+	*argvp = NULL;
+	*ixp = 0;
+    }
+    else {
+	*argvp = stck->base[--stck->top_ix].argv;
+	*ixp = stck->base[stck->top_ix].ix;
+	if (stck->top_ix == 0 && stck->base != &stck->def_buf[0]) {
+	    efree(stck->base);
+	    stck->base = &stck->def_buf[0];
+	    stck->size = DEF_ARGV_STACK_SIZE;
+	}
+    }
+}
+
+static void
+get_file_args(char *filename, argv_buf *abp, argv_buf *xabp)
+{
+    argv_stack stck;
+    int i;
+    char **argv;
+
+    ARGV_STACK_INIT(&stck);
+
+    i = 0;
+    argv = read_args_file(filename);
+    
+    while (argv) {
+	
+	while (argv[i]) {
+	    if (strcmp(argv[i], "-args_file") == 0) {
+		char **new_argv;
+		char *fname;
+		if (!argv[++i])
+		    usage("-args_file");
+		fname = argv[i++];
+		new_argv = read_args_file(fname);
+		if (new_argv) {
+		    if (argv[i])
+			push_argv(&stck, argv, i);
+		    else
+			efree(argv);
+		    i = 0;
+		    argv = new_argv;
+		}
+	    }
+	    else {
+		if (strcmp(argv[i], "-extra") == 0) {
+		    i++;
+		    while (argv[i])
+			save_arg(xabp, argv[i++]);
+		    break;
+		}
+		save_arg(abp, argv[i++]);
+	    }
+	}
+
+	efree(argv);
+
+	pop_argv(&stck, &argv, &i);
+    }
+}
+
+static void
+initial_argv_massage(int *argc, char ***argv)
+{
+    argv_buf ab = {0}, xab = {0};
+    int ix, vix, ac;
+    char **av;
+    struct {
+	int argc;
+	char **argv;
+    } avv[] = {{INT_MAX, NULL}, {INT_MAX, NULL}, {INT_MAX, NULL},
+	       {INT_MAX, NULL}, {INT_MAX, NULL}, {INT_MAX, NULL}};
+    /*
+     * The environment flag containing OTP release is intentionally
+     * undocumented and intended for OTP internal use only.
+     */
+
+    vix = 0;
+    av = build_args_from_env("ERL_AFLAGS");
+    if (av)
+	avv[vix++].argv = av;
+
+    /* command line */
+    if (*argc > 1) {
+	avv[vix].argc = *argc - 1;
+	avv[vix++].argv = &(*argv)[1];
+    }
+
+    av = build_args_from_env("ERL_FLAGS");
+    if (av)
+	avv[vix++].argv = av;
+
+    av = build_args_from_env("ERL_" OTP_SYSTEM_VERSION "_FLAGS");
+    if (av)
+	avv[vix++].argv = av;
+
+    av = build_args_from_env("ERL_ZFLAGS");
+    if (av)
+	avv[vix++].argv = av;
+
+    if (vix == (*argc > 1 ? 1 : 0)) {
+	/* Only command line argv; check if we can use argv as it is... */
+	ac = *argc;
+	av = *argv;
+	for (ix = 1; ix < ac; ix++) {
+	    if (strcmp(av[ix], "-args_file") == 0) {
+		/* ... no; we need to expand arguments from
+		   file into argument list */
+		goto build_new_argv;
+	    }
+	    if (strcmp(av[ix], "-extra") == 0) {
+		break;
+	    }
+	}
+
+	/* ... yes; we can use argv as it is. */
 	return;
     }
 
-    while(*tmp++) {
-	++add;
+ build_new_argv:
+
+    save_arg(&ab, (*argv)[0]);
+    
+    vix = 0;
+    while (avv[vix].argv) {
+	ac = avv[vix].argc;
+	av = avv[vix].argv;
+
+	ix = 0;
+	while (ix < ac && av[ix]) {
+	    if (strcmp(av[ix], "-args_file") == 0) {
+		if (++ix == ac)
+		    usage("-args_file");
+		get_file_args(av[ix++], &ab, &xab);
+	    }
+	    else {
+		if (strcmp(av[ix], "-extra") == 0) {
+		    ix++;
+		    while (ix < ac && av[ix])
+			save_arg(&xab, av[ix++]);
+		    break;
+		}
+		save_arg(&ab, av[ix++]);
+	    }
+	}
+
+	vix++;
     }
-    *argc +=add;
-    res = emalloc((*argc + 1) * sizeof(char *));
-    rtmp = res;
-    for (tmp = *argv; (*rtmp = *tmp) != NULL && strcmp(*rtmp, "-extra") != 0;
-	 ++tmp, ++rtmp)
-	;
-    for ( ; (*rtmp = *addargs) != NULL; ++addargs, ++rtmp)
-	;
-    for ( ; (*rtmp = *tmp) != NULL; ++tmp, ++rtmp)
-	;
-    *argv = res;
+
+    vix = 0;
+    while (avv[vix].argv) {
+	if (avv[vix].argc == INT_MAX) /* not command line */
+	    efree(avv[vix].argv);
+	vix++;
+    }
+
+    if (xab.argc) {
+	save_arg(&ab, "-extra");
+	for (ix = 0; ix < xab.argc; ix++)
+	    save_arg(&ab, xab.argv[ix]);
+	efree(xab.argv);
+    }
+
+    save_arg(&ab, NULL);
+    trim_argv_buf(&ab);
+    *argv = ab.argv;
+    *argc = ab.argc - 1;
 }
 
 #ifdef __WIN32__

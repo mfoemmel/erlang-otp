@@ -286,13 +286,13 @@ get_deprecated(Ts, F, A, Env) ->
 	    M = Env#env.module,
 	    case erl_internal:obsolete(M, F, A) of
 		{true, {M1, F1, A1}} ->
-		    Text = if M == M1 ->
+		    Text = if M =:= M1 ->
 				   io_lib:fwrite("~w/~w", [F1, A1]);
 			      true ->
 				   io_lib:fwrite("~w:~w/~w",
 						 [M1, F1, A1])
 			   end,
-		    Ref = if M == M1 ->
+		    Ref = if M =:= M1 ->
 				  edoc_refs:function(F1, A1);
 			     true ->
 				  edoc_refs:function(M1, F1, A1)
@@ -312,9 +312,9 @@ get_deprecated(Ts, F, A, Env) ->
 
 get_expr_ref(Expr) ->
     case catch {ok, erl_syntax_lib:analyze_application(Expr)} of
-	{ok, {F, A}} when atom(F), integer(A) ->
+	{ok, {F, A}} when is_atom(F), is_integer(A) ->
 	    edoc_refs:function(F, A);
- 	{ok, {M, {F, A}}} when atom(M), atom(F), integer(A) ->
+ 	{ok, {M, {F, A}}} when is_atom(M), is_atom(F), is_integer(A) ->
  	    edoc_refs:function(M, F, A);
 	_ ->
 	    none
@@ -330,17 +330,17 @@ authors(Ts) ->
 
 author({Name, Mail, URI}) ->
     %% At least one of Name and Mail must be nonempty in the tag.
-    {author, ([{name, if Name == "" -> Mail;
+    {author, ([{name, if Name =:= "" -> Mail;
 			 true -> Name
 		      end}]
-	      ++ if Mail == "" ->
+	      ++ if Mail =:= "" ->
 			 case lists:member($@, Name) of
 			     true -> [{email, Name}];
 			     false -> []
 			 end;
 		    true -> [{email, Mail}]
 		 end
-	      ++ if URI == "" -> [];
+	      ++ if URI =:= "" -> [];
 		    true -> [{website, URI}]
 		 end), []}.
 
@@ -434,7 +434,7 @@ merge_args([], [], [], Rs, _P, _S, _N) ->
 merge_args(As, As1, Ds, Rs, P, S, N, A, D0) ->
     D = case dict:find(A, P) of
 	    {ok, D1} -> D1;
-	    error when D0 == [] -> [];  % no description
+	    error when D0 =:= [] -> [];  % no description
 	    error -> [D0]  % a simple-xml text element
 	end,
     merge_args(As, As1, Ds, [{A, D} | Rs], P,

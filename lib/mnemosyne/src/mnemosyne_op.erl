@@ -278,7 +278,7 @@ split_loop(NextPids, Count, {Tid, PidL,EndC}) ->
 %%%----------------------------------------------------------------
 %%%---- Table lookup
 
-table(NextPid, P) when record(P,pred_sym) ->
+table(NextPid, P) when is_record(P,pred_sym) ->
     table_loop(NextPid, P, #acc{}, {[], [], []}).
 
 
@@ -577,9 +577,9 @@ bss_union([], _, Acc) ->
     Acc.
 
 %%%----------------------------------------------------------------
-send([Pid|Pids], Msg) when pid(Pid) ->	Pid ! Msg, send(Pids,Msg);
+send([Pid|Pids], Msg) when is_pid(Pid) ->  Pid ! Msg, send(Pids,Msg);
 send([], _) -> ok;
-send(Pid, Msg) when pid(Pid) -> Pid ! Msg.
+send(Pid, Msg) when is_pid(Pid) -> Pid ! Msg.
 
 %%%----
 split_list(all, L) -> {L,[]};

@@ -141,8 +141,8 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I../include -I../../kernel/include
+
+ERL_COMPILE_FLAGS += +warn_obsolete_guard -I../include -I../../kernel/include
 
 # ----------------------------------------------------
 # Targets

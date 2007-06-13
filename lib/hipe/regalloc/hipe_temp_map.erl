@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/01/23 21:34:53 $
-%%              $Revision: 1.9 $
+%%              $Date: 2007/05/12 09:31:03 $
+%%              $Revision: 1.10 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -58,8 +58,8 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
       %% If it is precoloured, we know what to map it to.
       true -> 
 	case Target of
-	  hipe_sparc_specific_fp ->{fp_reg, N};
-	  _->{reg,N}
+	  hipe_sparc_specific_fp -> {fp_reg, N};
+	  _ -> {reg, N}
 	end;
       false -> unknown
     end,
@@ -69,9 +69,9 @@ cols2tuple(N, SourceMapping, Vs, Target) ->
 %% True if temp Temp is spilled.
 is_spilled(Temp, Map) ->
   case catch element(Temp+1, Map) of
-    {reg, R} -> false;
-    {fp_reg, R}-> false;
-    {spill, N} -> true;
+    {reg, _R} -> false;
+    {fp_reg, _R}-> false;
+    {spill, _N} -> true;
     unknown -> false;
     Error -> ?EXIT({bad_temp_map, Temp, Map, Error})
  end.
@@ -79,9 +79,9 @@ is_spilled(Temp, Map) ->
 %% True if temp Temp is allocated to a reg.
 in_reg(Temp, Map) ->
   case catch element(Temp+1, Map) of
-    {reg, R} -> true;
-    {fp_reg, R} -> false;
-    {spill, N} -> false;
+    {reg, _R} -> true;
+    {fp_reg, _R} -> false;
+    {spill, _N} -> false;
     unknown -> false;
     _ -> ?EXIT({bad_temp_map, Temp, Map})
   end.
@@ -89,9 +89,9 @@ in_reg(Temp, Map) ->
 %% True if temp Temp is allocated to a fp_reg.
 in_fp_reg(Temp, Map) ->
   case catch element(Temp+1, Map) of
-    {fp_reg, R} -> true;
-    {reg, R} -> false;
-    {spill, N} -> false;
+    {fp_reg, _R} -> true;
+    {reg, _R} -> false;
+    {spill, _N} -> false;
     unknown -> false;
     _ -> ?EXIT({bad_temp_map, Temp, Map})
   end.
@@ -135,7 +135,6 @@ in_fp_reg(Temp, Map) ->
     unknown -> false;
     _ -> ?EXIT({bad_temp_map, Temp, Map})
   end.
-
 
 %% Returns the inf temp Temp is mapped to.
 find(Temp, Map) -> element(Temp+1, Map).

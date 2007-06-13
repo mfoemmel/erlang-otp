@@ -74,6 +74,10 @@
 -define(SSL_ACCEPT_REP, 46).
 -define(SSL_ACCEPT_ERR, 47).
 
+-define(DUMP_CMD,       48).
+-define(DEBUG_CMD,      49).
+-define(DEBUGMSG_CMD,   50).
+
 %% --------------
 
 -define(SSLv2, 1).

@@ -57,34 +57,34 @@ apply(Mod, Name, Args) ->
 
 
 % Spawns with a fun
-spawn(F) when function(F) ->
+spawn(F) when is_function(F) ->
     spawn(erlang, apply, [F, []]);
-spawn({M,F}=MF) when atom(M), atom(F) ->
+spawn({M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn(erlang, apply, [MF, []]);
 spawn(F) ->
     erlang:fault(badarg, [F]).
 
-spawn(N, F) when N == node() ->
+spawn(N, F) when N =:= node() ->
     spawn(F);
-spawn(N, F) when function(F) ->
+spawn(N, F) when is_function(F) ->
     spawn(N, erlang, apply, [F, []]);
-spawn(N, {M,F}=MF) when atom(M), atom(F) ->
+spawn(N, {M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn(N, erlang, apply, [MF, []]);
 spawn(N, F) ->
     erlang:fault(badarg, [N, F]).
 
-spawn_link(F) when function(F) ->
+spawn_link(F) when is_function(F) ->
     spawn_link(erlang, apply, [F, []]);
-spawn_link({M,F}=MF) when atom(M), atom(F) ->
+spawn_link({M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn_link(erlang, apply, [MF, []]);
 spawn_link(F) ->
     erlang:fault(badarg, [F]).
 
-spawn_link(N, F) when N == node() ->
+spawn_link(N, F) when N =:= node() ->
     spawn_link(F);
-spawn_link(N, F) when function(F) ->
+spawn_link(N, F) when is_function(F) ->
     spawn_link(N, erlang, apply, [F, []]);
-spawn_link(N, {M,F}=MF) when atom(M), atom(F) ->
+spawn_link(N, {M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn_link(N, erlang, apply, [MF, []]);
 spawn_link(N, F) ->
     erlang:fault(badarg, [N, F]).
@@ -101,29 +101,29 @@ spawn_monitor(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
 spawn_monitor(M, F, A) ->
     erlang:error(badarg, [M,F,A]).
 
-spawn_opt(F, O) when function(F) ->
+spawn_opt(F, O) when is_function(F) ->
     spawn_opt(erlang, apply, [F, []], O);
-spawn_opt({M,F}=MF, O) when atom(M), atom(F) ->
+spawn_opt({M,F}=MF, O) when is_atom(M), is_atom(F) ->
     spawn_opt(erlang, apply, [MF, []], O);
 spawn_opt({M,F,A}, O) -> % For (undocumented) backward compatibility
     spawn_opt(M, F, A, O);
 spawn_opt(F, O) ->
     erlang:fault(badarg, [F, O]).
 
-spawn_opt(N, F, O) when N == node() ->
+spawn_opt(N, F, O) when N =:= node() ->
     spawn_opt(F, O);
-spawn_opt(N, F, O) when function(F) ->
+spawn_opt(N, F, O) when is_function(F) ->
     spawn_opt(N, erlang, apply, [F, []], O);
-spawn_opt(N, {M,F}=MF, O) when atom(M), atom(F) ->
+spawn_opt(N, {M,F}=MF, O) when is_atom(M), is_atom(F) ->
     spawn_opt(N, erlang, apply, [MF, []], O);
 spawn_opt(N, F, O) ->
     erlang:fault(badarg, [N, F, O]).
 
 % Spawns with MFA
 
-spawn(N,M,F,A) when N == node(), atom(M), atom(F), list(A) ->
+spawn(N,M,F,A) when N =:= node(), is_atom(M), is_atom(F), is_list(A) ->
     spawn(M,F,A);
-spawn(N,M,F,A) when atom(N), atom(M), atom(F) ->
+spawn(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
     case is_well_formed_list(A) of
 	true ->
 	    ok;
@@ -133,7 +133,7 @@ spawn(N,M,F,A) when atom(N), atom(M), atom(F) ->
     case catch gen_server:call({net_kernel,N},
 			       {spawn,M,F,A,group_leader()},
 			       infinity) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid;
 	Error ->
 	    case remote_spawn_error(Error, {no_link, N, M, F, A, []}) of
@@ -146,9 +146,9 @@ spawn(N,M,F,A) when atom(N), atom(M), atom(F) ->
 spawn(N,M,F,A) ->
     erlang:fault(badarg, [N, M, F, A]).
 
-spawn_link(N,M,F,A) when N == node(), atom(M), atom(F), list(A) ->
+spawn_link(N,M,F,A) when N =:= node(), is_atom(M), is_atom(F), is_list(A) ->
     spawn_link(M,F,A);
-spawn_link(N,M,F,A) when atom(N), atom(M), atom(F) ->
+spawn_link(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
     case is_well_formed_list(A) of
 	true ->
 	    ok;
@@ -158,7 +158,7 @@ spawn_link(N,M,F,A) when atom(N), atom(M), atom(F) ->
     case catch gen_server:call({net_kernel,N},
 			       {spawn_link,M,F,A,group_leader()},
 			       infinity) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid;
 	Error ->
 	    case remote_spawn_error(Error, {link, N, M, F, A, []}) of
@@ -204,7 +204,7 @@ spawn_opt(N, M, F, A, O) when is_atom(N), is_atom(M), is_atom(F) ->
     case catch gen_server:call({net_kernel,N},
 			       {spawn_opt,M,F,A,NO,L,group_leader()},
 			       infinity) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid;
 	Error ->
 	    case remote_spawn_error(Error, {L, N, M, F, A, NO}) of
@@ -218,7 +218,7 @@ spawn_opt(N,M,F,A,O) ->
     erlang:fault(badarg, [N,M,F,A,O]).
 
 remote_spawn_error({'EXIT', {{nodedown,N}, _}}, {L, N, M, F, A, O}) ->
-    {Opts, LL} = case L == link of
+    {Opts, LL} = case L =:= link of
 		     true ->
 			 {[link|O], [link]};
 		     false ->
@@ -328,12 +328,12 @@ dexit(Pid, Reason) ->
 	false -> true
     end.
 
-dsend(Pid, Msg) when pid(Pid) ->
+dsend(Pid, Msg) when is_pid(Pid) ->
     case net_kernel:connect(node(Pid)) of
 	true -> erlang:send(Pid, Msg);
 	false -> Msg
     end;
-dsend(Port, Msg) when port(Port) ->
+dsend(Port, Msg) when is_port(Port) ->
     case net_kernel:connect(node(Port)) of
 	true -> erlang:send(Port, Msg);
 	false -> Msg
@@ -345,12 +345,12 @@ dsend({Name, Node}, Msg) ->
 	ignored -> Msg				% Not distributed.
     end.
 
-dsend(Pid, Msg, Opts) when pid(Pid) ->
+dsend(Pid, Msg, Opts) when is_pid(Pid) ->
     case net_kernel:connect(node(Pid)) of
 	true -> erlang:send(Pid, Msg, Opts);
 	false -> ok
     end;
-dsend(Port, Msg, Opts) when port(Port) ->
+dsend(Port, Msg, Opts) when is_port(Port) ->
     case net_kernel:connect(node(Port)) of
 	true -> erlang:send(Port, Msg, Opts);
 	false -> ok
@@ -394,11 +394,11 @@ delay_trap(Result, Timeout) -> receive after Timeout -> Result end.
 %% Messages to us use our cookie. IF we change our cookie, other nodes 
 %% have to reflect that, which we cannot forsee.
 %%
-set_cookie(Node, C) when Node =/= nonode@nohost, atom(Node) ->
+set_cookie(Node, C) when Node =/= nonode@nohost, is_atom(Node) ->
     Res = case C of
-	      _ when atom(C) ->
+	      _ when is_atom(C) ->
 		  auth:set_cookie(Node, C);
-	      {CI,CO} when atom(CI),atom(CO) ->
+	      {CI,CO} when is_atom(CI), is_atom(CO) ->
 		  auth:set_cookie(Node, {CI, CO});
 	      _ ->
 		  error
@@ -424,14 +424,14 @@ info(What) ->
 memory() ->
     erlang:system_info(memory).
 
-memory(Type) when atom(Type) ->
+memory(Type) when is_atom(Type) ->
     case erlang:system_info({memory, [Type]}) of
 	[{Type, Bytes}] -> Bytes;
 	Error -> erlang:fault(Error, [Type])
     end;
 memory(TypeSpec) ->
     case erlang:system_info({memory, TypeSpec}) of
-	Result when list(Result) -> Result;
+	Result when is_list(Result) -> Result;
 	Error -> erlang:fault(Error, [TypeSpec])
     end.
 
@@ -440,7 +440,7 @@ memory(TypeSpec) ->
 integer_to_list(I, 10) ->
     erlang:integer_to_list(I);
 integer_to_list(I, Base) 
-  when integer(I), integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
+  when is_integer(I), is_integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
     if I < 0 ->
 	    [$-|integer_to_list(-I, Base, [])];
        true ->
@@ -457,7 +457,7 @@ integer_to_list(I0, Base, R0) ->
 	    true ->
 		 [D+$0|R0]
 	 end,
-    if I1 == 0 ->
+    if I1 =:= 0 ->
 	    R1;
        true ->
 	    integer_to_list(I1, Base, R1)
@@ -468,9 +468,9 @@ integer_to_list(I0, Base, R0) ->
 list_to_integer(L, 10) ->
     erlang:list_to_integer(L);
 list_to_integer(L, Base)
-  when list(L), integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
+  when is_list(L), is_integer(Base), Base >= 2, Base =< 1+$Z-$A+10 ->
     case list_to_integer_sign(L, Base) of 
-	I when integer(I) ->
+	I when is_integer(I) ->
 	    I;
 	Fault ->
 	    erlang:fault(Fault, [L,Base])
@@ -480,7 +480,7 @@ list_to_integer(L, Base) ->
 
 list_to_integer_sign([$-|[_|_]=L], Base) ->
     case list_to_integer(L, Base, 0) of
-	I when integer(I) ->
+	I when is_integer(I) ->
 	    -I;
 	I ->
 	    I
@@ -493,13 +493,13 @@ list_to_integer_sign(_, _) ->
     badarg.
 
 list_to_integer([D|L], Base, I) 
-  when integer(D), D >= $0, D =< $9, D < Base+$0 ->
+  when is_integer(D), D >= $0, D =< $9, D < Base+$0 ->
     list_to_integer(L, Base, I*Base + D-$0);
 list_to_integer([D|L], Base, I) 
-  when integer(D), D >= $A, D < Base+$A-10 ->
+  when is_integer(D), D >= $A, D < Base+$A-10 ->
     list_to_integer(L, Base, I*Base + D-$A+10);
 list_to_integer([D|L], Base, I) 
-  when integer(D), D >= $a, D < Base+$a-10 ->
+  when is_integer(D), D >= $a, D < Base+$a-10 ->
     list_to_integer(L, Base, I*Base + D-$a+10);
 list_to_integer([], _, I) ->
     I;
@@ -508,7 +508,7 @@ list_to_integer(_, _, _) ->
 
 demonitor(MRef, Opts) ->
     Flush = case catch get_demonitor_opts(Opts, false) of
-		Bool when Bool == true; Bool == false -> Bool;
+		Bool when Bool; not Bool -> Bool;
 		_ -> erlang:error(badarg, [MRef, Opts])
 	    end,
     Res = case catch erlang:demonitor(MRef) of

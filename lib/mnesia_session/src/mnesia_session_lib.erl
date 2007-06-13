@@ -38,7 +38,7 @@
 lookup_connector() ->
     Name = mnesia_connector,
     case whereis(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    Pid;
 	_ ->
 	    exit({not_started, Name})
@@ -52,7 +52,7 @@ lookup_corba_connector() ->
 	    NS = corba:resolve_initial_references("NameService"),
 	    Key = 'CosNaming_NamingContext':resolve(NS, Name),
 	    case catch corba:get_pid(Key) of
-		Pid when pid(Pid) ->
+		Pid when is_pid(Pid) ->
 		    % Return object key for corba connector
 		    Key; 
 		_ ->
@@ -92,7 +92,7 @@ default_env(corba_connector_name) ->
     lname:insert_component(InitialName, 1, NC).
 
 do_check_env(enable_corba, B) -> is_bool(B);
-do_check_env(gen_server_module, M) when atom(M) -> M;
+do_check_env(gen_server_module, M) when is_atom(M) -> M;
 do_check_env(debug, D) -> is_debug(D);
 do_check_env(corba_connector_name, N) -> is_corba_name(N).
 
@@ -104,7 +104,7 @@ is_debug(verbose) -> verbose;
 is_debug(debug) -> debug;
 is_debug(trace) -> trace.
     
-is_corba_name(N) -> true == lname:check_name(N), N.
+is_corba_name(N) -> true = lname:check_name(N), N.
 
 get_initial_debug() ->
     Debug = mnesia_session_lib:get_env(debug),
@@ -120,7 +120,7 @@ stop() ->
 start() ->
     application:start(?APPLICATION).
 
-start(ExtraEnv) when list(ExtraEnv) ->
+start(ExtraEnv) when is_list(ExtraEnv) ->
     case application:load(?APPLICATION) of
 	ok ->
 	    patched_start(ExtraEnv);
@@ -132,7 +132,7 @@ start(ExtraEnv) when list(ExtraEnv) ->
 start(ExtraEnv) ->
     {error, {badarg, ExtraEnv}}.
 
-patched_start([{Env, Val} | Tail]) when atom(Env) ->
+patched_start([{Env, Val} | Tail]) when is_atom(Env) ->
     case patch_env(Env, Val) of
 	{error, Reason} ->
 	    {error, Reason};

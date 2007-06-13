@@ -91,25 +91,25 @@
 %       end
 %       ).
 -define(SET(L, T), #?TAG{data = L, type = T}).
--define(IS_SET(S), record(S, ?TAG)).
+-define(IS_SET(S), is_record(S, ?TAG)).
 -define(IS_UNTYPED_SET(S), ?TYPE(S) =:= ?ANYTYPE).
 
 %% Ordered sets and atoms:
 -define(ORDDATA(S), (S)#?ORDTAG.orddata).
 -define(ORDTYPE(S), (S)#?ORDTAG.ordtype).
 -define(ORDSET(L, T), #?ORDTAG{orddata = L, ordtype = T}).
--define(IS_ORDSET(S), record(S, ?ORDTAG)).
+-define(IS_ORDSET(S), is_record(S, ?ORDTAG)).
 -define(ATOM_TYPE, atom).
--define(IS_ATOM_TYPE(T), atom(T)). % true for ?ANYTYPE...
+-define(IS_ATOM_TYPE(T), is_atom(T)). % true for ?ANYTYPE...
 
 %% When IS_SET is true:
 -define(ANYTYPE, '_').
 -define(BINREL(X, Y), {X, Y}).
--define(IS_RELATION(R), tuple(R)).
+-define(IS_RELATION(R), is_tuple(R)).
 -define(REL_ARITY(R), size(R)).
 -define(REL_TYPE(I, R), element(I, R)).
 -define(SET_OF(X), [X]).
--define(IS_SET_OF(X), list(X)).
+-define(IS_SET_OF(X), is_list(X)).
 -define(FAMILY(X, Y), ?BINREL(X, ?SET_OF(Y))).
 
 %%
@@ -122,7 +122,7 @@
 
 from_term(T) ->
     Type = case T of
-               _ when list(T) -> [?ANYTYPE];
+               _ when is_list(T) -> [?ANYTYPE];
                _ -> ?ANYTYPE
            end,
     case catch setify(T, Type) of
@@ -157,7 +157,7 @@ is_type(Atom) when ?IS_ATOM_TYPE(Atom), Atom =/= ?ANYTYPE ->
     true;
 is_type(?SET_OF(T)) ->
     is_element_type(T);
-is_type(T) when tuple(T), size(T) > 0 ->
+is_type(T) when is_tuple(T), size(T) > 0 ->
     is_types(size(T), T);
 is_type(_T) ->
     false.
@@ -187,14 +187,14 @@ set(L, ?SET_OF(_) = T) ->
 set(L, T) ->
     erlang:fault(badarg, [L, T]).
 
-from_sets(Ss) when list(Ss) ->
+from_sets(Ss) when is_list(Ss) ->
     case set_of_sets(Ss, [], ?ANYTYPE) of
         {error, Error} ->
             erlang:fault(Error, [Ss]);
         Set ->
             Set
     end;
-from_sets(Tuple) when tuple(Tuple) ->
+from_sets(Tuple) when is_tuple(Tuple) ->
     case ordset_of_sets(tuple_to_list(Tuple), [], []) of
         error ->
             erlang:fault(badarg, [Tuple]);
@@ -206,7 +206,7 @@ from_sets(T) ->
 
 relation([]) ->
     ?SET([], ?BINREL(?ATOM_TYPE, ?ATOM_TYPE));
-relation(Ts = [T | _]) when tuple(T) ->
+relation(Ts = [T | _]) when is_tuple(T) ->
     case catch rel(Ts, size(T)) of
         {'EXIT', _} ->
             erlang:fault(badarg, [Ts]);
@@ -228,7 +228,7 @@ a_function(Ts) ->
     case catch func(Ts, ?BINREL(?ATOM_TYPE, ?ATOM_TYPE)) of
         {'EXIT', _} ->
             erlang:fault(badarg, [Ts]);
-        Bad when atom(Bad) ->
+        Bad when is_atom(Bad) ->
             erlang:fault(Bad, [Ts]);
 	Set ->
 	    Set
@@ -238,7 +238,7 @@ a_function(Ts, T) ->
     case catch a_func(Ts, T) of
 	{'EXIT', _} ->
 	    erlang:fault(badarg, [Ts, T]);
-	Bad when atom(Bad) ->
+	Bad when is_atom(Bad) ->
 	    erlang:fault(Bad, [Ts, T]);
 	Set ->
 	    Set
@@ -248,7 +248,7 @@ family(Ts) ->
     case catch fam2(Ts, ?FAMILY(?ATOM_TYPE, ?ATOM_TYPE)) of
         {'EXIT', _} ->
             erlang:fault(badarg, [Ts]);
-        Bad when atom(Bad) ->
+        Bad when is_atom(Bad) ->
             erlang:fault(Bad, [Ts]);
         Set ->
 	    Set
@@ -258,7 +258,7 @@ family(Ts, T) ->
     case catch fam(Ts, T) of
 	{'EXIT', _} ->
 	    erlang:fault(badarg, [Ts, T]);
-	Bad when atom(Bad) ->
+	Bad when is_atom(Bad) ->
 	    erlang:fault(Bad, [Ts, T]);
 	Set ->
 	    Set
@@ -283,14 +283,14 @@ to_sets(S) when ?IS_SET(S) ->
         ?SET_OF(Type) -> list_of_sets(?LIST(S), Type, []);
         Type -> list_of_ordsets(?LIST(S), Type, [])
     end;
-to_sets(S) when ?IS_ORDSET(S), tuple(?ORDTYPE(S)) ->
+to_sets(S) when ?IS_ORDSET(S), is_tuple(?ORDTYPE(S)) ->
     tuple_of_sets(tuple_to_list(?ORDDATA(S)), tuple_to_list(?ORDTYPE(S)), []);
 to_sets(S) when ?IS_ORDSET(S) ->
     erlang:fault(badarg, [S]).
 
 no_elements(S) when ?IS_SET(S) ->
     length(?LIST(S));
-no_elements(S) when ?IS_ORDSET(S), tuple(?ORDTYPE(S)) ->
+no_elements(S) when ?IS_ORDSET(S), is_tuple(?ORDTYPE(S)) ->
     size(?ORDDATA(S));
 no_elements(S) when ?IS_ORDSET(S) ->
     erlang:fault(badarg, [S]).
@@ -304,7 +304,7 @@ specification(Fun, S) when ?IS_SET(S) ->
 		specification(?LIST(S), XFun, [])
 	end,
     case R of
-	SL when list(SL) ->
+	SL when is_list(SL) ->
 	    ?SET(SL, Type);
 	Bad ->
 	    erlang:fault(Bad, [Fun, S])
@@ -352,7 +352,7 @@ product(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 
 product({S1, S2}) ->
     product(S1, S2);
-product(T) when tuple(T) ->
+product(T) when is_tuple(T) ->
     Ss = tuple_to_list(T),
     case catch sets_to_list(Ss) of
         {'EXIT', _} ->
@@ -496,7 +496,7 @@ range(R) when ?IS_SET(R) ->
 field(R) ->
     union(domain(R), range(R)).
 
-relative_product(RT) when tuple(RT) ->
+relative_product(RT) when is_tuple(RT) ->
     case relprod_n(RT, foo, false, false) of
         {error, Reason} -> 
             erlang:fault(Reason, [RT]);
@@ -506,7 +506,7 @@ relative_product(RT) when tuple(RT) ->
 
 relative_product(R1, R2) when ?IS_SET(R1), ?IS_SET(R2) ->
     relative_product1(converse(R1), R2);
-relative_product(RT, R) when tuple(RT), ?IS_SET(R) ->
+relative_product(RT, R) when is_tuple(RT), ?IS_SET(R) ->
     EmptyR = case ?TYPE(R) of
                  ?BINREL(_, _) -> ?LIST(R) =:= [];
                  ?ANYTYPE -> true;
@@ -657,7 +657,7 @@ composite(Fn1, Fn2) when ?IS_SET(Fn1), ?IS_SET(Fn2) ->
         true when DTF2 =:= ?ANYTYPE -> Fn2;
         true -> 
 	    case comp(?LIST(Fn1), ?LIST(Fn2)) of
-		SL when list(SL) ->
+		SL when is_list(SL) ->
 		    ?SET(sort(SL), ?BINREL(DTF1, RTF2));
 		Bad ->
 		    erlang:fault(Bad, [Fn1, Fn2])
@@ -669,7 +669,7 @@ inverse(Fn) when ?IS_SET(Fn) ->
     case ?TYPE(Fn) of
         ?BINREL(DT, RT) -> 
 	    case inverse1(?LIST(Fn)) of
-		SL when list(SL) ->
+		SL when is_list(SL) ->
 		    ?SET(SL, ?BINREL(RT, DT));
 		Bad ->
 		    erlang:fault(Bad, [Fn])
@@ -683,7 +683,7 @@ inverse(Fn) when ?IS_SET(Fn) ->
 %%% 
 
 %% Equivalent to range(restriction(inverse(substitution(Fun, S1)), S2)).
-restriction(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
+restriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
     RT = ?TYPE(R),
     ST = ?TYPE(S),
     case check_for_sort(RT, I) of
@@ -746,7 +746,7 @@ restriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 	    end
     end.
 
-drestriction(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
+drestriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
     RT = ?TYPE(R),
     ST = ?TYPE(S),
     case check_for_sort(RT, I) of
@@ -811,7 +811,7 @@ drestriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 	    end
     end.
 
-projection(I, Set) when integer(I), ?IS_SET(Set) ->
+projection(I, Set) when is_integer(I), ?IS_SET(Set) ->
     Type = ?TYPE(Set),
     case check_for_sort(Type, I) of
         empty ->
@@ -826,7 +826,7 @@ projection(I, Set) when integer(I), ?IS_SET(Set) ->
 projection(Fun, Set) ->
     range(substitution(Fun, Set)).
 
-substitution(I, Set) when integer(I), ?IS_SET(Set) ->
+substitution(I, Set) when is_integer(I), ?IS_SET(Set) ->
     Type = ?TYPE(Set),
     case check_for_sort(Type, I) of
 	empty ->
@@ -871,7 +871,7 @@ partition(Sets) ->
     F2 = relation_to_family(converse(F1)),
     range(F2).
 
-partition(I, Set) when integer(I), ?IS_SET(Set) ->
+partition(I, Set) when is_integer(I), ?IS_SET(Set) ->
     Type = ?TYPE(Set),
     case check_for_sort(Type, I) of
         empty ->
@@ -886,7 +886,7 @@ partition(I, Set) when integer(I), ?IS_SET(Set) ->
 partition(Fun, Set) ->
     range(partition_family(Fun, Set)).
 
-partition(I, R, S) when integer(I), ?IS_SET(R), ?IS_SET(S) ->
+partition(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
     RT = ?TYPE(R),
     ST = ?TYPE(S),
     case check_for_sort(RT, I) of
@@ -953,7 +953,7 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 	    end
     end.
 
-multiple_relative_product(T, R) when tuple(T), ?IS_SET(R) ->
+multiple_relative_product(T, R) when is_tuple(T), ?IS_SET(R) ->
     case test_rel(R, size(T), eq) of
 	true when ?TYPE(R) =:= ?ANYTYPE ->
 	    empty_set();
@@ -965,7 +965,7 @@ multiple_relative_product(T, R) when tuple(T), ?IS_SET(R) ->
     end.
 
 join(R1, I1, R2, I2) 
-  when ?IS_SET(R1), ?IS_SET(R2), integer(I1), integer(I2) ->
+  when ?IS_SET(R1), ?IS_SET(R2), is_integer(I1), is_integer(I2) ->
     case test_rel(R1, I1, lte) and test_rel(R2, I2, lte) of
         false -> 
 	    erlang:fault(badarg, [R1, I1, R2, I2]);
@@ -1022,7 +1022,7 @@ family_specification(Fun, F) when ?IS_SET(F) ->
 			fam_specification(?LIST(F), XFun, [])
 		end,
 	    case R of
-		SL when list(SL) ->
+		SL when is_list(SL) ->
 		    ?SET(SL, FType);
 		Bad ->
 		    erlang:fault(Bad, [Fun, F])
@@ -1043,7 +1043,7 @@ intersection_of_family(F) when ?IS_SET(F) ->
     case ?TYPE(F) of
         ?FAMILY(_DT, Type) ->
             case int_of_fam(?LIST(F)) of
-                FU when list(FU) ->
+                FU when is_list(FU) ->
                     ?SET(FU, Type);
                 Bad ->
                     erlang:fault(Bad, [F])
@@ -1063,7 +1063,7 @@ family_intersection(F) when ?IS_SET(F) ->
     case ?TYPE(F) of
         ?FAMILY(DT, ?SET_OF(Type)) ->
             case fam_int(?LIST(F), []) of
-                FU when list(FU) ->
+                FU when is_list(FU) ->
                     ?SET(FU, ?FAMILY(DT, Type));
                 Bad ->
                     erlang:fault(Bad, [F])
@@ -1114,7 +1114,7 @@ fam_binop(F1, F2, FF) when ?IS_SET(F1), ?IS_SET(F2) ->
         _ ->  erlang:fault(badarg, [F1, F2])
     end.
 
-partition_family(I, Set) when integer(I), ?IS_SET(Set) ->
+partition_family(I, Set) when is_integer(I), ?IS_SET(Set) ->
     Type = ?TYPE(Set),
     case check_for_sort(Type, I) of
         empty ->
@@ -1294,7 +1294,7 @@ rel(Ts, Sz, Type) when Sz >= 1 ->
     SL = usort(Ts),
     rel(SL, SL, Sz, Type).
 
-rel([T | Ts], L, Sz, Type) when tuple(T), size(T) =:= Sz ->
+rel([T | Ts], L, Sz, Type) when is_tuple(T), size(T) =:= Sz ->
     rel(Ts, L, Sz, Type);
 rel([], L, _Sz, Type) ->
     ?SET(L, Type).
@@ -1372,7 +1372,7 @@ setify(L, ?SET_OF(Type0)) ->
         {'EXIT', _} ->
             {?SET_OF(Type), Set} = create(L, Type0, Type0, []),
             ?SET(Set, Type);
-        N when integer(N) ->
+        N when is_integer(N) ->
              rel(L, N, Type0);
         Sizes ->
             make_oset(L, Sizes, L, Type0)
@@ -1381,7 +1381,7 @@ setify(E, Type0) ->
     {Type, OrdSet} = make_element(E, Type0, Type0),
     ?ORDSET(OrdSet, Type).
 
-is_no_lists(T) when tuple(T) -> 
+is_no_lists(T) when is_tuple(T) -> 
    Sz = size(T),
    is_no_lists(T, Sz, Sz, []).
 
@@ -1402,18 +1402,20 @@ create([], T, _T0, L) ->
 
 make_element(C, ?ANYTYPE, _T0) ->
     make_element(C);
-make_element(C, Atom, ?ANYTYPE) when ?IS_ATOM_TYPE(Atom), constant(C) ->
+make_element(C, Atom, ?ANYTYPE) when ?IS_ATOM_TYPE(Atom), 
+                                     not is_list(C), not is_tuple(C) ->
     {Atom, C};
 make_element(C, Atom, Atom) when ?IS_ATOM_TYPE(Atom) ->
     {Atom, C};
-make_element(T, TT, ?ANYTYPE) when tuple(T), tuple(TT), 
+make_element(T, TT, ?ANYTYPE) when is_tuple(T), is_tuple(TT), 
                                    size(T) =:= size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], ?ANYTYPE);
-make_element(T, TT, T0) when tuple(T), tuple(TT), size(T) =:= size(TT) ->
+make_element(T, TT, T0) when is_tuple(T), is_tuple(TT), 
+                             size(T) =:= size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], tuple_to_list(T0));
-make_element(L, [LT], ?ANYTYPE) when list(L) ->
+make_element(L, [LT], ?ANYTYPE) when is_list(L) ->
     create(L, LT, ?ANYTYPE, []);
-make_element(L, [LT], [T0]) when list(L) ->
+make_element(L, [LT], [T0]) when is_list(L) ->
     create(L, LT, T0, []).
 
 make_tuple([E | Es], [T | Ts], NT, L, T0) when T0 =:= ?ANYTYPE ->
@@ -1426,11 +1428,11 @@ make_tuple([], [], NT, L, _T0s) when NT =/= [] ->
     {list_to_tuple(reverse(NT)), list_to_tuple(reverse(L))}.
 
 %% Derive type.
-make_element(C) when constant(C) ->
+make_element(C) when not is_list(C), not is_tuple(C) ->
     {?ATOM_TYPE, C};
-make_element(T) when tuple(T) ->
+make_element(T) when is_tuple(T) ->
     make_tuple(tuple_to_list(T), [], []);
-make_element(L) when list(L) ->
+make_element(L) when is_list(L) ->
     create(L, ?ANYTYPE, ?ANYTYPE, []).
 
 make_tuple([E | Es], T, L) ->
@@ -1446,9 +1448,9 @@ make_oset([], _Szs, L, Type) ->
     ?SET(usort(L), Type).
 
 %% Optimization. Avoid re-building (nested) tuples.
-test_oset({Sz,Args}, T, T0) when tuple(T), size(T) =:= Sz ->
+test_oset({Sz,Args}, T, T0) when is_tuple(T), size(T) =:= Sz ->
     test_oset_args(Args, T, T0);
-test_oset(Sz, T, _T0) when tuple(T), size(T) =:= Sz ->
+test_oset(Sz, T, _T0) when is_tuple(T), size(T) =:= Sz ->
     true.
 
 test_oset_args([{Arg,Szs} | Ss], T, T0) ->
@@ -2035,7 +2037,7 @@ inverse([], _A0, L) ->
     end.
 
 %% Inlined.
-external_fun({external, Function}) when atom(Function) ->
+external_fun({external, Function}) when is_atom(Function) ->
     false;
 external_fun({external, Fun}) ->
     Fun;
@@ -2363,7 +2365,7 @@ setfun(T, Fun, Type, NType) ->
     end.
 
 %% Inlined.
-term2set(L, Type) when list(L) ->
+term2set(L, Type) when is_list(L) ->
     ?SET(L, Type);
 term2set(T, Type) ->
     ?ORDSET(T, Type).
@@ -2402,13 +2404,13 @@ check_fun(T, F, FunT) ->
     L = flatten(tuple2list(F(NT))),
     has_hole(L, 1).
 
-number_tuples(T, N) when tuple(T) ->
+number_tuples(T, N) when is_tuple(T) ->
     {L, NN} = mapfoldl(fun number_tuples/2, N, tuple_to_list(T)),
     {list_to_tuple(L), NN};
 number_tuples(_, N) ->
     {N, N+1}.
 
-tuple2list(T) when tuple(T) ->
+tuple2list(T) when is_tuple(T) ->
     map(fun tuple2list/1, tuple_to_list(T));
 tuple2list(C) ->
     [C].
@@ -2461,7 +2463,7 @@ unify_types1(Type, ?ANYTYPE) ->
     Type;
 unify_types1(?SET_OF(Type1), ?SET_OF(Type2)) ->
     [unify_types1(Type1, Type2)];
-unify_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) =:= size(T2) ->
+unify_types1(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
     unify_typesl(size(T1), T1, T2, []);
 unify_types1(_T1, _T2) ->
     throw([]).
@@ -2484,7 +2486,7 @@ match_types1(_, ?ANYTYPE) ->
     true;
 match_types1(?SET_OF(Type1), ?SET_OF(Type2)) -> 
     match_types1(Type1, Type2);
-match_types1(T1, T2) when tuple(T1), tuple(T2), size(T1) =:= size(T2) ->
+match_types1(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
     match_typesl(size(T1), T1, T2);
 match_types1(_T1, _T2) ->
     false.

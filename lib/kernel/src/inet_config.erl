@@ -20,7 +20,7 @@
 -include("inet_config.hrl").
 -include("inet.hrl").
 
--import(lists, [foreach/2, member/2, reverse/1, flatten/1]).
+-import(lists, [foreach/2, member/2, reverse/1]).
 
 -export([init/0]).
 
@@ -71,7 +71,7 @@ init() ->
 
     case OsType of
 	{unix,Type} ->
-	    if Type == linux ->
+	    if Type =:= linux ->
 		    %% It may be the case that the domain name was not set
 		    %% because the hostname was short. But NOW we can look it
 		    %% up and get the long name and the domain name from it.
@@ -322,7 +322,7 @@ set_search_dom(Domain) ->
 load_resolv(File, Func) ->
     case get_file(File) of
 	{ok,Bin} ->
-	    case apply(inet_parse, Func, [File,{chars,Bin}]) of
+            case inet_parse:Func(File, {chars, Bin}) of
 		{ok, Ls} ->
 		    inet_db:add_rc_list(Ls);
 		{error, Reason} ->
@@ -423,10 +423,10 @@ win32_load1(Reg,Type,HFileKey) ->
 			   false -> [Domain|Searches0]
 		       end,
 	    foreach(fun(D) -> inet_db:add_search(D) end, Searches),
-	    if Type == nt ->
+	    if Type =:= nt ->
 		    DBPath = win32reg:expand(DBPath0),
 		    load_hosts(filename:join(DBPath, "hosts"),nt);
-		Type == windows ->
+		Type =:= windows ->
 		    load_hosts(filename:join(DBPath0,""),windows)
 	    end,
 %% Maybe activate this later as an optimization
@@ -448,7 +448,7 @@ win32_get_strings(Reg, Names) ->
 
 win32_get_strings(Reg, [Name|Rest], Result) ->
     case win32reg:value(Reg, Name) of
-	{ok, Value} when list(Value) ->
+	{ok, Value} when is_list(Value) ->
 	    win32_get_strings(Reg, Rest, [Value|Result]);
 	{ok, _NotString} ->
 	    {error, not_string};
@@ -465,7 +465,7 @@ win32_get_strings(_, [], Result) ->
 vxworks_load_hosts() ->
     HostShow = os:cmd("hostShow"),
     case check_hostShow(HostShow) of
-	Hosts when list(Hosts) ->
+	Hosts when is_list(Hosts) ->
 	    case inet_parse:hosts_vxworks({chars, Hosts}) of
 		{ok, Ls} ->
 		    foreach(

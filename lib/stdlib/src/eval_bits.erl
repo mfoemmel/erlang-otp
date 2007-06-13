@@ -172,7 +172,7 @@ bin_gen_field({bin_element,Line,VE,Size0,Options0},
     match_check_size(Size1, BBs0),
     {value, Size, _BBs} = Efun(Size1, BBs0),
     case catch get_value(Bin, Type, Size, Unit, Sign, Endian) of
-        {Val,Rest} when is_binary(Rest) ->
+        {Val,<<_/bitstr>>=Rest} ->
             NewV = coerce_to_float(V, Type),
             case catch Mfun(NewV, Val, Bs0) of
                 {match,Bs} ->

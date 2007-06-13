@@ -179,10 +179,11 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
+ERL_COMPILE_FLAGS += $(ERL_IDL_FLAGS) \
+	-I$(ERL_TOP)/lib/orber/include \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' \
 	-D'ORBVSN="$(ORBER_VSN)"'
@@ -215,17 +216,17 @@ docs:
 # ----------------------------------------------------
 
 $(GEN_ERL_FILES1) $(GEN_HRL_FILES1): $(ERL_TOP)/lib/ic/include/erlang.idl
-	erlc $(ERL_FLAGS) $(ERL_TOP)/lib/ic/include/erlang.idl
+	erlc $(ERL_IDL_FLAGS) $(ERL_TOP)/lib/ic/include/erlang.idl
 
 $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): CORBA.idl
-	erlc $(ERL_FLAGS) CORBA.idl
+	erlc $(ERL_IDL_FLAGS) CORBA.idl
 
 $(GEN_ERL_FILES3) $(GEN_HRL_FILES3): OrberIFR.idl
-	erlc $(ERL_FLAGS) +'{this,"Orber::IFR"}' \
+	erlc $(ERL_IDL_FLAGS) +'{this,"Orber::IFR"}' \
 	OrberIFR.idl
 
 $(GEN_ASN_ERL) $(GEN_ASN_HRL): OrberCSIv2.asn1 OrberCSIv2.set.asn
-	erlc $(ERL_FLAGS) $(ASN_FLAGS) OrberCSIv2.asn1 ;\
+	erlc $(ERL_COMPILE_FLAGS) $(ASN_FLAGS) OrberCSIv2.asn1 ;\
 	erlc $(GEN_ASN_ERL) 
 # Use the following when we safely can inline the ASN1 runtime code.
 # Requires igor (part of syntax_tools (introduced in R10B

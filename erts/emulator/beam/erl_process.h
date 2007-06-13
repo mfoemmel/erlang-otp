@@ -435,9 +435,9 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 				 || (p)->id != (pid)			\
 				 || (p)->status == P_EXITING)
  
-#define IS_TRACED(p)        ( (p)->tracer_proc != NIL)
-#define IS_TRACED_FL(p,tf)  ( IS_TRACED(p) \
-			      && ( ((p)->trace_flags & (tf)) == (tf)) )
+#define IS_TRACED(p)             ( (p)->tracer_proc != NIL )
+#define ARE_TRACE_FLAGS_ON(p,tf) ( ((p)->trace_flags & (tf|F_SENSITIVE)) == (tf) )
+#define IS_TRACED_FL(p,tf)       ( IS_TRACED(p) && ARE_TRACE_FLAGS_ON(p,tf) )
 
 /* process priorities */
 #define PRIORITY_MAX          0
@@ -453,31 +453,38 @@ extern erts_smp_atomic_t erts_tot_proc_mem;
 #define F_TRAPEXIT           (1 << 0)
 #define F_INSLPQUEUE         (1 << 1) /* Set if in timer queue */
 #define F_TIMO               (1 << 2) /* Set if timeout */
-#define F_USING_DB           (1 << 3) /* If have created tables */
-#define F_DISTRIBUTION       (1 << 16)  /* Process used in distribution */
-#define F_HEAP_GROW          (1 << 17)
-#define F_NEED_FULLSWEEP     (1 << 18) /* If process has old binaries & funs. */
-#define F_USING_DDLL         (1 << 24) /* Process has used the DDLL interface */
-#define F_HAVE_BLCKD_MSCHED  (1 << 25) /* Process have blocked multi-scheduling */
+#define F_HEAP_GROW          (1 << 3)
+#define F_NEED_FULLSWEEP     (1 << 4) /* If process has old binaries & funs. */
+#define F_USING_DB           (1 << 5) /* If have created tables */
+#define F_DISTRIBUTION       (1 << 6) /* Process used in distribution */
+#define F_USING_DDLL         (1 << 7) /* Process has used the DDLL interface */
+#define F_HAVE_BLCKD_MSCHED  (1 << 8) /* Process have blocked multi-scheduling */
 
 /* process trace_flags */
-#define F_TRACE_SEND         (1 << 4)   
-#define F_TRACE_RECEIVE      (1 << 5)
-#define F_TRACE_SOS          (1 << 6) /* Set on spawn       */
-#define F_TRACE_SOS1         (1 << 7) /* Set on first spawn */
-#define F_TRACE_SOL          (1 << 8) /* Set on link        */
-#define F_TRACE_SOL1         (1 << 9) /* Set on first link  */
-#define F_TRACE_CALLS        (1 << 10)
-#define F_TIMESTAMP          (1 << 11)
-#define F_TRACE_PROCS        (1 << 12)
-#define F_TRACE_FIRST_CHILD  (1 << 13)
-#define F_TRACE_SCHED        (1 << 14)
-#define F_TRACE_GC           (1 << 15)
-#define F_TRACE_ARITY_ONLY   (1 << 19)
-#define F_TRACE_RETURN_TO    (1 << 20) /* Return_to trace when breakpoint tracing */
-#define F_TRACE_SILENT       (1 << 21) /* No call trace msg suppress */
-#define F_TRACER             (1 << 22) /* May be (has been) tracer */
-#define F_EXCEPTION_TRACE    (1 << 23) /* May have exception trace on stack */
+#define F_SENSITIVE          (1 << 0)
+#define F_TRACE_SEND         (1 << 1)   
+#define F_TRACE_RECEIVE      (1 << 2)
+#define F_TRACE_SOS          (1 << 3) /* Set on spawn       */
+#define F_TRACE_SOS1         (1 << 4) /* Set on first spawn */
+#define F_TRACE_SOL          (1 << 5) /* Set on link        */
+#define F_TRACE_SOL1         (1 << 6) /* Set on first link  */
+#define F_TRACE_CALLS        (1 << 7)
+#define F_TIMESTAMP          (1 << 8)
+#define F_TRACE_PROCS        (1 << 9)
+#define F_TRACE_FIRST_CHILD  (1 << 10)
+#define F_TRACE_SCHED        (1 << 11)
+#define F_TRACE_GC           (1 << 12)
+#define F_TRACE_ARITY_ONLY   (1 << 13)
+#define F_TRACE_RETURN_TO    (1 << 14) /* Return_to trace when breakpoint tracing */
+#define F_TRACE_SILENT       (1 << 15) /* No call trace msg suppress */
+#define F_TRACER             (1 << 16) /* May be (has been) tracer */
+#define F_EXCEPTION_TRACE    (1 << 17) /* May have exception trace on stack */
+#define F_NUM_FLAGS          18
+#ifdef DEBUG
+#  define F_INITIAL_TRACE_FLAGS (5 << F_NUM_FLAGS)
+#else
+#  define F_INITIAL_TRACE_FLAGS 0
+#endif
 
 #define TRACEE_FLAGS (  F_TRACE_PROCS | F_TRACE_CALLS \
 		     | F_TRACE_SOS |  F_TRACE_SOS1| F_TRACE_RECEIVE  \

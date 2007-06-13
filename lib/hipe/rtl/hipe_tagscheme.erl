@@ -111,7 +111,7 @@ mk_nil()	-> ?NIL.
 mk_non_value()	-> ?THE_NON_VALUE.
 
 is_fixnum(N) when is_integer(N) ->
-  Bits     = ?bytes_to_bits(hipe_rtl_arch:word_size()) - ?TAG_IMMED1_SIZE,
+  Bits = ?bytes_to_bits(hipe_rtl_arch:word_size()) - ?TAG_IMMED1_SIZE,
   (N =< ((1 bsl (Bits - 1)) - 1)) and (N >= -(1 bsl (Bits - 1))).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -132,19 +132,6 @@ tag_tuple(Res, X) -> tag_boxed(Res, X).
 
 tag_cons(Res, X) ->
   hipe_rtl:mk_alu(Res, X, 'add', hipe_rtl:mk_imm(?TAG_PRIMARY_LIST)).
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-%% write_catch_frame(SP, Off,  CatchLab) ->
-%%   %% SP[Off] = make_catch(CatchLab)
-%%   %% loader should transform the label to a catch table index,
-%%   %% tag it, and emit a 'load constant' instruction
-%%   CatchPC = hipe_rtl:mk_new_reg(),
-%%   [hipe_rtl:mk_load_address(CatchPC, CatchLab, 'catch'),
-%%    hipe_rtl:mk_store(SP, hipe_rtl:mk_imm(Off), CatchPC)].
-
-%%% no longer needed
-%tag_catch(Ix) -> (Ix bsl ?TAG_IMMED2_SIZE) bor ?TAG_IMMED2_CATCH.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -181,7 +168,7 @@ test_any_pid(X, TrueLab, FalseLab, Pred) ->
   NotInternalPidLab = hipe_rtl:mk_new_label(),
   [test_internal_pid(X, TrueLab, hipe_rtl:label_name(NotInternalPidLab), Pred),
    NotInternalPidLab,
-   test_external_pid(X, TrueLab,FalseLab,Pred)].
+   test_external_pid(X, TrueLab, FalseLab, Pred)].
 
 test_external_pid(X, TrueLab, FalseLab, Pred) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
@@ -200,7 +187,7 @@ test_any_port(X, TrueLab, FalseLab, Pred) ->
   NotInternalPortLab = hipe_rtl:mk_new_label(),
   [test_internal_port(X, TrueLab, hipe_rtl:label_name(NotInternalPortLab), Pred),
    NotInternalPortLab,
-   test_external_port(X, TrueLab,FalseLab,Pred)].
+   test_external_port(X, TrueLab, FalseLab, Pred)].
 
 test_external_port(X, TrueLab, FalseLab, Pred) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),

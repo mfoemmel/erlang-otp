@@ -305,9 +305,9 @@ get_cleaned_dictionary(Pid) ->
 	_                 -> {dictionary,[]}
     end.
 
-clean_dict([E|Dict]) when element(1,E) == '$ancestors' ->
+clean_dict([E|Dict]) when element(1,E) =:= '$ancestors' ->
     clean_dict(Dict);
-clean_dict([E|Dict]) when element(1,E) == '$initial_call' ->
+clean_dict([E|Dict]) when element(1,E) =:= '$initial_call' ->
     clean_dict(Dict);
 clean_dict([E|Dict]) ->
     [E|clean_dict(Dict)];
@@ -441,7 +441,7 @@ get_ancestors() ->
 	_              -> []
     end.
 
-proc_info(Pid,Item) when node(Pid) == node() ->
+proc_info(Pid,Item) when node(Pid) =:= node() ->
     process_info(Pid,Item);
 proc_info(Pid,Item) ->
     case lists:member(node(Pid),nodes()) of

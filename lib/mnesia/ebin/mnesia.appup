@@ -1,0 +1,18 @@
+{"4.3.5",  
+ [  
+  {"4.3.4", 
+   [
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_index, soft, soft_purge, soft_purge, []}
+   ]
+  } 
+ ],
+ [
+  {"4.3.4", 
+   [
+    {update, mnesia_dumper, soft, soft_purge, soft_purge, []},
+    {update, mnesia_index, soft, soft_purge, soft_purge, []}
+   ]
+  } 
+ ]
+}.

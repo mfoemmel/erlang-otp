@@ -43,7 +43,7 @@ load(Application) ->
 
 load(Application, DistNodes) ->
     case application_controller:load_application(Application) of
-	ok when DistNodes /= [] ->
+	ok when DistNodes =/= [] ->
 	    AppName = get_appl_name(Application),
 	    case dist_ac:load_application(AppName, DistNodes) of
 		ok ->
@@ -143,14 +143,14 @@ get_all_key() -> application_controller:get_pid_all_key(group_leader()).
 get_all_key(Application) -> application_controller:get_all_key(Application).
 
 get_application() -> application_controller:get_application(group_leader()).
-get_application(Pid) when pid(Pid) ->
+get_application(Pid) when is_pid(Pid) ->
     case process_info(Pid, group_leader) of
 	{group_leader, Gl} ->
 	    application_controller:get_application(Gl);
 	undefined ->
 	    undefined
     end;
-get_application(Module) when atom(Module) ->
+get_application(Module) when is_atom(Module) ->
     application_controller:get_application_module(Module).
 
 start_type() ->
@@ -158,5 +158,5 @@ start_type() ->
 
 
 %% Internal
-get_appl_name(Name) when atom(Name) -> Name;
-get_appl_name({application, Name, _}) when atom(Name) -> Name.
+get_appl_name(Name) when is_atom(Name) -> Name;
+get_appl_name({application, Name, _}) when is_atom(Name) -> Name.

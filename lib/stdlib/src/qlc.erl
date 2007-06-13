@@ -136,19 +136,17 @@ get_handle(_) ->
 %%%
 
 append(QHs) ->
-    Hs = lists:map(fun(QH) -> 
-                           case get_handle(QH) of
-                               badarg -> erlang:error(badarg, [QHs]);
-                               H -> H
-                           end end, QHs),
+    Hs = [case get_handle(QH) of
+              badarg -> erlang:error(badarg, [QHs]);
+              H -> H
+          end || QH <- QHs],
     #qlc_handle{h = #qlc_append{hl = Hs}}.
 
 append(QH1, QH2) ->
-    Hs = lists:map(fun(QH) -> 
-                           case get_handle(QH) of
-                               badarg -> erlang:error(badarg, [QH1, QH2]);
-                               H -> H
-                           end end, [QH1, QH2]),
+    Hs = [case get_handle(QH) of
+              badarg -> erlang:error(badarg, [QH1, QH2]);
+              H -> H
+          end || QH <- [QH1, QH2]],
     #qlc_handle{h = #qlc_append{hl = Hs}}.
 
 cursor(QH) ->
@@ -546,8 +544,9 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
                                            Format =:= abstract_code;
                                            Format =:= debug ->
                 {ok, Format};
-            {value, {n_elements, NElements}} when NElements =:= infinity; 
-                                          integer(NElements), NElements > 0 ->
+            {value, {n_elements, NElements}} when NElements =:= infinity;
+                                                  is_integer(NElements),
+                                                   NElements > 0 ->
                 {ok, NElements};
             {value, {order, Order}} when is_function(Order), 
                                            is_function(Order, 2);
@@ -562,7 +561,8 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
                 {ok, T};
             {value, {size, Size}} when is_integer(Size), Size > 0 ->
                 {ok, Size};
-            {value, {no_files, NoFiles}} when integer(NoFiles), NoFiles > 1 ->
+            {value, {no_files, NoFiles}} when is_integer(NoFiles), 
+                                              NoFiles > 1 ->
                 {ok, NoFiles};
             {value, {Key, _}} ->
                 badarg;
@@ -831,7 +831,7 @@ abstract({qlc, E0, Qs0, Opt}, NElements) ->
     ?QLC_Q(1, 1, 1, 1, {lc,1,E,Qs}, Os);
 abstract({table, {M, F, As0}}, _NElements) 
                           when is_atom(M), is_atom(F), is_list(As0) ->
-    As = lists:map(fun(A) -> erl_parse:abstract(A, 1) end, As0),
+    As = [erl_parse:abstract(A, 1) || A <- As0],
     {call, 1, {remote, 1, {atom, 1, M}, {atom, 1, F}}, As};
 abstract({table, TableDesc}, _NElements) ->
     case io_lib:deep_char_list(TableDesc) of
@@ -1031,7 +1031,7 @@ le_info(#prepared{qh = #qlc_table{format_fun = FormatFun, trav_MS = TravMS,
             {table, FormatFun(all)}
     end;
 le_info(#prepared{qh = #qlc_append{hl = HL}}) ->
-    {append, lists:map(fun le_info/1, HL)};
+    {append, [le_info(H) || H <- HL]};
 le_info(#prepared{qh = #qlc_sort{h = H, keypos = sort, 
                                  opts = SortOptions0, tmpdir = TmpDir}}) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
@@ -1201,7 +1201,7 @@ prep_le(#qlc_append{hl = HL}, GOpt) ->
     case lists:flatmap(fun(#prepared{qh = #qlc_list{l = []}}) -> [];
                           (#prepared{qh = #qlc_append{hl = HL1}}) -> HL1;
                           (H) -> [H] end, 
-                       lists:map(fun(H) -> prep_le(H, GOpt) end, HL)) of
+                       [prep_le(H, GOpt) || H <- HL]) of
         []=Nil -> 
             short_list(Nil);
         [Prep] -> 
@@ -1740,7 +1740,7 @@ opt_le(#prepared{qh = #qlc{qdata = Qdata0, optz = Optz0}=QLC}=Prep, GenNum) ->
     Optz = Optz1#optz{fast_join = Join},
     Prep#prepared{qh = QLC#qlc{qdata = Qdata, optz = Optz}};
 opt_le(#prepared{qh = #qlc_append{hl = HL}}=Prep, GenNum) ->
-    Hs = lists:map(fun(H) -> opt_le(H, GenNum) end, HL),
+    Hs = [opt_le(H, GenNum) || H <- HL],
     Prep#prepared{qh = #qlc_append{hl = Hs}};
 opt_le(#prepared{qh = #qlc_sort{h = H}=Sort}=Prep, GenNum) ->
     Prep#prepared{qh = Sort#qlc_sort{h = opt_le(H, GenNum)}};

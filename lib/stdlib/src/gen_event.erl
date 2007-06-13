@@ -176,7 +176,7 @@ loop(Parent, ServerName, MSL, Debug) ->
 				  [ServerName, MSL]);
 	{'EXIT', Parent, Reason} ->
 	    terminate_server(Reason, Parent, MSL, ServerName);
-	Msg when Debug == [] ->
+	Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, ServerName, MSL, []);
 	Msg ->
 	    Debug1 = sys:handle_debug(Debug, {gen_event, print_event}, 
@@ -248,9 +248,9 @@ terminate_server(Reason, Parent, MSL, ServerName) ->
 %% termination of the event manager (server).
 %% Do not unlink Parent !
 do_unlink(Parent, MSL) ->
-    lists:foreach(fun(Handler) when Handler#handler.supervised == Parent ->
+    lists:foreach(fun(Handler) when Handler#handler.supervised =:= Parent ->
 			  true;
-		     (Handler) when pid(Handler#handler.supervised) ->
+		     (Handler) when is_pid(Handler#handler.supervised) ->
 			  unlink(Handler#handler.supervised),
 			  true;
 		     (_) ->
@@ -267,7 +267,7 @@ handle_exit(From, Reason, MSL, SName) ->
     server_notify({'EXIT', From, Reason}, handle_info, MSL1, SName).
 
 terminate_supervised(Pid, Reason, MSL, SName) ->
-    F = fun(Ha) when Ha#handler.supervised == Pid ->
+    F = fun(Ha) when Ha#handler.supervised =:= Pid ->
 		do_terminate(Ha#handler.module,
 			     Ha,
 			     {stop,Reason},
@@ -295,7 +295,7 @@ system_terminate(Reason, Parent, _Debug, [ServerName, MSL]) ->
 %% which module should be changed.
 %%-----------------------------------------------------------------
 system_code_change([ServerName, MSL], Module, OldVsn, Extra) ->
-    MSL1 = lists:zf(fun(H) when H#handler.module == Module ->
+    MSL1 = lists:zf(fun(H) when H#handler.module =:= Module ->
 			    {ok, NewState} =
 				Module:code_change(OldVsn,
 						   H#handler.state, Extra),
@@ -406,8 +406,8 @@ split_and_terminate(HandlerId, Args, MSL, SName, Handler2, Sup) ->
 	{Mod, Handler, MSL1} ->
 	    OldSup = Handler#handler.supervised,
 	    NewSup = if
-			 Sup == false -> OldSup;
-			 true         -> Sup
+			 not Sup -> OldSup;
+			 true    -> Sup
 		     end,
 	    {do_terminate(Mod, Handler, Args,
 			  Handler#handler.state, swapped, SName,
@@ -478,11 +478,11 @@ new_handler(Mod, Handler1) ->
 
 split(Ha, MSL) -> split(Ha, MSL, []).
 
-split({Mod,Id}, [Ha|T], L) when Ha#handler.module == Mod,
-                                Ha#handler.id == Id ->
+split({Mod,Id}, [Ha|T], L) when Ha#handler.module =:= Mod,
+                                Ha#handler.id =:= Id ->
     {Mod, Ha, lists:reverse(L, T)};
-split(Mod, [Ha|T], L) when Ha#handler.module == Mod,
-                           Ha#handler.id == false ->
+split(Mod, [Ha|T], L) when Ha#handler.module =:= Mod,
+                           not Ha#handler.id ->
     {Mod, Ha, lists:reverse(L, T)};
 split(Ha, [H|T], L) ->
     split(Ha, T, [H|L]);
@@ -505,33 +505,33 @@ server_call(Handler, Query, MSL, SName) ->
 	    {{error, bad_module}, MSL}
     end.
 
-search({Mod, Id}, [Ha|_MSL]) when Ha#handler.module == Mod,
-				  Ha#handler.id == Id ->
+search({Mod, Id}, [Ha|_MSL]) when Ha#handler.module =:= Mod,
+				  Ha#handler.id =:= Id ->
     {ok, Ha};
-search(Mod, [Ha|_MSL]) when Ha#handler.module == Mod,
-			    Ha#handler.id == false ->
+search(Mod, [Ha|_MSL]) when Ha#handler.module =:= Mod,
+			    not Ha#handler.id ->
     {ok, Ha};
 search(Handler, [_|MSL]) ->
     search(Handler, MSL);
 search(_, []) ->
     false.
 
-delete({Mod, Id}, [Ha|MSL]) when Ha#handler.module == Mod,
-                                 Ha#handler.id == Id ->
+delete({Mod, Id}, [Ha|MSL]) when Ha#handler.module =:= Mod,
+                                 Ha#handler.id =:= Id ->
     MSL;
-delete(Mod, [Ha|MSL]) when Ha#handler.module == Mod,
-                           Ha#handler.id == false ->
+delete(Mod, [Ha|MSL]) when Ha#handler.module =:= Mod,
+                           not Ha#handler.id ->
     MSL;
 delete(Handler, [Ha|MSL]) ->
     [Ha|delete(Handler, MSL)];
 delete(_, []) ->
     [].
 
-replace({Mod, Id}, [Ha|MSL], NewHa) when Ha#handler.module == Mod,
-                                         Ha#handler.id == Id ->
+replace({Mod, Id}, [Ha|MSL], NewHa) when Ha#handler.module =:= Mod,
+                                         Ha#handler.id =:= Id ->
     [NewHa|MSL];
-replace(Mod, [Ha|MSL], NewHa) when Ha#handler.module == Mod,
-                                   Ha#handler.id == false ->
+replace(Mod, [Ha|MSL], NewHa) when Ha#handler.module =:= Mod,
+                                   not Ha#handler.id ->
     [NewHa|MSL];
 replace(Handler, [Ha|MSL], NewHa) ->
     [Ha|replace(Handler, MSL, NewHa)];
@@ -610,7 +610,7 @@ report_error(Handler, Reason, State, LastIn, SName)   ->
 	      "** Reason == ~p~n",
 	      [handler(Handler),SName,LastIn,State,Reason1]).
 
-handler(Handler) when Handler#handler.id == false ->
+handler(Handler) when not Handler#handler.id ->
     Handler#handler.module;
 handler(Handler) ->
     {Handler#handler.module, Handler#handler.id}.
@@ -626,7 +626,7 @@ stop_handlers([], _) ->
     [].
 
 the_handlers(MSL) ->
-    lists:map(fun(Handler) when Handler#handler.id == false ->
+    lists:map(fun(Handler) when not Handler#handler.id ->
 		      Handler#handler.module;
 		 (Handler) ->
 		      {Handler#handler.module, Handler#handler.id}

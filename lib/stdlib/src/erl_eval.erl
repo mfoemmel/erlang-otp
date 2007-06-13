@@ -38,7 +38,7 @@
 
 -export([check_command/2, fun_data/1]).
 
--import(lists, [reverse/1,foldl/3,member/2,map/2]).
+-import(lists, [reverse/1,foldl/3,member/2]).
 
 %% seq(ExpressionSeq, Bindings)
 %% seq(ExpressionSeq, Bindings, LocalFuncHandler)
@@ -108,9 +108,6 @@ expr(E, Bs, Lf, Ef) ->
     expr(E, Bs, Lf, Ef, none).
 
 %% Check a command (a list of expressions) by calling erl_lint.
-%%
-%% There may be bindings {module,A} in Bs (put there by shell.erl),
-%% but they are harmless.
 
 check_command(Es, Bs) ->
     Opts = case eval_bits:bitlevel_binaries_enabled() of
@@ -201,6 +198,7 @@ expr({'fun',_Line,{function,Mod,Name,Arity}}, Bs, _Lf, _Ef, RBs) ->
     F = erlang:make_fun(Mod, Name, Arity),
     ret_expr(F, Bs, RBs);    
 expr({'fun',_Line,{function,Name,Arity}}, _Bs0, _Lf, _Ef, _RBs) -> % R8
+    %% Don't know what to do...
     erlang:raise(error, undef, [{erl_eval,Name,Arity}|stacktrace()]);
 expr({'fun',Line,{clauses,Cs}} = Ex, Bs, Lf, Ef, RBs) ->
     %% Save only used variables in the function environment.
@@ -307,7 +305,7 @@ expr({match,_,Lhs,Rhs0}, Bs0, Lf, Ef, RBs) ->
     end;
 expr({op,_,Op,A0}, Bs0, Lf, Ef, RBs) ->
     {value,A,Bs} = expr(A0, Bs0, Lf, Ef, none),
-    ret_expr(eval_op(Op, A), Bs, RBs);
+    eval_op(Op, A, Bs, Ef, RBs);
 expr({op,_,'andalso',L0,R0}, Bs0, Lf, Ef, RBs) ->
     {value,L,Bs1} = expr(L0, Bs0, Lf, Ef, none),
     V = case L of
@@ -339,7 +337,7 @@ expr({op,_,'orelse',L0,R0}, Bs0, Lf, Ef, RBs) ->
 expr({op,_,Op,L0,R0}, Bs0, Lf, Ef, RBs) ->
     {value,L,Bs1} = expr(L0, Bs0, Lf, Ef, none),
     {value,R,Bs2} = expr(R0, Bs0, Lf, Ef, none),
-    ret_expr(eval_op(Op, L, R), merge_bindings(Bs1, Bs2), RBs);
+    eval_op(Op, L, R, merge_bindings(Bs1, Bs2), Ef, RBs);
 expr({bin,_,Fs}, Bs0, Lf, Ef, RBs) ->
     EvalFun = fun(E, B) -> expr(E, B, Lf, Ef, none) end,
     case catch eval_bits:expr_grp(Fs, Bs0, EvalFun) of
@@ -473,13 +471,20 @@ do_apply({M,F}=Func, As, Bs0, Ef, RBs)
             ret_expr(Fun(Func, As), Bs0, RBs)
     end;
 do_apply(Func, As, Bs0, Ef, RBs) ->
-    Info = if
-               is_function(Func) -> erlang:fun_info(Func, module);
-               true -> no
-           end,
-    case {Info,Ef} of
-        {{module,?MODULE},_} ->
-            {env, [FBs, FEf, FLf, FCs]} = erlang:fun_info(Func, env),
+    Env = if
+              is_function(Func) -> 
+                  case {erlang:fun_info(Func, module),
+                        erlang:fun_info(Func, env)} of
+                      {{module,?MODULE},{env,Env1}} when Env1 =/= [] ->
+                          {env,Env1};
+                      _ ->
+                          no_env
+                  end;
+              true -> 
+                  no_env
+          end,
+    case {Env,Ef} of
+        {{env,[FBs, FEf, FLf, FCs]},_} ->
             %% If we are evaluting within another function body 
             %% (RBs =/= none), we return RBs when this function body
             %% has been evalutated, otherwise we return Bs0, the
@@ -494,14 +499,14 @@ do_apply(Func, As, Bs0, Ef, RBs) ->
                 _ ->
                     erlang:raise(error, {badarity,{Func,As}},stacktrace())
             end;
-        {_,none} when RBs =:= value ->
+        {no_env,none} when RBs =:= value ->
             %% Make tail recursive calls when possible.
             apply(Func, As);
-        {_,none} ->
+        {no_env,none} ->
             ret_expr(apply(Func, As), Bs0, RBs);
-        {_,{value,F}} when RBs =:= value ->
+        {no_env,{value,F}} when RBs =:= value ->
             F(Func,As);
-        {_,{value,F}} ->
+        {no_env,{value,F}} ->
             ret_expr(F(Func, As), Bs0, RBs)
     end.
 
@@ -563,7 +568,7 @@ eval_generate([], _P, _Bs0, _Lf, _Ef, _CompFun, Acc) ->
 eval_generate(Term, _P, _Bs0, _Lf, _Ef, _CompFun, _Acc) ->
     erlang:raise(error, {bad_generator,Term}, stacktrace()).
 
-eval_b_generate(Bin, P, Bs0, Lf, Ef, CompFun, Acc) when is_binary(Bin) ->
+eval_b_generate(<<_/bitstr>>=Bin, P, Bs0, Lf, Ef, CompFun, Acc) ->
     Mfun = fun(L, R, Bs) -> match1(L, R, Bs, Bs0) end,
     Efun = fun(Exp, Bs) -> expr(Exp, Bs, Lf, Ef, none) end,
     case eval_bits:bin_gen(P, Bin, new_bindings(), Bs0, Mfun, Efun) of
@@ -631,8 +636,7 @@ eval_fun([], As, _Bs, _Lf, _Ef, _RBs) ->
     '-inside-a-shell-fun-'(), % Dummy call to avoid warning.
     %% list_to_tuple/1 below to avoid arity check.
     erlang:raise(error, function_clause, 
-		 [{?MODULE,'-inside-a-shell-fun-',list_to_tuple(As)}
-		  |stacktrace()]).
+		 [{?MODULE,'-inside-a-shell-fun-',As}|stacktrace()]).
 
 '-inside-a-shell-fun-'() -> ok.
 
@@ -656,36 +660,11 @@ expr_list([E|Es], Vs, BsOrig, Bs0, Lf, Ef) ->
 expr_list([], Vs, _, Bs, _Lf, _Ef) ->
     {reverse(Vs),Bs}.
 
-eval_op('*', A1, A2) -> A1 * A2;
-eval_op('/', A1, A2) -> A1 / A2;
-eval_op('+', A1, A2) -> A1 + A2;
-eval_op('-', A1, A2) -> A1 - A2;
-eval_op('div', A1, A2) -> A1 div A2;
-eval_op('rem', A1, A2) -> A1 rem A2;
-eval_op('band', A1, A2) -> A1 band A2;
-eval_op('bor', A1, A2) -> A1 bor A2;
-eval_op('bxor', A1, A2) -> A1 bxor A2;
-eval_op('bsl', A1, A2) -> A1 bsl A2;
-eval_op('bsr', A1, A2) -> A1 bsr A2;
-eval_op('<', E1, E2) -> E1 < E2;
-eval_op('=<', E1, E2) -> E1 =< E2;
-eval_op('>', E1, E2) -> E1 > E2;
-eval_op('>=', E1, E2) -> E1 >= E2;
-eval_op('==', E1, E2) -> E1 == E2;
-eval_op('/=', E1, E2) -> E1 /= E2;
-eval_op('=:=', E1, E2) -> E1 =:= E2;
-eval_op('=/=', E1, E2) -> E1 =/= E2;
-eval_op('and', E1, E2) -> E1 and E2;
-eval_op('or', E1, E2) -> E1 or E2;
-eval_op('xor', E1, E2) -> E1 xor E2;
-eval_op('++', A1, A2) -> A1 ++ A2;
-eval_op('--', A1, A2) -> A1 -- A2;
-eval_op('!', E1, E2) -> E1 ! E2.
+eval_op(Op, Arg1, Arg2, Bs, Ef, RBs) ->
+    do_apply({erlang,Op}, [Arg1,Arg2], Bs, Ef, RBs).
 
-eval_op('+', A) -> + A;
-eval_op('-', A) -> - A;
-eval_op('bnot', A) -> bnot A;
-eval_op('not', A) -> not A.
+eval_op(Op, Arg, Bs, Ef, RBs) ->
+    do_apply({erlang,Op}, [Arg], Bs, Ef, RBs).
 
 %% if_clauses(Clauses, Bindings, LocalFuncHandler, ExtFuncHandler, RBs)
 
@@ -826,13 +805,13 @@ match_clause([], _Vals, _Bs, _Lf, _Ef) ->
 %% guard(GuardTests, Bindings, LocalFuncHandler, ExtFuncHandler) -> bool()
 %%  Evaluate a guard.  We test if the guard is a true guard.
 
-guard(L=[G|_], Bs0, Lf, Ef) when list(G) ->
+guard(L=[G|_], Bs0, Lf, Ef) when is_list(G) ->
     guard1(L, Bs0, Lf, Ef);
 guard(L, Bs0, Lf, Ef) ->
     guard0(L, Bs0, Lf, Ef).
 
 %% disjunction of guard conjunctions
-guard1([G|Gs], Bs0, Lf, Ef) when list(G) ->
+guard1([G|Gs], Bs0, Lf, Ef) when is_list(G) ->
     case guard0(G, Bs0, Lf, Ef) of
 	true ->
 	    true;
@@ -859,39 +838,26 @@ guard0([], _Bs, _Lf, _Ef) -> true.
 %%  Evaluate one guard test. Never fails, returns bool().
 
 guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf, Ef) ->
-    case catch begin 
-                   {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
-                   {value,type_test(Name, As1),Bs1} % Ignore Ef.
-               end of
-        {value,true,Bs2} -> {value,true,Bs2};
-        _Other -> {value,false,Bs0}
-    end;
+    try 
+        {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
+        {value,true,_} = type_test(Name, As1, Bs1, Ef)
+    catch error:_ -> {value,false,Bs0} end;
 guard_test({op,_,Op,A0}, Bs0, Lf, Ef) ->
-    case catch begin
-		   {[A],Bs1} = expr_list([A0], Bs0, Lf, Ef),
-		   {value,eval_op(Op, A),Bs1}
-	       end of
-	{value,true,Bs2} -> {value,true,Bs2};
-	_Other -> {value,false,Bs0}
-    end;
+    try
+        {[A],Bs1} = expr_list([A0], Bs0, Lf, Ef),
+        {value,true,_} = eval_op(Op, A, Bs1, Ef, none)
+    catch error:_ -> {value,false,Bs0} end;
 guard_test({op,_,'andalso',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
-    case catch expr(G, Bs0, Lf, Ef, none) of
-        {value,true,Bs1} -> {value,true,Bs1};
-        _Other -> {value,false,Bs0}
-    end;
+    try {value,true,_} = expr(G, Bs0, Lf, Ef, none)
+    catch error:_ -> {value,false,Bs0} end;
 guard_test({op,_,'orelse',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
-    case catch expr(G, Bs0, Lf, Ef, none) of
-        {value,true,Bs1} -> {value,true,Bs1};
-        _Other -> {value,false,Bs0}
-    end;
+    try {value,true,_} = expr(G, Bs0, Lf, Ef, none)
+    catch error:_ -> {value,false,Bs0} end;
 guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf, Ef) ->
-    case catch begin
-		   {[Lhs,Rhs],Bs1} = expr_list([Lhs0,Rhs0], Bs0, Lf, Ef),
-		   {value,eval_op(Op, Lhs, Rhs),Bs1}
-	       end of
-	{value,true,Bs2} -> {value,true,Bs2};
-	_Other -> {value,false,Bs0}
-    end;
+    try
+        {[Lhs,Rhs],Bs1} = expr_list([Lhs0,Rhs0], Bs0, Lf, Ef),
+        {value,true,_} = eval_op(Op, Lhs, Rhs, Bs1, Ef, none)
+    catch error:_ -> {value,false,Bs0} end;   
 guard_test({atom,_,true}, Bs, _Lf, _Ef) -> {value,true,Bs};
 guard_test({atom,_,false}, Bs, _Lf, _Ef) -> {value,false,Bs};
 guard_test({var,_,V}, Bs, _Lf, _Ef) ->
@@ -899,33 +865,33 @@ guard_test({var,_,V}, Bs, _Lf, _Ef) ->
     {value,Val =:= true,Bs};
 guard_test({call,_L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As0}, 
           Bs0, Lf, Ef) ->
-    case catch begin
-                   {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
-                   {value,type_test(F, As1),Bs1} % Ignore Ef.
-               end of
-        {value,true,Bs2} -> {value,true,Bs2};
-        _Other -> {value,false,Bs0}
-    end;
+    try
+        {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
+        {value,true,_} = type_test(F, As1, Bs1, Ef)
+    catch error:_ -> {value,false,Bs0} end;
 guard_test({call,L,{tuple,L1,[{atom,Lm,erlang},{atom,L2,F}]},As}, 
          Bs0, Lf, Ef) ->
     guard_test({call,L,{remote,L1,{atom,Lm,erlang},{atom,L2,F}},As}, 
                Bs0, Lf, Ef);
 guard_test(_Other, Bs, _Lf, _Ef) -> {value,false,Bs}.
 
-type_test(integer, [A]) -> erlang:is_integer(A);
-type_test(float, [A]) ->  erlang:is_float(A);
-type_test(number, [A]) -> erlang:is_number(A);
-type_test(atom, [A]) -> erlang:is_atom(A);
-type_test(constant, [A]) -> erlang:is_constant(A);
-type_test(list, [A]) -> erlang:is_list(A);
-type_test(tuple, [A]) -> erlang:is_tuple(A);
-type_test(pid, [A]) -> erlang:is_pid(A);
-type_test(reference, [A]) -> erlang:is_reference(A);
-type_test(port, [A]) -> erlang:is_port(A);
-type_test(function, [A]) -> erlang:is_function(A);
-type_test(binary, [A]) -> erlang:is_binary(A);
-type_test(record, [R,A]) -> erlang:is_record(R, A);
-type_test(Test, As) -> erlang:apply(erlang, Test, As).
+type_test(Test, As, Bs, Ef) ->
+    do_apply({erlang,type_test(Test)}, As, Bs, Ef, none).
+
+type_test(integer) -> is_integer;
+type_test(float) -> is_float;
+type_test(number) -> is_number;
+type_test(atom) -> is_atom;
+type_test(constant) -> is_constant;
+type_test(list) -> is_list;
+type_test(tuple) -> is_tuple;
+type_test(pid) -> is_pid;
+type_test(reference) -> is_reference;
+type_test(port) -> is_port;
+type_test(function) -> is_function;
+type_test(binary) -> is_binary;
+type_test(record) -> is_record;
+type_test(Test) -> Test.
 
 
 %% match(Pattern, Term, Bindings) ->
@@ -1001,12 +967,12 @@ match1({cons,_,H,T}, [H1|T1], Bs0, BBs) ->
     match1(T, T1, Bs, BBs);
 match1({cons,_,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({tuple,_,Elts}, Tuple, Bs, BBs) when tuple(Tuple),
+match1({tuple,_,Elts}, Tuple, Bs, BBs) when is_tuple(Tuple),
 					    length(Elts) =:= size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs, BBs);
 match1({tuple,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({bin, _, Fs}, B, Bs0, BBs) when binary(B) ->
+match1({bin, _, Fs}, <<_/bitstr>>=B, Bs0, BBs) ->
     eval_bits:match_bits(Fs, B, Bs0, BBs,
 			 fun(L, R, Bs) -> match1(L, R, Bs, BBs) end,
 			 fun(E, Bs) -> expr(E, Bs, none, none, none) end);
@@ -1114,15 +1080,15 @@ merge_bindings(Bs1, Bs2) ->
 
 is_constant_expr(Expr) ->
     case eval_expr(Expr) of
-        {ok, X} when number(X) -> true;
+        {ok, X} when is_number(X) -> true;
         _ -> false
     end.
 
 eval_expr(Expr) ->
     case catch ev_expr(Expr) of
-        X when integer(X) -> {ok, X};
-        X when float(X) -> {ok, X};
-        X when atom(X) -> {ok,X};
+        X when is_integer(X) -> {ok, X};
+        X when is_float(X) -> {ok, X};
+        X when is_atom(X) -> {ok,X};
         {'EXIT',Reason} -> {error, Reason};
         _ -> {error, badarg}
     end.
@@ -1130,9 +1096,9 @@ eval_expr(Expr) ->
 partial_eval(Expr) ->
     Line = line(Expr),
     case catch ev_expr(Expr) of
-	X when integer(X) -> ret_expr(Expr,{integer,Line,X});
-	X when float(X) -> ret_expr(Expr,{float,Line,X});
-	X when atom(X) -> ret_expr(Expr,{atom,Line,X});
+	X when is_integer(X) -> ret_expr(Expr,{integer,Line,X});
+	X when is_float(X) -> ret_expr(Expr,{float,Line,X});
+	X when is_atom(X) -> ret_expr(Expr,{atom,Line,X});
 	_ ->
 	    Expr
     end.
@@ -1143,15 +1109,15 @@ ev_expr({integer,_,X}) -> X;
 ev_expr({float,_,X})   -> X;
 ev_expr({atom,_,X})    -> X;
 ev_expr({tuple,_,Es}) ->
-    list_to_tuple(map(fun(X) -> ev_expr(X) end, Es));
+    list_to_tuple([ev_expr(X) || X <- Es]);
 ev_expr({nil,_}) -> [];
 ev_expr({cons,_,H,T}) -> [ev_expr(H) | ev_expr(T)].
 %%ev_expr({call,Line,{atom,_,F},As}) ->
 %%    true = erl_internal:guard_bif(F, length(As)),
-%%    apply(erlang, F, map(fun(X) -> ev_expr(X) end, As));
+%%    apply(erlang, F, [ev_expr(X) || X <- As]);
 %%ev_expr({call,Line,{remote,_,{atom,_,erlang},{atom,_,F}},As}) ->
 %%    true = erl_internal:guard_bif(F, length(As)),
-%%    apply(erlang, F, map(fun(X) -> ev_expr(X) end, As)).
+%%    apply(erlang, F, [ev_expr(X) || X <- As]);
 
 ret_expr(_Old, New) ->
     %%    io:format("~w: reduced ~s => ~s~n",

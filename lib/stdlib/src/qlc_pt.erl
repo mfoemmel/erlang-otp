@@ -25,7 +25,7 @@
 %% Exported to qlc.erl only:
 -export([vars/1, aux_name1/3]).
 
--import(lists, [append/1, flatmap/2, flatten/1, keysearch/3, map/2, sort/1]).
+-import(lists, [append/1, flatmap/2, flatten/1, keysearch/3, sort/1]).
 
 -include_lib("stdlib/include/ms_transform.hrl").
 
@@ -95,7 +95,7 @@ transform_expression(LC, Bindings) ->
 
 transform_expression(LC, Bs0, WithLintErrors) ->
     L = 1,
-    As = map(fun({V,_Val}) -> {var,L,V} end, Bs0),
+    As = [{var,L,V} || {V,_Val} <- Bs0],
     F = {function,L,bar,L,[{clause,L,As,[],[?QLC_Q(L, L, L, L, LC, [])]}]},
     Forms = [{attribute,L,file,{"foo",L}},
              {attribute,L,module,foo}, F],
@@ -657,17 +657,17 @@ join_quals(JoinInfo, QCs, L, LcNo, ExtraConstants, AllVars) ->
                 EqualCols ->
                     [{Q1,Q2,'=='} || {Q1,Q2} <- join_qnums(EqualCols)]
             end,
-    LD = map(fun({Q1, Q2, Op}) ->
-                     [{QId1,P1,GV1,QIVs1}] = 
-                         [{QId,P,GV,QIVs} || 
-                             {QId,{QIVs,{{gen,P,_,GV},_GoI,_SI}}} <- QCs, 
-                             QId#qid.no =:= Q1],
-                     [{QId2,P2,QIVs2}] = 
-                         [{QId,P,QIVs--[GV]} || 
-                             {QId,{QIVs,{{gen,P,_,GV},_,_}}} <- QCs,
-                             QId#qid.no =:= Q2],
-                     {QId1,Op,P1,GV1,QIVs1++QIVs2,QId2,P2}
-             end, lists:usort(QNums)),
+    LD = [begin 
+              [{QId1,P1,GV1,QIVs1}] = 
+                  [{QId,P,GV,QIVs} || 
+                      {QId,{QIVs,{{gen,P,_,GV},_GoI,_SI}}} <- QCs, 
+                      QId#qid.no =:= Q1],
+              [{QId2,P2,QIVs2}] = 
+                  [{QId,P,QIVs--[GV]} || 
+                      {QId,{QIVs,{{gen,P,_,GV},_,_}}} <- QCs,
+                      QId#qid.no =:= Q2],
+              {QId1,Op,P1,GV1,QIVs1++QIVs2,QId2,P2}
+          end || {Q1, Q2, Op} <- lists:usort(QNums)],
     Aux = abst_vars(aux_vars(['F','H','O','C'], LcNo, AllVars), L),
     F = fun({QId1,Op,P1,GV1,QIVs,QId2,P2}, {QId,GoI,SI}) ->
                 AP1 = anon_pattern(P1),
@@ -819,7 +819,7 @@ simple_template({call,L,{remote,_,{atom,_,erlang},{atom,_,element}}=Call,
 simple_template({var, _, _}=E) ->
     E;
 simple_template({tuple, L, Es}) ->
-    {tuple, L, map(fun simple_template/1, Es)};
+    {tuple, L, [simple_template(E) || E <- Es]};
 simple_template({cons, L, H, T}) ->
     {cons, L, simple_template(H), simple_template(T)};
 simple_template(E) ->
@@ -1063,8 +1063,8 @@ eq_columns(Qualifiers, AllIVs, Dependencies, State) ->
 %% -> {TwoGen, ManyGens}
 join_gens(Cs0) ->
     Cs = [family_list(C) || C <- Cs0],
-    {lists:filter(fun(C) -> length(C) =:= 2 end, Cs),
-     lists:filter(fun(C) -> length(C) > 2 end, Cs)}.
+    {[C || C <- Cs, length(C) =:= 2],
+     [C || C <- Cs, length(C) > 2]}.
 
 %% Tries to find columns (possibly in the same table) that are
 %% matched (=:=/2) or compared (==/2). Unification again.
@@ -1347,12 +1347,10 @@ column_i_2({cons,_,_,E}, I, N) ->
     column_i_2(E, I+1, N).
 
 pattern_size(Fs, PatternVar) ->
-    Szs = map(fun(F) ->
-                      case deref({var, 0, PatternVar}, F) of
-                          {cons_tuple, Cs} -> pattern_sz(Cs, 0);
-                          _ -> undefined
-                      end
-              end, Fs),
+    Szs = [case deref({var, 0, PatternVar}, F) of
+               {cons_tuple, Cs} -> pattern_sz(Cs, 0);
+               _ -> undefined
+           end || F <- Fs],
     case lists:usort(Szs) of
         [Sz] when Sz >= 0 -> Sz;
         _  -> undefined
@@ -1388,11 +1386,11 @@ sel_columns(_, _Col, _PId, _Selector) ->
 all_frames([], _PatternVar, _DerefFun) ->
     [];
 all_frames(Fs, PatternVar, DerefFun) ->
-    Rs = map(fun(F) ->
-                     Deref = deref({var, 0, PatternVar}, F),
-                     RL = DerefFun(Deref),
-                     sofs:relation(RL) % possibly empty
-             end, Fs),
+    Rs = [begin
+              Deref = deref({var, 0, PatternVar}, F),
+              RL = DerefFun(Deref),
+              sofs:relation(RL) % possibly empty
+          end || F <- Fs],
     Ss = sofs:from_sets(Rs),
     %% D: columns occurring in every frame (path).
     D = sofs:intersection(sofs:projection(fun(S) -> sofs:projection(1, S) end,
@@ -1705,20 +1703,19 @@ qdata([], L) ->
     {nil,L}.
 
 qcon(Cs) ->
-    abstr([{C,[erl_parse:normalise(V) || V <- Vs]} || {C,Vs} <- Cs], 0).
+    list2cons([{tuple,0,[{integer,0,C},list2cons(Vs)]} || {C,Vs} <- Cs]).
 
 %% The original code (in Source) is used for filters and the template
 %% since the translated code can have QLC expressions and we don't
 %% want them to be visible.
 qcode(E, QCs, Source, L) ->
-    F = fun({_,C}) -> 
-                Bin = term_to_binary(C, [compressed]),
-                {bin, L, [{bin_element, L, 
-                           {string, L, binary_to_list(Bin)},
-                           default, default}]}
-        end,
-    CL = map(F,lists:keysort(1, [{qlc:template_state(),E} | 
-                                 qcode(QCs, Source)])),
+    CL = [begin
+              Bin = term_to_binary(C, [compressed]),
+              {bin, L, [{bin_element, L, 
+                         {string, L, binary_to_list(Bin)},
+                         default, default}]}
+          end || {_,C} <- lists:keysort(1, [{qlc:template_state(),E} | 
+                                            qcode(QCs, Source)])],
     {'fun', L, {clauses, [{clause, L, [], [], [{tuple, L, CL}]}]}}.
 
 qcode([{_QId, {_QIvs, {{gen,P,_LE,_GV}, GoI, _SI}}} | QCs], Source) ->
@@ -1871,14 +1868,13 @@ split_args(Args, L, State) when length(Args) > State#state.maxargs ->
 split_args(Args, _L, _State) ->
     Args.
     
-%% Replace each element in IEs that are members of Es by R, keep all
+%% Replace every element in IEs that is a member of Es by R, keep all
 %% other elements as they are.
 replace(Es, IEs, R) ->
-    map(fun(E) -> case lists:member(E, Es) of
-                      true -> R; 
-                      false -> E 
-                  end 
-        end, IEs).
+    [case lists:member(E, Es) of
+         true -> R; 
+         false -> E 
+     end || E <- IEs].
 
 is_list_c(V, L) ->
     {call,L,?A(is_list),[?V(V)]}.
@@ -1887,7 +1883,7 @@ next(Go, GoI, L) ->
     {call,L,?A(element),[?I(GoI),?V(Go)]}.
 
 aux_vars(Vars, LcN, AllVars) ->
-    map(fun(N) -> aux_var(N, LcN, 0, 1, AllVars) end, Vars).
+    [aux_var(Name, LcN, 0, 1, AllVars) || Name <- Vars].
 
 aux_var(Name, LcN, QN, N, AllVars) ->
     aux_name(lists:concat([Name, LcN, '_', QN, '_']), N, AllVars).
@@ -2021,12 +2017,11 @@ nos([E0 | Es0], S0) ->
     {Es, S} = nos(Es0, S1),
     {[E | Es], S};
 nos({'fun',L,{clauses,Cs}}, S) ->
-    F = fun({clause,Ln,H0,G0,B0}) -> 
-                {H, S1} = nos_pattern(H0, S),
-                {[G, B], _} = nos([G0, B0], S1),
-                {clause,Ln,H,G,B}
-        end,
-    NCs = map(F, Cs),
+    NCs = [begin
+               {H, S1} = nos_pattern(H0, S),
+               {[G, B], _} = nos([G0, B0], S1),
+               {clause,Ln,H,G,B}
+           end || {clause,Ln,H0,G0,B0} <- Cs],
     {{'fun',L,{clauses,NCs}}, S};
 nos({lc,L,E0,Qs0}, S) ->
     %% QLCs as well as LCs. It is OK to modify LCs as long as they

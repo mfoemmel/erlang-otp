@@ -34,10 +34,10 @@
 %%-----------------------------------------------------------------
 %% External exports
 %%-----------------------------------------------------------------
--export([start/1, connect/4, connections/0, 
+-export([start/1, connect/5, connections/0, 
 	 sockname2peername/2, peername2sockname/2,
 	 add_connection/5,
-	 add/2, add/3, remove/1, reconfigure/1, reconfigure/2]).
+	 add/3, remove/1, reconfigure/1, reconfigure/2]).
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -54,7 +54,7 @@
 
 -record(connection, {pid, socket, type, peerdata, localdata, ref = 0}).
 
--record(listen, {pid, socket, port, type, ref = 0, options}).
+-record(listen, {pid, socket, port, type, ref = 0, options, proxy_options = []}).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -65,13 +65,12 @@
 start(Opts) ->
     gen_server:start_link({local, orber_iiop_net}, orber_iiop_net, Opts, []).
 
-add(IP, normal) ->
-    add(IP, normal, orber_env:iiop_port());
-add(IP, ssl) ->
-    add(IP, ssl, orber_env:iiop_ssl_port()).
-
-add(IP, Type, Port) ->
-    gen_server:call(orber_iiop_net, {add, IP, Type, Port}, infinity).
+add(IP, normal, Options) ->
+    Port = orber_tb:keysearch(iiop_port, Options, orber_env:iiop_port()),
+    gen_server:call(orber_iiop_net, {add, IP, normal, Port, Options}, infinity);
+add(IP, ssl, Options) ->
+    Port = orber_tb:keysearch(iiop_ssl_port, Options, orber_env:iiop_ssl_port()),
+    gen_server:call(orber_iiop_net, {add, IP, ssl, Port, Options}, infinity).
 
 remove(Ref) ->
     gen_server:call(orber_iiop_net, {remove, Ref}, infinity).
@@ -93,8 +92,9 @@ reconfigure(Options, Ref) ->
 	    {error, "No proxy matched the supplied reference"}
     end.
 
-connect(Type, S, AcceptPid, Ref) ->
-    gen_server:call(orber_iiop_net, {connect, Type, S, AcceptPid, Ref}, infinity).
+connect(Type, S, AcceptPid, Ref, ProxyOptions) ->
+    gen_server:call(orber_iiop_net, {connect, Type, S, AcceptPid, 
+				     Ref, ProxyOptions}, infinity).
 
 connections() ->
     do_select([{#connection{peerdata = '$1', _='_'}, [], ['$1']}]).
@@ -226,7 +226,7 @@ handle_call({remove, Ref}, _From, State) ->
 	_ ->
 	    {reply, ok, State}
     end;
-handle_call({add, IP, Type, Port}, _From, State) ->
+handle_call({add, IP, Type, Port, ProxyOptions}, _From, State) ->
     Family = orber_env:ip_version(),
     case inet:getaddr(IP, Family) of
 	{ok, IPTuple} ->
@@ -234,13 +234,15 @@ handle_call({add, IP, Type, Port}, _From, State) ->
 	    Ref = make_ref(),
 	    case orber_socket:listen(Type, Port, Options, false) of
 		{ok, Listen, NewPort} ->
-		    {ok, Pid} = orber_iiop_socketsup:start_accept(Type, Listen, Ref),
+		    {ok, Pid} = orber_iiop_socketsup:start_accept(Type, Listen, Ref,
+								  ProxyOptions),
 		    link(Pid),
 		    ets:insert(?CONNECTION_DB, #listen{pid = Pid, 
 						       socket = Listen, 
 						       port = NewPort, 
 						       type = Type, ref = Ref,
-						       options = Options}),
+						       options = Options,
+						       proxy_options = ProxyOptions}),
 		    {reply, {ok, Ref}, State};
 		Error ->
 		    {reply, Error, State}
@@ -248,12 +250,13 @@ handle_call({add, IP, Type, Port}, _From, State) ->
 	Other ->
 	    {reply, Other, State}
     end;
-handle_call({connect, Type, Socket, _AcceptPid, AccepRef}, _From, State) 
+handle_call({connect, Type, Socket, _AcceptPid, AccepRef, ProxyOptions}, _From, State) 
   when State#state.max_connections == infinity;
        State#state.max_connections > State#state.counter ->
     case catch access_allowed(Type, Socket, Type) of
 	true ->
-	    case orber_iiop_insup:start_connection(Type, Socket, AccepRef) of
+	    case orber_iiop_insup:start_connection(Type, Socket, 
+						   AccepRef, ProxyOptions) of
 		{ok, Pid} when pid(Pid) ->
 		    link(Pid),
 		    {reply, {ok, Pid, true}, update_counter(State, 1)};
@@ -265,11 +268,12 @@ handle_call({connect, Type, Socket, _AcceptPid, AccepRef}, _From, State)
 	    orber_tb:info("Blocked connect attempt from ~s - ~p", [H, P]),
 	    {reply, denied, State}
     end;
-handle_call({connect, Type, Socket, AcceptPid, AccepRef}, _From, 
+handle_call({connect, Type, Socket, AcceptPid, AccepRef, ProxyOptions}, _From, 
 	    #state{queue = Q} = State) ->
     case catch access_allowed(Type, Socket, Type) of
 	true ->
-	    case orber_iiop_insup:start_connection(Type, Socket, AccepRef) of
+	    case orber_iiop_insup:start_connection(Type, Socket, 
+						   AccepRef, ProxyOptions) of
 		{ok, Pid} when pid(Pid) ->
 		    link(Pid),
 		    Ref = erlang:make_ref(),
@@ -346,15 +350,17 @@ handle_cast(_, State) ->
 handle_info({'EXIT', Pid, _Reason}, State) when pid(Pid) ->
     case ets:lookup(?CONNECTION_DB, Pid) of
 	[#listen{pid = Pid, socket = Listen, port = Port, type = Type, 
-		 ref = Ref, options = Options}] ->
+		 ref = Ref, options = Options, proxy_options = POpts}] ->
 	    ets:delete(?CONNECTION_DB, Pid),
 	    unlink(Pid),
 	    NewListen = new_listen_socket(Type, Listen, Port, Options),
-	    {ok, NewPid} = orber_iiop_socketsup:start_accept(Type, NewListen, Ref),
+	    {ok, NewPid} = orber_iiop_socketsup:start_accept(Type, NewListen, 
+							     Ref, POpts),
 	    link(NewPid),
 	    ets:insert(?CONNECTION_DB, #listen{pid = NewPid, socket = NewListen, 
 					       port = Port, type = Type, 
-					       ref = Ref, options = Options}),
+					       ref = Ref, options = Options, 
+					       proxy_options = POpts}),
 	    %% Remove the connection if it's in the queue.
 	    {noreply, 
 	     State#state{queue = 

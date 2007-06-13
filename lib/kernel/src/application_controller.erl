@@ -924,7 +924,7 @@ handle_application_started(AppName, Res, S) ->
 		{undefined, _} ->
 		    {noreply, NewS};
 		%% Check only if the application is started on the own node
-		{{ok, Perms}, {distributed, StartNode}} when StartNode == node() ->
+		{{ok, Perms}, {distributed, StartNode}} when StartNode =:= node() ->
 		    case lists:member({AppName, false}, Perms) of
 			true ->
 			    #state{running = StopRunning, started = StopStarted} = NewS,
@@ -950,17 +950,17 @@ handle_application_started(AppName, Res, S) ->
 
 
 
-	{error, R} when RestartType == temporary ->
+	{error, R} when RestartType =:= temporary ->
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    info_exited(AppName, R, RestartType),
 	    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
 			      start_req = Start_reqN}};
-	{info, R} when RestartType == temporary ->
+	{info, R} when RestartType =:= temporary ->
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    {noreply, S#state{starting = keydelete(AppName, 1, Starting),
 			      start_req = Start_reqN}};
-	{ErrInf, R} when RestartType == transient, ErrInf == error;
-			 RestartType == transient, ErrInf == info ->
+	{ErrInf, R} when RestartType =:= transient, ErrInf =:= error;
+			 RestartType =:= transient, ErrInf =:= info ->
 	    notify_cntrl_started(AppName, undefined, S, {error, R}),
 	    case ErrInf of
 		error ->
@@ -1029,7 +1029,7 @@ handle_info({ac_start_application_reply, AppName, Res}, S) ->
 		    NewStarting1 = keydelete(AppName, 1, Starting),
 		    NewStarting = [{AppName, RestartType, {takeover, Node}, From} | NewStarting1],
 		    {noreply, S#state{starting = NewStarting}};
-		{error, Reason} when RestartType == permanent ->
+		{error, Reason} when RestartType =:= permanent ->
 		    Start_reqN =
 			reply_to_requester(AppName, Start_req,
 					   {error, Reason}),
@@ -1151,7 +1151,7 @@ handle_info({'EXIT', Pid, Reason}, S) ->
 		{value, {_AppName, temporary}} ->
 		    info_exited(AppName, Reason, temporary),
 		    {noreply, NewS};
-		{value, {_AppName, transient}} when Reason == normal ->
+		{value, {_AppName, transient}} when Reason =:= normal ->
 		    info_exited(AppName, Reason, transient),
 		    {noreply, NewS};
 		{value, {_AppName, Type}} ->
@@ -1377,7 +1377,7 @@ stop_appl(_AppName, _Id, _Type) ->
 keysearchdelete(Key, Pos, List) ->
     ksd(Key, Pos, List, []).
 
-ksd(Key, Pos, [H | T], Rest) when element(Pos, H) == Key ->
+ksd(Key, Pos, [H | T], Rest) when element(Pos, H) =:= Key ->
     {value, H, Rest ++ T};
 ksd(Key, Pos, [H | T], Rest) ->
     ksd(Key, Pos, T, [H | Rest]);
@@ -1744,7 +1744,7 @@ check_conf() ->
 				   %% configuration parameters.
 				   %% Therefore read and merge contents.
 				   if
-				       BFName=="sys" ->
+				       BFName =:= "sys" ->
 					   {ok, SysEnv, Errors} =
 					       check_conf_sys(NewEnv),
 

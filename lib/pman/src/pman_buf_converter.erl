@@ -15,17 +15,17 @@
 %% 
 %%     $Id$
 %%
-%%%----------------------------------------------------------------------
-%%% Purpose : The purpouse of the converter process is to take
-%%%           care of the raw data that is received by the tracing
-%%%           process (a pman_shell process) and pass it on to
-%%%           the buffer process in chunks that can be handled.
-%%%
-%%%           This module is a part of the buffering system, and
-%%%           should not be used except through the API defined
-%%%           in the pman_buf module.
-%%%
-%%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------
+%% Purpose : The purpouse of the converter process is to take
+%%           care of the raw data that is received by the tracing
+%%           process (a pman_shell process) and pass it on to
+%%           the buffer process in chunks that can be handled.
+%%
+%%           This module is a part of the buffering system, and
+%%           should not be used except through the API defined
+%%           in the pman_buf module.
+%%
+%%----------------------------------------------------------------------
 
 -module(pman_buf_converter).
 
@@ -167,7 +167,7 @@ save_loop_init(Fd,Raw) ->
 
     Print = lists:map(fun(X) -> pman_buf_utils:textformat(X) end, Raw),
     receive
-	{buffer,Text} when list(Text) ->
+	{buffer,Text} when is_list(Text) ->
 	    io:format(Fd,Text,[]),
 	    io:format(Fd,Print,[]),
 	    save_loop(Fd)

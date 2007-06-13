@@ -69,8 +69,8 @@ do_collect_info(Lbl,Cfg,Acc,FailLbl) ->
       {cont,NewAcc,SuccLbl,NewMsOut}
   end.
 
-calc_size([{_,Size}|Rest]) ->
-  Size+calc_size(Rest);
+calc_size([{_,Size}|Rest]) when is_integer(Size) ->
+  Size + calc_size(Rest);
 calc_size([]) -> 0.
 
 update_code(_Lbl,Cfg,[_Info],_Cont,_FailLbl,_MsIn,_MsOut) ->
@@ -108,17 +108,18 @@ make_butlast([{Res,Size}|Rest],Var) ->
    make_butlast(Rest,NewVar)].
 
 cfg(Cfg) ->
-  {_,FunName,_} =  hipe_icode_cfg:function(Cfg),
+  {_,FunName,_} = hipe_icode_cfg:function(Cfg),
   case bincomp_fun(atom_to_list(FunName)) of
     from_binary ->
-      %%hipe_icode_cfg:pp(Cfg),
-      {MaxIterCode,MaxIterVar} = find_matches(Cfg),
+      %% hipe_icode_cfg:pp(Cfg),
+      {MaxIterCode, MaxIterVar} = find_matches(Cfg),
       {Init, Cfg1}  = remove_init(Cfg),
       {Cfg2, SelfRecLbl, RetVal} = 
 	add_new_start(Cfg1, Init, MaxIterVar, MaxIterCode),
-      %%hipe_icode_cfg:pp(Cfg2),
-      Cfg3 = rewrite_cfg(Cfg2, SelfRecLbl, hipe_icode_cfg:function(Cfg), {get_offset(Init),RetVal}),
-       %%hipe_icode_cfg:pp(Cfg3),
+      %% hipe_icode_cfg:pp(Cfg2),
+      Cfg3 = rewrite_cfg(Cfg2, SelfRecLbl, hipe_icode_cfg:function(Cfg),
+			 {get_offset(Init),RetVal}),
+       %% hipe_icode_cfg:pp(Cfg3),
       cfg2(Cfg3);
     from_list ->
       {MaxIterCode,MaxIterVar} = get_max_iter(Cfg),
@@ -133,13 +134,14 @@ cfg(Cfg) ->
 	    failed ->
 	      Cfg;
 	    {Lbl, SuccLbl} ->
-	      {Cfg1, Succs, Flag} = remove_unnecessary([SuccLbl],Cfg,[],[SuccLbl],false),
+	      {Cfg1, Succs, Flag} =
+		remove_unnecessary([SuccLbl],Cfg,[],[SuccLbl],false),
 	      Cfg2 = 
 		if Flag -> rewrite_bs_gets([SuccLbl], Cfg1, []);
 		   true -> Cfg1
 		end, 
 	      Cfg3 = unique_state_name(Lbl, Cfg2),
-	       %%hipe_icode_cfg:pp(Cfg3),
+	       %% hipe_icode_cfg:pp(Cfg3),
 	      rewrite_gotos(Succs, Cfg3, Lbl, SuccLbl)
 	  end;
 	false ->
@@ -152,9 +154,9 @@ get_offset(Init) ->
   Offset.
 
 get_max_iter(Cfg) ->
-  [List]=hipe_icode_cfg:params(Cfg),
+  [List] = hipe_icode_cfg:params(Cfg),
   IterVar = hipe_icode:mk_new_var(),
-  {[hipe_icode:mk_call([IterVar], erlang,  length, [List], remote)],
+  {[hipe_icode:mk_call([IterVar], erlang, length, [List], remote)],
    IterVar}.
 
 contains_tail_call(Cfg) ->
@@ -166,7 +168,7 @@ contains_tail_call([Lbl|Lbls], Cfg, Start) ->
   BB = hipe_icode_cfg:bb(Cfg, Lbl),
   Last = hipe_bb:last(BB),
   case hipe_icode:is_goto(Last) andalso 
-    hipe_icode:goto_label(Last) == Start of
+    hipe_icode:goto_label(Last) =:= Start of
     true ->
       true;
     false ->
@@ -206,11 +208,11 @@ unique_state_name([Lbl|Rest],Cfg,OldState,NewState,Visited) ->
   Last = hipe_bb:last(NewBB),
   case ending(Last) of
     true ->
-      Nexts=[hipe_icode:call_fail_label(Last)],
+      Nexts = [hipe_icode:call_fail_label(Last)],
       NewNexts = [X || X <- Nexts, not(lists:member(X,Visited))],
       unique_state_name(Rest++NewNexts,NewCfg,OldState,NewState,Visited++NewNexts);
     false -> 
-      Nexts=hipe_icode_cfg:succ(Cfg,Lbl),
+      Nexts = hipe_icode_cfg:succ(Cfg,Lbl),
       NewNexts = [X || X <- Nexts, not(lists:member(X,Visited))],
       unique_state_name(Rest++NewNexts,NewCfg,OldState,NewState,Visited++NewNexts) 
   end;
@@ -264,7 +266,7 @@ get_state_from_bs(I) ->
 
 change_bs_state(I,NS) ->
   [_OldMS|RestArgs] = hipe_icode:call_args(I),
-  [_OldMS|RestDst] =lists:reverse(hipe_icode:call_dstlist(I)),
+  [_OldMS|RestDst] = lists:reverse(hipe_icode:call_dstlist(I)),
   I1 = hipe_icode:call_args_update(I,[NS|RestArgs]),
   hipe_icode:call_dstlist_update(I1,lists:reverse([NS|RestDst])).
 
@@ -281,7 +283,7 @@ matching_bs(_) -> false.
 		  
 find_bs_start_match_labels(Cfg) ->
   Start = hipe_icode_cfg:start_label(Cfg),
-  [StartMatchLbl]=hipe_icode_cfg:succ(Cfg,Start),
+  [StartMatchLbl] = hipe_icode_cfg:succ(Cfg,Start),
   BB = hipe_icode_cfg:bb(Cfg, StartMatchLbl),
   StartMatch = hipe_bb:last(BB),
   true = is_start_match(StartMatch),
@@ -330,9 +332,12 @@ rewrite_bs_get(Instr) ->
 	  {hipe_bs_primop,Name} ->
 	    NewName = 
 	      case Name of
-		{bs_get_integer,Size,Flags} -> {bs_get_integer,Size,Flags band 6};
-		{bs_get_float,Size,Flags} -> {bs_get_float,Size,Flags band 6};
-		{bs_get_binary,Size,Flags} -> {bs_get_binary,Size,Flags band 6};
+		{bs_get_integer,Size,Flags} ->
+		  {bs_get_integer,Size,Flags band 6};
+		{bs_get_float,Size,Flags} ->
+		  {bs_get_float,Size,Flags band 6};
+		{bs_get_binary,Size,Flags} ->
+		  {bs_get_binary,Size,Flags band 6};
 		Old -> Old
 	      end,
 	    {hipe_bs_primop,NewName};
@@ -368,7 +373,7 @@ remove_unnecessary([SuccLbl|Rest],Cfg,Succs,Visited,Flag) ->
 	  NewBB = hipe_bb:mk_bb(NewCode),
 	  NewCfg = hipe_icode_cfg:bb_add(Cfg, SuccLbl, NewBB),
 	  {NewCfg2, NewSuccs} = {NewCfg, [{Succ,Bin}|Succs]},
-	  %%	remove_bs_test_tail(Succ, NewCfg, Bin, Succs),
+	  %% remove_bs_test_tail(Succ, NewCfg, Bin, Succs),
 	  remove_unnecessary(NewRest, NewCfg2, NewSuccs, Visited, NewFlag or Flag);
 	false ->
 	  remove_unnecessary(NewRest, Cfg, Succs, Visited, Flag)
@@ -396,7 +401,7 @@ remove_unnecessary([],Cfg,Succs,_Visited,Flag) ->
 is_not_aligned(BsGetAll) ->
   case BsGetAll of
     {hipe_bs_primop,{bs_get_binary_all,Flags}} ->
-      (Flags band 1) == 0
+      (Flags band 1) =:= 0
   end.
 	
 res_used_in_start_match([Lbl|Rest],Cfg,Var0,Visited) ->
@@ -417,7 +422,7 @@ res_used_in_start_match([Lbl|Rest],Cfg,Var0,Visited) ->
 	      res_used_in_start_match(Rest++NewNexts,Cfg,Var, Visited++NewNexts)
 	  end;
 	false ->
-	  Nexts=hipe_icode_cfg:succ(Cfg,Lbl),
+	  Nexts = hipe_icode_cfg:succ(Cfg,Lbl),
 	  NewNexts = [X || X <- Nexts, not(lists:member(X,Visited))],
 	  res_used_in_start_match(Rest++NewNexts,Cfg,Var, Visited++NewNexts)
       end
@@ -426,7 +431,7 @@ res_used_in_start_match([],_Cfg,_Var,_Visited) ->
   false.
 
 moving_var(I,Var) ->
-  case hipe_icode:is_move(I) andalso (hipe_icode:move_src(I) == Var) of
+  case hipe_icode:is_move(I) andalso (hipe_icode:move_src(I) =:= Var) of
     true ->
       hipe_icode:move_dst(I);
     false ->
@@ -481,9 +486,8 @@ rewrite_gotos([], Cfg, _Lbl, _SuccLbl, _Bins, Visited) ->
   {Visited,Cfg}.
 
 rewrite_oldcode([I|Is], Bins, Acc) ->
-  NewBins = 
-    [X|| X <- Bins, not(lists:member(X,hipe_icode:defines(I)))],
-  case [X|| X <- hipe_icode:uses(I),lists:member(X,Bins)] of
+  NewBins = [X || X <- Bins, not(lists:member(X,hipe_icode:defines(I)))],
+  case [X || X <- hipe_icode:uses(I), lists:member(X,Bins)] of
     [] ->
       rewrite_oldcode(Is, NewBins, [I|Acc]);
     _ ->
@@ -493,7 +497,7 @@ rewrite_oldcode([], Bins, Acc) ->
   {lists:reverse(Acc), Bins}.
 
 is_correct_goto(Last, Lbl) ->
-  hipe_icode:is_goto(Last) andalso hipe_icode:goto_label(Last) == Lbl.
+  hipe_icode:is_goto(Last) andalso hipe_icode:goto_label(Last) =:= Lbl.
 
 is_bs_test_tail(Last) ->
   hipe_icode:is_call(Last) andalso correct_testtail(hipe_icode:call_fun(Last)).
@@ -504,7 +508,7 @@ correct_testtail(_) ->
   false.
 
 is_bs_final2(Instr) ->
-   hipe_icode:is_call(Instr) andalso  correct_bs_final2(hipe_icode:call_fun(Instr)).
+   hipe_icode:is_call(Instr) andalso correct_bs_final2(hipe_icode:call_fun(Instr)).
 
 correct_bs_final2({hipe_bs_primop, bs_final}) ->
   true;

@@ -154,12 +154,12 @@ nodes_info() ->                get_nodes_info().
 i() ->                         print_info().
 i(Node) ->                     print_info(Node).
 
-verbose(Level) when integer(Level) ->
+verbose(Level) when is_integer(Level) ->
     request({verbose, Level}).
 
-set_net_ticktime(T, TP) when integer(T), T > 0, integer(TP), TP >= 0 ->
+set_net_ticktime(T, TP) when is_integer(T), T > 0, is_integer(TP), TP >= 0 ->
     ticktime_res(request({new_ticktime, T*250, TP*1000})).
-set_net_ticktime(T) when integer(T) ->
+set_net_ticktime(T) when is_integer(T) ->
     set_net_ticktime(T, ?DEFAULT_TRANSITION_PERIOD).
 get_net_ticktime() ->
     ticktime_res(request(ticktime)).
@@ -185,9 +185,9 @@ monitor_nodes(Flag, Opts) ->
     end.
 
 %% ...
-ticktime_res({A, I}) when atom(A), integer(I) -> {A, I div 250};
-ticktime_res(I)      when integer(I)          -> I div 250;
-ticktime_res(A)      when atom(A)             -> A.
+ticktime_res({A, I}) when is_atom(A), is_integer(I) -> {A, I div 250};
+ticktime_res(I)      when is_integer(I)          -> I div 250;
+ticktime_res(A)      when is_atom(A)             -> A.
 
 %% Called though BIF's
 
@@ -201,7 +201,7 @@ disconnect(Node) ->            request({disconnect, Node}).
 hidden_connect(Node) ->        do_connect(Node, hidden, false).
 
 %% Should this node publish itself on Node?
-publish_on_node(Node) when atom(Node) ->
+publish_on_node(Node) when is_atom(Node) ->
     request({publish_on_node, Node}).
 
 %% Update publication list
@@ -209,9 +209,9 @@ update_publish_nodes(Ns) ->
     request({update_publish_nodes, Ns}).
 
 %% explicit connects
-connect_node(Node) when atom(Node) ->
+connect_node(Node) when is_atom(Node) ->
     request({connect, normal, Node}).
-hidden_connect_node(Node) when atom(Node) ->
+hidden_connect_node(Node) when is_atom(Node) ->
     request({connect, hidden, Node}).
 
 do_connect(Node, Type, WaitForBarred) -> %% Type = normal | hidden
@@ -275,7 +275,7 @@ passive_connect_monitor(Parent, Node) ->
 %% kernel, thus basically accepting them :-)
 request(Req) ->
     case whereis(net_kernel) of
-	P when pid(P) ->
+	P when is_pid(P) ->
 	    gen_server:call(net_kernel,Req,infinity);
 	_ -> ignored
     end.
@@ -314,7 +314,7 @@ init({Name, LongOrShortNames, TickT}) ->
 	    Ticktime = to_integer(TickT),
 	    Ticker = spawn_link(net_kernel, ticker, [self(), Ticktime]),
 	    case auth:get_cookie(Node) of
-		Cookie when atom(Cookie) ->
+		Cookie when is_atom(Cookie) ->
 		    {ok, #state{name = Name,
 				node = Node,
 				type = LongOrShortNames,
@@ -346,18 +346,18 @@ init({Name, LongOrShortNames, TickT}) ->
 %% The response is delayed until the connection is up and
 %% running.
 %%
-handle_call({connect, _, Node}, _From, State) when Node == node() ->
+handle_call({connect, _, Node}, _From, State) when Node =:= node() ->
     {reply, true, State};
 handle_call({connect, Type, Node}, From, State) ->
     verbose({connect, Type, Node}, 1, State),
     case ets:lookup(sys_dist, Node) of
-	[Conn] when Conn#connection.state == up ->
+	[Conn] when Conn#connection.state =:= up ->
 	    {reply, true, State};
-	[Conn] when Conn#connection.state == pending ->
+	[Conn] when Conn#connection.state =:= pending ->
 	    Waiting = Conn#connection.waiting,
 	    ets:insert(sys_dist, Conn#connection{waiting = [From|Waiting]}),
 	    {noreply, State};
-	[Conn] when Conn#connection.state == up_pending ->
+	[Conn] when Conn#connection.state =:= up_pending ->
 	    Waiting = Conn#connection.waiting,
 	    ets:insert(sys_dist, Conn#connection{waiting = [From|Waiting]}),
 	    {noreply, State};
@@ -375,7 +375,7 @@ handle_call({connect, Type, Node}, From, State) ->
 %%
 %% Close the connection to Node.
 %%
-handle_call({disconnect, Node}, _From, State) when Node == node() ->
+handle_call({disconnect, Node}, _From, State) when Node =:= node() ->
     {reply, false, State};
 handle_call({disconnect, Node}, _From, State) ->
     verbose({disconnect, Node}, 1, State),
@@ -385,19 +385,19 @@ handle_call({disconnect, Node}, _From, State) ->
 %% 
 %% The spawn/4 BIF ends up here.
 %% 
-handle_call({spawn,M,F,A,Gleader},{From,Tag},State) when pid(From) ->
+handle_call({spawn,M,F,A,Gleader},{From,Tag},State) when is_pid(From) ->
     do_spawn([no_link,{From,Tag},M,F,A,Gleader],[],State);
 
 %% 
 %% The spawn_link/4 BIF ends up here.
 %% 
-handle_call({spawn_link,M,F,A,Gleader},{From,Tag},State) when pid(From) ->
+handle_call({spawn_link,M,F,A,Gleader},{From,Tag},State) when is_pid(From) ->
     do_spawn([link,{From,Tag},M,F,A,Gleader],[],State);
 
 %% 
 %% The spawn_opt/5 BIF ends up here.
 %% 
-handle_call({spawn_opt,M,F,A,O,L,Gleader},{From,Tag},State) when pid(From) ->
+handle_call({spawn_opt,M,F,A,O,L,Gleader},{From,Tag},State) when is_pid(From) ->
     do_spawn([L,{From,Tag},M,F,A,Gleader],O,State);
 
 %% 
@@ -423,7 +423,7 @@ handle_call({is_auth, _Node}, _From, State) ->
 %% Not applicable any longer !?
 %% 
 handle_call({apply,_Mod,_Fun,_Args}, {From,Tag}, State) 
-  when pid(From), node(From) == node() ->
+  when is_pid(From), node(From) =:= node() ->
     gen_server:reply({From,Tag}, not_implemented),
 %    Port = State#state.port,
 %    catch apply(Mod,Fun,[Port|Args]),
@@ -563,8 +563,8 @@ handle_info({accept,AcceptPid,Socket,Family,Proto}, State) ->
 handle_info({SetupPid, {nodeup,Node,Address,Type,Immediate}}, 
 	    State) ->
     case {Immediate, ets:lookup(sys_dist, Node)} of
-	{true, [Conn]} when Conn#connection.state == pending,
-			    Conn#connection.owner == SetupPid ->
+	{true, [Conn]} when Conn#connection.state =:= pending,
+			    Conn#connection.owner =:= SetupPid ->
 	    ets:insert(sys_dist, Conn#connection{state = up,
 						 address = Address,
 						 waiting = [],
@@ -637,7 +637,7 @@ handle_info({SetupPid, {is_pending, Node}}, State) ->
 %%
 %% Handle different types of process terminations.
 %%
-handle_info({'EXIT', From, Reason}, State) when pid(From) ->
+handle_info({'EXIT', From, Reason}, State) when is_pid(From) ->
     verbose({'EXIT', From, Reason}, 1, State),
     handle_exit(From, Reason, State);
 
@@ -750,7 +750,7 @@ pending_own_exit(Pid, State) ->
 	    NewPend = lists:keydelete(Pid, 1, Pend),
 	    State1 = State#state { pend_owners = NewPend },
 	    case get_conn(Node) of
-		{ok, Conn} when Conn#connection.state == up_pending ->
+		{ok, Conn} when Conn#connection.state =:= up_pending ->
 		    reply_waiting(Node,Conn#connection.waiting, true),
 		    Conn1 = Conn#connection { state = up,
 					      waiting = [],
@@ -797,11 +797,11 @@ nodedown(Conn, Owner, Node, Reason, Type, OldState) ->
     Owners = lists:keydelete(Owner, 1, OldState#state.conn_owners),
     State = OldState#state{conn_owners = Owners},
     case Conn#connection.state of
-	pending when Conn#connection.owner == Owner ->
+	pending when Conn#connection.owner =:= Owner ->
 	    pending_nodedown(Conn, Node, Type, State);
-	up when Conn#connection.owner == Owner ->
+	up when Conn#connection.owner =:= Owner ->
 	    up_nodedown(Conn, Node, Reason, Type, State);
-	up_pending when Conn#connection.owner == Owner ->
+	up_pending when Conn#connection.owner =:= Owner ->
 	    up_pending_nodedown(Conn, Node, Reason, Type, State);
 	_ ->
 	    OldState
@@ -887,11 +887,11 @@ check_opt({Opt, value},
 check_opt(Opt, [OtherOpt | RestOpts], TORes, OtherOpts) ->
     check_opt(Opt, RestOpts, TORes, [OtherOpt | OtherOpts]).
 
-check_options(Opts) when list(Opts) ->
+check_options(Opts) when is_list(Opts) ->
     RestOpts1 = case check_opt({node_type, value}, Opts) of
-		    {true, {node_type,Type}, RO1} when Type == visible;
-						       Type == hidden;
-						       Type == all ->
+		    {true, {node_type,Type}, RO1} when Type =:= visible;
+						       Type =:= hidden;
+						       Type =:= all ->
 			RO1;
 		    {true, {node_type, _Type} = Opt, _RO1} ->
 			throw({error, {bad_option_value, Opt}});
@@ -915,7 +915,7 @@ check_options(Opts) when list(Opts) ->
 check_options(Opts) ->
     {error, {options_not_a_list, Opts}}.
 
-mk_monitor_nodes_error(Flag, _Opts) when Flag /= true, Flag /= false ->
+mk_monitor_nodes_error(Flag, _Opts) when Flag =/= true, Flag =/= false ->
     error;
 mk_monitor_nodes_error(_Flag, Opts) ->
     case catch check_options(Opts) of
@@ -929,9 +929,9 @@ mk_monitor_nodes_error(_Flag, Opts) ->
 
 do_disconnect(Node, State) ->
     case ets:lookup(sys_dist, Node) of
-	[Conn] when Conn#connection.state == up ->
+	[Conn] when Conn#connection.state =:= up ->
 	    disconnect_pid(Conn#connection.owner, State);
-	[Conn] when Conn#connection.state == up_pending ->
+	[Conn] when Conn#connection.state =:= up_pending ->
 	    disconnect_pid(Conn#connection.owner, State);
 	_ ->
 	    {false, State}
@@ -960,7 +960,7 @@ get_nodes(Key, Which) ->
 	[Conn = #connection{state = up}] ->
 	    [Conn#connection.node | get_nodes(ets:next(sys_dist, Key),
 					      Which)];
-	[Conn = #connection{}] when Which == all ->
+	[Conn = #connection{}] when Which =:= all ->
 	    [Conn#connection.node | get_nodes(ets:next(sys_dist, Key),
 					      Which)];
 	_ ->
@@ -980,15 +980,15 @@ get_up_nodes(Key) ->
  	    get_up_nodes(ets:next(sys_dist, Key))
     end.
 
-ticker(Kernel, Tick) when integer(Tick) ->
+ticker(Kernel, Tick) when is_integer(Tick) ->
     process_flag(priority, max),
     ?tckr_dbg(ticker_started),
     ticker_loop(Kernel, Tick).
 
-to_integer(T) when integer(T) -> T;
-to_integer(T) when atom(T) -> 
+to_integer(T) when is_integer(T) -> T;
+to_integer(T) when is_atom(T) -> 
     list_to_integer(atom_to_list(T));
-to_integer(T) when list(T) -> 
+to_integer(T) when is_list(T) -> 
     list_to_integer(T).
 
 ticker_loop(Kernel, Tick) ->
@@ -1037,17 +1037,17 @@ send(_From,To,Mess) ->
     case whereis(To) of
 	undefined ->
 	    Mess;
-	P when pid(P) ->
+	P when is_pid(P) ->
 	    P ! Mess
     end.
 
 -ifdef(UNUSED).
 
-safesend(Name,Mess) when atom(Name) ->
+safesend(Name,Mess) when is_atom(Name) ->
     case whereis(Name) of 
 	undefined ->
 	    Mess;
-	P when pid(P) ->
+	P when is_pid(P) ->
 	    P ! Mess
     end;
 safesend(Pid, Mess) -> Pid ! Mess.
@@ -1086,7 +1086,7 @@ spawn_func(_,{From,Tag},M,F,A,Gleader) ->
 setup(Node,Type,From,State) ->
     Allowed = State#state.allowed,
     case lists:member(Node, Allowed) of
-	false when Allowed /= [] ->
+	false when Allowed =/= [] ->
 	    error_msg("** Connection attempt with "
 		      "disallowed node ~w ** ~n", [Node]),
 	    {error, bad_node};
@@ -1131,8 +1131,8 @@ select_mod(Node, []) ->
 
 get_proto_mod(Family,Protocol,[L|Ls]) ->
     A = L#listen.address,
-    if A#net_address.family == Family,
-       A#net_address.protocol == Protocol ->
+    if A#net_address.family =:= Family,
+       A#net_address.protocol =:= Protocol ->
 	    {ok, L#listen.module};
        true ->
 	    get_proto_mod(Family,Protocol,Ls)
@@ -1167,7 +1167,7 @@ create_name(Name, LongOrShortNames, Try) ->
     case Host1 of
 	{ok,HostPart} ->
 	    {ok,list_to_atom(Head ++ HostPart)};
-	{error,long} when Try == 1 ->
+	{error,long} when Try =:= 1 ->
 	    %% It could be we haven't read domain name from resolv file yet
 	    inet_config:do_load_resolv(os:type(), longnames),
 	    create_name(Name, LongOrShortNames, 0);
@@ -1193,14 +1193,15 @@ create_hostpart(Name, LongOrShortNames) ->
 		    end;
 		{_,shortnames} ->
 		    case inet_db:gethostname() of
-			H when list(H), length(H)>0 ->
+			H when is_list(H), length(H)>0 ->
 			    {ok,"@" ++ H};
 			_ ->
 			    {error,short}
 		    end;
 		{_,longnames} ->
 		    case {inet_db:gethostname(),inet_db:res_option(domain)} of
-			{H,D} when list(D),list(H),length(D)> 0, length(H)>0 ->
+			{H,D} when is_list(D), is_list(H),
+                        length(D)> 0, length(H)>0 ->
 			    {ok,"@" ++ H ++ "." ++ D};
 			_ ->
 			    {error,long}
@@ -1224,7 +1225,7 @@ protocol_childspecs([]) ->
 protocol_childspecs([H|T]) ->
     Mod = list_to_atom(H ++ "_dist"),
     case (catch Mod:childspecs()) of
-	{ok, Childspecs} when list(Childspecs) ->
+	{ok, Childspecs} when is_list(Childspecs) ->
 	    Childspecs ++ protocol_childspecs(T);
 	_ ->
 	    protocol_childspecs(T)
@@ -1301,14 +1302,14 @@ start_protos(Name, [Proto | Ps], Node, Ls) ->
 start_protos(_,[], _Node, Ls) ->
     Ls.
 
-set_node(Node, Creation) when node() == nonode@nohost ->
+set_node(Node, Creation) when node() =:= nonode@nohost ->
     case catch erlang:setnode(Node, Creation) of
 	true ->
 	    ok;
 	{'EXIT',Reason} ->
 	    {error,Reason}
     end;
-set_node(Node, _Creation) when node() == Node ->
+set_node(Node, _Creation) when node() =:= Node ->
     ok.
 
 connecttime() ->
@@ -1415,7 +1416,7 @@ delete_all(_, []) -> [].
 -endif.
 
 all_atoms([]) -> true;
-all_atoms([N|Tail]) when atom(N) ->
+all_atoms([N|Tail]) when is_atom(N) ->
     all_atoms(Tail);
 all_atoms(_) -> false.
 
@@ -1500,5 +1501,5 @@ verbose(Term, Level, #state{verbose = Verbose}) when Verbose >= Level ->
 verbose(_, _, _) ->
     ok.
 
-getnode(P) when pid(P) -> node(P);
+getnode(P) when is_pid(P) -> node(P);
 getnode(P) -> P.

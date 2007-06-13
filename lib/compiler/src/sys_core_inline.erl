@@ -68,7 +68,7 @@
 
 module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
     case inline_option(10, 0, Opts) of
-	{Thresh,Fs} when integer(Thresh), Thresh > 0; Fs /= [] ->
+	{Thresh,Fs} when is_integer(Thresh), Thresh > 0; Fs /= [] ->
 	    case proplists:get_bool(verbose, Opts) of
 		true ->
 		    io:format("Old inliner: threshold=~p functions=~p\n",
@@ -83,9 +83,9 @@ module(#c_module{exports=Es,defs=Ds0}=Mod, Opts) ->
 inline_option(_OnVal, OffVal, Opts) ->
     foldl(fun ({inline,{_,_}=Val}, {T,Fs}) ->
 		  {T,[Val|Fs]};
-	      ({inline,Val}, {T,Fs}) when list(Val) ->
+	      ({inline,Val}, {T,Fs}) when is_list(Val) ->
 		  {T,Val ++ Fs};
-	      ({inline,Val}, {_,Fs}) when integer(Val) ->
+	      ({inline,Val}, {_,Fs}) when is_integer(Val) ->
 		  {Val,Fs};
 
 	      %% Clashes with Richard's new inliner.
@@ -100,8 +100,7 @@ inline_option(_OnVal, OffVal, Opts) ->
 
 inline(Fs0, St0) ->
     %% Generate list of augmented functions.
-    Fs1 = map(fun (#c_def{name=#c_fname{id=F,arity=A},
-			  val=#c_fun{body=B}}=Def) ->
+    Fs1 = map(fun ({#c_fname{id=F,arity=A},#c_fun{body=B}}=Def) ->
 		      Weight = core_lib:fold(fun weight_func/2, 0, B),
 		      #fstat{func=F,arity=A,def=Def,weight=Weight}
 	      end, Fs0),
@@ -110,7 +109,7 @@ inline(Fs0, St0) ->
 			      case is_inlineable(Fst, St0#inline.thresh,
 						 St0#inline.inline) of
 				  true ->
-				      Ffun = (Fst#fstat.def)#c_def.val,
+				      {_,Ffun} = Fst#fstat.def,
 				      If = #ifun{func=Fst#fstat.func,
 						 arity=Fst#fstat.arity,
 						 vars=Ffun#c_fun.vars,
@@ -159,7 +158,7 @@ inline_inline(#ifun{body=B,weight=Iw}=If, Is) ->
 %%  Try to inline calls in a normal function.  Here we inline anything
 %%  in the inline list.
 
-inline_func(#fstat{def=F0}=Fstat, Is) ->
+inline_func(#fstat{def={Name,F0}}=Fstat, Is) ->
     Inline = fun (#c_apply{op=#c_fname{id=F,arity=A},args=As}=Call, Mod) ->
 		     case find_inl(F, A, Is) of
 			 #ifun{vars=Vs,body=B} ->
@@ -172,7 +171,7 @@ inline_func(#fstat{def=F0}=Fstat, Is) ->
 		 (Core, Mod) -> {Core,Mod}
 	     end,
     {F1,Mod} = core_lib:mapfold(Inline, false, F0),
-    Fstat#fstat{def=F1,modified=Mod}.
+    Fstat#fstat{def={Name,F1},modified=Mod}.
 
 weight_func(_Core, Acc) -> Acc + 1.
 

@@ -221,7 +221,7 @@ init_table(Table, Fun) ->
 
 init_table_continue(_Table, end_of_input) ->
     true;
-init_table_continue(Table, {List,Fun}) when list(List), function(Fun) ->
+init_table_continue(Table, {List,Fun}) when is_list(List), is_function(Fun) ->
     case (catch init_table_sub(Table, List)) of
 	{'EXIT', Reason} ->
 	    (catch Fun(close)),
@@ -242,10 +242,10 @@ match_delete(Table, Pattern) ->
     ets:select_delete(Table,[{Pattern,[],[true]}]),
     true.
 
-delete(T) when atom(T) ; integer(T) ->
+delete(T) when is_atom(T) ; is_integer(T) ->
     ets:db_delete(T).
 
-info(T) when atom(T) ; integer(T) ->
+info(T) when is_atom(T) ; is_integer(T) ->
     local_info(T, node()).
 
 local_info(T, Node) ->
@@ -262,7 +262,7 @@ local_info(T, Node) ->
 	     {protection, info(T, protection)}]
     end.
 
-info(T, What) when atom(T) ; integer(T) ->
+info(T, What) when is_atom(T) ; is_integer(T) ->
     local_info(T, What, node()).
 
 local_info(T, What, Node) ->
@@ -286,7 +286,7 @@ local_info(T, What, Node) ->
 		    undefined;
 		_ ->
 		    if
-			atom(T) -> 
+			is_atom(T) -> 
 			    true;
 			true -> 
 			    false
@@ -308,7 +308,7 @@ local_info(T, What, Node) ->
 tab2list(T) ->
     ets:match_object(T, '_').
 
-filter(Tn, F, A) when atom(Tn) ; integer(Tn) ->
+filter(Tn, F, A) when is_atom(Tn) ; is_integer(Tn) ->
     do_filter(Tn,ets:first(Tn),F,A, []).
 
 do_filter(_Tab, '$end_of_table', _,_, Ack) -> 
@@ -318,7 +318,7 @@ do_filter(Tab, Key, F, A, Ack) ->
 	false ->
 	    do_filter(Tab, ets:next(Tab, Key), F,A,Ack);
 	true ->
-	    Ack2 = lists:append(ets:lookup(Tab, Key), Ack),
+            Ack2 = ets:lookup(Tab, Key) ++ Ack,
 	    do_filter(Tab, ets:next(Tab, Key), F,A,Ack2);
 	{true, Value} ->
 	    do_filter(Tab, ets:next(Tab, Key), F,A,[Value | Ack])
@@ -585,7 +585,7 @@ is_reg(Owner) ->
 %%% pushes the remaining entries to the right instead, rather than
 %%% losing information.
 hform(A0, B0, C0, D0, E0, F0) ->
-    [A,B,C,D,E,F] = lists:map(fun to_string/1, [A0,B0,C0,D0,E0,F0]),
+    [A,B,C,D,E,F] = [to_string(T) || T <- [A0,B0,C0,D0,E0,F0]],
     A1 = pad_right(A, 15),
     B1 = pad_right(B, 17),
     C1 = pad_right(C, 5),
@@ -626,9 +626,9 @@ display_items(Height, Width, Tab, Key, Turn, Opos) when Turn >=  Height ->
 
 choice(Height, Width, P, Mode, Tab, Key, Turn, Opos) ->
     case get_line(P, "c\n") of
-	"c\n" when Mode == normal ->
+	"c\n" when Mode =:= normal ->
 	    do_display(Height, Width, Tab, Key, 1, Opos);
-	"c\n" when tuple(Mode), element(1, Mode) == re ->
+	"c\n" when is_tuple(Mode), element(1, Mode) =:= re ->
 	    {re, Re} = Mode,
 	    re_search(Height, Width, Tab, Key, Re, 1, Opos);
 	"q\n" ->
@@ -639,9 +639,9 @@ choice(Height, Width, P, Mode, Tab, Key, Turn, Opos) ->
 	    catch case catch list_to_integer(nonl(Digs)) of
 		      {'EXIT', _} ->
 			  io:format("Bad digits \n", []);
-		      Number when Mode == normal ->
+		      Number when Mode =:= normal ->
 			  print_number(Tab, ets:first(Tab), Number);
-		      Number when Mode == eot ->
+		      Number when Mode =:= eot ->
 			  print_number(Tab, ets:first(Tab), Number);
 		      Number -> %% regexp
 			  {re, Re} = Mode,
@@ -691,7 +691,7 @@ do_display_item(_Height, Width, I, Opos)  ->
     L = to_string(I),
     L2 = if
 	     length(L) > Width - 8 ->
-		 lists:append(string:substr(L, 1, Width-13), "  ...");
+                 string:substr(L, 1, Width-13) ++ "  ...";
 	     true ->
 		 L
 	 end,

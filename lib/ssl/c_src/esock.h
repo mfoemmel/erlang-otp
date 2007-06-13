@@ -225,6 +225,11 @@ struct _proxy {
 #define ESOCK_SSL_ACCEPT_REP     46
 #define ESOCK_SSL_ACCEPT_ERR     47
 
+#define ESOCK_DUMP_STATE_CMD      48
+#define ESOCK_SET_DEBUG_CMD       49
+#define ESOCK_SET_DEBUGMSG_CMD    50
+
+
 /* Option codes  for ESOCK_SET_SOCKOPT_CMD */
 #define ESOCK_SET_TCP_NODELAY	1
 

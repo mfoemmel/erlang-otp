@@ -88,10 +88,10 @@ init([]) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 handle_call({open, Name, ModeList}, {Pid, _Tag} = _From, Handle)
-  when list(ModeList) ->
+  when is_list(ModeList) ->
     Child = ?FILE_IO_SERVER:start_link(Pid, Name, ModeList),
     case Child of
-	{ok, P} when pid(P) ->
+	{ok, P} when is_pid(P) ->
 	    ets:insert(?FILE_IO_SERVER_TABLE, {P, Name});
 	_ ->
 	    ok
@@ -200,7 +200,7 @@ handle_cast(Msg, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %%----------------------------------------------------------------------
 
-handle_info({'EXIT', Pid, _Reason}, Handle) when pid(Pid) ->
+handle_info({'EXIT', Pid, _Reason}, Handle) when is_pid(Pid) ->
     ets:delete(?FILE_IO_SERVER_TABLE, Pid),
     {noreply, Handle};
 
@@ -253,7 +253,7 @@ do_start(Start) ->
 %% Should mimic gen_server:Start
 do_start(Start, Node, Name) ->
     case rpc:call(Node, erlang, whereis, [Name]) of
-	Filer when pid(Filer); Filer == undefined ->
+	Filer when is_pid(Filer); Filer =:= undefined ->
 	    case catch do_start_slave(Start, Filer, Name) of
 		{'EXIT', Reason} ->
 		    {error, Reason};
@@ -291,7 +291,7 @@ do_start_slave(start, Filer, Name) ->
 %% We do not need to load slave as a mandatory module
 %% during system startup.
 
-relay_start(Parent, Token, Filer, Name) when pid(Filer) ->
+relay_start(Parent, Token, Filer, Name) when is_pid(Filer) ->
     case catch register(Name, self()) of
 	true ->
 	    ok;

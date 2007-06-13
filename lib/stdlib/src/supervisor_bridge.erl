@@ -60,8 +60,8 @@ start_link(Name, Mod, StartArgs) ->
 init([Mod, StartArgs, Name0]) ->  
     process_flag(trap_exit, true),
     Name = supname(Name0, Mod),
-    case apply(Mod, init, [StartArgs]) of
-	{ok, Pid, ChildState} when pid(Pid) ->
+    case Mod:init(StartArgs) of
+	{ok, Pid, ChildState} when is_pid(Pid) ->
 	    link(Pid),
 	    report_progress(Pid, Mod, StartArgs, Name),
 	    {ok, #state{mod = Mod, pid = Pid,
@@ -84,7 +84,7 @@ handle_call(_Req, _From, State) ->
 handle_cast(_, State) ->
     {noreply, State}.
 
-handle_info({'EXIT', Pid, Reason}, State) when State#state.pid == Pid ->
+handle_info({'EXIT', Pid, Reason}, State) when State#state.pid =:= Pid ->
     report_error(child_terminated, Reason, State),
     {stop, Reason, State#state{pid = undefined}};
 handle_info(_, State) ->
@@ -100,7 +100,7 @@ code_change(_OldVsn, State, _Extra) ->
 
 %% This function is supposed to terminate the 'real' server.
 terminate_pid(Reason, #state{mod = Mod, child_state = ChildState}) ->
-    apply(Mod, terminate, [Reason, ChildState]).
+    Mod:terminate(Reason, ChildState).
 
 report_progress(Pid, Mod, StartArgs, SupName) ->
     Progress = [{supervisor, SupName},

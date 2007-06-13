@@ -26,7 +26,7 @@
 %% list containing atoms. A name may be empty, but may not contain two
 %% consecutive period (`.') characters or end with a period character.
 
-to_string(Name) when atom(Name) ->
+to_string(Name) when is_atom(Name) ->
     atom_to_list(Name);
 to_string(Name) ->
     Name.
@@ -39,14 +39,14 @@ to_string(Name) ->
 concat(A, B) ->
     concat([A, B]).
 
-concat([H | T]) when atom(H) ->
+concat([H | T]) when is_atom(H) ->
     concat([atom_to_list(H) | T]);
 concat(["" | T]) ->
     concat_1(T);
 concat(L) ->
     concat_1(L).
 
-concat_1([H | T]) when atom(H) ->
+concat_1([H | T]) when is_atom(H) ->
     concat_1([atom_to_list(H) | T]);
 concat_1([H]) ->
     H;
@@ -57,7 +57,7 @@ concat_1([]) ->
 concat_1(Name) ->
     erlang:fault({badarg, Name}).
 
-is_valid(Name) when atom(Name) ->
+is_valid(Name) when is_atom(Name) ->
     is_valid_1(atom_to_list(Name));
 is_valid([$. | _]) ->
     false;
@@ -66,19 +66,19 @@ is_valid(Name) ->
 
 is_valid_1([$.]) -> false;
 is_valid_1([$., $. | _]) -> false;
-is_valid_1([H | T]) when integer(H), H >= 0 ->
+is_valid_1([H | T]) when is_integer(H), H >= 0 ->
     is_valid_1(T);
 is_valid_1([]) -> true;
 is_valid_1(_) -> false.
 
-split(Name) when atom(Name) ->
+split(Name) when is_atom(Name) ->
     split_1(atom_to_list(Name), []);
 split(Name) ->
     split_1(Name, []).
 
 split_1([$. | T], Cs) ->
     [lists:reverse(Cs) | split_1(T, [])];
-split_1([H | T], Cs) when integer(H), H >= 0 ->
+split_1([H | T], Cs) when is_integer(H), H >= 0 ->
     split_1(T, [H | Cs]);
 split_1([], Cs) ->
     [lists:reverse(Cs)];
@@ -89,13 +89,13 @@ split_1(_, _) ->
 %% length larger than one (i.e., if the name can be split into two or
 %% more segments), but is cheaper.
 
-is_segmented(Name) when atom(Name) ->
+is_segmented(Name) when is_atom(Name) ->
     is_segmented_1(atom_to_list(Name));
 is_segmented(Name) ->
     is_segmented_1(Name).
 
 is_segmented_1([$. | _]) -> true;
-is_segmented_1([H | T]) when integer(H), H >= 0 ->
+is_segmented_1([H | T]) when is_integer(H), H >= 0 ->
     is_segmented_1(T);
 is_segmented_1([]) -> false;
 is_segmented_1(_) ->
@@ -110,7 +110,7 @@ last_1([_ | T]) -> last_1(T).
 first(Name) ->
     first_1(split(Name)).
 
-first_1([H | T]) when T /= [] -> [H | first_1(T)];
+first_1([H | T]) when T =/= [] -> [H | first_1(T)];
 first_1(_) -> [].
 
 strip_last(Name) ->

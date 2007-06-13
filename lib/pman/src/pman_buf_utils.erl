@@ -76,8 +76,8 @@ fargs([A]) -> tuple_space(A);  %% last arg
 fargs([A|Args]) -> [tuple_space(A),", "|fargs(Args)].
 
 
-tuple_space(X) when tuple(X) -> print(size(X), X, "}");
-tuple_space(X)               -> io_lib:format("~p",[X]).
+tuple_space(X) when is_tuple(X) -> print(size(X), X, "}");
+tuple_space(X)                  -> io_lib:format("~p",[X]).
 
 print(0  , _X, Buff) -> ["{"|Buff];
 print(1  , X, Buff) -> 

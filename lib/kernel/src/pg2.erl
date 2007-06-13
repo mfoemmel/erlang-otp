@@ -63,7 +63,7 @@ delete(Name) ->
 		 end),
     ok.
 
-join(Name, Pid) when pid(Pid) ->
+join(Name, Pid) when is_pid(Pid) ->
     ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
 	[] ->
@@ -77,7 +77,7 @@ join(Name, Pid) when pid(Pid) ->
 	    ok
     end.
 
-leave(Name, Pid) when pid(Pid) ->
+leave(Name, Pid) when is_pid(Pid) ->
     ensure_started(),
     case ets:lookup(pg2_table, {members, Name}) of
         [] ->
@@ -130,7 +130,7 @@ get_closest_pid(Name) ->
 		Members ->
 		    lists:nth((X rem length(Members))+1, Members)
 	    end;
-	Members when list(Members) ->
+	Members when is_list(Members) ->
 	    {_,_,X} = erlang:now(),
 	    lists:nth((X rem length(Members))+1, Members);
 	Else ->
@@ -168,7 +168,7 @@ handle_call({join, Name, Pid}, _From, S) ->
 	    ets:insert(pg2_table, {{members, Name}, [Pid | Members]}),
 	    NewLinks =
 		if
-		    node(Pid) == node() ->
+		    node(Pid) =:= node() ->
 			link(Pid),
 			[{_, LocalMembers}] = 
 			    ets:lookup(pg2_table, {local_members, Name}),
@@ -190,7 +190,7 @@ handle_call({leave, Name, Pid}, _From, S) ->
             ets:insert(pg2_table, {{members, Name}, lists:delete(Pid,Members)}),
             NewLinks =
                 if
-                    node(Pid) == node() ->
+                    node(Pid) =:= node() ->
                         [{_, LocalMembers}] = 
                             ets:lookup(pg2_table, {local_members, Name}),
                         ets:insert(pg2_table,
@@ -254,7 +254,7 @@ terminate(_Reason, S) ->
 %% Delete member Pid from all groups
 del_members([[Name, Pids] | T], Pid) ->
     lists:foreach(
-      fun(Pid2) when Pid == Pid2 ->
+      fun(Pid2) when Pid =:= Pid2 ->
 	      del_member(members, Name, Pid),
 	      del_member(local_members, Name, Pid),
 	      gen_server:abcast(nodes(), ?MODULE, {del_member, Name, Pid});
@@ -270,7 +270,7 @@ del_member(KeyTag, Name, Pid) ->
 %% Delete all members on Node in all groups.
 del_node_members([[Name, Pids] | T], Node) ->
     NewMembers = 
-	lists:filter(fun(Pid) when node(Pid) == Node -> false;
+	lists:filter(fun(Pid) when node(Pid) =:= Node -> false;
 			(_) -> true
 		     end, Pids),
     ets:insert(pg2_table, {{members, Name}, NewMembers}),

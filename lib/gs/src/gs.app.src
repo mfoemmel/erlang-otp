@@ -7,7 +7,7 @@
              gstk_image,gstk_label,gstk_line,gstk_listbox,gstk_menu,gstk_menubar,
              gstk_menubutton,gstk_menuitem,gstk_oval,gstk_polygon,gstk_port_handler,
              gstk_radiobutton,gstk_rectangle,gstk_scale,gstk_text,gstk_widgets,
-             gstk_window,tcl2erl,tool_file_dialog,tool_genfd,tool_utils,
+             gstk_window,tcl2erl,tool_file_dialog,tool_utils,
 	     gs_packer,gse]},
   {registered, [gs_frontend]},
   {applications, [kernel, stdlib]}]}.

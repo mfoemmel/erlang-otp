@@ -159,7 +159,7 @@ copy(#file_descriptor{module = ?MODULE} = Source,
      #file_descriptor{module = ?MODULE} = Dest,
      Length)
   when is_integer(Length), Length >= 0;
-       atom(Length) ->
+       is_atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
     file:copy_opened(Source, Dest, Length);
 copy(#file_descriptor{module = ?MODULE}, 

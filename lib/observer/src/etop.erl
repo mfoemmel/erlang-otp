@@ -61,7 +61,7 @@ help() ->
 stop() ->
     case whereis(etop_server) of
 	undefined -> not_started;
-	Pid when pid(Pid) -> etop_server ! stop
+	Pid when is_pid(Pid) -> etop_server ! stop
     end.
 
 config(Key,Value) ->
@@ -72,8 +72,8 @@ config(Key,Value) ->
 	error -> 
 	    {error,illegal_opt}
     end.
-check_runtime_config(lines,L) when integer(L),L>0 -> ok;
-check_runtime_config(interval,I) when integer(I),I>0 -> ok;
+check_runtime_config(lines,L) when is_integer(L),L>0 -> ok;
+check_runtime_config(interval,I) when is_integer(I),I>0 -> ok;
 check_runtime_config(sort,S) when S=:=runtime; 
 				  S=:=reductions; 
 				  S=:=memory; 
@@ -241,7 +241,7 @@ get_tag(msg_q) -> #etop_proc_info.mq.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Configuration Management
 
-getopt(What, Config) when record(Config, opts) ->
+getopt(What, Config) when is_record(Config, opts) ->
     case What of 
 	node  -> Config#opts.node;
 	port  -> Config#opts.port;
@@ -256,58 +256,58 @@ getopt(What, Config) when record(Config, opts) ->
 	host  -> Config#opts.host
     end.
 
-putopt(Key, Value, Config) when record(Config, opts) ->
+putopt(Key, Value, Config) when is_record(Config, opts) ->
     Config1 = handle_args([{Key,Value}],Config),
     Config1#opts.out_proc ! {config,{Key,Value},Config1},
     Config1.
 
-handle_args([{node, [NodeString]}| R], Config) when list(NodeString) ->
+handle_args([{node, [NodeString]}| R], Config) when is_list(NodeString) ->
     Node = list_to_atom(NodeString),
     NewC = Config#opts{node = Node},
     handle_args(R, NewC);
-handle_args([{node, Node} |R], Config) when atom(Node) ->
+handle_args([{node, Node} |R], Config) when is_atom(Node) ->
     NewC = Config#opts{node = Node},
     handle_args(R, NewC);
-handle_args([{port, Port}| R], Config) when integer(Port) ->
+handle_args([{port, Port}| R], Config) when is_integer(Port) ->
     NewC = Config#opts{port=Port},
     handle_args(R, NewC);
-handle_args([{port, [Port]}| R], Config) when list(Port) ->
+handle_args([{port, [Port]}| R], Config) when is_list(Port) ->
     NewC = Config#opts{port= list_to_integer(Port)},
     handle_args(R, NewC);
-handle_args([{interval, Time}| R], Config) when integer(Time)->
+handle_args([{interval, Time}| R], Config) when is_integer(Time)->
     NewC = Config#opts{intv=Time*1000},
     handle_args(R, NewC);
-handle_args([{interval, [Time]}| R], Config) when list(Time)->
+handle_args([{interval, [Time]}| R], Config) when is_list(Time)->
     NewC = Config#opts{intv=list_to_integer(Time)*1000},
     handle_args(R, NewC);
-handle_args([{lines, Lines}| R], Config) when integer(Lines) ->
+handle_args([{lines, Lines}| R], Config) when is_integer(Lines) ->
     NewC = Config#opts{lines=Lines},
     handle_args(R, NewC);
-handle_args([{lines, [Lines]}| R], Config) when list(Lines) ->
+handle_args([{lines, [Lines]}| R], Config) when is_list(Lines) ->
     NewC = Config#opts{lines= list_to_integer(Lines)},
     handle_args(R, NewC);
-handle_args([{accumulate, Bool}| R], Config) when atom(Bool) ->
+handle_args([{accumulate, Bool}| R], Config) when is_atom(Bool) ->
     NewC = Config#opts{accum=Bool},
     handle_args(R, NewC);
-handle_args([{accumulate, [Bool]}| R], Config) when list(Bool) ->
+handle_args([{accumulate, [Bool]}| R], Config) when is_list(Bool) ->
     NewC = Config#opts{accum= list_to_atom(Bool)},
     handle_args(R, NewC);
-handle_args([{sort, Sort}| R], Config) when atom(Sort) ->
+handle_args([{sort, Sort}| R], Config) when is_atom(Sort) ->
     NewC = Config#opts{sort=Sort},
     handle_args(R, NewC);
-handle_args([{sort, [Sort]}| R], Config) when list(Sort) ->
+handle_args([{sort, [Sort]}| R], Config) when is_list(Sort) ->
     NewC = Config#opts{sort= list_to_atom(Sort)},
     handle_args(R, NewC);
-handle_args([{output, Output}| R], Config) when atom(Output) ->
+handle_args([{output, Output}| R], Config) when is_atom(Output) ->
     NewC = Config#opts{out_mod=output(Output)},
     handle_args(R, NewC);
-handle_args([{output, [Output]}| R], Config) when list(Output) ->
+handle_args([{output, [Output]}| R], Config) when is_list(Output) ->
     NewC = Config#opts{out_mod= output(list_to_atom(Output))},
     handle_args(R, NewC);
-handle_args([{tracing, OnOff}| R], Config) when atom(OnOff) ->
+handle_args([{tracing, OnOff}| R], Config) when is_atom(OnOff) ->
     NewC = Config#opts{tracing=OnOff},
     handle_args(R, NewC);
-handle_args([{tracing, [OnOff]}| R], Config) when list(OnOff) ->
+handle_args([{tracing, [OnOff]}| R], Config) when is_list(OnOff) ->
     NewC = Config#opts{tracing=list_to_atom(OnOff)},
     handle_args(R, NewC);
 

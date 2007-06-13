@@ -666,13 +666,12 @@ is_in_queue(#db{q={L1,L2}}, P) -> % Should really be in queue.erl
 %% added when group leaders differ. Note that catch all is needed
 %% because net_sup is undefined when not networked but still present
 %% in the kerenl_sup child list. Blahh, didn't like that.
-groupl(P) when is_port(P) -> nil;
-groupl(P) when is_pid(P) ->
+groupl(P) ->
     case process_info(P, group_leader) of
 	{group_leader, GL} -> GL;
 	_Other -> nil
-    end;
-groupl(_) -> nil.
+    end.
+
 cmp_groupl(_GL1, nil) -> true;
 cmp_groupl(GL1, GL1) -> true;
 cmp_groupl(_, _) -> false.

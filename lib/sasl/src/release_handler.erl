@@ -208,7 +208,7 @@ install_option({update_paths, Bool}) when Bool==true; Bool==false ->
 install_option(_Opt) -> false.
 
 check_timeout(infinity) -> true;
-check_timeout(Int) when integer(Int), Int > 0 -> true;
+check_timeout(Int) when is_integer(Int), Int > 0 -> true;
 check_timeout(_Else) -> false.
 
 %%-----------------------------------------------------------------
@@ -276,7 +276,7 @@ set_removed(Vsn) ->
 %%          is called.
 %% Returns: ok | {error, {no_such_release, Vsn}}
 %%-----------------------------------------------------------------
-install_file(Vsn, File) when list(File) ->
+install_file(Vsn, File) when is_list(File) ->
     gen_server:call(release_handler, {install_file, File, Vsn}).
 
 %%-----------------------------------------------------------------
@@ -507,14 +507,14 @@ init([]) ->
 	end,
     StartPrg =
 	case application:get_env(start_prg) of
-	    {ok, Found2} when list(Found2) ->
+	    {ok, Found2} when is_list(Found2) ->
 		{do_check, Found2};
 	    _ ->
 		{no_check, filename:join([Root, "bin", "start"])}
 	end,
     Static =
 	case application:get_env(static_emulator) of
-	    {ok, SFlag} when atom(SFlag) -> SFlag;
+	    {ok, SFlag} when is_atom(SFlag) -> SFlag;
 	    _                            -> false
 	end,
     {ok, #state{root = Root, rel_dir = ReleaseDir, releases = Releases,
@@ -722,13 +722,13 @@ is_client() ->
 	    {false, false}
     end.
 
-atom_list([A|T]) when atom(A) -> atom_list(T);
-atom_list([])                 -> true;
-atom_list(_)                  -> false.
+atom_list([A|T]) when is_atom(A) -> atom_list(T);
+atom_list([])                    -> true;
+atom_list(_)                     -> false.
 
-int_list([I|T]) when integer(I) -> int_list(T);
-int_list([])                    -> true;
-int_list(_)                     -> false.
+int_list([I|T]) when is_integer(I) -> int_list(T);
+int_list([])                       -> true;
+int_list(_)                        -> false.
 
 resend_sync_nodes(S) ->
     lists:foreach(fun(Msg) -> self() ! Msg end, S#state.pre_sync_nodes),

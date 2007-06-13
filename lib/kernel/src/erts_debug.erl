@@ -101,7 +101,7 @@ df(Mod, Func) when is_atom(Mod), is_atom(Func) ->
     case catch Mod:module_info(functions) of
 	Fs0 when is_list(Fs0) ->
 	    Name = lists:concat([Mod,"_",Func,".dis"]),
-	    Fs = [{Mod,Func1,Arity} || {Func1,Arity} <- Fs0, Func1 == Func],
+	    Fs = [{Mod,Func1,Arity} || {Func1,Arity} <- Fs0, Func1 =:= Func],
 	    dff(Name, Fs);
 	{'EXIT',_} ->
 	    {undef,Mod}
@@ -112,7 +112,7 @@ df(Mod, Func, Arity) when is_atom(Mod), is_atom(Func) ->
 	Fs0 when is_list(Fs0) ->
 	    Name = lists:concat([Mod,"_",Func,"_",Arity,".dis"]),
 	    Fs = [{Mod,Func1,Arity1} || {Func1,Arity1} <- Fs0,
-					Func1 == Func, Arity1 == Arity],
+					Func1 =:= Func, Arity1 =:= Arity],
 	    dff(Name, Fs);
 	{'EXIT',_} ->
 	    {undef,Mod}

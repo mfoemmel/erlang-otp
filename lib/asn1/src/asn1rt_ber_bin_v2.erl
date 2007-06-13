@@ -159,48 +159,6 @@ encode_tlv_list([],Acc) ->
     Bin=list_to_binary(lists:reverse(Acc)),
     {Bin,size(Bin)}.
 
-% encode_primitive({{_,ClassTagNo},V}) ->
-%     Len = size(V), % not sufficient as length encode
-%     Class = ClassTagNo bsr 16,
-%     {TagLen,Tag} =
-%     case encode_tag_val({Class,?PRIMITIVE,ClassTagNo - Class}) of
-% 	T when list(T) ->
-% 	    {length(T),list_to_binary(T)};
-% 	T ->
-% 	    {1,T}
-%     end,
-    
--ifdef(asn1_r7b_enable_driver).
-
-decode(B,driver) ->
-    Port = get_asn1_port(),
-    case catch port_control(Port,2,B) of	
-	Bin when binary(Bin) ->
-	    binary_to_term(Bin);
-	List when list(List) -> handle_error(List,B);
-	{'EXIT',{badarg,Reason}} ->
-	    exit({"failed to call driver probably due to bad asn1 value",Reason});
-	Reason -> exit(Reason)
-    end.
-
-get_asn1_port() ->
-    case catch ets:lookup(asn1_driver_table,asn1_port) of
-	{'EXIT',Reason} -> %table does not exist
-	    asn1rt_driver_handler:load_driver(),
-	    receive
-		{reply,Port} when port(Port) ->
-		    Port
-	    end;
-	[] -> 
-	    asn1_port_owner ! {request_port,self()},
-	    receive
-		{reply,Port} when port(Port) ->
-		    Port
-	    end;
-	[{_,Port}] -> Port
-    end.
-
--else.
 
 decode(B,driver) ->
     case catch port_control(asn1_driver_port,2,B) of
@@ -226,8 +184,6 @@ decode(B,driver) ->
 	    exit(Reason)
     end.
 
-
--endif.
 
 handle_error([],_)->
     exit({error,{asn1,{"memory allocation problem"}}});

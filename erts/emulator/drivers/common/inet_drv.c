@@ -492,6 +492,10 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 /* INET_REQ_SUBSCRIBE sub-requests */
 #define INET_SUBS_EMPTY_OUT_Q  1
 
+/* TCP additional flags */
+#define TCP_ADDF_DELAY_SEND    1
+#define TCP_ADDF_CLOSE_SENT    2
+
 /* *_REQ_* replies */
 #define INET_REP_ERROR       0
 #define INET_REP_OK          1
@@ -972,7 +976,7 @@ typedef struct {
     char*         i_ptr;        /* current pos in buf */
     char*         i_ptr_start;  /* packet start pos in buf */
     int           i_remain;     /* remaining chars to read */
-    int   fdelay_send;          /* delay all sends until the next poll */
+    int           tcp_add_flags;/* Additional TCP descriptor flags */
 #ifdef USE_HTTP
     int           http_state;   /* 0 = response|request  1=headers fields */
 #endif
@@ -3344,12 +3348,16 @@ static int tcp_closed_message(tcp_descriptor* desc)
     int i = 0;
 
     DEBUGF(("tcp_closed_message(%ld):\r\n", (long)desc->inet.port)); 
+    if (!(desc->tcp_add_flags & TCP_ADDF_CLOSE_SENT)) {
+	desc->tcp_add_flags |= TCP_ADDF_CLOSE_SENT;
 
-    i = LOAD_ATOM(spec, i, am_tcp_closed);
-    i = LOAD_PORT(spec, i, desc->inet.dport);
-    i = LOAD_TUPLE(spec, i, 2);
-    ASSERT(i <= 6);
-    return driver_output_term(desc->inet.port, spec, i);
+	i = LOAD_ATOM(spec, i, am_tcp_closed);
+	i = LOAD_PORT(spec, i, desc->inet.dport);
+	i = LOAD_TUPLE(spec, i, 2);
+	ASSERT(i <= 6);
+	return driver_output_term(desc->inet.port, spec, i);
+    } 
+    return 0;
 }
 
 /*
@@ -3899,7 +3907,7 @@ static char* inet_set_address(int family, inet_address* dst, char* src, int* len
 #endif
     return NULL;
 }
-
+#ifdef HAVE_SCTP
 /*
 ** Set an inaddr structure, address family comes from source data,
 ** or from argument if source data specifies constant address.
@@ -3979,6 +3987,7 @@ static char *inet_set_faddress(int family, inet_address* dst,
     }
     return inet_set_address(family, dst, src, len);
 }
+#endif /* HAVE_SCTP */
 
 /* Get a inaddr structure
 ** src = inaddr structure
@@ -4940,6 +4949,15 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    DEBUGF(("inet_set_opts(%ld): s=%d, ACTIVE=%d\r\n",
 		    (long)desc->port, desc->s,ival));
 	    desc->active = ival;
+	    if ((desc->stype == SOCK_STREAM) && (desc->active != INET_PASSIVE) && 
+		(desc->state == INET_STATE_CLOSED)) {
+		tcp_closed_message((tcp_descriptor *) desc);
+		if (desc->exitf) {
+		    driver_exit(desc->port, 0);
+		} else {
+		    desc_close_read(desc);
+		}
+	    }
 	    continue;
 
 	case INET_LOPT_PACKET:
@@ -5015,7 +5033,10 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 	case INET_LOPT_TCP_DELAY_SEND:
 	    if (desc->stype == SOCK_STREAM) {
 		tcp_descriptor* tdesc = (tcp_descriptor*) desc;
-		tdesc->fdelay_send = ival;
+		if (ival)
+		    tdesc->tcp_add_flags |= TCP_ADDF_DELAY_SEND;
+		else
+		    tdesc->tcp_add_flags &= ~TCP_ADDF_DELAY_SEND;
 	    }
 	    continue;
 
@@ -5398,7 +5419,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    arg.lin.l_onoff  = get_int16 (curr);  curr += 2;
 	    arg.lin.l_linger = get_int32 (curr);  curr += 4;
 
-	    proto   = IPPROTO_SCTP; /* Still, despite it's a generic IP opt */
+	    proto   = SOL_SOCKET;
 	    type    = SO_LINGER;
 	    arg_ptr = (char*) (&arg.lin);
 	    arg_sz  = sizeof  ( arg.lin);
@@ -5416,7 +5437,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	case INET_OPT_RCVBUF:
 	{
 	    arg.ival= get_int32 (curr);	  curr += 4;
-	    proto   = IPPROTO_SCTP;
+	    proto   = SOL_SOCKET;
 	    type    = SO_RCVBUF;
 	    arg_ptr = (char*) (&arg.ival);
 	    arg_sz  = sizeof  ( arg.ival);
@@ -5430,7 +5451,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	case INET_OPT_SNDBUF:
 	{
 	    arg.ival= get_int32 (curr);	  curr += 4;
-	    proto   = IPPROTO_SCTP;
+	    proto   = SOL_SOCKET;
 	    type    = SO_SNDBUF;
 	    arg_ptr = (char*) (&arg.ival);
 	    arg_sz  = sizeof  ( arg.ival);
@@ -5869,7 +5890,7 @@ static int inet_fill_opts(inet_descriptor* desc,
 	case INET_LOPT_TCP_DELAY_SEND:
 	    if (desc->stype == SOCK_STREAM) {
 		*ptr++ = opt;
-		ival = ((tcp_descriptor*)desc)->fdelay_send;
+		ival = !!(((tcp_descriptor*)desc)->tcp_add_flags & TCP_ADDF_DELAY_SEND);
 		put_int32(ival, ptr);
 	    } else {
 		TRUNCATE_TO(0,ptr);
@@ -7419,7 +7440,7 @@ static ErlDrvData tcp_inet_start(ErlDrvPort port, char* args)
     desc->i_ptr_start = NULL;
     desc->i_remain = 0;
     desc->i_bufsz = 0;
-    desc->fdelay_send = 0;
+    desc->tcp_add_flags = 0;
 #ifdef USE_HTTP
     desc->http_state = 0;
 #endif
@@ -7850,6 +7871,7 @@ static void tcp_inet_timeout(ErlDrvData e)
     } else if ((state & TCP_STATE_CONNECTED) == TCP_STATE_CONNECTED) {
 	if (desc->busy_on_send) {
 	    desc->busy_on_send = 0;
+	    set_busy_port(desc->inet.port, 0);
 	    inet_reply_error_am(INETP(desc), am_timeout);
 	}
 	else {
@@ -8941,7 +8963,7 @@ static int tcp_sendv(tcp_descriptor* desc, ErlIOVec* ev)
 	
 	DEBUGF(("tcp_sendv(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
-	if (desc->fdelay_send) {
+	if (desc->tcp_add_flags & TCP_ADDF_DELAY_SEND) {
 	    n = 0;
 	} else if (sock_sendv(desc->inet.s, ev->iov, vsize, &n, 0) 
 		   == SOCKET_ERROR) {
@@ -9027,7 +9049,7 @@ static int tcp_send(tcp_descriptor* desc, char* ptr, int len)
 
 	DEBUGF(("tcp_send(%ld): s=%d, about to send %d,%d bytes\r\n",
 		(long)desc->inet.port, desc->inet.s, h_len, len));
-	if (desc->fdelay_send) {
+	if (desc->tcp_add_flags & TCP_ADDF_DELAY_SEND) {
 	    sock_send(desc->inet.s, buf, 0, 0);
 	    n = 0;
 	} else 	if (sock_sendv(desc->inet.s,iov,2,&n,0) == SOCKET_ERROR) {

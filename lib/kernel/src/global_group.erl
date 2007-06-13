@@ -146,7 +146,7 @@ request(Req) ->
 
 request(Req, Time) ->
     case whereis(global_group) of
-	P when pid(P) ->
+	P when is_pid(P) ->
 	    gen_server:call(global_group, Req, Time);
 	_Other -> 
 	    {error, global_group_not_runnig}
@@ -318,7 +318,7 @@ handle_call(own_nodes, _From, S) ->
 %%%
 %%% Get the registered names from a specified Node, or GlobalGroupName.
 %%%====================================================================================
-handle_call({registered_names, {group, Group}}, _From, S) when Group == S#state.group_name ->
+handle_call({registered_names, {group, Group}}, _From, S) when Group =:= S#state.group_name ->
     Res = global:registered_names(),
     {reply, Res, S};
 handle_call({registered_names, {group, Group}}, From, S) ->
@@ -333,7 +333,7 @@ handle_call({registered_names, {group, Group}}, From, S) ->
 	    put(registered_names, [{Pid, From} | Wait]),
 	    {noreply, S}
     end;
-handle_call({registered_names, {node, Node}}, _From, S) when Node == node() ->
+handle_call({registered_names, {node, Node}}, _From, S) when Node =:= node() ->
     Res = global:registered_names(),
     {reply, Res, S};
 handle_call({registered_names, {node, Node}}, From, S) ->
@@ -369,7 +369,7 @@ handle_call({send, Name, Msg}, From, S) ->
 	    {reply, Found, S}
     end;
 %% Search in the specified global group, which happens to be the own group.
-handle_call({send, {group, Grp}, Name, Msg}, _From, S) when Grp == S#state.group_name ->
+handle_call({send, {group, Grp}, Name, Msg}, _From, S) when Grp =:= S#state.group_name ->
     case global:whereis_name(Name) of
 	undefined ->
 	    {reply, {badarg, {Name, Msg}}, S};
@@ -422,7 +422,7 @@ handle_call({whereis_name, Name}, From, S) ->
     end;
 %% Search in the specified global group, which happens to be the own group.
 handle_call({whereis_name, {group, Group}, Name}, _From, S) 
-  when Group == S#state.group_name ->
+  when Group =:= S#state.group_name ->
     Res = global:whereis_name(Name),
     {reply, Res, S};
 %% Search in the specified global group.
@@ -553,7 +553,7 @@ handle_call({global_groups_removed, _NewPara}, _From, S) ->
 handle_call({ng_add_check, Node, PubType, OthersNG}, _From, S) ->
     %% Check which nodes are already updated
     OwnNG = get_own_nodes(),
-    case S#state.group_publish_type == PubType of
+    case S#state.group_publish_type =:= PubType of
 	true ->
 	    case OwnNG of
 		OthersNG ->
@@ -810,7 +810,7 @@ handle_cast(_Cast, S) ->
 %%% if global group configuration inform global only if the node is one in
 %%% the own global group.
 %%%====================================================================================
-handle_info({nodeup, Node}, S) when S#state.sync_state == no_conf ->
+handle_info({nodeup, Node}, S) when S#state.sync_state =:= no_conf ->
 %    io:format("~p>>>>> nodeup, Node ~p ~n",[node(), Node]),
     send_monitor(S#state.monitor, {nodeup, Node}, S#state.sync_state),
     global_name_server ! {nodeup, Node},
@@ -821,7 +821,7 @@ handle_info({nodeup, Node}, S) ->
 		   synced ->
 		       X = (catch rpc:call(Node, global_group, get_own_nodes, [])),
 		       case X of
-			   X when list(X) ->
+			   X when is_list(X) ->
 			       lists:sort(X);
 			   _ ->
 			       []
@@ -866,7 +866,7 @@ handle_info({nodeup, Node}, S) ->
 %%% before the node is synced. This means that nodedown may arrive from a
 %%% node which we are not aware of.
 %%%====================================================================================
-handle_info({nodedown, Node}, S) when S#state.sync_state == no_conf ->
+handle_info({nodedown, Node}, S) when S#state.sync_state =:= no_conf ->
 %    io:format("~p>>>>> nodedown, no_conf Node ~p~n",[node(), Node]),
     send_monitor(S#state.monitor, {nodedown, Node}, S#state.sync_state),
     global_name_server ! {nodedown, Node},
@@ -1045,12 +1045,12 @@ sync_check([], _Up, ErrorNodes) ->
     {error, ErrorNodes};
 sync_check(Rem, Up, ErrorNodes) ->
     receive
-	{config_ok, ?cc_vsn, Pid, Node} when Pid == self() ->
+	{config_ok, ?cc_vsn, Pid, Node} when Pid =:= self() ->
 	    global_name_server ! {nodeup, Node},
 	    sync_check(Rem -- [Node], Up, ErrorNodes);
-	{config_error, ?cc_vsn, Pid, Node} when Pid == self() ->
+	{config_error, ?cc_vsn, Pid, Node} when Pid =:= self() ->
 	    sync_check(Rem -- [Node], Up, [Node | ErrorNodes]);
-	{no_global_group_configuration, ?cc_vsn, Pid, Node} when Pid == self() ->
+	{no_global_group_configuration, ?cc_vsn, Pid, Node} when Pid =:= self() ->
 	    sync_check(Rem -- [Node], Up, [Node | ErrorNodes]);
 	%% Ignore, illegal vsn or illegal Pid
 	_ ->
@@ -1100,13 +1100,13 @@ send_monitor([P|T], M, no_conf) -> safesend_nc(P, M), send_monitor(T, M, no_conf
 send_monitor([P|T], M, SyncState) -> safesend(P, M), send_monitor(T, M, SyncState);
 send_monitor([], _, _) -> ok.
 
-safesend(Name, {Msg, Node}) when atom(Name) ->
+safesend(Name, {Msg, Node}) when is_atom(Name) ->
     case lists:member(Node, get_own_nodes()) of
 	true ->
 	    case whereis(Name) of 
 		undefined ->
 		    {Msg, Node};
-		P when pid(P) ->
+		P when is_pid(P) ->
 		    P ! {Msg, Node}
 	    end;
 	false ->
@@ -1120,11 +1120,11 @@ safesend(Pid, {Msg, Node}) ->
 	    not_own_group
     end.
 
-safesend_nc(Name, {Msg, Node}) when atom(Name) ->
+safesend_nc(Name, {Msg, Node}) when is_atom(Name) ->
     case whereis(Name) of 
 	undefined ->
 	    {Msg, Node};
-	P when pid(P) ->
+	P when is_pid(P) ->
 	    P ! {Msg, Node}
     end;
 safesend_nc(Pid, {Msg, Node}) -> 

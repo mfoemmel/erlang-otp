@@ -667,7 +667,7 @@ update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
 	    NewReady = [{New_earl,N}|Ready],
 	    NewPreds2 = hipe_vectors:set(NewPreds,N-1,0),
 	    update_earliest(Xs,Cycle,NewPreds2,NewEarl,NewReady);
-	Num_preds > 1 ->
+	is_integer(Num_preds), Num_preds > 1 ->
 	    update_earliest(Xs,Cycle,NewPreds,NewEarl,Ready)
     end.
 
@@ -709,11 +709,11 @@ update_earliest([{Lat,N}|Xs],Cycle,Preds,Earl,Ready) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 deps(IxBB) ->
     N = length(IxBB),
-    DAG =   empty_dag(N),  % The DAG contains both dependence-arcs and 
-                           % number of predeccessors...
+    DAG = empty_dag(N),  % The DAG contains both dependence-arcs and 
+                         % number of predeccessors...
     {_DepTab,DAG1} = dd(IxBB, DAG),
     DAG2 = md(IxBB, DAG1),
-    DAG3 = cd(IxBB,DAG2),     
+    DAG3 = cd(IxBB, DAG2),     
     DAG3.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

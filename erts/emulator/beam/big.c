@@ -541,6 +541,9 @@ static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
     if (rl == 0)
 	rl = 1;
 
+    while(rl > 1 && r[rl-1] == 0) /* Remove "trailing zeroes" */
+      --rl;
+
     if (r_signed && (rl > 1 || *r != 0)) {
 	rl = I_sub(y, yl, r, rl, r);
 	ql = D_sub(qp, ql, 1, qp);
@@ -635,6 +638,9 @@ static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 
     if (rl == 0)
 	rl = 1;
+
+    while(rl > 1 && r[rl-1] == 0) /* Remove "trailing zeroes" */
+      --rl;
 
     if (r_signed && (rl > 1 || *r != 0))
 	rl = I_sub(y, yl, r, rl, r);

@@ -1,0 +1,18 @@
+<!ENTITY % ISOlat1 SYSTEM "xhtml-lat1.ent" >
+%ISOlat1;
+
+<!ENTITY amp    "&#x0026;" >
+<!ENTITY gt     "&#x003E;" >
+<!ENTITY lt     "&#x003C;" >
+
+<!ELEMENT bookinsidecover     (#PCDATA|br|theheader|vfill|tt|bold)* >
+
+<!ELEMENT tt                  (#PCDATA|br|theheader|vfill)* >
+<!ELEMENT bold                (#PCDATA|br|theheader|vfill)* >
+<!ELEMENT vfill               EMPTY >
+<!ELEMENT theheader           EMPTY >
+<!ATTLIST theheader           tag  (title,prepared,responsible,docno,
+				    approved,checked,date,rev,file,
+				    none) "none" >
+
+<!ELEMENT br                  EMPTY >

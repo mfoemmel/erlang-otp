@@ -32,7 +32,13 @@ is_safe('/') -> false;
 is_safe('*') -> false;
 is_safe('-') -> false;
 is_safe('bsr') -> false;
+is_safe('bsl') -> false;
 is_safe('band') -> false;
+is_safe('bor') -> false;
+is_safe('bxor') -> false;
+is_safe('bnot') -> false;
+is_safe('div') -> false;
+is_safe('rem') -> false;
 is_safe(call_fun) -> false;
 is_safe(check_get_msg) -> false;
 is_safe(clear_timeout) -> false;
@@ -68,6 +74,7 @@ is_safe(unsafe_untag_float) -> true;
 is_safe(#apply_N{}) -> false;
 is_safe(#closure_element{}) -> true;
 %% is_safe(#element{}) -> false;
+%% is_safe(#gc_test{}) -> ???
 is_safe({hipe_bs_primop, {bs_start_match,_}}) -> false;
 is_safe({hipe_bs_primop, {bs_get_binary,_,_}}) -> false;
 is_safe({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> false;
@@ -145,6 +152,7 @@ fails(unsafe_tl) -> false;
 fails(#apply_N{}) -> true;
 fails(#closure_element{}) -> false;
 fails(#element{}) -> true;
+%% fails(#gc_test{}) -> ???
 fails({hipe_bs_primop, {bs_start_match,_}}) -> true;
 fails({hipe_bs_primop, {bs_get_binary,_,_}}) -> true;
 fails({hipe_bs_primop, {bs_get_binary_all,_,_}}) -> true;
@@ -188,6 +196,10 @@ pp(Op, Dev) ->
       io:format(Dev, "apply_N<~w>/", [N]);
     #closure_element{n=N} ->
       io:format(Dev, "closure_element<~w>", [N]);
+    #element{} ->
+      io:format(Dev, "element", []);
+    #gc_test{need=N} ->
+      io:format(Dev, "gc_test<~w>", [N]);
     {hipe_bs_primop, BsOp}  ->
       case BsOp of
 	{bs_put_binary_all, Flags} -> 
@@ -237,7 +249,9 @@ pp(Op, Dev) ->
 	bs_bits_to_bytes2 ->
 	  io:format(Dev, "bs_bits_to_bytes2", []);
 	bs_final ->
-	  io:format(Dev, "bs_final", [])
+	  io:format(Dev, "bs_final", []);
+	bs_final2 ->
+	  io:format(Dev, "bs_final2", [])
       end;
     #mkfun{mfa={Mod, Fun, Arity}, magic_num=Unique, index=I} ->
       io:format(Dev, "mkfun<~w,~w,~w,~w,~w>", [Mod, Fun, Arity, Unique, I]);
@@ -245,7 +259,7 @@ pp(Op, Dev) ->
       io:format(Dev, "unsafe_element<~w>", [N]);
     #unsafe_update_element{index=N} ->
       io:format(Dev, "unsafe_update_element<~w>", [N]);
-    Fun ->
+    Fun when is_atom(Fun) ->
       io:format(Dev, "~w", [Fun])
   end.
 

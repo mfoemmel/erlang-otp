@@ -1,0 +1,13 @@
+{application, os_mon,
+   [{description, "CPO  CXC 138 46"},
+    {vsn, "2.1.2.1"},
+    {modules, [os_mon, os_mon_mib, os_sup,
+               disksup, memsup, cpu_sup, os_mon_sysinfo, nteventlog]},
+    {registered, [os_mon_sup, os_mon_sysinfo, disksup, memsup, cpu_sup, 
+                  os_sup_server]},
+    {applications, [kernel, stdlib, sasl]},
+    {env, [{start_cpu_sup, true},
+	   {start_disksup, true},
+	   {start_memsup, true},
+	   {start_os_sup, false}]},
+    {mod, {os_mon, []}}]}.

@@ -19,8 +19,8 @@
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2006/07/24 16:34:36 $
-%%              $Revision: 1.21 $
+%%              $Date: 2007/05/04 07:48:57 $
+%%              $Revision: 1.22 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -842,16 +842,14 @@ gen_search_switch_val(Arg, Cases, Default, VarMap, ConstTab, _Options) ->
 %%  Multiples of 4.
 
 tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
-  %% io:format("Making switch\n",[]),
-
   %% Calculate the size of the table: 
-  %%  the number of keys * wordsize.
-  LastOffset = (length(KeyList)-1)*?WORDSIZE, 
+  %%  the number of keys * wordsize
+  LastOffset = (length(KeyList)-1)*?WORDSIZE,
 
   %% Calculate the power of two closest to the size of the table.
-  Pow2 = trunc(math:pow(2,(trunc(math:log(LastOffset) / math:log(2))))),
+  Pow2 = 1 bsl trunc(math:log(LastOffset) / math:log(2)),
 
-  %% Create some registers an lables that we need.
+  %% Create some registers and lables that we need
   IndexReg = hipe_rtl:mk_new_reg_gcsafe(),
   Temp = hipe_rtl:mk_new_reg_gcsafe(),
   Temp2 = hipe_rtl:mk_new_reg_gcsafe(),
@@ -860,10 +858,10 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
   Lab3 = hipe_rtl:mk_new_label(),
   Lab4 = hipe_rtl:mk_new_label(),
   
-  %% Calculate the position to start looking at.
+  %% Calculate the position to start looking at
   Init = (LastOffset)-Pow2,
 
-  %% Create the code.
+  %% Create the code
   [
    hipe_rtl:mk_move(IndexReg,hipe_rtl:mk_imm(0)),
    hipe_rtl:mk_load(Temp,TablePntrReg,hipe_rtl:mk_imm(Init)),
@@ -871,12 +869,11 @@ tab(KeyList, LabelList, KeyReg, TablePntrReg, Default) ->
 		      hipe_rtl:label_name(Lab2), 
 		      hipe_rtl:label_name(Lab1), 0.5),
    Lab1,
-   hipe_rtl:mk_alu(IndexReg, IndexReg, add, 
-		   hipe_rtl:mk_imm(Init+?WORDSIZE)),
+   hipe_rtl:mk_alu(IndexReg, IndexReg, add, hipe_rtl:mk_imm(Init+?WORDSIZE)),
    hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
    Lab2] ++
 
-    step(Pow2 div 2,TablePntrReg,IndexReg,KeyReg) ++
+    step(Pow2 div 2, TablePntrReg, IndexReg, KeyReg) ++
 
     [hipe_rtl:mk_branch(IndexReg, gt, hipe_rtl:mk_imm(LastOffset),
 		       hipe_rtl:label_name(Default), 
@@ -913,7 +910,7 @@ step(I,TablePntrReg,IndexReg,KeyReg) ->
         [hipe_rtl:mk_move(IndexReg, TempIndex),
          hipe_rtl:mk_goto(hipe_rtl:label_name(Lab2)),
          Lab2
-         | step(I div 2,TablePntrReg,IndexReg,KeyReg)
+         | step(I div 2, TablePntrReg, IndexReg, KeyReg)
         ]
     end.
 
@@ -924,13 +921,15 @@ lbls_from_cases([{_,L}|Rest], VarMap) ->
   {RtlL, VarMap2} = hipe_rtl_varmap:icode_label2rtl_label(L,VarMap1),
   %%  {[{label,hipe_rtl:label_name(RtlL)}|Map],VarMap2};
   {[hipe_rtl:label_name(RtlL)|Map],VarMap2};
-lbls_from_cases([],VarMap) -> {[], VarMap}.
+lbls_from_cases([], VarMap) ->
+  {[], VarMap}.
 
 %%-------------------------------------------------------------------------
 
 split_cases(L) -> 
-  split_cases(L,[],[]).
-split_cases([],Vs,Ls) -> {lists:reverse(Vs),lists:reverse(Ls)};
+  split_cases(L, [], []).
+
+split_cases([], Vs, Ls) -> {lists:reverse(Vs),lists:reverse(Ls)};
 split_cases([{V,L}|Rest], Vs, Ls) ->
   split_cases(Rest, [hipe_icode:const_value(V)|Vs], [L|Ls]).
 
@@ -949,7 +948,7 @@ gen_switch_tuple(I, Map, ConstTab, _Options) ->
   {X, Map1} = 
     hipe_rtl_varmap:icode_var2rtl_var(hipe_icode:switch_tuple_arity_arg(I), Map),
   Fail0 = hipe_icode:switch_tuple_arity_fail_label(I),
-  {Fail1, Map2} =  hipe_rtl_varmap:icode_label2rtl_label(Fail0, Map1),
+  {Fail1, Map2} = hipe_rtl_varmap:icode_label2rtl_label(Fail0, Map1),
   FailLab = hipe_rtl:label_name(Fail1),
   {Cases, Map3} =
     lists:foldr(fun({A,L}, {Rest,M}) ->
@@ -981,3 +980,4 @@ gen_switch_int(X, FailLab, [{C,L}|Rest]) ->
    gen_switch_int(X, FailLab, Rest)];
 gen_switch_int(_, FailLab, []) ->
   [hipe_rtl:mk_goto(FailLab)].
+

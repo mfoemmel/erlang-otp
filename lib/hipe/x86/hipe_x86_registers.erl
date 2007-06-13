@@ -183,7 +183,7 @@ is_arg(R) ->
 	_ -> false
     end.
 
-args(Arity) ->
+args(Arity) when is_integer(Arity), Arity >= 0 ->
     Max = ?X86_NR_ARG_REGS,
     N = if Arity > Max -> Max; true -> Arity end,
     args(N-1, []).
@@ -206,7 +206,6 @@ ret(N) ->
        true ->
 	    exit({?MODULE, ret, N})
     end.
-
 
 call_clobbered() ->
     [{?EAX,tagged},{?EAX,untagged},	% does the RA strip the type or not?

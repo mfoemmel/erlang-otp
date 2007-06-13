@@ -27,8 +27,9 @@
 
 -export([edit_line1/2]).
 
--import(lists, [append/2, reverse/1, reverse/2,
-		nthtail/2, keysearch/3, prefix/2]).
+-import(lists, [append/2, reverse/1, reverse/2]).
+
+%-import([nthtail/2, keysearch/3, prefix/2]).
 
 -export([over_word/3]).
 
@@ -148,7 +149,7 @@ prefix_arg(N) -> N.
 %% key_map(Char, Prefix)
 %%  Map a character and a prefix to an action.
 
-key_map(A, _) when atom(A) -> A;		% so we can push keywords
+key_map(A, _) when is_atom(A) -> A;		% so we can push keywords
 key_map($\^A, none) -> beginning_of_line;
 key_map($\^B, none) -> backward_char;
 key_map($\^D, none) -> forward_delete_char;
@@ -166,9 +167,9 @@ key_map($\^], none) -> auto_blink;
 key_map($\^X, none) -> ctlx;
 key_map($\^Y, none) -> yank;
 key_map($\e, none) -> meta;
-key_map($), Prefix) when Prefix /= meta -> {blink,$),$(};
-key_map($}, Prefix) when Prefix /= meta -> {blink,$},${};
-key_map($], Prefix) when Prefix /= meta -> {blink,$],$[};
+key_map($), Prefix) when Prefix =/= meta -> {blink,$),$(};
+key_map($}, Prefix) when Prefix =/= meta -> {blink,$},${};
+key_map($], Prefix) when Prefix =/= meta -> {blink,$],$[};
 key_map($B, meta) -> backward_word;
 key_map($D, meta) -> kill_word;
 key_map($F, meta) -> forward_word;
@@ -296,12 +297,12 @@ over_non_word([], Stack, N) ->
     {[],Stack,N}.
 
 word_char(C) when C >= $A, C =< $Z -> true;
-word_char(C) when C >= $À, C =< $Þ, C /= $× -> true;
+word_char(C) when C >= $À, C =< $Þ, C =/= $× -> true;
 word_char(C) when C >= $a, C =< $z -> true;
-word_char(C) when C >= $ß, C =< $ÿ, C /= $÷ -> true;
+word_char(C) when C >= $ß, C =< $ÿ, C =/= $÷ -> true;
 word_char(C) when C >= $0, C =< $9 -> true;
-word_char(C) when C == $_ -> true;
-word_char(C) when C == $. -> true;    % accept dot-separated names
+word_char(C) when C =:= $_ -> true;
+word_char(C) when C =:= $. -> true;    % accept dot-separated names
 word_char(_) -> false.
 
 %% over_white(Chars, InitialStack, InitialCount) ->

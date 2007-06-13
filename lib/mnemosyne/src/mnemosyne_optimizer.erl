@@ -114,11 +114,11 @@ separate_constraints_and_fns(Goals) ->
     {Res, fnvarset(Res)}.
 
 
-fnvarset(Ds) when list(Ds) ->
+fnvarset(Ds) when is_list(Ds) ->
     lists:foldl(
-      fun(D,S) when record(D,disj_alt) ->
+      fun(D,S) when is_record(D,disj_alt) ->
 	      lists:foldl(
-		fun(F,S1) when record(F,fn) ->
+		fun(F,S1) when is_record(F,fn) ->
 			ordsets:add_element(F#fn.alias_var, S1)
 		end, S, D#disj_alt.fncalls)
       end, ordsets:new(), Ds).
@@ -144,7 +144,7 @@ separate_one({'#not',C, NGs}, Acc, Invert) ->
 		      NewNGs ->[{'#not',C,NewNGs} | Acc#disj_alt.conj]
 		  end};
 
-separate_one(C, Acc, Invert) when record(C,constraint), Invert==false ->
+separate_one(C, Acc, Invert) when is_record(C,constraint), Invert==false ->
     {Csep, FnCalls} = separate_fns(C, Acc#disj_alt.fncalls),
     case Csep#constraint.op of
 	'=' ->  
@@ -155,12 +155,12 @@ separate_one(C, Acc, Invert) when record(C,constraint), Invert==false ->
 				       fncalls = FnCalls}
     end;
 
-separate_one(E, Acc, Invert) when record(E,erl_expr) ->
+separate_one(E, Acc, Invert) when is_record(E,erl_expr) ->
     {Esep, FnCalls} = separate_fns(E, Acc#disj_alt.fncalls),
     Acc#disj_alt{fncalls = FnCalls,
 		 conj = [Esep | Acc#disj_alt.conj]};
 
-separate_one(C, Acc, Invert) when record(C,constraint), Invert==true ->
+separate_one(C, Acc, Invert) when is_record(C,constraint), Invert==true ->
     separate_one(mnemosyne_constraint:invert_constraint(C), Acc, false);
 
 separate_one(Goal, Acc, Invert) ->
@@ -186,7 +186,7 @@ separate_fns([H0|T0], Acc0) ->
     {T, Acc} = separate_fns(T0, Acc1),
     {[H|T], Acc};
 
-separate_fns(T0, Acc0) when tuple(T0) -> 
+separate_fns(T0, Acc0) when is_tuple(T0) -> 
     {T, Acc} = separate_fns(tuple_to_list(T0), Acc0),
     {list_to_tuple(T), Acc};
 	    
@@ -214,7 +214,7 @@ deduce_bindings_bind(Disj, WantedVariables) ->
     Res.
 
 
-deduce_bindings_bind([Conj|Conjs], Vars, Acc) when record(Conj,disj_alt) ->
+deduce_bindings_bind([Conj|Conjs], Vars, Acc) when is_record(Conj,disj_alt) ->
     deduce_bindings_bind(Conjs, Vars,
 			 case catch deduce_bindings_bind1(Conj,Vars) of
 			     fail -> Acc;
@@ -295,12 +295,12 @@ alias_to_bindings([], Bs, _) ->
 
 
 
-constraints_bindings([C|Cs], Bs0) when record(C, constraint) ->
+constraints_bindings([C|Cs], Bs0) when is_record(C, constraint) ->
     Bs = mnemosyne_unify:add_bind_trigger(mnemosyne_unify:variables(C),
 					  {mnemosyne_constraint,check,[C]},
 					  Bs0),
     constraints_bindings(Cs, Bs);
-constraints_bindings([F|Fs], Bs0) when record(F, fn) ->
+constraints_bindings([F|Fs], Bs0) when is_record(F, fn) ->
     constraints_bindings(Fs, Bs0);
 %    Bs = mnemosyne_unify:add_bind_trigger(
 %	   mnemosyne_unify:variables(F),
@@ -433,11 +433,11 @@ how_to_eval(Z) ->
     how_to_eval(Z1#optimizer_result.code, Z1#optimizer_result.pattern, Z1, Z).
     
 
-how_to_eval([D], Pattern, Z1, Z) when record(D,disj_alt) ->
+how_to_eval([D], Pattern, Z1, Z) when is_record(D,disj_alt) ->
     %% Promising, just one alternative in a disjunction. Check that one.
     how_to_eval(D#disj_alt.conj, Pattern, Z1, Z);
 
-how_to_eval([P0], Pattern, Z1, Z) when record(P0,pred_sym),
+how_to_eval([P0], Pattern, Z1, Z) when is_record(P0,pred_sym),
 				       P0#pred_sym.type==table ->
     %% Yes! Just one db-access in the query. Use mnesia:match_object instead.
     P = mnemosyne_exec:mk_patterns(P0),
@@ -483,7 +483,7 @@ remove_obsolete_clauses(Disj0) ->
 	    Disj
     end.
 
-check_constraints([C|Cs], Acc) when record(C,disj_alt) ->
+check_constraints([C|Cs], Acc) when is_record(C,disj_alt) ->
     case catch mnemosyne_unify:check_triggers(C#disj_alt.bs) of
 	fail ->
 	    check_constraints(Cs, Acc);
@@ -509,7 +509,7 @@ extract_common_bindings([]) ->
     {[],[]}.
 
 
-extract([C|Cs], Set) when record(C,disj_alt) ->
+extract([C|Cs], Set) when is_record(C,disj_alt) ->
     extract(Cs, ordsets:intersection(disj_bs_to_set(C),Set));
 extract([], Set) ->
     Set.
@@ -530,7 +530,7 @@ disj_bs_to_set(C) ->
             %% OTP-6496 (dialyzer). remove_obsolete_clauses does not handle
             %% '#bindings'.
 %%	    {'#bindings',_,X} -> X;
-	    _ when record(C,disj_alt) -> C#disj_alt.bs
+	    _ when is_record(C,disj_alt) -> C#disj_alt.bs
 	end,
     ordsets:from_list( mnemosyne_unify:bindings_to_list(Bs) ).
 
@@ -546,7 +546,7 @@ ordering(Disjs, BoundVars) ->
 	     []).
 
 
-ordering([D|Ds], BoundVars0, CostFn, Acc) when record(D,disj_alt) ->
+ordering([D|Ds], BoundVars0, CostFn, Acc) when is_record(D,disj_alt) ->
     BoundVars = ordsets:union(BoundVars0, 
 			      mnemosyne_unify:bs_vars_value(D#disj_alt.bs)),
     {Gs1,Ntuples} = order_goals(D#disj_alt.conj, BoundVars, CostFn, [], 1),
@@ -582,7 +582,7 @@ cheapest([], BoundVars, Gmin, Cmin, CostFn, Acc, _) ->
     {Gmin, Acc}.
 
 
-select_idx(P, BoundVars) when record(P,pred_sym) ->
+select_idx(P, BoundVars) when is_record(P,pred_sym) ->
     case P#pred_sym.type of
 	rule when P#pred_sym.recursive==recursive -> 
 	    P;
@@ -592,7 +592,7 @@ select_idx(P, BoundVars) when record(P,pred_sym) ->
 	    case bound_key_or_index(P,BoundVars) of
 		none -> P;
 		1 -> P#pred_sym{idx_method=key};
-		I when integer(I) ->  P#pred_sym{idx_method={stat_idx,I}}
+		I when is_integer(I) ->  P#pred_sym{idx_method={stat_idx,I}}
 	    end
     end;
 select_idx(P, BoundVars) ->
@@ -621,7 +621,7 @@ select_ground_index_arg([], _, _) ->
 newbind(G, Vars) -> ordsets:union(mnemosyne_unify:variables(G), Vars).
 
 %%%----------------------------------------------------------------
-push_bindings(Opr) when record(Opr,optimizer_result) ->
+push_bindings(Opr) when is_record(Opr,optimizer_result) ->
     Disj = push_bindings(Opr#optimizer_result.code, []),
     ?debugmsg(3, "~s\n", [mnemosyne_pp:body(Disj)]),
     Opr#optimizer_result{code=Disj}.
@@ -647,9 +647,9 @@ push_bindings1([], Bs, BsVars) ->
     [{'#bindings',1,Bs}].
 
 %%%----------------------------------------------------------------
-push_function_calls(Opr) when record(Opr,optimizer_result) ->
+push_function_calls(Opr) when is_record(Opr,optimizer_result) ->
     Disjs = 
-	lists:map(fun(D) when record(D,disj_alt) ->
+	lists:map(fun(D) when is_record(D,disj_alt) ->
 			  D#disj_alt{conj =  push_function_calls1(D),
 				     fncalls = []}
 		  end, 
@@ -703,15 +703,15 @@ build_tree(Opr) ->
 %% OTP-6496 (dialyzer):
 %%build_tree1([{'#bindings',C,Bs}|DisjBs]) ->
 %%    [{'#bindings',C,Bs} | build_tree1(DisjBs)];
-build_tree1([C|Alts]) when record(C,disj_alt) -> 
+build_tree1([C|Alts]) when is_record(C,disj_alt) -> 
     build_tree1(Alts, prepare(C)).
 
-build_tree1([C|Alts], Tree) when record(C,disj_alt) -> 
+build_tree1([C|Alts], Tree) when is_record(C,disj_alt) -> 
     build_tree1(Alts,  ins(prepare(C),Tree));
 build_tree1([], Tree) -> Tree.
 
 
-prepare(C) when record(C,disj_alt) ->
+prepare(C) when is_record(C,disj_alt) ->
     case  C#disj_alt.bs of
 	[] -> C#disj_alt.conj;
 	Bs -> [{'#bindings',1,Bs} | C#disj_alt.conj]
@@ -740,7 +740,7 @@ insa(L, [Alt|Alts]) -> [Alt|insa(L,Alts)];
 insa(L, []) -> [L].
 
 %%%----------------------------------------------------------------
-adornments(Opr) when record(Opr,optimizer_result) ->
+adornments(Opr) when is_record(Opr,optimizer_result) ->
     WantedVars = mnemosyne_unify:variables(Opr#optimizer_result.pattern),
     CommonBs = Opr#optimizer_result.common_bs,
     Ncommonvars = 
@@ -755,7 +755,7 @@ adornments(Opr) when record(Opr,optimizer_result) ->
     Opr#optimizer_result{code=Code}.
 
 
-adornments_disj([D|Ds], Ncommonvars, WantedVars, Acc) when record(D,disj_alt)->
+adornments_disj([D|Ds], Ncommonvars, WantedVars, Acc) when is_record(D,disj_alt)->
     S1 = mnemosyne_unify:count_variables(
 	   {D#disj_alt.conj,
 	    D#disj_alt.fncalls},
@@ -772,7 +772,7 @@ adornments_disj([], _, _, Acc) ->
     Acc.
 
 
-adornments([G|Gs], DefVars, SingeltonVars) when record(G,pred_sym) ->
+adornments([G|Gs], DefVars, SingeltonVars) when is_record(G,pred_sym) ->
     Vars = ordsets:union(mnemosyne_unify:variables(G), DefVars),
     G_singeltons = ordsets:intersection(Vars,SingeltonVars),
     [G#pred_sym{defvars=DefVars, singelvars=G_singeltons} |

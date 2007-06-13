@@ -1467,7 +1467,7 @@ empty_lb(ber_bin) ->
     "<<>>".
 
 rtmod(ber) ->
-    list_to_atom(?RT_BER);
+    list_to_atom(?RT_BER_BIN);
 rtmod(ber_bin) ->
     list_to_atom(?RT_BER_BIN).
 

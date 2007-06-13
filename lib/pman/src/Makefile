@@ -36,7 +36,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/pman-$(VSN)
 MODULES= \
 	pman \
 	pman_main \
-	pman_primitive \
 	pman_shell \
 	pman_relay \
 	pman_relay_server \
@@ -48,13 +47,11 @@ MODULES= \
 	pman_buf_converter \
 	pman_buf_printer \
 	pman_options \
-	pman_osdepend \
 	pman_process \
 	pman_tool
 
 HRL_FILES= \
 	assert.hrl \
-	pman.hrl \
 	pman_buf.hrl \
 	pman_options.hrl \
 	pman_win.hrl
@@ -74,8 +71,7 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += 
+ERL_COMPILE_FLAGS += +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets

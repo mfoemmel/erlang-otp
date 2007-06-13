@@ -57,6 +57,7 @@ MODULES =  \
 	dialyzer_cl \
 	dialyzer_cl_parse \
 	dialyzer_codeserver \
+	dialyzer_contracts \
 	dialyzer_dataflow \
 	dialyzer_dep \
 	dialyzer_gui \
@@ -85,8 +86,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=
-ERL_COMPILE_FLAGS += -I$(HIPE_ICODE_DIR) +warn_unused_import
+ERL_COMPILE_FLAGS += -I$(HIPE_ICODE_DIR) +warn_unused_import +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets
@@ -113,13 +113,13 @@ $(DIALYZER_DIR)/plt/dialyzer_init_plt: ../../hipe/ebin/erl_types.beam ../../hipe
 	$(ERL_TOP)/bin/dialyzer --check_init_plt
 
 $(EBIN)/dialyzer_cl_parse.$(EMULATOR): dialyzer_cl_parse.erl ../vsn.mk Makefile
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
+	erlc $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_cl_parse.erl
 
 $(EBIN)/dialyzer_plt.$(EMULATOR): dialyzer_plt.erl Makefile ../vsn.mk
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_plt.erl
+	erlc $(ERL_COMPILE_FLAGS) -DDEFAULT_LIBS="[$(DIALYZER_DEF_LIBS)]" -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_plt.erl
 
 $(EBIN)/dialyzer_gui.$(EMULATOR): dialyzer_gui.erl ../vsn.mk
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
+	erlc $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) dialyzer_gui.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@

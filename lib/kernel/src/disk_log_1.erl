@@ -105,7 +105,7 @@ sync(FdC, FName) ->
 truncate(FdC, FileName, Head) ->
     Reply = truncate_at(FdC, FileName, ?HEADSZ),
     case Reply of
-	{ok, _} when Head == none ->
+	{ok, _} when Head =:= none ->
             Reply;
 	{ok, FdC1} ->
 	    {ok, B} = Head,
@@ -120,7 +120,7 @@ truncate(FdC, FileName, Head) ->
     end.
 
 %% -> {NewFdC, Reply}, Reply = {Cont, Binaries} | {error, Reason} | eof
-chunk(FdC, FileName, Pos, B, N) when binary(B) ->
+chunk(FdC, FileName, Pos, B, N) when is_binary(B) ->
     true = size(B) >= ?HEADERSZ,
     do_handle_chunk(FdC, FileName, Pos, B, N);
 chunk(FdC, FileName, Pos, NoBytes, N) ->
@@ -131,12 +131,12 @@ chunk(FdC, FileName, Pos, NoBytes, N) ->
     case read_chunk(FdC, FileName, Pos, MaxNoBytes) of
 	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
-	{NewFdC, {ok, Bin}} when NoBytes == []; size(Bin) >= NoBytes ->
+	{NewFdC, {ok, Bin}} when NoBytes =:= []; size(Bin) >= NoBytes ->
 	    NewPos = Pos + size(Bin),
             do_handle_chunk(NewFdC, FileName, NewPos, Bin, N);
 	{NewFdC, {ok, _Bin}} ->
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
-	{NewFdC, eof} when integer(NoBytes) -> % "cannot happen"
+	{NewFdC, eof} when is_integer(NoBytes) -> % "cannot happen"
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
 	Other -> % eof or error
 	    Other
@@ -207,7 +207,7 @@ read_chunk(FdC, FileName, Pos, MaxBytes) ->
 %% Used by wrap_log_reader.
 %% -> {NewFdC, Reply}, 
 %%    Reply = {Cont, Binaries, Bad} (Bad >= 0) | {error, Reason} | eof
-chunk_read_only(FdC, FileName, Pos, B, N) when record(FdC, cache) ->
+chunk_read_only(FdC, FileName, Pos, B, N) when is_record(FdC, cache) ->
     do_chunk_read_only(FdC, FileName, Pos, B, N);
 chunk_read_only(Fd, FileName, Pos, B, N) ->
     %% wrap_log_reader calling...
@@ -215,7 +215,7 @@ chunk_read_only(Fd, FileName, Pos, B, N) ->
     {_NFdC, Reply} = do_chunk_read_only(FdC, FileName, Pos, B, N),
     Reply.
 
-do_chunk_read_only(FdC, FileName, Pos, B, N) when binary(B) ->
+do_chunk_read_only(FdC, FileName, Pos, B, N) when is_binary(B) ->
     true = size(B) >= ?HEADERSZ,
     do_handle_chunk_ro(FdC, FileName, Pos, B, N);
 do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
@@ -227,13 +227,13 @@ do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
 	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
 	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
 	    {NewFdC, {NewCont, [], size(Bin)}};
-	{NewFdC, {ok, Bin}} when NoBytes == []; size(Bin) >= NoBytes ->
+	{NewFdC, {ok, Bin}} when NoBytes =:= []; size(Bin) >= NoBytes ->
 	    NewPos = Pos + size(Bin),
 	    do_handle_chunk_ro(NewFdC, FileName, NewPos, Bin, N);
 	{NewFdC, {ok, Bin}} ->
 	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
 	    {NewFdC, {NewCont, [], size(Bin)-?HEADERSZ}};
-	{NewFdC, eof} when integer(NoBytes) -> % "cannot happen"
+	{NewFdC, eof} when is_integer(NoBytes) -> % "cannot happen"
 	    {NewFdC, eof}; % what else?
 	Other -> 
 	    Other
@@ -301,7 +301,7 @@ close(#cache{fd = Fd, c = C}, FileName, read_write) ->
     {Reply, _NewFdC} = write_cache(Fd, FileName, C),
     mark(Fd, FileName, ?CLOSED),
     file:close(Fd),
-    if Reply == ok -> ok; true -> throw(Reply) end.
+    if Reply =:= ok -> ok; true -> throw(Reply) end.
 
 %% Open an internal file. Head is ignored if Mode is read_only.
 %% int_open(FileName, Repair, Mode, Head) -> 
@@ -310,7 +310,7 @@ close(#cache{fd = Fd, c = C}, FileName, read_write) ->
 %%  | throw(Error)
 %% Alloc = new | existed
 %% HeadSize = {NumberOfItemsWritten, NumberOfBytesWritten}
-%% (HeadSize is equal {0, 0} if Alloc == existed, or no header written.)
+%% (HeadSize is equal {0, 0} if Alloc =:= existed, or no header written.)
 int_open(FName, truncate, read_write, Head) ->
     new_int_file(FName, Head);
 int_open(FName, Repair, read_write, Head) ->
@@ -330,9 +330,9 @@ int_open(FName, Repair, read_write, Head) ->
 				Error ->
 				    file_error(FName, Error)
 			    end;
-			yes_not_closed when Repair == true ->
+			yes_not_closed when Repair ->
 			    repair(Fd, FName);
-			yes_not_closed when Repair == false ->
+			yes_not_closed when not Repair ->
 			    file:close(Fd),
 			    throw({error, {need_repair, FName}});
 			no ->
@@ -462,11 +462,11 @@ mark(Fd, FileName, What) ->
 %% -> {ok, Bin} | Error
 lh({ok, Bin}, _Format) ->
     {ok, Bin};
-lh({M, F, A}, Format) when list(A) ->
+lh({M, F, A}, Format) when is_list(A) ->
     case catch apply(M, F, A) of
-	{ok, Head} when Format == internal ->
+	{ok, Head} when Format =:= internal ->
 	    {ok, term_to_binary(Head)};
-	{ok, Bin} when binary(Bin) ->
+	{ok, Bin} when is_binary(Bin) ->
 	    {ok, Bin};
 	{ok, Bytes} ->
 	    case catch list_to_binary(Bytes) of
@@ -591,9 +591,9 @@ repair_err(In, Out, OutName, ErrFileName, Error) ->
 
 %% Used by wrap_log_reader.
 %% -> yes | yes_not_closed | no
-is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC == M, ?CLOSED == S ->
+is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?CLOSED =:= S ->
     yes;
-is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC == M, ?OPENED == S ->
+is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?OPENED =:= S ->
     yes_not_closed;
 is_head(_Bin) ->
     no.
@@ -1022,7 +1022,7 @@ read_index_file(FName) ->
 	{ok, Fd} ->
 	    R = case file:read(Fd, ?MAX_CHUNK_SIZE) of
 		    {ok, <<0, 0:32, Version, CurF:32, Tail/binary>>}
-		             when Version == ?VERSION, 
+		             when Version =:= ?VERSION, 
 				  0 < CurF, CurF < ?MAX_FILES -> 
 			parse_index(CurF, Version, 1, Tail, Fd, 0, 0, 0);
 		    {ok, <<0, CurF:32, Tail/binary>>} 
@@ -1040,10 +1040,10 @@ read_index_file(FName) ->
     end.
 
 parse_index(CurF, V, CurF, <<CurSz:64, Tail/binary>>, Fd, _, TotSz, NFiles)
-          when V == ?VERSION ->
+          when V =:= ?VERSION ->
     parse_index(CurF, V, CurF+1, Tail, Fd, CurSz, TotSz, NFiles+1);
 parse_index(CurF, V, N, <<Sz:64, Tail/binary>>, Fd, CurSz, TotSz, NFiles)
-          when V == ?VERSION ->
+          when V =:= ?VERSION ->
     parse_index(CurF, V, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
 parse_index(CurF, V, CurF, <<CurSz:32, Tail/binary>>, Fd, _, TotSz, NFiles)
           when V < ?VERSION ->
@@ -1053,7 +1053,7 @@ parse_index(CurF, V, N, <<Sz:32, Tail/binary>>, Fd, CurSz, TotSz, NFiles)
     parse_index(CurF, V, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
 parse_index(CurF, V, N, B, Fd, CurSz, TotSz, NFiles) ->
     case file:read(Fd, ?MAX_CHUNK_SIZE) of
-	eof when 0 == size(B) ->
+	eof when 0 =:= size(B) ->
 	    {CurF, CurSz, TotSz, NFiles};	    
 	{ok, Bin} ->
             NewB = list_to_binary([B, Bin]),
@@ -1124,7 +1124,7 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 
 to_8_bytes(<<N:32,T/binary>>, NT, FileName, Fd) ->
     to_8_bytes(T, [NT | <<N:64>>], FileName, Fd);
-to_8_bytes(B, NT, _FileName, _Fd) when size(B) == 0 ->
+to_8_bytes(B, NT, _FileName, _Fd) when size(B) =:= 0 ->
     NT;
 to_8_bytes(_B, _NT, FileName, Fd) ->
     file:close(Fd),
@@ -1139,7 +1139,7 @@ index_file_trunc(FName, N) ->
 		eof ->
 		    file:close(Fd),
 		    ok;
-		{ok, <<0, 0:32, Version>>} when Version == ?VERSION ->
+		{ok, <<0, 0:32, Version>>} when Version =:= ?VERSION ->
 		    truncate_index_file(Fd, FileName, 10, 8, N);
 		{ok, <<0, _/binary>>} ->
 		    truncate_index_file(Fd, FileName, 5, 4, N);
@@ -1167,7 +1167,7 @@ print_index_file(File) ->
     io:format("-- Index begin --~n"),
     case file:read_file(File) of
 	{ok, <<0, 0:32, Version, CurF:32, Tail/binary>>} 
-	         when Version == ?VERSION, 0 < CurF, CurF < ?MAX_FILES ->
+	         when Version =:= ?VERSION, 0 < CurF, CurF < ?MAX_FILES ->
 	    io:format("cur file: ~w~n", [CurF]),
 	    loop_index(1, Version, Tail);
 	{ok, <<0, CurF:32, Tail/binary>>} when 0 < CurF, CurF < ?MAX_FILES ->
@@ -1181,7 +1181,7 @@ print_index_file(File) ->
     end,
     io:format("-- end --~n").    
 
-loop_index(N, V, <<Sz:64, Tail/binary>>) when V == ?VERSION ->
+loop_index(N, V, <<Sz:64, Tail/binary>>) when V =:= ?VERSION ->
     io:format(" ~p  items: ~w~n", [N, Sz]),
     loop_index(N+1, V, Tail);
 loop_index(N, V, <<Sz:32, Tail/binary>>) when V < ?VERSION ->
@@ -1202,7 +1202,7 @@ write_size_file(read_only, _FName, _NewSize, _NewMaxFiles, _Version) ->
 write_size_file(read_write, FName, NewSize, NewMaxFiles, Version) ->
     FileName = ?size_file_name(FName),
     Bin = if 
-	      Version ==  ?VERSION ->
+	      Version =:=  ?VERSION ->
 		  <<Version, NewSize:64, NewMaxFiles:32>>;
 	      true ->
 		  <<NewSize:32, NewMaxFiles:32>>
@@ -1222,7 +1222,7 @@ read_size_file(FName) ->
 %% -> {{NoBytes, NoFiles}, Version}, Version = integer() | undefined
 read_size_file_version(FName) ->
     case file:read_file(?size_file_name(FName)) of
-	{ok, <<Version, Size:64, MaxFiles:32>>} when Version == ?VERSION ->
+	{ok, <<Version, Size:64, MaxFiles:32>>} when Version =:= ?VERSION ->
 	    {{Size, MaxFiles}, Version};
 	{ok, <<Size:32, MaxFiles:32>>} ->
 	    {{Size, MaxFiles}, 1};
@@ -1231,10 +1231,10 @@ read_size_file_version(FName) ->
 	    {{0, 0}, ?VERSION}
     end.
 
-conv({More, Terms}, FileNo) when record(More, continuation) ->
+conv({More, Terms}, FileNo) when is_record(More, continuation) ->
     Cont = More#continuation{pos = {FileNo, More#continuation.pos}},
     {Cont, Terms};
-conv({More, Terms, Bad}, FileNo) when record(More, continuation) ->
+conv({More, Terms, Bad}, FileNo) when is_record(More, continuation) ->
     Cont = More#continuation{pos = {FileNo, More#continuation.pos}},
     {Cont, Terms, Bad};
 conv(Other, _) ->
@@ -1253,7 +1253,7 @@ fff(FName, MaybeFirstF, CurF, MaxF) ->
 	    
 %% -> {iolist(), LastBins, NoBytes, NoTerms}
 ext_split_bins(CurB, MaxB, FirstPos, Bins) ->
-    MaxBs = MaxB - CurB, IsFirst = CurB == FirstPos,
+    MaxBs = MaxB - CurB, IsFirst = CurB =:= FirstPos,
     ext_split_bins(MaxBs, IsFirst, [], Bins, 0, 0).
 
 ext_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
@@ -1261,7 +1261,7 @@ ext_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
     if
         NBs =< MaxBs ->
 	    ext_split_bins(MaxBs, IsFirst, [First | X], Last, NBs, N+1);
-	IsFirst == true, First == [] ->
+	IsFirst, First =:= [] ->
             % To avoid infinite loop - we allow the file to be
    	    % too big if it's just one item on the file.
 	    {[X], Last, NBs, N+1}; 
@@ -1273,7 +1273,7 @@ ext_split_bins(_, _, First, [], Bs, N) ->
 
 %% -> {iolist(), LastBins, NoBytes, NoTerms}
 int_split_bins(CurB, MaxB, FirstPos, Bins) ->
-    MaxBs = MaxB - CurB, IsFirst = CurB == FirstPos,
+    MaxBs = MaxB - CurB, IsFirst = CurB =:= FirstPos,
     int_split_bins(MaxBs, IsFirst, [], Bins, 0, 0).
 
 int_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
@@ -1290,7 +1290,7 @@ int_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
     if
         NBs =< MaxBs ->
 	    int_split_bins(MaxBs, IsFirst, [First | XB], Last, NBs, N+1);
-	IsFirst == true, First == [] ->
+	IsFirst, First =:= [] ->
             % To avoid infinite loop - we allow the file to be
    	    % too big if it's just one item on the file.
 	    {[XB], Last, NBs, N+1}; 

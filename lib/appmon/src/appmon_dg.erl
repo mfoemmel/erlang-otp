@@ -83,9 +83,9 @@ edel(DG, E) ->
 
 eadd(DG, E, D, Ref) ->
     case eget(edge, DG, E) of
-	{_, _, _, ED} when record(ED, edata), ED#edata.ref == Ref ->
+	{_, _, _, ED} when is_record(ED, edata), ED#edata.ref == Ref ->
 	    known;
-	{_, _, _, ED} when record(ED, edata), ED#edata.ref /= Ref ->
+	{_, _, _, ED} when is_record(ED, edata), ED#edata.ref /= Ref ->
 	    update_e(DG, E, ED#edata{ref=Ref}),
 	    updated;
 	_Other ->
@@ -145,7 +145,7 @@ set(y, DG, V, Y) ->
     D = get(data, DG, V),
     av(DG, V, D#vdata{y=Y});
 
-set(data, DG, V, D) when record(D, vdata)->
+set(data, DG, V, D) when is_record(D, vdata)->
     av(DG, V, D);
 
 set(x, DG, V, X) ->
@@ -157,21 +157,21 @@ set(x, DG, V, X) ->
 
 visited(DG, {V1, V2}, Ref) ->			% for edge
     D = eget(data, DG, {V1, V2}),
-    if  record(D, edata), D#edata.ref == Ref -> true;
+    if  is_record(D, edata), D#edata.ref == Ref -> true;
 	true -> false
     end;
 visited(DG, V, Ref) ->
     D = get(data, DG, V),
-    if  record(D, vdata), D#vdata.ref == Ref -> true;
+    if  is_record(D, vdata), D#vdata.ref == Ref -> true;
 	true -> false
     end.
 
 add(DG, V, D, Ref) ->
     case get(data, DG, V) of
-	D2 when record(D2, vdata), D2#vdata.ref==Ref -> 
+	D2 when is_record(D2, vdata), D2#vdata.ref==Ref -> 
 	    io:format("Ooops in ~p:add vertex~n", [?MODULE]),
 	    known;
-	D2 when record(D2, vdata) -> 
+	D2 when is_record(D2, vdata) -> 
 	    %%io:format("~p touch vertex ~p~n", [self(), V]),
 	    set(ref, DG, V, Ref), 
 	    set(type, DG, V, D#vdata.type), 

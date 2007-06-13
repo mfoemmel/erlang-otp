@@ -957,6 +957,9 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
     int res = 0;
     Uint actual = 0;
     Uint wanted = wanted_no_of_schedulers;
+    ethr_thr_opts opts = ETHR_THR_OPTS_DEFAULT_INITER;
+    opts.detached = 1;
+
     if (wanted < 1)
 	wanted = 1;
     if (wanted > ERTS_MAX_NO_OF_SCHEDULERS) {
@@ -976,7 +979,7 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
 	}
 	actual++;
 	init_sched_thr_data(esdp, actual);
-	cres = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,1);
+	cres = ethr_thr_create(&esdp->tid,sched_thread_func,(void*)esdp,&opts);
 	if (cres != 0) {
 	    res = cres;
 	    erts_free(ERTS_ALC_T_SCHDLR_DATA, (void *) esdp);
@@ -3061,8 +3064,9 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 	    p->trace_flags |= (parent->trace_flags & TRACEE_FLAGS);
 	    p->tracer_proc = parent->tracer_proc;
 	}
-	if (parent->trace_flags & F_TRACE_PROCS) 
+	if (ARE_TRACE_FLAGS_ON(parent, F_TRACE_PROCS)) {
 	    trace_proc_spawn(parent, p->id, mod, func, args);
+	}
 	if (parent->trace_flags & F_TRACE_SOS1) { /* Overrides TRACE_CHILDREN */
 	    p->trace_flags |= (parent->trace_flags & TRACEE_FLAGS);
 	    p->tracer_proc = parent->tracer_proc;
@@ -3079,7 +3083,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 #ifdef DEBUG
 	int ret;
 #endif
-	if (IS_TRACED(parent) && (parent->trace_flags & F_TRACE_PROCS) != 0) {
+	if (IS_TRACED_FL(parent, F_TRACE_PROCS)) {
 	    trace_proc(parent, parent, am_link, p->id);
 	}
 
@@ -3209,7 +3213,7 @@ void erts_init_empty_process(Process *p)
     p->reds = 0;
     p->error_handler = am_error_handler;
     p->tracer_proc = NIL;
-    p->trace_flags = 0;
+    p->trace_flags = F_INITIAL_TRACE_FLAGS;
     p->group_leader = ERTS_INVALID_PID;
     p->flags = 0;
     p->fvalue = NIL;
@@ -3339,7 +3343,7 @@ erts_debug_verify_clean_empty_process(Process* p)
     ASSERT(p->heap == NULL);
     ASSERT(p->id == ERTS_INVALID_PID);
     ASSERT(p->tracer_proc == NIL);
-    ASSERT(p->trace_flags == 0);
+    ASSERT(p->trace_flags == F_INITIAL_TRACE_FLAGS);
     ASSERT(p->group_leader == ERTS_INVALID_PID);
     ASSERT(p->dist_entry == NULL);
     ASSERT(p->next == NULL);
@@ -4172,6 +4176,8 @@ erts_do_exit_process(Process* p, Eterm reason)
 
     erts_trace_check_exiting(p->id);
 
+    ASSERT((p->trace_flags & F_INITIAL_TRACE_FLAGS) == F_INITIAL_TRACE_FLAGS);
+
     cancel_timer(p);		/* Always cancel timer just in case */
 
     if (p->bif_timers)
@@ -4361,6 +4367,9 @@ erts_stack_dump(int to, void *to_arg, Process *p)
     Eterm* sp;
     int yreg = -1;
 
+    if (p->trace_flags & F_SENSITIVE) {
+	return;
+    }
     erts_program_counter_info(to, to_arg, p);
     for (sp = p->stop; sp < STACK_START(p); sp++) {
         yreg = stack_element_dump(to, to_arg, p, sp, yreg);

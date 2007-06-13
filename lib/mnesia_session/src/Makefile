@@ -131,16 +131,17 @@ APP_DIR = $(ERL_TOP)/lib/mnesia_session
 
 IC_DIR := $(ERL_TOP)/lib/ic
 
-ERL_FLAGS +=  \
+ERL_COMMON_FLAGS +=  \
 		-pa $(APP_DIR)/ebin \
 		-pa $(IC_DIR)/ebin \
 		-I $(APP_DIR)/include
 
-ERL_COMPILE_FLAGS += \
+ERL_COMPILE_FLAGS += $(ERL_COMMON_FLAGS) \
+	+warn_obsolete_guard \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,vsn,"mnesia_session_$(MNESIA_SESSION_VSN)"}'
 
-IDL_COMPILE_FLAGS += \
+IDL_COMPILE_FLAGS += $(ERL_COMMON_FLAGS) \
 	-I $(IC_DIR)/include
 
 # ----------------------------------------------------
@@ -171,7 +172,7 @@ $(EBIN)/mnesia_session_impl.$(EMULATOR): $(APP_DIR)/include/mnesia.hrl
 $(EBIN)/mnesia_corba_session_impl.$(EMULATOR): $(APP_DIR)/include/mnesia.hrl
 
 $(GEN_CORBA_FILES): mnesia_corba_session.idl 
-	$(ERLC) $(ERL_FLAGS) $(IDL_COMPILE_FLAGS) \
+	$(ERLC) $(IDL_COMPILE_FLAGS) \
 	+'{preproc_flags,"-I${IC_DIR}/include"}' \
 	+'{{impl,"mnesia_corba_session"},"mnesia_corba_session_impl"}' \
 	+'{this,"mnesia::corba_session"}' \
@@ -179,7 +180,7 @@ $(GEN_CORBA_FILES): mnesia_corba_session.idl
 	mv mnesia.hrl $(APP_DIR)/include
 
 $(GEN_GS_FILES): mnesia_session.idl
-	$(ERLC) $(ERL_FLAGS)  $(IDL_COMPILE_FLAGS) \
+	$(ERLC) $(IDL_COMPILE_FLAGS) \
 	+'{be,erl_genserv}' \
 	mnesia_session.idl
 	mv mnesia.hrl $(APP_DIR)/include

@@ -467,6 +467,8 @@ ubif erlang:is_reference/1
 ubif 'erl.lang.term':is_reference/1	ebif_is_reference_1
 ubif erlang:is_binary/1
 ubif 'erl.lang.term':is_binary/1	ebif_is_binary_1
+ubif erlang:is_bitstr/1
+ubif 'erl.lang.term':is_bitstr/1	ebif_is_bitstr_1
 ubif erlang:is_function/1
 ubif 'erl.lang.term':is_function/1	ebif_is_function_1
 ubif erlang:is_function/2
@@ -665,6 +667,12 @@ bif erlang:make_fun/3
 bif erlang:iolist_size/1
 bif erlang:iolist_to_binary/1
 bif erlang:list_to_existing_atom/1
+
+#
+# New Bifs in R11B-5
+#
+bif erlang:list_to_bitstr/1
+bif erlang:bitstr_to_list/1
 
 #
 # Obsolete

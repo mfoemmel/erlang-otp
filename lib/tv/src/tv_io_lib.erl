@@ -49,27 +49,27 @@ format(Format, Args) ->
 write(Term) -> write(Term, -1).
 
 write(_Term, 0) -> "...";
-write(Term, _D) when integer(Term) -> integer_to_list(Term);
-write(Term, _D) when float(Term) -> tv_io_lib_format:fwrite_g(Term);
-write(Atom, _D) when atom(Atom) -> write_atom(Atom);
-write(Term, _D) when port(Term) -> "#Port";
-write(Term, _D) when pid(Term) -> pid_to_list(Term);
-write(Term, _D) when reference(Term) -> "#Ref";
-write(Term, _D) when binary(Term) -> "#Bin";
+write(Term, _D) when is_integer(Term) -> integer_to_list(Term);
+write(Term, _D) when is_float(Term) -> tv_io_lib_format:fwrite_g(Term);
+write(Atom, _D) when is_atom(Atom) -> write_atom(Atom);
+write(Term, _D) when is_port(Term) -> "#Port";
+write(Term, _D) when is_pid(Term) -> pid_to_list(Term);
+write(Term, _D) when is_reference(Term) -> "#Ref";
+write(Term, _D) when is_binary(Term) -> "#Bin";
 write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->
     if
-	D == 1 -> "[...]";
+	D =:= 1 -> "[...]";
 	true ->
 	    [$[,[write(H, D-1)|write_tail(T, D-1)],$]]
     end;
-write(F, _D) when function(F) ->
+write(F, _D) when is_function(F) ->
     {module,M} = erlang:fun_info(F, module),
     ["#Fun<",atom_to_list(M),">"];
-write(T, D) when tuple(T) ->
+write(T, D) when is_tuple(T) ->
     if
-	D == 1 -> "{...}";
+	D =:= 1 -> "{...}";
 	true ->
 	    [${,
 	     [write(element(1, T), D-1)|write_tail(tl(tuple_to_list(T)), D-1)],
@@ -177,7 +177,7 @@ quote_atom([]) ->
 %%  Return true if CharList is a (possibly deep) list of characters, else
 %%  false.
 
-char_list([C|Cs]) when integer(C), C >= 0, C =< 255 ->
+char_list([C|Cs]) when is_integer(C), C >= 0, C =< 255 ->
     char_list(Cs);
 char_list([]) -> true;
 char_list(_Other) -> false.			%Everything else is false
@@ -185,9 +185,9 @@ char_list(_Other) -> false.			%Everything else is false
 deep_char_list(Cs) ->
     deep_char_list(Cs, []).
 
-deep_char_list([C|Cs], More) when list(C) ->
+deep_char_list([C|Cs], More) when is_list(C) ->
     deep_char_list(C, [Cs|More]);
-deep_char_list([C|Cs], More) when integer(C), C >= 0, C =< 255 ->
+deep_char_list([C|Cs], More) when is_integer(C), C >= 0, C =< 255 ->
     deep_char_list(Cs, More);
 deep_char_list([], [Cs|More]) ->
     deep_char_list(Cs, More);
@@ -199,7 +199,7 @@ deep_char_list(_Other, _More) ->	     %Everything else is false
 %%  Return true if CharList is a list of printable characters, else
 %%  false.
 
-printable_list([C|Cs]) when integer(C), C >= $ , C =< 255 ->
+printable_list([C|Cs]) when is_integer(C), C >= $ , C =< 255 ->
     printable_list(Cs);
 printable_list([$\n|Cs]) ->
     printable_list(Cs);

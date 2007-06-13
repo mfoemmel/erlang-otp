@@ -335,45 +335,45 @@
 
 -define(classify_char(Char),
     (case Char of
-        _ when Char >= $0, Char =< $9       -> safe_char;
-        _ when Char >= $a, Char =< $z       -> safe_char;
-        _ when Char >= $A, Char =< $Z       -> safe_char;
-        $+                                  -> safe_char;
-        $-                                  -> safe_char;
-        $&                                  -> safe_char;
-        $!                                  -> safe_char;
-        $_                                  -> safe_char;
-        $/                                  -> safe_char;
-        $'                                  -> safe_char;
-        $?                                  -> safe_char;
-        $@                                  -> safe_char;
-        $^                                  -> safe_char;
-        $`                                  -> safe_char;
-        $~                                  -> safe_char;
-        $*                                  -> safe_char;
-        $$                                  -> safe_char;                    
-        ?BackslashToken                     -> safe_char;
-        ?LparToken                          -> safe_char;
-        ?RparToken                          -> safe_char;
-        $%                                  -> safe_char;
-        ?VbarToken                          -> safe_char;
-        $.                                  -> safe_char;
-        ?SemiColonToken                     -> rest_char;
-        ?LsbrktToken                        -> rest_char;
-        ?RsbrktToken                        -> rest_char;
-        ?LbrktToken                         -> rest_char;
-        ?RbrktToken                         -> rest_char;
-        ?ColonToken                         -> rest_char;
-        ?CommaToken                         -> rest_char;
-        ?NequalToken                        -> rest_char;
-        ?LesserToken                        -> rest_char;
-        ?GreaterToken                       -> rest_char;
-        ?EqualToken                         -> rest_char;
-        ?DoubleQuoteToken                   -> double_quote;
-        ?SpToken                            -> white_space;
-        ?HtabToken                          -> white_space;
-        ?LfToken                            -> end_of_line;
-        ?CrToken                            -> end_of_line;
-        _                                   -> bad_char
+        _ when (Char >= $0) and     (Char =< $9) -> safe_char;
+        _ when (Char >= $a) and     (Char =< $z) -> safe_char;
+        _ when (Char >= $A) and     (Char =< $Z) -> safe_char_upper;
+        $+                                       -> safe_char;
+        $-                                       -> safe_char;
+        $&                                       -> safe_char;
+        $!                                       -> safe_char;
+        $_                                       -> safe_char;
+        $/                                       -> safe_char;
+        $'                                       -> safe_char;
+        $?                                       -> safe_char;
+        $@                                       -> safe_char;
+        $^                                       -> safe_char;
+        $`                                       -> safe_char;
+        $~                                       -> safe_char;
+        $*                                       -> safe_char;
+        $$                                       -> safe_char;
+        ?BackslashToken                          -> safe_char;
+        ?LparToken                               -> safe_char;
+        ?RparToken                               -> safe_char;
+        $%                                       -> safe_char;
+        ?VbarToken                               -> safe_char;
+        $.                                       -> safe_char;
+        ?SemiColonToken                          -> rest_char;
+        ?LsbrktToken                             -> rest_char;
+        ?RsbrktToken                             -> rest_char;
+        ?LbrktToken                              -> rest_char;
+        ?RbrktToken                              -> rest_char;
+        ?ColonToken                              -> rest_char;
+        ?CommaToken                              -> rest_char;
+        ?NequalToken                             -> rest_char;
+        ?LesserToken                             -> rest_char;
+        ?GreaterToken                            -> rest_char;
+        ?EqualToken                              -> rest_char;
+        ?DoubleQuoteToken                        -> double_quote;
+        ?SpToken                                 -> white_space;
+        ?HtabToken                               -> white_space;
+        ?LfToken                                 -> end_of_line;
+        ?CrToken                                 -> end_of_line;
+        _                                        -> bad_char
     end)).
 

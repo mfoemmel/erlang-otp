@@ -3863,8 +3863,10 @@ SysIOVec* driver_peekq(ErlDrvPort ix, int* vlenp)  /* length of io-vector */
 {
     ErlIOQueue* q = drvport2ioq(ix);
 
-    if (q == NULL)
+    if (q == NULL) {
+	*vlenp = -1;
 	return NULL;
+    }
     if ((*vlenp = (q->v_tail - q->v_head)) == 0)
 	return NULL;
     return q->v_head;

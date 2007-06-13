@@ -49,8 +49,7 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=
-ERL_COMPILE_FLAGS +=
+ERL_COMPILE_FLAGS += +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets
@@ -70,7 +69,7 @@ clean:
 # ----------------------------------------------------
 
 $(EBIN)/typer_options.$(EMULATOR): typer_options.erl ../vsn.mk Makefile
-	erlc $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) typer_options.erl
+	erlc -W $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) typer_options.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@

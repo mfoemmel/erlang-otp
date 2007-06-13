@@ -116,13 +116,14 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosProperty/ebin \
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosProperty/ebin \
 	-pa $(ERL_TOP)/lib/ic/ebin\
 	-pa $(ERL_TOP)/lib/orber/ebin
 
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-pa $(ERL_TOP)/lib/orber/include \
 	-pa $(ERL_TOP)/lib/cosProperty/include \
 	-I$(ERL_TOP)/lib/cosProperty/include \
@@ -159,7 +160,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES) $(GEN_HRL_FILES): CosProperty.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosProperty.cfg"}' CosProperty.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosProperty.cfg"}' CosProperty.idl
 	mv $(LOCAL_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 

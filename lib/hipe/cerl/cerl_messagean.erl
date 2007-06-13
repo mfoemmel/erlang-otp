@@ -788,7 +788,7 @@ remote_call_1(erlang, element, 2, [_,X], [N|_], _L, St) ->
 	    case is_c_int(N) of
 		true ->
 		    N1 = int_val(N),
-		    if N1 >= 1, N1 =< length(Xs) ->
+		    if is_integer(N1), 1 =< N1, N1 =< length(Xs) ->
 			    {[nth(N1, Xs)], St};
 		       true ->
 			    {none, St}
@@ -808,7 +808,7 @@ remote_call_1(erlang, setelement, 3, [_,X, Y], [N|_], L, St) ->
 	    case is_c_int(N) of
 		true ->
 		    N1 = int_val(N),
-		    if N1 >= 1, N1 =< length(Xs) ->
+		    if is_integer(N1), 1 =< N1, N1 =< length(Xs) ->
 			    Xs1 = set_nth(N1, Y, Xs),
 			    {[struct(L, Xs1)], St};
 		       true ->

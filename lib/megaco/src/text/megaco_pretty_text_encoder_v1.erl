@@ -42,18 +42,9 @@
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_message([], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
-    case catch enc_MegacoMessage(MegaMsg) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
-    case catch enc_MegacoMessage(MegaMsg) of
+encode_message(EC, MegaMsg) 
+  when is_list(EC) and is_record(MegaMsg, 'MegacoMessage') ->
+    case (catch enc_MegacoMessage(MegaMsg)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
 	Bin when binary(Bin) ->
@@ -63,7 +54,7 @@ encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
 	    {ok, Bin}
     end;
 encode_message(EC, MegaMsg) 
-  when record(MegaMsg, 'MegacoMessage')  ->
+  when is_record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, EC}};
 encode_message(_EC, _MegaMsg) ->
     {error, bad_megaco_message}.

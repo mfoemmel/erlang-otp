@@ -137,10 +137,13 @@ typedef struct {
     clock_t tms_cstime;
 } SysTimes;
 
-#if defined (__GNUC__)
-typedef long long SysHrTime; /* Not actually needed... */
-#else
 #define HAVE_INT64 1
+#if defined (__GNUC__)
+typedef unsigned long long Uint64;
+typedef long long          Sint64;
+
+typedef long long SysHrTime;
+#else
 typedef ULONGLONG Uint64;
 typedef LONGLONG  Sint64;
 

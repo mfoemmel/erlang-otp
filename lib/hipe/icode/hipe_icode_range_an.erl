@@ -162,7 +162,7 @@ server__update_return_value(Info) ->
 		      {Prev_state, Lookup_return_range}
 		  end,
 		Fixed_return_range = 
-		  if (State > ?FUNCTION_FIXPOINT_DEPTH) ->
+		  if State > ?FUNCTION_FIXPOINT_DEPTH ->
 		      range_widening(Prev_return_range, Return_range, 
 				     Wideningvalues);
 		     true ->
@@ -207,7 +207,7 @@ server__update_call_args(MFA, Args, Info) -> %% TODO Needs comments
       Lookup_state = 0,
       Args_updated = true,
       Insert_args = lists:map(Rename_fun, Args);
-    {value, {Lookup_args, Lookup_state}} ->
+    {value, {Lookup_args, Lookup_state}} when is_integer(Lookup_state) ->
       %% io:format("Lookup_args ~p ~n MFA ~p ~n", [Lookup_args, MFA]),
       Arg_ranges = lists:map(Rename_fun, Args), %% this isn't needed
       Tuple_args_list = lists:zipwith(fun(X, Y) -> [X,Y] end,
@@ -232,18 +232,16 @@ server__update_call_args(MFA, Args, Info) -> %% TODO Needs comments
 	    Union_args
 	end,
       Range_tuple_list = lists:zip(Insert_args, Lookup_args),
-      Args_updated = lists:foldl(
-		       fun({Range1, Range2}, Bool) ->
-			   (Range1 =/= Range2) or Bool
-		       end,
-		       false,
-		       Range_tuple_list)
+      Args_updated = lists:foldl(fun({Range1, Range2}, Bool) ->
+				     (Range1 =/= Range2) or Bool
+				 end,
+				 false,
+				 Range_tuple_list)
   end,
-  New_info=
+  New_info =
     if Args_updated ->
 	%%?not_done_debug("server_update_args break ~n", []),
 	Server ! {self(), {message, {MFA, args}, {Insert_args, Lookup_state + 1}}},
-
 	info_struct__set_current_mfa_not_done(Info, true);
        true ->
 	Info
@@ -366,16 +364,16 @@ get_range_from_annotation(Arg_info, Key) ->
     end,
   range_init(Key, Int_range, Other).
 
-keep_vars(Vars)->
+keep_vars(Vars) ->
   [V || V <- Vars, hipe_icode:is_var(unannotate_var(V))].
 
 dont_keep_vars(Vars)->
   [V || V <- Vars, not hipe_icode:is_var(unannotate_var(V))].
 
-defines(I)->
+defines(I) ->
   keep_vars(hipe_icode:defines(I)).
 
-uses(I)->
+uses(I) ->
   keep_vars(hipe_icode:uses(I)).
 
 consts(I) ->
@@ -842,7 +840,7 @@ analyse_fcall(Key, {M,F,A}, Info, Args) ->
 analyse_bs_get_integer_funs(Size, Flags, true) ->
   Signed = Flags band 4,
   if Signed =:= 0 ->
-      Max = round(math:pow(2, Size)) - 1,
+      Max = 1 bsl Size - 1,
       Min = 0;
      true ->
       Max = posinf,
@@ -1504,12 +1502,12 @@ info_struct__live_vars(#info_struct{liveness=Liveness}, Label) ->
   hipe_icode_liveness:livein(Liveness, Label).
 
 info_struct__increment_label_counter(Info = #info_struct{label_counters = Counters}, Label) ->
-  case gb_trees:lookup(Label, Counters) of
-    none ->
-      NewCounter = 1;
-    {value, Counter} ->
-      NewCounter = Counter + 1
-  end,
+  NewCounter = case gb_trees:lookup(Label, Counters) of
+		 none ->
+		   1;
+		 {value, Counter} when is_integer(Counter) ->
+		   Counter + 1
+	       end,
   New_label_counter_tree = gb_trees:enter(Label, NewCounter, Counters),
   Info#info_struct{label_counters = New_label_counter_tree}.
 
@@ -1517,7 +1515,7 @@ info_struct__counter_from_label(#info_struct{label_counters = Counters}, Label) 
   case gb_trees:lookup(Label, Counters) of
     none ->
       0;
-    {value, Counter} ->
+    {value, Counter} when is_integer(Counter) ->
       Counter
   end.
 
@@ -1539,9 +1537,9 @@ info_struct__set_current_mfa_not_done(Info, Bool) ->
   Info#info_struct{current_mfa_not_done=Bool}.
 
 info_struct__current_mfa_not_done(#info_struct{current_mfa_not_done=NotDone, 
-					   current_mfa = MFA,
-					   server = Server,
-					   is_recursive = Recursive} = Info) ->
+					       current_mfa = MFA,
+					       server = Server,
+					       is_recursive = Recursive} = Info) ->
   NotDone and 
     if Recursive ->
 	Server ! {self(), {load, message, {MFA, return_range}}},
@@ -2136,13 +2134,15 @@ range_rem(Name, Range1, Range2) ->
   Max_range2_leq_zero = inf_geq(0, Max_range2),
   New_min = 
     if Min1_geq_zero ->	0;
-       Max_range2_leq_zero -> Max_range2;
-       true -> inf_inv(Max_range2)
+       Max_range2 =:= 0 -> 0;
+       Max_range2_leq_zero -> inf_add(Max_range2, 1);
+       true -> inf_add(inf_inv(Max_range2), 1)
     end,
   New_max = 
     if Max1_leq_zero -> 0;
-       Max_range2_leq_zero -> inf_inv(Max_range2);
-       true -> Max_range2
+       Max_range2 =:= 0 -> 0;
+       Max_range2_leq_zero -> inf_add(inf_inv(Max_range2), 1);
+       true -> inf_add(Max_range2, -1)
     end,
   range_init(Name, {New_min, New_max}, false).
 
@@ -2176,8 +2176,8 @@ range_bnot(Name, Range) ->
 width({Min, Max}) -> inf_max([width(Min), width(Max)]);
 width(posinf) -> posinf;
 width(neginf) -> posinf;
-width(X) when X >= 0 -> poswidth(X, 0);
-width(X) when X < 0 -> negwidth(X, 0).
+width(X) when is_integer(X), X >= 0 -> poswidth(X, 0);
+width(X) when is_integer(X), X < 0 -> negwidth(X, 0).
 
 poswidth(X, N) ->
   case X < (1 bsl N) of
@@ -2266,11 +2266,11 @@ classify_range(Range) ->
       classify_int_range(Number1, Number2)
   end.
 
-classify_int_range(Number1,_Number2) when Number1 >= 0 ->
+classify_int_range(Number1, _Number2) when Number1 >= 0 ->
   plus_plus;
-classify_int_range(_Number1,Number2) when Number2 < 0 ->
+classify_int_range(_Number1, Number2) when Number2 < 0 ->
   minus_minus;
-classify_int_range(_Number1,_Number2) ->
+classify_int_range(_Number1, _Number2) ->
   minus_plus.
        
 range_bxor(Name, R1, R2) ->
@@ -2481,8 +2481,10 @@ get_smaller_value_1(Value, [Head|Tail]) ->
   end.
 
 range_widening(Old_range, New_range, Wideningvalues) ->
-  New_min_fixed = inf_geq(var_range__min(New_range), var_range__min(Old_range)),
-  New_max_fixed = inf_geq(var_range__max(Old_range), var_range__max(New_range)), 
+  New_min_fixed = inf_geq(var_range__min(New_range),
+			  var_range__min(Old_range)),
+  New_max_fixed = inf_geq(var_range__max(Old_range),
+			  var_range__max(New_range)), 
 
   Old_empty = var_range__is_empty(Old_range),
 
@@ -2508,7 +2510,7 @@ range_widening(Old_range, New_range, Wideningvalues) ->
     end,
   New_other = var_range__other(New_range),
   R = range_init(var_range__name(New_range), Range_range, New_other),
-						%  io:format("Range widening ~p~n", [R]),
+  %% io:format("Range widening ~p~n", [R]),
   R.
 
 %%---------------------------------------------------------------------------
@@ -2520,18 +2522,17 @@ inf_max([H|T])->
   if H =:= empty ->
       inf_max(T);
      true ->
-      lists:foldl(
-	fun(Elem, Max) ->
-	    Geq = inf_geq(Elem, Max),
-	    if not Geq or (Elem =:= empty) ->
-		Max;
-	       true ->
-		Elem
-	    end
-	end,
-	H,
-	T)
-  end. 
+      lists:foldl(fun(Elem, Max) ->
+		      Geq = inf_geq(Elem, Max),
+		      if not Geq or (Elem =:= empty) ->
+			  Max;
+			 true ->
+			  Elem
+		      end
+		  end,
+		  H,
+		  T)
+  end.
 
 inf_min([]) -> empty;
 inf_min([H|T])->
@@ -2552,7 +2553,7 @@ inf_min([H|T])->
 
 inf_abs(posinf) -> posinf;
 inf_abs(neginf) -> posinf;
-inf_abs(Number) when is_integer(Number), (Number < 0) -> - Number;
+inf_abs(Number) when is_integer(Number), Number < 0 -> - Number;
 inf_abs(Number) when is_integer(Number) -> Number.
 
 inf_add(posinf, _Number) -> posinf;
@@ -2574,8 +2575,8 @@ inf_geq(A, B) -> A >= B.
 
 inf_greater_zero(posinf) -> true;
 inf_greater_zero(neginf) -> false;
-inf_greater_zero(Number) when Number >= 0 -> true;
-inf_greater_zero(Number) when Number < 0 -> false.
+inf_greater_zero(Number) when is_integer(Number), Number >= 0 -> true;
+inf_greater_zero(Number) when is_integer(Number), Number < 0 -> false.
 
 inf_div(Number, 0) ->
   Greater = inf_greater_zero(Number),
@@ -2620,11 +2621,11 @@ inf_mult(Number1, Number2) -> Number1 * Number2.
 
 inf_bsl(posinf, _) -> posinf;
 inf_bsl(neginf, _) -> neginf;
-inf_bsl(Number, posinf) when Number >= 0 -> posinf;
+inf_bsl(Number, posinf) when is_integer(Number), Number >= 0 -> posinf;
 inf_bsl(_, posinf) -> neginf;
-inf_bsl(Number, neginf) when Number >= 0 -> 0;
+inf_bsl(Number, neginf) when is_integer(Number), Number >= 0 -> 0;
 inf_bsl(_Number, neginf) -> -1;
-inf_bsl(Number1, Number2) -> 
+inf_bsl(Number1, Number2) when is_integer(Number1), is_integer(Number2) ->
   %% We can not shift left with a number which is not a fixnum. We
   %% don't have enough memory.
   Bits = ?BITS,
@@ -2646,7 +2647,8 @@ range_info_from_info_struct(Info) ->
 	      warn = info_struct__warn(Info)
 	     }.
 
-range_info__def_range(#range_info{out_label_range_trees = Label_tree}, Label, Variable) ->
+range_info__def_range(#range_info{out_label_range_trees = Label_tree},
+		      Label, Variable) ->
   %% io:format("Def: Label ~p, Var ~p ~n", [Label, Variable]),
   Range_tree = gb_trees:get(Label, Label_tree),
   case gb_trees:lookup(Variable, Range_tree) of
@@ -2698,16 +2700,16 @@ perform_ops1(Op,R1) ->
   List = [Op(X) || X <- lists:seq(Min1,Max1)],
   {lists:min(List),lists:max(List)}.
 
-compare(Range,{Min2,Max2},OpName,Input) ->		     
+compare(Range, {Min2, Max2}, OpName, Input) ->		     
   {Min1, Max1} = var_range__range(Range),
-  if is_atom(Min1)  ->
+  if is_atom(Min1) ->
       io:format("Lower Limit overapproximated by infinity for operation ~p~nInput: ~p~n",
 		[OpName,Input]);
-     is_atom(Max1)  ->
+     is_atom(Max1) ->
       io:format("Upper Limit overapproximated by infinity for operation ~p~nInput: ~p~n",
 		[OpName,Input]);
      true ->
-      Diff = Min2-Min1,
+      Diff = Min2 - Min1,
       if Diff > 0 ->
 	  %%io:format("Lower limit overapproximated ~p units for operation ~p~n",
 	  %%	    [Diff,OpName]),
@@ -2718,7 +2720,7 @@ compare(Range,{Min2,Max2},OpName,Input) ->
 	  io:format("ERROR:~nIllegal Range for operation ~p~nReal value ~p with lower limit ~p~nInput: ~p~n",
 		    [OpName,Min2,Min1,Input])
       end,
-      Diff2 = Max1-Max2,
+      Diff2 = Max1 - Max2,
       if Diff2 > 0 ->
 	  %%io:format("Upper limit overapproximated ~p units for operation ~p~n",
 	  %%	    [Diff2,OpName]),
@@ -2731,14 +2733,14 @@ compare(Range,{Min2,Max2},OpName,Input) ->
       end
   end.
 
-one_test({Fun1,Fun2,Name},Range) ->
+one_test({Fun1, Fun2, Name}, Range) ->
   R = range_init(a, Range, false),
-  compare(Fun2(R),perform_ops1(Fun1, R), Name,Range).
+  compare(Fun2(R), perform_ops1(Fun1, R), Name, Range).
 
-two_test({Fun1,Fun2,Name},Range1,Range2) ->
+two_test({Fun1, Fun2, Name}, Range1, Range2) ->
   R1 = range_init(a, Range1, false),
   R2 = range_init(a, Range2, false),
-  compare(Fun2(R1, R2),perform_ops2(Fun1, R1, R2), Name,{Range1,Range2}).
+  compare(Fun2(R1, R2), perform_ops2(Fun1, R1, R2), Name, {Range1, Range2}).
 
 tests('bnot') ->
   {fun(X) -> bnot X end,

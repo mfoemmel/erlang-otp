@@ -20,6 +20,7 @@
 -export([start/0, start/1, start/2, server/1, server/2, history/1, results/1]).
 -export([whereis_evaluator/0, whereis_evaluator/1]).
 -export([start_restricted/1, stop_restricted/0]).
+-export([local_allowed/3, non_local_allowed/3]).
 
 -define(LINEMAX, 30).
 -define(DEF_HISTORY, 20).
@@ -28,6 +29,18 @@
 -define(RECORDS, shell_records).
 
 -define(MAXSIZE_HEAPBINARY, 64).
+
+% When used as the fallback restricted shell callback module...
+local_allowed(q,[],State) ->
+    {true,State};
+local_allowed(_,_,State) ->
+    {false,State}.
+
+non_local_allowed({init,stop},[],State) ->
+    {true,State};
+non_local_allowed(_,_,State) ->
+    {false,State}.
+
 
 start() ->
     start(false, false).
@@ -53,7 +66,7 @@ whereis_evaluator() ->
 	User ->
 	    %% get user_drv pid from group, or shell pid from user
 	    case group:interfaces(User) of
-		[] ->				% old- or noshell		    
+		[] ->				% old- or noshell
 		    case user:interfaces(User) of
 			[] ->
 			    undefined;
@@ -82,7 +95,7 @@ whereis_evaluator(Shell) ->
     case process_info(Shell, dictionary) of
 	{dictionary,Dict} ->
 	    case lists:keysearch(evaluator, 1, Dict) of
-		{value,{_,Eval}} when pid(Eval) ->
+		{value,{_,Eval}} when is_pid(Eval) ->
 		    Eval;
 		_ ->
 		    undefined
@@ -97,13 +110,16 @@ whereis_evaluator(Shell) ->
 start_restricted(RShMod) when is_atom(RShMod) ->
     case code:ensure_loaded(RShMod) of
 	{module,RShMod} -> 
-	    ok;
+	    application:set_env(stdlib, restricted_shell, RShMod),
+	    exit('restricted shell starts now');
 	{error,What} ->
-	    io:fwrite("Warning! Restricted shell module ~w not found: ~p~n", 
-		      [RShMod,What])
-    end,
-    application:set_env(stdlib, restricted_shell, RShMod),
-    exit('restricted shell starts now').
+	    error_logger:error_report(
+	      lists:flatten(
+		io_lib:format(
+		  "Restricted shell module ~w not found: ~p~n", 
+		  [RShMod,What]))),
+	    {error,What}
+    end.
 
 stop_restricted() ->
     application:unset_env(stdlib, restricted_shell),
@@ -193,14 +209,13 @@ server(StartSync) ->
 
     case RShErr of
 	undefined       -> ok;
-	{RShMod2,What2} -> io:fwrite("Warning! Restricted shell module ~w not found: ~p~n", 
-				     [RShMod2,What2])
+	{RShMod2,What2} -> io:fwrite("Warning! Restricted shell module ~w not found: ~p.~nOnly the commands q() and init:stop() will be allowed!~n", 
+				     [RShMod2,What2]),
+			   application:set_env(stdlib, restricted_shell, 
+					       ?MODULE)
     end,
 
-    check_env(shell_history_length, "shell history length"),
-    check_env(shell_saved_results, "max number of saved results"),
-    History = get_env(shell_history_length, ?DEF_HISTORY),
-    Results = get_env(shell_saved_results, ?DEF_RESULTS),
+    {History,Results} = check_and_get_history_and_results(),
     server_loop(0, start_eval(Bs, RT, []), Bs, RT, [], History, Results).
 
 server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
@@ -211,9 +226,7 @@ server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
             case expand_hist(Es0, N) of
                 {ok,Es} ->
                     {V,Eval,Bs,Ds} = shell_cmd(Es, Eval0, Bs0, RT, Ds0),
-                    History = get_env(shell_history_length, ?DEF_HISTORY),
-                    Results = min(History,
-                                  get_env(shell_saved_results,?DEF_RESULTS)),
+                    {History,Results} = check_and_get_history_and_results(),
                     add_cmd(N, Es, V),
                     HB1 = del_cmd(command, N - History, N - History0, false),
                     HB = del_cmd(result, N - Results, N - Results0, HB1),
@@ -423,9 +436,6 @@ shell_cmd(Es, Eval, Bs, RT, Ds) ->
 shell_rep(Ev, Bs0, RT, Ds0) ->
     receive
 	{shell_rep,Ev,{value,V,Bs,Ds}} ->
-            VS = io_lib_pretty:print(V, ?LINEMAX, record_print_fun(RT)),
-            io:put_chars(VS),
-            io:nl(),
 	    {V,Ev,Bs,Ds};
         {shell_rep,Ev,{command_error,{Line,M,Error}}} -> 
 	    io:fwrite("** ~w: ~s **\n", [Line,M:format_error(Error)]),
@@ -479,9 +489,10 @@ evaluator(Shell, Bs, RT, Ds) ->
 eval_loop(Shell, Bs0, RT) ->
     receive
 	{shell_cmd,Shell,{eval,Es}} ->
-            Ef = none,
+            Ef = {value, 
+                  fun(MForFun, As) -> apply_fun(MForFun, As, Shell) end},
             Lf = local_func_handler(Shell, RT, Ef),
-            {R,Bs2} = exprs(Es, Bs0, RT, Lf, none),
+            {R,Bs2} = exprs(Es, Bs0, RT, Lf, Ef),
 	    Shell ! {shell_rep,self(),R},
 	    eval_loop(Shell, Bs2, RT)
     end.
@@ -502,14 +513,24 @@ exprs(Es, Bs0, RT, Lf, Ef) ->
 exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
     UsedRecords = used_record_defs(E0, RT),
     RBs = record_bindings(UsedRecords, Bs1),
-    case erl_eval:check_command(prep_check([E0]), RBs) of
+    case check_command(prep_check([E0]), RBs) of
         ok ->
             E1 = expand_records(UsedRecords, E0),
-            {value,V,Bs2} = erl_eval:expr(E1, Bs1, Lf, Ef),
+            {value,V0,Bs2} = expr(E1, Bs1, Lf, Ef),
             Bs = orddict:from_list([VV || {X,_}=VV <- erl_eval:bindings(Bs2),
                                           not is_expand_variable(X)]),
             if
                 Es =:= [] ->
+                    VS = io_lib_pretty:print(V0, ?LINEMAX, 
+                                             record_print_fun(RT)),
+                    io:put_chars(VS),
+                    io:nl(),
+                    %% Don't send the result back if it is known to be
+                    %% thrown away anyway.
+                    V = case get_history_and_results() of
+                            {_, 0} -> ignored;
+                            _ -> V0
+                        end,
                     {{value,V,Bs,get()},Bs};
                 true -> 
                     exprs(Es, Bs, RT, Lf, Ef, Bs0)
@@ -576,34 +597,23 @@ used_records(E) ->
 
 restrict_handlers(RShMod, Shell, RT) ->
     { fun(F,As,Binds) -> 
-	      local_func_handler(F, As, RShMod, Binds, Shell, RT) 
+	      local_allowed(F, As, RShMod, Binds, Shell, RT) 
       end,
       fun(MF,As) -> 
 	      non_local_allowed(MF, As, RShMod, Shell) 
       end }.
 
-local_func_handler(F, As, RShMod, Bs, Shell, RT) ->
-    case local_allowed(F, As, RShMod, Bs, Shell, RT) of
-	{not_restricted,Res} ->
-	    Res;
-	{AsEv,Bs1} ->
-	    %% The arguments have already been evaluated but local_func/7
-	    %% expects them on abstract form. We can't send the original 
-	    %% (unevaluated) arguments since reevaluation may give 
-	    %% us unexpected results, so we use erl_parse:abstract/1.
-            {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
-	    AsAbs = lists:map(fun(A) -> erl_parse:abstract(A) end, AsEv),
-	    local_func(F, AsAbs, Bs1, Shell, RT, {eval,LFH}, {value,NLFH})
-    end.
-
 local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
     {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
-    case not_restricted(F, As) of
+    case not_restricted(F, As) of % Not restricted is the same as builtin. 
+				  % variable and record manipulations local 
+	                          % to the shell process. Those are never
+	                          % restricted.
 	true ->
 	    Res = local_func(F, As, Bs, Shell, RT, {eval,LFH}, {value,NLFH}),
-	    {not_restricted,Res};
+	    Res;
 	false ->
-            {AsEv,Bs1} = erl_eval:expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
+            {AsEv,Bs1} = expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
 	    case RShMod:local_allowed(F, AsEv, {get(restricted_shell_state),
 						get(restricted_expr_state)}) of
 		{Result,{RShShSt,RShExprSt}} ->
@@ -612,10 +622,11 @@ local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
 		    if not Result -> 
 			    shell_req(Shell, {update_dict,get()}),
 			    exit({disallowed,{F,AsEv}});
-		       true -> 
-			    {AsEv,Bs1}
+		       true -> % This is never a builtin, 
+                               % those are handled above.
+			    non_builtin_local_func(F,AsEv,Bs1)
 		    end;
-		Unexpected ->			% the user didn't read the manual
+		Unexpected ->  % The user supplied non conforming module
 		    exit({bad_return_value,
 			  {RShMod,local_allowed},Unexpected})
 	    end
@@ -632,9 +643,9 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
 		    shell_req(Shell, {update_dict,get()}),
 		    exit({disallowed,{MForFun,As}});
                 {redirect, NewMForFun, NewAs} ->
-                    apply(NewMForFun, NewAs);
+                    apply_fun(NewMForFun, NewAs, Shell);
                 _ -> 
-		    apply(MForFun, As)
+		    apply_fun(MForFun, As, Shell)
 	    end;
 	Unexpected ->				% the user didn't read the manual
 	    exit({bad_return_value,
@@ -642,6 +653,7 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
     end.
 
 %% The commands implemented in shell should not be checked if allowed
+%% This *has* to correspond to the function local_func/7!
 %% (especially true for f/1, the argument must not be evaluated).
 not_restricted(f, []) ->
     true;
@@ -688,6 +700,18 @@ not_restricted(rr, [_,_,_]) ->
 not_restricted(_, _) ->
     false.
 
+%% When erlang:garbage_collect() is called from the shell,
+%% the shell process process that spawned the evaluating 
+%% process is garbage collected as well.
+%% To garbage collect the evaluating process only the command
+%% garbage_collect(self()). can be used.
+apply_fun({erlang,garbage_collect}, [], Shell) ->
+    erlang:garbage_collect(Shell),
+    catch erlang:garbage_collect(whereis(user)),
+    erlang:garbage_collect();
+apply_fun(MForFun, As, _Shell) ->
+    apply(MForFun, As).
+
 prep_check({call,Line,{atom,_,f},[{var,_,_Name}]}) ->
     %% Do not emit a warning for f(V) when V is unbound.
     {atom,Line,ok};
@@ -730,6 +754,11 @@ init_dict([]) -> true.
 %% local_func(Function, Args, Bindings, Shell, RecordTable, 
 %%            LocalFuncHandler, ExternalFuncHandler) -> {value,Val,Bs}
 %%  Evaluate local functions, including shell commands.
+%%
+%% Note that the predicate not_restricted/2 has to correspond to what's 
+%% handled internally - it should return 'true' for all local functions 
+%% handled in this module (i.e. those that are not eventually handled by 
+%% non_builtin_local_func/3 (user_default/shell_default).
 
 local_func(h, [], Bs, Shell, RT, _Lf, _Ef) ->
     Cs = shell_req(Shell, get_cmd),
@@ -769,7 +798,7 @@ local_func(rf, [], Bs, _Shell, RT, _Lf, _Ef) ->
     true = ets:delete_all_objects(RT),
     {value,initiate_records(Bs, RT),Bs};
 local_func(rf, [A], Bs0, _Shell, RT, Lf, Ef) ->
-    {[Recs],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {[Recs],Bs} = expr_list([A], Bs0, Lf, Ef),
     if '_' =:= Recs ->
             true = ets:delete_all_objects(RT);
        true -> 
@@ -780,21 +809,21 @@ local_func(rf, [A], Bs0, _Shell, RT, Lf, Ef) ->
 local_func(rl, [], Bs, _Shell, RT, _Lf, _Ef) ->
     {value,list_records(ets:tab2list(RT)),Bs};
 local_func(rl, [A], Bs0, _Shell, RT, Lf, Ef) ->
-    {[Recs],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {[Recs],Bs} = expr_list([A], Bs0, Lf, Ef),
     {value,list_records(record_defs(RT, listify(Recs))),Bs};
 local_func(rp, [A], Bs0, _Shell, RT, Lf, Ef) ->
-    {[V],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {[V],Bs} = expr_list([A], Bs0, Lf, Ef),
     io:put_chars(io_lib_pretty:print(V, record_print_fun(RT))),
     io:nl(),
     {value,ok,Bs};
 local_func(rr, [A], Bs0, _Shell, RT, Lf, Ef) ->
-    {[File],Bs} = erl_eval:expr_list([A], Bs0, Lf, Ef),
+    {[File],Bs} = expr_list([A], Bs0, Lf, Ef),
     {value,read_and_add_records(File, '_', [], Bs, RT),Bs};
 local_func(rr, [_,_]=As0, Bs0, _Shell, RT, Lf, Ef) ->
-    {[File,Sel],Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
+    {[File,Sel],Bs} = expr_list(As0, Bs0, Lf, Ef),
     {value,read_and_add_records(File, Sel, [], Bs, RT),Bs};
 local_func(rr, [_,_,_]=As0, Bs0, _Shell, RT, Lf, Ef) ->
-    {[File,Sel,Options],Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
+    {[File,Sel,Options],Bs} = expr_list(As0, Bs0, Lf, Ef),
     {value,read_and_add_records(File, Sel, Options, Bs, RT),Bs};
 local_func(which, [{atom,_,M}], Bs, _Shell, _RT, _Lf, _Ef) ->
     case erl_eval:binding({module,M}, Bs) of
@@ -849,13 +878,17 @@ local_func(exit, [], _Bs, Shell, _RT, _Lf, _Ef) ->
     shell_req(Shell, exit),			%This terminates us
     exit(normal);
 local_func(F, As0, Bs0, _Shell, _RT, Lf, Ef) when is_atom(F) ->
-    {As,Bs} = erl_eval:expr_list(As0, Bs0, Lf, Ef),
+    {As,Bs} = expr_list(As0, Bs0, Lf, Ef),
+    non_builtin_local_func(F,As,Bs).
+
+non_builtin_local_func(F,As,Bs) ->
     case erlang:function_exported(user_default, F, length(As)) of
 	true ->
             {eval,{user_default,F},As,Bs};
 	false ->
             {eval,{shell_default,F},As,Bs}
     end.
+    
 
 local_func_handler(Shell, RT, Ef) ->
     H = fun(Lf) -> 
@@ -929,7 +962,7 @@ read_records(File, Selected, Options) ->
 add_records(RAs, Bs0, RT) ->
     Recs = [{Name,D} || {attribute,_,_,{Name,_}}=D <- RAs],
     Bs1 = record_bindings(Recs, Bs0),
-    case erl_eval:check_command([], Bs1) of
+    case check_command([], Bs1) of
         {error,{_Line,M,ErrDesc}} ->
             %% A source file that has not been compiled.
             ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
@@ -943,6 +976,18 @@ listify(L) when is_list(L) ->
     L;
 listify(E) ->
     [E].
+
+check_command(Es, Bs) ->
+    erl_eval:check_command(Es, strip_bindings(Bs)).
+
+expr(E, Bs, Lf, Ef) ->
+    erl_eval:expr(E, strip_bindings(Bs), Lf, Ef).
+
+expr_list(Es, Bs, Lf, Ef) ->
+    erl_eval:expr_list(Es, strip_bindings(Bs), Lf, Ef).
+
+strip_bindings(Bs) ->
+    Bs -- [B || {{module,_},_}=B <- Bs].
 
 %% Note that a sequence number is used here to make sure that if a
 %% record is used by another record, then the first record is parsed
@@ -1070,7 +1115,7 @@ pre_defs([_|Opts]) ->
 pre_defs([]) -> [].
 
 inc_paths(Opts) ->
-    [P || {i,P} <- Opts, list(P)].
+    [P || {i,P} <- Opts, is_list(P)].
 
 record_attrs(Forms) ->
     [A || A = {attribute,_,record,_D} <- Forms].
@@ -1147,8 +1192,14 @@ record_defs(RT, Names) ->
                   end, Names).
 
 expand_value(E) ->
-    substitute_v1(fun({value,_CommandN,V}) -> erl_parse:abstract(V) 
+    substitute_v1(fun({value,CommandN,V}) -> try_abstract(V, CommandN)
                   end, E).
+
+%% There is no abstract representation of funs.
+try_abstract(V, CommandN) ->
+    try erl_parse:abstract(V)
+    catch _:_ -> {call,0,{atom,0,v},[{integer,0,CommandN}]}
+    end.
 
 %% Rather than listing possibly huge results the calls to v/1 are shown.
 prep_list_commands(E) ->
@@ -1165,6 +1216,16 @@ substitute_v1(F, [E | Es]) ->
 substitute_v1(_F, E) -> 
     E.
 
+check_and_get_history_and_results() ->
+    check_env(shell_history_length, "shell history length"),
+    check_env(shell_saved_results, "max number of saved results"),
+    get_history_and_results().
+
+get_history_and_results() ->
+    History = get_env(shell_history_length, ?DEF_HISTORY),
+    Results = get_env(shell_saved_results, ?DEF_RESULTS),
+    {History, min(Results, History)}.
+
 min(X, Y) when X < Y ->
     X;
 min(_X, Y) ->
@@ -1172,7 +1233,7 @@ min(_X, Y) ->
 
 get_env(V, Def) ->
     case application:get_env(stdlib, V) of
-	{ok, Val} when is_integer(Val) ->
+	{ok, Val} when is_integer(Val), Val >= 0 ->
 	    Val;
 	_ ->
 	    Def
@@ -1182,7 +1243,7 @@ check_env(V, Name) ->
     case application:get_env(stdlib, V) of
 	undefined ->
 	    ok;
-	{ok, Val} when is_integer(Val) ->
+	{ok, Val} when is_integer(Val), Val >= 0 ->
 	    ok;
 	{ok, Val} ->
 	    Txt = io_lib:fwrite("Invalid ~s ~p~n", [Name, Val]),

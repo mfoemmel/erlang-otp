@@ -42,7 +42,8 @@
 
 	 start_transport/2,
 	 loop_transport/1, % Internal only
-	 send_message/2
+	 send_message/2,
+	 resend_message/2
 	]).
 
 -include("megaco_test_lib.hrl").
@@ -185,6 +186,22 @@ send_message(Handles, Bin) ->
     ?LOG("send_message -> entry with"
 	 "~n   Handles: ~p", [Handles]),    
     case megaco_tc_controller:lookup(allow_send_message) of
+	{value, ok} ->
+	    do_send_message(Handles, Bin);
+	{value, {fail, Reason}} ->
+	    {error, Reason};
+	{value, {cancel, Reason}} ->
+	    {cancel, Reason};
+	{value, {skip, Result}} ->
+	    Result;
+	false ->
+	    do_send_message(Handles, Bin)
+    end.
+
+resend_message(Handles, Bin) ->
+    ?LOG("resend_message -> entry with"
+	 "~n   Handles: ~p", [Handles]),    
+    case megaco_tc_controller:lookup(allow_resend_message) of
 	{value, ok} ->
 	    do_send_message(Handles, Bin);
 	{value, {fail, Reason}} ->

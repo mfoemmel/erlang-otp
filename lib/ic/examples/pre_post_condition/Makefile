@@ -83,10 +83,12 @@ TARGET_FILES = \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
+ERL_LOCAL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
+ERL_COMPILE_FLAGS += \
+	$(ERL_LOCAL_FLAGS) \
+	-pa $(ERL_TOP)/lib/orber -I$(ERL_TOP)/lib/orber
 YRL_FLAGS = 
 
 
@@ -105,7 +107,7 @@ test: $(TEST_TARGET_FILES)
 
 
 $(GEN_ERL_MODULES:%=%.erl) $(GEN_HRL_FILES): ex.idl
-	erlc $(ERL_FLAGS) +'{precond,{tracer,pre}}' \
+	erlc $(ERL_LOCAL_FLAGS) +'{precond,{tracer,pre}}' \
 		+'{{postcond,"m::i::f"},{tracer,post}}' ex.idl
 
 # ----------------------------------------------------

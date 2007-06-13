@@ -180,7 +180,7 @@ await_started(MonRef, Pid) ->
 
     after 10000 ->
 	    i("await_started ~p: timeout: "
-	      "~n~p", [Pid, process_info(Pid)]),
+	      "~n~p", [Pid, (catch process_info(Pid))]),
 	    exit({error, timeout})
     end.
 

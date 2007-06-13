@@ -115,7 +115,7 @@ write_head1(Type, {{Y,Mo,D},{H,Mi,S}}, _) ->
     io_lib:format("~n=~s==== ~p-~s-~p::~s:~s:~s ===~n",
 		  [Type,D,month(Mo),Y,t(H),t(Mi),t(S)]).
 
-t(X) when integer(X) ->
+t(X) when is_integer(X) ->
     t1(integer_to_list(X));
 t(_) ->
     "".

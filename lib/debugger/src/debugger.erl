@@ -77,7 +77,7 @@ start() ->
     dbg_ui_mon:start(global, default).
 start(Mode) when Mode==local; Mode==global ->
     dbg_ui_mon:start(Mode, default);
-start(SFile) when list(SFile) ->
+start(SFile) when is_list(SFile) ->
     dbg_ui_mon:start(global, SFile).
 start(Mode, SFile) ->
     dbg_ui_mon:start(Mode, SFile).

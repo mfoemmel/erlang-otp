@@ -151,7 +151,7 @@ get_node_lists(CurrNode) ->
 %% which definitely is in the list. (node() may have gone distributed in the 
 %% meantime, but it *IS* in the list!)  :-)
 
-get_node_mark_index(CurrNode, [H | T], Acc) when CurrNode /= H ->
+get_node_mark_index(CurrNode, [H | T], Acc) when CurrNode =/= H ->
     get_node_mark_index(CurrNode, T, Acc + 1);
 get_node_mark_index(CurrNode, [CurrNode | _], Acc) ->
     Acc.  %% Acc tells the index of the current head.  :-)
@@ -160,14 +160,14 @@ get_node_mark_index(CurrNode, [CurrNode | _], Acc) ->
 
 
 
-check_selected_node('nonode@nohost', _OldNode, _WinCreated) when node() == 'nonode@nohost' ->
+check_selected_node('nonode@nohost', _OldNode, _WinCreated) when node() =:= 'nonode@nohost' ->
        %% Not distributed, OK!
     'nonode@nohost';
-check_selected_node(_Node, _OldNode, WinCreated) when node() == 'nonode@nohost' ->
+check_selected_node(_Node, _OldNode, WinCreated) when node() =:= 'nonode@nohost' ->
        %% No longer distributed, but previously was!
     handle_error(undistributed),
     update_node_listbox('nonode@nohost', WinCreated);
-check_selected_node(Node, _OldNode, _WinCreated) when Node == node() ->
+check_selected_node(Node, _OldNode, _WinCreated) when Node =:= node() ->
        %% We are distributed, but on 
        %% our own node! Since we 
        % still are running, the node 
@@ -205,7 +205,7 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    case lists:member(CurrNode, available_nodes()) of
 		true ->
 		    done;
-		false when node() == 'nonode@nohost', CurrNode /= 'nonode@nohost' ->
+		false when node() =:= 'nonode@nohost', CurrNode =/= 'nonode@nohost' ->
 		    handle_error(undistributed);
 		false ->
 		    handle_error(nodedown)
@@ -221,9 +221,9 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    case lists:member(CurrNode, available_nodes()) of
 		true ->
 		    done;
-		false when node() == 'nonode@nohost', CurrNode /= 'nonode@nohost' ->
+		false when node() =:= 'nonode@nohost', CurrNode =/= 'nonode@nohost' ->
 		    handle_error(undistributed);
-		false when CurrNode == 'nonode@nohost' ->
+		false when CurrNode =:= 'nonode@nohost' ->
 		    net_kernel:monitor_nodes(true),
 		    handle_error(distributed);
 		false ->
@@ -245,11 +245,11 @@ loop(Pid, CurrNode, HomeNode, WinCreated) ->
 	    loop(Pid, CurrNode, HomeNode, WinCreated);
 
 
-	show_window when WinCreated == true->
+	show_window when WinCreated->
 	    gs:config(win, [raise]),
 	    loop(Pid, CurrNode, HomeNode, WinCreated);
 	
-	show_window when WinCreated == false ->
+	show_window when not WinCreated ->
 	    init_window(CurrNode, Pid),
 	    loop(Pid, CurrNode, HomeNode, true);
 

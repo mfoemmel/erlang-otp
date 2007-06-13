@@ -34,7 +34,7 @@
 #endif
 #include "hipe_signal.h"
 
-#if __GLIBC__ == 2 && (__GLIBC_MINOR__ >= 3 && __GLIBC_MINOR__ <= 5)
+#if __GLIBC__ == 2 && (__GLIBC_MINOR__ >= 3 && __GLIBC_MINOR__ <= 6)
 /* See comment below for glibc 2.2. */
 #ifndef __USE_GNU
 #define __USE_GNU		/* to un-hide RTLD_NEXT */

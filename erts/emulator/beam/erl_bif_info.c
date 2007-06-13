@@ -645,47 +645,77 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 	ERTS_SMP_MSGQ_MV_INQ2PRIVQ(rp);
 	n = rp->msg.len;
 
-	if (n == 0) {
+	if (n == 0 || rp->trace_flags & F_SENSITIVE) {
 	    hp = HAlloc(BIF_P, 3);
 	} else {
-	    Eterm* ma = (Eterm *) erts_alloc(ERTS_ALC_T_TMP, n*sizeof(Eterm));
-	    int i;
+	    struct {
+		Uint copy_struct_size;
+		ErlMessage* msgp;
+	    } *mq = erts_alloc(ERTS_ALC_T_TMP, n*sizeof(*mq));
+	    Sint i = 0;
+	    Uint heap_need = 3;
+#ifdef DEBUG
+	    Eterm *hp_end;
+#endif
 
-	    i = 0;
-	    for (mp = rp->msg.first; mp != NULL; mp = mp->next) {
+	    for (mp = rp->msg.first; mp; mp = mp->next) {
+		heap_need += 2;
+		mq[i].msgp = mp;
+		if (rp != BIF_P) {
+		    Eterm msg = ERL_MESSAGE_TERM(mq[i].msgp);
+		    mq[i].copy_struct_size = (is_immed(msg)
 #ifdef HYBRID
-		/*
-		 * Hybrid: Almost all messages already are in the message area.
-		 */
-		if (NO_COPY(ERL_MESSAGE_TERM(mp)) || rp == BIF_P) {
-		    /* Constant, already in message area, or same process. */
-		    ma[i] = ERL_MESSAGE_TERM(mp);
-		} else {
-		    ma[i] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
-		}
-#else
-		/*
-		 * We must copy the message if it belongs to another process.
-		 */
-		if (rp == BIF_P) {
-#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
-		    if (mp->bp) {
-			erts_move_msg_mbuf_to_proc_mbufs(BIF_P, mp);
-		    }
+					      || NO_COPY(msg)
 #endif
-		    ma[i] = ERL_MESSAGE_TERM(mp);
-		} else {
-		    ma[i] = copy_object(ERL_MESSAGE_TERM(mp), BIF_P);
+					      ? 0
+					      : size_object(msg));
+		    heap_need += mq[i].copy_struct_size;
 		}
+		else {
+		    mq[i].copy_struct_size = 0;
+#if defined(HEAP_FRAG_ELIM_TEST)
+		    if (mp->bp)
+			heap_need += mp->bp->size;
 #endif
+		}
 		i++;
 	    }
-	    hp = HAlloc(BIF_P, 3+2*n);
-	    for (i = n-1; i >= 0; i--) {
-		res = CONS(hp, ma[i], res);
+
+	    hp = HAlloc(BIF_P, heap_need);
+#ifdef DEBUG
+	    hp_end = hp + heap_need - 3;
+	    ASSERT(i == n);
+#endif
+	    for (i--; i >= 0; i--) {
+		Eterm msg = ERL_MESSAGE_TERM(mq[i].msgp);
+		if (rp != BIF_P) {
+		    if (mq[i].copy_struct_size)
+			msg = copy_struct(msg,
+					  mq[i].copy_struct_size,
+					  &hp,
+					  &MSO(BIF_P));
+		}
+		else {
+#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
+		    if (mq[i].msgp->bp) {
+#if defined(HEAP_FRAG_ELIM_TEST)
+			erts_move_msg_mbuf_to_heap(&hp,
+						   &MSO(BIF_P),
+						   mq[i].msgp);
+			msg = ERL_MESSAGE_TERM(mq[i].msgp);
+#elif defined(ERTS_SMP)
+			erts_move_msg_mbuf_to_proc_mbufs(BIF_P, mq[i].msgp);
+#endif
+			ASSERT(!mq[i].msgp->bp);
+		    }
+#endif
+		}
+		    
+		res = CONS(hp, msg, res);
 		hp += 2;
 	    }
-	    erts_free(ERTS_ALC_T_TMP, (void *) ma);
+	    ASSERT(hp == hp_end);
+	    erts_free(ERTS_ALC_T_TMP, mq);
 	}
     } else if (item == am_message_queue_len) {
 	hp = HAlloc(BIF_P, 3);
@@ -761,7 +791,11 @@ process_info_aux(Process *BIF_P, Process *rp, Eterm rpid, Eterm item)
 	}
 	DESTROY_MONITOR_INFOS(mic);
     } else if (item == am_dictionary) {
-	res = erts_dictionary_copy(BIF_P, rp->dictionary);
+	if (rp->trace_flags & F_SENSITIVE) {
+	    res = NIL;
+	} else {
+	    res = erts_dictionary_copy(BIF_P, rp->dictionary);
+	}
 	hp = HAlloc(BIF_P, 3);
     } else if (item == am_DollarDictionary) {
 	res = erts_dictionary_copy(BIF_P, rp->debug_dictionary);

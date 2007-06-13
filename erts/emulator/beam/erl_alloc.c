@@ -643,14 +643,18 @@ static Uint
 get_kb_value(char *param_end, char** argv, int* ip)
 {
     Sint tmp;
+    Uint max = ((~((Uint) 0))/1024) + 1;
     char *rest;
     char *param = argv[*ip]+1;
     char *value = get_value(param_end, argv, ip);
     errno = 0;
     tmp = (Sint) strtol(value, &rest, 10);
-    if (errno != 0 || rest == value || tmp < 0 || tmp*1024 < tmp)
+    if (errno != 0 || rest == value || tmp < 0 || max < ((Uint) tmp))
 	bad_value(param, param_end, value);
-    return (Uint) tmp*1024;
+    if (max == (Uint) tmp)
+	return ~((Uint) 0);
+    else
+	return ((Uint) tmp)*1024;
 }
 
 static Uint
@@ -2314,7 +2318,7 @@ unsigned long erts_alc_test(unsigned long op,
 	    if (ethr_thr_create(tid,
 				(void * (*)(void *)) a1,
 				(void *) a2,
-				0) != 0)
+				NULL) != 0)
 		ERTS_ALC_TEST_ABORT;
 	    return (unsigned long) tid;
 	}

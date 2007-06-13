@@ -52,7 +52,7 @@
 		child_type,
 		modules = []}).
 
--define(is_simple(State), State#state.strategy == simple_one_for_one).
+-define(is_simple(State), State#state.strategy =:= simple_one_for_one).
 
 behaviour_info(callbacks) ->
     [{init,1}];
@@ -97,7 +97,7 @@ which_children(Supervisor) ->
 call(Supervisor, Req) ->
     gen_server:call(Supervisor, Req, infinity).
 
-check_childspecs(ChildSpecs) when list(ChildSpecs) ->
+check_childspecs(ChildSpecs) when is_list(ChildSpecs) ->
     case check_startspec(ChildSpecs) of
 	{ok, _} -> ok;
 	Error -> {error, Error}
@@ -180,11 +180,11 @@ start_children([], NChildren, _SupName) ->
 do_start_child(SupName, Child) ->
     #child{mfa = {M, F, A}} = Child,
     case catch apply(M, F, A) of
-	{ok, Pid} when pid(Pid) ->
+	{ok, Pid} when is_pid(Pid) ->
 	    NChild = Child#child{pid = Pid},
 	    report_progress(NChild, SupName),
 	    {ok, Pid};
-	{ok, Pid, Extra} when pid(Pid) ->
+	{ok, Pid, Extra} when is_pid(Pid) ->
 	    NChild = Child#child{pid = Pid},
 	    report_progress(NChild, SupName),
 	    {ok, Pid, Extra};
@@ -196,9 +196,9 @@ do_start_child(SupName, Child) ->
 
 do_start_child_i(M, F, A) ->
     case catch apply(M, F, A) of
-	{ok, Pid} when pid(Pid) ->
+	{ok, Pid} when is_pid(Pid) ->
 	    {ok, Pid};
-	{ok, Pid, Extra} when pid(Pid) ->
+	{ok, Pid, Extra} when is_pid(Pid) ->
 	    {ok, Pid, Extra};
 	ignore ->
 	    {ok, undefined};
@@ -246,7 +246,7 @@ handle_call({start_child, ChildSpec}, _From, State) ->
 
 handle_call({restart_child, Name}, _From, State) ->
     case get_child(Name, State) of
-	{value, Child} when Child#child.pid == undefined ->
+	{value, Child} when Child#child.pid =:= undefined ->
 	    case do_start_child(State#state.name, Child) of
 		{ok, Pid} ->
 		    NState = replace_child(Child#child{pid = Pid}, State),
@@ -265,7 +265,7 @@ handle_call({restart_child, Name}, _From, State) ->
 
 handle_call({delete_child, Name}, _From, State) ->
     case get_child(Name, State) of
-	{value, Child} when Child#child.pid == undefined ->
+	{value, Child} when Child#child.pid =:= undefined ->
 	    NState = remove_child(Child, State),
 	    {reply, ok, NState};
 	{value, _} ->
@@ -339,8 +339,7 @@ terminate(_Reason, State) ->
 %%       does not have any side effects.
 %%
 code_change(_, State, _) ->
-    case apply(State#state.module, init,
-	       [State#state.args]) of
+    case (State#state.module):init(State#state.args) of
 	{ok, {SupFlags, StartSpec}} ->
 	    case catch check_flags(SupFlags) of
 		ok ->
@@ -396,7 +395,7 @@ update_childspec1([], Children, KeepOld) ->
     lists:reverse(Children ++ KeepOld).  
 
 update_chsp(OldCh, Children) ->
-    case lists:map(fun(Ch) when OldCh#child.name == Ch#child.name ->
+    case lists:map(fun(Ch) when OldCh#child.name =:= Ch#child.name ->
 			   Ch#child{pid = OldCh#child.pid};
 		      (Ch) ->
 			   Ch
@@ -429,7 +428,7 @@ handle_start_child(Child, State) ->
 		{error, What} ->
 		    {{error, {What, Child}}, State}
 	    end;
-	{value, OldChild} when OldChild#child.pid /= undefined ->
+	{value, OldChild} when OldChild#child.pid =/= undefined ->
 	    {{error, {already_started, OldChild#child.pid}}, State};
 	{value, _OldChild} ->
 	    {{error, already_present}, State}
@@ -549,7 +548,7 @@ terminate_children([Child | Children], SupName, Res) ->
 terminate_children([], _SupName, Res) ->
     Res.
 
-do_terminate(Child, SupName) when Child#child.pid /= undefined ->
+do_terminate(Child, SupName) when Child#child.pid =/= undefined ->
     case shutdown(Child#child.pid,
 		  Child#child.shutdown) of
 	ok ->
@@ -646,9 +645,9 @@ state_del_child(Child, State) ->
     NChildren = del_child(Child#child.name, State#state.children),
     State#state{children = NChildren}.
 
-del_child(Name, [Ch|Chs]) when Ch#child.name == Name ->
+del_child(Name, [Ch|Chs]) when Ch#child.name =:= Name ->
     [Ch#child{pid = undefined} | Chs];
-del_child(Pid, [Ch|Chs]) when Ch#child.pid == Pid ->
+del_child(Pid, [Ch|Chs]) when Ch#child.pid =:= Pid ->
     [Ch#child{pid = undefined} | Chs];
 del_child(Name, [Ch|Chs]) ->
     [Ch|del_child(Name, Chs)];
@@ -660,9 +659,9 @@ del_child(_, []) ->
 split_child(Name, Chs) ->
     split_child(Name, Chs, []).
 
-split_child(Name, [Ch|Chs], After) when Ch#child.name == Name ->
+split_child(Name, [Ch|Chs], After) when Ch#child.name =:= Name ->
     {lists:reverse([Ch#child{pid = undefined} | After]), Chs};
-split_child(Pid, [Ch|Chs], After) when Ch#child.pid == Pid ->
+split_child(Pid, [Ch|Chs], After) when Ch#child.pid =:= Pid ->
     {lists:reverse([Ch#child{pid = undefined} | After]), Chs};
 split_child(Name, [Ch|Chs], After) ->
     split_child(Name, Chs, [Ch | After]);
@@ -675,7 +674,7 @@ replace_child(Child, State) ->
     Chs = do_replace_child(Child, State#state.children),
     State#state{children = Chs}.
 
-do_replace_child(Child, [Ch|Chs]) when Ch#child.name == Child#child.name ->
+do_replace_child(Child, [Ch|Chs]) when Ch#child.name =:= Child#child.name ->
     [Child | Chs];
 do_replace_child(Child, [Ch|Chs]) ->
     [Ch|do_replace_child(Child, Chs)].
@@ -724,11 +723,11 @@ validStrategy(one_for_all)        -> true;
 validStrategy(rest_for_one)       -> true;
 validStrategy(What)               -> throw({invalid_strategy, What}).
 
-validIntensity(Max) when integer(Max),
+validIntensity(Max) when is_integer(Max),
                          Max >=  0 -> true;
 validIntensity(What)              -> throw({invalid_intensity, What}).
 
-validPeriod(Period) when integer(Period),
+validPeriod(Period) when is_integer(Period),
                          Period > 0 -> true;
 validPeriod(What)                   -> throw({invalid_period, What}).
 
@@ -782,8 +781,10 @@ validChildType(What)  -> throw({invalid_child_type, What}).
 
 validName(_Name) -> true. 
 
-validFunc({M, F, A}) when atom(M), atom(F), list(A) -> true;
-validFunc(Func)                                 -> throw({invalid_mfa, Func}).
+validFunc({M, F, A}) when is_atom(M), 
+                          is_atom(F), 
+                          is_list(A) -> true;
+validFunc(Func)                      -> throw({invalid_mfa, Func}).
 
 validRestartType(permanent)   -> true;
 validRestartType(temporary)   -> true;
@@ -791,16 +792,16 @@ validRestartType(transient)   -> true;
 validRestartType(RestartType) -> throw({invalid_restart_type, RestartType}).
 
 validShutdown(Shutdown, _) 
-  when integer(Shutdown), Shutdown > 0 -> true;
+  when is_integer(Shutdown), Shutdown > 0 -> true;
 validShutdown(infinity, supervisor)    -> true;
 validShutdown(brutal_kill, _)          -> true;
 validShutdown(Shutdown, _)             -> throw({invalid_shutdown, Shutdown}).
 
 validMods(dynamic) -> true;
-validMods(Mods) when list(Mods) ->
+validMods(Mods) when is_list(Mods) ->
     lists:foreach(fun(Mod) ->
 		    if
-			atom(Mod) -> ok;
+			is_atom(Mod) -> ok;
 			true -> throw({invalid_module, Mod})
 		    end
 		  end,

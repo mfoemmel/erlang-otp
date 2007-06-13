@@ -29,12 +29,18 @@ enc_MegacoMessage(Val) ->
     State = ?INIT_INDENT,
     enc_MegacoMessage(Val, State).
 
-enc_MegacoMessage(Val, State)
-  when record(Val, 'MegacoMessage') ->
+enc_MegacoMessage(#'MegacoMessage'{authHeader = asn1_NOVALUE, 
+				   mess       = Mess}, State) ->
     [
      ?LWSP,
-     enc_AuthenticationHeader(Val#'MegacoMessage'.authHeader, State),
-     enc_Message(Val#'MegacoMessage'.mess, State)
+     enc_Message(Mess, State)
+    ];
+enc_MegacoMessage(#'MegacoMessage'{authHeader = Auth, 
+				   mess       = Mess}, State) ->
+    [
+     ?LWSP,
+     enc_AuthenticationHeader(Auth, State),
+     enc_Message(Mess, State)
     ].
 
 %% Note that encoding the transaction this way
@@ -162,27 +168,40 @@ enc_mtpAddress(Val, State) ->
      ?RBRKT
     ].
 
-enc_DomainName(Val, State)
-  when record(Val, 'DomainName') ->
+enc_DomainName(#'DomainName'{portNumber = asn1_NOVALUE,
+			     name       = Name}, State) ->
     [
      $<,
      %% BUGBUG: (ALPHA / DIGIT) *63(ALPHA / DIGIT / "-" / ".")
-     enc_STRING(Val#'DomainName'.name, State, 1, 64),
+     enc_STRING(Name, State, 1, 64),
+     $>
+    ];
+enc_DomainName(#'DomainName'{portNumber = PortNumber,
+			     name       = Name}, State) ->
+    [
+     $<,
+     %% BUGBUG: (ALPHA / DIGIT) *63(ALPHA / DIGIT / "-" / ".")
+     enc_STRING(Name, State, 1, 64),
      $>,
-     case Val#'DomainName'.portNumber of
-	 asn1_NOVALUE ->
-	     [];
-	 PortNumber ->
-	     [
-	      $:,
-	      enc_portNumber(PortNumber, State)
-	     ]
-     end
+     $:,
+     enc_portNumber(PortNumber, State)
     ].
 
-enc_IP4Address(Val, State)
-  when record(Val, 'IP4Address') ->
-    [A1, A2, A3, A4] = Val#'IP4Address'.address,
+enc_IP4Address(#'IP4Address'{portNumber = asn1_NOVALUE,
+			     address    = [A1, A2, A3, A4]}, State) ->
+    [
+     $[,
+     enc_V4hex(A1, State),
+     ?DOT,
+     enc_V4hex(A2, State),
+     ?DOT,
+     enc_V4hex(A3, State),
+     ?DOT,
+     enc_V4hex(A4, State),    
+     $]
+    ];
+enc_IP4Address(#'IP4Address'{portNumber = PortNumber,
+			     address    = [A1, A2, A3, A4]}, State) ->
     [
      $[,
      enc_V4hex(A1, State),
@@ -193,37 +212,30 @@ enc_IP4Address(Val, State)
      ?DOT,
      enc_V4hex(A4, State),    
      $],
-     case Val#'IP4Address'.portNumber of
-	 asn1_NOVALUE ->
-	     [];
-	 PortNumber ->
-	     [
-	      $:,
-	      enc_portNumber(PortNumber, State)
-	     ]
-     end
-    ].
+     $:,
+     enc_portNumber(PortNumber, State)
+    ].    
 
 enc_V4hex(Val, State) ->
     enc_DIGIT(Val, State, 0, 255).
 
-enc_IP6Address(Val, State)
-  when record(Val, 'IP6Address'),
-       list(Val#'IP6Address'.address),
-       length(Val#'IP6Address'.address) == 16 ->
+enc_IP6Address(#'IP6Address'{portNumber = asn1_NOVALUE,
+			     address    = Addr}, State) 
+  when is_list(Addr) and (length(Addr) == 16) ->
     [
      $[,
-     enc_IP6Address_address(Val#'IP6Address'.address, State),
+     enc_IP6Address_address(Addr, State),
+     $]
+    ];
+enc_IP6Address(#'IP6Address'{portNumber = PortNumber,
+			     address    = Addr}, State) 
+  when is_list(Addr) and (length(Addr) == 16) ->
+    [
+     $[,
+     enc_IP6Address_address(Addr, State),
      $],
-     case Val#'IP6Address'.portNumber of
-	 asn1_NOVALUE ->
-	     [];
-	 PortNumber ->
-	     [
-	      $:,
-	      enc_portNumber(PortNumber, State)
-	     ]
-     end
+     $:,
+     enc_portNumber(PortNumber, State)
     ].
 
 enc_IP6Address_address([0, 0|Addr], State) ->
@@ -332,6 +344,13 @@ enc_Transaction({Tag, Val}, State) ->
 	    error({invalid_Transaction_tag, Tag})
     end.
 
+enc_TransactionResponseAck([Mand], State) ->
+    [
+     ?ResponseAckToken,
+     ?LBRKT_INDENT(State),
+     [enc_TransactionAck(Mand, State)],
+     ?RBRKT_INDENT(State)
+    ];
 enc_TransactionResponseAck([Mand | Opt], State) ->
     [
      ?ResponseAckToken,
@@ -368,13 +387,15 @@ enc_TransactionRequest(#'TransactionRequest'{transactionId = Tid,
      enc_TransactionRequest_actions(Acts, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ];
-enc_TransactionRequest(Bin, _State) when binary(Bin) ->
+enc_TransactionRequest(Bin, _State) when is_binary(Bin) ->
     [Bin].
 
-enc_TransactionRequest_actions(Bin, _State) when binary(Bin) ->
+enc_TransactionRequest_actions(Bin, _State) when is_binary(Bin) ->
     [Bin]; %% Already encoded...
 enc_TransactionRequest_actions({'TransactionRequest_actions',Val}, State) ->
     enc_TransactionRequest_actions(Val, State);
+enc_TransactionRequest_actions([Mand], State) ->
+    [enc_ActionRequest(Mand, State)];
 enc_TransactionRequest_actions([Mand | Opt], State) ->
     [enc_ActionRequest(Mand, State) |
      [[?COMMA_INDENT(State), enc_ActionRequest(Val, State)] || Val <- Opt]].
@@ -389,6 +410,21 @@ enc_TransactionPending(#'TransactionPending'{transactionId = Tid}, State) ->
 enc_TransactionPending(Bin, _State) when binary(Bin) ->
     [Bin].
 
+enc_TransactionReply(#'TransactionReply'{transactionId        = Tid,
+					 immAckRequired       = asn1_NOVALUE,
+					 transactionResult    = Res%% , 
+%% 					 segmentationNumber   = SegNo,
+%% 					 segmentationComplete = SegCompl
+					}, 
+		     State) ->
+    [
+     ?ReplyToken,
+     ?EQUAL,
+     enc_TransactionId(Tid, State),
+     ?LBRKT_INDENT(State),
+     enc_TransactionReply_transactionResult(Res, ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ];
 enc_TransactionReply(#'TransactionReply'{transactionId        = Tid,
 					 immAckRequired       = Req,
 					 transactionResult    = Res%% , 
@@ -431,23 +467,29 @@ enc_TransactionReply_transactionResult({Tag, Val}, State) ->
 
 enc_TransactionReply_transactionResult_actionReplies({'TransactionReply_transactionResult_actionReplies',Val}, State) ->
     enc_TransactionReply_transactionResult_actionReplies(Val, State);
+enc_TransactionReply_transactionResult_actionReplies([Mand], State) ->
+    [enc_ActionReply(Mand, State)];
 enc_TransactionReply_transactionResult_actionReplies([Mand | Opt], State) ->
     [enc_ActionReply(Mand, State),
      [[?COMMA_INDENT(State), enc_ActionReply(Val, State)] || Val <- Opt]].
 
-enc_ErrorDescriptor(Val, State)
-  when record(Val, 'ErrorDescriptor') ->
+enc_ErrorDescriptor(#'ErrorDescriptor'{errorText = asn1_NOVALUE,
+				       errorCode = Code}, State) ->
     [
      ?ErrorToken,
      ?EQUAL,
-     enc_ErrorCode(Val#'ErrorDescriptor'.errorCode, State),
+     enc_ErrorCode(Code, State),
      ?LBRKT,
-     case Val#'ErrorDescriptor'.errorText of
-	 asn1_NOVALUE ->
-	     [];
-	 ErrorText ->
-	     enc_ErrorText(ErrorText, State)
-     end,
+     ?RBRKT
+    ];
+enc_ErrorDescriptor(#'ErrorDescriptor'{errorText = Text,
+				       errorCode = Code}, State) ->
+    [
+     ?ErrorToken,
+     ?EQUAL,
+     enc_ErrorCode(Code, State),
+     ?LBRKT,
+     enc_ErrorText(Text, State),
      ?RBRKT
     ].
 
@@ -471,21 +513,47 @@ enc_ContextID(Val, State) ->
 	Int when integer(Int) -> enc_UINT32(Int, State)
     end.
 
-enc_ActionRequest(Bin, _State) when binary(Bin) ->
+enc_ActionRequest(Bin, _State) when is_binary(Bin) ->
     [Bin]; %% Already encoded...
-enc_ActionRequest(Val, State)
-     when record(Val, 'ActionRequest') ->
+enc_ActionRequest(#'ActionRequest'{contextId           = CID,
+				   contextRequest      = asn1_NOVALUE,
+				   contextAttrAuditReq = asn1_NOVALUE,
+				   commandRequests     = CmdReqs}, State) ->
     [
      ?CtxToken,
      ?EQUAL,
-     enc_ContextID(Val#'ActionRequest'.contextId, State),
+     enc_ContextID(CID, State),
      ?LBRKT_INDENT(State),
-     enc_list([{[Val#'ActionRequest'.contextRequest],
-		fun enc_ContextRequest/2},
-	       {[Val#'ActionRequest'.contextAttrAuditReq],
-		fun enc_ContextAttrAuditRequest/2},
-	       {Val#'ActionRequest'.commandRequests,
-		fun enc_CommandRequest/2}],
+     enc_list([{CmdReqs, fun enc_CommandRequest/2}],
+	      ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ];
+enc_ActionRequest(#'ActionRequest'{contextId           = CID,
+				   contextRequest      = CtxReq,
+				   contextAttrAuditReq = asn1_NOVALUE,
+				   commandRequests     = CmdReqs}, State) ->
+    [
+     ?CtxToken,
+     ?EQUAL,
+     enc_ContextID(CID, State),
+     ?LBRKT_INDENT(State),
+     enc_list([{[CtxReq], fun enc_ContextRequest/2},
+	       {CmdReqs,  fun enc_CommandRequest/2}],
+	      ?INC_INDENT(State)),
+     ?RBRKT_INDENT(State)
+    ];
+enc_ActionRequest(#'ActionRequest'{contextId           = CID,
+				   contextRequest      = CtxReq,
+				   contextAttrAuditReq = CtxAAR,
+				   commandRequests     = CmdReqs}, State) ->
+    [
+     ?CtxToken,
+     ?EQUAL,
+     enc_ContextID(CID, State),
+     ?LBRKT_INDENT(State),
+     enc_list([{[CtxReq],  fun enc_ContextRequest/2},
+	       {[CtxAAR],  fun enc_ContextAttrAuditRequest/2},
+	       {CmdReqs,   fun enc_CommandRequest/2}],
 	      ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ].
@@ -799,24 +867,33 @@ enc_emergencyValue(_, _) ->
 %%      ?RBRKT_INDENT(State)
 %%     ].
 
-enc_CommandRequest(Val, State)
-  when record(Val, 'CommandRequest') ->
-%%     d("enc_CommandRequest -> entry with"
-%%       "~n   Val: ~p", [Val]),
+enc_CommandRequest(#'CommandRequest'{optional       = asn1_NOVALUE,
+				     wildcardReturn = asn1_NOVALUE,
+				     command        = Cmd}, State) ->
     [
-     case Val#'CommandRequest'.optional of
-	 asn1_NOVALUE ->
-	     [];
-	 'NULL' ->
-	     "O-"
-     end,
-     case Val#'CommandRequest'.wildcardReturn of
-	 asn1_NOVALUE ->
-	     [];
-	 'NULL' ->
-	     "W-"
-     end,
-     enc_Command(Val#'CommandRequest'.command, State)
+     enc_Command(Cmd, State)
+    ];
+enc_CommandRequest(#'CommandRequest'{optional       = 'NULL',
+				     wildcardReturn = asn1_NOVALUE,
+				     command        = Cmd}, State) ->
+    [
+     "O-",
+     enc_Command(Cmd, State)
+    ]; 
+enc_CommandRequest(#'CommandRequest'{optional       = asn1_NOVALUE,
+				     wildcardReturn = 'NULL',
+				     command        = Cmd}, State) ->
+    [
+     "W-",
+     enc_Command(Cmd, State)
+    ]; 
+enc_CommandRequest(#'CommandRequest'{optional       = 'NULL',
+				     wildcardReturn = 'NULL',
+				     command        = Cmd}, State) ->
+    [
+     "O-",
+     "W-",
+     enc_Command(Cmd, State)
     ]. 
 
 enc_Command({'Command',Val}, State) ->
@@ -3033,10 +3110,11 @@ enc_Value(String, _State) ->
  
 quoted_string_count([H | T], Count, IsSafe) ->
     case ?classify_char(H) of
-	safe_char   -> quoted_string_count(T, Count + 1, IsSafe);
-	rest_char   -> quoted_string_count(T, Count + 1, false);
-	white_space -> quoted_string_count(T, Count + 1, false);
-	_           -> error({illegal_char, H})
+	safe_char_upper -> quoted_string_count(T, Count + 1, IsSafe);
+	safe_char       -> quoted_string_count(T, Count + 1, IsSafe);
+	rest_char       -> quoted_string_count(T, Count + 1, false);
+	white_space     -> quoted_string_count(T, Count + 1, false);
+	_               -> error({illegal_char, H})
     end;
 quoted_string_count([], Count, IsSafe) ->
     {IsSafe, Count}.

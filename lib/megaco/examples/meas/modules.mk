@@ -1,5 +1,9 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
+SCRIPT_SKELETONS = \
+	trans.sh.skel \
+	mstone1.sh.skel
+
 MODULES = \
         megaco_codec_transform  \
         megaco_codec_mstone_lib \

@@ -11,6 +11,43 @@
   <p>This document describes the changes made to the Dialyzer
     application.</p>
 
+<section><title>Dialyzer 1.7.0</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor Makefile changes.</p>
+          <p>
+	    Own Id: OTP-6689</p>
+        </item>
+        <item>
+	    <p>Dialyzer can now use success typings to find
+	    discrepancies. As a consequence significantly more
+	    discrepancies are detected. The downside is that the
+	    analysis takes about 2 to 2.5 times longer than in
+	    previous versions, and may also result in some warnings
+	    that might be harder to interpret even though they are
+	    correct. This has been a major change, worth of
+	    increasing the version number.</p>
+	    <p>New command-line options:</p>
+	    <p>--succ_typings Use the success typings analysis.</p>
+	    <p>--dataflow (default) Use the previous analysis.</p>
+	    <p>The new type unit() has been introduced to handle the
+	    return type of non-terminating functions such as
+	    servers.</p>
+	    <p>Dialyzer's code server uses a compressed
+	    representation and the analysis requires significantly
+	    less memory than in previous versions.</p>
+          <p>
+	    Own Id: OTP-6736</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
 <section><title>Dialyzer 1.6.0</title>
 
     <section><title>Improvements and New Features</title>

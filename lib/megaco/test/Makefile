@@ -59,28 +59,34 @@ TARGET_FILES = $(MODULES:%=%.$(EMULATOR))
 
 COVER_SPEC_FILE = megaco.cover
 
+APP_CASES   = app appup
+
 CODEC_CASES = codec1 codec2 codec3a codec3b codec3c
 
+MISC_CASES  = sdp dm tid config udp tcp ex 
+
+OP_CASES    = mess mib mreq pending trans actions load
+
+ALL_CASES   = $(APP_CASES) $(CODEC_CASES) $(MISC_CASES) $(OP_CASES)
 
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
+
+include ../src/app/megaco.mk 
 
 ifeq ($(USE_MEGACO_TEST_CODE),true)
 ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE=mona_lisa_spelar_doom
 endif
 
 ifeq ($(USE_MEGACO_HIPE),true)
-ERL_COMPILE_FLAGS += +native
+ERL_COMPILE_FLAGS += +native -Dmegaco_hipe_special=true
 endif
 
-ERL_FLAGS += \
-           -pa $(ERL_TOP)/lib/megaco/ebin \
-           -pa $(ERL_TOP)/lib/et/ebin
-
 ERL_COMPILE_FLAGS += \
-           -pa $(ERL_TOP)/lib/test_server/ebin \
-           -I$(ERL_TOP)/lib/test_server/include
+	$(MEGACO_ERL_COMPILE_FLAGS)         \
+	-pa $(ERL_TOP)/lib/test_server/ebin \
+	-I$(ERL_TOP)/lib/test_server/include
 
 ERL_PATH = -pa ../../megaco/examples/simple \
            -pa ../../megaco/ebin \
@@ -130,11 +136,47 @@ info:
 # Special Targets
 # ----------------------------------------------------
 
+aall: make
+	@echo "make sure epmd is new"
+	@epmd -kill > /dev/null
+	@echo "Running all app sub-suites separatelly"
+	@for i in $(APP_CASES); do \
+            echo "SUITE: $$i"; \
+            clearmake -V $$i > $$i.log; \
+        done
+
 call: make
 	@echo "make sure epmd is new"
 	@epmd -kill > /dev/null
 	@echo "Running all codec sub-suites separatelly"
 	@for i in $(CODEC_CASES); do \
+            echo "SUITE: $$i"; \
+            clearmake -V $$i > $$i.log; \
+        done
+
+mall: make
+	@echo "make sure epmd is new"
+	@epmd -kill > /dev/null
+	@echo "Running all misc sub-suites separatelly"
+	@for i in $(MISC_CASES); do \
+            echo "SUITE: $$i"; \
+            clearmake -V $$i > $$i.log; \
+        done
+
+oall: make
+	@echo "make sure epmd is new"
+	@epmd -kill > /dev/null
+	@echo "Running all operation sub-suites separatelly"
+	@for i in $(OP_CASES); do \
+            echo "SUITE: $$i"; \
+            clearmake -V $$i > $$i.log; \
+        done
+
+all: make
+	@echo "make sure epmd is new"
+	@epmd -kill > /dev/null
+	@echo "Running all sub-suites separatelly"
+	@for i in $(ALL_CASES); do \
             echo "SUITE: $$i"; \
             clearmake -V $$i > $$i.log; \
         done
@@ -326,6 +368,11 @@ tid: make
 	$(MERL) $(ARGS) -sname megaco_tid $(ERL_PATH) \
             -s megaco_test_lib t megaco_binary_term_id_test \
             -s erlang halt
+
+timer: make
+	$(MERL) $(ARGS) -sname megaco_timer $(ERL_PATH) \
+            -s megaco_test_lib t megaco_timer_test \
+            $(EHALT)
 
 tickets: make
 	$(MERL) $(ARGS) -sname megaco_tickets $(ERL_PATH) \

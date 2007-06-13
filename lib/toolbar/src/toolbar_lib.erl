@@ -111,7 +111,7 @@ legal_file(File) ->
 % If Strings is a list of strings, return a string where all these strings
 % are concatenated with newlines in between, otherwise return Strings.
 %----------------------------------------
-insert_newlines([String|Rest]) when list(String), Rest/=[]->
+insert_newlines([String|Rest]) when is_list(String), Rest/=[]->
     String ++ "\n" ++ insert_newlines(Rest);
 insert_newlines([Last]) ->
     [Last];
@@ -134,11 +134,11 @@ insert_newlines(Other) ->
 %----------------------------------------
 tool_info_syntax("1.1",ToolInfo) ->
     tool_info_syntax("0.1",ToolInfo);
-tool_info_syntax("0.1",ToolInfo) when tuple(ToolInfo) ->
+tool_info_syntax("0.1",ToolInfo) when is_tuple(ToolInfo) ->
     syntax01(tuple_to_list(ToolInfo),false,false,[]);
 tool_info_syntax("0.1",_) ->
     {error,format};
-tool_info_syntax("1.2",ToolInfo) when list(ToolInfo)->
+tool_info_syntax("1.2",ToolInfo) when is_list(ToolInfo)->
     syntax01(ToolInfo,false,false,[]);
 tool_info_syntax(_Vsn,_) ->
     {error,version}.
@@ -154,25 +154,25 @@ tool_info_syntax(_Vsn,_) ->
 %   Reason - format | noname | nostart
 % Version 0.1 syntax check of .tool file.
 %----------------------------------------
-syntax01([{tool,Str}|Rest],false,StartF,Res) when list(Str) ->
+syntax01([{tool,Str}|Rest],false,StartF,Res) when is_list(Str) ->
     case string:strip(Str) of
 	[] ->
 	    {error,format};
 	Tool ->
 	    syntax01(Rest,true,StartF,[{tool,Tool}|Res])
     end;
-syntax01([{start,{M,F,A}}|Rest],NameF,false,Res) when atom(M),
-						      atom(F),
-						      list(A) ->
+syntax01([{start,{M,F,A}}|Rest],NameF,false,Res) when is_atom(M),
+						      is_atom(F),
+						      is_list(A) ->
     syntax01(Rest,NameF,true,[{start,{M,F,A}}|Res]);
-syntax01([{icon,Str}|Rest],NameF,StartF,Res) when list(Str) ->
+syntax01([{icon,Str}|Rest],NameF,StartF,Res) when is_list(Str) ->
     case string:strip(Str) of
 	[] ->
 	    syntax01(Rest,NameF,StartF,Res);
 	Icon ->
 	    syntax01(Rest,NameF,StartF,[{icon,Icon}|Res])
     end;
-syntax01([{message,Str}|Rest],NameF,StartF,Res) when list(Str) ->
+syntax01([{message,Str}|Rest],NameF,StartF,Res) when is_list(Str) ->
     case string:strip(Str) of
 	[] ->
 	    syntax01(Rest,NameF,StartF,Res);
@@ -180,7 +180,7 @@ syntax01([{message,Str}|Rest],NameF,StartF,Res) when list(Str) ->
 	    syntax01(Rest,NameF,StartF,
 		     [{message,lists:sublist(Message,1,30)}|Res])
     end;
-syntax01([{html,Str}|Rest],NameF,StartF,Res) when list(Str) ->
+syntax01([{html,Str}|Rest],NameF,StartF,Res) when is_list(Str) ->
     case string:strip(Str) of
 	[] ->
 	    syntax01(Rest,NameF,StartF,Res);

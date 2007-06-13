@@ -91,10 +91,12 @@ APP_FILE =
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/orber/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/orber/include \
+ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
+	-I$(ERL_TOP)/lib/orber/include \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"orber_$(ORBER_VSN)"}' 
 
@@ -121,11 +123,11 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_FILES): cos_naming_ext.idl cos_naming.idl
-	erlc $(ERL_FLAGS) +'{this,"CosNaming::NamingContext"}' \
+	erlc $(ERL_IDL_FLAGS) +'{this,"CosNaming::NamingContext"}' \
 	+'{this,"CosNaming::NamingContextExt"}' cos_naming_ext.idl
-	erlc $(ERL_FLAGS) +'{this,"CosNaming::NamingContext"}' cos_naming.idl
+	erlc $(ERL_IDL_FLAGS) +'{this,"CosNaming::NamingContext"}' cos_naming.idl
 
-#	echo "ic:gen(cos_naming, [{this, \"CosNaming::NamingContext\"}]), halt()."| $(ERL) $(ERL_FLAGS)
+#	echo "ic:gen(cos_naming, [{this, \"CosNaming::NamingContext\"}]), halt()."| $(ERL) $(ERL_IDL_FLAGS)
 
 
 # ----------------------------------------------------

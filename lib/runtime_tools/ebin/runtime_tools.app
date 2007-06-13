@@ -1,0 +1,14 @@
+{application, runtime_tools,
+   [{description,  "RUNTIME_TOOLS version 1"},
+    {vsn,          "1.6.6"},
+    {modules,      [dbg,observer_backend,
+		    inviso_rt,inviso_rt_lib,inviso_rt_meta,
+		    inviso_as_lib,inviso_autostart,inviso_autostart_server,
+		    runtime_tools,runtime_tools_sup,erts_alloc_config]},
+    {registered,   [runtime_tools_sup,inviso_rt,inviso_rt_meta]},
+    {applications, [kernel, stdlib]},
+%    {env,          [{inviso_autostart_mod,your_own_autostart_module}]},
+    {env,          []},
+    {mod,          {runtime_tools, []}}]}.
+
+

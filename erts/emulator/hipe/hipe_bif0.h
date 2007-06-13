@@ -6,7 +6,6 @@
 #ifndef HIPE_BIF0_H
 #define HIPE_BIF0_H
 
-extern Eterm address_to_term(const void *address, Process *p);
 extern Uint *hipe_bifs_find_pc_from_mfa(Eterm mfa);
 
 /* shared with ggc.c -- NOT an official API */

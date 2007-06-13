@@ -188,6 +188,20 @@ obsolete(auth, node_cookie, 1) ->
 obsolete(auth, node_cookie, 2) ->
     {true, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
 
+%% Added in R11B-5.
+obsolete(http_base_64, _, _) ->
+    {true, "The http_base_64 module is deprecated; use the base64 module instead"};
+obsolete(httpd_util, encode_base64, 1) ->
+    {true, "Deprecated; use one of the encode functions in the base64 module instead"};
+obsolete(httpd_util, decode_base64, 1) ->
+    {true, "Deprecated; use one of the decode functions in the base64 module instead"};
+obsolete(httpd_util, to_upper, 1) ->
+    {true, {string, to_upper, 1}};
+obsolete(httpd_util, to_lower, 1) ->
+    {true, {string, to_lower, 1}};
+obsolete(erlang, is_constant, 1) ->
+    {true, "Deprecated"};
+
 obsolete(_, _, _) ->
     false.
 

@@ -74,10 +74,10 @@ listen(Name) ->
 
 do_listen(Options0) ->
     {First,Last} = case application:get_env(kernel,inet_dist_listen_min) of
-		       {ok,N} when integer(N) ->
+		       {ok,N} when is_integer(N) ->
 			   case application:get_env(kernel,
 						    inet_dist_listen_max) of
-			       {ok,M} when integer(M) ->
+			       {ok,M} when is_integer(M) ->
 				   {N,M};
 			       _ ->
 				   {N,N}
@@ -329,17 +329,17 @@ close(Socket) ->
 %% If Node is illegal terminate the connection setup!!
 splitnode(Node, LongOrShortNames) ->
     case split_node(atom_to_list(Node), $@, []) of
-	[Name|Tail] when Tail /= [] ->
+	[Name|Tail] when Tail =/= [] ->
 	    Host = lists:append(Tail),
 	    case split_node(Host, $., []) of
-		[_] when LongOrShortNames == longnames ->
+		[_] when LongOrShortNames =:= longnames ->
 		    error_msg("** System running to use "
 			      "fully qualified "
 			      "hostnames **~n"
 			      "** Hostname ~s is illegal **~n",
 			      [Host]),
 		    ?shutdown(Node);
-		L when length(L) > 1, LongOrShortNames == shortnames ->
+		L when length(L) > 1, LongOrShortNames =:= shortnames ->
 		    error_msg("** System NOT running to use fully qualified "
 			      "hostnames **~n"
 			      "** Hostname ~s is illegal **~n",
@@ -416,7 +416,7 @@ mask({M1,M2,M3,M4}, {IP1,IP2,IP3,IP4}) ->
      M3 band IP3,
      M4 band IP4}.
 
-is_node_name(Node) when atom(Node) ->
+is_node_name(Node) when is_atom(Node) ->
     case split_node(atom_to_list(Node), $@, []) of
 	[_, _Host] -> true;
 	_ -> false

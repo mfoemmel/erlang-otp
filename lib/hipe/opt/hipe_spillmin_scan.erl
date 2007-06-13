@@ -20,9 +20,9 @@
 %%              * 2002-10-08, Happi: Cleanup and speedup
 %%
 %% CVS:
-%%    $Author: mikpe $
-%%    $Date: 2006/09/14 13:33:28 $
-%%    $Revision: 1.4 $
+%%    $Author: kostis $
+%%    $Date: 2007/05/13 10:45:06 $
+%%    $Revision: 1.5 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -532,7 +532,8 @@ add_def_point([], _, I) ->
   %% No more to add return the interval.
   I.
 
-extend_interval(Pos, {Beginning, End}) ->
+extend_interval(Pos, {Beginning, End})
+  when is_integer(Beginning), is_integer(End) ->
   %% If this position occurs before the beginning of the interval,
   %% then extend the beginning to this position.
   NewBeginning = 

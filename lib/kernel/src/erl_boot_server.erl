@@ -102,7 +102,7 @@ delete_slave(Slave) ->
 	    {error, {badarg, Slave}}
     end.
 
-add_subnet(Mask, Addr) when tuple(Mask), tuple(Addr) ->
+add_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     case member_address(Addr, [{Mask, Addr}]) of
 	true ->
 	    gen_server:call(boot_server, {add, {Mask, Addr}});
@@ -110,7 +110,7 @@ add_subnet(Mask, Addr) when tuple(Mask), tuple(Addr) ->
 	    {error, empty_subnet}
     end.
 
-delete_subnet(Mask, Addr) when tuple(Mask), tuple(Addr) ->
+delete_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     gen_server:call(boot_server, {delete, {Mask, Addr}}).
 
 which_slaves() ->
@@ -124,17 +124,17 @@ would_be_booted(Addr) ->
     {ok, IP} = inet:getaddr(Addr, inet),
     member_address(IP, which_slaves()).
 
-int16(X) when integer(X) ->
+int16(X) when is_integer(X) ->
     [(X bsr 8) band 16#ff, (X) band 16#ff].
 
 %% Check if an address is a member
 
 member_address(IP, [{{MA, MB, MC, MD}, {EA, EB, EC, ED}}|Rest]) ->
     {A, B, C, D} = IP,
-    if A band MA == EA,
-       B band MB == EB,
-       C band MC == EC,
-       D band MD == ED ->
+    if A band MA =:= EA,
+       B band MB =:= EB,
+       C band MC =:= EC,
+       D band MD =:= ED ->
 	    true;
        true ->
 	    member_address(IP, Rest)

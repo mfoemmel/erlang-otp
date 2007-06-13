@@ -31,7 +31,7 @@
 -export([appcall/4]).
 
 -import(lists, [reverse/1,flatten/1,sublist/3,sort/1,keysearch/3,keysort/2,
-		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2,map/2]).
+		concat/1,max/1,min/1,foreach/2,foldl/3,flatmap/2]).
 -import(io, [format/1, format/2]).
 
 help() ->
@@ -66,7 +66,7 @@ help() ->
 
 c(File) -> c(File, []).
 
-c(File, Opts0) when list(Opts0) ->
+c(File, Opts0) when is_list(Opts0) ->
     Opts = [report_errors,report_warnings|Opts0],
     case compile:file(File, Opts) of
 	{ok,Mod} ->				%Listing file.
@@ -147,8 +147,7 @@ lc_batch(Args) ->
 	    halt(1);
 	{Opts, Files} ->
 	    COpts = [report_errors, report_warnings | reverse(Opts)],
-	    Res = map(fun(File) -> compile:file(File, COpts) end,
-		      reverse(Files)),
+            Res = [compile:file(File, COpts) || File <- reverse(Files)],
 	    case lists:member(error, Res) of
 		true ->
 		    halt(1);
@@ -188,7 +187,7 @@ make_term(Str) ->
 
 nc(File) -> nc(File, []).
 
-nc(File, Opts0) when list(Opts0) ->
+nc(File, Opts0) when is_list(Opts0) ->
     Opts = Opts0 ++ [report_errors, report_warnings],
     case compile:file(File, Opts) of
 	{ok,Mod} ->
@@ -203,7 +202,7 @@ nc(File, Opts0) when list(Opts0) ->
 	Other ->                                %Errors go here
 	    Other
     end;
-nc(File, Opt) when atom(Opt) -> 
+nc(File, Opt) when is_atom(Opt) -> 
     nc(File, [Opt]).
 
 %% l(Mod)
@@ -305,7 +304,7 @@ display_info(Pid) ->
 	Info ->
 	    Call = initial_call(Info),
 	    Curr = case fetch(current_function, Info) of
-		       {Mod,F,Args} when list(Args) ->
+		       {Mod,F,Args} when is_list(Args) ->
 			   {Mod,F,length(Args)};
 		       Other ->
 			   Other
@@ -423,8 +422,8 @@ f_p_e(P, F) ->
 
 bi(I) ->
     case erlang:system_info(I) of
-	X when binary(X) -> io:put_chars(binary_to_list(X));
-	X when list(X) -> io:put_chars(X);
+	X when is_binary(X) -> io:put_chars(binary_to_list(X));
+	X when is_list(X) -> io:put_chars(X);
 	X -> format("~w", [X])
     end.
 
@@ -534,12 +533,12 @@ regs() ->
 
 all_regs() ->
     case is_alive() of
-	true -> map(fun (N) -> {N,rpc:call(N, erlang, registered, [])} end,
-		    [node()|nodes()]);
+        true -> [{N,rpc:call(N, erlang, registered, [])} ||
+                    N <- [node()|nodes()]];
 	false -> [{node(),registered()}]
     end.
 
-print_node_regs({N, List}) when list(List) ->
+print_node_regs({N, List}) when is_list(List) ->
     {Pids,Ports,_Dead} = pids_and_ports(N, sort(List), [], [], []),
     %% print process info
     format("~n** Registered procs on node ~w **~n",[N]),
@@ -555,10 +554,10 @@ pids_and_ports(_, [], Pids, Ports, Dead) ->
 
 pids_and_ports(Node, [Name|Names], Pids, Ports, Dead) ->
     case pwhereis(Node, Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    pids_and_ports(Node, Names, [{Name,pinfo(Pid),Pid}|Pids],
 			   Ports, Dead);
-	Id when port(Id) ->
+	Id when is_port(Id) ->
 	    pids_and_ports(Node, Names, Pids, 
 			   [{Name,portinfo(Id),Id}|Ports], Dead);
 	undefined ->

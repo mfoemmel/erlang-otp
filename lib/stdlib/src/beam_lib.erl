@@ -41,9 +41,8 @@
 -export([make_crypto_key/2, get_crypto_key/1]).	%Utilities used by compiler
 
 -import(lists,
-	[append/1, delete/2, foreach/2, keydelete/3, keymember/3, keysearch/3,
-	 keysort/2, map/2, member/2, nthtail/2, prefix/2, reverse/1, 
-	 sort/1, splitwith/2]).
+	[append/1, delete/2, foreach/2, keysearch/3, keysort/2, 
+         member/2, reverse/1, sort/1, splitwith/2]).
 
 -include_lib("kernel/include/file.hrl").
 -include("erl_compile.hrl").
@@ -53,19 +52,21 @@
 %%
 
 info(File) ->
-    catch read_info(beam_filename(File)).
+    read_info(beam_filename(File)).
 
 chunks(File, Chunks) ->
-    catch read_chunk_data(File, Chunks).
+    read_chunk_data(File, Chunks).
 
 chunks(File, Chunks, Options) ->
-    catch read_chunk_data(File, Chunks, Options).
+    try read_chunk_data(File, Chunks, Options)
+    catch Error -> Error end.
 
 all_chunks(File) ->
-    catch read_all_chunks(File).
+    read_all_chunks(File).
 
 cmp(File1, File2) ->
-    catch cmp_files(File1, File2).
+    try cmp_files(File1, File2)
+    catch Error -> Error end.
 
 cmp_dirs(Dir1, Dir2) ->
     catch compare_dirs(Dir1, Dir2).
@@ -74,10 +75,12 @@ diff_dirs(Dir1, Dir2) ->
     catch diff_directories(Dir1, Dir2).
 
 strip(FileName) ->
-    catch strip_file(FileName).
+    try strip_file(FileName)
+    catch Error -> Error end.
     
-strip_files(Files) when list(Files) ->
-    catch strip_fils(Files).
+strip_files(Files) when is_list(Files) ->
+    try strip_fils(Files)
+    catch Error -> Error end.
     
 strip_release(Root) ->
     catch strip_rel(Root).
@@ -161,11 +164,13 @@ make_crypto_key(des3_cbc, String) ->
 %%
 
 read_info(File) ->
-    {ok, Module, Data} = scan_beam(File, info),
-    [if
-	 binary(File) -> {binary, File};
-	 true -> {file, File}
-     end, {module, Module}, {chunks, Data}].
+    try
+        {ok, Module, Data} = scan_beam(File, info),
+        [if
+             is_binary(File) -> {binary, File};
+             true -> {file, File}
+         end, {module, Module}, {chunks, Data}]
+    catch Error -> Error end.
 
 diff_directories(Dir1, Dir2) ->
     {OnlyDir1, OnlyDir2, Diff} = compare_dirs(Dir1, Dir2),
@@ -207,7 +212,7 @@ compare_files([{_,F1} | R1], [{_,F2} | R2], Acc) ->
 beam_files(Dir) ->
     ok = assert_directory(Dir),
     L = filelib:wildcard(filename:join(Dir, "*.beam")),
-    lists:map(fun(Path) -> {filename:basename(Path), Path} end, L).
+    [{filename:basename(Path), Path} || Path <- L].
 
 %% -> ok | throw(Error)
 cmp_files(File1, File2) ->
@@ -240,9 +245,7 @@ strip_rel(Root) ->
 
 %% -> {ok, [{Mod, BinaryOrFileName}]} | throw(Error)
 strip_fils(Files) ->
-    Fun = fun(F) -> {ok, Reply} = strip_file(F), Reply end,
-    L = map(Fun, Files),
-    {ok, L}.
+    {ok, [begin {ok, Reply} = strip_file(F), Reply end || F <- Files]}.
 
 %% -> {ok, {Mod, FileName}} | {ok, {Mod, binary()}} | throw(Error)
 strip_file(File) ->
@@ -322,18 +325,20 @@ filter_funtab_1(<<Important:20/binary,_OldUniq:4/binary,T/binary>>, Zero) ->
     [Important,Zero|filter_funtab_1(T, Zero)];
 filter_funtab_1(Tail, _) when is_binary(Tail) -> [Tail].
 
-read_all_chunks(File0) when atom(File0);
-			    list(File0); 
-			    binary(File0) ->
-    File = beam_filename(File0),
-    {ok, Module, ChunkIds0} = scan_beam(File, info),
-    ChunkIds = [Name || {Name,_,_} <- ChunkIds0],
-    {ok, Module, Chunks} = scan_beam(File, ChunkIds),
-    {ok, Module, lists:reverse(Chunks)}.
+read_all_chunks(File0) when is_atom(File0);
+			    is_list(File0); 
+			    is_binary(File0) ->
+    try
+        File = beam_filename(File0),
+        {ok, Module, ChunkIds0} = scan_beam(File, info),
+        ChunkIds = [Name || {Name,_,_} <- ChunkIds0],
+        {ok, Module, Chunks} = scan_beam(File, ChunkIds),
+        {ok, Module, lists:reverse(Chunks)}
+    catch Error -> Error end.
 
-%% -> {ok, {Module, Symbols}} | throw(Error)
 read_chunk_data(File0, ChunkNames) ->
-    read_chunk_data(File0, ChunkNames, []).
+    try read_chunk_data(File0, ChunkNames, [])
+    catch Error -> Error end.
 
 %% -> {ok, {Module, Symbols}} | throw(Error)
 read_chunk_data(File0, ChunkNames0, Options)
@@ -344,15 +349,15 @@ read_chunk_data(File0, ChunkNames0, Options)
     {ok, Module, Chunks} = scan_beam(File, ChunkIds, AllowMissingChunks),
     AT = ets:new(beam_symbols, []),
     T = {empty, AT},
-    R = (catch chunks_to_data(Names, Chunks, File, Chunks, Module, T, [])),
-    ets:delete(AT),
-    R.
+    try chunks_to_data(Names, Chunks, File, Chunks, Module, T, [])
+    after ets:delete(AT) 
+    end.
     
 %% -> {ok, list()} | throw(Error)
-check_chunks([ChunkName | Ids], File, IL, L) when atom(ChunkName) ->
+check_chunks([ChunkName | Ids], File, IL, L) when is_atom(ChunkName) ->
     ChunkId = chunk_name_to_id(ChunkName, File),
     check_chunks(Ids, File, [ChunkId | IL], [{ChunkId, ChunkName} | L]);
-check_chunks([ChunkId | Ids], File, IL, L) -> % when list(ChunkId)
+check_chunks([ChunkId | Ids], File, IL, L) -> % when is_list(ChunkId)
     check_chunks(Ids, File, [ChunkId | IL], [{ChunkId, ChunkId} | L]);
 check_chunks([], _File, IL, L) ->
     {lists:usort(IL), reverse(L)}.
@@ -409,7 +414,7 @@ scan_beam(FD, Pos, What, Mod, Data) ->
 	    error({invalid_beam_file, filename(FD), Pos})
     end.
 
-get_data(Cs, Id, FD, Size, Pos, Pos2, _Mod, Data) when Id =:= "Atom" ->
+get_data(Cs, "Atom"=Id, FD, Size, Pos, Pos2, _Mod, Data) ->
     NewCs = del_chunk(Id, Cs),
     {NFD, Chunk} = get_chunk(Id, Pos, Size, FD),
     <<_Num:32, Chunk2/binary>> = Chunk,
@@ -459,7 +464,7 @@ chunks_to_data([{Id, Name} | CNs], Chunks, File, Cs, Module, Atoms, L) ->
 chunks_to_data([], _Chunks, _File, _Cs, Module, _Atoms, L) ->
     {ok, {Module, reverse(L)}}.
 
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id =:= attributes ->
+chunk_to_data(attributes=Id, Chunk, File, _Cs, AtomTable, _Mod) ->
     try
 	Term = binary_to_term(Chunk),
 	{AtomTable, {Id, attributes(Term)}}
@@ -467,14 +472,14 @@ chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id =:= attributes ->
 	error:badarg ->
 	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
     end;
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, _Mod) when Id =:= compile_info ->
+chunk_to_data(compile_info=Id, Chunk, File, _Cs, AtomTable, _Mod) ->
     try
 	{AtomTable, {Id, binary_to_term(Chunk)}}
     catch
 	error:badarg ->
 	    error({invalid_chunk, File, chunk_name_to_id(Id, File)})
     end;
-chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id =:= abstract_code ->
+chunk_to_data(abstract_code=Id, Chunk, File, _Cs, AtomTable, Mod) ->
     case Chunk of
 	<<>> ->
 	    {AtomTable, {Id, no_abstract_code}};
@@ -489,12 +494,12 @@ chunk_to_data(Id, Chunk, File, _Cs, AtomTable, Mod) when Id =:= abstract_code ->
 		    {AtomTable, {Id, Term}}
 	    end
     end;
-chunk_to_data(Id, _Chunk, _File, Cs, AtomTable0, _Mod) when Id =:= atoms ->
+chunk_to_data(atoms=Id, _Chunk, _File, Cs, AtomTable0, _Mod) ->
     AtomTable = ensure_atoms(AtomTable0, Cs),
     Atoms = ets:tab2list(AtomTable),
     {AtomTable, {Id, lists:sort(Atoms)}};
 chunk_to_data(ChunkName, Chunk, File,
-	      Cs, AtomTable, _Mod) when atom(ChunkName) ->
+	      Cs, AtomTable, _Mod) when is_atom(ChunkName) ->
     case catch symbols(Chunk, AtomTable, Cs, ChunkName) of
 	{ok, NewAtomTable, S} ->
 	    {NewAtomTable, {ChunkName, S}};
@@ -502,7 +507,7 @@ chunk_to_data(ChunkName, Chunk, File,
 	    error({invalid_chunk, File, chunk_name_to_id(ChunkName, File)})
     end;
 chunk_to_data(ChunkId, Chunk, _File, 
-	      _Cs, AtomTable, _Module) -> % when list(ChunkId)
+	      _Cs, AtomTable, _Module) when is_list(ChunkId) ->
     {AtomTable, {ChunkId, Chunk}}. % Chunk is a binary
 
 chunk_name_to_id(atoms, _)           -> "Atom";
@@ -547,8 +552,9 @@ symbol(indexed_imports, AT, I1, I2, I3, Cnt) ->
     {Cnt, atm(AT, I1), atm(AT, I2), I3};
 symbol(imports, AT, I1, I2, I3, _Cnt) ->
     {atm(AT, I1), atm(AT, I2), I3};
-symbol(Name, AT, I1, I2, I3, _Cnt) when Name =:= labeled_exports; 
-					Name =:= labeled_locals ->
+symbol(labeled_exports, AT, I1, I2, I3, _Cnt) ->
+    {atm(AT, I1), I2, I3};
+symbol(labeled_locals, AT, I1, I2, I3, _Cnt) ->
     {atm(AT, I1), I2, I3};
 symbol(_, AT, I1, I2, _I3, _Cnt) ->
     {atm(AT, I1), I2}.
@@ -622,12 +628,12 @@ pread(FD, AtPos, Size) ->
             {FD, eof}
     end.
 
-filename(BB) when binary(BB#bb.source) ->
+filename(BB) when is_binary(BB#bb.source) ->
     BB#bb.source;
 filename(BB) -> 
     list_to_atom(BB#bb.source).    
 
-beam_filename(Bin) when binary(Bin) ->
+beam_filename(Bin) when is_binary(Bin) ->
     Bin;
 beam_filename(File) ->
     filename:rootname(File, ".beam") ++ ".beam".

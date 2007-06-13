@@ -103,7 +103,7 @@ init_opts(Element, Options) ->
 	    R#opts{stylesheet = S};
 	"" ->
 	    R;  % don't use any stylesheet
-	S when list(S) ->
+	S when is_list(S) ->
 	    R#opts{stylesheet = S}; 
 	_ ->
 	    report("bad value for option `stylesheet'.", []),
@@ -430,13 +430,10 @@ typespec(Es) ->
 types([]) -> [];
 types(Ts) ->
     Es = lists:flatmap(fun ({Name, E}) -> typedecl(Name, E) end, Ts),
-    if Es == [] -> [];
-       true ->
-	    [?NL,
-	     {h2, [{a, [{name, ?DATA_TYPES_LABEL}],
-		    [?DATA_TYPES_TITLE]}]},
-	     ?NL | Es]
-    end.
+    [?NL,
+     {h2, [{a, [{name, ?DATA_TYPES_LABEL}],
+	    [?DATA_TYPES_TITLE]}]},
+     ?NL | Es].
 
 typedecl(Name, E=#xmlElement{content = Es}) ->
     ([?NL, {h3, [{class, "typedecl"}], label_anchor([Name, "()"], E)}, ?NL]

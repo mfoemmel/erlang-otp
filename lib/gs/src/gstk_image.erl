@@ -99,7 +99,7 @@ create(gif,DB, Gstkid, Opts) ->
 	{Coords, NewOpts} ->
 	    CCmd = "image create photo",
 	    case tcl2erl:ret_atom(CCmd) of
-		Photo_item when atom(Photo_item) ->
+		Photo_item when is_atom(Photo_item) ->
 		    #gstkid{parent=Parent,owner=Owner,id=Id}=Gstkid,
 		    Pgstkid = gstk_db:lookup_gstkid(DB, Parent, Owner),
 		    SO = Pgstkid#gstkid.widget_data,
@@ -114,9 +114,9 @@ create(gif,DB, Gstkid, Opts) ->
 		    case gstk_canvas:make_command(NewOpts, Ngstkid,
 						 CanvasTkW, MCmd, DB) of
 			{error,Reason} -> {error,Reason};
-			Cmd when list(Cmd) ->
+			Cmd when is_list(Cmd) ->
 			    case tcl2erl:ret_int(Cmd) of
-				Item when integer(Item) ->
+				Item when is_integer(Item) ->
 				    %% buu, not nice
 				    G2 = gstk_db:lookup_gstkid(DB,Id),
 				    NewWidget = {Photo_item_s,Item},
@@ -290,11 +290,11 @@ pickout_coords([Opt | Rest], Opts) ->
 pickout_coords([], _Opts) ->
     {error, "An image must have two coordinates"}.
 
-coords({X,Y}) when number(X),number(Y) ->
+coords({X,Y}) when is_number(X),is_number(Y) ->
     [gstk:to_ascii(X), " ", gstk:to_ascii(Y), " "];
-coords([{X,Y} | R]) when number(X),number(Y) ->
+coords([{X,Y} | R]) when is_number(X),is_number(Y) ->
     [gstk:to_ascii(X), " ", gstk:to_ascii(Y), " ", coords(R)];
-coords({{X1,Y1},{X2,Y2}}) when number(X1),number(Y1),number(X2),number(Y2) ->
+coords({{X1,Y1},{X2,Y2}}) when is_number(X1),is_number(Y1),is_number(X2),is_number(Y2) ->
     [gstk:to_ascii(X1), " ", gstk:to_ascii(Y1)," ",
      gstk:to_ascii(X2), " ", gstk:to_ascii(Y2)];
 coords([_]) -> %% not a pair

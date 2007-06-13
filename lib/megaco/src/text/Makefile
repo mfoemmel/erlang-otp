@@ -65,9 +65,10 @@ endif
 
 include ../app/megaco.mk
 
-ERL_FLAGS += $(MEGACO_ERL_FLAGS)
-
-ERL_COMPILE_FLAGS += -I../../include $(MEGACO_APP_VSN_COMPILE_FLAGS)
+ERL_COMPILE_FLAGS += \
+	$(MEGACO_ERL_COMPILE_FLAGS) \
+	-I../../include     \
+	$(MEGACO_APP_VSN_COMPILE_FLAGS)
 
 ifeq ($(YRL_VERBOSE),true)
 YRL_FLAGS += -v

@@ -47,9 +47,9 @@ error(What) ->
 error(Where, What) ->
     error(0, Where, What).
 
-error(Line, Where, S) when list(S) ->
+error(Line, Where, S) when is_list(S) ->
     report(Line, Where, S, []);
-error(Line, Where, {S, D}) when list(S) ->
+error(Line, Where, {S, D}) when is_list(S) ->
     report(Line, Where, S, D);
 error(Line, Where, {format_error, M, D}) ->
     report(Line, Where, M:format_error(D), []).
@@ -74,7 +74,7 @@ report(Where, S, Vs) ->
 
 report(L, Where, S, Vs) ->
     io:put_chars(where(Where)),
-    if integer(L), L > 0 ->
+    if is_integer(L), L > 0 ->
 	    io:fwrite("at line ~w: ", [L]);
        true ->
 	    ok
@@ -92,5 +92,5 @@ where({File, {F, A}}) ->
     io_lib:fwrite("~s, function ~s/~w: ", [File, F, A]);
 where([]) ->
     io_lib:fwrite("~s: ", [?APPLICATION]);
-where(File) when list(File) ->
+where(File) when is_list(File) ->
     File ++ ": ".

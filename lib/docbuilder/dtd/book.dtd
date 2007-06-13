@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common SYSTEM "common.dtd" >
+%common;
+<!ENTITY % common.table SYSTEM "common.table.dtd" >
+%common.table;
+
+<!ELEMENT book                (header,
+			       insidecover?,
+			       pagetext,
+			       preamble,
+			       (applications|parts|headline|pagetext)+,
+				(listoffigures?,
+				 listoftables?,
+				 listofterms?,
+				 bibliography?,
+				 index?)) >
+<!ELEMENT header              (title,prepared,responsible?,docno,approved?,
+                               checked?,date,rev,file?,abbreviation?) >
+<!ATTLIST header	      titlestyle (special|normal) "normal">
+<!ELEMENT title               (#PCDATA|br)* >
+<!ELEMENT prepared            (#PCDATA|br)* >
+<!ELEMENT responsible         (#PCDATA|br)* >
+<!ELEMENT docno               (#PCDATA|br)* >
+<!ELEMENT approved            (#PCDATA|br)* >
+<!ELEMENT checked             (#PCDATA|br)* >
+<!ELEMENT date                (#PCDATA|br)* >
+<!ELEMENT rev                 (#PCDATA|br)* >
+<!ELEMENT file                (#PCDATA|br)* >
+<!ELEMENT abbreviation        (#PCDATA|br)* >
+
+<!ELEMENT pagetext	      (#PCDATA) >
+<!ELEMENT preamble	      (preface?, contents?) >
+<!ELEMENT preface	      (title?,(%block;|quote|br|marker|warning|note|table)*) >
+
+<!ELEMENT insidecover         (#PCDATA|br|theheader|vfill|vspace|tt|bold|
+			       include)* >
+<!ELEMENT tt                  (#PCDATA|br|theheader|vfill)* >
+<!ELEMENT bold                (#PCDATA|br|theheader|vfill)* >
+<!ELEMENT vfill               EMPTY >
+<!ELEMENT theheader           EMPTY >
+<!ATTLIST theheader           tag  (title|prepared|responsible|docno|
+				    approved|checked|date|rev|file|
+				    abbreviation|
+				    none) "none" >
+
+
+<!ELEMENT applications        (include)* >
+<!ELEMENT parts               (title?,description?,(include|onepart)*) >
+<!ATTLIST parts               lift (yes|no) "no" >
+<!ELEMENT headline            (#PCDATA) >
+<!ELEMENT index               EMPTY >
+<!ELEMENT listoffigures       EMPTY >
+<!ELEMENT listoftables        EMPTY >
+<!ELEMENT listofterms         EMPTY >
+<!ELEMENT bibliography        EMPTY >
+<!ELEMENT contents            EMPTY >
+<!ATTLIST contents            level (0|1|2|3) "2">
+
+<!ELEMENT onepart             (title?,description?,include+) >
+<!ATTLIST onepart             lift (yes|no) "no" >
+
+<!ELEMENT description	      (%block;|quote|br|marker|warning|note)* >
+
+<!ELEMENT include             EMPTY >
+<!ATTLIST include             file CDATA #REQUIRED>

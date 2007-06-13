@@ -116,13 +116,14 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosTransactions/ebin \
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosTransactions/ebin \
 	-pa $(ERL_TOP)/lib/ic/ebin\
 	-pa $(ERL_TOP)/lib/orber/ebin
 
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-I$(ERL_TOP)/lib/cosTransactions/include \
 	-I$(ERL_TOP)/lib/orber/include \
 	+'{parse_transform,sys_pre_attributes}' \
@@ -153,7 +154,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES) $(EXTERNAL_GEN_HRL_FILES): CosTransactions.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosTransactions.cfg"}' CosTransactions.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosTransactions.cfg"}' CosTransactions.idl
 	mv $(GEN_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

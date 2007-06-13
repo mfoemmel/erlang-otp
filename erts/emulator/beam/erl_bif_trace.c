@@ -576,7 +576,7 @@ trace_3(Process* p, Eterm pid_spec, Eterm how, Eterm list)
 	} else {
 	    tracee_p->trace_flags &= ~mask;
 	}
-	if(!tracee_p->trace_flags) {
+	if ((tracee_p->trace_flags & TRACEE_FLAGS) == 0) {
 	    tracee_p->tracer_proc = NIL;
 	} else if (tracer != NIL) {
 	    tracee_p->tracer_proc = tracer;

@@ -153,13 +153,9 @@ DEV_TARGET_FILES= \
 # FLAGS
 # ----------------------------------------------------
 
-ERL_FLAGS += \
-	-pa $(APP_DIR)/ebin \
-	-pa $(IC_DIR)/ebin \
-	-pa $(EI_DIR)/ebin
-
-
-ERL_COMPILE_FLAGS += \
+ERL_COMPILE_FLAGS += -pa $(APP_DIR)/ebin \
+		-pa $(IC_DIR)/ebin \
+		-pa $(EI_DIR)/ebin \
 		-I $(PP_DIR) \
 		-I $(IC_DIR)/include
 
@@ -203,20 +199,20 @@ clean:
 docs:
 
 $(EBIN)/%.$(EMULATOR): $(PP_DIR)/%.erl
-	$(ERLC) -b$(EMULATOR) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) -b$(EMULATOR) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 $(GEN_ERL_FILES): $(PERSON_IDL)
-	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
+	$(ERLC) $(ERL_COMPILE_FLAGS) \
 	+'{be,erl_genserv}' +'{outdir,"./$(PP_DIR)"}' \
 	$(PERSON_IDL)
 
 $(GEN_PP_FILES): $(PERSON_IDL)
-	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
+	$(ERLC) $(ERL_COMPILE_FLAGS) \
 	+'{be,c_genserv}' +'{outdir,"./$(PP_DIR)"}' \
 	$(PERSON_IDL)
 
 $(GEN_MS_FILES): $(ERL_TOP)/lib/mnesia_session/src/mnesia_session.idl
-	$(ERLC) $(ERL_FLAGS)  $(ERL_COMPILE_FLAGS) \
+	$(ERLC) $(ERL_COMPILE_FLAGS) \
 	+'{be,c_genserv}' +'{outdir,"./$(MS_DIR)"}' \
 	$(ERL_TOP)/lib/mnesia_session/src/mnesia_session.idl
 
@@ -233,7 +229,6 @@ info:
 	@echo ""
 	@echo "APP_DIR   = $(APP_DIR)"
 	@echo "PROGRAM   = $(PROGRAM)"
-	@echo "ERL_FLAGS = $(ERL_FLAGS)"
 	@echo "CFLAGS    = $(CFLAGS)"
 	@echo "LDFLAG    = $(LDFLAGS)"
 	@echo "LDLIBS    = $(LDLIBS)"

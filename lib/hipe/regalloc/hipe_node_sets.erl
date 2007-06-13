@@ -15,17 +15,14 @@
 	 colored     % Nodes succesfully colored
 	}).
 
-spilled(Node_sets)    -> Node_sets#node_sets.spilled.
-colored(Node_sets)    -> Node_sets#node_sets.colored.
+spilled(Node_sets) -> Node_sets#node_sets.spilled.
+colored(Node_sets) -> Node_sets#node_sets.colored.
     
-set_spilled(Spilled, Node_sets)       -> Node_sets#node_sets{spilled = Spilled}.
-set_colored(Colored, Node_sets)       -> Node_sets#node_sets{colored = Colored}.
+set_spilled(Spilled, Node_sets) -> Node_sets#node_sets{spilled = Spilled}.
+set_colored(Colored, Node_sets) -> Node_sets#node_sets{colored = Colored}.
 
 new() ->
-  #node_sets{
-     spilled    = [],
-     colored    = []
-    }.
+  #node_sets{spilled = [], colored = []}.
 
 add_spilled(Node, Node_sets) ->
   set_spilled([Node | spilled(Node_sets)], Node_sets).

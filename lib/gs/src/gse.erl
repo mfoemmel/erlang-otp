@@ -151,7 +151,7 @@ start(Opts) ->
 %%    {incvalid_option, Type, {Option,Value}}
 %%
 %%
-create(Objtype,Parent,Opts) when list(Opts) ->
+create(Objtype,Parent,Opts) when is_list(Opts) ->
     case gs:create(Objtype,Parent,Opts) of
 	{error,Reason} ->
 	    exit({?MODULE, create,Reason});
@@ -174,7 +174,7 @@ create(Objtype,Parent,Opts) when list(Opts) ->
 %%    {name_occupied,Name}
 %%
 
-create_named(Name,Objtype,Parent,Opts) when list(Opts) ->
+create_named(Name,Objtype,Parent,Opts) when is_list(Opts) ->
     case gs:create(Objtype,Name,Parent,Opts) of
 	{error,Reason} ->
 	    exit({?MODULE, create_named,Reason});
@@ -189,7 +189,7 @@ create_named(Name,Objtype,Parent,Opts) when list(Opts) ->
 %%     gs:config(Object, Opt)
 %%
 
-config(Object,Opts) when list(Opts) ->
+config(Object,Opts) when is_list(Opts) ->
     case gs:config(Object,Opts) of
 	{error,Reason} ->
 	    exit({?MODULE, config,Reason});
@@ -229,14 +229,14 @@ create_tree(Parent, Tree)->
     end.
 
 
-window(Parent,Options) when list(Options) ->
+window(Parent,Options) when is_list(Options) ->
     case gs:window(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,window,Reason});
 	Return -> Return
     end.
 
-named_window(Name,Parent,Options) when list(Options) ->
+named_window(Name,Parent,Options) when is_list(Options) ->
     case gs:window(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_window,Reason});
@@ -244,7 +244,7 @@ named_window(Name,Parent,Options) when list(Options) ->
     end.
 
     
-button(Parent,Options) when list(Options) ->
+button(Parent,Options) when is_list(Options) ->
     case gs:button(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,button,Reason});
@@ -252,7 +252,7 @@ button(Parent,Options) when list(Options) ->
     end.
 
 
-named_button(Name,Parent,Options) when list(Options) ->
+named_button(Name,Parent,Options) when is_list(Options) ->
     case gs:button(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_button,Reason});
@@ -260,7 +260,7 @@ named_button(Name,Parent,Options) when list(Options) ->
     end.
 
     
-checkbutton(Parent,Options) when list(Options) ->
+checkbutton(Parent,Options) when is_list(Options) ->
     case gs:checkbutton(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,checkbutton,Reason});
@@ -268,7 +268,7 @@ checkbutton(Parent,Options) when list(Options) ->
     end.
 
 
-named_checkbutton(Name,Parent,Options) when list(Options) ->
+named_checkbutton(Name,Parent,Options) when is_list(Options) ->
     case gs:checkbutton(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_checkbutton,Reason});
@@ -276,7 +276,7 @@ named_checkbutton(Name,Parent,Options) when list(Options) ->
     end.
 
     
-radiobutton(Parent,Options) when list(Options) ->
+radiobutton(Parent,Options) when is_list(Options) ->
     case gs:radiobutton(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,radiobutton,Reason});
@@ -284,7 +284,7 @@ radiobutton(Parent,Options) when list(Options) ->
     end.
 
 
-named_radiobutton(Name,Parent,Options) when list(Options) ->
+named_radiobutton(Name,Parent,Options) when is_list(Options) ->
     case gs:radiobutton(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_radiobutton,Reason});
@@ -292,7 +292,7 @@ named_radiobutton(Name,Parent,Options) when list(Options) ->
     end.
 
     
-frame(Parent,Options) when list(Options) ->
+frame(Parent,Options) when is_list(Options) ->
     case gs:frame(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,frame,Reason});
@@ -300,7 +300,7 @@ frame(Parent,Options) when list(Options) ->
     end.
 
 
-named_frame(Name,Parent,Options) when list(Options) ->
+named_frame(Name,Parent,Options) when is_list(Options) ->
     case gs:frame(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_frame,Reason});
@@ -308,7 +308,7 @@ named_frame(Name,Parent,Options) when list(Options) ->
     end.
 
     
-canvas(Parent,Options) when list(Options) ->
+canvas(Parent,Options) when is_list(Options) ->
     case gs:canvas(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,canvas,Reason});
@@ -316,7 +316,7 @@ canvas(Parent,Options) when list(Options) ->
     end.
 
 
-named_canvas(Name,Parent,Options) when list(Options) ->
+named_canvas(Name,Parent,Options) when is_list(Options) ->
     case gs:canvas(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_canvas,Reason});
@@ -324,7 +324,7 @@ named_canvas(Name,Parent,Options) when list(Options) ->
     end.
 
     
-label(Parent,Options) when list(Options) ->
+label(Parent,Options) when is_list(Options) ->
     case gs:label(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,label,Reason});
@@ -332,7 +332,7 @@ label(Parent,Options) when list(Options) ->
     end.
 
 
-named_label(Name,Parent,Options) when list(Options) ->
+named_label(Name,Parent,Options) when is_list(Options) ->
     case gs:label(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_label,Reason});
@@ -340,7 +340,7 @@ named_label(Name,Parent,Options) when list(Options) ->
     end.
 
     
-message(Parent,Options) when list(Options) ->
+message(Parent,Options) when is_list(Options) ->
     case gs:message(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,message,Reason});
@@ -348,7 +348,7 @@ message(Parent,Options) when list(Options) ->
     end.
 
 
-named_message(Name,Parent,Options) when list(Options) ->
+named_message(Name,Parent,Options) when is_list(Options) ->
     case gs:message(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_message,Reason});
@@ -356,7 +356,7 @@ named_message(Name,Parent,Options) when list(Options) ->
     end.
 
     
-listbox(Parent,Options) when list(Options) ->
+listbox(Parent,Options) when is_list(Options) ->
     case gs:listbox(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,listbox,Reason});
@@ -364,7 +364,7 @@ listbox(Parent,Options) when list(Options) ->
     end.
 
 
-named_listbox(Name,Parent,Options) when list(Options) ->
+named_listbox(Name,Parent,Options) when is_list(Options) ->
     case gs:listbox(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_listbox,Reason});
@@ -372,7 +372,7 @@ named_listbox(Name,Parent,Options) when list(Options) ->
     end.
 
     
-entry(Parent,Options) when list(Options) ->
+entry(Parent,Options) when is_list(Options) ->
     case gs:entry(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,entry,Reason});
@@ -380,7 +380,7 @@ entry(Parent,Options) when list(Options) ->
     end.
 
 
-named_entry(Name,Parent,Options) when list(Options) ->
+named_entry(Name,Parent,Options) when is_list(Options) ->
     case gs:entry(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_entry,Reason});
@@ -388,7 +388,7 @@ named_entry(Name,Parent,Options) when list(Options) ->
     end.
 
     
-scrollbar(Parent,Options) when list(Options) ->
+scrollbar(Parent,Options) when is_list(Options) ->
     case gs:scrollbar(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,scrollbar,Reason});
@@ -396,7 +396,7 @@ scrollbar(Parent,Options) when list(Options) ->
     end.
 
 
-named_scrollbar(Name,Parent,Options) when list(Options) ->
+named_scrollbar(Name,Parent,Options) when is_list(Options) ->
     case gs:scrollbar(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_scrollbar,Reason});
@@ -404,7 +404,7 @@ named_scrollbar(Name,Parent,Options) when list(Options) ->
     end.
 
     
-scale(Parent,Options) when list(Options) ->
+scale(Parent,Options) when is_list(Options) ->
     case gs:scale(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,scale,Reason});
@@ -412,7 +412,7 @@ scale(Parent,Options) when list(Options) ->
     end.
 
 
-named_scale(Name,Parent,Options) when list(Options) ->
+named_scale(Name,Parent,Options) when is_list(Options) ->
     case gs:scale(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_scale,Reason});
@@ -420,7 +420,7 @@ named_scale(Name,Parent,Options) when list(Options) ->
     end.
 
     
-editor(Parent,Options) when list(Options) ->
+editor(Parent,Options) when is_list(Options) ->
     case gs:editor(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,editor,Reason});
@@ -428,7 +428,7 @@ editor(Parent,Options) when list(Options) ->
     end.
 
 
-named_editor(Name,Parent,Options) when list(Options) ->
+named_editor(Name,Parent,Options) when is_list(Options) ->
     case gs:editor(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_editor,Reason});
@@ -436,7 +436,7 @@ named_editor(Name,Parent,Options) when list(Options) ->
     end.
 
     
-prompter(Parent,Options) when list(Options) ->
+prompter(Parent,Options) when is_list(Options) ->
     case gs:prompter(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,prompter,Reason});
@@ -444,7 +444,7 @@ prompter(Parent,Options) when list(Options) ->
     end.
 
 
-named_prompter(Name,Parent,Options) when list(Options) ->
+named_prompter(Name,Parent,Options) when is_list(Options) ->
     case gs:prompter(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_prompter,Reason});
@@ -452,7 +452,7 @@ named_prompter(Name,Parent,Options) when list(Options) ->
     end.
 
     
-line(Parent,Options) when list(Options) ->
+line(Parent,Options) when is_list(Options) ->
     case gs:line(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,line,Reason});
@@ -460,7 +460,7 @@ line(Parent,Options) when list(Options) ->
     end.
 
 
-named_line(Name,Parent,Options) when list(Options) ->
+named_line(Name,Parent,Options) when is_list(Options) ->
     case gs:line(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_line,Reason});
@@ -468,7 +468,7 @@ named_line(Name,Parent,Options) when list(Options) ->
     end.
 
     
-oval(Parent,Options) when list(Options) ->
+oval(Parent,Options) when is_list(Options) ->
     case gs:oval(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,oval,Reason});
@@ -476,7 +476,7 @@ oval(Parent,Options) when list(Options) ->
     end.
 
 
-named_oval(Name,Parent,Options) when list(Options) ->
+named_oval(Name,Parent,Options) when is_list(Options) ->
     case gs:oval(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_oval,Reason});
@@ -484,7 +484,7 @@ named_oval(Name,Parent,Options) when list(Options) ->
     end.
 
     
-rectangle(Parent,Options) when list(Options) ->
+rectangle(Parent,Options) when is_list(Options) ->
     case gs:rectangle(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,rectangle,Reason});
@@ -492,7 +492,7 @@ rectangle(Parent,Options) when list(Options) ->
     end.
 
 
-named_rectangle(Name,Parent,Options) when list(Options) ->
+named_rectangle(Name,Parent,Options) when is_list(Options) ->
     case gs:rectangle(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_rectangle,Reason});
@@ -500,7 +500,7 @@ named_rectangle(Name,Parent,Options) when list(Options) ->
     end.
 
     
-polygon(Parent,Options) when list(Options) ->
+polygon(Parent,Options) when is_list(Options) ->
     case gs:polygon(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,polygon,Reason});
@@ -508,7 +508,7 @@ polygon(Parent,Options) when list(Options) ->
     end.
 
 
-named_polygon(Name,Parent,Options) when list(Options) ->
+named_polygon(Name,Parent,Options) when is_list(Options) ->
     case gs:polygon(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_polygon,Reason});
@@ -516,7 +516,7 @@ named_polygon(Name,Parent,Options) when list(Options) ->
     end.
 
     
-text(Parent,Options) when list(Options) ->
+text(Parent,Options) when is_list(Options) ->
     case gs:text(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,text,Reason});
@@ -524,7 +524,7 @@ text(Parent,Options) when list(Options) ->
     end.
 
 
-named_text(Name,Parent,Options) when list(Options) ->
+named_text(Name,Parent,Options) when is_list(Options) ->
     case gs:text(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_text,Reason});
@@ -532,7 +532,7 @@ named_text(Name,Parent,Options) when list(Options) ->
     end.
 
     
-image(Parent,Options) when list(Options) ->
+image(Parent,Options) when is_list(Options) ->
     case gs:image(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,image,Reason});
@@ -540,7 +540,7 @@ image(Parent,Options) when list(Options) ->
     end.
 
 
-named_image(Name,Parent,Options) when list(Options) ->
+named_image(Name,Parent,Options) when is_list(Options) ->
     case gs:image(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_image,Reason});
@@ -548,7 +548,7 @@ named_image(Name,Parent,Options) when list(Options) ->
     end.
 
     
-arc(Parent,Options) when list(Options) ->
+arc(Parent,Options) when is_list(Options) ->
     case gs:arc(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,arc,Reason});
@@ -556,7 +556,7 @@ arc(Parent,Options) when list(Options) ->
     end.
 
 
-named_arc(Name,Parent,Options) when list(Options) ->
+named_arc(Name,Parent,Options) when is_list(Options) ->
     case gs:arc(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_arc,Reason});
@@ -564,7 +564,7 @@ named_arc(Name,Parent,Options) when list(Options) ->
     end.
 
     
-menu(Parent,Options) when list(Options) ->
+menu(Parent,Options) when is_list(Options) ->
     case gs:menu(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,menu,Reason});
@@ -572,7 +572,7 @@ menu(Parent,Options) when list(Options) ->
     end.
 
 
-named_menu(Name,Parent,Options) when list(Options) ->
+named_menu(Name,Parent,Options) when is_list(Options) ->
     case gs:menu(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_menu,Reason});
@@ -580,7 +580,7 @@ named_menu(Name,Parent,Options) when list(Options) ->
     end.
 
     
-menubutton(Parent,Options) when list(Options) ->
+menubutton(Parent,Options) when is_list(Options) ->
     case gs:menubutton(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,menubutton,Reason});
@@ -588,7 +588,7 @@ menubutton(Parent,Options) when list(Options) ->
     end.
 
 
-named_menubutton(Name,Parent,Options) when list(Options) ->
+named_menubutton(Name,Parent,Options) when is_list(Options) ->
     case gs:menubutton(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_menubutton,Reason});
@@ -596,7 +596,7 @@ named_menubutton(Name,Parent,Options) when list(Options) ->
     end.
 
     
-menubar(Parent,Options) when list(Options) ->
+menubar(Parent,Options) when is_list(Options) ->
     case gs:menubar(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,menubar,Reason});
@@ -604,7 +604,7 @@ menubar(Parent,Options) when list(Options) ->
     end.
 
 
-named_menubar(Name,Parent,Options) when list(Options) ->
+named_menubar(Name,Parent,Options) when is_list(Options) ->
     case gs:menubar(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_menubar,Reason});
@@ -612,7 +612,7 @@ named_menubar(Name,Parent,Options) when list(Options) ->
     end.
 
     
-menuitem(Parent,Options) when list(Options) ->
+menuitem(Parent,Options) when is_list(Options) ->
     case gs:menuitem(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,menuitem,Reason});
@@ -620,7 +620,7 @@ menuitem(Parent,Options) when list(Options) ->
     end.
 
 
-named_menuitem(Name,Parent,Options) when list(Options) ->
+named_menuitem(Name,Parent,Options) when is_list(Options) ->
     case gs:menuitem(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_menuitem,Reason});
@@ -628,7 +628,7 @@ named_menuitem(Name,Parent,Options) when list(Options) ->
     end.
 
     
-grid(Parent,Options) when list(Options) ->
+grid(Parent,Options) when is_list(Options) ->
     case gs:grid(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,grid,Reason});
@@ -636,7 +636,7 @@ grid(Parent,Options) when list(Options) ->
     end.
 
 
-named_grid(Name,Parent,Options) when list(Options) ->
+named_grid(Name,Parent,Options) when is_list(Options) ->
     case gs:grid(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_grid,Reason});
@@ -644,7 +644,7 @@ named_grid(Name,Parent,Options) when list(Options) ->
     end.
 
     
-gridline(Parent,Options) when list(Options) ->
+gridline(Parent,Options) when is_list(Options) ->
     case gs:gridline(Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,gridline,Reason});
@@ -652,7 +652,7 @@ gridline(Parent,Options) when list(Options) ->
     end.
 
 
-named_gridline(Name,Parent,Options) when list(Options) ->
+named_gridline(Name,Parent,Options) when is_list(Options) ->
     case gs:gridline(Name, Parent,Options) of
 	{error, Reason} ->
 	    exit({?MODULE,named_gridline,Reason});

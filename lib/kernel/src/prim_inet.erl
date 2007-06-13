@@ -85,7 +85,7 @@ open1(Protocol, Family) ->
 	Error -> Error
     end.
 
-fdopen1(Protocol, Family, Fd) when integer(Fd) ->
+fdopen1(Protocol, Family, Fd) when is_integer(Fd) ->
     case open0(Protocol) of
 	{ok, S} ->
 	    case ctl_cmd(S,?INET_REQ_FDOPEN,[Family,?int32(Fd)]) of
@@ -158,7 +158,7 @@ shutdown_pend_loop(S, N0) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-close(S) when port(S) ->
+close(S) when is_port(S) ->
     unlink(S),               %% avoid getting {'EXIT', S, Reason}
     case subscribe(S, [subs_empty_out_q]) of
 	{ok, [{subs_empty_out_q,N}]} when N > 0 ->
@@ -175,7 +175,7 @@ close_pend_loop(S, N) ->
     after ?INET_CLOSE_TIMEOUT ->
 	    case getstat(S, [send_pend]) of
                 {ok, [{send_pend,N1}]} ->
-                    if N1 == N -> catch erlang:port_close(S), ok;
+                    if N1 =:= N -> catch erlang:port_close(S), ok;
                        true -> close_pend_loop(S, N1)
                     end;
 		_ ->
@@ -191,7 +191,7 @@ close_pend_loop(S, N) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-bind(S,IP,Port) when port(S), is_integer(Port), Port >= 0, Port =< 65535 ->
+bind(S,IP,Port) when is_port(S), is_integer(Port), Port >= 0, Port =< 65535 ->
     case ctl_cmd(S,?INET_REQ_BIND,[?int16(Port),ip_to_bytes(IP)]) of
 	{ok, [P1,P0]} -> {ok, ?u16(P1, P0)};
 	Error -> Error
@@ -248,8 +248,8 @@ connect(S, IP, Port) -> connect0(S, IP, Port, -1).
 connect(S, IP, Port, infinity) -> connect0(S, IP, Port, -1);
 connect(S, IP, Port, Time)     -> connect0(S, IP, Port, Time).
 
-connect0(S, IP, Port, Time) when port(S), Port > 0, Port =< 65535,
-				 integer(Time) ->
+connect0(S, IP, Port, Time) when is_port(S), Port > 0, Port =< 65535,
+				 is_integer(Time) ->
     case async_connect(S, IP, Port, Time) of
 	{ok, S, Ref} ->
 	    receive
@@ -291,7 +291,7 @@ accept(L)            -> accept0(L, -1).
 accept(L, infinity)  -> accept0(L, -1);
 accept(L, Time)      -> accept0(L, Time).
 
-accept0(L, Time) when port(L), integer(Time) ->
+accept0(L, Time) when is_port(L), is_integer(Time) ->
     case async_accept(L, Time) of
 	{ok, Ref} ->
 	    receive 
@@ -356,7 +356,7 @@ listen(S, Flag)   when is_port(S), is_boolean(Flag) ->
 %% NOT delegating this task to any back-end.  For SCTP, this function MUST NOT
 %% be called directly -- use "sendmsg" instead:
 %%
-send(S, Data) when port(S) ->
+send(S, Data) when is_port(S) ->
     ?DBG_FORMAT("prim_inet:send(~p, ~p)~n", [S,Data]),
     try erlang:port_command(S, Data) of
 	true ->
@@ -381,7 +381,7 @@ send(S, Data) when port(S) ->
 %% "sendto" is for UDP. IP and Port are set by the caller to 0 if the socket
 %% is known to be connected.
 
-sendto(S, IP, Port, Data) when port(S), Port >= 0, Port =< 65535 ->
+sendto(S, IP, Port, Data) when is_port(S), Port >= 0, Port =< 65535 ->
     ?DBG_FORMAT("prim_inet:sendto(~p, ~p, ~p, ~p)~n", [S,IP,Port,Data]),
     try erlang:port_command(S, [?int16(Port),ip_to_bytes(IP),Data]) of
 	true -> 
@@ -430,9 +430,9 @@ recv(S, Length) -> recv0(S, Length, -1).
 
 recv(S, Length, infinity) -> recv0(S, Length,-1);
 
-recv(S, Length, Time) when integer(Time) -> recv0(S, Length, Time).
+recv(S, Length, Time) when is_integer(Time) -> recv0(S, Length, Time).
 
-recv0(S, Length, Time) when port(S), integer(Length), Length >= 0 ->
+recv0(S, Length, Time) when is_port(S), is_integer(Length), Length >= 0 ->
     case async_recv(S, Length, Time) of
 	{ok, Ref} ->
 	    receive
@@ -469,12 +469,12 @@ recvfrom(S, Length) ->
 
 recvfrom(S, Length, infinity) ->
     recvfrom0(S, Length, -1);
-recvfrom(S, Length, Time) when integer(Time), Time < 16#ffffffff ->
+recvfrom(S, Length, Time) when is_integer(Time), Time < 16#ffffffff ->
     recvfrom0(S, Length, Time);
 recvfrom(_, _, _) -> {error,einval}.
 
 recvfrom0(S, Length, Time)
-  when port(S), integer(Length), Length >= 0, Length =< 16#ffffffff ->
+  when is_port(S), is_integer(Length), Length >= 0, Length =< 16#ffffffff ->
     case ctl_cmd(S, ?PACKET_REQ_RECV,[enc_time(Time),?int32(Length)]) of
 	{ok,[R1,R0]} ->
 	    Ref = ?u16(R1,R0),
@@ -504,7 +504,7 @@ recvfrom0(_, _, _) -> {error,einval}.
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-peername(S) when port(S) ->
+peername(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_PEER, []) of
 	{ok, [F, P1,P0 | Addr]} ->
 	    {IP, _} = get_ip(F, Addr),
@@ -512,12 +512,12 @@ peername(S) when port(S) ->
 	Error -> Error
     end.
 
-setpeername(S, {IP,Port}) when port(S) ->
+setpeername(S, {IP,Port}) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_SETPEER, [?int16(Port),ip_to_bytes(IP)]) of
 	{ok,[]} -> ok;
 	Error -> Error
     end;
-setpeername(S, undefined) when port(S) ->
+setpeername(S, undefined) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_SETPEER, []) of
 	{ok,[]} -> ok;
 	Error -> Error
@@ -529,7 +529,7 @@ setpeername(S, undefined) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-sockname(S) when port(S) ->
+sockname(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_NAME, []) of
 	{ok, [F, P1, P0 | Addr]} ->
 	    {IP, _} = get_ip(F, Addr),
@@ -537,12 +537,12 @@ sockname(S) when port(S) ->
 	Error -> Error
     end.
 
-setsockname(S, {IP,Port}) when port(S) ->
+setsockname(S, {IP,Port}) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_SETNAME, [?int16(Port),ip_to_bytes(IP)]) of
 	{ok,[]} -> ok;
 	Error -> Error
     end;
-setsockname(S, undefined) when port(S) ->
+setsockname(S, undefined) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_SETNAME, []) of
 	{ok,[]} -> ok;
 	Error -> Error
@@ -557,10 +557,10 @@ setsockname(S, undefined) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-setopt(S, Opt, Value) when port(S) -> 
+setopt(S, Opt, Value) when is_port(S) -> 
     setopts(S, [{Opt,Value}]).
 
-setopts(S, Opts) when port(S) ->
+setopts(S, Opts) when is_port(S) ->
     case encode_opt_val(Opts) of
 	{ok, Buf} ->
 	    case ctl_cmd(S, ?INET_REQ_SETOPTS, Buf) of
@@ -578,13 +578,13 @@ setopts(S, Opts) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getopt(S, Opt) when port(S), atom(Opt) ->
+getopt(S, Opt) when is_port(S), is_atom(Opt) ->
     case getopts(S, [Opt]) of
 	{ok,[{_,Value}]} -> {ok, Value};
 	Error -> Error
     end.
 
-getopts(S, Opts) when port(S), list(Opts) ->
+getopts(S, Opts) when is_port(S), is_list(Opts) ->
     case encode_opts(Opts) of
 	{ok,Buf} ->
 	    case ctl_cmd(S, ?INET_REQ_GETOPTS, Buf) of
@@ -635,7 +635,7 @@ chgopts(S, Opts) when is_port(S), is_list(Opts) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getiflist(S) when port(S) ->
+getiflist(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_GETIFLIST, []) of
 	{ok, Data} -> {ok, build_iflist(Data)};
 	Error -> Error
@@ -701,7 +701,7 @@ ifset(S, Name, Opts) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-subscribe(S, Sub) when port(S),list(Sub) ->
+subscribe(S, Sub) when is_port(S), is_list(Sub) ->
     case encode_subs(Sub) of
 	{ok, Bytes} ->
 	    case ctl_cmd(S, ?INET_REQ_SUBSCRIBE, Bytes) of
@@ -719,7 +719,7 @@ subscribe(S, Sub) when port(S),list(Sub) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getstat(S, Stats) when port(S),list(Stats) ->
+getstat(S, Stats) when is_port(S), is_list(Stats) ->
     case encode_stats(Stats) of
 	{ok, Bytes} ->
 	    case ctl_cmd(S, ?INET_REQ_GETSTAT, Bytes) of
@@ -737,7 +737,7 @@ getstat(S, Stats) when port(S),list(Stats) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getfd(S) when port(S) ->
+getfd(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_GETFD, []) of
 	{ok, [S3,S2,S1,S0]} -> {ok, ?u32(S3,S2,S1,S0)};
 	Error -> Error
@@ -751,7 +751,7 @@ getfd(S) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getindex(S) when port(S) ->
+getindex(S) when is_port(S) ->
     %% NOT USED ANY MORE
     {error, einval}.
 
@@ -763,7 +763,7 @@ getindex(S) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-gettype(S) when port(S) ->
+gettype(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_GETTYPE, []) of
 	{ok, [F3,F2,F1,F0,T3,T2,T1,T0]} ->
 	    Family = case ?u32(F3,F2,F1,F0) of
@@ -788,7 +788,7 @@ getprotocol(S) when is_port(S) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%  IS_SCTP(insock()) -> true | false
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% is_sctp(S) when port(S) ->
+%% is_sctp(S) when is_port(S) ->
 %%     case gettype(S) of
 %% 	{ok, {_, seqpacket}} -> true;
 %% 	_		     -> false
@@ -802,7 +802,7 @@ getprotocol(S) when is_port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getstatus(S) when port(S) ->
+getstatus(S) when is_port(S) ->
     case ctl_cmd(S, ?INET_REQ_GETSTATUS, []) of
 	{ok, [S3,S2,S1,S0]} ->	
 	    {ok, dec_status(?u32(S3,S2,S1,S0))};
@@ -817,7 +817,7 @@ getstatus(S) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-gethostname(S) when port(S) ->
+gethostname(S) when is_port(S) ->
     ctl_cmd(S, ?INET_REQ_GETHOSTNAME, []).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -828,13 +828,13 @@ gethostname(S) when port(S) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getservbyname(S,Name,Proto) when port(S),atom(Name),atom(Proto) ->
+getservbyname(S,Name,Proto) when is_port(S), is_atom(Name), is_atom(Proto) ->
     getservbyname1(S, atom_to_list(Name), atom_to_list(Proto));
-getservbyname(S,Name,Proto) when port(S),atom(Name),list(Proto) ->
+getservbyname(S,Name,Proto) when is_port(S), is_atom(Name), is_list(Proto) ->
     getservbyname1(S, atom_to_list(Name), Proto);
-getservbyname(S,Name,Proto) when port(S),list(Name),atom(Proto) ->
+getservbyname(S,Name,Proto) when is_port(S), is_list(Name), is_atom(Proto) ->
     getservbyname1(S, Name, atom_to_list(Proto));
-getservbyname(S,Name,Proto) when port(S),list(Name),list(Proto) ->
+getservbyname(S,Name,Proto) when is_port(S), is_list(Name), is_list(Proto) ->
     getservbyname1(S, Name, Proto);
 getservbyname(_,_, _) ->
     {error, einval}.
@@ -861,9 +861,9 @@ getservbyname1(S,Name,Proto) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-getservbyport(S,Port,Proto) when port(S),atom(Proto) ->
+getservbyport(S,Port,Proto) when is_port(S), is_atom(Proto) ->
     getservbyport1(S, Port, atom_to_list(Proto));
-getservbyport(S,Port,Proto) when port(S),list(Proto) ->
+getservbyport(S,Port,Proto) when is_port(S), is_list(Proto) ->
     getservbyport1(S, Port, Proto);
 getservbyport(_, _, _) ->
     {error, einval}.
@@ -905,11 +905,11 @@ unrecv(S, Data) ->
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-detach(S) when port(S) ->
+detach(S) when is_port(S) ->
     unlink(S),
     ok.
 
-attach(S) when port(S) ->
+attach(S) when is_port(S) ->
     try erlang:port_connect(S, self()) of
 	true -> link(S), ok
     catch
@@ -1279,7 +1279,7 @@ type_value_2(uint24, X) when X band 16#ffffff =:= X   -> true;
 type_value_2(uint16, X) when X band 16#ffff =:= X     -> true;
 type_value_2(uint8, X)  when X band 16#ff =:= X       -> true;
 type_value_2(time, infinity)                          -> true;
-type_value_2(time, X) when integer(X), X >= 0         -> true;
+type_value_2(time, X) when is_integer(X), X >= 0      -> true;
 type_value_2(ip,{A,B,C,D}) when ?ip(A,B,C,D)          -> true;
 type_value_2(addr, {{A,B,C,D},Port}) when ?ip(A,B,C,D) ->
     type_value_2(uint16, Port);
@@ -1840,7 +1840,7 @@ dec_status(Flags) ->
 enc_time(Time) when Time < 0 -> [255,255,255,255];
 enc_time(Time) -> ?int32(Time).
 
-encode_ifname(Name) when atom(Name) -> encode_ifname(atom_to_list(Name));
+encode_ifname(Name) when is_atom(Name) -> encode_ifname(atom_to_list(Name));
 encode_ifname(Name) ->
     N = length(Name),
     if N > 255 -> {error, einval};

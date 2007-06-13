@@ -69,14 +69,18 @@ atom(Atom, #asm{atoms=Atoms0,next_atom=NextIndex}=Dict) when is_atom(Atom) ->
 %% Remembers an exported function.
 %%    export(Func, Arity, Label, Dict) -> Dict'
 
-export(Func, Arity, Label, Dict0) when atom(Func), integer(Arity), integer(Label) ->
+export(Func, Arity, Label, Dict0) when is_atom(Func),
+				       is_integer(Arity),
+				       is_integer(Label) ->
     {Index, Dict1} = atom(Func, Dict0),
     Dict1#asm{exports = [{Index, Arity, Label}| Dict1#asm.exports]}.
 
 %% Remembers a local function.
 %%    local(Func, Arity, Label, Dict) -> Dict'
 
-local(Func, Arity, Label, Dict0) when atom(Func), integer(Arity), integer(Label) ->
+local(Func, Arity, Label, Dict0) when is_atom(Func),
+				      is_integer(Arity),
+				      is_integer(Label) ->
     {Index,Dict1} = atom(Func, Dict0),
     Dict1#asm{locals=[{Index,Arity,Label}|Dict1#asm.locals]}.
 

@@ -76,7 +76,7 @@
 %%     kill_processes(H)
 
 
-setup_collector_and_query(OptQuery) when record(OptQuery,optimizer_result) ->
+setup_collector_and_query(OptQuery) when is_record(OptQuery,optimizer_result) ->
     Spec = #spec{func = fun(Accu,P) -> [P|Accu] end,
 		 pattern = OptQuery#optimizer_result.pattern},
     CollectorPid =
@@ -305,7 +305,7 @@ simple_loop(Answers, Tid, CursorOwner, Spec) ->
     end.
 	
 
-ask_for_more(Pid, N, EndCounters) when pid(Pid) ->
+ask_for_more(Pid, N, EndCounters) when is_pid(Pid) ->
     NewEndToken = mnemosyne_op:new_end_token(1),
      Pid ! {bss, [], N, [NewEndToken], [], {true, self()}},  
     [NewEndToken | EndCounters].    
@@ -494,20 +494,20 @@ count_receivers ({'#not', _, Q}, Count) ->
     {Q2, C2} = count_receivers (Q, Count),
     { {'#not', Count, Q2}, C2}
 ;
-count_receivers (X, Count) when record (X, disj_alt) ->
+count_receivers (X, Count) when is_record (X, disj_alt) ->
     {X2, Count2} = count_receivers (X#disj_alt.conj, Count),
     {X#disj_alt{conj=X2}, Count2}
 ;
 count_receivers (C, Count) ->
     {set_count (C, Count), Count}.
     
-set_count (X,C) when record (X, pred_sym) ->
+set_count (X,C) when is_record (X, pred_sym) ->
     X#pred_sym{rec_count = C};
-set_count (X,C) when record (X,fn) ->
+set_count (X,C) when is_record (X,fn) ->
     X#fn{rec_count = C};
-set_count (X,C) when record (X, erl_expr) ->
+set_count (X,C) when is_record (X, erl_expr) ->
     X#erl_expr{rec_count = C};
-set_count (X,C) when record (X, disj_alt) ->
+set_count (X,C) when is_record (X, disj_alt) ->
     X#disj_alt{rec_count = C};
 set_count ({'#bindings', RecC, Bs},C) ->
     { {'#bindings', C, Bs}, 1}.
@@ -523,7 +523,7 @@ setup({'#or',Count, Alts}, NextPid) ->
 setup({'#bindings',RecCount, Bs}, NextPid) ->
     ?start_op(bindings, [NextPid,RecCount,Bs]);
 
-setup(P, NextPid) when record(P,pred_sym) ->
+setup(P, NextPid) when is_record(P,pred_sym) ->
     case P#pred_sym.type of
 	table ->
 	    Ps = mk_patterns(P),
@@ -533,13 +533,13 @@ setup(P, NextPid) when record(P,pred_sym) ->
 	    ?start_op(call_recursive_op, [NextPid,P])
     end;
 
-setup(F, NextPid) when record(F,fn) ->
+setup(F, NextPid) when is_record(F,fn) ->
     ?start_op(funcall, [NextPid,F#fn.alias_var,F#fn.fndef,F#fn.rec_count]);
 
-setup(E, NextPid) when record(E,erl_expr) ->
+setup(E, NextPid) when is_record(E,erl_expr) ->
     ?start_op(erl_expr, [NextPid,E]);
 
-setup(C, NextPid) when record(C,disj_alt) ->
+setup(C, NextPid) when is_record(C,disj_alt) ->
     setup(C#disj_alt.conj, NextPid);
 
 setup({'#not',C, Q}, NextPid) ->
@@ -554,9 +554,9 @@ setup([], NextPid) ->
 
 
 
-make_split([Pid], Count) when pid(Pid) -> Pid;
-make_split(L, Count) when list(L),pid(hd(L)) -> ?start_op(split, [L, Count]);
-make_split(Pid, Count) when pid(Pid) -> Pid.
+make_split([Pid], Count) when is_pid(Pid) -> Pid;
+make_split(L, Count) when is_list(L),is_pid(hd(L)) -> ?start_op(split, [L, Count]);
+make_split(Pid, Count) when is_pid(Pid) -> Pid.
 
 %%%----------------
 -record(mkp, {p=[],	%% The Pattern to send to trans:match (ets:match)
@@ -565,7 +565,7 @@ make_split(Pid, Count) when pid(Pid) -> Pid.
 	     }).
 
 
-mk_patterns(P) when record(P,pred_sym) ->
+mk_patterns(P) when is_record(P,pred_sym) ->
     S = mkp(P#pred_sym.args,
 	    P#pred_sym.defvars,
 	    P#pred_sym.singelvars,
@@ -587,7 +587,7 @@ mkp([], DefVars, SingelVars, S) ->
 mkp1([H|T], DefVars, SingelVars, S0) ->
     Sh = mkp1(H, DefVars, SingelVars, S0#mkp{p=[]}),
     if
-	list(T) ->
+	is_list(T) ->
 	    mkp1(T, DefVars, SingelVars, Sh#mkp{p=[Sh#mkp.p|S0#mkp.p]});
 	true ->
 	    St = mkp1(T, DefVars, SingelVars, Sh#mkp{p=[]}),
@@ -622,7 +622,7 @@ mkp1({'#var',V}, DefVars, SingelVars, S0) ->
 	    end
     end;
 	
-mkp1(T, DefVars, SingelVars, S0) when tuple(T) ->
+mkp1(T, DefVars, SingelVars, S0) when is_tuple(T) ->
     S1 = mkp1(tuple_to_list(T),DefVars,SingelVars,S0),
     S1#mkp{p=list_to_tuple(S1#mkp.p)};
 

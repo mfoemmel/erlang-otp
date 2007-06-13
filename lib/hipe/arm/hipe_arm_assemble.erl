@@ -208,7 +208,6 @@ translate_insn(I) ->	% -> [{Op,Opnd,OrigI}]
     #load{} -> do_load(I);
     #ldrsb{} -> do_ldrsb(I);
     #move{} -> do_move(I);
-    #mul{} -> do_mul(I);
     %% pseudo_b: eliminated by finalise
     %% pseudo_blr: eliminated by finalise
     %% pseudo_call: eliminated by finalise
@@ -219,8 +218,7 @@ translate_insn(I) ->	% -> [{Op,Opnd,OrigI}]
     %% pseudo_tailcall: eliminated by frame
     %% pseudo_tailcall_prepare: eliminated by finalise
     #smull{} -> do_smull(I);
-    #store{} -> do_store(I);
-    _ -> exit({?MODULE,translate_insn,I})
+    #store{} -> do_store(I)
   end.
 
 do_alu(I) ->
@@ -286,15 +284,6 @@ do_move(I) ->
   NewAm1 = do_am1(Am1),
   [{MovOp, {NewCond,NewS,NewDst,NewAm1}, I}].
 
-do_mul(I) ->
-  #mul{dst=Dst,src1=Src1,src2=Src2} = I,
-  NewCond = do_cond('al'),
-  NewS = do_s(false),
-  NewDst = do_reg(Dst),
-  NewSrc1 = do_reg(Src1),
-  NewSrc2 = do_reg(Src2),
-  [{'mul', {NewCond,NewS,NewDst,NewSrc1,NewSrc2}, I}].
-
 do_pseudo_li(I, MFA, ConstMap, Address, PrevImms, PendImms) ->
   #pseudo_li{dst=Dst,imm=Imm,label=Label0} = I,
   {Label1,PendImms1} =
@@ -312,7 +301,7 @@ do_pseudo_li(I, MFA, ConstMap, Address, PrevImms, PendImms) ->
 		 true ->
 		  RelocData =
 		    case Imm of
-		      Atom when atom(Atom) ->
+		      Atom when is_atom(Atom) ->
 			{load_atom, Atom};
 		      {Label,constant} ->
 			ConstNo = find_const({MFA,Label}, ConstMap),
@@ -348,7 +337,8 @@ do_store(I) ->
   NewAm2 = do_am2(Am2),
   [{StOp, {NewCond,NewSrc,NewAm2}, I}].
 
-do_reg(#arm_temp{reg=Reg,type=Type}) when Reg >= 0, Reg < 16, Type =/= 'double' ->
+do_reg(#arm_temp{reg=Reg,type=Type})
+  when is_integer(Reg), 0 =< Reg, Reg < 16, Type =/= 'double' ->
   {r,Reg}.
   
 do_cond(Cond) -> {'cond',Cond}.

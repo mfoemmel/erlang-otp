@@ -61,9 +61,10 @@ endif
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -I ../inets_app
+INETS_ERL_FLAGS += -I ../inets_app
 
-ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
+ERL_COMPILE_FLAGS += $(INETS_ERL_FLAGS) \
+		     $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'
 

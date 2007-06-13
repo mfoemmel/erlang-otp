@@ -379,7 +379,7 @@ ldstm_form(Cond, AddressingMode, W, L, Rn, Registers) ->
 	  ?ASSERT((RegisterList band BitRn) =:= 0);
 	0 ->
 	  %% STM! Rn in Registers and not lowest is UNPREDICTABLE
-	  case Registers band BitRn of
+	  case RegisterList band BitRn of
 	    0 -> [];
 	    _ ->
 	      ?ASSERT((RegisterList band (-RegisterList)) =:= BitRn)
@@ -390,6 +390,7 @@ ldstm_form(Cond, AddressingMode, W, L, Rn, Registers) ->
   'cond'(Cond) bor ?BF(27,25,2#100) bor am4_ls_multiple(L, AddressingMode) bor ?BIT(21,W) bor ?BIT(20,L) bor ?BF(19,16,Rn) bor ?BF(15,0,RegisterList).
 
 register_list(Registers) -> register_list(Registers, 0).
+
 register_list([{r,R}|Rs], Mask) -> register_list(Rs, Mask bor (1 bsl R));
 register_list([], Mask) -> Mask.
 

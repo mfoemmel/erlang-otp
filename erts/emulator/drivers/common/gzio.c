@@ -1,4 +1,9 @@
-/* gzio.c -- IO on .gz files
+/*
+ * Original version by Jean-loup Gailly. Modified for use by the
+ * Erlang run-time system and efile_driver; names of all external
+ * functions changed to avoid conflicts with the official gzio.c file.
+ *
+ * gzio.c -- IO on .gz files
  * Copyright (C) 1995-1996 Jean-loup Gailly.
  * For conditions of distribution and use, see copyright notice in zlib.h
  */
@@ -365,10 +370,8 @@ local int destroy (s)
      Reads the given number of uncompressed bytes from the compressed file.
    gzread returns the number of bytes actually read (0 for end of file).
 */
-int gzread (file, buf, len)
-    gzFile file;
-    voidp buf;
-    unsigned len;
+int
+erts_gzread(gzFile file, voidp buf, unsigned len)
 {
     gz_stream *s = (gz_stream*)file;
     Bytef *start = buf; /* starting point for crc computation */
@@ -459,10 +462,8 @@ int gzread (file, buf, len)
      Writes the given number of uncompressed bytes into the compressed file.
    gzwrite returns the number of bytes actually written (0 in case of error).
 */
-int gzwrite (file, buf, len)
-    gzFile file;
-    voidpc buf;
-    unsigned len;
+int
+erts_gzwrite(gzFile file, voidpc buf, unsigned len)
 {
     gz_stream *s = (gz_stream*)file;
 
@@ -499,10 +500,8 @@ int gzwrite (file, buf, len)
  *  - When writing, only forward seek is supported.
  */
 
-int gzseekk (file, offset, whence)
-    gzFile file;
-    int offset;
-    int whence;
+int
+erts_gzseek(gzFile file, int offset, int whence)
 {
     int pos;
     gz_stream* s = (gz_stream *) file;
@@ -545,10 +544,10 @@ int gzseekk (file, offset, whence)
 	    n = sizeof(buf);
 
 	if (s->mode == 'r') {
-	    gzread(file, buf, n);
+	    erts_gzread(file, buf, n);
 	} else {
 	    memset(buf, '\0', n);
-	    gzwrite(file, buf, n);
+	    erts_gzwrite(file, buf, n);
 	}
     }
 
@@ -561,9 +560,8 @@ int gzseekk (file, offset, whence)
      gzflush should be called only when strictly necessary because it can
    degrade compression.
 */
-int gzflush (file, flush)
-    gzFile file;
-    int flush;
+int
+erts_gzflush(gzFile file, int flush)
 {
     uInt len;
     int done = 0;
@@ -633,8 +631,8 @@ local uLong getLong (s)
      Flushes all pending output if necessary, closes the compressed file
    and deallocates all the (de)compression state.
 */
-int gzclose (file)
-    gzFile file;
+int
+erts_gzclose(gzFile file)
 {
     int err;
     gz_stream *s = (gz_stream*)file;
@@ -642,7 +640,7 @@ int gzclose (file)
     if (s == NULL) return Z_STREAM_ERROR;
 
     if (s->mode == 'w') {
-        err = gzflush (file, Z_FINISH);
+        err = erts_gzflush (file, Z_FINISH);
         if (err != Z_OK) return s->destroy(file);
 
         putLong (s->file, s->crc);
@@ -652,38 +650,6 @@ int gzclose (file)
     return s->destroy(file);
 }
 
-/* ===========================================================================
-     Returns the error message for the last error which occured on the
-   given compressed file. errnum is set to zlib error number. If an
-   error occured in the file system and not in the compression library,
-   errnum is set to Z_ERRNO and the application may consult errno
-   to get the exact error code.
-*/
-const char*  gzerror (file, errnum)
-    gzFile file;
-    int *errnum;
-{
-    char *m;
-    gz_stream *s = (gz_stream*)file;
-
-    if (s == NULL) {
-        *errnum = Z_STREAM_ERROR;
-        return (const char*)ERR_MSG(Z_STREAM_ERROR);
-    }
-    *errnum = s->z_err;
-    if (*errnum == Z_OK) return (const char*)"";
-
-    m =  (char*)(*errnum == Z_ERRNO ? zstrerror(errno) : s->stream.msg);
-
-    if (m == NULL || *m == '\0') m = (char*)ERR_MSG(s->z_err);
-
-    TRYFREE(s->msg);
-    s->msg = (char*)ALLOC(strlen(s->path) + strlen(m) + 3);
-    strcpy(s->msg, s->path);
-    strcat(s->msg, ": ");
-    strcat(s->msg, m);
-    return (const char*)s->msg;
-}
 
 /* ===========================================================================
    Uncompresses the buffer given and returns a pointer to a binary.
@@ -695,9 +661,7 @@ const char*  gzerror (file, errnum)
 */
 
 ErlDrvBinary*
-gzinflate_buffer(start, size)
-    char* start;		/* Start of buffer to uncompress. */
-    int size;			/* Size of buffer to uncompress. */
+erts_gzinflate_buffer(char* start, int size)
 {
     ErlDrvBinary* bin;
     ErlDrvBinary* bin2;
@@ -712,22 +676,23 @@ gzinflate_buffer(start, size)
     }
 
     for (;;) {
-	int n = gzread(fd, bin->orig_bytes + bytes_read, size-bytes_read);
+	int n = erts_gzread(fd, bin->orig_bytes + bytes_read, size-bytes_read);
 	if (n == 0) {
-	    gzclose(fd);
-	    if ((bin2 = driver_realloc_binary(bin, bytes_read)) == NULL)
+	    erts_gzclose(fd);
+	    if ((bin2 = driver_realloc_binary(bin, bytes_read)) == NULL) {
 		driver_free_binary(bin);
+	    }
 	    return bin2;
 	} else if (n == -1) {
 	    driver_free_binary(bin);
-	    gzclose(fd);
+	    erts_gzclose(fd);
 	    return NULL;
 	}
 	bytes_read += n;
 	size *= 2;
 	if ((bin2 = driver_realloc_binary(bin, size)) == NULL) {
 	    driver_free_binary(bin);
-	    gzclose(fd);
+	    erts_gzclose(fd);
 	    return NULL;
 	}
 	bin = bin2;
@@ -746,9 +711,7 @@ gzinflate_buffer(start, size)
 #define GZIP_X_SIZE (GZIP_HD_SIZE+GZIP_TL_SIZE)
 
 ErlDrvBinary*
-gzdeflate_buffer(start, size)
-    char* start;		/* Start of buffer to compress. */
-    int size;			/* Size of buffer to compress. */
+erts_gzdeflate_buffer(char* start, int size)
 {
     z_stream c_stream; /* compression stream */
     ErlDrvBinary* bin;

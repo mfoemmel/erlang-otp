@@ -89,7 +89,7 @@ void erts_init_trace(void) {
 #endif
     erts_bif_trace_init();
     erts_system_monitor_clear(NULL);
-    default_trace_flags = 0;
+    default_trace_flags = F_INITIAL_TRACE_FLAGS;
     default_tracer = NIL;
     system_seq_tracer = am_false;
 #ifdef ERTS_SMP
@@ -106,6 +106,9 @@ erts_trace_check_exiting(Eterm exiting)
     if (exiting == default_tracer) {
 	default_tracer = NIL;
 	default_trace_flags &= TRACEE_FLAGS;
+#ifdef DEBUG
+	default_trace_flags |= F_INITIAL_TRACE_FLAGS;
+#endif
     }
     if (exiting == system_seq_tracer) {
 #ifdef DEBUG_PRINTOUTS
@@ -648,7 +651,7 @@ trace_send(Process *p, Eterm to, Eterm msg)
     Eterm* hp;
     Eterm mess;
     
-    if (!(p->trace_flags & F_TRACE_SEND)) {
+    if (!ARE_TRACE_FLAGS_ON(p, F_TRACE_SEND)) {
 	return;
     }
 
@@ -810,8 +813,8 @@ trace_receive(Process *rp, Eterm msg)
     }
 }
 
-int seq_trace_update_send(p)
-Process *p;
+int
+seq_trace_update_send(Process *p)
 {
     Eterm seq_tracer = erts_get_system_seq_tracer();
     ASSERT((is_tuple(SEQ_TRACE_TOKEN(p)) || is_nil(SEQ_TRACE_TOKEN(p))));
@@ -854,8 +857,10 @@ seq_trace_output_generic(Eterm token, Eterm msg, Uint type,
     seq_tracer = erts_get_system_seq_tracer();
 
     ASSERT(is_tuple(token) || is_nil(token));
-    if ( (SEQ_TRACE_T_SENDER(token) == seq_tracer) || (token == NIL))
+    if (SEQ_TRACE_T_SENDER(token) == seq_tracer || token == NIL ||
+	(process && process->trace_flags & F_SENSITIVE)) {
 	return;
+    }
 
     switch (type) {
     case SEQ_TRACE_SEND:    type_atom = am_send; break;
@@ -1434,6 +1439,10 @@ erts_call_trace(Process* p, Eterm mfa[3], Binary *match_spec,
 	 *     meta trace =>
 	 *       use fixed flag set instead of process flags
 	 */	    
+	if (p->trace_flags & F_SENSITIVE) {
+	    /* No trace messages for sensitive processes. */
+	    return 0;
+	}
 	meta_flags = F_TRACE_CALLS | F_TIMESTAMP;
 	tracee_flags = &meta_flags;
 #ifdef ERTS_SMP
@@ -1932,7 +1941,7 @@ erts_bif_trace(int bif_index, Process* p,
 
     ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p->id);
 
-    if ((p->trace_flags & F_TRACE_CALLS) == 0 && (! meta)) {
+    if (!ARE_TRACE_FLAGS_ON(p, F_TRACE_CALLS) && (! meta)) {
 	/* Warning! This is an Optimization. 
 	 *
 	 * If neither meta trace is active nor process trace flags then 
@@ -2728,6 +2737,8 @@ erts_foreach_sys_msg_in_q(void (*func)(Eterm,
 static void
 init_sys_msg_dispatcher(void)
 {
+    erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
+    thr_opts.detached = 1;
     init_smq_element_alloc();
     sys_message_queue = NULL;
     sys_message_queue_end = NULL;
@@ -2737,7 +2748,7 @@ init_sys_msg_dispatcher(void)
     erts_smp_thr_create(&sys_msg_dispatcher_tid,
 			sys_msg_dispatcher_func,
 			NULL,
-			1);
+			&thr_opts);
 }
 
 #endif

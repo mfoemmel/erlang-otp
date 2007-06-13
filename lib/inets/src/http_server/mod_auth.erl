@@ -36,6 +36,10 @@
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
+%% We will not make the change to use base64 in stdlib in inets just yet.
+%% it will be included in the next major release of inets. 
+-compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
+
 -define(VMODULE,"AUTH").
 
 -define(NOPASSWORD,"NoPassword").

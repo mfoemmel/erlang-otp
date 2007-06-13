@@ -30,5 +30,5 @@ run(M, F, A) ->
 	    erlang:display({fatal,error,module,M,"does not export",F,"/1"}),
 	    halt(1);
 	true ->
-	    apply(M, F, [A])
+            M:F(A)
     end.

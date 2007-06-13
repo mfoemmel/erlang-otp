@@ -68,7 +68,8 @@
 
 -export([module/2,format_error/1]).
 
--import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,reverse/1,member/2]).
+-import(lists, [map/2,foldl/3,foldr/3,mapfoldl/3,all/2,any/2,
+		reverse/1,reverse/2,member/2]).
 -include("core_parse.hrl").
 
 %%-define(DEBUG, 1).
@@ -101,11 +102,10 @@ module(#c_module{defs=Ds0}=Mod, Opts) ->
     erase(no_inline_list_funcs),
     {ok,Mod#c_module{defs=Ds1},get_warnings()}.
 
-function_1(#c_def{val=B0}=Def) ->
-    %%ok = io:fwrite("~w:~p~n", [?LINE,{Def#c_def.name}]),
+function_1({Name,B0}) ->
     ?ASSERT([] =:= core_lib:free_vars(B0)),
-    B1 = expr(B0, sub_new()),			%This must be a fun!
-    Def#c_def{val=B1}.
+    B = expr(B0, sub_new()),			%This must be a fun!
+    {Name,B}.
 
 %% body(Expr, Sub) -> Expr.
 %%  No special handling of anything except values.
@@ -221,8 +221,8 @@ expr(#c_let{}=Let, Sub) ->
 	    expr(Expr, sub_new(Sub))
     end;
 expr(#c_letrec{defs=Fs0,body=B0}=Letrec, Sub) ->
-    Fs1 = map(fun (#c_def{val=Fb}=Fd) ->
-		      Fd#c_def{val=expr(Fb, Sub)}
+    Fs1 = map(fun ({Name,Fb}) ->
+		      {Name,expr(Fb, Sub)}
 	      end, Fs0),
     B1 = body(B0, Sub),
     Letrec#c_letrec{defs=Fs1,body=B1};
@@ -307,8 +307,9 @@ is_safe_simple(#c_var{}) -> true;		%Not atomic
 is_safe_simple(#c_cons{hd=H,tl=T}) ->
     is_safe_simple(H) andalso is_safe_simple(T);
 is_safe_simple(#c_tuple{es=Es}) -> is_safe_simple_list(Es);
-is_safe_simple(#c_binary{}) -> false;
-is_safe_simple(E) -> core_lib:is_atomic(E).
+is_safe_simple(#c_literal{}) -> true;
+is_safe_simple(#c_fname{}) -> true;
+is_safe_simple(_) -> false.
 
 is_safe_simple_list(Es) -> all(fun is_safe_simple/1, Es).
 
@@ -387,7 +388,7 @@ call_1(_Call, lists, all, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
@@ -416,7 +417,7 @@ call_1(_Call, lists, any, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
@@ -437,7 +438,7 @@ call_1(_Call, lists, foreach, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
@@ -461,7 +462,7 @@ call_1(_Call, lists, map, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
@@ -488,7 +489,7 @@ call_1(_Call, lists, flatmap, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
 	 Sub);
 call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
@@ -523,9 +524,9 @@ call_1(_Call, lists, filter, [Arg1,Arg2], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, L], arg=#c_values{es=[Arg1, Arg2]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L]}}},
-	 Sub);
+    Sub);
 call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
     Loop = #c_fname{id='lists^foldl', arity=2},
     F = #c_var{name='F'},
@@ -544,7 +545,7 @@ call_1(_Call, lists, foldl, [Arg1,Arg2,Arg3], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L, A]}}},
 	 Sub);
 call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
@@ -565,7 +566,7 @@ call_1(_Call, lists, foldr, [Arg1,Arg2,Arg3], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, A, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 			       body=#c_apply{op=Loop, args=[L, A]}}},
 	 Sub);
 call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
@@ -611,7 +612,7 @@ call_1(_Call, lists, mapfoldl, [Arg1,Arg2,Arg3], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, Avar, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 %%% Tuple passing version
 			       body=#c_apply{op=Loop, args=[L, Avar]}}},
 %%% Multiple-value version
@@ -664,7 +665,7 @@ call_1(_Call, lists, mapfoldr, [Arg1,Arg2,Arg3], Sub) ->
 		 body=#c_case{arg=Xs, clauses=[C1, C2, C3]}},
     L = #c_var{name='L'},
     expr(#c_let{vars=[F, Avar, L], arg=#c_values{es=[Arg1, Arg2, Arg3]},
-		body=#c_letrec{defs=[#c_def{name=Loop, val=Fun}],
+		body=#c_letrec{defs=[{Loop,Fun}],
 %%% Tuple passing version
  			       body=#c_apply{op=Loop, args=[L, Avar]}}},
 %%% Multiple-value version
@@ -702,10 +703,10 @@ fold_call_1(Call, erlang, '++', [Arg1,Arg2]) ->
 fold_call_1(Call, erlang, element, [Arg1,Arg2]) ->
     eval_element(Call, Arg1, Arg2);
 fold_call_1(Call, erlang, setelement, [Arg1,Arg2,Arg3]) ->
-    Ref = make_ref(),
-    case catch {Ref,eval_setelement(Arg1, Arg2, Arg3)} of
-	{Ref,Val} -> Val;
-	_Other -> Call
+    try
+	eval_setelement(Arg1, Arg2, Arg3)
+    catch _:_ ->
+	    Call
     end;
 fold_call_1(Call, erlang, apply, [Mod,Func,Args]) ->
     simplify_apply(Call, Mod, Func, Args);
@@ -750,11 +751,18 @@ eval_rel_op(Call, _, _) -> Call.
 
 eval_length(Call, Core) -> eval_length(Call, Core, 0).
     
-eval_length(Call, #c_literal{val=[]}, Len) ->
-    #c_literal{anno=Call#c_call.anno,val=Len};
+eval_length(Call, #c_literal{val=Val}, Len0) ->
+    try
+	Len = Len0 + length(Val),
+	#c_literal{anno=Call#c_call.anno,val=Len}
+    catch
+	_:_ ->
+	    eval_failure(Call, badarg)
+    end;
 eval_length(Call, #c_cons{tl=T}, Len) ->
     eval_length(Call, T, Len+1);
-eval_length(Call, _List, 0) -> Call;		%Could do nothing
+eval_length(Call, _List, 0) ->
+    Call;		%Could do nothing
 eval_length(Call, List, Len) ->
     A = Call#c_call.anno,
     #c_call{anno=A,
@@ -765,8 +773,12 @@ eval_length(Call, List, Len) ->
 %% eval_append(Call, FirstList, SecondList) -> Val.
 %%  Evaluates the constant part of '++' expression.
 
-eval_append(_Call, #c_literal{val=Cs1}=S1, #c_literal{val=Cs2}) ->
-    S1#c_literal{val=Cs1 ++ Cs2};
+eval_append(Call, #c_literal{val=Cs1}=S1, #c_literal{val=Cs2}) ->
+    try 
+	S1#c_literal{val=Cs1 ++ Cs2}
+    catch error:badarg ->
+	    eval_failure(Call, badarg)
+    end;
 eval_append(Call, #c_literal{val=Cs}, List) when length(Cs) =< 4 ->
     Anno = Call#c_call.anno,
     foldr(fun (C, L) ->
@@ -787,31 +799,50 @@ eval_element(Call, #c_literal{val=Pos}, #c_tuple{es=Es}) when is_integer(Pos) ->
 	true ->
 	    eval_failure(Call, badarg)
     end;
-eval_element(Call, Pos, Tuple) ->
-    case {Pos,Tuple} of
-	{#c_literal{val=I},#c_var{}} when is_integer(I) -> Call;
-	{#c_var{},#c_tuple{}} -> Call;
-	{#c_var{},#c_var{}} -> Call;
-	{_,_} -> eval_failure(Call, badarg)
-    end.
+eval_element(Call, #c_literal{val=Pos}, #c_literal{val=Val}=Lit)
+  when is_integer(Pos), is_tuple(Val) ->
+    if
+	1 =< Pos, Pos =< size(Val) ->
+	    Lit#c_literal{val=element(Pos, Val)};
+	true ->
+	    eval_failure(Call, badarg)
+    end;
+eval_element(Call, #c_literal{val=I}, #c_var{}) when is_integer(I) -> Call;
+eval_element(Call, #c_var{}, #c_literal{}) -> Call;
+eval_element(Call, #c_var{}, #c_tuple{}) -> Call;
+eval_element(Call, #c_var{}, #c_var{}) -> Call;
+eval_element(Call, _, _) -> eval_failure(Call, badarg).
 
 %% eval_setelement(Pos, Tuple, NewVal) -> Val.
 %%  Evaluates setelement/3 if Pos and Tuple are literals.
 
-eval_setelement(#c_literal{val=Pos}, #c_tuple{es=Es}=Tuple, NewVal)
+eval_setelement(#c_literal{val=Pos}, #c_tuple{anno=A,es=Es}, NewVal)
   when is_integer(Pos) ->
-    Tuple#c_tuple{es=eval_setelement1(Pos, Es, NewVal)}.
+    make_tuple(A, eval_setelement_1(Pos, Es, NewVal));
+eval_setelement(#c_literal{val=Pos}, #c_literal{anno=A,val=Es0}, NewVal)
+  when is_integer(Pos) ->
+    Es = [#c_literal{anno=A,val=E} || E <- tuple_to_list(Es0)],
+    make_tuple(A, eval_setelement_1(Pos, Es, NewVal)).
 
-eval_setelement1(1, [_|T], NewVal) ->
+eval_setelement_1(1, [_|T], NewVal) ->
     [NewVal|T];
-eval_setelement1(Pos, [H|T], NewVal) when Pos > 1 ->
-    [H|eval_setelement1(Pos-1, T, NewVal)].
+eval_setelement_1(Pos, [H|T], NewVal) when Pos > 1 ->
+    [H|eval_setelement_1(Pos-1, T, NewVal)].
 
 eval_failure(Call, Reason) ->
     add_warning(Call, {eval_failure,Reason}),
     #c_call{module=#c_literal{val=erlang},
 	    name=#c_literal{val=error},
 	    args=[core_lib:make_literal(Reason)]}.
+
+make_tuple(Anno, Es0) ->
+    case core_lib:is_literal_list(Es0) of
+	false ->
+	    #c_tuple{anno=Anno,es=Es0};
+	true ->
+	    Es = core_lib:concrete_list(Es0),
+	    #c_literal{anno=Anno,val=list_to_tuple(Es)}
+    end.
 
 %% simplify_apply(Call0, Mod, Func, Args) -> Call
 %%  Simplify an apply/3 to a call if the number of arguments
@@ -823,13 +854,15 @@ simplify_apply(Call, Mod, Func, Args) ->
 	false -> Call
     end.
 
-simplify_apply_1(#c_literal{val=[]}, Call, Mod, Func, Args) ->
-    Call#c_call{module=Mod,name=Func,args=reverse(Args)};
+simplify_apply_1(#c_literal{val=MoreArgs0}, Call, Mod, Func, Args)
+  when length(MoreArgs0) >= 0 ->
+    MoreArgs = core_lib:make_literal_list(MoreArgs0),
+    Call#c_call{module=Mod,name=Func,args=reverse(Args, MoreArgs)};
 simplify_apply_1(#c_cons{hd=Arg,tl=T}, Call, Mod, Func, Args) ->
     simplify_apply_1(T, Call, Mod, Func, [Arg|Args]);
 simplify_apply_1(_, Call, _, _, _) -> Call.
 
-is_atom_or_var(#c_literal{}) -> true;
+is_atom_or_var(#c_literal{val=Atom}) when is_atom(Atom) -> true;
 is_atom_or_var(#c_var{}) -> true;
 is_atom_or_var(_) -> false.
 
@@ -959,7 +992,8 @@ is_subst(#c_tuple{es=[]}) -> true;		%The empty tuple
 is_subst(#c_fname{}) -> false;			%Fun implementaion needs this
 is_subst(#c_var{}) -> true;
 is_subst(#c_literal{val=[_|_]}) -> false;	%Better not.
-is_subst(E) -> core_lib:is_atomic(E).
+is_subst(#c_literal{val=V}) -> not is_tuple(V);
+is_subst(_) -> false.
 
 %% sub_new() -> #sub{}.
 %% sub_get_var(Var, #sub{}) -> Value.
@@ -1012,7 +1046,7 @@ sub_is_val(#c_var{name=V}, #sub{v=S}) ->
     v_is_value(V, S).
 
 v_is_value(Var, Sub) ->
-    any(fun ({_,#c_var{name=Val}}) when Val == Var -> true;
+    any(fun ({_,#c_var{name=Val}}) when Val =:= Var -> true;
 	    (_) -> false
 	end, Sub).
 
@@ -1453,32 +1487,32 @@ tuple_to_values(#c_primop{name=#c_literal{val=match_fail},args=[_]}=Prim,
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=exit},
 			args=Args}=Call,
-		_Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) =:= 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=throw},
 			args=Args}=Call,
-		_Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) =:= 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=error},
 			args=Args}=Call,
-		_Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) =:= 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=error},
 			args=Args}=Call,
-		_Arity) when length(Args) == 2 ->
+		_Arity) when length(Args) =:= 2 ->
     Call;
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=fault},
 			args=Args}=Call,
-		_Arity) when length(Args) == 1 ->
+		_Arity) when length(Args) =:= 1 ->
     Call;
 tuple_to_values(#c_call{module=#c_literal{val=erlang},
 			name=#c_literal{val=fault},
 			args=Args}=Call,
-		_Arity) when length(Args) == 2 ->
+		_Arity) when length(Args) =:= 2 ->
     Call;
 tuple_to_values(#c_tuple{es=Es}, Arity) when length(Es) =:= Arity ->
     core_lib:make_values(Es);

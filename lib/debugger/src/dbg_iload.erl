@@ -101,7 +101,7 @@ interpret_file_attribute(Code) ->
     epp:interpret_file_attribute(Code).
 
 
-abstr(Bin) when binary(Bin) -> binary_to_term(Bin);
+abstr(Bin) when is_binary(Bin) -> binary_to_term(Bin);
 abstr(Term) -> Term.
 
 % store_funs(Db, Mod) ->
@@ -140,7 +140,7 @@ store_mod_line_no(Mod, Db, Contents) ->
 
 store_mod_line_no(_, _, [], _, _, NewCont) ->
     list_to_binary(lists:reverse(NewCont));
-store_mod_line_no(Mod, Db, Contents, LineNo, Pos, NewCont) when integer(LineNo) ->
+store_mod_line_no(Mod, Db, Contents, LineNo, Pos, NewCont) when is_integer(LineNo) ->
     {ContTail,Pos1,NewCont1} = store_line(Mod, Db, Contents, LineNo, Pos, NewCont),
     store_mod_line_no(Mod, Db, ContTail, LineNo+1, Pos1, NewCont1).
 

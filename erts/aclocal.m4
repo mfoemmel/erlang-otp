@@ -620,6 +620,9 @@ dnl On ofs1 the '-pthread' switch should be used
 	AC_CHECK_FUNC(pthread_spin_lock, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_SPIN_LOCK, 1, \
 [Define if you have the pthread_spin_lock function.]))
+	AC_CHECK_FUNC(pthread_attr_setguardsize, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE, 1, \
+[Define if you have the pthread_attr_setguardsize function.]))
 
 	dnl Restore LIBS
 	LIBS=$saved_libs

@@ -52,7 +52,7 @@ setup_autostart(Node,Repeat,Options,TracerData,CmdFiles,Bindings,Translations,RT
 		    Bindings,Translations,RTtag,off).
 setup_autostart(Node,Repeat,Options,TracerData,CmdFiles,Bindings,Translations,RTtag,Dbg) ->
     case rpc:call(Node,inviso_autostart,which_config_file,[]) of
-	FileName when list(FileName) ->      % Write to this file then.
+	FileName when is_list(FileName) ->      % Write to this file then.
 	    {String,Args}=format_config_file(Repeat,TracerData,Options,CmdFiles,
 					     Bindings,Translations,RTtag,Dbg),
 	    Bytes=list_to_binary(io_lib:format(String,Args)),
@@ -127,7 +127,7 @@ set_repeat(Node,N) ->
 
 examine_config_file(Node) ->
     case rpc:call(Node,inviso_autostart,which_config_file,[]) of
-	FileName when list(FileName) ->     % Read this file, and then modify it.
+	FileName when is_list(FileName) ->     % Read this file, and then modify it.
 	    case rpc:call(Node,file,consult,[FileName]) of
 		{ok,Terms} ->
 		    {ok,FileName,Terms};

@@ -29,6 +29,8 @@
 #ifndef ETHR_EXTENDED_LIB
 #error "Need extended ethread library for smp build"
 #endif
+#define ERTS_SMP_THR_OPTS_DEFAULT_INITER ERTS_THR_OPTS_DEFAULT_INITER
+typedef erts_thr_opts_t erts_smp_thr_opts_t;
 typedef erts_thr_init_data_t erts_smp_thr_init_data_t;
 typedef erts_tid_t erts_smp_tid_t;
 typedef erts_mtx_t erts_smp_mtx_t;
@@ -58,6 +60,8 @@ void erts_thr_fatal_error(int, char *); /* implemented in erl_init.c */
 
 #else /* #ifdef ERTS_SMP */
 
+#define ERTS_SMP_THR_OPTS_DEFAULT_INITER 0
+typedef int erts_smp_thr_opts_t;
 typedef int erts_smp_thr_init_data_t;
 typedef int erts_smp_tid_t;
 typedef int erts_smp_mtx_t;
@@ -84,7 +88,7 @@ ERTS_GLB_INLINE void erts_smp_thr_init(erts_smp_thr_init_data_t *id);
 ERTS_GLB_INLINE void erts_smp_thr_create(erts_smp_tid_t *tid,
 					 void * (*func)(void *),
 					 void *arg,
-					 int detached);
+					 erts_smp_thr_opts_t *opts);
 ERTS_GLB_INLINE void erts_smp_thr_join(erts_smp_tid_t tid, void **thr_res);
 ERTS_GLB_INLINE void erts_smp_thr_detach(erts_smp_tid_t tid);
 ERTS_GLB_INLINE void erts_smp_thr_exit(void *res);
@@ -192,10 +196,10 @@ erts_smp_thr_init(erts_smp_thr_init_data_t *id)
 
 ERTS_GLB_INLINE void
 erts_smp_thr_create(erts_smp_tid_t *tid, void * (*func)(void *), void *arg,
-		    int detached)
+		    erts_smp_thr_opts_t *opts)
 {
 #ifdef ERTS_SMP
-    erts_thr_create(tid, func, arg, detached);
+    erts_thr_create(tid, func, arg, opts);
 #endif
 }
 

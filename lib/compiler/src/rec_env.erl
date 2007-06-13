@@ -584,7 +584,7 @@ generate(_N, Range) ->
 %% already used as keys in the environment. See {@link new_key/1} for
 %% details.
 
-new_keys(N, Env) when integer(N) ->
+new_keys(N, Env) when is_integer(N) ->
     new_keys(N, fun (X) -> X end, Env).
 
     
@@ -599,7 +599,7 @@ new_keys(N, Env) when integer(N) ->
 %% already used as keys in the environment. See {@link new_key/3} for
 %% details.
 
-new_keys(N, F, Env) when integer(N) ->
+new_keys(N, F, Env) when is_integer(N) ->
     R = start_range(Env),
     new_keys(N, [], R, F, Env).
 

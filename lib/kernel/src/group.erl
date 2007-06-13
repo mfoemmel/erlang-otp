@@ -22,8 +22,6 @@
 -export([start/2, start/3, server/3]).
 -export([interfaces/1]).
 
--import(io_lib, [deep_char_list/1]).
-
 start(Drv, Shell) ->
     start(Drv, Shell, []).
 
@@ -72,11 +70,11 @@ start_shell({Mod,Func,Args}) ->
     start_shell1(Mod, Func, Args);
 start_shell({Node,Mod,Func,Args}) ->
     start_shell1(net, call, [Node,Mod,Func,Args]);
-start_shell(Shell) when atom(Shell) ->
+start_shell(Shell) when is_atom(Shell) ->
     start_shell1(Shell, start, []);
 start_shell(Shell) when is_function(Shell) ->
     start_shell1(Shell);
-start_shell(Shell) when pid(Shell) ->
+start_shell(Shell) when is_pid(Shell) ->
     group_leader(self(), Shell),		% we are the shells group leader
     link(Shell),				% we're linked to it.
     put(shell, Shell);
@@ -87,7 +85,7 @@ start_shell1(M, F, Args) ->
     G = group_leader(),
     group_leader(self(), self()),
     case catch apply(M, F, Args) of
-	Shell when pid(Shell) ->
+	Shell when is_pid(Shell) ->
 	    group_leader(G, self()),
 	    link(Shell),			% we're linked to it.
 	    put(shell, Shell);
@@ -99,7 +97,7 @@ start_shell1(Fun) ->
     G = group_leader(),
     group_leader(self(), self()),
     case catch Fun() of
-	Shell when pid(Shell) ->
+	Shell when is_pid(Shell) ->
 	    group_leader(G, self()),
 	    link(Shell),			% we're linked to it.
 	    put(shell, Shell);
@@ -109,7 +107,7 @@ start_shell1(Fun) ->
 
 server_loop(Drv, Shell, Buf0) ->
     receive
-	{io_request,From,ReplyAs,Req} when pid(From) ->
+	{io_request,From,ReplyAs,Req} when is_pid(From) ->
 	    Buf = io_request(Req, From, ReplyAs, Drv, Buf0),
 	    server_loop(Drv, Shell, Buf);
 	{driver_id,ReplyTo} ->
@@ -149,12 +147,12 @@ io_request(Req, From, ReplyAs, Drv, Buf0) ->
 	    exit(R)
     end.
 
-io_request({put_chars,Binary}, Drv, Buf) when binary(Binary) -> % New in R9C
+io_request({put_chars,Binary}, Drv, Buf) when is_binary(Binary) -> % New in R9C
     send_drv(Drv, {put_chars,Binary}),
     {ok,ok,Buf};
 io_request({put_chars,Chars}, Drv, Buf) ->
     case catch list_to_binary(Chars) of
-	Binary when binary(Binary) ->
+	Binary when is_binary(Binary) ->
 	    send_drv(Drv, {put_chars,Binary}),
 	    {ok,ok,Buf};
 	_ ->
@@ -162,12 +160,12 @@ io_request({put_chars,Chars}, Drv, Buf) ->
     end;
 io_request({put_chars,M,F,As}, Drv, Buf) ->
     case catch apply(M, F, As) of
-	Binary when binary(Binary) ->
+	Binary when is_binary(Binary) ->
 	    send_drv(Drv, {put_chars,Binary}),
 	    {ok,ok,Buf};
 	Chars ->
 	    case catch list_to_binary(Chars) of
-		B when binary(B) ->
+		B when is_binary(B) ->
 		    send_drv(Drv, {put_chars,B}),
 		    {ok,ok,Buf};
 		_ ->
@@ -181,7 +179,7 @@ io_request({get_chars,Prompt,Mod,Func,XtraArg}, Drv, Buf) ->
     get_chars(Prompt, Mod, Func, XtraArg, Drv, Buf);
 io_request({get_line,Prompt}, Drv, Buf) ->
     get_chars(Prompt, io_lib, collect_line, [], Drv, Buf);
-io_request({setopts,Opts}, Drv, Buf) when list(Opts) ->
+io_request({setopts,Opts}, Drv, Buf) when is_list(Opts) ->
     setopts(Opts, Drv, Buf);
 %% End of new in R9C
 io_request({get_until,Prompt,M,F,As}, Drv, Buf) ->
@@ -299,8 +297,8 @@ get_line1({done,Line,Rest,Rs}, Drv, _Ls) ->
     put(line_buffer, [Line|lists:delete(Line, get(line_buffer))]),
     {done,Line,Rest};
 get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0) 
-  when ((Mode == none) and (Char == $\^P))
-       or ((Mode == meta_left_sq_bracket) and (Char == $A)) ->
+  when ((Mode =:= none) and (Char =:= $\^P))
+       or ((Mode =:= meta_left_sq_bracket) and (Char =:= $A)) ->
     send_drv_reqs(Drv, Rs),
     case up_stack(Ls0) of
 	{none,Ls} ->
@@ -316,8 +314,8 @@ get_line1({undefined,{_A,Mode,Char},Cs,Cont,Rs}, Drv, Ls0)
 		      Ls)
     end;
 get_line1({undefined,{_A,Mode,Char},_Cs,Cont,Rs}, Drv, Ls0) 
-  when ((Mode == none) and (Char == $\^N))
-       or ((Mode == meta_left_sq_bracket) and (Char == $B)) ->
+  when ((Mode =:= none) and (Char =:= $\^N))
+       or ((Mode =:= meta_left_sq_bracket) and (Char =:= $B)) ->
     send_drv_reqs(Drv, Rs),
     case down_stack(Ls0) of
 	{none,_Ls} ->
@@ -359,7 +357,7 @@ get_line1({What,Cont0,Rs}, Drv, Ls) ->
 	    get_line1(edlin:edit_line(Cs, Cont0), Drv, Ls);
 	{Drv,eof} ->
 	    get_line1(edlin:edit_line(eof, Cont0), Drv, Ls);
-	{io_request,From,ReplyAs,Req} when pid(From) ->
+	{io_request,From,ReplyAs,Req} when is_pid(From) ->
 	    {more_chars,Cont,_More} = edlin:edit_line([], Cont0),
 	    send_drv_reqs(Drv, edlin:erase_line(Cont)),
 	    io_request(Req, From, ReplyAs, Drv, []), %WRONG!!!
@@ -406,7 +404,7 @@ get_password1({Chars,[]}, Drv) ->
     receive
 	{Drv,{data,Cs}} ->
 	    get_password1(edit_password(Cs,Chars),Drv);
-	{io_request,From,ReplyAs,Req} when pid(From) ->
+	{io_request,From,ReplyAs,Req} when is_pid(From) ->
 	    %send_drv_reqs(Drv, [{delete_chars, -length(Pbs)}]),
 	    io_request(Req, From, ReplyAs, Drv, []), %WRONG!!!
 	    %% I guess the reason the above line is wrong is that Buf is
@@ -439,7 +437,7 @@ edit_password([Char|Cs],Chars) ->
 %% prompt_bytes(Prompt)
 %%  Return a list of bytes for the Prompt.
 
-prompt_bytes(Prompt) when atom(Prompt) ->
+prompt_bytes(Prompt) when is_atom(Prompt) ->
     atom_to_list(Prompt);
 prompt_bytes({format,Format,Args}) ->
     case catch io_lib:format(Format,Args) of

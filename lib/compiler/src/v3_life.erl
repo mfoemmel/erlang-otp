@@ -473,6 +473,7 @@ is_gc_bif(Name, Arity) ->
 	false -> is_gc_bif_1(Name, Arity)
 end.
 
+is_gc_bif_1(is_bitstr, 1) -> false;		%XXX Remove in R12B.
 is_gc_bif_1(hd, 1) -> false;
 is_gc_bif_1(tl, 1) -> false;
 is_gc_bif_1(self, 0) -> false;

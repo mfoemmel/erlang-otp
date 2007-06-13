@@ -55,7 +55,7 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 	{notype,_} ->
 	    true;
 	{primitive,bif} ->
-	    get_type_prim(Type);
+	    get_type_prim(Type,get_encoding_rule(M));
 	'ASN1_OPEN_TYPE' ->
 	    case  Type#type.constraint of
 		[#'Externaltypereference'{type=TrefConstraint}] ->
@@ -63,7 +63,6 @@ get_type(M,Typename,Type,Tellname) when record(Type,type) ->
 		_ ->
 		    ERule = get_encoding_rule(M),
 		    open_type_value(ERule)
-%%		    "open_type"
 	    end;
 	{constructed,bif} when Typename == ['EXTERNAL'] ->
 	    Val=get_type_constructed(M,Typename,InnerType,Type),
@@ -163,7 +162,7 @@ gen_list(_,_,_,_,0) ->
 gen_list(M,Typename,Oftype,Tellname,N) ->
     [get_type(M,Typename,Oftype,no)|gen_list(M,Typename,Oftype,Tellname,N-1)].
     
-get_type_prim(D) ->
+get_type_prim(D,Erule) ->
     C = D#type.constraint,
     case D#type.def of
 	'INTEGER' ->
@@ -256,15 +255,18 @@ get_type_prim(D) ->
 	    adjust_list(size_random(C),c_string(C,"BMPString"));
 	'UTF8String' ->
 	    {ok,Res}=asn1rt:utf8_list_to_binary(adjust_list(random(50),[$U,$T,$F,$8,$S,$t,$r,$i,$n,$g,16#ffff,16#fffffff,16#ffffff,16#fffff,16#fff])),
-	    Res;
+	    case Erule of
+		per ->
+		    binary_to_list(Res);
+		_ ->
+		    Res
+	    end;
 	'UniversalString' ->
 	    adjust_list(size_random(C),c_string(C,"UniversalString"));
 	XX ->
 	    exit({asn1_error,nyi,XX})
     end.
 
-c_string(undefined,Default) ->
-    Default;
 c_string(C,Default) ->
     case get_constraint(C,'PermittedAlphabet') of
 	{'SingleValue',Sv} when list(Sv) ->

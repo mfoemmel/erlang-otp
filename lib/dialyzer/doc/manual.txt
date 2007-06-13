@@ -35,7 +35,7 @@ Dialyzer has several modes of analysis. These are controlled by the
 buttons in the top-middle part of the main window, under "Analysis Options".
 
 The parameters are:
-* Analyze:
+* File Type:
     - Byte code:
 	The analysis starts from .beam bytecode files.
 	The files must be compiled with +debug_info. If this is not 
@@ -44,6 +44,21 @@ The parameters are:
 	compiling with +debug_info.
     - Source code:
 	The analysis starts from .erl files. 
+
+* Analysis:
+    - Dataflow:
+        Use a dataflow analysis to find discrepancies. This analysis mode
+        is more precise than previous versions of Dialyzer. It also provides
+        file and line number information.
+    - Success Typings:
+        A significantly stronger analysis that finds more discrepancies than
+        dataflow. However, it takes 2 to 2.5 times longer time, and can also
+        give warnings that might be harder to interpret, even though they are
+        still correct.
+    - Old Style:
+        For those that need to analyze beam files that have not been compiled
+        with +debug_info, this mode provides analysis in the idiom of older 
+        versions of Dialyzer.
 
 Controlling the discrepancies reported by the Dialyzer
 ======================================================
@@ -140,7 +155,8 @@ The exit status of the command line version is:
 Usage: dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
 		 [-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
 		 [--old_style] [--output_plt file] [-Wwarn]* [--src] 
-		 [-c applications] [-r applications] [-o outfile] 
+		 [-c applications] [-r applications] [-o outfile]
+                 [--dataflow] [--succ_typings]
 
 Options: 
    -c applications (or --command-line applications)
@@ -189,6 +205,10 @@ Options:
        Makes Dialyzer a bit more quiet
    --verbose
        Makes Dialyzer a bit more verbose
+   --dataflow
+       Makes Dialyzer use dataflow analysis to find discrepancies. (Default)
+   --succ_typings
+       Makes Dialyzer use success typings to find discrepancies.
 
 Note:
   * denotes that multiple occurrences of these options are possible.
@@ -263,6 +283,7 @@ Option   : {files,          [Filename : string()]}
 	 | {output_file,    FileName : string()}
 	 | {supress_inline, bool()}               %% Defaults to true
 	 | {warnings,       [WarnOpts]}
+         | {analysis_type,  dataflow | succ_typings | old_style}
 
 WarnOpts : no_return
 	 | no_unused

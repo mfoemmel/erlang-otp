@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common.refs SYSTEM "common.refs.dtd" >
+%common.refs;
+
+<!ELEMENT cref                (header,lib,libsummary,description, 
+			       (section|funcs)*,authors) >
+<!ELEMENT lib                 (#PCDATA) >
+<!ELEMENT libsummary          (#PCDATA) >
+
+<!-- `name' is used in common.refs.dtd and must therefore 
+      be defined in each *ref. dtd -->
+<!ELEMENT name                (ret,nametext) >
+<!ELEMENT ret                 (#PCDATA) >
+<!ELEMENT nametext            (#PCDATA) >
+

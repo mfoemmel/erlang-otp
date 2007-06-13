@@ -44,18 +44,6 @@ decode(Module,Type,Bytes) ->
 	    Result
     end.
 
--ifdef(asn1_r7b_enable_driver).
-
-load_driver() ->
-    asn1rt_driver_handler:load_driver(),
-    receive
-	{reply,_Port} ->
-	    ok;
-	Error ->
-	    {error,Error}
-    end.
-
--else.	
 	
 load_driver() ->
     asn1rt_driver_handler:load_driver(),
@@ -68,7 +56,6 @@ load_driver() ->
 	    {error,Error}
     end.
 
--endif.
 
 unload_driver() ->
     case catch asn1rt_driver_handler:unload_driver() of

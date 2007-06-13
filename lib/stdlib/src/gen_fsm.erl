@@ -273,7 +273,7 @@ get_proc_name({global, Name}) ->
     case global:safe_whereis_name(Name) of
 	undefined ->
 	    exit(process_not_registered_globally);
-	Pid when Pid==self() ->
+	Pid when Pid =:= self() ->
 	    Name;
 	_Pid ->
 	    exit(process_not_registered_globally)
@@ -351,7 +351,7 @@ loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
 				  [Name, StateName, StateData, Mod, Time]);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
-	_Msg when Debug == [] ->
+	_Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, Name, StateName, StateData, Mod, Time);
 	_Msg ->
 	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
@@ -418,15 +418,15 @@ handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time) -> %No debug her
 	    loop(Parent, Name, NStateName, NStateData, Mod, infinity, []);
 	{next_state, NStateName, NStateData, Time1} ->
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, []);
-        {reply, Reply, NStateName, NStateData} when From /= undefined ->
+        {reply, Reply, NStateName, NStateData} when From =/= undefined ->
 	    reply(From, Reply),
 	    loop(Parent, Name, NStateName, NStateData, Mod, infinity, []);
-        {reply, Reply, NStateName, NStateData, Time1} when From /= undefined ->
+        {reply, Reply, NStateName, NStateData, Time1} when From =/= undefined ->
 	    reply(From, Reply),
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, []);
 	{stop, Reason, NStateData} ->
 	    terminate(Reason, Name, Msg, Mod, StateName, NStateData, []);
-	{stop, Reason, Reply, NStateData} when From /= undefined ->
+	{stop, Reason, Reply, NStateData} when From =/= undefined ->
 	    {'EXIT', R} = (catch terminate(Reason, Name, Msg, Mod,
 					   StateName, NStateData, [])),
 	    reply(From, Reply),
@@ -449,15 +449,15 @@ handle_msg(Msg, Parent, Name, StateName, StateData, Mod, _Time, Debug) ->
 	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      {Name, NStateName}, return),
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, Debug1);
-        {reply, Reply, NStateName, NStateData} when From /= undefined ->
+        {reply, Reply, NStateName, NStateData} when From =/= undefined ->
 	    Debug1 = reply(Name, From, Reply, Debug, NStateName),
 	    loop(Parent, Name, NStateName, NStateData, Mod, infinity, Debug1);
-        {reply, Reply, NStateName, NStateData, Time1} when From /= undefined ->
+        {reply, Reply, NStateName, NStateData, Time1} when From =/= undefined ->
 	    Debug1 = reply(Name, From, Reply, Debug, NStateName),
 	    loop(Parent, Name, NStateName, NStateData, Mod, Time1, Debug1);
 	{stop, Reason, NStateData} ->
 	    terminate(Reason, Name, Msg, Mod, StateName, NStateData, Debug);
-	{stop, Reason, Reply, NStateData} when From /= undefined ->
+	{stop, Reason, Reply, NStateData} when From =/= undefined ->
 	    {'EXIT', R} = (catch terminate(Reason, Name, Msg, Mod,
 					   StateName, NStateData, Debug)),
 	    reply(Name, From, Reply, Debug, StateName),

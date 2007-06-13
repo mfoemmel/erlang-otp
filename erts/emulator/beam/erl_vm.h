@@ -34,10 +34,6 @@
 /* #  define INC_TIME_BASED 1 */ /* Time-based incremental GC (vs Work-based) */
 #endif
 
-#if defined(HEAP_FRAG_ELIM_TEST) && defined(HIPE)
-#warning Heap-fragment elimination (nofrag) is not supported with HIPE yet
-#endif
-
 #define BEAM 1
 #define EMULATOR "BEAM"
 #define SEQ_TRACE 1

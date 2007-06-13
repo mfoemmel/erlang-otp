@@ -191,6 +191,7 @@
 	 write_file/3,
 	 start/1,
 	 info/1,
+	 change_config/2,
 	 start/0
 	]).
 
@@ -273,15 +274,29 @@ start(Options) ->
     tftp_engine:daemon_start(Options).
 
 %%-------------------------------------------------------------------
-%% info(Pid) -> undefined | Options
+%% info(Pid) -> {ok, Options} | {error, Reason}
 %% 
 %% Options = [option()]
+%% Reason  = term()
 %%
 %% Returns info about a tftp daemon, server or client process
 %%-------------------------------------------------------------------
 
 info(Pid) ->
     tftp_engine:info(Pid).
+
+%%-------------------------------------------------------------------
+%% change_config(Pid, Options) -> ok | {error, Reason}
+%% 
+%% Options = [option()]
+%% Reason  = term()
+%%
+%% Changes config for a tftp daemon, server or client process
+%% Must be used with care.
+%%-------------------------------------------------------------------
+
+change_config(Pid, Options) ->
+    tftp_engine:change_config(Pid, Options).
 
 %%-------------------------------------------------------------------
 %% start() -> ok | {error, Reason}

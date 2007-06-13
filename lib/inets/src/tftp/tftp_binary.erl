@@ -31,14 +31,14 @@ prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
 prepare(Access, Bin, Mode, SuggestedOptions, []) ->
     %% Client side
     case catch handle_options(Access, Bin, Mode, SuggestedOptions) of
-	{ok, IsNetworkAscii, AcceptedOptions} when Access == read, binary(Bin) ->
+	{ok, IsNetworkAscii, AcceptedOptions} when Access =:= read, binary(Bin) ->
 	    State = #read_state{options  	 = AcceptedOptions,
 				blksize  	 = lookup_blksize(AcceptedOptions),
 				bin      	 = Bin,
 				is_network_ascii = IsNetworkAscii,
 			        count            = size(Bin)},
 	    {ok, AcceptedOptions, State};
-	{ok, IsNetworkAscii, AcceptedOptions} when Access == write, Bin == binary ->
+	{ok, IsNetworkAscii, AcceptedOptions} when Access =:= write, Bin =:= binary ->
 	    State = #write_state{options  	  = AcceptedOptions,
 				 blksize  	  = lookup_blksize(AcceptedOptions),
 				 list     	  = [],
@@ -70,13 +70,13 @@ open(Access, Bin, Mode, NegotiatedOptions, State) ->
     %% Both sides
     IsNetworkAscii =
 	if
-	    record(State, write_state) -> State#write_state.is_network_ascii;
-	    record(State, read_state)  -> State#read_state.is_network_ascii
+	    is_record(State, write_state) -> State#write_state.is_network_ascii;
+	    is_record(State, read_state)  -> State#read_state.is_network_ascii
 	end,
     case catch handle_options(Access, Bin, Mode, NegotiatedOptions) of
 	{ok, IsNetworkAscii2, Options}
-	when Options == NegotiatedOptions,
-	     IsNetworkAscii == IsNetworkAscii2 ->
+	when Options =:= NegotiatedOptions,
+	     IsNetworkAscii =:= IsNetworkAscii2 ->
 	    {ok, NegotiatedOptions, State};
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
@@ -86,7 +86,7 @@ open(Access, Bin, Mode, NegotiatedOptions, State) ->
 %% Read
 %%-------------------------------------------------------------------
 
-read(#read_state{bin = Bin} = State) when binary(Bin) ->
+read(#read_state{bin = Bin} = State) when is_binary(Bin) ->
     BlkSize = State#read_state.blksize,
     if
 	size(Bin) >= BlkSize ->
@@ -101,11 +101,11 @@ read(#read_state{bin = Bin} = State) when binary(Bin) ->
 %% Write
 %%-------------------------------------------------------------------
 
-write(Bin, #write_state{list = List} = State) when binary(Bin), list(List) ->
+write(Bin, #write_state{list = List} = State) when is_binary(Bin), is_list(List) ->
     Size = size(Bin),
     BlkSize = State#write_state.blksize,
     if
-	Size == BlkSize ->
+	Size =:= BlkSize ->
 	    {more, State#write_state{list = [Bin | List]}};
 	Size < BlkSize ->
 	    Bin2 = list_to_binary(lists:reverse([Bin | List])),
@@ -143,7 +143,7 @@ do_handle_options(Access, Bin, [{Key, Val} | T]) ->
     case Key of
 	"tsize" ->
 	    case Access of
-		read when Val == "0", binary(Bin) ->
+		read when Val =:= "0", binary(Bin) ->
 		    Tsize = integer_to_list(size(Bin)),
 		    [{Key, Tsize} | do_handle_options(Access, Bin, T)];
 		_ ->
@@ -166,7 +166,7 @@ handle_integer(Access, Bin, Key, Val, Options, Min, Max) ->
 	    do_handle_options(Access, Bin, Options);
 	Int when Int >= Min, Int =< Max ->
 	    [{Key, Val} | do_handle_options(Access, Bin, Options)];
-	Int when Int >= Min, Max == infinity ->
+	Int when Int >= Min, Max =:= infinity ->
 	    [{Key, Val} | do_handle_options(Access, Bin, Options)];
 	_Int ->
 	    throw({error, {badopt, "Illegal " ++ Key ++ " value " ++ Val}})

@@ -70,7 +70,7 @@ prepare(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
     %% Kept for backwards compatibility 
     prepare(Access, Filename, Mode, SuggestedOptions, Initial).
 
-prepare(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
+prepare(Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
     %% Client side
     case catch handle_options(Access, Filename, Mode, SuggestedOptions, Initial) of
 	{ok, Filename2, AcceptedOptions} ->
@@ -122,7 +122,7 @@ open(_Peer, Access, Filename, Mode, SuggestedOptions, Initial) ->
     %% Kept for backwards compatibility 
     open(Access, Filename, Mode, SuggestedOptions, Initial).
 
-open(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
+open(Access, Filename, Mode, SuggestedOptions, Initial) when is_list(Initial) ->
     %% Server side
     case prepare(Access, Filename, Mode, SuggestedOptions, Initial) of
 	{ok, AcceptedOptions, State} ->
@@ -130,21 +130,21 @@ open(Access, Filename, Mode, SuggestedOptions, Initial) when list(Initial) ->
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
     end;
-open(Access, Filename, Mode, NegotiatedOptions, State) when record(State, state) ->
+open(Access, Filename, Mode, NegotiatedOptions, State) when is_record(State, state) ->
     %% Both sides
     case catch handle_options(Access, Filename, Mode, NegotiatedOptions, State) of
 	{ok, _Filename2, Options} 
-	   when Options == NegotiatedOptions ->
+	   when Options =:= NegotiatedOptions ->
 	    do_open(State);
 	{error, {Code, Text}} ->
 	    {error, {Code, Text}}
     end.
 
-do_open(State) when record(State, state) ->
+do_open(State) when is_record(State, state) ->
     case file:open(State#state.filename, file_options(State)) of
 	{ok, Fd} ->
 	    {ok, State#state.options, State#state{fd = Fd}};
-	{error, Reason} when atom(Reason) ->
+	{error, Reason} when is_atom(Reason) ->
 	    {error, file_error(Reason)}
     end.
 	
@@ -154,7 +154,7 @@ file_options(State) ->
 	write -> [write, delayed_write, raw, binary]
     end.
 
-file_error(Reason) when atom(Reason) ->
+file_error(Reason) when is_atom(Reason) ->
     Details = file:format_error(Reason),
     case Reason of
 	eexist -> {Reason, Details};
@@ -186,10 +186,10 @@ file_error(Reason) when atom(Reason) ->
 read(#state{access = read} = State) ->
     BlkSize = State#state.blksize,
     case file:read(State#state.fd, BlkSize) of
-	{ok, Bin} when binary(Bin), size(Bin) == BlkSize ->
+	{ok, Bin} when is_binary(Bin), size(Bin) =:= BlkSize ->
 	    Count = State#state.count + size(Bin),
 	    {more, Bin, State#state{count = Count}};
-	{ok, Bin} when binary(Bin), size(Bin) < BlkSize ->
+	{ok, Bin} when is_binary(Bin), size(Bin) < BlkSize ->
 	    file:close(State#state.fd),
 	    Count = State#state.count + size(Bin),
 	    {last, Bin, Count};
@@ -218,11 +218,11 @@ read(#state{access = read} = State) ->
 %% The file is automatically closed when the last chunk is written
 %%-------------------------------------------------------------------
 
-write(Bin, #state{access = write} = State) when binary(Bin) ->
+write(Bin, #state{access = write} = State) when is_binary(Bin) ->
     Size = size(Bin),
     BlkSize = State#state.blksize,
     case file:write(State#state.fd, Bin) of
-	ok when Size == BlkSize->
+	ok when Size =:= BlkSize->
 	    Count = State#state.count + Size,
 	    {more, State#state{count = Count}};
 	ok when Size < BlkSize->
@@ -260,14 +260,14 @@ abort(_Code, _Text, #state{fd = Fd, access = Access} = State) ->
 %% Process options
 %%-------------------------------------------------------------------
 
-handle_options(Access, Filename, Mode, Options, InitialState) when Mode == "octet" ->
+handle_options(Access, Filename, Mode, Options, InitialState) when Mode =:= "octet" ->
     Filename2 = handle_filename(Filename, InitialState),
-    Options2 = do_handle_options(Access, Filename, Options),
+    Options2 = do_handle_options(Access, Filename2, Options),
     {ok, Filename2, Options2};
 handle_options(_Access, _Filename, Mode, _Options, _InitialState) ->
     {error, {badop, "Illegal mode " ++ Mode}}.
 
-handle_filename(Filename, InitialState) when list(InitialState) ->
+handle_filename(Filename, InitialState) when is_list(InitialState) ->
     case lists:keysearch(root_dir, 1, InitialState) of
 	{value, {_, Dir}} ->
 	    case catch filename_join(Dir, Filename) of
@@ -279,7 +279,7 @@ handle_filename(Filename, InitialState) when list(InitialState) ->
 	false ->
 	    Filename
     end;
-handle_filename(_Filename, State) when record(State, state) ->
+handle_filename(_Filename, State) when is_record(State, state) ->
     State#state.filename.
 
 filename_join(Dir, Filename) ->
@@ -295,7 +295,7 @@ do_handle_options(Access, Filename, [{Key, Val} | T]) ->
     case Key of
 	"tsize" ->
 	    case Access of
-		read when Val == "0" ->
+		read when Val =:= "0" ->
 		    case file:read_file_info(Filename) of
 			{ok, FI} ->
 			    Tsize = integer_to_list(FI#file_info.size),
@@ -323,7 +323,7 @@ handle_integer(Access, Filename, Key, Val, Options, Min, Max) ->
 	    do_handle_options(Access, Filename, Options);
 	Int when Int >= Min, Int =< Max ->
 	    [{Key, Val} | do_handle_options(Access, Filename, Options)];
-	Int when Int >= Min, Max == infinity ->
+	Int when Int >= Min, Max =:= infinity ->
 	    [{Key, Val} | do_handle_options(Access, Filename, Options)];
 	_Int ->
 	    throw({error, {badopt, "Illegal " ++ Key ++ " value " ++ Val}})

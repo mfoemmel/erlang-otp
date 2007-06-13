@@ -29,7 +29,7 @@
 	 encode_trans_reply/2,
 	 encode_actions/3,
 	 send_body/3,
-	 send_message/2
+	 send_message/3
         ]).
 
 %% Test functions
@@ -51,8 +51,20 @@
 			Afun
 		end
 	end(Other,Where)).
+-define(TC_AWAIT_SEND_EVENT(SendFunction),
+        case megaco_tc_controller:lookup(send_function) of
+            {value, {Tag, Pid}} when is_pid(Pid) ->
+                Pid ! {Tag, self(), SendFuncion},
+                receive
+                    {Tag, Pid} ->
+                        ok
+                end;
+            _ ->
+                ok
+        end).
 -else.
 -define(SIM(Other,Where),Other).
+-define(TC_AWAIT_SEND_EVENT(_),ok).
 -endif.
 
 
@@ -158,7 +170,7 @@ encode_message(#conn_data{protocol_version = Version,
 send_body(ConnData, TraceLabel, Body) ->
     case encode_body(ConnData, TraceLabel, Body) of
         {ok, Bin} ->
-            send_message(ConnData, Bin);
+            send_message(ConnData, false, Bin);
         {error, Reason} ->
             {error, Reason}
     end.
@@ -168,12 +180,25 @@ send_body(ConnData, TraceLabel, Body) ->
 %% Send the (encoded) message
 %%----------------------------------------------------------------------
 
-send_message(ConnData, Bin) ->
+send_message(#conn_data{resend_indication = true} = ConnData, 
+	     true, Bin) ->
+    do_send_message(ConnData, resend_message, Bin);
+
+send_message(ConnData, _Resend, Bin) ->
+    %% p("send_message -> entry with"
+    %%   "~n   ResendInd: ~p"
+    %%   "~n   Resend:    ~p", [ConnData#conn_data.resend_indication, _Resend]),
+    do_send_message(ConnData, send_message, Bin).
+
+do_send_message(ConnData, SendFunc, Bin) ->
     %% Send the message
     #conn_data{send_mod    = SendMod,
 	       send_handle = SendHandle} = ConnData,
-    ?report_trace(ConnData, "send bytes", [{bytes, Bin}]),
-    case (catch SendMod:send_message(SendHandle, Bin)) of
+
+    ?TC_AWAIT_SEND_EVENT(SendFunc),
+
+    ?report_trace(ConnData, "send bytes", [{bytes,Bin},{send_func,SendFunc}]),
+    case (catch SendMod:SendFunc(SendHandle, Bin)) of
         ok ->
             ?SIM({ok, Bin}, send_message);
         {cancel, Reason} ->
@@ -184,22 +209,22 @@ send_message(ConnData, Bin) ->
 	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
-	    error_msg("failed (error) sending message (~p):"
-		      "~n~w", [SendHandle, Reason]),
+	    error_msg("failed (error) sending message [using ~w] (~p):"
+		      "~n~w", [SendFunc, SendHandle, Reason]),
             {error, {send_message_failed, Reason}};
         {'EXIT', Reason} = Error ->
 	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {exit, Reason}]),
-	    error_msg("failed (exit) sending message (~p):"
-		      "~n~w", [SendHandle, Reason]),
+	    error_msg("failed (exit) sending message [using ~w] (~p):"
+		      "~n~w", [SendFunc, SendHandle, Reason]),
             {error, {send_message_failed, Error}};
         Reason ->
 	    incNumErrors(ConnData#conn_data.conn_handle),
             ?report_important(ConnData, "<ERROR> send_message callback",
                               [{bytes, Bin}, {error, Reason}]),
-	    error_msg("failed sending message on (~p): "
-		      "~n~w", [SendHandle, Reason]),
+	    error_msg("failed sending message [using ~w] on (~p): "
+		      "~n~w", [SendFunc, SendHandle, Reason]),
             {error, {send_message_failed, Reason}}
     end.
 
@@ -236,12 +261,12 @@ incNum(Cnt) ->
 	    
 %% p(F, A) ->
 %%     print(now(), F, A).
-%% 
+
 %% print(Ts, F, A) ->
 %%     io:format("*** [~s] ~p ***"
 %% 		 "~n   " ++ F ++ "~n", 
 %% 		 [format_timestamp(Ts), self() | A]).
-%% 
+
 %% format_timestamp(Now) ->
 %%     {_N1, _N2, N3}   = Now,
 %%     {Date, Time}   = calendar:now_to_datetime(Now),

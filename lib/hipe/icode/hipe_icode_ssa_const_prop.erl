@@ -5,7 +5,7 @@
 %% ============================================================================
 %%  Filename :  hipe_icode_ssa_const_prop.erl
 %%  Authors  :  Daniel Luna, Erik Andersson
-%%  Purpose  :  Perform sparse conditional constant propagation.
+%%  Purpose  :  Perform sparse conditional constant propagation on Icode.
 %%  Notes    :  Works on the control-flow graph.
 %%
 %%  History  : * 2003-03-05: Created.
@@ -19,7 +19,7 @@
 %%
 %% TODO: 
 %%
-%% Take care of failures in call and replace operation with apropriate
+%% Take care of failures in call and replace operation with appropriate
 %% failure.
 %%
 %% Handle ifs with non-binary operators
@@ -395,7 +395,7 @@ evaluate_if_const(Conditional, Argument1, Argument2) ->
 %%-----------------------------------------------------------------------------
 
 evaluate_type(Type, Vals) ->
-  case [X||X<-Vals,X=:=bottom] of
+  case [X || X <- Vals, X =:= bottom] of
     [] -> evaluate_type_const(Type, Vals);
     _ -> bottom
   end.
@@ -499,8 +499,8 @@ update_call(Instruction, Environment) ->
 
 %%-----------------------------------------------------------------------------
 
-is_call_to_fp_op(Ins)->
-  case hipe_icode:call_fun(Ins) of
+is_call_to_fp_op(Instruction) ->
+  case hipe_icode:call_fun(Instruction) of
     fp_add             -> true;
     fp_sub             -> true;
     fp_mul             -> true;
@@ -513,27 +513,31 @@ is_call_to_fp_op(Ins)->
 
 %%-----------------------------------------------------------------------------
 
-update_enter(Ins, Env) ->
-  Args = hipe_icode:enter_args(Ins),
-  EvalArgs = [lookup_lattice_value(X, Env) || X<-Args],
-  Fun = hipe_icode:enter_fun(Ins),
+update_enter(Instruction, Environment) ->
+  Args = hipe_icode:enter_args(Instruction),
+  EvalArgs = [lookup_lattice_value(X, Environment) || X <- Args],
+  Fun = hipe_icode:enter_fun(Instruction),
   case lists:any(fun(X) -> (X =:= bottom) end, EvalArgs) of
     true ->
-      [Ins];
+      update_enter_arguments(Instruction, Environment);
     false ->
-      ConstVals = [hipe_icode:const_value(X)||X<-EvalArgs],
+      ConstVals = [hipe_icode:const_value(X) || X <- EvalArgs],
       case catch evaluate_call_or_enter(ConstVals, Fun) of
 	{'EXIT', _} -> 
-	  [Ins];
+	  update_enter_arguments(Instruction, Environment);
 	bottom -> 
-	  [Ins];
+	  update_enter_arguments(Instruction, Environment);
 	Const ->
 	  Dst = hipe_icode:mk_new_var(),
 	  [hipe_icode:mk_move(Dst, Const),
 	   hipe_icode:mk_return([Dst])]
       end
   end.
-  
+
+update_enter_arguments(Instruction, Env) ->
+  NewArguments = update_arguments(hipe_icode:enter_args(Instruction), Env),
+  [hipe_icode:enter_args_update(Instruction, NewArguments)].
+
 %%-----------------------------------------------------------------------------
 
 update_if(Instruction, Environment) ->
@@ -586,8 +590,6 @@ conv_if_to_type(I, Const, Arg) when is_atom(Const);
   [NewI];
 conv_if_to_type(I, _, _) ->
   [I].
-
-
 
 %%-----------------------------------------------------------------------------
 
@@ -706,6 +708,6 @@ update_arguments(ArgumentList, Environment) ->
        X;
      Constant ->
        Constant
-   end || X <- ArgumentList].
+   end || X <- ArgumentList].
 
 %%----------------------------- End of file -----------------------------------

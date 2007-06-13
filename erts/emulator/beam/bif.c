@@ -129,9 +129,8 @@ BIF_RETTYPE link_1(BIF_ALIST_1)
     DistEntry *dep;
     int code;
 
-    if (IS_TRACED(BIF_P)) {
-	if (BIF_P->trace_flags & F_TRACE_PROCS)
-	    trace_proc(BIF_P, BIF_P, am_link, BIF_ARG_1);
+    if (IS_TRACED_FL(BIF_P, F_TRACE_PROCS)) {
+	trace_proc(BIF_P, BIF_P, am_link, BIF_ARG_1);
     }
     /* check that the pid or port which is our argument is OK */
 
@@ -846,9 +845,8 @@ BIF_RETTYPE unlink_1(BIF_ALIST_1)
      *    be allowed to remove the link...)
      */
 
-    if (IS_TRACED(BIF_P)) {
-	if (BIF_P->trace_flags & F_TRACE_PROCS) 
-	    trace_proc(BIF_P, BIF_P, am_unlink, BIF_ARG_1);
+    if (IS_TRACED_FL(BIF_P, F_TRACE_PROCS)) {
+	trace_proc(BIF_P, BIF_P, am_unlink, BIF_ARG_1);
     }
 
     if (is_internal_port(BIF_ARG_1)) {
@@ -1352,6 +1350,14 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
        BIF_RET(old_value);
    }
    else if (BIF_ARG_1 == am_trap_exit) {
+       Uint trap_exit;
+       if (BIF_ARG_2 == am_true) {
+	   trap_exit = 1;
+       } else if (BIF_ARG_2 == am_false) {
+	   trap_exit = 0;
+       } else {
+	   goto error;
+       }
        /*
 	* NOTE: It is important that we check for pending exit signals
 	*       and handle them before flag trap_exit is set to true.
@@ -1361,10 +1367,11 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
        ERTS_SMP_BIF_CHK_PENDING_EXIT(BIF_P,
 				     ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
        old_value = ERTS_PROC_IS_TRAPPING_EXITS(BIF_P) ? am_true : am_false;
-       if (BIF_ARG_2 == am_true)
+       if (trap_exit) {
 	   ERTS_PROC_SET_TRAP_EXIT(BIF_P);
-       else if (BIF_ARG_2 == am_false)
+       } else {
 	   ERTS_PROC_UNSET_TRAP_EXIT(BIF_P);
+       }
        erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_STATUS);
        BIF_RET(old_value);
    }
@@ -1383,6 +1390,25 @@ BIF_RETTYPE process_flag_2(BIF_ALIST_2)
        } else {
 	   BIF_P->min_heap_size = erts_next_heap_size(i, 0);
        }
+       BIF_RET(old_value);
+   }
+   else if (BIF_ARG_1 == am_sensitive) {
+       Uint is_sensitive;
+       if (BIF_ARG_2 == am_true) {
+	   is_sensitive = 1;
+       } else if (BIF_ARG_2 == am_false) {
+	   is_sensitive = 0;
+       } else {
+	   goto error;
+       }
+       erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCKS_ALL_MINOR);
+       old_value = BIF_P->trace_flags & F_SENSITIVE ? am_true : am_false;
+       if (is_sensitive) {
+	   BIF_P->trace_flags |= F_SENSITIVE;
+       } else {
+	   BIF_P->trace_flags &= ~F_SENSITIVE;
+       }
+       erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCKS_ALL_MINOR);
        BIF_RET(old_value);
    }
    else if (BIF_ARG_1 == am_monitor_nodes) {

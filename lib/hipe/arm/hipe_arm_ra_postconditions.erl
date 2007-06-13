@@ -38,7 +38,6 @@ do_insn(I, TempMap, Strategy) ->
     #load{} -> do_load(I, TempMap, Strategy);
     #ldrsb{} -> do_ldrsb(I, TempMap, Strategy);
     #move{} -> do_move(I, TempMap, Strategy);
-    #mul{} -> do_mul(I, TempMap, Strategy);
     #pseudo_call{} -> do_pseudo_call(I, TempMap, Strategy);
     #pseudo_li{} -> do_pseudo_li(I, TempMap, Strategy);
     #pseudo_move{} -> do_pseudo_move(I, TempMap, Strategy);
@@ -81,14 +80,6 @@ do_move(I=#move{dst=Dst,am1=Am1}, TempMap, Strategy) ->
   {FixAm1,NewAm1,DidSpill2} = fix_am1(Am1, TempMap, Strategy),
   NewI = I#move{dst=NewDst,am1=NewAm1},
   {FixAm1 ++ [NewI | FixDst], DidSpill1 or DidSpill2}.
-
-do_mul(I=#mul{dst=Dst,src1=Src1,src2=Src2}, TempMap, Strategy) ->
-  %% ARM requires that Dst and Src1 are different registers.
-  {FixDst,NewDst,DidSpill1} = fix_dst(Dst, TempMap, Strategy),		% temp1
-  {FixSrc1,NewSrc1,DidSpill2} = fix_src2(Src1, TempMap, Strategy),	% temp2
-  {FixSrc2,NewSrc2,DidSpill3} = fix_src1(Src2, TempMap, Strategy),	% temp1
-  NewI = I#mul{dst=NewDst,src1=NewSrc1,src2=NewSrc2},
-  {FixSrc1 ++ FixSrc2 ++ [NewI | FixDst], DidSpill1 or DidSpill2 or DidSpill3}.
 
 do_pseudo_call(I=#pseudo_call{funv=FunV}, TempMap, Strategy) ->
   {FixFunV,NewFunV,DidSpill} = fix_funv(FunV, TempMap, Strategy),

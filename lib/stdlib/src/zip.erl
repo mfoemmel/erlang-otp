@@ -76,9 +76,6 @@
 	  cwd	       % directory to relate paths to	  
 	 }).
 
-%% import BIFs
--import(lists, [reverse/2, keysearch/3]).
-
 %% max bytes read from files and archives (and fed to zlib)
 -define(READ_BLOCK_SIZE, 16*1024).
 
@@ -1101,7 +1098,7 @@ get_z_file(In0, Z, Input, Output, OpO, FB, CWD) ->
 		    %% TODO This should be fixed some day:
 		    %% In5 = Input({set_file_info, FileName, FileInfo#file_info{size=UncompSize}}, In4),
 		    FB(FileName),
-		    CRC == CRC32 orelse throw({bad_crc, FileName}),
+		    CRC =:= CRC32 orelse throw({bad_crc, FileName}),
 		    {Out, In5}
 	    end;
 	_ ->
@@ -1164,7 +1161,7 @@ get_z_data_loop(CompSize, UncompSize, In0, Out0, Input, Output, Z) ->
 
 
 %% skip data descriptor if any
-skip_z_data_descriptor(GPFlag, Input, In0) when GPFlag band 8 == 8 ->
+skip_z_data_descriptor(GPFlag, Input, In0) when GPFlag band 8 =:= 8 ->
     Input({seek, cur, 12}, In0);
 skip_z_data_descriptor(_GPFlag, _Input, In0) ->
     In0.

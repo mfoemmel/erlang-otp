@@ -198,7 +198,7 @@ handle_call({new_process, Pid, Meta, Function}, _From, State) ->
     %% The status depends on if the process is automatically attached to
     %% or not.
     Reply = case auto_attach(init, State#state.auto, Pid) of
-		AttPid when pid(AttPid) -> break;
+		AttPid when is_pid(AttPid) -> break;
 		ignore -> running
 	    end,
 
@@ -443,7 +443,7 @@ handle_info({'EXIT',Who,Why}, State) ->
 	    %% Check if someone is attached to the debugged process,
 	    %% if so a new meta process should be started
 	    Meta = case Proc#proc.attpid of
-		       AttPid when pid(AttPid) ->
+		       AttPid when is_pid(AttPid) ->
 			   spawn_link(dbg_ieval, exit_info, 
 				      [self(),AttPid,Pid,Why,ExitInfo]);
 		       undefined ->
@@ -496,13 +496,13 @@ code_change(_OldVsn, State, _Extra) ->
 %% Internal functions
 %%====================================================================
 
-auto_attach(Why, Auto, Proc) when record(Proc, proc) ->
+auto_attach(Why, Auto, Proc) when is_record(Proc, proc) ->
     case Proc#proc.attpid of
-	AttPid when pid(AttPid) -> ignore;
+	AttPid when is_pid(AttPid) -> ignore;
 	undefined ->
 	    auto_attach(Why, Auto, Proc#proc.pid)
     end;
-auto_attach(Why, Auto, Pid) when pid(Pid) ->
+auto_attach(Why, Auto, Pid) when is_pid(Pid) ->
     case Auto of
 	false -> ignore;
 	{Flags, {Mod, Func, Args}} ->
@@ -551,7 +551,7 @@ send_all(meta, Msg, State) ->
 send_all(attached, Msg, State) ->
     AttPids= mapfilter(fun(Proc) ->
 			       case Proc#proc.attpid of
-				   Pid when pid(Pid) -> Pid;
+				   Pid when is_pid(Pid) -> Pid;
 				   undefined -> ignore
 			       end
 		       end,

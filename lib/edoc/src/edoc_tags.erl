@@ -257,7 +257,7 @@ parse_tags([#tag{name = Name} = T | Ts], How, Env, Where, Ts1) ->
 	xml ->
 	    [T1] = parse_tag(T, fun parse_xml/4, Env, Where),
 	    parse_tags(Ts, How, Env, Where, [T1 | Ts1]);
-	F when function(F) ->
+	F when is_function(F) ->
 	    Ts2 = parse_tag(T, F, Env, Where),
 	    parse_tags(Ts, How, Env, Where, lists:reverse(Ts2, Ts1))
     end;
@@ -345,7 +345,7 @@ parse_file(Data, Line, Env, _Where) ->
 
 parse_header(Data, Line, Env, {Where, _}) ->
     parse_header(Data, Line, Env, Where);
-parse_header(Data, Line, Env, Where) when list(Where) ->
+parse_header(Data, Line, Env, Where) when is_list(Where) ->
     case edoc_lib:parse_expr(Data, Line) of
 	{string, _, File} ->
 	    Dir = filename:dirname(Where),

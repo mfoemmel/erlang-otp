@@ -31,16 +31,16 @@ ESRC = .
 endif
 
 $(EBIN)/%.jam: $(ESRC)/%.erl
-	$(ERLC) -bjam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) -bjam $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 $(EBIN)/%.beam: $(ESRC)/%.erl
-	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) -bbeam $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 .erl.jam:
-	$(ERLC) -bjam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
+	$(ERLC) -bjam $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
 
 .erl.beam:
-	$(ERLC) -bbeam $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
+	$(ERLC) -bbeam $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
 
 #
 # When .erl files are automatically created GNU make removes them if

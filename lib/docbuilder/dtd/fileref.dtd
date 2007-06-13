@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % common.refs SYSTEM "common.refs.dtd" >
+%common.refs;
+
+<!ELEMENT fileref             (header,file,filesummary,description, 
+			       (section|funcs)*,authors) >
+<!-- Note: ELEMENT file is already defined -->
+<!ELEMENT filesummary         (#PCDATA) >
+
+<!-- `name' is used in common.refs.dtd and must therefore 
+      be defined in each *ref. dtd -->
+<!ELEMENT name                (#PCDATA) >

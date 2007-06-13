@@ -124,11 +124,11 @@ instr_type(I) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-resources_available(_Cycle,I,Rsrc,I_res) ->
-    res_avail(instruction_resource(I_res,I),Rsrc).
+resources_available(_Cycle, I, Rsrc, I_res) ->
+    res_avail(instruction_resource(I_res, I), Rsrc).
 
-instruction_resource(I_res,I) ->
-    hipe_vectors:get(I_res,I-1).
+instruction_resource(I_res, I) ->
+    hipe_vectors:get(I_res, I-1).
 
 %% The following function checks resource availability.
 %% * all function units are assumed to be fully pipelined, so only
@@ -140,11 +140,14 @@ instruction_resource(I_res,I) ->
 %% * br closes the cycle (= returns done).
 %% * single requires an entirely empty state and closes the cycle
 
-res_avail(ieu0, { free, I1, NumI, free, Mem, Br }) when NumI < 2 ->
+res_avail(ieu0, { free, I1, NumI, free, Mem, Br })
+  when is_integer(NumI), NumI < 2 ->
     { yes, { occ, I1, NumI+1, free, Mem, Br }};
-res_avail(ieu1, { _I0, free, NumI, free, Mem, Br }) when NumI < 2 ->
+res_avail(ieu1, { _I0, free, NumI, free, Mem, Br })
+  when is_integer(NumI), NumI < 2 ->
     { yes, { free, occ, NumI+1, free, Mem, Br }};
-res_avail(ieu, { I0, I1, NumI, _X, Mem, Br }) when NumI < 2 ->
+res_avail(ieu, { I0, I1, NumI, _X, Mem, Br })
+  when is_integer(NumI), NumI < 2 ->
     { yes, { I0, I1, NumI+1, occ, Mem, Br }};
 res_avail(mem, { I0, I1, NumI, X, free, Br }) ->
     { yes, { I0, I1, NumI, X, occ, Br }};
@@ -152,7 +155,7 @@ res_avail(br, { _I0, _I1, _NumI, _X, _Mem, free }) ->
     { yes, done };
 res_avail(single, { free, free, 0, free, free, free }) ->
     { yes, done };
-res_avail(_,_) ->
+res_avail(_, _) ->
     no.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -172,29 +175,29 @@ empty_state() -> { free, free, 0, free, free, free }.
 %% Note: all ld/st are assumed to hit in the L1 cache (D-cache),
 %%   which is sort of imprecise.
 
-raw_latency(alu,store) -> 0;
-raw_latency(load,_) -> 2;            % only if load is L1 hit
-raw_latency(alu_cc,b) -> 0;
-raw_latency(_I0,_I1) ->
+raw_latency(alu, store) -> 0;
+raw_latency(load, _) -> 2;            % only if load is L1 hit
+raw_latency(alu_cc, b) -> 0;
+raw_latency(_I0, _I1) ->
     1.
 
-war_latency(_I0,_I1) ->
+war_latency(_I0, _I1) ->
     0.
 
-waw_latency(_I0,_I1) ->
+waw_latency(_I0, _I1) ->
     1.
 
 %% *** UNFINISHED ***
 %% At present, all load/stores are assumed to hit in the L1 cache,
 %% which isn't really satisfying.
 
-%% m_raw_latency(_St,_Ld) ->
+%% m_raw_latency(_St, _Ld) ->
 %%     1.
 %% 
-%% m_war_latency(_Ld,_St) ->
+%% m_war_latency(_Ld, _St) ->
 %%     1.
 %% 
-%% m_waw_latency(_St1,_St2) ->
+%% m_waw_latency(_St1, _St2) ->
 %%     1.
 
 %% Use these for 'default latencies' = do not permit reordering.
@@ -208,11 +211,11 @@ m_war_latency() ->
 m_waw_latency() ->
     1.
 
-br_to_unsafe_latency(_BrTy,_UTy) ->
+br_to_unsafe_latency(_BrTy, _UTy) ->
     0.
 
-unsafe_to_br_latency(_UTy,_BrTy) ->
+unsafe_to_br_latency(_UTy, _BrTy) ->
     0.
 
-br_br_latency(_BrTy1,_BrTy2) ->
+br_br_latency(_BrTy1, _BrTy2) ->
     0.

@@ -373,10 +373,13 @@ static ERTS_INLINE void timer_thread_post_insert(Uint ticks)
 
 static void timer_thread_init(void)
 {
+    erts_thr_opts_t opts = ERTS_THR_OPTS_DEFAULT_INITER;
     erts_tid_t tid;
 
+    opts->detached = 1;
+
     timer_thread_iwait = erts_iwait_init();
-    erts_thr_create(&tid, timer_thread_start, NULL, 1);
+    erts_thr_create(&tid, timer_thread_start, NULL, &opts);
 }
 
 #else

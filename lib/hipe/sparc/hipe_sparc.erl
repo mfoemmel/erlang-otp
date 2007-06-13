@@ -469,10 +469,10 @@ mk_sparc(Fun, Arity, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
 	 arity=Arity, closure=Closure, leaf=Leaf,
 	 code=Code, data=Data, var_range=VarRange, label_range=LabelRange}.
 %% %% @spec mk_sparc(Fun::mfa(), Arity::integer(), 
-%% %%                               Code::[sparc_instruction()] , 
-%% %%                               Data::hipe_consttab:const_tab(), 
-%% %%                               VarRange::{integer(),integer()} ,
-%% %%                               LabelRange::{integer(),integer()} 
+%% %%                            Code::[sparc_instruction()] , 
+%% %%                            Data::hipe_consttab:const_tab(), 
+%% %%                            VarRange::{integer(),integer()} ,
+%% %%                            LabelRange::{integer(),integer()} 
 %% %%                               ) -> sparc()
 %% mk_sparc(Fun, Arity, Code, Data, VarRange, LabelRange) ->
 %%   #sparc{'fun'=Fun, 
@@ -482,7 +482,7 @@ mk_sparc(Fun, Arity, Closure, Leaf, Code, Data, VarRange, LabelRange) ->
 %% @spec sparc_fun(Sparc::sparc()) -> mfa()
 sparc_fun(#sparc{'fun'=Fun}) -> Fun.
 %% @spec sparc_arity(Sparc::sparc()) -> integer()
-sparc_arity(#sparc{arity=Arity}) -> Arity.
+sparc_arity(#sparc{arity=Arity}) when is_integer(Arity), 0 =< Arity -> Arity.
 %% @spec (Sparc::sparc()) -> bool()
 sparc_is_closure(#sparc{closure=IsClosure}) -> IsClosure.
 %% @spec (Sparc::sparc()) -> bool()
@@ -1184,12 +1184,12 @@ fpreg_nr({sparc_fpreg, RegNr}) when is_integer(RegNr) -> RegNr.
 
 %% Immediates %%
 %% @spec (Value::integer()) -> imm()
-mk_imm(Value) -> {sparc_imm, Value}.
+mk_imm(Value) when is_integer(Value) -> {sparc_imm, Value}.
 %% @spec (operand()) -> bool()
 is_imm(I) -> case I of {sparc_imm, _} -> true; _ -> false end.
 %% @spec (imm(Value)) -> Value
 %% Value = integer()
-imm_value({sparc_imm, Value}) -> Value.
+imm_value({sparc_imm, Value}) when is_integer(Value) -> Value.
 
 %% Spill locations
 %% mk_spill(Pos) -> {spill, Pos}.

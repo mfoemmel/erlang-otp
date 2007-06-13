@@ -581,11 +581,11 @@ get_updated_elem2(FromRecEdit, NewTerm, ProcVars) ->
 		    case VirtualCol of 
 			undefined ->
 			    NewTerm;
-			_AnyCol when FromRecEdit == true ->
+			_AnyCol when FromRecEdit ->
 			    NewTerm;
 			_AnyCol ->
 			    if 
-				tuple(ObjToUpdate) ->
+				is_tuple(ObjToUpdate) ->
 				    erlang:setelement(VirtualCol, ObjToUpdate, NewTerm);
 				true ->
 				    NewTerm
@@ -620,7 +620,7 @@ get_updated_elem2(FromRecEdit, NewTerm, ProcVars) ->
 
 
 
-new_object_ok(ets, _RecordName, NewTerm) when tuple(NewTerm) ->
+new_object_ok(ets, _RecordName, NewTerm) when is_tuple(NewTerm) ->
     true;
 new_object_ok(ets, _RecordName, _NewTerm) ->
     Msg = case get(error_msg_mode) of
@@ -632,7 +632,7 @@ new_object_ok(ets, _RecordName, _NewTerm) ->
 		   "A proper tuple."]
 	  end,
     {false, Msg};    
-new_object_ok(mnesia, RecordName, NewTerm) when tuple(NewTerm) ->
+new_object_ok(mnesia, RecordName, NewTerm) when is_tuple(NewTerm) ->
     NewRecName = element(1, NewTerm),
     case NewRecName of
 	RecordName ->
@@ -952,11 +952,11 @@ handle_col_marked(Msg, ProcVars) ->
     
     NewMarkP = 
 	if
-	    ColMarked == true ->
+	    ColMarked ->
 		MarkP#mark_params{col_no = VirtualCol};
 	    true ->
 		if 
-		    SortCol == undefined ->
+		    SortCol =:= undefined ->
 			MarkP;
 		    true ->
 			MarkP#mark_params{col_no = SortCol}
@@ -1024,7 +1024,7 @@ handle_row_marked(Msg, ProcVars) ->
 
     {DataElement, NewMarkP} = 
 	if
-	    RowMarked == true ->
+	    RowMarked ->
 		{MarkedRowOrCol, RowObj} = 
 		    ?DISP_FUNC_FILE:get_data_element(row, DataList, RealRow, undefined),
 		

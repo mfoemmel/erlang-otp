@@ -189,7 +189,7 @@ send_body(#mod{socket_type = Type, socket = Sock} = ModData,
     end.
 
 split_header([$: | Value], AccName) ->
-    Name = httpd_util:to_lower(string:strip(AccName)),
+    Name = http_util:to_lower(string:strip(AccName)),
     {lists:reverse(Name), 
      string:strip(string:strip(string:strip(Value, right, ?LF), right, ?CR))};
 split_header([Char | Rest], AccName) ->
@@ -321,7 +321,7 @@ send_response_old(#mod{method      = "HEAD"} = ModData,
     
     case httpd_util:split(NewResponse, [?CR, ?LF, ?CR, ?LF],2) of
 	{ok, [Head, Body]} ->
-	    NewHead = handle_headers(string:tokens(Head, [?CR,?LF]), []),
+	    {ok, NewHead} = handle_headers(string:tokens(Head, [?CR,?LF]), []),
 	    send_header(ModData, StatusCode, [{content_length,
 					    content_length(Body)} | NewHead]);
 	{ok, [NewResponse]} ->

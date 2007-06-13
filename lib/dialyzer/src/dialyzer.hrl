@@ -19,15 +19,15 @@
 -define(HIPE_DEF_OPTS, 
 	[no_inline_fp, {pmatch, no_duplicates}, {target, x86}]).
 
--record(analysis, {analysis_pid, core_transform=dataflow,
+-record(analysis, {analysis_pid, type=dataflow,
 		   defines=[], doc_plt,
-		   files, fixpoint, granularity, include_dirs=[],
+		   files, include_dirs=[],
 		   init_plt, mcg=none, plt_info=none, 
 		   supress_inline, start_from, user_plt}).
 
 -record(options, {files=[],
 		  files_rec=[],
-		  core_transform=core_warnings,
+		  analysis_type=dataflow, %%succ_typings,
 		  defines=[],
 		  from=byte_code, %% default is to start from byte code	  
 		  init_plt,
@@ -52,3 +52,6 @@
 -define(WARN_GUARDS, warn_guards).
 -define(WARN_OLD_BEAM, warn_old_beam).
 -define(WARN_FAILING_CALL, warn_failing_call).
+
+%% Mostly for debugging.
+-define(WARN_TERM_COMP, warn_term_comp).

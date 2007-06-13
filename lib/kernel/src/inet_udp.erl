@@ -31,8 +31,8 @@
 
 
 %% inet_udp port lookup
-getserv(Port) when integer(Port) -> {ok, Port};
-getserv(Name) when atom(Name)    -> inet:getservbyname(Name,udp).
+getserv(Port) when is_integer(Port) -> {ok, Port};
+getserv(Name) when is_atom(Name)    -> inet:getservbyname(Name,udp).
 
 %% inet_udp address lookup
 getaddr(Address) -> inet:getaddr(Address, inet).
@@ -117,9 +117,9 @@ optuniquify(Opt, [], Rest, Result) ->
     optuniquify(lists:reverse(Rest), [Opt | Result]);
 %% Duplicate option tuple
 optuniquify(Opt0, [Opt1 | Tail], Rest, Result)
-  when tuple(Opt0), tuple(Opt1), 
-       size(Opt0) == size(Opt1), 
-       element(1, Opt0) == element(1, Opt1) ->
+  when is_tuple(Opt0), is_tuple(Opt1), 
+       size(Opt0) =:= size(Opt1), 
+       element(1, Opt0) =:= element(1, Opt1) ->
     %% Waste duplicate
     optuniquify(Opt0, Tail, Rest, Result);
 %% Duplicate option atom or other term

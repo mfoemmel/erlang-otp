@@ -87,6 +87,7 @@ int erts_backtrace_depth;	/* How many functions to show in a backtrace
 				 */
 
 int erts_async_max_threads;  /* number of threads for async support */
+int erts_async_thread_suggested_stack_size;
 erts_smp_atomic_t erts_max_gen_gcs;
 
 Eterm erts_error_logger_warnings; /* What to map warning logs to, am_error, 
@@ -480,6 +481,10 @@ void erts_usage(void)
 
     /*    erts_fprintf(stderr, "-# number  set the number of items to be used in traces etc\n"); */
 
+    erts_fprintf(stderr, "-a size    suggested stack size in kilo words for threads\n");
+    erts_fprintf(stderr, "           in the async-thread pool, valid range is [%d-%d]\n",
+		 ERTS_ASYNC_THREAD_MIN_STACK_SIZE,
+		 ERTS_ASYNC_THREAD_MAX_STACK_SIZE);
     erts_fprintf(stderr, "-A number  set number of threads in async thread pool,\n");
     erts_fprintf(stderr, "           valid range is [0-%d]\n",
 		 ERTS_MAX_NO_OF_ASYNC_THREADS);
@@ -546,6 +551,7 @@ early_init(int *argc, char **argv) /*
     display_loads = 0;
     erts_backtrace_depth = DEFAULT_BACKTRACE_SIZE;
     erts_async_max_threads = 0;
+    erts_async_thread_suggested_stack_size = ERTS_ASYNC_THREAD_MIN_STACK_SIZE;
     H_MIN_SIZE = H_DEFAULT_SIZE;
 
     erts_initialized = 0;
@@ -884,6 +890,28 @@ erl_start(int argc, char **argv)
 		erts_fprintf(stderr, "bad number of async threads %s\n", arg);
 		erts_usage();
 	    }
+
+	    VERBOSE(DEBUG_SYSTEM, ("using %d async-threads\n",
+				   async_max_threads));
+	    break;
+
+	case 'a':
+	    /* suggested stack size (Kilo Words) for threads in thread pool */
+	    arg = get_arg(argv[i]+2, argv[i+1], &i);
+	    erts_async_thread_suggested_stack_size = atoi(arg);
+	    
+	    if ((erts_async_thread_suggested_stack_size
+		 < ERTS_ASYNC_THREAD_MIN_STACK_SIZE)
+		|| (erts_async_thread_suggested_stack_size >
+		    ERTS_ASYNC_THREAD_MAX_STACK_SIZE)) {
+		erts_fprintf(stderr, "bad stack size for async threads %s\n",
+			     arg);
+		erts_usage();
+	    }
+
+	    VERBOSE(DEBUG_SYSTEM,
+		    ("suggested async-thread stack size %d kilo words\n",
+		     erts_async_thread_suggested_stack_size));
 	    break;
 
  	case 'r':

@@ -20,6 +20,8 @@
 %% Utility functions common to several dets file formats.
 %% To be used from dets, dets_v8 and dets_v9 only.
 
+-export([cmp/2, msort/1, mkeysort/2, mkeysearch/3, family/1]).
+
 -export([rename/2, pread/2, pread/4, ipread/3, pwrite/2, write/2,
          truncate/2, position/2, sync/1, open/2, truncate/3, fwrite/3,
          write_file/2, position/3, position_close/3, pwrite/4,
@@ -49,6 +51,79 @@
 
 -include("dets.hrl").
 
+%%% A total ordering of all Erlang terms.
+
+%% -> -1 | 0 | 1. T1 is (smaller than | equal | greater than) T2.
+%% If is_integer(I), is_float(F), I == F then I is deemed smaller than F.
+cmp(T, T) ->
+    0;
+cmp([E1 | T1], [E2 | T2]) ->
+    case cmp(E1, E2) of
+        0 -> cmp(T1, T2);
+        R -> R
+    end;
+cmp(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
+    tcmp(T1, T2, 1, size(T1));
+cmp(I, F) when is_integer(I), is_float(F) ->
+    -1;
+cmp(F, I) when is_float(F), is_integer(I) ->
+    1;
+cmp(T1, T2) when T1 < T2 ->
+    -1;
+cmp(_T1, _T2) -> % when _T1 > _T2
+    1.
+
+tcmp(T1, T2, I, I) ->
+    cmp(element(I, T1), element(I,  T2));
+tcmp(T1, T2, I, N) ->
+    case cmp(element(I, T1), element(I, T2)) of
+        0 -> tcmp(T1, T2, I + 1, N);
+        R -> R
+    end.
+
+msort(L) ->
+    %% sort is very much faster than msort, let it do most of the work.    
+    F = fun(X, Y) -> cmp(X, Y) =< 0 end,
+    lists:sort(F, lists:sort(L)).
+
+mkeysort(I, L) ->
+    F = fun(X, Y) -> cmp(element(I, X), element(I, Y)) =< 0 end,
+    %% keysort is much faster than mkeysort, let it do most of the work.
+    lists:sort(F, lists:keysort(I, L)).
+
+mkeysearch(Key, I, L) ->
+    case lists:keysearch(Key, I, L) of
+        {value, Value}=Reply when element(I, Value) =:= Key ->
+            Reply;
+        false ->
+            false;
+        _ ->
+            mkeysearch2(Key, I, L)
+    end.
+
+mkeysearch2(_Key, _I, []) ->
+    false;
+mkeysearch2(Key, I, [E | _L]) when element(I, E) =:= Key ->
+    {value, E};
+mkeysearch2(Key, I, [_ | L]) ->
+    mkeysearch(Key, I, L).
+
+%% Be careful never to compare key, but use matching instead.
+%% Otherwise sofs could have been used:
+%%    sofs:to_external(sofs:relation_to_family(sofs:relation(L, 2))).
+family([]) ->
+    [];
+family(L) ->
+    [{K,V}|KVL] = mkeysort(1, L),
+    per_key(KVL, K, [V], []).
+
+per_key([], K, Vs, KVs) ->
+    lists:reverse(KVs, [{K,msort(Vs)}]);
+per_key([{K,V}|L], K, Vs, KVs) -> % match
+    per_key(L, K, [V|Vs], KVs);
+per_key([{K1,V}|L], K, Vs, KVs) ->
+    per_key(L, K1, [V], [{K,msort(Vs)}|KVs]).
+
 rename(From, To) ->
     case file:rename(From, To) of
         ok ->
@@ -68,7 +143,7 @@ pread(Positions, Head) ->
 		    false ->
 			{ok, Bins}
 		end;
-	    {error, Reason} when enomem == Reason; einval == Reason ->
+	    {error, Reason} when enomem =:= Reason; einval =:= Reason ->
 		{error, {bad_object_header, Head#head.filename}};
 	    {error, Reason} ->
 		{file_error, Head#head.filename, Reason}
@@ -83,7 +158,7 @@ pread(Positions, Head) ->
 %% -> {ok, binary()} | throw({NewHead, Error})
 pread(Head, Pos, Min, Extra) ->
     R = case file:pread(Head#head.fptr, Pos, Min+Extra) of
-	    {error, Reason} when enomem == Reason; einval == Reason ->
+	    {error, Reason} when enomem =:= Reason; einval =:= Reason ->
 		{error, {bad_object_header, Head#head.filename}};
 	    {error, Reason} ->
 		{file_error, Head#head.filename, Reason};
@@ -139,7 +214,7 @@ write_file(Head, Bin) ->
 		R1 = file:write(Fd, Bin),
 		R2 = file:sync(Fd),
 		file:close(Fd),
-		if R1 == ok -> R2; true -> R1 end;
+		if R1 =:= ok -> R2; true -> R1 end;
 	    Else ->
 		Else
 	end,
@@ -186,7 +261,7 @@ open(FileSpec, Args) ->
 
 truncate(Fd, FileName, Pos) ->
     if
-	Pos == cur ->
+	Pos =:= cur ->
 	    ok;
 	true ->
 	    position(Fd, FileName, Pos)
@@ -318,9 +393,9 @@ cache_size(C) ->
 
 %% -> [object()] | false
 cache_lookup(Type, [Key | Keys], CL, LU) ->
-    %% keysearch returns the _first_ matching tuple.
-    case lists:keysearch(Key, 1, CL) of
-	{value, {Key,{_Seq,{insert,Object}}}} when Type == set ->
+    %% mkeysearch returns the _first_ tuple with a matching key.
+    case mkeysearch(Key, 1, CL) of
+	{value, {Key,{_Seq,{insert,Object}}}} when Type =:= set ->
 	    cache_lookup(Type, Keys, CL, [Object | LU]);
 	{value, {Key,{_Seq,delete_key}}} ->
 	    cache_lookup(Type, Keys, CL, LU);
@@ -333,17 +408,17 @@ cache_lookup(_Type, [], _CL, LU) ->
 reset_cache(C) ->
     WrTime = C#cache.wrtime,
     NewWrTime = if 
-		    WrTime == undefined ->
+		    WrTime =:= undefined ->
 			WrTime;
 		    true ->
 			now()
 		end,
-    PK = sofs:relation_to_family(sofs:relation(C#cache.cache)),
+    PK = family(C#cache.cache),
     NewC = C#cache{cache = [], csize = 0, inserts = 0, wrtime = NewWrTime},
-    {NewC, C#cache.inserts, sofs:to_external(PK)}.
+    {NewC, C#cache.inserts, PK}.
 
 is_empty_cache(Cache) ->
-    Cache#cache.cache == [].
+    Cache#cache.cache =:= [].
 
 new_cache({Delay, Size}) ->
     #cache{cache = [], csize = 0, inserts = 0, 
@@ -455,7 +530,7 @@ alloc(Head, Sz) when Head#head.fixed =/= false -> % when Sz > 0
     NewFtab = move_down(Ftab1, FPos, Pos, Addr),
     NewFreelists = {NewFrozen, NewFtab},
     {Head#head{freelists = NewFreelists}, Addr, Pos};
-alloc(Head, Sz) when Head#head.fixed == false -> % when Sz > 0
+alloc(Head, Sz) when Head#head.fixed =:= false -> % when Sz > 0
     ?DEBUG("alloc of size ~p", [Sz]),
     Pos = sz2pos(Sz),
     Ftab = Head#head.freelists,
@@ -534,13 +609,13 @@ free_in_pos(Ftab, Addr, Pos, Base) ->
 	    free_in_pos(NewFtab, MoveUpAddr, Pos+1, Base)
     end.
 
-get_freelists(Head) when Head#head.fixed == false ->
+get_freelists(Head) when Head#head.fixed =:= false ->
     Head#head.freelists;
 get_freelists(Head) when Head#head.fixed =/= false ->
     {_Frozen, Current} = Head#head.freelists,
     Current.
 
-set_freelists(Head, Ftab) when Head#head.fixed == false ->
+set_freelists(Head, Ftab) when Head#head.fixed =:= false ->
     Head#head{freelists = Ftab};
 set_freelists(Head, Ftab) when Head#head.fixed =/= false ->
     {Frozen, _} = Head#head.freelists,
@@ -552,7 +627,7 @@ sz2pos(N) when N > 0 ->
     1 + log2(N+1).
 
 %% Returns the i such that 2^(i-1) < N =< 2^i.
-log2(N) when integer(N), N >= 0 ->
+log2(N) when is_integer(N), N >= 0 ->
     if N > ?POW(8) ->
 	    if N > ?POW(10) ->
 		    if N > ?POW(11) ->
@@ -587,7 +662,7 @@ log2(N) when integer(N), N >= 0 ->
     end.
 
 make_zeros(0) -> [];
-make_zeros(N) when N rem 2 == 0 ->
+make_zeros(N) when N rem 2 =:= 0 ->
     P = make_zeros(N div 2),
     [P|P];
 make_zeros(N) ->
@@ -614,7 +689,7 @@ all_free(Head) ->
     
 all_free([], X0, Y0, F) ->
     lists:reverse([{X0,Y0} | F]);
-all_free([{X,Y} | L], X0, Y0, F) when Y0 == X ->
+all_free([{X,Y} | L], X0, Y0, F) when Y0 =:= X ->
     all_free(L, X0, Y, F);
 all_free([{X,Y} | L], X0, Y0, F) when Y0 < X ->
     all_free(L, X, Y, [{X0,Y0} | F]).
@@ -627,7 +702,7 @@ all_allocated([], _X0, _Y0, []) ->
 all_allocated([], _X0, _Y0, A0) ->
     [<<From:32, To:32>> | A] = lists:reverse(A0),
     {From, To, list_to_binary(A)};
-all_allocated([{X,Y} | L], X0, Y0, A) when Y0 == X ->
+all_allocated([{X,Y} | L], X0, Y0, A) when Y0 =:= X ->
     all_allocated(L, X0, Y, A);
 all_allocated([{X,Y} | L], _X0, Y0, A) when Y0 < X ->
     all_allocated(L, X, Y, [<<Y0:32,X:32>> | A]).
@@ -639,7 +714,7 @@ all_allocated_as_list([], _X0, _Y0, []) ->
     [];
 all_allocated_as_list([], _X0, _Y0, A) ->
     lists:reverse(A);
-all_allocated_as_list([{X,Y} | L], X0, Y0, A) when Y0 == X ->
+all_allocated_as_list([{X,Y} | L], X0, Y0, A) when Y0 =:= X ->
     all_allocated_as_list(L, X0, Y, A);
 all_allocated_as_list([{X,Y} | L], _X0, Y0, A) when Y0 < X ->
     all_allocated_as_list(L, X, Y, [[Y0 | X] | A]).
@@ -1047,14 +1122,14 @@ bplus_delete(Tree, Key) ->
     case ?NODE_TYPE(NewTree) of
 	l ->
 	    if
-		S == 0 ->
+		S =:= 0 ->
 		    v;
 		true ->
 		    NewTree
 	    end;
 	n ->
 	    if
-		S == 1 ->
+		S =:= 1 ->
 		    bplus_get_tree(NewTree, 1);
 		true ->
 		    NewTree

@@ -29,16 +29,19 @@
 
 gen_call_builtin(Fun, Dst, Args, IsGuard, Cont, Fail) ->
   case Fun of
-    {erlang,apply,3} ->
+    {erlang, apply, 3} ->
       gen_apply(Dst, Args, Cont, Fail);
 
-    {erlang,element,2} ->
+    {erlang, element, 2} ->
       gen_element(Dst, Args, IsGuard, Cont, Fail);
 
-    {erlang,self,0} ->
+    {erlang, self, 0} ->
       gen_self(Dst, Cont);
 
-    {hipe_bifs,in_native,0} ->
+    {erlang, is_tuple, 1} ->
+      gen_is_tuple(Dst, Args, Cont);
+
+    {hipe_bifs, in_native, 0} ->
       Dst1 =
 	case Dst of
 	  [] -> %% The result is not used.
@@ -51,22 +54,22 @@ gen_call_builtin(Fun, Dst, Args, IsGuard, Cont, Fail) ->
   end.
 
 %% (Recall that enters cannot occur within a catch-region in the same
-%% function, so we don't need to consider fail-continuations here.)
+%% function, so we do not need to consider fail-continuations here.)
 %% TODO: should we inline expand more functions here? Cf. above.
 gen_enter_builtin(Fun, Args) ->
   case Fun of
-    {erlang,apply,3} ->
+    {erlang, apply, 3} ->
       gen_enter_apply(Args);
 
 %% TODO
-%%     {erlang,element,2} ->
+%%     {erlang, element, 2} ->
 %%       gen_enter_element(Args, IsGuard);
 
 %% TODO
-%%     {erlang,self,0} ->
+%%     {erlang, self, 0} ->
 %%       gen_enter_self();
 
-    {hipe_bifs,in_native,0} ->
+    {hipe_bifs, in_native, 0} ->
       Dst = hipe_rtl:mk_new_var(),
       [hipe_rtl:mk_load_atom(Dst, true), hipe_rtl:mk_return([Dst])];
 
@@ -120,8 +123,7 @@ gen_primop({Op,Dst,Args,Cont,Fail}, IsGuard, ConstTab) ->
     %% Binary Syntax
     %%
     {hipe_bs_primop, BsOP} ->
-      {FailLabelName, FailCode} = 
-	gen_fail_code(Fail, badarg, IsGuard),
+      {FailLabelName, FailCode} = gen_fail_code(Fail, badarg, IsGuard),
       {Code1,NewConstTab} = 
 	hipe_rtl_binary:gen_rtl(BsOP, Dst, Args, Cont, FailLabelName, ConstTab),
       {[Code1,FailCode], NewConstTab};
@@ -420,7 +422,7 @@ gen_general_add_sub(Dst, Args, Cont, Fail, Op) ->
   case Dst of
     [] ->
       [hipe_rtl:mk_call([hipe_rtl:mk_new_var()],
-                                Op, Args, Cont, Fail, not_remote)];
+                        Op, Args, Cont, Fail, not_remote)];
     [Res] ->
       [hipe_rtl:mk_call([Res], Op, Args, Cont, Fail, not_remote)]
   end.
@@ -841,7 +843,8 @@ gen_call_fun(Dst, ArgsAndFun, Continuation, Fail) ->
        [] ->
 	 hipe_rtl:mk_enter(NAddressReg, Args, not_remote);
        _ ->
-	 hipe_rtl:mk_call(Dst, NAddressReg, Args, Continuation, Fail, not_remote)
+	 hipe_rtl:mk_call(Dst, NAddressReg, Args,
+			  Continuation, Fail, not_remote)
      end],
 
   {BadArityLabName, BadArityCode} = gen_fail_code(Fail, {badarity, Fun}),
@@ -850,8 +853,7 @@ gen_call_fun(Dst, ArgsAndFun, Continuation, Fail) ->
     hipe_tagscheme:if_fun_get_arity_and_address(ArityReg, NAddressReg,
 						Fun, BadFunLabName,
 						0.9),
-  CheckArityCode = check_arity(ArityReg, length(RevArgs),
-			       BadArityLabName),
+  CheckArityCode = check_arity(ArityReg, length(RevArgs), BadArityLabName),
   CallCode =
     case Continuation of
       [] -> %% This is a tailcall
@@ -940,7 +942,8 @@ gen_redtest(Amount) ->
 		    hipe_rtl:label_name(StayLabel), 0.01),
    SuspendLabel,
    %% The suspend path should not execute PutFCallsInsn.
-   hipe_rtl:mk_call([], suspend_0, [], hipe_rtl:label_name(ContinueLabel), [], not_remote),
+   hipe_rtl:mk_call([], suspend_0, [],
+		    hipe_rtl:label_name(ContinueLabel), [], not_remote),
    StayLabel,
    PutFCallsInsn,
    ContinueLabel].
@@ -955,12 +958,33 @@ gen_self(Dst, Cont) ->
   end.
 
 %%
-%% Generate unsafe head
+%% @doc Generate is_tuple/1 test
+%%
+gen_is_tuple(Dst, [Arg], Cont) ->
+  GotoCont = hipe_rtl:mk_goto(Cont),
+  case Dst of
+    [] -> %% The result is not used.
+      [GotoCont];
+    [Dst1] ->
+      TrueLabel = hipe_rtl:mk_new_label(),
+      FalseLabel = hipe_rtl:mk_new_label(),
+      [hipe_tagscheme:test_tuple(Arg, hipe_rtl:label_name(TrueLabel),
+				 hipe_rtl:label_name(FalseLabel), 0.5),
+       TrueLabel,
+       hipe_rtl:mk_load_atom(Dst1, true),
+       GotoCont,
+       FalseLabel,
+       hipe_rtl:mk_load_atom(Dst1, false),
+       GotoCont]
+  end.
+
+%%
+%% @doc Generate unsafe head
 %%
 gen_unsafe_hd(Dst, [Arg]) -> hipe_tagscheme:unsafe_car(Dst, Arg).
 
 %%
-%% Generate unsafe tail
+%% @doc Generate unsafe tail
 %%
 gen_unsafe_tl(Dst, [Arg]) -> hipe_tagscheme:unsafe_cdr(Dst, Arg).
 
@@ -1131,7 +1155,7 @@ gen_fclearerror() ->
       [hipe_rtl_arch:pcb_store(Offset, hipe_rtl:mk_imm(0), int32)]
   end.
 
-gen_fcheckerror(ContLbl, FailLbl)->
+gen_fcheckerror(ContLbl, FailLbl) ->
   Tmp = hipe_rtl:mk_new_reg(),
   TmpFailLbl0 = hipe_rtl:mk_new_label(),
   FailCode = fp_fail_code(TmpFailLbl0, FailLbl),
@@ -1143,7 +1167,7 @@ gen_fcheckerror(ContLbl, FailLbl)->
 	[hipe_rtl_arch:pcb_load(Tmp, Offset, int32)]
     end ++
     [hipe_rtl:mk_branch(Tmp, eq, hipe_rtl:mk_imm(0), 
-		       ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
+			ContLbl, hipe_rtl:label_name(TmpFailLbl0), 0.9)] ++
     FailCode.
 
 gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->
@@ -1169,7 +1193,7 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->
       TestFixNum ++
 	[TrueFixNum, 
     	 hipe_tagscheme:untag_fixnum(TmpReg, Src),
-	 hipe_rtl:mk_fconv(Dst,TmpReg),
+	 hipe_rtl:mk_fconv(Dst, TmpReg),
 	 GotoCont,
 	 ContFixNum] ++ 
 	TestFp ++
@@ -1177,7 +1201,7 @@ gen_conv_to_float(Dst, [Src], ContLbl, FailLbl) ->
 	 hipe_tagscheme:unsafe_untag_float(Dst, Src), 
 	 GotoCont, 
 	 ContFp] ++
-	[hipe_rtl:mk_call([Tmp],conv_big_to_float,[Src],
+	[hipe_rtl:mk_call([Tmp], conv_big_to_float, [Src],
 			  hipe_rtl:label_name(ContBigNum),
 			  hipe_rtl:label_name(TmpFailLbl0), not_remote)]++
 	FailCode ++

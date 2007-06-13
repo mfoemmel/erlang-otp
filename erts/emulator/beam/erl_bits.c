@@ -464,13 +464,18 @@ erts_bs_start_match_2(Process *p, Eterm Binary, Uint Max)
     if (!is_binary(Binary)) {
 	return THE_NON_VALUE;
     } else { 
-	Eterm Orig;				    
-	Uint offs; 
-	Uint* hp; 
+	Eterm Orig;
+	Uint offs;
+	Uint* hp;
 	Uint NeededSize;
 	ErlBinMatchState *ms;
-	Uint bitoffs;						
-	Uint bitsize;						
+	Uint bitoffs;
+	Uint bitsize;
+	Uint total_bin_size;
+	total_bin_size = binary_size(Binary);
+	if ((total_bin_size >> (8*sizeof(Uint)-3)) != 0) {
+	    return THE_NON_VALUE;
+	}
 	NeededSize = ERL_BIN_MATCHSTATE_SIZE(Max);
 	hp = HeapOnlyAlloc(p, NeededSize);
 	ms = (ErlBinMatchState *) hp;                         
@@ -479,7 +484,7 @@ erts_bs_start_match_2(Process *p, Eterm Binary, Uint Max)
 	(ms->mb).orig = Orig;
 	(ms->mb).base = binary_bytes(Orig);
 	(ms->mb).offset = 8 * offs + bitoffs;
-	(ms->mb).size = binary_size(Binary) * 8 + (ms->mb).offset + bitsize;
+	(ms->mb).size = total_bin_size * 8 + (ms->mb).offset + bitsize;
 	return make_matchstate(ms);
     }    
 }
@@ -494,10 +499,12 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
     byte* LSB;
     byte* MSB;
     Uint* hp;
+    Uint* hp_end;
+    Uint words_needed;
+    Uint actual;
     Uint v32;
     int sgn = 0;
     Eterm res = THE_NON_VALUE;
-   
 	
     if (num_bits == 0) {
 	return SMALL_ZERO;
@@ -616,8 +623,15 @@ erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuff
 	res = make_big(hp);
 	break;
     default:
-	hp = HeapOnlyAlloc(p, 1+WSIZE(bytes));
+	words_needed = 1+WSIZE(bytes);
+	hp = HeapOnlyAlloc(p, words_needed);
+	hp_end = hp + words_needed;
 	res = bytes_to_big(LSB, bytes, sgn, hp); 
+	if (is_small(res)) {
+	    p->htop = hp;
+	} else if ((actual = bignum_header_arity(*hp)+1) < words_needed) {
+	    p->htop = hp + actual;
+	}
 	break;
     }
 

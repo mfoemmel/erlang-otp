@@ -64,7 +64,7 @@ void *term_to_address(Eterm arg)
     return term_to_Uint(arg, &u) ? (void*)u : NULL;
 }
 
-Eterm address_to_term(const void *address, Process *p)
+static Eterm address_to_term(const void *address, Process *p)
 {
     return Uint_to_term((Uint)address, p);
 }

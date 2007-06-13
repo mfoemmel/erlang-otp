@@ -78,7 +78,7 @@ create(DB, GstkId, Opts) ->
     Ngstkid = GstkId#gstkid{widget=TkW},
     case gstk_generic:make_command(Opts, Ngstkid,TkW, MPreCmd, PlaceCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec([Cmd,";pack ", TkW, " -side top -fill x;"]),
 	    Ngstkid
     end.

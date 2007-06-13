@@ -58,7 +58,7 @@ set_bit([T0|Ts], Bt) ->
     set_bit(Ts, Bt2);
 set_bit([], Bt) -> {ok,Bt}.
 
-update_type({unit,Sz}, Type) when integer(Sz), Sz > 0, Sz =< 256 ->
+update_type({unit,Sz}, Type) when is_integer(Sz), Sz > 0, Sz =< 256 ->
     Type#bittype { unit = Sz };
 update_type(integer,      Type) -> Type#bittype { type   = integer};
 update_type(float,        Type) -> Type#bittype { type   = float};

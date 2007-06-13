@@ -71,7 +71,7 @@ parse_transform(Forms, Options) ->
 %% used in the real transformation.
 init_transform(S) ->
     case S#state.options of
-	Options when list(Options) ->
+	Options when is_list(Options) ->
 	    init_transform(Options, S);
 	Option ->
 	    init_transform([Option], S)

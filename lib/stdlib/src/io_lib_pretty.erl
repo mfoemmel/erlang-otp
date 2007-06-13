@@ -52,8 +52,16 @@ print(_, _, _, 0, _RF) -> "...";
 print(Term, Col, Ll, D, RecDefFun) when Col =< 0 ->
     print(Term, 1, Ll, D, RecDefFun);
 print(Term, Col, Ll, D, RecDefFun) when is_tuple(Term); 
-                                        is_list(Term);
-                                        is_binary(Term) ->
+                                        is_list(Term) ->
+    If = {_S, Len} = print_length(Term, D, RecDefFun),
+    if
+        Len < Ll - Col ->
+            write(If);
+        true ->
+            TInd = while_fail([-1, 4], fun(I) -> cind(If, Col, Ll, I) end, 1),
+            pp(If, Col, Ll, TInd, indent(Col), 0)
+    end;
+print(<<_/bitstr>>=Term, Col, Ll, D, RecDefFun) ->
     If = {_S, Len} = print_length(Term, D, RecDefFun),
     if
         Len < Ll - Col ->
@@ -256,9 +264,9 @@ print_length(Tuple, D, RF) when is_tuple(Tuple) ->
     print_length_tuple(Tuple, D, RF);
 print_length(<<>>, _D, _RF) ->
     {"<<>>", 4};
-print_length(Bin, 1, _RF) when is_binary(Bin) ->
+print_length(<<_/bitstr>>, 1, _RF) ->
     {"<<...>>", 7};
-print_length(Bin, D, _RF) when is_binary(Bin) ->
+print_length(<<_/bitstr>>=Bin, D, _RF) ->
     case erlang:bitsize(Bin) rem 8 of
         0 ->
 	    D1 = D - 1, 
@@ -401,9 +409,9 @@ printable_bin1(Bin, Start, Len) ->
 
 %% -> all | integer() >=0. Adopted from io_lib.erl.
 % printable_list1([_ | _], 0) -> 0;
-printable_list1([C | Cs], N) when integer(C), C >= $\s, C =< $~ ->
+printable_list1([C | Cs], N) when is_integer(C), C >= $\s, C =< $~ ->
     printable_list1(Cs, N - 1);
-printable_list1([C | Cs], N) when integer(C), C >= $\240, C =< $\377 ->
+printable_list1([C | Cs], N) when is_integer(C), C >= $\240, C =< $\377 ->
     printable_list1(Cs, N - 1);
 printable_list1([$\n | Cs], N) -> printable_list1(Cs, N - 1);
 printable_list1([$\r | Cs], N) -> printable_list1(Cs, N - 1);

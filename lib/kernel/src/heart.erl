@@ -107,7 +107,7 @@ start_portprogram() ->
     HeartCmd = "heart -pid " ++ os:getpid() ++ " " ++ 
 	get_heart_timeouts(),
     case catch open_port({spawn, HeartCmd}, [{packet, 2}]) of
-	Port when port(Port) ->
+	Port when is_port(Port) ->
 	    case wait_ack(Port) of
 		ok ->
 		    {ok, Port};
@@ -125,12 +125,12 @@ start_portprogram() ->
 get_heart_timeouts() ->
     HeartOpts = case os:getenv("HEART_BEAT_TIMEOUT") of
 		    false -> [];
-		    H when list(H) -> 
+		    H when is_list(H) -> 
 			"-ht " ++ H
 		end,
     HeartOpts ++ case os:getenv("HEART_BEAT_BOOT_DELAY") of
 		     false -> [];
-		     W when list(W) ->
+		     W when is_list(W) ->
 			 " -wt " ++ W
 		 end.
 
@@ -159,7 +159,7 @@ wait_ack(Port) ->
 loop(Parent, Port, Cmd) ->
     send_heart_beat(Port),
     receive
-	{From, set_cmd, NewCmd} when list(NewCmd), length(NewCmd) < 2047 ->
+	{From, set_cmd, NewCmd} when is_list(NewCmd), length(NewCmd) < 2047 ->
 	    send_heart_cmd(Port, NewCmd),
 	    wait_ack(Port),
 	    From ! {heart, ok},

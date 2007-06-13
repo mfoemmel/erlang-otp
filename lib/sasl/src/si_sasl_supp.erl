@@ -80,10 +80,10 @@ pi(XPid) ->
 pi(Opt, XPid) ->
     si_exec({si_sasl_supp, pi_impl}, [valid_opt(Opt), XPid]).
 
-pi(A, B, C) when integer(A), integer(B), integer(C) ->
+pi(A, B, C) when is_integer(A), is_integer(B), is_integer(C) ->
     si_exec({si_sasl_supp, pi_impl}, [normal, {A, B, C}]).
 
-pi(Opt, A, B, C) when integer(A), integer(B), integer(C) ->
+pi(Opt, A, B, C) when is_integer(A), is_integer(B), is_integer(C) ->
     si_exec({si_sasl_supp, pi_impl}, [valid_opt(Opt), {A, B, C}]).
 
 %%-----------------------------------------------------------------
@@ -212,11 +212,11 @@ open_log_file(FileName) ->
 %% Returns: Pid|{error, Reason}
 %% Fails: Never.
 %%--------------------------------------------------
-make_pid(A,B,C) when integer(A), integer(B), integer(C) ->
+make_pid(A,B,C) when is_integer(A), is_integer(B), is_integer(C) ->
     list_to_pid(lists:concat(["<",A,".",B,".",C,">"])).
-make_pid(P) when pid(P) -> P;
+make_pid(P) when is_pid(P) -> P;
 make_pid(undefined) -> undefined;
-make_pid(P) when atom(P) ->
+make_pid(P) when is_atom(P) ->
     case whereis(P) of
 	undefined ->
 	    case expand_abbrev(P, process_abbrevs()) of
@@ -230,7 +230,7 @@ make_pid(P) when atom(P) ->
 	    end;
 	Pid -> Pid
     end;
-make_pid(P) when list(P) -> list_to_pid(P);
+make_pid(P) when is_list(P) -> list_to_pid(P);
 make_pid({A, B, C}) -> make_pid(A, B, C);
 make_pid(X) -> {error, {'can not make a pid of', X}}.
 
@@ -261,7 +261,7 @@ expand_abbrev(ProcessName, Abbrevs) ->
 %% Returns: {status_info, Pid, Type, Data}
 %%        | {error, Reason}
 %%-----------------------------------------------------------------
-status_info(Pid) when pid(Pid) ->
+status_info(Pid) when is_pid(Pid) ->
     case catch sys:get_status(Pid, 5000) of
 	{status, Pid, Type, Info} ->
 	    {status_info, Pid, Type, Info};
@@ -305,7 +305,7 @@ p(X) ->
 
 pi_impl(Opt, XPid) ->
     case make_pid(XPid) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    case status_info(Pid) of
 		{status_info, Pid, {module, Module}, Data} ->
 		    do_best_printout(Opt, Pid, Module, Data);
@@ -324,7 +324,7 @@ pi_impl(Opt, XPid) ->
 %% Return ok|{error, Reason}
 %% Fails: Never.
 %%--------------------------------------------------
-do_best_printout(Opt, Pid, Mod, Data) when pid(Pid) ->
+do_best_printout(Opt, Pid, Mod, Data) when is_pid(Pid) ->
     case print_info(get(device), Pid, {Mod, format_status}, Opt, Data) of
 	ok -> ok;
 	{error, Reason} ->
@@ -334,7 +334,7 @@ do_best_printout(Opt, Pid, Mod, Data) when pid(Pid) ->
 
 ppi_impl(XPid) -> 
     case make_pid(XPid) of
-	P when pid(P) -> 
+	P when is_pid(P) -> 
 	    case process_info(P) of
 		undefined ->
 		    {error, {'dead process', P}};
@@ -354,7 +354,7 @@ print_info(Device, Pid, {Module, Func}, Opt, Data) ->
     case erlang:function_exported(Module, Func, 2) of
 	true ->
 	    case catch apply({Module, Func}, [Opt, Data]) of
-		Format when list(Format) ->
+		Format when is_list(Format) ->
 		    format_lib_supp:print_info(Device, 79,
 					       add_pid_to_format(Pid, Format)),
 		    ok;

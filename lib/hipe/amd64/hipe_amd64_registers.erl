@@ -223,7 +223,7 @@ is_arg(R) ->
     _ -> false
   end.
 
-args(Arity) ->
+args(Arity) when is_integer(Arity), Arity >= 0 ->
   Max = ?AMD64_NR_ARG_REGS,
   N = if Arity > Max -> Max; true -> Arity end,
   args(N-1, []).

@@ -189,10 +189,10 @@ regexp(_, RExpr, unknown) ->
 regexp(Kind, RExpr, Type) ->
     E = {type, {type, Type}, {regexpr, RExpr, Type}},
     case Type of
-	'Fun' when Kind == func -> E;
-	'Mod' when Kind == atom -> E;
-	'App' when Kind == atom -> E;
-	'Rel' when Kind == atom -> E;
+	'Fun' when Kind =:= func -> E;
+	'Mod' when Kind =:= atom -> E;
+	'App' when Kind =:= atom -> E;
+	'Rel' when Kind =:= atom -> E;
 	_Else -> return_error(0, ["type_mismatch", t2s(E)])
     end.
 

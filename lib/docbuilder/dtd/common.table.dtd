@@ -1,0 +1,6 @@
+<!ELEMENT table               (row+,tcaption) >
+<!ELEMENT row                 (cell+) >
+<!ELEMENT cell                (%inline;)* >
+<!ATTLIST cell                align  (left|center|right) "left"
+                              valign (top|middle|bottom) "middle" >
+<!ELEMENT tcaption            (#PCDATA) >

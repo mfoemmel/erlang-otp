@@ -337,8 +337,8 @@ collect_block({break,Bs})            -> {block_end,Bs};
 %%collect_block({bif,_Bif,_As,_Rs})    -> include;
 collect_block(_)                     -> no_block.
 
-func_vars({remote,M,F}) when element(1, M) == var;
-			     element(1, F) == var ->
+func_vars({remote,M,F}) when element(1, M) =:= var;
+			     element(1, F) =:= var ->
     [M,F];
 func_vars(_) -> [].
 
@@ -469,7 +469,7 @@ top_level_block(Keis, Bef, MaxRegs, _St) ->
 %%   number to the outer catch, which is wrong.
 
 turn_yregs(0, Tp, _) -> Tp;
-turn_yregs(El, Tp, MaxY) when element(1, element(El, Tp)) == yy ->
+turn_yregs(El, Tp, MaxY) when element(1, element(El, Tp)) =:= yy ->
     turn_yregs(El-1, setelement(El, Tp, {y,MaxY-element(2, element(El, Tp))}), MaxY);
 turn_yregs(El, Tp, MaxY) when is_list(element(El, Tp)) ->
     New = map(fun ({yy,YY}) -> {y,MaxY-YY};
@@ -872,6 +872,7 @@ test_cg(Test, As, Fail, I, Vdb, Bef, St) ->
 test_type(is_atom, 1)      -> {cond_op,is_atom};
 test_type(is_boolean, 1)   -> {cond_op,is_boolean};
 test_type(is_binary, 1)    -> {cond_op,is_binary};
+test_type(is_bitstr, 1)    -> {cond_op,is_bitstr};
 test_type(is_constant, 1)  -> {cond_op,is_constant};
 test_type(is_float, 1)     -> {cond_op,is_float};
 test_type(is_function, 1)  -> {cond_op,is_function};
@@ -937,8 +938,8 @@ call_cg({var,V}, As, Rs, Le, Vdb, Bef, St0) ->
     {comment({call_fun,{var,V},As}) ++ Sis ++ Frees ++ [{call_fun,Arity}],
      Aft,need_stack_frame(St0)};
 call_cg({remote,Mod,Name}, As, Rs, Le, Vdb, Bef, St0)
-  when element(1, Mod) == var;
-       element(1, Name) == var ->
+  when element(1, Mod) =:= var;
+       element(1, Name) =:= var ->
     {Sis,Int} = cg_setup_call(As++[Mod,Name], Bef, Le#l.i, Vdb),
     %% Put return values in registers.
     Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
@@ -963,7 +964,7 @@ build_call({remote,{atom,erlang},{atom,'!'}}, 2, St0) ->
     {[send],need_stack_frame(St0)};
 build_call({remote,{atom,Mod},{atom,Name}}, Arity, St0) ->
     {[{call_ext,Arity,{extfunc,Mod,Name,Arity}}],need_stack_frame(St0)};
-build_call(Name, Arity, St0) when atom(Name) ->
+build_call(Name, Arity, St0) when is_atom(Name) ->
     {Lbl,St1} = local_func_label(Name, Arity, need_stack_frame(St0)),
     {[{call,Arity,{f,Lbl}}],St1}.
 
@@ -987,8 +988,8 @@ enter_cg({var,V}, As, Le, Vdb, Bef, St0) ->
      clear_dead(Int#sr{reg=clear_regs(Int#sr.reg)}, Le#l.i, Vdb),
      need_stack_frame(St0)};
 enter_cg({remote,Mod,Name}=Func, As, Le, Vdb, Bef, St0)
-  when element(1, Mod) == var;
-       element(1, Name) == var ->
+  when element(1, Mod) =:= var;
+       element(1, Name) =:= var ->
     {Sis,Int} = cg_setup_call(As++[Mod,Name], Bef, Le#l.i, Vdb),
     %% Build complete code and final stack/register state.
     Arity = length(As),
@@ -1235,8 +1236,8 @@ catch_cg(C, {var,R}, Le, Vdb, Bef, St0) ->
     CatchReg = fetch_stack({catch_tag,CatchTag}, Int1#sr.stk),
     {Cis,Int2,St2} = cg_block(C, Le#l.i, Le#l.vdb, Int1,
 			      St1#cg{break=B,in_catch=true}),
-    Aft = Int2#sr{reg=load_reg(R, 0, Int2#sr.reg),
-		  stk=drop_catch(CatchTag, Int2#sr.stk)},
+    [] = Int2#sr.reg,				%Assertion.
+    Aft = Int2#sr{reg=[{0,R}],stk=drop_catch(CatchTag, Int2#sr.stk)},
     {[{'catch',CatchReg,{f,B}}] ++ Cis ++
      [{label,B},{catch_end,CatchReg}],
      clear_dead(Aft, Le#l.i, Vdb),
@@ -1762,7 +1763,6 @@ load_vars(Vs, Regs) ->
     foldl(fun ({var,V}, Rs) -> put_reg(V, Rs) end, Regs, Vs).
 
 %% put_reg(Val, Regs) -> Regs.
-%% load_reg(Val, Reg, Regs) -> Regs.
 %% free_reg(Val, Regs) -> Regs.
 %% find_reg(Val, Regs) -> ok{r{R}} | error.
 %% fetch_reg(Val, Regs) -> r{R}.
@@ -1779,13 +1779,6 @@ put_reg_1(V, [free|Rs], I) -> [{I,V}|Rs];
 put_reg_1(V, [{reserved,I,V}|Rs], I) -> [{I,V}|Rs];
 put_reg_1(V, [R|Rs], I) -> [R|put_reg_1(V, Rs, I+1)];
 put_reg_1(V, [], I) -> [{I,V}].
-
-load_reg(V, R, Rs) -> load_reg_1(V, R, Rs, 0).
-
-load_reg_1(V, I, [_|Rs], I) -> [{I,V}|Rs];
-load_reg_1(V, I, [R|Rs], C) -> [R|load_reg_1(V, I, Rs, C+1)];
-load_reg_1(V, I, [], I) -> [{I,V}];
-load_reg_1(V, I, [], C) -> [free|load_reg_1(V, I, [], C+1)].
 
 % free_reg(V, [{I,V}|Rs]) -> [free|Rs];
 % free_reg(V, [R|Rs]) -> [R|free_reg(V, Rs)];
@@ -1831,7 +1824,7 @@ put_stack(Val, [NotFree|Stk]) -> [NotFree|put_stack(Val, Stk)].
 put_stack_carefully(Val, Stk0) ->
     case catch put_stack_carefully1(Val, Stk0) of
 	error -> error;
-	Stk1 when list(Stk1) -> Stk1
+	Stk1 when is_list(Stk1) -> Stk1
     end.
 
 put_stack_carefully1(_, []) -> throw(error);

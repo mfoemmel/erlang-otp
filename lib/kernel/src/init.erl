@@ -1205,7 +1205,7 @@ reverse([H|T], Y) ->
     reverse(T, [H|Y]);
 reverse([], X) -> X.
 			
-search(Key, [H|_T]) when is_tuple(H), element(1, H) == Key ->
+search(Key, [H|_T]) when is_tuple(H), element(1, H) =:= Key ->
     {value, H};
 search(Key, [_|T]) -> search(Key, T);
 search(_Key, []) -> false.

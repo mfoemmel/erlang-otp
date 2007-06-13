@@ -27,8 +27,8 @@
 -include("inet_int.hrl").
 
 %% inet_udp port lookup
-getserv(Port) when integer(Port) -> {ok, Port};
-getserv(Name) when atom(Name)    -> inet:getservbyname(Name,udp).
+getserv(Port) when is_integer(Port) -> {ok, Port};
+getserv(Name) when is_atom(Name)    -> inet:getservbyname(Name,udp).
 
 %% inet_udp address lookup
 getaddr(Address) -> inet:getaddr(Address, inet6).
@@ -36,7 +36,7 @@ getaddr(Address,Timer) -> inet:getaddr(Address, inet6, Timer).
 
 open(Port) -> open(Port, []).
 
-open(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
+open(Port, Opts) when is_integer(Port), Port >= 0, Port =< 65535 ->
     case inet:udp_options([{port,Port} | Opts], inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -48,14 +48,14 @@ open(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
     end.
 
 send(S, Addr = {A,B,C,D,E,F,G,H}, P, Data) 
-  when ?ip6(A,B,C,D,E,F,G,H), integer(P), P > 0, P =< 65535 ->
+  when ?ip6(A,B,C,D,E,F,G,H), is_integer(P), P > 0, P =< 65535 ->
     prim_inet:sendto(S, Addr, P, Data).
 
 send(S, Data) ->
     prim_inet:sendto(S, {0,0,0,0,0,0,0,0}, 0, Data).
     
 connect(S, Addr = {A,B,C,D,E,F,G,H}, P) 
-  when ?ip6(A,B,C,D,E,F,G,H), integer(P), P > 0, P =< 65535 ->
+  when ?ip6(A,B,C,D,E,F,G,H), is_integer(P), P > 0, P =< 65535 ->
     prim_inet:connect(S, Addr, P).
 
 recv(S,Len) ->

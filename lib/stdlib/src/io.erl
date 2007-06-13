@@ -56,7 +56,7 @@ parse_exprs(I, P) -> parse_erl_exprs(I, P).
 
 %% Writing and reading characters.
 
-to_tuple(T) when tuple(T) -> T;
+to_tuple(T) when is_tuple(T) -> T;
 to_tuple(T) -> {T}.
 
 %% Problem: the variables Other, Name and Args may collide with surrounding
@@ -99,7 +99,7 @@ nl(Io) ->
 get_chars(Prompt, N) ->
     get_chars(default_input(), Prompt, N).
 
-get_chars(Io, Prompt, N) when integer(N), N >= 0 ->
+get_chars(Io, Prompt, N) when is_integer(N), N >= 0 ->
     request(Io, {get_chars,Prompt,N}).
 
 get_line(Prompt) ->
@@ -145,7 +145,7 @@ read(Io, Prompt) ->
 	    Other
     end.
 
-read(Io, Prompt, StartLine) when integer(StartLine) ->
+read(Io, Prompt, StartLine) when is_integer(StartLine) ->
     case request(Io, {get_until,Prompt,erl_scan,tokens,[StartLine]}) of
 	{ok,Toks,EndLine} ->
             case erl_parse:parse_term(Toks) of
@@ -258,11 +258,11 @@ request(Request) ->
 
 request(standard_io, Request) ->
     request(group_leader(), Request);
-request(Pid, Request) when pid(Pid) ->
+request(Pid, Request) when is_pid(Pid) ->
     Mref = erlang:monitor(process,Pid),
     Pid ! {io_request,self(),Pid,io_request(Pid, Request)},
     wait_io_mon_reply(Pid,Mref);
-request(Name, Request) when atom(Name) ->
+request(Name, Request) when is_atom(Name) ->
     case whereis(Name) of
 	undefined ->
 	    {error, arguments};
@@ -275,9 +275,9 @@ requests(Requests) ->				%Requests as atomic action
 
 requests(standard_io, Requests) ->              %Requests as atomic action
     requests(group_leader(), Requests);
-requests(Pid, Requests) when pid(Pid) ->
+requests(Pid, Requests) when is_pid(Pid) ->
     request(Pid, {requests,io_requests(Pid, Requests)});
-requests(Name, Requests) when atom(Name) ->
+requests(Name, Requests) when is_atom(Name) ->
     case whereis(Name) of
 	undefined ->
 	    {error, arguments};
@@ -343,20 +343,20 @@ io_request(_Pid, {fwrite,Format,Args}) ->
 io_request(_Pid, nl) ->
     {put_chars,io_lib:nl()};
 io_request(Pid, {put_chars,Chars}=Request0) 
-  when list(Chars), node(Pid) == node() ->
+  when is_list(Chars), node(Pid) =:= node() ->
     %% Convert to binary data if the I/O server is guaranteed to be new
     Request =
 	case catch list_to_binary(Chars) of
-	    Binary when binary(Binary) ->
+	    Binary when is_binary(Binary) ->
 		{put_chars,Binary};
 	    _ ->
 		Request0
 	end,
     Request;
-io_request(Pid, {get_chars,Prompt,N}) when node(Pid) /= node() ->
+io_request(Pid, {get_chars,Prompt,N}) when node(Pid) =/= node() ->
     %% Do not send new I/O request to possibly old I/O server
     {get_until,Prompt,io_lib,collect_chars,[N]};
-io_request(Pid, {get_line,Prompt}) when node(Pid) /= node() ->
+io_request(Pid, {get_line,Prompt}) when node(Pid) =/= node() ->
     %% Do not send new I/O request to possibly old I/O server
     {get_until,Prompt,io_lib,collect_line,[]};
 io_request(_Pid, {fread,Prompt,Format}) ->

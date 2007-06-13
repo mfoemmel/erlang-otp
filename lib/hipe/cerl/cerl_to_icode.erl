@@ -111,7 +111,7 @@
 	      }).		
 
 -record('receive', {loop}).
--record(var, {name}).
+-record(cerl_to_icode__var, {name}).
 -record('fun', {label, vars}).
 
 
@@ -442,7 +442,7 @@ expr_var(E, Ts, Ctxt, Env, S) ->
 		    error_msg("undefined variable: ~P.", [Name, 5]),
 		    throw(error)
 	    end;
-	{ok, #var{name = V}} ->
+	{ok, #cerl_to_icode__var{name = V}} ->
 	    case Ctxt#ctxt.final of
 		false ->
 		    glue([V], Ts, S);
@@ -565,16 +565,19 @@ expr_seq_1(E, F, Ctxt, Env, S) ->
 %% ---------------------------------------------------------------------
 %% Binaries
 
+-record(sz_var,   {code, sz}).
+-record(sz_const, {code, sz}).
+
 expr_binary(E, [V]=Ts, Ctxt, Env, S) ->
     Offset = make_reg(),
     Base = make_reg(),
     Segs = cerl:binary_segments(E),
     S1 = case do_size_code(Segs, S, Env, Ctxt) of
-	     {const, S0, Size} ->
+	     #sz_const{code = S0, sz = Size} ->
 		 Primop = {hipe_bs_primop, {bs_init, Size, 0}},
 		 add_code([icode_call_primop([V, Base, Offset], Primop, [])],
 			  S0);
-	     {var, S0, SizeVar} ->
+	     #sz_var{code = S0, sz = SizeVar} ->
 		 Primop = {hipe_bs_primop, {bs_init, 0}},
 		 add_code([icode_call_primop([V, Base, Offset],
 					     Primop, [SizeVar])],
@@ -582,25 +585,24 @@ expr_binary(E, [V]=Ts, Ctxt, Env, S) ->
 	 end,
     Vars = make_vars(length(Segs)),
     S2 = binary_segments(Segs, Vars, Ctxt, Env, S1, false, Base, Offset),
-    S3 =
-	case s__get_bitlevel_binaries(S2) of
-	    true ->
-		POp = {hipe_bs_primop, bs_final},
-		add_code([icode_call_primop([V],POp, [V, Offset])],S2);
-	    false ->
-		S2
-	end,
+    S3 = case s__get_bitlevel_binaries(S2) of
+	     true ->
+		 POp = {hipe_bs_primop, bs_final},
+		 add_code([icode_call_primop([V], POp, [V, Offset])], S2);
+	     false ->
+		 S2
+	 end,
     maybe_return(Ts, Ctxt, S3).
 
 do_size_code(Segs, S, Env, Ctxt) ->
     case do_size_code(Segs, S, Env, cerl:c_int(0), [], []) of
 	{[], [], Const, S1} ->
-	    {const, S1, (cerl:concrete(Const) + 7) div 8};
+	    #sz_const{code = S1, sz = ((cerl:concrete(Const) + 7) div 8)};
 	{Pairs, Bins, Const, S1} ->
 	    V1 = make_var(),
 	    S2 = add_code([icode_move(V1, icode_const(cerl:int_val(Const)))], S1),
 	    {S3, SizeVar} = create_size_code(Pairs, Bins, Ctxt, V1, S2),
-	    {var, S3, SizeVar}
+	    #sz_var{code = S3, sz = SizeVar}
     end.
 
 do_size_code([Seg|Rest], S, Env, Const, Pairs, Bins) ->
@@ -793,7 +795,7 @@ bitstr(E, Ts, Ctxt, Env, S, Align, Base, Offset) ->
     bitstr_gen_op(Ts, Ctxt, SizeInfo, ConstInfo, Type, Flags, Base, Offset).
 
 bitstr_gen_op([V], #ctxt{fail=FL, class=guard}, SizeInfo, ConstInfo,
-	       Type, Flags, Base, Offset) ->
+	      Type, Flags, Base, Offset) ->
     SL = new_label(),
     case SizeInfo of
 	{all,_NewUnit, NewAlign, S1} ->
@@ -867,7 +869,7 @@ expr_apply(E, Ts, Ctxt, Env, S) ->
 			{ok, #'fun'{label = L, vars = Vs1}} ->
 			    %% Call to a local letrec-bound function.
 			    add_letrec_call(L, Vs1, Vs, Ctxt, S1);
-			{ok, #var{}} ->
+			{ok, #cerl_to_icode__var{}} ->
 			    error_msg("cannot call via variable; must "
 				      "be closure converted: ~P.",
 				      [V, 5]),
@@ -946,8 +948,8 @@ expr_primop_1(?PRIMOP_RECEIVE_SELECT, 0, _As, _E, Ts, Ctxt, _Env, S) ->
     primop_receive_select(Ts, Ctxt, S);
 expr_primop_1(?PRIMOP_RECEIVE_NEXT, 0, _As, _E, _Ts, Ctxt, _Env, S) ->
     primop_receive_next(Ctxt, S);
-%expr_primop_1(?PRIMOP_IDENTITY, 1, [A], _E, Ts, Ctxt, Env, S) ->
-%    expr(A, Ts, Ctxt, Env, S);  % used for unary plus
+%%expr_primop_1(?PRIMOP_IDENTITY, 1, [A], _E, Ts, Ctxt, Env, S) ->
+%%    expr(A, Ts, Ctxt, Env, S);  % used for unary plus
 expr_primop_1(?PRIMOP_NEG, 1, [A], _, Ts, Ctxt, Env, S) ->
     E = cerl:c_primop(cerl:c_atom('-'), [cerl:c_int(0), A]),
     expr_primop(E, Ts, Ctxt, Env, S);
@@ -2118,7 +2120,7 @@ is_type_test(Op, A) when is_atom(Op), is_integer(A) -> false.
 %% Utility functions
 
 bind_var(V, Name, Env) ->
-    env__bind(cerl:var_name(V), #var{name = Name}, Env).
+    env__bind(cerl:var_name(V), #cerl_to_icode__var{name = Name}, Env).
 
 bind_vars([V | Vs], [X | Xs], Env) ->
     bind_vars(Vs, Xs, bind_var(V, X, Env));

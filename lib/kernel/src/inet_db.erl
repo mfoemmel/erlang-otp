@@ -180,10 +180,10 @@ del_alt_ns() ->
     call(del_alt_ns).
 
 %% add this domain to the search list
-add_search(Domain) when list(Domain) -> 
+add_search(Domain) when is_list(Domain) -> 
     call({add_search, Domain}).
 
-ins_search(Domain) when list(Domain) ->
+ins_search(Domain) when is_list(Domain) ->
     call({ins_search, Domain}).
 
 del_search(Domain) ->
@@ -262,7 +262,7 @@ add_rc(File) ->
 %% Add an inetrc binary term must be a rc list
 add_rc_bin(Bin) ->
     case catch binary_to_term(Bin) of
-	List when list(List) ->
+	List when is_list(List) ->
 	    add_rc_list(List);
 	_ ->
 	    {error, badarg}
@@ -342,7 +342,7 @@ translate_lookup(["yp" | Ls]) -> [yp | translate_lookup(Ls)];
 translate_lookup(["nis" | Ls]) -> [nis | translate_lookup(Ls)];
 translate_lookup(["nisplus" | Ls]) -> [nisplus | translate_lookup(Ls)];
 translate_lookup(["native" | Ls]) -> [native | translate_lookup(Ls)];
-translate_lookup([M | Ls]) when atom(M) -> translate_lookup([atom_to_list(M) | Ls]);
+translate_lookup([M | Ls]) when is_atom(M) -> translate_lookup([atom_to_list(M) | Ls]);
 translate_lookup([_ | Ls]) -> translate_lookup(Ls);
 translate_lookup([]) -> [].
 
@@ -576,8 +576,8 @@ res_hostent_by_domain(Domain, Aliases, Type, RRs) ->
 %% newly resolved lookup address record
 res_lookup_type(Domain,Type,RRs) ->
     [R#dns_rr.data || R <- RRs,
-		      R#dns_rr.domain == Domain,
-		      R#dns_rr.type == Type].
+		      R#dns_rr.domain =:= Domain,
+		      R#dns_rr.type =:= Type].
 
 %%
 %% gethostbyaddr (cache version)
@@ -607,7 +607,7 @@ ent_gethostbyaddr(RRs, IP, AddrType, Length) ->
 	[] -> {error, nxdomain};
 	[RR|TR] ->
 	    %% debug
-	    if TR /= [] ->
+	    if TR =/= [] ->
 		    ?dbg("gethostbyaddr found extra=~p~n", [TR]);
 	       true -> ok
 	    end,
@@ -633,7 +633,7 @@ dnip(IP) ->
 
 dnt(IP = {A,B,C,D}) when ?ip(A,B,C,D) ->
     {ok, {IP, inet, 4}};
-dnt({0,0,0,0,0,16#ffff,G,H}) when integer(G+H) ->
+dnt({0,0,0,0,0,16#ffff,G,H}) when is_integer(G+H) ->
     A = G div 256, B = G rem 256, C = H div 256, D = H rem 256,
     {ok, {{A,B,C,D}, inet, 4}};
 dnt(IP = {A,B,C,D,E,F,G,H}) when ?ip6(A,B,C,D,E,F,G,H) ->
@@ -762,7 +762,7 @@ handle_call(Request, _From, State) ->
 	%% IP adress is not specified anywhere
 	%% This code will be changed when the hosts-table is reorganized
 	%% to use names as keys
-	{add_host,{127,0,0,1},[TName|TAs]} when list(TName), list(TAs) ->
+	{add_host,{127,0,0,1},[TName|TAs]} when is_list(TName), is_list(TAs) ->
 	    [Name|As] = lists:map(fun tolower/1,[TName|TAs]),
 	    NameList = case ets:lookup(State#state.hosts,{127,0,0,1}) of
 			   [{_IP,_,NList}] -> NList;
@@ -772,7 +772,7 @@ handle_call(Request, _From, State) ->
 	    ets:insert(State#state.hosts, {{127,0,0,1},inet,NameList ++ Ns}),
 	    {reply, ok, State};
 
-	{add_host,IP,[TName|TAs]} when tuple(IP), list(TName), list(TAs) ->
+	{add_host,IP,[TName|TAs]} when is_tuple(IP), is_list(TName), is_list(TAs) ->
 	    As = lists:map(fun tolower/1,[TName|TAs]),
 	    As1 = 
 		case ets:lookup(State#state.hosts, IP) of
@@ -783,7 +783,7 @@ handle_call(Request, _From, State) ->
 		    [] ->
 			As
 		end,
-	    if size(IP) == 4 ->
+	    if size(IP) =:= 4 ->
 		    %% temporary special as above
 		    case ets:lookup(State#state.hosts,{127,0,0,1}) of
 			[{IP,_,AList}] ->
@@ -797,24 +797,24 @@ handle_call(Request, _From, State) ->
 		    %% end temporary special
 		    ets:insert(State#state.hosts, {IP,inet,As1}),
 		    {reply, ok, State};
-	       size(IP) == 8 ->
+	       size(IP) =:= 8 ->
 		    ets:insert(State#state.hosts, {IP,inet6,As1}),
 		    {reply, ok, State};
 	       true ->
 		    {reply, error, State}
 	    end;
 
-	{del_host, IP} when tuple(IP) ->
+	{del_host, IP} when is_tuple(IP) ->
 	    ets:delete(State#state.hosts, IP),
 	    {reply, ok, State};
 		    
-	{add_rr, RR} when record(RR, dns_rr) ->
+	{add_rr, RR} when is_record(RR, dns_rr) ->
 	    RR1 = lower_rr(RR),
 	    ?dbg("add_rr: ~p~n", [RR1]),
 	    do_add_rr(RR1, Db, State),
 	    {reply, ok, State};
 
-	{del_rr, RR} when record(RR, dns_rr) ->
+	{del_rr, RR} when is_record(RR, dns_rr) ->
 	    RR1 = lower_rr(RR),
 	    %% note. del_rr will handle wildcards !!!
 	    Cache = State#state.cache,
@@ -825,12 +825,12 @@ handle_call(Request, _From, State) ->
 	    {reply, do_lookup_rr(Domain, Class, Type), State};
 
 	%% XXX Fix IPv6 nameservers
-	{ins_ns, {A,B,C,D},Port} when ?ip(A,B,C,D), integer(Port) ->
+	{ins_ns, {A,B,C,D},Port} when ?ip(A,B,C,D), is_integer(Port) ->
 	    [{_,Ns}] = ets:lookup(Db, res_ns),
 	    ets:insert(Db, {res_ns, [{{A,B,C,D},Port} | Ns]}),
 	    {reply, ok, State};
 
-	{add_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), integer(Port) ->
+	{add_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
 	    [{_,Ns}] = ets:lookup(Db, res_ns),
 	    ets:insert(Db, {res_ns, Ns ++ [{{A,B,C,D},Port}]}),
 	    {reply, ok, State};
@@ -845,12 +845,12 @@ handle_call(Request, _From, State) ->
 	    {reply, ok, State};
 
 	%% Fix IPv6 nameservers
-	{ins_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), integer(Port) ->
+	{ins_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
 	    [{_,Ns}] = ets:lookup(Db, res_alt_ns),
 	    ets:insert(Db, {res_alt_ns, [{{A,B,C,D},Port} | Ns]}),
 	    {reply, ok, State};
 
-	{add_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), integer(Port) ->
+	{add_alt_ns, {A,B,C,D}, Port} when ?ip(A,B,C,D), is_integer(Port) ->
 	    [{_,Ns}] = ets:lookup(Db, res_alt_ns),
 	    ets:insert(Db, {res_alt_ns, Ns ++ [{{A,B,C,D},Port}]}),
 	    {reply, ok, State};
@@ -934,11 +934,11 @@ handle_call(Request, _From, State) ->
 	    ets:insert(Db, {res_recurse, 0}),
 	    {reply, ok, State};
 
-	{set_timeout, Time} when integer(Time), Time > 0 ->
+	{set_timeout, Time} when is_integer(Time), Time > 0 ->
 	    ets:insert(Db, {res_timeout, Time}),
 	    {reply, ok, State};
 
-	{set_retry, N} when integer(N), N > 0 ->
+	{set_retry, N} when is_integer(N), N > 0 ->
 	    ets:insert(Db, {res_retry, N}),
 	    {reply, ok, State};
 
@@ -962,7 +962,7 @@ handle_call(Request, _From, State) ->
 	    ets:insert(Db, {socks5_server, {A,B,C,D}}),
 	    {reply, ok, State};
 
-	{set_socks_port, Port} when integer(Port) ->
+	{set_socks_port, Port} when is_integer(Port) ->
 	    ets:insert(Db, {socks5_port, Port}),
 	    {reply, ok, State};
 
@@ -996,23 +996,23 @@ handle_call(Request, _From, State) ->
 	    ets:insert(Db, {socks5_noproxy, keydelete({A,B,C,D},1,As)}),
 	    {reply, ok, State};
 
-	{set_tcp_module, Mod} when atom(Mod) ->
+	{set_tcp_module, Mod} when is_atom(Mod) ->
 	    ets:insert(Db, {tcp_module, Mod}), %% check/load module ?
 	    {reply, ok, State};
 
-	{set_udp_module, Mod} when atom(Mod) ->
+	{set_udp_module, Mod} when is_atom(Mod) ->
 	    ets:insert(Db, {udp_module, Mod}), %% check/load module ?
 	    {reply, ok, State};
 
-	{set_sctp_module, Fam} when atom(Fam) ->
+	{set_sctp_module, Fam} when is_atom(Fam) ->
 	    ets:insert(Db, {sctp_module, Fam}),
 	    {reply, ok, State};
 
-	{set_cache_size, Size} when integer(Size), Size >= 0 ->
+	{set_cache_size, Size} when is_integer(Size), Size >= 0 ->
 	    ets:insert(Db, {cache_size, Size}),
 	    {reply, ok, State};
 	
-	{set_cache_refresh, Time} when integer(Time), Time > 0 ->
+	{set_cache_refresh, Time} when is_integer(Time), Time > 0 ->
 	    Time1 = ((Time+999) div 1000)*1000, %% round up
 	    ets:insert(Db, {cache_refresh_interval, Time1}),
 	    stop_timer(State#state.cache_timer),
@@ -1113,7 +1113,7 @@ match_rr(RR) ->
 
 %% filter old resource records and update access count
 
-filter_rr([RR | RRs], Time) when RR#dns_rr.ttl == 0 -> %% at least once
+filter_rr([RR | RRs], Time) when RR#dns_rr.ttl =:= 0 -> %% at least once
     ets:match_delete(inet_cache, RR),
     [RR | filter_rr(RRs, Time)];
 filter_rr([RR | RRs], Time) when RR#dns_rr.tm + RR#dns_rr.ttl < Time ->
@@ -1131,7 +1131,7 @@ filter_rr([], _Time) ->  [].
 %%
 lower_rr(RR) ->
     Dn = RR#dns_rr.domain,
-    if list(Dn) ->
+    if is_list(Dn) ->
 	    RR#dns_rr { domain = tolower(Dn) };
        true -> RR
     end.

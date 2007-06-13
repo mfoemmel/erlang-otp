@@ -89,6 +89,9 @@
 /* Define if you have the pthread_atfork function. */
 #undef ETHR_HAVE_PTHREAD_ATFORK
 
+/* Define if you have the pthread_attr_setguardsize function. */
+#undef ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE
+
 /* Define if you have the <pthread.h> header file. */
 #undef ETHR_HAVE_PTHREAD_H
 

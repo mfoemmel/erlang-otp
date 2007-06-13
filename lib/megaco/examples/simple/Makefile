@@ -62,8 +62,9 @@ ifeq ($(WARN_UNUSED_WARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
 
-ERL_FLAGS += -pa $(ERL_TOP)/lib/megaco/ebin
-ERL_COMPILE_FLAGS += -I../../include
+ERL_COMPILE_FLAGS += \
+	-pa $(ERL_TOP)/lib/megaco/ebin \
+	-I../../include
 
 ifneq ($(MGC_HOST),)
 MG_START_ARGS = "{mgc_host, $(MGC_HOST)}"

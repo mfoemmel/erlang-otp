@@ -54,7 +54,7 @@ get_sasl_error_logger() ->
     case application:get_env(sasl, sasl_error_logger) of
 	{ok, false} -> undefined;
 	{ok, tty} -> tty;
-	{ok, {file, File}} when list(File) -> {file, File};
+	{ok, {file, File}} when is_list(File) -> {file, File};
 	{ok, Bad} -> exit({bad_config, {sasl, {sasl_error_logger, Bad}}});
 	_ -> undefined
     end.
@@ -85,21 +85,21 @@ get_mf() ->
 get_mf_dir() ->
     case application:get_env(sasl, error_logger_mf_dir) of
 	{ok, false} -> throw(undefined);
-	{ok, Dir} when list(Dir) -> Dir;
+	{ok, Dir} when is_list(Dir) -> Dir;
 	undefined -> throw(undefined);
 	{ok, Bad} -> exit({bad_config, {sasl, {error_logger_mf_dir, Bad}}})
     end.
 
 get_mf_maxb() ->
     case application:get_env(sasl, error_logger_mf_maxbytes) of
-	{ok, MaxB} when integer(MaxB) -> MaxB;
+	{ok, MaxB} when is_integer(MaxB) -> MaxB;
 	undefined -> throw(undefined);
 	{ok, Bad} -> exit({bad_config, {sasl, {error_logger_mf_maxbytes, Bad}}})
     end.
 
 get_mf_maxf() ->
     case application:get_env(sasl, error_logger_mf_maxfiles) of
-	{ok, MaxF} when integer(MaxF), MaxF > 0, MaxF < 256 -> MaxF;
+	{ok, MaxF} when is_integer(MaxF), MaxF > 0, MaxF < 256 -> MaxF;
 	undefined -> throw(undefined);
 	{ok, Bad} -> exit({bad_config, {sasl, {error_logger_mf_maxfiles, Bad}}})
     end.

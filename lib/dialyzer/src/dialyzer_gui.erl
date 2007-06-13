@@ -45,8 +45,8 @@
 	       plt_empty, plt_search_doc, plt_show_doc,
 	       warnings}).
 	       
--record(mode, {gran_all, start_byte_code, iter_fixpoint, gran_module,
-	       start_src_code, iter_qad, dataflow, succ_typings}).
+-record(mode, {start_byte_code, iter_fixpoint,
+	       start_src_code, iter_qad, dataflow, succ_typings, old_style}).
 
 
 start(DialyzerOptions = #options{}) ->
@@ -97,21 +97,19 @@ start(DialyzerOptions = #options{}) ->
 		    {height, 20}, {pack_xy, {2, 2}}]),
   ModePacker = gs:frame(Packer, [{packer_x, [{fixed, 75},{fixed, 120}]},
 				 {packer_y, [{fixed, 20},{fixed, 20},
-					     {stretch, 1}, % empty space
-					     {fixed, 20}, {fixed, 20},
-					     {stretch, 1}, % empty space
-					     {fixed, 20}, {fixed, 20},
-					     {stretch, 1}, % empty space
-					     {fixed, 20}, {fixed, 20},
-					     {stretch, 1}, % empty space
-					     {fixed, 15}, {stretch, 1}]},
+					     {fixed, 20},
+					     %%{stretch, 1}, % empty space
+					     {fixed, 20}, {fixed, 20}, 
+					     {fixed, 20},
+					     {stretch, 1} % empty space
+					    ]},
 				 {bw, 10}, {relief, flat},
 				 {default, {radiobutton, {align, w}}},
 				 {default, {label, {align, w}}},
 				 {pack_xy, {2, 3}}]),
 
   %% Bytecode vs. Source code
-  gs:label(ModePacker, [{label, {text, "Analyze:"}},
+  gs:label(ModePacker, [{label, {text, "File Type:"}},
 			{height, 20}, {pack_xy, {1,1}}]),
   ModeByteCode = gs:radiobutton(ModePacker,
 				[{group, start_from},
@@ -123,53 +121,28 @@ start(DialyzerOptions = #options{}) ->
 				{label, {text,"SourceCode"}},
 				{pack_xy, {2,2}}]),
 
-  %% Analyze modules or all chosen
-%%  gs:label(ModePacker, [{label, {text, "Granularity:"}},
-%%			{height, 20}, {pack_xy, {1,4}}]),
-%%  ModeFileModule = gs:radiobutton(ModePacker,
-%%				  [{group, granularity},
-%%				   {label, {text,"Module-local"}}, 
-%%				   {pack_xy, {2,4}}]),
-%%  ModeFileAll = gs:radiobutton(ModePacker,
-%%			       [{group, granularity},
-%%				{select, true},
-%%				{label, {text,"Global"}}, 
-%%				{pack_xy, {2,5}}]),
-
-  %% Iteration Mode
-%%  gs:label(ModePacker, [{label, {text, "Iteration:"}}, 
-%%			{height, 20}, {pack_xy, {1,7}}]),
-%%  ModeAnalysisQaD = gs:radiobutton(ModePacker,
-%%				   [{group, analysis},
-%%				    {label,{text,"One pass"}}, 
-%%				    {pack_xy, {2,7}}]),
-%%  ModeAnalysisFixpoint = gs:radiobutton(ModePacker,
-%%					[{group, analysis},
-%%					 {label,{text,"Fixpoint"}}, 
-%%					 {select, true},
-%%					 {pack_xy, {2,8}}]),
-
-  %% Core transform
-%%  gs:label(ModePacker, [{label, {text, "Analysis:"}}, 
-%%			{height, 20}, {pack_xy, {1,10}}]),
-%%  ModeDataflow = gs:radiobutton(ModePacker,
-%%			      [{group, core},
-%%			       {label,{text,"Quick & dirty"}}, 
-%%			       {select, true},
-%%			       {pack_xy, {2,10}}]),
-%%  ModeSuccTypings = gs:radiobutton(ModePacker,
-%%			       [{group, core},
-%%				{label,{text,"More precise"}}, 
-%%				{pack_xy, {2,11}}]),
+  %% Analysis Type
+  gs:label(ModePacker, [{label, {text, "Analysis:"}}, 
+			{height, 20}, {pack_xy, {1,4}}]),
+  ModeDataflow = gs:radiobutton(ModePacker,
+			      [{group, type},
+			       {label,{text,"Dataflow"}}, 
+			       {select, true},
+			       {pack_xy, {2,4}}]),
+  ModeSuccTypings = gs:radiobutton(ModePacker,
+			       [{group, type},
+				{label,{text,"Success Typings"}}, 
+				{pack_xy, {2,5}}]),
+  ModeOldStyle = gs:radiobutton(ModePacker,
+				[{group, type},
+				 {label,{text,"Old Style"}}, 
+				 {pack_xy, {2,6}}]),
 
   Mode = #mode{start_byte_code=ModeByteCode,
-	       start_src_code=ModeSrcCode
-	       %% gran_all=ModeFileAll,
-	       %% gran_module=ModeFileModule, 
-	       %% iter_fixpoint=ModeAnalysisFixpoint, 
-	       %% iter_qad=ModeAnalysisQaD,
-	       %% dataflow=ModeDataflow,
-	       %% succ_typings=ModeSuccTypings
+	       start_src_code=ModeSrcCode,
+	       dataflow=ModeDataflow,
+	       succ_typings=ModeSuccTypings,
+	       old_style=ModeOldStyle
 	      },
 
   %% --------- Log box --------------
@@ -523,11 +496,11 @@ gui_loop(State = #gui_state{}) ->
       gui_loop(State);
     {BackendPid, warnings, Warnings} ->
       WarningString = 
-	case Options#options.core_transform of
-	  dataflow ->
+	case Options#options.analysis_type of
+	  old_style ->
 	    lists:flatten([io_lib:format("~w: ~s", [Fun, W])
 			   || {Fun, W} <- Warnings]);
-	  core_warnings ->
+	  dataflow ->
 	    lists:flatten([io_lib:format("~s:~w: ~s", 
 					 [filename:basename(File), Line, W])
 			   || {{File, Line}, W} <- Warnings])
@@ -675,7 +648,6 @@ handle_file_delete(#gui_state{chosen_box=ChosenBox}) ->
       ok
   end.
 
-
 %% ---- Other ----
 
 change_dir_or_add_file(S = #gui_state{file_wd=FWD, mode=Mode}, 
@@ -761,14 +733,11 @@ config_gui_start(State) ->
   gs:config(Menu#menu.plt_show_doc, {enable, false}),
 
   Mode = State#gui_state.mode,
-  gs:config(Mode#mode.gran_all, {enable, false}),
   gs:config(Mode#mode.start_byte_code, {enable, false}),
-  gs:config(Mode#mode.iter_fixpoint, {enable, false}),
-  gs:config(Mode#mode.gran_module, {enable, false}),
   gs:config(Mode#mode.start_src_code, {enable, false}),
-  gs:config(Mode#mode.iter_qad, {enable, false}),  
   gs:config(Mode#mode.dataflow, {enable, false}),
-  gs:config(Mode#mode.succ_typings, {enable, false}).
+  gs:config(Mode#mode.succ_typings, {enable, false}),
+  gs:config(Mode#mode.old_style, {enable, false}).
 
 
 config_gui_stop(State) ->
@@ -793,14 +762,11 @@ config_gui_stop(State) ->
   gs:config(Menu#menu.plt_show_doc, {enable, true}),
 
   Mode = State#gui_state.mode,
-  gs:config(Mode#mode.gran_all, {enable, true}),
   gs:config(Mode#mode.start_byte_code, {enable, true}),
-  gs:config(Mode#mode.iter_fixpoint, {enable, true}),
-  gs:config(Mode#mode.gran_module, {enable, true}),
   gs:config(Mode#mode.start_src_code, {enable, true}),
-  gs:config(Mode#mode.iter_qad, {enable, true}),
   gs:config(Mode#mode.dataflow, {enable, true}),
-  gs:config(Mode#mode.succ_typings, {enable, true}).
+  gs:config(Mode#mode.succ_typings, {enable, true}),
+  gs:config(Mode#mode.old_style, {enable, true}).
 
 
 
@@ -1168,7 +1134,7 @@ free_editor(State, Contents0, Title) ->
   Contents = lists:flatten(Contents0),
   Tokens = string:tokens(Contents, "\n"),
   NofLines = length(Tokens),
-  LongestLine = lists:max([length(X)||X<-Tokens]),
+  LongestLine = lists:max([length(X) || X <- Tokens]),
 
   Height0 = NofLines * 25 + 80,
   if Height0 > 500 -> Height = 500;
@@ -1235,7 +1201,7 @@ include_dialog(State, Parent) ->
 					{pack_xy, {1,1}}]),
   
   Options = State#gui_state.options,
-  Dirs = [io_lib:format("~s", [X])||X<-Options#options.include_dirs],
+  Dirs = [io_lib:format("~s", [X]) || X <- Options#options.include_dirs],
   DirBox = gs:listbox(Frame, [{pack_xy, {1,4}}, {vscroll, right},
 				{bg, white}, {configure, true},
 				{selectmode, multiple},
@@ -1302,7 +1268,7 @@ include_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	  [] ->
 	    Options;
 	  List ->
-	    [gs:config(DirBox, [{del, X}])||
+	    [gs:config(DirBox, [{del, X}]) ||
 	      X <- lists:reverse(lists:sort(List))],
 	    NewDirs = gs:read(DirBox, items),
 	    Options#options{include_dirs=NewDirs}
@@ -1336,7 +1302,7 @@ macro_dialog(State, Parent) ->
 					{pack_xy, {1,1}}]),
   
   Options = State#gui_state.options,
-  Macros = [io_lib:format("~p = ~p", [X,Y])||{X,Y}<-Options#options.defines],
+  Macros = [io_lib:format("~p = ~p", [X,Y]) || {X,Y}<-Options#options.defines],
   MacroBox = gs:listbox(Frame, [{pack_x, {1,2}}, {pack_y, 4}, {vscroll, right},
 				{bg, white}, {configure, true},
 				{selectmode, multiple},
@@ -1404,7 +1370,7 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 	    end
 	end,
       NewOptions = Options#options{defines=NewDefines},		 
-      NewEntries = [io_lib:format("~p = ~p", [X, Y])||{X, Y} <- NewDefines],
+      NewEntries = [io_lib:format("~p = ~p", [X, Y]) || {X, Y} <- NewDefines],
       gs:config(MacroBox, [{items, NewEntries}]),
       macro_loop(Parent, NewOptions, Frame, AddButton, DeleteAllButton, 
 		 DeleteButton, MacroBox, MacroEntry, TermEntry, OkButton, 
@@ -1429,7 +1395,7 @@ macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton,
 		  list_to_atom(Macro)
 	      end,
 	    Delete = [Fun(X) || X <- List],
-	    [gs:config(MacroBox, [{del, X}])||
+	    [gs:config(MacroBox, [{del, X}]) ||
 	      X <- lists:reverse(lists:sort(List))],
 	    Defines = Options#options.defines,
 	    NewDefines = lists:foldl(fun(X, Acc) -> 
@@ -1488,16 +1454,6 @@ start_analysis(State) ->
 
 build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
 				 init_plt=InitPlt0, empty_plt=EmptyPlt}) ->
-  Fixpoint = first,
-%%    case gs:read(Mode#mode.iter_fixpoint, select) of
-%%      true -> first;
-%%      false -> false
-%%    end,
-  Granularity = all,
-%%    case gs:read(Mode#mode.gran_all, select) of
-%%      true -> all;
-%%      false -> module
-%%    end,
   StartFrom =
     case gs:read(Mode#mode.start_byte_code, select) of
       true -> byte_code;
@@ -1513,17 +1469,19 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
       true -> EmptyPlt;
       false -> InitPlt0
     end,
-  CoreTransform = Options#options.core_transform,
-%%    case gs:read(Mode#mode.dataflow, select) of
-%%      true -> dataflow;
-%%      false -> succ_typings
-%%    end,
+  AnalType = 
+    case gs:read(Mode#mode.dataflow, select) of
+      true -> dataflow;
+      false ->
+	case gs:read(Mode#mode.succ_typings, select) of
+	  true -> succ_typings;
+	  false -> old_style
+	end
+    end,
   
   #analysis{supress_inline=CheckInline,
-	    core_transform=CoreTransform,
+	    type=AnalType,
 	    defines=Options#options.defines,
-	    fixpoint=Fixpoint, 
-	    granularity=Granularity,
 	    include_dirs=Options#options.include_dirs,
 	    init_plt=InitPlt,
 	    start_from=StartFrom}.

@@ -870,7 +870,7 @@ resolve_load_atom(Instr,Addr,Refs)->
   Atom = hipe_sparc:load_atom_atom(Instr),
   Dest = hipe_sparc:load_atom_dest(Instr),
   I1 = hipe_sparc:sethi_create(Dest, hipe_sparc:mk_imm(0)),
-  I2 = hipe_sparc:alu_create(Dest,Dest, 'or', hipe_sparc:mk_imm(0)),
+  I2 = hipe_sparc:alu_create(Dest, Dest, 'or', hipe_sparc:mk_imm(0)),
   {[assemble_instr(I2),assemble_instr(I1)],
    Addr+8,[{?LOAD_ATOM, Addr, Atom}|Refs]}.
 
@@ -891,7 +891,7 @@ resolve_call_link(Instr,Addr,OldRefs,Map)->
   %% Get the stack descriptor information
   SD = hipe_sparc:call_link_stack_desc(Instr),
   FSize = hipe_sparc:sdesc_size(SD),
-  Live =  list_to_tuple(hipe_sparc:sdesc_live_slots(SD)),
+  Live = list_to_tuple(hipe_sparc:sdesc_live_slots(SD)),
   Arity = case hipe_sparc:sdesc_arity(SD) of
 	    N when N > ?SPARC_NR_ARG_REGS -> N - ?SPARC_NR_ARG_REGS;
 	    _ -> 0

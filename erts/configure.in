@@ -95,6 +95,14 @@ AC_ARG_ENABLE(smp-support,
     *)  enable_smp_support=yes ;;
   esac ], enable_smp_support=unknown)
 
+AC_ARG_ENABLE(hybrid-heap,
+[  --enable-hybrid-heap    enable hybrid heap
+  --disable-hybrid-heap   disable hybrid heap],
+[ case "$enableval" in
+    no) enable_hybrid_heap=no ;;
+    *)  enable_hybrid_heap=yes ;;
+  esac ], enable_hybrid_heap=unknown)
+
 AC_ARG_ENABLE(lock-checking,
 [  --enable-lock-checking  enable lock checking],
 [ case "$enableval" in
@@ -1923,7 +1931,7 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
 #include <asm/sigcontext.h>
@@ -1933,8 +1941,13 @@ static __inline__ int check_fpe(double f)
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
+#elif defined(__OpenBSD__) && defined(__x86_64__)
+#include <sys/types.h>
+#include <machine/fpu.h>
 #endif
+#if !(defined(__OpenBSD__) && defined(__x86_64__))
 #include <ucontext.h>
+#endif
 #include <string.h>
 
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
@@ -1994,6 +2007,10 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 	struct env87 *env87 = &savefpu->sv_87.sv_env;
 	env87->en_sw &= ~0xFF;
     }
+#elif defined(__OpenBSD__) && defined(__x86_64__)
+    struct fxsave64 *fxsave = uc->sc_fpstate;
+    fxsave->fx_mxcsr = 0x1F80;
+    fxsave->fx_fsw &= ~0xFF;
 #elif defined(__sun__) && defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     struct fpchip_state *fpstate = &mc->fpregs.fp_reg_set.fpchip_state;
@@ -2110,13 +2127,26 @@ AC_SUBST(TSP_APP)
 # Check if we should build hybrid emulator
 #
 
-case $host_os in
-    win32|vxworks|ose) # vxworks and ose have their own "configure scripts"...
+AC_MSG_CHECKING([whether a hybrid heap emulator should be built])
+case $enable_hybrid_heap-$host_os in
+    yes-*)
+	AC_MSG_RESULT([yes; enabled by user])
+	ERTS_BUILD_HYBRID_EMU=yes;;
+    no-*)
+	AC_MSG_RESULT([no; disabled by user])
+	ERTS_BUILD_HYBRID_EMU=no;;
+    *-win32|*-vxworks|*-ose) # vxworks and ose have their own "configure scripts"...
+	AC_MSG_RESULT([no; default on this platform])
 	ERTS_BUILD_HYBRID_EMU=no;;
     *)
-	AC_DEFINE(ERTS_HAVE_HYBRID_EMU, 1, [Define if the hybrid emulator is built])
+	AC_MSG_RESULT([yes; default on this platform])
 	ERTS_BUILD_HYBRID_EMU=yes;;
 esac
+
+
+if test $ERTS_BUILD_HYBRID_EMU = yes; then
+    AC_DEFINE(ERTS_HAVE_HYBRID_EMU, 1, [Define if the hybrid emulator is built])
+fi
 
 AC_SUBST(ERTS_BUILD_HYBRID_EMU)
 
@@ -2398,6 +2428,10 @@ case $host_os in
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
 		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
+	linux*)
+		DED_LD="$CC"
+		DED_LDFLAGS="-shared"
+	;;	
 	osf*)
 		# NOTE! Whitespace after -rpath is important.
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH="-rpath "
@@ -2452,7 +2486,76 @@ AC_SUBST(SSH_APP)
 AC_SUBST(SSL_INCLUDE)
 AC_SUBST(SSL_ROOT)
 AC_SUBST(SSL_LIBDIR)
+AC_SUBST(SSL_DYNAMIC_ONLY)
+AC_SUBST(SSL_LINK_WITH_KERBEROS)
+AC_SUBST(STATIC_KERBEROS_LIBS)
+AC_SUBST(SSL_LINK_WITH_ZLIB)
+AC_SUBST(STATIC_ZLIB_LIBS)
 AC_SUBST(OPENSSL_CMD)
+
+AC_ARG_WITH(ssl-zlib,
+[  --with-ssl-zlib=PATH         specify location of ZLib to be used by OpenSSL
+  --with-ssl-zlib               link SSL with  Zlib (default if found)
+  --without-ssl-zlib            don't link SSL with ZLib])
+
+
+if  test "x$with_ssl_zlib" = "xno"; then
+	SSL_LINK_WITH_ZLIB=no
+	STATIC_ZLIB_LIBS=
+elif test "x$with_ssl_zlib" = "xyes" -o "x$with_ssl_zlib" = "x" ;then
+	if  test "x$MIXED_CYGWIN" = "xyes"; then
+		SSL_LINK_WITH_ZLIB=no	
+		STATIC_ZLIB_LIBS=	
+	else
+		AC_MSG_CHECKING(for static ZLib to be used by SSL in standard locations) 
+		zlib_found=no
+		for dir in /usr/local /usr/sfw /usr /usr/pkg \
+		/usr/local/openssl /usr/lib/openssl /usr/openssl \
+		/usr/local/ssl /usr/lib/ssl /usr/ssl
+		do
+			if test "x$ARCH" = "xamd64" -o \
+				"x$ARCH" = "xppc64"; then
+				if test -f "$dir/lib64/libz.a"; then
+					SSL_LINK_WITH_ZLIB=yes
+					STATIC_ZLIB_LIBS=$dir/lib64/libz.a
+					zlib_found=yes
+				fi
+			fi
+			if test -f "$dir/lib/libz.a"; then
+					SSL_LINK_WITH_ZLIB=yes
+					STATIC_ZLIB_LIBS=$dir/lib/libz.a
+					zlib_found=yes
+			fi
+			if test "x$zlib_found" = "xyes"; then
+				break
+			fi
+		done
+		if test "x$zlib_found" = "xno"; then
+		       	AC_MSG_RESULT([no])
+			SSL_LINK_WITH_ZLIB=no
+			STATIC_ZLIB_LIBS=
+		else
+			AC_MSG_RESULT([$STATIC_ZLIB_LIBS])
+		fi
+	fi				
+else
+	if test -f "$with_ssl_zlib/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/libz.a
+	elif test -f "$with_ssl_zlib/lib64/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib64/libz.a
+	elif test -f "$with_ssl_zlib/lib/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib/libz.a
+	else
+	       	AC_MSG_ERROR(Invalid path to option --with-ssl-zlib=PATH)
+		SSL_LINK_WITH_ZLIB=no
+		STATIC_ZLIB_LIBS=
+	fi
+fi
+		
+			
 AC_ARG_WITH(ssl,
 [  --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
@@ -2463,6 +2566,8 @@ AC_ARG_WITH(ssl,
 for a in ssl crypto ssh; do
   /bin/rm -f $ERL_TOP/lib/$a/SKIP
 done
+
+SSL_DYNAMIC_ONLY=no
 
 if test "x$with_ssl" = "xno"; then
     SSL_APP=
@@ -2495,8 +2600,8 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     SSH_APP=ssh
 
     AC_MSG_CHECKING(for OpenSSL >= 0.9.7 in standard locations) 
-    for dir in $extra_dir /cygdrive/c/OpenSSL /usr/sfw \
-		/usr/local /usr /usr/pkg \
+    for dir in $extra_dir /cygdrive/c/OpenSSL \
+		/usr/local /usr/sfw /usr /usr/pkg \
 		/usr/local/openssl /usr/lib/openssl /usr/openssl \
 		/usr/local/ssl /usr/lib/ssl /usr/ssl
 	do
@@ -2514,7 +2619,19 @@ elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
 				is_real_ssl=no
 			fi
 		else
-			SSL_LIBDIR="$dir/lib"
+			if test "x$ARCH" = "xamd64" -o \
+				"x$ARCH" = "xppc64"; then
+				if test -f "$dir/lib64/libcrypto.a"; then
+					SSL_LIBDIR="$dir/lib64"
+				else
+					SSL_LIBDIR="$dir/lib"
+				fi
+			else	 
+				SSL_LIBDIR="$dir/lib"
+			fi
+		fi
+		if test '!' -f $SSL_LIBDIR/libcrypto.a; then
+			SSL_DYNAMIC_ONLY=yes
 		fi
 		SSL_BINDIR="$dir/bin"
 dnl 		Should one use EXEEXT or ac_exeext?
@@ -2565,6 +2682,8 @@ dnl 		Should one use EXEEXT or ac_exeext?
 		  SSL_LIB="/usr/lib"
 		  SSL_BINDIR="/usr/sbin"
 		  OPENSSL_CMD="$SSL_BINDIR/openssl"
+		  dnl OpenBSD requires us to link with -L and -l
+		  SSL_DYNAMIC_ONLY="yes" 
 		fi
 		;;
 	esac
@@ -2612,9 +2731,29 @@ if test "x$SSL_APP" != "x" ; then
       ],[
       AC_MSG_RESULT([yes])
       ssl_krb5_enabled=yes
+      if test -f $SSL_LIBDIR/libkrb5.a; then
+          SSL_LINK_WITH_KERBEROS=yes
+	  STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
+	  if test -f $SSL_LIBDIR/libkrb5support.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libk5crypto.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libresolv.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libcom_err.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
+	  fi
+      else
+	 SSL_LINK_WITH_KERBEROS=no
+	 STATIC_KERBEROS_LIBS=""
+      fi 	
       ],[
       AC_MSG_RESULT([no])
       ssl_krb5_enabled=no
+      SSL_WITH_KERBEROS=no
       ])
     CPPFLAGS=$old_CPPFLAGS
     SSL_KRB5_INCLUDE=

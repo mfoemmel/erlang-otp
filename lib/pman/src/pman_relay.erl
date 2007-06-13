@@ -15,11 +15,11 @@
 %% 
 %%     $Id$
 %%
-%%%----------------------------------------------------------------------
-%%% Purpose : Interface function to  relay calls (esp. trace calls) 
-%%%           to processes on other  nodes. Some of the calls
-%%%           are conditionally relayed.
-%%%----------------------------------------------------------------------
+%%----------------------------------------------------------------------
+%% Purpose : Interface function to  relay calls (esp. trace calls) 
+%%           to processes on other  nodes. Some of the calls
+%%           are conditionally relayed.
+%%----------------------------------------------------------------------
 
 -module(pman_relay).
 
@@ -41,7 +41,7 @@
 %% do the job for us 
 %% ---------------------------------------------------------------
 
-start(P) when pid(P), node(P) /= node() ->
+start(P) when is_pid(P), node(P)/=node() ->
     
     %% Remote supervision, relaying necessary
     

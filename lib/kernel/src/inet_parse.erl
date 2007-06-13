@@ -282,9 +282,9 @@ parse_file(File, Fn) ->
 
 parse_file(Fname, {fd,Fd}, Fn) ->
     parse_fd(Fname,Fd, 1, Fn, []);
-parse_file(Fname, {chars,Cs}, Fn) when list(Cs) ->
+parse_file(Fname, {chars,Cs}, Fn) when is_list(Cs) ->
     parse_cs(Fname, Cs, 1, Fn, []);
-parse_file(Fname, {chars,Cs}, Fn) when binary(Cs) ->
+parse_file(Fname, {chars,Cs}, Fn) when is_binary(Cs) ->
     parse_cs(Fname, binary_to_list(Cs), 1, Fn, []);
 parse_file(_, File, Fn) ->
     case file:open(File, [read]) of
@@ -349,17 +349,17 @@ get_line([C | Cs], Acc) -> get_line(Cs, [C|Acc]).
 %%
 %% Read a line
 %%
-read_line(Fd) when pid(Fd) -> io:get_line(Fd, '');
-read_line(Fd) when record(Fd, file_descriptor) ->
+read_line(Fd) when is_pid(Fd) -> io:get_line(Fd, '');
+read_line(Fd) when is_record(Fd, file_descriptor) ->
     collect_line(Fd, []).
 
 collect_line(Fd, Cs) ->
     case file:read(Fd, 80) of
-	{ok, Line} when binary(Line) ->
+	{ok, Line} when is_binary(Line) ->
 	    collect_line(Fd, size(Line), binary_to_list(Line), Cs);
 	{ok, Line} ->
 	    collect_line(Fd, length(Line), Line, Cs);
-	eof when Cs == [] ->
+	eof when Cs =:= [] ->
 	    eof;
 	eof -> reverse(Cs)
     end.    
@@ -430,9 +430,11 @@ is_dom_ldh(_) -> false.
 
 is_dom2([A,B,C,D]) ->
     case ?L2I(D) of
-	Di when integer(Di) ->
+	Di when is_integer(Di) ->
 	    case {?L2I(A),?L2I(B),?L2I(C)} of
-		{Ai,Bi,Ci} when integer(Ai),integer(Bi),integer(Ci) -> false;
+		{Ai,Bi,Ci} when is_integer(Ai),
+                                is_integer(Bi),
+                                is_integer(Ci) -> false;
 		_ -> true
 	    end;
 	_ -> true
@@ -446,7 +448,7 @@ is_dom2(_) ->
 %% Test ipv4 address or ipv6 address
 %% Return {ok, Address} | {error, Reason}
 %%
-address(Cs) when list(Cs) ->
+address(Cs) when is_list(Cs) ->
     case ipv4_address(Cs) of
 	{ok,IP} -> {ok,IP};
 	_ ->
@@ -534,7 +536,7 @@ ipv6_addr(Cs) ->
     ipv6_addr(x4(Cs), []).
 
 %% Before "::"
-ipv6_addr({Cs0,[]}, A) when length(A) == 7 ->
+ipv6_addr({Cs0,[]}, A) when length(A) =:= 7 ->
     ipv6_addr_done([tox(Cs0)|A]);
 ipv6_addr({Cs0,"::"}, A) when length(A) =< 6 ->
     ipv6_addr_done([tox(Cs0)|A], []);
@@ -542,7 +544,7 @@ ipv6_addr({Cs0,"::"++Cs1}, A) when length(A) =< 5 ->
     ipv6_addr(x4(Cs1), [tox(Cs0)|A], []);
 ipv6_addr({Cs0,":"++Cs1}, A) when length(A) =< 6 ->
     ipv6_addr(x4(Cs1), [tox(Cs0)|A]);
-ipv6_addr({Cs0,"."++Cs1}, A) when length(A) == 6 ->
+ipv6_addr({Cs0,"."++Cs1}, A) when length(A) =:= 6 ->
     ipv6_addr(d3(Cs1), A, [], [tod(Cs0)]).
 
 %% After "::"
@@ -554,7 +556,7 @@ ipv6_addr({Cs0,"."++Cs1}, A, B) when length(A)+length(B) =< 5 ->
     ipv6_addr(x4(Cs1), A, B, [tod(Cs0)]).
 
 %% After "."
-ipv6_addr({Cs0,[]}, A, B, C) when length(C) == 3 ->
+ipv6_addr({Cs0,[]}, A, B, C) when length(C) =:= 3 ->
     ipv6_addr_done(A, B, [tod(Cs0)|C]);
 ipv6_addr({Cs0,"."++Cs1}, A, B, C) when length(C) =< 2 ->
     ipv6_addr(d3(Cs1), A, B, [tod(Cs0)|C]).
@@ -584,7 +586,7 @@ tox(Cs) ->
 
 dup(0, _, L) ->
     L;
-dup(N, E, L) when integer(N), N >= 1 ->
+dup(N, E, L) when is_integer(N), N >= 1 ->
     dup(N-1, E, [E|L]);
 dup(N, E, L) ->
     erlang:fault(badarg, [N,E,L]).

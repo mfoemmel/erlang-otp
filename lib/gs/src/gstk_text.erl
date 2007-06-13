@@ -150,7 +150,7 @@ option(Option, Gstkid, _Canvas, DB, _AItem) ->
     case Option of
 	{anchor,         How} -> {s, [" -anchor ", gstk:to_ascii(How)]};
 	{fg,          Color} -> {s, [" -fi ", gstk:to_color(Color)]};
-	{font, Font} when tuple(Font) ->
+	{font, Font} when is_tuple(Font) ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    {s, [" -fo ", gstk_font:choose_ascii(DB,Font)]};
 	{justify,       How} -> {s, [" -j ", gstk:to_ascii(How)]};

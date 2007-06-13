@@ -37,7 +37,7 @@
 
 
 getserv(Port) when Port band 16#ffff =:= Port -> {ok, Port};
-getserv(Name) when atom(Name) ->
+getserv(Name) when is_atom(Name) ->
     inet:getservbyname(Name, sctp);
 getserv(_) ->
     {error,einval}.

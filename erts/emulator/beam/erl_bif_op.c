@@ -33,7 +33,7 @@
 #include "big.h"
 #include "dist.h"
 #include "erl_version.h"
-
+#include "erl_binary.h"
 
 BIF_RETTYPE and_2(BIF_ALIST_2)
 {
@@ -205,6 +205,14 @@ BIF_RETTYPE is_tuple_1(BIF_ALIST_1)
 }
 
 BIF_RETTYPE is_binary_1(BIF_ALIST_1)
+{
+    if (is_binary(BIF_ARG_1) && binary_bitsize(BIF_ARG_1) == 0) {
+	BIF_RET(am_true);
+    }
+    BIF_RET(am_false);
+}
+
+BIF_RETTYPE is_bitstr_1(BIF_ALIST_1)
 {
     if (is_binary(BIF_ARG_1)) {
 	BIF_RET(am_true);

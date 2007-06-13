@@ -141,7 +141,7 @@ get_mnesia_table_info([TabId | Tail], OwnersToHide, Acc) ->
 get_mnesia_owner_size(TabId) ->
     {OwnerPid, OwnerName} = 
 	case catch mnesia:table_info(TabId, owner) of
-	    Pid when pid(Pid) ->
+	    Pid when is_pid(Pid) ->
 		case lists:keysearch(registered_name, 1, process_info(Pid)) of
 		    false ->
 			{Pid, {notext}};
@@ -171,14 +171,14 @@ hidden_tables(mnesia, _SysTabHidden) ->
 
 
 get_tables(Node, KindOfTable, UnreadHidden, SysTabHidden,SortKey) ->
-    LocalNode = (Node == node()),
+    LocalNode = (Node =:= node()),
     Tables = 
 	case catch get_table_list(Node,LocalNode,KindOfTable,SysTabHidden) of
-	    Result when list(Result) ->
+	    Result when is_list(Result) ->
 		case UnreadHidden of 
 		    true ->
 			lists:filter(fun(H) ->
-					     element(?READABLE_ELEM, H) == true
+					     element(?READABLE_ELEM, H)
 				     end, 
 				     Result);
 		    _Other ->
@@ -258,7 +258,7 @@ get_ets_name_owner_protection(TabId) ->
 
 current_mnesia_tables(SysTabHidden) ->
     case catch get_table_list(node(), true, mnesia, SysTabHidden) of
-	Result when list(Result) ->
+	Result when is_list(Result) ->
 	    lists:map(fun(H) ->
 			      element(?NAME_ELEM, H)
 		      end,
@@ -318,7 +318,7 @@ analyze_error(Cause, Node, Table) ->
 
         {'EXIT', Reason} ->
             handle_error({unexpected_error,Reason}, Node, Table);
-        Error when tuple(Error) ->
+        Error when is_tuple(Error) ->
             handle_error({unexpected_error,Error}, Node, Table)
     end.
     
@@ -357,7 +357,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
      WinSize,Tables,Shortcuts,UnreadHidden,SysTabHidden,SortKey,Children) ->
     receive
 
-	{gs, Gridline, click, {grid,Readable}, [Col,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, click, {grid,Readable}, [Col,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),
 	    NewMarkedCell = mark_cell({Gridline, Col, Row}, MarkedCell, Readable),
 	    loop(KindOfTable,CurrNode,NewMarkedCell,GridLines,WinSize,Tables,Shortcuts,
@@ -370,7 +370,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 
 
-	{gs, Gridline, doubleclick, {grid,Data}, [?NAME_COL,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, doubleclick, {grid,Data}, [?NAME_COL,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),	    
 	    NewMarkedCell = mark_cell({Gridline, ?NAME_COL, Row}, undefined, Data),
 	    {Table, Name, Readable} = get_table_id(KindOfTable, Row, Tables),
@@ -387,7 +387,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    end;
 	    
 
-	{gs, Gridline, doubleclick, {grid,Data}, [?ID_COL,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, doubleclick, {grid,Data}, [?ID_COL,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),	    
 	    NewMarkedCell = mark_cell({Gridline, ?ID_COL, Row}, undefined, Data),
 	    {Table, Name, Readable} = get_table_id(KindOfTable, Row, Tables),
@@ -404,11 +404,11 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    end;
 	    
 
-	{gs, Gridline, doubleclick, {grid,Data}, [?INFO_COL,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, doubleclick, {grid,Data}, [?INFO_COL,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),	    
 	    NewMarkedCell = mark_cell({Gridline, ?INFO_COL, Row}, undefined, Data),
 	    {Table, _Name, _Readable} = get_table_id(KindOfTable, Row, Tables),
-	    case start_tv_info(Table, CurrNode, CurrNode == node(), KindOfTable, Children) of
+	    case start_tv_info(Table, CurrNode, CurrNode =:= node(), KindOfTable, Children) of
 		Children ->
 		    {FinalMarkedCell, NewTables, NewGridLines} = 
 			refresh_window(NewMarkedCell,Tables,KindOfTable,CurrNode,GridLines,
@@ -421,7 +421,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    end;
 
 
-	{gs, Gridline, doubleclick, {grid,Data}, [?PID_COL,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, doubleclick, {grid,Data}, [?PID_COL,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),	    
 	    NewMarkedCell = mark_cell({Gridline, ?PID_COL, Row}, undefined, Data),
 	    OwnerPid = element(?PID_ELEM, lists:nth(Row, Tables)),
@@ -430,7 +430,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,SortKey, NewChildren);
 
 
-	{gs, Gridline, doubleclick, {grid,Data}, [?PROCNAME_COL,Row,Text | _]} when Text /= "" ->
+	{gs, Gridline, doubleclick, {grid,Data}, [?PROCNAME_COL,Row,Text | _]} when Text =/= "" ->
 	    unmark_cell(MarkedCell, Tables),	    
 	    NewMarkedCell = mark_cell({Gridline, ?PROCNAME_COL, Row}, undefined, Data),
 	    OwnerPid = element(?PID_ELEM, lists:nth(Row, Tables)),
@@ -441,7 +441,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 
 %%	{gs, win, configure, _Data, [Width, Height | _]} when {Width,Height} /= WinSize ->
 	Msg0 = {gs, win, configure, _Data, [Width0, Height0 | _]} 
-	when {Width0,Height0} /= WinSize ->
+	when {Width0,Height0} =/= WinSize ->
 	    {gs, win, configure, _, [Width,Height|_]} = flush_msgs(Msg0),
 
 	    NewSize = resize_window(Width, Height, length(Tables)),
@@ -488,7 +488,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 
 
-	{gs, _Id, click, show_mnesia, _Args} when KindOfTable == ets ->
+	{gs, _Id, click, show_mnesia, _Args} when KindOfTable =:= ets ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    gs:config(label2, [{fg, ?DISABLED_COLOR}]),
@@ -508,7 +508,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,NewSortKey,Children);
 
 
-	{gs, _Id, click, show_ets, _Args} when KindOfTable == mnesia ->
+	{gs, _Id, click, show_ets, _Args} when KindOfTable =:= mnesia ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    gs:config(label2, [{fg, ?NORMAL_FG_COLOR}]),
@@ -524,7 +524,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,SortKey,Children);
 	    
 
-	{gs, _Id, click, show_system, _Args} when SysTabHidden == true ->
+	{gs, _Id, click, show_system, _Args} when SysTabHidden ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} 
@@ -535,7 +535,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,false,SortKey,Children);
 
 
-	{gs, _Id, click, hide_system, _Args} when SysTabHidden == false ->
+	{gs, _Id, click, hide_system, _Args} when not SysTabHidden ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -547,7 +547,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,true,SortKey,Children);
 
 
-	{gs, _Id, click, show_unreadable, _Args} when UnreadHidden == true ->
+	{gs, _Id, click, show_unreadable, _Args} when UnreadHidden ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} 
@@ -558,7 +558,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 false,SysTabHidden,SortKey,Children);
 
 
-	{gs, _Id, click, hide_unreadable, _Args} when UnreadHidden == false ->
+	{gs, _Id, click, hide_unreadable, _Args} when not UnreadHidden ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -573,7 +573,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	{gs, _Id, click, show_info, _Args} ->
 	    {Table, _Name, _Readable} = get_table_id(KindOfTable, element(3,MarkedCell),
 					      Tables),
-	    case start_tv_info(Table, CurrNode, CurrNode == node(), KindOfTable, Children) of
+	    case start_tv_info(Table, CurrNode, CurrNode =:= node(), KindOfTable, Children) of
 		Children ->
 		    {NewMarkedCell, NewTables, NewGridLines} = 
 			refresh_window(MarkedCell,Tables,KindOfTable,CurrNode,GridLines,
@@ -586,7 +586,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    end;
 
 
-	{gs, _Id, click, sort_table_name, _Args} when SortKey /= ?NAME_ELEM ->
+	{gs, _Id, click, sort_table_name, _Args} when SortKey =/= ?NAME_ELEM ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -596,7 +596,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,?NAME_ELEM,Children);
 	
 
-	{gs, _Id, click, sort_table_id, _Args} when SortKey /= ?ID_ELEM ->
+	{gs, _Id, click, sort_table_id, _Args} when SortKey =/= ?ID_ELEM ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -606,7 +606,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,?ID_ELEM,Children);
 		    
 
-	{gs, _Id, click, sort_owner_name, _Args} when SortKey /= ?PROCNAME_ELEM ->
+	{gs, _Id, click, sort_owner_name, _Args} when SortKey =/= ?PROCNAME_ELEM ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -617,7 +617,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 		 UnreadHidden,SysTabHidden,?PROCNAME_ELEM,Children);
 	
 
-	{gs, _Id, click, sort_owner_pid, _Args} when SortKey /= ?PID_ELEM ->
+	{gs, _Id, click, sort_owner_pid, _Args} when SortKey =/= ?PID_ELEM ->
 	    gs:config(win, [{cursor,busy}]),
 	    NewMarkedCell = unmark_cell(MarkedCell, Tables),
 	    {NewTables, NewGridLines} = 
@@ -781,7 +781,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 	    
 
 	{tv_new_table, NewTabWinPid, Node, Name, Options, KindOfTableToCreate, _Readable, false} ->
-	    case create_table(KindOfTableToCreate, Node, Node == node(), Name, Options, 
+	    case create_table(KindOfTableToCreate, Node, Node =:= node(), Name, Options, 
 			      NewTabWinPid) of
 		error ->
 		    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize, 
@@ -800,7 +800,7 @@ loop(KindOfTable,CurrNode,MarkedCell,GridLines,
 
 	
 	{tv_new_table, NewTabWinPid, Node, Name, Options, KindOfTableToCreate, Readable, true} ->
-	    case create_table(KindOfTableToCreate, Node, Node == node(), Name, Options, 
+	    case create_table(KindOfTableToCreate, Node, Node =:= node(), Name, Options, 
 			      NewTabWinPid) of
 		error ->
 		    loop(KindOfTable,CurrNode,MarkedCell,GridLines,WinSize, 
@@ -985,13 +985,13 @@ handle_keypress(show_info,KindOfTable,CurrNode,MarkedCell,GridLines,
 	case MarkedCell of
 	    {_Id, ?NAME_COL, Row} ->
 		{Table, _Name, _Readable} = get_table_id(KindOfTable, Row, Tables),
-		start_tv_info(Table, CurrNode, CurrNode == node(), KindOfTable, Children);
+		start_tv_info(Table, CurrNode, CurrNode =:= node(), KindOfTable, Children);
 	    {_Id, ?ID_COL, Row} ->
 		{Table, _Name, _Readable} = get_table_id(KindOfTable, Row, Tables),
-		start_tv_info(Table, CurrNode, CurrNode == node(), KindOfTable, Children);
+		start_tv_info(Table, CurrNode, CurrNode =:= node(), KindOfTable, Children);
 	    {_Id, ?INFO_COL, Row} ->
 		{Table, _Name, _Readable} = get_table_id(KindOfTable, Row, Tables),
-		start_tv_info(Table, CurrNode, CurrNode == node(), KindOfTable, Children);
+		start_tv_info(Table, CurrNode, CurrNode =:= node(), KindOfTable, Children);
 	    _OtherCell ->
 		Children
 	end,
@@ -1071,7 +1071,7 @@ get_table_id(ets, Row, Tables) ->
 replace_node_name('nonode@nohost', 'nonode@nohost') ->
        %% Still undistributed...
     false;
-replace_node_name(_Node, _OldNode) when node() == 'nonode@nohost' ->
+replace_node_name(_Node, _OldNode) when node() =:= 'nonode@nohost' ->
        %% No longer distributed, but previously was!
     true;
 replace_node_name(_Node, 'nonode@nohost') ->
@@ -1082,7 +1082,7 @@ replace_node_name(_Node, _OldNode) ->
 
 
 
-update_node_name(Children) when node() == 'nonode@nohost' ->
+update_node_name(Children) when node() =:= 'nonode@nohost' ->
        %% We have been distributed, but no longer are!
        %% We change all node names stored to 'nonode@nohost'!
        %% This works because we *will* receive exit signals
@@ -1138,7 +1138,7 @@ update_tv_browser(Children) ->
 
 
 get_tv_info_pid(TabId,Node,Children) ->
-    TvInfoChildren = [X || X <- Children, element(2,X) == tv_info],
+    TvInfoChildren = [X || X <- Children, element(2,X) =:= tv_info],
     case lists:keysearch({TabId,Node}, 3, TvInfoChildren) of
 	{value, {Pid, tv_info, {_Table,Node}}} ->
 	    Pid;
@@ -1161,18 +1161,18 @@ start_tv_browser(Tab,Node,_Name,KindOfTable,false,Children) ->
 		   "will remain unknown."],
 	    tv_utils:notify(win, "TV Notification", Msg)
     end,
-    start_tv_info(Tab, Node, Node == node(), KindOfTable, Children);
+    start_tv_info(Tab, Node, Node =:= node(), KindOfTable, Children);
 start_tv_browser(Table,Node,Name,KindOfTable,_Readable,Children) ->
-    TvBrowserChildren = [X || X <- Children, element(2,X) == tv_browser],
+    TvBrowserChildren = [X || X <- Children, element(2,X) =:= tv_browser],
     case lists:keysearch({Table,Node}, 3, TvBrowserChildren) of
 	{value, {BPid,tv_browser,{Table,Node}}} ->
 	    BPid ! raise,
 	    Children;
 	_Other ->
 	       %% Check that table still exists!
-	    case table_still_there(KindOfTable, Node, Node == node(), Table, Name) of
+	    case table_still_there(KindOfTable, Node, Node =:= node(), Table, Name) of
 		true ->
-		    LocalNode = (Node == node()),
+		    LocalNode = (Node =:= node()),
 		    NewBPid = tv:start_browser(Node, LocalNode, Table, KindOfTable, Name, 
 					       get(error_msg_mode)),
 		    [{NewBPid, tv_browser, {Table,Node}} | Children];
@@ -1198,7 +1198,7 @@ start_tv_browser(Table,Node,Name,KindOfTable,_Readable,Children) ->
 
 table_still_there(ets, Node, LocalNode, Table, Name) ->
     case catch tv_ets_rpc:all(Node, LocalNode) of
-	Tables when list(Tables) ->
+	Tables when is_list(Tables) ->
 	    case lists:member(Table, Tables) of   
 		true ->
 		    true;
@@ -1211,7 +1211,7 @@ table_still_there(ets, Node, LocalNode, Table, Name) ->
     end;
 table_still_there(mnesia, Node, LocalNode, Table, Name) ->
     case catch tv_mnesia_rpc:system_info(Node, LocalNode, tables) of
-	Tables when list(Tables) ->
+	Tables when is_list(Tables) ->
 	    lists:member(Name, Tables);
 	Error ->
 	    analyze_error(Error, Node, Table),
@@ -1224,7 +1224,7 @@ table_still_there(mnesia, Node, LocalNode, Table, Name) ->
 
 
 start_tv_info(Table, Node, LocalNode, KindOfTable, Children) ->
-    TvInfoChildren = [X || X <- Children, element(2,X) == tv_info],
+    TvInfoChildren = [X || X <- Children, element(2,X) =:= tv_info],
     case lists:keysearch({Table,Node}, 3, TvInfoChildren) of
 	{value, {Pid,tv_info,{Table,Node}}} ->
 	    Pid ! #info_raise_window{sender = self()},
@@ -1243,7 +1243,7 @@ start_tv_info(Table, Node, LocalNode, KindOfTable, Children) ->
 
 
 start_tv_new_table(CurrNode, Children) ->
-    TvNewTableChild = [X || X <- Children, element(2,X) == tv_new_table],
+    TvNewTableChild = [X || X <- Children, element(2,X) =:= tv_new_table],
     case TvNewTableChild of
 	[{Pid,tv_new_table,undefined}] ->
 	    Pid ! raise,
@@ -1311,7 +1311,7 @@ unmark_cell({Id, Col, Row}, Tables) ->
     
     FgColor = 
 	case NamedTable of
-	    false when Col == ?NAME_COL ->
+	    false when Col =:= ?NAME_COL ->
 		?UNNAMED_FG_COLOR;
 	    _Other2 ->
 		?NORMAL_FG_COLOR
@@ -1666,7 +1666,7 @@ create_menulist([], _Menu, _MaxLength) ->
 create_menulist([{Text, Type, Data, AccCharPos, ShortcutChar} | Rest], Menu, MaxLength) ->
     ShortcutCapitalChar = 
 	if
-	    ShortcutChar == no_char ->
+	    ShortcutChar =:= no_char ->
 		no_char;
 	    true ->
 		CharAsciiValue   = lists:nth(1, atom_to_list(ShortcutChar)),
@@ -1675,7 +1675,7 @@ create_menulist([{Text, Type, Data, AccCharPos, ShortcutChar} | Rest], Menu, Max
 	end,
     
     FinalText = if 
-		    ShortcutChar == no_char ->
+		    ShortcutChar =:= no_char ->
 			Text;
 		    true ->
 			Text ++ lists:duplicate(MaxLength - length(Text), " ") ++ 
@@ -1755,7 +1755,7 @@ config_gridline(LineId, TabTuple) ->
 				 case element(Elem, TabTuple) of
 				     {notext} ->
 					 {text, {Col, ""}};
-				     Other when Elem == ?NAME_ELEM ->
+				     Other when Elem =:= ?NAME_ELEM ->
 					 case NamedTable of
 					     false ->
 						 {text, {Col, " " ++ 

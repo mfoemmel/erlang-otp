@@ -293,7 +293,7 @@ fix_def_for_container([],_) -> [].
 %% -----------------------------------------------------------------
 %%  lookup things
 
-lookup_gstkid(DB, Name, Owner) when atom(Name) ->
+lookup_gstkid(DB, Name, Owner) when is_atom(Name) ->
     ID = lookup(DB, {Owner, Name}),
     lookup(DB, ID);
 
@@ -301,7 +301,7 @@ lookup_gstkid(DB, ID, _Owner) ->
     lookup(DB, ID).
 
 
-lookup_gstkid(_DB, Name) when atom(Name) ->
+lookup_gstkid(_DB, Name) when is_atom(Name) ->
     exit({'must use owner',Name});
 
 lookup_gstkid(DB, ID) ->

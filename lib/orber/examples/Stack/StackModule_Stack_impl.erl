@@ -2,7 +2,7 @@
 
 -module('StackModule_Stack_impl').
 -include_lib("orber/include/corba.hrl").
--include_lib("orber/examples/Stack/StackModule.hrl").
+-include("StackModule.hrl").
 -export([pop/1, push/2, empty/1, init/1, terminate/2]).
 
 

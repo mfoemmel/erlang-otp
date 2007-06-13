@@ -28,7 +28,7 @@
 
 %% The average number of tuples that a call of G will return
 
-output_size(P, BoundVars) when record(P,pred_sym), P#pred_sym.type==table ->
+output_size(P, BoundVars) when is_record(P,pred_sym), P#pred_sym.type==table ->
     {Card, Image, MaxSel} = mnemosyne_catalog:image(P#pred_sym.functor),
     if  MaxSel == 0 -> 0; %% ????
 	true ->
@@ -43,7 +43,7 @@ output_size(P, BoundVars) ->
 
 %% Cost = f(estimated_selectivity)
 
-selective_cost(P, BoundVars) when record(P,pred_sym) ->
+selective_cost(P, BoundVars) when is_record(P,pred_sym) ->
     case P#pred_sym.type of
 	rule when P#pred_sym.recursive==recursive -> 
 	    {5, 0, bound_factor(P,BoundVars)};
@@ -57,7 +57,7 @@ selective_cost({'#not',C,NGs}, BoundVars) ->
 	[] -> {4,length(NGs),0};
 	N ->  {6,length(NGs),length(N)}
     end;
-selective_cost(E, BoundVars) when record(E,erl_expr) ->
+selective_cost(E, BoundVars) when is_record(E,erl_expr) ->
     {1,0,0}.
 
 

@@ -22,7 +22,7 @@
 
 -export([constants/0, mark_dirty/1, read_file_header/2,
          check_file_header/2, do_perform_save/1, initiate_file/11,
-         prep_table_copy/9, init_freelist/2, fsck_input/4,
+         init_freelist/2, fsck_input/4,
          bulk_input/3, output_objs/4, write_cache/1, may_grow/3,
          find_object/2, re_hash/2, slot_objs/2, scan_objs/8,
          db_hash/2, no_slots/1, table_parameters/1]).
@@ -163,6 +163,10 @@
 %% (former versions use erlang:hash).
 %% Version 8(b) files are only converted to version 8(c) if repair is
 %% done, so we need compatability with 8(b) for a _long_ time.
+%%
+%% There are known bugs due to the fact that keys and objects are
+%% sometimes compared (==) and sometimes matched (=:=). The version
+%% used by default (9, see dets_v9.erl) does not have this problem.
 
 -define(NOT_PROPERLY_CLOSED,0).
 -define(CLOSED_PROPERLY,1).
@@ -202,9 +206,6 @@ mark_dirty(Head) ->
     dets_utils:sync(Head),
     dets_utils:position(Head, Head#head.freelists_p),
     dets_utils:truncate(Head, cur).
-
-prep_table_copy(_Fd, _Tab, _Fname, _Type, _Kp, _Ram, _Cache, _Auto, _Parms) ->
-    throw(badarg).
 
 %% -> {ok, head()} | throw(Error)
 initiate_file(Fd, Tab, Fname, Type, Kp, MinSlots, MaxSlots, 
@@ -350,11 +351,11 @@ read_file_header(Fd, FileName) ->
 check_file_header(FH, Fd) ->
     Test = 
 	if
-	    FH#fileheader.cookie /= ?MAGIC ->
+	    FH#fileheader.cookie =/= ?MAGIC ->
 		{error, not_a_dets_file};
-	    FH#fileheader.type == badtype ->
+	    FH#fileheader.type =:= badtype ->
 		{error, invalid_type_code};
-	    FH#fileheader.version /= ?FILE_FORMAT_VERSION -> 
+	    FH#fileheader.version =/= ?FILE_FORMAT_VERSION -> 
 		case lists:member(FH#fileheader.version,
                                   ?CAN_BUMP_BY_REPAIR) of
 		    true ->
@@ -362,9 +363,9 @@ check_file_header(FH, Fd) ->
 		    false ->
 			{error, bad_version}
 		end;
-	    FH#fileheader.trailer /= FH#fileheader.eof ->
+	    FH#fileheader.trailer =/= FH#fileheader.eof ->
 		{error, not_closed};
-	    FH#fileheader.closed_properly == ?CLOSED_PROPERLY ->
+	    FH#fileheader.closed_properly =:= ?CLOSED_PROPERLY ->
 		case lists:member(FH#fileheader.version,
 				  ?CAN_CONVERT_FREELIST) of
 		    true ->
@@ -372,17 +373,17 @@ check_file_header(FH, Fd) ->
 		    false ->
 			{error, not_closed} % should not happen
 		end;
-	    FH#fileheader.closed_properly == ?CLOSED_PROPERLY2 ->
+	    FH#fileheader.closed_properly =:= ?CLOSED_PROPERLY2 ->
 		{ok, true, hash};
-	    FH#fileheader.closed_properly == 
+	    FH#fileheader.closed_properly =:= 
 	          ?CLOSED_PROPERLY2_NEED_COMPACTING  ->
 		{ok, need_compacting, hash};
-	    FH#fileheader.closed_properly == ?CLOSED_PROPERLY_NEW_HASH ->
+	    FH#fileheader.closed_properly =:= ?CLOSED_PROPERLY_NEW_HASH ->
 		{ok, true, phash};
-	    FH#fileheader.closed_properly == 
+	    FH#fileheader.closed_properly =:= 
 	         ?CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING  ->
 		{ok, need_compacting, phash};
-	    FH#fileheader.closed_properly == ?NOT_PROPERLY_CLOSED ->
+	    FH#fileheader.closed_properly =:= ?NOT_PROPERLY_CLOSED ->
 		{error, not_closed};
 	    FH#fileheader.closed_properly > 
 	         ?CLOSED_PROPERLY_NEW_HASH_NEED_COMPACTING ->
@@ -445,7 +446,8 @@ bulk_input(Head, InitFun, Cntrs, Ref) ->
 	    case catch {Ref, InitFun(read)} of
 		{Ref, end_of_input} ->
 		    end_of_input;
-		{Ref, {L0, NewInitFun}} when list(L0), function(NewInitFun) ->
+		{Ref, {L0, NewInitFun}} when is_list(L0), 
+                                             is_function(NewInitFun) ->
 		    Kp = Head#head.keypos,
 		    case catch bulk_objects(L0, Head, Cntrs, Kp, []) of
 			{'EXIT', _Error} ->
@@ -721,7 +723,7 @@ count_input(_Cntrs, [], L) ->
 
 count_object(Cntrs, LogSz) ->
     case catch ets:update_counter(Cntrs, LogSz, 1) of
-	N when integer(N) -> ok;
+	N when is_integer(N) -> ok;
 	_Badarg -> true = ets:insert(Cntrs, {LogSz, 1})
     end.
 
@@ -982,7 +984,7 @@ re_hash_link([], _LastOld, _LastNew, _LastInNew, Ws) ->
 insert_new([{NewSlotPos,_4} | Rs], [<<P:32>> = PB | Bins], [N | Ns], Ws) ->
     {FirstNew, LastNew, LastInNew} = N,
     Ws1 = case P of
-	      0 when LastInNew == true ->
+	      0 when LastInNew ->
 		  Ws;
 	      0 ->
 		  [{LastNew, <<0:32>>} | Ws];
@@ -1046,20 +1048,20 @@ wl([{_Seq, {delete_object, Object}} | Cs], Type, Del, Lookup, I, Objs) ->
     NObjs = lists:keydelete(Object, 1, Objs),
     wl(Cs, Type, Del, Lookup, I, [{Object,0} | NObjs]);
 wl([{_Seq, {insert, Object}} | Cs], Type, _Del, Lookup, _I, _Objs) 
-                    when Type == set ->
+                    when Type =:= set ->
     wl(Cs, Type, delete, Lookup, 1, [{Object,-1}]);
 wl([{_Seq, {insert, Object}} | Cs], Type, Del, Lookup, _I, Objs) ->
     NObjs = 
 	case lists:keysearch(Object, 1, Objs) of
 	    {value, {_, 0}} ->
 		lists:keyreplace(Object, 1, Objs, {Object,-1});
-	    {value, {_, _C}} when Type == bag -> % C == 1; C == -1
+	    {value, {_, _C}} when Type =:= bag -> % C =:= 1; C =:= -1
 		Objs;
-	    {value, {_, C}} when C < 0 -> % when Type == duplicate_bag
+	    {value, {_, C}} when C < 0 -> % when Type =:= duplicate_bag
 		lists:keyreplace(Object, 1, Objs, {Object,C-1});
-	    {value, {_, C}} -> % when C > 0, Type == duplicate_bag
+	    {value, {_, C}} -> % when C > 0, Type =:= duplicate_bag
 		lists:keyreplace(Object, 1, Objs, {Object,C+1});
-	    false when Del == delete ->
+	    false when Del =:= delete ->
 		[{Object, -1} | Objs];
 	    false ->
 		[{Object, 1} | Objs]
@@ -1161,8 +1163,7 @@ chain(Head, Slot) ->
 %% -> {Head, [LookedUpObject], pwrite_list()} | throw({Head, Error})
 eval_work_list(Head, WorkLists) ->
     SWLs = tag_with_slot(WorkLists, Head, []),
-    R1 = sofs:relation(SWLs, 2),
-    P1 = sofs:to_external(sofs:relation_to_family(R1)),
+    P1 = dets_utils:family(SWLs), 
     {PerSlot, SlotPositions} = remove_slot_tag(P1, [], []),
     {ok, Bins} = dets_utils:pread(SlotPositions, Head),
     first_object(PerSlot, SlotPositions, Bins, Head, [], [], [], []).
@@ -1244,9 +1245,9 @@ eval_first([<<Next:32, Sz:32, _Status:32, Bin/binary>> | Bins],
 eval_first([], [], _Head, Ls, LU) ->
     {ok, Ls, LU}.
 
-eval_slot(_Head, _TrySize, Pos, [], L, LU) when Pos =:= 0 ->
+eval_slot(_Head, _TrySize, _Pos=0, [], L, LU) ->
     {L, LU};
-eval_slot(Head, _TrySize, Pos, [WL | WLs], L, LU) when Pos =:= 0 ->
+eval_slot(Head, _TrySize, Pos=0, [WL | WLs], L, LU) ->
     {_Key, {_Delete, LookUp, Objects}} = WL,
     {NL, NLU} = end_of_key(Objects, LookUp, L, []),
     eval_slot(Head, ?ReadAhead, Pos, WLs, NL, NLU++LU);
@@ -1269,7 +1270,7 @@ find_key(Head, Pos, NextPos, Size, Term, Key, WLs, L, LU) ->
     end.
 
 eval_key(_Key, _Delete, Lookup, _Objects, Head, Pos, WLs, L, LU, LUK) 
-                            when Head#head.type == set ->
+                            when Head#head.type =:= set ->
     NLU = case Lookup of
 	      {lookup, Pid} -> [{Pid,LUK} | LU];
 	      skip -> LU
@@ -1299,21 +1300,21 @@ eval_object(Size, Term, Delete, LookUp, Objects, Head, Pos, L, LU) ->
 	{value, {_Object, N}} when N =:= 0 ->
 	    L1 = [{delete,Pos,Size} | L],
 	    {Objects, L1, LU};
-	{value, {_Object, N}} when N < 0, Type == set ->
+	{value, {_Object, N}} when N < 0, Type =:= set ->
 	    L1 = [{old,Pos} | L],
 	    wl_lookup(LookUp, Objects, Term, L1, LU);
-	{value, {Object, _N}} when Type == bag -> % when N == 1; N == -1
+	{value, {Object, _N}} when Type =:= bag -> % when N =:= 1; N =:= -1
 	    L1 = [{old,Pos} | L],
 	    Objects1 = lists:keydelete(Object, 1, Objects),
 	    wl_lookup(LookUp, Objects1, Term, L1, LU);
-	{value, {Object, N}} when N < 0, Type == duplicate_bag ->
+	{value, {Object, N}} when N < 0, Type =:= duplicate_bag ->
 	    L1 = [{old,Pos} | L],
 	    Objects1 = lists:keyreplace(Object, 1, Objects, {Object,N+1}),
 	    wl_lookup(LookUp, Objects1, Term, L1, LU);
-	{value, {_Object, N}} when N > 0, Type == duplicate_bag ->
+	{value, {_Object, N}} when N > 0, Type =:= duplicate_bag ->
 	    L1 = [{old,Pos} | L],
 	    wl_lookup(LookUp, Objects, Term, L1, LU);
-	false when Type == set, Delete == delete ->
+	false when Type =:= set, Delete =:= delete ->
 	    case lists:keysearch(-1, 2, Objects) of
 		false -> % no inserted object, perhaps deleted objects
 		    L1 = [{delete,Pos,Size} | L],
@@ -1323,22 +1324,22 @@ eval_object(Size, Term, Delete, LookUp, Objects, Head, Pos, L, LU) ->
 		    NSize = size(Bin2),
 		    Overwrite = 
 			if
-			    NSize == Size ->
+			    NSize =:= Size ->
 				true;
 			    true ->
 				SizePos = sz2pos(Size+?OHDSZ),
 				NSizePos = sz2pos(NSize+?OHDSZ),
-				SizePos == NSizePos
+				SizePos =:= NSizePos
 			end,
 		    E = if 
-			    Overwrite == true ->
+			    Overwrite ->
 				{overwrite,Bin2,Pos};
 			    true ->
 				{replace,Bin2,Pos,Size}
 			end,
 		    wl_lookup(LookUp, [], Term2, [E | L], LU)
 	    end;
-	false when Delete == delete ->
+	false when Delete =:= delete ->
 	    L1 = [{delete,Pos,Size} | L],
 	    {Objects, L1, LU};
 	false ->
@@ -1481,7 +1482,7 @@ scan_skip(_Bin, From, _To, Skip, L, Ts, R) -> % when From + Skip > _To
     From1 = From + Skip,
     {more, From1, From1, L, Ts, R, 0}.
 
-scan_next_allocated(_Bin, _From, To, L = <<>>, Ts, R) ->
+scan_next_allocated(_Bin, _From, To, <<>>=L, Ts, R) ->
     {more, To, To, L, Ts, R, 0};
 scan_next_allocated(Bin, From0, _To, <<From:32, To:32, L/binary>>, Ts, R) ->
     Skip = From - From0,
@@ -1513,9 +1514,9 @@ file_info(FH) ->
     if
         CP =:= 0 ->
             {error, not_closed};
-        FH#fileheader.cookie /= ?MAGIC ->
+        FH#fileheader.cookie =/= ?MAGIC ->
             {error, not_a_dets_file};
-        FH#fileheader.version /= ?FILE_FORMAT_VERSION ->
+        FH#fileheader.version =/= ?FILE_FORMAT_VERSION ->
             {error, bad_version};
         true ->
             {ok, [{closed_properly,CP},{keypos,Kp},{m, M},

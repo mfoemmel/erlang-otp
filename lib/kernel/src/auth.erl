@@ -282,9 +282,9 @@ make_error(Name, Reason) ->
 
 %% Verifies that only the owner can access the cookie file.
 
-check_attributes(Name, Type, _Mode, _Os) when Type /= regular ->
+check_attributes(Name, Type, _Mode, _Os) when Type =/= regular ->
     {error, "Cookie file " ++ Name ++ " is of type " ++ Type};
-check_attributes(Name, _Type, Mode, {unix, _}) when (Mode band 8#077) /= 0 ->
+check_attributes(Name, _Type, Mode, {unix, _}) when (Mode band 8#077) =/= 0 ->
     {error, "Cookie file " ++ Name ++ " must be accessible by owner only"};
 check_attributes(_Name, _Type, _Mode, _Os) ->
     ok.

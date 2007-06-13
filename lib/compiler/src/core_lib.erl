@@ -20,9 +20,10 @@
 -module(core_lib).
 
 -export([get_anno/1,set_anno/2]).
--export([is_atomic/1,is_literal/1,is_literal_list/1,
+-export([is_literal/1,is_literal_list/1,
 	 is_simple/1,is_simple_list/1,is_simple_top/1]).
--export([literal_value/1,make_literal/1]).
+-export([literal_value/1,make_literal/1,make_literal_list/1]).
+-export([concrete_list/1]).
 -export([make_values/1]).
 -export([map/2, fold/3, mapfold/3]).
 -export([is_var_used/2]).
@@ -39,12 +40,6 @@
 get_anno(C) -> element(2, C).
 set_anno(C, A) -> setelement(2, C, A).
 
-%% is_atomic(Expr) -> true | false.
-
-is_atomic(#c_literal{val=V}) -> not is_tuple(V);
-is_atomic(#c_fname{}) -> true;
-is_atomic(_) -> false.
-
 %% is_literal(Expr) -> true | false.
 
 is_literal(#c_literal{}) -> true;
@@ -55,7 +50,8 @@ is_literal(#c_cons{hd=H,tl=T}) ->
     end;
 is_literal(#c_tuple{es=Es}) -> is_literal_list(Es);
 is_literal(#c_binary{segments=Es}) -> is_lit_bin(Es);
-is_literal(E) -> is_atomic(E).
+is_literal(#c_fname{}) -> true;
+is_literal(_) -> false.
 
 is_literal_list(Es) -> lists:all(fun is_literal/1, Es).
 
@@ -67,6 +63,7 @@ is_lit_bin(Es) ->
 %% is_simple(Expr) -> true | false.
 
 is_simple(#c_var{}) -> true;
+is_simple(#c_literal{}) -> true;
 is_simple(#c_cons{hd=H,tl=T}) ->
     case is_simple(H) of
 	true -> is_simple(T); 
@@ -74,7 +71,8 @@ is_simple(#c_cons{hd=H,tl=T}) ->
     end;
 is_simple(#c_tuple{es=Es}) -> is_simple_list(Es);
 is_simple(#c_binary{segments=Es}) -> is_simp_bin(Es);
-is_simple(E) -> is_atomic(E).
+is_simple(#c_fname{}) -> true;
+is_simple(_) -> false.
 
 is_simple_list(Es) -> lists:all(fun is_simple/1, Es).
 
@@ -90,7 +88,9 @@ is_simple_top(#c_var{}) -> true;
 is_simple_top(#c_cons{}) -> true;
 is_simple_top(#c_tuple{}) -> true;
 is_simple_top(#c_binary{}) -> true;
-is_simple_top(E) -> is_atomic(E).
+is_simple_top(#c_literal{}) -> true;
+is_simple_top(#c_fname{}) -> true;
+is_simple_top(_) -> false.
 
 %% literal_value(LitExpr) -> Value.
 %%  Return the value of LitExpr.
@@ -116,7 +116,9 @@ literal_value_bin(#c_bitstr{val=Val,size=Sz,unit=U,type=T,flags=Fs}) ->
     literal_value(Val).
 
 %% make_literal(Value) -> LitExpr.
-%%  Make a literal expression from an Erlang value.
+%%  Make a literal expression from an Erlang value. This function
+%%  will fail if the value is not expressable as a literal
+%%  (for instance, a pid).
 
 make_literal([]) -> #c_literal{val=[]};
 make_literal([H0|T0]) ->
@@ -136,10 +138,10 @@ make_literal(T0) when is_tuple(T0) ->
 	true -> #c_literal{val=list_to_tuple(concrete_list(T))}
     end;
 make_literal(Bs) when is_binary(Bs) ->
-    Template = #c_bitstr{type=make_literal(integer),size=make_literal(8),
-			 unit=make_literal(1),flags=make_literal([unsigned,big])},
-    Es = [Template#c_bitstr{val=make_literal(B)} || B <- binary_to_list(Bs)],
-    #c_binary{segments=Es}.
+    case erlang:bitsize(Bs) of
+	Bitsize when Bitsize rem 8 =:= 0 ->
+	    #c_literal{val=Bs}
+    end.
 
 make_literal_list(Vals) -> lists:map(fun make_literal/1, Vals). 
 
@@ -179,9 +181,7 @@ map(F, #c_alias{var=Var, pat=Pat}=R) ->
 		pat=map(F, Pat)});
 
 map(F, #c_module{defs=Defs}=R) ->
-    F(R#c_module{defs=map_list(F, Defs)});
-map(F, #c_def{val=Val}=R) ->
-    F(R#c_def{val=map(F, Val)});
+    F(R#c_module{defs=map_def_list(F, Defs)});
 
 map(F, #c_fun{vars=Vars, body=Body}=R) ->
     F(R#c_fun{vars=map_list(F, Vars),
@@ -191,7 +191,7 @@ map(F, #c_let{vars=Vs, arg=Arg, body=Body}=R) ->
 	      arg=map(F, Arg), 
 	      body=map(F, Body)});
 map(F, #c_letrec{defs=Fs,body=Body}=R) ->
-    F(R#c_letrec{defs=map_list(F, Fs),
+    F(R#c_letrec{defs=map_def_list(F, Fs),
 		 body=map(F, Body)});
 map(F, #c_seq{arg=Arg, body=Body}=R) ->
     F(R#c_seq{arg=map(F, Arg),
@@ -229,6 +229,11 @@ map(F, T) -> F(T).				%Atomic nodes.
 
 map_list(F, L) -> lists:map(fun (E) -> map(F, E) end, L).
 
+map_def_list(F, L) ->
+    lists:map(fun ({N,V}) -> {N,map(F, V)} end, L).
+					
+    
+
 %% fold(FoldFun, Accumulator, CoreExpr) -> Accumulator.
 %%  This function traverses the core parse format, at each level
 %%  applying the submited argument function, assumed to do the real
@@ -246,16 +251,14 @@ fold(F, Acc, #c_alias{pat=P,var=V}=R) ->
     F(R, fold(F, fold(F, Acc, P), V));
 
 fold(F, Acc, #c_module{defs=Defs}=R) ->
-    F(R, fold_list(F, Acc, Defs));
-fold(F, Acc, #c_def{val=Val}=R) ->
-    F(R, fold(F, Acc, Val));
+    F(R, fold_def_list(F, Acc, Defs));
 
 fold(F, Acc, #c_fun{vars=Vars, body=Body}=R) ->
     F(R, fold(F, fold_list(F, Acc, Vars), Body));
 fold(F, Acc, #c_let{vars=Vs, arg=Arg, body=Body}=R) ->
     F(R, fold(F, fold(F, fold_list(F, Acc, Vs), Arg), Body));
 fold(F, Acc, #c_letrec{defs=Fs,body=Body}=R) ->
-    F(R, fold(F, fold_list(F, Acc, Fs), Body));
+    F(R, fold(F, fold_def_list(F, Acc, Fs), Body));
 fold(F, Acc, #c_seq{arg=Arg, body=Body}=R) ->
     F(R, fold(F, fold(F, Acc, Arg), Body));
 fold(F, Acc, #c_case{arg=Arg, clauses=Clauses}=R) ->
@@ -281,6 +284,13 @@ fold(F, Acc, T) ->				%Atomic nodes
 fold_list(F, Acc, L) ->
     lists:foldl(fun (E, A) -> fold(F, A, E) end, Acc, L).
 
+fold_def_list(F, Acc, L) ->
+    lists:foldl(fun ({_,V}, A) ->
+			fold(F, A, V)
+		end, Acc, L).
+
+
+
 %% mapfold(MapfoldFun, Accumulator, CoreExpr) -> {CoreExpr,Accumulator}.
 %%  This function traverses the core parse format, at each level
 %%  applying the submited argument function, assumed to do the real
@@ -304,11 +314,8 @@ mapfold(F, Acc0, #c_alias{pat=P0,var=V0}=R) ->
     F(R#c_alias{pat=P1,var=V1}, Acc2);
 
 mapfold(F, Acc0, #c_module{defs=D0}=R) ->
-    {D1,Acc1} = mapfold_list(F, Acc0, D0),
+    {D1,Acc1} = mapfold_def_list(F, Acc0, D0),
     F(R#c_module{defs=D1}, Acc1);
-mapfold(F, Acc0, #c_def{val=V0}=R) ->
-    {V1,Acc1} = mapfold(F, Acc0, V0),
-    F(R#c_def{val=V1}, Acc1);
 
 mapfold(F, Acc0, #c_fun{vars=Vs0, body=B0}=R) ->
     {Vs1,Acc1} = mapfold_list(F, Acc0, Vs0),
@@ -320,7 +327,7 @@ mapfold(F, Acc0, #c_let{vars=Vs0, arg=A0, body=B0}=R) ->
     {B1,Acc3} = mapfold(F, Acc2, B0),
     F(R#c_let{vars=Vs1,arg=A1,body=B1}, Acc3);
 mapfold(F, Acc0, #c_letrec{defs=Fs0,body=B0}=R) ->
-    {Fs1,Acc1} = mapfold_list(F, Acc0, Fs0),
+    {Fs1,Acc1} = mapfold_def_list(F, Acc0, Fs0),
     {B1,Acc2} = mapfold(F, Acc1, B0),
     F(R#c_letrec{defs=Fs1,body=B1}, Acc2);
 mapfold(F, Acc0, #c_seq{arg=A0, body=B0}=R) ->
@@ -370,6 +377,12 @@ mapfold(F, Acc, T) ->				%Atomic nodes
 mapfold_list(F, Acc, L) ->
     lists:mapfoldl(fun (E, A) -> mapfold(F, A, E) end, Acc, L).
 
+mapfold_def_list(F, Acc, L) ->
+    lists:mapfoldl(fun ({N,V0}, A0) ->
+			   {V1,A1} = mapfold(F, A0, V0),
+			   {{N,V1},A1}
+		   end, Acc, L).
+
 %% is_var_used(VarName, Expr) -> true | false.
 %%  Test if the variable VarName is used in Expr.
 
@@ -407,7 +420,7 @@ vu_expr(V, #c_let{vars=Vs,arg=Arg,body=B}) ->
 	    end
     end;
 vu_expr(V, #c_letrec{defs=Fs,body=B}) ->
-    case lists:any(fun (#c_def{val=Fb}) -> vu_body(V, Fb) end, Fs) of
+    case lists:any(fun ({_,Fb}) -> vu_body(V, Fb) end, Fs) of
 	true -> true;
 	false -> vu_body(V, B)
     end;
@@ -573,9 +586,9 @@ free(#c_let{vars=Vs,arg=Arg,body=B}, Scope0, Free0) ->
     Scope = lists:foldl(fun(#c_var{name=V}, Sc) -> gb_sets:add(V, Sc) end, Scope0, Vs),
     free(B, Scope, Free);
 free(#c_letrec{defs=Defs,body=B}, Scope0, Free0) ->
-    Free = free_list(Defs, Scope0, Free0),
+    Free = free_def_list(Defs, Scope0, Free0),
     free(B, Scope0, Free);
-free(#c_def{name=_Name,val=Val}, Scope0, Free0) ->
+free({_Name,Val}, Scope0, Free0) ->
     free(Val, Scope0, Free0);
 free(#c_fun{vars=Vs,body=B}, Scope, Free) ->
     free(#c_let{arg=#c_literal{val=[]},vars=Vs,body=B}, Scope, Free);
@@ -592,6 +605,11 @@ free_list([E|Es], Scope, Free0) ->
     Free = free(E, Scope, Free0),
     free_list(Es, Scope, Free);
 free_list([], _, Free) -> Free.
+
+free_def_list([{_,V}|Es], Scope, Free0) ->
+    Free = free(V, Scope, Free0),
+    free_def_list(Es, Scope, Free);
+free_def_list([], _, Free) -> Free.
 
 free_segs([#c_bitstr{val=Val,size=Size}|Bs], Scope, Free0) ->
     Free1 = free(Val, Scope, Free0),

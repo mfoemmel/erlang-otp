@@ -15,321 +15,130 @@
 %% 
 %%     $Id$
 %%
-
 -module(pman_tool).
 
-%% ---------------------------------------------------------------
-%% The user interface exports 
-%% ---------------------------------------------------------------
+%% Listbox selection window
 
-%%-compile(export_all).
--include("assert.hrl").
+-export([select/3]).
 
-%% Exported interface
--export([modal_single_select/3,
-	 modal_multiple_select/3]).
-
-
-%% Internal exports
-%%
-
--export ([modal_select_worker/5]).
-
-%Callback functions
--export([ok_cb/5,
-	 cancel_cb/5,
-	 window_cb/5,
-	 listbox_cb/5]).
-
-
-
-%% State record.
-%%
-
--record(state,{topwin,
-	       frame,
-	       calling_pid,
-	       caption,
-	       listbox,
-	       ok_button,
-	       cancel_button,
-	       choices}).
+-record(state, {topwin,
+		frame,
+		listbox}).
 
 %% Constants
 -define(WIN_WIDTH, 350).
 -define(WIN_HEIGHT, 350).
 
--define(DEFAULT_SELECTMODE, single).
--define(SINGLE_CAPTION,
-	{label, {text, "Select one of the following:"}}).
--define(MULTI_CAPTION,
-	{label, {text, "Select one or more of the following:"}}).
-
-%%
-%% The function modal_single_select(Parent, Choices) enters it's own event
-%% loop disregarding all gs events that does not apply to it's functionality.
-%%
-%% No proper grab is performed, so to the user it may appear as if other 
-%% GUI operations are available unless the caller handles the greying out 
-%% of all unavailable operations.
-%%
-%% It is assumed that all choices are unique, since no distinction is made
-%% between several equal choices. 
-%% 
-%% modal_single_select(Parent, Choices)
-%% Choices = [String, String,...]
-%%
-
-modal_single_select(Parent, Title, Choices) ->
-    Pid = spawn (?MODULE, modal_select_worker, [self (),
-						Parent, Title, Choices, 
-						[{selectmode, single}]]),
+select(Win, Title, Choices) ->
+    Self = self(),
+    Pid = spawn_link(fun() -> init(Self, Win, Title, Choices) end),
     receive 
-	{Pid, Value} ->
-	    Value
-    end.
-    
-
-modal_multiple_select(Parent, Title, Choices) ->
-    Pid = spawn (?MODULE, modal_select_worker, [self (), 
-						Parent, Title, Choices, 
-						[{selectmode, single}]]),
-    receive 
-	{Pid, Value} ->
-	    Value
+	{Pid, Result} ->
+	    Result
     end.
 
+init(Pid, Win, Title, Choices) ->
 
+    %% Create window
+    State = create_window(Win, Title, Choices),
 
-modal_select_worker(CallingPid, Parent, Title, Choices, Options) ->
-
-    %% create window
-    State = create_window(Parent, Title, Choices),
-
-
-    %% 
-    add_callback(State#state.ok_button, {?MODULE, ok_cb}, []),
-    add_callback(State#state.cancel_button, {?MODULE, cancel_cb}, []),
-    add_callback(State#state.topwin, {?MODULE, window_cb}, []),
-    add_callback(State#state.listbox, {?MODULE, listbox_cb}, []),
-
-
-    %% Set the selectmode according to the specified options
-    case lists:keysearch(selectmode, 1, Options) of
-	{value, {_Key, multiple}} ->
-	    gse:config(State#state.listbox, [{selectmode, multiple}]),
-	    gse:config(State#state.caption, [?MULTI_CAPTION]);
-	{value, {_Key, single}} ->
-	    gse:config(State#state.listbox, [{selectmode, single}]),
-	    gse:config(State#state.caption, [?SINGLE_CAPTION]);
-
-	false  ->
-	    gse:config(State#state.listbox,
-		       [{selectmode, ?DEFAULT_SELECTMODE}])
-    end,
-    
-    
     gse:map(State#state.topwin),
     
     %% enter event loop
-    gen_loop(State#state{calling_pid = CallingPid}).
+    loop(Pid, Choices, State).
+
+loop(Pid, Choices, State) ->
+    receive
+	{gs, _, destroy, _Data, _Args} ->
+	    Pid ! {self(), cancelled};
+	{gs, _, configure, _Data, [W, H|_]} ->
+	    gse:resize(State#state.frame, W, H),
+	    loop(Pid, Choices, State);
+	{gs, _, click, ok, _Args} ->
+	    case gs:read(State#state.listbox, selection) of
+		[] ->
+		    Pid ! {self(), cancelled};
+		Indices ->
+		    Selection = selection(Indices, Choices),
+		    Pid ! {self(), Selection}
+	    end;
+	{gs, _, click, cancel, _Args} ->
+	    Pid ! {self(), cancelled};
+	{gs, Obj, doubleclick, _Data, _Args} ->
+	    self() ! {gs, Obj, click, ok, []},
+	    loop(Pid, Choices, State);
+	_GSEvent ->
+	    loop(Pid, Choices, State)
+    end.
+
+selection(Indices, Choices) ->
+    selection(0, Indices, Choices).
+
+selection(I, [I|Is], [{Val,_Str}|Vals]) ->
+    [Val | selection(I+1, Is, Vals)];
+selection(I, [I|Is], [Val|Vals]) ->
+    [Val | selection(I+1, Is, Vals)];
+selection(_I, [], _Vals) ->
+    [];
+selection(I, Is, [_Val|Vals]) ->
+    selection(I+1, Is, Vals).
     
-    
-
-
-
-
-
-%% create_window/1 
-%% creates a window and returns a state record, where
-%% all interesting components are items.
-
-create_window(Parent, Title, Choices) ->
-
+create_window(Win, Title, Choices) ->
+    Font = pman_win:font(Win),
 
     %% Top window and a frame that covers it entirely, to allow
     %% usage of the packer for geometry management.
-    Topwin = gse:window(Parent,[{width, ?WIN_WIDTH},
-				{height,?WIN_HEIGHT},
-				{configure, true},
-				{title, Title}]),
-    Frame = gse:frame(Topwin,[{packer_x,[{stretch,1},
-					 {stretch,1}]},
-			      {packer_y,[{stretch,1},
-					 {stretch,5},
-					 {stretch,1}]}]),
+    Topwin = gse:window(Win, [{width, ?WIN_WIDTH},
+			      {height,?WIN_HEIGHT},
+			      {configure, true},
+			      {title, Title}]),
+    Frame = gse:frame(Topwin, [{packer_x,[{stretch,1},
+					  {stretch,1}]},
+			       {packer_y,[{stretch,1},
+					  {stretch,5},
+					  {stretch,1}]}]),
 
-    %% Caption above the list of items 
-    Caption = gse:label(Frame,[{pack_x,{1,2}},
-			       {pack_y,{1,1}}]),
+    %% Caption above the list of items
+    CaptionTxt = "Select one or more of the following:",
+    gse:label(Frame, [{pack_x,{1,2}},
+		      {pack_y,{1,1}},
+		      {label,{text,CaptionTxt}}, {font,Font}]),
+
     %% List of selectable items
     Listbox = gse:listbox(Frame, [{pack_x,{1,2}},
 				  {pack_y,{2,2}},
-				  {selection,0},
+				  {selectmode,multiple},
 				  {doubleclick, true},
+				  {font,Font},
 				  {items, str_choices(Choices)}]),
 
-    
+    %% OK and Cancel buttons in a separate frame.
+    F13 = gse:frame(Frame, [{bw,1},
+			    {pack_xy,{{1,2},3}},
+			    {packer_x,[{stretch,1},
+				       {fixed, 60},
+				       {stretch,1},
+				       {fixed, 60},
+				       {stretch,1}]},
+			    {packer_y,[{stretch,1},
+				       {fixed, 30},
+				       {stretch,1}]}]),
 
-
-    %% OK & Cancel buttons in a separate frame.
-    F13 = gse:frame(Frame,[{bw,1},%{bg,green},
-			   {pack_xy,{{1,2},3}},
-			   {packer_x,[{stretch,1},
-				      {fixed, 60},
-				      {stretch,1},
-				      {fixed, 60},
-				      {stretch,1}]},
-			   {packer_y,[{stretch,1},
-				      {fixed, 30},
-				      {stretch,1}]}]),
-
-
-    OKButton = gse:button(F13,[{pack_xy,{2,2}},
-			       {label,{text,"OK"}}]),
-    CancelButton = gse:button(F13,[{pack_xy,{4,2}},
-				   {label,{text,"Cancel"}}]),
+    gse:button(F13, [{pack_xy,{2,2}},
+		     {label,{text,"OK"}}, {font,Font},
+		     {data,ok}]),
+    gse:button(F13, [{pack_xy,{4,2}},
+		     {label,{text,"Cancel"}}, {font,Font},
+		     {data,cancel}]),
 
     gse:resize(Frame, ?WIN_WIDTH, ?WIN_HEIGHT),
-    #state{topwin=Topwin,
-	   frame=Frame,
-	   caption=Caption,
-	   listbox=Listbox,
-	   ok_button=OKButton,
-	   cancel_button=CancelButton,
-	   choices=Choices}.
+    #state{topwin=Topwin, frame=Frame, listbox=Listbox}.
 
-
-%% str_choices_strings(Choices)
-%% takes a list of Erlang terms as argument,
-%% returns a list of strings with the print-representation of those terms. 
-%% [one, 1, "foo", {snulle, bulle}, [1,2,3]] results in 
-%% ["one","1","[102,111,111]","{snulle,bulle}","[1,2,3]"]
 str_choices(Choices) ->
-    MkString = fun(E) ->
-		       lists:flatten(io_lib:format("~s",[E]))
-	       end,
-    lists:map(MkString, Choices).
-
-
-
-%%
-%% Callback functions
-%%
-%% Callback_cb(Object,
-%%             Event, 
-%%             State,
-%%             UserData
-%%            )
-
-%% This function is called when the OK button is pressed.
-ok_cb(_Object, _Event, _Args, State, _UserData) ->
-    return_selection(State).
-
-%% This function is called when the Cancle button is pressed.
-cancel_cb(_Object, _Event, _Args, State, _UserData) ->
-    gse:destroy(State#state.topwin),
-    {return, {cancelled, cancel}}.
-    
-%% This function is called when an event occurs in a window..
-window_cb(_Object, destroy, _Args, _State, _UserData) ->
-    {return, {cancelled, destroyed}};
-
-window_cb(_Object, configure, [Width, Height|_Rest], State, _UserData) ->
-    gse:resize(State#state.frame, Width, Height),
-    {state, State}.
-
-
-
-%% A doubleclick int the listbox will cause the dialog to return
-listbox_cb(_Object, doubleclick, _Args, State, _UserData) ->
-    return_selection(State).
-
-
-
-return_selection(State) ->
-
-    GetObject =
-	fun(I) ->
-		lists:nth(I+1, State#state.choices) 
-	end,
-
-    case gs:read(State#state.listbox, selection) of
-	%% Empty selection
-	[] ->
-	    gse:destroy(State#state.topwin),
-	    {return, {cancelled, no_selection}};
-	%% One or more items selected
-	[Hd|Tl] ->
-	    Selection = lists:map(GetObject, [Hd|Tl]),
-	    gse:destroy(State#state.topwin),
-	    {return, Selection}
-    
-    end.
-
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% 
-%% General functions for user interface development.
-%%
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-
-
-%%
-%% General loop, to be used by all gs-applications.
-%% Will call any registered callbacks.
-%% 
-    
-    
-gen_loop(State) ->
-
-
-    receive
-
-	%% Handle all cases of events where no callback is defined.
-	{gs, _Object, _Event, [], _Args} ->
-	    ?ALWAYS_ASSERT("gen_loop: No callback defined"),	    
-	    gen_loop(State);
-
-	%% Handle all evets with a defined callback.
-	{gs, Object, Event, {callback, Callback}, Args} ->
-	    case apply_callback(Object, Event, Args, Callback, State) of
-		{return, Value} -> 
-		    State#state.calling_pid ! {self (), Value};
-
-		{state, State1} -> 
-		    gen_loop(State1)
-	    end;
-	_AnyEvent ->
-	    ?ALWAYS_ASSERT("Received unexpected event"),
-	    gen_loop(State)
-	    
-    end.
-
-%%
-%% 
-%%
-
-apply_callback(Object, Event, Args, Callback, State) ->
-    {Module, Function, UserData} = Callback,
-    apply(Module, Function, [Object, Event, Args, State, UserData]).
-
-
-
-
-%% All callback functions must return one of the following type of return
-%% values
-%% {return, Value}          The loop will terminate, and return Value, and 
-%%                          the State
-%% {state, State}           Loop continues, with new State
-%%
-
-add_callback(Object, {Module, Function}, UserData) ->
-    gse:config(Object, [{data, {callback, {Module, Function, UserData}}}]).
-
-
-
-
-
+    lists:map(
+      fun({Val, Str}) ->
+	      lists:flatten(io_lib:format("~p: ~s", [Val, Str]));
+	 (Term) ->
+	      lists:flatten(io_lib:format("~p", [Term]))
+      end,
+      Choices).

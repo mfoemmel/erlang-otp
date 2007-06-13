@@ -256,17 +256,17 @@ lattice_meet(Val1, Val2) ->
 all_ones() ->
   (1 bsl ?bytes_to_bits(hipe_rtl_arch:word_size())) - 1.
 
-%% when calling partial_eval*() we know that at least one of the Values are 
-%% bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
+%% when calling partial_eval*() we know that at least one of the Values 
+%% are bottom or top. They return { Value, Sign, Zero, Overflow, Carry }. 
 %% (just like hipe_rtl_arch:eval_alu)
 
 %% logic shifts are very similar each other. Limit is the number of
 %% bits in the words.
 partial_eval_shift(Limit, Val1, Val2) ->
   if 
-    Val2 == 0 -> {Val1, Val1, Val1, Val1, Val1};
-    Val1 == 0 -> {0, false, true, false, false};
-    (Val2 =/= top) and (Val2 =/= bottom) and (Val2 >= Limit) -> 
+    Val2 =:= 0 -> {Val1, Val1, Val1, Val1, Val1};
+    Val1 =:= 0 -> {0, false, true, false, false};
+    is_integer(Val2), Val2 >= Limit -> % (Val2 =/= top) and (Val2 =/= bottom)
       {0, false, true, Val1, Val1}; % OVerflow & carry we dont know about.
     true -> lattice_meet(Val1, Val2)
   end.
@@ -767,8 +767,8 @@ update_srcs(Srcs, Env) ->
 
 partial_update_shift(Limit, Val1, Val2) ->
   if
-    (Val1 =:= bottom) and (Val2 == 0) -> move_src1;
-    (Val1 == 0) or ((Val2 =/= bottom) and (Val2 >= Limit)) -> 0;
+    (Val1 =:= bottom) and (Val2 =:= 0) -> move_src1;
+    (Val1 =:= 0) or ((Val2 =/= bottom) and (Val2 >= Limit)) -> 0;
     true -> keep_it
   end.
 

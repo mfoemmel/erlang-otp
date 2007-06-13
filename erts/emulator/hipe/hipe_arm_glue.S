@@ -272,6 +272,38 @@ nbif_fail:
 	mov	r0, #HIPE_MODE_SWITCH_RES_THROW
 	b	.flush_exit	/* no need to save RA */
 
+#if defined(HEAP_FRAG_ELIM_TEST)
+	.global	nbif_0_gc_after_bif
+	.global	nbif_1_gc_after_bif
+	.global	nbif_2_gc_after_bif
+	.global	nbif_3_gc_after_bif
+nbif_0_gc_after_bif:
+	mov	r1, #0
+	b	.gc_after_bif
+nbif_1_gc_after_bif:
+	mov	r1, #1
+	b	.gc_after_bif
+nbif_2_gc_after_bif:
+	mov	r1, #2
+	b	.gc_after_bif
+nbif_3_gc_after_bif:
+	mov	r1, #3
+	/*FALLTHROUGH*/
+.gc_after_bif:
+	str	r1, [P, #P_NARITY]
+	str	TEMP_LR, [P, #P_NRA]
+	str	NSP, [P, #P_NSP]
+	mov	TEMP_LR, lr
+	mov	r1, r0
+	mov	r0, P
+	bl	erts_gc_after_bif_call
+	mov	lr, TEMP_LR
+	ldr	TEMP_LR, [P, #P_NRA]
+	mov	r1, #0
+	str	r1, [P, #P_NARITY]
+	mov	pc, lr
+#endif
+
 /*
  * We end up here when a BIF called from native signals an
  * exceptional condition, and RESCHEDULE cannot occur.

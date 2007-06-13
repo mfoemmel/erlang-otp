@@ -20,8 +20,9 @@
 %% INVISO LogFile Merger.
 %%
 %% Merges all log-entries in all files in Files in chronological order
-%% into what ever is handled by WorkHandlerFun. Note that Files can be a list of lists.
-%% The inner lists represent files which belong together, i.e being a wrap-set.
+%% into what ever is handled by WorkHandlerFun. Note that Files can contain
+%% several files. Both in the sence that it can be a wrapset. But also because
+%% the log is spread over more than one LogFiles (i.e trace_log + ti_log).
 %% It is further possible to use another reader-process (for the logfiles)
 %% than the default one. This is useful if the logfiles are formatted in
 %% another way than as done by a trace-port.
@@ -54,10 +55,13 @@
 %% merge(Files,OutputFile) =
 %%
 %%   Files=[FileDescription,...]
-%%   FileDescription=[FileSet,...] | [{reader,Mod,Func,FileSet},...]
-%%   FileSet={Node,LogFiles} | {Node,LogFiles}
-%%   LogFiles=[{trace_log,Files} [,{ti_log,Files}] ]
-%%     either just trace_log or trace_log and ti_log.
+%%   FileDescription=FileSet | {reader,Mod,Func,FileSet}
+%%   FileSet={Node,LogFiles} | {Node,[LogFiles,...]}
+%%     in the latter case the LogFiles must be sorted, beginning with the oldest.
+%%   LogFiles=[{trace_log,Files} [,{ti_log,[FileName]}] ]
+%%       either just trace_log or trace_log and ti_log.
+%%     Files=[FileName] | [FileName,...]
+%%       in the latter case it is a wrapset.
 %%   BeginHandlerFun= ( fun(HandlerData)->{ok,NewHandleData} | {error,Reason} )
 %%   WorkHandlerFun= ( fun(Node,Term,PidMappings,HandlerData)->
 %%     {ok,NewHandlerData} | {error,Reason}

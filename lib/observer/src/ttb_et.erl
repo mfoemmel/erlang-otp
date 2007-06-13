@@ -40,7 +40,7 @@ handler(_,Trace,_Traci,Col) ->
 
 %%% ----------- Collector Filter -----------
 
-collector(Event) when record(Event,event) -> 
+collector(Event) when is_record(Event,event) -> 
     %% if collector is selected from viewer menu
     true; 
 collector(Trace) ->
@@ -230,8 +230,8 @@ label(in,M,F,A) -> "in " ++ mfa(M,F,A).
 mfa(M,F,A) -> atom_to_list(M) ++ ":" ++ fa(F,A).
 fa(F,A) -> atom_to_list(F) ++ "/" ++ integer_to_list(arity(A)).
 
-arity(L) when list(L) -> length(L);
-arity(I) when integer(I) -> I.
+arity(L) when is_list(L) -> length(L);
+arity(I) when is_integer(I) -> I.
     
 get_actors(From,To) ->
     case {get_proc(From),get_proc(To)} of
@@ -241,9 +241,9 @@ get_actors(From,To) ->
 	{F,T} -> {{F,unknown},{T,unknown}}
     end.
 	    
-get_proc({_Pid,Name,Node}) when atom(Name) -> {Name,Node};
+get_proc({_Pid,Name,Node}) when is_atom(Name) -> {Name,Node};
 get_proc({Pid,_initfunc,Node}) -> {Pid,Node};
-get_proc(P) when pid(P);port(P) -> {P,node(P)};
+get_proc(P) when is_pid(P); is_port(P) -> {P,node(P)};
 get_proc(P) -> P.
 
 get_mfarity(List) ->

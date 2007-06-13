@@ -8,12 +8,16 @@ $(EBIN)/megaco_digit_map.$(EMULATOR): megaco_digit_map.erl \
 	megaco_message_internal.hrl \
 	../text/megaco_text_tokens.hrl
 
-$(EBIN)/megaco_encoder.$(EMULATOR): megaco_encoder.erl \
-	../../include/megaco.hrl \
-	../app/megaco_internal.hrl
+$(EBIN)/megaco_encoder.$(EMULATOR): megaco_encoder.erl
+
+$(EBIN)/megaco_edist_compress.$(EMULATOR): megaco_edist_compress.erl
 
 $(EBIN)/megaco_erl_dist_encoder.$(EMULATOR): megaco_erl_dist_encoder.erl \
 	megaco_message_internal.hrl 
+
+$(EBIN)/megaco_erl_dist_encoder_mc.$(EMULATOR): megaco_erl_dist_encoder_mc.erl \
+	megaco_message_internal.hrl \
+	../app/megaco_internal.hrl 
 
 $(EBIN)/megaco_filter.$(EMULATOR): megaco_filter.erl \
 	../../include/megaco.hrl \
@@ -41,6 +45,10 @@ $(EBIN)/megaco_sdp.$(EMULATOR): \
 $(EBIN)/megaco_stats.$(EMULATOR): megaco_stats.erl 
 
 $(EBIN)/megaco_sup.$(EMULATOR): megaco_sup.erl
+
+$(EBIN)/megaco_timer.$(EMULATOR): \
+	megaco_timer.erl \
+	../../include/megaco.hrl
 
 $(EBIN)/megaco_trans_sender.$(EMULATOR): megaco_trans_sender.erl 
 

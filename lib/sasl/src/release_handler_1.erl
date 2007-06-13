@@ -54,7 +54,7 @@ check_script(Script, LibDirs) ->
 				   end,
 				   #eval_state{libdirs = LibDirs},
 				   Before) of
-		EvalState2 when record(EvalState2, eval_state) -> ok;
+		EvalState2 when is_record(EvalState2, eval_state) -> ok;
 		{error, Error} -> {error, Error};
 		Other -> {error, Other}
 	    end;
@@ -76,13 +76,13 @@ eval_script(Script, Apps, LibDirs, Opts) ->
 					       libdirs = LibDirs,
 					       opts = Opts},
 				   Before) of
-		EvalState2 when record(EvalState2, eval_state) ->
+		EvalState2 when is_record(EvalState2, eval_state) ->
 		    case catch lists:foldl(fun(Instruction, EvalState3) ->
 						   eval(Instruction, EvalState3)
 					   end,
 					   EvalState2,
 					   After) of
-			EvalState4 when record(EvalState4, eval_state) ->
+			EvalState4 when is_record(EvalState4, eval_state) ->
 			    {ok, EvalState4#eval_state.unpurged};
 			restart_new_emulator ->
 			    restart_new_emulator;
@@ -478,7 +478,7 @@ get_supervised_procs() ->
     lists:foldl(
       fun(Application, Procs) ->
 	      case application_controller:get_master(Application) of
-		  Pid when pid(Pid) ->
+		  Pid when is_pid(Pid) ->
 		      {Root, _AppMod} = application_master:get_child(Pid),
 		      case get_supervisor_module(Root) of
 			  {ok, SupMod} ->
@@ -504,12 +504,12 @@ get_supervised_procs() ->
 		end,
 		application:which_applications())).
 
-get_procs([{Name, Pid, worker, dynamic} | T], Sup) when pid(Pid) ->
+get_procs([{Name, Pid, worker, dynamic} | T], Sup) when is_pid(Pid) ->
     Mods = get_dynamic_mods(Name),
     [{Sup, Name, Pid, Mods} | get_procs(T, Sup)];
-get_procs([{Name, Pid, worker, Mods} | T], Sup) when pid(Pid), list(Mods) ->
+get_procs([{Name, Pid, worker, Mods} | T], Sup) when is_pid(Pid), is_list(Mods) ->
     [{Sup, Name, Pid, Mods} | get_procs(T, Sup)];
-get_procs([{Name, Pid, supervisor, Mods} | T], Sup) when pid(Pid) ->
+get_procs([{Name, Pid, supervisor, Mods} | T], Sup) when is_pid(Pid) ->
     [{Sup, Name, Pid, Mods} | get_procs(T, Sup)] ++ 
 	get_procs(supervisor:which_children(Pid), Pid);
 get_procs([_H | T], Sup) ->
@@ -543,7 +543,7 @@ get_dynamic_mods(Pid) ->
 %%
 get_supervisor_module(SupPid) ->
     case catch get_supervisor_module1(SupPid) of
-	{ok, Module} when atom(Module) ->
+	{ok, Module} when is_atom(Module) ->
 	    {ok, Module};
 	_Other ->
 	    io:format("~w: reason: ~w~n", [SupPid, _Other]),

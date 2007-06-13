@@ -261,14 +261,23 @@ add_callee_mfas([], MFAs, _SkipErtsSyms) -> MFAs.
 %%
 mk_trampoline_map([], []) -> []; % archs not using trampolines
 mk_trampoline_map(CalleeMFAs, Trampolines) ->
-  mk_trampoline_map(size(CalleeMFAs), CalleeMFAs, Trampolines, gb_trees:empty()).
+  SizeofLong =
+    case erlang:system_info(hipe_architecture) of
+      amd64 -> 8;
+      _ -> 4
+    end,
+  mk_trampoline_map(size(CalleeMFAs), CalleeMFAs, Trampolines, SizeofLong, gb_trees:empty()).
 
-mk_trampoline_map(I, CalleeMFAs, Trampolines, Map) when I >= 1 ->
+mk_trampoline_map(I, CalleeMFAs, Trampolines, SizeofLong, Map) when I >= 1 ->
   MFA = element(I, CalleeMFAs),
-  Trampoline = element(I, Trampolines),
+  %% Trampoline = element(I, Trampolines),
+  Skip = (I-1)*SizeofLong,
+  <<_:Skip/binary-unit:8,
+    Trampoline:SizeofLong/integer-unsigned-native-unit:8,
+    _/binary>> = Trampolines,
   NewMap = gb_trees:insert(MFA, Trampoline, Map),
-  mk_trampoline_map(I-1, CalleeMFAs, Trampolines, NewMap);
-mk_trampoline_map(0, _, _, Map) -> Map.
+  mk_trampoline_map(I-1, CalleeMFAs, Trampolines, SizeofLong, NewMap);
+mk_trampoline_map(0, _, _, _, Map) -> Map.
 
 %%----------------------------------------------------------------
 %%

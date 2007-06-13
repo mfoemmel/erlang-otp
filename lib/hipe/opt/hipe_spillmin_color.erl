@@ -52,8 +52,8 @@ stackalloc(CFG, _StackSlots, SpillIndex, _Options, Target, TempMap) ->
 ceiling(X) ->
   T = erlang:trunc(X),
   case (X - T) of
-    Neg when Neg < 0 -> T;
-    Pos when Pos > 0 -> T + 1;
+    Neg when Neg < 0.0 -> T;
+    Pos when Pos > 0.0 -> T + 1;
     _ -> T
   end.
 
@@ -306,10 +306,10 @@ simplify_ig([], 0, _IG, _K, Stk, _Vis, _Target) ->
   Stk;
 simplify_ig([], N, _IG, _K, _Stk, _Vis, _Target) 
   when N > 0 ->
-  ?report3("N: ~w Stk: ~w N+Stk ~w\n",[N,length(Stk),N+length(Stk)]),
+  ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
   throw(foo);
 simplify_ig([X|Xs], N, IG, K, Stk, Vis, Target) ->
-  ?report3("N: ~w Stk: ~w N+Stk ~w\n",[N,length(Stk),N+length(Stk)]),
+  ?report3("N: ~w Stk: ~w N+Stk ~w\n", [N,length(Stk),N+length(Stk)]),
   case is_visited(X,Vis) of
     true ->
       ?report("  node ~p already visited~n",[X]),
@@ -317,16 +317,16 @@ simplify_ig([X|Xs], N, IG, K, Stk, Vis, Target) ->
     false ->
       ?report("Stack ~w\n", [Stk]),
       {NewLow, NewIG} = decrement_neighbors(X, Xs, IG, Vis, K),
-      ?report("  node ~w pushed\n(~w now ready)~n",[X,NewLow]),
+      ?report("  node ~w pushed\n(~w now ready)~n", [X, NewLow]),
       NewStk = push_colored(X, Stk),
-      simplify_ig(NewLow, N-1, NewIG, K, NewStk, visit(X,Vis), Target)
+      simplify_ig(NewLow, N-1, NewIG, K, NewStk, visit(X, Vis), Target)
   end.
 
 decrement_neighbors(X, Xs, IG, Vis, K) ->
   Ns = unvisited_neighbors(X, Vis, IG),
   ?report("  node ~p has neighbors ~w\n(unvisited ~p)~n",
-	  [X, neighbors(X,IG),Ns]),
-  decrement_each(Ns,Xs,IG,Vis,K).
+	  [X, neighbors(X, IG), Ns]),
+  decrement_each(Ns, Xs, IG, Vis, K).
 
 %% For each node, decrement its degree and check if it is now
 %% a low-degree node. In that case, add it to the 'low list'.
@@ -384,13 +384,13 @@ select_color(X, IG, Cols, PhysRegs) ->
 
 %%%%%%%%%%%%%%%%%%%%
 
-get_colors([],_Cols) -> [];
-get_colors([X|Xs],Cols) ->
-  case color_of(X,Cols) of
+get_colors([], _Cols) -> [];
+get_colors([X|Xs], Cols) ->
+  case color_of(X, Cols) of
     uncolored ->
-      get_colors(Xs,Cols);
-    {color,R} ->
-      [R|get_colors(Xs,Cols)]
+      get_colors(Xs, Cols);
+    {color, R} ->
+      [R|get_colors(Xs, Cols)]
   end.
 
 select_unused_color(UsedColors, PhysRegs) ->
@@ -398,34 +398,32 @@ select_unused_color(UsedColors, PhysRegs) ->
   AvailRegs = ordsets:to_list(ordsets:subtract(PhysRegs, Summary)),
   hd(AvailRegs).
 
-
 push_colored(X,Stk) ->
     [{X, colorable} | Stk].
 
-
 low_degree_nodes([], _K) -> [];
 low_degree_nodes([{N,Info}|Xs], K) ->
-  ?report0("node ~p has degree ~p: ~w~n",[N,degree(Info),neighbors(Info)]),
+  ?report0("node ~p has degree ~p: ~w~n", [N, degree(Info), neighbors(Info)]),
   Deg = degree(Info),
   if
     Deg < K ->
-      [N|low_degree_nodes(Xs,K)];
+      [N|low_degree_nodes(Xs, K)];
     true ->
-      low_degree_nodes(Xs,K)
+      low_degree_nodes(Xs, K)
   end.
 
 %%%%%%%%%%%%%%%%%%%%
 
-unvisited_neighbors(X,Vis,IG) ->
-    ordsets:from_list(unvisited(neighbors(X,IG),Vis)).
+unvisited_neighbors(X, Vis, IG) ->
+    ordsets:from_list(unvisited(neighbors(X, IG), Vis)).
 
-unvisited([],_Vis) -> [];
-unvisited([X|Xs],Vis) ->
-   case is_visited(X,Vis) of
+unvisited([], _Vis) -> [];
+unvisited([X|Xs], Vis) ->
+   case is_visited(X, Vis) of
       true ->
-	 unvisited(Xs,Vis);
+	 unvisited(Xs, Vis);
       false ->
-	 [X|unvisited(Xs,Vis)]
+	 [X|unvisited(Xs, Vis)]
    end.
 
 
@@ -456,10 +454,10 @@ init_stackslots(NumSlots, Acc) ->
 %%
 %% Note: later on, we may wish to add 'move-related' support.
 
--record(ig_info, {neighbors=[]::list(),degree=0::integer()}).
+-record(ig_info, {neighbors=[]::list(), degree=0::integer()}).
 
 empty_ig(NumNodes) ->
-  hipe_vectors:new(NumNodes,#ig_info{neighbors=[],degree=0}).
+  hipe_vectors:new(NumNodes, #ig_info{neighbors=[],degree=0}).
 
 degree(Info) ->
   Info#ig_info.degree.
@@ -467,9 +465,9 @@ degree(Info) ->
 neighbors(Info) ->
   Info#ig_info.neighbors.
 
-add_edge(X,X,IG) -> IG;
-add_edge(X,Y,IG) ->
-  add_arc(X,Y,add_arc(Y,X,IG)).
+add_edge(X, X, IG) -> IG;
+add_edge(X, Y, IG) ->
+  add_arc(X, Y, add_arc(Y, X, IG)).
 
 add_arc(X, Y, IG) ->
   Info = hipe_vectors:get(IG, X),
@@ -500,7 +498,7 @@ decrement_degree(X, IG) ->
   Degree = degree(Info),
   NewDegree = Degree-1,
   NewInfo = Info#ig_info{degree=NewDegree},
-  {NewDegree, hipe_vectors:set(IG,X,NewInfo)}.
+  {NewDegree, hipe_vectors:set(IG, X, NewInfo)}.
 
 list_ig(IG) ->
   hipe_vectors:list(IG).
@@ -510,13 +508,13 @@ list_ig(IG) ->
 %% The coloring datatype:
 
 none_colored(NumNodes) ->
-  hipe_vectors:new(NumNodes,uncolored).
+  hipe_vectors:new(NumNodes, uncolored).
 
-color_of(X,Cols) ->
-  hipe_vectors:get(Cols,X).
+color_of(X, Cols) ->
+  hipe_vectors:get(Cols, X).
 
-set_color(X,R,Cols) ->
-  hipe_vectors:set(Cols,X,{color,R}).
+set_color(X, R, Cols) ->
+  hipe_vectors:set(Cols, X, {color, R}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
@@ -525,24 +523,24 @@ set_color(X,R,Cols) ->
 %% the integer version.
 
 none_visited(NumNodes) ->
-  hipe_vectors:new(NumNodes,false).
+  hipe_vectors:new(NumNodes, false).
 
-visit(X,Vis) ->
-  hipe_vectors:set(Vis,X,true).
+visit(X, Vis) ->
+  hipe_vectors:set(Vis, X, true).
 
-is_visited(X,Vis) ->
-  hipe_vectors:get(Vis,X).
+is_visited(X, Vis) ->
+  hipe_vectors:get(Vis, X).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% *** INTERFACES TO OTHER MODULES ***
 %%
 
-liveout(CFG,L, Target) ->
-  ordsets:from_list(reg_names(Target:liveout(CFG,L), Target)).
+liveout(CFG, L, Target) ->
+  ordsets:from_list(reg_names(Target:liveout(CFG, L), Target)).
 
-bb(CFG,L,Target) ->
-   hipe_bb:code(Target:bb(CFG,L)).
+bb(CFG, L, Target) ->
+   hipe_bb:code(Target:bb(CFG, L)).
 
 def_use(X, Target, TempMap) ->
   Defines = [Y || Y <- reg_names(Target:defines(X), Target), 

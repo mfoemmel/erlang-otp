@@ -78,7 +78,7 @@
 %% January 1st.
 %%
 %% df/2 catches the case Year<0
-date_to_gregorian_days(Year, Month, Day) when integer(Day), Day > 0 ->
+date_to_gregorian_days(Year, Month, Day) when is_integer(Day), Day > 0 ->
     Last = last_day_of_the_month(Year, Month),
     if
 	Day =< Last ->
@@ -129,12 +129,12 @@ gregorian_seconds_to_datetime(Secs) when Secs >= 0 ->
 
 %% is_leap_year(Year) = true | false
 %%
-is_leap_year(Y) when integer(Y), Y >= 0 ->
+is_leap_year(Y) when is_integer(Y), Y >= 0 ->
     is_leap_year1(Y).
 
-is_leap_year1(Year) when Year rem 4 == 0, Year rem 100 > 0 ->
+is_leap_year1(Year) when Year rem 4 =:= 0, Year rem 100 > 0 ->
     true;
-is_leap_year1(Year) when Year rem 400 == 0 ->
+is_leap_year1(Year) when Year rem 400 =:= 0 ->
     true;
 is_leap_year1(_) -> false.
 
@@ -143,7 +143,7 @@ is_leap_year1(_) -> false.
 %%
 %% Returns the number of days in a month.
 %%
-last_day_of_the_month(Y, M) when integer(Y), Y >= 0 ->
+last_day_of_the_month(Y, M) when is_integer(Y), Y >= 0 ->
     last_day_of_the_month1(Y, M).
 
 last_day_of_the_month1(_, 4) -> 30;
@@ -155,7 +155,7 @@ last_day_of_the_month1(Y, 2) ->
       true -> 29;
       _    -> 28
    end;
-last_day_of_the_month1(_, M) when integer(M), M > 0, M < 13 ->
+last_day_of_the_month1(_, M) when is_integer(M), M > 0, M < 13 ->
     31.
 
 
@@ -264,7 +264,7 @@ time_difference({{Y1, Mo1, D1}, {H1, Mi1, S1}},
 %%
 %% time_to_seconds(Time)
 %%
-time_to_seconds({H, M, S}) when integer(H), integer(M), integer(S) ->
+time_to_seconds({H, M, S}) when is_integer(H), is_integer(M), is_integer(S) ->
     H * ?SECONDS_PER_HOUR +
 	M * ?SECONDS_PER_MINUTE + S.
       
@@ -285,7 +285,7 @@ universal_time_to_local_time(DateTime) ->
 %% valid_date(Year, Month, Day) = true | false
 %% valid_date({Year, Month, Day}) = true | false
 %%
-valid_date(Y, M, D) when integer(Y), integer(M), integer(D) ->
+valid_date(Y, M, D) when is_integer(Y), is_integer(M), is_integer(D) ->
     valid_date1(Y, M, D).
 
 valid_date1(Y, M, D) when Y >= 0, M > 0, M < 13, D > 0 ->

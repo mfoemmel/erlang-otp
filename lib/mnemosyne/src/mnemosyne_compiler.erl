@@ -78,7 +78,7 @@ pass2_rules(Rules, Module, Record_defs) ->
 	       (_, Acc) -> Acc
 	   end, [], R) of
 	[] -> {ok, R};
-	L when list(L) -> {error, L}
+	L when is_list(L) -> {error, L}
     end.
 	   
 
@@ -111,7 +111,7 @@ format_error(Msg) ->
 	{undefined,{record,RecName}} ->
 	    io_lib:format("Undefined record \"~w\"", [RecName]);
 
-	{undefined,What} when atom(What) ->
+	{undefined,What} when is_atom(What) ->
 	    io_lib:format("No ~w definition", [What]);
 
 	{cannot_find_type,Var} ->
@@ -181,17 +181,17 @@ get_var_types(Gs) -> get_var_types(Gs, get_var_types(Gs,[]), []).
 get_var_types(Gs, VT, VT) ->  VT;
 get_var_types(Gs, VT, _) -> get_var_types(Gs, get_var_types(Gs,VT), VT).
 
-get_var_types(P, VTs) when record(P,pred_sym),
+get_var_types(P, VTs) when is_record(P,pred_sym),
 			   P#pred_sym.record_def =/= ?UNKNOWN ->
     %% Rule or fact call whos type is fully known
     [{'#var',V}] = P#pred_sym.args,
     {Name,Fs} = P#pred_sym.record_def,
     var_type(Name, V, P#pred_sym.line, VTs);
 
-get_var_types(P, VTs) when record(P,pred_sym) ->
+get_var_types(P, VTs) when is_record(P,pred_sym) ->
     VTs;
 
-get_var_types(C, VTs) when record(C,constraint) ->
+get_var_types(C, VTs) when is_record(C,constraint) ->
     get_var_types(C#constraint.exprL, get_var_types(C#constraint.exprR,VTs));
 
 get_var_types({'#or', C, Alts}, VTs) ->
@@ -201,16 +201,16 @@ get_var_types({'#not', C, Gs}, VTs) ->
     get_var_types(Gs, C, VTs);
 
 %%% This is not exactly right ...
-get_var_types(D, VTs) when record(D,disj_alt) ->
+get_var_types(D, VTs) when is_record(D,disj_alt) ->
     get_var_types(D#disj_alt.conj,VTs);
 
 get_var_types([H|T], VTs) ->
     get_var_types(T, get_var_types(H,VTs));
 
-get_var_types(R, VTs) when record(R,rec_f) ->
+get_var_types(R, VTs) when is_record(R,rec_f) ->
     var_type(R#rec_f.name, R#rec_f.var, R#rec_f.line, VTs);
 
-get_var_types(T, VTs) when tuple(T) ->
+get_var_types(T, VTs) when is_tuple(T) ->
     get_var_types(tuple_to_list(T), VTs);
 
 get_var_types(_, VTs) ->
@@ -247,13 +247,13 @@ var_type(Type, Var, Line, VTs) ->
 %%% record names (like 'r' in X#r.a) is the same as the deduced type.
 
 
-set_record_type(P, VarTypes, RecordDefs) when record(P,pred_sym) ->
+set_record_type(P, VarTypes, RecordDefs) when is_record(P,pred_sym) ->
     P;
 
-set_record_type(C, VarTypes, RecordDefs) when record(C,constraint),
+set_record_type(C, VarTypes, RecordDefs) when is_record(C,constraint),
 					      C#constraint.op == '='  ->
     case {C#constraint.exprL, C#constraint.exprR} of
-	{{'#var',Vc}, R} when record(R,rec_c) ->
+	{{'#var',Vc}, R} when is_record(R,rec_c) ->
 	    Rnew=
 		case var_type(Vc,VarTypes) of
 		    
@@ -276,11 +276,11 @@ set_record_type(C, VarTypes, RecordDefs) when record(C,constraint),
 		end,
 	    C#constraint{exprR = set_record_type(Rnew,VarTypes,RecordDefs)};
 	
-	{R, {'#var',Vc}} when record(R,rec_c) ->
+	{R, {'#var',Vc}} when is_record(R,rec_c) ->
 	    set_record_type(C#constraint{exprL={'#var',Vc},exprR=R}, 
 			 VarTypes, RecordDefs);
 
-	{L, R} when record(L,rec_c), record(R,rec_c) ->
+	{L, R} when is_record(L,rec_c), is_record(R,rec_c) ->
 	    if
 		L#rec_c.name == R#rec_c.name ->
 		    C#constraint{exprL=set_record_type(L,VarTypes,RecordDefs),
@@ -297,7 +297,7 @@ set_record_type(C, VarTypes, RecordDefs) when record(C,constraint),
 			 exprR=set_record_type(R,VarTypes,RecordDefs)}
     end;
 
-set_record_type(R, VarTypes, RecordDefs) when record(R,rec_f) ->
+set_record_type(R, VarTypes, RecordDefs) when is_record(R,rec_f) ->
     %% X.f of X#r.f
     {'#var',Var} = R#rec_f.var,
     R1 =
@@ -338,12 +338,12 @@ set_record_type(R, VarTypes, RecordDefs) when record(R,rec_f) ->
     end;
     
 
-set_record_type(R, VarTypes, RecordDefs) when record(R,rec_c), 
+set_record_type(R, VarTypes, RecordDefs) when is_record(R,rec_c), 
 					   R#rec_c.name == ?UNKNOWN ->
     %% #{a=.., b=.. ...}
     throw({error, {R#rec_c.line, ?MODULE, must_give_record_name}});
 
-set_record_type(R, VarTypes, RecordDefs) when record(R,rec_c), 
+set_record_type(R, VarTypes, RecordDefs) when is_record(R,rec_c), 
 					   R#rec_c.name =/= ?UNKNOWN ->
     %% #r{a=.., b=.. ...}
     case lookup_record_def(R#rec_c.name, RecordDefs) of
@@ -375,7 +375,7 @@ set_record_type([H|T], VarTypes, RecordDefs) ->
     [set_record_type(H,VarTypes,RecordDefs) |
      set_record_type(T,VarTypes,RecordDefs)];
 
-set_record_type(Tuple, VarTypes, RecordDefs) when tuple(Tuple) ->
+set_record_type(Tuple, VarTypes, RecordDefs) when is_tuple(Tuple) ->
     list_to_tuple( 
       set_record_type(tuple_to_list(Tuple), VarTypes, RecordDefs)
      );

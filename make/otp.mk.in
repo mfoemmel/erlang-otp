@@ -5,8 +5,8 @@
 # Copyright (C) 1996, Ericsson Telecommunications
 # Author: Lars Thorsen
 # ----------------------------------------------------
-.SUFFIXES: .erl .beam .yrl .xrl .bin .mib .hrl .sgml .html .ps .3 .1 \
-	.fig .dvi .tex .class .java .pdf .psframe .pscrop .el .elc
+.SUFFIXES: .erl .beam .yrl .xrl .bin .mib .hrl .sgml .xml .html .ps \
+	.3 .1 .fig .dvi .tex .class .java .pdf .psframe .pscrop .el .elc
 
 # ----------------------------------------------------
 #	Common macros
@@ -102,13 +102,13 @@ ESRC = .
 endif
 
 $(EBIN)/%.beam: $(EGEN)/%.erl
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 $(EBIN)/%.beam: $(ESRC)/%.erl
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(EBIN) $<
 
 .erl.beam:
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
+	$(ERLC) $(ERL_COMPILE_FLAGS) -o$(dir $@) $<
 
 #
 # When .erl files are automatically created GNU make removes them if
@@ -197,14 +197,23 @@ TEXDIR = .
 
 # HTML & GIF files that always are generated and must be delivered 
 SGML_COLL_FILES = $(SGML_APPLICATION_FILES) $(SGML_PART_FILES)
-FASCICULES = $(wildcard fascicules.sgml)
-DEFAULT_HTML_FILES = $(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_frame.html) \
+XML_COLL_FILES = $(XML_APPLICATION_FILES) $(XML_PART_FILES)
+FASCICULES = $(wildcard fascicules.sgml) $(wildcard fascicules.xml)
+DEFAULT_HTML_FILES = \
+	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_frame.html) \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_first.html) \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_term.html) \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_cite.html) \
 	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%_index.html) \
 	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.kwc) \
-	$(FASCICULES:%.sgml=$(HTMLDIR)/index.html)
+	$(FASCICULES:%.sgml=$(HTMLDIR)/index.html) \
+	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_frame.html) \
+	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_first.html) \
+	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_term.html) \
+	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_cite.html) \
+	$(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%_index.html) \
+	$(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.kwc) \
+	$(FASCICULES:%.xml=$(HTMLDIR)/index.html)
 
 DEFAULT_GIF_FILES = $(HTMLDIR)/min_head.gif
 
@@ -240,45 +249,66 @@ LATEX_CLEAN = *.aux *.cites *.citeshd *.dvi *.idx *.ilg *.ind \
 #
 # Rules
 #
-%.html: %.sgml
+%.html:: %.sgml
 	$(DOCBTRANSFORM) -ent html -html -outdir . $(SGML_FLAGS) $*
 	@$(RM) $*.html.sgmls_errs $*.html.sgmls_output
+%.html:: %.xml
+	$(DOCBTRANSFORM) -ent html -html -outdir . $(SGML_FLAGS) $*
 
-$(HTMLDIR)/%.html: %.sgml
+$(HTMLDIR)/%.html:: %.sgml
 	$(DOCBTRANSFORM) -ent html -html -outdir $(HTMLDIR) $(SGML_FLAGS) $*
 	@$(RM) $*.html.sgmls_errs $*.html.sgmls_output
+$(HTMLDIR)/%.html:: %.xml
+	$(DOCBTRANSFORM) -ent html -html -outdir $(HTMLDIR) $(SGML_FLAGS) $*
 
-$(MAN1DIR)/%.1: %.sgml
+$(MAN1DIR)/%.1:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 1 -outdir $(MAN1DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man1.sgmls_errs $*.man1.sgmls_output
+$(MAN1DIR)/%.1:: %.xml
+	$(DOCBTRANSFORM) -ent man -m 1 -outdir $(MAN1DIR) $(SGML_FLAGS) $*
 
-$(MAN2DIR)/%.2: %.sgml
+$(MAN2DIR)/%.2:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 2 -outdir $(MAN2DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man2.sgmls_errs $*.man2.sgmls_output
+$(MAN2DIR)/%.2:: %.xml
+	$(DOCBTRANSFORM) -ent man -m 2 -outdir $(MAN2DIR) $(SGML_FLAGS) $*
 
-$(MAN3DIR)/%.3: %.sgml
+$(MAN3DIR)/%.3:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 3 -outdir $(MAN3DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man3.sgmls_errs $*.man3.sgmls_output
+$(MAN3DIR)/%.3:: %.xml
+	$(DOCBTRANSFORM) -ent man -m 3 -outdir $(MAN3DIR) $(SGML_FLAGS) $*
 
-$(MAN4DIR)/%.4: %.sgml
+$(MAN4DIR)/%.4:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 4 -outdir $(MAN4DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man4.sgmls_errs $*.man4.sgmls_output
+$(MAN4DIR)/%.4:: %.xml
+	$(DOCBTRANSFORM) -ent man -m 4 -outdir $(MAN4DIR) $(SGML_FLAGS) $*
 
-$(MAN6DIR)/%.6: %_app.sgml
+$(MAN6DIR)/%.6:: %_app.sgml
 	$(DOCBTRANSFORM) -ent man -m 6 -outdir $(MAN6DIR) $(SGML_FLAGS) $*_app
 	@$(RM) $*_app.man6.sgmls_errs $*_app.man6.sgmls_output
 	mv $(MAN6DIR)/$*_app.6 $@
+$(MAN6DIR)/%.6:: %_app.xml
+	$(DOCBTRANSFORM) -ent man -m 6 -outdir $(MAN6DIR) $(SGML_FLAGS) $*_app
+	mv $(MAN6DIR)/$*_app.6 $@
 
-$(MAN9DIR)/%.9: %.sgml
+$(MAN9DIR)/%.9:: %.sgml
 	$(DOCBTRANSFORM) -ent man -m 9 -outdir $(MAN9DIR) $(SGML_FLAGS) $*
 	@$(RM) $*.man9.sgmls_errs $*.man9.sgmls_output
+$(MAN9DIR)/%.9:: %.xml
+	$(DOCBTRANSFORM) -ent man -m 9 -outdir $(MAN9DIR) $(SGML_FLAGS) $*
 
-%.tex: %.sgml
+%.tex:: %.sgml
 	(cd `dirname $*`; \
 	 $(DOCBTRANSFORM) -includepath `pwd` \
 		-ent latex -latex $(SGML_FLAGS) `basename $*`; \
 		 $(RM) `basename $*`.latex.sgmls_errs \
 		`basename $*`.latex.sgmls_output)
+%.tex:: %.xml
+	(cd `dirname $*`; \
+	 $(DOCBTRANSFORM) -includepath `pwd` \
+		-ent latex -latex $(SGML_FLAGS) `basename $*`)
 
 %.dvi: %.tex
 	$(DOCBTEX2DVI) $*

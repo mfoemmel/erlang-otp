@@ -1,0 +1,7 @@
+{application, appmon,
+ [{description, "DEVTOOLS  CXC 138 16"},
+  {vsn, "2.1.9"},
+  {modules, [appmon, appmon_a, appmon_dg, appmon_info,
+	     appmon_lb, appmon_place, appmon_txt,process_info,appmon_web]},
+  {registered,[appmon, appmon_info, appmon_txt,webappmon_server,proc_info]},
+  {applications, [kernel, stdlib]}]}.

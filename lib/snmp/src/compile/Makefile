@@ -54,8 +54,6 @@ PARSER_TARGET = $(PARSER_MODULE).$(EMULATOR)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-
 ifeq ($(WARN_UNUSED_VARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars
 endif
@@ -67,6 +65,7 @@ ERL_COMPILE_FLAGS += -I../../include \
                      -I$(ERL_TOP)/lib/stdlib
 
 YRL_FLAGS = -o .
+
 
 # ----------------------------------------------------
 # Targets

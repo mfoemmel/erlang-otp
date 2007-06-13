@@ -325,9 +325,9 @@ tagup_header([]) ->          [];
 tagup_header([Line|Rest]) -> [tag(Line, [])|tagup_header(Rest)].
 
 tag([], Tag) ->
-    {httpd_util:to_lower(lists:reverse(Tag)), ""};
+    {http_util:to_lower(lists:reverse(Tag)), ""};
 tag([$:|Rest], Tag) ->
-    {httpd_util:to_lower(lists:reverse(Tag)), string:strip(Rest)};
+    {http_util:to_lower(lists:reverse(Tag)), string:strip(Rest)};
 tag([Chr|Rest], Tag) ->
     tag(Rest, [Chr|Tag]).
 

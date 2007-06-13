@@ -221,7 +221,7 @@ get_input_and_search(DbList, IsRegExp, Notify, ListAsStr) ->
     case StrConvRes of
 	{ok, TermOrRE} ->
 	    search(IsRegExp, TermOrRE, DbList, ListAsStr);
-	{error, {_Reason, Msg}} when Notify == true ->
+	{error, {_Reason, Msg}} when Notify ->
 	    gs:config(win, [beep]),
 	    tv_utils:notify(win, "TV Notification", Msg);
 	{error, {_Reason, _Msg}} ->
@@ -271,7 +271,7 @@ string_to_term(Str) ->
 		       %% May be a PID, have to check this, since erl_scan
 		       %% currently cannot handle this case...  :-(
 		    case catch list_to_pid(Str) of
-			Pid when pid(Pid) ->
+			Pid when is_pid(Pid) ->
 			    {ok, Pid};
 			_Error ->
 			    case get(error_msg_mode) of
@@ -444,14 +444,14 @@ search_for_regexp(Pattern, Elem, ListAsStr) ->
 
 
 
-compare_terms(Term, Elem) when constant(Elem), Term =/= Elem ->   % Not a list, not a tuple
+compare_terms(Term, Elem) when not is_tuple(Elem), not is_list(Elem), Term =/= Elem ->
     not_found;
 compare_terms(Term, Term) ->
        %% Even the case Term = "{}" or "[]"!!!
     found;
-compare_terms(Term, Elem) when list(Elem) ->
+compare_terms(Term, Elem) when is_list(Elem) ->
     traverse_list(Term, Elem);
-compare_terms(Term, Elem) when tuple(Elem) ->
+compare_terms(Term, Elem) when is_tuple(Elem) ->
     traverse_tuple(Term, Elem, 1, size(Elem)).
 
 

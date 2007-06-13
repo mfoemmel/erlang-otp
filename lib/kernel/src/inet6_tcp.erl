@@ -28,8 +28,8 @@
 -include("inet_int.hrl").
 
 %% inet_tcp port lookup
-getserv(Port) when integer(Port) -> {ok, Port};
-getserv(Name) when atom(Name)    -> inet:getservbyname(Name,tcp).
+getserv(Port) when is_integer(Port) -> {ok, Port};
+getserv(Name) when is_atom(Name)    -> inet:getservbyname(Name,tcp).
 
 %% inet_tcp address lookup
 getaddr(Address) -> inet:getaddr(Address, inet6).
@@ -78,11 +78,12 @@ connect(Address, Port, Opts) ->
 
 connect(Address, Port, Opts, infinity) ->
     do_connect(Address, Port, Opts, infinity);
-connect(Address, Port, Opts, Timeout) when integer(Timeout), Timeout >= 0 ->
+connect(Address, Port, Opts, Timeout) when is_integer(Timeout), 
+                                           Timeout >= 0 ->
     do_connect(Address, Port, Opts, Timeout).
 
 do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when 
-  ?ip6(A,B,C,D,E,F,G,H), integer(Port), Port > 0, Port =< 65535 ->
+  ?ip6(A,B,C,D,E,F,G,H), is_integer(Port), Port > 0, Port =< 65535 ->
     case inet:connect_options(Opts, inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -103,7 +104,7 @@ do_connect(Addr = {A,B,C,D,E,F,G,H}, Port, Opts, Time) when
 %% 
 %% Listen
 %%
-listen(Port, Opts) when integer(Port), Port >= 0, Port =< 65535 ->
+listen(Port, Opts) when is_integer(Port), Port >= 0, Port =< 65535 ->
     case inet:listen_options([{port,Port} | Opts], inet6) of
 	{error, Reason} -> exit(Reason);
 	{ok, R} ->
@@ -144,5 +145,5 @@ accept(L,Timeout) ->
 %% Create a port/socket from a file descriptor 
 %%
 fdopen(Fd, Opts) ->
-    inet:fdopen(Fd, Opts, stream, inet6, ?MODULE).
+    inet:fdopen(Fd, Opts, tcp, inet6, ?MODULE).
 

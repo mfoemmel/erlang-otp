@@ -81,14 +81,14 @@ read_term_from_stream(Stream, File) ->
 %%% Returns: {ok, Dirs} | {error, What}
 %%% ----------------------------------------------------
 
-get_dirs(RegPath) when list(RegPath) ->
+get_dirs(RegPath) when is_list(RegPath) ->
     Names = filename:split(RegPath),
     ExpNames = expand_names(Names),
     catch get_dirs(ExpNames, [], true);
 get_dirs(_) ->
     {error, badarg}.
 
-get_path(RegPath) when list(RegPath) ->
+get_path(RegPath) when is_list(RegPath) ->
     F = fun(RegP) ->
 		case get_dirs(RegP) of
 		    {ok, Dirs} -> {true, Dirs};
@@ -205,7 +205,7 @@ dir_p(DirF) ->
     end.
     
 
-flat([H|T], Ack) when list(hd(H)) ->
+flat([H|T], Ack) when is_list(hd(H)) ->
     flat(T, lists:reverse(H) ++ Ack);
 flat([[]|T], Ack) ->
     flat(T, Ack);

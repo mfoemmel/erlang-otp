@@ -16,7 +16,8 @@
 -export([
 	 daemon_start/1,
 	 client_start/4,
-	 info/1
+	 info/1,
+	 change_config/2
 	]).
 
 %% module internal
@@ -43,31 +44,49 @@
 %%% Info
 %%%-------------------------------------------------------------------
 
-info(ToPid) when pid(ToPid) ->
+info(ToPid) when is_pid(ToPid) ->
+    call(info, ToPid, timer:seconds(10)).
+
+change_config(ToPid, Options) when is_pid(ToPid) ->
+    BadKeys = [host, port, udp],
+    BadOptions = [{Key, Val} || {Key, Val} <- Options,
+				BadKey <- BadKeys,
+				Key =:= BadKey],
+    case BadOptions of
+	[] ->
+	    call({change_config, Options}, ToPid, timer:seconds(10));
+	[{Key, Val} | _] ->
+	    {error, {badarg, {Key, Val}}}
+    end.
+
+call(Req, ToPid, Timeout) when is_pid(ToPid) ->
     Type = process,
     Ref = erlang:monitor(Type, ToPid),
-    ToPid ! {info, self()},
+    ToPid ! {Req, Ref, self()},
     receive
-	{info, FromPid, Info} when FromPid == ToPid ->
+	{Reply, Ref, FromPid} when FromPid =:= ToPid ->
 	    erlang:demonitor(Ref),
-	    Info;
-	{'DOWN', Ref, Type, FromPid, _Reason} when FromPid == ToPid ->
-	    undefined
-    after timer:seconds(10) ->
-	    timeout
+	    Reply;
+	{'DOWN', Ref, Type, FromPid, _Reason} when FromPid =:= ToPid ->
+	    {error, timeout}
+    after Timeout ->
+	    {error, timeout}
     end.
+
+reply(Reply, Ref, ToPid) ->
+    ToPid ! {Reply, Ref, self()}.
 
 %%%-------------------------------------------------------------------
 %%% Daemon
 %%%-------------------------------------------------------------------
 
 %% Returns {ok, Port}
-daemon_start(Options) when list(Options) ->
+daemon_start(Options) when is_list(Options) ->
     Config = tftp_lib:parse_config(Options),
     proc_lib:start_link(?MODULE, daemon_init, [Config], infinity).
 
-daemon_init(Config) when record(Config, config), 
-                         pid(Config#config.parent_pid) ->
+daemon_init(Config) when is_record(Config, config), 
+                         is_pid(Config#config.parent_pid) ->
     process_flag(trap_exit, true),
     UdpOptions = prepare_daemon_udp(Config),
     case catch gen_udp:open(Config#config.udp_port, UdpOptions) of
@@ -76,7 +95,7 @@ daemon_init(Config) when record(Config, config),
 	    proc_lib:init_ack({ok, self()}),
 	    Config2 = Config#config{udp_socket = Socket,
 				    udp_port   = ActualPort},
-	    print_debug_info(Config2, daemon, open, undefined),
+	    print_debug_info(Config2, daemon, open, #tftp_msg_req{filename = ""}),
 	    daemon_loop(Config2, 0, []);
 	{error, Reason} ->
 	    Text = lists:flatten(io_lib:format("UDP open ~p -> ~p", [UdpOptions, Reason])),
@@ -97,9 +116,9 @@ prepare_daemon_udp(#config{udp_port = Port, udp_options = UdpOptions}) ->
 	    %% Use fd from setuid_socket_wrap, such as -tftpd_69
 	    InitArg = list_to_atom("tftpd_" ++ integer_to_list(Port)),
 	    case init:get_argument(InitArg) of
-		{ok, [[FdStr]] = Badarg} when list(FdStr) ->
+		{ok, [[FdStr]] = Badarg} when is_list(FdStr) ->
 		    case catch list_to_integer(FdStr) of
-			Fd when integer(Fd) ->
+			Fd when is_integer(Fd) ->
 			    [{fd, Fd} | UdpOptions];
 			{'EXIT', _} ->
 			    exit({badarg, {prebound_fd, InitArg, Badarg}})
@@ -111,67 +130,76 @@ prepare_daemon_udp(#config{udp_port = Port, udp_options = UdpOptions}) ->
 	    end
     end.
 
-daemon_loop(Config, N, Servers) ->
+daemon_loop(DaemonConfig, N, Servers) ->
     receive
-	{info, Pid} when pid(Pid) ->
+	{info, Ref, FromPid} when is_pid(FromPid) ->
 	    ServerInfo = [{n_conn, N} | [{server, P} || P <- Servers]],
-	    Info = internal_info(Config, daemon) ++ ServerInfo,
-	    Pid ! {info, self(), Info},
-	    daemon_loop(Config, N, Servers);
-	{udp, Socket, RemoteHost, RemotePort, Bin} when binary(Bin) ->
+	    Info = internal_info(DaemonConfig, daemon) ++ ServerInfo,
+	    reply({ok, Info}, Ref, FromPid),
+	    daemon_loop(DaemonConfig, N, Servers);
+	{{change_config, Options}, Ref, FromPid} when is_pid(FromPid) ->
+	    case catch tftp_lib:parse_config(Options, DaemonConfig) of
+		{'EXIT', Reason} ->
+		    reply({error, Reason}, Ref, FromPid),
+		    daemon_loop(DaemonConfig, N, Servers);
+		DaemonConfig2 when is_record(DaemonConfig2, config) ->
+		    reply(ok, Ref, FromPid),
+		    daemon_loop(DaemonConfig2, N, Servers)
+	    end;
+	{udp, Socket, RemoteHost, RemotePort, Bin} when is_binary(Bin) ->
 	    inet:setopts(Socket, [{active, once}]),
-	    ServerConfig = Config#config{parent_pid = self(),
-					 udp_host   = RemoteHost,
-					 udp_port   = RemotePort},
+	    ServerConfig = DaemonConfig#config{parent_pid = self(),
+					       udp_host   = RemoteHost,
+					       udp_port   = RemotePort},
 	    Msg = (catch tftp_lib:decode_msg(Bin)),
 	    print_debug_info(ServerConfig, daemon, recv, Msg),
 	    case Msg of
-		Req when record(Req, tftp_msg_req), 
-		         N < Config#config.max_conn ->
+		Req when is_record(Req, tftp_msg_req), 
+		N < DaemonConfig#config.max_conn ->
 		    Args = [ServerConfig, Req],
 		    Pid = proc_lib:spawn_link(?MODULE, server_init, Args),
-		    daemon_loop(Config, N + 1, [Pid | Servers]);
-		Req when record(Req, tftp_msg_req) ->
+		    daemon_loop(DaemonConfig, N + 1, [Pid | Servers]);
+		Req when is_record(Req, tftp_msg_req) ->
 		    Reply = #tftp_msg_error{code = enospc,
 					    text = "Too many connections"},
 		    send_msg(ServerConfig, daemon, Reply),
-		    daemon_loop(Config, N, Servers);
-		{'EXIT', Reply} when record(Reply, tftp_msg_error) ->
+		    daemon_loop(DaemonConfig, N, Servers);
+		{'EXIT', Reply} when is_record(Reply, tftp_msg_error) ->
 		    send_msg(ServerConfig, daemon, Reply),
-		    daemon_loop(Config, N, Servers);
+		    daemon_loop(DaemonConfig, N, Servers);
 		Req  ->
 		    Reply = #tftp_msg_error{code = badop,
 					    text = "Illegal TFTP operation"},
-		    error("Daemon received: ~p", [Req]),
+		    error("Daemon received: ~p from ~p:~p", [Req, RemoteHost, RemotePort]),
 		    send_msg(ServerConfig, daemon, Reply),
-		    daemon_loop(Config, N, Servers)
+		    daemon_loop(DaemonConfig, N, Servers)
 	    end;
 	{system, From, Msg} ->
-	    Misc = {daemon_loop, [Config, N, Servers]},
-	    sys:handle_system_msg(Msg, From, Config#config.parent_pid, ?MODULE, [], Misc);
-	{'EXIT', Pid, Reason} when Config#config.parent_pid == Pid ->
-	    close_port(Config, daemon),
+	    Misc = {daemon_loop, [DaemonConfig, N, Servers]},
+	    sys:handle_system_msg(Msg, From, DaemonConfig#config.parent_pid, ?MODULE, [], Misc);
+	{'EXIT', Pid, Reason} when DaemonConfig#config.parent_pid =:= Pid ->
+	    close_port(DaemonConfig, daemon, #tftp_msg_req{filename = ""}),
 	    exit(Reason);
 	{'EXIT', Pid, _Reason} = Info ->
 	    case lists:member(Pid, Servers) of
 		true ->
-		    daemon_loop(Config, N - 1, Servers -- [Pid]);
+		    daemon_loop(DaemonConfig, N - 1, Servers -- [Pid]);
 		false ->
 		    error("Daemon received: ~p", [Info]),
-		    daemon_loop(Config, N, Servers)
+		    daemon_loop(DaemonConfig, N, Servers)
 	    end;
 	Info ->
 	    error("Daemon received: ~p", [Info]),
-	    daemon_loop(Config, N, Servers)
+	    daemon_loop(DaemonConfig, N, Servers)
     end.
 
 %%%-------------------------------------------------------------------
 %%% Server
 %%%-------------------------------------------------------------------
 
-server_init(Config, Req) when record(Config, config),
-                              pid(Config#config.parent_pid),
-                              record(Req, tftp_msg_req) ->
+server_init(Config, Req) when is_record(Config, config),
+                              is_pid(Config#config.parent_pid),
+                              is_record(Req, tftp_msg_req) ->
     process_flag(trap_exit, true),
     SuggestedOptions = Req#tftp_msg_req.options,
     UdpOptions = Config#config.udp_options,
@@ -180,13 +208,13 @@ server_init(Config, Req) when record(Config, config),
     Config2 = tftp_lib:parse_config(SuggestedOptions, Config1),
     SuggestedOptions2 = Config2#config.user_options,
     Req2 = Req#tftp_msg_req{options = SuggestedOptions2},
-    case open_free_port(Config2, server) of
+    case open_free_port(Config2, server, Req2) of
 	{ok, Config3} ->
 	    Filename = Req#tftp_msg_req.filename,
-	    case match_callback(Filename, Config#config.callbacks) of
+	    case match_callback(Filename, Config3#config.callbacks) of
 		{ok, Callback} ->
 		    print_debug_info(Config3, server, match, Callback),
-		    case pre_verify_options(Config2, Req2) of
+		    case pre_verify_options(Config3, Req2) of
 			ok ->
 			    case callback({open, server_open}, Config3, Callback, Req2) of
 				{Callback2, {ok, AcceptedOptions}} ->
@@ -203,10 +231,10 @@ server_init(Config, Req) when record(Config, config),
 						    write -> 1
 						end,
 					    common_loop(Config5, Callback3, Req3, Next, LocalAccess, BlockNo);
-					{ok, Config4, Req3} when LocalAccess == write ->
+					{ok, Config4, Req3} when LocalAccess =:= write ->
 					    BlockNo = 0,
 					    common_ack(Config4, Callback2, Req3, LocalAccess, BlockNo, undefined);
-					{ok, Config4, Req3} when LocalAccess == read ->
+					{ok, Config4, Req3} when LocalAccess =:= read ->
 					    BlockNo = 0,
 					    common_read(Config4, Callback2, Req3, LocalAccess, BlockNo, BlockNo, undefined);
 					{error, {Code, Text}} ->
@@ -256,11 +284,11 @@ client_start(Access, RemoteFilename, LocalFilename, Options) ->
 	    {error, Error}
     end.
 
-client_init(Config, Req) when record(Config, config),
-                              pid(Config#config.parent_pid),
-                              record(Req, tftp_msg_req) ->
+client_init(Config, Req) when is_record(Config, config),
+                              is_pid(Config#config.parent_pid),
+                              is_record(Req, tftp_msg_req) ->
     process_flag(trap_exit, true),
-    case open_free_port(Config, client) of
+    case open_free_port(Config, client, Req) of
 	{ok, Config2} ->
 	    Req2 =
 		case Config2#config.use_tsize of
@@ -333,12 +361,12 @@ client_open(Config, Callback, Req, Next) ->
 			    send_msg(Config, Req, Error),
 			    terminate(Config, Req, ?ERROR(verify_server_options, Code, Text))
 		    end;
-		#tftp_msg_ack{block_no = ActualBlockNo} when LocalAccess == read ->
+		#tftp_msg_ack{block_no = ActualBlockNo} when LocalAccess =:= read ->
 		    Req2 = Req#tftp_msg_req{options = []},
 		    {Config2, Callback2, Req2} = do_client_open(Config, Callback, Req2),
 		    ExpectedBlockNo = 0,
 		    common_read(Config2, Callback2, Req2, LocalAccess, ExpectedBlockNo, ActualBlockNo, undefined);
-		#tftp_msg_data{block_no = ActualBlockNo, data = Data} when LocalAccess == write ->
+		#tftp_msg_data{block_no = ActualBlockNo, data = Data} when LocalAccess =:= write ->
 		    Req2 = Req#tftp_msg_req{options = []},
 		    {Config2, Callback2, Req2} = do_client_open(Config, Callback, Req2),
 		    ExpectedBlockNo = 1,
@@ -354,7 +382,7 @@ client_open(Config, Callback, Req, Next) ->
 		{'EXIT', #tftp_msg_error{code = Code, text = Text}} ->
 		    callback({abort, {Code, Text}}, Config, Callback, Req),
 		    terminate(Config, Req, ?ERROR(client_open, Code, Text));
-		Msg when tuple(Msg) ->
+		Msg when is_tuple(Msg) ->
 		    Code = badop,
 		    Text = "Illegal TFTP operation",
 		    {undefined, Error} =
@@ -394,9 +422,9 @@ common_loop(Config, Callback, Req, Next, LocalAccess, ExpectedBlockNo) ->
     case Next of
 	{ok, DecodedMsg, Prepared} ->
 	    case DecodedMsg of
-		#tftp_msg_ack{block_no = ActualBlockNo} when LocalAccess == read ->
+		#tftp_msg_ack{block_no = ActualBlockNo} when LocalAccess =:= read ->
 		    common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Prepared);
-		#tftp_msg_data{block_no = ActualBlockNo, data = Data} when LocalAccess == write ->
+		#tftp_msg_data{block_no = ActualBlockNo, data = Data} when LocalAccess =:= write ->
 		    common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Data, Prepared);
 		#tftp_msg_error{code = Code, text = Text} ->
 		    callback({abort, {Code, Text}}, Config, Callback, Req),
@@ -405,7 +433,7 @@ common_loop(Config, Callback, Req, Next, LocalAccess, ExpectedBlockNo) ->
 		    callback({abort, {Code, Text}}, Config, Callback, Req),
 		    send_msg(Config, Req, Error),
 		    terminate(Config, Req, ?ERROR(common_loop, Code, Text));
-		Msg when tuple(Msg) ->
+		Msg when is_tuple(Msg) ->
 		    Code = badop,
 		    Text = "Illegal TFTP operation",
 		    {undefined, Error} =
@@ -431,10 +459,13 @@ common_read(Config, Callback, Req, LocalAccess, BlockNo, BlockNo, Prepared) ->
 	    send_msg(Config, Req, Reply),
 	    terminate(Config, Req, ?ERROR(read, Code, Text))
     end;
+common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Prepared) 
+  when ActualBlockNo < ExpectedBlockNo ->
+    do_common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, Prepared, undefined);
 common_read(Config, Callback, Req, _LocalAccess, ExpectedBlockNo, ActualBlockNo, _Prepared) ->
     Code = badblk,
     Text = "Unknown transfer ID = " ++ 
-	integer_to_list(ActualBlockNo) ++ "(" ++ integer_to_list(ExpectedBlockNo) ++ ")", 
+	integer_to_list(ActualBlockNo) ++ " (" ++ integer_to_list(ExpectedBlockNo) ++ ")", 
     {undefined, Error} =
 	callback({abort, {Code, Text}}, Config, Callback, Req),
     send_msg(Config, Req, Error),
@@ -442,10 +473,21 @@ common_read(Config, Callback, Req, _LocalAccess, ExpectedBlockNo, ActualBlockNo,
 
 do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared) ->
     NextBlockNo = BlockNo + 1,
-    Reply = #tftp_msg_data{block_no = NextBlockNo, data = Data},
-    {Config2, Callback2, Next} =
-	transfer(Config, Callback, Req, Reply, LocalAccess, Prepared),
-    common_loop(Config2, Callback2, Req, Next, LocalAccess, NextBlockNo).
+    case NextBlockNo =< 65535 of
+	true ->
+	    Reply = #tftp_msg_data{block_no = NextBlockNo, data = Data},
+	    {Config2, Callback2, Next} =
+		transfer(Config, Callback, Req, Reply, LocalAccess, Prepared),
+	    common_loop(Config2, Callback2, Req, Next, LocalAccess, NextBlockNo);
+	false ->
+	    Code = badblk,
+	    Text = "Too big transfer ID = " ++ 
+		integer_to_list(NextBlockNo) ++ " > 65535", 
+	    {undefined, Error} =
+		callback({abort, {Code, Text}}, Config, Callback, Req),
+	    send_msg(Config, Req, Error),
+	    terminate(Config, Req, ?ERROR(read, Code, Text))
+    end.
 
 common_write(Config, _, Req, _, _, _, _, {terminate, Result}) ->
     terminate(Config, Req, {ok, Result});
@@ -460,10 +502,13 @@ common_write(Config, Callback, Req, LocalAccess, BlockNo, BlockNo, Data, undefin
 	    send_msg(Config, Req, Reply),
 	    terminate(Config, Req, ?ERROR(write, Code, Text))
     end;
+common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, _Data, undefined) 
+  when ActualBlockNo < ExpectedBlockNo ->
+    common_ack(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, undefined);
 common_write(Config, Callback, Req, _, ExpectedBlockNo, ActualBlockNo, _, _) ->
     Code = badblk,
     Text = "Unknown transfer ID = " ++ 
-	integer_to_list(ActualBlockNo) ++ "(" ++ integer_to_list(ExpectedBlockNo) ++ ")", 
+	integer_to_list(ActualBlockNo) ++ " (" ++ integer_to_list(ExpectedBlockNo) ++ ")", 
     {undefined, Error} =
 	callback({abort, {Code, Text}}, Config, Callback, Req),
     send_msg(Config, Req, Error),
@@ -473,8 +518,19 @@ common_ack(Config, Callback, Req, LocalAccess, BlockNo, Prepared) ->
     Reply = #tftp_msg_ack{block_no = BlockNo},
     {Config2, Callback2, Next} = 
 	transfer(Config, Callback, Req, Reply, LocalAccess, Prepared),
-    NextBlockNo = BlockNo + 1, 
-    common_loop(Config2, Callback2, Req, Next, LocalAccess, NextBlockNo).
+    NextBlockNo = BlockNo + 1,
+    case NextBlockNo =< 65535 of
+	true ->   
+	    common_loop(Config2, Callback2, Req, Next, LocalAccess, NextBlockNo);
+	false ->
+	    Code = badblk,
+	    Text = "Too big transfer ID = " ++ 
+		integer_to_list(NextBlockNo) ++ " > 65535", 
+	    {undefined, Error} =
+		callback({abort, {Code, Text}}, Config, Callback, Req),
+	    send_msg(Config, Req, Error),
+	    terminate(Config, Req, ?ERROR(read, Code, Text))
+    end.
 
 pre_terminate(Config, Req, Result) ->
     if
@@ -497,31 +553,31 @@ terminate(Config, Req, Result) ->
 		{error, {What, Code, Text}}
     end,  
     if
-	Config#config.parent_pid == undefined ->
-	    close_port(Config, client),
+	Config#config.parent_pid =:= undefined ->
+	    close_port(Config, client, Req),
 	    exit(normal);
 	Req#tftp_msg_req.local_filename /= undefined  ->
 	    %% Client
-	    close_port(Config, client),
+	    close_port(Config, client, Req),
 	    proc_lib:init_ack(Result2),
 	    unlink(Config#config.parent_pid),
 	    exit(normal);
 	true ->
 	    %% Server
-	    close_port(Config, server),
+	    close_port(Config, server, Req),
 	    exit(shutdown)		    
     end.
 
-close_port(Config, Who) ->
+close_port(Config, Who, Data) ->
     case Config#config.udp_socket of
 	undefined -> 
 	    ignore;
 	Socket    -> 
-	    print_debug_info(Config, Who, close, undefined),
+	    print_debug_info(Config, Who, close, Data),
 	    gen_udp:close(Socket)
     end.
 
-open_free_port(Config, Who) when record(Config, config) ->
+open_free_port(Config, Who, Data) when is_record(Config, config) ->
     UdpOptions = Config#config.udp_options,
     case Config#config.port_policy of
 	random ->
@@ -529,7 +585,7 @@ open_free_port(Config, Who) when record(Config, config) ->
 	    case catch gen_udp:open(0, UdpOptions) of
 		{ok, Socket} ->
 		    Config2 = Config#config{udp_socket = Socket},
-		    print_debug_info(Config2, Who, open, undefined),
+		    print_debug_info(Config2, Who, open, Data),
 		    {ok, Config2};
 		{error, Reason} ->
 		    Text = lists:flatten(io_lib:format("UDP open ~p -> ~p", [[0 | UdpOptions], Reason])),
@@ -542,12 +598,12 @@ open_free_port(Config, Who) when record(Config, config) ->
 	    case catch gen_udp:open(Port, UdpOptions) of
 		{ok, Socket} ->
 		    Config2 = Config#config{udp_socket = Socket},
-		    print_debug_info(Config2, Who, open, undefined),
+		    print_debug_info(Config2, Who, open, Data),
 		    {ok, Config2};
 		{error, eaddrinuse} ->
 		    PortPolicy = {range, Port + 1, Max},
 		    Config2 = Config#config{port_policy = PortPolicy},
-		    open_free_port(Config2, Who);
+		    open_free_port(Config2, Who, Data);
 		{error, Reason} ->
 		    Text = lists:flatten(io_lib:format("UDP open ~p -> ~p", [[Port | UdpOptions], Reason])),
 		    ?ERROR(open, undef, Text);
@@ -576,22 +632,27 @@ do_transfer(Config, Callback, Req, Msg, IoList, LocalAccess, Prepared, Retry) ->
 	ok ->
 	    {Callback2, Prepared2} = 
 		early_read(Config, Callback, Req, LocalAccess, Prepared),
+	    Code = undef,
+	    Text = "Transfer timed out.",
 	    case wait_for_msg(Config, Callback, Req) of
-		timeout when Config#config.polite_ack == true ->
+		timeout when Config#config.polite_ack =:= true ->
 		    do_send_msg(Config, Req, Msg, IoList),
-		    terminate(Config, Req, Prepared2);
-		timeout when Retry == true ->
+		    case Prepared2 of
+			{terminate, Result} ->
+			    terminate(Config, Req, {ok, Result});
+			_ ->
+			    terminate(Config, Req, ?ERROR(transfer, Code, Text))
+		    end;
+		timeout when Retry =:= true ->
 		    Retry2 = false,
 		    do_transfer(Config, Callback2, Req, Msg, IoList, LocalAccess, Prepared2, Retry2);
 		timeout ->
-		    Code = undef,
-		    Text = "Transfer timed out.",
 		    Error = #tftp_msg_error{code = Code, text = Text},
 		    {Config, Callback, {error, Error}};
 		{Config2, Reply} ->
 		    {Config2, Callback2, {ok, Reply, Prepared2}}
 	    end;
-        {error, _Reason} when Retry == true ->
+        {error, _Reason} when Retry =:= true ->
 	    do_transfer(Config, Callback, Req, Msg, IoList, LocalAccess, Prepared, false);
 	{error, Reason} ->
 	    Code = undef,
@@ -619,16 +680,26 @@ do_send_msg(Config, Req, Msg, IoList) ->
 
 wait_for_msg(Config, Callback, Req) ->
     receive
-	{info, Pid} when pid(Pid) ->
+	{info, Ref, FromPid} when is_pid(FromPid) ->
 	    Type =
 		case Req#tftp_msg_req.local_filename /= undefined of
 		    true  -> client;
 		    false -> server
 		end,
-	    Pid ! {info, self(), internal_info(Config, Type)},
+	    Info = internal_info(Config, Type),
+	    reply({ok, Info}, Ref, FromPid),
 	    wait_for_msg(Config, Callback, Req);
-	{udp, Socket, RemoteHost, RemotePort, Bin} when  binary(Bin),
-	                                     Callback#callback.block_no == undefined ->
+	{{change_config, Options}, Ref, FromPid} when is_pid(FromPid) ->
+	    case catch tftp_lib:parse_config(Options, Config) of
+		{'EXIT', Reason} ->
+		    reply({error, Reason}, Ref, FromPid),
+		    wait_for_msg(Config, Callback, Req);
+		Config2 when is_record(Config2, config) ->
+		    reply(ok, Ref, FromPid),
+		    wait_for_msg(Config2, Callback, Req)
+	    end;
+	{udp, Socket, RemoteHost, RemotePort, Bin} when is_binary(Bin),
+	                                     Callback#callback.block_no =:= undefined ->
 	    %% Client prepare
 	    inet:setopts(Socket, [{active, once}]),
 	    Config2 = Config#config{udp_host = RemoteHost,
@@ -636,9 +707,9 @@ wait_for_msg(Config, Callback, Req) ->
 	    DecodedMsg = (catch tftp_lib:decode_msg(Bin)),
 	    print_debug_info(Config2, Req, recv, DecodedMsg),
 	    {Config2, DecodedMsg};
-	{udp, Socket, Host, Port, Bin} when binary(Bin),
-                                            Config#config.udp_host == Host,
-	                                    Config#config.udp_port == Port ->
+	{udp, Socket, Host, Port, Bin} when is_binary(Bin),
+                                            Config#config.udp_host =:= Host,
+	                                    Config#config.udp_port =:= Port ->
 	    inet:setopts(Socket, [{active, once}]),
 	    DecodedMsg = (catch tftp_lib:decode_msg(Bin)),
 	    print_debug_info(Config, Req, recv, DecodedMsg),
@@ -646,14 +717,14 @@ wait_for_msg(Config, Callback, Req) ->
 	{system, From, Msg} ->
 	    Misc = {wait_for_msg, [Config, Callback, Req]},
 	    sys:handle_system_msg(Msg, From, Config#config.parent_pid, ?MODULE, [], Misc);
-	{'EXIT', Pid, Reason} when Config#config.parent_pid == Pid ->
+	{'EXIT', Pid, _Reason} when Config#config.parent_pid =:= Pid ->
 	    Code = undef,
 	    Text = "Parent exited.",
-	    terminate(Config, Req, {error, {wait_for_msg, Code, Text, Reason}});
+	    terminate(Config, Req, ?ERROR(wait_for_msg, Code, Text));
 	Msg when Req#tftp_msg_req.local_filename /= undefined ->
 	    error("Client received : ~p", [Msg]),
 	    wait_for_msg(Config, Callback, Req);
-	Msg when Req#tftp_msg_req.local_filename == undefined ->
+	Msg when Req#tftp_msg_req.local_filename =:= undefined ->
 	    error("Server received : ~p", [Msg]),
 	    wait_for_msg(Config, Callback, Req)
     after Config#config.timeout * 1000 ->
@@ -678,12 +749,12 @@ callback(Access, Config, Callback, Req) ->
     {Callback2, Result}.
 
 do_callback(read = Fun, Config, Callback, Req) 
-  when record(Config, config),
-       record(Callback, callback),
-       record(Req, tftp_msg_req) ->
+  when is_record(Config, config),
+       is_record(Callback, callback),
+       is_record(Req, tftp_msg_req) ->
     Args =  [Callback#callback.state],
     case catch apply(Callback#callback.module, Fun, Args) of
-	{more, Bin, NewState} when binary(Bin) ->
+	{more, Bin, NewState} when is_binary(Bin) ->
 	    BlockNo = Callback#callback.block_no + 1,
 	    Count   = Callback#callback.count + size(Bin),
 	    Callback2 = Callback#callback{state    = NewState, 
@@ -700,10 +771,10 @@ do_callback(read = Fun, Config, Callback, Req)
 	    callback({abort, {Code, Text, Details}}, Config, Callback, Req)
     end;
 do_callback({write = Fun, Bin}, Config, Callback, Req)
-  when record(Config, config),
-       record(Callback, callback),
-       record(Req, tftp_msg_req),
-       binary(Bin) ->
+  when is_record(Config, config),
+       is_record(Callback, callback),
+       is_record(Req, tftp_msg_req),
+       is_binary(Bin) ->
     Args =  [Bin, Callback#callback.state],
     case catch apply(Callback#callback.module, Fun, Args) of
 	{more, NewState} ->
@@ -723,9 +794,9 @@ do_callback({write = Fun, Bin}, Config, Callback, Req)
 	    callback({abort, {Code, Text, Details}}, Config, Callback, Req)
     end;
 do_callback({open, Type}, Config, Callback, Req)
-  when record(Config, config),
-       record(Callback, callback),
-       record(Req, tftp_msg_req) ->
+  when is_record(Config, config),
+       is_record(Callback, callback),
+       is_record(Req, tftp_msg_req) ->
     {Access, Filename} = local_file_access(Req),
     {Fun, BlockNo} =
 	case Type of
@@ -766,20 +837,20 @@ do_callback({abort, {Code, Text, Details}}, Config, Callback, Req) ->
     Error = #tftp_msg_error{code = Code, text = Text, details = Details},
     do_callback({abort, Error}, Config, Callback, Req);
 do_callback({abort = Fun, #tftp_msg_error{code = Code, text = Text} = Error}, Config, Callback, Req)
-  when record(Config, config),
-       record(Callback, callback), 
-       record(Req, tftp_msg_req) ->
+  when is_record(Config, config),
+       is_record(Callback, callback), 
+       is_record(Req, tftp_msg_req) ->
     Args =  [Code, Text, Callback#callback.state],
     catch apply(Callback#callback.module, Fun, Args),
     {undefined, Error};
-do_callback({abort, Error}, _Config, undefined, _Req) when record(Error, tftp_msg_error) ->
+do_callback({abort, Error}, _Config, undefined, _Req) when is_record(Error, tftp_msg_error) ->
     {undefined, Error}.
 
 peer_info(#config{udp_host = Host, udp_port = Port}) ->
     if
-	tuple(Host), size(Host) == 4 ->
+	is_tuple(Host), size(Host) =:= 4 ->
 	    {inet, tftp_lib:host_to_string(Host), Port};
-	tuple(Host), size(Host) == 8 ->
+	is_tuple(Host), size(Host) =:= 8 ->
 	    {inet6, tftp_lib:host_to_string(Host), Port};
 	true ->
 	    {undefined, Host, Port}
@@ -787,17 +858,17 @@ peer_info(#config{udp_host = Host, udp_port = Port}) ->
 
 match_callback(Filename, Callbacks) ->
     if
-	Filename == binary ->
+	Filename =:= binary ->
 	    {ok, #callback{regexp   = "", 
 			   internal = "", 
 			   module   = tftp_binary,
 			   state    = []}};
-	binary(Filename) ->
+	is_binary(Filename) ->
 	    {ok, #callback{regexp   = "", 
 			   internal = "", 
 			   module   = tftp_binary, 
 			   state    = []}};  
-	Callbacks == []  ->
+	Callbacks =:= []  ->
 	    {ok, #callback{regexp   = "", 
 			   internal = "",
 			   module   = tftp_file, 
@@ -806,7 +877,7 @@ match_callback(Filename, Callbacks) ->
 	    do_match_callback(Filename, Callbacks)
     end.
 
-do_match_callback(Filename, [C | Tail]) when record(C, callback) ->
+do_match_callback(Filename, [C | Tail]) when is_record(C, callback) ->
     case catch regexp:match(Filename, C#callback.internal) of
 	{match, _, _} ->
 	    {ok, C};
@@ -853,14 +924,14 @@ internal_info(Config, Type) ->
      {rejected, Config#config.rejected},
      {timeout, Config#config.timeout},
      {polite_ack, Config#config.polite_ack},
-     {debug_level, Config#config.debug_level},
+     {debug, Config#config.debug_level},
      {parent_pid, Config#config.parent_pid}
     ] ++ Config#config.user_options ++ Config#config.callbacks.
 
 local_file_access(#tftp_msg_req{access = Access, 
 				local_filename = Local, 
 				filename = Filename}) ->
-    case Local == undefined of
+    case Local =:= undefined of
 	true ->
 	    %% Server side
 	    {Access, Filename};
@@ -898,7 +969,7 @@ post_verify_options(Config, Req, NewOptions, Text) ->
     BadOptions  = 
 	[Key || {Key, _Val} <- NewOptions, 
 		not lists:keymember(Key, 1, OldOptions)],
-    case BadOptions == [] of
+    case BadOptions =:= [] of
 	true ->
 	    {ok,
 	     Config#config{timeout = lookup_timeout(NewOptions)},
@@ -937,15 +1008,15 @@ lookup_mode(Options) ->
 
 verify_integer(Key, Min, Max, Options) ->
     case lists:keysearch(Key, 1, Options) of
-	{value, {_, Val}} when list(Val) ->
+	{value, {_, Val}} when is_list(Val) ->
 	    case catch list_to_integer(Val) of
 		{'EXIT', _} ->
 		    false;
-		Int when Int >= Min, integer(Min),
-		         Max == infinity ->
+		Int when Int >= Min, is_integer(Min),
+		         Max =:= infinity ->
 		    true;
-		Int when Int >= Min, integer(Min),
-                         Int =< Max, integer(Max) ->
+		Int when Int >= Min, is_integer(Min),
+                         Int =< Max, is_integer(Max) ->
 		    true;
 		_ ->
 		    false
@@ -958,32 +1029,34 @@ error(F, A) ->
 
 print_debug_info(#config{debug_level = Level} = Config, Who, What, Data) ->
     if
-	Level == none ->
+	Level =:= none ->
 	    ok;
-	record(Data, error) ->
+	is_record(Data, error) ->
 	    do_print_debug_info(Config, Who, What, Data);
-	Level == all ->
+	Level =:= error ->
+	    ok;	
+	Level =:= all ->
 	    do_print_debug_info(Config, Who, What, Data);
-	What == open ->
+	What =:= open ->
 	    do_print_debug_info(Config, Who, What, Data);
-	What == close ->
+	What =:= close ->
 	    do_print_debug_info(Config, Who, What, Data);
-	Level == brief ->
+	Level =:= brief ->
 	    ok;	
 	What /= recv, What /= send ->
 	    ok;
-	record(Data, tftp_msg_data), Level == normal ->
+	is_record(Data, tftp_msg_data), Level =:= normal ->
 	    ok;	 
-	record(Data, tftp_msg_ack), Level == normal ->
+	is_record(Data, tftp_msg_ack), Level =:= normal ->
 	    ok;
 	true ->
 	    do_print_debug_info(Config, Who, What, Data)
     end.
 
-do_print_debug_info(Config, Who, What, #tftp_msg_data{data = Bin} = Msg) when binary(Bin) ->
+do_print_debug_info(Config, Who, What, #tftp_msg_data{data = Bin} = Msg) when is_binary(Bin) ->
     Msg2 = Msg#tftp_msg_data{data = {bytes, size(Bin)}},
     do_print_debug_info(Config, Who, What, Msg2);
-do_print_debug_info(Config, Who, What, #tftp_msg_req{local_filename = Filename} = Msg) when binary(Filename) ->
+do_print_debug_info(Config, Who, What, #tftp_msg_req{local_filename = Filename} = Msg) when is_binary(Filename) ->
     Msg2 = Msg#tftp_msg_req{local_filename = binary},
     do_print_debug_info(Config, Who, What, Msg2);
 do_print_debug_info(Config, Who, What, Data) ->
@@ -994,41 +1067,42 @@ do_print_debug_info(Config, Who, What, Data) ->
 	    {ok, Port} ->
 		Port
 	end,
-    Remote = Config#config.udp_port,
+    %% Remote = Config#config.udp_port,
+    PeerInfo = peer_info(Config),
     Side = 
 	if
-	    record(Who, tftp_msg_req),
+	    is_record(Who, tftp_msg_req),
 	    Who#tftp_msg_req.local_filename /= undefined ->
 		client;
-	    record(Who, tftp_msg_req),
-	    Who#tftp_msg_req.local_filename == undefined ->
+	    is_record(Who, tftp_msg_req),
+	    Who#tftp_msg_req.local_filename =:= undefined ->
 		server;
-	    atom(Who) ->
+	    is_atom(Who) ->
 		Who
 	end,
     case {What, Data} of
 	{_, #error{what = What, code = Code, text = Text}} -> 
-	    io:format("~p(~p): ~p ~p -> ~p: ~s\n", [Side, Local, What, self(), Code, Text]);
-	{open, _} ->
-	    io:format("~p(~p): open ~p ->  ~p\n", [Side, Local, self(), Config#config.udp_host]);
-	{close, _} ->
-	    io:format("~p(~p): close ~p ->  ~p\n", [Side, Local, self(), Config#config.udp_host]);
+	    io:format("~p(~p): ~p ~p -> ~p: ~s\n", [Side, Local, self(), What, Code, Text]);
+	{open, #tftp_msg_req{filename = Filename}} ->
+	    io:format("~p(~p): open  ~p -> ~p ~p\n", [Side, Local, PeerInfo, self(), Filename]);
+	{close, #tftp_msg_req{filename = Filename}} ->
+	    io:format("~p(~p): close ~p -> ~p ~p\n", [Side, Local, PeerInfo, self(), Filename]);
 	{recv, _} ->
-	    io:format("~p(~p): recv  ~p <- ~p\n", [Side, Local, Remote, Data]);
+	    io:format("~p(~p): recv  ~p <- ~p\n", [Side, Local, PeerInfo, Data]);
 	{send, _} ->
-	    io:format("~p(~p): send  ~p -> ~p\n", [Side, Local, Remote, Data]);
-	{match, _} when record(Data, callback) ->
+	    io:format("~p(~p): send  ~p -> ~p\n", [Side, Local, PeerInfo, Data]);
+	{match, _} when is_record(Data, callback) ->
 	    Mod = Data#callback.module,
 	    State = Data#callback.state,
-	    io:format("~p(~p): match ~p ~p => ~p\n", [Side, Local, Remote, Mod, State]);
+	    io:format("~p(~p): match ~p ~p => ~p\n", [Side, Local, PeerInfo, Mod, State]);
 	{call, _} ->
 	    case Data of
-		{Callback, _Result} when record(Callback, callback) ->
+		{Callback, _Result} when is_record(Callback, callback) ->
 		    Mod   = Callback#callback.module,
 		    State = Callback#callback.state,
-		    io:format("~p(~p): call ~p ~p => ~p\n", [Side, Local, Remote, Mod, State]);
+		    io:format("~p(~p): call ~p ~p => ~p\n", [Side, Local, PeerInfo, Mod, State]);
 		{undefined, Result}  ->
-		    io:format("~p(~p): call ~p result => ~p\n", [Side, Local, Remote, Result])
+		    io:format("~p(~p): call ~p result => ~p\n", [Side, Local, PeerInfo, Result])
 	    end
     end.
 

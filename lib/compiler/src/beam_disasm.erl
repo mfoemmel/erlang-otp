@@ -968,6 +968,13 @@ resolve_inst({bs_final2,[X,Y]},_,_,_) ->
     {bs_final2,X,Y};
 
 %%
+%% R11B-5.
+%% 
+resolve_inst({is_bitstr=I,Args0},_,_,_) ->
+    [L|Args] = resolve_args(Args0),
+    {test,I,L,Args};
+
+%%
 %% Catches instructions that are not yet handled.
 %%
 resolve_inst(X,_,_,_) -> ?exit({resolve_inst,X}).

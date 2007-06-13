@@ -43,7 +43,7 @@
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3, tr_var/2, tr_varbind/1,
-	 handle_pdu/8, worker/2, worker_loop/1, do_send_trap/6]).
+	 handle_pdu/7, worker/2, worker_loop/1, do_send_trap/6]).
 
 -ifndef(default_verbosity).
 -define(default_verbosity,silence).
@@ -514,53 +514,15 @@ db(Tab) ->
 %%% 2. Main loop
 %%%--------------------------------------------------
 handle_info({snmp_pdu, Vsn, Pdu, PduMS, ACMData, Address, Extra}, S) ->
-    ?vdebug("[handle_info] Received PDU: "
-	    "~n   ~p"
-	    "~n   from: ~p", [Pdu, Address]),
-    %% XXX OTP-3324
-    AuthMod = get(auth_module),
-    case AuthMod:init_check_access(Pdu, ACMData) of
-	{ok, MibView, ContextName} ->
-	    AgentData = cheat(ACMData, Address, ContextName),
-	    case valid_pdu_type(Pdu#pdu.type) of
-		true when S#state.multi_threaded == false ->
-		    % Execute in same process
-		    ?vtrace("execute in the same process",[]),
-		    handle_pdu(MibView, Vsn, Pdu, PduMS, 
-			       ACMData, AgentData, Extra),
-		    {noreply, S};
-		true when Pdu#pdu.type == 'set-request' ->
-		    % Always send to main worker, in order to serialize
-		    % the SETs
-		    ?vtrace("send set-request to main worker",[]),
-		    S#state.set_worker !
-			{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
-		    {noreply, S#state{worker_state = busy}};
-		true when S#state.worker_state == busy ->
-		    % Main worker busy => create new worker
-		    ?vtrace("main worker busy -> crete new worker",[]),
-		    spawn_thread(MibView, Vsn, Pdu, PduMS,
-				 ACMData, AgentData, Extra),
-		    {noreply, S};
-		true ->
-		    % Send to main worker
-		    ?vtrace("send to main worker",[]),
-		    S#state.worker !
-			{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
-		    {noreply, S#state{worker_state = busy}};
-		_ -> 
-		    {noreply, S}
-	    end;
-	{error, Reason} ->
-	    ?vlog("~n   auth init check failed: ~p", [Reason]),
-	    handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra),
-	    {noreply, S};
-	{discarded, Variable, Reason} ->
-	    ?vlog("~n   PDU discarded for reason: ~p", [Reason]),
-	    get(net_if) ! {discarded_pdu, Vsn, Pdu#pdu.request_id,
-			   ACMData, Variable, Extra},
-	    {noreply, S}
-    end;
+    ?vdebug("handle_info(snmp_pdu) -> entry with"
+	    "~n   Vsn:     ~p"
+	    "~n   Pdu:     ~p"
+	    "~n   Address: ~p", [Vsn, Pdu, Address]),
+    
+    NewS = handle_snmp_pdu(is_valid_pdu_type(Pdu#pdu.type),
+			   Vsn, Pdu, PduMS, ACMData, Address, Extra, S),
+
+    {noreply, NewS};
 
 handle_info(worker_available, S) ->
     ?vdebug("worker available",[]),
@@ -947,54 +909,18 @@ terminate(_Reason, _S) ->
 
 %% Downgrade
 %%
-code_change({down, _Vsn}, S, downgrade_to_pre_4_7) ->
+code_change({down, _Vsn}, S, downgrade_to_pre_4_9_3) ->
     S1 = worker_restart(S),
-    #state{type           = T, 
-	   parent         = P, 
-	   worker         = W, 
-	   worker_state   = WS,
-	   set_worker     = SW, 
-	   multi_threaded = MT, 
-	   ref            = R, 
-	   vsns           = V,
-	   nfilters       = NF,
-	   note_store     = NS,
-	   mib_server     = MS,   
-	   net_if         = NI,
-	   backup         = B} = S1,
-    %% There is no way to stop a running backup server in a controlled
-    %% way, so we has to use brute force...
-    stop_backup_server(B),
-    NS = {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI},
-    {ok, NS};
+    {ok, S1};
 
 %% Upgrade
 %%
-code_change(_Vsn, S, upgrade_from_pre_4_7) ->
-    {state, T, P, W, WS, SW, MT, R, V, NF, NS, MS, NI} = S,
-    S1 = #state{type           = T, 
-		parent         = P, 
-		worker         = W, 
-		worker_state   = WS,
-		set_worker     = SW, 
-		multi_threaded = MT, 
-		ref            = R, 
-		vsns           = V,
-		nfilters       = NF,
-		note_store     = NS,
-		mib_server     = MS,   
-		net_if         = NI},
-    NS = worker_restart(S1),
-    {ok, NS};
+code_change(_Vsn, S, upgrade_from_pre_4_9_3) ->
+    S1 = worker_restart(S),
+    {ok, S1};
 
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
-
-
-stop_backup_server(undefined) ->
-    ok;
-stop_backup_server({Pid, _}) when pid(Pid) ->
-    exit(Pid, kill).
 
 
 worker_restart(S) ->
@@ -1087,11 +1013,10 @@ cheat(_, Address, ContextName) ->
 %% 
 %%-----------------------------------------------------------------
 
-spawn_thread(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra) ->
+spawn_thread(Vsn, Pdu, PduMS, ACMData, Address, Extra) ->
     Dict = get(),
-    proc_lib:spawn_link(?MODULE, handle_pdu,
-			[MibView, Vsn, Pdu, PduMS, ACMData,
-			 AgentData, Extra, Dict]).
+    Args = [Vsn, Pdu, PduMS, ACMData, Address, Extra, Dict], 
+    proc_lib:spawn_link(?MODULE, handle_pdu, Args).
 
 spawn_trap_thread(TrapRec, NotifyName, ContextName, Recv, V) ->
     Dict = get(),
@@ -1108,27 +1033,37 @@ do_send_trap(TrapRec, NotifyName, ContextName, Recv, V, Dict) ->
 
 worker(Master, Dict) ->
     lists:foreach(fun({Key, Val}) -> put(Key, Val) end, Dict),
-    put(sname,worker_short_name(get(sname))),
+    put(sname, worker_short_name(get(sname))),
     ?vlog("starting",[]),
     worker_loop(Master).
 
 worker_loop(Master) ->
     receive
-	{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra} ->
-	    handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
+	{Vsn, Pdu, PduMS, ACMData, Address, Extra} ->
+	    handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra),
 	    Master ! worker_available;
+
+	%% Old style message
+	{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra} ->
+	    do_handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
+	    Master ! worker_available;
+
 	{TrapRec, NotifyName, ContextName, Recv, V} -> % We don't trap exits!
 	    ?vtrace("send trap:~n   ~p",[TrapRec]),
 	    snmpa_trap:send_trap(TrapRec, NotifyName, 
 				 ContextName, Recv, V, get(net_if)),
 	    Master ! worker_available;
+
 	{verbosity, Verbosity} ->
 	    put(verbosity,snmp_verbosity:validate(Verbosity));
+
 	terminate ->
 	    exit(normal);
+
 	_X ->
 	    %% ignore
 	    ok
+
     after 30000 ->
 	    %% This is to assure that the worker process leaves a
 	    %% possibly old version of this module.
@@ -1140,67 +1075,74 @@ worker_loop(Master) ->
 %%-----------------------------------------------------------------
 %%-----------------------------------------------------------------
 
-% handle_snmp_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra, S) ->
-%      %% XXX OTP-3324
-%     AuthMod = get(auth_module),
-%     case AuthMod:init_check_access(Pdu, ACMData) of
-% 	{ok, MibView, ContextName} ->
-% 	    AgentData = cheat(ACMData, Address, ContextName),
-% 	    do_handle_snmp_pdu(valid_pdu_type(Pdu#pdu.type), S, 
-% 			       MibView, Vsn, Pdu, PduMS, 
-% 			       ACMData, AgentData, Extra);
-% 	{error, Reason} ->
-% 	    ?vlog("auth init check failed: ~n   ~p", [Reason]),
-% 	    handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra),
-% 	    S;
-% 	{discarded, Variable, Reason} ->
-% 	    ?vlog("PDU discarded for reason: ~n~p", [Reason]),
-% 	    get(net_if) ! {discarded_pdu, Vsn, Pdu#pdu.request_id,
-% 			   ACMData, Variable, Extra},
-% 	    S
-%     end.
+handle_snmp_pdu(true, Vsn, Pdu, PduMS, ACMData, Address, Extra, 
+		#state{multi_threaded = false} = S) ->
+    ?vtrace("handle_snmp_pdu -> single-thread agent",[]),
+    handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra),
+    S;
+handle_snmp_pdu(true, Vsn, #pdu{type = 'set-request'} = Pdu, PduMS, 
+		ACMData, Address, Extra, 
+		#state{set_worker = Worker} = S) ->
+    ?vtrace("handle_snmp_pdu -> multi-thread agent: "
+	    "send set-request to main worker",[]),
+    Worker ! {Vsn, Pdu, PduMS, ACMData, Address, Extra}, 
+    S#state{worker_state = busy};
+handle_snmp_pdu(true, Vsn, Pdu, PduMS, 
+		ACMData, Address, Extra, 
+		#state{worker_state = busy} = S) ->
+    ?vtrace("handle_snmp_pdu -> multi-thread agent: "
+	    "main worker busy - create new worker",[]),
+    spawn_thread(Vsn, Pdu, PduMS, ACMData, Address, Extra),
+    S;
+handle_snmp_pdu(true, Vsn, Pdu, PduMS, ACMData, Address, Extra, 
+		#state{worker = Worker} = S) ->
+    ?vtrace("handle_snmp_pdu -> multi-thread agent: "
+	    "send to main worker",[]),
+    Worker ! {Vsn, Pdu, PduMS, ACMData, Address, Extra}, 
+    S#state{worker_state = busy};
+handle_snmp_pdu(_, _Vsn, _Pdu, _PduMS, _ACMData, _Address, _Extra, S) ->
+    S.
 
-% do_handle_snmp_pdu(true, #state{multi_threaded = false} = S,
-% 		   MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra) ->
-%     %% Execute in same process
-%     ?vtrace("execute in the same process",[]),
-%     handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
-%     S;
-% do_handle_snmp_pdu(true, #state{set_worker = SetWorker} = S,
-% 		   MibView, Vsn, #pdu{type = 'set-request'} = Pdu, 
-% 		   PduMS, ACMData, AgentData, Extra) ->
-%     %% Always send to main worker, in order to serialize the SETs
-%     ?vtrace("send set-request to main worker",[]),
-%     SetWorker ! {MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
-%     S#state{worker_state = busy};
-% do_handle_snmp_pdu(true, #state{worker_state = busy} = S,
-% 		   MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra) ->
-%     %% Main worker busy => create new worker
-%     ?vtrace("main worker busy -> crete new worker",[]),
-%     spawn_thread(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
-%     S;
-% do_handle_snmp_pdu(true, #state{worker = Worker} = S,
-% 		   MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra) ->
-%     %% Send to main worker
-%     ?vtrace("send to main worker",[]),
-%     Worker ! {MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra},
-%     S#state{worker_state = busy};
-% do_handle_snmp_pdu(_, S, _, _, _, _, _, _, _) ->
-%     S.
-    
-   
-handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra, Dict) ->
+
+%% Called via the spawn_thread function
+handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra, Dict) ->
     lists:foreach(fun({Key, Val}) -> put(Key, Val) end, Dict),
-    put(sname,pdu_handler_short_name(get(sname))),
-    ?vlog("starting",[]),
-    handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra).
+    put(sname, pdu_handler_short_name(get(sname))),
+    ?vlog("new worker starting",[]),
+    handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra).
 
-handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData,
-	   {Community, Address, ContextName}, Extra) ->
+handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra) ->
+    %% OTP-3324
+    AuthMod = get(auth_module),
+    case AuthMod:init_check_access(Pdu, ACMData) of
+	{ok, MibView, ContextName} ->
+	    ?vlog("handle_pdu -> ok:"
+		  "~n   MibView:     ~p"
+		  "~n   ContextName: ~p", [MibView, ContextName]),
+	    AgentData = cheat(ACMData, Address, ContextName),
+	    do_handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra);
+	{error, Reason} ->
+	    ?vlog("handle_pdu -> error:"
+		  "~n   Reason: ~p", [Reason]),
+	    handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra);
+	{discarded, Variable, Reason} ->
+	    ?vlog("handle_pdu -> discarded:"
+		  "~n   Variable: ~p"
+		  "~n   Reason:   ~p", [Variable, Reason]),
+	    get(net_if) ! {discarded_pdu, Vsn, Pdu#pdu.request_id,
+			   ACMData, Variable, Extra}
+    end.
+
+do_handle_pdu(MibView, Vsn, Pdu, PduMS, 
+	      ACMData, {Community, Address, ContextName}, Extra) ->
+    
     put(net_if_data, Extra),
+
     RePdu = process_msg(MibView, Vsn, Pdu, PduMS, Community, 
 			Address, ContextName),
-    ?vtrace("reply PDU:~n   ~p",[RePdu]),
+
+    ?vtrace("do_handle_pdu -> processed:"
+	    "~n   RePdu: ~p", [RePdu]),
     get(net_if) ! {snmp_response, Vsn, RePdu, 
 		   RePdu#pdu.type, ACMData, Address, Extra}.
 
@@ -1208,7 +1150,7 @@ handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData,
 handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
     #pdu{type = Type, request_id = ReqId, varbinds = Vbs} = Pdu,
     RawErrStatus = snmpa_acm:error2status(Reason),
-    case valid_pdu_type(Type) of
+    case is_valid_pdu_type(Type) of
 	true ->
 	    %% RawErrStatus can be authorizationError or genErr.  If it is
 	    %% authorizationError, we'll have to do different things, 
@@ -1234,14 +1176,18 @@ handle_acm_error(Vsn, Reason, Pdu, ACMData, Address, Extra) ->
 			make_response_pdu(ReqId, RawErrStatus, Idx, Vbs, Vbs);
 		    Type == 'get-request' ->  % this is v2
 			ReVbs = lists:map(
-				  fun(Vb) -> Vb#varbind{value=noSuchObject} end,
+				  fun(Vb) -> 
+					  Vb#varbind{value=noSuchObject} 
+				  end,
 				  Vbs),
 			make_response_pdu(ReqId, noError, 0, Vbs, ReVbs);
 		    Type == 'set-request' ->
 			make_response_pdu(ReqId, noAccess, Idx, Vbs, Vbs);
 		    true -> % next or bulk
 			ReVbs = lists:map(
-				  fun(Vb) -> Vb#varbind{value=endOfMibView} end,
+				  fun(Vb) -> 
+					  Vb#varbind{value=endOfMibView} 
+				  end,
 				  Vbs),
 			make_response_pdu(ReqId, noError, 0, Vbs, ReVbs)
 		end,
@@ -2944,15 +2890,18 @@ report_err(Val, Mfa, Err) ->
     user_err("Got ~p from ~w. Using ~w", [Val, Mfa, Err]),
     {error, Err}.
 
-valid_pdu_type('get-request') -> true;
-valid_pdu_type('get-next-request') -> true;
-valid_pdu_type('get-bulk-request') -> true;
-valid_pdu_type('set-request') -> true;
-valid_pdu_type(_) -> false.
+is_valid_pdu_type('get-request')      -> true;
+is_valid_pdu_type('get-next-request') -> true;
+is_valid_pdu_type('get-bulk-request') -> true;
+is_valid_pdu_type('set-request')      -> true;
+is_valid_pdu_type(_)                  -> false.
 
 get_pdu_data() ->
-    {get(net_if_data), get(snmp_request_id),
-     get(snmp_address), get(snmp_community), get(snmp_context)}.
+    {get(net_if_data), 
+     get(snmp_request_id),
+     get(snmp_address), 
+     get(snmp_community), 
+     get(snmp_context)}.
 
 put_pdu_data({Extra, ReqId, Address, Community, ContextName}) -> 
     put(net_if_data, Extra),

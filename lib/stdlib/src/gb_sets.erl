@@ -698,7 +698,7 @@ is_subset_2(_, []) ->
 %% For compatibility with `sets':
 
 is_set({0, nil}) -> true;
-is_set({N, {_, _, _}}) when integer(N), N >= 0 -> true;
+is_set({N, {_, _, _}}) when is_integer(N), N >= 0 -> true;
 is_set(_) -> false.
 
 filter(F, S) ->

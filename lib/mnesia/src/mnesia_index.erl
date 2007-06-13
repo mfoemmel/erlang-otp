@@ -114,7 +114,8 @@ del_object_index2([{Pos, Ixt} | Tail], SoB, Tab, K, Obj, Old) ->
     del_object_index2(Tail, SoB, Tab, K, Obj, Old).
 
 del_object_bag(Tab, Key, Obj, Pos, Ixt, undefined) -> 
-    Old = mnesia_lib:db_get(Tab, Key),
+    IxKey = element(Pos, Obj),
+    Old = [X || X <-  mnesia_lib:db_get(Tab, Key), element(Pos, X) =:= IxKey],
     del_object_bag(Tab, Key, Obj, Pos, Ixt, Old);
 %% If Tab type is bag we need remove index identifier if Tab 
 %% contains less than 2 elements. 

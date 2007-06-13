@@ -1,0 +1,22 @@
+{"2.1.2.1",
+ [
+  {"2.1",
+   [{load_module, cpu_sup},
+    {load_module, disksup},
+    {load_module, memsup},
+    {load_module, os_mon},
+    {load_module, os_mon_mib}]},
+  {"2.1.1",
+   [{load_module, os_mon_mib}]}
+ ],
+ [
+  {"2.1",
+   [{load_module, cpu_sup},
+    {load_module, disksup},
+    {load_module, memsup},
+    {load_module, os_mon},
+    {load_module, os_mon_mib}]},
+  {"2.1.1",
+   [{load_module, os_mon_mib}]}
+  ]
+}.

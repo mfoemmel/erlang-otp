@@ -108,12 +108,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R11B-0.tar.gz | tar xf -
-  1)    zcat otp_src_R11B-0.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R11B-5.tar.gz | tar xf -
+  1)    zcat otp_src_R11B-5.tar.gz | tar xf -
 
 Now cd into the base directory
 
-  2)    cd otp_src_R11B-0
+  2)    cd otp_src_R11B-5
 
 On some platforms Perl may behave strangely if certain locales are set,
 so optionally you may need to set the LANG variable:
@@ -162,7 +162,7 @@ Other options are:
 				of the SMP emulator. (See the next section.)
 
 	--enable-threads	Enable support for threaded I/O.
-				(This is the default is SMP support is enabled.
+				(This is the default if SMP support is enabled.
 				See the next section.)
 				
 	--disable-hipe   	Disable HiPE (High-Performance Erlang).
@@ -187,6 +187,28 @@ having to do step 5 again).
 If you or your system has special requirements please read the
 Makefile for additional configuration information.
 
+Distribution with pre-built platform independent build results
+--------------------------------------------------------------
+
+The distribution with pre-built platform independent build results
+contains all source files as well as most platform independent build
+results, e.g., most '*.beam' files. This distribution also contains a
+file named 'otp_src_R11B-5/prebuilt.files' which contains the names of
+all pre-built files. Most of the content of the bootstrap directory have
+been removed, but it can be recreated from the pre-built files.
+
+The build procedure is the same for this distribution as for the
+distribution without any pre-built files. The actual build will, however,
+go much faster since 'make' will notice that a lot of the build results
+already have been built.
+
+NOTE: Doing 'make clean' in an arbitrary directory of the source tree,
+may remove files needed for bootstrapping the build. Doing
+'make recreate_primary_bootstrap' from the $ERL_TOP directory before
+doing 'make clean' will ensure that it will be possible to build after
+doing 'make clean'. 'make recreate_primary_bootstrap' will be invoked
+automatically when 'make' is invoked from ERL_TOP with with either the
+clean target, or the default target.
 
 Support for SMP (Symmetric Multi Processing)
 --------------------------------------------
@@ -217,13 +239,13 @@ For some graphical tools to find the on-line help you have to install
 the HTML documentation on top of the installed OTP applications, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_html_R11B-0.tar.gz | tar xf -
+        gunzip -c otp_html_R<XY>B-<Z>.tar.gz | tar xf -
 
 For "erl -man <page>" to work the Unix manual pages have to be
 installed in the same way, i.e.
 
         cd <PrefixDir>/lib/erlang
-        gunzip -c otp_man_R11B-0.tar.gz | tar xf -
+        gunzip -c otp_man_R<XY>B-<Z>.tar.gz | tar xf -
 
 
 GS (Graphic System)

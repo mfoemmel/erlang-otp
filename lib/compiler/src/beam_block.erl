@@ -444,7 +444,7 @@ opt_alloc(Is, Ns, Nh, LivingRegs) ->
 gen_init(Fs, Regs) -> gen_init(Fs, Regs, 0, []).
 
 gen_init(SameFs, _Regs, SameFs, Acc) -> reverse(Acc);
-gen_init(Fs, Regs, Y, Acc) when Regs band 1 == 0 ->
+gen_init(Fs, Regs, Y, Acc) when Regs band 1 =:= 0 ->
     gen_init(Fs, Regs bsr 1, Y+1, [{init,{y,Y}}|Acc]);
 gen_init(Fs, Regs, Y, Acc) ->
     gen_init(Fs, Regs bsr 1, Y+1, Acc).
@@ -622,6 +622,10 @@ bs_split_int(0, Sz, _, _) when Sz > 64 ->
     %% We don't want to split in this case because the
     %% string will consist of only zeroes.
     no_split;
+bs_split_int(-1, Sz, _, _) when Sz > 64 ->
+    %% We don't want to split in this case because the
+    %% string will consist of only 255 bytes.
+    no_split;
 bs_split_int(N, Sz, Fail, Acc) ->
     FirstByteSz = case Sz rem 8 of
 		      0 -> 8;
@@ -629,6 +633,9 @@ bs_split_int(N, Sz, Fail, Acc) ->
 		  end,
     bs_split_int_1(N, FirstByteSz, Sz, Fail, Acc).
 
+bs_split_int_1(-1, _, Sz, Fail, Acc) when Sz > 64 ->
+    I = {bs_put_integer,Fail,{integer,Sz},1,{field_flags,[big]},{integer,-1}},
+    [I|Acc];
 bs_split_int_1(0, _, Sz, Fail, Acc) when Sz > 64 ->
     I = {bs_put_integer,Fail,{integer,Sz},1,{field_flags,[big]},{integer,0}},
     [I|Acc];

@@ -44,28 +44,28 @@ strong_components(G) ->
 cyclic_strong_components(G) ->
     remove_singletons(strong_components(G), G, []).
 
-reachable(Vs, G) when list(Vs) ->
+reachable(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun out/3, Vs, first)).
     
-reachable_neighbours(Vs, G) when list(Vs) ->
+reachable_neighbours(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun out/3, Vs, not_first)).
     
-reaching(Vs, G) when list(Vs) ->
+reaching(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun in/3, Vs, first)).
     
-reaching_neighbours(Vs, G) when list(Vs) ->
+reaching_neighbours(Vs, G) when is_list(Vs) ->
     lists:append(forest(G, fun in/3, Vs, not_first)).
     
 topsort(G) ->
     L = revpostorder(G),
-    case length(forest(G, fun in/3, L)) == length(digraph:vertices(G)) of
+    case length(forest(G, fun in/3, L)) =:= length(digraph:vertices(G)) of
 	true  -> L;
 	false -> false
     end.
 
 is_acyclic(G) ->
     case loop_vertices(G) of
-	[] -> topsort(G) /= false;
+	[] -> topsort(G) =/= false;
 	_  -> false
     end.
     
@@ -190,10 +190,10 @@ subgraph_opts(G, Vs, Opts) ->
     subgraph_opts(Opts, inherit, true, G, Vs).
 
 subgraph_opts([{type, Type} | Opts], _Type0, Keep, G, Vs)
-  when Type == inherit; list(Type) ->
+  when Type =:= inherit; is_list(Type) ->
     subgraph_opts(Opts, Type, Keep, G, Vs);
 subgraph_opts([{keep_labels, Keep} | Opts], Type, _Keep0, G, Vs)
-  when Keep == true; Keep == false ->
+  when Keep; not Keep ->
     subgraph_opts(Opts, Type, Keep, G, Vs);
 subgraph_opts([], inherit, Keep, G, Vs) ->
     Info = digraph:info(G),
@@ -210,29 +210,29 @@ subgraph(G, Vs, Type, Keep) ->
 	Error = {error, _} ->
 	    Error;
 	SG ->
-	    lists:map(fun(V) -> subgraph_vertex(V, G, SG, Keep) end, Vs),
-	    EFun = fun(V) -> lists:map(fun(E) -> 
+	    lists:foreach(fun(V) -> subgraph_vertex(V, G, SG, Keep) end, Vs),
+	    EFun = fun(V) -> lists:foreach(fun(E) -> 
 					       subgraph_edge(E, G, SG, Keep) 
-				       end,
-				       digraph:out_edges(G, V))
+                                           end,
+                                           digraph:out_edges(G, V))
 		   end,
-	    lists:map(EFun, digraph:vertices(SG)),
+	    lists:foreach(EFun, digraph:vertices(SG)),
 	    SG
     end.
 
 subgraph_vertex(V, G, SG, Keep) ->
     case digraph:vertex(G, V) of
 	false -> ok;
-	_ when Keep == false -> digraph:add_vertex(SG, V);
-	{_V, Label} when Keep == true -> digraph:add_vertex(SG, V, Label)
+	_ when not Keep -> digraph:add_vertex(SG, V);
+	{_V, Label} when Keep -> digraph:add_vertex(SG, V, Label)
     end.
 
 subgraph_edge(E, G, SG, Keep) ->
     {_E, V1, V2, Label} = digraph:edge(G, E),
     case digraph:vertex(SG, V2) of
 	false -> ok;
-	_ when Keep == false -> digraph:add_edge(SG, E, V1, V2, []);
-	_ when Keep == true -> digraph:add_edge(SG, E, V1, V2, Label)
+	_ when not Keep -> digraph:add_edge(SG, E, V1, V2, []);
+	_ when Keep -> digraph:add_edge(SG, E, V1, V2, Label)
     end.
 
 condense(SC, G, SCG, V2I, I2C) ->

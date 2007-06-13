@@ -790,7 +790,52 @@ extern int count_instructions;
 #define IsBoolean(X, Fail) if ((X) != am_true && (X) != am_false) { Fail; }
 
 #define IsBinary(Src, Fail) \
- if (is_not_binary(Src)) { Fail; }
+ if (is_not_binary(Src) || binary_bitsize(Src) != 0) { Fail; }
+
+#define IsBitstr(Src, Fail) \
+  if (is_not_binary(Src)) { Fail; }
+
+#ifdef ARCH_64
+#define BsSafeMul(A, B, Fail, Target)		\
+   do { Uint64 _res = (A) * (B);		\
+      if (_res / B != A) { Fail; }		\
+      Target = _res;				\
+   } while (0)
+#else
+#define BsSafeMul(A, B, Fail, Target)			\
+   do { Uint64 _res = (Uint64)(A) * (Uint64)(B);	\
+      if ((_res >> (8*sizeof(Uint))) != 0) { Fail; }	\
+      Target = _res;					\
+   } while (0)
+#endif
+
+#define BsGetFieldSize(Bits, Unit, Fail, Target)	\
+   do {							\
+      Sint _signed_size; Uint _uint_size;		\
+      if (is_small(Bits)) {				\
+        _signed_size = signed_val(Bits);		\
+         if (_signed_size < 0) { Fail; }		\
+         _uint_size = (Uint) _signed_size;		\
+      } else {						\
+         if (!term_to_Uint(Bits, &temp_bits)) { Fail; }	\
+         _uint_size = temp_bits;			\
+      }							\
+      BsSafeMul(_uint_size, Unit, Fail, Target);	\
+   } while (0)
+
+#define BsGetUncheckedFieldSize(Bits, Unit, Fail, Target)	\
+   do {								\
+      Sint _signed_size; Uint _uint_size;			\
+      if (is_small(Bits)) {					\
+        _signed_size = signed_val(Bits);			\
+         if (_signed_size < 0) { Fail; }			\
+         _uint_size = (Uint) _signed_size;			\
+      } else {							\
+         if (!term_to_Uint(Bits, &temp_bits)) { Fail; }		\
+         _uint_size = (Uint) temp_bits;				\
+      }								\
+      Target = _uint_size * Unit;				\
+   } while (0)
 
 #if !defined(HEAP_FRAG_ELIM_TEST)
 
@@ -893,20 +938,19 @@ extern int count_instructions;
    else { Store(_result, Dst); }			\
  } while(0)  
 
-#define BsGetInteger2_8(Ms, Dst, Store, Fail)				\
- do {								\
-    ErlBinMatchBuffer *_mb;                                     \
-    Eterm _result;						\
-    _mb = ms_matchbuffer(Ms);                                   \
+#define BsGetInteger2_8(Ms, Dst, Store, Fail)		\
+ do {							\
+    ErlBinMatchBuffer *_mb;				\
+    Eterm _result;					\
+    _mb = ms_matchbuffer(Ms);				\
     if (_mb->size - _mb->offset < 8) { Fail; }		\
-    if ((_mb->offset & 7) != 0) {					\
-      _result = erts_bs_get_integer_2(c_p, 8, 0, _mb);		\
-    }								\
-    else {							\
-    _result = make_small(_mb->base[_mb->offset/8]);		\
-    _mb->offset += 8;						\
-    }                                                           \
-    Store(_result, Dst);					\
+    if ((_mb->offset & 7) != 0) {			\
+      _result = erts_bs_get_integer_2(c_p, 8, 0, _mb);	\
+    } else {						\
+      _result = make_small(_mb->base[_mb->offset/8]);	\
+      _mb->offset += 8;					\
+    }							\
+    Store(_result, Dst);				\
  } while (0)
 
 #define BsGetInteger2_16(Ms, Dst, Store, Fail)			\
@@ -915,9 +959,9 @@ extern int count_instructions;
     Eterm _result;						\
     _mb = ms_matchbuffer(Ms);					\
    if (_mb->size - _mb->offset < 16) { Fail; }			\
-   if ((_mb->offset & 7) != 0) {					\
+   if ((_mb->offset & 7) != 0) {				\
       _result = erts_bs_get_integer_2(c_p, 16, 0, _mb);		\
-    }                                                           \
+    }								\
    else {							\
     _result = make_small(get_int16(_mb->base + _mb->offset/8));	\
     _mb->offset += 16;						\
@@ -925,34 +969,8 @@ extern int count_instructions;
     Store(_result, Dst);					\
  } while (0)
 
-#define BsGetInteger2_32(Ms, Live, Dst, Store, Fail)		\
- do {								\
-    ErlBinMatchBuffer *_mb;                                     \
-   Uint32 _integer;						\
-    Eterm _result;						\
-    _mb = ms_matchbuffer(Ms);                                   \
-   if (_mb->size - _mb->offset < 32) { Fail; }	                \
-   if ((_mb->offset & 7) != 0) {				\
-     SWAPOUT;							\
-     _result = erts_bs_get_integer_2(c_p, 32, 0, _mb);		\
-     HTOP = HEAP_TOP(c_p);					\
-   }	                                                        \
-   else {							\
-     _integer = get_int32(_mb->base + _mb->offset/8);	        \
-     _mb->offset += 32;					        \
-    if (IS_USMALL(0, _integer)) {				\
-	_result = make_small(_integer);				\
-    } else {							\
-        TestHeap(BIG_UINT_HEAP_SIZE, Live);			\
-	_result = uint_to_big((Uint) _integer, HTOP);	        \
-	HTOP += BIG_UINT_HEAP_SIZE;				\
-    }								\
-   }								\
-    Store(_result, Dst);				        \
- } while (0)
-
-#define BsGetIntegerImm2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
-  do {							                \
+#define BsGetIntegerImm2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
+  do {							        	\
     ErlBinMatchBuffer *_mb;						\
     Eterm _result; unsigned wordneed;					\
     if (Sz > 27) {							\
@@ -967,91 +985,88 @@ extern int count_instructions;
     else { Store(_result, Dst); }					\
   } while (0)
     
-#define BsGetInteger2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
-    do {								\
-	ErlBinMatchBuffer *_mb;						\
-      Eterm _result; Sint _size; unsigned wordneed;			\
-      if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
-      _size *= ((Flags) >> 3);						\
-      wordneed = 1+WSIZE(NBYTES(_size));				\
-      TestHeap(wordneed, Live);						\
-      _mb = ms_matchbuffer(Ms);						\
-      SWAPOUT;								\
-      _result = erts_bs_get_integer_2(c_p, _size, (Flags), _mb);	\
-      HTOP = HEAP_TOP(c_p);						\
-      if (is_non_value(_result)) { Fail; }				\
-      else { Store(_result, Dst); }					\
-    } while (0)
-
-#define BsGetFloat2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
+#define BsGetInteger2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
  do {								\
    ErlBinMatchBuffer *_mb;					\
-   Eterm _result; Sint _size;					\
-   if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
-   _size *= ((Flags) >> 3);					\
-   TestHeap(FLOAT_SIZE_OBJECT, Live);				\
+   Eterm _result; Uint _size; unsigned wordneed;		\
+   BsGetFieldSize(Sz, ((Flags) >> 3), Fail, _size);		\
+   wordneed = 1+WSIZE(NBYTES((Uint) _size));			\
+   TestHeap(wordneed, Live);					\
    _mb = ms_matchbuffer(Ms);					\
    SWAPOUT;							\
-   _result = erts_bs_get_float_2(c_p, _size, (Flags), _mb);	\
+   _result = erts_bs_get_integer_2(c_p, _size, (Flags), _mb);	\
    HTOP = HEAP_TOP(c_p);					\
    if (is_non_value(_result)) { Fail; }				\
    else { Store(_result, Dst); }				\
- } while (0)
-
-#define BsGetBinaryImm_2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
-  do {									\
-    ErlBinMatchBuffer *_mb;                                             \
-    Eterm _result;							\
-    TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);		\
-    _mb = ms_matchbuffer(Ms);						\
-    SWAPOUT;								\
-    _result = erts_bs_get_binary_2(c_p, (Sz), (Flags), _mb);		\
-    HTOP = HEAP_TOP(c_p);						\
-    if (is_non_value(_result)) { Fail; }				\
-    else { Store(_result, Dst); }					\
   } while (0)
 
-#define BsGetBinary_2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
-  do {									\
-    ErlBinMatchBuffer *_mb;                                             \
-    Eterm _result; Sint _size;						\
-    if (!is_small(Sz) || (_size = signed_val(Sz)) < 0) { Fail; }	\
-    TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);		\
-    _size *= ((Flags) >> 3);						\
-    TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);		\
-    _mb = ms_matchbuffer(Ms);						\
-    SWAPOUT;								\
-    _result = erts_bs_get_binary_2(c_p, _size, (Flags), _mb);		\
-    HTOP = HEAP_TOP(c_p);						\
-    if (is_non_value(_result)) { Fail; }				\
-    else { Store(_result, Dst); }					\
-  } while (0)
-
-#define BsGetBinaryAll_2(Ms, Live, Unit, Dst, Store, Fail)		\
-  do {									\
-    ErlBinMatchBuffer *_mb;                                             \
-    Eterm _result;							\
-    TestHeap(ERL_SUB_BIN_SIZE, Live);					\
-    _mb = ms_matchbuffer(Ms);						\
-    if (((_mb->size - _mb->offset) % Unit) == 0)			\
-      {SWAPOUT;								\
-	_result = erts_bs_get_binary_all_2(c_p, _mb);			\
-	HTOP = HEAP_TOP(c_p);						\
-	if (is_non_value(_result)) { Fail; }				\
-	else { Store(_result, Dst); }					\
-      }									\
-    else { Fail; }							\
- } while (0)
-
-#define BsSkipBits2(Ms, Bits, Unit, Fail)				\
+#define BsGetFloat2(Ms, Live, Sz, Flags, Dst, Store, Fail)		\
  do {									\
    ErlBinMatchBuffer *_mb;						\
-   size_t new_offset; Sint _size;					\
-    _mb = ms_matchbuffer(Ms);						\
-   if (!is_small(Bits) || (_size = signed_val(Bits)) < 0) { Fail; }	\
-    new_offset = _mb->offset + _size * (Unit);				\
-    if (new_offset <= _mb->size) { _mb->offset = new_offset; }		\
-    else { Fail; }							\
+   Eterm _result; Sint _size;						\
+   if (!is_small(Sz) || (_size = unsigned_val(Sz)) > 64) { Fail; }	\
+   _size *= ((Flags) >> 3);						\
+   TestHeap(FLOAT_SIZE_OBJECT, Live);					\
+   _mb = ms_matchbuffer(Ms);						\
+   SWAPOUT;								\
+   _result = erts_bs_get_float_2(c_p, _size, (Flags), _mb);		\
+   HTOP = HEAP_TOP(c_p);						\
+   if (is_non_value(_result)) { Fail; }					\
+   else { Store(_result, Dst); }					\
+ } while (0)
+
+#define BsGetBinaryImm_2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
+  do {								\
+    ErlBinMatchBuffer *_mb;					\
+    Eterm _result;						\
+    TestHeap(heap_bin_size(ERL_ONHEAP_BIN_LIMIT), Live);	\
+    _mb = ms_matchbuffer(Ms);					\
+    SWAPOUT;							\
+    _result = erts_bs_get_binary_2(c_p, (Sz), (Flags), _mb);	\
+    HTOP = HEAP_TOP(c_p);					\
+    if (is_non_value(_result)) { Fail; }			\
+    else { Store(_result, Dst); }				\
+  } while (0)
+
+#define BsGetBinary_2(Ms, Live, Sz, Flags, Dst, Store, Fail)	\
+  do {								\
+    ErlBinMatchBuffer *_mb;					\
+    Eterm _result; Uint _size;					\
+    BsGetFieldSize(Sz, ((Flags) >> 3), Fail, _size);		\
+    TestHeap(ERL_SUB_BIN_SIZE, Live);				\
+    _mb = ms_matchbuffer(Ms);					\
+    SWAPOUT;							\
+    _result = erts_bs_get_binary_2(c_p, _size, (Flags), _mb);	\
+    HTOP = HEAP_TOP(c_p);					\
+    if (is_non_value(_result)) { Fail; }			\
+    else { Store(_result, Dst); }				\
+  } while (0)
+
+#define BsGetBinaryAll_2(Ms, Live, Unit, Dst, Store, Fail)	\
+  do {								\
+    ErlBinMatchBuffer *_mb;					\
+    Eterm _result;						\
+    TestHeap(ERL_SUB_BIN_SIZE, Live);				\
+    _mb = ms_matchbuffer(Ms);					\
+    if (((_mb->size - _mb->offset) % Unit) == 0) {		\
+      SWAPOUT;							\
+      _result = erts_bs_get_binary_all_2(c_p, _mb);		\
+      HTOP = HEAP_TOP(c_p);					\
+      if (is_non_value(_result)) { Fail; }			\
+      else { Store(_result, Dst); }				\
+    } else { Fail; }						\
+ } while (0)
+
+#define BsSkipBits2(Ms, Bits, Unit, Fail)			\
+ do {								\
+   ErlBinMatchBuffer *_mb;					\
+   size_t new_offset;						\
+   Uint _size;							\
+    _mb = ms_matchbuffer(Ms);					\
+   BsGetFieldSize(Bits, Unit, Fail, _size);			\
+   new_offset = _mb->offset + _size;				\
+   if (new_offset <= _mb->size) { _mb->offset = new_offset; }	\
+   else { Fail; }						\
  } while (0)
 
 #define BsSkipBitsAll2(Ms, Unit, Fail)		\
@@ -1079,8 +1094,10 @@ extern int count_instructions;
 
 #define NewBsPutInteger(Sz, Flags, Src)						\
  do {										\
-    Sint _size = signed_val(Sz) * ((Flags) >> 3);				\
-    if (!erts_new_bs_put_integer(ERL_BITS_ARGS_3((Src), _size, (Flags)))) { goto badarg; }	\
+    Sint _size;									\
+    BsGetUncheckedFieldSize(Sz, ((Flags) >> 3), goto badarg, _size);		\
+    if (!erts_new_bs_put_integer(ERL_BITS_ARGS_3((Src), _size, (Flags))))	\
+       { goto badarg; }								\
  } while (0)
 
 #define NewBsPutFloatImm(Sz, Flags, Src)					\
@@ -1088,16 +1105,18 @@ extern int count_instructions;
     if (!erts_new_bs_put_float(c_p, (Src), (Sz), (Flags))) { goto badarg; }	\
  } while (0)
 
-#define NewBsPutFloat(Sz, Flags, Src)					\
- do {									\
-    Sint _size = signed_val(Sz) * ((Flags) >> 3);			\
+#define NewBsPutFloat(Sz, Flags, Src)						\
+ do {										\
+    Sint _size;									\
+    BsGetUncheckedFieldSize(Sz, ((Flags) >> 3), goto badarg, _size);		\
     if (!erts_new_bs_put_float(c_p, (Src), _size, (Flags))) { goto badarg; }	\
  } while (0)
 
-#define NewBsPutBinary(Sz, Flags, Src)					\
- do {									\
-    Sint _size = signed_val(Sz) * ((Flags) >> 3);			\
-    if (!erts_new_bs_put_binary(ERL_BITS_ARGS_2((Src), _size))) { goto badarg; }		\
+#define NewBsPutBinary(Sz, Flags, Src)							\
+ do {											\
+    Sint _size;										\
+    BsGetUncheckedFieldSize(Sz, ((Flags) >> 3), goto badarg, _size);			\
+    if (!erts_new_bs_put_binary(ERL_BITS_ARGS_2((Src), _size))) { goto badarg; }	\
  } while (0)
 
 #define NewBsPutBinaryImm(Sz, Src)				        \
@@ -1309,6 +1328,8 @@ void process_main(void)
     int Go;
 #endif
 
+    Uint temp_bits; /* Temporary used by BsSkipBits2 & BsGetInteger2 */
+
     ERL_BITS_DECLARE_STATEP; /* Has to be last declaration */
 
 
@@ -1364,7 +1385,7 @@ void process_main(void)
 	SET_I(c_p->i);
 
 	reds = c_p->fcalls;
-	if (c_p->ct != NULL) {
+	if (c_p->ct != NULL && (c_p->trace_flags & F_SENSITIVE) == 0) {
 	    neg_o_reds = -reds;
 	    FCALLS = REDS_IN(c_p) = 0;
 	} else {
@@ -3506,15 +3527,26 @@ void process_main(void)
      }
 	 /* FALL THROUGH */
      do_bs_init:
-	 if (is_not_small(tmp_arg1)) {
-	     goto badarg;
-	 } else {
+         if (is_small(tmp_arg1)) {
 	     Sint size = signed_val(tmp_arg1);
-
 	     if (size < 0) {
 		 goto badarg;
 	     }
 	     tmp_arg1 = (Eterm) size;
+	 } else if (is_big(tmp_arg1) && !bignum_header_is_neg(*big_val(tmp_arg1))) {
+	     Sint bytes;
+	     if (!term_to_Sint(tmp_arg1, &bytes)) {
+		 goto system_limit;
+	     }
+	     if (bytes < 0) {
+		 goto badarg;
+	     }
+	     if ((bytes >> (8*sizeof(Uint)-3)) != 0) {
+		 goto system_limit;
+	     }
+	     tmp_arg1 = (Eterm) bytes;
+	 } else {
+	     goto badarg;
 	 }
 
 	 if (tmp_arg1 <= ERL_ONHEAP_BIN_LIMIT) {
@@ -3615,10 +3647,21 @@ void process_main(void)
 
  do_bits_to_bytes:
      {
-	 if (is_not_valid_bit_size(tmp_arg1)) {
-	     goto badarg;
+	 if (is_valid_bit_size(tmp_arg1)) {
+	     tmp_arg1 = make_small(unsigned_val(tmp_arg1) >> 3);
+	 } else {
+	     Uint bytes;
+	     if (!term_to_Uint(tmp_arg1, &bytes)) {
+		 goto badarg;
+	     }
+	     tmp_arg1 = bytes;
+	     if ((tmp_arg1 & 0x07) != 0) {
+		 goto badarg;
+	     }
+	     SWAPOUT;
+	     tmp_arg1 = erts_make_integer(tmp_arg1 >> 3, c_p);
+	     HTOP = HEAP_TOP(c_p);
 	 }
-	 tmp_arg1 = make_small(unsigned_val(tmp_arg1) >> 3);
 	 StoreBifResult(1, tmp_arg1);
      }
  }
@@ -3640,8 +3683,26 @@ void process_main(void)
  
  do_bits_to_bytes2:
      {
-       tmp_arg1 = make_small((unsigned_val(tmp_arg1)+7) >> 3);	 
-       StoreBifResult(0, tmp_arg1);
+	 if (is_small(tmp_arg1)) {
+	     Sint val = signed_val(tmp_arg1);
+	     if (val >= 0) {
+		 tmp_arg1 = make_small((val+7) >> 3);
+	     }
+	 } else if (is_big(tmp_arg1)) {
+	     Uint bytes;
+	     if (term_to_Uint(tmp_arg1, &bytes)) {
+		 tmp_arg1 = bytes;
+		 SWAPOUT;
+		 tmp_arg1 = erts_make_integer((tmp_arg1+7) >> 3, c_p);
+		 HTOP = HEAP_TOP(c_p);
+	     }
+	 }
+
+	 /*
+	  * If there is an error, we leave the original value and
+	  * trust bs_init2 to notice the problem and signal the exception.
+	  */
+	 StoreBifResult(0, tmp_arg1);
      }
  }
    
@@ -3669,18 +3730,38 @@ void process_main(void)
  }
 
  OpCase(i_bs_add_jId): {
+     Uint Unit = Arg(1);
      if (is_both_small(tmp_arg1, tmp_arg2)) {
-	 Uint Unit = Arg(1);
 	 Sint Arg1 = signed_val(tmp_arg1);
 	 Sint Arg2 = signed_val(tmp_arg2);
 
 	 if (Arg1 >= 0 && Arg2 >= 0) {
-	     Sint res = Arg1 + Unit*Arg2;
-
-	     if (MY_IS_SSMALL(res)) {
-		 Eterm result = make_small(res);
-		 StoreBifResult(2, result);
+	     BsSafeMul(Arg2, Unit, goto system_limit, tmp_arg1);
+	     if ((Sint) tmp_arg1 < 0) {
+		 goto system_limit;
 	     }
+	     tmp_arg1 += Arg1;
+
+	 store_bs_add_result:
+	     if (MY_IS_SSMALL((Sint) tmp_arg1)) {
+		 tmp_arg1 = make_small(tmp_arg1);
+	     } else {
+		 SWAPOUT;
+		 tmp_arg1 = erts_make_integer(tmp_arg1, c_p);
+		 HTOP = HEAP_TOP(c_p);
+	     }
+	     StoreBifResult(2, tmp_arg1);
+	 }
+     } else {
+	 Uint a;
+	 Uint b;
+	 if (term_to_Uint(tmp_arg1, &a) && term_to_Uint(tmp_arg2, &b)) {
+	     BsSafeMul(b, Unit, goto system_limit, tmp_arg1);
+	     if ((Sint) tmp_arg1 < 0) {
+		 goto system_limit;
+	     }
+	     tmp_arg1 += a;
+	     goto store_bs_add_result;
 	 }
      }
 
@@ -3893,7 +3974,7 @@ OpCase(i_put_literal_IId): {
      */
  OpCase(call_traced_function): {
      if (IS_TRACED_FL(c_p, F_TRACE_CALLS)) {
-	 unsigned offset = (unsigned) (((Export *) 0)->code+3);
+	 unsigned offset = offsetof(Export, code) + 3*sizeof(Eterm);
 	 Export* ep = (Export *) (((char *)I)-offset);
 	 Uint32 flags;
 
@@ -4473,6 +4554,12 @@ OpCase(i_put_literal_IId): {
      }
      goto no_error_handler;
  }
+
+
+ OpCase(system_limit_j):
+ system_limit:
+    c_p->freason = SYSTEM_LIMIT;
+    goto lb_Cl_error;
 
  /*
   * Construction of binaries using old instructions.

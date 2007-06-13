@@ -90,7 +90,9 @@ format_error({not_var,{F,A}}) ->
 format_error({not_pattern,{F,A}}) ->
     io_lib:format("expecting pattern in ~w/~w", [F,A]);
 format_error({not_bs_pattern,{F,A}}) ->
-    io_lib:format("expecting bit syntax pattern in ~w/~w", [F,A]).
+    io_lib:format("expecting bit syntax pattern in ~w/~w", [F,A]);
+format_error({bittype_unit,{F,A}}) ->
+    io_lib:format("unit without size in bit syntax pattern/expression in ~w/~w", [F,A]).
 
 %% module(CoreMod) ->
 %% module(CoreMod, [CompileOption]) ->
@@ -110,7 +112,7 @@ module(#c_module{name=M,exports=Es,attrs=As,defs=Ds}, _Opts) ->
 %% defined_funcs([FuncDef]) -> [Fname].
 
 defined_funcs(Fs) ->
-    foldl(fun (#c_def{name=#c_fname{id=I,arity=A}}, Def) ->
+    foldl(fun ({#c_fname{id=I,arity=A},_}, Def) ->
 		  add_element({I,A}, Def)
 	  end, [], Fs).
 
@@ -129,13 +131,13 @@ return_status(St) ->
 %% add_warning(ErrorDescriptor, State) -> State'
 %%  Note that we don't use line numbers here.
 
-add_error(E, St) -> St#lint{errors=[{none,core_lint,E}|St#lint.errors]}.
+add_error(E, St) -> St#lint{errors=[{?MODULE,E}|St#lint.errors]}.
 
 %%add_warning(W, St) -> St#lint{warnings=[{none,core_lint,W}|St#lint.warnings]}.
 
 check_exports(Es, St) ->
-    case all(fun (#c_fname{id=Name,arity=Arity}) when
-		       atom(Name), integer(Arity) -> true;
+    case all(fun (#c_fname{id=Name,arity=Arity})
+		 when is_atom(Name), is_integer(Arity) -> true;
 		 (_) -> false
 	     end, Es) of
 	true -> St;
@@ -143,7 +145,7 @@ check_exports(Es, St) ->
     end.
 
 check_attrs(As, St) ->
-    case all(fun (#c_def{name=#c_literal{},val=V}) -> core_lib:is_literal(V);
+    case all(fun ({#c_literal{},V}) -> core_lib:is_literal(V);
 		 (_) -> false
 	     end, As) of
 	true -> St;
@@ -168,7 +170,7 @@ check_state(Es, Defined, St) ->
 module_defs(B, Def, St) ->
     %% Set top level function name.
     foldl(fun (Func, St0) ->
-		  #c_fname{id=F,arity=A} = Func#c_def.name,
+		  {#c_fname{id=F,arity=A},_} = Func,
 		  St1 = St0#lint{func={F,A}},
 		  function(Func, Def, St1)
 	  end, St, B).
@@ -180,7 +182,7 @@ functions(Fs, Def, St0) ->
 
 %% function(CoreFunc, Defined, State) -> State.
 
-function(#c_def{name=#c_fname{},val=B}, Def, St) ->
+function({#c_fname{},B}, Def, St) ->
     %% Body must be a fun!
     case B of
 	#c_fun{} -> expr(B, Def, any, St);
@@ -448,7 +450,7 @@ pat_segment(_, _, Ps, St) ->
 pat_bit_expr(#c_literal{val=I}, _, _, St) when is_integer(I), I >= 0 -> St;
 pat_bit_expr(#c_var{name=N}, _, Def, St) ->
     expr_var(N, Def, St);
-pat_bit_expr(#c_literal{val=all}, binary, _Def, St) -> St;
+pat_bit_expr(#c_literal{val=all}, #c_literal{val=binary}, _Def, St) -> St;
 pat_bit_expr(_, _, _, St) ->
     add_error({illegal_expr,St#lint.func}, St).
 

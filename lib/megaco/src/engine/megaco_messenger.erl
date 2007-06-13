@@ -956,7 +956,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
 	    #conn_data{send_handle      = SendHandle,
 		       pending_timer    = InitTimer,
 		       protocol_version = Version} = ConnData,
-	    {WaitFor, CurrTimer} = init_timer(InitTimer),
+	    {WaitFor, CurrTimer} = megaco_timer:init(InitTimer),
 	    M = ?MODULE,
 	    F = pending_timeout,
 	    A = [ConnData, TransId, CurrTimer],	    
@@ -1093,7 +1093,7 @@ prepare_request(ConnData, T, Rest, AckList, ReqList) ->
             ConnData2 = ConnData#conn_data{protocol_version = Version},
             ?report_trace(ConnData2, 
 			  "re-send trans reply", [T | {bytes, Bin}]),
-            case megaco_messenger_misc:send_message(ConnData2, Bin) of
+            case megaco_messenger_misc:send_message(ConnData2, true, Bin) of
 		{ok, _} ->
 		    ok;
 		{error, Reason} ->
@@ -1331,7 +1331,7 @@ do_handle_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	    megaco_config:del_pending_counter(sent, TransId),
 
 	    Method = timer_method(AckAction),
-	    {WaitFor, CurrTimer} = init_timer(InitTimer),
+	    {WaitFor, CurrTimer} = megaco_timer:init(InitTimer),
 	    OptBin = opt_garb_binary(CurrTimer, Bin),
 	    M = ?MODULE,
 	    F = reply_timeout,
@@ -1443,7 +1443,7 @@ do_handle_long_request(AckAction, {ok, Bin}, ConnData, TransId) ->
 	[Rep] when is_record(Rep, reply) ->
 	    Method = timer_method(AckAction),
 	    InitTimer = ConnData#conn_data.reply_timer,
-	    {WaitFor, CurrTimer} = init_timer(InitTimer),
+	    {WaitFor, CurrTimer} = megaco_timer:init(InitTimer),
 	    OptBin = opt_garb_binary(CurrTimer, Bin),
 	    ConnHandle = ConnData#conn_data.conn_handle,
 	    M = ?MODULE,
@@ -1756,7 +1756,7 @@ handle_recv_pending(#conn_data{long_request_resend = LRR,
     %% not resend from now on.
     
     megaco_monitor:cancel_apply_after(Ref),
-    {WaitFor, CurrTimer} = init_timer(InitTimer),
+    {WaitFor, CurrTimer} = megaco_timer:init(InitTimer),
     ConnHandle = ConnData#conn_data.conn_handle,
     M = ?MODULE,
     F = request_timeout,
@@ -1812,7 +1812,7 @@ handle_recv_pending(#conn_data{conn_handle = ConnHandle} = ConnData, TransId,
     %% increment the timer (one "slot" has been consumed).
     
     megaco_monitor:cancel_apply_after(Ref),
-    {WaitFor, Timer2} = recalc_timer(CurrTimer),
+    {WaitFor, Timer2} = megaco_timer:restart(CurrTimer),
     ConnHandle = ConnData#conn_data.conn_handle,
     M = ?MODULE,
     F = request_timeout,
@@ -1928,6 +1928,7 @@ handle_acks([]) ->
 
 %% OTP-4213: Temporary until we figure out why this work...
 handle_ack(ConnData, AckStatus, Rep, T) ->
+    ?rt2("handle_ack", [AckStatus, Rep, T]),
     #reply{trans_id          = TransId,
 	   timer_ref         = ReplyRef,
 	   pending_timer_ref = PendingRef,  %% BMK Still running?
@@ -2315,7 +2316,7 @@ send_request(#conn_data{control_pid = CP} = CD,
 	       long_request_timer  = LongTimer} = CD,
     insert_requests(CD, CH, TRs, Action, Bin,
 		    InitTimer, LongTimer),
-    case megaco_messenger_misc:send_message(CD, Bin) of
+    case megaco_messenger_misc:send_message(CD, false, Bin) of
 	{error, Reason} ->
 	    cancel_requests(CD, TRs, Reason);
 	{ok, _} ->
@@ -2373,7 +2374,7 @@ insert_request(ConnData, ConnHandle, TransId,
 	       user_args           = UserArgs,
 	       send_handle         = SendHandle,
 	       reply_data          = ReplyData} = ConnData,
-    {WaitFor, CurrTimer} = init_timer(InitTimer),
+    {WaitFor, CurrTimer} = megaco_timer:init(InitTimer),
     M   = ?MODULE,
     F   = request_timeout,
     A   = [ConnHandle, TransId],
@@ -2631,7 +2632,7 @@ send_reply(#conn_data{serial = Serial} = CD, Result, ImmAck) ->
     Body = {transactions, [{transactionReply, TR}]},
     case megaco_messenger_misc:encode_body(CD, "encode trans reply", Body) of
         {ok, Bin} ->
-            megaco_messenger_misc:send_message(CD, Bin);
+            megaco_messenger_misc:send_message(CD, false, Bin);
         {error, Reason} = Error ->
 	    ED = #'ErrorDescriptor'{errorCode = ?megaco_internal_gateway_error,
 				    errorText = "encode body"},
@@ -3015,7 +3016,7 @@ do_request_timeout(ConnHandle, TransId, ConnData,
 			{ok, Bin} ->
 			    ?report_trace(ConnData2, "re-send trans request", 
 					  [{bytes, Bin}]),
-			    case maybe_send_message(ConnData2, Bin) of
+			    case maybe_send_message(ConnData2, true, Bin) of
 				ok ->
 				    ignore;
 				{ok, _} ->
@@ -3042,7 +3043,7 @@ do_request_timeout(ConnHandle, TransId, ConnData,
 		no_send ->
 		    ok
 	    end,
-	    {WaitFor, Timer2} = recalc_timer(Timer),
+	    {WaitFor, Timer2} = megaco_timer:restart(Timer),
 	    OptBin            = opt_garb_binary(Timer2, Data),
 	    {Type, _}         = Req#request.timer_ref,
 	    M = ?MODULE,
@@ -3079,9 +3080,9 @@ maybe_encode(CD, TR)
 maybe_encode(_CD, Trash) ->
     {error, {invalid_bin, Trash}}.
 
-maybe_send_message(CD, Bin) when is_binary(Bin) ->
-    megaco_messenger_misc:send_message(CD, Bin);
-maybe_send_message(#conn_data{trans_sender = Pid}, {Serial, Bin}) 
+maybe_send_message(CD, Resend, Bin) when is_binary(Bin) ->
+    megaco_messenger_misc:send_message(CD, Resend, Bin);
+maybe_send_message(#conn_data{trans_sender = Pid}, _Resend, {Serial, Bin}) 
   when is_pid(Pid) and is_integer(Serial) and is_binary(Bin) ->
     megaco_trans_sender:send_req(Pid, Serial, Bin).
 
@@ -3147,7 +3148,7 @@ do_reply_timeout(ConnHandle, TransId, ConnData, Timer,
 %%       "~n   Rep:        ~p"
 %%       "~n", [ConnHandle, TransId, Timer, Rep]),
 
-    case megaco_messenger_misc:send_message(CD, Bytes) of
+    case megaco_messenger_misc:send_message(CD, true, Bytes) of
 	{ok, _} ->
 	    ignore;
 	{error, Reason} ->
@@ -3157,7 +3158,7 @@ do_reply_timeout(ConnHandle, TransId, ConnData, Timer,
     do_reply_timeout(ConnHandle, TransId, Timer, Rep).
 
 do_reply_timeout(ConnHandle, TransId, Timer, #reply{bytes = Bytes} = Rep) ->
-    {WaitFor, Timer2} = recalc_timer(Timer),
+    {WaitFor, Timer2} = megaco_timer:restart(Timer),
     OptBin = opt_garb_binary(Timer2, Bytes),
     M = ?MODULE,
     F = reply_timeout,
@@ -3228,7 +3229,7 @@ pending_timeout(ConnData, TransId, Timer) ->
 			    incNumTimerRecovery(ConnHandle),
 			    timeout_out2;
 			_ ->
-			    {WaitFor, Timer2} = recalc_timer(Timer),
+			    {WaitFor, Timer2} = megaco_timer:restart(Timer),
 			    M = ?MODULE,
 			    F = pending_timeout,
 			    A = [ConnData, TransId, Timer2],
@@ -3341,45 +3342,6 @@ to_local_trans_id(#conn_data{conn_handle = CH}, Serial)
     Mid = CH#megaco_conn_handle.local_mid, 
     #trans_id{mid = Mid, serial = Serial}.    
     
-
-%% Returns {WaitFor, NewTimer} | {WaitFor, timeout}
-init_timer(SingleWaitFor) when SingleWaitFor == infinity ->
-    {SingleWaitFor, timeout};
-init_timer(SingleWaitFor) when is_integer(SingleWaitFor) ->
-    {SingleWaitFor, timeout};
-init_timer(Timer) when is_record(Timer, megaco_incr_timer) ->
-    return_incr(Timer).
-
-return_incr(Timer) ->
-    WaitFor = Timer#megaco_incr_timer.wait_for,
-    case Timer#megaco_incr_timer.max_retries of
-	infinity ->
-	    {WaitFor, Timer};
-	infinity_restartable ->
-	    {WaitFor, {Timer, timeout}};
-	Int when is_integer(Int), Int > 0 -> 
-	    {WaitFor, Timer};
-	0  ->
-	    {WaitFor, timeout}
-    end.
-
-%% Returns {WaitFor, NewTimer} | {WaitFor, timeout}
-recalc_timer(Timer) when is_record(Timer, megaco_incr_timer) ->
-    Old     = Timer#megaco_incr_timer.wait_for,
-    Factor  = Timer#megaco_incr_timer.factor,
-    Incr    = Timer#megaco_incr_timer.incr,
-    New     = (Old * Factor) + Incr,
-    Max     = decr(Timer#megaco_incr_timer.max_retries),
-    Timer2  = Timer#megaco_incr_timer{wait_for    = New,
-                                      max_retries = Max},
-    return_incr(Timer2);
-recalc_timer({Timer, timeout}) when is_record(Timer, megaco_incr_timer) ->
-    recalc_timer(Timer).
-
-decr(infinity = V)             -> V;
-decr(infinity_restartable = V) -> V;
-decr(Int) when is_integer(Int) -> Int - 1.
-
 
 warning_msg(F, A) ->
     ?megaco_warning(F, A).

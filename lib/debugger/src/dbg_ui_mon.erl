@@ -225,7 +225,7 @@ loop(State) ->
 	    gui_cmd(stopped, State);
 
 	%% From the GUI
-	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
+	GuiEvent when is_tuple(GuiEvent), element(1, GuiEvent)==gs ->
 	    Cmd = dbg_ui_mon_win:handle_event(GuiEvent,State#state.win),
 	    State2 = gui_cmd(Cmd, State),
 	    loop(State2);
@@ -686,7 +686,7 @@ load_settings2(Settings, State) ->
 			      true -> ignore
 			  end,
 			  case Cond of
-			      CFunction when tuple(CFunction) ->
+			      CFunction when is_tuple(CFunction) ->
 				  int:test_at_break(Mod,Line,CFunction);
 			      null -> ignore
 			  end

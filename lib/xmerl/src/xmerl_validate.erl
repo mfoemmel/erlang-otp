@@ -420,9 +420,9 @@ valid_contents(Rule,XMLS,Rules,S,WSActionMode)->
 	{XML_N,[]}->
 	    lists:flatten(XML_N);
 	{_,[#xmlElement{name=Name}|_T]} ->
-	    exit({error,{element,Name,isnt_comprise_in_the_rule}});
+	    exit({error,{element,Name,isnt_comprise_in_the_rule,Rule}});
 	{_,[#xmlText{}=Txt|_T]} ->
-	    exit({error,{element,text,isnt_comprise_in_the_rule,Txt}});
+	    exit({error,{element,text,Txt,isnt_comprise_in_the_rule,Rule}});
 	{error,Reason} ->
 	    {error,Reason};
 	{error,Reason,N} ->

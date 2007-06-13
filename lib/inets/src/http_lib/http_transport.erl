@@ -18,7 +18,8 @@
 -module(http_transport).
 
 % Internal application API
--export([start/1, connect/3, listen/2, listen/3, accept/2, accept/3, close/2,
+-export([start/1, connect/3, connect/4, listen/2, listen/3, 
+	 accept/2, accept/3, close/2,
 	 send/3, controlling_process/3, setopts/3,
 	 peername/2, resolve/0]).
 
@@ -54,7 +55,8 @@ start({ssl, _}) ->
     end.
 
 %%-------------------------------------------------------------------------
-%% connect(SocketType, Address, IPV6) -> {ok, Socket} | {error, Reason}
+%% connect(SocketType, Address, IPV6, Timeout) ->
+%%                                            {ok, Socket} | {error, Reason}
 %%      SocketType = ip_comm | {ssl, SslConfig}  
 %%      Address = {Host, Port}
 %%      IPV6 = disabled | enabled
@@ -63,7 +65,10 @@ start({ssl, _}) ->
 %% Description: Connects to the Host and Port specified in HTTPRequest.
 %%		uses ipv6 if possible.
 %%-------------------------------------------------------------------------
-connect(ip_comm, {Host, Port}, enabled) ->
+connect(SocketType, Address, IPV6) ->
+    connect(SocketType, Address, IPV6, infinity).
+
+connect(ip_comm, {Host, Port}, enabled, Timeout) ->
     {Opts, NewHost} = 
 	case inet:getaddr(Host, inet6) of
 	    {ok, IPAddr = {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
@@ -82,15 +87,15 @@ connect(ip_comm, {Host, Port}, enabled) ->
 		{[binary, {packet, 0}, {active, false},
 		  {reuseaddr,true}], Host}
 	end,
-    gen_tcp:connect(NewHost, Port, Opts);
+    gen_tcp:connect(NewHost, Port, Opts, Timeout);
 
-connect(ip_comm, {Host, Port}, disabled) ->
+connect(ip_comm, {Host, Port}, disabled, Timeout) ->
     Opts = [binary, {packet, 0}, {active, false}, {reuseaddr,true}],
-    gen_tcp:connect(Host, Port, Opts);
+    gen_tcp:connect(Host, Port, Opts, Timeout);
 
-connect({ssl, SslConfig}, {Host, Port}, _) ->
+connect({ssl, SslConfig}, {Host, Port}, _, Timeout) ->
     Opts = [binary, {active, false}] ++ SslConfig,
-    ssl:connect(Host, Port, Opts).
+    ssl:connect(Host, Port, Opts, Timeout).
 
 %%-------------------------------------------------------------------------
 %% listen(SocketType, Port) -> {ok, Socket} | {error, Reason}

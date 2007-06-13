@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8" ?>
+
+<!ENTITY % ISOlat1 SYSTEM "xhtml-lat1.ent" >
+%ISOlat1;
+
+<!ENTITY amp    "&#x0026;" >
+<!ENTITY gt     "&#x003E;" >
+<!ENTITY lt     "&#x003C;" >
+
+<!-- Structure -->
+
+<!ELEMENT fascicules          (fascicule)+ >
+<!ELEMENT fascicule           (#PCDATA) >
+<!ATTLIST fascicule           file CDATA #REQUIRED
+                              href CDATA #REQUIRED
+                              entry (yes|no) "no" >
+

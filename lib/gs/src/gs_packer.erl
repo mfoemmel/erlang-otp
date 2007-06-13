@@ -83,7 +83,7 @@ pack(Size, SpecSizes) ->
 	Left < Min ->
 	    NewSpecs = cnvt_to_min(SpecSizes),
 	    pack(Size,NewSpecs);
-	integer(Max), Max =/= 0, Left > Max ->
+	is_integer(Max), Max =/= 0, Left > Max ->
 	    NewSpecs = cnvt_to_max(SpecSizes),
 	    pack(Size,NewSpecs);
 	true ->
@@ -235,9 +235,7 @@ cnvt_to_min({stretch,_W}, Specs) ->
 cnvt_to_min({stretch,_W,Mi}, Specs) ->
     [{stretch,Mi} | cnvt_to_min(Specs)];
 cnvt_to_min({stretch,_W,Mi,_Ma}, Specs) ->
-    [{stretch,Mi} | cnvt_to_min(Specs)];
-cnvt_to_min(Spec, Specs) ->
-    [Spec | cnvt_to_min(Specs)].
+    [{stretch,Mi} | cnvt_to_min(Specs)].
 
 %% We know that there can only be {fixed,P} and {stretch,W,Mi,Ma}
 %% in this list.

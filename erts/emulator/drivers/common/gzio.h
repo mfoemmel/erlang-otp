@@ -16,14 +16,13 @@
  *     $Id$
  */
 
-/*
- * This file contains the functions added to the gzio driver
- * and that was not in the original zlib distribution
- */
+int erts_gzread(gzFile file, voidp buf, unsigned len);
+int erts_gzwrite(gzFile file, voidpc buf, unsigned len);
+int erts_gzseek(gzFile, int, int);
+int erts_gzflush(gzFile file, int flush);
+int erts_gzclose(gzFile file);
+ErlDrvBinary* erts_gzinflate_buffer(char*, int);
+ErlDrvBinary* erts_gzdeflate_buffer(char*, int);
 
-/* XXX: Sounds like an impossible operation to me... /kgb */
-extern int gzseekk(gzFile, int, int);
-extern ErlDrvBinary* gzinflate_buffer(char*, int);
-extern ErlDrvBinary* gzdeflate_buffer(char*, int);
 
 

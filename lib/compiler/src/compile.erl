@@ -44,27 +44,27 @@
 
 file(File) -> file(File, ?DEFAULT_OPTIONS).
 
-file(File, Opts) when list(Opts) ->
+file(File, Opts) when is_list(Opts) ->
     do_compile({file,File}, Opts++env_default_opts());
 file(File, Opt) ->
     file(File, [Opt|?DEFAULT_OPTIONS]).
 
 forms(File) -> forms(File, ?DEFAULT_OPTIONS).
 
-forms(Forms, Opts) when list(Opts) ->
+forms(Forms, Opts) when is_list(Opts) ->
     do_compile({forms,Forms}, [binary|Opts++env_default_opts()]);
-forms(Forms, Opts) when atom(Opts) ->
+forms(Forms, Opts) when is_atom(Opts) ->
     forms(Forms, [Opts|?DEFAULT_OPTIONS]).
 
 env_default_opts() ->
     Key = "ERL_COMPILER_OPTIONS",
     case os:getenv(Key) of
 	false -> [];
-	Str when list(Str) ->
+	Str when is_list(Str) ->
 	    case erl_scan:string(Str) of
 		{ok,Tokens,_} ->
 		    case erl_parse:parse_term(Tokens ++ [{dot, 1}]) of
-			{ok,List} when list(List) -> List;
+			{ok,List} when is_list(List) -> List;
 			{ok,Term} -> [Term];
 			{error,_Reason} ->
 			    io:format("Ignoring bad term in ~s\n", [Key]),
@@ -994,7 +994,7 @@ native_compile_1(St) ->
     Opts0 = [no_new_binaries|St#compile.options],
     IgnoreErrors = member(ignore_native_errors, Opts0),
     Opts = case keysearch(hipe, 1, Opts0) of
-	       {value,{hipe,L}} when list(L) -> L;
+	       {value,{hipe,L}} when is_list(L) -> L;
 	       {value,{hipe,X}} -> [X];
 	       _ -> []
 	   end,
@@ -1002,7 +1002,7 @@ native_compile_1(St) ->
 			    St#compile.core_code,
 			    St#compile.code,
 			    Opts) of
-	{ok, {Type,Bin}} when binary(Bin) ->
+	{ok, {Type,Bin}} when is_binary(Bin) ->
 	    {ok, embed_native_code(St, {Type,Bin})};
 	{error, R} ->
 	    case IgnoreErrors of
@@ -1116,7 +1116,7 @@ list_errors(_F, []) -> ok.
 %% tmpfile(ObjFile) -> TmpFile
 %%  Work out the correct input and output file names.
 
-iofile(File) when atom(File) ->
+iofile(File) when is_atom(File) ->
     iofile(atom_to_list(File));
 iofile(File) ->
     {filename:dirname(File), filename:basename(File, ".erl")}.
@@ -1124,7 +1124,7 @@ iofile(File) ->
 erlfile(Dir, Base, Suffix) ->
     filename:join(Dir, Base++Suffix).
 
-outfile(Base, Ext, Opts) when atom(Ext) ->
+outfile(Base, Ext, Opts) when is_atom(Ext) ->
     outfile(Base, atom_to_list(Ext), Opts);
 outfile(Base, Ext, Opts) ->
     Obase = case keysearch(outdir, 1, Opts) of
@@ -1152,7 +1152,7 @@ pre_defs([_|Opts]) ->
 pre_defs([]) -> [].
 
 inc_paths(Opts) ->
-    [ P || {i,P} <- Opts, list(P) ].
+    [ P || {i,P} <- Opts, is_list(P) ].
 
 src_listing(Ext, St) ->
     listing(fun (Lf, {_Mod,_Exp,Fs}) -> do_src_listing(Lf, Fs);
@@ -1190,7 +1190,7 @@ help([{iff,Flag,{src_listing,Ext}}|T]) ->
 help([{iff,Flag,{listing,Ext}}|T]) ->
     io:fwrite("~p - Generate .~s file\n", [Flag,Ext]),
     help(T);
-help([{iff,Flag,{Name,Fun}}|T]) when function(Fun) ->
+help([{iff,Flag,{Name,Fun}}|T]) when is_function(Fun) ->
     io:fwrite("~p - Run ~s\n", [Flag,Name]),
     help(T);
 help([{iff,_Flag,Action}|T]) ->
@@ -1199,7 +1199,7 @@ help([{iff,_Flag,Action}|T]) ->
 help([{unless,Flag,{pass,Pass}}|T]) ->
     io:fwrite("~p - Skip the ~s pass\n", [Flag,Pass]),
     help(T);
-help([{unless,no_postopt=Flag,List}|T]) when list(List) ->
+help([{unless,no_postopt=Flag,List}|T]) when is_list(List) ->
     %% Hard-coded knowledgde here.
     io:fwrite("~p - Skip all post optimisation\n", [Flag]),
     help(List),

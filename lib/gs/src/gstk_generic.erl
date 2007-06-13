@@ -249,7 +249,7 @@ mk_cmd_and_exec(Options, Gstkid, TkW, SCmd, PCmd, DB) ->
 mk_cmd_and_exec(Options, Gstkid, TkW, SCmd, PCmd, DB,ExtraArg) ->
     case gstk_generic:make_command(Options,Gstkid,TkW,SCmd,PCmd,DB,ExtraArg) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(Cmd)
     end.
 
@@ -484,7 +484,7 @@ gen_data(_Opt,Gstkid,_TkW,DB,_ExtraArg) ->
 gen_pack_x({Start,Stop},Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_x,{Start,Stop}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C);
-gen_pack_x(Col,Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) when integer(Col) ->
+gen_pack_x(Col,Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) when is_integer(Col) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_x,{Col,Col}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C).
 gen_pack_x(_Opt,Gstkid,_TkW,DB,_ExtraArg) ->
@@ -493,24 +493,24 @@ gen_pack_x(_Opt,Gstkid,_TkW,DB,_ExtraArg) ->
 gen_pack_y({Start,Stop},Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_y,{Start,Stop}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C);
-gen_pack_y(Row,Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) when integer(Row) ->
+gen_pack_y(Row,Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) when is_integer(Row) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_y,{Row,Row}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C).
 gen_pack_y(_Opt,Gstkid,_TkW,DB,_ExtraArg) ->
     gstk_db:opt(DB,Gstkid,pack_y, undefined).
 
 gen_pack_xy({Col,Row},Opts,Gstkid,TkW,DB,ExtraArg,S,P,C)
-  when integer(Col), integer(Row) ->
+  when is_integer(Col), is_integer(Row) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_x,{Col,Col}}),
     gstk_db:insert_opt(DB,Gstkid,{pack_y,{Row,Row}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C);
 gen_pack_xy({Col,{StartRow,StopRow}},Opts,Gstkid,TkW,DB,ExtraArg,S,P,C)
-  when integer(Col) ->
+  when is_integer(Col) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_x,{Col,Col}}),
     gstk_db:insert_opt(DB,Gstkid,{pack_y,{StartRow,StopRow}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C);
 gen_pack_xy({{StartCol,StopCol},Row},Opts,Gstkid,TkW,DB,ExtraArg,S,P,C)
-  when integer(Row) ->
+  when is_integer(Row) ->
     gstk_db:insert_opt(DB,Gstkid,{pack_x,{StartCol,StopCol}}),
     gstk_db:insert_opt(DB,Gstkid,{pack_y,{Row,Row}}),
     out_opts(Opts,Gstkid,TkW,DB,ExtraArg,S,P,C);
@@ -757,7 +757,7 @@ gen_cursor(Cur,Opts,Gstkid,TkW,DB,ExtraArg,S,P,C) ->
 gen_cursor(_Opt,_Gstkid,TkW,_DB,_ExtraArg) ->
     case tcl2erl:ret_str([TkW," cg -cur"]) of
 	"" -> parent;
-	Txt when list(Txt) ->
+	Txt when is_list(Txt) ->
 	    case lists:keysearch(Txt,2,cursors()) of
 		{value,{Cur,_}} -> Cur;
 		_ -> {bad_result, read_cursor}
@@ -866,7 +866,7 @@ parse_scrolls(Gstkid, Opts) ->
     end.
 
 
-parse_scrolls([Option | Rest], Vscroll, Hscroll, Opts) when tuple(Option) ->
+parse_scrolls([Option | Rest], Vscroll, Hscroll, Opts) when is_tuple(Option) ->
     case element(1, Option) of
 	vscroll ->
 	    parse_scrolls(Rest, element(2, Option), Hscroll, Opts);
@@ -892,7 +892,7 @@ parse_scrolls([], Vscroll, Hscroll, Opts) ->
 %%
 bind(DB, Gstkid, TkW, Etype, On) ->
     WD = Gstkid#gstkid.widget_data,
-    TkW2 = if record(WD, so) ->
+    TkW2 = if is_record(WD, so) ->
 		   WD#so.object;
 	      true -> TkW
 	   end,

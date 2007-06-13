@@ -522,8 +522,10 @@ read_config_file(FileName) ->
 read_config_file(Stream, SoFar) ->
     case io:get_line(Stream, []) of
 	eof ->
+	    file:close(Stream),
 	    {ok, lists:reverse(SoFar)};
 	{error, Reason} ->
+	    file:close(Stream),
 	    {error, Reason};
 	[$#|_Rest] ->
 	    %% Ignore commented lines for efficiency later ..
@@ -613,7 +615,10 @@ store_traverse(ConfigListEntry, ConfigList, [Module|Rest]) ->
     end.
 
 store_mime_types(Name,MimeTypesList) ->
-    MimeTypesDB = ets:new(Name, [set, protected]),
+    %% Make sure that the ets table is not duplicated
+    %% when reloading configuration
+    catch ets:delete(Name),
+    MimeTypesDB = ets:new(Name, [named_table, set, protected]),
     store_mime_types1(MimeTypesDB, MimeTypesList).
 store_mime_types1(MimeTypesDB,[]) ->
     {ok, MimeTypesDB};

@@ -28,7 +28,7 @@
 -export([seq/1,seq/2]).
 -deprecated([{seq,1},{seq,2}]).
 
--import(lists, [append/1,foldr/3,map/2,mapfoldl/3,reverse/1,reverse/2]).
+-import(lists, [append/1,foldr/3,mapfoldl/3,reverse/1,reverse/2]).
 -import(io_lib, [write/1,format/2,write_char/1,write_string/1]).
 -import(erl_parse, [inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
 
@@ -553,7 +553,7 @@ lexprs(Es, Hook) ->
     lexprs(Es, fun lexpr/2, Hook).
 
 lexprs(Es, F, Hook) ->
-    map(fun(E) -> F(E, Hook) end, Es).
+    [F(E, Hook) || E <- Es].
 
 maybe_paren(P, Prec, Expr) when P < Prec ->
     [$(,Expr,$)];
@@ -716,7 +716,7 @@ insert_nl(CharsL, I, ST) ->
     insert_sep(CharsL, nl_indent(I, ST)).
 
 insert_sep([Chars1 | CharsL], Sep) ->
-    [Chars1 | map(fun(Chars) -> [Sep,Chars] end, CharsL)].
+    [Chars1 | [[Sep,Chars] || Chars <- CharsL]].
 
 nl_indent(0, _T) ->
     $\n;

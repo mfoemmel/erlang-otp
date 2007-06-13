@@ -56,7 +56,7 @@ get_token(Type) ->
 print(Term) ->
     erlang:seq_trace_print(Term).
 
-print(Label,Term) when atom(Label) ->
+print(Label,Term) when is_atom(Label) ->
     erlang:fault(badarg, [Label, Term]);
 print(Label,Term) ->
     erlang:seq_trace_print(Label,Term).

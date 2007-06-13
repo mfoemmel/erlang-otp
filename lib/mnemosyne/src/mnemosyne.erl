@@ -128,15 +128,15 @@ reoptimize({call,Call,_}) -> {call,Call,mnemosyne_optimizer:phase2(Call)}.
 
 cursor(Call) -> cursor(Call,?default_prefetch).
 
-cursor(Call, Nprefetch) when integer(Nprefetch), Nprefetch>0 -> 
+cursor(Call, Nprefetch) when is_integer(Nprefetch), Nprefetch>0 -> 
     Qcoll = setup_query(Call),
     init_query(Qcoll, Nprefetch).
 
 
 next_answers(Cursor) -> next_answers(Cursor, ?default_min, ?default_max).
 
-next_answers({cursor,_,ExecC}, Nmin, Nmax) when integer(Nmin), 
-						integer(Nmax), 
+next_answers({cursor,_,ExecC}, Nmin, Nmax) when is_integer(Nmin), 
+						is_integer(Nmax), 
 						Nmin > 0,
 						Nmin =< Nmax ->
     mnemosyne_exec:get_answers(ExecC, Nmin, Nmax).
@@ -145,8 +145,8 @@ next_answers({cursor,_,ExecC}, Nmin, Nmax) when integer(Nmin),
 
 all_answers(Cursor) -> all_answers(Cursor, ?default_min, ?default_max).
 
-all_answers({cursor,_,ExecC}, Nmin, Nmax) when integer(Nmin), 
-					       integer(Nmax), 
+all_answers({cursor,_,ExecC}, Nmin, Nmax) when is_integer(Nmin), 
+					       is_integer(Nmax), 
 					       Nmin > 0,
 					       Nmin =< Nmax ->
     collect_all_answers(ExecC, Nmin, Nmax, []).
@@ -186,7 +186,7 @@ setup_query({call,_,Opt}) ->
 init_query(Q) -> 
     init_query(Q,?default_prefetch).
 
-init_query({setup_query,Q}, Nprefetch) when integer(Nprefetch), Nprefetch>0 ->
+init_query({setup_query,Q}, Nprefetch) when is_integer(Nprefetch), Nprefetch>0 ->
     {cursor, Q, mnemosyne_exec:init_query(Q,Nprefetch)}.
 
 delete_query({setup_query, Q}) ->
@@ -206,7 +206,7 @@ info() ->
 collect_all_answers(ExecC, Nmin, Nmax, Acc) ->
     case mnemosyne_exec:get_answers(ExecC, Nmin, Nmax) of
 	[] -> Acc;
-	L when list(L) -> collect_all_answers(ExecC, Nmin, Nmax, Acc++L)
+	L when is_list(L) -> collect_all_answers(ExecC, Nmin, Nmax, Acc++L)
     end.
 
 

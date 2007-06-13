@@ -28,9 +28,11 @@ MODULES = \
 	megaco_sdp_test \
 	megaco_tc_controller \
 	megaco_tcp_test \
+	megaco_timer_test \
 	megaco_trans_test \
 	megaco_udp_test \
 	megaco_test_generator \
+	megaco_test_generic_transport \
 	megaco_test_mgc \
 	megaco_test_mg \
 	megaco_test_msg_v1_lib \

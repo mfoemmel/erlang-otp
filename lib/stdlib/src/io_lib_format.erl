@@ -380,13 +380,13 @@ string(S, none, _Adj, none, _Pad) -> S;
 string(S, F, Adj, none, Pad) ->
     N = lists:flatlength(S),
     if N > F  -> flat_trunc(S, F);
-       N == F -> S;
+       N =:= F -> S;
        true   -> adjust(S, chars(Pad, F-N), Adj)
     end;
 string(S, none, _Adj, P, Pad) ->
     N = lists:flatlength(S),
     if N > P  -> flat_trunc(S, P);
-       N == P -> S;
+       N =:= P -> S;
        true   -> [S|chars(Pad, P-N)]
     end;
 string(S, F, Adj, F, Pad) ->
@@ -394,10 +394,10 @@ string(S, F, Adj, F, Pad) ->
 string(S, F, Adj, P, Pad) when F > P ->
     N = lists:flatlength(S),
     if N > F  -> flat_trunc(S, F);
-       N == F -> S;
-       N > P  -> adjust(flat_trunc(S, P), chars(Pad, F-P), Adj);
-       N == P -> adjust(S, chars(Pad, F-P), Adj);
-       true   -> adjust([S|chars(Pad, P-N)], chars(Pad, F-P), Adj)
+       N =:= F -> S;
+       N > P   -> adjust(flat_trunc(S, P), chars(Pad, F-P), Adj);
+       N =:= P -> adjust(S, chars(Pad, F-P), Adj);
+       true    -> adjust([S|chars(Pad, P-N)], chars(Pad, F-P), Adj)
     end.
 
 %% unprefixed_integer(Int, Field, Adjust, Base, PadChar, Lowercase)

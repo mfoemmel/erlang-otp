@@ -151,6 +151,14 @@
       <item>
 	makes Dialyzer a bit more verbose
       </item>
+      <tag><c>--dataflow</c></tag>
+      <item>
+       Makes Dialyzer use dataflow analysis to find discrepancies. (Default)
+      </item>
+      <tag><c>--succ_typings</c></tag>
+      <item>
+      Makes Dialyzer use success typings to find discrepancies.
+      </item>
     </taglist>
 
     <note>

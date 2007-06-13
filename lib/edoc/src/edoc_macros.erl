@@ -38,11 +38,11 @@
 
 
 std_macros(Env) ->
-    (if Env#env.module == [] -> [];
+    (if Env#env.module =:= [] -> [];
 	true -> [{module, atom_to_list(Env#env.module)}]
      end
      ++
-     if Env#env.package == [] -> [];
+     if Env#env.package =:= [] -> [];
 	true -> [{package, atom_to_list(Env#env.package)}]
      end
      ++
@@ -57,7 +57,7 @@ std_macros(Env) ->
 
 %% Check well-formedness of user-specified list of macro definitions.
 
-check_defs([{K, D} | Ds]) when atom(K), list(D) ->
+check_defs([{K, D} | Ds]) when is_atom(K), is_list(D) ->
     check_defs(Ds);
 check_defs([X | _Ds]) ->
     report("bad macro definition: ~P.", [X, 10]),
@@ -83,7 +83,7 @@ link_macro(S, Line, Env) ->
     {S1, S2} = edoc_lib:split_at_stop(S),
     Ref = edoc_parser:parse_ref(S1, Line),
     URI = edoc_refs:get_uri(Ref, Env),
-    Txt = if S2 == [] -> "<code>" ++ S1 ++ "</code>";
+    Txt = if S2 =:= [] -> "<code>" ++ S1 ++ "</code>";
 	     true -> S2
 	  end,
     Target = case edoc_refs:is_top(Ref, Env) of
@@ -196,9 +196,9 @@ expand_macro_def(M, Arg, L, Defs, St, As) ->
 	    St1 = St#state{seen = sets:add_element(M, Seen)},
 	    case dict:find(M, Defs) of
 		{ok, Def} ->
-		    Txt = if function(Def) ->
+		    Txt = if is_function(Def) ->
 				  Def(Arg1, L, St1#state.env);
-			     list(Def) ->
+			     is_list(Def) ->
 				  Def
 			  end,
 		    expand(Txt, L, Defs1, St1, As);

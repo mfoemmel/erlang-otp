@@ -187,8 +187,8 @@ find([], _, Def) -> Def.
 set_arg_names(S, Ns) ->
     set_arg_anns(S, Ns, fun is_name/1).
 
-set_arg_descs(S, Ns) ->
-    set_arg_anns(S, Ns, fun is_desc/1).
+%% set_arg_descs(S, Ns) ->
+%%    set_arg_anns(S, Ns, fun is_desc/1).
 
 set_arg_anns(#t_spec{type = #t_fun{args = As}=T}=S, Ns, F) ->
     Zip = fun (A, N) ->

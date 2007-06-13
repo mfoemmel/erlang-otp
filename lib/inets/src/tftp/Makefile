@@ -59,8 +59,6 @@ INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-
 ERL_COMPILE_FLAGS += $(INETS_FLAGS) \
                      +'{parse_transform,sys_pre_attributes}' \
                      +'{attribute,insert,app_vsn,$(APP_VSN)}'

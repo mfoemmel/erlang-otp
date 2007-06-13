@@ -89,9 +89,9 @@ create_http_header_elements(ScriptType, [{Name, Value} | Headers], Acc)
     create_http_header_elements(ScriptType, Headers, [Element | Acc]).
 
 http_env_element(cgi, VarName, Value)  ->
-    {"HTTP_"++ httpd_util:to_upper(VarName), Value};
+    {"HTTP_"++ http_util:to_upper(VarName), Value};
 http_env_element(esi, VarName, Value)  ->
-    {list_to_atom("http_"++ httpd_util:to_lower(VarName)), Value}.
+    {list_to_atom("http_"++ http_util:to_lower(VarName)), Value}.
 
 multi_value([]) ->
   [];

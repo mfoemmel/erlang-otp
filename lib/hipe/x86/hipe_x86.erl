@@ -203,14 +203,16 @@
 %%% Low-level accessors.
 %%%
 
-mk_temp(Reg, Type) -> #x86_temp{reg=Reg, type=Type, allocatable=true}.
-mk_nonallocatable_temp(Reg, Type) -> #x86_temp{reg=Reg, type=Type, allocatable=false}.
+mk_temp(Reg, Type) when is_integer(Reg) ->
+    #x86_temp{reg=Reg, type=Type, allocatable=true}.
+mk_nonallocatable_temp(Reg, Type) when is_integer(Reg) ->
+    #x86_temp{reg=Reg, type=Type, allocatable=false}.
 mk_new_temp(Type) ->
     mk_temp(hipe_gensym:get_next_var(x86), Type).
 mk_new_nonallocatable_temp(Type) ->
    mk_nonallocatable_temp(hipe_gensym:get_next_var(x86), Type).
 is_temp(X) -> case X of #x86_temp{} -> true; _ -> false end.
-temp_reg(#x86_temp{reg=Reg}) -> Reg.
+temp_reg(#x86_temp{reg=Reg}) when is_integer(Reg) -> Reg.
 temp_type(#x86_temp{type=Type}) -> Type.
 temp_is_allocatable(#x86_temp{allocatable=A}) -> A.
 

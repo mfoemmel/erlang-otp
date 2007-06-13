@@ -103,7 +103,7 @@ all(suite) ->
     [
      ack,
      trans_req,
-     trans_req_and_ack ,
+     trans_req_and_ack,
      pending,
      reply     
     ].
@@ -391,6 +391,7 @@ single_trans_req(Config) when list(Config) ->
     put(verbosity, ?TEST_VERBOSITY),
     put(sname,     "TEST"),
     put(tc,        single_trans_req),
+    process_flag(trap_exit, true),    
     i("starting"),
 
     MgcNode = make_node_name(mgc),
@@ -431,23 +432,35 @@ single_trans_req(Config) when list(Config) ->
 
     d("[MGC] await the generator reply"),
     case megaco_test_generator:megaco_await_reply(Mgc) of
+	{'EXIT', Pid1, Reason1} ->
+	    ?ERROR({mgc_failed, {received_unexpected_EXIT, Pid1, Reason1}}),
+	    ok;
+	{'EXIT', Reason1} ->
+	    ?ERROR({mgc_failed, {received_unexpected_EXIT, Reason1}}),
+	    ok;
 	{ok, MgcReply} ->
 	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
 	    ok;
 	{error, MgcReply} ->
 	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
+	    ?ERROR({mgc_failed, MgcReply})
+    end,
 
     d("[MG] await the generator reply"),
     case megaco_test_generator:megaco_await_reply(Mg) of
+	{'EXIT', Pid2, Reason2} ->
+	    ?ERROR({mg_failed, {received_unexpected_EXIT, Pid2, Reason2}}),
+	    ok;
+	{'EXIT', Reason2} ->
+	    ?ERROR({mg_failed, {received_unexpected_EXIT, Reason2}}),
+	    ok;
 	{ok, MgReply} ->
 	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
 	    ok;
 	{error, MgReply} ->
 	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
 	    ?ERROR(mg_failed)
-		end,
+    end,
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
@@ -464,6 +477,26 @@ single_trans_req(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(str_mgc_connect_verify_fun(), 
+        {?MODULE, str_mgc_verify_handle_connect, []}).
+-define(str_mgc_service_change_req_verify_fun(Mid),
+        {?MODULE, str_mgc_verify_service_change_req, [Mid]}).
+-define(str_mgc_notify_req_verify_fun(),
+        {?MODULE, str_mgc_verify_notify_request, []}).
+-define(str_mgc_disco_verify_fun(),
+        {?MODULE, str_mgc_verify_handle_disconnect, []}).
+-else.
+-define(str_mgc_connect_verify_fun(), 
+        fun str_mgc_verify_handle_connect/1).
+-define(str_mgc_service_change_req_verify_fun(Mid),
+        str_mgc_verify_service_change_req_fun(Mid)).
+-define(str_mgc_notify_req_verify_fun(),
+	str_mgc_verify_notify_request_fun()).
+-define(str_mgc_disco_verify_fun(),
+	fun str_mgc_verify_handle_disconnect/1).
+-endif.
+
 str_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -472,12 +505,16 @@ str_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun str_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = str_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = str_mgc_verify_notify_request_fun(),
-    DiscoVerify = fun str_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?str_mgc_connect_verify_fun(),
+    ServiceChangeReqVerify = ?str_mgc_service_change_req_verify_fun(Mid),
+    NotifyReqVerify        = ?str_mgc_notify_req_verify_fun(),
+    DiscoVerify            = ?str_mgc_disco_verify_fun(),
+%%     ConnectVerify = fun str_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = str_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify = str_mgc_verify_notify_request_fun(),
+%%     DiscoVerify = fun str_mgc_verify_handle_disconnect/1,
     EvSeq = [
-	     {debug, true},
+	     {debug, false},
 	     {megaco_trace, disable},
 	     megaco_start,
 	     {megaco_start_user, Mid, RI, []},
@@ -503,96 +540,106 @@ str_mgc_verify_handle_connect(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
+
 str_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("str_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [str_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = str_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    str_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+str_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("str_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [str_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = str_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = str_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = str_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = str_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = str_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = str_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = str_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = str_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("str_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = str_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = str_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+str_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("str_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = str_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
 
 str_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("str_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [str_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = str_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("str_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = str_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    str_mgc_verify_notify_request(Ev)
     end.
+
+str_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("str_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [str_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = str_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+str_mgc_verify_notify_request(Else) ->
+    io:format("str_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = str_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
 
 str_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("str_mgc_verify_handle_disconnect -> ok"
@@ -639,6 +686,22 @@ str_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(str_mg_connect_verify_fun(), 
+        {?MODULE, str_mg_verify_handle_connect, []}).
+-define(str_mg_service_change_reply_verify_fun(),
+        {?MODULE, str_mg_verify_service_change_reply, []}).
+-define(str_mg_notify_reply_verify_fun(),
+        {?MODULE, str_mg_verify_notify_reply, []}).
+-else.
+-define(str_mg_connect_verify_fun(), 
+        fun str_mg_verify_handle_connect/1).
+-define(str_mg_service_change_reply_verify_fun(Mid),
+        fun str_mg_verify_service_change_reply/1).
+-define(str_mg_notify_reply_verify_fun(),
+	fun str_mg_verify_notify_reply/1).
+-endif.
+
 str_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -648,17 +711,20 @@ str_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [str_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun str_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun str_mg_verify_service_change_reply/1,
-    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
-    NotifyReq = [str_mg_notify_request_ar(1, Tid, 1)],
-    NotifyReplyVerify = fun str_mg_verify_notify_reply/1, 
+    Tid            = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq        = [str_mg_notify_request_ar(1, Tid, 1)],
+    ConnectVerify            = ?str_mg_connect_verify_fun(), 
+    ServiceChangeReplyVerify = ?str_mg_service_change_reply_verify_fun(), 
+    NotifyReplyVerify        = ?str_mg_notify_reply_verify_fun(), 
+    %% ConnectVerify = fun str_mg_verify_handle_connect/1,
+    %% ServiceChangeReplyVerify = fun str_mg_verify_service_change_reply/1,
+    %% NotifyReplyVerify = fun str_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
 	     {megaco_start_user, Mid, RI, []},
 	     start_transport,
-	     {megaco_trace, disable},
+	     {megaco_trace, max}, 
 	     {megaco_system_info, users},
 	     {megaco_system_info, connections},
 	     connect,
@@ -862,6 +928,26 @@ multi_trans_req_timeout(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrt_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrt_mgc_verify_handle_connect, []}).
+-define(mtrt_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrt_mgc_verify_service_change_req, [Mid]}).
+-define(mtrt_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrt_mgc_verify_notify_request, []}).
+-define(mtrt_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrt_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrt_mgc_verify_handle_connect_fun(), 
+        fun mtrt_mgc_verify_handle_connect/1).
+-define(mtrt_mgc_verify_service_change_req_fun(Mid),
+        mtrt_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrt_mgc_verify_notify_req_fun(),
+	mtrt_mgc_verify_notify_request_fun()).
+-define(mtrt_mgc_verify_handle_disconnect_fun(),
+	fun mtrt_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrt_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -870,10 +956,14 @@ mtrt_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrt_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrt_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrt_mgc_verify_notify_request_fun(),
-    DiscoVerify = fun mtrt_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrt_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrt_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrt_mgc_verify_notify_req_fun(),
+    DiscoVerify            = ?mtrt_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrt_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrt_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrt_mgc_verify_notify_request_fun(),
+%%     DiscoVerify            = fun mtrt_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -906,95 +996,102 @@ mtrt_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrt_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrt_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrt_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrt_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrt_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrt_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrt_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrt_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrt_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrt_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrt_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrt_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrt_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrt_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
-			    {error, Err, ErrReply}
+				    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrt_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrt_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrt_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrt_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrt_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrt_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrt_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrt_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrt_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrt_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrt_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrt_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrt_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrt_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrt_mgc_verify_notify_request(Ev)
     end.
+
+mtrt_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrt_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrt_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrt_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrt_mgc_verify_notify_request(Else) ->
+    io:format("mtrt_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrt_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrt_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("mtrt_mgc_verify_handle_disconnect -> ok"
@@ -1041,6 +1138,22 @@ mtrt_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrt_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrt_mg_verify_handle_connect, []}).
+-define(mtrt_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrt_mg_verify_service_change_reply, []}).
+-define(mtrt_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrt_mg_verify_notify_reply, []}).
+-else.
+-define(mtrt_mg_verify_handle_connect_fun(), 
+        fun mtrt_mg_verify_handle_connect/1).
+-define(mtrt_mg_verify_service_change_reply_fun(),
+        fun mtrt_mg_verify_service_change_reply/1).
+-define(mtrt_mg_verify_notify_reply_fun(),
+	fun mtrt_mg_verify_notify_reply/1).
+-endif.
+
 mtrt_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -1050,11 +1163,11 @@ mtrt_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrt_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrt_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrt_mg_verify_service_change_reply/1,
-    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
-    NotifyReq = [mtrt_mg_notify_request_ar(1, Tid, 1)],
-    NotifyReplyVerify = fun mtrt_mg_verify_notify_reply/1, 
+    Tid            = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq        = [mtrt_mg_notify_request_ar(1, Tid, 1)],
+    ConnectVerify            = ?mtrt_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrt_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrt_mg_verify_notify_reply_fun(), 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -1278,6 +1391,26 @@ multi_trans_req_maxcount1(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrmc1_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrmc1_mgc_verify_handle_connect, []}).
+-define(mtrmc1_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrmc1_mgc_verify_service_change_req, [Mid]}).
+-define(mtrmc1_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrmc1_mgc_verify_notify_request, []}).
+-define(mtrmc1_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrmc1_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrmc1_mgc_verify_handle_connect_fun(), 
+        fun mtrmc1_mgc_verify_handle_connect/1).
+-define(mtrmc1_mgc_verify_service_change_req_fun(Mid),
+        mtrmc1_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrmc1_mgc_verify_notify_req_fun(),
+	mtrmc1_mgc_verify_notify_request_fun()).
+-define(mtrmc1_mgc_verify_handle_disconnect_fun(),
+	fun mtrmc1_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrmc1_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -1286,10 +1419,14 @@ mtrmc1_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrmc1_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrmc1_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrmc1_mgc_verify_notify_request_fun(),
-    DiscoVerify = fun mtrmc1_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrmc1_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrmc1_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrmc1_mgc_verify_notify_req_fun(),
+    DiscoVerify            = ?mtrmc1_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify = fun mtrmc1_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrmc1_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify = mtrmc1_mgc_verify_notify_request_fun(),
+%%     DiscoVerify = fun mtrmc1_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -1322,95 +1459,102 @@ mtrmc1_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrmc1_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrmc1_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrmc1_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrmc1_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrmc1_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrmc1_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrmc1_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrmc1_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrmc1_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrmc1_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrmc1_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrmc1_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrmc1_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrmc1_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrmc1_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrmc1_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrmc1_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrmc1_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrmc1_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrmc1_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrmc1_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrmc1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrmc1_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrmc1_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrmc1_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrmc1_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrmc1_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrmc1_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrmc1_mgc_verify_notify_request(Ev)
     end.
+
+mtrmc1_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrmc1_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrmc1_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrmc1_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrmc1_mgc_verify_notify_request(Else) ->
+    io:format("mtrmc1_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrmc1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrmc1_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("mtrmc1_mgc_verify_handle_disconnect -> ok"
@@ -1457,6 +1601,22 @@ mtrmc1_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrmc1_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrmc1_mg_verify_handle_connect, []}).
+-define(mtrmc1_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrmc1_mg_verify_service_change_reply, []}).
+-define(mtrmc1_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrmc1_mg_verify_notify_reply, []}).
+-else.
+-define(mtrmc1_mg_verify_handle_connect_fun(), 
+        fun mtrmc1_mg_verify_handle_connect/1).
+-define(mtrmc1_mg_verify_service_change_reply_fun(),
+        fun mtrmc1_mg_verify_service_change_reply/1).
+-define(mtrmc1_mg_verify_notify_reply_fun(),
+	fun mtrmc1_mg_verify_notify_reply/1).
+-endif.
+
 mtrmc1_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -1466,11 +1626,14 @@ mtrmc1_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrmc1_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrmc1_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrmc1_mg_verify_service_change_reply/1,
-    Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
-    NotifyReq = [mtrmc1_mg_notify_request_ar(1, Tid, 1)],
-    NotifyReplyVerify = fun mtrmc1_mg_verify_notify_reply/1, 
+    Tid            = #megaco_term_id{id = ["00000000","00000000","01101101"]},
+    NotifyReq        = [mtrmc1_mg_notify_request_ar(1, Tid, 1)],
+    ConnectVerify            = ?mtrmc1_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrmc1_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrmc1_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrmc1_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrmc1_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrmc1_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -1697,6 +1860,26 @@ multi_trans_req_maxcount2(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrmc2_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrmc2_mgc_verify_handle_connect, []}).
+-define(mtrmc2_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrmc2_mgc_verify_service_change_req, [Mid]}).
+-define(mtrmc2_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrmc2_mgc_verify_notify_request, []}).
+-define(mtrmc2_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrmc2_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrmc2_mgc_verify_handle_connect_fun(), 
+        fun mtrmc2_mgc_verify_handle_connect/1).
+-define(mtrmc2_mgc_verify_service_change_req_fun(Mid),
+        mtrmc2_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrmc2_mgc_verify_notify_req_fun(),
+	mtrmc2_mgc_verify_notify_request_fun()).
+-define(mtrmc2_mgc_verify_handle_disconnect_fun(),
+	fun mtrmc2_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrmc2_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -1705,10 +1888,14 @@ mtrmc2_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrmc2_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrmc2_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrmc2_mgc_verify_notify_request_fun(),
-    DiscoVerify = fun mtrmc2_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrmc2_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrmc2_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrmc2_mgc_verify_notify_req_fun(),
+    DiscoVerify            = ?mtrmc2_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrmc2_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrmc2_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrmc2_mgc_verify_notify_request_fun(),
+%%     DiscoVerify            = fun mtrmc2_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -1741,112 +1928,119 @@ mtrmc2_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrmc2_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrmc2_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrmc2_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrmc2_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrmc2_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrmc2_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrmc2_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrmc2_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrmc2_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrmc2_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrmc2_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrmc2_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrmc2_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrmc2_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrmc2_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrmc2_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrmc2_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrmc2_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrmc2_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrmc2_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrmc2_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrmc2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrmc2_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrmc2_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    io:format("mtrmc2_mgc_verify_notify_request:fun -> "
-			      "single command",[]),
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, 
-			     [mtrmc2_mgc_notify_reply_ar1(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = CRs} ->
-		    io:format("mtrmc2_mgc_verify_notify_request:fun -> "
-			      "multi command (~w)",[length(CRs)]),
-		    Tids = [Tid || 
-			       #'CommandRequest'{command = 
-						 {notifyReq, 
-						  #'NotifyRequest'{
-						    terminationID = [Tid]}}} 
-				   <- CRs],
-		    Reply = 
-			{discard_ack, 
-			 [mtrmc2_mgc_notify_reply_ar2(Cid, Tids)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrmc2_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrmc2_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrmc2_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrmc2_mgc_verify_notify_request(Ev)
     end.
+
+mtrmc2_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrmc2_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    io:format("mtrmc2_mgc_verify_notify_request:fun -> "
+		      "single command",[]),
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, 
+		     [mtrmc2_mgc_notify_reply_ar1(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = CRs} ->
+	    io:format("mtrmc2_mgc_verify_notify_request:fun -> "
+		      "multi command (~w)",[length(CRs)]),
+	    Tids = [Tid || 
+		       #'CommandRequest'{command = 
+					 {notifyReq, 
+					  #'NotifyRequest'{
+					    terminationID = [Tid]}}} 
+			   <- CRs],
+	    Reply = 
+		{discard_ack, 
+		 [mtrmc2_mgc_notify_reply_ar2(Cid, Tids)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrmc2_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrmc2_mgc_verify_notify_request(Else) ->
+    io:format("mtrmc2_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrmc2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrmc2_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("mtrmc2_mgc_verify_handle_disconnect -> ok"
@@ -1897,6 +2091,22 @@ mtrmc2_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrmc2_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrmc2_mg_verify_handle_connect, []}).
+-define(mtrmc2_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrmc2_mg_verify_service_change_reply, []}).
+-define(mtrmc2_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrmc2_mg_verify_notify_reply, []}).
+-else.
+-define(mtrmc2_mg_verify_handle_connect_fun(), 
+        fun mtrmc2_mg_verify_handle_connect/1).
+-define(mtrmc2_mg_verify_service_change_reply_fun(),
+        fun mtrmc2_mg_verify_service_change_reply/1).
+-define(mtrmc2_mg_verify_notify_reply_fun(),
+	fun mtrmc2_mg_verify_notify_reply/1).
+-endif.
+
 mtrmc2_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -1906,8 +2116,6 @@ mtrmc2_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrmc2_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrmc2_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrmc2_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR1 = fun(N) ->
 		  [mtrmc2_mg_notify_request_ar1(N, Tid, N)]
@@ -1915,7 +2123,12 @@ mtrmc2_mg_event_sequence(text, tcp) ->
     NR2 = fun(N) ->
 		  [mtrmc2_mg_notify_request_ar2(N, Tid, N)]
 	  end,
-    NotifyReplyVerify = fun mtrmc2_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrmc2_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrmc2_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrmc2_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrmc2_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrmc2_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrmc2_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -2168,6 +2381,26 @@ multi_trans_req_maxsize1(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrms1_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrms1_mgc_verify_handle_connect, []}).
+-define(mtrms1_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrms1_mgc_verify_service_change_req, [Mid]}).
+-define(mtrms1_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrms1_mgc_verify_notify_request, []}).
+-define(mtrms1_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrms1_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrms1_mgc_verify_handle_connect_fun(), 
+        fun mtrms1_mgc_verify_handle_connect/1).
+-define(mtrms1_mgc_verify_service_change_req_fun(Mid),
+        mtrms1_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrms1_mgc_verify_notify_req_fun(),
+	mtrms1_mgc_verify_notify_request_fun()).
+-define(mtrms1_mgc_verify_handle_disconnect_fun(),
+	fun mtrms1_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrms1_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -2176,10 +2409,14 @@ mtrms1_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrms1_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrms1_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify1 = mtrms1_mgc_verify_notify_request_fun1(),
-    DiscoVerify = fun mtrms1_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrms1_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrms1_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrms1_mgc_verify_notify_req_fun(),
+    DiscoVerify            = ?mtrms1_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrms1_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrms1_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify1       = mtrms1_mgc_verify_notify_request_fun1(),
+%%     DiscoVerify            = fun mtrms1_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -2189,11 +2426,11 @@ mtrms1_mgc_event_sequence(text, tcp) ->
 	     listen,
 	     {megaco_callback, handle_connect,       ConnectVerify},
 	     {megaco_callback, handle_trans_request, ServiceChangeReqVerify},
-	     {megaco_callback, handle_trans_request, NotifyReqVerify1},
-	     {megaco_callback, handle_trans_request, NotifyReqVerify1},
-	     {megaco_callback, handle_trans_request, NotifyReqVerify1},
-	     {megaco_callback, handle_trans_request, NotifyReqVerify1},
-	     {megaco_callback, handle_trans_request, NotifyReqVerify1},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
+	     {megaco_callback, handle_trans_request, NotifyReqVerify},
 	     {megaco_callback, handle_disconnect,    DiscoVerify},
 	     {sleep, 1000},
 	     megaco_stop_user,
@@ -2212,96 +2449,103 @@ mtrms1_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrms1_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrms1_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrms1_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrms1_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrms1_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrms1_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrms1_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrms1_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrms1_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrms1_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrms1_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrms1_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrms1_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrms1_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrms1_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrms1_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrms1_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrms1_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrms1_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+	    {error, Err, ErrReply}
+    end;
+mtrms1_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrms1_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrms1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
+mtrms1_mgc_verify_notify_request_fun() ->
+    fun(Ev) ->
+	    mtrms1_mgc_verify_notify_request(Ev)
     end.
 
-mtrms1_mgc_verify_notify_request_fun1() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrms1_mgc_verify_notify_request:fun1 -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, 
-			     [mtrms1_mgc_notify_reply_ar1(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrms1_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrms1_mgc_verify_notify_request:fun1 -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrms1_err_desc(Else),
+mtrms1_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrms1_mgc_verify_notify_request:fun1 -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, 
+		     [mtrms1_mgc_notify_reply_ar1(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrms1_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, AR, ErrReply}
+    end;
+mtrms1_mgc_verify_notify_request(Else) ->
+    io:format("mtrms1_mgc_verify_notify_request:fun1 -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrms1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrms1_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("mtrms1_mgc_verify_handle_disconnect -> ok"
@@ -2348,6 +2592,22 @@ mtrms1_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrms1_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrms1_mg_verify_handle_connect, []}).
+-define(mtrms1_mg_verify_service_change_reply_fun(Mid),
+        {?MODULE, mtrms1_mg_verify_service_change_reply, [Mid]}).
+-define(mtrms1_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrms1_mg_verify_notify_reply, []}).
+-else.
+-define(mtrms1_mg_verify_handle_connect_fun(), 
+        fun mtrms1_mg_verify_handle_connect/1).
+-define(mtrms1_mg_verify_service_change_reply_fun(),
+        fun mtrms1_mg_verify_service_change_reply/1).
+-define(mtrms1_mg_verify_notify_reply_fun(),
+	fun mtrms1_mg_verify_notify_reply/1).
+-endif.
+
 mtrms1_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -2357,13 +2617,16 @@ mtrms1_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrms1_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrms1_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrms1_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(N) ->
 		 [mtrms1_mg_notify_request_ar1(N, Tid, N)]
 	 end,
-    NotifyReplyVerify1 = fun mtrms1_mg_verify_notify_reply1/1, 
+    ConnectVerify            = ?mtrms1_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrms1_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrms1_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrms1_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrms1_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrms1_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -2391,11 +2654,11 @@ mtrms1_mg_event_sequence(text, tcp) ->
 	     {megaco_cast, [NR(2), NR(3)], []},
 	     {megaco_cast, NR(4), []},
 	     {megaco_cast, NR(5), []},
-	     {megaco_callback, handle_trans_reply, NotifyReplyVerify1},
-	     {megaco_callback, handle_trans_reply, NotifyReplyVerify1},
-	     {megaco_callback, handle_trans_reply, NotifyReplyVerify1},
-	     {megaco_callback, handle_trans_reply, NotifyReplyVerify1},
-	     {megaco_callback, handle_trans_reply, NotifyReplyVerify1},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
+	     {megaco_callback, handle_trans_reply, NotifyReplyVerify},
 	     {sleep, 1000},
 	     megaco_stop_user,
 	     megaco_stop,
@@ -2452,12 +2715,12 @@ mtrms1_mg_verify_service_change_reply(Else) ->
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
 
-mtrms1_mg_verify_notify_reply1({handle_trans_reply, _CH, ?VERSION, 
+mtrms1_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
 				{ok, [AR]}, _}) ->
     io:format("mtrms1_mg_verify_service_change_reply -> ok"
 	      "~n   AR: ~p~n", [AR]),
     {ok, AR, ok};
-mtrms1_mg_verify_notify_reply1(Else) ->
+mtrms1_mg_verify_notify_reply(Else) ->
     io:format("mtrms1_mg_verify_service_change_reply -> unknown"
 	      "~n   Else: ~p~n", [Else]),
     {error, Else, ok}.
@@ -2587,6 +2850,26 @@ multi_trans_req_maxsize2(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrms2_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrms2_mgc_verify_handle_connect, []}).
+-define(mtrms2_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrms2_mgc_verify_service_change_req, [Mid]}).
+-define(mtrms2_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrms2_mgc_verify_notify_request, []}).
+-define(mtrms2_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrms2_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrms2_mgc_verify_handle_connect_fun(), 
+        fun mtrms2_mgc_verify_handle_connect/1).
+-define(mtrms2_mgc_verify_service_change_req_fun(Mid),
+        mtrms2_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrms2_mgc_verify_notify_req_fun(),
+	mtrms2_mgc_verify_notify_request_fun()).
+-define(mtrms2_mgc_verify_handle_disconnect_fun(),
+	fun mtrms2_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrms2_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -2595,10 +2878,14 @@ mtrms2_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrms2_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrms2_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrms2_mgc_verify_notify_request_fun(),
-    DiscoVerify = fun mtrms2_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrms2_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrms2_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrms2_mgc_verify_notify_req_fun(),
+    DiscoVerify            = ?mtrms2_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrms2_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrms2_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrms2_mgc_verify_notify_request_fun(),
+%%     DiscoVerify            = fun mtrms2_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -2631,112 +2918,119 @@ mtrms2_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrms2_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrms2_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrms2_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrms2_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrms2_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrms2_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrms2_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrms2_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrms2_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrms2_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrms2_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrms2_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrms2_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrms2_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrms2_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrms2_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrms2_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrms2_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrms2_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrms2_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrms2_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrms2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrms2_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrms2_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = [CR]} ->
-		    io:format("mtrms2_mgc_verify_notify_request:fun -> "
-			      "single command", []),
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, 
-			     [mtrms2_mgc_notify_reply_ar1(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = Cid, 
-				 commandRequests = CRs} ->
-		    io:format("mtrms2_mgc_verify_notify_request:fun -> "
-			      "multi command (~w)", [length(CRs)]),
-		    Tids = [Tid || 
-			       #'CommandRequest'{command = 
-						 {notifyReq, 
-						  #'NotifyRequest'{
-						    terminationID = [Tid]}}} 
-				   <- CRs],
-		    Reply = 
-			{discard_ack, 
-			 [mtrms2_mgc_notify_reply_ar2(Cid, Tids)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrms2_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrms2_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrms2_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrms2_mgc_verify_notify_request(Ev)
     end.
+
+mtrms2_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrms2_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = [CR]} ->
+	    io:format("mtrms2_mgc_verify_notify_request:fun -> "
+		      "single command", []),
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, 
+		     [mtrms2_mgc_notify_reply_ar1(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = Cid, 
+			 commandRequests = CRs} ->
+	    io:format("mtrms2_mgc_verify_notify_request:fun -> "
+		      "multi command (~w)", [length(CRs)]),
+	    Tids = [Tid || 
+		       #'CommandRequest'{command = 
+					 {notifyReq, 
+					  #'NotifyRequest'{
+					    terminationID = [Tid]}}} 
+			   <- CRs],
+	    Reply = 
+		{discard_ack, 
+		 [mtrms2_mgc_notify_reply_ar2(Cid, Tids)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrms2_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrms2_mgc_verify_notify_request(Else) ->
+    io:format("mtrms2_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrms2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrms2_mgc_verify_handle_disconnect({handle_disconnect, CH, ?VERSION, R}) -> 
     io:format("mtrms2_mgc_verify_handle_disconnect -> ok"
@@ -2787,6 +3081,22 @@ mtrms2_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrms2_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrms2_mg_verify_handle_connect, []}).
+-define(mtrms2_mg_verify_service_change_reply_fun(Mid),
+        {?MODULE, mtrms2_mg_verify_service_change_reply, [Mid]}).
+-define(mtrms2_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrms2_mg_verify_notify_reply, []}).
+-else.
+-define(mtrms2_mg_verify_handle_connect_fun(), 
+        fun mtrms2_mg_verify_handle_connect/1).
+-define(mtrms2_mg_verify_service_change_reply_fun(),
+        fun mtrms2_mg_verify_service_change_reply/1).
+-define(mtrms2_mg_verify_notify_reply_fun(),
+	fun mtrms2_mg_verify_notify_reply/1).
+-endif.
+
 mtrms2_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -2796,12 +3106,15 @@ mtrms2_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrms2_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrms2_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrms2_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NotifyReq1 = [mtrms2_mg_notify_request_ar1(1, Tid, 1)],
     NotifyReq2 = [mtrms2_mg_notify_request_ar2(2, Tid, 2)],
-    NotifyReplyVerify = fun mtrms2_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrms2_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrms2_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrms2_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrms2_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrms2_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrms2_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -3048,6 +3361,30 @@ single_trans_req_and_ack(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(straa_mgc_verify_handle_connect_fun(), 
+        {?MODULE, straa_mgc_verify_handle_connect, []}).
+-define(straa_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, straa_mgc_verify_service_change_req, [Mid]}).
+-define(straa_mgc_verify_notify_req_fun(),
+        {?MODULE, straa_mgc_verify_notify_request, []}).
+-define(straa_mgc_verify_ack_fun(),
+        {?MODULE, straa_mgc_verify_ack, []}).
+-define(straa_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, straa_mgc_verify_handle_disconnect, []}).
+-else.
+-define(straa_mgc_verify_handle_connect_fun(), 
+        fun straa_mgc_verify_handle_connect/1).
+-define(straa_mgc_verify_service_change_req_fun(Mid),
+        straa_mgc_verify_service_change_req_fun(Mid)).
+-define(straa_mgc_verify_notify_req_fun(),
+	straa_mgc_verify_notify_request_fun()).
+-define(straa_mgc_verify_ack_fun(),
+	fun straa_mgc_verify_ack/1).
+-define(straa_mgc_verify_handle_disconnect_fun(),
+	fun straa_mgc_verify_handle_disconnect/1).
+-endif.
+
 straa_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -3056,11 +3393,16 @@ straa_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun straa_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = straa_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = straa_mgc_verify_notify_request_fun(),
-    AckVerify = fun straa_mgc_verify_ack/1, 
-    DiscoVerify = fun straa_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?straa_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?straa_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?straa_mgc_verify_notify_req_fun(),
+    AckVerify              = ?straa_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?straa_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun straa_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = straa_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = straa_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun straa_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun straa_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -3091,109 +3433,116 @@ straa_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 straa_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("straa_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [straa_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = straa_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    straa_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+straa_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("straa_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [straa_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = straa_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = straa_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = straa_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = straa_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = straa_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = straa_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = straa_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = straa_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("straa_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = straa_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = straa_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+straa_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("straa_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = straa_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 straa_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("straa_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, kalle},
-		    Reply = {HandleAck, 
-			     [straa_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, 
-			     [straa_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = straa_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("straa_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = straa_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    straa_mgc_verify_notify_request(Ev)
     end.
+
+straa_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("straa_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [straa_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, 
+		     [straa_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = straa_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+straa_mgc_verify_notify_request(Else) ->
+    io:format("straa_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = straa_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 straa_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
     io:format("straa_mgc_verify_ack -> ok"
@@ -3250,6 +3599,22 @@ straa_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(straa_mg_verify_handle_connect_fun(), 
+        {?MODULE, straa_mg_verify_handle_connect, []}).
+-define(straa_mg_verify_service_change_reply_fun(),
+        {?MODULE, straa_mg_verify_service_change_reply, []}).
+-define(straa_mg_verify_notify_reply_fun(),
+        {?MODULE, straa_mg_verify_notify_reply, []}).
+-else.
+-define(straa_mg_verify_handle_connect_fun(), 
+        fun straa_mg_verify_handle_connect/1).
+-define(straa_mg_verify_service_change_reply_fun(),
+        fun straa_mg_verify_service_change_reply/1).
+-define(straa_mg_verify_notify_reply_fun(),
+	fun straa_mg_verify_notify_reply/1).
+-endif.
+
 straa_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -3259,13 +3624,16 @@ straa_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [straa_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun straa_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun straa_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(N) ->
 		 [straa_mg_notify_request_ar(N, Tid, N)]
 	 end,
-    NotifyReplyVerify = fun straa_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?straa_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?straa_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?straa_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun straa_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun straa_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun straa_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -3491,6 +3859,30 @@ multi_trans_req_and_ack_timeout(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaat_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaat_mgc_verify_handle_connect, []}).
+-define(mtrtaat_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrtaat_mgc_verify_service_change_req, [Mid]}).
+-define(mtrtaat_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrtaat_mgc_verify_notify_request, []}).
+-define(mtrtaat_mgc_verify_ack_fun(),
+        {?MODULE, mtrtaat_mgc_verify_ack, []}).
+-define(mtrtaat_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrtaat_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrtaat_mgc_verify_handle_connect_fun(), 
+        fun mtrtaat_mgc_verify_handle_connect/1).
+-define(mtrtaat_mgc_verify_service_change_req_fun(Mid),
+        mtrtaat_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrtaat_mgc_verify_notify_req_fun(),
+	mtrtaat_mgc_verify_notify_request_fun()).
+-define(mtrtaat_mgc_verify_ack_fun(),
+	fun mtrtaat_mgc_verify_ack/1).
+-define(mtrtaat_mgc_verify_handle_disconnect_fun(),
+	fun mtrtaat_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrtaat_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -3499,11 +3891,16 @@ mtrtaat_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrtaat_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrtaat_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrtaat_mgc_verify_notify_request_fun(),
-    AckVerify = fun mtrtaat_mgc_verify_ack/1, 
-    DiscoVerify = fun mtrtaat_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrtaat_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrtaat_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrtaat_mgc_verify_notify_req_fun(),
+    AckVerify              = ?mtrtaat_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtrtaat_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrtaat_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrtaat_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrtaat_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun mtrtaat_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtrtaat_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -3540,108 +3937,116 @@ mtrtaat_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrtaat_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaat_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrtaat_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrtaat_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrtaat_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrtaat_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrtaat_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrtaat_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrtaat_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrtaat_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrtaat_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrtaat_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrtaat_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrtaat_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrtaat_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrtaat_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrtaat_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaat_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrtaat_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrtaat_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrtaat_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaat_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaat_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaat_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, kalle},
-		    Reply = {HandleAck, 
-			     [mtrtaat_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrtaat_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrtaat_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrtaat_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaat_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrtaat_mgc_verify_notify_request(Ev)
     end.
+
+mtrtaat_mgc_verify_notify_request({handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrtaat_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [mtrtaat_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrtaat_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrtaat_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrtaat_mgc_verify_notify_request(Else) ->
+    io:format("mtrtaat_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaat_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
+
 
 mtrtaat_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, kalle}) -> 
     io:format("mtrtaat_mgc_verify_ack -> ok"
@@ -3698,6 +4103,22 @@ mtrtaat_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaat_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaat_mg_verify_handle_connect, []}).
+-define(mtrtaat_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrtaat_mg_verify_service_change_reply, []}).
+-define(mtrtaat_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrtaat_mg_verify_notify_reply, []}).
+-else.
+-define(mtrtaat_mg_verify_handle_connect_fun(), 
+        fun mtrtaat_mg_verify_handle_connect/1).
+-define(mtrtaat_mg_verify_service_change_reply_fun(),
+        fun mtrtaat_mg_verify_service_change_reply/1).
+-define(mtrtaat_mg_verify_notify_reply_fun(),
+	fun mtrtaat_mg_verify_notify_reply/1).
+-endif.
+
 mtrtaat_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -3707,13 +4128,16 @@ mtrtaat_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrtaat_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrtaat_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrtaat_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtrtaat_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReplyVerify = fun mtrtaat_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrtaat_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrtaat_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrtaat_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrtaat_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrtaat_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrtaat_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -3943,6 +4367,30 @@ multi_trans_req_and_ack_ackmaxcount(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaaamc_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaaamc_mgc_verify_handle_connect, []}).
+-define(mtrtaaamc_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrtaaamc_mgc_verify_service_change_req, [Mid]}).
+-define(mtrtaaamc_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrtaaamc_mgc_verify_notify_request, []}).
+-define(mtrtaaamc_mgc_verify_ack_fun(),
+        {?MODULE, mtrtaaamc_mgc_verify_ack, []}).
+-define(mtrtaaamc_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrtaaamc_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrtaaamc_mgc_verify_handle_connect_fun(), 
+        fun mtrtaaamc_mgc_verify_handle_connect/1).
+-define(mtrtaaamc_mgc_verify_service_change_req_fun(Mid),
+        mtrtaaamc_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrtaaamc_mgc_verify_notify_req_fun(),
+	mtrtaaamc_mgc_verify_notify_request_fun()).
+-define(mtrtaaamc_mgc_verify_ack_fun(),
+	fun mtrtaaamc_mgc_verify_ack/1).
+-define(mtrtaaamc_mgc_verify_handle_disconnect_fun(),
+	fun mtrtaaamc_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrtaaamc_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -3951,11 +4399,16 @@ mtrtaaamc_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrtaaamc_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrtaaamc_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrtaaamc_mgc_verify_notify_request_fun(),
-    AckVerify = fun mtrtaaamc_mgc_verify_ack/1, 
-    DiscoVerify = fun mtrtaaamc_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrtaaamc_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrtaaamc_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrtaaamc_mgc_verify_notify_req_fun(),
+    AckVerify              = ?mtrtaaamc_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtrtaaamc_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrtaaamc_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrtaaamc_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrtaaamc_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun mtrtaaamc_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtrtaaamc_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -3994,109 +4447,117 @@ mtrtaaamc_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrtaaamc_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaaamc_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrtaaamc_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrtaaamc_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrtaaamc_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrtaaamc_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrtaaamc_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrtaaamc_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrtaaamc_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrtaaamc_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrtaaamc_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrtaaamc_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrtaaamc_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrtaaamc_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrtaaamc_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrtaaamc_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrtaaamc_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaaamc_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrtaaamc_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrtaaamc_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrtaaamc_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaaamc_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaaamc_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaaamc_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{requestId = Rid, 
-						observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
-		    Reply = {HandleAck, 
-			     [mtrtaaamc_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrtaaamc_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrtaaamc_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrtaaamc_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaaamc_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrtaaamc_mgc_verify_notify_request(Ev)
     end.
+
+mtrtaaamc_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrtaaamc_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{requestId = Rid, 
+					observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
+	    Reply = {HandleAck, 
+		     [mtrtaaamc_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrtaaamc_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrtaaamc_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrtaaamc_mgc_verify_notify_request(Else) ->
+    io:format("mtrtaaamc_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaaamc_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaaamc_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, 
 			  {kalle, Rid}}) -> 
@@ -4155,6 +4616,22 @@ mtrtaaamc_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaaamc_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaaamc_mg_verify_handle_connect, []}).
+-define(mtrtaaamc_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrtaaamc_mg_verify_service_change_reply, []}).
+-define(mtrtaaamc_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrtaaamc_mg_verify_notify_reply, []}).
+-else.
+-define(mtrtaaamc_mg_verify_handle_connect_fun(), 
+        fun mtrtaaamc_mg_verify_handle_connect/1).
+-define(mtrtaaamc_mg_verify_service_change_reply_fun(),
+        fun mtrtaaamc_mg_verify_service_change_reply/1).
+-define(mtrtaaamc_mg_verify_notify_reply_fun(),
+	fun mtrtaaamc_mg_verify_notify_reply/1).
+-endif.
+
 mtrtaaamc_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -4164,13 +4641,16 @@ mtrtaaamc_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrtaaamc_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrtaaamc_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrtaaamc_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtrtaaamc_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReplyVerify = fun mtrtaaamc_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrtaaamc_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrtaaamc_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrtaaamc_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrtaaamc_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrtaaamc_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrtaaamc_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -4402,6 +4882,30 @@ multi_trans_req_and_ack_reqmaxcount(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaarac_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaarac_mgc_verify_handle_connect, []}).
+-define(mtrtaarac_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrtaarac_mgc_verify_service_change_req, [Mid]}).
+-define(mtrtaarac_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrtaarac_mgc_verify_notify_request, []}).
+-define(mtrtaarac_mgc_verify_ack_fun(),
+        {?MODULE, mtrtaarac_mgc_verify_ack, []}).
+-define(mtrtaarac_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrtaarac_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrtaarac_mgc_verify_handle_connect_fun(), 
+        fun mtrtaarac_mgc_verify_handle_connect/1).
+-define(mtrtaarac_mgc_verify_service_change_req_fun(Mid),
+        mtrtaarac_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrtaarac_mgc_verify_notify_req_fun(),
+	mtrtaarac_mgc_verify_notify_request_fun()).
+-define(mtrtaarac_mgc_verify_ack_fun(),
+	fun mtrtaarac_mgc_verify_ack/1).
+-define(mtrtaarac_mgc_verify_handle_disconnect_fun(),
+	fun mtrtaarac_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrtaarac_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -4410,11 +4914,16 @@ mtrtaarac_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrtaarac_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrtaarac_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrtaarac_mgc_verify_notify_request_fun(),
-    AckVerify = fun mtrtaarac_mgc_verify_ack/1, 
-    DiscoVerify = fun mtrtaarac_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrtaarac_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrtaarac_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrtaarac_mgc_verify_notify_req_fun(),
+    AckVerify              = ?mtrtaarac_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtrtaarac_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrtaarac_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrtaarac_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrtaarac_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun mtrtaarac_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtrtaarac_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -4452,109 +4961,117 @@ mtrtaarac_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrtaarac_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaarac_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrtaarac_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrtaarac_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrtaarac_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrtaarac_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrtaarac_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrtaarac_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrtaarac_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrtaarac_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrtaarac_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrtaarac_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrtaarac_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrtaarac_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrtaarac_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrtaarac_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrtaarac_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaarac_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrtaarac_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrtaarac_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrtaarac_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaarac_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaarac_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaarac_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{requestId = Rid, 
-						observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
-		    Reply = {HandleAck, 
-			     [mtrtaarac_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrtaarac_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrtaarac_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrtaarac_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaarac_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrtaarac_mgc_verify_notify_request(Ev)
     end.
+
+mtrtaarac_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrtaarac_mgc_verify_notify_request:fun -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{requestId = Rid, 
+					observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
+	    Reply = {HandleAck, 
+		     [mtrtaarac_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrtaarac_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrtaarac_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrtaarac_mgc_verify_notify_request(Else) ->
+    io:format("mtrtaarac_mgc_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaarac_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaarac_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, 
 			  {kalle, Rid}}) -> 
@@ -4613,6 +5130,22 @@ mtrtaarac_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaarac_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaarac_mg_verify_handle_connect, []}).
+-define(mtrtaarac_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrtaarac_mg_verify_service_change_reply, []}).
+-define(mtrtaarac_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrtaarac_mg_verify_notify_reply, []}).
+-else.
+-define(mtrtaarac_mg_verify_handle_connect_fun(), 
+        fun mtrtaarac_mg_verify_handle_connect/1).
+-define(mtrtaarac_mg_verify_service_change_reply_fun(),
+        fun mtrtaarac_mg_verify_service_change_reply/1).
+-define(mtrtaarac_mg_verify_notify_reply_fun(),
+	fun mtrtaarac_mg_verify_notify_reply/1).
+-endif.
+
 mtrtaarac_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -4622,13 +5155,16 @@ mtrtaarac_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrtaarac_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrtaarac_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrtaarac_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtrtaarac_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReplyVerify = fun mtrtaarac_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrtaarac_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrtaarac_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrtaarac_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrtaarac_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrtaarac_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrtaarac_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -4860,6 +5396,30 @@ multi_trans_req_and_ack_maxsize1(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaams1_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaams1_mgc_verify_handle_connect, []}).
+-define(mtrtaams1_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrtaams1_mgc_verify_service_change_req, [Mid]}).
+-define(mtrtaams1_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrtaams1_mgc_verify_notify_request, []}).
+-define(mtrtaams1_mgc_verify_ack_fun(),
+        {?MODULE, mtrtaams1_mgc_verify_ack, []}).
+-define(mtrtaams1_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrtaams1_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrtaams1_mgc_verify_handle_connect_fun(), 
+        fun mtrtaams1_mgc_verify_handle_connect/1).
+-define(mtrtaams1_mgc_verify_service_change_req_fun(Mid),
+        mtrtaams1_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrtaams1_mgc_verify_notify_req_fun(),
+	mtrtaams1_mgc_verify_notify_request_fun()).
+-define(mtrtaams1_mgc_verify_ack_fun(),
+	fun mtrtaams1_mgc_verify_ack/1).
+-define(mtrtaams1_mgc_verify_handle_disconnect_fun(),
+	fun mtrtaams1_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrtaams1_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -4868,11 +5428,16 @@ mtrtaams1_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrtaams1_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrtaams1_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrtaams1_mgc_verify_notify_request_fun(),
-    AckVerify = fun mtrtaams1_mgc_verify_ack/1, 
-    DiscoVerify = fun mtrtaams1_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrtaams1_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrtaams1_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrtaams1_mgc_verify_notify_req_fun(),
+    AckVerify              = ?mtrtaams1_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtrtaams1_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrtaams1_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrtaams1_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrtaams1_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun mtrtaams1_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtrtaams1_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -4910,109 +5475,117 @@ mtrtaams1_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrtaams1_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaams1_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrtaams1_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrtaams1_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrtaams1_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrtaams1_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtrtaams1_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrtaams1_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrtaams1_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrtaams1_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrtaams1_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrtaams1_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrtaams1_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrtaams1_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrtaams1_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrtaams1_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtrtaams1_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaams1_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrtaams1_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrtaams1_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtrtaams1_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaams1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaams1_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtrtaams1_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{requestId = Rid, 
-						observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
-		    Reply = {HandleAck, 
-			     [mtrtaams1_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtrtaams1_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrtaams1_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtrtaams1_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtrtaams1_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrtaams1_mgc_verify_notify_request(Ev)
     end.
+
+mtrtaams1_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtrtaams1_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{requestId = Rid, 
+					observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
+	    Reply = {HandleAck, 
+		     [mtrtaams1_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtrtaams1_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrtaams1_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrtaams1_mgc_verify_notify_request(Else) ->
+    io:format("mtrtaams1_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtrtaams1_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaams1_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, 
 			  {kalle, Rid}}) -> 
@@ -5071,6 +5644,22 @@ mtrtaams1_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaams1_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaams1_mg_verify_handle_connect, []}).
+-define(mtrtaams1_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrtaams1_mg_verify_service_change_reply, []}).
+-define(mtrtaams1_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrtaams1_mg_verify_notify_reply, []}).
+-else.
+-define(mtrtaams1_mg_verify_handle_connect_fun(), 
+        fun mtrtaams1_mg_verify_handle_connect/1).
+-define(mtrtaams1_mg_verify_service_change_reply_fun(),
+        fun mtrtaams1_mg_verify_service_change_reply/1).
+-define(mtrtaams1_mg_verify_notify_reply_fun(),
+	fun mtrtaams1_mg_verify_notify_reply/1).
+-endif.
+
 mtrtaams1_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -5080,13 +5669,16 @@ mtrtaams1_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrtaams1_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrtaams1_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrtaams1_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtrtaams1_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReplyVerify = fun mtrtaams1_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrtaams1_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrtaams1_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrtaams1_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrtaams1_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrtaams1_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrtaams1_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -5317,6 +5909,30 @@ multi_trans_req_and_ack_maxsize2(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaams2_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaams2_mgc_verify_handle_connect, []}).
+-define(mtrtaams2_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtrtaams2_mgc_verify_service_change_req, [Mid]}).
+-define(mtrtaams2_mgc_verify_notify_req_fun(),
+        {?MODULE, mtrtaams2_mgc_verify_notify_request, []}).
+-define(mtrtaams2_mgc_verify_ack_fun(),
+        {?MODULE, mtrtaams2_mgc_verify_ack, []}).
+-define(mtrtaams2_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtrtaams2_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtrtaams2_mgc_verify_handle_connect_fun(), 
+        fun mtrtaams2_mgc_verify_handle_connect/1).
+-define(mtrtaams2_mgc_verify_service_change_req_fun(Mid),
+        mtrtaams2_mgc_verify_service_change_req_fun(Mid)).
+-define(mtrtaams2_mgc_verify_notify_req_fun(),
+	mtrtaams2_mgc_verify_notify_request_fun()).
+-define(mtrtaams2_mgc_verify_ack_fun(),
+	fun mtrtaams2_mgc_verify_ack/1).
+-define(mtrtaams2_mgc_verify_handle_disconnect_fun(),
+	fun mtrtaams2_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtrtaams2_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -5325,11 +5941,16 @@ mtrtaams2_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtrtaams2_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtrtaams2_mgc_verify_service_change_req_fun(Mid),
-    NotifyReqVerify = mtrtaams2_mgc_verify_notify_request_fun(),
-    AckVerify = fun mtrtaams2_mgc_verify_ack/1, 
-    DiscoVerify = fun mtrtaams2_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtrtaams2_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtrtaams2_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtrtaams2_mgc_verify_notify_req_fun(),
+    AckVerify              = ?mtrtaams2_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtrtaams2_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtrtaams2_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtrtaams2_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtrtaams2_mgc_verify_notify_request_fun(),
+%%     AckVerify              = fun mtrtaams2_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtrtaams2_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -5367,114 +5988,122 @@ mtrtaams2_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtrtaams2_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    p("mtrtaams2_mgc_verify_service_change_req -> ok"
-	      "~n   AR: ~p", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtrtaams2_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtrtaams2_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtrtaams2_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtrtaams2_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    p("mtrtaams2_mgc_verify_service_change_req -> ok"
+      "~n   AR: ~p", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtrtaams2_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtrtaams2_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtrtaams2_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtrtaams2_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtrtaams2_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtrtaams2_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtrtaams2_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtrtaams2_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtrtaams2_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    p("mtrtaams2_mgc_verify_service_change_req -> unknown"
-	      "~n   Else: ~p", [Else]),
-	    ED = mtrtaams2_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtrtaams2_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtrtaams2_mgc_verify_service_change_req(Else, _Min) ->
+    p("mtrtaams2_mgc_verify_service_change_req -> unknown"
+      "~n   Else: ~p", [Else]),
+    ED = mtrtaams2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaams2_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    p("mtrtaams2_mgc_verify_notify_request:fun -> ok"
-	      "~n   AR: ~p", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    p("mtrtaams2_mgc_verify_notify_request:fun -> "
-		      "single command", []),		    
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{requestId = Rid, 
-						observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
-		    Reply = {HandleAck, 
-			     [mtrtaams2_mgc_notify_reply_ar1(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = CRs} ->
-		    p("mtrtaams2_mgc_verify_notify_request:fun -> "
-		      "multi command (~w)", [length(CRs)]),		    
-		    Tids = [Tid || 
-			       #'CommandRequest'{command = 
-						 {notifyReq, 
-						  #'NotifyRequest'{
-						    terminationID = [Tid]}}} 
-				   <- CRs],
-		    Reply = 
-			{discard_ack, 
-			 [mtrtaams2_mgc_notify_reply_ar2(Cid, Tids)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtrtaams2_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    p("mtrtaams2_mgc_verify_notify_request:fun -> unknown"
-	      "~n   Else: ~p", [Else]),
-	    ED = mtrtaams2_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtrtaams2_mgc_verify_notify_request(Ev)
     end.
+
+mtrtaams2_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    p("mtrtaams2_mgc_verify_notify_request:fun -> ok"
+      "~n   AR: ~p", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    p("mtrtaams2_mgc_verify_notify_request:fun -> "
+	      "single command", []),		    
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{requestId = Rid, 
+					observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, {kalle, Rid}},
+	    Reply = {HandleAck, 
+		     [mtrtaams2_mgc_notify_reply_ar1(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = CRs} ->
+	    p("mtrtaams2_mgc_verify_notify_request:fun -> "
+	      "multi command (~w)", [length(CRs)]),		    
+	    Tids = [Tid || 
+		       #'CommandRequest'{command = 
+					 {notifyReq, 
+					  #'NotifyRequest'{
+					    terminationID = [Tid]}}} 
+			   <- CRs],
+	    Reply = 
+		{discard_ack, 
+		 [mtrtaams2_mgc_notify_reply_ar2(Cid, Tids)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtrtaams2_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtrtaams2_mgc_verify_notify_request(Else) ->
+    p("mtrtaams2_mgc_verify_notify_request:fun -> unknown"
+      "~n   Else: ~p", [Else]),
+    ED = mtrtaams2_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtrtaams2_mgc_verify_ack({handle_trans_ack, CH, ?VERSION, ok, 
 			  {kalle, Rid}}) -> 
@@ -5535,6 +6164,22 @@ mtrtaams2_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtrtaams2_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtrtaams2_mg_verify_handle_connect, []}).
+-define(mtrtaams2_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtrtaams2_mg_verify_service_change_reply, []}).
+-define(mtrtaams2_mg_verify_notify_reply_fun(),
+        {?MODULE, mtrtaams2_mg_verify_notify_reply, []}).
+-else.
+-define(mtrtaams2_mg_verify_handle_connect_fun(), 
+        fun mtrtaams2_mg_verify_handle_connect/1).
+-define(mtrtaams2_mg_verify_service_change_reply_fun(),
+        fun mtrtaams2_mg_verify_service_change_reply/1).
+-define(mtrtaams2_mg_verify_notify_reply_fun(),
+	fun mtrtaams2_mg_verify_notify_reply/1).
+-endif.
+
 mtrtaams2_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -5544,8 +6189,6 @@ mtrtaams2_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtrtaams2_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtrtaams2_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtrtaams2_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR1 = fun(Cid, Rid) ->
 		  [mtrtaams2_mg_notify_request_ar1(10 + Rid, Tid, Cid)]
@@ -5553,7 +6196,12 @@ mtrtaams2_mg_event_sequence(text, tcp) ->
     NR2 = fun(Cid, Rid) ->
 		  [mtrtaams2_mg_notify_request_ar2(20 + Rid, Tid, Cid)]
 	  end,
-    NotifyReplyVerify = fun mtrtaams2_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtrtaams2_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtrtaams2_mg_verify_service_change_reply_fun(), 
+    NotifyReplyVerify        = ?mtrtaams2_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtrtaams2_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtrtaams2_mg_verify_service_change_reply/1,
+%%     NotifyReplyVerify        = fun mtrtaams2_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -5789,8 +6437,8 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
 	    ok;
 	{error, MgcReply} ->
 	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
+	    ?ERROR({mgc_failed, MgcReply})
+    end,
 
     d("[MG] await the generator reply"),
     case megaco_test_generator:megaco_await_reply(Mg, 30000) of
@@ -5799,8 +6447,8 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
 	    ok;
 	{error, MgReply} ->
 	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+	    ?ERROR({mg_failed, MgReply})
+    end,
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
@@ -5817,6 +6465,34 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtraaap_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtraaap_mgc_verify_handle_connect, []}).
+-define(mtraaap_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtraaap_mgc_verify_service_change_req, [Mid]}).
+-define(mtraaap_mgc_verify_notify_req_fun(),
+        {?MODULE, mtraaap_mgc_verify_notify_request, []}).
+-define(mtraaap_mgc_verify_notify_reply_fun(),
+        {?MODULE, mtraaap_mgc_verify_notify_reply, []}).
+-define(mtraaap_mgc_verify_ack_fun(),
+        {?MODULE, mtraaap_mgc_verify_ack, []}).
+-define(mtraaap_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtraaap_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtraaap_mgc_verify_handle_connect_fun(), 
+        fun mtraaap_mgc_verify_handle_connect/1).
+-define(mtraaap_mgc_verify_service_change_req_fun(Mid),
+        mtraaap_mgc_verify_service_change_req_fun(Mid)).
+-define(mtraaap_mgc_verify_notify_req_fun(),
+	mtraaap_mgc_verify_notify_request_fun()).
+-define(mtraaap_mgc_verify_notify_reply_fun(),
+	fun mtraaap_mgc_verify_notify_reply/1).
+-define(mtraaap_mgc_verify_ack_fun(),
+	fun mtraaap_mgc_verify_ack/1).
+-define(mtraaap_mgc_verify_handle_disconnect_fun(),
+	fun mtraaap_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtraaap_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -5825,19 +6501,25 @@ mtraaap_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtraaap_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtraaap_mgc_verify_service_change_req_fun(Mid),
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtraaap_mgc_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReqVerify = mtraaap_mgc_verify_notify_request_fun(),
-    NotifyReplyVerify = fun mtraaap_mgc_verify_notify_reply/1, 
-    AckVerify = fun mtraaap_mgc_verify_ack/1, 
-    DiscoVerify = fun mtraaap_mgc_verify_handle_disconnect/1,
     ReqTmr = #megaco_incr_timer{wait_for    = 500,
 				factor      = 1,
 				max_retries = 1},
+    ConnectVerify          = ?mtraaap_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtraaap_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtraaap_mgc_verify_notify_req_fun(),
+    NotifyReplyVerify      = ?mtraaap_mgc_verify_notify_reply_fun(), 
+    AckVerify              = ?mtraaap_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtraaap_mgc_verify_handle_disconnect_fun(),
+%%     ConnectVerify          = fun mtraaap_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtraaap_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtraaap_mgc_verify_notify_request_fun(),
+%%     NotifyReplyVerify      = fun mtraaap_mgc_verify_notify_reply/1, 
+%%     AckVerify              = fun mtraaap_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtraaap_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     {megaco_trace, disable},
@@ -5873,108 +6555,116 @@ mtraaap_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtraaap_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaap_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtraaap_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtraaap_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtraaap_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtraaap_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtraaap_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtraaap_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtraaap_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtraaap_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtraaap_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtraaap_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtraaap_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtraaap_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtraaap_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtraaap_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtraaap_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaap_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtraaap_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtraaap_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtraaap_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaap_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaap_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaap_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, kalle},
-		    Reply = {HandleAck, 
-			     [mtraaap_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtraaap_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtraaap_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtraaap_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaap_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtraaap_mgc_verify_notify_request(Ev)
     end.
+
+mtraaap_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtraaap_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [mtraaap_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtraaap_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtraaap_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtraaap_mgc_verify_notify_request(Else) ->
+    io:format("mtraaap_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaap_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaap_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
 				 {ok, [AR]}, _}) ->
@@ -6050,6 +6740,26 @@ mtraaap_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtraaap_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtraaap_mg_verify_handle_connect, []}).
+-define(mtraaap_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtraaap_mg_verify_service_change_reply, []}).
+-define(mtraaap_mg_verify_notify_req_fun(),
+        {?MODULE, mtraaap_mgc_verify_notify_request, []}).
+-define(mtraaap_mg_verify_notify_reply_fun(),
+        {?MODULE, mtraaap_mg_verify_notify_reply, []}).
+-else.
+-define(mtraaap_mg_verify_handle_connect_fun(), 
+        fun mtraaap_mg_verify_handle_connect/1).
+-define(mtraaap_mg_verify_service_change_reply_fun(),
+        fun mtraaap_mg_verify_service_change_reply/1).
+-define(mtraaap_mg_verify_notify_req_fun(),
+	mtraaap_mgc_verify_notify_request_fun()).
+-define(mtraaap_mg_verify_notify_reply_fun(),
+	fun mtraaap_mg_verify_notify_reply/1).
+-endif.
+
 mtraaap_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -6059,14 +6769,18 @@ mtraaap_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtraaap_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtraaap_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtraaap_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtraaap_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReqVerify = mtraaap_mg_verify_notify_request_fun(),
-    NotifyReplyVerify = fun mtraaap_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtraaap_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtraaap_mg_verify_service_change_reply_fun(), 
+    NotifyReqVerify          = ?mtraaap_mg_verify_notify_req_fun(),
+    NotifyReplyVerify        = ?mtraaap_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtraaap_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtraaap_mg_verify_service_change_reply/1,
+%%     NotifyReqVerify          = mtraaap_mg_verify_notify_request_fun(),
+%%     NotifyReplyVerify        = fun mtraaap_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -6163,33 +6877,37 @@ mtraaap_mg_verify_service_change_reply(Else) ->
     {error, Else, ok}.
 
 mtraaap_mg_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaap_mg_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtraaap_mg_notify_reply_ar(Cid, Tid)]},
-		    {ok, 3000, AR, Reply};
-		_ ->
-		    ED = mtraaap_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtraaap_mg_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaap_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtraaap_mg_verify_notify_request(Ev)
     end.
+
+mtraaap_mg_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtraaap_mg_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtraaap_mg_notify_reply_ar(Cid, Tid)]},
+	    {ok, 3000, AR, Reply};
+	_ ->
+	    ED = mtraaap_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtraaap_mg_verify_notify_request(Else) ->
+    io:format("mtraaap_mg_verify_notify_request:fun -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaap_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaap_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
 				{ok, [AR]}, _}) ->
@@ -6352,6 +7070,34 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
 %%
 %% MGC generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtraaar_mgc_verify_handle_connect_fun(), 
+        {?MODULE, mtraaar_mgc_verify_handle_connect, []}).
+-define(mtraaar_mgc_verify_service_change_req_fun(Mid),
+        {?MODULE, mtraaar_mgc_verify_service_change_req, [Mid]}).
+-define(mtraaar_mgc_verify_notify_req_fun(),
+        {?MODULE, mtraaar_mgc_verify_notify_request, []}).
+-define(mtraaar_mgc_verify_notify_reply_fun(),
+        {?MODULE, mtraaar_mgc_verify_notify_reply, []}).
+-define(mtraaar_mgc_verify_ack_fun(),
+        {?MODULE, mtraaar_mgc_verify_ack, []}).
+-define(mtraaar_mgc_verify_handle_disconnect_fun(),
+        {?MODULE, mtraaar_mgc_verify_handle_disconnect, []}).
+-else.
+-define(mtraaar_mgc_verify_handle_connect_fun(), 
+        fun mtraaar_mgc_verify_handle_connect/1).
+-define(mtraaar_mgc_verify_service_change_req_fun(Mid),
+        mtraaar_mgc_verify_service_change_req_fun(Mid)).
+-define(mtraaar_mgc_verify_notify_req_fun(),
+	mtraaar_mgc_verify_notify_request_fun()).
+-define(mtraaar_mgc_verify_notify_reply_fun(),
+	fun mtraaar_mgc_verify_notify_reply/1).
+-define(mtraaar_mgc_verify_ack_fun(),
+	fun mtraaar_mgc_verify_ack/1).
+-define(mtraaar_mgc_verify_handle_disconnect_fun(),
+	fun mtraaar_mgc_verify_handle_disconnect/1).
+-endif.
+
 mtraaar_mgc_event_sequence(text, tcp) ->
     Mid = {deviceName,"ctrl"},
     RI = [
@@ -6360,16 +7106,22 @@ mtraaar_mgc_event_sequence(text, tcp) ->
 	  {encoding_config,  []},
 	  {transport_module, megaco_tcp}
 	 ],
-    ConnectVerify = fun mtraaar_mgc_verify_handle_connect/1,
-    ServiceChangeReqVerify = mtraaar_mgc_verify_service_change_req_fun(Mid),
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtraaar_mgc_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReqVerify = mtraaar_mgc_verify_notify_request_fun(),
-    NotifyReplyVerify = fun mtraaar_mgc_verify_notify_reply/1, 
-    AckVerify = fun mtraaar_mgc_verify_ack/1, 
-    DiscoVerify = fun mtraaar_mgc_verify_handle_disconnect/1,
+    ConnectVerify          = ?mtraaar_mgc_verify_handle_connect_fun(), 
+    ServiceChangeReqVerify = ?mtraaar_mgc_verify_service_change_req_fun(Mid),
+    NotifyReqVerify        = ?mtraaar_mgc_verify_notify_req_fun(),
+    NotifyReplyVerify      = ?mtraaar_mgc_verify_notify_reply_fun(), 
+    AckVerify              = ?mtraaar_mgc_verify_ack_fun(), 
+    DiscoVerify            = ?mtraaar_mgc_verify_handle_disconnect_fun(), 
+%%     ConnectVerify          = fun mtraaar_mgc_verify_handle_connect/1,
+%%     ServiceChangeReqVerify = mtraaar_mgc_verify_service_change_req_fun(Mid),
+%%     NotifyReqVerify        = mtraaar_mgc_verify_notify_request_fun(),
+%%     NotifyReplyVerify      = fun mtraaar_mgc_verify_notify_reply/1, 
+%%     AckVerify              = fun mtraaar_mgc_verify_ack/1, 
+%%     DiscoVerify            = fun mtraaar_mgc_verify_handle_disconnect/1,
     EvSeq = [
 	     {debug, true},
 	     %% {megaco_trace, max}, 
@@ -6407,108 +7159,116 @@ mtraaar_mgc_verify_handle_connect(Else) ->
     {error, Else, ok}.
 
 mtraaar_mgc_verify_service_change_req_fun(Mid) ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaar_mgc_verify_service_change_req -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{commandRequests = [CR]} ->
-		    case CR of
-			#'CommandRequest'{command = Cmd} ->
-			    case Cmd of
-				{serviceChangeReq, 
-				 #'ServiceChangeRequest'{terminationID = [Tid],
-							 serviceChangeParms = Parms}} ->
-				    case Tid of
-					#megaco_term_id{contains_wildcards = false, 
-							id = ["root"]} ->
-					    case Parms of
-						#'ServiceChangeParm'{
-							 serviceChangeMethod = restart,
-							 serviceChangeReason = [[$9,$0,$1|_]]} ->
-						    Reply = 
-							{discard_ack, 
-							 [mtraaar_mgc_service_change_reply_ar(Mid, 1)]},
-						    {ok, AR, Reply};
-						_ ->
-						    Err = {invalid_SCP, Parms},
-						    ED = mtraaar_err_desc(Parms),
-						    ErrReply = {discard_ack, 
-								ED},
-						    {error, Err, ErrReply}
-					    end;
+    fun(Ev) ->
+	    mtraaar_mgc_verify_service_change_req(Ev, Mid)
+    end.
+
+mtraaar_mgc_verify_service_change_req(
+  {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
+    io:format("mtraaar_mgc_verify_service_change_req -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{commandRequests = [CR]} ->
+	    case CR of
+		#'CommandRequest'{command = Cmd} ->
+		    case Cmd of
+			{serviceChangeReq, 
+			 #'ServiceChangeRequest'{terminationID = [Tid],
+						 serviceChangeParms = Parms}} ->
+			    case Tid of
+				#megaco_term_id{contains_wildcards = false, 
+						id = ["root"]} ->
+				    case Parms of
+					#'ServiceChangeParm'{
+						 serviceChangeMethod = restart,
+						 serviceChangeReason = [[$9,$0,$1|_]]} ->
+					    Reply = 
+						{discard_ack, 
+						 [mtraaar_mgc_service_change_reply_ar(Mid, 1)]},
+					    {ok, AR, Reply};
 					_ ->
-					    Err = {invalid_termination_id, Tid},
-					    ED = mtraaar_err_desc(Tid),
-					    ErrReply = {discard_ack, ED},
+					    Err = {invalid_SCP, Parms},
+					    ED = mtraaar_err_desc(Parms),
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
-				    Err = {invalid_command, Cmd},
-				    ED = mtraaar_err_desc(Cmd),
+				    Err = {invalid_termination_id, Tid},
+				    ED = mtraaar_err_desc(Tid),
 				    ErrReply = {discard_ack, ED},
 				    {error, Err, ErrReply}
 			    end;
 			_ ->
-			    Err = {invalid_command_request, CR},
-			    ED = mtraaar_err_desc(CR),
+			    Err = {invalid_command, Cmd},
+			    ED = mtraaar_err_desc(Cmd),
 			    ErrReply = {discard_ack, ED},
 			    {error, Err, ErrReply}
 		    end;
 		_ ->
-		    Err = {invalid_action_request, AR},
-		    ED = mtraaar_err_desc(AR),
+		    Err = {invalid_command_request, CR},
+		    ED = mtraaar_err_desc(CR),
 		    ErrReply = {discard_ack, ED},
 		    {error, Err, ErrReply}
 	    end;
-       (Else) ->
-	    io:format("mtraaar_mgc_verify_service_change_req -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaar_err_desc(Else),
+	_ ->
+	    Err = {invalid_action_request, AR},
+	    ED = mtraaar_err_desc(AR),
 	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
-    end.
+	    {error, Err, ErrReply}
+    end;
+mtraaar_mgc_verify_service_change_req(Else, _Mid) ->
+    io:format("mtraaar_mgc_verify_service_change_req -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaar_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaar_mgc_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaar_mgc_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    HandleAck = {handle_sloppy_ack, kalle},
-		    Reply = {HandleAck, 
-			     [mtraaar_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		#'ActionRequest'{contextId = 2 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtraaar_mgc_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtraaar_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtraaar_mgc_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaar_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtraaar_mgc_verify_notify_request(Ev)
     end.
+
+mtraaar_mgc_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtraaar_mgc_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    HandleAck = {handle_sloppy_ack, kalle},
+	    Reply = {HandleAck, 
+		     [mtraaar_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	#'ActionRequest'{contextId = 2 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtraaar_mgc_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtraaar_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtraaar_mgc_verify_notify_request(Else) ->
+    io:format("mtraaar_mgc_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaar_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaar_mgc_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
 				 {ok, [AR]}, _}) ->
@@ -6589,6 +7349,26 @@ mtraaar_mgc_notify_reply(Mid, TransId, Cid, TermId) ->
 %%
 %% MG generator stuff
 %% 
+-ifdef(megaco_hipe_special).
+-define(mtraaar_mg_verify_handle_connect_fun(), 
+        {?MODULE, mtraaar_mg_verify_handle_connect, []}).
+-define(mtraaar_mg_verify_service_change_reply_fun(),
+        {?MODULE, mtraaar_mg_verify_service_change_reply, []}).
+-define(mtraaar_mg_verify_notify_req_fun(),
+        {?MODULE, mtraaar_mgc_verify_notify_request, []}).
+-define(mtraaar_mg_verify_notify_reply_fun(),
+        {?MODULE, mtraaar_mg_verify_notify_reply, []}).
+-else.
+-define(mtraaar_mg_verify_handle_connect_fun(), 
+        fun mtraaar_mg_verify_handle_connect/1).
+-define(mtraaar_mg_verify_service_change_reply_fun(),
+        fun mtraaar_mg_verify_service_change_reply/1).
+-define(mtraaar_mg_verify_notify_req_fun(),
+	mtraaar_mgc_verify_notify_request_fun()).
+-define(mtraaar_mg_verify_notify_reply_fun(),
+	fun mtraaar_mg_verify_notify_reply/1).
+-endif.
+
 mtraaar_mg_event_sequence(text, tcp) ->
     Mid = {deviceName,"mg"},
     RI = [
@@ -6598,14 +7378,18 @@ mtraaar_mg_event_sequence(text, tcp) ->
 	  {transport_module, megaco_tcp}
 	 ],
     ServiceChangeReq = [mtraaar_mg_service_change_request_ar(Mid, 1)],
-    ConnectVerify = fun mtraaar_mg_verify_handle_connect/1,
-    ServiceChangeReplyVerify = fun mtraaar_mg_verify_service_change_reply/1,
     Tid = #megaco_term_id{id = ["00000000","00000000","01101101"]},
     NR = fun(Cid, Rid) ->
 		 [mtraaar_mg_notify_request_ar(Rid, Tid, Cid)]
 	 end,
-    NotifyReqVerify = mtraaar_mg_verify_notify_request_fun(),
-    NotifyReplyVerify = fun mtraaar_mg_verify_notify_reply/1, 
+    ConnectVerify            = ?mtraaar_mg_verify_handle_connect_fun(), 
+    ServiceChangeReplyVerify = ?mtraaar_mg_verify_service_change_reply_fun(), 
+    NotifyReqVerify          = ?mtraaar_mg_verify_notify_req_fun(),
+    NotifyReplyVerify        = ?mtraaar_mg_verify_notify_reply_fun(), 
+%%     ConnectVerify            = fun mtraaar_mg_verify_handle_connect/1,
+%%     ServiceChangeReplyVerify = fun mtraaar_mg_verify_service_change_reply/1,
+%%     NotifyReqVerify          = mtraaar_mg_verify_notify_request_fun(),
+%%     NotifyReplyVerify        = fun mtraaar_mg_verify_notify_reply/1, 
     EvSeq = [
 	     {debug, true},
 	     megaco_start,
@@ -6703,33 +7487,37 @@ mtraaar_mg_verify_service_change_reply(Else) ->
     {error, Else, ok}.
 
 mtraaar_mg_verify_notify_request_fun() ->
-    fun({handle_trans_request, _, ?VERSION, [AR]}) ->
-	    io:format("mtraaar_mg_verify_notify_request:fun -> ok"
-		      "~n   AR: ~p~n", [AR]),
-	    case AR of
-		#'ActionRequest'{contextId = 1 = Cid, 
-				 commandRequests = [CR]} ->
-		    #'CommandRequest'{command = Cmd} = CR,
-		    {notifyReq, NR} = Cmd,
-		    #'NotifyRequest'{terminationID = [Tid],
-				     observedEventsDescriptor = OED,
-				     errorDescriptor = asn1_NOVALUE} = NR,
-		    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
-		    #'ObservedEvent'{eventName = "al/of"} = OE,
-		    Reply = {discard_ack, [mtraaar_mg_notify_reply_ar(Cid, Tid)]},
-		    {ok, AR, Reply};
-		_ ->
-		    ED = mtraaar_err_desc(AR),
-		    ErrReply = {discard_ack, ED},
-		    {error, AR, ErrReply}
-	    end;
-       (Else) ->
-	    io:format("mtraaar_mg_verify_notify_request:fun -> unknown"
-		      "~n   Else: ~p~n", [Else]),
-	    ED = mtraaar_err_desc(Else),
-	    ErrReply = {discard_ack, ED},
-	    {error, Else, ErrReply}
+    fun(Ev) ->
+	    mtraaar_mg_verify_notify_request(Ev)
     end.
+
+mtraaar_mg_verify_notify_request(
+  {handle_trans_request, _, ?VERSION, [AR]}) ->
+    io:format("mtraaar_mg_verify_notify_request -> ok"
+	      "~n   AR: ~p~n", [AR]),
+    case AR of
+	#'ActionRequest'{contextId = 1 = Cid, 
+			 commandRequests = [CR]} ->
+	    #'CommandRequest'{command = Cmd} = CR,
+	    {notifyReq, NR} = Cmd,
+	    #'NotifyRequest'{terminationID = [Tid],
+			     observedEventsDescriptor = OED,
+			     errorDescriptor = asn1_NOVALUE} = NR,
+	    #'ObservedEventsDescriptor'{observedEventLst = [OE]} = OED,
+	    #'ObservedEvent'{eventName = "al/of"} = OE,
+	    Reply = {discard_ack, [mtraaar_mg_notify_reply_ar(Cid, Tid)]},
+	    {ok, AR, Reply};
+	_ ->
+	    ED = mtraaar_err_desc(AR),
+	    ErrReply = {discard_ack, ED},
+	    {error, AR, ErrReply}
+    end;
+mtraaar_mg_verify_notify_request(Else) ->
+    io:format("mtraaar_mg_verify_notify_request -> unknown"
+	      "~n   Else: ~p~n", [Else]),
+    ED = mtraaar_err_desc(Else),
+    ErrReply = {discard_ack, ED},
+    {error, Else, ErrReply}.
 
 mtraaar_mg_verify_notify_reply({handle_trans_reply, _CH, ?VERSION, 
 				{ok, [AR]}, _}) ->

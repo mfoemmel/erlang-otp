@@ -9,8 +9,8 @@
 %%  History  :	* 2002-03-14 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2004/01/31 00:38:38 $
-%%              $Revision: 1.2 $
+%%              $Date: 2007/05/10 16:29:26 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %% @doc
 %%    A tool to enable using the HiPE compiler as an automatic JIT
@@ -21,7 +21,10 @@
 -module(hipe_jit).
 -export([start/0]).
 
--record(state,{mode=start,threshold=5000,sleep=5000,time=1000}).
+-record(state, {mode=start,
+	       	threshold=5000 :: integer(),
+		sleep=5000     :: integer(),
+		time=1000      :: integer()}).
 
 %% @spec start() -> pid()
 %%

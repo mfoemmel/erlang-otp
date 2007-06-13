@@ -31,6 +31,8 @@
 #include "ethread.h"
 #include "erl_lock_check.h"
 #include "erl_term.h"
+#define ERTS_THR_OPTS_DEFAULT_INITER ETHR_THR_OPTS_DEFAULT_INITER
+typedef ethr_thr_opts erts_thr_opts_t;
 typedef ethr_init_data erts_thr_init_data_t;
 typedef ethr_tid erts_tid_t;
 typedef struct {
@@ -69,7 +71,8 @@ void  __noreturn erts_thr_fatal_error(int, char *); /* implemented in
 
 #else /* #ifdef USE_THREADS */
 
-
+#define ERTS_THR_OPTS_DEFAULT_INITER 0
+typedef int erts_thr_opts_t;
 typedef int erts_thr_init_data_t;
 typedef int erts_tid_t;
 typedef int erts_mtx_t;
@@ -92,7 +95,7 @@ typedef struct {
 
 ERTS_GLB_INLINE void erts_thr_init(erts_thr_init_data_t *id);
 ERTS_GLB_INLINE void erts_thr_create(erts_tid_t *tid, void * (*func)(void *),
-				     void *arg, int detached);
+				     void *arg, erts_thr_opts_t *opts);
 ERTS_GLB_INLINE void erts_thr_join(erts_tid_t tid, void **thr_res);
 ERTS_GLB_INLINE void erts_thr_detach(erts_tid_t tid);
 ERTS_GLB_INLINE void erts_thr_exit(void *res);
@@ -150,10 +153,10 @@ erts_thr_init(erts_thr_init_data_t *id)
 
 ERTS_GLB_INLINE void
 erts_thr_create(erts_tid_t *tid, void * (*func)(void *), void *arg,
-		   int detached)
+		erts_thr_opts_t *opts)
 {
 #ifdef USE_THREADS
-    int res = ethr_thr_create(tid, func, arg, detached);
+    int res = ethr_thr_create(tid, func, arg, opts);
     if (res)
 	erts_thr_fatal_error(res, "create thread");
 #endif

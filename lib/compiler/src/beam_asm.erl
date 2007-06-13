@@ -343,7 +343,7 @@ flag_to_bit(big)     -> 16#00;
 flag_to_bit(signed)  -> 16#04;
 flag_to_bit(unsigned)-> 16#00;
 flag_to_bit(exact)   -> 16#08;
-flag_to_bit(native) ->  16#10.
+flag_to_bit(native)  -> 16#10.
     
 encode_list([H|T], _Dict, _Acc) when is_list(H) ->
     exit({illegal_nested_list,encode_arg,[H|T]});
@@ -353,8 +353,8 @@ encode_list([H|T], Dict0, Acc) ->
 encode_list([], Dict, Acc) -> {Acc,Dict}.
 
 encode_alloc_list(L0, Dict0) ->
-    {L,Dict} = encode_alloc_list_1(L0, Dict0, []),
-    {[encode(?tag_z, 3),encode(?tag_u, length(L0))|L],Dict}.
+    {Bin,Dict} = encode_alloc_list_1(L0, Dict0, []),
+    {[encode(?tag_z, 3),encode(?tag_u, length(L0)),Bin],Dict}.
 
 encode_alloc_list_1([{words,Words}|T], Dict, Acc0) ->
     Acc = [Acc0,encode(?tag_u, 0),encode(?tag_u, Words)],

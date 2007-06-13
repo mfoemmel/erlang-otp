@@ -249,8 +249,8 @@ is_name_1([$_ | Cs]) ->
 is_name_1([]) -> true;
 is_name_1(_) -> false.
 
-to_atom(A) when atom(A) -> A;
-to_atom(S) when list(S) -> list_to_atom(S).
+to_atom(A) when is_atom(A) -> A;
+to_atom(S) when is_list(S) -> list_to_atom(S).
     
 unique([X | Xs]) -> [X | unique(Xs, X)];
 unique([]) -> [].
@@ -487,23 +487,23 @@ uri_get_http_r10(URI) ->
 
 uri_get_http_1(Result, URI) ->
     case Result of
-	{ok, {ok, {200, Text}}} when list(Text) ->
+	{ok, {ok, {200, Text}}} when is_list(Text) ->
 	    %% new short result format
 	    {ok, Text};
-	{ok, {ok, {Status, Text}}} when integer(Status), list(Text) ->
+	{ok, {ok, {Status, Text}}} when is_integer(Status), is_list(Text) ->
 	    %% new short result format when status /= 200
 	    Phrase = httpd_util:reason_phrase(Status),
 	    {error, http_errmsg(Phrase, URI)};
-	{ok, {ok, {{_Vsn, 200, _Phrase}, _Hdrs, Text}}} when list(Text) ->
+	{ok, {ok, {{_Vsn, 200, _Phrase}, _Hdrs, Text}}} when is_list(Text) ->
 	    %% new long result format
 	    {ok, Text};
-	{ok, {ok, {{_Vsn, _Status, Phrase}, _Hdrs, Text}}} when list(Text) ->
+	{ok, {ok, {{_Vsn, _Status, Phrase}, _Hdrs, Text}}} when is_list(Text) ->
 	    %% new long result format when status /= 200
 	    {error, http_errmsg(Phrase, URI)};
-	{ok, {200,_Hdrs,Text}} when list(Text) ->
+	{ok, {200,_Hdrs,Text}} when is_list(Text) ->
 	    %% old result format
 	    {ok, Text};
-	{ok, {Status,_Hdrs,Text}} when list(Text) ->
+	{ok, {Status,_Hdrs,Text}} when is_list(Text) ->
 	    %% old result format when status /= 200
 	    Phrase = httpd_util:reason_phrase(Status),
 	    {error, http_errmsg(Phrase, URI)};
@@ -562,13 +562,13 @@ to_label_2(Cs) ->
 %% ---------------------------------------------------------------------
 %% Files
 
-filename([C | T]) when integer(C), C > 0 ->
+filename([C | T]) when is_integer(C), C > 0 ->
     [C | filename(T)];
 filename([H|T]) ->
     filename(H) ++ filename(T);
 filename([]) ->
     [];
-filename(N) when atom(N) ->
+filename(N) when is_atom(N) ->
     atom_to_list(N);
 filename(N) ->
     report("bad filename: `~P'.", [N, 25]),
@@ -589,8 +589,8 @@ list_dir(Dir, Error) ->
 	    Fs;
 	{error, R} ->
 	    F = case Error of
-		    true ->
-			fun (S, As) -> report(S, As), exit(error) end;
+		    %% true ->
+		    %%	fun (S, As) -> report(S, As), exit(error) end;
 		    false ->
 			fun (S, As) -> warning(S, As), [] end
 		end,
@@ -966,7 +966,7 @@ run_layout(Fun, Opts) ->
 run_plugin(Name, Default, Fun, Opts) ->
     run_plugin(Name, Name, Default, Fun, Opts).
 
-run_plugin(Name, Key, Default, Fun, Opts) when atom(Name) ->
+run_plugin(Name, Key, Default, Fun, Opts) when is_atom(Name) ->
     Module = get_plugin(Key, Default, Opts),
     case catch {ok, Fun(Module)} of
 	{ok, Value} ->
@@ -978,7 +978,7 @@ run_plugin(Name, Key, Default, Fun, Opts) when atom(Name) ->
 
 get_plugin(Key, Default, Opts) ->
     case proplists:get_value(Key, Opts, Default) of
-	M when atom(M) ->
+	M when is_atom(M) ->
 	    M;
 	Other ->
 	    report("bad value for option '~w': ~P.", [Key, Other, 10]),

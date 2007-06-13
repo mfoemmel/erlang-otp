@@ -33,9 +33,9 @@ unfold(Goals, RecordDefinitions) ->
     {_, Alts, RecDefs} =
 	unfold(Goals, RecordDefinitions, mnemosyne_lib:new()),
     {case Alts of
-	 [Alt] when list(Alt) -> 
+	 [Alt] when is_list(Alt) -> 
 	     Alt;
-	 Alts when list(Alts) -> 
+	 Alts when is_list(Alts) -> 
 	     {'#or', 1, lists:map(fun(A) -> #disj_alt{conj=A} end, Alts)}
      end,
      RecDefs}.
@@ -72,7 +72,7 @@ unfold([{'#or',_,Alts0}|Goals], RecDefs0, SymTab0, Acc) ->
     {SymTab, Alts, RecDefs} = unfold_each_alt(Alts0, RecDefs0, SymTab0),
     unfold(Goals, RecDefs, SymTab, append_clauses(Alts,Acc));
 
-unfold([Goal|Goals], RecDefs0, SymTab0, Acc) when record(Goal,pred_sym) ->
+unfold([Goal|Goals], RecDefs0, SymTab0, Acc) when is_record(Goal,pred_sym) ->
     RecDefs = visible_record_definitions(RecDefs0, Goal#pred_sym.module),
     {RecName,_} = Goal#pred_sym.record_def,
     case lists:keysearch(RecName,1,RecDefs) of
@@ -203,7 +203,7 @@ analyse_clause([], _, SymTab) ->
     SymTab.
 
 
-analyse_goal(Goal, Trace, SymTab0) when record(Goal,pred_sym), 
+analyse_goal(Goal, Trace, SymTab0) when is_record(Goal,pred_sym), 
 					Goal#pred_sym.type == rule ->
     SymTab = symtab(Goal, SymTab0),
     case recursive(Goal,SymTab) of
@@ -233,7 +233,7 @@ analyse_goal(_, Trace, SymTab) ->
 
 	
 %%%----------------------------------------------------------------
-expand_record(R, VarTypes, RecordDefs, Mod) when record(R,rec_f) ->
+expand_record(R, VarTypes, RecordDefs, Mod) when is_record(R,rec_f) ->
     %% X.f
     {'#var',Var} = R#rec_f.var,
     case mnemosyne_compiler:lookup_record_def(R#rec_f.name, RecordDefs) of
@@ -254,7 +254,7 @@ expand_record(R, VarTypes, RecordDefs, Mod) when record(R,rec_f) ->
     end;
 
 
-expand_record(R, VarTypes, RecordDefs, Mod) when record(R,rec_c) ->
+expand_record(R, VarTypes, RecordDefs, Mod) when is_record(R,rec_c) ->
     %% #{a=.., b=.. ...}
     case mnemosyne_compiler:lookup_record_def(R#rec_c.name, RecordDefs) of
 	{value, {RecName,FieldNames}} ->
@@ -317,7 +317,7 @@ expand_record([H|T], VarTypes, RecDefs, Mod) ->
     [  expand_record(H,VarTypes,RecDefs, Mod) 
      | expand_record(T,VarTypes,RecDefs, Mod)];
 
-expand_record(Tuple, VarTypes, RecordDefs, Mod) when tuple(Tuple) ->
+expand_record(Tuple, VarTypes, RecordDefs, Mod) when is_tuple(Tuple) ->
     list_to_tuple( expand_record(tuple_to_list(Tuple), VarTypes, 
 				 RecordDefs, Mod));
 

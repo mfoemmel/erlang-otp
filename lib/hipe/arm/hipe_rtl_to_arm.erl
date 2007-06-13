@@ -130,7 +130,7 @@ mk_shift_ir(S, Dst, Src1, ShiftOp, Src2) ->
   mk_li(Tmp, Src1,
 	mk_shift_rr(S, Dst, Tmp, ShiftOp, Src2)).
 
-mk_shift_ri(S, Dst, Src1, ShiftOp, Src2) ->
+mk_shift_ri(S, Dst, Src1, ShiftOp, Src2) when is_integer(Src2) ->
   if Src2 >= 0, Src2 < 32 -> [];
      true -> io:format("~w: excessive immediate shift ~w\n", [?MODULE,Src2])
   end,
@@ -471,7 +471,7 @@ mk_ldrsb_ii(Dst, Base1, Base2) ->
   mk_li(Tmp, Base1,
 	mk_ldrsb_ri(Dst, Tmp, Base2)).
    
-mk_ldrsb_ri(Dst, Base, Offset) ->
+mk_ldrsb_ri(Dst, Base, Offset) when is_integer(Offset) ->
   {Sign,AbsOffset} =
     if Offset < 0 -> {'-', -Offset};
        true -> {'+', Offset}

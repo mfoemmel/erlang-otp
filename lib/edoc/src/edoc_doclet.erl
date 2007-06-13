@@ -372,7 +372,7 @@ overview(Dir, Title, Env, Opts) ->
 
 copy_image(Dir) ->
     case code:priv_dir(?EDOC_APP) of
-	PrivDir when list(PrivDir) ->
+	PrivDir when is_list(PrivDir) ->
 	    From = filename:join(PrivDir, ?IMAGE),
 	    edoc_lib:copy_file(From, filename:join(Dir, ?IMAGE));
 	_ ->
@@ -387,11 +387,11 @@ copy_stylesheet(Dir, Options) ->
     case proplists:get_value(stylesheet, Options) of
 	undefined ->
 	    From = case proplists:get_value(stylesheet_file, Options) of
-		       File when list(File) ->
+		       File when is_list(File) ->
 			   File;
 		       _ ->
 			   case code:priv_dir(?EDOC_APP) of
-			       PrivDir when list(PrivDir) ->
+			       PrivDir when is_list(PrivDir) ->
 				   filename:join(PrivDir, ?STYLESHEET);
 			       _ ->
 				   report("cannot find default "
@@ -417,7 +417,7 @@ stylesheet(Options) ->
 			  ?STYLESHEET;
 		      "" ->
 			  "";    % no stylesheet
-		      S when list(S) ->
+		      S when is_list(S) ->
 			  S;
 		      _ ->
 			  report("bad value for option 'stylesheet'.",

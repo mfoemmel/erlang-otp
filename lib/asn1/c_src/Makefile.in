@@ -110,8 +110,6 @@ endif
 # ----------------------------------------------------
 
 opt: $(OBJDIR) $(LIBDIR) $(SHARED_OBJ_FILES)
-	rm -f ../priv/lib/asn1_erl_drv*
-	$(LN) $(SHARED_OBJ_FILES) ../priv/lib
 
 debug: opt
 

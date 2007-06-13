@@ -60,6 +60,12 @@ cl(["-I"++Dir|T]) ->
 cl(["-c"++_|T]) ->
   NewTail = command_line(T),
   cl(NewTail);
+cl(["--dataflow"|T]) ->
+  put(dialyzer_options_analysis_type, dataflow),
+  cl(T);
+cl(["--succ_typings"|T]) ->
+  put(dialyzer_options_analysis_type, succ_typings),
+  cl(T);
 cl(["-r"++_|T0]) ->
   put(dialyzer_options_gui, false),
   {Args,T} = collect_args(T0),
@@ -76,7 +82,7 @@ cl(["--output"]) ->
 cl(["-o"]) ->
   error("No outfile specified");
 cl(["--old_style"|T]) ->
-  put(dialyzer_options_core_transform, dataflow),
+  put(dialyzer_options_analysis_type, old_style),
   cl(T);
 cl(["--output",Output|T]) ->
   put(dialyzer_output, Output),
@@ -173,7 +179,7 @@ init() ->
 
   DefaultOpts = #options{},
   put(dialyzer_include,                 DefaultOpts#options.include_dirs),
-  put(dialyzer_options_core_transform,  DefaultOpts#options.core_transform),
+  put(dialyzer_options_analysis_type,   DefaultOpts#options.analysis_type),
   put(dialyzer_options_defines,         DefaultOpts#options.defines),
   put(dialyzer_options_files,           DefaultOpts#options.files),
   put(dialyzer_options_suppress_inline, DefaultOpts#options.supress_inline),
@@ -211,13 +217,13 @@ cl_opts() ->
    |common_options()].
 
 common_options() ->
-  [{core_transform, get(dialyzer_options_core_transform)},
+  [{analysis_type, get(dialyzer_options_analysis_type)},
    {defines, get(dialyzer_options_defines)},
    {from, get(dialyzer_options_from)},
    {include_dirs, get(dialyzer_include)},
    {init_plt, get(dialyzer_init_plt)},
    {output_plt, get(dialyzer_output_plt)},
-   {old_style, get(dialyzer_options_core_transform) =:= dataflow},
+   {old_style, get(dialyzer_options_analysis_type) =:= old_style},
    {quiet, get(dialyzer_options_quiet)},
    {supress_inline, get(dialyzer_options_suppress_inline)},
    {warnings, get(dialyzer_warnings)}].
@@ -256,6 +262,7 @@ help_message() ->
 	        [--old_style] [--output_plt file] [-Wwarn]* 
                 [--no_warn_on_inline] [--src] [-c applications] 
                 [-r applications] [-o outfile]
+                [--dataflow] [--succ_typings]
 
 Options: 
    -c applications (or --command-line applications)
@@ -304,6 +311,10 @@ Options:
        Makes Dialyzer a bit more quiet
    --verbose
        Makes Dialyzer a bit more verbose
+   --dataflow
+       Makes Dialyzer use dataflow analysis to find discrepancies. (Default)
+   --succ_typings
+       Makes Dialyzer use success typings to find discrepancies.
 
 Note:
   * denotes that multiple occurrences of these options are possible.

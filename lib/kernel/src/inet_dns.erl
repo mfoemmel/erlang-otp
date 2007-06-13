@@ -317,7 +317,7 @@ encode_type(Type) ->
 	?S_MAILB -> ?T_MAILB;
 	?S_MAILA -> ?T_MAILA;
 	?S_ANY -> ?T_ANY;
-	Type when integer(Type) -> Type    %% raw unknown type
+	Type when is_integer(Type) -> Type    %% raw unknown type
     end.
 
 %%
@@ -340,14 +340,14 @@ encode_class(Class) ->
 	chaos -> ?C_CHAOS;
 	hs -> ?C_HS;
 	any -> ?C_ANY;
-	Class when integer(Class) -> Class    %% raw unknown class
+	Class when is_integer(Class) -> Class    %% raw unknown class
     end.
 
 %%
 %% Decode data field
 %%
 decode_data(?S_A,  in, [A,B,C,D], _)   -> {A,B,C,D};
-decode_data(?S_AAAA,in, As, _) when length(As) == 16 ->
+decode_data(?S_AAAA,in, As, _) when length(As) =:= 16 ->
     [X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16] = As,
     { ?u16(X1,X2),?u16(X3,X4),?u16(X5,X6),?u16(X7,X8),
      ?u16(X9,X10),?u16(X11,X12),?u16(X13,X14),?u16(X15,X16)};
@@ -433,15 +433,15 @@ dn_exp([0 | T], _, []) ->  % Root domain
     {".", T};
 dn_exp([0 | T], _, Name) ->
     {reverse(Name), T};
-dn_exp([N | T], Buffer, Name) when N band ?INDIR_MASK == 0 ->
-    if Name == [] ->
+dn_exp([N | T], Buffer, Name) when N band ?INDIR_MASK =:= 0 ->
+    if Name =:= [] ->
 	    dn_exp_label(N, T, Name, Buffer);
        true ->
 	    dn_exp_label(N, T, [$. | Name], Buffer)
     end;
 dn_exp(_, Buffer, Name) when length(Name) > length(Buffer) -> 
     error;
-dn_exp([N1,N2 | T], Buffer, Name) when N1 band ?INDIR_MASK == ?INDIR_MASK ->
+dn_exp([N1,N2 | T], Buffer, Name) when N1 band ?INDIR_MASK =:= ?INDIR_MASK ->
     Offset = ((N1 band 16#3f) bsl 8) bor N2,
     case catch nthtail(Offset, Buffer) of
 	{'EXIT', _} -> error;
@@ -465,7 +465,7 @@ dn_exp_label(N, [H|T], Name, Buffer) ->
 %% Encode data field
 %%
 encode_data(?S_A, in, {A,B,C,D}, Ptrs, _)  -> {[A,B,C,D], Ptrs};
-encode_data(?S_AAAA, in, As, Ptrs, _) when tuple(As), size(As) == 8 ->
+encode_data(?S_AAAA, in, As, Ptrs, _) when is_tuple(As), size(As) =:= 8 ->
     {X1,X2,X3,X4,X5,X6,X7,X8} = As,
     A = ?int16(X1) ++ ?int16(X2) ++ ?int16(X3) ++ ?int16(X4) ++ 
 	?int16(X5) ++ ?int16(X6) ++ ?int16(X7) ++ ?int16(X8),
@@ -550,12 +550,12 @@ dn_comp_label([], Ns, Cn, Buf, _Offset) ->
 %%
 dn_skip([0|Dn]) ->
     Dn;
-dn_skip([N|Dn]) when N band ?INDIR_MASK == 0 ->
+dn_skip([N|Dn]) when N band ?INDIR_MASK =:= 0 ->
     case catch nthtail(N, Dn) of
 	{'EXIT', _} -> error;
 	NDn -> dn_skip(NDn)
     end;
-dn_skip([N1,_N2|Dn]) when N1 band ?INDIR_MASK == ?INDIR_MASK ->
+dn_skip([N1,_N2|Dn]) when N1 band ?INDIR_MASK =:= ?INDIR_MASK ->
     Dn;
 dn_skip(_) -> error.
 
@@ -571,14 +571,14 @@ dn_find(Name, [{Nm, Offset} | Ns]) ->
 dn_find(_, []) -> false.
 
 
-cmp_name(Name, Nm) when length(Name) == length(Nm) ->
+cmp_name(Name, Nm) when length(Name) =:= length(Nm) ->
     cmp_lower(Name, Nm);
 cmp_name(_, _) -> false.
 
 cmp_lower([H0|T0], [H1|T1]) ->
     HH0 = ?tolower(H0),
     HH1 = ?tolower(H1),
-    if HH0 == HH1 -> cmp_lower(T0, T1);
+    if HH0 =:= HH1 -> cmp_lower(T0, T1);
        true -> false
     end;
 cmp_lower([], []) -> true.

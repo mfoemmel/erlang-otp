@@ -68,8 +68,8 @@ APPUP_TARGET= $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += +nowarn_unused_vars
-ERL_COMPILE_FLAGS += \
+ERL_COMPILE_FLAGS += +nowarn_unused_vars \
+	+warn_obsolete_guard \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,vsn,"mnemosyne_$(MNEMOSYNE_VSN)"}' 
 

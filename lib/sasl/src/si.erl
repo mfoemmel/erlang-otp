@@ -82,10 +82,10 @@ pi(XPid) ->
 pi(Opt, XPid) ->
     si_sasl_supp:si_exec({si, pi_impl}, [si_sasl_supp:valid_opt(Opt), XPid]).
 
-pi(A, B, C) when integer(A), integer(B), integer(C) ->
+pi(A, B, C) when is_integer(A), is_integer(B), is_integer(C) ->
     si_sasl_supp:si_exec({si, pi_impl}, [normal, {A, B, C}]).
 
-pi(Opt, A, B, C) when integer(A), integer(B), integer(C) ->
+pi(Opt, A, B, C) when is_integer(A), is_integer(B), is_integer(C) ->
     si_sasl_supp:si_exec({si, pi_impl}, [si_sasl_supp:valid_opt(Opt), {A, B, C}]).
 
 %%-----------------------------------------------------------------
@@ -129,7 +129,7 @@ print_help() ->
 %%--------------------------------------------------
 pi_impl(Opt, XPid) ->
     case make_pid(try_local_expand_abbrev(XPid)) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    case status_info(Pid) of
 		{status_info, Pid, {module, Module}, Data} ->
 		    si_sasl_supp:do_best_printout(Opt, Pid, Module, Data);

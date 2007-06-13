@@ -134,7 +134,7 @@ start() ->
 %% start(Nodes) -> {ok,StartedNodes}
 %%   Nodes = Node | [Node,...]
 %%   Node = atom()
-start(Node) when atom(Node) ->
+start(Node) when is_atom(Node) ->
     start([Node]);
 start(Nodes) ->
     call({start_nodes,remove_myself(Nodes,[])}).
@@ -153,12 +153,12 @@ compile(ModFile) ->
     compile_module(ModFile, []).
 compile(ModFile, Options) ->
     compile_module(ModFile, Options).
-compile_module(ModFile) when atom(ModFile);
-			     list(ModFile) ->
+compile_module(ModFile) when is_atom(ModFile);
+			     is_list(ModFile) ->
     compile_module(ModFile, []).
-compile_module(Module, Options) when atom(Module), list(Options) ->
+compile_module(Module, Options) when is_atom(Module), is_list(Options) ->
     compile_module(atom_to_list(Module), Options);
-compile_module(File, Options) when list(File), list(Options) ->
+compile_module(File, Options) when is_list(File), is_list(Options) ->
     WithExt = case filename:extension(File) of
 		  ".erl" ->
 		      File;
@@ -183,9 +183,9 @@ compile_directory() ->
 	Error ->
 	    Error
     end.
-compile_directory(Dir) when list(Dir) ->
+compile_directory(Dir) when is_list(Dir) ->
     compile_directory(Dir, []).
-compile_directory(Dir, Options) when list(Dir), list(Options) ->
+compile_directory(Dir, Options) when is_list(Dir), is_list(Options) ->
     case file:list_dir(Dir) of
 	{ok, Files} ->
 	    
@@ -215,7 +215,7 @@ compile_directory(Dir, Options) when list(Dir), list(Options) ->
 compile_modules(Files,Options) ->
     Options2 = lists:filter(fun(Option) ->
 				    case Option of
-					{i, Dir} when list(Dir) -> true;
+					{i, Dir} when is_list(Dir) -> true;
 					{d, _Macro} -> true;
 					{d, _Macro, _Value} -> true;
 					_ -> false
@@ -235,7 +235,7 @@ compile_modules([],_Opts,Result) ->
 %%   ModFile - see compile/1
 %%   Result - see compile/1
 %%   Reason = non_existing | already_cover_compiled
-compile_beam(Module) when atom(Module) ->
+compile_beam(Module) when is_atom(Module) ->
     case code:which(Module) of
 	non_existing -> 
 	    {error,non_existing};
@@ -244,7 +244,7 @@ compile_beam(Module) when atom(Module) ->
 	File ->
 	    compile_beam(Module,File)
     end;
-compile_beam(File) when list(File) ->
+compile_beam(File) when is_list(File) ->
     {WithExt,WithoutExt}
 	= case filename:rootname(File,".beam") of
 	      File ->
@@ -272,7 +272,7 @@ compile_beam_directory() ->
 	Error ->
 	    Error
     end.
-compile_beam_directory(Dir) when list(Dir) ->
+compile_beam_directory(Dir) when is_list(Dir) ->
     case file:list_dir(Dir) of
 	{ok, Files} ->
 	    
@@ -327,15 +327,15 @@ compile_beams([],Result) ->
 %%   Error = {not_cover_compiled,Module}
 analyse(Module) ->
     analyse(Module, coverage).
-analyse(Module, Analysis) when Analysis==coverage; Analysis==calls ->
+analyse(Module, Analysis) when Analysis=:=coverage; Analysis=:=calls ->
     analyse(Module, Analysis, function);
-analyse(Module, Level) when Level==line; Level==clause; Level==function;
-			    Level==module ->
+analyse(Module, Level) when Level=:=line; Level=:=clause; Level=:=function;
+			    Level=:=module ->
     analyse(Module, coverage, Level).
-analyse(Module, Analysis, Level) when atom(Module),
-				      Analysis==coverage; Analysis==calls,
-				      Level==line; Level==clause;
-				      Level==function; Level==module ->
+analyse(Module, Analysis, Level) when is_atom(Module),
+				      Analysis=:=coverage; Analysis=:=calls,
+				      Level=:=line; Level=:=clause;
+				      Level=:=function; Level=:=module ->
     call({{analyse, Analysis, Level}, Module}).
 
 analyze(Module) -> analyse(Module).
@@ -354,16 +354,16 @@ analyze(Module, Analysis, Level) -> analyse(Module, Analysis, Level).
 %%           {file,File,Reason}
 %%     File = string()
 %%     Reason = term()
-analyse_to_file(Module) when atom(Module) ->
+analyse_to_file(Module) when is_atom(Module) ->
     analyse_to_file(Module, outfilename(Module,[]), []).
-analyse_to_file(Module, []) when atom(Module) ->
+analyse_to_file(Module, []) when is_atom(Module) ->
     analyse_to_file(Module, outfilename(Module,[]), []);
-analyse_to_file(Module, Options) when atom(Module),
-				      list(Options), atom(hd(Options)) ->
+analyse_to_file(Module, Options) when is_atom(Module),
+				      is_list(Options), is_atom(hd(Options)) ->
     analyse_to_file(Module, outfilename(Module,Options), Options);
-analyse_to_file(Module, OutFile) when atom(Module), list(OutFile) ->
+analyse_to_file(Module, OutFile) when is_atom(Module), is_list(OutFile) ->
     analyse_to_file(Module, OutFile, []).
-analyse_to_file(Module, OutFile, Options) when atom(Module), list(OutFile) ->
+analyse_to_file(Module, OutFile, Options) when is_atom(Module), is_list(OutFile) ->
     call({{analyse_to_file, OutFile, Options}, Module}).
 
 analyze_to_file(Module) -> analyse_to_file(Module).
@@ -416,14 +416,14 @@ which_nodes() ->
 %% is_compiled(Module) -> {file,File} | false
 %%   Module = atom()
 %%   File = string()
-is_compiled(Module) when atom(Module) ->
+is_compiled(Module) when is_atom(Module) ->
     call({is_compiled, Module}).
 
 %% reset(Module) -> ok | {error,Error}
 %% reset() -> ok
 %%   Module = atom()
 %%   Error = {not_cover_compiled,Module}
-reset(Module) when atom(Module) ->
+reset(Module) when is_atom(Module) ->
     call({reset, Module}).
 reset() ->
     call(reset).
@@ -432,7 +432,7 @@ reset() ->
 stop() ->
     call(stop).
 
-stop(Node) when atom(Node) ->
+stop(Node) when is_atom(Node) ->
     stop([Node]);
 stop(Nodes) ->
     call({stop,remove_myself(Nodes,[])}).
@@ -979,7 +979,7 @@ get_data_for_remote_loading({Module,File}) ->
 ms(Module) ->
     ets:fun2ms(fun({Module,InitInfo})  -> 
 		       {Module,InitInfo};
-		  ({Key,_}) when is_record(Key,bump),Key#bump.module==Module -> 
+		  ({Key,_}) when is_record(Key,bump),Key#bump.module=:=Module -> 
 		       {Key,0}
 	       end).
 
@@ -1266,7 +1266,7 @@ get_abstract_code(Module, Beam) ->
 	Error -> Error
     end.
 
-transform(Vsn, Code, Module, Beam) when Vsn==abstract_v1; Vsn==abstract_v2 ->
+transform(Vsn, Code, Module, Beam) when Vsn=:=abstract_v1; Vsn=:=abstract_v2 ->
     Vars0 = #vars{module=Module, vsn=Vsn},
     MainFile=find_main_filename(Code),
     {ok, MungedForms,Vars} = transform_2(Code,[],Vars0,MainFile,on),
@@ -1440,13 +1440,13 @@ munge_expr({'catch',Line,Expr}, Vars) ->
     {MungedExpr, Vars2} = munge_expr(Expr, Vars),
     {{'catch',Line,MungedExpr}, Vars2};
 munge_expr({call,Line1,{remote,Line2,ExprM,ExprF},Exprs},
-	   Vars) when Vars#vars.is_guard==false->
+	   Vars) when Vars#vars.is_guard=:=false->
     {MungedExprM, Vars2} = munge_expr(ExprM, Vars),
     {MungedExprF, Vars3} = munge_expr(ExprF, Vars2),
     {MungedExprs, Vars4} = munge_exprs(Exprs, Vars3, []),
     {{call,Line1,{remote,Line2,MungedExprM,MungedExprF},MungedExprs}, Vars4};
 munge_expr({call,Line1,{remote,_Line2,_ExprM,ExprF},Exprs},
-	   Vars) when Vars#vars.is_guard==true ->
+	   Vars) when Vars#vars.is_guard=:=true ->
     %% Difference in abstract format after preprocessing: BIF calls in guards
     %% are translated to {remote,...} (which is not allowed as source form)
     %% NOT NECESSARY FOR Vsn=raw_abstract_v1
@@ -1499,8 +1499,8 @@ munge_expr({'fun',Line,{clauses,Clauses}}, Vars) ->
 munge_expr(Form, Vars) -> % var|char|integer|float|string|atom|nil|bin|eof
     {Form, Vars}.
 
-munge_exprs([Expr|Exprs], Vars, MungedExprs) when Vars#vars.is_guard==true,
-						  list(Expr) ->
+munge_exprs([Expr|Exprs], Vars, MungedExprs) when Vars#vars.is_guard=:=true,
+						  is_list(Expr) ->
     {MungedExpr, _Vars} = munge_exprs(Expr, Vars, []),
     munge_exprs(Exprs, Vars, [MungedExpr|MungedExprs]);
 munge_exprs([Expr|Exprs], Vars, MungedExprs) ->

@@ -864,9 +864,16 @@ typedef struct {
 
 #define ETHR_INIT_DATA_DEFAULT_INITER {malloc, realloc, free, NULL, NULL, NULL}
 
+typedef struct {
+    int detached;			/* boolean (default false) */
+    int suggested_stack_size;		/* kilo words (default sys dependent) */
+} ethr_thr_opts;
+
+#define ETHR_THR_OPTS_DEFAULT_INITER {0, -1}
+
 int ethr_init(ethr_init_data *);
 int ethr_install_exit_handler(void (*funcp)(void));
-int ethr_thr_create(ethr_tid *, void * (*)(void *), void *, int);
+int ethr_thr_create(ethr_tid *, void * (*)(void *), void *, ethr_thr_opts *);
 int ethr_thr_join(ethr_tid, void **);
 int ethr_thr_detach(ethr_tid);
 void ethr_thr_exit(void *);

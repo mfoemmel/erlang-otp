@@ -218,6 +218,11 @@ expand_content(Content, Pos, Parents) ->
 
 expand_content([{H} | T], Pos, Parents, Norm) ->
     expand_content(H ++ T, Pos, Parents, Norm);
+expand_content([{F,S}|T], Pos, Parents, Norm) when is_function(F) ->
+    case F(S) of
+	done -> expand_content(T, Pos, Parents, Norm);
+	{C,S2} -> expand_content([{F,S2},C|T], Pos, Parents, Norm)
+    end;
 expand_content([H | T], Pos, Parents, Norm) ->
     [expand_element(H, Pos, Parents, Norm)
      | expand_content(T, Pos+1, Parents, Norm)];
@@ -233,6 +238,13 @@ expand_attributes([H = #xmlAttribute{} | T], Pos, Parents) ->
     [H#xmlAttribute{pos = Pos,
 		    value = expand_value(H#xmlAttribute.value)}
      | expand_attributes(T, Pos+1, Parents)];
+expand_attributes([{P,S}|T], Pos, Parents) when is_function(P) -> 
+    case P(S) of
+	done ->
+	    expand_attributes(T, Pos, Parents);
+	{A,S2} ->
+	    expand_attributes([{P,S2},A|T], Pos, Parents)
+    end;
 expand_attributes([{K, V} | T], Pos, Parents) ->
     [#xmlAttribute{name = K,
 		   pos = Pos,

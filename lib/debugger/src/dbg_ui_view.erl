@@ -73,7 +73,7 @@ loop(State) ->
     receive
 
 	%% From the GUI main window
-	GuiEvent when tuple(GuiEvent), element(1, GuiEvent)==gs ->
+	GuiEvent when is_tuple(GuiEvent), element(1, GuiEvent)==gs ->
 	    Cmd = dbg_ui_trace_win:handle_event(GuiEvent, State#state.win),
 	    State2 = gui_cmd(Cmd, State),
 	    loop(State2);

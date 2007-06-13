@@ -1,3 +1,27 @@
+% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%% 
+%%     $Id$
+%%
+%% Description:
+%% Support module to the inviso tool.
+%%
+%% Authors:
+%% Lennart Öhman, lennart.ohman@st.se
+%% -----------------------------------------------------------------------------
+
 -module(inviso_tool_lib).
 
 %% -----------------------------------------------------------------------------
@@ -261,7 +285,7 @@ join_patterns_3(_,_,_,[]) ->
 %% specification for each node that shall participate in tracing controlled
 %% through the inviso-tool. If no own tracer data generator function is specified,
 %% this function is used.
-std_tdg({{Y,Mo,D},{H,Mi,S}},Node) ->
+std_tdg(Node,{{Y,Mo,D},{H,Mi,S}}) ->
     NameStr=atom_to_list(Node)++"_"++?I2L(Y)++"-"++?I2L(Mo)++"-"++?I2L(D)++"_"++
 	?I2L(H)++"-"++?I2L(Mi)++"-"++?I2L(S),
     LogTD={file,NameStr++".log"},

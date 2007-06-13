@@ -70,8 +70,7 @@ APPUP_TARGET = $(EBIN)/$(APPUP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +warn_unused_vars
+ERL_COMPILE_FLAGS += +warn_obsolete_guard +warn_unused_vars
 
 # ----------------------------------------------------
 # Targets

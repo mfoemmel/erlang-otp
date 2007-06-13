@@ -80,7 +80,7 @@ get_rc() ->
 close(Socket) ->
     prim_inet:close(Socket),
     receive
-	{Closed, Socket} when Closed == tcp_closed; Closed == udp_closed ->
+	{Closed, Socket} when Closed =:= tcp_closed; Closed =:= udp_closed ->
 	    ok
     after 0 ->
 	    ok
@@ -161,7 +161,7 @@ withsocket(Fun) ->
     end.
     
 
-pushf(_Socket, Fun, _State) when function(Fun) ->
+pushf(_Socket, Fun, _State) when is_function(Fun) ->
     {error, einval}.
 
 popf(_Socket) ->
@@ -233,7 +233,7 @@ ip(Name) ->
 %% This function returns the erlang port used (with inet_drv)
 %% Return values: {ok,#Port} if ok
 %%                {error, einval} if not applicable
-getll(Socket) when port(Socket) ->
+getll(Socket) when is_port(Socket) ->
     {ok, Socket}.
 
 %%
@@ -279,7 +279,7 @@ getservbyport(Port, Proto) ->
 	Error -> Error
     end.
 
-getservbyname(Name, Proto) when atom(Name) ->
+getservbyname(Name, Proto) when is_atom(Name) ->
     case inet_udp:open(0, []) of
 	{ok,U} ->
 	    Res = prim_inet:getservbyname(U,Name, Proto),
@@ -347,7 +347,7 @@ con_opt([Opt | Opts], R, As) ->
 	{tcp_module,_}  -> con_opt(Opts, R, As);
 	inet        -> con_opt(Opts, R, As);
 	inet6       -> con_opt(Opts, R, As);
-	{Name,Val} when atom(Name) -> con_add(Name, Val, R, Opts, As);
+	{Name,Val} when is_atom(Name) -> con_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
 con_opt([], R, _) ->
@@ -404,7 +404,7 @@ list_opt([Opt | Opts], R, As) ->
 	{tcp_module,_}  -> list_opt(Opts, R, As);
 	inet         -> list_opt(Opts, R, As);
 	inet6        -> list_opt(Opts, R, As);
-	{Name,Val} when atom(Name) -> list_add(Name, Val, R, Opts, As);
+	{Name,Val} when is_atom(Name) -> list_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
 list_opt([], R, _SockOpts) ->
@@ -449,7 +449,7 @@ udp_opt([Opt | Opts], R, As) ->
 	{udp_module,_} -> udp_opt(Opts, R, As);
 	inet        -> udp_opt(Opts, R, As);
 	inet6       -> udp_opt(Opts, R, As);
-	{Name,Val} when atom(Name) -> udp_add(Name, Val, R, Opts, As);
+	{Name,Val} when is_atom(Name) -> udp_add(Name, Val, R, Opts, As);
 	_ -> {error, badarg}
     end;
 udp_opt([], R, _SockOpts) ->
@@ -568,7 +568,7 @@ getaddrs_tm({A,B,C,D} = IP, Fam, _)  ->
     if 
 	?ip(A,B,C,D) ->
 	    if
-		Fam == inet -> {ok,[IP]};
+		Fam =:= inet -> {ok,[IP]};
 		true -> {error,nxdomain}
 	    end;
 	true ->         {error,einval}
@@ -579,7 +579,7 @@ getaddrs_tm({A,B,C,D,E,F,G,H} = IP, Fam, _) ->
     if 
 	?ip6(A,B,C,D,E,F,G,H) ->
 	    if
-		Fam == inet6 -> {ok,[IP]};
+		Fam =:= inet6 -> {ok,[IP]};
 		true -> {error,nxdomain}
 	    end;
 	true -> {error,einval}
@@ -749,7 +749,7 @@ open(Fd, _Addr, _Port, Opts, Protocol, Family, Module) ->
     fdopen(Fd, Opts, Protocol, Family, Module).
 
 fdopen(Fd, Opts, Protocol, Family, Module) ->
-    case prim_inet:fdopen(Protocol, Family, Fd) of
+    case prim_inet:fdopen(Protocol, Fd, Family) of
 	{ok, S} ->
 	    case prim_inet:setopts(S, Opts) of
 		ok ->
@@ -762,8 +762,8 @@ fdopen(Fd, Opts, Protocol, Family, Module) ->
     end.
 
 
-ip_to_bytes(IP) when size(IP) == 4 -> ip4_to_bytes(IP);
-ip_to_bytes(IP) when size(IP) == 8 -> ip6_to_bytes(IP).
+ip_to_bytes(IP) when size(IP) =:= 4 -> ip4_to_bytes(IP);
+ip_to_bytes(IP) when size(IP) =:= 8 -> ip6_to_bytes(IP).
 
 
 ip4_to_bytes({A,B,C,D}) ->
@@ -854,8 +854,8 @@ info(S, F, Proto) ->
 	    end;
 	packet ->
 	    case prim_inet:getopt(S, packet) of
-		{ok,Type} when atom(Type) -> atom_to_list(Type);
-		{ok,Type} when integer(Type) -> integer_to_list(Type);
+		{ok,Type} when is_atom(Type) -> atom_to_list(Type);
+		{ok,Type} when is_integer(Type) -> integer_to_list(Type);
 		_ -> " "
 	    end;
 	type ->
@@ -934,13 +934,13 @@ format_error(Tag) ->
     erl_posix_msg:message(Tag).
 
 %% Close a TCP socket.
-tcp_close(S) when port(S) ->
+tcp_close(S) when is_port(S) ->
     %% if exit_on_close is set we must force a close even if remotely closed!!!
     prim_inet:close(S),
     receive {tcp_closed, S} -> ok after 0 -> ok end.
 
 %% Close a UDP socket.
-udp_close(S) when port(S) ->
+udp_close(S) when is_port(S) ->
     receive 
 	{udp_closed, S} -> ok
     after 0 ->
@@ -949,9 +949,9 @@ udp_close(S) when port(S) ->
     end.
 
 %% Set controlling process for TCP socket.
-tcp_controlling_process(S, NewOwner) when port(S), pid(NewOwner) ->
+tcp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
     case erlang:port_info(S, connected) of
-	{connected, Pid} when Pid /= self() ->
+	{connected, Pid} when Pid =/= self() ->
 	    {error, not_owner};
 	undefined ->
 	    {error, einval};
@@ -1000,9 +1000,9 @@ tcp_sync_input(S, Owner, Flag) ->
     end.
 
 %% Set controlling process for UDP or SCTP socket.
-udp_controlling_process(S, NewOwner) when port(S), pid(NewOwner) ->
+udp_controlling_process(S, NewOwner) when is_port(S), is_pid(NewOwner) ->
     case erlang:port_info(S, connected) of
-	{connected, Pid} when Pid /= self() ->
+	{connected, Pid} when Pid =/= self() ->
 	    {error, not_owner};
 	_ ->
 	    {ok,A0} = prim_inet:getopt(S, active),

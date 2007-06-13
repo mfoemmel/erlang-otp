@@ -263,7 +263,10 @@ schedule_cache_check(void)
 static void
 mseg_late_init(void)
 {
-    erts_thr_create(&mseg_cc_tid, mseg_cache_cleaner, NULL, 0);
+    erts_thr_opts_t opts = ERTS_THR_OPTS_DEFAULT_INITER;
+    opts.detached = 0;
+    opts.suggested_stack_size = 8; /* kilo words */
+    erts_thr_create(&mseg_cc_tid, mseg_cache_cleaner, NULL, &opts);
 }
 
 #else  /* #if defined(USE_THREADS) && !defined(ERTS_SMP) */
@@ -1269,7 +1272,7 @@ erts_mseg_init(ErtsMsegInit_t *init)
 #if HAVE_MMAP && !defined(MAP_ANON)
     mmap_fd = open("/dev/zero", O_RDWR);
     if (mmap_fd < 0)
-	erl_exit(-1, "erts_mseg: unable to open /dev/zero\n");
+	erl_exit(ERTS_ABORT_EXIT, "erts_mseg: unable to open /dev/zero\n");
 #endif
 
     page_size = GET_PAGE_SIZE;
@@ -1277,7 +1280,8 @@ erts_mseg_init(ErtsMsegInit_t *init)
     page_shift = 1;
     while ((page_size >> page_shift) != 1) {
 	if ((page_size & (1 << (page_shift - 1))) != 0)
-	    erl_exit(1, "erts_mseg: Unexpected page_size %bpu\n", page_size);
+	    erl_exit(ERTS_ABORT_EXIT,
+		     "erts_mseg: Unexpected page_size %bpu\n", page_size);
 	page_shift++;
     }
 

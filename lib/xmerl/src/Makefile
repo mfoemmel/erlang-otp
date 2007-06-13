@@ -101,7 +101,6 @@ TARGET_FILES = $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS +=
 ERL_COMPILE_FLAGS += \
 		-I ../include \
 		+warn_unused_vars
@@ -147,14 +146,14 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
 
 xmerl_xpath_parse.erl:	xmerl_xpath_parse.yrl
-	$(ERLC) $(ERL_FLAGS) -o  $(ESRC) $<
+	$(ERLC)  -o  $(ESRC) $<
 
 xmerl_b64Bin.erl: xmerl_b64Bin.yrl
-	$(ERLC) $(ERL_FLAGS) -o  $(ESRC) $<
+	$(ERLC)  -o  $(ESRC) $<
 
 
 $(EBIN)/%.beam:	%.erl
-	$(ERLC) $(ERL_FLAGS) $(ERL_COMPILE_FLAGS) -o $(EBIN) $<
+	$(ERLC)  $(ERL_COMPILE_FLAGS) -o $(EBIN) $<
 
 $(DOCDIR)/%.html:	%.erl
 	$(ERL) -noshell $(EDOC_PATHS) \

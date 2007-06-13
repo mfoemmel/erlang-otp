@@ -83,7 +83,7 @@ dump_process_info(int to, void *to_arg, Process *p)
 
     ERTS_SMP_MSGQ_MV_INQ2PRIVQ(p);
 
-    if (p->msg.first) {
+    if ((p->trace_flags & F_SENSITIVE) == 0 && p->msg.first) {
 	erts_print(to, to_arg, "=proc_messages:%T\n", p->id);
 	for (mp = p->msg.first; mp != NULL; mp = mp->next) {
 	    Eterm mesg = ERL_MESSAGE_TERM(mp);
@@ -95,47 +95,47 @@ dump_process_info(int to, void *to_arg, Process *p)
 	}
     }
 
-    if (p->dictionary) {
-	erts_print(to, to_arg, "=proc_dictionary:%T\n", p->id);
-	erts_deep_dictionary_dump(to, to_arg,
-				  p->dictionary, dump_element_nl);
-    }
+    if ((p->trace_flags & F_SENSITIVE) == 0) {
+	if (p->dictionary) {
+	    erts_print(to, to_arg, "=proc_dictionary:%T\n", p->id);
+	    erts_deep_dictionary_dump(to, to_arg,
+				      p->dictionary, dump_element_nl);
+	}
 
-    if (p->debug_dictionary) {
-	erts_print(to, to_arg, "=debug_proc_dictionary:%T\n", p->id);
-	erts_deep_dictionary_dump(to, to_arg,
-				  p->debug_dictionary, dump_element_nl);
-    }
-
-    erts_print(to, to_arg, "=proc_stack:%T\n", p->id);
-
-    for (sp = p->stop; sp < STACK_START(p); sp++) {
-        yreg = stack_element_dump(to, to_arg, p, sp, yreg);
-    }
-
-    erts_print(to, to_arg, "=proc_heap:%T\n", p->id);
-
-    for (sp = p->stop; sp < STACK_START(p); sp++) {
-	Eterm term = *sp;
-
-	if (!is_catch(term) && !is_CP(term)) {
-	    heap_dump(to, to_arg, term);
+	if (p->debug_dictionary) {
+	    erts_print(to, to_arg, "=debug_proc_dictionary:%T\n", p->id);
+	    erts_deep_dictionary_dump(to, to_arg,
+				      p->debug_dictionary, dump_element_nl);
 	}
     }
-    
-    for (mp = p->msg.first; mp != NULL; mp = mp->next) {
-	Eterm mesg = ERL_MESSAGE_TERM(mp);
-	heap_dump(to, to_arg, mesg);
-	mesg = ERL_MESSAGE_TOKEN(mp);
-	heap_dump(to, to_arg, mesg);
-    }
 
-    if (p->dictionary) {
-	erts_deep_dictionary_dump(to, to_arg, p->dictionary, heap_dump);
-    }
+    if ((p->trace_flags & F_SENSITIVE) == 0) {
+	erts_print(to, to_arg, "=proc_stack:%T\n", p->id);
+	for (sp = p->stop; sp < STACK_START(p); sp++) {
+	    yreg = stack_element_dump(to, to_arg, p, sp, yreg);
+	}
 
-    if (p->debug_dictionary) {
-	erts_deep_dictionary_dump(to, to_arg, p->debug_dictionary, heap_dump);
+	erts_print(to, to_arg, "=proc_heap:%T\n", p->id);
+	for (sp = p->stop; sp < STACK_START(p); sp++) {
+	    Eterm term = *sp;
+	    
+	    if (!is_catch(term) && !is_CP(term)) {
+		heap_dump(to, to_arg, term);
+	    }
+	}
+	for (mp = p->msg.first; mp != NULL; mp = mp->next) {
+	    Eterm mesg = ERL_MESSAGE_TERM(mp);
+	    heap_dump(to, to_arg, mesg);
+	    mesg = ERL_MESSAGE_TOKEN(mp);
+	    heap_dump(to, to_arg, mesg);
+	}
+	if (p->dictionary) {
+	    erts_deep_dictionary_dump(to, to_arg, p->dictionary, heap_dump);
+	}
+
+	if (p->debug_dictionary) {
+	    erts_deep_dictionary_dump(to, to_arg, p->debug_dictionary, heap_dump);
+	}
     }
 }
 

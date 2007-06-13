@@ -98,6 +98,15 @@
 #include "sys.h"
 #endif
 
+/*
+ * Implement time correction using times() call even on Linuxes 
+ * that can simulate gethrtime with clock_gettime, no use implementing
+ * a phony gethrtime in this file as the time questions are so infrequent.
+ */
+#if defined(CORRET_USING_TIMES) || defined(GETHRTIME_WITH_CLOCK_GETTIME)
+#  define HEART_CORRECT_USING_TIMES 1
+#endif
+
 #include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -126,7 +135,7 @@
 #  include <sys/time.h>
 #  include <unistd.h>
 #  include <signal.h>
-#  if defined(CORRECT_USING_TIMES)
+#  if defined(HEART_CORRECT_USING_TIMES)
 #    include <sys/times.h>
 #    include <limits.h>
 #  endif
@@ -1187,7 +1196,7 @@ time_t timestamp(time_t *res)
     return r;
 }
 
-#elif defined(CORRECT_USING_TIMES)
+#elif defined(HEART_CORRECT_USING_TIMES)
 
 #  ifdef NO_SYSCONF
 #    include <sys/param.h>

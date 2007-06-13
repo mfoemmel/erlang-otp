@@ -92,7 +92,7 @@ accept(S) ->
 	    Error
     end.
 
-accept(S, Time) when port(S) ->
+accept(S, Time) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:accept(S, Time);
@@ -120,7 +120,7 @@ close(S) ->
 %%
 %% Send
 %%
-send(S, Packet) when port(S) ->
+send(S, Packet) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:send(S, Packet);
@@ -131,7 +131,7 @@ send(S, Packet) when port(S) ->
 %%
 %% Receive data from a socket (passive mode)
 %%
-recv(S, Length) when port(S) ->
+recv(S, Length) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:recv(S, Length);
@@ -139,7 +139,7 @@ recv(S, Length) when port(S) ->
 	    Error
     end.
 
-recv(S, Length, Time) when port(S) ->
+recv(S, Length, Time) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:recv(S, Length, Time);
@@ -147,7 +147,7 @@ recv(S, Length, Time) when port(S) ->
 	    Error
     end.
 
-unrecv(S, Data) when port(S) ->
+unrecv(S, Data) when is_port(S) ->
     case inet_db:lookup_socket(S) of
 	{ok, Mod} ->
 	    Mod:unrecv(S, Data);

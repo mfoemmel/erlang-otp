@@ -53,25 +53,41 @@
 -export([handle_logfile_sort_wrapset/1]).   % Exported as a service to other readers.
 %% -----------------------------------------------------------------------------
 
+%% init(RecPid,FileStruct)=N/A
+%%   RecPid=pid(), the process id of the log file merger.
+%%   FileStruct=LogFiles | [LogFiles,...]
+%%     LogFiles=[{trace_log,[File,...]} [,{ti_log,[File]}] ]
+%%       File=string()
 %% Spawn on this function to start a reader process for trace-port generated
 %% logfiles, possibly with inviso-generated ti-files.
-init(RecPid,FileStruct) ->
-    {TIalias,TIunalias}=handle_ti_file(FileStruct),% If there is a ti-file, read it.
-    Files=handle_logfiles(FileStruct),      % Returns a sorted list of logfiles.
+init(RecPid,LogFiles=[Tuple|_]) when tuple(Tuple) -> % Only one LogFiles.
+    init(RecPid,[LogFiles]);
+init(RecPid,FileStruct) when list(FileStruct) ->
+    logfiles_loop(RecPid,FileStruct).
+%% -----------------------------------------------------------------------------
+
+logfiles_loop(RecPid,[LogFiles|Rest]) ->
+    {TIalias,TIunalias}=handle_ti_file(LogFiles),% If there is a ti-file, read it.
+    Files=handle_logfiles(LogFiles),        % Returns a sorted list of logfiles.
     case open_next_file(Files) of
 	{ok,FileName,FD,NewFiles} ->
-	    loop(RecPid,FileName,NewFiles,TIalias,TIunalias,FD);
+	    case loop(RecPid,FileName,NewFiles,TIalias,TIunalias,FD) of
+		next ->
+		    logfiles_loop(RecPid,Rest);
+		stop ->
+		    true                    % Terminate normally.
+	    end;
 	done ->                             % Hmm, already out of files.
 	    true;                           % Then lets terminate normally.
 	{error,Reason} ->                   % Couldn't even open the first file.
 	    exit(Reason)
-    end.
-%% -----------------------------------------------------------------------------
+    end;
+logfiles_loop(_RecPid,[]) ->                % No more files in LogFiles.
+    true.                                   % Terminate normally.
 
 %% This workloop reads an entry from the input file upon request from the merger
 %% process and sends it back to the merger process (Parent). If the file ends
 %% there are more files to open and read in Files, the next file will be opened. 
-
 loop(RecPid,FileName,Files,TIalias,TIunalias,FD) ->
     receive
 	{get_next_entry,RecPid} ->           % The receiver request the next entry.
@@ -84,11 +100,12 @@ loop(RecPid,FileName,Files,TIalias,TIunalias,FD) ->
 		{error,Reason} ->            % Not a properly formatted entry.
 		    RecPid ! {next_entry,self(),{error,Reason}},
 		    loop(RecPid,FileName,Files,TIalias,TIunalias,FD);
-		done ->                     % No more files to read.
-		    true                    % Lets terminate normally.
+		done ->                     % No more files to read in this LogFiles.
+		    next                    % Are there more Files in FileStruct?
 	    end;
 	{stop,RecPid} ->                    % The receiver process is done.
-	    file:close(FD)                  % Close file and terminate normally.
+	    file:close(FD),                 % Close file and terminate normally.
+	    stop
     end.
 %% -----------------------------------------------------------------------------
 

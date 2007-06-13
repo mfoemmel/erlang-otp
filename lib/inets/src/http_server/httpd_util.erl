@@ -31,6 +31,17 @@
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
 
+%% We will not make the change to use base64 in stdlib in inets just yet.
+%% it will be included in the next major release of inets. 
+-compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
+-compile({nowarn_deprecated_function, {http_base_64, decode, 1}}).
+
+-deprecated([{to_lower, 1, next_major_release},
+	     {to_upper, 1, next_major_release},
+	     {decode_base64, 1, next_major_release},
+	     {encode_base64, 1, next_major_release}
+	    ]).
+
 %% key1search
 
 key1search(TupleList,Key) ->

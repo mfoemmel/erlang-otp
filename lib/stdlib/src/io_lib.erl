@@ -132,7 +132,7 @@ write(Atom, _D) when is_atom(Atom) -> write_atom(Atom);
 write(Term, _D) when is_port(Term) -> write_port(Term);
 write(Term, _D) when is_pid(Term) -> pid_to_list(Term);
 write(Term, _D) when is_reference(Term) -> write_ref(Term);
-write(Term, D) when is_binary(Term) -> write_binary(Term, D);
+write(<<_/bitstr>>=Term, D) -> write_binary(Term, D);
 write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->
@@ -208,7 +208,7 @@ quote_atom(Atom, Cs0) ->
 	    case Cs0 of
 		[C|Cs] when C >= $a, C =< $z ->
 		    not name_chars(Cs);
-		[C|Cs] when C >= $ß, C =< $ÿ, C /= $÷ ->
+		[C|Cs] when C >= $ß, C =< $ÿ, C =/= $÷ ->
 		    not name_chars(Cs);
 		_ -> true
 	    end
@@ -222,9 +222,9 @@ name_chars([C|Cs]) ->
 name_chars([]) -> true.
 
 name_char(C) when C >= $a, C =< $z -> true;
-name_char(C) when C >= $ß, C =< $ÿ, C /= $÷ -> true;
+name_char(C) when C >= $ß, C =< $ÿ, C =/= $÷ -> true;
 name_char(C) when C >= $A, C =< $Z -> true;
-name_char(C) when C >= $À, C =< $Þ, C /= $× -> true;
+name_char(C) when C >= $À, C =< $Þ, C =/= $× -> true;
 name_char(C) when C >= $0, C =< $9 -> true;
 name_char($_) -> true;
 name_char($@) -> true;
@@ -479,7 +479,7 @@ collect_line_list(Stack, []) ->
 get_until(start, Data, XtraArg) ->
     get_until([], Data, XtraArg);
 get_until(Cont, Data, {Mod, Func, XtraArgs}) ->
-    Chars = if binary(Data) ->
+    Chars = if is_binary(Data) ->
 		    binary_to_list(Data);
 	       true ->
 		    Data

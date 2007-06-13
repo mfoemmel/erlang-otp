@@ -824,7 +824,10 @@ gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],ObjSetName,NthObj) ->
 	    emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
 	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
 	false ->
-	    gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj)
+	    emit([indent(3),"fun(Type,Val,_) ->",nl,
+		  indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," -> [{octets,Val}]",nl]),
+	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[])
     end;
 gen_inlined_enc_funs(Fields,[_H|Rest],ObjSetName,NthObj) ->
     gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj);
@@ -854,6 +857,9 @@ gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
 		{Acc,0};
 	    false ->
+		emit([";",nl,
+		      indent(9),{asis,Name}," -> ",nl,
+		      "[{octets,Val}]",nl]),
 		{Acc,0}
 	end,
     gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+NAdd,Acc2);
@@ -1000,7 +1006,10 @@ gen_inlined_dec_funs(Fields,[{typefield,Name,_}|Rest],
 	    emit([indent(12),"'",M,"':'dec_",T,"'(Val, telltype)"]),
 	    gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj);
 	false ->
-	    gen_inlined_dec_funs(Fields,Rest,ObjSetName,NthObj)
+	    emit([indent(3),"fun(Type, Val, _, _) ->",nl,
+		  indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," ->{Val,Type}"]),
+	    gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj)
     end;
 gen_inlined_dec_funs(Fields,[_|Rest],ObjSetName,NthObj) ->
     gen_inlined_dec_funs(Fields,Rest,ObjSetName,NthObj);
@@ -1027,6 +1036,8 @@ gen_inlined_dec_funs1(Fields,[{typefield,Name,_}|Rest],
 	      emit([indent(12),"'",M,"'",":'dec_",T,"'(Val,telltype)"]),
 	      0;
 	  false ->
+	      emit([";",nl,
+		    indent(9),{asis,Name}," ->{Val,Type}"]),
 	      0
       end,
     gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj+N);
@@ -1234,8 +1245,13 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 	'UTF8String' ->
 	    emit({"?RT_PER:decode_UTF8String(",BytesVar,")"});
 	'ANY' ->
-	    emit(["?RT_PER:decode_open_type(",BytesVar,",", 
-		  {asis,Constraint}, ")"]); 
+	    case Erules of
+		per ->
+		    emit(["fun() -> {XTerm,YTermXBytes} = ?RT_PER:decode_open_type(",BytesVar,",",{asis,Constraint}, "), {binary_to_list(XTerm),XBytes} end ()"]);
+		_ ->
+		    emit(["?RT_PER:decode_open_type(",BytesVar,",", 
+			  {asis,Constraint}, ")"])
+	    end;
 	'ASN1_OPEN_TYPE' ->
 	    case Constraint of
 		[#'Externaltypereference'{type=Tname}] ->
@@ -1251,7 +1267,12 @@ gen_dec_prim(Erules,Att,BytesVar) ->
 		    emit(["   {YTerm,_} = dec_",Tname,"(XTerm,mandatory),",nl]),
 		    emit(["   {YTerm,XBytes} end(",BytesVar,")"]);
 		_ ->
-		    emit(["?RT_PER:decode_open_type(",BytesVar,",[])"])
+		    case Erules of
+			per ->
+			    emit(["fun() -> {XTerm,XBytes} = ?RT_PER:decode_open_type(",BytesVar,", []), {binary_to_list(XTerm),XBytes} end()"]);
+			_ ->
+			    emit(["?RT_PER:decode_open_type(",BytesVar,",[])"])
+		    end
 	    end;
 	#'ObjectClassFieldType'{} ->
 		case asn1ct_gen:get_inner(Att#type.def) of

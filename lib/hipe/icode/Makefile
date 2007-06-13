@@ -42,11 +42,12 @@ DOC_MODULES = hipe_beam_to_icode \
 	hipe_icode_heap_test \
 	hipe_icode_exceptions hipe_icode_primops \
 	hipe_icode_bincomp \
-	hipe_icode_range_an \
+	hipe_icode_range_an hipe_icode_range\
 	hipe_icode_ssa hipe_icode_ssa_const_prop hipe_icode_ssa_copy_prop \
 	hipe_icode_type hipe_icode_pp hipe_icode_fp \
-	hipe_icode_split_arith hipe_icode_callgraph \
-	hipe_icode_instruction_counter
+	hipe_icode_split_arith hipe_icode_callgraph   \
+	hipe_icode_instruction_counter hipe_icode_coordinator \
+	hipe_icode_ssa_struct_reuse hipe_icode_inline_bifs 
 
 MODULES = $(DOC_MODULES) hipe_icode_ebb hipe_icode_mulret 
 
@@ -66,8 +67,7 @@ DOC_FILES= $(DOC_MODULES:%=$(DOCS)/%.html)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
-ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import
+ERL_COMPILE_FLAGS += +nowarn_shadow_vars +warn_unused_import +warn_obsolete_guard
 
 # ----------------------------------------------------
 # Targets
@@ -124,4 +124,5 @@ $(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ss
 $(EBIN)/hipe_icode_ssa_const_prop.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
 $(EBIN)/hipe_icode_ssa_copy_prop.beam: hipe_icode.hrl ../ssa/hipe_ssa_copy_prop.inc
 $(EBIN)/hipe_icode_type.beam: hipe_icode.hrl hipe_icode_primops.hrl hipe_icode_type.hrl
+$(EBIN)/hipe_icode_inline_bifs.beam: hipe_icode.hrl
 

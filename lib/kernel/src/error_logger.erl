@@ -222,18 +222,18 @@ init(Max) when is_integer(Max) ->
 init({go_back, _PostState}) ->  
     {ok, {?buffer_size, 0, []}};
 init(_) ->  %% Start and just relay to other
-    {ok, []}.             %% node if node(GLeader) /= node().
+    {ok, []}.             %% node if node(GLeader) =/= node().
     
-handle_event({Type, GL, Msg}, State) when node(GL) /= node() ->
+handle_event({Type, GL, Msg}, State) when node(GL) =/= node() ->
     gen_event:notify({error_logger, node(GL)},{Type, GL, Msg}),
 %    handle_event2({Type, GL, Msg}, State);  %% Shall we do something at this
     {ok, State};                                  %% node too ???
-handle_event({info_report, _, {_, Type, _}}, State) when Type /= std_info ->
+handle_event({info_report, _, {_, Type, _}}, State) when Type =/= std_info ->
     {ok, State};   %% Ignore other info reports here
 handle_event(Event, State) ->
     handle_event2(Event, State).
 
-handle_info({emulator, GL, Chars}, State) when node(GL) /= node() ->
+handle_info({emulator, GL, Chars}, State) when node(GL) =/= node() ->
     {error_logger, node(GL)} ! {emulator, GL, add_node(Chars,self())},
     {ok, State};
 handle_info({emulator, GL, Chars}, State) ->

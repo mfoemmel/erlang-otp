@@ -34,6 +34,7 @@
 %% Application internal exports
 -export([
 	 start_link/0,
+	 stop/0,
 
 	 apply_after/4,
 	 apply_after/5,
@@ -71,6 +72,9 @@
 start_link() ->
     ?d("start -> entry", []),
     gen_server:start_link({local, ?SERVER}, ?MODULE, [self()], []).
+
+stop() ->
+    call(stop).
 
 lookup_request(Key) ->
     ets:lookup(megaco_requests, Key).
@@ -187,6 +191,9 @@ handle_call({apply_at_exit, M, F, A, Pid}, _From, S) ->
     put({?MODULE, Ref}, AAE),
     Reply = Ref,
     {reply, Reply, S};
+
+handle_call(stop, {Parent, _} = _From, #state{parent_pid = Parent} = S) ->
+    {stop, normal, ok, S};
 
 handle_call(Req, From, S) ->
     warning_msg("received unexpected request from ~p: "

@@ -24,7 +24,7 @@
 
 %%-------------------------------------------------------------------------
 
-%% @spec translate(IcodeRecord::term(), Options::options()) -> term()
+%% @spec translate(IcodeRecord::#icode{}, Options::options()) -> term()
 %%
 %%     options() = [option()]
 %%     option() = term()
@@ -32,15 +32,16 @@
 %% @doc Translates a linear form of Icode for a single function to a
 %% linear form of RTL-code.
 %%
-translate(IcodeRecord, Options) ->
-  ?IF_DEBUG_LEVEL(2, put(hipe_mfa,hipe_icode:icode_fun(IcodeRecord)), ok),  
+translate(IcodeRecord = #icode{}, Options) ->
+  ?IF_DEBUG_LEVEL(2, put(hipe_mfa, hipe_icode:icode_fun(IcodeRecord)), ok),
   %% hipe_icode_pp:pp(Fun),
 
   %% Initialize gensym and varmap
   {Args, VarMap} = hipe_rtl_varmap:init(IcodeRecord),
   %% Get the name and other info of the function to translate.
   MFA = hipe_icode:icode_fun(IcodeRecord),
-  ConstTab = hipe_icode:icode_data(IcodeRecord),
+  ConstTab = hipe_consttab:new(), % hipe_icode:icode_data(IcodeRecord),
+  %% io:format("~w\n", [ConstTab]),
   Icode = hipe_icode:icode_code(IcodeRecord),
   IsClosure = hipe_icode:icode_is_closure(IcodeRecord), 
   IsLeaf = hipe_icode:icode_is_leaf(IcodeRecord),
@@ -202,21 +203,18 @@ conv_call_type(local) -> not_remote.
 %%
 gen_enter(I, VarMap, ConstTab) ->
   Fun = hipe_icode:enter_fun(I),
-%%  IsGuard = hipe_icode:call_in_guard(I),
-  IsGuard = false, %%Enter can not happen in a guard
-
   {Args, VarMap1, ConstTab1, InitCode} = 
     args_to_vars(hipe_icode:enter_args(I), VarMap, ConstTab),
-
-  {Code1, ConstTab3} =
+  {Code1, ConstTab2} =
     case hipe_icode:enter_type(I) of
       primop ->
+	IsGuard = false, % enter can not happen in a guard
 	hipe_rtl_primops:gen_enter_primop({Fun, Args}, IsGuard, ConstTab1);
       Type ->
 	Call = gen_enter_1(Fun, Args, Type),
-	{Call, ConstTab}
+	{Call, ConstTab1}
     end,
-  {[InitCode,Code1], VarMap1, ConstTab3}.  
+  {[InitCode,Code1], VarMap1, ConstTab2}.
 
 %% This catches those standard functions that we inline expand
 
@@ -269,7 +267,7 @@ gen_fail(I, VarMap, ConstTab) ->
 %% GOTO
 %%
 
-gen_goto(I, VarMap, ConstTab)->
+gen_goto(I, VarMap, ConstTab) ->
   {Label, Map0} = 
     hipe_rtl_varmap:icode_label2rtl_label(hipe_icode:goto_label(I), VarMap),
   {hipe_rtl:mk_goto(hipe_rtl:label_name(Label)), Map0, ConstTab}.
@@ -302,7 +300,7 @@ gen_if(I, VarMap, ConstTab) ->
 %% LABEL
 %%
 
-gen_label(I, VarMap, ConstTab)->
+gen_label(I, VarMap, ConstTab) ->
   LabelName = hipe_icode:label_name(I),
   {NewLabel,Map0} = hipe_rtl_varmap:icode_label2rtl_label(LabelName, VarMap),
   {NewLabel,Map0,ConstTab}.
@@ -457,7 +455,7 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
 				     AtomLabName,[]},
 				    false, ConstTab),
       Code = 
-	hipe_tagscheme:test_tuple_N(X, S, TupleLblName, FalseLbl, Pred) ++	
+	hipe_tagscheme:test_tuple_N(X, S, TupleLblName, FalseLbl, Pred) ++
 	[TupleLbl|UntagCode] ++
 	[AtomLab,
 	 hipe_rtl:mk_load_atom(TmpAtomVar, A),
@@ -535,7 +533,8 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
       [hipe_rtl:mk_branch(Arg1, eq, Arg2, TrueLbl,
 			  hipe_rtl:label_name(GenLbl), Pred),
        GenLbl,
-       hipe_rtl:mk_call([Tmp], op_exact_eqeq_2, Args, TestRetName, [], not_remote),
+       hipe_rtl:mk_call([Tmp], op_exact_eqeq_2, Args,
+			TestRetName, [], not_remote),
        TestRetLbl,
        hipe_rtl:mk_branch(Tmp, ne, hipe_rtl:mk_imm(0),
 			  TrueLbl, FalseLbl, Pred)];
@@ -548,7 +547,8 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
       [hipe_rtl:mk_branch(Arg1, eq, Arg2, FalseLbl,
 			  hipe_rtl:label_name(GenLbl), 1-Pred),
        GenLbl,
-       hipe_rtl:mk_call([Tmp], op_exact_eqeq_2, Args, TestRetName, [], not_remote),
+       hipe_rtl:mk_call([Tmp], op_exact_eqeq_2, Args,
+			TestRetName, [], not_remote),
        TestRetLbl,
        hipe_rtl:mk_branch(Tmp, ne, hipe_rtl:mk_imm(0),
 			  FalseLbl, TrueLbl, Pred)];
@@ -629,7 +629,6 @@ gen_cond(CondOp, Args, TrueLbl, FalseLbl, Pred) ->
 			  TrueLbl, FalseLbl, Pred)]
   end.
 
-
 %% --------------------------------------------------------------------
 %%
 %% Translate a list argument list of icode vars to rtl vars. Also
@@ -641,14 +640,13 @@ args_to_vars([Arg|Args],VarMap, ConstTab) ->
     args_to_vars(Args, VarMap, ConstTab),
   case hipe_icode:is_var_or_fvar_or_reg(Arg) of
     true ->
-      {Var, VarMap2} = hipe_rtl_varmap:icode_var2rtl_var(Arg,VarMap1),
+      {Var, VarMap2} = hipe_rtl_varmap:icode_var2rtl_var(Arg, VarMap1),
       {[Var|Vars], VarMap2, ConstTab1, Code};
     false ->
       case type_of_const(Arg) of
 	big ->
 	  ConstVal = hipe_icode:const_value(Arg),
-	  {ConstTab2, Label} = 
-	    hipe_consttab:insert_term(ConstTab1, ConstVal),
+	  {ConstTab2, Label} = hipe_consttab:insert_term(ConstTab1, ConstVal),
 	  NewArg = hipe_rtl:mk_const_label(Label),
 	  {[NewArg|Vars], VarMap1, ConstTab2, Code};
 	fixnum ->
@@ -660,8 +658,7 @@ args_to_vars([Arg|Args],VarMap, ConstTab) ->
 	  {[NewArg|Vars], VarMap1, ConstTab1, Code};
 	_ ->
 	  Var = hipe_rtl:mk_new_var(),
-	  {Code2, ConstTab2} = 
-	    gen_const_move(Var, Arg, ConstTab1),
+	  {Code2, ConstTab2} = gen_const_move(Var, Arg, ConstTab1),
 	  {[Var|Vars], VarMap1, ConstTab2, [Code2,Code]}
       end
   end;
@@ -702,7 +699,7 @@ gen_big_move(Dst, Big, ConstTab) ->
   {hipe_rtl:mk_move(Dst, hipe_rtl:mk_const_label(Label)),
    NewTab}.
 
-type_of_const(Const)->
+type_of_const(Const) ->
   case hipe_icode:is_const_fun(Const) of
     true -> const_fun;
     false ->
@@ -720,7 +717,6 @@ type_of_const(Const)->
 	  big
       end
   end.
-      
 
 tagged_val_of([]) -> hipe_tagscheme:mk_nil();
 tagged_val_of(X) when is_integer(X) -> hipe_tagscheme:mk_fixnum(X).

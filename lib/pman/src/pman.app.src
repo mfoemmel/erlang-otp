@@ -11,8 +11,6 @@
 	     pman_main,
 	     pman_module_info,
 	     pman_options,
-	     pman_osdepend,
-	     pman_primitive,
 	     pman_process,
 	     pman_relay,
 	     pman_relay_server,
@@ -20,5 +18,5 @@
 	     pman_tool,
 	     pman_win
 	    ]},
-  {registered,[]},
-  {applications, [kernel, stdlib, gs, tools]}]}.
+  {registered, []},
+  {applications, [kernel, stdlib]}]}.

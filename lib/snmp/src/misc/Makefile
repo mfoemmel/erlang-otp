@@ -66,7 +66,7 @@ endif
 # FLAGS
 # ----------------------------------------------------
 
-ERL_FLAGS += -pa $(ERL_TOP)/lib/snmp/ebin
+ERL_COMPILE_FLAGS += -pa $(ERL_TOP)/lib/snmp/ebin
 
 ifeq ($(WARN_UNUSED_VARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars

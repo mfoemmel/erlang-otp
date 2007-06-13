@@ -30,19 +30,22 @@
 	 is_exported/2,
 	 lookup/3, 
 	 lookup_records/2,
+	 lookup_contracts/2,
+	 lookup_contract/2,
 	 new/0,
 	 next_core_label/1,
 	 store_records/3,
+	 store_contracts/3,
 	 update_next_core_label/2]).
 
 
--record(dialyzer_codeserver, {table, exports, next_core_label, records}).
+-record(dialyzer_codeserver, {table, exports, next_core_label, records, contracts}).
 
 new() ->
   Table = table__new(),
   Exports = sets:new(),
   #dialyzer_codeserver{table=Table, exports=Exports, next_core_label=0,
-		       records=dict:new()}.
+		       records=dict:new(), contracts=dict:new()}.
 
 delete(#dialyzer_codeserver{table=Table}) ->
   table__delete(Table).
@@ -64,21 +67,8 @@ is_exported(MFA, #dialyzer_codeserver{exports=Exports}) ->
 all_exports(#dialyzer_codeserver{exports=Exports}) ->
   Exports.
 
-lookup({M,F,A}, core, CS) ->
-  case table__lookup(CS#dialyzer_codeserver.table, {M, core}) of
-    {ok, Tree} ->
-      case [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
-			  cerl:fname_id(Var) =:= F,
-			  cerl:fname_arity(Var) =:= A] of
-	[] -> error;
-	[Def] -> {ok, Def}
-      end;
-    error -> error
-  end;
-lookup(M, core, CS) when is_atom(M) ->
-  table__lookup(CS#dialyzer_codeserver.table, {M, core});
-lookup(MFA = {_,_,_}, icode, CS) ->
-  table__lookup(CS#dialyzer_codeserver.table, {MFA, icode}).      
+lookup(Id, Tag, CS) ->
+  table__lookup(CS#dialyzer_codeserver.table, {Id, Tag}).
 
 next_core_label(#dialyzer_codeserver{next_core_label=NCL}) ->
   NCL.
@@ -101,18 +91,75 @@ lookup_records(Module,
     {ok, Dict} -> Dict
   end.
 
+
+store_contracts(Module, Dict, 
+	      CS=#dialyzer_codeserver{contracts=ContDict}) when is_atom(Module) ->
+  case dict:size(Dict) =:= 0 of
+    true -> CS;
+    false ->
+      CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, ContDict)}
+  end.
+
+lookup_contracts(Module, 
+	       #dialyzer_codeserver{contracts=ContDict}) when is_atom(Module) ->
+  case dict:find(Module, ContDict) of
+    error -> dict:new();
+    {ok, Dict} -> Dict
+  end.
+
+lookup_contract({M,F,A}, #dialyzer_codeserver{contracts=ContDict}) ->
+  case dict:find(M, ContDict) of
+    error -> error;
+    {ok, Dict} -> 
+	dict:find({F,A}, Dict)
+  end.
+
 table__new() ->
-  ets:new(dialyzer_codeserver, []).
+  spawn_link(fun() -> table__loop(none, dict:new())end).
 
-table__delete(Table) ->
-  ets:delete(Table).
+table__delete(TablePid) ->
+  TablePid ! stop.
 
-table__lookup(Table, Key) ->
-  case ets:lookup(Table, Key) of
-    [{Key, Val}] -> {ok, Val};
-    _ -> error
+table__lookup(TablePid, Key) ->
+  TablePid ! {self(), lookup, Key},
+  receive
+    {TablePid, Key, Ans} -> Ans
   end.
 
 table__insert(Table, List) ->
-  true = ets:insert(Table, List),
+  List1 = [{Key, term_to_binary(Val, [compressed])} || {Key, Val} <- List],
+  Table ! {insert, List1},
   Table.
+
+table__loop(Cached, Map) ->
+  receive
+    stop -> ok;
+    {Pid, lookup, Key = {{M, F, A}, core}} ->
+      {NewCached, Ans} =
+	case Cached of
+	  {M, Tree} ->
+	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
+				   cerl:fname_id(Var) =:= F,
+				   cerl:fname_arity(Var) =:= A],
+	    {Cached, {ok, Val}};
+	  _ ->
+	    Bin = dict:fetch({M, core}, Map),
+	    Tree = binary_to_term(Bin),
+	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
+				   cerl:fname_id(Var) =:= F,
+				   cerl:fname_arity(Var) =:= A],
+	    {{M, Tree}, {ok, Val}}
+	end,
+      Pid ! {self(), Key, Ans},
+      table__loop(NewCached, Map);
+    {Pid, lookup, Key} ->
+      Bin = dict:fetch(Key, Map),
+      Tree = binary_to_term(Bin),
+      Pid ! {self(), Key, {ok, Tree}},
+      table__loop(Cached, Map);
+    {insert, List} ->
+      NewMap = lists:foldl(fun({Key, Val}, AccMap) -> 
+			       dict:store(Key, Val, AccMap)
+			   end, Map, List),
+      table__loop(Cached, NewMap)
+  end.

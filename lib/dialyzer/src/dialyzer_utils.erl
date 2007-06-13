@@ -18,6 +18,7 @@
 	 get_core_from_src/2,
 	 get_core_from_beam/2,
 	 get_record_info/1,
+	 get_spec_info/1,
 	 merge_record_dicts/1,
 	 pp_hook/0
 	]).
@@ -155,6 +156,45 @@ handle_merge_clash(Tag, Orddict1, Orddict2) ->
   orddict:merge(fun(_Arity, Fields, Fields) -> Fields;
 		   (Arity, _, _) -> throw({record_clash, Tag, Arity})
 		end, Orddict1, Orddict2).
+
+
+%% ============================================================================
+%%
+%%  Spec info
+%%
+%% ============================================================================
+
+
+get_spec_info(AbstractCode) ->
+  get_spec_info(AbstractCode, dict:new()).
+
+%% TypeSpec is a list of contracts for a function. 
+%% Each contract is [[Arguments], Range] with parse forms.
+get_spec_info([{attribute, _, type_spec, {{Name, Arity}, TypeSpec}}|Left], 
+	      SpecDict) when is_list(TypeSpec) ->
+  case form_to_contract(TypeSpec) of
+    error -> {error, SpecDict};
+    Contract ->
+      NewSpecDict = dict:store({Name, Arity}, Contract, SpecDict),
+      get_spec_info(Left, NewSpecDict)
+  end;
+
+get_spec_info([_Other|Left], SpecDict) ->
+  get_spec_info(Left, SpecDict);
+
+get_spec_info([], SpecDict) ->
+  {ok, SpecDict}.
+
+
+form_to_contract([{type, 'fun', Info} | Left]) -> 
+  [Info|form_to_contract(Left)];
+form_to_contract([_|_]) -> io:format("The contract does not follow the function format: \"(Arguments) -> Return\"\n"), error;
+form_to_contract([]) -> [].
+  
+
+% Warnings
+% We admit 2 contracts for the same function rigth now. 
+% Previous contracts are overwritten. 
 
 %% ============================================================================
 %%

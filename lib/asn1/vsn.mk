@@ -1,5 +1,5 @@
-#next version number to use is 1.4.4.10 | 1.4.5 | 1.5 | 2.0
-ASN1_VSN = 1.4.4.14
+#next version number to use is 1.4.6 | 1.5 | 2.0
+ASN1_VSN = 1.4.5
 
 TICKETS_1.2.5 = \
 	OTP-3341
@@ -195,3 +195,16 @@ TICKETS_1.4.4.12 = \
 
 TICKETS_1.4.4.13 = \
 	OTP-6405
+
+TICKETS_1.4.4.14 = \
+	OTP-6462 \
+	OTP-6506
+
+TICKETS_1.4.5 = \
+	OTP-6493 \
+	OTP-6601 \
+	OTP-6695 \
+	OTP-6698 \
+	OTP-6702 \
+	OTP-6707 \
+	OTP-6717

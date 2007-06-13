@@ -242,6 +242,9 @@ erts_thread_create(erl_thread_t *tid,
 #ifdef USE_THREADS
     int res;
     erl_thread_t_ *etid = driver_alloc(sizeof(erl_thread_t_));
+    ethr_thr_opts opts = ETHR_THR_OPTS_DEFAULT_INITER;
+    opts.detached = detached;
+
     if (!etid)
 	return ENOMEM;
 
@@ -249,7 +252,7 @@ erts_thread_create(erl_thread_t *tid,
     etid->arg = arg;
     etid->detached = detached;
 
-    res = ethr_thr_create(&etid->tid, thread_wrapper_func, etid, detached);
+    res = ethr_thr_create(&etid->tid, thread_wrapper_func, etid, &opts);
 
     if (res != 0) {
 	driver_free(etid);

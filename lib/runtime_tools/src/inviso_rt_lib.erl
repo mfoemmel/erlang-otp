@@ -57,12 +57,12 @@
 %% RegExpDir can further limit the modules. It introduces the requirement that
 %% a module must be loaded from a directory with a path satisfying the RegExpDir.
 %% All regular expression are according to the standard lib regexp module.
-expand_regexp(RegExpMod,Opts) when list(RegExpMod),list(Opts) ->
+expand_regexp(RegExpMod,Opts) when is_list(RegExpMod),is_list(Opts) ->
     match_modules(RegExpMod,Opts);
 expand_regexp(RegExpMod,Opts) ->
     {error,{badarg,[RegExpMod,Opts]}}.
 expand_regexp(NodesOrRegExpDir,RegExpMod,Opts)
-  when list(NodesOrRegExpDir),list(RegExpMod),list(Opts) ->
+  when is_list(NodesOrRegExpDir),is_list(RegExpMod),is_list(Opts) ->
     case is_list_of_atoms(NodesOrRegExpDir) of
 	true ->                              % Interpret as list of nodes.
 	    lists:foreach(fun(N)->spawn(?MODULE,rpc,[self(),N,RegExpMod,Opts]) end,
@@ -74,7 +74,7 @@ expand_regexp(NodesOrRegExpDir,RegExpMod,Opts)
 expand_regexp(NodesOrRegExpDir,RegExpMod,Opts) ->
     {error,{badarg,[NodesOrRegExpDir,RegExpMod,Opts]}}.
 expand_regexp(Nodes,RegExpDir,RegExpMod,Opts)
-  when list(Nodes),list(RegExpDir),list(RegExpMod),list(Opts) ->
+  when is_list(Nodes),is_list(RegExpDir),is_list(RegExpMod),is_list(Opts) ->
     lists:foreach(fun(N)->
 			  spawn(?MODULE,rpc,[self(),N,RegExpDir,RegExpMod,Opts])
 		  end,
@@ -94,10 +94,10 @@ expand_regexp_answers(Nodes,Answers) ->
 %% is_tracerdata(TracerData)=true|false
 %% Answers the question if TracerData is proper tracerdata. Note that true can be
 %% returned if it resembles tracerdata very closely.
-is_tracerdata({Fun,_Data}) when function(Fun) -> true;
-is_tracerdata({relayer,To}) when pid(To);atom(To) -> true;
+is_tracerdata({Fun,_Data}) when is_function(Fun) -> true;
+is_tracerdata({relayer,To}) when is_pid(To);is_atom(To) -> true;
 is_tracerdata(collector) -> true;
-is_tracerdata({file,Param}) when tuple(Param);list(Param) -> true;
+is_tracerdata({file,Param}) when is_tuple(Param);is_list(Param) -> true;
 is_tracerdata({ip,_Param}) -> true;
 is_tracerdata([{trace,LogTD}|Rest]) ->
     case is_tracerdata(LogTD) of
@@ -118,8 +118,8 @@ is_tracerdata([]) ->
 is_tracerdata(_) ->
     false.
 
-is_tidata({file,FileName}) when list(FileName) -> true; 
-is_tidata({file,FileName,{M,F,Args}}) when list(FileName),atom(M),atom(F),list(Args) ->
+is_tidata({file,FileName}) when is_list(FileName) -> true; 
+is_tidata({file,FileName,{M,F,Args}}) when is_list(FileName),is_atom(M),is_atom(F),is_list(Args) ->
     true;
 is_tidata(_) -> false.
 %% ------------------------------------------------------------------------------		
@@ -199,9 +199,9 @@ handle_expand_regexp_2([{Mod,Path}|Rest],RegExpDir,RegExpMod,Result) ->
     case regexp:first_match(ModStr,RegExpMod) of
 	{match,1,ModLen} ->                  % Ok, The regexp matches the module.
 	    if
-		list(RegExpDir),atom(Path) -> % Preloaded or covercompiled...
+		is_list(RegExpDir),is_atom(Path) -> % Preloaded or covercompiled...
 		    handle_expand_regexp_2(Rest,RegExpDir,RegExpMod,Result);
-		list(RegExpDir),list(Path) -> % Dir reg-exp is used!
+		is_list(RegExpDir),is_list(Path) -> % Dir reg-exp is used!
 		    PathOnly=filename:dirname(Path), % Must remove beam-file name.
 		    case regexp:first_match(PathOnly,RegExpDir) of
 			{match,_,_} ->       % Did find a match, that is enough!
@@ -222,7 +222,7 @@ handle_expand_regexp_2([],_,_,Result) -> Result.
 %% Returns a list of unique module names.
 handle_expand_regexp_3([Path|Rest],RegExpDir,RegExpMod,AllLoaded,Result) ->
     if
-	list(RegExpDir) ->                   % We must consider the directory name.
+	is_list(RegExpDir) ->                   % We must consider the directory name.
 	    AbsPath=
 		case filename:pathtype(Path) of
 		    absolute ->              % Is already abs.
@@ -279,7 +279,7 @@ handle_expand_regexp_3_2([],_,_,Result) -> Result.
 %% Help function which finds out if its argument is a list of zero or more
 %% atoms.
 %% Returns 'true' or 'false'.
-is_list_of_atoms([A|Rest]) when atom(A) ->
+is_list_of_atoms([A|Rest]) when is_atom(A) ->
     is_list_of_atoms(Rest);
 is_list_of_atoms([_|_]) ->
     false;
@@ -437,11 +437,11 @@ do_call_translation(F,Params,Translations) ->
 
 do_call_translation_2(Params,NewM,NewF,ArgFun) ->
     case ArgFun of
-	{M,F} when atom(M),atom(F) ->
+	{M,F} when is_atom(M),is_atom(F) ->
 	    case catch M:F(Params) of
 		{'EXIT',_Reason} ->
 		    false;                   % If it does not work, skipp it.
-		MungedParams when list(MungedParams) ->
+		MungedParams when is_list(MungedParams) ->
 		    {ok,NewM,NewF,MungedParams};
 		_ ->
 		    false

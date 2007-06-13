@@ -363,7 +363,7 @@ check_marked_row(NewVirtRow, undefined, RealRow, RowMarkP) ->
        % No btn already pressed!
     {true, RowMarkP#row_mark_params{virtual_row_marked = NewVirtRow,
 				    real_row_marked    = RealRow}};
-check_marked_row(NewVirtRow, OldVirtRow, _RealRow, RowMarkP) when NewVirtRow == OldVirtRow ->
+check_marked_row(NewVirtRow, OldVirtRow, _RealRow, RowMarkP) when NewVirtRow =:= OldVirtRow ->
        % The button previously pressed has been pressed again!
     {false, RowMarkP#row_mark_params{virtual_row_marked = undefined,
 				     real_row_marked    = undefined}};
@@ -425,14 +425,14 @@ mark_col_btn(NewId, undefined, NewVirtCol, _OldVirtCol, _RealCol, _SortCol, ColM
 		     ]),
     {true, ColMarkP#col_mark_params{col_btn_id         = NewId,
 				    virtual_col_marked = NewVirtCol}};
-mark_col_btn(NewId, _OldId, NewVirtCol, OldVirtCol, _RealCol, SortCol, ColMarkP) when NewVirtCol == OldVirtCol, NewVirtCol == SortCol ->
+mark_col_btn(NewId, _OldId, NewVirtCol, OldVirtCol, _RealCol, SortCol, ColMarkP) when NewVirtCol =:= OldVirtCol, NewVirtCol =:= SortCol ->
        % The button previously pressed has been pressed again!
     gs:config(NewId, [{bg, ?SORT_MARK_COLOR},
 		      {fg, {0, 0, 0}}
 		     ]),
     {false, ColMarkP#col_mark_params{col_btn_id         = undefined,
 				     virtual_col_marked = undefined}};
-mark_col_btn(NewId, _OldId, NewVirtCol, OldVirtCol, _RealCol, _SortCol, ColMarkP) when NewVirtCol == OldVirtCol ->
+mark_col_btn(NewId, _OldId, NewVirtCol, OldVirtCol, _RealCol, _SortCol, ColMarkP) when NewVirtCol =:= OldVirtCol ->
        % The button previously pressed has been pressed again!
     gs:config(NewId, [{bg, ?DEFAULT_BG_COLOR},
 		      {fg, {0, 0, 0}}

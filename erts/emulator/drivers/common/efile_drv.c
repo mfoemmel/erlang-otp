@@ -599,7 +599,7 @@ static void free_data(void *data)
 
 static void do_close(int flags, Sint fd) {
     if (flags & EFILE_COMPRESSED) {
-	gzclose((gzFile)(fd));
+	erts_gzclose((gzFile)(fd));
     } else {
 	efile_closefile((int) fd);
     }
@@ -872,9 +872,9 @@ static void invoke_read(void *data)
     }
     read_size = size;
     if (d->flags & EFILE_COMPRESSED) {
-	read_size = gzread((gzFile)d->fd, 
-			   d->c.read.binp->orig_bytes + d->c.read.bin_offset,
-			   size);
+	read_size = erts_gzread((gzFile)d->fd, 
+				d->c.read.binp->orig_bytes + d->c.read.bin_offset,
+				size);
 	status = (read_size != -1);
 	if (!status) {
 	    d->errInfo.posix_errno = EIO;
@@ -1082,31 +1082,15 @@ static void invoke_ipread(void *data)
     d->again = 0;
 }
 
-#if 0
-static void invoke_write(void *data)
-{
-    struct t_data *d = (struct t_data *) data;
-
-    int status;			/* Status of write operation. */
-
-    if (d->flags & EFILE_COMPRESSED) {
-	status = gzwrite((gzFile)d->fd, (char *) d->b, d->n) == d->n;
-    } else {
-	status = efile_write(&d->errInfo, d->flags, (int) d->fd,
-			     (char *)d->b, d->n);
-    }
-
-    d->result_ok = status;
-}
-#endif
-
 /* invoke_writev and invoke_pwritev are the only thread functions that
  * access non-thread data i.e the port queue and a mutex in the port
  * structure that is used to lock the port queue.
  *
- * They can do this because there is no risk that they might be 
- * invoked after the port has been terminated, since the port will not
- * be terminated until the port queue is empty.
+ * The port will normally not be terminated until the port queue is
+ * empty, but if the port is killed, i.e., exit(Port, kill) is called,
+ * it will terminate regardless of the port queue state. When the
+ * port is invalid driver_peekq() returns NULL and set the size to -1,
+ * and driver_sizeq() returns -1.
  */
 
 static void invoke_writev(void *data) {
@@ -1126,13 +1110,13 @@ static void invoke_writev(void *data) {
     }
     MUTEX_LOCK(d->c.writev.q_mtx); /* Lock before accessing the port queue */
     iov = driver_peekq(d->c.writev.port, &iovlen);
-    ASSERT(driver_sizeq(d->c.writev.port) >= size);
+
     /* Calculate iovcnt */
     for (p = 0, iovcnt = 0;
 	 p < size && iovcnt < iovlen;
 	 p += iov[iovcnt++].iov_len)
 	;
-    if (iovcnt > 0) {
+    if (iovlen > 0) {
 	ASSERT(iov[iovcnt-1].iov_len > p - size);
 	iov[iovcnt-1].iov_len -= p - size;
 	if (d->flags & EFILE_COMPRESSED) {
@@ -1144,9 +1128,9 @@ static void invoke_writev(void *data) {
 		     */
 		    errno = EINVAL; 
 		    if (! (status = 
-			   gzwrite((gzFile)d->fd, 
-				   iov[i].iov_base,
-				   iov[i].iov_len)) == iov[i].iov_len) {
+			   erts_gzwrite((gzFile)d->fd, 
+					iov[i].iov_base,
+					iov[i].iov_len)) == iov[i].iov_len) {
 			d->errInfo.posix_errno =
 			    d->errInfo.os_errno = errno; /* XXX Correct? */
 			break;
@@ -1160,8 +1144,12 @@ static void invoke_writev(void *data) {
 					iov, iovcnt, size);
 	}
 	iov[iovcnt-1].iov_len += p - size;
-    } else {
+    } else if (iovlen == 0) {
 	d->result_ok = 1;
+    }
+    else { /* Port has terminated */
+	d->result_ok = 0;
+	d->errInfo.posix_errno = d->errInfo.os_errno = EINVAL;
     }
     MUTEX_UNLOCK(d->c.writev.q_mtx);
     d->c.writev.free_size = size;
@@ -1239,6 +1227,8 @@ static void invoke_pwritev(void *data) {
     p = 0;
     MUTEX_LOCK(c->q_mtx);
     iov = driver_peekq(c->port, &iovlen);
+    if (iovlen < 0)
+	goto error; /* Port terminated */
     for (iovcnt = 0, c->free_size = 0;
 	 c->cnt < c->n && iovcnt < iovlen && c->free_size < size;
 	 c->cnt++) {
@@ -1289,6 +1279,7 @@ static void invoke_pwritev(void *data) {
 	    /* Mismatch between number of 
 	     * pos/size specs vs number of queued buffers .
 	     */
+	error:
 	    d->errInfo.posix_errno = EINVAL;
 	    d->result_ok = 0;
 	    d->again = 0;
@@ -1368,8 +1359,8 @@ static void invoke_lseek(void *data)
     d->again = 0;
     if (d->flags & EFILE_COMPRESSED) {
 	status = 1;
-	d->c.lseek.location = gzseekk((gzFile)d->fd, 
-				      d->c.lseek.offset, d->c.lseek.origin);
+	d->c.lseek.location = erts_gzseek((gzFile)d->fd, 
+					  d->c.lseek.offset, d->c.lseek.origin);
 	if (d->c.lseek.location == -1) {
 	    d->errInfo.posix_errno = errno;
 	    status = 0;

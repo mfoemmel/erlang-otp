@@ -45,7 +45,6 @@ TARGET_FILES = $(MODULES:=.beam)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
 ERL_COMPILE_FLAGS += -pa ../ebin -I ../src
 EBIN = .
 

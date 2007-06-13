@@ -78,7 +78,7 @@
 compile(File) ->
     compile(File,[]).
 
-compile(File,Options) when list(Options) ->
+compile(File,Options) when is_list(Options) ->
     Options1 = optimize_ber_bin(Options),
     Options2 = includes(File,Options1),
     Includes=[I||{i,I}<-Options2],
@@ -100,7 +100,7 @@ compile(File,Options) when list(Options) ->
     end.
 
 
-compile1(File,Options) when list(Options) ->
+compile1(File,Options) when is_list(Options) ->
     io:format("Erlang ASN.1 version ~p compiling ~p ~n",[?vsn,File]),
     io:format("Compiler Options: ~p~n",[Options]),
     Ext = filename:extension(File),
@@ -191,7 +191,7 @@ compile_set(SetBase,Files,Options)
 			      E = filename:extension(F),
 			      B = filename:basename(F,E),
 			      if
-				  list(B) -> list_to_atom(B);
+				  is_list(B) -> list_to_atom(B);
 				  true -> B
 			      end
 		      end,
@@ -390,21 +390,21 @@ compare_defs2(D,D) ->
 compare_defs2(_,_) ->
     not_equal.
 
-unset_pos(Def) when record(Def,typedef) ->
+unset_pos(Def) when is_record(Def,typedef) ->
     Def#typedef{pos=undefined};
-unset_pos(Def) when record(Def,classdef) ->
+unset_pos(Def) when is_record(Def,classdef) ->
     Def#classdef{pos=undefined};
-unset_pos(Def) when record(Def,valuedef) ->
+unset_pos(Def) when is_record(Def,valuedef) ->
     Def#valuedef{pos=undefined};
-unset_pos(Def) when record(Def,ptypedef) ->
+unset_pos(Def) when is_record(Def,ptypedef) ->
     Def#ptypedef{pos=undefined};
-unset_pos(Def) when record(Def,pvaluedef) ->
+unset_pos(Def) when is_record(Def,pvaluedef) ->
     Def#pvaluedef{pos=undefined};
-unset_pos(Def) when record(Def,pvaluesetdef) ->
+unset_pos(Def) when is_record(Def,pvaluesetdef) ->
     Def#pvaluesetdef{pos=undefined};
-unset_pos(Def) when record(Def,pobjectdef) ->
+unset_pos(Def) when is_record(Def,pobjectdef) ->
     Def#pobjectdef{pos=undefined};
-unset_pos(Def) when record(Def,pobjectsetdef) ->
+unset_pos(Def) when is_record(Def,pobjectsetdef) ->
     Def#pobjectsetdef{pos=undefined}.
 
 get_pos_of_def(#typedef{pos=Pos}) ->
@@ -500,27 +500,27 @@ export_all(ModuleList) ->
 		  lists:map(
 		    fun(Def)->
 			    case Def of
-				T when record(T,typedef)->
+				T when is_record(T,typedef)->
 				    #'Externaltypereference'{pos=0,
 							     module=MName,
 							     type=T#typedef.name};
-				V when record(V,valuedef) ->
+				V when is_record(V,valuedef) ->
 				    #'Externalvaluereference'{pos=0,
 							      module=MName,
 							      value=V#valuedef.name};
-				C when record(C,classdef) ->
+				C when is_record(C,classdef) ->
 				    #'Externaltypereference'{pos=0,
 							     module=MName,
 							     type=C#classdef.name};
-				P when record(P,ptypedef) ->
+				P when is_record(P,ptypedef) ->
 				    #'Externaltypereference'{pos=0,
 							     module=MName,
 							     type=P#ptypedef.name};
-				PV when record(PV,pvaluesetdef) ->
+				PV when is_record(PV,pvaluesetdef) ->
 				    #'Externaltypereference'{pos=0,
 							     module=MName,
 							     type=PV#pvaluesetdef.name};
-				PO when record(PO,pobjectdef) ->
+				PO when is_record(PO,pobjectdef) ->
 				    #'Externalvaluereference'{pos=0,
 							      module=MName,
 							      value=PO#pobjectdef.name}
@@ -745,7 +745,7 @@ parse({true,Tokens},File,Options) ->
     case catch asn1ct_parser2:parse(Tokens) of
 	{error,{{Line,_Mod,Message},_TokTup}} ->
 	    if 
-		integer(Line) ->
+		is_integer(Line) ->
 		    BaseName = filename:basename(File),
 		    io:format("syntax error at line ~p in module ~s:~n",
 			      [Line,BaseName]);
@@ -1199,7 +1199,7 @@ compile(File, _OutFile, Options) ->
 	ParseRes when tuple(ParseRes) ->
 	    io:format("~p~n",[ParseRes]),
 	    ok;
-	ScanRes when list(ScanRes) ->
+	ScanRes when is_list(ScanRes) ->
 	    io:format("~p~n",[ScanRes]),
 	    ok;
 	Unknown -> 
@@ -1299,7 +1299,7 @@ start() ->
     start(Includes).
 
 
-start(Includes) when list(Includes) ->
+start(Includes) when is_list(Includes) ->
     asn1_db:dbstart(Includes).
 
 stop() ->
@@ -1317,12 +1317,12 @@ save() ->
 encode(Module,Term) ->
     asn1rt:encode(Module,Term).
 
-encode(Module,Type,Term) when list(Module) ->
+encode(Module,Type,Term) when is_list(Module) ->
     asn1rt:encode(list_to_atom(Module),Type,Term);
 encode(Module,Type,Term) ->
     asn1rt:encode(Module,Type,Term).
 
-decode(Module,Type,Bytes) when list(Module) ->
+decode(Module,Type,Bytes) when is_list(Module) ->
     asn1rt:decode(list_to_atom(Module),Type,Bytes);
 decode(Module,Type,Bytes) ->
     asn1rt:decode(Module,Type,Bytes).
@@ -1360,7 +1360,7 @@ test(Module,Type,Value) ->
 	{ok,Bytes} ->
 	    %%	    io:format("test 1: ~p~n",[{Bytes}]),
 	    M = if 
-		    list(Module) ->
+		    is_list(Module) ->
 			list_to_atom(Module);
 		    true ->
 			Module
@@ -1369,17 +1369,17 @@ test(Module,Type,Value) ->
 		case M:encoding_rule() of
 		    ber ->
 			lists:flatten(Bytes);
-		    ber_bin when binary(Bytes) ->
+		    ber_bin when is_binary(Bytes) ->
 			Bytes;
 		    ber_bin ->
 			list_to_binary(Bytes);
-		    ber_bin_v2 when binary(Bytes) ->
+		    ber_bin_v2 when is_binary(Bytes) ->
 			Bytes;
 		    ber_bin_v2 ->
 			list_to_binary(Bytes);
 		    per ->
 			lists:flatten(Bytes);
-		    per_bin when binary(Bytes) ->
+		    per_bin when is_binary(Bytes) ->
 			Bytes;
 		    per_bin ->
 			list_to_binary(Bytes)
@@ -1420,11 +1420,11 @@ vsn() ->
 
 
 
-print_error_message([got,H|T]) when list(H) ->
+print_error_message([got,H|T]) when is_list(H) ->
     io:format(" got:"),
     print_listing(H,"and"),
     print_error_message(T);
-print_error_message([expected,H|T]) when list(H) ->
+print_error_message([expected,H|T]) when is_list(H) ->
     io:format(" expected one of:"),
     print_listing(H,"or"),
     print_error_message(T);
@@ -1448,7 +1448,7 @@ print_listing([],_) ->
 %% functions to administer ets tables
 
 %% Always creates a new table
-create_ets_table(Name,Options) when atom(Name) ->
+create_ets_table(Name,Options) when is_atom(Name) ->
     case ets:info(Name) of
 	undefined ->
 	    ets:new(Name,Options);
@@ -1535,7 +1535,7 @@ partial_decode_prepare(_,_,_,_) ->
 %% OPTIONAL or DEFAULT element that shall be decoded as
 %% usual. [bin,Tag] corresponds to an element, mandatory, OPTIONAL or
 %% DEFAULT, that shall be left encoded (incomplete decoded).
-create_partial_inc_decode_gen_info(ModName,{Mod,[{Name,L}|Ls]}) when list(L) ->
+create_partial_inc_decode_gen_info(ModName,{Mod,[{Name,L}|Ls]}) when is_list(L) ->
     TopTypeName = partial_inc_dec_toptype(L),
     [{Name,TopTypeName,
       create_partial_inc_decode_gen_info1(ModName,TopTypeName,{Mod,L})}|
@@ -1571,12 +1571,12 @@ create_partial_inc_decode_gen_info1(_,_,TNL) ->
 create_pdec_inc_command(_ModName,_,[],Acc) ->
     lists:reverse(Acc);
 create_pdec_inc_command(ModName,{Comps1,Comps2},TNL,Acc) 
-  when list(Comps1),list(Comps2) ->
+  when is_list(Comps1),is_list(Comps2) ->
     create_pdec_inc_command(ModName,Comps1 ++ Comps2,TNL,Acc);
 %% The following two functionclauses matches on the type after the top type. This one if the top type had no tag, i.e. a CHOICE
-create_pdec_inc_command(ModN,Clist,[CL|_Rest],[[]]) when list(CL) ->
+create_pdec_inc_command(ModN,Clist,[CL|_Rest],[[]]) when is_list(CL) ->
     create_pdec_inc_command(ModN,Clist,CL,[]);
-create_pdec_inc_command(ModN,Clist,[CL|_Rest],Acc) when list(CL) ->
+create_pdec_inc_command(ModN,Clist,[CL|_Rest],Acc) when is_list(CL) ->
     InnerDirectives=create_pdec_inc_command(ModN,Clist,CL,[]),
     lists:reverse([InnerDirectives|Acc]);
 create_pdec_inc_command(ModName,
@@ -1594,7 +1594,7 @@ create_pdec_inc_command(ModName,
 	{Name,parts} ->
 	    TagCommand = get_tag_command(TS,?PARTS,Prop),
 	    create_pdec_inc_command(ModName,Comps,Cs,concat_sequential(TagCommand,Acc));
-	L when list(L) -> % I guess this never happens due to previous function clause
+	L when is_list(L) -> % I guess this never happens due to previous function clause
 	    %% This case is only possible as the first element after
 	    %% the top type element, when top type is SEGUENCE or SET.
 	    %% Follow each element in L. Must note every tag on the
@@ -1605,7 +1605,7 @@ create_pdec_inc_command(ModName,
 	    %% a "complete" command will be decoded by an ordinary TLV
 	    %% decode.
 	    create_pdec_inc_command(ModName,CList,L,Acc);
-	{Name,RestPartsList} when list(RestPartsList) ->
+	{Name,RestPartsList} when is_list(RestPartsList) ->
 	    %% Same as previous, but this may occur at any place in
 	    %% the structure. The previous is only possible as the
 	    %% second element.
@@ -1637,21 +1637,21 @@ create_pdec_inc_command(ModName,
 						    prop=Prop}|Comps]},
 			[{C1,Directive}|Rest],Acc) ->
     case Directive of
-	List when list(List) ->
+	List when is_list(List) ->
 %	    [Command,Tag] = get_tag_command(TS,?ALTERNATIVE,Prop),
 	    TagCommand = get_tag_command(TS,?ALTERNATIVE,Prop),
 	    CompAcc = 
 		create_pdec_inc_command(ModName,
 					get_components(TS#type.def),List,[]),
 	    NewAcc = case TagCommand of
-			 [Command,Tag] when atom(Command) ->
+			 [Command,Tag] when is_atom(Command) ->
 			     [[Command,Tag,CompAcc]|Acc];
-			 [L1,_L2|Rest] when list(L1) ->
+			 [L1,_L2|Rest] when is_list(L1) ->
 % 			     [LastComm|Comms] = lists:reverse(TagCommand),
 % 			     [concat_sequential(lists:reverse(Comms),
 % 					       [LastComm,CompAcc])|Acc]
 			     case lists:reverse(TagCommand) of
-				 [Atom|Comms] when atom(Atom) ->
+				 [Atom|Comms] when is_atom(Atom) ->
 				     [concat_sequential(lists:reverse(Comms),
 							[Atom,CompAcc])|Acc];
 				 [[Command2,Tag2]|Comms] ->
@@ -1682,7 +1682,7 @@ create_pdec_inc_command(ModName,
     create_pdec_inc_command(ModName,{'CHOICE',Comps},TNL,
 			    concat_sequential(TagCommand,Acc));
 create_pdec_inc_command(M,{'CHOICE',{Cs1,Cs2}},TNL,Acc) 
-  when list(Cs1),list(Cs2) ->
+  when is_list(Cs1),is_list(Cs2) ->
     create_pdec_inc_command(M,{'CHOICE',Cs1 ++ Cs2},TNL,Acc);
 create_pdec_inc_command(ModName,#'Externaltypereference'{module=M,type=Name},
 			TNL,Acc) ->
@@ -1692,11 +1692,11 @@ create_pdec_inc_command(_,_,TNL,_) ->
     throw({error,{"unexpected error when creating partial "
 		  "decode command",TNL}}).
 
-partial_inc_dec_toptype([T|_]) when atom(T) ->
+partial_inc_dec_toptype([T|_]) when is_atom(T) ->
     T;
-partial_inc_dec_toptype([{T,_}|_]) when atom(T) ->
+partial_inc_dec_toptype([{T,_}|_]) when is_atom(T) ->
     T;
-partial_inc_dec_toptype([L|_]) when list(L) ->
+partial_inc_dec_toptype([L|_]) when is_list(L) ->
     partial_inc_dec_toptype(L);
 partial_inc_dec_toptype(_) ->
     throw({error,{"no top type found for partial incomplete decode"}}).
@@ -1797,7 +1797,7 @@ create_pdec_command(ModName,TS=#type{def=Def},[C1|Cs],Acc) ->
 	    %% decoded.
 	    TagCommand = get_tag_command(TS,?CHOOSEN),
 	    create_pdec_command(ModName,Def,Cs,concat_tags(TagCommand,Acc));
-	[N] when integer(N) ->
+	[N] when is_integer(N) ->
 	    TagCommand = get_tag_command(TS,?SKIP),
 	    create_pdec_command(ModName,Def,[[N-1]|Cs],
 				concat_tags(TagCommand,Acc));
@@ -1811,11 +1811,11 @@ create_pdec_command(_,_,TNL,_) ->
 	    
 % get_components({'CHOICE',Components}) ->
 %     Components;
-get_components(#'SEQUENCE'{components={C1,C2}}) when list(C1),list(C2) ->
+get_components(#'SEQUENCE'{components={C1,C2}}) when is_list(C1),is_list(C2) ->
     C1++C2;
 get_components(#'SEQUENCE'{components=Components}) ->
     Components;
-get_components(#'SET'{components={C1,C2}}) when list(C1),list(C2) ->
+get_components(#'SET'{components={C1,C2}}) when is_list(C1),is_list(C2) ->
     C1++C2;
 get_components(#'SET'{components=Components}) ->
     Components;
@@ -1826,9 +1826,9 @@ get_components({'SET OF',Components}) ->
 get_components(Def) ->
     Def.
 
-concat_sequential(L=[A,B],Acc) when atom(A),binary(B) ->
+concat_sequential(L=[A,B],Acc) when is_atom(A),is_binary(B) ->
     [L|Acc];
-concat_sequential(L,Acc) when list(L) ->
+concat_sequential(L,Acc) when is_list(L) ->
     concat_sequential1(lists:reverse(L),Acc);
 concat_sequential(A,Acc)  ->
     [A|Acc].
@@ -1836,7 +1836,7 @@ concat_sequential1([],Acc) ->
     Acc;
 concat_sequential1([[]],Acc) ->
     Acc;
-concat_sequential1([El|RestEl],Acc) when list(El) ->
+concat_sequential1([El|RestEl],Acc) when is_list(El) ->
     concat_sequential1(RestEl,[El|Acc]);
 concat_sequential1([mandatory|RestEl],Acc) ->
     concat_sequential1(RestEl,[mandatory|Acc]);
@@ -1855,7 +1855,7 @@ many_tags(_) ->
 
 concat_tags(Ts,Acc) ->
     case many_tags(Ts) of
-	true when list(Ts) ->
+	true when is_list(Ts) ->
 	    lists:reverse(Ts)++Acc;
 	true ->
 	    [Ts|Acc];
@@ -1886,7 +1886,7 @@ get_tag_command(T=#type{tag=[Tag|Tags]},Command) ->
     TC = get_tag_command(T#type{tag=[Tag]},Command),
     TCs = get_tag_command(T#type{tag=Tags},Command),
     case many_tags(TCs) of
-	true when list(TCs) ->
+	true when is_list(TCs) ->
 	    [TC|TCs];
 	_ -> [TC|[TCs]]
     end.
@@ -1906,7 +1906,7 @@ get_tag_command(#type{tag=[Tag]},?MANDATORY,Prop) ->
     end;
 get_tag_command(#type{tag=[Tag]},Command,Prop) ->
     [anonymous_dec_command(Command,Prop),encode_tag_val(decode_class(Tag#tag.class),Tag#tag.form, Tag#tag.number)];
-get_tag_command(#type{tag=Tag},Command,Prop) when record(Tag,tag) ->
+get_tag_command(#type{tag=Tag},Command,Prop) when is_record(Tag,tag) ->
     get_tag_command(#type{tag=[Tag]},Command,Prop);
 get_tag_command(T=#type{tag=[Tag|Tags]},Command,Prop) ->
     [get_tag_command(T#type{tag=[Tag]},Command,Prop)|[
@@ -1942,20 +1942,20 @@ tlv_tags([]) ->
     [];
 tlv_tags([mandatory|Rest]) ->
     [mandatory|tlv_tags(Rest)];
-tlv_tags([[Command,Tag]|Rest]) when atom(Command),binary(Tag) ->
+tlv_tags([[Command,Tag]|Rest]) when is_atom(Command),is_binary(Tag) ->
     [[Command,tlv_tag(Tag)]|tlv_tags(Rest)];
-tlv_tags([[Command,Directives]|Rest]) when atom(Command),list(Directives) ->
+tlv_tags([[Command,Directives]|Rest]) when is_atom(Command),is_list(Directives) ->
     [[Command,tlv_tags(Directives)]|tlv_tags(Rest)];
 %% remove all empty lists
 tlv_tags([[]|Rest]) ->
     tlv_tags(Rest);
-tlv_tags([{Name,TopType,L1}|Rest]) when list(L1),atom(TopType) ->
+tlv_tags([{Name,TopType,L1}|Rest]) when is_list(L1),is_atom(TopType) ->
     [{Name,TopType,tlv_tags(L1)}|tlv_tags(Rest)];
-tlv_tags([[Command,Tag,L1]|Rest]) when list(L1),binary(Tag) ->
+tlv_tags([[Command,Tag,L1]|Rest]) when is_list(L1),is_binary(Tag) ->
     [[Command,tlv_tag(Tag),tlv_tags(L1)]|tlv_tags(Rest)];
 tlv_tags([[mandatory|Rest]]) ->
     [[mandatory|tlv_tags(Rest)]];
-tlv_tags([L=[L1|_]|Rest]) when list(L1) ->
+tlv_tags([L=[L1|_]|Rest]) when is_list(L1) ->
     [tlv_tags(L)|tlv_tags(Rest)].
 
 tlv_tag(<<Cl:2,_:1,TagNo:5>>) when TagNo < 31 ->
@@ -1973,7 +1973,7 @@ tlv_tag1(<<1:1,PartialTag:7,Buffer/binary>>,Acc) ->
 %% reads the content from the configuration file and returns the
 %% selected part choosen by InfoType. Assumes that the config file
 %% content is an Erlang term.
-read_config_file(ModuleName,InfoType) when atom(InfoType) ->
+read_config_file(ModuleName,InfoType) when is_atom(InfoType) ->
     CfgList = read_config_file(ModuleName),
     get_config_info(CfgList,InfoType).
 
@@ -2049,7 +2049,7 @@ save_gen_state(exclusive_decode,{_,ConfList},PartIncTlvTagList) ->
     %ConfList=[{FunctionName,PatternList}|Rest]
     State =
 	case get_gen_state() of
-	    S when record(S,gen_state) -> S;
+	    S when is_record(S,gen_state) -> S;
 	    _ -> #gen_state{}
 	end,
     StateRec = State#gen_state{inc_tag_pattern=PartIncTlvTagList,
@@ -2058,7 +2058,7 @@ save_gen_state(exclusive_decode,{_,ConfList},PartIncTlvTagList) ->
 save_gen_state(_,_,_) ->
 %%    ok.
     case get_gen_state() of
-	S when record(S,gen_state) -> ok;
+	S when is_record(S,gen_state) -> ok;
 	_ -> save_config(gen_state,#gen_state{})
     end.
 
@@ -2066,7 +2066,7 @@ save_gen_state(selective_decode,{_,Type_component_name_list}) ->
 %%    io:format("Selective_decode: ~p~n",[Type_component_name_list]),
     State =
 	case get_gen_state() of
-	    S when record(S,gen_state) -> S;
+	    S when is_record(S,gen_state) -> S;
 	    _ -> #gen_state{}
 	end,
     StateRec = State#gen_state{type_pattern=Type_component_name_list},
@@ -2074,7 +2074,7 @@ save_gen_state(selective_decode,{_,Type_component_name_list}) ->
 save_gen_state(selective_decode,_) ->
     ok.
 
-save_gen_state(GenState) when record(GenState,gen_state) ->
+save_gen_state(GenState) when is_record(GenState,gen_state) ->
     save_config(gen_state,GenState).
 
 
@@ -2084,7 +2084,7 @@ get_gen_state_field(Field) ->
     case read_config_data(gen_state) of
 	undefined ->
 	    undefined;
-	GenState when record(GenState,gen_state) -> 
+	GenState when is_record(GenState,gen_state) -> 
 	    get_gen_state_field(GenState,Field);
 	Err ->
 	    exit({error,{asn1,{"false configuration file info",Err}}})
@@ -2124,7 +2124,7 @@ get_gen_state() ->
 
 update_gen_state(Field,Data) ->
     case get_gen_state() of
-	State when record(State,gen_state) ->
+	State when is_record(State,gen_state) ->
 	    update_gen_state(Field,State,Data);
 	_ ->
 	    exit({error,{asn1,{internal,
@@ -2147,7 +2147,7 @@ update_gen_state(func_name,State,Data) ->
 update_gen_state(namelist,State,Data) ->
 %     SData =
 % 	case Data of
-% 	    [D] when list(D) -> D;
+% 	    [D] when is_list(D) -> D;
 % 	    _ -> Data
 % 	end,
     save_gen_state(State#gen_state{namelist=Data});
@@ -2166,17 +2166,17 @@ update_namelist(Name) ->
     case get_gen_state_field(namelist) of
 	[Name,Rest] -> update_gen_state(namelist,Rest);
 	[Name|Rest] -> update_gen_state(namelist,Rest);
-	[{Name,List}] when list(List) -> update_gen_state(namelist,List);
-	[{Name,Atom}|Rest] when atom(Atom) -> update_gen_state(namelist,Rest);
+	[{Name,List}] when is_list(List) -> update_gen_state(namelist,List);
+	[{Name,Atom}|Rest] when is_atom(Atom) -> update_gen_state(namelist,Rest);
 	Other -> Other
     end.
 
 pop_namelist() ->
     DeepTail = %% removes next element in order
-	fun([[{_,A}]|T],_Fun) when atom(A) -> T;
-	   ([{_N,L}|T],_Fun) when list(L) -> [L|T];
+	fun([[{_,A}]|T],_Fun) when is_atom(A) -> T;
+	   ([{_N,L}|T],_Fun) when is_list(L) -> [L|T];
 	   ([[]|T],Fun) -> Fun(T,Fun);
-	   ([L1|L2],Fun) when list(L1) ->
+	   ([L1|L2],Fun) when is_list(L1) ->
 		case lists:flatten(L1) of
 		    [] -> Fun([L2],Fun);
 		    _ -> [Fun(L1,Fun)|L2]
@@ -2198,36 +2198,36 @@ pop_namelist() ->
 next_namelist_el() ->
     case get_gen_state_field(namelist) of
 	undefined -> undefined;
-	L when list(L) -> next_namelist_el(L)
+	L when is_list(L) -> next_namelist_el(L)
     end.
 
 next_namelist_el([]) ->
     [];
-next_namelist_el([L]) when list(L) ->
+next_namelist_el([L]) when is_list(L) ->
     next_namelist_el(L);
-next_namelist_el([H|_]) when atom(H) ->
+next_namelist_el([H|_]) when is_atom(H) ->
     H;
-next_namelist_el([L|T]) when list(L) ->
+next_namelist_el([L|T]) when is_list(L) ->
     case next_namelist_el(L) of
 	[] ->
 	    next_namelist_el([T]);
 	R ->
 	    R
     end;
-next_namelist_el([H={_,A}|_]) when atom(A) ->
+next_namelist_el([H={_,A}|_]) when is_atom(A) ->
     H.
 
 %% removes a bracket from the namelist
 step_in_constructed() ->
     case get_gen_state_field(namelist) of
-	[L] when list(L) ->
+	[L] when is_list(L) ->
 	    update_gen_state(namelist,L);
 	_ -> ok
     end.
 			
 is_function_generated(Name) ->
     case get_gen_state_field(gen_refed_funcs) of
-	L when list(L) ->
+	L when is_list(L) ->
 	    lists:member(Name,L);
 	_ ->
 	    false
@@ -2235,7 +2235,7 @@ is_function_generated(Name) ->
 			       
 get_tobe_refed_func(Name) ->
     case get_gen_state_field(tobe_refed_funcs) of
-	L when list(L) ->
+	L when is_list(L) ->
 	    case lists:keysearch(Name,1,L) of
 		{_,Element} ->
 		    Element;
@@ -2256,7 +2256,7 @@ add_tobe_refed_func(Data) ->
 	    (D) -> D end (Data),
     NewData =
 	case SI of
-	    I when integer(I) ->
+	    I when is_integer(I) ->
 		fun(D) -> D end(Data);
 % 		fun({N,Ix,P}) -> {N,Ix+1,P};
 % 		   ({N,Ix,P,T}) -> {N,Ix+1,P,T} end (Data);
@@ -2352,11 +2352,6 @@ maybe_rename_function(Mode,Name,Pattern) ->
 			    NewName = 
 				maybe_rename_function2(type_check(Name),Name,
 						       Suffix),
-% 			    case Mode of
-% 				component ->
-% 				    add_t_r_f(Name,0,Pattern);
-% 				    add_tobe_refed_func({Name,0,Pattern});
-% 				{component,
 			    add_generated_function({Name,NextIndex,Pattern}),
 			    NewName;
 			Value -> % name and pattern existed
@@ -2376,26 +2371,10 @@ maybe_rename_function(Mode,Name,Pattern) ->
 		    Name;
 		_ -> % this if call from add_tobe_refed_func
 		    add_generated_function({Name,0,Pattern}),
-%  		    case Name of
-%  			#'Externaltypereference'{} ->
-%  			    add_tobe_refed_func({Name,0,Pattern});
-%  			A when atom(A) ->
-%  			    TDef = asn1_db:dbget(get(currmod),Name),
-%  			    add_tobe_refed_func({[Name],0,Pattern,
-%  						 TDef#typedef.typespec})
-%  		    end,
 		    Name
 	    end
     end.
 
-% add_t_r_f(Name,I,Pattern) when record(Name,'Externaltypereference') ->
-%     add_tobe_refed_func({Name,I,Pattern});
-% add_t_r_f(Name,I,Pattern) when atom(Name) ->
-%     TDef = asn1_db:dbget(get(currmod),Name),
-%     add_tobe_refed_func({[Name],I,Pattern,TDef#typedef.typespec});
-% add_t_r_f(Name,I,Pattern) when list(Name) ->
-%     TDef = asn1_db:dbget(get(currmod),lists:last(Name)),
-%     add_tobe_refed_func({Name,I,Pattern,TDef#typedef.typespec}).
     
 maybe_rename_function2(record,#'Externaltypereference'{type=Name},Suffix) ->
     lists:concat([Name,Suffix]);
@@ -2444,7 +2423,7 @@ generated_functions_member(_,_,[]) ->
 %     lists:keymember(Name,1,L);
 % generated_functions_member1(_,_,_) -> false.
 
-generated_functions_filter(_,Name,L) when atom(Name);list(Name) ->
+generated_functions_filter(_,Name,L) when is_atom(Name);is_list(Name) ->
     lists:filter(fun({N,_,_}) when N==Name -> true;
 		    (_) -> false
 		 end, L);
@@ -2492,11 +2471,11 @@ set_current_sindex(Index) ->
     update_gen_state(current_suffix_index,Index).
 
 
-type_check(A) when atom(A) ->
+type_check(A) when is_atom(A) ->
     atom;
-type_check(I) when integer(I) ->
-    integer;
-type_check(L) when list(L) ->
+%% type_check(I) when is_integer(I) ->
+%%     integer;
+type_check(L) when is_list(L) ->
     Pred = fun(X) when X=<255 ->
 		   false;
 	      (_) -> true

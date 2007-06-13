@@ -95,10 +95,10 @@ eval(W, {'#funcall',M,F,Args}) -> apply(eval(W,M),
 					eval(W,F),
 					eval(W,Args));
 
-eval(WhenCalled, L) when list(L) ->
+eval(WhenCalled, L) when is_list(L) ->
     lists:map(fun(E) -> eval(WhenCalled,E) end, L);
 
-eval(WhenCalled, T) when tuple(T) ->
+eval(WhenCalled, T) when is_tuple(T) ->
     list_to_tuple(eval(WhenCalled,tuple_to_list(T)));
 
 eval(WhenCalled, V) -> V.

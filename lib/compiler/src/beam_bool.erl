@@ -338,7 +338,7 @@ safe_bool_op(N, Ar) ->
 bopt_bool_args(As, Forest) ->
     mapfoldl(fun bopt_bool_arg/2, Forest, As).
 
-bopt_bool_arg({T,_}=R, Forest) when T == x; T == y ->
+bopt_bool_arg({T,_}=R, Forest) when T =:= x; T =:= y ->
     {gb_trees:get(R, Forest),gb_trees:delete(R, Forest)};
 bopt_bool_arg(Term, Forest) ->
     {Term,Forest}.

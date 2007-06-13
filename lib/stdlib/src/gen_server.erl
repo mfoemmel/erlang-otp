@@ -174,11 +174,11 @@ call(Name, Request, Timeout) ->
 cast({global,Name}, Request) ->
     catch global:send(Name, cast_msg(Request)),
     ok;
-cast({Name,Node}=Dest, Request) when atom(Name), atom(Node) -> 
+cast({Name,Node}=Dest, Request) when is_atom(Name), is_atom(Node) -> 
     do_cast(Dest, Request);
-cast(Dest, Request) when atom(Dest) ->
+cast(Dest, Request) when is_atom(Dest) ->
     do_cast(Dest, Request);
-cast(Dest, Request) when pid(Dest) ->
+cast(Dest, Request) when is_pid(Dest) ->
     do_cast(Dest, Request).
 
 do_cast(Dest, Request) -> 
@@ -196,13 +196,13 @@ reply({To, Tag}, Reply) ->
 %% ----------------------------------------------------------------- 
 %% Asyncronous broadcast, returns nothing, it's just send'n prey
 %%-----------------------------------------------------------------  
-abcast(Name, Request) when atom(Name) ->
+abcast(Name, Request) when is_atom(Name) ->
     do_abcast([node() | nodes()], Name, cast_msg(Request)).
 
-abcast(Nodes, Name, Request) when list(Nodes), atom(Name) ->
+abcast(Nodes, Name, Request) when is_list(Nodes), is_atom(Name) ->
     do_abcast(Nodes, Name, cast_msg(Request)).
 
-do_abcast([Node|Nodes], Name, Msg) when atom(Node) ->
+do_abcast([Node|Nodes], Name, Msg) when is_atom(Node) ->
     do_send({Name,Node},Msg),
     do_abcast(Nodes, Name, Msg);
 do_abcast([], _,_) -> abcast.
@@ -218,17 +218,17 @@ do_abcast([], _,_) -> abcast.
 %%% now arrive to the terminated middleman and so be discarded.
 %%% -----------------------------------------------------------------
 multi_call(Name, Req)
-  when atom(Name) ->
+  when is_atom(Name) ->
     do_multi_call([node() | nodes()], Name, Req, infinity).
 
 multi_call(Nodes, Name, Req) 
-  when list(Nodes), atom(Name) ->
+  when is_list(Nodes), is_atom(Name) ->
     do_multi_call(Nodes, Name, Req, infinity).
 
 multi_call(Nodes, Name, Req, infinity) ->
     do_multi_call(Nodes, Name, Req, infinity);
 multi_call(Nodes, Name, Req, Timeout) 
-  when list(Nodes), atom(Name), integer(Timeout), Timeout >= 0 ->
+  when is_list(Nodes), is_atom(Name), is_integer(Timeout), Timeout >= 0 ->
     do_multi_call(Nodes, Name, Req, Timeout).
 
 
@@ -314,7 +314,7 @@ loop(Parent, Name, State, Mod, Time, Debug) ->
 				  [Name, State, Mod, Time]);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, State, Debug);
-	_Msg when Debug == [] ->
+	_Msg when Debug =:= [] ->
 	    handle_msg(Msg, Parent, Name, State, Mod, Time);
 	_Msg ->
 	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
@@ -376,7 +376,7 @@ send_nodes(Nodes, Name, Tag, Req) ->
     send_nodes(Nodes, Name, Tag, Req, []).
 
 send_nodes([Node|Tail], Name, Tag, Req, Monitors)
-  when atom(Node) ->
+  when is_atom(Node) ->
     Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {'$gen_call', {self(), {Tag, Node}}, Req},
@@ -428,7 +428,7 @@ rec_nodes(Tag, [N|Tail], Name, Badnodes, Replies, Time, TimerId) ->
 	    rec_nodes_rest(Tag, Tail, Name, [N | Badnodes], Replies)
     after Time ->
 	    case rpc:call(N, erlang, whereis, [Name]) of
-		Pid when pid(Pid) -> % It exists try again.
+		Pid when is_pid(Pid) -> % It exists try again.
 		    rec_nodes(Tag, [N|Tail], Name, Badnodes,
 			      Replies, infinity, TimerId);
 		_ -> % badnode
@@ -486,8 +486,8 @@ rec_nodes_rest(_Tag, [], _Name, Badnodes, Replies) ->
 %%% Monitor functions
 %%% ---------------------------------------------------
 
-start_monitor(Node, Name) when atom(Node), atom(Name) ->
-    if node() == nonode@nohost, Node /= nonode@nohost ->
+start_monitor(Node, Name) when is_atom(Node), is_atom(Name) ->
+    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
 	    Ref = make_ref(),
 	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
 	    {Node, Ref};
@@ -497,13 +497,13 @@ start_monitor(Node, Name) when atom(Node), atom(Name) ->
 		    %% Remote node is R6
 		    monitor_node(Node, true),
 		    Node;
-		Ref when reference(Ref) ->
+		Ref when is_reference(Ref) ->
 		    {Node, Ref}
 	    end
     end.
 
 %% Cancels a monitor started with Ref=erlang:monitor(_, _).
-unmonitor(Ref) when reference(Ref) ->
+unmonitor(Ref) when is_reference(Ref) ->
     erlang:demonitor(Ref),
     receive
 	{'DOWN', Ref, _, _, _} ->
@@ -755,7 +755,7 @@ get_proc_name({global, Name}) ->
     case global:safe_whereis_name(Name) of
 	undefined ->
 	    exit(process_not_registered_globally);
-	Pid when Pid==self() ->
+	Pid when Pid =:= self() ->
 	    Name;
 	_Pid ->
 	    exit(process_not_registered_globally)
@@ -789,9 +789,9 @@ name_to_pid(Name) ->
 %%-----------------------------------------------------------------
 format_status(Opt, StatusData) ->
     [PDict, SysState, Parent, Debug, [Name, State, Mod, _Time]] = StatusData,
-    NameTag = if pid(Name) ->
+    NameTag = if is_pid(Name) ->
 		      pid_to_list(Name);
-		 atom(Name) ->
+		 is_atom(Name) ->
 		      Name
 	      end,
     Header = lists:concat(["Status for generic server ", NameTag]),

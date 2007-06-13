@@ -1221,7 +1221,18 @@ gen_inlined_enc_funs(Fields,[{typefield,Name,_}|Rest],ObjSetName,NthObj) ->
 	    emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
 	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[]);
 	false ->
-	    gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj)
+	    emit([indent(3),"fun(Type, Val, _) ->",nl,
+		  indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," ->",nl,
+		  indent(12),"Size = case Val of",nl,
+		  indent(15),"B when is_binary(B) -> size(B);",nl,
+		  indent(15),"_ -> length(Val)",nl,
+		  indent(12),"end,",nl,
+		  indent(12),"if",nl,
+		  indent(15),"Size < 256 -> [29,Size,Val];",nl,
+		  indent(15),"true -> [21,<<Size:16>>,Val]",nl,
+		  indent(12),"end"]),
+	    gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj,[])
     end;
 gen_inlined_enc_funs(Fields,[_|Rest],ObjSetName,NthObj) ->
     gen_inlined_enc_funs(Fields,Rest,ObjSetName,NthObj);
@@ -1251,6 +1262,16 @@ gen_inlined_enc_funs1(Fields,[{typefield,Name,_}|Rest],ObjSetName,
 		emit([indent(12),"'",M,"'",":'enc_",T,"'(Val)"]),
 		{Acc,0};
 	    false ->
+		emit([";",nl,
+		      indent(9),{asis,Name}," ->",nl,
+		      indent(12),"Size = case Val of",nl,
+		      indent(15),"B when is_binary(B) -> size(B);",nl,
+		      indent(15),"_ -> length(Val)",nl,
+		      indent(12),"end,",nl,
+		      indent(12),"if",nl,
+		      indent(15),"Size < 256 -> [29,Size,Val];",nl,
+		      indent(15),"true -> [21,<<Size:16>>,Val]",nl,
+		      indent(12),"end"]),
 		{Acc,0}
 	end,
     gen_inlined_enc_funs1(Fields,Rest,ObjSetName,NthObj+NAdd,Acc2);
@@ -1397,7 +1418,10 @@ gen_inlined_dec_funs(Fields,[{typefield,Name,_}|Rest],
 	    emit([indent(12),"'",M,"':'dec_",T,"'(Val, telltype)"]),
 	    gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj);
 	false ->
-	    gen_inlined_dec_funs(Fields,Rest,ObjSetName,NthObj)
+	    emit([indent(3),"fun(Type, Val, _, _) ->",nl,
+		  indent(6),"case Type of",nl,
+		  indent(9),{asis,Name}," -> {Val,Type}"]),
+	    gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj)
     end;
 gen_inlined_dec_funs(Fields,[_|Rest],ObjSetName,NthObj) ->
     gen_inlined_dec_funs(Fields,Rest,ObjSetName,NthObj);
@@ -1425,6 +1449,8 @@ gen_inlined_dec_funs1(Fields,[{typefield,Name,_}|Rest],
 	    emit([indent(12),"'",M,"':'dec_",T,"'(Val,telltype)"]),
 	    0;
 	false ->
+	    emit([";",nl,
+		  indent(9),{asis,Name}," -> {Val,Type}"]),
 	    0
     end,
     gen_inlined_dec_funs1(Fields,Rest,ObjSetName,NthObj+N);

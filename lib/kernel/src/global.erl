@@ -1260,21 +1260,20 @@ do_ops(Ops, ConnNode, Names_ext, ExtraInfo, S0) ->
 %% It is possible that a node that was up and running when the
 %% operations were assembled has since died. The final {in_sync,...}
 %% messages do not generate nodedown messages for such nodes. To
-%% compensate "artificial" nodedown messages are created which will
-%% remove the registered names that were inserted (as well as removing
-%% the node names from 'known'). Since monitor_node may take some time
-%% processes are spawned to avoid locking up the global_name_server.
-%% Should somehow double nodedown messages occur (one of them
-%% artificial), nothing bad can happen (the second nodedown is a
-%% no-op). It is assumed that there cannot be a nodeup before the
-%% artificial nodedown.
+%% compensate "artificial" nodedown messages are created. Since
+%% monitor_node may take some time processes are spawned to avoid
+%% locking up the global_name_server. Should somehow double nodedown
+%% messages occur (one of them artificial), nothing bad can happen
+%% (the second nodedown is a no-op). It is assumed that there cannot
+%% be a nodeup before the artificial nodedown.
 %%
 %% The extra nodedown messages generated here also take care of the
 %% case that a nodedown message is received _before_ the operations
 %% are run.
 sync_others(Nodes) ->
     N = case application:get_env(kernel, ?N_CONNECT_RETRIES) of
-            {ok, NRetries} when NRetries >= 0 -> NRetries;
+            {ok, NRetries} when is_integer(NRetries), 
+                                NRetries >= 0 -> NRetries;
             _ -> ?DEFAULT_N_CONNECT_RETRIES
         end,
     lists:foreach(fun(Node) -> 

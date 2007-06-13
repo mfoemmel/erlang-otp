@@ -96,7 +96,7 @@ init_opts(Element, Options) ->
 	    R#opts{stylesheet = S};
 	"" ->
 	    R;  % don't use any stylesheet
-	S when list(S) ->
+	S when is_list(S) ->
 	    R#opts{stylesheet = S}; 
 	_ ->
 	    report("bad value for option `stylesheet'.", []),
@@ -402,21 +402,18 @@ local_defs2(Es) ->
 types([]) -> [];
 types(Ts) ->
     Es = lists:flatmap(fun ({Name, E}) -> typedecl(Name, E) end, Ts),
-    if Es == [] -> [];
-       true ->
-	    [?NL,
-%	     {h2, [{a, [{name, ?DATA_TYPES_LABEL}],
-%		    [?DATA_TYPES_TITLE]}]},
-%	     ?NL | Es]
-	     {p,[{marker, [{id, ?DATA_TYPES_LABEL}],[]},
-		 {em,[?DATA_TYPES_TITLE]}]},
-	     ?NL, {taglist,[?NL|Es]}]
-    end.
+    [?NL,
+%    {h2, [{a, [{name, ?DATA_TYPES_LABEL}],
+%	   [?DATA_TYPES_TITLE]}]},
+%    ?NL | Es]
+     {p,[{marker, [{id, ?DATA_TYPES_LABEL}],[]},
+	 {em,[?DATA_TYPES_TITLE]}]},
+     ?NL, {taglist,[?NL|Es]}].
 
-%type(Name, E=#xmlElement{content = Es}) ->
-%    ([?NL, {h3, label_anchor([Name, "()"], E)}, ?NL]
-%     ++ [{p, typedef(get_content(typedef, Es))}, ?NL]
-%     ++ fulldesc(Es)).
+%%type(Name, E=#xmlElement{content = Es}) ->
+%%    ([?NL, {h3, label_anchor([Name, "()"], E)}, ?NL]
+%%     ++ [{p, typedef(get_content(typedef, Es))}, ?NL]
+%%     ++ fulldesc(Es)).
 typedecl(_Name, #xmlElement{content = Es}) ->
     [{tag, typedef(get_content(typedef, Es))},?NL,{item,fulldesc(Es)},?NL].
 

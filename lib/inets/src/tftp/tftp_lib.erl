@@ -47,7 +47,7 @@ parse_config(Options) ->
 parse_config(Options, Config) ->
     do_parse_config(Options, Config).
 
-do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
+do_parse_config([{Key, Val} | Tail], Config) when is_record(Config, config) ->
     case Key of
 	debug ->
 	    case Val of
@@ -68,18 +68,18 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    end;
 	host ->
 	    if
-		list(Val) ->
+		is_list(Val) ->
 		    do_parse_config(Tail, Config#config{udp_host = Val});
-		tuple(Val), size(Val) == 4 ->
+		is_tuple(Val), size(Val) =:= 4 ->
 		    do_parse_config(Tail, Config#config{udp_host = Val});
-		tuple(Val), size(Val) == 8 ->
+		is_tuple(Val), size(Val) =:= 8 ->
 		    do_parse_config(Tail, Config#config{udp_host = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
 	port ->
 	    if
-		integer(Val), Val >= 0 ->
+		is_integer(Val), Val >= 0 ->
 		    Config2 = Config#config{udp_port = Val, udp_options = Config#config.udp_options},
 		    do_parse_config(Tail, Config2);
 		true ->
@@ -91,7 +91,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 		    do_parse_config(Tail, Config#config{port_policy = Val});
 		0 ->
 		    do_parse_config(Tail, Config#config{port_policy = random});
-		MinMax when integer(MinMax), MinMax > 0 ->
+		MinMax when is_integer(MinMax), MinMax > 0 ->
 		    do_parse_config(Tail, Config#config{port_policy = {range, MinMax, MinMax}});
 		{range, Min, Max} when Max >= Min, 
 		integer(Min), Min > 0,
@@ -100,7 +100,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
-	udp when list(Val) ->
+	udp when is_list(Val) ->
 	    Fun =  
 		fun({K, V}, List) when K /= active -> 
 			replace_val(K, V, List);
@@ -122,7 +122,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    end;
 	max_tsize ->
 	    if
-		Val == infinity ->
+		Val =:= infinity ->
 		    do_parse_config(Tail, Config#config{max_tsize = Val});
 		integer(Val), Val >= 0 ->
 		    do_parse_config(Tail, Config#config{max_tsize = Val});
@@ -131,14 +131,14 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    end;
 	max_conn ->
 	    if
-		Val == infinity ->
+		Val =:= infinity ->
 		    do_parse_config(Tail, Config#config{max_conn = Val});
 		integer(Val), Val > 0 ->
 		    do_parse_config(Tail, Config#config{max_conn = Val});
 		true ->
 		    exit({badarg, {Key, Val}})
 	    end;
-	_ when list(Key), list(Val) ->
+	_ when is_list(Key), is_list(Val) ->
 	    Key2 = to_lower(Key),
 	    Val2 = to_lower(Val),
 	    TftpOptions = replace_val(Key2, Val2, Config#config.user_options),
@@ -151,7 +151,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 		write ->
 		    Rejected = [Val | Config#config.rejected],
 		    do_parse_config(Tail, Config#config{rejected = Rejected});
-		_ when list(Val) ->
+		_ when is_list(Val) ->
 		    Rejected = [Val | Config#config.rejected],
 		    do_parse_config(Tail, Config#config{rejected = Rejected});
 		_ ->
@@ -159,7 +159,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	    end;
 	callback ->
 	    case Val of
-		{RegExp, Mod, State} when list(RegExp), atom(Mod) ->
+		{RegExp, Mod, State} when is_list(RegExp), atom(Mod) ->
 		    case regexp:parse(RegExp) of
 			{ok, Internal} ->
 			    Callback = #callback{regexp   = RegExp,
@@ -177,7 +177,7 @@ do_parse_config([{Key, Val} | Tail], Config) when record(Config, config) ->
 	_ ->
 	    exit({badarg, {Key, Val}})
     end;
-do_parse_config([], Config) when record(Config, config) ->
+do_parse_config([], Config) when is_record(Config, config) ->
     UdpOptions = Config#config.udp_options,
     IsInet6 = lists:member(inet6, UdpOptions),
     IsInet  = lists:member(inet, UdpOptions),
@@ -205,12 +205,12 @@ do_parse_config([], Config) when record(Config, config) ->
     UdpOptions2 = lists:reverse(UdpOptions),
     TftpOptions = lists:reverse(Config#config.user_options),
     Config#config{udp_host = Host2, udp_options = UdpOptions2, user_options = TftpOptions};
-do_parse_config(Options, Config) when record(Config, config) ->
+do_parse_config(Options, Config) when is_record(Config, config) ->
     exit({badarg, Options}).
 
 host_to_string(Host) ->
     case Host of
-	String when list(String) ->
+	String when is_list(String) ->
 	    String;
 	{A1, A2, A3, A4} -> % inet
 	    lists:concat([A1, ".", A2, ".", A3, ".",A4]);
@@ -244,7 +244,7 @@ code_character(N) ->
 %% Decode
 %%-------------------------------------------------------------------
 
-decode_msg(Bin) when binary(Bin) ->
+decode_msg(Bin) when is_binary(Bin) ->
     case Bin of
 	<<?TFTP_OPCODE_RRQ:16/integer, Tail/binary>> ->
 	    case decode_strings(Tail, [keep_case, lower_case]) of
@@ -299,7 +299,7 @@ decode_msg(Bin) when binary(Bin) ->
 				 text = "Invalid syntax"})
     end.
 
-decode_strings(Bin, Cases) when binary(Bin), list(Cases) ->
+decode_strings(Bin, Cases) when is_binary(Bin), is_list(Cases) ->
     do_decode_strings(Bin, Cases, []).
 
 do_decode_strings(<<>>, _Cases, Strings) ->
@@ -307,7 +307,7 @@ do_decode_strings(<<>>, _Cases, Strings) ->
 do_decode_strings(Bin, [Case | Cases], Strings) ->
     {String, Tail} = decode_string(Bin, Case, []),
     if
-	Cases == [] ->
+	Cases =:= [] ->
 	    do_decode_strings(Tail, [Case], [String | Strings]);
 	true ->
 	    do_decode_strings(Tail, Cases,  [String | Strings])
@@ -315,11 +315,11 @@ do_decode_strings(Bin, [Case | Cases], Strings) ->
 
 decode_string(<<Char:8/integer, Tail/binary>>, Case, String) ->
     if
-	Char == 0 ->
+	Char =:= 0 ->
 	    {lists:reverse(String), Tail};
-	Case == keep_case ->
+	Case =:= keep_case ->
 	    decode_string(Tail, Case, [Char | String]);
-	Case == lower_case ->
+	Case =:= lower_case ->
 	    Char2 = ?LOWER(Char),
 	    decode_string(Tail, Case, [Char2 | String])
     end;
@@ -342,7 +342,7 @@ decode_error_code(Int) ->
         ?TFTP_ERROR_EEXIST  -> eexist;
         ?TFTP_ERROR_BADUSER -> baduser;
         ?TFTP_ERROR_BADOPT  -> badopt;
-        Int when integer(Int), Int >= 0, Int =< 65536 -> Int;
+        Int when is_integer(Int), Int >= 0, Int =< 65535 -> Int;
 	_ -> exit(#tftp_msg_error{code = undef, text = "Error code outside range."})
     end.
 
@@ -350,43 +350,40 @@ decode_error_code(Int) ->
 %% Encode
 %%-------------------------------------------------------------------
 
-encode_msg(Msg) when record(Msg, tftp_msg_req)  ->
-    OpCode = case Msg#tftp_msg_req.access of
+encode_msg(#tftp_msg_req{access = Access,
+			 filename = Filename,
+			 mode = Mode, 
+			 options = Options}) ->
+    OpCode = case Access of
 		 read  -> ?TFTP_OPCODE_RRQ;
 		 write -> ?TFTP_OPCODE_WRQ
 	     end,
     [
      <<OpCode:16/integer>>,
-     Msg#tftp_msg_req.filename, 
+     Filename, 
      0, 
-     Msg#tftp_msg_req.mode, 
+     Mode, 
      0,
-     [[Key, 0, Val, 0] || {Key, Val} <- Msg#tftp_msg_req.options]
+     [[Key, 0, Val, 0] || {Key, Val} <- Options]
     ];
-encode_msg(Msg) when record(Msg, tftp_msg_data) ->
+encode_msg(#tftp_msg_data{block_no = BlockNo, data = Data}) when BlockNo =< 65535 ->
     [
-     <<?TFTP_OPCODE_DATA:16/integer, (Msg#tftp_msg_data.block_no):16/integer>>,
-     Msg#tftp_msg_data.data
+     <<?TFTP_OPCODE_DATA:16/integer, BlockNo:16/integer>>,
+     Data
     ];
-encode_msg(Msg) when record(Msg, tftp_msg_ack) ->
-    <<?TFTP_OPCODE_ACK:16/integer, (Msg#tftp_msg_ack.block_no):16/integer>>;
-encode_msg(Msg) when record(Msg, tftp_msg_error) ->
-    Code = encode_error_code(Msg#tftp_msg_error.code),
+encode_msg(#tftp_msg_ack{block_no = BlockNo}) when BlockNo =< 65535 ->
+    <<?TFTP_OPCODE_ACK:16/integer, BlockNo:16/integer>>;
+encode_msg(#tftp_msg_error{code = Code, text = Text}) ->
+    IntCode = encode_error_code(Code),
     [
-     <<?TFTP_OPCODE_ERROR:16/integer, Code:16/integer>>, 
-     Msg#tftp_msg_error.text,
+     <<?TFTP_OPCODE_ERROR:16/integer, IntCode:16/integer>>, 
+     Text,
      0
     ];
-encode_msg(Msg) when record(Msg, tftp_msg_error) ->
-    [
-     <<?TFTP_OPCODE_ERROR:16/integer, (Msg#tftp_msg_error.code):16/integer>>, 
-     Msg#tftp_msg_error.text,
-     0
-    ];
-encode_msg(Msg) when record(Msg, tftp_msg_oack) ->
+encode_msg(#tftp_msg_oack{options = Options}) ->
     [
      <<?TFTP_OPCODE_OACK:16/integer>>,
-     [[Key, 0, Val, 0] || {Key, Val} <- Msg#tftp_msg_oack.options]
+     [[Key, 0, Val, 0] || {Key, Val} <- Options]
     ].
 
 encode_error_code(Code) ->
@@ -400,7 +397,7 @@ encode_error_code(Code) ->
         eexist  -> ?TFTP_ERROR_EEXIST;
         baduser -> ?TFTP_ERROR_BADUSER;
         badopt  -> ?TFTP_ERROR_BADOPT;
-        Int when integer(Int), Int >= 0, Int =< 65536 -> Int
+        Int when is_integer(Int), Int >= 0, Int =< 65535 -> Int
     end.
 
 %%-------------------------------------------------------------------
@@ -411,7 +408,7 @@ replace_val(Key, Val, List) ->
     case lists:keysearch(Key, 1, List) of
 	false ->
 	    List ++ [{Key, Val}];
-	{value, {_, OldVal}} when OldVal == Val ->
+	{value, {_, OldVal}} when OldVal =:= Val ->
 	    List;
 	{value, {_, _}} ->
 	    lists:keyreplace(Key, 1, List, {Key, Val})

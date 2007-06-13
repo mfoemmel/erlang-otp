@@ -237,10 +237,21 @@ erts_lib:
 docs:
 
 clean:
+ifneq ($(INSTALL_PROGS),)
 	rm -f $(INSTALL_PROGS)
+endif
+ifneq ($(ENTRY_OBJ),)
 	rm -f $(ENTRY_OBJ) 
-	rm -f $(ERLSRV_OBJECTS) $(MC_OUTPUTS)
+endif
+ifneq ($(ERLSRV_OBJECTS),)
+	rm -f $(ERLSRV_OBJECTS)
+endif
+ifneq ($(MC_OUTPUTS),)
+	rm -f $(MC_OUTPUTS)
+endif
+ifneq ($(ERLRES_OBJ),)
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/$(ERLRES_OBJ)
+endif
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/win_erlexec.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/init_file.o
 	rm -f $(ERL_TOP)/erts/obj*/$(TARGET)/start_erl.o

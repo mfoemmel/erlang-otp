@@ -1156,7 +1156,7 @@ indexify(Fd,<<"\n=",TagAndRest/binary>>,N) ->
     indexify(Fd,Rest,N1);
 indexify(Fd,<<>>,N) ->
     case read(Fd) of
-	{ok,Chunk} when binary(Chunk) ->
+	{ok,Chunk} when is_binary(Chunk) ->
 	    indexify(Fd,Chunk,N);
         eof ->
 	    eof
@@ -1165,7 +1165,7 @@ indexify(Fd,<<$\n>>,N) ->
     %% This clause is needed in case the chunk ends with a newline and
     %% the next chunk starts with a tag (i.e. "\n=....")
     case read(Fd) of
-	{ok,Chunk} when binary(Chunk) ->
+	{ok,Chunk} when is_binary(Chunk) ->
 	    indexify(Fd,<<$\n,Chunk/binary>>,N);
         eof ->
 	    eof
@@ -1187,7 +1187,7 @@ tag(Fd,<<Char:8,Rest/binary>>,N,Gat,Di,id) ->
     tag(Fd,Rest,N+1,Gat,[Char|Di],id);
 tag(Fd,<<>>,N,Gat,Di,Now) ->
     case read(Fd) of
-	{ok,Chunk} when binary(Chunk) ->
+	{ok,Chunk} when is_binary(Chunk) ->
 	    tag(Fd,Chunk,N,Gat,Di,Now);
         eof ->
 	    {[$=|lists:reverse(Gat)],lists:reverse(Di),<<>>,N}
@@ -1517,7 +1517,7 @@ all_procinfo(Fd,Fun,Proc,LineHead) ->
 	    get_procinfo(Fd,Fun,Proc#proc{msg_q=size_or_term(Fd)});
 	"Last calls" ->
 	    R = case size_or_term(Fd) of
-		    SizeThing when tuple(SizeThing) ->
+		    SizeThing when is_tuple(SizeThing) ->
 			Proc#proc{last_calls=SizeThing};
 		    Term ->
 			Proc#proc{last_calls=replace_all($ ,$\n,Term,[])}

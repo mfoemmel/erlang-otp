@@ -212,7 +212,7 @@ one_lc_to_handle([Expr]) ->
 		  case catch mnesia:table_info(Tab, attributes) of
 		      {'EXIT',{aborted,no_exists}} ->
 			  throw({error, atom_to_list(Tab)++" does not exist"});
-		      Attrs when list(Attrs) ->
+		      Attrs when is_list(Attrs) ->
 			  {Tab,Attrs}
 		  end
 	  end, find_tables(Expr)),
@@ -249,7 +249,7 @@ find_tables({generate,_,{var,_,_},{call,_,{atom,_,table},[{atom,_,Table}]}},
 	    Acc) ->  [Table | Acc];
 find_tables({generate,_,{var,_,_},_}, Acc) ->
     throw({error, "Illegal generator"});
-find_tables(T, Acc) when tuple(T) ->  find_tables(tuple_to_list(T), Acc);
+find_tables(T, Acc) when is_tuple(T) ->  find_tables(tuple_to_list(T), Acc);
 find_tables([H|T], Acc) ->  find_tables(T, find_tables(H,Acc));
 find_tables(_, Acc) ->   Acc.
     
@@ -503,7 +503,7 @@ add_argtype (Name, Type, S, L) ->
 	    S#s{argtypes=[{Name, Type} | S#s.argtypes]}
     end.
 
-arg_record_def(What, Name, S) when record(S,s) ->
+arg_record_def(What, Name, S) when is_record(S,s) ->
     arg_record_def(What, Name, Name, S#s.argtypes, S#s.recdefs, S#s.line).
 
 arg_record_def(rule, Name, Type, ArgTypes, RecDefs, Line) ->
@@ -620,15 +620,15 @@ vars(X) -> vars(X,ordsets:new()).
 vars({var,_,V}, S) -> ordsets:add_element(V,S);
 vars({cons,_,H,T}, S) -> vars(T, vars(H,S));
 vars({tuple,_,As}, S) -> vars(As, S);
-vars(L, S) when list(L) -> lists:foldr(fun vars/2, S, L);
-vars(T, S) when tuple(T) -> vars(tuple_to_list(T), S);
+vars(L, S) when is_list(L) -> lists:foldr(fun vars/2, S, L);
+vars(T, S) when is_tuple(T) -> vars(tuple_to_list(T), S);
 vars(_, S) -> S.
 
 
 runtime_resolve_tables(Goal, S) ->
     lists:map(
       fun
-	  (P) when record(P,pred_sym), P#pred_sym.record_def == ?UNKNOWN ->
+	  (P) when is_record(P,pred_sym), P#pred_sym.record_def == ?UNKNOWN ->
 	      P#pred_sym{record_def = 
 			 arg_record_def(P#pred_sym.type,
 					P#pred_sym.functor,
@@ -668,7 +668,7 @@ replace_lcs([H|T], S0) -> %% mapfoldl doesn't handle non-proper lists
     {T1,S2} = replace_lcs(T, S1),
     {[H1|T1], S2};
 
-replace_lcs(T, S0) when tuple(T) -> 
+replace_lcs(T, S0) when is_tuple(T) -> 
     {F, S} = replace_lcs(tuple_to_list(T), S0),
     {list_to_tuple(F), S};
 
@@ -692,7 +692,7 @@ abstract_keep_vars(X) ->
 abstract_keep_vars({'#erl', X}, L) -> 
     {X, L};
 
-abstract_keep_vars(Fun, L) when function(Fun) ->
+abstract_keep_vars(Fun, L) when is_function(Fun) ->
     {Fun(), L};
     
 abstract_keep_vars([H0|T0], L0) ->
@@ -700,14 +700,14 @@ abstract_keep_vars([H0|T0], L0) ->
     {T, L} = abstract_keep_vars(T0, L1),
     {{cons,0,H,T}, L};
 
-abstract_keep_vars(Tuple, L0) when tuple(Tuple) ->
+abstract_keep_vars(Tuple, L0) when is_tuple(Tuple) ->
     {T,L} = lists:mapfoldl(
 	      fun(A,B)->
 		      abstract_keep_vars(A,B) 
 	      end, L0, tuple_to_list(Tuple)),
     {{tuple,0,T}, L};
 
-abstract_keep_vars(R0, {L0,N0}) when reference(R0) ->
+abstract_keep_vars(R0, {L0,N0}) when is_reference(R0) ->
   case lists:keysearch(R0,1,L0) of
 	{value,{R0,R}} ->
 	    {erl_parse:abstract(R), {L0,N0}};
@@ -720,7 +720,7 @@ abstract_keep_vars(X, L0) ->
 
 
 
-tr_body(L, S0) when list(L) ->
+tr_body(L, S0) when is_list(L) ->
     {Body, NewS} = 
 	lists:mapfoldl (
 	  fun
@@ -1004,7 +1004,7 @@ generate_table_generator (Var, VL, Right, S) ->
     
     {RecDef, Type} = 
 	case TypeField of
-	    [] when atom(Name) ->			% one arg only
+	    [] when is_atom(Name) ->			% one arg only
 		{arg_record_def(table,Name,S), Name};
 	    []  ->			                % one arg only
 		{[], Name};
@@ -1167,7 +1167,7 @@ all_vars ({var, _, '_'}, Res) ->
 all_vars ({var, Line, Name}, Res) ->
     ordsets:add_element ({var, '_', Name}, Res)
 ;
-all_vars (X, Res) when tuple (X) ->
+all_vars (X, Res) when is_tuple (X) ->
     all_vars (tuple_to_list (X), Res)
 ;
 all_vars ([H|T], Res) ->
@@ -1209,7 +1209,7 @@ exchange_vars ({var, Line, Name}, Vars) ->
 	    NewVar
     end
 ;
-exchange_vars (X, Vars) when tuple (X) ->
+exchange_vars (X, Vars) when is_tuple (X) ->
     list_to_tuple (exchange_vars (tuple_to_list (X), Vars))
 ;
 exchange_vars (X, _) ->
@@ -1225,7 +1225,7 @@ exchange_var (Name, VarList) ->
 
 
 
-add_query (Code, Vars, S) when tuple (Code) ->
+add_query (Code, Vars, S) when is_tuple (Code) ->
     add_query ([Code], Vars, S)
 ;
 add_query (Code, Vars, S) ->
@@ -1279,7 +1279,7 @@ mk_mquery_catch () ->
      [{atom, 0, true}]}.
 
 
-add_var_type (Name, Def, S) when atom(Name), tuple(Def) ->
+add_var_type (Name, Def, S) when is_atom(Name), is_tuple(Def) ->
     Type = element (1, Def),
     case lists:keysearch (Name, 1, S#s.var_types) of
 	{value, {_, Type}} ->
@@ -1330,7 +1330,7 @@ is_compilable2({record_field,Line,{var,L1,Var},{atom,L2,Field}}, S) ->
 	false ->
 	    throw(unknown_record)
     end;	    
-is_compilable2(X,S) when tuple(X) ->
+is_compilable2(X,S) when is_tuple(X) ->
     {true, NewExp} = is_compilable2 (tuple_to_list (X), S),
     {true, list_to_tuple(NewExp)};
 is_compilable2 ([H|T], S) ->

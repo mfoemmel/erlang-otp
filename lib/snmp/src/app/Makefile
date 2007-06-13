@@ -76,7 +76,6 @@ endif
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += 
 
 ifeq ($(WARN_UNUSED_VARS),true)
 ERL_COMPILE_FLAGS += +warn_unused_vars

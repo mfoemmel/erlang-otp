@@ -66,9 +66,9 @@ stop() ->
 port_please(Node, Host) ->
   port_please(Node, Host, infinity).
 
-port_please(Node,HostName, Timeout) when atom(HostName) ->
+port_please(Node,HostName, Timeout) when is_atom(HostName) ->
   port_please1(Node,atom_to_list(HostName), Timeout);
-port_please(Node,HostName, Timeout) when list(HostName) ->
+port_please(Node,HostName, Timeout) when is_list(HostName) ->
   port_please1(Node,HostName, Timeout);
 port_please(Node, EpmdAddr, Timeout) ->
   get_port(Node, EpmdAddr, Timeout).
@@ -87,9 +87,9 @@ names() ->
     {ok, H} = inet:gethostname(),
     names(H).
 
-names(HostName) when atom(HostName) ->
+names(HostName) when is_atom(HostName) ->
   names1(atom_to_list(HostName));
-names(HostName) when list(HostName) ->
+names(HostName) when is_list(HostName) ->
   names1(HostName);
 names(EpmdAddr) ->
   get_names(EpmdAddr).
@@ -145,7 +145,7 @@ handle_cast(_, State) ->
 
 %%----------------------------------------------------------------------
 
-handle_info({tcp_closed, Socket}, State) when State#state.socket == Socket ->
+handle_info({tcp_closed, Socket}, State) when State#state.socket =:= Socket ->
     {noreply, State#state{socket = -1}};
 handle_info(_, State) ->
     {noreply, State}.
@@ -233,7 +233,7 @@ epmd_dist_high() ->
 	   ?epmd_dist_high; 
 	Version ->
 	    case (catch list_to_integer(Version)) of
-		N when integer(N), N < ?epmd_dist_high ->
+		N when is_integer(N), N < ?epmd_dist_high ->
 		    N;
 		_ ->
 		   ?epmd_dist_high
@@ -246,7 +246,7 @@ epmd_dist_low() ->
 	   ?epmd_dist_low; 
 	Version ->
 	    case (catch list_to_integer(Version)) of
-		N when integer(N), N > ?epmd_dist_low ->
+		N when is_integer(N), N > ?epmd_dist_low ->
 		    N;
 		_ ->
 		   ?epmd_dist_low
@@ -467,11 +467,11 @@ wait_for_close(Socket, Reply) ->
 %%
 %% Creates a (flat) null terminated string from atom or list.
 %%
-cstring(S) when atom(S) -> cstring(atom_to_list(S));
-cstring(S) when list(S) -> S ++ [0].
+cstring(S) when is_atom(S) -> cstring(atom_to_list(S));
+cstring(S) when is_list(S) -> S ++ [0].
 
-to_string(S) when atom(S) -> atom_to_list(S);
-to_string(S) when list(S) -> S.
+to_string(S) when is_atom(S) -> atom_to_list(S);
+to_string(S) when is_list(S) -> S.
 
 %%
 %% Find names on epmd
@@ -490,7 +490,7 @@ do_get_names(Socket) ->
     receive
 	{tcp, Socket, [P0,P1,P2,P3|T]} ->
 	    EpmdPort = ?u32(P0,P1,P2,P3),
-	    if EpmdPort == ?erlang_daemon_port ->
+	    if EpmdPort =:= ?erlang_daemon_port ->
 		    names_loop(Socket, T, []);
 	       true ->
 		    close(Socket),

@@ -5,6 +5,7 @@
 #include "config.h"
 #endif
 #include "global.h"
+#include "erl_binary.h"
 #include <sys/mman.h>
 
 #include "hipe_arch.h"
@@ -142,7 +143,7 @@ static int check_callees(Eterm callees)
     return arity;
 }
 
-static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, Eterm *trampvec, Process *p)
+static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, unsigned int **trampvec)
 {
     unsigned int *base, *address, *tramp_pos, nrfreewords;
     int trampnr;
@@ -179,7 +180,7 @@ static unsigned int *try_alloc(Uint nrwords, int nrcallees, Eterm callees, Eterm
 	    hipe_flush_icache_range(trampoline, 4*sizeof(int));
 	    hipe_mfa_set_trampoline(m, f, a, trampoline);
 	}
-	trampvec[trampnr] = address_to_term(trampoline, p);
+	trampvec[trampnr-1] = trampoline;
     }
     curseg.tramp_pos = tramp_pos;
     return address;
@@ -189,7 +190,8 @@ void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *
 {
     Uint nrwords;
     int nrcallees;
-    Eterm *trampvec, *retry_hp;
+    Eterm trampvecbin;
+    unsigned int **trampvec;
     unsigned int *address;
     unsigned int *base;
     struct segment oldseg;
@@ -201,16 +203,13 @@ void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *
     nrcallees = check_callees(callees);
     if (nrcallees < 0)
 	return NULL;
-    trampvec = HAlloc(p, 1+nrcallees);
-    trampvec[0] = make_arityval(nrcallees);
-    retry_hp = HEAP_TOP(p);
+    trampvecbin = new_binary(p, NULL, nrcallees*sizeof(unsigned int*));
+    trampvec = (unsigned int**)binary_bytes(trampvecbin);
 
-    address = try_alloc(nrwords, nrcallees, callees, trampvec, p);
+    address = try_alloc(nrwords, nrcallees, callees, trampvec);
     if (!address) {
-	HRelease(p, HEAP_TOP(p), retry_hp);
 	base = new_code_mapping();
 	if (base == MAP_FAILED) {
-	    HRelease(p, HEAP_TOP(p), trampvec);
 	    return NULL;
 	}
 	oldseg = curseg;
@@ -218,16 +217,15 @@ void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *
 	curseg.code_pos = base;
 	curseg.tramp_pos = (unsigned int*)((char*)base + SEGMENT_NRBYTES);
 
-	address = try_alloc(nrwords, nrcallees, callees, trampvec, p);
+	address = try_alloc(nrwords, nrcallees, callees, trampvec);
 	if (!address) {
 	    munmap(base, SEGMENT_NRBYTES);
 	    curseg = oldseg;
-	    HRelease(p, HEAP_TOP(p), trampvec);
 	    return NULL;
 	}
 	/* commit to new segment, ignore leftover space in old segment */
     }
-    *trampolines = make_tuple(trampvec);
+    *trampolines = trampvecbin;
     return address;
 }
 
@@ -237,7 +235,7 @@ static unsigned int *alloc_stub(Uint nrwords)
     unsigned int *base;
     struct segment oldseg;
 
-    address = try_alloc(nrwords, 0, NIL, NULL, NULL);
+    address = try_alloc(nrwords, 0, NIL, NULL);
     if (!address) {
 	base = new_code_mapping();
 	if (base == MAP_FAILED)
@@ -247,7 +245,7 @@ static unsigned int *alloc_stub(Uint nrwords)
 	curseg.code_pos = base;
 	curseg.tramp_pos = (unsigned int*)((char*)base + SEGMENT_NRBYTES);
 
-	address = try_alloc(nrwords, 0, NIL, NULL, NULL);
+	address = try_alloc(nrwords, 0, NIL, NULL);
 	if (!address) {
 	    munmap(base, SEGMENT_NRBYTES);
 	    curseg = oldseg;

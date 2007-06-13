@@ -93,7 +93,8 @@
 	  %% This flag is used when a connection is being cancelled.
 	  %% The purpuse is to avoid raise conditions with replies
 	  %% during the cancellation. 
-	  cancel               % boolean(), false
+	  cancel,              % boolean(), false
+	  resend_indication    % boolean(), false
 	 }).
 
 %% N.B. Update megaco_config when a new field is added

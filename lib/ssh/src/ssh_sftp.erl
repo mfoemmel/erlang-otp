@@ -388,7 +388,6 @@ handle_call({pread,Async,Handle,At,Length}, From, State) ->
 	    State1 = update_offset(Handle, Offset+Length, State),
 	    make_reply_post(ReqID,Async,From,State1,
 			    fun({ok,Data}, State2) ->
-				    io:format("get_mode ~p\n", [Handle]),
 				    case get_mode(Handle, State2) of
 					binary -> {{ok,Data}, State2};
 					text ->
@@ -924,13 +923,10 @@ get_size(Handle, State) ->
 %%     FI#fileinf.offset.
 
 get_mode(Handle, State) ->
-    io:format("Mode\n"),
     case dict:find(Handle, State#state.inf) of
 	{ok, FI} ->
-	    io:format("Mode for ~p - ~p\n", [Handle, FI#fileinf.mode]),
 	    FI#fileinf.mode;
 	_ ->
-	    io:format("undefined mode for ~p\n", [Handle]),
 	    undefined
     end.
 

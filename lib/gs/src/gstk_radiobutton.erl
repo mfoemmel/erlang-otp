@@ -103,7 +103,7 @@ create(DB, GstkId, Opts) ->
     PlacePreCmd = [";place ", TkW],
     case gstk_generic:make_command(NOpts, NGstkId, TkW, "", PlacePreCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(["radiobutton ", TkW," -bo 2 -indi true ",Cmd]),
 	    NGstkId
     end.

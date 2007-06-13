@@ -149,10 +149,10 @@ world(Verbose) ->
         Hosts -> expand_hosts(Hosts, Verbose)
     end.
 
-world_list(Hosts) when list (Hosts) ->
+world_list(Hosts) when is_list (Hosts) ->
     expand_hosts(Hosts, silent).
 
-world_list(Hosts, Verbose) when list(Hosts) ->
+world_list(Hosts, Verbose) when is_list(Hosts) ->
     expand_hosts(Hosts, Verbose).
 
 expand_hosts(Hosts, Verbose) ->

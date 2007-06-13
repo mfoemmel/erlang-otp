@@ -33,7 +33,6 @@ ifneq ($(MIBS_VERBOSITY),)
 SNMP_FLAGS += +'{verbosity,$(MIBS_VERBOSITY)}'
 endif
 
-ERL_FLAGS += 
 ERL_COMPILE_FLAGS += -I../include \
                      -Dversion=\"$(VSN)$(PRE_VSN)\" \
                      +'{parse_transform,sys_pre_attributes}' \

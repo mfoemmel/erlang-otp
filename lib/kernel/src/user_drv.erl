@@ -56,7 +56,7 @@ interfaces(UserDrv) ->
     case process_info(UserDrv, dictionary) of
 	{dictionary,Dict} ->
 	    case lists:keysearch(current_group, 1, Dict) of
-		{value,Gr={_,Group}} when pid(Group) ->
+		{value,Gr={_,Group}} when is_pid(Group) ->
 		    [Gr];
 		_ ->
 		    []
@@ -72,7 +72,7 @@ interfaces(UserDrv) ->
 %%  The initial calls to run the user driver. These start the port(s)
 %%  then call server1/3 to set everything else up.
 
-server(Pid, Shell) when pid(Pid) ->
+server(Pid, Shell) when is_pid(Pid) ->
     server1(Pid, Pid, Shell);
 
 server(Pname, Shell) ->
@@ -107,7 +107,7 @@ server1(Iport, Oport, Shell) ->
 		RShell = {list_to_atom(Node),shell,start,[]},
 		RGr = group:start(self(), RShell),
 		{RGr,RShell};
-	    E when E == error ; E == {ok,[[]]} ->
+	    E when E =:= error ; E =:= {ok,[[]]} ->
 		{group:start(self(), Shell),Shell}
 	end,
 
@@ -162,9 +162,9 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 	    server_loop(Iport, Oport, Curr, NewU, gr_set_num(Gr, 1, NewU, {}));
 	{'EXIT',Pid,R} ->			% shell and group leader exit
 	    case gr_cur_pid(Gr) of
-		Pid when R /= die ,
-			 R /= terminated  ->	% current shell exited
-		    if R /= normal ->
+		Pid when R =/= die ,
+			 R =/= terminated  ->	% current shell exited
+		    if R =/= normal ->
 			    io_requests([{put_chars,"*** ERROR: "}], Iport, Oport);
 		       true -> % exit not caused by error
 			    io_requests([{put_chars,"*** "}], Iport, Oport)
@@ -172,15 +172,15 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 		    io_requests([{put_chars,"Shell process terminated! "}], Iport, Oport),
 		    Gr1 = gr_del_pid(Gr, Pid),		    
 		    case gr_get_info(Gr, Pid) of
-			{Ix,{shell,start,[]}} -> % local shell
+			{Ix,{shell,start,Params}} -> % 3-tuple == local shell
 			    io_requests([{put_chars,"***\n"}], Iport, Oport),	    
 			    %% restart group leader and shell, same index
-			    Pid1 = group:start(self(), {shell,start,[]}),
+			    Pid1 = group:start(self(), {shell,start,Params}),
 			    {ok,Gr2} = gr_set_cur(gr_set_num(Gr1, Ix, Pid1, 
-							     {shell,start,[]}), Ix),
+							     {shell,start,Params}), Ix),
 			    put(current_group, Pid1),
 			    server_loop(Iport, Oport, Pid1, User, Gr2);
-			_ ->			% remote shell
+			_ -> % remote shell
 			    io_requests([{put_chars,"(^G to start new job) ***\n"}],
 					Iport, Oport),	    
 			    server_loop(Iport, Oport, Curr, User, Gr1)
@@ -530,7 +530,7 @@ member(_X, []) -> false.
 flatten(List) ->
     flatten(List, [], []).
 
-flatten([H|T], Cont, Tail) when list(H) ->
+flatten([H|T], Cont, Tail) when is_list(H) ->
     flatten(H, [T|Cont], Tail);
 flatten([H|T], Cont, Tail) ->
     [H|flatten(T, Cont, Tail)];

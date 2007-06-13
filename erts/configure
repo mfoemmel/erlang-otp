@@ -309,7 +309,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_APP CRYPTO_APP SSH_APP SSL_INCLUDE SSL_ROOT SSL_LIBDIR OPENSSL_CMD REGTOOL os_mon_programs JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_APP CRYPTO_APP SSH_APP SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL os_mon_programs JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -848,6 +848,8 @@ Optional Features:
   --disable-threads       disable async thread support
   --enable-smp-support    enable smp support
   --disable-smp-support   disable smp support
+  --enable-hybrid-heap    enable hybrid heap
+  --disable-hybrid-heap   disable hybrid heap
   --enable-lock-checking  enable lock checking
   --enable-kernel-poll    enable kernel poll support
   --disable-kernel-poll   disable kernel poll support
@@ -868,6 +870,9 @@ Optional Packages:
   --without-PACKAGE       do not use PACKAGE (same as --with-PACKAGE=no)
   --with-perfctr=PATH     specify location of perfctr include and lib
   --without-perfctr       don't use perfctr (default)
+  --with-ssl-zlib=PATH         specify location of ZLib to be used by OpenSSL
+  --with-ssl-zlib               link SSL with  Zlib (default if found)
+  --without-ssl-zlib            don't link SSL with ZLib
   --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL
@@ -2539,6 +2544,17 @@ if test "${enable_smp_support+set}" = set; then
   esac
 else
   enable_smp_support=unknown
+fi;
+
+# Check whether --enable-hybrid-heap or --disable-hybrid-heap was given.
+if test "${enable_hybrid_heap+set}" = set; then
+  enableval="$enable_hybrid_heap"
+   case "$enableval" in
+    no) enable_hybrid_heap=no ;;
+    *)  enable_hybrid_heap=yes ;;
+  esac
+else
+  enable_hybrid_heap=unknown
 fi;
 
 # Check whether --enable-lock-checking or --disable-lock-checking was given.
@@ -7286,6 +7302,105 @@ if test $ac_cv_func_pthread_spin_lock = yes; then
 
 cat >>confdefs.h <<\_ACEOF
 #define ETHR_HAVE_PTHREAD_SPIN_LOCK 1
+_ACEOF
+
+fi
+
+	echo "$as_me:$LINENO: checking for pthread_attr_setguardsize" >&5
+echo $ECHO_N "checking for pthread_attr_setguardsize... $ECHO_C" >&6
+if test "${ac_cv_func_pthread_attr_setguardsize+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+/* Define pthread_attr_setguardsize to an innocuous variant, in case <limits.h> declares pthread_attr_setguardsize.
+   For example, HP-UX 11i <limits.h> declares gettimeofday.  */
+#define pthread_attr_setguardsize innocuous_pthread_attr_setguardsize
+
+/* System header to define __stub macros and hopefully few prototypes,
+    which can conflict with char pthread_attr_setguardsize (); below.
+    Prefer <limits.h> to <assert.h> if __STDC__ is defined, since
+    <limits.h> exists even on freestanding compilers.  */
+
+#ifdef __STDC__
+# include <limits.h>
+#else
+# include <assert.h>
+#endif
+
+#undef pthread_attr_setguardsize
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+{
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char pthread_attr_setguardsize ();
+/* The GNU C library defines this for functions which it implements
+    to always fail with ENOSYS.  Some functions are actually named
+    something starting with __ and the normal name is an alias.  */
+#if defined (__stub_pthread_attr_setguardsize) || defined (__stub___pthread_attr_setguardsize)
+choke me
+#else
+char (*f) () = pthread_attr_setguardsize;
+#endif
+#ifdef __cplusplus
+}
+#endif
+
+int
+main ()
+{
+return f != pthread_attr_setguardsize;
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_func_pthread_attr_setguardsize=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_func_pthread_attr_setguardsize=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_func_pthread_attr_setguardsize" >&5
+echo "${ECHO_T}$ac_cv_func_pthread_attr_setguardsize" >&6
+if test $ac_cv_func_pthread_attr_setguardsize = yes; then
+  \
+
+cat >>confdefs.h <<\_ACEOF
+#define ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE 1
 _ACEOF
 
 fi
@@ -18339,7 +18454,7 @@ static __inline__ int check_fpe(double f)
 
 #endif
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
 #include <asm/sigcontext.h>
@@ -18349,8 +18464,13 @@ static __inline__ int check_fpe(double f)
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
+#elif defined(__OpenBSD__) && defined(__x86_64__)
+#include <sys/types.h>
+#include <machine/fpu.h>
 #endif
+#if !(defined(__OpenBSD__) && defined(__x86_64__))
 #include <ucontext.h>
+#endif
 #include <string.h>
 
 static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
@@ -18410,6 +18530,10 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 	struct env87 *env87 = &savefpu->sv_87.sv_env;
 	env87->en_sw &= ~0xFF;
     }
+#elif defined(__OpenBSD__) && defined(__x86_64__)
+    struct fxsave64 *fxsave = uc->sc_fpstate;
+    fxsave->fx_mxcsr = 0x1F80;
+    fxsave->fx_fsw &= ~0xFF;
 #elif defined(__sun__) && defined(__x86_64__)
     mcontext_t *mc = &uc->uc_mcontext;
     struct fpchip_state *fpstate = &mc->fpregs.fp_reg_set.fpchip_state;
@@ -18547,17 +18671,35 @@ fi
 # Check if we should build hybrid emulator
 #
 
-case $host_os in
-    win32|vxworks|ose) # vxworks and ose have their own "configure scripts"...
+echo "$as_me:$LINENO: checking whether a hybrid heap emulator should be built" >&5
+echo $ECHO_N "checking whether a hybrid heap emulator should be built... $ECHO_C" >&6
+case $enable_hybrid_heap-$host_os in
+    yes-*)
+	echo "$as_me:$LINENO: result: yes; enabled by user" >&5
+echo "${ECHO_T}yes; enabled by user" >&6
+	ERTS_BUILD_HYBRID_EMU=yes;;
+    no-*)
+	echo "$as_me:$LINENO: result: no; disabled by user" >&5
+echo "${ECHO_T}no; disabled by user" >&6
+	ERTS_BUILD_HYBRID_EMU=no;;
+    *-win32|*-vxworks|*-ose) # vxworks and ose have their own "configure scripts"...
+	echo "$as_me:$LINENO: result: no; default on this platform" >&5
+echo "${ECHO_T}no; default on this platform" >&6
 	ERTS_BUILD_HYBRID_EMU=no;;
     *)
+	echo "$as_me:$LINENO: result: yes; default on this platform" >&5
+echo "${ECHO_T}yes; default on this platform" >&6
+	ERTS_BUILD_HYBRID_EMU=yes;;
+esac
+
+
+if test $ERTS_BUILD_HYBRID_EMU = yes; then
 
 cat >>confdefs.h <<\_ACEOF
 #define ERTS_HAVE_HYBRID_EMU 1
 _ACEOF
 
-	ERTS_BUILD_HYBRID_EMU=yes;;
-esac
+fi
 
 
 
@@ -19077,6 +19219,10 @@ case $host_os in
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
 		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
+	linux*)
+		DED_LD="$CC"
+		DED_LDFLAGS="-shared"
+	;;
 	osf*)
 		# NOTE! Whitespace after -rpath is important.
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH="-rpath "
@@ -19296,6 +19442,82 @@ fi
 
 
 
+
+
+
+
+
+
+# Check whether --with-ssl-zlib or --without-ssl-zlib was given.
+if test "${with_ssl_zlib+set}" = set; then
+  withval="$with_ssl_zlib"
+
+fi;
+
+
+if  test "x$with_ssl_zlib" = "xno"; then
+	SSL_LINK_WITH_ZLIB=no
+	STATIC_ZLIB_LIBS=
+elif test "x$with_ssl_zlib" = "xyes" -o "x$with_ssl_zlib" = "x" ;then
+	if  test "x$MIXED_CYGWIN" = "xyes"; then
+		SSL_LINK_WITH_ZLIB=no
+		STATIC_ZLIB_LIBS=
+	else
+		echo "$as_me:$LINENO: checking for static ZLib to be used by SSL in standard locations" >&5
+echo $ECHO_N "checking for static ZLib to be used by SSL in standard locations... $ECHO_C" >&6
+		zlib_found=no
+		for dir in /usr/local /usr/sfw /usr /usr/pkg \
+		/usr/local/openssl /usr/lib/openssl /usr/openssl \
+		/usr/local/ssl /usr/lib/ssl /usr/ssl
+		do
+			if test "x$ARCH" = "xamd64" -o \
+				"x$ARCH" = "xppc64"; then
+				if test -f "$dir/lib64/libz.a"; then
+					SSL_LINK_WITH_ZLIB=yes
+					STATIC_ZLIB_LIBS=$dir/lib64/libz.a
+					zlib_found=yes
+				fi
+			fi
+			if test -f "$dir/lib/libz.a"; then
+					SSL_LINK_WITH_ZLIB=yes
+					STATIC_ZLIB_LIBS=$dir/lib/libz.a
+					zlib_found=yes
+			fi
+			if test "x$zlib_found" = "xyes"; then
+				break
+			fi
+		done
+		if test "x$zlib_found" = "xno"; then
+		       	echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+			SSL_LINK_WITH_ZLIB=no
+			STATIC_ZLIB_LIBS=
+		else
+			echo "$as_me:$LINENO: result: $STATIC_ZLIB_LIBS" >&5
+echo "${ECHO_T}$STATIC_ZLIB_LIBS" >&6
+		fi
+	fi
+else
+	if test -f "$with_ssl_zlib/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/libz.a
+	elif test -f "$with_ssl_zlib/lib64/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib64/libz.a
+	elif test -f "$with_ssl_zlib/lib/libz.a"; then
+		SSL_LINK_WITH_ZLIB=yes
+		STATIC_ZLIB_LIBS=$with_ssl_zlib/lib/libz.a
+	else
+	       	{ { echo "$as_me:$LINENO: error: Invalid path to option --with-ssl-zlib=PATH" >&5
+echo "$as_me: error: Invalid path to option --with-ssl-zlib=PATH" >&2;}
+   { (exit 1); exit 1; }; }
+		SSL_LINK_WITH_ZLIB=no
+		STATIC_ZLIB_LIBS=
+	fi
+fi
+
+
+
 # Check whether --with-ssl or --without-ssl was given.
 if test "${with_ssl+set}" = set; then
   withval="$with_ssl"
@@ -19307,6 +19529,8 @@ fi;
 for a in ssl crypto ssh; do
   /bin/rm -f $ERL_TOP/lib/$a/SKIP
 done
+
+SSL_DYNAMIC_ONLY=no
 
 if test "x$with_ssl" = "xno"; then
     SSL_APP=
@@ -19375,8 +19599,8 @@ fi
 
     echo "$as_me:$LINENO: checking for OpenSSL >= 0.9.7 in standard locations" >&5
 echo $ECHO_N "checking for OpenSSL >= 0.9.7 in standard locations... $ECHO_C" >&6
-    for dir in $extra_dir /cygdrive/c/OpenSSL /usr/sfw \
-		/usr/local /usr /usr/pkg \
+    for dir in $extra_dir /cygdrive/c/OpenSSL \
+		/usr/local /usr/sfw /usr /usr/pkg \
 		/usr/local/openssl /usr/lib/openssl /usr/openssl \
 		/usr/local/ssl /usr/lib/ssl /usr/ssl
 	do
@@ -19394,7 +19618,19 @@ echo $ECHO_N "checking for OpenSSL >= 0.9.7 in standard locations... $ECHO_C" >&
 				is_real_ssl=no
 			fi
 		else
-			SSL_LIBDIR="$dir/lib"
+			if test "x$ARCH" = "xamd64" -o \
+				"x$ARCH" = "xppc64"; then
+				if test -f "$dir/lib64/libcrypto.a"; then
+					SSL_LIBDIR="$dir/lib64"
+				else
+					SSL_LIBDIR="$dir/lib"
+				fi
+			else
+				SSL_LIBDIR="$dir/lib"
+			fi
+		fi
+		if test '!' -f $SSL_LIBDIR/libcrypto.a; then
+			SSL_DYNAMIC_ONLY=yes
 		fi
 		SSL_BINDIR="$dir/bin"
 		if test -f "$SSL_BINDIR/openssl$EXEEXT"; then
@@ -19458,6 +19694,7 @@ echo "${ECHO_T}$SSL_ROOT" >&6
 		  SSL_LIB="/usr/lib"
 		  SSL_BINDIR="/usr/sbin"
 		  OPENSSL_CMD="$SSL_BINDIR/openssl"
+		  		  SSL_DYNAMIC_ONLY="yes"
 		fi
 		;;
 	esac
@@ -19520,12 +19757,32 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
       echo "$as_me:$LINENO: result: yes" >&5
 echo "${ECHO_T}yes" >&6
       ssl_krb5_enabled=yes
+      if test -f $SSL_LIBDIR/libkrb5.a; then
+          SSL_LINK_WITH_KERBEROS=yes
+	  STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
+	  if test -f $SSL_LIBDIR/libkrb5support.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libk5crypto.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libresolv.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
+	  fi
+	  if test -f $SSL_LIBDIR/libcom_err.a; then
+		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
+	  fi
+      else
+	 SSL_LINK_WITH_KERBEROS=no
+	 STATIC_KERBEROS_LIBS=""
+      fi
 
 else
 
       echo "$as_me:$LINENO: result: no" >&5
 echo "${ECHO_T}no" >&6
       ssl_krb5_enabled=no
+      SSL_WITH_KERBEROS=no
 
 fi
 rm -f conftest*
@@ -20549,6 +20806,11 @@ s,@SSH_APP@,$SSH_APP,;t t
 s,@SSL_INCLUDE@,$SSL_INCLUDE,;t t
 s,@SSL_ROOT@,$SSL_ROOT,;t t
 s,@SSL_LIBDIR@,$SSL_LIBDIR,;t t
+s,@SSL_DYNAMIC_ONLY@,$SSL_DYNAMIC_ONLY,;t t
+s,@SSL_LINK_WITH_KERBEROS@,$SSL_LINK_WITH_KERBEROS,;t t
+s,@STATIC_KERBEROS_LIBS@,$STATIC_KERBEROS_LIBS,;t t
+s,@SSL_LINK_WITH_ZLIB@,$SSL_LINK_WITH_ZLIB,;t t
+s,@STATIC_ZLIB_LIBS@,$STATIC_ZLIB_LIBS,;t t
 s,@OPENSSL_CMD@,$OPENSSL_CMD,;t t
 s,@REGTOOL@,$REGTOOL,;t t
 s,@os_mon_programs@,$os_mon_programs,;t t

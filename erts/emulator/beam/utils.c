@@ -2603,7 +2603,7 @@ buf_to_intlist(Eterm** hpp, char *buf, int len, Eterm tail)
 **        |   [ iohead | iotail]
 **        ;
 ** 
-** Return remaning bytes in buffer on success
+** Return remaining bytes in buffer on success
 **        -1 on overflow
 **        -2 on type error (including that result would not be a whole number of bytes)
 */
@@ -2611,7 +2611,6 @@ buf_to_intlist(Eterm** hpp, char *buf, int len, Eterm tail)
 int io_list_to_buf(Eterm obj, char* buf, int len)
 {
     Eterm* objp;
-    int offset = 0;
     DECLARE_ESTACK(s);
     goto L_again;
     
@@ -2623,15 +2622,10 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 	    objp = list_val(obj);
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
-		if (len == 0)
+		if (len == 0) {
 		    goto L_overflow;
-		if (offset == 0) {
-		    *buf++ = unsigned_val(obj);
-		} else {
-		    *buf =  (char)((unsigned_val(obj) >> offset) & *buf);
-		    buf++;
-		    *buf = (unsigned_val(obj) << (8-offset));
-		}   
+		}
+		*buf++ = unsigned_val(obj);
 		len--;
 	    } else if (is_binary(obj)) {
 		byte* bptr;
@@ -2644,27 +2638,24 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 		    goto L_overflow;
 		}
 		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-		num_bits = 8*size+bitsize;
-		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-		offset += bitsize;
-		buf += size+(offset>7);
-		len -= size+(offset>7);
-		offset = offset & 7;
-	    }
-	    else if (is_nil(obj)) {
-		;
-	    }
-	    else if (is_list(obj)) {
+		if (bitsize != 0) {
+		    goto L_type_error;
+		}
+		num_bits = 8*size;
+		copy_binary_to_buffer(buf, 0, bptr, bitoffs, num_bits);
+		buf += size;
+		len -= size;
+	    } else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
 		goto L_iter_list; /* on head */
-	    }
-	    else
+	    } else if (is_not_nil(obj)) {
 		goto L_type_error;
+	    }
 
 	    obj = CDR(objp);
-	    if (is_list(obj))
+	    if (is_list(obj)) {
 		goto L_iter_list; /* on tail */
-	    else if (is_binary(obj)) {
+	    } else if (is_binary(obj)) {
 		byte* bptr;
 		size_t size = binary_size(obj);
 		Uint bitsize;
@@ -2674,15 +2665,14 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 		    goto L_overflow;
 		}
 		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-		num_bits = 8*size+bitsize;
-		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-		offset += bitsize;
-		buf += size+(offset>7);
-		len -= size+(offset>7);
-		offset = offset & 7;
-	    } else if (is_nil(obj)) {
-		;
-	    } else {
+		if (bitsize != 0) {
+		    goto L_type_error;
+		}
+		num_bits = 8*size;
+		copy_binary_to_buffer(buf, 0, bptr, bitoffs, num_bits);
+		buf += size;
+		len -= size;
+	    } else if (is_not_nil(obj)) {
 		goto L_type_error;
 	    }
 	} else if (is_binary(obj)) {
@@ -2695,134 +2685,20 @@ int io_list_to_buf(Eterm obj, char* buf, int len)
 		goto L_overflow;
 	    }
 	    ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-	    num_bits = 8*size+bitsize;
-	    copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-	    offset += bitsize;
-	    buf += size+(offset>7);
-	    len -= size+(offset>7);
-	    offset = offset & 7;
+	    if (bitsize != 0) {
+		goto L_type_error;
+	    }
+	    num_bits = 8*size;
+	    copy_binary_to_buffer(buf, 0, bptr, bitoffs, num_bits);
+	    buf += size;
+	    len -= size;
 	} else if (is_not_nil(obj)) {
 	    goto L_type_error;
 	}
     }
       
     DESTROY_ESTACK(s);
-    if (offset) {
-	return -2;
-    }
     return len;
-
- L_type_error:
-    DESTROY_ESTACK(s);
-    return -2;
-
- L_overflow:
-    DESTROY_ESTACK(s);
-    return -1;
-}
-
-int io_list_to_buf2(Eterm obj, char* buf, int len)
-{
-    Eterm* objp;
-    int offset=0;
-    DECLARE_ESTACK(s);
-    goto L_again;
-    
-    while (!ESTACK_ISEMPTY(s)) {
-	obj = ESTACK_POP(s);
-    L_again:
-	if (is_list(obj)) {
-	L_iter_list:
-	    objp = list_val(obj);
-	    obj = CAR(objp);
-	    if (is_byte(obj)) {
-		if (len == 0)
-		    goto L_overflow;
-		if (offset==0) {
-		    *buf++ = unsigned_val(obj);
-		} else {
-		    *buf =  (char)((unsigned_val(obj) >> offset) | 
-				   ((*buf >> (8-offset)) << (8-offset)));
-		    buf++;
-		    *buf = (unsigned_val(obj) << (8-offset));
-		}   
-		len--;
-	    } else if (is_binary(obj)) {
-		byte* bptr;
-		size_t size = binary_size(obj);
-		Uint bitsize;
-		Uint bitoffs;
-		Uint num_bits;
-		
-		if (len < size) {
-		    goto L_overflow;
-		}
-		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-		num_bits = 8*size+bitsize;
-		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-		offset += bitsize;
-		buf += size+(offset>7);
-		len -= size+(offset>7);
-		offset = offset & 7;
-	    }
-	    else if (is_nil(obj)) {
-		;
-	    }
-	    else if (is_list(obj)) {
-		ESTACK_PUSH(s, CDR(objp));
-		goto L_iter_list; /* on head */
-	    }
-	    else
-		goto L_type_error;
-
-	    obj = CDR(objp);
-	    if (is_list(obj))
-		goto L_iter_list; /* on tail */
-	    else if (is_binary(obj)) {
-		byte* bptr;
-		size_t size = binary_size(obj);
-		Uint bitsize;
-		Uint bitoffs;
-		Uint num_bits;
-		if (len < size) {
-		    goto L_overflow;
-		}
-		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-		num_bits = 8*size+bitsize;
-		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-		offset += bitsize;
-		buf += size+(offset>7);
-		len -= size+(offset>7);
-		offset = offset & 7;
-		
-	    }
-	    else if (is_nil(obj))
-		;
-	    else
-		goto L_type_error;
-	} else if (is_binary(obj)) {
-	    byte* bptr;
-	    size_t size = binary_size(obj);
-	    Uint bitsize;
-	    Uint bitoffs;
-	    Uint num_bits;
-	    if (len < size) {
-		goto L_overflow;
-	    }
-	    ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
-	    num_bits = 8*size+bitsize;
-	    copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
-	    offset += bitsize;
-	    buf += size+(offset>7);
-	    len -= size+(offset>7);
-	    offset = offset & 7;
-	} else if (is_not_nil(obj)) {
-	    goto L_type_error;
-	}
-    }
-    
-    DESTROY_ESTACK(s);
-    return offset;
 
  L_type_error:
     DESTROY_ESTACK(s);
@@ -2836,8 +2712,7 @@ int io_list_to_buf2(Eterm obj, char* buf, int len)
 int io_list_len(Eterm obj)
 {
     Eterm* objp;
-    int len = 0;
-    int offs = 0;
+    Sint len = 0;
     DECLARE_ESTACK(s);
     goto L_again;
 
@@ -2851,80 +2726,39 @@ int io_list_len(Eterm obj)
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
 		len++;
-	    } else if (is_binary(obj)) {
+	    } else if (is_binary(obj) && binary_bitsize(obj) == 0) {
 		len += binary_size(obj);
-		offs += binary_bitsize(obj);
-		if (offs > 8) { len+=1; offs-=8;}
-	    } else if (is_nil(obj)) {
-		;
 	    } else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
 		goto L_iter_list; /* on head */
-	    } else {
+	    } else if (is_not_nil(obj)) {
 		goto L_type_error;
 	    }
 	    /* Tail */
 	    obj = CDR(objp);
 	    if (is_list(obj))
 		goto L_iter_list; /* on tail */
-	    else if (is_binary(obj)) {
+	    else if (is_binary(obj) && binary_bitsize(obj) == 0) {
 		len += binary_size(obj);
-	    } else if (is_nil(obj)) {
-		;
-	    } else {
+	    } else if (is_not_nil(obj)) {
 		goto L_type_error;
 	    }
-	} else if (is_binary(obj)) { /* Tail was binary */
+	} else if (is_binary(obj) && binary_bitsize(obj) == 0) { /* Tail was binary */
 	    len += binary_size(obj);
-	    offs = binary_bitsize(obj);
-	    if (offs > 8) { len+=1; offs-=8;}
 	} else if (is_not_nil(obj)) {
 	    goto L_type_error;
 	}
     }
 
     DESTROY_ESTACK(s);
-    return len+(offs>0);
+    return len;
 
  L_type_error:
     DESTROY_ESTACK(s);
     return -1;
 }
-/*
-int
-io_list_len(Eterm list)
-{
-    int len = 0;
-    int i;
 
-    while (is_list(list)) {
-	Eterm* cons = list_val(list);
-	Eterm obj = CAR(cons);
-
-	list = CDR(cons);
-	if (is_byte(obj)) {
-	    len++;
-	} else if (is_list(obj)) {
-	    if ((i = io_list_len(obj)) < 0)
-		return i;
-	    len += i;
-	} else if (is_binary(obj)) {
-	    len += binary_size(obj);
-	} else if (!is_nil(obj)) {
-	    return -1;
-	}
-    }
-    if (is_nil(list))
-	return len;
-    else if (is_binary(list)) {
-	return len + binary_size(list);
-    } else {
-	return -1;
-    }
-}
-*/
 /* return 0 if item is not a non-empty flat list of bytes */
-
 int
 is_string(Eterm list)
 {

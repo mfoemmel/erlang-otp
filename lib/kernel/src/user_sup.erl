@@ -50,7 +50,7 @@ init([]) ->
 
 start_slave(Master) ->
     case rpc:call(Master, erlang, whereis, [user]) of
-	User when pid(User) ->
+	User when is_pid(User) ->
 	    spawn(?MODULE, relay, [User]);
 	_ ->
 	    error_logger:error_msg('Cannot get remote user', []),
@@ -92,7 +92,7 @@ wait_for_user_p(0) ->
     {error, nouser};
 wait_for_user_p(N) ->
     case whereis(user) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    link(Pid),
 	    {ok, Pid};
 	_ ->

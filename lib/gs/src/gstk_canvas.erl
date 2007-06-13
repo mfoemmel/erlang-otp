@@ -105,7 +105,7 @@ create(DB, Gstkid, Opts) ->
 	    case gstk_generic:make_command(NewOpts, NGstkid, MainW,
 			       SimplePreCmd, PlacePreCmd, DB,Canvas) of
 		{error,Reason} -> {error,Reason};
-		Cmd when list(Cmd) ->
+		Cmd when is_list(Cmd) ->
 		    gstk:exec(Cmd),
 		    gstk:exec([MainW,".sy conf -rel sunken -bo 2;",
 			      MainW,".pad.sx conf -rel sunken -bo 2;"]),
@@ -273,7 +273,7 @@ hit(DB,Canvas,X1,Y1,X2,Y2) ->
     Ay2 = gstk:to_ascii(Y2),
     case tcl2erl:ret_list([Canvas," find overlapping ",
 			   Ax1,$ ,Ay1,$ ,Ax2,$ ,Ay2]) of
-	Items when list(Items) ->
+	Items when is_list(Items) ->
 	    [{_,Node}] = ets:lookup(DB,frontend_node),
 	    fix_ids(Items,DB,Canvas,Node);
 	Other ->
@@ -412,16 +412,16 @@ eunbind(DB, Gstkid, TkW, Etype, WS, _Edata) ->
 mk_cmd_and_exec(Options, Gstkid, Canvas, AItem, SCmd, DB) ->
     case make_command(Options, Gstkid, Canvas, AItem, SCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(Cmd)
     end.
 
 mk_cmd_and_call(Opts,Gstkid, CanvasTkW, MCmd, DB) ->
     case make_command(Opts,Gstkid, CanvasTkW, MCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    case tcl2erl:ret_int(Cmd) of
-		Item when integer(Item) ->
+		Item when is_integer(Item) ->
 		    G2 = gstk_db:lookup_gstkid(DB,Gstkid#gstkid.id), % buu, not nice
 		    NewGstkid = G2#gstkid{widget_data=Item},
 		    NewGstkid;
@@ -464,7 +464,7 @@ item_config(DB, Gstkid, Opts) ->
     SCmd = [Canvas, " itemconf ", AItem],
     case make_command(Opts, Gstkid, Canvas, AItem, SCmd, DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(Cmd)
     end.
 
@@ -483,7 +483,7 @@ pickout_coords([], _Opts, ObjType, NbrOfCoords) ->
     {error, io_lib:format("A ~w must have ~w coordinates",
 			  [ObjType,NbrOfCoords])}.
 
-coords([{X,Y} | R]) when number(X),number(Y) ->
+coords([{X,Y} | R]) when is_number(X),is_number(Y) ->
     [gstk:to_ascii(X), " ", gstk:to_ascii(Y), " ", coords(R)];
 coords([_]) -> %% not a pair
     invalid;

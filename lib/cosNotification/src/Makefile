@@ -283,7 +283,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosNotification/ebin \
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosNotification/ebin \
 	-pa $(ERL_TOP)/lib/ic/ebin\
 	-pa $(ERL_TOP)/lib/orber/ebin \
 	-pa $(ERL_TOP)/lib/cosEvent/ebin \
@@ -293,6 +293,7 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosNotification/ebin \
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-pa $(ERL_TOP)/lib/orber/include \
 	-pa $(ERL_TOP)/lib/cosNotification/include \
 	-pa $(ERL_TOP)/lib/cosEvent/include \
@@ -334,18 +335,18 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_NOTIFICATION_ERL_FILES) $(EXTERNAL_GEN_NOTIFICATION_HRL_FILES): CosNotification.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotification.cfg"}' CosNotification.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosNotification.cfg"}' CosNotification.idl
 	mv $(GEN_NOTIFICATION_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_CHANNELADMIN_ERL_FILES) $(EXTERNAL_GEN_CHANNELADMIN_HRL_FILES): CosNotifyChannelAdmin.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyChannelAdmin.cfg"}' CosNotifyChannelAdmin.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosNotifyChannelAdmin.cfg"}' CosNotifyChannelAdmin.idl
 	mv $(GEN_CHANNELADMIN_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_NOTIFYFILTER_ERL_FILES) $(EXTERNAL_GEN_NOTIFYFILTER_HRL_FILES): CosNotifyFilter.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyFilter.cfg"}' CosNotifyFilter.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosNotifyFilter.cfg"}' CosNotifyFilter.idl
 	mv $(GEN_NOTIFYFILTER_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_OE_EVENTCOMM_ERL_FILES) $(GEN_OE_EVENTCOMM_HRL_FILES): cosNotificationAppComm.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"cosNotificationComm.cfg"}' cosNotificationAppComm.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"cosNotificationComm.cfg"}' cosNotificationAppComm.idl
 $(GEN_NOTIFYCOMM_ERL_FILES) $(EXTERNAL_GEN_NOTIFYCOMM_HRL_FILES): CosNotifyComm.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosNotifyComm.cfg"}' CosNotifyComm.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosNotifyComm.cfg"}' CosNotifyComm.idl
 	mv $(GEN_NOTIFYCOMM_HRL_FILES) $(EXTERNAL_INC_PATH)
 $(GEN_YECC_ERL_FILES) $(GEN_YECC_HRL_FILES): cosNotification_Grammar.yrl
 

@@ -46,7 +46,7 @@
 
 -export([string/1,string/2,tokens/3,format_error/1,reserved_word/1]).
 
--import(lists, [reverse/1,reverse/2,member/2]).
+-import(lists, [reverse/1]).
 
 %% format_error(Error)
 %%  Return a string describing the error.
@@ -186,13 +186,13 @@ scan([C|Cs], _Stack, Toks, Pos, State, Errors)
   when C >= $a, C =< $z ->                              % Atoms
     sub_scan_name(Cs, [C,fun scan_atom/6], Toks, Pos, State, Errors);
 scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
-  when C >= $ß, C =< $ÿ, C /= $÷ ->                     % Atoms
+  when C >= $ß, C =< $ÿ, C =/= $÷ ->                     % Atoms
     sub_scan_name(Cs, [C,fun scan_atom/6], Toks, Pos, State, Errors);
 scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
   when C >= $A, C =< $Z ->                              % Variables
     sub_scan_name(Cs, [C,fun scan_variable/6], Toks, Pos, State, Errors);
 scan([C|Cs], _Stack, Toks, Pos, State, Errors) 
-  when C >= $À, C =< $Þ, C /= $× ->                     % Variables
+  when C >= $À, C =< $Þ, C =/= $× ->                     % Variables
     sub_scan_name(Cs, [C,fun scan_variable/6], Toks, Pos, State, Errors);
 scan([$_|Cs], _Stack, Toks, Pos, State, Errors) ->      % _Variables
     sub_scan_name(Cs, [$_,fun scan_variable/6], Toks, Pos, State, Errors);
@@ -328,9 +328,9 @@ sub_scan_name(Eof, Stack, Toks, Pos, State, Errors) ->
     Fun(Eof, Name, Toks, Pos, State, Errors).
 
 name_char(C) when C >= $a, C =< $z -> true;
-name_char(C) when C >= $ß, C =< $ÿ, C /= $÷ -> true;
+name_char(C) when C >= $ß, C =< $ÿ, C =/= $÷ -> true;
 name_char(C) when C >= $A, C =< $Z -> true;
-name_char(C) when C >= $À, C =< $Þ, C /= $× -> true;
+name_char(C) when C >= $À, C =< $Þ, C =/= $× -> true;
 name_char(C) when C >= $0, C =< $9 -> true;
 name_char($_) -> true;
 name_char($@) -> true;

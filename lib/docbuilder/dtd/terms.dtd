@@ -1,0 +1,18 @@
+<!ENTITY % ISOlat1 SYSTEM "xhtml-lat1.ent" >
+%ISOlat1;
+
+<!ENTITY amp    "&#x0026;" >
+<!ENTITY gt     "&#x003E;" >
+<!ENTITY lt     "&#x003C;" >
+
+<!-- Structure -->
+
+<!ELEMENT terms               (term)* >
+<!ELEMENT term                (id, shortdef, def, resp?) >
+<!ELEMENT id                  (#PCDATA) >
+<!ELEMENT shortdef            (#PCDATA) >
+<!ELEMENT def                 ((#PCDATA|c|em)*) >
+<!ELEMENT resp                (#PCDATA) >
+<!ELEMENT c                   (#PCDATA) >
+<!ELEMENT em                  (#PCDATA|c) >
+

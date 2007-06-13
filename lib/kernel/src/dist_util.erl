@@ -145,7 +145,7 @@ handshake_other_started(#hs_data{request_type=ReqType}=HSData0) ->
 is_allowed(#hs_data{other_node = Node, 
 		    allowed = Allowed} = HSData) ->
     case lists:member(Node, Allowed) of
-	false when Allowed /= [] ->
+	false when Allowed =/= [] ->
 	    send_status(HSData, not_allowed),
 	    error_msg("** Connection attempt from "
 		      "disallowed node ~w ** ~n", [Node]),
@@ -168,12 +168,12 @@ check_dflag_xnc(#hs_data{other_node = Node,
 		     0
 	     end,
     ReqXncFlags = XRFlg bor XPPFlg,
-    case OtherFlags band ReqXncFlags == ReqXncFlags of
+    case OtherFlags band ReqXncFlags =:= ReqXncFlags of
 	true ->
 	    ok;
 	false ->
-	    What = case {OtherFlags band XRFlg == XRFlg,
-			 OtherFlags band XPPFlg == XPPFlg} of
+	    What = case {OtherFlags band XRFlg =:= XRFlg,
+			 OtherFlags band XPPFlg =:= XPPFlg} of
 		       {false, false} -> "references, pids and ports";
 		       {true, false} -> "pids and ports";
 		       {false, true} -> "references"
@@ -380,9 +380,9 @@ gen_challenge() ->
 %%    
 get_cookies(Node) ->
     case auth:get_cookie(Node) of
-	X when atom(X) ->
+	X when is_atom(X) ->
 	    {X,X};
-	{Y,Z} when atom(Y), atom(Z) ->
+	{Y,Z} when is_atom(Y), is_atom(Z) ->
 	    {Y,Z};
 	_ ->
 	    erlang:fault("Corrupt cookie database")
@@ -634,9 +634,9 @@ recv_status(#hs_data{kernel_pid = Kernel, socket = Socket,
 		    Reply = is_pending(Kernel, Node),
 		    ?debug({is_pending,self(),Reply}),
 		    send_status(HSData, Reply),
-		    if Reply == false ->
+		    if not Reply ->
 			    ?shutdown(Node);
-		       Reply == true ->
+		       Reply ->
 			    Stat
 		    end;
 		_ -> Stat
@@ -692,9 +692,9 @@ send_tick(Socket, Tick, Type, MFTick, MFGetstat) ->
     T = T0 + 1,
     T1 = T rem 4,
     case MFGetstat(Socket) of
-	{ok, Read, _, _} when  Ticked == T ->
+	{ok, Read, _, _} when  Ticked =:= T ->
 	    {error, not_responding};
-	{ok, Read, W, Pend} when Type == hidden ->
+	{ok, Read, W, Pend} when Type =:= hidden ->
 	    send_tick(Socket, Pend, MFTick),
 	    {ok, Tick#tick{write = W + 1,
 			   tick = T1}};

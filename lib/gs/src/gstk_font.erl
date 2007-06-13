@@ -218,7 +218,7 @@ norm_style([bold,italic] = Style) ->
     Style;
 norm_style([italic,bold]) ->
     [bold,italic];
-norm_style(List) when list(List) -> % not well formed list, ignore garbage
+norm_style(List) when is_list(List) -> % not well formed list, ignore garbage
     case {lists:member(bold, List),lists:member(italic, List)} of
 	{true,true} ->
 	    [bold,italic];

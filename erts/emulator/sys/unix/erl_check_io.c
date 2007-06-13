@@ -176,7 +176,7 @@ abort_task(Eterm id, ErtsPortTaskHandle *pthp, short type)
     }
     else if (erts_port_task_is_scheduled(pthp)) {
 	erts_port_task_abort(pthp);
-	ASSERT(erts_drvportid2port(id));
+	ASSERT(erts_is_port_alive(id));
     }
 }
 
@@ -512,7 +512,7 @@ chk_stale(Eterm id, int fd, int mode)
 {
     if (is_nil(id))
 	return 0;
-    if (erts_drvportid2port(id))
+    if (erts_is_port_alive(id))
 	return 1; /* Steal */
     stale_drv_select(id, fd, mode);
     return 0;

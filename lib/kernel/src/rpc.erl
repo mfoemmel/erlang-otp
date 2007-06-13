@@ -206,7 +206,7 @@ block_call(N,M,F,A,_Timeout) when node() =:= N ->  %% Optimize local call
     local_call(M, F, A);
 block_call(N,M,F,A,infinity) ->
     do_call(N, {block_call,M,F,A,group_leader()}, infinity);
-block_call(N,M,F,A,Timeout) when integer(Timeout), Timeout >= 0 ->
+block_call(N,M,F,A,Timeout) when is_integer(Timeout), Timeout >= 0 ->
     do_call(N, {block_call,M,F,A,group_leader()}, Timeout).
 
 local_call(M, F, A) when is_atom(M), is_atom(F), is_list(A) ->
@@ -317,7 +317,7 @@ eval_everywhere(Nodes, Mod, Fun, Args) ->
 
 
 send_nodes([Node|Tail], Name, Msg, Monitors) 
-  when atom(Node) ->
+  when is_atom(Node) ->
     Monitor = start_monitor(Node, Name),
     %% Handle non-existing names in rec_nodes.
     catch {Name, Node} ! {self(), Msg},
@@ -331,7 +331,7 @@ send_nodes([], _Name,  _Req, Monitors) ->
 %% Starts a monitor, either the new way, or the old.
 %% Assumes that the arguments are atoms.
 start_monitor(Node, Name) ->
-    if node() =:= nonode@nohost, Node /= nonode@nohost ->
+    if node() =:= nonode@nohost, Node =/= nonode@nohost ->
 	    Ref = make_ref(),
 	    self() ! {'DOWN', Ref, process, {Name, Node}, noconnection},
 	    {Node, Ref};
@@ -341,7 +341,7 @@ start_monitor(Node, Name) ->
 
 %% Cancels a monitor started with Ref=erlang:monitor(_, _),
 %% i.e return value {Node, Ref} from start_monitor/2 above.
-unmonitor(Ref) when reference(Ref) ->
+unmonitor(Ref) when is_reference(Ref) ->
     erlang:demonitor(Ref),
     receive
 	{'DOWN', Ref, _, _, _} ->
@@ -355,16 +355,17 @@ unmonitor(Ref) when reference(Ref) ->
 multicall(M, F, A) -> 
     multicall(M, F, A, infinity).
 
-multicall(Nodes, M, F, A) when list(Nodes) ->
+multicall(Nodes, M, F, A) when is_list(Nodes) ->
     multicall(Nodes, M, F, A, infinity);
 multicall(M, F, A, Timeout) ->
     multicall([node() | nodes()], M, F, A, Timeout).
 
 multicall(Nodes, M, F, A, infinity)
-  when list(Nodes), atom(M), atom(F), list(A) ->
+  when is_list(Nodes), is_atom(M), is_atom(F), is_list(A) ->
     do_multicall(Nodes, M, F, A, infinity);
 multicall(Nodes, M, F, A, Timeout) 
-  when list(Nodes), atom(M), atom(F), list(A), integer(Timeout), Timeout >= 0 ->
+  when is_list(Nodes), is_atom(M), is_atom(F), is_list(A), is_integer(Timeout), 
+       Timeout >= 0 ->
     do_multicall(Nodes, M, F, A, Timeout).
 
 do_multicall(Nodes, M, F, A, Timeout) ->
@@ -390,7 +391,7 @@ multi_server_call(Name, Msg) ->
     multi_server_call([node() | nodes()], Name, Msg).
 
 multi_server_call(Nodes, Name, Msg) 
-  when list(Nodes), atom(Name) ->
+  when is_list(Nodes), is_atom(Name) ->
     Monitors = send_nodes(Nodes, Name, Msg, []),
     rec_nodes(Name, Monitors).
 

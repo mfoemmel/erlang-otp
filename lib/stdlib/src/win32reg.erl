@@ -66,12 +66,12 @@ open(Modes) ->
 	    {error, enotsup}
     end.
 
-close({win32reg, Reg}) when port(Reg) ->
+close({win32reg, Reg}) when is_port(Reg) ->
     unlink(Reg),
     exit(Reg, die),
     ok.
 
-current_key({win32reg, Reg}) when port(Reg) ->
+current_key({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_current],
     Reg ! {self(), {command, Cmd}},
     {state, Hkey, Name} = get_result(Reg),
@@ -81,10 +81,10 @@ current_key({win32reg, Reg}) when port(Reg) ->
 	     _  -> Root ++ [$\\|Name]
 	 end}.
 
-change_key({win32reg, Reg}, Key) when port(Reg) ->
+change_key({win32reg, Reg}, Key) when is_port(Reg) ->
     change_key(Reg, ?cmd_open_key, Key).
 
-change_key_create({win32reg, Reg}, Key) when port(Reg) ->
+change_key_create({win32reg, Reg}, Key) when is_port(Reg) ->
     change_key(Reg, ?cmd_create_key, Key).
 
 change_key(Reg, Cmd, Key) ->
@@ -96,17 +96,17 @@ change_key(Reg, Cmd, Key) ->
 	    {error, Reason}
     end.
 
-sub_keys({win32reg, Reg}) when port(Reg) ->
+sub_keys({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_all_subkeys],
     Reg ! {self(), {command, Cmd}},
     collect_keys(Reg, []).
 
-delete_key({win32reg, Reg}) when port(Reg) ->
+delete_key({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_delete_key],
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
     
-set_value({win32reg, Reg}, Name0, Value) when port(Reg) ->
+set_value({win32reg, Reg}, Name0, Value) when is_port(Reg) ->
     Name =
 	case Name0 of
 	    default -> [];
@@ -117,7 +117,7 @@ set_value({win32reg, Reg}, Name0, Value) when port(Reg) ->
     Reg ! {self(), {command, Cmd}},
     get_result(Reg).
 
-value({win32reg, Reg}, Name) when port(Reg) ->
+value({win32reg, Reg}, Name) when is_port(Reg) ->
     Cmd = [?cmd_get_value, Name, 0],
     Reg ! {self(), {command, Cmd}},
     case get_result(Reg) of
@@ -127,12 +127,12 @@ value({win32reg, Reg}, Name) when port(Reg) ->
 	    {error, Reason}
     end.
     
-values({win32reg, Reg}) when port(Reg) ->
+values({win32reg, Reg}) when is_port(Reg) ->
     Cmd = [?cmd_get_all_values],
     Reg ! {self(), {command, Cmd}},
     collect_values(Reg, []).
 
-delete_value({win32reg, Reg}, Name0) when port(Reg) ->
+delete_value({win32reg, Reg}, Name0) when is_port(Reg) ->
     Name =
 	case Name0 of
 	    default -> [];
@@ -223,11 +223,11 @@ encode_value(?reg_dword, Value) ->
 encode_value(_, Value) ->
     list_to_binary(Value).
 
-term_to_value(Int) when integer(Int) ->
+term_to_value(Int) when is_integer(Int) ->
     {i32(?reg_dword), i32(Int)};
-term_to_value(String) when list(String) ->
+term_to_value(String) when is_list(String) ->
     {i32(?reg_sc), [String, 0]};
-term_to_value(Bin) when binary(Bin) ->
+term_to_value(Bin) when is_binary(Bin) ->
     {i32(?reg_binary), Bin};
 term_to_value(_) ->
     exit(badarg).
@@ -242,7 +242,7 @@ get_cstring([C|Rest], Result) ->
 get_cstring([], Result) ->
     {ok, lists:reverse(Result), []}.
 	    
-i32(Int) when integer(Int) ->
+i32(Int) when is_integer(Int) ->
     [(Int bsr 24) band 255,
      (Int bsr 16) band 255,
      (Int bsr  8) band 255,

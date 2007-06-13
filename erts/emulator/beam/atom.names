@@ -362,6 +362,7 @@ atom running
 atom runtime
 atom save_calls
 atom scheduler_id
+atom sensitive
 atom sequential_tracer
 atom sequential_trace_token
 atom serial

@@ -173,7 +173,7 @@ get_c_code(Func, Dst1, Ms, Size, Flags, TrueLblName, FalseLblName) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%% Int Code %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-make_int_gc_code(I) when integer(I) ->
+make_int_gc_code(I) when is_integer(I) ->
   case hipe_tagscheme:bignum_sizeneed(I) of
     0 -> [];
     X when is_integer(X) -> [hipe_rtl:mk_gctest(X)]
@@ -884,7 +884,7 @@ multiply_code([ShiftSize| Rest], Register, Result, FalseLblName, Tmp1, OldCode) 
 multiply_code([], _Register, _Result, _FalseLblName, _Tmp1, Code) ->
   Code.
 
-number2list(X) when is_integer(X), X>=0 ->
+number2list(X) when is_integer(X), X >= 0 ->
   number2list(X, []).
 
 number2list(1, Acc) ->
@@ -892,7 +892,8 @@ number2list(1, Acc) ->
 number2list(0, Acc) ->
   lists:reverse(Acc);
 number2list(X, Acc) ->
-  number2list(X-round(math:pow(2,floorlog2(X))), [floorlog2(X)|Acc]).
+  F = floorlog2(X),
+  number2list(X-(1 bsl F), [F|Acc]).
 
 floorlog2(X) ->
   round(math:log(X)/math:log(2)-0.5). 
@@ -902,4 +903,4 @@ set_high(X) ->
 set_high(0, Y) ->
   Y;
 set_high(X, Y) ->
-  set_high(X-1, Y+round(math:pow(2,27-X))).
+  set_high(X-1, Y+(1 bsl (27-X))).

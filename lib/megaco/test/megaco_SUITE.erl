@@ -62,7 +62,8 @@ all(suite) ->
      trans,
      actions,
      load,
-     pending_limit
+     pending_limit,
+     timer
     ].
 
 tickets(suite) ->
@@ -124,4 +125,7 @@ load(suite) ->
 
 pending_limit(suite) ->
     [{megaco_pending_limit_test, all}].
+
+timer(suite) ->
+    [{megaco_timer_test, all}].
 

@@ -36,6 +36,7 @@
 	 from_file/2,
 	 insert/2,
 	 lookup/2,
+	 lookup/3,
 	 lookup_module/2,
 	 merge_and_write_file/2,
 	 merge_plts/1,
@@ -75,8 +76,30 @@ copy(From, To) ->
 insert(Plt, Object) ->
   ets:insert(Plt, Object).
 
+
+
+
+lookup(Plt, MFA={M, F, A}, Args) when is_atom(M), is_atom(F),
+				  is_integer(A), 0 =< A, A =< 255 ->
+  lookup_1(Plt, MFA, Args);
+lookup(Plt, Label, Args) when is_integer(Label) ->
+  lookup_1(Plt, Label, Args).
+
+lookup_1(Plt, Obj, Args) ->
+  case ets:lookup(Plt, Obj) of
+    [] -> none;
+    [{Obj, {contract, Ret_fun, Arg}}] ->
+      if (Args =:= none) -> 
+	  {value, {Ret_fun(Arg), Arg}};
+	 true -> 
+	  {value, {Ret_fun(Args), Arg}}
+      end;
+    [{Obj, Ret, Arg}] -> {value, {Ret, Arg}}
+  end.
+
+
 lookup(Plt, MFA={M, F, A}) when is_atom(M), is_atom(F),
-				is_integer(A), 0 =< A, A =< 255 ->
+                            is_integer(A), 0 =< A, A =< 255 ->
   lookup_1(Plt, MFA);
 lookup(Plt, Label) when is_integer(Label) ->
   lookup_1(Plt, Label).
@@ -84,8 +107,11 @@ lookup(Plt, Label) when is_integer(Label) ->
 lookup_1(Plt, Obj) ->
   case ets:lookup(Plt, Obj) of
     [] -> none;
+    [{Obj, {contract, Ret_fun, Arg}}] ->
+      {contract, {Ret_fun, Arg}};
     [{Obj, Ret, Arg}] -> {value, {Ret, Arg}}
   end.
+
 
 lookup_module(Plt, M) when is_atom(M) ->
   case ets:match_object(Plt, {{M, '_', '_'}, '_', '_'}) of
@@ -349,10 +375,21 @@ pp_non_returning() ->
   PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
   Plt = from_file(foo, PltFile),
   List = ets:tab2list(Plt),
-  NonRet = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
-						  erl_types:t_is_none(Range)],
+  Unit = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
+						erl_types:t_is_unit(Range)],
+  None = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
+						erl_types:t_is_none(Range)],
+  io:format("=========================================\n"),
+  io:format("=                Loops                  =\n"),
+  io:format("=========================================\n\n"),
   [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
-   || {{M,F,A}, Type} <- lists:sort(NonRet)],
+   || {{M,F,A}, Type} <- lists:sort(Unit)],
+  io:format("\n\n=========================================\n"),
+  io:format("=                Errors                 =\n"),
+  io:format("=========================================\n\n"),
+
+  [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
+   || {{M,F,A}, Type} <- lists:sort(None)],
   ets:delete(Plt),
   ok.
 

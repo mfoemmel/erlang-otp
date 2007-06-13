@@ -587,7 +587,7 @@ mark_cell_and_notify(CellId, RealCol, RealRow, ProcVars) ->
 
     CellMarked = case CellText of
 		     "" -> false;
-		     _AnyText when CellId==OldCellId -> false;
+		     _AnyText when CellId=:=OldCellId -> false;
 		     _AnyText -> true
 		 end,
 
@@ -1043,7 +1043,7 @@ check_if_new_mark_visible(_Col, _Row, _NofCols, _NofRows) ->
 %%======================================================================
 
 
-update_marked_cells(CellId, OldCellId, _MarkedCell) when CellId == OldCellId ->
+update_marked_cells(CellId, OldCellId, _MarkedCell) when CellId =:= OldCellId ->
     gs:config(CellId, [{bg, ?DEFAULT_GRID_BGCOLOR}]);
 update_marked_cells(_CellId, undefined, false) ->
     done;
@@ -1246,7 +1246,7 @@ make_row_data_list(N, NofRows, [DataItem | RemData]) ->
 %%======================================================================
 
 
-item_to_list(Item) when tuple(Item) ->
+item_to_list(Item) when is_tuple(Item) ->
     tuple_to_list(Item);
 item_to_list(Item) ->
     [Item].
@@ -1740,7 +1740,7 @@ create_col_frames(N, NofRows, RowHeight, ParentId, GridP, ColFrameAcc, LabelAcc)
 		 nof_cols   = NofCols,
 		 col_width  = ColWidth} = GridP,
     Xpos = if
-	       N == NofCols ->
+	       N =:= NofCols ->
 		   0;
 	       true ->
 		   ColWidth + 1

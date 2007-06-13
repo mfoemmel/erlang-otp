@@ -88,7 +88,7 @@ is_string([]) -> false;
 is_string(X) -> is_string_2(X).
 
 is_string_2([]) -> true;
-is_string_2([H|T]) when integer(H), H >= $ , H =< 255 ->
+is_string_2([H|T]) when is_integer(H), H >= $ , H =< 255 ->
     is_string_2(T);
 is_string_2(_) -> false.
 

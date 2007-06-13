@@ -63,7 +63,7 @@
 %%  Exported functions
 %%
 
-xset(L, T) when list (L) ->
+xset(L, T) when is_list(L) ->
     from_external(lists:usort(L), T);
 xset(S, T) ->
     from_external(S, T).
@@ -74,7 +74,7 @@ xset(S, T) ->
 is_directory(F) ->
     case file:read_file_info(F) of
 	{ok, Info} -> 
-	    Info#file_info.type == directory;
+	    Info#file_info.type =:= directory;
 	{error, Error} -> 
 	    file_error(F, Error)
     end.
@@ -95,7 +95,8 @@ file_info(F) ->
     case file:read_file_info(F) of
 	{ok, Info} -> 
 	    Readable = case Info#file_info.access of
-			   Access when Access == read; Access == read_write ->
+			   Access when Access =:= read; 
+                                       Access =:= read_write ->
 			       readable;
 			   _ ->
 			       unreadable
@@ -189,8 +190,7 @@ release_directory(Dir, UseLib, SubDir) ->
     SDir = subdir(Dir, "lib", UseLib),
     case file:list_dir(SDir) of
 	{ok, FileNames} ->
-	    F = fun(File) -> filename:join(SDir, File) end,
-	    Files = map(F, FileNames),
+            Files = [filename:join(SDir, File) || File <- FileNames],
 	    case select_application_directories(Files, SubDir) of
 		{ok, ApplDirs} ->
 		    {ok, list_to_atom(filename:basename(Dir)), SDir, ApplDirs};
@@ -213,7 +213,7 @@ release_directory(Dir, UseLib, SubDir) ->
 %% itself.
 %%  
 select_application_directories(FileNames, Dir) ->
-    select_application_directories(FileNames, Dir, Dir /= [], []).
+    select_application_directories(FileNames, Dir, Dir =/= [], []).
 
 %% filename_to_application(FileName) -> 
 %%          {ApplicationName,NumbericApplicationVersion}
@@ -239,8 +239,7 @@ filename_to_application(FileName) ->
 %%
 select_last_application_version(AppVs) ->
     TL = to_external(partition(1, relation(AppVs))),
-    F = fun(L) -> last(keysort(2, L)) end,
-    map(F, TL).
+    [last(keysort(2, L)) || L <- TL].
 
 %% scan_directory(Directory, Recurse, Collect, Watch) -> 
 %%     {Collected, Errors, Seen, Unreadable}
@@ -436,7 +435,7 @@ relation_to_graph(S) ->
 
 %% -> {ok, FileName} | Error | fault()
 %% Finds a module's BEAM file.
-find_beam(Module) when atom(Module) ->
+find_beam(Module) when is_atom(Module) ->
     case code:which(Module) of
 	non_existing ->
 	    error({no_such_module, Module});
@@ -517,8 +516,8 @@ format_error(E) ->
 %%  Local functions
 %%
 
-to_list(X) when atom(X) -> atom_to_list(X);
-to_list(X) when list(X) -> X.
+to_list(X) when is_atom(X) -> atom_to_list(X);
+to_list(X) when is_list(X) -> X.
 
 select_application_directories([FileName|FileNames], Dir, Flag, L) ->
     case is_directory(FileName) of
@@ -552,7 +551,7 @@ filename2appl(File) ->
     true = string:len(V) > 0,
     VsnT = string:tokens(V, "."),
     ApplName = string:sub_string(File, 1, Pos-1),
-    Vsn = map(fun erlang:list_to_integer/1, VsnT),
+    Vsn = [list_to_integer(Vsn) || Vsn <- VsnT],
     {list_to_atom(ApplName),Vsn}.
 
 find_files_dir(Dir, Recurse, Collect, Watch, L) ->
@@ -567,7 +566,7 @@ find_files_dir(Dir, Recurse, Collect, Watch, L) ->
 find_files([F | Fs], Dir, Recurse, Collect, Watch, L) ->
     File = filename:join(Dir, F),
     L1 = case file_info(File) of
-	     {ok, {_, directory, readable, _}} when Recurse == true ->
+	     {ok, {_, directory, readable, _}} when Recurse ->
 		 find_files_dir(File, Recurse, Collect, Watch, L);
              {ok, {_, directory, _, _}} ->
 		 L;
@@ -619,7 +618,7 @@ neighbours([V | Vs], G, Fun, VT, L) ->
 neighbours([], _G, _Fun, [VT], L) ->
     xset(L, [{VT,VT}]).
 
-neighbours([N | Ns], G, Fun, VT, L, V, Vs) when Fun == reachable_neighbours ->
+neighbours([N | Ns], G, Fun, VT, L, V, Vs) when Fun =:= reachable_neighbours ->
     neighbours(Ns, G, Fun, VT, [{V, N} | L], V, Vs);
 neighbours([N | Ns], G, Fun, VT, L, V, Vs) ->
     neighbours(Ns, G, Fun, VT, [{N, V} | L], V, Vs);
@@ -631,18 +630,18 @@ match_list(L, RExpr) ->
     filter(fun(E) -> match(E, Expr) end, L).
 
 match_one(VarL, Con, Col) ->
-    select_each(VarL, fun(E) -> Con == element(Col, E) end).
+    select_each(VarL, fun(E) -> Con =:= element(Col, E) end).
 
 match_many(VarL, RExpr, Col) ->
     {ok, Expr} = regexp:parse(RExpr),    
     select_each(VarL, fun(E) -> match(element(Col, E), Expr) end).
 
-match(I, Expr) when integer(I) ->
+match(I, Expr) when is_integer(I) ->
     S = integer_to_list(I),
-    {match, 1, length(S)} == regexp:first_match(S, Expr);
-match(A, Expr) when atom(A) ->
+    {match, 1, length(S)} =:= regexp:first_match(S, Expr);
+match(A, Expr) when is_atom(A) ->
     S = atom_to_list(A),
-    {match, 1, length(S)} == regexp:first_match(S, Expr).
+    {match, 1, length(S)} =:= regexp:first_match(S, Expr).
 
 select_each([{Mod,Funs} | L], Pred) ->
     case filter(Pred, Funs) of
@@ -654,9 +653,9 @@ select_each([{Mod,Funs} | L], Pred) ->
 select_each([], _Pred) ->
     [].
 
-split_options([O | Os], A, P, I, V) when atom(O) ->
+split_options([O | Os], A, P, I, V) when is_atom(O) ->
     split_options(Os, [O | A], P, I, V);
-split_options([O={Name,_} | Os], A, P, I, V) when atom(Name) ->
+split_options([O={Name,_} | Os], A, P, I, V) when is_atom(Name) ->
     split_options(Os, A, [O | P], I, V);
 split_options([O | Os], A, P, I, V) ->
     split_options(Os, A, P, [O | I], V);
@@ -667,13 +666,13 @@ split_options([], A, P, I, V) ->
 split_options(O, A, P, I, V) ->
     split_options([O], A, P, I, V).
 
-option_values([O | Os], A, P, I, Vs) when atom(O) ->
+option_values([O | Os], A, P, I, Vs) when is_atom(O) ->
     option_values(Os, delete(O, A), P, I, [member(O, A) | Vs]);    
 option_values([{Name, AllowedValues} | Os], A, P, I, Vs) ->
     case keysearch(Name, 1, P) of
 	{value, {_, Values}} ->
 	    option_value(Name, AllowedValues, Values, A, P, I, Vs, Os);
-	false when AllowedValues == [] ->
+	false when AllowedValues =:= [] ->
 	    option_values(Os, A, P, I, [[] | Vs]);
 	false ->
 	    [Default | _] = AllowedValues,
@@ -683,7 +682,8 @@ option_values([], A, P, Invalid, Values) ->
     I2 = to_external(family_to_relation(family(P))),
     {reverse(Values), Invalid ++ A ++ I2}.
 
-option_value(Name, [_Deflt, Fun], Vals, A, P, I, Vs, Os) when function(Fun) ->
+option_value(Name, [_Deflt, Fun], Vals, A, P, I, Vs, Os) 
+                                                  when is_function(Fun) ->
     P1 = keydelete(Name, 1, P),
     case Fun(Vals) of
 	true ->
@@ -697,9 +697,9 @@ option_value(Name, AllowedValues, Values, A, P, I, Vs, Os) ->
     AVS = set(AllowedValues),
     V1 = to_external(intersection(VS, AVS)),
     {V, NP} = case to_external(difference(VS, AVS)) of
-		  _ when AllowedValues == [] -> {Values,P1};
+		  _ when AllowedValues =:= [] -> {Values,P1};
 		  [] -> {V1,P1};
-		  _ when length(AllowedValues) == 1 -> 
+		  _ when length(AllowedValues) =:= 1 -> 
 		      {Values,P1};
  		  I1 -> {V1,[{Name,I1} | P1]}
 	      end,

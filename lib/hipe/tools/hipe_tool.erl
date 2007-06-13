@@ -10,8 +10,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2006/07/25 07:37:35 $
-%%              $Revision: 1.12 $
+%%              $Date: 2007/05/10 16:29:46 $
+%%              $Revision: 1.13 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -324,8 +324,8 @@ update_module_box(State,Idx,Data,_Txt) ->
       Funs = lists:usort((funs(Mod))), 
       MFAs = mfas(Mod,Funs),
       ModText = atom_to_list(Mod),
-      update_text(mod,"Module:"++ModText),
-      update_text(compmod,"Compile\nModule\n"++ModText),
+      update_text(mod, "Module:"++ModText),
+      update_text(compmod, "Compile\nModule\n"++ModText),
       Options = get_compile(Info),
       update_text(ver,get_version(Options)),
       update_text(time,get_time(Options)),
@@ -337,12 +337,10 @@ update_module_box(State,Idx,Data,_Txt) ->
 	 true -> update_text(prof,"Profile\n"++ModText)
       end,
       
-		 
+      Mode = get_mode(Funs, NativeCode),
       
-      Mode = get_mode(Funs,NativeCode),
-      
-      update_text(native,Mode),
-      Items = fun_names(Mod,Funs, NativeCode,Prof),
+      update_text(native, Mode),
+      Items = fun_names(Mod, Funs, NativeCode, Prof),
 
       catch gs:config(module_listbox, [{data, MFAs},
 				       {items, Items},
@@ -350,7 +348,7 @@ update_module_box(State,Idx,Data,_Txt) ->
 				      ]),
       ProfData = [mfa_to_string(element(1,X))++" "++
 				integer_to_list(element(2,X))
-		  ||X<-hipe_profile:res(),element(2,X)>0],
+		  || X <- hipe_profile:res(), element(2,X)>0],
       catch gs:config(profile_listbox, [{data, ProfData},
 				       {items, ProfData},
 				       {selection, 0}

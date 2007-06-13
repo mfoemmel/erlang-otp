@@ -87,9 +87,9 @@ stop(Pid) ->
 %%-----------------------------------------------------------------
 %% Func: init/1
 %%-----------------------------------------------------------------
-init({connect, Type, Socket, Ref}) ->
+init({connect, Type, Socket, Ref, Options}) ->
     process_flag(trap_exit, true),
-    Flags = orber:get_flags(),
+    Flags = orber_tb:keysearch(flags, Options, orber_env:get_flags()),
     {Address, Port} = PeerData = orber_socket:peerdata(Type, Socket),
     {LAddress, LPort} = LocalData = orber_socket:sockdata(Type, Socket),
     case {?ORB_FLAG_TEST(Flags, ?ORB_ENV_LOCAL_INTERFACE), LPort} of
@@ -100,7 +100,8 @@ init({connect, Type, Socket, Ref}) ->
 	_ ->
 	    orber_iiop_net:add_connection(Socket, Type, PeerData, LocalData, Ref),
 	    Interceptors = 
-		case orber:get_interceptors() of
+		case orber_tb:keysearch(interceptors, Options,
+					orber_env:get_interceptors()) of
 		    {native, PIs} ->
 			{native, orber_pi:new_in_connection(PIs, Address, Port, 
 							    LAddress, LPort), PIs};
@@ -112,7 +113,9 @@ init({connect, Type, Socket, Ref}) ->
 		    true when Type == ssl ->
 			#giop_env{interceptors = Interceptors, 
 				  flags = Flags, host = [LAddress], 
-				  iiop_port = orber:iiop_port(),
+				  iiop_port = 
+				  orber_tb:keysearch(iiop_port, Options, 
+						     orber_env:iiop_port()),
 				  iiop_ssl_port = LPort,
 				  domain = orber:domain(),
 				  partial_security = orber:partial_security()};
@@ -120,7 +123,9 @@ init({connect, Type, Socket, Ref}) ->
 			#giop_env{interceptors = Interceptors, 
 				  flags = Flags, host = [LAddress], 
 				  iiop_port = LPort,
-				  iiop_ssl_port = orber:iiop_ssl_port(),
+				  iiop_ssl_port = 
+				  orber_tb:keysearch(iiop_ssl_port, Options, 
+						     orber_env:iiop_ssl_port()),
 				  domain = orber:domain(),
 				  partial_security = orber:partial_security()};
 		    false ->
@@ -134,16 +139,26 @@ init({connect, Type, Socket, Ref}) ->
 					  partial_security = orber:partial_security()};
 			    true ->
 				#giop_env{interceptors = Interceptors, 
-					  flags = Flags, host = orber:nat_host(), 
-					  iiop_port = orber:nat_iiop_port(),
-					  iiop_ssl_port = orber:nat_iiop_ssl_port(),
+					  flags = Flags, 
+					  host = 
+					  orber_tb:keysearch(nat_ip_address, Options,
+							     orber_env:nat_host()), 
+					  iiop_port = 
+					  orber_tb:keysearch(nat_iiop_port, Options,
+							     orber_env:nat_iiop_port()),
+					  iiop_ssl_port = 
+					  orber_tb:keysearch(nat_iiop_ssl_port, Options,
+							     orber_env:nat_iiop_ssl_port()),
 					  domain = orber:domain(),
 					  partial_security = orber:partial_security()}
 			end
 		end,
-	    Timeout = orber:iiop_in_connection_timeout(),
-	    MaxFrags = orber:iiop_max_fragments(),
-	    MaxRequests = orber:iiop_max_in_requests(),
+	    Timeout = orber_tb:keysearch(iiop_in_connection_timeout, Options,
+					 orber_env:iiop_in_connection_timeout()),
+	    MaxFrags = orber_tb:keysearch(iiop_max_fragments, Options,
+					  orber_env:iiop_max_fragments()),
+	    MaxRequests = orber_tb:keysearch(iiop_max_in_requests, Options,
+					     orber_env:iiop_max_in_requests()),
 	    {ok, #state{stype = Type, 
 			socket = Socket, 
 			db =  ets:new(orber_incoming_requests, [set]), 

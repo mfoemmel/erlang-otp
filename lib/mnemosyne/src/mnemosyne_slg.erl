@@ -336,7 +336,7 @@ delay(X, {H,D,B}) -> {H,[X|D],lists:delete(X,B)}.
 %% A:-A with all C in program P such that A unifies C
 %% A little short-cut wich just fetches matching clauses from the DB...
 
-slg_resolvents_P_A(P) when record(P,pred_sym) ->
+slg_resolvents_P_A(P) when is_record(P,pred_sym) ->
     case P#pred_sym.type of
 	rule ->
 	    lists:map(fun(Body) -> {P,[],Body} end,
@@ -346,7 +346,7 @@ slg_resolvents_P_A(P) when record(P,pred_sym) ->
     end.
 
 
-key(A) when record(A,pred_sym) -> mnemosyne_unify:numbervars(A#pred_sym.args).
+key(A) when is_record(A,pred_sym) -> mnemosyne_unify:numbervars(A#pred_sym.args).
 
 min(A,B) when A<B -> A;
 min(_,B) -> B.
@@ -369,7 +369,7 @@ create_table_stack() ->
 in_table(Key) ->
     case table_lookup({comp,Key}) of
 	[] -> false;
-	L when list(L) -> true
+	L when is_list(L) -> true
     end.
 
 new_table_entry(Key, Poss, Negs) ->

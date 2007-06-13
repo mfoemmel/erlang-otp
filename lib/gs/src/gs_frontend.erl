@@ -121,7 +121,7 @@ loop(State) ->
 						%	    io:format("frontend received: ~p~n",[X]),
 	    case catch (doit(X,State)) of
 		done -> loop(State);
-		NewState when record(NewState,state) ->
+		NewState when is_record(NewState,state) ->
 		    loop(NewState);
 		stop -> stop;
 		Reason ->
@@ -213,12 +213,12 @@ doit({'EXIT', KernelBackend, Reason}, State)
 
 doit({'EXIT', Pid, _Reason}, #state{kernel=K,user=U,db=DB}) ->
     %% io:format("Pid ~w died reason ~w~n", [Pid, _Reason]),
-    if pid(U) -> 
+    if is_pid(U) -> 
 	    DeadObjU = gstk:pid_died(U,Pid),
 	    remove_objs(DB,DeadObjU);
        true -> ok
     end,
-    if pid(K) ->
+    if is_pid(K) ->
 	    DeadObjK = gstk:pid_died(K,Pid),
 	    remove_objs(DB,DeadObjK);
        true -> true end,
@@ -275,9 +275,9 @@ doit({From,{instance,kernel,Opts}},State) ->
 
 doit({From,stop}, State) ->
     #state{kernel=K,user=U} = State,
-    if pid(U) -> gstk:stop(U);
+    if is_pid(U) -> gstk:stop(U);
        true -> true end,
-    if pid(K) -> gstk:stop(K);
+    if is_pid(K) -> gstk:stop(K);
        true -> true end,
     reply(From,stopped),
     stop;
@@ -325,7 +325,7 @@ remove_user_objects(DB) ->
     DeadObj = find_user_obj(ets:first(DB),DB),
     remove_objs(DB,DeadObj).
 
-find_user_obj(Int,DB) when integer(Int) ->
+find_user_obj(Int,DB) when is_integer(Int) ->
     if Int rem 2 == 0 -> %% a kernel obj
 	    find_user_obj(ets:next(DB,Int),DB);
        true -> %% a user obj
@@ -346,7 +346,7 @@ remove_objs(DB,[Obj|Objs]) ->
     remove_objs(DB,Objs);
 remove_objs(_DB,[]) -> done.
 
-idOrName_to_id(DB,IdOrName,Pid) when atom(IdOrName) ->
+idOrName_to_id(DB,IdOrName,Pid) when is_atom(IdOrName) ->
     case ets:lookup(DB,{IdOrName,Pid}) of
 	[{_,Obj}] -> Obj;
 	_ -> undefined

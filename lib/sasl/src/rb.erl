@@ -65,9 +65,9 @@ list(Type) -> gen_server:call(rb_server, {list, Type}, infinity).
 show() -> 
     gen_server:call(rb_server, show, infinity).
 
-show(Number) when integer(Number) -> 
+show(Number) when is_integer(Number) -> 
     gen_server:call(rb_server, {show_number, Number}, infinity);
-show(Type) when atom(Type) ->
+show(Type) when is_atom(Type) ->
     gen_server:call(rb_server, {show_type, Type}, infinity).
 
 grep(RegExp) -> gen_server:call(rb_server, {grep, RegExp}, infinity).
@@ -218,7 +218,7 @@ open_log_file(FileName) ->
 	    standard_io
     end.
 
-close_device(Fd) when pid(Fd) ->
+close_device(Fd) when is_pid(Fd) ->
     catch file:close(Fd);
 close_device(_) -> ok.
 
@@ -267,7 +267,7 @@ make_file_list(Dir, FirstFileNo) ->
 	{ok, FileNames} ->
 	    FileNumbers = lists:zf(fun(Name) ->
 					   case catch list_to_integer(Name) of
-					       Int when integer(Int) ->
+					       Int when is_integer(Int) ->
 						   {true, Int};
 					       _ ->
 						   false
@@ -313,7 +313,7 @@ get_report_data_from_file(Dir, No, FileNr, Max, Type) ->
     Fname = integer_to_list(FileNr),
     FileName = lists:concat([Dir, Fname]),
     case file:open(FileName, read) of
-	{ok, Fd} when pid(Fd) -> read_reports(No, Fd, Fname, Max, Type);
+	{ok, Fd} when is_pid(Fd) -> read_reports(No, Fd, Fname, Max, Type);
 	_ -> [{No, unknown, "Can't open file " ++ Fname, "???", Fname, 0}]
     end.
 
@@ -384,7 +384,7 @@ read_reports(Fd, Res, Type) ->
 		    read_reports(Fd, [Rep | Res], Type);
 		RealType == Type ->
 		    read_reports(Fd, [Rep | Res], Type);
-		list(Type) ->
+		is_list(Type) ->
 		    case lists:member(RealType, Type) of
 			true ->
 			    read_reports(Fd, [Rep | Res], Type);
@@ -457,7 +457,7 @@ get_short_descr({{Date, Time}, {error_report, Pid, {_, crash_report, Rep}}}) ->
 get_short_descr({{Date, Time}, {error_report, Pid, {_, supervisor_report,Rep}}}) ->
     Name =
 	case lists:keysearch(supervisor, 1, Rep) of
-	    {value, {_Key, N}} when atom(N) -> N;
+	    {value, {_Key, N}} when is_atom(N) -> N;
 	    _ -> Pid
 	end,
     NameStr = lists:flatten(io_lib:format("~w", [Name])),
@@ -610,7 +610,7 @@ print_grep_report(Dir, Data, Number, Device, RegExp, Abort, Log) ->
     {Fname, FilePosition} = find_report(Data, Number),
     FileName = lists:concat([Dir, Fname]),
     case file:open(FileName, read) of
-	{ok, Fd} when pid(Fd) -> 
+	{ok, Fd} when is_pid(Fd) -> 
 	    check_rep(Fd, FilePosition, Device, RegExp, Number, Abort, Log);
 	_ -> 
 	    io:format("rb: can't open file ~p~n", [Fname]),

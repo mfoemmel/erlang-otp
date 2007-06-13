@@ -112,9 +112,9 @@ opt([],Opt) ->
 nods(all) ->
     Nodes1 = remove_active([node()|nodes()]),
     remove_faulty_runtime_tools_vsn(Nodes1);
-nods(Node) when atom(Node) ->
+nods(Node) when is_atom(Node) ->
     nods([Node]);
-nods(Nodes) when list(Nodes) ->
+nods(Nodes) when is_list(Nodes) ->
     Nodes1 = remove_active(Nodes),
     Nodes2 = remove_noexist(Nodes1),
     remove_faulty_runtime_tools_vsn(Nodes2).
@@ -188,7 +188,7 @@ name(Node,Filename) ->
 store(Func,Args) ->
     Last = case ets:last(?history_table) of
 	       '$end_of_table' -> 0;
-	       Int when integer(Int) -> Int
+	       Int when is_integer(Int) -> Int
 	   end,
     ets:insert(?history_table,{Last+1,{?MODULE,Func,Args}}).
 
@@ -222,14 +222,14 @@ write_config(ConfigFile,Config) ->
     write_config(ConfigFile,Config,[]).
 write_config(ConfigFile,all,Opt) ->
     write_config(ConfigFile,['_'],Opt);
-write_config(ConfigFile,Nums,Opt) when list(Nums), integer(hd(Nums)); 
+write_config(ConfigFile,Nums,Opt) when is_list(Nums), is_integer(hd(Nums)); 
 				       Nums=:=['_'] ->
     F = fun(N) -> ets:select(?history_table,
 			     [{{N,'$1'},[],['$1']}])
 	end,
     Config = lists:append(lists:map(F,Nums)),
     do_write_config(ConfigFile,Config,Opt);
-write_config(ConfigFile,Config,Opt) when list(Config) ->
+write_config(ConfigFile,Config,Opt) when is_list(Config) ->
     case check_config(Config,[]) of
 	{ok,Config1} -> do_write_config(ConfigFile,Config1,Opt);
 	Error -> Error
@@ -272,7 +272,7 @@ read_config(B,Acc,N) ->
 
 run_config(ConfigFile) ->
     case list_config(ConfigFile) of
-	Config when list(Config) ->
+	Config when is_list(Config) ->
 	    lists:foreach(fun({_,{M,F,A}}) -> print_func(M,F,A),
 					      R = apply(M,F,A),
 					      print_result(R) 
@@ -283,7 +283,7 @@ run_config(ConfigFile) ->
 
 run_config(ConfigFile,N) ->
     case list_config(ConfigFile) of
-	Config when list(Config) ->
+	Config when is_list(Config) ->
 	    case lists:keysearch(N,1,Config) of
 		{value,{N,{M,F,A}}} -> 
 		    print_func(M,F,A),
@@ -341,20 +341,20 @@ transform_flags(Flags) ->
     dbg:transform_flags(Flags).
 
 
-procs(Procs) when list(Procs) ->
+procs(Procs) when is_list(Procs) ->
     lists:foldl(fun(P,Acc) -> proc(P)++Acc end,[],Procs);
 procs(Proc) ->
     proc(Proc).
 
 proc(Procs) when Procs=:=all; Procs=:=existing; Procs=:=new ->
     [Procs];
-proc(Name) when atom(Name) ->
+proc(Name) when is_atom(Name) ->
     [Name]; % can be registered on this node or other node
-proc(Pid) when pid(Pid) ->
+proc(Pid) when is_pid(Pid) ->
     [Pid];
 proc({global,Name}) ->
     case global:whereis_name(Name) of
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    [Pid];
 	undefined ->
 	    []
@@ -427,7 +427,7 @@ ctpg(A,B,C) ->
 %%% Support for sequential trace
 seq_trigger_ms() -> seq_trigger_ms(all).
 seq_trigger_ms(all) -> seq_trigger_ms(?seq_trace_flags);
-seq_trigger_ms(Flag) when atom(Flag) -> seq_trigger_ms([Flag],[]);
+seq_trigger_ms(Flag) when is_atom(Flag) -> seq_trigger_ms([Flag],[]);
 seq_trigger_ms(Flags) -> seq_trigger_ms(Flags,[]).
 seq_trigger_ms([Flag|Flags],Body) ->
     case lists:member(Flag,?seq_trace_flags) of
@@ -447,7 +447,7 @@ write_trace_info(Key,What) ->
 no_store_write_trace_info(Key,What) ->
     case whereis(?MODULE) of
 	undefined -> ok;
-	Pid when pid(Pid) -> ?MODULE ! {write_trace_info,Key,What}
+	Pid when is_pid(Pid) -> ?MODULE ! {write_trace_info,Key,What}
     end,
     ok.
 
@@ -460,7 +460,7 @@ stop(Opts) ->
     Fetch = stop_opts(Opts),
     case whereis(?MODULE) of
 	undefined -> ok;
-	Pid when pid(Pid) -> 
+	Pid when is_pid(Pid) -> 
 	    ?MODULE ! {stop,Fetch,self()},
 	    receive {?MODULE,stopped} -> ok end
     end,
@@ -486,7 +486,7 @@ start() ->
 	    Parent = self(),
 	    Pid = spawn(fun() -> init(Parent) end),
 	    receive {started,Pid} -> ok end;
-	Pid when pid(Pid) ->
+	Pid when is_pid(Pid) ->
 	    ok
     end.
 
@@ -667,7 +667,7 @@ format(Files,Opt) ->
     {Out,Handler} = format_opt(Opt),
     ets:new(?MODULE,[named_table]),
     format(Files,Out,Handler).
-format(File,Out,Handler) when list(File), integer(hd(File)) ->
+format(File,Out,Handler) when is_list(File), is_integer(hd(File)) ->
     Files = 
 	case filelib:is_dir(File) of
 	    true ->  % will merge all files in the directory
@@ -684,7 +684,7 @@ format(File,Out,Handler) when list(File), integer(hd(File)) ->
 		[File]
 	end,
     format(Files,Out,Handler);
-format(Files,Out,Handler) when list(Files), list(hd(Files)) ->
+format(Files,Out,Handler) when is_list(Files), is_list(hd(Files)) ->
     StopDbg = case whereis(dbg) of
 		  undefined -> true;
 		  _ -> false
@@ -784,9 +784,9 @@ get_file(File,Traci) ->
 	    check_exists(File)
     end.
 
-check_client(Client,File) when list(Client) ->
+check_client(Client,File) when is_list(Client) ->
     check_exists(File);
-check_client(Client,File) when tuple(Client),element(2,Client)==wrap ->
+check_client(Client,File) when is_tuple(Client),element(2,Client)==wrap ->
     Root = filename:rootname(File,".wrp"),
     case filename:extension(Root) of
 	".*" -> 
@@ -844,9 +844,9 @@ handler(Trace,State) ->
     end,
     State.
 
-handler1(Trace,{Fd,{Traci,{Fun,State}}}) when function(Fun) ->
+handler1(Trace,{Fd,{Traci,{Fun,State}}}) when is_function(Fun) ->
     {Traci,{Fun,Fun(Fd,Trace,Traci,State)}};
-handler1(Trace,{Fd,{Traci,{{M,F},State}}}) when atom(M), atom(F) ->
+handler1(Trace,{Fd,{Traci,{{M,F},State}}}) when is_atom(M), is_atom(F) ->
     {Traci,{{M,F},M:F(Fd,Trace,Traci,State)}}.
 
 defaulthandler(Fd,Trace,_Traci,initial) ->
@@ -894,17 +894,17 @@ update_procinfo(Trace) ->
     ProcInfo = get_procinfo(Pid),
     setelement(2,Trace,ProcInfo).
 
-get_procinfo(Pid) when pid(Pid) ->
+get_procinfo(Pid) when is_pid(Pid) ->
     case ets:lookup(?MODULE,Pid) of
 	[PI] -> PI;
 	[] -> Pid
     end;
-get_procinfo(Name) when atom(Name) ->
+get_procinfo(Name) when is_atom(Name) ->
     case ets:match_object(?MODULE,{'_',Name,node()}) of
 	[PI] -> PI;
 	[] -> Name
     end;
-get_procinfo({Name,Node}) when atom(Name) ->
+get_procinfo({Name,Node}) when is_atom(Name) ->
     case ets:match_object(?MODULE,{'_',Name,Node}) of
 	[PI] -> PI;
 	[] -> {Name,Node}
@@ -920,7 +920,7 @@ get_first([Client|Clients]) ->
     end;
 get_first([]) -> [].
 
-get_next(Client,State) when pid(Client) ->
+get_next(Client,State) when is_pid(Client) ->
     Client ! {get,self()},
     receive 
 	{Client,{end_of_trace,_}} -> 
@@ -942,8 +942,8 @@ timestamp(_Trace) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% common internal functions
-to_list(Atom) when atom(Atom) -> [Atom];
-to_list(List) when list(List) -> List.
+to_list(Atom) when is_atom(Atom) -> [Atom];
+to_list(List) when is_list(List) -> List.
 
 write_binary(File,TermList) ->
     {ok,Fd} = file:open(File,[raw,append]),    

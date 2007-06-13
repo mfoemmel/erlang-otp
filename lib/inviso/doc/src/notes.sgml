@@ -10,6 +10,64 @@
   
   <p>This document describes the changes made to the Inviso application.
   </p>
+
+<section><title>Inviso 0.4</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    A bug in inviso_rt_meta caused an ETS table containing
+	    information on initiated (init_tpm) functions to be lost
+	    when suspending tracing. Further an enhancement to
+	    inviso_rt has been introduced making it possible to
+	    activate process trace flags based on globally registered
+	    names. It is then not an error to activate a global name
+	    on a node where the name does not reside. The process
+	    count in the return value will simply be set to zero
+	    (hence exactly one node in the NodeResult part of the
+	    return value will indicate one matching process found). A
+	    bug was found in fetch_log API. At the same time the
+	    fetch_log functionality was enhanced to also offer flow
+	    control making fetcher processes send chunks of
+	    transferred file data at a slower pace.</p>
+          <p>
+	    Own Id: OTP-6703</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    Minor Makefile changes.</p>
+          <p>
+	    Own Id: OTP-6689 Aux Id: OTP-6742 </p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+
+<section><title>Inviso 0.3</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+            In this release the first working version of the
+            inviso_tool is included. Updates and small bugfixes in
+            the inviso application.</p>
+          <p>
+            Own Id: OTP-6677</p>
+        </item>
+      </list>
+    </section>
+
+</section>
 <section><title>Inviso 0.2.1</title>
 
     <section><title>Improvements and New Features</title>

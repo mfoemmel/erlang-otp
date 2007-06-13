@@ -491,10 +491,10 @@ insert_op(Tid, _, {op, change_table_copy_type, N, FromS, ToS, TabDef}, InPlace, 
     Cs = mnesia_schema:list2cs(TabDef),
     Val = mnesia_schema:insert_cstruct(Tid, Cs, true), % Update ram only
     {schema, Tab, _} = Val,
-    if
-	InitBy /= startup ->
+    case lists:member(N, val({current, db_nodes})) of
+	true when InitBy /= startup  ->
 	    mnesia_controller:add_active_replica(Tab, N, Cs);
-	true ->
+	_ ->
 	    ignore
     end,
     if  
@@ -760,6 +760,11 @@ insert_op(Tid, _, {op, merge_schema, TabDef}, InPlace, InitBy) ->
 			     case mnesia_lib:cs_to_storage_type(Node, Cs) of
 				 Storage -> NS;
 				 disc_copies when Node == node() -> 
+				     Dir = mnesia_lib:dir(),    
+				     ok = mnesia_schema:opt_create_dir(true, Dir),
+				     mnesia_schema:purge_dir(Dir, []),
+				     mnesia_log:purge_all_logs(),
+
 				     mnesia_lib:set(use_dir, true),	     
 				     mnesia_log:init(),
 				     Ns = val({current, db_nodes}),

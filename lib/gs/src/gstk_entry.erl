@@ -101,7 +101,7 @@ create(DB, GstkId, Opts) ->
     Ngstkid = GstkId#gstkid{widget=TkW},
     case gstk_generic:make_command(Opts,Ngstkid,TkW,"", PlacePreCmd,DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    case gstk:call(["entry ", TkW,Cmd]) of
 		{result, _} ->
 		    gstk:exec(
@@ -220,7 +220,7 @@ read_option(Option,Gstkid,TkW,DB,_) ->
 %%------------------------------------------------------------------------------
 %%			       PRIMITIVES
 %%------------------------------------------------------------------------------
-p_index(Index) when integer(Index) -> gstk:to_ascii(Index);
+p_index(Index) when is_integer(Index) -> gstk:to_ascii(Index);
 p_index(insert) -> "insert";
 p_index(last)   -> "end";
 p_index(Idx)    -> gs:error("Bad index in entry: ~w~n",[Idx]),0.

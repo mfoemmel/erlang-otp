@@ -5,48 +5,56 @@
 # +optimize
 # For ber_bin this means "optimize" (whatever that is),
 # but for per_bin it means that a stage in the encode
-# is done in the asn1 driver
+# is done in the asn1 driver.
 #
 # +driver
 # For ber_bin this means that part of the decode is done
-# in the asn1 driver
+# in the asn1 driver.
 #
 # +asn1config
 # This is only used by the ber_bin, and means that 
 # some partial decode functions will be created 
-# (as described by the asn1config file)
+# (as described by the asn1config file).
+# 
+# +inline
+# This means that the ASN.1 runtime library will be inlined.
 #
 
-BER_V1_FLAGS             = +noobj
-BER_BIN_V1_FLAGS         = +noobj +asn1config +optimize
-BER_BIN_DRV_V1_FLAGS     = +noobj +asn1config +optimize +driver
-BER_V2_FLAGS             = +noobj
-BER_BIN_V2_FLAGS         = +noobj +asn1config +optimize
-BER_BIN_DRV_V2_FLAGS     = +noobj +asn1config +optimize +driver
-BER_PREV3A_FLAGS         = +noobj
-BER_BIN_PREV3A_FLAGS     = +noobj +asn1config +optimize
-BER_BIN_DRV_PREV3A_FLAGS = +noobj +asn1config +optimize +driver
-BER_PREV3B_FLAGS         = +noobj
-BER_BIN_PREV3B_FLAGS     = +noobj +asn1config +optimize
-BER_BIN_DRV_PREV3B_FLAGS = +noobj +asn1config +optimize +driver
-BER_PREV3C_FLAGS         = +noobj
-BER_BIN_PREV3C_FLAGS     = +noobj +asn1config +optimize
-BER_BIN_DRV_PREV3C_FLAGS = +noobj +asn1config +optimize +driver
-PER_V1_FLAGS             = +noobj
-PER_BIN_V1_FLAGS         = +noobj
-PER_BIN_DRV_V1_FLAGS     = +noobj +optimize
-PER_V2_FLAGS             = +noobj
-PER_BIN_V2_FLAGS         = +noobj
-PER_BIN_DRV_V2_FLAGS     = +noobj +optimize
-PER_PREV3A_FLAGS         = +noobj
-PER_BIN_PREV3A_FLAGS     = +noobj
-PER_BIN_DRV_PREV3A_FLAGS = +noobj +optimize
-PER_PREV3B_FLAGS         = +noobj
-PER_BIN_PREV3B_FLAGS     = +noobj
-PER_BIN_DRV_PREV3B_FLAGS = +noobj +optimize
-PER_PREV3C_FLAGS         = +noobj
-PER_BIN_PREV3C_FLAGS     = +noobj
-PER_BIN_DRV_PREV3C_FLAGS = +noobj +optimize
+ASN1_CT_OPTS += +noobj
+ifeq ($(MEGACO_INLINE_ASN1_RT),true)
+ASN1_CT_OPTS += +inline
+endif
+
+BER_V1_FLAGS             = $(ASN1_CT_OPTS)
+BER_BIN_V1_FLAGS         = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_V1_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+BER_V2_FLAGS             = $(ASN1_CT_OPTS)
+BER_BIN_V2_FLAGS         = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_V2_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+BER_PREV3A_FLAGS         = $(ASN1_CT_OPTS)
+BER_BIN_PREV3A_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_PREV3A_FLAGS = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+BER_PREV3B_FLAGS         = $(ASN1_CT_OPTS)
+BER_BIN_PREV3B_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_PREV3B_FLAGS = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+BER_PREV3C_FLAGS         = $(ASN1_CT_OPTS)
+BER_BIN_PREV3C_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_PREV3C_FLAGS = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+PER_V1_FLAGS             = $(ASN1_CT_OPTS)
+PER_BIN_V1_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_DRV_V1_FLAGS     = $(ASN1_CT_OPTS) +optimize
+PER_V2_FLAGS             = $(ASN1_CT_OPTS)
+PER_BIN_V2_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_DRV_V2_FLAGS     = $(ASN1_CT_OPTS) +optimize
+PER_PREV3A_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_PREV3A_FLAGS     = $(ASN1_CT_OPTS)
+PER_BIN_DRV_PREV3A_FLAGS = $(ASN1_CT_OPTS) +optimize
+PER_PREV3B_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_PREV3B_FLAGS     = $(ASN1_CT_OPTS)
+PER_BIN_DRV_PREV3B_FLAGS = $(ASN1_CT_OPTS) +optimize
+PER_PREV3C_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_PREV3C_FLAGS     = $(ASN1_CT_OPTS)
+PER_BIN_DRV_PREV3C_FLAGS = $(ASN1_CT_OPTS) +optimize
 
 # --- Version 1 ---
 

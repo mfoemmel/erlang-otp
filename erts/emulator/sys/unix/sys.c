@@ -171,9 +171,11 @@ static volatile int have_prepared_crash_dump;
 
 static erts_smp_atomic_t sys_misc_mem_sz;
 
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP)
 static void smp_sig_notify(char c);
 static int sig_notify_fds[2] = {-1, -1};
+#elif defined(USE_THREADS)
+static int async_fd[2];
 #endif
 
 #if CHLDWTHR || defined(ERTS_SMP)
@@ -613,9 +615,13 @@ prepare_crash_dump(void)
     if (max < 1024)
 	max = 1024;
     for (i = 3; i < max; i++) {
-#ifdef ERTS_SMP
+#if defined(ERTS_SMP)
 	/* We don't want to close the signal notification pipe... */
 	if (i == sig_notify_fds[0] || i == sig_notify_fds[1])
+	    continue;
+#elif defined(USE_THREADS)
+	/* We don't want to close the async notification pipe... */
+	if (i == async_fd[0] || i == async_fd[1])
 	    continue;
 #endif
 	close(i);
@@ -1112,6 +1118,11 @@ static int set_driver_data(int port_num,
 static int spawn_init()
 {
    int i;
+#if CHLDWTHR
+   erts_thr_opts_t thr_opts = ERTS_THR_OPTS_DEFAULT_INITER;
+   thr_opts.detached = 0;
+   thr_opts.suggested_stack_size = 0; /* Smallest possible */
+#endif
 
    sys_sigset(SIGPIPE, SIG_IGN); /* Ignore - we'll handle the write failure */
    driver_data = (struct driver_data *)
@@ -1129,7 +1140,7 @@ static int spawn_init()
    sys_sigset(SIGCHLD, onchld); /* Reap children */
 
 #if CHLDWTHR
-   erts_thr_create(&child_waiter_tid, child_waiter, NULL, 0);
+   erts_thr_create(&child_waiter_tid, child_waiter, NULL, &thr_opts);
 #endif
 
    return 1;
@@ -2087,8 +2098,6 @@ static void ready_output(ErlDrvData e, ErlDrvEvent ready_fd)
 ** Async opertation support
 */
 #if defined(USE_THREADS) && !defined(ERTS_SMP)
-static int async_fd[2];
-
 static void
 sys_async_ready_failed(int fd, int r, int err)
 {
@@ -2736,6 +2745,9 @@ signal_dispatcher_thread_func(void *unused)
 static void
 init_smp_sig_notify(void)
 {
+    erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
+    thr_opts.detached = 1;
+
     if (pipe(sig_notify_fds) < 0) {
 	erl_exit(ERTS_ABORT_EXIT,
 		 "Failed to create signal-dispatcher pipe: %s (%d)\n",
@@ -2747,7 +2759,7 @@ init_smp_sig_notify(void)
     erts_smp_thr_create(&sig_dispatcher_tid,
 			signal_dispatcher_thread_func,
 			NULL,
-			1);
+			&thr_opts);
 }
 
 void
@@ -2755,8 +2767,11 @@ erts_sys_main_thread(void)
 {
 
 #ifdef ERTS_SMP_USE_IO_THREAD
+    erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
+    thr_opts.detached = 1;
+
     /* Start I/O thread... */
-    erts_smp_thr_create(&erts_io_thr_tid, io_thread_func, NULL, 1);
+    erts_smp_thr_create(&erts_io_thr_tid, io_thread_func, NULL, &thr_opts);
 #endif
 
     /* Become signal receiver thread... */

@@ -159,9 +159,9 @@ pattern_grp([],_St) ->
 
 bit_types([]) ->
     [];
-bit_types([Atom | Rest]) when atom(Atom) ->
+bit_types([Atom | Rest]) when is_atom(Atom) ->
     [Atom | bit_types(Rest)];
-bit_types([{Atom, Integer} | Rest]) when atom(Atom), integer(Integer) ->
+bit_types([{Atom, Integer} | Rest]) when is_atom(Atom), is_integer(Integer) ->
     [{Atom, Integer} | bit_types(Rest)].
 
 pattern_list([P0|Ps],St) ->
@@ -169,7 +169,7 @@ pattern_list([P0|Ps],St) ->
     [P1|pattern_list(Ps,St)];
 pattern_list([],_St) -> [].
 
-guard([G0|Gs],St) when list(G0) ->
+guard([G0|Gs],St) when is_list(G0) ->
     [guard0(G0,St) | guard(Gs,St)];
 guard(L,St) ->
     guard0(L,St).
@@ -220,7 +220,7 @@ gexpr({call,Line,{atom,La,F},As0},St) ->
     end;
 % Pre-expansion generated calls to erlang:is_record/3 must also be handled
 gexpr({call,Line,{remote,La,{atom,Lb,erlang},{atom,Lc,is_record}},As0},St)
-  when length(As0) == 3 ->
+  when length(As0) =:= 3 ->
     As1 = gexpr_list(As0,St),
     {call,Line,{remote,La,{atom,Lb,erlang},{atom,Lc,is_record}},As1};
 % Guard bif's can be remote, but only in the module erlang...
@@ -348,7 +348,7 @@ expr({call,Lc,{atom,_,new}=Name,As0},#pmod{parameters=Ps}=St)
     As1 = expr_list(As0,St),
     {call,Lc,Name,As1};
 expr({call,Lc,{atom,_,module_info}=Name,As0},St)
-  when length(As0) == 0; length(As0) == 1 ->
+  when length(As0) =:= 0; length(As0) =:= 1 ->
     %% The module_info/0 and module_info/1 functions are also static.
     As1 = expr_list(As0,St),
     {call,Lc,Name,As1};

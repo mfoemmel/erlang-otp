@@ -37,7 +37,7 @@
 %%  and it also splits the handling of the control characters into two
 %%  parts.
 
-fwrite(Format, Args) when atom(Format) ->
+fwrite(Format, Args) when is_atom(Format) ->
     fwrite(atom_to_list(Format), Args);
 fwrite(Format, Args) ->
     Cs = collect(Format, Args),
@@ -75,7 +75,7 @@ precision([$.|Fmt], Args) ->
 precision(Fmt, Args) ->
     {none,Fmt,Args}.
 
-field_value([$*|Fmt], [A|Args]) when integer(A) ->
+field_value([$*|Fmt], [A|Args]) when is_integer(A) ->
     {A,Fmt,Args};
 field_value([C|Fmt], Args) when C >= $0, C =< $9 ->
     field_value([C|Fmt], Args, 0);
@@ -151,22 +151,22 @@ control($w, [A], F, Adj, P, Pad, _I) ->
     term(tv_io_lib:write(A, -1), F, Adj, P, Pad);
 control($p, [A], F, Adj, P, Pad, I) ->
     print(A, -1, F, Adj, P, Pad, I);
-control($W, [A,Depth], F, Adj, P, Pad, _I) when integer(Depth) ->
+control($W, [A,Depth], F, Adj, P, Pad, _I) when is_integer(Depth) ->
     term(tv_io_lib:write(A, Depth), F, Adj, P, Pad);
-control($P, [A,Depth], F, Adj, P, Pad, I) when integer(Depth) ->
+control($P, [A,Depth], F, Adj, P, Pad, I) when is_integer(Depth) ->
     print(A, Depth, F, Adj, P, Pad, I);
-control($s, [A], F, Adj, P, Pad, _I) when atom(A) ->
+control($s, [A], F, Adj, P, Pad, _I) when is_atom(A) ->
     string(atom_to_list(A), F, Adj, P, Pad);
 control($s, [L], F, Adj, P, Pad, _I) ->
     true = tv_io_lib:deep_char_list(L),		%Check if L a character list
     string(L, F, Adj, P, Pad);
-control($e, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($e, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_e(A, F, Adj, P, Pad);
-control($f, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($f, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_f(A, F, Adj, P, Pad);
-control($g, [A], F, Adj, P, Pad, _I) when float(A) ->
+control($g, [A], F, Adj, P, Pad, _I) when is_float(A) ->
     fwrite_g(A, F, Adj, P, Pad);
-control($c, [A], F, Adj, P, Pad, _I) when integer(A) ->
+control($c, [A], F, Adj, P, Pad, _I) when is_integer(A) ->
     char(A band 255, F, Adj, P, Pad);
 control($~, [], F, Adj, P, Pad, _I) -> char($~, F, Adj, P, Pad);
 control($n, [], F, Adj, P, Pad, _I) -> newline(F, Adj, P, Pad);
@@ -178,7 +178,7 @@ control($i, [_A], _F, _Adj, _P, _Pad, _I) -> [].
 
 indentation([$\n|Cs], _I) -> indentation(Cs, 0);
 indentation([$\t|Cs], I) -> indentation(Cs, ((I + 8) div 8) * 8);
-indentation([C|Cs], I) when integer(C) ->
+indentation([C|Cs], I) when is_integer(C) ->
     indentation(Cs, I+1);
 indentation([C|Cs], I) ->
     indentation(Cs, indentation(C, I));
@@ -230,7 +230,7 @@ float_man(Ds, 0, Dc) ->
     {[$.|Cs],C};
 float_man([D|Ds], I, Dc) ->
     case float_man(Ds, I-1, Dc) of
-	{Cs,true} when D == $9 -> {[$0|Cs],true};
+	{Cs,true} when D =:= $9 -> {[$0|Cs],true};
 	{Cs,true} -> {[D+1|Cs],false};
 	{Cs,false} -> {[D|Cs],false}
     end;
@@ -241,7 +241,7 @@ float_man([D|_Ds], 0) when D >= $5 -> {[],true};
 float_man([_|_], 0) -> {[],false};
 float_man([D|Ds], Dc) ->
     case float_man(Ds, Dc-1) of
-	{Cs,true} when D == $9 -> {[$0|Cs],true};
+	{Cs,true} when D =:= $9 -> {[$0|Cs],true};
 	{Cs,true} -> {[D+1|Cs],false}; 
 	{Cs,false} -> {[D|Cs],false}
     end;
@@ -371,7 +371,7 @@ min(_, R) -> R.
 
 flatten(List) -> flatten(List, []).
 
-flatten([H|T], Cont) when list(H) ->
+flatten([H|T], Cont) when is_list(H) ->
     flatten(H, [T|Cont]);
 flatten([H|T], Cont) ->
     [H|flatten(T, Cont)];
@@ -383,7 +383,7 @@ flatten([], []) -> [].
 
 flat_length(List) -> flat_length(List, 0).
 
-flat_length([H|T], L) when list(H) ->
+flat_length([H|T], L) when is_list(H) ->
     flat_length(H, flat_length(T, L));
 flat_length([_|T], L) ->
     flat_length(T, L + 1);

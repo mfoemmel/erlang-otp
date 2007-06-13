@@ -45,7 +45,7 @@
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, 
 	 terminate/2, code_change/3]).
 
--import(lists, [foldl/3, keydelete/3, keysearch/3]).
+-import(lists, [keydelete/3, keysearch/3]).
 
 -import(sofs, [to_external/1, is_sofs_set/1]).
 
@@ -108,7 +108,7 @@
 %% -> [Faulty] | Error; Faulty = {undefined, Calls} | {unused, Funs}
 %% No user variables have been assigned digraphs, so there is no
 %% need to call xref_base:delete/1.
-m(Module) when atom(Module) ->
+m(Module) when is_atom(Module) ->
     case xref_utils:find_beam(Module) of
 	{ok, File} ->
 	    Fun = fun(S) -> 
@@ -162,7 +162,7 @@ d(Directory) ->
 start(Name) ->
     start(Name, []).
 
-start(Name, Opts0) when list(Opts0) ->
+start(Name, Opts0) when is_list(Opts0) ->
     {Args, Opts} = case keysearch(xref_mode, 1, Opts0) of
 		       {value, Mode} ->
 			   {[Mode], keydelete(xref_mode, 1, Opts0)};

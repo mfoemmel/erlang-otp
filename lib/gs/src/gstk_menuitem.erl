@@ -110,7 +110,7 @@ create(DB, GstkId, Opts) ->
 mk_it(GenArgs,CallArgs,InsertArgs,Ngstkid) ->
     case apply(gstk_generic,make_command,GenArgs) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    case apply(gstk,call,[[CallArgs|Cmd]]) of
 		{result,_} ->
 		    apply(gstk_menu,insert_menuitem,InsertArgs),
@@ -281,7 +281,7 @@ option(Option, Gstkid, TkW, DB, {Kind,Index}) ->
 	invoke    -> {c, [TkW, " inv ", gstk:to_ascii(Index)]};
 	{accelerator,   Acc} -> {s, [" -acc ", gstk:to_ascii(Acc)]};
 	{click,          On} -> cbind(On, Gstkid, TkW, Index, Kind, DB);
-	{font, Font} when tuple(Font) ->
+	{font, Font} when is_tuple(Font) ->
 	    gstk_db:insert_opt(DB,Gstkid,Option),
 	    {s, [" -font ", gstk_font:choose_ascii(DB,Font)]};
 	{label, {image,Img}} -> {s, [" -bitm @", Img, " -lab {}"]};
@@ -531,7 +531,7 @@ parse_opts([Option | Rest], TkMenu, Idx, Type, Options) ->
 parse_opts([], TkMenu, Index, Type, Options) ->
     RealIdx =
 	case Index of
-	    Idx when integer(Idx) -> Idx;
+	    Idx when is_integer(Idx) -> Idx;
 	    last  -> find_last_index(TkMenu);
 	    Other -> gs:error("Invalid index ~p~n",[Other])
 	end,
@@ -539,7 +539,7 @@ parse_opts([], TkMenu, Index, Type, Options) ->
 
 find_last_index(TkMenu) ->
     case tcl2erl:ret_int([TkMenu, " index last"]) of
-	Last when integer(Last) -> Last+1;
+	Last when is_integer(Last) -> Last+1;
 	none  -> 0;
 	Other -> gs:error("Couldn't find index ~p~n",[Other])
     end.
@@ -571,7 +571,7 @@ cbind({false, _}, Gstkid, _TkMenu, _Index, _Type, DB) ->
     gstk_db:delete_event(DB, Gstkid, click),
     none;
 
-cbind(On, Gstkid, TkMenu, Index, Type, DB) when atom(On) ->
+cbind(On, Gstkid, TkMenu, Index, Type, DB) when is_atom(On) ->
     cbind({On, []}, Gstkid, TkMenu, Index, Type, DB).
 
 

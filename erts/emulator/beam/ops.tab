@@ -231,6 +231,7 @@ raise s s
 
 # Internal now, but could be useful to make known to the compiler.
 badarg j
+system_limit j
 
 move R R =>
 move Float=o Dst=d => i_put_float Float Dst
@@ -622,6 +623,14 @@ is_binary f x
 is_binary f y
 %hot
 
+is_bitstr Fail=f cwo => jump Fail
+%macro: is_bitstr IsBitstr -fail_action
+is_bitstr f r
+is_bitstr f x
+%cold
+is_bitstr f y
+%hot
+
 is_reference Fail=f cwo => jump Fail
 %macro: is_reference IsRef -fail_action
 is_reference f r
@@ -987,11 +996,12 @@ bs_restore2 x I
 # Fetching integers from binaries.
 bs_get_integer2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
 			gen_get_integer2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
+bs_get_integer2 Fail=f Ms=rx Live=u Sz=w Unit=u Flags=u Dst=d => \
+			gen_get_integer2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
 %macro: i_bs_get_integer_imm2 BsGetIntegerImm2 -fail_action -gen_dest
 %macro: i_bs_get_integer2 BsGetInteger2 -fail_action -gen_dest
 %macro: i_bs_get_integer2_8 BsGetInteger2_8 -fail_action -gen_dest
 %macro: i_bs_get_integer2_16 BsGetInteger2_16 -fail_action -gen_dest
-%macro: i_bs_get_integer2_32 BsGetInteger2_32 -fail_action -gen_dest
 i_bs_get_integer_imm2 f r I I I d
 i_bs_get_integer_imm2 f x I I I d
 i_bs_get_integer2 f r I s I d
@@ -1000,11 +1010,11 @@ i_bs_get_integer2_8 f r d
 i_bs_get_integer2_8 f x d
 i_bs_get_integer2_16 f r d
 i_bs_get_integer2_16 f x d
-i_bs_get_integer2_32 f r I d
-i_bs_get_integer2_32 f x I d
 
 # Fetching binaries from binaries.
 bs_get_binary2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
+			gen_get_binary2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
+bs_get_binary2 Fail=f Ms=rx Live=u Sz=w Unit=u Flags=u Dst=d => \
 			gen_get_binary2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
 %macro: i_bs_get_binary_imm2 BsGetBinaryImm_2 -fail_action -gen_dest
 %macro: i_bs_get_binary2 BsGetBinary_2 -fail_action -gen_dest
@@ -1020,6 +1030,8 @@ i_bs_get_binary_all2 f x I I d
 bs_get_float2 Fail=f Ms=rx Live=u Sz=s Unit=u Flags=u Dst=d => \
 		gen_get_float2(Fail, Ms, Live, Sz, Unit, Flags, Dst)
 
+bs_get_float2 Fail=f Ms=rx Live=u Sz=w Unit=u Flags=u Dst=d => jump Fail
+
 %macro: i_bs_get_float2 BsGetFloat2 -fail_action -gen_dest
 i_bs_get_float2 f r I s I d
 i_bs_get_float2 f x I s I d
@@ -1027,6 +1039,8 @@ i_bs_get_float2 f x I s I d
 # Miscellanous
 
 bs_skip_bits2 Fail=f Ms=rx Sz=s Unit=u Flags=u => \
+			gen_skip_bits2(Fail, Ms, Sz, Unit, Flags)
+bs_skip_bits2 Fail=f Ms=rx Sz=w Unit=u Flags=u => \
 			gen_skip_bits2(Fail, Ms, Sz, Unit, Flags)
 
 %macro: i_bs_skip_bits_imm2 BsSkipBitsImm2 -fail_action
@@ -1060,12 +1074,15 @@ bs_test_tail_imm2 f x I
 #
 %cold
 
+bs_init2 Fail Sz Words Regs Flags Dst | binary_too_big(Sz) => system_limit Fail
+
 bs_init2 Fail Sz=u Words=u==0 Regs Flags Dst | should_gen_heap_bin(Sz) | new_bs_instructions() => i_bs_init_heap_bin Sz Regs Dst
 bs_init2 Fail Sz=u Words=u==0 Regs Flags Dst | new_bs_instructions() => i_bs_init Sz Regs Dst
 
 bs_init2 Fail Sz=u Words Regs Flags Dst | should_gen_heap_bin(Sz) | new_bs_instructions() => i_bs_init_heap_bin_heap Sz Words Regs Dst
 bs_init2 Fail Sz=u Words Regs Flags Dst | new_bs_instructions() => \
    i_bs_init_heap Sz Words Regs Dst
+
 
 bs_init2 Fail Sz Words=u==0 Regs Flags Dst | new_bs_instructions() => \
   i_bs_init_fail Sz Fail Regs Dst
@@ -1102,6 +1119,7 @@ i_bs_final2 r d
 i_bs_final2 x d
 i_bs_final2 y d
 
+bs_add Fail S1=i==0 S2 Unit=u==1 D => move S2 D
 bs_add Fail S1 S2 Unit D => i_fetch S1 S2 | i_bs_add Fail Unit D
 
 i_bs_add j I d
@@ -1115,6 +1133,8 @@ bs_put_integer Fail=j Sz=s Unit=u Flags=u Big=w => \
 bs_put_integer Fail=j Sz=s Unit=u Flags=u Bad=o => badarg Fail
 bs_put_integer Fail=j Sz=s Unit=u Flags=u Src=s => \
 			gen_put_integer(Fail, Sz, Unit, Flags, Src)
+bs_put_integer Fail=j Sz=w Unit=u Flags=u Src=s => \
+			gen_put_integer(Fail, Sz, Unit, Flags, Src)
 
 %macro: i_new_bs_put_integer NewBsPutInteger
 %macro: i_new_bs_put_integer_imm NewBsPutIntegerImm
@@ -1125,11 +1145,12 @@ i_new_bs_put_integer_imm j I I s
 #
 # Storing floats into binaries.
 #
+bs_put_float Fail Sz=w Unit Flags Val => badarg Fail
 
-bs_put_float Fail=j Sz=s Unit=u Flags=u Big=w => \
+bs_put_float Fail=j Sz Unit=u Flags=u Big=w => \
 	i_put_big Big x | bs_put_float Fail Sz Unit Flags x
 
-bs_put_float Fail=j Sz=s Unit=u Flags=u Float=o => \
+bs_put_float Fail=j Sz Unit=u Flags=u Float=o => \
 	i_put_float Float x | bs_put_float Fail Sz Unit Flags x
 
 bs_put_float Fail=j Sz=s Unit=u Flags=u Src=s => \
@@ -1147,6 +1168,8 @@ i_new_bs_put_float_imm j I I s
 
 bs_put_binary Fail=j Sz=s Unit=u Flags=u Bad=ow => badarg Fail
 bs_put_binary Fail=j Sz=s Unit=u Flags=u Src=s => \
+			gen_put_binary(Fail, Sz, Unit, Flags, Src)
+bs_put_binary Fail=j Sz=w Unit=u Flags=u Src=s => \
 			gen_put_binary(Fail, Sz, Unit, Flags, Src)
 
 %macro: i_new_bs_put_binary NewBsPutBinary

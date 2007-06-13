@@ -141,10 +141,12 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosEvent/ebin -pa $(ERL_TOP)/lib/ic/ebin
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosEvent/ebin -pa $(ERL_TOP)/lib/ic/ebin
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
-ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/cosEvent/include \
+ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
+	-I$(ERL_TOP)/lib/cosEvent/include \
 	+'{parse_transform,sys_pre_attributes}' \
 	+'{attribute,insert,app_vsn,"cosEvent_$(COSEVENT_VSN)"}' 
 
@@ -173,14 +175,14 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES1) $(EXTERNAL_GEN_HRL_FILES1): CosEventChannelAdmin.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosEventChannelAdmin.cfg"}' CosEventChannelAdmin.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosEventChannelAdmin.cfg"}' CosEventChannelAdmin.idl
 	mv $(GEN_HRL_FILES1) $(EXTERNAL_INC_PATH)
 
 $(GEN_ERL_FILES2) $(GEN_HRL_FILES2): cosEventApp.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"cosEventApp.cfg"}' cosEventApp.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"cosEventApp.cfg"}' cosEventApp.idl
 
 $(GEN_ERL_FILES3) $(EXTERNAL_GEN_HRL_FILES3): CosEventComm.idl
-	erlc $(ERL_FLAGS) CosEventComm.idl
+	erlc $(ERL_IDL_FLAGS) CosEventComm.idl
 	mv $(GEN_HRL_FILES3) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

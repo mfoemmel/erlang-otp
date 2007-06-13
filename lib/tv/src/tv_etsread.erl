@@ -409,9 +409,9 @@ update_object2(ets, Node, LocalNode, Tab, _DbsPid, KeyNo, Obj, OldObj) ->
 		   %% once, but we only want to replace it once!
 		{_Replaced, TmpList} =
 		    lists:foldl(
-		      fun(Data, {Replaced,Acc}) when Data /= OldObj ->
+		      fun(Data, {Replaced,Acc}) when Data =/= OldObj ->
 			      {Replaced, [Data | Acc]};
-			 (_Data, {Replaced,Acc}) when Replaced /= true ->
+			 (_Data, {Replaced,Acc}) when not Replaced ->
 			      {true, [Obj | Acc]};
 			 (Data, {Replaced,Acc}) ->
 			      {Replaced, [Data | Acc]}
@@ -462,7 +462,7 @@ update_object2(mnesia, Node, LocalNode, Tab, _DbsPid, KeyNo, Obj, OldObj) ->
 			  mnesia:delete(Tab,OldKey,write)
 		  end),
 		ChangeFun =
-		    fun(H) when H == OldObj ->
+		    fun(H) when H =:= OldObj ->
 			    Obj;
 		       (H) ->
 			    H

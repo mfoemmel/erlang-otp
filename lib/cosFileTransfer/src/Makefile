@@ -109,7 +109,7 @@ APP_TARGET = $(EBIN)/$(APP_FILE)
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-ERL_FLAGS += -pa $(ERL_TOP)/lib/cosFileTransfer/ebin \
+ERL_IDL_FLAGS += -pa $(ERL_TOP)/lib/cosFileTransfer/ebin \
 	-pa $(ERL_TOP)/lib/cosProperty/ebin \
 	-pa $(ERL_TOP)/lib/cosProperty/src \
 	-I$(ERL_TOP)/lib/cosProperty/src \
@@ -119,6 +119,7 @@ ERL_FLAGS += -pa $(ERL_TOP)/lib/cosFileTransfer/ebin \
 # The -pa option is just used temporary until erlc can handle 
 # includes from other directories than ../include .
 ERL_COMPILE_FLAGS += \
+	$(ERL_IDL_FLAGS) \
 	-pa $(ERL_TOP)/lib/orber/include \
 	-pa $(ERL_TOP)/lib/cosFileTransfer/include \
 	-pa $(ERL_TOP)/lib/cosProperty/include \
@@ -159,7 +160,7 @@ docs:
 # Special Build Targets
 # ----------------------------------------------------
 $(GEN_ERL_FILES) $(GEN_HRL_FILES): CosFileTransfer.idl
-	erlc $(ERL_FLAGS) +'{cfgfile,"CosFileTransfer.cfg"}' CosFileTransfer.idl
+	erlc $(ERL_IDL_FLAGS) +'{cfgfile,"CosFileTransfer.cfg"}' CosFileTransfer.idl
 	mv $(LOCAL_HRL_FILES) $(EXTERNAL_INC_PATH)
 
 # ----------------------------------------------------

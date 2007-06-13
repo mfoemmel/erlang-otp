@@ -182,8 +182,7 @@ main(Tree, Ctxt, Opts) ->
     Reply = self(),
     Pid = spawn_link(fun () -> start(Reply, Tree, Ctxt, Opts1) end),
     receive
-        {Pid1, Tree1} when Pid1 == Pid ->
-            Tree1
+        {Pid, Tree1} -> Tree1
     end.
 
 start(Reply, Tree, Ctxt, Opts) ->
@@ -623,7 +622,7 @@ i_case_1(As, E, Ctxt, Ren, Env, S) ->
     case i_clauses(As, case_clauses(E), Ctxt, Ren, Env, S) of
         {false, {As1, Vs, Env1, Cs}, S1} ->
             %% We still have a list of clauses. Sanity check:
-            if Cs == [] ->
+            if Cs =:= [] ->
                     report_warning("empty list of clauses "
 				   "in residual program!.\n");
                true ->
@@ -1051,7 +1050,7 @@ i_call(E, Ctxt, Ren, Env, S) ->
 		 S2
 	 end,
     case Ctxt of
-        effect when Static == true ->
+        effect when Static =:= true ->
             case is_safe_call(atom_val(M), atom_val(F), Arity) of
                 true ->
                     %% The result will not be used, and the call is
@@ -1223,8 +1222,8 @@ i_receive(E, Ctxt, Ren, Env, S) ->
             %% We still have a list of clauses. If the list is empty,
             %% and the expiry expression is the integer zero, the
             %% expression reduces to the expiry body.
-	    if Cs == [] ->
-		    case is_c_int(T) andalso (int_val(T) == 0) of
+	    if Cs =:= [] ->
+		    case is_c_int(T) andalso (int_val(T) =:= 0) of
 			true ->
 			    {B, S3};
 			false ->
@@ -2214,7 +2213,7 @@ reduce_bif_call_1(erlang, element, 2, [X, Y], _Env) ->
 	    %% the elements, so lifting out a particular element is OK.
 	    T = list_to_tuple(tuple_es(Y)),
 	    N = int_val(X),
-	    if integer(N), N > 0, N =< size(T) ->
+	    if is_integer(N), N > 0, N =< size(T) ->
 		    E = element(N, T),
 		    Es = tuple_to_list(setelement(N, T, void())),
 		    {true, make_seq(c_tuple(Es), E)};
@@ -2258,7 +2257,7 @@ reduce_bif_call_1(erlang, setelement, 3, [X, Y, Z], Env) ->
 	    %% evaluated before any part of `Y'.
 	    T = list_to_tuple(tuple_es(Y)),
 	    N = int_val(X),
-	    if integer(N), N > 0, N =< size(T) ->
+	    if is_integer(N), N > 0, N =< size(T) ->
 		    E = element(N, T),
 		    case is_simple(Z) of
 			true ->
@@ -2409,12 +2408,12 @@ get_components(N, E) ->
     case type(E) of
 	values ->
 	    Es = values_es(E),
-	    if length(Es) == N ->
+	    if length(Es) =:= N ->
 		    {true, Es};
 	       true ->
 		    false
 	    end;
-	_ when N == 1 ->
+	_ when N =:= 1 ->
 	    {true, [E]};
 	_ ->
 	    false

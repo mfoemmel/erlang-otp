@@ -24,7 +24,7 @@ RELSYSDIR = $(RELEASE_PATH)/edoc_test
 # FLAGS
 # ----------------------------------------------------
 
-ERL_FLAGS += 
+ERL_MAKE_FLAGS += 
 ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/test_server/include
 
 EBIN = .
@@ -40,7 +40,7 @@ make_emakefile:
 	>> $(EMAKEFILE)
 
 tests debug opt: make_emakefile
-	erl $(ERL_FLAGS) -make
+	erl $(ERL_MAKE_FLAGS) -make
 
 clean:
 	rm -f $(EMAKEFILE)

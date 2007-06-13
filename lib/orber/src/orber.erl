@@ -640,19 +640,34 @@ deactivate_audit_trail() ->
 %% Arguments  : IP   - string
 %%              Type - normal | ssl
 %%              Port - integer > 0
+%%              Options - [{Key, Value}]
+%%              Key - atom() valid configuration parameter
+%%              Value - a valid value for the given Key
 %% Returns    : #Ref
 %% Raises     : 
 %% Description: Add a new listen process, which will accept new incoming
 %%              connections.
 %%----------------------------------------------------------------------
-add_listen_interface(IP, Type) ->
-    orber_iiop_net:add(IP, Type).
-add_listen_interface(IP, Type, Port) when integer(Port), Port > 0 ->
-    orber_iiop_net:add(IP, Type, Port);
-add_listen_interface(IP, Type, Port)  ->
+add_listen_interface(IP, normal) ->
+    orber_iiop_net:add(IP, normal, [{iiop_port, orber_env:iiop_port()}]);
+add_listen_interface(IP, ssl) ->
+    orber_iiop_net:add(IP, ssl, [{iiop_ssl_port, orber_env:iiop_ssl_port()}]).
+
+add_listen_interface(IP, normal, Port) when integer(Port), Port > 0 ->
+    orber_iiop_net:add(IP, normal, [{iiop_port, Port}]);
+add_listen_interface(IP, ssl, Port) when integer(Port), Port > 0 ->
+    orber_iiop_net:add(IP, ssl, [{iiop_ssl_port, Port}]);
+add_listen_interface(IP, Type, Options) when list(Options) ->
+    orber_iiop_net:add(IP, Type, Options);
+add_listen_interface(IP, Type, Port) when integer(Port) ->
     orber:dbg("[~p] orber:add_listen_interface(~p, ~p, ~p);~n"
 	      "The port number must be greater than 0.", 
 	      [?LINE, IP, Type, Port], ?DEBUG_LEVEL),
+    corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO});
+add_listen_interface(IP, Type, Extra) ->
+    orber:dbg("[~p] orber:add_listen_interface(~p, ~p, ~p);~n"
+	      "Incorrect argument(s).", 
+	      [?LINE, IP, Type, Extra], ?DEBUG_LEVEL),
     corba:raise(#'BAD_PARAM'{completion_status=?COMPLETED_NO}).
     
 %%----------------------------------------------------------------------

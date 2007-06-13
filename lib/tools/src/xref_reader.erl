@@ -102,29 +102,18 @@ clauses(Cls, S) ->
 
 clauses([{clause, _Line, _H, G, B} | Cs], FunVars, Matches, S) ->
     S1 = case S#xrefr.builtins_too of
-	     true -> guard(G, S);
+	     true -> expr(G, S);
 	     false -> S
 	 end,
-    S2 = expr_list(B, S1),
+    S2 = expr(B, S1),
     S3 = S2#xrefr{funvars = FunVars, matches = Matches},
     clauses(Cs, S3);
 clauses([], _FunVars, _Matches, S) -> 
     S.
 
-guard([G0 | Gs], S) when list(G0) ->
-    S1 = guard0(G0, S),
-    guard(Gs, S1);
-guard(L, S) ->
-    guard0(L, S).
-
-guard0([G0 | Gs], S) ->
-    S1 = expr(G0, S),
-    guard0(Gs, S1);
-guard0([], S) -> S.
-
 attr([E={From, To} | As], Ln, M, Fun, AL, AX, B, S) ->
     case mfa(From, M) of
-	{_, _, MFA} when MFA == Fun; [] == Fun -> 
+	{_, _, MFA} when MFA =:= Fun; [] =:= Fun -> 
 	    attr(From, To, Ln, M, Fun, AL, AX, B, S, As, E);
 	{_, _, _} ->
 	    attr(As, Ln, M, Fun, AL, AX, [E | B], S);
@@ -145,32 +134,12 @@ attr(From, To, Ln, M, Fun, AL, AX, B, S, As, E) ->
 	_ -> attr(As, Ln, M, Fun, AL, AX, [E | B], S)
     end.
 
-mfa({F,A}, M) when atom(F), integer(A) ->
+mfa({F,A}, M) when is_atom(F), is_integer(A) ->
     {true, local, {M,F,A}};
-mfa(MFA={M,F,A}, M1) when atom(M), atom(F), integer(A) ->
-    {M==M1, external, MFA};
+mfa(MFA={M,F,A}, M1) when is_atom(M), is_atom(F), is_integer(A) ->
+    {M=:=M1, external, MFA};
 mfa(_, _M) -> false.
 
-expr({var, _Line, _V}, S) -> S;
-expr({char, _Line, _I}, S) -> S;		%R8.
-expr({integer, _Line, _I}, S) -> S;
-expr({float, _Line, _F}, S) -> S;
-expr({atom, _Line, _A}, S) -> S;
-expr({string, _Line, _St}, S) -> S;
-expr({nil, _Line}, S) -> S;
-expr({cons, _Line, H, T}, S) ->
-    S1 = expr(H, S),
-    expr(T, S1);
-expr({lc, _Line, E, Qs}, S) ->
-    S1 = lc_bc_quals(Qs, S),
-    expr(E, S1);
-expr({bc, _Line, E, Qs}, S) ->
-    S1 = lc_bc_quals(Qs, S),
-    expr(E, S1);
-expr({tuple, _Line, Es}, S) ->
-    expr_list(Es, S);
-expr({block, _Line, Es}, S) ->
-    expr_list(Es, S);
 expr({'if', _Line, Cs}, S) ->
     clauses(Cs, S);
 expr({'case', _Line, E, Cs}, S) ->
@@ -180,13 +149,13 @@ expr({'receive', _Line, Cs}, S) ->
     clauses(Cs, S);
 expr({'receive', _Line, Cs, To, ToEs}, S) ->
     S1 = expr(To, S),
-    S2 = expr_list(ToEs, S1),
+    S2 = expr(ToEs, S1),
     clauses(Cs, S2);
 expr({'try',_Line,Es,Scs,Ccs,As}, S) ->
-    S1 = expr_list(Es, S),
+    S1 = expr(Es, S),
     S2 = clauses(Scs, S1),
     S3 = clauses(Ccs, S2),
-    expr_list(As, S3);
+    expr(As, S3);
 expr({call, Line,
       {remote, _, {atom,_,erlang}, {atom,_,make_fun}},
       [{atom,_,Mod}, {atom,_,Fun}, {integer,_,Arity}]}, S) ->
@@ -199,11 +168,11 @@ expr({'fun', Line, {function, Mod, Name, Arity}}, S) ->
 expr({'fun', Line, {function, Name, Arity}, _Extra}, S) ->
     %% Added in R8.
     handle_call(local, S#xrefr.module, Name, Arity, Line, S);
-expr({'fun', _Line, {clauses, Cs} ,_Extra}, S) ->
+expr({'fun', _Line, {clauses, Cs}, _Extra}, S) ->
     clauses(Cs, S);
 expr({call, Line, {atom, _, Name}, As}, S) ->
     S1 = handle_call(local, S#xrefr.module, Name, length(As), Line, S),
-    expr_list(As, S1);
+    expr(As, S1);
 expr({call, Line, {remote, _Line, {atom,_,Mod}, {atom,_,Name}}, As}, S) ->
     external_call(Mod, Name, As, Line, false, S);
 expr({call, Line, {remote, _Line, Mod, Name}, As}, S) ->
@@ -211,8 +180,6 @@ expr({call, Line, {remote, _Line, Mod, Name}, As}, S) ->
     external_call(erlang, apply, [Mod, Name, list2term(As)], Line, true, S);
 expr({call, Line, F, As}, S) ->
     external_call(erlang, apply, [F, list2term(As)], Line, true, S);
-expr({'catch', _Line, E}, S) ->
-    expr(E, S);
 expr({match, _Line, {var,_,Var}, {'fun', _, {clauses, Cs}, _Extra}}, S) ->
     %% This is what is needed in R7 to avoid warnings for the functions 
     %% that are passed around by the "expansion" of list comprehension.
@@ -223,51 +190,23 @@ expr({match, _Line, {var,_,Var}, E}, S) ->
     %%     Args = [A,B], apply(m, f, Args)
     S1 = S#xrefr{matches = [{Var, E} | S#xrefr.matches]},
     expr(E, S1);
-expr({match, _Line, _P, E}, S) ->
-    expr(E, S);
-expr({op, _Line, _Op, A}, S) ->
-    expr(A, S);
-expr({op, _Line, _Op, L, R}, S) ->
-    S1 = expr(L, S),
-    expr(R, S1);
-expr({bin, _Line, Fs}, S) ->
-    expr_list(Fs, S);
-expr({bin_element, _L, E1, E2, _E3}, S) ->
-    S1 = expr(E1, S),
-    S2 = case E2 of
-	     default -> S1;
-	     _ -> expr(E2, S1)
-	 end,
-    S2.
-
-expr_list([E | Es], S) ->
-    S1 = expr(E, S),
-    expr_list(Es, S1);
-expr_list([], S) -> 
-    S.
-
-lc_bc_quals([{generate, _Line, _P, E} | Qs], S) ->
-    S1 = expr(E, S),
-    lc_bc_quals(Qs, S1);
-lc_bc_quals([{b_generate, _Line, _P, E} | Qs], S) ->
-    S1 = expr(E, S),
-    lc_bc_quals(Qs, S1);
-lc_bc_quals([E | Qs], S) ->
-    S1 = expr(E, S),
-    lc_bc_quals(Qs, S1);
-lc_bc_quals([], S) ->
+expr(T, S) when is_tuple(T) ->
+    expr(tuple_to_list(T), S);
+expr([E | Es], S) ->
+    expr(Es, expr(E, S));
+expr(_E, S) ->
     S.
 
 %% Mod and Fun may not correspond to something in the abstract code,
-%% which is signalled by X == true.
+%% which is signalled by X =:= true.
 external_call(Mod, Fun, ArgsList, Line, X, S) ->
     Arity = length(ArgsList),
     W = case xref_utils:is_funfun(Mod, Fun, Arity) of
-	    true when erlang == Mod, apply == Fun, 2 == Arity -> apply2;
-	    true when erts_debug == Mod, apply == Fun, 4 == Arity -> debug4;
-	    true when erlang == Mod, spawn_opt == Fun -> Arity - 1;
+	    true when erlang =:= Mod, apply =:= Fun, 2 =:= Arity -> apply2;
+	    true when erts_debug =:= Mod, apply =:= Fun,4 =:= Arity -> debug4;
+	    true when erlang =:= Mod, spawn_opt =:= Fun -> Arity - 1;
 	    true -> Arity;
-	    false when Mod == erlang ->
+	    false when Mod =:= erlang ->
 		case erl_internal:type_test(Fun, Arity) of
 		    true -> type;
 		    false -> false
@@ -275,16 +214,16 @@ external_call(Mod, Fun, ArgsList, Line, X, S) ->
 	    false -> false
 	end,
     S1 = if
-	     W == type; X == true ->
+	     W =:= type; X ->
 		 S;
 	     true ->
 		 handle_call(external, Mod, Fun, Arity, Line, S)
 	 end,
     case {W, ArgsList} of
 	{false, _} ->
-	    expr_list(ArgsList, S1);
+	    expr(ArgsList, S1);
 	{type, _} ->
-	    expr_list(ArgsList, S1);
+	    expr(ArgsList, S1);
 	{apply2, [{tuple, _, [M,F]}, ArgsTerm]} ->
 	    eval_args(M, F, ArgsTerm, Line, S1, ArgsList, []);
 	{1, [{tuple, _, [M,F]} | R]} ->	% R = [] unless spawn_opt
@@ -306,12 +245,12 @@ eval_args(Mod, Fun, ArgsTerm, Line, S, ArgsList, Extra) ->
     case term2list(ArgsTerm, [], S) of
 	undefined ->
 	    S1 = unresolved(M, F, -1, Line, S),
-	    expr_list(ArgsList, S1);	    
-	ArgsList2 when false == IsSimpleCall ->
+	    expr(ArgsList, S1);	    
+	ArgsList2 when not IsSimpleCall ->
 	    S1 = unresolved(M, F, length(ArgsList2), Line, S),
-	    expr_list(ArgsList, S1);
-	ArgsList2 when true == IsSimpleCall ->
-	    S1 = expr_list(Extra, S),
+	    expr(ArgsList, S1);
+	ArgsList2 when IsSimpleCall ->
+	    S1 = expr(Extra, S),
 	    external_call(M, F, ArgsList2, Line, false, S1)
     end.
 
@@ -325,7 +264,7 @@ check_funarg(W, ArgsList, Line, S) ->
     S1 = case funarg(FunArg, S) of
 	     true ->
 		 S;
-	     false when integer(W) -> % 1 or 2
+	     false when is_integer(W) -> % 1 or 2
 		 unresolved(?MOD_EXPR, ?VAR_EXPR, 0, Line, S);
 	     false -> % apply2
 		 N = case term2list(Args, [], S) of
@@ -334,7 +273,7 @@ check_funarg(W, ArgsList, Line, S) ->
 		     end,
 		 unresolved(?MOD_EXPR, ?VAR_EXPR, N, Line, S)
 	 end,
-    expr_list(ArgsList, S1).
+    expr(ArgsList, S1).
 
 funarg({'fun', _, _Clauses, _Extra}, _S) -> true;
 funarg({var, _, Var}, S) -> member(Var, S#xrefr.funvars);
@@ -371,7 +310,7 @@ unresolved(M, F, A, Line, S) ->
 
 handle_call(Locality, Module, Name, Arity, Line, S) ->
     case xref_utils:is_builtin(Module, Name, Arity) of
-	true when S#xrefr.builtins_too == false -> S;
+	true when not S#xrefr.builtins_too -> S;
 	_Else ->
 	    To = {Module, Name, Arity},
 	    handle_call(Locality, To, Line, S, false)
@@ -386,7 +325,7 @@ handle_call(Locality, To0, Line, S, IsUnres) ->
     Call = {From, To},
     CallAt = {Call, Line},
     S1 = if
-	     IsUnres == true ->
+	     IsUnres ->
 		 S#xrefr{unresolved = [CallAt | S#xrefr.unresolved]};
 	     true ->
 		 S

@@ -128,7 +128,7 @@ collect_files(_Dir,[],_Recursive, Acc) -> Acc;
 collect_files(Dir, [File | Files], Recursive, Acc) ->
     FullFile = addfile(Dir, File),
     NewAcc = case filelib:is_dir(FullFile) of
-		 true when Recursive == true ->
+		 true when Recursive ->
 		     collect_dirs([FullFile], Recursive, Acc);
 		 true ->
 		     Acc;
@@ -187,7 +187,7 @@ module(In, Last, Acc, {LineNo, CharNo}) ->
 
 %% Handle one line.  Return the last added function name.
 line([], Last, Acc,  _) -> {Last, Acc};
-line(Line, _, Acc, Nos) when hd(Line) == $- ->
+line(Line, _, Acc, Nos) when hd(Line) =:= $- ->
     case attribute(Line, Nos) of
 	false -> {[], Acc};
 	New -> {[], [New | Acc]}
@@ -323,8 +323,8 @@ genout(Os, Name, Entries) ->
 
 
 %% Create a filename by joining `Dir' and `File'.
-addfile(Dir, File) when atom(Dir) -> addfile(atom_to_list(Dir), File);
-addfile(Dir, File) when atom(File) -> addfile(Dir, atom_to_list(File));
+addfile(Dir, File) when is_atom(Dir) -> addfile(atom_to_list(Dir), File);
+addfile(Dir, File) when is_atom(File) -> addfile(Dir, atom_to_list(File));
 addfile(Dir, File) ->
     case lists:reverse(Dir) of
 	[$/| _] -> lists:append(Dir, File);
@@ -338,13 +338,13 @@ addfile(Dir, File) ->
 %% Flatten and reverse a nested list.
 flatrev(Ls) -> flatrev(Ls, []).
 
-flatrev([C | Ls], Acc) when integer(C) -> flatrev(Ls, [C | Acc]);
+flatrev([C | Ls], Acc) when is_integer(C) -> flatrev(Ls, [C | Acc]);
 flatrev([L | Ls], Acc) -> flatrev(Ls, flatrev(L, Acc));
 flatrev([], Acc) -> Acc.
 
 
 %% Count the number of elements in a nested list.
-reclength([L | Ls]) when list(L) ->
+reclength([L | Ls]) when is_list(L) ->
     reclength(L) + reclength(Ls);
 reclength([_ | Ls]) ->
     reclength(Ls) + 1;

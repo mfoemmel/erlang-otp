@@ -1154,6 +1154,8 @@ parse_prop_name([] = All, Group, Groups) ->
 
 do_parse_prop_name([Char | Rest], Name, Group, Groups) ->
     case ?classify_char(Char) of
+        safe_char_upper ->
+            do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         safe_char ->
             do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         rest_char when Char == $=, Name /= [] ->

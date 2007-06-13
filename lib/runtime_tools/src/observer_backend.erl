@@ -180,11 +180,11 @@ ttb_meta_tracer_loop(MetaFile,PI,Acc) ->
 			    Acc),
 	    ttb_meta_tracer_loop(MetaFile,PI,NewAcc);
 
-	{metadata,Data} when list(Data) ->
+	{metadata,Data} when is_list(Data) ->
 	    ttb_store_meta(Data,MetaFile),
 	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
 
-	{metadata,Key,Fun} when function(Fun) ->
+	{metadata,Key,Fun} when is_function(Fun) ->
 	    ttb_store_meta([{Key,Fun()}],MetaFile),
 	    ttb_meta_tracer_loop(MetaFile,PI,Acc);
 
@@ -225,9 +225,9 @@ pinfo(P,Globals) ->
     end.
 
 
-ttb_store_meta(Data,{local,MetaFile,Port}) when list(Data) ->
+ttb_store_meta(Data,{local,MetaFile,Port}) when is_list(Data) ->
     ttb_send_to_port(Port,MetaFile,Data);
-ttb_store_meta(Data,MetaFile) when list(Data) ->
+ttb_store_meta(Data,MetaFile) when is_list(Data) ->
     {ok,Fd} = file:open(MetaFile,[raw,append]),
     ttb_write_binary(Fd,Data),
     file:close(Fd);

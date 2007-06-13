@@ -1,0 +1,3 @@
+<!ELEMENT image	              (icaption) >
+<!ATTLIST image		      file CDATA #REQUIRED >
+<!ELEMENT icaption            (#PCDATA) >

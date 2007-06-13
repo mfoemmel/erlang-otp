@@ -276,10 +276,8 @@ pp_fun(Dev, Fun, Args, Type, Guard) ->
       end
   end.
 
-pp_arg(Dev, {var, V, {T, R}}) ->
-  io:format(Dev, "v~p (~s, ~s)", [V, erl_types:t_to_string(T), hipe_icode_range_an:to_string(R)]);
-pp_arg(Dev, {var, V, T}) ->
-  io:format(Dev, "v~p (~s)", [V, erl_types:t_to_string(T)]);
+pp_arg(Dev, {var, V, Ann}) ->
+  io:format(Dev, "v~p (~s)", [V, hipe_icode_range:pp_ann(Ann)]);
 pp_arg(Dev, {var, V}) ->
   io:format(Dev, "v~p", [V]);
 pp_arg(Dev, {fvar, V}) ->
@@ -341,7 +339,7 @@ pp_switch_cases(Dev, [{Val, L}|Ls], Pos) ->
   pp_switch_cases(Dev, Ls, NewPos);
 pp_switch_cases(_Dev, [], _) -> ok.
 
-is_string([X|Rest]) when X > 0, X < 256 ->
+is_string([X|Rest]) when is_integer(X), 0 < X, X < 256 ->
   is_string(Rest);
 is_string([]) ->
   true;

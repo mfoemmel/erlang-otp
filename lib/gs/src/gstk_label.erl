@@ -89,7 +89,7 @@ create(DB, GstkId, Opts) ->
     Ngstkid = GstkId#gstkid{widget=TkW},
     case gstk_generic:make_command(Opts,Ngstkid,TkW,"",PlacePreCmd,DB) of
 	{error,Reason} -> {error,Reason};
-	Cmd when list(Cmd) ->
+	Cmd when is_list(Cmd) ->
 	    gstk:exec(["label ", TkW,Cmd]),
 	    Ngstkid
     end.

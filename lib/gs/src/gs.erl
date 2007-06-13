@@ -75,7 +75,7 @@ create(Objtype, Parent) ->
     tag_if_ok(gs_frontend:create(GsPid,{Objtype, undefined, obj_id(Parent),[]})
 	      ,GsPid).
 
-create(Objtype, Parent, Opts) when list(Opts) ->
+create(Objtype, Parent, Opts) when is_list(Opts) ->
     GsPid = frontend(Parent),
     tag_if_ok(gs_frontend:create(GsPid,{Objtype,undefined,obj_id(Parent),Opts}),
 	      GsPid);
@@ -85,7 +85,7 @@ create(Objtype, Parent, Opt) ->
 				 {Objtype,undefined,obj_id(Parent),[Opt]}),
 	      GsPid).
 
-create(Objtype, Name, Parent, Opts) when list(Opts) -> 
+create(Objtype, Name, Parent, Opts) when is_list(Opts) -> 
     GsPid = frontend(Parent),
     tag_if_ok(gs_frontend:create(GsPid,{Objtype, Name, obj_id(Parent),Opts}),
 	      GsPid);
@@ -94,12 +94,12 @@ create(Objtype, Name, Parent, Opt) ->
     tag_if_ok(gs_frontend:create(GsPid,{Objtype,Name,obj_id(Parent),[Opt]}),
 	      GsPid).
 
-tag_if_ok(Int,Pid) when integer(Int) ->
+tag_if_ok(Int,Pid) when is_integer(Int) ->
     {Int,Pid};
 tag_if_ok(Err,_) ->
     Err.
 
-config(IdOrName, Options) when list(Options) ->
+config(IdOrName, Options) when is_list(Options) ->
     gs_frontend:config(frontend(IdOrName),{obj_id(IdOrName),Options});
 config(IdOrName, Option) ->
     gs_frontend:config(frontend(IdOrName),{obj_id(IdOrName),[Option]}).
@@ -117,16 +117,16 @@ info(version) -> "1.3.2";
 info(Option) ->
     gs_frontend:info(Option).
 
-is_id({Int,Pid}) when integer(Int), pid(Pid) -> true;
+is_id({Int,Pid}) when is_integer(Int), is_pid(Pid) -> true;
 is_id(_) -> false.
 
-frontend({_,Pid}) when pid(Pid) -> Pid;
-frontend({AtomName,Node}) when atom(AtomName),atom(Node) ->
+frontend({_,Pid}) when is_pid(Pid) -> Pid;
+frontend({AtomName,Node}) when is_atom(AtomName),is_atom(Node) ->
     rpc:call(Node,erlang,whereis,[gs_frontend]);
-frontend(Atom) when atom(Atom) -> whereis(gs_frontend).
+frontend(Atom) when is_atom(Atom) -> whereis(gs_frontend).
 
 obj_id({Id,_}) -> Id;
-obj_id(Atom) when atom(Atom) -> Atom.
+obj_id(Atom) when is_atom(Atom) -> Atom.
 
 error(Format, Data) ->
     io:format("gs error: "),
@@ -148,7 +148,7 @@ create_tree(ParentId,[{Type,Name,Options,Children}|R]) ->
 		Err -> Err
 	    end
     end;
-create_tree(ParentId,[{Type,Name,Options}|R]) when atom(Name) ->
+create_tree(ParentId,[{Type,Name,Options}|R]) when is_atom(Name) ->
     create_tree(ParentId,[{Type,Name,Options,[]}|R]);
 create_tree(ParentId,[{Type,Options,Children}|R]) ->
     case create(Type,ParentId,Options) of
@@ -161,7 +161,7 @@ create_tree(ParentId,[{Type,Options,Children}|R]) ->
     end;
 create_tree(ParentId,[{Type,Options}|R]) ->
     create_tree(ParentId,[{Type,Options,[]}|R]);
-create_tree(ParentId,Tuple) when tuple(Tuple) ->
+create_tree(ParentId,Tuple) when is_tuple(Tuple) ->
     create_tree(ParentId,[Tuple]);
 create_tree(_,[]) ->
     ok.
@@ -386,11 +386,11 @@ pair(Key, List) ->
 %%----------------------------------------------------------------------
 %% When we know there is a value
 %%----------------------------------------------------------------------
-val(Key, List) when list(List) ->
+val(Key, List) when is_list(List) ->
     {value, {_,Val}} = lists:keysearch(Key, 1, List),
     Val.
 
-val(Key,List,ElseVal) when list(List) ->
+val(Key,List,ElseVal) when is_list(List) ->
     case lists:keysearch(Key, 1, List) of
 	{value, {_, Val}} -> Val;
 	_ -> ElseVal

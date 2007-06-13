@@ -59,7 +59,7 @@
 nslookup(Name, Class, Type) ->
     nslookup2(Name,Class,Type,false).
 
-nslookup(Name, Class, Type, Timeout) when integer(Timeout), Timeout >= 0 ->
+nslookup(Name, Class, Type, Timeout) when is_integer(Timeout), Timeout >= 0 ->
     Timer = inet:start_timer(Timeout),
     Res = nslookup2(Name,Class,Type,Timer),
     inet:stop_timer(Timer),
@@ -114,7 +114,7 @@ gethostbyaddr(IP) -> gethostbyaddr_tm(IP,false).
 gethostbyaddr(IP,Timeout) ->
     Timer = inet:start_timer(Timeout),
     Res = gethostbyaddr_tm(IP,Timer),
-    inet:stop_timer(Timeout),
+    inet:stop_timer(Timer),
     Res.    
 
 gethostbyaddr_tm({A,B,C,D}, Timer) when ?ip(A,B,C,D) ->
@@ -124,7 +124,7 @@ gethostbyaddr_tm({A,B,C,D}, Timer) when ?ip(A,B,C,D) ->
 	_ -> res_gethostbyaddr(dn_in_addr_arpa(A,B,C,D), IP, Timer)
     end;
 %% ipv4  only ipv6 address
-gethostbyaddr_tm({0,0,0,0,0,16#ffff,G,H},Timer) when integer(G+H) ->
+gethostbyaddr_tm({0,0,0,0,0,16#ffff,G,H},Timer) when is_integer(G+H) ->
     gethostbyaddr_tm({G div 256, G rem 256, H div 256, H rem 256},Timer);
 gethostbyaddr_tm({A,B,C,D,E,F,G,H},Timer) when ?ip6(A,B,C,D,E,F,G,H) ->
     IP = {A,B,C,D,E,F,G,H},
@@ -132,12 +132,12 @@ gethostbyaddr_tm({A,B,C,D,E,F,G,H},Timer) when ?ip6(A,B,C,D,E,F,G,H) ->
 	{ok, HEnt} -> {ok, HEnt};
 	_ -> res_gethostbyaddr(dn_ip6_int(A,B,C,D,E,F,G,H), IP, Timer)
     end;
-gethostbyaddr_tm(Addr,Timer) when list(Addr) ->
+gethostbyaddr_tm(Addr,Timer) when is_list(Addr) ->
     case inet_parse:address(Addr) of
 	{ok, IP} -> gethostbyaddr_tm(IP,Timer);
 	_Error -> {error, formerr}
     end;
-gethostbyaddr_tm(Addr,Timer) when atom(Addr) ->
+gethostbyaddr_tm(Addr,Timer) when is_atom(Addr) ->
     gethostbyaddr_tm(atom_to_list(Addr),Timer);
 gethostbyaddr_tm(_,_) -> {error, formerr}.
 
@@ -150,7 +150,7 @@ res_gethostbyaddr(Addr, IP, Timer) ->
     {ok, Id, Buffer} = res_mkquery(Addr, in, ptr),
     case res_send2(Id, Buffer, res_option(nameserver),Timer) of
 	{ok, Rec} ->
-	    if length(Rec#dns_rec.anlist) == 0 ->
+	    if length(Rec#dns_rec.anlist) =:= 0 ->
 		    alt_gethostbyaddr(Id, Buffer, IP, 
 				      {error, nxdomain}, Timer);
 	       true ->
@@ -198,7 +198,7 @@ gethostbyname(Name,Family) ->
 gethostbyname(Name,Family,Timeout) ->
     Timer = inet:start_timer(Timeout),    
     Res = gethostbyname_tm(Name,Family,Timer),
-    inet:stop_timer(Timeout),
+    inet:stop_timer(Timer),
     Res.
     
 gethostbyname_tm(Name,inet,Timer) ->
@@ -244,10 +244,10 @@ getbyname(Name, Type) ->
 getbyname(Name, Type, Timeout) ->
     Timer = inet:start_timer(Timeout),
     Res = getbyname_tm(Name, Type, Timer),
-    inet:stop_timer(Timeout),
+    inet:stop_timer(Timer),
     Res.
 
-getbyname_tm(Name, Type, Timer) when list(Name) ->
+getbyname_tm(Name, Type, Timer) when is_list(Name) ->
     case type_p(Type) of
 	true ->
 	    case inet_parse:visible_string(Name) of
@@ -261,7 +261,7 @@ getbyname_tm(Name, Type, Timer) when list(Name) ->
 	false ->
 	    {error, formerr}
     end;
-getbyname_tm(Name,Type,Timer) when atom(Name) ->
+getbyname_tm(Name,Type,Timer) when is_atom(Name) ->
     getbyname_tm(atom_to_list(Name), Type,Timer);
 getbyname_tm(_, _, _) -> {error, formerr}.
 
@@ -370,7 +370,7 @@ res_send2(Id, Buffer, Ns, Timer) ->
     if
 	length(Buffer) > ?PACKETSZ ->
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
-	UseVc == true ->
+	UseVc ->
 	    res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns);
 	true ->
 	    res_send_udp2(Id, Buffer, Retry, Tm, Timer, Ns)
@@ -389,7 +389,7 @@ res_send_udp(_S, _Id, _Buffer, N, N, _Tm, _Timer, _Ns) ->
     {error, timeout};
 res_send_udp(S, Id, Buffer, I, N, Tm, Timer, Ns) ->
     Num = length(Ns),
-    if Num == 0 ->
+    if Num =:= 0 ->
 	    {error, timeout};
        true ->
 	    case res_send_query_udp(S,Id,Buffer,I,Num,Tm,Timer,Ns,[]) of
@@ -416,7 +416,7 @@ res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [{IP, Port}|Ns],ErrNs) ->
 	{error, econnrefused} -> 
 	    res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, 
 			       Ns, [{IP,Port}|ErrNs]);
-	{error, timeout} when Timeout == 0 ->
+	{error, timeout} when Timeout =:= 0 ->
 	    {error, timeout};
 	_Error -> res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer,
 				    Ns, ErrNs)
@@ -510,7 +510,7 @@ nsdname({A,B,C,D}) ->
     {ok, dn_in_addr_arpa(A,B,C,D)};
 nsdname({A,B,C,D,E,F,G,H}) -> 
     {ok, dn_ip6_int(A,B,C,D,E,F,G,H)};
-nsdname(Name) when list(Name) ->
+nsdname(Name) when is_list(Name) ->
     case inet_parse:visible_string(Name) of
 	true ->
 	    case inet_parse:address(Name) of

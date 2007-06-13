@@ -1,12 +1,12 @@
-%%----------------------------------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%======================================================================
 %% File    : hipe_sparc_specific.erl
 %% Author  : Ingemar Åberg <d95ina@it.uu.se>
 %% Purpose : Provide target specific functions to the register allocator
-%% Created :  2 Apr 2000 by Ingemar Åberg <d95ina@it.uu.se>
-%%----------------------------------------------------------------------
+%% Created : 2 April 2000 by Ingemar Åberg <d95ina@it.uu.se>
+%%======================================================================
 
 -module(hipe_sparc_specific).
--author('d95ina@it.uu.se').
 
 -export([number_of_temporaries/1]).
 
@@ -42,34 +42,33 @@
 	 predictionorder/1,
 	 reverse_postorder/1]).
 
-
-%% ---------------- Liveness stuff ----------------
+%% ---------------- Liveness stuff -------------------------------------
 
 analyze(CFG) ->
-    hipe_sparc_liveness:analyze(CFG).
+  hipe_sparc_liveness:analyze(CFG).
 
 liveout(BB_in_out_liveness,Label) ->
-    hipe_sparc_liveness:liveout(BB_in_out_liveness,Label).
+  hipe_sparc_liveness:liveout(BB_in_out_liveness,Label).
 
 livein(Liveness,L) ->
-    hipe_sparc_liveness:livein(Liveness,L).
+  hipe_sparc_liveness:livein(Liveness,L).
 
-%% ---------------- Registers stuff ----------------
+%% ---------------- Registers stuff ------------------------------------
 
 allocatable() ->
-    hipe_sparc_registers:allocatable().
+  hipe_sparc_registers:allocatable().
 
 all_precoloured() ->
-    hipe_sparc_registers:all_precoloured().
+  hipe_sparc_registers:all_precoloured().
 
 is_precoloured(Reg) ->
-    hipe_sparc_registers:is_precoloured(Reg).
+  hipe_sparc_registers:is_precoloured(Reg).
 
 physical_name(Reg) ->
-    hipe_sparc_registers:physical_name(Reg).
+  hipe_sparc_registers:physical_name(Reg).
 
 is_global(R) ->
-  not lists:member(R,hipe_sparc_registers:allocatable()).
+  not lists:member(R, hipe_sparc_registers:allocatable()).
 
 is_fixed(R) ->
   hipe_sparc_registers:is_fixed(R).
@@ -83,9 +82,9 @@ all_args() ->
    hipe_sparc_registers:arg(5)].
 
 is_arg(R) ->
-  lists:member(R,all_args()).
+  lists:member(R, all_args()).
 
-%% CFG stuff
+%% -------------- CFG stuff --------------------------------------------
 
 %% Return registers that are used to pass arguments to the CFG.
 args(CFG) ->
@@ -95,9 +94,9 @@ args(CFG) ->
 non_alloc(_CFG) ->
   [].
 
-arg_vars(N, Acc) when N >= 0 ->
+arg_vars(N, Acc) when is_integer(N), N >= 0 ->
   arg_vars(N-1, [arg_var(N)|Acc]);
-arg_vars(_, Acc) -> Acc.
+arg_vars(-1, Acc) -> Acc.
 
 arg_vars(N) ->
   case N >= hipe_sparc_registers:register_args() of
@@ -146,8 +145,8 @@ number_of_temporaries(_CFG) ->
   %% (Well, on sparc this is not entirely true, but lets pretend...)
   Highest_temporary + 1.
 
-bb(CFG,L) ->
-  hipe_sparc_cfg:bb(CFG,L).
+bb(CFG, L) ->
+  hipe_sparc_cfg:bb(CFG, L).
 
 succ_map(CFG) ->
   hipe_sparc_cfg:succ_map(CFG).
@@ -159,8 +158,8 @@ defines(I) ->
   hipe_sparc:keep_registers(hipe_sparc:defines(I)).
 
 def_use(Instruction) ->
-  {D,U} = hipe_sparc:def_use(Instruction),
-  {hipe_sparc:keep_registers(D),hipe_sparc:keep_registers(U)}.
+  {D, U} = hipe_sparc:def_use(Instruction),
+  {hipe_sparc:keep_registers(D), hipe_sparc:keep_registers(U)}.
 
 is_move(Instruction) ->
   hipe_sparc:is_move(Instruction).

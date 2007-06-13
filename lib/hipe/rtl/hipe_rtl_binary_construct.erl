@@ -7,9 +7,9 @@
 %%  History  :	*2001-06-14 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2007/03/08 17:36:03 $
-%%              $Revision: 1.2 $
+%%              $Author: kostis $
+%%              $Date: 2007/05/04 07:48:56 $
+%%              $Revision: 1.3 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -1089,7 +1089,7 @@ multiply_code(List=[Head|_Tail], Variable, Result, FalseLblName) ->
      SuccessLbl],
   multiply_code(List, Register, Result, FalseLblName, Tmp1, Code).
 
-multiply_code([ShiftSize| Rest], Register, Result, FalseLblName, Tmp1, OldCode) ->
+multiply_code([ShiftSize|Rest], Register, Result, FalseLblName, Tmp1, OldCode) ->
   SuccessLbl = hipe_rtl:mk_new_label(),
   Code = OldCode ++ [hipe_rtl:mk_alu(Tmp1, Register, sll, hipe_rtl:mk_imm(ShiftSize)),
 		     hipe_rtl:mk_alub(Result, Tmp1, 'add', Result, not_overflow, hipe_rtl:label_name(SuccessLbl), FalseLblName, 0.99),
@@ -1098,7 +1098,7 @@ multiply_code([ShiftSize| Rest], Register, Result, FalseLblName, Tmp1, OldCode) 
 multiply_code([], _Register, _Result, _FalseLblName, _Tmp1, Code) ->
   Code.
 
-number2list(X) when is_integer(X), X>=0 ->
+number2list(X) when is_integer(X), X >= 0 ->
   number2list(X, []).
 
 number2list(1, Acc) ->
@@ -1106,7 +1106,8 @@ number2list(1, Acc) ->
 number2list(0, Acc) ->
   lists:reverse(Acc);
 number2list(X, Acc) ->
-  number2list(X-round(math:pow(2,floorlog2(X))), [floorlog2(X)|Acc]).
+  F = floorlog2(X),
+  number2list(X-(1 bsl F), [F|Acc]).
 
 floorlog2(X) ->
   round(math:log(X)/math:log(2)-0.5). 
@@ -1116,14 +1117,15 @@ set_high(X) ->
 set_high(0, Y) ->
   Y;
 set_high(X, Y) ->
-  set_high(X-1, Y+round(math:pow(2,27-X))).
+  set_high(X-1, Y+(1 bsl (27-X))).
 
 first_part(Var, Register, FalseLblName) ->
   [SuccessLbl1, SuccessLbl2] = create_lbls(2),
   [hipe_tagscheme:test_fixnum(Var, hipe_rtl:label_name(SuccessLbl1),
-			     FalseLblName, 0.99),
+			      FalseLblName, 0.99),
   SuccessLbl1,
   hipe_tagscheme:fixnum_ge(Var, hipe_rtl:mk_imm(hipe_tagscheme:mk_fixnum(0)), 
 			   hipe_rtl:label_name(SuccessLbl2), FalseLblName, 0.99),
   SuccessLbl2,
   hipe_tagscheme:untag_fixnum(Register, Var)].
+

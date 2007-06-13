@@ -78,7 +78,7 @@ ticktime() ->
     %% Time is given in seconds. The net_kernel tick time is
     %% Time/4 milliseconds.
     case catch application:get_env(net_ticktime) of
-	{ok, Value} when integer(Value), Value > 0 ->
+	{ok, Value} when is_integer(Value), Value > 0 ->
 	    [Value * 250]; %% i.e. 1000 / 4 = 250 ms.
 	_ ->
 	    []
@@ -95,7 +95,7 @@ stop() ->
 	    supervisor:delete_child(kernel_sup, net_sup_dynamic);
 	Error ->
 	    case whereis(net_sup) of
-		Pid when pid(Pid) ->
+		Pid when is_pid(Pid) ->
 		    %% Dist. started through -sname | -name flags
 		    {error, not_allowed};
 		_ ->

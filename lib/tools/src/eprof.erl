@@ -190,7 +190,7 @@ handle_call({profile, Rootset}, {From, _Tag}, S) ->
 				      rootset = Rootset}}
     end;
 
-handle_call(stop_profiling, _FromTag, S) when S#state.profiling == true ->
+handle_call(stop_profiling, _FromTag, S) when S#state.profiling ->
     ptrac(S#state.rootset, false, all()),
     call_trace_for_all(false),
     multi_schedule(),
@@ -238,7 +238,7 @@ handle_call(stop, _FromTag, S) ->
 
 %%%%%%%%%%%%%%%%%%%
 
-handle_info({trace_ts,_From,_Op,_Func,_Time}=M, S0) when S0#state.profiling == true ->
+handle_info({trace_ts,_From,_Op,_Func,_Time}=M, S0) when S0#state.profiling ->
     Start = erlang:now(),
     #state{table=Tab,pop=PrevOp0,ptime=PrevTime0,pfunc=PrevFunc0,
 	   overhead=Overhead0} = S0,
@@ -247,7 +247,7 @@ handle_info({trace_ts,_From,_Op,_Func,_Time}=M, S0) when S0#state.profiling == t
     S = S0#state{overhead=Overhead,pfunc=PrevFunc,pop=PrevOp,ptime=PrevTime},
     {noreply,S};
 
-handle_info({trace_ts, From, _, _, _}, S) when S#state.profiling == false ->
+handle_info({trace_ts, From, _, _, _}, S) when not S#state.profiling ->
     ptrac([From], false, all()),
     {noreply, S};
 
@@ -297,21 +297,21 @@ call_trace_for_all(Flag) ->
     erlang:trace_pattern(on_load, Flag, [local]),
     erlang:trace_pattern({'_','_','_'}, Flag, [local]).
 
-ptrac([P|T], How, Flags) when pid(P) ->
+ptrac([P|T], How, Flags) when is_pid(P) ->
     case dotrace(P, How, Flags) of
 	true ->
 	    ptrac(T, How, Flags);
-	false when How == true ->
+	false when How ->
 	    false;
 	false ->
 	    ptrac(T, How, Flags)
     end;
 
-ptrac([P|T], How, Flags) when atom(P) ->
+ptrac([P|T], How, Flags) when is_atom(P) ->
     case whereis(P) of
-	undefined when How == true ->
+	undefined when How ->
 	    false;
-	undefined when How == false ->
+	undefined when not How ->
 	    ptrac(T, How, Flags);
 	Pid ->
 	    ptrac([Pid|T], How, Flags)
@@ -327,7 +327,7 @@ dotrace(P, How, What) ->
     case (catch erlang:trace(P, How, What)) of
 	1 ->
 	    true;
-	_Other when How == false ->
+	_Other when not How ->
 	    true;
 	_Other ->
 	    io:format("** eprof: bad process: ~p,~p,~p~n", [P,How,What]),
@@ -464,7 +464,7 @@ del(_Key,[]) -> [].
 
 flush_receive() ->
     receive 
-	{trace_ts, From, _, _, _} when pid(From) ->
+	{trace_ts, From, _, _, _} when is_pid(From) ->
 	    ptrac([From], false, all()),
 	    flush_receive();
 	_ ->

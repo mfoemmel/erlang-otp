@@ -635,7 +635,7 @@ try_file(undefined, ObjFilename, Mod, Rules) ->
 	Error -> Error
     end;
 try_file(Src, _ObjFilename, Mod, _Rules) ->
-    List = apply(Mod, module_info, [compile]),
+    List = Mod:module_info(compile),
     {value, {options, Options}} = lists:keysearch(options, 1, List),
     {ok, Cwd} = file:get_cwd(),
     AbsPath = make_abs_path(Cwd, Src),
@@ -656,18 +656,18 @@ filter_options(Base, [{outdir, Path}|Rest], Result) ->
     filter_options(Base, Rest, [{outdir, make_abs_path(Base, Path)}|Result]);
 filter_options(Base, [{i, Path}|Rest], Result) ->
     filter_options(Base, Rest, [{i, make_abs_path(Base, Path)}|Result]);
-filter_options(Base, [Option|Rest], Result) when Option == trace ->
+filter_options(Base, [Option|Rest], Result) when Option =:= trace ->
     filter_options(Base, Rest, [Option|Result]);
-filter_options(Base, [Option|Rest], Result) when Option == export_all ->
+filter_options(Base, [Option|Rest], Result) when Option =:= export_all ->
     filter_options(Base, Rest, [Option|Result]);
-filter_options(Base, [Option|Rest], Result) when Option == binary ->
+filter_options(Base, [Option|Rest], Result) when Option =:= binary ->
     filter_options(Base, Rest, [Option|Result]);
-filter_options(Base, [Option|Rest], Result) when Option == fast ->
+filter_options(Base, [Option|Rest], Result) when Option =:= fast ->
     filter_options(Base, Rest, [Option|Result]);
-filter_options(Base, [Tuple|Rest], Result) when element(1, Tuple) == d ->
+filter_options(Base, [Tuple|Rest], Result) when element(1, Tuple) =:= d ->
     filter_options(Base, Rest, [Tuple|Result]);
 filter_options(Base, [Tuple|Rest], Result)
-when element(1, Tuple) == parse_transform ->
+when element(1, Tuple) =:= parse_transform ->
     filter_options(Base, Rest, [Tuple|Result]);
 filter_options(Base, [_|Rest], Result) ->
     filter_options(Base, Rest, Result);
@@ -677,7 +677,7 @@ filter_options(_Base, [], Result) ->
 %% Gets the source file given path of object code and module name.
 
 get_source_file(Obj, Mod, Rules) ->
-    case catch(apply(Mod, module_info, [source_file])) of
+    case catch Mod:module_info(source_file) of
 	{'EXIT', _Reason} ->
 	    source_by_rules(dirname(Obj), packages:last(Mod), Rules);
 	File ->

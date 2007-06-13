@@ -41,6 +41,9 @@ typedef struct port Port;
 
 #define ERTS_MAX_NO_OF_ASYNC_THREADS 1024
 extern int erts_async_max_threads;
+#define ERTS_ASYNC_THREAD_MIN_STACK_SIZE 16	/* Kilo words */
+#define ERTS_ASYNC_THREAD_MAX_STACK_SIZE 8192	/* Kilo words */
+extern int erts_async_thread_suggested_stack_size;
 
 #define MAXINDX 255
 
@@ -519,6 +522,7 @@ do {										\
 #define ERTS_PORT_SFLG_INITIALIZING	((Uint32) (1 << 12))
 /* Port uses port specific locking (opposed to driver specific locking) */
 #define ERTS_PORT_SFLG_PORT_SPECIFIC_LOCK ((Uint32) (1 << 13))
+#define ERTS_PORT_SFLG_INVALID		((Uint32) (1 << 14))
 
 #ifdef DEBUG
 /* Only debug: make sure all flags aren't cleared unintentionally */
@@ -531,7 +535,7 @@ do {										\
    | ERTS_PORT_SFLG_FREE_SCHEDULED					\
    | ERTS_PORT_SFLG_INITIALIZING)
 #define ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP				\
-  ERTS_PORT_SFLGS_DEAD
+  (ERTS_PORT_SFLGS_DEAD | ERTS_PORT_SFLG_INVALID)
 #define ERTS_PORT_SFLGS_INVALID_LOOKUP					\
   (ERTS_PORT_SFLGS_INVALID_DRIVER_LOOKUP				\
    | ERTS_PORT_SFLG_CLOSING)
@@ -976,6 +980,8 @@ ERTS_GLB_INLINE Port*erts_id2port_sflgs(Eterm, Process *, Uint32, Uint32);
 ERTS_GLB_INLINE void erts_port_release(Port *);
 ERTS_GLB_INLINE Port*erts_drvport2port(ErlDrvPort);
 ERTS_GLB_INLINE Port*erts_drvportid2port(Eterm);
+ERTS_GLB_INLINE Uint32 erts_portid2status(Eterm id);
+ERTS_GLB_INLINE int erts_is_port_alive(Eterm id);
 ERTS_GLB_INLINE int erts_is_valid_tracer_port(Eterm id);
 ERTS_GLB_INLINE void erts_dist_op_prepare(DistEntry *, Process *, Uint32);
 ERTS_GLB_INLINE void erts_dist_op_finalize(DistEntry *);
@@ -1077,19 +1083,37 @@ erts_drvportid2port(Eterm id)
     return &erts_port[ix];
 }
 
+ERTS_GLB_INLINE Uint32
+erts_portid2status(Eterm id)
+{
+    if (is_not_internal_port(id))
+	return ERTS_PORT_SFLG_INVALID;
+    else {
+	Uint32 status;
+	int ix = internal_port_index(id);
+	if (erts_max_ports <= ix)
+	    return ERTS_PORT_SFLG_INVALID;
+	erts_smp_port_tab_lock();
+	if (erts_port[ix].id == id)
+	    status = erts_port[ix].status;
+	else
+	    status = ERTS_PORT_SFLG_INVALID;
+	erts_smp_port_tab_unlock();
+	return status;
+    }
+}
+
+ERTS_GLB_INLINE int
+erts_is_port_alive(Eterm id)
+{
+    return !(erts_portid2status(id) & (ERTS_PORT_SFLG_INVALID
+				       | ERTS_PORT_SFLGS_DEAD));
+}
+
 ERTS_GLB_INLINE int
 erts_is_valid_tracer_port(Eterm id)
 {
-    if (is_not_internal_port(id))
-	return 0;
-    else {
-	int valid;
-	int ix = internal_port_index(id);
-	erts_smp_port_tab_lock();
-	valid = !INVALID_TRACER_PORT(&erts_port[ix], id);
-	erts_smp_port_tab_unlock();
-	return valid;
-    }
+    return !(erts_portid2status(id) & ERTS_PORT_SFLGS_INVALID_TRACER_LOOKUP);
 }
 
 ERTS_GLB_INLINE void

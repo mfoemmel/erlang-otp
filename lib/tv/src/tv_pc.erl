@@ -365,9 +365,9 @@ check_node(ProcVars) ->
     case net_adm:ping(OldCurrNode) of
 	pong ->
 	    ProcVars;
-	pang when LocalNode == false ->
+	pang when not LocalNode ->
 	    ProcVars;
-	pang when LocalNode == true ->
+	pang when LocalNode ->
 	    %% XXX [siri] Will this ever happen? I thought local_node
 	    %% indicated if current_node was the node where tv was
 	    %% started. If so, we are pinging ourselves here, and
@@ -458,7 +458,7 @@ set_sorting_mode(Msg, ProcVars) ->
 	case SortKeyNo of 
 	    undefined ->
 		if
-		    TableType == mnesia ->
+		    TableType =:= mnesia ->
 			2;
 		    true ->
 			1
@@ -751,14 +751,14 @@ clear_message_buffer() ->
 
 
 
-max_time_required(T1, T2) when number(T1), number(T2) ->
+max_time_required(T1, T2) when is_number(T1), is_number(T2) ->
     if
 	T1 > T2 ->
 	    T1;
 	true ->
 	    T2
     end;
-max_time_required(T1, _T2) when number(T1) ->
+max_time_required(T1, _T2) when is_number(T1) ->
     T1;
 max_time_required(_T1, T2) ->
     T2.
@@ -785,9 +785,9 @@ too_short_pollinterval_chosen(infinity, _EtsreadTime, _DbsTime) ->
     false;
 too_short_pollinterval_chosen(undefined, _EtsreadTime, _DbsTime) ->
     false;
-too_short_pollinterval_chosen(PollInt, EtsreadTime, _DbsTime) when EtsreadTime >= PollInt, number(EtsreadTime) ->
+too_short_pollinterval_chosen(PollInt, EtsreadTime, _DbsTime) when EtsreadTime >= PollInt, is_number(EtsreadTime) ->
     true;
-too_short_pollinterval_chosen(PollInt, _EtsreadTime, DbsTime) when DbsTime >= PollInt, number(DbsTime) ->
+too_short_pollinterval_chosen(PollInt, _EtsreadTime, DbsTime) when DbsTime >= PollInt, is_number(DbsTime) ->
     true;
 too_short_pollinterval_chosen(_PollInt, _EtsreadTime, _DbsTime) ->
     false.
