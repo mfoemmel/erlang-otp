@@ -101,6 +101,9 @@ eval_alu(Op,Arg1,Arg2) ->
 %% We need to be able to do evaluations based only on the bits, since
 %% there are cases where we can evaluate a subset of the bits, but can
 %% not do a full eval-alub call (eg. a + 0 gives no carry)
+%%
+-spec(eval_cond_bits/5 :: (atom(), bool(), bool(), bool(), bool()) -> bool()).
+
 eval_cond_bits(Cond, N, Z, V, C) ->
   case Cond of
     'eq' ->

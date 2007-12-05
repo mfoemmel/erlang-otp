@@ -24,6 +24,8 @@
 
 -include("dbg_ieval.hrl").
 
+-import(lists, [foldl/3,flatmap/2]).
+
 %%====================================================================
 %% External exports
 %%====================================================================
@@ -1111,6 +1113,8 @@ expr({bin,Line,Fs}, Bs0, Ieval0) ->
 %% List comprehension
 expr({lc,_Line,E,Qs}, Bs, Ieval) ->
     eval_lc(E, Qs, Bs, Ieval);
+expr({bc,_Line,E,Qs}, Bs, Ieval) ->
+    eval_bc(E, Qs, Bs, Ieval);
 
 %% Brutal exit on unknown expressions/clauses/values/etc.
 expr(E, _Bs, _Ieval) ->
@@ -1129,14 +1133,19 @@ eval_lc(E, Qs, Bs, Ieval) ->
 
 eval_lc1(E, [{generate,Line,P,L0}|Qs], Bs0, Ieval0) ->
     Ieval = Ieval0#ieval{line=Line},
-    {value,L1,Bs1} = expr(L0,Bs0,Ieval#ieval{last_call=false}),
-    lists:flatmap(fun (V) ->
-			  case catch match1(P, V, [], Bs0) of
-			      {match,Bsn} ->
-				  Bs2 = add_bindings(Bsn, Bs1),
-				  eval_lc1(E, Qs, Bs2, Ieval);
-			      nomatch -> []
-			  end end,L1);
+    {value,L1,Bs1} = expr(L0, Bs0, Ieval#ieval{last_call=false}),
+    flatmap(fun (V) ->
+		    case catch match1(P, V, [], Bs0) of
+			{match,Bsn} ->
+			    Bs2 = add_bindings(Bsn, Bs1),
+			    eval_lc1(E, Qs, Bs2, Ieval);
+			nomatch -> []
+		    end end,L1);
+eval_lc1(E, [{b_generate,Line,P,L0}|Qs], Bs0, Ieval0) ->
+    Ieval = Ieval0#ieval{line=Line},
+    {value,Bin,_} = expr(L0, Bs0, Ieval#ieval{last_call=false}),
+    CompFun = fun(NewBs) -> eval_lc1(E, Qs, NewBs, Ieval) end,
+    eval_b_generate(Bin, P, Bs0, CompFun);
 eval_lc1(E, [{guard,Q}|Qs], Bs0, Ieval) ->
     case guard(Q, Bs0) of
 	true -> eval_lc1(E, Qs, Bs0, Ieval);
@@ -1150,6 +1159,56 @@ eval_lc1(E, [Q|Qs], Bs0, Ieval) ->
 eval_lc1(E, [], Bs, Ieval) ->
     {value,V,_} = expr(E, Bs, Ieval#ieval{last_call=false}),
     [V].
+
+%% eval_bc(Expr,[Qualifier],Bindings,IevalState) ->
+%%	{value,Value,Bindings}.
+%% This is evaluating list comprehensions "straight out of the book".
+%% Copied from rv's implementation in erl_eval.
+eval_bc(E, Qs, Bs, Ieval) ->
+    Val = erlang:list_to_bitstring(eval_bc1(E, Qs, Bs, Ieval)),
+    {value,Val,Bs}.
+
+eval_bc1(E, [{generate,Line,P,L0}|Qs], Bs0, Ieval0) ->
+    Ieval = Ieval0#ieval{line=Line},
+    {value,L1,Bs1} = expr(L0, Bs0, Ieval#ieval{last_call=false}),
+    flatmap(fun (V) ->
+		    case catch match1(P, V, [], Bs0) of
+			{match,Bsn} ->
+			    Bs2 = add_bindings(Bsn, Bs1),
+			    eval_bc1(E, Qs, Bs2, Ieval);
+			nomatch -> []
+		    end end, L1);
+eval_bc1(E, [{b_generate,Line,P,L0}|Qs], Bs0, Ieval0) ->
+    Ieval = Ieval0#ieval{line=Line},
+    {value,Bin,_} = expr(L0, Bs0, Ieval#ieval{last_call=false}),
+    CompFun = fun(NewBs) -> eval_bc1(E, Qs, NewBs, Ieval) end,
+    eval_b_generate(Bin, P, Bs0, CompFun);
+eval_bc1(E, [{guard,Q}|Qs], Bs0, Ieval) ->
+    case guard(Q, Bs0) of
+	true -> eval_bc1(E, Qs, Bs0, Ieval);
+	false -> []
+    end;
+eval_bc1(E, [Q|Qs], Bs0, Ieval) ->
+    case expr(Q, Bs0, Ieval#ieval{last_call=false}) of
+	{value,true,Bs} -> eval_bc1(E, Qs, Bs, Ieval);
+	_ -> []
+    end;
+eval_bc1(E, [], Bs, Ieval) ->
+    {value,V,_} = expr(E, Bs, Ieval#ieval{last_call=false}),
+    [V].
+
+eval_b_generate(<<_/bitstring>>=Bin, P, Bs0, CompFun) ->
+    Mfun = fun(L, R, Bs) -> match1(L, R, Bs, Bs0) end,
+    Efun = fun(Exp, Bs) -> expr(Exp, Bs, #ieval{}) end,
+    case eval_bits:bin_gen(P, Bin, erl_eval:new_bindings(), Bs0, Mfun, Efun) of
+	{match,Rest,Bs1} ->
+	    Bs2 = add_bindings(Bs1, Bs0),
+	    CompFun(Bs2) ++ eval_b_generate(Rest, P, Bs0, CompFun);
+	{nomatch,Rest} ->
+	    eval_b_generate(Rest, P, Bs0, CompFun);
+	done ->
+	    []
+    end.
 
 module_info(Mod, module) -> Mod;
 module_info(_Mod, compile) -> [];
@@ -1520,7 +1579,7 @@ match1({cons,_,H,T}, [H1|T1], Bs0, BBs) ->
 match1({tuple,_,Elts}, Tuple, Bs, BBs) 
   when is_tuple(Tuple), length(Elts)=:=size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs, BBs);
-match1({bin,_,Fs}, B, Bs0, BBs0) when is_binary(B) ->
+match1({bin,_,Fs}, B, Bs0, BBs0) when erlang:is_bitstr(B) ->
     Bs1 = lists:sort(Bs0),  %Kludge.
     BBs = lists:sort(BBs0),
     try eval_bits:match_bits(Fs, B, Bs1, BBs,

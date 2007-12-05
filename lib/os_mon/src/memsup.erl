@@ -169,7 +169,8 @@ init([]) ->
     PortMode = case OS of
 		   {unix, darwin} -> false;
 		   {unix, freebsd} -> false;
-		   {unix, linux} -> false;
+		   % Linux supports this.
+		   {unix, linux} -> true;
 		   {unix, openbsd} -> true;
 		   {unix, irix64} -> true;
 		   {unix, irix} -> true;
@@ -708,6 +709,7 @@ get_memory_usage({unix,freebsd}) ->
     NMemTotal = PageCount * PageSize,
     {NMemUsed, NMemTotal};
 
+%% Deprecated: Linux uses port (sysconf)
 %% Linux: see below
 get_memory_usage({unix,linux}) ->
     get_memory_usage_linux();

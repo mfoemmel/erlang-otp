@@ -147,6 +147,9 @@
 	 attribute_arguments/1,
 	 attribute_name/1,
 	 binary/1,
+	 binary_comp/2,
+	 binary_comp_template/1,
+	 binary_comp_body/1,
 	 binary_field/1,
 	 binary_field/2,
 	 binary_field/3,
@@ -154,6 +157,9 @@
 	 binary_field_types/1,
 	 binary_field_size/1,
 	 binary_fields/1,
+	 binary_generator/2,
+	 binary_generator_body/1,
+	 binary_generator_pattern/1,
 	 block_expr/1,
 	 block_expr_body/1,
 	 case_expr/2,
@@ -566,8 +572,10 @@ type(Node) ->
 	{clause, _, _, _, _} -> clause;
 	{cons, _, _, _} -> list;
 	{function, _, _, _, _} -> function;
+	{b_generate, _, _, _} -> binary_generator;
 	{generate, _, _, _} -> generator;
 	{lc, _, _, _} -> list_comp;
+	{bc, _, _, _} -> binary_comp;		
 	{match, _, _, _} -> match_expr;
 	{op, _, _, _, _} -> infix_expr;
 	{op, _, _, _} -> prefix_expr;
@@ -586,7 +594,7 @@ type(Node) ->
 	{'try', _, _, _, _, _} -> try_expr;
 	{tuple, _, _} -> tuple;
 	_ ->
-	    erlang:fault({badarg, Node})
+	    erlang:error({badarg, Node})
     end.
 
 
@@ -2975,24 +2983,23 @@ revert_attribute_1(import, [M], Pos, Node) ->
 	{ok, A} -> {attribute, Pos, import, A};
 	error -> Node
     end;
-revert_attribute_1(import, [A, List], Pos, Node) ->
-    case type(A) of
-	atom ->
+revert_attribute_1(import, [M, List], Pos, Node) ->
+    case revert_module_name(M) of
+	{ok, A} ->
 	    case is_list_skeleton(List) of
 		true ->
 		    case is_proper_list(List) of
 			true ->
 			    Fs = fold_function_names(
 				   list_elements(List)),
-			    {attribute, Pos, import,
-			     {concrete(A), Fs}};
+			    {attribute, Pos, import, {A, Fs}};
 			false ->
 			    Node
 		    end;
 		false ->
 		    Node
 	    end;
-	_ ->
+	error ->
 	    Node
     end;
 revert_attribute_1(file, [A, Line], Pos, Node) ->
@@ -4578,6 +4585,75 @@ list_comp_body(Node) ->
 	    (data(Node1))#list_comp.body
     end.
 
+%% =====================================================================
+%% @spec binary_comp(Template::syntaxTree(), Body::[syntaxTree()]) ->
+%%           syntaxTree()
+%%
+%% @doc Creates an abstract binary comprehension. If <code>Body</code> is
+%% <code>[E1, ..., En]</code>, the result represents
+%% "<code>&lt;&lt;<em>Template</em> || <em>E1</em>, ..., <em>En</em>&gt;&gt;</code>".
+%%
+%% @see binary_comp_template/1
+%% @see binary_comp_body/1
+%% @see generator/2
+
+-record(binary_comp, {template, body}).
+
+%% type(Node) = binary_comp
+%% data(Node) = #binary_comp{template :: Template, body :: Body}
+%%
+%%	Template = Node = syntaxTree()
+%%	Body = [syntaxTree()]
+%%
+%% `erl_parse' representation:
+%%
+%% {bc, Pos, Template, Body}
+%%
+%%	Template = erl_parse()
+%%	Body = [erl_parse()] \ []
+
+binary_comp(Template, Body) ->
+    tree(binary_comp, #binary_comp{template = Template, body = Body}).
+
+revert_binary_comp(Node) ->
+    Pos = get_pos(Node),
+    Template = binary_comp_template(Node),
+    Body = binary_comp_body(Node),
+    {bc, Pos, Template, Body}.
+
+
+%% =====================================================================
+%% @spec binary_comp_template(syntaxTree()) -> syntaxTree()
+%%
+%% @doc Returns the template subtree of a <code>binary_comp</code> node.
+%%
+%% @see binary_comp/2
+
+binary_comp_template(Node) ->
+    case unwrap(Node) of
+	{bc, _, Template, _} ->
+	    Template;
+	Node1 ->
+	    (data(Node1))#binary_comp.template
+    end.
+
+
+%% =====================================================================
+%% @spec binary_comp_body(syntaxTree()) -> [syntaxTree()]
+%%
+%% @doc Returns the list of body subtrees of a <code>binary_comp</code>
+%% node.
+%%
+%% @see binary_comp/2
+
+binary_comp_body(Node) ->
+    case unwrap(Node) of
+	{bc, _, _, Body} ->
+	    Body;
+	Node1 ->
+	    (data(Node1))#binary_comp.body
+    end.
+
 
 %% =====================================================================
 %% @spec query_expr(Body::syntaxTree()) -> syntaxTree()
@@ -4745,6 +4821,7 @@ rule_arity(Node) ->
 %% @see generator_pattern/1
 %% @see generator_body/1
 %% @see list_comp/2
+%% @see binary_comp/2
 
 -record(generator, {pattern, body}).
 
@@ -4800,6 +4877,72 @@ generator_body(Node) ->
 	    (data(Node1))#generator.body
     end.
 
+
+%% =====================================================================
+%% @spec binary_generator(Pattern::syntaxTree(), Body::syntaxTree()) ->
+%%           syntaxTree()
+%%
+%% @doc Creates an abstract binary_generator. The result represents
+%% "<code><em>Pattern</em> &lt;- <em>Body</em></code>".
+%%
+%% @see binary_generator_pattern/1
+%% @see binary_generator_body/1
+%% @see list_comp/2
+%% @see binary_comp/2
+
+-record(binary_generator, {pattern, body}).
+
+%% type(Node) = binary_generator
+%% data(Node) = #binary_generator{pattern :: Pattern, body :: Body}
+%%
+%%	Pattern = Argument = syntaxTree()
+%%
+%% `erl_parse' representation:
+%%
+%% {b_generate, Pos, Pattern, Body}
+%%
+%%	Pattern = Body = erl_parse()
+
+binary_generator(Pattern, Body) ->
+    tree(binary_generator, #binary_generator{pattern = Pattern, body = Body}).
+
+revert_binary_generator(Node) ->
+    Pos = get_pos(Node),
+    Pattern = binary_generator_pattern(Node),
+    Body = binary_generator_body(Node),
+    {b_generate, Pos, Pattern, Body}.
+
+
+%% =====================================================================
+%% @spec binary_generator_pattern(syntaxTree()) -> syntaxTree()
+%%
+%% @doc Returns the pattern subtree of a <code>generator</code> node.
+%%
+%% @see binary_generator/2
+
+binary_generator_pattern(Node) ->
+    case unwrap(Node) of
+	{b_generate, _, Pattern, _} ->
+	    Pattern;
+	Node1 ->
+	    (data(Node1))#binary_generator.pattern
+    end.
+
+
+%% =====================================================================
+%% @spec binary_generator_body(syntaxTree()) -> syntaxTree()
+%%
+%% @doc Returns the body subtree of a <code>generator</code> node.
+%%
+%% @see binary_generator/2
+
+binary_generator_body(Node) ->
+    case unwrap(Node) of
+	{b_generate, _, _, Body} ->
+	    Body;
+	Node1 ->
+	    (data(Node1))#binary_generator.body
+    end.
 
 %% =====================================================================
 %% @spec block_expr(Body::[syntaxTree()]) -> syntaxTree()
@@ -5754,7 +5897,7 @@ abstract(T) when is_tuple(T) ->
 abstract(T) when is_binary(T) ->
     binary([binary_field(integer(B)) || B <- binary_to_list(T)]);
 abstract(T) ->
-    erlang:fault({badarg, T}).
+    erlang:error({badarg, T}).
 
 abstract_list([T | Ts]) ->
     [abstract(T) | abstract_list(Ts)];
@@ -5829,7 +5972,7 @@ concrete(Node) ->
 				   end, [], true),
 	    B;
     	_ ->
-	    erlang:fault({badarg, Node})
+	    erlang:error({badarg, Node})
     end.
 
 concrete_list([E | Es]) ->
@@ -5937,8 +6080,12 @@ revert_root(Node) ->
 	    revert_attribute(Node);
 	binary ->
 	    revert_binary(Node);
+        binary_comp ->
+	    revert_binary_comp(Node);
 	binary_field ->
 	    revert_binary_field(Node);
+        binary_generator ->
+	    revert_binary_generator(Node);
 	block_expr ->
 	    revert_block_expr(Node);
 	case_expr ->
@@ -6044,14 +6191,14 @@ revert_forms(T) ->
 		{ok, Fs} ->
 		    Fs;
 		{error, R} ->
-		    erlang:fault({error, R});
+		    erlang:error({error, R});
 		{'EXIT', R} ->
 		    exit(R);
 		R ->
 		    throw(R)
 	    end;
 	_ ->
-	    erlang:fault({badarg, T})
+	    erlang:error({badarg, T})
     end.
 
 revert_forms_1([T | Ts]) ->
@@ -6153,7 +6300,9 @@ subtrees(T) ->
 		    end;
 		binary ->
 		    [binary_fields(T)];
-		binary_field ->
+		binary_comp ->
+		    [[binary_comp_template(T)], binary_comp_body(T)];
+                binary_field ->
 		    case binary_field_types(T) of
 			[] ->
 			    [[binary_field_body(T)]];
@@ -6161,6 +6310,9 @@ subtrees(T) ->
 			    [[binary_field_body(T)],
 			     Ts]
 		    end;
+	        binary_generator ->
+		    [[binary_generator_pattern(T)], 
+                     [binary_generator_body(T)]];
 		block_expr ->
 		    [block_expr_body(T)];
 		case_expr ->
@@ -6333,8 +6485,10 @@ make_tree(arity_qualifier, [[N], [A]]) -> arity_qualifier(N, A);
 make_tree(attribute, [[N]]) -> attribute(N);
 make_tree(attribute, [[N], A]) -> attribute(N, A);
 make_tree(binary, [Fs]) -> binary(Fs);
+make_tree(binary_comp, [[T], B]) -> binary_comp(T, B);
 make_tree(binary_field, [[B]]) -> binary_field(B);
 make_tree(binary_field, [[B], Ts]) -> binary_field(B, Ts);
+make_tree(binary_generator, [[P], [E]]) -> binary_generator(P, E);
 make_tree(block_expr, [B]) -> block_expr(B);
 make_tree(case_expr, [[A], C]) -> case_expr(A, C);
 make_tree(catch_expr, [[B]]) -> catch_expr(B);
@@ -6615,7 +6769,7 @@ is_tree(_) ->
 %% @see tree/2
 
 data(#tree{data = D}) -> D;
-data(T) -> erlang:fault({badarg, T}).
+data(T) -> erlang:error({badarg, T}).
 
 
 %% =====================================================================

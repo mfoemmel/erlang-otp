@@ -42,7 +42,28 @@ typedef struct {
 #endif
 } erts_mtx_t;
 typedef ethr_cond erts_cnd_t;
+typedef struct {
+    ethr_rwmutex rwmtx;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_t lc;
+#endif
+} erts_rwmtx_t;
 typedef ethr_tsd_key erts_tsd_key_t;
+typedef ethr_gate erts_gate_t;
+typedef ethr_atomic_t erts_atomic_t;
+typedef struct {
+    ethr_spinlock_t slck;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_t lc;
+#endif
+} erts_spinlock_t;
+typedef struct {
+    ethr_rwlock_t rwlck;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_t lc;
+#endif
+} erts_rwlock_t;
+
 typedef ethr_timeval erts_thr_timeval_t;
 void  __noreturn erts_thr_fatal_error(int, char *); /* implemented in
 						       erl_init.c */
@@ -64,9 +85,6 @@ void  __noreturn erts_thr_fatal_error(int, char *); /* implemented in
 #ifdef ETHR_HAVE_ETHR_REC_MUTEX_INIT
 #  define ERTS_HAVE_REC_MTX_INIT	ETHR_HAVE_ETHR_REC_MUTEX_INIT
 #endif
-#ifdef ETHR_HAVE_ETHR_MUTEX_TRYLOCK
-#  define ERTS_HAVE_MTX_TRYLOCK		ETHR_HAVE_ETHR_MUTEX_TRYLOCK
-#endif
 
 
 #else /* #ifdef USE_THREADS */
@@ -77,7 +95,17 @@ typedef int erts_thr_init_data_t;
 typedef int erts_tid_t;
 typedef int erts_mtx_t;
 typedef int erts_cnd_t;
+typedef int erts_rwmtx_t;
 typedef int erts_tsd_key_t;
+typedef int erts_gate_t;
+typedef long erts_atomic_t;
+#if __GNUC__ > 2
+typedef struct { } erts_spinlock_t;
+typedef struct { } erts_rwlock_t;
+#else
+typedef struct { int gcc_is_buggy; } erts_spinlock_t;
+typedef struct { int gcc_is_buggy; } erts_rwlock_t;
+#endif
 typedef struct {
     long tv_sec;
     long tv_nsec;
@@ -89,7 +117,6 @@ typedef struct {
 #define ERTS_THR_INIT_DATA_DEF_INITER	0
 
 #define ERTS_HAVE_REC_MTX_INIT		1
-#define ERTS_HAVE_MTX_TRYLOCK		1
 
 #endif /* #ifdef USE_THREADS */
 
@@ -114,9 +141,7 @@ ERTS_GLB_INLINE void erts_mtx_init_locked(erts_mtx_t *mtx, char *name);
 ERTS_GLB_INLINE void erts_mtx_destroy(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_set_forksafe(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_unset_forksafe(erts_mtx_t *mtx);
-#ifdef ERTS_HAVE_MTX_TRYLOCK
 ERTS_GLB_INLINE int erts_mtx_trylock(erts_mtx_t *mtx);
-#endif /* #ifdef ETHR_HAVE_ETHR_MTX_TRYLOCK */
 ERTS_GLB_INLINE void erts_mtx_lock(erts_mtx_t *mtx);
 ERTS_GLB_INLINE void erts_mtx_unlock(erts_mtx_t *mtx);
 ERTS_GLB_INLINE int erts_lc_mtx_is_locked(erts_mtx_t *mtx);
@@ -127,11 +152,67 @@ ERTS_GLB_INLINE int erts_cnd_timedwait(erts_cnd_t *cnd, erts_mtx_t *mtx,
 				       erts_thr_timeval_t *time);
 ERTS_GLB_INLINE void erts_cnd_signal(erts_cnd_t *cnd);
 ERTS_GLB_INLINE void erts_cnd_broadcast(erts_cnd_t *cnd);
+ERTS_GLB_INLINE void erts_rwmtx_init_x(erts_rwmtx_t *rwmtx,
+				       char *name,
+				       Eterm extra);
+ERTS_GLB_INLINE void erts_rwmtx_init(erts_rwmtx_t *rwmtx,
+					 char *name);
+ERTS_GLB_INLINE void erts_rwmtx_destroy(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE int erts_rwmtx_tryrlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_rwmtx_rlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_rwmtx_runlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE int erts_rwmtx_tryrwlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE void erts_rwmtx_rwunlock(erts_rwmtx_t *rwmtx);
+ERTS_GLB_INLINE int erts_lc_rwmtx_is_rlocked(erts_rwmtx_t *mtx);
+ERTS_GLB_INLINE int erts_lc_rwmtx_is_rwlocked(erts_rwmtx_t *mtx);
+ERTS_GLB_INLINE void erts_atomic_init(erts_atomic_t *var, long i);
+ERTS_GLB_INLINE void erts_atomic_set(erts_atomic_t *var, long i);
+ERTS_GLB_INLINE long erts_atomic_read(erts_atomic_t *var);
+ERTS_GLB_INLINE long erts_atomic_inctest(erts_atomic_t *incp);
+ERTS_GLB_INLINE long erts_atomic_dectest(erts_atomic_t *decp);
+ERTS_GLB_INLINE void erts_atomic_inc(erts_atomic_t *incp);
+ERTS_GLB_INLINE void erts_atomic_dec(erts_atomic_t *decp);
+ERTS_GLB_INLINE long erts_atomic_addtest(erts_atomic_t *addp,
+					 long i);
+ERTS_GLB_INLINE void erts_atomic_add(erts_atomic_t *addp, long i);
+ERTS_GLB_INLINE long erts_atomic_xchg(erts_atomic_t *xchgp,
+				      long new);
+ERTS_GLB_INLINE long erts_atomic_bor(erts_atomic_t *var, long mask);
+ERTS_GLB_INLINE long erts_atomic_band(erts_atomic_t *var, long mask);
+ERTS_GLB_INLINE void erts_spinlock_init_x(erts_spinlock_t *lock,
+					  char *name,
+					  Eterm extra);
+ERTS_GLB_INLINE void erts_spinlock_init(erts_spinlock_t *lock,
+					char *name);
+ERTS_GLB_INLINE void erts_spinlock_destroy(erts_spinlock_t *lock);
+ERTS_GLB_INLINE void erts_spin_unlock(erts_spinlock_t *lock);
+ERTS_GLB_INLINE void erts_spin_lock(erts_spinlock_t *lock);
+ERTS_GLB_INLINE int erts_lc_spinlock_is_locked(erts_spinlock_t *lock);
+ERTS_GLB_INLINE void erts_rwlock_init_x(erts_rwlock_t *lock,
+					char *name,
+					Eterm extra);
+ERTS_GLB_INLINE void erts_rwlock_init(erts_rwlock_t *lock,
+				      char *name);
+ERTS_GLB_INLINE void erts_rwlock_destroy(erts_rwlock_t *lock);
+ERTS_GLB_INLINE void erts_read_unlock(erts_rwlock_t *lock);
+ERTS_GLB_INLINE void erts_read_lock(erts_rwlock_t *lock);
+ERTS_GLB_INLINE void erts_write_unlock(erts_rwlock_t *lock);
+ERTS_GLB_INLINE void erts_write_lock(erts_rwlock_t *lock);
+ERTS_GLB_INLINE int erts_lc_rwlock_is_rlocked(erts_rwlock_t *lock);
+ERTS_GLB_INLINE int erts_lc_rwlock_is_rwlocked(erts_rwlock_t *lock);
 ERTS_GLB_INLINE void erts_thr_time_now(erts_thr_timeval_t *time);
 ERTS_GLB_INLINE void erts_tsd_key_create(erts_tsd_key_t *keyp);
 ERTS_GLB_INLINE void erts_tsd_key_delete(erts_tsd_key_t key);
 ERTS_GLB_INLINE void erts_tsd_set(erts_tsd_key_t key, void *value);
 ERTS_GLB_INLINE void * erts_tsd_get(erts_tsd_key_t key);
+ERTS_GLB_INLINE void erts_gate_init(erts_gate_t *gp);
+ERTS_GLB_INLINE void erts_gate_destroy(erts_gate_t *gp);
+ERTS_GLB_INLINE void erts_gate_close(erts_gate_t *gp);
+ERTS_GLB_INLINE void erts_gate_let_through(erts_gate_t *gp, unsigned no);
+ERTS_GLB_INLINE void erts_gate_wait(erts_gate_t *gp);
+ERTS_GLB_INLINE void erts_gate_swait(erts_gate_t *gp, int spincount);
+
 #ifdef ETHR_HAVE_ETHR_SIG_FUNCS
 #define ERTS_THR_HAVE_SIG_FUNCS 1
 ERTS_GLB_INLINE void erts_thr_sigmask(int how, const sigset_t *set,
@@ -335,8 +416,6 @@ erts_mtx_unset_forksafe(erts_mtx_t *mtx)
 #endif
 }
 
-#ifdef ERTS_HAVE_MTX_TRYLOCK
-
 ERTS_GLB_INLINE int
 erts_mtx_trylock(erts_mtx_t *mtx)
 {
@@ -364,8 +443,6 @@ erts_mtx_trylock(erts_mtx_t *mtx)
 #endif
 
 }
-
-#endif /* #ifdef ETHR_HAVE_ETHR_MTX_TRYLOCK */
 
 ERTS_GLB_INLINE void
 erts_mtx_lock(erts_mtx_t *mtx)
@@ -475,6 +552,602 @@ erts_cnd_broadcast(erts_cnd_t *cnd)
 }
 
 ERTS_GLB_INLINE void
+erts_rwmtx_init_x(erts_rwmtx_t *rwmtx, char *name, Eterm extra)
+{
+#ifdef USE_THREADS
+    int res = ethr_rwmutex_init(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "initialize rwmutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock_x(&rwmtx->lc, name, ERTS_LC_FLG_LT_RWMUTEX, extra);
+#endif
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_init(erts_rwmtx_t *rwmtx, char *name)
+{
+#ifdef USE_THREADS
+    int res = ethr_rwmutex_init(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "initialize rwmutex");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock(&rwmtx->lc, name, ERTS_LC_FLG_LT_RWMUTEX);
+#endif
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_destroy(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_destroy_lock(&rwmtx->lc);
+#endif
+    res = ethr_rwmutex_destroy(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "destroy rwmutex");
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_rwmtx_tryrlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    if (erts_lc_trylock_force_busy_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ))
+	return EBUSY; /* Make sure caller can handle the situation without
+			 causing a lock order violation */
+#endif
+
+    res = ethr_rwmutex_tryrlock(&rwmtx->rwmtx);
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_trylock_flg(res == 0, &rwmtx->lc, ERTS_LC_FLG_LO_READ);
+#endif
+
+    if (res != 0 && res != EBUSY)
+	erts_thr_fatal_error(res, "try read lock rwmutex");
+    
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_rlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ);
+#endif
+    res = ethr_rwmutex_rlock(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "read lock rwmutex");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_runlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ);
+#endif
+    res = ethr_rwmutex_runlock(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "read unlock rwmutex");
+#endif
+}
+
+
+ERTS_GLB_INLINE int
+erts_rwmtx_tryrwlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    if (erts_lc_trylock_force_busy_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE))
+	return EBUSY; /* Make sure caller can handle the situation without
+			 causing a lock order violation */
+#endif
+
+    res = ethr_rwmutex_tryrwlock(&rwmtx->rwmtx);
+
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_trylock_flg(res == 0, &rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
+#endif
+
+    if (res != 0 && res != EBUSY)
+	erts_thr_fatal_error(res, "try write lock rwmutex");
+    
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_rwlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
+#endif
+    res = ethr_rwmutex_rwlock(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "write lock rwmutex");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwmtx_rwunlock(erts_rwmtx_t *rwmtx)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
+#endif
+    res = ethr_rwmutex_rwunlock(&rwmtx->rwmtx);
+    if (res != 0)
+	erts_thr_fatal_error(res, "write unlock rwmutex");
+#endif
+}
+
+#if 0 /* The following rwmtx function names are
+	 reserved for potential future use. */ 
+
+/* Try upgrade from r-locked state to rw-locked state */
+ERTS_GLB_INLINE int
+erts_rwmtx_trywlock(erts_rwmtx_t *rwmtx)
+{
+    return 0;
+}
+
+/* Upgrade from r-locked state to rw-locked state */
+ERTS_GLB_INLINE void
+erts_rwmtx_wlock(erts_rwmtx_t *rwmtx)
+{
+
+}
+
+/* Downgrade from rw-locked state to r-locked state */
+ERTS_GLB_INLINE void
+erts_rwmtx_wunlock(erts_rwmtx_t *rwmtx)
+{
+
+}
+
+#endif
+
+ERTS_GLB_INLINE int
+erts_lc_rwmtx_is_rlocked(erts_rwmtx_t *mtx)
+{
+#if defined(USE_THREADS) && defined(ERTS_ENABLE_LOCK_CHECK)
+    int res;
+    erts_lc_lock_t lc = mtx->lc;
+    lc.flags = ERTS_LC_FLG_LO_READ;
+    erts_lc_have_locks(&res, &lc, 1);
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_lc_rwmtx_is_rwlocked(erts_rwmtx_t *mtx)
+{
+#if defined(USE_THREADS) && defined(ERTS_ENABLE_LOCK_CHECK)
+    int res;
+    erts_lc_lock_t lc = mtx->lc;
+    lc.flags = ERTS_LC_FLG_LO_READ|ERTS_LC_FLG_LO_WRITE;
+    erts_lc_have_locks(&res, &lc, 1);
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_atomic_init(erts_atomic_t *var, long i)
+{
+#ifdef USE_THREADS
+    int res = ethr_atomic_init(var, i);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic init");
+#else
+    *var = i;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_atomic_set(erts_atomic_t *var, long i)
+{
+#ifdef USE_THREADS
+    int res = ethr_atomic_set(var, i);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic set");
+#else
+    *var = i;
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_read(erts_atomic_t *var)
+{
+#ifdef USE_THREADS
+    long i;
+    int res = ethr_atomic_read(var, &i);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic read");
+    return i;
+#else
+    return *var;
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_inctest(erts_atomic_t *incp)
+{
+#ifdef USE_THREADS
+    long test;
+    int res = ethr_atomic_inctest(incp, &test);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic increment and test");
+    return test;
+#else
+    return ++(*incp);
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_dectest(erts_atomic_t *decp)
+{
+#ifdef USE_THREADS
+    long test;
+    int res = ethr_atomic_dectest(decp, &test);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic decrement and test");
+    return test;
+#else
+    return --(*decp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_atomic_inc(erts_atomic_t *incp)
+{
+#ifdef USE_THREADS
+    int res = ethr_atomic_inc(incp);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic increment");
+#else
+    ++(*incp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_atomic_dec(erts_atomic_t *decp)
+{
+#ifdef USE_THREADS
+    int res = ethr_atomic_dec(decp);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic decrement");
+#else
+    --(*decp);
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_addtest(erts_atomic_t *addp, long i)
+{
+#ifdef USE_THREADS
+    long test;
+    int res = ethr_atomic_addtest(addp, i, &test);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic addition and test");
+    return test;
+#else
+    return *addp += i;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_atomic_add(erts_atomic_t *addp, long i)
+{
+#ifdef USE_THREADS
+    int res = ethr_atomic_add(addp, i);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic addition");
+#else
+    *addp += i;
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_xchg(erts_atomic_t *xchgp, long new)
+{
+    long old;
+#ifdef USE_THREADS
+    int res = ethr_atomic_xchg(xchgp, new, &old);
+    if (res)
+	erts_thr_fatal_error(res, "perform atomic exchange");
+#else
+    old = *xchgp;
+    *xchgp = new;
+#endif
+    return old;
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_bor(erts_atomic_t *var, long mask)
+{
+    long old;
+#ifdef USE_THREADS
+    int res = ethr_atomic_or_old(var, mask, &old);
+    if (res != 0)
+	erts_thr_fatal_error(res, "perform atomic bitwise or");
+#else
+    old = *var;
+    *var |= mask;
+#endif
+    return old;
+}
+
+ERTS_GLB_INLINE long
+erts_atomic_band(erts_atomic_t *var, long mask)
+{
+    long old;
+#ifdef USE_THREADS
+    int res = ethr_atomic_and_old(var, mask, &old);
+    if (res != 0)
+	erts_thr_fatal_error(res, "perform atomic bitwise and");
+#else
+    old = *var;
+    *var &= mask;
+#endif
+    return old;
+}
+
+ERTS_GLB_INLINE void
+erts_spinlock_init_x(erts_spinlock_t *lock, char *name, Eterm extra)
+{
+#ifdef USE_THREADS
+    int res = ethr_spinlock_init(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "init spinlock");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_SPINLOCK, extra);
+#endif
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_spinlock_init(erts_spinlock_t *lock, char *name)
+{
+#ifdef USE_THREADS
+    int res = ethr_spinlock_init(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "init spinlock");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock(&lock->lc, name, ERTS_LC_FLG_LT_SPINLOCK);
+#endif
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_spinlock_destroy(erts_spinlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_destroy_lock(&lock->lc);
+#endif
+    res = ethr_spinlock_destroy(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "destroy spinlock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_spin_unlock(erts_spinlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock(&lock->lc);
+#endif
+    res = ethr_spin_unlock(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "release spin lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_spin_lock(erts_spinlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock(&lock->lc);
+#endif
+    res = ethr_spin_lock(&lock->slck);
+    if (res)
+	erts_thr_fatal_error(res, "take spin lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_lc_spinlock_is_locked(erts_spinlock_t *lock)
+{
+#if defined(USE_THREADS) && defined(ERTS_ENABLE_LOCK_CHECK)
+    int res;
+    erts_lc_lock_t lc = lock->lc;
+    lc.flags = 0;
+    erts_lc_have_locks(&res, &lc, 1);
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwlock_init_x(erts_rwlock_t *lock, char *name, Eterm extra)
+{
+#ifdef USE_THREADS
+    int res = ethr_rwlock_init(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "init rwlock");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK, extra);
+#endif
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwlock_init(erts_rwlock_t *lock, char *name)
+{
+#ifdef USE_THREADS
+    int res = ethr_rwlock_init(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "init rwlock");
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_init_lock(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK);
+#endif
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_rwlock_destroy(erts_rwlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_destroy_lock(&lock->lc);
+#endif
+    res = ethr_rwlock_destroy(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "destroy rwlock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_read_unlock(erts_rwlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock_flg(&lock->lc, ERTS_LC_FLG_LO_READ);
+#endif
+    res = ethr_read_unlock(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "release read lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_read_lock(erts_rwlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_flg(&lock->lc, ERTS_LC_FLG_LO_READ);
+#endif
+    res = ethr_read_lock(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "take read lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_write_unlock(erts_rwlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_unlock_flg(&lock->lc, ERTS_LC_FLG_LO_READ_WRITE);
+#endif
+    res = ethr_write_unlock(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "release write lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_write_lock(erts_rwlock_t *lock)
+{
+#ifdef USE_THREADS
+    int res;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_lock_flg(&lock->lc, ERTS_LC_FLG_LO_READ_WRITE);
+#endif
+    res = ethr_write_lock(&lock->rwlck);
+    if (res)
+	erts_thr_fatal_error(res, "take write lock");
+#else
+    (void)lock;
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_lc_rwlock_is_rlocked(erts_rwlock_t *lock)
+{
+#if defined(USE_THREADS) && defined(ERTS_ENABLE_LOCK_CHECK)
+    int res;
+    erts_lc_lock_t lc = lock->lc;
+    lc.flags = ERTS_LC_FLG_LO_READ;
+    erts_lc_have_locks(&res, &lc, 1);
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE int
+erts_lc_rwlock_is_rwlocked(erts_rwlock_t *lock)
+{
+#if defined(USE_THREADS) && defined(ERTS_ENABLE_LOCK_CHECK)
+    int res;
+    erts_lc_lock_t lc = lock->lc;
+    lc.flags = ERTS_LC_FLG_LO_READ|ERTS_LC_FLG_LO_WRITE;
+    erts_lc_have_locks(&res, &lc, 1);
+    return res;
+#else
+    return 0;
+#endif
+}
+
+ERTS_GLB_INLINE void
 erts_thr_time_now(erts_thr_timeval_t *time)
 {
 #ifdef USE_THREADS
@@ -521,6 +1194,66 @@ erts_tsd_get(erts_tsd_key_t key)
     return ethr_tsd_get(key);
 #else
     return NULL;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_init(erts_gate_t *gp)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_init((ethr_gate *) gp);
+    if (res != 0)
+	erts_thr_fatal_error(res, "initialize gate");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_destroy(erts_gate_t *gp)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_destroy((ethr_gate *) gp);
+    if (res != 0)
+	erts_thr_fatal_error(res, "destroy gate");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_close(erts_gate_t *gp)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_close((ethr_gate *) gp);
+    if (res != 0)
+	erts_thr_fatal_error(res, "close gate");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_let_through(erts_gate_t *gp, unsigned no)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_let_through((ethr_gate *) gp, no);
+    if (res != 0)
+	erts_thr_fatal_error(res, "let through gate");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_wait(erts_gate_t *gp)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_wait((ethr_gate *) gp);
+    if (res != 0)
+	erts_thr_fatal_error(res, "wait on gate");
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_gate_swait(erts_gate_t *gp, int spincount)
+{
+#ifdef USE_THREADS
+    int res = ethr_gate_swait((ethr_gate *) gp, spincount);
+    if (res != 0)
+	erts_thr_fatal_error(res, "swait on gate");
 #endif
 }
 

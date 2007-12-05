@@ -22,6 +22,7 @@
 
 ASN1_CT_OPTS += +noobj
 ifeq ($(MEGACO_INLINE_ASN1_RT),true)
+# We need atleast version 1.4.6 of the ANS.1 application
 ASN1_CT_OPTS += +inline
 endif
 
@@ -40,6 +41,9 @@ BER_BIN_DRV_PREV3B_FLAGS = $(ASN1_CT_OPTS) +asn1config +optimize +driver
 BER_PREV3C_FLAGS         = $(ASN1_CT_OPTS)
 BER_BIN_PREV3C_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize
 BER_BIN_DRV_PREV3C_FLAGS = $(ASN1_CT_OPTS) +asn1config +optimize +driver
+BER_V3_FLAGS             = $(ASN1_CT_OPTS)
+BER_BIN_V3_FLAGS         = $(ASN1_CT_OPTS) +asn1config +optimize
+BER_BIN_DRV_V3_FLAGS     = $(ASN1_CT_OPTS) +asn1config +optimize +driver
 PER_V1_FLAGS             = $(ASN1_CT_OPTS)
 PER_BIN_V1_FLAGS         = $(ASN1_CT_OPTS)
 PER_BIN_DRV_V1_FLAGS     = $(ASN1_CT_OPTS) +optimize
@@ -55,6 +59,10 @@ PER_BIN_DRV_PREV3B_FLAGS = $(ASN1_CT_OPTS) +optimize
 PER_PREV3C_FLAGS         = $(ASN1_CT_OPTS)
 PER_BIN_PREV3C_FLAGS     = $(ASN1_CT_OPTS)
 PER_BIN_DRV_PREV3C_FLAGS = $(ASN1_CT_OPTS) +optimize
+PER_V3_FLAGS             = $(ASN1_CT_OPTS)
+PER_BIN_V3_FLAGS         = $(ASN1_CT_OPTS)
+PER_BIN_DRV_V3_FLAGS     = $(ASN1_CT_OPTS) +optimize
+
 
 # --- Version 1 ---
 
@@ -119,6 +127,7 @@ $(PER_BIN_DRV_ASN1_V1_SPEC).erl $(PER_BIN_DRV_ASN1_V1_SPEC).hrl: \
 $(EBIN)/$(PER_BIN_DRV_ASN1_V1_SPEC).$(EMULATOR): \
 	$(PER_BIN_DRV_ASN1_V1_SPEC).erl \
 	$(PER_BIN_DRV_ASN1_V1_SPEC).hrl
+
 
 # --- Version 2 ---
 
@@ -381,6 +390,71 @@ $(EBIN)/$(PER_BIN_DRV_ASN1_PREV3C_SPEC).$(EMULATOR): \
 	$(PER_BIN_DRV_ASN1_PREV3C_SPEC).hrl
 
 
+# -- (v3) --
+
+$(BER_ASN1_V3_SPEC).erl $(BER_ASN1_V3_SPEC).hrl: \
+	$(BER_ASN1_V3_SPEC).set.asn \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(BER_ASN1_V3_SPEC):"
+	$(ERLC) -bber $(BER_V3_FLAGS) $(BER_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(BER_ASN1_V3_SPEC).$(EMULATOR): \
+	$(BER_ASN1_V3_SPEC).erl \
+	$(BER_ASN1_V3_SPEC).hrl
+
+$(BER_BIN_ASN1_V3_SPEC).erl $(BER_BIN_ASN1_V3_SPEC).hrl: \
+	$(BER_BIN_ASN1_V3_SPEC).set.asn \
+	$(BER_BIN_ASN1_V3_SPEC).asn1config \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(BER_BIN_ASN1_V3_SPEC):"
+	$(ERLC) -bber_bin $(BER_BIN_V3_FLAGS) $(BER_BIN_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(BER_BIN_ASN1_V3_SPEC).$(EMULATOR): \
+	$(BER_BIN_ASN1_V3_SPEC).erl \
+	$(BER_BIN_ASN1_V3_SPEC).hrl
+
+$(BER_BIN_DRV_ASN1_V3_SPEC).erl $(BER_BIN_DRV_ASN1_V3_SPEC).hrl: \
+	$(BER_BIN_DRV_ASN1_V3_SPEC).set.asn \
+	$(BER_BIN_DRV_ASN1_V3_SPEC).asn1config \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(BER_BIN_DRV_ASN1_V3_SPEC):"
+	$(ERLC) -bber_bin $(BER_BIN_DRV_V3_FLAGS) $(BER_BIN_DRV_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(BER_BIN_DRV_ASN1_V3_SPEC).$(EMULATOR): \
+	$(BER_BIN_DRV_ASN1_V3_SPEC).erl \
+	$(BER_BIN_DRV_ASN1_V3_SPEC).hrl
+
+$(PER_ASN1_V3_SPEC).erl $(PER_ASN1_V3_SPEC).hrl: \
+	$(PER_ASN1_V3_SPEC).set.asn \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(PER_ASN1_V3_SPEC):"
+	$(ERLC) -bper $(PER_V3_FLAGS) $(PER_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(PER_ASN1_V3_SPEC).$(EMULATOR): \
+	$(PER_ASN1_V3_SPEC).erl \
+	$(PER_ASN1_V3_SPEC).hrl
+
+$(PER_BIN_ASN1_V3_SPEC).erl $(PER_BIN_ASN1_V3_SPEC).hrl: \
+	$(PER_BIN_ASN1_V3_SPEC).set.asn \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(PER_BIN_ASN1_V3_SPEC):"
+	$(ERLC) -bper_bin $(PER_BIN_V3_FLAGS) $(PER_BIN_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(PER_BIN_ASN1_V3_SPEC).$(EMULATOR): \
+	$(PER_BIN_ASN1_V3_SPEC).erl \
+	$(PER_BIN_ASN1_V3_SPEC).hrl
+
+$(PER_BIN_DRV_ASN1_V3_SPEC).erl $(PER_BIN_DRV_ASN1_V3_SPEC).hrl: \
+	$(PER_BIN_DRV_ASN1_V3_SPEC).set.asn \
+	$(ASN1_V3_SPEC).asn
+	@echo "$(PER_BIN_DRV_ASN1_V3_SPEC):"
+	$(ERLC) -bper_bin $(PER_BIN_DRV_V3_FLAGS) $(PER_BIN_DRV_ASN1_V3_SPEC).set.asn
+
+$(EBIN)/$(PER_BIN_DRV_ASN1_V3_SPEC).$(EMULATOR): \
+	$(PER_BIN_DRV_ASN1_V3_SPEC).erl \
+	$(PER_BIN_DRV_ASN1_V3_SPEC).hrl
+
+
 # -------------
 
 $(EBIN)/megaco_ber_encoder.$(EMULATOR): megaco_ber_encoder.erl \
@@ -421,6 +495,9 @@ $(EBIN)/megaco_binary_name_resolver_prev3c.$(EMULATOR): \
 	megaco_binary_name_resolver_prev3c.erl \
 	../app/megaco_internal.hrl
 
+$(EBIN)/megaco_binary_name_resolver_v3.$(EMULATOR): \
+	megaco_binary_name_resolver_v3.erl
+
 $(EBIN)/megaco_binary_term_id.$(EMULATOR): megaco_binary_term_id.erl
 
 $(EBIN)/megaco_binary_term_id_gen.$(EMULATOR): megaco_binary_term_id_gen.erl
@@ -454,4 +531,10 @@ $(EBIN)/megaco_binary_transformer_prev3c.$(EMULATOR): \
 	../app/megaco_internal.hrl \
         $(MEGACO_INCLUDEDIR)/megaco.hrl \
         $(MEGACO_INCLUDEDIR)/megaco_message_prev3c.hrl
+
+$(EBIN)/megaco_binary_transformer_v3.$(EMULATOR): \
+	megaco_binary_transformer_v3.erl \
+	../app/megaco_internal.hrl \
+        $(MEGACO_INCLUDEDIR)/megaco.hrl \
+        $(MEGACO_INCLUDEDIR)/megaco_message_v3.hrl
 

@@ -288,8 +288,8 @@ gen_oe_tc3(G, N, [X|Rest], Fd, Acc) when record(X, op) ->
     Function = get_id2(X),
     FunctionAtom = ic_util:to_atom(get_id2(X)),
     GI = io_lib:format("{~p, ~p:oe_tc(~p)}",[Function, N, FunctionAtom]),
-    emit(Fd, "oe_tc(~p) -> ~p:oe_tc(~s);\n",
-	 [FunctionAtom, N, Function]),
+    emit(Fd, "oe_tc(~p) -> ~p:oe_tc(~p);\n",
+	 [FunctionAtom, N, FunctionAtom]),
     gen_oe_tc3(G, N, Rest, Fd, [GI|Acc]);
 
 gen_oe_tc3(G, N, [X|Rest], Fd, Acc) when record(X, attr) ->

@@ -41,10 +41,10 @@ store_directory_data(_Directory, DirData) ->
 	    "     DirData:   ~p",
 	    [_Directory, DirData]),
 
-    PWFile = httpd_util:key1search(DirData, auth_user_file),
-    GroupFile = httpd_util:key1search(DirData, auth_group_file),
-    Addr = httpd_util:key1search(DirData, bind_address),
-    Port = httpd_util:key1search(DirData, port),
+    PWFile = proplists:get_value(auth_user_file, DirData),
+    GroupFile = proplists:get_value(auth_group_file, DirData),
+    Addr = proplists:get_value(bind_address, DirData),
+    Port = proplists:get_value(port, DirData),
 
     PWName  = httpd_util:make_name("httpd_dets_pwdb",Addr,Port),
     case dets:open_file(PWName,[{type,set},{file,PWFile},{repair,true}]) of
@@ -71,7 +71,7 @@ store_directory_data(_Directory, DirData) ->
 
 add_user(DirData, UStruct) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     Record = {{UStruct#httpd_user.username, Addr, Port, Dir},
 	      UStruct#httpd_user.password, UStruct#httpd_user.user_data}, 
     case dets:lookup(PWDB, UStruct#httpd_user.username) of
@@ -84,7 +84,7 @@ add_user(DirData, UStruct) ->
 
 get_user(DirData, UserName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     User = {UserName, Addr, Port, Dir},
     case dets:lookup(PWDB, User) of
 	[{User, Password, UserData}] ->
@@ -97,7 +97,7 @@ list_users(DirData) ->
     ?DEBUG("list_users -> ~n"
 	   "     DirData: ~p", [DirData]),
     {Addr, Port, Dir} = lookup_common(DirData),
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     case dets:traverse(PWDB, fun(X) -> {continue, X} end) of    %% SOOOO Ugly !
 	Records when list(Records) ->
 	    ?DEBUG("list_users -> ~n"
@@ -114,7 +114,7 @@ list_users(DirData) ->
 
 delete_user(DirData, UserName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     User = {UserName, Addr, Port, Dir},
     case dets:lookup(PWDB, User) of
 	[{User, _SomePassword, _UserData}] ->
@@ -135,7 +135,7 @@ delete_user(DirData, UserName) ->
 %%
 add_group_member(DirData, GroupName, UserName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
@@ -155,7 +155,7 @@ add_group_member(DirData, GroupName, UserName) ->
 
 list_group_members(DirData, GroupName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, Users}] ->
@@ -166,7 +166,7 @@ list_group_members(DirData, GroupName) ->
 
 list_groups(DirData) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    GDB  = httpd_util:key1search(DirData, auth_group_file),
+    GDB  = proplists:get_value(auth_group_file, DirData),
     case dets:match(GDB, {'$1', '_'}) of
 	[] ->
 	    {ok, []};
@@ -181,7 +181,7 @@ list_groups(DirData) ->
 
 delete_group_member(DirData, GroupName, UserName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, GroupName) of
 	[{Group, Users}] ->
@@ -200,7 +200,7 @@ delete_group_member(DirData, GroupName, UserName) ->
 
 delete_group(DirData, GroupName) ->
     {Addr, Port, Dir} = lookup_common(DirData),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     Group = {GroupName, Addr, Port, Dir},
     case dets:lookup(GDB, Group) of
 	[{Group, _Users}] ->
@@ -211,9 +211,9 @@ delete_group(DirData, GroupName) ->
     end.
 
 lookup_common(DirData) ->
-    Dir  = httpd_util:key1search(DirData, path),
-    Port = httpd_util:key1search(DirData, port),
-    Addr = httpd_util:key1search(DirData, bind_address),
+    Dir  = proplists:get_value(path, DirData),
+    Port = proplists:get_value(port, DirData),
+    Addr = proplists:get_value(bind_address, DirData),
     {Addr, Port, Dir}.
 
 %% remove/1
@@ -221,8 +221,8 @@ lookup_common(DirData) ->
 %% Closes dets tables used by this auth mod.
 %%
 remove(DirData) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
+    GDB = proplists:get_value(auth_group_file, DirData),
     dets:close(GDB),
     dets:close(PWDB),
     ok.

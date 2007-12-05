@@ -43,7 +43,6 @@ MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_temp_map \
 	  hipe_optimistic_regalloc \
 	  hipe_coalescing_regalloc \
-	  hipe_optimistic_regalloc \
 	  hipe_graph_coloring_regalloc \
 	  hipe_regalloc_loop \
 	  hipe_ls_regalloc \

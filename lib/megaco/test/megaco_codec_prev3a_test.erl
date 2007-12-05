@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Test encoding/decoding (codec) module of Megaco/H.248
@@ -1798,16 +1800,16 @@ compact_otp5186_msg_2(Msg1, EncodeExpect, DecodeExpect) ->
 %% --
 						   
 compact_otp5186_msg01() ->
-    "!/2 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001{}}}".
+    "!/" ?VERSION_STR " <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001{}}}".
 
 compact_otp5186_msg02() ->
-    "!/2 <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001}}".
+    "!/" ?VERSION_STR " <mg5>\nP=67111298{C=2699{AV=mg5_ipeph/0x0f0001}}".
 
 compact_otp5186_msg03() ->
     {'MegacoMessage',
      asn1_NOVALUE,
      {'Message',
-      2,
+      ?VERSION,
       {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
       {transactions,
        [{transactionReply,
@@ -1827,7 +1829,7 @@ compact_otp5186_msg03() ->
 			   ]
 			  }
 			 ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -1837,7 +1839,7 @@ compact_otp5186_msg03() ->
 
 compact_otp5186_msg04() ->
     {'MegacoMessage',asn1_NOVALUE,
-     {'Message',2,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+     {'Message',?VERSION,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
       {transactions,
        [{transactionReply,
 	 {'TransactionReply',67111298,asn1_NOVALUE,
@@ -1859,7 +1861,7 @@ compact_otp5186_msg04() ->
 			   ]
 			  }
 			 ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -1871,7 +1873,7 @@ compact_otp5186_msg05() ->
     {'MegacoMessage',
      asn1_NOVALUE,
      {'Message',
-      2,
+      ?VERSION,
       {domainName,{'DomainName',"mg5",asn1_NOVALUE}},
       {transactions,
        [{transactionReply,
@@ -1891,7 +1893,7 @@ compact_otp5186_msg05() ->
 			   ]
 			  }
 			 ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -1901,7 +1903,7 @@ compact_otp5186_msg05() ->
 
 compact_otp5186_msg06() ->
     {'MegacoMessage',asn1_NOVALUE,
-     {'Message',2,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
+     {'Message',?VERSION,{domainName,{'DomainName',"mg5",asn1_NOVALUE}},
       {transactions,
        [{transactionReply,
 	 {'TransactionReply',67111298,asn1_NOVALUE,
@@ -1923,7 +1925,7 @@ compact_otp5186_msg06() ->
 			   ]
 			  }
 			 ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -2919,7 +2921,22 @@ pretty_otp5068_msg1() ->
 		 [],
 		 asn1_NOVALUE,
 		 inSvc},
-		asn1_NOVALUE}}]}}}]}]}}}]}}}.
+		asn1_NOVALUE}
+	      }
+	     ]
+	    }
+	   }
+	  }
+	 ]
+	}
+       ]
+      },asn1_NOVALUE,asn1_NOVALUE
+     }
+    }
+   ]
+  }
+ }
+}.
   
 
 
@@ -3045,7 +3062,7 @@ pretty_otp5085_msg1() ->
 	     []
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3072,7 +3089,7 @@ pretty_otp5085_msg2() ->
 	     []
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3099,7 +3116,7 @@ pretty_otp5085_msg3() ->
 	     []
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3127,7 +3144,7 @@ pretty_otp5085_msg4() ->
 	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3155,7 +3172,7 @@ pretty_otp5085_msg5() ->
 	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3183,7 +3200,7 @@ pretty_otp5085_msg6() ->
 	      {notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3210,7 +3227,7 @@ pretty_otp5085_msg7() ->
 	     [{notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3253,7 +3270,7 @@ pretty_otp5085_msg8() ->
 	     [{notifyReply, cre_NotifyRep([#megaco_term_id{id = ?A5555}])}]
 	    }
 	   ]
-	  }
+	  },asn1_NOVALUE,asn1_NOVALUE
 	 }
 	}
        ]
@@ -3520,7 +3537,21 @@ pretty_otp5793_msg1() ->
                   ["ip",
                    "104",
                    "2",
-                   "19"]}]}}]}]}}}]}}}.
+                   "19"]
+		 }
+		]
+	       }
+	      }
+	     ]
+	    }
+	   ]
+	  },asn1_NOVALUE,asn1_NOVALUE
+	 }
+	}
+       ]
+      }
+     }
+    }.
 
 
 

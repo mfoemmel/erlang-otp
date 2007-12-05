@@ -1,78 +1,82 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 
 %%% Description: Default Callback module for ssh_sftpd
 
 -module(ssh_sftpd_file).
 
+-behaviour(ssh_sftpd_file_api).
+
 %% API
--export([close/1, delete/1, del_dir/1, get_cwd/0, is_dir/1, list_dir/1, 
-	 make_dir/1, make_symlink/2, open/2, position/2, read/2,
-	 read_file_info/1, read_link/1, read_link_info/1, rename/2,
-	 write/2, write_file_info/2]).
+-export([close/2, delete/2, del_dir/2, get_cwd/1, is_dir/2, list_dir/2, 
+	 make_dir/2, make_symlink/3, open/3, position/3, read/3,
+	 read_file_info/2, read_link/2, read_link_info/2, rename/3,
+	 write/3, write_file_info/3]).
 
-close(IoDevice) ->
-    file:close(IoDevice).
+close(IoDevice, State) ->
+    {file:close(IoDevice), State}.
 
-delete(Path) ->
-    file:delete(Path).
+delete(Path, State) ->
+    {file:delete(Path), State}.
 
-del_dir(Path) ->
-    file:del_dir(Path).
+del_dir(Path, State) ->
+    {file:del_dir(Path), State}.
 
-get_cwd() ->
-    file:get_cwd().
+get_cwd(State) ->
+    {file:get_cwd(), State}.
 
-is_dir(AbsPath) ->
-    filelib:is_dir(AbsPath).
+is_dir(AbsPath, State) ->
+    {filelib:is_dir(AbsPath), State}.
 
-list_dir(AbsPath) ->
-    file:list_dir(AbsPath).
+list_dir(AbsPath, State) ->
+    {file:list_dir(AbsPath), State}.
      
-make_dir(Dir) ->
-    file:make_dir(Dir).
+make_dir(Dir, State) ->
+    {file:make_dir(Dir), State}.
      
-make_symlink(Path2, Path) ->
-    file:make_symlink(Path2, Path).
+make_symlink(Path2, Path, State) ->
+    {file:make_symlink(Path2, Path), State}.
 
-open(Path, Flags) ->
-    file:open(Path, Flags).
+open(Path, Flags, State) ->
+    {file:open(Path, Flags), State}.
      
-position(IoDevice, Offs) ->
-    file:position(IoDevice, Offs).
+position(IoDevice, Offs, State) ->
+    {file:position(IoDevice, Offs), State}.
 
-read(IoDevice, Len) ->
-    file:read(IoDevice, Len).
+read(IoDevice, Len, State) ->
+    {file:read(IoDevice, Len), State}.
           
-read_link(Path) ->
-    file:read_link(Path).
+read_link(Path, State) ->
+    {file:read_link(Path), State}.
 
-read_link_info(Path) ->
-    file:read_link_info(Path).
+read_link_info(Path, State) ->
+    {file:read_link_info(Path), State}.
      
-read_file_info(Path) ->
-    file:read_file_info(Path).
+read_file_info(Path, State) ->
+    {file:read_file_info(Path), State}.
 
-rename(Path, Path2) ->
-    file:rename(Path, Path2).
+rename(Path, Path2, State) ->
+    {file:rename(Path, Path2), State}.
 
-write(IoDevice, Data) ->
-    file:write(IoDevice, Data).
+write(IoDevice, Data, State) ->
+    {file:write(IoDevice, Data), State}.
      
-write_file_info(Path,Info) ->
-    file:write_file_info(Path, Info).
+write_file_info(Path,Info, State) ->
+    {file:write_file_info(Path, Info), State}.

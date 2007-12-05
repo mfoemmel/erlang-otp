@@ -3,13 +3,13 @@
 
 -module(hipe_arm_pp).
 -export([pp/1, pp/2, pp_insn/1]).
+
 -include("hipe_arm.hrl").
 
 pp(Defun) ->
   pp(standard_io, Defun).
 
-pp(Dev, #defun{mfa=MFA, code=Code, data=Data}) ->
-  {M,F,A} = hipe_arm:mfa_mfa(MFA),
+pp(Dev, #defun{mfa=#arm_mfa{m=M,f=F,a=A}, code=Code, data=Data}) ->
   Fname = atom_to_list(M)++"_"++atom_to_list(F)++"_"++integer_to_list(A),
   io:format(Dev, "\t.text\n", []),
   io:format(Dev, "\t.align 4\n", []),
@@ -175,7 +175,7 @@ pp_sdesc_live(Dev, Live) -> pp_sdesc_live(Dev, Live, 1).
 
 pp_sdesc_live(Dev, Live, I) ->
   io:format(Dev, "~s", [to_hex(element(I, Live))]),
-  if I < size(Live) ->
+  if I < tuple_size(Live) ->
       io:format(Dev, ",", []),
       pp_sdesc_live(Dev, Live, I+1);
      true -> []
@@ -279,7 +279,7 @@ pp_am1(Dev, Am1) ->
   end.
 
 pp_am2(Dev, #am2{src=Src,sign=Sign,offset=Am2Offset}) ->
-  io:format("[", []),
+  io:format(Dev, "[", []),
   pp_temp(Dev, Src),
   io:format(Dev, ",~s", [sign_name(Sign)]),
   case Am2Offset of
@@ -287,7 +287,7 @@ pp_am2(Dev, #am2{src=Src,sign=Sign,offset=Am2Offset}) ->
       pp_temp(Dev, Am2Offset);
     {Src2,rrx} ->
       pp_temp(Dev, Src2),
-      io:format(", rrx");
+      io:format(Dev, ", rrx", []);
     {Src2,ShiftOp,Imm5} ->
       pp_temp(Dev, Src2),
       io:format(Dev, ",~w #~w", [ShiftOp,Imm5]);
@@ -297,7 +297,7 @@ pp_am2(Dev, #am2{src=Src,sign=Sign,offset=Am2Offset}) ->
   io:format(Dev, "]", []).
 
 pp_am3(Dev, #am3{src=Src,sign=Sign,offset=Am3Offset}) ->
-  io:format("[", []),
+  io:format(Dev, "[", []),
   pp_temp(Dev, Src),
   io:format(Dev, ",~s", [sign_name(Sign)]),
   case Am3Offset of

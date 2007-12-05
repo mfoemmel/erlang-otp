@@ -220,6 +220,14 @@ BIF_RETTYPE is_bitstr_1(BIF_ALIST_1)
     BIF_RET(am_false);
 }
 
+BIF_RETTYPE is_bitstring_1(BIF_ALIST_1)
+{
+    if (is_binary(BIF_ARG_1)) {
+	BIF_RET(am_true);
+    }
+    BIF_RET(am_false);
+}
+
 BIF_RETTYPE is_function_1(BIF_ALIST_1)
 {
     if (is_any_fun(BIF_ARG_1)) {

@@ -194,7 +194,6 @@ void hipe_print_pcb(Process *p)
     U("mbuf       ", mbuf);
     U("mbuf_sz    ", mbuf_sz);
     U("dictionary ", dictionary);
-    U("debug_dic..", debug_dictionary);
     U("ct         ", ct);
     U("seq..clock ", seq_trace_clock);
     U("seq..astcnt", seq_trace_lastcnt);
@@ -206,15 +205,6 @@ void hipe_print_pcb(Process *p)
     P("cp         ", cp);
     P("i          ", i);
     U("catches    ", catches);
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    U("arith_heap ", arith_heap);
-    U("arith_avail", arith_avail);
-#ifdef DEBUG
-    U("arith_file ", arith_file);
-    U("arith_line ", arith_line);
-    P("arith_che..", arith_check_me);
-#endif
-#endif
     U("arity      ", arity);
     P("arg_reg    ", arg_reg);
     U("max_arg_reg", max_arg_reg);

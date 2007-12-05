@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -34,6 +36,7 @@
 	 lookup_label/2,
 	 lookup_name/2,
 	 modules/1,
+	 module_deps/1,
 	 module_postorder/1,
 	 module_postorder_from_funs/2,
 	 in_neighbours/2,
@@ -51,30 +54,10 @@
 -endif.
 
 %%----------------------------------------------------------------------
-%%
-%% A callgraph is a directed graph where the nodes are functions and a
-%% call between two functions is an edge from the caller to the
-%% callee. 
-%%
-%% calls       -  A mapping from call site (and apply site) labels 
-%%                to the possible functions that can be called.
-%% digraph     -  A digraph representing the callgraph. 
-%%                Nodes are represented as MFAs or labels.
-%% esc         -  A set of all escaping functions as reported by dialyzer_dep.
-%% postorder   -  A list of strongly connected components of the callgraph
-%%                sorted in a topological bottom-up order.
-%%                This is produced by calling finalize/1.
-%% name_map    -  A mapping from label to MFA.
-%% rev_name_map-  A reverse mapping of the name_map.
-%% rec_var_map -  a dict mapping from letrec bound labels to function names. 
-%%                Only for top level functions (from module defs).
-%% self_rec    -  a set containing all self recursive functions.
-%%                Note that this contains MFAs for named functions and labels
-%%                whenever applicable.
-%%
 
--record(dialyzer_callgraph, {digraph, esc, name_map, rev_name_map, postorder,
-			     rec_var_map, self_rec, calls}).
+-include("dialyzer_callgraph.hrl").
+
+%%----------------------------------------------------------------------
 
 new() ->
   #dialyzer_callgraph{calls=dict:new(),
@@ -107,13 +90,23 @@ lookup_rec_var(Label, #dialyzer_callgraph{rec_var_map=RecVarMap})
 lookup_call_site(Label,#dialyzer_callgraph{calls=Calls})when is_integer(Label)->
   dict:find(Label, Calls).
 
+-spec(lookup_name/2 ::
+      (integer(), #dialyzer_callgraph{}) -> 'error' | {'ok',mfa()}).
+
 lookup_name(Label,#dialyzer_callgraph{name_map=NameMap})when is_integer(Label)->
   dict:find(Label, NameMap).
+
+-spec(lookup_label/2 ::
+      (mfa(), #dialyzer_callgraph{}) -> 'error' | {'ok',mfa()}
+     ;(integer(), #dialyzer_callgraph{}) -> {'ok',integer()}).
 
 lookup_label(MFA = {_,_,_}, #dialyzer_callgraph{rev_name_map=RevNameMap}) ->
   dict:find(MFA, RevNameMap);
 lookup_label(Label, #dialyzer_callgraph{}) when is_integer(Label) ->
   {ok, Label}.
+
+-spec(in_neighbours/2 ::
+      (integer() | mfa(), #dialyzer_callgraph{}) -> 'none' | [any(),...]).
 
 in_neighbours(Label, CG=#dialyzer_callgraph{}) when is_integer(Label) ->
   Name = case dict:find(Label, CG#dialyzer_callgraph.name_map) of
@@ -124,8 +117,12 @@ in_neighbours(Label, CG=#dialyzer_callgraph{}) when is_integer(Label) ->
 in_neighbours(MFA={_,_,_}, CG=#dialyzer_callgraph{}) ->
   digraph_in_neighbours(MFA, CG#dialyzer_callgraph.digraph).
 
+-spec(is_self_rec/2 :: (integer() | mfa(), #dialyzer_callgraph{}) -> bool()).
+
 is_self_rec(MfaOrLabel, #dialyzer_callgraph{self_rec=SelfRecs}) ->
   sets:is_element(MfaOrLabel, SelfRecs).
+
+-spec(is_escaping/2 :: (integer(), #dialyzer_callgraph{}) -> bool()).
 
 is_escaping(Label, #dialyzer_callgraph{esc=Esc}) when is_integer(Label) ->
   sets:is_element(Label, Esc).  
@@ -181,6 +178,18 @@ module_postorder(#dialyzer_callgraph{digraph=DG}) ->
   digraph:delete(MDG2),
   digraph_delete(MDG3),
   PostOrder1.
+
+%% The module deps of a module is who is depending on the module.
+module_deps(#dialyzer_callgraph{digraph=DG}) ->
+  Edges = digraph_edges(DG),
+  Nodes = ordsets:from_list([M || {M,_F,_A} <- digraph_vertices(DG)]),
+  MDG = digraph_new(),
+  MDG1 = digraph_confirm_vertices(Nodes, MDG),
+  MDG2 = create_module_digraph(Edges, MDG1),
+  Deps = [{N, ordsets:from_list(digraph:in_neighbours(MDG2, N))}
+	  || N <- Nodes],
+  digraph_delete(MDG2),
+  dict:from_list(Deps).
 
 sort_sccs_internally(PO, MDG) ->
   sort_sccs_internally(PO, MDG, []).
@@ -362,8 +371,8 @@ scan_one_core_fun(TopTree, FunName) ->
 				      
 get_label(T) ->
   case cerl:get_ann(T) of
-    [{label, L} | _] -> L;
-    _ -> erlang:fault({missing_label, T})
+    [{label, L} | _] when is_integer(L) -> L;
+    _ -> erlang:error({missing_label, T})
   end.
 
 
@@ -523,6 +532,8 @@ digraph_postorder(Digraph, LastModule, Acc) ->
       end
   end.
 
+-spec(scc_belongs_to_module/2 :: ([integer() | mfa()], atom()) -> bool()).
+
 scc_belongs_to_module([Label|Left], Module) when is_integer(Label) ->
   scc_belongs_to_module(Left, Module);
 scc_belongs_to_module([{M, _, _}|Left], Module) ->
@@ -532,9 +543,10 @@ scc_belongs_to_module([{M, _, _}|Left], Module) ->
 scc_belongs_to_module([], _Module) ->
   false.
       
+-spec(find_module/1 :: ([integer() | mfa(),...]) -> atom()).
+
 find_module([{M, _, _}|_]) -> M;
 find_module([Label|Left]) when is_integer(Label) -> find_module(Left).
-  
 
 digraph_finalize(DG) ->
   DG1 = digraph_utils:condensation(DG),
@@ -545,6 +557,10 @@ digraph_finalize(DG) ->
 digraph_reaching_subgraph(Funs, DG) ->  
   Vertices = digraph_utils:reaching(Funs, DG),
   digraph_utils:subgraph(DG, Vertices).
+
+%%=============================================================================
+%% Utilities for 'dot'
+%%=============================================================================
 
 -ifndef(NO_UNUSED).
 to_dot(CG = #dialyzer_callgraph{digraph=DG, esc=Esc}) ->

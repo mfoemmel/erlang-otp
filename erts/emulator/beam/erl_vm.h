@@ -18,6 +18,10 @@
 #ifndef __ERL_VM_H__
 #define __ERL_VM_H__
 
+#define NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP 1
+
+/* #define ERTS_OPCODE_COUNTER_SUPPORT */
+
 #if defined(HYBRID)
 /* # define CHECK_FOR_HOLES */
 #endif
@@ -25,9 +29,6 @@
 #if defined(DEBUG) && !defined(CHECK_FOR_HOLES) && !defined(__WIN32__)
 # define CHECK_FOR_HOLES
 #endif
-
-
-/* #define HEAP_FRAG_ELIM_TEST 1 */
 
 #if defined(HYBRID)
 /* #  define INCREMENTAL 1    */ /* Incremental garbage collection */
@@ -102,7 +103,8 @@
 
 #endif /* DEBUG */
 
-#define HRelease(p, endp, ptr)					\
+#if defined(CHECK_FOR_HOLES)
+# define HRelease(p, endp, ptr)					\
   if ((ptr) == (endp)) {					\
      ;								\
   } else if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	\
@@ -110,45 +112,19 @@
   } else {							\
      erts_arith_shrink(p, ptr);					\
   }
+#else
+# define HRelease(p, endp, ptr)					\
+  if ((ptr) == (endp)) {					\
+     ;								\
+  } else if (HEAP_START(p) <= (ptr) && (ptr) < HEAP_TOP(p)) {	\
+     HEAP_TOP(p) = (ptr);					\
+  }
+#endif
 
 #define HeapWordsLeft(p) (HEAP_LIMIT(p) - HEAP_TOP(p))
 
-#define ARITH_HEAP(p)     (p)->arith_heap
-#define ARITH_AVAIL(p)    (p)->arith_avail
-#ifdef DEBUG
-#  define ARITH_CHECK_ME(p) (p)->arith_check_me
-#endif
-
-/* Allocate memory on secondary arithmetic heap. */
-
 #if defined(DEBUG) || defined(CHECK_FOR_HOLES)
 # define ERTS_HOLE_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
-#endif
-
-#if defined(DEBUG)
-# define ARITH_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
-#endif
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-#if defined(DEBUG)
-#  define ArithCheck(p) \
-      ASSERT(ARITH_CHECK_ME(p)[0] == ARITH_MARKER);
-#  define ArithAlloc(p, need)					\
-   (ASSERT_EXPR((need) >= 0),					\
-    ((ARITH_AVAIL(p) < (need)) ?				\
-     erts_heap_alloc((p), (need)) :				\
-     ((ARITH_HEAP(p) += (need)), (ARITH_AVAIL(p) -= (need)),	\
-      (ARITH_CHECK_ME(p) = ARITH_HEAP(p)),			\
-      (ARITH_HEAP(p) - (need)))))
-#else
-#  define ArithCheck(p)
-#  define ArithAlloc(p, need)			\
-    ((ARITH_AVAIL(p) < (need)) ?		\
-      erts_heap_alloc((p), (need)) :		\
-      ((ARITH_HEAP(p) += (need)),		\
-       (ARITH_AVAIL(p) -= (need)),		\
-       (ARITH_HEAP(p) - (need))))
-#endif
 #endif
 
 /*
@@ -158,7 +134,7 @@
 
 typedef struct op_entry {
    char* name;			/* Name of instruction. */
-   unsigned mask[3];		/* Signature mask. */
+   Uint32 mask[3];		/* Signature mask. */
    int sz;			/* Number of loaded words. */
    char* pack;			/* Instructions for packing engine. */
    char* sign;			/* Signature string. */

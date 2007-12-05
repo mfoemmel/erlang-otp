@@ -568,8 +568,11 @@ file_start(ErlDrvPort port, char* command)
 {
     file_descriptor* desc;
 
-    if ((desc = (file_descriptor*) EF_ALLOC(sizeof(file_descriptor))) == NULL)
-	return ERL_DRV_ERROR_GENERAL;
+    if ((desc = (file_descriptor*) EF_ALLOC(sizeof(file_descriptor)))
+	== NULL) {
+	errno = ENOMEM;
+	return ERL_DRV_ERROR_ERRNO;
+    }
     desc->fd = FILE_FD_INVALID;
     desc->port = port;
     desc->key = (unsigned) (Uint) port;
@@ -800,6 +803,21 @@ static void reply_data(file_descriptor *desc,
     put_int32((Uint32)len, header+1+4);
     driver_output_binary(desc->port, header, sizeof(header),
 			 binp, offset, len);
+}
+
+static void reply_buf(file_descriptor *desc, char *buf, size_t len) {
+    char header[1+4+4];
+    /* Data arriving at the Erlang process:
+     * [?FILE_RESP_DATA, 64-bit length (big-endian) | Data]
+     */
+    header[0] = FILE_RESP_DATA;
+#if SIZEOF_SIZE_T == 4
+    put_int32(0, header+1);
+#else
+    put_int32(len>>32, header+1);
+#endif
+    put_int32((Uint32)len, header+1+4);
+    driver_output2(desc->port, header, sizeof(header), buf, len);
 }
 
 static int reply_eof(file_descriptor *desc) {
@@ -1095,6 +1113,7 @@ static void invoke_ipread(void *data)
 
 static void invoke_writev(void *data) {
     struct t_data *d = (struct t_data *) data;
+    SysIOVec      *iov0;
     SysIOVec      *iov;
     int            iovlen;
     int            iovcnt;
@@ -1108,14 +1127,21 @@ static void invoke_writev(void *data) {
     } else {
 	size = d->c.writev.size;
     }
+
+    /* Copy the io vector to avoid locking the port que while writing */
     MUTEX_LOCK(d->c.writev.q_mtx); /* Lock before accessing the port queue */
-    iov = driver_peekq(d->c.writev.port, &iovlen);
+    iov0 = driver_peekq(d->c.writev.port, &iovlen);
 
     /* Calculate iovcnt */
     for (p = 0, iovcnt = 0;
 	 p < size && iovcnt < iovlen;
-	 p += iov[iovcnt++].iov_len)
+	 p += iov0[iovcnt++].iov_len)
 	;
+    iov = EF_ALLOC(sizeof(SysIOVec)*iovcnt);
+    memcpy(iov,iov0,iovcnt*sizeof(SysIOVec));
+    MUTEX_UNLOCK(d->c.writev.q_mtx);
+    /* Let go of lock until we deque from original vector */
+
     if (iovlen > 0) {
 	ASSERT(iov[iovcnt-1].iov_len > p - size);
 	iov[iovcnt-1].iov_len -= p - size;
@@ -1143,7 +1169,6 @@ static void invoke_writev(void *data) {
 					d->flags, (int) d->fd,
 					iov, iovcnt, size);
 	}
-	iov[iovcnt-1].iov_len += p - size;
     } else if (iovlen == 0) {
 	d->result_ok = 1;
     }
@@ -1151,7 +1176,8 @@ static void invoke_writev(void *data) {
 	d->result_ok = 0;
 	d->errInfo.posix_errno = d->errInfo.os_errno = EINVAL;
     }
-    MUTEX_UNLOCK(d->c.writev.q_mtx);
+    EF_FREE(iov);
+
     d->c.writev.free_size = size;
     d->c.writev.size -= size;
     if (! d->result_ok) {
@@ -1167,7 +1193,6 @@ static void invoke_writev(void *data) {
 
 static void free_writev(void *data) {
     struct t_data *d = data;
-
     MUTEX_LOCK(d->c.writev.q_mtx);
     driver_deq(d->c.writev.port, d->c.writev.size + d->c.writev.free_size);
     MUTEX_UNLOCK(d->c.writev.q_mtx);
@@ -1209,6 +1234,7 @@ static void invoke_altname(void *data)
 
 static void invoke_pwritev(void *data) {
     struct t_data    *d = (struct t_data *) data;
+    SysIOVec         *iov0;
     SysIOVec         *iov;
     int               iovlen;
     int               iovcnt;
@@ -1225,8 +1251,13 @@ static void invoke_pwritev(void *data) {
     }
     d->result_ok = !0;
     p = 0;
+    /* Lock the queue just for a while, we don't want it locked during write */
     MUTEX_LOCK(c->q_mtx);
-    iov = driver_peekq(c->port, &iovlen);
+    iov0 = driver_peekq(c->port, &iovlen);
+    iov = EF_ALLOC(sizeof(SysIOVec)*iovlen);
+    memcpy(iov,iov0,sizeof(SysIOVec)*iovlen);
+    MUTEX_UNLOCK(c->q_mtx);
+
     if (iovlen < 0)
 	goto error; /* Port terminated */
     for (iovcnt = 0, c->free_size = 0;
@@ -1289,7 +1320,7 @@ static void invoke_pwritev(void *data) {
 	}
     }
  done:
-    MUTEX_UNLOCK(c->q_mtx);
+    EF_FREE(iov); /* Free our copy of the vector, nothing to restore */
 }
 
 static void free_pwritev(void *data) {
@@ -1447,7 +1478,7 @@ static void invoke_open(void *data)
 	    status = efile_may_openfile(&d->errInfo, d->b);
 	    if (status || (d->errInfo.posix_errno != EISDIR)) {
 		mode = (d->flags & EFILE_MODE_READ) ? "rb" : "wb";
-		d->fd = (Sint) gzopen(d->b, mode);
+		d->fd = (Sint) erts_gzopen(d->b, mode);
 		if ((gzFile)d->fd) {
 		    status = 1;
 		} else {
@@ -2300,7 +2331,7 @@ file_outputv(ErlDrvData e, ErlIOVec *ev) {
 	    goto done;
 	}
 	if (size == 0) {
-	    reply_Uint(desc, size);
+	    reply_buf(desc, &command, 0);
 	    goto done;
 	}
 	if (desc->read_size >= size) {

@@ -595,7 +595,7 @@ is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?CLOSED =:= S ->
     yes;
 is_head(<<M:4/binary, S:4/binary>>) when ?LOGMAGIC =:= M, ?OPENED =:= S ->
     yes_not_closed;
-is_head(_Bin) ->
+is_head(Bin) when is_binary(Bin) ->
     no.
 
 %%-----------------------------------------------------------------
@@ -619,9 +619,18 @@ is_head(_Bin) ->
 %%          Reports can be browsed with Report Browser Tool (rb), or
 %%          read with disk_log.
 %%-----------------------------------------------------------------
-%% -> {ok, handle(), Cnt} 
-%%  | {repaired, handle(), Rec, Bad, Cnt) 
-%%  | throw(FileError)
+-spec(mf_int_open/7 ::
+      (FName   :: string(),
+       MaxB    :: integer(),
+       MaxF    :: integer(),
+       Repair  :: dlog_repair(),
+       Mode    :: dlog_mode(),
+       Head    :: dlog_head(),
+       Version :: integer())
+      -> {'ok', #handle{}, integer()}
+       | {'repaired', #handle{},
+	  non_neg_integer(), non_neg_integer(), non_neg_integer()}).
+%%     | throw(FileError)
 mf_int_open(FName, MaxB, MaxF, Repair, Mode, Head, Version) -> 
     {First, Sz, TotSz, NFiles} = read_index_file(Repair, FName, MaxF),
     write_size_file(Mode, FName, MaxB, MaxF, Version),
@@ -1467,9 +1476,9 @@ truncate_at(FdC, FileName, Pos) ->
     case position(FdC, FileName, Pos) of
 	{ok, NewFdC, _Pos} ->
 	    case file:truncate(NewFdC#cache.fd) of
-		ok    -> 
+		ok    ->
 		    {ok, NewFdC};
-		Error -> 
+		Error ->
 		    {catch file_error(FileName, Error), NewFdC}
 	    end;
 	Reply ->
@@ -1512,7 +1521,7 @@ fclose(#cache{fd = Fd, c = C}, FileName) ->
     write_cache_close(Fd, FileName, C),
     file:close(Fd).
 
-%% -> {Reply, cache()}; Reply = ok | Error
+%% -> {Reply, #cache{}}; Reply = ok | Error
 write_cache(Fd, _FileName, []) ->
     {ok, #cache{fd = Fd}};
 write_cache(Fd, FileName, C) ->
@@ -1521,7 +1530,7 @@ write_cache(Fd, FileName, C) ->
         Error -> {catch file_error(FileName, Error), #cache{fd = Fd}}
     end.
 
-%% -> cache() | throw(Error)
+%% -> cache{} | throw(Error)
 write_cache_close(Fd, _FileName, []) ->
     #cache{fd = Fd};
 write_cache_close(Fd, FileName, C) ->
@@ -1530,8 +1539,12 @@ write_cache_close(Fd, FileName, C) ->
         Error -> file_error_close(Fd, FileName, Error)
     end.
 
+-spec(file_error/2 :: (string(), {'error',atom()}) -> no_return()).
+
 file_error(FileName, {error, Error}) ->
     throw({error, {file_error, FileName, Error}}).
+
+-spec(file_error_close/3 :: (pid(), string(), {'error',atom()}) -> no_return()).
 
 file_error_close(Fd, FileName, {error, Error}) ->
     file:close(Fd),

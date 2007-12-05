@@ -7,7 +7,7 @@
 %%%-------------------------------------------------------------------
 -module(hipe_digraph).
 
--export([new/0, add_edge/3, add_node/2, from_list/1, to_list/1,
+-export([new/0, add_edge/3, add_node/2, add_node_list/2, from_list/1, to_list/1,
 	get_parents/2, get_children/2]).
 
 -export([take_indep_scc/1, reverse_preorder_sccs/1]).
@@ -47,8 +47,12 @@ to_list(#digraph{edges=Edges}) ->
 		      end, [], List1),
   lists:flatten(List2).
 
-add_node(NewNode, DG) ->
-  add_edge(NewNode, NewNode, DG).
+add_node(NewNode, DG = #digraph{nodes=Nodes}) ->
+  DG#digraph{nodes=sets:add_element(NewNode, Nodes)}.
+
+add_node_list(NewNodes, DG = #digraph{nodes=Nodes}) ->
+  Set = sets:from_list(NewNodes),
+  DG#digraph{nodes=sets:union(Set, Nodes)}.
 
 add_edge(From, To, #digraph{edges=Edges, rev_edges=RevEdges, 
 			    leaves=Leaves, nodes=Nodes}) ->

@@ -31,7 +31,7 @@ do(Info) ->
     Date      = custom_date(),
     log_internal_info(Info,Date,Info#mod.data),
     LogFormat = get_log_format(Info#mod.config_db),
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{StatusCode, _PhraseArgs, Reason} ->
 	    transfer_log(Info, "-", AuthUser, Date, StatusCode, 0, LogFormat),
@@ -44,15 +44,15 @@ do(Info) ->
 	    {proceed,Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data,response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		{already_sent,StatusCode,Size} ->
 		    transfer_log(Info, "-", AuthUser, Date, StatusCode,
 				 Size, LogFormat),
 		    {proceed,Info#mod.data};
 
 		{response, Head, _Body} ->
-		    Size = httpd_util:key1search(Head, content_length, 0),
-		    Code = httpd_util:key1search(Head, code, 200),
+		    Size = proplists:get_value(content_length, Head, 0),
+		    Code = proplists:get_value(code, Head, 200),
 		    transfer_log(Info, "-", AuthUser, Date, Code, 
 				 Size, LogFormat),
 		    {proceed,Info#mod.data};	
@@ -89,7 +89,7 @@ sign(_Minutes) ->
     $-.
 
 auth_user(Data) ->
-    case httpd_util:key1search(Data,remote_user) of
+    case proplists:get_value(remote_user,Data) of
 	undefined ->
 	    "-";
 	RemoteUser ->
@@ -193,8 +193,7 @@ get_log_format(ConfigDB)->
 
 %% load
 
-load([$T,$r,$a,$n,$s,$f,$e,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |
-      TransferDiskLogSize],[]) ->
+load("TransferDiskLogSiSize " ++ TransferDiskLogSize, []) ->
     case regexp:split(TransferDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
@@ -213,10 +212,10 @@ load([$T,$r,$a,$n,$s,$f,$e,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |
 				 " is an invalid TransferDiskLogSize")}
 	    end
     end;
-load([$T,$r,$a,$n,$s,$f,$e,$r,$D,$i,$s,$k,$L,$o,$g,$ |TransferDiskLog],[]) ->
+load("TransferDiskLog " ++ TransferDiskLog,[]) ->
     {ok,[],{transfer_disk_log,httpd_conf:clean(TransferDiskLog)}};
 
-load([$E,$r,$r,$o,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ | ErrorDiskLogSize],[]) ->
+load("ErrorDiskLogSize " ++  ErrorDiskLogSize, []) ->
     case regexp:split(ErrorDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
@@ -234,10 +233,10 @@ load([$E,$r,$r,$o,$r,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ | ErrorDiskLogSize],[]) 
 				 " is an invalid ErrorDiskLogSize")}
 	    end
     end;
-load([$E,$r,$r,$o,$r,$D,$i,$s,$k,$L,$o,$g,$ |ErrorDiskLog],[]) ->
+load("ErrorDiskLog " ++ ErrorDiskLog, []) ->
     {ok, [], {error_disk_log, httpd_conf:clean(ErrorDiskLog)}};
 
-load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |SecurityDiskLogSize],[]) ->
+load("SecurityDiskLogSize " ++ SecurityDiskLogSize, []) ->
     case regexp:split(SecurityDiskLogSize, " ") of
 	{ok, [MaxBytes, MaxFiles]} ->
 	    case httpd_conf:make_integer(MaxBytes) of
@@ -247,18 +246,19 @@ load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$i,$s,$k,$L,$o,$g,$S,$i,$z,$e,$ |SecurityDiskLo
 			    {ok, [], {security_disk_log_size,
 				      {MaxBytesInteger, MaxFilesInteger}}};
 			{error,_} ->
-			    {error, ?NICE(httpd_conf:clean(SecurityDiskLogSize)++
-					  " is an invalid SecurityDiskLogSize")}
+			    {error, 
+			     ?NICE(httpd_conf:clean(SecurityDiskLogSize) ++
+				   " is an invalid SecurityDiskLogSize")}
 		    end;
 		{error, _} ->
-		    {error, ?NICE(httpd_conf:clean(SecurityDiskLogSize)++
+		    {error, ?NICE(httpd_conf:clean(SecurityDiskLogSize) ++
 				  " is an invalid SecurityDiskLogSize")}
 	    end
     end;
-load([$S,$e,$c,$u,$r,$i,$t,$y,$D,$i,$s,$k,$L,$o,$g,$ |SecurityDiskLog],[]) ->
+load("SecurityDiskLog " ++ SecurityDiskLog, []) ->
     {ok, [], {security_disk_log, httpd_conf:clean(SecurityDiskLog)}};
 
-load([$D,$i,$s,$k,$L,$o,$g,$F,$o,$r,$m,$a,$t,$ |Format],[]) ->
+load("DiskLogFormat " ++ Format, []) ->
     case httpd_conf:clean(Format) of
 	"internal" ->
 	    {ok, [], {disk_log_format,internal}};
@@ -270,34 +270,64 @@ load([$D,$i,$s,$k,$L,$o,$g,$F,$o,$r,$m,$a,$t,$ |Format],[]) ->
 
 %% store
 
-store({transfer_disk_log,TransferDiskLog},ConfigList) ->
-    case create_disk_log(TransferDiskLog, transfer_disk_log_size, ConfigList) of
+store({transfer_disk_log,TransferDiskLog}, ConfigList) 
+  when is_list(TransferDiskLog) ->
+    case create_disk_log(TransferDiskLog, 
+			 transfer_disk_log_size, ConfigList) of
 	{ok,TransferDB} ->
 	    {ok,{transfer_disk_log,TransferDB}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
-store({security_disk_log,SecurityDiskLog},ConfigList) ->
-    case create_disk_log(SecurityDiskLog, security_disk_log_size, ConfigList) of
+store({transfer_disk_log,TransferLog}, _) ->
+    {error, {wrong_type, {transfer_disk_log, TransferLog}}};
+store({security_disk_log,SecurityDiskLog},ConfigList) 
+  when is_list(SecurityDiskLog) ->
+    case create_disk_log(SecurityDiskLog, 
+			 security_disk_log_size, ConfigList) of
 	{ok,SecurityDB} ->
 	    {ok,{security_disk_log,SecurityDB}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
-store({error_disk_log,ErrorDiskLog},ConfigList) ->
+store({security_disk_log, SecurityLog}, _) ->
+    {error, {wrong_type, {security_disk_log, SecurityLog}}};
+
+store({error_disk_log,ErrorDiskLog},ConfigList) when is_list(ErrorDiskLog) ->
     case create_disk_log(ErrorDiskLog, error_disk_log_size, ConfigList) of
 	{ok,ErrorDB} ->
 	    {ok,{error_disk_log,ErrorDB}};
 	{error,Reason} ->
 	    {error,Reason}
-    end.
-
+    end;
+store({error_disk_log,ErrorLog}, _) ->
+    {error, {wrong_type, {error_disk_log, ErrorLog}}};
+store({transfer_disk_log_size, {ByteInt, FileInt}} = Conf, _) 
+  when is_integer(ByteInt), is_integer(FileInt)->
+    {ok, Conf};
+store({transfer_disk_log_size, Value}, _) ->
+    {error, {wrong_type, {transfer_disk_log_size, Value}}};
+store({error_disk_log_size, {ByteInt, FileInt}} = Conf, _) 
+  when is_integer(ByteInt), is_integer(FileInt)->
+    {ok, Conf};
+store({error_disk_log_size, Value}, _) ->
+    {error, {wrong_type, {error_disk_log_size, Value}}};
+store({security_disk_log_size, {ByteInt, FileInt}} = Conf, _) 
+  when is_integer(ByteInt), is_integer(FileInt)->
+    {ok, Conf};
+store({security_disk_log_size, Value}, _) ->
+    {error, {wrong_type, {security_disk_log_size, Value}}};
+store({disk_log_format, Value} = Conf, _) when Value == internal; 
+					Value == external ->
+    {ok, Conf};
+store({disk_log_format, Value}, _) ->
+    {error, {wrong_type, {disk_log_format, Value}}}.
 
 %%----------------------------------------------------------------------
 %% Open or creates the disklogs 
 %%----------------------------------------------------------------------
 log_size(ConfigList, Tag) ->
-    httpd_util:key1search(ConfigList, Tag, {500*1024,8}).
+    proplists:get_value(Tag, ConfigList, {500*1024,8}).
 
 create_disk_log(LogFile, SizeTag, ConfigList) ->
     Filename = httpd_conf:clean(LogFile),
@@ -308,11 +338,12 @@ create_disk_log(LogFile, SizeTag, ConfigList) ->
 	volumerelative ->
 	    create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList);
 	relative ->
-	    case httpd_util:key1search(ConfigList,server_root) of
+	    case proplists:get_value(server_root,ConfigList) of
 		undefined ->
 		    {error,
 		     ?NICE(Filename++
-			   " is an invalid ErrorLog beacuse ServerRoot is not defined")};
+			   " is an invalid ErrorLog beacuse ServerRoot "
+			   "is not defined")};
 		ServerRoot ->
 		    AbsoluteFilename = filename:join(ServerRoot,Filename),
 		    create_disk_log(AbsoluteFilename, MaxBytes, MaxFiles,
@@ -321,7 +352,7 @@ create_disk_log(LogFile, SizeTag, ConfigList) ->
     end.
 
 create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList) ->
-    Format = httpd_util:key1search(ConfigList, disk_log_format, external),
+    Format = proplists:get_value(disk_log_format, ConfigList, external),
     open(Filename, MaxBytes, MaxFiles, Format).
     
 

@@ -33,14 +33,12 @@
 #include "erl_binary.h"
 
 static Eterm check_process_code(Process* rp, Module* modp);
-static void delete_code(Process *c_p, Uint32 c_p_locks, Module* modp);
+static void delete_code(Process *c_p, ErtsProcLocks c_p_locks, Module* modp);
 static void delete_export_references(Eterm module);
 static int purge_module(int module);
 static int is_native(Eterm* code);
-#if defined(HEAP_FRAG_ELIM_TEST)
 static int any_heap_ref_ptrs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size);
 static int any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size);
-#endif
 
 Eterm
 load_module_2(BIF_ALIST_2)
@@ -394,13 +392,18 @@ check_process_code(Process* rp, Module* modp)
     }
 #endif
 
-#if defined(HEAP_FRAG_ELIM_TEST)
     /*
      * See if there are constants inside the module referenced by the process.
      */
+    done_gc = 0;
     for (;;) {
 	ErlMessage* mp;
 
+	if (any_heap_ref_ptrs(&rp->fvalue, &rp->fvalue+1, mod_start, mod_size)) {
+	    rp->freason = EXC_NULL;
+	    rp->fvalue = NIL;
+	    rp->ftrace = NIL;
+	}
 	if (any_heap_ref_ptrs(rp->stop, rp->hend, mod_start, mod_size)) {
 	    goto need_gc;
 	}
@@ -450,12 +453,10 @@ check_process_code(Process* rp, Module* modp)
 	    erts_garbage_collect_literals(rp, literals, lit_size);
 	}
     }
-#endif
     return am_false;
 #undef INSIDE
 }
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 #define in_area(ptr,start,nbytes) \
     ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
 
@@ -494,16 +495,12 @@ any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
 		return 1;
 	    }
 	    break;
-	case TAG_PRIMARY_HEADER: {
-	      Uint tari;
-
-	      if (header_is_transparent(val)) {
-		  p++;
-		  continue;
-	      }
-	      tari = thing_arityval(val);
-	      p += tari;
-	  }
+	case TAG_PRIMARY_HEADER:
+	    if (!header_is_transparent(val)) {
+		Eterm* new_p = p + thing_arityval(val);
+		ASSERT(start <= new_p && new_p < end);
+		p = new_p;
+	    }
 	}
     }
     return 0;
@@ -511,7 +508,6 @@ any_heap_refs(Eterm* start, Eterm* end, char* mod_start, Uint mod_size)
 
 #undef in_area
 
-#endif
 
 static int
 purge_module(int module)
@@ -579,7 +575,7 @@ purge_module(int module)
  */
 
 static void 
-delete_code(Process *c_p, Uint32 c_p_locks, Module* modp)
+delete_code(Process *c_p, ErtsProcLocks c_p_locks, Module* modp)
 {
 #ifdef ERTS_ENABLE_LOCK_CHECK
 #ifdef ERTS_SMP
@@ -640,7 +636,7 @@ delete_export_references(Eterm module)
 
 
 int
-beam_make_current_old(Process *c_p, Uint32 c_p_locks, Eterm module)
+beam_make_current_old(Process *c_p, ErtsProcLocks c_p_locks, Eterm module)
 {
     Module* modp = erts_put_module(module);
 

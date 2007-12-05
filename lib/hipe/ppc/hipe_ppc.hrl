@@ -17,7 +17,7 @@
 %%% mfa		::= {ppc_mfa, atom, atom, arity}
 %%% prim	::= {ppc_prim, atom}
 
--record(ppc_mfa, {m, f, a}).
+-record(ppc_mfa, {m::atom(), f::atom(), a::byte()}).
 -record(ppc_prim, {prim}).
 -record(ppc_sdesc, {exnlab, fsize, arity, live}).
 -record(ppc_simm16, {value}).

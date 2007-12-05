@@ -312,7 +312,7 @@ dec_max(X,Y) -> X-Y.
 get_report_data_from_file(Dir, No, FileNr, Max, Type) ->	
     Fname = integer_to_list(FileNr),
     FileName = lists:concat([Dir, Fname]),
-    case file:open(FileName, read) of
+    case file:open(FileName, [read]) of
 	{ok, Fd} when is_pid(Fd) -> read_reports(No, Fd, Fname, Max, Type);
 	_ -> [{No, unknown, "Can't open file " ++ Fname, "???", Fname, 0}]
     end.
@@ -576,7 +576,7 @@ print_report(Dir, Data, Number, Device, Abort, Log) ->
     case find_report(Data, Number) of
 	{Fname, FilePosition} ->
 	    FileName = lists:concat([Dir, Fname]),
-	    case file:open(FileName, read) of
+	    case file:open(FileName, [read]) of
 		{ok, Fd} -> 
 		    read_rep(Fd, FilePosition, Device, Abort, Log);
 		_ -> 
@@ -609,7 +609,7 @@ print_grep_reports(Dir, Data, RegExp, Device, Abort, Log) ->
 print_grep_report(Dir, Data, Number, Device, RegExp, Abort, Log) ->
     {Fname, FilePosition} = find_report(Data, Number),
     FileName = lists:concat([Dir, Fname]),
-    case file:open(FileName, read) of
+    case file:open(FileName, [read]) of
 	{ok, Fd} when is_pid(Fd) -> 
 	    check_rep(Fd, FilePosition, Device, RegExp, Number, Abort, Log);
 	_ -> 

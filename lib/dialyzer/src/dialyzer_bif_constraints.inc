@@ -187,7 +187,7 @@ get_bif_constr({erlang, is_function, 2}, Dst, [Fun, Arity], _State) ->
 get_bif_constr({erlang, is_integer, 1}, Dst, [Arg], _State) ->
   get_bif_test_constr(Dst, Arg, t_integer());
 get_bif_constr({erlang, is_list, 1}, Dst, [Arg], _State) ->
-  get_bif_test_constr(Dst, Arg, t_pos_improper_list());
+  get_bif_test_constr(Dst, Arg, t_maybe_improper_list());
 get_bif_constr({erlang, is_number, 1}, Dst, [Arg], _State) ->
   get_bif_test_constr(Dst, Arg, t_number());
 get_bif_constr({erlang, is_pid, 1}, Dst, [Arg], _State) ->

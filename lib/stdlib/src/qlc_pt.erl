@@ -17,7 +17,7 @@
 %%
 -module(qlc_pt).
 
-%%% Purpose: Implements the QLC Parse Transform.
+%%% Purpose: Implements the qlc Parse Transform.
 
 -export([parse_transform/2, transform_from_evaluator/2, 
          transform_expression/2]).
@@ -35,6 +35,9 @@
 %% Also in qlc.erl.
 -define(QLC_Q(L1, L2, L3, L4, LC, Os), 
         {call,L1,{remote,L2,{atom,L3,?APIMOD},{atom,L4,?Q}},[LC | Os]}).
+-define(QLC_QQ(L1, L2, L3, L4, L5, L6, LC, Os), % packages...
+        {call,L1,{remote,L2,{record_field,L3,{atom,L4,''},
+                             {atom,L5,?APIMOD}},{atom,L6,?Q}},[LC | Os]}).
 -define(IMP_Q(L1, L2, LC, Os), {call,L,{atom,L2,?Q},[LC | Os]}).
 
 %% Also in qlc.erl.
@@ -66,7 +69,7 @@
 
 parse_transform(Forms0, Options) ->
     Forms = Forms0,
-    ?DEBUG("QLC Parse Transform~n", []),
+    ?DEBUG("qlc Parse Transform~n", []),
     State = #state{imp = is_qlc_q_imported(Forms),
                    maxargs = ?COMPILE_MAX_NUM_OF_ARGS,
                    records = record_attributes(Forms)},
@@ -83,7 +86,7 @@ parse_transform(Forms0, Options) ->
     end.
 
 transform_from_evaluator(LC, Bindings) ->
-    ?DEBUG("QLC Parse Transform (Evaluator Version)~n", []),
+    ?DEBUG("qlc Parse Transform (Evaluator Version)~n", []),
     transform_expression(LC, Bindings, false).
 
 transform_expression(LC, Bindings) ->
@@ -96,7 +99,8 @@ transform_expression(LC, Bindings) ->
 transform_expression(LC, Bs0, WithLintErrors) ->
     L = 1,
     As = [{var,L,V} || {V,_Val} <- Bs0],
-    F = {function,L,bar,L,[{clause,L,As,[],[?QLC_Q(L, L, L, L, LC, [])]}]},
+    Ar = length(As),
+    F = {function,L,bar,Ar,[{clause,L,As,[],[?QLC_Q(L, L, L, L, LC, [])]}]},
     Forms = [{attribute,L,file,{"foo",L}},
              {attribute,L,module,foo}, F],
     State = #state{imp = false,
@@ -107,7 +111,8 @@ transform_expression(LC, Bs0, WithLintErrors) ->
     case compile_messages(Forms, FormsNoShadows, Options, State) of
         {[],[],_Warnings} ->
             {NewForms,_State1} = transform(FormsNoShadows, State),
-            {function,L,bar,L,[{clause,L,As,[],[NF]}]} = lists:last(NewForms),
+            {function,L,bar,Ar,[{clause,L,As,[],[NF]}]} = 
+                lists:last(NewForms),
             {ok,NF};
         {E0,Errors,_Warnings} when WithLintErrors ->
             {not_ok,mforms(error, E0 ++ Errors)};
@@ -123,7 +128,7 @@ transform_expression(LC, Bs0, WithLintErrors) ->
 -define(ABST_MORE(Obj, Cont), {cons, L, Obj, Cont}).
 
 %% Qualifier identifier. 
-%% The first one encountered in a QLC expression has no=1.
+%% The first one encountered in a QLC has no=1.
 -record(qid, {lcid,no}).
 
 %% Avoid duplicated lint warnings and lint errors. Care has been taken
@@ -152,14 +157,14 @@ is_qlc_q_imported(Forms) ->
 record_attributes(Forms) ->
     [A || A = {attribute, _, record, _D} <- Forms].
 
-%% Get the compile errors and warnings for the QLC expressions as well
-%% as messages for introduced variables used in list expressions and
-%% messages for badargs. Since the QLC expressions will be replaced by
-%% some terms, the compiler cannot find the errors and warnings after
-%% the parse transformation.
+%% Get the compile errors and warnings for the QLC as well as messages
+%% for introduced variables used in list expressions and messages for
+%% badargs. Since the QLCs will be replaced by some terms, the
+%% compiler cannot find the errors and warnings after the parse
+%% transformation.
 %%
 compile_messages(Forms, FormsNoShadows, Options, State) ->
-    %% QLC cannot handle binary generators.
+    %% The qlc module cannot handle binary generators.
     BGenF = fun(_QId,{b_generate,Line,_P,_LE}=BGen, GA, A) ->
                     M = {Line,?APIMOD,binary_generator},
                     {BGen,[{get(?QLC_FILE),[M]}|GA],A};
@@ -225,7 +230,7 @@ untag(E) ->
 %% Filter: all variables bound inside the filter are introduced
 %% variables (unless they are unsafe).
 %%
-intro_variables(Forms, State) ->
+intro_variables(FormsNoShadows, State) ->
     Fun = fun(QId, {T,_L,P0,_E0}=Q, {GVs,QIds}, Foo) when T =:= b_generate;
                                                           T =:= generate ->
                   PVs = var_ufold(fun({var,_,V}) -> {QId,V} end, P0),
@@ -242,7 +247,10 @@ intro_variables(Forms, State) ->
                   {Filter,{GVs,[{QId,[]} | QIds]},Foo}
           end,
     Acc0 = {[],[]},
-    {FForms,{GenVars,QIds}} = qual_fold(Fun, Acc0, [], Forms, State),
+    {FForms,{GenVars,QIds}} = 
+        qual_fold(Fun, Acc0, [], FormsNoShadows, State),
+    %% Note: the linter messages are the ones we are looking for.
+    %% If there are no linter messages, the compiler will crash (ignored).
     Es0 = compile_errors(FForms),
     %% A variable is bound inside the filter if it is not bound before
     %% the filter, but it is bound after the filter (obviously).
@@ -257,8 +265,8 @@ intro_variables(Forms, State) ->
     I1 = family(IV ++ GenVars),
     sofs:to_external(sofs:family_union(sofs:family(QIds), I1)).
 
-compile_errors(Forms) ->
-    case compile_forms(Forms, []) of
+compile_errors(FormsNoShadows) ->
+    case compile_forms(FormsNoShadows, []) of
         {[], _Warnings} ->
             [];
         {Errors, _Warnings} ->
@@ -266,11 +274,13 @@ compile_errors(Forms) ->
             flatmap(fun({_File,Es}) -> Es end, Errors)
     end.
 
+-define(MAX_NUM_OF_LINES, 23). % assume max 1^23 lines (> 8 millions)
+
 compile_forms(Forms0, Options) ->
-    Forms1 = no_qlc_transform(Forms0),
-    Forms = [F || F <- Forms1, element(1, F) =/= eof] ++ [{eof,999999}],
+    Forms = [F || F <- Forms0, element(1, F) =/= eof] ++ 
+            [{eof,1 bsl ?MAX_NUM_OF_LINES}],
     try 
-        case compile:forms(Forms, compile_options(Options)) of
+        case compile:noenv_forms(Forms, compile_options(Options)) of
             {ok, _ModName, Ws0} ->
                 {[], Ws0};
             {error, Es0, Ws0} -> 
@@ -285,13 +295,6 @@ compile_forms(Forms0, Options) ->
                 {Errors, Warnings}
         end
     end.
-
-no_qlc_transform([{attribute, _, compile, {parse_transform,?APIMOD}} | Fs]) ->
-    no_qlc_transform(Fs);
-no_qlc_transform([F | Fs]) ->
-    [F | no_qlc_transform(Fs)];
-no_qlc_transform([]) ->
-    [].
 
 compile_options(Options) ->
     No = [report,report_errors,report_warnings,'P','E' | bitstr_options()],
@@ -318,7 +321,7 @@ bitstr_options() ->
 %% {{extra,LineNo,File,Var},Module,{unbound_var,V}}, where Var is the
 %% original variable name and V is the name invented by no_shadows/2.
 %%
-used_genvar_check(Forms, State) ->
+used_genvar_check(FormsNoShadows, State) ->
     F = fun(QId, {T, Ln, _P, LE}=Q, {QsIVs0, Exprs0}, IVsSoFar0) 
                                    when T =:= b_generate; T =:= generate ->
                 F = fun({var, _, V}=Var) -> 
@@ -337,10 +340,10 @@ used_genvar_check(Forms, State) ->
                 {QsIVs, IVsSoFar} = q_intro_vars(QId, QsIVs0, IVsSoFar0),
                 {Filter, {QsIVs, Exprs}, IVsSoFar}
         end,
-    IntroVars = intro_variables(Forms, State),
+    IntroVars = intro_variables(FormsNoShadows, State),
     Acc0 = {IntroVars, [{atom, 0, true}]},
-    {_, {[], Exprs}} = qual_fold(F, Acc0, [], Forms, State),
-    FunctionNames = [Name || {function, _, Name, _, _} <- Forms],
+    {_, {[], Exprs}} = qual_fold(F, Acc0, [], FormsNoShadows, State),
+    FunctionNames = [Name || {function, _, Name, _, _} <- FormsNoShadows],
     UniqueFName = aux_name(used_genvar, 1, sets:from_list(FunctionNames)),
     {function,0,UniqueFName,0,[{clause,0,[],[],lists:reverse(Exprs)}]}.
     
@@ -424,34 +427,24 @@ q_intro_vars(QId, [{QId, IVs} | QsIVs], IVsSoFar) -> {QsIVs, IVs ++ IVsSoFar}.
 %% (evaluated once only). Among the arguments indicated by ellipses
 %% are all variables introduced in patterns and filters.
 %%
-%% transform/2 replaces each QLC expression (call to qlc:q/1) with a
-%% qlc_lc record. The general case is that calling the fun stored in
-%% the 'lc' field returns {qlc_v1, QFun, CodeF, Qdata} such that: QFun
-%% is the above mentioned fun; CodeF is a fun returning the original
-%% code for the template, every pattern, and every filter; Qdata is
-%% the above mentioned table. There are two special cases when calling
-%% the fun returns something else:
-%%
+%% transform/2 replaces each QLC (call to qlc:q/1) with a qlc_lc
+%% record. The general case is that calling the fun stored in the 'lc'
+%% field returns {qlc_v1, QFun, CodeF, Qdata, QOpt} such that: QFun is
+%% the above mentioned fun; CodeF is a fun returning the original code
+%% for the template, every pattern, and every filter; Qdata is the
+%% above mentioned table; QOpt is a property list implemented as a fun
+%% of one argument - an atom - which returns information about such
+%% things as constant columns, match specifications, &c.
+%% There is one special case when calling the fun stored in the 'lc'
+%% field returns something else:
 %% - If the QLC has the form [Var || Var <- LE] and there are no
 %%   options to qlc:q/2, a tuple {simple_v1, P, LEf, Line} is returned.
 %%   The objects returned are the objects returned by the generator
 %%   (calling LEf returns the objects generated by LE).
-%%
-%% - If the QLC has the form [T || P <- LE, F1, F2, ...] (if there is no Fi,
-%%   'true' takes its place) a tuple {single_v1, QFun, CodeF, Qdata,
-%%   MatchSpec, ColumnFun} is returned if ets:fun2ms(fun(P) when F1
-%%   andalso F2 andalso ... -> P end) is a match specification or
-%%   lookup can be used for finding key values. ColumnFun returns for
-%%   every position (column) of the pattern P the constant values (or
-%%   'false' if there are no constant values). MatchSpec is a match
-%%   specification that can be used instead of the QLC, or
-%%   'no_match_spec' if there is no such match specification.
-%%   [This is R10B only. In R11B more than one generator of a QLC
-%%    expression may have match specifications.]
 
-transform(Forms, State) ->
-    IntroVars = intro_variables(Forms, State),
-    AllVars = sets:from_list(ordsets:to_list(vars(Forms))),
+transform(FormsNoShadows, State) ->
+    IntroVars = intro_variables(FormsNoShadows, State),
+    AllVars = sets:from_list(ordsets:to_list(vars(FormsNoShadows))),
     ?DEBUG("AllVars = ~p~n", [sets:to_list(AllVars)]),
     F1 = fun(QId, {generate,_,P,LE}, Foo, {GoI,SI}) ->
                  {{QId,GoI,SI,{gen,P,LE}},Foo,{GoI + 3, SI + 2}};
@@ -461,20 +454,20 @@ transform(Forms, State) ->
     TemplS = qlc:template_state(),
     GoState = {TemplS + 1, TemplS + 1},
     {ModifiedForms1,_} = 
-        qual_fold(F1, [], GoState, Forms, State),
+        qual_fold(F1, [], GoState, FormsNoShadows, State),
 
-    %% This is for info/2. QLC expressions in filters and the template
-    %% are translated before the expression itself is translated.
-    %% info/2 must not display the result of the translation, but the
-    %% source code.
+    %% This is for info/2. QLCs in filters and the template are
+    %% translated before the expression itself is translated. info/2
+    %% must not display the result of the translation, but the source
+    %% code.
     {_,Source0} = qual_fold(fun(_QId, {generate,_,_P,_E}=Q, Dict, Foo) -> 
                                     {Q,Dict,Foo};
                                (QId, F, Dict, Foo) ->
                                     {F,dict:store(QId, F, Dict),Foo}
-                            end, dict:new(), [], Forms, State),
+                            end, dict:new(), [], FormsNoShadows, State),
     {_,Source} = qlc_mapfold(fun(Id, {lc,_L,E,_Qs}=LC, Dict) ->
                                      {LC,dict:store(Id, E, Dict)}
-                             end, Source0, Forms, State),
+                             end, Source0, FormsNoShadows, State),
 
 
     %% Unused variables introduced in filters are not optimized away.
@@ -739,8 +732,8 @@ join_handle_constants(QId, ExtraConstants) ->
     end.
 
 %%% By the term "imported variable" is meant a variable that is bound
-%%% outside (before) the QLC expression. Perhaps "parameter" would be
-%%% a more suitable name.
+%%% outside (before) the QLC. Perhaps "parameter" would be a more
+%%% suitable name.
 
 %% The column fun is to be used when there is a known key column or
 %% indices. The argument is a column number and the return value is a
@@ -1117,19 +1110,43 @@ filter_info(FilterData, AllIVs, Dependencies, State) ->
 %% filter could fail for some object(s) excluded by lookup or join. If
 %% the failing filter is placed _after_ the guard filter, the failing
 %% objects have already been filtered out by the guard filter.
+%% Note: guard filters using variables from one generator are allowed
+%% to be placed after further generators (the docs states otherwise, but 
+%% this seems to be common practice).
 filter_list(FilterData, Dependencies, State) ->
-    RecordDefs = State#state.records,
-    {GuardFilters, OtherFilters} =
-        lists:partition(fun({_QId,{fil,F}}) ->
-                                erl_lint:is_guard_test(F, RecordDefs)
-                        end, FilterData),
-    [Filter || Filter={Id,_} <- GuardFilters,
-               [] =:= [GId || {Id2, GIds} <- Dependencies,
-                              Id2 =:= Id,
-                              GId <- GIds,
-                              {OId, _} <- OtherFilters,
-                              OId < Id,    % OId comes before Id
-                              OId > GId]]. % OId comes after GId
+    RDs = State#state.records,
+    sel_gf(FilterData, 1, Dependencies, RDs, [], []).
+
+sel_gf([], _N, _Deps, _RDs, _Gens, _Gens1) ->
+    [];
+sel_gf([{#qid{no = N}=Id,{fil,F}}=Fil | FData], N, Deps, RDs, Gens, Gens1) ->
+    case erl_lint:is_guard_test(F, RDs) of
+        true ->
+            {value, {Id,GIds}} = keysearch(Id, 1, Deps),
+            case length(GIds) =< 1 of
+                true ->
+                    case generators_in_scope(GIds, Gens1) of
+                        true ->
+                            [Fil|sel_gf(FData, N+1, Deps, RDs, Gens, Gens1)];
+                        false ->
+                            sel_gf(FData, N + 1, Deps, RDs, [], [])
+                    end;
+                false ->
+                    case generators_in_scope(GIds, Gens) of
+                        true ->
+                            [Fil | sel_gf(FData, N + 1, Deps, RDs, Gens, [])];
+                        false ->
+                            sel_gf(FData, N + 1, Deps, RDs, [], [])
+                    end
+            end;
+        false ->
+            sel_gf(FData, N + 1, Deps, RDs, [], [])
+    end;
+sel_gf(FData, N, Deps, RDs, Gens, Gens1) ->
+    sel_gf(FData, N + 1, Deps, RDs, [N | Gens], [N | Gens1]).
+
+generators_in_scope(GenIds, GenNumbers) ->
+    lists:all(fun(#qid{no=N}) -> lists:member(N, GenNumbers) end, GenIds).
 
 pattern_frame(GeneratorData, BindFun, Anon1, State) ->
     Frame0 = [],
@@ -1246,16 +1263,16 @@ filter(E0, Frame0, BF, SF, State) ->
 %% fails for some combination of values, it must fail also when
 %% looking up values or joining. In other words, the excluded
 %% combinations of values must not evaluate to anything but 'false'.
-%% Filters looking like guards can fail since for such filter the so
-%% called guard semantics ensures that the value is 'false' if it is
-%% not 'true'. This behavior was inherited from the ordinary list
-%% comprehension, where it has been considered a bug kept for backward
-%% compatibility. Now it has become a part of QLC, and hard to change
-%% (at least in QLC).
+%% Filters looking like guards are allowed to fail since for such
+%% filter the so called guard semantics ensures that the value is
+%% 'false' if it is not 'true'. This behavior was inherited from the
+%% ordinary list comprehension, where it has been considered a bug
+%% kept for backward compatibility. Now it has become part of the QLC
+%% semantics, and hard to change (at least in the qlc module).
 %%
 %% A special case is =/2. If there is a chance that the =/2 fails
 %% (badmatch) for some combination of values, that combination cannot
-%% be excluded. If the variable is bound once only, it is OK, but not
+%% be excluded. If the variable is bound only once, it is OK, but not
 %% twice (or more). The current implementation does not handle =/2 at
 %% all (except in generator patterns).
 
@@ -1706,8 +1723,8 @@ qcon(Cs) ->
     list2cons([{tuple,0,[{integer,0,C},list2cons(Vs)]} || {C,Vs} <- Cs]).
 
 %% The original code (in Source) is used for filters and the template
-%% since the translated code can have QLC expressions and we don't
-%% want them to be visible.
+%% since the translated code can have QLCs and we don't want them to
+%% be visible.
 qcode(E, QCs, Source, L) ->
     CL = [begin
               Bin = term_to_binary(C, [compressed]),
@@ -1940,6 +1957,13 @@ qlcmf(?QLC_Q(L1, L2, L3, L4, LC0, Os0), F, Imp, A0, No0) when length(Os0) < 2 ->
     NL = make_lcid(L1, No),
     {T, A} = F(NL, LC, A2),
     {?QLC_Q(L1, L2, L3, L4, T, Os), A, No + 1};
+qlcmf(?QLC_QQ(L1, L2, L3, L4, L5, L6, LC0, Os0),
+      F, Imp, A0, No0) when length(Os0) < 2 ->
+    {Os, A1, No1} = qlcmf(Os0, F, Imp, A0, No0),
+    {LC, A2, No} = qlcmf(LC0, F, Imp, A1, No1), % nested...
+    NL = make_lcid(L1, No),
+    {T, A} = F(NL, LC, A2),
+    {?QLC_QQ(L1, L2, L3, L4, L5, L6, T, Os), A, No + 1};
 qlcmf(?IMP_Q(L1, L2, LC0, Os0), F, Imp=true, A0, No0) when length(Os0) < 2 ->
     {Os, A1, No1} = qlcmf(Os0, F, Imp, A0, No0),
     {LC, A2, No} = qlcmf(LC0, F, Imp, A1, No1), % nested...
@@ -2119,12 +2143,11 @@ restore_line_numbers1({var, {_, VL}, V}) ->
 restore_line_numbers1({var, L, _}=Var) when is_integer(L) ->
     Var.
 
--define(MAX_NUM_OF_LINES, 23). % assume max 1^23 lines (> 8 millions)
-
-%% QLC expression identifier. 
+%% QLC identifier. 
 %% The first one encountered in the file has No=1.
 
-make_lcid(Line, No) when is_integer(Line), is_integer(No), No > 0 ->
+make_lcid(Line, No) when is_integer(Line), Line < (1 bsl ?MAX_NUM_OF_LINES), 
+                          is_integer(No), No > 0 ->
     sgn(Line) * ((No bsl ?MAX_NUM_OF_LINES) + sgn(Line) * Line).
 
 is_lcid(Id) ->

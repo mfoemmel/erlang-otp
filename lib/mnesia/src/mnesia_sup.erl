@@ -107,11 +107,8 @@ add_event_handler() ->
 
 kill() ->
     Mnesia = [mnesia_fallback | mnesia:ms()],
-    Mnemosyne = mnemosyne_ms(),
     Kill = fun(Name) -> catch exit(whereis(Name), kill) end,
-    lists:foreach(Kill, Mnemosyne),
     lists:foreach(Kill, Mnesia),
-    lists:foreach(fun ensure_dead/1, Mnemosyne),
     lists:foreach(fun ensure_dead/1, Mnesia),
     timer:sleep(10),
     case lists:keymember(mnesia, 1, application:which_applications()) of
@@ -127,11 +124,5 @@ ensure_dead(Name) ->
 	    exit(Pid, kill),
 	    timer:sleep(10),
 	    ensure_dead(Name)
-    end.
-
-mnemosyne_ms() ->
-    case mnesia_monitor:get_env(embedded_mnemosyne) of
-	true -> apply(mnemosyne,ms,[]);
-	false -> []
     end.
 

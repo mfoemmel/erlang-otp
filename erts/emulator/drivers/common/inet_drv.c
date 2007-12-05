@@ -4954,6 +4954,7 @@ static int inet_set_opts(inet_descriptor* desc, char* ptr, int len)
 		tcp_closed_message((tcp_descriptor *) desc);
 		if (desc->exitf) {
 		    driver_exit(desc->port, 0);
+		    return 0; /* Give up on this socket, descriptor lost */
 		} else {
 		    desc_close_read(desc);
 		}
@@ -5809,6 +5810,7 @@ static int inet_fill_opts(inet_descriptor* desc,
     while(len--) {
 	opt = *buf++;
 	proto = SOL_SOCKET;
+	ival = 0; /* Windows Vista needs this (only writes part of it) */
 	arg_sz = sizeof(ival);
 	arg_ptr = (char*) &ival;
 
@@ -5967,6 +5969,7 @@ static int inet_fill_opts(inet_descriptor* desc,
 	    break;
 	case INET_OPT_LINGER:
 	    arg_sz = sizeof(li_val);
+	    sys_memzero((void *) &li_val, sizeof(li_val));
 	    arg_ptr = (char*) &li_val;	    
 	    type = SO_LINGER; 
 	    break;
@@ -6028,9 +6031,9 @@ static int inet_fill_opts(inet_descriptor* desc,
 	    put_int32(ival, ptr);
 	}
 	else {
-	    put_int32(li_val.l_onoff, ptr);
+	    put_int32(((Uint32) li_val.l_onoff), ptr);
 	    PLACE_FOR(4,ptr);
-	    put_int32(li_val.l_linger, ptr);
+	    put_int32(((Uint32) li_val.l_linger), ptr);
 	}
     }
     return (dest_used);

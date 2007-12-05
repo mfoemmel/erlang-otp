@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Define internal data structures and error codes
@@ -63,12 +65,12 @@
 	  pending_timer, 
 	  
 	  %% ------
-	  %% These counter's is used for the MGCOriginatedPendingLimit
+	  %% These counter's are used for the MGCOriginatedPendingLimit
 	  %% and MGOriginatedPendingLimit counters (of the root package).
-	  %% If the user is an MGC, the 
+	  %% If the user is an MGC, then 
 	  %%   sent_pending_limit - represent MGCOriginatedPendingLimit
 	  %%   recv_pending_limit - represent MGOriginatedPendingLimit
-	  %% If the user is an MG, the 
+	  %% If the user is an MG, then 
 	  %%   sent_pending_limit - represent MGOriginatedPendingLimit
 	  %%   recv_pending_limit - represent MGCOriginatedPendingLimit
 	  sent_pending_limit,  % infinity | integer() > 0
@@ -90,12 +92,24 @@
 	  threaded,            % boolean(), false
 	  strict_version,      % boolean(), true
 	  long_request_resend, % boolean(), false
+
 	  %% This flag is used when a connection is being cancelled.
 	  %% The purpuse is to avoid raise conditions with replies
 	  %% during the cancellation. 
 	  cancel,              % boolean(), false
-	  resend_indication    % boolean(), false
+	  resend_indication,   % boolean(), false
+
+	  %% -------
+	  %% Defined in the Segmentation Package (extends the root package)
+	  %% 
+	  segment_reply_ind,  % boolean(), false
+	  segment_recv_acc,   % bool()
+	  segment_recv_timer, % megaco_timer() | integer() > 0 | infinity
+	  segment_send,       % none | infinity | integer() > 0
+	  segment_send_timer, % megaco_timer() | integer() > 0 | infinity
+	  max_pdu_size        % infinity | integer() > 0
 	 }).
+
 
 %% N.B. Update megaco_config when a new field is added
 -record(remote_conn_data,
@@ -119,6 +133,14 @@
 -define(megaco_error(F, A),
 	(catch error_logger:error_msg("[ ~w : ~w : ~p ] ~n" ++ F ++ "~n", 
 				      [?APPLICATION, ?MODULE, self()|A]))).
+
+
+%%%----------------------------------------------------------------------
+%%% Default (ignore) value of the Extra argument to the 
+%%% megaco:receive_message/5 and process_received_message functions/5.
+%%%----------------------------------------------------------------------
+
+-define(default_user_callback_extra, ignore_extra).
 
 
 %%%----------------------------------------------------------------------

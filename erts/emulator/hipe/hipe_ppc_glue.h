@@ -3,7 +3,7 @@
 #ifndef HIPE_PPC_GLUE_H
 #define HIPE_PPC_GLUE_H
 
-#include "hipe_ppc_asm.h"	/* for NR_ARG_REGS */
+#include "hipe_ppc_asm.h"	/* for NR_ARG_REGS, PPC_LEAF_WORDS */
 
 /* Emulated code recursively calls native code.
    The return address is `nbif_return', which is exported so that
@@ -89,12 +89,12 @@ hipe_push_ppc_params(Process *p, unsigned int arity, Eterm reg[])
     unsigned int i;
 
     i = arity;
-    if( i > NR_ARG_REGS ) {
+    if (i > NR_ARG_REGS) {
 	Eterm *nsp = p->hipe.nsp;
 	i = NR_ARG_REGS;
 	do {
 	    *--nsp = reg[i++];
-	} while( i < arity );
+	} while (i < arity);
 	p->hipe.nsp = nsp;
 	i = NR_ARG_REGS;
     }
@@ -108,11 +108,11 @@ hipe_pop_ppc_params(Process *p, unsigned int arity, Eterm reg[])
     unsigned int i;
 
     i = arity;
-    if( i > NR_ARG_REGS ) {
+    if (i > NR_ARG_REGS) {
 	Eterm *nsp = p->hipe.nsp;
 	do {
 	    reg[--i] = *nsp++;
-	} while( i > NR_ARG_REGS );
+	} while (i > NR_ARG_REGS);
 	p->hipe.nsp = nsp;
 	/* INV: i == NR_ARG_REGS */
     }
@@ -126,7 +126,7 @@ hipe_call_to_native(Process *p, unsigned int arity, Eterm reg[])
 {
     int nstkargs;
 
-    if( (nstkargs = arity - NR_ARG_REGS) < 0 )
+    if ((nstkargs = arity - NR_ARG_REGS) < 0)
 	nstkargs = 0;
     hipe_check_nstack(p, max(nstkargs + 1, PPC_LEAF_WORDS));
     hipe_push_ppc_nra_frame(p);			/* needs 1 word */
@@ -140,7 +140,7 @@ hipe_tailcall_to_native(Process *p, unsigned int arity, Eterm reg[])
 {
     int nstkargs;
 
-    if( (nstkargs = arity - NR_ARG_REGS) < 0 )
+    if ((nstkargs = arity - NR_ARG_REGS) < 0)
 	nstkargs = 0;
     hipe_check_nstack(p, max(nstkargs, PPC_LEAF_WORDS));
     hipe_push_ppc_params(p, arity, reg);	/* needs nstkargs words */
@@ -167,7 +167,7 @@ static __inline__ int
 hipe_call_from_native_is_recursive(Process *p, Eterm reg[])
 {
     hipe_pop_ppc_params(p, p->arity, reg);
-    if( p->hipe.nra != (void(*)(void))&nbif_return )
+    if (p->hipe.nra != (void(*)(void))&nbif_return)
 	return 1;
     hipe_pop_ppc_nra_frame(p);
     return 0;
@@ -202,7 +202,7 @@ static __inline__ void hipe_reschedule_from_native(Process *p)
 #if NR_ARG_REGS == 0
     ASSERT(p->arity == 0);
 #else
-    if( p->arg_reg != p->def_arg_reg ) {
+    if (p->arg_reg != p->def_arg_reg) {
 	unsigned int i;
 	for(i = 0; i < p->arity; ++i)
 	    p->arg_reg[i] = p->def_arg_reg[i];
@@ -229,7 +229,7 @@ static __inline__ const void *hipe_closure_stub_address(unsigned int arity)
 #if NR_ARG_REGS == 0
     return &nbif_ccallemu0;
 #else	/* > 0 */
-    switch( arity ) {
+    switch (arity) {
       case 0:	return &nbif_ccallemu0;
 #if NR_ARG_REGS == 1
       default:	return &nbif_ccallemu1;

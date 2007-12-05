@@ -25,6 +25,7 @@
 	 inflateSync/1,inflateReset/1,inflate/2,inflateEnd/1,
 	 setBufSize/2,getBufSize/1,
 	 crc32/1,crc32/2,crc32/3,adler32/2,adler32/3,getQSize/1,
+	 crc32_combine/4,adler32_combine/4,
 	 compress/1,uncompress/1,zip/1,unzip/1,
 	 gzip/1,gunzip/1]).
 
@@ -108,23 +109,54 @@
 -define(ADLER32_1,       21).
 -define(ADLER32_2,       22).
 
+-define(CRC32_COMBINE,   23).
+-define(ADLER32_COMBINE, 24).
+
+
+%%------------------------------------------------------------------------
+
+%% Main data types of the file -- make the first one builtin?
+-type(iodata()      :: iolist() | binary()).
+-type(zstream()     :: port()).
+
+%% Auxiliary data types of the file
+-type(zlevel()      :: 'none' | 'default' | 'best_compression' | 'best_speed' 
+                     | 0..9).
+-type(zmethod()     :: 'deflated').
+-type(zwindowbits() :: -15..-9 | 9..47).
+-type(zmemlevel()   :: 1..9).
+-type(zstrategy()   :: 'default' | 'filtered' | 'huffman_only').
+-type(zflush()      :: 'none' | 'sync' | 'full' | 'finish').
+
+%%------------------------------------------------------------------------
+
 %% open a z_stream
+-spec(open/0 :: () -> zstream()).
 open() ->
     open_port({spawn, zlib_drv}, [binary]).
 
 %% close and release z_stream
+-spec(close/1 :: (zstream()) -> 'ok').
 close(Z) ->
-    try true = port_close(Z),
-	ok
+    try
+	true = port_close(Z),
+	receive	      %In case the caller is the owner and traps exits
+	    {'EXIT',Z,_} -> ok
+	after 0 -> ok
+	end
     catch _:_ -> erlang:error(badarg)
     end.
 
+-spec(deflateInit/1 :: (zstream()) -> 'ok').
 deflateInit(Z) ->
     call(Z, ?DEFLATE_INIT, <<?Z_DEFAULT_COMPRESSION:32>>).
 
+-spec(deflateInit/2 :: (zstream(), zlevel()) -> 'ok').
 deflateInit(Z, Level) ->
     call(Z, ?DEFLATE_INIT, <<(arg_level(Level)):32>>).
 
+-spec(deflateInit/6 :: (zstream(), zlevel(), zmethod(),
+		        zwindowbits(), zmemlevel(), zstrategy()) -> 'ok').
 deflateInit(Z, Level, Method, WindowBits, MemLevel, Strategy) ->
     call(Z, ?DEFLATE_INIT2, <<(arg_level(Level)):32, 
 			     (arg_method(Method)):32,
@@ -132,19 +164,24 @@ deflateInit(Z, Level, Method, WindowBits, MemLevel, Strategy) ->
 			     (arg_mem(MemLevel)):32,
 			     (arg_strategy(Strategy)):32>>).
 
+-spec(deflateSetDictionary/2 :: (zstream(), binary()) -> integer()).
 deflateSetDictionary(Z, Dictionary) ->
     call(Z, ?DEFLATE_SETDICT, Dictionary).
 
+-spec(deflateReset/1 :: (zstream()) -> 'ok').
 deflateReset(Z) ->
     call(Z, ?DEFLATE_RESET, []).
 
+-spec(deflateParams/3 :: (zstream(), zlevel(), zstrategy()) -> 'ok').
 deflateParams(Z, Level, Strategy) ->
     call(Z, ?DEFLATE_PARAMS, <<(arg_level(Level)):32, 
 			      (arg_strategy(Strategy)):32>>).
 
+-spec(deflate/2 :: (zstream(), iodata()) -> iolist()).
 deflate(Z, Data) ->
     deflate(Z, Data, none).
 
+-spec(deflate/3 :: (zstream(), iodata(), zflush()) -> iolist()).
 deflate(Z, Data, Flush) ->
     try port_command(Z, Data) of
 	true ->
@@ -156,24 +193,31 @@ deflate(Z, Data, Flush) ->
 	    erlang:error(badarg) 
     end.
 
+-spec(deflateEnd/1 :: (zstream()) -> 'ok').
 deflateEnd(Z) ->
     call(Z, ?DEFLATE_END, []).    
 
+-spec(inflateInit/1 :: (zstream()) -> 'ok').
 inflateInit(Z) ->
     call(Z, ?INFLATE_INIT, []).    
 
+-spec(inflateInit/2 :: (zstream(), zwindowbits()) -> 'ok').
 inflateInit(Z, WindowBits) -> 
     call(Z, ?INFLATE_INIT2, <<(arg_bitsz(WindowBits)):32>>).
 
+-spec(inflateSetDictionary/2 :: (zstream(), binary()) -> 'ok').
 inflateSetDictionary(Z, Dictionary) -> 
     call(Z, ?INFLATE_SETDICT, Dictionary).
 
+-spec(inflateSync/1 :: (zstream()) -> 'ok').
 inflateSync(Z) -> 
     call(Z, ?INFLATE_SYNC, []).
 
+-spec(inflateReset/1 :: (zstream()) -> 'ok').
 inflateReset(Z) -> 
-    call(Z, ?INFLATE_RESET, []).    
+    call(Z, ?INFLATE_RESET, []).
 
+-spec(inflate/2 :: (zstream(), iodata()) -> iolist()).
 inflate(Z, Data) ->
     try port_command(Z, Data) of
 	true -> 
@@ -185,38 +229,59 @@ inflate(Z, Data) ->
 	    erlang:error(badarg) 
     end.
 
+-spec(inflateEnd/1 :: (zstream()) -> 'ok').
 inflateEnd(Z) ->
     call(Z, ?INFLATE_END, []).
 
+-spec(setBufSize/2 :: (zstream(), non_neg_integer()) -> 'ok').
 setBufSize(Z, Size) ->
     call(Z, ?SET_BUFSZ, <<Size:32>>).
 
+-spec(getBufSize/1 :: (zstream()) -> non_neg_integer()).
 getBufSize(Z) ->
     call(Z, ?GET_BUFSZ, []).
 
+-spec(crc32/1 :: (zstream()) -> integer()).
 crc32(Z) ->
     call(Z, ?CRC32_0, []).
 
+-spec(crc32/2 :: (zstream(), binary()) -> integer()).
 crc32(Z, Binary) ->
     call(Z, ?CRC32_1, Binary).
 
+-spec(crc32/3 :: (zstream(), integer(), binary()) -> integer()).
 crc32(Z, CRC, Binary) when is_binary(Binary), is_integer(CRC) ->
     call(Z, ?CRC32_2, <<CRC:32, Binary/binary>>);
 crc32(_Z, _CRC, _Binary)  ->
     erlang:error(badarg).
 
+-spec(adler32/2 :: (zstream(), binary()) -> integer()).
 adler32(Z, Binary) ->
     call(Z, ?ADLER32_1, Binary).
 
+-spec(adler32/3 :: (zstream(), integer(), binary()) -> integer()).
 adler32(Z, Adler, Binary) when is_binary(Binary), is_integer(Adler) ->
     call(Z, ?ADLER32_2, <<Adler:32, Binary/binary>>);
 adler32(_Z, _Adler, _Binary)  ->
     erlang:error(badarg).
 
+crc32_combine(Z, CRC1, CRC2, Len2) 
+  when is_integer(CRC1), is_integer(CRC2), is_integer(Len2) ->
+    call(Z, ?CRC32_COMBINE, <<CRC1:32, CRC2:32, Len2:32>>);
+crc32_combine(_Z, _CRC1, _CRC2, _Len2) ->
+    erlang:error(badarg).
+
+adler32_combine(Z, Adler1, Adler2, Len2) 
+  when is_integer(Adler1), is_integer(Adler2), is_integer(Len2) ->
+    call(Z, ?ADLER32_COMBINE, <<Adler1:32, Adler2:32, Len2:32>>);
+adler32_combine(_Z, _Adler1, _Adler2, _Len2) ->
+    erlang:error(badarg).
+
 getQSize(Z) ->
-    call(Z, ?GET_QSIZE, []).    
+    call(Z, ?GET_QSIZE, []).
 
 %% compress/uncompress zlib with header
+-spec(compress/1 :: (binary()) -> binary()).
 compress(Binary) ->
     Z = open(),
     deflateInit(Z, default),
@@ -225,6 +290,7 @@ compress(Binary) ->
     close(Z),
     list_to_binary(Bs).
 
+-spec(uncompress/1 :: (binary()) -> binary()).
 uncompress(Binary) when is_binary(Binary), size(Binary) >= 8 ->
     Z = open(),
     inflateInit(Z),
@@ -236,6 +302,7 @@ uncompress(Binary) when is_binary(Binary) -> erlang:error(data_error);
 uncompress(_) -> erlang:error(badarg).
 
 %% unzip/zip zlib without header (zip members)
+-spec(zip/1 :: (binary()) -> binary()).
 zip(Binary) ->
     Z = open(),
     deflateInit(Z, default, deflated, -?MAX_WBITS, 8, default),
@@ -244,6 +311,7 @@ zip(Binary) ->
     close(Z),
     list_to_binary(Bs).
 
+-spec(unzip/1 :: (binary()) -> binary()).
 unzip(Binary) ->
     Z = open(),
     inflateInit(Z, -?MAX_WBITS),
@@ -252,6 +320,7 @@ unzip(Binary) ->
     close(Z),
     list_to_binary(Bs).
     
+-spec(gzip/1 :: (iodata()) -> binary()).
 gzip(Data) when is_binary(Data); is_list(Data) ->
     Z = open(),
     deflateInit(Z, default, deflated, 16+?MAX_WBITS, 8, default),
@@ -261,6 +330,7 @@ gzip(Data) when is_binary(Data); is_list(Data) ->
     iolist_to_binary(Bs);
 gzip(_) -> erlang:error(badarg).
 
+-spec(gunzip/1 :: (iodata()) -> binary()).
 gunzip(Data) when is_binary(Data); is_list(Data) ->
     Z = open(),
     inflateInit(Z, 16+?MAX_WBITS),
@@ -270,9 +340,11 @@ gunzip(Data) when is_binary(Data); is_list(Data) ->
     iolist_to_binary(Bs);
 gunzip(_) -> erlang:error(badarg).
 
+-spec(collect/1 :: (zstream()) -> iolist()).
 collect(Z) -> 
     collect(Z,[]).
 
+-spec(collect/2 :: (zstream(), iolist()) -> iolist()).
 collect(Z,Acc) ->
     receive 
 	{Z, {data, Bin}} ->
@@ -281,6 +353,7 @@ collect(Z,Acc) ->
 	    lists:reverse(Acc)
     end.
 
+-spec(flush/1 :: (zstream()) -> 'ok').
 flush(Z) ->
     receive
 	{Z, {data,_}} ->
@@ -311,12 +384,14 @@ arg_strategy(_) -> erlang:error(badarg).
 arg_method(deflated) -> ?Z_DEFLATED;
 arg_method(_) -> erlang:error(badarg).
 
+-spec(arg_bitsz/1 :: (zwindowbits()) -> zwindowbits()).
 arg_bitsz(Bits) when is_integer(Bits) andalso
 		     ((8 < Bits andalso Bits < 48) orelse
 		      (-15 =< Bits andalso Bits < -8)) ->
     Bits;
 arg_bitsz(_) -> erlang:error(badarg).
 
+-spec(arg_mem/1 :: (zmemlevel()) -> zmemlevel()).
 arg_mem(Level) when is_integer(Level), 1 =< Level, Level =< 9 -> Level;
 arg_mem(_) -> erlang:error(badarg).
 

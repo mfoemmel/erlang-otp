@@ -38,6 +38,16 @@
 -define(       GRAPH, digraph       ).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Debugging stuff
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+-ifndef(SSAPRE_DEBUG).
+-define(pp_debug(_Str, _Args), ok).
+-else.
+-define(pp_debug(Str, Args), io:format(standard_io, Str, Args)).
+-endif.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Records / Structures
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -75,39 +85,39 @@ rtl_ssapre(RtlSSACfg, Options) ->
   %% io:format("\n\n############ SSA-Form CHECK ==> ~w\n",[hipe_rtl_ssa:check(RtlSSACfg)]),
 
   {CFG2,XsiGraph,CFGGraph,MPs} = perform_Xsi_insertion(RtlSSACfg,Options),
-  %%pp_debug("~n~n################ Xsi CFG ################\n",[]),pp_cfg(CFG2,XsiGraph),
+  %%?pp_debug("~n~n################ Xsi CFG ################\n",[]),pp_cfg(CFG2,XsiGraph),
   XsiList = ?GRAPH:vertices(XsiGraph),
   case XsiList of
     [] ->
       %% No Xsi
-      ?option_time(pp_debug("~n~n################ No Xsi Inserted ################~n",[]),"RTL A-SSAPRE No Xsi inserted (skip Downsafety and Will Be Available)",Options),
+      ?option_time(?pp_debug("~n~n################ No Xsi Inserted ################~n",[]),"RTL A-SSAPRE No Xsi inserted (skip Downsafety and Will Be Available)",Options),
       ok;
     _ ->
-      pp_debug("~n############ Downsafety ##########~n",[]),
+      ?pp_debug("~n############ Downsafety ##########~n",[]),
       ?option_time(perform_downsafety(MPs,CFGGraph,XsiGraph),"RTL A-SSAPRE Downsafety",Options),
-      pp_debug("~n~n################ CFG Graph ################~n",[]),pp_cfggraph(CFGGraph),
-      pp_debug("~n############ Will Be Available ##########~n",[]),
+      ?pp_debug("~n~n################ CFG Graph ################~n",[]),pp_cfggraph(CFGGraph),
+      ?pp_debug("~n############ Will Be Available ##########~n",[]),
       ?option_time(perform_will_be_available(XsiGraph,CFGGraph,Options),"RTL A-SSAPRE WillBeAvailable",Options)
   end,
   
-  pp_debug("~n############ No more need for the CFG Graph....Deleting...",[]),?GRAPH:delete(CFGGraph),
-  pp_debug("~n~n################ Xsi Graph ################~n",[]),pp_xsigraph(XsiGraph),
+  ?pp_debug("~n############ No more need for the CFG Graph....Deleting...",[]),?GRAPH:delete(CFGGraph),
+  ?pp_debug("~n~n################ Xsi Graph ################~n",[]),pp_xsigraph(XsiGraph),
   
-  pp_debug("~n############ Code Motion ##########~n",[]),
+  ?pp_debug("~n############ Code Motion ##########~n",[]),
   Labels = ?CFG:preorder(CFG2),
 
-  pp_debug("~n~n################ Xsi CFG ################~n",[]),pp_cfg(CFG2,XsiGraph),
+  ?pp_debug("~n~n################ Xsi CFG ################~n",[]),pp_cfg(CFG2,XsiGraph),
 
   init_redundancy_count(),
   ?option_time(FinalCFG=perform_code_motion(Labels,CFG2,XsiGraph),"RTL A-SSAPRE Code Motion",Options),
   
-  pp_debug("\n############ No more need for the Xsi Graph....Deleting...",[]),?GRAPH:delete(XsiGraph),
+  ?pp_debug("\n############ No more need for the Xsi Graph....Deleting...",[]),?GRAPH:delete(XsiGraph),
 
   %% io:format("\n################ Final CFG ################\n"),
   %% hipe_rtl_cfg:pp(FinalCFG),
   %% io:format("\n\n############ SSA-Form CHECK ==> ~w\n",
   %%           [hipe_rtl_ssa:check(FinalCFG)]),
-  pp_debug("\nSSAPRE : ~w redundancies were found\n",[get_redundancy_count()]),
+  ?pp_debug("\nSSAPRE : ~w redundancies were found\n",[get_redundancy_count()]),
 
   FinalCFG.
 
@@ -125,21 +135,21 @@ perform_Xsi_insertion(Cfg, Options)->
   %%Labels = ?CFG:reverse_postorder(Cfg), 
   Labels = ?CFG:preorder(Cfg), 
 
-  pp_debug("~n~n############# Finding definitions for computation~n~n",[]),
+  ?pp_debug("~n~n############# Finding definitions for computation~n~n",[]),
   ?option_time({Cfg2,XsiGraph} = find_definition_for_computations(Labels,Cfg,XsiGraph),"RTL A-SSAPRE Xsi Insertion, searching from instructions",Options),
 
   %% Active List creation
   GeneratorXsiList = lists:sort(?GRAPH:vertices(XsiGraph)),
-  pp_debug("~n~n############# Inserted Xsis ~w",[GeneratorXsiList]),
-  pp_debug("~n~n############# Finding operands~n",[]),
+  ?pp_debug("~n~n############# Inserted Xsis ~w",[GeneratorXsiList]),
+  ?pp_debug("~n~n############# Finding operands~n",[]),
   ?option_time({Cfg3,XsiGraph} = find_operands(Cfg2,XsiGraph,GeneratorXsiList,0),"RTL A-SSAPRE Xsi Insertion, finding operands",Options),
 
   %% Creating the CFGGraph
-  pp_debug("~n~n############# Creating CFG Graph",[]),
-  pp_debug("~n############# Labels = ~w",[Labels]),
+  ?pp_debug("~n~n############# Creating CFG Graph",[]),
+  ?pp_debug("~n############# Labels = ~w",[Labels]),
   CFGGraph = digraph:new([cyclic,private]),
   [StartLabel|Others] = Labels,   % adding the start label as a leaf
-  pp_debug("~nAdding a vertex for the start label: ~w",[StartLabel]),
+  ?pp_debug("~nAdding a vertex for the start label: ~w",[StartLabel]),
   ?GRAPH:add_vertex(CFGGraph,StartLabel,#block{type=top}),
                                                 % Doing the others
   ?option_time(MPs=create_cfggraph(Others,Cfg3,CFGGraph,[],[],[],XsiGraph),"RTL A-SSAPRE Xsi Insertion, creating intermediate 'SSAPRE Graph'",Options),
@@ -168,7 +178,7 @@ find_definition_for_computations_in_block(BlockLabel,[],Cfg,
   {NewCfg,XsiGraph}; %% No more instructions to inspect in this block
 find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,
 					  VisitedInstructions,XsiGraph) ->
-  %%  pp_debug(" Inspecting instruction: ",[]),pp_instr(Inst,nil),
+  %%  ?pp_debug(" Inspecting instruction: ",[]),pp_instr(Inst,nil),
   case Inst of
     #alu{} ->
       %% Is Inst interesting for SSAPRE?
@@ -190,7 +200,7 @@ find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,
 
           %% Add a vertex to the Xsi Graph
           ?GRAPH:add_vertex(XsiGraph,Key,Xsi),
- 	  pp_debug(" Inserting Xsi: ",[]),pp_xsi(Xsi),
+ 	  ?pp_debug(" Inserting Xsi: ",[]),pp_xsi(Xsi),
 
           Label = Xsi#xsi.label,
           case BlockLabel == Label of
@@ -213,7 +223,7 @@ find_definition_for_computations_in_block(BlockLabel,[Inst|Rest],Cfg,
 						    NewVisited, XsiGraph)
       end;
     _ ->
-      %%pp_debug("~n [L~w] Not concerned with: ~w",[BlockLabel,Inst]),
+      %%?pp_debug("~n [L~w] Not concerned with: ~w",[BlockLabel,Inst]),
       %% If the instruction is not a SSAPRE candidate, we skip it and keep on
       %% processing instructions
       %% Prepend Inst, so that we have all in reverse order.
@@ -233,7 +243,7 @@ check_definition(E,[],BlockLabel,Cfg,XsiGraph)->
   %% No definition found in that block
   %% Search is previous blocks
   Preds = ?CFG:pred(?CFG:pred_map(Cfg),BlockLabel),
-  %%  pp_debug("~n CHECKING DEFINITION  ####### Is L~w a merge block? It has ~w preds. So far E=",[BlockLabel,length(Preds)]),pp_expr(E),
+  %%  ?pp_debug("~n CHECKING DEFINITION  ####### Is L~w a merge block? It has ~w preds. So far E=",[BlockLabel,length(Preds)]),pp_expr(E),
   case Preds of
     [] ->
       %% Entry Point
@@ -278,8 +288,8 @@ check_definition(E,[CC|Rest],BlockLabel,Cfg,XsiGraph) ->
  	      {def_found,bottom};
  	    _ -> 
  	      %% Emend E with this def(C)
- 	      %%pp_debug("Parameters are E=~w, DST=~w, DEF=~w",[E,DST,DEF]),
- 	      F=emend(E,DST,DEF),
+ 	      %%?pp_debug("Parameters are E=~w, DST=~w, DEF=~w",[E,DST,DEF]),
+ 	      F = emend(E,DST,DEF),
  	      check_definition(F,Rest,BlockLabel,Cfg,XsiGraph) %% Continue the search
  	  end
       end;
@@ -404,7 +414,7 @@ find_operands(Cfg,XsiGraph,[],_Count) ->
 find_operands(Cfg,XsiGraph,ActiveList,Count) ->
   {NewCfg,TempActiveList} = find_operands_for_active_list(Cfg,XsiGraph,ActiveList,[]),
   NewActiveList = lists:reverse(TempActiveList),
-  pp_debug("~n################ Finding operands (iteration ~w): ~w have been introduced. Now ~w in total~n",
+  ?pp_debug("~n################ Finding operands (iteration ~w): ~w have been introduced. Now ~w in total~n",
  	   [Count+1, length(NewActiveList), length(?GRAPH:vertices(XsiGraph))]),
   find_operands(NewCfg,XsiGraph,NewActiveList,Count+1).
 
@@ -412,12 +422,12 @@ find_operands_for_active_list(Cfg,_XsiGraph,[],ActiveListAcc) ->
   {Cfg,ActiveListAcc};
 find_operands_for_active_list(Cfg,XsiGraph,[K|Ks],ActiveListAcc) ->
   {_Key,Xsi} = ?GRAPH:vertex(XsiGraph,K),
-  pp_debug("~n Inspecting operands of : ~n",[]),pp_xsi(Xsi),
+  ?pp_debug("~n Inspecting operands of : ~n",[]),pp_xsi(Xsi),
   Preds = ?CFG:pred(?CFG:pred_map(Cfg),Xsi#xsi.label),
   {NewCfg,NewActiveListAcc}=determine_operands(Xsi,Preds,Cfg,K,XsiGraph,ActiveListAcc),
   {_Key2,Xsi2} = ?GRAPH:vertex(XsiGraph,K),
-  pp_debug("~n ** Final Xsi: ~n",[]),pp_xsi(Xsi2),
-  pp_debug("~n #####################################################~n",[]),
+  ?pp_debug("~n ** Final Xsi: ~n",[]),pp_xsi(Xsi2),
+  ?pp_debug("~n #####################################################~n",[]),
   find_operands_for_active_list(NewCfg,XsiGraph,Ks,NewActiveListAcc).
 
 determine_operands(_Xsi,[],Cfg,_K,_XsiGraph,ActiveAcc) ->
@@ -444,8 +454,8 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
       ?GRAPH:add_vertex(XsiGraph,K,NewXsi),
       determine_operands(NewXsi,Ps,Cfg,K,XsiGraph,ActiveAcc);  
     {revised_expression,E_prime} ->
-      pp_debug(" E' is determined : ",[]),pp_expr(E_prime),
-      pp_debug(" and going along the edge L~w~n",[P]),
+      ?pp_debug(" E' is determined : ",[]),pp_expr(E_prime),
+      ?pp_debug(" and going along the edge L~w~n",[P]),
       %% Go along the edge P
       RevCode = lists:reverse(hipe_bb:code(?CFG:bb(Cfg,P))),
       case check_one_operand(E_prime,RevCode,P,Cfg,K,XsiGraph) of
@@ -485,8 +495,8 @@ determine_operands(Xsi,[P|Ps],Cfg,K,XsiGraph,ActiveAcc) ->
  	  NewBB = hipe_bb:mk_bb(NewCode),
  	  NewCfg = ?CFG:bb_add(Cfg, XsiChild#xsi.label, NewBB),
 
- 	  pp_debug(" -- ",[]),pp_arg(Xsi#xsi.def),pp_debug(" causes insertion of: ~n",[]),pp_xsi(XsiChild),
-          pp_debug(" -- Adding an edge ",[]),pp_arg(Xsi#xsi.def),pp_debug(" -> ",[]),pp_arg(XsiChild#xsi.def),
+ 	  ?pp_debug(" -- ",[]),pp_arg(Xsi#xsi.def),?pp_debug(" causes insertion of: ~n",[]),pp_xsi(XsiChild),
+          ?pp_debug(" -- Adding an edge ",[]),pp_arg(Xsi#xsi.def),?pp_debug(" -> ",[]),pp_arg(XsiChild#xsi.def),
 
           %% Adding an edge...
  	  %%?GRAPH:add_edge(XsiGraph,K,KeyChild,"family"),
@@ -543,7 +553,7 @@ emend_with_processed_xsis(E, [I|Rest], Pred, XsiGraph) ->
  	  end;
   	true ->
  	  A=xsi_arg(Xsi,Pred),
- 	  %%pp_debug(" ######### xsi_arg(I:~w,Pred:~w) = ~w~n",[I,Pred,A]),
+ 	  %% ?pp_debug(" ######### xsi_arg(I:~w,Pred:~w) = ~w~n",[I,Pred,A]),
  	  case A of
  	    #bottom{} ->
  	      operand_is_bottom;
@@ -564,7 +574,7 @@ emend_with_processed_xsis(E, [I|Rest], Pred, XsiGraph) ->
   end.
 
 %% get_visited_instructions(Xsi,[]) ->
-%%   pp_debug("~nWe don't find this xsi with def ",[]),pp_arg(Xsi#xsi.def),pp_debug(" in L~w : ",[Xsi#xsi.label]),
+%%   ?pp_debug("~nWe don't find this xsi with def ",[]),pp_arg(Xsi#xsi.def),?pp_debug(" in L~w : ",[Xsi#xsi.label]),
 %%   exit({?MODULE,no_such_xsi_in_block,"We didn't find that Xsi in the block"});
 get_visited_instructions(Xsi,[I|Rest]) ->
   case I of
@@ -606,7 +616,7 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
       %% One predecessor only, we just keep looking for a definition in that block
       case expr_is_constant(E) of
         true ->
-          pp_debug("\n\n############## Wow expr is constant: ~w",[E]),
+          ?pp_debug("\n\n############## Wow expr is constant: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
           Op = #const_expr{var=Var,value=Value},
@@ -619,7 +629,7 @@ check_one_operand(E, [], BlockLabel, Cfg, XsiKey, XsiGraph) ->
       %% It's a merge point
       case expr_is_constant(E) of
         true ->
-          pp_debug("\n\n############## Wow expr is constant at merge point: ~w",[E]),
+          ?pp_debug("\n\n############## Wow expr is constant at merge point: ~w",[E]),
           Var = ?RTL:mk_new_var(),
           Value = eval_expr(E),
           Op = #const_expr{var=Var,value=Value},
@@ -658,7 +668,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
  	    _->
  	      %% Simply emend
  	      F = emend(E,DST,DEF),
- 	      pp_debug("~nEmendation : E= ",[]),pp_expr(E),pp_debug(" ==> E'= ",[]),pp_expr(F),pp_debug("~n",[]),
+ 	      ?pp_debug("~nEmendation : E= ",[]),pp_expr(E),?pp_debug(" ==> E'= ",[]),pp_expr(F),?pp_debug("~n",[]),
  	      check_one_operand(F,Rest,BlockLabel,Cfg,XsiKey,XsiGraph)
  	  end;
  	false ->
@@ -694,7 +704,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
           %% fetch definition of C, and give it to E
           %% Must update an edge in the XsiGraph, and here, we know it's a Temp
           %% Note: this can create a loop (= a cycle of length 1)
-          pp_debug(" -- Found a cycle with match: Adding an edge t~w -> t~w",[XsiKey,Key]),
+          ?pp_debug(" -- Found a cycle with match: Adding an edge t~w -> t~w",[XsiKey,Key]),
           ?GRAPH:add_edge(XsiGraph,XsiKey,Key),
           {def_found,Xsi#xsi.def};
         _ ->
@@ -738,7 +748,7 @@ check_one_operand(E,[CC|Rest],BlockLabel,Cfg,XsiKey,XsiGraph) ->
   end.
 
 eval_expr(E) ->
-  pp_debug("~n Evaluating the result of ~w~n", [E]),
+  ?pp_debug("~n Evaluating the result of ~w~n", [E]),
   Op1 = ?RTL:alu_src1(E),
   Op2 = ?RTL:alu_src2(E),
   Val1 = case ?RTL:is_imm(Op1) of
@@ -748,7 +758,7 @@ eval_expr(E) ->
            true -> ?RTL:imm_value(Op2)
          end,    
   {Result, _Sign, _Zero, _Overflow, _Carry} = ?ARCH:eval_alu(?RTL:alu_op(E), Val1, Val2),
-  pp_debug("~n Result is then ~w~n", [Result]),
+  ?pp_debug("~n Result is then ~w~n", [Result]),
   ?RTL:mk_imm(Result).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -756,9 +766,9 @@ eval_expr(E) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 create_cfggraph([],_Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,_XsiGraph) ->
-  pp_debug("~n~n ############# PostProcessing ~n~w~n",[LateEdges]),
+  ?pp_debug("~n~n ############# PostProcessing ~n~w~n",[LateEdges]),
   post_process(LateEdges,CFGGraph),
-  pp_debug("~n~n ############# Factorizing ~n~w~n",[ToBeFactorizedAcc]),
+  ?pp_debug("~n~n ############# Factorizing ~n~w~n",[ToBeFactorizedAcc]),
   factorize(ToBeFactorizedAcc,CFGGraph),
   MPAcc;
 create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGraph) ->
@@ -769,7 +779,7 @@ create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGra
     [P] ->
       Code = ?BB:code(?CFG:bb(Cfg,Label)),
       Defs = get_defs_in_non_merge_block(Code,[]),
-      pp_debug("~nAdding a vertex for ~w",[Label]),
+      ?pp_debug("~nAdding a vertex for ~w",[Label]),
       Succs = ?CFG:succ(?CFG:succ_map(Cfg),Label),
       case Succs of
         [] -> %% Exit point
@@ -779,7 +789,7 @@ create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGra
           ?GRAPH:add_vertex(CFGGraph,Label,#block{type=not_mp,attributes={P,Succs}}),
           NewToBeFactorizedAcc=[Label|ToBeFactorizedAcc]
       end,
-      pp_debug("~nAdding an edge ~w -> ~w (~w)",[P,Label,Defs]),
+      ?pp_debug("~nAdding an edge ~w -> ~w (~w)",[P,Label,Defs]),
       case ?GRAPH:add_edge(CFGGraph,P,Label,Defs) of
         {error,Reason} ->
           exit({?MODULE,forget_that_for_christs_sake_bingwen_please,{"Bad edge",Reason}});
@@ -792,7 +802,7 @@ create_cfggraph([Label|Ls],Cfg,CFGGraph,ToBeFactorizedAcc,MPAcc,LateEdges,XsiGra
       {Defs,Xsis,Maps,Uses} = get_info_in_merge_block(Code,XsiGraph,[],[],gb_trees:empty(),gb_trees:empty()),
       Attributes = #mp{preds=Preds,xsis=Xsis,defs=Defs,maps=Maps,uses=Uses},
       MergeBlock = #block{type=mp,attributes=Attributes},
-      pp_debug("~nAdding a vertex for ~w with Defs= ~w",[Label,Defs]),
+      ?pp_debug("~nAdding a vertex for ~w with Defs= ~w",[Label,Defs]),
       ?GRAPH:add_vertex(CFGGraph,Label,MergeBlock),
       %% Add edges
       NewLateEdges = add_edges_for_mp(Preds,Label,LateEdges),
@@ -910,14 +920,14 @@ post_process([E|Es], CFGGraph) ->
                none ->
                  ?SETS:new()
              end,
-  %%pp_debug("~nAdding an edge ~w -> ~w (~w)",[Pred,Label,SetToAdd]),
+  %% ?pp_debug("~nAdding an edge ~w -> ~w (~w)",[Pred,Label,SetToAdd]),
   ?GRAPH:add_edge(CFGGraph, Pred, Label, SetToAdd),
   post_process(Es, CFGGraph).
 
 factorize([], _CFGGraph) -> ok;
 factorize([P|Ps], CFGGraph) ->
   [OE|OEs] = ?GRAPH:out_edges(CFGGraph,P),
-  %%pp_debug("~nIn_degrees ~w : ~w",[P,?GRAPH:in_degree(CFGGraph,P)]),
+  %% ?pp_debug("~nIn_degrees ~w : ~w",[P,?GRAPH:in_degree(CFGGraph,P)]),
   [InEdge] = ?GRAPH:in_edges(CFGGraph,P),
   {E,V1,V2,Label} = ?GRAPH:edge(CFGGraph,InEdge),
   {_OEE,_OEV1,_OEV2,LOE} = ?GRAPH:edge(CFGGraph,OE),
@@ -948,11 +958,11 @@ perform_downsafety([MP|MPs],G,XG) ->
   Maps = Att#mp.maps,
   Defs = Att#mp.defs,
   OutEdges = ?GRAPH:out_edges(G,MP),
-  %%pp_debug("~n Inspection Maps : ~w",[Maps]),
+  %% ?pp_debug("~n Inspection Maps : ~w",[Maps]),
   NewNDS = parse_keys(gb_trees:keys(Maps),Maps,OutEdges,G,Defs,NDS,XG),
   NewAtt = Att#mp{ndsSet=NewNDS},
   ?GRAPH:add_vertex(G,V,Block#block{attributes=NewAtt}),
-  pp_debug("~n Not Downsafe at L~w: ~w",[V,NewNDS]),
+  ?pp_debug("~n Not Downsafe at L~w: ~w",[V,NewNDS]),
   %%io:format(standard_io,"~n Not Downsafe at L~w: ~w",[V,NewNDS]),
   perform_downsafety(MPs,G,XG).
 
@@ -960,7 +970,7 @@ parse_keys([], _Maps, _OutEdges, _G, _Defs, NDS, _XsiG) ->
   NDS;
 parse_keys([M|Ms], Maps, OutEdges, G, Defs, NDS, XsiG) ->
   KillerSet = gb_trees:get(M,Maps),
-  %%pp_debug("~n Inspection ~w -> ~w",[M,KillerSet]),
+  %% ?pp_debug("~n Inspection ~w -> ~w",[M,KillerSet]),
   TempSet = ?SETS:intersection(KillerSet,Defs),
   NewNDS = case ?SETS:size(TempSet) of
 	     0 -> getNDS(M,KillerSet,NDS,OutEdges,G,XsiG);
@@ -977,8 +987,8 @@ getNDS(_M,_KillerSet,NDS,[],_G,_XsiG) ->
 getNDS(M,KillerSet,NDS,[E|Es],G,XsiG) ->
   {_EE,_V1,_V2,Label} = ?GRAPH:edge(G,E),
   Set = ?SETS:intersection(KillerSet,Label),
-  %%   pp_debug("~n ######## Intersection between KillerSet: ~w and Label: ~w",[KillerSet,Label]),
-  %%   pp_debug("~n ######## ~w",[Set]),
+  %% ?pp_debug("~n ######## Intersection between KillerSet: ~w and Label: ~w",[KillerSet,Label]),
+  %% ?pp_debug("~n ######## ~w",[Set]),
   case ?SETS:size(Set) of
     0 ->
       %% M is not downsafe
@@ -994,9 +1004,9 @@ getNDS(M,KillerSet,NDS,[E|Es],G,XsiG) ->
 
 perform_will_be_available(XsiGraph,CFGGraph,Options) ->
   Keys = ?GRAPH:vertices(XsiGraph),
-  pp_debug("~n############ Can Be Available ##########~n",[]),
+  ?pp_debug("~n############ Can Be Available ##########~n",[]),
   ?option_time(perform_can_be_available(Keys,XsiGraph,CFGGraph),"RTL A-SSAPRE WillBeAvailable - Compute CanBeAvailable",Options),
-  pp_debug("~n############ Later ##########~n",[]),
+  ?pp_debug("~n############ Later ##########~n",[]),
   ?option_time(perform_later(Keys,XsiGraph),"RTL A-SSAPRE WillBeAvailable - Compute Later",Options).
 
 perform_can_be_available([],_XsiGraph,_CFGGraph) -> ok;
@@ -1053,7 +1063,7 @@ propagate_cba([IPX|IPXs],XsiGraph,XsiDef,CFGGraph) ->
 perform_later([], _XsiGraph) -> ok;
 perform_later([Key|Keys], XsiGraph) ->
   {V,Xsi} = ?GRAPH:vertex(XsiGraph,Key),
-  %% pp_debug("~n DEBUG : inspecting later of ~w (~w)~n",[Key,Xsi#xsi.later]),
+  %% ?pp_debug("~n DEBUG : inspecting later of ~w (~w)~n",[Key,Xsi#xsi.later]),
   case Xsi#xsi.later of
     undefined ->
       OpList = xsi_oplist(Xsi),
@@ -1070,7 +1080,7 @@ perform_later([Key|Keys], XsiGraph) ->
               ?GRAPH:add_vertex(XsiGraph,V,Xsi#xsi{later=false,wba=false})
           end,
           AllParents = digraph_utils:reaching([Key],XsiGraph),
-          pp_debug("~nPropagating to all parents of t~w: ~w",[Key,AllParents]),
+          ?pp_debug("~nPropagating to all parents of t~w: ~w",[Key,AllParents]),
           propagate_later(AllParents,XsiGraph),
           perform_later(Keys,XsiGraph);
         _ -> %% Just contains bottoms and/or expressions
@@ -1086,10 +1096,10 @@ propagate_later([IPX|IPXs], XsiGraph) ->
   {V,IPXsi} = ?GRAPH:vertex(XsiGraph,IPX),
   case IPXsi#xsi.later of
     false ->
-      pp_debug("~nThrough propagation, later of t~w is already reset",[IPX]),
+      ?pp_debug("~nThrough propagation, later of t~w is already reset",[IPX]),
       propagate_later(IPXs,XsiGraph);
     _ ->
-      pp_debug("~nThrough propagation, resetting later of t~w",[IPX]),
+      ?pp_debug("~nThrough propagation, resetting later of t~w",[IPX]),
       case IPXsi#xsi.cba of
         true ->
           ?GRAPH:add_vertex(XsiGraph,V,IPXsi#xsi{later=false,wba=true});
@@ -1124,11 +1134,11 @@ perform_code_motion([], Cfg, _XsiG) ->
   Cfg;
 perform_code_motion([L|Labels], Cfg, XsiG) ->
   Code=?BB:code(?CFG:bb(Cfg,L)),
-  pp_debug("~n################  Code Motion in L~w~n",[L]),
-  pp_debug("~nCode to move ~n",[]),
+  ?pp_debug("~n################  Code Motion in L~w~n",[L]),
+  ?pp_debug("~nCode to move ~n",[]),
   pp_instrs(Code,XsiG),
   NewCfg = code_motion_in_block(L,Code,Cfg,XsiG,[],gb_trees:empty()),
-  pp_debug("~n################  Code Motion successful in L~w~n",[L]),
+  ?pp_debug("~n################  Code Motion successful in L~w~n",[L]),
   perform_code_motion(Labels,NewCfg,XsiG).
 
 code_motion_in_block(Label,[],Cfg,_XsiG,Visited,InsertionsAcc) ->
@@ -1138,10 +1148,10 @@ code_motion_in_block(Label,[],Cfg,_XsiG,Visited,InsertionsAcc) ->
   Cfg2 = ?CFG:bb_add(Cfg,Label,NewBB),
   %% Must come after the bb_add, since redirect will update the Phis too...
   Cfg3 = make_insertions(Label,InsertionsAlong,InsertionsAcc,Cfg2),
-  %%pp_debug("~nChecking the Code at L~w:~n~p",[Label,?BB:code(?CFG:bb(Cfg3,Label))]),
+  %% ?pp_debug("~nChecking the Code at L~w:~n~p",[Label,?BB:code(?CFG:bb(Cfg3,Label))]),
   Cfg3;
 code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
-  pp_debug("~nInspecting Inst : ~n",[]),pp_instr(Inst,XsiG),
+  ?pp_debug("~nInspecting Inst : ~n",[]),pp_instr(Inst,XsiG),
   case Inst of
     #pre_candidate{} ->
       Def = Inst#pre_candidate.def,
@@ -1157,7 +1167,7 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
               %% Turn into a move
               Dst = ?RTL:alu_dst(Alu),
               Move = ?RTL:mk_move(Dst,Def#temp.var),
-              pp_instr(Inst#pre_candidate.alu,nil),pp_debug(" ==> ",[]),pp_instr(Move,nil),
+              pp_instr(Inst#pre_candidate.alu,nil), ?pp_debug(" ==> ",[]), pp_instr(Move,nil),
               %% Counting redundancies
               redundancy_add(),
               InstToAdd = Move;
@@ -1168,7 +1178,7 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
           %% Turn into a move
           Dst = ?RTL:alu_dst(Alu),
           Move = ?RTL:mk_move(Dst,Def),
-          pp_instr(Alu,nil), pp_debug(" ==> ",[]),pp_instr(Move,nil),
+          pp_instr(Alu,nil), ?pp_debug(" ==> ",[]), pp_instr(Move,nil),
           %% Counting redundancies
           redundancy_add(),
           InstToAdd = Move
@@ -1181,7 +1191,7 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
         true ->
           %% Xsi is a WBA, it might trigger insertions
           OpList = xsi_oplist(Xsi),
-          pp_debug(" This Xsi is a 'Will be available'",[]),
+          ?pp_debug(" This Xsi is a 'Will be available'",[]),
           %% Cleaning the instruction
           Expr = prepare_inst(Xsi#xsi.inst),
           {NewOpList,NewInsertionsAcc} = get_insertions(OpList,[],InsertionsAcc,Visited,Expr,XsiG),
@@ -1189,10 +1199,10 @@ code_motion_in_block(L,[Inst|Insts],Cfg,XsiG,Visited,InsertionsAcc) ->
           PhiOpList = [{Pred,Var} || #xsi_op{pred=Pred,op=Var} <- NewOpList],
           Def = Xsi#xsi.def,
           Phi = ?RTL:phi_arglist_update(?RTL:mk_phi(Def#temp.var),PhiOpList),
-          pp_debug("~n Xsi is turned into Phi : ~w",[Phi]),
+          ?pp_debug("~n Xsi is turned into Phi : ~w",[Phi]),
           code_motion_in_block(L,Insts,Cfg,XsiG,[Phi|Visited],NewInsertionsAcc);
         _ ->
-          pp_debug(" This Xsi is not a 'Will be available'",[]),
+          ?pp_debug(" This Xsi is not a 'Will be available'",[]),
           code_motion_in_block(L,Insts,Cfg,XsiG,Visited,InsertionsAcc)
       end;
 %%     phi ->
@@ -1227,7 +1237,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
           From = Insertion#insertion.from,
           case lists:keysearch(Op,1,From) of
             false -> 
-              pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#bottom.var,
               Expr2 = ?RTL:alu_dst_update(Expr,Dst),
               Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1235,12 +1245,12 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
             {value,{_,Val}} ->
-              pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
           end;
         none ->
-          pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
+          ?pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
           Dst = Op#bottom.var,
           Expr2 = ?RTL:alu_dst_update(Expr,Dst),
           Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1253,7 +1263,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
           From = Insertion#insertion.from,
           case lists:keysearch(Op,1,From) of
             false -> 
-              pp_debug("~nThere have been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere have been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#const_expr.var,
               Val = Op#const_expr.value,
               Inst = ?RTL:mk_move(Dst,Val),
@@ -1261,12 +1271,12 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
             {value,{_,Val}} ->
-              pp_debug("~nThere have been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere have been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
           end;
         none ->
-          pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
+          ?pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
           Dst = Op#const_expr.var,
           Val = Op#const_expr.value,
           Inst = ?RTL:mk_move(Dst,Val),
@@ -1281,7 +1291,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
           From = Insertion#insertion.from,
           case lists:keysearch(Op,1,From) of
             false -> 
-              pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Dst = Op#eop.var,
               Expr2 = ?RTL:alu_dst_update(Expr,Dst),
               Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1289,12 +1299,12 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
               NewInsertion = Insertion#insertion{from=[{Op,Dst}|From],code=[Inst|Code]},
               NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc);
             {value,{_,Val}} ->
-              pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too | Op=",[Pred]),pp_arg(Op),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
           end;
         none ->
-          pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
+          ?pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course)| Op=",[Pred]),pp_arg(Op),
           Dst = Op#eop.var,
           Expr2 = ?RTL:alu_dst_update(Expr,Dst),
           Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1307,16 +1317,16 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
           From = Insertion#insertion.from,
           case lists:keysearch(Op,1,From) of
             false -> 
-              pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, but not for that operand | Op=",[Pred]),pp_arg(Op),
               Key = Op#temp.key,
               {_V,Xsi} = ?GRAPH:vertex(XsiG,Key),      
               case Xsi#xsi.wba of
                 true ->
-                  pp_debug("~nBut the operand is a WBA Xsi: no need for insertion",[]),
+                  ?pp_debug("~nBut the operand is a WBA Xsi: no need for insertion",[]),
                   Dst = Op#temp.var,
                   NewInsertionsAcc = InsertionsAcc;
                 _ ->
-                  pp_debug("~nBut the operand is a NOT WBA Xsi: we must make an insertion",[]),
+                  ?pp_debug("~nBut the operand is a NOT WBA Xsi: we must make an insertion",[]),
                   Dst = ?RTL:mk_new_var(),
                   Expr2 = ?RTL:alu_dst_update(Expr,Dst),
                   Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1325,22 +1335,22 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
                   NewInsertionsAcc = gb_trees:update(Pred,NewInsertion,InsertionsAcc)
               end;
             {value,{_,Val}} ->
-              pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too (Op=~w)",[Pred,Op]),
-              pp_debug("~nThis means, this temp is a WBA Xsi's definition",[]),
+              ?pp_debug("~nThere has been insertions along the edge L~w already, and for that operand too (Op=~w)",[Pred,Op]),
+              ?pp_debug("~nThis means, this temp is a WBA Xsi's definition",[]),
               Dst = Val,
               NewInsertionsAcc = InsertionsAcc
           end;
         none ->
-          pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course | Op=",[Pred]),pp_arg(Op),
+          ?pp_debug("~nThere has been no insertion along the edge L~w, (and not for that operand, of course | Op=",[Pred]),pp_arg(Op),
           Key = Op#temp.key,
           {_V,Xsi} = ?GRAPH:vertex(XsiG,Key),
           case Xsi#xsi.wba of
             true ->
-              pp_debug("~nBut the operand is a WBA Xsi: no need for insertion",[]),
+              ?pp_debug("~nBut the operand is a WBA Xsi: no need for insertion",[]),
               Dst = Op#temp.var,
               NewInsertionsAcc = InsertionsAcc;
             _ ->
-              pp_debug("~nBut the operand is a NOT WBA Xsi: we must make an insertion",[]),
+              ?pp_debug("~nBut the operand is a NOT WBA Xsi: we must make an insertion",[]),
               Dst = ?RTL:mk_new_var(),
               Expr2 = ?RTL:alu_dst_update(Expr,Dst),
               Inst = manufacture_computation(Pred,Expr2,Visited),
@@ -1349,7 +1359,7 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
           end
       end;
     _ ->
-      pp_debug("~nThe operand (Op=",[]),pp_arg(Op),pp_debug(") is a real variable, no need for insertion along L~w",[Pred]),
+      ?pp_debug("~nThe operand (Op=",[]),pp_arg(Op),?pp_debug(") is a real variable, no need for insertion along L~w",[Pred]),
       Dst = Op,
       NewInsertionsAcc = InsertionsAcc
   end,
@@ -1357,10 +1367,10 @@ get_insertions([XsiOp|Ops],OpAcc,InsertionsAcc,Visited,Expr,XsiG) ->
   get_insertions(Ops, [NewXsiOp|OpAcc], NewInsertionsAcc, Visited, Expr, XsiG).
 
 manufacture_computation(_Pred, Expr, []) ->
-  pp_debug("~n Manufactured computation : ~w", [Expr]),
+  ?pp_debug("~n Manufactured computation : ~w", [Expr]),
   Expr;
 manufacture_computation(Pred, Expr, [I|Rest]) ->
-  %%pp_debug("~n Expr = ~w",[Expr]),
+  %% ?pp_debug("~n Expr = ~w",[Expr]),
   SRC1 = ?RTL:alu_src1(Expr),
   SRC2 = ?RTL:alu_src2(Expr),
   case I of
@@ -1416,7 +1426,6 @@ xsi_arg_update(Xsi, Pred, Op) ->
 
 -ifndef(SSAPRE_DEBUG).
 
-pp_debug(_,_) -> ok.
 %%pp_cfg(Cfg,_) -> ?CFG:pp(Cfg).
 pp_cfg(_,_) -> ok.
 pp_instr(_,_) -> ok.
@@ -1434,9 +1443,6 @@ pp_cfggraph(_) -> ok.
 %%   io:format(standard_io, "Size of the CFG Graph: ~w", [length(Vertices)]).
 
 -else.
-
-pp_debug(Str, Args) ->
-  io:format(standard_io, Str, Args).
 
 pp_cfg(Cfg, Graph) ->
   Labels = ?CFG:preorder(Cfg),
@@ -1576,7 +1582,7 @@ pp_xsivertex([], _G) ->
 pp_xsivertex([Key|Keys], G) ->
   {V,Xsi} = ?GRAPH:vertex(G, Key),
   OutNeighbours = ?GRAPH:out_neighbours(G, V),
-  pp_debug(" ~w -> ~w", [V,OutNeighbours]), pp_xsi(Xsi),
+  ?pp_debug(" ~w -> ~w", [V,OutNeighbours]), pp_xsi(Xsi),
   pp_xsivertex(Keys, G).
 
 pp_cfgvertex([], _G) ->
@@ -1585,9 +1591,9 @@ pp_cfgvertex([Key|Keys], G) ->
   {V,Block} = ?GRAPH:vertex(G,Key),
   case Block#block.type of
     mp ->
-      pp_debug("~n Block ~w's attributes: ~n", [V]),
+      ?pp_debug("~n Block ~w's attributes: ~n", [V]),
       pp_attributes(Block),
-      pp_debug("~n Block ~w's edges: ~n", [V]),
+      ?pp_debug("~n Block ~w's edges: ~n", [V]),
       pp_edges(G, ?GRAPH:in_edges(G,Key), ?GRAPH:out_edges(G,Key));
     _->
       ok
@@ -1600,39 +1606,39 @@ pp_attributes(Block) ->
     undefined ->
       ok;
     _ ->
-      pp_debug("        Maps: ~n",[]),pp_maps(gb_trees:keys(Att#mp.maps),Att#mp.maps),
-      pp_debug("        Uses: ~n",[]),pp_uses(gb_trees:keys(Att#mp.uses),Att#mp.uses),
-      pp_debug("        Defs: ~w~n",[Att#mp.defs]),
-      pp_debug("        Xsis: ~w~n",[Att#mp.xsis]),
-      pp_debug("        NDS : ",[]),pp_nds(?SETS:to_list(Att#mp.ndsSet))
+      ?pp_debug("        Maps: ~n",[]),pp_maps(gb_trees:keys(Att#mp.maps),Att#mp.maps),
+      ?pp_debug("        Uses: ~n",[]),pp_uses(gb_trees:keys(Att#mp.uses),Att#mp.uses),
+      ?pp_debug("        Defs: ~w~n",[Att#mp.defs]),
+      ?pp_debug("        Xsis: ~w~n",[Att#mp.xsis]),
+      ?pp_debug("        NDS : ",[]),pp_nds(?SETS:to_list(Att#mp.ndsSet))
   end.
 
 pp_maps([], _Maps) -> ok;
 pp_maps([K|Ks], Maps) ->
-  pp_debug("              ",[]),pp_arg(K#xsi_op.op),pp_debug("-> ~w~n",[?SETS:to_list(gb_trees:get(K,Maps))]),
+  ?pp_debug("              ",[]),pp_arg(K#xsi_op.op),?pp_debug("-> ~w~n",[?SETS:to_list(gb_trees:get(K,Maps))]),
   pp_maps(Ks, Maps).
 
 pp_uses([], _Maps) -> ok;
 pp_uses([K|Ks], Maps) ->
-  pp_debug("              ~w -> ~w~n",[K,?SETS:to_list(gb_trees:get(K,Maps))]),
+  ?pp_debug("              ~w -> ~w~n",[K,?SETS:to_list(gb_trees:get(K,Maps))]),
   pp_uses(Ks, Maps).
 
-pp_nds([]) -> pp_debug("~n",[]);
-pp_nds(undefined) -> pp_debug("None",[]);
+pp_nds([]) -> ?pp_debug("~n",[]);
+pp_nds(undefined) -> ?pp_debug("None",[]);
 pp_nds([K]) ->
-  pp_arg(K#xsi_op.op), pp_debug("~n",[]);
+  pp_arg(K#xsi_op.op), ?pp_debug("~n",[]);
 pp_nds([K|Ks]) ->
-  pp_arg(K#xsi_op.op), pp_debug(", ",[]),
+  pp_arg(K#xsi_op.op), ?pp_debug(", ",[]),
   pp_nds(Ks).
 
 pp_edges(_G, [], []) -> ok;
 pp_edges(G, [], [OUT|OUTs]) ->
   {_E,V1,V2,Label} = ?GRAPH:edge(G,OUT),
-  pp_debug(" Out edge ~w -> ~w (~w)~n", [V1,V2,?SETS:to_list(Label)]),
+  ?pp_debug(" Out edge ~w -> ~w (~w)~n", [V1,V2,?SETS:to_list(Label)]),
   pp_edges(G, [], OUTs);
 pp_edges(G, [IN|INs], Outs) ->
   {_E,V1,V2,Label} = ?GRAPH:edge(G,IN),
-  pp_debug("  In edge ~w -> ~w (~w)~n", [V1,V2,?SETS:to_list(Label)]),
+  ?pp_debug("  In edge ~w -> ~w (~w)~n", [V1,V2,?SETS:to_list(Label)]),
   pp_edges(G, INs, Outs).
 
 -endif.
@@ -1662,8 +1668,10 @@ redundancy_add() ->
   V = get({ssapre_redundancy,redundancy_count}),
   put({ssapre_redundancy,redundancy_count}, V+1).
 
+-ifdef(SSAPRE_DEBUG).
 get_redundancy_count() ->
   get({ssapre_redundancy,redundancy_count}).
+-endif.
 
 %% //////////////////
 %% // End of the file

@@ -258,6 +258,11 @@ enc_used_contexts(Env, [#'IOP_ServiceContext'{context_id=?ORBER_GENERIC_CTX_ID,
     %% This shall not be forwarded.
     enc_used_contexts(Env, T, Ctxs);
 enc_used_contexts(Env, [#'IOP_ServiceContext'{context_id=?ORBER_GENERIC_CTX_ID,
+					      context_data = {configuration, _O}}|T], 
+		  Ctxs) ->
+    %% This shall not be forwarded.
+    enc_used_contexts(Env, T, Ctxs);
+enc_used_contexts(Env, [#'IOP_ServiceContext'{context_id=?ORBER_GENERIC_CTX_ID,
 					      context_data = Ctx}|T], 
 		  Ctxs) ->
     %% Encode ByteOrder
@@ -485,7 +490,7 @@ enc_fragment(Env) ->
 %% Args: An integer message type code
 %% Returns: An atom which is the message type code name
 %%-----------------------------------------------------------------
-enc_giop_msg_type('request') ->  %% LTH lägga in version ??
+enc_giop_msg_type('request') ->
     0;
 enc_giop_msg_type('reply') ->
     1;

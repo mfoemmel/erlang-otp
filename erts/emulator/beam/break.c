@@ -311,13 +311,6 @@ print_process_info(int to, void *to_arg, Process *p)
 	    erts_dictionary_dump(to, to_arg, p->dictionary);
 	    erts_print(to, to_arg, "\n");
 	}
-    
-	/* as well as the debug dictionary */
-	if (p->debug_dictionary != NULL && !garbing) {
-	    erts_print(to, to_arg, "$Dictionary: ");
-	    erts_dictionary_dump(to, to_arg, p->debug_dictionary);
-	    erts_print(to, to_arg, "\n");
-	}
     }
     
     /* print the number of reductions etc */

@@ -48,7 +48,7 @@ static erts_smp_rwmtx_t regtab_rwmtx;
 
 #ifdef ERTS_SMP
 static ERTS_INLINE void
-reg_safe_read_lock(Process *c_p, Uint32 *c_p_locks)
+reg_safe_read_lock(Process *c_p, ErtsProcLocks *c_p_locks)
 {
     if (*c_p_locks) {
 	ASSERT(c_p);
@@ -67,7 +67,7 @@ reg_safe_read_lock(Process *c_p, Uint32 *c_p_locks)
 }
 
 static ERTS_INLINE void
-reg_safe_write_lock(Process *c_p, Uint32 *c_p_locks)
+reg_safe_write_lock(Process *c_p, ErtsProcLocks *c_p_locks)
 {
     if (*c_p_locks) {
 	ASSERT(c_p);
@@ -84,6 +84,18 @@ reg_safe_write_lock(Process *c_p, Uint32 *c_p_locks)
 
     reg_write_lock();
 }
+
+static ERTS_INLINE int
+is_proc_alive(Process *p)
+{
+    int res;
+    erts_pix_lock_t *pixlck = ERTS_PID2PIXLOCK(p->id);
+    erts_pix_lock(pixlck);
+    res = !p->is_exiting;
+    erts_pix_unlock(pixlck);
+    return res;
+}
+
 #endif
 
 void register_info(int to, void *to_arg)
@@ -152,7 +164,7 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
     Process *proc = NULL;
     Port *port = NULL;
     RegProc r, *rp;
-    ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
+    ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p);
 
     if (is_not_atom(name) || name == am_undefined)
 	return res;
@@ -172,7 +184,7 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
 
 #ifdef ERTS_SMP
     {
-	Uint32 proc_locks = proc ? ERTS_PROC_LOCK_MAIN : 0;
+	ErtsProcLocks proc_locks = proc ? ERTS_PROC_LOCK_MAIN : 0;
 	reg_safe_write_lock(proc, &proc_locks);
 
 	if (proc && !proc_locks)
@@ -209,6 +221,9 @@ int erts_register_name(Process *c_p, Eterm name, Eterm id)
 	proc->reg = rp;
     }
     else if (port && rp->pt == port) {
+    	if (IS_TRACED_FL(port, F_TRACE_PORTS)) {
+		trace_port(port, am_register, name);
+	}
 	port->reg = rp;
     }
 
@@ -245,9 +260,9 @@ erts_whereis_name_to_id(Process *c_p, Eterm name)
     int ix;
     HashBucket* b;
 #ifdef ERTS_SMP
-    Uint32 c_p_locks = c_p ? ERTS_PROC_LOCK_MAIN : 0;
+    ErtsProcLocks c_p_locks = c_p ? ERTS_PROC_LOCK_MAIN : 0;
 
-    ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p->id);
+    ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(c_p);
     reg_safe_read_lock(c_p, &c_p_locks);
     if (c_p && !c_p_locks)
         erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_MAIN);
@@ -287,9 +302,12 @@ erts_whereis_name_to_id(Process *c_p, Eterm name)
 
 
 void
-erts_whereis_name(Process *c_p, Uint32 c_p_locks,
+erts_whereis_name(Process *c_p,
+		  ErtsProcLocks c_p_locks,
 		  Eterm name,
-		  Process** proc, Uint32 need_locks, int allow_proc_exiting,
+		  Process** proc,
+		  ErtsProcLocks need_locks,
+		  int allow_proc_exiting,
 		  Port** port)
 {
     RegProc* rp = NULL;
@@ -297,7 +315,7 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
     int ix;
     HashBucket* b;
 #ifdef ERTS_SMP
-    Uint32 current_c_p_locks;
+    ErtsProcLocks current_c_p_locks;
     Port *pending_port = NULL;
 
     if (!c_p)
@@ -339,19 +357,20 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
 	    if (!rp->p)
 		*proc = NULL;
 	    else {
-		if (erts_proc_safelock(c_p,
+		if (need_locks) {
+		    erts_proc_safelock(c_p,
 				       current_c_p_locks,
 				       c_p_locks,
-				       1,
-				       rp->p->id,
 				       rp->p,
 				       0,
-				       need_locks,
-				       allow_proc_exiting)) {
-		    *proc = rp->p;
+				       need_locks);
 		    current_c_p_locks = c_p_locks;
 		}
+		if (allow_proc_exiting || is_proc_alive(rp->p))
+		    *proc = rp->p;
 		else {
+		    if (need_locks)
+			erts_smp_proc_unlock(rp->p, need_locks);
 		    *proc = NULL;
 		}
 	    }
@@ -409,9 +428,9 @@ erts_whereis_name(Process *c_p, Uint32 c_p_locks,
 
 Process *
 erts_whereis_process(Process *c_p,
-		     Uint32 c_p_locks,
+		     ErtsProcLocks c_p_locks,
 		     Eterm name,
-		     Uint32 need_locks,
+		     ErtsProcLocks need_locks,
 		     int allow_exiting)
 {
     Process *proc;
@@ -427,7 +446,7 @@ erts_whereis_process(Process *c_p,
  *
  */
 int erts_unregister_name(Process *c_p,
-			 Uint32 c_p_locks,
+			 ErtsProcLocks c_p_locks,
 			 Port *c_prt,
 			 Eterm name)
 {
@@ -435,7 +454,7 @@ int erts_unregister_name(Process *c_p,
     RegProc r, *rp;
     Port *port = c_prt;
 #ifdef ERTS_SMP
-    Uint32 current_c_p_locks;
+    ErtsProcLocks current_c_p_locks;
 
     /*
      * SMP note: If 'c_prt != NULL' and 'c_prt->reg->name == name',
@@ -479,25 +498,20 @@ int erts_unregister_name(Process *c_p,
 #endif
 	    ERTS_SMP_LC_ASSERT(rp->pt == port && erts_lc_is_port_locked(port));
 	    rp->pt->reg = NULL;
+	    
+	    if (IS_TRACED_FL(port, F_TRACE_PORTS)) {
+		trace_port(port, am_unregister, name);
+	    }
+
 	} else if (rp->p) {
 	    Process* p = rp->p;
 #ifdef ERTS_SMP
-#ifdef DEBUG
-	    int lock_res =
-#else
-	    (void)
-#endif
-		erts_proc_safelock(c_p,
-				   current_c_p_locks,
-				   c_p_locks,
-				   1,
-				   rp->p->id,
-				   rp->p,
-				   0,
-				   ERTS_PROC_LOCK_MAIN,
-				   1);
-	    ASSERT(lock_res); /* Since we allow both procs exiting
-				 and we have the reg tab lock */
+	    erts_proc_safelock(c_p,
+			       current_c_p_locks,
+			       c_p_locks,
+			       rp->p,
+			       0,
+			       ERTS_PROC_LOCK_MAIN);
 	    current_c_p_locks = c_p_locks;
 #endif
 	    p->reg = NULL;
@@ -565,9 +579,9 @@ BIF_RETTYPE registered_0(BIF_ALIST_0)
     Eterm* hp;
     HashBucket **bucket;
 #ifdef ERTS_SMP
-    Uint32 proc_locks = ERTS_PROC_LOCK_MAIN;
+    ErtsProcLocks proc_locks = ERTS_PROC_LOCK_MAIN;
 
-    ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(BIF_P->id);
+    ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(BIF_P);
     reg_safe_read_lock(BIF_P, &proc_locks);
     if (!proc_locks)
 	erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_MAIN);

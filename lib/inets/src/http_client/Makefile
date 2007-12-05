@@ -42,6 +42,8 @@ MODULES = \
 	httpc_handler \
 	httpc_manager \
 	httpc_sup \
+	httpc_handler_sup \
+	httpc_profile_sup \
 	httpc_response \
 	httpc_request \
 	http_uri \
@@ -60,7 +62,7 @@ INETS_FLAGS = -D'SERVER_SOFTWARE="inets/$(VSN)"' \
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-INETS_ERL_FLAGS += -I ../http_lib -I ../inets_app
+INETS_ERL_FLAGS += -I ../http_lib -I ../inets_app -pa ../../ebin
 
 ERL_COMPILE_FLAGS += $(INETS_ERL_FLAGS)\
 		     $(INETS_FLAGS) \

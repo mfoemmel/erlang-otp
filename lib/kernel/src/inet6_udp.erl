@@ -82,4 +82,4 @@ controlling_process(Socket, NewOwner) ->
 %% Create a port/socket from a file descriptor 
 %%
 fdopen(Fd, Opts) ->
-    inet:fdopen(Fd, Opts, dgram, inet6, ?MODULE).
+    inet:fdopen(Fd, Opts, udp, inet6, ?MODULE).

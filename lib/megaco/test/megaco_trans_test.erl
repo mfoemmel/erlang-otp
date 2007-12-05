@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify that the transaction sender works with acks.
@@ -404,7 +406,7 @@ single_trans_req(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = str_mgc_event_sequence(text, tcp),
@@ -413,13 +415,13 @@ single_trans_req(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = str_mg_event_sequence(text, tcp),
@@ -428,47 +430,18 @@ single_trans_req(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc) of
-	{'EXIT', Pid1, Reason1} ->
-	    ?ERROR({mgc_failed, {received_unexpected_EXIT, Pid1, Reason1}}),
-	    ok;
-	{'EXIT', Reason1} ->
-	    ?ERROR({mgc_failed, {received_unexpected_EXIT, Reason1}}),
-	    ok;
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR({mgc_failed, MgcReply})
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg) of
-	{'EXIT', Pid2, Reason2} ->
-	    ?ERROR({mg_failed, {received_unexpected_EXIT, Pid2, Reason2}}),
-	    ok;
-	{'EXIT', Reason2} ->
-	    ?ERROR({mg_failed, {received_unexpected_EXIT, Reason2}}),
-	    ok;
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -867,7 +840,7 @@ multi_trans_req_timeout(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrt_mgc_event_sequence(text, tcp),
@@ -876,13 +849,13 @@ multi_trans_req_timeout(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrt_mg_event_sequence(text, tcp),
@@ -891,35 +864,18 @@ multi_trans_req_timeout(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -1330,7 +1286,7 @@ multi_trans_req_maxcount1(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrmc1_mgc_event_sequence(text, tcp),
@@ -1339,13 +1295,13 @@ multi_trans_req_maxcount1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrmc1_mg_event_sequence(text, tcp),
@@ -1354,35 +1310,18 @@ multi_trans_req_maxcount1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -1799,7 +1738,7 @@ multi_trans_req_maxcount2(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrmc2_mgc_event_sequence(text, tcp),
@@ -1808,13 +1747,13 @@ multi_trans_req_maxcount2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+   {ok, MgcId} =  megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrmc2_mg_event_sequence(text, tcp),
@@ -1823,35 +1762,18 @@ multi_trans_req_maxcount2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR({mgc_failed, MgcReply})
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR({mg_failed, MgReply})
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -2320,7 +2242,7 @@ multi_trans_req_maxsize1(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrms1_mgc_event_sequence(text, tcp),
@@ -2329,13 +2251,13 @@ multi_trans_req_maxsize1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrms1_mg_event_sequence(text, tcp),
@@ -2344,35 +2266,18 @@ multi_trans_req_maxsize1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -2789,7 +2694,7 @@ multi_trans_req_maxsize2(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrms2_mgc_event_sequence(text, tcp),
@@ -2798,13 +2703,13 @@ multi_trans_req_maxsize2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrms2_mg_event_sequence(text, tcp),
@@ -2813,35 +2718,18 @@ multi_trans_req_maxsize2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -3300,7 +3188,7 @@ single_trans_req_and_ack(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = straa_mgc_event_sequence(text, tcp),
@@ -3309,13 +3197,13 @@ single_trans_req_and_ack(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = straa_mg_event_sequence(text, tcp),
@@ -3324,35 +3212,18 @@ single_trans_req_and_ack(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -3798,7 +3669,7 @@ multi_trans_req_and_ack_timeout(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrtaat_mgc_event_sequence(text, tcp),
@@ -3807,13 +3678,13 @@ multi_trans_req_and_ack_timeout(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrtaat_mg_event_sequence(text, tcp),
@@ -3822,35 +3693,18 @@ multi_trans_req_and_ack_timeout(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -4306,7 +4160,7 @@ multi_trans_req_and_ack_ackmaxcount(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrtaaamc_mgc_event_sequence(text, tcp),
@@ -4315,13 +4169,13 @@ multi_trans_req_and_ack_ackmaxcount(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrtaaamc_mg_event_sequence(text, tcp),
@@ -4330,35 +4184,18 @@ multi_trans_req_and_ack_ackmaxcount(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -4821,7 +4658,7 @@ multi_trans_req_and_ack_reqmaxcount(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrtaarac_mgc_event_sequence(text, tcp),
@@ -4830,13 +4667,13 @@ multi_trans_req_and_ack_reqmaxcount(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+   {ok, MgcId} =  megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrtaarac_mg_event_sequence(text, tcp),
@@ -4845,35 +4682,18 @@ multi_trans_req_and_ack_reqmaxcount(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -5335,7 +5155,7 @@ multi_trans_req_and_ack_maxsize1(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrtaams1_mgc_event_sequence(text, tcp),
@@ -5344,13 +5164,13 @@ multi_trans_req_and_ack_maxsize1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrtaams1_mg_event_sequence(text, tcp),
@@ -5359,35 +5179,18 @@ multi_trans_req_and_ack_maxsize1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-		end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-		end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -5848,7 +5651,7 @@ multi_trans_req_and_ack_maxsize2(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtrtaams2_mgc_event_sequence(text, tcp),
@@ -5857,13 +5660,13 @@ multi_trans_req_and_ack_maxsize2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtrtaams2_mg_event_sequence(text, tcp),
@@ -5872,35 +5675,18 @@ multi_trans_req_and_ack_maxsize2(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -6404,7 +6190,7 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtraaap_mgc_event_sequence(text, tcp),
@@ -6413,13 +6199,13 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtraaap_mg_event_sequence(text, tcp),
@@ -6428,35 +6214,18 @@ multi_trans_req_and_ack_and_pending(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR({mgc_failed, MgcReply})
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR({mg_failed, MgReply})
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -7009,7 +6778,7 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
 
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = mtraaar_mgc_event_sequence(text, tcp),
@@ -7018,13 +6787,13 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = mtraaar_mg_event_sequence(text, tcp),
@@ -7033,35 +6802,18 @@ multi_trans_req_and_ack_and_reply(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc, 30000) of
-	{ok, MgcReply} ->
-	    d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-	    ok;
-	{error, MgcReply} ->
-	    d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-	    ?ERROR(mgc_failed)
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg, 30000) of
-	{ok, MgReply} ->
-	    d("[MG] OK => MgReply: ~n~p", [MgReply]),
-	    ok;
-	{error, MgReply} ->
-	    d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-	    ?ERROR(mg_failed)
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -7831,6 +7583,29 @@ make_node_name(Name) ->
 	_ ->
 	    exit("Test node must be started with '-sname'")
      end.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+await_completion(Ids) ->
+    case megaco_test_generator_lib:await_completion(Ids) of
+        {ok, Reply} ->
+            d("OK => Reply: ~n~p", [Reply]),
+            ok;
+        {error, Reply} ->
+            d("ERROR => Reply: ~n~p", [Reply]),
+            ?ERROR({failed, Reply})
+    end.
+
+await_completion(Ids, Timeout) ->
+    case megaco_test_generator_lib:await_completion(Ids, Timeout) of
+        {ok, Reply} ->
+            d("OK => Reply: ~n~p", [Reply]),
+            ok;
+        {error, Reply} ->
+            d("ERROR => Reply: ~n~p", [Reply]),
+            ?ERROR({failed, Reply})
+    end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

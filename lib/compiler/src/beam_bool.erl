@@ -45,7 +45,7 @@ function({function,Name,Arity,CLabel,Is0}, Lbl0) ->
 %%
 
 bool_opt(Asm, Lbl) ->
-    LiveInfo = index_instructions(Asm),
+    LiveInfo = beam_utils:index_labels(Asm),
     bopt(Asm, [], #st{next=Lbl,ll=LiveInfo}).
 
 bopt([{block,Bl0}=Block|
@@ -113,7 +113,7 @@ bopt_block(Reg, Fail, OldIs, [{block,Bl0}|Acc0], St0) ->
 		    %%    practice.
 		    %%
 		    %% 2. Not possible to rewrite because we have not seen
-		    %%    the complete boolan expression (it is spread out
+		    %%    the complete boolean expression (it is spread out
 		    %%    over several blocks with jumps and labels).
 		    %%    The 'or' and 'and' instructions must have fully
 		    %%    known operands in order to be eliminated.
@@ -358,23 +358,7 @@ bopt_good_arg({x,_}=X, Regs) ->
 bopt_good_arg(_, _) -> ok.
 
 bif_to_test(_, N, As) ->
-    bif_to_test(N, As).
-
-bif_to_test('=:=', As) -> {test,is_eq_exact,fail,As};
-bif_to_test('=/=', As) -> {test,is_ne_exact,fail,As};
-bif_to_test('==', As) -> {test,is_eq,fail,As};
-bif_to_test('/=', As) -> {test,is_ne,fail,As};
-bif_to_test('=<', [L,R]) -> {test,is_ge,fail,[R,L]};
-bif_to_test('>=', As) -> {test,is_ge,fail,As};
-bif_to_test('>', [L,R]) -> {test,is_lt,fail,[R,L]};
-bif_to_test('<', As) -> {test,is_lt,fail,As};
-bif_to_test(is_function, [_,_]=As) -> {test,is_function2,fail,As};
-bif_to_test(is_record, [_,_,_]=As) -> {test,is_record,fail,As};
-bif_to_test(Name, [_]=As) ->
-    case erl_internal:new_type_test(Name, 1) of
-	false -> exit({bif_to_test,Name,As,failed});
-	true -> {test,Name,fail,As}
-    end.
+    beam_utils:bif_to_test(N, As, fail).
 
 make_and_list([{'and',As}|Is]) ->
     make_and_list(As++Is);
@@ -542,65 +526,14 @@ ssa_first_free_list(Regs, Next) ->
 
 ssa_last_target([{set,[Dst],_,_}]) -> Dst;
 ssa_last_target([_|Is]) -> ssa_last_target(Is).
-    
-%% index_instructions(FunctionIs) -> GbTree([{Label,Is}])
-%%  Index the instruction sequence so that we can quickly
-%%  look up the instruction following a specific label.
-
-index_instructions(Is) ->
-    ii_1(Is, []).
-
-ii_1([{label,Lbl}|Is0], Acc) ->
-    Is = lists:dropwhile(fun({label,_}) -> true;
-			    (_) -> false end, Is0),
-    ii_1(Is0, [{Lbl,Is}|Acc]);
-ii_1([_|Is], Acc) ->
-    ii_1(Is, Acc);
-ii_1([], Acc) -> gb_trees:from_orddict(sort(Acc)).
 
 %% is_killed(Register, [Instruction], State) -> true|false
 %%  Determine whether a register is killed in the instruction sequence.
 %%  The state is used to allow us to determine the kill state
 %%  across branches.
 
-is_killed(R, Is, St) ->
-    case is_killed_1(R, Is, St) of
-	false ->
-	    %%io:format("nk ~p: ~P\n", [R,Is,15]),
-	    false;
-	true -> true
-    end.
-
-is_killed_1(R, [{block,Blk}|Is], St) ->
-    case is_killed_1(R, Blk, St) of
-	true -> true;
-	false -> is_killed_1(R, Is, St)
-    end;
-is_killed_1(R, [{test,_,{f,Fail},As}|Is], St) ->
-    case not member(R, As) andalso is_reg_killed_at(R, Fail, St) of
-	false -> false;
-	true -> is_killed_1(R, Is, St)
-    end;
-is_killed_1(R, [{select_val,R,_,_}|_], _) -> false;
-is_killed_1(R, [{select_val,_,Fail,{list,Branches}}|_], St) ->
-    is_killed_at_all(R, [Fail|Branches], St);
-is_killed_1(R, [{jump,{f,F}}|_], St) ->
-    is_reg_killed_at(R, F, St);
-is_killed_1(Reg, Is, _) ->
-    beam_block:is_killed(Reg, Is).
-
-is_reg_killed_at(R, Lbl, #st{ll=Ll}=St) ->
-    Is = gb_trees:get(Lbl, Ll),
-    is_killed_1(R, Is, St).
-
-is_killed_at_all(R, [{f,Lbl}|T], St) ->
-    case is_reg_killed_at(R, Lbl, St) of
-	false -> false;
-	true -> is_killed_at_all(R, T, St)
-    end;
-is_killed_at_all(R, [_|T], St) ->
-    is_killed_at_all(R, T, St);
-is_killed_at_all(_, [], _) -> true.
+is_killed(R, Is, #st{ll=Ll}) ->
+    beam_utils:is_killed(R, Is, Ll).
 
 %% is_not_used(Register, [Instruction], State) -> true|false
 %%  Determine whether a register is never used in the instruction sequence
@@ -609,44 +542,8 @@ is_killed_at_all(_, [], _) -> true.
 %%    The state is used to allow us to determine the usage state
 %%  across branches.
 
-is_not_used(R, Is, St) ->
-    case is_not_used_1(R, Is, St) of
-	false ->
-	    %%io:format("used ~p: ~P\n", [R,Is,15]),
-	    false;
-	true -> true
-    end.
-
-is_not_used_1(R, [{block,Blk}|Is], St) ->
-    case is_not_used_1(R, Blk, St) of
-	true -> true;
-	false -> is_not_used_1(R, Is, St)
-    end;
-is_not_used_1(R, [{test,_,{f,Fail},As}|Is], St) ->
-    case not member(R, As) andalso is_reg_not_used_at(R, Fail, St) of
-	false -> false;
-	true -> is_not_used_1(R, Is, St)
-    end;
-is_not_used_1(R, [{select_val,R,_,_}|_], _) -> false;
-is_not_used_1(R, [{select_val,_,Fail,{list,Branches}}|_], St) ->
-    is_used_at_none(R, [Fail|Branches], St);
-is_not_used_1(R, [{jump,{f,F}}|_], St) ->
-    is_reg_not_used_at(R, F, St);
-is_not_used_1(Reg, Is, _) ->
-    beam_block:is_not_used(Reg, Is).
-
-is_reg_not_used_at(R, Lbl, #st{ll=Ll}=St) ->
-    Is = gb_trees:get(Lbl, Ll),
-    is_not_used_1(R, Is, St).
-
-is_used_at_none(R, [{f,Lbl}|T], St) ->
-    case is_reg_not_used_at(R, Lbl, St) of
-	false -> false;
-	true -> is_used_at_none(R, T, St)
-    end;
-is_used_at_none(R, [_|T], St) ->
-    is_used_at_none(R, T, St);
-is_used_at_none(_, [], _) -> true.
+is_not_used(R, Is, #st{ll=Ll}) ->
+    beam_utils:is_not_used(R, Is, Ll).
 
 %% initialized_regs([Instruction]) -> [Register])
 %%  Given a REVERSED instruction sequence, return a list of the registers

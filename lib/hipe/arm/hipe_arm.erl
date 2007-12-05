@@ -13,7 +13,6 @@
 	 temp_is_precoloured/1,
 
 	 mk_mfa/3,
-	 mfa_mfa/1,
 
 	 mk_prim/1,
 	 is_prim/1,
@@ -124,7 +123,6 @@ temp_is_precoloured(#arm_temp{reg=Reg}) ->
   hipe_arm_registers:is_precoloured_gpr(Reg).
 
 mk_mfa(M, F, A) -> #arm_mfa{m=M, f=F, a=A}.
-mfa_mfa(#arm_mfa{m=M, f=F, a=A}) -> {M, F, A}.
 
 mk_prim(Prim) -> #arm_prim{prim=Prim}.
 is_prim(X) -> case X of #arm_prim{} -> true; _ -> false end.

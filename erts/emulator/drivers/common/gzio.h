@@ -16,6 +16,9 @@
  *     $Id$
  */
 
+gzFile erts_gzopen (const char *path, const char *mode);
+gzFile erts_gzdopen (int fd, const char *mode);
+gzFile erts_gzbufopen(char* bytes, int size);
 int erts_gzread(gzFile file, voidp buf, unsigned len);
 int erts_gzwrite(gzFile file, voidpc buf, unsigned len);
 int erts_gzseek(gzFile, int, int);

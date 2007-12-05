@@ -19,11 +19,10 @@
 %% optimizes them.
 
 -module(beam_block).
+-compile([bitlevel_binaries]).			%Remove in R12B-1.
 
 -export([module/2]).
 -export([live_at_entry/1]).			%Used by beam_type, beam_bool.
--export([is_killed/2]).				%Used by beam_dead, beam_type, beam_bool.
--export([is_not_used/2]).			%Used by beam_bool.
 -export([merge_blocks/2]).			%Used by beam_jump.
 -import(lists, [map/2,mapfoldl/3,mapfoldr/3,reverse/1,reverse/2,foldl/3,
 		member/2,sort/1,all/2]).
@@ -61,15 +60,6 @@ blockify([{bs_save2,R,Point}=I,{test,is_eq_exact,_,_}=Test,
 	  {bs_restore2,R,Point}|Is], Acc) ->
     blockify([I,Test|Is], Acc);
 
-%% Old bit syntax matching.
-blockify([{test,bs_test_tail,F,[Bits]}|Is],
-	 [{test,bs_skip_bits,F,[{integer,I},Unit,_Flags]}|Acc]) ->
-    blockify(Is, [{test,bs_test_tail,F,[Bits+I*Unit]}|Acc]);
-blockify([{test,bs_skip_bits,F,[{integer,I1},Unit1,_]}|Is],
-	 [{test,bs_skip_bits,F,[{integer,I2},Unit2,Flags]}|Acc]) ->
-    blockify(Is, [{test,bs_skip_bits,F,
-		   [{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
-
 %% Do other peep-hole optimizations.
 blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	  [{select_val,Reg,{f,Fail},
@@ -80,6 +70,9 @@ blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	false ->
 	    blockify(Is0, [I|Acc]);
 	true ->
+	    %% The last instruction is a boolean operator/guard BIF that can't fail.
+	    %% We can convert the three-way branch to a two-way branch (eliminating
+	    %% the reference to the failure label).
 	    blockify(Is, [{jump,BrTrue},
 			  {test,is_eq_exact,BrFalse,[Reg,AtomTrue]}|Acc])
     end;
@@ -94,6 +87,16 @@ blockify([{test,is_atom,{f,Fail},[Reg]}=I|
 	true ->
 	    blockify(Is, [{jump,BrTrue},
 			  {test,is_eq_exact,BrFalse,[Reg,AtomTrue]}|Acc])
+    end;
+blockify([{test,is_eq,F,[_,_]=Ss}=I|Is], Acc) ->
+    case is_exact_eq_ok(Ss) of
+	false -> blockify(Is, [I|Acc]);
+	true -> blockify(Is, [{test,is_eq_exact,F,Ss}|Acc])
+    end;
+blockify([{test,is_ne,F,[_,_]=Ss}=I|Is], Acc) ->
+    case is_exact_eq_ok(Ss) of
+	false -> blockify(Is, [I|Acc]);
+	true -> blockify(Is, [{test,is_ne_exact,F,Ss}|Acc])
     end;
 blockify([I|Is0]=IsAll, Acc) ->
     case is_bs_put(I) of
@@ -121,6 +124,12 @@ is_last_bool([{set,[Reg],As,{bif,N,_}}], Reg) ->
 is_last_bool([_|Is], Reg) -> is_last_bool(Is, Reg);
 is_last_bool([], _) -> false.
 
+is_exact_eq_ok([{atom,_},_]) -> true;
+is_exact_eq_ok([nil,_]) -> true;
+is_exact_eq_ok([_,{atom,_}]) -> true;
+is_exact_eq_ok([_,nil]) -> true;
+is_exact_eq_ok([_,_]) -> false.
+
 collect_block(Is) ->
     collect_block(Is, []).
 
@@ -130,20 +139,33 @@ collect_block([I|Is]=Is0, Acc) ->
     case collect(I) of
 	error -> {reverse(Acc),Is0};
 	Instr -> collect_block(Is, [Instr|Acc])
-    end;
-collect_block([], Acc) -> {reverse(Acc),[]}.
+    end.
 
 collect({allocate_zero,N,R}) -> {set,[],[],{alloc,R,{zero,N,0,[]}}};
 collect({test_heap,N,R})     -> {set,[],[],{alloc,R,{nozero,nostack,N,[]}}};
 collect({bif,N,nofail,As,D}) -> {set,[D],As,{bif,N}};
-collect({bif,N,F,As,D})      -> {set,[D],As,{bif,N,F}};
+collect({bif,N0,F,As,D})      ->
+    N = case N0 of
+	    '==' ->
+		case is_exact_eq_ok(As) of
+		    false -> N0;
+		    true -> '=:='
+
+		end;
+	    '/=' ->
+		case is_exact_eq_ok(As) of
+		    false -> N0;
+		    true -> '=/='
+		end;
+	    _ -> N0
+	end,
+    {set,[D],As,{bif,N,F}};
 collect({gc_bif,N,F,R,As,D}) -> {set,[D],As,{alloc,R,{gc_bif,N,F}}};
 collect({move,S,D})          -> {set,[D],[S],move};
 collect({put_list,S1,S2,D})  -> {set,[D],[S1,S2],put_list};
 collect({put_tuple,A,D})     -> {set,[D],[],{put_tuple,A}};
 collect({put,S})             -> {set,[],[S],put};
 collect({put_string,L,S,D})  -> {set,[D],[],{put_string,L,S}};
-collect({put_literal,L,D})   -> {set,[D],[],{put_literal,L}};
 collect({get_tuple_element,S,I,D}) -> {set,[D],[S],{get_tuple_element,I}};
 collect({set_tuple_element,S,D,I}) -> {set,[],[S,D],{set_tuple_element,I}};
 collect({get_list,S,D1,D2})  -> {set,[D1,D2],[S],get_list};
@@ -206,21 +228,35 @@ alloc_may_pass({set,_,_,_}) -> true.
 combine_alloc({_,Ns,Nh1,Init}, {_,nostack,Nh2,[]})  ->
     {zero,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}.
 
-merge_blocks([{set,[],[],{allocate,R,{Attr,Ns,Nh1,Init}}}|B1],
-	     [{set,[],[],{allocate,_,{_,nostack,Nh2,[]}}}|B2]) ->
-    Alloc = {set,[],[],
-	     {allocate,R,
-	      {Attr,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}}},
-    [Alloc|merge_blocks(B1, B2)];
+merge_blocks([{set,[],[],{alloc,R,{Attr,Ns,Nh1,Init}}}=Alloc1|B1],
+	     [{set,[],[],{alloc,_,{_,nostack,Nh2,[]}}}|B2]=B2Orig) ->
+    case any_allocation(B1) of
+	true ->
+	    %% It is not safe to combine the allocations, because
+	    %% there is another allocation instruction (probably a
+	    %% gc_bif) that may "eat" the allocated space.
+	    [Alloc1|merge_blocks(B1, B2Orig)];
+	false ->
+	    %% It is safe to combine the allocations.
+	    Alloc = {set,[],[],
+		     {alloc,R,
+		      {Attr,Ns,beam_flatten:combine_heap_needs(Nh1, Nh2),Init}}},
+	    [Alloc|merge_blocks(B1, B2)]
+    end;
 merge_blocks(B1, B2) -> merge_blocks_1(B1++[{set,[],[],stop_here}|B2]).
 
 merge_blocks_1([{set,[],_,stop_here}|Is]) -> Is;
 merge_blocks_1([{set,[D],_,move}=I|Is]) ->
-    case is_killed(D, Is) of
+    case beam_utils:is_killed_block(D, Is) of
 	true -> merge_blocks_1(Is);
 	false -> [I|merge_blocks_1(Is)]
     end;
 merge_blocks_1([I|Is]) -> [I|merge_blocks_1(Is)].
+
+any_allocation([{set,_,_,{alloc,_,_}}|_]) -> true;
+any_allocation([_|Is]) -> any_allocation(Is);
+any_allocation([]) -> false.
+    
 
 %% opt([Instruction]) -> [Instruction]
 %%  Optimize the instruction stream inside a basic block.
@@ -283,12 +319,12 @@ opt_move_1(R, [{set,_,_,{alloc,Live,_}}|_]=Is, SafeRegs, Acc) when Live < SafeRe
     %% is a gc_bif instruction.
     opt_move_1(R, Is, Live, Acc);
 opt_move_1(R, [{set,[{x,X}=D],[R],move}|Is], SafeRegs, Acc) ->
-    case X < SafeRegs andalso is_killed(R, Is) of
+    case X < SafeRegs andalso beam_utils:is_killed_block(R, Is) of
 	true -> opt_move_2(D, Acc, Is);
 	false -> not_possible
     end;
 opt_move_1(R, [{set,[D],[R],move}|Is], _SafeRegs, Acc) ->
-    case is_killed(R, Is) of
+    case beam_utils:is_killed_block(R, Is) of
 	true -> opt_move_2(D, Acc, Is);
 	false -> not_possible
     end;
@@ -323,100 +359,6 @@ is_transparent(R, {set,Ds,Ss,_Op}) ->
 	false -> not member(R, Ss)
     end;
 is_transparent(_, _) -> false.
-
-%% is_killed(Register, [Instruction]) -> true|false
-%%  Determine whether a register is killed by the instruction sequence.
-%%  If true is returned, it means that the register will not be
-%%  referenced in ANY way (not even indirectly by an allocate instruction);
-%%  i.e. it is OK to enter the instruction sequence with Register
-%%  containing garbage.
-
-is_killed({x,N}=R, [{block,Blk}|Is]) ->
-    case is_killed(R, Blk) of
-	true -> true;
-	false ->
-	    %% Before looking beyond the block, we must be
-	    %% sure that the register is not referenced by
-	    %% any allocate instruction in the block.
-	    case all(fun({set,_,_,{alloc,Live,_}}) when N < Live -> false;
-			(_) -> true
-		     end, Blk) of
-		true -> is_killed(R, Is);
-		false -> false
-	    end
-    end;
-is_killed({x,X}, [{set,_,_,{alloc,Live,_}}|_]) ->
-    %% Note: To be safe here, we must return either true or false,
-    %% not looking further at the instructions beyond the allocate
-    %% instruction. 
-    X >= Live;
-is_killed(R, [{set,Ds,Ss,_Op}|Is]) ->
-    case member(R, Ss) of
-	true -> false;
-	false ->
-	    case member(R, Ds) of
-		true -> true;
-		false -> is_killed(R, Is)
-	    end
-    end;
-is_killed(R, [{block,Blk}|Is]) ->
-    case is_killed(R, Blk) of
-	true -> true;
-	false -> is_killed(R, Is)
-    end;
-is_killed(R, [{case_end,Used}|_]) -> R =/= Used;
-is_killed(R, [{badmatch,Used}|_]) -> R =/= Used;
-is_killed(_, [if_end|_]) -> true;
-is_killed(R, [{func_info,_,_,Ar}|_]) ->
-    case R of
-	{x,X} when X < Ar -> false;
-	_ -> true
-    end;
-is_killed(R, [{kill,R}|_]) -> true;
-is_killed(R, [{kill,_}|Is]) -> is_killed(R, Is);
-is_killed(R, [{bs_init2,_,_,_,_,_,Dst}|Is]) ->
-    if
-	R =:= Dst -> true;
-	true -> is_killed(R, Is)
-    end;
-is_killed(R, [{bs_put_string,_,_}|Is]) -> is_killed(R, Is);
-is_killed({x,R}, [{'%live',Live}|_]) when R >= Live -> true;
-is_killed({x,R}, [{'%live',_}|Is]) -> is_killed(R, Is);
-is_killed({x,R}, [{call,Live,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [{call_last,Live,_,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [{call_only,Live,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [{call_ext,Live,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [{call_ext_last,Live,_,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [{call_ext_only,Live,_}|_]) when R >= Live -> true;
-is_killed({x,R}, [return|_]) when R > 0 -> true;
-is_killed(_, _) -> false.
-
-%% is_not_used(Register, [Instruction]) -> true|false
-%%  Determine whether a register is used by the instruction sequence.
-%%  If true is returned, it means that the register will not be
-%%  referenced directly, but it may be referenced by an allocate
-%%  instruction (meaning that it is NOT allowed to contain garbage).
-
-is_not_used(R, [{block,Blk}|Is]) ->
-    case is_not_used(R, Blk) of
-	true -> true;
-	false -> is_not_used(R, Is)
-    end;
-is_not_used({x,R}=Reg, [{allocate,Live,_}|Is]) ->
-    if
-	R >= Live -> true;
-	true -> is_not_used(Reg, Is)
-    end;
-is_not_used(R, [{set,Ds,Ss,_Op}|Is]) ->
-    case member(R, Ss) of
-	true -> false;
-	false ->
-	    case member(R, Ds) of
-		true -> true;
-		false -> is_not_used(R, Is)
-	    end
-    end;
-is_not_used(R, Is) -> is_killed(R, Is).
 
 %% opt_alloc(Instructions) -> Instructions'
 %%  Optimises all allocate instructions.
@@ -530,8 +472,7 @@ collect_bs_puts_1([I|Is]=Is0, Acc) ->
     case is_bs_put(I) of
 	false -> {reverse(Acc),Is0};
 	true -> collect_bs_puts_1(Is, [I|Acc])
-    end;
-collect_bs_puts_1([], Acc) -> {reverse(Acc),[]}.
+    end.
     
 opt_bs_puts(Is) ->
     opt_bs_1(Is, []).
@@ -580,7 +521,7 @@ opt_bs_1([I|Is], Acc) ->
     opt_bs_1(Is, [I|Acc]);
 opt_bs_1([], Acc) -> reverse(Acc).
 
-eval_put_float(Src, Sz, Flags) ->
+eval_put_float(Src, Sz, Flags) when Sz =< 256 -> %Only evaluate if Sz is reasonable.
     Val = value(Src),
     case field_endian(Flags) of
 	little -> <<Val:Sz/little-float-unit:1>>;
@@ -589,8 +530,7 @@ eval_put_float(Src, Sz, Flags) ->
     end.
 
 value({integer,I}) -> I;
-value({float,F}) -> F;
-value({atom,A}) -> A.
+value({float,F}) -> F.
 
 bs_collect_string(Is, [{bs_put_string,Len,{string,Str}}|Acc]) ->
     bs_coll_str_1(Is, Len, reverse(Str), Acc);
@@ -650,19 +590,19 @@ bs_split_int_1(_, _, _, _, Acc) -> Acc.
 %%%
 %%% Optimization of new bit syntax matching: get rid
 %%% of redundant bs_restore2/2 instructions across select_val
-%%% instructions and a few other simple peep-hole optimizations.
+%%% instructions, as well as a few other simple peep-hole optimizations.
 %%%
 
 bsm_opt(Is0, Lc0) ->
-    Is1 = beam_clean:bs_clean_saves(Is0),
-    {Is2,D0,Lc} = bsm_scan(Is1, [], Lc0, []),
-    Is = case D0 of
-	     [] ->
-		 Is2;
+    {Is1,D0,Lc} = bsm_scan(Is0, [], Lc0, []),
+    Is2 = case D0 of
+	      [] ->
+		  Is1;
 	     _ ->
-		 D = gb_trees:from_orddict(orddict:from_list(D0)),
-		 bsm_reroute(Is2, D, [])
+		  D = gb_trees:from_orddict(orddict:from_list(D0)),
+		  bsm_reroute(Is1, D, none, [])
 	 end,
+    Is = beam_clean:bs_clean_saves(Is2),
     {bsm_opt_2(Is, []),Lc}.
 
 bsm_scan([{label,L}=Lbl,{bs_restore2,_,Save}=R|Is], D0, Lc, Acc0) ->
@@ -674,26 +614,36 @@ bsm_scan([I|Is], D, Lc, Acc) ->
 bsm_scan([], D, Lc, Acc) ->
     {reverse(Acc),D,Lc}.
 
-bsm_reroute([{bs_save2,_,Save}=I,{test,is_integer,Fa0,TestArgs},
-	     {select_val,Reg,Fb0,{list,Lbls0}}|Is], D, Acc0) ->
-    [Fa,Fb|Lbls] = bsm_subst_labels([Fa0,Fb0|Lbls0], Save, D),
-    Acc = [{select_val,Reg,Fb,{list,Lbls}},
-	   {test,is_integer,Fa,TestArgs},I|Acc0],
-    bsm_reroute(Is, D, Acc);
-bsm_reroute([{bs_save2,_,_}=I,{test,bs_get_float2,_,_}=T|Is], D, Acc0) ->
-    %% Bug in the emulator: bs_get_float2 will advance the position in the
-    %% binary if the field contain a NaN or other illegal float.
-    %% The emulator bug will be corrected in R11B-3. This clause should be removed
-    %% no later than in R12B-0.
-    Acc = [T,I|Acc0],
-    bsm_reroute(Is, D, Acc);
-bsm_reroute([{bs_save2,_,Save}=I,{test,TestOp,F0,TestArgs}|Is], D, Acc0) ->
+bsm_reroute([{bs_save2,Reg,Save}=I|Is], D, _, Acc) ->
+    bsm_reroute(Is, D, {Reg,Save}, [I|Acc]);
+bsm_reroute([{bs_restore2,Reg,Save}=I|Is], D, _, Acc) ->
+    bsm_reroute(Is, D, {Reg,Save}, [I|Acc]);
+bsm_reroute([{label,_}=I|Is], D, S, Acc) ->
+    bsm_reroute(Is, D, S, [I|Acc]);
+bsm_reroute([{select_val,Reg,F0,{list,Lbls0}}|Is], D, {_,Save}=S, Acc0) ->
+    [F|Lbls] = bsm_subst_labels([F0|Lbls0], Save, D),
+    Acc = [{select_val,Reg,F,{list,Lbls}}|Acc0],
+    bsm_reroute(Is, D, S, Acc);
+bsm_reroute([{test,TestOp,F0,TestArgs}|Is], D, {_,Save}=S, Acc0) ->
     F = bsm_subst_label(F0, Save, D),
-    Acc = [{test,TestOp,F,TestArgs},I|Acc0],
-    bsm_reroute(Is, D, Acc);
-bsm_reroute([I|Is], D, Acc) ->
-    bsm_reroute(Is, D, [I|Acc]);
-bsm_reroute([], _, Acc) -> reverse(Acc).
+    Acc = [{test,TestOp,F,TestArgs}|Acc0],
+    case bsm_not_bs_test(TestOp, length(TestArgs)) of
+	true ->
+	    %% The test instruction will not update the bit offset for the
+	    %% binary being matched. Therefore the save position can be kept.
+	    bsm_reroute(Is, D, S, Acc);
+	false ->
+	    %% The test instruction might update the bit offset. Kill our
+	    %% remembered Save position.
+	    bsm_reroute(Is, D, none, Acc)
+    end;
+bsm_reroute([{block,[{set,[],[],{alloc,_,_}}]}=Bl,
+	     {bs_context_to_binary,_}=I|Is], D, S, Acc) ->
+    %% To help further bit syntax optimizations.
+    bsm_reroute([I,Bl|Is], D, S, Acc);
+bsm_reroute([I|Is], D, _, Acc) ->
+    bsm_reroute(Is, D, none, [I|Acc]);
+bsm_reroute([], _, _, Acc) -> reverse(Acc).
 
 bsm_opt_2([{test,bs_test_tail2,F,[Ctx,Bits]}|Is],
 	  [{test,bs_skip_bits2,F,[Ctx,{integer,I},Unit,_Flags]}|Acc]) ->
@@ -702,25 +652,29 @@ bsm_opt_2([{test,bs_skip_bits2,F,[Ctx,{integer,I1},Unit1,_]}|Is],
 	  [{test,bs_skip_bits2,F,[Ctx,{integer,I2},Unit2,Flags]}|Acc]) ->
     bsm_opt_2(Is, [{test,bs_skip_bits2,F,
 		    [Ctx,{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
-bsm_opt_2([{test,bs_test_tail2,_,[Ctx,0]}|Is],
-	  [{test,bs_skip_bits2,_,[Ctx,{atom,all},8,{field_flags,Fl}]}|Acc]=Acc0) ->
-    %% The bs_test_tail/2 instruction is not needed here - it can't possibly 
-    %% fail after a bs_skip_bits/4 instruction.
-    case member(aligned, Fl) of
-	false ->
-	    bsm_opt_2(Is, Acc0);
-	true ->
-	    %% Since the bs_skip_bits/4 instruction is aligned, it can't
-	    %% fail and we can remove that instruction too.
-	    bsm_opt_2(Is, Acc)
-    end;
-bsm_opt_2([{test,bs_test_tail2,_,[Ctx,0]}|Is],
-	  [{test,bs_get_binary2,_,[Ctx,_,{atom,all},8,_,_]}|_]=Acc) ->
-    %% The bs_test_tail/2 instruction is not needed here - it can't fail.
-    bsm_opt_2(Is, Acc);
+bsm_opt_2([{test,bs_match_string,F,[Ctx,Bin1]},
+	   {test,bs_match_string,F,[Ctx,Bin2]}|Is], Acc) ->
+    I = {test,bs_match_string,F,[Ctx,<<Bin1/bitstr,Bin2/bitstr>>]},
+    bsm_opt_2([I|Is], Acc);
 bsm_opt_2([I|Is], Acc) ->
     bsm_opt_2(Is, [I|Acc]);
 bsm_opt_2([], Acc) -> reverse(Acc).
+
+%% bsm_not_bs_test(Name, Arity) -> true|false.
+%%  Test whether is the test is a "safe", i.e. does not move the
+%%  bit offset for a binary.
+%%
+%%  true means that the test is safe, false that we don't know or
+%%  that the test moves the offset (e.g. bs_get_integer2).
+
+bsm_not_bs_test(is_eq_exact, 2)  -> true;
+bsm_not_bs_test(is_ne_exact, 2) -> true;
+bsm_not_bs_test(is_ge, 2) -> true;
+bsm_not_bs_test(is_lt, 2)  -> true;
+bsm_not_bs_test(is_eq, 2) -> true;
+bsm_not_bs_test(is_ne, 2) -> true;
+bsm_not_bs_test(bs_test_tail2, 2) -> true;
+bsm_not_bs_test(F, A) -> erl_internal:new_type_test(F, A).
 
 bsm_subst_labels(Fs, Save, D) ->
     bsm_subst_labels_1(Fs, Save, D, []).

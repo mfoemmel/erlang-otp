@@ -139,7 +139,7 @@ tmp_file_prefix(File, Opts) ->
 		     end, [], Opts)]).
 
 parse_sgmls(InFile, SgmlsFile) ->
-    case file:open(SgmlsFile, read) of
+    case file:open(SgmlsFile, [read]) of
 	{ok, Fd} ->
 	    Res = case (catch do_parse_sgmls(Fd)) of
 		      {ok, Tree} ->
@@ -271,7 +271,7 @@ tag_name([H|T], L) ->
     tag_name(T, [H|L]).
 
 cat(File) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Fd} ->
 	    cat1(Fd),
 	    file:close(Fd);
@@ -342,7 +342,7 @@ pp(File, Opts) ->
     end.
 
 dump(File, Struct) ->
-    {ok, Stream} = file:open(File, write),
+    {ok, Stream} = file:open(File, [write]),
     io:format("Info: Dump on ~p ...", [File]),
     io:format(Stream, "~n~s~n", [docb_pretty_format:term(Struct)]),
     io:format(" done.\n"),
@@ -434,7 +434,7 @@ finish_transform(Tree, File, Opts, Filter) ->
 		Others
 	end,
     {ok, Out} =
-	file:open(docb_util:outfile(File, Extension, NewOpts), write),
+	file:open(docb_util:outfile(File, Extension, NewOpts), [write]),
     put_chars(Out, Str),
     file:close(Out).
 
@@ -547,16 +547,18 @@ include_file(File, Tag) ->
 
 %% include(File, StartTag, StopTag) -> {ok, String} | error
 include(File, "", "") ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Fd} ->
-	    {ok, include_all(Fd)};
+	    String = include_all(Fd),
+	    file:close(Fd),
+	    {ok, String};
 	_ ->
 	    docb_util:message(error,
 			      "Include file ~s not found", [File]),
 	    error
     end;
 include(File, StartTag, StopTag) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Fd} ->
 	    String = extract(File, Fd, StartTag, StopTag, searching),
 	    file:close(Fd),

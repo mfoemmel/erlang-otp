@@ -15,170 +15,178 @@
 %% 
 %%     $Id$
 %%
+
 -module(httpd).
 
--export([multi_start/1, multi_start_link/1,
-	 start/0, start/1, 
+-behaviour(inets_service).
+
+-include("httpd.hrl").
+
+-deprecated({start, 0, next_major_release}).
+-deprecated({start, 1, next_major_release}).
+-deprecated({start_link, 1, next_major_release}).
+-deprecated({start_child, 0, next_major_release}).
+-deprecated({start_child, 1, next_major_release}).
+-deprecated({stop, 0, next_major_release}).
+-deprecated({stop, 1, next_major_release}).
+-deprecated({stop, 2, next_major_release}).
+-deprecated({stop_child, 0, next_major_release}).
+-deprecated({stop_child, 1, next_major_release}).
+-deprecated({stop_child, 2, next_major_release}).
+-deprecated({restart, 0, next_major_release}).
+-deprecated({restart, 1, next_major_release}).
+-deprecated({restart, 2, next_major_release}).
+-deprecated({block, 0, next_major_release}).
+-deprecated({block, 1, next_major_release}).
+-deprecated({block, 2, next_major_release}).
+-deprecated({block, 3, next_major_release}).
+-deprecated({block, 4, next_major_release}).
+-deprecated({unblock, 0, next_major_release}).
+-deprecated({unblock, 1, next_major_release}).
+-deprecated({unblock, 2, next_major_release}).
+
+%% Behavior callbacks
+-export([start_standalone/1, start_service/1, stop_service/1, services/0, 
+	 service_info/1]).
+
+%% API
+-export([parse_query/1, reload_config/2, info/1, info/2, info/3]).
+
+%% Deprecated
+-export([start/0, start/1, 
 	 start_link/0, start_link/1, 
 	 start_child/0,start_child/1,
-	 multi_stop/1,
 	 stop/0,stop/1,stop/2,
 	 stop_child/0,stop_child/1,stop_child/2,
-	 multi_restart/1,
-	 restart/0,restart/1,restart/2,
-	 parse_query/1]).
+	 restart/0,restart/1,restart/2]).
 
-%% Optional start related stuff...
--export([load/1, load_mime_types/1, start2/1, start_link2/1, stop2/1]).
-
-%% Management stuff
+%% Management stuff should be internal functions 
+%% Will be from r13
 -export([block/0,block/1,block/2,block/3,block/4,
 	 unblock/0,unblock/1,unblock/2]).
 
-%% Debugging and status info stuff...
+%% Internal Debugging and status info stuff...
+%% Keep for now should probably be moved to test catalog
 -export([get_status/1,get_status/2,get_status/3,
 	 get_admin_state/0,get_admin_state/1,get_admin_state/2,
 	 get_usage_state/0,get_usage_state/1,get_usage_state/2]).
 
--include("httpd.hrl").
+%%%========================================================================
+%%% API
+%%%========================================================================
 
-start() ->
-    start("/var/tmp/server_root/conf/8888.conf").
+parse_query(String) ->
+  {ok, SplitString} = regexp:split(String,"[&;]"),
+  foreach(SplitString).
 
-start(ConfigFile) ->
-    httpd_instance_sup:start(ConfigFile).
-
-start_link() ->
-    start("/var/tmp/server_root/conf/8888.conf").
-
-start_link(ConfigFile) when is_list(ConfigFile) ->
-    httpd_instance_sup:start_link(ConfigFile).
-
-start2(Config) when is_list(Config) ->
-    httpd_instance_sup:start2(Config).
-
-start_link2(Config) ->
-    httpd_instance_sup:start_link2(Config).
-
-stop() ->
-  stop(8888).
-
-stop(Port) when is_integer(Port) ->
-    stop(undefined, Port);
-stop(Pid) when is_pid(Pid) ->
-    httpd_instance_sup:stop(Pid);
-stop(ConfigFile) when is_list(ConfigFile) ->
-    httpd_instance_sup:stop(ConfigFile).
-
-stop(Addr, Port) when is_integer(Port) ->
-    httpd_instance_sup:stop(Addr, Port).
-
-stop2(Config) when is_list(Config) ->
-    httpd_instance_sup:stop2(Config).
-
-start_child() ->
-    start_child("/var/tmp/server_root/conf/8888.conf").
-
-start_child(ConfigFile) ->
-    httpd_sup:start_child(ConfigFile).
-
-stop_child() ->
-  stop_child(8888).
-
-stop_child(Port) ->
-    stop_child(undefined, Port).
-
-stop_child(Addr, Port) when integer(Port) ->
-    httpd_sup:stop_child(Addr, Port).
-
-multi_start(MultiConfigFile) ->
-    case read_multi_file(MultiConfigFile) of
-	{ok,ConfigFiles} ->
-	    mstart(ConfigFiles);
+reload_config(Config = [Value| _], Mode) when is_tuple(Value) ->
+    do_reload_config(Config, Mode);
+reload_config(ConfigFile, Mode) ->
+    case httpd_conf:load(ConfigFile) of
+	{ok, ConfigList} ->
+	    do_reload_config(ConfigList, Mode);
 	Error ->
 	    Error
     end.
 
-mstart(ConfigFiles) ->
-    mstart(ConfigFiles,[]).
-mstart([],Results) ->
-    {ok,lists:reverse(Results)};
-mstart([H|T],Results) ->
-    Res = start(H),
-    mstart(T,[Res|Results]).
+info(Pid) when is_pid(Pid) ->
+    info(Pid, []).
 
-multi_start_link(MultiConfigFile) ->
-    case read_multi_file(MultiConfigFile) of
-	{ok,ConfigFiles} ->
-	    mstart_link(ConfigFiles);
+info(Pid, Properties) when is_pid(Pid), is_list(Properties) ->
+    {ok, ServiceInfo} = service_info(Pid), 
+    Address = proplists:get_value(bind_address, ServiceInfo),
+    Port = proplists:get_value(port, ServiceInfo),
+    case Properties of
+	[] ->
+	    info(Address, Port);
+	_ ->
+	    info(Address, Port, Properties)
+    end; 
+info(Address, Port) when is_integer(Port) ->    
+    httpd_conf:get_config(Address, Port).
+
+info(Address, Port, Properties) when is_integer(Port), 
+				     is_list(Properties) ->    
+    httpd_conf:get_config(Address, Port, Properties).
+
+%%%========================================================================
+%%% Behavior callbacks
+%%%========================================================================
+
+start_standalone(Config) ->
+    httpd_sup:start_link([{httpd, Config}], stand_alone).
+
+start_service(Conf) ->
+    httpd_sup:start_child(Conf).
+
+stop_service({Address, Port}) ->
+    httpd_sup:stop_child(Address, Port);
+
+stop_service(Pid) when is_pid(Pid) ->
+    case service_info(Pid)  of
+	{ok, Info} ->	   
+	    Address = proplists:get_value(bind_address, Info),
+	    Port = proplists:get_value(port, Info),
+	    stop_service({Address, Port});
 	Error ->
 	    Error
     end.
-mstart_link(ConfigFiles) ->
-    mstart_link(ConfigFiles,[]).
-mstart_link([],Results) ->
-    {ok,lists:reverse(Results)};
-mstart_link([H|T],Results) ->
-    Res = start_link(H),
-    mstart_link(T,[Res|Results]).
+	    
+services() ->
+    [{httpd, ChildPid} || {_, ChildPid, _, _} <- 
+			      supervisor:which_children(httpd_sup)].
 
-multi_stop(MultiConfigFile) ->
-    case read_multi_file(MultiConfigFile) of
-	{ok,ConfigFiles} ->
-	    mstop(ConfigFiles);
-	Error ->
-	    Error
+service_info(Pid) ->
+    try
+	[{ChildName, ChildPid} || 
+	    {ChildName, ChildPid, _, _} <- 
+		supervisor:which_children(httpd_sup)] of
+	Children ->
+	    child_name2info(child_name(Pid, Children))
+    catch
+	exit:{noproc, _} ->
+	    {error, service_not_available} 
+    end.
+%%%--------------------------------------------------------------
+%%% Internal functions
+%%%--------------------------------------------------------------------
+
+child_name(_, []) ->
+    undefined;
+child_name(Pid, [{Name, Pid} | _]) ->
+    Name;
+child_name(Pid, [_ | Children]) ->
+    child_name(Pid, Children).
+
+child_name2info(undefined) ->
+    {error, no_such_service};
+child_name2info({httpd_instance_sup, any, Port}) ->
+    {ok, Host} = inet:gethostname(),
+    Info = info(any, Port, [server_name]),
+    {ok, [{bind_address,  any}, {host, Host}, {port, Port} | Info]};
+child_name2info({httpd_instance_sup, Address, Port}) ->
+    Info = info(Address, Port, [server_name]),
+    {ok, {_, Host, _, _,_, _}} = inet:gethostbyaddr(Address),
+    {ok, [{bind_address, Address}, {host, Host}, {port, Port} | Info]}.
+
+reload(Config, Address, Port) ->
+    Name = make_name(Address,Port),
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    httpd_manager:reload(Pid, Config);
+	_ ->
+	    {error,not_started}
     end.
 
-mstop(ConfigFiles) ->
-    mstop(ConfigFiles,[]).
-mstop([],Results) ->
-    {ok,lists:reverse(Results)};
-mstop([H|T],Results) ->
-    Res = stop(H),
-    mstop(T,[Res|Results]).
-
-multi_restart(MultiConfigFile) ->
-    case read_multi_file(MultiConfigFile) of
-	{ok,ConfigFiles} ->
-	    mrestart(ConfigFiles);
-	Error ->
-	    Error
-    end.
-
-mrestart(ConfigFiles) ->
-    mrestart(ConfigFiles,[]).
-mrestart([],Results) ->
-    {ok,lists:reverse(Results)};
-mrestart([H|T],Results) ->
-    Res = restart(H),
-    mrestart(T,[Res|Results]).
-
-restart() -> restart(undefined,8888).
-
-restart(Port) when is_integer(Port) ->
-    restart(undefined,Port);
-restart(ConfigFile) when is_list(ConfigFile) ->
-    case get_addr_and_port(ConfigFile) of
-	{ok,Addr,Port} ->
-	    restart(Addr,Port);
-	Error ->
-	    Error
-    end.
-    
-restart(Addr,Port) when is_integer(Port) ->
-    do_restart(Addr,Port).
-
-do_restart(Addr,Port) when is_integer(Port) -> 
+reload(Addr, Port) when is_integer(Port) ->
     Name = make_name(Addr,Port),
     case whereis(Name) of
 	Pid when pid(Pid) ->
-	    httpd_manager:restart(Pid);
+	    httpd_manager:reload(Pid, undefined);
 	_ ->
 	    {error,not_started}
     end.
     
-
 %%% =========================================================
 %%% Function:    block/0, block/1, block/2, block/3, block/4
 %%%              block()
@@ -326,6 +334,43 @@ unblock(Addr,Port) when is_integer(Port) ->
 	    {error,not_started}
     end.
 
+foreach([]) ->
+  [];
+foreach([KeyValue|Rest]) ->
+  {ok, Plus2Space, _} = regexp:gsub(KeyValue,"[\+]"," "),
+  case regexp:split(Plus2Space,"=") of
+    {ok,[Key|Value]} ->
+      [{httpd_util:decode_hex(Key),
+	httpd_util:decode_hex(lists:flatten(Value))}|foreach(Rest)];
+    {ok,_} ->
+      foreach(Rest)
+  end.
+
+get_addr_and_port(ConfigFile) ->
+    case httpd_conf:load(ConfigFile) of
+	{ok,ConfigList} ->
+	    Port = proplists:get_value(port,ConfigList,80),
+	    Address = 
+		case proplists:get_value(bind_address, ConfigList) of
+		    any  ->
+			any;
+		    Host -> 
+			{ok, Addr} = httpd_util:ip_address(Host),
+			Addr
+		end,
+	    {ok,Address,Port};
+	Error ->
+	    Error
+    end.
+
+
+make_name(Addr,Port) ->
+    httpd_util:make_name("httpd",Addr,Port).
+
+%%%--------------------------------------------------------------
+%%% Internal debug functions - Do we want these functions here!?
+%%%--------------------------------------------------------------------
+
 %%% =========================================================
 %%% Function:    get_admin_state/0, get_admin_state/1, get_admin_state/2
 %%%              get_admin_state()
@@ -452,65 +497,98 @@ get_status(Addr,Port,Timeout) when is_integer(Port) ->
 	    not_started
     end.
 
-load(ConfigFile) ->
-    httpd_conf:load(ConfigFile).
+do_reload_config(ConfigList, Mode) ->
+    Port = proplists:get_value(port,ConfigList,80),
+    Address = 
+	case proplists:get_value(bind_address, ConfigList) of
+	    any  ->
+		any;
+	    Host -> 
+		{ok, Addr} = httpd_util:ip_address(Host),
+		Addr
+	end,
+    NewConfig = proplists:delete(bind_address, ConfigList),
+    block(Address, Port, Mode),
+    reload([{bind_address, Address}  | NewConfig], Address, Port),
+    unblock(Address, Port).
 
-load_mime_types(MimeTypesFile) ->
-    httpd_conf:load_mime_types(MimeTypesFile).
+%%%--------------------------------------------------------------
+%%% Deprecated 
+%%%--------------------------------------------------------------
+start() ->
+    start("/var/tmp/server_root/conf/8888.conf").
 
-parse_query(String) ->
-  {ok, SplitString} = regexp:split(String,"[&;]"),
-  foreach(SplitString).
+start(ConfigFile) ->
+    {ok, Pid} = httpd_instance_sup:start_link(ConfigFile, infinity, disable),
+    unlink(Pid),
+    {ok, Pid}.
 
-foreach([]) ->
-  [];
-foreach([KeyValue|Rest]) ->
-  {ok, Plus2Space, _} = regexp:gsub(KeyValue,"[\+]"," "),
-  case regexp:split(Plus2Space,"=") of
-    {ok,[Key|Value]} ->
-      [{httpd_util:decode_hex(Key),
-	httpd_util:decode_hex(lists:flatten(Value))}|foreach(Rest)];
-    {ok,_} ->
-      foreach(Rest)
-  end.
+start_link() ->
+    start("/var/tmp/server_root/conf/8888.conf").
 
-get_addr_and_port(ConfigFile) ->
-    case httpd_conf:load(ConfigFile) of
-	{ok,ConfigList} ->
-	    Port = httpd_util:key1search(ConfigList,port,80),
-	    Addr = httpd_util:key1search(ConfigList,bind_address),
-	    {ok,Addr,Port};
+start_link(ConfigFile) when is_list(ConfigFile) ->
+    httpd_instance_sup:start_link(ConfigFile, infinity, disable).
+
+stop() ->
+  stop(8888).
+
+stop(Port) when is_integer(Port) ->
+    stop(undefined, Port);
+stop(Pid) when is_pid(Pid) ->
+    old_stop(Pid);
+stop(ConfigFile) when is_list(ConfigFile) ->
+    old_stop(ConfigFile).
+
+stop(Addr, Port) when is_integer(Port) ->
+    old_stop(Addr, Port).
+
+start_child() ->
+    start_child("/var/tmp/server_root/conf/8888.conf").
+
+start_child(ConfigFile) ->
+    httpd_sup:start_child(ConfigFile).
+
+stop_child() ->
+  stop_child(8888).
+
+stop_child(Port) ->
+    stop_child(undefined, Port).
+
+stop_child(Addr, Port) when integer(Port) ->
+    httpd_sup:stop_child(Addr, Port).
+
+restart() -> reload(undefined, 8888).
+
+restart(Port) when is_integer(Port) ->
+    reload(undefined,  Port).
+restart(Addr, Port) ->
+    reload(Addr, Port).
+
+old_stop(Pid) when pid(Pid) ->
+    do_stop(Pid);
+old_stop(ConfigFile) when list(ConfigFile) ->
+    case get_addr_and_port(ConfigFile) of
+	{ok, Addr, Port} ->
+	    old_stop(Addr, Port);
+	    
 	Error ->
 	    Error
+    end;
+old_stop(_StartArgs) ->
+    ok.
+
+old_stop(Addr, Port) when integer(Port) ->
+    Name = old_make_name(Addr, Port), 
+    case whereis(Name) of
+	Pid when pid(Pid) ->
+	    do_stop(Pid),
+	    ok;
+	_ ->
+	    not_started
     end.
+    
+do_stop(Pid) ->
+    exit(Pid, shutdown).
 
-
-make_name(Addr,Port) ->
-    httpd_util:make_name("httpd",Addr,Port).
-
-
-%% Multi stuff
-%%
-
-read_multi_file(File) ->
-    read_mfile(file:open(File,read)).
-
-read_mfile({ok,Fd}) ->
-    read_mfile(read_line(Fd),Fd,[]);
-read_mfile(Error) ->
-    Error.
-
-read_mfile(eof, _Fd, SoFar) ->
-    {ok,lists:reverse(SoFar)};
-read_mfile([$# | _Comment], Fd, SoFar) ->
-    read_mfile(read_line(Fd), Fd, SoFar);
-read_mfile([], Fd, SoFar) ->
-    read_mfile(read_line(Fd), Fd, SoFar);
-read_mfile(Line, Fd, SoFar) ->
-    read_mfile(read_line(Fd), Fd, [Line | SoFar]).
-
-read_line(Fd)      -> read_line1(io:get_line(Fd, [])).
-read_line1(eof)    -> eof;
-read_line1(String) -> httpd_conf:clean(String).
-
-
+old_make_name(Addr,Port) ->
+    httpd_util:make_name("httpd_instance_sup",Addr,Port).

@@ -29,7 +29,7 @@ do(Info) ->
     AuthUser = auth_user(Info#mod.data),
     Date     = custom_date(),
     log_internal_info(Info,Date,Info#mod.data),
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{StatusCode, _PhraseArgs, Reason} ->
 	    transfer_log(Info,"-",AuthUser,Date,StatusCode,0),
@@ -42,13 +42,13 @@ do(Info) ->
 	    {proceed,Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data,response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		{already_sent,StatusCode,Size} ->
 		    transfer_log(Info,"-",AuthUser,Date,StatusCode,Size),
 		    {proceed,Info#mod.data};
 		{response, Head, _Body} ->
-		    Size = httpd_util:key1search(Head,content_length,unknown),
-		    Code = httpd_util:key1search(Head,code,unknown),
+		    Size = proplists:get_value(content_length,Head,unknown),
+		    Code = proplists:get_value(code,Head,unknown),
 		    transfer_log(Info, "-", AuthUser, Date, Code, Size),
 		    {proceed, Info#mod.data};
 		{_StatusCode, Response} ->
@@ -83,7 +83,7 @@ sign(_Minutes) ->
     $-.
 
 auth_user(Data) ->
-    case httpd_util:key1search(Data,remote_user) of
+    case proplists:get_value(remote_user, Data) of
 	undefined ->
 	    "-";
 	RemoteUser ->
@@ -173,38 +173,44 @@ report_error(ConfigDB, Error) ->
 
 %% load
 
-load([$T,$r,$a,$n,$s,$f,$e,$r,$L,$o,$g,$ |TransferLog],[]) ->
+load("TransferLog " ++ TransferLog, []) ->
     {ok,[],{transfer_log,httpd_conf:clean(TransferLog)}};
-load([$E,$r,$r,$o,$r,$L,$o,$g,$ |ErrorLog],[]) ->
+load("ErrorLog " ++ ErrorLog, []) ->
     {ok,[],{error_log,httpd_conf:clean(ErrorLog)}};
-load([$S,$e,$c,$u,$r,$i,$t,$y,$L,$o,$g,$ |SecurityLog], []) ->
+load("SecurityLog " ++ SecurityLog, []) ->
     {ok, [], {security_log, httpd_conf:clean(SecurityLog)}}.
 
 %% store
 
-store({transfer_log,TransferLog},ConfigList) ->
+store({transfer_log,TransferLog}, ConfigList) when is_list(TransferLog)->
     case create_log(TransferLog,ConfigList) of
 	{ok,TransferLogStream} ->
 	    {ok,{transfer_log,TransferLogStream}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
-store({error_log,ErrorLog},ConfigList) ->
+store({transfer_log,TransferLog}, _) ->
+    {error, {wrong_type, {transfer_log, TransferLog}}};
+store({error_log,ErrorLog}, ConfigList) when is_list(ErrorLog) ->
     case create_log(ErrorLog,ConfigList) of
 	{ok,ErrorLogStream} ->
 	    {ok,{error_log,ErrorLogStream}};
 	{error,Reason} ->
 	    {error,Reason}
     end;
-store({security_log, SecurityLog},ConfigList) ->
+store({error_log,ErrorLog}, _) ->
+    {error, {wrong_type, {error_log, ErrorLog}}};
+store({security_log, SecurityLog}, ConfigList) when is_list(SecurityLog) ->
     case create_log(SecurityLog, ConfigList) of
 	{ok, SecurityLogStream} ->
 	    {ok, {security_log, SecurityLogStream}};
 	{error, Reason} ->
 	    {error, Reason}
-    end.
+    end;
+store({security_log, SecurityLog}, _) ->
+    {error, {wrong_type, {security_log, SecurityLog}}}.
 
-create_log(LogFile,ConfigList) ->
+create_log(LogFile, ConfigList) ->
     Filename = httpd_conf:clean(LogFile),
     case filename:pathtype(Filename) of
 	absolute ->
@@ -224,7 +230,7 @@ create_log(LogFile,ConfigList) ->
 		    {error,?NICE("Can't create "++Filename)}
 	    end;
 	relative ->
-	    case httpd_util:key1search(ConfigList,server_root) of
+	    case proplists:get_value(server_root,ConfigList) of
 		undefined ->
 		    {error,
 		     ?NICE(Filename++

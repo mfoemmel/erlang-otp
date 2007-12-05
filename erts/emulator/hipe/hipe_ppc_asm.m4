@@ -177,6 +177,17 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
  *	May be registers or process-private memory locations.
  *	Must not be C caller-save registers.
  *	Must not overlap with any Erlang global registers.
+ *
+ * TEMP_ARG0:
+ *	Used in nbif_stack_trap_ra to preserve the return value.
+ *	Must be a C callee-save register.
+ *	Must be otherwise unused in the return path.
+ *
+ * TEMP_ARG0:
+ *	Used in hipe_ppc_inc_stack to preserve the return address
+ *	(TEMP_LR contains the caller's saved return address).
+ *	Must be a C callee-save register.
+ *	Must be otherwise unused in the call path.
  */
 `#define TEMP_ARG0	r27'
 `#define TEMP_ARG1	r26'
@@ -202,18 +213,6 @@ define(SAR_1,`STORE ARG$1, P_ARG$1(P) SEMI ')dnl
 define(SAR_N,`ifelse(eval($1 >= 0),0,,`SAR_N(eval($1-1))SAR_1($1)')')dnl
 define(STORE_ARG_REGS,`SAR_N(eval(NR_ARG_REGS-1))')dnl
 `#define STORE_ARG_REGS	'STORE_ARG_REGS
-
-dnl
-dnl NSP_RETN(NPOP)
-dnl NPOP should be non-zero.
-dnl
-define(NSP_RETN,`addi	NSP, NSP, $1
-	blr')dnl
-
-dnl
-dnl NSP_RET0
-dnl
-define(NSP_RET0,`blr')dnl
 
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
@@ -250,6 +249,9 @@ dnl NBIF_RET(ARITY)
 dnl Generates a return from a native BIF, taking care to pop
 dnl any stacked formal parameters.
 dnl
+define(NSP_RETN,`addi	NSP, NSP, $1
+	blr')dnl
+define(NSP_RET0,`blr')dnl
 define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(WSIZE*($1 - NR_ARG_REGS)))')dnl
 define(NBIF_RET_N,`ifelse(eval($1),0,`NSP_RET0',`NSP_RETN($1)')')dnl
 define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl

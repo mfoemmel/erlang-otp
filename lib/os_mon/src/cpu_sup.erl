@@ -153,10 +153,10 @@ handle_call({?util, Detailed, PerCpu}, {Client, _Tag},
 			       PerCpu,
 			       fun () -> linux_read_cpu_util() end,
 			       State);
-handle_call({?util, _Detailed, _PerCpu}, _From, State) ->
+handle_call({?util, Detailed, PerCpu}, _From, State) ->
     String = "OS_MON (cpu_sup), util/1 unavailable for this OS~n",
     error_logger:warning_msg(String),
-    {reply, dummy_reply(?util), State};
+    {reply, dummy_reply({?util, Detailed, PerCpu}), State};
 handle_call(Request, _From, State) when Request==?nprocs;
 					Request==?avg1;
 					Request==?avg5;
@@ -275,9 +275,9 @@ get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
 	    N-1
     end;
 get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
-    %% Get the load average using uptime.
-    D = os:cmd("uptime") -- "\n",
-    %% Here is a sample uptime string from Mac OS 10.3.8:
+    %% Get the load average using uptime, overriding Locale setting.
+    D = os:cmd("LANG=C uptime") -- "\n",
+    %% Here is a sample uptime string from Mac OS 10.3.8 (C Locale):
     %%    "11:17  up 12 days, 20:39, 2 users, load averages: 1.07 0.95 0.66"
     %% The safest way to extract the load averages seems to be grab everything
     %% after the last colon and then do an fread on that.

@@ -1,4 +1,21 @@
 %% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
+%% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%%
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%%
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
+%%
+%%     $Id$
+%%
+
 %%%-------------------------------------------------------------------
 %%% File    : dialyzer_utils.erl
 %%% Author  : Tobias Lindahl <tobiasl@csd.uu.se>
@@ -9,6 +26,8 @@
 -module(dialyzer_utils).
 
 -export([
+	 format_sig/1,
+	 format_sig/2,
 	 get_abstract_code_from_beam/1,
 	 get_abstract_code_from_src/1,
 	 get_abstract_code_from_src/2,
@@ -17,8 +36,8 @@
 	 get_core_from_src/1,
 	 get_core_from_src/2,
 	 get_core_from_beam/2,
-	 get_record_info/1,
-	 get_spec_info/1,
+	 get_record_and_type_info/1,
+	 get_spec_info/2,
 	 merge_record_dicts/1,
 	 pp_hook/0
 	]).
@@ -35,7 +54,7 @@ get_abstract_code_from_src(File) ->
   get_abstract_code_from_src(File, []).
 
 get_abstract_code_from_src(File, Opts) ->
-  case compile:file(File, [to_pp, binary, typed_record|Opts]) of
+  case compile:file(File, [to_pp, binary|Opts]) of
     error -> {error, []};
     {error, Errors, _} -> {error, format_errors(Errors)};
     {ok, _, AbstrCode} -> AbstrCode
@@ -93,24 +112,70 @@ get_core_from_abstract_code(AbstrCode, Opts) ->
 %%
 %% ============================================================================
 
-get_record_info(AbstractCode) ->
-  get_record_info(AbstractCode, dict:new()).
+%% This will also contain the type info (aliases)
+get_record_and_type_info(AbstractCode) ->
+  get_record_and_type_info(AbstractCode, dict:new()).
 
-get_record_info([{attribute, _, record, {Name, Fields0}}|Left], RecDict) ->
+get_record_and_type_info([{attribute, _, record, {Name, Fields0}}|Left], 
+			 RecDict) ->
   case get_record_fields(Fields0, RecDict) of
     {ok, Fields} ->
       Arity = length(Fields),
       Fun = fun(OldOrdDict) -> orddict:store(Arity, Fields, OldOrdDict) end,
       NewRecDict = dict:update(Name, Fun, [{Arity, Fields}], RecDict),
-      get_record_info(Left, NewRecDict);
+      get_record_and_type_info(Left, NewRecDict);
     {error, Error} ->
-      {error, lists:flatten(io_lib:format("Error while parsing ~w#{}: ~s\n",
+      {error, lists:flatten(io_lib:format("Error while parsing #~w{}: ~s\n",
 					  [Name, Error]))}
   end;
-get_record_info([_Other|Left], RecDict) ->
-  get_record_info(Left, RecDict);
-get_record_info([], RecDict) ->
+get_record_and_type_info([{attribute, _, type, {{record, Name}, Fields0, []}}
+			  |Left], RecDict) ->
+  %% This overrides the original record declaration.
+  case get_record_fields(Fields0, RecDict) of
+    {ok, Fields} ->
+      Arity = length(Fields),
+      Fun = fun(OldOrdDict) -> orddict:store(Arity, Fields, OldOrdDict) end,
+      NewRecDict = dict:update(Name, Fun, [{Arity, Fields}], RecDict),
+      get_record_and_type_info(Left, NewRecDict);
+    {error, Error} ->
+      {error, lists:flatten(io_lib:format("Error while parsing #~w{}: ~s\n",
+					  [Name, Error]))}
+  end;
+get_record_and_type_info([{attribute, _, type, {Name, TypeForm}}|Left], 
+			 RecDict) ->
+  try
+    NewRecDict = add_new_type(Name, TypeForm, [], RecDict),
+    get_record_and_type_info(Left, NewRecDict)
+  catch
+    throw:{error, What} -> {error, What}
+  end;
+get_record_and_type_info([{attribute, _, type, {Name, TypeForm, Args}}|Left], 
+			 RecDict) ->
+  try
+    NewRecDict = add_new_type(Name, TypeForm, Args, RecDict),
+    get_record_and_type_info(Left, NewRecDict)
+  catch
+    throw:{error, What} -> {error, What}
+  end;
+get_record_and_type_info([_Other|Left], RecDict) ->
+  get_record_and_type_info(Left, RecDict);
+get_record_and_type_info([], RecDict) ->
   {ok, RecDict}.
+
+add_new_type(Name, TypeForm, [], RecDict) ->
+  case erl_types:lookup_type(Name, RecDict) of 
+    {ok, _DefinedType} -> 
+      {error, 
+       io_lib:format("Type already defined: ~w\n",[Name])};
+    error -> 
+      %% Hack to allow a very limited form of recursive types
+      %% TODO: Revise this
+      TmpRecDict = dict:store({type, Name}, erl_types:t_any(), RecDict),
+      Type = erl_types:t_from_form(TypeForm, TmpRecDict),
+      dict:store({type, Name}, Type, RecDict)
+  end;
+add_new_type(_Name, _TypeForm, _Args, _RecDict) ->
+  throw({error, "Parametrized user defined types: Not Yet Implemented"}).
 
 get_record_fields(Fields, RecDict) ->
   get_record_fields(Fields, RecDict, []).
@@ -149,9 +214,13 @@ merge_record_dicts(RecDict1, RecDict2) ->
   try {ok, dict:merge(fun handle_merge_clash/3, RecDict1, RecDict2)}
   catch
     throw:{record_clash, Tag, Arity} ->
-      {record_clash, Tag, Arity}
+      {record_clash, Tag, Arity};
+    throw:{newtype_clash, Name} ->
+      {newtype_clash, Name}
   end.
 
+handle_merge_clash({type,_}, T, T) -> T;
+handle_merge_clash({type, Name}, _, _) -> throw({newtype_clash, Name});
 handle_merge_clash(Tag, Orddict1, Orddict2) ->
   orddict:merge(fun(_Arity, Fields, Fields) -> Fields;
 		   (Arity, _, _) -> throw({record_clash, Tag, Arity})
@@ -165,36 +234,50 @@ handle_merge_clash(Tag, Orddict1, Orddict2) ->
 %% ============================================================================
 
 
-get_spec_info(AbstractCode) ->
-  get_spec_info(AbstractCode, dict:new()).
+get_spec_info(AbstractCode, RecordsDict) ->
+  {value, {attribute, _, module, ModName}} = 
+    lists:keysearch(module, 3, AbstractCode),
+  get_spec_info(AbstractCode, dict:new(), RecordsDict, ModName, "nofile").
 
-%% TypeSpec is a list of contracts for a function. 
-%% Each contract is [[Arguments], Range] with parse forms.
-get_spec_info([{attribute, _, type_spec, {{Name, Arity}, TypeSpec}}|Left], 
-	      SpecDict) when is_list(TypeSpec) ->
-  case form_to_contract(TypeSpec) of
-    error -> {error, SpecDict};
-    Contract ->
-      NewSpecDict = dict:store({Name, Arity}, Contract, SpecDict),
-      get_spec_info(Left, NewSpecDict)
+%% TypeSpec is a list of conditional contracts for a function. 
+%% Each contract will be {[Argument], Range, [Constraint]} where 
+%% Argument and Range -> erl_types format.
+%% Constraint -> {subtype, X, Y}
+
+get_spec_info([{attribute, Ln, spec, {Id, TypeSpec}}|Left], 
+	      SpecDict, RecordsDict, ModName, 
+	      CurrentFile) when is_list(TypeSpec) ->
+  {Mod, Fun, Arity} =
+    case Id of
+      {_, _, _} = MFA -> MFA;
+      {F, A} -> {ModName, F, A}
+    end,
+  try 
+    Contract = dialyzer_contracts:contract_from_form(TypeSpec, RecordsDict),
+    Index = {Mod, Fun, Arity},
+    case dict:find(Index, SpecDict) of
+      error -> 
+	NewSpecDict = 
+	  dict:store(Index, {{CurrentFile, Ln}, Contract}, SpecDict),
+	get_spec_info(Left, NewSpecDict, RecordsDict, ModName, CurrentFile);
+      {ok, {{File, L},_C}} -> 
+	Msg = io_lib:format("Contract for function ~w:~w/~w already " 
+			    "defined in ~s:~w.\n", 
+			    [ModName, Fun, Arity, File, L]),
+	throw({error, Msg})
+    end
+  catch
+    throw:{error, Error} -> 
+      {error, lists:flatten(io_lib:format("Error while parsing contract"
+					  " in line ~w: ~s\n", [Ln,Error]))}
   end;
-
-get_spec_info([_Other|Left], SpecDict) ->
-  get_spec_info(Left, SpecDict);
-
-get_spec_info([], SpecDict) ->
+get_spec_info([{attribute, _, file, {File, _}}|Left],
+	      SpecDict, RecordsDict, ModName, _CurrentFile) ->
+  get_spec_info(Left, SpecDict, RecordsDict, ModName, File);
+get_spec_info([_Other|Left], SpecDict, RecordsDict, ModName, CurrentFile) ->
+  get_spec_info(Left, SpecDict, RecordsDict, ModName, CurrentFile);
+get_spec_info([], SpecDict, _RecordsDict, _ModName, _CurrentFile) ->
   {ok, SpecDict}.
-
-
-form_to_contract([{type, 'fun', Info} | Left]) -> 
-  [Info|form_to_contract(Left)];
-form_to_contract([_|_]) -> io:format("The contract does not follow the function format: \"(Arguments) -> Return\"\n"), error;
-form_to_contract([]) -> [].
-  
-
-% Warnings
-% We admit 2 contracts for the same function rigth now. 
-% Previous contracts are overwritten. 
 
 %% ============================================================================
 %%
@@ -217,6 +300,15 @@ format_errors([{Mod, Errors}|Left]) ->
 format_errors([]) ->
   [].
 
+format_sig(Type) ->
+  format_sig(Type, dict:new()).
+
+format_sig(Type, RecDict) ->
+  "fun(" ++ Sig = lists:flatten(erl_types:t_to_string(Type, RecDict)),
+  ")" ++ RevSig = lists:reverse(Sig),
+  lists:reverse(RevSig).
+
+
 %%%-------------------------------------------------------------------
 %%% Author  : Per Gustafsson <pergu@it.uu.se>
 %%% Description : pp_hook for better printing of binaries. 
@@ -228,10 +320,12 @@ pp_hook() ->
     fun pp_hook/3.
 
 pp_hook(Node, Ctxt, Cont) ->
-  case cerl:is_c_binary(Node) of
-    true ->
+  case cerl:type(Node) of
+    binary ->
       pp_binary(Node,Ctxt,Cont);
-    false ->
+    bitstr ->
+      pp_segment(Node,Ctxt,Cont);
+    _ ->
       Cont(Node, Ctxt)
   end.
 
@@ -287,13 +381,6 @@ pp_flags([Flag|Flags]) ->
   prettypr:beside(prettypr:text("-"),
 		  prettypr:beside(pp_atom(Flag),
 				 pp_flags(Flags))).
-
-%keep_endian(Flags) ->
-%  [cerl:c_atom(X) || X <- Flags, (X =:= big) or (X =:= little)
-%  or (X =:= native)].
-
-%keep_all(Flags) ->
-%  [cerl:c_atom(X) || X <- Flags].
 
 keep_endian(Flags) ->
   [cerl:c_atom(X) || X <- Flags, (X =:= little) or (X =:= native)].

@@ -208,8 +208,6 @@ erts_dicts_mem_size(Process *p)
     Uint size = 0;
     if (p->dictionary)
 	size += PD_SZ2BYTES(p->dictionary->size);
-    if (p->debug_dictionary)
-	size += PD_SZ2BYTES(p->debug_dictionary->size);
     return size;
 }
 
@@ -218,12 +216,7 @@ erts_erase_dicts(Process *p)
 {
     if (p->dictionary)
 	pd_hash_erase_all(p);
-    if (p->debug_dictionary) {
-	p->dictionary = p->debug_dictionary;
-	pd_hash_erase_all(p);
-    }
     p->dictionary = NULL;
-    p->debug_dictionary = NULL;
 }
 
 /* 
@@ -331,79 +324,6 @@ BIF_RETTYPE erase_1(BIF_ALIST_1)
     }
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
-}
-
-/*
-** Debug dictionary interfaces (i.e. $put, $get etc).
-** The implementation is kind of sloppy, I switch the dictionary
-** to the debug_dictionary and call the usual BIF, then switch
-** back. 
-*/
-
-BIF_RETTYPE dollar_put_2(BIF_ALIST_2)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = put_2(BIF_P, BIF_ARG_1, BIF_ARG_2);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
-}
-
-BIF_RETTYPE dollar_get_0(BIF_ALIST_0)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = get_0(BIF_P);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
-}
-
-BIF_RETTYPE dollar_get_1(BIF_ALIST_1)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = get_1(BIF_P, BIF_ARG_1);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
-}
-
-BIF_RETTYPE dollar_get_keys_1(BIF_ALIST_1)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = get_keys_1(BIF_P, BIF_ARG_1);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
-}
-
-BIF_RETTYPE dollar_erase_0(BIF_ALIST_0)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = erase_0(BIF_P);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
-}
-
-BIF_RETTYPE dollar_erase_1(BIF_ALIST_1)
-{
-    BIF_RETTYPE save_ret;
-    ProcDict *save_pd = BIF_P->dictionary;
-    BIF_P->dictionary = BIF_P->debug_dictionary;
-    save_ret = erase_1(BIF_P, BIF_ARG_1);
-    BIF_P->debug_dictionary = BIF_P->dictionary;
-    BIF_P->dictionary = save_pd;
-    BIF_RET(save_ret);
 }
 
 /*

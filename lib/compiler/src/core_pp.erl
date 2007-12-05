@@ -38,10 +38,8 @@
 	       tab_width = 8,
 	       line = 0}).
 
-format(Node) -> case catch format(Node, #ctxt{}) of
-		    {'EXIT',_} -> io_lib:format("~p",[Node]);
-		    Other -> Other
-		end.
+format(Node) ->
+    format(Node, #ctxt{}).
 
 maybe_anno(Node, Fun, Ctxt) ->
     As = core_lib:get_anno(Node),
@@ -69,9 +67,23 @@ maybe_anno(Node, Fun, Ctxt, As) ->
 	    ["( ",
 	     Fun(Node, Ctxt1),
 	     nl_indent(Ctxt1),
-	     "-| ",format_1(core_lib:make_literal(List), Ctxt2)," )"
+	     "-| ",format_anno(List, Ctxt2)," )"
 	    ]
     end.
+
+format_anno([_|_]=List, Ctxt) ->
+    [$[,format_anno_list(List, Ctxt),$]];
+format_anno(Tuple, Ctxt) when is_tuple(Tuple) ->
+    [${,format_anno_list(tuple_to_list(Tuple), Ctxt),$}];
+format_anno(Val, Ctxt) when is_atom(Val) ->
+    format_1(core_lib:make_literal(Val), Ctxt);
+format_anno(Val, Ctxt) when is_integer(Val) ->
+    format_1(core_lib:make_literal(Val), Ctxt).
+
+format_anno_list([H|[_|_]=T], Ctxt) ->
+    [format_anno(H, Ctxt), $, | format_anno_list(T, Ctxt)];
+format_anno_list([H], Ctxt) ->
+    format_anno(H, Ctxt).
 
 strip_line([A | As]) when is_integer(A) ->
     strip_line(As);
@@ -96,11 +108,17 @@ format_1(#c_literal{val=[]}, _) -> "[]";
 format_1(#c_literal{val=I}, _) when is_integer(I) -> integer_to_list(I);
 format_1(#c_literal{val=F}, _) when is_float(F) -> float_to_list(F);
 format_1(#c_literal{val=A}, _) when is_atom(A) -> core_atom(A);
-format_1(#c_literal{val=L}, _) -> io_lib:format("LITERAL<~p>", [L]);
+format_1(#c_literal{val=[H|T]}, Ctxt) ->
+    format_1(#c_cons{hd=#c_literal{val=H},tl=#c_literal{val=T}}, Ctxt);
+format_1(#c_literal{val=Tuple}, Ctxt) when is_tuple(Tuple) ->
+    format_1(#c_tuple{es=[#c_literal{val=E} || E <- tuple_to_list(Tuple)]}, Ctxt);
+format_1(#c_literal{anno=A,val=Bitstring}, Ctxt) when erlang:is_bitstr(Bitstring) ->
+    Segs = segs_from_bitstring(Bitstring),
+    format_1(#c_binary{anno=A,segments=Segs}, Ctxt);
 format_1(#c_var{name=V}, _) ->
     %% Internal variable names may be:
     %%     - atoms representing proper Erlang variable names, or
-    %%     any atoms that may be printed without single-quoting
+    %%       any atoms that may be printed without single-quoting
     %%     - nonnegative integers.
     %% It is important that when printing variables, no two names
     %% should ever map to the same string.
@@ -456,3 +474,21 @@ is_simple_term(#c_literal{val=[_|_]}) -> false;
 is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
 is_simple_term(#c_fname{}) -> true;
 is_simple_term(_) -> false.
+
+segs_from_bitstring(<<H,T/bitstr>>) ->
+    [#c_bitstr{val=#c_literal{val=H},
+	       size=#c_literal{val=8},
+	       unit=#c_literal{val=1},
+	       type=#c_literal{val=integer},
+	       flags=#c_literal{val=[unsigned,big]}}|segs_from_bitstring(T)];
+segs_from_bitstring(<<>>) ->
+    [];
+segs_from_bitstring(Bitstring) ->
+    N = erlang:bitsize(Bitstring),
+    <<I:N>> = Bitstring,
+    [#c_bitstr{val=#c_literal{val=I},
+	      size=#c_literal{val=N},
+	      unit=#c_literal{val=1},
+	      type=#c_literal{val=integer},
+	      flags=#c_literal{val=[unsigned,big]}}].
+

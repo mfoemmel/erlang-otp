@@ -402,7 +402,7 @@ new_variable_names(N, S) ->
 %% 
 %% @see new_variable_name/2
 
-new_variable_names(N, F, S) when integer(N) ->
+new_variable_names(N, F, S) when is_integer(N) ->
     R = start_range(S),
     new_variable_names(N, [], R, F, S).
 
@@ -463,7 +463,7 @@ annotate_bindings(Tree) ->
         {value, {env, InVars}} ->
             annotate_bindings(Tree, InVars);
         _ ->
-            erlang:fault(badarg)
+            erlang:error(badarg)
     end.
 
 vann(Tree, Env) ->
@@ -493,8 +493,12 @@ vann(Tree, Env) ->
             vann_fun_expr(Tree, Env);
         list_comp ->
             vann_list_comp(Tree, Env);
+        binary_comp ->
+            vann_binary_comp(Tree, Env);
         generator ->
             vann_generator(Tree, Env);
+        binary_generator ->
+            vann_binary_generator(Tree, Env);
         block_expr ->
             vann_block_expr(Tree, Env);
         macro ->
@@ -607,7 +611,9 @@ vann_list_comp(Tree, Env) ->
 vann_list_comp_body_join() ->
     fun (T, {Env, Bound, Free}) ->
             {T1, Bound1, Free1} = case erl_syntax:type(T) of
-                                      generator ->
+                                      binary_generator ->
+				          vann_binary_generator(T,Env);
+				      generator ->
                                           vann_generator(T, Env);
                                       _ ->
                                           %% Bindings in filters are not
@@ -627,6 +633,42 @@ vann_list_comp_body(Ts, Env) ->
     {Ts1, {_, Bound, Free}} = lists:mapfoldl(F, {Env, [], []}, Ts),
     {Ts1, {Bound, Free}}.
 
+vann_binary_comp(Tree, Env) ->
+    Es = erl_syntax:binary_comp_body(Tree),
+    {Es1, {Bound1, Free1}} = vann_binary_comp_body(Es, Env),
+    Env1 = ordsets:union(Env, Bound1),
+    T = erl_syntax:binary_comp_template(Tree),
+    {T1, _, Free2} = vann(T, Env1),
+    Free = ordsets:union(Free1, ordsets:subtract(Free2, Bound1)),
+    Bound = [],
+    Tree1 = rewrite(Tree, erl_syntax:binary_comp(T1, Es1)),
+    {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
+
+vann_binary_comp_body_join() ->
+    fun (T, {Env, Bound, Free}) ->
+            {T1, Bound1, Free1} = case erl_syntax:type(T) of
+                                    binary_generator ->
+				          vann_binary_generator(T, Env);
+				    generator ->
+                                          vann_generator(T, Env);
+                                      _ ->
+                                          %% Bindings in filters are not
+                                          %% exported to the rest of the
+                                          %% body.
+                                          {T2, _, Free2} = vann(T, Env),
+                                          {T2, [], Free2}
+                                  end,
+            Env1 = ordsets:union(Env, Bound1),
+            {T1, {Env1, ordsets:union(Bound, Bound1),
+                  ordsets:union(Free, 
+                                ordsets:subtract(Free1, Bound))}}
+    end.
+
+vann_binary_comp_body(Ts, Env) ->
+    F = vann_binary_comp_body_join(),
+    {Ts1, {_, Bound, Free}} = lists:mapfoldl(F, {Env, [], []}, Ts),
+    {Ts1, {Bound, Free}}.
+
 %% In list comprehension generators, the pattern variables are always
 %% viewed as new occurrences, shadowing whatever is in the input
 %% environment (thus, the pattern contains no variable uses, only
@@ -638,6 +680,14 @@ vann_generator(Tree, Env) ->
     E = erl_syntax:generator_body(Tree),
     {E1, _, Free} = vann(E, Env),
     Tree1 = rewrite(Tree, erl_syntax:generator(P1, E1)),
+    {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
+
+vann_binary_generator(Tree, Env) ->
+    P = erl_syntax:binary_generator_pattern(Tree),
+    {P1, Bound, _} = vann_pattern(P, Env),
+    E = erl_syntax:binary_generator_body(Tree),
+    {E1, _, Free} = vann(E, Env),
+    Tree1 = rewrite(Tree, erl_syntax:binary_generator(P1, E1)),
     {ann_bindings(Tree1, Env, Bound, Free), Bound, Free}.
 
 vann_block_expr(Tree, Env) ->
@@ -789,12 +839,12 @@ delete_binding_anns([]) ->
 %% expression which never terminates normally. Note that the reverse
 %% does not apply. Currently, the detected cases are calls to
 %% `exit/1', `throw/1',
-%% `erlang:fault/1' and `erlang:fault/2'.
+%% `erlang:error/1' and `erlang:error/2'.
 %%
 %% @see //kernel/erlang:exit/1
 %% @see //kernel/erlang:throw/1
-%% @see //kernel/erlang:fault/1
-%% @see //kernel/erlang:fault/2
+%% @see //kernel/erlang:error/1
+%% @see //kernel/erlang:error/2
 
 is_fail_expr(E) ->          
     case erl_syntax:type(E) of
@@ -965,7 +1015,7 @@ is_fail_expr(E) ->
 %% @see erl_syntax:error_marker_info/1
 %% @see erl_syntax:warning_marker_info/1
 
-analyze_forms(Forms) when list(Forms) ->
+analyze_forms(Forms) when is_list(Forms) ->
     finfo_to_list(lists:foldl(fun collect_form/2, new_finfo(), Forms));
 analyze_forms(Forms) ->
     analyze_forms(
@@ -1239,9 +1289,15 @@ analyze_attribute(_, Node) ->
 
 
 %% =====================================================================
-%% @spec analyze_module_attribute(Node::syntaxTree()) -> atom()
+%% @spec analyze_module_attribute(Node::syntaxTree()) ->
+%%           Name::atom() | {Name::atom(), Variables::[atom()]}
 %%
-%% @doc Returns the module name declared by a module attribute.
+%% @doc Returns the module name and possible parameters declared by a
+%% module attribute. If the attribute is a plain module declaration such
+%% as `-module(name)', the result is the module name. If the attribute
+%% is a parameterized module declaration, the result is a tuple
+%% containing the module name and a list of the parameter variable
+%% names.
 %%
 %% The evaluation throws `syntax_error' if
 %% `Node' does not represent a well-formed module
@@ -1363,7 +1419,7 @@ analyze_function_name(Node) ->
 
 append_arity(A, {Module, Name}) ->
     {Module, append_arity(A, Name)};
-append_arity(A, Name) when atom(Name) ->
+append_arity(A, Name) when is_atom(Name) ->
     {Name, A};
 append_arity(A, A) ->
     A;
@@ -1819,7 +1875,7 @@ function_name_expansions([F | Fs], Ack) ->
 function_name_expansions([], Ack) ->
     Ack.
 
-function_name_expansions({A, N}, Name, Ack) when integer(N) ->
+function_name_expansions({A, N}, Name, Ack) when is_integer(N) ->
     [{{A, N}, Name} | Ack];
 function_name_expansions({_, N}, Name, Ack) ->
     function_name_expansions(N, Name,  Ack);

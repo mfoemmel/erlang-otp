@@ -43,8 +43,10 @@ prefix_op mult_op add_op list_op comp_op
 rule rule_clauses rule_clause rule_body
 binary bin_elements bin_element bit_expr
 opt_bit_size_expr bit_size_expr opt_bit_type_list bit_type_list bit_type
-top_type top_types type typed_expr typed_attr_val arg_types arg_type
-typed_exprs typed_record_fields.
+top_type top_types type typed_expr typed_attr_val arg_types arg_type 
+type_sig type_sigs type_guard type_guards fun_type fun_type_100 binary_type
+typed_exprs typed_record_fields field_types field_type
+bin_base_type bin_unit_type int_type.
 
 Terminals
 char integer float atom string var
@@ -74,10 +76,11 @@ form -> rule dot : '$1'.
 attribute -> '-' atom '(' attr_val ')' : build_attribute('$2', '$4').
 attribute -> '-' atom '(' typed_attr_val ')' : build_typed_attribute('$2','$4').
 
-typed_attr_val -> expr ',' typed_record_fields : ['$1' , '$3'].
-typed_attr_val -> expr '::' top_types          : ['$1' , '$3'].
+typed_attr_val -> expr ',' typed_record_fields : ['$1' , {typed_record, '$3'}].
+typed_attr_val -> expr '::' type_sigs          : ['$1' , {type_sigs, '$3'}].
+typed_attr_val -> expr '::' top_type           : ['$1' , {type_def, '$3'}].
 
-typed_record_fields -> '{' typed_exprs '}' : {tuple,line('$1'),'$2'}.
+typed_record_fields -> '{' typed_exprs '}' : {tuple, line('$1'), '$2'}.
 
 typed_exprs -> typed_expr                 : ['$1'].
 typed_exprs -> typed_expr ',' typed_exprs : ['$1'|'$3'].
@@ -86,33 +89,87 @@ typed_exprs -> typed_expr ',' exprs       : ['$1'|'$3'].
 
 typed_expr -> expr '::' top_type          : {typed,'$1','$3'}.
 
+type_sigs -> type_sig                     : ['$1'].
+type_sigs -> type_sig ';' type_sigs       : ['$1'|'$3'].
+
+type_sig -> fun_type                      : '$1'.
+type_sig -> fun_type 'when' type_guards   : {type, line('$1'), bounded_fun, 
+                                             ['$1','$3']}.
+
+type_guards -> type_guard                 : ['$1'].
+type_guards -> type_guard ',' type_guards : ['$1'|'$3'].
+
+type_guard -> atom '(' top_types ')'      : {type, line('$1'), constraint, 
+                                             ['$1', '$3']}.
+
 top_types -> top_type                     : ['$1'].
 top_types -> top_type ',' top_types       : ['$1'|'$3'].
 
-top_type -> type                          : '$1'.
 top_type -> type '|' top_type             : lift_unions('$1','$3').
+top_type -> type                          : '$1'.
 
-type -> atom                              : {type, atom, [normalise('$1')]}.
-type -> atom '(' ')'                      : build_type('$1', []).
-type -> atom '(' top_type ')'             : build_type('$1', ['$3']).
-type -> atom '(' top_type ',' top_type ')': build_type('$1', ['$3', '$5']).
-type -> '[' ']'                           : {type, nil, []}.
-type -> '[' top_type ']'                  : {type, list, ['$2']}.
-type -> '[' top_type ',' '.' '.' '.' ']'  : {type, nonempty_list, ['$2']}.
-type -> '(' '(' ')' '->' top_type ')'     : {type, 'fun', [[], '$5']}.
-type -> '(' '(' arg_types ')' '->' top_type ')' : {type, 'fun', ['$3', '$6']}.
-type -> '{' '}'                           : {type, tuple, []}.
-type -> '{' top_types '}'                 : {type, tuple, '$2'}.
-type -> '#' atom '{' '}'                  : {type, record, [normalise('$2')]}.
-type -> integer                           : {type, integer, [normalise('$1')]}.
-type -> '(' integer '.' '.' integer ')'   : 
-			{type, range, [normalise('$2'), normalise('$5')]}.
+type -> var                               : '$1'.
+type -> atom                              : '$1'.
+type -> atom '(' ')'                      : build_gen_type('$1').
+type -> atom '(' top_types ')'            : {type, line('$1'), 
+                                             normalise('$1'), '$3'}.
+type -> '[' ']'                           : {type, line('$1'), nil, []}.
+type -> '[' top_type ']'                  : {type, line('$1'), list, ['$2']}.
+type -> '[' top_type ',' '.' '.' '.' ']'  : {type, line('$1'), 
+                                             nonempty_list, ['$2']}.
+type -> '{' '}'                           : {type, line('$1'), tuple, []}.
+type -> '{' top_types '}'                 : {type, line('$1'), tuple, '$2'}.
+type -> '#' atom '{' '}'                  : {type, line('$1'), record, ['$2']}.
+type -> '#' atom '{' field_types '}'      : {type, line('$1'), 
+                                             record, ['$2'|'$4']}.
+type -> binary_type                       : '$1'.
+type -> int_type                          : '$1'.
+type -> int_type '.' '.' int_type         : {type, line('$1'), range, 
+                                             ['$1', '$4']}.
+type -> 'fun' '(' ')'                     : {type, line('$1'), 'fun', []}.
+type -> 'fun' '(' fun_type_100 ')'        : '$3'.
+
+int_type -> integer                       : '$1'.
+int_type -> '-' integer                   : abstract(-normalise('$2'), 
+                                                     line('$2')).
+
+fun_type_100 -> '(' '.' '.' '.' ')' '->' top_type 
+                                          : {type, line('$1'), 'fun',
+                                             [{type, line('$1'), any}, '$7']}.
+fun_type_100 -> fun_type                  : '$1'.
+
+fun_type -> '(' ')' '->' top_type  : {type, line('$1'), 'fun',
+                                      [{type, line('$1'), product, []}, '$4']}.
+fun_type -> '(' arg_types ')' '->' top_type 
+                                   : {type, line('$1'), 'fun',
+                                      [{type, line('$1'), product, '$2'},'$5']}.
+
 
 arg_types -> arg_type                     : ['$1'].
 arg_types -> arg_type ',' arg_types       : ['$1'|'$3'].
 
 arg_type -> var '::' top_type             : '$3'.
 arg_type -> top_type                      : '$1'.
+
+field_types -> field_type                 : ['$1'].
+field_types -> field_type ',' field_types : ['$1'|'$3'].
+
+field_type -> atom '::' top_type          : {type, line('$1'), field_type, 
+                                             ['$1', '$3']}.
+
+binary_type -> '<<' '>>'                  : {type, line('$1'),binary, 
+					     [abstract(0, line('$1')), 
+					      abstract(0, line('$1'))]}.
+binary_type -> '<<' bin_base_type '>>'    : {type, line('$1'),binary,
+					     ['$2', abstract(0, line('$1'))]}.
+binary_type -> '<<' bin_unit_type '>>'    : {type, line('$1'),binary,
+                                             [abstract(0, line('$1')), '$2']}.
+binary_type -> '<<' bin_base_type ',' bin_unit_type '>>'
+                                    : {type, line('$1'), binary, ['$2', '$4']}.
+
+bin_base_type -> var ':' integer          : build_bin_type(['$1'], '$3').
+
+bin_unit_type -> var ':' var '*' integer  : build_bin_type(['$1', '$3'], '$5').
 
 attr_val -> exprs : '$1'.
 
@@ -243,7 +300,7 @@ lc_exprs -> lc_expr ',' lc_exprs : ['$1'|'$3'].
 
 lc_expr -> expr : '$1'.
 lc_expr -> expr '<-' expr : {generate,line('$2'),'$1','$3'}.
-lc_expr -> binary '<=' expr_max : {b_generate,line('$2'),'$1','$3'}.
+lc_expr -> binary '<=' expr : {b_generate,line('$2'),'$1','$3'}.
 
 tuple -> '{' '}' : {tuple,line('$1'),[]}.
 tuple -> '{' exprs '}' : {tuple,line('$1'),'$2'}.
@@ -449,7 +506,7 @@ Erlang code.
 
 %% The following directive is needed for (significantly) faster compilation
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
--compile([inline,{hipe,[{regalloc,linear_scan}]}]).
+-compile([{hipe,[{regalloc,linear_scan}]}]).
 
 
 %% mkop(Op, Arg) -> {op,Line,Op,Arg}.
@@ -489,53 +546,49 @@ parse_term(Tokens) ->
 	{error,E} -> {error,E}
     end.
 
-build_type({atom,_,any}, []) -> {type, any, []};
-build_type({atom,_,atom}, []) -> {type, atom, []};
-build_type({atom,_,binary}, []) -> {type, binary, []};
-build_type({atom,_,bool}, []) -> {type, bool, []};
-build_type({atom,_,byte}, []) -> {type, byte, []};
-build_type({atom,_,char}, []) -> {type, char, []};
-build_type({atom,_,float}, []) -> {type, float, []};
-build_type({atom,_,function}, []) -> {type, 'fun', []};
-build_type({atom,_,identifier}, []) -> {type, identifier, []};
-build_type({atom,_,integer}, []) -> {type, integer, []};
-build_type({atom,_,list}, []) -> {type, list, []};
-build_type({atom,_,mfa}, []) -> {type, mfa, []};
-build_type({atom,_,neg_integer}, []) -> {type, neg_integer, []};
-build_type({atom,_,non_neg_integer}, []) -> {type, non_neg_integer, []};
-build_type({atom,_,none}, []) -> {type, none, []};
-build_type({atom,_,nonempty_list}, [C,T]) -> {type, cons, [C,T]};
-build_type({atom,_,nonempty_possibly_improper_list}, []) -> 
-    {type, cons, []};
-build_type({atom,_,nonempty_posssibly_improper_list}, [C,T]) -> 
-    {type, cons, [C, T]};
-build_type({atom,_,number}, []) -> {type, number, []};
-build_type({atom,_,pid}, []) -> {type, pid, []};
-build_type({atom,_,port}, []) -> {type, port, []};
-build_type({atom,_,pos_integer}, []) -> {type, pos_integer, []};
-build_type({atom,_,possibly_improper_list}, [C,T]) -> 
-    {type, pos_improper_list, [C,T]};
-build_type({atom,_,possibly_improper_list}, []) -> 
-    {type, pos_improper_list, []};
-build_type({atom,_,ref}, []) -> {type, ref, []};
-build_type({atom,_,string}, []) -> {type, string, []};
-build_type({atom,_,tuple}, []) -> {type, tuple, []};
-build_type({atom,_,Other}, []) -> {type, var, [Other]}.
+-type(attributes() :: 'export' | 'file' | 'import' | 'module'
+		    | 'record' | 'spec' | 'type').
 
-build_typed_attribute({atom,La,record}, [{atom,_Ln,RecordName},RecTuple]) ->
+build_typed_attribute({atom,La,record}, [{atom,_Ln,RecordName},
+                                         {typed_record, RecTuple}]) ->
     {attribute,La,record,{RecordName,record_tuple(RecTuple)}};
 build_typed_attribute({atom,La,spec}, [{op,_Lo,'/',{atom,_La,FunName},
 				                   {integer,_Li,FunArity}},
-				       	TypeSpec])  ->
-    {attribute,La,type_spec,{{FunName,FunArity},TypeSpec}};
-build_typed_attribute({atom,La,_},_) ->
-    error_bad_decl(La,spec).
+				       {type_sigs, TypeSpec}])  ->
+    {attribute,La,spec,{{FunName,FunArity},TypeSpec}};
+build_typed_attribute({atom,La,spec},
+                      [{op,_,'/',{remote,_,{atom,_,ModName},
+                                           {atom,_,FunName}},
+                                 {integer,_,FunArity}},
+                       {type_sigs, TypeSpec}]) ->
+    {attribute,La,spec,{{ModName,FunName,FunArity},TypeSpec}};
+build_typed_attribute({atom,La,type}, 
+                      [{call,_,{atom,_,TypeName},Args},{type_def, Type}]) ->
+    {attribute,La,type,{TypeName,Type,Args}};
+build_typed_attribute({atom,La,Atom},_) ->
+    case Atom of
+        record -> error_bad_decl(La,record);
+        spec   -> error_bad_decl(La,spec);
+        type   -> error_bad_decl(La,type);
+        _      -> return_error(La, "bad attribute")
+    end.
 
-lift_unions(T1, {type, union, List}) ->
-    {type, union, [T1|List]};
-lift_unions(T1, T2 = {type, _, _}) ->
-    {type, union, [T1, T2]}.
+lift_unions(T1, {type, _La, union, List}) ->
+    {type, line(T1), union, [T1|List]};
+lift_unions(T1, T2) ->
+    {type, line(T1), union, [T1, T2]}.
 
+build_gen_type({atom, La, tuple}) ->
+    {type, La, tuple, any};
+build_gen_type({atom, La, Name}) ->
+    {type, La, Name, []}.
+
+build_bin_type([{var, _, '_'}|Left], Int) ->
+    build_bin_type(Left, Int);
+build_bin_type([], Int) ->
+    Int;
+build_bin_type([{var, La, _}|_], _) ->
+    return_error(La, "Bad binary type").
 
 %% build_attribute(AttrName, AttrValue) ->
 %%	{attribute,Line,module,Module}
@@ -619,6 +672,8 @@ var_list({nil,_Ln}) -> [];
 var_list(Other) ->
     return_error(line(Other), "bad variable list").
 
+-spec(error_bad_decl/2 :: (integer(), attributes()) -> no_return()).
+
 error_bad_decl(L, S) ->
     return_error(L, io_lib:format("bad ~w declaration", [S])).
 
@@ -633,19 +688,6 @@ record_tuple({tuple,_Lt,Fields}) ->
 record_tuple(Other) ->
     return_error(line(Other), "bad record declaration").
 
-%%record_fields([{atom,La,A}|Fields]) ->
-%%    [{record_field,La,{atom,La,A},{atom,La,undefined},{type, any, []}}
-%%     |record_fields(Fields)];
-%%record_fields([{match,_Lm,{atom,La,A},Expr}|Fields]) ->
-%%    [{record_field,La,{atom,La,A},Expr,{type, any, []}}
-%%     |record_fields(Fields)];
-%%record_fields([{typed,Expr,TypeInfo}|Fields]) ->
-%%    [{record_field,La,FieldName,Init,_BogusTypeInfo}] = record_fields([Expr]),
-%%    [{record_field,La,FieldName,Init,TypeInfo}|record_fields(Fields)];
-%%record_fields([Other|_Fields]) ->
-%%    return_error(line(Other), "bad record field");
-%%record_fields([]) -> [].
-
 record_fields([{atom,La,A}|Fields]) ->
     [{record_field,La,{atom,La,A}}|record_fields(Fields)];
 record_fields([{match,_Lm,{atom,La,A},Expr}|Fields]) ->
@@ -655,7 +697,8 @@ record_fields([{typed,Expr,TypeInfo}|Fields]) ->
     TypeInfo1 = 
 	case Expr of
 	    {match, _, _, _} -> TypeInfo; %% If we have an initializer.
-	    {atom, _, _} -> lift_unions({type, atom, ['undefined']}, TypeInfo)
+	    {atom, La, _} -> 
+                lift_unions(abstract(undefined, La), TypeInfo)
 	end, 
     [{typed_record_field,Field,TypeInfo1}|record_fields(Fields)];
 record_fields([Other|_Fields]) ->
@@ -745,7 +788,7 @@ normalise({tuple,_,Args}) ->
 %% Atom dot-notation, as in 'foo.bar.baz'
 normalise({record_field,_,_,_}=A) ->
     case package_segments(A) of
-	error -> erlang:fault({badarg, A});
+	error -> erlang:error({badarg, A});
 	As -> list_to_atom(packages:concat(As))
     end;
 %% Special case for unary +/-.
@@ -755,7 +798,7 @@ normalise({op,_,'+',{float,_,F}}) -> F;
 normalise({op,_,'-',{char,_,I}}) -> -I;		%Weird, but compatible!
 normalise({op,_,'-',{integer,_,I}}) -> -I;
 normalise({op,_,'-',{float,_,F}}) -> -F;
-normalise(X) -> erlang:fault({badarg, X}).
+normalise(X) -> erlang:error({badarg, X}).
 
 normalise_list([H|T]) ->
     [normalise(H)|normalise_list(T)];

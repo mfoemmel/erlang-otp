@@ -444,7 +444,9 @@ lay_1(Node, Ctxt) ->
 	module ->
 	    lay_module(Node, Ctxt);
 	binary ->
-	    lay_binary(Node, Ctxt)
+	    lay_binary(Node, Ctxt);
+	bitstr ->
+	    lay_bitstr(Node, Ctxt)
     end.
 
 lay_literal(Node, Ctxt) ->
@@ -458,6 +460,15 @@ lay_literal(Node, Ctxt) ->
 	    %% that could represent printable characters - we
 	    %% always print an integer.
 	    text(int_lit(Node));
+	V when is_binary(V) ->
+	    lay_binary(cerl:c_binary([cerl:c_bitstr(cerl:abstract(B),
+						    cerl:abstract(8),
+						    cerl:abstract(1),
+						    cerl:abstract(integer),
+						    cerl:abstract([unsigned,
+								   big]))
+				      || B <- binary_to_list(V)]),
+		       Ctxt);
 	[] ->
 	    text("[]");
 	[_ | _] ->

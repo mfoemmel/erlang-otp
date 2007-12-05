@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify the application specifics of the Megaco application
@@ -170,9 +172,9 @@ recv(suite) ->
 
 tickets(suite) ->
     [
-     otp_4956%,
-%%      otp_5310,
-%%      otp_5619
+     otp_4956,
+     otp_5310,
+     otp_5619
     ].
 
 
@@ -306,6 +308,9 @@ sent_timer_exceeded(Config) when list(Config) ->
     d("[MGC] no reply to requests "
       "(simulate that the request takes a __long__ time)"),
     ?MGC_REQ_IGNORE(Mgc),
+
+    d("sleep 5 seconds to align trace output"),
+    sleep(5000),
 
     d("[MG] send the notify"),
     {ok, {_ProtocolVersion, {error, ED}}} = ?MG_NOTIF_RAR(Mg),
@@ -713,7 +718,7 @@ recv_limit_exceeded1(Config) when list(Config) ->
     ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_tcp_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = rle1_mgc_event_sequence(text, tcp),
@@ -722,13 +727,13 @@ recv_limit_exceeded1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:tcp(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_tcp_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_megaco_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = rle1_mg_event_sequence(text, tcp),
@@ -737,35 +742,18 @@ recv_limit_exceeded1(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:megaco(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_megaco_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:tcp_await_reply(Mgc) of
-        {ok, MgcReply} ->
-            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-            ok;
-        {error, MgcReply} ->
-            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-            ?ERROR(mgc_failed)
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mg) of
-        {ok, MgReply} ->
-            d("[MG] OK => MgReply: ~n~p", [MgReply]),
-            ok;
-        {error, MgReply} ->
-            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-            ?ERROR(mg_failed)
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_tcp_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_megaco_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -837,6 +825,7 @@ rle1_mgc_event_sequence2(Mid, EM, EC) ->
 	 ],
     EvSeq.
 
+-ifndef(megaco_hipe_special).
 rle1_mgc_encode_msg_fun(Mod, Conf) ->
     fun(M) ->
             encode_msg(M, Mod, Conf)
@@ -846,6 +835,7 @@ rle1_mgc_decode_msg_fun(Mod, Conf) ->
     fun(M) ->
             decode_msg(M, Mod, Conf)
     end.
+-endif.
 
 rle1_mgc_service_change_reply_msg(Mid, TransId, Cid) ->
     SCRP  = #'ServiceChangeResParm'{serviceChangeMgcId = Mid},
@@ -1129,7 +1119,7 @@ otp_4956(Config) when list(Config) ->
     ok = megaco_test_lib:start_nodes([MgcNode, MgNode], ?FILE, ?LINE),
 
     d("[MGC] start the simulator "),
-    {ok, Mgc} = megaco_test_generator:start_link("MGC", MgcNode),
+    {ok, Mgc} = megaco_test_megaco_generator:start_link("MGC", MgcNode),
 
     d("[MGC] create the event sequence"),
     MgcEvSeq = otp_4956_mgc_event_sequence(text, tcp),
@@ -1138,13 +1128,13 @@ otp_4956(Config) when list(Config) ->
     sleep(1000),
 
     d("[MGC] start the simulation"),
-    megaco_test_generator:megaco(Mgc, MgcEvSeq),
+    {ok, MgcId} = megaco_test_megaco_generator:exec(Mgc, MgcEvSeq),
 
     i("wait some time before starting the MG simulator"),
     sleep(1000),
 
     d("[MG] start the simulator (generator)"),
-    {ok, Mg} = megaco_test_generator:start_link("MG", MgNode),
+    {ok, Mg} = megaco_test_tcp_generator:start_link("MG", MgNode),
 
     d("[MG] create the event sequence"),
     MgEvSeq = otp_4956_mg_event_sequence(text, tcp),
@@ -1153,35 +1143,18 @@ otp_4956(Config) when list(Config) ->
     sleep(1000),
 
     d("[MG] start the simulation"),
-    megaco_test_generator:tcp(Mg, MgEvSeq),
+    {ok, MgId} = megaco_test_tcp_generator:exec(Mg, MgEvSeq),
 
-    d("[MGC] await the generator reply"),
-    case megaco_test_generator:megaco_await_reply(Mgc) of
-        {ok, MgcReply} ->
-            d("[MGC] OK => MgcReply: ~n~p", [MgcReply]),
-            ok;
-        {error, MgcReply} ->
-            d("[MGC] ERROR => MgcReply: ~n~p", [MgcReply]),
-            ?ERROR({mgc_failed, MgcReply})
-    end,
-
-    d("[MG] await the generator reply"),
-    case megaco_test_generator:tcp_await_reply(Mg) of
-        {ok, MgReply} ->
-            d("[MG] OK => MgReply: ~n~p", [MgReply]),
-            ok;
-        {error, MgReply} ->
-            d("[MG] ERROR => MgReply: ~n~p", [MgReply]),
-            ?ERROR({mg_failed, MgReply})
-    end,
+    d("await the generator reply(s)"),
+    await_completion([MgcId, MgId]),
 
     %% Tell Mgc to stop
     i("[MGC] stop generator"),
-    megaco_test_generator:stop(Mgc),
+    megaco_test_megaco_generator:stop(Mgc),
 
     %% Tell Mg to stop
     i("[MG] stop generator"),
-    megaco_test_generator:stop(Mg),
+    megaco_test_tcp_generator:stop(Mg),
 
     i("done", []),
     ok.
@@ -1283,7 +1256,8 @@ otp_4956_mgc_verify_service_change_req_fun(Mid) ->
 otp_4956_mgc_verify_service_change_req(
   {handle_trans_request, _, ?VERSION, [AR]}, Mid) ->
     io:format("otp_4956_mgc_verify_service_change_req -> ok"
-	      "~n   AR: ~p~n", [AR]),
+	      "~n   AR: ~p"
+	      "~n", [AR]),
     case AR of
 	#'ActionRequest'{commandRequests = [CR]} ->
 	    case CR of
@@ -1306,7 +1280,8 @@ otp_4956_mgc_verify_service_change_req(
 					_ ->
 					    Err = {invalid_SCP, Parms},
 					    ED = otp_4956_err_desc(Parms),
-					    ErrReply = {discard_ack, ED},
+					    ErrReply = {discard_ack, 
+							ED},
 					    {error, Err, ErrReply}
 				    end;
 				_ ->
@@ -1334,8 +1309,6 @@ otp_4956_mgc_verify_service_change_req(
 	    {error, Err, ErrReply}
     end;
 otp_4956_mgc_verify_service_change_req(Else, _Mid) ->
-    io:format("otp_4956_mgc_verify_service_change_req -> unknown"
-	      "~n   Else: ~p~n", [Else]),
     ED       = otp_4956_err_desc(Else),
     ErrReply = {discard_ack, ED},
     {error, Else, ErrReply}.
@@ -1548,6 +1521,7 @@ otp_4956_mg_event_sequence(text, tcp) ->
 	    ],
     EvSeq.
 
+-ifndef(megaco_hipe_special).
 otp_4956_mg_encode_msg_fun(Mod, Conf) ->
     fun(M) -> 
             encode_msg(M, Mod, Conf)
@@ -1557,6 +1531,7 @@ otp_4956_mg_decode_msg_fun(Mod, Conf) ->
     fun(M) -> 
             decode_msg(M, Mod, Conf)
     end.
+-endif.
 
 -ifndef(megaco_hipe_special).
 otp_4956_mg_verify_service_change_rep_msg_fun() ->
@@ -1598,18 +1573,20 @@ otp_4956_mg_verify_pending_msg_fun() ->
     end.
 -endif.
 
-otp_4956_mg_verify_pending_msg(#'MegacoMessage'{mess = Mess} = M) ->
-    print("otp_4956_mg_verify_pending_msg -> entry with"
-	  "~n~p", [M]),
+otp_4956_mg_verify_pending_msg(#'MegacoMessage'{mess = Mess} = M) -> 
+    io:format("otp_4956_mg_verify_pending_msg -> entry with"
+	      "~n   Mess. ~p"
+	      "~n", [Mess]),
     #'Message'{messageBody = Body} = Mess,
     {transactions, [Trans]} = Body,
     {transactionPending, TP} = Trans,
     #'TransactionPending'{transactionId = _Id} = TP,
-    print("otp_4956_mg_verify_pending_msg -> done~n", []),
+    io:format("otp_4956_mg_verify_pending_msg -> done~n", []),
     {ok, M};
 otp_4956_mg_verify_pending_msg(M) ->
-    print("otp_4956_mg_verify_pending_msg -> entry with invalid message"
-	  "~n~p", [M]),
+    io:format("otp_4956_mg_verify_pending_msg -> entry with"
+	      "~n   M: ~p"
+	      "~n", [M]),
     {error, {invalid_message, M}}.
 
 -ifndef(megaco_hipe_special).
@@ -1619,24 +1596,25 @@ otp_4956_mg_verify_pending_limit_msg_fun() ->
     end.
 -endif.
 
-otp_4956_mg_verify_pending_limit_msg(#'MegacoMessage'{mess = Mess} = M) ->
-    print("otp_4956_mg_verify_pending_limit_msg -> entry with"
-	  "~n~p", [M]),
+otp_4956_mg_verify_pending_limit_msg(#'MegacoMessage'{mess = Mess} = M) -> 
+    io:format("otp_4956_mg_verify_pending_limit_msg -> entry with"
+	      "~n   Mess: ~p"
+	      "~n", [Mess]),
     #'Message'{messageBody = Body} = Mess,
     {transactions, [Trans]} = Body,
     {transactionReply, TR} = Trans,
     case element(4, TR) of
 	{transactionError, ED} ->
 	    EC = ?megaco_number_of_transactionpending_exceeded,
-	    EC = ED#'ErrorDescriptor'.errorCode, 
-	    print("otp_4956_mg_verify_pending_limit_msg -> done~n", []),
+	    #'ErrorDescriptor'{errorCode = EC} = ED,
 	    {ok, M};
 	_ ->
 	    {error, {invalid_transactionReply, TR}}
     end;
 otp_4956_mg_verify_pending_limit_msg(M) ->
-    print("otp_4956_mg_verify_pending_limit_msg -> entry with invalid message"
-	  "~n~p", [M]),
+    io:format("otp_4956_mg_verify_pending_limit_msg -> entry with"
+	      "~n   M: ~p"
+	      "~n", [M]),
     {error, {invalid_message, M}}.
 
 otp_4956_mg_service_change_request_ar(_Mid, Cid) ->
@@ -2097,6 +2075,29 @@ make_node_name(Name) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+await_completion(Ids) ->
+    case megaco_test_generator_lib:await_completion(Ids) of
+	{ok, Reply} ->
+	    d("OK => Reply: ~n~p", [Reply]),
+	    ok;
+	{error, Reply} ->
+	    d("ERROR => Reply: ~n~p", [Reply]),
+	    ?ERROR({failed, Reply})
+    end.
+
+await_completion(Ids, Timeout) ->
+    case megaco_test_generator_lib:await_completion(Ids, Timeout) of
+	{ok, Reply} ->
+	    d("OK => Reply: ~n~p", [Reply]),
+	    ok;
+	{error, Reply} ->
+	    d("ERROR => Reply: ~n~p", [Reply]),
+	    ?ERROR({failed, Reply})
+    end.
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 sleep(X) -> receive after X -> ok end.
 
 %% error_msg(F,A) -> error_logger:error_msg(F ++ "~n",A).
@@ -2132,11 +2133,11 @@ print(true, Ts, Tc, P, F, A) ->
 print(_, _, _, _, _, _) ->
     ok.
 
-print(F, A) ->
-    io:format("*** [~s] ***"
-	      "~n   " ++ F ++ "~n", 
-	      [format_timestamp(now()) | A]).
-    
+%% print(F, A) ->
+%%     io:format("*** [~s] ***"
+%% 	      "~n   " ++ F ++ "~n", 
+%% 	      [format_timestamp(now()) | A]).
+
 format_timestamp(Now) -> megaco:format_timestamp(Now).
 
 

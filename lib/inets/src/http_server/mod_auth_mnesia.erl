@@ -269,9 +269,9 @@ delete_group(DirData, GroupName) ->
 %% Utility functions.
 
 lookup_common(DirData) ->
-    Dir = httpd_util:key1search(DirData, path),
-    Port = httpd_util:key1search(DirData, port),
-    Addr = httpd_util:key1search(DirData, bind_address),
+    Dir = proplists:get_value(path, DirData),
+    Port = proplists:get_value(port, DirData),
+    Addr = proplists:get_value(bind_address, DirData),
     {Addr, Port, Dir}.
 
 

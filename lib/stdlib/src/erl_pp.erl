@@ -24,10 +24,6 @@
 	 attribute/1,attribute/2,function/1,function/2,rule/1,rule/2,
 	 guard/1,guard/2,exprs/1,exprs/2,exprs/3,expr/1,expr/2,expr/3,expr/4]).
 
-%% The following exports are here for backwards compatibility.
--export([seq/1,seq/2]).
--deprecated([{seq,1},{seq,2}]).
-
 -import(lists, [append/1,foldr/3,mapfoldl/3,reverse/1,reverse/2]).
 -import(io_lib, [write/1,format/2,write_char/1,write_string/1]).
 -import(erl_parse, [inop_prec/1,preop_prec/1,func_prec/0,max_prec/0]).
@@ -37,12 +33,6 @@
 %%%
 %%% Exported functions
 %%%
-
-seq(Es) ->
-    exprs(Es).
-
-seq(Es, Hook) ->
-    exprs(Es, Hook).
 
 form(Thing) ->
     form(Thing, none).
@@ -217,6 +207,9 @@ lexpr({cons,_,H,T}, _, Hook) ->
 lexpr({lc,_,E,Qs}, _Prec, Hook) ->
     Lcl = {list,[{step,[lexpr(E, Hook),leaf(" ||")],lc_quals(Qs, Hook)}]},
     {seq,$[,$],[],[Lcl]};
+lexpr({bc,_,E,Qs}, _Prec, Hook) ->
+    Lcl = {list,[{step,[lexpr(E, Hook),leaf(" ||")],lc_quals(Qs, Hook)}]},
+    {seq,leaf("<< "),leaf(" >>"),[],[Lcl]};
 lexpr({tuple,_,Elts}, _, Hook) ->
     tuple(Elts, Hook);
 %%lexpr({struct,_,Tag,Elts}, _, Hook) ->
@@ -325,6 +318,15 @@ lexpr({op,_,Op,Arg}, Prec, Hook) ->
     {P,R} = preop_prec(Op),
     Ol = leaf(format("~s ", [Op])),
     El = [Ol,lexpr(Arg, R, Hook)],
+    maybe_paren(P, Prec, El);
+lexpr({op,_,Op,Larg,Rarg}, Prec, Hook)  when Op =:= 'orelse'; 
+                                             Op =:= 'andalso' ->
+    %% Breaks lines since R12B.
+    {L,P,R} = inop_prec(Op),
+    Ll = lexpr(Larg, L, Hook),
+    Ol = leaf(format("~s", [Op])),
+    Lr = lexpr(Rarg, R, Hook),
+    El = {prefer_nl,[],[Ll,Ol,Lr]},
     maybe_paren(P, Prec, El);
 lexpr({op,_,Op,Larg,Rarg}, Prec, Hook) ->
     {L,P,R} = inop_prec(Op),
@@ -514,17 +516,20 @@ nl_clauses(Type, Sep, Hook, Cs) ->
     {prefer_nl,Sep,lexprs(Cs, Type, Hook)}.
 
 %% clauses(Type, Hook, Clauses) -> [Char].
-%%  Generic clause printing function.
+%%  Generic clause printing function (breaks lines since R12B).
 
 clauses(Type, Hook, Cs) ->
-    expr_list(Cs, [$;], Type, Hook).
+    {prefer_nl,[$;],lexprs(Cs, Type, Hook)}.
 
 %% lc_quals(Qualifiers, After, Hook)
-%% List comprehension qualifiers
+%% List comprehension qualifiers (breaks lines since R12B).
 
 lc_quals(Qs, Hook) ->
-    {seq,[],[],[$,],lexprs(Qs, fun lc_qual/2, Hook)}.
+    {prefer_nl,[$,],lexprs(Qs, fun lc_qual/2, Hook)}.
 
+lc_qual({b_generate,_,Pat,E}, Hook) ->
+    Pl = lexpr(Pat, 0, Hook),
+    {list,[{step,[Pl,leaf(" <=")],lexpr(E, 0, Hook)}]};
 lc_qual({generate,_,Pat,E}, Hook) ->
     Pl = lexpr(Pat, 0, Hook),
     {list,[{step,[Pl,leaf(" <-")],lexpr(E, 0, Hook)}]};
@@ -641,7 +646,12 @@ f({prefer_nl,Sep,LItems}, I, ST, WT) when I < 0 ->
 f({prefer_nl,Sep,LItems}, I0, ST, WT) ->
     CharsSize2L = fl(LItems, Sep, I0, [], ST, WT),
     {_CharsL,Sizes} = unz(CharsSize2L),
-    {insert_newlines(CharsSize2L, I0, ST),nsz(lists:last(Sizes), I0)};
+    if
+        Sizes =:= [] ->
+            {[], 0};
+        true ->
+            {insert_newlines(CharsSize2L, I0, ST),nsz(lists:last(Sizes), I0)}
+    end;
 f({string,S}, I, ST, WT) ->
     f(write_a_string(S, I), I, ST, WT);
 f({hook,HookExpr,Precedence,Func}, I, _ST, _WT) ->

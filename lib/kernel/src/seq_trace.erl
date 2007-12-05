@@ -57,7 +57,7 @@ print(Term) ->
     erlang:seq_trace_print(Term).
 
 print(Label,Term) when is_atom(Label) ->
-    erlang:fault(badarg, [Label, Term]);
+    erlang:error(badarg, [Label, Term]);
 print(Label,Term) ->
     erlang:seq_trace_print(Label,Term).
 

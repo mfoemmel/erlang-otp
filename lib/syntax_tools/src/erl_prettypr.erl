@@ -177,7 +177,14 @@ format(Node) ->
 %% @type context(). A representation of the current context of the
 %% pretty-printer. Can be accessed in hook functions.
 %%
-%% @doc Prettyprint-formats an abstract Erlang syntax tree as text.
+%% @doc Prettyprint-formats an abstract Erlang syntax tree as text. For
+%% example, if you have a `.beam' file that has been compiled with
+%% `debug_info', the following should print the source code for the
+%% module (as it looks in the debug info representation):
+%% ```{ok,{_,[{abstract_code,{_,AC}}]}} =
+%%            beam_lib:chunks("myfile.beam",[abstract_code]),
+%%    io:put_chars(erl_prettypr:format(erl_syntax:form_list(AC)))
+%% '''
 %%
 %% Available options:
 %% <dl>
@@ -640,7 +647,7 @@ lay_2(Node, Ctxt) ->
 		   beside(par(Es), floating(text(">>"))));
 
 	binary_field ->
-	    Ctxt1 = reset_prec(Ctxt),
+	    Ctxt1 = set_prec(Ctxt, max_prec()),
 	    D1 = lay(erl_syntax:binary_field_body(Node), Ctxt1),
 	    D2 = case erl_syntax:binary_field_types(Node) of
 		     [] ->
@@ -715,6 +722,12 @@ lay_2(Node, Ctxt) ->
 	    D2 = lay(erl_syntax:generator_body(Node), Ctxt1),
 	    par([D1, beside(text("<- "), D2)], Ctxt1#ctxt.break_indent);
 
+	binary_generator ->
+	    Ctxt1 = reset_prec(Ctxt),
+	    D1 = lay(erl_syntax:binary_generator_pattern(Node), Ctxt1),
+	    D2 = lay(erl_syntax:binary_generator_body(Node), Ctxt1),
+	    par([D1, beside(text("<= "), D2)], Ctxt1#ctxt.break_indent);
+
 	implicit_fun ->
 	    D = lay(erl_syntax:implicit_fun_name(Node),
 		    reset_prec(Ctxt)),
@@ -729,6 +742,16 @@ lay_2(Node, Ctxt) ->
 	    beside(floating(text("[")),
 		   par([D1, beside(floating(text("|| ")),
 				   beside(D2, floating(text("]"))))]));
+
+	binary_comp ->
+	    Ctxt1 = reset_prec(Ctxt),
+	    D1 = lay(erl_syntax:binary_comp_template(Node), Ctxt1),
+	    D2 = par(seq(erl_syntax:binary_comp_body(Node),
+			 floating(text(",")), Ctxt1,
+			 fun lay/2)),
+	    beside(floating(text("<< ")),
+		   par([D1, beside(floating(text(" || ")),
+				   beside(D2, floating(text(" >>"))))]));
 
 	macro ->
 	    %% This is formatted similar to a normal function call, but

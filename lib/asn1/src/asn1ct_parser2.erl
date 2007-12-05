@@ -1574,7 +1574,8 @@ parse_ObjectSetFromObjects(Tokens) ->
 
 parse_GeneralConstraint(Tokens) ->
     Flist = [fun parse_UserDefinedConstraint/1,
-	     fun parse_TableConstraint/1],
+	     fun parse_TableConstraint/1,
+	     fun parse_ContentsConstraint/1],
     case (catch parse_or(Tokens,Flist)) of
 	{'EXIT',Reason} ->
 	    exit(Reason);
@@ -1702,8 +1703,22 @@ parse_ComponentIdList(Tokens,_) ->
 		       [got,get_token(hd(Tokens)),expected,
 			[identifier,'identifier.']]}}).
 
-    
-
+parse_ContentsConstraint([{_,_,'CONTAINING'}|Rest]) ->
+    {Type,Rest2} = parse_Type(Rest),
+    case Rest2 of
+	[{_,_,'ENCODED'},{_,_,'BY'}|Rest3] ->
+	    {Value,Rest4} = parse_Value(Rest3),
+	    {{contentsconstraint,Type,Value},Rest4};
+	_ ->
+	    {{contentsconstraint,Type,[]},Rest2}
+    end;
+parse_ContentsConstraint([{_,_,'ENCODED'},{_,_,'BY'}|Rest]) ->
+    {Value,Rest2} = parse_Value(Rest),
+    {{contentsconstraint,[],Value},Rest2};
+parse_ContentsConstraint(Tokens) ->
+    throw({asn1_error,{get_line(hd(Tokens)),get(asn1_module),
+		       [got,get_token(hd(Tokens)),expected,
+			'CONTAINING','or','ENCODED BY']}}).
 
 
 % X.683 Parameterization of ASN.1 specifications
@@ -2753,9 +2768,32 @@ fixup_size_constraint({'SingleValue',L}) when list(L) ->
 	ordsets:from_list(L);
 fixup_size_constraint({'SingleValue',L}) ->
 	{L,L};
+fixup_size_constraint({'SizeConstraint',C}) ->
+    %% this is a second SIZE
+    fixup_size_constraint(C);
 fixup_size_constraint({C1,C2}) ->
-	{fixup_size_constraint(C1), fixup_size_constraint(C2)}.
+    %% this is with extension marks
+    {turn2vr(fixup_size_constraint(C1)), extension_size(fixup_size_constraint(C2))};
+fixup_size_constraint(CList) when is_list(CList) ->
+    [fixup_constraint(Xc)||Xc <- CList].
    
+turn2vr(L) when is_list(L) ->
+    L2 =[X||X<-ordsets:from_list(L),is_integer(X)],
+    case L2 of
+	[H|_] ->
+	    {H,hd(lists:reverse(L2))};
+	_ ->
+	    L
+    end;
+turn2vr(VR) ->
+    VR.
+extension_size({I,I}) ->
+    [I];
+extension_size({I1,I2}) ->
+    [I1,I2];
+extension_size(C) ->
+    C.
+
 get_line({_,Pos,Token}) when integer(Pos),atom(Token) ->
     Pos;
 get_line({Token,Pos}) when integer(Pos),atom(Token) ->

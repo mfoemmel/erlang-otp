@@ -42,7 +42,7 @@ opt([{block,Body0}|Is], Acc, Ts0) ->
     {Body,Ts} = simplify(Body0, Ts0),
     opt(Is, [{block,Body}|Acc], Ts);
 opt([I0|Is], Acc, Ts0) ->
-    case simplify([I0], Ts0) of
+    case simplify_basic([I0], Ts0) of
 	{[],Ts} -> opt(Is, Acc, Ts);
 	{[I],Ts} -> opt(Is, [I|Acc], Ts)
     end;
@@ -183,7 +183,7 @@ simplify_float_1([], Ts, Rs, Acc0) ->
 
 opt_fmoves([{set,[{x,_}=R],[{fr,_}]=Src,fmove}=I1,
 	    {set,[{y,_}]=Dst,[{x,_}=R],move}=I2|Is], Acc) ->
-    case beam_block:is_killed(R, Is) of
+    case beam_utils:is_killed_block(R, Is) of
 	false -> opt_fmoves(Is, [I2,I1|Acc]);
 	true -> opt_fmoves(Is, [{set,Dst,Src,fmove}|Acc])
     end;
@@ -209,74 +209,70 @@ clearerror([], OrigIs) -> [{set,[],[],fclearerror}|OrigIs].
 %%  could have been converted to floating point operations).
 
 flt_need_heap(Is) ->
-    flt_need_heap_1(reverse(Is), 0, 0, [], []).
+    flt_need_heap_1(reverse(Is), 0, 0, []).
 
-flt_need_heap_1([{set,[],[],{alloc,_,Alloc}}|Is], H, Fl, Lit, Acc) ->
+flt_need_heap_1([{set,[],[],{alloc,_,Alloc}}|Is], H, Fl, Acc) ->
     case Alloc of
 	{_,nostack,_,_} ->
 	    %% Remove any existing test_heap/2 instruction.
-	    flt_need_heap_1(Is, H, Fl, Lit, Acc);
+	    flt_need_heap_1(Is, H, Fl, Acc);
 	{Z,Stk,_,Inits} when is_integer(Stk) ->
 	    %% Keep any allocate*/2 instruction and recalculate heap need.
-	    I = {set,[],[],{alloc,regs,{Z,Stk,build_alloc(H, Fl, Lit),Inits}}},
-	    flt_need_heap_1(Is, 0, 0, [], [I|Acc])
+	    I = {set,[],[],{alloc,regs,{Z,Stk,build_alloc(H, Fl),Inits}}},
+	    flt_need_heap_1(Is, 0, 0, [I|Acc])
     end;
-flt_need_heap_1([I|Is], H0, Fl0, Lit0, Acc) ->
-    {Ns,H1,Fl1,Lit} = flt_need_heap_2(I, H0, Fl0, Lit0),
-    flt_need_heap_1(Is, H1, Fl1, Lit, [I|Ns]++Acc);
-flt_need_heap_1([], H, Fl, Lit, Acc) ->
-    flt_alloc(H, Fl, Lit) ++ Acc.
+flt_need_heap_1([I|Is], H0, Fl0, Acc) ->
+    {Ns,H1,Fl1} = flt_need_heap_2(I, H0, Fl0),
+    flt_need_heap_1(Is, H1, Fl1, [I|Ns]++Acc);
+flt_need_heap_1([], H, Fl, Acc) ->
+    flt_alloc(H, Fl) ++ Acc.
 
 %% First come all instructions that build. We pass through, while we
 %% add to the need for heap words and floats on the heap.
-flt_need_heap_2({set,[_],[{fr,_}],fmove}, H, Fl, Lit) ->
-    {[],H,Fl+1,Lit};
-flt_need_heap_2({set,_,_,put_list}, H, Fl, Lit) ->
-    {[],H+2,Fl,Lit};
-flt_need_heap_2({set,_,_,{put_tuple,_}}, H, Fl, Lit) ->
-    {[],H+1,Fl,Lit};
-flt_need_heap_2({set,_,_,put}, H, Fl, Lit) ->
-    {[],H+1,Fl,Lit};
-flt_need_heap_2({set,_,_,{put_string,L,_Str}}, H, Fl, Lit) ->
-    {[],H+2*L,Fl,Lit};
-flt_need_heap_2({set,_,_,{put_literal,L}}, H, Fl, Lit) ->
-    {[],H,Fl,[L|Lit]};
+flt_need_heap_2({set,[_],[{fr,_}],fmove}, H, Fl) ->
+    {[],H,Fl+1};
+flt_need_heap_2({set,_,_,put_list}, H, Fl) ->
+    {[],H+2,Fl};
+flt_need_heap_2({set,_,_,{put_tuple,_}}, H, Fl) ->
+    {[],H+1,Fl};
+flt_need_heap_2({set,_,_,put}, H, Fl) ->
+    {[],H+1,Fl};
+flt_need_heap_2({set,_,_,{put_string,L,_Str}}, H, Fl) ->
+    {[],H+2*L,Fl};
 %% Then the "neutral" instructions. We just pass them.
-flt_need_heap_2({set,[{fr,_}],_,_}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,[],[],fclearerror}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,[],[],fcheckerror}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,{bif,_}}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,{bif,_,_}}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,move}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,{get_tuple_element,_}}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,get_list}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
-flt_need_heap_2({set,_,_,{'catch',_}}, H, Fl, Lit) ->
-    {[],H,Fl,Lit};
+flt_need_heap_2({set,[{fr,_}],_,_}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,[],[],fclearerror}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,[],[],fcheckerror}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{bif,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{bif,_,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,move}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{get_tuple_element,_}}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,get_list}, H, Fl) ->
+    {[],H,Fl};
+flt_need_heap_2({set,_,_,{'catch',_}}, H, Fl) ->
+    {[],H,Fl};
 %% All other instructions should cause the insertion of an allocation
 %% instruction if needed.
-flt_need_heap_2(_, H, Fl, Lit) ->
-    {flt_alloc(H, Fl, Lit),0,0,[]}.
+flt_need_heap_2(_, H, Fl) ->
+    {flt_alloc(H, Fl),0,0}.
 
-flt_alloc(0, 0, []) -> [];
-flt_alloc(H, 0, []) ->
+flt_alloc(0, 0) ->
+    [];
+flt_alloc(H, 0) ->
     [{set,[],[],{alloc,regs,{nozero,nostack,H,[]}}}];
-flt_alloc(H, Fl, Lit) ->
+flt_alloc(H, F) ->
     [{set,[],[],{alloc,regs,{nozero,nostack,
-			     build_alloc(H, Fl, Lit),
-			     []}}}].
+			     build_alloc(H, F),[]}}}].
 
-build_alloc(Words, 0, []) ->
-    Words;
-build_alloc(Words, Floats, Literals) ->
-    {alloc,[{words,Words},{floats,Floats}|Literals]}.
+build_alloc(Words, 0) -> Words;
+build_alloc(Words, Floats) -> {alloc,[{words,Words},{floats,Floats}]}.
 
 
 %% flt_liveness([Instruction], LiveAtEntry) -> [Instruction]
@@ -284,7 +280,7 @@ build_alloc(Words, Floats, Literals) ->
 %%  function. We base liveness of the number of live registers at
 %%  entry to the instruction sequence.
 %%
-%%  An 'not_possible' term will be thrown if the set of live registers
+%%  A 'not_possible' term will be thrown if the set of live registers
 %%  is not continous at an allocation function (e.g. if {x,0} and {x,2}
 %%  are live, but not {x,1}).
 
@@ -510,7 +506,7 @@ flush_all([{_,{float,_},_}|Rs], Is, Acc) ->
     flush_all(Rs, Is, Acc);
 flush_all([{I,V,dirty}|Rs], Is, Acc0) ->
     Acc = checkerror(Acc0),
-    case beam_block:is_killed(V, Is) of
+    case beam_utils:is_killed_block(V, Is) of
 	true  -> flush_all(Rs, Is, Acc);
 	false -> flush_all(Rs, Is, [{set,[V],[{fr,I}],fmove}|Acc])
     end;

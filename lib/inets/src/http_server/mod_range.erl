@@ -25,17 +25,17 @@ do(Info) ->
     ?DEBUG("do -> entry",[]),
     case Info#mod.method of
 	"GET" ->
-	    case httpd_util:key1search(Info#mod.data,status) of
+	    case proplists:get_value(status, Info#mod.data) of
 		%% A status code has been generated!
 		{_StatusCode,  _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
-		    case httpd_util:key1search(Info#mod.data,response) of
+		    case proplists:get_value(response, Info#mod.data) of
 			%% No response has been generated!
 			undefined ->
-			    case httpd_util:key1search(Info#mod.parsed_header,
-						       "range") of
+			    case proplists:get_value("range",
+						     Info#mod.parsed_header) of
 				undefined ->
 				    %Not a range response
 				    {proceed,Info#mod.data};
@@ -44,8 +44,8 @@ do(Info) ->
 				    %%if-range field that stopped The
 				    %%range request in favor for the
 				    %%whole file
-				    case httpd_util:key1search(Info#mod.data,
-							       if_range) of
+				    case proplists:get_value(if_range,
+							     Info#mod.data) of
 					send_file ->
 					    {proceed,Info#mod.data};
 					_undefined ->

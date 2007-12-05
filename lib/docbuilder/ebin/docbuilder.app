@@ -1,6 +1,6 @@
 {application, docbuilder,
  [{description, "Tool for building HTML documentation"},
-  {vsn, "0.9"},
+  {vsn, "0.9.7"},
   {modules, [docb_edoc_xml_cb,
 	     docb_gen,
 	     docb_html,

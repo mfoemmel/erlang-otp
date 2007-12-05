@@ -1,11 +1,12 @@
-%%%----------------------------------------------
-%%% File    : typer.hrl
-%%% Author  : He, Bingwen <Bingwen.He@gmail.com>
-%%% Description : 
-%%%
-%%%----------------------------------------------
+%% -*- erlang-indent-level: 2 -*-
+%%--------------------------------------------------------------------
+%% File    : typer.hrl
+%% Author  : Bingwen He <Bingwen.He@gmail.com>
+%% Description : 
+%%--------------------------------------------------------------------
 
--define(SRC_COMP_OPTS, [binary,no_inline,strict_record_test,typed_record]).
+-define(SRC_COMP_OPTS, [no_copt, binary, no_inline,
+			strict_record_test]).
 
 -record(args, {analyze=[]        :: [string()],
 	       analyzed_dir_r=[] :: [string()],
@@ -13,19 +14,22 @@
 
 -record(analysis, {
 	  %% Common use:
-	  mode=[]	:: string(), %% TODO: change to atom
-	  macros=[]	:: [string()],
+	  mode		:: atom(),
+	  macros=[]	:: [{atom(),_}], % {macro_name, value}
 	  includes=[]	:: [string()],
 
 	  %% Esp for Dialyzer
 	  %% ----------------------
-	  code_server=dialyzer_codeserver:new(),
-	  callgraph=dialyzer_callgraph:new(),
-	  ana_files	:: [string()], %% ABS filenames
+	  code_server = dialyzer_codeserver:new(),
+	  callgraph   = dialyzer_callgraph:new(),
+	  ana_files	:: [string()],   % absolute filenames
 
 	  %% Esp for TypEr
 	  %% ----------------------
 	  t_files=[]	:: [string()], 
+
+	  %% For choosing between contracts or comments
+	  contracts=true :: bool(),
 
 	  %% Any file in 'final_files' is compilable.
 	  %% And we need to keep it as {FileName,ModuleName}
@@ -40,4 +44,4 @@
 	  %%            should be kept as well
 	  func=typer_map:new(),	%% dict
 	  inc_func=typer_map:new(),	%% dict
-	  trust_plt=dialyzer_plt:new(trusted_plt)}).
+	  trust_plt=dialyzer_plt:new()}).

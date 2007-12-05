@@ -3,8 +3,21 @@
 		(in reversed chronological order)
 ==============================================================================
 
-Version 1.7.0 (not released)
----------------------------- 
+Version 1.7.1 (in Erlang/OTP R12B-0)
+------------------------------------
+ - Use of success typings is now default, is robust and detects significantly
+   more errors than in previous versions.
+ - Dialyzer now accepts and takes into account type information in record
+   declarations and in contracts -- see related paper in Erlang'07 workshop.
+   Various OTP applications (e.g. stdlib and kernel) are partially annotated
+   with appropriate contracts specifying types information for their functions.
+ - The type previously known as unit() has been renamed to no_return().
+   Its use in a contract as the return type of a function now silences off
+   the "function has no local return" dialyzer warning without use of the
+   corresponding option.
+
+Version 1.7.0 (in Erlang/OTP R11B-5)
+------------------------------------ 
  - Dialyzer can now use success typings to find discrepancies. As a
    consequence significantly more discrepancies are detected. The downside
    is that the analysis takes about 2 to 2.5 times longer than in previous

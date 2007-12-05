@@ -58,7 +58,7 @@
 
 -export([res_option/1]).
 -export([socks_option/1]).
--export([getbyname/2]).
+-export([getbyname/2, get_searchlist/0]).
 -export([gethostbyaddr/1]).
 -export([res_gethostbyaddr/2,res_hostent_by_domain/3]).
 %% inet help functions
@@ -464,23 +464,44 @@ res_cache_answer(Rec) ->
 %%
 %% getbyname (cache version)
 %%
-getbyname(Name,Type) ->
-    case inet_parse:dots(Name) of
-	{0, false} ->
-	    getbysearch(Name, ".", res_option(search),Type);
-	{0, true} ->
-	    getbysearch(Name, "", res_option(search),Type);
-	_ ->
-	    hostent_by_domain(Name,Type)
+%% This function and inet_res:res_getbyname/3 must look up names
+%% in the same manner, but not from the same places.
+%%
+getbyname(Name, Type) ->
+    {EmbeddedDots, TrailingDot} = inet_parse:dots(Name),
+    Dot = if TrailingDot -> ""; true -> "." end,
+    if  TrailingDot ->
+	    hostent_by_domain(Name, Type);
+	EmbeddedDots =:= 0 ->
+	    getbysearch(Name, Dot, get_searchlist(), Type, {error,nxdomain});
+	true ->
+	    case hostent_by_domain(Name, Type) of
+		{error,_}=Error ->
+		    getbysearch(Name, Dot, get_searchlist(), Type, Error);
+		Other -> Other
+	    end
     end.
 
-getbysearch(Name, Dot, [Dom | Ds], Type) ->
+getbysearch(Name, Dot, [Dom | Ds], Type, _) ->
     case hostent_by_domain(Name ++ Dot ++ Dom, Type) of
 	{ok, HEnt} -> {ok, HEnt};
-	_Error -> getbysearch(Name, Dot, Ds, Type)
+	Error      ->
+	    getbysearch(Name, Dot, Ds, Type, Error)
     end;
-getbysearch(Name, _Dot, [], Type) ->
-    hostent_by_domain(Name, Type).
+getbysearch(_Name, _Dot, [], _Type, Error) ->
+    Error.
+
+
+
+%%
+%% get_searchlist
+%%
+get_searchlist() ->
+    case res_option(search) of
+	[] -> [res_option(domain)];
+	L -> L
+    end.
+
 
 
 make_hostent(Name, Addrs, Aliases, ?S_A) ->
@@ -511,7 +532,7 @@ make_hostent(Name, Datas, Aliases, Type) ->
 
 hostent_by_domain(Domain, Type) ->
     ?dbg("hostent_by_domain: ~p~n", [Domain]),
-    hostent_by_domain(Domain, [], Type).
+    hostent_by_domain(stripdot(Domain), [], Type).
 
 hostent_by_domain(Domain, Aliases, Type) ->
     case lookup_type(Domain, Type) of
@@ -552,7 +573,7 @@ res_hostent_by_domain(Domain, Type, Rec) ->
     res_cache_answer(Rec),
     RRs = Rec#dns_rec.anlist,
     ?dbg("res_hostent_by_domain: ~p - ~p~n", [Domain, RRs]),
-    res_hostent_by_domain(Domain, [], Type, RRs).
+    res_hostent_by_domain(stripdot(Domain), [], Type, RRs).
 
 res_hostent_by_domain(Domain, Aliases, Type, RRs) ->
     case res_lookup_type(Domain, Type, RRs) of
@@ -866,18 +887,20 @@ handle_call(Request, _From, State) ->
 
 	{ins_search, Dom} ->
 	    case inet_parse:visible_string(Dom) of
-		true ->
+		false when Dom =/= [] -> %% Allow "" for root domain
+		    {reply, error, State};
+		_ ->
 		    [{_,Ds}] = ets:lookup(Db, res_search),
 		    Ds1 = lists:delete(Dom, Ds),
 		    ets:insert(Db, {res_search, [Dom | Ds1]}),
-		    {reply, ok, State};
-		false ->
-		    {reply, error, State}
+		    {reply, ok, State}
 	    end;
 
 	{add_search, Dom} ->
 	    case inet_parse:visible_string(Dom) of
-		true ->
+		false when Dom =/= [] -> %% Allow "" for root domain
+		    {reply, error, State};
+		_ ->
 		    [{_,Ds}] = ets:lookup(Db, res_search),
 		    case member(Dom, Ds) of
 			true ->
@@ -885,18 +908,16 @@ handle_call(Request, _From, State) ->
 			false ->
 			    ets:insert(Db, {res_search, Ds ++ [Dom]}),
 			    {reply, ok, State}
-		    end;
-		false ->
-		    {reply, error, State}
+		    end
 	    end;
 
 	{del_search, Dom} ->
 	    case inet_parse:visible_string(Dom) of
-		true ->
+		false when Dom =/= [] -> %% Allow "" for root domain
+		    {reply, error, State};
+		_ ->
 		    [{_,Ds}] = ets:lookup(Db, res_search),
 		    ets:insert(Db, {res_search, Ds -- [Dom]}),
-		    {reply, ok, State};
-		false ->
 		    {reply, ok, State}
 	    end;
 
@@ -1162,6 +1183,22 @@ hex(X) ->
     X4 = (X band 16#f),
     if X4 < 10 -> X4 + $0;
        true -> (X4-10) + $a
+    end.
+
+%% Strip trailing dot, do not produce garbage unless necessary.
+%%
+stripdot(Name) ->
+    case stripdot_1(Name) of
+	false -> Name;
+	N     -> N
+    end.
+%%
+stripdot_1([$.])  -> [];
+stripdot_1([])    -> false;
+stripdot_1([H|T]) ->
+    case stripdot_1(T) of
+	false     -> false;
+	N         -> [H|N]
     end.
 
 %% -------------------------------------------------------------------

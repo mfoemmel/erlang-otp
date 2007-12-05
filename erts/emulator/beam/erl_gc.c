@@ -30,16 +30,19 @@
 #include "error.h"
 #include "big.h"
 #include "erl_gc.h"
+#include "erl_misc_utils.h"
 #if HIPE
 #include "hipe_stack.h"
 #endif
 
+#define ERTS_INACT_WR_PB_LEAVE_MUCH_LIMIT 1
+#define ERTS_INACT_WR_PB_LEAVE_MUCH_PERCENTAGE 20
+#define ERTS_INACT_WR_PB_LEAVE_LIMIT 10
+#define ERTS_INACT_WR_PB_LEAVE_PERCENTAGE 10
 /*
  * Returns number of elements in an array.
  */
 #define ALENGTH(a) (sizeof(a)/sizeof(a[0]))
-
-#ifdef HEAP_FRAG_ELIM_TEST
 
 static erts_smp_spinlock_t info_lck;
 static Uint garbage_cols;		/* no of garbage collections */
@@ -48,7 +51,8 @@ static Uint reclaimed;			/* no of words reclaimed in GCs */
 # define STACK_SZ_ON_HEAP(p) ((p)->hend - (p)->stop)
 # define OverRunCheck() \
     if (p->stop < p->htop) { \
-        erl_exit(-1, "%T: Overrun stack and heap at line %d\n", p->id,__LINE__); \
+        erl_exit(ERTS_ABORT_EXIT, "%s, line %d: %T: Overrun stack and heap\n", \
+		 __FILE__,__LINE__,p->id); \
     }
 
 /*
@@ -85,7 +89,7 @@ static Uint adjust_after_fullsweep(Process *p, int size_before,
 				   int need, Eterm *objv, int nobj);
 
 static void grow_new_heap(Process *p, Uint new_sz, Eterm* objv, int nobj);
-static void grow_old_heap(Process *p, Uint new_sz, Eterm* objv, int nobj);
+static void realloc_old_heap(Process *p, Uint new_sz, Eterm* objv, int nobj);
 static void sweep_proc_bins(Process *p, int fullsweep);
 static void sweep_proc_funs(Process *p, int fullsweep);
 static void sweep_proc_externals(Process *p, int fullsweep);
@@ -96,8 +100,6 @@ static void offset_rootset(Process *p, Sint offs, char* area, Uint area_size,
 static void offset_off_heap(Process* p, Sint offs, char* area, Uint area_size);
 static void offset_mqueue(Process *p, Sint offs, char* area, Uint area_size);
 static void ensure_old_heap_size(Process *p, Uint size);
-
-#endif /* HEAP_FRAG_ELIM_TEST */
 
 #ifdef HARDDEBUG
 static void disallow_heap_frag_ref_in_heap(Process* p);
@@ -114,10 +116,7 @@ static void disallow_heap_frag_ref(Process* p, Eterm* n_htop, Eterm* objv, int n
 static Sint heap_sizes[MAX_HEAP_SIZES];	/* Suitable heap sizes. */
 static int num_heap_sizes;	/* Number of heap sizes. */
 
-
-#ifndef HEAP_FRAG_ELIM_TEST
-extern void erts_init_ggc(void);
-#endif
+Uint erts_test_long_gc_sleep; /* Only used for testing... */
 
 /*
  * Initialize GC global data.
@@ -127,13 +126,10 @@ erts_init_gc(void)
 {
     int i = 0;
 
-#ifdef HEAP_FRAG_ELIM_TEST
     erts_smp_spinlock_init(&info_lck, "gc_info");
     garbage_cols = 0;
     reclaimed = 0;
-#else
-    erts_init_ggc();
-#endif
+    erts_test_long_gc_sleep = 0;
 
     /*
      * Heap sizes start growing in a Fibonacci sequence.
@@ -195,8 +191,6 @@ erts_next_heap_size(Uint size, Uint offset)
     }
     return 0;
 }
-
-#ifdef HEAP_FRAG_ELIM_TEST
 /*
  * Return the next heap size to use. Make sure we never return
  * a smaller heap size than the minimum heap size for the process.
@@ -209,7 +203,6 @@ next_heap_size(Process* p, Uint size, Uint offset)
     size = erts_next_heap_size(size, offset);
     return size < p->min_heap_size ? p->min_heap_size : size;
 }
-#endif
 
 Eterm
 erts_heap_sizes(Process* p)
@@ -250,8 +243,6 @@ erts_heap_sizes(Process* p)
     return res;
 }
 
-#ifdef HEAP_FRAG_ELIM_TEST
-
 void
 erts_gc_info(ErtsGCInfo *gcip)
 {
@@ -266,14 +257,14 @@ erts_gc_info(ErtsGCInfo *gcip)
 void 
 erts_offset_heap(Eterm* hp, Uint sz, Sint offs, Eterm* low, Eterm* high)
 {
-    return offset_heap(hp, sz, offs, (char*) low, ((char *)high)-((char *)low));
+    offset_heap(hp, sz, offs, (char*) low, ((char *)high)-((char *)low));
 }
 
 void 
 erts_offset_heap_ptr(Eterm* hp, Uint sz, Sint offs, 
 		     Eterm* low, Eterm* high)
 {
-    return offset_heap_ptr(hp, sz, offs, (char *) low, ((char *)high)-((char *)low));
+    offset_heap_ptr(hp, sz, offs, (char *) low, ((char *)high)-((char *)low));
 }
 
 #define ptr_within(ptr, low, high) ((ptr) < (high) && (ptr) >= (low))
@@ -301,17 +292,15 @@ erts_offset_off_heap(ErlOffHeap *ohp, Sint offs, Eterm* low, Eterm* high)
 #undef ptr_within
 
 Eterm
-erts_gc_after_bif_call(Process* p, Eterm result)
+erts_gc_after_bif_call(Process* p, Eterm result, Eterm* regs, Uint arity)
 {
     int cost;
 
     if (is_non_value(result)) {
 	if (p->freason == TRAP) {
 	    cost = erts_garbage_collect(p, 0, p->def_arg_reg, p->arity);
-	} else if (p->freason == RESCHEDULE) {
-	    abort();
 	} else {
-	    cost = erts_garbage_collect(p, 0, NULL, 0);
+	    cost = erts_garbage_collect(p, 0, regs, arity);
 	}
     } else {
 	Eterm val[1];
@@ -385,6 +374,8 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
     if (erts_system_monitor_long_gc != 0) {
 	Uint ms2, s2, us2;
 	Sint t;
+	if (erts_test_long_gc_sleep)
+	    while (0 != erts_milli_sleep(erts_test_long_gc_sleep));
 	get_now(&ms2, &s2, &us2);
 	t = ms2 - ms1;
 	t = t*1000000 + s2 - s1;
@@ -392,6 +383,12 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
 	if (t > 0 && (Uint)t > erts_system_monitor_long_gc) {
 	    monitor_long_gc(p, t);
 	}
+    }
+    if (erts_system_monitor_large_heap != 0) {
+	Uint size = HEAP_SIZE(p);
+	size += OLD_HEAP(p) ? OLD_HEND(p) - OLD_HEAP(p) : 0;
+	if (size >= erts_system_monitor_large_heap)
+	    monitor_large_heap(p);
     }
 
     erts_smp_spin_lock(&info_lck);
@@ -406,15 +403,8 @@ erts_garbage_collect(Process* p, int need, Eterm* objv, int nobj)
      * We intentionally do not rescan the areas copied by the GC.
      * We trust the GC not to leave any holes.
      */
-    {
-	Eterm* start = p->htop;
-	Eterm* stop = p->stop;
-	p->last_htop = p->htop;
-	p->last_mbuf = 0;
-	while (start < stop) {
-	    *start++ = ERTS_HOLE_MARKER;
-	}
-    }
+    p->last_htop = p->htop;
+    p->last_mbuf = 0;
 #endif    
 
     return ((int) (HEAP_TOP(p) - HEAP_START(p)) / 10);
@@ -645,11 +635,13 @@ erts_garbage_collect_literals(Process* p, Eterm* literals, Uint lit_size)
 static int
 minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 {
+    Uint mature = HIGH_WATER(p) - HEAP_START(p);
+
     /*
      * Allocate an old heap if we don't have one and if we'll need one.
      */
 
-    if (OLD_HEAP(p) == NULL && HIGH_WATER(p) != HEAP_START(p)) {
+    if (OLD_HEAP(p) == NULL && mature != 0) {
         Eterm* n_old;
 
         /* Note: We choose a larger heap size than strictly needed,
@@ -668,19 +660,20 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     }
 
     /*
-     * Do a minor collection if the old heap is large enough.
+     * Do a minor collection if there is an old heap and if it
+     * is large enough.
      */
 
-    if (HEAP_TOP(p) - HEAP_START(p) <= OLD_HEND(p) - OLD_HTOP(p)) {
+    if (OLD_HEAP(p) && mature <= OLD_HEND(p) - OLD_HTOP(p)) {
 	ErlMessage *msgp;
 	Uint size_after;
 	Uint need_after;
 	Uint stack_size = STACK_SZ_ON_HEAP(p);
 	Uint fragments = MBUF_SIZE(p) + combined_message_size(p);
 	Uint size_before = fragments + (HEAP_TOP(p) - HEAP_START(p));
+	Uint new_sz = next_heap_size(p, HEAP_SIZE(p) + fragments, 0);
 
-        do_minor(p, next_heap_size(p, HEAP_SIZE(p) + fragments, 0),
-		 objv, nobj);
+        do_minor(p, new_sz, objv, nobj);
 
 	/*
 	 * Copy newly received message onto the end of the new heap.
@@ -706,10 +699,23 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
          * the heap size is substantial, we don't want to shrink.
          */
 
-        if ((HEAP_SIZE(p) > 300) && (4 * need_after < HEAP_SIZE(p)) &&
+        if ((HEAP_SIZE(p) > 3000) && (4 * need_after < HEAP_SIZE(p)) &&
             ((HEAP_SIZE(p) > 8000) ||
              (HEAP_SIZE(p) > (OLD_HEND(p) - OLD_HEAP(p))))) {
 	    Uint wanted = 3 * need_after;
+	    Uint old_heap_sz = OLD_HEND(p) - OLD_HEAP(p);
+
+	    /*
+	     * Additional test to make sure we don't make the heap too small
+	     * compared to the size of the older generation heap.
+	     */
+	    if (wanted*9 < old_heap_sz) {
+		Uint new_wanted = old_heap_sz / 8;
+		if (new_wanted > wanted) {
+		    wanted = new_wanted;
+		}
+	    }
+
             if (wanted < MIN_HEAP_SIZE(p)) {
                 wanted = MIN_HEAP_SIZE(p);
             } else {
@@ -728,7 +734,7 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 	     */
             ASSERT(HEAP_SIZE(p) == next_heap_size(p, HEAP_SIZE(p), 0));
             return 1;
-        }
+	}
     }
 
     /*
@@ -746,6 +752,7 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
  */
 #if defined(HIPE)
 
+#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
 #define FULLSWEEP_NSTACK(p,old_htop,n_htop)				\
 	do {								\
 		Eterm *tmp_old_htop = old_htop;				\
@@ -754,6 +761,7 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 		old_htop = tmp_old_htop;				\
 		n_htop = tmp_n_htop;					\
 	} while(0)
+#endif
 
 #define GENSWEEP_NSTACK(p,old_htop,n_htop)				\
 	do {								\
@@ -780,7 +788,11 @@ minor_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 
 #else /* !HIPE */
 
+#if NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
+#define fullsweep_nstack(p,n_htop)		(n_htop)
+#else
 #define FULLSWEEP_NSTACK(p,old_htop,n_htop)	do{}while(0)
+#endif
 #define GENSWEEP_NSTACK(p,old_htop,n_htop)	do{}while(0)
 #define offset_nstack(p,offs,area,area_size)	do{}while(0)
 
@@ -966,14 +978,20 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
         sweep_proc_externals(p, 0);
     }
 
+#ifdef HARDDEBUG
+    /*
+     * Go through the old_heap before, and try to find references from the old_heap
+     * into the old new_heap that has just been evacuated and is about to be freed
+     * (as well as looking for reference into heap fragments, of course).
+     */
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+
     /* Copy stack to end of new heap */
     n = p->hend - p->stop;
     sys_memcpy(n_heap + new_sz - n, p->stop, n * sizeof(Eterm));
     p->stop = n_heap + new_sz - n;
 
-#ifdef DEBUG
-    sys_memset(HEAP_START(p), 0xf7, HEAP_SIZE(p) * sizeof(Eterm));
-#endif
     ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
 		   (void*)HEAP_START(p),
 		   HEAP_SIZE(p) * sizeof(Eterm));
@@ -984,10 +1002,272 @@ do_minor(Process *p, int new_sz, Eterm* objv, int nobj)
 
 #ifdef HARDDEBUG
     disallow_heap_frag_ref_in_heap(p);
-    disallow_heap_frag_ref_in_old_heap(p);
 #endif
     remove_message_buffers(p);
 }
+
+#if NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
+
+/*
+ * Major collection. DISCARD the old heap.
+ */
+
+static int
+major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
+{
+    Rootset rootset;
+    Roots* roots;
+    int size_before;
+    Eterm* n_heap;
+    Eterm* n_htop;
+    char* src = (char *) HEAP_START(p);
+    Uint src_size = (char *) HEAP_TOP(p) - src;
+    char* oh = (char *) OLD_HEAP(p);
+    Uint oh_size = (char *) OLD_HTOP(p) - oh;
+    int n;
+    Uint new_sz;
+    Uint fragments = MBUF_SIZE(p) + combined_message_size(p);
+    ErlMessage *msgp;
+
+    size_before = fragments + (HEAP_TOP(p) - HEAP_START(p));
+
+    /*
+     * Do a fullsweep GC. First figure out the size of the heap
+     * to receive all live data.
+     */
+
+    new_sz = HEAP_SIZE(p) + fragments + (OLD_HTOP(p) - OLD_HEAP(p));
+    /*
+     * We used to do
+     *
+     * new_sz += STACK_SZ_ON_HEAP(p);
+     *
+     * here for no obvious reason. (The stack size is already counted once
+     * in HEAP_SIZE(p).)
+     */
+    new_sz = next_heap_size(p, new_sz, 0);
+
+    /*
+     * Should we grow although we don't actually need to?
+     */
+
+    if (new_sz == HEAP_SIZE(p) && FLAGS(p) & F_HEAP_GROW) {
+        new_sz = next_heap_size(p, HEAP_SIZE(p), 1);
+    }
+    FLAGS(p) &= ~(F_HEAP_GROW|F_NEED_FULLSWEEP);
+    n_htop = n_heap = (Eterm *) ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP,
+						sizeof(Eterm)*new_sz);
+
+    /*
+     * Get rid of heap fragments.
+     */
+
+    if (MBUF(p) != NULL) {
+	n_htop = collect_heap_frags(p, n_heap, n_htop, objv, nobj);
+    }
+
+    /*
+     * Copy all top-level terms directly referenced by the rootset to
+     * the new new_heap.
+     */
+
+    n = setup_rootset(p, objv, nobj, &rootset);
+    n_htop = fullsweep_nstack(p, n_htop);
+    roots = rootset.roots;
+    while (n--) {
+	Eterm* g_ptr = roots->v;
+	Eterm g_sz = roots->sz;
+
+	roots++;
+	while (g_sz--) {
+	    Eterm* ptr;
+	    Eterm val;
+	    Eterm gval = *g_ptr;
+	    
+	    switch (primary_tag(gval)) {
+
+	    case TAG_PRIMARY_BOXED: {
+		ptr = boxed_val(gval);
+		val = *ptr;
+		if (IS_MOVED(val)) {
+		    ASSERT(is_boxed(val));
+		    *g_ptr++ = val;
+		} else if (in_area(ptr, src, src_size) || in_area(ptr, oh, oh_size)) {
+		    MOVE_BOXED(ptr,val,n_htop,g_ptr++);
+		} else {
+		    g_ptr++;
+		}
+		continue;
+	    }
+
+	    case TAG_PRIMARY_LIST: {
+		ptr = list_val(gval);
+		val = *ptr;
+		if (is_non_value(val)) {
+		    *g_ptr++ = ptr[1];
+		} else if (in_area(ptr, src, src_size) || in_area(ptr, oh, oh_size)) {
+		    ASSERT(within(ptr, p));
+		    MOVE_CONS(ptr,val,n_htop,g_ptr++);
+		} else {
+		    g_ptr++;
+		}
+		continue;
+	    }
+
+	    default: {
+		g_ptr++;
+		continue;
+	    }
+	    }
+	}
+    }
+
+    cleanup_rootset(&rootset);
+
+    /*
+     * Now all references on the stack point to the new heap. However,
+     * most references on the new heap point to the old heap so the next stage
+     * is to scan through the new heap evacuating data from the old heap
+     * until all is copied.
+     */
+
+    if (oh_size == 0) {
+	n_htop = sweep_one_area(n_heap, n_htop, src, src_size);
+    } else {
+	Eterm* n_hp = n_heap;
+
+	while (n_hp != n_htop) {
+	    Eterm* ptr;
+	    Eterm val;
+	    Eterm gval = *n_hp;
+
+	    switch (primary_tag(gval)) {
+	    case TAG_PRIMARY_BOXED: {
+		ptr = boxed_val(gval);
+		val = *ptr;
+		if (IS_MOVED(val)) {
+		    ASSERT(is_boxed(val));
+		    *n_hp++ = val;
+		} else if (in_area(ptr, src, src_size) || in_area(ptr, oh, oh_size)) {
+		    MOVE_BOXED(ptr,val,n_htop,n_hp++);
+		} else {
+		    n_hp++;
+		}
+		break;
+	    }
+	    case TAG_PRIMARY_LIST: {
+		ptr = list_val(gval);
+		val = *ptr;
+		if (is_non_value(val)) {
+		    *n_hp++ = ptr[1];
+		} else if (in_area(ptr, src, src_size) || in_area(ptr, oh, oh_size)) {
+		    MOVE_CONS(ptr,val,n_htop,n_hp++);
+		} else {
+		    n_hp++;
+		}
+		break;
+	    }
+	    case TAG_PRIMARY_HEADER: {
+		if (!header_is_thing(gval))
+		    n_hp++;
+		else {
+		    if (header_is_bin_matchstate(gval)) {
+			ErlBinMatchState *ms = (ErlBinMatchState*) n_hp;
+			ErlBinMatchBuffer *mb = &(ms->mb);
+			Eterm* origptr;	
+			origptr = &(mb->orig);
+			ptr = boxed_val(*origptr);
+			val = *ptr;
+			if (IS_MOVED(val)) {
+			    *origptr = val;
+			    mb->base = binary_bytes(*origptr);
+			} else if (in_area(ptr, src, src_size) ||
+				   in_area(ptr, oh, oh_size)) {
+			    ASSERT(within(ptr, p));
+			    MOVE_BOXED(ptr,val,n_htop,origptr); 
+			    mb->base = binary_bytes(*origptr);
+			    ptr = boxed_val(*origptr);
+			    val = *ptr;
+			}
+		    }
+		    n_hp += (thing_arityval(gval)+1);
+		}
+		break;
+	    }
+	    default:
+		n_hp++;
+		break;
+	    }
+	}
+    }
+
+    if (MSO(p).mso) {
+	sweep_proc_bins(p, 1);
+    }
+    if (MSO(p).funs) {
+	sweep_proc_funs(p, 1);
+    }
+    if (MSO(p).externals) {
+	sweep_proc_externals(p, 1);
+    }
+
+    if (OLD_HEAP(p) != NULL) {
+	ERTS_HEAP_FREE(ERTS_ALC_T_OLD_HEAP,
+		       OLD_HEAP(p),
+		       (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
+	OLD_HEAP(p) = OLD_HTOP(p) = OLD_HEND(p) = NULL;
+    }
+
+#ifdef HARDDEBUG
+    /*
+     * Go through the old_heap before, and try to find references from the old_heap
+     * into the old new_heap that has just been evacuated and is about to be freed
+     * (as well as looking for reference into heap fragments, of course).
+     */
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+
+    /* Move the stack to the end of the heap */
+    n = HEAP_END(p) - p->stop;
+    sys_memcpy(n_heap + new_sz - n, p->stop, n * sizeof(Eterm));
+    p->stop = n_heap + new_sz - n;
+
+    ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
+		   (void *) HEAP_START(p),
+		   (HEAP_END(p) - HEAP_START(p)) * sizeof(Eterm));
+    HEAP_START(p) = n_heap;
+    HEAP_TOP(p) = n_htop;
+    HEAP_SIZE(p) = new_sz;
+    HEAP_END(p) = n_heap + new_sz;
+    GEN_GCS(p) = 0;
+
+    HIGH_WATER(p) = HEAP_TOP(p);
+
+    /*
+     * Copy newly received message onto the end of the new heap.
+     */
+    for (msgp = p->msg.first; msgp; msgp = msgp->next) {
+	if (msgp->bp) {
+	    erts_move_msg_mbuf_to_heap(&p->htop, &p->off_heap, msgp);
+	}
+    }
+
+    *recl += adjust_after_fullsweep(p, size_before, need, objv, nobj);
+
+#ifdef HARDDEBUG
+    disallow_heap_frag_ref_in_heap(p);
+#endif
+    remove_message_buffers(p);
+
+    OverRunCheck();
+    return 1;			/* We are done. */
+}
+
+#else
+
+/*
+ * Major collection. KEEP the old heap.
+ */
 
 static int
 major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
@@ -1032,23 +1312,29 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 						sizeof(Eterm)*new_sz);
 
     /*
-     * Allocate a new old_heap if there are any data on the old old_heap.
-     */
-
-    if (oh_size != 0) {
-	new_oh_size = erts_next_heap_size(oh_size+new_sz, 0);
-	old_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_OLD_HEAP,
-					    sizeof(Eterm)*new_oh_size);
-	old_htop = old_heap;
-    }
-
-    /*
      * Get rid of heap fragments.
      */
 
     if (MBUF(p) != NULL) {
 	n_htop = collect_heap_frags(p, n_heap, n_htop, objv, nobj);
     }
+
+    /*
+     * Allocate a new old_heap if there is any data on the old old_heap.
+     */
+
+    if (oh_size != 0) {
+	new_oh_size = oh_size + fragments + (HEAP_TOP(p) - HEAP_START(p));
+	new_oh_size = erts_next_heap_size(new_oh_size, 0);
+	old_heap = (Eterm*) ERTS_HEAP_ALLOC(ERTS_ALC_T_OLD_HEAP,
+					    sizeof(Eterm)*new_oh_size);
+	old_htop = old_heap;
+    }
+
+    /*
+     * Copy all top-level terms directly referenced by the rootset to
+     * the new new_heap.
+     */
 
     n = setup_rootset(p, objv, nobj, &rootset);
     FULLSWEEP_NSTACK(p, old_htop, n_htop);
@@ -1208,10 +1494,6 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     }
 
     if (OLD_HEAP(p) != NULL) {
-#ifdef DEBUG
-	sys_memset(OLD_HEAP(p), 0xf5,
-		   (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
-#endif
 	ERTS_HEAP_FREE(ERTS_ALC_T_OLD_HEAP,
 		       OLD_HEAP(p),
 		       (OLD_HEND(p) - OLD_HEAP(p)) * sizeof(Eterm));
@@ -1220,15 +1502,20 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 	OLD_HEND(p) = old_heap + new_oh_size;
     }
 
+#ifdef HARDDEBUG
+    /*
+     * Go through the old_heap before, and try to find references from the old_heap
+     * into the old new_heap that has just been evacuated and is about to be freed
+     * (as well as looking for reference into heap fragments, of course).
+     */
+    disallow_heap_frag_ref_in_old_heap(p);
+#endif
+
     /* Move the stack to the end of the heap */
     n = HEAP_END(p) - p->stop;
     sys_memcpy(n_heap + new_sz - n, p->stop, n * sizeof(Eterm));
     p->stop = n_heap + new_sz - n;
 
-#ifdef DEBUG
-    sys_memset(HEAP_START(p), 0xf3,
-	       (HEAP_END(p) - HEAP_START(p)) * sizeof(Eterm));
-#endif
     ERTS_HEAP_FREE(ERTS_ALC_T_HEAP,
 		   (void *) HEAP_START(p),
 		   (HEAP_END(p) - HEAP_START(p)) * sizeof(Eterm));
@@ -1238,7 +1525,16 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     HEAP_SIZE(p) = new_sz;
     HEAP_END(p) = n_heap + new_sz;
     GEN_GCS(p) = 0;
-    HIGH_WATER(p) = HEAP_TOP(p);
+
+    /*
+     * Make sure that nothing is put on the old heap until it has
+     * survived at least three GCs. (In the traditional "frag" emulator,
+     * we used to set the high water pointer to the heap top, meaning
+     * that data only needed to survive two GCs before being put onto
+     * the old heap.)
+     */
+
+    HIGH_WATER(p) = HEAP_START(p);
 
     /*
      * Copy newly received message onto the end of the new heap.
@@ -1253,7 +1549,6 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
 
 #ifdef HARDDEBUG
     disallow_heap_frag_ref_in_heap(p);
-    disallow_heap_frag_ref_in_old_heap(p);
 #endif
     remove_message_buffers(p);
 
@@ -1261,12 +1556,18 @@ major_collection(Process* p, int need, Eterm* objv, int nobj, Uint *recl)
     return 1;			/* We are done. */
 }
 
+#endif
+
 static Uint
 adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int nobj)
 {
     int wanted, sz, size_after, need_after;
     int stack_size = STACK_SZ_ON_HEAP(p);
     Uint reclaimed_now;
+#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
+    Uint old_heap_size;
+    Uint new_old_heap_size;
+#endif
 
     size_after = (HEAP_TOP(p) - HEAP_START(p));
     reclaimed_now = (size_before - size_after);
@@ -1299,6 +1600,34 @@ adjust_after_fullsweep(Process *p, int size_before, int need, Eterm *objv, int n
             erts_shrink_new_heap(p, sz, objv, nobj);
         }
     }
+
+
+#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
+    /*
+     * Shrink the old heap if it significantly bigger than it needs to be.
+     * Don't bother at all for small sizes.
+     */
+    if (p->old_heap == NULL) {
+	return reclaimed_now;
+    }
+    old_heap_size = p->old_hend - p->old_heap;
+    new_old_heap_size = 2 * (p->old_htop - p->old_heap);
+    if (new_old_heap_size >= old_heap_size) {
+	/* More than half of the old heap is in use */
+	return reclaimed_now;
+    }
+    if (old_heap_size - new_old_heap_size < 4*p->min_heap_size) {
+	/* The gain is too small to bother */
+	return reclaimed_now;
+    }
+    if (2*p->heap_sz > new_old_heap_size) {
+	/* The new heap is at least half as big as the old heap -- don't bother */
+	return reclaimed_now;
+    }
+
+    /* Shrink the old heap to twice the size of the live data. */
+    realloc_old_heap(p, new_old_heap_size, objv, nobj);
+#endif
     return reclaimed_now;
 }
 
@@ -1332,9 +1661,6 @@ remove_message_buffers(Process* p)
     MBUF_SIZE(p) = 0;
     while (bp != NULL) {
 	ErlHeapFragment* next_bp = bp->next;
-#ifdef DEBUG
-	sys_memset(bp->mem, 0xf9, bp->size*sizeof(Eterm));
-#endif 
 	free_message_buffer(bp);
 	bp = next_bp;
     }
@@ -1792,13 +2118,6 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
 				    p->dictionary->data,
 				    p->dictionary->used);
     }
-#ifdef HARDDEBUG
-    if (p->debug_dictionary != NULL) {
-	disallow_heap_frag_ref(p, n_htop,
-			       p->debug_dictionary->data,
-			       p->debug_dictionary->used);
-    }
-#endif
 
     /*
      * Go through the message queue, move everything that is in one of the
@@ -1806,7 +2125,17 @@ collect_heap_frags(Process* p, Eterm* n_hstart, Eterm* n_htop,
      */
 
     for (mp = p->msg.first; mp != NULL; mp = mp->next) {
-	if (is_not_immed(ERL_MESSAGE_TERM(mp)) || is_not_immed(ERL_MESSAGE_TOKEN(mp))) {
+	/*
+	 * In most cases, mp->bp points to a heap fragment which is
+	 * self-contained and we will copy it to the heap at the
+	 * end of the GC to avoid scanning it.
+	 *
+	 * In a few cases, however, such as in process_info(Pid, messages)
+	 * and trace_delivered/1, a new message points to a term that has
+	 * been allocated by HAlloc() and mp->bp is NULL. Therefore we need
+	 * this loop.
+	 */
+	if (mp->bp == NULL) {
 	    n_htop = collect_root_array(p, n_htop, mp->m, 2);
 	}
     }
@@ -1856,11 +2185,6 @@ add_to_rootset(Process *p, Eterm *objv, int nobj, Rootset *rootset, Uint n)
     if (p->dictionary != NULL) {
         roots[n].v = p->dictionary->data;
         roots[n].sz = p->dictionary->used;
-        ++n;
-    }
-    if (p->debug_dictionary != NULL) {
-        roots[n].v  = p->debug_dictionary->data;
-        roots[n].sz = p->debug_dictionary->used;
         ++n;
     }
     if (nobj > 0) {
@@ -2026,13 +2350,14 @@ erts_shrink_new_heap(Process *p, Uint new_sz, Eterm *objv, int nobj)
 }
 
 static void
-grow_old_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
+realloc_old_heap(Process *p, Uint new_sz, Eterm* objv, int nobj)
 {
     Eterm* old_heap;
     Uint old_live_size = p->old_htop - p->old_heap;
     Sint offs;
 
     ASSERT(HEAP_SIZE(p) < new_sz);
+    ASSERT(p->old_htop - p->old_heap <= new_sz);
     old_heap = (Eterm *) ERTS_HEAP_REALLOC(ERTS_ALC_T_OLD_HEAP,
 					   (void *) p->old_heap,
 					   sizeof(Eterm)*(p->old_hend-p->old_heap),
@@ -2137,9 +2462,55 @@ sweep_proc_funs(Process *p, int fullsweep)
     ASSERT(*prev == NULL);
 }
 
+struct shrink_cand_data {
+    ProcBin* candidates;
+    Uint no_of_candidates;
+    Uint no_of_active;
+};
+
+static ERTS_INLINE void
+link_live_proc_bin(struct shrink_cand_data *shrink,
+		   ProcBin ***prevppp,
+		   ProcBin **pbpp)
+{
+    ProcBin *pbp = *pbpp;
+
+    *pbpp = pbp->next;
+
+    if (pbp->flags & (PB_ACTIVE_WRITER|PB_IS_WRITABLE)) {
+	ASSERT(((pbp->flags & (PB_ACTIVE_WRITER|PB_IS_WRITABLE))
+		== (PB_ACTIVE_WRITER|PB_IS_WRITABLE))
+	       || ((pbp->flags & (PB_ACTIVE_WRITER|PB_IS_WRITABLE))
+		   == PB_IS_WRITABLE));
+
+
+	if (pbp->flags & PB_ACTIVE_WRITER) {
+	    pbp->flags &= ~PB_ACTIVE_WRITER;
+	    shrink->no_of_active++;
+	}
+	else { /* inactive */
+	    Uint unused = pbp->val->orig_size - pbp->size;
+	    /* Our allocators are 8 byte aligned, i.e., shrinking with
+	       less than 8 bytes will have no real effect */
+	    if (unused >= 8) { /* A shrink candidate; save in candidate list */
+		pbp->next = shrink->candidates;
+		shrink->candidates = pbp;
+		shrink->no_of_candidates++;
+		return;
+	    }
+	}
+    }
+
+    /* Not a shrink candidate; keep in original mso list */
+    **prevppp = pbp;
+    *prevppp = &pbp->next;
+
+}
+
 static void
 sweep_proc_bins(Process *p, int fullsweep)
 {
+    struct shrink_cand_data shrink = {0};
     ProcBin** prev;
     ProcBin* ptr;
     Binary* bptr;
@@ -2166,18 +2537,14 @@ sweep_proc_bins(Process *p, int fullsweep)
         Eterm* ppt = (Eterm *) ptr;
 
         if (IS_MOVED(*ppt)) {        /* Object is alive */
-            ProcBin* ro = (ProcBin*) binary_val(*ppt);
-
-            *prev = ro;         /* Patch to moved pos */
-            prev = &ro->next;
-            ptr = ro->next;
+            ptr = (ProcBin*) binary_val(*ppt);
+	    link_live_proc_bin(&shrink, &prev, &ptr); 
         } else if (in_area(ppt, oh, oh_size)) {
             /*
              * Object resides on old heap, and we just did a
              * generational collection - keep object in list.
              */
-            prev = &ptr->next;
-            ptr = ptr->next;
+	    link_live_proc_bin(&shrink, &prev, &ptr); 
         } else {                /* Object has not been moved - deref it */
             *prev = ptr->next;
             bptr = ptr->val;
@@ -2191,7 +2558,47 @@ sweep_proc_bins(Process *p, int fullsweep)
             ptr = *prev;
         }
     }
-    ASSERT(*prev == NULL);
+
+    /*
+     * We now have the mso list divided into two lists:
+     * - shrink candidates (inactive writable with unused data) 
+     * - other binaries (read only + active writable ...)
+     *
+     * Put them back together.
+     */
+
+    *prev = shrink.candidates;
+
+    /*
+     * If we got any shrink candidates, check them out.
+     */
+
+    if (shrink.candidates) {
+	Uint leave_unused = 0;
+
+	if (shrink.no_of_active == 0) {
+	    if (shrink.no_of_candidates <= ERTS_INACT_WR_PB_LEAVE_MUCH_LIMIT)
+		leave_unused = ERTS_INACT_WR_PB_LEAVE_MUCH_PERCENTAGE;
+	    else if (shrink.no_of_candidates <= ERTS_INACT_WR_PB_LEAVE_LIMIT)
+		leave_unused = ERTS_INACT_WR_PB_LEAVE_PERCENTAGE;
+	}
+
+	for (ptr = shrink.candidates; ptr; ptr = ptr->next) {
+	    Uint new_size = ptr->size;
+
+	    if (leave_unused) {
+		new_size += (new_size * 100) / leave_unused;
+		/* Our allocators are 8 byte aligned, i.e., shrinking with
+		   less than 8 bytes will have no real effect */
+		if (new_size + 8 >= ptr->val->orig_size)
+		    continue;
+	    }
+
+	    ptr->val = erts_bin_realloc(ptr->val, new_size);
+	    ptr->val->orig_size = new_size;
+	    ptr->bytes = (byte *) ptr->val->orig_bytes;
+	}
+    }
 }
 
 /*
@@ -2345,13 +2752,13 @@ offset_mqueue(Process *p, Sint offs, char* area, Uint area_size)
             break;
         }
 
+	mesg = ERL_MESSAGE_TOKEN(mp);
+	if (is_boxed(mesg) && in_area(ptr_val(mesg), area, area_size)) {
+	    ERL_MESSAGE_TOKEN(mp) = offset_ptr(mesg, offs);
+        }
         ASSERT((is_nil(ERL_MESSAGE_TOKEN(mp)) ||
 		is_tuple(ERL_MESSAGE_TOKEN(mp)) ||
 		is_atom(ERL_MESSAGE_TOKEN(mp))));
-	mesg = ERL_MESSAGE_TOKEN(mp);
-	if (is_tuple(mesg) && in_area(tuple_val(mesg), area, area_size)) {
-	    ERL_MESSAGE_TOKEN(mp) = offset_ptr(mesg, offs);
-        }
         mp = mp->next;
     }
 }
@@ -2363,11 +2770,6 @@ offset_one_rootset(Process *p, Sint offs, char* area, Uint area_size,
     if (p->dictionary)  {
 	offset_heap(p->dictionary->data, 
 		    p->dictionary->used, 
-		    offs, area, area_size);
-    }
-    if (p->debug_dictionary) {
-	offset_heap(p->debug_dictionary->data, 
-		    p->debug_dictionary->used, 
 		    offs, area, area_size);
     }
     offset_heap_ptr(&p->fvalue, 1, offs, area, area_size);
@@ -2403,7 +2805,7 @@ ensure_old_heap_size(Process *p, Uint size)
 	p->old_hend = old_heap + old_heap_size;
     } else if (p->old_htop - p->old_heap < size) {
 	Uint old_heap_size = erts_next_heap_size((p->old_hend-p->old_heap)+size, 1);
-	grow_old_heap(p, old_heap_size, p->arg_reg, p->arity);
+	realloc_old_heap(p, old_heap_size, p->arg_reg, p->arity);
     }
 }
 
@@ -2429,5 +2831,3 @@ within(Eterm *ptr, Process *p)
     return 0;
 }
 #endif
-
-#endif /* HEAP_FRAG_ELIM_TEST */

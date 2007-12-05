@@ -23,7 +23,8 @@
 -export([fixoptionals/2, cindex/3,
 	 list_to_record/2,
 	 encode_tag_val/1,
-	 encode_tags/3]).
+	 encode_tags/3,
+	 skip_ExtensionAdditions/2]).
 -export([encode_boolean/2,decode_boolean/2,
 	 encode_integer/3,encode_integer/4,
 	 decode_integer/3, decode_integer/4,
@@ -414,8 +415,8 @@ decode_constructed_incomplete([TagNo|RestTag],Bin) ->
 	    decode_constructed_incomplete(RestTag,Bin)
     end;
 decode_constructed_incomplete([],Bin) ->
-    {Tlv,_Rest}=decode_primitive(Bin),
-    [Tlv].
+    {Tlv,Rest}=decode_primitive(Bin),
+    [Tlv|decode_constructed_incomplete([],Rest)].
 
 decode_constr_indef_incomplete(_TagMatch,<<0,0,Rest/binary>>,Acc) ->
     {lists:reverse(Acc),Rest};
@@ -572,7 +573,7 @@ get_length_and_value(<<1:1,LL:7,T/binary>>) ->
     <<Value:Length/binary,Rest2/binary>> = Rest,
     {ok,{<<1:1,LL:7,Length:LL/unit:8,Value/binary>>,Rest2}}.
 
-get_indefinite_length_and_value(<<H,T>>) ->
+get_indefinite_length_and_value(<<H,T/binary>>) ->
     get_indefinite_length_and_value(T,[H]).
 
 get_indefinite_length_and_value(<<0,0,Rest/binary>>,Acc) ->
@@ -613,6 +614,20 @@ cindex(Ix,Val,Cname) ->
 	X -> X 
     end. 
  
+%%%
+%% skips components that do not match a tag in Tags
+skip_ExtensionAdditions([],_Tags) ->
+    [];
+skip_ExtensionAdditions(TLV=[{Tag,_}|Rest],Tags) ->
+    case [X||X=T<-Tags,T==Tag] of
+	[] ->
+	    %% skip this TLV and continue with next
+	    skip_ExtensionAdditions(Rest,Tags);
+	_ ->
+	    TLV
+    end.
+    
+
 %%=============================================================================== 
 %%=============================================================================== 
 %%=============================================================================== 
@@ -1736,6 +1751,8 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrO
 	{Lb,Ub} when StrLen >= Lb, Ub >= StrLen -> % variable length constraint
 	    NewVal;
 	{{Lb,_Ub},[]} when StrLen >= Lb ->
+	    NewVal;
+	{{Lb,_Ub},_Ext=[Min|_]} when StrLen >= Lb; StrLen >= Min ->
 	    NewVal;
 	{{Lb1,Ub1},{Lb2,Ub2}} when StrLen >= Lb1, StrLen =< Ub1; 
 				   StrLen =< Ub2, StrLen >= Lb2 ->

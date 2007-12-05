@@ -491,6 +491,8 @@ gen_type_test([X], Type, TrueLbl, FalseLbl, Pred, ConstTab) ->
       {hipe_tagscheme:test_binary(X, TrueLbl, FalseLbl, Pred), ConstTab};
     constant ->
       {hipe_tagscheme:test_constant(X, TrueLbl, FalseLbl, Pred), ConstTab};
+    bitstr ->
+      {hipe_tagscheme:test_bitstr(X, TrueLbl, FalseLbl, Pred), ConstTab};
     Other ->
       exit({?MODULE,{"unknown type",Other}})
   end;

@@ -50,6 +50,22 @@ The overall format of the term format is:
 | 131 | Tag |   Data      |
 +-----+-----+-------------+
 
+A compressed term looks like this:
+
+  1      1          4                  N
++-----+----+-------------------+-----------------------+
+| 131 | 80 | Uncompressed Size | Zlib-compressed data  |
++-----+----+-------------------+-----------------------+
+
+Uncompressed Size (usigned 32 bit integer in big endian byte order)
+is the size of the data before it was compressed.
+The compressed data has the following format when it has been expanded:
+
+   1    Uncompressed Size
++-----+-------------------+
+| Tag |  Data             |
++-----+-------------------+
+
 2.2. SMALL_INTEGER_EXT (97)
 
   1    1
@@ -354,7 +370,7 @@ the data field, counting from the most significant bit towards the least
 significant.
 
 
-2.24. FLOAT_EXT         (70)
+2.24. NEW_FLOAT_EXT     (70)
 
   1         8
 +----+-----------+

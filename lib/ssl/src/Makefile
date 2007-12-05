@@ -36,6 +36,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssl-$(VSN)
 
 MODULES= \
 	ssl \
+	ssl_alert \
 	ssl_app \
 	ssl_broker \
 	ssl_broker_sup \
@@ -43,12 +44,29 @@ MODULES= \
 	ssl_sup \
 	ssl_prim \
 	ssl_pkix \
-	ssl_pem \
+	ssl_pem	\
 	ssl_base64 \
-	inet_ssl_dist
+	inet_ssl_dist \
+	ssl_certificate\
+	ssl_certificate_db\
+	ssl_cipher \
+	ssl_connection \
+	ssl_connection_sup \
+	ssl_debug \
+	ssl_handshake \
+	ssl_manager \
+	ssl_session \
+	ssl_record \
+	ssl_ssl2 \
+	ssl_ssl3 \
+	ssl_tls1 \
 
-INTERNAL_HRL_FILES= ssl_int.hrl ssl_broker_int.hrl
-PUBLIC_HRL_FILES= ssl_pkix.hrl
+INTERNAL_HRL_FILES = \
+	 ssl_int.hrl ssl_broker_int.hrl \
+	 ssl_alert.hrl ssl_cipher.hrl ssl_handshake.hrl ssl_internal.hrl \
+	 ssl_record.hrl
+
+PUBLIC_HRL_FILES = ssl_pkix.hrl 
 
 ERL_FILES= $(MODULES:%=%.erl)
 
@@ -76,7 +94,7 @@ ERL_COMPILE_FLAGS += -I$(ERL_TOP)/lib/kernel/src -I$(INCLUDE) \
 # Targets
 # ----------------------------------------------------
 
-debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) 
+debug opt: $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) $(PUBLIC_HRL_FILES)
 
 clean:
 	rm -f $(TARGET_FILES) $(APP_TARGET) $(APPUP_TARGET) 
@@ -87,6 +105,9 @@ $(APP_TARGET):	$(APP_SRC) ../vsn.mk
 
 $(APPUP_TARGET):	$(APPUP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
+
+$(PUBLIC_HRL_FILES):
+	cp -f $(PUBLIC_HRL_FILES) $(INCLUDE)
 
 docs:
 

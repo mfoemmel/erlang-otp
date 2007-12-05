@@ -40,8 +40,9 @@
 %%-User interface-------------------------------------------------------
 
 %% ERLREF
-module(Element, _Opts) ->
-    XML = layout_module(Element),
+module(Element, Opts) ->
+    SortP = proplists:get_value(sort_functions, Opts, true),
+    XML = layout_module(Element, SortP),
     xmerl:export_simple([XML], docb_xmerl_xml_cb, []).
 
 %% CHAPTER
@@ -51,15 +52,22 @@ overview(Element, _Opts) ->
 
 %%--Internal functions--------------------------------------------------
 
-layout_module(#xmlElement{name = module, content = Es}=E) ->
+layout_module(#xmlElement{name = module, content = Es}=E, SortP) ->
     Name = get_attrval(name, E),
     Desc = get_content(description, Es),
     ShortDesc = text_only(get_content(briefDescription, Desc)),
     FullDesc =  otp_xmlify(get_content(fullDescription, Desc)),
     Types0 = get_content(typedecls, Es),
     Types1 = lists:sort([{type_name(Et), Et} || Et <- Types0]),
-    Functions = [Ef || Ef <- get_content(functions, Es)],
-    SortedFs = lists:sort([{function_name(Ef), Ef} || Ef <- Functions]),
+    Functions =
+	case SortP of
+	    true ->
+		lists:sort([{function_name(Ef), Ef} ||
+			       Ef <- get_content(functions, Es)]);
+	    false ->
+		[{function_name(Ef), Ef} ||
+		    Ef <- get_content(functions, Es)]
+	end,
     Header = {header, [
 		       ?NL,{title, [Name]},
 		       ?NL,{prepared, [""]},
@@ -81,7 +89,7 @@ layout_module(#xmlElement{name = module, content = Es}=E) ->
 				    {marker,[{id,"types"}],[]},
 				    ?NL|types(Types1)]}]
 	    end,
-    Funcs = functions(SortedFs),
+    Funcs = functions(Functions),
     See = seealso_module(Es),
     Authors = {authors, authors(Es)},
     {erlref,

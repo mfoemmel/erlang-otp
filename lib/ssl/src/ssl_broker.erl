@@ -417,7 +417,7 @@ handle_call({transport_accept, Client, ListenSocket, Timeout}, _From, St) ->
 %%
 handle_call({ssl_accept, Client, Socket, Timeout}, _From, St) ->
     debug(St, "ssl_accept: client = ~w, socket = ~w~n", [Client, Socket]),
-    case ssl_accept_prim(ssl_server, gen_tcp, Client, Socket, Timeout, St) of
+    case ssl_accept_prim(ssl_server, gen_tcp, Client, St#st.opts, Timeout, St#st{thissock=Socket}) of
 	{ok, Socket, NSt} ->
 	    {reply, ok, NSt};
 	{error, Reason, St} ->
@@ -790,17 +790,18 @@ transport_accept_prim(ServerName, ListenFd, LOpts, Timeout, St) ->
 	    {error, Reason, St}
     end.
 
-ssl_accept_prim(ServerName, TcpModule, Client, Socket, Timeout, St) -> 
+ssl_accept_prim(ServerName, TcpModule, Client, LOpts, Timeout, St) -> 
     FlagStr = [],
     SSLOpts = [],
+    AOpts = get_tcp_accept_opts(LOpts),
     %% Timeout is gen_server timeout - hence catch.
     debug(St, "ssl_accept_prim: self() ~w Client ~w~n", [self(), Client]),
+    Socket = St#st.thissock,
     Fd = Socket#sslsocket.fd,
     A = (catch ssl_server:ssl_accept_prim(ServerName, Fd, FlagStr, Timeout)),
     debug(St, "ssl_accept_prim: ~w~n", [A]),
     case A of 
 	ok ->
-	    AOpts = St#st.opts,
 	    B = connect_proxy(ServerName, TcpModule, Fd, 
 			       St#st.proxyport, AOpts, Timeout),
 	    debug(St, "ssl_accept_prim: connect_proxy ~w~n", [B]),
@@ -1085,7 +1086,7 @@ is_listen_opt(Opt) ->
     is_tcp_listen_opt(Opt) or is_ssl_opt(Opt).
 
 is_tcp_accept_opt(Opt) ->
-    is_tcp_gen_opt(Opt) or is_ssl_opt(Opt).
+    is_tcp_gen_opt(Opt).
 
 is_tcp_connect_opt(Opt) ->
     is_tcp_gen_opt(Opt) or is_tcp_connect_only_opt(Opt).
@@ -1118,6 +1119,8 @@ is_tcp_gen_opt({ip, Addr}) -> is_ip_address(Addr);
 is_tcp_gen_opt(_Opt) -> false.
 
 is_tcp_listen_only_opt({backlog, Size}) when is_integer(Size), 0 =< Size -> 
+    true;
+is_tcp_listen_only_opt({reuseaddr, Bool}) when Bool == true; Bool == false ->
     true;
 is_tcp_listen_only_opt(_Opt) -> false.
 

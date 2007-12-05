@@ -238,10 +238,18 @@ do_connect(Node, Type, WaitForBarred) -> %% Type = normal | hidden
 			    false
 		    end
 	    end;
-	_ ->
+	Else ->
 	    case application:get_env(kernel, dist_auto_connect) of
 		{ok, never} ->
 		    ?connect_failure(Node,{dist_auto_connect,never}),
+		    false;
+		% This might happen due to connection close 
+		% not beeing propagated to user space yet.
+		% Save the day by just not connecting... 
+		{ok, once} when Else =/= [],
+				(hd(Else))#connection.state =:= up ->
+		    ?connect_failure(Node,{barred_connection,  
+				ets:lookup(sys_dist, Node)}),
 		    false;
 		_ ->
 		    request({connect, Type, Node})
@@ -268,9 +276,6 @@ passive_connect_monitor(Parent, Node) ->
 	    end
     end.
 		    
-    
-    
-
 %% If the net_kernel isn't running we ignore all requests to the 
 %% kernel, thus basically accepting them :-)
 request(Req) ->
@@ -306,6 +311,9 @@ start_link([Name, LongOrShortNames, Ticktime]) ->
 	    exit(nodistribution)
     end.
 
+%% auth:get_cookie should only be able to return an atom
+%% tuple cookies are unknowns 
+
 init({Name, LongOrShortNames, TickT}) ->
     process_flag(trap_exit,true),
     case init_node(Name, LongOrShortNames) of
@@ -332,7 +340,6 @@ init({Name, LongOrShortNames, TickT}) ->
 		    {stop, {error,{bad_cookie, Node}}}
 	    end;
 	Error ->
-
 	    {stop, Error}
     end.
 

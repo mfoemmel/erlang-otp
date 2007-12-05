@@ -3872,7 +3872,7 @@ inherit_options(S) ->
     %%io:format("xsdbase: ~p~n",[S#xmerl_scanner.xmlbase]),
     [{xsdbase,S#xmerl_scanner.xmlbase}].
 
-handle_schema_result({ok,{XSDRes=#xmlElement{},_},_},S5) ->
+handle_schema_result({XSDRes=#xmlElement{},_},S5) ->
     {XSDRes,S5};
 handle_schema_result({error,Reason},S5) ->
     ?fatal({failed_schema_validation,Reason},S5).

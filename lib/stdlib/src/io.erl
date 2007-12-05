@@ -22,6 +22,7 @@
 	 get_password/0, get_password/1,
 	 setopts/1, setopts/2]).
 -export([write/1,write/2,read/1,read/2,read/3]).
+-export([columns/0,columns/1,rows/0,rows/1]).
 -export([fwrite/1,fwrite/2,fwrite/3,fread/2,fread/3,
 	 format/1,format/2,format/3]).
 -export([scan_erl_exprs/1,scan_erl_exprs/2,scan_erl_exprs/3,
@@ -29,26 +30,6 @@
 	 parse_erl_exprs/1,parse_erl_exprs/2,parse_erl_exprs/3,
 	 parse_erl_form/1,parse_erl_form/2,parse_erl_form/3]).
 -export([request/1,request/2,requests/1,requests/2]).
-
-%% The following exports are here for backwards compatibility.
--export([parse_exprs/2]).
--export([scan_erl_seq/1,scan_erl_seq/2,scan_erl_seq/3,
-	 parse_erl_seq/1,parse_erl_seq/2, parse_erl_seq/3]).
--deprecated([{parse_exprs,2},{scan_erl_seq,1},{scan_erl_seq,2},
-             {scan_erl_seq,3},{parse_erl_seq,1},{parse_erl_seq,2},
-             {parse_erl_seq,3}]).
-	 
-%%  These calls are here for backwards compatibility (BC sucks!).
-
-scan_erl_seq(P)          -> scan_erl_exprs(P).
-scan_erl_seq(I, P)       -> scan_erl_exprs(I, P).
-scan_erl_seq(I, P, Pos)  -> scan_erl_exprs(I, P, Pos).
-
-parse_erl_seq(P)          -> parse_erl_exprs(P).
-parse_erl_seq(I, P)       -> parse_erl_exprs(I, P).
-parse_erl_seq(I, P, Pos)  -> parse_erl_exprs(I, P, Pos).
-
-parse_exprs(I, P) -> parse_erl_exprs(I, P).
 
 %%
 %% User interface.
@@ -66,7 +47,7 @@ to_tuple(T) -> {T}.
     case request(Io, Request) of
 	{error, Reason} ->
 	    [Name | Args] = tuple_to_list(to_tuple(Request)),
-	    erlang:fault(conv_reason(Name, Reason), [Name, Io | Args]);
+	    erlang:error(conv_reason(Name, Reason), [Name, Io | Args]);
 	Other ->
 	    Other
     end).
@@ -75,10 +56,10 @@ o_request(Io, Request) ->
     case request(Io, Request) of
 	{error, Reason} ->
 	    [Name | Args] = tuple_to_list(to_tuple(Request)),
-	    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:fault(undef)),
+	    {'EXIT',{undef,[_Current|Mfas]}} = (catch erlang:error(undef)),
 	    MFA = {io, Name, [Io | Args]},
 	    exit({conv_reason(Name, Reason),[MFA|Mfas]});
-%	    erlang:fault(conv_reason(Name, Reason), [Name, Io | Args]);
+%	    erlang:error(conv_reason(Name, Reason), [Name, Io | Args]);
 	Other ->
 	    Other
     end.
@@ -95,6 +76,28 @@ nl() ->
 nl(Io) ->
 %    o_request(Io, {put_chars,io_lib:nl()}).
     o_request(Io, nl).
+
+columns() ->
+    columns(default_output()).
+columns(Io) ->
+    case request(Io,{get_geometry,columns}) of
+	N  when is_integer(N) ->
+	    {ok,N};
+	_ ->
+	    {error,enotsup}
+    end.
+	    
+rows() ->
+    rows(default_output()).
+rows(Io) ->
+    case request(Io,{get_geometry,rows}) of
+	N  when is_integer(N) ->
+	    {ok,N};
+	_ ->
+	    {error,enotsup}
+    end.
+	    
+
 
 get_chars(Prompt, N) ->
     get_chars(default_input(), Prompt, N).
@@ -136,7 +139,7 @@ read(Io, Prompt) ->
 	{ok,Toks,_EndLine} ->
 	    erl_parse:parse_term(Toks);
 %	{error, Reason} when atom(Reason) ->
-%	    erlang:fault(conv_reason(read, Reason), [Io, Prompt]);
+%	    erlang:error(conv_reason(read, Reason), [Io, Prompt]);
 	{error,E,_EndLine} ->
 	    {error,E};
 	{eof,_EndLine} ->
@@ -181,7 +184,7 @@ fread(Prompt, Format) ->
 fread(Io, Prompt, Format) ->
     case request(Io, {fread,Prompt,Format}) of
 %	{error, Reason} when atom(Reason) ->
-%	    erlang:fault(conv_reason(fread, Reason), [Io, Prompt, Format]);
+%	    erlang:error(conv_reason(fread, Reason), [Io, Prompt, Format]);
 	Other ->
 	    Other
     end.

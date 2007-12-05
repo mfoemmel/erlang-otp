@@ -235,7 +235,7 @@ public abstract class AbstractConnection extends Thread {
     header.write1(version);
 
     // fix up length in preamble
-    header.poke4BE(0,header.count() + payload.count() - 4);
+    header.poke4BE(0, header.size() + payload.size() - 4);
     
     do_send(header,payload);
   }
@@ -274,7 +274,7 @@ public abstract class AbstractConnection extends Thread {
     header.write1(version);
 
     // fix up length in preamble
-    header.poke4BE(0,header.count() + payload.count() - 4);
+    header.poke4BE(0, header.size() + payload.size() - 4);
     
     do_send(header,payload);
   }
@@ -322,7 +322,7 @@ public abstract class AbstractConnection extends Thread {
       OtpOutputStream payload = new OtpOutputStream(new OtpErlangTuple(msg));
       
       // fix up length in preamble
-      header.poke4BE(0,header.count() + payload.count() - 4);
+      header.poke4BE(0, header.size() + payload.size() - 4);
     
       try {
 	do_send(header,payload);
@@ -367,7 +367,7 @@ public abstract class AbstractConnection extends Thread {
     header.write_any(dest);
 
     // fix up length in preamble
-    header.poke4BE(0,header.count()-4);
+    header.poke4BE(0, header.size()-4);
 
     do_send(header);
   }
@@ -401,7 +401,7 @@ public abstract class AbstractConnection extends Thread {
     header.write_any(dest);
 
     // fix up length in preamble
-    header.poke4BE(0,header.count()-4);
+    header.poke4BE(0, header.size()-4);
 
     do_send(header);
   }
@@ -447,7 +447,7 @@ public abstract class AbstractConnection extends Thread {
     header.write_any(reason);
 
     // fix up length in preamble
-    header.poke4BE(0,header.count()-4);
+    header.poke4BE(0, header.size()-4);
 
     do_send(header);
   }
@@ -1076,8 +1076,7 @@ public abstract class AbstractConnection extends Thread {
 	  throw new IOException("Handshake failed - peer cannot handle extended references");
       }
       
-      if (OtpSystem.useExtendedPidsPorts()
-	  && (peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
+      if ((peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
 	  throw new IOException("Handshake failed - peer cannot handle extended pids and ports");
       }
 
@@ -1128,8 +1127,7 @@ public abstract class AbstractConnection extends Thread {
 	  throw new IOException("Handshake failed - peer cannot handle extended references");
       }
       
-      if (OtpSystem.useExtendedPidsPorts()
-	  && (peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
+      if ((peer.flags & AbstractNode.dFlagExtendedPidsPorts) == 0) {
 	  throw new IOException("Handshake failed - peer cannot handle extended pids and ports");
       }
 

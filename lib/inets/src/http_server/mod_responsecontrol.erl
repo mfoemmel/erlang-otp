@@ -23,13 +23,13 @@
 
 do(Info) ->
     ?DEBUG("do -> response_control",[]),
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data, response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		%% No response has been generated!
 		undefined ->
 		    case do_responsecontrol(Info) of
@@ -103,11 +103,11 @@ control(Path, Info, FileInfo) ->
 %%If there are both a range and an if-range field control if
 %%----------------------------------------------------------------------
 control_range(Path,Info,FileInfo) ->
-    case httpd_util:key1search(Info#mod.parsed_header, "range") of
+    case proplists:get_value("range", Info#mod.parsed_header) of
 	undefined->
 	    undefined;
 	_Range ->
-	    case httpd_util:key1search(Info#mod.parsed_header,"if-range") of
+	    case proplists:get_value("if-range", Info#mod.parsed_header) of
 		undefined ->
 		    undefined;
 		EtagOrDate ->
@@ -173,8 +173,8 @@ control_Etag(Path, Info, FileInfo)->
 %%Control if they match the Etag for the requested file
 %%----------------------------------------------------------------------
 control_match(Info, _FileInfo, HeaderField, FileEtag)-> 
-    case split_etags(httpd_util:key1search(Info#mod.parsed_header,
-					   HeaderField)) of
+    case split_etags(proplists:get_value(HeaderField,
+					 Info#mod.parsed_header)) of
  	undefined->
 	    undefined;
         Etags->
@@ -245,8 +245,8 @@ control_modification(Path,Info,FileInfo)->
 %%Header Field is the name of the field  to control
 
 control_modification_data(Info, ModificationTime, HeaderField)-> 
-    case strip_date(httpd_util:key1search(Info#mod.parsed_header,
-					  HeaderField)) of
+    case strip_date(proplists:get_value(HeaderField, 
+					Info#mod.parsed_header)) of
  	undefined->
 	    undefined;
 	LastModified0 ->

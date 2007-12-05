@@ -43,6 +43,7 @@
 %% Module information
 
 %% @type module() = #module{name = [] | atom(),
+%%                          parameters = none | [atom()],
 %%                          functions = ordset(function_name()),
 %%                          exports = ordset(function_name()),
 %%                          attributes = ordset({atom(), term()}),
@@ -51,6 +52,7 @@
 %%  function_name(T) = {atom(), integer()}
 
 -record(module, {name = [],
+		 parameters = none,
 		 functions = [],
 		 exports = [],
 		 attributes = [],

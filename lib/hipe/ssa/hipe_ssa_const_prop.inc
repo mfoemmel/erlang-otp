@@ -52,6 +52,7 @@ visit_expressions([Inst | Insts], Environment, FlowWork, SSAWork) ->
 
 -record(env, {cfg,
 	      executable_flags,
+	      handled_blocks,
 	      lattice_values,
 	      ssa_edges
 	     }).
@@ -59,6 +60,7 @@ visit_expressions([Inst | Insts], Environment, FlowWork, SSAWork) ->
 create_env(CFG) ->
   #env{cfg              = CFG,
        executable_flags = gb_sets:empty(),
+       handled_blocks   = gb_sets:empty(),
        lattice_values   = initialize_lattice(CFG),
        ssa_edges        = initialize_ssa_edges(CFG)
       }.
@@ -142,19 +144,17 @@ scc([{Source,Destination} | FlowWorkList], SSAWorkList, Environment) ->
       Code         = extract_code(Destination, Environment),
       {Environment2, Code1, ExtraSSA} =
         visit_phi_nodes(Code, Destination, Environment1, []),
-      ExecutablePreds =
-        [Pred || Pred <- predecessors(Destination, Environment2),
-                 executable({Pred, Destination}, Environment2)],
-      case (length(ExecutablePreds) =< 1) of
-        false ->
-          scc(FlowWorkList, ExtraSSA ++ SSAWorkList, Environment2);
+      case handled(Destination, Environment2) of
         true ->
+          scc(FlowWorkList, ExtraSSA ++ SSAWorkList, Environment2);
+        false ->
           {MoreFlowDests, MoreSSAWork, Environment3} = 
             visit_expressions(Code1, Environment2),
           MoreFlowWork  = [{Destination, Node} || Node <- MoreFlowDests],
           FlowWorkList1 = MoreFlowWork ++ FlowWorkList,
           SSAWorkList1  = ExtraSSA ++ MoreSSAWork ++ SSAWorkList,
-          scc(FlowWorkList1, SSAWorkList1, Environment3)
+	  Environment4  = mark_as_handled(Destination, Environment3),
+          scc(FlowWorkList1, SSAWorkList1, Environment4)
       end
   end;
 %% Take an element from the SSAWorkList and process it
@@ -363,6 +363,15 @@ mark_as_executable(Edge, Environment) ->
 
 %%-----------------------------------------------------------------------------
 
+mark_as_handled(Node, Environment = #env{handled_blocks=Handled}) ->
+  NewHandled = gb_sets:add_element(Node, Handled),
+  Environment#env{handled_blocks=NewHandled}.
+
+handled(Node, #env{handled_blocks=Handled}) ->
+  gb_sets:is_element(Node, Handled).
+
+%%-----------------------------------------------------------------------------
+
 extract_code(Node, Environment) ->
   CFG = env__cfg(Environment),
   case ?CFG:bb(CFG, Node) of
@@ -392,7 +401,7 @@ update_lattice_value({Names, NewValue}, Environment) when is_list(Names) ->
     fun(Dst, {Env, SSA}) ->
         {NewEnv, NewSSA} = 
           update_lattice_value({Dst, NewValue}, Env),
-        {NewEnv, SSA++NewSSA}
+        {NewEnv, SSA ++ NewSSA}
     end,
   lists:foldl(Update, {Environment, []}, Names);
 %% update_lattice_value({Name, {Res, N, Z, C, V} }, _) ->

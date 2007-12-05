@@ -87,6 +87,8 @@ id2atom({2,5,4,46}) ->
     'at-dnQualifier';
 id2atom({2,5,4,65}) ->
     'at-pseudonym';
+id2atom({2,5,4,72}) ->
+    'at-role';
 id2atom({2,5,29,9}) ->
     'ce-subjectDirectoryAttributes';
 id2atom({2,5,29,14}) ->
@@ -133,6 +135,8 @@ id2atom({2,5,29,46}) ->
     'ce-freshestCRL';
 id2atom({2,5,29,54}) ->
     'ce-inhibitAnyPolicy';
+id2atom({2,5,29,55}) ->
+    'ce-targetInformation';
 id2atom({1,2,840,10045,1}) ->
     fieldType;
 id2atom({1,2,840,10045,2}) ->
@@ -143,6 +147,8 @@ id2atom({1,2,840,10045,4}) ->
     ecSigType;
 id2atom({2,2,840,10040,2}) ->
     holdInstruction;
+id2atom({2,5,1,5,55}) ->
+    'at-clearance';
 id2atom({2,5,29,32,0}) ->
     anyPolicy;
 id2atom({2,5,29,37,0}) ->
@@ -263,10 +269,18 @@ id2atom({1,3,6,1,5,5,7,2}) ->
     qt;
 id2atom({1,3,6,1,5,5,7,3}) ->
     kp;
+id2atom({1,3,6,1,5,5,7,10}) ->
+    aca;
 id2atom({1,3,6,1,5,5,7,48}) ->
     ad;
 id2atom({1,3,6,1,5,5,7,1,1}) ->
     'pe-authorityInfoAccess';
+id2atom({1,3,6,1,5,5,7,1,4}) ->
+    'pe-ac-auditIdentity';
+id2atom({1,3,6,1,5,5,7,1,6}) ->
+    'pe-aaControls';
+id2atom({1,3,6,1,5,5,7,1,10}) ->
+    'pe-ac-proxying';
 id2atom({1,3,6,1,5,5,7,1,11}) ->
     'pe-subjectInfoAccess';
 id2atom({1,3,6,1,5,5,7,2,1}) ->
@@ -285,6 +299,16 @@ id2atom({1,3,6,1,5,5,7,3,8}) ->
     'kp-timeStamping';
 id2atom({1,3,6,1,5,5,7,3,9}) ->
     'kp-OCSPSigning';
+id2atom({1,3,6,1,5,5,7,10,1}) ->
+    'aca-authenticationInfo';
+id2atom({1,3,6,1,5,5,7,10,2}) ->
+    'aca-accessIdentity';
+id2atom({1,3,6,1,5,5,7,10,3}) ->
+    'aca-chargingIdentity';
+id2atom({1,3,6,1,5,5,7,10,4}) ->
+    'aca-group';
+id2atom({1,3,6,1,5,5,7,10,6}) ->
+    'aca-encAttrs';
 id2atom({1,3,6,1,5,5,7,48,1}) ->
     'ad-ocsp';
 id2atom({1,3,6,1,5,5,7,48,2}) ->
@@ -298,6 +322,18 @@ id2atom({2,16,840,1,101,2,1,1,22}) ->
 id2atom(Any)->
     Any.
 
+atom2id(aca) ->
+    {1,3,6,1,5,5,7,10};
+atom2id('aca-accessIdentity') ->
+    {1,3,6,1,5,5,7,10,2};
+atom2id('aca-authenticationInfo') ->
+    {1,3,6,1,5,5,7,10,1};
+atom2id('aca-chargingIdentity') ->
+    {1,3,6,1,5,5,7,10,3};
+atom2id('aca-encAttrs') ->
+    {1,3,6,1,5,5,7,10,6};
+atom2id('aca-group') ->
+    {1,3,6,1,5,5,7,10,4};
 atom2id(ad) ->
     {1,3,6,1,5,5,7,48};
 atom2id('ad-caIssuers') ->
@@ -316,6 +352,8 @@ atom2id(anyPolicy) ->
     {2,5,29,32,0};
 atom2id(at) ->
     {2,5,4};
+atom2id('at-clearance') ->
+    {2,5,1,5,55};
 atom2id('at-commonName') ->
     {2,5,4,3};
 atom2id('at-countryName') ->
@@ -338,6 +376,8 @@ atom2id('at-organizationalUnitName') ->
     {2,5,4,11};
 atom2id('at-pseudonym') ->
     {2,5,4,65};
+atom2id('at-role') ->
+    {2,5,4,72};
 atom2id('at-serialNumber') ->
     {2,5,4,5};
 atom2id('at-stateOrProvinceName') ->
@@ -436,6 +476,8 @@ atom2id('ce-subjectDirectoryAttributes') ->
     {2,5,29,9};
 atom2id('ce-subjectKeyIdentifier') ->
     {2,5,29,14};
+atom2id('ce-targetInformation') ->
+    {2,5,29,55};
 atom2id('characteristic-two-basis') ->
     {1,2,840,10045,1,2,3};
 atom2id('characteristic-two-field') ->
@@ -508,6 +550,12 @@ atom2id('pds-name') ->
     7;
 atom2id(pe) ->
     {1,3,6,1,5,5,7,1};
+atom2id('pe-aaControls') ->
+    {1,3,6,1,5,5,7,1,6};
+atom2id('pe-ac-auditIdentity') ->
+    {1,3,6,1,5,5,7,1,4};
+atom2id('pe-ac-proxying') ->
+    {1,3,6,1,5,5,7,1,10};
 atom2id('pe-authorityInfoAccess') ->
     {1,3,6,1,5,5,7,1,1};
 atom2id('pe-subjectInfoAccess') ->
@@ -592,6 +640,12 @@ atom2id(Any)->
     Any.
 
 all_atoms() ->
+    aca,
+    'aca-accessIdentity',
+    'aca-authenticationInfo',
+    'aca-chargingIdentity',
+    'aca-encAttrs',
+    'aca-group',
     ad,
     'ad-caIssuers',
     'ad-caRepository',
@@ -601,6 +655,7 @@ all_atoms() ->
     anyExtendedKeyUsage,
     anyPolicy,
     at,
+    'at-clearance',
     'at-commonName',
     'at-countryName',
     'at-dnQualifier',
@@ -612,6 +667,7 @@ all_atoms() ->
     'at-organizationName',
     'at-organizationalUnitName',
     'at-pseudonym',
+    'at-role',
     'at-serialNumber',
     'at-stateOrProvinceName',
     'at-surname',
@@ -661,6 +717,7 @@ all_atoms() ->
     'ce-subjectAltName',
     'ce-subjectDirectoryAttributes',
     'ce-subjectKeyIdentifier',
+    'ce-targetInformation',
     'characteristic-two-basis',
     'characteristic-two-field',
     'common-name',
@@ -697,6 +754,9 @@ all_atoms() ->
     md5WithRSAEncryption,
     'pds-name',
     pe,
+    'pe-aaControls',
+    'pe-ac-auditIdentity',
+    'pe-ac-proxying',
     'pe-authorityInfoAccess',
     'pe-subjectInfoAccess',
     'physical-delivery-country-name',
@@ -780,6 +840,7 @@ all_ids() ->
     {2,5,4,44},
     {2,5,4,46},
     {2,5,4,65},
+    {2,5,4,72},
     {2,5,29,9},
     {2,5,29,14},
     {2,5,29,15},
@@ -803,11 +864,13 @@ all_ids() ->
     {2,5,29,37},
     {2,5,29,46},
     {2,5,29,54},
+    {2,5,29,55},
     {1,2,840,10045,1},
     {1,2,840,10045,2},
     {1,2,840,10045,3},
     {1,2,840,10045,4},
     {2,2,840,10040,2},
+    {2,5,1,5,55},
     {2,5,29,32,0},
     {2,5,29,37,0},
     {1,2,840,10040,4,1},
@@ -868,8 +931,12 @@ all_ids() ->
     {1,3,6,1,5,5,7,1},
     {1,3,6,1,5,5,7,2},
     {1,3,6,1,5,5,7,3},
+    {1,3,6,1,5,5,7,10},
     {1,3,6,1,5,5,7,48},
     {1,3,6,1,5,5,7,1,1},
+    {1,3,6,1,5,5,7,1,4},
+    {1,3,6,1,5,5,7,1,6},
+    {1,3,6,1,5,5,7,1,10},
     {1,3,6,1,5,5,7,1,11},
     {1,3,6,1,5,5,7,2,1},
     {1,3,6,1,5,5,7,2,2},
@@ -879,6 +946,11 @@ all_ids() ->
     {1,3,6,1,5,5,7,3,4},
     {1,3,6,1,5,5,7,3,8},
     {1,3,6,1,5,5,7,3,9},
+    {1,3,6,1,5,5,7,10,1},
+    {1,3,6,1,5,5,7,10,2},
+    {1,3,6,1,5,5,7,10,3},
+    {1,3,6,1,5,5,7,10,4},
+    {1,3,6,1,5,5,7,10,6},
     {1,3,6,1,5,5,7,48,1},
     {1,3,6,1,5,5,7,48,2},
     {1,3,6,1,5,5,7,48,3},

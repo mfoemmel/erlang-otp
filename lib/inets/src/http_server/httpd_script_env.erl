@@ -133,7 +133,7 @@ create_script_elements(_, _, _, _) ->
     [].
 
 create_mod_interaction_elements(_, ModData)->
-    case httpd_util:key1search(ModData#mod.data, remote_user) of
+    case proplists:get_value(remote_user, ModData#mod.data) of
 	undefined ->
 	    [];
 	RemoteUser ->

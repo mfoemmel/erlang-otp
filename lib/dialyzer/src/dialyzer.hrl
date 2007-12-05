@@ -19,15 +19,15 @@
 -define(HIPE_DEF_OPTS, 
 	[no_inline_fp, {pmatch, no_duplicates}, {target, x86}]).
 
--record(analysis, {analysis_pid, type=dataflow,
+-record(analysis, {analysis_pid, type=succ_typings,
 		   defines=[], doc_plt,
 		   files, include_dirs=[],
-		   init_plt, mcg=none, plt_info=none, 
+		   init_plt, mcg=none,
 		   supress_inline, start_from, user_plt}).
 
 -record(options, {files=[],
 		  files_rec=[],
-		  analysis_type=dataflow, %%succ_typings,
+		  analysis_type=succ_typings,
 		  defines=[],
 		  from=byte_code, %% default is to start from byte code	  
 		  init_plt,
@@ -38,6 +38,8 @@
 		  erlang_mode=false,
 		  supress_inline=false,
 		  output_file=""}).
+
+-record(contract, {contracts :: [_], args :: list(), forms :: [{_, _}]}).
 
 %% Warning classification.
 
@@ -52,6 +54,11 @@
 -define(WARN_GUARDS, warn_guards).
 -define(WARN_OLD_BEAM, warn_old_beam).
 -define(WARN_FAILING_CALL, warn_failing_call).
+-define(WARN_CONTRACT_TYPES, warn_contract_types).
+-define(WARN_CONTRACT_SYNTAX, warn_contract_syntax).
+-define(WARN_CONTRACT_NOT_EQUAL, warn_contract_not_equal).
+-define(WARN_CONTRACT_SUBTYPE, warn_contract_subtype).
+-define(WARN_CONTRACT_SUPERTYPE, warn_contract_supertype).
 
 %% Mostly for debugging.
 -define(WARN_TERM_COMP, warn_term_comp).

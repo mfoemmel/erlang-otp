@@ -119,30 +119,33 @@ close(#file_descriptor{module = ?MODULE, data = Port}) ->
     ll_close(Port).
 
 read(#file_descriptor{module = ?MODULE, data = Port}, Sz)
-  when ?G_I32(Sz) ->
-    Cmd = <<?RAM_FILE_READ:8,Sz:32>>,
-    case call_port(Port, Cmd) of
-	{ok, {0, _Data}} when Sz =/= 0 ->
-	    eof;
-	{ok, {_Sz, Data}} ->
-	    {ok, Data};
-	{error, enomem} ->
-	    %% Garbage collecting here might help if the current processes
-	    %% has some old binaries left.
-	    erlang:garbage_collect(),
+  when is_integer(Sz), Sz >= 0 ->
+    if
+	?G_I32(Sz) ->
+	    Cmd = <<?RAM_FILE_READ:8,Sz:32>>,
 	    case call_port(Port, Cmd) of
-		{ok, {0, _Data}} ->
+		{ok, {0, _Data}} when Sz =/= 0 ->
 		    eof;
 		{ok, {_Sz, Data}} ->
 		    {ok, Data};
+		{error, enomem} ->
+		    %% Garbage collecting here might help if
+		    %% the current processes has some old binaries left.
+		    erlang:garbage_collect(),
+		    case call_port(Port, Cmd) of
+			{ok, {0, _Data}} when Sz =/= 0 ->
+			    eof;
+			{ok, {_Sz, Data}} ->
+			    {ok, Data};
+			Error ->
+			    Error
+		    end;
 		Error ->
 		    Error
 	    end;
-	Error ->
-	    Error
-    end;
-read(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+	true ->
+	    {error, einval}
+    end.
 
 write(#file_descriptor{module = ?MODULE, data = Port}, Bytes) -> 
     case call_port(Port, [?RAM_FILE_WRITE | Bytes]) of
@@ -161,23 +164,21 @@ copy(#file_descriptor{module = ?MODULE} = Source,
   when is_integer(Length), Length >= 0;
        is_atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
-    file:copy_opened(Source, Dest, Length);
-copy(#file_descriptor{module = ?MODULE}, 
-     #file_descriptor{module = ?MODULE}, 
-     _) ->
-    {error, einval}.
+    file:copy_opened(Source, Dest, Length).
 
 
 sync(#file_descriptor{module = ?MODULE, data = Port}) -> 
-    call_port(Port, [?RAM_FILE_FSYNC]).
+    call_port(Port, <<?RAM_FILE_FSYNC>>).
 
 truncate(#file_descriptor{module = ?MODULE, data = Port}) -> 
-    call_port(Port, [?RAM_FILE_TRUNCATE]).
+    call_port(Port, <<?RAM_FILE_TRUNCATE>>).
 
 position(#file_descriptor{module = ?MODULE, data = Port}, Pos) -> 
     case lseek_position(Pos) of
-	{ok, Offs, Whence} ->
+	{ok, Offs, Whence} when ?G_I32(Offs) ->
 	    call_port(Port, <<?RAM_FILE_LSEEK:8,Offs:32,Whence:32>>);
+	{ok, _, _} ->
+	    {error, einval};
 	Error ->
 	    Error
     end.
@@ -185,20 +186,20 @@ position(#file_descriptor{module = ?MODULE, data = Port}, Pos) ->
 
 
 pread(#file_descriptor{module = ?MODULE, data = Port}, L) when is_list(L) ->
-    case pread_1(L) of
-	Commands when is_list(Commands) ->
-	    pread_2(Port, Commands, []);
-	Error -> 
-	    Error
-    end;
-pread(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+    pread_1(Port, L, []).
 
-pread_1([]) -> [];
-pread_1([{At, Sz} | T]) when ?G_I32(At), ?G_I32(Sz) ->
-    [{Sz,<<?RAM_FILE_PREAD:8,At:32,Sz:32>>}|pread_1(T)];
-pread_1(_) ->
-   {error, einval}.
+pread_1(Port, [], Cs) ->
+    pread_2(Port, lists:reverse(Cs), []);
+pread_1(Port, [{At, Sz} | T], Cs)
+  when is_integer(At), is_integer(Sz), Sz >= 0 ->
+    if 
+	?G_I32(At), ?G_I32(Sz) ->
+	    pread_1(Port, T, [{Sz,<<?RAM_FILE_PREAD:8,At:32,Sz:32>>}|Cs]);
+	true ->
+	    {error, einval}
+    end;
+pread_1(_, _, _243) ->
+   {error, badarg}.
 
 pread_2(_Port, [], R) ->
     {ok, lists:reverse(R)};
@@ -213,57 +214,77 @@ pread_2(Port, [{Sz,Command}|Commands], R) ->
     end.
 
 pread(#file_descriptor{module = ?MODULE, data = Port}, At, Sz) 
-  when ?G_I32(At), ?G_I32(Sz) ->
-    case call_port(Port, <<?RAM_FILE_PREAD:8,At:32,Sz:32>>) of
-	{ok, {0,_Data}} when Sz =/= 0 -> 
-	    eof;
-	{ok, {_Sz,Data}} -> 
-	    {ok, Data};
-	Error -> 
-	    Error
+  when is_integer(At), is_integer(Sz), Sz >= 0 ->
+    if
+	?G_I32(At), ?G_I32(Sz) ->
+	    case call_port(Port, <<?RAM_FILE_PREAD:8,At:32,Sz:32>>) of
+		{ok, {0,_Data}} when Sz =/= 0 -> 
+		    eof;
+		{ok, {_Sz,Data}} -> 
+		    {ok, Data};
+		Error -> 
+		    Error
+	    end;
+	true ->
+	    {error, einval}
     end;
 pread(#file_descriptor{module = ?MODULE}, _, _) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 
 pwrite(#file_descriptor{module = ?MODULE, data = Port}, L) when is_list(L) ->
-    case pwrite_1(L) of
-	Commands when is_list(Commands) ->
-	    pwrite_2(Port, Commands, 0);
-	Error ->
-	    Error
-    end;
-pwrite(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+    pwrite_1(Port, L, 0, []).
 
-pwrite_1([]) -> [];
-pwrite_1([{At, Bytes} | T]) when ?G_I32(At) ->
-    [[<<?RAM_FILE_PWRITE:8,At:32>> | Bytes] | pwrite_1(T)];
-pwrite_1(_) ->
-    {error, einval}.
+pwrite_1(Port, [], _, Cs) ->
+    pwrite_2(Port, lists:reverse(Cs), 0);
+pwrite_1(Port, [{At, Bytes} | T], R, Cs) when is_integer(At) ->
+    if
+	?G_I32(At), is_binary(Bytes) ->
+	    pwrite_1(Port, T, R+1, 
+		     [<<?RAM_FILE_PWRITE:8,At:32,Bytes/binary>> | Cs]);
+	?G_I32(At) ->
+	    try erlang:iolist_to_binary(Bytes) of
+		Bin ->
+		    pwrite_1(Port, T, R+1, 
+			     [<<?RAM_FILE_PWRITE:8,At:32,Bin/binary>> | Cs])
+	    catch
+		error:Reason ->
+		    {error, Reason}
+	    end;
+	true ->
+	    {error, {R, einval}}
+    end;
+pwrite_1(_, _, _, _) ->
+    {error, badarg}.
 
 pwrite_2(_Port, [], _R) ->
     ok;
-pwrite_2(Port, [Command|Commands], R) ->     
+pwrite_2(Port, [Command|Commands], R) ->
     case call_port(Port, Command) of
 	{ok, _Sz} ->
 	    pwrite_2(Port, Commands, R+1);
+	{error, badarg} = Error ->
+	    Error;
 	{error, Reason} ->
 	    {error, {R, Reason}}
     end.
 
-pwrite(#file_descriptor{module = ?MODULE, data = Port}, At, Bytes) 
-  when ?G_I32(At) ->
-    case call_port(Port, [<<?RAM_FILE_PWRITE:8,At:32>>|Bytes]) of
-	{ok, _Sz} ->
-	    ok;
-	Error ->
-	    Error
+pwrite(#file_descriptor{module = ?MODULE, data = Port}, At, Bytes)
+  when is_integer(At) ->
+    if
+	?G_I32(At) ->
+	    case call_port(Port, [<<?RAM_FILE_PWRITE:8,At:32>>|Bytes]) of
+		{ok, _Sz} ->
+		    ok;
+		Error ->
+		    Error
+	    end;
+	true ->
+	    {error, einval}
     end;
 pwrite(#file_descriptor{module = ?MODULE}, _, _) ->
-    {error, einval}.
-
+    {error, badarg}.
 
 
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle, Pos, MaxSz) ->
@@ -272,6 +293,8 @@ ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle, Pos, MaxSz) ->
 
 
 %% --------------------------------------------------------------------------
+%% Specialized ram_file API for functions not in file, unique to ram_file.
+%%
 
 
 get_file(#file_descriptor{module = ?MODULE, data = Port}) ->
@@ -331,9 +354,7 @@ uudecode(#file_descriptor{}) ->
 %%% Functions to communicate with the driver
 
 ll_open(Data, Mode, Opts) ->
-    case (catch erlang:open_port({spawn, ?RAM_FILE_DRV}, Opts)) of
-	{'EXIT', _Reason} ->
-	    {error, emfile};
+    try erlang:open_port({spawn, ?RAM_FILE_DRV}, Opts) of
 	Port ->
 	    case call_port(Port, [<<?RAM_FILE_OPEN:8,Mode:32>>|Data]) of
 		{error, _} = Error ->
@@ -342,21 +363,28 @@ ll_open(Data, Mode, Opts) ->
 		{ok, _} ->
 		    {ok, Port}
 	    end
+    catch
+	error:Reason ->
+	    {error, Reason}
     end.
-    
-call_port(Port, Command0) when is_list(Command0) ->
-    case catch list_to_binary(Command0) of
-	{'EXIT',_} ->
-	    {error, einval};
-	Command when is_binary(Command) ->
-	    call_port(Port, Command)
+
+call_port(Port, Command) when is_port(Port), is_binary(Command) ->
+    try erlang:port_command(Port, Command) of
+	true ->
+	    get_response(Port)
+    catch
+	error:badarg ->
+	    {error, einval}; % Since Command is valid, Port must be dead
+	error:Reason ->
+	    {error, Reason}
     end;
 call_port(Port, Command) ->
-    case catch erlang:port_command(Port, Command) of
-	{'EXIT', _} ->
-	    {error, einval};
-	_ ->
-	    get_response(Port)
+    try erlang:iolist_to_binary(Command) of
+	Bin ->
+	    call_port(Port, Bin)
+    catch
+	error:Reason ->
+	    {error, Reason}
     end.
 
 get_response(Port) ->
@@ -368,7 +396,7 @@ get_response(Port) ->
     end.
 
 ll_close(Port) ->
-    catch erlang:port_close(Port),
+    try erlang:port_close(Port) catch error:_ -> ok end,
     receive %% In case the caller is the owner and traps exits
 	{'EXIT', Port, _} ->
 	    ok
@@ -390,7 +418,7 @@ mode_list({binary, Mode}) when is_atom(Mode) ->
 mode_list({character, Mode}) when is_atom(Mode) ->
     mode_list(Mode);
 mode_list(_) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 
@@ -419,7 +447,7 @@ open_mode([binary|Rest], {Mode, Opts}) ->
 open_mode([], {Mode, Opts}) ->
     {Mode, Opts};
 open_mode(_, _) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 
@@ -435,14 +463,14 @@ lseek_position(cur) ->
     lseek_position({cur, 0});
 lseek_position(eof) ->
     lseek_position({eof, 0});
-lseek_position({bof, Offset}) when ?G_I32(Offset) ->
+lseek_position({bof, Offset}) when is_integer(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_SET};
-lseek_position({cur, Offset}) when ?G_I32(Offset) ->
+lseek_position({cur, Offset}) when is_integer(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_CUR};
-lseek_position({eof, Offset}) when ?G_I32(Offset) ->
+lseek_position({eof, Offset}) when is_integer(Offset) ->
     {ok, Offset, ?RAM_FILE_SEEK_END};
 lseek_position(_) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 

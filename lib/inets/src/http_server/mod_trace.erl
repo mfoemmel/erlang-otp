@@ -69,13 +69,13 @@ generate_trace_response_body([{Field,Value}|Rest],Head) ->
 %%Function that controls whether a response is generated or not
 %%----------------------------------------------------------------------
 response_generated(Info)->
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode,_PhraseArgs,_Reason}->
 	    true;
 	%%No status code control repsonsxe
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data, response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		%% No response has been generated!
 		undefined ->
 		    false;

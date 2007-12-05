@@ -24,11 +24,6 @@
 -export([subtract/2,is_subset/2]).
 -export([fold/3,filter/2]).
 
-%% Deprecated interface.
-
--export([new_set/0,set_to_list/1,list_to_set/1,subset/2]).
--deprecated([{new_set,0},{set_to_list,1},{list_to_set,1},{subset,2}]).
-
 %% new() -> Set.
 %%  Return a new empty ordered set.
 
@@ -163,26 +158,11 @@ is_subset(_, []) -> false.
 %% fold(Fun, Accumulator, OrdSet) -> Accumulator.
 %%  Fold function Fun over all elements in OrdSet and return Accumulator.
 
-fold(F, Acc, [E|Es]) ->
-    fold(F, F(E, Acc), Es);
-fold(F, Acc, []) when is_function(F, 2) -> Acc.
+fold(F, Acc, Set) ->
+    lists:foldl(F, Acc, Set).
 
 %% filter(Fun, OrdSet) -> OrdSet.
 %%  Filter OrdSet with Fun.
 
-filter(F, [E|Es]) ->
-    case F(E) of
-	true -> [E|filter(F, Es)]; 
-	false -> filter(F, Es)
-    end;
-filter(F, []) when is_function(F, 1) -> [].
-
-%% Deprecated interface.
-
-new_set() -> new().
-
-set_to_list(S) -> to_list(S).
-
-list_to_set(L) -> from_list(L).
-
-subset(S1, S2) -> is_subset(S1, S2).
+filter(F, Set) ->
+    lists:filter(F, Set).

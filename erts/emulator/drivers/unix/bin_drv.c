@@ -56,6 +56,7 @@ const struct erl_drv_entry bin_driver_entry = {
 static int bin_init()
 {
     this_port = -1;
+    return 0;
 }
 
 

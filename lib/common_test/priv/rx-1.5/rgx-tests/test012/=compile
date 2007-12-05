@@ -1,0 +1,9 @@
+#!/bin/sh
+
+HDR=$1
+LIB=$2
+
+sed -f TESTS2C.sed TESTS > testcases.h
+rm -f regex.h
+ln -s $HDR regex.h
+gcc -o runtests runtests.c $LIB

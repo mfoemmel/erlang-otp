@@ -34,6 +34,12 @@
 #include <locale.h>
 #include <unistd.h>
 #include <termios.h>
+#ifdef HAVE_FCNTL_H
+#include <fcntl.h>
+#endif
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
 
 #include "erl_driver.h"
 
@@ -59,6 +65,8 @@ static int cols, xn;
 #define OP_INSC 2
 #define OP_DELC 3
 #define OP_BEEP 4
+/* Control op */
+#define CTRL_OP_GET_WINSIZE 100
 
 static int lbuf_size = BUFSIZ;
 #define MAXSIZE (1 << 16)
@@ -111,6 +119,7 @@ static int move_down(int);
 static int tty_init(int,int,int,int);
 static int tty_set(int);
 static int tty_reset(int);
+static int ttysl_control(ErlDrvData, unsigned int, char *, int, char **, int);
 static RETSIGTYPE suspend(int);
 static RETSIGTYPE cont(int);
 
@@ -122,7 +131,10 @@ struct erl_drv_entry ttsl_driver_entry = {
     ttysl_from_erlang,
     ttysl_from_tty,
     NULL,
-    "tty_sl"
+    "tty_sl",
+    NULL,
+    NULL,
+    ttysl_control
   };
 
 static int ttysl_init(void)
@@ -131,7 +143,7 @@ static int ttysl_init(void)
     ttysl_fd = -1;
     lbuf = NULL;		/* For line buffer handling */
     capbuf = NULL;		/* For termcap handling */
-    return TRUE;
+    return 0;
 }
 
 static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
@@ -197,6 +209,48 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
 
     return (ErlDrvData)ttysl_port;	/* Nothing important to return */
 }
+
+#define DEF_HEIGHT 24
+#define DEF_WIDTH 80
+static void ttysl_get_window_size(Uint32 *width, Uint32 *height)
+{
+#ifdef TIOCGWINSZ 
+    struct winsize ws;
+    if (ioctl(ttysl_fd,TIOCGWINSZ,&ws) == 0) {
+	*width = (Uint32) ws.ws_col;
+	*height = (Uint32) ws.ws_row;
+	return;
+    }
+#endif
+    *width = DEF_WIDTH;
+    *height = DEF_HEIGHT;
+}
+    
+static int ttysl_control(ErlDrvData drv_data,
+			 unsigned int command,
+			 char *buf, int len,
+			 char **rbuf, int rlen)
+{
+    char resbuff[2*sizeof(Uint32)];
+    switch (command) {
+    case CTRL_OP_GET_WINSIZE:
+	{
+	    Uint32 w,h;
+	    ttysl_get_window_size(&w,&h);
+	    memcpy(resbuff,&w,sizeof(Uint32));
+	    memcpy(resbuff+sizeof(Uint32),&h,sizeof(Uint32));
+	}
+	break;
+    default:
+	return 0;
+    }
+    if (rlen < 2*sizeof(Uint32)) {
+	*rbuf = driver_alloc(2*sizeof(Uint32));
+    }
+    memcpy(*rbuf,resbuff,2*sizeof(Uint32));
+    return 2*sizeof(Uint32);
+}
+
 
 static void ttysl_stop(ErlDrvData ttysl_data)
 {

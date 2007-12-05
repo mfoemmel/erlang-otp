@@ -58,6 +58,8 @@ my @gen_arity;
 my @gen_opname;
 my @op_to_name;
 
+my @obsolete;
+
 my %macro;
 my %macro_flags;
 
@@ -82,7 +84,7 @@ my @pred_table;
 # Operand types for generic instructions.
 
 my $compiler_types = "uiaxyfhz";
-my $loader_types = "nprowvl";
+my $loader_types = "nprvlq";
 my $genop_types = $compiler_types . $loader_types;
 
 #
@@ -106,10 +108,9 @@ my %arg_size = ('r' => 0,	# x(0) - x register zero
 		'b' => 1,	# pointer to bif
 		'A' => 1,	# arity value
 		'P' => 1,	# byte offset into tuple
-		'o' => 2,	# float
-		'w' => 1,	# bignumber
 		'h' => 1,	# character
 		'l' => 1,	# float reg
+		'q' => 1,	# literal term
 	     );
 
 #
@@ -131,8 +132,8 @@ my @tag_type;
 
     # Composed types.
     $type_bit{'d'} = $type_bit{'x'} | $type_bit{'y'} | $type_bit{'r'};
-    $type_bit{'c'} = $type_bit{'i'} | $type_bit{'a'} | $type_bit{'n'};
-    $type_bit{'s'} = $type_bit{'d'} | $type_bit{'c'};
+    $type_bit{'c'} = $type_bit{'i'} | $type_bit{'a'} | $type_bit{'n'} | $type_bit{'q'};
+    $type_bit{'s'} = $type_bit{'d'} | $type_bit{'i'} | $type_bit{'a'} |	$type_bit{'n'};
     $type_bit{'j'} = $type_bit{'f'} | $type_bit{'p'};
 
     # Aliases (for matching purposes).
@@ -235,15 +236,16 @@ while (<>) {
     #
     # Parse: Name/Arity  (generic instruction)
     #
-    if (m@^(\w+)/(\d)\s*$@) {
-	my($name) = $1;
-	my($arity) = $2;
+    if (m@^(-)?(\w+)/(\d)\s*$@) {
+	my($obsolete) = $1;
+	my($name) = $2;
+	my($arity) = $3;
 	$name =~ /^[a-z]/ or &error("Opname must start with a lowercase letter");
 	defined $gen_arity{$name} and $gen_arity{$name} != $arity and
 	    &error("Opname $name already defined with arity $gen_arity{$name}");
 	defined $unnumbered{$name,$arity} and
 	    &error("Opname $name already defined with arity $gen_arity{$name}");
-
+	
 	if (defined $op_num) {	# Numbered generic operation
 	    $gen_opname[$op_num] = $name;
 	    $gen_arity[$op_num] = $arity;
@@ -252,6 +254,7 @@ while (<>) {
 	    $gen_to_spec{"$name/$arity"} = undef;
 	    $num_specific{"$name/$arity"} = 0;
 	    $min_window{"$name/$arity"} = 255;
+	    $obsolete[$op_num] = $obsolete eq '-';
 	} else {		# Unnumbered generic operation.
 	    push(@unnumbered_generic, [$name, $arity]);
 	    $unnumbered{$name,$arity} = 1;
@@ -268,6 +271,9 @@ while (<>) {
 	if @args > $max_operands;
     &syntax_check($name, @args);
     my $arity = @args;
+    if ($obsolete[$gen_opnum{$name,$arity}]) {
+	error("specific instructions may not be specified for obsolete instructions");
+    }
     push(@{$specific_op{"$name/$arity"}}, [$name, $hot, @args]);
     if (defined $op_num) {
 	&error("specific instructions must not be numbered");
@@ -458,7 +464,8 @@ sub emulator_output {
 	    my($spec_op) = $gen_to_spec{$key};
 	    my($num_specific) = $num_specific{$key};
 	    defined $spec_op or $tr != -1 or
-		&error("instruction $key has no specific instruction");
+		$obsolete[$gen_opnum{$name,$arity}] or
+		error("instruction $key has no specific instruction");
 	    $spec_op = -1 unless defined $spec_op;
 	    &init_item($name, $arity, $spec_op, $num_specific, $tr, $min_window{$key});
 	}
@@ -511,7 +518,7 @@ sub emulator_output {
 	print "#define TAG_$letter $tag_num\n";
 	$tag_num++;
     }
-    print "\n";
+    print "\n#define BEAM_NUM_TAGS $tag_num\n\n";
 
     $i = 0;
     foreach (sort keys %match_engine_ops) {
@@ -664,16 +671,17 @@ sub compiler_output {
 
     for ($i = 0; $i < @gen_opname; $i++) {
 	next unless defined $gen_opname[$i];
+	print "%%" if $obsolete[$i];
 	print "opcode(", &quote($gen_opname[$i]), ", $gen_arity[$i]) -> $i;\n";
     }
-    print "opcode(Name, Arity) -> erlang:fault(badarg, [Name,Arity]).\n\n";
+    print "opcode(Name, Arity) -> erlang:error(badarg, [Name,Arity]).\n\n";
 
     for ($i = 0; $i < @gen_opname; $i++) {
 	next unless defined $gen_opname[$i];
 	print "opname($i) -> {",
 	&quote($gen_opname[$i]), ",$gen_arity[$i]};\n";
     }
-    print "opname(Number) -> erlang:fault(badarg, [Number]).\n";
+    print "opname(Number) -> erlang:error(badarg, [Number]).\n";
 
     #
     # Generate .hrl file.
@@ -836,7 +844,7 @@ sub basic_generator {
 
 	    /[fp]/ and do { $fail_type = $_; last SWITCH };
 
-	    /[eLIFEbASjPowl]/ and do { last SWITCH; };
+	    /[eLIFEbASjPowlq]/ and do { last SWITCH; };
 
 	    die "$name: The generator can't handle $_, at";
 	}
@@ -1073,8 +1081,12 @@ sub compile_transform {
 	$arity++ unless $list[1] eq '*';
 	$_ = [ @list ];
     }
+
+    if ($obsolete[$gen_opnum{$name,$arity}]) {
+	error("obsolete function must not be used in transformations");
+    }
     
-    [$name, $arity, @ops];
+    [$name,$arity,@ops];
 }
 
 sub tr_parse_op {

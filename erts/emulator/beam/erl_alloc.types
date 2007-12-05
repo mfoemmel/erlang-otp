@@ -77,6 +77,7 @@ allocator	BINARY		false		binary_alloc
 allocator	ETS		true		ets_alloc
 allocator	FIXED_SIZE	true		fix_alloc
 
++enable thread_safe_std_alloc
 +else # Non smp build
 
 allocator	SYSTEM		true		sys_alloc
@@ -136,6 +137,8 @@ type	MONITOR_SH	FIXED_SIZE	PROCESSES	monitor_sh
 type	MONITOR_LH	STANDARD	PROCESSES	monitor_lh
 type	NLINK_SH	FIXED_SIZE	PROCESSES	nlink_sh
 type	NLINK_LH	STANDARD	PROCESSES	nlink_lh
+type	SUSPEND_MON	STANDARD	PROCESSES	suspend_monitor
+type	PEND_SUSPEND	SHORT_LIVED	PROCESSES	pending_suspend
 type	PROC_LIST	FIXED_SIZE	PROCESSES	proc_list
 type	FUN_ENTRY	FIXED_SIZE	CODE		fun_entry
 type	ATOM_TXT	LONG_LIVED	ATOM		atom_text
@@ -185,7 +188,7 @@ type	TMP_DIST_BUF	TEMPORARY	SYSTEM		tmp_dist_buf
 type	ASYNC		SYSTEM		SYSTEM		async
 type	ASYNC_Q		LONG_LIVED	SYSTEM		async_queue
 type	ESTACK		TEMPORARY	SYSTEM		estack
-type	PORT_CALL_BUF	STANDARD	SYSTEM		port_call_buf
+type	PORT_CALL_BUF	TEMPORARY	SYSTEM		port_call_buf
 type	DB_TABLE	FIXED_SIZE	ETS		db_tab
 type	DB_FIXATION	SHORT_LIVED	ETS		db_fixation
 type	DB_FIX_DEL	SHORT_LIVED	ETS		fixed_del
@@ -220,10 +223,28 @@ type	PORT_NAMES	SHORT_LIVED	SYSTEM		port_names
 type	PORT_DATA_LOCK	STANDARD	SYSTEM		port_data_lock
 type	NODES_MON	STANDARD	PROCESSES	nodes_monitor
 
++if thread_safe_std_alloc
+type	DRV_THR_OPTS	STANDARD	SYSTEM		driver_thread_opts
+type	DRV_TID		STANDARD	SYSTEM		driver_tid
+type	DRV_MTX		STANDARD	SYSTEM		driver_mutex
+type	DRV_CND		STANDARD	SYSTEM		driver_cond
+type	DRV_RWLCK	STANDARD	SYSTEM		driver_rwlock
+type	DRV_TSD		STANDARD	SYSTEM		driver_tsd
++else
+type	DRV_THR_OPTS	SYSTEM		SYSTEM		driver_thread_opts
+type	DRV_TID		SYSTEM		SYSTEM		driver_tid
+type	DRV_MTX		SYSTEM		SYSTEM		driver_mutex
+type	DRV_CND		SYSTEM		SYSTEM		driver_cond
+type	DRV_RWLCK	SYSTEM		SYSTEM		driver_rwlock
+type	DRV_TSD		SYSTEM		SYSTEM		driver_tsd
++endif
+
 +if smp
 type	PORT_LOCK	STANDARD	SYSTEM		port_lock
 type	DRIVER_LOCK	STANDARD	SYSTEM		driver_lock
 type	XPORTS_LIST	SHORT_LIVED	SYSTEM		extra_port_list
+type	PROC_LCK_WTR	LONG_LIVED	SYSTEM		proc_lock_waiter
+type	PROC_LCK_QS	LONG_LIVED	SYSTEM		proc_lock_queues
 +endif
 
 #
@@ -282,24 +303,24 @@ type	SSB		SHORT_LIVED	PROCESSES	ssb
 #
 
 type	DRV_TAB		LONG_LIVED	SYSTEM		drv_tab
+type	DRV_EV_STATE	LONG_LIVED	SYSTEM		driver_event_state
+type	DRV_EV_D_STATE	FIXED_SIZE	SYSTEM		driver_event_data_state
+type	DRV_SEL_D_STATE	FIXED_SIZE	SYSTEM		driver_select_data_state
+type	FD_LIST		SHORT_LIVED	SYSTEM		fd_list
+type	POLLSET		LONG_LIVED	SYSTEM		pollset
+type	POLLSET_UPDREQ	SHORT_LIVED	SYSTEM		pollset_update_req
+type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
+type	POLL_RES_EVS	LONG_LIVED	SYSTEM		poll_result_events
+type	FD_STATUS	LONG_LIVED	SYSTEM		fd_status
 
 +if unix
 
 type	SYS_READ_BUF	TEMPORARY	SYSTEM		sys_read_buf
 type	FD_TAB		LONG_LIVED	SYSTEM		fd_tab
 type	FD_ENTRY_BUF	STANDARD	SYSTEM		fd_entry_buf
-type	FD_LIST		SHORT_LIVED	SYSTEM		fd_list
 type	CS_PROG_PATH	LONG_LIVED	SYSTEM		cs_prog_path
 type	ENVIRONMENT	SYSTEM		SYSTEM		environment
 type	PUTENV_STR	SYSTEM		SYSTEM		putenv_string
-type	POLLSET		LONG_LIVED	SYSTEM		poll_set
-type	POLL_FDS	LONG_LIVED	SYSTEM		poll_fds
-type	POLL_RES_EVS	LONG_LIVED	SYSTEM		poll_result_events
-type	FD_STATUS	LONG_LIVED	SYSTEM		fd_status
-type	DRV_EV_STATE	LONG_LIVED	SYSTEM		driver_event_state
-type	DRV_EV_D_STATE	FIXED_SIZE	SYSTEM		driver_event_data_state
-type	DRV_SEL_D_STATE	FIXED_SIZE	SYSTEM		driver_select_data_state
-type	POLLSET_UPDREQ	SHORT_LIVED	SYSTEM		pollset_update_req
 type	PRT_REP_EXIT	STANDARD	SYSTEM		port_report_exit
 
 +endif

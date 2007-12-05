@@ -1,9 +1,0 @@
-<!doctype fascicules PUBLIC "-//Stork//DTD fascicules//EN">
-<fascicules>
-  <fascicule file="part_notes" href="part_notes_frame.html" entry="yes">
-    Release Notes
-  </fascicule>
-  <fascicule file="" href="../../../../doc/print.html">
-    Off-Print
-  </fascicule>
-</fascicules>

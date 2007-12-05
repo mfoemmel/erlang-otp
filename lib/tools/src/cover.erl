@@ -1666,9 +1666,9 @@ merge_functions([], _MFun, Result) ->
 %%   Module = atom()
 %%   OutFile = ErlFile = string()
 do_analyse_to_file(Module, OutFile, ErlFile, HTML) ->
-    case file:open(ErlFile, read) of
+    case file:open(ErlFile, [read]) of
 	{ok, InFd} ->
-	    case file:open(OutFile, write) of
+	    case file:open(OutFile, [write]) of
 		{ok, OutFd} ->
 		    if HTML -> 
 			    io:format(OutFd,

@@ -106,6 +106,39 @@ WDD_TYPEDEF(ErlDrvTermData,  driver_get_monitored_process,
 	    (ErlDrvPort port, const ErlDrvMonitor *monitor));
 WDD_TYPEDEF(int,  driver_compare_monitors, 
 	    (const ErlDrvMonitor *, const ErlDrvMonitor *));
+WDD_TYPEDEF(ErlDrvMutex *, erl_drv_mutex_create, (char *name));
+WDD_TYPEDEF(void, erl_drv_mutex_destroy, (ErlDrvMutex *mtx));
+WDD_TYPEDEF(int, erl_drv_mutex_trylock, (ErlDrvMutex *mtx));
+WDD_TYPEDEF(void, erl_drv_mutex_lock, (ErlDrvMutex *mtx));
+WDD_TYPEDEF(void, erl_drv_mutex_unlock, (ErlDrvMutex *mtx));
+WDD_TYPEDEF(ErlDrvCond *, erl_drv_cond_create, (char *name));
+WDD_TYPEDEF(void, erl_drv_cond_destroy, (ErlDrvCond *cnd));
+WDD_TYPEDEF(void, erl_drv_cond_signal, (ErlDrvCond *cnd));
+WDD_TYPEDEF(void, erl_drv_cond_broadcast, (ErlDrvCond *cnd));
+WDD_TYPEDEF(void, erl_drv_cond_wait, (ErlDrvCond *cnd, ErlDrvMutex *mtx));
+WDD_TYPEDEF(ErlDrvRWLock *, erl_drv_rwlock_create, (char *name));
+WDD_TYPEDEF(void, erl_drv_rwlock_destroy, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(int, erl_drv_rwlock_tryrlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(void, erl_drv_rwlock_rlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(void, erl_drv_rwlock_runlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(int, erl_drv_rwlock_tryrwlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(void, erl_drv_rwlock_rwlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(void, erl_drv_rwlock_rwunlock, (ErlDrvRWLock *rwlck));
+WDD_TYPEDEF(int, erl_drv_tsd_key_create, (char *name, ErlDrvTSDKey *key));
+WDD_TYPEDEF(void, erl_drv_tsd_key_destroy, (ErlDrvTSDKey key));
+WDD_TYPEDEF(void, erl_drv_tsd_set, (ErlDrvTSDKey key, void *data));
+WDD_TYPEDEF(void *, erl_drv_tsd_get, (ErlDrvTSDKey key));
+WDD_TYPEDEF(ErlDrvThreadOpts *, erl_drv_thread_opts_create, (char *name));
+WDD_TYPEDEF(void, erl_drv_thread_opts_destroy, (ErlDrvThreadOpts *opts));
+WDD_TYPEDEF(int, erl_drv_thread_create, (char *name,
+					 ErlDrvTid *tid,
+					 void * (*func)(void *),
+					 void *args,
+					 ErlDrvThreadOpts *opts));
+WDD_TYPEDEF(ErlDrvTid, erl_drv_thread_self, (void));
+WDD_TYPEDEF(int, erl_drv_equal_tids, (ErlDrvTid tid1, ErlDrvTid tid2));
+WDD_TYPEDEF(void, erl_drv_thread_exit, (void *resp));
+WDD_TYPEDEF(int, erl_drv_thread_join, (ErlDrvTid, void **respp));
 
 typedef struct {
     WDD_FTYPE(null_func) *null_func;
@@ -176,6 +209,35 @@ typedef struct {
     WDD_FTYPE(driver_demonitor_process) *driver_demonitor_process;
     WDD_FTYPE(driver_get_monitored_process) *driver_get_monitored_process;
     WDD_FTYPE(driver_compare_monitors) *driver_compare_monitors;
+    WDD_FTYPE(erl_drv_mutex_create) *erl_drv_mutex_create;
+    WDD_FTYPE(erl_drv_mutex_destroy) *erl_drv_mutex_destroy;
+    WDD_FTYPE(erl_drv_mutex_trylock) *erl_drv_mutex_trylock;
+    WDD_FTYPE(erl_drv_mutex_lock) *erl_drv_mutex_lock;
+    WDD_FTYPE(erl_drv_mutex_unlock) *erl_drv_mutex_unlock;
+    WDD_FTYPE(erl_drv_cond_create) *erl_drv_cond_create;
+    WDD_FTYPE(erl_drv_cond_destroy) *erl_drv_cond_destroy;
+    WDD_FTYPE(erl_drv_cond_signal) *erl_drv_cond_signal;
+    WDD_FTYPE(erl_drv_cond_broadcast) *erl_drv_cond_broadcast;
+    WDD_FTYPE(erl_drv_cond_wait) *erl_drv_cond_wait;
+    WDD_FTYPE(erl_drv_rwlock_create) *erl_drv_rwlock_create;
+    WDD_FTYPE(erl_drv_rwlock_destroy) *erl_drv_rwlock_destroy;
+    WDD_FTYPE(erl_drv_rwlock_tryrlock) *erl_drv_rwlock_tryrlock;
+    WDD_FTYPE(erl_drv_rwlock_rlock) *erl_drv_rwlock_rlock;
+    WDD_FTYPE(erl_drv_rwlock_runlock) *erl_drv_rwlock_runlock;
+    WDD_FTYPE(erl_drv_rwlock_tryrwlock) *erl_drv_rwlock_tryrwlock;
+    WDD_FTYPE(erl_drv_rwlock_rwlock) *erl_drv_rwlock_rwlock;
+    WDD_FTYPE(erl_drv_rwlock_rwunlock) *erl_drv_rwlock_rwunlock;
+    WDD_FTYPE(erl_drv_tsd_key_create) *erl_drv_tsd_key_create;
+    WDD_FTYPE(erl_drv_tsd_key_destroy) *erl_drv_tsd_key_destroy;
+    WDD_FTYPE(erl_drv_tsd_set) *erl_drv_tsd_set;
+    WDD_FTYPE(erl_drv_tsd_get) *erl_drv_tsd_get;
+    WDD_FTYPE(erl_drv_thread_opts_create) *erl_drv_thread_opts_create;
+    WDD_FTYPE(erl_drv_thread_opts_destroy) *erl_drv_thread_opts_destroy;
+    WDD_FTYPE(erl_drv_thread_create) *erl_drv_thread_create;
+    WDD_FTYPE(erl_drv_thread_self) *erl_drv_thread_self;
+    WDD_FTYPE(erl_drv_equal_tids) *erl_drv_equal_tids;
+    WDD_FTYPE(erl_drv_thread_exit) *erl_drv_thread_exit;
+    WDD_FTYPE(erl_drv_thread_join) *erl_drv_thread_join;
   /* Add new calls here */
 } TWinDynDriverCallbacks;   
 
@@ -256,6 +318,38 @@ extern TWinDynDriverCallbacks WinDynDriverCallbacks;
 (WinDynDriverCallbacks.driver_get_monitored_process)
 #define driver_compare_monitors \
 (WinDynDriverCallbacks.driver_compare_monitors)
+#define erl_drv_mutex_create (WinDynDriverCallbacks.erl_drv_mutex_create)
+#define erl_drv_mutex_destroy (WinDynDriverCallbacks.erl_drv_mutex_destroy)
+#define erl_drv_mutex_trylock (WinDynDriverCallbacks.erl_drv_mutex_trylock)
+#define erl_drv_mutex_lock (WinDynDriverCallbacks.erl_drv_mutex_lock)
+#define erl_drv_mutex_unlock (WinDynDriverCallbacks.erl_drv_mutex_unlock)
+#define erl_drv_cond_create (WinDynDriverCallbacks.erl_drv_cond_create)
+#define erl_drv_cond_destroy (WinDynDriverCallbacks.erl_drv_cond_destroy)
+#define erl_drv_cond_signal (WinDynDriverCallbacks.erl_drv_cond_signal)
+#define erl_drv_cond_broadcast (WinDynDriverCallbacks.erl_drv_cond_broadcast)
+#define erl_drv_cond_wait (WinDynDriverCallbacks.erl_drv_cond_wait)
+#define erl_drv_rwlock_create (WinDynDriverCallbacks.erl_drv_rwlock_create)
+#define erl_drv_rwlock_destroy (WinDynDriverCallbacks.erl_drv_rwlock_destroy)
+#define erl_drv_rwlock_tryrlock (WinDynDriverCallbacks.erl_drv_rwlock_tryrlock)
+#define erl_drv_rwlock_rlock (WinDynDriverCallbacks.erl_drv_rwlock_rlock)
+#define erl_drv_rwlock_runlock (WinDynDriverCallbacks.erl_drv_rwlock_runlock)
+#define erl_drv_rwlock_tryrwlock \
+(WinDynDriverCallbacks.erl_drv_rwlock_tryrwlock)
+#define erl_drv_rwlock_rwlock (WinDynDriverCallbacks.erl_drv_rwlock_rwlock)
+#define erl_drv_rwlock_rwunlock (WinDynDriverCallbacks.erl_drv_rwlock_rwunlock)
+#define erl_drv_tsd_key_create (WinDynDriverCallbacks.erl_drv_tsd_key_create)
+#define erl_drv_tsd_key_destroy (WinDynDriverCallbacks.erl_drv_tsd_key_destroy)
+#define erl_drv_tsd_set (WinDynDriverCallbacks.erl_drv_tsd_set)
+#define erl_drv_tsd_get (WinDynDriverCallbacks.erl_drv_tsd_get)
+#define erl_drv_thread_opts_create \
+(WinDynDriverCallbacks.erl_drv_thread_opts_create)
+#define erl_drv_thread_opts_destroy \
+(WinDynDriverCallbacks.erl_drv_thread_opts_destroy)
+#define erl_drv_thread_create (WinDynDriverCallbacks.erl_drv_thread_create)
+#define erl_drv_thread_self (WinDynDriverCallbacks.erl_drv_thread_self)
+#define erl_drv_equal_tids (WinDynDriverCallbacks.erl_drv_equal_tids)
+#define erl_drv_thread_exit (WinDynDriverCallbacks.erl_drv_thread_exit)
+#define erl_drv_thread_join (WinDynDriverCallbacks.erl_drv_thread_join)
 
 /* The only variable in the interface... */
 #define driver_term_nil (driver_mk_term_nil())
@@ -348,7 +442,36 @@ do {				                        \
 ((W).driver_monitor_process) = driver_monitor_process;    \
 ((W).driver_demonitor_process) = driver_demonitor_process;  \
 ((W).driver_get_monitored_process) = driver_get_monitored_process;      \
-((W).driver_compare_monitors) = driver_compare_monitors; \
+((W).driver_compare_monitors) = driver_compare_monitors;\
+((W).erl_drv_mutex_create) = erl_drv_mutex_create;	\
+((W).erl_drv_mutex_destroy) = erl_drv_mutex_destroy;	\
+((W).erl_drv_mutex_trylock) = erl_drv_mutex_trylock;	\
+((W).erl_drv_mutex_lock) = erl_drv_mutex_lock;		\
+((W).erl_drv_mutex_unlock) = erl_drv_mutex_unlock;	\
+((W).erl_drv_cond_create) = erl_drv_cond_create;	\
+((W).erl_drv_cond_destroy) = erl_drv_cond_destroy;	\
+((W).erl_drv_cond_signal) = erl_drv_cond_signal;	\
+((W).erl_drv_cond_broadcast) = erl_drv_cond_broadcast;	\
+((W).erl_drv_cond_wait) = erl_drv_cond_wait;		\
+((W).erl_drv_rwlock_create) = erl_drv_rwlock_create;	\
+((W).erl_drv_rwlock_destroy) = erl_drv_rwlock_destroy;	\
+((W).erl_drv_rwlock_tryrlock) = erl_drv_rwlock_tryrlock;\
+((W).erl_drv_rwlock_rlock) = erl_drv_rwlock_rlock;	\
+((W).erl_drv_rwlock_runlock) = erl_drv_rwlock_runlock;	\
+((W).erl_drv_rwlock_tryrwlock) = erl_drv_rwlock_tryrwlock;\
+((W).erl_drv_rwlock_rwlock) = erl_drv_rwlock_rwlock;	\
+((W).erl_drv_rwlock_rwunlock) = erl_drv_rwlock_rwunlock;\
+((W).erl_drv_tsd_key_create) = erl_drv_tsd_key_create;	\
+((W).erl_drv_tsd_key_destroy) = erl_drv_tsd_key_destroy;\
+((W).erl_drv_tsd_set) = erl_drv_tsd_set;		\
+((W).erl_drv_tsd_get) = erl_drv_tsd_get;		\
+((W).erl_drv_thread_opts_create) = erl_drv_thread_opts_create;\
+((W).erl_drv_thread_opts_destroy) = erl_drv_thread_opts_destroy;\
+((W).erl_drv_thread_create) = erl_drv_thread_create;	\
+((W).erl_drv_thread_self) = erl_drv_thread_self;	\
+((W).erl_drv_equal_tids) = erl_drv_equal_tids;		\
+((W).erl_drv_thread_exit) = erl_drv_thread_exit;	\
+((W).erl_drv_thread_join) = erl_drv_thread_join;	\
 } while (0)
 
 

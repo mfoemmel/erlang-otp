@@ -1,0 +1,4 @@
+This test searches for a literal regexp in a long piece of text.  This
+kind of test doesn't do any fancy backtracking or backreferencing --
+it is a test of how tightly coded the innermost loop is.
+

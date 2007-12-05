@@ -36,14 +36,18 @@
 %% TODO: check that variables in @equiv are found in the signature
 %% TODO: copy types from target (if missing) when using @equiv
 
-%% <!ELEMENT module (description?, author*, copyright?, version?,
-%%                   since?, deprecated?, see*, reference*, todo?,
-%%                   behaviour*, callbacks?, typedecls?, functions)>
+%% <!ELEMENT module (args?, description?, author*, copyright?,
+%%                   version?, since?, deprecated?, see*, reference*,
+%%                   todo?, behaviour*, callbacks?, typedecls?,
+%%                   functions)>
 %% <!ATTLIST module
 %%   name CDATA #REQUIRED
 %%   private NMTOKEN(yes | no) #IMPLIED
 %%   hidden NMTOKEN(yes | no) #IMPLIED
 %%   root CDATA #IMPLIED>
+%% <!ELEMENT args (arg*)>
+%% <!ELEMENT arg (argName, description?)>
+%% <!ELEMENT argName (#PCDATA)>
 %% <!ELEMENT description (briefDescription, fullDescription?)>
 %% <!ELEMENT briefDescription (#PCDATA)>
 %% <!ELEMENT fullDescription (#PCDATA)>
@@ -89,7 +93,8 @@ module(Module, Entries, Env, Opts) ->
 			   true -> [{hidden, "yes"}];
 			   false -> []
 		       end),
-	   (behaviours(Module#module.attributes, Env)
+	   (module_args(Module#module.parameters)
+	    ++ behaviours(Module#module.attributes, Env)
 	    ++ get_doc(HeaderTags)
 	    ++ authors(HeaderTags)
 	    ++ get_version(HeaderTags)
@@ -118,6 +123,11 @@ description(Desc) ->
     [{description,
       [{briefDescription, ShortDesc},
        {fullDescription, Desc}]}].
+
+module_args(none) ->
+    [];
+module_args(Vs) ->
+    [{args, [{arg, [{argName, [atom_to_list(V)]}]} || V <- Vs]}].
 
 types(Tags, Env) ->
     [{typedecl, [{label, edoc_types:to_label(Def)}],

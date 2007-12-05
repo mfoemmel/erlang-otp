@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %% -------------------------------------------------------------------------
 %%
@@ -43,6 +45,7 @@
 	 get_agent_user_id/2, 
 	 
 	 system_info/0, system_info/1, 
+	 %% update_system_info/2, 
 	 get_engine_id/0, get_engine_max_message_size/0,
 
 	 register_usm_user/3, unregister_usm_user/2, 
@@ -361,6 +364,9 @@ system_info(Key) when atom(Key) ->
 	_ ->
 	    {error, not_found}
     end.
+
+%% update_system_info(Key, Val) ->
+%%     call({update_system_info, Key, Val}).
 
 system_start_time() ->
     system_info(system_start_time).
@@ -1983,6 +1989,12 @@ handle_call({backup, BackupDir}, From, State) ->
     end;
 
 
+%% handle_call({update_system_info, Key, Val}, _From, State) ->
+%%     ?vlog("received update_system_info: ~p -> ~p", [Key, Val]),
+%%     Reply = handle_update_system_info(Key, Val),
+%%     {reply, Reply, State};
+
+
 handle_call(is_started, _From, State) ->
     ?vlog("received is_started request", []),
     {reply, true, State};
@@ -2073,6 +2085,39 @@ stop_backup_server(undefined) ->
     ok;
 stop_backup_server({Pid, _}) when pid(Pid) ->
     exit(Pid, kill).
+
+
+
+%%----------------------------------------------------------
+%% Update system info
+%%----------------------------------------------------------
+
+%% handle_update_system_info(audit_trail_log_type = Key, Val) ->
+%%     case snmpm_config:system_info(audit_trail_log) of
+%% 	{ok, true} ->
+%% 	    Value = 
+%% 		case Val of
+%% 		    read ->
+%% 			{ok, [read]};
+%% 		    write ->
+%% 			{ok, [write]};
+%% 		    read_write ->
+%% 			{ok, [read,write]};
+%% 		    _ ->
+%% 			{error, {bad_value, Key, Val}}
+%% 		end,
+%% 	    case Value of
+%% 		{ok, NewValue} ->
+%% 		    ets:insert(snmpm_config_table, {Key, NewValue}),
+%% 		    ok;
+%% 		false ->
+%% 		    Value
+%% 	    end;
+%% 	_ ->
+%% 	    {error, audit_trail_log_not_enabled}
+%%     end;
+%% handle_update_system_info(BadKey, Val) ->
+%%     {error, {unsupported_update, BadKey, Val}}.
 
 
 %%----------------------------------------------------------

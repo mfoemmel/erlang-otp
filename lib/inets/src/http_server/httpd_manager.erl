@@ -22,13 +22,9 @@
 
 -behaviour(gen_server).
 
-%% External API
--export([start/2, start_link/2, start_link/3, stop/1, restart/1]).
-
-%% Internal API
+%% Application internal API
+-export([start/2, start_link/2, start_link/3, start_link/4, stop/1, reload/2]).
 -export([new_connection/1, done_connection/1]).
-
-%% Module API
 -export([config_lookup/2, config_lookup/3, 
 	 config_multi_lookup/2, config_multi_lookup/3, 
 	 config_match/2, config_match/3]).
@@ -60,34 +56,46 @@
 
 c(Port) ->
     Ref = httpd_util:make_name("httpd",undefined,Port),
-    gen_server:call(Ref, fake_close).
+    call(Ref, fake_close).
 
 
 %%
 %% External API
 %%
-
+%% Deprecated 
 start(ConfigFile, ConfigList) ->
-    Port = httpd_util:key1search(ConfigList,port,80),
-    Addr = httpd_util:key1search(ConfigList,bind_address),
+    Port = proplists:get_value(port,ConfigList,80),
+    Addr = proplists:get_value(bind_address, ConfigList),
     Name = make_name(Addr,Port),
     gen_server:start({local,Name},?MODULE,
 		     [ConfigFile, ConfigList, 15000, Addr, Port],[]).
-    
+
+%% Deprecated    
 start_link(ConfigFile, ConfigList) ->
     start_link(ConfigFile, ConfigList, 15000).
+
 start_link(ConfigFile, ConfigList, AcceptTimeout) ->
-    Port = httpd_util:key1search(ConfigList,port,80),
-    Addr = httpd_util:key1search(ConfigList,bind_address),
-    Name = make_name(Addr,Port),
+    Port = proplists:get_value(port, ConfigList, 80),
+    Addr = proplists:get_value(bind_address, ConfigList),
+    Name = make_name(Addr, Port),
+    
     gen_server:start_link({local, Name},?MODULE,
 			  [ConfigFile, ConfigList, AcceptTimeout, Addr, Port],[]).
     
-stop(ServerRef) ->
-    gen_server:call(ServerRef, stop).
+start_link(ConfigFile, ConfigList, AcceptTimeout, ListenSocket) ->
+    Port = proplists:get_value(port, ConfigList, 80),
+    Addr = proplists:get_value(bind_address, ConfigList),
+    Name = make_name(Addr, Port),
+    
+    gen_server:start_link({local, Name},?MODULE,
+			  [ConfigFile, ConfigList, AcceptTimeout, Addr, 
+			   Port, ListenSocket],[]).
 
-restart(ServerRef) ->
-    gen_server:call(ServerRef, restart).
+stop(ServerRef) ->
+    call(ServerRef, stop).
+
+reload(ServerRef, Conf) ->
+    call(ServerRef, {reload, Conf}).
 
 
 %%%----------------------------------------------------------------
@@ -226,15 +234,33 @@ init([ConfigFile, ConfigList, AcceptTimeout, Addr, Port]) ->
     process_flag(trap_exit, true),
     case (catch do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port)) of
 	{error, Reason} ->
-	    String = lists:flatten(io_lib:format("Failed initiating web server: ~n~p~n~p~n",[ConfigFile,Reason])),
+	    String = lists:flatten(
+		       io_lib:format("Failed initiating "
+				     "web server: ~n~p~n~p~n",
+				     [ConfigFile,Reason])),
 	    error_logger:error_report(String),
-	    {stop, Reason};
+	    {stop, {error, Reason}};
+	{ok, State} ->
+	    {ok, State}
+    end;
+init([ConfigFile, ConfigList, AcceptTimeout, Addr, Port, 
+      ListenInfo]) ->
+    process_flag(trap_exit, true),
+    case (catch do_init(ConfigFile, ConfigList, AcceptTimeout, 
+			Addr, Port, ListenInfo)) of
+	{error, Reason} ->
+	    String = lists:flatten(
+		       io_lib:format("Failed initiating "
+				     "web server: ~n~p~n~p~n",
+				     [ConfigFile,Reason])),
+	    error_logger:error_report(String),
+	    {stop, {error, Reason}};
 	{ok, State} ->
 	    {ok, State}
     end.
-   
 
 do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port) ->
+    NewConfigFile = proplists:get_value(file, ConfigList, ConfigFile),
     ConfigDB   = do_initial_store(ConfigList),
     SocketType = httpd_conf:config(ConfigDB),
     case httpd_acceptor_sup:start_acceptor(SocketType, Addr,
@@ -243,7 +269,7 @@ do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port) ->
 	    Status = [{max_conn,0}, {last_heavy_load,never}, 
 		      {last_connection,never}],
 	    State  = #state{socket_type = SocketType,
-			    config_file = ConfigFile,
+			    config_file = NewConfigFile,
 			    config_db   = ConfigDB,
 			    connections = [],
 			    status      = Status},
@@ -252,6 +278,25 @@ do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port) ->
 	    Else
     end.
 
+do_init(ConfigFile, ConfigList, AcceptTimeout, Addr, Port, ListenInfo) ->
+    NewConfigFile = proplists:get_value(file, ConfigList, ConfigFile),
+    ConfigDB   = do_initial_store(ConfigList),
+    SocketType = httpd_conf:config(ConfigDB),
+    case httpd_acceptor_sup:start_acceptor(SocketType, Addr,
+					   Port, ConfigDB, 
+					   AcceptTimeout, ListenInfo) of
+	{ok, _Pid} ->
+	    Status = [{max_conn,0}, {last_heavy_load,never}, 
+		      {last_connection,never}],
+	    State  = #state{socket_type = SocketType,
+			    config_file = NewConfigFile,
+			    config_db   = ConfigDB,
+			    connections = [],
+			    status      = Status},
+	    {ok, State};
+	Else ->
+	    Else
+    end.
 
 do_initial_store(ConfigList) ->
     case httpd_conf:store(ConfigList) of
@@ -328,15 +373,15 @@ handle_call(get_usage_state, _From, State) ->
     Reply = get_ustate(State),
     {reply,Reply,State};
 
-handle_call(restart, _From, State) when State#state.admin_state == blocked ->
-    case handle_restart(State) of
+handle_call({reload, Conf}, _From, State) when State#state.admin_state == blocked ->
+    case handle_reload(Conf, State) of
 	{stop, Reply,S1} ->
 	    {stop, Reply, S1};
 	{_, Reply, S1} ->
 	    {reply,Reply,S1}
     end;
 
-handle_call(restart, _From, State) ->
+handle_call({reload, _}, _From, State) ->
     {reply,{error,{invalid_admin_state,State#state.admin_state}},State};
 
 handle_call(block, _From, State) ->
@@ -434,12 +479,7 @@ terminate(_, #state{config_db = Db}) ->
 
 %% code_change({down,ToVsn}, State, Extra)
 %% 
-%% NOTE:
-%% Actually upgrade from 2.5.1 to 2.5.3 and downgrade from 
-%% 2.5.3 to 2.5.1 is done with an application restart, so 
-%% these function is actually never used. The reason for keeping
-%% this stuff is only for future use.
-%%
+
 code_change({down,_ToVsn}, State, _Extra) ->
     {ok,State};
 
@@ -664,15 +704,20 @@ handle_blocker_exit(S) ->
 
 
 %% -------------------------------------------------------------------------
-%% handle_restart
+%% handle_reload
 %%
 %%
 %%
 %%
-handle_restart(#state{config_file = undefined} = State) ->
+handle_reload(undefined, #state{config_file = undefined} = State) ->
     {continue, {error, undefined_config_file}, State};
-handle_restart(#state{config_db = Db, config_file = ConfigFile} = State) ->
+handle_reload(undefined, #state{config_file = ConfigFile} = State) ->
     {ok, Config} = httpd_conf:load(ConfigFile),
+    do_reload(Config, State);
+handle_reload(Config, State) ->
+    do_reload(Config, State).
+
+do_reload(Config, #state{config_db = Db} = State) ->
     case (catch check_constant_values(Db, Config)) of
 	ok ->
 	    %% If something goes wrong between the remove 
@@ -688,11 +733,10 @@ handle_restart(#state{config_db = Db, config_file = ConfigFile} = State) ->
 	    {continue, Error, State}
     end.
 
-
 check_constant_values(Db, Config) ->
     %% Check port number
     Port = httpd_util:lookup(Db,port),
-    case httpd_util:key1search(Config,port) of  %% MUST be equal
+    case proplists:get_value(port,Config) of  %% MUST be equal
 	Port ->
 	    ok;
 	OtherPort ->
@@ -701,7 +745,7 @@ check_constant_values(Db, Config) ->
 
     %% Check bind address
     Addr = httpd_util:lookup(Db,bind_address),
-    case httpd_util:key1search(Config,bind_address) of  %% MUST be equal
+    case proplists:get_value(bind_address, Config) of  %% MUST be equal
 	Addr ->
 	    ok;
 	OtherAddr ->
@@ -710,7 +754,7 @@ check_constant_values(Db, Config) ->
 
     %% Check socket type
     SockType = httpd_util:lookup(Db, com_type),
-    case httpd_util:key1search(Config, com_type) of  %% MUST be equal
+    case proplists:get_value(com_type, Config) of  %% MUST be equal
 	SockType ->
 	    ok;
 	OtherSockType ->

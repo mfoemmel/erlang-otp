@@ -47,7 +47,7 @@
 %%
 
 add_user(DirData, #httpd_user{username = User} = UStruct) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     Record = {User,
 	      UStruct#httpd_user.password, 
 	      UStruct#httpd_user.user_data}, 
@@ -60,7 +60,7 @@ add_user(DirData, #httpd_user{username = User} = UStruct) ->
     end.
 
 get_user(DirData, User) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     case ets:lookup(PWDB, User) of
 	[{User, PassWd, Data}] ->
 	    {ok, #httpd_user{username=User, password=PassWd, user_data=Data}};
@@ -69,13 +69,13 @@ get_user(DirData, User) ->
     end.
 
 list_users(DirData) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     Records = ets:match(PWDB, '$1'), 
     {ok, lists:foldr(fun({User, _PassWd, _Data}, A) -> [User | A] end, 
 		     [], lists:flatten(Records))}.
 
 delete_user(DirData, UserName) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
     case ets:lookup(PWDB, UserName) of
 	[{UserName, _SomePassword, _SomeData}] ->
 	    ets:delete(PWDB, UserName),
@@ -94,7 +94,7 @@ delete_user(DirData, UserName) ->
 %%
   
 add_group_member(DirData, Group, UserName) ->
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    case lists:member(UserName, Users) of
@@ -112,7 +112,7 @@ add_group_member(DirData, Group, UserName) ->
     end.
 
 list_group_members(DirData, Group) ->
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] ->
 	    {ok, Users};
@@ -121,13 +121,13 @@ list_group_members(DirData, Group) ->
     end.
 
 list_groups(DirData) ->
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     Groups = ets:match(GDB, '$1'), 
     {ok, httpd_util:uniq(lists:foldr(fun({G, _}, A) -> [G|A] end,
 				     [], lists:flatten(Groups)))}.
 
 delete_group_member(DirData, Group, User) ->
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     case ets:lookup(GDB, Group) of
 	[{Group, Users}] when is_list(Users) ->
 	    case lists:member(User, Users) of
@@ -143,7 +143,7 @@ delete_group_member(DirData, Group, User) ->
     end.
 
 delete_group(DirData, Group) ->
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    GDB = proplists:get_value(auth_group_file, DirData),
     case ets:lookup(GDB, Group) of
 	[{Group, _Users}] ->
 	    ets:delete(GDB, Group),
@@ -153,15 +153,15 @@ delete_group(DirData, Group) ->
     end.
 
 store_directory_data(_Directory, DirData) ->
-    PWFile = httpd_util:key1search(DirData, auth_user_file),
-    GroupFile = httpd_util:key1search(DirData, auth_group_file),
+    PWFile = proplists:get_value(auth_user_file, DirData),
+    GroupFile = proplists:get_value(auth_group_file, DirData),
     case load_passwd(PWFile) of
 	{ok, PWDB} ->
 	    case load_group(GroupFile) of
 		{ok, GRDB} ->
 		    %% Address and port is included in the file names...
-		    Addr = httpd_util:key1search(DirData, bind_address),
-		    Port = httpd_util:key1search(DirData, port),
+		    Addr = proplists:get_value(bind_address, DirData),
+		    Port = proplists:get_value(port, DirData),
 		    {ok, PasswdDB} = store_passwd(Addr,Port,PWDB),
 		    {ok, GroupDB}  = store_group(Addr,Port,GRDB),
 		    NDD1 = lists:keyreplace(auth_user_file, 1, DirData, 
@@ -283,8 +283,8 @@ store_group(GroupDB,[User|Rest]) ->
 %% Deletes ets tables used by this auth mod.
 %%
 remove(DirData) ->
-    PWDB = httpd_util:key1search(DirData, auth_user_file),
-    GDB = httpd_util:key1search(DirData, auth_group_file),
+    PWDB = proplists:get_value(auth_user_file, DirData),
+    GDB = proplists:get_value(auth_group_file, DirData),
     ets:delete(PWDB),
     ets:delete(GDB).
 

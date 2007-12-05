@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: pergu $
-%%              $Date: 2006/09/14 16:50:48 $
-%%              $Revision: 1.60 $
+%%              $Author: kostis $
+%%              $Date: 2007/10/31 17:24:24 $
+%%              $Revision: 1.61 $
 %%=====================================================================
 %% @doc
 %%
@@ -166,6 +166,8 @@ fcalls_from_pcb() ->
   Reg = hipe_rtl:mk_new_reg(),
   {pcb_load(Reg, ?P_FCALLS), Reg, pcb_store(?P_FCALLS, Reg)}.
 
+-spec(add_ra_reg/1 :: ([X]) -> [X]).
+
 add_ra_reg(Rest) ->
   case get(hipe_target_arch) of
     ultrasparc ->
@@ -308,10 +310,10 @@ log2_word_size() ->
 endianess() ->
   case get(hipe_target_arch) of
     ultrasparc -> big;
-    powerpc -> big;
-    arm -> big; % XXX: arm is bi-endian
-    x86 -> little;
-    amd64 -> little
+    powerpc    -> big;
+    arm        -> big;    % XXX: arm is bi-endian
+    x86        -> little;
+    amd64      -> little
   end.
 
 %%%------------------------------------------------------------------------

@@ -89,11 +89,12 @@
 %%     form on the Icode level.</dd>
 %%
 %%   <dt><code>icode_ssa_struct_reuse</code></dt>
-%%     <dd>Tries to factor out identical structure and list constructions
+%%     <dd>Tries to factor out identical tuple and list constructions
 %%     on the Icode level.</dd>
 %%
 %%   <dt><code>icode_type</code></dt>
-%%     <dd>A type propagator on the Icode level.</dd>
+%%     <dd>Simplifies the code by employing type analysis and propagation
+%%     on the Icode level.</dd>
 %%
 %%   <dt><code>icode_range</code></dt>
 %%     <dd>Performs integer range analysis on the Icode level.</dd>
@@ -234,20 +235,34 @@
 	 help_options/0,
 	 help_option/1,
 	 help_debug_options/0,
-	 version/0,
-	 has_hipe_code/1,
-	 set_architecture/1,
-         init/1,
-         pre_init/1]).
+	 version/0]).
 
 -ifndef(DEBUG).
 -define(DEBUG,true).
 -endif.
+
 -include("hipe.hrl").
 -include("../rtl/hipe_literals.hrl").
 
+%%-------------------------------------------------------------------
+%% Basic type declaration for exported functions of the 'hipe' module
+%%-------------------------------------------------------------------
+
+-type(mod() :: atom()).
+-type(c_unit() :: mod() | mfa()).
+-type(f_unit() :: mod() | binary()).
+-type(comp_option() :: atom() | {atom(), atom()}).
+-type(comp_options() :: [comp_option()]).
+-type(c_ret() :: {'ok',c_unit()} | {'error',_}).
+-type(compile_file() :: atom() | string() | binary()).
+-type(compile_ret() :: {hipe_architecture(), binary()} | list()).
+
+%%-------------------------------------------------------------------
+
 -define(COMPILE_DEFAULTS, [o2]).
 -define(DEFAULT_TIMEOUT, infinity).
+
+%%-------------------------------------------------------------------
 
 %% @spec load(Mod) -> {module, Mod} | {error, Reason}
 %%     Mod = mod()
@@ -257,13 +272,16 @@
 %%
 %% @see load/2
 
+-spec(load/1 :: (Mod) -> {'module', Mod} | {'error', _}
+			   when is_subtype(Mod, mod())).
+
 load(Mod) ->
   load(Mod, beam_file(Mod)).
 
-%% @spec load(Mod, Bin) -> {module, Mod} | {error, Reason}
+%% @spec load(Mod, BeamFileName) -> {module, Mod} | {error, Reason}
 %%     Mod = mod()
 %%     Reason = term()
-%%     Bin = binary() | filename()
+%%     BeamFileName = string()
 %%     filename() = term()
 %%
 %% @type mod() = atom(). A module name.
@@ -276,25 +294,24 @@ load(Mod) ->
 %%
 %% @see load/1
 
-%% load(Mod, Bin) when is_binary(Bin) ->
-%%   do_load(Mod, Bin, false);
-load(Mod, File) when is_atom(File) ->
+-spec(load/2 :: (Mod, string()) -> {'module', Mod} | {'error', _}
+				    when is_subtype(Mod, mod())).
+
+load(Mod, BeamFileName) when is_list(BeamFileName) ->
   Architecture = erlang:system_info(hipe_architecture),
   ChunkName = hipe_unified_loader:chunk_name(Architecture),
-  case beam_lib:chunks(File, [ChunkName]) of
-    {ok,{_,[{_,Bin}]}} -> do_load(Mod, Bin, File);
+  case beam_lib:chunks(BeamFileName, [ChunkName]) of
+    {ok,{_,[{_,Bin}]}} when is_binary(Bin) -> do_load(Mod, Bin, Bin);
     Error -> {error, Error}
   end.
-
-
--define(USER_DEFAULTS, [load]).
-
 
 %% @spec c(Name) -> {ok, Name} | {error, Reason}
 %%       Name = mod() | mfa()
 %%       Reason = term()
 %%
 %% @equiv c(Name, [])
+
+-spec(c/1 :: (c_unit()) -> c_ret()).
 
 c(Name) ->
   c(Name, []).
@@ -322,6 +339,8 @@ c(Name) ->
 %% @see c/3
 %% @see f/2
 %% @see compile/2
+
+-spec(c/2 :: (c_unit(), comp_options()) -> c_ret()).
 
 c(Name, Options) ->
   c(Name, beam_file(Name), Options).
@@ -372,6 +391,8 @@ f(File) ->
 %%
 %% @see c/3
 
+-spec(f/2 :: (f_unit(), comp_options()) -> {'ok', mod()} | {'error', _}).
+
 f(File, Opts) ->
   case file(File, user_compile_opts(Opts)) of
     {ok, Name, _} ->
@@ -380,11 +401,13 @@ f(File, Opts) ->
       Other
   end.
 
+-define(USER_DEFAULTS, [load]).
+
 user_compile_opts(Opts) ->
   Opts ++ ?USER_DEFAULTS.
 
 
-%% @spec compile(Name) -> {ok, Binary} | {error, Reason}
+%% @spec compile(Name) -> {ok, {Target,Binary}} | {error, Reason}
 %%       Name = mod() | mfa()
 %%       Binary = binary()
 %%       Reason = term()
@@ -394,7 +417,7 @@ user_compile_opts(Opts) ->
 compile(Name) ->
   compile(Name, []).
 
-%% @spec compile(Name, options()) -> {ok, Binary} | {error, Reason}
+%% @spec compile(Name, options()) -> {ok, {Target,Binary}} | {error, Reason}
 %%       Name = mod() | mfa()
 %%       Binary = binary()
 %%       Reason = term()
@@ -417,6 +440,8 @@ compile(Name) ->
 compile(Name, Options) ->
   compile(Name, beam_file(Name), Options).
 
+-spec(beam_file/1 :: (atom() | mfa()) -> string()).
+
 beam_file({M,F,A}) when is_atom(M), is_atom(F), is_integer(A), A >= 0 ->
   beam_file(M);
 beam_file(Module) when is_atom(Module) ->
@@ -424,11 +449,12 @@ beam_file(Module) when is_atom(Module) ->
     non_existing ->
       ?error_msg("Cannot find ~w.beam file.",[Module]),
       ?EXIT({cant_find_beam_file,Module});
-    File ->
+    File -> % string()
       File
   end.
 
-%% @spec compile(Name, File, options()) -> {ok, Binary} | {error, Reason}
+%% @spec compile(Name, File, options()) ->
+%%           {ok, {Target, Binary}} | {error, Reason}
 %%       Name = mod() | mfa()
 %%       File = filename() | binary()
 %%       Binary = binary()
@@ -438,6 +464,10 @@ beam_file(Module) when is_atom(Module) ->
 %% specified <code>File</code>.
 %%
 %% @see compile/2
+
+-spec(compile/3 ::
+      (c_unit(), compile_file(), comp_options()) ->
+	  {'ok', compile_ret()} | {'error', _}).
 
 compile(Name, File, Opts0) ->
   Opts1 = expand_kt2(Opts0),
@@ -487,7 +517,7 @@ compile(Name, File, Opts0) ->
 	    case Name of
 	      {_M,_F,_A} ->
 		%% There is no point in using the callgraph when
-		%% analyzing just one function. or to use concurrent comp
+		%% analyzing just one function. or to use concurrent_comp
 		[no_use_callgraph,no_concurrent_comp|Opts];
 	      _ -> Opts
 	    end
@@ -509,7 +539,7 @@ compile_core(Name, Core0, File, Opts) ->
   compile(Name, Core1, File, Opts).
 
 %% @spec compile(Name, Core, File, options()) ->
-%%           {ok, Binary} | {error, Reason}
+%%           {ok, {Target, Binary}} | {error, Reason}
 %%       Name = mod()
 %%       Core = coreErlang() | []
 %%       File = filename() | binary()
@@ -525,6 +555,10 @@ compile_core(Name, Core0, File, Opts) ->
 %%
 %% @see compile/3
 
+-spec(compile/4 ::
+      (atom(), _, compile_file(), comp_options()) ->
+	 {'ok', compile_ret()} | {'error', _}).
+
 compile(Name, [], File, Opts) ->
   compile(Name, File, Opts);
 compile({M,F,A}, _Core, _File, _Opts) ->
@@ -538,7 +572,7 @@ compile(Name, Core, File, Opts) when is_atom(Name) ->
 	     end,
   run_compiler(Name, DisasmFun, IcodeFun, Opts).
 
-%% @spec file(File) -> {ok, Name, Binary} | {error, Reason}
+%% @spec file(File) -> {ok, Name, {Target, Binary}} | {error, Reason}
 %%       File = filename() | binary()
 %%       Name = mod() | mfa()
 %%       Binary = binary()
@@ -546,11 +580,14 @@ compile(Name, Core, File, Opts) when is_atom(Name) ->
 %% 
 %% @equiv file(File, [])
 
+-spec(file/1 :: (Mod) -> {'ok', Mod, compile_ret()} | {'error', _}
+			  when is_subtype(Mod, mod())).
+
 file(File) ->
   file(File, []).
 
-%% @spec file(File, options()) -> {ok, Name, Binary} | {error, Reason}
-%%       File = filename() | binary()
+%% @spec file(File, options()) -> {ok, Name, {Target,Binary}} | {error, Reason}
+%%       File = filename()
 %%       Name = mod() | mfa()
 %%       Binary = binary()
 %%       Reason = term()
@@ -562,6 +599,9 @@ file(File) ->
 %% @see file/1
 %% @see compile/2
 
+-spec(file/2 :: (Mod, comp_options()) -> {'ok', Mod, compile_ret()}
+				      |  {'error', _}
+					  when is_subtype(Mod, mod())).
 file(File, Options) when is_atom(File) ->
   case beam_lib:info(File) of
     L when is_list(L) ->
@@ -794,35 +834,33 @@ finalize_fun_concurrent(MfaIcodeList, Opts) ->
       NonEscaping = [{M,F,A} || {{M,F,A}, Icode} <- MfaIcodeList, 
 				not lists:member({F,A},Exports),
 				not hipe_icode:icode_is_closure(Icode)],
-      Escaping = Closures++Exported, 
-      TypeServerFun = 
-	fun() -> 
-	    hipe_icode_coordinator:coordinate(
-	      CallGraph,Escaping,
-	      NonEscaping,hipe_icode_type) 
+      Escaping = Closures++Exported,
+      TypeServerFun =
+	fun() ->
+	    hipe_icode_coordinator:coordinate(CallGraph, Escaping,
+					      NonEscaping, hipe_icode_type)
 	end,
       TypeServer = spawn_link(TypeServerFun),
-      PPServerFun = 
-	fun() -> 
-	    pp_server_start(Opts) 
+      PPServerFun =
+	fun() ->
+	    pp_server_start(Opts)
 	end,
       PPServer = spawn_link(PPServerFun),
-      RangeServerFun = 
-	fun() -> 
-	    hipe_icode_coordinator:coordinate(
-	      CallGraph,Escaping,
-	      NonEscaping,hipe_icode_range) 
+      RangeServerFun =
+	fun() ->
+	    hipe_icode_coordinator:coordinate(CallGraph, Escaping,
+					      NonEscaping, hipe_icode_range)
 	end,
       RangeServer = spawn_link(RangeServerFun),
       NewOpts = [{icode_range_server,RangeServer},
 		 {icode_type_server,TypeServer},
 		 {pp_server,PPServer}|Opts],
-      CompFuns = 
+      CompFuns =
 	[fun() ->
 	     set_architecture(NewOpts),
 	     pre_init(NewOpts),
 	     init(NewOpts),
-	     Self ! finalize_fun_sequential(IcodeFun,NewOpts)
+	     Self ! finalize_fun_sequential(IcodeFun, NewOpts)
 	 end || IcodeFun <- MfaIcodeList],
       [spawn_link(Fun) || Fun <- CompFuns],
       Final = [receive Res when element(1,Res) =:= MFA -> Res end ||
@@ -842,12 +880,12 @@ stop_and_wait(Pid) ->
 
 finalize_fun_sequential({MFA, Icode}, Opts) ->
   {T1,_} = erlang:statistics(runtime),
-  ?when_option(verbose, Opts, ?debug_msg("Compiling ~w",[MFA])),
+  ?when_option(verbose, Opts, ?debug_msg("Compiling ~w~n",[MFA])),
   case catch hipe_main:compile_icode(MFA, Icode, Opts) of
     {native, Platform, {unprofiled,Code}} ->
       {T2,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts,
-		   ?debug_untagged_msg(" in ~.2f s\n", [(T2-T1)/1000])),
+		   ?debug_msg("Compiled ~w in ~.2f s\n", [MFA,(T2-T1)/1000])),
       case Platform of
 	ultrasparc -> {Entry,Ct} = Code, {MFA,Entry,Ct};
 	powerpc -> {MFA, Code};
@@ -916,7 +954,7 @@ do_load(Mod, Bin, WholeModule) ->
       %% In this case, the emulated code for the module must be loaded.
       code:ensure_loaded(Mod),
       code:load_native_partial(Mod, Bin);
-    _ ->
+    BinCode when is_binary(BinCode) ->
       case code:is_sticky(Mod) of
 	true ->
 	  %% Don't purge or register sticky mods; just load native.
@@ -1169,6 +1207,8 @@ option_text(debug) ->
   "Outputs internal debugging information during compilation";
 option_text(fill_delayslot) ->
   "Try to optimize Sparc delay slots";
+option_text(icode_range) ->
+  "Performs integer range analysis on the Icode level";
 option_text(icode_ssa_check) ->
   "Checks whether Icode is on SSA form or not\n";
 option_text(icode_ssa_copy_prop) ->
@@ -1176,9 +1216,12 @@ option_text(icode_ssa_copy_prop) ->
 option_text(icode_ssa_const_prop) ->
   "Performs sparse conditional constant propagation on Icode SSA";
 option_text(icode_ssa_struct_reuse) ->
-  "Factors out common structure and list constructions on Icode SSA";
+  "Factors out common tuple and list constructions on Icode SSA";
+option_text(icode_type) ->
+  "Performs type analysis on the Icode level" ++
+  "and then simplifies the code based on the results of this analysis";
 option_text(load) ->
-  "Automatically load the produced code into memory";
+  "Automatically load the produced native code into memory";
 option_text(peephole) ->
   "Enables peephole optimizations";
 option_text(pmatch) ->
@@ -1253,7 +1296,7 @@ help_option(Opt) ->
   case expand_options([Opt]) of
     [Opt] ->
       Name = if is_atom(Opt) -> Opt;
-		is_tuple(Opt), size(Opt) =:= 2 -> element(1, Opt)
+		is_tuple(Opt), tuple_size(Opt) =:= 2 -> element(1, Opt)
 	     end,
       case option_text(Name) of
 	"" ->  
@@ -1284,24 +1327,6 @@ help_debug_options() ->
 	    []),
   ok.
 
-%% @spec (Name) -> bool() 
-%% Name = mod() | string()
-%% @doc Returns true if the module or file contains native HiPE code.
-has_hipe_code(Atom) when is_atom(Atom) ->
-  has_hipe_code(atom_to_list(Atom));
-has_hipe_code(File) ->
-  case catch 
-    lists:member($H, 
-		 [ hd(ChunkName) ||
-		   {ChunkName,_} <- element(3,beam_lib:all_chunks(File))]
-		) of
-    {'EXIT',_} ->
-      exit({bad_beam_file,File});
-    R -> R
-  end.
-
-
-%%
 hipe_timers() ->
   [time_ra].
 
@@ -1432,7 +1457,7 @@ o1_opts() ->
   end.
 
 o2_opts() ->
-  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, % icode_ssa_struct_reuse,
+  Common = [icode_ssa_const_prop, icode_ssa_copy_prop, icode_ssa_struct_reuse,
 	    icode_type, icode_inline_bifs,
 	    rtl_ssa, rtl_ssa_const_prop,
 	    spillmin_color, use_indexing, remove_comments, 
@@ -1557,11 +1582,13 @@ opt_expansions() ->
 %% This expands "basic" options, which may be tested early and cannot be
 %% in conflict with options found in the source code.
 
+-spec(expand_basic_options/1 :: (comp_options()) -> comp_options()).
 expand_basic_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
 			     {expand, opt_basic_expansions()}]).
 
+-spec(expand_kt2/1 :: (comp_options()) -> comp_options()).
 expand_kt2(Opts) -> 
   proplists:normalize(Opts, [{expand, [{kt2_type,
 					[{use_callgraph, fixpoint}, core, 
@@ -1570,8 +1597,9 @@ expand_kt2(Opts) ->
 %% Note that set_architecture/1 must be called first, and that the given
 %% list should contain the total set of options, since things like 'o2'
 %% are expanded here. Basic expansions are processed here also, since
-%% this function is called from the help-functions.
+%% this function is called from the help functions.
 
+-spec(expand_options/1 :: (comp_options()) -> comp_options()).
 expand_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
@@ -1579,6 +1607,7 @@ expand_options(Opts) ->
 			     {expand, opt_pre_expansions()},
 			     {expand, opt_expansions()}]).
 
+-spec(check_options/1 :: (comp_options()) -> 'ok').
 check_options(Opts) ->
   Keys = ordsets:from_list(opt_keys()),
   Used = ordsets:from_list(proplists:get_keys(Opts)),

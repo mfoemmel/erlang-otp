@@ -22,9 +22,9 @@
 -include("core_parse.hrl").
 
 %% High-level interface.
--export([file/1,file/2,format_error/1,iofile/1]).
--export([forms/1,forms/2]).
--export([output_generated/1]).
+-export([file/1,file/2,noenv_file/2,format_error/1,iofile/1]).
+-export([forms/1,forms/2,noenv_forms/2]).
+-export([output_generated/1,noenv_output_generated/1]).
 -export([options/0]).
 
 %% Erlc interface.
@@ -34,13 +34,16 @@
 -import(lists, [member/2,reverse/1,reverse/2,keysearch/3,last/1,
 		map/2,flatmap/2,foreach/2,foldr/3,any/2,filter/2]).
 
+%%
+%%  Exported functions
+%%
+
+
 %% file(FileName)
 %% file(FileName, Options)
 %%  Compile the module in file FileName.
 
 -define(DEFAULT_OPTIONS, [verbose,report_errors,report_warnings]).
-
--define(pass(P), {P,fun P/1}).
 
 file(File) -> file(File, ?DEFAULT_OPTIONS).
 
@@ -53,8 +56,41 @@ forms(File) -> forms(File, ?DEFAULT_OPTIONS).
 
 forms(Forms, Opts) when is_list(Opts) ->
     do_compile({forms,Forms}, [binary|Opts++env_default_opts()]);
-forms(Forms, Opts) when is_atom(Opts) ->
-    forms(Forms, [Opts|?DEFAULT_OPTIONS]).
+forms(Forms, Opt) when is_atom(Opt) ->
+    forms(Forms, [Opt|?DEFAULT_OPTIONS]).
+
+%% Given a list of compilation options, returns true if compile:file/2
+%% would have generated a Beam file, false otherwise (if only a binary or a
+%% listing file would have been generated).
+
+output_generated(Opts) ->
+    noenv_output_generated(Opts++env_default_opts()).
+
+%%
+%% Variants of the same function that don't consult ERL_COMPILER_OPTIONS
+%% for default options.
+%%
+
+noenv_file(File, Opts) when is_list(Opts) ->
+    do_compile({file,File}, Opts);
+noenv_file(File, Opt) ->
+    noenv_file(File, [Opt|?DEFAULT_OPTIONS]).
+
+noenv_forms(Forms, Opts) when is_list(Opts) ->
+    do_compile({forms,Forms}, [binary|Opts]);
+noenv_forms(Forms, Opt) when is_atom(Opt) ->
+    noenv_forms(Forms, [Opt|?DEFAULT_OPTIONS]).
+
+noenv_output_generated(Opts) ->
+    any(fun ({save_binary,_F}) -> true;
+	    (_Other) -> false
+	end, passes(file, expand_opts(Opts))).
+
+%%
+%%  Local functions
+%%
+
+-define(pass(P), {P,fun P/1}).
 
 env_default_opts() ->
     Key = "ERL_COMPILER_OPTIONS",
@@ -84,15 +120,6 @@ do_compile(Input, Opts0) ->
 	{Serv,Rep} -> Rep
     end.
 
-%% Given a list of compilation options, returns true if compile:file/2
-%% would have generated a Beam file, false otherwise (if only a binary or a
-%% listing file would have been generated).
-
-output_generated(Opts) ->
-    any(fun ({save_binary,_F}) -> true;
-	    (_Other) -> false
-	end, passes(file, expand_opts(Opts))).
-
 expand_opts(Opts0) ->
     %% {debug_info_key,Key} implies debug_info.
     Opts = case {proplists:get_value(debug_info_key, Opts0),
@@ -112,17 +139,13 @@ expand_opt(report, Os) ->
     [report_errors,report_warnings|Os];
 expand_opt(return, Os) ->
     [return_errors,return_warnings|Os];
-expand_opt(r7, Os) ->
-    expand_opt(r9, Os);
-expand_opt(r8, Os) ->
-    expand_opt(r9, Os);
-expand_opt(r9, Os) ->
-    [no_topt,no_new_binaries,no_new_apply,no_gc_bifs,no_constant_pool|Os];
 expand_opt(r10, Os) ->
-    [no_topt,no_new_binaries,no_gc_bifs,no_constant_pool|Os];
+    [no_stack_trimming,no_topt,no_binaries,no_gc_bifs,no_constant_pool|Os];
+expand_opt(r11, Os) ->
+    [no_stack_trimming,no_binaries,no_constant_pool|Os];
 expand_opt({debug_info_key,_}=O, Os) ->
     [encrypt_debug_info,O|Os];
-expand_opt(no_new_binaries=O, Os) ->
+expand_opt(no_binaries=O, Os) ->
     %%Turn off the entire type optimization pass.
     [no_topt,O|Os];
 expand_opt(no_float_opt, Os) ->
@@ -311,7 +334,12 @@ mpf(Ms) ->
 %%  Figure out which passes that need to be run.
 
 passes(forms, Opts) ->
-    select_passes(standard_passes(), Opts);
+    case member(from_core, Opts) of
+	true ->
+	    select_passes(core_passes(), Opts);
+	false ->
+	    select_passes(standard_passes(), Opts)
+    end;
 passes(file, Opts) ->
     case member(from_beam, Opts) of
 	true ->
@@ -392,6 +420,8 @@ select_passes([{pass,Mod}|Ps], Opts) ->
 		case catch Mod:module(St#compile.code, St#compile.options) of
 		    {ok,Code} ->
 			{ok,St#compile{code=Code}};
+		    {ok,Code,Ws} ->
+			{ok,St#compile{code=Code,warnings=St#compile.warnings++Ws}};
 		    {error,Es} ->
 			{error,St#compile{errors=St#compile.errors ++ Es}}
 		end
@@ -519,7 +549,7 @@ core_passes() ->
 
 kernel_passes() ->
     %% Destructive setelement/3 optimization and core lint.
-    [?pass(core_dsetel_module),
+    [{unless,no_constant_pool,?pass(core_dsetel_module)}, %Not safe without constant pool.
      {iff,clint,?pass(core_lint_module)},
      {iff,core,?pass(save_core_code)},
 
@@ -549,6 +579,10 @@ asm_passes() ->
 	 {iff,djmp,{listing,"jump"}},
 	 {pass,beam_clean},
 	 {iff,dclean,{listing,"clean"}},
+	 {unless,no_bsm_opt,{pass,beam_bsm}},
+	 {iff,dbsm,{listing,"bsm"}},
+	 {unless,no_stack_trimming,{pass,beam_trim}},
+	 {iff,dtrim,{listing,"trim"}},
 	 {pass,beam_flatten}]},
 
        %% If post optimizations are turned off, we still coalesce
@@ -664,16 +698,7 @@ parse_module(St) ->
     Opts = St#compile.options,
     Cwd = ".",
     IncludePath = [Cwd, St#compile.dir|inc_paths(Opts)],
-
-    %% TypEr
-    case member(typed_record,St#compile.options) of
-	true ->
-	    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts), [typed_record]);
-	_ ->
-	    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts))
-    end,
-    %% Done
-
+    R =  epp:parse_file(St#compile.ifile, IncludePath, pre_defs(Opts)),
     case R of
 	{ok,Forms} ->
 	    {ok,St#compile{code=Forms}};
@@ -796,7 +821,10 @@ add_default_base(St, Forms) ->
     F = St#compile.filename,
     case F of
 	"" ->
-	    M = get_module(Forms),
+ 	    M = case get_module(Forms) of
+ 		    PackageModule when is_list(PackageModule) -> last(PackageModule);
+		    M0 -> M0
+ 		end,
 	    St#compile{base = atom_to_list(M)};
 	_ ->
 	    St
@@ -833,8 +861,13 @@ expand_module(#compile{code=Code,options=Opts0}=St0) ->
     {ok,St0#compile{module=Mod,options=Opts,code={Mod,Exp,Forms}}}.
 
 core_module(#compile{code=Code0,options=Opts}=St) ->
-    {ok,Code,Ws} = v3_core:module(Code0, Opts),
-    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ Ws}}.
+    case v3_core:module(Code0, Opts) of
+	{ok,Code,Ws} ->
+	    {ok,St#compile{code=Code,warnings=St#compile.warnings ++ Ws}};
+	{error,Es,Ws} ->
+	    {error,St#compile{warnings=St#compile.warnings ++ Ws,
+			      errors=St#compile.errors ++ Es}}
+    end.
 
 core_fold_module(#compile{code=Code0,options=Opts}=St) ->
     {ok,Code,Ws} = sys_core_fold:module(Code0, Opts),
@@ -991,7 +1024,7 @@ native_compile(St) ->
     end.
 
 native_compile_1(St) ->
-    Opts0 = [no_new_binaries|St#compile.options],
+    Opts0 = St#compile.options,
     IgnoreErrors = member(ignore_native_errors, Opts0),
     Opts = case keysearch(hipe, 1, Opts0) of
 	       {value,{hipe,L}} when is_list(L) -> L;

@@ -1,5 +1,5 @@
 %% -*- erlang-indent-level: 2 -*-
-%%
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -11,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -241,7 +241,7 @@ help_warnings() ->
     -Wno_fun_app
 	Suppress warnings for fun applications that will fail.
     -Wno_match
-	Suppress warnings for pattern matching operations that will never succeed.
+	Suppress warnings for patterns that are unused or cannot match.
     -Wno_comp
 	Suppress warnings for term comparisons that will always return false.
     -Wno_guards

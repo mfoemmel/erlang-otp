@@ -1,0 +1,152 @@
+# Makefile for librx
+# Copyright (C) 1994 Free Software Foundation, Inc.
+# 
+# This file is part of GNU Rx
+# 
+# GNU Rx is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2, or (at your option)
+# any later version.
+# 
+# GNU Rx is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with GNU Rx; see the file COPYING.LIB.  If not, write to
+# the Free Software Foundation, 59 Temple Place - Suite 330, Boston, MA 02111-1307, USA.
+
+
+SHELL = /bin/sh
+
+srcdir = @srcdir@
+VPATH = @srcdir@
+prefix = @prefix@
+exec_prefix = @exec_prefix@
+bindir = $(exec_prefix)/bin
+libdir = $(exec_prefix)/lib
+includedir = $(prefix)/include
+infodir = $(prefix)/info
+
+#### Start of system configuration section. ####
+
+CC = @CC@
+INSTALL = @INSTALL@
+DEFS = @DEFS@
+CFLAGS = @CFLAGS@
+ALL_CFLAGS = @opt_cflags@ -I. -I$(srcdir) -I$(srcdir)/../libsystas $(CFLAGS)
+AR = ar
+AR_FLAGS = rc
+RANLIB = @RANLIB@
+opt_objs=@opt_objs@
+
+source= hashrexp.c rx.c rxanal.c rxbasic.c rxbitset.c rxcset.c rxdbug.c rxgnucomp.c rxhash.c rxnfa.c rxnode.c rxposix.c rxsimp.c rxspencer.c rxstr.c rxsuper.c rxunfa.c rgx.c
+
+headers=_rx.h rx.h rxanal.h rxbasic.h rxbitset.h rxcontext.h rxcset.h rxgnucomp.h rxhash.h rxnfa.h rxnode.h inst-rxposix.h  rxposix.h rxproto.h rxsimp.h rxspencer.h rxstr.h rxsuper.h rxunfa.h  rxall.h
+
+ancillery=configure.in Makefile.in configure \
+	  COPYING.LIB ChangeLog PLUGIN  \
+	  ../doc/rx.texi ../doc/rx.info ../doc/texinfo.tex
+distfiles=$(source) $(headers) $(ancillery)
+libobjs= hashrexp.o rx.o rxanal.o rxbasic.o rxbitset.o rxcset.o rxdbug.o rxgnucomp.o rxhash.o rxnfa.o rxnode.o rxposix.o rxsimp.o rxspencer.o rxstr.o rxsuper.o rxunfa.o
+gen_c_files=rgx.x
+
+.SUFFIXES:
+.SUFFIXES: .o .c .h .ps .dvi .info .texinfo .scm .cd .x
+
+.c.x:
+	$(CC) $(ALL_CFLAGS) -DSCM_MAGIC_SNARFER -E $< | grep "^%%%" | sed -e "s/^%%%//" > $@ ; \
+
+.c.o:
+	$(CC) -c $(ALL_CFLAGS) $(DEFS) -I$(srcdir) $<
+
+all: librx.a
+
+install: all
+	test -d $(libdir) || mkdir $(libdir)
+	test -d $(includedir) || mkdir $(includedir)
+	$(INSTALL) librx.a $(libdir)/librx.a
+	$(RANLIB) $(libdir)/librx.a
+	$(INSTALL) $(srcdir)/inst-rxposix.h $(includedir)/rxposix.h
+
+
+uninstall:
+	-rm -f $(libdir)/librx.a
+	-rm -f $(includedir)/rxposix.h
+
+clean:
+	-rm -f $(libobjs) librx.a  $(opt_objs) 
+
+distclean: clean
+	-rm Makefile config.status config.log rgx.x
+
+mostlyclean: clean
+
+realclean: distclean
+
+TAGS:
+	etags $(source)
+
+info:
+
+install-info:
+
+clean-info:
+
+dvi:
+
+check:
+
+SUBDIR=.
+manifest:
+	for file in $(distfiles); do echo $(SUBDIR)/$$file; done
+
+dist:	$(distfiles)
+	echo rx-`sed -e '/version_string/!d' -e 's/[^0-9.]*\([0-9.]*\).*/\1/' -e q rx.c` > .fname
+	rm -rf `cat .fname`
+	mkdir `cat .fname`
+	ln $(distfiles) `cat .fname`
+	tar chzf `cat .fname`.tar.gz `cat .fname`
+	rm -rf `cat .fname` .fname
+
+
+librx.a: $(libobjs) $(opt_objs)
+	rm -f librx.a
+	$(AR) $(AR_FLAGS) librx.a $(libobjs) $(opt_objs)
+	$(RANLIB) librx.a
+
+
+depends:
+	touch $(gen_c_files) scmconfig.h
+	gcc -MM -I. -I../libsystas $(source)
+	rm $(gen_c_files) scmconfig.h
+###
+hashrexp.o : hashrexp.c rxall.h rxnode.h rxbitset.h rxcset.h rxhash.h 
+rx.o : rx.c rx.h rxhash.h rxbitset.h rxall.h rxnfa.h _rx.h rxcset.h rxnode.h rxsuper.h
+rxanal.o : rxanal.c rxall.h rxanal.h rxcset.h rxbitset.h rxnode.h rxsuper.h \
+  rxnfa.h _rx.h rxhash.h 
+rxbasic.o : rxbasic.c rxall.h rxbasic.h rxcontext.h rxnode.h rxbitset.h rxcset.h \
+  rxspencer.h rxproto.h rxunfa.h _rx.h rxhash.h rxanal.h rxsuper.h rxnfa.h inst-rxposix.h \
+  rxstr.h 
+rxbitset.o : rxbitset.c rxall.h rxbitset.h 
+rxcset.o : rxcset.c rxall.h rxcset.h rxbitset.h 
+rxdbug.o : rxdbug.c rxall.h rxgnucomp.h rxcset.h rxbitset.h rxnode.h rxnfa.h \
+  _rx.h rxhash.h 
+rxgnucomp.o : rxgnucomp.c rxall.h rxgnucomp.h rxcset.h rxbitset.h rxnode.h 
+rxhash.o : rxhash.c rxall.h rxhash.h rxbitset.h 
+rxnfa.o : rxnfa.c rxall.h rxnfa.h _rx.h rxhash.h rxbitset.h rxcset.h rxnode.h 
+rxnode.o : rxnode.c rxall.h rxnode.h rxbitset.h rxcset.h 
+rxposix.o : rxposix.c rxall.h rxposix.h rxspencer.h rxproto.h rxnode.h rxbitset.h \
+  rxcset.h rxunfa.h _rx.h rxhash.h rxanal.h rxsuper.h rxnfa.h inst-rxposix.h rxcontext.h \
+  rxgnucomp.h rxbasic.h rxsimp.h 
+rxsimp.o : rxsimp.c rxall.h rxsimp.h rxcset.h rxbitset.h rxnode.h 
+rxspencer.o : rxspencer.c rxall.h rxspencer.h rxproto.h rxnode.h rxbitset.h \
+  rxcset.h rxunfa.h _rx.h rxhash.h rxanal.h rxsuper.h rxnfa.h inst-rxposix.h 
+rxstr.o : rxstr.c rxall.h rxstr.h rxspencer.h rxproto.h rxnode.h rxbitset.h \
+  rxcset.h rxunfa.h _rx.h rxhash.h rxanal.h rxsuper.h rxnfa.h inst-rxposix.h rxcontext.h 
+rxsuper.o : rxsuper.c rxall.h rxsuper.h rxnfa.h _rx.h rxhash.h rxbitset.h rxcset.h \
+  rxnode.h 
+rxunfa.o : rxunfa.c rxall.h rx.h rxhash.h rxbitset.h rxunfa.h _rx.h rxcset.h \
+  rxnfa.h rxnode.h 
+rgx.o : rgx.c rgx.x

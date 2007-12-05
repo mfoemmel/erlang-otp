@@ -32,12 +32,17 @@ rule([header|_],_) ->
 rule([ret|_],_) ->
     {"",""};
 
-rule([name|_], {_,_,[_,{pcdata,[],Name}]}) ->
+rule([nametext|_],_) ->
+    {" ",""};
+
+rule([name|_], {_,_,[_Ret,{nametext,[],[{pcdata,[],Name}]}]}) ->
     FName = lists:flatten(docb_html_util:pcdata_to_html(Name)),
     TName = docb_util:trim(FName), 
     CAnchor = docb_util:fknidx(TName, "/"),
     {"<A NAME=\"" ++ CAnchor ++ "\"><STRONG><CODE>",
      "</CODE></STRONG></A><BR>\n"};
+rule([name|T], {I,As,[Ret,{pcdata,[],Name}]}) -> % For SGML DTD
+    rule([name|T], {I,As,[Ret,{nametext,[],[{pcdata,[],Name}]}]});
 
 rule([lib|_],_) ->
     {"\n<H3>C LIBRARY</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};

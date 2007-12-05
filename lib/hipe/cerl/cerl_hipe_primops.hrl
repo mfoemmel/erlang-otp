@@ -83,3 +83,4 @@
 -define(PRIMOP_SET_LABEL, set_label).           % arity 1
 -define(PRIMOP_GOTO_LABEL, goto_label).         % arity 1
 -define(PRIMOP_REDUCTION_TEST, reduction_test). % arity 0
+-define(PRIMOP_BS_CONTEXT_TO_BINARY, bs_context_to_binary). % arity 1

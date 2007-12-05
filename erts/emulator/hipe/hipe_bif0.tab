@@ -85,9 +85,6 @@ atom x86_abs_pcrel
 # atom used by hipe_patch_address()
 atom load_fe
 
-# atoms used by hipe_bifs:primop_address/1
-atom erts_mb
-
 atom suspend_msg
 atom suspend_msg_timeout
 atom suspend_0
@@ -111,3 +108,4 @@ atom bs_allocate
 atom bs_get_integer_2
 atom bs_get_float_2
 atom bs_get_binary_2
+atom bs_reallocate

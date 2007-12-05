@@ -210,7 +210,7 @@ start_link(Options) ->
 default_state() ->
     #state{parent_pid     = self(),
            collector_pid  = undefined,
-           detail_level   = max,
+           detail_level   = ?detail_level_max,
            active_filter  = collector,
            filters        = [#filter{name = collector, function = fun(E) -> E end}],
            event_order    = trace_ts,
@@ -233,14 +233,7 @@ default_state() ->
            height         = 600}.
 
 parse_opt([], S, CollectorOpt) ->
-    case S#state.detail_level of
-        max ->
-            {ok, S#state{detail_level = ?detail_level_max}, CollectorOpt};
-        min ->
-            {ok, S#state{detail_level = ?detail_level_min}, CollectorOpt};
-        Int when integer(Int) ->
-            {ok, S, [{parent_pid, S#state.parent_pid} | CollectorOpt]}
-    end;
+    {ok, S, [{parent_pid, S#state.parent_pid} | CollectorOpt]};
 parse_opt([H | T], S, CollectorOpt) ->
     case H of
         {parent_pid, Parent} when Parent == undefined ->

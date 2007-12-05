@@ -17,28 +17,34 @@
 %%
 -module(string).
 
--export([len/1,equal/2,concat/2,chr/2,rchr/2,str/2,rstr/2,index/2,
+-export([len/1,equal/2,concat/2,chr/2,rchr/2,str/2,rstr/2,
 	 span/2,cspan/2,substr/2,substr/3,tokens/2,chars/2,chars/3]).
 -export([copies/2,words/1,words/2,strip/1,strip/2,strip/3,
 	 sub_word/2,sub_word/3,left/2,left/3,right/2,right/3,
-	 sub_string/2,sub_string/3,centre/2,centre/3]).
--export([re_sh_to_awk/1,re_parse/1,re_match/2,re_sub/3,re_gsub/3,re_split/2]).
+	 sub_string/2,sub_string/3,centre/2,centre/3, join/2]).
 -export([to_upper/1, to_lower/1]).
 
--deprecated([{re_sh_to_awk,1},{re_parse,1},{re_match,2},{re_sub,3},
-             {re_gsub,3},{re_split,2},{index,2}]).
-
 -import(lists,[reverse/1,member/2]).
+
+%%---------------------------------------------------------------------------
+
+-type(direction() :: 'left' | 'right' | 'both').
+
+%%---------------------------------------------------------------------------
 
 %% Robert's bit
 
 %% len(String)
 %%  Return the length of a string.
 
+-spec(len/1 :: (string()) -> non_neg_integer()).
+
 len(S) -> length(S).
 
 %% equal(String1, String2)
 %%  Test if 2 strings are equal.
+
+-spec(equal/2 :: (string(), string()) -> bool()).
 
 equal(S, S) -> true;
 equal(_, _) -> false.
@@ -46,17 +52,23 @@ equal(_, _) -> false.
 %% concat(String1, String2)
 %%  Concatenate 2 strings.
 
+-spec(concat/2 :: (string(), string()) -> string()).
+
 concat(S1, S2) -> S1 ++ S2.
 
 %% chr(String, Char)
 %% rchr(String, Char)
 %%  Return the first/last index of the character in a string.
 
+-spec(chr/2 :: (string(), char()) -> non_neg_integer()).
+
 chr(S, C) when is_integer(C) -> chr(S, C, 1).
 
 chr([C|_Cs], C, I) -> I;
 chr([_|Cs], C, I) -> chr(Cs, C, I+1);
 chr([], _C, _I) -> 0.
+
+-spec(rchr/2 :: (string(), char()) -> non_neg_integer()).
 
 rchr(S, C) when is_integer(C) -> rchr(S, C, 1, 0).
 
@@ -72,6 +84,8 @@ rchr([], _C, _I, L) -> L.
 %%  Return the first/last index of the sub-string in a string.
 %%  index/2 is kept for backwards compatibility.
 
+-spec(str/2 :: (string(), string()) -> non_neg_integer()).
+
 str(S, Sub) when is_list(Sub) -> str(S, Sub, 1).
 
 str([C|S], [C|Sub], I) ->
@@ -81,6 +95,8 @@ str([C|S], [C|Sub], I) ->
     end;
 str([_|S], Sub, I) -> str(S, Sub, I+1);
 str([], _Sub, _I) -> 0.
+
+-spec(rstr/2 :: (string(), string()) -> non_neg_integer()).
 
 rstr(S, Sub) when is_list(Sub) -> rstr(S, Sub, 1, 0).
 
@@ -96,10 +112,10 @@ prefix([C|Pre], [C|String]) -> prefix(Pre, String);
 prefix([], String) when is_list(String) -> true;
 prefix(Pre, String) when is_list(Pre), is_list(String) -> false.
 
-index(S, Sub) -> str(S, Sub).
-
 %% span(String, Chars) -> Length.
 %% cspan(String, Chars) -> Length.
+
+-spec(span/2 :: (string(), string()) -> non_neg_integer()).
 
 span(S, Cs) when is_list(Cs) -> span(S, Cs, 0).
 
@@ -109,6 +125,8 @@ span([C|S], Cs, I) ->
 	false -> I
     end;
 span([], _Cs, I) -> I.
+
+-spec(cspan/2 :: (string(), string()) -> non_neg_integer()).
 
 cspan(S, Cs) when is_list(Cs) -> cspan(S, Cs, 0).
 
@@ -122,10 +140,15 @@ cspan([], _Cs, I) -> I.
 %% substr(String, Start)
 %% substr(String, Start, Length)
 %%  Extract a sub-string from String.
+
+-spec(substr/2 :: (string(), pos_integer()) -> string()).
+
 substr(String, 1) when is_list(String) -> 
     String;
 substr(String, S) when is_integer(S), S > 1 ->
     substr2(String, S).
+
+-spec(substr/3 :: (string(), pos_integer(), non_neg_integer()) -> string()).
 
 substr(String, S, L) when is_integer(S), S >= 1, is_integer(L), L >= 0 ->
     substr1(substr2(String, S), L).
@@ -138,6 +161,8 @@ substr2([_|String], S) -> substr2(String, S-1).
 
 %% tokens(String, Seperators).
 %%  Return a list of tokens seperated by characters in Seperators.
+
+-spec(tokens/2 :: (string(), string()) -> [[char(),...]]).
 
 tokens(S, Seps) ->
     tokens1(S, Seps, []).
@@ -158,7 +183,11 @@ tokens2([C|S], Seps, Toks, Cs) ->
 tokens2([], _Seps, Toks, Cs) ->
     reverse([reverse(Cs)|Toks]).
 
+-spec(chars/2 :: (char(), non_neg_integer()) -> string()).
+
 chars(C, N) -> chars(C, N, []).
+
+-spec(chars/3 :: (char(), non_neg_integer(), string()) -> string()).
 
 chars(C, N, Tail) when N > 0 ->
     chars(C, N-1, [C|Tail]);
@@ -179,7 +208,11 @@ copies(CharList, Num, R) ->
 
 %%% WORDS %%%
 
+-spec(words/1 :: (string()) -> pos_integer()).
+
 words(String) -> words(String, $\s).
+
+-spec(words/2 :: (string(), char()) -> pos_integer()).
 
 words(String, Char) when is_integer(Char) ->
     w_count(strip(String, both, Char), Char, 0).
@@ -190,7 +223,11 @@ w_count([_H|T], Char, Num) -> w_count(T, Char, Num).
 
 %%% SUB_WORDS %%%
 
+-spec(sub_word/2 :: (string(), integer()) -> string()).
+
 sub_word(String, Index) -> sub_word(String, Index, $\s).
+
+-spec(sub_word/3 :: (string(), integer(), char()) -> string()).
 
 sub_word(String, Index, Char) when is_integer(Index), is_integer(Char) ->
     case words(String, Char) of
@@ -210,12 +247,18 @@ s_word([_|T],Stop,Char,Index,Res) when Index < Stop ->
 
 %%% STRIP %%%
 
+-spec(strip/1 :: (string()) -> string()).
+
 strip(String) -> strip(String, both).
+
+-spec(strip/2 :: (string(), direction()) -> string()).
 
 strip(String, left) -> strip_left(String, $\s);
 strip(String, right) -> strip_right(String, $\s);
 strip(String, both) ->
     strip_right(strip_left(String, $\s), $\s).
+
+-spec(strip/3 :: (string(), direction(), char()) -> string()).
 
 strip(String, right, Char) -> strip_right(String, Char);
 strip(String, left, Char) -> strip_left(String, Char);
@@ -239,7 +282,11 @@ strip_right([], Sc) when is_integer(Sc) ->
 
 %%% LEFT %%%
 
+-spec(left/2 :: (string(), non_neg_integer()) -> string()).
+
 left(String, Len) when is_integer(Len) -> left(String, Len, $\s).
+
+-spec(left/3 :: (string(), non_neg_integer(), char()) -> string()).
 
 left(String, Len, Char) when is_integer(Char) ->
     Slen = length(String),
@@ -253,7 +300,11 @@ l_pad(String, Num, Char) -> String ++ chars(Char, Num).
 
 %%% RIGHT %%%
 
+-spec(right/2 :: (string(), non_neg_integer()) -> string()).
+
 right(String, Len) when is_integer(Len) -> right(String, Len, $\s).
+
+-spec(right/3 :: (string(), non_neg_integer(), char()) -> string()).
 
 right(String, Len, Char) when is_integer(Char) ->
     Slen = length(String),
@@ -267,7 +318,11 @@ r_pad(String, Num, Char) -> chars(Char, Num, String).
 
 %%% CENTRE %%%
 
+-spec(centre/2 :: (string(), non_neg_integer()) -> string()).
+
 centre(String, Len) when is_integer(Len) -> centre(String, Len, $\s).
+
+-spec(centre/3 :: (string(), non_neg_integer(), char()) -> string()).
 
 centre(String, 0, Char) when is_list(String), is_integer(Char) ->
     [];                       % Strange cases to centre string
@@ -286,45 +341,6 @@ centre(String, Len, Char) when is_integer(Char) ->
 sub_string(String, Start) -> substr(String, Start).
 
 sub_string(String, Start, Stop) -> substr(String, Start, Stop - Start + 1).
-
-%% The Regular Expression Matching Functions.
-%%
-%%  These have been rewritten. As their interface has changed slightly
-%%  (much to the better) I have moved them to a new module 'regexp' to
-%%  avoid another "interface war" about something which doesn't
-%%  serioulsy affect that many people. This interface is kept for
-%%  backwards compatibility so I don't get shot for that as well.
-%%
-%%  /Robert Virding
-
-re_sh_to_awk(ShellRegExp) -> regexp:sh_to_awk(ShellRegExp).
-
-re_parse(RegExp) ->
-    case regexp:parse(RegExp) of
-	{ok,RE} -> {regexp,RE};
-	{error,E} -> {error,E} 
-    end.
-
-re_match(String, RegExp) ->
-    case regexp:match(String, RegExp) of
-	{match,Start,Len} -> {match,substr(String, Start, Len),Start};
-	nomatch -> nomatch;
-	{error,E} -> {error,E}
-    end.
-
-re_sub(String, RegExp, New) ->
-    case regexp:sub(String, RegExp, New) of
-	{ok,Res,_N} -> {ok,Res};
-	{error,E} -> {error,E}
-    end.
-
-re_gsub(String, RegExp, New) ->
-    case regexp:gsub(String, RegExp, New) of
-	{ok,Res,_N} -> {ok,Res};
-	{error,E} -> {error,E}
-    end.
-
-re_split(String, RegExp) -> regexp:split(String, RegExp).
 
 %% The long awaited to_upper and to_lower
 %% ISO/IEC 8859-1 (latin1) letters are converted, others are ignored
@@ -348,12 +364,23 @@ to_upper_char(C) when is_integer(C),  C >= 16#F8, C =< 16#FE ->
 to_upper_char(C) ->
     C.
 
+-spec(to_lower/1 :: (string()) -> string()
+		  ; (char()) -> char()).
+
 to_lower(S) when is_list(S) ->
     [to_lower_char(C) || C <- S];
 to_lower(C) when is_integer(C) ->
     to_lower_char(C).
 
+-spec(to_upper/1 :: (string()) -> string()
+		  ; (char()) -> char()).
+
 to_upper(S) when is_list(S) ->
     [to_upper_char(C) || C <- S];
 to_upper(C) when is_integer(C) ->
     to_upper_char(C).
+
+-spec(join/2 :: ([string(),...], string()) -> string()).
+
+join([H|T], Sep) ->
+    H ++ lists:concat([Sep ++ X || X <- T]).

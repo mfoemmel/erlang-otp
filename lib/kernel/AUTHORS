@@ -3,6 +3,7 @@ Original Authors and Contributors:
 Joe Armstrong
 Robert Virding
 Claes Wikström
+Mike Williams
 Tony Rogvall
 Magnus Fröberg
 Martin Björklund
@@ -15,13 +16,21 @@ Peter Olin
 Micael Karlberg
 Raimo Niskanen
 Rickard Green
+Gunilla Arendt
+Hans Bolinder
+Dan Gudmundsson
+Jan-Erik Dahlin
+Jakob Cederlund
 The HiPE project (mainly loading of native code)
+Rickard Carlsson
 
 and probably others...
 
 Open source contributors:
 
-Tony Rogvall (now @Bluetail)
+Tony Rogvall (now at Bluetail)
 	Rewrote inet_{tcp,udp}.erl and gen_{tcp,udp}.erl among others, 
 	added prim_{file,inet}.erl. When adding a new and faster
 	inet_drv.
+Leonid Timochouk
+Serge Aleynikov

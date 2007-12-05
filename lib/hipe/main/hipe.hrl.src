@@ -7,8 +7,8 @@
 %%  History  :	* 2000-11-03 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/03/08 16:42:29 $
-%%              $Revision: 1.5 $
+%%              $Date: 2007/10/10 12:30:15 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%
 %% Defines:
@@ -94,11 +94,11 @@
 %% Define the exit macro
 %%
 -ifdef(VERBOSE).
--define(EXIT(Reason), erlang:fault({?MODULE,?LINE,Reason})).
+-define(EXIT(Reason), erlang:error({?MODULE,?LINE,Reason})).
 -else.
 -define(EXIT(Reason),
  	?msg("EXITED with reason ~w @~w:~w\n", [Reason,?MODULE,?LINE]),
- 	erlang:fault({?MODULE,?LINE,Reason})).
+ 	erlang:error({?MODULE,?LINE,Reason})).
 -endif.
 
 %%
@@ -268,19 +268,26 @@
 
 -define(count_pre_ra_instructions(Options, NoInstrs), no_instrumentation).
 -define(count_post_ra_instructions(Options, NoInstrs),no_instrumentation).
--define(start_time_regalloc(Options),no_instrumentation).
--define(stop_time_regalloc(Options),no_instrumentation).
--define(start_time_caller_saves(Options),no_instrumentation).
--define(stop_time_caller_saves(Options),no_instrumentation).
--define(count_pre_ra_temps(Options, NoTemps),no_instrumentation).
--define(count_post_ra_temps(Options, NoTemps),no_instrumentation).
+-define(start_time_regalloc(Options), no_instrumentation).
+-define(stop_time_regalloc(Options), no_instrumentation).
+-define(start_time_caller_saves(Options), no_instrumentation).
+-define(stop_time_caller_saves(Options), no_instrumentation).
+-define(count_pre_ra_temps(Options, NoTemps), no_instrumentation).
+-define(count_post_ra_temps(Options, NoTemps), no_instrumentation).
 -define(start_ra_instrumentation(Options, NoInstrs, NoTemps),no_instrumentation).
 -define(stop_ra_instrumentation(Options, NoInstrs, NoTemps),no_instrumentation).
 -define(add_spills(Options, NoSpills), no_instrumentation).
--define(optional_start_timer(Options,Timer), no_instrumentation).
--define(optional_stop_timer(Options,Timer), no_instrumentation).
+-define(optional_start_timer(Options, Timer), no_instrumentation).
+-define(optional_stop_timer(Options, Timer), no_instrumentation).
 -define(inc_counter(Counter, Val), no_instrumentation).
 -define(update_counter(Counter, Val, Op), no_instrumentation).
--define(cons_counter(Counter, Val),no_instrumentation).
+-define(cons_counter(Counter, Val), no_instrumentation).
 
 -endif. %% HIPE_INSTRUMENT_COMPILER	
+
+%%----------------------------------------------------------------------------
+%% Basic types of the 'hipe' application used in other parts of the system
+%%----------------------------------------------------------------------------
+
+-type(hipe_architecture() ::
+		'amd64' | 'arm' | 'powerpc' | 'ppc64' | 'ultrasparc' | 'x86').

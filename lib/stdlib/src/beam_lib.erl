@@ -386,6 +386,7 @@ scan_beam1(File, What) ->
 	R ->
 	    R
     end.
+
 scan_beam2(FD, What) ->
     case pread(FD, 0, 12) of
 	{NFD, {ok, <<"FOR1", _Size:32, "BEAM">>}} ->
@@ -458,7 +459,7 @@ get_chunk(Id, Pos, Size, FD) ->
     end.
 
 chunks_to_data([{Id, Name} | CNs], Chunks, File, Cs, Module, Atoms, L) ->
-    {value, {_Id, Chunk}} =  keysearch(Id, 1, Chunks),
+    {value, {_Id, Chunk}} = keysearch(Id, 1, Chunks),
     {NewAtoms, Ret} = chunk_to_data(Name, Chunk, File, Cs, Atoms, Module),
     chunks_to_data(CNs, Chunks, File, Cs, Module, NewAtoms, [Ret | L]);
 chunks_to_data([], _Chunks, _File, _Cs, Module, _Atoms, L) ->
@@ -587,7 +588,9 @@ extract_atom(<<Len, B/binary>>) ->
 
 %%% Utils.
 
--record(bb, {pos = 0, bin, source}).
+-record(bb, {pos = 0 :: integer(),
+	     bin :: binary(),
+	     source :: binary() | string()}).
 
 open_file(<<"FOR1",_/binary>>=Binary) ->
     #bb{bin = Binary, source = Binary};
@@ -662,8 +665,12 @@ assert_directory(FileName) ->
 	    error({not_a_directory, FileName})
     end.
 
-file_error(FileName, {error, Error}) ->
-    error({file_error, FileName, Error}).
+-spec(file_error/2 :: ([char(),...], {'error',atom()}) -> no_return()).
+
+file_error(FileName, {error, Reason}) ->
+    error({file_error, FileName, Reason}).
+
+-spec(error/1 :: (_) -> no_return()).
 
 error(Reason) ->
     throw({error, ?MODULE, Reason}).
@@ -690,7 +697,8 @@ mandatory_chunks() ->
 %%% can use it.
 %%% ====================================================================
 
--record(state, {crypto_key_f}).
+-record(state, {crypto_key_f :: fun((_) -> _)}).
+
 -define(CRYPTO_KEY_SERVER, beam_lib__crypto_key_server).
 
 decrypt_abst(Mode, Module, File, Id, AtomTable, Bin) ->
@@ -734,7 +742,7 @@ start_crypto_server() ->
     gen_server:start({local,?CRYPTO_KEY_SERVER}, ?MODULE, [], []).
 
 init([]) ->
-    {ok,#state{}}.
+    {ok, #state{}}.
 
 handle_call({get_crypto_key, _}=R, From, #state{crypto_key_f=undefined}=S) ->
     case crypto_key_fun_from_file() of

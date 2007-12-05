@@ -1,0 +1,184 @@
+<?xml version="1.0" encoding="latin1" ?>
+<!DOCTYPE chapter SYSTEM "chapter.dtd">
+
+<chapter>
+  <header>
+    <copyright>
+      <year>2000</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
+    <title>Jinterface Release Notes</title>
+    <prepared>otp_appnotes</prepared>
+    <docno>nil</docno>
+    <date>nil</date>
+    <rev>nil</rev>
+  </header>
+  <p>This document describes the changes made to the Jinterface application.</p>
+
+<section><title>Jinterface 1.4</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+	    <p>Jinterface has been updated to handle compressed
+	    terms, bitstring, new (IEEE) floats and bignums. This has
+	    caused a few incompatibilities.</p>
+	    <p>com.ericsson.otp.erlang.OtpOutputStream now extends
+	    java.io.ByteArrayOutputStream, previously
+	    java.lang.Object, and hence the method size() now return
+	    the number of bytes in the stream as dictated by the new
+	    parent class and not the buffer length as before. The new
+	    method length() returns what the old size() did return.
+	    The method count() is deprecated as it returns the same
+	    as the new size().</p>
+	    <p>com.ericsson.otp.erlang.OtpErlangLong now can handle
+	    larger values than 64-bit. Previously when larger than
+	    64-bit integers were sent to a Jinterface node, it caused
+	    an com.ericsson.otp.erlang.OtpDecodeException. Now the
+	    integer is accepted, but the return value of longValue()
+	    is silently truncated, as opposed to the return value of
+	    intValue() that now and previously raises an
+	    com.ericsson.otp.erlang.OtpRangeException for
+	    unrepresentable values. The new methods isLong() and
+	    isULong() can be used to determine if the value fits in a
+	    long.</p>
+          <p>
+	    *** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>
+	    Own Id: OTP-6809</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
+  <section>
+    <title>Jinterface 1.3</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p><c>OtpMbox.receive()</c> and <c>OtpMbox.receive(long timeout)</c> can now throw
+            <c>OtpErlangDecodeException</c> if the received message
+            can not be decoded. <c>null</c> is now only returned from
+            <c>OtpMbox.receive(long timeout)</c> if a timeout occurs.
+            <c>OtpMbox.receive()</c> will never return <c>null</c>.</p>
+          <p>*** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>Own Id: OTP-3932 Aux Id: seq5196 </p>
+        </item>
+        <item>
+          <p>Strings longer than 65535 bytes were encoded wrong by
+            jinterface.</p>
+          <p>Own Id: OTP-4883 Aux Id: OTP-4865 </p>
+        </item>
+        <item>
+          <p>Misc bugfixes: </p>
+          <list type="bulleted">
+            <item>
+              <p>A node pinging itself does no
+                longer cause the java program to hang.</p>
+              <p></p>
+            </item>
+            <item>
+              <p><c>OtpMbox.close()</c> uses exit reason
+                <c>'normal'</c> (atom) instead of <c>"normal"</c>
+                (string).</p>
+              <p></p>
+            </item>
+            <item>
+              <p>Added <c>OtpNode.closeMbox(OtpMbox mbox, OtpErlangObject reason)</c>.</p>
+              <p></p>
+            </item>
+            <item>
+              <p>Added <c>OtpMbox.exit(OtpErlangObject reason)</c>
+                and <c>OtpMbox.exit(String reason)</c>.</p>
+              <p></p>
+            </item>
+            <item>
+              <p>Added <c>OtpMbox.exit(OtpErlangPid to, OtpErlangObject reason)</c>.</p>
+              <p></p>
+            </item>
+            <item>
+              <p><c>OtpMbox.exit(OtpErlangPid to, String reason)</c>
+                is now equivalent to <c>OtpMbox.exit(to, new OtpErlangAtom(reason))</c>.</p>
+              <p></p>
+            </item>
+            <item>Exit signals from an Erlang node can now contain
+             any erlang term as reason, not only atoms. </item>
+          </list>
+          <p>Own Id: OTP-5088</p>
+        </item>
+        <item>
+          <p>For java versions 1.3.1 or later, <c>localStatus</c> was
+            not sent to registered status handler when
+            <c>OtpNode.close()</c> was called. This is now corrected.</p>
+          <p>Own Id: OTP-5169</p>
+        </item>
+      </list>
+    </section>
+
+    <section>
+      <title>Improvements and New Features</title>
+      <list type="bulleted">
+        <item>
+          <p>Process identifiers and port identifiers have been
+            made more unique. Previously 18 bits were used as id in
+            the internal representation of process and port
+            identifiers. Now 28 bits are used. </p>
+          <p>The maximum
+            limit on the number of concurrently existing processes
+            due to the representation of pids has been increased to
+            268435456 processes. The same is true for ports. This
+            limit will at least on a 32-bit architecture be
+            impossible to reach due to memory shortage. </p>
+          <p><em>NOTE:</em> By default, the <c>ERTS</c>, and the
+            <c>erl_interface</c>, <c>ei</c>, and <c>jinterface</c>
+            libraries are now only guaranteed to be compatible with
+            other Erlang/OTP components from the same release. It is
+            possible to set each component in compatibility mode of
+            an earlier release, though. See the documentation for
+            respective component on how to set it in compatibility
+            mode. </p>
+          <p>*** POTENTIAL INCOMPATIBILITY ***</p>
+          <p>Own Id: OTP-4968 Aux Id: OTP-4196 </p>
+        </item>
+      </list>
+    </section>
+  </section>
+
+  <section>
+    <title>Jinterface 1.2.1.2</title>
+
+    <section>
+      <title>Fixed Bugs and Malfunctions</title>
+      <list type="bulleted">
+        <item>
+          <p>Output of Java long was truncated to 32 bits. IDL long
+            long and unsigned long long could not be used in a struct
+            for the Java backend. All unsigned integer types for the
+            Java backend had broken marshalling for large values.
+            These bugs has now been fixed.</p>
+          <p>Own Id: OTP-4763 Aux Id: seq8024 </p>
+        </item>
+      </list>
+    </section>
+  </section>
+</chapter>
+

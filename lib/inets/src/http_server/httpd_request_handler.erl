@@ -99,6 +99,8 @@ init([Manager, ConfigDB,AcceptTimeout]) ->
 
     MaxHeaderSize = httpd_util:lookup(ConfigDB, max_header_size, 
 				      ?HTTP_MAX_HEADER_SIZE),
+    MaxURISize = httpd_util:lookup(ConfigDB, max_uri_size, 
+				   ?HTTP_MAX_URI_SIZE),
     TimeOut = httpd_util:lookup(ConfigDB, keep_alive_timeout, 150000),
     NrOfRequest = httpd_util:lookup(ConfigDB, 
 				    max_keep_alive_request, infinity),
@@ -108,7 +110,8 @@ init([Manager, ConfigDB,AcceptTimeout]) ->
     
     State = #state{mod = Mod, manager = Manager, status = Status,
 		   timeout = TimeOut, max_keep_alive_request = NrOfRequest,
-		   mfa = {httpd_request, parse, [MaxHeaderSize]}}, 
+		   mfa = {httpd_request, parse, [{MaxURISize, 
+						  MaxHeaderSize}]}}, 
     
     NewState = activate_request_timeout(State),
 
@@ -157,11 +160,19 @@ handle_info({Proto, Socket, Data}, State =
         {ok, Result} ->
 	    NewState = cancel_request_timeout(State),
             handle_http_msg(Result, NewState); 
-	{error, {header_too_long, MaxHeaderSize}, Version} ->
+	{error, {uri_too_long, MaxSize}, Version} ->
 	    NewModData =  ModData#mod{http_version = Version},
-	    httpd_response:send_status(NewModData, 413, "Header too big"),
-	    Reason = io_lib:format("Header too big, max size is ~p~n", 
-				   [MaxHeaderSize]),
+	    httpd_response:send_status(NewModData, 414, "URI too long"),
+	    Reason = io_lib:format("Uri too long, max size is ~p~n", 
+				   [MaxSize]),
+	    error_log(Reason, NewModData),
+	    {stop, normal, State#state{response_sent = true, 
+				       mod = NewModData}};
+	{error, {header_too_long, MaxSize}, Version} ->
+	    NewModData =  ModData#mod{http_version = Version},
+	    httpd_response:send_status(NewModData, 413, "Header too long"),
+	    Reason = io_lib:format("Header too long, max size is ~p~n", 
+				   [MaxSize]),
 	    error_log(Reason, NewModData),
 	    {stop, normal, State#state{response_sent = true, 
 				       mod = NewModData}};
@@ -374,8 +385,8 @@ handle_body(#state{headers = Headers, body = Body, mod = ModData} = State,
 					  body = NewBody})
 		    end;
 		false ->
-		    httpd_response:send_status(ModData, 413, "Body too big"),
-		    error_log("Body too big", ModData),
+		    httpd_response:send_status(ModData, 413, "Body too long"),
+		    error_log("Body too long", ModData),
 		    {stop, normal,  State#state{response_sent = true}}
 	    end
     end.
@@ -389,8 +400,8 @@ handle_expect(#state{headers = Headers, mod =
 	    httpd_response:send_status(ModData, 100, ""),
 	    ok;
 	continue when MaxBodySize < Length ->
-	    httpd_response:send_status(ModData, 413, "Body too big"),
-	    error_log("Body too big", ModData),
+	    httpd_response:send_status(ModData, 413, "Body too long"),
+	    error_log("Body too long", ModData),
 	    {stop, normal, State#state{response_sent = true}};
 	{break, Value} ->
 	    httpd_response:send_status(ModData, 417, 
@@ -454,9 +465,11 @@ handle_next_request(#state{mod = #mod{connection = true} = ModData,
     MaxHeaderSize =
 	httpd_util:lookup(ModData#mod.config_db, 
 			  max_header_size, ?HTTP_MAX_HEADER_SIZE),
-   
-     TmpState = State#state{mod = NewModData,
-			   mfa = {httpd_request, parse, [MaxHeaderSize]},
+    MaxURISize = httpd_util:lookup(ModData#mod.config_db, max_uri_size, 
+				   ?HTTP_MAX_URI_SIZE),
+    TmpState = State#state{mod = NewModData,
+			   mfa = {httpd_request, parse, [{MaxURISize, 
+							  MaxHeaderSize}]},
 			    max_keep_alive_request = decrease(Max),
 			   headers = undefined, body = undefined,
 			   response_sent = false},

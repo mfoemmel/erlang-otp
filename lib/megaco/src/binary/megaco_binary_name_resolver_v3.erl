@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Handle meta data about packages
@@ -44,8 +46,8 @@ encode_name(Config, term_id, TermId) ->
     case megaco:encode_binary_term_id(Config, TermId) of
 	{ok, TermId2} ->
 	    TermId2;
-	{error, _Reason} ->
-	    exit({bad_term_id, TermId})
+	{error, Reason} ->
+	    exit({bad_term_id, TermId, Reason})
     end;	
 encode_name(_Config, Scope, Item) ->
     ?d("encode_name(~p) -> entry with"
@@ -56,8 +58,8 @@ decode_name(Config, term_id, TermId) ->
     case megaco:decode_binary_term_id(Config, TermId) of
 	{ok, TermId2} ->
 	    TermId2;
-	{error, _Reason} ->
-	    exit({bad_term_id, TermId})
+	{error, Reason} ->
+	    exit({bad_term_id, TermId, Reason})
     end;
 decode_name(_Config, Scope, Item) ->
     ?d("decode_name(~p) -> entry with"
@@ -628,7 +630,6 @@ encode_item(Scope, Package, Item) ->
         "nt"      -> encode_nt(Scope, Item);
         "rtp"     -> encode_rtp(Scope, Item);
         "tdmc"    -> encode_tdmc(Scope, Item);
-        ""        -> encode_native(Scope, Item);
         "swb"     -> encode_swb(Scope, Item)
     end.
 
@@ -753,7 +754,11 @@ capabilities_root() ->
      {property, "MGProvisionalResponseTimerValue"},
      {property, "MGCProvisionalResponseTimerValue"},
      {property, "MGCOriginatedPendingLimit"},
-     {property, "MGOriginatedPendingLimit"}
+     {property, "MGOriginatedPendingLimit"},
+     {property, "MGSegmentationTimerValue"},
+     {property, "MGCSegmentationTimerValue"},
+     {property, "MGMaxPDUSize"},
+     {property, "MGCMaxPDUSize"}
     ].
 
 encode_root(Scope, Item) ->
@@ -767,7 +772,11 @@ encode_root(Scope, Item) ->
                 "MGProvisionalResponseTimerValue"  -> [16#00, 16#05];
                 "MGCProvisionalResponseTimerValue" -> [16#00, 16#06];
                 "MGCOriginatedPendingLimit"        -> [16#00, 16#07];
-                "MGOriginatedPendingLimit"         -> [16#00, 16#08]
+                "MGOriginatedPendingLimit"         -> [16#00, 16#08];
+                "MGSegmentationTimerValue"         -> [16#00, 16#09];
+                "MGCSegmentationTimerValue"        -> [16#00, 16#0a];
+                "MGMaxPDUSize"                     -> [16#00, 16#0b];
+                "MGCMaxPDUSize"                    -> [16#00, 16#0c]
             end
     end.
 
@@ -782,7 +791,11 @@ decode_root(Scope, Item) ->
                 [16#00, 16#05] -> "MGProvisionalResponseTimerValue";
 		[16#00, 16#06] -> "MGCProvisionalResponseTimerValue";
 		[16#00, 16#07] -> "MGCOriginatedPendingLimit";
-		[16#00, 16#08] -> "MGOriginatedPendingLimit"
+		[16#00, 16#08] -> "MGOriginatedPendingLimit";
+		[16#00, 16#09] -> "MGSegmentationTimerValue";
+		[16#00, 16#0a] -> "MGCSegmentationTimerValue";
+		[16#00, 16#0b] -> "MGMaxPDUSize";
+		[16#00, 16#0c] -> "MGCMaxPDUSize"
             end
     end.
 
@@ -913,6 +926,7 @@ decode_tonedet({event_parameter, Item}, SubItem) ->
                 [16#00, 16#03] -> "tid"
             end
     end.
+
 
 %%----------------------------------------------------------------------
 %% Name:    dg - Basic DTMF Generator Package
@@ -1997,5 +2011,5 @@ decode_native(Scope, [Type, Item]) ->
 %% -------------------------------------------------------------------
 
 % error(Reason) ->
-%     erlang:fault(Reason).
+%     erlang:error(Reason).
  

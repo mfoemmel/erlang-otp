@@ -101,12 +101,6 @@ dump_process_info(int to, void *to_arg, Process *p)
 	    erts_deep_dictionary_dump(to, to_arg,
 				      p->dictionary, dump_element_nl);
 	}
-
-	if (p->debug_dictionary) {
-	    erts_print(to, to_arg, "=debug_proc_dictionary:%T\n", p->id);
-	    erts_deep_dictionary_dump(to, to_arg,
-				      p->debug_dictionary, dump_element_nl);
-	}
     }
 
     if ((p->trace_flags & F_SENSITIVE) == 0) {
@@ -131,10 +125,6 @@ dump_process_info(int to, void *to_arg, Process *p)
 	}
 	if (p->dictionary) {
 	    erts_deep_dictionary_dump(to, to_arg, p->dictionary, heap_dump);
-	}
-
-	if (p->debug_dictionary) {
-	    erts_deep_dictionary_dump(to, to_arg, p->debug_dictionary, heap_dump);
 	}
     }
 }

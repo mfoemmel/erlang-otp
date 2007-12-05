@@ -29,7 +29,7 @@ static __inline__ int hipe_word32_address_ok(void *address)
 /* Used when a BIF can trigger a stack walk. */
 static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
 {
-    /* XXX: for now; later we should have sufficient # of args in regs on ppc */
+    /* XXX: for now; later we should have sufficient # of args in regs */
     p->hipe.narity = arity;
 }
 

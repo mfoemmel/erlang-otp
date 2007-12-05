@@ -424,14 +424,18 @@ ssl_options(server, [["server_certfile", Value]|T]) ->
     [{certfile, Value} | ssl_options(server,T)];
 ssl_options(client, [["client_certfile", Value]|T]) ->
     [{certfile, Value} | ssl_options(client,T)];
+ssl_options(server, [["server_cacertfile", Value]|T]) ->
+    [{cacertfile, Value} | ssl_options(server,T)];
+ssl_options(server, [["server_keyfile", Value]|T]) ->
+    [{keyfile, Value} | ssl_options(server,T)];
 ssl_options(Type, [["client_certfile", _Value]|T]) ->
     ssl_options(Type,T);
 ssl_options(Type, [["server_certfile", _Value]|T]) ->
     ssl_options(Type,T);
 ssl_options(Type, [[Item, Value]|T]) ->
-    [{Item,fixup(Value)} | ssl_options(Type,T)];
+    [{atomize(Item),fixup(Value)} | ssl_options(Type,T)];
 ssl_options(Type, [[Item,Value |T1]|T2]) ->
-    ssl_options(Type,[[Item,Value],T1|T2]);
+    ssl_options(atomize(Type),[[Item,Value],T1|T2]);
 ssl_options(_,_) ->
     exit(malformed_ssl_dist_opt).
     
@@ -442,3 +446,8 @@ fixup(Value) ->
 	Int ->
 	    Int
     end.
+
+atomize(List) when is_list(List) ->
+    list_to_atom(List);
+atomize(Atom) when is_atom(Atom) ->
+    Atom.

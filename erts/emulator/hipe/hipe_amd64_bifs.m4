@@ -6,27 +6,15 @@ changecom(`/*', `*/')dnl
 include(`hipe/hipe_amd64_asm.m4')
 #`include' "hipe_literals.h"
 
-/*
- * XXX:
- * - Does not yet support C BIFs with >6 parameters.
- * - The noproc primops should be compiled to use C's argument
- *   passing convention, to eliminate register moves in the wrappers.
- */
-
 `#if THE_NON_VALUE == 0
 #define TEST_GOT_EXN	testq	%rax, %rax
 #else
 #define TEST_GOT_EXN	cmpq	$THE_NON_VALUE, %rax
 #endif'
 
-`#if defined(HEAP_FRAG_ELIM_TEST)
-#define TEST_GOT_MBUF		movq P_MBUF(P), %rdx; testq %rdx, %rdx; jnz 3f; 2:
+`#define TEST_GOT_MBUF		movq P_MBUF(P), %rdx; testq %rdx, %rdx; jnz 3f; 2:
 #define JOIN3(A,B,C)		A##B##C
-#define HANDLE_GOT_MBUF(ARITY)	3: call JOIN3(nbif_,ARITY,_gc_after_bif); jmp 2b
-#else
-#define TEST_GOT_MBUF		/*empty*/
-#define HANDLE_GOT_MBUF(ARITY)	/*empty*/
-#endif'
+#define HANDLE_GOT_MBUF(ARITY)	3: call JOIN3(nbif_,ARITY,_gc_after_bif); jmp 2b'
 
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
@@ -579,6 +567,12 @@ define(standard_bif_interface_0,`nofail_primop_interface_0($1, $2)')
 define(gc_bif_interface_0,`standard_bif_interface_0($1, $2)')
 define(gc_bif_interface_1,`standard_bif_interface_1($1, $2)')
 define(gc_bif_interface_2,`standard_bif_interface_2($1, $2)')
+
+/*
+ * Implement expensive_gc_bif_interface_N as expensive_bif_interface_N (N=1,2).
+ */
+define(expensive_gc_bif_interface_1,`expensive_bif_interface_1($1, $2)')
+define(expensive_gc_bif_interface_2,`expensive_bif_interface_2($1, $2)')
 
 /*
  * Implement gc_nofail_primop_interface_1 as nofail_primop_interface_1.

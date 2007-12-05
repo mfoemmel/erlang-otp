@@ -30,6 +30,7 @@
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
+-include("../../compiler/src/beam_disasm.hrl").
 
 -define(no_debug_msg(Str,Xs),ok).
 %%-define(no_debug_msg(Str,Xs),msg(Str,Xs)).
@@ -55,10 +56,17 @@
 	end).
 
 %%-----------------------------------------------------------------------
+%% Exported types
+%%-----------------------------------------------------------------------
+
+-type(hipe_beam_to_icode_ret() :: [{mfa(),#icode{}}]).
+
+
+%%-----------------------------------------------------------------------
 %% Internal data structures
 %%-----------------------------------------------------------------------
 
--record(beam_const, {value :: atom() | '[]' | integer() | float()}).
+-record(beam_const, {value :: atom() | [] | integer() | float()}).
 
 -record(closure_info, {mfa::mfa(), arity::byte(), fv_arity::byte()}).
 
@@ -72,6 +80,8 @@
 %%   pairs, and its second argument is the list of HiPE compiler options.
 %% @end
 %%-----------------------------------------------------------------------
+
+-spec(module/2 :: ([#function{}], list()) -> hipe_beam_to_icode_ret()).
 
 module(BeamFuns, Options) ->
   BeamCode0 = [beam_disasm:function__code(F) || F <- BeamFuns],
@@ -117,7 +127,9 @@ exclude_module_info_code([], Acc) ->
 %% @end
 %%-----------------------------------------------------------------------
 
-mfa(_, {M,module_info,A}, _) when is_atom(M), A =:= 0 orelse A =:= 1 ->
+-spec(mfa/3 :: (list(), mfa(), list()) -> hipe_beam_to_icode_ret()).
+
+mfa(_, {M,module_info,A}, _) when is_atom(M), (A =:= 0 orelse A =:= 1) ->
   [];  % the module_info/[0,1] functions are just stubs in a BEAM file
 mfa(BeamFuns, {M,F,A} = MFA, Options)
   when is_atom(M), is_atom(F), is_integer(A) ->
@@ -141,7 +153,7 @@ mfa_loop([], Acc, _, _, _, _) ->
 
 mfa_get(M, F, A, ModCode, ClosureInfo, Options) ->
   BeamCode = get_fun(ModCode, M,F,A),
-  pp_beam([BeamCode],Options),  % cheat by using a list
+  pp_beam([BeamCode], Options),  % cheat by using a list
   Icode = trans_mfa_code(M,F,A, BeamCode, ClosureInfo),
   FunMFAs = get_fun_mfas(BeamCode),
   {Icode, FunMFAs}.
@@ -367,15 +379,15 @@ trans_fun([{bif,BifName,{f,Lbl},[_] = Args,Reg}|Instructions], Env) ->
 trans_fun([{bif,BifName,{f,Lbl},[_,_] = Args,Reg}|Instructions], Env) ->
   {BifInsts,Env1} = trans_bif(2,BifName,Lbl,Args,Reg,Env),
   [hipe_icode:mk_comment({bif2,BifName})|BifInsts] ++ trans_fun(Instructions,Env1);
-%%--- allocate --- IGNORED ON PURPOSE
-trans_fun([{allocate,_,_}|Instructions], Env) ->
-  trans_fun(Instructions,Env);
+%%--- allocate
+trans_fun([{allocate,StackSlots,_}|Instructions], Env) ->
+  trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_heap --- IGNORED ON PURPOSE
 trans_fun([{allocate_heap,_,_,_}|Instructions], Env) ->
   trans_fun(Instructions,Env);
-%%--- allocate_zero --- IGNORED ON PURPOSE
-trans_fun([{allocate_zero,_,_}|Instructions], Env) ->
-  trans_fun(Instructions,Env);
+%%--- allocate_zero
+trans_fun([{allocate_zero,StackSlots,_}|Instructions], Env) ->
+  trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_heap_zero --- IGNORED ON PURPOSE
 trans_fun([{allocate_heap_zero,_,_,_}|Instructions], Env) ->
   trans_fun(Instructions,Env);
@@ -521,7 +533,7 @@ trans_fun([{test,is_tuple,{_,Lbl},[Arg]}|Instructions], Env) ->
 %%--- test_arity ---
 trans_fun([{test,test_arity,{f,Lbl},[Reg,N]}|Instructions], Env) ->
   True = mk_label(new),
-  I = hipe_icode:mk_type([mk_var(Reg)],{tuple,N}, 
+  I = hipe_icode:mk_type([trans_arg(Reg)],{tuple,N}, 
 			 hipe_icode:label_name(True),map_label(Lbl)),
   [I,True | trans_fun(Instructions,Env)];
 %%--------------------------------------------------------------------
@@ -547,12 +559,7 @@ trans_fun([{jump,{_,L}}|Instructions], Env) ->
 %%--- move ---
 trans_fun([{move,Src,Dst}|Instructions], Env) ->
   Dst1 = mk_var(Dst),
-  Src1 = case is_var(Src) of
-	   true ->
-	     mk_var(Src);
-	   false ->
-	     trans_const(Src)
-	 end,
+  Src1 = trans_arg(Src),
   [hipe_icode:mk_move(Dst1,Src1) | trans_fun(Instructions,Env)];
 %%--- catch --- ITS PROCESSING IS POSTPONED
 trans_fun([{'catch',N,{_,EndLabel}}|Instructions], Env) ->
@@ -588,8 +595,8 @@ trans_fun([{raise,{f,0},[Reg1,Reg2],{x,0}}|Instructions], Env) ->
   [Fail | trans_fun(Instructions,Env)];
 %%--- get_list ---
 trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
-  I1 = hipe_icode:mk_primop([mk_var(Head)],unsafe_hd,[mk_var(List)]),
-  I2 = hipe_icode:mk_primop([mk_var(Tail)],unsafe_tl,[mk_var(List)]),
+  I1 = hipe_icode:mk_primop([mk_var(Head)],unsafe_hd,[trans_arg(List)]),
+  I2 = hipe_icode:mk_primop([mk_var(Tail)],unsafe_tl,[trans_arg(List)]),
   %% Handle the cases where the dest overwrites the src!!
   if 
     Head /= List ->
@@ -605,14 +612,11 @@ trans_fun([{get_list,List,Head,Tail}|Instructions], Env) ->
 trans_fun([{get_tuple_element,Xreg,Index,Dst}|Instructions], Env) ->
   I = hipe_icode:mk_primop([mk_var(Dst)],
 			   #unsafe_element{index=Index+1},
-			   [mk_var(Xreg)]),
+			   [trans_arg(Xreg)]),
   [I | trans_fun(Instructions,Env)];
 %%--- set_tuple_element ---
 trans_fun([{set_tuple_element,Elem,Tuple,Index}|Instructions], Env) ->
-  Elem1 = case is_var(Elem) of
-	    true -> mk_var(Elem);
-	    false -> trans_const(Elem)
-	  end,
+  Elem1 = trans_arg(Elem),
   I = hipe_icode:mk_primop([mk_var(Tuple)],
 			   #unsafe_update_element{index=Index+1},
 			   [mk_var(Tuple),Elem1]),
@@ -700,7 +704,7 @@ trans_fun([{call_ext_only,_N,{extfunc,M,F,A}}|Instructions], Env) ->
 %%--------------------------------------------------------------------
 
 trans_fun([{test,bs_start_match2,{f,Lbl},[X,_Live, Max, Ms]}|Instructions], Env) ->
-  Bin = mk_var(X),
+  Bin = trans_arg(X),
   MsVar = mk_var(Ms),
   trans_op_call({hipe_bs_primop, {bs_start_match, Max}}, Lbl, [Bin],
 		[MsVar], Env, Instructions);
@@ -739,19 +743,22 @@ trans_fun([{test,bs_get_integer2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags0
 trans_fun([{test,bs_get_binary2,{f,Lbl},[Ms,_Live,Size,Unit,{field_flags,Flags},X]}| 
 	   Instructions], Env) ->
   MsVar = mk_var(Ms),
-  {Name, Args} = 
+  {Name, Args, Dsts} = 
     case Size of
       {atom, all} -> %% put all bits
-	{{bs_get_binary_all,Unit,Flags},[MsVar]};
+	if Ms =:= X ->
+	    {{bs_get_binary_all,Unit,Flags},[MsVar],[mk_var(X)]};
+	   true ->
+	    {{bs_get_binary_all_2,Unit,Flags},[MsVar],[mk_var(X),MsVar]}
+	end;
       {integer, NoBits} when is_integer(NoBits), NoBits >= 0 ->
-	{{bs_get_binary,NoBits*Unit,Flags}, [MsVar]};	%% Create a N*Unit bits subbinary
+	{{bs_get_binary,NoBits*Unit,Flags}, [MsVar], [mk_var(X),MsVar]};%% Create a N*Unit bits subbinary
       {integer, NoBits} when is_integer(NoBits), NoBits < 0 ->
 	?EXIT({bad_bs_size_constant,Size});
       BitReg -> % Use a number of bits only known at runtime.
 	Bits = mk_var(BitReg),
-	{{bs_get_binary,Unit,Flags}, [MsVar,Bits]}
+	{{bs_get_binary,Unit,Flags}, [MsVar,Bits], [mk_var(X),MsVar]}
     end,
-  Dsts = [mk_var(X),MsVar],
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, Dsts, Env, Instructions);
 trans_fun([{test,bs_skip_bits2,{f,Lbl},[Ms,Size,NumBits,{field_flags,Flags}]}|
 	   Instructions], Env) -> 
@@ -770,11 +777,81 @@ trans_fun([{test,bs_skip_bits2,{f,Lbl},[Ms,Size,NumBits,{field_flags,Flags}]}|
 	{{bs_skip_bits,NumBits},[MsVar,Src]}
     end,
   trans_op_call({hipe_bs_primop,Name}, Lbl, Args, [MsVar], Env, Instructions);
-trans_fun([{bs_save2,Ms,Index}| Instructions], Env) ->
-   MsVar = mk_var(Ms),
+trans_fun([{test,bs_test_unit,{f,Lbl},[Ms,Unit]}|
+	   Instructions], Env) -> 
+  %% the current match buffer
+  MsVar = mk_var(Ms),
+  trans_op_call({hipe_bs_primop,{bs_test_unit,Unit}}, Lbl, 
+		[MsVar], [], Env, Instructions);
+trans_fun([{test,bs_match_string,{f,Lbl},[Ms,BitSize,Bin]}|
+	   Instructions], Env) -> 
+  MsVar = mk_var(Ms),
+  ByteSize = BitSize div 8,
+  case BitSize rem 8 of
+    0 ->
+      trans_op_call({hipe_bs_primop,{bs_match_string,Bin,ByteSize}}, Lbl, 
+		[MsVar], [MsVar], Env, Instructions);
+    X when X > 0 ->
+      Pad = 8-X,
+      True = mk_label(new),
+      FalseLabName = map_label(Lbl),
+      TrueLabName = hipe_icode:label_name(True),
+      <<RealBin:ByteSize/binary, Int:X, _:Pad>> = Bin,
+      TmpVar = mk_var(new),
+      {I1,Env1} = trans_one_op_call({hipe_bs_primop,{bs_match_string,RealBin,ByteSize}}, Lbl, 
+				    [MsVar], [MsVar], Env),
+      {I2,Env2} = trans_one_op_call({hipe_bs_primop,{bs_get_integer,X,0}}, Lbl, 
+				    [MsVar], [TmpVar, MsVar], Env1),
+      I3 = hipe_icode:mk_type([TmpVar], {integer,Int}, TrueLabName, FalseLabName),
+      I1 ++ I2 ++ [I3,True] ++ trans_fun(Instructions, Env2)
+  end;
+trans_fun([{bs_context_to_binary,Var}| Instructions], Env) -> 
+  %% the current match buffer
+  IcodeVar = trans_arg(Var),
+  [hipe_icode:mk_primop([IcodeVar],{hipe_bs_primop,bs_context_to_binary},[IcodeVar])|
+   trans_fun(Instructions, Env)];
+trans_fun([{bs_append,{f,Lbl},Size,W,R,U,Binary,{field_flags,F},Dst}| 
+	   Instructions], Env) -> 
+  %% the current match buffer
+  SizeArg = trans_arg(Size),
+  BinArg = trans_arg(Binary),
+  IcodeDst = mk_var(Dst),
+  Offset = mk_var(reg),
+  Base = mk_var(reg),
+  trans_bin_call({hipe_bs_primop,{bs_append,W,R,U,F}},Lbl,[SizeArg,BinArg],
+		[IcodeDst,Base,Offset],
+		 Base, Offset, Env, Instructions);
+trans_fun([{bs_private_append,{f,Lbl},Size,U,Binary,{field_flags,F},Dst}| 
+	   Instructions], Env) -> 
+  %% the current match buffer
+  SizeArg = trans_arg(Size),
+  BinArg = trans_arg(Binary),
+  IcodeDst = mk_var(Dst),
+  Offset = mk_var(reg),
+  Base = mk_var(reg),
+  trans_bin_call({hipe_bs_primop,{bs_private_append,U,F}},
+		 Lbl,[SizeArg,BinArg],
+		 [IcodeDst,Base,Offset],
+		 Base, Offset, Env, Instructions);
+trans_fun([bs_init_writable|Instructions], Env) -> 
+  Var = mk_var({x,0}), %{x,0} is implict arg and dst
+  [hipe_icode:mk_primop([Var],{hipe_bs_primop,bs_init_writable},[Var]),
+   trans_fun(Instructions, Env)];
+trans_fun([{bs_save2,Ms,IndexName}| Instructions], Env) ->
+  Index =
+    case IndexName of
+      {atom, start} -> 0;
+      _ -> IndexName+1
+    end,
+  MsVar = mk_var(Ms),
   [hipe_icode:mk_primop([MsVar],{hipe_bs_primop,{bs_save,Index}},[MsVar]) |
    trans_fun(Instructions, Env)];
-trans_fun([{bs_restore2,Ms,Index}| Instructions], Env) ->
+trans_fun([{bs_restore2,Ms,IndexName}| Instructions], Env) ->
+  Index =
+    case IndexName of
+      {atom, start} -> 0;
+      _ -> IndexName+1
+    end,
   MsVar = mk_var(Ms),
   [hipe_icode:mk_primop([MsVar],{hipe_bs_primop,{bs_restore,Index}},[MsVar]) |
    trans_fun(Instructions, Env)];
@@ -802,39 +879,65 @@ trans_fun([{bs_init2,{f,Lbl},Size,_Words,_LiveRegs,{field_flags,Flags0},X}|
     end,
   trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Dst, Base, Offset],
 		 Base, Offset, Env, Instructions);
+trans_fun([{bs_init_bits,{f,Lbl},Size,_Words,_LiveRegs,{field_flags,Flags0},X}|
+	   Instructions], Env) ->
+  Dst = mk_var(X),
+  Flags = resolve_native_endianess(Flags0),
+  Offset = mk_var(reg),
+  Base = mk_var(reg),
+  {Name, Args} =
+    case Size of
+      NoBits when is_integer(NoBits) ->
+	{{bs_init_bits, NoBits, Flags}, []};
+      BitReg ->
+	Bits = mk_var(BitReg),
+	{{bs_init_bits, Flags}, [Bits]}
+    end,
+  trans_bin_call({hipe_bs_primop,Name}, Lbl, Args, [Dst, Base, Offset],
+		 Base, Offset, Env, Instructions);
 trans_fun([{bs_bits_to_bytes, {f,Lbl}, Bits, Bytes}|Instructions], Env) ->
-  Src = mk_var(Bits), 
+  Src = trans_arg(Bits), 
   Dst = mk_var(Bytes),
   trans_op_call({hipe_bs_primop,bs_bits_to_bytes}, Lbl, [Src], [Dst],
 		Env, Instructions);
 trans_fun([{bs_bits_to_bytes2, Bits, Bytes}|Instructions], Env) ->
-  Src = mk_var(Bits), 
+  Src = trans_arg(Bits), 
   Dst = mk_var(Bytes),
   [hipe_icode:mk_primop([Dst],{hipe_bs_primop,bs_bits_to_bytes2},[Src])|
    trans_fun(Instructions,Env)];
 trans_fun([{bs_add, {f,Lbl}, [Old,New,Unit], Res}|Instructions], Env) ->
   Dst = mk_var(Res),
-  case {Old,New} of
-    {{integer, I1},{integer, I2}} ->
-      [hipe_icode:mk_move(Dst,hipe_icode:mk_const(I2*Unit+I1))|
-       trans_fun(Instructions,Env)];
-    {_,{integer, I}} ->
-      OldVar = mk_var(Old),
-      trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, 
-		    Lbl, [OldVar], [Dst],
-		    Env, Instructions);
-    {{integer, I},_} ->
-      NewVar = mk_var(New),
-      trans_op_call({hipe_bs_primop,{bs_add,I,Unit}}, 
-		    Lbl, [NewVar], [Dst],
-		    Env, Instructions);
-    _ ->
-      OldVar = mk_var(Old),
-      NewVar = mk_var(New),
-      trans_op_call({hipe_bs_primop,{bs_add,Unit}}, 
-		    Lbl, [OldVar,NewVar],
-		    [Dst], Env, Instructions)
-  end;
+  Temp = mk_var(new),
+  MultIs =
+    case {New,Unit} of
+      {{integer, NewInt}, _} ->
+	[hipe_icode:mk_move(Temp, hipe_icode:mk_const(NewInt*Unit))];
+      {_, 1} ->
+	NewVar = mk_var(New),
+	[hipe_icode:mk_move(Temp, NewVar)];
+      _ ->
+	NewVar = mk_var(New),
+	if Lbl =:= 0 ->
+	    [hipe_icode:mk_primop([Temp], '*', 
+				  [NewVar, hipe_icode:mk_const(Unit)])];
+	   true ->
+	    Succ = mk_label(new),
+	    [hipe_icode:mk_primop([Temp], '*', 
+				  [NewVar, hipe_icode:mk_const(Unit)],
+				  hipe_icode:label_name(Succ), Lbl),
+	     Succ]
+	end
+    end,
+  AddI =
+    case Old of
+      {integer,OldInt} ->
+	hipe_icode:mk_primop([Dst], '+', [Temp, hipe_icode:mk_const(OldInt)]);
+      _ ->
+	OldVar = mk_var(Old),
+	hipe_icode:mk_primop([Dst], '+', [Temp, OldVar])
+    end,
+  MultIs ++ [AddI|trans_fun(Instructions, Env)];
+	   
 %%--------------------------------------------------------------------
 %%--- Translation of floating point instructions ---
 %%--------------------------------------------------------------------
@@ -871,10 +974,7 @@ trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->
       Dst1 = mk_var(Dst),
-      Src1 = case is_var(Src) of
-	       true -> mk_var(Src);
-	       false -> trans_const(Src)
-	     end,
+      Src1 = trans_arg(Src),
       case{hipe_icode:is_fvar(Dst1),
 	   hipe_icode:is_fvar(Src1)} of
 	{true, true} -> %% fvar := fvar 
@@ -893,10 +993,7 @@ trans_fun([{fmove,Src,Dst}|Instructions], Env) ->
 trans_fun([{fconv,Eterm,FReg}|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->
-      Src = case is_var(Eterm) of
-	      true -> mk_var(Eterm);
-	      false -> trans_const(Eterm)
-	    end,
+      Src = trans_arg(Eterm),
       ContLbl = mk_label(new),
       Dst = mk_var(FReg),
       [hipe_icode:mk_primop([Dst], conv_to_float, [Src], 
@@ -941,7 +1038,7 @@ trans_fun([{arithfbif,fdiv,Lab,SrcRs,DstR}|Instructions], Env) ->
 trans_fun([{arithfbif,fnegate,Lab,[SrcR],DestR}|Instructions], Env) ->
   case get(hipe_inline_fp) of
     true ->
-      Src = mk_var(SrcR),
+      Src = trans_arg(SrcR),
       Dst = mk_var(DestR),
       [hipe_icode:mk_primop([Dst], fnegate, [Src])| 
        trans_fun(Instructions,Env)];
@@ -1004,13 +1101,27 @@ trans_fun([{put_literal,{literal,Literal},DstR}|Instructions], Env) ->
   Move = hipe_icode:mk_move(DstV, hipe_icode:mk_const(Literal)),
   [Move | trans_fun(Instructions, Env)];
 %%--------------------------------------------------------------------
+%% New test instruction added in July 2007 for R12.
+%%--------------------------------------------------------------------
+%%--- is_bitstr ---
+trans_fun([{test,is_bitstr,{f,Lbl},[Arg]}|Instructions], Env) ->
+  {Code,Env1} = trans_type_test(bitstr, Lbl, Arg, Env),
+  [Code | trans_fun(Instructions, Env1)];
+%%--------------------------------------------------------------------
+%% New stack triming instruction added in October 2007 for R12.
+%%--------------------------------------------------------------------
+trans_fun([{trim,N,NY}|Instructions], Env) ->
+  %% trim away N registers leaving NY registers
+  Moves = trans_trim(N, NY),
+  %% io:format("trim ~w ~w\n  ~w\n", [N, NY, Moves]),
+  Moves ++ trans_fun(Instructions, Env);
+%%--------------------------------------------------------------------
 %%--- ERROR HANDLING ---
 %%--------------------------------------------------------------------
 trans_fun([X|_], _) ->
   ?EXIT({'trans_fun/2',X});
 trans_fun([], _) ->
   [].
-
 
 %%--------------------------------------------------------------------
 %% trans_call and trans_enter generate correct Icode calls/tail-calls,
@@ -1068,14 +1179,17 @@ trans_bif(Arity, BifName, Lbl, Args, DestReg, Env) ->
 
 trans_op_call(Name, Lbl, Args, Dests, Env, Instructions) ->
   {Code,Env1} =
-    case Lbl of
+    trans_one_op_call(Name, Lbl, Args, Dests, Env),
+  [Code|trans_fun(Instructions, Env1)].
+
+trans_one_op_call(Name, Lbl, Args, Dests, Env) ->
+  case Lbl of
       0 -> % Op is not in a guard
 	I = hipe_icode:mk_primop(Dests, Name, Args),
 	{[I], Env};
       _ -> % op occurs in a guard - fail silently to Lbl
 	make_fallthrough_guard(Dests, Name, Args, map_label(Lbl), Env)
-    end,
-  [Code|trans_fun(Instructions, Env1)].
+    end.
 
 trans_bin_call(Name, Lbl, Args, Dests, Base, Offset, Env, Instructions) ->
   {Code,Env1} =
@@ -1131,16 +1245,7 @@ trans_bin([{bs_put_float,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
 	   Instructions], Base, Offset, Env) ->
   %% Get the source of the binary.
-  {Src, SrcInstrs} = 
-    case is_var(Source) of
-      true ->
-	{mk_var(Source),[]};
-      false ->
-	C = trans_const(Source),
-	SrcVar = mk_var(new),
-	I = hipe_icode:mk_move(SrcVar, C),
-	{SrcVar,[I]}
-    end,
+  Src = trans_arg(Source), 
   %% Get type of put_binary
   {Name, Args, Env2} =
     case Size of
@@ -1156,9 +1261,9 @@ trans_bin([{bs_put_binary,{f,Lbl},Size,Unit,{field_flags,Flags},Source}|
 	{{bs_put_binary, Unit, Flags}, [Src, Bits,Base,Offset], Env}
     end,
   %% Generate code for calling the bs-op.
-  SrcInstrs ++ trans_bin_call({hipe_bs_primop, Name}, 
-			      Lbl, Args, [Offset],
-			      Base, Offset, Env2, Instructions);
+  trans_bin_call({hipe_bs_primop, Name}, 
+		 Lbl, Args, [Offset],
+		 Base, Offset, Env2, Instructions);
 %%--- bs_put_string ---
 trans_bin([{bs_put_string,SizeInBytes,{string,String}}|Instructions], Base, 
 	  Offset, Env) ->
@@ -1208,7 +1313,7 @@ trans_bin([{bs_put_integer,{f,Lbl},Size,Unit,{field_flags,Flags0},Source}|
 			     Lbl, [Src|Args], [Offset], Base, Offset, Env2, Instructions);
 trans_bin([{bs_final2,Src,Dst}|Instructions], _Base, Offset, Env) ->
   [hipe_icode:mk_primop([mk_var(Dst)], {hipe_bs_primop, bs_final}, 
-			[mk_var(Src),Offset])
+			[trans_arg(Src),Offset])
    |trans_fun(Instructions, Env)];
 trans_bin(Instructions, _Base, _Offset, Env) ->
   trans_fun(Instructions, Env).
@@ -1273,49 +1378,48 @@ trans_test_guard(TestOp,F,Arg1,Arg2,Env) ->
 make_fallthrough_guard(DstVar,GuardOp,Args,FailLName,Env) ->
   ContL = mk_label(new),
   ContLName = hipe_icode:label_name(ContL),
-  {Guard,Env1} = make_guard(DstVar,GuardOp,Args,ContLName,FailLName,Env),
-  {[Guard,ContL],Env1}.
+  {Instrs, NewDsts} = clone_dsts(DstVar),
+  {Guard,Env1} = make_guard(NewDsts,GuardOp,Args,ContLName,FailLName,Env),
+  {[Guard,ContL]++Instrs,Env1}.
 
 %% Make sure DstVar gets initialised to a dummy value after a fail:
-make_guard(Dests,{hipe_bs_primop,Primop},Args,ContLName,FailLName,Env) ->
-  {[hipe_icode:mk_guardop(Dests,{hipe_bs_primop,Primop},Args,ContLName,FailLName)],
-   Env};
-make_guard([DstVar],GuardOp,Args,ContLName,FailLName,Env) ->
+%make_guard(Dests,{hipe_bs_primop,Primop},Args,ContLName,FailLName,Env) ->
+%  {[hipe_icode:mk_guardop(Dests,{hipe_bs_primop,Primop},Args,ContLName,FailLName)],
+%   Env};
+make_guard(Dests=[_|_],GuardOp,Args,ContLName,FailLName,Env) ->
   TmpFailL = mk_label(new),
   TmpFailLName = hipe_icode:label_name(TmpFailL),
-  GuardOpIns = hipe_icode:mk_guardop([DstVar],GuardOp,Args,
+  GuardOpIns = hipe_icode:mk_guardop(Dests,GuardOp,Args,
 				     ContLName,TmpFailLName),
   FailCode = [TmpFailL,
-	      hipe_icode:mk_move(DstVar,hipe_icode:mk_const([])),
+	      nillify_all(Dests),
 	      hipe_icode:mk_goto(FailLName)],
   {[GuardOpIns|FailCode], Env};
 %% A guard that does not return anything:
 make_guard([],GuardOp,Args,ContLName,FailLName,Env) ->
   {[hipe_icode:mk_guardop([],GuardOp,Args,ContLName,FailLName)],
-   Env};
-%% Some bs-ops have multiple retvals...
-%% XXX: For now we assume they only return regs...
-%%      regs should not be re-introduced after a fail
-make_guard(Dests,GuardOp,Args,ContLName,FailLName,Env) ->
-  {[hipe_icode:mk_guardop(Dests,GuardOp,Args,ContLName,FailLName)],
    Env}.
-  %% XXX: code for initialising all return values of a guardop
-  %%      not in use since only strange binary ops have multiple 
-  %%      retvals.
-  % RestorCatchL = mk_label(new),
-  % RestorCatchLName =  hipe_icode:label_name(RestorCatchL),
-  % GuardOpIns = hipe_icode:mk_guardop(Dests,GuardOp,Args,
-  % 				  ContLName, 
-  % 				  RestorCatchLName),
-  % Restore = [RestorCatchL,
-  % 	    hipe_icode:mk_begin_handler(Dests),
-  % 	    nillify_rest(tl(Dests)),
-  % 	    hipe_icode:mk_goto(FailLName)],
-  %  {[GuardOpIns|Restore], Env1}.
-  %
-  % nillify_rest([Var|Vars]) ->
-  %   [hipe_icode:mk_move(Var,hipe_icode:mk_const([]))|nillify_rest(Vars)];
-  % nillify_rest([]) -> [].
+
+nillify_all([Var|Vars]) ->
+  [hipe_icode:mk_move(Var,hipe_icode:mk_const([]))|nillify_all(Vars)];
+nillify_all([]) -> [].
+
+clone_dsts(Dests) ->
+  clone_dsts(Dests, [],[]).
+
+clone_dsts([Dest|Dests], Instrs, NewDests) -> 
+  {I,ND} = clone_dst(Dest),
+  clone_dsts(Dests, [I|Instrs], [ND|NewDests]);
+clone_dsts([], Instrs, NewDests) ->
+  {lists:reverse(Instrs), lists:reverse(NewDests)}.
+
+clone_dst(Dest = {reg,_}) ->  
+  New = mk_var(reg),
+  {hipe_icode:mk_move(Dest, New), New};
+clone_dst(Dest = {var,_}) ->
+  New = mk_var(new),
+  {hipe_icode:mk_move(Dest, New), New}.
+
 
 %%-----------------------------------------------------------------------
 %% trans_type_test(Test, Lbl, Arg, Env) -> { Icode, NewEnv }
@@ -1401,6 +1505,10 @@ trans_is_eq_exact_var_const(Lbl, Arg1, Arg2, Env) -> % var =:= const
 	  hipe_icode:mk_if('=:=',
 			   [NewArg1, hipe_icode:mk_const(Float)],
 			   TrueLabName, FalseLabName);
+	{literal,Literal} ->
+	  hipe_icode:mk_if('=:=',
+			   [NewArg1, hipe_icode:mk_const(Literal)],
+			   TrueLabName, FalseLabName);
 	_ ->
 	  hipe_icode:mk_type([NewArg1], Arg2, TrueLabName, FalseLabName)
       end,
@@ -1442,6 +1550,10 @@ trans_is_ne_exact_var_const(Lbl, Arg1, Arg2, Env) -> % var =/= const
 	{float,Float} ->
 	  hipe_icode:mk_if('=/=',
 			   [NewArg1, hipe_icode:mk_const(Float)],
+			   TrueLabName, FalseLabName);
+	{literal,Literal} ->
+	  hipe_icode:mk_if('=/=',
+			   [NewArg1, hipe_icode:mk_const(Literal)],
 			   TrueLabName, FalseLabName);
 	_ ->
 	  hipe_icode:mk_type([NewArg1], Arg2, FalseLabName, TrueLabName)
@@ -1506,6 +1618,34 @@ trans_is_ne(Lbl, Arg1, Arg2, Env) ->
 	  {[I,Never], Env}
       end
   end.
+
+
+%%-----------------------------------------------------------------------
+%% Translates an allocate instruction into a sequence of initializations
+%%-----------------------------------------------------------------------
+
+trans_allocate(N) ->
+  trans_allocate(N, []).
+
+trans_allocate(0, Acc) ->
+  Acc;
+trans_allocate(N, Acc) ->
+  Move = hipe_icode:mk_move(mk_var({y,N-1}), 
+			    hipe_icode:mk_const('dummy_value')),
+  trans_allocate(N-1, [Move|Acc]).
+
+%%-----------------------------------------------------------------------
+%% Translates a trim instruction into a sequence of moves
+%%-----------------------------------------------------------------------
+
+trans_trim(N, NY) ->
+  lists:reverse(trans_trim(N, NY, 0, [])).
+
+trans_trim(_, 0, _, Acc) ->
+  Acc;
+trans_trim(N, NY, Y, Acc) ->
+  Move = hipe_icode:mk_move(mk_var({y,Y}), mk_var({y,N})),
+  trans_trim(N+1, NY-1, Y+1, [Move|Acc]).
 
 %%-----------------------------------------------------------------------
 %%-----------------------------------------------------------------------
@@ -1732,7 +1872,7 @@ trans_case_list([]) ->
   [].
 
 %%-----------------------------------------------------------------------
-%% Makes an Icode argument from a BEAM argument..
+%% Makes an Icode argument from a BEAM argument.
 %%-----------------------------------------------------------------------
 
 trans_arg(Arg) ->
@@ -1757,6 +1897,8 @@ trans_const(Const) ->
       hipe_icode:mk_const(Float);
     {string,String} ->
       hipe_icode:mk_const(String);
+    {literal,Literal} ->
+      hipe_icode:mk_const(Literal);
     nil ->
       hipe_icode:mk_const([]);
     Int when is_integer(Int) ->
@@ -1775,7 +1917,6 @@ trans_const(Const) ->
 
 mk_var({r,0}) ->
   hipe_icode:mk_var(0);
-
 mk_var({x,R}) when is_integer(R) ->
   V = 5*R,
   hipe_gensym:update_vrange(icode,V),
@@ -1843,6 +1984,8 @@ type(nil) ->
 type({integer,X}) when is_integer(X) ->
   #beam_const{value=X};
 type({float,X}) when is_float(X) ->
+  #beam_const{value=X};
+type({literal,X}) ->
   #beam_const{value=X}.
 
 %%-----------------------------------------------------------------------
@@ -1862,6 +2005,8 @@ is_var(nil) ->
 is_var({integer,N}) when is_integer(N) ->
   false;
 is_var({float,F}) when is_float(F) ->
+  false;
+is_var({literal,_Literal}) ->
   false.
 
 %%-----------------------------------------------------------------------

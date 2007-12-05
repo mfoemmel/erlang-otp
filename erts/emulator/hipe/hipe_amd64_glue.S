@@ -302,7 +302,6 @@ nbif_fail:
 	movl	$HIPE_MODE_SWITCH_RES_THROW, %eax
 	jmp	.flush_exit
 	
-#if defined(HEAP_FRAG_ELIM_TEST)
 	.global	nbif_0_gc_after_bif
 	.global	nbif_1_gc_after_bif
 	.global	nbif_2_gc_after_bif
@@ -333,7 +332,6 @@ nbif_3_gc_after_bif:
 	addq	$(16-8), %rsp
 	movl	$0, P_NARITY(P)		# Note: narity is a 32-bit field
 	ret
-#endif
 
 /*
  * We end up here when a BIF called from native signals an

@@ -465,7 +465,7 @@ encode(Code, Options) ->
   ExportMap = build_export_map(Code, 0, []),
   {AccCode,Relocs} = encode_mfas(Code, 0, [], [], Options),
   CodeBinary = list_to_binary(lists:reverse(AccCode)),
-  ?ASSERT(CodeSize =:= size(CodeBinary)),
+  ?ASSERT(CodeSize =:= byte_size(CodeBinary)),
   CombinedLabelMap = combine_label_maps(Code, 0, gb_trees:empty()),
   {CodeSize,CodeBinary,Relocs,CombinedLabelMap,ExportMap}.
 
@@ -525,7 +525,7 @@ encode_insns([I|Insns], Address, FunAddress, LabelMap, Relocs, AccCode, Options)
       {Bytes, NewRelocs} = ?HIPE_X86_ENCODE:insn_encode(Op, Arg, Address),
       print_insn(Address, Bytes, I, Options),
       Segment = list_to_binary(Bytes),
-      Size = size(Segment),
+      Size = byte_size(Segment),
       NewAccCode = [Segment|AccCode],
       encode_insns(Insns, Address+Size, FunAddress, LabelMap, NewRelocs++Relocs, NewAccCode, Options)
   end;

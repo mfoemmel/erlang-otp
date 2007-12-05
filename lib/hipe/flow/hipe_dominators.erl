@@ -260,7 +260,7 @@ lookup(Field, WD = #workDataCell{}) ->
     best     -> WD#workDataCell.best;
     samedom  -> WD#workDataCell.samedom;
     bucket   -> WD#workDataCell.bucket;
-    _Other   -> erlang:fault({?MODULE, lookup, 2})
+    _Other   -> erlang:error({?MODULE, lookup, 2})
   end;
 lookup(N, Table) when is_integer(N) ->
   case gb_trees:lookup(N, Table) of

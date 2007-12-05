@@ -11,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -33,7 +33,7 @@
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
 		    t_binary/0, t_bool/0, t_cons/0, t_constant/0, 
-		    t_pos_improper_list/0,
+		    t_maybe_improper_list/0,
 		    t_float/0, t_from_term/1, t_fun/0, t_fun/1, t_fun/2,
 		    t_fun_args/1, t_fun_arity/1,
 		    t_fun_range/1,t_inf/2, t_inf_lists/2, 
@@ -41,7 +41,7 @@
 		    t_integer/1, t_is_atom/1, t_is_atom/2, 
 		    t_is_any/1, t_is_binary/1,
 		    t_is_bool/1, t_is_cons/1, t_is_constant/1,
-		    t_is_pos_improper_list/1, t_is_equal/2, t_is_float/1,
+		    t_is_maybe_improper_list/1, t_is_equal/2, t_is_float/1,
 		    t_is_fun/1, t_is_integer/1, t_is_number/1,
 		    t_is_list/1, t_is_nil/1, t_is_port/1, t_is_pid/1,
 		    t_is_ref/1, t_is_subtype/2, 
@@ -213,7 +213,7 @@ analyze_insn(I, Info) ->
       %% Just an assert
       case defines(I) of
 	[] -> Info;
-	_ -> erlang:fault({"Instruction with destination not analyzed", I})
+	_ -> erlang:error({"Instruction with destination not analyzed", I})
       end
   end.
 
@@ -708,15 +708,13 @@ test_type0(function, T) ->
 test_type0(boolean, T) ->
   t_is_bool(T);
 test_type0(list, T) ->
-  t_is_pos_improper_list(T);
+  t_is_maybe_improper_list(T);
 test_type0(cons, T) ->
   t_is_cons(T);
 test_type0(nil, T) ->
   t_is_nil(T);
 test_type0(constant, T) ->
-  t_is_constant(T);
-test_type0(T, _) ->
-  erlang:fault({unknown_typetest, T}).
+  t_is_constant(T).
 
 
 true_branch_info(integer) ->
@@ -732,7 +730,7 @@ true_branch_info(atom) ->
 true_branch_info({atom, A}) ->
   t_atom(A);
 true_branch_info(list) ->
-  t_pos_improper_list();
+  t_maybe_improper_list();
 true_branch_info(tuple) ->
   t_tuple();
 true_branch_info({tuple, N}) ->
@@ -756,7 +754,7 @@ true_branch_info(boolean) ->
 true_branch_info(constant) ->
   t_constant();
 true_branch_info(T) ->
-  erlang:fault({unknown_typetest,T}).
+  erlang:error({?MODULE,unknown_typetest,T}).
 
 
 %% _________________________________________________________________
@@ -1236,9 +1234,6 @@ state__remove_unreachable(State = #state{cfg=Cfg}) ->
 state__succ(#state{succmap=SM}, Label) ->
   hipe_icode_cfg:succ(SM, Label).
 
-state__pred(#state{predmap=PM}, Label) ->
-  hipe_icode_cfg:pred(PM, Label).
-
 state__bb(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
   
@@ -1259,10 +1254,7 @@ state__info(#state{info_map=IM}, Label) ->
   end.
 
 state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info) ->
-  Pred = state__pred(S, Label),
-  RawLiveIn = [hipe_icode_ssa:ssa_liveness__livein(Liveness, Label, X) ||
-		X <- Pred],
-  LiveIn = ordsets:from_list(lists:flatten(RawLiveIn)),
+  LiveIn = hipe_icode_ssa:ssa_liveness__livein(Liveness, Label),
   case gb_trees:lookup({Label, in}, IM) of
     none -> 
       OldInfo = gb_trees:empty(),
@@ -1865,14 +1857,14 @@ call_warning(Fun, IcodeFun, Args) ->
 		case erl_bif_types:is_known(M, F, A) of
 		  true -> "built-in ";
 		  false ->
-		    erlang:fault({assert_failed, {not_known, Fun}})
+		    erlang:error({assert_failed, {not_known, Fun}})
 		end;
 	      false ->
 		""
 	    end,
 	  W = io_lib:format("Call to ~sfunction ~w with signature ~s will "
 			    "fail since the arguments are of type ~s!\n",
-			    [Bif, Fun, t_to_string(Signature),
+			    [Bif, Fun, format_sig(Signature),
 			     pp_args(Args)]),
 	  {?WARN_FAILING_CALL, {IcodeFun, W}}
       end;
@@ -1880,6 +1872,12 @@ call_warning(Fun, IcodeFun, Args) ->
       W = "Unsafe BEAM code! Please recompile with a newer BEAM compiler.\n",
       {?WARN_OLD_BEAM, {IcodeFun, W}}
   end.
+
+format_sig(Type) ->
+  "fun(" ++ Sig = lists:flatten(t_to_string(Type)),
+  ")" ++ RevSig = lists:reverse(Sig),
+  lists:reverse(RevSig).
+
 
 %% _________________________________________________________________
 %%

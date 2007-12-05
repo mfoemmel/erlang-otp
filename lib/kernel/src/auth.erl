@@ -43,6 +43,13 @@
 
 -include("../include/file.hrl").
 
+
+%%----------------------------------------------------------------------
+%% Contract specifications 
+%%----------------------------------------------------------------------
+
+-type(node() :: atom()).
+
 %%----------------------------------------------------------------------
 %% Exported functions
 %%----------------------------------------------------------------------
@@ -52,46 +59,69 @@ start_link() ->
 
 %%--Deprecated interface------------------------------------------------
 
+-spec(is_auth/1 :: (Node :: node()) -> 'yes' | 'no').
+
 is_auth(Node) ->
     case net_adm:ping(Node) of
 	pong -> yes;
 	pang -> no
     end.
 
+-spec(cookie/0 :: () -> atom()).
+
 cookie() ->
     get_cookie().
+
+-spec(cookie/1 :: (Cookies :: [atom(),...] | atom()) -> 'true').
 
 cookie([Cookie]) ->
     set_cookie(Cookie);
 cookie(Cookie) ->
     set_cookie(Cookie).
 
+-spec(node_cookie/1 :: (Cookies :: [atom(),...]) -> 'yes' | 'no').
+
 node_cookie([Node, Cookie]) ->
     node_cookie(Node, Cookie).
+
+-spec(node_cookie/2 :: (Node :: node(), Cookie :: atom()) -> 'yes' | 'no').
+
 node_cookie(Node, Cookie) ->
     set_cookie(Node, Cookie),
     is_auth(Node).
 
 %%--"New" interface-----------------------------------------------------
 
+-spec(get_cookie/0 :: () -> atom()).
+
 get_cookie() ->
     get_cookie(node()).
+
+-spec(get_cookie/1 :: (Node :: node()) -> atom()).
 
 get_cookie(_Node) when node() =:= nonode@nohost ->
     nocookie;
 get_cookie(Node) ->
     gen_server:call(auth, {get_cookie, Node}).
 
+-spec(set_cookie/1 :: (Cookie :: atom()) -> 'true').
+
 set_cookie(Cookie) ->
     set_cookie(node(), Cookie).
 
-set_cookie(_Node, _Cookie) when node()=:=nonode@nohost ->
-    erlang:fault(distribution_not_started);
+-spec(set_cookie/2 :: (Node :: node(), Cookie :: atom()) -> 'true').
+
+set_cookie(_Node, _Cookie) when node() =:= nonode@nohost ->
+    erlang:error(distribution_not_started);
 set_cookie(Node, Cookie) ->
     gen_server:call(auth, {set_cookie, Node, Cookie}).
 
+-spec(sync_cookie/0 :: () -> any()).
+
 sync_cookie() ->
     gen_server:call(auth, sync_cookie).
+
+-spec(print/3 :: (Node :: node(), Format :: string(), Args :: [_]) -> 'ok').
 
 print(Node,Format,Args) ->
     (catch gen_server:cast({auth,Node},{print,Format,Args})).
@@ -226,7 +256,7 @@ init_cookie() ->
 			{error, Error} ->
 			    error_logger:error_msg(Error, []),
 			    %% Is this really this serious?
-			    erlang:fault(Error);
+			    erlang:error(Error);
 			{ok, Co}  ->
 			    #state{our_cookie = list_to_atom(Co),
 				   other_cookies = ets:new(

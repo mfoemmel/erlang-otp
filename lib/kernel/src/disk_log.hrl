@@ -43,82 +43,103 @@
 -define(OPENED, <<6,7,8,9>>).
 -define(CLOSED, <<99,88,77,11>>).
 
+%%------------------------------------------------------------------------
+%% Types -- alphabetically
+%%------------------------------------------------------------------------
+
+-type(dlog_format()      :: 'external' | 'internal').
+-type(dlog_format_type() :: 'halt_ext' | 'halt_int' | 'wrap_ext' | 'wrap_int').
+-type(dlog_head()        :: 'none' | {'ok', binary()} | mfa()).
+-type(dlog_mode()        :: 'read_only' | 'read_write' ).
+-type(dlog_options()     :: [{atom(), any()}]).
+-type(dlog_repair()      :: 'truncate' | bool()).
+-type(dlog_size()        :: 'infinity' | pos_integer()
+                          | {pos_integer(), pos_integer()}).
+-type(dlog_status()      :: 'ok' | {'blocked', 'false' | [_]}).%QueueLogRecords
+-type(dlog_type()        :: 'halt' | 'wrap').
+
+-type(node() :: atom()).
+
+%%------------------------------------------------------------------------
+%% Records
+%%------------------------------------------------------------------------
+
 %% record of args for open
 -record(arg, {name = 0,
 	      version = undefined,
-	      file = none,
-	      repair = true,
-	      size = infinity,
-	      type = halt,
-	      distributed = false,
-	      format = internal,
-	      linkto = self(),
+	      file = none         :: 'none' | string(),
+	      repair = true       :: dlog_repair(),
+	      size = infinity     :: dlog_size(),
+	      type = halt         :: dlog_type(),
+	      distributed = false :: 'false' | {'true', [node()]},
+	      format = internal   :: dlog_format(),
+	      linkto = self()     :: 'none' | pid(),
 	      head = none,
-	      mode = read_write,
-	      notify = false,
-	      options}).
+	      mode = read_write   :: dlog_mode(),
+	      notify = false      :: bool(),
+	      options = []        :: dlog_options()}).
 
--record(log,
-	{status = ok,         %%  ok | {blocked, QueueLogRecords}
-	 name,                %%  the key leading to this structure
-	 blocked_by = none,   %%  pid of blocker | none
-	 users = 0,           %%  [pid], non-linked users
-	 filename,            %%  real name of the file
-	 owners = [],         %%  [{pid, notify}]
-	 type = halt,         %%  halt | wrap
-	 format = internal,   %%  internal | external
-	 format_type,         %%  halt_int | wrap_int | halt_ext | wrap_ext
-	 head = none,         %%  none | {head, H} | {M,F,A}
-	                      %%  called when wraplog wraps
-	 mode,                %%  read_write | read_only
-	 size,                %%  value of open/1 option 'size' (never changed)
-	 extra,               %%  record 'halt' for halt logs,
-                              %%  record 'handle' for wrap logs.
-	 version}             %%  undefined, integer() if wrap log file
+-record(cache,                %% Cache for logged terms (per file descriptor).
+        {fd,				%% File descriptor.
+         sz = 0   :: non_neg_integer(),	%% Number of bytes in the cache.
+         c = []   :: binary() | iolist()}%% The cache.
+        ).
+
+-record(halt,				%% For a halt log.
+	{fdc      :: #cache{},		%% A cache record.
+	 curB     :: non_neg_integer(),	%% Number of bytes on the file.
+	 size     :: dlog_size()}
 	).
 
--record(handle,               %% For a wrap log.
-	{filename,            %% Same as log.filename
-	 maxB,                %% integer(). Max size of the files.
-	 maxF,                %% MaxF = integer() | 
-                              %% {NewMaxF, OldMaxF} = {integer(), integer()}.
-                              %% MaxF. Maximum number of files.
-                              %% {NewMaxF, OldMaxF}. This form is used when the
-	                      %% number of wrap logs are decreased. The files 
-                              %% are not removed when the size is changed but 
-	                      %% next time the files are to be used, i.e next 
-	                      %% time the wrap log has filled the 
-                              %% Dir/Name.NewMaxF file.
-	 curB,                %% integer(). Number of bytes on current file.
-	 curF,                %% integer(). Current file number.
-	 cur_fdc,             %% Current file descriptor. A cache record.
-	 cur_name,            %% Current file name. For error reports.
-	 cur_cnt,             %% integer(). Number of items on current file,
-	                      %% header inclusive.
-	 acc_cnt,             %% integer(). acc_cnt+cur_cnt is number of items
-	                      %% written since the log was opened.
-	 firstPos,            %% Start position for first item (after header).
-	 noFull,              %% Number of overflows since last use of info/1
-	                      %% on this log, or since log was opened if info/1
-	                      %% has not yet been used on this log.
-	 accFull}             %% noFull+accFull is number of overflows since
-	                      %% the log was opened.
+-record(handle,				%% For a wrap log.
+	{filename :: string(),		%% Same as log.filename
+	 maxB     :: pos_integer(),	%% Max size of the files.
+	 maxF     :: pos_integer() | {pos_integer(),pos_integer()},
+				%% When pos_integer(), maximum number of files.
+				%% The form {NewMaxF, OldMaxF} is used when the
+				%% number of wrap logs are decreased. The files
+				%% are not removed when the size is changed but
+				%% next time the files are to be used, i.e next
+				%% time the wrap log has filled the 
+				%% Dir/Name.NewMaxF file.
+	 curB     :: non_neg_integer(),	%% Number of bytes on current file.
+	 curF     :: integer(), 	%% Current file number.
+	 cur_fdc  :: #cache{}, 	 	%% Current file descriptor.
+	 cur_name :: string(),		%% Current file name for error reports.
+	 cur_cnt  :: non_neg_integer(),	%% Number of items on current file,
+					%% header inclusive.
+	 acc_cnt  :: non_neg_integer(),	%% acc_cnt+cur_cnt is number of items
+					%% written since the log was opened.
+	 firstPos :: non_neg_integer(),	%% Start position for first item
+	 				%% (after header).
+	 noFull   :: non_neg_integer(),	%% Number of overflows since last
+	 				%% use of info/1 on this log, or
+					%% since log was opened if info/1
+					%% has not yet been used on this log.
+	 accFull  :: non_neg_integer()}	%% noFull+accFull is number of
+					%% oveflows since the log was opened.
        ).
 
--record(halt,                 %% For a halt log.
-	{fdc,                 %% A cache record.
-	 curB,                %% integer(). Number of bytes on the file.
-	 size}
+-record(log,
+	{status = ok       :: dlog_status(),
+	 name,                %%  the key leading to this structure
+	 blocked_by = none :: 'none' | pid(),	   %% pid of blocker
+	 users = 0         :: non_neg_integer(),   %% non-linked users
+	 filename          :: string(),		   %% real name of the file
+	 owners = []       :: [{pid(), bool()}],   %% [{pid, notify}]
+	 type = halt	   :: dlog_type(),
+	 format = internal :: dlog_format(),
+	 format_type	   :: dlog_format_type(),
+	 head = none,         %%  none | {head, H} | {M,F,A}
+	                      %%  called when wraplog wraps
+	 mode		   :: dlog_mode(),
+	 size,                %% value of open/1 option 'size' (never changed)
+	 extra             :: #halt{} | #handle{}, %% type of the log
+	 version           :: integer()}	   %% if wrap log file
 	).
 
 -record(continuation,         %% Chunk continuation.
-	{pid = self(),
-	 pos,
-	 b}
+	{pid = self() :: pid(),
+	 pos          :: non_neg_integer() | {integer(), non_neg_integer()},
+	 b            :: binary() | [] | pos_integer()}
 	).
-
--record(cache,                %% Cache for logged terms (per file descriptor).
-        {fd,                  %% File descriptor.
-         sz = 0,              %% integer(). Number of bytes in the cache.
-         c = []}              %% iolist(). The cache.
-        ).

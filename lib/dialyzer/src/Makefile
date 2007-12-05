@@ -70,7 +70,7 @@ MODULES =  \
 
 EXTRA_FILES=  ../plt/dialyzer_init_plt	## automatically generated
 
-HRL_FILES= dialyzer.hrl
+HRL_FILES= dialyzer.hrl dialyzer_callgraph.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 TARGET_FILES= $(INSTALL_FILES)
@@ -134,9 +134,11 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 $(EBIN)/dialyzer.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis.beam: dialyzer.hrl
 $(EBIN)/dialyzer_analysis_callgraph.beam: dialyzer.hrl
+$(EBIN)/dialyzer_callgraph.beam: dialyzer_callgraph.hrl
 $(EBIN)/dialyzer_cl.beam: dialyzer.hrl
 $(EBIN)/dialyzer_cl_parse.beam: dialyzer.hrl
-$(EBIN)/dialyzer_dataflow.beam: dialyzer.hrl
+$(EBIN)/dialyzer_contracts.beam: dialyzer.hrl
+$(EBIN)/dialyzer_dataflow.beam: dialyzer.hrl dialyzer_callgraph.hrl
 $(EBIN)/dialyzer_gui.beam: dialyzer.hrl
 $(EBIN)/dialyzer_icode.beam: $(HIPE_ICODE_DIR)/hipe_icode.hrl dialyzer.hrl
 $(EBIN)/dialyzer_options.beam: dialyzer.hrl

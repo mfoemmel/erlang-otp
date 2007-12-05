@@ -12,7 +12,7 @@ IMPORTS
 	-- Certificate (parts of)
 	Version, 
 	CertificateSerialNumber,
-	AlgorithmIdentifier,
+	--AlgorithmIdentifier,
 	Validity,
 	UniqueIdentifier,
 
@@ -104,10 +104,10 @@ IMPORTS
 	sha1WithRSAEncryption,
 	rsaEncryption, RSAPublicKey,
 	dhpublicnumber, DomainParameters, DHPublicKey,
-	id-keyExchangeAlgorithm, KEA-Parms-Id, KEA-PublicKey,
+	id-keyExchangeAlgorithm, KEA-Parms-Id, --KEA-PublicKey,
 	ecdsa-with-SHA1, 
 	prime-field, Prime-p, 
-	characteristic-two-field, Characteristic-two, 
+	characteristic-two-field, --Characteristic-two, 
 	gnBasis, 
 	tpBasis, Trinomial,
 	ppBasis, Pentanomial,
@@ -120,12 +120,12 @@ IMPORTS
 -- Certificate
 --
 
-Certificate  ::=  SEQUENCE  {
+SSLCertificate  ::=  SEQUENCE  {
      tbsCertificate       TBSCertificate,
      signatureAlgorithm   SignatureAlgorithm,
      signature            BIT STRING  }
 
-TBSCertificate  ::=  SEQUENCE  {
+SSLTBSCertificate  ::=  SEQUENCE  {
      version         [0]  Version DEFAULT v1,
      serialNumber         CertificateSerialNumber,
      signature            SignatureAlgorithm,
@@ -151,7 +151,7 @@ ATTRIBUTE-TYPE-AND-VALUE-CLASS ::= CLASS {
 	ID &id
 	TYPE &Type }
 	
-AttributeTypeAndValue ::=  SEQUENCE {
+SSLAttributeTypeAndValue ::=  SEQUENCE {
         type    ATTRIBUTE-TYPE-AND-VALUE-CLASS.&id
 		({SupportedAttributeTypeAndValues}),
         value   ATTRIBUTE-TYPE-AND-VALUE-CLASS.&Type
@@ -235,7 +235,7 @@ emailAddress ATTRIBUTE-TYPE-AND-VALUE-CLASS ::= {
 -- Signature and Public Key Algorithms
 --
 
-SubjectPublicKeyInfo ::=  SEQUENCE  {
+SSLSubjectPublicKeyInfo ::=  SEQUENCE  {
      algorithm SEQUENCE {
                algo     PUBLIC-KEY-ALGORITHM-CLASS.&id
 			     ({SupportedPublicKeyAlgorithms}), 
@@ -248,7 +248,7 @@ SubjectPublicKeyInfo ::=  SEQUENCE  {
 
 -- The following is needed for conversion of SubjectPublicKeyInfo.
 
-SubjectPublicKeyInfo-Any  ::=  SEQUENCE  {
+SSLSubjectPublicKeyInfo-Any  ::=  SEQUENCE  {
      algorithm            PublicKeyAlgorithm,
      subjectPublicKey     ANY }
 
@@ -383,7 +383,7 @@ SupportedPublicKeyAlgorithms PUBLIC-KEY-ALGORITHM-CLASS ::= {
 	ID &id
 	TYPE &Type }
 
-   FieldID ::= SEQUENCE {                    -- Finite field
+   SSLFieldID ::= SEQUENCE {                    -- Finite field
       fieldType   FIELD-ID-CLASS.&id({SupportedFieldIds}),
       parameters  FIELD-ID-CLASS.&Type({SupportedFieldIds}{@fieldType}) }
 
@@ -401,7 +401,7 @@ SupportedPublicKeyAlgorithms PUBLIC-KEY-ALGORITHM-CLASS ::= {
 	ID &id
 	TYPE &Type }
 
-   Characteristic-two ::= SEQUENCE {                    -- Finite field
+   SSLCharacteristic-two ::= SEQUENCE {                    -- Finite field
       m           INTEGER,                   -- Field size 2^m
       basis       CHARACTERISTIC-TWO-CLASS.&id({SupportedCharacteristicTwos}),
       parameters  CHARACTERISTIC-TWO-CLASS.&Type
@@ -444,11 +444,11 @@ EXTENSION-ATTRIBUTE-CLASS ::= CLASS {
 	ID &id
 	TYPE &Type }
 	
-ExtensionAttributes ::= SET SIZE (1..MAX) OF ExtensionAttribute
+SSLExtensionAttributes ::= SET SIZE (1..MAX) OF ExtensionAttribute
 
 -- XXX Below we should have extension-attribute-type and extension-
 -- attribute-value but Erlang ASN1 does not like it. 
-ExtensionAttribute ::=  SEQUENCE {
+SSLExtensionAttribute ::=  SEQUENCE {
    extensionAttributeType [0] IMPLICIT EXTENSION-ATTRIBUTE-CLASS.&id
 		({SupportedExtensionAttributes}),
    extensionAttributeValue [1] EXTENSION-ATTRIBUTE-CLASS.&Type
@@ -566,7 +566,7 @@ x400-teletex-domain-defined-attributes  EXTENSION-ATTRIBUTE-CLASS ::= {
 
 -- Extensions
 
-Extensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
+SSLExtensions  ::=  SEQUENCE SIZE (1..MAX) OF Extension
 
 EXTENSION-CLASS ::= CLASS {
 	&id OBJECT IDENTIFIER UNIQUE,
@@ -575,7 +575,7 @@ EXTENSION-CLASS ::= CLASS {
 	ID &id
 	[TYPE &Type] }
 
-Extension ::=  SEQUENCE {
+SSLExtension ::=  SEQUENCE {
         extnID	  EXTENSION-CLASS.&id({SupportedExtensions}),
 	critical  BOOLEAN DEFAULT FALSE,
         extnValue EXTENSION-CLASS.&Type({SupportedExtensions}{@extnID}) }

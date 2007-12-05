@@ -796,6 +796,8 @@ Optional Features:
   --disable-hipe          disable hipe support
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno
   --disable-erlang-mandir do not install Erlang man pages in a private directory
+  --enable-darwin-universal    build universal binaries on darwin i386
+  --enable-darwin-64bit    build 64bit binaries on darwin
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -1654,6 +1656,57 @@ else
   erl_mandir='$(ERLANG_ILIBDIR)/man'
 fi;
 
+
+# Check whether --enable-darwin-universal or --disable-darwin-universal was given.
+if test "${enable_darwin_universal+set}" = set; then
+  enableval="$enable_darwin_universal"
+   case "$enableval" in
+    no) enable_darwin_universal=no ;;
+    *)  enable_darwin_univeral=yes ;;
+  esac
+
+else
+  enable_darwin_universal=no
+fi;
+
+
+# Check whether --enable-darwin-64bit or --disable-darwin-64bit was given.
+if test "${enable_darwin_64bit+set}" = set; then
+  enableval="$enable_darwin_64bit"
+   case "$enableval" in
+    no) enable_darwin_64bit=no ;;
+    *)  enable_darwin_64bit=yes ;;
+  esac
+
+else
+  enable_darwin_64bit=no
+fi;
+
+TMPSYS=`uname -s`-`uname -m`
+if test X${enable_darwin_universal} = Xyes; then
+	if test X${enable_darwin_64bit} = Xyes; then
+		{ { echo "$as_me:$LINENO: error: --enable-darwin-universal and --enable-darwin-64bit mutually exclusive" >&5
+echo "$as_me: error: --enable-darwin-universal and --enable-darwin-64bit mutually exclusive" >&2;}
+   { (exit 1); exit 1; }; }
+	fi
+	enable_hipe=no
+	CFLAGS="-arch i386 -arch ppc $CFLAGS"
+	export CFLAGS
+	LDFLAGS="-arch i386 -arch ppc $LDFLAGS"
+	export LDFLAGS
+fi
+if test X${enable_darwin_64bit} = Xyes; then
+	if test X"$TMPSYS" '!=' X"Darwin-i386"; then
+		{ { echo "$as_me:$LINENO: error: --enable-darwin-64bit only supported on x86 host" >&5
+echo "$as_me: error: --enable-darwin-64bit only supported on x86 host" >&2;}
+   { (exit 1); exit 1; }; }
+	fi
+	enable_hipe=no
+	CFLAGS="-m64"
+	export CFLAGS
+	LDFLAGS="-m64 $LDFLAGS"
+	export LDFLAGS
+fi
 
 export ERL_TOP
 

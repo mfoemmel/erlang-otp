@@ -142,7 +142,7 @@ init_file(Raw,FileName, Name,Buffer_Pid) ->
 
 open_file(FileName, _Shell) ->
 %%    L = "pman_trace." ++ Shell,
-    case file:open(FileName, read_write) of
+    case file:open(FileName, [read,write]) of
 	{error, _} -> 
 	    Str = "ERROR: Could not create_file\n" ++ FileName,
 	    {false,Str};

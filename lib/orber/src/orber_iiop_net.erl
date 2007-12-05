@@ -159,23 +159,39 @@ terminate(_Reason, _State) ->
 %%-----------------------------------------------------------------
 %% Func: parse_options/2
 %%-----------------------------------------------------------------
-get_options(normal) ->
+get_options(normal, _Options) ->
     [];
-get_options(ssl) ->
-    [{verify, orber:ssl_server_verify()},
-     {depth, orber:ssl_server_depth()} |
-     ssl_server_extra_options([{certfile, orber:ssl_server_certfile()},
-			       {cacertfile, orber:ssl_server_cacertfile()},
-			       {password, orber:ssl_server_password()},
-			       {keyfile, orber:ssl_server_keyfile()},
-			       {ciphers, orber:ssl_client_ciphers()},
-			       {cachetimeout, orber:ssl_server_cachetimeout()}], [])].
+get_options(ssl, Options) ->
+    Verify = orber_tb:keysearch(ssl_server_verify, Options, 
+				orber_env:ssl_server_verify()),
+    Depth = orber_tb:keysearch(ssl_server_depth, Options, 
+			       orber_env:ssl_server_depth()),
+    Cert = orber_tb:keysearch(ssl_server_certfile, Options, 
+			      orber_env:ssl_server_certfile()),
+    CaCert = orber_tb:keysearch(ssl_server_cacertfile, Options, 
+				orber_env:ssl_server_cacertfile()),
+    Pwd = orber_tb:keysearch(ssl_server_password, Options, 
+			     orber_env:ssl_server_password()),
+    Key = orber_tb:keysearch(ssl_server_keyfile, Options, 
+			       orber_env:ssl_server_keyfile()),
+    Ciphers = orber_tb:keysearch(ssl_server_ciphers, Options, 
+				 orber_env:ssl_server_ciphers()),
+    Timeout = orber_tb:keysearch(ssl_server_cachetimeout, Options, 
+				 orber_env:ssl_server_cachetimeout()),
+    [{verify, Verify},
+     {depth, Depth} |
+     ssl_server_extra_options([{certfile, Cert},
+			       {cacertfile, CaCert},
+			       {password, Pwd},
+			       {keyfile, Key},
+			       {ciphers, Ciphers},
+			       {cachetimeout, Timeout}], [])].
 
 %%-----------------------------------------------------------------
 %% Func: parse_options/2
 %%-----------------------------------------------------------------
 parse_options([{port, Type, Port} | Rest], State) ->
-    Options = get_options(Type),
+    Options = get_options(Type, []),
     Options2 = case orber_env:ip_address_variable_defined() of
 		   false ->
 		       Options;
@@ -203,6 +219,26 @@ ssl_server_extra_options([{_Type, infinity}|T], Acc) ->
 ssl_server_extra_options([{Type, Value}|T], Acc) ->
     ssl_server_extra_options(T, [{Type, Value}|Acc]).
 
+filter_options([], Acc) ->
+    Acc;
+filter_options([{verify, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{depth, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{certfile, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{cacertfile, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{password, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{keyfile, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{ciphers, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([{cachetimeout, _}|T], Acc) ->
+    filter_options(T, Acc);
+filter_options([H|T], Acc) ->
+    filter_options(T, [H|Acc]).
 
 %%-----------------------------------------------------------------
 %% Func: handle_call/3
@@ -226,12 +262,13 @@ handle_call({remove, Ref}, _From, State) ->
 	_ ->
 	    {reply, ok, State}
     end;
-handle_call({add, IP, Type, Port, ProxyOptions}, _From, State) ->
+handle_call({add, IP, Type, Port, AllOptions}, _From, State) ->
     Family = orber_env:ip_version(),
     case inet:getaddr(IP, Family) of
 	{ok, IPTuple} ->
-	    Options = [{ip, IPTuple}|get_options(Type)],
+	    Options = [{ip, IPTuple}|get_options(Type, AllOptions)],
 	    Ref = make_ref(),
+	    ProxyOptions = filter_options(AllOptions, []),
 	    case orber_socket:listen(Type, Port, Options, false) of
 		{ok, Listen, NewPort} ->
 		    {ok, Pid} = orber_iiop_socketsup:start_accept(Type, Listen, Ref,
@@ -386,12 +423,18 @@ handle_info(_, State) ->
 new_listen_socket(normal, ListenFd, _Port, _Options) ->
     ListenFd;
 new_listen_socket(ssl, ListenFd, Port, Options) ->
-    case is_process_alive(ssl:pid(ListenFd)) of
-	true ->
+    Generation = orber_env:ssl_generation(),
+    if
+	Generation > 2 ->
 	    ListenFd;
-	_ ->
-	    {ok, Listen, _NP} = orber_socket:listen(ssl, Port, Options, true),
-	    Listen
+	true ->
+	    case is_process_alive(ssl:pid(ListenFd)) of
+		true ->
+		    ListenFd;
+		_ ->
+		    {ok, Listen, _NP} = orber_socket:listen(ssl, Port, Options, true),
+		    Listen
+	    end
     end.
 
 from_list(List) ->

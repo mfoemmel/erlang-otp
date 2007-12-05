@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpa_mpd).
 
@@ -21,6 +23,7 @@
 	 discarded_pdu/1,
 	 process_packet/6,
 	 generate_response_msg/5, generate_msg/5, 
+	 process_taddrs/1, 
 	 generate_req_id/0]).
 
 -define(SNMP_USE_V3, true).
@@ -655,28 +658,94 @@ generate_msg('version-3', NoteStore, Pdu,
 				   ContextEngineID, ContextName)}
     end.
 
+
+process_taddrs(Dests) ->
+    ?vtrace("process_taddrs -> entry with"
+	    "~n   Dests: ~p", [Dests]),
+    process_taddrs(Dests, []).
+
+process_taddrs([], Acc) ->
+    ?vtrace("process_taddrs -> entry when done with"
+	    "~n   Acc: ~p", [Acc]),
+    lists:reverse(Acc);
+
+%% v3
+process_taddrs([{{?snmpUDPDomain, [A,B,C,D,U1,U2]}, SecData} | T], Acc) ->
+    ?vtrace("process_taddrs -> entry when v3 with"
+	    "~n   A:       ~p"
+	    "~n   B:       ~p"
+	    "~n   C:       ~p"
+	    "~n   D:       ~p"
+	    "~n   U1:      ~p"
+	    "~n   U2:      ~p"
+	    "~n   SecData: ~p", [A, B, C, D, U1, U2, SecData]),
+    Entry = {{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}}, SecData}, 
+    process_taddrs(T, [Entry | Acc]);
+%% Bad v3
+process_taddrs([{{TDomain, TAddr}, _SecData} | T], Acc) ->
+    ?vtrace("process_taddrs -> entry when bad v3 with"
+	    "~n   TDomain: ~p"
+	    "~n   TAddr:   ~p", [TDomain, TAddr]),
+    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
+    process_taddrs(T, Acc);
+%% v1 & v2
+process_taddrs([{?snmpUDPDomain, [A,B,C,D,U1,U2]} | T], Acc) ->
+    ?vtrace("process_taddrs -> entry when v1/v2 with"
+	    "~n   A:  ~p"
+	    "~n   B:  ~p"
+	    "~n   C:  ~p"
+	    "~n   D:  ~p"
+	    "~n   U1: ~p"
+	    "~n   U2: ~p", [A, B, C, D, U1, U2]),
+    Entry = {snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}}, 
+    process_taddrs(T, [Entry | Acc]);
+%% Bad v1 or v2
+process_taddrs([{TDomain, TAddr} | T], Acc) ->
+    ?vtrace("process_taddrs -> entry when bad v1/v2 with"
+	    "~n   TDomain: ~p"
+	    "~n   TAddr:   ~p", [TDomain, TAddr]),
+    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
+    process_taddrs(T, Acc);
+process_taddrs(Crap, Acc) ->
+    throw({error, {taddrs_crap, Crap, Acc}}).
+
+
+mk_v1_v2_packet_list(To, Packet, Len, Pdu) ->
+    mk_v1_v2_packet_list(To, Packet, Len, Pdu, []).
+
+mk_v1_v2_packet_list([], _Packet, _Len, _Pdu, Acc) ->
+    lists:reverse(Acc);
+
+%% This (old) clause is for backward compatibillity reasons
+%% If this is called, then the filter function is not used
 mk_v1_v2_packet_list([{?snmpUDPDomain, [A,B,C,D,U1,U2]} | T],
-		     Packet, Len, Pdu) ->
+		     Packet, Len, Pdu, Acc) ->
     %% Sending from default UDP port
     inc_snmp_out_vars(Pdu),
-    [{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Packet} |
-     mk_v1_v2_packet_list(T, Packet, Len, Pdu)];
-mk_v1_v2_packet_list([{TDomain, TAddr} | T], Packet, Len, Pdu) ->
-    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
-    mk_v1_v2_packet_list(T, Packet, Len, Pdu);
-mk_v1_v2_packet_list([], _Packet, _Len, _Pdu) ->
-    [].
+    Entry = {snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Packet},
+    mk_v1_v2_packet_list(T, Packet, Len, Pdu, [Entry | Acc]);
 
-mk_v3_packet_list(NoteStore, 
-		  [{{?snmpUDPDomain, [A,B,C,D,U1,U2]},
-		    {SecModel, SecName, SecLevel, TargetAddrName}} | T], 
-		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
+%% This is the new clause
+%% This is only called if the actual target was accepted
+%% (by the filter module)
+mk_v1_v2_packet_list([{Domain, Addr} | T], 
+		     Packet, Len, Pdu, Acc) ->
+    %% Sending from default UDP port
+    inc_snmp_out_vars(Pdu),
+    Entry = {Domain, Addr, Packet},
+    mk_v1_v2_packet_list(T, Packet, Len, Pdu, [Entry | Acc]).
+
+
+mk_v3_packet_entry(NoteStore, Domain, Addr, 
+		   {SecModel, SecName, SecLevel, TargetAddrName},
+		   ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
     %% 7.1.7
+    ?vtrace("mk_v3_packet_entry -> entry - 7.1.7", []),
     PduType = Pdu#pdu.type,
     MsgID = generate_msg_id(),
     V3Hdr = #v3_hdr{msgID = MsgID,
 		    msgMaxSize =
-		       snmp_framework_mib:get_engine_max_message_size(),
+		    snmp_framework_mib:get_engine_max_message_size(),
 		    msgFlags = snmp_misc:mk_msg_flags(PduType, SecLevel),
 		    msgSecurityModel = SecModel},
     Message = #message{version = 'version-3', vsn_hdr = V3Hdr,
@@ -686,8 +755,9 @@ mk_v3_packet_list(NoteStore,
 	    ?SEC_USM ->
 		snmpa_usm
 	end,
+
     %% 7.1.9a
-    ?vtrace("mk_v3_packet_list -> sec engine id - 7.1.9a", []),
+    ?vtrace("mk_v3_packet_entry -> sec engine id - 7.1.9a", []),
     SecEngineID =
 	case PduType of
 	    'snmpv2-trap' ->
@@ -706,23 +776,22 @@ mk_v3_packet_list(NoteStore,
 			"" % this will trigger error in secmodule
 		end
 	end,
-    ?vdebug("mk_v3_packet_list -> secEngineID: ~p", [SecEngineID]),
+
+    ?vdebug("mk_v3_packet_entry -> secEngineID: ~p", [SecEngineID]),
     %% 7.1.9b
     case catch SecModule:generate_outgoing_msg(Message, SecEngineID,
 					       SecName, [], SecLevel) of
 	{'EXIT', Reason} ->
 	    config_err("~p (message: ~p)", [Reason, Message]),
-	    mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu, 
-			      ContextEngineID, ContextName);
+	    skip;
 	{error, Reason} ->
 	    ?vlog("~n   ~w error ~p\n", [SecModule, Reason]),
-	    mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu, 
-			      ContextEngineID, ContextName);
+	    skip;
 	OutMsg when is_list(OutMsg) ->
 	    %% 7.1.9c
 	    %% Store in cache for 150 sec.
 	    Packet = list_to_binary(OutMsg),
-	    ?vdebug("mk_v3_packet_list -> generated: ~w bytes", 
+	    ?vdebug("mk_v3_packet_entry -> generated: ~w bytes", 
 		    [size(Packet)]),
 	    Data = 
 		if
@@ -737,18 +806,64 @@ mk_v3_packet_list(NoteStore,
 			ContextEngineID, ContextName},
 	    snmp_note_store:set_note(NoteStore, 1500, {agent,MsgID}, CacheVal),
 	    inc_snmp_out_vars(Pdu),
-	    [{snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, Data} |
-	     mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu,
-			       ContextEngineID, ContextName)]
-    end;
-mk_v3_packet_list(NoteStore, [{{TDomain, TAddr}, _} | T], 
+	    {ok, {Domain, Addr, Data}}
+    end.
+
+
+mk_v3_packet_list(NoteStore, To, 
 		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName) ->
-    user_err("Bad TDomain/TAddr: ~w/~w", [TDomain, TAddr]),
-    mk_v3_packet_list(NoteStore, T, ScopedPDUBytes, Pdu, ContextEngineID, 
-		      ContextName);
-mk_v3_packet_list(_, [], _ScopedPDUBytes, _Pdu, _ContextEngineID, 
-		  _ContextName) ->
-    [].
+    mk_v3_packet_list(NoteStore, To, 
+		      ScopedPDUBytes, Pdu, 
+		      ContextEngineID, ContextName, []).
+
+mk_v3_packet_list(_, [], 
+		  _ScopedPDUBytes, _Pdu, 
+		  _ContextEngineID, _ContextName, 
+		  Acc) ->
+    lists:reverse(Acc);
+
+%% This clause is for backward compatibillity reasons
+%% If this is called the filter function is not used
+mk_v3_packet_list(NoteStore, 
+		  [{{?snmpUDPDomain, [A,B,C,D,U1,U2]}, SecData} | T], 
+		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName, 
+		  Acc) ->
+    case mk_v3_packet_entry(NoteStore, 
+			    snmpUDPDomain, {{A,B,C,D}, U1 bsl 8 + U2}, SecData,
+			    ScopedPDUBytes, Pdu, 
+			    ContextEngineID, ContextName) of
+	skip ->
+	    mk_v3_packet_list(NoteStore, T, 
+			      ScopedPDUBytes, Pdu, 
+			      ContextEngineID, ContextName, 
+			      Acc);
+	{ok, Entry} ->
+	    mk_v3_packet_list(NoteStore, T, 
+			      ScopedPDUBytes, Pdu, 
+			      ContextEngineID, ContextName, [Entry | Acc])
+    end;
+
+%% This is the new clause
+%% This is only called if the actual target was accepted
+%% (by the filter module)
+mk_v3_packet_list(NoteStore, 
+		  [{{Domain, Addr}, SecData} | T], 
+		  ScopedPDUBytes, Pdu, ContextEngineID, ContextName,
+		  Acc) ->
+    case mk_v3_packet_entry(NoteStore, 
+			    Domain, Addr, SecData,
+			    ScopedPDUBytes, Pdu, 
+			    ContextEngineID, ContextName) of
+	skip ->
+	    mk_v3_packet_list(NoteStore, T, 
+			      ScopedPDUBytes, Pdu, 
+			      ContextEngineID, ContextName, Acc);
+	{ok, Entry} ->
+	    mk_v3_packet_list(NoteStore, T, 
+			      ScopedPDUBytes, Pdu, 
+			      ContextEngineID, ContextName, [Entry | Acc])
+    end.
+
 
 generate_msg_id() ->
     gen(msg_id).

@@ -29,11 +29,10 @@
 #include "erl_sys_driver.h"
 #include "global.h"
 #include "erl_threads.h"
+#include "../../drivers/win32/win_con.h"
+
 
 void erts_sys_init_float(void);
-void init_sys_select(void);
-
-void win_check_io(int wait);
 
 void erl_start(int, char**);
 void erl_exit(int n, char*, _DOTS_);
@@ -73,6 +72,15 @@ static int create_pipe(LPHANDLE, LPHANDLE, BOOL);
 static int ApplicationType(const char* originalName, char fullPath[MAX_PATH]);
 
 HANDLE erts_service_event;
+
+#ifdef ERTS_SMP
+static erts_smp_tsd_key_t win32_errstr_key;
+#endif
+
+static erts_smp_atomic_t pipe_creation_counter;
+
+static erts_smp_mtx_t sys_driver_data_lock;
+
 
 /* Results from ApplicationType is one of */
 #define APPL_NONE 0
@@ -135,16 +143,44 @@ void erl_sys_init();
 void erl_sys_args(int* argc, char** argv);
 
 int nohup;
-
-Eterm erts_check_io_info(void *proc)
+#ifndef __GNUC__
+void erts_sys_invalid_parameter_handler(const wchar_t * expression,
+                                        const wchar_t * function, 
+                                        const wchar_t * file, 
+                                        unsigned int line,
+                                        uintptr_t pReserved
+                                        )
 {
-    return NIL;
+#ifdef DEBUG
+    fprintf(stderr,
+	    "Debug: Invalid parameter\"%ls\" "
+	    "(detected in \"%ls\" [%ls:%d]) \n", 
+	    (expression) ? expression : L"(unknown)",
+	    (function) ? function : L"(unknown)",
+	    (file) ? file : L"(unknown)",
+	    line);
+#endif
+    return;
+}
+#endif
+
+void sys_primitive_init(HMODULE beam)
+{
+#ifndef __GNUC__
+    /* Initialize this module handle (the beam.dll module handle) and 
+       take care of the standard library's aggressive invalid parameter 
+       handling... */
+    _set_invalid_parameter_handler(&erts_sys_invalid_parameter_handler);
+#endif
+    beam_module = (HMODULE) beam;
 }
 
 Uint
 erts_sys_misc_mem_sz(void)
 {
-    return (Uint) erts_smp_atomic_read(&sys_misc_mem_sz);
+    Uint res = (Uint) erts_check_io_size();
+    res += (Uint) erts_smp_atomic_read(&sys_misc_mem_sz);
+    return res;
 }
 
 void erl_sys_args(int* argc, char** argv)
@@ -189,7 +225,8 @@ void erl_sys_args(int* argc, char** argv)
 void
 erts_sys_prepare_crash_dump(void)
 {
-    close(3);			/* Make sure we have a free descriptor */
+    /* Windows - free file descriptors are hopefully available */
+    return;
 }
 
 static void
@@ -200,9 +237,6 @@ init_console()
     if (mode == NULL) {
 	mode = "window";
     }
-#ifdef PURIFY
-    mode = "window";
-#endif
 
     if (strcmp(mode, "window") == 0) {
 	win_console = TRUE;
@@ -377,6 +411,9 @@ typedef struct async_io {
 				 * the console for Windows NT).
 				 */
   HANDLE fd;			/* Handle for file or pipe. */
+#ifdef ERTS_SMP
+  int async_io_active;          /* if true, a close of the file will signal the event in ov */
+#endif
   OVERLAPPED ov;		/* Control structure for overlapped reading.
 				 * When overlapped reading is simulated with
 				 * a thread, the fields are used as follows:
@@ -458,6 +495,16 @@ struct erl_drv_entry spawn_driver_entry = {
     NULL /* ready_async */
 };
 
+#ifdef HARD_POLL_DEBUG
+extern void poll_debug_set_active_fd(ErtsSysFdType fd);
+extern void poll_debug_read_begin(ErtsSysFdType fd);
+extern void poll_debug_read_done(ErtsSysFdType fd, int bytes);
+extern void poll_debug_async_initialized(ErtsSysFdType fd);
+extern void poll_debug_async_immediate(ErtsSysFdType fd, int bytes);
+extern void poll_debug_write_begin(ErtsSysFdType fd);
+extern void poll_debug_write_done(ErtsSysFdType fd, int bytes);
+#endif
+
 extern int null_func(void);
 
 struct erl_drv_entry fd_driver_entry = {
@@ -490,7 +537,7 @@ struct erl_drv_entry vanilla_driver_entry = {
     NULL /* ready_async */
 };
 
-#ifdef USE_THREADS
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
 
 static int  async_drv_init(void);
 static ErlDrvData async_drv_start(ErlDrvPort, char*, SysDriverOpts*);
@@ -541,6 +588,8 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 {
     DriverData* dp;
     
+    erts_smp_mtx_lock(&sys_driver_data_lock);
+
     DEBUGF(("new_driver_data(port_num %d, pb %d)\n",
 	    port_num, packet_bytes));
 
@@ -560,19 +609,21 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 	    dp->totalNeeded = packet_bytes;
 	    dp->inBufSize = PORT_BUFSIZ;
 	    dp->inbuf = DRV_BUF_ALLOC(dp->inBufSize);
-	    if (dp->inbuf == NULL)
+	    if (dp->inbuf == NULL) {
+		erts_smp_mtx_unlock(&sys_driver_data_lock);
 		return NULL;
+	    }
 	    erts_smp_atomic_add(&sys_misc_mem_sz, dp->inBufSize);
 	    dp->outBufSize = 0;
 	    dp->outbuf = NULL;
 	    dp->port_num = port_num;
 	    dp->packet_bytes = packet_bytes;
 	    dp->port_pid = INVALID_HANDLE_VALUE;
-
 	    if (init_async_io(&dp->in, use_threads) == -1)
 		break;
 	    if (init_async_io(&dp->out, use_threads) == -1)
 		break;
+	    erts_smp_mtx_unlock(&sys_driver_data_lock);
 	    return dp;
 	}
     }
@@ -585,12 +636,42 @@ new_driver_data(port_num, packet_bytes, wait_objs_required, use_threads)
 	release_async_io(&dp->in);
 	release_async_io(&dp->out);
     }
+    erts_smp_mtx_unlock(&sys_driver_data_lock);
     return NULL;
 }
 
 static void
 release_driver_data(DriverData* dp)
 {
+    erts_smp_mtx_lock(&sys_driver_data_lock);
+
+#ifdef ERTS_SMP
+    /* This is a workaround for the fact that CancelIo cant cancel
+       requests issued by another thread and that we still cant use
+       CancelIoEx as that's only availabele in Vista etc. */
+    if(dp->in.async_io_active && dp->in.fd != INVALID_HANDLE_VALUE) {
+	CloseHandle(dp->in.fd);
+	dp->in.fd = INVALID_HANDLE_VALUE;
+	DEBUGF(("Waiting for the in event thingie"));
+	WaitForSingleObject(dp->in.ov.hEvent,INFINITE);
+	DEBUGF(("...done\n"));
+    }
+    if(dp->out.async_io_active && dp->out.fd != INVALID_HANDLE_VALUE) {
+	CloseHandle(dp->out.fd);
+	dp->out.fd = INVALID_HANDLE_VALUE;
+	DEBUGF(("Waiting for the out event thingie"));
+	WaitForSingleObject(dp->out.ov.hEvent,INFINITE);
+	DEBUGF(("...done\n"));
+    }
+#else
+    	if (dp->out.thread == (HANDLE) -1 && dp->in.fd != INVALID_HANDLE_VALUE) {
+	     CancelIo(dp->in.fd); 
+	}
+	if (dp->out.thread == (HANDLE) -1 && dp->out.fd != INVALID_HANDLE_VALUE) {
+	    CancelIo(dp->out.fd); 
+	}
+#endif
+
     if (dp->inbuf != NULL) {
 	ASSERT(erts_smp_atomic_read(&sys_misc_mem_sz) >= dp->inBufSize);
 	erts_smp_atomic_add(&sys_misc_mem_sz, -1*dp->inBufSize);
@@ -623,6 +704,7 @@ release_driver_data(DriverData* dp)
      */
 
     dp->port_num = PORT_FREE;
+    erts_smp_mtx_unlock(&sys_driver_data_lock);
 }
 
 /*
@@ -678,7 +760,9 @@ init_async_io(AsyncIo* aio, int use_threads)
     aio->ioAllowed = NULL;
     aio->pendingError = 0;
     aio->bytesTransferred = 0;
-
+#ifdef ERTS_SMP
+    aio->async_io_active = 0;
+#endif
     aio->ov.hEvent = CreateManualEvent(FALSE);
     if (aio->ov.hEvent == NULL)
 	return -1;
@@ -734,6 +818,9 @@ async_read_file(aio, buf, numToRead)
     DWORD numToRead;		/* Number of bytes to read. */
 {
     aio->pendingError = NO_ERROR;
+#ifdef HARD_POLL_DEBUG
+    poll_debug_async_initialized(aio->ov.hEvent);
+#endif
     if (aio->thread != (HANDLE) -1) {
 	DEBUGF(("async_read_file: signaling thread 0x%x, event 0x%x\n",
 		aio->thread, aio->ioAllowed));
@@ -741,19 +828,30 @@ async_read_file(aio, buf, numToRead)
 	OV_NUM_TO_READ(aio) = numToRead;
 	ResetEvent(aio->ov.hEvent);
 	SetEvent(aio->ioAllowed);
-    } else if (ReadFile(aio->fd, buf, numToRead,
-			&aio->bytesTransferred, &aio->ov)) {
-	DEBUGF(("async_read_file: ReadFile() suceeded: %d bytes\n",
-		aio->bytesTransferred));
-	aio->flags |= DF_OVR_READY;
-	SetEvent(aio->ov.hEvent);
     } else {
-	DWORD error = GetLastError();
-	if (error != ERROR_IO_PENDING) {
-	    aio->pendingError = error;
+#ifdef ERTS_SMP
+	aio->async_io_active = 1; /* Will get 0 when the event actually happened */
+#endif
+	if (ReadFile(aio->fd, buf, numToRead,
+		     &aio->bytesTransferred, &aio->ov)) {
+	    DEBUGF(("async_read_file: ReadFile() suceeded: %d bytes\n",
+		    aio->bytesTransferred));
+#ifdef HARD_POLL_DEBUG
+	    poll_debug_async_immediate(aio->ov.hEvent, aio->bytesTransferred);
+#endif
+	    aio->flags |= DF_OVR_READY;
 	    SetEvent(aio->ov.hEvent);
+	} else {
+	    DWORD error = GetLastError();
+	    if (error != ERROR_IO_PENDING) {
+#ifdef HARD_POLL_DEBUG
+		poll_debug_async_immediate(aio->ov.hEvent, 0);
+#endif
+		aio->pendingError = error;
+		SetEvent(aio->ov.hEvent);
+	    }
+	    DEBUGF(("async_read_file: ReadFile() -> %s\n", win32_errorstr(error)));
 	}
-	DEBUGF(("async_read_file: ReadFile() -> %s\n", win32_errorstr(error)));
     }
 }
 
@@ -781,19 +879,27 @@ async_write_file(aio, buf, numToWrite)
 	OV_NUM_TO_READ(aio) = numToWrite;
 	ResetEvent(aio->ov.hEvent);
 	SetEvent(aio->ioAllowed);
-    } else if (WriteFile(aio->fd, buf, numToWrite,
-			 &aio->bytesTransferred, &aio->ov)) {
-	DEBUGF(("async_write_file: WriteFile() suceeded: %d bytes\n",
-		aio->bytesTransferred));
-	ResetEvent(aio->ov.hEvent);
-	return TRUE;
     } else {
-	DWORD error = GetLastError();
-	if (error != ERROR_IO_PENDING) {
-	    aio->pendingError = error;
-	    SetEvent(aio->ov.hEvent);
+#ifdef ERTS_SMP
+	aio->async_io_active = 1; /* Will get 0 when the event actually happened */
+#endif
+	if (WriteFile(aio->fd, buf, numToWrite,
+		      &aio->bytesTransferred, &aio->ov)) {
+	    DEBUGF(("async_write_file: WriteFile() suceeded: %d bytes\n",
+		    aio->bytesTransferred));
+#ifdef ERTS_SMP
+	    aio->async_io_active = 0; /* The event will not be signalled */
+#endif
+	    ResetEvent(aio->ov.hEvent);
+	    return TRUE;
+	} else {
+	    DWORD error = GetLastError();
+	    if (error != ERROR_IO_PENDING) {
+		aio->pendingError = error;
+		SetEvent(aio->ov.hEvent);
+	    }
+	    DEBUGF(("async_write_file: WriteFile() -> %s\n", win32_errorstr(error)));
 	}
-	DEBUGF(("async_write_file: WriteFile() -> %s\n", win32_errorstr(error)));
     }
     return FALSE;
 }
@@ -986,6 +1092,12 @@ spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* opts)
 		goto error;
 	    }
 	}
+#ifdef HARD_POLL_DEBUG
+	if (strncmp(name,"inet_gethost",12) == 0) {
+	    erts_printf("Debugging \"%s\"\n", name);
+	    poll_debug_set_active_fd(dp->in.ov.hEvent);
+	}
+#endif
 	retval = set_driver_data(dp, hFromChild, hToChild, opts->read_write,
 				 opts->exit_status);
     }
@@ -1241,8 +1353,8 @@ CreateChildProcess(origcmd, hStdin, hStdout, hStderr, phPid, hide, env, wd)
 static int create_pipe(HANDLE *phRead, HANDLE *phWrite, BOOL inheritRead)
 {
     SECURITY_ATTRIBUTES sa = {sizeof(SECURITY_ATTRIBUTES), NULL, TRUE};
-    static long calls = 0;	/* Pipe instance pointer. */
     char pipe_name[128];	/* Name of pipe. */
+    Uint calls;
 
     /*
      * If we should't use named pipes, create anonmous pipes.
@@ -1277,9 +1389,10 @@ static int create_pipe(HANDLE *phRead, HANDLE *phWrite, BOOL inheritRead)
     /*
      * Otherwise, create named pipes.
      */
-    
+
+    calls = (Uint) erts_smp_atomic_inctest(&pipe_creation_counter);
     sprintf(pipe_name, "\\\\.\\pipe\\erlang44_%d_%d",
-	    getpid(), calls++);
+	    getpid(), calls);
 
     DEBUGF(("Creating pipe %s\n", pipe_name));
     sa.bInheritHandle = inheritRead;
@@ -1645,17 +1758,20 @@ static void common_stop(int index)
 
     DEBUGF(("common_stop(%d)\n", index));
 
-    if (dp->in.ov.hEvent != NULL)
+    if (dp->in.ov.hEvent != NULL) {
 	(void) driver_select(dp->port_num,
 			     (ErlDrvEvent)dp->in.ov.hEvent,
 			     DO_READ,
 			     0);
-
-    if (dp->out.ov.hEvent != NULL)
+    }
+    if (dp->out.ov.hEvent != NULL) {
 	(void) driver_select(dp->port_num,
 			     (ErlDrvEvent)dp->out.ov.hEvent,
 			     DO_WRITE,
 			     0);
+    }
+
+    
 
     if (dp->out.thread == (HANDLE) -1 && dp->in.thread == (HANDLE) -1) {
 	release_driver_data(dp);
@@ -1902,14 +2018,27 @@ ready_input(ErlDrvData drv_data, ErlDrvEvent ready_event)
 
     dp = driver_data+(int)drv_data;
     pb = dp->packet_bytes;
-
+#ifdef ERTS_SMP
+    if(dp->in.thread == (HANDLE) -1) {
+	dp->in.async_io_active = 0;
+    }
+#endif
     DEBUGF(("ready_input: dp %p, event 0x%x\n", dp, ready_event));
 
     /*
      * Evaluate the result of the overlapped read.
      */
 
+#ifdef HARD_POLL_DEBUG
+     poll_debug_read_begin(dp->in.ov.hEvent);
+#endif
+
     error = get_overlapped_result(&dp->in, &bytesRead, TRUE);
+
+#ifdef HARD_POLL_DEBUG
+    poll_debug_read_done(dp->in.ov.hEvent,bytesRead);
+#endif
+
     if (error == NO_ERROR) {
 	if (pb == 0) { /* Continous stream. */
 #ifdef DEBUG
@@ -2057,6 +2186,11 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
     DriverData* dp = driver_data + (int)drv_data;
     int error;
 
+#ifdef ERTS_SMP
+    if(dp->out.thread == (HANDLE) -1) {
+	dp->out.async_io_active = 0;
+    }
+#endif
     DEBUGF(("ready_output(%d, 0x%x)\n", drv_data, ready_event));
     set_busy_port(dp->port_num, 0);
 #ifdef DEBUG
@@ -2079,7 +2213,14 @@ ready_output(ErlDrvData drv_data, ErlDrvEvent ready_event)
     dp->outBufSize = 0;
     dp->outbuf = NULL;
 #endif
+#ifdef HARD_POLL_DEBUG
+    poll_debug_write_begin(dp->out.ov.hEvent);
+#endif
     error = get_overlapped_result(&dp->out, &bytesWritten, TRUE);
+#ifdef HARD_POLL_DEBUG
+    poll_debug_write_done(dp->out.ov.hEvent,bytesWritten);
+#endif
+
     if (error == NO_ERROR) {
 	dp->out.ov.Offset += bytesWritten; /* For vanilla driver. */
 	return ; /* 0; */
@@ -2119,6 +2260,10 @@ sys_init_io(void)
     max_files = 2*erts_max_ports;
     
 #ifdef USE_THREADS
+#ifdef ERTS_SMP
+    if (init_async(-1) < 0)
+	erl_exit(1, "Failed to initialize async-threads\n");
+#else
     {
 	/* This is special stuff, starting a driver from the 
 	 * system routines, but is a nice way of handling stuff
@@ -2136,7 +2281,23 @@ sys_init_io(void)
 	erts_port[ret].status |= ERTS_PORT_SFLG_IMMORTAL;
     }
 #endif
+#endif
 }
+
+#ifdef ERTS_SMP
+void
+erts_sys_main_thread(void)
+{
+    HANDLE dummy;
+#ifdef ERTS_ENABLE_LOCK_CHECK
+    erts_lc_set_thread_name("parent_thread");
+#endif
+    dummy = CreateEvent(NULL, FALSE, FALSE, NULL);
+    for(;;) {
+	WaitForSingleObject(dummy, INFINITE);
+    }
+}
+#endif
 
 void erts_sys_alloc_init(void)
 {
@@ -2175,62 +2336,54 @@ Preload* sys_preloaded(void)
 
     if (preloaded == NULL) {
 	int i;
-
-#ifdef ERL_RUN_SHARED_LIB
-	if (beam_module == NULL)
-#ifdef DEBUG
-	    beam_module = GetModuleHandle("beam.debug.dll");
-#else
-            beam_module = GetModuleHandle("beam.dll");
-#endif
-#endif
-	hRes = FindResource(beam_module, 0, "ERLANG_DICT");
-	/* We might have a resource compiler laying out the 0 resource with
-	   "0" as a textual name instead... */
-	if (hRes == NULL) {
-	    hRes = FindResource(beam_module, "0", "ERLANG_DICT");
-	}
-	if (hRes == NULL) {
-	    DWORD n = GetLastError();
-	    fprintf(stderr, "No ERLANG_DICT resource\n");
-	    exit(1);
-	}
-	data = (unsigned char *) LoadResource(beam_module, hRes);
-
-	num_preloaded = GETWORD(data);
-	if (num_preloaded == 0) {
-	    fprintf(stderr, "No preloaded modules\n");
-	    exit(1);
-	}
-
-	data += 2;
-	preloaded = erts_alloc(ERTS_ALC_T_PRELOADED,
-			       (num_preloaded+1)*sizeof(Preload));
-	res_name = erts_alloc(ERTS_ALC_T_PRELOADED,
-			      (num_preloaded+1)*sizeof(unsigned));
-	erts_smp_atomic_add(&sys_misc_mem_sz,
-			    (num_preloaded+1)*sizeof(Preload)
-			    + (num_preloaded+1)*sizeof(unsigned));
-	for (i = 0; i < num_preloaded; i++) {
-	    int n;
-
-	    preloaded[i].size = GETDWORD(data);
-	    data += 4;
-	    res_name[i] = GETWORD(data);
-	    data += 2;
-	    n = GETWORD(data);
-	    data += 2;
-	    preloaded[i].name = erts_alloc(ERTS_ALC_T_PRELOADED, n+1);
-	    erts_smp_atomic_add(&sys_misc_mem_sz, n+1);
-	    sys_memcpy(preloaded[i].name, data, n);
-	    preloaded[i].name[n] = '\0';
-	    data += n;
-	    DEBUGF(("name: %s; size: %d; resource: %p\n",
-		    preloaded[i].name, preloaded[i].size, res_name[i]));
-	}
-	preloaded[i].name = NULL;
+    ASSERT(beam_module != NULL);
+    hRes = FindResource(beam_module, 0, "ERLANG_DICT");
+    /* We might have a resource compiler laying out the 0 resource with
+       "0" as a textual name instead... */
+    if (hRes == NULL) {
+	hRes = FindResource(beam_module, "0", "ERLANG_DICT");
+    }
+    if (hRes == NULL) {
+	DWORD n = GetLastError();
+	fprintf(stderr, "No ERLANG_DICT resource\n");
+	exit(1);
+    }
+    data = (unsigned char *) LoadResource(beam_module, hRes);
+    
+    num_preloaded = GETWORD(data);
+    if (num_preloaded == 0) {
+	fprintf(stderr, "No preloaded modules\n");
+	exit(1);
     }
 
+    data += 2;
+    preloaded = erts_alloc(ERTS_ALC_T_PRELOADED,
+			   (num_preloaded+1)*sizeof(Preload));
+    res_name = erts_alloc(ERTS_ALC_T_PRELOADED,
+			  (num_preloaded+1)*sizeof(unsigned));
+    erts_smp_atomic_add(&sys_misc_mem_sz,
+			(num_preloaded+1)*sizeof(Preload)
+			    + (num_preloaded+1)*sizeof(unsigned));
+    for (i = 0; i < num_preloaded; i++) {
+	int n;
+	
+	preloaded[i].size = GETDWORD(data);
+	data += 4;
+	res_name[i] = GETWORD(data);
+	data += 2;
+	n = GETWORD(data);
+	data += 2;
+	preloaded[i].name = erts_alloc(ERTS_ALC_T_PRELOADED, n+1);
+	erts_smp_atomic_add(&sys_misc_mem_sz, n+1);
+	sys_memcpy(preloaded[i].name, data, n);
+	preloaded[i].name[n] = '\0';
+	data += n;
+	DEBUGF(("name: %s; size: %d; resource: %p\n",
+		preloaded[i].name, preloaded[i].size, res_name[i]));
+    }
+    preloaded[i].name = NULL;
+    }
+    
 #undef GETWORD
 #undef GETDWORD
     return preloaded;
@@ -2242,14 +2395,7 @@ unsigned char* sys_preload_begin(Preload* pp)
     HRSRC hRes;
     unsigned resource;
     
-#ifdef ERL_RUN_SHARED_LIB
-    /* if beam is a DLL, the resources are there, not in the exe */
-    beam_module = GetModuleHandle("ERL_RUN.DLL");
-    if (beam_module == NULL)
-	beam_module = GetModuleHandle("beam.dll");
-    if (beam_module == NULL)
-	beam_module = GetModuleHandle("beam.debug.dll");
-#endif
+    ASSERT(beam_module != NULL);
 
     resource = res_name[pp-preloaded];
     DEBUGF(("Loading name: %s; size: %d; resource: %p\n",
@@ -2308,13 +2454,16 @@ sys_get_key(int fd)
  * isn't called again.
  */
 
-char* win32_errorstr(error)
-     int error;
+char* win32_errorstr(int error)
 {
+#ifdef SMP
+  LPTSTR lpBufPtr = erts_smp_tsd_get(win32_errstr_key);
+#else
   static LPTSTR lpBufPtr = NULL;
-
-  if (lpBufPtr)
-    LocalFree(lpBufPtr);
+#endif
+  if (lpBufPtr) {
+      LocalFree(lpBufPtr);
+  }
   FormatMessage(
 		FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
 		FORMAT_MESSAGE_IGNORE_INSERTS,
@@ -2325,6 +2474,9 @@ char* win32_errorstr(error)
 		0,
 		NULL);
   SetLastError(error);
+#ifdef ERTS_SMP
+  erts_smp_tsd_set(win32_errstr_key,lpBufPtr);
+#endif
   return lpBufPtr;
 }
 
@@ -2462,7 +2614,9 @@ erl_assert_error(char* expr, char* file, int line)
     sprintf(message, "File %hs, line %d: %hs", file, line, expr);
     MessageBox(GetActiveWindow(), message, "Assertion failed",
 	       MB_OK | MB_ICONERROR);
+#if 0
     erl_crash_dump(file, line, "Assertion failed: %hs\n", expr);
+#endif
     DebugBreak();
 }
 
@@ -2557,6 +2711,13 @@ void erl_sys_init(void)
     noinherit_std_handle(STD_INPUT_HANDLE);
     noinherit_std_handle(STD_ERROR_HANDLE);
 
+
+    erts_smp_mtx_init(&sys_driver_data_lock, "sys_driver_data_lock");
+
+#ifdef ERTS_SMP
+    erts_smp_tsd_key_create(&win32_errstr_key);
+#endif
+    erts_smp_atomic_init(&pipe_creation_counter,0);
     /*
      * Test if we have named pipes or not.
      */
@@ -2568,7 +2729,11 @@ void erl_sys_init(void)
 	break;
     case VER_PLATFORM_WIN32_NT:
 	DEBUGF(("Running on Windows NT"));
+#ifdef DISABLE_NAMED_PIPES
+	use_named_pipes = FALSE;
+#else
 	use_named_pipes = TRUE;
+#endif
 	break;
     default:			/* Unsupported platform. */
 	exit(1);
@@ -2577,15 +2742,7 @@ void erl_sys_init(void)
 	    int_os_version.dwMajorVersion, int_os_version.dwMinorVersion,
 	    int_os_version.dwBuildNumber, int_os_version.szCSDVersion));
 
-#ifdef ERL_RUN_SHARED_LIB
-	if (beam_module == NULL)
-#ifdef DEBUG
-	    beam_module = GetModuleHandle("beam.debug.dll");
-#else
-            beam_module = GetModuleHandle("beam.dll");
-	    
-#endif
-#endif
+    ASSERT(beam_module != NULL);
     init_console();
 
     /*
@@ -2603,8 +2760,22 @@ void erl_sys_init(void)
 	SetStdHandle(STD_ERROR_HANDLE, GetStdHandle(STD_OUTPUT_HANDLE));
     }
     erts_sys_init_float();
-    init_sys_select();
+    erts_init_check_io();
 }
+
+#ifdef ERTS_SMP
+void
+erts_sys_schedule_interrupt(int set)
+{
+    erts_check_io_interrupt(set);
+}
+
+void
+erts_sys_schedule_interrupt_timed(int set, long msec)
+{
+    erts_check_io_interrupt_timed(set, msec);
+}
+#endif
 
 /*
  * Called from schedule() when it runs out of runnable processes,
@@ -2614,15 +2785,21 @@ void erl_sys_init(void)
 void
 erl_sys_schedule(int runnable)
 {
+#ifdef ERTS_SMP
+    erts_check_io(!runnable);
+    ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
+#else
+    erts_check_io_interrupt(0);
     if (runnable) {
-	win_check_io(0);	/* Poll for I/O */
+	erts_check_io(0);	/* Poll for I/O */
 	check_async_ready();	/* Check async completions */
     } else {
-	win_check_io(check_async_ready() ? 0 : 1);
+	erts_check_io(check_async_ready() ? 0 : 1);
     }
+#endif
 }
 
-#ifdef USE_THREADS
+#if defined(USE_THREADS) && !defined(ERTS_SMP)
 /*
  * Async operation support.
  */

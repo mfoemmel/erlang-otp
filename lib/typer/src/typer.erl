@@ -31,10 +31,12 @@
 
 %%--------------------------------------------------------------------
 
+-spec(start/0 :: () -> no_return()).
+
 start() ->
-  {Args,Analysis} = typer_options:process(),
-  %% io:format("Args: ~p\n",[Args]),
-  %% io:format("Analysis: ~p\n",[Analysis]),
+  {Args, Analysis} = typer_options:process(),
+  %% io:format("Args: ~p\n", [Args]),
+  %% io:format("Analysis: ~p\n", [Analysis]),
   
   TrustedFiles = typer_preprocess:get_all_files(Args, trust),
   %% io:format("TrustedFiles: ~p\n",[TrustedFiles]),
@@ -42,10 +44,10 @@ start() ->
   Analysis2 = extract(Analysis1),  
 
   All_Files = typer_preprocess:get_all_files(Args, analysis),
-  %% io:format("All_Files: ~p\n",[All_Files]),
+  %% io:format("All_Files: ~p\n", [All_Files]),
   Analysis3 = Analysis2#analysis{ana_files=All_Files},
   Analysis4 = typer_info:collect(Analysis3),
-  %% io:format("Final: ~p\n",[Analysis4#analysis.final_files]),
+  %% io:format("Final: ~p\n", [Analysis4#analysis.final_files]),
   
   TypeInfo = get_type_info(Analysis4),
 
@@ -71,7 +73,7 @@ extract(Analysis) ->
 	  case dialyzer_utils:get_abstract_code_from_src(File, CompOpts) of
 	    {error, Reason} -> compile_error(Reason);
 	    AbstractCode -> 
-	      case dialyzer_utils:get_record_info(AbstractCode) of
+	      case dialyzer_utils:get_record_and_type_info(AbstractCode) of
 		{error, Reason} -> compile_error(Reason);
 		{ok, Ans} -> Ans
 	      end
@@ -89,7 +91,7 @@ extract(Analysis) ->
 scan_comments([], _, _, _, _) -> ok;
 scan_comments([{_,_,_,Comment}|RestComments], Module, Plt, File, Records) ->
   Fun =
-    fun(Line) ->
+    fun(Line, AccPlt) ->
 	case Line of
 	  "% @typer_spec " ++ F_A_TypeInfo ->
 	    case erl_scan:string(F_A_TypeInfo++".") of
@@ -104,7 +106,7 @@ scan_comments([{_,_,_,Comment}|RestComments], Module, Plt, File, Records) ->
 			  FuncObject = {{Module,FName,Arity},
 					erl_types:t_fun_range(Type),
 					erl_types:t_fun_args(Type)},
-			  ets:insert(Plt, FuncObject)
+			  dialyzer_plt:insert(AccPlt, FuncObject)
 			catch
 			  throw:{error, What} ->
 			    typer_info_error(What, File)
@@ -117,11 +119,11 @@ scan_comments([{_,_,_,Comment}|RestComments], Module, Plt, File, Records) ->
 		end;
 	      _ -> typer_info_error(F_A_TypeInfo, File)
 	    end;
-	  _ -> ok
+	  _ -> AccPlt
 	end
     end,
-  lists:foreach(Fun, Comment),
-  scan_comments(RestComments, Module, Plt, File, Records).
+  NewPlt = lists:foldl(Fun, Plt, Comment),
+  scan_comments(RestComments, Module, NewPlt, File, Records).
 
 typer_info_error(String, File) ->
   io:format("\n          **Warning**: in \"~p\"\n      ", [File]),
@@ -134,41 +136,44 @@ get_type_info(Analysis) ->
 				      Analysis#analysis.trust_plt),
   %% io:format("--- Analyzing callgraph... "),  
   try 
-    dialyzer_succ_typings:analyze_callgraph(StrippedCallGraph, 
-					    Analysis#analysis.trust_plt,
-					    Analysis#analysis.code_server)
+    NewPlt = 
+      dialyzer_succ_typings:analyze_callgraph(StrippedCallGraph, 
+					      Analysis#analysis.trust_plt,
+					      Analysis#analysis.code_server),
+    Analysis#analysis{callgraph=StrippedCallGraph, trust_plt=NewPlt}
   catch
     error:What -> 
-      error(io_lib:format("analysis failed with error: ~p", [What]));
+      error(io_lib:format("Analysis failed with message: ~p", 
+			  [{What, erlang:get_stacktrace()}]));
     throw:{dialyzer_succ_typing_error, Msg} ->
       error(io_lib:format("analysis failed with message: ~s", [Msg]))
-  end,
-  %% io:format("done\n"),
-  Analysis#analysis{callgraph=StrippedCallGraph}.
+  end.
 
-remove_external(CallGraph, Plt) ->
+remove_external(CallGraph, PLT) ->
   {StrippedCG0, Ext} = dialyzer_callgraph:remove_external(CallGraph),
   StrippedCG = dialyzer_callgraph:finalize(StrippedCG0),
-  case get_external(Ext, Plt) of
+  case get_external(Ext, PLT) of
     [] -> ok; 
-    Externals -> io:format(" Unknown externals: ~p\n", [Externals])
+    Externals -> io:format(" Unknown functions: ~p\n", [lists:usort(Externals)])
   end,
   StrippedCG.
 
 get_external(Exts, Plt) ->
   Fun = fun ({_From, To = {M, F, A}}, Acc) ->
-	    case dialyzer_plt:lookup(Plt, To) of
-	      none ->
+	    case dialyzer_plt:contains_mfa(Plt, To) of
+	      false ->
 		case erl_bif_types:is_known(M, F, A) of
 		  true -> Acc;
 		  false -> [To|Acc]
 		end;
-	      {value,_} -> Acc
+	      true -> Acc
 	    end
 	end,
   lists:foldl(Fun, [], Exts).
 
 %%--------------------------------------------------------------------
+
+-spec(error/1 :: (string()) -> no_return()).
 
 error(Slogan) ->
   io:format("typer: ~s\n", [Slogan]),
@@ -176,9 +181,13 @@ error(Slogan) ->
 
 compile_error([]) ->
   error("cannot compile some input file(s)");
-compile_error(Reason) ->
+compile_error([{_, _}|_] = Reason) ->
   Msg = io_lib:format("analysis failed with error report:\n~s",
 		      [lists:flatten(format_compile_errors(Reason))]),
+  error(Msg);
+compile_error(Reason) when is_list(Reason) ->
+  Msg = io_lib:format("analysis failed with error report:\n~s",
+		      [Reason]),
   error(Msg).
 
 format_compile_errors([{Mod, Errors}|Left]) ->

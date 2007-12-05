@@ -1,6 +1,6 @@
 {application, cosProperty,
  [{description, "The Erlang CosProperty application"},
-  {vsn, "1.1.4"},
+  {vsn, "1.1.5"},
   {modules,
        [
         'cosProperty',

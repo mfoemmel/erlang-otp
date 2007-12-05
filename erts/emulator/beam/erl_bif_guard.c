@@ -32,17 +32,13 @@
 #include "big.h"
 #include "erl_binary.h"
 
-#if defined(HEAP_FRAG_ELIM_TEST)
-# undef ArithAlloc
-# define ArithAlloc(a, b) HAlloc(a, b)
 static Eterm gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live);
-#endif
-
 
 static Eterm double_to_integer(Process* p, double x);
 
 /*
- * Guard BIFs MUST allocate memory in heap fragments using ArithAlloc().
+ * Guard BIFs called using apply/3 and guard BIFs that never build
+ * anything on the heap.
  */
 
 BIF_RETTYPE abs_1(BIF_ALIST_1)
@@ -56,20 +52,19 @@ BIF_RETTYPE abs_1(BIF_ALIST_1)
 	i0 = signed_val(BIF_ARG_1);
 	i = labs(i0);
 	if (i0 == MIN_SMALL) {
-	    hp = ArithAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+	    hp = HAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
 	    BIF_RET(uint_to_big(i, hp));
 	} else {
 	    BIF_RET(make_small(i));
 	}
-    }
-    else if (is_big(BIF_ARG_1)) {
+    } else if (is_big(BIF_ARG_1)) {
 	if (!big_sign(BIF_ARG_1)) {
 	    BIF_RET(BIF_ARG_1);
 	} else {
 	    int sz = big_arity(BIF_ARG_1) + 1;
 	    Uint* x;
 
-	    hp = ArithAlloc(BIF_P, sz);	/* See note at beginning of file */
+	    hp = HAlloc(BIF_P, sz);	/* See note at beginning of file */
 	    sz--;
 	    res = make_big(hp);
 	    x = big_val(BIF_ARG_1);
@@ -79,13 +74,12 @@ BIF_RETTYPE abs_1(BIF_ALIST_1)
 		*hp++ = *x++;
 	    BIF_RET(res);
 	}
-    }
-    else if (is_float(BIF_ARG_1)) {
+    } else if (is_float(BIF_ARG_1)) {
 	FloatDef f;
 
 	GET_DOUBLE(BIF_ARG_1, f);
 	if (f.fd < 0.0) {
-	    hp = ArithAlloc(BIF_P, FLOAT_SIZE_OBJECT);
+	    hp = HAlloc(BIF_P, FLOAT_SIZE_OBJECT);
 	    f.fd = fabs(f.fd);
 	    res = make_float(hp);
 	    PUT_DOUBLE(f, hp);
@@ -118,7 +112,7 @@ BIF_RETTYPE float_1(BIF_ALIST_1)
     } else if (big_to_double(BIF_ARG_1, &f.fd) < 0) {
 	goto badarg;
     }
-    hp = ArithAlloc(BIF_P, FLOAT_SIZE_OBJECT);
+    hp = HAlloc(BIF_P, FLOAT_SIZE_OBJECT);
     res = make_float(hp);
     PUT_DOUBLE(f, hp);
     BIF_RET(res);
@@ -198,7 +192,7 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
 	if (IS_USMALL(0, sz)) {
 	    return make_small(sz);
 	} else {
-	    Eterm* hp = ArithAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+	    Eterm* hp = HAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
 	    BIF_RET(uint_to_big(sz, hp));
 	}
     }
@@ -206,40 +200,64 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
 }
 
 /**********************************************************************/
-/* returns the bitsize of a binary */
+/* returns the bitsize of a bitstring (DEPRECATED) */
 
 BIF_RETTYPE bitsize_1(BIF_ALIST_1)
 {
-  Uint low_bits;
-  Uint bytesize;
-  Uint high_bits;
-  if (is_binary(BIF_ARG_1)) {
-    bytesize = binary_size(BIF_ARG_1);
-    high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
-    low_bits = (bytesize << 3) + binary_bitsize(BIF_ARG_1);
-    if (high_bits == 0) {
-      if (IS_USMALL(0,low_bits)) {
-	BIF_RET(make_small(low_bits));
-      }
-      else {
-	Eterm* hp = ArithAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
-	BIF_RET(uint_to_big(low_bits, hp));
-      }
+    return bit_size_1(BIF_P, BIF_ARG_1);
+}
+
+/**********************************************************************/
+/* returns the bitsize of a bitstring */
+
+BIF_RETTYPE bit_size_1(BIF_ALIST_1)
+{
+    Uint low_bits;
+    Uint bytesize;
+    Uint high_bits;
+    if (is_binary(BIF_ARG_1)) {
+	bytesize = binary_size(BIF_ARG_1);
+	high_bits = bytesize >>  ((sizeof(Uint) * 8)-3);
+	low_bits = (bytesize << 3) + binary_bitsize(BIF_ARG_1);
+	if (high_bits == 0) {
+	    if (IS_USMALL(0,low_bits)) {
+		BIF_RET(make_small(low_bits));
+	    } else {
+		Eterm* hp = HAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+		BIF_RET(uint_to_big(low_bits, hp));
+	    }
+	} else {
+	    Uint sz = BIG_UINT_HEAP_SIZE+1;
+	    Eterm* hp = HAlloc(BIF_P, sz);
+	    hp[0] = make_pos_bignum_header(sz-1);
+	    BIG_DIGIT(hp,0) = low_bits;
+	    BIG_DIGIT(hp,1) = high_bits;
+	    BIF_RET(make_big(hp));
+	}
+    } else {
+	BIF_ERROR(BIF_P, BADARG);
     }
-    else {
-      Uint sz =  BIG_NEED_SIZE(4);
-      Eterm* hp = ArithAlloc(BIF_P, sz);
-      hp[0] = make_pos_bignum_header(sz-1);
-      BIG_DIGIT(hp,0) = DLOW(low_bits);
-      BIG_DIGIT(hp,1) = DHIGH(low_bits);
-      BIG_DIGIT(hp,2) = DLOW(high_bits);
-      BIG_DIGIT(hp,3) = DHIGH(high_bits);
-      BIF_RET(make_big(hp));
+}
+
+/**********************************************************************/
+/* returns the number of bytes need to store a bitstring */
+
+BIF_RETTYPE byte_size_1(BIF_ALIST_1)
+{
+    if (is_binary(BIF_ARG_1)) {
+	Uint bytesize = binary_size(BIF_ARG_1);
+	if (binary_bitsize(BIF_ARG_1) > 0) {
+	    bytesize++;
+	}
+	if (IS_USMALL(0, bytesize)) {
+	    BIF_RET(make_small(bytesize));
+	} else {
+	    Eterm* hp = HAlloc(BIF_P, BIG_UINT_HEAP_SIZE);
+	    BIF_RET(uint_to_big(bytesize, hp));
+	}
+    } else {
+	BIF_ERROR(BIF_P, BADARG);
     }
-  }
-  else {
-    BIF_ERROR(BIF_P, BADARG);
-  }
 }
 
 /*
@@ -250,11 +268,12 @@ double_to_integer(Process* p, double x)
 {
     int is_negative;
     int ds;
-    digit_t* xp;
+    ErtsDigit* xp;
     int i;
     Eterm res;
     size_t sz;
     Eterm* hp;
+    double dbase;
 
     if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
 	Sint xi = x;
@@ -270,25 +289,21 @@ double_to_integer(Process* p, double x)
 
     /* Unscale & (calculate exponent) */
     ds = 0;
+    dbase = ((double)(D_MASK)+1);
     while(x >= 1.0) {
-	x /= D_BASE;         /* "shift" right */
+	x /= dbase;         /* "shift" right */
 	ds++;
     }
     sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
 
-    /*
-     * Beam note: This function is called from guard bifs (round/1 and trunc/1),
-     * which are not allowed to build anything at all on the heap.
-     * Therefore it is essential to use the ArithAlloc() macro instead of HAlloc().
-     */
-    hp = ArithAlloc(p, sz);
+    hp = HAlloc(p, sz);
     res = make_big(hp);
-    xp = (digit_t*) (hp + 1);
+    xp = (ErtsDigit*) (hp + 1);
 
     for (i = ds-1; i >= 0; i--) {
-	digit_t d;
+	ErtsDigit d;
 
-	x *= D_BASE;      /* "shift" left */
+	x *= dbase;      /* "shift" left */
 	d = x;            /* trunc */
 	xp[i] = d;        /* store digit */
 	x -= d;           /* remove integer part */
@@ -305,8 +320,11 @@ double_to_integer(Process* p, double x)
     return res;
 }
 
-#if defined(HEAP_FRAG_ELIM_TEST)
-#undef ArithAlloc
+/*
+ * The following code is used when a guard that may build on the
+ * heap is called directly. They must not used HAlloc(), but must
+ * do a garbage collection if there is insufficient heap space.
+ */
 
 #define ERTS_GBIF_FORCE_GC 1
 
@@ -354,7 +372,7 @@ Eterm erts_gc_size_1(Process* p, Eterm* reg, Uint live)
     BIF_ERROR(p, BADARG);
 }
 
-Eterm erts_gc_bitsize_1(Process* p, Eterm* reg, Uint live)
+Eterm erts_gc_bit_size_1(Process* p, Eterm* reg, Uint live)
 {
     Eterm arg = reg[live];
     if (is_binary(arg)) {
@@ -377,18 +395,41 @@ Eterm erts_gc_bitsize_1(Process* p, Eterm* reg, Uint live)
 		return uint_to_big(low_bits, hp);
 	    }
 	} else {
-	    Uint sz =  BIG_NEED_SIZE(4);
+	    Uint sz = BIG_UINT_HEAP_SIZE+1;
 	    Eterm* hp;
 	    if (ERTS_NEED_GC(p, sz)) {
 		erts_garbage_collect(p, sz, reg, live);
 	    }
 	    hp = p->htop;
+	    p->htop += sz;
 	    hp[0] = make_pos_bignum_header(sz-1);
-	    BIG_DIGIT(hp,0) = DLOW(low_bits);
-	    BIG_DIGIT(hp,1) = DHIGH(low_bits);
-	    BIG_DIGIT(hp,2) = DLOW(high_bits);
-	    BIG_DIGIT(hp,3) = DHIGH(high_bits);
+	    BIG_DIGIT(hp,0) = low_bits;
+	    BIG_DIGIT(hp,1) = high_bits;
 	    return make_big(hp);
+	}
+    } else {
+	BIF_ERROR(p, BADARG);
+    }
+}
+
+Eterm erts_gc_byte_size_1(Process* p, Eterm* reg, Uint live)
+{
+    Eterm arg = reg[live];
+    if (is_binary(arg)) {
+	Uint bytesize = binary_size(arg);
+	if (binary_bitsize(arg) > 0) {
+	    bytesize++;
+	}
+	if (IS_USMALL(0, bytesize)) {
+	    return make_small(bytesize);
+	} else {
+	    Eterm* hp;
+	    if (ERTS_NEED_GC(p, BIG_UINT_HEAP_SIZE)) {
+		erts_garbage_collect(p, BIG_UINT_HEAP_SIZE, reg, live);
+	    }
+	    hp = p->htop;
+	    p->htop += BIG_UINT_HEAP_SIZE;
+	    return uint_to_big(bytesize, hp);
 	}
     } else {
 	BIF_ERROR(p, BADARG);
@@ -540,11 +581,12 @@ gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live)
 {
     int is_negative;
     int ds;
-    digit_t* xp;
+    ErtsDigit* xp;
     int i;
     Eterm res;
     size_t sz;
     Eterm* hp;
+    double dbase;
 
     if ((x < (double) (MAX_SMALL+1)) && (x > (double) (MIN_SMALL-1))) {
 	Sint xi = x;
@@ -560,8 +602,9 @@ gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live)
 
     /* Unscale & (calculate exponent) */
     ds = 0;
+    dbase = ((double)(D_MASK)+1);
     while(x >= 1.0) {
-	x /= D_BASE;         /* "shift" right */
+	x /= dbase;         /* "shift" right */
 	ds++;
     }
     sz = BIG_NEED_SIZE(ds);          /* number of words including arity */
@@ -571,12 +614,12 @@ gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live)
     hp = p->htop;
     p->htop += sz;
     res = make_big(hp);
-    xp = (digit_t*) (hp + 1);
+    xp = (ErtsDigit*) (hp + 1);
 
     for (i = ds-1; i >= 0; i--) {
-	digit_t d;
+	ErtsDigit d;
 
-	x *= D_BASE;      /* "shift" left */
+	x *= dbase;      /* "shift" left */
 	d = x;            /* trunc */
 	xp[i] = d;        /* store digit */
 	x -= d;           /* remove integer part */
@@ -592,5 +635,3 @@ gc_double_to_integer(Process* p, double x, Eterm* reg, Uint live)
     }
     return res;
 }
-
-#endif

@@ -18,7 +18,7 @@ static inline int nstack_walk_init_check(const Process *p)
 static inline Eterm *nstack_walk_nsp_begin(const Process *p)
 {
     unsigned int nstkarity = p->hipe.narity - NR_ARG_REGS;
-    if( (int)nstkarity < 0 )
+    if ((int)nstkarity < 0)
 	nstkarity = 0;
     return p->hipe.nsp + nstkarity;
 }
@@ -47,12 +47,12 @@ static inline Eterm *nstack_walk_nsp_end(const Process *p)
 static inline void nstack_walk_kill_trap(Process *p, Eterm *nsp_end)
 {
     /* remove gray/white boundary trap */
-    if( (unsigned long)p->hipe.nra == (unsigned long)&nbif_stack_trap_ra ) {
+    if ((unsigned long)p->hipe.nra == (unsigned long)&nbif_stack_trap_ra) {
 	p->hipe.nra = p->hipe.ngra;
     } else {
 	for(;;) {
 	    --nsp_end;
-	    if( nsp_end[0] == (unsigned long)&nbif_stack_trap_ra ) {
+	    if (nsp_end[0] == (unsigned long)&nbif_stack_trap_ra) {
 		nsp_end[0] = (unsigned long)p->hipe.ngra;
 		break;
 	    }

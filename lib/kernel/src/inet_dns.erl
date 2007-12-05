@@ -24,7 +24,7 @@
 -export([number_of_queries/1, number_of_answers/1,
 	 number_of_authority/1, number_of_resources/1]).
 
--import(lists, [reverse/1, nthtail/2]).
+-import(lists, [reverse/1, reverse/2, nthtail/2]).
 
 -include("inet_int.hrl").
 -include("inet_dns.hrl").
@@ -528,23 +528,22 @@ dn_comp(Name, Ns0, Buf, Offset) ->
 	    Ptr = [(Offs bsr 8) bor ?INDIR_MASK, Offs band 16#ff],
 	    { Buf ++ Ptr, Ns0 };
 	false ->
-	    dn_comp_label(Name, [{Name, Offset} | Ns0], [], Buf, Offset)
+	    { Buf ++ dn_comp_labels(Name, []), [{Name, Offset} | Ns0] }
     end.
 
-dn_comp_label([$\\, 0 | _Garbage], Ns, Cn, Buf, _Offset) ->
-    Label = [length(Cn) | reverse([0 | Cn])],
-    { Buf ++ Label, Ns};
-dn_comp_label([$. | Name], Ns, Cn, Buf, Offset) ->
-    Label = [length(Cn) | reverse(Cn)],
-    dn_comp(Name, Ns, Buf ++ Label, Offset+1);
-dn_comp_label([$\\, C | Name], Ns, Cn, Buf, Offset) ->
-    dn_comp_label(Name, Ns, [C, $\\ | Cn], Buf, Offset+2); %% Keep $\\
-dn_comp_label([C | Name], Ns, Cn, Buf, Offset) ->
-    dn_comp_label(Name, Ns, [C|Cn], Buf, Offset+1);
-dn_comp_label([], Ns, Cn, Buf, _Offset) ->
-    Label = [length(Cn) | reverse([0|Cn])],
-    { Buf ++ Label, Ns}.
-
+dn_comp_labels([$\\, 0 | _Garbage], Cn) ->
+    dn_comp_labels([], Cn);
+dn_comp_labels([$.], Cn) ->
+    dn_comp_labels([], Cn);
+dn_comp_labels([$. | Name], Cn) ->
+    [length(Cn) | reverse(Cn, dn_comp_labels(Name, []))];
+dn_comp_labels([$\\, C | Name], Cn) ->
+    dn_comp_labels(Name, [C, $\\ | Cn]);
+dn_comp_labels([C | Name], Cn) ->
+    dn_comp_labels(Name, [C | Cn]);
+dn_comp_labels([], Cn) ->
+    [length(Cn) | reverse(Cn, [0])].
+    
 %%
 %% Skip over a compressed domain name
 %%

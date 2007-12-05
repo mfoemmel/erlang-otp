@@ -6,9 +6,12 @@
 
 -module(demo).
 
--export([run/0, run_1/0, run_2/0, run_3/0, view/1, view/2, view/3]).
+-export([run/0, run_1/0, run_2/0, run_3/0, run_4/0, 
+	 view/1, view/2, view/3]).
 
 small_file() -> "test.erl".
+
+medium_file() -> "test_comprehensions.erl".
 
 big_file() -> "erl_comment_scan.erl".
 
@@ -29,11 +32,18 @@ run_1() ->
 run_2() ->
     view(small_file(), 15),
     io:fwrite("\n\n\n** Enter `demo:run_3()' to parse and pretty-print\n"
+	      "the file \"~s\" with field width 35\n\n",
+	      [medium_file()]),
+    ok.
+
+run_3() ->
+   view(medium_file(), 35),
+    io:fwrite("\n\n\n** Enter `demo:run_4()' to parse and pretty-print\n"
 	      "the file \"~s\" with field width 55 and ribbon width 40.\n\n",
 	      [big_file()]),
     ok.
 
-run_3() ->
+run_4() ->
     view(big_file(), 55, 40),
     io:fwrite("\n\n\n** Done! Now you can play around with the function\n"
 	      "`demo:view(FileName, PaperWidth, RibbonWidth)' on any\n"

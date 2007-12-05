@@ -36,7 +36,6 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES = \
-	http_base_64 \
 	http_chunk \
 	http_transport\
 	http_util \

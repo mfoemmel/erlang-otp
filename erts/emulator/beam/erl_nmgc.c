@@ -2,7 +2,7 @@
 #  include "config.h"
 #endif
 #include "global.h"
-#include "ggc.h"
+#include "erl_gc.h"
 #include "erl_binary.h"
 #include "erl_nmgc.h"
 #include "erl_debug.h"

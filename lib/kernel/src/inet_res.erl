@@ -253,9 +253,9 @@ getbyname_tm(Name, Type, Timer) when is_list(Name) ->
 	    case inet_parse:visible_string(Name) of
 		false -> {error, formerr};
 		true ->
-		    case inet_db:getbyname(Name,Type) of
+		    case inet_db:getbyname(Name, Type) of
 			{ok, HEnt} -> {ok, HEnt};
-			_ -> res_getbyname(Name,Type,Timer)
+			_ -> res_getbyname(Name, Type, Timer)
 		    end
 	    end;
 	false ->
@@ -271,44 +271,67 @@ type_p(Type) ->
 		        ?S_MB, ?S_MG, ?S_MR, ?S_NULL,
 		        ?S_WKS, ?S_HINFO, ?S_TXT, ?S_SRV,
 		        ?S_UINFO, ?S_UID, ?S_GID]).
-	    
-res_getbyname(Name,Type,Timer) ->
-    case dots(Name) of
-	{0, Dot} ->
+
+
+
+%% This function and inet_db:getbyname/2 must look up names
+%% in the same manner, but not from the same places.
+%%
+%% Assuming search path, i.e return value from inet_db:get_searchlist()
+%% to be ["dom1", "dom2"]:
+%%
+%% Old behaviour (not this code but the previous version):
+%% * For Name = "foo"
+%%       Name = "foo."      try "foo.dom1", "foo.dom2" at normal nameservers
+%% * For Name = "foo.bar"
+%%       Name = "foo.bar."  try "foo.bar" at normal then alt. nameservers
+%%                          then try "foo.bar.dom1", "foo.bar.dom2"
+%%                                   at normal nameservers
+%%
+%% New behaviour (this code), honoring the old behaviour but
+%% doing better for absolute names:
+%% * For Name = "foo"       try "foo.dom1", "foo.dom2" at normal nameservers
+%% * For Name = "foo.bar"   try "foo.bar" at normal then alt. nameservers
+%%                          then try "foo.bar.dom1", "foo.bar.dom2"
+%%                                   at normal nameservers
+%% * For Name = "foo."      try "foo" at normal then alt. nameservers
+%% * For Name = "foo.bar."  try "foo.bar" at normal then alt. nameservers
+%%
+%%
+%% FIXME This is probably how it should be done:
+%% Common behaviour (Solaris resolver) is:
+%% * For Name = "foo."      try "foo"
+%% * For Name = "foo.bar."  try "foo.bar"
+%% * For Name = "foo"       try "foo.dom1", "foo.dom2", "foo"
+%% * For Name = "foo.bar"   try "foo.bar.dom1", "foo.bar.dom2", "foo.bar"
+%% That is to try Name as it is as a last resort if it is not absolute.
+%%
+res_getbyname(Name, Type, Timer) ->
+    {EmbeddedDots, TrailingDot} = inet_parse:dots(Name),
+    Dot = if TrailingDot -> ""; true -> "." end,
+    if  TrailingDot ->
+	    res_getby_query_alt(Name, Type, Timer);
+	EmbeddedDots =:= 0 ->
 	    res_getby_search(Name, Dot,
-			     get_searchlist(),nxdomain,Type,Timer);
-	{_,Dot} ->
-	    case res_getby_query_alt(Name,Type,Timer) of
-		{error,_Reason} ->
+			     inet_db:get_searchlist(),
+			     nxdomain, Type, Timer);
+	true ->
+	    case res_getby_query_alt(Name, Type, Timer) of
+		{error,_Reason}=Error ->
 		    res_getby_search(Name, Dot,
-				     get_searchlist(),nxdomain,Type,Timer);
+				     inet_db:get_searchlist(),
+				     Error, Type, Timer);
 		Other -> Other
 	    end
-    end.
-
-%% returns number of dots and a string with a dot or an empty string
-%% {Numdots_except_last,Dotstring}
-%% Dotstring indicates wether a "." should be added before addition
-%% of more components
-dots(Name) ->
-    case inet_parse:dots(Name) of
-	{N,false} -> {N,"."}; % no dot we must add one
-	{N,true} -> {N,""}    % trailing dot , no need to add one
-    end.
-
-get_searchlist() ->
-    case res_option(search) of
-	[] -> [res_option(domain)];
-	L -> L
     end.
 
 res_getby_search(Name, Dot, [Dom | Ds], _Reason, Type, Timer) ->
     case res_getby_query(Name ++ Dot ++ Dom,res_option(nameserver),
 			 Type,Timer) of
-	{ok, HEnt} -> {ok, HEnt};
-	{error, formerr} -> {error, formerr};
-	{error, NewReason} -> res_getby_search(Name,Dot,Ds,NewReason,
-					       Type,Timer)
+	{ok, HEnt}         -> {ok, HEnt};
+	{error, formerr}   -> {error, formerr};
+	{error, NewReason} ->
+	    res_getby_search(Name, Dot, Ds, NewReason, Type, Timer)
     end;
 res_getby_search(_Name, _, [], Reason,_,_) ->
     {error, Reason}.
@@ -335,6 +358,7 @@ res_getby_query(Name, Ns, Type, Timer) ->
 	    inet_db:res_hostent_by_domain(Name, Type, Rec);
 	Error -> Error
     end.
+
 
 res_mkquery(Dname, Class, Type) ->
     ID = res_option(next_id),
@@ -410,6 +434,8 @@ res_send_query_udp(S, Id, Buffer, I, N, Tm, Timer, [{IP, Port}|Ns],ErrNs) ->
 	    {ok, Rec};
 	{error, nxdomain} ->
 	    {error, nxdomain};
+	{error, qfmterror} ->
+	    {error, einval};
 	{error, enetunreach} ->
 	    res_send_query_udp(S, Id, Buffer, I, N, Tm,Timer, 
 			       Ns, [{IP,Port}|ErrNs]);
@@ -455,6 +481,7 @@ res_send_tcp2(Id, Buffer, Retry, Tm, Timer, [{IP,Port}|Ns]) ->
 			     {ok,Rec} -> {ok, Rec};
 			     {error, nxdomain} -> {error, nxdomain};
 			     {error, fmt} -> {error, einval};
+			     {error, qfmterror} -> {error, einval};
 			     _Error ->
 				 res_send_tcp2(Id, Buffer, Retry, Tm, Timer, Ns)
 			 end;

@@ -774,7 +774,13 @@ handle_info({Port, {data, Bin}}, St)
 		  "reason = ~w~n", [Fd, Reason]),
 	    case delete_by_fd(Fd, St#st.cons) of
 		{ok, {_, _, From}, Cons} ->
-		    %% Must not close Fd since it is published
+		    case Reason of
+			enoproxysocket ->	
+			    send_cmd(Port, ?CLOSE, int32(Fd));
+			_ ->
+			    ok
+			    %% Must not close Fd since it is published
+		    end,
 		    gen_server:reply(From, {error, Reason}),
 		    {noreply, St#st{cons = Cons}};
 		_Other ->
@@ -1190,7 +1196,8 @@ new_intref(St) ->
 %%
 mk_cmd_line(Default) ->
     {port_program(Default), 
-     lists:flatten([debug_flag(), " ", debugdir_flag(), " ", 
+     lists:flatten([debug_flag(), " ", debug_port_flag(), " ",
+		    debugdir_flag(), " ", 
 		    msgdebug_flag(), " ", proxylsport_flag(), " ", 
 		    proxybacklog_flag(), " ", ephemeral_rsa_flag(), " ",
 		    ephemeral_dh_flag(), " ",
@@ -1258,6 +1265,14 @@ extension() ->
 
 debug_flag() ->
     case os:getenv("ERL_SSL_DEBUG") of
+	false ->
+	    get_env(debug, "-d");
+	_ ->
+	    "-d"
+    end.
+
+debug_port_flag() ->
+    case os:getenv("ERL_SSL_DEBUGPORT") of
 	false ->
 	    get_env(debug, "-d");
 	_ ->

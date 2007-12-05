@@ -110,20 +110,22 @@ copy_anno(Kdst, Ksrc) ->
 -record(ireceive_next, {anno=[],arg}).
 
 %% State record for kernel translator.
--record(kern, {func,				%Current function
+-record(kern, {func,				%Current host function
+	       ff,				%Current function
 	       vcount=0,			%Variable counter
 	       fcount=0,			%Fun counter
 	       ds=[],				%Defined variables
 	       funs=[],				%Fun functions
 	       free=[],				%Free variables
 	       ws=[],				%Warnings.
-	       extinstr=false,	                %Generate extended instructions
-	       lit=false}).			%Constant pool for literals.
+	       lit}).			        %Constant pool for literals.
 
 module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
-    ExtInstr = not member(no_new_apply, Options),
-    Lit = member(constant_pool, Options),
-    St0 = #kern{extinstr=ExtInstr,lit=Lit},
+    Lit = case member(no_constant_pool, Options) of
+	      true -> no;
+	      false -> dict:new()
+	  end,
+    St0 = #kern{lit=Lit},
     {Kfs,St} = mapfoldl(fun function/2, St0, Fs),
     Kes = map(fun (#c_fname{id=N,arity=Ar}) -> {N,Ar} end, Es),
     Kas = map(fun ({#c_literal{val=N},V}) ->
@@ -133,7 +135,8 @@ module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
 
 function({#c_fname{id=F,arity=Arity},Body}, St0) ->
     %%ok = io:fwrite("kern: ~p~n", [{F,Arity}]),
-    St1 = St0#kern{func={F,Arity},vcount=0,fcount=0,ds=sets:new()},
+    FA = {F,Arity},
+    St1 = St0#kern{func=FA,ff=undefined,vcount=0,fcount=0,ds=sets:new()},
     {#ifun{anno=Ab,vars=Kvs,body=B0},[],St2} = expr(Body, new_sub(), St1),
     {B1,_,St3} = ubody(B0, return, St2),
     %%B1 = B0, St3 = St2,				%Null second pass
@@ -216,11 +219,23 @@ gexpr_test_add(Ke, St0) ->
 
 expr(#c_var{anno=A,name=V}, Sub, St) ->
     {#k_var{anno=A,name=get_vsub(V, Sub)},[],St};
-expr(#c_literal{anno=A,val=V}, Sub, #kern{lit=LitFlag}=St) ->
-    Core = handle_literal(V, A, LitFlag),
+expr(#c_literal{anno=A,val=Lit}, Sub, #kern{lit=no}=St) ->
+    %% No constant pools for compatibility with a previous version.
+    %% Fully expand the literal.
+    Core = expand_literal(Lit, A),
     expr(Core, Sub, St);
-expr(#k_literal{}=V, _Sub, St) ->
-    {V,[],St};
+expr(#c_literal{}=Lit, Sub, St) ->
+    Core = handle_literal(Lit),
+    expr(Core, Sub, St);
+expr(#k_literal{val=Val0}=Klit, _Sub, #kern{lit=Literals0}=St) ->
+    %% Share identical literals to save some space and time during compilation.
+    case dict:find(Val0, Literals0) of
+	{ok,Val} ->
+	    {Klit#k_literal{val=Val},[],St};
+	error ->
+	    Literals = dict:store(Val0, Val0, Literals0),
+	    {Klit,[],St#kern{lit=Literals}}
+    end;
 expr(#k_nil{}=V, _Sub, St) ->
     {V,[],St};
 expr(#k_int{}=V, _Sub, St) ->
@@ -230,8 +245,7 @@ expr(#k_float{}=V, _Sub, St) ->
 expr(#k_atom{}=V, _Sub, St) ->
     {V,[],St};
 expr(#k_string{}=V, _Sub, St) ->
-    {V,[],St};
-expr(#k_binary{}=V, _Sub, St) ->
+    %% Only for compatibility with a previous version.
     {V,[],St};
 expr(#c_cons{anno=A,hd=Ch,tl=Ct}, Sub, St0) ->
     %% Do cons in two steps, first the expressions left to right, then
@@ -245,7 +259,7 @@ expr(#c_tuple{anno=A,es=Ces}, Sub, St0) ->
     {Kes,Ep,St1} = atomic_list(Ces, Sub, St0),
     {#k_tuple{anno=A,es=Kes},Ep,St1};
 expr(#c_binary{anno=A,segments=Cv}, Sub, St0) ->
-    try atomic_bin(Cv, Sub, St0, 0) of
+    try atomic_bin(Cv, Sub, St0) of
 	{Kv,Ep,St1} ->
 	    {#k_binary{anno=A,segs=Kv},Ep,St1}
     catch
@@ -266,11 +280,20 @@ expr(#c_fname{anno=A,arity=Ar}=Fname, Sub, St) ->
 	     V <- integers(1, Ar)],
     Fun = #c_fun{anno=A,vars=Vs,body=#c_apply{op=Fname,args=Vs}},
     expr(Fun, Sub, St);
-expr(#c_fun{anno=A,vars=Cvs,body=Cb}, Sub0, St0) ->
-    {Kvs,Sub1,St1} = pattern_list(Cvs, Sub0, St0),
+expr(#c_fun{anno=A,vars=Cvs,body=Cb}, Sub0, #kern{ff=OldFF}=St0) ->
+    FA = case OldFF of
+	     undefined ->
+		 St0#kern.func;
+	     _ ->
+		 case lists:keysearch(id, 1, A) of
+		     {value,{id,{_,_,Name}}} -> Name;
+		     _ -> unknown_fun
+		 end
+	 end,
+    {Kvs,Sub1,St1} = pattern_list(Cvs, Sub0, St0#kern{ff=FA}),
     %%ok = io:fwrite("~w: ~p~n", [?LINE,{{Cvs,Sub0,St0},{Kvs,Sub1,St1}}]),
-    {Kb,Pb,St2} = body(Cb, Sub1, St1),
-    {#ifun{anno=A,vars=Kvs,body=pre_seq(Pb, Kb)},[],St2};
+    {Kb,Pb,St2} = body(Cb, Sub1, St1#kern{ff=FA}),
+    {#ifun{anno=A,vars=Kvs,body=pre_seq(Pb, Kb)},[],St2#kern{ff=OldFF}};
 expr(#c_seq{arg=Ca,body=Cb}, Sub, St0) ->
     {Ka,Pa,St1} = body(Ca, Sub, St0),
     case is_exit_expr(Ka) of
@@ -355,16 +378,13 @@ expr(#c_call{anno=A,module=#c_literal{val=erlang},name=#c_literal{val=is_record}
 	    %% (Only in bodies.) Make it into an actual call to the BIF.
 	    {#k_call{anno=A,op=Remote,args=Args},Ap,St}
     end;
-expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) ->
+expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
     Ar = length(Cargs),
     {Type,St1} = case call_type(M0, F0, Ar) of
 		     error ->
 			 %% Invalid call (e.g. M:42/3). Issue a warning,
 			 %% and let the generated code use the old explict apply.
 			 {old_apply,add_warning(get_line(A), bad_call, A, St0)};
-		     apply when NI =:= false ->
-			 %% Requested compatibility with an earlier version.
-			 {old_apply,St0};
 		     Type0 ->
 			 {Type0,St0}
 		 end,
@@ -391,10 +411,11 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, #kern{extinstr=NI}=St0) 
 		   end,
 	    {Call,Ap,St}
     end;
-expr(#c_primop{anno=A,name=#c_literal{val=match_fail},args=Cargs}, Sub,
+expr(#c_primop{anno=A,name=#c_literal{val=match_fail},args=Cargs0}, Sub,
      #kern{lit=LitFlag}=St0) ->
+    Cargs = translate_match_fail(Cargs0, St0),
     %% This special case will disappear.
-    {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0#kern{lit=false}),
+    {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0#kern{lit=no}),
     St = St1#kern{lit=LitFlag},
     Ar = length(Cargs),
     Call = #k_call{anno=A,op=#k_internal{name=match_fail,arity=Ar},args=Kargs},
@@ -419,6 +440,25 @@ expr(#c_catch{anno=A,body=Cb}, Sub, St0) ->
     {#k_catch{anno=A,body=pre_seq(Pb, Kb)},[],St1};
 %% Handle internal expressions.
 expr(#ireceive_accept{anno=A}, _Sub, St) -> {#k_receive_accept{anno=A},[],St}.
+
+%% Translate a function_clause to case_clause if it has been moved into
+%% another function.
+translate_match_fail([#c_tuple{es=[#c_literal{anno=A,val=function_clause}|As]}]=Args,
+		      #kern{ff=FF}) ->
+    case {A,FF} of
+	{[{name,Same}],Same} ->
+	    %% Still in the correct function.
+	    Args;
+	{[{name,{F,_}}],F} ->
+	    %% Still in the correct function.
+	    Args;
+	_ ->
+	    %% Inlining has probably moved the function_clause into another
+	    %% function (where it will not work correctly).
+	    %% Rewrite to a case_clause.
+	    [#c_tuple{es=[#c_literal{val=case_clause},#c_tuple{es=As}]}]
+    end;
+translate_match_fail(Args, _) -> Args.
 
 %% expr_list([Cexpr], Sub, State) -> {[Kexpr],[PreKexpr],State}.
 
@@ -499,22 +539,21 @@ force_atomic(Ke, St0) ->
 % 		  {[A|As],Ap ++ Asp,St1}
 % 	  end, {[],[],St}, Kes).
 
-atomic_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0],
-	   Sub, St0, B0) ->
+atomic_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U0,type=T,flags=Fs0}|Es0],
+	   Sub, St0) ->
     {E,Ap1,St1} = atomic(E0, Sub, St0),
     {S1,Ap2,St2} = atomic(S0, Sub, St1),
     validate_bin_element_size(S1),
-    U0 = core_lib:literal_value(U),
-    Fs0 = core_lib:literal_value(Fs),
-    {B1,Fs1} = aligned(B0, S1, U0, Fs0),
-    {Es,Ap3,St3} = atomic_bin(Es0, Sub, St2, B1),
+    U1 = core_lib:literal_value(U0),
+    Fs1 = core_lib:literal_value(Fs0),
+    {Es,Ap3,St3} = atomic_bin(Es0, Sub, St2),
     {#k_bin_seg{anno=A,size=S1,
-		unit=U0,
+		unit=U1,
 		type=core_lib:literal_value(T),
 		flags=Fs1,
 		seg=E,next=Es},
      Ap1++Ap2++Ap3,St3};
-atomic_bin([], _Sub, St, _Bits) -> {#k_bin_end{},[],St}.
+atomic_bin([], _Sub, St) -> {#k_bin_end{},[],St}.
 
 validate_bin_element_size(#k_var{}) -> ok;
 validate_bin_element_size(#k_int{val=V}) when V >= 0 -> ok;
@@ -532,6 +571,7 @@ atomic_list(Ces, Sub, St) ->
 %% is_atomic(Kexpr) -> bool().
 %%  Is a Kexpr atomic?  Strings are NOT considered atomic!
 
+is_atomic(#k_literal{}) -> true;
 is_atomic(#k_int{}) -> true;
 is_atomic(#k_float{}) -> true;
 is_atomic(#k_atom{}) -> true;
@@ -598,30 +638,29 @@ flatten_alias(#c_alias{var=V,pat=P}) ->
 flatten_alias(Pat) -> {[],Pat}.
 
 pattern_bin(Es, Isub, Osub0, St0) ->
-    {Kbin,{_,Osub},St} = pattern_bin(Es, Isub, Osub0, St0, 0),
+    {Kbin,{_,Osub},St} = pattern_bin_1(Es, Isub, Osub0, St0),
     {Kbin,Osub,St}.
 
-pattern_bin([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0], 
-	    Isub0, Osub0, St0, B0) ->
+pattern_bin_1([#c_bitstr{anno=A,val=E0,size=S0,unit=U,type=T,flags=Fs}|Es0], 
+	    Isub0, Osub0, St0) ->
     {S1,[],St1} = expr(S0, Isub0, St0),
     U0 = core_lib:literal_value(U),
     Fs0 = core_lib:literal_value(Fs),
     %%ok= io:fwrite("~w: ~p~n", [?LINE,{B0,S1,U0,Fs0}]),
-    {B1,Fs1} = aligned(B0, S1, U0, Fs0),
     {E,Osub1,St2} = pattern(E0, Isub0, Osub0, St1),
     Isub1 = case E0 of
 		#c_var{name=V} ->
 		    set_vsub(V, E#k_var.name, Isub0);
 		_ -> Isub0
 	    end,
-    {Es,{Isub,Osub},St3} = pattern_bin(Es0, Isub1, Osub1, St2, B1),
+    {Es,{Isub,Osub},St3} = pattern_bin_1(Es0, Isub1, Osub1, St2),
     {#k_bin_seg{anno=A,size=S1,
 		unit=U0,
 		type=core_lib:literal_value(T),
-		flags=Fs1,
+		flags=Fs0,
 		seg=E,next=Es},
      {Isub,Osub},St3};
-pattern_bin([], Isub, Osub, St, _Bits) -> {#k_bin_end{},{Isub,Osub},St}.
+pattern_bin_1([], Isub, Osub, St) -> {#k_bin_end{},{Isub,Osub},St}.
 
 %% pattern_list([Cexpr], Sub, State) -> {[Kexpr],Sub,State}.
 
@@ -735,6 +774,7 @@ is_remote_bif(_, _, _) -> false.
 %%  called for effect only.
 
 bif_vals(dsetelement, 3) -> 0;
+bif_vals(bs_context_to_binary, 1) -> 0;
 bif_vals(_, _) -> 1.
 
 bif_vals(_, _, _) -> 1.
@@ -971,11 +1011,8 @@ match_var([U|Us], Cs0, Def, St) ->
 match_con([U|Us], Cs, Def, St0) ->
     %% Extract clauses for different constructors (types).
     %%ok = io:format("match_con ~p~n", [Cs]),
-    Ttcs = [ {T,Tcs} || T <- [k_cons,k_tuple,k_atom,k_float,k_int,k_nil,
-			      k_binary],
-		       begin Tcs = select(T, Cs),
-			     Tcs /= []
-		       end ] ++ select_bin_con(Cs),
+    Ttcs = select_types([k_binary], Cs) ++ select_bin_con(Cs) ++
+	select_types([k_cons,k_tuple,k_atom,k_float,k_int,k_nil], Cs),
     %%ok = io:format("ttcs = ~p~n", [Ttcs]),
     {Scs,St1} =
 	mapfoldl(fun ({T,Tcs}, St) ->
@@ -985,6 +1022,10 @@ match_con([U|Us], Cs, Def, St0) ->
 			 {#k_type_clause{anno=Anno,type=T,values=Sc},S1} end,
 		 St0, Ttcs),
     {build_alt_1st_no_fail(build_select(U, Scs), Def),St1}.
+
+select_types(Types, Cs) ->
+    [{T,Tcs} || T <- Types, begin Tcs = select(T, Cs), Tcs =/= [] end].
+    
 
 %% select_bin_con([Clause]) -> [{Type,[Clause]}].
 %%  Extract clauses for the k_bin_seg constructor.  As k_bin_seg
@@ -998,11 +1039,57 @@ select_bin_con(Cs0) ->
 		       end, Cs0),
     select_bin_con_1(Cs1).
 
-select_bin_con_1([C1|Cs]) ->
+select_bin_con_1(Cs) ->
+    try
+	select_bin_int(Cs)
+    catch
+	throw:not_possible ->
+	    select_bin_con_2(Cs)
+    end.
+
+select_bin_con_2([C1|Cs]) ->
     Con = clause_con(C1),
     {More,Rest} = splitwith(fun (C) -> clause_con(C) =:= Con end, Cs),
-    [{Con,[C1|More]}|select_bin_con_1(Rest)];
-select_bin_con_1([]) -> [].
+    [{Con,[C1|More]}|select_bin_con_2(Rest)];
+select_bin_con_2([]) -> [].
+
+select_bin_int([#iclause{pats=[#k_bin_seg{anno=A,type=integer,
+ 					  size=#k_int{val=Bits0}=Sz,unit=U,
+ 					  flags=Fl,seg=#k_int{val=Val},
+					  next=N}|Ps]}=C|Cs0]) ->
+    Bits = U * Bits0,
+    P = #k_bin_int{anno=A,size=Sz,unit=U,flags=Fl,val=Val,next=N},
+    select_assert_not_expensive(Bits, Val, Fl),
+    Cs = select_bin_int_1(Cs0, Bits, Fl, Val),
+    [{k_bin_int,[C#iclause{pats=[P|Ps]}|Cs]}];
+select_bin_int(_) -> throw(not_possible).
+
+select_bin_int_1([#iclause{pats=[#k_bin_seg{anno=A,type=integer,
+					    size=#k_int{val=Bits0}=Sz,unit=U,
+					    flags=Fl,seg=#k_int{val=Val},
+					    next=N}|Ps]}=C|Cs],
+		 Bits, Fl, Val) ->
+    if
+	Bits0*U =:= Bits -> ok;
+	true -> throw(not_possible)
+    end,
+    select_assert_not_expensive(Bits, Val, Fl),
+    P = #k_bin_int{anno=A,size=Sz,unit=U,flags=Fl,val=Val,next=N},
+    [C#iclause{pats=[P|Ps]}|select_bin_int_1(Cs, Bits, Fl, Val)];
+select_bin_int_1([], _, _, _) -> [];
+select_bin_int_1(_, _, _, _) -> throw(not_possible).
+
+select_assert_not_expensive(Sz, Val, Fs) ->
+    EmptyBindings = erl_eval:new_bindings(),
+    EvalFun = fun({integer,_,S}, B) -> {value,S,B} end,
+    Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,1}|Fs]}],
+    {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
+    if
+	erlang:bitsize(Bin) > 1024 ->
+	    throw(not_possible);
+	true ->
+	    ok
+    end.
 
 %% select(Con, [Clause]) -> [Clause].
 
@@ -1034,6 +1121,8 @@ group_value(k_binary, Cs) -> [Cs];
 group_value(k_bin_end, Cs) -> [Cs];
 group_value(k_bin_seg, Cs) ->
     group_bin_seg(Cs);
+group_value(k_bin_int, Cs) ->
+    [Cs];
 group_value(_, Cs) ->
     %% group_value(Cs).
     Cd = foldl(fun (C, Gcs0) -> dict:append(clause_val(C), C, Gcs0) end,
@@ -1070,6 +1159,8 @@ match_clause([U|Us], [C|_]=Cs0, Def, St0) ->
 
 sub_size_var(#k_bin_seg{size=#k_var{name=Name}=Kvar}=BinSeg, [#iclause{isub=Sub}|_]) ->
     BinSeg#k_bin_seg{size=Kvar#k_var{name=get_vsub(Name, Sub)}};
+sub_size_var(#k_bin_int{size=#k_var{name=Name}=Kvar}=BinSeg, [#iclause{isub=Sub}|_]) ->
+    BinSeg#k_bin_int{size=Kvar#k_var{name=get_vsub(Name, Sub)}};
 sub_size_var(K, _) -> K.
 
 get_con([C|_]) -> arg_arg(clause_arg(C)).	%Get the constructor
@@ -1080,10 +1171,17 @@ get_match(#k_cons{}, St0) ->
 get_match(#k_binary{}, St0) ->
     {[V]=Mes,St1} = new_vars(1, St0),
     {#k_binary{segs=V},Mes,St1};
+get_match(#k_bin_seg{size=#k_atom{val=all},next={k_bin_end,[]}}=Seg, St0) ->
+    {[S]=Vars,St1} = new_vars(1, St0),
+    {Seg#k_bin_seg{seg=S,next=[]},Vars,St1};
 get_match(#k_bin_seg{}=Seg, St0) ->
     {[S,N0],St1} = new_vars(2, St0),
     N = set_kanno(N0, [no_usage]),
     {Seg#k_bin_seg{seg=S,next=N},[S,N],St1};
+get_match(#k_bin_int{}=BinInt, St0) ->
+    {N0,St1} = new_var(St0),
+    N = set_kanno(N0, [no_usage]),
+    {BinInt#k_bin_int{next=N},[N],St1};
 get_match(#k_tuple{es=Es}, St0) ->
     {Mes,St1} = new_vars(length(Es), St0),
     {#k_tuple{es=Mes},Mes,St1};
@@ -1096,8 +1194,13 @@ new_clauses(Cs0, U, St) ->
 				 #k_cons{hd=H,tl=T} -> [H,T|As];
 				 #k_tuple{es=Es} -> Es ++ As;
 				 #k_binary{segs=E}  -> [E|As];
+				 #k_bin_seg{size=#k_atom{val=all},
+					    seg=S,next={k_bin_end,[]}} ->
+				     [S|As];
 				 #k_bin_seg{seg=S,next=N} ->
 				     [S,N|As];
+				 #k_bin_int{next=N} ->
+				     [N|As];
 				 _Other -> As
 			     end,
 		      Vs = arg_alias(Arg),
@@ -1174,6 +1277,7 @@ arg_con(Arg) ->
 	#k_tuple{} -> k_tuple;
 	#k_binary{} -> k_binary;
 	#k_bin_end{} -> k_bin_end;
+	#k_bin_int{} -> k_bin_int;
 	#k_bin_seg{} -> k_bin_seg;
 	#k_var{} -> k_var
     end.
@@ -1188,6 +1292,8 @@ arg_val(Arg) ->
 	#k_tuple{es=Es} -> length(Es);
 	#k_bin_seg{size=S,unit=U,type=T,flags=Fs} ->
 	    {set_kanno(S, []),U,T,Fs};
+	#k_bin_int{} ->
+	    0;
 	#k_bin_end{} -> 0;
 	#k_binary{} -> 0
     end.
@@ -1273,14 +1379,9 @@ iletrec_funs_gen(Fs, FreeVs, St) ->
 %% is_exit_expr(Kexpr) -> bool().
 %%  Test whether Kexpr always exits and never returns.
 
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=throw,arity=1}}) -> true;
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=exit,arity=1}}) -> true;
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=error,arity=1}}) -> true;
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=error,arity=2}}) -> true;
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=fault,arity=1}}) -> true;
-is_exit_expr(#k_call{op=#k_remote{mod=erlang,name=fault,arity=2}}) -> true;
 is_exit_expr(#k_call{op=#k_internal{name=match_fail,arity=1}}) -> true;
-is_exit_expr(#k_bif{op=#k_internal{name=rethrow,arity=2}}) -> true;
+is_exit_expr(#k_call{op=#k_remote{mod=Mod,name=Name,arity=Arity}}) ->
+    erl_bifs:is_exit_bif(Mod, Name, Arity);
 is_exit_expr(#k_receive_next{}) -> true;
 is_exit_expr(_) -> false.
 
@@ -1293,7 +1394,6 @@ is_enter_expr(#k_call{}) -> true;
 is_enter_expr(#k_match{}) -> true;
 is_enter_expr(#k_receive{}) -> true;
 is_enter_expr(#k_receive_next{}) -> true;
-%%is_enter_expr(#k_try{}) -> true;		%Soon
 is_enter_expr(_) -> false.
 
 %% uguard(Expr, State) -> {Expr,[UsedVar],State}.
@@ -1596,6 +1696,9 @@ pat_vars(#k_bin_seg{size=Size,seg=S}) ->
     {U1,New} = pat_list_vars([S]),
     {[],U2} = pat_vars(Size),
     {union(U1, U2),New};
+pat_vars(#k_bin_int{size=Size}) ->
+    {[],U} = pat_vars(Size),
+    {U,[]};
 pat_vars(#k_bin_end{}) -> {[],[]};
 pat_vars(#k_tuple{es=Es}) ->
     pat_list_vars(Es).
@@ -1606,52 +1709,38 @@ pat_list_vars(Ps) ->
 		  {union(Used0, Used),union(New0, New)} end,
 	  {[],[]}, Ps).
 
-%% handle_literal(Literal, Anno, UseConstantPool) -> Kernel
-%%  Handle literals; if UseConstantPool is true, complex literals (literals
-%%  conses or tuples) will translated to #k_literal{}; otherwise,
-%%  it will be translated to the old format.
+%% handle_literal(Literal, Anno) -> Kernel
+%%  Examine the literal. Complex (heap-based) literals such as lists,
+%%  tuples, and binaries should be kept as literals and put into the constant pool.
+%%
+%%  (If necessary, this function could be extended to go through the literal
+%%  and convert huge binary literals to bit syntax expressions. We don't do that
+%%  because v3_core does not produce huge binary literals, and the optimizations in
+%%  sys_core_fold don't do much optimizations of binaries. IF THAT CHANGE IS MADE,
+%%  ALSO CHANGE sys_core_dsetel.)
 
-handle_literal(V, Anno, false) ->
-    %% Unconditionally expand the literal.
-    expand_literal(V, Anno);
-handle_literal(V, Anno, true) ->
-    %% Complex (heap-based) literals such as lists, tuples, and binaries
-    %% should be kept as literals and put into the constant pools.
-
+handle_literal(#c_literal{anno=A,val=V}) ->
     case V of
 	[_|_] ->
-	    complex_literal(V, Anno);
+	    #k_literal{anno=A,val=V};
 	V when is_tuple(V) ->
-	    complex_literal(V, Anno);
-	V when is_binary(V) ->
-	    complex_literal(V, Anno);
+	    #k_literal{anno=A,val=V};
+	V when erlang:is_bitstr(V) ->
+	    #k_literal{anno=A,val=V};
 	_ ->
-	    expand_literal(V, Anno)
+	    expand_literal(V, A)
     end.
-	
-%% complex_literal(V, Anno) -> Kernel
-%%  We have a literal that should be put into the constant pool,
-%%  UNLESS it contains binaries that can be represented much more
-%%  compactly using bit syntax construction instructions such as
-%%  <<0:10000000>> or <<-1:1000000>>.
 
-complex_literal(V, Anno) ->
-    case expensive_binaries(V) of
-	false -> #k_literal{anno=Anno,val=V};
-	true -> expand_literal(V, Anno)
-    end.
+%% expand_literal(Literal, Anno) -> CoreTerm | KernelTerm
+%%  Fully expand the literal. Atomic terms such as integers are directly
+%%  translated to the Kernel Erlang format, while complex terms are kept
+%%  in the Core Erlang format (but the content is recursively processed).
 
 expand_literal([H|T]=V, A) when is_integer(H), 0 =< H, H =< 255 ->
     case is_print_char_list(T) of
 	false ->
 	    #c_cons{anno=A,hd=#k_int{anno=A,val=H},tl=expand_literal(T, A)};
 	true ->
-	    %% If constant pools are enabled, this can only happen
-	    %% if a binary in the same literal can be represented much
-	    %% more compactly using bit syntax construction. Therefore, when
-	    %% constant pools becomes default and mandatory, we can get
-	    %% rid of the put_string/3 instruction like this:
-	    %%     binary_to_list(<<"string">>)
 	    #k_string{anno=A,val=V}
     end;
 expand_literal([H|T], A) ->
@@ -1665,86 +1754,16 @@ expand_literal(V, A) when is_integer(V) ->
 expand_literal(V, A) when is_float(V) ->
     #k_float{anno=A,val=V};
 expand_literal(V, A) when is_atom(V) ->
-    #k_atom{anno=A,val=V};
-expand_literal(V, A) when is_binary(V) ->
-    Template = #k_bin_seg{anno=A,
-			  size=#k_int{anno=A,val=8},
-			  unit=1,
-			  type=integer,
-			  flags=[unsigned,big]},
-    Segs = expand_bin_chars(V, size(V)-1, Template, #k_bin_end{anno=A}),
-    #k_binary{anno=A,segs=Segs}.
-
-expand_bin_chars(Bin, I0, Template, Acc0) ->
-    case Bin of
-	<<_:I0/binary,C:8,_/binary>> when C =:= 0; C =:= 255 ->
-	    I1 = I0 - 1,
-	    case count_bytes(Bin, I1, C, 1) of
-		{N,I} when N > ?EXPENSIVE_BINARY_LIMIT ->
-		    Val = if C =:= 0 -> 0;
-			     C =:= 255 -> -1
-			  end,
-		    Acc = Template#k_bin_seg{seg=#k_int{val=Val},
-					     size=#k_int{val=8*N},
-					     next=Acc0},
-		    expand_bin_chars(Bin, I, Template, Acc);
-		_ ->
-		    Acc = Template#k_bin_seg{seg=#k_int{val=C},next=Acc0},
-		    expand_bin_chars(Bin, I1, Template, Acc)
-	    end;
-	<<_:I0/binary,C:8,_/binary>> ->
-	    Acc = Template#k_bin_seg{seg=#k_int{val=C},next=Acc0},
-	    expand_bin_chars(Bin, I0-1, Template, Acc);
-	_ when I0 < 0 ->
-	    Acc0
-    end.
+    #k_atom{anno=A,val=V}.
 
 expand_literal_list([H|T], A) ->
     [expand_literal(H, A)|expand_literal_list(T, A)];
 expand_literal_list([], _) -> [].
 
-count_bytes(Bin, I, C, N) ->
-    case Bin of
-	<<_:I/binary,C:8,_/binary>> ->
-	    count_bytes(Bin, I-1, C, N+1);
-	_ ->
-	    {N,I}
-    end.
-
 is_print_char_list([H|T]) when is_integer(H), 0 =< H, H =< 255 ->
     is_print_char_list(T);
 is_print_char_list([]) -> true;
 is_print_char_list(_) -> false.
-
-%% expensive_binaries(Term) -> true|false.
-%%  Find out whether the constant contains any binaries that can
-%%  be represented much more compactly using bit syntax instructions,
-%%  such as <<0:10000000>>.
-
-expensive_binaries([H|T]) ->
-    case expensive_binaries(H) of
-	false -> expensive_binaries(T);
-	true -> true
-    end;
-expensive_binaries(Tuple) when is_tuple(Tuple) ->
-    expensive_binaries(tuple_to_list(Tuple));
-expensive_binaries(Bin) when is_binary(Bin) ->
-    expensive_binary(Bin, size(Bin)-1);
-expensive_binaries(_) -> false.
-
-expensive_binary(Bin, I0) ->
-    case Bin of
-	<<_:I0/binary,C:8,_/binary>> when C =:= 0; C =:= 255 ->
-	    I1 = I0 - 1,
-	    case count_bytes(Bin, I1, C, 1) of
-		{N,_} when N > ?EXPENSIVE_BINARY_LIMIT -> true;
-		{_,I} -> expensive_binary(Bin, I)
-	    end;
-	_ when I0 > 0 ->
-	    expensive_binary(Bin, I0-1);
-	_ ->
-	    false
-    end.
 
 %% expand_pat_literal(Literal, Anno) -> Kernel
 %%  Expand a literal used as a pattern (the result will not contain #k_string{}).
@@ -1765,20 +1784,6 @@ expand_pat_literal(V, A) when is_atom(V) ->
 expand_pat_literal_list([H|T], A) ->
     [expand_pat_literal(H, A)|expand_pat_literal_list(T, A)];
 expand_pat_literal_list([], _) -> [].
-
-%% aligned(Bits, Size, Unit, Flags) -> {Size,Flags}
-%%  Add 'aligned' to the flags if the current field is aligned.
-%%  Number of bits correct modulo 8.
-
-aligned(B, S, U, Fs) when B rem 8 =:= 0 ->
-    {incr_bits(B, S, U),Fs}; %No more aligned annotations: [aligned|Fs]
-aligned(B, S, U, Fs) ->
-    {incr_bits(B, S, U),Fs}.
-
-incr_bits(B, #k_int{val=S}, U) when is_integer(B) -> B + S*U;
-incr_bits(B, #k_atom{val=all}, _) -> B;		%Always aligned
-incr_bits(B, _, 8) -> B;
-incr_bits(_, _, _) -> unknown.
 
 make_list(Es) ->
     foldr(fun(E, Acc) ->

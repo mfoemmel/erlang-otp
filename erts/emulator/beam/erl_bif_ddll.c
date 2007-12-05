@@ -90,8 +90,10 @@ static Eterm build_load_error_hp(Eterm *hp, int code);
 static Eterm build_load_error(Process *p, int code);
 static int errdesc_to_code(Eterm errdesc, int *code /* out */);
 static Eterm add_monitor(Process *p, DE_Handle *dh, Uint status);
-static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, Uint32 plocks);
-static Eterm notify_when_unloaded(Process *p, Eterm name_term, char *name, Uint32 plocks, Uint flag);
+static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name,
+				ErtsProcLocks plocks);
+static Eterm notify_when_unloaded(Process *p, Eterm name_term, char *name,
+				  ErtsProcLocks plocks, Uint flag);
 static void first_ddll_reference(DE_Handle *dh);
 static void dereference_all_processes(DE_Handle *dh);
 static void restore_process_references(DE_Handle *dh);
@@ -919,7 +921,9 @@ void erts_ddll_init(void)
 }
 
 /* Return value as a bif, called by erlang:monitor */
-Eterm erts_ddll_monitor_driver(Process *p, Eterm description, Uint32 plocks) 
+Eterm erts_ddll_monitor_driver(Process *p,
+			       Eterm description,
+			       ErtsProcLocks plocks) 
 {
     Eterm *tp;
     Eterm ret;
@@ -957,7 +961,7 @@ Eterm erts_ddll_monitor_driver(Process *p, Eterm description, Uint32 plocks)
     return ret;
 }
 
-void erts_ddll_remove_monitor(Process *p, Eterm ref, Uint32 plocks)
+void erts_ddll_remove_monitor(Process *p, Eterm ref, ErtsProcLocks plocks)
 { 
     DE_List *de;
     erts_smp_proc_unlock(p, plocks);
@@ -991,7 +995,7 @@ void erts_ddll_remove_monitor(Process *p, Eterm ref, Uint32 plocks)
 /* 
  * Called from erl_process.c.
  */
-void erts_ddll_proc_dead(Process *p, Uint32 plocks) 
+void erts_ddll_proc_dead(Process *p, ErtsProcLocks plocks) 
 {
     DE_List *de;
     erts_smp_proc_unlock(p, plocks);
@@ -1199,7 +1203,7 @@ static void ddll_no_more_references(void *vdh)
 
     if (x == 0) {
 	DE_ProcEntry **p = &(dh->procs);
-	Eterm save_driver_name;
+	Eterm save_driver_name = am_undefined;
 	ASSERT(dh->status != ERL_DE_OK);
 	do_unload_driver_entry(dh,&save_driver_name);
 	while (*p != NULL) {
@@ -1289,7 +1293,7 @@ char *erts_ddll_error(int code) {
 /*
  * Utilities
  */
-static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, Uint32 plocks)
+static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, ErtsProcLocks plocks)
 { 
     Eterm r = NIL;
     Eterm immediate_tag = NIL;
@@ -1346,7 +1350,7 @@ static Eterm notify_when_loaded(Process *p, Eterm name_term, char *name, Uint32 
     BIF_RET(r);
 }
 
-static Eterm notify_when_unloaded(Process *p, Eterm name_term, char *name, Uint32 plocks, Uint flag)
+static Eterm notify_when_unloaded(Process *p, Eterm name_term, char *name, ErtsProcLocks plocks, Uint flag)
 { 
     Eterm r = NIL;
     Eterm immediate_tag = NIL;
@@ -1606,7 +1610,15 @@ static int do_load_driver_entry(DE_Handle *dh, char *path, char *name)
     dh->status = ERL_DE_OK;
     dp->handle = dh;
 
-    erts_add_driver_entry(dp,1); /* io.c */
+    if (erts_add_driver_entry(dp,1) != 0 /* io.c */) { 
+	/*
+	 * The init in the driver struct did not return 0 
+	 */
+	erts_free(ERTS_ALC_T_DDLL_HANDLE, dh->full_path);
+	dh->full_path = NULL;
+	erts_sys_ddll_close(dh->handle);
+	return ERL_DE_LOAD_ERROR_FAILED_INIT;
+    }
 
     return ERL_DE_NO_ERROR;
 }
@@ -1731,7 +1743,7 @@ static void notify_proc(Process *proc, Eterm ref, Eterm driver_name, Eterm type,
     Eterm *hp;
     ErlHeapFragment *bp;
     ErlOffHeap *ohp;
-    Uint32 rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
+    ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_MSG_SEND;
     ERTS_SMP_CHK_NO_PROC_LOCKS;
 
     assert_drv_list_locked();

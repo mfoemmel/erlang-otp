@@ -248,7 +248,7 @@ sizeof_rm(RM) ->
 	{rm_mem, EA} -> sizeof_ea(EA)
     end.
 
-%%% Floating point stack postitions
+%%% Floating point stack positions
 
 -define(ST0, 2#000).
 -define(ST1, 2#001).

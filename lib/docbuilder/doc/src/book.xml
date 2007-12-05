@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="latin1" ?>
 <!DOCTYPE book SYSTEM "book.dtd">
-<!-- 
- ``The contents of this file are subject to the Erlang Public License,
+
+<book>
+  <header titlestyle="normal">
+    <copyright>
+      <year>1999</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved.</holder>
+    </copyright>
+    <legalnotice>
+ The contents of this file are subject to the Erlang Public License,
  Version 1.1, (the "License"); you may not use this file except in
  compliance with the License. You should have received a copy of the
  Erlang Public License along with this software. If not, it can be
@@ -14,12 +22,9 @@
  
  The Initial Developer of the Original Code is Ericsson AB.
  Portions created by Ericsson are Copyright 2007, Ericsson AB.
- All Rights Reserved.''
- 
-     $Id$
--->
-<book>
-  <header titlestyle="normal">
+ All Rights Reserved.
+    </legalnotice>
+    
     <title>DocBuilder</title>
     <prepared></prepared>
     <docno></docno>
@@ -36,10 +41,11 @@
     <include file="part"></include>
   </parts>
   <applications>
-    <include file="application"></include>
+    <include file="ref_man"></include>
   </applications>
   <listoffigures></listoffigures>
   <listoftables></listoftables>
   <listofterms></listofterms>
   <index></index>
 </book>
+

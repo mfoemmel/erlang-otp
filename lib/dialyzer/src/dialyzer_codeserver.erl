@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -9,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -93,16 +95,15 @@ lookup_records(Module,
 
 
 store_contracts(Module, Dict, 
-	      CS=#dialyzer_codeserver{contracts=ContDict}) when is_atom(Module) ->
+		CS=#dialyzer_codeserver{contracts=C}) when is_atom(Module) ->
   case dict:size(Dict) =:= 0 of
     true -> CS;
-    false ->
-      CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, ContDict)}
+    false -> CS#dialyzer_codeserver{contracts=dict:store(Module, Dict, C)}
   end.
 
-lookup_contracts(Module, 
-	       #dialyzer_codeserver{contracts=ContDict}) when is_atom(Module) ->
-  case dict:find(Module, ContDict) of
+lookup_contracts(Mod, 
+		 #dialyzer_codeserver{contracts=ContDict}) when is_atom(Mod) ->
+  case dict:find(Mod, ContDict) of
     error -> dict:new();
     {ok, Dict} -> Dict
   end.
@@ -110,8 +111,7 @@ lookup_contracts(Module,
 lookup_contract({M,F,A}, #dialyzer_codeserver{contracts=ContDict}) ->
   case dict:find(M, ContDict) of
     error -> error;
-    {ok, Dict} -> 
-	dict:find({F,A}, Dict)
+    {ok, Dict} -> dict:find({M, F,A}, Dict)
   end.
 
 table__new() ->
@@ -141,21 +141,26 @@ table__loop(Cached, Map) ->
 	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
 				   cerl:fname_id(Var) =:= F,
 				   cerl:fname_arity(Var) =:= A],
-	    {Cached, {ok, Val}};
+	    {Cached, Val};
 	  _ ->
-	    Bin = dict:fetch({M, core}, Map),
-	    Tree = binary_to_term(Bin),
+	    Tree = fetch_and_expand({M, core}, Map),
 	    [Val] = [{Var, Fun} || {Var, Fun} <- cerl:module_defs(Tree),
 				   cerl:fname_id(Var) =:= F,
 				   cerl:fname_arity(Var) =:= A],
-	    {{M, Tree}, {ok, Val}}
+	    {{M, Tree}, Val}
 	end,
-      Pid ! {self(), Key, Ans},
+      Pid ! {self(), Key, {ok, Ans}},
       table__loop(NewCached, Map);
+    {Pid, lookup, Key = {M, core}} ->
+      Ans = case Cached of
+	      {M, Tree} -> Tree;
+	      _ -> fetch_and_expand({M, core}, Map)
+	    end,
+      Pid ! {self(), Key, {ok, Ans}},
+      table__loop({M, Ans}, Map);
     {Pid, lookup, Key} ->
-      Bin = dict:fetch(Key, Map),
-      Tree = binary_to_term(Bin),
-      Pid ! {self(), Key, {ok, Tree}},
+      Ans = fetch_and_expand(Key, Map),
+      Pid ! {self(), Key, {ok, Ans}},
       table__loop(Cached, Map);
     {insert, List} ->
       NewMap = lists:foldl(fun({Key, Val}, AccMap) -> 
@@ -163,3 +168,7 @@ table__loop(Cached, Map) ->
 			   end, Map, List),
       table__loop(Cached, NewMap)
   end.
+
+fetch_and_expand(Key, Map) ->
+  Bin = dict:fetch(Key, Map),
+  binary_to_term(Bin).

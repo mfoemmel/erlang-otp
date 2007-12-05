@@ -1,3 +1,0 @@
-
-MNESIA_SESSION_VSN = 1.1.6.1
-

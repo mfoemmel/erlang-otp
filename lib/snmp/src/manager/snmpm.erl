@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpm).
 
@@ -71,6 +73,8 @@
 	 log_to_txt/2, log_to_txt/3, log_to_txt/4,
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7, 
 	 change_log_size/1,
+	 get_log_type/0,
+	 set_log_type/1,
 
 	 reconfigure/0,
 
@@ -687,6 +691,15 @@ log_to_txt(LogDir, Mibs, OutFile, LogName, LogFile, Start, Stop) ->
 change_log_size(NewSize) ->
     LogName = ?audit_trail_log_name, 
     snmp:change_log_size(LogName, NewSize).
+
+
+get_log_type() ->
+    snmpm_server:get_log_type().
+
+%% NewType -> atl_type()
+set_log_type(NewType) ->
+    snmpm_server:set_log_type(NewType).
+
 
 reconfigure() ->
     snmpm_server:reconfigure().

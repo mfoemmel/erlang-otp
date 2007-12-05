@@ -55,12 +55,14 @@ atom nocatch
 atom undefined_function
 atom undefined_lambda
 
-#
+
 # All other atoms.  Try to keep the order alphabetic.
 #
 atom DOWN='DOWN'
 atom UP='UP'
 atom EXIT='EXIT'
+atom aborted
+atom active
 atom all
 atom allocated
 atom allocated_areas
@@ -71,6 +73,7 @@ atom and
 atom andalso
 atom andthen
 atom arity
+atom asynchronous
 atom atom
 atom atom_used
 atom attributes
@@ -135,7 +138,6 @@ atom dmonitor_node
 atom dmonitor_p
 atom DollarDollar='$$'
 atom DollarUnderscore='$_'
-atom DollarDictionary='$dictionary'
 atom driver
 atom driver_options
 atom dsend
@@ -158,7 +160,9 @@ atom ERROR='ERROR'
 atom error_handler
 atom error_logger
 atom ets
+atom event
 atom exact_reductions
+atom exclusive
 atom exit_status
 atom existing
 atom exiting
@@ -167,6 +171,7 @@ atom external
 atom false
 atom fd
 atom flags
+atom flush
 atom free
 atom fullsweep_after
 atom fullsweep_if_old_binaries
@@ -201,6 +206,7 @@ atom id
 atom if_clause
 atom imports
 atom in
+atom inactive
 atom inconsistent
 atom index
 atom infinity
@@ -300,6 +306,7 @@ atom ok
 atom old_heap_block_size
 atom old_heap_size
 atom on_load
+atom open
 atom open_error
 atom or
 atom ordered_set
@@ -326,6 +333,7 @@ atom pending_reload
 atom permanent
 atom pid
 atom port
+atom ports
 atom port_count
 atom print
 atom priority
@@ -337,12 +345,16 @@ atom process_count
 atom process_limit
 atom process_dump
 atom procs
+atom profile
 atom protected
 atom protection
 atom public
 atom purify
 atom quantify
 atom queue_size
+atom ready_input
+atom ready_output
+atom ready_async
 atom receive
 atom recent_size
 atom reductions
@@ -358,9 +370,14 @@ atom return_to
 atom return_trace
 atom run_queue
 atom runnable
+atom runnable_ports
+atom runnable_procs
 atom running
+atom running_ports
+atom running_procs
 atom runtime
 atom save_calls
+atom scheduler 
 atom scheduler_id
 atom sensitive
 atom sequential_tracer
@@ -388,6 +405,7 @@ atom stop
 atom stream
 atom suspend
 atom suspended
+atom suspending
 atom sys_misc
 atom system
 atom system_error
@@ -404,6 +422,7 @@ atom timeout_value
 atom Times='*'
 atom timestamp
 atom total
+atom total_heap_size
 atom trace trace_ts traced 
 atom trace_control_word
 atom tracer
@@ -423,6 +442,7 @@ atom use_stdio
 atom used
 atom unblock
 atom uniq
+atom unless_suspending
 atom unloaded
 atom unloading
 atom unloaded_only

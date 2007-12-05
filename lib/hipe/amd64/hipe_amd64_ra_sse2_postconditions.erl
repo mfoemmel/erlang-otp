@@ -87,7 +87,7 @@ is_mem_opnd(Opnd, TempMap) ->
 	Reg = hipe_x86:temp_reg(Opnd),
 	case hipe_x86:temp_is_allocatable(Opnd) of
 	  true -> 
-	    case size(TempMap) > Reg of 
+	    case tuple_size(TempMap) > Reg of 
 	      true ->
 		case 
 		  hipe_temp_map:is_spilled(Reg,
@@ -114,7 +114,7 @@ is_mem_opnd(Opnd, TempMap) ->
 %%      Reg = hipe_x86:temp_reg(Src),
 %%      case hipe_x86:temp_is_allocatable(Src) of
 %%	true -> 
-%%	  case size(TempMap) > Reg of 
+%%	  case tuple_size(TempMap) > Reg of 
 %%	    true ->
 %%	      case hipe_temp_map:is_spilled(Reg, TempMap) of
 %%		true ->
@@ -135,7 +135,7 @@ is_mem_opnd(Opnd, TempMap) ->
 %%   case hipe_x86:temp_is_allocatable(Temp) of
 %%     true ->
 %%       Reg = hipe_x86:temp_reg(Temp),
-%%       case size(TempMap) > Reg of 
+%%       case tuple_size(TempMap) > Reg of 
 %%  	true ->
 %%  	  case hipe_temp_map:is_spilled(Reg, TempMap) of
 %%  	    true ->

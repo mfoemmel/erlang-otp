@@ -1,5 +1,3 @@
-Original authors:
-
 The original JAM emulator was first implemented by Mike Williams (the
 instruction set was argued out with Joe Armstrong).
 
@@ -8,12 +6,12 @@ They were completely rewritten by Björn Gustavsson.
 
 Over the years the emulator has been basically completely rewritten by
 a large number of individuals. Most(?) notably Claes Wikström, Tony
-Rogvall, Björn Gustavsson, Patrik Nyblom and Arndt Jonasson.
-In R7 and R8 also Raimo Niskanen and Rickard Green.
+Rogvall, Björn Gustavsson, Patrik Nyblom, Rickard Green, Raimo Niskanen
+and Arndt Jonasson.
 
 Marcus Arendt did the original port for Windows NT. Most of this code
 was rewritten by Björn Gustavsson, Patrik Nyblom, Kenneth Lundin,
-Fredrik Tillman and  Mattias Nilsson.
+Fredrik Tillman and Mattias Nilsson.
 
 Per Hedeland did the original port for VxWorks. This port was
 improved by Peter Högfeldt, Patrik Nyblom and Patrik Winroth.
@@ -21,32 +19,88 @@ improved by Peter Högfeldt, Patrik Nyblom and Patrik Winroth.
 Mikael Pettersson, of the HiPE project, designed and implemented
 the new 2-bit tag scheme.
 
+The SMP support has mainly been designed and implemented by Rickard Green,
+Tony Rogvall (mostly ets), Mikael Pettersson (mostly optimized synchronization
+primitives, and timer thread), and Patrik Nyblom (mostly dynamic drivers, and
+Windows port). Also Björn Gustavsson and Raimo Niskanen have contributed.
+
 There are also a lot of people who have contributed smaller (and
 bigger) things to the emulator and runtime system: Per Hedeland,
 Peter Högfeldt, Kenneth Lundin, Fredrik Tillman, Mattias Nilsson,
 Kent Boortz, Markus Torpvret, Jan-Erik Dahlin, Sebastian Strollo
 and perhaps more...
 
-Björn Gustavsson and Arndt Jonasson implemented the bit syntax
-instructions, borrowing some code from the original prototype
-implementation by Tony Rogvall and Claes Wikström.
+Björn Gustavsson (mostly matching) and Arndt Jonasson (mostly construction)
+implemented the bit syntax instructions, borrowing some code from
+the original prototype implementation by Tony Rogvall and Claes Wikström.
 
 The HiPE project (Kostis Sagonas, Mikael Petterson, Erik Johansson,
 Richard Carlsson, Ulf Magnusson, Jesper Wilhelmsson) added the
 hipe runtime to the Beam emulator. Björn Gustavsson helped to
 integrate the hipe runtime.
 
-New developers in the runtime for R7 and R8: Raimo Niskanen and Rickard Green.
+Rickard Green has designed and implemented the erts_alloc framework and
+memory allocators.
 
-Open source contributors:
-  Mick Dwyer
-  Geoff Wong
-  Maurice Castro
-  Luke Gorrie <luke@vegetable.org>
-  Shawn Pearce <pearcs@rpi.edu>
-  Ruslan Shevchenko <Ruslan@Shevchenko.Kiev.UA>
-  Tony Rogvall (@Bluetail): New faster inet_drv (R7)
+Per Gustafsson (and perhaps others in the HiPE group) come up with
+idea for bit-level binaries and binary comprehensions. Per Gustafsson
+and Björn Gustavsson implemented them in the BEAM compiler and run-time
+system. Björn Gustavsson implemented the new optimizations for matching
+and appending of binaries in BEAM compiler and run-time system, while
+Per Gustafsson implemented the optimizations in the HiPE compiler and
+HiPE run-time system.
+
+The big heap-fragment-elimination project has been going on for many
+years and several releases, and was finally finished in R12B. Suggested
+by the HiPE group in order to support constant pools and possible
+future GC improvements, most of the work was carried out by
+Björn Gustavsson, with help from Mikael Pettersson and the HiPE group.
+
+
+Original Authors and Contributors:
+
+Mike Williams
+Joe Armstrong
+Bogumil Hausman
+Björn Gustavsson
+Claes Wikström
+Tony Rogvall
+Patrik Nyblom
+Rickard Green
+Raimo Niskanen
+Arndt Jonasson
+Marcus Arendt
+Kenneth Lundin
+Fredrik Tillman
+Mattias Nilsson
+Per Hedeland
+Peter Högfeldt
+Patrik Winroth
+Mikael Pettersson
+Kent Boortz
+Markus Torpvret
+Jan-Erik Dahlin
+Sebastian Strollo
+Kostis Sagonis
+Erik Johansson
+Richard Carlsson
+Ulf Magnusson
+Jesper Wilhelmsson
+Jakob Cederlund
+Magnus Fröberg
+Per Gustafsson
+Björn-Egil Dahlberg
+
+Open Source Contributors:
+
+Mick Dwyer
+Geoff Wong
+Maurice Castro
+Luke Gorrie 
+Shawn Pearce 
+Ruslan Shevchenko <Ruslan@Shevchenko.Kiev.UA>
+Tony Rogvall (at Bluetail): New faster inet_drv (R7)
 			    HTTP packet mode (R8)
-  Sebastian Strollo (@Bluetail): poll() as alternative to select()
-  Mikael Pettersson (HiPE)
+Sebastian Strollo (at Bluetail): poll() as alternative to select()
+Mikael Pettersson (HiPE)
 

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpa).
 
@@ -53,14 +55,6 @@
 	 send_notification/6,
 	 send_trap/3, send_trap/4,
 
-         register_notification_filter/3,
-         register_notification_filter/4,
-         register_notification_filter/5,
-         unregister_notification_filter/1,
-         unregister_notification_filter/2,
-         which_notification_filter/0,
-         which_notification_filter/1,
- 
  	 sys_up_time/0, system_start_time/0,
 
 	 backup/1, backup/2, 
@@ -76,8 +70,25 @@
 %% Audit Trail Log functions
 -export([log_to_txt/2, log_to_txt/3, log_to_txt/4, 
 	 log_to_txt/5, log_to_txt/6, log_to_txt/7, 
-	 change_log_size/1]).
+	 change_log_size/1,
+	 get_log_type/0,    get_log_type/1, 
+	 change_log_type/1, change_log_type/2,
+	 set_log_type/1,    set_log_type/2
+	]).
 
+%% Message filter / load regulation functions
+-export([
+         register_notification_filter/3,
+         register_notification_filter/4,
+         register_notification_filter/5,
+         unregister_notification_filter/1,
+         unregister_notification_filter/2,
+         which_notification_filter/0,
+         which_notification_filter/1,
+	 
+	 get_request_limit/0, get_request_limit/1,
+	 set_request_limit/1, set_request_limit/2
+	]).
 
 -include("snmpa_atl.hrl").
 
@@ -265,7 +276,7 @@ me_of(Agent, Oid) ->
     snmpa_agent:me_of(Agent, Oid).
 
 
-%% -
+%% - message filter / load regulation
 
 register_notification_filter(Id, Mod, Data) when atom(Mod) ->
     register_notification_filter(snmp_master_agent, Id, Mod, Data, last).
@@ -294,7 +305,18 @@ which_notification_filter() ->
 which_notification_filter(Agent) ->
     snmpa_agent:which_notification_filter(Agent).
  
- 
+
+get_request_limit() -> 
+    get_request_limit(snmp_master_agent).
+get_request_limit(Agent) -> 
+    snmpa_agent:get_request_limit(Agent).
+
+set_request_limit(NewLimit) -> 
+    set_request_limit(snmp_master_agent, NewLimit).
+set_request_limit(Agent, NewLimit) -> 
+    snmpa_agent:set_request_limit(Agent, NewLimit).
+
+
 %% -
 
 send_notification(Agent, Notification, Recv) ->
@@ -385,3 +407,21 @@ change_log_size(NewSize) ->
     snmp:change_log_size(LogName, NewSize).
 
 
+get_log_type() ->
+    get_log_type(snmp_master_agent).
+
+get_log_type(Agent) ->
+    snmpa_agent:get_log_type(Agent).
+
+%% NewType -> atl_type()
+change_log_type(NewType) ->
+    set_log_type(NewType).
+
+change_log_type(Agent, NewType) ->
+    set_log_type(Agent, NewType).
+
+set_log_type(NewType) ->
+    set_log_type(snmp_master_agent, NewType).
+
+set_log_type(Agent, NewType) ->
+    snmpa_agent:set_log_type(Agent, NewType).

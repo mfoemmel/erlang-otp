@@ -1,26 +1,21 @@
 {"%VSN%",
  [
-  {"4.9.2",   
+  {"4.9.6",   
    [
-    {update, snmpa_agent, {advanced, upgrade_from_pre_4_9_3}, 
-     soft_purge, soft_purge, []}
-   ]
-  },
-
-  {"4.9.1",   
-   [
-    {update, snmpa_agent, {advanced, upgrade_from_pre_4_9_3}, 
-     soft_purge, soft_purge, []},
-    {update, snmpa_target_cache, soft, soft_purge, soft_purge, []}
-   ]
-  },
-
-  {"4.9",   
-   [
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, {advanced, upgrade_from_pre_4_9_3}, 
-     soft_purge, soft_purge, []},
-    {update, snmpa_target_cache, soft, soft_purge, soft_purge, []}
+    {load_module, snmp_config, soft_purge, soft_purge, []},
+    {load_module, snmpm, soft_purge, soft_purge, [snmpm_server]},
+    {load_module, snmpm_network_interface, soft_purge, soft_purge, []},
+    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if_filter]},
+    {load_module, snmpa_network_interface, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_net_if]},
+    {update, snmpm_net_if, soft, soft_purge, soft_purge, 
+     [snmpm_network_interface]},
+    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_net_if]},
+    {add_module, snmpa_net_if_filter}, 
+    {add_module, snmpa_network_interface_filter},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, 
+     [snmpa_network_interface, snmpa_net_if_filter, snmpa_mpd]}
    ]
   }
  ], 
@@ -28,27 +23,20 @@
 %% ---------------------------------------------------------------------------
 
  [
-  {"4.9.2",   
+  {"4.9.6",   
    [
-    {update, snmpa_agent, {advanced, downgrade_to_pre_4_9_3}, 
-     soft_purge, soft_purge, []}
-   ]
-  },
-
-  {"4.9.1",   
-   [
-    {update, snmpa_agent, {advanced, downgrade_to_pre_4_9_3}, 
-     soft_purge, soft_purge, []},
-    {update, snmpa_target_cache, soft, soft_purge, soft_purge, []}
-   ]
-  },
-
-  {"4.9",   
-   [
-    {load_module, snmp_view_based_acm_mib, soft_purge, soft_purge, []},
-    {update, snmpa_agent, {advanced, downgrade_to_pre_4_9_3}, 
-     soft_purge, soft_purge, []},
-    {update, snmpa_target_cache, soft, soft_purge, soft_purge, []}
+    {load_module, snmp_config, soft_purge, soft_purge, []},
+    {load_module, snmpm, soft_purge, soft_purge, [snmpm_server]},
+    {load_module, snmpm_network_interface, soft_purge, soft_purge, []},
+    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
+    {load_module, snmpa_mpd, soft_purge, soft_purge, []},
+    {load_module, snmpa_network_interface, soft_purge, soft_purge, []},
+    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_net_if]},
+    {update, snmpm_net_if, soft, soft_purge, soft_purge, 
+     [snmpm_network_interface]},
+    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_net_if]},
+    {update, snmpa_net_if, soft, soft_purge, soft_purge, 
+     [snmpa_network_interface, snmpa_mpd]}
    ]
   }
  ]

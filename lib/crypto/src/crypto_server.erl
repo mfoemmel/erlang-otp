@@ -52,9 +52,17 @@ init([]) ->
 	end,
     Cmd = "crypto_drv elibcrypto " ++ filename:join([LibDir, "elibcrypto"]),
     Port = open_port({spawn, Cmd}, []),
-    T = ets:new(crypto_server_table, [set, protected, named_table]),
-    ets:insert(T, {port, Port}),
-    {ok, {Port, []}}.
+    %% check that driver is loaded, linked and working
+    %% since crypto_drv links towards libcrypto, this is a good thing
+    %% since libcrypto is known to be bad with backwards compatibility
+    case catch port_control(Port, 0, []) of
+	{'EXIT', _} ->
+	    {stop, nodriver};
+	_ ->
+	    T = ets:new(crypto_server_table, [set, protected, named_table]),
+	    ets:insert(T, {port, Port}),
+	    {ok, {Port, []}}
+    end.
 
 %%% --------------------------------------------------------
 %%% The call-back functions.
@@ -78,7 +86,7 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 terminate(_Reason, {Port, _Libraries}) ->
-    Port ! {self, close},
+    Port ! {self(), close},
     ok.
 
 

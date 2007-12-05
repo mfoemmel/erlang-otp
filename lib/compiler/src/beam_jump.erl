@@ -20,8 +20,8 @@
 -module(beam_jump).
 
 -export([module/2,module_labels/1,
-	 is_unreachable_after/1,remove_unused_labels/1,
-	 is_label_used_in/2]).
+	 is_unreachable_after/1,is_exit_instruction/1,
+	 remove_unused_labels/1,is_label_used_in/2]).
 
 %%% The following optimisations are done:
 %%%
@@ -91,8 +91,6 @@
 %%%
 %%%      (The label L1 will be retained if there were previous references to it.)
 %%%
-%%% (7) Some redundant uses of is_boolean/1 is optimized away.
-%%%
 %%% Terminology note: The optimisation done here is called unreachable-code
 %%% elimination, NOT dead-code elimination.  Dead code elimination
 %%% means the removal of instructions that are executed, but have no visible
@@ -115,10 +113,9 @@ function_labels({function,Name,Arity,CLabel,Asm0}) ->
 
 function({function,Name,Arity,CLabel,Asm0}) ->
     Asm1 = share(Asm0),
-    Asm2 = bopt(Asm1),
-    Asm3 = move(Asm2),
-    Asm4 = opt(Asm3, CLabel),
-    Asm = remove_unused_labels(Asm4),
+    Asm2 = move(Asm1),
+    Asm3 = opt(Asm2, CLabel),
+    Asm = remove_unused_labels(Asm3),
     {function,Name,Arity,CLabel,Asm}.
 
 %%%
@@ -172,8 +169,6 @@ move_1([], End, Acc) ->
 
 move_2(Exit, Is, End, [{block,_},{label,_},{func_info,_,_,_}|_]=Acc) ->
     move_1(Is, End, [Exit|Acc]);
-move_2(Exit, Is, End, [{kill,_Y}|Acc]) ->
-    move_2(Exit, Is, End, Acc);
 move_2(Exit, Is, End, [{block,_}=Blk,{label,_}=Lbl,Dead|More]=Acc) ->
     case is_unreachable_after(Dead) of
 	false ->
@@ -190,38 +185,6 @@ move_2(Exit, Is, End, [{label,_}=Lbl,Dead|More]=Acc) ->
     end;
 move_2(Exit, Is, End, Acc) ->
     move_1(Is, End, [Exit|Acc]).
-
-%%%
-%%% (7) Remove redundant is_boolean tests.
-%%%
-
-bopt(Is) ->
-    bopt_1(Is, []).
-
-bopt_1([{test,is_boolean,_,_}=I|Is], Acc0) ->
-    case opt_is_bool(I, Acc0) of
-	no -> bopt_1(Is, [I|Acc0]);
-	yes -> bopt_1(Is, Acc0);
-	{yes,Acc} -> bopt_1(Is, Acc)
-    end;
-bopt_1([I|Is], Acc) -> bopt_1(Is, [I|Acc]);
-bopt_1([], Acc) -> reverse(Acc).
-
-opt_is_bool({test,is_boolean,{f,Lbl},[Reg]}, Acc) ->
-    opt_is_bool_1(Acc, Reg, Lbl).
-
-opt_is_bool_1([{test,is_eq_exact,{f,Lbl},[Reg,{atom,true}]}|_], Reg, Lbl) ->
-    %% Instruction not needed in this context.
-    yes;
-opt_is_bool_1([{test,is_ne_exact,{f,Lbl},[Reg,{atom,true}]}|Acc], Reg, Lbl) ->
-    %% Rewrite to shorter test.
-    {yes,[{test,is_eq_exact,{f,Lbl},[Reg,{atom,false}]}|Acc]};
-opt_is_bool_1([{test,_,{f,Lbl},_}=Test|Acc0], Reg, Lbl) ->
-    case opt_is_bool_1(Acc0, Reg, Lbl) of
-	{yes,Acc} -> {yes,[Test|Acc]};
-	Other -> Other
-    end;
-opt_is_bool_1(_, _, _) -> no.
 
 %%%
 %%% (3) (4) (5) (6) Jump and unreachable code optimizations.
@@ -266,10 +229,6 @@ opt([{select_val,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
 opt([{select_tuple_arity,_R,Fail,{list,Vls}}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used([Fail|Vls], St));
-opt([{'try',_R,Lbl}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{'catch',_R,Lbl}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
 opt([{label,L}=I|Is], Acc, #st{entry=L}=St) ->
     %% NEVER move the entry label.
     opt(Is, [I|Acc], St);
@@ -289,27 +248,20 @@ opt([{jump,{f,Lbl}},{label,Lbl}=I|Is], Acc, St) ->
     opt([I|Is], Acc, St);
 opt([{jump,Lbl}=I|Is], Acc, St) ->
     skip_unreachable(Is, [I|Acc], label_used(Lbl, St));
-opt([{loop_rec,Lbl,_R}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bif,_Name,Lbl,_As,_R}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{gc_bif,_Name,Lbl,_Live,_As,_R}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_integer,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_binary,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_put_float,Lbl,_Bits,_Unit,_Fl,_Val}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_final,Lbl,_R}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_init2,Lbl,_,_,_,_,_}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_add,Lbl,_,_}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([{bs_bits_to_bytes,Lbl,_,_}=I|Is], Acc, St) ->
-    opt(Is, [I|Acc], label_used(Lbl, St));
-opt([I|Is], Acc, St) ->
+%% Optimization: quickly handle some common instructions that don't
+%% have any failure labels and where is_unreachable_after(I) =:= false.
+opt([{block,_}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], St);
+opt([{kill,_}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], St);
+opt([{call,_,_}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], St);
+opt([{deallocate,_}=I|Is], Acc, St) ->
+    opt(Is, [I|Acc], St);
+%% All other instructions.
+opt([I|Is], Acc, #st{labels=Used0}=St0) ->
+    Used = ulbl(I, Used0),
+    St = St0#st{labels=Used},
     case is_unreachable_after(I) of
 	true  -> skip_unreachable(Is, [I|Acc], St);
 	false -> opt(Is, [I|Acc], St)
@@ -397,24 +349,16 @@ is_unreachable_after(I) -> is_exit_instruction(I).
 %%  causes an exit/failure.
 
 is_exit_instruction({call_ext,_,{extfunc,M,F,A}}) ->
-    is_exit_instruction_1(M, F, A);
+    erl_bifs:is_exit_bif(M, F, A);
 is_exit_instruction({call_ext_last,_,{extfunc,M,F,A},_}) ->
-    is_exit_instruction_1(M, F, A);
+    erl_bifs:is_exit_bif(M, F, A);
 is_exit_instruction({call_ext_only,_,{extfunc,M,F,A}}) ->
-    is_exit_instruction_1(M, F, A);
+    erl_bifs:is_exit_bif(M, F, A);
 is_exit_instruction(if_end) -> true;
 is_exit_instruction({case_end,_}) -> true;
 is_exit_instruction({try_case_end,_}) -> true;
 is_exit_instruction({badmatch,_}) -> true;
 is_exit_instruction(_) -> false.
-
-is_exit_instruction_1(erlang, exit, 1) -> true;
-is_exit_instruction_1(erlang, throw, 1) -> true;
-is_exit_instruction_1(erlang, error, 1) -> true;
-is_exit_instruction_1(erlang, error, 2) -> true;
-is_exit_instruction_1(erlang, fault, 1) -> true;
-is_exit_instruction_1(erlang, fault, 2) -> true;
-is_exit_instruction_1(_, _, _) -> false.
 
 %% is_label_used_in(LabelNumber, [Instruction]) -> true|false
 %%  Check whether the labels is used in the instruction sequence.
@@ -457,6 +401,8 @@ initial_labels([{label,Lbl}|Is], Acc) ->
 initial_labels([{func_info,_,_,_},{label,Lbl}|_], Acc) ->
     gb_sets:from_list([Lbl|Acc]).
 
+%% ulbl(Instruction, UsedGbSet) -> UsedGbSet'
+
 ulbl({test,_,Fail,_}, Used) ->
     mark_used(Fail, Used);
 ulbl({select_val,_,Fail,{list,Vls}}, Used) ->
@@ -483,17 +429,17 @@ ulbl({gc_bif,_Name,Lbl,_Live,_As,_R}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_init2,Lbl,_,_,_,_,_}, Used) ->
     mark_used(Lbl, Used);
+ulbl({bs_init_bits,Lbl,_,_,_,_,_}, Used) ->
+    mark_used(Lbl, Used);
 ulbl({bs_put_integer,Lbl,_Bits,_Unit,_Fl,_Val}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_put_float,Lbl,_Bits,_Unit,_Fl,_Val}, Used) ->
     mark_used(Lbl, Used);
 ulbl({bs_put_binary,Lbl,_Bits,_Unit,_Fl,_Val}, Used) ->
     mark_used(Lbl, Used);
-ulbl({bs_final,Lbl,_}, Used) ->
-    mark_used(Lbl, Used);
 ulbl({bs_add,Lbl,_,_}, Used) ->
     mark_used(Lbl, Used);
-ulbl({bs_bits_to_bytes,Lbl,_,_}, Used) ->
+ulbl({bs_append,Lbl,_,_,_,_,_,_,_}, Used) ->
     mark_used(Lbl, Used);
 ulbl(_, Used) -> Used.
 

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1996-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmp_config).
 
@@ -328,43 +330,69 @@ config_agent_sys() ->
 			no ->
 			    []
 		    end,
-		NetIfMod = ask("23. Which network interface module shall be used?",
-			       "snmpa_net_if", fun verify_module/1),
-		NetIfVerb = ask("24. Network interface verbosity "
-				"(silence/info/log/debug/trace)?", "silence",
+		NetIfVerb = ask("23. Network interface verbosity "
+				"(silence/info/log/debug/trace)?", 
+				"silence",
 				fun verify_verbosity/1),
-		NetIfBindTo = ask("25. Bind the agent IP address "
-				  "(true/false)?",
-				  "false", fun verify_bool/1),
-		NetIfNoReuse = ask("26. Shall the agents IP address and port "
-				   "be not reusable (true/false)?",
-				   "false", fun verify_bool/1),
-		NetIfReqLimit = ask("27. Agent request limit "
-				    "(used for flow control) "
-				    "(infinity/pos integer)?", "infinity",
-				    fun verify_netif_req_limit/1),
-		NetIfRecbuf = 
-		    case ask("28. Receive buffer size of the agent (in bytes) "
-			     "(default/pos integer)?", "default", 
-			     fun verify_netif_recbuf/1) of
-			default ->
-			    [];
-			RecBufSz ->
-			    [{recbuf, RecBufSz}]
-		    end,
-		NetIfSndbuf = 
-		    case ask("29. Send buffer size of the agent (in bytes) "
-			     "(default/pos integer)?", "default", 
-			     fun verify_netif_sndbuf/1) of
-			default ->
-			    [];
-			SndBufSz ->
-			    [{sndbuf, SndBufSz}]
-		    end,
+		NetIfMod = ask("24. Which network interface module shall be used?",
+			       "snmpa_net_if", fun verify_module/1),
 		NetIfOpts = 
-		    [{bind_to,   NetIfBindTo},
-		     {no_reuse,  NetIfNoReuse},
-		     {req_limit, NetIfReqLimit}] ++ NetIfRecbuf ++ NetIfSndbuf,
+		    case NetIfMod of
+			snmpa_net_if ->
+			    NetIfBindTo = 
+				ask("24a. Bind the agent IP address "
+				    "(true/false)?",
+				    "false", fun verify_bool/1),
+			    NetIfNoReuse = 
+				ask("24b. Shall the agents "
+				    "IP address "
+				    "and port be not reusable "
+				    "(true/false)?",
+				    "false", fun verify_bool/1),
+			    NetIfReqLimit = 
+				ask("24c. Agent request limit "
+				    "(used for flow control) "
+				    "(infinity/pos integer)?", 
+				    "infinity",
+				    fun verify_netif_req_limit/1),
+			    NetIfRecbuf = 
+				case ask("24d. Receive buffer size of the "
+					 "agent (in bytes) "
+					 "(default/pos integer)?", 
+					 "default", 
+					 fun verify_netif_recbuf/1) of
+				    default ->
+					[];
+				    RecBufSz ->
+					[{recbuf, RecBufSz}]
+				end,
+			    NetIfSndbuf = 
+				case ask("24e. Send buffer size of the agent "
+					 "(in bytes) (default/pos integer)?", 
+					 "default", 
+					 fun verify_netif_sndbuf/1) of
+				    default ->
+					[];
+				    SndBufSz ->
+					[{sndbuf, SndBufSz}]
+				end,
+			    NetIfFilter = 
+				case ask("24f. Do you wish to specify a "
+					 "network interface filter module "
+					 "(or use default)",
+					 "default", fun verify_module/1) of
+				    default ->
+					[];
+				    NetIfFilterMod ->
+					[{filter, [{module, NetIfFilterMod}]}]
+				end,
+			    [{bind_to,   NetIfBindTo},
+			     {no_reuse,  NetIfNoReuse},
+			     {req_limit, NetIfReqLimit}] ++ 
+				NetIfRecbuf ++ NetIfSndbuf ++ NetIfFilter;
+			_ ->
+			    []
+		    end,
 		NetIf = [{module,    NetIfMod},
 			 {verbosity, NetIfVerb},
 			 {options,   NetIfOpts}],

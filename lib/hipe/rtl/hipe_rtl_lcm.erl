@@ -489,14 +489,11 @@ lcm_precalc(CFG, Options) ->
   ?option_time(NodeInfo5 = calc_antic(CFG, NodeInfo4, AllExpr), 
 	       "RTL LCM calc_antic", Options),
 
-  %% Earliest is calculated when needed during calc_later instead.
-  ?option_time(EdgeInfo1 = calc_earliest(CFG, NodeInfo5, EdgeInfo0, 
-  					 AllExpr, Labels), 
+  ?option_time(EdgeInfo1 = calc_earliest(CFG, NodeInfo5, EdgeInfo0, Labels), 
   	       "RTL LCM calc_earliest", Options),
   %%EdgeInfo1 = EdgeInfo0,
 
-  ?option_time({NodeInfo6, EdgeInfo2} = calc_later(CFG, NodeInfo5, EdgeInfo1,
-						   AllExpr), 
+  ?option_time({NodeInfo6, EdgeInfo2} = calc_later(CFG, NodeInfo5, EdgeInfo1),
 	       "RTL LCM calc_later", Options),
   ?option_time(NodeInfo7 = calc_delete(CFG, NodeInfo6, Labels), 
 	       "RTL LCM calc_delete", Options),
@@ -582,13 +579,9 @@ calc_avail_node(Label, CFG, NodeInfo) ->
 %%=============================================================================
 %% Calculates the anicipated in/out sets, and returns an updated NodeInfo.
 calc_antic(CFG, NodeInfo, AllExpr) ->
-  % Initialize worklist with all nodes in postorder
+  %% Initialize worklist with all nodes in postorder
   Labels = hipe_rtl_cfg:postorder(CFG),
   Work = init_work(Labels),
-
-  %% Initialize start node
-%  NewNodeInfo = set_antic_in(NodeInfo, StartLabel, ?SETS:new()),
-%  calc_antic_fixpoint(Work, CFG, NewNodeInfo, AllExpr).
   calc_antic_fixpoint(Work, CFG, NodeInfo, AllExpr).
 
 calc_antic_fixpoint(Work, CFG, NodeInfo, AllExpr) ->
@@ -618,8 +611,7 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 
   %% Calculate antic in
   AnticIn = ?SETS:union(up_exp(NodeInfo, Label),
-			  ?SETS:subtract(AnticOut,
-					     killed_expr(NodeInfo, Label))),
+			?SETS:subtract(AnticOut, killed_expr(NodeInfo, Label))),
 
   {Changed, NodeInfo2} = 
     case antic_in(NodeInfo, Label) of
@@ -670,27 +662,27 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 %%=============================================================================
 %% Calculates the Later and LaterIn sets, and returns updates of both 
 %% NodeInfo (with LaterIn sets) and EdgeInfo (with Later sets).
-calc_later(CFG, NodeInfo, EdgeInfo, AllExpr) ->
+calc_later(CFG, NodeInfo, EdgeInfo) ->
   StartLabel = hipe_rtl_cfg:start_label(CFG),
   Work = init_work([{node, StartLabel}]),
 
   %% Initialize start node
   NewNodeInfo = set_later_in(NodeInfo, StartLabel, ?SETS:new()), 
 
-  calc_later_fixpoint(Work, CFG, NewNodeInfo, EdgeInfo, AllExpr).
+  calc_later_fixpoint(Work, CFG, NewNodeInfo, EdgeInfo).
 
-calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo, AllExpr) ->
+calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo) ->
   case get_work(Work) of
     {{edge, From, To}, Work2} ->
       {NewNodeInfo, NewEdgeInfo, AddWork} = 
-	calc_later_edge(From, To, CFG, NodeInfo, EdgeInfo, AllExpr),
+	calc_later_edge(From, To, CFG, NodeInfo, EdgeInfo),
       Work3 = add_work(Work2, AddWork),
-      calc_later_fixpoint(Work3, CFG, NewNodeInfo, NewEdgeInfo, AllExpr);
+      calc_later_fixpoint(Work3, CFG, NewNodeInfo, NewEdgeInfo);
 
     {{node, Label}, Work2} ->
       AddWork = calc_later_node(Label, CFG),
       Work3 = add_work(Work2, AddWork),
-      calc_later_fixpoint(Work3, CFG, NodeInfo, EdgeInfo, AllExpr);
+      calc_later_fixpoint(Work3, CFG, NodeInfo, EdgeInfo);
 
     fixpoint ->
       {NodeInfo, EdgeInfo}
@@ -700,39 +692,17 @@ calc_later_node(Label, CFG) ->
   Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Label),
   [{edge, Label, Succ} || Succ <- Succs].
 
-calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo, AllExpr) ->  
-  %% Instead of pre-calculating earliest, we calculate it when needed here
-%%  {Earliest, EdgeInfo1} = 
-%%    case lookup_earliest(EdgeInfo, {From, To}) of
-%%      none ->
-%%	IsStartLabel = (From =:= hipe_rtl_cfg:start_label(_CFG)),
-%%	CalcEarliest = calc_earliest_edge(NodeInfo, AllExpr, IsStartLabel,
-%%					  From, To),
-%%	{CalcEarliest, set_earliest(EdgeInfo, {From, To}, CalcEarliest)};
-%%
-%%      TempEarliest ->
-%%	{TempEarliest, EdgeInfo}
-%%    end,
+calc_later_edge(From, To, _CFG, NodeInfo, EdgeInfo) ->  
   Earliest = earliest(EdgeInfo, {From, To}),
-  EdgeInfo1 = EdgeInfo,
-  
   LaterIn = later_in(NodeInfo, From),
-  InvUpExp = ?SETS:subtract(AllExpr, up_exp(NodeInfo, From)),
-  Later = ?SETS:union(Earliest, ?SETS:intersection(LaterIn, InvUpExp)),
-  
-  {Changed, EdgeInfo2} =
-    case lookup_later(EdgeInfo1, {From, To}) of 
-      none ->
-	{true, set_later(EdgeInfo1, {From, To}, Later)};
+  UpExp = up_exp(NodeInfo, From),
+  Later = ?SETS:union(Earliest, ?SETS:subtract(LaterIn, UpExp)),
 
-      %% FIXME use cases "Later -> " and "OldLater ->" instead of =:= ?
-      OldLater ->
-	case Later =:= OldLater of
-	  true ->
-	    {false, EdgeInfo1};
-	  false ->
-	    {true, set_later(EdgeInfo1, {From, To}, Later)}
-	end
+  {Changed, EdgeInfo2} =
+    case lookup_later(EdgeInfo, {From, To}) of 
+      none ->  {true, set_later(EdgeInfo, {From, To}, Later)};
+      Later -> {false, EdgeInfo};
+      _Old ->  {true, set_later(EdgeInfo, {From, To}, Later)}
     end,
   
   case Changed of 
@@ -784,8 +754,6 @@ calc_up_exp(_, _, NodeInfo, []) ->
 calc_up_exp(CFG, ExprMap, NodeInfo, [Label|Labels]) ->
   BB = hipe_rtl_cfg:bb(CFG, Label),
   RevCode = lists:reverse(hipe_bb:code(BB)),
-  %% FIXME: Implement ExprId here 
-%%  Data = ?SETS:from_list(lists:map(fun expr_clear_dst/1, exp_work(RevCode))),
   Data = ?SETS:from_list(get_expr_ids(ExprMap, exp_work(RevCode))),
   NewNodeInfo = set_up_exp(NodeInfo, Label, Data),
   calc_up_exp(CFG, ExprMap, NewNodeInfo, Labels).
@@ -904,39 +872,66 @@ calc_killed_expr_bb([Instr|Instrs], UseMap, AllExpr, KilledExprs) ->
 
 %%=============================================================================
 %% Calculates the earliest set for all edges in the CFG.
-calc_earliest(_, _, EdgeInfo, _, []) ->
+
+calc_earliest(_, _, EdgeInfo, []) ->
   EdgeInfo;
-calc_earliest(CFG, NodeInfo, EdgeInfo, AllExpr, [From|Labels]) ->
-  IsStartLabel = (From =:= hipe_rtl_cfg:start_label(CFG)),
-  NewEdgeInfo = 
-    lists:foldl(fun(To, EdgeInfoAcc) ->
-		    Earliest = 
-		      calc_earliest_edge(NodeInfo, AllExpr, 
-					 IsStartLabel, From, To),
-		    set_earliest(EdgeInfoAcc, {From, To}, Earliest)
-		end, 
-		EdgeInfo,
-		hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), From)),
-  calc_earliest(CFG, NodeInfo, NewEdgeInfo, AllExpr, Labels).
+calc_earliest(CFG, NodeInfo, EdgeInfo, [To|Labels]) ->
+  EmptySet = ?SETS:new(),
+  Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), To),
+  NewEdgeInfo =
+    case EmptySet =:= antic_in(NodeInfo, To) of
+      true ->
+	%% Earliest is empty for all edges into this block.
+	lists:foldl(fun(From, EdgeInfoAcc) ->
+			set_earliest(EdgeInfoAcc, {From, To}, EmptySet)
+		    end, EdgeInfo, Preds);
+      false ->
+	lists:foldl(fun(From, EdgeInfoAcc) ->
+			IsStartLabel = (From =:= hipe_rtl_cfg:start_label(CFG)),
+			Earliest = 
+			  calc_earliest_edge(NodeInfo, IsStartLabel, From, To),
+			set_earliest(EdgeInfoAcc, {From, To}, Earliest)
+		    end, EdgeInfo, Preds)
+    end,
+  calc_earliest(CFG, NodeInfo, NewEdgeInfo, Labels).
   
 %%=============================================================================
 %% Calculates the earliest set for one edge.
-calc_earliest_edge(NodeInfo, AllExpr, IsStartLabel, From, To) ->
+calc_earliest_edge(NodeInfo, IsStartLabel, From, To) ->
   AnticIn = antic_in(NodeInfo, To),
   AvailOut = avail_out(NodeInfo, From),
-
+  
   case IsStartLabel of
     true->
       ?SETS:subtract(AnticIn, AvailOut);
-
     false ->
       AnticOut = antic_out(NodeInfo, From),
       ExprKill = killed_expr(NodeInfo, From),
-      ?SETS:intersection(?SETS:subtract(AnticIn, AvailOut),
-			 ?SETS:union(ExprKill, 
-				     ?SETS:subtract(AllExpr, 
-						    AnticOut)))
+      ?SETS:subtract(?SETS:subtract(AnticIn, AvailOut),
+		     ?SETS:subtract(AnticOut, ExprKill))
   end.
+%% The above used to be:
+%%
+%% ?SETS:intersection(?SETS:subtract(AnticIn, AvailOut),
+%%                    ?SETS:union(ExprKill, ?SETS:subtract(AllExpr, AnticOut)))
+%%
+%% But it is costly to use the AllExpr, so let's do some tricky set algebra.
+%%
+%% Let A = AnticIn, B = AvailOut, C = ExprKill, D = AnticOut, U = AllExpr
+%% Let n = intersection, u = union, ' = inverse
+%%
+%% Then
+%%    (A - B) n (C u (U - D)) =       <Remove D unless it is in C>
+%%  = (A - B) n ((C u U) - (D - C)) = <But U is the whole universe>
+%%  = (A - B) n (U - (D - C)) =       <We are really meaning the complement>
+%%  = (A - B) n (D - C)' =            <Intersection w complement is subtraction>
+%%  = (A - B) - (D - C)               <Simple enough, let's stop>
+%%
+%% or in other words
+%%   ?SETS:subtract(?SETS:subtract(AnticIn, AvailOut),
+%%                  ?SETS:subtract(AnticOut, ExprKill))
+
+
 
 %%%%%%%%%%%%%%%%%%%%%%%% INSERT / DELETE %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -1065,76 +1060,36 @@ mk_edge_info() ->
 %%=============================================================================
 %% Get methods
 up_exp(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, up_exp, {"Node data for label not found"}}),
-      none;
-    {value, #node_data{up_exp = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.up_exp.
 
 down_exp(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, down_exp, {"Node info not found"}}),
-      none;
-    {value, #node_data{down_exp = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.down_exp.
 
 killed_expr(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, killed_expr, {"Node info not found"}}),
-      none;
-    {value, #node_data{killed_expr = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.killed_expr.
 
 avail_in(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, avail_in, {"Node info not found"}}),
-      none;
-    {value, #node_data{avail_in = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.avail_in.
 
 avail_out(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, avail_out, {"Node info not found"}}),
-      none;
-    {value, #node_data{avail_out = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.avail_out.
 
 antic_in(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, antic_in, {"Node info not found"}}),
-      none;
-    {value, #node_data{antic_in = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.antic_in.
 
 antic_out(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, antic_out, {"Node info not found"}}),
-      none;
-    {value, #node_data{antic_out = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.antic_out.
 
 later_in(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, later_in, {"Node info not found"}}),
-      none;
-    {value, #node_data{later_in = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.later_in.
 
 lookup_later_in(NodeInfo, Label) ->
   case gb_trees:lookup(Label, NodeInfo) of
@@ -1145,22 +1100,12 @@ lookup_later_in(NodeInfo, Label) ->
   end.
 
 delete(NodeInfo, Label) ->
-  case gb_trees:lookup(Label, NodeInfo) of
-    none -> 
-      exit({?MODULE, delete, {"Node info not found"}}),
-      none;
-    {value, #node_data{delete = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Label, NodeInfo),
+  Data#node_data.delete.
 
 earliest(EdgeInfo, Edge) ->
-  case gb_trees:lookup(Edge, EdgeInfo) of
-    none -> 
-      exit({?MODULE, earliest, {"Edge info not found"}}),
-      none;
-    {value, #edge_data{earliest = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Edge, EdgeInfo),
+  Data#edge_data.earliest.
 
 -ifdef(LOOKUP_EARLIEST_NEEDED).
 lookup_earliest(EdgeInfo, Edge) ->
@@ -1173,13 +1118,8 @@ lookup_earliest(EdgeInfo, Edge) ->
 -endif.
 
 later(EdgeInfo, Edge) ->
-  case gb_trees:lookup(Edge, EdgeInfo) of
-    none -> 
-      exit({?MODULE, later, {"Edge info not found"}}),
-      none;
-    {value, #edge_data{later = Data}} ->
-      Data
-  end.
+  Data = gb_trees:get(Edge, EdgeInfo),
+  Data#edge_data.later.
 
 lookup_later(EdgeInfo, Edge) ->
   case gb_trees:lookup(Edge, EdgeInfo) of

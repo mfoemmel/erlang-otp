@@ -38,6 +38,7 @@ AEXTERN(Eterm,nbif_bs_get_integer_2,(void));
 AEXTERN(Eterm,nbif_bs_get_float_2,(void));
 AEXTERN(Eterm,nbif_bs_get_binary_2,(void));
 AEXTERN(char*,nbif_bs_allocate,(void));
+AEXTERN(Binary*,nbif_bs_reallocate,(void));
 
 AEXTERN(void,nbif_select_msg,(Process*));
 AEXTERN(Eterm,nbif_cmp_2,(void));
@@ -51,6 +52,7 @@ Eterm hipe_set_timeout(Process*, Eterm);
 void hipe_handle_exception(Process*);
 Eterm hipe_rethrow(Process *c_p, Eterm exc, Eterm value);
 char *hipe_bs_allocate(int);
+Binary *hipe_bs_reallocate(Binary*, int);
 int hipe_bs_put_small_float(Process*, Eterm, Uint, byte*, unsigned, unsigned);
 void hipe_bs_put_bits(Eterm, Uint, byte*, unsigned, unsigned);
 
@@ -63,10 +65,8 @@ int hipe_bs_put_big_integer(Process*, Eterm, Uint, byte*, unsigned, unsigned);
 int hipe_bs_put_big_integer(Eterm, Uint, byte*, unsigned, unsigned);
 #endif
 
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 AEXTERN(Eterm,nbif_check_get_msg,(Process*));
 Eterm hipe_check_get_msg(Process*);
-#endif
 
 /*
  * SMP-specific stuff

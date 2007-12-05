@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1996-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmp).
 
@@ -181,9 +183,9 @@ disable_trace() ->
 
 set_trace(Module, disable) when is_atom(Module) ->
     dbg:ctp(Module);
-set_trace(Module, Opts) when is_atom(Module) and is_list(Opts) ->
+set_trace(Module, Opts) when is_atom(Module) andalso is_list(Opts) ->
     set_trace(all, Module, Opts);
-set_trace(Modules, Opts) when is_list(Modules) and is_list(Opts) ->
+set_trace(Modules, Opts) when is_list(Modules) ->
     set_trace(all, Modules, Opts).
 
 set_trace(Item, Module, Opts) when is_atom(Module) ->
@@ -199,7 +201,7 @@ set_trace(_Item, Modules, disable) when is_list(Modules) ->
 	end,
     lists:foreach(DisableTrace, Modules);
 set_trace(Item, Modules, Opts) when is_list(Modules) ->
-    Mods = parse_modules(Modules, Opts, []),
+    Mods = parse_modules(Modules, Opts),
     SetTrace = 
 	fun({Module, ModOpts}) -> 
 		set_module_trace(Module, ModOpts)
@@ -237,23 +239,18 @@ set_module_trace(Module, Opts) ->
     end,
     ok.
 
+parse_modules(Modules, Opts) ->
+    parse_modules(Modules, Opts, []).
+
 parse_modules([], _Opts, Acc) ->
     lists:reverse(Acc);
 
-parse_modules([Module|Modules], disable = Opts, Acc) 
-  when is_atom(Module) ->
-    parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
-
 parse_modules([Module|Modules], Opts, Acc) 
-  when is_atom(Module) and is_list(Opts) ->
-    parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
-
-parse_modules([{Module, _}|Modules], disable = Opts, Acc) 
-  when is_atom(Module) ->
+  when is_atom(Module) andalso is_list(Opts) ->
     parse_modules(Modules, Opts, [{Module, Opts}|Acc]);
 
 parse_modules([{Module, ModOpts}|Modules], Opts, Acc) 
-  when is_atom(Module) and is_list(ModOpts) and is_list(Opts) ->
+  when is_atom(Module) andalso is_list(ModOpts) andalso is_list(Opts) ->
     NewModOpts = update_trace_options(Opts, ModOpts),
     parse_modules(Modules, Opts, [{Module, NewModOpts}|Acc]);
 

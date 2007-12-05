@@ -13,7 +13,7 @@
 %% 
 %% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
-%% $Id$
+%%     $Id$
 %%
 
 %%%-------------------------------------------------------------------
@@ -55,14 +55,15 @@
 
 start(Parent, LegalWarnings, Analysis) ->
   NewAnalysis1 = expand_files(Analysis),
-  init_plt(NewAnalysis1),
-  NewAnalysis2 = run_analysis(NewAnalysis1),
+  NewAnalysis2 = init_plt(NewAnalysis1),
+  NewAnalysis3 = run_analysis(NewAnalysis2),
   State = #state{parent=Parent, legal_warnings=LegalWarnings},
-  loop(State, NewAnalysis2, none).
+  loop(State, NewAnalysis3, none).
 
 run_analysis(Analysis) ->
   Self = self(),
-  Fun = fun() -> analysis_start(Self, Analysis) end,
+  Fun = fun() -> register(dialyzer_analysis_callgraph, self()), 
+		 analysis_start(Self, Analysis) end,
   Analysis#analysis{analysis_pid=spawn_link(Fun)}.
 
 loop(State, Analysis = #analysis{}, ExtCalls) ->
@@ -82,16 +83,19 @@ loop(State, Analysis = #analysis{}, ExtCalls) ->
     {AnalPid, error, Msg} ->
       send_error(Parent, Msg),
       loop(State, Analysis, ExtCalls);
-    {AnalPid, done} ->      
+    {AnalPid, done, Plt, DocPlt} ->      
       case ExtCalls =:= none of
 	true ->
-	  send_analysis_done(Parent);
+	  send_analysis_done(Parent, Plt, DocPlt);
 	false ->
 	  send_ext_calls(Parent, ExtCalls),
-	  send_analysis_done(Parent)
+	  send_analysis_done(Parent, Plt, DocPlt)
       end;
     {AnalPid, ext_calls, NewExtCalls} ->
       loop(State, Analysis, NewExtCalls);
+    {AnalPid, mod_deps, ModDeps} ->
+      send_mod_deps(Parent, ModDeps),
+      loop(State, Analysis, ExtCalls);
     {Parent, stop} ->
       exit(AnalPid, kill),
       ok
@@ -124,26 +128,35 @@ analysis_start(Parent, Analysis) ->
   State1 = State#analysis_state{codeserver=NewCServer},
   State2 = State1#analysis_state{no_warn_unused=NoWarn},
   %% Remove all old versions of the files being analyzed
-  dialyzer_plt:delete_list(Plt, dialyzer_callgraph:all_nodes(Callgraph)),
-  analyze_callgraph(Callgraph, State2),
-  dialyzer_callgraph:delete(Callgraph),
+  AllNodes = dialyzer_callgraph:all_nodes(Callgraph),
+  Plt1 = dialyzer_plt:delete_list(Plt, AllNodes),
+  State3 = analyze_callgraph(Callgraph, State2#analysis_state{plt=Plt1}),
   Exports = dialyzer_codeserver:all_exports(NewCServer),
-  dialyzer_plt:strip_non_member_mfas(Plt, Exports),
+  NonExports = sets:subtract(sets:from_list(AllNodes), Exports),
+  NonExportsList = sets:to_list(NonExports),
+  Plt3 = dialyzer_plt:delete_list(State3#analysis_state.plt, NonExportsList),
+  Plt4 = dialyzer_plt:delete_contract_list(Plt3, NonExportsList),
   dialyzer_codeserver:delete(NewCServer),
-  send_analysis_done(Parent).
-  
+  send_analysis_done(Parent, Plt4, State3#analysis_state.doc_plt).
+
 analyze_callgraph(Callgraph, State) ->
   Plt = State#analysis_state.plt,
   Codeserver = State#analysis_state.codeserver,
+  Parent = State#analysis_state.parent,
   case State#analysis_state.analysis_type of
     plt_build ->
       Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
-      dialyzer_succ_typings:analyze_callgraph(Callgraph1, Plt, Codeserver);
+      NewPlt = dialyzer_succ_typings:analyze_callgraph(Callgraph1, Plt, 
+						       Codeserver, Parent),
+      dialyzer_callgraph:delete(Callgraph1),
+      State#analysis_state{plt=NewPlt};
     old_style ->
       case erlang:system_info(schedulers) of
 	1 -> 
 	  Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
-	  analyze_callgraph_single_threaded(Callgraph1, State);
+	  NewState = analyze_callgraph_single_threaded(Callgraph1, State),
+	  dialyzer_callgraph:delete(Callgraph),
+	  NewState;
 	N when is_integer(N), N > 1 -> 
 	  analyze_callgraph_in_parallel(Callgraph, State, N)
       end;
@@ -151,32 +164,34 @@ analyze_callgraph(Callgraph, State) ->
       NoWarn = State#analysis_state.no_warn_unused,
       DocPlt = State#analysis_state.doc_plt,
       Callgraph1 = dialyzer_callgraph:finalize(Callgraph),
-      Warnings = dialyzer_succ_typings:get_warnings(Callgraph1, Plt, DocPlt,
-						    Codeserver, NoWarn, Type),
+      {Warnings, NewPlt, NewDocPlt} = 
+	dialyzer_succ_typings:get_warnings(Callgraph1, Plt, DocPlt,
+					   Codeserver, NoWarn, Type, Parent),
+      dialyzer_callgraph:delete(Callgraph1),
       send_warnings(State#analysis_state.parent, Warnings),
-      ok
+      State#analysis_state{plt=NewPlt, doc_plt=NewDocPlt}
   end.
 
 analyze_callgraph_in_parallel(Callgraph, State, N) ->
   CallgraphList1 = dialyzer_callgraph:split_into_components(Callgraph),
   CallgraphList2 = [dialyzer_callgraph:finalize(CG) || CG <- CallgraphList1],
-  parallel_analysis_loop(CallgraphList2, State, 0, N).
+  NewState = parallel_analysis_loop(CallgraphList2, State, 0, N),
+  [dialyzer_callgraph:delete(CG) || CG <- CallgraphList2],
+  NewState.
 
-parallel_analysis_loop([], #analysis_state{parent=Parent}, 0, _MaxProc) ->
-  send_analysis_done(Parent),
-  ok;
+parallel_analysis_loop([], State, 0, _MaxProc) ->
+  State;
 parallel_analysis_loop([CG|CGs], State, Running, MaxProc) 
   when Running < MaxProc ->
   Pid = self(),
   spawn_link(fun()->
-		 %%XXX: Until we move the icode analysis out of HiPE
 		 put(hipe_target_arch, x86), 
-		 %%io:format("Starting with nodes: ~p\n",
-		 %%          [dialyzer_callgraph:all_nodes(CG)]),
 		 %% Hijack our parents messages.
 		 State1 = State#analysis_state{parent=Pid},
-		 analyze_callgraph_single_threaded(CG, State1),
-		 Pid ! done
+		 NewState = analyze_callgraph_single_threaded(CG, State1),
+		 Plt = NewState#analysis_state.plt,
+		 DocPlt = NewState#analysis_state.doc_plt,
+		 Pid ! {done, Plt, DocPlt}
 	     end),
   parallel_analysis_loop(CGs, State, Running+1, MaxProc);
 parallel_analysis_loop(CGs, State, Running, MaxProc) ->
@@ -191,48 +206,69 @@ parallel_analysis_loop(CGs, State, Running, MaxProc) ->
     {_Pid, error, Msg} ->
       Parent ! {self(), error, Msg},
       parallel_analysis_loop(CGs, State, Running, MaxProc);
-    done ->
-      parallel_analysis_loop(CGs, State, Running - 1, MaxProc)
+    {done, Plt, DocPlt} ->
+      NewPlt = dialyzer_plt:merge_plts([State#analysis_state.plt, Plt]),
+      NewDocPlt = 
+	case {DocPlt, State#analysis_state.doc_plt} of
+	  {undefined, undefined} -> DocPlt;
+	  {DocPlt, OldDocPlt} -> dialyzer_plt:merge_plts([OldDocPlt, DocPlt])
+	end,
+      NewState = State#analysis_state{plt=NewPlt, doc_plt=NewDocPlt},
+      parallel_analysis_loop(CGs, NewState, Running - 1, MaxProc)
   end.
 
 analyze_callgraph_single_threaded(Callgraph, State) ->
   case dialyzer_callgraph:take_scc(Callgraph) of
     {ok, SCC, NewCallgraph} ->
-      analyze_scc_warnings(SCC, Callgraph, State),
-      analyze_callgraph_single_threaded(NewCallgraph, State);
+      {Warnings, NewState} = analyze_scc_warnings(SCC, Callgraph, State),
+      send_warnings(NewState#analysis_state.parent, Warnings),
+      analyze_callgraph_single_threaded(NewCallgraph, NewState);
     none ->
-      ok
+      State
   end.
 
 analyze_scc_warnings([Fun], Callgraph, State=#analysis_state{parent=Parent}) ->
-  Msg = io_lib:format("Analyzing Fun: ~p\n", [Fun]),
-  send_log(Parent, Msg),  
   case dialyzer_callgraph:is_self_rec(Fun, Callgraph) of
-    true -> analyze_scc_icode([Fun], State);
+    true ->
+      Msg = io_lib:format("Analyzing self rec Fun: ~p\n", [Fun]),
+      send_log(Parent, Msg),  
+      analyze_scc_icode([Fun], State);
     false -> 
-      {_, Warnings} = analyze_fun_icode(Fun, State),
-      send_warnings(Parent, Warnings)
+      Msg = io_lib:format("Analyzing Fun: ~p\n", [Fun]),
+      send_log(Parent, Msg),  
+      {_, Warnings, NewState} = analyze_fun_icode(Fun, State),
+      {Warnings, NewState}
   end;
 analyze_scc_warnings(SCC, _Callgraph, State = #analysis_state{parent=Parent}) ->
-  %%io:format("Analyzing scc: ~p\n", [SCC]),
   Msg = io_lib:format("Analyzing SCC: ~p\n", [SCC]),
   send_log(Parent, Msg),
   analyze_scc_icode(SCC, State).
 
-analyze_scc_icode(SCC, State = #analysis_state{parent=Parent}) ->
-  Res = [analyze_fun_icode(MFA, State) || MFA <- SCC],
-  case lists:any(fun({X, _}) -> X =:= not_fixpoint end, Res) of
-    true -> 
-      analyze_scc_icode(SCC, State);
-    false -> 
-      send_log(Parent, "Reached fixpoint for SCC\n"),
-      Warnings = lists:foldl(fun({_, W}, Acc) -> W ++ Acc end, [], Res),
-      send_warnings(Parent, Warnings)
+analyze_scc_icode(SCC, State) ->
+  {Fixpoint, DeepWarnings, NewState} =
+    lists:foldl(fun analyze_scc_icode_fold_fun/2, {fixpoint, [], State}, SCC),
+  case Fixpoint of
+    not_fixpoint -> 
+      send_log(NewState#analysis_state.parent, "Not fixpoint for SCC\n"),
+      analyze_scc_icode(SCC, NewState);
+    fixpoint -> 
+      send_log(NewState#analysis_state.parent, "Reached fixpoint for SCC\n"),
+      {lists:flatten(DeepWarnings), NewState}
   end.
 
-analyze_fun_icode(MFA, #analysis_state{codeserver=CServer, doc_plt=DocPlt,
-				       no_warn_unused=NoWarn,
-				       parent=Parent, plt=Plt}) ->
+analyze_scc_icode_fold_fun(MFA, {FP, AccWarnings, State}) ->
+  {Fixpoint, Warnings, NewState} = analyze_fun_icode(MFA, State),
+  NewAccWarnings = [Warnings|AccWarnings],
+  case Fixpoint of
+    fixpoint -> {FP, NewAccWarnings, NewState};
+    not_fixpoint -> {not_fixpoint, NewAccWarnings, NewState}
+  end.
+
+analyze_fun_icode(MFA, State = #analysis_state{codeserver=CServer, 
+					       doc_plt=DocPlt,
+					       no_warn_unused=NoWarn,
+					       parent=Parent, 
+					       plt=Plt}) ->
   %%io:format("Analyzing icode for: ~p\n", [MFA]),
   case dialyzer_codeserver:lookup(MFA, icode, CServer) of
     {ok, CFG} ->
@@ -245,17 +281,20 @@ analyze_fun_icode(MFA, #analysis_state{codeserver=CServer, doc_plt=DocPlt,
       send_log(Parent, Msg2),
       case Res of
 	{not_fixpoint, UpdateInfo, Warnings} ->
-	  if DocPlt =:= undefined -> ok;
-	     true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
-	  end,
-	  dialyzer_plt:insert(Plt, [UpdateInfo]),
-	  {not_fixpoint, Warnings};
+	  DocPlt1 =
+	    if DocPlt =:= undefined -> DocPlt;
+	       true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
+	    end,
+	  Plt1 = dialyzer_plt:insert(Plt, [UpdateInfo]),
+	  NewState = State#analysis_state{plt=Plt1, doc_plt=DocPlt1},
+	  {not_fixpoint, Warnings, NewState};
 	{fixpoint, UpdateInfo, Warnings} ->
-	  if DocPlt =:= undefined -> ok;
-	     true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
-	  end,
-	  dialyzer_plt:insert(Plt, [UpdateInfo]),
-	  {fixpoint, Warnings}
+	  DocPlt1 =
+	    if DocPlt =:= undefined -> DocPlt;
+	       true -> dialyzer_plt:insert(DocPlt, [UpdateInfo])
+	    end,
+	  NewState = State#analysis_state{doc_plt=DocPlt1},
+	  {fixpoint, Warnings, NewState}
       end;
     error ->
       %% Since HiPE removes module_info it is ok to not find the code
@@ -268,7 +307,7 @@ analyze_fun_icode(MFA, #analysis_state{codeserver=CServer, doc_plt=DocPlt,
 	  Msg = io_lib:format("  Could not find icode for ~w\n", [MFA]),
 	  send_error(Parent, Msg)
       end,
-      {fixpoint, []}
+      {fixpoint, [], State}
   end.
 
 %%____________________________________________________________
@@ -329,6 +368,13 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
 				  analysis_type=AnalType,
 				  codeserver=CodeServer}, 
 		  CServer, Callgraph, Files) ->
+  case AnalType =:= plt_build of
+    true ->
+      ModuleDeps = dialyzer_callgraph:module_deps(Callgraph),
+      send_mod_deps(Parent, ModuleDeps);
+    false ->
+      ok
+  end,
   {Callgraph1, ExtCalls} = dialyzer_callgraph:remove_external(Callgraph),
   ExtCalls1 = lists:filter(fun({_From, To}) -> 
 			       not dialyzer_plt:contains_mfa(InitPlt, To)
@@ -345,7 +391,8 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
 	  end,
 	ModuleSet = sets:from_list(Modules),
 	lists:partition(fun({_From, {M, _F, _A}}) -> 
-			    sets:is_element(M, ModuleSet)
+			    sets:is_element(M, ModuleSet) orelse
+			      dialyzer_plt:contains_module(InitPlt, M)
 			end, ExtCalls1)
     end,
   NonLocalCalls = dialyzer_callgraph:non_local_calls(Callgraph1),
@@ -376,13 +423,19 @@ compile_src(File, Includes, Defines, Callgraph, CServer, AnalType, Plt) ->
 	error -> {error, "  Could not find abstract code for: "++File};
 	Core ->
 	  NoWarn = abs_get_nowarn(AbstrCode, Mod),
-	  case dialyzer_utils:get_record_info(AbstrCode) of
+	  case dialyzer_utils:get_record_and_type_info(AbstrCode) of
 	    {error, _} = Error -> Error;
 	    {ok, RecInfo} ->
 	      CServer2 = 
 		dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
-	      compile_core(Mod, Core, NoWarn, Callgraph, 
-			   CServer2, AnalType, Plt)
+	      case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
+		{error, _} = Error -> Error;
+		{ok, SpecInfo} ->
+		  CServer3 = 
+		    dialyzer_codeserver:store_contracts(Mod,SpecInfo,CServer2),
+		  compile_core(Mod, Core, NoWarn, Callgraph, 
+			       CServer3, AnalType, Plt)
+	      end
 	  end
       end
   end.
@@ -406,7 +459,7 @@ compile_byte(File, Callgraph, CServer, AnalType, Plt) ->
 		{error, "  Could not get abstract code for "++File++
 		 "\n  Use option --old_style or recompile with"
 		 " +debug_info (preferred)."};
-	      plt_build ->
+	      succ_typings ->
 		{error, "  Could not get abstract code for "++File};
 	      old_style ->
 		case (catch hipe:c(Mod, ?HIPE_COMPILE_OPTS)) of
@@ -426,13 +479,20 @@ compile_byte(File, Callgraph, CServer, AnalType, Plt) ->
 	    case dialyzer_utils:get_core_from_abstract_code(AbstrCode, Opts) of
 	      error -> {error, "  Could not get core for "++File};
 	      Core ->
-		case dialyzer_utils:get_record_info(AbstrCode) of
+		case dialyzer_utils:get_record_and_type_info(AbstrCode) of
 		  {error, _} = Error -> Error;
 		  {ok, RecInfo} ->
 		    CServer1 = 
 		      dialyzer_codeserver:store_records(Mod, RecInfo, CServer),
-		    compile_core(Mod, Core, NoWarn, Callgraph, 
-				 CServer1, AnalType, Plt)
+		    case dialyzer_utils:get_spec_info(AbstrCode, RecInfo) of
+		      {error, _} = Error -> Error;
+		      {ok, SpecInfo} ->
+			CServer2 = 
+			  dialyzer_codeserver:store_contracts
+			    (Mod,SpecInfo,CServer1),
+			compile_core(Mod, Core, NoWarn, Callgraph, 
+				     CServer2, AnalType, Plt)
+		    end
 		end
 	    end
 	end,
@@ -575,8 +635,8 @@ send_warnings(Parent, Warnings) ->
 filter_warnings(LegalWarnings, Warnings) ->
   [Warning || {Tag, Warning} <- Warnings, lists:member(Tag, LegalWarnings)].
 
-send_analysis_done(Parent) ->
-  Parent ! {self(), done}.
+send_analysis_done(Parent, Plt, DocPlt) ->
+  Parent ! {self(), done, Plt, DocPlt}.
 
 send_error(Parent, Msg) ->
   Parent ! {self(), error, Msg}.
@@ -603,16 +663,17 @@ send_bad_calls(Parent, BadCalls, old_style, _CodeServer) ->
 send_bad_calls(Parent, BadCalls, _AnalType, CodeServer) ->
   send_warnings(Parent, format_bad_calls(BadCalls, CodeServer, [])).
 
-
+send_mod_deps(Parent, ModuleDeps) ->
+  Parent ! {self(), mod_deps, ModuleDeps}.
 
 format_bad_calls([{{_, _, _}, {_, module_info, A}}|Left], CodeServer, Acc) 
   when A =:= 0; A =:= 1 ->
   format_bad_calls(Left, CodeServer, Acc);
-format_bad_calls([{From, To}|Left], 
+format_bad_calls([{From, To = {M, F, A}}|Left], 
 		 CodeServer, Acc) ->
   {ok, Tree} = dialyzer_codeserver:lookup(From, core, CodeServer),
-  Msg = io_lib:format("Call to missing or unexported function ~w\n", 
-		      [To]),
+  Msg = io_lib:format("Call to missing or unexported function ~w:~w/~w\n", 
+		      [M, F, A]),
   FileLine = find_call_file_and_line(Tree, To),
   NewAcc = [{?WARN_CALLGRAPH, {FileLine, Msg}}|Acc],
   format_bad_calls(Left, CodeServer, NewAcc);
@@ -654,12 +715,6 @@ get_file([_|Tail]) -> get_file(Tail).
 %% Handle the PLT
 %%
 
-init_plt(#analysis{init_plt=InitPlt, user_plt=Plt, plt_info=Info}) ->
-  dialyzer_plt:copy(InitPlt, Plt),
-  case Info of
-    none -> ok;
-    {MD5, Libs} -> 
-      dialyzer_plt:insert(Plt, {md5, MD5}),
-      dialyzer_plt:insert(Plt, {libs, Libs}),
-      ok
-  end.
+init_plt(Analysis = #analysis{init_plt=InitPlt, user_plt=Plt}) ->
+  Plt1 = dialyzer_plt:copy(InitPlt, Plt),
+  Analysis#analysis{user_plt=Plt1}.

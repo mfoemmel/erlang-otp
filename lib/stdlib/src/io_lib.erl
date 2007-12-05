@@ -71,19 +71,6 @@
 %% Utilities for collecting characters.
 -export([collect_chars/3,collect_line/2,collect_line/3,get_until/3]).
 
--export([scan/1,scan/2,scan/3,reserved_word/1]).
--deprecated([{scan,1},{scan,2},{scan,3},{reserved_word,1}]).
-
-%% Backward compatibility functions.
-
-scan(Cont, Chars, Pos) -> erl_scan:tokens(Cont, Chars, Pos).
-
-scan(Chars) -> erl_scan:string(Chars).
-
-scan(Chars, StartPos) -> erl_scan:string(Chars, StartPos).
-
-reserved_word(Atom) -> erl_scan:reserved_word(Atom).
-
 %% Interface calls to sub-modules.
 
 fwrite(Format, Args) ->
@@ -98,7 +85,7 @@ fread(Cont, Chars, Format) ->
 format(Format, Args) ->
     case catch io_lib_format:fwrite(Format, Args) of
 	{'EXIT',_} ->
-	    erlang:fault(badarg, [Format, Args]);
+	    erlang:error(badarg, [Format, Args]);
 	Other ->
 	    Other
     end.

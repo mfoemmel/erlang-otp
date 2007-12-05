@@ -23,6 +23,14 @@
 
 -export([interfaces/1]).
 
+-define(OP_PUTC,0).
+-define(OP_MOVE,1).
+-define(OP_INSC,2).
+-define(OP_DELC,3).
+-define(OP_BEEP,4).
+% Control op
+-define(CTRL_OP_GET_WINSIZE,100).
+
 %% start()
 %% start(ArgumentList)
 %% start(PortName, Shell)
@@ -149,6 +157,9 @@ server_loop(Iport, Oport, Curr, User, Gr) ->
 	    server_loop(Iport, Oport, Curr, User, Gr);
 	{User,Req} ->				% never block from user!
 	    io_request(Req, Iport, Oport),
+	    server_loop(Iport, Oport, Curr, User, Gr);
+	{Curr,tty_geometry} ->
+	    Curr ! {self(),tty_geometry,get_tty_geometry(Iport)},
 	    server_loop(Iport, Oport, Curr, User, Gr);
 	{Curr,Req} ->
 	    io_request(Req, Iport, Oport),
@@ -408,19 +419,30 @@ get_line({What,Cont0,Rs}, Iport, Oport) ->
 get_line_timeout(blink) -> 1000;
 get_line_timeout(more_chars) -> infinity.
 
+% Let driver report window geometry,
+% definitely outside of the common interface
+get_tty_geometry(Iport) ->
+    case (catch port_control(Iport,?CTRL_OP_GET_WINSIZE,[])) of
+	List when is_list(List), length(List) =:= 8 -> 
+	    <<W:32/native,H:32/native>> = list_to_binary(List),
+	    {W,H};
+	_ ->
+	    error
+    end.
+
 %% io_request(Request, InPort, OutPort)
 %% io_requests(Requests, InPort, OutPort)
 
 io_request({put_chars,Cs}, _Iport, Oport) ->
-    Oport ! {self(),{command,[0|Cs]}};
+    Oport ! {self(),{command,[?OP_PUTC|Cs]}};
 io_request({move_rel,N}, _Iport, Oport) ->
-    Oport ! {self(),{command,[1|put_int16(N, [])]}};
+    Oport ! {self(),{command,[?OP_MOVE|put_int16(N, [])]}};
 io_request({insert_chars,Cs}, _Iport, Oport) ->
-    Oport ! {self(),{command,[2|Cs]}};
+    Oport ! {self(),{command,[?OP_INSC|Cs]}};
 io_request({delete_chars,N}, _Iport, Oport) ->
-    Oport ! {self(),{command,[3|put_int16(N, [])]}};
+    Oport ! {self(),{command,[?OP_DELC|put_int16(N, [])]}};
 io_request(beep, _Iport, Oport) ->
-    Oport ! {self(),{command,[4]}};
+    Oport ! {self(),{command,[?OP_BEEP]}};
 io_request({requests,Rs}, Iport, Oport) ->
     io_requests(Rs, Iport, Oport);
 io_request(_R, _Iport, _Oport) ->

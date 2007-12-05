@@ -287,6 +287,8 @@ terminate_supervised(Pid, Reason, MSL, SName) ->
 system_continue(Parent, Debug, [ServerName, MSL]) ->
     loop(Parent, ServerName, MSL, Debug).
 
+-spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
+
 system_terminate(Reason, Parent, _Debug, [ServerName, MSL]) ->
     terminate_server(Reason, Parent, MSL, ServerName).
 

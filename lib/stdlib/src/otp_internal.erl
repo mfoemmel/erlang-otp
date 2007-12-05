@@ -19,191 +19,254 @@
 
 -export([obsolete/3]).
 
-obsolete(init, get_flag, 1) ->
-    {true, {init, get_argument, 1}};
-obsolete(init, get_flags, 0) ->
-    {true, {init, get_arguments, 0}};
-obsolete(init, get_args, 0) ->
-    {true, {init, get_plain_arguments, 0}};
-obsolete(unix, cmd, 1) ->
-    {true, {os, cmd, 1}};
 
-%% This function is sometimes useful.
-%% obsolete(calendar, time_difference, 2) ->
-%%    {true, "not recommended; use the functions for gregorian "
-%%     "days/seconds instead"};
+%% obsolete(Module, Name, Arity) ->
+%%   no | {Tag,ReplacementMFA,Release} | {Tag,String}
+%%   Tag = deprecated | removed | experimental
+%%   ReplacementMFA = {atom(),atom(),integer()}
+%%   Release = string()
 
-obsolete(net, _, _) ->
-    {true, "module 'net' obsolete; use 'net_adm'"};
+obsolete(Mod, Name, Arity) ->
+    case obsolete_1(Mod, Name, Arity) of
+	{deprecated=Tag,{_,_,_}=Replacement} ->
+	    {Tag,Replacement,"in a future release"};
+	{_,String}=Ret when is_list(String) ->
+	    Ret;
+	{_,_,_}=Ret ->
+	    Ret;
+	no ->
+	    no
+    end.
 
-obsolete(erl_internal, builtins, 0) ->
-    {true, {erl_internal, bif, 2}};
+obsolete_1(init, get_flag, 1) ->
+    {removed, {init, get_argument, 1}, "R12B"};
+obsolete_1(init, get_flags, 0) ->
+    {removed, {init, get_arguments, 0}, "R12B"};
+obsolete_1(init, get_args, 0) ->
+    {removed, {init, get_plain_arguments, 0}, "R12B"};
+obsolete_1(unix, cmd, 1) ->
+    {removed, {os,cmd,1}, "R9B"};
 
-obsolete(string, re_sh_to_awk, 1) ->
-    {true, {regexp, sh_to_awk, 1}};
-obsolete(string, re_parse, 1) ->
-    {true, {regexp, parse, 1}};
-obsolete(string, re_match, 2) ->
-    {true, {regexp, match, 2}};
-obsolete(string, re_sub, 3) ->
-    {true, {regexp, sub, 3}};
-obsolete(string, re_gsub, 3) ->
-    {true, {regexp, gsub, 3}};
-obsolete(string, re_split, 2) ->
-    {true, {regexp, split, 2}};
+obsolete_1(net, _, _) ->
+    {deprecated, "module 'net' obsolete; use 'net_adm'"};
 
-obsolete(string, index, 2) ->
-    {true, {string, str, 2}};
+obsolete_1(erl_internal, builtins, 0) ->
+    {deprecated, {erl_internal, bif, 2}};
 
-obsolete(erl_eval, seq, 2) ->
-    {true, {erl_eval, exprs, 2}};
-obsolete(erl_eval, seq, 3) ->
-    {true, {erl_eval, exprs, 3}};
-obsolete(erl_eval, arg_list, 2) ->
-    {true, {erl_eval, expr_list, 2}};
-obsolete(erl_eval, arg_list, 3) ->
-    {true, {erl_eval, expr_list, 3}};
+obsolete_1(string, re_sh_to_awk, 1) ->
+    {removed, {regexp, sh_to_awk, 1}, "R12B"};
+obsolete_1(string, re_parse, 1) ->
+    {removed, {regexp, parse, 1}, "R12B"};
+obsolete_1(string, re_match, 2) ->
+    {removed, {regexp, match, 2}, "R12B"};
+obsolete_1(string, re_sub, 3) ->
+    {removed, {regexp, sub, 3}, "R12B"};
+obsolete_1(string, re_gsub, 3) ->
+    {removed, {regexp, gsub, 3}, "R12B"};
+obsolete_1(string, re_split, 2) ->
+    {removed, {regexp, split, 2}, "R12B"};
 
-obsolete(erl_pp, seq, 1) ->
-    {true, {erl_pp, exprs, 1}};
-obsolete(erl_pp, seq, 2) ->
-    {true, {erl_pp, exprs, 2}};
+obsolete_1(string, index, 2) ->
+    {removed, {string, str, 2}, "R12B"};
 
-obsolete(io, scan_erl_seq, 1) ->
-    {true, {io, scan_erl_exprs, 1}};
-obsolete(io, scan_erl_seq, 2) ->
-    {true, {io, scan_erl_exprs, 2}};
-obsolete(io, scan_erl_seq, 3) ->
-    {true, {io, scan_erl_exprs, 3}};
-obsolete(io, parse_erl_seq, 1) ->
-    {true, {io, parse_erl_exprs, 1}};
-obsolete(io, parse_erl_seq, 2) ->
-    {true, {io, parse_erl_exprs, 2}};
-obsolete(io, parse_erl_seq, 3) ->
-    {true, {io, parse_erl_exprs, 3}};
-obsolete(io, parse_exprs, 2) ->
-    {true, {io, parse_erl_exprs, 2}};
+obsolete_1(erl_eval, seq, 2) ->
+    {deprecated, {erl_eval, exprs, 2}};
+obsolete_1(erl_eval, seq, 3) ->
+    {deprecated, {erl_eval, exprs, 3}};
+obsolete_1(erl_eval, arg_list, 2) ->
+    {deprecated, {erl_eval, expr_list, 2}};
+obsolete_1(erl_eval, arg_list, 3) ->
+    {deprecated, {erl_eval, expr_list, 3}};
 
-obsolete(io_lib, scan, 1) ->
-    {true, {erl_scan, string, 1}};
-obsolete(io_lib, scan, 2) ->
-    {true, {erl_scan, string, 2}};
-obsolete(io_lib, scan, 3) ->
-    {true, {erl_scan, tokens, 3}};
-obsolete(io_lib, reserved_word, 1) ->
-    {true, {erl_scan, reserved_word, 1}};
+obsolete_1(erl_pp, seq, 1) ->
+    {removed, {erl_pp, exprs, 1}, "R12B"};
+obsolete_1(erl_pp, seq, 2) ->
+    {removed, {erl_pp, exprs, 2}, "R12B"};
 
-obsolete(lists, keymap, 4) ->
-    {true, {lists, keymap, 3}};
-obsolete(lists, all, 3) ->
-    {true, {lists, all, 2}};
-obsolete(lists, any, 3) ->
-    {true, {lists, any, 2}};
-obsolete(lists, map, 3) ->
-    {true, {lists, map, 2}};
-obsolete(lists, flatmap, 3) ->
-    {true, {lists, flatmap, 2}};
-obsolete(lists, foldl, 4) ->
-    {true, {lists, foldl, 3}};
-obsolete(lists, foldr, 4) ->
-    {true, {lists, foldr, 3}};
-obsolete(lists, mapfoldl, 4) ->
-    {true, {lists, mapfoldl, 3}};
-obsolete(lists, mapfoldr, 4) ->
-    {true, {lists, mapfoldr, 3}};
-obsolete(lists, filter, 3) ->
-    {true, {lists, filter, 2}};
-obsolete(lists, foreach, 3) ->
-    {true, {lists, foreach, 2}};
+obsolete_1(io, scan_erl_seq, 1) ->
+    {removed, {io, scan_erl_exprs, 1}, "R12B"};
+obsolete_1(io, scan_erl_seq, 2) ->
+    {removed, {io, scan_erl_exprs, 2}, "R12B"};
+obsolete_1(io, scan_erl_seq, 3) ->
+    {removed, {io, scan_erl_exprs, 3}, "R12B"};
+obsolete_1(io, parse_erl_seq, 1) ->
+    {removed, {io, parse_erl_exprs, 1}, "R12B"};
+obsolete_1(io, parse_erl_seq, 2) ->
+    {removed, {io, parse_erl_exprs, 2}, "R12B"};
+obsolete_1(io, parse_erl_seq, 3) ->
+    {removed, {io, parse_erl_exprs, 3}, "R12B"};
+obsolete_1(io, parse_exprs, 2) ->
+    {removed, {io, parse_erl_exprs, 2}, "R12B"};
 
-obsolete(ets, fixtable, 2) ->
-    {true, {ets, safe_fixtable, 2}};
+obsolete_1(io_lib, scan, 1) ->
+    {removed, {erl_scan, string, 1}, "R12B"};
+obsolete_1(io_lib, scan, 2) ->
+    {removed, {erl_scan, string, 2}, "R12B"};
+obsolete_1(io_lib, scan, 3) ->
+    {removed, {erl_scan, tokens, 3}, "R12B"};
+obsolete_1(io_lib, reserved_word, 1) ->
+    {removed, {erl_scan, reserved_word, 1}, "R12B"};
 
-obsolete(erlang, old_binary_to_term, 1) ->
-    {true, "deprecated BIF"};
-obsolete(erlang, info, 1) ->
-    {true, {erlang, system_info, 1}};
-obsolete(erlang, hash, 2) ->
-    {true, {erlang, phash2, 2}};
+obsolete_1(lists, keymap, 4) ->
+    {removed, {lists, keymap, 3}, "R12B"};
+obsolete_1(lists, all, 3) ->
+    {removed, {lists, all, 2}, "R12B"};
+obsolete_1(lists, any, 3) ->
+    {removed, {lists, any, 2}, "R12B"};
+obsolete_1(lists, map, 3) ->
+    {removed, {lists, map, 2}, "R12B"};
+obsolete_1(lists, flatmap, 3) ->
+    {removed, {lists, flatmap, 2}, "R12B"};
+obsolete_1(lists, foldl, 4) ->
+    {removed, {lists, foldl, 3}, "R12B"};
+obsolete_1(lists, foldr, 4) ->
+    {removed, {lists, foldr, 3}, "R12B"};
+obsolete_1(lists, mapfoldl, 4) ->
+    {removed, {lists, mapfoldl, 3}, "R12B"};
+obsolete_1(lists, mapfoldr, 4) ->
+    {removed, {lists, mapfoldr, 3}, "R12B"};
+obsolete_1(lists, filter, 3) ->
+    {removed, {lists, filter, 2}, "R12B"};
+obsolete_1(lists, foreach, 3) ->
+    {removed, {lists, foreach, 2}, "R12B"};
+obsolete_1(lists, zf, 3) ->
+    {removed, {lists, zf, 2}, "R12B"};
 
-obsolete(file, file_info, 1) ->
-    {true, {file, read_file_info, 1}};
+obsolete_1(ets, fixtable, 2) ->
+    {removed, {ets, safe_fixtable, 2}, "R12B"};
 
-obsolete(dict, dict_to_list, 1) ->
-    {true, {dict, to_list, 1}};
-obsolete(dict, list_to_dict, 1) ->
-    {true, {dict, from_list, 1}};
-obsolete(orddict, dict_to_list, 1) ->
-    {true, {orddict, to_list, 1}};
-obsolete(orddict, list_to_dict, 1) ->
-    {true, {orddict, from_list, 1}};
+obsolete_1(erlang, old_binary_to_term, 1) ->
+    {removed, "deprecated BIF", "R12B"};
+obsolete_1(erlang, info, 1) ->
+    {removed, {erlang, system_info, 1}, "R12B"};
+obsolete_1(erlang, hash, 2) ->
+    {deprecated, {erlang, phash2, 2}};
 
-obsolete(sets, new_set, 0) ->
-    {true, {sets, new, 0}};
-obsolete(sets, set_to_list, 1) ->
-    {true, {sets, to_list, 1}};
-obsolete(sets, list_to_set, 1) ->
-    {true, {sets, from_list, 1}};
-obsolete(sets, subset, 2) ->
-    {true, {sets, is_subset, 2}};
-obsolete(ordsets, new_set, 0) ->
-    {true, {ordsets, new, 0}};
-obsolete(ordsets, set_to_list, 1) ->
-    {true, {ordsets, to_list, 1}};
-obsolete(ordsets, list_to_set, 1) ->
-    {true, {ordsets, from_list, 1}};
-obsolete(ordsets, subset, 2) ->
-    {true, {ordsets, is_subset, 2}};
+obsolete_1(file, file_info, 1) ->
+    {removed, {file, read_file_info, 1}, "R12B"};
 
-obsolete(calendar, local_time_to_universal_time, 1) ->
-    {true, {calendar, local_time_to_universal_time_dst, 1}};
+obsolete_1(dict, dict_to_list, 1) ->
+    {removed, {dict,to_list,1}, "R12B"};
+obsolete_1(dict, list_to_dict, 1) ->
+    {removed, {dict,from_list,1}, "R12B"};
+obsolete_1(orddict, dict_to_list, 1) ->
+    {removed, {orddict,to_list,1}, "R12B"};
+obsolete_1(orddict, list_to_dict, 1) ->
+    {removed, {orddict,from_list,1}, "R12B"};
 
-obsolete(rpc, safe_multi_server_call, A) when A =:= 2; A =:= 3 ->
-    {true, {rpc, multi_server_call, A}};
+obsolete_1(sets, new_set, 0) ->
+    {removed, {sets, new, 0}, "R12B"};
+obsolete_1(sets, set_to_list, 1) ->
+    {removed, {sets, to_list, 1}, "R12B"};
+obsolete_1(sets, list_to_set, 1) ->
+    {removed, {sets, from_list, 1}, "R12B"};
+obsolete_1(sets, subset, 2) ->
+    {removed, {sets, is_subset, 2}, "R12B"};
+obsolete_1(ordsets, new_set, 0) ->
+    {removed, {ordsets, new, 0}, "R12B"};
+obsolete_1(ordsets, set_to_list, 1) ->
+    {removed, {ordsets, to_list, 1}, "R12B"};
+obsolete_1(ordsets, list_to_set, 1) ->
+    {removed, {ordsets, from_list, 1}, "R12B"};
+obsolete_1(ordsets, subset, 2) ->
+    {removed, {ordsets, is_subset, 2}, "R12B"};
 
-obsolete(snmp, N, A) ->
+obsolete_1(calendar, local_time_to_universal_time, 1) ->
+    {deprecated, {calendar, local_time_to_universal_time_dst, 1}};
+
+obsolete_1(rpc, safe_multi_server_call, A) when A =:= 2; A =:= 3 ->
+    {deprecated, {rpc, multi_server_call, A}};
+
+obsolete_1(snmp, N, A) ->
     case is_snmp_agent_function(N, A) of
-	false -> false;
+	false ->
+	    no;
 	true ->
-	    {true,"Deprecated; use snmpa:"++atom_to_list(N)++"/"++
+	    {deprecated,"Deprecated; use snmpa:"++atom_to_list(N)++"/"++
 	     integer_to_list(A)++" instead"}
     end;
 
-obsolete(megaco, format_versions, 1) ->
-    {true, "Deprecated; use megaco:print_version_info/0,1 instead"};
+obsolete_1(megaco, format_versions, 1) ->
+    {deprecated, "Deprecated; use megaco:print_version_info/0,1 instead"};
 
-obsolete(os_mon_mib, init, 1) ->
-    {true, {os_mon_mib, load, 1}};
-obsolete(os_mon_mib, stop, 1) ->
-    {true, {os_mon_mib, unload, 1}};
+obsolete_1(os_mon_mib, init, 1) ->
+    {deprecated, {os_mon_mib, load, 1}};
+obsolete_1(os_mon_mib, stop, 1) ->
+    {deprecated, {os_mon_mib, unload, 1}};
 
-obsolete(auth, is_auth, 1) ->
-    {true, {net_adm, ping, 1}};
-obsolete(auth, cookie, 0) ->
-    {true, {erlang, get_cookie, 0}};
-obsolete(auth, cookie, 1) ->
-    {true, {erlang, set_cookie, 2}};
-obsolete(auth, node_cookie, 1) ->
-    {true, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
-obsolete(auth, node_cookie, 2) ->
-    {true, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
+obsolete_1(auth, is_auth, 1) ->
+    {deprecated, {net_adm, ping, 1}};
+obsolete_1(auth, cookie, 0) ->
+    {deprecated, {erlang, get_cookie, 0}};
+obsolete_1(auth, cookie, 1) ->
+    {deprecated, {erlang, set_cookie, 2}};
+obsolete_1(auth, node_cookie, 1) ->
+    {deprecated, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
+obsolete_1(auth, node_cookie, 2) ->
+    {deprecated, "Deprecated; use erlang:set_cookie/2 and net_adm:ping/1 instead"};
 
 %% Added in R11B-5.
-obsolete(http_base_64, _, _) ->
-    {true, "The http_base_64 module is deprecated; use the base64 module instead"};
-obsolete(httpd_util, encode_base64, 1) ->
-    {true, "Deprecated; use one of the encode functions in the base64 module instead"};
-obsolete(httpd_util, decode_base64, 1) ->
-    {true, "Deprecated; use one of the decode functions in the base64 module instead"};
-obsolete(httpd_util, to_upper, 1) ->
-    {true, {string, to_upper, 1}};
-obsolete(httpd_util, to_lower, 1) ->
-    {true, {string, to_lower, 1}};
-obsolete(erlang, is_constant, 1) ->
-    {true, "Deprecated"};
+obsolete_1(http_base_64, _, _) ->
+    {deprecated, "The http_base_64 module is deprecated; use the base64 module instead"};
+obsolete_1(httpd_util, encode_base64, 1) ->
+    {deprecated, "Deprecated; use one of the encode functions in the base64 module instead"};
+obsolete_1(httpd_util, decode_base64, 1) ->
+    {deprecated, "Deprecated; use one of the decode functions in the base64 module instead"};
+obsolete_1(httpd_util, to_upper, 1) ->
+    {deprecated, {string, to_upper, 1}};
+obsolete_1(httpd_util, to_lower, 1) ->
+    {deprecated, {string, to_lower, 1}};
+obsolete_1(erlang, is_constant, 1) ->
+    {deprecated, "Deprecated; will be removed in R13B"};
 
-obsolete(_, _, _) ->
-    false.
+%% Added in R12B-0.
+obsolete_1(ssl, port, 1) ->
+    {deprecated, {ssl, sockname, 1}, "R13B"};
+obsolete_1(ssl, accept, A) when A =:= 1; A =:= 2 ->
+    {deprecated, "deprecated; use ssl:transport_accept/1,2 or ssl:ssl_accept/1,2"};
+obsolete_1(erlang, fault, 1) ->
+    {deprecated, {erlang,error,1}, "R13B"};
+obsolete_1(erlang, fault, 2) ->
+    {deprecated, {erlang,error,2}, "R13B"};
+obsolete_1(erlang, bitsize, 1) ->
+    {experimental, {erlang,bit_size,1}, "R12B-1"};
+obsolete_1(erlang, bitstr_to_list, 1) ->
+    {experimental, {erlang,bitstring_to_list,1}, "R12B-1"};
+obsolete_1(erlang, list_to_bitstr, 1) ->
+    {experimental, {erlang,list_to_bitstring,1}, "R12B-1"};
+
+obsolete_1(httpd, start, 0) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(httpd, start, 1) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(httpd, start_link, 1)  -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(httpd, start_child, 0) -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(httpd, start_child, 1) -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(httpd, stop, 0) 	  -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, stop, 1)        -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, stop, 2)        -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, stop_child, 0)  -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, stop_child, 1)  -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, stop_child, 2)  -> {deprecated,{inets,stop,2},"R14B"};
+obsolete_1(httpd, restart, 0) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, restart, 1) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, restart, 2) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, block, 0) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, block, 1) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, block, 2) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, block, 3) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, block, 4)	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, unblock, 0) 	  -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, unblock, 1)     -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd, unblock, 2)     -> {deprecated,{httpd,reload_config,2},"R14B"};
+obsolete_1(httpd_util, key1search, 2) -> {deprecated,{proplists,get_value,2},"R13B"};
+obsolete_1(httpd_util, key1search, 3) -> {deprecated,{proplists,get_value,3},"R13B"};
+obsolete_1(ftp, open, 1)          -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(ftp, open, 2)          -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(ftp, open, 3)          -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(ftp, close, 1)         -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(ftp, force_active, 1)  -> {deprecated,{inets,start,[2,3]},"R14B"};
+
+obsolete_1(_, _, _) ->
+    no.
 
 is_snmp_agent_function(c,                     1) -> true;
 is_snmp_agent_function(c,                     2) -> true;
@@ -246,4 +309,3 @@ is_snmp_agent_function(add_agent_caps,        2) -> true;
 is_snmp_agent_function(del_agent_caps,        1) -> true;
 is_snmp_agent_function(get_agent_caps,        0) -> true;
 is_snmp_agent_function(_,		      _) -> false.
-

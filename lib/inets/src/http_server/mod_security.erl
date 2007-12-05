@@ -30,33 +30,31 @@
 
 -include("httpd.hrl").
 
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
-
 -define(VMODULE,"SEC").
 
 
 %% do/1
 do(Info) ->
     %% Check and see if any user has been authorized.
-    case httpd_util:key1search(Info#mod.data,remote_user,not_defined_user) of
+    case proplists:get_value(remote_user, Info#mod.data,not_defined_user) of
 	not_defined_user ->
 	    %% No user has been authorized.
-	    case httpd_util:key1search(Info#mod.data, response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		%% A status code has been generated!
 		{401, _Response} ->
-		    case httpd_util:key1search(Info#mod.parsed_header,
-					       "authorization") of
+		    case proplists:get_value("authorization",
+					     Info#mod.parsed_header) of
 			undefined ->
-			    %% Not an authorization attempt (server just replied to
-			    %% challenge for authentication)
+			    %% Not an authorization attempt (server
+			    %% just replied to challenge for
+			    %% authentication)
 			    {proceed, Info#mod.data};
 			[$B,$a,$s,$i,$c,$ |EncodedString] ->
-			    %% Someone tried to authenticate, and obviously failed!
+			    %% Someone tried to authenticate, and
+			    %% obviously failed!
 			    DecodedString =  
 				case (catch 
-					  http_base_64:decode(
+					  base64:decode_to_string(
 					    EncodedString)) of
 				    %% Decode failed 
 				    {'EXIT',{function_clause, _}} ->
@@ -65,7 +63,8 @@ do(Info) ->
 					String
 				end,
 				 
-			    report_failed(Info, DecodedString,"Failed authentication"),
+			    report_failed(Info, DecodedString,
+					  "Failed authentication"),
 			    take_failed_action(Info, DecodedString),
 			    {proceed, Info#mod.data}
 		    end;
@@ -85,11 +84,13 @@ do(Info) ->
 							Addr, Port) of
 		true ->
 		    report_failed(Info, User ,"User Blocked"),
-		    {proceed, [{status, {403, Info#mod.request_uri, ""}}|Info#mod.data]};
+		    {proceed, [{status, {403, Info#mod.request_uri, ""}} |
+			       Info#mod.data]};
 		false ->
 		    report_failed(Info, User,"Authentication Succedded"),
 		    mod_security_server:store_successful_auth(Addr, Port, 
-							      User, SDirData),
+							      User, 
+							      SDirData),
 		    {proceed, Info#mod.data}
 	    end
     end.
@@ -97,7 +98,8 @@ do(Info) ->
 report_failed(Info, Auth, Event) ->
     Request = Info#mod.request_line,
     {_PortNumber,RemoteHost}=(Info#mod.init_data)#init_data.peername,
-    String = RemoteHost ++ " : " ++ Event ++ " : " ++ Request ++ " : " ++ Auth,
+    String = RemoteHost ++ " : " ++ Event ++ " : " ++ Request ++ 
+	" : " ++ Auth,
     mod_disk_log:security_log(Info,String),
     mod_log:security_log(Info, String).
 
@@ -111,14 +113,17 @@ take_failed_action(Info, Auth) ->
 					  Auth, SDirData).
 
 secretp(Path, ConfigDB) ->
-    Directories = ets:match(ConfigDB,{directory,'$1','_'}),
+    Directories = ets:match(ConfigDB,{directory,{'$1','_'}}),
     case secret_path(Path, Directories) of
 	{yes, Directory} ->
 	    SDirs0 = httpd_util:multi_lookup(ConfigDB, security_directory),
-	    SDir = lists:filter(fun(X) ->
-					lists:member({path, Directory}, X)
-				end, SDirs0),
-	    {Directory, lists:flatten(SDir)};
+	    [SDir] = lists:filter(fun({Directory0, _}) 
+				     when Directory0 == Directory ->
+					  true;
+				     (_) ->
+					  false
+				  end, SDirs0),
+	    SDir;
 	no ->
 	    {[], []}
     end.
@@ -145,63 +150,65 @@ secret_path(Path, [[NewDirectory]|Rest], Directory) ->
 
 load("<Directory " ++ Directory,[]) ->
     Dir = httpd_conf:custom_clean(Directory,"",">"),
-    {ok, [{security_directory, Dir, [{path, Dir}]}]};
-load(eof,[{security_directory,Directory, _DirData}|_]) ->
+    {ok, [{security_directory, {Dir, [{path, Dir}]}}]};
+load(eof,[{security_directory, {Directory, _DirData}}|_]) ->
     {error, ?NICE("Premature end-of-file in "++Directory)};
 load("SecurityDataFile " ++ FileName,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     File = httpd_conf:clean(FileName),
-    {ok, [{security_directory, Dir, [{data_file, File}|DirData]}]};
+    {ok, [{security_directory, {Dir, [{data_file, File}|DirData]}}]};
 load("SecurityCallbackModule " ++ ModuleName,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     Mod = list_to_atom(httpd_conf:clean(ModuleName)),
-    {ok, [{security_directory, Dir, [{callback_module, Mod}|DirData]}]};
+    {ok, [{security_directory, {Dir, [{callback_module, Mod}|DirData]}}]};
 load("SecurityMaxRetries " ++ Retries,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     load_return_int_tag("SecurityMaxRetries", max_retries, 
 			httpd_conf:clean(Retries), Dir, DirData);
 load("SecurityBlockTime " ++ Time,
-      [{security_directory, Dir, DirData}]) ->
+      [{security_directory, {Dir, DirData}}]) ->
 	    load_return_int_tag("SecurityBlockTime", block_time,
 				httpd_conf:clean(Time), Dir, DirData);
 load("SecurityFailExpireTime " ++ Time,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     load_return_int_tag("SecurityFailExpireTime", fail_expire_time,
 			httpd_conf:clean(Time), Dir, DirData);
 load("SecurityAuthTimeout " ++ Time0,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     Time = httpd_conf:clean(Time0),
     load_return_int_tag("SecurityAuthTimeout", auth_timeout,
 			httpd_conf:clean(Time), Dir, DirData);
 load("AuthName " ++ Name0,
-     [{security_directory, Dir, DirData}]) ->
+     [{security_directory, {Dir, DirData}}]) ->
     Name = httpd_conf:clean(Name0),
-    {ok, [{security_directory, Dir, [{auth_name, Name}|DirData]}]};
-load("</Directory>",[{security_directory,Directory, DirData}]) ->
-    {ok, [], {security_directory, Directory, DirData}}.
+    {ok, [{security_directory, {Dir, [{auth_name, Name}|DirData]}}]};
+load("</Directory>",[{security_directory, {Directory, DirData}}]) ->
+    {ok, [], {security_directory, {Directory, DirData}}}.
 
 load_return_int_tag(Name, Atom, Time, Dir, DirData) ->
     case Time of
 	"infinity" ->
-	    {ok, [{security_directory, Dir, [{Atom, 99999999999999999999999999999}|DirData]}]};
+	    {ok, [{security_directory, {Dir, 
+		   [{Atom, 99999999999999999999999999999} | DirData]}}]};
 	_Int ->
 	    case catch list_to_integer(Time) of
 		{'EXIT', _} ->
 		    {error, Time++" is an invalid "++Name};
 		Val ->
-		    {ok, [{security_directory, Dir, [{Atom, Val}|DirData]}]}
+		    {ok, [{security_directory, {Dir, [{Atom, Val}|DirData]}}]}
 	    end
     end.
 
-store({security_directory, _Dir0, DirData}, ConfigList) ->
-    Addr = httpd_util:key1search(ConfigList, bind_address),
-    Port = httpd_util:key1search(ConfigList, port),
+store({security_directory, {Dir, DirData}}, ConfigList) when is_list(Dir),
+							   is_list(DirData) ->
+    Addr = proplists:get_value(bind_address, ConfigList),
+    Port = proplists:get_value(port, ConfigList),
     mod_security_server:start(Addr, Port),
-    SR = httpd_util:key1search(ConfigList, server_root),
+    SR = proplists:get_value(server_root, ConfigList),
     
-    case httpd_util:key1search(DirData, data_file, no_data_file) of
+    case proplists:get_value(data_file, DirData, no_data_file) of
 	no_data_file ->
-	    {error, no_security_data_file};
+	    {error, {missing_security_data_file, {security_directory, {Dir, DirData}}}};
 	DataFile0 ->
 	    DataFile = 
 		case filename:pathtype(DataFile0) of
@@ -221,12 +228,13 @@ store({security_directory, _Dir0, DirData}, ConfigList) ->
 					  [{port,Port},{bind_address,Addr}|
 					   NewDirData0]
 				  end,
-		    {ok, {security_directory,NewDirData1}};
+			    {ok, {security_directory, {Dir, NewDirData1}}};
 		{error, Err} ->
 		    {error, {{open_data_file, DataFile}, Err}}
 	    end
-    end.
-
+    end;
+store({directory, {Directory, DirData}}, _) ->
+    {error, {wrong_type, {security_directory, {Directory, DirData}}}}.
 
 remove(ConfigDB) ->
     Addr = case ets:lookup(ConfigDB, bind_address) of

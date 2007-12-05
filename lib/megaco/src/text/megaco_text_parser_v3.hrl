@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose : Define semantic text parser actions
@@ -21,7 +23,7 @@
 
 
 -include_lib("megaco/include/megaco.hrl").
--include_lib("megaco/include/megaco_message_prev3a.hrl").
+-include_lib("megaco/include/megaco_message_v3.hrl").
 -include("megaco_text_tokens.hrl").
 
 make_safe_token({_TokenTag, Line, Text}) ->
@@ -53,12 +55,21 @@ ensure_auth_header(SpiToken, SnToken, AdToken) ->
     #'AuthenticationHeader'{secParmIndex = Spi, seqNum = Sn, ad = Ad}.
 
 %% ContextID         = (UINT32 / "*" / "-" / "$")
-ensure_contextID({_TokenTag, _Line, Text}) ->
+ensure_contextID({_TokenTag, Line, Text}) ->
     case Text of
         "*"  -> ?megaco_all_context_id;
         "-"  -> ?megaco_null_context_id;
         "\$" -> ?megaco_choose_context_id;
-        Int  -> ensure_uint32(Int)
+        Int  ->
+	    CID = ensure_uint32(Int),
+	    if
+		(CID =/= 0) and
+		(CID =/= 16#FFFFFFFE) and
+		(CID =/= 16#FFFFFFFF) ->
+		    CID;
+		true ->
+		    return_error(Line, {bad_ContextID, CID})
+	    end
     end.
 
 ensure_domainAddress([{_T, _L, _A} = Addr0], Port) ->
@@ -242,11 +253,14 @@ ensure_muxType({_TokenTag, _Line, Text} = Token) ->
 
 %% packagesItem      = NAME "-" UINT16
 %% NAME              = ALPHA *63(ALPHA / DIGIT / "_" )
-ensure_packagesItem({TokenTag, Line, Text}) ->
+ensure_packagesItem({_TokenTag, Line, Text} = Token) ->
     case string:tokens(Text, [$-]) of
         [Name, Version] ->
-            #'PackagesItem'{packageName    = ensure_NAME({TokenTag, Line, Name}),
-                            packageVersion = ensure_uint({TokenTag, Line, Version}, 0, 99)};
+            #'PackagesItem'{packageName    = ensure_NAME(
+					       setelement(3, Token, Name)),
+                            packageVersion = ensure_uint(
+					       setelement(3, Token, Version),
+					       0, 99)};
         _ ->
             return_error(Line, {bad_PackagesItem, Text})
     end.
@@ -254,11 +268,11 @@ ensure_packagesItem({TokenTag, Line, Text}) ->
 %% pkgdName          =  (PackageName / "*")  SLASH  (ItemID / "*" )
 %% PackageName       = NAME
 %% ItemID            = NAME
-ensure_pkgdName({TokenTag, Line, Text}) ->
+ensure_pkgdName({_TokenTag, Line, Text} = Token) ->
     case string:tokens(Text, [$/]) of
         [Name, Item] ->
-            ensure_name_or_star({TokenTag, Line, Name}),
-            ensure_name_or_star({TokenTag, Line, Item}),
+            ensure_name_or_star(setelement(3, Token, Name)),
+            ensure_name_or_star(setelement(3, Token, Item)),
             Text;
         _ ->
             return_error(Line, {bad_pkgdName, Text})
@@ -273,64 +287,246 @@ ensure_name_or_star(Name) ->
 
 %% v2 - start
 
-merge_indAudMediaDescriptor({termStateDescr, Val}) ->
-    #'IndAudMediaDescriptor'{termStateDescr = Val};
-merge_indAudMediaDescriptor({streamParm, Val}) ->
-    #'IndAudMediaDescriptor'{streams = {oneStream, Val}};
-merge_indAudMediaDescriptor({streamDescr, Val}) ->
-    #'IndAudMediaDescriptor'{streams = {multiStream, [Val]}}.
+merge_indAudMediaDescriptor(Vals) ->
+%%     d("merge_indAudMediaDescriptor -> entry with"
+%%       "~n   Vals: ~p", [Vals]),
+    merge_indAudMediaDescriptor(Vals, #'IndAudMediaDescriptor'{}).
+
+merge_indAudMediaDescriptor(
+  [], #'IndAudMediaDescriptor'{streams = Streams1} = D) ->
+%%     d("merge_indAudMediaDescriptor -> entry with"
+%%       "~n   Streams1: ~p"
+%%       "~n   D:        ~p", [Streams1, D]),
+    Streams2 = 
+	case Streams1 of
+	    {multiStream, Descs} ->
+		{multiStream, lists:reverse(Descs)};
+	    _ ->
+		Streams1
+	end,
+    D#'IndAudMediaDescriptor'{streams = Streams2};
+merge_indAudMediaDescriptor([{termStateDescr, Val}|Vals], D) 
+  when D#'IndAudMediaDescriptor'.termStateDescr == asn1_NOVALUE ->
+%%     d("merge_indAudMediaDescriptor(termStateDescr) -> entry with"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    D2 = #'IndAudMediaDescriptor'{termStateDescr = Val},
+    merge_indAudMediaDescriptor(Vals, D2);
+merge_indAudMediaDescriptor([{streamParm, Val}|Vals], D)  
+  when D#'IndAudMediaDescriptor'.streams == asn1_NOVALUE ->
+%%     d("merge_indAudMediaDescriptor(streamParm) -> entry with"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    D2 = #'IndAudMediaDescriptor'{streams = {oneStream, Val}},
+    merge_indAudMediaDescriptor(Vals, D2);
+merge_indAudMediaDescriptor([{streamDescr, Val}|Vals], D)  
+  when D#'IndAudMediaDescriptor'.streams == asn1_NOVALUE ->
+%%     d("merge_indAudMediaDescriptor(streamDescr) -> entry with"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    D2 = #'IndAudMediaDescriptor'{streams = {multiStream, [Val]}},
+    merge_indAudMediaDescriptor(Vals, D2);
+merge_indAudMediaDescriptor([{streamDescr, Val}|Vals], 
+  #'IndAudMediaDescriptor'{streams = Streams1} = D1) ->
+%%     d("merge_indAudMediaDescriptor() -> entry with"
+%%       "~n   Val:      ~p"
+%%       "~n   Streams1: ~p"
+%%       "~n   D1:       ~p", [Val, Streams1, D1]),
+    Streams2 = 
+	case Streams1 of
+	    {multiStream, Descs} ->
+		{multiStream, [Val|Descs]};
+	    _ ->
+		return_error(0, {bad_IndAudMediaDescriptor_streamDescr, 
+				 Val, Streams1})
+	end,
+    D2 = D1#'IndAudMediaDescriptor'{streams = Streams2},
+    merge_indAudMediaDescriptor(Vals, D2);
+merge_indAudMediaDescriptor([{Tag, Val}|_], D) ->
+%%     d("merge_indAudMediaDescriptor -> entry with"
+%%       "~n   Tag: ~p"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Tag, Val, D]),
+    case Tag of
+	termStateDescr ->
+	    return_error(0, {bad_IndAudMediaDescriptor_termStateDescr, 
+			     Val, D#'IndAudMediaDescriptor'.termStateDescr});
+	streamParm ->
+	    return_error(0, {bad_IndAudMediaDescriptor_streamParm, 
+			     Val, D#'IndAudMediaDescriptor'.streams});
+	streamDescr ->
+	    return_error(0, {bad_IndAudMediaDescriptor_streamDescr, 
+			     Val, D#'IndAudMediaDescriptor'.streams});
+	_ ->
+	    return_error(0, {bad_IndAudMediaDescriptor_tag, Tag, Val})
+    end.
 
 merge_indAudLocalControlDescriptor(Parms) ->
-    do_merge_indAudLocalControlDescriptor(Parms, 
-					  #'IndAudLocalControlDescriptor'{}).
+    merge_indAudLocalControlDescriptor(Parms, 
+					  #'IndAudLocalControlDescriptor'{},
+					  asn1_NOVALUE).
 					  
-do_merge_indAudLocalControlDescriptor([Parm | Parms], Desc) ->
-    case Parm of
-	modeToken when Desc#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE ->
-	    Desc2 = Desc#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
-	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	reservedGroupToken when Desc#'IndAudLocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
-	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'},
-	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	reservedValueToken when Desc#'IndAudLocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
-	    Desc2 = Desc#'IndAudLocalControlDescriptor'{reserveValue = 'NULL'},
-	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	{pkgdName, Val} when Desc#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
-	    PropParms = [#'IndAudPropertyParm'{name = Val}],
-	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms},
-	    do_merge_indAudLocalControlDescriptor(Parms, Desc2);
-	{pkgdName, Val} when list(Desc#'IndAudLocalControlDescriptor'.propertyParms) ->
-	    PropParms = Desc#'IndAudLocalControlDescriptor'.propertyParms,
-	    PropParms2 = [#'IndAudPropertyParm'{name = Val} | PropParms],
-	    Desc2 = Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2},
-	    do_merge_indAudLocalControlDescriptor(Parms, Desc2)
-    end;
-do_merge_indAudLocalControlDescriptor([], Desc) ->
-    case Desc#'IndAudLocalControlDescriptor'.propertyParms of
-	[_ | _] = PropParms -> % List has more then one element
-	    PropParms2= lists:reverse(PropParms),
-	    Desc#'IndAudLocalControlDescriptor'{propertyParms = PropParms2};
-	_ ->
-	    Desc
-    end.
+merge_indAudLocalControlDescriptor([modeToken | Parms], D, PP) 
+  when (D#'IndAudLocalControlDescriptor'.streamMode    == asn1_NOVALUE) and 
+       (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(modeToken,1) -> entry when"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    D2 = D#'IndAudLocalControlDescriptor'{streamMode = 'NULL'},
+    merge_indAudLocalControlDescriptor(Parms, D2, PP);
 
-ensure_indAudLocalParm(Token) ->
-    case Token of
-	{safeToken, _Line, "mode"}          -> modeToken;
-	{safeToken, _Line, "mo"}            -> modeToken;
-	{safeToken, _Line, "reservedgroup"} -> reservedGroupToken;
-	{safeToken, _Line, "rg"}            -> reservedGroupToken;
-	{safeToken, _Line, "reservedvalue"} -> reservedValueToken;
-	{safeToken, _Line, "rv"}            -> reservedValueToken;
-	PkgdName                            -> {pkgdName,
-						ensure_pkgdName(PkgdName)}
-    end.
+merge_indAudLocalControlDescriptor([modeToken | Parms], D, PP) 
+  when (D#'IndAudLocalControlDescriptor'.streamMode == asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(modeToken,2) -> entry when"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    merge_indAudLocalControlDescriptor(Parms, D, PP);
 
-merge_indAudTerminationStateDescriptor({pkgdName, Val}) ->
+merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP) 
+  when (D#'IndAudLocalControlDescriptor'.streamMode    == asn1_NOVALUE) and 
+       (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(mode,1) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p"
+%%       "~n   PP:  ~p", [Val, D, PP]),
+    D2 = 
+	case Val of
+	    {equal, Val2} ->
+		D#'IndAudLocalControlDescriptor'{streamModeSel = Val2};
+	    {inequal, Val2} ->
+		D#'IndAudLocalControlDescriptor'{streamModeSel = Val2}
+	end,
+    merge_indAudLocalControlDescriptor(Parms, D2, PP);
+
+merge_indAudLocalControlDescriptor([{mode, Val} | Parms], D, PP) 
+  when (D#'IndAudLocalControlDescriptor'.streamModeSel == asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(mode,2) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p"
+%%       "~n   PP:  ~p", [Val, D, PP]),
+    D2 = 
+	case Val of
+	    {equal, Val2} ->
+		D#'IndAudLocalControlDescriptor'{streamMode    = asn1_NOVALUE,
+						 streamModeSel = Val2};
+	    {inequal, Val2} ->
+		D#'IndAudLocalControlDescriptor'{streamMode    = asn1_NOVALUE,
+						 streamModeSel = Val2}
+	end,
+    merge_indAudLocalControlDescriptor(Parms, D2, PP);
+
+merge_indAudLocalControlDescriptor([reservedGroupToken | Parms], D, PP) 
+  when D#'IndAudLocalControlDescriptor'.reserveGroup == asn1_NOVALUE ->
+%%     d("merge_indAudLocalControlDescriptor(reservedGroupToken) -> entry when"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    D2 = D#'IndAudLocalControlDescriptor'{reserveGroup = 'NULL'},
+    merge_indAudLocalControlDescriptor(Parms, D2, PP);
+
+merge_indAudLocalControlDescriptor([reservedValueToken | Parms], D, PP) 
+  when D#'IndAudLocalControlDescriptor'.reserveValue == asn1_NOVALUE ->
+%%     d("merge_indAudLocalControlDescriptor(reservedValueToken) -> entry when"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    D2 = D#'IndAudLocalControlDescriptor'{reserveValue = 'NULL'},
+    merge_indAudLocalControlDescriptor(Parms, D2, PP);
+
+%% This is really wierd in the standard, so at this point this is the
+%% best I can do...  BUGBUG BUGBUG BUGBUG
+%% 
+merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    PP = #'IndAudPropertyParm'{name = Val},
+    merge_indAudLocalControlDescriptor(Parms, D, PP);
+
+merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, PP) 
+  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
+%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP]},
+    PP2 = #'IndAudPropertyParm'{name = Val},
+    merge_indAudLocalControlDescriptor(Parms, D2, PP2);
+
+merge_indAudLocalControlDescriptor([{name, Val} | Parms], D, PP) ->
+%%     d("merge_indAudLocalControlDescriptor(name) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p", [Val, D]),
+    PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
+    D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP|PPs]},
+    PP2 = #'IndAudPropertyParm'{name = Val},
+    merge_indAudLocalControlDescriptor(Parms, D2, PP2);
+
+%% BUGBUG BUGBUG I cannot construct a proper IndAudPropertyParm with
+%% just the prop (the mandatory name part is missing), so for now I
+%% assume that it this has been used, then the name part
+%% (pkgdName) must precide it? 
+merge_indAudLocalControlDescriptor([{prop, Val} | Parms], D, PP) 
+  when (PP =/= asn1_NOVALUE) and 
+       (D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor(prop,1) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p"
+%%       "~n   PP:  ~p", [Val, D, PP]),
+    PP2 = PP#'IndAudPropertyParm'{propertyParms = Val},
+    D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP2]},
+    merge_indAudLocalControlDescriptor(Parms, D2, asn1_NOVALUE);
+
+merge_indAudLocalControlDescriptor([{prop, Val} | Parms], D, PP) 
+  when (PP =/= asn1_NOVALUE) and 
+       is_list(D#'IndAudLocalControlDescriptor'.propertyParms) ->
+%%     d("merge_indAudLocalControlDescriptor(prop,2) -> entry when"
+%%       "~n   Val: ~p"
+%%       "~n   D:   ~p"
+%%       "~n   PP:  ~p", [Val, D, PP]),
+    PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
+    PP2 = PP#'IndAudPropertyParm'{propertyParms = Val},
+    D2  = D#'IndAudLocalControlDescriptor'{propertyParms = [PP2|PPs]},
+    merge_indAudLocalControlDescriptor(Parms, D2, asn1_NOVALUE);
+
+merge_indAudLocalControlDescriptor([H | _T], _D, _PP) ->
+    return_error(0, {bad_indAudLocalControlDescriptor_parm, H});
+
+merge_indAudLocalControlDescriptor([], D, asn1_NOVALUE) 
+  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
+%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
+%%       "~n   D:  ~p", [D]),
+    D;
+merge_indAudLocalControlDescriptor([], D, asn1_NOVALUE) ->
+%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
+%%       "~n   D:  ~p", [D]),
+    PPs = D#'IndAudLocalControlDescriptor'.propertyParms,
+    PropParms2 = lists:reverse(PPs),
+    D#'IndAudLocalControlDescriptor'{propertyParms = PropParms2};
+merge_indAudLocalControlDescriptor([], D, PP) 
+  when D#'IndAudLocalControlDescriptor'.propertyParms == asn1_NOVALUE ->
+%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    D#'IndAudLocalControlDescriptor'{propertyParms = [PP]};
+merge_indAudLocalControlDescriptor([], D, PP) ->
+%%     d("merge_indAudLocalControlDescriptor -> entry when done with"
+%%       "~n   D:  ~p"
+%%       "~n   PP: ~p", [D, PP]),
+    PPs  = D#'IndAudLocalControlDescriptor'.propertyParms,
+    PPs2 = lists:reverse([PP|PPs]),
+    D#'IndAudLocalControlDescriptor'{propertyParms = PPs2}.
+
+
+merge_indAudTerminationStateDescriptor({name, Val}) ->
     PropParm = #'IndAudPropertyParm'{name = Val},
     #'IndAudTerminationStateDescriptor'{propertyParms = [PropParm]};
+%% BUGBUG BUGBUG BUGBUG
+merge_indAudTerminationStateDescriptor({prop, Val}) ->
+    exit({incomplete_propertyParm_in_indAudTerminationStateDescriptor, Val});
 merge_indAudTerminationStateDescriptor(serviceStatesToken) ->
     #'IndAudTerminationStateDescriptor'{serviceState = 'NULL'};
+merge_indAudTerminationStateDescriptor({serviceStates, {equal, Val}}) ->
+    #'IndAudTerminationStateDescriptor'{serviceStateSel = Val};
+merge_indAudTerminationStateDescriptor({serviceStates, {inequal, Val}}) ->
+    #'IndAudTerminationStateDescriptor'{serviceStateSel = Val};
 merge_indAudTerminationStateDescriptor(bufferToken) ->
     #'IndAudTerminationStateDescriptor'{eventBufferControl = 'NULL'}.
 
@@ -355,13 +551,16 @@ ensure_indAudSignalListParm(SIG) when record(SIG, 'Signal') ->
     ensure_indAudSignal(SIG).
 
 ensure_indAudSignal(#'Signal'{signalName       = SignalName,
-			      streamID         = asn1_NOVALUE, 
+			      streamID         = SID, 
 			      sigType          = asn1_NOVALUE, 
 			      duration         = asn1_NOVALUE, 
 			      notifyCompletion = asn1_NOVALUE, 
 			      keepActive       = asn1_NOVALUE, 
-			      sigParList       = []}) ->
-    #'IndAudSignal'{signalName = SignalName}.
+			      sigParList       = [],
+			      requestID        = RID}) ->
+    #'IndAudSignal'{signalName      = SignalName,
+		    streamID        = SID,
+		    signalRequestID = RID}.
     
 
 ensure_IADMD({_TokenTag, _Line, 
@@ -376,15 +575,15 @@ merge_indAudPackagesDescriptor(#'PackagesItem'{packageName    = N,
 				packageVersion = V}.
 
 
-ensure_indAudTerminationStateParm(Token) ->
-    case Token of
-	{safeToken, _Line, "servicestates"} -> serviceStatesToken;
-	{safeToken, _Line, "si"}            -> serviceStatesToken;
-	{safeToken, _Line, "buffer"}        -> bufferToken;
-	{safeToken, _Line, "bf"}            -> bufferToken;
-	PkgdName                            -> {pkgdName,
-						ensure_pkgdName(PkgdName)}
-    end.
+%% ensure_indAudTerminationStateParm(Token) ->
+%%     case Token of
+%% 	{safeToken, _Line, "servicestates"} -> serviceStatesToken;
+%% 	{safeToken, _Line, "si"}            -> serviceStatesToken;
+%% 	{safeToken, _Line, "buffer"}        -> bufferToken;
+%% 	{safeToken, _Line, "bf"}            -> bufferToken;
+%% 	PkgdName                            -> {pkgdName,
+%% 						ensure_pkgdName(PkgdName)}
+%%     end.
 
 
 %% Types modified by v2:
@@ -623,6 +822,55 @@ ensure_serviceChangeMethod({safeToken, Line, Text}) ->
     return_error(Line, {bad_serviceChangeMethod, Text}).
 
 
+merge_topologyDescriptor(Components) ->
+    merge_topologyDescriptor(Components, #'TopologyRequest'{}, []).
+
+merge_topologyDescriptor([], TR, TRs) ->
+    lists:reverse([ensure_TopologyRequest(TR)|TRs]);
+merge_topologyDescriptor(
+  [{tid, From}|Comps], 
+  #'TopologyRequest'{terminationFrom = undefined} = TR1, TRs) ->
+    TR2 = TR1#'TopologyRequest'{terminationFrom = From},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor(
+  [{tid, To}|Comps], 
+  #'TopologyRequest'{terminationTo = undefined} = TR1, 
+  TRs) ->
+    TR2 = TR1#'TopologyRequest'{terminationTo = To},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor([{tid, From}|Comps], TR1, TRs) ->
+    TR2 = #'TopologyRequest'{terminationFrom = From},
+    merge_topologyDescriptor(Comps, TR2, [TR1 | TRs]);
+merge_topologyDescriptor([{direction, Dir}|Comps], TR1, TRs) ->
+    TR2 = TR1#'TopologyRequest'{topologyDirection = Dir},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor([{sid, SID}|Comps], TR1, TRs) ->
+    TR2 = TR1#'TopologyRequest'{streamID = SID},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor(
+  [{direction_ext, EDir}|Comps], 
+  #'TopologyRequest'{topologyDirection = asn1_NOVALUE} = TR1, TRs) ->
+    TR2 = TR1#'TopologyRequest'{topologyDirection          = oneway,
+				topologyDirectionExtension = EDir},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor([{direction_ext, EDir}|Comps], TR1, TRs) ->
+    TR2 = TR1#'TopologyRequest'{topologyDirectionExtension = EDir},
+    merge_topologyDescriptor(Comps, TR2, TRs);
+merge_topologyDescriptor(Comps, TR, TRs) ->
+    return_error(0, {bad_topologyDescriptor, Comps, TR, TRs}).
+
+
+ensure_TopologyRequest(#'TopologyRequest'{terminationFrom   = From,
+					  terminationTo     = To,
+					  topologyDirection = Dir} = R)
+  when (From =/= asn1_NOVALUE) and
+       (To   =/= asn1_NOVALUE) and
+       (Dir  =/= asn1_NOVALUE) ->
+    R;
+ensure_TopologyRequest(R) ->
+    return_error(0, {bad_TopologyRequest, R}).
+
+       
 ensure_profile({_TokenTag, Line, Text}) ->
     case string:tokens(Text, [$/]) of
         [Name, Version] ->
@@ -636,11 +884,18 @@ ensure_version(Version) ->
     ensure_uint(Version, 0, 99).
 
 merge_signalRequest(SignalName, PropertyParms) ->
+%%     d("merge_signalRequest -> entry with"
+%%       "~n   SignalName:    ~p"
+%%       "~n   PropertyParms: ~p", [SignalName, PropertyParms]),
     Sig = #'Signal'{signalName = SignalName},
     SPL = [],
     do_merge_signalRequest(Sig, PropertyParms, SPL).
 
 do_merge_signalRequest(Sig, [H | T], SPL) ->
+%%     d("do_merge_signalRequest -> entry with"
+%%       "~n   Sig: ~p"
+%%       "~n   H:   ~p"
+%%       "~n   SPL: ~p", [Sig, H, SPL]),
     case H of
         {stream, SID} when Sig#'Signal'.streamID == asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{streamID = SID}, T, SPL);
@@ -650,25 +905,27 @@ do_merge_signalRequest(Sig, [H | T], SPL) ->
             do_merge_signalRequest(Sig#'Signal'{duration = Duration}, T, SPL);
         {notify_completion, NC} when Sig#'Signal'.notifyCompletion == asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{notifyCompletion = NC}, T, SPL);
-        keepActive when Sig#'Signal'.keepActive == asn1_NOVALUE->
+        keepActive when Sig#'Signal'.keepActive == asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{keepActive = true}, T, SPL);
         {other, Name, PP} ->
             SP = #'SigParameter'{sigParameterName = Name, 
 				 value            = PP#'PropertyParm'.value,
 				 extraInfo        = PP#'PropertyParm'.extraInfo},
             do_merge_signalRequest(Sig, T, [SP | SPL]);
-        {direction, Dir} when Sig#'Signal'.direction == asn1_NOVALUE->
+        {direction, Dir} when Sig#'Signal'.direction == asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{direction = Dir}, T, SPL);
-        {requestId, RID} when Sig#'Signal'.requestID == asn1_NOVALUE->
+        {requestId, RID} when Sig#'Signal'.requestID == asn1_NOVALUE ->
             do_merge_signalRequest(Sig#'Signal'{requestID = RID}, T, SPL);
+        {intersigDelay, ISD} when Sig#'Signal'.intersigDelay == asn1_NOVALUE ->
+            do_merge_signalRequest(Sig#'Signal'{intersigDelay = ISD}, T, SPL);
         _ ->
             return_error(0, {bad_sigParm, H})
     end;
 do_merge_signalRequest(Sig, [], SPL) ->
     Sig#'Signal'{sigParList = lists:reverse(SPL)} .
 
-%% eventStream       = StreamToken EQUAL StreamID
-%% eventOther        = eventParameterName parmValue
+%% eventStream = StreamToken EQUAL StreamID
+%% eventOther  = eventParameterName parmValue
 select_stream_or_other("st", #'PropertyParm'{value = [Value]}) ->
     {stream, ensure_uint16(Value)};
 select_stream_or_other("st", Value) ->
@@ -742,82 +999,117 @@ merge_eventSpec(OE) when record(OE, 'ObservedEvent'),
 merge_eventSpec(OE) ->
     return_error(0, {bad_event_spec, OE}).
 
+make_RegulatedEmbeddedDescriptor({embed, SD, SED}) ->
+%%     d("make_RegulatedEmbeddedDescriptor(embed) -> entry with"
+%%       "~n   SD:  ~p"
+%%       "~n   SED: ~p", [SD, SED]),
+    #'RegulatedEmbeddedDescriptor'{secondEvent       = SED,
+				   signalsDescriptor = SD}.
+
 merge_eventParameters(Params) ->
-    StreamId = asn1_NOVALUE,
-    EPL      = [],
-    RA       = #'RequestedActions'{},
-    HasA     = no,
-    do_merge_eventParameters(Params, StreamId, EPL, RA, HasA) .
+%%     d("merge_eventParameters -> entry with"
+%%       "~n   Params: ~p", [Params]),
+    SID  = asn1_NOVALUE,
+    EPL  = [],
+    RA   = #'RequestedActions'{},
+    HasA = no,
+    do_merge_eventParameters(Params, SID, EPL, RA, HasA) .
                                    
-do_merge_eventParameters([H | T], StreamId, EPL, RA, HasA) ->
+do_merge_eventParameters([H | T], SID, EPL, RA, HasA) ->
+%%     d("do_merge_eventParameters -> entry with"
+%%       "~n   H:    ~p"
+%%       "~n   SID:  ~p"
+%%       "~n   EPL:  ~p"
+%%       "~n   RA:  ~p"
+%%       "~n   HasA: ~p", [H, SID, EPL, RA, HasA]),
     case H of
         keepActive when RA#'RequestedActions'.keepActive == asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{keepActive = true},
-            do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
+            do_merge_eventParameters(T, SID, EPL, RA2, yes);
+        resetEventsDescriptor when RA#'RequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+            RA2 = RA#'RequestedActions'{resetEventsDescriptor = 'NULL'},
+            do_merge_eventParameters(T, SID, EPL, RA2, yes);
         {embed, SD, SED} when RA#'RequestedActions'.signalsDescriptor == asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{signalsDescriptor = SD,
-                                          secondEvent       = SED},
-            do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
+					secondEvent       = SED},
+            do_merge_eventParameters(T, SID, EPL, RA2, yes);
         {eventDM, DM} when RA#'RequestedActions'.eventDM == asn1_NOVALUE ->
             RA2 = RA#'RequestedActions'{eventDM = DM},
-            do_merge_eventParameters(T, StreamId, EPL, RA2, yes);
-        {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
-            do_merge_eventParameters(T, NewStreamId, EPL, RA, HasA);
+            do_merge_eventParameters(T, SID, EPL, RA2, yes);
+        {stream, NewSID} when SID == asn1_NOVALUE ->
+            do_merge_eventParameters(T, NewSID, EPL, RA, HasA);
         {other, PP} when record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
-            do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
+            do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
         {other, EP} when record(EP, 'EventParameter') ->
-            do_merge_eventParameters(T, StreamId, [EP | EPL], RA, HasA);
+            do_merge_eventParameters(T, SID, [EP | EPL], RA, HasA);
+        {notifyBehaviour, NB} when RA#'RequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+            RA2 = RA#'RequestedActions'{notifyBehaviour = NB},
+            do_merge_eventParameters(T, SID, EPL, RA2, yes);
         _ ->
             return_error(0, {bad_eventParameter, H})
     end;
-do_merge_eventParameters([], StreamId, EPL, RA, yes) ->
-    #'RequestedEvent'{streamID    = StreamId,
+do_merge_eventParameters([], SID, EPL, RA, yes) ->
+    #'RequestedEvent'{streamID    = SID,
                       eventAction = RA, 
                       evParList   = lists:reverse(EPL)};
-do_merge_eventParameters([], StreamId, EPL, _RA, no) ->
-    #'RequestedEvent'{streamID    = StreamId,
+do_merge_eventParameters([], SID, EPL, _RA, no) ->
+    #'RequestedEvent'{streamID    = SID,
                       eventAction = asn1_NOVALUE, 
                       evParList   = lists:reverse(EPL)}.
 
 merge_secondEventParameters(Params) ->
-    StreamId = asn1_NOVALUE,
-    EPL      = [],
-    SRA      = #'SecondRequestedActions'{},
-    HasA     = no,
-    do_merge_secondEventParameters(Params, StreamId, EPL, SRA, HasA) .
+%%     d("merge_secondEventParameters -> entry with"
+%%       "~n   Params: ~p", [Params]),
+    SID  = asn1_NOVALUE,
+    EPL  = [],
+    SRA  = #'SecondRequestedActions'{},
+    HasA = no,
+    do_merge_secondEventParameters(Params, SID, EPL, SRA, HasA) .
                                    
-do_merge_secondEventParameters([H | T], StreamId, EPL, SRA, HasA) ->
+do_merge_secondEventParameters([H | T], SID, EPL, SRA, HasA) ->
+%%     d("do_merge_secondEventParameters -> entry with"
+%%       "~n   H:    ~p"
+%%       "~n   SID:  ~p"
+%%       "~n   EPL:  ~p"
+%%       "~n   SRA:  ~p"
+%%       "~n   HasA: ~p", [H, SID, EPL, SRA, HasA]),
     case H of
         keepActive when SRA#'SecondRequestedActions'.keepActive == asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{keepActive = true},
-            do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
+            do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
+        resetEventsDescriptor when SRA#'SecondRequestedActions'.resetEventsDescriptor == asn1_NOVALUE ->
+            SRA2 = SRA#'SecondRequestedActions'{resetEventsDescriptor = 'NULL'},
+            do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
         {second_embed, SD} when SRA#'SecondRequestedActions'.signalsDescriptor == asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{signalsDescriptor = SD},
-            do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
+            do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
         {eventDM, DM} when SRA#'SecondRequestedActions'.eventDM == asn1_NOVALUE ->
             SRA2 = SRA#'SecondRequestedActions'{eventDM = DM},
-            do_merge_secondEventParameters(T, StreamId, EPL, SRA2, yes);
-        {stream, NewStreamId} when StreamId == asn1_NOVALUE ->
-            do_merge_secondEventParameters(T, NewStreamId, EPL, SRA, HasA);
+            do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
+        {stream, NewSID} when SID == asn1_NOVALUE ->
+            do_merge_secondEventParameters(T, NewSID, EPL, SRA, HasA);
         {other, PP} when record(PP, 'PropertyParm') ->
             EP = #'EventParameter'{eventParameterName = PP#'PropertyParm'.name,
                                    value              = PP#'PropertyParm'.value,
 				   extraInfo          = PP#'PropertyParm'.extraInfo},
-            do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
+            do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
         {other, EP} when record(EP, 'EventParameter') ->
-            do_merge_secondEventParameters(T, StreamId, [EP | EPL], SRA, HasA);
+            do_merge_secondEventParameters(T, SID, [EP | EPL], SRA, HasA);
+        {notifyBehaviour, NB} when SRA#'SecondRequestedActions'.notifyBehaviour == asn1_NOVALUE ->
+            SRA2 = SRA#'SecondRequestedActions'{notifyBehaviour = NB},
+            do_merge_secondEventParameters(T, SID, EPL, SRA2, yes);
         _ ->
             return_error(0, {bad_secondEventParameter, H})
     end;
-do_merge_secondEventParameters([], StreamId, EPL, SRA, yes) ->
-    #'SecondRequestedEvent'{streamID    = StreamId,
+do_merge_secondEventParameters([], SID, EPL, SRA, yes) ->
+    #'SecondRequestedEvent'{streamID    = SID,
                             eventAction = SRA, 
                             evParList   = lists:reverse(EPL)};
-do_merge_secondEventParameters([], StreamId, EPL, _SRA, no) ->
-    #'SecondRequestedEvent'{streamID    = StreamId,
+do_merge_secondEventParameters([], SID, EPL, _SRA, no) ->
+    #'SecondRequestedEvent'{streamID    = SID,
                             eventAction = asn1_NOVALUE, 
                             evParList   = lists:reverse(EPL)}.
 
@@ -861,6 +1153,67 @@ ensure_timeStamp({'TimeStampToken', Line, Text}) ->
 ensure_transactionID(TransId) ->
     ensure_uint32(TransId).
 
+make_transactionID_and_segment_info({TokenTag, Line, Text}) ->
+    case string:tokens(Text, [$/]) of
+	[TidText, SegNoText, SegComplText] ->
+	    Tid   = ensure_uint32({TokenTag, Line, TidText}),
+	    SegNo = ensure_uint16({TokenTag, Line, SegNoText}),
+	    ensure_segmentationComplete({TokenTag, Line, SegComplText}),
+	    {Tid, SegNo, 'NULL'};
+	[TidText, SegNoText] ->
+	    Tid   = ensure_uint32({TokenTag, Line, TidText}),
+	    SegNo = ensure_uint16({TokenTag, Line, SegNoText}),
+	    {Tid, SegNo};
+	[TidText] ->
+	    ensure_uint32({TokenTag, Line, TidText})
+    end.
+    
+ensure_segmentationComplete({_TokenTag, _Line, "end"}) ->
+    ok;
+ensure_segmentationComplete({_TokenTag, _Line, "&"}) ->
+    ok;
+ensure_segmentationComplete({_TokenTag, Line, Text}) ->
+    return_error(Line, {invalid_segmentationCompleteToken, Text}).
+
+make_TransactionReply({Tid, SegNo, 'NULL'}, IAR, Res) ->
+%%     d("make_TransactionReply('NULL') -> entry with"
+%%       "~n   Tid:   ~p"
+%%       "~n   SegNo: ~p"
+%%       "~n   IAR:   ~p"
+%%       "~n   Res:   ~p", [Tid, SegNo, IAR, Res]),
+    #'TransactionReply'{transactionId        = Tid,
+			immAckRequired       = IAR,
+			transactionResult    = Res,
+			segmentNumber        = SegNo,
+			segmentationComplete = 'NULL'};
+make_TransactionReply({Tid, SegNo}, IAR, Res) ->
+%%     d("make_TransactionReply -> entry with"
+%%       "~n   Tid:   ~p"
+%%       "~n   SegNo: ~p"
+%%       "~n   IAR:   ~p"
+%%       "~n   Res:   ~p", [Tid, SegNo, IAR, Res]),
+    #'TransactionReply'{transactionId        = Tid,
+			immAckRequired       = IAR,
+			transactionResult    = Res,
+			segmentNumber        = SegNo};
+make_TransactionReply(Tid, IAR, Res) ->
+%%     d("make_TransactionReply -> entry with"
+%%       "~n   Tid:   ~p"
+%%       "~n   IAR:   ~p"
+%%       "~n   Res:   ~p", [Tid, IAR, Res]),
+    #'TransactionReply'{transactionId        = Tid,
+			immAckRequired       = IAR,
+			transactionResult    = Res}.
+
+make_SegmentReply({Tid, SegNo, 'NULL'}) ->
+    #'SegmentReply'{transactionId        = Tid,
+		    segmentNumber        = SegNo,
+		    segmentationComplete = 'NULL'};
+make_SegmentReply({Tid, SegNo}) ->
+    #'SegmentReply'{transactionId        = Tid,
+		    segmentNumber        = SegNo}.
+
+
 %% transactionAck       = transactionID / (transactionID "-" transactionID)
 ensure_transactionAck({safeToken, _Line, Text}) ->
     case string:tokens(Text, [$-]) of
@@ -871,39 +1224,54 @@ ensure_transactionAck({safeToken, _Line, Text}) ->
 			      lastAck  = ensure_transactionID(Id2)}
     end.
 
-merge_context_request(CR, []) ->
-    CR;
-merge_context_request(CR, [H|T]) ->
-    case H of
-	{priority, Int} when CR#'ContextRequest'.priority == asn1_NOVALUE ->
-	    merge_context_request(CR#'ContextRequest'{priority = Int}, T);
+merge_context_request(asn1_NOVALUE, Prop) ->
+    merge_context_request(#'ContextRequest'{}, Prop);
 
-	{emergency, Bool} when CR#'ContextRequest'.emergency == asn1_NOVALUE ->
-            merge_context_request(CR#'ContextRequest'{emergency = Bool}, T);
+merge_context_request(#'ContextRequest'{priority = asn1_NOVALUE} = CR, 
+                      {priority, Int}) ->
+    CR#'ContextRequest'{priority = Int};
 
-	{topology, Desc} when CR#'ContextRequest'.topologyReq == asn1_NOVALUE ->
-	    merge_context_request(CR#'ContextRequest'{topologyReq = Desc}, T);
+merge_context_request(#'ContextRequest'{emergency = asn1_NOVALUE} = CR, 
+                      {emergency, Bool}) ->
+    CR#'ContextRequest'{emergency = Bool};
 
-	{iepsCallind, Ind} when CR#'ContextRequest'.iepsCallind == asn1_NOVALUE ->
-	    merge_context_request(CR#'ContextRequest'{iepsCallind = Ind}, T);
+merge_context_request(#'ContextRequest'{topologyReq = asn1_NOVALUE} = CR, 
+                      {topology, Desc}) ->
+    CR#'ContextRequest'{topologyReq = Desc};
 
-	{prop, Prop} when CR#'ContextRequest'.contextProp == asn1_NOVALUE ->
-	    merge_context_request(CR#'ContextRequest'{contextProp = [Prop]}, T);
-	{Tag, Val} ->
-	    Val2 = 
-		case Tag of
-		    priority    -> CR#'ContextRequest'.priority;
-		    emergency   -> CR#'ContextRequest'.emergency;
-		    topology    -> CR#'ContextRequest'.topologyReq;
-		    iepsCallind -> CR#'ContextRequest'.iepsCallind;
-		    prop        -> CR#'ContextRequest'.contextProp
-		end,
-	    exit({at_most_once_contextProperty, {Tag, Val, Val2}})
-    end.
+merge_context_request(#'ContextRequest'{iepscallind = asn1_NOVALUE} = CR, 
+                      {iepsCallind, Ind}) ->
+    CR#'ContextRequest'{iepscallind = Ind};
+
+merge_context_request(#'ContextRequest'{contextProp = asn1_NOVALUE} = CR,
+                      {contextProp, Props}) ->
+    CR#'ContextRequest'{contextProp = Props};
+
+merge_context_request(#'ContextRequest'{contextList = asn1_NOVALUE} = CR, 
+                      {contextList, IDs}) -> 
+    CR#'ContextRequest'{contextList = IDs};
+
+merge_context_request(CR, {Tag, Val}) ->
+    Val2 = 
+        case Tag of
+            priority    -> CR#'ContextRequest'.priority;
+            emergency   -> CR#'ContextRequest'.emergency;
+            topology    -> CR#'ContextRequest'.topologyReq;
+            iepsCallind -> CR#'ContextRequest'.iepscallind;
+            contextProp -> CR#'ContextRequest'.contextProp;
+	    contextList -> CR#'ContextRequest'.contextList
+        end,
+    exit({at_most_once_contextProperty, {Tag, Val, Val2}}).
 	    
 
-merge_context_attr_audit_request(CAAR, []) ->
+merge_context_attr_audit_request(
+  #'ContextAttrAuditRequest'{contextPropAud = asn1_NOVALUE} = CAAR, []) ->
+    
     CAAR;
+merge_context_attr_audit_request(
+  #'ContextAttrAuditRequest'{contextPropAud = CPA} = CAAR, []) ->
+    
+    CAAR#'ContextAttrAuditRequest'{contextPropAud = lists:reverse(CPA)};
 merge_context_attr_audit_request(CAAR, [H|T]) ->
     case H of
 	priorityAudit when CAAR#'ContextAttrAuditRequest'.priority == asn1_NOVALUE ->
@@ -918,8 +1286,8 @@ merge_context_attr_audit_request(CAAR, [H|T]) ->
             CAAR2 = CAAR#'ContextAttrAuditRequest'{topology = 'NULL'},
 	    merge_context_attr_audit_request(CAAR2, T);
 
-        iepsCallind when CAAR#'ContextAttrAuditRequest'.iepsCallind == asn1_NOVALUE ->
-            CAAR2 = CAAR#'ContextAttrAuditRequest'{iepsCallind = 'NULL'},
+        iepsCallind when CAAR#'ContextAttrAuditRequest'.iepscallind == asn1_NOVALUE ->
+            CAAR2 = CAAR#'ContextAttrAuditRequest'{iepscallind = 'NULL'},
 	    merge_context_attr_audit_request(CAAR2, T);
 
 	{prop, Name} when CAAR#'ContextAttrAuditRequest'.contextPropAud == asn1_NOVALUE ->
@@ -931,7 +1299,41 @@ merge_context_attr_audit_request(CAAR, [H|T]) ->
 	    CPA   = CAAR#'ContextAttrAuditRequest'.contextPropAud,
 	    CPA2  = [#'IndAudPropertyParm'{name = Name}|CPA],
 	    CAAR2 = CAAR#'ContextAttrAuditRequest'{contextPropAud = CPA2},
-	    merge_context_attr_audit_request(CAAR2, T)
+	    merge_context_attr_audit_request(CAAR2, T);
+
+	{select_prio, Prio} when CAAR#'ContextAttrAuditRequest'.selectpriority == asn1_NOVALUE ->
+	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectpriority = Prio},
+	    merge_context_attr_audit_request(CAAR2, T);
+
+	{select_emergency, EV} when CAAR#'ContextAttrAuditRequest'.selectemergency == asn1_NOVALUE ->
+	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectemergency = EV},
+	    merge_context_attr_audit_request(CAAR2, T);
+
+	{select_ieps, IV} when CAAR#'ContextAttrAuditRequest'.selectiepscallind == asn1_NOVALUE ->
+	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectiepscallind = IV},
+	    merge_context_attr_audit_request(CAAR2, T);
+
+	{select_logic, SL} when CAAR#'ContextAttrAuditRequest'.selectLogic == asn1_NOVALUE ->
+	    CAAR2 = CAAR#'ContextAttrAuditRequest'{selectLogic = SL},
+	    merge_context_attr_audit_request(CAAR2, T);
+
+	%% BUGBUG BUGBUG BUGBUG BUGBUG BUGBUG BUGBUG BUGBUG BUGBUG BUGBUG
+	%% 
+	%% For some strange reason, contextAttrDescriptor was added
+	%% to contextAuditSelector. But there is no place for this
+	%% info in the ContextAttrAuditRequest. Since contextAttrDescriptor
+	%% can also be found in contextProperty (which correspond to
+	%% ContextRequest), the question is if this info should go there
+	%% or if we shall just drop it. For now we drop it.
+	%% 
+	{contextProp, _PPs} ->
+	    merge_context_attr_audit_request(CAAR, T);
+
+	{contextList, _IDs} ->
+	    merge_context_attr_audit_request(CAAR, T);
+
+	_ ->
+	    exit({unexpected_contextAttrAudit_item, H})
     
     end.
 
@@ -944,9 +1346,10 @@ do_merge_action_request([H|T], CmdReqs, CtxReq, CtxAuditReq, CtxId) ->
 	    do_merge_action_request(T, [CmdReq|CmdReqs], 
 				    CtxReq, CtxAuditReq, CtxId);
 
-	{contextProps, ContextReq} when CtxReq == asn1_NOVALUE ->
+	{contextProp, ContextProp} ->
 	    do_merge_action_request(T, CmdReqs, 
-				    ContextReq, CtxAuditReq, CtxId);
+				    merge_context_request(CtxReq, ContextProp),
+				    CtxAuditReq, CtxId);
 
 	{contextAudit, ContextAuditReq} when CtxAuditReq == asn1_NOVALUE ->
 	    do_merge_action_request(T, CmdReqs, 
@@ -970,48 +1373,66 @@ do_merge_action_reply([], Err, Ctx, Cmds) ->
     #'ActionReply'{errorDescriptor = Err,
 		   contextReply    = strip_ContextRequest(Ctx),
 		   commandReply    = lists:reverse(Cmds)};
-do_merge_action_reply([H|T], Err0, Ctx0, Cmds) ->
+do_merge_action_reply([H|T], Err0, CR, Cmds) ->
     case H of
         {error, Err1} when Err0 == asn1_NOVALUE ->
-            do_merge_action_reply(T, Err1, Ctx0, Cmds);
+            do_merge_action_reply(T, Err1, CR, Cmds);
         {command, Cmd} ->
-            do_merge_action_reply(T, Err0, Ctx0, [Cmd | Cmds]);
-        {context, Ctx1} when Ctx0 == asn1_NOVALUE ->
-	    do_merge_action_reply(T, Err0, Ctx1, Cmds)
+            do_merge_action_reply(T, Err0, CR, [Cmd | Cmds]);
+        {context, CtxProp} ->
+	    do_merge_action_reply(T, Err0, 
+				  merge_context_request(CR, CtxProp), Cmds)
     end.
+
+merge_auditOther([TID], TAR) ->
+    {auditResult, 
+     #'AuditResult'{terminationID          = TID,
+		    terminationAuditResult = TAR}};
+merge_auditOther(TIDs, TAR) ->
+    {auditResultTermList,
+     #'TermListAuditResult'{terminationIDList      = TIDs,
+			    terminationAuditResult = TAR}}.
 
 strip_ContextRequest(#'ContextRequest'{priority    = asn1_NOVALUE,
 				       emergency   = asn1_NOVALUE,
 				       topologyReq = asn1_NOVALUE,
-				       iepsCallind = asn1_NOVALUE,
-				       contextProp = asn1_NOVALUE}) ->
+				       iepscallind = asn1_NOVALUE,
+				       contextProp = asn1_NOVALUE,
+				       contextList = asn1_NOVALUE}) ->
     asn1_NOVALUE;
 strip_ContextRequest(#'ContextRequest'{priority    = asn1_NOVALUE,
 				       emergency   = asn1_NOVALUE,
 				       topologyReq = asn1_NOVALUE,
-				       iepsCallind = asn1_NOVALUE,
-				       contextProp = []}) ->
+				       iepscallind = asn1_NOVALUE,
+				       contextProp = [],
+				       contextList = asn1_NOVALUE}) ->
     asn1_NOVALUE;
-strip_ContextRequest(asn1_NOVALUE) ->
-    asn1_NOVALUE;
+%% strip_ContextRequest(asn1_NOVALUE) ->
+%%     asn1_NOVALUE;
 strip_ContextRequest(R) ->
     R.
 
-strip_ContextAttrAuditRequest(asn1_NOVALUE) ->
+strip_ContextAttrAuditRequest(
+  #'ContextAttrAuditRequest'{priority          = asn1_NOVALUE,
+			     emergency         = asn1_NOVALUE,
+			     topology          = asn1_NOVALUE,
+			     iepscallind       = asn1_NOVALUE,
+			     contextPropAud    = asn1_NOVALUE,
+			     selectpriority    = asn1_NOVALUE,
+			     selectemergency   = asn1_NOVALUE,
+			     selectiepscallind = asn1_NOVALUE, 
+			     selectLogic       = asn1_NOVALUE}) ->
     asn1_NOVALUE;
 strip_ContextAttrAuditRequest(
-  #'ContextAttrAuditRequest'{priority       = asn1_NOVALUE,
-			     emergency      = asn1_NOVALUE,
-			     topology       = asn1_NOVALUE,
-			     iepsCallind    = asn1_NOVALUE,
-			     contextPropAud = asn1_NOVALUE}) ->
-    asn1_NOVALUE;
-strip_ContextAttrAuditRequest(
-  #'ContextAttrAuditRequest'{priority       = asn1_NOVALUE,
-			     emergency      = asn1_NOVALUE,
-			     topology       = asn1_NOVALUE,
-			     iepsCallind    = asn1_NOVALUE,
-			     contextPropAud = []}) ->
+  #'ContextAttrAuditRequest'{priority          = asn1_NOVALUE,
+			     emergency         = asn1_NOVALUE,
+			     topology          = asn1_NOVALUE,
+			     iepscallind       = asn1_NOVALUE,
+			     contextPropAud    = [],
+			     selectpriority    = asn1_NOVALUE,
+			     selectemergency   = asn1_NOVALUE,
+			     selectiepscallind = asn1_NOVALUE, 
+			     selectLogic       = asn1_NOVALUE}) ->
     asn1_NOVALUE;
 strip_ContextAttrAuditRequest(R) ->
     R.
@@ -1023,6 +1444,14 @@ merge_AmmRequest_descriptors([{_, deprecated}|Descs], Acc) ->
 merge_AmmRequest_descriptors([Desc|Descs], Acc) ->
     merge_AmmRequest_descriptors(Descs, [Desc|Acc]).
 
+make_auditRequest([TID], AD) ->
+    #'AuditRequest'{terminationID   = TID,
+		    auditDescriptor = AD};
+make_auditRequest([TID|_] = TIDList, AD) ->
+    #'AuditRequest'{terminationID     = TID,
+		    auditDescriptor   = AD,
+		    terminationIDList = TIDList}.
+    
 make_commandRequest({CmdTag, {_TokenTag, _Line, Text}}, Cmd) ->
     Req = #'CommandRequest'{command  = {CmdTag, Cmd}},
     case Text of
@@ -1177,6 +1606,8 @@ parse_prop_name([] = All, Group, Groups) ->
 
 do_parse_prop_name([Char | Rest], Name, Group, Groups) ->
     case ?classify_char(Char) of
+	safe_char_upper ->
+            do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         safe_char ->
             do_parse_prop_name(Rest, [Char | Name], Group, Groups);
         rest_char when Char == $=, Name /= [] ->
@@ -1299,13 +1730,14 @@ value_of({_TokenTag, _Line, Text}) ->
 
 %% -------------------------------------------------------------------
 
-% d(F) ->
-%     d(F,[]).
-% d(F, A) ->
-%     d(get(dbg), F, A).
+%% d(F) ->
+%%     d(F,[]).
+%% d(F, A) ->
+%%     %% d(true, F, A).
+%%     d(get(dbg), F, A).
 
-% d(true, F, A) ->
-%     io:format("DBG:~w:" ++ F ++ "~n", [?MODULE | A]);
-% d(_, _, _) ->
-%     ok.
+%% d(true, F, A) ->
+%%     io:format("DBG:~w:" ++ F ++ "~n", [?MODULE | A]);
+%% d(_, _, _) ->
+%%     ok.
 

@@ -16,7 +16,7 @@
 %%     $Id$
 %%
 -module(dbg).
--export([p/1,p/2,c/3,c/4,i/0,i/1,start/0,stop/0,stop_clear/0,tracer/0,tracer/1,
+-export([p/1,p/2,c/3,c/4,i/0,start/0,stop/0,stop_clear/0,tracer/0,
 	 tracer/2, tracer/3, get_tracer/0, get_tracer/1, tp/2, tp/3, tp/4, 
 	 ctp/0, ctp/1, ctp/2, ctp/3, tpl/2, tpl/3, tpl/4, ctpl/0, ctpl/1, 
 	 ctpl/2, ctpl/3, ctpg/0, ctpg/1, ctpg/2, ctpg/3, ltp/0, wtp/1, rtp/1, 
@@ -275,12 +275,7 @@ rtp(FileName) ->
     end.
 
 tracer() ->
-    tracer(process).
-
-tracer(process) ->
-    tracer(process, {fun dhandler/2,user});
-tracer(Type) ->
-    tracer(Type, false).
+    tracer(process, {fun dhandler/2,user}).
 
 tracer(port, Fun) when is_function(Fun) ->
     start(Fun);
@@ -520,7 +515,6 @@ p(Pid, Flags) ->
     req({p,Pid,Flags}).
 
 i() -> req(i).
-i(Pid) -> req({i,Pid}).
 	
 c(M, F, A) ->
     c(M, F, A, all).
@@ -638,9 +632,6 @@ loop({C,T}=SurviveLinks, Table) ->
     receive
 	{From,i} ->
 	    reply(From, display_info(lists:map(fun({N,_}) -> N end,get()))),
-	    loop(SurviveLinks, Table);
-	{From,{i,Pid}} ->
-	    reply(From, display_info(to_pid(Pid))),
 	    loop(SurviveLinks, Table);
 	{From,{p,Pid,Flags}} ->
 	    reply(From, trace_process(Pid, Flags)),
@@ -788,7 +779,7 @@ tracer_loop(Handler, Hdata) ->
     end.
     
 recv_all_traces(Trace, Handler, Hdata) ->
-    Suspended = suspend(Trace, ordsets:new()),
+    Suspended = suspend(Trace, []),
     recv_all_traces(Suspended, Handler, Hdata, [Trace]).
 
 recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
@@ -812,10 +803,10 @@ recv_all_traces(Suspended0, Handler, Hdata, Traces) ->
     after 0 ->
 	    case catch invoke_handler(Traces, Handler, Hdata) of
 		{'EXIT',Reason} -> 
-		    resume(ordsets:to_list(Suspended0)),
+		    resume(Suspended0),
 		    exit({trace_handler_crashed,Reason});
 		NewHdata ->
-		    resume(ordsets:to_list(Suspended0)),
+		    resume(Suspended0),
 		    NewHdata
 	    end
     end.
@@ -827,15 +818,12 @@ invoke_handler([], _Handler, Hdata) ->
     Hdata.
 
 suspend({trace,From,call,_Func}, Suspended) when node(From) == node() ->
-    case ordsets:is_element(From, Suspended) of
-	true -> Suspended;
-	false ->
-	    case (catch erlang:suspend_process(From)) of
-		true ->
-		    ordsets:add_element(From, Suspended);
-		_ ->
-		    Suspended
-	    end
+    case (catch erlang:suspend_process(From, [unless_suspending,
+					      asynchronous])) of
+	true ->
+	    [From | Suspended];
+	_ ->
+	    Suspended
     end;
 suspend(_Other, Suspended) -> Suspended.
 

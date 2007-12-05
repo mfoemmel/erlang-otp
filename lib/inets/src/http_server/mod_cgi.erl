@@ -22,14 +22,10 @@
 -export([env/3]).
 
 %%% Callback API
--export([do/1, load/2]).
+-export([do/1, load/2, store/2]).
 
 -include("http_internal.hrl").
 -include("httpd.hrl").
-
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
 
 -define(VMODULE,"CGI").
 
@@ -63,13 +59,13 @@ env(ModData, _Script, AfterScript) ->
 %% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 do(ModData) ->
-    case httpd_util:key1search(ModData#mod.data, status) of
+    case proplists:get_value(status, ModData#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, ModData#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(ModData#mod.data, response) of
+	    case proplists:get_value(response, ModData#mod.data) of
 		undefined ->
 		    generate_response(ModData);
 		_Response ->
@@ -116,13 +112,34 @@ load("ScriptTimeout " ++ Timeout, [])->
 	   {error, ?NICE(httpd_conf:clean(Timeout)++
 			 " is an invalid ScriptTimeout")}
     end.
+
+%%--------------------------------------------------------------------------
+%% store(Directive, DirectiveList) -> {ok, NewDirective} | 
+%%                                    {ok, [NewDirective]} |
+%%                                    {error, Reason} 
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
+store({script_nocache, Value} = Conf, _) 
+  when Value == true; Value == false ->
+    {ok, Conf};
+store({script_nocache, Value}, _) ->
+    {error, {wrong_type, {script_nocache, Value}}};
+store({script_timeout, Value} = Conf, _) 
+  when is_integer(Value), Value >= 0 ->
+    {ok, Conf};
+store({script_timeout, Value}, _) ->
+    {error, {wrong_type, {script_timeout, Value}}}.
 	
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
 generate_response(ModData) ->
     RequestURI =
-	case httpd_util:key1search(ModData#mod.data, new_request_uri) of
+	case proplists:get_value(new_request_uri, ModData#mod.data) of
 	    undefined ->
 		ModData#mod.request_uri;
 	    Value ->

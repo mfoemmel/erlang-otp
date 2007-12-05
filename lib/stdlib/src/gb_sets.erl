@@ -263,7 +263,7 @@ insert_1(Key, nil, 0) ->
 insert_1(Key, nil, _) ->
     {Key, nil, nil};
 insert_1(Key, _, _) ->
-    erlang:fault({key_exists, Key}).
+    erlang:error({key_exists, Key}).
 
 count({_, nil, nil}) ->
     {1, 1};

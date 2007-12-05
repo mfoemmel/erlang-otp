@@ -48,16 +48,9 @@
 	 get_status/0,boot/1,get_arguments/0,get_plain_arguments/0,
 	 get_argument/1,script_id/0]).
 
--export([get_args/0]).
--deprecated([{get_args,0}]).
-
 % internal exports
 -export([fetch_loaded/0,ensure_loaded/1,make_permanent/2,
 	 notify_when_started/1,wait_until_started/0]).
-
-% old interface functions kept for backward compability.
--export([get_flag/1,get_flags/0]).
--deprecated([{get_flag,1},{get_flags,0}]).
 
 -record(state, {flags = [],
 		args = [],
@@ -90,15 +83,6 @@ bs2ss(L0) when is_list(L0) ->
     map(fun b2s/1, L0);
 bs2ss(L) ->
     L.
-
-get_args() ->
-    bs2as(request(get_args)).
-
-get_flag(F) ->  % Old interface
-    request({get_flag,F}).
-
-get_flags() ->  % Old interface
-    request(get_flags).
 
 get_status() ->
     request(get_status).
@@ -166,14 +150,6 @@ map(_F, []) ->
     [];
 map(F, [X|Rest]) ->
     [F(X) | map(F, Rest)].
-
-values_to_atoms_again([]) ->
-    [];
-values_to_atoms_again([{F,L0}|Rest]) ->
-    L = map(fun b2a/1, L0),
-    [{F,L}|values_to_atoms_again(Rest)];
-values_to_atoms_again([{F}|Rest]) ->
-    [{F}|values_to_atoms_again(Rest)].
 
 flags_to_atoms_again([]) ->
     [];
@@ -378,23 +354,10 @@ do_handle_msg(Msg,State) ->
 	    From ! {init,Status};
 	{From,script_id} -> 
 	    From ! {init,Sid};
-	{From,get_args} ->
-	    From ! {init,Args};
 	{From,{make_permanent,Boot,Config}} ->
 	    {Res,State1} = make_permanent(Boot,Config,Flags,State),
 	    From ! {init,Res},
 	    {new_state,State1};
-	{From,{get_flag,F}} -> % Old interface
-	    case search(F,Flags) of
-		{value,{F,V}} ->
-		    From ! {init,list_to_tuple([F|bs2as(V)])};
-		{value,{F}} ->
-		    From ! {init,{F}};
-		_ -> 
-		    From ! {init,notfound}
-	    end;
-	{From,get_flags} -> % Old interface 
-	    From ! {init,values_to_atoms_again(Flags)};
 	{From,{notify_when_started,Pid}} ->
 	    case Status of
 		{InS,PS} when InS =:= started ; PS =:= started ->

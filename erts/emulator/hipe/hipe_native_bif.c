@@ -204,12 +204,10 @@ void hipe_handle_exception(Process *c_p)
     ASSERT(c_p->freason != TRAP); /* Should have been handled earlier. */
     ASSERT(c_p->freason != RESCHEDULE); /* Should have been handled earlier. */
 
-#if defined(HEAP_FRAG_ELIM_TEST)
     if (c_p->mbuf) {
 	erts_printf("%s line %u: p==%p, p->mbuf==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf);
 	//erts_garbage_collect(c_p, 0, NULL, 0);
     }
-#endif
 
     /*
      * Check if we have an arglist for the top level call. If so, this
@@ -240,12 +238,10 @@ void hipe_handle_exception(Process *c_p)
     /* Synthesized to avoid having to generate code for it. */
     c_p->def_arg_reg[0] = exception_tag[GET_EXC_CLASS(c_p->freason)];
 
-#if defined(HEAP_FRAG_ELIM_TEST)
     if (c_p->mbuf) {
 	//erts_printf("%s line %u: p==%p, p->mbuf==%p, p->lastbif==%p\n", __FUNCTION__, __LINE__, c_p, c_p->mbuf, c_p->hipe.lastbif);
 	erts_garbage_collect(c_p, 0, NULL, 0);
     }
-#endif
     
     hipe_find_handler(c_p);
 }
@@ -316,6 +312,16 @@ char *hipe_bs_allocate(int len)
   return bptr->orig_bytes;
 }
 
+Binary *hipe_bs_reallocate(Binary* oldbptr, int newsize)
+{ 
+  Binary* bptr;
+  bptr = erts_bin_realloc(oldbptr, newsize);
+  bptr->orig_size = newsize;
+  return bptr;
+}
+
+
+
 int hipe_bs_put_big_integer(
 #ifdef ERTS_SMP
     Process *p,
@@ -364,11 +370,10 @@ void hipe_bs_put_bits(
   return;
 }
   
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
-
-#if defined(HEAP_FRAG_ELIM_TEST) /* Shallow copy to heap if possible;
-				    otherwise, move to heap via garbage
-				    collection. */
+/*
+ * Shallow copy to heap if possible; otherwise,
+ * move to heap via garbage collection.
+ */
 
 #define MV_MSG_MBUF_INTO_PROC(M)					\
 do {									\
@@ -394,40 +399,6 @@ do {									\
     ASSERT(!(M)->bp);							\
 } while (0)
 
-#elif 0 /* Shallow copy to heap if possible; otherwise,
-	   move to proc mbuf list. */
-
-#define MV_MSG_MBUF_INTO_PROC(M)					\
-do {									\
-    if ((M)->bp) {							\
-	Uint need = (M)->bp->size;					\
-	if (E - HTOP < need)						\
-	    erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));			\
-	else {								\
-	    Uint *htop = HTOP;						\
-	    erts_move_msg_mbuf_to_heap(&htop, &MSO(c_p), (M));		\
-	    ASSERT(htop - HTOP == need);				\
-	    HTOP = htop;						\
-	}								\
-    }									\
-    ASSERT(!(M)->bp);							\
-} while (0)
-
-#else /* Move to proc mbuf list. */
-
-#define MV_MSG_MBUF_INTO_PROC(M)					\
-do {									\
-    if ((M)->bp) erts_move_msg_mbuf_to_proc_mbufs(c_p, (M));		\
-    ASSERT(!(M)->bp);							\
-} while (0)
-
-#endif
-
-#else 
-#define MV_MSG_MBUF_INTO_PROC(M)
-#endif
-
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 /* This is like the loop_rec_fr BEAM instruction
  */
 Eterm hipe_check_get_msg(Process *c_p)
@@ -462,7 +433,6 @@ Eterm hipe_check_get_msg(Process *c_p)
     ret = ERL_MESSAGE_TERM(msgp);
     return ret;
 }
-#endif
 
 /*
  * SMP-specific stuff

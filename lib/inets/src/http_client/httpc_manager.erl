@@ -22,11 +22,11 @@
 -include("httpc_internal.hrl").
 -include("http_internal.hrl").
 
-%% Application API
--export([start_link/1, request/1, cancel_request/1,
-	 request_canceled/1, retry_request/1, redirect_request/1,
-	 insert_session/1, delete_session/1, set_options/1, store_cookies/2,
-	 cookies/1]).
+%% Internal Application API
+-export([start_link/1, start_link/2, request/2, cancel_request/2,
+	 request_canceled/2, retry_request/2, redirect_request/2,
+	 insert_session/2, delete_session/2, set_options/2, store_cookies/3,
+	 cookies/2]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2,
@@ -35,150 +35,181 @@
 -record(state, {
 	  cancel = [],	 % [{RequestId, HandlerPid, ClientPid}]  
 	  handler_db,    % ets() - Entry: {Requestid, HandlerPid, ClientPid}
-	  cookie_db,     % {ets(), dets()} - {session_cookie_db, cookie_db} 
+	  cookie_db,     % {ets(), dets()} - {session_cookie_db, cookie_db}
+	  session_db,    % ets() - Entry:  #tcp_session{}
+	  profile_name,  % atom()
 	  options = #options{}
 	 }).
 
 %%====================================================================
-%% Application API
+%% Internal Application API
 %%====================================================================
 %%--------------------------------------------------------------------
-%% Function: start_link() -> {ok, Pid}
+%% Function: start_link({ProfileName, CookieDir}) -> {ok, Pid}
+%%
+%% ProfileName - httpc_manager_<Profile>
+%% CookieDir - directory()
 %%
 %% Description: Starts the http request manger process. (Started by
 %% the intes supervisor.)
 %%--------------------------------------------------------------------
 start_link({default, CookieDir}) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, 
-			  [{http_default_cookie_db, CookieDir}], []). 
-
+			  [?MODULE, {http_default_cookie_db, CookieDir}], []);
+start_link({Profile, CookieDir}) ->
+    ProfileName = list_to_atom("httpc_manager_" ++ atom_to_list(Profile)), 
+    gen_server:start_link({local, ProfileName}, ?MODULE, 
+			  [ProfileName, 
+			   {http_default_cookie_db, CookieDir}], []).
+start_link({Profile, CookieDir}, stand_alone) ->
+    ProfileName = list_to_atom("stand_alone_" ++ atom_to_list(Profile)), 
+    gen_server:start_link(?MODULE, [ProfileName, 
+				    {http_default_cookie_db, CookieDir}], []).
 %%--------------------------------------------------------------------
-%% Function: request() -> {ok, Requestid} | {error, Reason}
+%% Function: request(Request, ProfileName) ->
+%%                                      {ok, Requestid} | {error, Reason}
 %%	Request = #request{}
+%%      ProfileName = atom()
 %%
 %% Description: Sends a request to the httpc manager process.
 %%--------------------------------------------------------------------
-request(Request) ->
-    call({request, Request}, infinity).
+request(Request, ProfileName) ->
+    call(ProfileName, {request, Request}, infinity).
 
 %%--------------------------------------------------------------------
-%% Function: retry_request(Request) -> _
+%% Function: retry_request(Request, ProfileName) -> _
 %%	Request = #request{}
+%%      ProfileName = atom()
 %%
 %% Description: Resends a request to the httpc manager process, intended
 %% to be called by the httpc handler process if it has to terminate with
 %% a non empty pipeline.
 %%--------------------------------------------------------------------
-retry_request(Request) ->
-    cast({retry_or_redirect_request, Request}).
+retry_request(Request, ProfileName) ->
+    cast(ProfileName, {retry_or_redirect_request, Request}).
 
 %%--------------------------------------------------------------------
-%% Function: redirect_request(Request) -> _
+%% Function: redirect_request(Request, ProfileName) -> _
 %%	Request = #request{}
+%%      ProfileName = atom()
 %%
 %% Description: Sends an atoumatic redirect request to the httpc
 %% manager process, intended to be called by the httpc handler process
 %% when the automatic redirect option is set.
 %%--------------------------------------------------------------------
-redirect_request(Request) ->
-    cast({retry_or_redirect_request, Request}).
+redirect_request(Request, ProfileName) ->
+    cast(ProfileName, {retry_or_redirect_request, Request}).
 
 %%--------------------------------------------------------------------
-%% Function: cancel_request(RequestId) -> ok
+%% Function: cancel_request(RequestId, ProfileName) -> ok
 %%	RequestId - ref()
+%%      ProfileName = atom()
 %%
 %% Description: Cancels the request with <RequestId>.
 %%--------------------------------------------------------------------
-cancel_request(RequestId) ->
-    call({cancel_request, RequestId}, infinity).
+cancel_request(RequestId, ProfileName) ->
+    call(ProfileName, {cancel_request, RequestId}, infinity).
 
 %%--------------------------------------------------------------------
-%% Function: request_canceled(RequestId) -> ok
+%% Function: request_canceled(RequestId, ProfileName) -> ok
 %%	RequestId - ref()
+%%      ProfileName = atom()
 %%
 %% Description: Confirms that a request has been canceld. Intended to
 %% be called by the httpc handler process.
 %%--------------------------------------------------------------------
-request_canceled(RequestId) ->
-    cast({request_canceled, RequestId}).
+request_canceled(RequestId, ProfileName) ->
+    cast(ProfileName, {request_canceled, RequestId}).
 
 %%--------------------------------------------------------------------
-%% Function: insert_session(Session) -> _
+%% Function: insert_session(Session, ProfileName) -> _
 %%	Session - #tcp_session{}
+%%      ProfileName - atom()
 %%
-%% Description: Inserts session information into the httpc manager table
-%% httpc_manager_session_db. Intended to be called by the httpc request
-%% handler process.
+%% Description: Inserts session information into the httpc manager
+%% table <ProfileName>_session_db. Intended to be called by
+%% the httpc request handler process.
 %%--------------------------------------------------------------------
-insert_session(Session) ->
-    ets:insert(httpc_manager_session_db, Session).
+insert_session(Session, ProfileName) ->
+    Db = list_to_atom(atom_to_list(ProfileName) ++ "_session_db"),
+    ets:insert(Db, Session).
 
 %%--------------------------------------------------------------------
-%% Function: delete_session(SessionId) -> _
+%% Function: delete_session(SessionId, ProfileName) -> _
 %%	SessionId -  {{Host, Port}, HandlerPid}
+%%      ProfileName - atom()
 %% 
-%% Description: Deletes session information from the httpc manager table
-%% httpc_manager_session_db. Intended to be called by the httpc request
-%% handler process.
+%% Description: Deletes session information from the httpc manager
+%% table httpc_manager_session_db_<Profile>. Intended to be called by
+%% the httpc request handler process.
 %%--------------------------------------------------------------------
-delete_session(SessionId) ->
-    ets:delete(httpc_manager_session_db, SessionId).
+delete_session(SessionId, ProfileName) ->
+    Db = list_to_atom(atom_to_list(ProfileName) ++ "_session_db"),
+    ets:delete(Db, SessionId).
 
 %%--------------------------------------------------------------------
-%% Function: set_options(Options) -> ok
+%% Function: set_options(Options, ProfileName) -> ok
 %%
-%% Options = [Option]
-%% Option = {proxy, {Proxy, [NoProxy]}} | {max_pipeline_length, integer()} |
-%%          {max_sessions, integer()} | {pipeline_timeout, integer()}
-%% Proxy = {Host, Port}
-%% NoProxy - [Domain | HostName | IPAddress]     
-%% Max - integer() 
+%%	Options = [Option]
+%%	Option = {proxy, {Proxy, [NoProxy]}} 
+%%              | {max_pipeline_length, integer()} |
+%%                {max_sessions, integer()} | {pipeline_timeout, integer()}
+%%	Proxy = {Host, Port}
+%%	NoProxy - [Domain | HostName | IPAddress]     
+%%	Max - integer() 
+%%	ProfileName = atom()
 %% 
 %% Description: Sets the options to be used by the client.
 %%--------------------------------------------------------------------
-set_options(Options) ->
-    cast({set_options, Options}).
+set_options(Options, ProfileName) ->
+    cast(ProfileName, {set_options, Options}).
 
 %%--------------------------------------------------------------------
-%% Function: store_cookies(Cookies, Address) -> ok
+%% Function: store_cookies(Cookies, Address, ProfileName) -> ok
 %%
-%% Cookies = [Cookie]
-%% Cookie = #http_cookie{}
+%%	Cookies = [Cookie]
+%%	Cookie = #http_cookie{}
+%%	ProfileName = atom()
 %% 
 %% Description: Stores cookies from the server.
 %%--------------------------------------------------------------------
-store_cookies([], _) ->
+store_cookies([], _, _) ->
     ok;
-store_cookies(Cookies, Address) ->
-    cast({store_cookies, {Cookies, Address}}).
+store_cookies(Cookies, Address, ProfileName) ->
+    cast(ProfileName, {store_cookies, {Cookies, Address}}).
 
 %%--------------------------------------------------------------------
-%% Function: cookies(Url) -> ok
+%% Function: cookies(Url, ProfileName) -> ok
 %%
-%% Url = string()
+%%	Url = string()
+%%      ProfileName = atom()
 %%
-%% Description: Retrieves the cookies that  
+%% Description: Retrieves the cookies that would be sent when 
+%% requesting <Url>.
 %%--------------------------------------------------------------------
-cookies(Url) ->
-    call({cookies, Url}, infinity).
+cookies(Url, ProfileName) ->
+    call(ProfileName, {cookies, Url}, infinity).
 
 %%====================================================================
 %% gen_server callback functions
 %%====================================================================
 
 %%--------------------------------------------------------------------
-%% Function: init([Request, Session]) -> {ok, State} | 
+%% Function: init([ProfileName, CookiesConf]) -> {ok, State} | 
 %%                       {ok, State, Timeout} | ignore |{stop, Reason}
 %% Description: Initiates the httpc_manger process
 %%--------------------------------------------------------------------
-init([CookiesConf|_Options]) ->
+init([ProfileName, CookiesConf | _]) ->
     process_flag(trap_exit, true),
-    ets:new(httpc_manager_session_db, 
+    SessionDb = list_to_atom(atom_to_list(ProfileName) ++ "_session_db"),
+    ets:new(SessionDb, 
 	    [public, set, named_table, {keypos, #tcp_session.id}]),
     {ok, #state{handler_db = ets:new(handler_db, [protected, set]),
 		cookie_db = 
 		http_cookie:open_cookie_db({CookiesConf, 
-					    http_session_cookie_db})
+					    http_session_cookie_db}),
+		session_db = SessionDb,
+		profile_name = ProfileName
 	       }}.
 
 %%--------------------------------------------------------------------
@@ -232,8 +263,9 @@ handle_call(Msg, From, State) ->
 %%          {stop, Reason, State}            (terminate/2 is called)
 %% Description: Handling cast messages
 %%--------------------------------------------------------------------
-handle_cast({retry_or_redirect_request, {Time, Request}}, State) ->
-    {ok, _} = timer:apply_after(Time, ?MODULE, retry_request, [Request]),
+handle_cast({retry_or_redirect_request, {Time, Request}}, 
+	    #state{profile_name = ProfileName} = State) ->
+    {ok, _} = timer:apply_after(Time, ?MODULE, retry_request, [Request, ProfileName]),
     {noreply, State};
 
 handle_cast({retry_or_redirect_request, Request}, State) ->
@@ -258,22 +290,22 @@ handle_cast({request_canceled, RequestId}, State) ->
 handle_cast({set_options, Options}, State = #state{options = OldOptions}) ->
     NewOptions = 
 	#options{proxy = 
-		 http_util:key1search(Options, proxy,
+		 proplists:get_value(proxy, Options,
 				       OldOptions#options.proxy),
 		 pipeline_timeout = 
-		 http_util:key1search(Options, pipeline_timeout, 
+		 proplists:get_value(pipeline_timeout, Options, 
 				       OldOptions#options.pipeline_timeout),
 		 max_pipeline_length =
-		 http_util:key1search(Options, max_pipeline_length, 
-				       OldOptions#options.max_pipeline_length),
+		 proplists:get_value(max_pipeline_length, Options, 
+				     OldOptions#options.max_pipeline_length),
 		 max_sessions = 
-		 http_util:key1search(Options, max_sessions, 
-				       OldOptions#options.max_sessions),
-		 cookies = http_util:key1search(Options, cookies, 
+		 proplists:get_value(max_sessions, Options, 
+				     OldOptions#options.max_sessions),
+		 cookies = proplists:get_value(cookies, Options, 
 						 OldOptions#options.cookies),
-		 ipv6 = http_util:key1search(Options, ipv6, 
+		 ipv6 = proplists:get_value(ipv6, Options, 
 					     OldOptions#options.ipv6),
-		 verbose = http_util:key1search(Options, verbose, 
+		 verbose = proplists:get_value(verbose, Options, 
 						OldOptions#options.verbose)
 		}, 
     case {OldOptions#options.verbose, NewOptions#options.verbose} of
@@ -301,7 +333,8 @@ handle_cast({store_cookies, {Cookies, _}}, State) ->
     {noreply, State};
 
 handle_cast(Msg, State) ->
-    error_logger:error_report("HTTPC_MANAGER recived unkown cast: ~p", [Msg]),
+    error_logger:error_report("HTTPC_MANAGER recived unkown cast: ~p", 
+			      [Msg]),
     {noreply, State}.
 
 %%--------------------------------------------------------------------
@@ -340,7 +373,7 @@ handle_info(Info, State) ->
 %%--------------------------------------------------------------------
 terminate(_, State) ->
     http_cookie:close_cookie_db(State#state.cookie_db),
-    ets:delete(httpc_manager_session_db),
+    ets:delete(State#state.session_db),
     ets:delete(State#state.handler_db).
 
 %%--------------------------------------------------------------------
@@ -353,7 +386,7 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
-handle_request(Request, State) ->
+handle_request(Request, State = #state{options = Options}) ->
     NewRequest = handle_cookies(generate_request_id(Request), State),
     case select_session(Request#request.method, 
 			Request#request.address, 
@@ -363,7 +396,7 @@ handle_request(Request, State) ->
 	no_connection ->
 	    start_handler(NewRequest, State);
 	{no_session,  OpenSessions} when OpenSessions 
-	< State#options.max_sessions ->
+	< Options#options.max_sessions ->
 	    start_handler(NewRequest, State);
 	{no_session, _} ->
 	    %% Do not start any more persistent connections
@@ -377,10 +410,11 @@ handle_request(Request, State) ->
 
 select_session(Method, HostPort, Scheme, #state{options = 
 						#options{max_pipeline_length =
-							 Max}}) ->
+							 Max},
+					       session_db = SessionDb}) ->
     case httpc_request:is_idempotent(Method) of
 	true ->
-	    Candidates = ets:match(httpc_manager_session_db,
+	    Candidates = ets:match(SessionDb,
 				   {'_', {HostPort, '$1'}, 
 				    false, Scheme, '_', '$2'}),
 	    select_session(Candidates, Max);
@@ -421,10 +455,27 @@ pipeline(Request, HandlerPid, State) ->
     end.
 
 start_handler(Request, State) ->
-    {ok, Pid} = httpc_handler:start_link(Request, State#state.options),
+    {ok, Pid} =
+	case is_inets_manager() of
+	    true ->
+		httpc_handler_sup:start_child([Request, State#state.options,
+					       State#state.profile_name]);
+	    false ->
+		httpc_handler:start_link(Request, State#state.options,
+					 State#state.profile_name)
+	end,
+    
     ets:insert(State#state.handler_db, {Request#request.id, 
 					Pid, Request#request.from}),
     erlang:monitor(process, Pid).
+
+is_inets_manager() ->
+    case get('$ancestors') of
+	[httpc_profile_sup | _] ->
+	    true;
+	_ ->
+	    false
+    end.
 
 generate_request_id(Request) ->
     case Request#request.id of
@@ -458,11 +509,11 @@ do_store_cookies([Cookie | Cookies], State) ->
     ok = http_cookie:insert(Cookie, State#state.cookie_db),
     do_store_cookies(Cookies, State).
 
-call(Msg, Timeout) ->
-    gen_server:call(?MODULE, Msg, Timeout).
+call(ProfileName, Msg, Timeout) ->
+    gen_server:call(ProfileName, Msg, Timeout).
 
-cast(Msg) ->
-   gen_server:cast(?MODULE, Msg).
+cast(ProfileName, Msg) ->
+   gen_server:cast(ProfileName, Msg).
 
 handle_verbose(debug) ->
     dbg:p(self(), [call]),

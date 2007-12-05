@@ -73,19 +73,23 @@ extern Export* dmonitor_p_trap;
 
 
 
-extern int dist_link(Process*, Uint32, DistEntry*, Eterm, Eterm);
-extern int dist_send(Process*, Uint32, DistEntry*, Eterm, Eterm);
-extern int dist_exit_tt(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, Eterm);
-extern int dist_unlink(Process*, Uint32, DistEntry*, Eterm, Eterm);
-extern int dist_reg_send(Process*, Uint32, DistEntry*, Eterm, Eterm);
-extern int dist_group_leader(Process*, Uint32, DistEntry*, Eterm, Eterm);
-extern int dist_exit(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
-extern int dist_exit2(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_link(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
+extern int dist_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
+extern int dist_exit_tt(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
+			Eterm, Eterm);
+extern int dist_unlink(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
+extern int dist_reg_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
+extern int dist_group_leader(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm);
+extern int dist_exit(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, Eterm);
+extern int dist_exit2(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, Eterm);
 #endif
 
-extern int dist_demonitor(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, int);
-extern int dist_monitor(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm);
-extern int dist_m_exit(Process*, Uint32, DistEntry*, Eterm, Eterm, Eterm, Eterm);
+extern int dist_demonitor(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
+			  Eterm, int);
+extern int dist_monitor(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
+			Eterm);
+extern int dist_m_exit(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm,
+		       Eterm, Eterm);
 
 extern Uint erts_dist_cache_size(void);
 extern int erts_is_alive(void);

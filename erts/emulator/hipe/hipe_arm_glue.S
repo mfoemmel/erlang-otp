@@ -272,7 +272,6 @@ nbif_fail:
 	mov	r0, #HIPE_MODE_SWITCH_RES_THROW
 	b	.flush_exit	/* no need to save RA */
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 	.global	nbif_0_gc_after_bif
 	.global	nbif_1_gc_after_bif
 	.global	nbif_2_gc_after_bif
@@ -302,7 +301,6 @@ nbif_3_gc_after_bif:
 	mov	r1, #0
 	str	r1, [P, #P_NARITY]
 	mov	pc, lr
-#endif
 
 /*
  * We end up here when a BIF called from native signals an
@@ -405,12 +403,12 @@ nbif_2_hairy_exception:
 nbif_stack_trap_ra:		/* a return address, not a function */
 	# This only handles a single return value.
 	# If we have more, we need to save them in the PCB.
-	mov	TEMP_RV, r0		/* save retval */
+	mov	TEMP_ARG0, r0		/* save retval */
 	str	NSP, [P, #P_NSP]
 	mov	r0, P
 	bl	hipe_handle_stack_trap	/* must not cons */
 	mov	lr, r0			/* original RA */
-	mov	r0, TEMP_RV		/* restore retval */
+	mov	r0, TEMP_ARG0		/* restore retval */
 	mov	pc, lr			/* resume at original RA */
 
 /*

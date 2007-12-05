@@ -4,6 +4,7 @@ BEHAVIOUR_MODULES = \
 	snmpa_authentication_service \
 	snmpa_error_report \
 	snmpa_network_interface \
+	snmpa_network_interface_filter \
 	snmpa_notification_filter \
 	snmpa_set_mechanism
 
@@ -26,6 +27,7 @@ MODULES = \
 	snmpa_misc_sup \
 	snmpa_mpd \
 	snmpa_net_if \
+	snmpa_net_if_filter \
 	snmpa_set \
 	snmpa_set_lib \
 	snmpa_supervisor \

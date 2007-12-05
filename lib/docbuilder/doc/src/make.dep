@@ -9,11 +9,11 @@
 # TeX files that the DVI file depend on
 # ----------------------------------------------------
 
-book.dvi: application.tex block_tags.tex book.tex character_entities.tex \
+book.dvi: block_tags.tex book.tex character_entities.tex \
 		docb_gen.tex docb_transform.tex docb_xml_check.tex \
 		docbuilder_app.tex fasc_dtds.tex header_tags.tex \
-		inline_tags.tex overview.tex part.tex refman_dtds.tex \
-		user_guide_dtds.tex
+		inline_tags.tex overview.tex part.tex ref_man.tex \
+		refman_dtds.tex user_guide_dtds.tex
 
 # ----------------------------------------------------
 # Source inlined when transforming from source to LaTeX
@@ -21,7 +21,7 @@ book.dvi: application.tex block_tags.tex book.tex character_entities.tex \
 
 block_tags.tex: gazonk
 
-book.tex: application.xml
+book.tex: ref_man.xml
 
 inline_tags.tex: ../../../../system/doc/definitions/term.defs
 

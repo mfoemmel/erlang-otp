@@ -43,39 +43,9 @@
 
 -module(core_scan).
 
--export([string/1,string/2,tokens/3,format_error/1]).
+-export([string/1,string/2,format_error/1]).
 
 -import(lists, [reverse/1]).
-
-%% tokens(Continuation, CharList, StartPos) ->
-%%	{done, {ok, [Tok], EndPos}, Rest} |
-%%	{done, {error,{ErrorPos,core_scan,What}, EndPos}, Rest} |
-%%	{more, Continuation'}
-%%  This is the main function into the re-entrant scanner. It calls the
-%%  re-entrant pre-scanner until this says done, then calls scan/1 on
-%%  the result.
-%%
-%%  The continuation has the form:
-%%      {RestChars,CharsSoFar,CurrentPos,StartPos}
-
-tokens([], Chars, Pos) ->			%First call
-    tokens({[],[],Pos,Pos}, Chars, Pos);
-tokens({Chars,SoFar0,Cp,Sp}, MoreChars, _) ->
-    In = Chars ++ MoreChars,
-    case pre_scan(In, SoFar0, Cp) of
-	{done,_,[],Ep} ->			%Found nothing
-	    {done,{eof,Ep},[]};
-	{done,_,SoFar1,Ep} ->			%Got complete tokens
-	    Res = case scan(reverse(SoFar1), Sp) of
-		      {ok,Toks} -> {ok,Toks,Ep};
-		      {error,E} -> {error,E,Ep}
-		  end,
-	    {done,Res,[]};
-	{more,Rest,SoFar1,Cp1} ->		%Missing end token
-	    {more,{Rest,SoFar1,Cp1,Sp}};
-	Other ->				%An error has occurred
-	    {done,Other,[]}
-    end.
 
 %% string([Char]) ->
 %% string([Char], StartPos) ->

@@ -191,14 +191,7 @@ literal_table(#asm{literals=Tab,next_literal=NumLiterals}) ->
     {NumLiterals,L}.
 
 my_term_to_binary(Term) ->
-    try
-	term_to_binary(Term, [{minor_version,1}])
-    catch
-	%% The catch can be removed in R11B-4. Might be needed now to build
-	%% bootstrap compiler.
-	error:badarg ->
-	    term_to_binary(Term)
-    end.
+    term_to_binary(Term, [{minor_version,1}]).
 
 %% Search for string Str in the string pool Pool.
 %%   old_string(Str, Pool) -> none | Index

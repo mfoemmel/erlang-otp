@@ -16,20 +16,20 @@
 %%     $Id$
 %%
 -module(mod_actions).
--export([do/1,load/2]).
+-export([do/1,load/2, store/2]).
 
 -include("httpd.hrl").
 
 %% do
 
 do(Info) ->
-  case httpd_util:key1search(Info#mod.data,status) of
+  case proplists:get_value(status, Info#mod.data) of
     %% A status code has been generated!
     {_StatusCode, _PhraseArgs, _Reason} ->
       {proceed,Info#mod.data};
     %% No status code has been generated!
     undefined ->
-      case httpd_util:key1search(Info#mod.data,response) of
+      case proplists:get_value(response, Info#mod.data) of
 	%% No response has been generated!
 	undefined ->
 	  Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
@@ -90,3 +90,26 @@ load("Script " ++ Script,[]) ->
     {ok,_} ->
       {error,?NICE(httpd_conf:clean(Script)++" is an invalid Script")}
   end.
+
+store({action, {MimeType, CGIScript}} = Conf, _) when is_list(MimeType),
+						      is_list(CGIScript)  ->
+    {ok, Conf};
+store({action, Value}, _) ->
+    {error, {wrong_type, {action, Value}}};
+
+store({script, {Method, CGIScript}} = Conf, _) when is_list(Method),
+						    is_list(CGIScript) ->
+    case string:to_lower(Method) of
+	"get" ->
+	    {ok, Conf};
+	"post" ->
+	    {ok, Conf};
+	_ ->
+	    {error, {wrong_type, Conf}}
+    end;
+
+store({script, Value}, _) ->
+    {error, {wrong_type, {script, Value}}}.
+
+
+

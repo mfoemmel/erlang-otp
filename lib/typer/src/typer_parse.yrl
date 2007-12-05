@@ -66,10 +66,10 @@ build_type({atom,_,number}, []) -> {type, number, []};
 build_type({atom,_,pid}, []) -> {type, pid, []};
 build_type({atom,_,port}, []) -> {type, port, []};
 build_type({atom,_,pos_integer}, []) -> {type, pos_integer, []};
-build_type({atom,_,possibly_improper_list}, [C,T]) -> 
-    {type, pos_improper_list, [C,T]};
-build_type({atom,_,possibly_improper_list}, []) -> 
-    {type, pos_improper_list, []};
+build_type({atom,_,maybe_improper_list}, [C,T]) -> 
+    {type, maybe_improper_list, [C,T]};
+build_type({atom,_,maybe_improper_list}, []) -> 
+    {type, maybe_improper_list, []};
 build_type({atom,_,ref}, []) -> {type, ref, []};
 build_type({atom,_,string}, []) -> {type, string, []};
 build_type({atom,_,tuple}, []) -> {type, tuple, []};
@@ -80,9 +80,9 @@ lift_unions(T1, {type, union, List}) ->
 lift_unions(T1, T2 = {type, _, _}) ->
     {type, union, [T1, T2]}.
 
-get_atom({atom, _, Atom}) -> Atom.
+get_atom({atom, _, Atom}) when is_atom(Atom) -> Atom.
 
-get_int({integer, _, Integer}) -> Integer.
+get_int({integer, _, Integer}) when is_integer(Integer) -> Integer.
 
 error_bad_decl(L, S) ->
     return_error(L, io_lib:format("bad ~w declaration", [S])).

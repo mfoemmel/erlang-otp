@@ -92,12 +92,12 @@ connect(Host, Port, SocketType, Timeout, Chars, Wchars, Ctx)
     Key = create_key(Host, Port, Ctx),
     case ets:lookup(?PM_CONNECTION_DB, Key) of
 	[#connection{child = connecting}] ->
-	    SocketOptions = get_ssl_socket_options(),
+	    SocketOptions = get_ssl_socket_options(Ctx),
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars, Key}, 
 			    Timeout);
 	[] ->
-	    SocketOptions = get_ssl_socket_options(),
+	    SocketOptions = get_ssl_socket_options(Ctx),
 	    gen_server:call(orber_iiop_pm, {connect, Host, Port, SocketType, 
 					    SocketOptions, Chars, Wchars, Key}, 
 			    Timeout);
@@ -107,7 +107,7 @@ connect(Host, Port, SocketType, Timeout, Chars, Wchars, Ctx)
 	    {ok, P, [], I, [Interface]}
     end.
 
-get_ssl_socket_options() ->
+get_ssl_socket_options([]) ->
     [{verify, orber:ssl_client_verify()},
      {depth, orber:ssl_client_depth()} |
      ssl_client_extra_options([{certfile, orber:ssl_client_certfile()},
@@ -115,7 +115,36 @@ get_ssl_socket_options() ->
 			       {password, orber:ssl_client_password()},
 			       {keyfile, orber:ssl_client_keyfile()},
 			       {ciphers, orber:ssl_client_ciphers()},
-			       {cachetimeout, orber:ssl_client_cachetimeout()}], [])].
+			       {cachetimeout, orber:ssl_client_cachetimeout()}], [])];
+get_ssl_socket_options([#'IOP_ServiceContext'
+			{context_id=?ORBER_GENERIC_CTX_ID, 
+			 context_data = {configuration, Options}}|_]) ->
+    Verify = orber_tb:keysearch(ssl_client_verify, Options, 
+				orber_env:ssl_client_verify()),
+    Depth = orber_tb:keysearch(ssl_client_depth, Options, 
+			       orber_env:ssl_client_depth()),
+    Cert = orber_tb:keysearch(ssl_client_certfile, Options, 
+			      orber_env:ssl_client_certfile()),
+    CaCert = orber_tb:keysearch(ssl_client_cacertfile, Options, 
+				orber_env:ssl_client_cacertfile()),
+    Pwd = orber_tb:keysearch(ssl_client_password, Options, 
+			     orber_env:ssl_client_password()),
+    Key = orber_tb:keysearch(ssl_client_keyfile, Options, 
+			     orber_env:ssl_client_keyfile()),
+    Ciphers = orber_tb:keysearch(ssl_client_ciphers, Options, 
+				 orber_env:ssl_client_ciphers()),
+    Timeout = orber_tb:keysearch(ssl_client_cachetimeout, Options, 
+				 orber_env:ssl_client_cachetimeout()),
+    [{verify, Verify},
+     {depth, Depth} |
+     ssl_client_extra_options([{certfile, Cert},
+			       {cacertfile, CaCert},
+			       {password, Pwd},
+			       {keyfile, Key},
+			       {ciphers, Ciphers},
+			       {cachetimeout, Timeout}], [])];
+get_ssl_socket_options([_|T]) ->
+    get_ssl_socket_options(T).
 
 ssl_client_extra_options([], Acc) ->
     Acc;

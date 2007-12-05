@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpa_acm).
 
@@ -176,21 +178,26 @@ init_ca(Pdu, {v3, _MsgID, SecModel, SecName, SecLevel,
 
 %%-----------------------------------------------------------------
 %% Func: check(Res) -> {ok, MibView} | {discarded, Variable, Reason}
-%% Args: Res = {ok, AccessFunc} | {authentication_failure, Variable, Reason
+%% Args: Res = {ok, AccessFunc} | 
+%%             {authentication_failure, Variable, Reason}
 %%-----------------------------------------------------------------
 
 %%-----------------------------------------------------------------
-%% NOTE: This function is executed in the Master agents's context
-%% Do a GET to retrieve the value for snmpEnableAuthenTraps.  A
-%% user may have another impl. than default for this variable.
+%% NOTE: The do_get MUST be executed in the Master agents's 
+%%       context. Therefor, force master-agent to do a GET to 
+%%       retrieve the value for snmpEnableAuthenTraps.  
+%%       A user may have another impl. than default for this 
+%%       variable.
 %%-----------------------------------------------------------------
 handle_authentication_failure() ->
     case snmpa_agent:do_get(get_root_mib_view(),
 			    [#varbind{oid = ?snmpEnableAuthenTraps_instance}],
-			    true) of
+			    true, true) of
 	{noError, _, [#varbind{value = ?snmpEnableAuthenTraps_enabled}]} ->
-	    snmpa:send_notification(self(), 
-				    authenticationFailure, no_receiver);
+	    ?vtrace("handle_authentication_failure -> enabled", []),
+	    snmpa:send_notification(snmp_master_agent, 
+				    authenticationFailure, 
+				    no_receiver);
 	_ ->
 	    ok
     end.

@@ -85,8 +85,8 @@ check_bitstring(L1=[H1|_T1],L2=[H2|_T2],NBL) when integer(H1),atom(H2) ->
     L3 = bit_list_to_nbl(L1,NBL,0,[]),
     check_bitstring(L3,L2,NBL);
 %% Both default value and user value as a list of atoms
-check_bitstring(L1=[H1|T1],L2=[H2|_T2],_) when atom(H1),atom(H2) ->
-    length(L1) == length(L2),
+check_bitstring(L1=[H1|T1],L2=[H2|_T2],_) 
+  when atom(H1),atom(H2),length(L1) == length(L2) ->
     case lists:member(H1,L2) of
 	true ->
 	    check_bitstring1(T1,L2);

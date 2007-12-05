@@ -26,7 +26,7 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
   OTHER_SUB_DIRECTORIES =	\
      snmp otp_mibs appmon erl_interface os_mon tools runtime_tools
   ifdef BUILD_ALL
-    OTHER_SUB_DIRECTORIES += mnesia jinterface ic mnemosyne asn1 debugger \
+    OTHER_SUB_DIRECTORIES += mnesia jinterface ic asn1 debugger \
 	inets mnesia_session orber pman tv observer cosTransactions cosEvent \
       cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
   endif
@@ -38,10 +38,10 @@ else
 #    OTHER_SUB_DIRECTORIES =	\
 #      appmon os_mon tools runtime_tools
     ifdef BUILD_ALL
-      OTHER_SUB_DIRECTORIES += mnesia mnemosyne \
-        inets mnesia_session pman tv observer
-#      OTHER_SUB_DIRECTORIES += mnesia ic mnemosyne asn1 debugger \
-#        inets mnesia_session orber pman tv observer cosTransactions cosEvent \
+      OTHER_SUB_DIRECTORIES += mnesia  \
+        inets pman tv observer
+#      OTHER_SUB_DIRECTORIES += mnesia ic asn1 debugger \
+#        inets orber pman tv observer cosTransactions cosEvent \
 #        cosTime cosNotification cosProperty cosFileTransfer cosEventDomain
     endif
   else
@@ -55,21 +55,21 @@ else
       ifeq ($(findstring win32,$(TARGET)),win32) # BUILD_ALL on win32
         OTHER_SUB_DIRECTORIES += 			\
           snmp otp_mibs appmon erl_interface asn1 jinterface gs inets ic \
-          mnesia mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools pman \
+          mnesia $(CRYPTO_APP) orber os_mon parsetools syntax_tools pman \
           $(SSL_APP) toolbar tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
-          cosFileTransfer cosEventDomain et megaco webtool syntax_tools \
-	  xmerl edoc ssh inviso typer docbuilder
+          cosFileTransfer cosEventDomain et megaco webtool \
+	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe
       else # BUILD_ALL on unix
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
-          ic mnesia  mnemosyne mnesia_session $(CRYPTO_APP) orber os_mon parsetools \
+          ic mnesia  $(CRYPTO_APP) orber os_mon parsetools syntax_tools \
           pman $(SSL_APP) toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
-	  syntax_tools xmerl edoc ssh inviso typer docbuilder
+	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept
 # dialyzer
         OTHER_SUB_DIRECTORIES += hipe $(TSP_APP)
       endif
@@ -88,7 +88,7 @@ else
       SUB_DIRECTORIES = snmp
     else
       ifdef FOURTH_BOOTSTRAP
-        SUB_DIRECTORIES = sasl jinterface ic
+        SUB_DIRECTORIES = sasl jinterface ic syntax_tools
       else # Not bootstrap build
         SUB_DIRECTORIES = $(ERTS_SUB_DIRECTORIES) $(OTHER_SUB_DIRECTORIES)
       endif

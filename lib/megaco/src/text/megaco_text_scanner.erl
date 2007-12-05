@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%----------------------------------------------------------------------
 %% Purpose : Scanner for text encoded Megaco/H.248 messages
 %%----------------------------------------------------------------------
@@ -37,10 +39,10 @@
 %% This is used when we _know_ it to be upper case
 -define(LOWER2(Char), Char - ($A - $a)).
 
-scan(Bin) when binary(Bin) ->
+scan(Bin) when is_binary(Bin) ->
     Chars = erlang:binary_to_list(Bin),
     tokens1(Chars, 1, []);
-scan(Chars) when list(Chars) ->
+scan(Chars) when is_list(Chars) ->
     tokens1(Chars, 1, []).
 
 %% As long as we dont know the version, we will loop in this function
@@ -595,8 +597,8 @@ select_token(LowerText) ->
         "m"                     -> 'MediaToken';
         %% "megaco"                -> 'MegacopToken';
 	%% "!"                     -> 'megacoptoken';
-	%% "segment"               -> 'MessageSegmentToken'; % v3
-	%% "sm"                    -> 'MessageSegmentToken'; % v3
+	"segment"               -> 'MessageSegmentToken'; % v3
+	"sm"                    -> 'MessageSegmentToken'; % v3
         "method"                -> 'MethodToken';
         "mt"                    -> 'MethodToken';
         "mtp"                   -> 'MtpToken';
@@ -671,8 +673,8 @@ select_token(LowerText) ->
         "rg"                    -> 'ReservedGroupToken';
         "reservedvalue"         -> 'ReservedValueToken';
         "rv"                    -> 'ReservedValueToken';
-        "end"                   -> 'SegmentCompleteToken'; % v3
-        "&"                     -> 'SegmentCompleteToken'; % v3
+        "end"                   -> 'SegmentationCompleteToken'; % v3
+        "&"                     -> 'SegmentationCompleteToken'; % v3
         "sendonly"              -> 'SendonlyToken';
         "so"                    -> 'SendonlyToken';
         "sendreceive"           -> 'SendrecvToken';

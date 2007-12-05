@@ -1,6 +1,6 @@
 {application, cosTransactions,
  [{description, "The Erlang CosTransactions application"},
-  {vsn, "1.2.2"},
+  {vsn, "1.2.3"},
   {modules,
        [
 	etrap_logmgr,

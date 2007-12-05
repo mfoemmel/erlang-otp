@@ -1,13 +1,32 @@
-%%%----------------------------------------------------------------------
-%%% File    : et_demo.erl
-%%% Author  : H}kan Mattsson <hakan@erix.ericsson.se>
-%%% Purpose : Provide some event trace filter examples.
-%%% Created : 09 Oct 2001 by H}kan Mattsson <hakan@erix.ericsson.se>
-%%%----------------------------------------------------------------------
--module(et_demo).
--author('hakan@erix.ericsson.se').
+% ``The contents of this file are subject to the Erlang Public License,
+%% Version 1.1, (the "License"); you may not use this file except in
+%% compliance with the License. You should have received a copy of the
+%% Erlang Public License along with this software. If not, it can be
+%% retrieved via the world wide web at http://www.erlang.org/.
+%% 
+%% Software distributed under the License is distributed on an "AS IS"
+%% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+%% the License for the specific language governing rights and limitations
+%% under the License.
+%% 
+%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
+%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
+%% AB. All Rights Reserved.''
+%%----------------------------------------------------------------------
+%% et_demo.erl - Provide some event trace filter examples.
+%%----------------------------------------------------------------------
 
--export([sim_trans/0, mgr_actors/1, live_trans/0, start/0, start/1, filters/0, trace_mnesia/0]).
+-module(et_demo).
+
+-export([
+         sim_trans/0,
+         mgr_actors/1,
+         live_trans/0,
+         start/0,
+         start/1,
+         filters/0,
+         trace_mnesia/0
+        ]).
 
 -include_lib("et/include/et.hrl").
 
@@ -44,12 +63,12 @@ mgr_actors(E) when record(E, event) ->
                    mnesia_locker -> lock_mgr;
                    _             -> A
                end
-	    end,
+            end,
     {true, E#event{from = Actor(E#event.from),
-		   to = Actor(E#event.to),
-		   contents = [{orig_from, E#event.from},
-			       {orig_to,   E#event.to},
-			       {orig_contents, E#event.contents}]}}.
+                   to = Actor(E#event.to),
+                   contents = [{orig_from, E#event.from},
+                               {orig_to,   E#event.to},
+                               {orig_contents, E#event.contents}]}}.
 %mgr_actors
 
 %%----------------------------------------------------------------------
@@ -72,8 +91,8 @@ start(ExtraOptions) ->
 %live_trans
 live_trans() ->
     et_demo:start([{title, "Mnesia tracer"},
-		   {hide_actions, true},
-		   {active_filter, named_process_info_nolink}]),
+                   {hide_actions, true},
+                   {active_filter, named_process_info_nolink}]),
     mnesia:start(),
     mnesia:create_table(my_tab, [{ram_copies, [node()]}]),
     et_demo:trace_mnesia(),

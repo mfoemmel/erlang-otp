@@ -80,7 +80,7 @@ dbloop(Includes, Tab) ->
 	    dbloop(Includes, Tab);
 	{From, {save, OutFile,Mod}} ->
 	    [{_,Mtab}] = ets:lookup(Tab,Mod),
-	    {From ! {asn1db, ets:tab2file(Mtab,OutFile)}},
+	    From ! {asn1db, ets:tab2file(Mtab,OutFile)},
 	    dbloop(Includes,Tab);
 	{From, {load, Mod}} ->
 	    Result = case ets:lookup(Tab,Mod) of
@@ -88,7 +88,7 @@ dbloop(Includes, Tab) ->
 			     opentab(Tab,Mod,Includes);
 			 [{_,Modtab}] -> {ok,Modtab}
 		     end,
-	    {From, {asn1db,Result}},
+	    From ! {asn1db,Result},
 	    dbloop(Includes,Tab);
 	{From, {new, Mod}} ->
 	    case ets:lookup(Tab,Mod) of

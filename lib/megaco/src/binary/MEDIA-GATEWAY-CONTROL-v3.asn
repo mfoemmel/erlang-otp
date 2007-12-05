@@ -87,7 +87,7 @@ Transaction ::= CHOICE
    transactionResponseAck  TransactionResponseAck, 
    -- use of response acks is dependent on underlying transport 
    ...,
-   segmentReply			SegmentReply
+   segmentReply	      SegmentReply
  } 
 
 TransactionId ::= INTEGER(0..4294967295)  -- 32-bit unsigned integer 
@@ -114,7 +114,7 @@ TransactionReply ::= SEQUENCE
       transactionError   ErrorDescriptor, 
       actionReplies      SEQUENCE OF ActionReply 
     }, 
-    ...
+    ...,
     segmentNumber         SegmentNumber OPTIONAL,
     segmentationComplete  NULL OPTIONAL 
  } 
@@ -143,11 +143,10 @@ ErrorDescriptor ::= SEQUENCE
  } 
 
 ErrorCode ::= INTEGER(0..65535) 
--- See clause 13 for IANA considerations with respect to error codes 
+-- See clause 14 for IANA considerations with respect to error codes 
 ErrorText ::= IA5String 
 
 ContextID ::= INTEGER(0..4294967295) 
-
 -- Context NULL Value: 0 
 -- Context CHOOSE Value: 4294967294 (0xFFFFFFFE)  
 -- Context ALL Value: 4294967295 (0xFFFFFFFF) 
@@ -176,30 +175,40 @@ ContextRequest ::= SEQUENCE
    topologyReq    SEQUENCE OF TopologyRequest OPTIONAL, 
    ...,
    iepscallind    BOOLEAN OPTIONAL,
-   contextProp    SEQUENCE OF PropertyParm OPTIONAL ,
+   contextProp    SEQUENCE OF PropertyParm OPTIONAL,
    contextList    SEQUENCE OF ContextID OPTIONAL
  } 
+-- When returning a contextList, the contextId in the ActionReply 
+-- construct will return the contextId from the associated ActionRequest.
 
 ContextAttrAuditRequest ::= SEQUENCE 
  { 
-   topology           NULL OPTIONAL, 
-   emergency          NULL OPTIONAL, 
-   priority           NULL OPTIONAL, 
+   topology        NULL OPTIONAL, 
+   emergency       NULL OPTIONAL, 
+   priority        NULL OPTIONAL, 
    ...,
    iepscallind        NULL OPTIONAL,
    contextPropAud     SEQUENCE OF IndAudPropertyParm OPTIONAL,
-   selectpriority     INTEGER(0..15) OPTIONAL,   -- to select given priority
-   selectemergency    BOOLEAN OPTIONAL,   -- to select if emergency set/not set (T/F) 
-   selectiepscallind  BOOLEAN OPTIONAL,   -- to select if IEPS set/not set (T/F)
+
+   selectpriority     INTEGER(0..15) OPTIONAL,
+   -- to select given priority
+
+   selectemergency    BOOLEAN OPTIONAL,
+   -- to select if emergency set/not set (T/F) 
+   
+   selectiepscallind  BOOLEAN OPTIONAL,
+   -- to select if IEPS set/not set (T/F)
+
    selectLogic        SelectLogic OPTIONAL    -- default is AND
  } 
 
-SelectLogic ::= CHOICE
+SelectLogic            ::= CHOICE
  {
    andAUDITSelect  NULL,     -- all selection conditions satisfied
    orAUDITSelect   NULL,     -- at least one selection condition satisfied
    ...
- }
+ }	
+
 
 CommandRequest ::= SEQUENCE 
  { 
@@ -248,13 +257,16 @@ TopologyRequest ::= SEQUENCE
       oneway(2) 
     }, 
    ..., 
-   streamID                     StreamID OPTIONAL,
+   streamID             	StreamID OPTIONAL,
    topologyDirectionExtension	ENUMERATED
     {
       onewayexternal(0),
       onewayboth(1),
       ...
-    }
+    } OPTIONAL 
+    -- This is not according to the standard, but without it
+    -- the TopologyRequest will be useless since topologyDirection
+    -- and topologyDirectionExtension are contradictory.
  } 
 
 AmmRequest ::= SEQUENCE 
@@ -299,7 +311,8 @@ AuditRequest ::= SEQUENCE
  { 
    terminationID        TerminationID, 
    auditDescriptor      AuditDescriptor, 
-   ... 
+   ...,
+   terminationIDList    TerminationIDList OPTIONAL
  } 
 -- terminationID shall contain the first termination in the
 -- list when using the terminationIDList construct in AuditRequest
@@ -317,11 +330,15 @@ AuditResult ::= SEQUENCE
  { 
    
    terminationID           TerminationID, 
-   terminationAuditResult  TerminationAudit ,
-   ...
+   terminationAuditResult  TerminationAudit 
  } 
 
-
+TermListAuditResult	::= SEQUENCE
+ {
+   terminationIDList       TerminationIDList,
+   terminationAuditResult  TerminationAudit,
+   ...
+ }
 
 TerminationAudit ::= SEQUENCE OF AuditReturnParameter 
 
@@ -406,15 +423,15 @@ IndAudLocalControlDescriptor ::= SEQUENCE
    propertyParms           SEQUENCE OF IndAudPropertyParm OPTIONAL, 
    ...,
    streamModeSel           StreamMode OPTIONAL
--- must not have both streamMode and streamModeSel
--- if both are present only streamModeSel shall be honoured
+   -- must not have both streamMode and streamModeSel	
+   -- if both are present only streamModeSel shall be honoured
  } 
 
 IndAudPropertyParm ::= SEQUENCE 
  { 
-   name           PkgdName, 
+   name            PkgdName, 
    ...,
-   propertyParms  PropertyParm OPTIONAL
+   propertyParms   PropertyParm OPTIONAL 
  } 
 --  to select based on property values 
 --  AND/OR selection logic is specified at context level
@@ -434,10 +451,9 @@ IndAudTerminationStateDescriptor ::= SEQUENCE
    eventBufferControl   NULL OPTIONAL, 
    serviceState         NULL OPTIONAL, 
    ...,
-   serviceStateSel      ServiceState OPTIONAL 
--- must not have both serviceState and serviceStateSel
--- if both are present only serviceStateSel shall be honoured
-
+   serviceStateSel      ServiceState OPTIONAL
+   -- must not have both serviceState and serviceStateSel
+   -- if both are present only serviceStateSel shall be honoured 
  } 
 
 IndAudEventsDescriptor ::= SEQUENCE 
@@ -470,10 +486,10 @@ IndAudSeqSigList ::= SEQUENCE
 
 IndAudSignal ::= SEQUENCE 
  { 
-   signalName      PkgdName, 
-   streamID        StreamID OPTIONAL, 
+   signalName       PkgdName, 
+   streamID         StreamID OPTIONAL, 
    ...,
-   signalRequestID RequestID OPTIONAL 
+   signalRequestID  RequestID OPTIONAL 
  } 
 
 IndAudDigitMapDescriptor ::= SEQUENCE 
@@ -556,7 +572,6 @@ ServiceChangeReply ::= SEQUENCE
 
 -- For ServiceChangeResult, no parameters are mandatory.  Hence the 
 -- distinction between ServiceChangeParm and ServiceChangeResParm. 
-
 ServiceChangeResult ::= CHOICE 
  { 
    errorDescriptor            ErrorDescriptor, 
@@ -621,27 +636,27 @@ StreamMode ::= ENUMERATED
    ... 
  } 
 
--- In PropertyParm, value is a SEQUENCE OF octet string.  When sent
--- by an MGC the interpretation is as follows:
--- empty sequence means CHOOSE
--- one element sequence specifies value
--- If the sublist field is not selected, a longer sequence means
--- "choose one of the values" (i.e. value1 OR value2 OR Ä)
--- If the sublist field is selected,
--- a sequence with more than one element encodes the value of a
--- list-valued property (i.e. value1 AND value2 AND Ä).
--- The relation field may only be selected if the value sequence
--- has length 1.  It indicates that the MG has to choose a value
--- for the property. E.g. x > 3 (using the greaterThan
--- value for relation) instructs the MG to choose any value larger
--- than 3 for property x.
--- The range field may only be selected if the value sequence
--- has length 2.  It indicates that the MG has to choose a value
--- in the range between the first octet in the value sequence and
--- the trailing octet in the value sequence, including the
--- boundary values.
--- When sent by the MG, only responses to an AuditCapability request
--- may contain multiple values, a range, or a relation field.
+-- In PropertyParm, value is a SEQUENCE OF octet string.  When sent 
+-- by an MGC the interpretation is as follows: 
+-- empty sequence means CHOOSE 
+-- one element sequence specifies value 
+-- If the sublist field is not selected, a longer sequence means 
+-- "choose one of the values" (i.e. value1 OR value2 OR ...) 
+-- If the sublist field is selected, 
+-- a sequence with more than one element encodes the value of a 
+-- list-valued property (i.e. value1 AND value2 AND ...). 
+-- The relation field may only be selected if the value sequence 
+-- has length 1.  It indicates that the MG has to choose a value 
+-- for the property. E.g. x > 3 (using the greaterThan 
+-- value for relation) instructs the MG to choose any value larger 
+-- than 3 for property x. 
+-- The range field may only be selected if the value sequence 
+-- has length 2.  It indicates that the MG has to choose a value 
+-- in the range between the first octet in the value sequence and 
+-- the trailing octet in the value sequence, including the 
+-- boundary values. 
+-- When sent by the MG, only responses to an AuditCapability request 
+-- may contain multiple values, a range, or a relation field. 
 
 PropertyParm ::= SEQUENCE 
  { 
@@ -659,15 +674,16 @@ PropertyParm ::= SEQUENCE
 Name ::= OCTET STRING(SIZE(2)) 
 
 PkgdName ::= OCTET STRING(SIZE(4)) 
--- represents Package Name (2 octets) plus property, event,
--- signal names or StatisticsID. (2 octets)
--- To wildcard a package use 0xFFFF for first two octets, CHOOSE
--- is not allowed. To reference native property tag specified in
--- Annex C, use 0x0000 as first two octets.
--- To wildcard a PropertyID, EventID, SignalID, or StatisticsID, use
--- 0xFFFF for last two octets, CHOOSE is not allowed.
--- Wildcarding of Package Name is permitted only if PropertyID,
--- EventID, SignalID, or StatisticsID are also wildcarded.
+-- represents Package Name (2 octets) plus Property, Event, 
+-- Signal Names or Statistics ID. (2 octets) 
+-- To wildcard a package use 0xFFFF for first two octets, choose 
+-- is not allowed. To reference native property tag specified in 
+-- Annex C, use 0x0000 as first two octets. 
+-- To wildcard a Property, Event, Signal, or Statistics ID, use 
+-- 0xFFFF for last two octets, choose is not allowed. 
+-- Wildcarding of Package Name is permitted only if Property, 
+-- Event, Signal, or Statistics ID are 
+-- also wildcarded. 
 
 Relation ::= ENUMERATED 
  { 
@@ -748,16 +764,16 @@ RequestedEvent ::= SEQUENCE
 
 RegulatedEmbeddedDescriptor ::= SEQUENCE
  {
-   secondEvent        SecondEventsDescriptor OPTIONAL,
-   signalsDescriptor  SignalsDescriptor OPTIONAL,
+   secondEvent		 SecondEventsDescriptor OPTIONAL,
+   signalsDescriptor	 SignalsDescriptor OPTIONAL,
    ...
  }
 
 NotifyBehaviour ::= CHOICE
  {
-   NotifyImmediate  NULL,
-   NotifyRegulated  RegulatedEmbeddedDescriptor,
-   NeverNotify      NULL,
+   notifyImmediate	 NULL,
+   notifyRegulated	 RegulatedEmbeddedDescriptor,
+   neverNotify		 NULL,
    ...
  }
 
@@ -769,7 +785,7 @@ RequestedActions ::= SEQUENCE
    signalsDescriptor     SignalsDescriptor OPTIONAL, 
    ...,
    notifyBehaviour       NotifyBehaviour OPTIONAL,
-   resetEventDescriptor  NULL OPTIONAL 
+   resetEventsDescriptor NULL OPTIONAL 
  } 
 
 EventDM ::= CHOICE 
@@ -801,7 +817,7 @@ SecondRequestedActions ::= SEQUENCE
    signalsDescriptor     SignalsDescriptor OPTIONAL, 
    ...,
    notifyBehaviour       NotifyBehaviour OPTIONAL,
-   resetEventDescriptor  NULL OPTIONAL 
+   resetEventsDescriptor NULL OPTIONAL 
  } 
 
 EventBufferDescriptor ::= SEQUENCE OF EventSpec 
@@ -866,7 +882,7 @@ SignalName ::= PkgdName
 NotifyCompletion ::= BIT STRING 
  { 
    onTimeOut(0), onInterruptByEvent(1), 
-   onInterruptByNewSignalDescr(2), otherReason(3), onIteration(4) 
+   onInterruptByNewSignalDescr(2), otherReason(3), onIteration(4)
  } 
 
 SigParameter ::= SEQUENCE 
@@ -885,7 +901,6 @@ SigParameter ::= SEQUENCE
 
 -- For an AuditCapReply with all events, the RequestID SHALL be ALL. 
 -- ALL is represented by 0xffffffff. 
-
 RequestID ::= INTEGER(0..4294967295)   -- 32-bit unsigned integer 
 
 ModemDescriptor ::= SEQUENCE 
@@ -998,7 +1013,8 @@ ServiceChangeProfile ::= SEQUENCE
    -- 64 characters for name, 1 for "/", 2 for version to match ABNF 
  } 
 
-PackagesDescriptor ::= SEQUENCE OF PackagesItem 
+PackagesDescriptor ::= SEQUENCE OF PackagesItem
+ 
 PackagesItem ::= SEQUENCE 
  { 
    packageName       Name, 
@@ -1013,6 +1029,9 @@ StatisticsParameter ::= SEQUENCE
    statName       PkgdName, 
    statValue      Value OPTIONAL 
  } 
+
+-- If statistic consists of a sub-list there will be more than one
+-- octetstring in statValue.
 
 NonStandardData ::= SEQUENCE 
  { 

@@ -139,21 +139,6 @@ BIF_RETTYPE hipe_bifs_modeswitch_debug_off_0(BIF_ALIST_0)
     BIF_RET(am_true);
 }
 
-Eterm hipe_bifs_test_reschedule_1(BIF_ALIST_1)
-{
-    static unsigned int flag;
-
-    // printf("%s(%#lx), flag %u\r\n", __FUNCTION__, BIF_ARG_1, flag);
-    // fflush(stdout);
-    if( !flag && BIF_ARG_1 != am_false ) {
-	flag = 1;
-	erts_suspend(BIF_P, ERTS_PROC_LOCK_MAIN, NULL);
-	BIF_ERROR(BIF_P, RESCHEDULE);
-    }
-    flag = !flag;
-    BIF_RET(NIL);
-}
-
 /* BIFs for handling the message area */
 
 BIF_RETTYPE hipe_bifs_show_message_area_0(BIF_ALIST_0)

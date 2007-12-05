@@ -72,6 +72,8 @@ endif
 
 TARGET_FILES= $(PROGRAMS:%=$(BINDIR)/%)
 
+LDFLAGS = @LDFLAGS@
+
 ALL_CFLAGS = @CFLAGS@ @DEFS@ $(CFLAGS)
 
 # ----------------------------------------------------

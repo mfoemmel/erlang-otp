@@ -9,6 +9,9 @@ $(EBIN)/snmpa_error_report.$(EMULATOR): \
 $(EBIN)/snmpa_network_interface.$(EMULATOR): \
 	snmpa_network_interface.erl
 
+$(EBIN)/snmpa_network_interface_filter.$(EMULATOR): \
+	snmpa_network_interface_filter.erl
+
 $(EBIN)/snmpa_notification_filter.$(EMULATOR): \
 	snmpa_notification_filter.erl
 
@@ -97,6 +100,9 @@ $(EBIN)/snmpa_net_if.$(EMULATOR): \
 	../misc/snmp_debug.hrl \
 	../misc/snmp_verbosity.hrl \
 	../../include/snmp_types.hrl
+
+$(EBIN)/snmpa_net_if_filter.$(EMULATOR): \
+	snmpa_net_if_filter.erl
 
 $(EBIN)/snmpa_set.$(EMULATOR): \
 	snmpa_set_mechanism.erl \

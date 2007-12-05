@@ -44,6 +44,7 @@
 	 start_garb/0,
 	 still_pending/1,
 	 sync_trans_tid_serial/1,
+	 sync/0,
 	 wait_for_decision/2,
 	 what_happened/3
 	]).
@@ -153,9 +154,8 @@ call(Msg) ->
                 {'EXIT', Pid, _Reason} ->
                     {error, {node_not_running, node()}}
             after 0 ->
-                    ignore
-            end,
-	    Res
+                    Res
+            end
     end.
 
 multicall(Nodes, Msg) ->
@@ -231,6 +231,9 @@ tell_im_certain(Nodes, D) ->
     Msg = {im_certain, node(), D},
   %%  mnesia_lib:verbose("~w: tell: ~w~n", [Msg, Nodes]), 
     abcast(Nodes, Msg).
+
+sync() ->
+    call(sync).
 
 log_mnesia_up(Node) ->
     call({log_mnesia_up, Node}).
@@ -390,19 +393,28 @@ wait_for_decision(presume_commit, _InitBy) ->
     {{presume_commit, self()}, committed};
 
 wait_for_decision(D, InitBy) when D#decision.outcome == presume_abort ->
+    wait_for_decision(D, InitBy, 0).
+    
+wait_for_decision(D, InitBy, N) -> 
     %% asym_trans
     Tid = D#decision.tid,
-    Outcome = filter_outcome(outcome(Tid, D#decision.outcome)),
+    Max = 10,
+    Outcome = outcome(Tid, D#decision.outcome),
     if 
-	Outcome /= unclear ->
-	    {Tid, Outcome};
-
+	Outcome =:= committed -> {Tid, committed};
+	Outcome =:= aborted   -> {Tid, aborted};
+	Outcome =:= presume_abort -> 
+	    case N > Max of
+		true -> {Tid, aborted};
+		false -> % busy loop for ets decision moving
+		    timer:sleep(10),
+		    wait_for_decision(D, InitBy, N+1)
+	    end;
 	InitBy /= startup ->
 	    %% Wait a while for active transactions
 	    %% to end and try again
-	    timer:sleep(200), 
-	    wait_for_decision(D, InitBy);
-
+	    timer:sleep(100), 
+	    wait_for_decision(D, InitBy, N);
 	InitBy == startup ->
 	    {ok, Res} = call({wait_for_decision, D}),
 	    {Tid, Res}
@@ -545,6 +557,8 @@ sync_trans_tid_serial(ThatCounter) when integer(ThatCounter) ->
 sync_trans_tid_serial(Tid) ->
     sync_trans_tid_serial(Tid#tid.counter).
 
+
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Callback functions from gen_server
 
@@ -683,6 +697,9 @@ handle_call({log_mnesia_down, Node}, _From, State) ->
 
 handle_call({log_master_nodes, Tab, Nodes, UseDir, IsRunning}, _From, State) ->
     do_log_master_nodes(Tab, Nodes, UseDir, IsRunning),
+    {reply, ok, State};
+
+handle_call(sync, _From, State) ->
     {reply, ok, State};
 
 handle_call(Msg, _From, State) ->

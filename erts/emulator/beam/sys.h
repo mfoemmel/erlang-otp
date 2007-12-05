@@ -51,21 +51,6 @@
 #define ERTS_TIMER_THREAD
 #endif
 
-#ifdef ERTS_SMP /* Use port tasks by default on on smp emu */
-#define ERTS_USE_PORT_TASKS 
-#endif
-
-#ifdef ERTS_DONT_USE_PORT_TASKS
-#undef ERTS_USE_PORT_TASKS
-#endif
-
-#if defined(ERTS_SMP_USE_IO_THREAD) && !defined(ERTS_SMP)
-#undef ERTS_SMP_USE_IO_THREAD
-#endif
-#if defined(ERTS_SMP_USE_IO_THREAD) && defined(ERTS_USE_PORT_TASKS)
-#error "Cannot combine I/O thread with port tasks"
-#endif
-
 #if defined (__WIN32__)
 #  include "erl_win_sys.h"
 #elif defined (VXWORKS) 
@@ -100,6 +85,16 @@
 #else
 #    define ENOTSUP -1738659
 #  endif
+#endif
+
+/*
+ * Make sure we have a type for FD's (used by erl_check_io)
+ */
+
+#ifndef ERTS_SYS_FD_TYPE
+typedef int ErtsSysFdType;
+#else
+typedef ERTS_SYS_FD_TYPE ErtsSysFdType;
 #endif
 
 #ifdef ERTS_INLINE
@@ -300,30 +295,30 @@ typedef unsigned char byte;
 #include "erl_lock_check.h"
 #include "erl_smp.h"
 
-#ifdef UNIX
-
 #ifdef ERTS_WANT_BREAK_HANDLING
-#ifdef ERTS_SMP
+#  ifdef ERTS_SMP
 extern erts_smp_atomic_t erts_break_requested;
-#define ERTS_BREAK_REQUESTED ((int) erts_smp_atomic_read(&erts_break_requested))
-#else
+#    define ERTS_BREAK_REQUESTED ((int) erts_smp_atomic_read(&erts_break_requested))
+#  else
 extern volatile int erts_break_requested;
-#define ERTS_BREAK_REQUESTED erts_break_requested
-#endif
+#    define ERTS_BREAK_REQUESTED erts_break_requested
+#  endif
 void erts_do_break_handling(void);
 #endif
 
 #ifdef ERTS_WANT_GOT_SIGUSR1
-#ifdef ERTS_SMP
+#  ifndef UNIX
+#    define ERTS_GOT_SIGUSR1 0
+#  else
+#    ifdef ERTS_SMP
 extern erts_smp_atomic_t erts_got_sigusr1;
-#define ERTS_GOT_SIGUSR1 ((int) erts_smp_atomic_read(&erts_got_sigusr1))
-#else
+#      define ERTS_GOT_SIGUSR1 ((int) erts_smp_atomic_read(&erts_got_sigusr1))
+#    else
 extern volatile int erts_got_sigusr1;
-#define ERTS_GOT_SIGUSR1 erts_got_sigusr1
+#      define ERTS_GOT_SIGUSR1 erts_got_sigusr1
+#    endif
+#  endif
 #endif
-#endif
-
-#endif /* UNIX */
 
 #ifdef ERTS_SMP
 extern erts_smp_atomic_t erts_writing_erl_crash_dump;
@@ -575,10 +570,6 @@ extern void erl_sys_schedule(int);
 extern void erl_sys_init_final(void);
 #else
 void sys_tty_reset(void);
-#endif
-
-#ifdef ERTS_SMP_USE_IO_THREAD
-extern erts_smp_tid_t erts_io_thr_tid; /* io.c */
 #endif
 
 EXTERN_FUNCTION(int, sys_max_files, (_VOID_));
@@ -1163,6 +1154,7 @@ EXTERN_FUNCTION(void, erl_bin_write, (unsigned char *, int, int));
 
 
 #ifdef __WIN32__
+
 void call_break_handler(void);
 char* last_error(void);
 char* win32_errorstr(int);

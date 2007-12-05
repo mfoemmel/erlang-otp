@@ -24,10 +24,6 @@
 -export([store/3,append/3,append_list/3,update/3,update/4,update_counter/3]).
 -export([fold/3,map/2,filter/2,merge/3]).
 
-%% Deprecated interface.
--export([dict_to_list/1,list_to_dict/1]).
--deprecated([{dict_to_list,1},{list_to_dict,1}]).
-
 %% new() -> Dictionary
 
 new() -> [].
@@ -167,13 +163,3 @@ merge(F, [{K1,V1}|D1], [{_K2,V2}|D2]) ->	%K1 == K2
     [{K1,F(K1, V1, V2)}|merge(F, D1, D2)];
 merge(F, [], D2) when is_function(F, 3) -> D2;
 merge(F, D1, []) when is_function(F, 3) -> D1.
-
-%% Deprecated interface.
-
-%% dict_to_list(Dictionary) -> [{Key,Value}]
-
-dict_to_list(D) -> to_list(D).
-
-%% list_to_dict([{Key,Value}]) -> Dictionary.
-
-list_to_dict(L) -> from_list(L).

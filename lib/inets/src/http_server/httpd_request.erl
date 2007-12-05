@@ -31,24 +31,24 @@
 %%%=========================================================================
 %%%  Internal application API
 %%%=========================================================================
-parse([Bin, MaxHeaderSize]) ->
-         parse_method(Bin, [], MaxHeaderSize, []).
+parse([Bin, MaxSizes]) ->
+         parse_method(Bin, [], MaxSizes, []).
 
 %% Functions that may be returned during the decoding process
 %% if the input data is incompleate. 
-parse_method([Bin, Method, MaxHeaderSize, Result]) ->
-    parse_method(Bin, Method, MaxHeaderSize, Result).
+parse_method([Bin, Method, MaxSizes, Result]) ->
+    parse_method(Bin, Method, MaxSizes, Result).
 
-parse_uri([Bin, URI, MaxHeaderSize, Result]) ->
-    parse_uri(Bin, URI, MaxHeaderSize, Result).
+parse_uri([Bin, URI, CurrSize, MaxSizes, Result]) ->
+    parse_uri(Bin, URI, CurrSize, MaxSizes, Result).
 
-parse_version([Bin, Rest, Version, MaxHeaderSize, Result]) ->
-    parse_version(<<Rest/binary, Bin/binary>>, Version, MaxHeaderSize, 
+parse_version([Bin, Rest, Version, MaxSizes, Result]) ->
+    parse_version(<<Rest/binary, Bin/binary>>, Version, MaxSizes, 
 		  Result).
 
-parse_headers([Bin, Rest, Header, Headers, MaxHeaderSize, Result]) ->
+parse_headers([Bin, Rest, Header, Headers, CurrSize, MaxSizes, Result]) ->
     parse_headers(<<Rest/binary, Bin/binary>>, 
-		  Header, Headers, MaxHeaderSize, Result).
+		  Header, Headers, CurrSize, MaxSizes, Result).
 
 whole_body([Bin, Body, Length])  ->
     whole_body(<<Body/binary, Bin/binary>>, Length).    
@@ -111,81 +111,91 @@ update_mod_data(ModData, Method, RequestURI, HTTPVersion, Headers)->
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-parse_method(<<>>, Method, MaxHeaderSize, Result) ->
-    {?MODULE, parse_method, [Method, MaxHeaderSize, Result]};
-parse_method(<<?SP, Rest/binary>>, Method, MaxHeaderSize, Result) ->
-    parse_uri(Rest, [], MaxHeaderSize,
+parse_method(<<>>, Method, MaxSizes, Result) ->
+    {?MODULE, parse_method, [Method, MaxSizes, Result]};
+parse_method(<<?SP, Rest/binary>>, Method, MaxSizes, Result) ->
+    parse_uri(Rest, [], 0, MaxSizes,
 	      [string:strip(lists:reverse(Method)) | Result]);
-parse_method(<<Octet, Rest/binary>>, Method, MaxHeaderSize, Result) ->
-    parse_method(Rest, [Octet | Method], MaxHeaderSize, Result).
+parse_method(<<Octet, Rest/binary>>, Method, MaxSizes, Result) ->
+    parse_method(Rest, [Octet | Method], MaxSizes, Result).
 
-parse_uri(<<>>, URI, MaxHeaderSize, Result) ->
-    {?MODULE, parse_uri, [URI, MaxHeaderSize, Result]};
-parse_uri(<<?SP, Rest/binary>>, URI, MaxHeaderSize, Result) -> 
-    parse_version(Rest, [], MaxHeaderSize, 
+parse_uri(_, _, CurrSize, {MaxURI, _}, _) when CurrSize > MaxURI,
+ MaxURI =/= nolimit -> 
+    %% We do not know the version of the client as it comes after the
+    %% uri send the lowest version in the response so that the client
+    %% will be able to handle it.
+    HttpVersion = "HTTP/0.9", 
+    {error, {uri_too_long, MaxURI}, HttpVersion};
+parse_uri(<<>>, URI, CurrSize, MaxSizes, Result) ->
+    {?MODULE, parse_uri, [URI, CurrSize, MaxSizes, Result]};
+parse_uri(<<?SP, Rest/binary>>, URI, _, MaxSizes, Result) -> 
+    parse_version(Rest, [], MaxSizes, 
 		  [string:strip(lists:reverse(URI)) | Result]);
 %% Can happen if it is a simple HTTP/0.9 request e.i "GET /\r\n\r\n"
-parse_uri(<<?CR, _Rest/binary>> = Data, URI, MaxHeaderSize, Result) -> 
-    parse_version(Data, [], MaxHeaderSize, 
+parse_uri(<<?CR, _Rest/binary>> = Data, URI, _,MaxSizes, Result) ->
+    parse_version(Data, [], MaxSizes, 
 		  [string:strip(lists:reverse(URI)) | Result]);
-parse_uri(<<Octet, Rest/binary>>, URI, MaxHeaderSize, Result) ->
-    parse_uri(Rest, [Octet | URI], MaxHeaderSize, Result).
+parse_uri(<<Octet, Rest/binary>>, URI, CurrSize, MaxSizes, Result) ->
+    parse_uri(Rest, [Octet | URI], CurrSize + 1, MaxSizes, Result).
 
-parse_version(<<>>, Version, MaxHeaderSize, Result) ->
-    {?MODULE, parse_version, [<<>>, Version, MaxHeaderSize, Result]};
-parse_version(<<?CR, ?LF, Rest/binary>>, Version, MaxHeaderSize, Result) ->
-    parse_headers(Rest, [], [], MaxHeaderSize, 
+parse_version(<<>>, Version, MaxSizes, Result) ->
+    {?MODULE, parse_version, [<<>>, Version, MaxSizes, Result]};
+parse_version(<<?CR, ?LF, Rest/binary>>, Version, MaxSizes, Result) ->
+    parse_headers(Rest, [], [], 0, MaxSizes, 
 		  [string:strip(lists:reverse(Version)) | Result]);
-parse_version(<<?CR>> = Data, Version, MaxHeaderSize, Result) ->
-    {?MODULE, parse_version, [Data, Version, MaxHeaderSize, Result]};
-parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result) ->
-    parse_version(Rest, [Octet | Version], MaxHeaderSize, Result).
+parse_version(<<?CR>> = Data, Version, MaxSizes, Result) ->
+    {?MODULE, parse_version, [Data, Version, MaxSizes, Result]};
+parse_version(<<Octet, Rest/binary>>, Version, MaxSizes, Result) ->
+    parse_version(Rest, [Octet | Version], MaxSizes, Result).
 
-parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result]};
-parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], _, Result) ->
-     NewResult = list_to_tuple(lists:reverse([Body, {#http_request_h{}, []} |
-					      Result])),
+parse_headers(_, _, _, CurrSize, {_, MaxHeaderSize}, Result) 
+  when CurrSize > MaxHeaderSize, MaxHeaderSize =/= nolimit -> 
+    HttpVersion = lists:nth(3, lists:reverse(Result)),
+    {error, {header_too_long, MaxHeaderSize}, HttpVersion};
+
+parse_headers(<<>>, Header, Headers, CurrSize, MaxSizes, Result) ->
+    {?MODULE, parse_headers, [<<>>, Header, Headers, CurrSize, 
+			      MaxSizes, Result]};
+parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, [], [], _,  _, Result) ->
+    NewResult = list_to_tuple(lists:reverse([Body, {#http_request_h{}, []} |
+					     Result])),
     {ok, NewResult};
-parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
-	      MaxHeaderSize, Result) ->
+parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers, _,
+	      _, Result) ->
     HTTPHeaders = [lists:reverse(Header) | Headers],
-    Length =   lists:foldl(fun(H, Acc) -> length(H) + Acc end,
-			   0, HTTPHeaders),
-    case ((Length > MaxHeaderSize) or (MaxHeaderSize == nolimit)) of
-	true ->
-	    {error, {header_too_long, MaxHeaderSize}, 
-	     lists:nth(3, lists:reverse(Result))}; % HTTP Version
-	false ->
-	    RequestHeaderRcord = 
-		http_request:headers(HTTPHeaders, #http_request_h{}),
-	    NewResult = 
-		list_to_tuple(lists:reverse([Body, {RequestHeaderRcord, 
+    RequestHeaderRcord = 
+	http_request:headers(HTTPHeaders, #http_request_h{}),
+    NewResult = 
+	list_to_tuple(lists:reverse([Body, {RequestHeaderRcord, 
 						    HTTPHeaders} | Result])),
-	    {ok, NewResult}
-    end;
-parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+    {ok, NewResult};
+
+parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, CurrSize, 
+	      MaxSizes, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
+			      MaxSizes, Result]};
 
 %% There where no headers, which is unlikely to happen.
-parse_headers(<<?CR,?LF>>, [], [], _, Result) ->
+parse_headers(<<?CR,?LF>>, [], [], _, _, Result) ->
      NewResult = list_to_tuple(lists:reverse([<<>>, {#http_request_h{}, []} |
 					      Result])),
     {ok, NewResult};
-parse_headers(<<?CR,?LF>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
-parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers, 
-	      MaxHeaderSize, Result) ->
+parse_headers(<<?CR,?LF>> = Data, Header, Headers, CurrSize, 
+	      MaxSizes, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
+			      MaxSizes, Result]};
+parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers, CurrSize,
+	      MaxSizes, Result) ->
     parse_headers(Rest, [Octet], [lists:reverse(Header) | Headers], 
-		  MaxHeaderSize, Result);
-parse_headers(<<?CR>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+		  CurrSize + 1, MaxSizes, Result);
+parse_headers(<<?CR>> = Data, Header, Headers, CurrSize,  
+	      MaxSizes, Result) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, CurrSize, 
+			      MaxSizes, Result]};
 parse_headers(<<Octet, Rest/binary>>, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, Result).
+	      CurrSize, MaxSizes, Result) ->
+    parse_headers(Rest, [Octet | Header], Headers, CurrSize + 1,
+		  MaxSizes, Result).
 
 whole_body(Body, Length) ->
     case size(Body) of
@@ -268,7 +278,7 @@ format_absolute_uri(OrigUri = "HTTP://" ++ _, _)->
     OrigUri;
 
 format_absolute_uri(Uri,ParsedHeader)->
-    case httpd_util:key1search(ParsedHeader,"host") of
+    case proplists:get_value("host", ParsedHeader) of
 	undefined ->
 	    nohost;
 	Host ->
@@ -276,13 +286,13 @@ format_absolute_uri(Uri,ParsedHeader)->
     end.
 
 get_persistens(HTTPVersion,ParsedHeader,ConfigDB)->
-    case httpd_util:lookup(ConfigDB, persistent_conn, true) of
+    case httpd_util:lookup(ConfigDB, keep_alive, true) of
 	true->
 	    case HTTPVersion of
 		%%If it is version prio to 1.1 kill the conneciton
 		"HTTP/1." ++ NList ->
-		    case httpd_util:key1search(ParsedHeader,
-					       "connection", "keep-alive") of  
+		    case proplists:get_value("conneciton", ParsedHeader,
+					     "keep-alive") of  
 			%%if the connection isnt ordered to go down
 			%%let it live The keep-alive value is the
 			%%older http/1.1 might be older Clients that

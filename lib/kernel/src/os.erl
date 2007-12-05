@@ -33,12 +33,14 @@ type() ->
 version() ->
     erlang:system_info(os_version).
 
+-spec(find_executable/1 :: (string()) -> string() | 'false').
 find_executable(Name) ->
     case os:getenv("PATH") of
 	false -> find_executable(Name, []);
 	Path  -> find_executable(Name, Path)
     end.
 
+-spec(find_executable/2 :: (string(), string()) -> string() | 'false').
 find_executable(Name, Path) ->
     Extensions = extensions(),
     case filename:pathtype(Name) of
@@ -78,8 +80,8 @@ verify_executable(Name0, [Ext|Rest]) ->
 	_ ->
 	    case file:read_file_info(Name1) of
 		{ok, #file_info{mode=Mode}} when Mode band 8#111 =/= 0 ->
-		    %% XXX This test for execution permission is not fool-proof on
-		    %% Unix, since we test if any execution bit is set.
+		    %% XXX This test for execution permission is not full-proof
+		    %% on Unix, since we test if any execution bit is set.
 		    {ok, Name1};
 		_ ->
 		    verify_executable(Name0, Rest)
@@ -121,7 +123,7 @@ extensions() ->
     end.
 
 %% Executes the given command in the default shell for the operating system.
-
+-spec(cmd/1 :: (atom() | string()) -> string()).
 cmd(Cmd) ->
     validate(Cmd),
     case type() of
@@ -135,7 +137,7 @@ cmd(Cmd) ->
 		      end,
 	    Port = open_port({spawn, Command}, [stream, in, eof, hide]),
 	    get_data(Port, []);
-% VxWorks uses a 'sh -c hook' in 'vxcall.c' to run os:cmd.
+	%% VxWorks uses a 'sh -c hook' in 'vxcall.c' to run os:cmd.
 	vxworks ->
 	    Command = lists:concat(["sh -c '", Cmd, "'"]),
 	    Port = open_port({spawn, Command}, [stream, in, eof]),

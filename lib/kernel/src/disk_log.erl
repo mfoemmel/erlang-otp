@@ -43,8 +43,15 @@
 %% To be used for debugging only:
 -export([pid2name/1]).
 
--record(state, {queue = [], messages = [], parent, server, cnt = 0, args,
-		error_status = ok,   %% ok | {error, Reason}
+-type(dlog_state_error() :: 'ok' | {'error', _}).
+
+-record(state, {queue = [],
+		messages = [],
+		parent,
+		server,
+		cnt = 0           :: non_neg_integer(),
+		args,
+		error_status = ok :: dlog_state_error(),
 		cache_error = ok     %% cache write error after timeout
 	       }).
 
@@ -59,6 +66,13 @@
 -compile({inline,[{log_loop,4},{log_end_sync,2},{replies,2},{rflat,1}]}).
 
 %%%----------------------------------------------------------------------
+%%% Contract type specifications
+%%%----------------------------------------------------------------------
+
+-type(bytes() :: binary() | [byte()]).
+-type(notify_return() :: 'ok' | {'error', 'no_such_log'}).
+
+%%%----------------------------------------------------------------------
 %%% API
 %%%----------------------------------------------------------------------
 
@@ -67,94 +81,147 @@
 %% There is one process per log.
 %%-----------------------------------------------------------------      
 
+-spec(open/1 :: (Args :: dlog_options()) -> any()).
 open(A) ->
     disk_log_server:open(check_arg(A, #arg{options = A})).
 
+-spec(log/2 :: (Log :: any(), Term :: any()) -> 
+    'ok' | {'error', any()}). 
 log(Log, Term) -> 
     req(Log, {log, term_to_binary(Term)}).
 
+-spec(blog/2 :: (Log :: any(), Bytes :: bytes()) -> 
+    'ok' | {'error', any()}).
 blog(Log, Bytes) ->
     req(Log, {blog, check_bytes(Bytes)}).
 
+-spec(log_terms/2 :: (Log :: any(), Terms :: [any()]) ->
+    'ok' | {'error', any()}).
 log_terms(Log, Terms) ->
     Bs = terms2bins(Terms),
     req(Log, {log, Bs}).
 
+-spec(blog_terms/2 :: (Log :: any(), Bytes :: [bytes()]) ->
+    'ok' | {'error', any()}).
 blog_terms(Log, Bytess) ->
     Bs = check_bytes_list(Bytess, Bytess),
     req(Log, {blog, Bs}).
 
+-spec(alog/2 :: (Log :: any(), Term :: any()) -> notify_return()).
 alog(Log, Term) -> 
     notify(Log, {alog, term_to_binary(Term)}).
 
+-spec(alog_terms/2 :: (Log :: any(), Terms :: [any()]) -> notify_return()).
 alog_terms(Log, Terms) ->
     Bs = terms2bins(Terms),
     notify(Log, {alog, Bs}).
 
+-spec(balog/2 :: (Log :: any(), Bytes :: bytes()) -> notify_return()).
 balog(Log, Bytes) -> 
     notify(Log, {balog, check_bytes(Bytes)}).
 
+-spec(balog_terms/2 :: (Log :: any(), Bytes :: [bytes()]) -> notify_return()).
 balog_terms(Log, Bytess) ->
     Bs = check_bytes_list(Bytess, Bytess),
     notify(Log, {balog, Bs}).
 
+-spec(close/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 close(Log) -> 
     req(Log, close).
 
+-spec(lclose/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 lclose(Log) ->
     lclose(Log, node()).
 
+-spec(lclose/2 :: (Log :: any(), Node :: node()) ->
+    'ok' | {'error', any()}).
 lclose(Log, Node) ->
     lreq(Log, close, Node).
 
+-spec(truncate/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 truncate(Log) -> 
     req(Log, {truncate, none, truncate, 1}).
 
+-spec(truncate/2 :: (Log :: any(), Head :: any()) ->
+    'ok' | {'error', any()}).
 truncate(Log, Head) ->
     req(Log, {truncate, {ok, term_to_binary(Head)}, truncate, 2}).
 
+-spec(btruncate/2 :: (Log :: any(), Head :: bytes()) ->
+    'ok' | {'error', any()}).
 btruncate(Log, Head) ->
     req(Log, {truncate, {ok, check_bytes(Head)}, btruncate, 2}).
 
+-spec(reopen/2 :: (Log :: any(), Filename :: string()) ->
+    'ok' | {'error', any()}).
 reopen(Log, NewFile) ->
     req(Log, {reopen, NewFile, none, reopen, 2}).
 
+-spec(reopen/3 :: (Log :: any(), Filename :: string(), Head :: any()) ->
+    'ok' | {'error', any()}).
 reopen(Log, NewFile, NewHead) ->
     req(Log, {reopen, NewFile, {ok, term_to_binary(NewHead)}, reopen, 3}).
 
+-spec(breopen/3 :: (Log :: any(), Filename :: string(), Head :: bytes()) ->
+    'ok' | {'error', any()}).
 breopen(Log, NewFile, NewHead) ->
     req(Log, {reopen, NewFile, {ok, check_bytes(NewHead)}, breopen, 3}).
 
+-spec(inc_wrap_file/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 inc_wrap_file(Log) -> 
     req(Log, inc_wrap_file).
 
+-spec(change_size/2 :: (Log :: any(), Size :: integer()) ->
+    'ok' | {'error', any()}).
 change_size(Log, NewSize) -> 
     req(Log, {change_size, NewSize}).
 
+-spec(change_notify/3 :: (Log :: any(), Pid :: pid(), Notify :: bool()) ->
+    'ok' | {'error', any()}).
 change_notify(Log, Pid, NewNotify) -> 
     req(Log, {change_notify, Pid, NewNotify}).
 
+-spec(change_header/2 :: (Log :: any(), Head :: {atom(), any()}) ->
+    'ok' | {'error', any()}).
 change_header(Log, NewHead) ->
     req(Log, {change_header, NewHead}).
 
+-spec(sync/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 sync(Log) -> 
     req(Log, sync).
 
+-spec(block/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 block(Log) -> 
     block(Log, true).
 
+-spec(block/2 :: (Log :: any(), QueueLogRecords :: bool()) ->
+    'ok' | {'error', any()}).
 block(Log, QueueLogRecords) -> 
     req(Log, {block, QueueLogRecords}).
 
+-spec(unblock/1 :: (Log :: any()) ->
+    'ok' | {'error', any()}).
 unblock(Log) -> 
     req(Log, unblock).
 
+-spec(format_error/1 :: (Error :: any()) ->
+    string()).
 format_error(Error) ->
     do_format_error(Error).
 
+-spec(info/1 :: (Log :: any()) ->
+    [{atom(), any()}] | {'error', any()}).
 info(Log) -> 
     sreq(Log, info).
-	      
+
+-spec(pid2name/1 :: (Pid :: pid()) ->
+    {'ok', any()} | 'undefined').	      
 pid2name(Pid) ->
     disk_log_server:start(),
     case ets:lookup(?DISK_LOG_PID_TABLE, Pid) of
@@ -166,9 +233,13 @@ pid2name(Pid) ->
 %% It retuns a {Cont2, ObjList} | eof | {error, Reason}
 %% The initial continuation is the atom 'start'
 
+-spec(chunk/2 :: (Log :: any(), Cont :: any()) ->
+    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}).
 chunk(Log, Cont) ->
     chunk(Log, Cont, infinity).
 
+-spec(chunk/3 :: (Log :: any(), Cont :: any(), N :: pos_integer() | 'infinity') ->
+    {'error', any()} | 'eof' | {any(), [any()]} | {any(), [any()], integer()}).
 chunk(Log, Cont, infinity) ->
     %% There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
     ichunk(Log, Cont, ?MAX_CHUNK_SIZE);
@@ -233,9 +304,13 @@ ichunk_bad_end([B | Bs], Mode, Log, C, Bad, A) ->
 	    ichunk_bad_end(Bs, Mode, Log, C, Bad, [T | A])
     end.
 
+-spec(bchunk/2 :: (Log :: any(), Cont :: any()) ->
+    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}).
 bchunk(Log, Cont) ->
     bchunk(Log, Cont, infinity).
 
+-spec(bchunk/3 :: (Log :: any(), Cont :: any(), N :: 'infinity' | pos_integer()) ->
+    {'error', any()} | 'eof' | {any(), [binary()]} | {any(), [binary()], integer()}).
 bchunk(Log, Cont, infinity) ->
     %% There cannot be more than ?MAX_CHUNK_SIZE terms in a chunk.
     bichunk(Log, Cont, ?MAX_CHUNK_SIZE);
@@ -259,6 +334,8 @@ bichunk_end({C, R, Bad}) when is_record(C, continuation) ->
 bichunk_end(R) ->
     R.
 
+-spec(chunk_step/3 :: (Log :: any(), Cont :: any(), N :: integer()) ->
+    {'ok', any()} | {'error', any()}).
 chunk_step(Log, Cont, N) when is_integer(N) ->
     ichunk_step(Log, Cont, N).
 
@@ -269,11 +346,14 @@ ichunk_step(_Log, More, N) when is_record(More, continuation) ->
 ichunk_step(_Log, _, _) ->
     {error, {badarg, continuation}}.
 
-chunk_info(More) when is_record(More, continuation) ->
+-spec(chunk_info/1 :: (More :: any()) ->
+    [{'node', node()},...] | {'error', {'no_continuation', any()}}).
+chunk_info(More = #continuation{}) ->
    [{node, node(More#continuation.pid)}];
 chunk_info(BadCont) ->
    {error, {no_continuation, BadCont}}.
 
+-spec(accessible_logs/0 :: () -> {[_], [_]}).
 accessible_logs() ->
     disk_log_server:accessible_logs().
 
@@ -281,6 +361,7 @@ istart_link(Server) ->
     {ok, proc_lib:spawn_link(disk_log, init, [self(), Server])}.
 
 %% Only for backwards compatibility, could probably be removed.
+-spec(start/0 :: () -> 'ok').
 start() ->
     disk_log_server:start().
 
@@ -290,7 +371,7 @@ internal_open(Pid, A) ->
 %%% ll_open() and ll_close() are used by disk_log_h.erl, a module not
 %%% (yet) in Erlang/OTP.
 
-%% -> {ok, Res, log(), Cnt} | Error
+%% -spec(ll_open/1 :: (dlog_options()) -> {'ok', Res :: _, #log{}, Cnt :: _} | Error).
 ll_open(A) ->
     case check_arg(A, #arg{options = A}) of
 	{ok, L} -> do_open(L);
@@ -342,7 +423,7 @@ check_arg([{linkto, Pid} |Tail], Res) when is_pid(Pid) ->
 check_arg([{linkto, none} |Tail], Res) ->
     check_arg(Tail, Res#arg{linkto = none});
 check_arg([{name, Name}|Tail], Res) ->
-    check_arg(Tail, Res#arg{name =Name});
+    check_arg(Tail, Res#arg{name = Name});
 check_arg([{repair, true}|Tail], Res) ->
     check_arg(Tail, Res#arg{repair = true});
 check_arg([{repair, false}|Tail], Res) ->
@@ -846,7 +927,7 @@ rflat([B | Bs], L) ->
     rflat(Bs, B ++ L);
 rflat([], L) -> L.
 
-%% -> {ok, Log} | Error
+%% -> {ok, Log} | {error, Error}
 do_change_notify(L, Pid, Notify) ->
     case is_owner(Pid, L) of
 	{true, Notify} ->
@@ -899,6 +980,7 @@ do_close2(_L, S) ->
 system_continue(_Parent, _, State) ->
     loop(State).
 
+-spec(system_terminate/4 :: (_, _, _, #state{}) -> no_return()).
 system_terminate(Reason, _Parent, _, State) ->
     _ = do_stop(State),
     exit(Reason).
@@ -913,6 +995,7 @@ system_code_change(State, _Module, _OldVsn, _Extra) ->
 %%%----------------------------------------------------------------------
 %%% Internal functions
 %%%----------------------------------------------------------------------
+-spec(do_exit/4 :: (#state{}, pid(), _, _) -> no_return()).
 do_exit(S, From, Message0, Reason) ->
     R = do_stop(S),
     Message = case S#state.cache_error of
@@ -926,6 +1009,7 @@ do_exit(S, From, Message0, Reason) ->
     ?PROFILE(ep:done()),
     exit(Reason).
 
+-spec(do_fast_exit/3 :: (#state{}, pid(), _) -> no_return()).
 do_fast_exit(S, Server, Message) ->
     _ = do_stop(S),
     Server ! {disk_log, self(), Message},
@@ -1000,6 +1084,7 @@ rename_file([Ext|Exts], File, NewFile, Res) ->
 rename_file([], _File, _NewFiles, Res) -> Res.
 
 %% "Old" error messages have been kept, arg_mismatch has been added.
+%%-spec(compare_arg/4 :: (dlog_options(), #arg{}, 
 compare_arg([], _A, none, _OrigHead) ->
     % no header option given
     ok;
@@ -1017,6 +1102,8 @@ compare_arg([{Attr, Val} | Tail], A, Head, OrigHead) ->
 	    Error
     end.
 
+-spec(compare_arg/3 :: (atom(), _, #arg{}) ->
+	     'ok' | {'not_ok', _} | {'error', {atom(), _}}).
 compare_arg(file, F, A) when F =/= A#arg.file ->
     {error, {name_already_open, A#arg.name}};
 compare_arg(mode, read_only, A) when A#arg.mode =:= read_write ->
@@ -1420,7 +1507,8 @@ do_unblock(L, S) ->
     [] = S#state.messages, % assertion
     S#state{queue = [], messages = lists:reverse(S#state.queue)}.
 
-%% -> integer() | {error, Error, integer()}
+-spec(do_log/2 :: (#log{}, [binary()]) -> integer() | {'error', _, integer()}).
+
 do_log(L, B) when L#log.type =:= halt ->
     #log{format = Format, extra = Halt} = L,
     #halt{curB = CurSize, size = Sz} = Halt,
@@ -1675,6 +1763,8 @@ nearby_pid(Log, Node) ->
 	    get_near_pid(Pids, Node)
     end.
 
+-spec(get_near_pid/2 :: ([pid(),...], node()) -> pid()).
+
 get_near_pid([Pid | _], Node) when node(Pid) =:= Node -> Pid;
 get_near_pid([Pid], _ ) -> Pid;
 get_near_pid([_ | T], Node) -> get_near_pid(T, Node).
@@ -1759,7 +1849,8 @@ cache_error(S, Pids) ->
 state_ok(S) ->
     state_err(S, ok).
 
-%% Note: Err = ok | {error, Reason}
+-spec(state_err/2 :: (#state{}, dlog_state_error()) -> #state{}).
+
 state_err(S, Err) when S#state.error_status =:= Err -> S;
 state_err(S, Err) ->
     notify_owners({error_status, Err}),

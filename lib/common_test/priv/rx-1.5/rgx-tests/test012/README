@@ -1,0 +1,45 @@
+These tests come from several sources, notably a test-suite started by
+Henry Spencer, and the "Khadafy" test suite by Scott Anderson.
+
+Each test consists of a regexp and a string, and an expected result
+from comparing the string to the regexp.  Only three results are
+checked for: bad regexp, regexp-ok but no match, and regexp matched.
+
+The tests come in three files:
+
+ runtests.c	-- The driver program.
+ TESTS		-- The list of test cases
+ TESTS2C.sed	-- A script to convert test cases into C.
+
+For each test case, a sequence number is printed.  If there is a
+problem with that case, more information is printed.  Output like
+this:
+
+  #0
+  #1
+  #2
+  ...
+
+indicates a successful run.  If an error occurs, some of the output
+lines will begin with "###".
+
+With a single numeric argument, runtests executes just that
+test and no others.  This is handy when debugging.
+
+Sometimes a bug will occur when all tests are run, but disappear when
+just the problematic test is run.  Usually this has to do with memory
+or cache corruption.
+
+This list of tests used by runtests is found in the file TESTS.  Each
+line of that file is a list of colon separated fields similar to:
+
+  1:^(ab|cd)e:abcde
+
+The first field is the expected return value of regexec, or '2' meaning
+that the pattern is not valid.
+
+The second field is the regular expression being tested.
+
+The third field is the string to which the pattern is to be compared.
+
+

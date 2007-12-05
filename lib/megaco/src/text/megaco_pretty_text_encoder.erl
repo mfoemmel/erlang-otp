@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %%% Purpose: Encode PRETTY Megaco/H.248 text messages from internal form
@@ -108,8 +110,27 @@ version_of(_EC, Bin) ->
 decode_message(EC, Bin) ->
     decode_message(EC, dynamic, Bin).
 
-decode_message([], _, Bin) when binary(Bin) ->
-    %%    d("decode_message -> entry"),
+decode_message([], _, Bin) when is_binary(Bin) ->
+    case megaco_text_scanner:scan(Bin) of
+	{ok, Tokens, 1, _LastLine} ->
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 3, _LastLine} ->
+	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+    end;
+decode_message([{version3,v3}], _, Bin) when is_binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -129,8 +150,7 @@ decode_message([], _, Bin) when binary(Bin) ->
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,prev3c}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3c) -> entry"),
+decode_message([{version3,prev3c}], _, Bin) when is_binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -150,8 +170,8 @@ decode_message([{version3,prev3c}], _, Bin) when binary(Bin) ->
 	{error, Reason, Line} ->
 	    parse_error(Reason, Line, [], Bin)
     end;
-decode_message([{version3,prev3b}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3b) -> entry"),
+decode_message([{version3,prev3b}], _, Bin) when is_binary(Bin) ->
+
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -171,8 +191,7 @@ decode_message([{version3,prev3b}], _, Bin) when binary(Bin) ->
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,prev3a}], _, Bin) when binary(Bin) ->
-%%    d("decode_message(prev3a) -> entry"),
+decode_message([{version3,prev3a}], _, Bin) when is_binary(Bin) ->
     case megaco_text_scanner:scan(Bin) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -192,29 +211,7 @@ decode_message([{version3,prev3a}], _, Bin) when binary(Bin) ->
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,v3}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3a) -> entry"),
-    case megaco_text_scanner:scan(Bin) of
-	{ok, Tokens, 1, _LastLine} ->
-	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
-
-	{ok, Tokens, 2, _LastLine} ->
-	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
-
-	{ok, Tokens, 3, _LastLine} ->
-	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
-
-	{ok, _Tokens, V, _LastLine} ->
-	    {error, {unsupported_version, V}};
-
-	{error, Reason, Tokens, Line} ->
-	    parse_error(Reason, Line, Tokens, Bin);
-
-	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
-    end;
-decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
-    %% d("decode_message(flex) -> entry"),
+decode_message([{flex, Port}], _, Bin) when is_binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -228,20 +225,35 @@ decode_message([{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	%% 	{error, Reason, Tokens, Line} ->
-	%% 	    parse_error(Reason, Line, Tokens, Bin);
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,prev3c},{flex, Port}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3c,flex) -> entry"),
+decode_message([{version3,v3},{flex, Port}], _, Bin) when is_binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
 	{ok, Tokens, 1, _LastLine} ->
-	    %% 	       io:format("decode_message(prev3c,flex) -> entry with"
-	    %% 			 "~n   _LastLine: ~p"
-	    %% 			 "~n   Tokens: ~p"
-	    %% 			 "~n", [_LastLine, Tokens]),	    
+	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 2, _LastLine} ->
+	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
+
+	{ok, Tokens, 3, _LastLine} ->
+	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
+
+	{ok, _Tokens, V, _LastLine} ->
+	    {error, {unsupported_version, V}};
+
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
+
+	{error, Reason, Line} ->               %% OTP-4007
+	    parse_error(Reason, Line, [], Bin) %% OTP-4007
+    end;
+decode_message([{version3,prev3c},{flex, Port}], _, Bin) when is_binary(Bin) ->
+    case megaco_flex_scanner:scan(Bin, Port) of
+	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
 
 	{ok, Tokens, 2, _LastLine} ->
@@ -253,20 +265,15 @@ decode_message([{version3,prev3c},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	%% 	{error, Reason, Tokens, Line} ->
-	%% 	    parse_error(Reason, Line, Tokens, Bin);
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,prev3b},{flex, Port}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3b,flex) -> entry"),
+decode_message([{version3,prev3b},{flex, Port}], _, Bin) when is_binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
 	{ok, Tokens, 1, _LastLine} ->
-	    %% 	       io:format("decode_message(prev3b,flex) -> entry with"
-	    %% 			 "~n   _LastLine: ~p"
-	    %% 			 "~n   Tokens: ~p"
-	    %% 			 "~n", [_LastLine, Tokens]),	    
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
 
 	{ok, Tokens, 2, _LastLine} ->
@@ -278,14 +285,13 @@ decode_message([{version3,prev3b},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	%% 	{error, Reason, Tokens, Line} ->
-	%% 	    parse_error(Reason, Line, Tokens, Bin);
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,prev3a},{flex, Port}], _, Bin) when binary(Bin) ->
-    %%    d("decode_message(prev3a,flex) -> entry"),
+decode_message([{version3,prev3a},{flex, Port}], _, Bin) when is_binary(Bin) ->
     case megaco_flex_scanner:scan(Bin, Port) of
 	{ok, Tokens, 1, _LastLine} ->
 	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
@@ -299,43 +305,19 @@ decode_message([{version3,prev3a},{flex, Port}], _, Bin) when binary(Bin) ->
 	{ok, _Tokens, V, _LastLine} ->
 	    {error, {unsupported_version, V}};
 
-	%% 	{error, Reason, Tokens, Line} ->
-	%% 	    parse_error(Reason, Line, Tokens, Bin);
+	%% {error, Reason, Tokens, Line} ->
+	%%     parse_error(Reason, Line, Tokens, Bin);
 
 	{error, Reason, Line} ->               %% OTP-4007
 	    parse_error(Reason, Line, [], Bin) %% OTP-4007
     end;
-decode_message([{version3,v3},{flex, Port}], _, Bin) when binary(Bin) ->
-    %% d("decode_message(v3,flex) -> entry"),
-    case megaco_flex_scanner:scan(Bin, Port) of
-	{ok, Tokens, 1, _LastLine} ->
-	    do_decode_message(?V1_PARSE_MOD, Tokens, Bin);
-
-	{ok, Tokens, 2, _LastLine} ->
-	    do_decode_message(?V2_PARSE_MOD, Tokens, Bin);
-
-	{ok, Tokens, 3, _LastLine} ->
-	    do_decode_message(?V3_PARSE_MOD, Tokens, Bin);
-
-	{ok, _Tokens, V, _LastLine} ->
-	    {error, {unsupported_version, V}};
-
-	%% 	{error, Reason, Tokens, Line} ->
-	%% 	    parse_error(Reason, Line, Tokens, Bin);
-
-	{error, Reason, Line} ->               %% OTP-4007
-	    parse_error(Reason, Line, [], Bin) %% OTP-4007
-    end;
-decode_message(EC, _, Bin) when binary(Bin) ->
+decode_message(EC, _, Bin) when is_binary(Bin) ->
     {error, {bad_encoding_config, EC}};
 decode_message(_EC, _, _BadBin) ->
     {error, bad_binary}.
 
 
 do_decode_message(ParseMod, Tokens, Bin) ->
-%%     io:format("do_decode_message -> entry with"
-%% 		    "~n   ParseMod: ~p"
-%% 		    "~n", [ParseMod]),
     case (catch ParseMod:parse(Tokens)) of
 	{ok, MegacoMessage} ->
 	    {ok, MegacoMessage};
@@ -348,23 +330,23 @@ do_decode_message(ParseMod, Tokens, Bin) ->
     end.
 
 
-decode_mini_message(EC, _, Bin) when binary(Bin) ->
+decode_mini_message(EC, _, Bin) when is_binary(Bin) ->
     megaco_text_mini_decoder:decode_message(EC, Bin).
 
 
 parse_error(Reason, Tokens, Chars) ->
-%%     io:format("do_decode_message -> entry with"
-%% 		  "~n   Reason: ~p"
-%% 		  "~n   Tokens: ~p"
-%% 		  "~n", [Reason, Tokens]),
+    %% io:format("parse_error -> entry with"
+    %%           "~n   Reason: ~p"
+    %% 	         "~n   Tokens: ~p"
+    %% 	         "~n", [Reason, Tokens]),
     {error, [{reason, Reason}, {token, Tokens}, {chars, Chars}]}.
 
 parse_error(Reason, Line, Tokens, Chars) ->
-%%     io:format("do_decode_message -> entry with"
-%% 		    "~n   Reason: ~p"
-%% 		    "~n   Line:   ~p"
-%% 		    "~n   Tokens: ~p"
-%% 		    "~n", [Reason, Line, Tokens]),
+    %% io:format("parse_error -> entry with"
+    %% 	         "~n   Reason: ~p"
+    %% 	         "~n   Line:   ~p"
+    %% 	         "~n   Tokens: ~p"
+    %% 	         "~n", [Reason, Line, Tokens]),
     {error, [{reason, Reason, Line}, {token, Tokens}, {chars, Chars}]}.
 
 
@@ -383,14 +365,14 @@ encode_transaction([{version3,_}|EC], 2, Trans) ->
     megaco_pretty_text_encoder_v2:encode_transaction(EC, Trans);
 encode_transaction(EC, 2, Trans) ->
     megaco_pretty_text_encoder_v2:encode_transaction(EC, Trans);
+encode_transaction([{version3,v3}|EC], 3, Trans) ->
+    megaco_pretty_text_encoder_v3:encode_transaction(EC, Trans);
 encode_transaction([{version3,prev3c}|EC], 3, Trans) ->
     megaco_pretty_text_encoder_prev3c:encode_transaction(EC, Trans);
 encode_transaction([{version3,prev3b}|EC], 3, Trans) ->
     megaco_pretty_text_encoder_prev3b:encode_transaction(EC, Trans);
 encode_transaction([{version3,prev3a}|EC], 3, Trans) ->
     megaco_pretty_text_encoder_prev3a:encode_transaction(EC, Trans);
-encode_transaction([{version3,v3}|EC], 3, Trans) ->
-    megaco_pretty_text_encoder_v3:encode_transaction(EC, Trans);
 encode_transaction(EC, 3, Trans) ->
     megaco_pretty_text_encoder_v3:encode_transaction(EC, Trans);
 encode_transaction(_EC, V, _Trans) ->
@@ -409,6 +391,9 @@ encode_action_requests([{version3,_}|EC], 2, ActReqs) when list(ActReqs) ->
     megaco_pretty_text_encoder_v2:encode_action_requests(EC, ActReqs);
 encode_action_requests(EC, 2, ActReqs) when list(ActReqs) ->
     megaco_pretty_text_encoder_v2:encode_action_requests(EC, ActReqs);
+encode_action_requests([{version3,v3}|EC], 3, ActReqs) 
+  when list(ActReqs) ->
+    megaco_pretty_text_encoder_v3:encode_action_requests(EC, ActReqs);
 encode_action_requests([{version3,prev3c}|EC], 3, ActReqs) 
   when list(ActReqs) ->
     megaco_pretty_text_encoder_prev3c:encode_action_requests(EC, ActReqs);
@@ -418,9 +403,6 @@ encode_action_requests([{version3,prev3b}|EC], 3, ActReqs)
 encode_action_requests([{version3,prev3a}|EC], 3, ActReqs) 
   when list(ActReqs) ->
     megaco_pretty_text_encoder_prev3a:encode_action_requests(EC, ActReqs);
-encode_action_requests([{version3,v3}|EC], 3, ActReqs) 
-  when list(ActReqs) ->
-    megaco_pretty_text_encoder_v3:encode_action_requests(EC, ActReqs);
 encode_action_requests(EC, 3, ActReqs) when list(ActReqs) ->
     megaco_pretty_text_encoder_v3:encode_action_requests(EC, ActReqs);
 encode_action_requests(_EC, V, _ActReqs) ->
@@ -439,14 +421,14 @@ encode_action_request([{version3,_}|EC], 2, ActReq) ->
     megaco_pretty_text_encoder_v2:encode_action_request(EC, ActReq);
 encode_action_request(EC, 2, ActReq) ->
     megaco_pretty_text_encoder_v2:encode_action_request(EC, ActReq);
+encode_action_request([{version3,v3}|EC], 3, ActReq) ->
+    megaco_pretty_text_encoder_v3:encode_action_request(EC, ActReq);
 encode_action_request([{version3,prev3c}|EC], 3, ActReq) ->
     megaco_pretty_text_encoder_prev3c:encode_action_request(EC, ActReq);
 encode_action_request([{version3,prev3b}|EC], 3, ActReq) ->
     megaco_pretty_text_encoder_prev3b:encode_action_request(EC, ActReq);
 encode_action_request([{version3,prev3a}|EC], 3, ActReq) ->
     megaco_pretty_text_encoder_prev3a:encode_action_request(EC, ActReq);
-encode_action_request([{version3,v3}|EC], 3, ActReq) ->
-    megaco_pretty_text_encoder_v3:encode_action_request(EC, ActReq);
 encode_action_request(EC, 3, ActReq) ->
     megaco_pretty_text_encoder_v3:encode_action_request(EC, ActReq);
 encode_action_request(_EC, V, _ActReq) ->
@@ -468,14 +450,14 @@ encode_command_request([{version3,_}|EC], 2, CmdReq) ->
     megaco_pretty_text_encoder_v2:encode_command_request(EC, CmdReq);
 encode_command_request(EC, 2, CmdReq) ->
     megaco_pretty_text_encoder_v2:encode_command_request(EC, CmdReq);
+encode_command_request([{version3,v3}|EC], 3, CmdReq) ->
+    megaco_pretty_text_encoder_v3:encode_command_request(EC, CmdReq);
 encode_command_request([{version3,prev3c}|EC], 3, CmdReq) ->
     megaco_pretty_text_encoder_prev3c:encode_command_request(EC, CmdReq);
 encode_command_request([{version3,prev3b}|EC], 3, CmdReq) ->
     megaco_pretty_text_encoder_prev3b:encode_command_request(EC, CmdReq);
 encode_command_request([{version3,prev3a}|EC], 3, CmdReq) ->
     megaco_pretty_text_encoder_prev3a:encode_command_request(EC, CmdReq);
-encode_command_request([{version3,v3}|EC], 3, CmdReq) ->
-    megaco_pretty_text_encoder_v3:encode_command_request(EC, CmdReq);
 encode_command_request(EC, 3, CmdReq) ->
     megaco_pretty_text_encoder_v3:encode_command_request(EC, CmdReq);
 encode_command_request(_EC, V, _CmdReq) ->
@@ -487,6 +469,9 @@ encode_command_request(_EC, V, _CmdReq) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_reply(ActRep) ->
+%%     io:format("~p:encode_action_reply -> entry with"
+%% 	      "~n   ActRep: ~p"
+%% 	      "~n", [?MODULE, ActRep]),
     encode_action_reply([], 1, ActRep).
 				       
 encode_action_reply([{version3,_}|EC], 1, ActRep) ->
@@ -497,14 +482,14 @@ encode_action_reply([{version3,_}|EC], 2, ActRep) ->
     megaco_pretty_text_encoder_v2:encode_action_reply(EC, ActRep);
 encode_action_reply(EC, 2, ActRep) ->
     megaco_pretty_text_encoder_v2:encode_action_reply(EC, ActRep);
+encode_action_reply([{version3,v3}|EC], 3, ActRep) ->
+    megaco_pretty_text_encoder_v3:encode_action_reply(EC, ActRep);
 encode_action_reply([{version3,prev3c}|EC], 3, ActRep) ->
     megaco_pretty_text_encoder_prev3c:encode_action_reply(EC, ActRep);
 encode_action_reply([{version3,prev3b}|EC], 3, ActRep) ->
     megaco_pretty_text_encoder_prev3b:encode_action_reply(EC, ActRep);
 encode_action_reply([{version3,prev3a}|EC], 3, ActRep) ->
     megaco_pretty_text_encoder_prev3a:encode_action_reply(EC, ActRep);
-encode_action_reply([{version3,v3}|EC], 3, ActRep) ->
-    megaco_pretty_text_encoder_v3:encode_action_reply(EC, ActRep);
 encode_action_reply(EC, 3, ActRep) ->
     megaco_pretty_text_encoder_v3:encode_action_reply(EC, ActRep);
 encode_action_reply(_EC, V, _ActRep) ->
@@ -541,7 +526,7 @@ trim_quoted_string([]) ->
 %% A utility function to pretty print the tags found in a megaco message
 %%----------------------------------------------------------------------
 
--define(TT2S_BEST_VERSION, prev3c).
+-define(TT2S_BEST_VERSION, v3).
 
 token_tag2string(Tag) ->
     token_tag2string(Tag, ?TT2S_BEST_VERSION).
@@ -555,9 +540,9 @@ token_tag2string(Tag, 2) ->
 token_tag2string(Tag, v2) ->
     megaco_pretty_text_encoder_v2:token_tag2string(Tag);
 token_tag2string(Tag, 3) ->
-    token_tag2string(Tag, prev3c);
+    token_tag2string(Tag, v3);
 token_tag2string(Tag, v3) ->
-    token_tag2string(Tag, prev3c);
+    megaco_pretty_text_encoder_v3:token_tag2string(Tag);
 token_tag2string(Tag, prev3b) ->
     megaco_pretty_text_encoder_prev3b:token_tag2string(Tag);
 token_tag2string(Tag, prev3c) ->
@@ -569,10 +554,11 @@ token_tag2string(Tag, _Vsn) ->
 
 %% d(F) ->
 %%     d(F, []).
-%% 
+
 %% d(F, A) ->
-%%     d(get(dbg), F, A).
-%% 
+%%     %% d(get(dbg), F, A).
+%%     d(true, F, A).
+
 %% d(true, F, A) ->
 %%     io:format("~p:" ++ F ++ "~n", [?MODULE|A]);
 %% d(_, _, _) ->

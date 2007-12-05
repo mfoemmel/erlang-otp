@@ -121,7 +121,7 @@ static Eterm ull_to_integer(unsigned long long x, Process *p)
     unsigned int ds, i;
     size_t sz;
     Eterm *hp;
-    digit_t *xp;
+    ErtsDigit *xp;
 
     if (x <= (unsigned long long)MAX_SMALL)
 	return make_small(x);
@@ -131,18 +131,18 @@ static Eterm ull_to_integer(unsigned long long x, Process *p)
     tmpx = x;
     do {
 	++ds;
-	tmpx >>= D_EXP;
+	tmpx = (tmpx >> (D_EXP / 2)) >> (D_EXP / 2);
     } while (tmpx != 0);
 
     sz = BIG_NEED_SIZE(ds);	/* number of words including arity */
     hp = HAlloc(p, sz);
     *hp = make_pos_bignum_header(sz-1);
 
-    xp = (digit_t*)(hp+1);
+    xp = (ErtsDigit*)(hp+1);
     i = 0;
     do {
-	xp[i++] = (digit_t)x;
-	x >>= D_EXP;
+	xp[i++] = (ErtsDigit)x;
+	x = (x >> (D_EXP / 2)) >> (D_EXP / 2);
     } while (i < ds);
     while (i & (BIG_DIGITS_PER_WORD-1))
 	xp[i++] = 0;

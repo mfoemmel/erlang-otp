@@ -23,7 +23,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/syntax_tools-$(VSN)
 
 EBIN = ../ebin
 
-ERL_COMPILE_FLAGS += +warn_unused_vars +nowarn_shadow_vars +warn_unused_import
+ERL_COMPILE_FLAGS += +warn_unused_vars +nowarn_shadow_vars +warn_unused_import +warn_obsolete_guard
 
 SOURCES=erl_syntax.erl erl_prettypr.erl erl_syntax_lib.erl	\
 	erl_comment_scan.erl erl_recomment.erl erl_tidy.erl	\

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1997-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpc_lib).
 
@@ -299,7 +301,8 @@ import_mib({{'RFC1155-SMI', ImportsFromMib},Line}) ->
 	     #asn1_type{bertype = 'TimeTicks', aliasname = 'TimeTicks',
 			lo = 0, hi=4294967295},
 	     #asn1_type{bertype = 'Opaque', aliasname = 'Opaque'}],
-    import_built_in_loop(ImportsFromMib,Nodes,Types,[],'RFC1155-SMI',Line);
+    Macros = ['OBJECT-TYPE'],
+    import_built_in_loop(ImportsFromMib,Nodes,Types,Macros,'RFC1155-SMI',Line);
 import_mib({{MibName, ImportsFromMib},Line}) ->
     import_from_file({{MibName, ImportsFromMib},Line}).
 

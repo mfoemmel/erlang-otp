@@ -1,0 +1,11 @@
+#!/bin/sh
+
+HDR=$1
+LIB=$2
+
+for n in 0 1 2 3; do
+  sed -f TESTS2C.sed TESTS-$n > testcases.h
+  rm -f regex.h
+  ln -s $HDR regex.h
+  gcc -o runtests-$n runtests.c $LIB
+done

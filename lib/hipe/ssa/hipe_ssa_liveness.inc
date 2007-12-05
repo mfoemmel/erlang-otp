@@ -18,6 +18,7 @@
 %%
 -ifdef(LIVENESS_NEEDED).
 -export([ssa_liveness__analyze/1,
+	 ssa_liveness__livein/2,
 	 ssa_liveness__livein/3]).
 %%	 ssa_liveness__liveout/2]).
 -endif.
@@ -140,10 +141,18 @@ ssa_liveness__liveout(Liveness, L) ->
 -ifdef(LIVENESS_NEEDED).
 ssa_liveness__livein(Liveness, L, Pred) ->
   set_to_list(livein_set(Liveness, L, Pred)).
+
+ssa_liveness__livein(Liveness, L) ->
+  set_to_list(livein_set(Liveness, L)).
+
+livein_set(Liveness, L) ->
+  {{_Gen,_Kill,{TotalDirGen, _DirGen}}, LiveIn, _LiveOut, _Successors} = 
+    liveness_lookup(L, Liveness),
+  set_union(TotalDirGen, LiveIn).
 -endif.
 
 livein_set(Liveness, L, Pred) ->
-  {{_Gen,_Kill,DirGen}, LiveIn, _LiveOut, _Successors} = 
+  {{_Gen,_Kill,{_TotalDirGen, DirGen}}, LiveIn, _LiveOut, _Successors} = 
     liveness_lookup(L, Liveness),
   case gb_trees:lookup(Pred, DirGen) of
     none ->
@@ -208,12 +217,19 @@ make_bb_transfer([I|Is], Succ) ->
       {Gen2, Kill2}
   end.
 
-get_directed_gen([I|Left])->
+get_directed_gen(Code) ->
+  Map = get_directed_gen_1(Code),
+  TotalGen = lists:foldl(fun({_Pred, Gen}, Acc) ->
+			     set_union(Gen, Acc)
+			 end, new_set(), gb_trees:to_list(Map)),
+  {TotalGen, Map}.
+
+get_directed_gen_1([I|Left])->
   case ?CODE:is_phi(I) of
     false -> 
       gb_trees:empty();
     true -> 
-      Map = get_directed_gen(Left),
+      Map = get_directed_gen_1(Left),
       ArgList = ?CODE:phi_arglist(I),
       lists:foldl(fun update_directed_gen/2, Map, ArgList)
   end.

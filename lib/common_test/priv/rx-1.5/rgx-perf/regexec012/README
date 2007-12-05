@@ -1,0 +1,30 @@
+This test uses the same framework as the regcomp012 performance
+tests and the test012 correctness tests, but different files
+of test cases.
+
+In fact, this test uses only one regexp:
+
+	(a.*bcde|a.*cde|a.*de|a.*e)(a.*b|a.*c|a.*d|a.*e)\1
+
+The test is run 3 times, each time doubling the length of the string
+being compared to the regexp.  Rx takes a time that is quadratic in
+the length of that string, Regex is exponential.
+
+If you run
+	
+	./=compile ../../regex/regex.h  ../../=build/regex/regex.o
+	./=doit ,gnu
+
+four files are generated.  ",gnu-<n>" for <n> = 0,1,2 or 3 contains
+the timing results for that test. ",gnu-plot" contains a summary
+of the tests, usitable for plotting with gnuplot.  Try this sequence:
+
+	% ./=compile ../../rx/inst-rxposix.h ../../=build/rx/librx.a
+	% ./=doit ,rx
+	% ./=compile ../../regex/regex.h  ../../=build/regex/regex.o
+	% ./=doit ,gnu
+	% gnuplot
+	gnuplot> plot ",rx-plot" with linespoints, ",gnu-plot" with linespoints
+	...
+	gnuplot> quit
+

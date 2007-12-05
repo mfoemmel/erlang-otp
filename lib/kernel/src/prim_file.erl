@@ -144,24 +144,24 @@ open(Port, File, ModeList) when is_port(Port),
                                 is_list(File), 
                                 is_list(ModeList) ->
     case open_mode(ModeList) of
-	{error, _} = Error ->
-	    Error;
-	{ok, Mode, _Portopts, _Setopts} ->
-	    open_int(Port, File, Mode, [])
+	{Mode, _Portopts, _Setopts} ->
+	    open_int(Port, File, Mode, []);
+	Reason ->
+	    {error, Reason}
     end;
 open(_,_,_) ->
-    {error, einval}.
+    {error, badarg}.
 
 %% Opens a file. Returns {error, Reason} | {ok, FileDescriptor}.
 open(File, ModeList) when is_list(File), is_list(ModeList) ->
     case open_mode(ModeList) of
-	{error, _} = Error ->
-	    Error;
-	{ok, Mode, Portopts, Setopts} ->
-	    open_int({?FD_DRV, Portopts}, File, Mode, Setopts)
+	{Mode, Portopts, Setopts} ->
+	    open_int({?FD_DRV, Portopts}, File, Mode, Setopts);
+	Reason ->
+	    {error, Reason}
     end;
 open(_, _) ->
-    {error, einval}.
+    {error, badarg}.
 
 %% Opens a port that can be used for open/3 or read_file/2.
 %% Returns {ok, Port} | {error, Reason}.
@@ -174,7 +174,7 @@ open(Portopts) when is_list(Portopts) ->
 	    Other
     end;
 open(_) ->
-    {error, einval}.
+    {error, badarg}.
 
 open_int({Driver, Portopts}, File, Mode, Setopts) ->
     case drv_open(Driver, Portopts) of
@@ -185,17 +185,12 @@ open_int({Driver, Portopts}, File, Mode, Setopts) ->
     end;
 open_int(Port, File, Mode, Setopts) ->
     M = Mode band ?EFILE_MODE_MASK,
-    case (catch list_to_binary([<<?FILE_OPEN, M:32>>, File, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    case drv_command(Port, Cmd) of
-		{ok, Number} ->
-		    open_int_setopts(Port, Number, Setopts);
-		{error, _} = Error ->
-		    drv_close(Port),
-		    Error
-	    end
+    case drv_command(Port, [<<?FILE_OPEN, M:32>>, File, 0]) of
+	{ok, Number} ->
+	    open_int_setopts(Port, Number, Setopts);
+	Error ->
+	    drv_close(Port),
+	    Error
     end.
 
 open_int_setopts(Port, Number, []) ->
@@ -204,7 +199,7 @@ open_int_setopts(Port, Number, [Cmd | Tail]) ->
     case drv_command(Port, Cmd) of
 	ok ->
 	    open_int_setopts(Port, Number, Tail);
-	{error, _} = Error ->
+	Error ->
 	    drv_close(Port),
 	    Error
     end.
@@ -217,7 +212,7 @@ close(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
     case drv_command(Port, <<?FILE_CLOSE>>) of
 	ok ->
 	    drv_close(Port);
-	{error, _} = Error ->
+	Error ->
 	    Error
     end;
 %% Closes a port opened with open/1.
@@ -231,62 +226,69 @@ write(#file_descriptor{module = ?MODULE, data = {Port, _}}, Bytes) ->
     case drv_command(Port, [?FILE_WRITE,Bytes]) of
 	{ok, _Size} ->
 	    ok;
-	{error, _} = Error ->
+	Error ->
 	    Error
     end.
 
 %% Returns ok | {error, {WrittenCount, Reason}}
-pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when is_list(L) ->
-    case (catch pwrite_int(Port, L, 0, [], [])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Result ->
-	    Result
-    end;
-pwrite(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, L)
+  when is_list(L) ->
+    pwrite_int(Port, L, 0, [], []).
 
 pwrite_int(_, [], 0, [], []) ->
     ok;
 pwrite_int(Port, [], N, Spec, Data) ->
     Header = list_to_binary([<<?FILE_PWRITEV, N:32>> | reverse(Spec)]),
-    case drv_command(Port, [Header | reverse(Data)]) of
+    case drv_command_raw(Port, [Header | reverse(Data)]) of
 	{ok, _Size} ->
 	    ok;
-	{error, {_R, _Reason}} = Error ->
+	Error ->
 	    Error
     end;
-pwrite_int(Port, [{Offs, Bin} | T], N, Spec, Data)
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       is_binary(Bin) ->
-    Size = size(Bin),
-    pwrite_int(Port, T, N+1, 
-	       [<<Offs:64/signed, Size:64>> | Spec], 
-	       [Bin | Data]);
 pwrite_int(Port, [{Offs, Bytes} | T], N, Spec, Data)
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       is_list(Bytes) ->
-    Bin = list_to_binary(Bytes), % Might throw badarg
+  when is_integer(Offs) ->
+    if
+	-(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE ->
+	    pwrite_int(Port, T, N, Spec, Data, Offs, Bytes);
+	true ->
+	    {error, einval}
+    end;
+pwrite_int(_, [_|_], _N, _Spec, _Data) ->
+    {error, badarg}.
+
+pwrite_int(Port, T, N, Spec, Data, Offs, Bin)
+  when is_binary(Bin) ->
     Size = size(Bin),
     pwrite_int(Port, T, N+1, 
 	       [<<Offs:64/signed, Size:64>> | Spec], 
 	       [Bin | Data]);
-pwrite_int(_, [_|_], _N, _Spec, _Data) ->
-    {error, einval}.
+pwrite_int(Port, T, N, Spec, Data, Offs, Bytes) ->
+    try list_to_binary(Bytes) of
+	Bin ->
+	    pwrite_int(Port, T, N, Spec, Data, Offs, Bin)
+    catch
+	error:Reason ->
+	    {error, Reason}
+    end.
 
 
 
 %% Returns {error, Reason} | ok.
 pwrite(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Bytes) 
-       when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
-    case pwrite_int(Port, [{Offs, Bytes}], 0, [], []) of
-	{error, {_, Reason}} ->
-	    {error, Reason};
-	Result ->
-	    Result
+  when is_integer(Offs) ->
+    if
+	-(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE ->
+	    case pwrite_int(Port, [], 0, [], [], Offs, Bytes) of
+		{error, {_, Reason}} ->
+		    {error, Reason};
+		Result ->
+		    Result
+	    end;
+	true ->
+	    {error, einval}
     end;
 pwrite(#file_descriptor{module = ?MODULE}, _, _) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 
@@ -296,95 +298,95 @@ sync(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
 
 %% Returns {ok, Data} | eof | {error, Reason}.
 read(#file_descriptor{module = ?MODULE, data = {Port, _}}, Size)
-  when is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    case drv_command(Port, <<?FILE_READ, Size:64>>) of
-	{ok, {0, _Data}} ->
-	    eof;
-	{ok, 0} ->
-	    eof;
-	{ok, {_Size, Data}} ->
-	    {ok, Data};
-	{error, enomem} ->
-	    %% Garbage collecting here might help if the current processes
-	    %% has some old binaries left.
-	    erlang:garbage_collect(),
+  when is_integer(Size), 0 =< Size ->
+    if
+	Size < ?LARGEFILESIZE ->
 	    case drv_command(Port, <<?FILE_READ, Size:64>>) of
-		{ok, {0, _Data}} ->
+		{ok, {0, _Data}} when Size =/= 0 ->
 		    eof;
 		{ok, {_Size, Data}} ->
 		    {ok, Data};
-		Other ->
-		    Other
+		{error, enomem} ->
+		    %% Garbage collecting here might help if
+		    %% the current processes has some old binaries left.
+		    erlang:garbage_collect(),
+		    case drv_command(Port, <<?FILE_READ, Size:64>>) of
+			{ok, {0, _Data}} when Size =/= 0 ->
+			    eof;
+			{ok, {_Size, Data}} ->
+			    {ok, Data};
+			Other ->
+			    Other
+		    end;
+		Error ->
+		    Error
 	    end;
-	{error, _} = Error ->
-	    Error
-    end;
-read(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+	true ->
+	    {error, einval}
+    end.
 
 %% Returns {ok, [Data|eof, ...]} | {error, Reason}
-pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, L) when is_list(L) ->
-    case (catch pread_int(Port, L, 0, [])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Result ->
-	    Result
-    end;
-pread(#file_descriptor{module = ?MODULE}, _) ->
-    {error, einval}.
+pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, L)
+  when is_list(L) ->
+    pread_int(Port, L, 0, []).
 
 pread_int(_, [], 0, []) ->
     {ok, []};
 pread_int(Port, [], N, Spec) ->
-    Command = list_to_binary([<<?FILE_PREADV, 0:32, N:32>> 
-			      | reverse(Spec)]),
-    case drv_command(Port, Command) of
-	{ok, _} = Result ->
-	    Result;
-	{error, {_R, _Reason}} = Error ->
-	    Error
-    end;
+    drv_command(Port, [<<?FILE_PREADV, 0:32, N:32>> | reverse(Spec)]);
 pread_int(Port, [{Offs, Size} | T], N, Spec)
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    pread_int(Port, T, N+1, [<<Offs:64/signed, Size:64>> | Spec]);
+  when is_integer(Offs), is_integer(Size), 0 =< Size ->
+    if
+	-(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE,
+	Size < ?LARGEFILESIZE ->
+	    pread_int(Port, T, N+1, [<<Offs:64/signed, Size:64>> | Spec]);
+	true ->
+	    {error, einval}
+    end;
 pread_int(_, [_|_], _N, _Spec) ->
-    {error, einval}.
+    {error, badarg}.
 
 
 
 %% Returns {ok, Data} | eof | {error, Reason}.
 pread(#file_descriptor{module = ?MODULE, data = {Port, _}}, Offs, Size) 
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE ->
-    case drv_command(Port, 
-		     <<?FILE_PREADV, 0:32, 1:32, Offs:64/signed, Size:64>>) of
-	{ok, [eof]} ->
-	    eof;
-	{ok, [Data]} ->
-	    {ok, Data};
-	{error, _} = Error ->
-	    Error
+  when is_integer(Offs), is_integer(Size), 0 =< Size ->
+    if
+	-(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE,
+	Size < ?LARGEFILESIZE ->
+	    case drv_command(Port, 
+			     <<?FILE_PREADV, 0:32, 1:32,
+			      Offs:64/signed, Size:64>>) of
+		{ok, [eof]} ->
+		    eof;
+		{ok, [Data]} ->
+		    {ok, Data};
+		Error ->
+		    Error
+	    end;
+	true ->
+	    {error, einval}
     end;
-pread(#file_descriptor{module = ?MODULE}, _, _) ->
-    {error, einval}.
+pread(#file_descriptor{module = ?MODULE, data = {_, _}}, _, _) ->
+    {error, badarg}.
 
 
-
-%% XXX here ???
 
 %% Returns {ok, Position} | {error, Reason}.
 position(#file_descriptor{module = ?MODULE, data = {Port, _}}, At) ->
     case lseek_position(At) of
-	{error, _} = Error ->
-	    Error;
-	{ok, Offs, Whence} ->
-	    drv_command(Port, <<?FILE_LSEEK, Offs:64/signed, Whence:32>>)
+	{Offs, Whence}
+	when -(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE ->
+	    drv_command(Port, <<?FILE_LSEEK, Offs:64/signed, Whence:32>>);
+	{_, _} ->
+	    {error, einval};
+	Reason ->
+	    {error, Reason}
     end.
 
 %% Returns {error, Reaseon} | ok.
 truncate(#file_descriptor{module = ?MODULE, data = {Port, _}}) ->
-    drv_command(Port, [?FILE_TRUNCATE]).
+    drv_command(Port, <<?FILE_TRUNCATE>>).
 
 
 
@@ -395,26 +397,31 @@ copy(#file_descriptor{module = ?MODULE} = Source,
   when is_integer(Length), Length >= 0;
        is_atom(Length) ->
     %% XXX Should be moved down to the driver for optimization.
-    file:copy_opened(Source, Dest, Length);
-copy(#file_descriptor{module = ?MODULE},
-     #file_descriptor{module = ?MODULE},
-     _) ->
-    {error, einval}.
+    file:copy_opened(Source, Dest, Length).
 
 
 
+ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE,
+				    data = {_, _}} = Handle,
+		   Offs,
+		   Infinity) when is_atom(Infinity) ->
+    ipread_s32bu_p32bu(Handle, Offs, (1 bsl 31)-1);
 ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE, data = {Port, _}},
 		   Offs,
 		   MaxSize)
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE,
-       is_integer(MaxSize), 0 =< MaxSize, MaxSize < (1 bsl 31) ->
-    drv_command(Port, <<?FILE_IPREAD, ?IPREAD_S32BU_P32BU,
-		       Offs:64, MaxSize:32>>);
-ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE} = Handle,
-		   Offs,
-		   _MaxSize)
-  when is_integer(Offs), 0 =< Offs, Offs < ?LARGEFILESIZE ->
-    ipread_s32bu_p32bu(Handle, Offs, (1 bsl 31)-1).
+  when is_integer(Offs), is_integer(MaxSize) ->
+    if
+	-(?LARGEFILESIZE) =< Offs, Offs < ?LARGEFILESIZE,
+	0 =< MaxSize, MaxSize < (1 bsl 31) ->
+	    drv_command(Port, <<?FILE_IPREAD, ?IPREAD_S32BU_P32BU,
+			       Offs:64, MaxSize:32>>);
+	true ->
+	    {error, einval}
+    end;
+ipread_s32bu_p32bu(#file_descriptor{module = ?MODULE, data = {_, _}},
+		   _Offs,
+		   _MaxSize) ->
+    {error, badarg}.
 
 
 
@@ -429,30 +436,19 @@ read_file(File) ->
 	    Error
     end.
 
-%%%-----------------------------------------------------------------
-%%% Functions operating on a file through a handle. ?FD_DRV.
-%%%
-%%% Specialized file contents operations.
-
 %% Takes a Port opened with open/1.
 read_file(Port, File) when is_port(Port) ->
-    case (catch list_to_binary([?FILE_READ_FILE | File])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    case drv_command(Port, Cmd) of
-		{ok, _} = Result ->
-		    Result;
-		{error, enomem} ->
-		    %% It could possibly help to do a 
-		    %% garbage collection here, 
-		    %% if the file server has some references
-		    %% to binaries read earlier.
-		    erlang:garbage_collect(),
-		    drv_command(Port, Cmd);
-		{error, _} = Error ->
-		    Error
-	    end
+    Cmd = [?FILE_READ_FILE | File],
+    case drv_command(Port, Cmd) of
+	{error, enomem} ->
+	    %% It could possibly help to do a 
+	    %% garbage collection here, 
+	    %% if the file server has some references
+	    %% to binaries read earlier.
+	    erlang:garbage_collect(),
+	    drv_command(Port, Cmd);
+	Result ->
+	    Result
     end.
 
     
@@ -464,7 +460,7 @@ write_file(File, Bin) ->
 	    Result = write(Handle, Bin),
 	    close(Handle),
 	    Result;
-	{error, _} = Error ->
+	Error ->
 	    Error
     end.
 
@@ -480,16 +476,22 @@ write_file(File, Bin) ->
 %% Returns {ok, Port}, the Port should be used as first argument in all
 %% the following functions. Returns {error, Reason} upon failure.
 start() ->
-    case catch erlang:open_port({spawn, ?DRV}, []) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
+    try erlang:open_port({spawn, ?DRV}, []) of
 	Port ->
 	    {ok, Port}
+    catch
+	error:Reason ->
+	    {error, Reason}
     end.
 
 stop(Port) when is_port(Port) ->
-    catch erlang:port_close(Port),
-    ok.
+    try erlang:port_close(Port) of
+	_ ->
+	    ok
+    catch
+	_:_ ->
+	    ok
+    end.
 
 
 
@@ -512,23 +514,29 @@ get_cwd([Letter, $: | _]) when $a =< Letter, Letter =< $z ->
     get_cwd_int(Letter - $a + 1);
 get_cwd([Letter, $: | _]) when $A =< Letter, Letter =< $Z ->
     get_cwd_int(Letter - $A + 1);
+get_cwd([_|_]) ->
+    {error, einval};
 get_cwd(_) ->
-    {error, einval}.
+    {error, badarg}.
 
-get_cwd(Port, []) ->
+get_cwd(Port, []) when is_port(Port) ->
     get_cwd_int(Port, 0);
-get_cwd(Port, [Letter, $: | _]) when $a =< Letter, Letter =< $z ->
+get_cwd(Port, [Letter, $: | _])
+  when is_port(Port), $a =< Letter, Letter =< $z ->
     get_cwd_int(Port, Letter - $a + 1);
-get_cwd(Port, [Letter, $: | _]) when $A =< Letter, Letter =< $Z ->
+get_cwd(Port, [Letter, $: | _])
+  when is_port(Port), $A =< Letter, Letter =< $Z ->
     get_cwd_int(Port, Letter - $A + 1);
+get_cwd(Port, [_|_]) when is_port(Port) ->
+    {error, einval};
 get_cwd(_, _) ->
-    {error, einval}.
+    {error, badarg}.
 
 get_cwd_int(Drive) ->
     get_cwd_int({?DRV, []}, Drive).
 
 get_cwd_int(Port, Drive) ->
-    drv_command(Port, [?FILE_PWD, Drive]).
+    drv_command(Port, <<?FILE_PWD, Drive>>).
 
 
 
@@ -561,12 +569,7 @@ set_cwd_int(Port, Dir0) ->
 	 end),
     %% Dir is now either a string or an EXIT tuple.
     %% An EXIT tuple will fail in the following catch.
-    case (catch list_to_binary([?FILE_CHDIR, Dir, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_CHDIR, Dir, 0]).
 
 
 
@@ -579,12 +582,7 @@ delete(Port, File) when is_port(Port) ->
     delete_int(Port, File).
 
 delete_int(Port, File) ->
-    case (catch list_to_binary([?FILE_DELETE, File, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_DELETE, File, 0]).
 
 
 
@@ -597,12 +595,7 @@ rename(Port, From, To) when is_port(Port) ->
     rename_int(Port, From, To).
 
 rename_int(Port, From, To) ->
-    case (catch list_to_binary([?FILE_RENAME, From, 0, To, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_RENAME, From, 0, To, 0]).
 
 
 
@@ -615,12 +608,7 @@ make_dir(Port, Dir) when is_port(Port) ->
     make_dir_int(Port, Dir).
 
 make_dir_int(Port, Dir) ->
-    case (catch list_to_binary([?FILE_MKDIR, Dir, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_MKDIR, Dir, 0]).
 
 
 
@@ -633,12 +621,7 @@ del_dir(Port, Dir) when is_port(Port) ->
     del_dir_int(Port, Dir).
 
 del_dir_int(Port, Dir) ->
-    case (catch list_to_binary([?FILE_RMDIR, Dir, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_RMDIR, Dir, 0]).
 
 
 
@@ -651,12 +634,7 @@ read_file_info(Port, File) when is_port(Port) ->
     read_file_info_int(Port, File).
 
 read_file_info_int(Port, File) ->
-    case (catch list_to_binary([?FILE_FSTAT, File, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_FSTAT, File, 0]).
 
 %% altname/{1,2}
 
@@ -667,12 +645,7 @@ altname(Port, File) when is_port(Port) ->
     altname_int(Port, File).
 
 altname_int(Port, File) ->
-    case (catch list_to_binary([?FILE_ALTNAME, File, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_ALTNAME, File, 0]).
 
 
 %% write_file_info/{2,3}
@@ -697,20 +670,14 @@ write_file_info_int(Port,
 	    {Atime0, undefined} -> {Atime0, Atime0};
 	    Complete -> Complete
 	end,
-    case (catch list_to_binary([?FILE_WRITE_INFO, 
-				int_to_bytes(Mode), 
-				int_to_bytes(Uid), 
-				int_to_bytes(Gid),
-				date_to_bytes(Atime), 
-				date_to_bytes(Mtime), 
-				date_to_bytes(Ctime),
-				File, 0])) 
-	of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_WRITE_INFO, 
+			int_to_bytes(Mode), 
+			int_to_bytes(Uid), 
+			int_to_bytes(Gid),
+			date_to_bytes(Atime), 
+			date_to_bytes(Mtime), 
+			date_to_bytes(Ctime),
+			File, 0]).
 
 
 
@@ -723,12 +690,7 @@ make_link(Port, Old, New) when is_port(Port) ->
     make_link_int(Port, Old, New).
 
 make_link_int(Port, Old, New) ->
-    case (catch list_to_binary([?FILE_LINK, Old, 0, New, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_LINK, Old, 0, New, 0]).
 
 
 
@@ -741,12 +703,7 @@ make_symlink(Port, Old, New) when is_port(Port) ->
     make_symlink_int(Port, Old, New).
 
 make_symlink_int(Port, Old, New) ->
-    case (catch list_to_binary([?FILE_SYMLINK, Old, 0, New, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_SYMLINK, Old, 0, New, 0]).
 
 
 
@@ -759,12 +716,7 @@ read_link(Port, Link) when is_port(Port) ->
     read_link_int(Port, Link).
 
 read_link_int(Port, Link) ->
-    case (catch list_to_binary([?FILE_READLINK, Link, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_READLINK, Link, 0]).
 
 
 
@@ -777,12 +729,7 @@ read_link_info(Port, Link) when is_port(Port) ->
     read_link_info_int(Port, Link).
 
 read_link_info_int(Port, Link) ->
-    case (catch list_to_binary([?FILE_LSTAT, Link, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd)
-    end.
+    drv_command(Port, [?FILE_LSTAT, Link, 0]).
 
 
 
@@ -795,12 +742,7 @@ list_dir(Port, Dir) when is_port(Port) ->
     list_dir_int(Port, Dir).
 
 list_dir_int(Port, Dir) ->
-    case (catch list_to_binary([?FILE_READDIR, Dir, 0])) of
-	{'EXIT', _} ->
-	    {error, einval};
-	Cmd ->
-	    drv_command(Port, Cmd, [[]])
-    end.
+    drv_command(Port, [?FILE_READDIR, Dir, 0], []).
 
 
 
@@ -813,11 +755,12 @@ list_dir_int(Port, Dir) ->
 %% Returns {ok, Port} when succesful.
 
 drv_open(Driver, Portopts) ->
-    case catch erlang:open_port({spawn, Driver}, Portopts) of
-	{'EXIT', _Reason} ->
-	    {error, emfile};
+    try erlang:open_port({spawn, Driver}, Portopts) of
 	Port ->
 	    {ok, Port}
+    catch
+	error:Reason ->
+	    {error,Reason}
     end.
 
 
@@ -825,7 +768,7 @@ drv_open(Driver, Portopts) ->
 %% Closes a port in a safe way. Returns ok.
 
 drv_close(Port) ->
-    catch erlang:port_close(Port),
+    try erlang:port_close(Port) catch error:_ -> ok end,
     receive %% Ugly workaround in case the caller==owner traps exits
 	{'EXIT', Port, _Reason} -> 
 	    ok
@@ -840,23 +783,51 @@ drv_close(Port) ->
 %% then closed after the result has been received.
 %% Returns {ok, Result} or {error, Reason}.
 
-drv_command(Port, Command) ->
-    drv_command(Port, Command, []).
+drv_command_raw(Port, Command) ->
+    drv_command(Port, Command, false, undefined).
 
-drv_command(Port, Command, ExtraArgs) when is_port(Port) ->
-    case catch erlang:port_command(Port, Command) of
-	{'EXIT', _} ->
+drv_command(Port, Command) ->
+    drv_command(Port, Command, undefined).
+
+drv_command(Port, Command, R) when is_binary(Command) ->
+    drv_command(Port, Command, true, R);
+drv_command(Port, Command, R) ->
+    try erlang:iolist_to_binary(Command) of
+	Bin ->
+	    drv_command(Port, Bin, true, R)
+    catch
+	error:Reason ->
+	    {error, Reason}
+    end.
+
+drv_command(Port, Command, Validated, R) when is_port(Port) ->
+    try erlang:port_command(Port, Command) of
+	true ->
+	    drv_get_response(Port, R)
+    catch
+	%% If the Command is valid, knowing that the port is a port,
+	%% a badarg error must mean it is a dead port, that is:
+	%% a currently invalid filehandle, -> einval, not badarg.
+	error:badarg when Validated ->
 	    {error, einval};
-	_ ->
-	    drv_get_response([Port | ExtraArgs])
+	error:badarg ->
+	    try erlang:iolist_size(Command) of
+		_ -> % Valid
+		    {error, einval}
+	    catch
+		error:_ ->
+		    {error, badarg}
+	    end;
+	error:Reason ->
+	    {error, Reason}
     end;
-drv_command({Driver, Portopts}, Command, ExtraArgs) ->
+drv_command({Driver, Portopts}, Command, Validated, R) ->
     case drv_open(Driver, Portopts) of
 	{ok, Port} ->
-	    Result = drv_command(Port, Command, ExtraArgs),
+	    Result = drv_command(Port, Command, Validated, R),
 	    drv_close(Port),
 	    Result;
-	{error, _} = Error ->
+	Error ->
 	    Error
     end.
 
@@ -865,29 +836,31 @@ drv_command({Driver, Portopts}, Command, ExtraArgs) ->
 %% Receives the response from a driver port.
 %% Returns: {ok, ListOrBinary}|{error, Reason}
 
-drv_get_response([Port]) ->
+drv_get_response(Port, R) when is_list(R) ->
+    case drv_get_response(Port) of
+	ok ->
+	    {ok, R};
+	{ok, Name} ->
+	    drv_get_response(Port, [Name|R]);
+	Error ->
+	    Error
+    end;
+drv_get_response(Port, _) ->
+    drv_get_response(Port).
+
+drv_get_response(Port) ->
     erlang:bump_reductions(100),
     receive
 	{Port, {data, [Response|Rest] = Data}} ->
-	    case catch translate_response(Response, Rest) of
-		{'EXIT', Reason} ->
-		    {error, {bad_response_from_port, Data, Reason}};
-		Result ->
-		    Result
+	    try translate_response(Response, Rest)
+	    catch
+		error:Reason ->
+		    {error, {bad_response_from_port, Data, 
+			     {Reason, erlang:get_stacktrace()}}}
 	    end;
 	{'EXIT', Port, Reason} ->
 	    {error, {port_died, Reason}}
-    end;
-drv_get_response([Port, Result]) ->
-    case drv_get_response([Port]) of
-	ok ->
-	    {ok, Result};
-	{ok, Name} ->
-	    drv_get_response([Port, [Name|Result]]);
-	{error, _} = Error ->
-	    Error
     end.
-
 
 
 %%%-----------------------------------------------------------------
@@ -896,16 +869,16 @@ drv_get_response([Port, Result]) ->
 
 
 %% Converts a list of mode atoms into an mode word for the driver.
-%% Returns {ok, Mode, Portopts, Setopts} where Portopts is a list of 
+%% Returns {Mode, Portopts, Setopts} where Portopts is a list of 
 %% options for erlang:open_port/2 and Setopts is a list of 
-%% setopt commands to send to the port, or {error, einval} upon failure.
+%% setopt commands to send to the port, or error Reason upon failure.
 
 open_mode(List) when is_list(List) ->
     case open_mode(List, 0, [], []) of
-	{ok, Mode, Portopts, Setopts} when Mode band 
+	{Mode, Portopts, Setopts} when Mode band 
 			  (?EFILE_MODE_READ bor ?EFILE_MODE_WRITE) 
 			  =:= 0 ->
-	    {ok, Mode bor ?EFILE_MODE_READ, Portopts, Setopts};
+	    {Mode bor ?EFILE_MODE_READ, Portopts, Setopts};
 	Other ->
 	    Other
     end.
@@ -924,32 +897,44 @@ open_mode([append|Rest], Mode, Portopts, Setopts) ->
     open_mode(Rest, Mode bor ?EFILE_MODE_APPEND bor ?EFILE_MODE_WRITE, 
 	      Portopts, Setopts);
 open_mode([delayed_write|Rest], Mode, Portopts, Setopts) ->
-    open_mode([{delayed_write, 64*1024, 2000}|Rest], Mode, Portopts, Setopts);
+    open_mode([{delayed_write, 64*1024, 2000}|Rest], Mode,
+	      Portopts, Setopts);
 open_mode([{delayed_write, Size, Delay}|Rest], Mode, Portopts, Setopts) 
-  when is_integer(Size), 0 =< Size, Size < ?LARGEFILESIZE,
-       is_integer(Delay), 0 =< Delay, Delay < 1 bsl 64 ->
-    open_mode(Rest, Mode, Portopts, 
-	      [<<?FILE_SETOPT, ?FILE_OPT_DELAYED_WRITE, Size:64, Delay:64>> 
-	       | Setopts]);
-open_mode([{read_ahead, Size}|Rest], Mode, Portopts, Setopts)
-  when is_integer(Size), 0 =< size, Size < ?LARGEFILESIZE ->
-    open_mode(Rest, Mode, Portopts,
-	      [<<?FILE_SETOPT, ?FILE_OPT_READ_AHEAD, Size:64>> | Setopts]);
+  when is_integer(Size), 0 =< Size, is_integer(Delay), 0 =< Delay ->
+    if
+	Size < ?LARGEFILESIZE, Delay < 1 bsl 64 ->
+	    open_mode(Rest, Mode, Portopts, 
+		      [<<?FILE_SETOPT, ?FILE_OPT_DELAYED_WRITE,
+			Size:64, Delay:64>> 
+		       | Setopts]);
+	true ->
+	    einval
+    end;
 open_mode([read_ahead|Rest], Mode, Portopts, Setopts) ->
     open_mode([{read_ahead, 64*1024}|Rest], Mode, Portopts, Setopts);
+open_mode([{read_ahead, Size}|Rest], Mode, Portopts, Setopts)
+  when is_integer(Size), 0 =< Size ->
+    if
+	Size < ?LARGEFILESIZE ->
+	    open_mode(Rest, Mode, Portopts,
+		      [<<?FILE_SETOPT, ?FILE_OPT_READ_AHEAD,
+			Size:64>> | Setopts]);
+	true ->
+	    einval
+    end;
 open_mode([], Mode, Portopts, Setopts) ->
-    {ok, Mode, reverse(Portopts), reverse(Setopts)};
+    {Mode, reverse(Portopts), reverse(Setopts)};
 open_mode(_, _Mode, _Portopts, _Setopts) ->
-    {error, einval}.
+    badarg.
 
 
 
 %% Converts a position tuple {bof, X} | {cur, X} | {eof, X} into
-%% {ok, Offset, OriginCode} for the driver.
-%% Returns {error, einval} upon failure.
+%% {Offset, OriginCode} for the driver.
+%% Returns badarg upon failure.
 
 lseek_position(Pos)
-  when is_integer(Pos), 0 =< Pos, Pos < ?LARGEFILESIZE ->
+  when is_integer(Pos) ->
     lseek_position({bof, Pos});
 lseek_position(bof) ->
     lseek_position({bof, 0});
@@ -958,16 +943,16 @@ lseek_position(cur) ->
 lseek_position(eof) ->
     lseek_position({eof, 0});
 lseek_position({bof, Offset})
-  when is_integer(Offset), 0 =< Offset, Offset < ?LARGEFILESIZE ->
-    {ok, Offset, ?EFILE_SEEK_SET};
+  when is_integer(Offset) ->
+    {Offset, ?EFILE_SEEK_SET};
 lseek_position({cur, Offset})
-  when is_integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
-    {ok, Offset, ?EFILE_SEEK_CUR};
+  when is_integer(Offset) ->
+    {Offset, ?EFILE_SEEK_CUR};
 lseek_position({eof, Offset})
-  when is_integer(Offset), -(?LARGEFILESIZE) =< Offset, Offset < ?LARGEFILESIZE ->
-    {ok, Offset, ?EFILE_SEEK_END};
+  when is_integer(Offset) ->
+    {Offset, ?EFILE_SEEK_END};
 lseek_position(_) ->
-    {error, einval}.
+    badarg.
 
 
 

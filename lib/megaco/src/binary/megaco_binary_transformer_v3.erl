@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Transform internal form of Megaco/H.248 messages
@@ -194,7 +196,8 @@ tr_Transaction({Tag, Val}, State) ->
             transactionRequest ->     tr_TransactionRequest(Val, State);
             transactionPending ->     tr_TransactionPending(Val, State);
             transactionReply ->       tr_TransactionReply(Val, State);
-            transactionResponseAck -> [tr_TransactionAck(T, State) || T <- Val]
+            transactionResponseAck -> [tr_TransactionAck(T, State) || T <- Val];
+	    segmentReply ->           tr_SegmentReply(Val, State)
         end,
     {Tag, Val2}.
 
@@ -223,17 +226,34 @@ tr_TransactionPending(#'TransactionPending'{transactionId = Id},
                       State) ->
     #'TransactionPending'{transactionId = tr_TransactionId(Id, State)}.
 
-tr_TransactionReply(#'TransactionReply'{transactionId     = Id,
-                                        immAckRequired    = ImmAck,
-                                        transactionResult = TransRes},
+tr_TransactionReply(#'TransactionReply'{transactionId        = Id,
+                                        immAckRequired       = ImmAck,
+                                        transactionResult    = TransRes,
+					segmentNumber        = SN,
+					segmentationComplete = SC},
                     State) ->
-    #'TransactionReply'{transactionId     = tr_TransactionId(Id, State),
-                        immAckRequired    = tr_opt_null(ImmAck, State),
-                        transactionResult = tr_TransactionReply_transactionResult(TransRes, State)}.
+    #'TransactionReply'{transactionId        = tr_TransactionId(Id, State),
+                        immAckRequired       = tr_opt_null(ImmAck, State),
+                        transactionResult    = tr_TransactionReply_transactionResult(TransRes, State),
+			segmentNumber        = tr_opt_SegmentNumber(SN, State),
+			segmentationComplete = tr_opt_null(SC, State)}.
 
 tr_opt_null(asn1_NOVALUE, _State) -> asn1_NOVALUE;
 tr_opt_null('NULL', _State)       -> 'NULL'.
 
+tr_SegmentNumber(Num, State) ->
+    tr_UINT16(Num, State).
+
+tr_opt_SegmentNumber(Num, State) ->
+    tr_opt_UINT16(Num, State).
+
+tr_SegmentReply(#'SegmentReply'{transactionId        = TID,
+				segmentNumber        = SN,
+				segmentationComplete = SC}, State) ->
+    #'SegmentReply'{transactionId        = tr_TransactionId(TID, State),
+		    segmentNumber        = tr_SegmentNumber(SN, State),
+		    segmentationComplete = tr_opt_null(SC, State)}.    
+    
 tr_TransactionReply_transactionResult({Tag, Val}, State) ->
     Val2 = 
         case Tag of
@@ -300,8 +320,9 @@ tr_opt_ContextRequest(CR, State) ->
 tr_ContextRequest(#'ContextRequest'{priority    = Prio,
 				    emergency   = Em,
 				    topologyReq = TopReqList,
-				    iepsCallind = Ind,
-				    contextProp = Props},
+				    iepscallind = Ind,
+				    contextProp = CtxProps,
+				    contextList = CtxList},
 		  State) ->
     Prio2 = 
         case Prio of
@@ -326,27 +347,37 @@ tr_ContextRequest(#'ContextRequest'{priority    = Prio,
             false        -> false;
             true         -> true
         end,
-    Props2 = 
-	case Props of
+    CtxProps2 = 
+	case CtxProps of
 	    asn1_NOVALUE -> asn1_NOVALUE;
-            _            -> [tr_PropertyParm(Prop, State) || Prop <- Props]
+            _            -> [tr_PropertyParm(Prop, State) || Prop <- CtxProps]
+	end,
+    CtxList2 = 
+	case CtxList of
+	    asn1_NOVALUE -> asn1_NOVALUE;
+            _            -> [tr_ContextID(Id, State) || Id <- CtxList]
 	end,
     #'ContextRequest'{priority    = Prio2,
                       emergency   = Em2,
                       topologyReq = TopReqList2,
-		      iepsCallind = Ind2,
-		      contextProp = Props2}.
+		      iepscallind = Ind2,
+		      contextProp = CtxProps2,
+		      contextList = CtxList2}.
 
 tr_opt_ContextAttrAuditRequest(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
 tr_opt_ContextAttrAuditRequest(CAAR, State) ->
     tr_ContextAttrAuditRequest(CAAR, State).
 
-tr_ContextAttrAuditRequest(#'ContextAttrAuditRequest'{topology       = Top,
-						      emergency      = Em,
-						      priority       = Prio,
-						      iepsCallind    = Ind,
-						      contextPropAud = Props},
+tr_ContextAttrAuditRequest(#'ContextAttrAuditRequest'{topology        = Top,
+						      emergency       = Em,
+						      priority        = Prio,
+						      iepscallind     = Ind,
+						      contextPropAud  = Props,
+						      selectpriority  = SPrio,
+						      selectemergency = SEm,
+						      selectiepscallind = SInd,
+						      selectLogic     = SLog},
                                State) ->
     Top2   = tr_opt_null(Top,  State),
     Em2    = tr_opt_null(Em,   State),
@@ -359,12 +390,43 @@ tr_ContextAttrAuditRequest(#'ContextAttrAuditRequest'{topology       = Top,
 	    _            -> 
 		[tr_indAudPropertyParm(Prop, State) || Prop <- Props]
 	end,
-    #'ContextAttrAuditRequest'{topology       = Top2,
-                               emergency      = Em2, 
-                               priority       = Prio2, 
-			       iepsCallind    = Ind2, 
-			       contextPropAud = Props2}.
+    SPrio2 = 
+        case SPrio of
+            asn1_NOVALUE -> asn1_NOVALUE;
+            _            -> tr_integer(SPrio, State, 0, 15)
+        end,
+    SEm2 = 
+        case SEm of
+            asn1_NOVALUE -> asn1_NOVALUE;
+            false        -> false;
+            true         -> true
+        end,
+    SInd2 = 
+	case SInd of
+            asn1_NOVALUE -> asn1_NOVALUE;
+            false        -> false;
+            true         -> true
+        end,
+    SLog2 = 
+        case SLog of
+            asn1_NOVALUE -> asn1_NOVALUE;
+            _            -> tr_SelectLogic(SLog, State)
+        end,
+    #'ContextAttrAuditRequest'{topology          = Top2,
+                               emergency         = Em2, 
+                               priority          = Prio2, 
+			       iepscallind       = Ind2, 
+			       contextPropAud    = Props2,
+			       selectpriority    = SPrio2,
+			       selectemergency   = SEm2,
+			       selectiepscallind = SInd2,
+			       selectLogic       = SLog2}.
 
+tr_SelectLogic({andAUDITSelect, 'NULL'} = Val, _State) ->
+    Val;
+tr_SelectLogic({orAUDITSelect, 'NULL'} = Val, _State) ->
+    Val.
+    
 tr_CommandRequest(#'CommandRequest'{command        = Cmd,
                                     optional       = Opt,
                                     wildcardReturn = Wild},
@@ -401,9 +463,11 @@ tr_CommandReply({Tag, Val}, State) ->
         end,
     {Tag, Val2}.
 
-tr_TopologyRequest(#'TopologyRequest'{terminationFrom   = From,
-                                      terminationTo     = To,
-                                      topologyDirection = Dir},
+tr_TopologyRequest(#'TopologyRequest'{terminationFrom            = From,
+                                      terminationTo              = To,
+                                      topologyDirection          = Dir,
+				      streamID                   = SID,
+				      topologyDirectionExtension = TDE},
                    State) ->
     Dir2 = 
         case Dir of
@@ -411,9 +475,17 @@ tr_TopologyRequest(#'TopologyRequest'{terminationFrom   = From,
             isolate -> isolate;
             oneway ->  oneway
         end,
+    TDE2 = 
+	case TDE of
+	    onewayexternal -> onewayexternal;
+	    onewayboth     -> onewayboth;
+	    asn1_NOVALUE   -> asn1_NOVALUE
+	end,
     #'TopologyRequest'{terminationFrom   = tr_TerminationID(From, State),
                        terminationTo     = tr_TerminationID(To, State),
-                       topologyDirection = Dir2}.
+                       topologyDirection = Dir2,
+		       streamID          = tr_opt_StreamID(SID, State),
+		       topologyDirectionExtension = TDE2}.
 
 tr_AmmRequest(#'AmmRequest'{terminationID = IdList,
                             descriptors   = DescList},
@@ -472,11 +544,18 @@ tr_SubtractRequest(#'SubtractRequest'{terminationID   = IdList,
                                              Id <- IdList],
                        auditDescriptor = tr_opt_AuditDescriptor(Desc, State)}.
 
-tr_AuditRequest(#'AuditRequest'{terminationID   = Id,
-                                auditDescriptor = Desc},
+tr_AuditRequest(#'AuditRequest'{terminationID     = Id,
+                                auditDescriptor   = Desc,
+				terminationIDList = TIDList},
                 State) ->
-    #'AuditRequest'{terminationID = tr_TerminationID(Id, State),
-                    auditDescriptor = tr_AuditDescriptor(Desc, State)}.
+    TIDList2 = 
+	case TIDList of
+	    asn1_NOVALUE -> asn1_NOVALUE;
+            _            -> [tr_TerminationID(TID, State) || TID <- TIDList]
+	end,
+    #'AuditRequest'{terminationID     = tr_TerminationID(Id, State),
+                    auditDescriptor   = tr_AuditDescriptor(Desc, State),
+		    terminationIDList = TIDList2}.
 
 %% auditReply           = (AuditValueToken / AuditCapToken ) 
 %%                        ( contextTerminationAudit  / auditOther)
@@ -495,7 +574,9 @@ tr_AuditReply({Tag, Val}, State) ->
 	    error ->
 		tr_ErrorDescriptor(Val, State);
 	    auditResult ->
-		tr_AuditResult(Val, State)
+		tr_AuditResult(Val, State);
+	    auditResultTermList ->
+		tr_TermListAuditResult(Val, State)
 	end,
     {Tag, Val2}.
 
@@ -504,6 +585,16 @@ tr_AuditResult(#'AuditResult'{terminationID          = Id,
               State) ->
     #'AuditResult'{terminationID          = tr_TerminationID(Id, State),
 		   terminationAuditResult = tr_TerminationAudit(AuditRes, State)}.
+
+tr_TermListAuditResult(
+  #'TermListAuditResult'{terminationIDList      = TIDList,
+			 terminationAuditResult = TAR},
+  State) ->
+    TIDList2 = [tr_TerminationID(TID, State) || TID <- TIDList],
+    TAR2     = tr_TerminationAudit(TAR, State), 
+    #'TermListAuditResult'{terminationIDList      = TIDList2,
+			   terminationAuditResult = TAR2}.
+
 
 tr_opt_AuditDescriptor(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
@@ -598,13 +689,16 @@ tr_indAudTerminationStateDescriptor(Val, State)
   when record(Val, 'IndAudTerminationStateDescriptor') ->
     #'IndAudTerminationStateDescriptor'{propertyParms      = Parms,
 					eventBufferControl = EBC,
-					serviceState       = SS} = Val,
+					serviceState       = SS,
+					serviceStateSel    = SSS} = Val,
     Parms2 = [tr_indAudPropertyParm(Parm, State) || Parm <- Parms],
     EBC2   = tr_opt_null(EBC, State),
     SS2    = tr_opt_null(SS, State),
-    #'IndAudTerminationStateDescriptor'{propertyParms = Parms2, 
+    SSS2   = tr_opt_ServiceState(SSS, State),
+    #'IndAudTerminationStateDescriptor'{propertyParms      = Parms2, 
 					eventBufferControl = EBC2,
-					serviceState       = SS2}.
+					serviceState       = SS2,
+					serviceStateSel    = SSS2}.
 
     
 tr_indAudStreamParms(#'IndAudStreamParms'{localControlDescriptor = LCD, 
@@ -650,15 +744,18 @@ tr_indAudLocalControlDescriptor(Val, State)
     #'IndAudLocalControlDescriptor'{streamMode    = M,
 				    reserveValue  = V,
 				    reserveGroup  = G,
-				    propertyParms = P} = Val,
-    M2 = tr_opt_null(M, State),
-    V2 = tr_opt_null(V, State),
-    G2 = tr_opt_null(G, State),
-    P2 = tr_indAudLocalControlDescriptor_propertyParms(P, State),
+				    propertyParms = P,
+				    streamModeSel = SMS} = Val,
+    M2   = tr_opt_null(M, State),
+    V2   = tr_opt_null(V, State),
+    G2   = tr_opt_null(G, State),
+    P2   = tr_indAudLocalControlDescriptor_propertyParms(P, State),
+    SMS2 = tr_opt_StreamMode(SMS, State),
     #'IndAudLocalControlDescriptor'{streamMode    = M2,
 				    reserveValue  = V2,
 				    reserveGroup  = G2,
-				    propertyParms = P2}.
+				    propertyParms = P2,
+				    streamModeSel = SMS2}.
 
 tr_indAudLocalControlDescriptor_propertyParms(Parms, State) 
   when list(Parms), length(Parms) > 0 ->
@@ -676,10 +773,17 @@ tr_indAudLocalRemoteDescriptor(#'IndAudLocalRemoteDescriptor'{propGroupID = ID,
 tr_indAudPropertyGroup(Grps, State) when list(Grps) ->
     [tr_indAudPropertyParm(Parm, State) || Parm <- Grps].
 
-tr_indAudPropertyParm(#'IndAudPropertyParm'{name = Name0}, State) ->
+tr_indAudPropertyParm(#'IndAudPropertyParm'{name          = Name0,
+					    propertyParms = Prop0}, State) ->
     Constraint = fun(Item) -> tr_PkgdName(Item, State) end,
     Name = resolve(property, Name0, State, Constraint),
-    #'IndAudPropertyParm'{name = Name}.
+    Prop = 
+	case Prop0 of
+	    asn1_NOVALUE -> asn1_NOVALUE;
+	    _            -> tr_PropertyParm(Prop0, State)
+	end,
+    #'IndAudPropertyParm'{name          = Name,
+			  propertyParms = Prop}.
 
 
 tr_indAudStreamDescriptor(#'IndAudStreamDescriptor'{streamID = ID,
@@ -718,12 +822,14 @@ tr_opt_indAudSignal(asn1_NOVALUE, _State) ->
 tr_opt_indAudSignal(Val, State) ->
     tr_indAudSignal(Val, State).
 
-tr_indAudSignal(#'IndAudSignal'{signalName = Name0,
-				streamID   = SID}, State) ->
+tr_indAudSignal(#'IndAudSignal'{signalName      = Name0,
+				streamID        = SID,
+				signalRequestID = RID}, State) ->
     Constraint = fun(Item) -> tr_PkgdName(Item, State) end,
     Name = resolve(signal, Name0, State, Constraint),
-    #'IndAudSignal'{signalName = Name, 
-		    streamID   = tr_opt_StreamID(SID, State)}.
+    #'IndAudSignal'{signalName      = Name, 
+		    streamID        = tr_opt_StreamID(SID, State),
+		    signalRequestID = tr_opt_RequestID(RID, State)}.
 
 tr_indAudSeqSigList(#'IndAudSeqSigList'{id = ID,
 					signalList = SigList}, State) ->
@@ -833,10 +939,12 @@ tr_AuditReturnParameter({Tag, Val}, State) ->
 
 tr_EmptyDescriptors(#'AuditDescriptor'{auditToken = Tokens},
                     State) ->
-    case Tokens of
-        asn1_NOVALUE -> asn1_NOVALUE;
-        _            -> [tr_auditItem(Token, State) || Token <- Tokens]
-    end.
+    Tokens2 = 
+	case Tokens of
+	    asn1_NOVALUE -> asn1_NOVALUE;
+	    _            -> [tr_auditItem(Token, State) || Token <- Tokens]
+	end,
+    #'AuditDescriptor'{auditToken = Tokens2}.
 
 tr_NotifyRequest(#'NotifyRequest'{terminationID            = IdList,
                                   observedEventsDescriptor = ObsDesc,
@@ -1160,17 +1268,47 @@ tr_RequestedEvent(#'RequestedEvent'{pkgdName    = Name,
                       eventAction = tr_opt_RequestedActions(Actions, State),
                       evParList   = [tr_EventParameter(P, Name, State) || P <- Parms]}.
 
+tr_RegulatedEmbeddedDescriptor(
+  #'RegulatedEmbeddedDescriptor'{secondEvent       = SE,
+				 signalsDescriptor = SD}, State) ->
+    SE2 = tr_opt_SecondEventsDescriptor(SE, State),
+    SD2 = tr_opt_SignalsDescriptor(SD, State),
+    #'RegulatedEmbeddedDescriptor'{secondEvent       = SE2,
+				   signalsDescriptor = SD2}.
+
+tr_opt_NotifyBehaviour(asn1_NOVALUE, _State) ->
+    asn1_NOVALUE;
+tr_opt_NotifyBehaviour(NB, State) ->
+    tr_NotifyBehaviour(NB, State).
+
+tr_NotifyBehaviour({notifyImmediate, 'NULL'} = NB, _State) ->
+    NB;
+tr_NotifyBehaviour({notifyRegulated = Tag, Val}, State) ->
+    {Tag, tr_RegulatedEmbeddedDescriptor(Val, State)};
+tr_NotifyBehaviour({neverNotify, 'NULL'} = NB, _State) ->
+    NB.
+
 tr_opt_RequestedActions(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
-tr_opt_RequestedActions(#'RequestedActions'{keepActive        = Keep,
-                                            eventDM           = DM,
-                                            secondEvent       = Event,
-                                            signalsDescriptor = SigDesc},
+tr_opt_RequestedActions(#'RequestedActions'{keepActive            = KA,
+                                            eventDM               = DM,
+                                            secondEvent           = SE,
+                                            signalsDescriptor     = SD,
+					    notifyBehaviour       = NB,
+					    resetEventsDescriptor = RSD},
                         State) ->
-    #'RequestedActions'{keepActive        = tr_opt_keepActive(Keep, State),
-                        eventDM           = tr_opt_EventDM(DM, State),
-                        secondEvent       = tr_opt_SecondEventsDescriptor(Event, State),
-                        signalsDescriptor = tr_opt_SignalsDescriptor(SigDesc, State)}.
+    KA2  = tr_opt_keepActive(KA, State),
+    DM2  = tr_opt_EventDM(DM, State),
+    SE2  = tr_opt_SecondEventsDescriptor(SE, State),
+    SD2  = tr_opt_SignalsDescriptor(SD, State),
+    NB2  = tr_opt_NotifyBehaviour(NB, State),
+    RSD2 = tr_opt_null(RSD, State),
+    #'RequestedActions'{keepActive            = KA2, 
+                        eventDM               = DM2, 
+                        secondEvent           = SE2,
+                        signalsDescriptor     = SD2,
+			notifyBehaviour       = NB2,
+			resetEventsDescriptor = RSD2}.
 
 tr_opt_keepActive(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
@@ -1209,13 +1347,23 @@ tr_SecondRequestedEvent(#'SecondRequestedEvent'{pkgdName    = Name,
 
 tr_opt_SecondRequestedActions(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
-tr_opt_SecondRequestedActions(#'SecondRequestedActions'{keepActive        = Keep,
-                                                        eventDM           = DM,
-                                                        signalsDescriptor = SigDesc},
-                              State) ->
-    #'SecondRequestedActions'{keepActive        = tr_opt_keepActive(Keep, State),
-                              eventDM           = tr_opt_EventDM(DM, State),
-                              signalsDescriptor = tr_opt_SignalsDescriptor(SigDesc, State)}.
+tr_opt_SecondRequestedActions(
+  #'SecondRequestedActions'{keepActive            = KA,
+			    eventDM               = DM,
+			    signalsDescriptor     = SD,
+			    notifyBehaviour       = NB,
+			    resetEventsDescriptor = RSD},
+  State) ->
+    KA2  = tr_opt_keepActive(KA, State),
+    DM2  = tr_opt_EventDM(DM, State),
+    SD2  = tr_opt_SignalsDescriptor(SD, State), 
+    NB2  = tr_opt_NotifyBehaviour(NB, State),
+    RSD2 = tr_opt_null(RSD, State),
+    #'SecondRequestedActions'{keepActive            = KA2, 
+                              eventDM               = DM2, 
+                              signalsDescriptor     = SD2, 
+			      notifyBehaviour       = NB2,
+			      resetEventsDescriptor = RSD2}.
 
 tr_EventBufferDescriptor(EventSpecs, State) ->
     [tr_EventSpec(ES, State) || ES <- EventSpecs].
@@ -1259,17 +1407,19 @@ tr_Signal(#'Signal'{signalName       = Name,
                     keepActive       = Keep,
                     sigParList       = Parms,
 		    direction        = Dir,
-		    requestID        = RID},
+		    requestID        = RID,
+		    intersigDelay    = ID},
           State) ->
     Name2  = tr_SignalName(Name, State),
     SID2   = tr_opt_StreamID(SID, State),
     Type2  = tr_opt_SignalType(Type, State),
-    Dur2   = tr_opt_duration(Dur, State),
+    Dur2   = tr_opt_UINT16(Dur, State), 
     Compl2 = tr_opt_NotifyCompletion(Compl, State),
     Keep2  = tr_opt_keepActive(Keep, State),
     Parms2 = [tr_SigParameter(P, Name, State) || P <- Parms],
     Dir2   = tr_opt_SignalDirection(Dir, State),
     RID2   = tr_opt_RequestID(RID, State),
+    ID2    = tr_opt_UINT16(ID, State), 
     #'Signal'{signalName       = Name2,
               streamID         = SID2, 
               sigType          = Type2, 
@@ -1278,12 +1428,8 @@ tr_Signal(#'Signal'{signalName       = Name,
               keepActive       = Keep2, 
               sigParList       = Parms2,
 	      direction        = Dir2,
-	      requestID        = RID2}.
-
-tr_opt_duration(asn1_NOVALUE, _State) ->
-    asn1_NOVALUE;
-tr_opt_duration(Dur, State) ->
-    tr_UINT16(Dur, State).
+	      requestID        = RID2,
+	      intersigDelay    = ID2}.
 
 tr_opt_NotifyCompletion(asn1_NOVALUE, _State) ->
     asn1_NOVALUE;
@@ -1295,7 +1441,8 @@ tr_notifyCompletionItem(Item, _State) ->
         onTimeOut                   -> onTimeOut;
         onInterruptByEvent          -> onInterruptByEvent;
         onInterruptByNewSignalDescr -> onInterruptByNewSignalDescr;
-        otherReason                 -> otherReason
+        otherReason                 -> otherReason;
+        onIteration                 -> onIteration
     end.
 
 tr_opt_SignalType(asn1_NOVALUE = Type, _State) ->
@@ -1610,6 +1757,6 @@ verify_count(Count, Min, Max) ->
 %% -------------------------------------------------------------------
 
 error(Reason) ->
-    erlang:fault(Reason).
+    erlang:error(Reason).
 
 

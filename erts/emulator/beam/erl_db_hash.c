@@ -284,6 +284,7 @@ void db_unfix_table_hash(DbTableHash *tb)
 int db_create_hash(Process *p, DbTable *tbl)
 {
     DbTableHash *tb = &tbl->hash;
+
     tb->szm = SZMASK;
     tb->nslots = SEGSZ;
     tb->nactive = SEGSZ;
@@ -958,10 +959,13 @@ static int db_select_continue_hash(Process *p,
 	    if (chunk_size && got >= chunk_size) {
 		break;
 	    }    
-	    if (num_left <= 0) {
+	    if (num_left <= 0 || MBUF(p)) {
+		/*
+		 * We have either reached our limit, or just created some heap fragments.
+		 * Since many heap fragments will make the GC slower, trap and GC now.
+		 */
 		goto trap;
 	    }
-	    
 	}
     }
 done:
@@ -1143,7 +1147,11 @@ static int db_select_chunk_hash(Process *p, DbTable *tbl,
 		if (chunk_size && got >= chunk_size) {
 		    break;
 		}    
-		if (num_left <= 0) {
+		if (num_left <= 0 || MBUF(p)) {
+		    /*
+		     * We have either reached our limit, or just created some heap fragments.
+		     * Since many heap fragments will make the GC slower, trap and GC now.
+		     */
 		    goto trap;
 		}
 	    }
@@ -2228,8 +2236,8 @@ static void shrink(DbTableHash* tb)
     *bp = BUCKET(tb, tb->nactive);
     BUCKET(tb, tb->nactive) = 0;
 
-    if ((tb->nactive & SZMASK) == SZMASK) {
-	int six = (tb->nactive >> SZEXP)+1;
+    if ((tb->nactive & SZMASK) == 0) {
+	int six = (tb->nactive >> SZEXP);
 
 	erts_db_free(ERTS_ALC_T_DB_SEG,
 		     (DbTable *) tb,

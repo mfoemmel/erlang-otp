@@ -44,6 +44,8 @@ do {									\
 #define in_area(ptr,start,nbytes) \
  ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
 
+extern Uint erts_test_long_gc_sleep;
+
 #ifdef DEBUG
 int within(Eterm *ptr, Process *p);
 #endif

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Encode V2 Megaco/H.248 text messages from internal form
@@ -79,7 +81,7 @@ enc_ActionReply(Val) ->
 enc_AuthenticationHeader(asn1_NOVALUE, _State) ->
     [];
 enc_AuthenticationHeader(Val, State)
-  when record(Val, 'AuthenticationHeader') ->
+  when is_record(Val, 'AuthenticationHeader') ->
     [
      ?AuthToken,
      ?EQUAL,
@@ -116,7 +118,7 @@ enc_AuthData(Val, State) ->
     ].
 
 enc_Message(Val, State)
-  when record(Val, 'Message') ->
+  when is_record(Val, 'Message') ->
     [
      ?MegacopToken,
      ?SLASH,
@@ -198,27 +200,27 @@ enc_IP4Address(#'IP4Address'{portNumber = asn1_NOVALUE,
 			     address    = [A1, A2, A3, A4]}, State) ->
     [
      $[,
-       enc_V4hex(A1, State),
-       ?DOT,
-       enc_V4hex(A2, State),
-       ?DOT,
-       enc_V4hex(A3, State),
-       ?DOT,
-       enc_V4hex(A4, State),    
-       $]
+     enc_V4hex(A1, State),
+     ?DOT,
+     enc_V4hex(A2, State),
+     ?DOT,
+     enc_V4hex(A3, State),
+     ?DOT,
+     enc_V4hex(A4, State),    
+     $]
     ];
 enc_IP4Address(#'IP4Address'{portNumber = PortNumber,
 			     address    = [A1, A2, A3, A4]}, State) ->
     [
      $[,
-       enc_V4hex(A1, State),
-       ?DOT,
-       enc_V4hex(A2, State),
-       ?DOT,
-       enc_V4hex(A3, State),
-       ?DOT,
-       enc_V4hex(A4, State),    
-       $],
+     enc_V4hex(A1, State),
+     ?DOT,
+     enc_V4hex(A2, State),
+     ?DOT,
+     enc_V4hex(A3, State),
+     ?DOT,
+     enc_V4hex(A4, State),    
+     $],
      $:,
      enc_portNumber(PortNumber, State)
     ].    
@@ -231,16 +233,16 @@ enc_IP6Address(#'IP6Address'{portNumber = asn1_NOVALUE,
   when is_list(Addr) and (length(Addr) == 16) ->
     [
      $[,
-       enc_IP6Address_address(Addr, State),
-       $]
+     enc_IP6Address_address(Addr, State),
+     $]
     ];
 enc_IP6Address(#'IP6Address'{portNumber = PortNumber,
 			     address    = Addr}, State) 
   when is_list(Addr) and (length(Addr) == 16) ->
     [
      $[,
-       enc_IP6Address_address(Addr, State),
-       $],
+     enc_IP6Address_address(Addr, State),
+     $],
      $:,
      enc_portNumber(PortNumber, State)
     ].
@@ -331,7 +333,7 @@ enc_PathName(Val, State) ->
     %% BUGBUG: ["@" pathDomainName ]
     enc_STRING(Val, State, 1, 64).
 
-enc_Transaction(Bin, _State) when binary(Bin) ->
+enc_Transaction(Bin, _State) when is_binary(Bin) ->
     [Bin]; %% Already encoded...
 enc_Transaction({'Transaction',Val}, State) ->
     enc_Transaction(Val, State);
@@ -366,7 +368,7 @@ enc_TransactionResponseAck([Mand | Opt], State) ->
     ].
     
 enc_TransactionAck(Val, State)
-  when record(Val, 'TransactionAck') ->
+  when is_record(Val, 'TransactionAck') ->
     [
      enc_TransactionId(Val#'TransactionAck'.firstAck, ?INC_INDENT(State)),
      case Val#'TransactionAck'.lastAck of
@@ -412,24 +414,20 @@ enc_TransactionPending(#'TransactionPending'{transactionId = Tid}, State) ->
      ?LBRKT_INDENT(State),
      ?RBRKT_INDENT(State)
     ];
-enc_TransactionPending(Bin, _State) when binary(Bin) ->
+enc_TransactionPending(Bin, _State) when is_binary(Bin) ->
     [Bin].
 
 enc_TransactionReply(#'TransactionReply'{transactionId        = Tid,
-					 immAckRequired       = asn1_NOVALUE,
-					 transactionResult    = Res}, 
+					 immAckRequired       = Req,
+					 transactionResult    = Res,
+					 %% These fields are actually not 
+					 %% supported in this implementation,
+					 %% but because the messanger module
+					 %% cannot see any diff between the
+					 %% various v3 implementations...
+					 segmentNumber        = asn1_NOVALUE,
+					 segmentationComplete = asn1_NOVALUE}, 
 		     State) ->
-    [
-     ?ReplyToken,
-     ?EQUAL,
-     enc_TransactionId(Tid, State),
-     ?LBRKT_INDENT(State),
-     enc_TransactionReply_transactionResult(Res, ?INC_INDENT(State)),
-     ?RBRKT_INDENT(State)
-    ];
-enc_TransactionReply(#'TransactionReply'{transactionId     = Tid,
-					 immAckRequired    = Req,
-					 transactionResult = Res}, State) ->
     [
      ?ReplyToken,
      ?EQUAL,
@@ -439,7 +437,7 @@ enc_TransactionReply(#'TransactionReply'{transactionId     = Tid,
      enc_TransactionReply_transactionResult(Res, ?INC_INDENT(State)),
      ?RBRKT_INDENT(State)
     ];
-enc_TransactionReply(Bin, _State) when binary(Bin) ->
+enc_TransactionReply(Bin, _State) when is_binary(Bin) ->
     [Bin].
 
 enc_immAckRequired(Val, _State) ->
@@ -511,7 +509,7 @@ enc_ContextID(Val, State) ->
 	Int when integer(Int) -> enc_UINT32(Int, State)
     end.
 
-enc_ActionRequest(Bin, _State) when binary(Bin) ->
+enc_ActionRequest(Bin, _State) when is_binary(Bin) ->
     [Bin]; %% Already encoded...
 enc_ActionRequest(#'ActionRequest'{contextId           = CID,
 				   contextRequest      = asn1_NOVALUE,
@@ -882,7 +880,7 @@ enc_iepsValue(Val, _State) ->
 
 
 enc_AmmRequest(Val, State)
-  when record(Val, 'AmmRequest') ->
+  when is_record(Val, 'AmmRequest') ->
 %     d("enc_AmmRequest -> entry with"
 %       "~n   Val: ~p", [Val]),
     [
@@ -950,7 +948,7 @@ enc_AmmsReply(#'AmmsReply'{terminationID = ID,
     ].
 
 enc_SubtractRequest(Val, State)
-  when record(Val, 'SubtractRequest') ->
+  when is_record(Val, 'SubtractRequest') ->
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -968,7 +966,7 @@ enc_SubtractRequest(Val, State)
     ].    
 
 enc_AuditRequest(Val, State)
-  when record(Val, 'AuditRequest') ->
+  when is_record(Val, 'AuditRequest') ->
     %%     d("enc_AuditRequest -> entry with"
     %%       "~n   Val: ~p", [Val]),
     [
@@ -1016,7 +1014,7 @@ enc_AuditReply({Tag, Val}, State) ->
 	     enc_ErrorDescriptor(Val, ?INC_INDENT(State)),
 	     ?RBRKT_INDENT(State)
 	    ]; 
-	auditResult when record(Val, 'AuditResult') ->
+	auditResult when is_record(Val, 'AuditResult') ->
 	    %% d("enc_AuditReply -> auditResult"),
 	    enc_auditOther(Val, State);
 	auditResult ->
@@ -1259,7 +1257,7 @@ enc_IndAudStreamParms(
     ].
 
 enc_IndAudLocalControlDescriptor(Val, State)
-  when record(Val, 'IndAudLocalControlDescriptor') ->
+  when is_record(Val, 'IndAudLocalControlDescriptor') ->
     [
      ?LocalControlToken,
      ?LBRKT_INDENT(State),
@@ -1309,7 +1307,7 @@ enc_IndAudStreamDescriptor(#'IndAudStreamDescriptor'{streamID    = SID,
     ].
     
 enc_IndAudEventBufferDescriptor(Val, State) 
-  when record(Val, 'IndAudEventBufferDescriptor') ->
+  when is_record(Val, 'IndAudEventBufferDescriptor') ->
     #'IndAudEventBufferDescriptor'{eventName = EvName,
 				   streamID  = ID} = Val, 
     [
@@ -1338,7 +1336,7 @@ enc_IndAudEventBufferDescriptor_eventSpec(ID, State) ->
     ].
 
 enc_IndAudEventsDescriptor(Val, State) 
-  when record(Val, 'IndAudEventsDescriptor') ->
+  when is_record(Val, 'IndAudEventsDescriptor') ->
     #'IndAudEventsDescriptor'{requestID = ReqID,
 			      pkgdName  = Name,
 			      streamID  = asn1_NOVALUE} = Val,
@@ -1473,7 +1471,7 @@ enc_EmptyDescriptors(#'AuditDescriptor'{auditToken = List}, State) ->
 
 
 enc_NotifyRequest(Val, State)
-  when record(Val, 'NotifyRequest') ->
+  when is_record(Val, 'NotifyRequest') ->
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -1492,7 +1490,7 @@ enc_NotifyRequest(Val, State)
     ].
 
 enc_NotifyReply(Val, State)
-  when record(Val, 'NotifyReply') ->
+  when is_record(Val, 'NotifyReply') ->
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -1515,7 +1513,7 @@ enc_NotifyReply(Val, State)
     ].
 
 enc_ObservedEventsDescriptor(Val, State)
-  when record(Val, 'ObservedEventsDescriptor') ->
+  when is_record(Val, 'ObservedEventsDescriptor') ->
     [
      ?ObservedEventsToken,
      ?EQUAL,
@@ -1537,7 +1535,7 @@ enc_observedEventsDescriptors([Mand | Opt], State) ->
 %% ;at-most-once eventStream, every eventParameterName at most once
 %% observedEventParameter = eventStream / eventOther
 enc_ObservedEvent(Val, State)
-  when record(Val, 'ObservedEvent') ->
+  when is_record(Val, 'ObservedEvent') ->
     [
      case Val#'ObservedEvent'.timeNotation of
 	 asn1_NOVALUE ->
@@ -1580,7 +1578,7 @@ enc_eventOther(#'EventParameter'{eventParameterName = Name,
     ].
 
 enc_ServiceChangeRequest(Val, State)
-  when record(Val, 'ServiceChangeRequest') ->
+  when is_record(Val, 'ServiceChangeRequest') ->
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -1601,7 +1599,7 @@ enc_ServiceChangeRequest(Val, State)
 %% servChgReplyParm     = (serviceChangeAddress / serviceChangeMgcId /
 %% 			  serviceChangeProfile / serviceChangeVersion )
 enc_ServiceChangeReply(Val, State)
-  when record(Val, 'ServiceChangeReply') ->
+  when is_record(Val, 'ServiceChangeReply') ->
     [
      %% Assume that Token is added elsewhere
      ?EQUAL,
@@ -1668,7 +1666,7 @@ enc_TerminationIDListN(TIDs, State) ->
 %% pathNAME             = ["*"] NAME *("/" / "*"/ ALPHA / DIGIT /"_" / "$" ) 
 %% 			  ["@" pathDomainName ]
 enc_TerminationID(Tid, State)
-  when record(Tid,  megaco_term_id) ->
+  when is_record(Tid,  megaco_term_id) ->
     List = [{Tid#megaco_term_id.id, fun enc_tid_component/2 }],
     enc_list(List, State, fun(_S) -> ?SLASH end, false).    
 
@@ -1695,7 +1693,7 @@ enc_tid_sub_component(Sub, _State) ->
 %% streamDescriptor     = StreamToken EQUAL StreamID LBRKT streamParm 
 %% 			  *(COMMA streamParm) RBRKT
 enc_MediaDescriptor(Val, State)
-  when record(Val, 'MediaDescriptor') ->
+  when is_record(Val, 'MediaDescriptor') ->
     [
      ?MediaToken,
      ?LBRKT_INDENT(State),
@@ -1721,7 +1719,7 @@ decompose_streams({Tag, Val}) ->
     end.
 
 decompose_StreamParms(Val)
-  when record(Val, 'StreamParms') ->
+  when is_record(Val, 'StreamParms') ->
     [
      {[Val#'StreamParms'.localControlDescriptor],
       fun enc_LocalControlDescriptor/2},
@@ -1734,7 +1732,7 @@ decompose_StreamParms(Val)
     ].
 
 enc_StreamDescriptor(Val, State) 
-    when record(Val, 'StreamDescriptor') ->
+    when is_record(Val, 'StreamDescriptor') ->
     [
      ?StreamToken,
      ?EQUAL,
@@ -1826,7 +1824,7 @@ enc_PkgdName(Val, State) ->
     enc_OCTET_STRING(Val, State, 1, 64).
 
 enc_localDescriptor(Val, State) 
-  when record(Val, 'LocalRemoteDescriptor') ->
+  when is_record(Val, 'LocalRemoteDescriptor') ->
     [
      ?LocalToken,
      ?LBRKT,
@@ -1835,7 +1833,7 @@ enc_localDescriptor(Val, State)
     ].
 
 enc_remoteDescriptor(Val, State) 
-  when record(Val, 'LocalRemoteDescriptor') ->
+  when is_record(Val, 'LocalRemoteDescriptor') ->
     [
      ?RemoteToken,
      ?LBRKT,
@@ -1853,7 +1851,7 @@ enc_remoteDescriptor(Val, State)
 %% (tag-value pairs) as specified in Annex C.  Each such group may
 %% contain the parameters of a session description.
 enc_LocalRemoteDescriptor(Val, State)
-  when record(Val, 'LocalRemoteDescriptor') ->
+  when is_record(Val, 'LocalRemoteDescriptor') ->
     case Val#'LocalRemoteDescriptor'.propGrps of
 	[] ->
 	    [];
@@ -1866,7 +1864,7 @@ enc_LocalRemoteDescriptor(Val, State)
 enc_PropertyGroup({'PropertyGroup',Val}, RequiresV, State) ->
     enc_PropertyGroup(Val, RequiresV, State);
 enc_PropertyGroup([H | _T] = List, mand_v, State) 
-  when record(H, 'PropertyParm'), H#'PropertyParm'.name == "v" ->
+  when is_record(H, 'PropertyParm') andalso (H#'PropertyParm'.name == "v") ->
     enc_PropertyGroup(List, opt_v, State);
 enc_PropertyGroup(PG, opt_v, State) ->
     [
@@ -1874,7 +1872,7 @@ enc_PropertyGroup(PG, opt_v, State) ->
     ].
 
 enc_PropertyGroupParm(Val, State)
-  when record(Val, 'PropertyParm') ->
+  when is_record(Val, 'PropertyParm') ->
     [OctetString] = Val#'PropertyParm'.value,
     [
      enc_PkgdName(Val#'PropertyParm'.name, State),
@@ -1887,7 +1885,7 @@ enc_PropertyGroupParm(Val, State)
 %% alternativeValue     = ( VALUE / LSBRKT VALUE *(COMMA VALUE) RSBRKT  / 
 %% 			  LSBRKT VALUE DOT DOT VALUE RSBRKT )
 enc_PropertyParm(Val, State)
-  when record(Val, 'PropertyParm') ->
+  when is_record(Val, 'PropertyParm') ->
     PkgdName = ?META_ENC(property, Val#'PropertyParm'.name),
     [
      enc_PkgdName(PkgdName, State),
@@ -1937,7 +1935,7 @@ enc_propertyParmValues(V, EI, _State) ->
     error({invalid_property_parm_values, V, EI}).
 
 enc_TerminationStateDescriptor(Val, State)
-  when record(Val, 'TerminationStateDescriptor') ->
+  when is_record(Val, 'TerminationStateDescriptor') ->
     [
      ?TerminationStateToken,
      ?LBRKT_INDENT(State),
@@ -1976,7 +1974,7 @@ enc_serviceState(Val, _State) ->
     ].
 
 enc_MuxDescriptor(Val, State)
-  when record(Val, 'MuxDescriptor') ->
+  when is_record(Val, 'MuxDescriptor') ->
     [
      ?MuxToken,
      ?EQUAL,
@@ -2002,7 +2000,7 @@ enc_StreamID(Val, State) ->
     enc_UINT16(Val, State).
 
 enc_EventsDescriptor(Val, State)
-  when record(Val, 'EventsDescriptor') ->
+  when is_record(Val, 'EventsDescriptor') ->
     #'EventsDescriptor'{requestID = RequestId,
 			eventList = Events} = Val,
     if
@@ -2024,7 +2022,7 @@ enc_EventsDescriptor(Val, State)
     end.
 
 enc_RequestedEvent(Val, State)
-  when record(Val, 'RequestedEvent') ->
+  when is_record(Val, 'RequestedEvent') ->
     PkgdName = ?META_ENC(event, Val#'RequestedEvent'.pkgdName),
     [
      enc_PkgdName(PkgdName, State),
@@ -2175,7 +2173,7 @@ enc_SecondRequestedEvent(#'SecondRequestedEvent'{pkgdName    = N,
 decompose_secondRequestedActions(asn1_NOVALUE) ->
     [];
 decompose_secondRequestedActions(Val)
-  when record(Val, 'SecondRequestedActions') ->
+  when is_record(Val, 'SecondRequestedActions') ->
     [
      {[Val#'SecondRequestedActions'.keepActive],
       fun enc_keepActive/2},
@@ -2252,7 +2250,7 @@ enc_SignalRequest({Tag, Val}, State) ->
 
 
 enc_SeqSigList(Val, State)
-  when record(Val, 'SeqSigList') ->
+  when is_record(Val, 'SeqSigList') ->
     [
      ?SignalListToken,
      ?EQUAL,
@@ -2264,7 +2262,7 @@ enc_SeqSigList(Val, State)
     ].
 
 enc_Signal(Val, State)
-  when record(Val, 'Signal') ->
+  when is_record(Val, 'Signal') ->
     [
      enc_SignalName(Val#'Signal'.signalName, State),
      enc_opt_brackets(
@@ -2334,7 +2332,7 @@ enc_SignalName(Val, State) ->
     enc_PkgdName(PkgdName, State).
 
 enc_sigOther(Val, State)
-  when record(Val, 'SigParameter') ->
+  when is_record(Val, 'SigParameter') ->
     [
      enc_Name(Val#'SigParameter'.sigParameterName, State),
      enc_propertyParmValues(Val#'SigParameter'.value,
@@ -2387,7 +2385,7 @@ enc_ModemDescriptor(MD, _State) ->
 %%      enc_ModemType(Val, State)
 %%     ];
 %% enc_ModemDescriptor(Val, State)
-%%   when record(Val, 'ModemDescriptor') ->
+%%   when is_record(Val, 'ModemDescriptor') ->
 %%     [
 %%      ?ModemToken,
 %%      ?LSBRKT,
@@ -2401,7 +2399,7 @@ enc_ModemDescriptor(MD, _State) ->
 %%     ].
 
 %% enc_ModemDescriptor(Val, State)
-%%   when record(Val, 'ModemDescriptor') ->
+%%   when is_record(Val, 'ModemDescriptor') ->
 %%     [
 %%      ?ModemToken,
 %%      %% BUGBUG: Does never generate: EQUAL modemType
@@ -2433,7 +2431,7 @@ enc_ModemDescriptor(MD, _State) ->
 %%     end.
 
 enc_DigitMapDescriptor(Val, State)
-  when record(Val, 'DigitMapDescriptor') ->
+  when is_record(Val, 'DigitMapDescriptor') ->
     [
      ?DigitMapToken,
      ?EQUAL,
@@ -2450,7 +2448,7 @@ enc_DigitMapName(Val, State) ->
     enc_Name(Val, State).
 
 enc_DigitMapValue(Val, State)
-  when record(Val, 'DigitMapValue') ->
+  when is_record(Val, 'DigitMapValue') ->
     [
      enc_timer(Val#'DigitMapValue'.startTimer,     $T, State),
      enc_timer(Val#'DigitMapValue'.shortTimer,     $S, State),
@@ -2471,7 +2469,7 @@ enc_timer(Timer, Prefix, State) ->
     ].
 
 enc_ServiceChangeParm(Val, State)
-  when record(Val, 'ServiceChangeParm') ->
+  when is_record(Val, 'ServiceChangeParm') ->
     [
      ?ServicesToken,
      ?LBRKT_INDENT(State),
@@ -2589,7 +2587,7 @@ enc_portNumber(Val, State) when integer(Val), Val >= 0 ->
     enc_UINT16(Val, State).
      
 enc_ServiceChangeResParm(Val, State)
-  when record(Val, 'ServiceChangeResParm') ->
+  when is_record(Val, 'ServiceChangeResParm') ->
     enc_list([{[Val#'ServiceChangeResParm'.serviceChangeAddress],
 	       fun enc_ServiceChangeAddress/2},
 	      {[Val#'ServiceChangeResParm'.serviceChangeVersion],
@@ -2613,7 +2611,7 @@ enc_PackagesDescriptor(Val, State) ->
     ].
 
 enc_PackagesItem(Val, State)
-  when record(Val, 'PackagesItem') ->
+  when is_record(Val, 'PackagesItem') ->
     PkgdName = ?META_ENC(package, Val#'PackagesItem'.packageName),
     [
      enc_Name(PkgdName, State),
@@ -2632,7 +2630,7 @@ enc_StatisticsDescriptor(List, State) when list(List) ->
     ].
 
 enc_StatisticsParameter(Val, State)
-  when record(Val, 'StatisticsParameter') ->
+  when is_record(Val, 'StatisticsParameter') ->
     PkgdName = ?META_ENC(statistics, Val#'StatisticsParameter'.statName),
     case Val#'StatisticsParameter'.statValue of
 	asn1_NOVALUE ->
@@ -2648,7 +2646,7 @@ enc_StatisticsParameter(Val, State)
     end.
 
 enc_TimeNotation(Val, State)
-  when record(Val, 'TimeNotation') ->
+  when is_record(Val, 'TimeNotation') ->
     [
      enc_STRING(Val#'TimeNotation'.date, State, 8, 8), % "yyyymmdd"
      "T",
@@ -2748,10 +2746,6 @@ enc_integer(Val, _State, Min, Max) ->
 %% Encodes a list of elements with separator tokens between
 %% the elements. Optional asn1_NOVALUE values are ignored.
 
-%% enc_list(asn1_NOVALUE, _State) ->
-%%     [];
-%% enc_list([], _State) ->
-%%     [];
 enc_list(List, State) ->
     enc_list(List, State, fun(_S) -> ?COMMA_INDENT(_S) end, false).
 

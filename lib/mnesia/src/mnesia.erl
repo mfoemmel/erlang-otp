@@ -32,6 +32,7 @@
 	 sync_transaction/1, sync_transaction/2, sync_transaction/3,
 	 async_dirty/1, async_dirty/2, sync_dirty/1, sync_dirty/2, ets/1, ets/2,
 	 activity/2, activity/3, activity/4, % Not for public use
+	 is_transaction/0,
 
 	 %% Access within an activity - Lock acquisition
 	 lock/2, lock/4,
@@ -297,8 +298,18 @@ ms() ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Activity mgt
 
+-spec(abort/1 :: (_) -> no_return()).
+
 abort(Reason) -> 
     exit({aborted, Reason}).
+
+is_transaction() ->
+    case get(mnesia_activity_state) of
+	{_, Tid, _Ts} when element(1,Tid) == tid ->
+	    true;
+	_ ->
+	    false
+    end.
 
 transaction(Fun) ->
     transaction(get(mnesia_activity_state), Fun, [], infinity, ?DEFAULT_ACCESS, async).
@@ -1344,7 +1355,7 @@ fun_select(Tid, Ts, Tab, Spec, LockKind, TabPat, Init, NObjects, Node, Storage) 
 		    FixedSpec = get_record_pattern(Spec),
 		    CMS = ets:match_spec_compile(Spec),
 		    trans_select(Init(FixedSpec), 
-				 Def#mnesia_select{written=Written,spec=CMS,type=Type})
+				 Def#mnesia_select{written=Written,spec=CMS,type=Type, orig=FixedSpec})
 	    end;
 	_Protocol ->
 	    select_state(Init(Spec),Def)
@@ -1844,6 +1855,8 @@ any_table_info(Tab, Item) when atom(Tab) ->
 				 (Prop) -> Prop end, 
 			      Props) 
 	    end;
+	name ->
+	    Tab;
 	_ ->
 	    case ?catch_val({Tab, Item}) of
 		{'EXIT', _} ->
@@ -2500,19 +2513,145 @@ snmp_close_table(Tab) ->
     mnesia_schema:del_snmp(Tab).
 
 snmp_get_row(Tab, RowIndex) when atom(Tab), Tab /= schema ->
-    dirty_rpc(Tab, mnesia_snmp_hook, get_row, [Tab, RowIndex]);
+    case get(mnesia_activity_state) of
+	_ when RowIndex =:= endOfTable -> 
+	    undefined;
+ 	{Mod, Tid, Ts=#tidstore{store=Store}} when element(1, Tid) =:= tid ->
+	    case snmp_oid_to_mnesia_key(RowIndex, Tab) of
+		unknown -> %% Arrg contains fix_string
+		    Ops = find_ops(Store, Tab, val({Tab, wild_pattern})),
+		    SnmpType = val({Tab,snmp}),
+		    Fix = fun({{_,Key},Row,Op}, Res) ->
+				  case mnesia_snmp_hook:key_to_oid(Tab,Key,SnmpType) of
+				      RowIndex -> 
+					  case Op of
+					      write -> {ok, Row};
+					      _ -> undefined
+					  end;
+				      _ -> 
+					  Res
+				  end
+			  end,
+		    lists:foldl(Fix, undefined, Ops);
+		Key ->
+		    case Mod:read(Tid, Ts, Tab, Key, read) of
+			[Row] ->  
+			    {ok, Row};
+			_ -> 
+			    undefined
+		    end
+	    end;
+ 	_ -> 
+ 	    dirty_rpc(Tab, mnesia_snmp_hook, get_row, [Tab, RowIndex])
+    end;
 snmp_get_row(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
 
+%%%%%%%%%%%%%
+
 snmp_get_next_index(Tab, RowIndex) when atom(Tab), Tab /= schema ->
-    dirty_rpc(Tab, mnesia_snmp_hook, get_next_index, [Tab, RowIndex]);
+    {Next,OrigKey} = dirty_rpc(Tab, mnesia_snmp_hook, get_next_index, [Tab, RowIndex]),
+    case get(mnesia_activity_state) of
+ 	{_Mod, Tid, #tidstore{store=Store}} when element(1, Tid) =:= tid ->		
+	    case OrigKey of
+		undefined ->
+		    snmp_order_keys(Store, Tab, RowIndex, []);
+		_ ->
+		    case ?ets_match(Store, {{Tab,OrigKey}, '_', '$1'}) of
+			[] ->  snmp_order_keys(Store,Tab,RowIndex,[OrigKey]);
+			Ops ->
+			    case lists:last(Ops) of
+				[delete] -> snmp_get_next_index(Tab, Next);
+				_ -> snmp_order_keys(Store,Tab,RowIndex,[OrigKey])
+			    end
+		    end
+	    end;
+	_ ->
+	    case Next of
+		endOfTable -> endOfTable;
+		_ -> {ok, Next}
+	    end
+    end;
 snmp_get_next_index(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
 
+snmp_order_keys(Store,Tab,RowIndex,Def) ->
+    All = ?ets_match(Store, {{Tab,'$1'},'_','$2'}),
+    SnmpType = val({Tab,snmp}),
+    Keys0 = [mnesia_snmp_hook:key_to_oid(Tab,Key,SnmpType) || 
+		Key <- ts_keys_1(All, Def)],
+    Keys = lists:sort(Keys0),
+    get_ordered_snmp_key(RowIndex,Keys).
+
+get_ordered_snmp_key(endOfTable, [First|_]) -> {ok, First};
+get_ordered_snmp_key(Prev, [First|_]) when Prev < First -> {ok, First};
+get_ordered_snmp_key(Prev, [_|R]) ->
+    get_ordered_snmp_key(Prev, R);
+get_ordered_snmp_key(_, []) ->
+    endOfTable.	       
+
+%%%%%%%%%%
+
 snmp_get_mnesia_key(Tab, RowIndex) when atom(Tab), Tab /= schema ->
-    dirty_rpc(Tab, mnesia_snmp_hook, get_mnesia_key, [Tab, RowIndex]);
+    case get(mnesia_activity_state) of
+ 	{_Mod, Tid, Ts} when element(1, Tid) =:= tid ->
+	    Res = dirty_rpc(Tab,mnesia_snmp_hook,get_mnesia_key,[Tab,RowIndex]),
+	    snmp_filter_key(Res, RowIndex, Tab, Ts#tidstore.store);
+	_ -> 
+	    dirty_rpc(Tab, mnesia_snmp_hook, get_mnesia_key, [Tab, RowIndex])
+    end;
 snmp_get_mnesia_key(Tab, _RowIndex) ->
     abort({bad_type, Tab}).
+
+snmp_oid_to_mnesia_key(RowIndex, Tab) ->
+    case mnesia_snmp_hook:oid_to_key(RowIndex, Tab) of
+	unknown ->  %% Contains fix_string needs lookup
+	    case dirty_rpc(Tab,mnesia_snmp_hook,get_mnesia_key,[Tab,RowIndex]) of
+		{ok, MnesiaKey} -> MnesiaKey;
+		undefined -> unknown
+	    end;
+	MnesiaKey -> 
+	    MnesiaKey
+    end.
+
+snmp_filter_key(undefined, endOfTable, _Tab, _Store) -> 
+    undefined;
+snmp_filter_key(Res = {ok,Key}, _RowIndex, Tab, Store) ->
+    case ?ets_lookup(Store, {Tab,Key}) of
+	[] -> Res;
+	Ops ->
+	    case lists:last(Ops) of
+		{_, _, write} -> Res;
+		_ -> undefined
+	    end
+    end;
+snmp_filter_key(undefined, RowIndex, Tab, Store) ->
+    case mnesia_snmp_hook:oid_to_key(RowIndex, Tab) of
+	unknown ->  %% Arrg contains fix_string
+	    Ops = find_ops(Store, Tab, val({Tab, wild_pattern})),
+	    SnmpType = val({Tab,snmp}),
+	    Fix = fun({{_,Key},_,Op}, Res) ->
+			  case mnesia_snmp_hook:key_to_oid(Tab,Key,SnmpType) of
+			      RowIndex -> 
+				  case Op of
+				      write -> {ok, Key};
+				      _ -> undefined
+				  end;
+			      _ -> 
+				  Res
+			  end
+		  end,
+	    lists:foldl(Fix, undefined, Ops);
+	Key ->
+	    case ?ets_lookup(Store, {Tab,Key}) of
+		[] -> undefined;
+		Ops ->
+		    case lists:last(Ops) of
+			{_, _, write} -> {ok, Key};
+			_ -> undefined
+		    end
+	    end
+    end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Textfile access
@@ -2536,7 +2675,7 @@ table(Tab,Opts) ->
 	     select ->
 		 fun(Ms) -> qlc_select(select(Tab,Ms,NObjects,Lock)) end;
 	     _ ->
-		 erlang:fault({badarg, {Trav,[Tab, Opts]}})
+		 erlang:error({badarg, {Trav,[Tab, Opts]}})
 	 end,
     Pre  = fun(Arg) -> pre_qlc(Arg, Tab) end,
     Post = fun()  -> post_qlc(Tab) end,
@@ -2606,6 +2745,7 @@ post_qlc(Tab) ->
     end.
 
 qlc_select('$end_of_table') ->     [];
+qlc_select({[], Cont}) -> qlc_select(select(Cont));
 qlc_select({Objects, Cont}) -> 
     Objects ++ fun() -> qlc_select(select(Cont)) end.
 

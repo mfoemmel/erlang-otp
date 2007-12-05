@@ -20,21 +20,63 @@
 
 -behaviour(supervisor).
 
--export([start_link/0, init/1]).
+%% API
+-export([start_link/0]).
 
+%% Supervisor callback
+-export([init/1]).
+
+%%%=========================================================================
+%%%  API
+%%%=========================================================================
 start_link() ->
-    supervisor:start_link({local, ssl_sup}, ssl_sup, []).
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
 
-
-%% init([])
-%% Returns: {ok,  {SupFlags,  [ChildSpec]}}
+%%%=========================================================================
+%%%  Supervisor callback
+%%%=========================================================================
+%% init([]) -> {ok,  {SupFlags,  [ChildSpec]}}
 %%
 init([]) ->
-    Child1 = {ssl_server, {ssl_server, start_link, []},
-	      permanent, 2000, worker, [ssl_server]},
+    
+    %% OLD ssl - moved start to ssl.erl only if old
+    %% ssl is acctualy run!
+    %%Child1 = {ssl_server, {ssl_server, start_link, []},
+    %%	       permanent, 2000, worker, [ssl_server]},
 
+    %% Does not start any port programs so it does matter
+    %% so much if it is not used!
     Child2 = {ssl_broker_sup, {ssl_broker_sup, start_link, []},
 	      permanent, 2000, supervisor, [ssl_broker_sup]},
 
-    {ok, {{one_for_all, 10, 3600}, [Child1, Child2]}}.
+
+    %% New ssl
+    SessionCertManager = session_and_cert_manager_child_spec(),
+    ConnetionManager = connection_manager_child_spec(),
+
+    {ok, {{one_for_all, 10, 3600}, [Child2, SessionCertManager,
+				    ConnetionManager]}}.
+
+%%--------------------------------------------------------------------
+%%% Internal functions
+%%--------------------------------------------------------------------
+
+session_and_cert_manager_child_spec() ->
+    Name = ssl_manager,  
+    StartFunc = {ssl_manager, start_link, []},
+    Restart = permanent, 
+    Shutdown = 4000,
+    Modules = [ssl_manager],
+    Type = worker,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
+
+connection_manager_child_spec() ->
+    Name = ssl_connection,  
+    StartFunc = {ssl_connection_sup, start_link, []},
+    Restart = permanent, 
+    Shutdown = 4000,
+    Modules = [ssl_connection],
+    Type = supervisor,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
+
 

@@ -33,7 +33,7 @@ MODULES =  \
 
 YRL_FILES= typer_parse.yrl
 
-HRL_FILES= typer.hrl
+HRL_FILES= typer.hrl typer_options.hrl
 ERL_FILES= $(MODULES:%=%.erl)
 INSTALL_FILES= $(MODULES:%=$(EBIN)/%.$(EMULATOR)) $(APP_TARGET) $(APPUP_TARGET)
 TARGET_FILES= $(INSTALL_FILES)
@@ -69,7 +69,7 @@ clean:
 # ----------------------------------------------------
 
 $(EBIN)/typer_options.$(EMULATOR): typer_options.erl ../vsn.mk Makefile
-	erlc -W $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) typer_options.erl
+	erlc -W  $(ERL_COMPILE_FLAGS) -DVSN="\"v$(VSN)\"" -o$(EBIN) typer_options.erl
 
 $(APP_TARGET): $(APP_SRC) ../vsn.mk
 	sed -e 's;%VSN%;$(VSN);' $< > $@
@@ -82,9 +82,9 @@ $(APPUP_TARGET): $(APPUP_SRC) ../vsn.mk
 # ---------------------------------------------------------------------
 
 $(EBIN)/typer.beam: typer.hrl
-$(EBIN)/typer_generator.beam: typer.hrl
-$(EBIN)/typer_info_collector.beam: typer.hrl
-$(EBIN)/typer_options.beam: typer.hrl
+$(EBIN)/typer_generator.beam: typer.hrl typer_options.hrl
+$(EBIN)/typer_info.beam: typer.hrl
+$(EBIN)/typer_options.beam: typer.hrl typer_options.hrl
 $(EBIN)/typer_preprocess.beam: typer.hrl
 
 # ----------------------------------------------------

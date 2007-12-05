@@ -27,13 +27,13 @@
 do(Info) ->
     case Info#mod.method of
 	"HEAD" ->
-	    case httpd_util:key1search(Info#mod.data,status) of
+	    case proplists:get_value(status, Info#mod.data) of
 		%% A status code has been generated!
 		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		_undefined ->
-		    case httpd_util:key1search(Info#mod.data,response) of
+		    case proplists:get_value(response, Info#mod.data) of
 			%% No response has been generated!
 			undefined ->
 			    do_head(Info);

@@ -22,7 +22,7 @@
 %% Interface for compiler.
 -export([module/2,format_error/1]).
 
--import(lists, [reverse/1,foldl/3,foreach/2,member/2]).
+-import(lists, [reverse/1,foldl/3,foreach/2,member/2,dropwhile/2]).
 
 -define(MAXREG, 1024).
 
@@ -125,7 +125,8 @@ beam_file(Name) ->
 	{error,beam_lib,Reason} -> [{beam_lib,Reason}];
 	{beam_file,L} ->
 	    {value,{module,Module}} = lists:keysearch(module, 1, L),
-	    {value,{code,Code}} = lists:keysearch(code, 1, L),
+	    {value,{code,Code0}} = lists:keysearch(code, 1, L),
+	    Code = normalize_disassembled_code(Code0),
 	    validate(Module, Code)
     catch _:_ -> [disassembly_failed]
     end.
@@ -146,18 +147,43 @@ beam_file(Name) ->
 %%%   put instructions.
 %%%
 
-%% validate([Function]) -> [] | [Error]
+%% validate(Module, [Function]) -> [] | [Error]
 %%  A list of functions with their code. The code is in the same
 %%  format as used in the compiler and in .S files.
-validate(_Module, []) -> [];
-validate(Module, [{function,Name,Ar,Entry,Code}|Fs]) ->
-    try validate_1(Code, Name, Ar, Entry) of
-	_ -> validate(Module, Fs)
+
+validate(Module, Fs) ->
+    Ft = index_bs_start_match(Fs, []),
+    validate_0(Module, Fs, Ft).
+
+index_bs_start_match([{function,_,_,Entry,Code}|Fs], Acc0) ->
+    case Code of
+	[_,_,{label,Entry}|Is] ->
+	    Acc = index_bs_start_match_1(Is, Entry, Acc0),
+	    index_bs_start_match(Fs, Acc);
+	_ ->
+	    index_bs_start_match(Fs, Acc0)
+    end;
+index_bs_start_match([], Acc) ->
+    gb_trees:from_orddict(lists:sort(Acc)).
+
+index_bs_start_match_1([{test,bs_start_match2,_,_}=I|_], Entry, Acc) ->
+    [{Entry,[I]}|Acc];
+index_bs_start_match_1([{test,_,{f,F},_},{bs_context_to_binary,_}|Is0], Entry, Acc) ->
+    [{label,F}|Is] = dropwhile(fun({label,L}) when L =:= F -> false;
+				  (_)  -> true
+			       end, Is0),
+    index_bs_start_match_1(Is, Entry, Acc);
+index_bs_start_match_1(_, _, Acc) -> Acc.
+
+validate_0(_Module, [], _) -> [];
+validate_0(Module, [{function,Name,Ar,Entry,Code}|Fs], Ft) ->
+    try validate_1(Code, Name, Ar, Entry, Ft) of
+	_ -> validate_0(Module, Fs, Ft)
     catch
 	Error ->
-	    [Error|validate(Module, Fs)];
+	    [Error|validate_0(Module, Fs, Ft)];
 	  error:Error ->
-	    [validate_error(Error, Module, Name, Ar)|validate(Module, Fs)]
+	    [validate_error(Error, Module, Name, Ar)|validate_0(Module, Fs, Ft)]
     end.
 
 -ifdef(DEBUG).
@@ -178,7 +204,6 @@ validate_error_1(Error, Module, Name, Ar) ->
 	 numy=none,			%Number of y registers.
 	 h=0,				%Available heap size.
 	 hf=0,				%Available heap size for floats.
-	 hlit=[],			%Literals that have been tested for.
 	 fls=undefined,			%Floating point state.
 	 ct=[],				%List of hot catch/try labels
 	 bsm=undefined,			%Bit syntax matching state.
@@ -189,7 +214,9 @@ validate_error_1(Error, Module, Name, Ar) ->
 -record(vst,				%Validator state
 	{current=none,			%Current state
 	 branched=gb_trees:empty(),	%States at jumps
-	 labels=gb_sets:empty()
+	 labels=gb_sets:empty(),	%All defined labels
+	 ft			        %Some other functions in the module
+	 				% (those that start with bs_start_match2).
 	}).
 
 -ifdef(DEBUG).
@@ -200,30 +227,51 @@ print_st(#st{x=Xs,y=Ys,numy=NumY,h=H,ct=Ct}) ->
 	      [gb_trees:to_list(Xs),gb_trees:to_list(Ys),NumY,H,Ct]).
 -endif.
 
-validate_1(Is, Name, Arity, Entry) ->
-    validate_2(labels(Is), Name, Arity, Entry).
+validate_1(Is, Name, Arity, Entry, Ft) ->
+    validate_2(labels(Is), Name, Arity, Entry, Ft).
 
 validate_2({Ls1,[{func_info,{atom,Mod},{atom,Name},Arity}=_F|Is]},
-	   Name, Arity, Entry) ->
+	   Name, Arity, Entry, Ft) ->
     lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [{label,_L}]) end, Ls1),
     ?DBG_FORMAT("  ~p.~n", [_F]),
-    validate_3(labels(Is), Name, Arity, Entry, Mod, Ls1);
-validate_2({Ls1,Is}, Name, Arity, _Entry) ->
+    validate_3(labels(Is), Name, Arity, Entry, Mod, Ls1, Ft);
+validate_2({Ls1,Is}, Name, Arity, _Entry, _Ft) ->
     error({{'_',Name,Arity},{first(Is),length(Ls1),illegal_instruction}}).
 
-validate_3({Ls2,Is}, Name, Arity, Entry, Mod, Ls1) ->
+validate_3({Ls2,Is}, Name, Arity, Entry, Mod, Ls1, Ft) ->
     lists:foreach(fun (_L) -> ?DBG_FORMAT("  ~p.~n", [{label,_L}]) end, Ls2),
     Offset = 1 + length(Ls1) + 1 + length(Ls2),
     EntryOK = (Entry =:= undefined) orelse lists:member(Entry, Ls2),
-    if  EntryOK ->
+    if
+	EntryOK ->
 	    St = init_state(Arity),
-	    Vst = #vst{current=St,
-		       branched=gb_trees_from_list([{L,St} || L <- Ls1]),
-		       labels=gb_sets:from_list(Ls1++Ls2)},
-	    valfun(Is, {Mod,Name,Arity}, Offset, Vst);
+	    Vst0 = #vst{current=St,
+			branched=gb_trees_from_list([{L,St} || L <- Ls1]),
+			labels=gb_sets:from_list(Ls1++Ls2),
+			ft=Ft},
+	    MFA = {Mod,Name,Arity},
+	    Vst = valfun(Is, MFA, Offset, Vst0),
+	    validate_fun_info_branches(Ls1, MFA, Vst);
 	true ->
 	    error({{Mod,Name,Arity},{first(Is),Offset,no_entry_label}})
     end.
+
+validate_fun_info_branches([L|Ls], MFA, #vst{branched=Branches}=Vst0) ->
+    Vst = Vst0#vst{current=gb_trees:get(L, Branches)},
+    validate_fun_info_branches_1(0, MFA, Vst),
+    validate_fun_info_branches(Ls, MFA, Vst);
+validate_fun_info_branches([], _, _) -> ok.
+
+validate_fun_info_branches_1(Arity, {_,_,Arity}, _) -> ok;
+validate_fun_info_branches_1(X, {Mod,Name,Arity}=MFA, Vst) ->
+    try
+	get_term_type({x,X}, Vst)
+    catch Error ->
+	    I = {func_info,{atom,Mod},{atom,Name},Arity},
+	    Offset = 2,
+	    error({MFA,{I,Offset,Error}})
+    end,
+    validate_fun_info_branches_1(X+1, MFA, Vst).
 
 first([X|_]) -> X;
 first([]) -> [].
@@ -242,7 +290,7 @@ init_state(Arity) ->
     kill_heap_allocation(#st{x=Xs,y=Ys,numy=none,ct=[]}).
 
 kill_heap_allocation(St) ->
-    St#st{h=0,hf=0,hlit=[]}.
+    St#st{h=0,hf=0}.
 
 init_regs(0, _) ->
     gb_trees:empty();
@@ -291,8 +339,29 @@ valfun_1({try_case_end,Src}, Vst) ->
     assert_term(Src, Vst),
     kill_state(Vst);
 %% Instructions that can not cause exceptions
+valfun_1({bs_context_to_binary,Ctx}, #vst{current=#st{x=Xs}}=Vst) ->
+    case Ctx of
+	{Tag,X} when Tag =:= x; Tag =:= y ->
+	    Type = case gb_trees:lookup(X, Xs) of
+		       {value,{match_context,_,_}} -> term;
+		       _ -> get_term_type(Ctx, Vst)
+		   end,
+	    set_type_reg(Type, Ctx, Vst);
+	_ ->
+	    error({bad_source,Ctx})
+    end;
+valfun_1(bs_init_writable=I, Vst) ->
+    call(I, 1, Vst);
+valfun_1({move,{y,_}=Src,{y,_}=Dst}, Vst) ->
+    %% The stack trimming optimization may generate a move from an initialized
+    %% but unassigned Y register to another Y register.
+    case get_term_type_1(Src, Vst) of
+	{catchtag,_} -> error({catchtag,Src});
+	{trytag,_} -> error({trytag,Src});
+	Type -> set_type_reg(Type, Dst, Vst)
+    end;
 valfun_1({move,Src,Dst}, Vst) ->
-    Type = get_term_type(Src, Vst),
+    Type = get_move_term_type(Src, Vst),
     set_type_reg(Type, Dst, Vst);
 valfun_1({fmove,Src,{fr,_}=Dst}, Vst) ->
     assert_type(float, Src, Vst),
@@ -339,12 +408,13 @@ valfun_1({put,Src}, Vst) ->
 valfun_1({put_string,Sz,_,Dst}, Vst0) when is_integer(Sz) ->
     Vst = eat_heap(2*Sz, Vst0),
     set_type_reg(cons, Dst, Vst);
-valfun_1({put_literal,{literal,Lit},Dst}, Vst0) ->
-    Vst = eat_heap_literal(Lit, Vst0),
-    set_type_reg(term, Dst, Vst);
 %% Misc.
 valfun_1({'%live',Live}, Vst) ->
     verify_live(Live, Vst),
+    Vst;
+valfun_1(remove_message, Vst) ->
+    Vst;
+valfun_1({'%',_}, Vst) ->
     Vst;
 %% Exception generating calls
 valfun_1({call_ext,Live,Func}=I, Vst) ->
@@ -372,6 +442,15 @@ valfun_1({deallocate,StkSize}, #vst{current=#st{numy=StkSize}}=Vst) ->
     deallocate(Vst);
 valfun_1({deallocate,_}, #vst{current=#st{numy=NumY}}) ->
     error({allocated,NumY});
+valfun_1({trim,N,Remaining}, #vst{current=#st{y=Yregs0,numy=NumY}=St}=Vst) ->
+    if
+	N =< NumY, N+Remaining =:= NumY ->
+	    Yregs1 = [{Y-N,Type} || {Y,Type} <- gb_trees:to_list(Yregs0), Y >= N],
+	    Yregs = gb_trees_from_list(Yregs1),
+	    Vst#vst{current=St#st{y=Yregs,numy=NumY-N}};
+	true ->
+	    error({trim,N,Remaining,allocated,NumY})
+    end;
 %% Catch & try.
 valfun_1({'catch',Dst,{f,Fail}}, Vst0) when Fail /= none ->
     Vst = #vst{current=#st{ct=Fails}=St} = 
@@ -429,8 +508,6 @@ valfun_2(_, _) ->
 
 %% Handle the remaining floating point instructions here.
 %% Floating point.
-valfun_3({arithfbif,Op,F,Src,Dst}, Vst) ->
-    valfun_3({bif,Op,F,Src,Dst}, Vst);
 valfun_3({fconv,Src,{fr,_}=Dst}, Vst) ->
     assert_term(Src, Vst),
     set_freg(Dst, Vst);
@@ -467,33 +544,33 @@ valfun_3(I, Vst) ->
 
 %% Instructions that can cause exceptions.
 valfun_4({apply,Live}, Vst) ->
-    call(Live+2, Vst);
+    call(apply, Live+2, Vst);
 valfun_4({apply_last,Live,_}, Vst) ->
-    tail_call(Live+2, Vst);
+    tail_call(apply, Live+2, Vst);
 valfun_4({call_fun,Live}, Vst) ->
-    call(Live, Vst);
-valfun_4({call,Live,_}, Vst) ->
-    call(Live, Vst);
+    call('fun', Live, Vst);
+valfun_4({call,Live,Func}, Vst) ->
+    call(Func, Live, Vst);
 valfun_4({call_ext,Live,Func}, Vst) ->
     %% Exception BIFs has alread been taken care of above.
     call(Func, Live, Vst);
-valfun_4({call_only,Live,_}, Vst) ->
-    tail_call(Live, Vst);
-valfun_4({call_ext_only,Live,_}, Vst) ->
-    tail_call(Live, Vst);
-valfun_4({call_last,Live,_,StkSize}, #vst{current=#st{numy=StkSize}}=Vst) ->
-    tail_call(Live, Vst);
+valfun_4({call_only,Live,Func}, Vst) ->
+    tail_call(Func, Live, Vst);
+valfun_4({call_ext_only,Live,Func}, Vst) ->
+    tail_call(Func, Live, Vst);
+valfun_4({call_last,Live,Func,StkSize}, #vst{current=#st{numy=StkSize}}=Vst) ->
+    tail_call(Func, Live, Vst);
 valfun_4({call_last,_,_,_}, #vst{current=#st{numy=NumY}}) ->
     error({allocated,NumY});
-valfun_4({call_ext_last,Live,_,StkSize}, 
+valfun_4({call_ext_last,Live,Func,StkSize}, 
 	 #vst{current=#st{numy=StkSize}}=Vst) ->
-    tail_call(Live, Vst);
+    tail_call(Func, Live, Vst);
 valfun_4({call_ext_last,_,_,_}, #vst{current=#st{numy=NumY}}) ->
     error({allocated,NumY});
 valfun_4({make_fun,_,_,Live}, Vst) ->
-    call(Live, Vst);
+    call('fun', Live, Vst);
 valfun_4({make_fun2,_,_,_,Live}, Vst) ->
-    call(Live, Vst);
+    call(make_fun, Live, Vst);
 %% Other BIFs
 valfun_4({bif,element,{f,Fail},[Pos,Tuple],Dst}, Vst0) ->
     TupleType0 = get_term_type(Tuple, Vst0),
@@ -502,8 +579,6 @@ valfun_4({bif,element,{f,Fail},[Pos,Tuple],Dst}, Vst0) ->
     TupleType = upgrade_tuple_type({tuple,[get_tuple_size(PosType)]}, TupleType0),
     Vst = set_type(TupleType, Tuple, Vst1),
     set_type_reg(term, Dst, Vst);
-valfun_4({arithbif,Op,F,Src,Dst}, Vst) ->
-    valfun_4({bif,Op,F,Src,Dst}, Vst);
 valfun_4({raise,{f,_}=Fail,Src,Dst}, Vst) ->
     valfun_4({bif,raise,Fail,Src,Dst}, Vst);
 valfun_4({bif,Op,{f,Fail},Src,Dst}, Vst0) ->
@@ -529,8 +604,6 @@ valfun_4({jump,{f,Lbl}}, Vst) ->
 valfun_4({loop_rec,{f,Fail},Dst}, Vst0) ->
     Vst = branch_state(Fail, Vst0),
     set_type_reg(term, Dst, Vst);
-valfun_4(remove_message, Vst) ->
-    Vst;
 valfun_4({wait,_}, Vst) ->
     kill_state(Vst);
 valfun_4({wait_timeout,_,Src}, Vst) ->
@@ -540,7 +613,7 @@ valfun_4({loop_rec_end,_}, Vst) ->
 valfun_4(timeout, #vst{current=St}=Vst) ->
     Vst#vst{current=St#st{x=init_regs(0, term)}};
 valfun_4(send, Vst) ->
-    call(2, Vst);
+    call(send, 2, Vst);
 valfun_4({set_tuple_element,Src,Tuple,I}, Vst) ->
     assert_term(Src, Vst),
     assert_type({tuple_element,I+1}, Tuple, Vst);
@@ -561,6 +634,14 @@ valfun_4({get_tuple_element,Src,I,Dst}, Vst) ->
     set_type_reg(term, Dst, Vst);
 
 %% New bit syntax matching instructions.
+valfun_4({test,bs_start_match2,{f,Fail},[Ctx,Live,NeedSlots,Ctx]}, Vst0) ->
+    %% If source and destination registers are the same, match state
+    %% is OK as input.
+    _ = get_move_term_type(Ctx, Vst0),
+    verify_live(Live, Vst0),
+    Vst1 = prune_x_regs(Live, Vst0),
+    Vst = branch_state(Fail, Vst1),
+    set_type_reg(bsm_match_state(NeedSlots), Ctx, Vst);
 valfun_4({test,bs_start_match2,{f,Fail},[Src,Live,Slots,Dst]}, Vst0) ->
     assert_term(Src, Vst0),
     verify_live(Live, Vst0),
@@ -573,11 +654,17 @@ valfun_4({test,_Test,{f,Fail},[Ctx,Live,_,_,_,Dst]}, Vst0) ->
     Vst1 = prune_x_regs(Live, Vst0),
     Vst = branch_state(Fail, Vst1),
     set_type_reg(term, Dst, Vst);
+valfun_4({test,bs_match_string,{f,Fail},[Ctx,_,_]}, Vst) ->
+    bsm_validate_context(Ctx, Vst),
+    branch_state(Fail, Vst);
 valfun_4({test,bs_skip_bits2,{f,Fail},[Ctx,Src,_,_]}, Vst) ->
     bsm_validate_context(Ctx, Vst),
     assert_term(Src, Vst),
     branch_state(Fail, Vst);
 valfun_4({test,bs_test_tail2,{f,Fail},[Ctx,_]}, Vst) ->
+    bsm_validate_context(Ctx, Vst),
+    branch_state(Fail, Vst);
+valfun_4({test,bs_test_unit,{f,Fail},[Ctx,_]}, Vst) ->
     bsm_validate_context(Ctx, Vst),
     branch_state(Fail, Vst);
 valfun_4({bs_save2,Ctx,SavePoint}, Vst) ->
@@ -645,6 +732,28 @@ valfun_4({bs_init2,{f,Fail},_,Heap,Live,_,Dst}, Vst0) ->
     Vst3 = prune_x_regs(Live, Vst2),
     Vst = bs_zero_bits(Vst3),
     set_type_reg(binary, Dst, Vst);
+valfun_4({bs_init_bits,{f,Fail},_,Heap,Live,_,Dst}, Vst0) ->
+    verify_live(Live, Vst0),
+    Vst1 = heap_alloc(Heap, Vst0),
+    Vst2 = branch_state(Fail, Vst1),
+    Vst3 = prune_x_regs(Live, Vst2),
+    Vst = bs_zero_bits(Vst3),
+    set_type_reg(binary, Dst, Vst);
+valfun_4({bs_append,{f,Fail},Bits,Heap,Live,_Unit,Bin,_Flags,Dst}, Vst0) ->
+    verify_live(Live, Vst0),
+    assert_term(Bits, Vst0),
+    assert_term(Bin, Vst0),
+    Vst1 = heap_alloc(Heap, Vst0),
+    Vst2 = branch_state(Fail, Vst1),
+    Vst3 = prune_x_regs(Live, Vst2),
+    Vst = bs_zero_bits(Vst3),
+    set_type_reg(binary, Dst, Vst);
+valfun_4({bs_private_append,{f,Fail},Bits,_Unit,Bin,_Flags,Dst}, Vst0) ->
+    assert_term(Bits, Vst0),
+    assert_term(Bin, Vst0),
+    Vst1 = branch_state(Fail, Vst0),
+    Vst = bs_zero_bits(Vst1),
+    set_type_reg(binary, Dst, Vst);
 valfun_4({bs_put_string,Sz,_}, Vst) when is_integer(Sz) ->
     Vst;
 valfun_4({bs_put_binary,{f,Fail},_,_,_,Src}=I, Vst0) ->
@@ -706,15 +815,6 @@ kill_state_1(Vst) ->
 %% A "plain" call.
 %%  The stackframe must be initialized.
 %%  The instruction will return to the instruction following the call.
-call(Live, #vst{current=St}=Vst) ->
-    verify_live(Live, Vst),
-    verify_y_init(Vst),
-    Xs = gb_trees_from_list([{0,term}]),
-    Vst#vst{current=St#st{x=Xs,f=init_fregs(),bsm=undefined}}.
-
-%% A "plain" call.
-%%  The stackframe must be initialized.
-%%  The instruction will return to the instruction following the call.
 call(Name, Live, #vst{current=St}=Vst) ->
     verify_live(Live, Vst),
     verify_y_init(Vst),
@@ -728,11 +828,45 @@ call(Name, Live, #vst{current=St}=Vst) ->
 %% Tail call.
 %%  The stackframe must have a known size and be initialized.
 %%  Does not return to the instruction following the call.
-tail_call(Live, Vst) ->
-    verify_live(Live, Vst),
+tail_call(Name, Live, Vst) ->
+    verify_call_args(Name, Live, Vst),
     verify_y_init(Vst),
     verify_no_ct(Vst),
     kill_state(Vst).
+
+verify_call_args(_, 0, #vst{}) ->
+    ok;
+verify_call_args({f,Lbl}, Live, Vst) when is_integer(Live)->
+    Verify = fun(R) ->
+		     case get_move_term_type(R, Vst) of
+			 {match_context,_,_} ->
+			     verify_call_match_context(Lbl, Vst);
+			 _ ->
+			     ok
+		     end
+	     end,
+    verify_call_args_1(Live, Verify, Vst);
+verify_call_args(_, Live, Vst) when is_integer(Live)->
+    Verify = fun(R) -> get_term_type(R, Vst) end,
+    verify_call_args_1(Live, Verify, Vst);
+verify_call_args(_, Live, _) ->
+    error({bad_number_of_live_regs,Live}).
+
+verify_call_args_1(0, _, _) -> ok;
+verify_call_args_1(N, Verify, Vst) ->
+    X = N - 1,
+    Verify({x,X}),
+    verify_call_args_1(X, Verify, Vst).
+
+verify_call_match_context(Lbl, #vst{ft=Ft}) ->
+    case gb_trees:lookup(Lbl, Ft) of
+	none ->
+	    error(no_bs_start_match2);
+	{value,[{test,bs_start_match2,_,[Ctx,_,_,Ctx]}|_]} ->
+	    ok;
+	{value,[{test,bs_start_match2,_,[Bin,_,_,Ctx]}|_]} ->
+	    error({binary_and_context_regs_different,Bin,Ctx})
+    end.
 
 allocate(Zero, Stk, Heap, Live, #vst{current=#st{numy=none}=St}=Vst0) ->
     verify_live(Live, Vst0),
@@ -768,9 +902,6 @@ heap_alloc_2([{words,HeapWords}|T], St0) ->
     heap_alloc_2(T, St);
 heap_alloc_2([{floats,Floats}|T], St0) ->
     St = St0#st{hf=Floats},
-    heap_alloc_2(T, St);
-heap_alloc_2([{literal,Lit}|T], #st{hlit=Hlit}=St0) ->
-    St = St0#st{hlit=[Lit|Hlit]},
     heap_alloc_2(T, St);
 heap_alloc_2([], St) -> St.
     
@@ -893,6 +1024,11 @@ bsm_get_context({x,X}=Reg, #vst{current=#st{x=Xs}}=_Vst) when is_integer(X) ->
     end;
 bsm_get_context(Reg, _) -> error({bad_source,Reg}).
     
+bsm_save(Reg, {atom,start}, Vst) ->
+    %% Save point refering to where the match started.
+    %% It is always valid. But don't forget to validate the context register.
+    bsm_get_context(Reg, Vst),
+    Vst;
 bsm_save(Reg, SavePoint, Vst) ->
     case bsm_get_context(Reg, Vst) of
 	{match_context,Bits,Slots} when SavePoint < Slots ->
@@ -901,6 +1037,11 @@ bsm_save(Reg, SavePoint, Vst) ->
 	_ -> error({illegal_save,SavePoint})
     end.
 
+bsm_restore(Reg, {atom,start}, Vst) ->
+    %% (Mostly) automatic save point refering to where the match started.
+    %% It is always valid. But don't forget to validate the context register.
+    bsm_get_context(Reg, Vst),
+    Vst;
 bsm_restore(Reg, SavePoint, Vst) ->
     case bsm_get_context(Reg, Vst) of
 	{match_context,Bits,Slots} when SavePoint < Slots ->
@@ -1021,8 +1162,9 @@ assert_term(Src, Vst) ->
 %%			Thus 'exception' is never stored as type descriptor
 %%			for a register.
 %%
-%% match_context	Only for X registers. A matching context for bit syntax
-%% 			matching; must only be used by bit syntax instructions.
+%% {match_context,_,_}	A matching context for bit syntax matching. We do allow
+%%			it to moved/to from stack, but otherwise it must only
+%%			be accessed by bit syntax matching instructions.
 %%
 %%
 %% Normal terms:
@@ -1101,15 +1243,28 @@ get_tuple_size(_) -> 0.
 validate_src(Ss, Vst) when is_list(Ss) ->
     foreach(fun(S) -> get_term_type(S, Vst) end, Ss).
 
+%% get_move_term_type(Src, ValidatorState) -> Type
+%%  Get the type of the source Src. The returned type Type will be
+%%  a standard Erlang type (no catch/try tags). Match contexts are OK.
+
+get_move_term_type(Src, Vst) ->
+    case get_term_type_1(Src, Vst) of
+	initialized -> error({unassigned,Src});
+	{catchtag,_} -> error({catchtag,Src});
+	{trytag,_} -> error({trytag,Src});
+	Type -> Type
+    end.
+
 %% get_term_type(Src, ValidatorState) -> Type
 %%  Get the type of the source Src. The returned type Type will be
-%%  a standard Erlang type (no catch/try tags).
+%%  a standard Erlang type (no catch/try tags or match contexts).
 
 get_term_type(Src, Vst) ->
     case get_term_type_1(Src, Vst) of
 	initialized -> error({unassigned,Src});
 	{catchtag,_} -> error({catchtag,Src});
 	{trytag,_} -> error({trytag,Src});
+	{match_context,_,_} -> error({match_context,Src});
 	Type -> Type
     end.
 
@@ -1123,6 +1278,7 @@ get_term_type_1(nil=T, _) -> T;
 get_term_type_1({atom,A}=T, _) when is_atom(A) -> T;
 get_term_type_1({float,F}=T, _) when is_float(F) -> T;
 get_term_type_1({integer,I}=T, _) when is_integer(I) -> T;
+get_term_type_1({literal,_}=T, _) -> T;
 get_term_type_1({x,X}=Reg, #vst{current=#st{x=Xs}}) when is_integer(X) ->
     case gb_trees:lookup(X, Xs) of
 	{value,Type} -> Type;
@@ -1249,6 +1405,10 @@ merge_types({atom,A}, bool) ->
     merge_bool(A);
 merge_types({match_context,B0,Slots},{match_context,B1,Slots}) ->
     {match_context,B0 bor B1,Slots};
+merge_types({match_context,_,_}=M, _) ->
+    M;
+merge_types(_, {match_context,_,_}=M) ->
+    M;
 merge_types(T1, T2) when T1 =/= T2 ->
     %% Too different. All we know is that the type is a 'term'.
     term.
@@ -1314,17 +1474,6 @@ eat_heap_float(#vst{current=#st{hf=HeapFloats0}=St}=Vst) ->
 	HeapFloats ->
 	    Vst#vst{current=St#st{hf=HeapFloats}}
     end.
-
-eat_heap_literal(Lit, #vst{current=#st{hlit=Hlit0}=St}=Vst) ->
-    Hlit = eat_heap_literal_1(Lit, Hlit0),
-    Vst#vst{current=St#st{hlit=Hlit}}.
-
-eat_heap_literal_1(Lit, [L|Ls]) when Lit =:= L ->
-    Ls;
-eat_heap_literal_1(Lit, [L|Ls]) ->
-    [L|eat_heap_literal_1(Lit, Ls)];
-eat_heap_literal_1(Lit, []) ->
-    error({heap_overflow,{wanted,{literal,Lit}}}).
 
 bif_type('-', Src, Vst) ->
     arith_type(Src, Vst);
@@ -1420,8 +1569,8 @@ arith_type([A,B], Vst) ->
     end;
 arith_type(_, _) -> number.
 
-return_type({extfunc,M,F,A}, Vst) ->
-    return_type_1(M, F, A, Vst).
+return_type({extfunc,M,F,A}, Vst) -> return_type_1(M, F, A, Vst);
+return_type(_, _) -> term.
 
 return_type_1(erlang, setelement, 3, Vst) ->
     Tuple = {x,1},
@@ -1480,10 +1629,45 @@ limit_check(_) -> ok.
 min(A, B) when is_integer(A), is_integer(B), A < B -> A;
 min(A, B) when is_integer(A), is_integer(B) -> B.
 
-gb_trees_from_list(L) -> gb_trees:from_orddict(orddict:from_list(L)).
+gb_trees_from_list(L) -> gb_trees:from_orddict(lists:sort(L)).
 
 -ifdef(DEBUG).
 error(Error) -> exit(Error).
 -else.
 error(Error) -> throw(Error).
 -endif.
+
+
+%%%
+%%% Rewrite disassembled code to the same format as we used internally
+%%% to not have to worry later.
+%%%
+
+normalize_disassembled_code(Fs) ->
+    Index = ndc_index(Fs, []),
+    ndc(Fs, Index, []).
+
+ndc_index([{function,Name,Arity,Entry,_Code}|Fs], Acc) ->
+    ndc_index(Fs, [{{Name,Arity},Entry}|Acc]);
+ndc_index([], Acc) ->
+    gb_trees:from_orddict(lists:sort(Acc)).
+
+ndc([{function,Name,Arity,Entry,Code0}|Fs], D, Acc) ->
+    Code = ndc_1(Code0, D, []),
+    ndc(Fs, D, [{function,Name,Arity,Entry,Code}|Acc]);
+ndc([], _, Acc) -> reverse(Acc).
+    
+ndc_1([{call=Op,A,{_,F,A}}|Is], D, Acc) ->
+    ndc_1(Is, D, [{Op,A,{f,gb_trees:get({F,A}, D)}}|Acc]);
+ndc_1([{call_only=Op,A,{_,F,A}}|Is], D, Acc) ->
+    ndc_1(Is, D, [{Op,A,{f,gb_trees:get({F,A}, D)}}|Acc]);
+ndc_1([{call_last=Op,A,{_,F,A},Sz}|Is], D, Acc) ->
+    ndc_1(Is, D, [{Op,A,{f,gb_trees:get({F,A}, D)},Sz}|Acc]);
+ndc_1([{arithbif,Op,F,Src,Dst}|Is], D, Acc) ->
+    ndc_1(Is, D, [{bif,Op,F,Src,Dst}|Acc]);
+ndc_1([{arithfbif,Op,F,Src,Dst}|Is], D, Acc) ->
+    ndc_1(Is, D, [{bif,Op,F,Src,Dst}|Acc]);
+ndc_1([I|Is], D, Acc) ->
+    ndc_1(Is, D, [I|Acc]);
+ndc_1([], _, Acc) ->
+    reverse(Acc).

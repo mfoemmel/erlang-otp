@@ -785,6 +785,9 @@ handle_info({nodeup, Node}, S) when Node =:= node() ->
     %% references to old node name ('nonode@nohost') to Node.
     {noreply, change_our_node_name(Node, S)};
 
+handle_info({nodeup, _Node}, S) when not S#state.connect_all ->
+    {noreply, S};
+
 handle_info({nodeup, Node}, S0) when S0#state.connect_all ->
     IsKnown = lists:member(Node, S0#state.known) or
               %% This one is only for double nodeups (shouldn't occur!)

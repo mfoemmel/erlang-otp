@@ -191,8 +191,6 @@ bif erlang:setelement/3
 bif 'erl.lang.tuple':setelement/3	ebif_setelement_3
 ubif erlang:size/1
 ubif 'erl.lang.term':size/1		ebif_size_1
-ubif erlang:bitsize/1
-ubif 'erl.lang.term':bitsize/1		ebif_bitsize_1
 bif erlang:spawn/3
 bif 'erl.lang.proc':spawn/3		ebif_spawn_3
 bif erlang:spawn_link/3
@@ -267,14 +265,13 @@ bif erlang:seq_trace_print/1
 bif 'erl.system.debug':seq_trace_print/1	ebif_seq_trace_print_1
 bif erlang:seq_trace_print/2
 bif 'erl.system.debug':seq_trace_print/2	ebif_seq_trace_print_2
-bif erlang:suspend_process/1
-bif 'erl.system.debug':suspend_process/1	ebif_suspend_process_1
+bif erlang:suspend_process/2
+bif 'erl.system.debug':suspend_process/2	ebif_suspend_process_2
 bif erlang:resume_process/1
 bif 'erl.system.debug':resume_process/1		ebif_resume_process_1
 bif erlang:process_display/2
 bif 'erl.system.debug':process_display/2	ebif_process_display_2
 
-# Used to implemented in the erlang:info/1 BIF.
 bif erlang:bump_reductions/1
 bif 'erl.lang.proc':bump_reductions/1	ebif_bump_reductions_1
 
@@ -344,7 +341,14 @@ bif erlang:system_monitor/1
 bif 'erl.system':monitor/1	ebif_system_monitor_1
 bif erlang:system_monitor/2
 bif 'erl.system':monitor/2	ebif_system_monitor_2
-
+# Added 2006-11-07
+bif erlang:system_profile/2
+bif 'erl.system':profile/2	ebif_system_profile_2
+# End Added 2006-11-07
+# Added 2007-01-17
+bif erlang:system_profile/0
+bif 'erl.system':profile/0	ebif_system_profile_0
+# End Added 2007-01-17
 bif erlang:ref_to_list/1
 bif 'erl.lang.ref':to_string/1		ebif_ref_to_string_1 ref_to_list_1
 bif erlang:port_to_list/1
@@ -480,13 +484,6 @@ ubif 'erl.lang.term':is_record/3	ebif_is_record_3
 
 bif erlang:match_spec_test/3
 
-bif erlang:'$put'/2	dollar_put_2
-bif erlang:'$get'/0	dollar_get_0
-bif erlang:'$get'/1	dollar_get_1
-bif erlang:'$get_keys'/1	dollar_get_keys_1
-bif erlang:'$erase'/0	dollar_erase_0
-bif erlang:'$erase'/1	dollar_erase_1
-
 #
 # Bifs in ets module.
 #
@@ -495,8 +492,8 @@ bif ets:all/0
 bif 'erl.lang.ets':all/0		ebif_ets_all_0
 bif ets:new/2
 bif 'erl.lang.ets':new/2		ebif_ets_new_2
-bif ets:db_delete/1
-bif 'erl.lang.ets':db_delete/1		ebif_ets_db_delete_1
+bif ets:delete/1
+bif 'erl.lang.ets':delete/1		ebif_ets_delete_1
 bif ets:delete/2
 bif 'erl.lang.ets':delete/2		ebif_ets_delete_2
 bif ets:delete_all_objects/1
@@ -505,16 +502,16 @@ bif ets:delete_object/2
 bif 'erl.lang.ets':delete_object/2	ebif_ets_delete_object_2
 bif ets:first/1
 bif 'erl.lang.ets':first/1		ebif_ets_first_1
-bif ets:fixtable/2
-bif 'erl.lang.ets':old_fixtable/2	ebif_ets_fixtable_2
 bif ets:is_compiled_ms/1
 bif 'erl.lang.ets':is_compiled_ms/1	ebif_ets_is_compiled_ms_1
 bif ets:lookup/2
 bif 'erl.lang.ets':lookup/2		ebif_ets_lookup_2
 bif ets:lookup_element/3
 bif 'erl.lang.ets':lookup_element/3	ebif_ets_lookup_element_3
-bif ets:db_info/2
-bif 'erl.lang.ets':db_info/2		ebif_ets_db_info_2
+bif ets:info/1
+bif 'erl.lang.ets':info/1		ebif_ets_info_1
+bif ets:info/2
+bif 'erl.lang.ets':info/2		ebif_ets_info_2
 bif ets:last/1
 bif 'erl.lang.ets':last/1		ebif_ets_last_1
 bif ets:match/1
@@ -669,20 +666,21 @@ bif erlang:iolist_to_binary/1
 bif erlang:list_to_existing_atom/1
 
 #
-# New Bifs in R11B-5
+# New Bifs in R12B-0
 #
-bif erlang:list_to_bitstr/1
-bif erlang:bitstr_to_list/1
+bif erlang:is_bitstring/1
+bif erlang:tuple_size/1
+bif erlang:byte_size/1
+bif erlang:bit_size/1
+bif erlang:list_to_bitstring/1
+bif erlang:bitstring_to_list/1
 
 #
 # Obsolete
 #
 
 bif erlang:hash/2
-bif erlang:old_binary_to_term/1
+ubif erlang:bitsize/1
+bif erlang:list_to_bitstr/1
+bif erlang:bitstr_to_list/1
 
-#
-# These are now in erlang.erl:
-#
-#bif erlang:concat_binary/1
-#bif erlang:info/1

@@ -131,6 +131,17 @@ exit_shell(Reason) ->
 	Pid -> exit(Pid, Reason)
     end.
 
+get_tty_geometry(Drv) ->
+    Drv ! {self(),tty_geometry},
+    receive
+	{Drv,tty_geometry,Geometry} ->
+	    %erlang:display({get_tty_geometry,Drv,Geometry}),
+	    Geometry
+    after 2000 ->
+	    timeout
+    end.
+			   
+
 io_request(Req, From, ReplyAs, Drv, Buf0) ->
     case io_request(Req, Drv, Buf0) of
 	{ok,Reply,Buf} ->
@@ -172,6 +183,23 @@ io_request({put_chars,M,F,As}, Drv, Buf) ->
 		    {error,{error,F},Buf}
 	    end
     end;
+
+%% New in R12
+io_request({get_geometry,columns},Drv,Buf) ->
+    case get_tty_geometry(Drv) of
+	{W,_H} ->
+	    {ok,W,Buf};
+	_ ->
+	    {error,{error,enotsup},Buf}
+    end;
+io_request({get_geometry,rows},Drv,Buf) ->
+    case get_tty_geometry(Drv) of
+	{_W,H} ->
+	    {ok,H,Buf};
+	_ ->
+	    {error,{error,enotsup},Buf}
+    end;
+
 %% These are new in R9C
 io_request({get_chars,Prompt,N}, Drv, Buf) ->
     get_chars(Prompt, io_lib, collect_chars, N, Drv, Buf);

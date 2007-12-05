@@ -1,1 +1,1 @@
-DOCB_VSN = 0.9
+DOCB_VSN = 0.9.7

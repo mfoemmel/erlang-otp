@@ -1,32 +1,35 @@
-%%%-------------------------------------------------------------------
-%%% File    : hipe_icode_coordinator.erl
-%%% Author  : Per Gustafsson <pergu@it.uu.se>
-%%% Description : 
-%%%          This module coordinates an icode pass
-%%% Created : 20 Feb 2007 by Per Gustafsson <pergu@it.uu.se>
-%%%-------------------------------------------------------------------
+%%%--------------------------------------------------------------------
+%%% File        : hipe_icode_coordinator.erl
+%%% Author      : Per Gustafsson <pergu@it.uu.se>
+%%% Description : This module coordinates an Icode pass.
+%%% Created     : 20 Feb 2007 by Per Gustafsson <pergu@it.uu.se>
+%%%---------------------------------------------------------------------
 -module(hipe_icode_coordinator).
 
 -export([coordinate/4]).
 
-coordinate(CallGraph,Escaping,NonEscaping,Mod) ->
-  ServerPid = initialize_server(Escaping,Mod),
+-spec(coordinate/4 :: (_, [{mfa(),bool()}], [mfa()], atom()) -> no_return()).
+
+coordinate(CallGraph, Escaping, NonEscaping, Mod) ->
+  ServerPid = initialize_server(Escaping, Mod),
   Clean = [MFA || {MFA, _} <- Escaping],
   coordinate(Clean,[],Clean++NonEscaping,CallGraph,gb_trees:empty(),ServerPid,Mod),
   receive
     {stop,AnsPid} ->
       ServerPid ! stop,
-      AnsPid ! {done,self()}
+      AnsPid ! {done,self()},
+      exit(normal)
   end.
 
-coordinate([],Available,[],_CG,PM,ServerPid,Mod) ->
+coordinate([], Available, [], _CG, PM, ServerPid, Mod) ->
   lists:foreach(fun(MFA) -> gb_trees:get(MFA,PM) ! 
 			      {done,final_funs(ServerPid,Mod)} end, Available);
-coordinate(Needed,Available,Busy,CG,PM,ServerPid,Mod) ->
+coordinate(Needed, Available, Busy, CG, PM, ServerPid, Mod) ->
   receive 
     {stop,AnsPid} ->
       ServerPid ! stop,
-      AnsPid ! {done,self()};
+      AnsPid ! {done,self()},
+      exit(normal);
     Message1 -> 
       %%io:format("Receiving Message1:~n~p~n~n", [Message1]),
       handle_message(Message1,Needed,Available,Busy,CG,PM,ServerPid,Mod)
@@ -143,7 +146,8 @@ analysis_funs(Pid) ->
   ArgsFun = fun(MFA,Cfg) -> get_args(MFA,Cfg,Pid) end,
   GetResFun = fun(MFA,Args) -> 
 		  Self ! {call,Args,MFA},
-		  get_res(MFA,Pid)
+		  [Ans] = get_res(MFA,Pid),
+		  Ans
 	      end,
   FinalFun = fun(MFA,RetTypes) ->
 		 Self ! {done,RetTypes,MFA} 
@@ -153,7 +157,8 @@ analysis_funs(Pid) ->
 final_funs(Pid,Mod) ->
   ArgsFun = fun(MFA,Cfg) -> safe_get_args(MFA,Cfg,Pid,Mod) end,
   GetResFun = fun(MFA,_) ->   
-		  safe_get_res(MFA,Pid,Mod)
+		  [Ans] = safe_get_res(MFA,Pid,Mod),
+		  Ans
 	      end,
   FinalFun = fun(_,_) -> ok end,
   {ArgsFun,GetResFun,FinalFun}. 

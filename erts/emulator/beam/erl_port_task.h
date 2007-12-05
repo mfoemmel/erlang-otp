@@ -22,11 +22,6 @@
  * Author: 	Rickard Green
  */
 
-#ifndef ERTS_USE_PORT_TASKS
-#undef ERL_PORT_TASK_H__
-#define ERL_PORT_TASK_H__
-#endif
-
 #ifndef ERL_PORT_TASK_H__
 #define ERL_PORT_TASK_H__
 
@@ -72,7 +67,7 @@ typedef struct {
 
 ERTS_GLB_INLINE void erts_port_task_handle_init(ErtsPortTaskHandle *pthp);
 ERTS_GLB_INLINE int erts_port_task_is_scheduled(ErtsPortTaskHandle *pthp);
-ERTS_GLB_INLINE void erts_port_task_init_sched(ErtsPortTaskSched *ptpp);
+ERTS_GLB_INLINE void erts_port_task_init_sched(ErtsPortTaskSched *ptsp);
 #ifdef ERTS_INCLUDE_SCHEDULER_INTERNALS
 ERTS_GLB_INLINE void erts_smp_tasks_lock(void);
 ERTS_GLB_INLINE void erts_smp_tasks_unlock(void);
@@ -168,12 +163,8 @@ int erts_port_task_schedule(Eterm,
 			    ErlDrvEvent,
 			    ErlDrvEventData);
 void erts_port_task_free_port(Port *);
+int erts_port_is_scheduled(Port *pp);
 
 #undef ERTS_INCLUDE_SCHEDULER_INTERNALS
 #endif /* ERL_PORT_TASK_H__ */
-
-
-
-
-
 

@@ -1644,8 +1644,6 @@ gen_internal_funcs(Erules,[TypeDef|Rest]) ->
     gen_internal_funcs(Erules,Rest).
 
 
-dbdec(Type) ->
-    dbdec(Type,"Bytes").
 dbdec(Type,Arg) ->
     demit({"io:format(\"decoding: ",{asis,Type},"~w~n\",[",Arg,"]),",nl}).
 

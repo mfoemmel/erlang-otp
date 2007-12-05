@@ -29,7 +29,7 @@
 
 init({File, Type}) ->
     process_flag(trap_exit, true),
-    case file:open(File, write) of
+    case file:open(File, [write]) of
 	{ok,Fd} ->
 	    {ok, {Fd, File, Type}};
 	What ->

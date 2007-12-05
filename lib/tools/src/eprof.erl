@@ -158,7 +158,7 @@ terminate(_Reason,_S) ->
 %%%%%%%%%%%%%%%%%%
 
 handle_call({logfile, F}, _FromTag, Status) ->
-    case file:open(F, write) of
+    case file:open(F, [write]) of
 	{ok, Fd} ->
 	    case get(fd) of
 		undefined -> ok;

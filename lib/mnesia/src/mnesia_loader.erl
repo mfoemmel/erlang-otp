@@ -549,16 +549,19 @@ handle_last({disc_copies, Tab}, _Type, nobin) ->
     Ret;
 
 handle_last({disc_only_copies, Tab}, Type, nobin) ->
-    case mnesia_lib:swap_tmp_files([Tab]) of
-	[] ->
+    mnesia_lib:dets_sync_close(Tab),
+    Tmp = mnesia_lib:tab2tmp(Tab),
+    Dat = mnesia_lib:tab2dat(Tab),
+    case file:rename(Tmp, Dat) of
+	ok ->
 	    Args = [{file, mnesia_lib:tab2dat(Tab)},
 		    {type, mnesia_lib:disk_type(Tab, Type)},
 		    {keypos, 2},
 		    {repair, mnesia_monitor:get_env(auto_repair)}],
 	    mnesia_monitor:open_dets(Tab, Args),
 	    ok;
-	L when list(L) ->
-	    {error, {"Cannot swap tmp files", Tab, L}}
+	{error, Reason} ->
+	    {error, {"Cannot swap tmp files", Tab, Reason}}
     end;
 
 handle_last({ram_copies, _Tab}, _Type, nobin) ->
@@ -583,7 +586,9 @@ down(Tab, Storage) ->
 	disc_copies ->
 	    catch ?ets_delete_table(Tab);
 	disc_only_copies ->
-	    mnesia_lib:cleanup_tmp_files([Tab])
+	    TmpFile = mnesia_lib:tab2tmp(Tab),
+	    mnesia_lib:dets_sync_close(Tab),
+	    file:delete(TmpFile)
     end,
     mnesia_checkpoint:tm_del_copy(Tab, node()),
     mnesia_controller:sync_del_table_copy_whereabouts(Tab, node()),

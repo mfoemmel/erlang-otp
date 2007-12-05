@@ -177,8 +177,8 @@ dir_4(File, Regexp, Env) ->
         {match, _, _} ->
             Opts = [{outfile, File}, {dir, ""} | Env#dir.options],
             case catch file(File, Opts) of
-                {'EXIT', _} ->
-                    warn("error tidying `~s'.", [File], Opts);
+                {'EXIT', Value} ->
+                    warn("error tidying `~s'.~n~p", [File,Value], Opts);
                 _ ->
                     ok
             end;
@@ -654,7 +654,7 @@ analyze_forms(Forms, File) ->
             L1;
         syntax_error ->
             report_error({File, 0, "syntax error."}),
-            erlang:fault(badarg);
+            erlang:error(badarg);
         {'EXIT', R} ->
             exit(R);
         R ->

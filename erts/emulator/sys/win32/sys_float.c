@@ -30,6 +30,9 @@ void
 erts_sys_init_float(void)
 {
 }
+void erts_thread_init_float(void)
+{
+}
 
 /*
  ** These two functions should maybe use localeconv() to pick up

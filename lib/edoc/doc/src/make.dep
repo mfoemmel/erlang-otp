@@ -9,13 +9,13 @@
 # TeX files that the DVI file depend on
 # ----------------------------------------------------
 
-book.dvi: application.tex book.tex chapter.tex edoc.tex \
-		edoc_doclet.tex edoc_extract.tex edoc_layout.tex \
-		edoc_lib.tex edoc_run.tex part.tex
+book.dvi: book.tex chapter.tex edoc.tex edoc_doclet.tex \
+		edoc_extract.tex edoc_layout.tex edoc_lib.tex \
+		edoc_run.tex part.tex ref_man.tex
 
 # ----------------------------------------------------
-# Source inlined when transforming from SGML to LaTeX
+# Source inlined when transforming from source to LaTeX
 # ----------------------------------------------------
 
-book.tex: application.sgml part.sgml
+book.tex: ref_man.xml
 

@@ -175,7 +175,7 @@ culprit([_ | B]) ->
 badarg({error, _} = E, _Args) ->
     E;
 badarg({badarg, _} = B, Args) ->
-    erlang:fault(B, Args).
+    erlang:error(B, Args).
 
 options(Options) when is_list(Options) ->
     options(Options, #opts{});
@@ -1348,6 +1348,8 @@ write(Fd, FileName, B, W) ->
         Error ->
             file_error(FileName, Error, W)
     end.
+
+-spec(file_error/3 :: (_, {'error',atom()}, #w{}) -> no_return()).
 
 file_error(File, {error, Reason}, W) ->
     error({error, {file_error, File, Reason}}, W).

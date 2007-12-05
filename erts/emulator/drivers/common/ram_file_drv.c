@@ -174,8 +174,10 @@ static ErlDrvData rfile_start(ErlDrvPort port, char* buf)
 {
     RamFile* f;
 
-    if ((f = (RamFile*) driver_alloc(sizeof(RamFile))) == NULL)
-	return ERL_DRV_ERROR_GENERAL;
+    if ((f = (RamFile*) driver_alloc(sizeof(RamFile))) == NULL) {
+	errno = ENOMEM;
+	return ERL_DRV_ERROR_ERRNO;
+    }
     f->port = port;
     f->flags = 0;
     f->bin = NULL;

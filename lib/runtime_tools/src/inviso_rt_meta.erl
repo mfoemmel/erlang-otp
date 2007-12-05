@@ -191,7 +191,7 @@ init_tpm(Pid,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
 %% previously have been initialized.
 %% tpm/6 & /9 initializes the function and starts meta tracing.
 tpm(Pid,Mod,Func,Arity,MatchSpec)
-  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_'->
+  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_'->
     send_wait(Pid,{tpm,{Mod,Func,Arity,MatchSpec}});
 tpm(_,_,_,_,_) ->
     {error,badarg}.
@@ -200,7 +200,7 @@ tpm(Pid,Mod,Func,Arity,MatchSpec,CallFunc) ->
     tpm(Pid,Mod,Func,Arity,MatchSpec,void,CallFunc,void,void).
 
 tpm(Pid,Mod,Func,Arity,MatchSpec,InitFunc,CallFunc,ReturnFunc,RemoveFunc)
-  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_' ->
+  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_' ->
     send_wait(Pid,{tpm,{Mod,Func,Arity,MatchSpec},InitFunc,CallFunc,ReturnFunc,RemoveFunc});
 tpm(_,_,_,_,_,_,_,_,_) ->
     {error,badarg}.
@@ -209,7 +209,7 @@ tpm(_,_,_,_,_,_,_,_,_) ->
 %% Same as tpm/X but the meta tracer will automatically append {tracer,Tracer}
 %% to the enable list in a {trace,Disable,Enable} match spec action term.
 tpm_tracer(Pid,Mod,Func,Arity,MatchSpec)
-  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_'->
+  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_'->
     send_wait(Pid,{tpm_tracer,{Mod,Func,Arity,MatchSpec}});
 tpm_tracer(_,_,_,_,_) ->
     {error,badarg}.
@@ -218,14 +218,13 @@ tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,CallFunc) ->
     tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,void,CallFunc,void,void).
 
 tpm_tracer(Pid,Mod,Func,Arity,MatchSpec,InitFunc,CallFunc,ReturnFunc,RemoveFunc)
-  when is_atom(Mod),is_atom(Func),is_integer(Arity),is_list(MatchSpec),Mod/='_',Func/='_' ->
+  when atom(Mod),atom(Func),integer(Arity),list(MatchSpec),Mod/='_',Func/='_' ->
     send_wait(Pid,{tpm_tracer,
 		   {Mod,Func,Arity,MatchSpec},
 		   InitFunc,CallFunc,ReturnFunc,RemoveFunc});
 tpm_tracer(_,_,_,_,_,_,_,_,_) ->
     {error,badarg}.
 %% -----------------------------------------------------------------------------
-
 
 %% tpm_ms(Pid,Mod,Func,Arity,MSname,MS)={ok,N}|{error,Reason}
 %%   Pid=Address to meta tracer process, pid().
@@ -261,7 +260,7 @@ ctpm_ms(Pid,Mod,Func,Arity,MSname) ->
 %% and a default ReturnFunc.
 local_register(Pid) ->
     Res1=tpm(Pid,
-	     erlang,register,2,[{'_',[],[{return_trace}]}],
+	     erlang,register,2,[{'_',[],[{exception_trace}]}],
 	     fun metafunc_init/4,fun local_register_call/3,
 	     fun local_register_return/3,void),
     Res2=tpm(Pid,
@@ -330,10 +329,14 @@ get_state(Pid) ->
 
 send_wait(To,Msg) ->
     Ref=make_ref(),
+    MRef=erlang:monitor(process,To),
     To ! {Msg,Ref,self()},
     receive
 	{inviso_rt_meta_reply,Ref,Reply} ->
-	    Reply
+	    erlang:demonitor(MRef),
+	    Reply;
+	{'DOWN',MRef,_,_To,_Reason} ->
+	    {error,no_metatracer}
     end.
 
 reply(To,Ref,Reply) ->
@@ -555,9 +558,9 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 	    stop_all_meta_tracing(get_all_meta_funcs_ld(LD),PublLD,LD),
 	    do_remove_publ_ld(get_removepublldmf_ld(LD),PublLD),
 	    close_traceinfo_file(TI);       % And then simply terminate.
-	{trace_ts,Pid,call,{M,F,Args},_TS} ->
-	    case handle_meta(get_call_func_ld(M,F,length(Args),LD),Pid,Args,PublLD) of
-		{ok,NewPublLD,Output} when is_binary(Output) ->
+	{trace_ts,Pid,call,{M,F,Args},TS} ->
+	    case handle_meta(get_call_func_ld(M,F,length(Args),LD),Pid,{call,Args,TS},PublLD) of
+		{ok,NewPublLD,Output} when is_binary(Output);is_list(Output) ->
 		    write_output(TI,Output),
 		    loop(Parent,Tracer,TI,LD,NewPublLD,CleanTime);
 		{ok,NewPublLD,_} ->         % No output to the ti-file this time.
@@ -565,9 +568,10 @@ loop(Parent,Tracer,TI,LD,PrevPublLD,PrevCleanTime) ->
 		_ ->                        % Not handled correct, not much to do.
 		    loop(Parent,Tracer,TI,LD,PublLD,CleanTime)
 	    end;
-	{trace_ts,Pid,return_from,{M,F,Arity},Value,_TS} ->
-	    case handle_meta(get_return_func_ld(M,F,Arity,LD),Pid,Value,PublLD) of
-		{ok,NewPublLD,Output} when is_binary(Output) ->
+	{trace_ts,Pid,TypeTag,{M,F,Arity},Value,TS}
+	  when TypeTag==return_from;TypeTag==exception_from ->
+	    case handle_meta(get_return_func_ld(M,F,Arity,LD),Pid,{TypeTag,Value,TS},PublLD) of
+		{ok,NewPublLD,Output} when is_binary(Output);is_list(Output) ->
 		    write_output(TI,Output),
 		    loop(Parent,Tracer,TI,LD,NewPublLD,CleanTime);
 		{ok,NewPublLD,_} ->         % No output to the ti-file this time.
@@ -730,7 +734,7 @@ h_ctpm_ms(Mod,Func,Arity,MSname) ->
 %% for a function.
 %% Returns 'true' or 'false'.
 check_tpm_args(Mod,Func,Arity)
-  when is_atom(Mod),is_atom(Func),is_integer(Arity),Mod/='_',Func/='_' ->
+  when atom(Mod),atom(Func),integer(Arity),Mod/='_',Func/='_' ->
     true;
 check_tpm_args(_,_,_) ->
     false.
@@ -738,7 +742,7 @@ check_tpm_args(_,_,_) ->
 
 %% Help function which calls the actual BIF setting meta-trace-patterns.
 %% Returns 'true' or 'false'.
-set_meta_tracing(Mod,Func,Arity,MS) when is_atom(Mod) ->
+set_meta_tracing(Mod,Func,Arity,MS) when atom(Mod) ->
     case erlang:module_loaded(Mod) of
 	true ->
 	    set_meta_tracing_2(Mod,Func,Arity,MS);
@@ -757,7 +761,7 @@ set_meta_tracing_2(Mod,Func,Arity,MS) ->
     case catch erlang:trace_pattern({Mod,Func,Arity},MS,[meta]) of
 	0 ->                                % Hmm, nothing happend :-)
 	    false;
-	N when is_integer(N) ->                % The normal case, some functions were hit.
+	N when integer(N) ->                % The normal case, some functions were hit.
 	    true;
 	{'EXIT',_Reason} ->
 	    false
@@ -783,7 +787,7 @@ stop_all_meta_tracing([],_,_) ->
 %% something else, and is then ignored.
 handle_meta({M,F},Pid,Arg1,PrivLD) ->
     (catch M:F(Pid,Arg1,PrivLD));
-handle_meta(Fun,Pid,Arg1,PrivLD) when is_function(Fun) ->
+handle_meta(Fun,Pid,Arg1,PrivLD) when function(Fun) ->
     (catch Fun(Pid,Arg1,PrivLD));
 handle_meta(_,_,_,_) ->                     % Don't know how to do this.
     false.
@@ -794,10 +798,10 @@ handle_meta(_,_,_,_) ->                     % Don't know how to do this.
 write_output(TI,[OutPut|Rest]) ->
     write_output(TI,OutPut),
     write_output(TI,Rest);
-write_output({file,FD},Bin) when is_binary(Bin) -> % Plain direct-binary file
+write_output({file,FD},Bin) when binary(Bin) -> % Plain direct-binary file
     Size=size(Bin),
     file:write(FD,list_to_binary([<<0,Size:32>>,Bin]));
-write_output({relay,ToNode},Bin) when is_atom(ToNode),is_binary(Bin) ->
+write_output({relay,ToNode},Bin) when atom(ToNode),binary(Bin) ->
     {inviso_rt_meta,ToNode} ! {relayed_meta,Bin};
 write_output(_,_) ->                        % Don't understand, just skip.
     true.
@@ -811,7 +815,7 @@ write_output(_,_) ->                        % Don't understand, just skip.
 %% Help function initializing the public loopdata structure. Note that if the
 %% supplied InitPublLDmfa is faulty we let the structure become the error.
 %% The error will most likely turn up in an error report somewhere, eventually.
-do_init_publ_ld({M,F,Args}) when is_atom(M),is_atom(F),is_list(Args) ->
+do_init_publ_ld({M,F,Args}) when atom(M),atom(F),list(Args) ->
     case catch apply(M,F,Args) of
 	{'EXIT',_Reason} ->
 	    {error,init_publ_ld_func};      % Let the struct be this error!
@@ -824,7 +828,7 @@ do_init_publ_ld(_) ->
 
 %% Help function which removes the public loopdata structure. The function does
 %% not necessarily have to exist. Returns nothing significant.
-do_remove_publ_ld({M,F},PublLD) when is_atom(M),is_atom(F) ->
+do_remove_publ_ld({M,F},PublLD) when atom(M),atom(F) ->
     catch M:F(PublLD);
 do_remove_publ_ld(_,_) ->
     true.
@@ -833,14 +837,14 @@ do_remove_publ_ld(_,_) ->
 %% Hlp function initializing a particular meta traced function into the public
 %% loopdata. Note that the function is not mandatory.
 %% Returns {NewPublLD,Output} or 'false'.
-do_initfunc({M,F},Mod,Func,Arity,PublLD) when is_atom(M),is_atom(F) ->
+do_initfunc({M,F},Mod,Func,Arity,PublLD) when atom(M),atom(F) ->
     case catch M:F(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD,Output} ->
 	    {NewPublLD,Output};
 	_ ->                                % Everything else is an error.
 	    false                           % Act as no initialization function.
     end;
-do_initfunc(Fun,Mod,Func,Arity,PublLD) when is_function(Fun) ->
+do_initfunc(Fun,Mod,Func,Arity,PublLD) when function(Fun) ->
     case catch Fun(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD,Output} ->
 	    {NewPublLD,Output};
@@ -854,14 +858,14 @@ do_initfunc(_,_,_,_,_) ->                   % Perhaps too generous, should be 'v
 %% Help function removing a particular meta traced function from the public
 %% loopdata. Note that we do not make much noice should the call back function
 %% be faulty.
-do_removefunc({M,F},Mod,Func,Arity,PublLD) when is_atom(M),is_atom(F) ->
+do_removefunc({M,F},Mod,Func,Arity,PublLD) when atom(M),atom(F) ->
     case catch M:F(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD} ->
 	    NewPublLD;
 	_ ->                                % Everything else is an error.
 	    PublLD                          % Act as no initialization function.
     end;
-do_removefunc(Fun,Mod,Func,Arity,PublLD) when is_function(Fun) ->
+do_removefunc(Fun,Mod,Func,Arity,PublLD) when function(Fun) ->
     case catch Fun(Mod,Func,Arity,PublLD) of
 	{ok,NewPublLD} ->
 	    NewPublLD;
@@ -925,7 +929,7 @@ add_tracer_2({Head,Cond,Body},Tracer) ->
 add_tracer_2(Faulty,_Tracer) ->
     Faulty.
 
-add_tracer_3([{trace,Disable,Enable}|Rest],Tracer) when is_list(Enable) ->
+add_tracer_3([{trace,Disable,Enable}|Rest],Tracer) when list(Enable) ->
     [{trace,Disable,Enable++[{{tracer,Tracer}}]}|Rest];
 add_tracer_3([ActionTerm|Rest],Tracer) ->
     [ActionTerm|add_tracer_3(Rest,Tracer)];
@@ -1146,47 +1150,54 @@ metafunc_init(erlang,register,2,{Part1,GlobalData}) ->
 %% still in structure it means a failed register/2 call. It must first be removed
 %% so it can not be mixed up with this one. Since meta-trace message will arrive
 %% in order, there was no return_from message for that call if we are here now.
-local_register_call(CallingPid,[Alias,Pid],{Part1,GlobalData}) ->
+local_register_call(CallingPid,{call,[Alias,Pid],TS},{Part1,GlobalData}) ->
     TupleList=element(1,Part1),             % The register/2 entry in a std. priv-ld.
     NewTupleList=lists:keydelete(CallingPid,1,TupleList), % If present, remove previous call.
     {ok,
-     {setelement(1,Part1,[{CallingPid,{Alias,Pid},now()}|NewTupleList]),GlobalData},
+     {setelement(1,Part1,[{CallingPid,{Alias,Pid},TS}|NewTupleList]),GlobalData},
      void}.
 
 %% Return-function for the erlang:register/2 BIF.
 %% This function formulates the output and removes the corresponding call entry
 %% from the standard priv-ld structure.
-local_register_return(CallingPid,_Value,PublLD={Part1,GlobalData}) ->
+local_register_return(CallingPid,{return_from,_Val,_TS},PublLD={Part1,GlobalData}) ->
     TupleList=element(1,Part1),             % The register/2 entry in a std. priv-ld.
     case lists:keysearch(CallingPid,1,TupleList) of
-	{value,{_,{Alias,Pid},Now}} ->
+	{value,{_,{Alias,Pid},NowTS}} ->
 	    NewTupleList=lists:keydelete(CallingPid,1,TupleList),
 	    {ok,
 	     {setelement(1,Part1,NewTupleList),GlobalData},
-	     term_to_binary({Pid,Alias,alias,Now})};
+	     term_to_binary({Pid,Alias,alias,NowTS})};
 	false ->                            % Strange, then don't know what to do.
 	    {ok,PublLD,void}                % Do nothing seems safe.
-    end.
+    end;
+local_register_return(CallingPid,{exception_from,_Val,_TS},{Part1,GlobalData}) ->
+    TupleList=element(1,Part1),             % The register/2 entry in a std. priv-ld.
+    NewTupleList=lists:keydelete(CallingPid,1,TupleList),
+    {ok,{setelement(1,Part1,NewTupleList),GlobalData},void}; % No association then.
+local_register_return(_,_,PublLD) ->        % Don't understand this.
+    {ok,PublLD,void}.
 
 %% When unregister/1 us called we simply want a unalias entry in the ti-file.
 %% We can unfortunately not connect it with a certain pid.
-local_unregister_call(_CallingPid,[Alias],PublLD) ->
-    {ok,PublLD,term_to_binary({undefined,Alias,unalias,now()})}.
+local_unregister_call(_CallingPid,{_TypeTag,[Alias],TS},PublLD) ->
+    {ok,PublLD,term_to_binary({undefined,Alias,unalias,TS})}.
 %% -----------------------------------------------------------------------------
 
 %% Call-function for global:register_name/2,/3.
 %% This function is actually the call function for the handle_call/3 in the
 %% global server. Note that we must check that we only do this on the node
 %% where Pid actually resides.
-global_register_call(_CallingPid,[{register,Alias,P,_},_,_],PublLD) when node(P)==node()->
-    {ok,PublLD,term_to_binary({P,{global,Alias},alias,now()})};
+global_register_call(_CallingPid,{call,[{register,Alias,P,_},_,_],TS},PublLD)
+  when node(P)==node()->
+    {ok,PublLD,term_to_binary({P,{global,Alias},alias,TS})};
 global_register_call(_CallingPid,_,PublLD) ->
     {ok,PublLD,void}.
 
 %% Call-function for global:unregister_name. It acutally checks on the use of
 %% global:delete_global_name/2 which is called when ever a global name is removed.
-global_unregister_call(_CallingPid,[Alias,P],PublLD) when node(P)==node()->
-    {ok,PublLD,term_to_binary({P,{global,Alias},unalias,now()})};
+global_unregister_call(_CallingPid,{call,[Alias,P],TS},PublLD) when node(P)==node()->
+    {ok,PublLD,term_to_binary({P,{global,Alias},unalias,TS})};
 global_unregister_call(_CallingPid,_,PublLD) ->
     {ok,PublLD,void}.
 %% -----------------------------------------------------------------------------

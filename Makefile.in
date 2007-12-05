@@ -282,17 +282,7 @@ dep depend:
 # Bootstraps... 
 # ----------------------------------------------------------------------
 
-#
-# If the source is a prebuild delivery, no $(ERL_TOP)/bootstrap
-# directory will exist. All applications part of the primary bootstrap
-# are delivered prebuilt though. Therefore, if no $(ERL_TOP)/bootstrap
-# exist, we begin by recreating the primary bootstrap, from the prebuild
-# result.
-#
-
-bootstrap_setup:
-	@test -d $(ERL_TOP)/bootstrap/lib \
-		|| ERL_TOP=$(ERL_TOP) $(MAKE) recreate_primary_bootstrap
+bootstrap_setup: check_recreate_primary_bootstrap
 ifeq ($(TARGET),win32)
 	@rm -f $(BOOTSTRAP_ROOT)/bootstrap/bin/erl.exe \
 		$(BOOTSTRAP_ROOT)/bootstrap/bin/erlc.exe \
@@ -333,7 +323,9 @@ secondary_bootstrap_copy:
 	cp -f lib/parsetools/include/*.hrl $(BOOTSTRAP_ROOT)/bootstrap/lib/parsetools/include
 	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1 ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1 ; fi
 	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/ebin ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/ebin ; fi
+	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/src ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/src ; fi
 	cp lib/asn1/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/ebin
+	cp -f lib/asn1/src/*.erl lib/asn1/src/*.hrl $(BOOTSTRAP_ROOT)/bootstrap/lib/asn1/src
 
 tertiary_bootstrap_build:
 	cd lib && \
@@ -361,20 +353,49 @@ fourth_bootstrap_copy:
 	cp lib/ic/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/ic/ebin
 	cp -f lib/ic/include/*.idl lib/ic/include/*.h $(BOOTSTRAP_ROOT)/bootstrap/lib/ic/include
 	cp lib/sasl/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/sasl/ebin
+	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/syntax_tools ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/syntax_tools ; fi
+	if test ! -d $(BOOTSTRAP_ROOT)/bootstrap/lib/syntax_tools/ebin ; then mkdir $(BOOTSTRAP_ROOT)/bootstrap/lib/syntax_tools/ebin ; fi
+	cp lib/syntax_tools/ebin/*.beam $(BOOTSTRAP_ROOT)/bootstrap/lib/syntax_tools/ebin
+
+.PHONY: check_recreate_primary_bootstrap recreate_primary_bootstrap
+
 
 #
-# recreate_primary_bootstrap assumes that all build results needed already
-# exist in the application specific directories of all applications part of
-# the primary bootstrap.
+# If the source is a prebuilt delivery, no $(ERL_TOP)/bootstrap/lib
+# directory will exist. All applications part of the primary bootstrap
+# are delivered prebuilt though. If it is a prebuilt delivery we need
+# to recreate the primary bootstrap, from the prebuilt result.
+#
+# A prebuild delivery always contain a $(ERL_TOP)/prebuilt.files file.
+# If no such file exists, we wont try to recreate the primary bootstrap,
+# since it will just fail producing anything useful.
+#
+
+check_recreate_primary_bootstrap:
+	@if test -f $(ERL_TOP)/prebuilt.files ; then \
+	  if test ! -d $(ERL_TOP)/bootstrap/lib ; then \
+	    $(MAKE) ERL_TOP=$(ERL_TOP) recreate_primary_bootstrap ; \
+	  fi ; \
+	fi
+
+#
+# recreate_primary_bootstrap assumes that if $(ERL_TOP)/prebuilt.files
+# exist, all build results needed already exist in the application specific
+# directories of all applications part of the primary bootstrap.
 #
 recreate_primary_bootstrap:
-	@if test -d $(ERL_TOP)/bootstrap/lib ; then \
-		@echo "bootstrap already exist" ; \
+	@if test ! -f $(ERL_TOP)/prebuilt.files ; then \
+	  echo "Cannot recreate bootstrap; this is not a pre-built source distribution" ; \
 	else \
-		$(MAKE) ERL_TOP=$(ERL_TOP) \
-			BOOTSTRAP_SRC_TOP=$(ERL_TOP) \
-			BOOTSTRAP_ROOT=$(ERL_TOP) \
-			primary_bootstrap_to_bootstrap_root_copy ; \
+	  if test -d $(ERL_TOP)/bootstrap/lib ; then \
+	    echo "Bootstrap already exist" ; \
+	  else \
+	    echo "Recreating primary bootstrap" ; \
+	    $(MAKE) ERL_TOP=$(ERL_TOP) \
+	            BOOTSTRAP_SRC_TOP=$(ERL_TOP) \
+	            BOOTSTRAP_ROOT=$(ERL_TOP) \
+	            primary_bootstrap_to_bootstrap_root_copy ; \
+	  fi ; \
 	fi
 
 # The first bootstrap build is rarely (never) used in open source, it's
@@ -433,7 +454,8 @@ primary_bootstrap_check_make:
 		;;							\
 	esac
 
-primary_bootstrap_build: primary_bootstrap_mkdirs primary_bootstrap_compiler
+primary_bootstrap_build: primary_bootstrap_mkdirs primary_bootstrap_compiler \
+  primary_bootstrap_stdlib
 	cd lib && $(MAKE) ERLC_FLAGS='-pa $(BOOTSTRAP_COMPILER)/ebin' \
 		BOOTSTRAP_TOP=$(BOOTSTRAP_TOP) \
 		BOOTSTRAP=1 opt
@@ -444,6 +466,11 @@ primary_bootstrap_compiler:
 		BOOTSTRAP_COMPILER=$(BOOTSTRAP_COMPILER) \
 		BOOTSTRAP=1 \
 		opt
+
+primary_bootstrap_stdlib: 
+	cd lib/stdlib/src && $(MAKE) \
+		BOOTSTRAP_COMPILER=$(BOOTSTRAP_COMPILER) \
+		primary_bootstrap_compiler
 
 primary_bootstrap_mkdirs:
 	test -d $(BOOTSTRAP_COMPILER)/egen \
@@ -545,13 +572,12 @@ TESTS +=					\
 	jinterface_test				\
 	kernel_test				\
 	megaco_test				\
-	mnemosyne_test				\
-	mnesia_session_test			\
 	mnesia_test				\
 	observer_test                           \
 	orber_test				\
 	os_mon_test				\
 	otp_mibs_test				\
+	percept_test				\
 	pman_test				\
 	sasl_test				\
 	snmp_test				\
@@ -578,6 +604,7 @@ TESTS +=					\
 	parsetools_test				\
 	ssl_test				\
 	ssh_test				\
+	syntax_tools_test			\
 	tools_test				\
 	toolbar_test				\
 	xmerl_test
@@ -707,10 +734,8 @@ install.dirs:
 # Clean targets
 #
 
-clean:
-	@test -d $(ERL_TOP)/bootstrap/lib \
-		|| ERL_TOP=$(ERL_TOP) $(MAKE) recreate_primary_bootstrap
-	rm -f *~ *.bak config.log config.status
+clean: check_recreate_primary_bootstrap
+	rm -f *~ *.bak config.log config.status prebuilt.files
 	find . -type f -name SKIP -print | xargs $(RM)
 	cd erts && ERL_TOP=$(ERL_TOP) $(MAKE) clean
 	cd lib  && ERL_TOP=$(ERL_TOP) $(MAKE) clean BUILD_ALL=true

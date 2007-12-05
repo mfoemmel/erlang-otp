@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %%% Purpose: Encode PRETTY Megaco/H.248 text messages from internal form
@@ -43,11 +45,11 @@
 %%----------------------------------------------------------------------
 
 encode_message(EC, MegaMsg) 
-  when is_list(EC) and is_record(MegaMsg, 'MegacoMessage') ->
+  when is_list(EC) andalso is_record(MegaMsg, 'MegacoMessage') ->
     case (catch enc_MegacoMessage(MegaMsg)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -77,7 +79,7 @@ encode_transaction(_EC, Trans) ->
     case (catch enc_Transaction(Trans)) of
         {'EXIT', Reason} ->
             {error, Reason};
-        Bin when binary(Bin) ->
+        Bin when is_binary(Bin) ->
             {ok, Bin};
         DeepIoList ->
             Bin = erlang:list_to_binary(DeepIoList),
@@ -92,7 +94,7 @@ encode_action_requests(_EC, ActReqs) when list(ActReqs) ->
     case (catch enc_ActionRequests(ActReqs)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -108,7 +110,7 @@ encode_action_request(_EC, ActReq)
     case (catch enc_ActionRequest(ActReq)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -124,7 +126,7 @@ encode_command_request(_EC, CmdReq)
     case (catch enc_CommandRequest(CmdReq)) of
         {'EXIT', Reason} ->
             {error, Reason};
-        Bin when binary(Bin) ->
+        Bin when is_binary(Bin) ->
             {ok, Bin};
         DeepIoList ->
             Bin = erlang:list_to_binary(DeepIoList),
@@ -140,8 +142,11 @@ encode_action_reply(_EC, ActRep)
     case (catch enc_ActionReply(ActRep)) of
         {'EXIT', Reason} ->
             {error, Reason};
+        Bin when is_binary(Bin) ->
+            {ok, Bin};
         DeepIoList ->
-            {ok, DeepIoList}
+            Bin = erlang:list_to_binary(DeepIoList),
+            {ok, Bin}
     end.
 
 

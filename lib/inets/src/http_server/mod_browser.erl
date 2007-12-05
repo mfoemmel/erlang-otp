@@ -76,7 +76,7 @@
 -define(VMODULE,"BROWSER").
 
 do(Info) ->
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed,Info#mod.data};
 	undefined ->
@@ -86,7 +86,7 @@ do(Info) ->
 
 getBrowser1(Info) ->
     PHead = Info#mod.parsed_header,
-    case httpd_util:key1search(PHead,"user-agent") of
+    case proplists:get_value("user-agent", PHead) of
 	undefined ->
 	    undefined;
 	AgentString ->

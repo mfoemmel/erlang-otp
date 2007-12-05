@@ -730,18 +730,27 @@ check_object(_S,ObjDef,ObjSpec) when (ObjDef#typedef.checked == true) ->
     ObjSpec;
 check_object(S,_ObjDef,#'Object'{classname=ClassRef,def=ObjectDef}) ->
     ?dbg("check_object ~p~n",[ObjectDef]),
-    {MName,_ClassDef} = get_referenced_type(S,ClassRef),
+%    {MName,_ClassDef} = get_referenced_type(S,ClassRef),
     NewClassRef = check_externaltypereference(S,ClassRef),
     ClassDef =
-	case _ClassDef#classdef.checked of
-	    false ->
+	case get_referenced_type(S,ClassRef) of
+	    {_MName,_ClDef=#classdef{checked=false}} ->
 		ObjClass=
-		    check_class(S#state{mname=MName,type=_ClassDef,
-					tname=ClassRef#'Externaltypereference'.type},_ClassDef),
+		    check_class(S#state{mname=_MName,type=_ClDef,
+					tname=ClassRef#'Externaltypereference'.type},_ClDef),
 		#classdef{checked=true,
-			   typespec=ObjClass};
-	    _ ->
-		_ClassDef
+			  typespec=ObjClass};
+	    {_,_ClDef} when is_record(_ClDef,classdef) ->		
+		_ClDef;
+	    {_MName,_TDef=#typedef{checked=false,pos=Pos,
+				   name=_TName,typespec=TS}} ->
+		ClDef = #classdef{pos=Pos,name=_TName,typespec=TS},
+		ObjClass =
+		    check_class(S#state{mname=_MName,type=_TDef,
+					tname=ClassRef#'Externaltypereference'.type},ClDef),
+		ClDef#classdef{checked=true,typespec=ObjClass};
+	    {_,_ClDef} ->
+		_ClDef
 	end,
     NewObj =
 	case ObjectDef of
@@ -1743,7 +1752,7 @@ merged_name(S,ERef=#'Externaltypereference'{module=M}) ->
 	    ERef;
 	{MergeM,true} -> 
 	    %% maybe the reference is renamed
-	    NewName=get_renamed_name(S,ERef#'Externaltypereference'.type,MergeM),
+	    NewName = get_renamed_name(ERef),
 	    ERef#'Externaltypereference'{module=MergeM,type=NewName};
 	{_,_} -> % i.e. M /= MergeM, not an inputmodule
 	    ERef
@@ -4254,7 +4263,7 @@ update_state(S,ModuleName) ->
 	_ -> throw({error,{asn1,{module_does_not_exist,ModuleName}}})
     end.
 
-get_renamed_name(_S,Name,Module) ->
+get_renamed_name(#'Externaltypereference'{type=Name,module=Module}) ->
     case ets:info(renamed_defs) of
 	undefined -> Name;
 	_ ->
@@ -4678,28 +4687,35 @@ check_sequence(S,Type,Comps)  ->
     end.
 
 expand_components(S, [{'COMPONENTS OF',Type}|T]) ->
-    CompList = 
-	case get_referenced_type(S,Type#type.def) of
-	    {_,#typedef{typespec=#type{def=Seq}}} when record(Seq,'SEQUENCE') -> 
-		case Seq#'SEQUENCE'.components of
-		    {Root,_Ext} -> Root;
-		    Root -> Root
-		end;
-	    {_,#typedef{typespec=#type{def=Set}}} when record(Set,'SET') ->
-		case Set#'SET'.components of
-		    {Root,_Ext} -> Root;
-		    Root -> Root
-		end;
-	    {_,#typedef{typespec=RefType=#type{def=#'Externaltypereference'{}}}} ->
-		[{'COMPONENTS OF',RefType}];
-	    Err -> throw({error,{asn1,{illegal_COMPONENTS_OF,Err}}})
-	end,
+    CompList = expand_components2(S,get_referenced_type(S,Type#type.def)),
     expand_components(S,CompList) ++ expand_components(S,T);
 expand_components(S,[H|T]) ->
     [H|expand_components(S,T)];
 expand_components(_,[]) ->
     [].
-    
+expand_components2(_S,{_,#typedef{typespec=#type{def=Seq}}}) 
+  when is_record(Seq,'SEQUENCE') ->
+    case Seq#'SEQUENCE'.components of
+	{R1,_Ext,R2} -> R1 ++ R2;
+	{Root,_Ext} -> Root;
+	Root -> Root
+    end;
+expand_components2(_S,{_,#typedef{typespec=#type{def=Set}}})
+  when is_record(Set,'SET') ->
+    case Set#'SET'.components of
+	{R1,_Ext,R2} -> R1 ++ R2;
+	{Root,_Ext} -> Root;
+	Root -> Root
+    end;
+expand_components2(_S,{_,#typedef{typespec=RefType=#type{def=#'Externaltypereference'{}}}}) ->
+    [{'COMPONENTS OF',RefType}];
+expand_components2(S,{_,PT={pt,_,_}}) ->
+    PTType = check_type(S,PT,#type{def=PT}),
+    expand_components2(S,{dummy,#typedef{typespec=PTType}});
+expand_components2(_S,Err) ->
+    throw({error,{asn1,{illegal_COMPONENTS_OF,Err}}}).
+
+
 check_unique_sequence_tags(S,[#'ComponentType'{prop=mandatory}|Rest]) ->
     check_unique_sequence_tags(S,Rest);
 check_unique_sequence_tags(S,[C|Rest]) when record(C,'ComponentType') ->
@@ -4749,6 +4765,8 @@ check_distinct_tags(Erule,Cs,Acc)
 check_distinct_tags(_,_,_) ->
     ok. % should check tags even for per, fix later
 
+check_distinct_tags({C1,C2,C3},Acc) when is_list(C1),is_list(C2),is_list(C3) ->
+    check_distinct_tags(C1++C2++C3,Acc);
 check_distinct_tags({C1,C2},Acc) when list(C1),list(C2) ->
     check_distinct_tags(C1++C2,Acc);
 check_distinct_tags([#'ComponentType'{tags=[T]}|Cs],Acc) ->
@@ -4922,27 +4940,22 @@ check_choice(S,Type,Components) when list(Components) ->
 		    check_unique_tags(S,NewComponents),
 		    NewComponents
 	    end;
-%%	    CompListWithTblInf = get_tableconstraint_info(S,Type,NewComps);
+
 	Dupl ->
 	    throw({error,{asn1,{duplicate_choice_alternatives,Dupl}}})
     end;
 check_choice(_S,_,[]) -> 
     [].
 
-%% probably dead code that should be removed
-%%maybe_automatic_tags(S,{Rc,Ec}) ->
-%%    {maybe_automatic_tags1(S,Rc,0),maybe_automatic_tags1(S,Ec,length(Rc))};
 maybe_automatic_tags(#state{erule=per},C) ->
     C;
 maybe_automatic_tags(#state{erule=per_bin},C) ->
     C;
 maybe_automatic_tags(S,C) ->
-    maybe_automatic_tags1(S,C,0).
-
-maybe_automatic_tags1(S,C,TagNo) ->
+    TagNos = tag_nums(C),
     case (S#state.module)#module.tagdefault of
 	'AUTOMATIC' ->
-	    generate_automatic_tags(S,C,TagNo);
+	    generate_automatic_tags(S,C,TagNos);
 	_ ->
 	    %% maybe is the module a multi file module were only some of
 	    %% the modules have defaulttag AUTOMATIC TAGS then the names
@@ -4950,12 +4963,32 @@ maybe_automatic_tags1(S,C,TagNo) ->
 	    Name= S#state.tname,
 	    case is_automatic_tagged_in_multi_file(Name) of
 		true ->
-		    generate_automatic_tags(S,C,TagNo);
+		    generate_automatic_tags(S,C,TagNos);
 		false ->
 		    C
 	    end
     end.
 
+%% Pos == 1 for Root1, 2 for Ext, 3 for Root2
+tag_nums(Cl) ->
+    tag_nums(Cl,0,0).
+tag_nums([{'EXTENSIONMARK',_,_}|Rest],Ext,Root2) ->
+    tag_nums_ext(Rest,Ext,Root2);
+tag_nums([_|Rest],Ext,Root2) ->
+    tag_nums(Rest,Ext+1,Root2+1);
+tag_nums([],Ext,Root2) ->
+    [0,Ext,Root2].
+tag_nums_ext([{'EXTENSIONMARK',_,_}|Rest],Ext,Root2) ->
+    tag_nums_root2(Rest,Ext,Root2);
+tag_nums_ext([_|Rest],Ext,Root2) ->
+    tag_nums_ext(Rest,Ext,Root2);
+tag_nums_ext([],Ext,_Root2) ->
+    [0,Ext,0].
+tag_nums_root2([_|Rest],Ext,Root2) ->
+    tag_nums_root2(Rest,Ext+1,Root2);
+tag_nums_root2([],Ext,Root2) ->
+    [0,Ext,Root2].
+    
 is_automatic_tagged_in_multi_file(Name) ->
     case ets:info(automatic_tags) of
 	undefined ->
@@ -4981,15 +5014,15 @@ generate_automatic_tags(_S,C,TagNo) ->
 	    generate_automatic_tags1(C,TagNo)
     end.
 
-generate_automatic_tags1([H|T],TagNo) when record(H,'ComponentType') ->
+generate_automatic_tags1([H|T],[TagNo|TagNos]) when record(H,'ComponentType') ->
     #'ComponentType'{typespec=Ts} = H,
     NewTs = Ts#type{tag=[#tag{class='CONTEXT',
 			     number=TagNo,
 			     type={default,'IMPLICIT'},
 			     form= 0 }]}, % PRIMITIVE
-    [H#'ComponentType'{typespec=NewTs}|generate_automatic_tags1(T,TagNo+1)];
-generate_automatic_tags1([ExtMark|T],TagNo) -> % EXTENSIONMARK
-    [ExtMark | generate_automatic_tags1(T,TagNo)];
+    [H#'ComponentType'{typespec=NewTs}|generate_automatic_tags1(T,[TagNo+1|TagNos])];
+generate_automatic_tags1([ExtMark|T],[_TagNo|TagNos]) -> % EXTENSIONMARK
+    [ExtMark | generate_automatic_tags1(T,TagNos)];
 generate_automatic_tags1([],_) ->
     [].
 
@@ -5039,9 +5072,6 @@ check_unique2([_|T],Pos,Acc) ->
 check_unique2([],_,Acc) ->
     lists:reverse(Acc).
 
-%% check_each_component(S,Type,{Rlist,ExtList}) ->
-%%     {check_each_component(S,Type,Rlist),
-%%      check_each_component(S,Type,ExtList)};
 check_each_component(S,Type,Components) ->
     check_each_component(S,Type,Components,[],[],[],root1).
 
@@ -5058,17 +5088,11 @@ check_each_component(S = #state{abscomppath=Path,recordtopname=TopName},Type,
     NewTags = get_taglist(S,CheckedTs),
 
     NewProp =
-%	case lists:member(der,S#state.options) of
-%	    true ->
-%	    True -> 
 	case normalize_value(S,CheckedTs,Prop,[Cname|TopName]) of
 	    mandatory -> mandatory;
 	    'OPTIONAL' -> 'OPTIONAL';
 	    DefaultValue -> {'DEFAULT',DefaultValue}
 	end,
-%	    _ ->
-%		Prop
-%	end,
     NewC = C#'ComponentType'{typespec=CheckedTs,prop=NewProp,tags=NewTags},
     case Ext of
 	root1 ->
@@ -5132,6 +5156,8 @@ check_each_alternative(_S,_,[],Acc,_,noext) ->
 componentrelation_leadingattr(S,CompList) ->
     Cs =
 	case CompList of
+	    {Comp1, EComps, Comp2} ->
+		Comp1++EComps++Comp2;
 	    {Components,EComponents} when list(Components) ->
 		Components ++ EComponents;
 	    CompList when list(CompList) ->
@@ -5788,6 +5814,10 @@ get_unique_fieldname([{fixedtypevaluefield,Name,_,'UNIQUE',_}|Rest],Acc) ->
 get_unique_fieldname([_H|T],Acc) ->
     get_unique_fieldname(T,Acc).
 
+get_tableconstraint_info(S,Type,{CheckedTs,EComps,CheckedTs2}) ->
+    {get_tableconstraint_info(S,Type,CheckedTs,[]),
+     get_tableconstraint_info(S,Type,EComps,[]),
+     get_tableconstraint_info(S,Type,CheckedTs2,[])};
 get_tableconstraint_info(S,Type,{CheckedTs,EComps}) ->
     {get_tableconstraint_info(S,Type,CheckedTs,[]),
      get_tableconstraint_info(S,Type,EComps,[])};
@@ -6219,7 +6249,10 @@ error({Other,Msg,#state{mname=Mname,type=#typedef{pos=Pos},tname=Typename}}) ->
     {error,{Other,Pos,Mname,Typename,Msg}};
 error({Other,Msg,#state{mname=Mname,type=#classdef{pos=Pos},tname=Typename}}) ->
     io:format("asn1error:~p:~p:~p~n~p~n",[Pos,Mname,Typename,Msg]),
-    {error,{Other,Pos,Mname,Typename,Msg}}.
+    {error,{Other,Pos,Mname,Typename,Msg}};
+error({Other,Msg,#state{mname=Mname,type=Type,tname=Typename}}) ->
+    io:format("asn1error:~p:~p:~p~n~p~n",[asn1ct:get_pos_of_def(Type),Mname,Typename,Msg]),
+    {error,{Other,asn1ct:get_pos_of_def(Type),Mname,Typename,Msg}}.
 
 include_default_type(Module) ->
     NameAbsList = default_type_list(),

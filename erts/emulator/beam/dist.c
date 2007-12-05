@@ -56,7 +56,7 @@ static int node_is_alive;
 /* forward declarations */
 
 static int clear_dist_entry(DistEntry*);
-static int pack_and_send(Process*, Uint32, DistEntry*, Eterm, Eterm, int);
+static int pack_and_send(Process*, ErtsProcLocks, DistEntry*, Eterm, Eterm, int);
 static void send_nodes_mon_msgs(Process *, Eterm, Eterm, Eterm, Eterm);
 static void init_nodes_monitors(void);
 
@@ -197,7 +197,7 @@ static void doit_monitor_net_exits(ErtsMonitor *mon, void *vnecp)
     Process *rp;
     ErtsMonitor *rmon;
     DistEntry *dep = ((NetExitsContext *) vnecp)->dep;
-    Uint32 rp_locks = ERTS_PROC_LOCK_LINK;
+    ErtsProcLocks rp_locks = ERTS_PROC_LOCK_LINK;
 
     rp = erts_pid2proc(NULL, 0, mon->pid, rp_locks);
     if (!rp) {
@@ -257,7 +257,7 @@ static void doit_link_net_exits_sub(ErtsLink *sublnk, void *vlnecp)
     ASSERT(lnk->type == LINK_PID);
     if (is_internal_pid(lnk->pid)) {
 	int xres;
-	Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
+	ErtsProcLocks rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
 
 	rp = erts_pid2proc(NULL, 0, lnk->pid, rp_locks);
 	if (!rp) {
@@ -318,7 +318,7 @@ static void doit_node_link_net_exits(ErtsLink *lnk, void *vnecp)
     Uint i,n;
     ASSERT(lnk->type == LINK_NODE)
     if (is_internal_pid(lnk->pid)) {
-	Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_MSG_SEND;
+	ErtsProcLocks rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_MSG_SEND;
 	rp = erts_pid2proc(NULL, 0, lnk->pid, rp_locks);
 	if (!rp) {
 	    goto done;
@@ -500,7 +500,7 @@ static int clear_dist_entry(DistEntry *dep)
 ** Send a DOP_LINK link message
 */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_link(Process *c_p, Uint32 c_p_locks,
+int dist_link(Process *c_p, ErtsProcLocks c_p_locks,
 	      DistEntry *dep, Eterm local, Eterm remote)
 {
     Eterm ctl_heap[4];
@@ -511,7 +511,7 @@ int dist_link(Process *c_p, Uint32 c_p_locks,
 
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_unlink(Process *c_p, Uint32 c_p_locks,
+int dist_unlink(Process *c_p, ErtsProcLocks c_p_locks,
 		DistEntry *dep, Eterm local, Eterm remote)
 {
     Eterm ctl_heap[4];
@@ -525,7 +525,7 @@ int dist_unlink(Process *c_p, Uint32 c_p_locks,
    {DOP_MONITOR_P_EXIT, Local pid or name, Remote pid, ref, reason},
    which is rather sad as only the ref is needed, no pid's... */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_m_exit(Process *c_p, Uint32 c_p_locks,
+int dist_m_exit(Process *c_p, ErtsProcLocks c_p_locks,
 		DistEntry *dep, Eterm watcher, Eterm watched, 
 		Eterm ref, Eterm reason)
 {
@@ -545,7 +545,7 @@ int dist_m_exit(Process *c_p, Uint32 c_p_locks,
    {DOP_MONITOR_P, Local pid, Remote pid or name, Ref}, which is exactly what's
    needed on the other side... */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_monitor(Process *c_p, Uint32 c_p_locks,
+int dist_monitor(Process *c_p, ErtsProcLocks c_p_locks,
 		 DistEntry *dep, Eterm watcher, Eterm watched, Eterm ref)
 {
     Eterm ctl;
@@ -564,7 +564,7 @@ int dist_monitor(Process *c_p, Uint32 c_p_locks,
    rather redundant as only the ref will be needed on the other side... */
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_demonitor(Process *c_p, Uint32 c_p_locks,
+int dist_demonitor(Process *c_p, ErtsProcLocks c_p_locks,
 		   DistEntry *dep, Eterm watcher, Eterm watched, 
 		   Eterm ref, int force)
 {
@@ -579,7 +579,7 @@ int dist_demonitor(Process *c_p, Uint32 c_p_locks,
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_send(Process* sender, Uint32 sender_locks,
+int dist_send(Process* sender, ErtsProcLocks sender_locks,
 	      DistEntry *dep, Eterm remote, Eterm message)
 {
     Eterm ctl;
@@ -601,7 +601,7 @@ int dist_send(Process* sender, Uint32 sender_locks,
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_reg_send(Process* sender, Uint32 sender_locks,
+int dist_reg_send(Process* sender, ErtsProcLocks sender_locks,
 		  DistEntry *dep, Eterm remote_name, Eterm message)
 {
     Eterm ctl;
@@ -629,7 +629,7 @@ int dist_reg_send(Process* sender, Uint32 sender_locks,
 ** data even if it has signaled that it is busy !!!
 */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit_tt(Process* c_p, Uint32 c_p_locks,
+int dist_exit_tt(Process* c_p, ErtsProcLocks c_p_locks,
 		 DistEntry *dep, Eterm local, Eterm remote, 
 		 Eterm reason, Eterm token)
 {
@@ -662,7 +662,7 @@ int dist_exit_tt(Process* c_p, Uint32 c_p_locks,
 }
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit(Process* c_p, Uint32 c_p_locks,
+int dist_exit(Process* c_p, ErtsProcLocks c_p_locks,
 	      DistEntry *dep, Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl_heap[5];
@@ -687,7 +687,7 @@ int dist_exit(Process* c_p, Uint32 c_p_locks,
 
 /* internal version of dist_exit2 that force send through busy port */
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_exit2(Process* c_p, Uint32 c_p_locks,
+int dist_exit2(Process* c_p, ErtsProcLocks c_p_locks,
 	       DistEntry *dep, Eterm local, Eterm remote, Eterm reason)
 {
     Eterm ctl_heap[5];
@@ -699,7 +699,7 @@ int dist_exit2(Process* c_p, Uint32 c_p_locks,
 
 
 /* SMP NOTE: See "SMP NOTE on dist_*() functions" above */
-int dist_group_leader(Process* c_p, Uint32 c_p_locks,
+int dist_group_leader(Process* c_p, ErtsProcLocks c_p_locks,
 		      DistEntry *dep, Eterm leader, Eterm remote)
 {
     Eterm ctl_heap[4];
@@ -747,8 +747,8 @@ int erts_net_message(Port *prt,
 		     int len)
 {
     byte *t;
-    int i;
-    int ctl_len;
+    Sint ctl_len;
+    Sint decoded_size;
     int orig_ctl_len;
     Eterm arg;
     Eterm from, to;
@@ -799,7 +799,7 @@ int erts_net_message(Port *prt,
 #ifdef MESS_DEBUG
     print_pass_through(dep, t, len-1);
 #endif
-    if ((ctl_len = decode_size(t, len-1)) == -1) {
+    if ((ctl_len = erts_decoded_size(t, len-1, 0)) == -1) {
 	PURIFY_MSG("data error");
 	goto data_error;
     }
@@ -1008,7 +1008,7 @@ int erts_net_message(Port *prt,
 	 * from R9B and onwards.
 	 */
 
-	if ((i = decode_size(t, len)) == -1) {
+	if ((decoded_size = erts_decoded_size(t, len, 0)) == -1) {
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
@@ -1025,16 +1025,16 @@ int erts_net_message(Port *prt,
 	     * The receiver is invalid, but we must decode the
 	     * message anyway to keep the atom cache up-to-date.
 	     */
-	    msg = new_message_buffer(i);
+	    msg = new_message_buffer(decoded_size);
 	    hp = msg->mem;
 	    (void) erts_from_external_format(dep, &hp, &t, &msg->off_heap);
 	    free_message_buffer(msg);
 	} else {
-	    Uint32 locks = ERTS_PROC_LOCKS_MSG_SEND;
+	    ErtsProcLocks locks = ERTS_PROC_LOCKS_MSG_SEND;
 	    ErlHeapFragment *bp;
 	    ErlOffHeap *ohp;
-	    hp = erts_alloc_message_heap(i+token_size,&bp,&ohp,rp,&locks);
-	    hp_end = hp + i + token_size;
+	    hp = erts_alloc_message_heap(decoded_size+token_size,&bp,&ohp,rp,&locks);
+	    hp_end = hp + decoded_size + token_size;
 	    message = erts_from_external_format(dep, &hp, &t, ohp);
 	    if (is_non_value(message)) {
 		PURIFY_MSG("data error");
@@ -1052,7 +1052,7 @@ int erts_net_message(Port *prt,
 	    else {
 		Uint final_size = hp - &bp->mem[0];
 		Eterm brefs[2] = {message, token};
-		ASSERT(i + token_size - (hp_end - hp) == final_size);
+		ASSERT(decoded_size + token_size - (hp_end - hp) == final_size);
 		bp = erts_resize_message_buffer(bp, final_size, &brefs[0], 2);
 		message = brefs[0];
 		token = brefs[1];
@@ -1071,7 +1071,7 @@ int erts_net_message(Port *prt,
 	 * from R9B and onwards.
 	 */
 
-	if ((i = decode_size(t, len)) == -1) {
+	if ((decoded_size = erts_decoded_size(t, len, 0)) == -1) {
 	    PURIFY_MSG("data error");
 	    goto data_error;
 	}
@@ -1088,17 +1088,17 @@ int erts_net_message(Port *prt,
 	     * The receiver is invalid, but we must decode the
 	     * message anyway to keep the atom cache up-to-date.
 	     */
-	    msg = new_message_buffer(i);
+	    msg = new_message_buffer(decoded_size);
 	    hp = msg->mem;
 	    (void) erts_from_external_format(dep, &hp, &t, &msg->off_heap);
 	    free_message_buffer(msg);
 	} else {
-	    Uint32 locks = ERTS_PROC_LOCKS_MSG_SEND;
+	    ErtsProcLocks locks = ERTS_PROC_LOCKS_MSG_SEND;
 	    ErlOffHeap *ohp;
 	    ErlHeapFragment *bp;
-	    hp = erts_alloc_message_heap(i+token_size,&bp,&ohp,rp,&locks);
+	    hp = erts_alloc_message_heap(decoded_size+token_size,&bp,&ohp,rp,&locks);
 
-	    hp_end = hp + i + token_size;
+	    hp_end = hp + decoded_size + token_size;
 	    message = erts_from_external_format(dep, &hp, &t, ohp);
 	    if (is_non_value(message)) {
 		PURIFY_MSG("data error");
@@ -1116,7 +1116,7 @@ int erts_net_message(Port *prt,
 	    else {
 		Uint final_size = hp - &bp->mem[0];
 		Eterm brefs[2] = {message, token};
-		ASSERT(i + token_size - (hp_end - hp) == final_size);
+		ASSERT(decoded_size + token_size - (hp_end - hp) == final_size);
 		bp = erts_resize_message_buffer(bp, final_size, &brefs[0], 2);
 		message = brefs[0];
 		token = brefs[1];
@@ -1133,7 +1133,7 @@ int erts_net_message(Port *prt,
 
 	Eterm lhp[3];
 	Eterm sysname;
-	Uint32 rp_locks = ERTS_PROC_LOCKS_MSG_SEND|ERTS_PROC_LOCK_LINK;
+	ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_MSG_SEND|ERTS_PROC_LOCK_LINK;
 
 	/* watched = tuple[2]; */  /* remote proc which died */
 	/* watcher = tuple[3]; */
@@ -1180,7 +1180,7 @@ int erts_net_message(Port *prt,
 
     case DOP_EXIT_TT:
     case DOP_EXIT: {
-	Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
+	ErtsProcLocks rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
 	/* 'from', which 'to' is linked to, died */
 	if (type == DOP_EXIT) {
 	   from = tuple[2];
@@ -1253,7 +1253,7 @@ int erts_net_message(Port *prt,
     }
     case DOP_EXIT2_TT:
     case DOP_EXIT2: {
-	Uint32 rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
+	ErtsProcLocks rp_locks = ERTS_PROC_LOCKS_XSIG_SEND;
 	/* 'from' is send an exit signal to 'to' */
 	if (type == DOP_EXIT2) {
 	   from = tuple[2];
@@ -1322,7 +1322,10 @@ int erts_net_message(Port *prt,
     ERTS_SMP_CHK_NO_PROC_LOCKS;
     return 0;
 
- data_error: {
+ data_error:
+    {
+	int i;
+
 	erts_dsprintf_buf_t *dsbufp = erts_create_logger_dsbuf();
 	erts_dsprintf(dsbufp,
 		      "Got invalid data on distribution channel, "
@@ -1368,7 +1371,7 @@ int erts_net_message(Port *prt,
 
 #define DEFAULT_TMP_DIST_BUF_SZ (8*1024)
 
-static int pack_and_send(Process *c_p, Uint32 c_p_locks,
+static int pack_and_send(Process *c_p, ErtsProcLocks c_p_locks,
 			 DistEntry *dep, Eterm ctl, Eterm mess, int force_busy)
 {
     byte *bufp;
@@ -1632,13 +1635,14 @@ void print_pass_through(DistEntry *dep, byte *t, int len)
     Eterm* hp;
     byte *orig = t;
     Uint i;
+    Sint decoded_size;
 
-    if ((i = decode_size(t, len)) == -1) {
+    if ((decoded_size = erts_decoded_size(t, len, 0)) == -1) {
 	erts_printf(stderr, "Bailing out in decode_size control message\n");
 	upp(orig, len);
 	erl_exit(1, "Bailing out in decode_size control message\n");
     }
-    ctl = new_message_buffer(i);
+    ctl = new_message_buffer(decoded_size);
     hp = ctl->mem;
     i = erts_from_external_format(dep, &hp, &t, &ctl->mso);
     if (is_non_value(i)) {
@@ -1654,12 +1658,12 @@ void print_pass_through(DistEntry *dep, byte *t, int len)
 	free_message_buffer(ctl);
 	return;
     }
-    if ((i = decode_size(t, len)) == -1) {
+    if ((decoded_size = erts_decoded_size(t, len, 0)) == -1) {
 	erts_printf(stderr, "Bailing out in decode_size second element\n");
 	upp(orig, len);
 	erl_exit(1, "Bailing out in decode_size second element\n");
     }
-    msg = new_message_buffer(i);
+    msg = new_message_buffer(decoded_size);
     hp = msg->mem;
     i = erts_from_external_format(dep, &hp, &t, &msg->mso);
     if (is_non_value(i)) {
@@ -1971,7 +1975,7 @@ BIF_RETTYPE dist_exit_3(BIF_ALIST_3)
     /* Check that local is local */
     if (is_internal_pid(local)) {
 	Process *lp;
-	Uint32 lp_locks;
+	ErtsProcLocks lp_locks;
 	if (BIF_P->id == local) {
 	    lp_locks = ERTS_PROC_LOCKS_ALL;
 	    lp = BIF_P;
@@ -2293,7 +2297,7 @@ nodes_mon_msg_sz(ErtsNodesMonitor *nmp, Eterm what, Eterm reason)
 
 static ERTS_INLINE void
 send_nodes_mon_msg(Process *rp,
-		   Uint32 *rp_locksp,
+		   ErtsProcLocks *rp_locksp,
 		   ErtsNodesMonitor *nmp,
 		   Eterm node,
 		   Eterm what,
@@ -2359,7 +2363,7 @@ static void
 send_nodes_mon_msgs(Process *c_p, Eterm what, Eterm node, Eterm type, Eterm reason)
 {
     ErtsNodesMonitor *nmp;
-    Uint32 rp_locks;
+    ErtsProcLocks rp_locks;
     Process *rp = NULL;
 
     ASSERT(is_immed(what));
@@ -2569,10 +2573,10 @@ remove_nodes_monitors(Process *c_p, Uint32 opts, int all)
 }
 
 void
-erts_delete_nodes_monitors(Process *c_p, Uint32 locks)
+erts_delete_nodes_monitors(Process *c_p, ErtsProcLocks locks)
 {
     if (erts_smp_mtx_trylock(&nodes_monitors_mtx) == EBUSY) {
-	Uint32 unlock_locks = locks & ~ERTS_PROC_LOCK_MAIN;
+	ErtsProcLocks unlock_locks = locks & ~ERTS_PROC_LOCK_MAIN;
 	if (c_p && unlock_locks)
 	    erts_smp_proc_unlock(c_p, unlock_locks);
 	erts_smp_mtx_lock(&nodes_monitors_mtx);

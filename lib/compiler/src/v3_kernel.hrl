@@ -41,6 +41,7 @@
 -record(k_cons, {anno=[],hd,tl}).
 -record(k_binary, {anno=[],segs}).
 -record(k_bin_seg, {anno=[],size,unit,type,flags,seg,next}).
+-record(k_bin_int, {anno=[],size,unit,flags,val,next}).
 -record(k_bin_end, {anno=[]}).
 -record(k_var, {anno=[],name}).
 

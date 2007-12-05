@@ -27,6 +27,7 @@
 -export([fun_info/1]).
 -export([send_nosuspend/2, send_nosuspend/3]).
 -export([localtime_to_universaltime/1]).
+-export([suspend_process/1]).
 
 -export([dlink/1, dunlink/1, dsend/2, dsend/3, dgroup_leader/2,
 	 dexit/2, dmonitor_node/3, dmonitor_p/2]).
@@ -37,7 +38,7 @@
 
 -export([nodes/0]).
 
--export([concat_binary/1,info/1]).
+-export([concat_binary/1]).
 
 -export([memory/0, memory/1]).
 
@@ -45,7 +46,7 @@
 
 -export([demonitor/2]).
 
--deprecated([{old_binary_to_term,1},{info,1},{hash,2}]).
+-deprecated([{hash,2},{fault,1},{fault,2}]).
 
 -compile(nowarn_bif_clash).
 
@@ -62,7 +63,7 @@ spawn(F) when is_function(F) ->
 spawn({M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn(erlang, apply, [MF, []]);
 spawn(F) ->
-    erlang:fault(badarg, [F]).
+    erlang:error(badarg, [F]).
 
 spawn(N, F) when N =:= node() ->
     spawn(F);
@@ -71,14 +72,14 @@ spawn(N, F) when is_function(F) ->
 spawn(N, {M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn(N, erlang, apply, [MF, []]);
 spawn(N, F) ->
-    erlang:fault(badarg, [N, F]).
+    erlang:error(badarg, [N, F]).
 
 spawn_link(F) when is_function(F) ->
     spawn_link(erlang, apply, [F, []]);
 spawn_link({M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn_link(erlang, apply, [MF, []]);
 spawn_link(F) ->
-    erlang:fault(badarg, [F]).
+    erlang:error(badarg, [F]).
 
 spawn_link(N, F) when N =:= node() ->
     spawn_link(F);
@@ -87,7 +88,7 @@ spawn_link(N, F) when is_function(F) ->
 spawn_link(N, {M,F}=MF) when is_atom(M), is_atom(F) ->
     spawn_link(N, erlang, apply, [MF, []]);
 spawn_link(N, F) ->
-    erlang:fault(badarg, [N, F]).
+    erlang:error(badarg, [N, F]).
 
 %% Spawn and atomically set up a monitor.
 
@@ -108,7 +109,7 @@ spawn_opt({M,F}=MF, O) when is_atom(M), is_atom(F) ->
 spawn_opt({M,F,A}, O) -> % For (undocumented) backward compatibility
     spawn_opt(M, F, A, O);
 spawn_opt(F, O) ->
-    erlang:fault(badarg, [F, O]).
+    erlang:error(badarg, [F, O]).
 
 spawn_opt(N, F, O) when N =:= node() ->
     spawn_opt(F, O);
@@ -117,7 +118,7 @@ spawn_opt(N, F, O) when is_function(F) ->
 spawn_opt(N, {M,F}=MF, O) when is_atom(M), is_atom(F) ->
     spawn_opt(N, erlang, apply, [MF, []], O);
 spawn_opt(N, F, O) ->
-    erlang:fault(badarg, [N, F, O]).
+    erlang:error(badarg, [N, F, O]).
 
 % Spawns with MFA
 
@@ -128,7 +129,7 @@ spawn(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
 	true ->
 	    ok;
 	false ->
-	    erlang:fault(badarg, [N, M, F, A])
+	    erlang:error(badarg, [N, M, F, A])
     end,
     case catch gen_server:call({net_kernel,N},
 			       {spawn,M,F,A,group_leader()},
@@ -138,13 +139,13 @@ spawn(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
 	Error ->
 	    case remote_spawn_error(Error, {no_link, N, M, F, A, []}) of
 		{fault, Fault} ->
-		    erlang:fault(Fault, [N, M, F, A]);
+		    erlang:error(Fault, [N, M, F, A]);
 		Pid ->
 		    Pid
 	    end
     end;
 spawn(N,M,F,A) ->
-    erlang:fault(badarg, [N, M, F, A]).
+    erlang:error(badarg, [N, M, F, A]).
 
 spawn_link(N,M,F,A) when N =:= node(), is_atom(M), is_atom(F), is_list(A) ->
     spawn_link(M,F,A);
@@ -153,7 +154,7 @@ spawn_link(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
 	true ->
 	    ok;
 	_ ->
-	    erlang:fault(badarg, [N, M, F, A])
+	    erlang:error(badarg, [N, M, F, A])
     end,
     case catch gen_server:call({net_kernel,N},
 			       {spawn_link,M,F,A,group_leader()},
@@ -163,13 +164,13 @@ spawn_link(N,M,F,A) when is_atom(N), is_atom(M), is_atom(F) ->
 	Error ->
 	    case remote_spawn_error(Error, {link, N, M, F, A, []}) of
 		{fault, Fault} ->
-		    erlang:fault(Fault, [N, M, F, A]);
+		    erlang:error(Fault, [N, M, F, A]);
 		Pid ->
 		    Pid
 	    end
     end;
 spawn_link(N,M,F,A) ->
-    erlang:fault(badarg, [N, M, F, A]).
+    erlang:error(badarg, [N, M, F, A]).
 
 spawn_opt(M, F, A, Opts) ->
     case catch erlang:spawn_opt({M,F,A,Opts}) of
@@ -209,13 +210,13 @@ spawn_opt(N, M, F, A, O) when is_atom(N), is_atom(M), is_atom(F) ->
 	Error ->
 	    case remote_spawn_error(Error, {L, N, M, F, A, NO}) of
 		{fault, Fault} ->
-		    erlang:fault(Fault, [N, M, F, A, O]);
+		    erlang:error(Fault, [N, M, F, A, O]);
 		Pid ->
 		    Pid
 	    end
     end;
 spawn_opt(N,M,F,A,O) ->
-    erlang:fault(badarg, [N,M,F,A,O]).
+    erlang:error(badarg, [N,M,F,A,O]).
 
 remote_spawn_error({'EXIT', {{nodedown,N}, _}}, {L, N, M, F, A, O}) ->
     {Opts, LL} = case L =:= link of
@@ -278,6 +279,13 @@ send_nosuspend(Pid, Msg, Opts) ->
 
 localtime_to_universaltime(Localtime) ->
     erlang:localtime_to_universaltime(Localtime, undefined).
+
+suspend_process(P) ->
+    case catch erlang:suspend_process(P, []) of
+	{'EXIT', {Reason, _}} -> erlang:error(Reason, [P]);
+	{'EXIT', Reason} -> erlang:error(Reason, [P]);
+	Res -> Res
+    end.
 
 %%
 %% If the emulator wants to perform a distributed command and
@@ -414,9 +422,6 @@ get_cookie() ->
 concat_binary(List) ->
     list_to_binary(List).
 
-info(What) ->
-    erlang:system_info(What).
-
 %%
 %% memory/[0,1]
 %%
@@ -427,12 +432,12 @@ memory() ->
 memory(Type) when is_atom(Type) ->
     case erlang:system_info({memory, [Type]}) of
 	[{Type, Bytes}] -> Bytes;
-	Error -> erlang:fault(Error, [Type])
+	Error -> erlang:error(Error, [Type])
     end;
 memory(TypeSpec) ->
     case erlang:system_info({memory, TypeSpec}) of
 	Result when is_list(Result) -> Result;
-	Error -> erlang:fault(Error, [TypeSpec])
+	Error -> erlang:error(Error, [TypeSpec])
     end.
 
 
@@ -447,7 +452,7 @@ integer_to_list(I, Base)
 	    integer_to_list(I, Base, [])
     end;
 integer_to_list(I, Base) ->
-    erlang:fault(badarg, [I, Base]).
+    erlang:error(badarg, [I, Base]).
 
 integer_to_list(I0, Base, R0) ->
     D = I0 rem Base,
@@ -473,10 +478,10 @@ list_to_integer(L, Base)
 	I when is_integer(I) ->
 	    I;
 	Fault ->
-	    erlang:fault(Fault, [L,Base])
+	    erlang:error(Fault, [L,Base])
     end;
 list_to_integer(L, Base) ->
-    erlang:fault(badarg, [L,Base]).
+    erlang:error(badarg, [L,Base]).
 
 list_to_integer_sign([$-|[_|_]=L], Base) ->
     case list_to_integer(L, Base, 0) of

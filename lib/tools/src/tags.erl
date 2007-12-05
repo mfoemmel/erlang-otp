@@ -126,7 +126,7 @@ collect_dirs([Dir | Dirs], Recursive, Acc) ->
 
 collect_files(_Dir,[],_Recursive, Acc) -> Acc;
 collect_files(Dir, [File | Files], Recursive, Acc) ->
-    FullFile = addfile(Dir, File),
+    FullFile = filename:join(Dir, File),
     NewAcc = case filelib:is_dir(FullFile) of
 		 true when Recursive ->
 		     collect_dirs([FullFile], Recursive, Acc);
@@ -164,7 +164,7 @@ files_loop([F | Fs], Os) ->
 
 %% Generate tags for one file.
 filename(Name, Os) ->
-    case file:open(Name, read) of
+    case file:open(Name, [read]) of
 	{ok, Desc} ->
 	    Acc = module(Desc, [], [], {1, 0}),
 	    file:close(Desc),
@@ -298,13 +298,13 @@ word_char(_) -> false.
 open_out(Options) ->
     case lists:keysearch(outfile, 1, Options) of
 	{value, {outfile, File}} ->
-	    file:open(File, write);
+	    file:open(File, [write]);
 	_ ->
 	    case lists:keysearch(outdir, 1, Options) of
 		{value, {outdir, Dir}} ->
-		    file:open(addfile(Dir, "TAGS"), write);
+		    file:open(filename:join(Dir, "TAGS"), [write]);
 		_ ->
-		    file:open("TAGS", write)
+		    file:open("TAGS", [write])
 	    end
     end.
 	    
@@ -321,16 +321,6 @@ genout(Os, Name, Entries) ->
     io:format(Os, "\^l~n~s,~w~n", [Name, reclength(Entries)]),
     io:put_chars(Os, lists:reverse(Entries)).
 
-
-%% Create a filename by joining `Dir' and `File'.
-addfile(Dir, File) when is_atom(Dir) -> addfile(atom_to_list(Dir), File);
-addfile(Dir, File) when is_atom(File) -> addfile(Dir, atom_to_list(File));
-addfile(Dir, File) ->
-    case lists:reverse(Dir) of
-	[$/| _] -> lists:append(Dir, File);
-	_ -> lists:append(Dir, [$/ | File])
-    end.
-    
 
     
 %%% help routines

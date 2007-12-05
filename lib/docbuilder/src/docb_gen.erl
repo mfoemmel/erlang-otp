@@ -23,7 +23,8 @@
 	       layout=docb_edoc_xml_cb,
 	       def=[],
 	       includes=[],
-	       preprocess=false}).
+	       preprocess=false,
+	       sort_functions=true}).
 
 %% module(File) -> ok | {error, Reason}
 %% module(File, Opts) -> ok | {error, Reason}
@@ -44,6 +45,7 @@ module(File0, RawOpts) ->
 		    Opts = [{def,         Args#args.def},
 			    {includes,    Args#args.includes},
 			    {preprocess,  Args#args.preprocess},
+			    {sort_functions, Args#args.sort_functions},
 
 			    {app_default, "OTPROOT"},
 			    {file_suffix, Args#args.suffix},
@@ -115,6 +117,9 @@ parse([{includes,Dirs} | RawOpts], Args) ->
 parse([{preprocess,Bool} | RawOpts], Args) when Bool==true;
 						Bool==false ->
     parse(RawOpts, Args#args{preprocess=Bool});
+parse([{sort_functions,Bool} | RawOpts], Args) when Bool==true;
+						    Bool==false ->
+    parse(RawOpts, Args#args{sort_functions=Bool});
 parse([], Args) ->
     {ok, Args};
 parse([Opt | _RawOpts], _Args) ->

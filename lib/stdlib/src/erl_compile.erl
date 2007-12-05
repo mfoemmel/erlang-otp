@@ -77,6 +77,8 @@ compile(List) ->
 	    error
     end.
 
+-spec(compiler_runner/1 :: ([_]) -> no_return()).
+
 compiler_runner(List) ->
     exit({compiler_result, compile1(List)}).
 

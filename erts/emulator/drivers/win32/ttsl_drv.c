@@ -28,6 +28,7 @@
 #include <signal.h>
 
 #include "erl_driver.h"
+#include "win_con.h"
 
 #define TRUE 1
 #define FALSE 0
@@ -41,6 +42,9 @@ static int rows;		/* Number of rows available. */
 #define OP_INSC 2
 #define OP_DELC 3
 #define OP_BEEP 4
+
+/* Control op */
+#define CTRL_OP_GET_WINSIZE 100
 
 static int lbuf_size = BUFSIZ;
 #define MAXSIZE (1 << 16)
@@ -64,6 +68,7 @@ int lpos;
 static int ttysl_init(void);
 static ErlDrvData ttysl_start(ErlDrvPort, char*);
 static void ttysl_stop(ErlDrvData);
+static int ttysl_control(ErlDrvData, unsigned int, char *, int, char **, int);
 static void ttysl_from_erlang(ErlDrvData, char*, int);
 static void ttysl_from_tty(ErlDrvData, ErlDrvEvent);
 static Sint16 get_sint16(char *s);
@@ -99,7 +104,7 @@ struct erl_drv_entry ttsl_driver_entry = {
     "tty_sl",
     NULL,
     NULL,
-    NULL,
+    ttysl_control,
     NULL
 };
 
@@ -107,7 +112,7 @@ static int ttysl_init()
 {
     lbuf = NULL;		/* For line buffer handling */
     ttysl_port = (ErlDrvPort)-1;
-    return TRUE;
+    return 0;
 }
 
 static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
@@ -120,6 +125,42 @@ static ErlDrvData ttysl_start(ErlDrvPort port, char* buf)
     ttysl_port = port;
     return (ErlDrvData)ttysl_port;/* Nothing important to return */
 }
+
+#define DEF_HEIGHT 24
+#define DEF_WIDTH 80
+
+static void ttysl_get_window_size(Uint32 *width, Uint32 *height)
+{
+    *width = ConGetColumns();
+    *height = ConGetRows();
+}
+    
+
+static int ttysl_control(ErlDrvData drv_data,
+			 unsigned int command,
+			 char *buf, int len,
+			 char **rbuf, int rlen)
+{
+    char resbuff[2*sizeof(Uint32)];
+    switch (command) {
+    case CTRL_OP_GET_WINSIZE:
+	{
+	    Uint32 w,h;
+	    ttysl_get_window_size(&w,&h);
+	    memcpy(resbuff,&w,sizeof(Uint32));
+	    memcpy(resbuff+sizeof(Uint32),&h,sizeof(Uint32));
+	}
+	break;
+    default:
+	return 0;
+    }
+    if (rlen < 2*sizeof(Uint32)) {
+	*rbuf = driver_alloc(2*sizeof(Uint32));
+    }
+    memcpy(*rbuf,resbuff,2*sizeof(Uint32));
+    return 2*sizeof(Uint32);
+}
+
 
 static void ttysl_stop(ErlDrvData ttysl_data)
 {

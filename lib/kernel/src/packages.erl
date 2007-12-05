@@ -26,6 +26,8 @@
 %% list containing atoms. A name may be empty, but may not contain two
 %% consecutive period (`.') characters or end with a period character.
 
+-spec(to_string/1 :: (atom() | string()) -> string()).
+
 to_string(Name) when is_atom(Name) ->
     atom_to_list(Name);
 to_string(Name) ->
@@ -55,7 +57,7 @@ concat_1([H | T]) ->
 concat_1([]) ->
     "";
 concat_1(Name) ->
-    erlang:fault({badarg, Name}).
+    erlang:error({badarg, Name}).
 
 is_valid(Name) when is_atom(Name) ->
     is_valid_1(atom_to_list(Name));
@@ -83,7 +85,7 @@ split_1([H | T], Cs) when is_integer(H), H >= 0 ->
 split_1([], Cs) ->
     [lists:reverse(Cs)];
 split_1(_, _) ->
-    erlang:fault(badarg).
+    erlang:error(badarg).
 
 %% This is equivalent to testing if `split(Name)' yields a list of
 %% length larger than one (i.e., if the name can be split into two or
@@ -99,7 +101,7 @@ is_segmented_1([H | T]) when is_integer(H), H >= 0 ->
     is_segmented_1(T);
 is_segmented_1([]) -> false;
 is_segmented_1(_) ->
-    erlang:fault(badarg).
+    erlang:error(badarg).
 
 last(Name) ->
     last_1(split(Name)).

@@ -111,13 +111,19 @@ perform_dump(InitBy, Regulator) ->
     dbg_out("Transaction log dump initiated by ~w: ~w~n",
 	    [InitBy, LogState]), 
     adjust_log_writes(false),    
-    mnesia_recover:allow_garb(),
     case LogState of
 	already_dumped ->
-	    dumped;
+	    case mnesia_monitor:use_dir() of
+		true ->
+		    dumped;
+		_ ->
+		    mnesia_recover:allow_garb(),
+		    dumped
+	    end;
 	{needs_dump, Diff} ->
 	    U = mnesia_monitor:get_env(dump_log_update_in_place),
 	    Cont = mnesia_log:init_log_dump(),
+	    mnesia_recover:sync(),
 	    case catch do_perform_dump(Cont, U, InitBy, Regulator, undefined) of
 		ok ->
 		    ?eval_debug_fun({?MODULE, post_dump}, [InitBy]),
@@ -127,6 +133,7 @@ perform_dump(InitBy, Regulator) ->
 			false ->
 			    mnesia_log:purge_some_logs()
 		    end,
+		    mnesia_recover:allow_garb(),
 		    %% And now to the crucial point...
 		    mnesia_log:confirm_log_dump(Diff);
 		{error, Reason} ->

@@ -255,12 +255,12 @@ handle_call(delete_tables, _From, Tables) ->
     {reply, ok, []};
 
 handle_call({check_blocked_user, [Info, User, SDirData]}, _From, Tables) ->
-    {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
-    Dir = httpd_util:key1search(SDirData, path),
-    Addr = httpd_util:key1search(SDirData, bind_address),
-    Port = httpd_util:key1search(SDirData, port),
+    {ETS, DETS} = proplists:get_value(data_file, SDirData),
+    Dir = proplists:get_value(path, SDirData),
+    Addr = proplists:get_value(bind_address, SDirData),
+    Port = proplists:get_value(port, SDirData),
     CBModule = 
-	httpd_util:key1search(SDirData, callback_module, no_module_at_all),
+	proplists:get_value(callback_module, SDirData, no_module_at_all),
     Ret = 
 	check_blocked_user(Info, User, Dir, Addr, Port, ETS, DETS, CBModule),
     {reply, Ret, Tables};
@@ -276,16 +276,16 @@ handle_cast({store_failed_auth, [_, _, []]}, Tables) ->
     %% was the source for the authentication failure so we should ignor it!
     {noreply, Tables};
 handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
-    {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
-    Dir  = httpd_util:key1search(SDirData, path),
-    Addr = httpd_util:key1search(SDirData, bind_address),
-    Port = httpd_util:key1search(SDirData, port),
+    {ETS, DETS} = proplists:get_value(data_file, SDirData),
+    Dir  = proplists:get_value(path, SDirData),
+    Addr = proplists:get_value(bind_address, SDirData),
+    Port = proplists:get_value(port, SDirData),
     {ok, [User,Password]} = httpd_util:split(DecodedString,":",2),
     Seconds = universal_time(),
     Key = {User, Dir, Addr, Port},
     %% Event
-    CBModule = httpd_util:key1search(SDirData, 
-				     callback_module, no_module_at_all),
+    CBModule = proplists:get_value(callback_module, 
+				     SDirData, no_module_at_all),
     auth_fail_event(CBModule,Addr,Port,Dir,User,Password),
     
     %% Find out if any of this user's other failed logins are too old to keep..
@@ -293,8 +293,8 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
 	[] ->
 	    no;
 	List ->
-	    ExpireTime = httpd_util:key1search(SDirData, 
-					       fail_expire_time, 30)*60,
+	    ExpireTime = proplists:get_value(fail_expire_time, 
+					     SDirData, 30)*60,
 	    lists:map(fun({failed, {TheKey, LS, Gen}}) ->
 			      Diff = Seconds-LS,
 			      if
@@ -318,8 +318,8 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     dets:insert(DETS, {failed, {Key, Seconds, Generation}}),
     
     %% See if we should block this user..
-    MaxRetries = httpd_util:key1search(SDirData, max_retries, 3),
-    BlockTime = httpd_util:key1search(SDirData, block_time, 60),
+    MaxRetries = proplists:get_value(max_retries, SDirData, 3),
+    BlockTime = proplists:get_value(block_time, SDirData, 60),
     case ets:match_object(ETS, {failed, {Key, '_', '_'}}) of
 	List1 when length(List1) >= MaxRetries ->
 	    %% Block this user until Future
@@ -349,9 +349,9 @@ handle_cast({store_failed_auth, [Info, DecodedString, SDirData]}, Tables) ->
     {noreply, Tables};
 
 handle_cast({store_successful_auth, [User, Addr, Port, SDirData]}, Tables) ->
-    {ETS, DETS} = httpd_util:key1search(SDirData, data_file),
-    AuthTimeOut = httpd_util:key1search(SDirData, auth_timeout, 30),
-    Dir = httpd_util:key1search(SDirData, path),
+    {ETS, DETS} = proplists:get_value(data_file, SDirData),
+    AuthTimeOut = proplists:get_value(auth_timeout, SDirData, 30),
+    Dir = proplists:get_value(path, SDirData),
     Key = {User, Dir, Addr, Port},
 
     %% Remove failed entries for this Key
@@ -396,7 +396,8 @@ code_change(_, State, _Extra) ->
 
 %% block_user_int/2
 block_user_int({User, Addr, Port, Dir, Time}) ->
-    Dirs = httpd_manager:config_match(Addr, Port, {security_directory, '_'}),
+    Dirs = httpd_manager:config_match(Addr, Port, 
+				      {security_directory, {'_', '_'}}),
     case find_dirdata(Dirs, Dir) of
 	{ok, DirData, {ETS, DETS}} ->
 	    Time1 = 
@@ -412,7 +413,7 @@ block_user_int({User, Addr, Port, Dir, Time}) ->
 				     {User,Addr,Port,Dir,'_'}}),
 	    ets:insert(ETS, {blocked_user, {User,Addr,Port,Dir,Future}}),
 	    dets:insert(DETS, {blocked_user, {User,Addr,Port,Dir,Future}}),
-	    CBModule = httpd_util:key1search(DirData, callback_module, 
+	    CBModule = proplists:get_value(callback_module, DirData, 
 					     no_module_at_all),
 	    user_block_event(CBModule,Addr,Port,Dir,User),
 	    true;
@@ -423,7 +424,7 @@ block_user_int({User, Addr, Port, Dir, Time}) ->
 
 find_dirdata([], _Dir) ->
     false;
-find_dirdata([{security_directory, DirData}|SDirs], Dir) ->
+find_dirdata([{security_directory, {_, DirData}}|SDirs], Dir) ->
     case lists:keysearch(path, 1, DirData) of
 	{value, {path, Dir}} ->
 	    {value, {data_file, {ETS, DETS}}} =
@@ -436,7 +437,8 @@ find_dirdata([{security_directory, DirData}|SDirs], Dir) ->
 %% unblock_user_int/2
 
 unblock_user_int({User, Addr, Port, Dir}) ->
-    Dirs = httpd_manager:config_match(Addr, Port, {security_directory, '_'}),
+    Dirs = httpd_manager:config_match(Addr, Port, {security_directory, {'_',
+									'_'}}),
     case find_dirdata(Dirs, Dir) of
 	{ok, DirData, {ETS, DETS}} ->
 	    case ets:match_object(ETS,
@@ -448,8 +450,8 @@ unblock_user_int({User, Addr, Port, Dir}) ->
 					   {User, Addr, Port, Dir, '_'}}),
 		    dets:match_delete(DETS, {blocked_user,
 					     {User, Addr, Port, Dir, '_'}}),
-	       	    CBModule = httpd_util:key1search(DirData, 
-						     callback_module, 
+	       	    CBModule = proplists:get_value(callback_module, 
+						     DirData, 
 						     no_module_at_all),
 		    user_unblock_event(CBModule,Addr,Port,Dir,User),
 		    true

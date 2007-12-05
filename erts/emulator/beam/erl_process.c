@@ -95,33 +95,16 @@ static erts_tsd_key_t sched_data_key;
 erts_smp_mtx_t schdlq_mtx;
 static erts_smp_mtx_t proc_tab_mtx;
 
+static int function_calls = 0;
+
 #ifdef ERTS_SMP
 static erts_smp_cnd_t schdlq_cnd;
 int erts_all_schedulers_waiting;
-#ifndef ERTS_SMP_USE_IO_THREAD
 static int doing_sys_schedule;
 static int waiting_in_sys_schedule = 0;
-#endif
-#endif
-#ifndef ERTS_SMP_USE_IO_THREAD
-static int function_calls = 0;
-#endif
-
-#ifdef ERTS_SMP
-erts_proc_lock_t erts_proc_locks[ERTS_PROC_LOCKS_NO_OF];
-
 static ErtsSchedulerData *schedulers;
 static Uint schedulers_waiting_on_runq;
 static ProcessList *pending_exiters;
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-static struct {
-    Sint16 proc_lock_main;
-    Sint16 proc_lock_link;
-    Sint16 proc_lock_msgq;
-    Sint16 proc_lock_status;
-} lc_id;
-#endif
 #else /* !ERTS_SMP */
 ErtsSchedulerData erts_scheduler_data;
 #endif
@@ -153,9 +136,14 @@ static Uint last_reds;
 static Uint last_exact_reds;
 Uint erts_default_process_flags;
 Eterm erts_system_monitor;
+Eterm erts_system_monitor_msg_queue_len;
 Eterm erts_system_monitor_long_gc;
 Eterm erts_system_monitor_large_heap;
 struct erts_system_monitor_flags_t erts_system_monitor_flags;
+
+/* system performance monitor */
+Eterm erts_system_profile;
+struct erts_system_profile_flags_t erts_system_profile_flags;
 
 #ifdef HYBRID
 Uint erts_num_active_procs;
@@ -188,242 +176,7 @@ static int stack_element_dump(int to, void *to_arg, Process* p, Eterm* sp,
 #ifdef ERTS_SMP
 static void handle_pending_exiters(ProcessList *);
 #endif
-
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-
-void
-erts_proc_lc_lock(Process *p, Uint32 locks)
-{
-    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
-					   p->id,
-					   ERTS_LC_FLG_LT_PROCLOCK);
-    if (locks & ERTS_PROC_LOCK_MAIN) {
-	lck.id = lc_id.proc_lock_main;
-	erts_lc_lock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_LINK) {
-	lck.id = lc_id.proc_lock_link;
-	erts_lc_lock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_MSGQ) {
-	lck.id = lc_id.proc_lock_msgq;
-	erts_lc_lock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_STATUS) {
-	lck.id = lc_id.proc_lock_status;
-	erts_lc_lock(&lck);
-    }
-}
-
-void
-erts_proc_lc_trylock(Process *p, Uint32 locks, int locked)
-{
-    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
-					   p->id,
-					   ERTS_LC_FLG_LT_PROCLOCK);
-    if (locks & ERTS_PROC_LOCK_MAIN) {
-	lck.id = lc_id.proc_lock_main;
-	erts_lc_trylock(locked, &lck);
-    }
-    if (locks & ERTS_PROC_LOCK_LINK) {
-	lck.id = lc_id.proc_lock_link;
-	erts_lc_trylock(locked, &lck);
-    }
-    if (locks & ERTS_PROC_LOCK_MSGQ) {
-	lck.id = lc_id.proc_lock_msgq;
-	erts_lc_trylock(locked, &lck);
-    }
-    if (locks & ERTS_PROC_LOCK_STATUS) {
-	lck.id = lc_id.proc_lock_status;
-	erts_lc_trylock(locked, &lck);
-    }
-}
-
-void
-erts_proc_lc_unlock(Process *p, Uint32 locks)
-{
-    erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
-					   p->id,
-					   ERTS_LC_FLG_LT_PROCLOCK);
-    if (locks & ERTS_PROC_LOCK_STATUS) {
-	lck.id = lc_id.proc_lock_status;
-	erts_lc_unlock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_MSGQ) {
-	lck.id = lc_id.proc_lock_msgq;
-	erts_lc_unlock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_LINK) {
-	lck.id = lc_id.proc_lock_link;
-	erts_lc_unlock(&lck);
-    }
-    if (locks & ERTS_PROC_LOCK_MAIN) {
-	lck.id = lc_id.proc_lock_main;
-	erts_lc_unlock(&lck);
-    }
-}
-
-int
-erts_proc_lc_trylock_force_busy(Process *p, Uint32 locks)
-{
-    if (locks & ERTS_PROC_LOCKS_ALL) {
-	erts_lc_lock_t lck = ERTS_LC_LOCK_INIT(-1,
-					       p->id,
-					       ERTS_LC_FLG_LT_PROCLOCK);
-
-	if (locks & ERTS_PROC_LOCK_MAIN)
-	    lck.id = lc_id.proc_lock_main;
-	else if (locks & ERTS_PROC_LOCK_LINK)
-	    lck.id = lc_id.proc_lock_link;
-	else if (locks & ERTS_PROC_LOCK_MSGQ)
-	    lck.id = lc_id.proc_lock_msgq;
-	else if (locks & ERTS_PROC_LOCK_STATUS)
-	    lck.id = lc_id.proc_lock_status;
-	else
-	    erts_lc_fail("Unknown proc lock found");
-
-	return erts_lc_trylock_force_busy(&lck);
-    }
-    return 0;
-}
-
-void erts_proc_lc_chk_only_proc_main(Process *p)
-{
-    erts_lc_lock_t proc_main = ERTS_LC_LOCK_INIT(lc_id.proc_lock_main,
-						 p->id,
-						 ERTS_LC_FLG_LT_PROCLOCK);
-    erts_lc_check_exact(&proc_main, 1);
-}
-
-#define ERTS_PROC_LC_EMPTY_LOCK_INIT \
-  ERTS_LC_LOCK_INIT(-1, THE_NON_VALUE, ERTS_LC_FLG_LT_PROCLOCK)
-
-void
-erts_proc_lc_chk_have_proc_locks(Process *p, Uint32 locks)
-{
-    int have_locks_len = 0;
-    erts_lc_lock_t have_locks[4] = {ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT};
-    if (locks & ERTS_PROC_LOCK_MAIN) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_main;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_LINK) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_link;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_MSGQ) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_msgq;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_STATUS) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_status;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-
-    erts_lc_check(have_locks, have_locks_len, NULL, 0);
-}
-
-void
-erts_proc_lc_chk_proc_locks(Process *p, Uint32 locks)
-{
-    int have_locks_len = 0;
-    int have_not_locks_len = 0;
-    erts_lc_lock_t have_locks[4] = {ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT,
-				    ERTS_PROC_LC_EMPTY_LOCK_INIT};
-    erts_lc_lock_t have_not_locks[4] = {ERTS_PROC_LC_EMPTY_LOCK_INIT,
-					ERTS_PROC_LC_EMPTY_LOCK_INIT,
-					ERTS_PROC_LC_EMPTY_LOCK_INIT,
-					ERTS_PROC_LC_EMPTY_LOCK_INIT};
-
-    if (locks & ERTS_PROC_LOCK_MAIN) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_main;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    else {
-	have_not_locks[have_not_locks_len].id = lc_id.proc_lock_main;
-	have_not_locks[have_not_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_LINK) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_link;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    else {
-	have_not_locks[have_not_locks_len].id = lc_id.proc_lock_link;
-	have_not_locks[have_not_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_MSGQ) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_msgq;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    else {
-	have_not_locks[have_not_locks_len].id = lc_id.proc_lock_msgq;
-	have_not_locks[have_not_locks_len++].extra = p->id;
-    }
-    if (locks & ERTS_PROC_LOCK_STATUS) {
-	have_locks[have_locks_len].id = lc_id.proc_lock_status;
-	have_locks[have_locks_len++].extra = p->id;
-    }
-    else {
-	have_not_locks[have_not_locks_len].id = lc_id.proc_lock_status;
-	have_not_locks[have_not_locks_len++].extra = p->id;
-    }
-
-    erts_lc_check(have_locks, have_locks_len,
-		  have_not_locks, have_not_locks_len);
-}
-
-Uint32
-erts_proc_lc_my_proc_locks(Process *p)
-{
-    int resv[4];
-    erts_lc_lock_t locks[4] = {ERTS_LC_LOCK_INIT(lc_id.proc_lock_main,
-						 p->id,
-						 ERTS_LC_FLG_LT_PROCLOCK),
-			       ERTS_LC_LOCK_INIT(lc_id.proc_lock_link,
-						 p->id,
-						 ERTS_LC_FLG_LT_PROCLOCK),
-			       ERTS_LC_LOCK_INIT(lc_id.proc_lock_msgq,
-						 p->id,
-						 ERTS_LC_FLG_LT_PROCLOCK),
-			       ERTS_LC_LOCK_INIT(lc_id.proc_lock_status,
-						 p->id,
-						 ERTS_LC_FLG_LT_PROCLOCK)};
-
-    Uint32 res = 0;
-
-    erts_lc_have_locks(resv, locks, 4);
-    if (resv[0])
-	res |= ERTS_PROC_LOCK_MAIN;
-    if (resv[1])
-	res |= ERTS_PROC_LOCK_LINK;
-    if (resv[2])
-	res |= ERTS_PROC_LOCK_MSGQ;
-    if (resv[3])
-	res |= ERTS_PROC_LOCK_STATUS;
-
-    return res;
-}
-
-void
-erts_proc_lc_chk_no_proc_locks(char *file, int line)
-{
-    int resv[4];
-    int ids[4] = {lc_id.proc_lock_main,
-		  lc_id.proc_lock_link,
-		  lc_id.proc_lock_msgq,
-		  lc_id.proc_lock_status};
-    erts_lc_have_lock_ids(resv, ids, 4);
-    if (resv[0] || resv[1] || resv[2] || resv[3]) {
-	erts_lc_fail("%s:%d: Thread has process locks locked when expected "
-		     "not to have any process locks locked",
-		     file, line);
-    }
-}
 
 int erts_smp_is_sched_locked(void)
 {
@@ -441,12 +194,6 @@ erts_pre_init_process(void)
 #ifdef ERTS_SMP
     pending_exiters = NULL;
 #endif
-#if defined(ERTS_ENABLE_LOCK_CHECK) && defined(ERTS_SMP)
-    lc_id.proc_lock_main	= erts_lc_get_lock_order_id("proc_main");
-    lc_id.proc_lock_link	= erts_lc_get_lock_order_id("proc_link");
-    lc_id.proc_lock_msgq	= erts_lc_get_lock_order_id("proc_msgq");
-    lc_id.proc_lock_status	= erts_lc_get_lock_order_id("proc_status");
-#endif
 }
 
 /* initialize the scheduler */
@@ -457,11 +204,11 @@ erts_init_process(void)
     Uint proc_bits = ERTS_PROC_BITS;
 #ifndef ERTS_SMP
     ErtsSchedulerData *esdp;
+#else
+    erts_init_proc_lock();
 #endif
 
-#ifdef ERTS_USE_PORT_TASKS
     erts_port_task_init();
-#endif
 
     init_misc_op_list_alloc();
 
@@ -489,9 +236,7 @@ erts_init_process(void)
     erts_num_active_procs = 0;
 #endif
 
-#ifndef ERTS_SMP_USE_IO_THREAD
     function_calls = 0;
-#endif
 
     block_multi_scheduling = 0;
     is_setting_block_multi_scheduling = 0;
@@ -503,26 +248,14 @@ erts_init_process(void)
     erts_smp_mtx_init(&msched_blk_mtx, "multi_scheduling_block");
     erts_smp_cnd_init(&msched_blk_cnd);
     erts_all_schedulers_waiting = 0;
-#ifndef ERTS_SMP_USE_IO_THREAD
     doing_sys_schedule = 0;
     waiting_in_sys_schedule = 0;
-#endif
     erts_smp_mtx_init(&schdlq_mtx, "schdlq");
     erts_smp_cnd_init(&schdlq_cnd);
 
     schedulers_waiting_on_runq = 0;
 
     schedulers = NULL;
-
-    for (i = 0; i < ERTS_PROC_LOCKS_NO_OF; i++) {
-	erts_smp_mtx_init(&erts_proc_locks[i].mtx,
-			  "proc_main" /* Con the lock checker */);
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	erts_proc_locks[i].mtx.lc.id = -1; /* Dont want lock checking on
-					      these mutexes */
-#endif
-	erts_smp_cnd_init(&erts_proc_locks[i].cnd);
-    }
 
 #else /* !ERTS_SMP */
 
@@ -569,11 +302,9 @@ void
 erts_wake_one_scheduler(void)
 {
     ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-#ifndef ERTS_SMP_USE_IO_THREAD
     if (schedulers_waiting_on_runq == 1 && waiting_in_sys_schedule)
 	erts_sys_schedule_interrupt(1);
     else
-#endif
 	erts_smp_cnd_signal(&schdlq_cnd);
 }
 
@@ -581,9 +312,7 @@ static void
 wake_all_schedulers(void)
 {
     ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-#ifndef ERTS_SMP_USE_IO_THREAD
     erts_sys_schedule_interrupt(1);
-#endif
     erts_smp_cnd_broadcast(&schdlq_cnd);
 }
 
@@ -659,7 +388,6 @@ suspend_process(Process *p)
 {
     ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS & erts_proc_lc_my_proc_locks(p));
     ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
-
     p->rcount++;  /* count number of suspend */
 #ifdef ERTS_SMP
     ASSERT(!(p->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)
@@ -695,7 +423,13 @@ suspend_process(Process *p)
     case P_FREE:
 	erl_exit(1, "bad state in suspend_process()\n");
     }
+
+    if ((erts_system_profile_flags.runnable_procs) && (p->rcount == 1) && (p->status != P_WAITING)) {
+        profile_runnable_proc(p, am_inactive);
+    }
+
     p->status = P_SUSPENDED;
+    
 }
 
 static ERTS_INLINE void
@@ -729,8 +463,16 @@ static void
 block_multi_scheduling_block(ErtsSchedulerData *esdp)
 {
     used_schedulers--;
+    
+    if (erts_system_profile_flags.scheduler) {
+    	profile_scheduler(make_small(esdp->no), am_inactive, 
+	    make_small(used_schedulers - schedulers_waiting_on_runq));
+    }
+    
     if (used_schedulers == 1)
 	erts_wake_one_scheduler(); /* The one performing the block */
+    
+
     while (block_multi_scheduling) {
 #ifdef ERTS_SMP_SCHEDULERS_NEED_TO_CHECK_CHILDREN
 	if (esdp->check_children) {
@@ -740,6 +482,7 @@ block_multi_scheduling_block(ErtsSchedulerData *esdp)
 	    erts_smp_sched_lock();
 	}
 #endif
+
 	erts_smp_sched_unlock();
 	erts_smp_activity_begin(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
 	erts_smp_mtx_lock(&msched_blk_mtx);
@@ -757,7 +500,14 @@ block_multi_scheduling_block(ErtsSchedulerData *esdp)
 	erts_smp_activity_end(ERTS_ACTIVITY_WAIT, NULL, NULL, NULL);
 	erts_smp_sched_lock();
     }
+    
     used_schedulers++;
+
+    if (erts_system_profile_flags.scheduler) {
+    	profile_scheduler(make_small(esdp->no), am_active, 
+	    make_small(used_schedulers - schedulers_waiting_on_runq));
+    }
+
     erts_all_schedulers_waiting = 0;
 }
 
@@ -769,7 +519,7 @@ block_multi_scheduling_block(ErtsSchedulerData *esdp)
  */
 
 int
-erts_block_multi_scheduling(Process *p, Uint32 plocks, int on, int all)
+erts_block_multi_scheduling(Process *p, ErtsProcLocks plocks, int on, int all)
 {
     int res;
     ProcessList *plp;
@@ -939,6 +689,9 @@ sched_thread_func(void *vesdp)
     }
 #endif
     erts_tsd_set(sched_data_key, vesdp);
+#ifdef ERTS_SMP
+    erts_proc_lock_prepare_proc_lock_waiter();
+#endif
     erts_register_blockable_thread();
 #ifdef HIPE
     hipe_thread_signal_init();
@@ -1019,88 +772,61 @@ erts_start_schedulers(Uint wanted_no_of_schedulers)
 #endif
 
 static void
-add_to_proc_list(ProcessList** plpp, Eterm pid)
+add_pend_suspend(Process *suspendee,
+		 Eterm originator_pid,
+		 void (*handle_func)(Process *,
+				     ErtsProcLocks,
+				     int,
+				     Eterm))
 {
-    ProcessList* plp;
-
-    /* Add at the end of the list */
-    for (; *plpp; plpp = &(*plpp)->next) {
-	ASSERT((*plpp)->pid != pid);
-    }
-
-    plp = (ProcessList *) erts_alloc(ERTS_ALC_T_PROC_LIST, sizeof(ProcessList));
-    plp->pid = pid;
-    plp->next = NULL;
-
-    *plpp = plp;
-}
-
-#if 0
-static void
-remove_from_proc_list(ProcessList** plpp, Eterm pid)
-{
-    for (; *plpp; plpp = &(*plpp)->next) {
-	if ((*plpp)->pid == pid) {
-	    ProcessList* plp = *plpp;
-	    *plpp = plp->next;
-	    erts_free(ERTS_ALC_T_PROC_LIST, (void *) plp);
+    ErtsPendingSuspend *psp = erts_alloc(ERTS_ALC_T_PEND_SUSPEND,
+					 sizeof(ErtsPendingSuspend));
+    psp->next = NULL;
 #ifdef DEBUG
-	    for (plp = *plpp; plp; plp = plp->next) {
-		ASSERT(plp->pid != pid);
-	    }
+#ifdef ARCH_64
+    psp->end = (ErtsPendingSuspend *) 0xdeaddeaddeaddead;
+#else
+    psp->end = (ErtsPendingSuspend *) 0xdeaddead;
 #endif
-	    return;
-	}
-    }
-    ASSERT(0);
+#endif
+    psp->pid = originator_pid;
+    psp->handle_func = handle_func;
+
+    if (suspendee->pending_suspenders)
+	suspendee->pending_suspenders->end->next = psp;
+    else
+	suspendee->pending_suspenders = psp;
+    suspendee->pending_suspenders->end = psp;
 }
-#endif
 
 static void
-handle_pending_suspend(Process *p, Uint32 p_locks)
+handle_pending_suspend(Process *p, ErtsProcLocks p_locks)
 {
-    ProcessList *plp;
-    int do_suspend;
-    Eterm suspendee;
+    ErtsPendingSuspend *psp;
+    int is_alive = !ERTS_PROC_IS_EXITING(p);
 
-    ASSERT(p->pending_suspenders);
+    ERTS_SMP_LC_ASSERT(p_locks & ERTS_PROC_LOCK_STATUS);
 
-    if (ERTS_PROC_IS_EXITING(p)) {
-	do_suspend = 0;
-	suspendee = NIL;
-    }
-    else {
-	do_suspend = 1;
-	suspendee = p->id;
-    }
-
-    plp = p->pending_suspenders; 
-    while (plp) {
-	ProcessList *free_plp;
-	Process *rp = erts_pid2proc(p, p_locks,
-				    plp->pid, ERTS_PROC_LOCK_STATUS);
-	if (rp) {
-	    ASSERT(is_nil(rp->suspendee));
-	    rp->suspendee = suspendee;
-	    if (do_suspend) {
-		erts_smp_sched_lock();
-		suspend_process(p);
-		erts_smp_sched_unlock();
-		do_suspend = 0;
-	    }
-	    /* rp is suspended waiting for p to suspend: resume rp */
-	    resume_process(rp);
-	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
+    /*
+     * New pending suspenders might appear while we are processing
+     * (since we may release the status lock on p while processing).
+     */
+    while (p->pending_suspenders) {
+	psp = p->pending_suspenders;
+	p->pending_suspenders = NULL;
+	while (psp) {
+	    ErtsPendingSuspend *free_psp;
+	    (*psp->handle_func)(p, p_locks, is_alive, psp->pid);
+	    free_psp = psp;
+	    psp = psp->next;
+	    erts_free(ERTS_ALC_T_PEND_SUSPEND, (void *) free_psp);
 	}
-	free_plp = plp;
-	plp = plp->next;
-	erts_free(ERTS_ALC_T_PROC_LIST, (void *) free_plp);
     }
-    p->pending_suspenders = NULL;
+    
 }
 
 static ERTS_INLINE void
-cancel_suspend_of_suspendee(Process *p, Uint32 p_locks)
+cancel_suspend_of_suspendee(Process *p, ErtsProcLocks p_locks)
 {
     if (is_not_nil(p->suspendee)) {
 	Process *rp;
@@ -1108,23 +834,55 @@ cancel_suspend_of_suspendee(Process *p, Uint32 p_locks)
 	    erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
 	rp = erts_pid2proc(p, p_locks|ERTS_PROC_LOCK_STATUS,
 			   p->suspendee, ERTS_PROC_LOCK_STATUS);
-	if (rp)
+	if (rp) {
 	    erts_resume(rp, ERTS_PROC_LOCK_STATUS);
+	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
+	}
 	if (!(p_locks & ERTS_PROC_LOCK_STATUS))
 	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_STATUS);
 	p->suspendee = NIL;
     }
 }
 
+static void
+handle_pend_sync_suspend(Process *suspendee,
+			 ErtsProcLocks suspendee_locks,
+			 int suspendee_alive,
+			 Eterm suspender_pid)
+{
+    Process *suspender;
+
+    ERTS_SMP_LC_ASSERT(suspendee_locks & ERTS_PROC_LOCK_STATUS);
+
+    suspender = erts_pid2proc(suspendee,
+			      suspendee_locks,
+			      suspender_pid,
+			      ERTS_PROC_LOCK_STATUS);
+    if (suspender) {
+	ASSERT(is_nil(suspender->suspendee));
+	if (suspendee_alive) {
+	    erts_smp_sched_lock();
+	    suspend_process(suspendee);
+	    erts_smp_sched_unlock();
+	    suspender->suspendee = suspendee->id;
+	}
+	/* suspender is suspended waiting for suspendee to suspend;
+	   resume suspender */
+	resume_process(suspender);
+	erts_smp_proc_unlock(suspender, ERTS_PROC_LOCK_STATUS);
+    }
+}
+
 Process *
-erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
-			     Eterm suspendee, Uint32 suspendee_locks)
+erts_suspend_another_process(Process *c_p, ErtsProcLocks c_p_locks,
+			     Eterm suspendee, ErtsProcLocks suspendee_locks)
 {
     Process *rp;
     int unlock_c_p_status;
 
     ASSERT(c_p->id != suspendee);
 
+    ERTS_SMP_LC_ASSERT(c_p_locks & ERTS_PROC_LOCK_MAIN);
     ERTS_SMP_LC_ASSERT(c_p_locks == erts_proc_lc_my_proc_locks(c_p));
 
     c_p->freason = EXC_NULL;
@@ -1147,9 +905,18 @@ erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
 		       suspendee, ERTS_PROC_LOCK_STATUS);
 
     if (rp) {
+	if (c_p->pending_suspenders) {
+	    /*
+	     * If we got pending suspenders and suspend ourselves waiting
+	     * to suspend another process or suspend another process
+	     * we might deadlock. In this case we have to reschedule,
+	     * be suspended by someone else and then do it all over again.
+	     */
+	    goto reschedule;
+	}
 	erts_smp_sched_lock();
 	if (!(rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)) {
-	    Uint32 need_locks = suspendee_locks & ~ERTS_PROC_LOCK_STATUS;
+	    ErtsProcLocks need_locks = suspendee_locks & ~ERTS_PROC_LOCK_STATUS;
 	    suspend_process(rp);
 	    erts_smp_sched_unlock();
 	    c_p->suspendee = suspendee;
@@ -1160,13 +927,16 @@ erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
 	}
 	else {
 	    /* Mark rp pending for suspend by c_p */
-	    add_to_proc_list(&rp->pending_suspenders, c_p->id);
+	    add_pend_suspend(rp, c_p->id, handle_pend_sync_suspend);
+
 	    ASSERT(is_nil(c_p->suspendee));
 
-	    /* Suspend c_p (caller is assumed to return to process_main
-	       immediately). When rp is suspended c_p will be resumed. */
+	    /* Suspend c_p; when rp is suspended c_p will be resumed. */
 	    suspend_process(c_p);
 	    erts_smp_sched_unlock();
+	reschedule:
+	    /* Reschedule (caller is assumed to return to process_main
+	       immediately). */
 	    c_p->freason = RESCHEDULE;
 	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
 	    rp = NULL;
@@ -1193,15 +963,16 @@ erts_suspend_another_process(Process *c_p, Uint32 c_p_locks,
 
 
 Process *
-erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
-			  Eterm pid, Uint32 pid_locks)
+erts_pid2proc_not_running(Process *c_p, ErtsProcLocks c_p_locks,
+			  Eterm pid, ErtsProcLocks pid_locks)
 {
     Process *rp;
     int unlock_c_p_status;
 
     ERTS_SMP_LC_ASSERT(c_p_locks == erts_proc_lc_my_proc_locks(c_p));
 
-    ASSERT(pid_locks & (ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS));
+    ERTS_SMP_LC_ASSERT(c_p_locks & ERTS_PROC_LOCK_MAIN);
+    ERTS_SMP_LC_ASSERT(pid_locks & (ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS));
 
     c_p->freason = EXC_NULL;
 
@@ -1217,9 +988,11 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 
     if (c_p->suspendee == pid) {
 	/* Process previously suspended by c_p (below)... */
-	Uint32 rp_locks = pid_locks|ERTS_PROC_LOCK_STATUS;
+	ErtsProcLocks rp_locks = pid_locks|ERTS_PROC_LOCK_STATUS;
 	rp = erts_pid2proc(c_p, c_p_locks|ERTS_PROC_LOCK_STATUS, pid, rp_locks);
 	c_p->suspendee = NIL;
+	ASSERT(c_p->flags & F_P2PNR_RESCHED);
+	c_p->flags &= ~F_P2PNR_RESCHED;
 	if (rp)
 	    resume_process(rp);
     }
@@ -1228,27 +1001,41 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
 	rp = erts_pid2proc(c_p, c_p_locks|ERTS_PROC_LOCK_STATUS,
 			   pid, ERTS_PROC_LOCK_STATUS);
 
-	if (!rp)
+	if (!rp) {
+	    c_p->flags &= ~F_P2PNR_RESCHED;
 	    goto done;
+	}
+
+	ASSERT(!(c_p->flags & F_P2PNR_RESCHED));
 
 	erts_smp_sched_lock();
 	if (rp->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED) {
 	scheduled:
 	    /* Phiu... */
 
-	    /* Mark rp pending for suspend by c_p */
-	    add_to_proc_list(&rp->pending_suspenders, c_p->id);
-	    ASSERT(is_nil(c_p->suspendee));
+	    /*
+	     * If we got pending suspenders and suspend ourselves waiting
+	     * to suspend another process we might deadlock.
+	     * In this case we have to reschedule, be suspended by
+	     * someone else and then do it all over again.
+	     */
+	    if (!c_p->pending_suspenders) {
+		/* Mark rp pending for suspend by c_p */
+		add_pend_suspend(rp, c_p->id, handle_pend_sync_suspend);
+		ASSERT(is_nil(c_p->suspendee));
 
-	    /* Suspend c_p (caller is assumed to return to process_main
-	       immediately). When rp is suspended c_p will be resumed. */
-	    suspend_process(c_p);
+		/* Suspend c_p; when rp is suspended c_p will be resumed. */
+		suspend_process(c_p);
+		c_p->flags |= F_P2PNR_RESCHED;
+	    }
+	    /* Reschedule (caller is assumed to return to process_main
+	       immediately). */
 	    c_p->freason = RESCHEDULE;
 	    erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
 	    rp = NULL;
 	}
 	else {
-	    Uint32 need_locks = pid_locks & ~ERTS_PROC_LOCK_STATUS;
+	    ErtsProcLocks need_locks = pid_locks & ~ERTS_PROC_LOCK_STATUS;
 	    if (need_locks && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
 		erts_smp_sched_unlock();
 		erts_smp_proc_unlock(rp, ERTS_PROC_LOCK_STATUS);
@@ -1278,478 +1065,419 @@ erts_pid2proc_not_running(Process *c_p, Uint32 c_p_locks,
     return rp;
 }
 
-/*
- * erts_proc_get_locks() assumes that lckp->mtx is locked by calling
- * thread and that one or more locks have been taken by other threads.
- * erts_proc_get_locks() returns when all locks in lock_flags
- * have been acquired if wait_for_locks != 0; otherwise, when
- * as many locks as possible have been acquired.
- */
+#endif /* ERTS_SMP */
 
-Uint32
-erts_proc_get_locks(Process *p,
-		    erts_proc_lock_t *lckp,
-		    Uint32 lock_flags,
-		    int wait_for_locks)
+
+#ifdef ERTS_SMP
+
+static ERTS_INLINE void
+do_bif_suspend_process(ErtsSuspendMonitor *smon,
+		       Process *suspendee,
+		       int lock_sched)
 {
-    int i;
-    Uint32 got_locks = 0;
-    Uint32 need_locks = lock_flags & ERTS_PROC_LOCKS_ALL;
-    ASSERT(need_locks & (p->lock_flags & ERTS_PROC_LOCKS_ALL));
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (wait_for_locks)
-	erts_proc_lc_lock(p, need_locks);
-#endif
-
-    /*
-     * Need to lock as many locks as possible (according to lock order)
-     * in order to avoid starvation.
-     */
-    i = 0;
-    while (1) {
-	Uint32 lock = (1 << i);
-	if (lock & need_locks) {
-	check_lock_again:
-	    if (lock & p->lock_flags) {
-		if (wait_for_locks) {
-		    p->lock_flags |= ERTS_PROC_LOCK_FLAG_WAITERS;
-		    erts_smp_cnd_wait(&lckp->cnd, &lckp->mtx);
-		}
-		else
-		    return got_locks;
-		if (!(need_locks & p->lock_flags)) {
-		    p->lock_flags |= need_locks; /* Got them all at once... */
-#ifdef ERTS_ENABLE_LOCK_CHECK
-		    if (!wait_for_locks)
-			erts_proc_lc_lock(p, need_locks);
-#endif
-		    got_locks |= need_locks;
-		    ASSERT(got_locks == (lock_flags & ERTS_PROC_LOCKS_ALL));
-		    return got_locks;
-		}
-		goto check_lock_again;
-	    }
-	    else {
-		p->lock_flags |= lock;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-		if (!wait_for_locks)
-		    erts_proc_lc_lock(p, lock);
-#endif
-		got_locks |= lock;
-		need_locks &= ~lock;
-		if (!need_locks) {
-		    ASSERT(got_locks == (lock_flags & ERTS_PROC_LOCKS_ALL));
-		    return got_locks;
-		}
-	    }
+    ASSERT(suspendee);
+    ASSERT(!suspendee->is_exiting);
+    ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS
+		       & erts_proc_lc_my_proc_locks(suspendee));
+    if (smon) {
+	if (!smon->active) {
+	    if (lock_sched)
+		erts_smp_sched_lock();
+	    suspend_process(suspendee);
+	    if (lock_sched)
+		erts_smp_sched_unlock();
 	}
-	i++;
+	smon->active += smon->pending;
+	ASSERT(smon->active);
+	smon->pending = 0;
+    }
+    
+}
+
+static void
+handle_pend_bif_sync_suspend(Process *suspendee,
+			     ErtsProcLocks suspendee_locks,
+			     int suspendee_alive,
+			     Eterm suspender_pid)
+{
+    Process *suspender;
+
+    ERTS_SMP_LC_ASSERT(suspendee_locks & ERTS_PROC_LOCK_STATUS);
+
+    suspender = erts_pid2proc(suspendee,
+			      suspendee_locks,
+			      suspender_pid,
+			      ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS);
+    if (suspender) {
+	ASSERT(is_nil(suspender->suspendee));
+	if (!suspendee_alive)
+	    erts_delete_suspend_monitor(&suspender->suspend_monitors,
+					suspendee->id);
+	else {
+	    ErtsSuspendMonitor *smon;
+	    smon = erts_lookup_suspend_monitor(suspender->suspend_monitors,
+					       suspendee->id);
+	    do_bif_suspend_process(smon, suspendee, 1);
+	    suspender->suspendee = suspendee->id;
+	}
+	/* suspender is suspended waiting for suspendee to suspend;
+	   resume suspender */
+	resume_process(suspender);
+	erts_smp_proc_unlock(suspender,
+			     ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS);
     }
 }
 
-/*
- * proc_safelock_aux() is a helper function for erts_proc_safelock().
- *
- * If no locks are held, process might have become exiting since the
- * last time we looked at it; therefore, we must check that process
- * is not exiting each time we acquires the lckp->mtx if no locks
- * were held.
- */
-static int
-proc_safelock_aux(Process *p, Uint pid, erts_proc_lock_t *lckp,
-		  Uint32 *have_locks, Uint32 *need_locks,
-		  Uint32 get_locks, Uint32 allow_exiting)
+static void
+handle_pend_bif_async_suspend(Process *suspendee,
+			      ErtsProcLocks suspendee_locks,
+			      int suspendee_alive,
+			      Eterm suspender_pid)
 {
-#define SAME_PROC(PID, PIX, PROC) \
-  ((PROC) == process_tab[(PIX)] && (PROC)->id == (PID))
-#define EXITING_PROC(PROC) \
-  ((PROC)->lock_flags & ERTS_PROC_LOCK_FLAG_EXITING)
-    int res = 0;
-    Uint pix = internal_pid_index(pid);
-    int check_same_proc = !*have_locks && pid != ERTS_INVALID_PID;
-    int check_exiting_proc = (!allow_exiting && !*have_locks);
-    Uint32 got_locks = 0;
 
-    ASSERT((*have_locks & get_locks) == 0);
-    ASSERT((*have_locks & *need_locks) == 0);
-    ASSERT((*need_locks & get_locks) != 0);
+    Process *suspender;
 
-    erts_smp_mtx_lock(&lckp->mtx);
-    if (check_same_proc && (!SAME_PROC(pid, pix, p)
-			    || (check_exiting_proc && EXITING_PROC(p))))
-	goto done;
+    ERTS_SMP_LC_ASSERT(suspendee_locks & ERTS_PROC_LOCK_STATUS);
 
- do_get_locks:
-    if (p->lock_flags & get_locks) {
-	Uint32 locks = erts_proc_get_locks(p, lckp, get_locks, 0);
-	get_locks &= ~locks;
-	got_locks |= locks;
-	if (get_locks) {
-	    p->lock_flags |= ERTS_PROC_LOCK_FLAG_WAITERS;
-	    erts_smp_cnd_wait(&lckp->cnd, &lckp->mtx);
-	    if (check_same_proc
-		&& (check_same_proc = !got_locks)
-		&& (!SAME_PROC(pid, pix, p)
-		    || (check_exiting_proc
-			&& (check_exiting_proc = !got_locks)
-			&& EXITING_PROC(p))))
-		goto done;
-	    goto do_get_locks;
-	}
-    }
-    else {
-	p->lock_flags |= get_locks; /* Got them all at once... */
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	erts_proc_lc_lock(p, get_locks);
-#endif
-	got_locks |= get_locks;
-	/* get_locks = 0; */
-    }
-    res = 1;
-
- done:
-    erts_smp_mtx_unlock(&lckp->mtx);
-    *have_locks |= got_locks;
-    *need_locks &= ~got_locks;
-    return res;
-#undef SAME_PROC
-#undef EXITING_PROC
-}
-
-/*
- * erts_proc_safelock() locks process locks on two processes. this_proc
- * should be the currently running process. In order to avoid a deadlock,
- * erts_proc_safelock() unlocks those locks that needs to be unlocked,
- * and then acquires locks in lock order (including the previously unlocked
- * ones).
- *
- * If other_proc becomes invalid during the locking NULL is returned,
- * this_proc's lock state is restored, and all locks on other_proc are
- * left unlocked.
- *
- * If allow_this_exiting is true this_proc is allowed to become invalid
- * (exiting); otherwise if this_proc becomes invalid, NULL is returned
- * and both processes lock states are restored.
- */
-
-int
-erts_proc_safelock(Process * this_proc,
-		   Uint32 this_have_locks,
-		   Uint32 this_need_locks,
-		   int allow_this_exiting,
-		   Uint32 other_pid,
-		   Process *other_proc,
-		   Uint32 other_have_locks,
-		   Uint32 other_need_locks,
-		   int allow_other_exiting)
-{
-    Process *p1, *p2, *exiting_p;
-    Eterm pid1, pid2;
-    Uint32 need_locks1, have_locks1, need_locks2, have_locks2;
-    Uint32 unlock_mask, ax1, ax2;
-    erts_proc_lock_t *lckp1, *lckp2;
-    int lock_no, res;
-
-    ASSERT(other_proc);
-
-
-    /* Determine inter process lock order...
-     * Locks with the same lock order should be locked on p1 before p2.
-     */
-    if (this_proc) {
-	if (this_proc->id < other_pid) {
-	    p1 = this_proc;
-	    pid1 = this_proc->id;
-	    need_locks1 = this_need_locks;
-	    have_locks1 = this_have_locks;
-	    lckp1 = &erts_proc_locks[ERTS_PID2LOCKIX(pid1)];
-	    ax1 = allow_this_exiting;
-	    p2 = other_proc;
-	    pid2 = other_pid;
-	    need_locks2 = other_need_locks;
-	    have_locks2 = other_have_locks;
-	    lckp2 = &erts_proc_locks[ERTS_PID2LOCKIX(pid2)];
-	    ax2 = allow_other_exiting;
-	}
-	else if (this_proc->id > other_pid) {
-	    p1 = other_proc;
-	    pid1 = other_pid;
-	    need_locks1 = other_need_locks;
-	    have_locks1 = other_have_locks;
-	    lckp1 = &erts_proc_locks[ERTS_PID2LOCKIX(pid1)];
-	    ax1 = allow_other_exiting;
-	    p2 = this_proc;
-	    pid2 = this_proc->id;
-	    need_locks2 = this_need_locks;
-	    have_locks2 = this_have_locks;
-	    lckp2 = &erts_proc_locks[ERTS_PID2LOCKIX(pid2)];
-	    ax2 = allow_this_exiting;
-	}
+    suspender = erts_pid2proc(suspendee,
+			      suspendee_locks,
+			      suspender_pid,
+			      ERTS_PROC_LOCK_LINK);
+    if (suspender) {
+	ASSERT(is_nil(suspender->suspendee));
+	if (!suspendee_alive)
+	    erts_delete_suspend_monitor(&suspender->suspend_monitors,
+					suspendee->id);
 	else {
-	    ASSERT(this_proc == other_proc);
-	    ASSERT(this_proc->id == other_pid);
-	    p1 = this_proc;
-	    pid1 = this_proc->id;
-	    need_locks1 = this_need_locks | other_need_locks;
-	    have_locks1 = this_have_locks | other_have_locks;
-	    lckp1 = &erts_proc_locks[ERTS_PID2LOCKIX(pid1)];
-	    ax1 = allow_this_exiting || allow_other_exiting;
-	    p2 = NULL;
-	    pid2 = 0;
-	    need_locks2 = 0;
-	    have_locks2 = 0;
-	    lckp2 = NULL;
-	    ax2 = 0;
+	    ErtsSuspendMonitor *smon;
+	    smon = erts_lookup_suspend_monitor(suspender->suspend_monitors,
+					       suspendee->id);
+	    do_bif_suspend_process(smon, suspendee, 1);
 	}
+	erts_smp_proc_unlock(suspender, ERTS_PROC_LOCK_LINK);
     }
-    else {
-	p1 = other_proc;
-	pid1 = other_pid;
-	need_locks1 = other_need_locks;
-	have_locks1 = other_have_locks;
-	lckp1 = &erts_proc_locks[ERTS_PID2LOCKIX(pid1)];
-	ax1 = allow_other_exiting;
-	p2 = NULL;
-	pid2 = 0;
-	need_locks2 = 0;
-	have_locks2 = 0;
-	lckp2 = NULL;
-	ax2 = 0;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	this_need_locks = 0;
-	this_have_locks = 0;
-#endif
-    }
-
-    res = 1; /* Prepare for success... */
-
- start_restore:
-
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (p1)
-	erts_proc_lc_chk_proc_locks(p1, have_locks1);
-    if (p2)
-	erts_proc_lc_chk_proc_locks(p2, have_locks2);
-
-    if ((need_locks1 & have_locks1) != have_locks1)
-	erts_lc_fail("Thread tries to release process lock(s) "
-		     "on %T via erts_proc_safelock().", pid1);
-    if ((need_locks2 & have_locks2) != have_locks2)
-	erts_lc_fail("Thread tries to release process lock(s) "
-		     "on %T via erts_proc_safelock().",
-		     pid2);
-#endif
-
-
-    need_locks1 &= ~have_locks1;
-    need_locks2 &= ~have_locks2;
-
-    /* Figure out the range of locks that needs to be unlocked... */
-    unlock_mask = ERTS_PROC_LOCKS_ALL;
-    for (lock_no = 0;
-	 lock_no <= ERTS_PROC_LOCK_MAX_BIT;
-	 lock_no++) {
-	Uint32 lock = (1 << lock_no);
-	if (lock & need_locks1)
-	    break;
-	unlock_mask &= ~lock;
-	if (lock & need_locks2)
-	    break;
-    }
-
-    /* ... and unlock locks in that range... */
-    if (have_locks1 || have_locks2) {
-	Uint32 unlock_locks;
-	unlock_locks = unlock_mask & have_locks1;
-	if (unlock_locks) {
-	    have_locks1 &= ~unlock_locks;
-	    need_locks1 |= unlock_locks;
-	    erts_proc_unlock(p1, unlock_locks);
-	}
-	unlock_locks = unlock_mask & have_locks2;
-	if (unlock_locks) {
-	    have_locks2 &= ~unlock_locks;
-	    need_locks2 |= unlock_locks;
-	    erts_proc_unlock(p2, unlock_locks);
-	}
-    }
-
-    /*
-     * lock_no equals the number of the first lock to lock on
-     * either p1 *or* p2.
-     */
-
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (p1)
-	erts_proc_lc_chk_proc_locks(p1, have_locks1);
-    if (p2)
-	erts_proc_lc_chk_proc_locks(p2, have_locks2);
-#endif
-
-    /* Lock locks in lock order... */
-    while (lock_no <= ERTS_PROC_LOCK_MAX_BIT) {
-	Uint32 locks;
-	Uint32 lock = (1 << lock_no);
-	Uint32 lock_mask = 0;
-	if (need_locks1 & lock) {
-	    do {
-		lock = (1 << lock_no++);
-		lock_mask |= lock;
-	    } while (lock_no <= ERTS_PROC_LOCK_MAX_BIT
-		     && !(need_locks2 & lock));
-	    if (need_locks2 & lock)
-		lock_no--;
-	    locks = need_locks1 & lock_mask;
-	    if (!proc_safelock_aux(p1, pid1, lckp1,
-				   &have_locks1, &need_locks1,
-				   locks, ax1)) {
-		exiting_p = p1;
-		goto exiting_proc;
-	    }
-	}
-	else if (need_locks2 & lock) {
-	    while (lock_no <= ERTS_PROC_LOCK_MAX_BIT
-		   && !(need_locks1 & lock)) {
-		lock_mask |= lock;
-		lock = (1 << ++lock_no);
-	    }
-	    locks = need_locks2 & lock_mask;
-	    if (!proc_safelock_aux(p2, pid2, lckp2,
-				   &have_locks2, &need_locks2,
-				   locks, ax2)) {
-		exiting_p = p2;
-		goto exiting_proc;
-	    }
-	}
-	else
-	    lock_no++;
-    }
-
- done:
-
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (p1)
-	erts_proc_lc_chk_proc_locks(p1, have_locks1);
-    if (p2)
-	erts_proc_lc_chk_proc_locks(p2, have_locks2);
-
-    if (p1 && p2) {
-	if (p1 == this_proc) {
-	    ERTS_SMP_LC_ASSERT(this_need_locks == have_locks1);
-	    ERTS_SMP_LC_ASSERT(other_need_locks == have_locks2);
-	}
-	else {
-	    ERTS_SMP_LC_ASSERT(this_need_locks == have_locks2);
-	    ERTS_SMP_LC_ASSERT(other_need_locks == have_locks1);
-	}
-    }
-    else {
-	ERTS_SMP_LC_ASSERT(p1);
-	if (this_proc) {
-	    ERTS_SMP_LC_ASSERT(have_locks1
-			       == (this_need_locks
-				   | other_need_locks));
-	}
-	else {
-	    ERTS_SMP_LC_ASSERT(have_locks1 == other_need_locks);
-	}
-    }
-#endif
-
-
-    return res;
-
- exiting_proc:
-    res = 0;
-    /*
-     * Note: We may end up here two times if this_proc gets exiting
-     *       the first time we try to lock, and other_proc gets exiting
-     *       when we try to restore the lock states. This is no problem
-     *       and will work out fine.
-     */
-
-    /*
-     * We have no locks on the proc that got exiting.
-     */
-    if (this_proc) {
-	/* Piuhhhh!!! Fix the mess... */
-	Uint32 restore_locks1, restore_locks2;
-	Uint32 unlock_locks;
-	if (this_proc == exiting_p) {
-	    /* Restore locks on both procs */
-	    if (this_proc == p1) {
-		ASSERT(!have_locks1);
-		restore_locks1 = this_have_locks;
-		restore_locks2 = other_have_locks;
-		ax1 = 1;
-	    }
-	    else {
-		ASSERT(this_proc == p2);
-		ASSERT(!have_locks2);
-		restore_locks1 = other_have_locks;
-		restore_locks2 = this_have_locks;
-		ax2 = 1;
-	    }
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	    this_need_locks = this_have_locks;
-	    other_need_locks = other_have_locks;
-#endif
-	}
-	else {
-	    /* Restore locks on this_proc */
-	    if (this_proc == p1) {
-		ASSERT(!have_locks2);
-		restore_locks1 = this_have_locks;
-		restore_locks2 = 0;
-		ax1 = 1;
-	    }
-	    else {
-		ASSERT(this_proc == p2);
-		ASSERT(!have_locks1);
-		restore_locks1 = 0;
-		restore_locks2 = this_have_locks;
-		ax2 = 1;
-	    }
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	    this_need_locks = this_have_locks;
-	    other_need_locks = 0;
-#endif
-	}
-
-	unlock_locks = have_locks1 & ~restore_locks1;
-	if (unlock_locks) {
-	    erts_proc_unlock(p1, unlock_locks);
-	    have_locks1 &= ~unlock_locks;
-	}
-	need_locks1 = restore_locks1;
-
-	unlock_locks = have_locks2 & ~restore_locks2;
-	if (unlock_locks) {
-	    erts_proc_unlock(p2, unlock_locks);
-	    have_locks2 &= ~unlock_locks;
-	}
-	need_locks2 = restore_locks2;
-
-	if (need_locks1 != have_locks1 || need_locks2 != have_locks1)
-	    goto start_restore;
-    }
-    else {
-	ASSERT(exiting_p == other_proc);
-	/* No this_proc and other_proc exiting == we are done */
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	need_locks1 = have_locks1 = need_locks2 = have_locks2
-	    = this_need_locks = other_need_locks = 0;
-#endif
-    }
-
-    goto done;
 }
 
 #endif /* ERTS_SMP */
+
+/*
+ * The erlang:suspend_process/2 BIF
+ */
+
+BIF_RETTYPE
+suspend_process_2(BIF_ALIST_2)
+{
+    Eterm res;
+    Process* suspendee = NULL;
+    ErtsSuspendMonitor *smon;
+    ErtsProcLocks xlocks = (ErtsProcLocks) 0;
+
+    /* Options and default values: */
+    int asynchronous = 0;
+    int unless_suspending = 0;
+
+
+    if (BIF_P->id == BIF_ARG_1)
+	goto badarg; /* We are not allowed to suspend ourselves */
+
+    if (is_not_nil(BIF_ARG_2)) {
+	/* Parse option list */
+	Eterm arg = BIF_ARG_2;
+
+	while (is_list(arg)) {
+	    Eterm *lp = list_val(arg);
+	    arg = CAR(lp);
+	    switch (arg) {
+	    case am_unless_suspending:
+		unless_suspending = 1;
+		break;
+	    case am_asynchronous:
+		asynchronous = 1;
+		break;
+	    default:
+		goto badarg;
+	    }
+	    arg = CDR(lp);
+	}
+	if (is_not_nil(arg))
+	    goto badarg;
+    }
+
+    xlocks = ERTS_PROC_LOCK_LINK | (asynchronous
+				    ? (ErtsProcLocks) 0
+				    : ERTS_PROC_LOCK_STATUS);
+
+    erts_smp_proc_lock(BIF_P, xlocks);
+
+    suspendee = erts_pid2proc(BIF_P,
+			      ERTS_PROC_LOCK_MAIN|xlocks,
+			      BIF_ARG_1,
+			      ERTS_PROC_LOCK_STATUS);
+    if (!suspendee)
+	goto no_suspendee;
+
+    smon = erts_add_or_lookup_suspend_monitor(&BIF_P->suspend_monitors,
+					      BIF_ARG_1);
+#ifndef ERTS_SMP /* no ERTS_SMP */
+
+    /* This is really a piece of cake without SMP support... */
+    if (!smon->active) {
+	suspend_process(suspendee);
+	smon->active++;
+	res = am_true;
+    }
+    else if (unless_suspending)
+	res = am_false;
+    else if (smon->active == INT_MAX)
+	goto system_limit;
+    else {
+	smon->active++;
+	res = am_true;
+    }
+
+#else /* ERTS_SMP */
+
+    /* ... but a little trickier with SMP support ... */
+
+    if (asynchronous) {
+	/* --- Asynchronous suspend begin ---------------------------------- */
+
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_LINK
+			   & erts_proc_lc_my_proc_locks(BIF_P));
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS
+			   == erts_proc_lc_my_proc_locks(suspendee));
+
+	if (smon->active) {
+	    smon->active += smon->pending;
+	    smon->pending = 0;
+	    if (unless_suspending)
+		res = am_false;
+	    else if (smon->active == INT_MAX)
+		goto system_limit;
+	    else {
+		smon->active++;
+		res = am_true;
+	    }
+	    /* done */
+	}
+	else {
+	    /* We havn't got any active suspends on the suspendee */
+	    if (smon->pending && unless_suspending)
+		res = am_false;
+	    else {
+		if (smon->pending == INT_MAX)
+		    goto system_limit;
+
+		smon->pending++;
+		erts_smp_sched_lock();
+		if (suspendee->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)
+		    add_pend_suspend(suspendee,
+				     BIF_P->id,
+				     handle_pend_bif_async_suspend);
+		else
+		    do_bif_suspend_process(smon, suspendee, 0);
+		erts_smp_sched_unlock();
+
+		res = am_true;
+	    }
+	    /* done */
+	}
+	/* --- Asynchronous suspend end ------------------------------------ */
+    }
+    else /* if (!asynchronous) */ {
+	/* --- Synchronous suspend begin ----------------------------------- */
+
+	ERTS_SMP_LC_ASSERT(((ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS)
+			    & erts_proc_lc_my_proc_locks(BIF_P))
+			   == (ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCK_STATUS));
+	ERTS_SMP_LC_ASSERT(ERTS_PROC_LOCK_STATUS
+			   == erts_proc_lc_my_proc_locks(suspendee));
+
+	if (BIF_P->suspendee == BIF_ARG_1) {
+	    /* We are back after a reschedule and the suspendee
+	       has been suspended on behalf of us. */
+	    ASSERT(smon->active >= 1);
+	    BIF_P->suspendee = NIL;
+	    res = (!unless_suspending || smon->active == 1
+		   ? am_true
+		   : am_false);
+	    /* done */
+	}
+	else if (smon->active) {
+	    if (unless_suspending)
+		res = am_false;
+	    else {
+		smon->active++;
+		res = am_true;
+	    }
+	    /* done */
+	}
+	else {
+	    /* We havn't got any active suspends on the suspendee */
+
+	    /*
+	     * If we have pending suspenders and suspend ourselves waiting
+	     * to suspend another process, or suspend another process
+	     * we might deadlock. In this case we have to reschedule,
+	     * be suspended by someone else, and then do it all over again.
+	     */
+	    if (BIF_P->pending_suspenders)
+		goto reschedule;
+
+	    if (!unless_suspending && smon->pending == INT_MAX)
+		goto system_limit;
+	    if (!unless_suspending || smon->pending == 0)
+		smon->pending++;
+
+	    erts_smp_sched_lock();
+	    if (!(suspendee->scheduler_flags & ERTS_PROC_SCHED_FLG_SCHEDULED)) {
+		do_bif_suspend_process(smon, suspendee, 0);
+		erts_smp_sched_unlock();
+		res = (!unless_suspending || smon->active == 1
+		       ? am_true
+		       : am_false);
+		/* done */
+	    }
+	    else {
+		/* Mark suspendee pending for suspend by BIF_P */
+		add_pend_suspend(suspendee,
+				 BIF_P->id,
+				 handle_pend_bif_sync_suspend);
+
+		ASSERT(is_nil(BIF_P->suspendee));
+
+		/*
+		 * Suspend BIF_P; when suspendee is suspended, BIF_P
+		 * will be resumed and this BIF will be called again.
+		 * This time with BIF_P->suspendee == BIF_ARG_1 (see
+		 * above).
+		 */
+		suspend_process(BIF_P);
+		erts_smp_sched_unlock();
+		goto reschedule;
+	    }
+	}
+	/* --- Synchronous suspend end ------------------------------------- */
+    }
+
+#endif /* ERTS_SMP */
+
+    ASSERT(suspendee->status == P_SUSPENDED || (asynchronous && smon->pending));
+    ASSERT(suspendee->status == P_SUSPENDED || !smon->active);
+
+    erts_smp_proc_unlock(suspendee, ERTS_PROC_LOCK_STATUS);
+    erts_smp_proc_unlock(BIF_P, xlocks);
+    BIF_RET(res);
+
+ system_limit:
+    res = SYSTEM_LIMIT;
+    goto do_error;
+
+ no_suspendee:
+#ifdef ERTS_SMP
+    BIF_P->suspendee = NIL;
+#endif
+    erts_delete_suspend_monitor(&BIF_P->suspend_monitors, BIF_ARG_1);
+
+ badarg:
+    res = BADARG;
+#ifdef ERTS_SMP
+    goto do_error;
+
+ reschedule:
+    res = RESCHEDULE;
+#endif
+
+ do_error:
+    if (suspendee)
+	erts_smp_proc_unlock(suspendee, ERTS_PROC_LOCK_STATUS);
+    if (xlocks)
+	erts_smp_proc_unlock(BIF_P, xlocks);
+    BIF_ERROR(BIF_P, res);
+
+}
+
+
+/*
+ * The erlang:resume_process/1 BIF
+ */
+
+BIF_RETTYPE
+resume_process_1(BIF_ALIST_1)
+{
+    ErtsSuspendMonitor *smon;
+    Process *suspendee;
+    int is_active;
+ 
+    if (BIF_P->id == BIF_ARG_1)
+	BIF_ERROR(BIF_P, BADARG);
+
+    erts_smp_proc_lock(BIF_P, ERTS_PROC_LOCK_LINK);
+    smon = erts_lookup_suspend_monitor(BIF_P->suspend_monitors, BIF_ARG_1);
+
+    if (!smon) {
+	/* No previous suspend or dead suspendee */
+	goto error;
+    }
+    else if (smon->pending) {
+	smon->pending--;
+	ASSERT(smon->pending >= 0);
+	if (smon->active) {
+	    smon->active += smon->pending;
+	    smon->pending = 0;
+	}
+	is_active = smon->active;
+    }
+    else if (smon->active) {
+	smon->active--;
+	ASSERT(smon->pending >= 0);
+	is_active = 1;
+    }
+    else {
+	/* No previous suspend or dead suspendee */
+	goto error;
+    }
+
+    if (smon->active || smon->pending || !is_active) {
+	/* Leave the suspendee as it is; just verify that it is still alive */
+	suspendee = erts_pid2proc(BIF_P,
+				  ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
+				  BIF_ARG_1,
+				  0);
+	if (!suspendee)
+	    goto no_suspendee;
+
+    }
+    else {
+	/* Resume */
+	suspendee = erts_pid2proc(BIF_P,
+				  ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_LINK,
+				  BIF_ARG_1,
+				  ERTS_PROC_LOCK_STATUS);
+	if (!suspendee)
+	    goto no_suspendee;
+
+	ASSERT(suspendee->status == P_SUSPENDED);
+	resume_process(suspendee);
+
+	erts_smp_proc_unlock(suspendee, ERTS_PROC_LOCK_STATUS);
+    }
+
+    if (!smon->active && !smon->pending)
+	erts_delete_suspend_monitor(&BIF_P->suspend_monitors, BIF_ARG_1);
+
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+
+    BIF_RET(am_true);
+
+ no_suspendee:
+    /* cleanup */
+    erts_delete_suspend_monitor(&BIF_P->suspend_monitors, BIF_ARG_1);
+
+ error:
+    erts_smp_proc_unlock(BIF_P, ERTS_PROC_LOCK_LINK);
+    BIF_ERROR(BIF_P, BADARG);
+}
 
 int
 sched_q_len(void)
@@ -1806,6 +1534,7 @@ internal_add_to_schedule_q(Process *p)
      *             to schedule a new process.
      */
     ScheduleQ* sq;
+    Uint32 prev_status = p->status;
 
 #ifdef ERTS_SMP
 
@@ -1858,6 +1587,11 @@ internal_add_to_schedule_q(Process *p)
     }
 
     runq_len++;
+
+    if ((erts_system_profile_flags.runnable_procs) && prev_status != P_RUNNING) {
+    	profile_runnable_proc(p, am_active);
+    }
+
 #ifdef ERTS_SMP
     p->status_flags |= ERTS_PROC_SFLG_INRUNQ;
 #endif
@@ -1945,6 +1679,9 @@ remove_proc_from_sched_q(Process *p)
 	p->status_flags &= ~ERTS_PROC_SFLG_INRUNQ;
 #endif
 	runq_len--;
+	if (erts_system_profile_flags.runnable_procs) {
+	    profile_runnable_proc(p, am_inactive);
+	}
     }
 #ifdef ERTS_SMP
     ASSERT(!(p->status_flags & ERTS_PROC_SFLG_INRUNQ));
@@ -1957,7 +1694,7 @@ remove_proc_from_sched_q(Process *p)
 
 
 Eterm
-erts_process_status(Process *c_p, Uint32 c_p_locks,
+erts_process_status(Process *c_p, ErtsProcLocks c_p_locks,
 		    Process *rp, Eterm rpid)
 {
     Eterm res = am_undefined;
@@ -2029,7 +1766,7 @@ erts_process_status(Process *c_p, Uint32 c_p_locks,
 */
 
 void
-erts_suspend(Process* process, Uint32 process_locks, Port *busy_port)
+erts_suspend(Process* process, ErtsProcLocks process_locks, Port *busy_port)
 {
 
     ERTS_SMP_LC_ASSERT(process_locks == erts_proc_lc_my_proc_locks(process));
@@ -2051,7 +1788,7 @@ erts_suspend(Process* process, Uint32 process_locks, Port *busy_port)
 }
 
 void
-erts_resume(Process* process, Uint32 process_locks)
+erts_resume(Process* process, ErtsProcLocks process_locks)
 {
     ERTS_SMP_LC_ASSERT(process_locks == erts_proc_lc_my_proc_locks(process));
     if (!(process_locks & ERTS_PROC_LOCK_STATUS))
@@ -2155,6 +1892,7 @@ Process *schedule(Process *p, int calls)
 	erts_smp_sched_lock();
     } else {
 #ifdef ERTS_SMP
+	ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
 	esdp = p->scheduler_data;
 	ASSERT(esdp->current_process == p
 	       || esdp->free_process == p);
@@ -2162,15 +1900,14 @@ Process *schedule(Process *p, int calls)
 	esdp = &erts_scheduler_data;
 	ASSERT(esdp->current_process == p);
 #endif
-#ifndef ERTS_SMP_USE_IO_THREAD
 	function_calls += calls;
-#endif
 	reductions += calls;
 	ASSERT(esdp && esdp == erts_get_scheduler_data());
 
 	p->reds += calls;
 
 	erts_smp_proc_lock(p, ERTS_PROC_LOCK_STATUS);
+	
 
 #ifdef ERTS_SMP
 	if (ERTS_PROC_PENDING_EXIT(p)) {
@@ -2187,11 +1924,20 @@ Process *schedule(Process *p, int calls)
 	}
 #endif
 	erts_smp_sched_lock();
+	
+	if ((erts_system_profile_flags.runnable_procs) && (p->status == P_WAITING)) {
+	    profile_runnable_proc(p, am_inactive);
+	}
 
 	/* Rule of thumb, only trace when we have a valid current_process */
-	if (p->status != P_FREE && IS_TRACED_FL(p, F_TRACE_SCHED)) {
-	    trace_sched(p, am_out);
+	if (p->status != P_FREE) {
+	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
+	    	trace_sched(p, am_out);
+	    } else if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
+		trace_virtual_sched(p, am_out);
+	    }
 	}
+
 
 	esdp->current_process = NULL;
 #ifdef ERTS_SMP
@@ -2207,16 +1953,14 @@ Process *schedule(Process *p, int calls)
 
 
 	if (p->status == P_FREE) {
-	    ERTS_PROC_LESS_MEM(sizeof(Process));
 #ifdef ERTS_SMP
 	    ASSERT(esdp->free_process == p);
 	    esdp->free_process = NULL;
-#endif
-#ifdef ERTS_ENABLE_LOCK_CHECK
-	    /* No need to unlock unless we are checking locks */
 	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
+	    erts_dec_proc_lock_refc(p);
+#else	    
+	    erts_free_proc(p);
 #endif
-	    erts_free(ERTS_ALC_T_PROC, (void *) p);
 	} else {
 	    erts_smp_proc_unlock(p, ERTS_PROC_LOCK_MAIN|ERTS_PROC_LOCK_STATUS);
 	}
@@ -2240,9 +1984,7 @@ Process *schedule(Process *p, int calls)
 
     ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
  check_activities_to_run: {
-#ifdef ERTS_USE_PORT_TASKS
 	long port_runq_len;
-#endif
 	long tot_runq_len;
 	
 	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
@@ -2264,21 +2006,19 @@ Process *schedule(Process *p, int calls)
 	ERTS_SMP_LC_ASSERT(erts_smp_is_sched_locked());
 
 #ifdef ERTS_SMP
-	if (block_multi_scheduling && used_schedulers != 1)
+	if (block_multi_scheduling && used_schedulers != 1) {
 	    block_multi_scheduling_block(esdp);
-	else
+	} else {
 	    erts_smp_chk_system_block(prepare_for_block,
 				      resume_after_block,
 				      NULL);
+	}
 #endif
 
 	tot_runq_len = runq_len;
 
-#ifdef ERTS_USE_PORT_TASKS
 	port_runq_len = erts_port_task_port_queue_len();
 	tot_runq_len += port_runq_len;
-#endif
-
 
 #ifdef ERTS_SMP
 	if (schedulers_waiting_on_runq && tot_runq_len > 1)
@@ -2290,14 +2030,16 @@ Process *schedule(Process *p, int calls)
 	    if (block_multi_scheduling && used_schedulers != 1)
 		goto check_activities_to_run;
 	    schedulers_waiting_on_runq++;
+	    
+	    if (erts_system_profile_flags.scheduler) {
+	    	profile_scheduler( make_small(esdp->no), am_inactive, 
+		    make_small(used_schedulers - schedulers_waiting_on_runq));
+	    }
+	    
 	    if (used_schedulers == schedulers_waiting_on_runq)
 		erts_all_schedulers_waiting = 1;
-#ifndef ERTS_SMP_USE_IO_THREAD
 	    if (!doing_sys_schedule
-#ifdef ERTS_USE_PORT_TASKS
-		&& !erts_port_task_have_outstanding_io_tasks()
-#endif
-		) {
+		&& !erts_port_task_have_outstanding_io_tasks()) {
 		function_calls = 0;
 		waiting_in_sys_schedule = doing_sys_schedule = 1;
 		erts_sys_schedule_interrupt(0);
@@ -2308,15 +2050,11 @@ Process *schedule(Process *p, int calls)
 		erts_smp_sched_lock();
 		waiting_in_sys_schedule = doing_sys_schedule = 0;
 	    }
-	    else
-#endif
-	    {
-#ifndef ERTS_SMP_USE_IO_THREAD
+	    else {
 		/* If all schedulers are waiting, one of them *should*
 		   be waiting in erl_sys_schedule() */
 		ASSERT(!erts_all_schedulers_waiting
 		       || waiting_in_sys_schedule);
-#endif
 
 		erts_smp_activity_begin(ERTS_ACTIVITY_WAIT,
 					prepare_for_block,
@@ -2327,26 +2065,27 @@ Process *schedule(Process *p, int calls)
 				      prepare_for_block,
 				      resume_after_block,
 				      NULL);
+
 	    }
 	    if (erts_all_schedulers_waiting)
 		erts_all_schedulers_waiting = 0;
 	    ASSERT(schedulers_waiting_on_runq > 0);
 	    schedulers_waiting_on_runq--;
+	    
+	    if (erts_system_profile_flags.scheduler) {
+	    	profile_scheduler( make_small(esdp->no), am_active, 
+		    make_small(used_schedulers - schedulers_waiting_on_runq));
+	    }
+	    
 	    goto check_activities_to_run;
 	}
-#endif /* #ifdef ERTS_SMP */
-#if defined(ERTS_SMP) && !defined(ERTS_SMP_USE_IO_THREAD)
 	else
-#endif
-#ifndef ERTS_SMP_USE_IO_THREAD
+#endif /* #ifdef ERTS_SMP */
 	if (function_calls > input_reductions
 #ifdef ERTS_SMP
 	    && !doing_sys_schedule
 #endif
-#ifdef ERTS_USE_PORT_TASKS
-	    && !erts_port_task_have_outstanding_io_tasks()
-#endif
-	    ) {
+	    && !erts_port_task_have_outstanding_io_tasks()) {
 	    int runnable;
 
 #ifdef ERTS_SMP
@@ -2361,9 +2100,7 @@ Process *schedule(Process *p, int calls)
 	     */
 
 	    function_calls = 0;
-#ifdef ERTS_USE_PORT_TASKS
 	    ASSERT(!erts_port_task_have_outstanding_io_tasks());
-#endif
 #ifdef ERTS_SMP
 	    /* erts_sys_schedule_interrupt(0); */
 	    doing_sys_schedule = 1;
@@ -2383,9 +2120,7 @@ Process *schedule(Process *p, int calls)
 	    goto do_sys_schedule;
 #endif
 	}
-#endif /* !ERTS_SMP_USE_IO_THREAD */
 
-#ifdef ERTS_USE_PORT_TASKS
 	/*
 	 * Find a new port to run.
 	 */
@@ -2411,7 +2146,6 @@ Process *schedule(Process *p, int calls)
 		goto check_activities_to_run;
 	    }
 	}
-#endif
 
 	/*
 	 * Find a new process to run.
@@ -2463,10 +2197,8 @@ Process *schedule(Process *p, int calls)
 	default:
 	    ASSERT(qmask == 0);
 	    ASSERT(runq_len == 0);
-#ifdef ERTS_USE_PORT_TASKS
 	    if (erts_port_task_port_queue_len())
 		goto check_activities_to_run;
-#endif
 	    goto empty_runq;
 	}
 
@@ -2506,7 +2238,6 @@ Process *schedule(Process *p, int calls)
 
 	ASSERT(runq_len > 0);
 	runq_len--;
-
 	context_switches++;
 
 #ifdef ERTS_SMP
@@ -2547,9 +2278,12 @@ Process *schedule(Process *p, int calls)
 
         ACTIVATE(p);
 	calls = context_reds;
+	
 	if (p->status != P_EXITING) {
 	    if (IS_TRACED_FL(p, F_TRACE_SCHED)) {
 		trace_sched(p, am_in);
+	    } else if (IS_TRACED_FL(p, F_TRACE_SCHED_PROCS)) {
+	    	trace_virtual_sched(p, am_in);
 	    }
 	    p->status = P_RUNNING;
 	}
@@ -2570,6 +2304,7 @@ Process *schedule(Process *p, int calls)
 
 	p->fcalls = calls;
 	ASSERT(IS_ACTIVE(p));
+	ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
 	return p;
     }
 }
@@ -2704,13 +2439,12 @@ erts_test_next_pid(int set, Uint next)
     Sint res;
     Sint p_prev;
 
-    erts_smp_mtx_lock(&proc_tab_mtx);
+    erts_smp_proc_tab_lock();
 
     if (!set) {
 	res = p_next < 0 ? -1 : (p_serial << p_serial_shift | p_next);
     }
     else {
-	erts_smp_proc_tab_lock();
 
 	p_serial = (Sint) ((next >> p_serial_shift) & p_serial_mask);
 	p_next = (Sint) (erts_process_tab_index_mask & next);
@@ -2736,10 +2470,9 @@ erts_test_next_pid(int set, Uint next)
 
 	res = process_tab[p_next] ? -1 : (p_serial << p_serial_shift | p_next);
 
-	erts_smp_proc_tab_unlock();
     }
 
-    erts_smp_mtx_unlock(&proc_tab_mtx);
+    erts_smp_proc_tab_unlock();
 
     return res;
 
@@ -2752,17 +2485,39 @@ Uint erts_process_count(void)
     return (Uint) res;
 }
 
+void
+erts_smp_proc_tab_lock(void)
+{
+    erts_smp_mtx_lock(&proc_tab_mtx);
+}
+
+void
+erts_smp_proc_tab_unlock(void)
+{
+    erts_smp_mtx_unlock(&proc_tab_mtx);
+}
+
+void
+erts_free_proc(Process *p)
+{
+    ERTS_PROC_LESS_MEM(sizeof(Process));
+    erts_free(ERTS_ALC_T_PROC, (void *) p);
+}
+
+
 /*
 ** Allocate process and find out where to place next process.
 */
 static Process*
 alloc_process(void)
 {
-    erts_smp_mtx_t *ptabix_mtxp;
+#ifdef ERTS_SMP
+    erts_pix_lock_t *pix_lock;
+#endif
     Process* p;
     int p_prev;
 
-    erts_smp_mtx_lock(&proc_tab_mtx);
+    erts_smp_proc_tab_lock();
 
     if (p_next == -1) {
 	p = NULL;
@@ -2776,12 +2531,10 @@ alloc_process(void)
     p_last = p_next;
 
 #ifdef ERTS_SMP
-    ptabix_mtxp = &erts_proc_locks[ERTS_PIX2LOCKIX(p_next)].mtx;
-#else
-    ptabix_mtxp = NULL;
+    pix_lock = ERTS_PIX2PIXLOCK(p_next);
+    erts_pix_lock(pix_lock);
 #endif
 
-    erts_smp_mtx_lock(ptabix_mtxp);
 
     process_tab[p_next] = p;
     erts_smp_atomic_inc(&process_count);
@@ -2799,17 +2552,12 @@ alloc_process(void)
 					  : ERTS_MAX_PID_SERIAL));
 
 #ifdef ERTS_SMP
-    p->lock_flags = ERTS_PROC_LOCKS_ALL;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_proc_lc_trylock(p, ERTS_PROC_LOCKS_ALL, 1);
-#endif
+    erts_proc_lock_init(p); /* All locks locked */
+    erts_pix_unlock(pix_lock);
 #endif
 
     p->rstatus = P_FREE;
     p->rcount = 0;
-
-
-    erts_smp_mtx_unlock(ptabix_mtxp);
 
     /*
      * set p_next to the next available slot
@@ -2836,7 +2584,7 @@ alloc_process(void)
 
  error:
 
-    erts_smp_mtx_unlock(&proc_tab_mtx);
+    erts_smp_proc_tab_unlock();
 
     return p;
 
@@ -2959,13 +2707,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->stop = p->hend = p->heap + sz;
     p->htop = p->heap;
     p->heap_sz = sz;
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    p->arith_avail = 0;		/* No arithmetic heap. */
-    p->arith_heap = NULL;
-#ifdef DEBUG
-    p->arith_check_me = NULL;
-#endif
-#endif
     p->catches = 0;
 
     /* No need to initialize p->fcalls. */
@@ -3014,6 +2755,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->nlinks = NULL;
     p->monitors = NULL;
     p->nodes_monitors = NULL;
+    p->suspend_monitors = NULL;
     p->ct = NULL;
 
     ASSERT(is_pid(parent->group_leader));
@@ -3043,7 +2785,6 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     p->mbuf = NULL;
     p->mbuf_sz = 0;
     p->dictionary = NULL;
-    p->debug_dictionary = NULL;
     p->seq_trace_lastcnt = 0;
     p->seq_trace_clock = 0;
     SEQ_TRACE_TOKEN(p) = NIL;
@@ -3152,6 +2893,7 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
 
     runq_len++;
 
+
     p->next = NULL;
     if (!sq->first)
 	sq->first = p;
@@ -3160,6 +2902,10 @@ erl_create_process(Process* parent, /* Parent of process (default group leader).
     sq->last = p;
 
     p->status = P_RUNABLE;
+    
+    if (erts_system_profile_flags.runnable_procs) {
+    	profile_runnable_proc(p, am_active);
+    }
 
 #ifdef ERTS_SMP
     p->scheduler_data = NULL;
@@ -3247,13 +2993,13 @@ void erts_init_empty_process(Process *p)
     p->monitors = NULL;
     p->nlinks = NULL;         /* List of links */
     p->nodes_monitors = NULL;
+    p->suspend_monitors = NULL;
     p->msg.first = NULL;
     p->msg.last = &p->msg.first;
     p->msg.save = &p->msg.first;
     p->msg.len = 0;
     p->bif_timers = NULL;
     p->dictionary = NULL;
-    p->debug_dictionary = NULL;
     p->ct = NULL;
     p->seq_trace_clock = 0;
     p->seq_trace_lastcnt = 0;
@@ -3265,17 +3011,6 @@ void erts_init_empty_process(Process *p)
     p->cp = NULL;
     p->i = NULL;
     p->current = NULL;
-
-    /*
-     * Secondary heap for arithmetic operations.
-     */
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    p->arith_heap = NULL;
-    p->arith_avail = 0;
-#ifdef DEBUG
-    p->arith_check_me = NULL;
-#endif
-#endif
 
     /*
      * Saved x registers.
@@ -3315,7 +3050,6 @@ void erts_init_empty_process(Process *p)
     p->is_exiting = 0;
     p->status_flags = 0;
     p->scheduler_flags = 0;
-    p->lock_flags = 0;
     p->msg_inq.first = NULL;
     p->msg_inq.last = &p->msg_inq.first;
     p->msg_inq.len = 0;
@@ -3323,6 +3057,8 @@ void erts_init_empty_process(Process *p)
     p->pending_suspenders = NULL;
     p->pending_exit.reason = THE_NON_VALUE;
     p->pending_exit.bp = NULL;
+    erts_proc_lock_init(p);
+    erts_smp_proc_unlock(p, ERTS_PROC_LOCKS_ALL);
 #endif
 
 #if !defined(NO_FPE_SIGNALS)
@@ -3360,11 +3096,11 @@ erts_debug_verify_clean_empty_process(Process* p)
     ASSERT(p->monitors == NULL);
     ASSERT(p->nlinks == NULL);
     ASSERT(p->nodes_monitors == NULL);
+    ASSERT(p->suspend_monitors == NULL);
     ASSERT(p->msg.first == NULL);
     ASSERT(p->msg.len == 0);
     ASSERT(p->bif_timers == NULL);
     ASSERT(p->dictionary == NULL);
-    ASSERT(p->debug_dictionary == NULL);
     ASSERT(p->ct == NULL);
     ASSERT(p->catches == 0);
     ASSERT(p->cp == NULL);
@@ -3391,13 +3127,6 @@ erts_debug_verify_clean_empty_process(Process* p)
     ASSERT(p->off_heap.externals == NULL);
     ASSERT(p->off_heap.overhead == 0);
 
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    ASSERT(p->arith_avail == 0);
-    ASSERT(p->arith_heap == NULL);
-#ifdef DEBUG
-    ASSERT(p->arith_check_me == NULL);
-#endif
-#endif
     ASSERT(p->mbuf == NULL);
 }
 
@@ -3417,14 +3146,6 @@ erts_cleanup_empty_process(Process* p)
 #endif
     p->off_heap.externals = NULL;
     p->off_heap.overhead = 0;
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    p->arith_avail = 0;
-    p->arith_heap = NULL;
-#ifdef DEBUG
-    p->arith_check_me = NULL;
-#endif
-#endif
 
     mbufp = p->mbuf;
     while (mbufp) {
@@ -3516,6 +3237,7 @@ delete_process(Process* p)
     ASSERT(!p->monitors);
     ASSERT(!p->nlinks);
     ASSERT(!p->nodes_monitors);
+    ASSERT(!p->suspend_monitors);
 
     if (p->ct != NULL) {
 	ERTS_PROC_LESS_MEM((sizeof(struct saved_calls)
@@ -3529,7 +3251,7 @@ delete_process(Process* p)
     }
 
     p->fvalue = NIL;
-    
+
 #ifdef HYBRID
     erts_active_procs[p->active_index] =
         erts_active_procs[--erts_num_active_procs];
@@ -3551,19 +3273,23 @@ delete_process(Process* p)
 static ERTS_INLINE void
 set_proc_exiting(Process *p, Eterm reason, ErlHeapFragment *bp)
 {
+#ifdef ERTS_SMP
+    erts_pix_lock_t *pix_lock = ERTS_PID2PIXLOCK(p->id);
     ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(p) == ERTS_PROC_LOCKS_ALL);
     /*
-     * You are required to have all locks when going to status P_EXITING,
-     * This makes it is enough to take any lock when looking up a process
-     * (pid2proc()) to prevent the looked up process from exiting until
-     * the lock has been released.
+     * You are required to have all proc locks and the pix lock when going
+     * to status P_EXITING. This makes it is enough to take any lock when
+     * looking up a process (pid2proc()) to prevent the looked up process
+     * from exiting until the lock has been released.
      */
 
-#ifdef ERTS_SMP
-    erts_smp_proc_lock(p, ERTS_PROC_LOCK_FLAG_EXITING);
+    erts_pix_lock(pix_lock);
     p->is_exiting = 1;
 #endif
     p->status = P_EXITING;
+#ifdef ERTS_SMP
+    erts_pix_unlock(pix_lock);
+#endif
     p->fvalue = reason;
     if (bp)
 	erts_link_mbuf_to_proc(p, bp);
@@ -3577,9 +3303,9 @@ set_proc_exiting(Process *p, Eterm reason, ErlHeapFragment *bp)
 #ifdef ERTS_SMP
 
 void
-erts_handle_pending_exit(Process *c_p, Uint32 locks)
+erts_handle_pending_exit(Process *c_p, ErtsProcLocks locks)
 {
-    Uint32 xlocks;
+    ErtsProcLocks xlocks;
     ASSERT(is_value(c_p->pending_exit.reason));
     ERTS_SMP_LC_ASSERT(erts_proc_lc_my_proc_locks(c_p) == locks);
     ERTS_SMP_LC_ASSERT(locks & ERTS_PROC_LOCK_MAIN);
@@ -3646,7 +3372,7 @@ save_pending_exiter(Eterm pid)
  */
 
 static ERTS_INLINE void
-send_exit_message(Process *to, Uint32 *to_locksp,
+send_exit_message(Process *to, ErtsProcLocks *to_locksp,
 		  Eterm exit_term, Uint term_size, Eterm token)
 {
     if (token == NIL) {
@@ -3747,7 +3473,7 @@ send_exit_signal(Process *c_p,		/* current process if and only
 					   if reason is stored on it */
 		 Eterm from,		/* Id of sender of signal */
 		 Process *rp,		/* receiving process */
-		 Uint32 *rp_locks,	/* current locks on receiver */
+		 ErtsProcLocks *rp_locks,/* current locks on receiver */
 		 Eterm reason,		/* exit reason */
 		 Eterm exit_tuple,	/* Prebuild exit tuple
 					   or THE_NON_VALUE */
@@ -3787,7 +3513,8 @@ send_exit_signal(Process *c_p,		/* current process if and only
 		/* Ensure that all locks on c_p are locked before
 		   proceeding... */
 		if (*rp_locks != ERTS_PROC_LOCKS_ALL) {
-		    Uint32 need_locks = ~(*rp_locks) & ERTS_PROC_LOCKS_ALL;
+		    ErtsProcLocks need_locks = (~(*rp_locks)
+						& ERTS_PROC_LOCKS_ALL);
 		    if (erts_smp_proc_trylock(c_p, need_locks) == EBUSY) {
 			erts_smp_proc_unlock(c_p,
 					     *rp_locks & ~ERTS_PROC_LOCK_MAIN);
@@ -3799,7 +3526,7 @@ send_exit_signal(Process *c_p,		/* current process if and only
 	    }
 	    else if (!(rp->status_flags & ERTS_PROC_SFLG_SCHEDULED)) {
 		/* Process not scheduled ... */
-		Uint32 need_locks = ~(*rp_locks) & ERTS_PROC_LOCKS_ALL;
+		ErtsProcLocks need_locks = ~(*rp_locks) & ERTS_PROC_LOCKS_ALL;
 		if (need_locks
 		    && erts_smp_proc_trylock(rp, need_locks) == EBUSY) {
 		    /* ... but we havn't got all locks on it ... */
@@ -3884,7 +3611,7 @@ int
 erts_send_exit_signal(Process *c_p,
 		      Eterm from,
 		      Process *rp,
-		      Uint32 *rp_locks,
+		      ErtsProcLocks *rp_locks,
 		      Eterm reason,
 		      Eterm token,
 		      Process *token_update,
@@ -3970,7 +3697,8 @@ static void doit_exit_monitor(ErtsMonitor *mon, void *vpcontext)
 	} else if (is_internal_pid(mon->pid)) {/* local by name or pid */
 	    Eterm watched;
 	    Eterm lhp[3];
-	    Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_MSG_SEND;
+	    ErtsProcLocks rp_locks = (ERTS_PROC_LOCK_LINK
+				      | ERTS_PROC_LOCKS_MSG_SEND);
 	    rp = erts_pid2proc(NULL, 0, mon->pid, rp_locks);
 	    if (rp == NULL) {
 		goto done;
@@ -4056,7 +3784,8 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
 	    ASSERT(0); /* It isn't possible to setup such a link... */
 	}
 	else if (is_internal_pid(item)) {
-	    Uint32 rp_locks = ERTS_PROC_LOCK_LINK|ERTS_PROC_LOCKS_XSIG_SEND;
+	    ErtsProcLocks rp_locks = (ERTS_PROC_LOCK_LINK
+				      | ERTS_PROC_LOCKS_XSIG_SEND);
 	    rp = erts_pid2proc(NULL, 0, item, rp_locks);
 	    if (rp) {
 		rlnk = erts_remove_link(&(rp->nlinks), p->id);
@@ -4130,6 +3859,19 @@ static void doit_exit_link(ErtsLink *lnk, void *vpcontext)
     erts_destroy_link(lnk);
 }
 
+static void
+resume_suspend_monitor(ErtsSuspendMonitor *smon, void *vc_p)
+{
+    Process *suspendee = erts_pid2proc((Process *) vc_p, ERTS_PROC_LOCKS_ALL,
+				       smon->pid, ERTS_PROC_LOCK_STATUS);
+    if (suspendee) {
+	if (smon->active)
+	    resume_process(suspendee);
+	erts_smp_proc_unlock(suspendee, ERTS_PROC_LOCK_STATUS);
+    }
+    erts_destroy_suspend_monitor(smon);
+}
+
 
 /* this function fishishes a process and propagates exit messages - called
    by process_main when a process dies */
@@ -4138,24 +3880,35 @@ erts_do_exit_process(Process* p, Eterm reason)
 {
     ErtsLink* lnk;
     ErtsMonitor *mon;
+#ifdef ERTS_SMP
+    erts_pix_lock_t *pix_lock = ERTS_PID2PIXLOCK(p->id);
+#endif
 
     p->arity = 0;		/* No live registers */
     p->fvalue = reason;
     
 #ifdef ERTS_SMP
-    ERTS_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p->id);
+    ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
     /* By locking all locks (main lock is already locked) when going
        to status P_EXITING, it is enough to take any lock when
        looking up a process (erts_pid2proc()) to prevent the looked up
        process from exiting until the lock has been released. */
-    erts_smp_proc_lock(p,
-		       ERTS_PROC_LOCKS_ALL_MINOR|ERTS_PROC_LOCK_FLAG_EXITING);
+    erts_smp_proc_lock(p, ERTS_PROC_LOCKS_ALL_MINOR);
+#endif
+    
+    if (erts_system_profile_flags.runnable_procs && (p->status != P_WAITING)) {
+    	profile_runnable_proc(p, am_inactive);
+    }
+
+#ifdef ERTS_SMP
+    erts_pix_lock(pix_lock);
     p->is_exiting = 1;
 #endif
-
+    
     p->status = P_EXITING;
 
 #ifdef ERTS_SMP
+    erts_pix_unlock(pix_lock);
 
     if (ERTS_PROC_PENDING_EXIT(p)) {
 	/* Process exited before pending exit was received... */
@@ -4198,6 +3951,13 @@ erts_do_exit_process(Process* p, Eterm reason)
     if (p->nodes_monitors)
 	erts_delete_nodes_monitors(p, ERTS_PROC_LOCKS_ALL);
 
+    if (p->suspend_monitors) {
+	erts_sweep_suspend_monitors(p->suspend_monitors,
+				    resume_suspend_monitor,
+				    p);
+	p->suspend_monitors = NULL;
+    }
+
     /*
      * The registered name *should* be the last "erlang resource" to
      * cleanup.
@@ -4207,21 +3967,16 @@ erts_do_exit_process(Process* p, Eterm reason)
 
     {
 	int pix;
-	erts_smp_mtx_t *ptabix_mtxp;
-#ifdef ERTS_SMP
-	ptabix_mtxp = &(erts_proc_locks[ERTS_PID2LOCKIX(p->id)].mtx);
-#else
-	ptabix_mtxp = NULL;
-#endif
-	
+
 	ASSERT(internal_pid_index(p->id) < erts_max_processes);
 	pix = internal_pid_index(p->id);
 
-	erts_smp_mtx_lock(&proc_tab_mtx);
+	erts_smp_proc_tab_lock();
 	erts_smp_sched_lock();
-	erts_smp_mtx_lock(ptabix_mtxp);
 
 #ifdef ERTS_SMP
+	erts_pix_lock(pix_lock);
+
 	ASSERT(p->scheduler_data);
 	ASSERT(p->scheduler_data->current_process == p);
 	ASSERT(p->scheduler_data->free_process == NULL);
@@ -4234,7 +3989,9 @@ erts_do_exit_process(Process* p, Eterm reason)
 	ASSERT(erts_smp_atomic_read(&process_count) > 0);
 	erts_smp_atomic_dec(&process_count);
 
-	erts_smp_mtx_unlock(ptabix_mtxp);
+#ifdef ERTS_SMP
+	erts_pix_unlock(pix_lock);
+#endif
 	erts_smp_sched_unlock();
 
 	if (p_next < 0) {
@@ -4245,7 +4002,7 @@ erts_do_exit_process(Process* p, Eterm reason)
 	    p_next = pix;
 	}
 
-	erts_smp_mtx_unlock(&proc_tab_mtx);
+	erts_smp_proc_tab_unlock();
     }
 
     /*
@@ -4297,6 +4054,7 @@ erts_do_exit_process(Process* p, Eterm reason)
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_smp_proc_lock(p, ERTS_PROC_LOCK_MAIN); /* Make process_main() happy */
+    ERTS_SMP_CHK_HAVE_ONLY_MAIN_PROC_LOCK(p);
 #endif
 }
 

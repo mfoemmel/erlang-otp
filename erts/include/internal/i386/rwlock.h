@@ -1,3 +1,21 @@
+/* ``The contents of this file are subject to the Erlang Public License,
+ * Version 1.1, (the "License"); you may not use this file except in
+ * compliance with the License. You should have received a copy of the
+ * Erlang Public License along with this software. If not, it can be
+ * retrieved via the world wide web at http://www.erlang.org/.
+ * 
+ * Software distributed under the License is distributed on an "AS IS"
+ * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+ * the License for the specific language governing rights and limitations
+ * under the License.
+ * 
+ * The Initial Developer of the Original Code is Ericsson AB.
+ * Portions created by Ericsson are Copyright 2006, Ericsson AB.
+ * All Rights Reserved.''
+ * 
+ *     $Id$
+ */
+
 /*
  * Native ethread rwlocks on x86/x86-64.
  * Author: Mikael Pettersson.
@@ -8,10 +26,13 @@
 #define ETHREAD_I386_RWLOCK_H
 
 /* XXX: describe the algorithm */
-#define ETHR_RWLOCK_OFFSET	(1<<24)
 typedef struct {
     volatile int lock;
 } ethr_native_rwlock_t;
+
+#ifdef ETHR_TRY_INLINE_FUNCS
+
+#define ETHR_RWLOCK_OFFSET	(1<<24)
 
 static ETHR_INLINE void
 ethr_native_rwlock_init(ethr_native_rwlock_t *lock)
@@ -106,5 +127,7 @@ ethr_native_write_lock(ethr_native_rwlock_t *lock)
 	} while (ethr_native_write_is_locked(lock));
     }
 }
+
+#endif /* ETHR_TRY_INLINE_FUNCS */
 
 #endif /* ETHREAD_I386_RWLOCK_H */

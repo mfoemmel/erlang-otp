@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%-----------------------------------------------------------------
 %% Purpose: Supervisor for all active UDP port servers
@@ -31,8 +33,10 @@
 %% External exports
 %%-----------------------------------------------------------------
 -export([
-	 start_link/0
+	 start_link/0, 
+	 start_child/2
 	]).
+
 
 %%-----------------------------------------------------------------
 %% Internal exports
@@ -43,15 +47,26 @@
 	 start_server/1
 	]).
 
+
 %%-----------------------------------------------------------------
 %% External interface functions
 %%-----------------------------------------------------------------
+
 %%-----------------------------------------------------------------
 %% Func: start_link
 %% Description: Starts the UDP port server supervisor
 %%-----------------------------------------------------------------
 start_link() ->
     supervisor:start_link(?MODULE, [[]]).
+
+
+%%-----------------------------------------------------------------
+%% Func: start_child
+%% Description: Starts the UDP port server supervisor
+%%-----------------------------------------------------------------
+start_child(SupPid, UdpRec) ->
+    supervisor:start_child(SupPid, [UdpRec]).
+
 
 %%-----------------------------------------------------------------
 %% Internal interface functions
@@ -63,6 +78,7 @@ start_link() ->
 start_server(Args) ->
     megaco_udp_server:start_link(Args).
 
+
 %%-----------------------------------------------------------------
 %% Server functions
 %%-----------------------------------------------------------------
@@ -71,12 +87,13 @@ start_server(Args) ->
 %% Description: Init funcion for the supervisor
 %%-----------------------------------------------------------------
 init(_) ->
-    SupFlags = {simple_one_for_one, 500, 100},
+    SupFlags  = {simple_one_for_one, 500, 100},
     ChildSpec = [
 		 {megaco_udp_server,
-		  {?MODULE, start_server,
-		   []},
-		  permanent, 10000, worker,
+		  {?MODULE, start_server, []},
+		  permanent, 
+		  10000, 
+		  worker,
 		  []}
 		],
     {ok, {SupFlags, ChildSpec}}.

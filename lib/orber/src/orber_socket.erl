@@ -69,19 +69,28 @@ setopts(ssl, Socket, Opts) ->
 %%
 connect(Type, Host, Port, Options) ->
     Timeout = orber:iiop_setup_connection_timeout(),
-    Options1 = check_options(Type, Options),
+    Generation = orber_env:ssl_generation(),
+    Options1 = check_options(Type, Options, Generation),
     Options2 = 
 	case Type of
 	    normal ->
-		Keepalive = orber_env:iiop_out_keepalive(),
-		[{keepalive, Keepalive}|Options1];
+		[{keepalive, orber_env:iiop_out_keepalive()}|Options1];
+	    _ when Generation > 2 ->
+		[{keepalive, orber_env:iiop_ssl_out_keepalive()}|Options1];
 	    _ ->
-%		Keepalive = orber_env:iiop_ssl_out_keepalive(),
-%		[{keepalive, Keepalive}|Options1]
 		Options1
 	end,
     case orber:iiop_out_ports() of
+	{Min, Max} when Type == normal ->
+	    multi_connect(Min, Max, Type, Host, Port, 
+			  [binary, {reuseaddr, true}, 
+			   {packet,cdr}| Options2], Timeout);
+	{Min, Max} when Generation > 2 ->
+	    multi_connect(Min, Max, Type, Host, Port, 
+			  [binary, {reuseaddr, true}, 
+			   {packet,cdr}| Options2], Timeout);
 	{Min, Max} ->
+	    %% reuseaddr not available for older SSL versions
 	    multi_connect(Min, Max, Type, Host, Port, 
 			  [binary, {packet,cdr}| Options2], Timeout);
 	_ ->
@@ -125,21 +134,35 @@ multi_connect(CurrentPort, Max, Type, Host, Port, Options, _) when CurrentPort >
     orber:dbg("[~p] orber_socket:multi_connect(~p, ~p, ~p, ~p);~n"
 	      "Unable to use any of the sockets defined by 'iiop_out_ports'.~n"
 	      "Either all ports are in use or to many connections already exists.", 
-			    [?LINE, Type, Host, Port, Options], ?DEBUG_LEVEL),
+	      [?LINE, Type, Host, Port, Options], ?DEBUG_LEVEL),
     corba:raise(#'IMP_LIMIT'{minor=(?ORBER_VMCID bor 1), completion_status=?COMPLETED_NO});
 multi_connect(CurrentPort, Max, normal, Host, Port, Options, Timeout) ->
     case catch gen_tcp:connect(Host, Port, [{port, CurrentPort}|Options], Timeout) of
 	{ok, Socket} ->
 	    Socket;
+	{error, timeout} ->
+	    orber:dbg("[~p] orber_socket:multi_connect(normal, ~p, ~p, ~p);~n"
+		      "Timeout after ~p msec.", 
+		      [?LINE, Host, Port, [{port, CurrentPort}|Options],
+		       Timeout], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4),
+					completion_status=?COMPLETED_NO});
 	_ ->
 	    multi_connect(CurrentPort+1, Max, normal, Host, Port, Options, Timeout)
     end;
 multi_connect(CurrentPort, Max, ssl, Host, Port, Options, Timeout) ->
-     case catch ssl:connect(Host, Port, [{port, CurrentPort}|Options], Timeout) of
+    case catch ssl:connect(Host, Port, [{port, CurrentPort}|Options], Timeout) of
 	{ok, Socket} ->
 	    Socket;
+	{error, timeout} ->
+	    orber:dbg("[~p] orber_socket:multi_connect(ssl, ~p, ~p, ~p);~n"
+		      "Timeout after ~p msec.", 
+		      [?LINE, Host, Port, [{port, CurrentPort}|Options], 
+		       Timeout], ?DEBUG_LEVEL),
+	    corba:raise(#'COMM_FAILURE'{minor=(?ORBER_VMCID bor 4), 
+					completion_status=?COMPLETED_NO});
 	_ ->
-	     multi_connect(CurrentPort+1, Max, ssl, Host, Port, Options, Timeout)
+	    multi_connect(CurrentPort+1, Max, ssl, Host, Port, Options, Timeout)
     end.
   
 
@@ -152,7 +175,7 @@ listen(Type, Port, Options) ->
     listen(Type, Port, Options, true).
 
 listen(normal, Port, Options, Exception) ->
-    Options1 = check_options(normal, Options),
+    Options1 = check_options(normal, Options, 0),
     Backlog = orber:iiop_backlog(),
     Keepalive = orber_env:iiop_in_keepalive(),
     Options2 = case orber:iiop_max_in_requests() of
@@ -165,7 +188,7 @@ listen(normal, Port, Options, Exception) ->
 		   infinity ->
 		       Options2;
 		   MaxSize ->
-		       [{packet_size, MaxSize}|Options1]
+		       [{packet_size, MaxSize}|Options2]
 	       end,
     case catch gen_tcp:listen(Port, [binary, {packet,cdr}, {keepalive, Keepalive},
 				     {reuseaddr,true}, {backlog, Backlog} |
@@ -194,8 +217,8 @@ listen(normal, Port, Options, Exception) ->
     end;
 listen(ssl, Port, Options, Exception) ->
     Backlog = orber:iiop_ssl_backlog(),
-%    Keepalive = orber_env:iiop_ssl_in_keepalive(),
-    Options1 = check_options(ssl, Options),
+    Generation = orber_env:ssl_generation(),
+    Options1 = check_options(ssl, Options, Generation),
     Options2 = case orber:iiop_max_in_requests() of
 		   infinity ->
 		       Options1;
@@ -206,17 +229,23 @@ listen(ssl, Port, Options, Exception) ->
 		   infinity ->
 		       Options2;
 		   MaxSize ->
-		       [{packet_size, MaxSize}|Options1]
+		       [{packet_size, MaxSize}|Options2]
 	       end,
-%    case catch ssl:listen(Port, [binary, {packet,cdr}, {keepalive, Keepalive},
+    Options4 = if
+		   Generation > 2 ->
+		       [{reuseaddr, true}, 
+			{keepalive, orber_env:iiop_ssl_in_keepalive()}|Options3];
+		   true ->
+		       Options3
+	       end,
     case catch ssl:listen(Port, [binary, {packet,cdr},
-				 {backlog, Backlog} | Options3]) of
+				 {backlog, Backlog} | Options4]) of
 	{ok, ListenSocket} ->
 	    {ok, ListenSocket, check_port(Port, ssl, ListenSocket)};
 	{error, Reason} when Exception == false ->
 	    {error, Reason};
 	{error, eaddrinuse} ->	
-	    AllOpts = [binary, {packet,cdr} | Options3],
+	    AllOpts = [binary, {packet,cdr} | Options4],
 	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
 		      "Looks like the listen port is already in use. Check if~n"
 		      "another Orber is started on the same node and uses the~n"
@@ -225,7 +254,7 @@ listen(ssl, Port, Options, Exception) ->
 		      [?LINE, Port, AllOpts], ?DEBUG_LEVEL),
 	    corba:raise(#'COMM_FAILURE'{completion_status=?COMPLETED_NO});
 	Error ->
-	    AllOpts = [binary, {packet,cdr} | Options3],
+	    AllOpts = [binary, {packet,cdr} | Options4],
 	    orber:dbg("[~p] orber_socket:listen(ssl, ~p, ~p);~n"
 		      "Failed with reason: ~p", 
 		      [?LINE, Port, AllOpts, Error], ?DEBUG_LEVEL),
@@ -365,11 +394,18 @@ create_data(What) ->
 %% How = read | write | read_write
 shutdown(normal, Socket, How) ->
     gen_tcp:shutdown(Socket, How);
-shutdown(ssl, Socket, read_write) ->
-    %% SSL do no support shutdown. For now we'll use this solution instead.
-    close(ssl, Socket);
-shutdown(ssl, _Socket, _How) ->
-    {error, undefined}.
+shutdown(ssl, Socket, How) ->
+    Generation = orber_env:ssl_generation(),
+    if
+	Generation > 2 ->
+	    ssl:shutdown(Socket, How);
+	How == read_write ->
+	    %% Older versions of SSL do no support shutdown.
+	    %% For now we'll use this solution instead.
+	    close(ssl, Socket);
+	true ->
+	    {error, undefined}
+    end.
 
 %%-----------------------------------------------------------------
 %% Remove Messages from queue
@@ -444,7 +480,7 @@ check_port(Port, _, _) ->
 %% Check Options. 
 %% We need this as a work-around since the SSL-app doesn't allow us
 %% to pass 'inet' as an option. Also needed for R9B :-(
-check_options(normal, Options) ->
+check_options(normal, Options, _Generation) ->
     case orber:ip_version() of
 	inet ->
 	    Options;
@@ -452,10 +488,14 @@ check_options(normal, Options) ->
 	    %% Necessary for R9B. Should be [orber:ip_version()|Options];
 	    [inet6|Options]
     end;
-check_options(ssl, Options) ->
+check_options(ssl, Options, Generation) ->
     case orber:ip_version() of
+	inet when Generation > 2 ->
+	    [{ssl_imp, new}|Options];
 	inet ->
 	    Options;
+	inet6 when Generation > 2 ->
+	    [{ssl_imp, new}, inet6|Options];
 	inet6 ->
 	    %% Will fail until SSL supports this option. 
 	    %% Note, we want this happen!

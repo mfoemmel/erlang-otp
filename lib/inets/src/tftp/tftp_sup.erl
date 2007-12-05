@@ -24,8 +24,10 @@
 -behaviour(supervisor).
 
 %% API
--export([start_link/1]).
--export([start_child/1]).
+-export([start_link/1,
+	 start_child/1,
+	 stop_child/1,
+	 which_children/0]).
 
 %% Supervisor callback
 -export([init/1]).
@@ -37,8 +39,30 @@
 start_link(TftpServices) ->
     supervisor:start_link({local, ?MODULE}, ?MODULE, [TftpServices]).
 
-start_child(Args) ->
-    supervisor:start_child(?MODULE, Args).
+start_child(Options) ->
+    KillAfter = default_kill_after(),
+    ChildSpec = worker_spec(KillAfter, Options),
+    supervisor:start_child(?MODULE, ChildSpec).
+
+stop_child(Pid) when is_pid(Pid) ->
+    Children = supervisor:which_children(?MODULE),
+    case [Id || {Id, P, _Type, _Modules} <- Children, P =:= Pid] of
+	[] ->
+	    {error, not_found};
+	[Id] ->
+	    case supervisor:terminate_child(?MODULE, Id) of
+		ok ->
+		    supervisor:delete_child(?MODULE, Id);
+		{error, not_found} ->
+		    supervisor:delete_child(?MODULE, Id);
+		{error, Reason} ->
+		    {error, Reason}
+	    end
+    end.
+
+which_children() ->
+    Children = supervisor:which_children(?MODULE),
+    [{tftpd, Pid} || {_Id, Pid, _Type, _Modules} <- Children, Pid =/= undefined].
     
 %%%=========================================================================
 %%%  Supervisor callback
@@ -48,7 +72,7 @@ init([Services]) when is_list(Services) ->
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
-    KillAfter = timer:seconds(3),
+    KillAfter = default_kill_after(),
     Children = [worker_spec(KillAfter, Options) || {tftpd, Options} <- Services],
     {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.
 
@@ -69,6 +93,9 @@ unique_name(Options) ->
 	_ ->
 	    {tftpd, erlang:now()}
     end.
+
+default_kill_after() ->
+    timer:seconds(3).
 
 %% supervisor_spec(Name) ->
 %%     {Name, {Name, start, []}, permanent, infinity, supervisor,

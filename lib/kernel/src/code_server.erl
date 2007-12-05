@@ -1175,7 +1175,7 @@ absname_vr([[X, $:]|Name], _, _AbsBase) ->
     Dcwd =
 	case erl_prim_loader:get_cwd([X, $:]) of
 	    {ok, Dir}  -> Dir;
-	    {error, _} -> [X, $:, $/]
+	    error -> [X, $:, $/]
     end,
     absname(filename:join(Name), Dcwd).
 

@@ -1,5 +1,5 @@
-VSN = 5.5.5
-SYSTEM_VSN = R11B
+VSN = 5.6
+SYSTEM_VSN = R12B
 
 # Port number 4365 in 4.2
 # Port number 4366 in 4.3

@@ -20,8 +20,10 @@ gen_rtl(BsOP, Dst, Args, TrueLblName, FalseLblName, ConstTab) ->
   end.
 
 type_of_operation({bs_start_match,_}) -> match;
+type_of_operation({{bs_start_match,_},_}) -> match;
 type_of_operation({bs_get_binary,_,_}) -> match;
 type_of_operation({bs_get_binary_all,_,_}) -> match;
+type_of_operation({bs_get_binary_all_2,_,_}) -> match;
 type_of_operation({bs_get_integer,_,_}) -> match;
 type_of_operation({bs_get_float,_,_}) ->  match;
 type_of_operation({bs_skip_bits,_}) -> match;
@@ -29,16 +31,24 @@ type_of_operation({bs_skip_bits_all,_,_}) ->  match;
 type_of_operation({bs_test_tail,_}) -> match;
 type_of_operation({bs_restore,_}) -> match;
 type_of_operation({bs_save,_}) ->  match;
+type_of_operation({bs_test_unit,_}) ->  match;
+type_of_operation({bs_match_string,_,_}) ->  match;
+type_of_operation(bs_context_to_binary) ->  match;
 type_of_operation({bs_add,_}) -> construct;
 type_of_operation({bs_add,_,_}) -> construct;
 type_of_operation(bs_bits_to_bytes) -> construct;
 type_of_operation(bs_bits_to_bytes2) -> construct;
 type_of_operation({bs_init,_}) -> construct;
 type_of_operation({bs_init,_,_}) -> construct;
+type_of_operation({bs_init_bits,_}) -> construct;
+type_of_operation({bs_init_bits,_,_}) -> construct;
 type_of_operation({bs_put_binary,_,_}) -> construct;
 type_of_operation({bs_put_binary_all,_}) -> construct;  
 type_of_operation({bs_put_float,_,_,_}) -> construct;
 type_of_operation({bs_put_integer,_,_,_}) -> construct;
 type_of_operation({bs_put_string,_,_}) -> construct;  
 type_of_operation({unsafe_bs_put_integer,_,_,_}) -> construct;
-type_of_operation(bs_final) -> construct.
+type_of_operation(bs_final) -> construct;
+type_of_operation({bs_append,_,_,_,_}) -> construct;
+type_of_operation({bs_private_append,_,_}) -> construct;
+type_of_operation(bs_init_writable) -> construct.

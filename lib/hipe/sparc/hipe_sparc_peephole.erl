@@ -122,8 +122,8 @@ peep([I=#move{dst=Dst, src={sparc_imm, Val}}|Insns], Ack, Lst) ->
 
 %% ElimPushPop
 %% -----------
-peep([#pseudo_push{reg=Reg}, #pseudo_pop{reg=Reg} | Insns], Ack, Lst) ->
-    peep(Insns, Ack, [elimPushPop|Lst]);
+%% peep([#pseudo_push{reg=Reg}, #pseudo_pop{reg=Reg} | Insns], Ack, Lst) ->
+%%     peep(Insns, Ack, [elimPushPop|Lst]);
     
 
 %% ElimStoreLoad

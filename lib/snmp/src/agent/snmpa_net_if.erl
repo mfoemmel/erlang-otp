@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpa_net_if).
 
@@ -22,9 +24,11 @@
 -export([start_link/4,
 	 info/1, 
 	 verbosity/2]).
--export([get_log_type/1, set_log_type/2]).
+-export([get_log_type/1,  set_log_type/2]).
+-export([get_request_limit/1, set_request_limit/2]).
 -export([system_continue/3, system_terminate/4, system_code_change/4]).
 -export([init/5]).
+-export([filter_reset/1]).
 
 -include("snmp_types.hrl").
 -include("snmpa_internal.hrl").
@@ -42,11 +46,15 @@
 		reqs  = [], 
 		debug = false,
 		limit = infinity,
-		rcnt  = []}).
+		rcnt  = [],
+		filter}).
 
 -ifndef(default_verbosity).
 -define(default_verbosity,silence).
 -endif.
+
+-define(DEFAULT_FILTER_MODULE, snmpa_net_if_filter).
+-define(DEFAULT_FILTER_OPTS,   [{module, snmpa_net_if_filter}]).
 
 
 %%%-----------------------------------------------------------------
@@ -70,34 +78,9 @@ start_link(Prio, NoteStore, MasterAgent, Opts) ->
     Args = [Prio, NoteStore, MasterAgent, self(), Opts],
     proc_lib:start_link(?MODULE, init, Args).
 
-% %% Send a trap (v1) or notification (v2 or v3)
-% send_pdu(Pid, 'version-1' = Vsn, Pdu, MsgData, Addrs) 
-%   when record(Pdu, trappdu) ->
-%     Pid ! {send_pdu, Vsn, Pdu, MsgData, Addrs};
-% send_pdu(Pid, 'version-2' = Vsn, Pdu, MsgData, Addrs) 
-%   when record(Pdu, pdu) ->
-%     Pid ! {send_pdu, Vsn, Pdu, MsgData, Addrs};
-% send_pdu(Pid, 'version-3' = Vsn, Pdu, MsgData, Addrs) 
-%   when record(Pdu, pdu) ->
-%     Pid ! {send_pdu, Vsn, Pdu, MsgData, Addrs}.
-
-% %% Send an inform request (v2 or v3)
-% send_pdu_req(Pid, 'version-2' = Vsn, Pdu, MsgData, To, ReplyPid) 
-%   when record(Pdu, pdu) ->
-%     Pid ! {send_pdu_req, Vsn, Pdu, MsgData, To, To, ReplyPid};
-% send_pdu_req(Pid, 'version-3' = Vsn, Pdu, MsgData, To, ReplyPid) 
-%   when record(Pdu, pdu) ->
-%     Pid ! {send_pdu_req, Vsn, Pdu, MsgData, To, To, ReplyPid}.
-
-% send_response_pdu(Pid, Vsn, Response, ACMData, To, Extra) 
-%   when record(Response, pdu) ->
-%     Pid ! {snmp_response, Vsn, Response, ACMData, To, Extra}.
-
-% discard_pdu(Pid, Vsn, ReqId, ACMData, Variable, Extra) ->
-%     Pid ! {discarded_pdu, Vsn, ReqId, ACMData, Variable, Extra}.
     
 info(Pid) ->
-    case call(Pid, info, info_reply) of
+    case call(Pid, info) of
 	Info when list(Info) ->
 	    Info;
 	_ ->
@@ -108,17 +91,16 @@ verbosity(Pid, Verbosity) ->
     Pid ! {verbosity, Verbosity}.
 
 get_log_type(Pid) ->
-    Pid ! {self(), get_log_type},
-    receive
-	{Pid, Type} ->
-	    Type
-    after
-	5000 ->
-	    undefined
-    end.
+    call(Pid, get_log_type).
 
-set_log_type(Pid, Type) ->
-    Pid ! {set_log_type, Type}.
+set_log_type(Pid, NewType) ->
+    call(Pid, {set_log_type, NewType}).
+
+get_request_limit(Pid) ->
+    call(Pid, get_request_limit).
+
+set_request_limit(Pid, NewLimit) ->
+    call(Pid, {set_request_limit, NewLimit}).
 
 get_port() ->
     {value, UDPPort} = snmp_framework_mib:intAgentUDPPort(get),
@@ -127,6 +109,9 @@ get_port() ->
 get_address() ->
     {value, IPAddress} = snmp_framework_mib:intAgentIpAddress(get),
     IPAddress.
+
+filter_reset(Pid) ->
+    Pid ! filter_reset.
 
 
 %%-----------------------------------------------------------------
@@ -171,11 +156,16 @@ do_init(Prio, NoteStore, MasterAgent, Parent, Opts) ->
     ?vdebug("vsns: ~w",[Vsns]),
 
     %% Flow control --
-    Limit = get_req_limit(Opts),
+    Limit      = get_req_limit(Opts),
+    ?vdebug("Limit: ~w", [Limit]),
+    FilterOpts = get_filter_opts(Opts),
+    FilterMod  = create_filter(FilterOpts),
+    ?vdebug("FilterMod: ~w", [FilterMod]),
 
     %% -- Audit trail log
     Log = create_log(),
     ?vdebug("Log: ~w",[Log]),
+
 
     %% -- Socket --
     IPOpts1 = ip_opt_bind_to_ip_address(Opts, IPAddress),
@@ -187,6 +177,7 @@ do_init(Prio, NoteStore, MasterAgent, Parent, Opts) ->
     case gen_udp_open(UDPPort, IPOpts) of
 	{ok, Sock} ->
 	    MpdState = snmpa_mpd:init(Vsns),
+	    init_counters(), 
 	    active_once(Sock),
 	    S = #state{parent       = Parent,
 		       note_store   = NoteStore,
@@ -195,18 +186,19 @@ do_init(Prio, NoteStore, MasterAgent, Parent, Opts) ->
 		       usock        = Sock, 
 		       usock_opts   = IPOpts,
 		       log          = Log,
-		       limit        = Limit},
-	    ?vdebug("started with MpdState: ~p",[MpdState]),
+		       limit        = Limit,
+		       filter       = FilterMod},
+	    ?vdebug("started with MpdState: ~p", [MpdState]),
 	    {ok, S};
 	{error, Reason} ->
-	    ?vinfo("Failed to open UDP socket: ~p",[Reason]),
+	    ?vinfo("Failed to open UDP socket: ~p", [Reason]),
 	    {error, {udp_open, UDPPort, Reason}}
     end.
 
 create_log() ->
     case ets:lookup(snmp_agent_table, audit_trail_log) of
 	[] ->
-	    {dummy, []};
+	    {undefined, []};
 	[{audit_trail_log, AtlOpts}] ->
 	    ?vtrace("AtlOpts: ~p",[AtlOpts]),
 	    Type   = get_atl_type(AtlOpts),
@@ -223,6 +215,18 @@ create_log() ->
 		    throw({error, {create_log, Reason}})
 	    end
     end.
+
+
+create_filter(Opts) when is_list(Opts) ->
+    case get_filter_module(Opts) of
+	?DEFAULT_FILTER_MODULE = Mod ->
+	    Mod;
+	Module ->
+	    snmpa_network_interface_filter:verify(Module),
+	    Module
+    end;
+create_filter(BadOpts) ->
+    throw({error, {bad_filter_opts, BadOpts}}).
 
 
 log({_, []}, _, _, _, _) ->
@@ -259,40 +263,48 @@ gen_udp_open(Port, Opts) ->
 		    gen_udp:open(Port, Opts)
 	    end
     end.
-	
+
+
 loop(S) ->
     receive
 	{udp, _UdpId, Ip, Port, Packet} ->
 	    ?vlog("got paket from ~w:~w",[Ip,Port]),
-	    NewS = handle_recv(S, Ip, Port, Packet),
+	    %% NewS = handle_recv(S, Ip, Port, Packet),
+	    NewS = maybe_handle_recv(S, Ip, Port, Packet),
 	    loop(NewS);
 
-	{info, Pid} ->
+	{info, ReplyRef, Pid} ->
 	    Info = get_info(S),
-	    Pid ! {info_reply, Info, self()},
+	    Pid ! {ReplyRef, Info, self()},
 	    loop(S);
 
+	%% response (to get/get_next/get_bulk/set requests)
 	{snmp_response, Vsn, RePdu, Type, ACMData, Dest, []} ->
 	    ?vlog("reply pdu: "
 		  "~n   ~s", 
 		  [?vapply(snmp_misc, format, [256, "~w", [RePdu]])]),
-	    NewS = handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
+	    %% NewS = handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
+	    NewS = maybe_handle_reply_pdu(S, Vsn, RePdu, Type, ACMData, Dest),
 	    loop(NewS);
 
+	%% Traps/notification
 	{send_pdu, Vsn, Pdu, MsgData, To} ->
 	    ?vdebug("send pdu: "
 		    "~n   Pdu: ~p"
-		    "~n   To:  ~p", [Pdu,To]),
-	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
+		    "~n   To:  ~p", [Pdu, To]),
+	    %% NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
+	    NewS = maybe_handle_send_pdu(S, Vsn, Pdu, MsgData, To, undefined),
 	    loop(NewS);
 
+	%% Informs
 	{send_pdu_req, Vsn, Pdu, MsgData, To, From} ->
 	    ?vdebug("send pdu request: "
 		    "~n   Pdu:  ~p"
 		    "~n   To:   ~p"
 		    "~n   From: ~p", 
-		    [Pdu,To,toname(From)]),
-	    NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
+		    [Pdu, To, toname(From)]),
+	    %% NewS = handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
+	    NewS = maybe_handle_send_pdu(S, Vsn, Pdu, MsgData, To, From),
 	    loop(NewS);
 
 	{discarded_pdu, _Vsn, ReqId, _ACMData, Variable, _Extra} ->
@@ -301,15 +313,29 @@ loop(S) ->
 	    NewS = update_req_counter_outgoing(S, ReqId),
 	    loop(NewS);
 
-	{From, get_log_type} ->
+	{get_log_type, ReplyRef, Pid} ->
+	    ?vdebug("get log type: ~p", []),
 	    #state{log = {_, LogType}} = S,
-	    From ! {self(), LogType},
+	    Pid ! {ReplyRef, {ok, LogType}, self()},
 	    loop(S);
 
-	{set_log_type, Type} when Type == write; Type == read_write ->
-	    ?vdebug("set log type: ~p", [Type]),
-	    #state{log = {Log, _}} = S,
-	    loop(S#state{log = {Log, Type}});
+	{{set_log_type, NewType}, ReplyRef, Pid} ->
+	    ?vdebug("set log type: ~p", [NewType]),
+	    {NewState, Reply} = (catch handle_set_log_type(S, NewType)),
+	    Pid ! {ReplyRef, Reply, self()},
+	    loop(NewState);
+
+	{get_request_limit, ReplyRef, Pid} ->
+	    ?vdebug("get request limit: ~p", []),
+	    #state{limit = Limit} = S,
+	    Pid ! {ReplyRef, {ok, Limit}, self()},
+	    loop(S);
+
+	{{set_request_limit, NewLimit}, ReplyRef, Pid} ->
+	    ?vdebug("set request limit: ~p", [NewLimit]),
+	    {NewState, Reply} = (catch handle_set_request_limit(S, NewLimit)),
+	    Pid ! {ReplyRef, Reply, self()},
+	    loop(NewState);
 
 	{disk_log, _Node, Log, Info} ->
 	    ?vdebug("disk log event: ~p, ~p", [Log, Info]),
@@ -317,8 +343,12 @@ loop(S) ->
 	    loop(NewS);
 
 	{verbosity, Verbosity} ->
-	    ?vlog("verbosity: ~p -> ~p",[get(verbosity), Verbosity]),
-	    put(verbosity,snmp_verbosity:validate(Verbosity)),
+	    ?vlog("verbosity: ~p -> ~p", [get(verbosity), Verbosity]),
+	    put(verbosity, snmp_verbosity:validate(Verbosity)),
+	    loop(S);
+
+	filter_reset ->
+	    reset_counters(),
 	    loop(S);
 
 	{'EXIT', Parent, Reason} when Parent == S#state.parent ->
@@ -421,11 +451,22 @@ update_req_counter_outgoing(#state{limit = Limit, rcnt = RCnt} = S,
     S#state{rcnt = NewRCnt}.
     
 
+maybe_handle_recv(#state{filter = FilterMod} = S, 
+		  Ip, Port, Packet) ->
+    case (catch FilterMod:accept_recv(Ip, Port)) of
+	false ->
+	    %% Drop the received packet 
+	    inc(netIfMsgInDrops),
+	    S;
+	_ ->
+	    handle_recv(S, Ip, Port, Packet)
+    end.
+
 handle_recv(#state{usock      = Sock, 
 		   mpd_state  = MpdState, 
 		   note_store = NS,
 		   log        = Log} = S, Ip, Port, Packet) ->
-    put(n1,erlang:now()),
+    put(n1, erlang:now()),
     LogF = fun(Type, Data) ->
 		   log(Log, Type, Data, Ip, Port)
 	   end,
@@ -435,7 +476,8 @@ handle_recv(#state{usock      = Sock,
 	    ?vlog("got pdu"
 		"~n   ~s", 
 		[?vapply(snmp_misc, format, [256, "~w", [Pdu]])]),
-	    handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
+	    %% handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
+	    maybe_handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S);
 	{discarded, Reason} ->
 	    ?vlog("packet discarded for reason: "
 		"~n   ~s",
@@ -451,6 +493,19 @@ handle_recv(#state{usock      = Sock,
 	    S
     end.
     
+maybe_handle_recv_pdu(Ip, Port, Vsn, #pdu{type = Type} = Pdu, PduMS, ACMData, 
+		      #state{usock = Sock, filter = FilterMod} = S) ->
+    case (catch FilterMod:accept_recv_pdu(Ip, Port, Type)) of
+	false ->
+	    inc(netIfPduInDrops),
+	    active_once(Sock),
+	    ok;
+	_ ->
+	    handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S)
+    end;
+maybe_handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S) ->
+    handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData, S).
+
 handle_recv_pdu(Ip, Port, Vsn, #pdu{type = 'get-response'} = Pdu, 
 		_PduMS, _ACMData, #state{usock = Sock} = S) ->
     active_once(Sock),
@@ -472,38 +527,117 @@ handle_recv_pdu(Ip, Port, Vsn, Pdu, PduMS, ACMData,
     S.
 
 
-handle_reply_pdu(#state{log = Log} = S, Vsn, #pdu{request_id = Rid} = Pdu, 
-		 Type, ACMData, {Ip, Port}) ->
+maybe_handle_reply_pdu(#state{filter = FilterMod} = S, Vsn, 
+		       #pdu{request_id = Rid} = Pdu, 
+		       Type, ACMData, {Ip, Port} = Dest) ->
     S1 = update_req_counter_outgoing(S, Rid),
+    case (catch FilterMod:accept_send_pdu([{Ip, Port}], Type)) of
+	false ->
+	    inc(netIfPduOutDrops),
+	    ok;
+	_ ->
+	    handle_reply_pdu(S1, Vsn, Pdu, Type, ACMData, Dest)
+    end,
+    S1.
+
+handle_reply_pdu(#state{log    = Log,
+			usock  = Sock, 
+			filter = FilterMod}, 
+		 Vsn, Pdu, Type, ACMData, {Ip, Port}) ->
     LogF = fun(Type2, Data) ->
 		   log(Log, Type2, Data, Ip, Port)
 	   end,
     case (catch snmpa_mpd:generate_response_msg(Vsn, Pdu, Type,
-					       ACMData, LogF)) of
+						ACMData, LogF)) of
 	{ok, Packet} ->
-	    ?vinfo("time in agent: ~w mysec", 
-		[subtr(erlang:now(),get(n1))]),
-	    (catch udp_send(S#state.usock, Ip, Port, Packet)),
-	    S1;
+	    ?vinfo("time in agent: ~w mysec", [time_in_agent()]),
+	    maybe_udp_send(FilterMod, Sock, Ip, Port, Packet);
 	{discarded, Reason} ->
 	    ?vlog("handle_reply_pdu -> "
 		  "~n   reply discarded for reason: ~s", 
 		[?vapply(snmp_misc, format, [256, "~w", [Reason]])]),
-	    S1;
+	    ok;
 	{'EXIT', Reason} ->
 	    user_err("failed generating response message: "
-		     "~nPDU: ~w~n~w", [Pdu, Reason]),
-	    S1
+		     "~nPDU: ~w~n~w", [Pdu, Reason])
     end.
     
 
+process_taddrs(To) ->
+    process_taddrs(To, []).
+
+process_taddrs([], Acc) ->
+    lists:reverse(Acc);
+%% v3 
+process_taddrs([{{_Domain, AddrAndPort}, _SecData}|T], Acc) ->
+    process_taddrs(T, [AddrAndPort|Acc]);
+%% v1 & v2
+process_taddrs([{_Domain, AddrAndPort}|T], Acc) ->
+    process_taddrs(T, [AddrAndPort|Acc]).
+
+
+merge_taddrs(To1, To2) ->
+    merge_taddrs(To1, To2, []).
+
+merge_taddrs([], _To2, Acc) ->
+    lists:reverse(Acc);
+%% v3
+merge_taddrs([{{_, AddrAndPort}, _} = H|To1], To2, Acc) ->
+    case lists:member(AddrAndPort, To2) of
+	true ->
+	    merge_taddrs(To1, To2, [H|Acc]);
+	false ->
+	    merge_taddrs(To1, To2, Acc)
+    end;
+%% v1 & v2
+merge_taddrs([{_, AddrAndPort} = H|To1], To2, Acc) ->
+    case lists:member(AddrAndPort, To2) of
+	true ->
+	    merge_taddrs(To1, To2, [H|Acc]);
+	false ->
+	    merge_taddrs(To1, To2, Acc)
+    end;
+merge_taddrs([_Crap|To1], To2, Acc) ->
+    merge_taddrs(To1, To2, Acc).
+
+
+maybe_handle_send_pdu(#state{filter = FilterMod} = S,
+		      Vsn, Pdu, MsgData, To0, From) ->
+
+    ?vtrace("maybe_handle_send_pdu -> entry with"
+	    "~n   FilterMod: ~p"
+	    "~n   To0:       ~p", [FilterMod, To0]),
+
+    To1 = snmpa_mpd:process_taddrs(To0),
+    To2 = process_taddrs(To1),
+
+    case (catch FilterMod:accept_send_pdu(To2, pdu_type_of(Pdu))) of
+	false ->
+	    inc(netIfPduOutDrops),
+	    ok;
+	true ->
+	    handle_send_pdu(S, Vsn, Pdu, MsgData, To1, From);
+	To3 when is_list(To3) ->
+	    To4 = merge_taddrs(To1, To3),
+	    ?vtrace("maybe_handle_send_pdu -> To4: "
+		    "~n   ~p", [To4]),
+	    handle_send_pdu(S, Vsn, Pdu, MsgData, To4, From);
+	_ ->
+	    handle_send_pdu(S, Vsn, Pdu, MsgData, To1, From)
+    end.
+
 handle_send_pdu(#state{note_store = NS} = S, Vsn, Pdu, MsgData, To, From) ->
+    
+    ?vtrace("handle_send_pdu -> entry with"
+	    "~n   Pdu: ~p"
+	    "~n   To:  ~p", [Pdu, To]),
+
     case (catch snmpa_mpd:generate_msg(Vsn, NS, Pdu, MsgData, To)) of
 	{ok, Addresses} ->
-	    handle_send_pdu(S,Pdu,Addresses);
+	    handle_send_pdu(S, Pdu, Addresses);
 	{discarded, Reason} ->
 	    ?vlog("handle_send_pdu -> "
-		  "~n   PDU ~p not sent due to ~p", [Pdu,Reason]),
+		  "~n   PDU ~p not sent due to ~p", [Pdu, Reason]),
 	    ok;
         {'EXIT', Reason} ->
             user_err("failed generating message: "
@@ -529,8 +663,8 @@ handle_send_pdu(S, Trap, Addresses) ->
 
 handle_send_pdu(S, Type, Pdu, Addresses) ->
     case (catch handle_send_pdu1(S, Type, Addresses)) of
-	{Reason,Sz} ->
-	    error_msg("[error] Cannot send message "
+	{Reason, Sz} ->
+	    error_msg("Cannot send message "
 		      "~n   size:   ~p"
 		      "~n   reason: ~p"
 		      "~n   pdu:    ~p",
@@ -539,34 +673,24 @@ handle_send_pdu(S, Type, Pdu, Addresses) ->
 	    ok
     end.
 	    
-handle_send_pdu1(#state{log = Log, usock = Sock}, Type, Addresses) ->
+handle_send_pdu1(#state{log    = Log, 
+			usock  = Sock,
+			filter = FilterMod}, Type, Addresses) ->
     SendFun = 
 	fun({snmpUDPDomain, {Ip, Port}, Packet}) when is_binary(Packet) ->
 		?vdebug("sending packet:"
 			"~n   size: ~p"
 			"~n   to:   ~p:~p",
 			[sz(Packet), Ip, Port]),
-		log(Log, Type, Packet, Ip, Port),
-		udp_send(Sock, Ip, Port, Packet);
-	   ({snmpUDPDomain, {Ip, Port}, {Packet, LogData}}) when is_binary(Packet) ->
+		maybe_udp_send(FilterMod, Log, Type, Sock, Ip, Port, Packet);
+
+	   ({snmpUDPDomain, {Ip, Port}, {Packet, _LogData}}) when is_binary(Packet) ->
 		?vdebug("sending encrypted packet:"
 			"~n   size: ~p"
 			"~n   to:   ~p:~p",
 			[sz(Packet), Ip, Port]),
-		log(Log, Type, LogData, Ip, Port),
-		udp_send(Sock, Ip, Port, Packet);
+		maybe_udp_send(FilterMod, Log, Type, Sock, Ip, Port, Packet);
 
-	   %% This clause is intended to be used during the code 
-	   %% upgrade, from pre-4.8.4 to 4.8.4: Skip logging since 
-	   %% the item logged will be a list, that cannot be 
-	   %% handled during log coversion.
-	   ({snmpUDPDomain, {Ip, Port}, Packet}) ->
-		?vdebug("sending packet:"
-			"~n   size: ~p"
-			"~n   to:   ~p:~p",
-			[sz(Packet), Ip, Port]),
-		udp_send(Sock, Ip, Port, Packet);
-	   
 	   (_X) ->
 		?vlog("** bad res: ~p", [_X]),
 		ok
@@ -583,6 +707,25 @@ handle_response(Vsn, Pdu, From, S) ->
 	_ ->
 	    ?vdebug("handle_response -> "
 		    "~n   No receiver available for response pdu", [])
+    end.
+
+maybe_udp_send(FilterMod, Sock, Ip, Port, Packet) ->
+    case (catch FilterMod:accept_send(Ip, Port)) of
+	false ->
+	    inc(netIfMsgOutDrops),
+	    ok;
+	_ ->
+	    (catch udp_send(Sock, Ip, Port, Packet))
+    end.
+
+maybe_udp_send(FilterMod, AtLog, Type, Sock, Ip, Port, Packet) ->
+    case (catch FilterMod:accept_send(Ip, Port)) of
+	false ->
+	    inc(netIfMsgOutDrops),
+	    ok;
+	_ ->
+	    log(AtLog, Type, Packet, Ip, Port),
+	    (catch udp_send(Sock, Ip, Port, Packet))
     end.
 
 
@@ -651,6 +794,48 @@ active_once(Sock) ->
 
 
 %%%-----------------------------------------------------------------
+
+handle_set_log_type(#state{log = {Log, OldValue}} = State, NewType) 
+  when (Log /= undefined) ->
+    NewValue =
+	case NewType of
+	    read ->
+		[read];
+	    write ->
+		[write];
+	    read_write ->
+		[read,write];
+	    _ ->
+		throw({State, {error, {bad_atl_type, NewType}}})
+	end,
+    NewState = State#state{log = {Log, NewValue}},
+    OldType =
+	case {lists:member(read, OldValue),
+	      lists:member(write, OldValue)} of
+	    {true, true} ->
+		read_write;
+	    {true, false} ->
+		read;
+	    {false, true} ->
+		write;
+	    {false, false} ->
+		throw({State, {error, {bad_atl_type, OldValue}}})
+	end,
+    {NewState, {ok, OldType}};
+handle_set_log_type(State, _NewType) ->
+    {State, {error, not_enabled}}.
+
+
+handle_set_request_limit(#state{limit = OldLimit} = State, NewLimit) 
+  when ((is_integer(NewLimit) andalso (NewLimit >= 0)) orelse 
+	(NewLimit == infinity)) ->
+    NewState = State#state{limit = NewLimit},
+    {NewState, {ok, OldLimit}};
+handle_set_request_limit(State, BadLimit) ->
+    {State, {error, {bad_request_limit, BadLimit}}}.
+
+
+%%%-----------------------------------------------------------------
 %%% System messages
 %%%-----------------------------------------------------------------
 system_continue(_Parent, _Dbg, S) ->
@@ -660,10 +845,62 @@ system_terminate(Reason, _Parent, _Dbg, #state{log = Log}) ->
     do_close_log(Log),
     exit(Reason).
 
+system_code_change(OldState, _Module, _OldVsn, upgrade_from_pre_4_10) ->
+    {state, 
+     parent       = Parent, 
+     note_store   = NS,
+     master_agent = MA, 
+     usock        = Sock, 
+     usock_opts   = SockOpts, 
+     mpd_state    = MpdState, 
+     log          = Log,
+     reqs         = Reqs, 
+     debug        = Dbg,
+     limit        = Limit,
+     rcnt         = RCNT} = OldState,
+    NewState = #state{parent       = Parent, 
+		      note_store   = NS,
+		      master_agent = MA, 
+		      usock        = Sock, 
+		      usock_opts   = SockOpts, 
+		      mpd_state    = MpdState, 
+		      log          = Log,
+		      reqs         = Reqs, 
+		      debug        = Dbg,
+		      limit        = Limit,
+		      rcnt         = RCNT,
+		      filter       = create_filter(?DEFAULT_FILTER_OPTS)},
+    {ok, NewState};
+system_code_change(OldState, _Module, _OldVsn, downgrade_to_pre_4_10) ->
+    #state{parent       = Parent, 
+	   note_store   = NS,
+	   master_agent = MA, 
+	   usock        = Sock, 
+	   usock_opts   = SockOpts, 
+	   mpd_state    = MpdState, 
+	   log          = Log,
+	   reqs         = Reqs, 
+	   debug        = Dbg,
+	   limit        = Limit,
+	   rcnt         = RCNT} = OldState,
+    NewState = 
+	{state, 
+	 parent       = Parent, 
+	 note_store   = NS,
+	 master_agent = MA, 
+	 usock        = Sock, 
+	 usock_opts   = SockOpts, 
+	 mpd_state    = MpdState, 
+	 log          = Log,
+	 reqs         = Reqs, 
+	 debug        = Dbg,
+	 limit        = Limit,
+	 rcnt         = RCNT},
+    {ok, NewState};
 system_code_change(S, _Module, _OldVsn, _Extra) ->
     {ok, S}.
 
-do_close_log({dummy, []}) ->
+do_close_log({undefined, []}) ->
     ok;
 do_close_log({Log, _}) ->
     (catch snmp_log:sync(Log)),
@@ -676,12 +913,70 @@ do_close_log(_) ->
 %%%-----------------------------------------------------------------
 %%% DEBUG FUNCTIONS
 %%%-----------------------------------------------------------------
+time_in_agent() ->
+    subtr(erlang:now(), get(n1)).
+
 subtr({X1,Y1,Z1}, {X1,Y1,Z2}) ->
     Z1 - Z2;
 subtr({X1,Y1,Z1}, {X1,Y2,Z2}) ->
     ((Y1-Y2) * 1000000) + (Z1 - Z2);
 subtr({X1,Y1,Z1}, {X2,Y2,Z2}) ->
     ((X1 - X2) * 1000000000000) + ((Y1 - Y2) * 1000000) + (Z1 - Z2).
+
+
+%% ----------------------------------------------------------------
+
+pdu_type_of(#pdu{type = Type}) ->
+    Type;
+pdu_type_of(TrapPdu) when is_record(TrapPdu, trappdu) ->
+    trap.
+
+
+%%-----------------------------------------------------------------
+%% Counter functions
+%%-----------------------------------------------------------------
+
+init_counters() -> 
+    F = fun(Counter) -> maybe_create_counter(Counter) end,
+    lists:map(F, counters()).
+
+reset_counters() -> 
+    F = fun(Counter) -> init_counter(Counter) end,
+    lists:map(F, counters()).
+
+maybe_create_counter(Counter) ->
+    case ets:lookup(snmp_agent_table, Counter) of
+	[_] -> ok;
+	_ -> init_counter(Counter)
+    end.
+
+init_counter(Counter) -> 
+    ets:insert(snmp_agent_table, {Counter, 0}).
+
+counters() ->
+    [
+     netIfMsgOutDrops,
+     netIfMsgInDrops,
+     netIfPduOutDrops,
+     netIfPduInDrops
+    ].
+
+inc(Name) -> 
+    ets:update_counter(snmp_agent_table, Name, 1).
+
+get_counters() ->
+    Counters = counters(),
+    get_counters(Counters, []).
+
+get_counters([], Acc) ->
+    lists:reverse(Acc);
+get_counters([Counter|Counters], Acc) ->
+    case ets:lookup(snmp_agent_table, Counter) of
+	[CounterVal] ->
+	    get_counters(Counters, [CounterVal|Acc]);
+	_ ->
+	    get_counters(Counters, Acc)
+    end.
 
 
 %% ----------------------------------------------------------------
@@ -749,6 +1044,12 @@ get_vsns(Opts) ->
 get_req_limit(O) ->
     snmp_misc:get_option(req_limit, O, infinity).
 
+get_filter_opts(O) ->
+    snmp_misc:get_option(filter, O, []).
+
+get_filter_module(O) ->
+    snmp_misc:get_option(module, O, ?DEFAULT_FILTER_MODULE).
+
 get_recbuf(Opts) -> 
     snmp_misc:get_option(recbuf, Opts, use_default).
 
@@ -778,10 +1079,11 @@ config_err(F, A) ->
 
 %% ----------------------------------------------------------------
 
-call(Pid, Req, ReplyTag) ->
-    Pid ! {Req, self()},
+call(Pid, Req) ->
+    ReplyRef = make_ref(),
+    Pid ! {Req, ReplyRef, self()},
     receive 
-	{ReplyTag, Reply, Pid} ->
+	{ReplyRef, Reply, Pid} ->
 	    Reply
     after 5000 ->
 	    {error, timeout}
@@ -793,7 +1095,11 @@ call(Pid, Req, ReplyTag) ->
 get_info(#state{usock = Id, reqs = Reqs}) ->
     ProcSize = proc_mem(self()),
     PortInfo = get_port_info(Id),
-    [{reqs, Reqs}, {process_memory, ProcSize}, {port_info, PortInfo}].
+    Counters = get_counters(),
+    [{reqs,           Reqs}, 
+     {counters,       Counters}, 
+     {process_memory, ProcSize}, 
+     {port_info,      PortInfo}].
 
 proc_mem(P) when is_pid(P) ->
     case (catch erlang:process_info(P, memory)) of
@@ -841,7 +1147,20 @@ get_port_info(Id) ->
 	    _ ->
 		[]
 	end,
-    [{socket, Id}] ++ IfList ++ PortStats ++ PortInfo ++ PortStatus ++ PortAct.
+    BufSz = 
+	case (catch inet:getopts(Id, [recbuf, sndbuf])) of
+	    {ok, Sz} ->
+		[{buffer_size, Sz}];
+	    _ ->
+		[]
+	end,
+    [{socket, Id}] ++ 
+	IfList ++ 
+	PortStats ++ 
+	PortInfo ++ 
+	PortStatus ++ 
+	PortAct ++ 
+	BufSz.
 
 
 %% ----------------------------------------------------------------

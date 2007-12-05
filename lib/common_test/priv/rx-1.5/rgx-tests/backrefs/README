@@ -1,0 +1,31 @@
+The backref test checks for conformance to the Posix left-most longest
+rule.  
+
+The rule says that regexec must find the leftmost and longest match.
+Consistant with that, each subexpression must also be the leftmost
+possible match, giving precedence to lower numbered subexpressions.
+
+Here is an example:
+
+	pattern: (abcd|abc)(d|)
+	text:    abcd
+
+The pattern can only match "abcd" and must match the text.  The question
+is how the pmatch data is set.  Is it:
+
+   [A]	\1 = "abcd"
+	\2 = ""
+
+or
+
+   [B]	\1 = "abc"
+	\2 = "d"
+
+
+Note that option [A] has assigned \1 the leftmost and longest of its
+possible matches while [B] has assigned \2 the leftmost and longest of
+its possible matches.  
+
+The correct answer is [A] since subexpression \1 is the lower numbered
+subexpression, and therefore making \1 leftmost-longest has precedence
+over making \2 leftmost-longest.

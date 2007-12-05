@@ -9,12 +9,8 @@ include(`hipe/hipe_arm_asm.m4')
 	.text
 	.p2align 2
 
-`#if defined(HEAP_FRAG_ELIM_TEST)
-#define JOIN3(A,B,C)		A##B##C
-#define TEST_GOT_MBUF(ARITY)	ldr r1, [P, #P_MBUF]; cmp r1, #0; blne JOIN3(nbif_,ARITY,_gc_after_bif)
-#else
-#define TEST_GOT_MBUF(ARITY)	/*empty*/
-#endif'
+`#define JOIN3(A,B,C)		A##B##C
+#define TEST_GOT_MBUF(ARITY)	ldr r1, [P, #P_MBUF]; cmp r1, #0; blne JOIN3(nbif_,ARITY,_gc_after_bif)'
 
 /*
  * standard_bif_interface_1(nbif_name, cbif_name)
@@ -242,6 +238,75 @@ $1:
 	RESTORE_CONTEXT_GC
 	beq	nbif_2_simple_exception
 	NBIF_RET(2)
+	.size	$1, .-$1
+	.type	$1, %function
+#endif')
+
+/*
+ * expensive_gc_bif_interface_1(nbif_name, cbif_name)
+ * expensive_gc_bif_interface_2(nbif_name, cbif_name)
+ *
+ * Generate native interface for a BIF with 1-2 parameters and
+ * an expensive failure mode (may fail with RESCHEDULE).
+ * The BIF may do a GC.
+ */
+define(expensive_gc_bif_interface_1,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.global	$1
+$1:
+	/* Set up C argument registers. */
+	mov	r0, P
+	NBIF_ARG(r1,1,0)
+
+	/* Save actual parameters in case we must reschedule. */
+	NBIF_SAVE_RESCHED_ARGS(1)
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT_GC
+	bl	$2
+	TEST_GOT_MBUF(1)
+
+	/* Restore registers. Check for exception. */
+	cmp	r0, #THE_NON_VALUE
+	RESTORE_CONTEXT_GC
+	beq	1f
+	NBIF_RET(1)
+1:
+	sub	r2, pc, #(.+8)-$1
+	b	nbif_1_hairy_exception
+	.size	$1, .-$1
+	.type	$1, %function
+#endif')
+
+define(expensive_gc_bif_interface_2,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.global	$1
+$1:
+	/* Set up C argument registers. */
+	mov	r0, P
+	NBIF_ARG(r1,2,0)
+	NBIF_ARG(r2,2,1)
+
+	/* Save actual parameters in case we must reschedule. */
+	NBIF_SAVE_RESCHED_ARGS(2)
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT_GC
+	bl	$2
+	TEST_GOT_MBUF(2)
+
+	/* Restore registers. Check for exception. */
+	cmp	r0, #THE_NON_VALUE
+	RESTORE_CONTEXT_GC
+	beq	1f
+	NBIF_RET(2)
+1:
+	sub	r2, pc, #(.+8)-$1
+	b	nbif_2_hairy_exception
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')

@@ -24,7 +24,7 @@
 -export([deliver/2]).
 
 %% Callback API
--export([do/1, load/2]).
+-export([do/1, load/2, store/2]).
 
 -include("httpd.hrl").
 
@@ -61,11 +61,11 @@ deliver(_SessionID, _Data) ->
 %% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
 %%-------------------------------------------------------------------------
 do(ModData) ->
-    case httpd_util:key1search(ModData#mod.data, status) of
+    case proplists:get_value(status, ModData#mod.data) of
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, ModData#mod.data};
 	undefined ->
-	    case httpd_util:key1search(ModData#mod.data, response) of
+	    case proplists:get_value(response, ModData#mod.data) of
 		undefined ->
 		    generate_response(ModData);
 		_Response ->
@@ -86,15 +86,21 @@ do(ModData) ->
 %%-------------------------------------------------------------------------
 load("ErlScriptAlias " ++ ErlScriptAlias, []) ->
     case regexp:split(ErlScriptAlias," ") of
-	{ok, [ErlName | Modules]} ->
-	    {ok, [], {erl_script_alias, {ErlName,Modules}}};
+	{ok, [ErlName | StrModules]} ->
+	    Modules = lists:map(fun(Str) -> 
+					list_to_atom(httpd_conf:clean(Str)) 
+				end, StrModules),
+	    {ok, [], {erl_script_alias, {ErlName, Modules}}};
 	{ok, _} ->
 	    {error, ?NICE(httpd_conf:clean(ErlScriptAlias) ++
 			 " is an invalid ErlScriptAlias")}
     end;
 load("EvalScriptAlias " ++ EvalScriptAlias, []) ->
     case regexp:split(EvalScriptAlias, " ") of
-	{ok, [EvalName|Modules]} ->
+	{ok, [EvalName | StrModules]} ->
+	    Modules = lists:map(fun(Str) -> 
+					list_to_atom(httpd_conf:clean(Str)) 
+				end, StrModules),
 	    {ok, [], {eval_script_alias, {EvalName, Modules}}};
 	{ok, _} ->
 	    {error, ?NICE(httpd_conf:clean(EvalScriptAlias) ++
@@ -119,6 +125,48 @@ load("ErlScriptNoCache " ++ CacheArg, [])->
 			 " is an invalid ErlScriptNoCache directive")}
     end.
 
+%%--------------------------------------------------------------------------
+%% store(Directive, DirectiveList) -> {ok, NewDirective} | 
+%%                                    {ok, [NewDirective]} |
+%%                                    {error, Reason} 
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
+store({erl_script_alias, {Name, Modules}} = Conf, _) 
+  when is_list(Name) ->
+    try httpd_util:modules_validate(Modules) of
+   	ok ->
+   	    {ok, Conf}
+    catch
+   	throw:Error ->
+   	    {error, {wrong_type, {erl_script_alias, Error}}}
+    end;
+
+store({eval_script_alias, {Name, Modules}} = Conf, _)  
+  when is_list(Name)->
+    try httpd_util:modules_validate(Modules) of
+  	ok ->
+   	    {ok, Conf}
+    catch
+   	throw:Error ->
+   	    {error, {wrong_type, {eval_script_alias, Error}}}
+    end;
+
+store({erl_script_alias, Value}, _) ->
+    {error, {wrong_type, {erl_script_alias, Value}}};
+store({erl_script_timeout, Value} = Conf, _) 
+  when is_integer(Value), Value >= 0 ->
+    {ok, Conf};
+store({erl_script_timeout, Value}, _) ->
+    {error, {wrong_type, {erl_script_timeout, Value}}};
+store({erl_script_nocache, Value} = Conf, _) when Value == true; 
+						  Value == false ->
+    {ok, Conf};
+store({erl_script_nocache, Value}, _) ->
+    {error, {wrong_type, {erl_script_nocache, Value}}}.
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================   
@@ -175,15 +223,17 @@ alias_match_str(Alias, eval_script_alias) ->
 erl(#mod{method = Method} = ModData, ESIBody, Modules) 
   when Method == "GET"; Method == "HEAD"->
     case httpd_util:split(ESIBody,":|%3A|/",2) of
-	{ok, [Module, FuncAndInput]} ->
+	{ok, [ModuleName, FuncAndInput]} ->
 	    case httpd_util:split(FuncAndInput,"[\?/]",2) of
 		{ok, [FunctionName, Input]} ->
 		    generate_webpage(ModData, ESIBody, Modules, 
-				     Module, FunctionName, Input, 
-				    script_elements(FunctionName, Input));
+				     list_to_atom(ModuleName), 
+				     FunctionName, Input, 
+				     script_elements(FunctionName, Input));
 		{ok, [FunctionName]} ->
 		    generate_webpage(ModData, ESIBody, Modules, 
-				     Module, FunctionName, "", 
+				     list_to_atom(ModuleName),
+				     FunctionName, "", 
 				     script_elements(FunctionName, ""));
 		{ok, BadRequest} ->
 		    {proceed,[{status,{400,none, BadRequest}} | 
@@ -195,24 +245,24 @@ erl(#mod{method = Method} = ModData, ESIBody, Modules)
 
 erl(#mod{method = "POST", entity_body = Body} = ModData, ESIBody, Modules) ->
     case httpd_util:split(ESIBody,":|%3A|/",2) of
-	{ok,[Module, Function]} ->
-	    generate_webpage(ModData, ESIBody, Modules, Module, 
+	{ok,[ModuleName, Function]} ->
+	    generate_webpage(ModData, ESIBody, Modules, 
+			     list_to_atom(ModuleName), 
 			     Function, Body, [{entity_body, Body}]);
 	{ok, BadRequest} ->
 	    {proceed,[{status, {400, none, BadRequest}} | ModData#mod.data]}
     end.
 
-generate_webpage(ModData, ESIBody, ["all"], ModuleName, FunctionName,
+generate_webpage(ModData, ESIBody, ["all"], Module, FunctionName,
 		 Input, ScriptElements) ->
-    generate_webpage(ModData, ESIBody, [ModuleName], ModuleName,
+    generate_webpage(ModData, ESIBody, [Module], Module,
 		     FunctionName, Input, ScriptElements);
-generate_webpage(ModData, ESIBody, Modules, ModuleName, FunctionName,
+generate_webpage(ModData, ESIBody, Modules, Module, FunctionName,
 		 Input, ScriptElements) ->
-    case lists:member(ModuleName, Modules) of
+    Function = list_to_atom(FunctionName),
+    case lists:member(Module, Modules) of
 	true ->
 	    Env = httpd_script_env:create_env(esi, ModData, ScriptElements),
-	    Module = list_to_atom(ModuleName),
-	    Function = list_to_atom(FunctionName),
 	    case erl_scheme_webpage_chunk(Module, Function, 
 					  Env, Input, ModData) of
 		{error, erl_scheme_webpage_chunk_undefined} ->
@@ -426,7 +476,8 @@ is_authorized(_ESIBody, ["all"]) ->
 is_authorized(ESIBody, Modules) ->
     case regexp:match(ESIBody, "^[^\:(%3A)]*") of
 	{match, Start, Length} ->
-	    lists:member(string:substr(ESIBody, Start, Length), Modules);
+	    lists:member(list_to_atom(string:substr(ESIBody, Start, Length)),
+			 Modules);
 	nomatch ->
 	    false
     end.

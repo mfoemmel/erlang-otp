@@ -88,7 +88,7 @@ controlling_process(Socket, NewOwner) ->
 fdopen(Fd, Opts) ->
     inet:fdopen(Fd, 
 		optuniquify([{recbuf, ?RECBUF} | Opts]), 
-		dgram, inet, ?MODULE).
+		udp, inet, ?MODULE).
 
 
 %% Remove all duplicate options from an option list.

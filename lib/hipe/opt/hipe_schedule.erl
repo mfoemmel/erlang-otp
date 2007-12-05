@@ -840,7 +840,7 @@ add_deps(N,Instr,DepTab,DAG) ->
 dd_type(Instr) ->
     case Instr of
 	#b{} -> branch;
-	#br{} -> branch;
+	%% #br{} -> branch;
 	#call_link{} -> branch;
 	#jmp_link{} -> branch;
 	#jmp{} -> branch;
@@ -855,11 +855,15 @@ dd_type(Instr) ->
 	    {mmove,Lat};
 	#sethi{} -> alu;
 	#alu_cc{} -> alu_cc;
-	#cmov_cc{} -> cmov_cc;
-	#cmov_r{} -> alu;
+	%% #cmov_cc{} -> cmov_cc;
+	%% #cmov_r{} -> alu;
 	#load_atom{} -> alu;
 	#load_address{} -> alu;
-	_ -> pseudo
+	#pseudo_enter{} -> pseudo;
+	#pseudo_pop{} -> pseudo;
+	#pseudo_return{} -> pseudo;
+	#pseudo_spill{} -> pseudo;
+	#pseudo_unspill{} -> pseudo
     end.
 
 

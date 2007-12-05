@@ -43,7 +43,7 @@ file_term2binary(FileIn, FileOut) ->
 %% read_term(File) -> {ok, Term} | Error
 	
 read_term(File) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Stream} ->
 	    Res = read_term_from_stream(Stream, File),
 	    file:close(Stream),

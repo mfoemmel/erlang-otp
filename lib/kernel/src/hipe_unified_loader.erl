@@ -266,7 +266,8 @@ mk_trampoline_map(CalleeMFAs, Trampolines) ->
       amd64 -> 8;
       _ -> 4
     end,
-  mk_trampoline_map(size(CalleeMFAs), CalleeMFAs, Trampolines, SizeofLong, gb_trees:empty()).
+  mk_trampoline_map(size(CalleeMFAs), CalleeMFAs,
+		    Trampolines, SizeofLong, gb_trees:empty()).
 
 mk_trampoline_map(I, CalleeMFAs, Trampolines, SizeofLong, Map) when I >= 1 ->
   MFA = element(I, CalleeMFAs),
@@ -876,7 +877,7 @@ assert_local_patch(Address) when is_integer(Address) ->
 %% ____________________________________________________________________
 %% 
 
-%% Beam: t_nil() | t_binary()  (used as a flag)
+%% Beam: nil() | binary()  (used as a flag)
 
 enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam) ->
   true = size(CodeBinary) =:= CodeSize,

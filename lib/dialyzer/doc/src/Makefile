@@ -38,13 +38,13 @@ RELSYSDIR = $(RELEASE_PATH)/lib/dialyzer-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-SGML_APPLICATION_FILES = application.sgml
-SGML_REF3_FILES = dialyzer.sgml 
+XML_APPLICATION_FILES = ref_man.xml
+XML_REF3_FILES = dialyzer.xml 
 
-SGML_PART_FILES = part.sgml part_notes.sgml
-SGML_CHAPTER_FILES = dialyzer_chapter.sgml notes.sgml
+XML_PART_FILES = part.xml part_notes.xml
+XML_CHAPTER_FILES = dialyzer_chapter.xml notes.xml
 
-BOOK_FILES = book.sgml
+BOOK_FILES = book.xml
 
 GIF_FILES = \
 	note.gif \
@@ -67,24 +67,24 @@ TEXT_FILES = \
 	../overview.txt \
 	../warnings.txt
 
-HTML_FILES = $(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
+HTML_FILES = $(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html)
 
 INFO_FILE = ../../info
 EXTRA_FILES = \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
-	$(SGML_REF3_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_REF3_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_CHAPTER_FILES:%.xml=$(HTMLDIR)/%.html)
 
-MAN3_FILES = $(SGML_REF3_FILES:%.sgml=$(MAN3DIR)/%.3)
+MAN3_FILES = $(XML_REF3_FILES:%.xml=$(MAN3DIR)/%.3)
 
 TEX_FILES_BOOK = \
-	$(BOOK_FILES:%.sgml=%.tex)
-TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
-	$(SGML_APPLICATION_FILES:%.sgml=%.tex)
+	$(BOOK_FILES:%.xml=%.tex)
+TEX_FILES_REF_MAN = $(XML_REF3_FILES:%.xml=%.tex) \
+	$(XML_APPLICATION_FILES:%.xml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
+	$(XML_CHAPTER_FILES:%.xml=%.tex)
 
 TOP_PDF_FILE = dialyzer-$(VSN).pdf
 TOP_PS_FILE  = dialyzer-$(VSN).ps
@@ -98,7 +98,7 @@ $(TOP_PS_FILE): book.dvi ../../vsn.mk
 # ----------------------------------------------------
 # FLAGS 
 # ----------------------------------------------------
-SGML_FLAGS += 
+XML_FLAGS += 
 DVIPS_FLAGS += 
 
 # ----------------------------------------------------
@@ -134,7 +134,7 @@ clean clean_docs clean_tex:
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES)
 	rm -f $(TOP_PDF_FILE) $(TOP_PS_FILE)
-	rm -f errs core *~ *sgmls_output *sgmls_errs $(LATEX_CLEAN) 
+	rm -f errs core *~ $(LATEX_CLEAN) min_head.gif
 
 # ----------------------------------------------------
 # Release Target

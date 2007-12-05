@@ -1,19 +1,21 @@
-  /*  ``The contents of this file are subject to the Erlang Public License,
-   *  Version 1.1, (the "License"); you may not use this file except in
-   *  compliance with the License. You should have received a copy of the
-   *  Erlang Public License along with this software. If not, it can be
-   *  retrieved via the world wide web at http://www.erlang.org/.
-   *  
-   *  Software distributed under the License is distributed on an "AS IS"
-   *  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
-   *  the License for the specific language governing rights and limitations
-   *  under the License.
-   *  
-   *  The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-   *  Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-   *  AB. All Rights Reserved.''
-   *  
-   * 	  $Id$
+  /*<copyright>
+   * <year>2001-2007</year>
+   * <holder>Ericsson AB, All Rights Reserved</holder>
+   *</copyright>
+   *<legalnotice>
+   * The contents of this file are subject to the Erlang Public License,
+   * Version 1.1, (the "License"); you may not use this file except in
+   * compliance with the License. You should have received a copy of the
+   * Erlang Public License along with this software. If not, it can be
+   * retrieved online at http://www.erlang.org/.
+   *
+   * Software distributed under the License is distributed on an "AS IS"
+   * basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+   * the License for the specific language governing rights and limitations
+   * under the License.
+   *
+   * The Initial Developer of the Original Code is Ericsson AB.
+   *</legalnotice>
    * ----------------------------------------------------------------------
    *  Author:   Hakan Mattsson <hakan@cslab.ericsson.com>
    *  Purpose : Scanner for text encoded Megaco/H.248 messages
@@ -122,7 +124,7 @@ static ErlDrvTermData mfs_LoopbackToken = 0;
 static ErlDrvTermData mfs_MediaToken = 0;
 static ErlDrvTermData mfs_MegacopToken = 0;
 static ErlDrvTermData mfs_MethodToken = 0;
-/* static ErlDrvTermData mfs_MessageSegmentToken = 0; */
+static ErlDrvTermData mfs_MessageSegmentToken = 0;
 static ErlDrvTermData mfs_MgcIdToken = 0;
 static ErlDrvTermData mfs_ModeToken = 0;
 static ErlDrvTermData mfs_ModemToken = 0;
@@ -167,7 +169,7 @@ static ErlDrvTermData mfs_ResponseAckToken = 0;
 static ErlDrvTermData mfs_RestartToken = 0;
 static ErlDrvTermData mfs_SEP = 0;
 static ErlDrvTermData mfs_SafeChars = 0;
-/* static ErlDrvTermData mfs_SegmentationCOmpleteToken = 0;  */  /* v3 */
+static ErlDrvTermData mfs_SegmentationCompleteToken = 0;    /* v3 */
 static ErlDrvTermData mfs_SendonlyToken = 0;
 static ErlDrvTermData mfs_SendrecvToken = 0;
 static ErlDrvTermData mfs_ServiceChangeAddressToken = 0;
@@ -485,6 +487,8 @@ media                                   LOAD_TOKEN(mfs_MediaToken);
 m                                       LOAD_TOKEN(mfs_MediaToken);
 megaco                                  LOAD_TOKEN(mfs_MegacopToken);
 !                                       LOAD_TOKEN(mfs_MegacopToken);
+segment                                 LOAD_TOKEN(mfs_MessageSegmentToken);
+sm                                      LOAD_TOKEN(mfs_MessageSegmentToken);
 method                                  LOAD_TOKEN(mfs_MethodToken);
 mt                                      LOAD_TOKEN(mfs_MethodToken);
 mgcidtotry                              LOAD_TOKEN(mfs_MgcIdToken);
@@ -558,6 +562,8 @@ reservedgroup                           LOAD_TOKEN(mfs_ReservedGroupToken);
 rg                                      LOAD_TOKEN(mfs_ReservedGroupToken);
 reservedvalue                           LOAD_TOKEN(mfs_ReservedValueToken);
 rv                                      LOAD_TOKEN(mfs_ReservedValueToken);
+end                                     LOAD_TOKEN(mfs_SegmentationCompleteToken);
+&                                       LOAD_TOKEN(mfs_SegmentationCompleteToken);
 sendonly                                LOAD_TOKEN(mfs_SendonlyToken);
 so                                      LOAD_TOKEN(mfs_SendonlyToken);
 sendreceive                             LOAD_TOKEN(mfs_SendrecvToken);
@@ -1113,7 +1119,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_LoopbackToken = driver_mk_atom("LoopbackToken");
   mfs_MediaToken = driver_mk_atom("MediaToken");
   mfs_MegacopToken = driver_mk_atom("MegacopToken");
-  /* mfs_MessageSegmentToken = driver_mk_atom("MessageSegmentToken"); */
+  mfs_MessageSegmentToken = driver_mk_atom("MessageSegmentToken");
   mfs_MethodToken = driver_mk_atom("MethodToken");
   mfs_MgcIdToken = driver_mk_atom("MgcIdToken");
   mfs_ModeToken = driver_mk_atom("ModeToken");
@@ -1159,7 +1165,7 @@ static ErlDrvData mfs_start(ErlDrvPort port, char *buf)
   mfs_RestartToken = driver_mk_atom("RestartToken");
   mfs_SEP = driver_mk_atom("SEP");
   mfs_SafeChars = driver_mk_atom("SafeChars");
-  /* mfs_SegmentationCOmpleteToken = driver_mk_atom("SegmentationCOmpleteToken"); */
+  mfs_SegmentationCompleteToken = driver_mk_atom("SegmentationCompleteToken");
   mfs_SendonlyToken = driver_mk_atom("SendonlyToken");
   mfs_SendrecvToken = driver_mk_atom("SendrecvToken");
   mfs_ServiceChangeAddressToken = driver_mk_atom("ServiceChangeAddressToken");

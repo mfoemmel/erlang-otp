@@ -262,6 +262,7 @@
         ?megaco_unexpected_event_or_request_id).
 -define(megaco_unexpected_request_id, 
         ?megaco_unexpected_event_or_request_id).
+-define(megaco_segments_not_received,                       459).    % v3
 -define(megaco_unable_to_set_statistic_on_stream,           460).    % v3
 -define(megaco_implied_add_for_multiplex_failure,           471).
 -define(megaco_internal_gateway_error,                      500).

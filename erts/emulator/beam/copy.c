@@ -24,11 +24,11 @@
 #include "erl_vm.h"
 #include "global.h"
 #include "erl_process.h"
-#include "ggc.h"
+#include "erl_gc.h"
 #include "erl_nmgc.h"
 #include "big.h"
 #include "erl_binary.h"
-
+#include "erl_bits.h"
 
 #ifdef HYBRID
 MA_STACK_DECLARE(src);
@@ -188,8 +188,6 @@ size_object(Eterm obj)
 Eterm
 copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 {
-#define in_area(ptr,start,nbytes) \
-    ((unsigned long)((char*)(ptr) - (char*)(start)) < (nbytes))
     char* hstart;
     Uint hsize;
     Eterm* htop;
@@ -307,6 +305,10 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		{
 		    ProcBin* pb;
 
+		    pb = (ProcBin *) objp;
+		    if (pb->flags) {
+			erts_emasculate_writable_binary(pb);
+		    }
 		    i = thing_arityval(*objp) + 1;
 		    hbot -= i;
 		    tp = hbot;
@@ -317,6 +319,7 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    pb = (ProcBin*) hbot;
 		    erts_refc_inc(&pb->val->refc, 2);
 		    pb->next = off_heap->mso;
+		    pb->flags = 0;
 		    off_heap->mso = pb;
 		    off_heap->overhead += pb->size /
 		      BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
@@ -333,14 +336,12 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 		    Uint extra_bytes;
 		    Uint real_size;
 		    if ((bit_size + bit_offset) > 8) {
-			  extra_bytes = 2;
-			}  
-			else if ((bit_size + bit_offset) > 0) {
-			  extra_bytes = 1;
-			}
-			else {
-			  extra_bytes = 0;
-			} 
+			extra_bytes = 2;
+		    } else if ((bit_size + bit_offset) > 0) {
+			extra_bytes = 1;
+		    } else {
+			extra_bytes = 0;
+		    } 
 		    real_size = size+extra_bytes;
 		    objp = binary_val(real_bin);
 		    if (thing_subtag(*objp) == HEAP_BINARY_SUBTAG) {
@@ -357,6 +358,9 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			ProcBin* to;
 			
 			ASSERT(thing_subtag(*objp) == REFC_BINARY_SUBTAG);
+			if (from->flags) {
+			    erts_emasculate_writable_binary(from);
+			}
 			hbot -= PROC_BIN_SIZE;
 			to = (ProcBin *) hbot;
 			to->thing_word = HEADER_PROC_BIN;
@@ -365,22 +369,24 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 			erts_refc_inc(&to->val->refc, 2);
 			to->bytes = from->bytes + offset;
 			to->next = off_heap->mso;
+			to->flags = 0;
 			off_heap->mso = to;
 			off_heap->overhead += to->size /
 			  BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
 		    }
 		    *argp = make_binary(hbot);
 		    if (extra_bytes != 0) {
-		      ErlSubBin* res;
-		      hbot -= ERL_SUB_BIN_SIZE;
-		      res = (ErlSubBin *) hbot;
-		      res->thing_word = HEADER_SUB_BIN;
-		      res->size = size;
-		      res->bitsize = bit_size;
-		      res->bitoffs = bit_offset;
-		      res->offs = 0;
-		      res->orig = *argp;
-		      *argp = make_binary(hbot);
+			ErlSubBin* res;
+			hbot -= ERL_SUB_BIN_SIZE;
+			res = (ErlSubBin *) hbot;
+			res->thing_word = HEADER_SUB_BIN;
+			res->size = size;
+			res->bitsize = bit_size;
+			res->bitoffs = bit_offset;
+			res->offs = 0;
+			res->is_writable = 0;
+			res->orig = *argp;
+			*argp = make_binary(hbot);
 		    }
 		    break;
 		}
@@ -460,7 +466,6 @@ copy_struct(Eterm obj, Uint sz, Eterm** hpp, ErlOffHeap* off_heap)
 #endif
     *hpp = (Eterm *) (hstart+hsize);
     return res;
-#undef in_area
 }
 
 #ifdef HYBRID
@@ -741,12 +746,10 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 		if ((bit_size + bit_offset) > 8) {
 		    extra_bytes = 2;
 		    sub_binary_heapneed = ERL_SUB_BIN_SIZE;
-		}  
-		else if ((bit_size + bit_offset) > 0) {
+		} else if ((bit_size + bit_offset) > 0) {
 		    extra_bytes = 1;
 		    sub_binary_heapneed = ERL_SUB_BIN_SIZE;
-		}
-		else {
+		} else {
 		    extra_bytes = 0;
 		    sub_binary_heapneed = 0;
 		}
@@ -764,7 +767,7 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
                     to_bin->size = real_size;
                     sys_memcpy(to_bin->data, ((byte *)from_bin->data) +
                                sub_offset, real_size);
-		    res_binary=make_binary(to_bin);
+		    res_binary = make_binary(to_bin);
 		    hp += i;
                 } else {
                     ProcBin *from_bin;
@@ -787,16 +790,17 @@ Eterm copy_struct_lazy(Process *from, Eterm orig, Uint offs)
 		    hp += PROC_BIN_SIZE;
                 }
 		if (extra_bytes != 0) {
-		      ErlSubBin* res;
-		      res = (ErlSubBin *) hp;
-		      res->thing_word = HEADER_SUB_BIN;
-		      res->size = size;
-		      res->bitsize = bit_size;
-		      res->bitoffs = bit_offset;
-		      res->offs = 0;
-		      res->orig = res_binary;
-		      res_binary = make_binary(hp);
-		    }
+		    ErlSubBin* res;
+		    res = (ErlSubBin *) hp;
+		    res->thing_word = HEADER_SUB_BIN;
+		    res->size = size;
+		    res->bitsize = bit_size;
+		    res->bitoffs = bit_offset;
+		    res->offs = 0;
+		    res->is_writable = 0;
+		    res->orig = res_binary;
+		    res_binary = make_binary(hp);
+		}
 		MA_STACK_UPDATE(dst,MA_STACK_POP(offset),res_binary);
 		MA_STACK_POP(dst);
                 continue;

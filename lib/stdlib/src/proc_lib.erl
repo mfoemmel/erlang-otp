@@ -40,7 +40,7 @@ spawn(F) when is_function(F) ->
     Ancestors = get_ancestors(),
     erlang:spawn(proc_lib,init_p,[Parent,Ancestors,F]).
 
-spawn(M,F,A) ->
+spawn(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
@@ -50,7 +50,7 @@ spawn_link(F) when is_function(F) ->
     Ancestors = get_ancestors(),
     erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,F]).
 
-spawn_link(M,F,A) ->
+spawn_link(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(proc_lib,init_p,[Parent,Ancestors,M,F,A]).
@@ -60,7 +60,7 @@ spawn(Node, F) when is_function(F) ->
     Ancestors = get_ancestors(),
     erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,F]).
 
-spawn(Node,M,F,A) ->
+spawn(Node,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
@@ -70,7 +70,7 @@ spawn_link(Node,F) when is_function(F) ->
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,F]).
 
-spawn_link(Node,M,F,A) ->
+spawn_link(Node,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     erlang:spawn_link(Node,proc_lib,init_p,[Parent,Ancestors,M,F,A]).
@@ -87,13 +87,13 @@ spawn_opt(Node, F, Opts) when is_function(F) ->
     check_for_monitor(Opts),
     erlang:spawn_opt(Node,proc_lib,init_p,[Parent,Ancestors,F],Opts).
 
-spawn_opt(M,F,A,Opts) ->
+spawn_opt(M,F,A,Opts) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
     erlang:spawn_opt(proc_lib,init_p,[Parent,Ancestors,M,F,A],Opts).
 
-spawn_opt(Node,M,F,A,Opts) ->
+spawn_opt(Node,M,F,A,Opts) when is_atom(M), is_atom(F), is_list(A) ->
     Parent = get_my_name(),
     Ancestors = get_ancestors(),
     check_for_monitor(Opts),
@@ -109,7 +109,7 @@ check_for_monitor(SpawnOpts) ->
 	    false
     end.
 
-hibernate(M,F,A) ->
+hibernate(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     erlang:hibernate(proc_lib, wake_up, [M,F,A]).
 
 ensure_link(SpawnOpts) ->
@@ -124,44 +124,41 @@ ensure_link(SpawnOpts) ->
 init_p(Parent,Ancestors,F) when is_function(F) ->
     put('$ancestors',[Parent|Ancestors]),
     put('$initial_call',F),
-    Result = (catch F()),
-    exit_p(Result,F).
+    try F() catch Class:Reason -> exit_p(Class, Reason, F) end.
 
-init_p(Parent,Ancestors,M,F,A) ->
+init_p(Parent,Ancestors,M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     put('$ancestors',[Parent|Ancestors]),
     put('$initial_call',{M,F,A}),
-    Result = (catch apply(M,F,A)),
-    exit_p(Result,{M,F,A}).
+    try apply(M,F,A) 
+    catch Class:Reason -> exit_p(Class, Reason, {M,F,A}) end.
 
-wake_up(M,F,A) ->
-    Result = (catch apply(M,F,A)),
-    exit_p(Result, {M,F,A}).
+wake_up(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
+    try apply(M,F,A) 
+    catch Class:Reason -> exit_p(Class, Reason, {M,F,A}) end.
 
-exit_p({'EXIT',Reason},StartF) ->
-    crash_report(Reason,StartF),
-    exit(Reason);
-exit_p(Reason,_) ->
-    Reason.
+exit_p(Class, Reason, StartF) ->
+    _ = crash_report(Class, Reason, StartF),
+    exit(Reason).
 
-start(M,F,A) ->
+start(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     start(M,F,A,infinity).
 
-start(M,F,A,Timeout) ->
+start(M,F,A,Timeout) when is_atom(M), is_atom(F), is_list(A) ->
     Pid = proc_lib:spawn(M,F,A),
     sync_wait(Pid, Timeout).
 
-start(M,F,A,Timeout,SpawnOpts) ->
+start(M,F,A,Timeout,SpawnOpts) when is_atom(M), is_atom(F), is_list(A) ->
     Pid = proc_lib:spawn_opt(M, F, A, SpawnOpts),
     sync_wait(Pid, Timeout).
 
-start_link(M,F,A) ->
+start_link(M,F,A) when is_atom(M), is_atom(F), is_list(A) ->
     start_link(M,F,A,infinity).
 
-start_link(M,F,A,Timeout) ->
+start_link(M,F,A,Timeout) when is_atom(M), is_atom(F), is_list(A) ->
     Pid = proc_lib:spawn_link(M,F,A),
     sync_wait(Pid, Timeout).
 
-start_link(M,F,A,Timeout,SpawnOpts) ->
+start_link(M,F,A,Timeout,SpawnOpts) when is_atom(M), is_atom(F), is_list(A) ->
     Pid = proc_lib:spawn_opt(M, F, A, ensure_link(SpawnOpts)),
     sync_wait(Pid, Timeout).
 
@@ -259,26 +256,26 @@ trans_init(gen,init_it,[gen_fsm,_,_,_,Module|_]) ->
     {Module,init,1};
 trans_init(gen,init_it,[gen_event|_]) ->
     {gen_event,init_it,6};
-trans_init(M,F,A) ->
+trans_init(M,F,A) when is_atom(M), is_atom(F) ->
     {M,F,length(A)}.
 
 %% -----------------------------------------------------
 %% Generate a crash report.
 %% -----------------------------------------------------
 
-crash_report(normal,_)      -> ok;
-crash_report(shutdown,_)    -> ok;
-crash_report(Reason,StartF) ->
-    OwnReport = my_info(Reason,StartF),
+crash_report(exit, normal,_)      -> ok;
+crash_report(exit, shutdown,_)    -> ok;
+crash_report(Class, Reason, StartF) ->
+    OwnReport = my_info(Class, Reason, StartF),
     LinkReport = linked_info(self()),
     Rep = [OwnReport,LinkReport],
     error_logger:error_report(crash_report, Rep),
     Rep.
 
-my_info(Reason,StartF) ->
+my_info(Class, Reason, StartF) ->
     [{pid, self()},
      get_process_info(self(), registered_name),         
-     {error_info, Reason}, 
+     {error_info, {Class,Reason,erlang:get_stacktrace()}}, 
      {initial_call, StartF},
      get_ancestors(self()),        
      get_process_info(self(), messages),
@@ -476,9 +473,35 @@ format_report(Rep) when is_list(Rep) ->
 format_report(Rep) ->
     io_lib:format("~p~n",[Rep]).
 
+format_rep([{initial_call,InitialCall}|Rep]) ->
+    [format_call(InitialCall)|format_rep(Rep)];
+format_rep([{error_info,{Class,Reason,StackTrace}}|Rep]) ->
+    [format_exception(Class, Reason, StackTrace)|format_rep(Rep)];
 format_rep([{Tag,Data}|Rep]) ->
-    io_lib:format("    ~p: ~80.18p~n",[Tag,Data]) ++ format_rep(Rep);
-format_rep([Other|Rep]) ->
-    io_lib:format("    ~p~n",[Other]) ++ format_rep(Rep);
+    [format_tag(Tag, Data)|format_rep(Rep)];
 format_rep(_) ->
     [].
+
+format_exception(Class, Reason, StackTrace) ->
+    PF = pp_fun(),
+    StackFun = fun(M, _F, _A) -> (M =:= erl_eval) or (M =:= ?MODULE) end,
+    %% EI = "    exception: ",
+    EI = "    ",
+    [EI, lib:format_exception(1+length(EI), Class, Reason, 
+                              StackTrace, StackFun, PF), "\n"].
+
+format_call(StartF) when is_function(StartF) ->
+    ["    initial call: ", lib:format_fun(StartF), "\n"];
+format_call({M,F,As}=StartF) ->
+    IC = "    initial call: ",
+    try [IC, lib:format_call(1+length(IC), {M,F}, As, pp_fun()), "\n"]
+    catch error:_ -> format_tag(initial_call, StartF)
+    end.
+
+pp_fun() ->
+    fun(Term, I) -> 
+            io_lib:format("~." ++ integer_to_list(I) ++ "p", [Term]) 
+    end.
+
+format_tag(Tag, Data) ->
+    io_lib:format("    ~p: ~80.18p~n", [Tag,Data]).

@@ -1,3 +1,4 @@
+%% -*- erlang-indent-level: 4 -*-
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -41,8 +42,8 @@
 %% The main interface.
 -export([module/2]).
 
--import(lists, [member/2,keymember/3,keysort/2,keysearch/3,append/1,
-		map/2,flatmap/2,foldl/3,foldr/3,mapfoldl/3,
+-import(lists, [member/2,keymember/3,keysort/2,keysearch/3,keydelete/3,
+		append/1,map/2,flatmap/2,filter/2,foldl/3,foldr/3,mapfoldl/3,
 		sort/1,reverse/1,reverse/2]).
 -import(v3_life, [vdb_find/2]).
 
@@ -80,10 +81,16 @@ functions(Forms, AtomMod) ->
 
 function({function,Name,Arity,As0,Vb,Vdb}, AtomMod, St0) ->
     %%ok = io:fwrite("cg ~w:~p~n", [?LINE,{Name,Arity}]),
-    {Asm0,EntryLabel,St} = cg_fun(Vb, As0, Vdb, AtomMod, {Name,Arity}, St0),
-    Asm = bs_function(Asm0),
-    Func = {function,Name,Arity,EntryLabel,Asm},
-    {Func,St}.
+    try
+	{Asm,EntryLabel,St} = cg_fun(Vb, As0, Vdb, AtomMod, {Name,Arity}, St0),
+	Func = {function,Name,Arity,EntryLabel,Asm},
+	{Func,St}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [Name,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
 
 %% cg_fun([Lkexpr], [HeadVar], Vdb, State) -> {[Ainstr],State}
 
@@ -137,7 +144,8 @@ cg({try_enter,Ta,Vs,Tb,Evs,Th}, Le, Vdb, Bef, St) ->
     try_enter_cg(Ta, Vs, Tb, Evs, Th, Le, Vdb, Bef, St);
 cg({'catch',Cb,R}, Le, Vdb, Bef, St) ->
     catch_cg(Cb, R, Le, Vdb, Bef, St);
-cg({set,Var,Con}, Le, Vdb, Bef, St) -> set_cg(Var, Con, Le, Vdb, Bef, St);
+cg({set,Var,Con}, Le, Vdb, Bef, St) ->
+    set_cg(Var, Con, Le, Vdb, Bef, St);
 cg({return,Rs}, Le, Vdb, Bef, St) -> return_cg(Rs, Le, Vdb, Bef, St);
 cg({break,Bs}, Le, Vdb, Bef, St) -> break_cg(Bs, Le, Vdb, Bef, St);
 cg({need_heap,H}, _Le, _Vdb, Bef, St) ->
@@ -158,49 +166,40 @@ cg_list(Kes, I, Vdb, Bef, St0) ->
 %%  collect them together as much as possible.
 
 need_heap(Kes0, I) ->
-    {Kes,H,Lit} = need_heap_0(reverse(Kes0), 0, [], []),
-%%     {Kes,H} = flatmapfoldr(fun (Ke, H0) ->
-%% 				    {Ns,H1} = need_heap_1(Ke, H0),
-%% 				    {[Ke|Ns],H1}
-%% 			    end, 0, Kes0),
+    {Kes,H} = need_heap_0(reverse(Kes0), 0, []),
 
     %% Prepend need_heap if necessary.
-    need_heap_need(I, H, Lit) ++ Kes.
+    need_heap_need(I, H) ++ Kes.
 
-need_heap_0([Ke|Kes], H0, Lit0, Acc) ->
-    {Ns,H,Lit} = need_heap_1(Ke, H0, Lit0),
-    need_heap_0(Kes, H, Lit, [Ke|Ns]++Acc);
-need_heap_0([], H, Lit, Acc) ->
-    {Acc,H,Lit}.
+need_heap_0([Ke|Kes], H0, Acc) ->
+    {Ns,H} = need_heap_1(Ke, H0),
+    need_heap_0(Kes, H, [Ke|Ns]++Acc);
+need_heap_0([], H, Acc) ->
+    {Acc,H}.
 
-need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H, Lit) ->
-    {need_heap_need(I, H, Lit),0,[]};
-need_heap_1(#l{ke={set,_,Val}}, H, Lit) ->
+need_heap_1(#l{ke={set,_,{binary,_}},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={set,_,Val}}, H) ->
     %% Just pass through adding to needed heap.
     {[],H + case Val of
 		{cons,_} -> 2;
 		{tuple,Es} -> 1 + length(Es);
 		{string,S} -> 2 * length(S);
 		_Other -> 0
-	    end,
-     case Val of
-	 {literal,L} -> [L|Lit];
-	 _ -> Lit
-     end};
-need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H, Lit) ->
-    {need_heap_need(I, H, Lit),0,[]};
-need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H, Lit) ->
-    {need_heap_need(I, H, Lit),0,[]};
-need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H, Lit) ->
-    {[],H,Lit};
-need_heap_1(#l{i=I}, H, Lit) ->
-    {need_heap_need(I, H, Lit),0,[]}.
+	    end};
+need_heap_1(#l{ke={bif,dsetelement,_As,_Rs},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={bif,{make_fun,_,_,_,_},_As,_Rs},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={bif,bs_init_writable,_As,_Rs},i=I}, H) ->
+    {need_heap_need(I, H),0};
+need_heap_1(#l{ke={bif,_Bif,_As,_Rs}}, H) ->
+    {[],H};
+need_heap_1(#l{i=I}, H) ->
+    {need_heap_need(I, H),0}.
 
-need_heap_need(_I, 0, []) -> [];
-need_heap_need(I, H, []) -> [#l{ke={need_heap,H},i=I}];
-need_heap_need(I, H, Lit0) ->
-    Lit = [{literal,L} || L <- Lit0],
-    [#l{ke={need_heap,{alloc,[{words,H}|Lit]}},i=I}].
+need_heap_need(_I, 0) -> [];
+need_heap_need(I, H) -> [#l{ke={need_heap,H},i=I}].
 
 %% match_cg(Match, [Ret], Le, Vdb, StackReg, State) ->
 %%	{[Ainstr],StackReg,State}.
@@ -233,7 +232,13 @@ match_cg({alt,F,S}, _Le, Fail, Bef, St0) ->
     {Sis,Saft,St3} = match_cg(S, Fail, Bef, St2),
     Aft = sr_merge(Faft, Saft),
     {Fis ++ [{label,Tf}] ++ Sis,Aft,St3};
-match_cg({select,V,Scs}, _Va, Fail, Bef, St) ->
+match_cg({select,{var,Vname}=V,Scs0}, #l{a=Anno}, Fail, Bef, St) ->
+    ReuseForContext = member(reuse_for_context, Anno) andalso
+	find_reg(Vname, Bef#sr.reg) =/= error,
+    Scs = case ReuseForContext of
+	      false -> Scs0;
+	      true -> bsm_rename_ctx(Scs0, Vname)
+	  end,
     match_fmf(fun (S, F, Sta) ->
 		      select_cg(S, V, F, Fail, Bef, Sta) end,
 	      Fail, St, Scs);
@@ -278,6 +283,84 @@ match_fail_cg({try_clause,Reason}, Le, Vdb, Bef, St) ->
     {Sis ++ [{try_case_end,R}],
      Int#sr{reg=clear_regs(Int0#sr.reg)},St}.
 
+%% bsm_rename_ctx([Clause], Var) -> [Clause]
+%%  We know from an annotation that the register for a binary can
+%%  be reused for the match context because the two are not truly
+%%  alive at the same time (even though the conservative life time
+%%  information calculated by v3_life says so). The easiest way
+%%  to have those variables share the same register is to rename
+%%  the variable with the shortest life-span (the match context)
+%%  to the variable for the binary (which can have a very long life-time
+%%  because it is locked during matching). We KNOW that the match
+%%  state variable will only be alive during the matching.
+
+bsm_rename_ctx([#l{ke={type_clause,binary,
+		       [#l{ke={val_clause,{binary,{var,Old}},Ke0}}=L2]}}=L1|Cs], New) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New),
+    [L1#l{ke={type_clause,binary,
+	      [L2#l{ke={val_clause,{binary,{var,New}},Ke}}]}}|bsm_rename_ctx(Cs, New)];
+bsm_rename_ctx([C|Cs], New) ->
+    [C|bsm_rename_ctx(Cs, New)];
+bsm_rename_ctx([], _) -> [].
+
+bsm_rename_ctx(#l{ke={select,{var,V},Cs0}}=L, Old, New) ->
+    Cs = bsm_rename_ctx_list(Cs0, Old, New),
+    L#l{ke={select,{var,bsm_rename_var(V, Old, New)},Cs}};
+bsm_rename_ctx(#l{ke={type_clause,Type,Cs0}}=L, Old, New) ->
+    Cs = bsm_rename_ctx_list(Cs0, Old, New),
+    L#l{ke={type_clause,Type,Cs}};
+bsm_rename_ctx(#l{ke={val_clause,{bin_end,V},Ke0}}=L, Old, New) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New),
+    L#l{ke={val_clause,{bin_end,bsm_rename_var(V, Old, New)},Ke}};
+bsm_rename_ctx(#l{ke={val_clause,{bin_seg,V,Sz,U,Type,Fl,Vs},Ke0}}=L, Old, New) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New),
+    L#l{ke={val_clause,{bin_seg,bsm_rename_var(V, Old, New),Sz,U,Type,Fl,Vs},Ke}};
+bsm_rename_ctx(#l{ke={val_clause,{bin_int,V,Sz,U,Fl,Val,Vs},Ke0}}=L, Old, New) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New),
+    L#l{ke={val_clause,{bin_int,bsm_rename_var(V, Old, New),Sz,U,Fl,Val,Vs},Ke}};
+bsm_rename_ctx(#l{ke={val_clause,Val,Ke0}}=L, Old, New) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New),
+    L#l{ke={val_clause,Val,Ke}};
+bsm_rename_ctx(#l{ke={alt,F0,S0}}=L, Old, New) ->
+    F = bsm_rename_ctx(F0, Old, New),
+    S = bsm_rename_ctx(S0, Old, New),
+    L#l{ke={alt,F,S}};
+bsm_rename_ctx(#l{ke={guard,Gcs0}}=L, Old, New) ->
+    Gcs = bsm_rename_ctx_list(Gcs0, Old, New),
+    L#l{ke={guard,Gcs}};
+bsm_rename_ctx(#l{ke={guard_clause,G0,B0}}=L, Old, New) ->
+    G = bsm_rename_ctx(G0, Old, New),
+    B = bsm_rename_ctx(B0, Old, New),
+    %% A guard clause may cause unsaved variables to be saved on the stack.
+    %% Since the match state variable Old is an alias for New (uses the
+    %% same register), it is neither in the stack nor register descriptor
+    %% lists and we would crash when we didn't find it unless we remove
+    %% it from the database.
+    bsm_forget_var(L#l{ke={guard_clause,G,B}}, Old);
+bsm_rename_ctx(#l{ke={protected,Ts0,Rs}}=L, Old, New) ->
+    Ts = bsm_rename_ctx_list(Ts0, Old, New),
+    bsm_forget_var(L#l{ke={protected,Ts,Rs}}, Old);
+bsm_rename_ctx(#l{ke={match,Ms0,Rs}}=L, Old, New) ->
+    Ms = bsm_rename_ctx(Ms0, Old, New),
+    L#l{ke={match,Ms,Rs}};
+bsm_rename_ctx(#l{ke={test,_,_}}=L, _, _) -> L;
+bsm_rename_ctx(#l{ke={bif,_,_,_}}=L, _, _) -> L;
+bsm_rename_ctx(#l{ke={gc_bif,_,_,_}}=L, _, _) -> L;
+bsm_rename_ctx(#l{ke={set,_,_}}=L, _, _) -> L;
+bsm_rename_ctx(#l{ke={block,_}}=L, Old, _) -> bsm_forget_var(L, Old).
+
+bsm_rename_ctx_list([C|Cs], Old, New) ->
+    [bsm_rename_ctx(C, Old, New)|bsm_rename_ctx_list(Cs, Old, New)];
+bsm_rename_ctx_list([], _, _) -> [].
+    
+bsm_rename_var(Old, Old, New) -> New;
+bsm_rename_var(V, _, _) -> V.
+
+%% bsm_forget_var(#l{}, Variable) -> #l{}
+%%  Remove a variable from the variable life-time database.
+
+bsm_forget_var(#l{vdb=Vdb}=L, V) ->
+    L#l{vdb=keydelete(V, 1, Vdb)}.
 
 %% block_cg([Kexpr], Le, Vdb, StackReg, St) -> {[Ainstr],StackReg,St}.
 %% block_cg([Kexpr], Le, StackReg, St) -> {[Ainstr],StackReg,St}.
@@ -310,7 +393,6 @@ cg_block(Kes0, I, Vdb, Bef, St0) ->
 
 basic_block(Kes) -> basic_block(Kes, []).
 
-basic_block([], Acc) -> {reverse(Acc),[]};
 basic_block([Le|Les], Acc) ->
     case collect_block(Le#l.ke) of
 	include -> basic_block(Les, [Le|Acc]);
@@ -334,7 +416,6 @@ collect_block({enter,{var,_}=Var,As})-> {block_end,As++[Var]};
 collect_block({enter,Func,As})       -> {block_end,As++func_vars(Func)};
 collect_block({return,Rs})           -> {block_end,Rs};
 collect_block({break,Bs})            -> {block_end,Bs};
-%%collect_block({bif,_Bif,_As,_Rs})    -> include;
 collect_block(_)                     -> no_block.
 
 func_vars({remote,M,F}) when element(1, M) =:= var;
@@ -492,12 +573,10 @@ select_cg(#l{ke={type_clause,nil,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_nil(S, V, Tf, Vf, Bef, St);
 select_cg(#l{ke={type_clause,binary,[S]}}, {var,V}, Tf, Vf, Bef, St) ->
     select_binary(S, V, Tf, Vf, Bef, St);
-select_cg(#l{ke={type_clause,old_bin_seg,S}}, {var,V}, Tf, _Vf, Bef, St) ->
-    old_select_bin_segs(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,bin_seg,S}}, {var,V}, Tf, _Vf, Bef, St) ->
     select_bin_segs(S, V, Tf, Bef, St);
-select_cg(#l{ke={type_clause,old_bin_end,[S]}}, {var,V}, Tf, _Vf, Bef, St) ->
-    old_select_bin_end(S, V, Tf, Bef, St);
+select_cg(#l{ke={type_clause,bin_int,S}}, {var,V}, Tf, _Vf, Bef, St) ->
+    select_bin_segs(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,bin_end,[S]}}, {var,V}, Tf, _Vf, Bef, St) ->
     select_bin_end(S, V, Tf, Bef, St);
 select_cg(#l{ke={type_clause,Type,Scs}}, {var,V}, Tf, Vf, Bef, St0) ->
@@ -525,7 +604,6 @@ select_val_cg(Type, R, Vls0, Tf, Vf, Sis) ->
 	       end, Vls0),
     [{test,select_type_test(Type),{f,Tf},[R]}, {select_val,R,{f,Vf},{list,Vls1}}|Sis].
     
-select_type_test(tuple) -> is_tuple;
 select_type_test(integer) -> is_integer;
 select_type_test(atom) -> is_atom;
 select_type_test(float) -> is_float.
@@ -553,11 +631,14 @@ select_nil(#l{ke={val_clause,nil,B}}, V, Tf, Vf, Bef, St0) ->
     {Bis,Aft,St1} = match_cg(B, Vf, Bef, St0),
     {[{test,is_nil,{f,Tf},[fetch_var(V, Bef)]}] ++ Bis,Aft,St1}.
 
-select_binary(#l{ke={val_clause,{old_binary,{var,Ivar}},B},i=I,vdb=Vdb},
+select_binary(#l{ke={val_clause,{binary,{var,V}},B},i=I,vdb=Vdb},
 	      V, Tf, Vf, Bef, St0) ->
-    Int0 = clear_dead(Bef, I, Vdb),
+    Int0 = clear_dead(Bef#sr{reg=Bef#sr.reg}, I, Vdb),
     {Bis,Aft,St1} = match_cg(B, Vf, Int0, St0),
-    {[{test,bs_start_match,{f,Tf},[fetch_var(V, Bef)]},{bs_save,Ivar}|Bis],
+    CtxReg = fetch_var(V, Int0),
+    Live = max_reg(Bef#sr.reg),
+    {[{test,bs_start_match2,{f,Tf},[CtxReg,Live,V,CtxReg]},
+      {bs_save2,CtxReg,{V,V}}|Bis],
      Aft,St1};
 select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
 	      V, Tf, Vf, Bef, St0) ->
@@ -570,47 +651,6 @@ select_binary(#l{ke={val_clause,{binary,{var,Ivar}},B},i=I,vdb=Vdb},
       {bs_save2,CtxReg,{Ivar,Ivar}}|Bis],
      Aft,St1}.
 
-%% Old selection of binary segments follow.
-
-old_select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
-    match_fmf(fun(S, Fail, Sta) ->
-		      old_select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
-	      Tf, St, Scs).
-
-old_select_bin_seg(#l{ke={val_clause,{old_bin_seg,Size,U,T,Fs,Es},B},i=I,vdb=Vdb},
-		   Ivar, Fail, Bef, St0) ->
-    {Mis,Int,St1} = old_select_extract_bin(Es, Size, U, T, Fs, Fail,
-					   I, Vdb, Bef, St0),
-    {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
-    {[{bs_restore,Ivar}|Mis] ++ Bis,Aft,St2}.
-
-old_select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
-		   I, Vdb, Bef, St) ->
-    SizeReg = get_bin_size_reg(Size0, Bef),
-    {Es,Aft} =
-	case vdb_find(Hd, Vdb) of
-	    {_,_,Lhd} when Lhd =< I ->
-		{[{test,bs_skip_bits,{f,Vf},[SizeReg,Unit,{field_flags,Flags}]},
-		  {bs_save,Tl}],Bef};
-	    {_,_,_} ->
-		Reg0 = put_reg(Hd, Bef#sr.reg),
-		Int1 = Bef#sr{reg=Reg0},
-		Rhd = fetch_reg(Hd, Reg0),
-		Name = old_get_bits_instr(Type),
-		{[{test,Name,{f,Vf},[SizeReg,Unit,{field_flags,Flags},Rhd]},
-		  {bs_save,Tl}],Int1}
-	end,
-    {Es,clear_dead(Aft, I, Vdb),St}.
-
-old_select_bin_end(#l{ke={val_clause,old_bin_end,B}},
-	       Ivar, Tf, Bef, St0) ->
-    {Bis,Aft,St2} = match_cg(B, Tf, Bef, St0),
-    {[{bs_restore,Ivar},{test,bs_test_tail,{f,Tf},[0]}|Bis],Aft,St2}.
-
-old_get_bits_instr(integer) -> bs_get_integer;
-old_get_bits_instr(float)   -> bs_get_float;
-old_get_bits_instr(binary)  -> bs_get_binary.
-
 %% New instructions for selection of binary segments.
 
 select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
@@ -618,16 +658,43 @@ select_bin_segs(Scs, Ivar, Tf, Bef, St) ->
 		      select_bin_seg(S, Ivar, Fail, Bef, Sta) end,
 	      Tf, St, Scs).
 
-select_bin_seg(#l{ke={val_clause,{bin_seg,Ctx,Size,U,T,Fs,Es},B},i=I,vdb=Vdb},
+select_bin_seg(#l{ke={val_clause,{bin_seg,Ctx,Size,U,T,Fs0,Es},B},i=I,vdb=Vdb,a=A},
 	       Ivar, Fail, Bef, St0) ->
+    Fs = [{anno,A}|Fs0],
     {Mis,Int,St1} = select_extract_bin(Es, Size, U, T, Fs, Fail,
+				       I, Vdb, Bef, Ctx, B, St0),
+    {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
+    CtxReg = fetch_var(Ctx, Bef),
+    Is = if
+	     Mis =:= [] ->
+		 %% No bs_restore2 instruction needed if no match instructions.
+		 Bis;
+	     true ->
+		 [{bs_restore2,CtxReg,{Ctx,Ivar}}|Mis++Bis]
+	 end,
+    {Is,Aft,St2};
+select_bin_seg(#l{ke={val_clause,{bin_int,Ctx,Sz,U,Fs,Val,Es},B},i=I,vdb=Vdb},
+	       Ivar, Fail, Bef, St0) ->
+    {Mis,Int,St1} = select_extract_int(Es, Val, Sz, U, Fs, Fail,
 				       I, Vdb, Bef, Ctx, St0),
     {Bis,Aft,St2} = match_cg(B, Fail, Int, St1),
     CtxReg = fetch_var(Ctx, Bef),
     {[{bs_restore2,CtxReg,{Ctx,Ivar}}|Mis] ++ Bis,Aft,St2}.
 
-select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
+select_extract_int([{var,Tl}], Val, {integer,Sz}, U, Fs, Vf,
 		   I, Vdb, Bef, Ctx, St) ->
+    EmptyBindings = erl_eval:new_bindings(),
+    EvalFun = fun({integer,_,S}, B) -> {value,S,B} end,
+    Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,U}|Fs]}],
+    {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
+    Bits = U*Sz,
+    Bits = erlang:bitsize(Bin),			%Assertion.
+    CtxReg = fetch_var(Ctx, Bef),
+    {[{test,bs_match_string,{f,Vf},[CtxReg,Bin]},{bs_save2,CtxReg,{Ctx,Tl}}],
+     clear_dead(Bef, I, Vdb),St}.
+
+select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
+		   I, Vdb, Bef, Ctx, _Body, St) ->
     SizeReg = get_bin_size_reg(Size0, Bef),
     {Es,Aft} =
 	case vdb_find(Hd, Vdb) of
@@ -645,7 +712,66 @@ select_extract_bin([{var,Hd},{var,Tl}], Size0, Unit, Type, Flags, Vf,
 		{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,{field_flags,Flags},Rhd]},
 		  {bs_save2,CtxReg,{Ctx,Tl}}],Int1}
 	end,
+    {Es,clear_dead(Aft, I, Vdb),St};
+select_extract_bin([{var,Hd}], Size0, Unit, Type, Flags, Vf,
+		   I, Vdb, Bef, Ctx, Body, St) ->
+    SizeReg = get_bin_size_reg(Size0, Bef),
+    {Es,Aft} =
+	case vdb_find(Hd, Vdb) of
+	    {_,_,Lhd} when Lhd =< I ->
+		CtxReg = fetch_var(Ctx, Bef),
+		{case SizeReg =:= {atom,all} andalso is_context_unused(Body) of
+		     true when Unit =:= 1 ->
+			 [];
+		     true ->
+			 [{test,bs_test_unit,{f,Vf},[CtxReg,Unit]}];
+		     false ->
+			 [{test,bs_skip_bits2,{f,Vf},
+			   [CtxReg,SizeReg,Unit,{field_flags,Flags}]}]
+		 end,Bef};
+	    {_,_,_} ->
+		case is_context_unused(Body) of
+		    false ->
+			Reg = put_reg(Hd, Bef#sr.reg),
+			Int1 = Bef#sr{reg=Reg},
+			Rhd = fetch_reg(Hd, Reg),
+			CtxReg = fetch_reg(Ctx, Reg),
+			Name = get_bits_instr(Type),
+			Live = max_reg(Bef#sr.reg),
+			{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,
+					     {field_flags,Flags},Rhd]}],
+			 Int1};
+		    true ->
+			%% Since the matching context will not be used again,
+			%% we can reuse its register. Reusing the register
+			%% opens some interesting optimizations in the
+			%% run-time system.
+
+			Reg0 = Bef#sr.reg,
+			CtxReg = fetch_reg(Ctx, Reg0),
+			Reg = replace_reg_contents(Ctx, Hd, Reg0),
+			Int1 = Bef#sr{reg=Reg},
+			Name = get_bits_instr(Type),
+			Live = max_reg(Int1#sr.reg),
+			{[{test,Name,{f,Vf},[CtxReg,Live,SizeReg,Unit,
+					     {field_flags,Flags},CtxReg]}],
+			 Int1}
+		end
+	end,
     {Es,clear_dead(Aft, I, Vdb),St}.
+
+%% is_context_unused(Ke) -> true | false
+%%   Simple heurististic to determine whether the code that follows will
+%%   use the current matching context again. (The information of liveness
+%%   calculcated by v3_life is too conservative to be useful for this purpose.)
+%%   'true' means that the code that follows will definitely not use the context
+%%   again (because it is a block, not guard or matching code); 'false' that we
+%%   are not sure (there is either a guard, or more matching, either which may
+%%   reference the context again).
+
+is_context_unused(#l{ke=Ke}) -> is_context_unused(Ke);
+is_context_unused({block,_}) -> true;
+is_context_unused(_) -> false.
 
 select_bin_end(#l{ke={val_clause,{bin_end,Ctx},B}},
 	       Ivar, Tf, Bef, St0) ->
@@ -775,11 +901,6 @@ is_matching_guard(#l{ke={test,_,_}}) -> false;
 is_matching_guard(#l{ke={bif,_,_,_}}) -> false;
 is_matching_guard(#l{ke={gc_bif,_,_,_}}) -> false;
 is_matching_guard(#l{ke={set,_,_}}) -> false;
-is_matching_guard(#l{ke={seq,F,T}}) ->
-    case is_matching_guard(F) of
-	false -> is_matching_guard(T);
-	true -> true
-    end;
 is_matching_guard(#l{ke={match,_,_}}) -> true.
 
 is_matching_guard_list([T|Ts]) ->
@@ -854,45 +975,9 @@ protected_cg_1(Ts, Rs, _Fail, I, Vdb, Bef, St0) ->
 %%  Generate test instruction.  Use explicit fail label here.
 
 test_cg(Test, As, Fail, I, Vdb, Bef, St) ->
-    case test_type(Test, length(As)) of
-    	{cond_op,Op} ->
-	    Ars = cg_reg_args(As, Bef),
-	    Int = clear_dead(Bef, I, Vdb),
-	    {[{test,Op,{f,Fail},Ars}],
-	     clear_dead(Int, I, Vdb),
-	     St};
-	{rev_cond_op,Op} ->
-	    [S1,S2] = cg_reg_args(As, Bef),
-	    Int = clear_dead(Bef, I, Vdb),
-	    {[{test,Op,{f,Fail},[S2,S1]}],
-	     clear_dead(Int, I, Vdb),
-	     St}
-    end.
-
-test_type(is_atom, 1)      -> {cond_op,is_atom};
-test_type(is_boolean, 1)   -> {cond_op,is_boolean};
-test_type(is_binary, 1)    -> {cond_op,is_binary};
-test_type(is_bitstr, 1)    -> {cond_op,is_bitstr};
-test_type(is_constant, 1)  -> {cond_op,is_constant};
-test_type(is_float, 1)     -> {cond_op,is_float};
-test_type(is_function, 1)  -> {cond_op,is_function};
-test_type(is_function, 2)  -> {cond_op,is_function2};
-test_type(is_integer, 1)   -> {cond_op,is_integer};
-test_type(is_list, 1)      -> {cond_op,is_list};
-test_type(is_number, 1)    -> {cond_op,is_number};
-test_type(is_pid, 1)       -> {cond_op,is_pid};
-test_type(is_port, 1)      -> {cond_op,is_port};
-test_type(is_reference, 1) -> {cond_op,is_reference};
-test_type(is_tuple, 1)     -> {cond_op,is_tuple};
-test_type('=<', 2)  -> {rev_cond_op,is_ge};
-test_type('>', 2)   -> {rev_cond_op,is_lt};
-test_type('<', 2)   -> {cond_op,is_lt};
-test_type('>=', 2)  -> {cond_op,is_ge};
-test_type('==', 2)  -> {cond_op,is_eq};
-test_type('/=', 2)  -> {cond_op,is_ne};
-test_type('=:=', 2) -> {cond_op,is_eq_exact};
-test_type('=/=', 2) -> {cond_op,is_ne_exact};
-test_type(is_record, 3) -> {cond_op,is_record}.
+    Args = cg_reg_args(As, Bef),
+    Aft = clear_dead(Bef, I, Vdb),
+    {[beam_utils:bif_to_test(Test, Args, {f,Fail})],Aft,St}.
 
 %% guard_cg_list([Kexpr], Fail, I, Vdb, StackReg, St) ->
 %%      {[Ainstr],StackReg,St}.
@@ -1044,7 +1129,6 @@ need_stack_frame(St) -> St#cg{need_frame=true}.
 %% trap_bif(Mod, Name, Arity) -> true|false
 %%   Trap bifs that need a stack frame.
 
-trap_bif(erlang, '!', 2) -> true;
 trap_bif(erlang, link, 1) -> true;
 trap_bif(erlang, unlink, 1) -> true;
 trap_bif(erlang, monitor_node, 2) -> true;
@@ -1055,6 +1139,9 @@ trap_bif(_, _, _) -> false.
 %% bif_cg(Bif, [Arg], [Ret], Le, Vdb, StackReg, State) ->
 %%      {[Ainstr],StackReg,State}.
 
+bif_cg(bs_context_to_binary=Instr, [Src0], [], Le, Vdb, Bef, St0) ->
+    [Src] = cg_reg_args([Src0], Bef),
+    {[{Instr,Src}],clear_dead(Bef, Le#l.i, Vdb), St0};
 bif_cg(dsetelement, [Index0,Tuple0,New0], _Rs, Le, Vdb, Bef, St0) ->
     [New,Tuple,{integer,Index1}] = cg_reg_args([New0,Tuple0,Index0], Bef),
     Index = Index1-1,
@@ -1066,10 +1153,14 @@ bif_cg({make_fun,Func,Arity,Index,Uniq}, As, Rs, Le, Vdb, Bef, St0) ->
     Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
     {FuncLbl,St1} = local_func_label(Func, Arity, St0),
     MakeFun = {make_fun2,{f,FuncLbl},Index,Uniq,length(As)},
-    {comment({make_fun,{Func,Arity,Uniq},As}) ++ Sis ++
-     [MakeFun],
+    {Sis ++ [MakeFun],
      clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),
      St1};
+bif_cg(bs_init_writable=I, As, Rs, Le, Vdb, Bef, St) ->
+    %% This behaves like a function call.
+    {Sis,Int} = cg_setup_call(As, Bef, Le#l.i, Vdb),
+    Reg = load_vars(Rs, clear_regs(Int#sr.reg)),
+    {Sis++[I],clear_dead(Int#sr{reg=Reg}, Le#l.i, Vdb),St};
 bif_cg(Bif, As, [{var,V}], Le, Vdb, Bef, St0) ->
     Ars = cg_reg_args(As, Bef),
 
@@ -1261,19 +1352,6 @@ set_cg([{var,R}], {cons,Es}, Le, Vdb, Bef, St) ->
     Int1 = Int0#sr{reg=put_reg(R, Int0#sr.reg)},
     Ret = fetch_reg(R, Int1#sr.reg),
     {[{put_list,S1,S2,Ret}], Int1, St};
-set_cg([{var,R}], {old_binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
-    Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
-    PutCode = cg_bin_put(Segs, Fail, Bef),
-    {Sis,Int0} =
-	case InCatch of
-	    true -> adjust_stack(Bef, Le#l.i, Le#l.i+1, Vdb);
-	    false -> {[],Bef}
-	end,
-    Code = cg_binary_old(PutCode),
-    Int1 = clear_dead(Int0, Le#l.i, Vdb),
-    Aft = Int0#sr{reg=put_reg(R, Int1#sr.reg)},
-    Ret = fetch_reg(R, Aft#sr.reg),
-    {Sis ++ Code ++ [{bs_final,Fail,Ret}],Aft,St};
 set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
     Int0 = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
     Target = fetch_reg(R, Int0#sr.reg),
@@ -1287,8 +1365,8 @@ set_cg([{var,R}], {binary,Segs}, Le, Vdb, Bef, #cg{in_catch=InCatch}=St) ->
 	end,
     MaxRegs = max_reg(Bef#sr.reg),
     Aft = clear_dead(Int1, Le#l.i, Vdb),
-    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs),
-    {Sis++Code++make_bs_final(Target,Target),Aft,St};
+    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs, Le#l.a),
+    {Sis++Code,Aft,St};
 set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
     %% Find a place for the return register first.
     Int = Bef#sr{reg=put_reg(R, Bef#sr.reg)},
@@ -1300,8 +1378,6 @@ set_cg([{var,R}], Con, Le, Vdb, Bef, St) ->
 		  [{move,fetch_var(V, Int),Ret}];
 	      {string,Str} ->
 		  [{put_string,length(Str),{string,Str},Ret}];
-	      {literal,_}=Lit ->
-		  [{put_literal,Lit,Ret}];
 	      Other ->
 		  [{move,Other,Ret}]
 	  end,
@@ -1312,16 +1388,9 @@ set_cg([], {binary,Segs}, Le, Vdb, Bef, St) ->
     Temp = find_scratch_reg(put_reg(Target, Bef#sr.reg)),
     PutCode = cg_bin_put(Segs, Fail, Bef),
     MaxRegs = max_reg(Bef#sr.reg),
-    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs),
+    Code = cg_binary(PutCode, Target, Temp, Fail, MaxRegs, Le#l.a),
     Aft = clear_dead(Bef, Le#l.i, Vdb),
     {Code,Aft,St};
-set_cg([], {old_binary,Segs}, Le, Vdb, Bef, St) ->
-    Fail = bif_fail(St#cg.btype, St#cg.bfail, 42),
-    PutCode = cg_bin_put(Segs, Fail, Bef),
-    Ais0 = cg_binary_old(PutCode),
-    Ret = find_scratch_reg(Bef#sr.reg),
-    Ais = Ais0 ++ [{bs_final,Fail,Ret}],
-    {Ais,clear_dead(Bef, Le#l.i, Vdb),St};
 set_cg([], _, Le, Vdb, Bef, St) ->
     %% This should have been stripped by compiler, just cleanup.
     {[],clear_dead(Bef, Le#l.i, Vdb), St}.
@@ -1331,33 +1400,78 @@ set_cg([], _, Le, Vdb, Bef, St) ->
 %%% Code generation for constructing binaries.
 %%%
 
-cg_binary(PutCode, Target, Temp, Fail, MaxRegs) ->
-    Live = case Target of
-	       {x,X} when X =:= MaxRegs -> MaxRegs+1;
-	       {x,X} when X < MaxRegs -> MaxRegs
-	   end,
-    SzCode = cg_binary_size(PutCode, Target, Temp, Fail, Live),
-    Code = SzCode ++ [{bs_init2,Fail,Target,MaxRegs,{field_flags,[]},Target}|PutCode],
+cg_binary([{bs_put_binary,Fail,{atom,all},U,_Flags,Src}|PutCode],
+	  Target, Temp, Fail, MaxRegs, Anno) ->
+    Live = cg_live(Target, MaxRegs),
+    SzCode = cg_bitstr_size(PutCode, Target, Temp, Fail, Live),
+    BinFlags = {field_flags,[]},
+    Code = SzCode ++
+	[case member(single_use, Anno) of
+	     true ->
+		 {bs_private_append,Fail,Target,U,Src,BinFlags,Target};
+	     false ->
+		 {bs_append,Fail,Target,0,MaxRegs,U,Src,BinFlags,Target}
+	 end] ++ PutCode,
+    cg_bin_opt(Code);
+cg_binary(PutCode, Target, Temp, Fail, MaxRegs, _Anno) ->
+    Live = cg_live(Target, MaxRegs),
+    {InitOp,SzCode} = cg_binary_size(PutCode, Target, Temp, Fail, Live),
+    Code = SzCode ++ [{InitOp,Fail,Target,0,MaxRegs,{field_flags,[]},Target}|PutCode],
     cg_bin_opt(Code).
 
+cg_live({x,X}, MaxRegs) when X =:= MaxRegs -> MaxRegs+1;
+cg_live({x,X}, MaxRegs) when X < MaxRegs -> MaxRegs.
+
+
+%% Generate code that calculate the size of the bitstr to be
+%% built in BITS.
+
+cg_bitstr_size(PutCode, Target, Temp, Fail, Live) ->
+    {Bits,Es} = cg_bitstr_size_1(PutCode, 0, []),
+    reverse(cg_gen_binsize(Es, Target, Temp, Fail, Live,
+			   [{move,{integer,Bits},Target}])).
+
+cg_bitstr_size_1([{_,_,S,U,_,Src}|Next], Bits, Acc) ->
+    case S of
+	{integer,N} -> cg_bitstr_size_1(Next, Bits+N*U, Acc);
+	{atom,all} -> cg_bitstr_size_1(Next, Bits, [{bit_size,Src}|Acc]);
+	_ when U =:= 1 -> cg_bitstr_size_1(Next, Bits, [S|Acc]);
+	_ -> cg_bitstr_size_1(Next, Bits, [{'*',S,U}])
+    end;
+cg_bitstr_size_1([], Bits, Acc) -> {Bits,Acc}.
+
+%% Generate code that calculate the size of the bitstr to be
+%% built in BYTES or BITS (depending on what is easiest).
+
 cg_binary_size(PutCode, Target, Temp, Fail, Live) ->
-    Szs = cg_binary_size_1(PutCode, 0, []),
-    cg_binary_size_expr(Szs, Target, Temp, Fail, Live).
+    {InitInstruction,Szs} = cg_binary_size_1(PutCode, 0, []),
+    SizeExpr = reverse(cg_gen_binsize(Szs, Target, Temp, Fail, Live, [{move,{integer,0},Target}])),
+    {InitInstruction,SizeExpr}.
 
 cg_binary_size_1([{_Put,_Fail,S,U,_Flags,Src}|T], Bits, Acc) ->
     cg_binary_size_2(S, U, Src, T, Bits, Acc);
 cg_binary_size_1([], Bits, Acc) ->
     Bytes = Bits div 8,
     RemBits = Bits rem 8,
-    Res = sort([{1,{integer,RemBits}},{8,{integer,Bytes}}|Acc]),
-    cg_binary_size_3(Res).
+    Sizes0 = sort([{1,{integer,RemBits}},{8,{integer,Bytes}}|Acc]),
+    Sizes = filter(fun({_,{integer,0}}) -> false;
+		      (_) -> true end, Sizes0),
+    case Sizes of
+	[{1,_}|_] ->
+	    {bs_init_bits,cg_binary_bytes_to_bits(Sizes, [])};
+	[{8,_}|_] ->
+	    {bs_init2,[E || {8,E} <- Sizes]}
+    end.
 
 cg_binary_size_2({integer,N}, U, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits+N*U, Acc);
-cg_binary_size_2({atom,all}, 8, E, Next, Bits, Acc) ->
-    cg_binary_size_1(Next, Bits, [{8,{size,E}}|Acc]);
-cg_binary_size_2({atom,all}, 1, E, Next, Bits, Acc) ->
-    cg_binary_size_1(Next, Bits, [{1,{bitsize,E}}|Acc]);
+cg_binary_size_2({atom,all}, U, E, Next, Bits, Acc) ->
+    if 
+	U rem 8 =:= 0 ->
+	    cg_binary_size_1(Next, Bits, [{8,{byte_size,E}}|Acc]);
+	true ->
+	    cg_binary_size_1(Next, Bits, [{1,{bit_size,E}}|Acc])
+    end;
 cg_binary_size_2(Reg, 1, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits, [{1,Reg}|Acc]);
 cg_binary_size_2(Reg, 8, _, Next, Bits, Acc) ->
@@ -1365,81 +1479,63 @@ cg_binary_size_2(Reg, 8, _, Next, Bits, Acc) ->
 cg_binary_size_2(Reg, U, _, Next, Bits, Acc) ->
     cg_binary_size_1(Next, Bits, [{1,{'*',Reg,U}}|Acc]).
 
-cg_binary_size_3([{_,{integer,0}}|T]) ->
-    cg_binary_size_3(T);
-cg_binary_size_3([{U,S1},{U,S2}|T]) ->
-    {L0,Rest} = cg_binary_size_4(T, U, []),
-    L = [S1,S2|L0],
-    [{U,L}|cg_binary_size_3(Rest)];
-cg_binary_size_3([{U,S}|T]) ->
-    [{U,[S]}|cg_binary_size_3(T)];
-cg_binary_size_3([]) -> [].
+cg_binary_bytes_to_bits([{8,{integer,N}}|T], Acc) ->
+    cg_binary_bytes_to_bits(T, [{integer,8*N}|Acc]);
+cg_binary_bytes_to_bits([{8,{byte_size,Reg}}|T], Acc) ->
+    cg_binary_bytes_to_bits(T, [{bit_size,Reg}|Acc]);
+cg_binary_bytes_to_bits([{8,Reg}|T], Acc) ->
+    cg_binary_bytes_to_bits(T, [{'*',Reg,8}|Acc]);
+cg_binary_bytes_to_bits([{1,Sz}|T], Acc) ->
+    cg_binary_bytes_to_bits(T, [Sz|Acc]);
+cg_binary_bytes_to_bits([], Acc) ->
+    cg_binary_bytes_to_bits_1(sort(Acc)).
 
-cg_binary_size_4([{U,S}|T], U, Acc) ->
-    cg_binary_size_4(T, U, [S|Acc]);
-cg_binary_size_4(T, _, Acc) ->
-    {Acc,T}.
-
-%% cg_binary_size_expr/5
-%%  Generate code for calculating the resulting size of a binary.
-cg_binary_size_expr(Sizes, Target, Temp, Fail, Live) ->
-    cg_binary_size_expr_1(Sizes, Target, Temp, Fail, Live,
-			  [{move,{integer,0},Target}]).
-
-cg_binary_size_expr_1([{1,E0}|T], Target, Temp, Fail, Live, Acc) ->
-    E1 = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
-    E = [make_bs_bits_to_bytes(Fail,Target,Target)|E1],
-    cg_binary_size_expr_1(T, Target, Temp, Fail, Live, E);
-cg_binary_size_expr_1([{8,E0}], Target, Temp, Fail, Live, Acc) ->
-    E = cg_gen_binsize(E0, Target, Temp, Fail, Live, Acc),
-    reverse(E);
-cg_binary_size_expr_1([], _, _, _, _, Acc) -> reverse(Acc).
+cg_binary_bytes_to_bits_1([{integer,I},{integer,J}|T]) ->
+    cg_binary_bytes_to_bits_1([{integer,I+J}|T]);
+cg_binary_bytes_to_bits_1([H|T]) ->
+    [H|cg_binary_bytes_to_bits_1(T)];
+cg_binary_bytes_to_bits_1([]) -> [].
 
 cg_gen_binsize([{'*',A,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
 		   [{bs_add,Fail,[Target,A,B],Target}|Acc]);
-cg_gen_binsize([{bitsize,B}|T], Target, Temp, Fail, Live, Acc) ->
+cg_gen_binsize([{bit_size,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
-		   [{gc_bif,bitsize,Fail,Live,[B],Temp}|Acc]);
-cg_gen_binsize([{size,B}|T], Target, Temp, Fail, Live, Acc) ->
+		   [{gc_bif,bit_size,Fail,Live,[B],Temp}|Acc]);
+cg_gen_binsize([{byte_size,B}|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize([Temp|T], Target, Temp, Fail, Live,
-		   [{gc_bif,size,Fail,Live,[B],Temp}|Acc]);
+		   [{gc_bif,byte_size,Fail,Live,[B],Temp}|Acc]);
 cg_gen_binsize([E0|T], Target, Temp, Fail, Live, Acc) ->
     cg_gen_binsize(T, Target, Temp, Fail, Live,
-		 [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
+		   [{bs_add,Fail,[Target,E0,1],Target}|Acc]);
 cg_gen_binsize([], _, _, _, _, Acc) -> Acc.
+
+%% cg_gen_binsize_init([{'*',A,B}|T], Target, Fail, Live, Acc) ->
+%%     {bs_add,Fail,[{integer,0},A,B],Target};
+%% cg_gen_binsize_init([{bit_size,B}|T], Target, Fail, Live, Acc) ->
+%%     {gc_bif,bit_size,Fail,Live,[B],Target};
+%% cg_gen_binsize_init([{byte_size,B}|T], Target, Fail, Live, Acc) ->
+%%     {gc_bif,byte_size,Fail,Live,[B],Target}.
 
 
 %% cg_bin_opt(Code0) -> Code
 %%  Optimize the size calculations for binary construction.
 
+cg_bin_opt([{move,Size,D},{bs_append,Fail,D,Extra,Regs0,U,Bin,Flags,D}|Is]) ->
+    Regs = cg_bo_newregs(Regs0, D),
+    cg_bin_opt([{bs_append,Fail,Size,Extra,Regs,U,Bin,Flags,D}|Is]);
+cg_bin_opt([{move,Size,D},{bs_private_append,Fail,D,U,Bin,Flags,D}|Is]) ->
+    cg_bin_opt([{bs_private_append,Fail,Size,U,Bin,Flags,D}|Is]);
 cg_bin_opt([{move,{integer,0},D},{bs_add,_,[D,{integer,_}=S,1],Dst}|Is]) ->
     cg_bin_opt([{move,S,Dst}|Is]);
 cg_bin_opt([{move,{integer,0},D},{bs_add,Fail,[D,S,U],Dst}|Is]) ->
     cg_bin_opt([{bs_add,Fail,[{integer,0},S,U],Dst}|Is]);
-cg_bin_opt([{move,{integer,Bytes},D},{bs_init2,Fail,D,Regs0,Flags,D}|Is]) ->
+cg_bin_opt([{move,{integer,Bytes},D},{Op,Fail,D,Extra,Regs0,Flags,D}|Is])
+  when Op =:= bs_init2; Op =:= bs_init_bits ->
     Regs = cg_bo_newregs(Regs0, D),
-    cg_bin_opt([{bs_init2,Fail,Bytes,Regs,Flags,D}|Is]);
-cg_bin_opt([{move,Src,D},{bs_init2,Fail,D,Regs0,Flags,D}|Is]) ->
-    Regs = cg_bo_newregs(Regs0, D),
-    cg_bin_opt([{bs_init2,Fail,Src,Regs,Flags,D}|Is]);
-cg_bin_opt([{move,Src,Dst},{bs_bits_to_bytes2,Dst,Dst}|Is]) ->
-    cg_bin_opt([{bs_bits_to_bytes2,Src,Dst}|Is]);
-cg_bin_opt([{move,Src,Dst},{bs_bits_to_bytes,Fail,Dst,Dst}|Is]) ->
-    cg_bin_opt([{bs_bits_to_bytes,Fail,Src,Dst}|Is]);
+    cg_bin_opt([{Op,Fail,Bytes,Extra,Regs,Flags,D}|Is]);
 cg_bin_opt([{move,Src1,Dst},{bs_add,Fail,[Dst,Src2,U],Dst}|Is]) ->
     cg_bin_opt([{bs_add,Fail,[Src1,Src2,U],Dst}|Is]);
-cg_bin_opt([{bs_bits_to_bytes2,{integer,N},D}|Is0]) -> 
-  cg_bin_opt([{move,{integer,(N+7) div 8},D}|Is0]); 
-cg_bin_opt([{bs_bits_to_bytes,Fail,{integer,N},_}|Is0]) when N rem 8 =/= 0 ->
-    case Fail of
-	{f,0} ->
-	    Is = [{move,{atom,badarg},{x,0}},
-		  {call_ext,1,{extfunc,erlang,error,1}}|Is0],
-	    cg_bin_opt(Is);
-	_ ->
-	    cg_bin_opt([{jump,Fail}|Is0])
-    end;
 cg_bin_opt([I|Is]) ->
     [I|cg_bin_opt(Is)];
 cg_bin_opt([]) -> [].
@@ -1449,8 +1545,6 @@ cg_bo_newregs(R, _) -> R.
 
 %% Common for new and old binary code generation.
 
-cg_bin_put({old_bin_seg,S,U,T,Fs,L}, Fail, Bef) ->
-    cg_bin_put({bin_seg,[],S,U,T,Fs,L}, Fail, Bef);
 cg_bin_put({bin_seg,[],S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
     S1 = case S0 of
 	     {var,Sv} -> fetch_var(Sv, Bef);
@@ -1466,32 +1560,7 @@ cg_bin_put({bin_seg,[],S0,U,T,Fs,[E0,Next]}, Fail, Bef) ->
 	     float   -> bs_put_float
 	 end,
     [{Op,Fail,S1,U,{field_flags,Fs},E1}|cg_bin_put(Next, Fail, Bef)];
-cg_bin_put({bin_end,[]}, _, _) -> [];
-cg_bin_put(old_bin_end, _, _) -> [].
-
-%% Old style.
-
-cg_binary_old(PutCode) ->
-    [cg_bs_init(PutCode)] ++ need_bin_buf(PutCode).
-
-cg_bs_init(Code) ->
-    {Size,Fs} = foldl(fun ({_,_,{integer,N},U,_,_}, {S,Fs}) ->
-			      {S + N*U,Fs};
-			  (_, {S,_}) ->
-			      {S,[]}
-		      end, {0,[exact]}, Code),
-    {bs_init,(Size+7) div 8,{field_flags,Fs}}.
-
-need_bin_buf(Code0) ->
-    {Code1,F,H} = foldr(fun ({_,_,{integer,N},U,_,_}=Bs, {Code,F,H}) ->
-				{[Bs|Code],F,H + N*U};
-			    ({_,_,_,_,_,_}=Bs, {Code,F,H}) ->
-				{[Bs|need_bin_buf_need(H, F, Code)],true,0}
-			end, {[],false,0}, Code0),
-    need_bin_buf_need(H, F, Code1).
-
-need_bin_buf_need(0, false, Rest) -> Rest;
-need_bin_buf_need(H, _, Rest) -> [{bs_need_buf,H}|Rest].
+cg_bin_put({bin_end,[]}, _, _) -> [].
 
 cg_build_args(As, Bef) ->
     map(fun ({var,V}) -> {put,fetch_var(V, Bef)};
@@ -1683,8 +1752,7 @@ clear_dead_stk(Stk, Until, Vdb) ->
 
 sr_merge(#sr{reg=R1,stk=S1,res=[]}, #sr{reg=R2,stk=S2,res=[]}) ->
     #sr{reg=longest(R1, R2),stk=longest(S1, S2),res=[]};
-sr_merge(void, S2) -> S2#sr{res=[]};
-sr_merge(S1, void) -> S1#sr{res=[]}.
+sr_merge(void, S2) -> S2#sr{res=[]}.
 
 longest([H|T1], [H|T2]) -> [H|longest(T1, T2)];
 longest([dead|T1], [free|T2]) -> [dead|longest(T1, T2)];
@@ -1803,6 +1871,9 @@ find_scratch_reg([], I) -> {x,I}.
 %%copy_reg(Val, R, Regs) -> load_reg(Val, R, Regs).
 %%move_reg(Val, R, Regs) -> load_reg(Val, R, free_reg(Val, Regs)).
 
+replace_reg_contents(Old, New, [{I,Old}|Rs]) -> [{I,New}|Rs];
+replace_reg_contents(Old, New, [R|Rs]) -> [R|replace_reg_contents(Old, New, Rs)].
+
 %%clear_regs(Regs) -> map(fun (R) -> free end, Regs).
 clear_regs(_) -> [].
 
@@ -1863,89 +1934,6 @@ put_catch(Tag, [Other|Stk], Acc) ->
 drop_catch(Tag, [{{catch_tag,Tag}}|Stk]) -> [free|Stk];
 drop_catch(Tag, [Other|Stk]) -> [Other|drop_catch(Tag, Stk)].
 
-%%%
-%%% Finish the code generation for the bit syntax matching.
-%%%
-
-bs_function(Asm) ->
-    case bs_needed(Asm, 0, false, []) of
-	{false,[]} ->
-	    %% No bit syntax is used in this function.
-	    Asm;
-	{true,Dict} ->
-	    %% Old bit syntax matching or new bit syntax construction.
-	    bs_replace(Asm, Dict, [])
-    end.
-
-%%%
-%%% Pass 1: Found out which bs_restore's that are needed. We are very
-%%% conservative about which bs_restore's are needed.
-%%%
-
-bs_needed([{bs_save,Name},{bs_restore,Name}|T], N, _BsUsed, Dict) ->
-    bs_needed(T, N, true, Dict);
-bs_needed([{bs_save,_Name}|T], N, _BsUsed, Dict) ->
-    bs_needed(T, N, true, Dict);
-bs_needed([{bs_restore,Name}|T], N, _BsUsed, Dict) ->
-    case keysearch(Name, 1, Dict) of
-	{value,{Name,_}} -> bs_needed(T, N, true, Dict);
-	false -> bs_needed(T, N+1, true, [{Name,N}|Dict])
-    end;
-bs_needed([{bs_init,_,_}|T], N, _, Dict) ->
-    bs_needed(T, N, true, Dict);
-bs_needed([{bs_init2,_,_,_,_,_}|T], N, _, Dict) ->
-    bs_needed(T, N, true, Dict);
-bs_needed([_|T], N, BsUsed, Dict) ->
-    bs_needed(T, N, BsUsed, Dict);
-bs_needed([], _, BsUsed, Dict) -> {BsUsed,Dict}.
-
-%%%
-%%% Pass 2: Only needed if there were some bs_* instructions found.
-%%%
-%%% Remove any bs_save with a name that never were found to be restored
-%%% in the first pass.
-%%%
-
-bs_replace([{bs_save,Name}=Save,{bs_restore,Name}|T], Dict, Acc) ->
-    bs_replace([Save|T], Dict, Acc);
-bs_replace([{bs_save,Name}|T], Dict, Acc) ->
-    case keysearch(Name, 1, Dict) of
-	{value,{Name,N}} ->
-	    bs_replace(T, Dict, [{bs_save,N}|Acc]);
-	false ->
-	    bs_replace(T, Dict, Acc)
-    end;
-bs_replace([{bs_restore,Name}|T], Dict, Acc) ->
-    case keysearch(Name, 1, Dict) of
-	{value,{Name,N}} ->
-	    bs_replace(T, Dict, [{bs_restore,N}|Acc]);
-	false ->
-	    bs_replace(T, Dict, Acc)
-    end;
-bs_replace([{bs_init2,Fail,Bytes,Regs,Flags,Dst}|T0], Dict, Acc) ->
-    case bs_find_test_heap(T0) of
-	none ->
-	    bs_replace(T0, Dict, [{bs_init2,Fail,Bytes,0,Regs,Flags,Dst}|Acc]);
-	{T,Words} ->
-	    bs_replace(T, Dict, [{bs_init2,Fail,Bytes,Words,Regs,Flags,Dst}|Acc])
-    end;
-bs_replace([H|T], Dict, Acc) ->
-    bs_replace(T, Dict, [H|Acc]);
-bs_replace([], _, Acc) -> reverse(Acc).
-
-bs_find_test_heap(Is) ->
-    bs_find_test_heap_1(Is, []).
-
-bs_find_test_heap_1([{bs_put_integer,_,_,_,_,_}=I|Is], Acc) ->
-    bs_find_test_heap_1(Is, [I|Acc]);
-bs_find_test_heap_1([{bs_put_float,_,_,_,_,_}=I|Is], Acc) ->
-    bs_find_test_heap_1(Is, [I|Acc]);
-bs_find_test_heap_1([{bs_put_binary,_,_,_,_,_}=I|Is], Acc) ->
-    bs_find_test_heap_1(Is, [I|Acc]);
-bs_find_test_heap_1([{test_heap,Words,_}|Is], Acc) ->
-    {reverse(Acc, Is),Words};
-bs_find_test_heap_1(_, _) -> none.
-
 %% new_label(St) -> {L,St}.
 
 new_label(#cg{lcount=Next}=St) ->
@@ -1956,24 +1944,3 @@ flatmapfoldl(F, Accu0, [Hd|Tail]) ->
     {Rs,Accu2} = flatmapfoldl(F, Accu1, Tail),
     {R++Rs,Accu2};
 flatmapfoldl(_, Accu, []) -> {[],Accu}.
-
-%% flatmapfoldr(F, Accu0, [Hd|Tail]) ->
-%%     {Rs,Accu1} = flatmapfoldr(F, Accu0, Tail),
-%%     {R,Accu2} = F(Hd, Accu1),
-%%     {R++Rs,Accu2};
-%% flatmapfoldr(_, Accu, []) -> {[],Accu}.
-
-%% Utility functions for generating different code depending on wether 
-%% the bitlevel_binaries option is given or not
-
-make_bs_final(Src,Dst) ->
-  case proplists:get_bool(bitlevel_binaries, get(?MODULE)) of
-    true -> [{bs_final2,Src,Dst}];
-    false -> []
-  end.
-
-make_bs_bits_to_bytes(Fail,Src,Dst) ->
-  case proplists:get_bool(bitlevel_binaries, get(?MODULE)) of
-    true -> {bs_bits_to_bytes2,Src,Dst};
-    false -> {bs_bits_to_bytes,Fail,Src,Dst}
-  end.

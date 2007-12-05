@@ -20,10 +20,6 @@
 -include("http_internal.hrl").
 -include("httpc_internal.hrl").
 
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
-
 %%% Internal API
 -export([send/3, is_idempotent/1, is_client_closing/1]).
 
@@ -51,7 +47,8 @@ send(SendAddr, #request{method = Method, scheme = Scheme,
     
     TmpHeaders = handle_user_info(UserInfo, Headers),
 
-    {TmpHeaders2, Body} = post_data(Method, TmpHeaders, Content, HeadersAsIs),
+    {TmpHeaders2, Body} = 
+	post_data(Method, TmpHeaders, Content, HeadersAsIs),
     
     {NewHeaders, Uri} = case Address of
 			    SendAddr ->
@@ -109,7 +106,8 @@ is_idempotent(_) ->
 %% is_client_closing(Headers) ->
 %% Headers = #http_request_h{}
 %%                                   
-%% Description: Checks if the client has supplied a "Connection: close" header.
+%% Description: Checks if the client has supplied a "Connection:
+%% close" header.
 %%-------------------------------------------------------------------------
 is_client_closing(Headers) ->
     case Headers#http_request_h.connection of
@@ -176,7 +174,7 @@ handle_proxy(HttpOptions, Headers) ->
 	undefined ->
 	    Headers;
 	{User, Password} ->
-	    UserPasswd = http_base_64:encode(User ++ ":" ++ Password),
+	    UserPasswd = base64:encode_to_string(User ++ ":" ++ Password),
 	    Headers#http_request_h{'proxy-authorization' = 
 				   "Basic " ++ UserPasswd}
     end.
@@ -186,7 +184,7 @@ handle_user_info([], Headers) ->
 handle_user_info(UserInfo, Headers) ->
     case string:tokens(UserInfo, ":") of
 	[User, Passwd] ->
-	    UserPasswd = http_base_64:encode(User ++ ":" ++ Passwd),
+	    UserPasswd = base64:encode_to_string(User ++ ":" ++ Passwd),
 	    Headers#http_request_h{authorization = "Basic " ++ UserPasswd};
 	_ ->
 	    Headers

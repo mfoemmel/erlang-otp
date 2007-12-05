@@ -19,8 +19,8 @@
 %%               Fixed some bugs and started cleanup.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/05/04 07:48:57 $
-%%              $Revision: 1.22 $
+%%              $Date: 2007/10/31 15:50:37 $
+%%              $Revision: 1.23 $
 %% ====================================================================
 %%  Exports  :
 %%    gen_switch_val(I, VarMap, ConstTab, Options)
@@ -118,7 +118,7 @@ gen_fast_switch_on(integer, Cases, VarMap, ConstTab, Arg, {I, Fail, Options})  -
       case proplists:get_bool(use_clusters, Options) of
 	false ->
 	  M = list_to_tuple(Cases),
-	  D = density(M,1,size(M)),
+	  D = density(M, 1, tuple_size(M)),
 	  if 
 	    D >= ?MINDENSITY ->
 	      gen_jump_table(Arg,Fail,hipe_icode:switch_val_fail_label(I),VarMap,ConstTab,Cases,Min);
@@ -255,7 +255,7 @@ check_duplicates([{Const1,_},{Const2,L2}|T]) ->
 minclusters(Cases) when is_list(Cases) ->
   minclusters(list_to_tuple(Cases));
 minclusters(Cases) when is_tuple(Cases) ->
-  N = size(Cases),
+  N = tuple_size(Cases),
   MinClusters = list_to_tuple([0|n_list(N,inf)]),
   i_loop(1,N,MinClusters,Cases).
 
@@ -321,7 +321,7 @@ density(A,I,J) ->
 
 cluster_split(Cases,Clust) ->
   A = tl(tuple_to_list(Clust)),
-  Max = element(size(Clust),Clust),
+  Max = element(tuple_size(Clust),Clust),
   L1 = lists:reverse(Cases),
   L2 = lists:reverse(A),
   cluster_split(Max,[],[],L1,L2).

@@ -34,7 +34,7 @@
 
 -record(pending, {log, pid, req, from, attach, clients}). % [{Request,From}]
 
--record(state, {pending = []}). % [pending()]
+-record(state, {pending = [] :: [#pending{}]}).
 
 %%%-----------------------------------------------------------------
 %%% This module implements the disk_log server.  Its primary purpose
@@ -202,7 +202,7 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
                             start_log(Name, Req, From, State)
                     end
             end;
-        false when W =:= distr  ->
+        false when W =:= distr ->
             ok = pg2:create(?group(Name)),
             case get_local_pid(Name) of
                 undefined ->
@@ -216,6 +216,9 @@ do_open({open, W, #arg{name = Name}=A}=Req, From, State) ->
 
 %% Spawning a process is a means to avoid deadlock when
 %% disk_log_servers mutually open disk_logs.
+
+-spec(open_distr_rpc/3 :: ([_], _, _) -> no_return()). % XXX: underspecified
+
 open_distr_rpc(Nodes, A, From) ->
     {AllReplies, BadNodes} = rpc:multicall(Nodes, ?MODULE, dist_open, [A]),
     {Ok, Bad} = cr(AllReplies, [], []),

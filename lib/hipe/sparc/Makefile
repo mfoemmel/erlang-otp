@@ -124,6 +124,7 @@ $(EBIN)/hipe_sparc_liveness.beam: ../flow/liveness.inc
 $(EBIN)/hipe_sparc_main.beam: ../main/hipe.hrl
 $(EBIN)/hipe_sparc_multimove.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_opt_frame.beam: ../main/hipe.hrl hipe_sparc.hrl
+$(EBIN)/hipe_sparc_peephole.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_pp.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_prop.beam: ../main/hipe.hrl hipe_sparc.hrl
 $(EBIN)/hipe_sparc_prop_env.beam: ../main/hipe.hrl

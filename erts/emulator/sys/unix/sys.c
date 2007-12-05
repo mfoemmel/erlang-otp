@@ -38,6 +38,14 @@
 #include <sys/bsdtypes.h>
 #endif
 
+#include <termios.h>
+#ifdef HAVE_FCNTL_H
+#include <fcntl.h>
+#endif
+#ifdef HAVE_SYS_IOCTL_H
+#include <sys/ioctl.h>
+#endif
+
 #define NEED_CHILD_SETUP_DEFINES
 #define ERTS_WANT_BREAK_HANDLING
 #define ERTS_WANT_GOT_SIGUSR1
@@ -956,6 +964,7 @@ static struct driver_data {
 /* Driver interfaces */
 static ErlDrvData spawn_start(ErlDrvPort, char*, SysDriverOpts*);
 static ErlDrvData fd_start(ErlDrvPort, char*, SysDriverOpts*);
+static int fd_control(ErlDrvData, unsigned int, char *, int, char **, int);
 static ErlDrvData vanilla_start(ErlDrvPort, char*, SysDriverOpts*);
 static int spawn_init(void);
 static void fd_stop(ErlDrvData);
@@ -998,7 +1007,7 @@ struct erl_drv_entry fd_driver_entry = {
     "fd",
     NULL,
     NULL,
-    NULL,
+    fd_control,
     NULL,
     outputv,
     NULL
@@ -1549,6 +1558,51 @@ static reset_qnx_spawn()
     qnx_spawn_options.iov[3] = 0xff;
 }
 #endif
+
+#define FD_DEF_HEIGHT 24
+#define FD_DEF_WIDTH 80
+/* Control op */
+#define FD_CTRL_OP_GET_WINSIZE 100
+
+static int fd_get_window_size(int fd, Uint32 *width, Uint32 *height)
+{
+#ifdef TIOCGWINSZ 
+    struct winsize ws;
+    if (ioctl(fd,TIOCGWINSZ,&ws) == 0) {
+	*width = (Uint32) ws.ws_col;
+	*height = (Uint32) ws.ws_row;
+	return 0;
+    }
+#endif
+    return -1;
+}
+
+static int fd_control(ErlDrvData drv_data,
+		      unsigned int command,
+		      char *buf, int len,
+		      char **rbuf, int rlen)
+{
+    int fd = (int)(long)drv_data;
+    char resbuff[2*sizeof(Uint32)];
+    switch (command) {
+    case FD_CTRL_OP_GET_WINSIZE:
+	{
+	    Uint32 w,h;
+	    if (fd_get_window_size(fd,&w,&h)) 
+		return 0;
+	    memcpy(resbuff,&w,sizeof(Uint32));
+	    memcpy(resbuff+sizeof(Uint32),&h,sizeof(Uint32));
+	}
+	break;
+    default:
+	return 0;
+    }
+    if (rlen < 2*sizeof(Uint32)) {
+	*rbuf = driver_alloc(2*sizeof(Uint32));
+    }
+    memcpy(*rbuf,resbuff,2*sizeof(Uint32));
+    return 2*sizeof(Uint32);
+}
 
 static ErlDrvData fd_start(ErlDrvPort port_num, char* name,
 			   SysDriverOpts* opts)
@@ -2618,25 +2672,6 @@ erl_sys_schedule(int runnable)
 
 #ifdef ERTS_SMP
 
-#ifdef ERTS_SMP_USE_IO_THREAD
-static void *io_thread_func(void *unused)
-{
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_set_thread_name("io");
-#endif
-    erts_register_blockable_thread();
-    erts_thread_init_fp_exception();
-    erts_smp_activity_begin(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
-    while (1) {
-	ERTS_CHK_IO(1);
-	ERTS_SMP_LC_ASSERT(!ERTS_LC_IS_BLOCKING);
-    }
-    /* Not reached ... */
-    erts_smp_activity_end(ERTS_ACTIVITY_IO, NULL, NULL, NULL);
-    return NULL;
-}
-#endif /* ERTS_SMP_USE_IO_THREAD */
-
 static erts_smp_tid_t sig_dispatcher_tid;
 
 static void
@@ -2765,15 +2800,6 @@ init_smp_sig_notify(void)
 void
 erts_sys_main_thread(void)
 {
-
-#ifdef ERTS_SMP_USE_IO_THREAD
-    erts_smp_thr_opts_t thr_opts = ERTS_SMP_THR_OPTS_DEFAULT_INITER;
-    thr_opts.detached = 1;
-
-    /* Start I/O thread... */
-    erts_smp_thr_create(&erts_io_thr_tid, io_thread_func, NULL, &thr_opts);
-#endif
-
     /* Become signal receiver thread... */
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_set_thread_name("signal_receiver");

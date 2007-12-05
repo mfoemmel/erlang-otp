@@ -27,6 +27,9 @@
 %% Internal exports
 -export([server/1, server/2]).
 
+%% Defines for control ops
+-define(CTRL_OP_GET_WINSIZE,100).
+
 %%
 %% The basic server and start-up.
 %%
@@ -163,6 +166,17 @@ server_loop(Port, Q) ->
 	    server_loop(Port, Q)
     end.
 
+
+get_fd_geometry(Port) ->
+    case (catch port_control(Port,?CTRL_OP_GET_WINSIZE,[])) of
+	List when is_list(List), length(List) =:= 8 -> 
+	    <<W:32/native,H:32/native>> = list_to_binary(List),
+	    {W,H};
+	_ ->
+	    error
+    end.
+
+
 %% NewSaveBuffer = io_request(Request, FromPid, ReplyAs, Port, SaveBuffer)
 
 do_io_request(Req, From, ReplyAs, Port, Q0) ->
@@ -181,6 +195,21 @@ io_request({put_chars,Mod,Func,Args}, Port, Q) ->
     put_chars(catch apply(Mod,Func,Args), Port, Q);
 io_request({get_chars,Prompt,N}, Port, Q) -> % New in R9C
     get_chars(Prompt, io_lib, collect_chars, N, Port, Q);
+%% New in R12
+io_request({get_geometry,columns},Port,Q) ->
+    case get_fd_geometry(Port) of
+	{W,_H} ->
+	    {ok,W,Q};
+	_ ->
+	    {error,{error,enotsup},Q}
+    end;
+io_request({get_geometry,rows},Port,Q) ->
+    case get_fd_geometry(Port) of
+	{_W,H} ->
+	    {ok,H,Q};
+	_ ->
+	    {error,{error,enotsup},Q}
+    end;
 %% These are new in R9C
 io_request({get_chars,Prompt,Mod,Func,XtraArg}, Port, Q) ->
 %    erlang:display({?MODULE,?LINE,Q}),
@@ -290,6 +319,9 @@ get_chars(Prompt, M, F, Xa, Port, Q, State) ->
 		{io_request,From,ReplyAs,{put_chars,M1,F1,A1}} when is_pid(From) ->
 		    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
 				  {put_chars,M1,F1,A1}, From, ReplyAs);
+                {io_request,From,ReplyAs,{requests,Requests}} when is_pid(From) ->
+                    get_chars_req(Prompt, M, F, Xa, Port, Q, State,
+                                  {requests,Requests}, From, ReplyAs);
 		{'EXIT',From,What} when node(From) =:= node() ->
 		    {exit,What}
 	    end;

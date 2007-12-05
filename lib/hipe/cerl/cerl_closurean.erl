@@ -100,7 +100,7 @@ annotate(T) ->
     {cerl_trees:map(F, T), Xs, Out, Esc, Deps, Par}.
 
 append_ann(Tag, Val, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
+    if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
 	    append_ann(Tag, Val, Xs);
        true ->
 	    [X | append_ann(Tag, Val, Xs)]

@@ -11,7 +11,7 @@
 
 -record(closure_element, {n::byte()}).
 
--record(element, {index::integer()}).
+-record(element, {typeinfo::list()}).
 
 -record(gc_test, {need::integer()}).
 

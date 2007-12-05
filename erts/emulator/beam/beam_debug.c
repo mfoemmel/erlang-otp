@@ -379,6 +379,7 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
 	case 'a':		/* Tagged atom */
 	case 'i':		/* Tagged integer */
 	case 'c':		/* Tagged constant */
+	case 'q':		/* Tagged literal */
 	    erts_print(to, to_arg, "%T", *ap);
 	    ap++;
 	    break;
@@ -454,29 +455,6 @@ print_op(int to, void *to_arg, int op, int size, Eterm* addr)
 	case 'P':	/* Byte offset into tuple (see beam_load.c) */
 	    erts_print(to, to_arg, "%d", (*ap / sizeof(Eterm*)) - 1);
 	    ap++;
-	    break;
-	case 'w':
-	    {
-		int arity = thing_arityval(ap[0]);
-		print_big(to, to_arg, ap);
-		ap += arity + 1;
-		size += arity;
-	    }
-	    break;
-	case 'o':
-	    {
-		FloatDef f;
-#ifdef ARCH_64
-		ap++;
-		f.fdw = *ap++;
-#else
-		ap++;
-		f.fw[0] = *ap++;
-		f.fw[1] = *ap++;
-#endif
-		erts_print(to, to_arg, "%g", f.fd);
-		size++;
-	    }
 	    break;
 	case 'l':		/* fr(N) */
 	    erts_print(to, to_arg, "fr(%d)", reg_index(ap[0]));

@@ -8,8 +8,8 @@
 %%%
 %%% CVS      :
 %%%              $Author: kostis $
-%%%              $Date: 2006/12/15 21:11:54 $
-%%%              $Revision: 1.34 $
+%%%              $Date: 2007/11/19 23:56:33 $
+%%%              $Revision: 1.37 $
 %%%-------------------------------------------------------------------
 
 -module(hipe_icode_fp).
@@ -127,7 +127,7 @@ unannotate_fclearerror1([], Acc) ->
 %% Make float ebbs
 %%
 
-place_fp_blocks(State)->
+place_fp_blocks(State) ->
   WorkList = new_worklist(State),
   transform_block(WorkList, State).
 
@@ -159,12 +159,10 @@ transform_block(WorkList, State) ->
       end
   end.
 
-
 transform_instrs([I|Left], PhiMap, Map, Acc) ->
   Defines = hipe_icode:defines(I),
   NewMap = delete_all(Defines, Map),
   NewPhiMap = delete_all(Defines, PhiMap),
-  
   case I of
     #phi{} ->
       Uses = hipe_icode:uses(I),
@@ -231,7 +229,7 @@ transform_instrs([I|Left], PhiMap, Map, Acc) ->
 transform_instrs([], _PhiMap, Map, Acc) ->
   {Map, lists:reverse(Acc)}.
 
-check_for_fop_candidates(I, Map, Acc)->
+check_for_fop_candidates(I, Map, Acc) ->
   case is_fop_cand(I) of
     false ->
       NewIs = handle_untagged_arguments(I, Map),
@@ -275,7 +273,7 @@ check_for_fop_candidates(I, Map, Acc)->
 %% which currently are untagged, we must tag the values and perhaps
 %% end the fp ebb.
 
-handle_untagged_arguments(I, Map)->
+handle_untagged_arguments(I, Map) ->
   case lists:filter(fun(X)-> must_be_tagged(X, Map) end, hipe_icode:uses(I)) of
     [] ->
       [I];
@@ -288,13 +286,13 @@ handle_untagged_arguments(I, Map)->
 
 %% Add phi nodes for untagged fp values.
 
-do_prelude(Map)->  
+do_prelude(Map) ->  
   case gb_trees:lookup(phi, Map) of
     none ->
       {[], Map};
     {value, List} ->
       %%io:format("Adding phi: ~w\n", [List]),
-      Fun = fun({FVar, Bindings}, Acc) -> 
+      Fun = fun ({FVar, Bindings}, Acc) -> 
 		[hipe_icode:mk_phi(FVar, Bindings)|Acc]
 	    end,
       {lists:foldl(Fun, [], List), gb_trees:delete(phi, Map)}
@@ -305,7 +303,7 @@ split_code(Code) ->
 
 split_code([I], Acc) ->
   {lists:reverse(Acc), I};
-split_code([I|Left], Acc)->
+split_code([I|Left], Acc) ->
   split_code(Left, [I|Acc]).
 
 
@@ -343,7 +341,7 @@ needs_fcheckerror([Label|Left], State, Acc) ->
 	NeedsFcheck ->	  
 	  case length(Pred) =:= length(NeedsFcheck) of
 	    true ->
-	      %% All edges needs fcheckerror. Add this to the
+	      %% All edges need fcheckerror. Add this to the
 	      %% beginning of the block instead.
 	      needs_fcheckerror(Left, State, [{none, Label}|Acc]);
 	    false ->
@@ -376,10 +374,10 @@ add_fp_ebb_fixup(From, To, State) ->
   NewToBB = hipe_bb:code_update(ToBB, NewToCode),
   state__bb_add(NewState1, To, NewToBB).
 
-redirect_phis(Code, OldFrom, NewFrom)->
+redirect_phis(Code, OldFrom, NewFrom) ->
   redirect_phis(Code, OldFrom, NewFrom, []).
 
-redirect_phis([I|Left], OldFrom, NewFrom, Acc)->
+redirect_phis([I|Left], OldFrom, NewFrom, Acc) ->
   case I of
     #phi{} ->
       NewI = hipe_icode:phi_redirect_pred(I, OldFrom, NewFrom),
@@ -651,8 +649,8 @@ get_type(Var) ->
   case hipe_icode:is_const(Var) of
     true -> erl_types:t_from_term(hipe_icode:const_value(Var));
     false ->
-      case hipe_icode:is_annotated_var(Var) of
-	true -> hipe_icode:var_annotation(Var)
+      case hipe_icode:is_annotated_var_or_reg(Var) of
+	true -> hipe_icode:reg_or_var_annotation(Var)
 %%%     false -> erl_types:t_any()
       end
   end.
@@ -716,13 +714,36 @@ filter_map([{Var, Bindings}|Left], NofPreds, Map) ->
 	      {value, Val} ->
 		gb_trees:update(phi, [{PhiDst, PhiArgs}|Val], Map)
 	    end,
-	  filter_map(Left, NofPreds, gb_trees:update(Var, PhiDst, NewMap))
+	  NewBinding =
+	    case bindings_are_assigned(Bindings) of
+	      true -> {assigned, PhiDst};
+	      false -> PhiDst
+	    end,
+	  filter_map(Left, NofPreds, gb_trees:update(Var, NewBinding, NewMap))
       end;
     false ->
       filter_map(Left, NofPreds, gb_trees:delete(Var, Map))
   end;
 filter_map([], _NofPreds, Map) ->
   Map.
+
+bindings_are_assigned([{_, {assigned, _}}|Left]) ->
+  assert_assigned(Left),
+  true;
+bindings_are_assigned(Bindings) ->
+  assert_not_assigned(Bindings),
+  false.
+
+assert_assigned([{_, {assigned, _}}|Left]) ->
+  assert_assigned(Left);
+assert_assigned([]) ->
+  ok.
+
+assert_not_assigned([{_, FVar}|Left]) ->
+  true = hipe_icode:is_fvar(FVar),
+  assert_not_assigned(Left);
+assert_not_assigned([]) ->
+  ok.
 
 %% all_args_equal returns true if the mapping for a variable is the
 %% same from all predecessors, i.e., we do not need a phi-node.
@@ -793,6 +814,7 @@ any_is_float([]) ->
 
 remove_duplicates(List) ->
   remove_duplicates(List, []).
+
 remove_duplicates([X|Left], Acc) ->
   case lists:member(X, Acc) of
     true ->
@@ -834,9 +856,9 @@ get_conv_instrs([Var|Left], Map, Acc) ->
   NewI = 
     case erl_types:t_is_float(get_type(Var)) of
       true ->
-	[hipe_icode:mk_primop([Dst],unsafe_untag_float,[Var])];
+	[hipe_icode:mk_primop([Dst], unsafe_untag_float, [Var])];
       false ->
-	[hipe_icode:mk_primop([Dst],conv_to_float,[Var])] 
+	[hipe_icode:mk_primop([Dst], conv_to_float, [Var])] 
     end,
   get_conv_instrs(Left, Map, NewI++Acc);
 get_conv_instrs([], _, Acc) ->
@@ -864,30 +886,30 @@ new_state(Cfg) ->
   EdgeMap = gb_trees:empty(),
   #state{cfg=Cfg, block_map=BlockMap, edge_map=EdgeMap}.
 
-state__cfg(#state{cfg=Cfg})->
+state__cfg(#state{cfg=Cfg}) ->
   Cfg.
 
-state__succ(#state{cfg=Cfg}, Label)->
+state__succ(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:succ(hipe_icode_cfg:succ_map(Cfg), Label).
 
-state__pred(#state{cfg=Cfg}, Label)->
+state__pred(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:pred(hipe_icode_cfg:pred_map(Cfg), Label).
 
-state__redirect(S=#state{cfg=Cfg}, From, ToOld, ToNew)->
+state__redirect(S=#state{cfg=Cfg}, From, ToOld, ToNew) ->
   NewCfg = hipe_icode_cfg:redirect(Cfg, From, ToOld, ToNew),
   S#state{cfg=NewCfg}.
 
-state__bb(#state{cfg=Cfg}, Label)->
+state__bb(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
   
-state__bb_add(S=#state{cfg=Cfg}, Label, BB)->
+state__bb_add(S=#state{cfg=Cfg}, Label, BB) ->
   NewCfg = hipe_icode_cfg:bb_add(Cfg, Label, BB),
   S#state{cfg=NewCfg}.
 
-state__map(S=#state{block_map=BM}, Label)->
+state__map(S=#state{block_map=BM}, Label) ->
   join_maps(state__pred(S, Label), BM).
 
-state__map_update(S=#state{block_map=BM}, Label, Map)->
+state__map_update(S=#state{block_map=BM}, Label, Map) ->
   MapChanged = 
     case gb_trees:lookup(Label, BM) of
       {value, Map1} -> not match(Map1, Map);
@@ -901,7 +923,7 @@ state__map_update(S=#state{block_map=BM}, Label, Map)->
       fixpoint
   end.
 
-state__join_in_block(S=#state{edge_map = Map}, Label)->
+state__join_in_block(S=#state{edge_map = Map}, Label) ->
   Pred = state__pred(S, Label),
   Edges = [{X, Label} || X <- Pred],
   NewInBlock = join_in_block([gb_trees:lookup(X, Map) || X <- Edges]),
@@ -916,27 +938,27 @@ state__join_in_block(S=#state{edge_map = Map}, Label)->
       {S#state{edge_map = NewMap}, NewInBlock}
   end.
 
-state__in_block_out_update(S=#state{edge_map = Map}, Label, NewInBlock)->
+state__in_block_out_update(S=#state{edge_map = Map}, Label, NewInBlock) ->
   Succ = state__succ(S, Label),
   Edges = [{Label, X} || X <- Succ],
   NewMap = update_edges(Edges, NewInBlock, Map),
   NewMap1 = gb_trees:enter({inblock_out, Label}, NewInBlock, NewMap),
   S#state{edge_map = NewMap1}.
 
-update_edges([Edge|Left], NewInBlock, Map)->
+update_edges([Edge|Left], NewInBlock, Map) ->
   NewMap = gb_trees:enter(Edge, NewInBlock, Map),
   update_edges(Left, NewInBlock, NewMap);
 update_edges([], _NewInBlock, NewMap) ->
   NewMap.
 
-join_in_block([])->
+join_in_block([]) ->
   false;
-join_in_block([none|_])->
+join_in_block([none|_]) ->
   false;
 join_in_block([{value, InBlock}|Left]) ->
   join_in_block(Left, InBlock).
 
-join_in_block([none|_], _Current)->
+join_in_block([none|_], _Current) ->
   false;
 join_in_block([{value, InBlock}|Left], Current) ->
   if Current =:= InBlock -> join_in_block(Left, Current);
@@ -948,25 +970,25 @@ join_in_block([], Current) ->
   Current.
 	
 
-state__get_in_block_in(#state{edge_map=Map}, Label)->
+state__get_in_block_in(#state{edge_map=Map}, Label) ->
   gb_trees:get({inblock_in, Label}, Map).
 
-state__get_in_block_out(#state{edge_map=Map}, Label)->
+state__get_in_block_out(#state{edge_map=Map}, Label) ->
   gb_trees:get({inblock_out, Label}, Map).
 
 
-new_worklist(#state{cfg=Cfg})->
+new_worklist(#state{cfg=Cfg}) ->
   Start = hipe_icode_cfg:start_label(Cfg),
   {[Start], [], gb_sets:insert(Start, gb_sets:empty())}.
 
-get_work({[Label|Left], List, Set})->
+get_work({[Label|Left], List, Set}) ->
   {Label, {Left, List, gb_sets:delete(Label, Set)}};
 get_work({[], [], _Set}) ->
   none;
 get_work({[], List, Set}) ->
   get_work({lists:reverse(List), [], Set}).
 
-add_work({List1, List2, Set}, [Label|Left])->
+add_work({List1, List2, Set}, [Label|Left]) ->
   case gb_sets:is_member(Label, Set) of
     true -> 
       add_work({List1, List2, Set}, Left);
@@ -979,11 +1001,11 @@ add_work(WorkList, []) ->
   WorkList.
 
 
-match(Tree1, Tree2)->
+match(Tree1, Tree2) ->
   match_1(gb_trees:to_list(Tree1), Tree2) andalso 
     match_1(gb_trees:to_list(Tree2), Tree1).
 
-match_1([{Key, Val}|Left], Tree2)->
+match_1([{Key, Val}|Left], Tree2) ->
   case gb_trees:lookup(Key, Tree2) of
     {value, Val} ->
       match_1(Left, Tree2);

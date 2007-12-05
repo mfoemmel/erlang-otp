@@ -40,14 +40,8 @@
 #  define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #endif
 
-#if defined(HEAP_FRAG_ELIM_TEST)
-# define ArithCheck(x)
-# define ArithAlloc(a, b) HAlloc((a), (b))
-#endif
-
 static Eterm shift(Process* p, Eterm arg1, Eterm arg2, int right);
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
 {
     Uint actual;
@@ -55,32 +49,25 @@ static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint allo
     if (is_immed(res)) {
 	if (p->heap <= hp && hp < p->htop) {
 	    p->htop = hp;
+#if defined(CHECK_FOR_HOLES)
 	} else {
 	    erts_arith_shrink(p, hp);
+#endif
 	}
     } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
 	if (p->heap <= hp && hp < p->htop) {
 	    p->htop = hp+actual;
+#if defined(CHECK_FOR_HOLES)
 	} else {
 	    erts_arith_shrink(p, hp+actual);
+#endif
 	}
     }
 }
-#else
-static ERTS_INLINE void maybe_shrink(Process* p, Eterm* hp, Eterm res, Uint alloc)
-{
-    Uint actual;
-
-    if (is_immed(res)) {
-	erts_arith_shrink(p, hp);
-    } else if ((actual = bignum_header_arity(*hp)+1) < alloc) {
-	erts_arith_shrink(p, hp+actual);
-    }
-}
-#endif
 
 /*
- ** Bif interfaces
+ * BIF interfaces. They will only be from match specs and
+ * when a BIF is applied.
  */
 
 BIF_RETTYPE splus_1(BIF_ALIST_1)
@@ -237,13 +224,12 @@ shift(Process* p, Eterm arg1, Eterm arg2, int right)
 			ires -= (-i / D_EXP);
 		}
 		need = BIG_NEED_SIZE(ires+1);
-		bigp = ArithAlloc(p, need);
+		bigp = HAlloc(p, need);
 		arg1 = big_lshift(arg1, i, bigp);
 		maybe_shrink(p, bigp, arg1, need);
 		if (is_nil(arg1)) {
 		    BIF_ERROR(p, SYSTEM_LIMIT);
 		}
-		ArithCheck(p);
 		BIF_RET(arg1);
 	    } else if (is_big(arg1)) {
 		if (i == 0) {
@@ -264,14 +250,13 @@ BIF_RETTYPE bnot_1(BIF_ALIST_1)
 	ret = make_small(~signed_val(BIF_ARG_1));
     } else if (is_big(BIF_ARG_1)) {
 	Uint need = BIG_NEED_SIZE(big_size(BIF_ARG_1)+1);
-	Eterm* bigp = ArithAlloc(BIF_P, need);
+	Eterm* bigp = HAlloc(BIF_P, need);
 
 	ret = big_bnot(BIF_ARG_1, bigp);
 	maybe_shrink(BIF_P, bigp, ret, need);
 	if (is_nil(ret)) {
 	    BIF_ERROR(BIF_P, SYSTEM_LIMIT);
 	}
-	ArithCheck(BIF_P);
     } else {
 	BIF_ERROR(BIF_P, BADARITH);
     }
@@ -280,12 +265,10 @@ BIF_RETTYPE bnot_1(BIF_ALIST_1)
 
 /*
  * Implementation and interfaces for the rest of the runtime system.
- *
- * Note:
- * The global functions named erts_XXX are used by the beam
- * emulator loop, do NOT fiddle with these without considering
- * that fact, please...
+ * The functions that follow are only used in match specs and when
+ * arithmetic functions are applied.
  */
+
 Eterm
 erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 {
@@ -313,9 +296,8 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		    if (MY_IS_SSMALL(ires)) {
 			return make_small(ires);
 		    } else {
-			hp = ArithAlloc(p, 2);
+			hp = HAlloc(p, 2);
 			res = small_to_big(ires, hp);
-			ArithCheck(p);
 			return res;
 		    }
 		default:
@@ -371,7 +353,7 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		    sz2 = big_size(arg2);
 		    sz = MAX(sz1, sz2)+1;
 		    need_heap = BIG_NEED_SIZE(sz);
-		    hp = ArithAlloc(p, need_heap);
+		    hp = HAlloc(p, need_heap);
 		    res = big_plus(arg1, arg2, hp);
 		    if (is_nil(res)) {
 			erts_arith_shrink(p, hp);
@@ -379,7 +361,6 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 			return THE_NON_VALUE;
 		    }
 		    maybe_shrink(p, hp, res, need_heap);
-		    ArithCheck(p);
 		    return res;
 		case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 		    if (big_to_double(arg1, &f1.fd) < 0) {
@@ -419,9 +400,8 @@ erts_mixed_plus(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd + f2.fd;
 		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
-		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
+		    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
-		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
 		    return res;
 		default:
@@ -463,9 +443,8 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		    if (MY_IS_SSMALL(ires)) {
 			return make_small(ires);
 		    } else {
-			hp = ArithAlloc(p, 2);
+			hp = HAlloc(p, 2);
 			res = small_to_big(ires, hp);
-			ArithCheck(p);
 			return res;
 		    }
 		default:
@@ -510,7 +489,7 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		    sz2 = big_size(arg2);
 		    sz = MAX(sz1, sz2)+1;
 		    need_heap = BIG_NEED_SIZE(sz);
-		    hp = ArithAlloc(p, need_heap);
+		    hp = HAlloc(p, need_heap);
 		    res = big_minus(arg1, arg2, hp);
 		    if (is_nil(res)) {
 			erts_arith_shrink(p, hp);
@@ -518,7 +497,6 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 			return THE_NON_VALUE;
 		    }
                     maybe_shrink(p, hp, res, need_heap);
-		    ArithCheck(p);
 		    return res;
 		default:
 		    goto badarith;
@@ -567,9 +545,8 @@ erts_mixed_minus(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd - f2.fd;
 		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
-		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
+		    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
-		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
 		    return res;
 		default:
@@ -619,9 +596,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 			 * result is small (which should be the most common case
 			 * in practice).
 			 */
-			arg1 = small_to_big(signed_val(arg1), tmp_big1);
-			arg2 = small_to_big(signed_val(arg2), tmp_big2);
-			res = big_times(arg1, arg2, big_res);
+			res = small_times(signed_val(arg1), signed_val(arg2), big_res);
 			if (is_small(res)) {
 			    return res;
 			} else {
@@ -637,7 +612,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 			    hdr = big_res[0];
 			    arity = bignum_header_arity(hdr);
 			    ASSERT(arity == 1 || arity == 2);
-			    hp = ArithAlloc(p, arity+1);
+			    hp = HAlloc(p, arity+1);
 			    res = make_big(hp);
 			    *hp++ = hdr;
 			    *hp++ = big_res[1];
@@ -705,7 +680,7 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 
 		do_big:
 		    need_heap = BIG_NEED_SIZE(sz);
-                    hp = ArithAlloc(p, need_heap);
+                    hp = HAlloc(p, need_heap);
 		    res = big_times(arg1, arg2, hp);
 
 		    /*
@@ -720,7 +695,6 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 			return THE_NON_VALUE;
 		    }
                     maybe_shrink(p, hp, res, need_heap);
-                    ArithCheck(p);
 		    return res;
 		case (_TAG_HEADER_FLOAT >> _TAG_PRIMARY_SIZE):
 		    if (big_to_double(arg1, &f1.fd) < 0) {
@@ -760,9 +734,8 @@ erts_mixed_times(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd * f2.fd;
 		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
-		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
+		    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
 		    res = make_float(hp);
-		    ArithCheck(p);
 		    PUT_DOUBLE(f1, hp);
 		    return res;
 		default:
@@ -887,9 +860,8 @@ erts_mixed_div(Process* p, Eterm arg1, Eterm arg2)
 		do_float:
 		    f1.fd = f1.fd / f2.fd;
 		    ERTS_FP_ERROR(p, f1.fd, goto badarith);
-		    hp = ArithAlloc(p, FLOAT_SIZE_OBJECT);
+		    hp = HAlloc(p, FLOAT_SIZE_OBJECT);
 		    PUT_DOUBLE(f1, hp);
-		    ArithCheck(p);
 		    return make_float(hp);
 		default:
 		    goto badarith;
@@ -940,7 +912,7 @@ erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 
 	    ires = big_size(arg2);
 	    need = BIG_NEED_SIZE(i-ires+1) + BIG_NEED_SIZE(i);
-	    hp = ArithAlloc(p, need);
+	    hp = HAlloc(p, need);
 	    arg1 = big_div(arg1, arg2, hp);
 	    if (is_nil(arg1)) {
 		erts_arith_shrink(p, hp);
@@ -948,7 +920,6 @@ erts_int_div(Process* p, Eterm arg1, Eterm arg2)
 		return THE_NON_VALUE;
 	    }
 	    maybe_shrink(p, hp, arg1, need);
-	    ArithCheck(p);
 	}
 	return arg1;
     default:
@@ -981,7 +952,7 @@ erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 	    arg1 = SMALL_ZERO;
 	} else if (ires > 0) {
 	    Uint need = BIG_NEED_SIZE(big_size(arg1));
-	    Eterm* hp = ArithAlloc(p, need);
+	    Eterm* hp = HAlloc(p, need);
 
 	    arg1 = big_rem(arg1, arg2, hp);
 	    if (is_nil(arg1)) {
@@ -990,7 +961,6 @@ erts_int_rem(Process* p, Eterm arg1, Eterm arg2)
 		return THE_NON_VALUE;
 	    }
 	    maybe_shrink(p, hp, arg1, need);
-	    ArithCheck(p);
 	}
 	return arg1;
     default:
@@ -1020,11 +990,10 @@ Eterm erts_band(Process* p, Eterm arg1, Eterm arg2)
 	return THE_NON_VALUE;
     }
     need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, need);
+    hp = HAlloc(p, need);
     arg1 = big_band(arg1, arg2, hp);
     ASSERT(is_not_nil(arg1));
     maybe_shrink(p, hp, arg1, need);
-    ArithCheck(p);
     return arg1;
 }
 
@@ -1049,11 +1018,10 @@ Eterm erts_bor(Process* p, Eterm arg1, Eterm arg2)
 	return THE_NON_VALUE;
     }
     need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, need);
+    hp = HAlloc(p, need);
     arg1 = big_bor(arg1, arg2, hp);
     ASSERT(is_not_nil(arg1));
     maybe_shrink(p, hp, arg1, need);
-    ArithCheck(p);
     return arg1;
 }
 
@@ -1078,11 +1046,10 @@ Eterm erts_bxor(Process* p, Eterm arg1, Eterm arg2)
 	return THE_NON_VALUE;
     }
     need = BIG_NEED_SIZE(MAX(big_size(arg1), big_size(arg2)) + 1);
-    hp = ArithAlloc(p, need);
+    hp = HAlloc(p, need);
     arg1 = big_bxor(arg1, arg2, hp);
     ASSERT(is_not_nil(arg1));
     maybe_shrink(p, hp, arg1, need);
-    ArithCheck(p);
     return arg1;
 }
 
@@ -1092,7 +1059,7 @@ Eterm erts_bnot(Process* p, Eterm arg)
 
     if (is_big(arg)) {
 	Uint need = BIG_NEED_SIZE(big_size(arg)+1);
-	Eterm* bigp = ArithAlloc(p, need);
+	Eterm* bigp = HAlloc(p, need);
 
 	ret = big_bnot(arg, bigp);
 	maybe_shrink(p, bigp, ret, need);
@@ -1100,7 +1067,6 @@ Eterm erts_bnot(Process* p, Eterm arg)
 	    p->freason = SYSTEM_LIMIT;
 	    return NIL;
 	}
-	ArithCheck(p);
     } else {
 	p->freason = BADARITH;
 	return NIL;
@@ -1108,7 +1074,6 @@ Eterm erts_bnot(Process* p, Eterm arg)
     return ret;
 } 
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 #define ERTS_ARITH_FORCE_GC 0
 
 #define ERTS_NEED_GC(p, need) \
@@ -1131,15 +1096,13 @@ trim_heap(Process* p, Eterm* hp, Eterm res)
 }
 
 /*
- * The following are not allowed to be used here
+ * The functions that follow are called from the emulator loop.
+ * They are not allowed to allocate heap fragments, but must do
+ * a garbage collection if there is insufficient heap space.
  */
+
 #define erts_arith_shrink horrible error
 #define maybe_shrink horrible error
-#undef ArithAlloc
-#undef ArithCheck
-#define ArithAlloc horrible error
-#define ArithCheck horrible error
-
 
 Eterm
 erts_gc_mixed_plus(Process* p, Eterm* reg, Uint live)
@@ -1514,9 +1477,8 @@ erts_gc_mixed_times(Process* p, Eterm* reg, Uint live)
 			 * result is small (which should be the most common case
 			 * in practice).
 			 */
-			arg1 = small_to_big(signed_val(arg1), tmp_big1);
-			arg2 = small_to_big(signed_val(arg2), tmp_big2);
-			res = big_times(arg1, arg2, big_res);
+			res = small_times(signed_val(arg1), signed_val(arg2),
+					  big_res);
 			if (is_small(res)) {
 			    return res;
 			} else {
@@ -2023,5 +1985,3 @@ Eterm erts_gc_bnot(Process* p, Eterm* reg, Uint live)
     }
     return result;
 } 
-
-#endif

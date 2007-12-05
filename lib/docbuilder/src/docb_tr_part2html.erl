@@ -29,16 +29,16 @@ transform(File, {part, _Attrs, [Header| Rest]}, Opts0) ->
 
     %% Create the framing HTML document
     OutFile = docb_util:outfile(File ++ "_frame", ".html", Opts0),
-    case file:open(OutFile, write) of
+    case file:open(OutFile, [write]) of
 	{ok, Frame} ->
 	    io:format(Frame,
 "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\">
 <!-- This document was generated using DocBuilder-" ++ docb_util:version() ++ " -->
 <HTML>
 <HEAD>
-  <TITLE>~s</TITLE>" ++
-  docb_util:html_snippet(head,  Opts0) ++
-"</HEAD>
+  <TITLE>~s</TITLE>
+  " ++ docb_util:html_snippet(head,  Opts0) ++ "
+</HEAD>
 <FRAMESET COLS=\"200, *\">
   <FRAME SRC=\"~s\" NAME=\"toc\">
   <FRAME SRC=\"~s\" NAME=\"document\">
@@ -135,8 +135,8 @@ concat_files(Files, Opts, TransformP, TOpts) ->
 concat_files([File | Rest], Body, ChLevel, Opts, TP, TOpts, Ext) ->
     case docb_main:parse1(File, Opts) of
 	{ok, Parse} ->
-	    {TopTag, Attrs, [Header| More]} = Parse,
-	    {header, _, [{title, _, Title}| _]} = Header,
+	    {TopTag, Attrs, [Header = {header, _, HeaderContents} | More]} = Parse,
+	    {value,{title,_,Title}} = lists:keysearch(title,1,HeaderContents),
 	    NewMore = [{section, [], [{title, [], Title}| More]}],
 	    NewParse = {TopTag, Attrs, [Header| NewMore]},
 	    if

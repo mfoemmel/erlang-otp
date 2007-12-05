@@ -308,7 +308,7 @@ handle_call(stoppit,_From,Data)->
     {stop,normal,ok,Data};
 
 handle_call(is_localhost,_From,Data)->
-    Result=case httpd_util:key1search(Data#state.web_data,bind_address) of
+    Result=case proplists:get_value(bind_address, Data#state.web_data) of
 	?DEFAULT_ADDR ->
 	    true;
 	_IpNumber ->
@@ -367,9 +367,9 @@ terminate(_Reason,Data)->
     ok.
 
 print_url(ConfigData)->
-    Server=httpd_util:key1search(ConfigData,server_name,"undefined"),
-    Port=httpd_util:key1search(ConfigData,port,"undefined"),
-    {A,B,C,D}=httpd_util:key1search(ConfigData,bind_address,"undefined"),
+    Server=proplists:get_value(server_name,ConfigData,"undefined"),
+    Port=proplists:get_value(port,ConfigData,"undefined"),
+    {A,B,C,D}=proplists:get_value(bind_address,ConfigData,"undefined"),
     io:format("WebTool is available at http://~s:~w/~n",[Server,Port]),
     io:format("Or  http://~w.~w.~w.~w:~w/~n",[A,B,C,D,Port]).
 
@@ -434,7 +434,7 @@ start_webserver(Data,Path,Config)->
     end.
 
 start_server(Conf_data)->
-    case httpd:start2(Conf_data) of
+    case inets:start(httpd, Conf_data, stand_alone) of
 	{ok,Pid}->
 	    {ok,Pid};
 	Error->
@@ -474,7 +474,7 @@ get_tool_files_data()->
 get_file_content(Tools)->
     Get_data=fun({tool,ToolData}) ->
 		     %%io:format("Data : ~p ~n",[ToolData]),
-		     case httpd_util:key1search(ToolData,config_func) of
+		     case proplists:get_value(config_func,ToolData) of
 			 {M,F,A}->
 			     case catch apply(M,F,A) of
 				 {'EXIT',_} ->
@@ -508,7 +508,7 @@ insert_app({Name,Key_val_list},Table) when is_list(Key_val_list),is_atom(Name)->
     %%io:format("ToolData: ~p: ~p~n",[Name,Key_val_list]),
     lists:foreach(
       fun({alias,{erl_alias,Alias,Mods}}) ->
-	      Key_val = {erl_script_alias,{Alias,[atom_to_list(M)||M<-Mods]}},
+	      Key_val = {erl_script_alias,{Alias,Mods}},
 	      %%io:format("Insert: ~p~n",[Key_val]),
 	      ets:insert(Table,{Name,Key_val});
 	 (Key_val_pair)->
@@ -603,11 +603,11 @@ get_path()->
 %----------------------------------------------------------------------
 shutdown_server(State)->
     {Addr,Port} = get_addr_and_port(State#state.web_data),
-    httpd:stop(Addr,Port).
+    inets:stop(httpd,{Addr,Port}).
 
 get_addr_and_port(Config) ->
-    Addr = httpd_util:key1search(Config,bind_address,?DEFAULT_ADDR),
-    Port = httpd_util:key1search(Config,port,?DEFAULT_PORT),
+    Addr = proplists:get_value(bind_address,Config,?DEFAULT_ADDR),
+    Port = proplists:get_value(port,Config,?DEFAULT_PORT),
     {Addr,Port}.
 
 %----------------------------------------------------------------------
@@ -1147,7 +1147,7 @@ get_tools3(ToolFile) ->
 % There are a little unneccesary work in this format but it is extendable
 %----------------------------------------------------------------------
 webdata(TupleList)-> 
-    case httpd_util:key1search(TupleList,config_func,nodata) of
+    case proplists:get_value(config_func,TupleList,nodata) of
 	{M,F,A} ->
 	    {tool,[{config_func,{M,F,A}}]};
 	_ ->

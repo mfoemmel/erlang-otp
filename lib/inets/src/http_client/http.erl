@@ -15,18 +15,24 @@
 %% 
 %%     $Id$
 %%
-%% This module is very loosely based on code initially developed by 
-%% Johan Blom at Mobile Arts AB
 %% Description:
 %%% This version of the HTTP/1.1 client supports:
 %%%      - RFC 2616 HTTP 1.1 client part
 %%%      - RFC 2818 HTTP Over TLS
 
 -module(http).
+-behaviour(inets_service).
 
 %% API
--export([request/1, request/4, cancel_request/1, set_options/1, 
-	 verify_cookies/2, cookie_header/1]).
+-export([request/1, request/2, request/4, request/5,
+	 cancel_request/1, cancel_request/2,
+	 set_options/1, set_options/2,
+	 verify_cookies/2, verify_cookies/3, cookie_header/1, 
+	 cookie_header/2, stream_next/1]).
+
+%% Behavior callbacks
+-export([start_standalone/1, start_service/1, 
+	 stop_service/1, services/0, service_info/1]).
 
 -include("http_internal.hrl").
 -include("httpc_internal.hrl").
@@ -36,7 +42,20 @@
 %%%=========================================================================
 
 %%--------------------------------------------------------------------------
-%% request(Method, Request, HTTPOptions, Options) ->
+%% request(Url [, Profile]) ->
+%%           {ok, {StatusLine, Headers, Body}} | {error,Reason} 
+%%
+%%	Url - string() 
+%% Description: Calls request/4 with default values.
+%%--------------------------------------------------------------------------
+request(Url) ->
+    request(Url, default).
+
+request(Url, Profile) ->
+    request(get, {Url, []}, [], [], Profile).
+
+%%--------------------------------------------------------------------------
+%% request(Method, Request, HTTPOptions, Options [, Profile]) ->
 %%           {ok, {StatusLine, Headers, Body}} | {ok, {Status, Body}} |
 %%           {ok, RequestId} | {error,Reason} | {ok, {saved_as, FilePath}
 %%
@@ -69,21 +88,22 @@
 %% return {ok, RequestId} and later on a message will be sent to the
 %% calling process on the format {http, {RequestId, {StatusLine,
 %% Headers, Body}}} or {http, {RequestId, {error, Reason}}}
-%% %%--------------------------------------------------------------------------
-request(Url) ->
-    request(get, {Url, []}, [], []).
+%%--------------------------------------------------------------------------
 
-request(Method, {Url, Headers}, HTTPOptions, Options) 
+request(Method, Request, HttpOptions, Options) ->
+    request(Method, Request, HttpOptions, Options, default). 
+
+request(Method, {Url, Headers}, HTTPOptions, Options, Profile) 
   when Method==options;Method==get;Method==head;Method==delete;Method==trace ->
     case http_uri:parse(Url) of
 	{error,Reason} ->
 	    {error,Reason};
 	ParsedUrl ->
 	    handle_request(Method, Url, {ParsedUrl, Headers, [], []}, 
-			   HTTPOptions, Options)
+			   HTTPOptions, Options, Profile)
     end;
      
-request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options) 
+request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options, Profile) 
   when Method==post;Method==put ->
     case http_uri:parse(Url) of
 	{error,Reason} ->
@@ -91,7 +111,7 @@ request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options)
 	ParsedUrl ->
 	    handle_request(Method, Url, 
 			   {ParsedUrl, Headers, ContentType, Body}, 
-			   HTTPOptions, Options)
+			   HTTPOptions, Options, Profile)
     end.
 
 %%--------------------------------------------------------------------------
@@ -101,7 +121,10 @@ request(Method, {Url,Headers,ContentType,Body}, HTTPOptions, Options)
 %% Description: Cancels a HTTP-request.
 %%-------------------------------------------------------------------------
 cancel_request(RequestId) ->
-    ok = httpc_manager:cancel_request(RequestId), 
+    cancel_request(RequestId, default).
+
+cancel_request(RequestId, Profile) ->
+    ok = httpc_manager:cancel_request(RequestId, profile_name(Profile)), 
     receive  
 	%% If the request was allready fullfilled throw away the 
 	%% answer as the request has been canceled.
@@ -112,8 +135,9 @@ cancel_request(RequestId) ->
     end.
 
 %%--------------------------------------------------------------------------
-%% set_options(Options) ->
+%% set_options(Options [, Profile]) -> ok | {error, Reason}
 %%   Options - [Option]
+%%   Profile - atom()
 %%   Option - {proxy, {Proxy, NoProxy}} | {max_sessions, MaxSessions} | 
 %%            {max_pipeline_length, MaxPipeline} | 
 %%            {pipeline_timeout, PipelineTimeout} | {cookies, CookieMode}
@@ -126,36 +150,124 @@ cancel_request(RequestId) ->
 %% Description: Informs the httpc_manager of the new settings. 
 %%-------------------------------------------------------------------------
 set_options(Options) ->
-    ensure_started(no_scheme),
-    httpc_manager:set_options(Options).
+    set_options(Options, default).
+set_options(Options, Profile) ->
+    case validate_options(Options) of
+	ok ->
+	    try httpc_manager:set_options(Options, profile_name(Profile)) of
+		Result ->
+		    Result
+	    catch
+		exit:{noproc, _} ->
+		    {error, inets_not_started}
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end.
 
+%%--------------------------------------------------------------------------
+%% verify_cookies(SetCookieHeaders, Url [, Profile]) -> ok | {error, reason} 
+%%   
+%%                                 
+%% Description: 
+%%-------------------------------------------------------------------------
 verify_cookies(SetCookieHeaders, Url) ->
-    {_, _, Host, Port, Path, _} = http_uri:parse(Url),
-    Cookies = http_cookie:cookies(SetCookieHeaders, Path, Host),
-    httpc_manager:store_cookies(Cookies, {Host, Port}),
-    ok.
+    verify_cookies(SetCookieHeaders, Url, default).
 
+verify_cookies(SetCookieHeaders, Url, Profile) ->
+    {_, _, Host, Port, Path, _} = http_uri:parse(Url),
+    ProfileName = profile_name(Profile),
+    Cookies = http_cookie:cookies(SetCookieHeaders, Path, Host),
+    try httpc_manager:store_cookies(Cookies, {Host, Port}, ProfileName) of
+	_ ->
+	    ok
+    catch 
+	exit:{noproc, _} ->
+	    {error, {not_started, Profile}}
+    end.
+
+%%--------------------------------------------------------------------------
+%% cookie_header(Url [, Profile]) -> Header | {error, Reason}
+%%               
+%% Description: Returns the cookie header that would be sent when making
+%% a request to <Url>.
+%%-------------------------------------------------------------------------
 cookie_header(Url) ->
-    httpc_manager:cookies(Url).
+    cookie_header(Url, default).
+
+cookie_header(Url, Profile) ->
+    try httpc_manager:cookies(Url, profile_name(Profile)) of
+	Header ->
+	    Header
+    catch 
+	exit:{noproc, _} ->
+	    {error, {not_started, Profile}}
+    end.
+
+
+stream_next(Pid) ->
+    httpc_handler:stream_next(Pid).
+
+%%%========================================================================
+%%% Behavior callbacks
+%%%========================================================================
+start_standalone(PropList) ->
+    case proplists:get_value(profile, PropList) of
+	undefined ->
+	    {error, no_profile};
+	Profile ->
+	    Dir = 
+		proplists:get_value(data_dir, PropList, only_session_cookies),
+	    httpc_manager:start_link({Profile, Dir}, stand_alone)
+    end.
+
+start_service(Config) ->
+    httpc_profile_sup:start_child(Config).
+
+stop_service(Profile) when is_atom(Profile) ->
+    httpc_profile_sup:stop_child(Profile);
+stop_service(Pid) when is_pid(Pid) ->
+    case service_info(Pid) of
+	{ok, [{profile, Profile}]} ->
+	    stop_service(Profile);
+	Error ->
+	    Error
+    end.
+
+services() ->
+    [{httpc, Pid} || {_, Pid, _, _} <- 
+			supervisor:which_children(httpc_profile_sup)].
+service_info(Pid) ->
+    try [{ChildName, ChildPid} || 
+	    {ChildName, ChildPid, _, _} <- 
+		supervisor:which_children(httpc_profile_sup)] of
+	Children ->
+	    child_name2info(child_name(Pid, Children))
+    catch
+	exit:{noproc, _} ->
+	    {error, service_not_available} 
+    end.
 
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
 handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
-			Headers, ContentType, Body}, HTTPOptions, Options) ->
+			Headers, ContentType, Body}, 
+	       HTTPOptions, Options, Profile) ->
     HTTPRecordOptions = http_options(HTTPOptions, #http_options{}),
     
-    Sync = http_util:key1search(Options, sync, true),
+    Sync = proplists:get_value(sync, Options, true),
     NewHeaders = lists:map(fun({Key, Val}) -> 
 				   {http_util:to_lower(Key), Val} end,
 			   Headers),
-    Stream = http_util:key1search(Options, stream, none),
+    Stream = proplists:get_value(stream, Options, none),
 
     case {Sync, Stream} of
 	{true, self} ->
 	    {error, streaming_error};
 	_ ->
-	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, Host),
+	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, 
+					  Host),
 	    Request = #request{from = self(),
 			       scheme = Scheme, address = {Host,Port},
 			       path = Path, pquery = Query, method = Method,
@@ -167,13 +279,15 @@ handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
 			       headers_as_is = 
 			       headers_as_is(Headers, Options)},
 	    
-	    ensure_started(Scheme),
 	    
-	    case httpc_manager:request(Request) of
+	    try httpc_manager:request(Request, profile_name(Profile)) of
 		{ok, RequestId} ->
 		    handle_answer(RequestId, Sync, Options);
 		{error, Reason} ->
 		    {error, Reason}
+	    catch
+		error:{noproc, _} ->
+		    {error, {not_started, Profile}}
 	    end
     end.
 
@@ -191,13 +305,13 @@ handle_answer(RequestId, true, Options) ->
  
 return_answer(Options, {StatusLine, Headers, BinBody}) ->
     Body = 
-	case http_util:key1search(Options, body_format, string) of
+	case proplists:get_value(body_format, Options, string) of
 	    string ->
 		binary_to_list(BinBody);
 	    _ ->
 		BinBody
 	end,
-    case http_util:key1search(Options, full_result, true) of
+    case proplists:get_value(full_result, Options, true) of
 	true ->
 	    {ok, {StatusLine, Headers, Body}};
 	false ->
@@ -211,7 +325,7 @@ return_answer(Options, {StatusLine, Headers, BinBody}) ->
 %% used if there is no other way to communicate with the server or for
 %% testing purpose.
 headers_as_is(Headers, Options) ->
-     case http_util:key1search(Options, headers_as_is, false) of
+     case proplists:get_value(headers_as_is, Options, false) of
 	 false ->
 	     [];
 	 true  ->
@@ -240,6 +354,33 @@ http_options([{proxy_auth, Val = {User, Passwd}} | Settings], Acc)
 http_options([Option | Settings], Acc) ->
     error_logger:info_report("Invalid option ignored ~p~n", [Option]),
     http_options(Settings, Acc).
+
+validate_options([]) ->
+    ok;
+validate_options([{proxy, {{ProxyHost, ProxyPort}, NoProxy}}| Tail]) when
+		 is_list(ProxyHost), is_integer(ProxyPort), 
+		 is_list(NoProxy) ->
+    validate_options(Tail);
+validate_options([{pipeline_timeout, Value}| Tail]) when is_integer(Value) ->
+    validate_options(Tail);
+validate_options([{max_pipeline_length, Value}| Tail]) 
+  when is_integer(Value) ->
+    validate_options(Tail);
+validate_options([{max_sessions, Value}| Tail]) when is_integer(Value) ->
+    validate_options(Tail);
+validate_options([{cookies, Value}| Tail]) 
+  when Value == enabled; Value == disabled; Value == verify ->
+    validate_options(Tail);
+validate_options([{ipv6, Value}| Tail]) 
+  when Value == enabled; Value == disabled ->
+    validate_options(Tail);
+validate_options([{verbose, Value}| Tail]) when Value == false;
+						Value == verbose;
+						Value == debug;
+						Value == trace ->
+    validate_options(Tail);
+validate_options([{_, _} = Opt| _]) ->
+    {error, {not_an_option, Opt}}.
 
 header_record([], RequestHeaders, Host) ->
     validate_headers(RequestHeaders, Host);
@@ -360,37 +501,24 @@ validate_headers(RequestHeaders = #http_request_h{host = undefined}, Host) ->
 validate_headers(RequestHeaders, _) ->
     RequestHeaders.
 
-ensure_started(Scheme) ->
-    %% Start of the inets application should really be handled by the 
-    %% application using inets. 
-    case application:start(inets) of
-	{error,{already_started,inets}} ->
-	    ok;
-	{error, {{already_started,_}, % Started as an included application
-	 {inets_app, start, _}}} ->
-	    ok;
-	ok ->
-	    error_logger:info_report("The inets application was not started."
-				     " Has now been started as a temporary" 
-				     " application.")
-    end,
-    
-    case Scheme of
-	https ->
-	    %% Start of the ssl application should really be handled by the 
-	    %% application using inets. 
-	    case application:start(ssl) of
-		{error,{already_started,ssl}} ->
-		    ok;
-		%% Started as an included application
-		{error, {{already_started,_}, 
-		 {ssl_app, start, _}}} ->
-		    ok;
-		ok ->
-		    error_logger:info_report("The ssl application was not "
-					     "started. Has now been started "
-					     "as a temporary application.")
-	    end;
-	_ ->
-	    ok
-    end.
+profile_name(default) ->
+    httpc_manager;
+profile_name(Pid) when is_pid(Pid) ->
+    Pid;
+profile_name(Profile) ->
+    list_to_atom("httpc_manager_" ++ atom_to_list(Profile)).
+
+child_name2info(undefined) ->
+    {error, no_such_service};
+child_name2info(httpc_manager) ->
+    {ok, [{profile, default}]};
+child_name2info({http, Profile}) ->
+    {ok, [{profile, Profile}]}.
+
+child_name(_, []) ->
+    undefined;
+child_name(Pid, [{Name, Pid} | _]) ->
+    Name;
+child_name(Pid, [_ | Children]) ->
+    child_name(Pid, Children).
+

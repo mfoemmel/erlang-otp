@@ -77,7 +77,7 @@ typedef struct {
 
 #define ERL_DRV_EXTENDED_MARKER		(0xfeeeeeed)
 #define ERL_DRV_EXTENDED_MAJOR_VERSION	1
-#define ERL_DRV_EXTENDED_MINOR_VERSION	1
+#define ERL_DRV_EXTENDED_MINOR_VERSION	2
 
 /*
  * The emulator will refuse to load a driver with different major
@@ -132,6 +132,8 @@ typedef struct erl_drv_event_data *ErlDrvEventData; /* Event data */
  * Used in monitors...
  */
 typedef unsigned long ErlDrvTermData;
+typedef unsigned long ErlDrvUInt;
+typedef signed long ErlDrvSInt;
 /*
  * A driver monitor
  */
@@ -188,6 +190,20 @@ typedef struct erl_io_vec {
     SysIOVec* iov;
     ErlDrvBinary** binv;
 } ErlIOVec;
+
+/*
+ * erl driver thread types
+ */
+
+typedef struct ErlDrvTid_ *ErlDrvTid;
+typedef struct ErlDrvMutex_ ErlDrvMutex;
+typedef struct ErlDrvCond_ ErlDrvCond;
+typedef struct ErlDrvRWLock_ ErlDrvRWLock;
+typedef int ErlDrvTSDKey;
+
+typedef struct {
+    int suggested_stack_size;
+} ErlDrvThreadOpts;
 
 /*
  * 
@@ -402,6 +418,44 @@ EXTERN int remove_driver_entry(ErlDrvEntry *de);
 EXTERN void driver_system_info(ErlDrvSysInfo *sip, size_t si_size);
 
 /*
+ * erl driver thread functions.
+ */
+
+EXTERN ErlDrvMutex *erl_drv_mutex_create(char *name);
+EXTERN void erl_drv_mutex_destroy(ErlDrvMutex *mtx);
+EXTERN int erl_drv_mutex_trylock(ErlDrvMutex *mtx);
+EXTERN void erl_drv_mutex_lock(ErlDrvMutex *mtx);
+EXTERN void erl_drv_mutex_unlock(ErlDrvMutex *mtx);
+EXTERN ErlDrvCond *erl_drv_cond_create(char *name);
+EXTERN void erl_drv_cond_destroy(ErlDrvCond *cnd);
+EXTERN void erl_drv_cond_signal(ErlDrvCond *cnd);
+EXTERN void erl_drv_cond_broadcast(ErlDrvCond *cnd);
+EXTERN void erl_drv_cond_wait(ErlDrvCond *cnd, ErlDrvMutex *mtx);
+EXTERN ErlDrvRWLock *erl_drv_rwlock_create(char *name);
+EXTERN void erl_drv_rwlock_destroy(ErlDrvRWLock *rwlck);
+EXTERN int erl_drv_rwlock_tryrlock(ErlDrvRWLock *rwlck);
+EXTERN void erl_drv_rwlock_rlock(ErlDrvRWLock *rwlck);
+EXTERN void erl_drv_rwlock_runlock(ErlDrvRWLock *rwlck);
+EXTERN int erl_drv_rwlock_tryrwlock(ErlDrvRWLock *rwlck);
+EXTERN void erl_drv_rwlock_rwlock(ErlDrvRWLock *rwlck);
+EXTERN void erl_drv_rwlock_rwunlock(ErlDrvRWLock *rwlck);
+EXTERN int erl_drv_tsd_key_create(char *name, ErlDrvTSDKey *key);
+EXTERN void erl_drv_tsd_key_destroy(ErlDrvTSDKey key);
+EXTERN void erl_drv_tsd_set(ErlDrvTSDKey key, void *data);
+EXTERN void *erl_drv_tsd_get(ErlDrvTSDKey key);
+EXTERN ErlDrvThreadOpts *erl_drv_thread_opts_create(char *name);
+EXTERN void erl_drv_thread_opts_destroy(ErlDrvThreadOpts *opts);
+EXTERN int erl_drv_thread_create(char *name,
+				 ErlDrvTid *tid,
+				 void * (*func)(void *),
+				 void *args,
+				 ErlDrvThreadOpts *opts);
+EXTERN ErlDrvTid erl_drv_thread_self(void);
+EXTERN int erl_drv_equal_tids(ErlDrvTid tid1, ErlDrvTid tid2);
+EXTERN void erl_drv_thread_exit(void *resp);
+EXTERN int erl_drv_thread_join(ErlDrvTid, void **respp);
+
+/*
  * Misc.
  */
 EXTERN int null_func(void);
@@ -431,17 +485,21 @@ EXTERN int null_func(void);
 /* Possible types to send from driver          Argument type */
 #define ERL_DRV_NIL         ((ErlDrvTermData) 1)  /* None */
 #define ERL_DRV_ATOM        ((ErlDrvTermData) 2)  /* driver_mk_atom(string) */
-#define ERL_DRV_INT         ((ErlDrvTermData) 3)  /* int */
+#define ERL_DRV_INT         ((ErlDrvTermData) 3)  /* ErlDrvSInt */
 #define ERL_DRV_PORT        ((ErlDrvTermData) 4)  /* driver_mk_port(ix) */
-#define ERL_DRV_BINARY      ((ErlDrvTermData) 5)  /* ErlDriverBinary*, 
-						   * int size, int offs */
-#define ERL_DRV_STRING      ((ErlDrvTermData) 6)  /* char*, int */
-#define ERL_DRV_TUPLE       ((ErlDrvTermData) 7)  /* int */
-#define ERL_DRV_LIST        ((ErlDrvTermData) 8)  /* int */
-#define ERL_DRV_STRING_CONS ((ErlDrvTermData) 9)  /* char*, int */
+#define ERL_DRV_BINARY      ((ErlDrvTermData) 5)  /* ErlDrvBinary*, 
+						   * ErlDrvUInt size,
+						   * ErlDrvUInt offs */
+#define ERL_DRV_STRING      ((ErlDrvTermData) 6)  /* char*, ErlDrvUInt */
+#define ERL_DRV_TUPLE       ((ErlDrvTermData) 7)  /* ErlDrvUInt */
+#define ERL_DRV_LIST        ((ErlDrvTermData) 8)  /* ErlDrvUInt */
+#define ERL_DRV_STRING_CONS ((ErlDrvTermData) 9)  /* char*, ErlDrvUInt */
 #define ERL_DRV_PID         ((ErlDrvTermData) 10) /* driver_connected,... */
 
-#define ERL_DRV_FLOAT         ((ErlDrvTermData) 11) /* double * */
+#define ERL_DRV_FLOAT       ((ErlDrvTermData) 11) /* double * */
+#define ERL_DRV_EXT2TERM    ((ErlDrvTermData) 12) /* char *, ErlDrvUInt */
+#define ERL_DRV_UINT        ((ErlDrvTermData) 13) /* ErlDrvUInt */
+#define ERL_DRV_BUF2BINARY  ((ErlDrvTermData) 14) /* char *, ErlDrvUInt */
 
 #ifndef ERL_DRIVER_TYPES_ONLY
 

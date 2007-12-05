@@ -273,7 +273,7 @@ tail -> ']' : #c_literal{val=[]}.
 tail -> '|' anno_expression ']' : '$2'.
 tail -> ',' anno_expression tail : #c_cons{hd='$2',tl='$3'}.
 
-binary -> '#' '{' '}' '#' : #c_binary{segments=[]}.
+binary -> '#' '{' '}' '#' : #c_literal{val = <<>>}.
 binary -> '#' '{' segments '}' '#' : #c_binary{segments='$3'}.
 
 segments -> segment ',' segments : ['$1' | '$3'].
@@ -347,11 +347,12 @@ arg_list -> '(' anno_expressions ')' : '$2'.
 try_expr ->
     'try' anno_expression 'of' let_vars '->' anno_expression
 	'catch' let_vars '->' anno_expression :
-	if length('$8') =:= 2 ->
+	Len = length('$8'),
+        if Len =:= 2; Len =:= 3 ->
 		#c_try{arg='$2',vars='$4',body='$6',evars='$8',handler='$10'};
 	   true ->
 		return_error(tok_line('$7'),
-			     "expected 2 exception variables in 'try'")
+			     "expected 2 or 3 exception variables in 'try'")
 	end.
 
 catch_expr -> 'catch' anno_expression : #c_catch{body='$2'}.

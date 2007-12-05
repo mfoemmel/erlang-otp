@@ -26,13 +26,13 @@ do(Info) ->
     ?DEBUG("do -> entry",[]),
     case Info#mod.method of
 	"GET" ->
-	    case httpd_util:key1search(Info#mod.data,status) of
+	    case proplists:get_value(status, Info#mod.data) of
 		%% A status code has been generated!
 		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
-		    case httpd_util:key1search(Info#mod.data,response) of
+		    case proplists:get_value(response, Info#mod.data) of
 			%% No response has been generated!
 			undefined ->
 			    do_dir(Info);
@@ -108,7 +108,8 @@ dir(Path,RequestURI,ConfigDB) ->
 		 body(Path,RequestURI,ConfigDB,SortedFileList),
 		 footer(Path,SortedFileList)]};
 	{error,Reason} ->
-	    {error,?NICE("Can't open directory "++Path++": "++Reason)}
+	    {error,?NICE("Can't open directory "++Path++": "++
+			 file:format_error(Reason))}
     end.
 
 %% header

@@ -279,7 +279,6 @@ ASYM(nbif_fail):
 	movl	$HIPE_MODE_SWITCH_RES_THROW, %eax
 	jmp	.flush_exit
 	
-#if defined(HEAP_FRAG_ELIM_TEST)
 	GLOBAL(nbif_0_gc_after_bif)
 	GLOBAL(nbif_1_gc_after_bif)
 	GLOBAL(nbif_2_gc_after_bif)
@@ -310,7 +309,6 @@ nbif_3_gc_after_bif:
 	addl	$(16-4), %esp
 	movl	$0, P_NARITY(P)
 	ret
-#endif
 
 /*
  * We end up here when a BIF called from native signals an

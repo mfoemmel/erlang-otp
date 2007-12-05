@@ -157,8 +157,6 @@ fixoptionals([Pos|Ot],Val,Acc) ->
 getext(Bytes) when tuple(Bytes) ->
     getbit(Bytes);
 getext(Bytes) when binary(Bytes) ->
-    getbit({0,Bytes});
-getext(Bytes) when list(Bytes) ->
     getbit({0,Bytes}).
 
 getextension(0, Bytes) ->
@@ -836,9 +834,12 @@ encode_length(Vr={Lb,Ub},Len) when Ub =< 65535 ,Lb >= 0 -> % constrained
     encode_constrained_number(Vr,Len);
 encode_length({Lb,_Ub},Len) when integer(Lb), Lb >= 0 -> % Ub > 65535
     encode_length(undefined,Len);
-encode_length({Vr={Lb,Ub},[]},Len) when Ub =< 65535 ,Lb >= 0 -> 
+encode_length({Vr={Lb,Ub},Ext},Len) 
+  when Ub =< 65535 ,Lb >= 0, Len=<Ub, is_list(Ext) -> 
     %% constrained extensible
     [{bits,1,0},encode_constrained_number(Vr,Len)];
+encode_length({{Lb,_Ub},Ext},Len) when is_list(Ext) ->
+    [{bits,1,1},encode_semi_constrained_number(Lb,Len)];
 encode_length(SingleValue,_Len) when integer(SingleValue) ->
     [].
 
@@ -901,12 +902,10 @@ decode_length(Buffer,{Lb,Ub}) when Ub =< 65535 ,Lb >= 0 -> % constrained
     decode_constrained_number(Buffer,{Lb,Ub});
 decode_length(Buffer,{Lb,_}) when integer(Lb), Lb >= 0 -> % Ub > 65535
     decode_length(Buffer,undefined);
-decode_length(Buffer,{{Lb,Ub},[]}) -> 
-    case getbit(Buffer) of
-	{0,Buffer2} ->
-	    decode_length(Buffer2, {Lb,Ub})
-    end;
-
+decode_length(Buffer,{VR={_Lb,_Ub},Ext}) when is_list(Ext) ->
+    {0,Buffer2} = getbit(Buffer),
+    decode_length(Buffer2, VR);
+	
 
 %When does this case occur with {_,_Lb,Ub} ??
 % X.691:10.9.3.5 

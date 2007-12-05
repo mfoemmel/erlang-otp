@@ -227,8 +227,7 @@ Warning options:
   -Wno_fun_app
      Suppress warnings for fun applications that will fail.
   -Wno_match
-     Suppress warnings for pattern matching operations that will never 
-     succeed.
+     Suppress warnings for patterns that are unused or cannot match.
   -Wno_comp
      Suppress warnings for term comparisons that will always return false.
   -Wno_guards

@@ -9,12 +9,12 @@
 # TeX files that the DVI file depend on
 # ----------------------------------------------------
 
-book.dvi: application.tex book.tex dialyzer.tex dialyzer_chapter.tex \
-		part.tex
+book.dvi: book.tex dialyzer.tex dialyzer_chapter.tex \
+		part.tex ref_man.tex
 
 # ----------------------------------------------------
-# Source inlined when transforming from SGML to LaTeX
+# Source inlined when transforming from source to LaTeX
 # ----------------------------------------------------
 
-book.tex: application.sgml part.sgml
+book.tex: ref_man.xml
 

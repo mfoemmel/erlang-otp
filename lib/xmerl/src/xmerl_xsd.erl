@@ -639,7 +639,12 @@ element_content({group,S},G,Env) ->
     %% a reference or a definition.
     %% content is one of all, choice or sequence.
     case qualify_NCName(G,S) of
-	no_name -> % reference
+	no_name -> % reference.
+	    %% If reference is a recursive ref to a group with the
+	    %% same name as this group points at the redefined valid
+	    %% schema group. See XMLSchema part 1, section 4.2.2
+	    %% "Schema Representation Constraint: Individual Component
+	    %% Redefinition"
 	    Ref = particle_ref(G),
 	    {Occur,S2} = occurance(G,{1,1},S),
 	    GRef =
@@ -649,10 +654,11 @@ element_content({group,S},G,Env) ->
 	    {GRef,add_ref(S2,GRef)};
 	Name -> % definition, always schema or redefine as parent
 	    {CM,S2} = type(G#xmlElement.content,in_scope(Name,S),[group|Env]),
+	    CM2 = recursive_redefine(Name,CM,S2),
 	    S2_1 = out_scope(Name,S2),
-	    S3 = check_cm(group,allowed_content(group,Env),CM,S2_1),
+	    S3 = check_cm(group,allowed_content(group,Env),CM2,S2_1),
 	    S4 = save_object({group,#schema_group{name=Name,
-					     content=remove_annotation(CM)}},S3),
+					     content=remove_annotation(CM2)}},S3),
 	    {{group,Name},S4}
     end;
 element_content({all,S},All,Env) ->
@@ -1105,6 +1111,48 @@ union_types1([C=#xmlElement{}|Cs],S,Env,Acc) ->
 union_types1([_H|T],S,Env,Acc) ->
     union_types1(T,S,Env,Acc).
 
+%% If a group in a redefine refer to itself the reference is to the
+%% "old" definition of the group. See XMLSchema part 1, section 4.2.2
+%% "Schema Representation Constraint: Individual Component
+%% Redefinition"
+recursive_redefine(Name,CM,S=#xsd_state{redefine=true}) ->
+    case remove_annotation(CM) of
+	[{MG,{C,Occ}}] ->
+	    [{MG,{recursive_redefine2(Name,C,S),Occ}}];
+	_ ->
+	    CM
+    end;
+recursive_redefine(_,CM,_) ->
+    CM.
+recursive_redefine2(Name,[{group,{Name,Occ}}|T],S) ->
+    %% Rename old group definition
+    case rename_redef_group(Name,S) of
+	failed ->
+	    [{group,{Name,Occ}}|T];
+	NewName ->
+	    [{group,{NewName,Occ}}|T]
+    end;
+recursive_redefine2(Name,[{MG,{C,Occ}}|T],S) 
+  when MG =:= sequence; MG =:= choice; MG=:= all; MG=:= group ->
+    C2 = recursive_redefine2(Name,C,S),
+    [{MG,{C2,Occ}}|recursive_redefine2(Name,T,S)];
+recursive_redefine2(Name,[H|T],S) ->
+    [H|recursive_redefine2(Name,T,S)];
+recursive_redefine2(_,[],_) ->
+    [].
+    
+rename_redef_group(Name={LN,Scope,NS},S) ->
+    %% Scope must be []
+    NewName = {LN,['#redefine'|Scope],NS},
+    case resolve({group,NewName},S) of
+	{SG=#schema_group{name=Name},_} ->
+	    save_object({group,SG#schema_group{name=NewName}},S),
+	    NewName;
+	_ ->
+	    failed
+    end.
+	    
+    
 add_ref(S=#xsd_state{unchecked_references=UR},STRef={simpleType,Ref}) ->
     case {is_builtin_simple_type(Ref),Ref} of
 	{true,_} ->
@@ -1519,6 +1567,12 @@ decrease_occurance({K,{ID,Occ}}) ->
 decrease_occurance(Other) ->
     Other.
 
+get_occur({_,{_,Occ={Min,_}}}) when is_integer(Min) ->
+    Occ;
+get_occur({_,{_,Occ={Min,_},_}}) when is_integer(Min) ->
+    Occ;
+get_occur(Other) ->
+    Other.
     
 %% remove_whitespace(L=[T=#xmlText{}|Rest]) ->
 %%     case is_whitespace(T) of
@@ -2356,7 +2410,7 @@ check_element_type(XML=[XMLTxt=#xmlText{}|Rest],CM=[CMEl|CMRest],Env,
 	    {ResolvedT,S2} = resolve(CMEl,S),
 	    case check_text_type(XML,ResolvedT,S2) of
 		{error,Reason} ->
-		    case optional(CMEl) of
+		    case is_optional(CMEl,S) of
 			true ->
 			    check_element_type(XML,CMRest,Env,Block,S,Checked);
 			_ ->
@@ -2376,7 +2430,7 @@ check_element_type(XML=[#xmlElement{}|_],[{sequence,{CM,Occ}}|_CMRest],
 check_element_type(XML=[#xmlElement{}|_],[{choice,{CM,Occ}}|_CMRest],
 		   Env,_Block,S,Checked) ->
     ?debug("calling choice/6~n",[]),
-    check_choice(XML,CM,Occ,Env,S,Checked);
+    check_choice(XML,CM,Occ,Env,set_num_el(S,0),Checked);
 check_element_type(XML=[#xmlElement{}|_],[{all,{CM,Occ}}|_CMRest],
 		   Env,_Block,S,Checked) ->
     ?debug("calling choice/6~n",[]),
@@ -2405,7 +2459,7 @@ check_element_type(XML=[XMLEl=#xmlElement{}|_],[CMEl|CMRest],Env,
 check_element_type([],[],_Env,_Block,S,Checked) ->
     {Checked,[],S};
 check_element_type([],[CMEl|CMRest],Env,Block,S,Checked) ->
-    case optional(CMEl) of
+    case is_optional(CMEl,S) of
 	true ->
 	    check_element_type([],CMRest,Env,Block,S,Checked);
 	_ ->
@@ -2462,36 +2516,50 @@ check_element_type(XML=[XMLEl=#xmlElement{name=Name}|RestXML],
     case cmp_name(ElName,CMName,S) of %% substitutionGroup
 	true when S#xsd_state.num_el =< Max ->
 	    S1 = id_constraints(CMEl,XMLEl,S),
-
-	    {ResolvedType,S2} = resolve(Type,XMLEl,S1), 
+	    %% If CMEl element has a substitutionGroup we have to
+	    %% switch to the rigth element and type here.
+	    {CMEl2,Type2,S2} =
+		if 
+		    ElName =:= CMName ->
+			{CMEl,Type,S1};
+		    true ->
+			case resolve({element,ElName},S1) of
+			    {SESub=#schema_element{type=SubType},Ssub} ->
+				{SESub,SubType,Ssub};
+			    {_,Ssub} ->
+				{CMEl,Type,Ssub}
+			end
+		end,
+			
+	    {ResolvedType,S3} = resolve(Type2,XMLEl,S2), 
 	    %% What's the value of Resolve?: It must be a simpleType,
 	    %% complexType or an identity-constraint object
-	    XsiFactors  = xsi_factors(CMEl),
-	    {XMLEl2,S3} = check_attributes(XMLEl,ResolvedType,
-					   XsiFactors,S2),
-	    S4 = check_abstract(ElName,XMLEl,CMEl,S3),
-	    S5 = check_form(ElName,Name,XMLEl,
+	    XsiFactors  = xsi_factors(CMEl2),
+	    {XMLEl2,S4} = check_attributes(XMLEl,ResolvedType,
+					   XsiFactors,S3),
+	    S5 = check_abstract(ElName,XMLEl,CMEl,S4),
+	    S6 = check_form(ElName,Name,XMLEl,
 			    actual_form_value(CMEl#schema_element.form,
-					      S4#xsd_state.elementFormDefault),
-			    S4),
+					      S5#xsd_state.elementFormDefault),
+			    S5),
 	    %Step into content of XML element.
-	    {Content,_,S6} =
+	    {Content,_,S7} =
 		case
 		    check_element_type(XMLEl2#xmlElement.content,
 				       ResolvedType,Env,
-				       Block,S5,Checked) of
+				       Block,S6,Checked) of
 		    {error,Reason} ->
-			{XMLEl2#xmlElement.content,[],acc_errs(S5,Reason)};
+			{XMLEl2#xmlElement.content,[],acc_errs(S6,Reason)};
 		    Result ={_,[],_} -> Result;
 		    {_,UnexpectedRest,_} ->
 			Err = {error_path(XMLEl,Name),?MODULE,
 			       {unexpected_rest,UnexpectedRest}},
 			{XMLEl2#xmlElement.content,[],
-			 acc_errs(S5,Err)}
+			 acc_errs(S6,Err)}
 		end,
 	    {[XMLEl2#xmlElement{content=reverse(Content)}],
 	     RestXML,
-	     set_scope(S5#xsd_state.scope,set_num_el(S6,S5))};
+	     set_scope(S5#xsd_state.scope,set_num_el(S7,S6))};
 	true ->
 	    {error,{error_path(XMLEl,Name),?MODULE,
 		    {element_not_suitable_with_schema,ElName,S}}};
@@ -2584,6 +2652,17 @@ check_element_type(XML=[E=#xmlElement{name=Name}|Rest],
 	_ ->
 	    {error,{error_path(E,Name),?MODULE,{element_bad_match,E,Any,Env}}}
     end;
+check_element_type([],CM,_Env,_Block,_S,Checked) ->
+    %% #schema_complex_type, any, #schema_group, anyType and lists are
+    %% catched above.
+    case CM of
+	{simpleType,_} ->
+	    {error,{error_path(Checked,undefined),?MODULE,
+		    {empty_content_not_allowed,CM}}};
+	_ ->
+	    {error,{error_path(Checked,undefined),?MODULE,
+		    {empty_content_not_allowed,CM}}}
+    end;
 check_element_type(XML,CM,_Env,_Block,S,_Checked) ->
     {error,{error_path(XML,undefined),?MODULE,{match_failure,XML,CM,S}}}.
 %% single xml content object and single schema object
@@ -2609,19 +2688,38 @@ split_xmlText(XML) ->
 %% Sequence
 check_sequence([T=#xmlText{}|Rest],Els,Occ,Env,S,Checked) ->
     check_sequence(Rest,Els,Occ,Env,S,[T|Checked]);
-check_sequence(Seq=[_InstEl=#xmlElement{}|_],[El|Els],Occ={Min,_},Env,S,Checked) ->
+check_sequence(Seq=[_InstEl=#xmlElement{}|_],[El|Els],Occ={_Min,_Max},Env,S,Checked) ->
     %% El any of (element | group | choice | sequence | any)*
 
-%%    {ResolvedT,S2} = resolve(El,InstEl,S),
     {ResolvedT,S2} = resolve(El,S),
-    case check_element_type(Seq,ResolvedT,Env,[],S2,[]) of
-	{[],_,S3} -> %% An optional element not present.
-	    check_sequence(Seq,Els,Occ,Env,set_num_el(S3,0),Checked);
-	{error,_Reason} when Min==0 ->
-	    {[],Seq,S};
-	Err = {error,_Reason} ->
-	    Err;
-	{Ret,UnValRest,S3} ->%% must also take care of more elements of same name
+    case check_element_type(Seq,ResolvedT,Env,[],count_num_el(S2),[]) of
+	{[],_,S3} -> %% An optional element not present or maybe content == [].
+	    case is_optional(El,S3) of
+		true ->
+		    check_sequence(Seq,Els,Occ,Env,set_num_el(S3,0),Checked);
+		_ ->
+		    {error,{error_path(Checked,undefined),?MODULE,
+			    {missing_mandatory_elements,El}}}
+	    end;
+	Err={error,_Reason} ->
+	    case {is_optional(El,S),S#xsd_state.num_el,get_occur(El)} of
+		{true,_,_} ->
+		    check_sequence(Seq,Els,Occ,Env,set_num_el(S,0),Checked);
+		{_,N,{_Min2,Max}} when N>=Max ->
+		    check_sequence(Seq,Els,Occ,Env,set_num_el(S,0),Checked);
+		_ ->
+		    Err
+	    end;
+%% 	{error,_Reason} when Min==0 -> %% optional element
+%% 	    {[],Seq,S}; %% {Checked,Seq,S}
+%% 	{error,_Reason} when S#xsd_state.num_el >= Max ->
+%% 	    %% This failure because of number limit
+%% 	    {Checked,Seq,S};
+%% 	Err = {error,_Reason} ->
+%% 	    %% Even though this match failed
+%%	    Err;
+	{Ret,UnValRest,S3} ->
+	    %% must also take care of more elements of same name
 	    %% decrease occurance in El for the optional measurements
 	    %% when Seq is empty.
 	    check_sequence(UnValRest,[decrease_occurance(El)|Els],Occ,Env,
@@ -2654,7 +2752,7 @@ check_choice([T=#xmlText{}|Rest],Els,Occ,Env,S,Checked) ->
     end;
 check_choice(Ch=[#xmlElement{}|_],[El|Els],Occ,Env,S,Checked) ->
     {ResolvedT,S2} = resolve(El,S),
-    case check_element_type(Ch,ResolvedT,Env,[],S2,[]) of
+    case check_element_type(Ch,ResolvedT,Env,[],count_num_el(S2),[]) of
 	{[],_,_S3} -> %% not matched optional element
 	    check_choice(Ch,Els,Occ,Env,S2,Checked);
 	{error,_Reason} -> %% This may happen but not for the
@@ -2675,9 +2773,18 @@ check_choice(Ch=[#xmlElement{}|_],[El|Els],Occ,Env,S,Checked) ->
 check_choice([],_,_,_,S,Checked) ->
     {Checked,[],set_num_el(S,0)};
 check_choice(XML,[],{0,_},_,S,Checked) ->
+    %% Choice is optional
     {Checked,XML,set_num_el(S,0)};
-check_choice(XML,[],_,_,_S,_) ->
-    {error,{error_path(XML,undefined),?MODULE,{no_element_matching_choice,XML}}}.
+check_choice(XML,[],_,_,S,Checked) ->
+    %% Choice has already matched something, the rest is for somthing
+    %% else to match.
+    case S#xsd_state.num_el > 0 of
+	true ->
+	    {Checked,XML,set_num_el(S,0)};
+	_ ->
+	    {error,{error_path(XML,undefined),?MODULE,
+		    {no_element_matching_choice,XML}}}
+    end.
 
 check_all([T=#xmlText{}|RestXML],CM,Occ,Env,S,Checked,XML) ->
     case is_whitespace(T) of
@@ -3028,6 +3135,8 @@ check_type(Type=#schema_simple_type{},Value,S) ->
     check_simpleType(Type,Value,S);
 check_type({simpleType,{anySimpleType,_}},Value,S) ->
     {Value,S};
+check_type({union,Types},Value,S) ->
+    check_union_types(Types,Value,S);
 check_type(ST={simpleType,QName={Name,_Scope,_NS}},Value,S) ->
     case is_builtin_simple_type(QName) of
 	true ->
@@ -3074,6 +3183,18 @@ check_simpleType(#schema_simple_type{base_type=BT,final=_Final,
 	    end;
 	{_,[CT]} ->
 	    {_,_S2} = check_type(CT,Value,S)
+    end.
+
+check_union_types(Types,Value,S) ->
+    check_union_types(Types,Types,Value,S).
+check_union_types([],UT,Value,S) ->
+    acc_errs(S,{[],?MODULE,{value__not_valid,Value,UT}});
+check_union_types([T|Ts],UT,Value,S = #xsd_state{errors=Errs}) ->
+    case check_type(T,Value,S) of
+	{Val,S2=#xsd_state{errors=Errs}} ->
+	    {Val,S2};
+	{_,_} ->
+	    check_union_types(Ts,UT,Value,S)
     end.
 
 reserved_attribute({RA,_,?XSD_INSTANCE_NAMESPACE},_)
@@ -3492,6 +3613,14 @@ derived_or_equal([MemberTypeRef],[HeadTypeRef],Block,S) ->
     {HeadType,_} = resolve(HeadTypeRef,S),
     {MemberType,_} = resolve(MemberTypeRef,S),
     derived_or_equal_types(MemberType,HeadType,schema,Block,S).
+derived_or_equal_types(MemT,{anyType,_},Env,Block,S) ->
+    case MemT of
+	#schema_simple_type{content=Cntnt} ->	    
+	    is_derivation_blocked(Env,Block,Cntnt,S);
+	#schema_complex_type{content=Cntnt} ->
+	    is_derivation_blocked(Env,Block,Cntnt,S);
+	_ -> S
+    end;
 derived_or_equal_types(MemT=#schema_simple_type{name=Mem,base_type=MemBase},
 		       #schema_simple_type{name=Head},Env,Block,S)
   when Mem==Head;MemBase==Head ->
@@ -3585,6 +3714,33 @@ at_least_one({_Min,Max}) when Max > 0 ->
 at_least_one(_) ->
     false.
 
+is_optional({element,{_,{0,_}}},_S) ->
+    true;
+is_optional({any,{_,{0,_},_}},_S) ->
+    true;
+is_optional({MG,{_CM,{0,_}}},_S) 
+  when MG =:= all; MG =:= sequence; MG =:= choice  ->
+    true;
+is_optional({MG,{CM,_Occ}},S) 
+  when MG =:= all; MG =:= sequence; MG =:= choice  ->
+    case member(false,[is_optional(Y,S)||Y<-CM]) of
+	true ->
+	    false;
+	_ -> true
+    end;
+is_optional({group,{_,{0,_}}},_S) ->
+    true;
+is_optional(G={group,_},S) ->
+    case resolve(G,S) of
+	{#schema_group{content=[]},_} ->
+	    true;
+	{#schema_group{content=[CM]},_} ->
+	    is_optional(CM,S)
+    end;
+is_optional(_,_) ->
+    false.
+    
+    
 
 acc_errs(S=#xsd_state{errors=Errs},ErrMsg) ->
     S#xsd_state{errors=[ErrMsg|Errs]}.

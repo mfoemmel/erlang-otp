@@ -39,6 +39,7 @@ CC = @CC@
 LD = @LD@
 SHELL = /bin/sh
 LIBS = @LIBS@
+PLAIN_CFLAGS = @CFLAGS@
 
 # ----------------------------------------------------
 # Includes and libs
@@ -159,7 +160,7 @@ $(OBJDIR)/%$(obj): %.c
 
 # Unix
 $(BINDIR)/ssl_esock: $(OBJS)
-	$(CC) $(CC_R_OPT) -o $@ $^ $(LIBS) $(SSL_LINK_LIB)
+	$(CC) $(CC_R_OPT) $(PLAIN_CFLAGS) -o $@ $^ $(LIBS) $(SSL_LINK_LIB)
 
 # Win32/Cygwin
 $(BINDIR)/ssl_esock.exe: $(OBJS)

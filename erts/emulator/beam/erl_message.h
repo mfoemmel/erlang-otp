@@ -19,6 +19,8 @@
 #ifndef __ERL_MESSAGE_H__
 #define __ERL_MESSAGE_H__
 
+#include "erl_process.h"
+
 struct proc_bin;
 struct external_thing_;
 
@@ -62,9 +64,7 @@ do {									\
 
 typedef struct erl_mesg {
     struct erl_mesg* next;	/* Next message */
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
     ErlHeapFragment *bp;
-#endif
     Eterm m[2];			/* m[0] = message, m[1] = seq trace token */
 } ErlMessage;
 
@@ -154,8 +154,6 @@ do {							\
 #define SAVE_MESSAGE(p) \
      (p)->msg.save = &(*(p)->msg.save)->next
 
-struct process;
-
 #define ERTS_SND_FLG_NO_SEQ_TRACE		(((unsigned) 1) << 0)
 
 void init_message(void);
@@ -164,14 +162,12 @@ ErlHeapFragment* new_message_buffer(Uint);
 ErlHeapFragment* erts_resize_message_buffer(ErlHeapFragment *, Uint,
 					    Eterm *, Uint);
 void free_message_buffer(ErlHeapFragment *);
-void erts_queue_message(struct process*, Uint32, ErlHeapFragment*, Eterm, Eterm);
-void erts_deliver_exit_message(Eterm, struct process*, Uint32 *, Eterm, Eterm);
-void erts_send_message(struct process*, struct process*, Uint32 *, Eterm, unsigned);
-void erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp);
+void erts_queue_message(Process*, ErtsProcLocks, ErlHeapFragment*, Eterm, Eterm);
+void erts_deliver_exit_message(Eterm, Process*, ErtsProcLocks *, Eterm, Eterm);
+void erts_send_message(Process*, Process*, ErtsProcLocks *, Eterm, unsigned);
+void erts_link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp);
 
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 void erts_move_msg_mbuf_to_heap(Eterm**, ErlOffHeap*, ErlMessage *);
-void erts_move_msg_mbuf_to_proc_mbufs(struct process*, ErlMessage *);
-#endif
+void erts_move_msg_mbuf_to_proc_mbufs(Process*, ErlMessage *);
 
 #endif

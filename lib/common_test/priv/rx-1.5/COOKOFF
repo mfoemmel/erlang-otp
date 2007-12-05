@@ -1,0 +1,216 @@
+		     The Regexp Library Cook-off
+
+Rx is, among other things, an implementation of the interface
+specified by POSIX for programming with regular expressions.  Some
+other implementations are GNU regex.c and Henry Spencer's regex
+library.
+
+If you are maintaining a program or library that includes a regexp
+matcher, you might want to consider which regexp implementation is
+best.  Regexp matchers are very complicated; they are hard to get
+right, hard to make fast and efficient, and hard to evaluate.
+Therefore, choosing the best implementation for your needs is no easy
+task; neither is maintaining an implementation.
+
+To my knowledge, there are no comprehensive, free-software test suites
+to help you evaluate regex function implementations.  This release of
+Rx includes some tests to try to help fix that.  The release includes
+test programs which you can use to measure some aspects of the
+correctness and performance of your favorite POSIX regexp library.  If
+you use these, please consider adding new tests to the collection and
+sending them to the author of Rx.
+
+Below is a summary of what I learned comparing GNU regex and Rx on one
+system.  There are also some hints for running the tests yourself.
+Performance numbers refer to tests done on a P90 using GCC 2.7.0 to
+compile with debugging information and optimization ("gcc -g -O").
+
+Caution: the results so far are pretty one-sided in favor of Rx, but I
+doubt the real situation is that simple.  If you find a case where GNU
+regex wins, please contribute it to the test suite.
+
+
+		      CORRECTNESS RESULTS SO FAR
+
+GNU Regex is not properly POSIX, as illustrated by the test
+"rgx-tests/backrefs".  That test uses the regexp:
+
+	(abc|abcd)(d|)
+
+and compares it to the string:
+
+	abcd
+
+Regex correctly says that the string matches the pattern, but
+incorrectly sets the "pmatch" data returned by regexec.  According to
+POSIX, 
+
+	pmatch[1] == (0, 4) "abcd"
+	pmatch[2] == (4, 4) ""
+
+but GNU regex reports:
+
+	pmatch[1] == (0, 3) "abc"
+	pmatch[2] == (3, 4) "d"
+
+That bug occurs because GNU regex doesn't do enough backtracking.  It
+accepts the match it finds because it is a longest match, but it does
+not properly enforce the leftmost-longest criteria for
+sub-expressions.
+
+I haven't found any cases where Rx fails to return the values
+specified by POSIX (except for internationalization features which
+aren't implemented yet).
+
+
+
+		      PERFORMANCE RESULTS SO FAR
+
+Rx is a little bit smaller than regex:
+
+    POSIX functions from librx.a:
+	text	data
+	32757	2241
+
+    regex.o:
+	text	data
+	43333  	522
+
+Rx normally uses more memory at run-time, though the amount is
+configurable.
+
+
+Some speed tests:
+
+
+* regcomp012
+
+This test stresses the performance of "regcomp".  The performance of
+"regexec" doesn't matter much to its outcome.  On this test, GNU regex
+is about 10 times faster than Rx.
+
+
+
+* regexec012
+
+This test stresses the performance of "regexec" on a case artificially
+created to maximize the amount of backtracking GNU regex will have to
+do.  Examples like this seem to be rare in real life, but not
+non-existent.
+
+This test is run three times, each time doubling the length of the
+string being checked.  In the shortest case, GNU regex is just a
+little bit faster -- but with each doubling of the string length, Rx's
+run-time goes up quadratically, while GNU Regex's grows exponentially.
+Therefore, as the test gets longer, Rx quickly becomes much faster.
+
+This is easy to see using a graph made by "gnuplot".  Instructions for
+making such a plot are given later in this file.
+
+
+
+* longlitstr
+
+This test uses a simple regular expression: a literal string.  It
+compares that to a rather long input string.  So, this test stresses
+the performance of the inner loop of regexec, with no backtracking at
+all.
+
+On this test, Rx ran 3 times faster than GNU regex.
+
+
+
+* n-shortlitstr
+
+This test also uses a simple regular expression: a literal string.  It
+compares that to a largish number of input strings, each a line taken
+from the source of a texinfo manual.  So, this test stresses
+the performance of the overall performance of regexec -- not just the
+inner loop, but also the overhead cost of calling and returning from regexec.
+
+On this test, Rx ran about 3 times faster than GNU regex.
+
+
+
+* longdotstr
+
+This test uses the same long test string as longlitstr, but this time
+the regexp contains a .*.  On this test, Rx went a little about 3x
+faster than GNU regex.
+
+This test was added because during the course of development it was
+discovered that this Rx was incredibly slow on this test.  A new
+optimization (a generalization of the "fastmap" strategy) was added to
+fix the problem.
+
+
+
+		    RUNNING THE CORRECTNESS TESTS
+
+The directory "rgx-tests" contains programs that check the correctness
+of a regexp implementation.  Every test gets its own subdirectory.  A
+simple system of shell scripts is used to run the tests.  These
+commands illustrate how the tests were run for Rx and GNU regex on the
+author's system:
+
+Tests must be run from this directory:
+
+	% cd rgx-tests
+
+Compile the tests for GNU rx:
+
+	% ./=each ./=compile ../../rx/inst-rxposix.h ../../=build/rx/librx.a
+	
+Run the tests for GNU rx:
+
+	% ./=each ./=doit ,rx
+
+Examine the results by eye:
+
+	% cat */,rx
+	[....]
+
+Search for errors.  Error reports begin with "###"
+
+	% grep -s  "###" */,rx
+	[....]
+
+Compile the tests for GNU regex:
+
+	% ./=each ./=compile ../../regex/regex.h ../../=build/regex/regex.o
+	
+Run the tests for GNU regex:
+
+	% ./=each ./=doit ,gnu
+
+Examine the results by eye:
+
+	% cat */,gnu
+	[....]
+
+Search for errors.  Error reports begin with "###"
+
+	% grep -s  "###" */,gnu
+	[....]
+
+
+
+		    RUNNING THE PERFORMANCE TESTS
+
+The performance tests are run much like the correctness tests:
+
+	% cd rgx-perf
+	% ./=each ./=compile ../../rx/inst-rxposix.h ../../=build/rx/librx.a
+	% ./=each ./=doit ,rx
+	% ./=each ./=compile ../../regex/regex.h ../../=build/regex/regex.o
+	% ./=each ./=doit ,gnu
+
+Most of the timing results are best read by eye.
+
+One of the performance tests, the "regexec012" test, produces results
+suitable for graphing with GNU plot:
+
+	% gnuplot
+	gnuplot> plot "regexec012/,rx-plot" with linespoints, "regexec012/,gnu-plot" with linespoints
+	gnuplot> quit
+

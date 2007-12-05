@@ -32,16 +32,16 @@ transform(File, {application, _Attrs, [Header|Rest]}, Opts0) ->
 
 	    %% Create the framing HTML document
 	    OutFile = docb_util:outfile(File++"_frame", ".html", Opts0),
-	    case file:open(OutFile, write) of
+	    case file:open(OutFile, [write]) of
 		{ok, Fd} ->
 		    io:format(Fd,
 "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\">
 <!-- This document was generated using DocBuilder-" ++ docb_util:version() ++ " -->
 <HTML>
 <HEAD>
-  <TITLE>~s</TITLE>" ++
-  docb_util:html_snippet(head, Opts0) ++
-"</HEAD>
+  <TITLE>~s</TITLE>
+  " ++ docb_util:html_snippet(head, Opts0) ++ "
+</HEAD>
 <FRAMESET COLS=\"150, *\">
   <FRAME SRC=\"~s\" NAME=\"toc\">
   <FRAME SRC=\"~s\" NAME=\"document\">

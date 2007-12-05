@@ -22,6 +22,12 @@
 -export([undefined_function/3, undefined_lambda/3, stub_function/3,
 	 breakpoint/3]).
 
+-spec(undefined_function/3 :: (
+	Module :: atom(),
+	Function :: atom(),
+	Args :: list()) ->
+	any()).
+
 undefined_function(Module, Func, Args) ->
     case ensure_loaded(Module) of
 	{module, Module} ->
@@ -37,6 +43,12 @@ undefined_function(Module, Func, Args) ->
 	    crash(Module, Func, Args)
     end.
 
+-spec(undefined_lambda/3 :: (
+	Module :: atom(),
+	Function :: fun(),
+	Args :: list()) ->
+	any()).
+
 undefined_lambda(Module, Fun, Args) ->
     case ensure_loaded(Module) of
 	{module, Module} ->
@@ -49,6 +61,12 @@ undefined_lambda(Module, Fun, Args) ->
 	    crash(Fun, Args)
     end.
 
+-spec(breakpoint/3 :: (
+	Module :: atom(),
+	Function :: atom(),
+	Args :: list()) ->
+	any()).
+
 breakpoint(Module, Func, Args) ->
     (int()):eval(Module, Func, Args).
 
@@ -56,15 +74,17 @@ breakpoint(Module, Func, Args) ->
 %% building strong components in xref or dialyzer.
 
 int() -> int.
-    
 
 %%
 %% Crash providing a beautiful stack backtrace.
 %%
 crash(Fun, Args) ->
     crash({Fun,Args}).
+
 crash(M, F, A) ->
     crash({M,F,A}).
+
+-spec(crash/1 :: (tuple()) -> no_return()).
 crash(MFA) ->
     try erlang:error(undef)
     catch

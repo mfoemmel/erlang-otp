@@ -114,10 +114,14 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"schdlq",				NULL			},
     {	"multi_scheduling_block",		NULL			},
     {	"pollset",				"address"		},
-    {	"pdl_refc_mtx",				NULL			},
+#ifdef __WIN32__
+    {	"pollwaiter",				"address"		},
+    {   "break_waiter_lock",                    NULL                    },
+#endif /* __WIN32__ */
     {	"binary_alloc",				NULL			},
     {	"alcu_init_atoms",			NULL			},
     {	"mseg_init_atoms",			NULL			},
+    {	"drv_tsd",				NULL			},
 #ifdef ERTS_SMP
     {	"sys_msg_q", 				NULL			},
     {	"atom_tab",				NULL			},
@@ -133,20 +137,28 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"alcu_allocator",			"index"			},
     {	"mseg",					NULL			},
 #ifdef ERTS_SMP
-#ifdef ERTS_USE_PORT_TASKS
     {	"port_tasks_lock",			NULL			},
-#endif
     {	"port_tab_lock",			NULL			},
     {	"xports_list_alloc_lock",		NULL			},
     {	"inet_buffer_stack_lock",		NULL			},
     {	"gc_info",				NULL			},
     {	"io_wake",				NULL			},
     {	"timer_wheel",				NULL			},
-    {	"timeofday",				NULL			},
     {	"system_block",				NULL			},
+    {	"timeofday",				NULL			},
     {	"breakpoints",				NULL			},
     {	"pollsets_lock",			NULL			},
     {	"async_id",				NULL			},
+    {	"pix_lock",				"address"		},
+    {	"proc_lck_wtr_alloc",			NULL 			},
+#ifdef __WIN32__
+    {	"sys_driver_data_lock",			NULL 			}, 
+#endif
+#endif
+#ifdef __WIN32__
+#ifdef DEBUG
+    {   "save_ops_lock",                        NULL                    },
+#endif
 #endif
     {	"mtrace_buf",				NULL			}
 };

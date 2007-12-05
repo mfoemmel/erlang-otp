@@ -43,20 +43,20 @@ RELSYSDIR = $(RELEASE_PATH)/lib/jinterface-$(VSN)
 # ----------------------------------------------------
 
 # Renamed this var to fool otp.mk.in
-SGML_APP_FILES = application.sgml
-SGML_REF3_FILES = jinterface.sgml
+XML_APP_FILES = ref_man.xml
+XML_REF3_FILES = jinterface.xml
 
-SGML_PART_FILES = \
-	part.sgml \
-	part_notes.sgml \
-	part_notes_history.sgml
+XML_PART_FILES = \
+	part.xml \
+	part_notes.xml \
+	part_notes_history.xml
 
-SGML_CHAPTER_FILES = \
-	notes.sgml \
-	notes_history.sgml \
-	jinterface_users_guide.sgml
+XML_CHAPTER_FILES = \
+	notes.xml \
+	notes_history.xml \
+	jinterface_users_guide.xml
 
-BOOK_FILES = book.sgml
+BOOK_FILES = book.xml
 
 GIF_FILES = \
 	notes.gif \
@@ -67,11 +67,11 @@ GIF_FILES = \
 
 
 TEX_FILES_BOOK = \
-	$(BOOK_FILES:%.sgml=%.tex)
-TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
-	$(SGML_APP_FILES:%.sgml=%.tex)
+	$(BOOK_FILES:%.xml=%.tex)
+TEX_FILES_REF_MAN = $(XML_REF3_FILES:%.xml=%.tex) \
+	$(XML_APP_FILES:%.xml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	part.tex $(SGML_CHAPTER_FILES:%.sgml=%.tex)
+	part.tex $(XML_CHAPTER_FILES:%.xml=%.tex)
 
 
 TOP_PDF_FILE = jinterface-$(VSN).pdf
@@ -123,14 +123,14 @@ JAVA_GEN_FILES = \
 
 
 HTML_FILES = \
-	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html)
 
 
 EXTRA_FILES = \
 	summary.html.src \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
-	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_CHAPTER_FILES:%.xml=$(HTMLDIR)/%.html)
 
 
 
@@ -143,7 +143,7 @@ INDEX_TARGET = $(DOCDIR)/$(INDEX_FILE)
 # ----------------------------------------------------
 # FLAGS 
 # ----------------------------------------------------
-SGML_FLAGS += 
+XML_FLAGS += 
 DVIPS_FLAGS += 
 
 # ----------------------------------------------------
@@ -185,7 +185,7 @@ clean clean_docs clean_tex:
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES)
 	rm -f $(TOP_HTML_FILES) $(TOP_PDF_FILE) $(TOP_PS_FILE)
-	rm -f errs core *~ *sgmls_output *sgmls_errs *dump min_head.gif $(LATEX_CLEAN)
+	rm -f errs core *~ *dump min_head.gif $(LATEX_CLEAN)
 	rm -f $(JAVA_GEN_FILES)
 
 

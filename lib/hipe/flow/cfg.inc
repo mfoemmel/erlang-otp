@@ -36,12 +36,12 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(cfg_info, {'fun'         :: mfa(),
+-record(cfg_info, {'fun',      % :: mfa(),
 		   start_label,
 		   is_closure    :: bool(),
 		   closure_arity :: byte(),
 		   is_leaf       :: bool(),
-		   params,        % list()
+		   params,     % :: list()
 		   extra,
 		   info=[]}).
 -record(cfg, {table,  %
@@ -431,7 +431,7 @@ take_bbs(Xs, CFG) ->
 	  take_bbs(Rest, NewCFG)
       end;
     false ->
-      erlang:fault({?MODULE,"basic block doesn't start with a label",Xs})
+      erlang:error({?MODULE,"basic block doesn't start with a label",Xs})
   end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -653,7 +653,7 @@ succ(SuccMap, Label) ->
     {value,{_Block,Succ,_Pred}} ->
       Succ;
     none ->
-      erlang:fault({successor_not_found,Label,SuccMap})
+      erlang:error({successor_not_found,Label,SuccMap})
   end.
 
 -ifdef(PRED_MAP_NEEDED).
@@ -666,7 +666,7 @@ pred(Map, Label) ->
     {value,{_Block,_Succ,Pred}} ->
       Pred;
     none ->
-      erlang:fault({predecessor_not_found,Label,Map})
+      erlang:error({predecessor_not_found,Label,Map})
   end.
 -endif.	% PRED_MAP_NEEDED
 
@@ -680,7 +680,7 @@ fallthrough(CFG, Label) ->
 	 _ -> none
        end;
      none ->
-       erlang:fault({"fallthrough label not found",Label})
+       erlang:error({"fallthrough label not found",Label})
   end.
 
 conditional(CFG, Label) ->
@@ -732,7 +732,7 @@ lin_succ(Label, CFG, Vis) ->
 	  {Vis2, Code2} = lin_succ(Cond, CFG, Vis1),
 	  {Vis2, [[LblInstr|hipe_bb:code(Block)], Code1, Code2]};
 	false ->
-	  erlang:fault({?MODULE,"No basic block with label",Label})
+	  erlang:error({?MODULE,"No basic block with label",Label})
       end
   end.
 

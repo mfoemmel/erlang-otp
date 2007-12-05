@@ -31,13 +31,6 @@ typedef struct erl_bin_match_buffer {
 } ErlBinMatchBuffer;
 
 struct erl_bits_state {
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    /*
-     * Used for matching.
-     */
-    ErlBinMatchBuffer erts_mb_;	/* Current match buffer. */
-    ErlBinMatchBuffer erts_save_mb_[MAX_REG]; /* Saved match buffers. */
-#endif
     /*
      * Used for building binaries.
      */
@@ -52,24 +45,21 @@ struct erl_bits_state {
      * buffer (old instruction set).
      */
     unsigned erts_bin_offset_;
-#if !defined(HEAP_FRAG_ELIM_TEST)
     /*
-     * The following variables are only used for building binaries
-     * using the old instructions.
+     * Whether the current binary is writable.
      */
-    byte* erts_bin_buf_;
-    unsigned erts_bin_buf_len_;
-#endif
+     unsigned erts_writable_bin_;
 };
 
 typedef struct erl_bin_match_struct{
   Eterm thing_word;
-  ErlBinMatchBuffer mb; /* Present match buffer */
-  Eterm save_offset[1]; /* Saved offsets */
+  ErlBinMatchBuffer mb;		/* Present match buffer */
+  Eterm save_offset[1];		/* Saved offsets */
 } ErlBinMatchState;
 
-#define ERL_BIN_MATCHSTATE_SIZE(_Max) ((sizeof(ErlBinMatchState) + (_Max-1)*sizeof(Eterm))/sizeof(Eterm)) 
-#define HEADER_BIN_MATCHSTATE(_Max) _make_header(ERL_BIN_MATCHSTATE_SIZE(_Max)-1, _TAG_HEADER_BIN_MATCHSTATE)
+#define ERL_BIN_MATCHSTATE_SIZE(_Max) ((sizeof(ErlBinMatchState) + (_Max)*sizeof(Eterm))/sizeof(Eterm)) 
+#define HEADER_BIN_MATCHSTATE(_Max) _make_header(ERL_BIN_MATCHSTATE_SIZE((_Max))-1, _TAG_HEADER_BIN_MATCHSTATE)
+#define HEADER_NUM_SLOTS(hdr) (header_arity(hdr)-sizeof(ErlBinMatchState)/sizeof(Eterm)+1)
 
 #define make_matchstate(_Ms) make_boxed((Eterm*)(_Ms))  
 #define ms_matchbuffer(_Ms) &(((ErlBinMatchState*)(_Ms - TAG_PRIMARY_BOXED))->mb)
@@ -132,38 +122,9 @@ extern struct erl_bits_state ErlBitsState;
 
 #endif	/* ERL_BITS_REENTRANT */
 
-#if !defined(HEAP_FRAG_ELIM_TEST)
-# define erts_mb		(ErlBitsState.erts_mb_)
-# define erts_save_mb		(ErlBitsState.erts_save_mb_)
-#endif
-
 #define erts_bin_offset		(ErlBitsState.erts_bin_offset_)
 #define erts_current_bin	(ErlBitsState.erts_current_bin_)
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-#define erts_bin_buf		(ErlBitsState.erts_bin_buf_)
-#define erts_bin_buf_len	(ErlBitsState.erts_bin_buf_len_)
-
-
-#define erts_InitMatchBuf(Src, Fail)					\
-do {									\
-    Eterm _Bin = (Src);							\
-    if (!is_binary(_Bin)) {						\
-	Fail;								\
-    } else {								\
-	Eterm _orig;							\
-	Uint _offs;							\
-	Uint _bitoffs;							\
-	Uint _bitsize;							\
-									\
-	ERTS_GET_REAL_BIN(_Bin, _orig, _offs, _bitoffs, _bitsize);	\
-	erts_mb.orig = _orig;						\
-	erts_mb.base = binary_bytes(_orig);				\
-	erts_mb.offset = 8 * _offs+_bitoffs;				\
-	erts_mb.size = binary_size(_Bin) * 8 + erts_mb.offset+_bitsize;	\
-    }									\
-} while (0)
-#endif
+#define erts_writable_bin       (ErlBitsState.erts_writable_bin_)
 
 #define copy_binary_to_buffer(DstBuffer, DstBufOffset, SrcBuffer, SrcBufferOffset, NumBits) \
   do {											    \
@@ -228,7 +189,7 @@ Eterm erts_bs_get_binary_all_2(Process *p, ErlBinMatchBuffer* mb);
 
 int erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm Integer, Uint num_bits, unsigned flags));
 int erts_new_bs_put_binary(ERL_BITS_PROTO_2(Eterm Bin, Uint num_bits));
-int erts_new_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm Bin));
+int erts_new_bs_put_binary_all(ERL_BITS_PROTO_2(Eterm Bin, Uint unit));
 int erts_new_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
 void erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
 
@@ -245,6 +206,11 @@ int erts_bs_put_binary(ERL_BITS_PROTO_2(Eterm Bin, Uint num_bits));
 int erts_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm Bin));
 int erts_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
 void erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
+Uint32 erts_bs_get_unaligned_uint32(Process *p, ErlBinMatchBuffer* mb);
+Eterm erts_bs_append(Process* p, Eterm* reg, Uint live, Eterm build_size_term,
+		     Uint extra_words, Uint unit);
+Eterm erts_bs_private_append(Process* p, Eterm bin, Eterm sz, Uint unit);
+Eterm erts_bs_init_writable(Process* p, Eterm sz);
 
 /*
  * Common utilities.

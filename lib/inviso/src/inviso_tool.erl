@@ -101,7 +101,7 @@
 %% API exports.
 %% -----------------------------------------------------------------------------
 
--export([start/0,start/1,stop/0]).
+-export([start/0,start/1,stop/0,stop/1]).
 -export([reconnect_nodes/0,reconnect_nodes/1,
 	 start_session/0,start_session/1,
 	 reinitiate_session/0,reinitiate_session/1,
@@ -109,12 +109,14 @@
 	 stop_session/0,
 	 reset_nodes/0,reset_nodes/1,
 	 atc/3,sync_atc/3,sync_atc/4,
+	 sync_rtc/2,sync_rtc/3,
 	 dtc/2,sync_dtc/2,sync_dtc/3,
 	 inviso/2]).
 -export([reactivate/0,reactivate/1,
 	 save_history/1,
 	 get_autostart_data/1,get_autostart_data/2,
-	 get_activities/0,get_node_status/0,get_node_status/1]).
+	 get_activities/0,get_node_status/0,get_node_status/1,get_session_data/0]).
+-export([flush/0,flush/1]).
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
@@ -177,6 +179,12 @@
 	 {ctp_all,0}]).
 %% -----------------------------------------------------------------------------
 
+%% Since many function calls to inviso may take long time, especially if they
+%% involve difficult and many trace patterns to set, the default gen_server:call
+%% time out can not be used. We just do not want to get stuck for ever if some
+%% error occurs.
+-define(CALL_TIMEOUT,60000).
+
 %% Default max time to wait for a trace case called synchronously to return.
 -define(SYNC_TC_TIMEOUT,10000).
 
@@ -229,7 +237,9 @@ start(Config) ->
     gen_server:start({local,?MODULE},?MODULE,Config,[]).
 %% -----------------------------------------------------------------------------
 
+%% stop(UntouchedNodes)=
 %% stop()={ok,NodeResults} | NodeResult | {error,Reason}
+%%   UntouchedNodes=list(), nodes where any trace patterns shall not be removed.
 %%   NodeResults=[{Node,NodeResult},...]
 %%   NodeResult=ok | {error,Reason} | patterns_untouched
 %% Stops the inviso tool and the inviso control component. Runtime components are
@@ -238,7 +248,9 @@ start(Config) ->
 %% trace patterns cleared before the inviso control component is shutdown.
 %% The NodeResults indicates which nodes were successfullt handled.
 stop() ->
-    gen_server:call(?MODULE,stop).
+    stop([]).
+stop(UntouchedNodes) ->
+    gen_server:call(?MODULE,{stop,UntouchedNodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% reconnect_nodes()=NodeResult; function for the nod-distributed case.
@@ -254,11 +266,11 @@ stop() ->
 %% tracing but the tool runs a session, the node must be reinitiated to become
 %% tracing.
 reconnect_nodes() ->
-    gen_server:call(?MODULE,{reconnect_nodes,local_runtime}).
+    gen_server:call(?MODULE,{reconnect_nodes,local_runtime},?CALL_TIMEOUT).
 reconnect_nodes(Node) when atom(Node) ->
     reconnect_nodes([Node]);
 reconnect_nodes(Nodes) when list(Nodes) ->
-    gen_server:call(?MODULE,{reconnect_nodes,Nodes}).
+    gen_server:call(?MODULE,{reconnect_nodes,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% start_session()={ok,{SessionNr,InvisoReturn}} | {error,Reason}
@@ -272,7 +284,7 @@ reconnect_nodes(Nodes) when list(Nodes) ->
 start_session() ->
     start_session([]).
 start_session(MoreTDGargs) ->
-    gen_server:call(?MODULE,{start_session,MoreTDGargs}).
+    gen_server:call(?MODULE,{start_session,MoreTDGargs},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% reinitiate_session(Nodes)={ok,InvisoReturn} | {error,Reason}
@@ -285,9 +297,9 @@ start_session(MoreTDGargs) ->
 %% history to bring it up to speed. Note that the tool must be running a session
 %% for reinitiate to work.
 reinitiate_session() ->
-    gen_server:call(?MODULE,{reinitiate_session,local_runtime}).
+    gen_server:call(?MODULE,{reinitiate_session,local_runtime},?CALL_TIMEOUT).
 reinitiate_session(Nodes) ->
-    gen_server:call(?MODULE,{reinitiate_session,Nodes}).
+    gen_server:call(?MODULE,{reinitiate_session,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% restore_session()=
@@ -305,16 +317,16 @@ reinitiate_session(Nodes) ->
 restore_session() ->
     restore_session([]).
 restore_session([]) ->                      % This cant be a filename.
-    gen_server:call(?MODULE,{restore_session,[]});
+    gen_server:call(?MODULE,{restore_session,[]},?CALL_TIMEOUT);
 restore_session(FileNameOrMoreTDGargs) ->
     case is_string(FileNameOrMoreTDGargs) of
 	true ->                             % Interpret it as a filename.
 	    restore_session(FileNameOrMoreTDGargs,[]);
 	false ->                            % The we want to use last session history!
-	    gen_server:call(?MODULE,{restore_session,FileNameOrMoreTDGargs})
+	    gen_server:call(?MODULE,{restore_session,FileNameOrMoreTDGargs},?CALL_TIMEOUT)
     end.
 restore_session(FileName,MoreTDGargs) ->
-    gen_server:call(?MODULE,{restore_session,{FileName,MoreTDGargs}}).
+    gen_server:call(?MODULE,{restore_session,{FileName,MoreTDGargs}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% stop_session()={ok,{SessionNr,Result}} | {error,Reason}
@@ -328,7 +340,7 @@ restore_session(FileName,MoreTDGargs) ->
 %% error. Not if an individual node failed stop tracing successfully.
 %% Any running trace case, including reactivator processes will be terminated.
 stop_session() ->
-    gen_server:call(?MODULE,stop_session).
+    gen_server:call(?MODULE,stop_session,?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% reset_nodes()=NodeResult | {error,Reason}
@@ -337,9 +349,9 @@ stop_session() ->
 %% Clear nodes from trace flags, trace patterns and meta trace patterns. The tool
 %% must not be having a running session.
 reset_nodes() ->
-    gen_server:call(?MODULE,{reset_nodes,local_runtime}).
+    gen_server:call(?MODULE,{reset_nodes,local_runtime},?CALL_TIMEOUT).
 reset_nodes(Nodes) ->
-    gen_server:call(?MODULE,{reset_nodes,Nodes}).
+    gen_server:call(?MODULE,{reset_nodes,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% atc(TC,Id,Vars)=ok | {error,Reason}
@@ -353,7 +365,7 @@ reset_nodes(Nodes) ->
 %% the trace case has not been executed. It rather means that is undetermined
 %% what happend.
 atc(TC,Id,Vars) ->
-    gen_server:call(?MODULE,{atc,{TC,Id,Vars}}).
+    gen_server:call(?MODULE,{atc,{TC,Id,Vars}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% sync_atc(TC,Id,Vars)=Result | {error,Reason}
@@ -362,9 +374,21 @@ atc(TC,Id,Vars) ->
 %%   TimeOut=interger() | infinity, the max wait time for the trace case to finnish.
 %% As atc/3 but waits for the trace case to finish.
 sync_atc(TC,Id,Vars) ->
-    gen_server:call(?MODULE,{sync_atc,{TC,Id,Vars,?SYNC_TC_TIMEOUT}}).
+    gen_server:call(?MODULE,{sync_atc,{TC,Id,Vars,?SYNC_TC_TIMEOUT}},?CALL_TIMEOUT).
 sync_atc(TC,Id,Vars,TimeOut) ->
-    gen_server:call(?MODULE,{sync_atc,{TC,Id,Vars,TimeOut}}).
+    gen_server:call(?MODULE,{sync_atc,{TC,Id,Vars,TimeOut}},?CALL_TIMEOUT).
+%% -----------------------------------------------------------------------------
+
+%% sync_rtc(TC,Vars)=Result | {error,Reason}
+%% sync_rtc(TC,Vars,TimeOut)=
+%%   Result=term(), what ever is returned be the last expression in the trace case.
+%%   TimeOut=interger() | infinity, the max wait time for the trace case to finnish.
+%% As sync_atc/3 but the trace case is not marked as activated. It is mearly placed
+%% in the history. Hence with sync_rtc a trace case can be "activated" multiple time.
+sync_rtc(TC,Vars) ->
+    gen_server:call(?MODULE,{sync_rtc,{TC,Vars,?SYNC_TC_TIMEOUT}},?CALL_TIMEOUT).
+sync_rtc(TC,Vars,TimeOut) ->
+    gen_server:call(?MODULE,{sync_rtc,{TC,Vars,TimeOut}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% dtc(TC,Id)=ok | {error,Reason}
@@ -376,7 +400,7 @@ sync_atc(TC,Id,Vars,TimeOut) ->
 %% As with activation, the returned 'ok' simply indicates the start of the trace
 %% case.
 dtc(TC,Id) ->
-    gen_server:call(?MODULE,{dtc,{TC,Id}}).
+    gen_server:call(?MODULE,{dtc,{TC,Id}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% sync_dtc(TC,Id)=Result | {error,Reason}
@@ -384,9 +408,9 @@ dtc(TC,Id) ->
 %%   Synchronous deactivation of trace case. See dtc/2 and sync_atc/3 for
 %%   parameters.
 sync_dtc(TC,Id) ->
-    gen_server:call(?MODULE,{sync_dtc,{TC,Id,?SYNC_TC_TIMEOUT}}).
+    gen_server:call(?MODULE,{sync_dtc,{TC,Id,?SYNC_TC_TIMEOUT}},?CALL_TIMEOUT).
 sync_dtc(TC,Id,TimeOut) ->
-    gen_server:call(?MODULE,{sync_dtc,{TC,Id,TimeOut}}).
+    gen_server:call(?MODULE,{sync_dtc,{TC,Id,TimeOut}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% inviso(Cmd,Args)=Result
@@ -401,7 +425,7 @@ sync_dtc(TC,Id,TimeOut) ->
 %% When these functions are written to an autostart config file by the tool there
 %% is supposed to be a translation to inviso_rt functions.
 inviso(Cmd,Args) ->
-    gen_server:call(?MODULE,{inviso,{Cmd,Args}}).
+    gen_server:call(?MODULE,{inviso,{Cmd,Args}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% reactivate()=ok | {error,Reason}
@@ -424,7 +448,7 @@ inviso(Cmd,Args) ->
 reactivate() ->                             % Non-distributed API.
     reactivate(node()).
 reactivate(Node) ->
-    gen_server:call(?MODULE,{reactivate,Node}).
+    gen_server:call(?MODULE,{reactivate,Node},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% save_history(FileName)={ok,AbsFileName} | {error,Reason}
@@ -433,7 +457,7 @@ reactivate(Node) ->
 %% file. Otherwise the history dir will be used. If no history dir was specified
 %% the tool dir will be used, prepended to FileName.
 save_history(FileName) ->
-    gen_server:call(?MODULE,{save_history,FileName}).
+    gen_server:call(?MODULE,{save_history,FileName},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% get_autostart_data(Nodes,Dependency)={ok,{AutoStartData,NodeResults} |
@@ -441,19 +465,20 @@ save_history(FileName) ->
 %%   Dependency=inviso dependency parameter which will be used for every
 %%     autostarted runtime component (included in Options).
 %%   NodeResults=[{Node,NodeResult},...]
-%%     NodeResult={ok,{Options,TracerData}} | {error,Reason}
+%%     NodeResult={ok,{Options,{tdg,{M,F,CompleteTDGargs}}}} | {error,Reason}
 %%       Options=add_nodes options to the inviso runtime component.
-%%       TracerData=init tracing parameter to the runtime component.
+%%       M,F=atom(), the module and function for tracerdata generation.
+%%       CompleteTDGargs=list(), all arguments as they are given to the tracer
+%%         data generator function.
 %%       AutostartData=[CaseSpec,...]
-%%         CaseSpec={file,{FileName,Bindings}} | {binary,FileContent}
+%%         CaseSpec={file,{FileName,Bindings}} | {mfa,{M,F,Args}}
 %%           FileName=string(), pointing out the trace case file. Note that this
 %%             is the same as the path used by the tool.
 %%           Bindings=Var bindings used according to the history for the
 %%             invocation.
-%%           FileContent=binary(), to be written to a text file. This is for
-%%             direct inviso commands found in the history. Such must be written
-%%             to a self-made trace case file in order for the script execution
-%%             mechanism to perform them.
+%%           M,F=atom(), the function that shall be called (normally some inviso).
+%%           Args=list(), the actual arguments. Note that this may contain things
+%%             which can not be written to file (ports, pids,...).
 %% Function returning information on how to autostart a node to make it trace
 %% according to the current history. The inviso_tool does not know how to write
 %% the necessary files at the nodes in question. That must be done by the user
@@ -464,9 +489,9 @@ save_history(FileName) ->
 %% trace cases and binaries is of importance (otherwise they will be redone in
 %% an incorrect order).
 get_autostart_data(Dependency) ->
-    gen_server:call(?MODULE,{get_autostart_data,Dependency}).
+    gen_server:call(?MODULE,{get_autostart_data,Dependency},?CALL_TIMEOUT).
 get_autostart_data(Nodes,Dependency) ->
-    gen_server:call(?MODULE,{get_autostart_data,{Nodes,Dependency}}).
+    gen_server:call(?MODULE,{get_autostart_data,{Nodes,Dependency}},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% get_activities()={ok,Ongoing} | {error,Reason}
@@ -480,7 +505,7 @@ get_autostart_data(Nodes,Dependency) ->
 %% this momement. This can be useful to implement "home brewn" synchronization,
 %% waiting for the runtime components to reach a certain state.
 get_activities() ->
-    gen_server:call(?MODULE,get_activities).
+    gen_server:call(?MODULE,get_activities,?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% get_status(Node)={ok,StateStatus} | {error,Reason}
@@ -490,13 +515,34 @@ get_activities() ->
 get_node_status() ->
     get_node_status(local_runtime).
 get_node_status(Node) ->
-    gen_server:call(?MODULE,{get_node_status,Node}).
+    gen_server:call(?MODULE,{get_node_status,Node},?CALL_TIMEOUT).
+%% -----------------------------------------------------------------------------
+
+%% get_session_data()={ok,{Status,SessionNr,TDGargs}} | {error,Reason}
+%%   Status=tracing | not_tracing, info about current/last session.
+%%   SessionNr=integer()
+%%   TDGargs=list(), list of the arguments that will be given to the tracer data
+%%     generator function (not including the leading Nodes list).
+%% Returns data about the current or last session.
+get_session_data() ->
+    gen_server:call(?MODULE,get_session_data,?CALL_TIMEOUT).
+%% -----------------------------------------------------------------------------
+
+%% flush()={ok,NodeResults} | NodeResult | {error,Reason}
+%% flush(Nodes)={ok,NodesResults} | {error,Reason}
+%%   NodeResults=[{Node,NodeResult},...]
+%%   NodeResult=ok | {error,Reason}
+%% Makes runtime components flush their trace ports.
+flush() ->
+    gen_server:call(?MODULE,flush,?CALL_TIMEOUT).
+flush(Nodes) ->
+    gen_server:call(?MODULE,{flush,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% get_loopdata()=#ld
 %% Debug API returning the internal loopdata structure. See #ld above for details.
 get_loopdata() ->
-    gen_server:call(?MODULE,get_loopdata).
+    gen_server:call(?MODULE,get_loopdata,?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
@@ -513,8 +559,10 @@ tc_executer_reply(To,Reply) ->
 
 %% Internal API used by a reactivator process indicating it is done with the
 %% history log it has got so far.
+%% Timeout set to infinity since the tool may be busy, then the reactivator just
+%% have to wait. If the tool crashes the reactivator will be go down too automatically.
 reactivator_reply(TPid,Counter) ->
-    gen_server:call(TPid,{reactivator_reply,{Counter,self()}}).
+    gen_server:call(TPid,{reactivator_reply,{Counter,self()}},infinity).
 %% -----------------------------------------------------------------------------
 
 
@@ -631,8 +679,16 @@ start_subscribe_inviso_events(CNode) ->
 %% gen_server handle call back functions.
 %% -----------------------------------------------------------------------------
 
-handle_call(stop,_From,LD=#ld{nodes=Nodes,c_node=CNode,keep_nodes=KeepNodes}) ->
-    {stop,normal,remove_all_trace_patterns(CNode,KeepNodes,Nodes),LD};
+handle_call({stop,UntouchedNodes},_From,LD=#ld{nodes=NodesD,c_node=CNode,keep_nodes=KeepNodes})
+  when is_list(UntouchedNodes) ->
+    {stop,
+     normal,
+     remove_all_trace_patterns(CNode,
+			       UntouchedNodes++KeepNodes,
+			       get_available_nodes(NodesD)),
+     LD};
+handle_call({stop,BadArg},_From,LD) ->
+    {reply,{error,{badarg,BadArg}},LD};
 
 handle_call({reconnect_nodes,Nodes},_From,LD) ->
     case h_reconnect_nodes(Nodes,LD) of
@@ -656,10 +712,16 @@ handle_call({start_session,MoreTDGargs},_From,LD=#ld{session_state=SState}) ->
 	false ->                               % No session running.
 	    if
 		list(MoreTDGargs) ->
-		    DateTime=calendar:local_time(),
+		    DateTime=calendar:universal_time(),
 		    {M,F,Args}=LD#ld.tdg,
-		    TDGargs=[DateTime]++MoreTDGargs++Args,
+		    TDGargs=inviso_tool_lib:mk_tdg_args(DateTime,MoreTDGargs++Args),
 		    case h_start_session(M,F,TDGargs,LD) of
+			{ok,{SessionNr,ReturnVal,NewLD}} -> % No nodes to initiate.
+			    NewLD2=add_initial_tcs_to_history(NewLD#ld.initial_tcs,
+							      NewLD#ld{chl=mk_chl(LD#ld.chl)}),
+			    {reply,
+			     {ok,{SessionNr,ReturnVal}},
+			     NewLD2#ld{session_state=tracing_sessionstate()}};
 			{ok,{SessionNr,ReturnVal,Nodes2,NewLD}} ->
 			    NewLD2=do_initial_tcs(NewLD#ld.initial_tcs,
 						  Nodes2,
@@ -831,6 +893,25 @@ handle_call({sync_atc,{TC,Id,Vars,TimeOut}},_From,LD=#ld{session_state=SState}) 
 	    {reply,{error,no_session},LD}
     end;
 
+handle_call({sync_rtc,{TC,Vars,TimeOut}},_From,LD=#ld{session_state=SState}) ->
+    case is_tracing(SState) of
+	true ->
+	    if
+		integer(TimeOut);TimeOut==infinity ->
+		    case h_sync_rtc(TC,Vars,TimeOut,LD) of
+			{ok,NewLD,Result} ->
+			    {reply,Result,NewLD};
+			{error,Reason} ->
+			    {reply,{error,Reason},LD}
+		    end;
+		true ->
+		    {reply,{error,{badarg,TimeOut}},LD}
+	    end;
+	false ->
+	    {reply,{error,no_session},LD}
+    end;
+
+
 handle_call({dtc,{TC,Id}},_From,LD=#ld{session_state=SState}) ->
     case is_tracing(SState) of              % Check that we are tracing now.
 	true ->
@@ -919,6 +1000,7 @@ handle_call({save_history,FileName},_From,LD=#ld{chl=CHL,dir=Dir,history_dir=HDi
 	    end
     end;
 
+
 handle_call({get_autostart_data,{Nodes,Dependency}},_From,LD=#ld{chl=CHL}) ->
     case build_autostart_data(lists:keysort(2,get_loglist_chl(CHL)),LD#ld.tc_dict) of
 	{ok,ASD} ->
@@ -964,6 +1046,26 @@ handle_call({get_node_status,Node},_Node,LD) ->
 	StateStatus ->
 	    {reply,{ok,StateStatus},LD}
     end;
+
+handle_call(get_session_data,_From,LD=#ld{session_state=SState,tracer_data=TD}) ->
+    case get_latest_session_nr_tracer_data(TD) of
+	undefined ->
+	    {reply,{error,no_session},LD};
+	SessionNr ->
+	    TDGargs=get_latest_tdgargs_tracer_data(TD),
+	    case is_tracing(SState) of
+		true ->
+		    {reply,{ok,{tracing,SessionNr,TDGargs}},LD};
+		false ->
+		    {reply,{ok,{not_tracing,SessionNr,TDGargs}},LD}
+	    end
+    end;
+
+handle_call(flush,_From,LD=#ld{c_node=CNode,nodes=NodesD}) ->
+    Nodes=get_tracing_nodes(NodesD),
+    {reply,h_flush(CNode,Nodes),LD};
+handle_call({flush,Nodes},_From,LD=#ld{c_node=CNode}) ->
+    {reply,h_flush(CNode,Nodes),LD};
 
 handle_call(get_loopdata,_From,LD) ->
     {reply,LD,LD};
@@ -1027,8 +1129,8 @@ handle_info(_,LD) ->
 %% stopping for some external reason, and we must then do more here in terminate/2.
 terminate(normal,#ld{c_node=CNode}) ->      % This is when we are stopping our self.
     stop_inviso_at_c_node(CNode);
-terminate(_,#ld{c_node=CNode,nodes=Nodes,keep_nodes=KeepNodes}) ->
-    remove_all_trace_patterns(CNode,KeepNodes,Nodes),
+terminate(_,#ld{c_node=CNode,nodes=NodesD,keep_nodes=KeepNodes}) ->
+    remove_all_trace_patterns(CNode,KeepNodes,get_all_nodenames_nodes(NodesD)),
     stop_inviso_at_c_node(CNode).
 %% -----------------------------------------------------------------------------
 
@@ -1081,32 +1183,68 @@ h_reconnect_nodes(Nodes,_LD) ->
 %% Help function starting the tracing at all nodes. Note that the tracer data
 %% is calculated using a user defined function. This is how for instance the
 %% file names (of the log files) are determined.
+%% Before the nodes are initiated their (possibly remaining) trace patterns are
+%% cleared, both local and global.
 h_start_session(M,F,TDGargs,LD=#ld{c_node=CNode,nodes=NodesD,tracer_data=TDs}) ->
     case get_inactive_running_nodes(NodesD) of
 	[] ->                               % There are no nodes to initiate!
-	    {SessionNr,NewTDs}=insert_td_tracer_data(TDGargs,TDs),
-	    {ok,{SessionNr,[],LD#ld{tracer_data=NewTDs,chl=mk_chl(LD#ld.chl)}}};
+	    h_start_session_nonodes(TDGargs,LD,[]);
 	Nodes ->                            % List of nodes or 'local_runtime'.
-	    case call_tracer_data_generator(CNode,M,F,TDGargs,Nodes) of
-		{ok,TracerList} ->          % Generated our tracerdata.
-		    case h_start_session_2(CNode,TracerList) of
-			{ok,ReturnValue} -> % Some nodes are initialized now.
-			    {NewNodesD,Nodes2}=
-				set_tracing_running_nodes(CNode,ReturnValue,NodesD),
-			    {SessionNr,NewTDs}=insert_td_tracer_data(TDGargs,TDs),
-			    {ok,{SessionNr,
-				 ReturnValue,
-				 Nodes2,    % The nodes that shall get initial tracases.
-				 LD#ld{nodes=NewNodesD,tracer_data=NewTDs}}};
-			{error,Reason} ->
-			    {error,Reason}
+	    case h_start_session_ctp_all(CNode,Nodes) of
+		{ok,Errors,[]} ->           % Now no nodes to initiate!
+		    h_start_session_nonodes(TDGargs,LD,Errors);
+		{ok,Errors,Nodes2} ->       % Now these nodes are fresh.
+		    case call_tracer_data_generator(CNode,M,F,TDGargs,Nodes2) of
+			{ok,TracerList} ->  % Generated our tracerdata.
+			    case h_start_session_2(CNode,TracerList,Errors) of
+				{ok,ReturnValue} -> % Some nodes are initialized now.
+				    {NewNodesD,Nodes3}=
+					set_tracing_running_nodes(CNode,ReturnValue,NodesD),
+				    {SessionNr,NewTDs}=insert_td_tracer_data(TDGargs,TDs),
+				    {ok,{SessionNr,
+					 ReturnValue,
+					 Nodes3, % The nodes that shall get initial tracases.
+					 LD#ld{nodes=NewNodesD,tracer_data=NewTDs}}};
+				{error,Reason} ->
+				    {error,Reason}
+			    end;
+			{error,Reason} ->   % Faulty tracer data generator func.
+			    {error,{bad_tdg,Reason}}
 		    end;
-		{error,Reason} ->           % Faulty tracer data generator func.
-		    {error,{bad_tdg,Reason}}
+		{error,Reason} ->           % Error clearing patterns.
+		    {error,Reason}
 	    end
     end.
 
-h_start_session_2(undefined,TracerData) ->   % Non distributed case.
+h_start_session_nonodes(TDGargs,LD=#ld{c_node=CNode,tracer_data=TDs},Errors) ->
+    {SessionNr,NewTDs}=insert_td_tracer_data(TDGargs,TDs),
+    if
+	CNode==undefined ->
+	    {ok,{SessionNr,[],LD#ld{tracer_data=NewTDs}}};
+	true ->
+	    {ok,{SessionNr,{ok,Errors},LD#ld{tracer_data=NewTDs}}}
+    end.
+
+%% Help function clearing all trace patterns on all nodes.
+h_start_session_ctp_all(CNode,Nodes) ->
+    case remove_all_trace_patterns(CNode,[],Nodes) of
+	ok ->                               % Non-distributed case1.
+	    {ok,[],local_runtime};
+	{error,Reason} ->                   % Non-distributed case2 and general failure.
+	    {error,Reason};
+	{ok,NodeResults} ->
+	    h_start_session_ctp_all_2(NodeResults,[],[])
+    end.
+
+h_start_session_ctp_all_2([{Node,{error,Reason}}|Rest],Errors,Nodes) ->
+    h_start_session_ctp_all_2(Rest,[{Node,{error,Reason}}|Errors],Nodes);
+h_start_session_ctp_all_2([{Node,_OkOrPatternsUntouched}|Rest],Errors,Nodes) ->
+    h_start_session_ctp_all_2(Rest,Errors,[Node|Nodes]);
+h_start_session_ctp_all_2([],Errors,Nodes) ->
+    {ok,Errors,Nodes}.
+
+%% Help function doing the actual init_tracing.
+h_start_session_2(undefined,TracerData,_Errors) -> % Non distributed case.
     case inviso:init_tracing(TracerData) of
 	{ok,LogResult} when list(LogResult) ->
 	    {ok,{ok,LogResult}};
@@ -1115,10 +1253,10 @@ h_start_session_2(undefined,TracerData) ->   % Non distributed case.
 	{error,Reason} ->
 	    {error,Reason}
     end;
-h_start_session_2(CNode,TracerList) ->
+h_start_session_2(CNode,TracerList,Errors) ->
     case rpc:call(CNode,inviso,init_tracing,[TracerList]) of
 	{ok,NodeResults} ->
-	    {ok,{ok,NodeResults}};
+	    {ok,{ok,Errors++NodeResults}};
 	{error,Reason} ->
 	    {error,Reason};
 	{badrpc,Reason} ->
@@ -1146,20 +1284,48 @@ do_initial_tcs([],_Nodes,LD) ->
     LD.
 %% -----------------------------------------------------------------------------
 
+%% This help functio is used instead of do_initial_tcs/3 if there actually are no
+%% nodes to do the trace cases on. The reason we must have this function is that
+%% the tracecases must still be entered into the history with bindings and all.
+%% But we let them be marked as 'running' immediately (no need for the activator
+%% process).
+add_initial_tcs_to_history([{TC,Vars}|Rest],LD=#ld{tc_dict=TCdict,chl=CHL}) ->
+    case get_tracecase_tc_dict(TC,TCdict) of
+	{ok,TraceCase} ->
+	    case check_bindings(Vars,TraceCase) of
+		{ok,Bindings} ->
+		    Id=make_ref(),          % Trace case ID.
+		    FakeProcH=make_ref(),   % Need something to enter as activator.
+		    NewCHL=set_activating_chl(TC,Id,CHL,Bindings,FakeProcH),
+		    NewCHL2=set_running_chl(FakeProcH,TC,Id,void,NewCHL), % Result=void.
+		    NewInitialTcs=add_initial_tcs(TC,Id,LD#ld.started_initial_tcs),
+		    add_initial_tcs_to_history(Rest,LD#ld{chl=NewCHL2,
+							  started_initial_tcs=NewInitialTcs});
+		{error,_Reason} ->          % Not much we can do about that.
+		    add_initial_tcs_to_history(Rest,LD)
+	    end;
+	false ->
+	    add_initial_tcs_to_history(Rest,LD)
+    end;
+add_initial_tcs_to_history([],LD) ->
+    LD.
+%% -----------------------------------------------------------------------------
+
 %% -----------------------------------------------------------------------------
 %% reinitiate_session
 %% -----------------------------------------------------------------------------
 
 %% Function doing the reinitiation. That means first do init_tracing at the nodes
 %% in question. Then redo the command history to bring them up to speed.
+%% But first the runtime component is cleared of all trace patterns.
 h_reinitiate_session(Nodes,M,F,TDGargs,LD=#ld{c_node=CNode,nodes=NodesD}) ->
-    case h_reinitiate_session_2(Nodes,NodesD) of
+    case h_reinitiate_session_2(Nodes,NodesD,CNode) of
 	{ok,{[],NodesErr}} ->               % No nodes to reinitiate.
 	    {ok,{NodesErr,{ok,[]},LD}};
 	{ok,{Nodes2,NodesErr}} ->           % List of nodes or local_runtime.
 	    case call_tracer_data_generator(CNode,M,F,TDGargs,Nodes2) of
 		{ok,TracerList} ->
-		    case h_start_session_2(CNode,TracerList) of % Borrow from start_session.
+		    case h_start_session_2(CNode,TracerList,[]) of % Borrow from start_session.
 			{ok,ReturnValue} -> % Ok, now we must redo cmd history.
 			    {NewNodesD,_Nodes}=
 				set_tracing_running_nodes(CNode,ReturnValue,NodesD),
@@ -1178,10 +1344,15 @@ h_reinitiate_session(Nodes,M,F,TDGargs,LD=#ld{c_node=CNode,nodes=NodesD}) ->
 %% Help function finding out which nodes in Nodes actually can be reinitiated.
 %% A node must be up, inactive and not suspended in order for this to work. All the
 %% rest is just a matter of how detailed error return values we want to generate.
-h_reinitiate_session_2(local_runtime,NodesD) -> % Non distributed case.
+h_reinitiate_session_2(local_runtime,NodesD,undefined) -> % Non distributed case.
     case get_state_nodes(local_runtime,NodesD) of
 	{inactive,running} ->               % Only ok case.
-	    {ok,{local_runtime,[]}};
+	    case inviso:ctp_all() of
+		ok ->
+		    {ok,{local_runtime,[]}};
+		{error,Reason} ->           % This is strange.
+		    {error,Reason}
+	    end;
 	{_,suspended} ->
 	    {ok,{[],{error,suspended}}};
 	down ->
@@ -1189,11 +1360,20 @@ h_reinitiate_session_2(local_runtime,NodesD) -> % Non distributed case.
 	_ ->
 	    {ok,{[],{error,already_in_session}}}
     end;
-h_reinitiate_session_2(Nodes,NodesD) when list(Nodes) ->
+h_reinitiate_session_2(Nodes,NodesD,CNode) when list(Nodes) ->
     {ok,lists:foldl(fun(N,{Nodes2,NodesErr})->
 			    case get_state_nodes(N,NodesD) of
 				{inactive,running} -> % Only ok case.
-				    {[N|Nodes2],NodesErr};
+				    case rpc:call(CNode,inviso,ctp_all,[[N]]) of
+					{ok,[{N,ok}]} ->
+					    {[N|Nodes2],NodesErr};
+					{ok,[{N,{error,Reason}}]} ->
+					    {Nodes2,[{N,{error,Reason}}|NodesErr]};
+					{error,Reason} ->
+					    {Nodes2,[{N,{error,Reason}}|NodesErr]};
+					{badrpc,Reason} ->
+					    {Nodes2,[{N,{error,{badrpc,Reason}}}|NodesErr]}
+				    end;
 				{_,suspended} ->
 				    {Nodes2,[{N,{error,suspended}}|NodesErr]};
 				down ->
@@ -1206,8 +1386,8 @@ h_reinitiate_session_2(Nodes,NodesD) when list(Nodes) ->
 		    end,
 		    {[],[]},
 		    Nodes)};
-h_reinitiate_session_2(Nodes,_NodesD) ->
-    {error,{badarg,Nodes}}.
+h_reinitiate_session_2(Nodes,_NodesD,_CNode) ->
+    {error,{badarg7,Nodes}}.
 
 %% Help function redoing the command history log at all nodes that actually
 %% started to trace. Note that we do not modify the return value which will be
@@ -1234,10 +1414,12 @@ h_reinitiate_session_chl([],LD) ->
 %% Help function starting a session (init tracing) and redoes the history
 %% found in CHL.
 h_restore_session(MoreTDGargs,LD) ->
-    DateTime=calendar:local_time(),
+    DateTime=calendar:universal_time(),
     {M,F,Args}=LD#ld.tdg,
-    TDGargs=[DateTime]++MoreTDGargs++Args,
+    TDGargs=inviso_tool_lib:mk_tdg_args(DateTime,MoreTDGargs++Args),
     case h_start_session(M,F,TDGargs,LD) of
+	{ok,{SessionNr,ReturnVal,NewLD}} ->   % There were no available nodes.
+	    {ok,{SessionNr,ReturnVal,NewLD}};
 	{ok,{SessionNr,ReturnVal,Nodes2,NewLD}} ->
 	    NewLD2=h_reinitiate_session_chl(Nodes2,NewLD),
 	    {ok,{SessionNr,ReturnVal,NewLD2}};
@@ -1397,6 +1579,37 @@ h_sync_atc(TC,Id,Vars,TimeOut,LD=#ld{c_node=CNode,tc_dict=TCdict,chl=CHL}) ->
 	    end;
 	{ok,_Bindings} ->                   % Already activated and running.
 	    {error,already_started}
+    end.
+%% -----------------------------------------------------------------------------
+
+%% -----------------------------------------------------------------------------
+%% rtc
+%% -----------------------------------------------------------------------------
+
+%% Function handling running a trace case without marking it as activated. It
+%% is in the history mearly indicated as activated
+h_sync_rtc(TC,Vars,TimeOut,LD=#ld{c_node=CNode,tc_dict=TCdict,chl=CHL}) ->
+    case get_tracecase_tc_dict(TC,TCdict) of
+	{ok,TraceCase} ->                   % Such a trace case exists.
+	    case check_bindings(Vars,TraceCase) of
+		{ok,Bindings} ->            % Necessary vars exists in Vars.
+		    {ok,TcFName}=get_tc_activate_fname(TraceCase),
+		    Nodes=get_nodenames_running_nodes(LD#ld.nodes),
+		    Bindings2=erl_eval:add_binding('Nodes',Nodes,Bindings),
+		    RpcNode=get_rpc_nodename(CNode),
+		    case rpc:call(RpcNode,file,script,[TcFName,Bindings2],TimeOut) of
+			{ok,Value} ->
+			    {ok,LD#ld{chl=add_rtc_chl(TC,Bindings2,CHL)},Value};
+			{error,Reason} ->
+			    {error,{faulty_tracecase,{TcFName,Reason}}};
+			{badrpc,Reason} ->
+			    {error,{badrpc,Reason}}
+		    end;
+		{error,Reason} ->   % Variable def missing.
+		    {error,Reason}
+	    end;
+	false ->
+	    {error,unknown_tracecase}
     end.
 %% -----------------------------------------------------------------------------
 
@@ -1583,32 +1796,34 @@ h_save_history(HDir,Dir,FileName,SortedLog) ->
 %% from the tool. Note that we remove the tool-dependency and insert the one
 %% specify in the get_autostart_data call.
 h_get_autostart_data(local_runtime,_,Dependency,ASD,M,F,TDGargs,OptsG) ->
-    case call_tracer_data_generator(undefined,M,F,TDGargs,local_runtime) of
-	{ok,TracerData} ->
-	    Opts0=start_runtime_components_mk_opts(local_runtime,OptsG),
-	    Opts=[Dependency|lists:keydelete(dependency,1,Opts0)],
-	    {ok,{ASD,{ok,{Opts,TracerData}}}};
-	{error,Reason} ->
-	    {error,{bad_tdg,Reason}}
-    end;
+    CompleteTDGargs=call_tracer_data_generator_mkargs(local_runtime,TDGargs),
+    Opts0=start_runtime_components_mk_opts(local_runtime,OptsG),
+    Opts=[Dependency|lists:keydelete(dependency,1,Opts0)],
+    {ok,{ASD,{ok,{Opts,{tdg,{M,F,CompleteTDGargs}}}}}};
+
 h_get_autostart_data(Nodes,CNode,Dependency,ASD,M,F,TDGargs,OptsG) when list(Nodes) ->
     {ok,{ASD,h_get_autostart_data_2(Nodes,CNode,Dependency,M,F,TDGargs,OptsG)}};
 h_get_autostart_data(Nodes,_CNode,_Dependency,_ASD,_M,_F,_TDGargs,_OptsG) ->
     {error,{badarg,Nodes}}.
 
 h_get_autostart_data_2([Node|Rest],CNode,Dependency,M,F,TDGargs,OptsG) ->
-    case call_tracer_data_generator(CNode,M,F,TDGargs,[Node]) of
-	{ok,[{_,TracerData}]} ->
-	    Opts0=start_runtime_components_mk_opts(Node,OptsG),
-	    Opts=[Dependency|lists:keydelete(dependency,1,Opts0)],
-	    [{Node,{ok,{Opts,TracerData}}}|
-	     h_get_autostart_data_2(Rest,CNode,Dependency,M,F,TDGargs,OptsG)];
-	{error,Reason} ->
-	    [{Node,{error,{bad_tdg,Reason}}}|
-	     h_get_autostart_data_2(Rest,CNode,Dependency,M,F,TDGargs,OptsG)]
-    end;
+    CompleteTDGargs=call_tracer_data_generator_mkargs(Node,TDGargs),
+    Opts0=start_runtime_components_mk_opts(Node,OptsG),
+    Opts=[Dependency|lists:keydelete(dependency,1,Opts0)],
+    [{Node,{ok,{Opts,{tdg,{M,F,CompleteTDGargs}}}}}|
+     h_get_autostart_data_2(Rest,CNode,Dependency,M,F,TDGargs,OptsG)];
 h_get_autostart_data_2([],_CNode,_Dependency,_M,_F,_TDGargs,_OptsG) ->
     [].
+%% -----------------------------------------------------------------------------
+
+%% -----------------------------------------------------------------------------
+%% flush
+%% -----------------------------------------------------------------------------
+
+h_flush(undefined,_Nodes) ->
+    inviso:flush();
+h_flush(CNode,Nodes) ->
+    inviso_tool_lib:inviso_cmd(CNode,flush,[Nodes]).
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
@@ -1759,14 +1974,17 @@ build_reinitiate_session_reply_2([],_NodesErr,_NodeResults) ->
 %% been removed. Further all tracecase log entries must be set to running since
 %% there can not be such a thing as an activating tracecase stored away in a
 %% saved historyfile!
+%% We must also take away any #Ref.
 build_saved_history_data(SortedLog) ->
     CleanedLog=
 	lists:filter(fun({_,_,Stop,_}) when Stop==stop;Stop==stopping -> false;
 			(_) -> true
 		     end,
 		     SortedLog),
-    lists:map(fun({{TC,Id},C,activating,B})->{{TC,Id},C,running,B};
-		 (Entry)->Entry
+    lists:map(fun({{TC,Id},C,activating,B}) -> {{TC,Id},C,running,B};
+		 ({{TC,Id},C,S,B}) -> {{TC,Id},C,S,B};
+		 ({{M,F,Args,_Ref},C}) -> {{M,F,Args},C};
+		 ({{TC,_Ref},C,B}) -> {TC,C,B} % An rtc.
 	      end,
 	      CleanedLog).
 %% -----------------------------------------------------------------------------
@@ -1786,83 +2004,12 @@ build_autostart_data_2([{{TCname,_},_C,activating,Bindings}|Rest],TCdict,Accum) 
     build_autostart_data_tc(TCname,Bindings,TCdict,Rest,Accum);
 build_autostart_data_2([{{TCname,_},_C,running,Bindings}|Rest],TCdict,Accum) ->
     build_autostart_data_tc(TCname,Bindings,TCdict,Rest,Accum);
-build_autostart_data_2(SortedLog,TCdict,Accum) when SortedLog/=[] ->
-    case build_autostart_data_cmd(SortedLog,[]) of
-	{ok,{Cmds,Rest}} ->
-	    build_autostart_data_2(Rest,TCdict,[{binary,list_to_binary(Cmds)}|Accum]);
-	{error,Reason} ->                    % Non printable datatypes.
-	    {error,Reason}
-    end;
+build_autostart_data_2([{{TCname,_Ref},_C,Bindings}|Rest],TCdict,Accum) ->
+    build_autostart_data_tc(TCname,Bindings,TCdict,Rest,Accum);
+build_autostart_data_2([{{M,F,Args,_Ref},_C}|Rest],TCdict,Accum) ->
+    build_autostart_data_2(Rest,TCdict,[{mfa,{M,F,Args}}|Accum]);
 build_autostart_data_2([],_TCdict,Accum) ->
     {ok,lists:reverse(Accum)}.
-
-build_autostart_data_cmd([{{M,F,Args,_Ref},_C}|Rest],Accum) ->
-    build_autostart_data_cmd(Rest,[{M,F,Args}|Accum]);
-build_autostart_data_cmd(Rest,Accum) ->      % Either end of list or end of commands.
-    case build_autostart_data_cmd_2(Accum,"") of
-	{ok,String} ->
-	    {ok,{String,Rest}};
-	{error,Reason} ->
-	    {error,Reason}
-    end.
-
-build_autostart_data_cmd_2([{M,F,Args}|Rest],String) ->
-    case build_autostart_data_cmd_2_mk_args(Args,"") of
-	{ok,ArgString} ->
-	    build_autostart_data_cmd_2(Rest,
-				       atom_to_list(M)++":"++
-				       atom_to_list(F)++"("++
-				       ArgString++").\n"++String);
-	{error,Reason} ->                    % An incorrect argument found.
-	    {error,Reason}
-    end;
-build_autostart_data_cmd_2([],String) ->
-    {ok,String}.
-
-%% Help function building a string of all argument or returns an error if
-%% the arguments contains a non-printable datatype (pids are of no use in a
-%% script-file).
-build_autostart_data_cmd_2_mk_args([Arg|Rest],ArgString) ->
-    case build_autostart_data_cmd_2_mk_args_check_type(Arg) of
-	ok ->
-	    NewArgString=
-		if
-		    ArgString=="" ->
-			[lists:flatten(io_lib:write(Arg))];
-		    true ->
-			[lists:flatten(io_lib:write(Arg)),","|ArgString]
-		end,
-	    build_autostart_data_cmd_2_mk_args(Rest,NewArgString);
-	error ->
-	    {error,{datatype,Arg}}
-    end;
-build_autostart_data_cmd_2_mk_args([],ArgString) ->
-    {ok,lists:flatten(lists:reverse(ArgString))}.
-
-build_autostart_data_cmd_2_mk_args_check_type(A)
-  when pid(A);port(A);reference(A);function(A) ->
-    error;                                   % Can not be written to file.
-build_autostart_data_cmd_2_mk_args_check_type([E|Rest]) ->
-    case build_autostart_data_cmd_2_mk_args_check_type(E) of
-	ok ->
-	    build_autostart_data_cmd_2_mk_args_check_type(Rest);
-	error ->
-	    error
-    end;
-build_autostart_data_cmd_2_mk_args_check_type(T) when tuple(T),size(T)>0 ->
-    build_autostart_data_cmd_2_mk_args_check_type_tuple(T,1);
-build_autostart_data_cmd_2_mk_args_check_type(_) ->
-    ok.
-
-build_autostart_data_cmd_2_mk_args_check_type_tuple(T,I) when size(T)>=I ->
-    case build_autostart_data_cmd_2_mk_args_check_type(element(I,T)) of
-	ok ->
-	    build_autostart_data_cmd_2_mk_args_check_type_tuple(T,I+1);
-	error ->
-	    error
-    end;
-build_autostart_data_cmd_2_mk_args_check_type_tuple(_T,_) ->
-    ok.
 
 %% Help function placing the filename in the AutoStartData structure.    
 build_autostart_data_tc(TCname,Bindings,TCdict,Rest,Accum) ->
@@ -1897,7 +2044,15 @@ call_tracer_data_generator_2(_,_,_,[]) ->
     [].
 
 call_tracer_data_generator_3(M,F,TDGargs,Node) ->
-    apply(M,F,[Node|TDGargs]).
+    apply(M,F,call_tracer_data_generator_mkargs(Node,TDGargs)).
+
+%% This function creates the arguments that the tracer data generator function
+%% accepts (in an apply call). The reason for making it a sepparate function is
+%% that the arguments are constructed in more situations than just when actually
+%% doing the apply. By having a function it will become obvious where to change
+%% should the arguments change.
+call_tracer_data_generator_mkargs(Node,TDGargs) ->
+    inviso_tool_lib:mk_complete_tdg_args(Node,TDGargs).
 %% -----------------------------------------------------------------------------
 
 %% This function acts as standard options generator function. That is returning
@@ -2159,6 +2314,9 @@ reactivator_executer_2(Node,TCdict,TPid,_Counter,DoneCases,
 		       [{{TCname,Id},NextC,running,Bindings}|Rest]) ->
     reactivator_executer_3(Node,TCdict,TPid,DoneCases,Rest,TCname,Id,NextC,Bindings,Rest);
 reactivator_executer_2(Node,TCdict,TPid,_Counter,DoneCases,
+		       [{{TCname,_Ref},NextC,Bindings}|Rest]) ->
+    reactivator_executer_rtc(Node,TCdict,TPid,DoneCases,Rest,TCname,NextC,Bindings,Rest);
+reactivator_executer_2(Node,TCdict,TPid,_Counter,DoneCases,
 		       [{{TCname,Id},NextC,activating,Bindings}|Rest]) ->
     reactivator_executer_3(Node,TCdict,TPid,DoneCases,Rest,TCname,Id,NextC,Bindings,Rest);
 reactivator_executer_2(Node,TCdict,TPid,_Counter,DoneCases,
@@ -2211,6 +2369,19 @@ reactivator_executer_3(Node,TCdict,TPid,DoneCases,Rest,TCname,Id,NextC,Bindings,
 %% return anything significant.
 reactivator_executer_tc(Node,Bindings,FileName) ->
     catch file:eval(FileName,erl_eval:add_binding('Nodes',[Node],Bindings)).
+
+%% Help function handling trace case that are simply executed - rtc.
+reactivator_executer_rtc(Node,TCdict,TPid,DoneCases,Rest,TCname,NextC,Bindings,Rest) ->
+    case get_tracecase_tc_dict(TCname,TCdict) of
+	{ok,{_,_,_,FNameOn}} ->             % A case with just on functionality.
+	    reactivator_executer_tc(Node,Bindings,FNameOn),
+	    reactivator_executer_2(Node,TCdict,TPid,NextC,DoneCases,Rest);
+	{ok,{_,_,_,FNameOn,_}} ->
+	    reactivator_executer_tc(Node,Bindings,FNameOn),
+	    reactivator_executer_2(Node,TCdict,TPid,NextC,DoneCases,Rest);
+	false ->                            % Strange, does not exist anylonger!?
+	    reactivator_executer_2(Node,TCdict,TPid,NextC,DoneCases,Rest)
+    end.
 
 reactivator_executer_cmd(nonode@nohost,M,F,Args) ->
     catch apply(M,F,Args);                  % Non-distributed.
@@ -2716,6 +2887,17 @@ get_tracing_nodes(AvailableStatus) ->
     AvailableStatus.
 %% -----------------------------------------------------------------------------
 
+%% Returns a list of all nodes that are currently up.
+get_available_nodes(down) ->
+    undefined;
+get_available_nodes([{_Node,down}|Rest]) ->
+    get_available_nodes(Rest);
+get_available_nodes([{Node,_}|Rest]) ->
+    [Node|get_available_nodes(Rest)];
+get_available_nodes([]) ->
+    [].
+%% -----------------------------------------------------------------------------
+
 %% Function returning the "state" of Node. Mainly used to check if the node is
 %% suspended or not.
 %% Returns {State,Status} | reactivating | down
@@ -2803,12 +2985,16 @@ insert_td_tracer_data(TDGargs,undefined) ->
 %% -----------------------------------------------------------------------------
 
 %% Returns the latest session nr.
+get_latest_session_nr_tracer_data(undefined) ->
+    undefined;
 get_latest_session_nr_tracer_data([{SessionNr,_}|_]) ->
     SessionNr.
 %% -----------------------------------------------------------------------------
 
 %% Returns the tracer data arguments used when creating the trace data for the
 %% latest session.
+get_latest_tdgargs_tracer_data(undefined) ->
+    undefined;
 get_latest_tdgargs_tracer_data([{_,TDGargs}|_]) ->
     TDGargs.
 %% -----------------------------------------------------------------------------
@@ -2885,6 +3071,7 @@ get_tc_varnames({_TCname,_Type,VarNames,_FNameOn,_FNameOff}) ->
 %%   ETStable=tid() -> {{TCname,Id},Counter,State1,Bindings}
 %%   ETStable=tid() -> {{TCname,Id},Counter,running,Bindings,Result} |
 %%                     {{TCname,Id,#Ref},Counter,stop,Bindings} |
+%%                     {{TCname,#Ref},Counter,Bindings} % An rtc
 %%                     {{M,F,Args,#Ref},Counter}
 %%     Counter=integer(), the order-counter for this logged entry.
 %%     State1=activating | stopping
@@ -2992,6 +3179,10 @@ add_inviso_call_chl(Cmd,Args,{NextCounter,OnGoingList,TId}) ->
     ets:insert(TId,{{inviso,Cmd,Args,make_ref()},NextCounter}),
     {NextCounter+1,OnGoingList,TId}.
 
+%% Function adding a run trace case entry to the chl.
+add_rtc_chl(TCname,Bindings,{NextCounter,OnGoingList,TId}) ->
+    ets:insert(TId,{{TCname,make_ref()},NextCounter,Bindings}),
+    {NextCounter+1,OnGoingList,TId}.
 %% Returns the highest used counter number in the command history log.
 get_highest_used_counter_chl({NextCounter,_,_}) ->    
     NextCounter-1.
@@ -3020,11 +3211,26 @@ get_loglist_chl({_,_,TId}) ->
     lists:map(fun({{TC,Id},C,S,B,_Result}) -> {{TC,Id},C,S,B}; % running
 		 (Tuple={{_TC,_Id},_C,_S,_B}) -> Tuple;      % activating | stopping
 		 (Tuple={{_TC,_Id,_Ref},_C,_S,_B}) -> Tuple; % stop
-		 (Tuple={{_M,_F,_Args,_Ref},_C}) -> Tuple
+		 (Tuple={{_M,_F,_Args,_Ref},_C}) -> Tuple;
+		 (Tuple={{_TC,_Ref},_C,_B}) -> Tuple
 	      end,
 	      L);
 get_loglist_chl(_) ->                       % The history is not initiated, ever!
     [].
+
+%% Function returning a list of log entries, but only those which are not
+%% cancelled out by deactivations.
+% get_loglist_active_chl({_,_,TId}) ->
+%     L=ets:tab2list(TId),
+%     lists:zf(fun({{TC,Id},C,S,B,_Result}) -> {true,{{TC,Id},C,S,B}}; % running
+% 		(Tuple={{_TC,_Id},_C,_S,_B}) -> Tuple;      % activating | stopping
+% 		(Tuple={{_TC,_Id,_Ref},_C,_S,_B}) -> Tuple; % stop
+% 		(Tuple={{_M,_F,_Args,_Ref},_C}) -> Tuple
+% 	     end,
+% 	     L);
+% get_loglist_chl(_) ->                       % The history is not initiated, ever!
+%     [].
+
 
 %% This helpfunction recreates a history from a saved history list. This function
 %% is supposed to crash if the log is not well formatted. Note that we must restore
@@ -3038,8 +3244,11 @@ replace_history_chl(OldCHL,SortedLog) ->
 replace_history_chl_2(TId,[{{TC,Id},C,running,B}|Rest],_Counter) ->
     ets:insert(TId,{{TC,Id},C,running,B,undefined}),
     replace_history_chl_2(TId,Rest,C);
-replace_history_chl_2(TId,[{{M,F,Args,Ref},C}|Rest],_Counter) ->
-    ets:insert(TId,{{M,F,Args,Ref},C}),
+replace_history_chl_2(TId,[{{M,F,Args},C}|Rest],_Counter) ->
+    ets:insert(TId,{{M,F,Args,make_ref()},C}),
+    replace_history_chl_2(TId,Rest,C);
+replace_history_chl_2(TId,[{TC,C,B}|Rest],_Counter) ->
+    ets:insert(TId,{{TC,make_ref()},C,B}),
     replace_history_chl_2(TId,Rest,C);
 replace_history_chl_2(TId,[],Counter) ->
     {TId,Counter}.

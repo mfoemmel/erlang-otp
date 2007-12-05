@@ -26,11 +26,394 @@
 #include "big.h"
 #include "error.h"
 #include "bif.h"
+
+#define ZERO_DIGITS(v, sz) do {			\
+	dsize_t _t_sz = sz;			\
+	ErtsDigit* _t_v  = v;			\
+	while(_t_sz--) *_t_v++ = 0;		\
+    } while(0)
+
+#define MOVE_DIGITS(dst, src, sz) do {				\
+	dsize_t _t_sz = sz;					\
+	ErtsDigit* _t_dst;					\
+	ErtsDigit* _t_src;					\
+	if (dst < src) {					\
+	    _t_dst = dst;					\
+	    _t_src = src;					\
+	    while(_t_sz--) *_t_dst++ = *_t_src++;		\
+	}							\
+	else if (dst > src) {					\
+	    _t_dst = (dst)+((sz)-1);				\
+	    _t_src = (src)+((sz)-1);				\
+	    while(_t_sz--) *_t_dst-- = *_t_src--;		\
+	}							\
+    } while(0)
+
+/* add a and b with carry in + out */
+#define DSUMc(a,b,c,s) do {						\
+	ErtsDigit ___cr = (c);						\
+	ErtsDigit ___xr = (a)+(___cr);					\
+	ErtsDigit ___yr = (b);						\
+	___cr = (___xr < ___cr);					\
+	___xr = ___yr + ___xr;						\
+	___cr += (___xr < ___yr);					\
+	s = ___xr;							\
+	c = ___cr;							\
+    }  while(0)
+
+/* add a and b with carry out */
+#define DSUM(a,b,c,s) do {					\
+	ErtsDigit ___xr = (a);					\
+	ErtsDigit ___yr = (b);					\
+	___xr = ___yr + ___xr;					\
+	s = ___xr;						\
+	c = (___xr < ___yr);					\
+    }  while(0)
+
+#define DSUBb(a,b,r,d) do {						\
+	ErtsDigit ___cr = (r);						\
+	ErtsDigit ___xr = (a);						\
+	ErtsDigit ___yr = (b)+___cr;					\
+	___cr = (___yr < ___cr);					\
+	___yr = ___xr - ___yr;						\
+	___cr += (___yr > ___xr);					\
+	d = ___yr;							\
+	r = ___cr;							\
+    } while(0)
+
+#define DSUB(a,b,r,d) do {			\
+	ErtsDigit ___xr = (a);			\
+	ErtsDigit ___yr = (b);			\
+	___yr = ___xr - ___yr;			\
+	r = (___yr > ___xr);			\
+	d = ___yr;				\
+    } while(0)
+
+/* type a constant as a ErtsDigit - to get shifts correct */
+#define DCONST(n) ((ErtsDigit)(n))
+
+/*
+ *   BIG_HAVE_DOUBLE_DIGIT is defined if we have defined
+ *   the type ErtsDoubleDigit which MUST have 
+ *    sizeof(ErtsDoubleDigit) >= sizeof(ErtsDigit)
+ */
+#ifdef BIG_HAVE_DOUBLE_DIGIT
+
+/* ErtsDoubleDigit => ErtsDigit */
+#define DLOW(x)        ((ErtsDigit)(x))
+#define DHIGH(x)       ((ErtsDigit)(((ErtsDoubleDigit)(x)) >> D_EXP))
+
+/* ErtsDigit => ErtsDoubleDigit */
+#define DLOW2HIGH(x)   (((ErtsDoubleDigit)(x)) << D_EXP)
+#define DDIGIT(a1,a0)  (DLOW2HIGH(a1) + (a0))
+
+#define DMULc(a,b,c,p) do {			       \
+        ErtsDoubleDigit _t = ((ErtsDoubleDigit)(a))*(b) + (c);	\
+	p = DLOW(_t);						\
+	c = DHIGH(_t);						\
+    } while(0)
+#define DMUL(a,b,c1,c0) do { \
+	ErtsDoubleDigit _t = ((ErtsDoubleDigit)(a))*(b);	\
+	c0 = DLOW(_t);					\
+	c1 = DHIGH(_t);					\
+    } while(0)
+
+#define DDIV(a1,a0,b,q) do {						\
+	ErtsDoubleDigit _t = DDIGIT((a1),(a0));				\
+	q = _t / (b);							\
+    } while(0)
+
+#define DDIV2(a1,a0,b1,b0,q) do {					\
+	ErtsDoubleDigit _t = DDIGIT((a1),(a0));				\
+	q = _t / DDIGIT((b1),(b0));					\
+    } while(0)
+
+#define DREM(a1,a0,b,r) do { \
+	ErtsDoubleDigit _t = DDIGIT((a1),(a0));		\
+	r = _t % (b);					\
+    } while(0)
+
+#else
+
+/* If we do not have double digit then we have some more work to do */
+#define H_EXP (D_EXP >> 1)
+#define LO_MASK ((ErtsDigit)((DCONST(1) << H_EXP)-1))
+#define HI_MASK ((ErtsDigit)(LO_MASK << H_EXP))
+
+#define DGT(a,b) ((a)>(b))
+#define DEQ(a,b) ((a)==(b))
+
+#define D2GT(a1,a0,b1,b0)  (DGT(a1,b1) || (((a1)==(b1)) && DGT(a0,b0)))
+#define D2EQ(a1,a0,b1,b0)  (DEQ(a1,b1) && DEQ(a0,b0))
+#define D2LT(a1,a0,b1,b0)  D2GT(b1,b0,a1,a0)
+#define D2GTE(a1,a0,b1,b0) (!D2LT(a1,a0,b1,b0))
+#define D2LTE(a1,a0,b1,b0) (!D2GT(a1,a0,b1,b0))
+
+// Add (A+B),  A=(a1B+a0) B=(b1B+b0)
+#define D2ADD(a1,a0,b1,b0,c1,c0) do { \
+	ErtsDigit __ci = 0;	      \
+	DSUM(a0,b0,__ci,c0); \
+	DSUMc(a1,b1,__ci,c1);			\
+    } while(0)
+
+// Subtract (A-B), A=(a1B+a0), B=(b1B+b0)  (A>=B)
+#define D2SUB(a1,a0,b1,b0,c1,c0) do { \
+	ErtsDigit __bi;		      \
+	DSUB(a0,b0,__bi,c0);	      \
+	DSUBb(a1,b1,__bi,c1);	      \
+    } while(0)
+
+
+/* Left shift (multiply by 2) (A <<= 1 where A=a1*B+a0)  */
+#define D2LSHIFT1(a1,a0) do {		\
+	a1 = ((a0) >> (D_EXP-1)) | ((a1)<<1);		\
+	a0 = (a0) << 1;					\
+    } while(0)
+
+/* Right shift (divide by 2) (A >>= 1 where A=a1*B+a0) */
+#define D2RSHIFT1(a1,a0) do {		\
+	a0 = (((a1) & 1) << (D_EXP-1)) | ((a0)>>1);	\
+	a1 = ((a1) >> 1);				\
+    } while(0)
+
+/* Calculate a*b + d1 and store double prec result in d1, d0 */
+#define DMULc(a,b,d1,d0) do {					\
+	ErtsHalfDigit __a0 = (a);				\
+	ErtsHalfDigit __a1 = ((a) >> H_EXP);			\
+	ErtsHalfDigit __b0 = (b);				\
+	ErtsHalfDigit __b1 = ((b) >> H_EXP);			\
+	ErtsDigit __a0b0 = (ErtsDigit)__a0*__b0;		\
+	ErtsDigit __a0b1 = (ErtsDigit)__a0*__b1;		\
+	ErtsDigit __a1b0 = (ErtsDigit)__a1*__b0;		\
+	ErtsDigit __a1b1 = (ErtsDigit)__a1*__b1;		\
+	ErtsDigit __p0,__p1,__p2,__c0;				\
+	DSUM(__a0b0,d1,__c0,__p0);				\
+	DSUM((__c0<<H_EXP),(__p0>>H_EXP),__p2,__p1);		\
+	DSUM(__p1,__a0b1,__c0,__p1);				\
+	__p2 += __c0;						\
+	DSUM(__p1,__a1b0,__c0,__p1);				\
+	__p2 += __c0;						\
+	DSUM(__p1,__a1b1<<H_EXP,__c0,__p1);			\
+	__p2 += __c0;						\
+	DSUM(__a1b1, (__p2<<H_EXP),__c0,__p2);			\
+	d1 = (__p2 & HI_MASK) | (__p1 >> H_EXP);		\
+	d0 = (__p1 << H_EXP) | (__p0 & LO_MASK);		\
+    } while(0)
+
+#define DMUL(a,b,d1,d0) do {				\
+	ErtsDigit _ds = 0;				\
+	DMULc(a,b,_ds,d0);				\
+	d1 = _ds;					\
+    } while(0)
+
+/* Calculate a*(Bb1 + b0) + d2 = a*b1B + a*b0 + d2 */
+#define D2MULc(a,b1,b0,d2,d1,d0) do { \
+	DMULc(a, b0, d2, d0);	      \
+	DMULc(a, b1, d2, d1);	      \
+    } while(0)
+
+/* Calculate s in a = 2^s*a1 */
+/* NOTE since D2PF is used by other macros variables is prefixed bt __ */
+#if D_EXP == 64
+#define D2PF(a, s) do {							\
+	ErtsDigit __x = (a);						\
+	int __s = 0;							\
+        if (__x <= 0x00000000FFFFFFFF) { __s += 32; __x <<= 32; }	\
+        if (__x <= 0x0000FFFFFFFFFFFF) { __s += 16; __x <<= 16; }	\
+	if (__x <= 0x00FFFFFFFFFFFFFF) { __s += 8;  __x <<= 8;  }	\
+	if (__x <= 0x0FFFFFFFFFFFFFFF) { __s += 4;  __x <<= 4;  }	\
+	if (__x <= 0x3FFFFFFFFFFFFFFF) { __s += 2;  __x <<= 2;  }	\
+	if (__x <= 0x7FFFFFFFFFFFFFFF) { __s += 1; }		\
+	s = __s;						\
+    } while(0)
+#elif D_EXP == 32
+#define D2PF(a, s) do {						\
+	ErtsDigit __x = (a);					\
+	int __s = 0;						\
+        if (__x <= 0x0000FFFF) { __s += 16; __x <<= 16; }		\
+	if (__x <= 0x00FFFFFF) { __s += 8;  __x <<= 8;  }		\
+	if (__x <= 0x0FFFFFFF) { __s += 4;  __x <<= 4;  }		\
+	if (__x <= 0x3FFFFFFF) { __s += 2;  __x <<= 2;  }		\
+	if (__x <= 0x7FFFFFFF) { __s += 1; }			\
+	s = __s;							\
+    } while(0)
+#elif D_EXP == 16
+#define D2PF(a, s) do {					\
+	ErtsDigit __x = (a);				\
+	int __s = 0;					\
+	if (__x <= 0x00FF) { __s += 8; __x <<= 8; }	\
+	if (__x <= 0x0FFF) { __s += 4; __x <<= 4; }	\
+	if (__x <= 0x3FFF) { __s += 2; __x <<= 2; }	\
+	if (__x <= 0x7FFF) { __s += 1; }		\
+	s = __s;					\
+    } while(0)
+#elif D_EXP == 8
+#define D2PF(a, s) do {					\
+	ErtsDigit __x = (a);				\
+	int __s = 0;					\
+	if (__x <= 0x0F) { __s += 4; __x <<= 4; }	\
+	if (__x <= 0x3F) { __s += 2; __x <<= 2; }	\
+	if (__x <= 0x7F) { __s += 1; }			\
+	s = _s;						\
+    } while(0)
+#endif
+
+/* Calculate q = (a1B + a0) / b,  assume a1 < b */
+#define DDIVREM(a1,a0,b,q,r) do {					\
+	ErtsDigit _a1 = (a1);						\
+	ErtsDigit _a0 = (a0);						\
+	ErtsDigit _b = (b);						\
+	ErtsHalfDigit _un1, _un0;					\
+	ErtsHalfDigit _vn1, _vn0;					\
+	ErtsDigit _q1, _q0;						\
+	ErtsDigit _un32, _un21, _un10;					\
+	ErtsDigit _rh;							\
+	Sint _s;							\
+	D2PF(_b, _s);							\
+	_b = _b << _s;							\
+	_vn1 = _b >> H_EXP;						\
+	_vn0 = _b & LO_MASK;						\
+	_un32 = (_a1 << _s) | ((_a0>>(D_EXP-_s)) & (-_s >> (D_EXP-1)));	\
+	_un10 = _a0 << _s;						\
+	_un1 = _un10 >> H_EXP;						\
+	_un0 = _un10 & LO_MASK;						\
+	_q1 = _un32/_vn1;						\
+	_rh = _un32 - _q1*_vn1;						\
+	while ((_q1 >= (DCONST(1)<<H_EXP))||(_q1*_vn0 > (_rh<<H_EXP)+_un1)) {	\
+	    _q1--;							\
+	    _rh += _vn1;						\
+	    if (_rh >= (DCONST(1)<<H_EXP)) break;				\
+	}								\
+	_un21 = (_un32<<H_EXP) + _un1 - _q1*_b;				\
+	_q0 = _un21/_vn1;						\
+	_rh = _un21 - _q0*_vn1;						\
+	while ((_q0 >= (DCONST(1)<<H_EXP))||(_q0*_vn0 > ((_rh<<H_EXP)+_un0))) {	\
+	    _q0--;							\
+	    _rh += _vn1;						\
+	    if (_rh >= (DCONST(1)<<H_EXP)) break;				\
+	}								\
+	r = ((_un21<<H_EXP) + _un0 - _q0*_b) >> _s;			\
+	q = (_q1<<H_EXP) + _q0;						\
+    } while(0)
+
+/* divide any a=(a1*B + a0) with b */
+#define DDIVREM2(a1,a0,b,q1,q0,r) do {		\
+	ErtsDigit __a1 = (a1);			\
+	ErtsDigit __b = (b);			\
+	q1 = __a1 / __b;			\
+	DDIVREM(__a1 % __b, (a0), __b, q0, r);	\
+    } while(0)
+
+
+/* Calculate q = (a1B + a0) % b */
+#define DREM(a1,a0,b,r) do {				\
+	ErtsDigit __a1 = (a1);				\
+	ErtsDigit __b = (b);				\
+	ErtsDigit __q0;					\
+	DDIVREM((__a1 % __b), (a0), __b, __q0, r);	\
+    } while(0)
+
+#define DDIV(a1,a0,b,q)	do {			\
+	ErtsDigit _tmp;				\
+	DDIVREM(a1,a0,b,q,_tmp);		\
+    } while(0)
+
+
+/* Calculate q, r  A = Bq+R when, assume A1 >= B */
+#define D2DIVREM(a1,a0,b1,b0,q0,r1,r0) do {			\
+	ErtsDigit _a1 = (a1);					\
+	ErtsDigit _a0 = (a0);					\
+	ErtsDigit _b1 = (b1);					\
+	ErtsDigit _b0 = (b0);					\
+	ErtsDigit _q = 0;					\
+	int _as = 1;						\
+	while(D2GTE(_a1,_a0,_b1,_b0)) {				\
+	    ErtsDigit _q1;					\
+	    ErtsDigit _t2=0, _t1, _t0;				\
+	    if ((_b1 == 1) && (_a1 > 1))			\
+		_q1 = _a1 / 2;					\
+	    else						\
+		_q1 = _a1/_b1;					\
+	    if (_as<0)						\
+		_q -= _q1;					\
+	    else						\
+		_q += _q1;					\
+	    D2MULc(_q1, _b1, _b0, _t2, _t1, _t0);		\
+	    if (D2GT(_t1,_t0,_a1,_a0)) {			\
+		D2SUB(_t1,_t0,_a1,_a0,_a1,_a0);			\
+		_as = -_as;					\
+	    }							\
+	    else {						\
+		D2SUB(_a1,_a0,_t1,_t0,_a1,_a0);			\
+	    }							\
+	}							\
+	if (_as < 0) {						\
+	    _q--;						\
+	    D2SUB(_b1,_b0,_a1,_a0,_a1,_a0);			\
+	}							\
+	q0 = _q;						\
+	r1 = _a1;						\
+	r0 = _a0;						\
+    } while(0)
+
+
+/* Calculate q, r  A = Bq+R when assume B>0 */
+#define D2DIVREM_0(a1,a0,b1,b0,q1,q0,r1,r0) do {	\
+	ErtsDigit _a1 = (a1);				\
+	ErtsDigit _a0 = (a0);				\
+	ErtsDigit _b1 = (b1);				\
+	ErtsDigit _b0 = (b0);				\
+	if (D2EQ(_a1,_a0,0,0)) {			\
+	    q1 = q0 = 0;				\
+	    r1 = r0 = 0;				\
+	}						\
+	else {						\
+	    ErtsDigit _res1 = 0;			\
+	    ErtsDigit _res0 = 0;			\
+	    ErtsDigit _d1 = 0;				\
+	    ErtsDigit _d0 = 1;				\
+	    ErtsDigit _e1 = (1 << (D_EXP-1));		\
+	    ErtsDigit _e0 = 0;				\
+	    while(_e1 && !(_a1 & _e1))			\
+		_e1 >>= 1;				\
+	    if (_e1 == 0) {				\
+		_e0 = (1 << (D_EXP-1));			\
+		while(_e0 && !(_a0 & _e0))		\
+		    _e0 >>= 1;				\
+	    }						\
+	    if (D2GT(_b1,_b0,0,0)) {			\
+		while(D2GT(_e1,_e0,_b1,_b0)) {		\
+		    D2LSHIFT1(_b1,_b0);			\
+		    D2LSHIFT1(_d1,_d0);			\
+		}					\
+	    }						\
+	    do {					\
+		if (!D2GT(_b1,_b0,_a1,_a0)) {		\
+		    D2SUB(_a1,_a0, _b1, _b0, _a1, _a0); \
+		    D2ADD(_d1,_d0, _res1,_res0, _res1, _res0);	\
+		}						\
+		D2RSHIFT1(_b1,_b0);			\
+		D2RSHIFT1(_d1,_d0);			\
+	    } while (!D2EQ(_d1,_d0,0,0));		\
+	    r1 = _a1;					\
+	    r0 = _a0;					\
+	    q1 = _res1;					\
+	    q0 = _res0;					\
+	}						\
+    } while(0)
+
+#define DDIV2(a1,a0,b1,b0,q) do {		\
+	ErtsDigit _tmp_r1;			\
+	ErtsDigit _tmp_r0;			\
+	D2DIVREM(a1,a0,b1,b0,q,_tmp_r1,_tmp_r0); \
+    } while(0)
+
+#endif
+
 /*
 ** compare two number vectors
-** 32OK
 */
-static int I_comp(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl)
+static int I_comp(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl)
 {
     if (xl < yl)
 	return -1;
@@ -41,7 +424,7 @@ static int I_comp(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl)
 	    return 0;
 	x += (xl-1);
 	y += (yl-1);
-	while(xl > 0 && (*x == *y)) {
+	while((xl > 0) && (*x == *y)) {
 	    x--;
 	    y--;
 	    xl--;
@@ -55,13 +438,12 @@ static int I_comp(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl)
 /*
 ** Add digits in x and y and store them in r
 ** assumption: (xl >= yl)
-** 32OK
 */
-static dsize_t I_add(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t I_add(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
     dsize_t sz = xl;
-    register digit_t yr, xr;
-    register digit_t c = 0;
+    register ErtsDigit yr, xr;
+    register ErtsDigit c = 0;
 
     ASSERT(xl >= yl);
 
@@ -88,12 +470,11 @@ static dsize_t I_add(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 }
 /*
 ** Add a digits in v1 and store result in vr
-** 32OK
 */
-static dsize_t D_add(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
+static dsize_t D_add(ErtsDigit* x, dsize_t xl, ErtsDigit c, ErtsDigit* r)
 {
     dsize_t sz = xl;
-    register digit_t xr;
+    register ErtsDigit xr;
 
     while(xl--) {
 	xr = *x++ + c;
@@ -111,13 +492,12 @@ static dsize_t D_add(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
 ** Subtract digits v2 from v1 and store result in v3
 ** Assert  I_comp(x, xl, y, yl) >= 0
 **
-** 32OK
 */
-static dsize_t I_sub(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t I_sub(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
-    digit_t* r0 = r;
-    register digit_t yr, xr;
-    register digit_t c = 0;
+    ErtsDigit* r0 = r;
+    register ErtsDigit yr, xr;
+    register ErtsDigit c = 0;
 
     ASSERT(I_comp(x, xl, y, yl) >= 0);
 
@@ -146,12 +526,11 @@ static dsize_t I_sub(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 
 /*
 ** Subtract digit d from v1 and store result in vr
-** 32OK
 */
-static dsize_t D_sub(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
+static dsize_t D_sub(ErtsDigit* x, dsize_t xl, ErtsDigit c, ErtsDigit* r)
 {
-    digit_t* r0 = r;
-    register digit_t yr, xr;
+    ErtsDigit* r0 = r;
+    register ErtsDigit yr, xr;
 
     ASSERT(I_comp(x, xl, x, 1) >= 0);
 
@@ -170,13 +549,12 @@ static dsize_t D_sub(digit_t* x, dsize_t xl, digit_t c, digit_t* r)
 
 /*
 ** subtract Z000...0 - y and store result in r, return new size
-** 32OK
 */
-static dsize_t Z_sub(digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t Z_sub(ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
-    digit_t* r0 = r;
-    register digit_t yr;
-    register digit_t c = 0;
+    ErtsDigit* r0 = r;
+    register ErtsDigit yr;
+    register ErtsDigit c = 0;
 
     while(yl--) {
 	yr = *y++ + c;
@@ -194,20 +572,19 @@ static dsize_t Z_sub(digit_t* y, dsize_t yl, digit_t* r)
 /*
 ** Multiply digits in x with digits in y and store in r
 ** Assumption: digits in r must be 0 (upto the size of x)
-** 32UPDATE
 */
-static dsize_t I_mul(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t I_mul(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
-    digit_t* r0 = r;
-    digit_t* rt = r;
+    ErtsDigit* r0 = r;
+    ErtsDigit* rt = r;
 
     while(xl--) {
-	digit_t cp = 0;
-	digit_t c = 0;
+	ErtsDigit cp = 0;
+	ErtsDigit c = 0;
 	dsize_t n = yl;
-	digit_t* yt = y;
-	digit_t d;
-	digit_t p;
+	ErtsDigit* yt = y;
+	ErtsDigit d;
+	ErtsDigit p;
 
 	d = *x; 
 	x++;
@@ -255,26 +632,25 @@ static dsize_t I_mul(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 ** Square digits in x store in r (x & r may point into a common area)
 ** Assumption: x is destroyed if common area and digits in r are zero
 **             to the size of xl+1
-** 32UPDATE
 */
 
-static dsize_t I_sqr(digit_t* x, dsize_t xl, digit_t* r)
+static dsize_t I_sqr(ErtsDigit* x, dsize_t xl, ErtsDigit* r)
 {
-    digit_t d_next = *x;
-    digit_t d;
-    digit_t* r0 = r;
-    digit_t* s = r;
+    ErtsDigit d_next = *x;
+    ErtsDigit d;
+    ErtsDigit* r0 = r;
+    ErtsDigit* s = r;
 
     if ((r + xl) == x)	/* "Inline" operation */
 	*x = 0;
     x++;
 	
     while(xl--) {
-	digit_t* y = x;
-	digit_t y_0 = 0, y_1 = 0, y_2 = 0, y_3 = 0;
-	digit_t b0, b1;
-	digit_t z0, z1, z2;
-	digit_t t;
+	ErtsDigit* y = x;
+	ErtsDigit y_0 = 0, y_1 = 0, y_2 = 0, y_3 = 0;
+	ErtsDigit b0, b1;
+	ErtsDigit z0, z1, z2;
+	ErtsDigit t;
 	dsize_t y_l = xl;
 		
 	s = r;
@@ -318,13 +694,12 @@ static dsize_t I_sqr(digit_t* x, dsize_t xl, digit_t* r)
 
 /*
 ** Multiply digits d with digits in x and store in r
-** 32UPDATE
 */
-static dsize_t D_mul(digit_t* x, dsize_t xl, digit_t d, digit_t* r)
+static dsize_t D_mul(ErtsDigit* x, dsize_t xl, ErtsDigit d, ErtsDigit* r)
 {
-    digit_t c = 0;
+    ErtsDigit c = 0;
     dsize_t rl = xl;
-    digit_t p;
+    ErtsDigit p;
 
     switch(d) {
     case 0:
@@ -363,16 +738,15 @@ static dsize_t D_mul(digit_t* x, dsize_t xl, digit_t d, digit_t* r)
 **
 ** Return size of r
 ** 0 means borrow
-** 32UPDATE
 */
-static dsize_t D_mulsub(digit_t* x, dsize_t xl, digit_t d,
-			digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t D_mulsub(ErtsDigit* x, dsize_t xl, ErtsDigit d,
+			ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
-    digit_t c = 0;
-    digit_t b = 0;
-    digit_t c0;
-    digit_t* r0 = r;
-    digit_t s;
+    ErtsDigit c = 0;
+    ErtsDigit b = 0;
+    ErtsDigit c0;
+    ErtsDigit* r0 = r;
+    ErtsDigit s;
 
     ASSERT(xl == yl || xl == yl+1);
 
@@ -404,14 +778,13 @@ static dsize_t D_mulsub(digit_t* x, dsize_t xl, digit_t d,
 ** Divide digits in x with a digit,
 ** quotient is returned in q and remainder digit in r
 ** x and q may be equal
-** 32UPDATE
 */
-static dsize_t D_div(digit_t* x, dsize_t xl, digit_t d, digit_t* q, digit_t* r)
+static dsize_t D_div(ErtsDigit* x, dsize_t xl, ErtsDigit d, ErtsDigit* q, ErtsDigit* r)
 {
-    digit_t* xp = x + (xl-1);
-    digit_t* qp = q + (xl-1);
+    ErtsDigit* xp = x + (xl-1);
+    ErtsDigit* qp = q + (xl-1);
     dsize_t qsz = xl;
-    digit_t a1;
+    ErtsDigit a1;
 	
     a1 = *xp; 
     xp--;
@@ -427,7 +800,7 @@ static dsize_t D_div(digit_t* x, dsize_t xl, digit_t d, digit_t* q, digit_t* r)
     }
 
     do {
-	digit_t q0, a0, b1, b0, b;
+	ErtsDigit q0, a0, b1, b0, b;
 
 	if (d > a1) {
 	    a0 = *xp; 
@@ -453,18 +826,17 @@ static dsize_t D_div(digit_t* x, dsize_t xl, digit_t d, digit_t* q, digit_t* r)
 ** assume that integer(x) > integer(y)
 ** Return remainder in x (length int rl)
 ** Return quotient size
-** 32UPDATE
 */
 
-static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
-		     digit_t* q, digit_t* r, dsize_t* rlp)
+static dsize_t I_div(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl,
+		     ErtsDigit* q, ErtsDigit* r, dsize_t* rlp)
 {
-    digit_t* rp;
-    digit_t* qp;
-    digit_t b1 = y[yl-1];
-    digit_t b2 = y[yl-2];
-    digit_t a1;
-    digit_t a2;
+    ErtsDigit* rp;
+    ErtsDigit* qp;
+    ErtsDigit b1 = y[yl-1];
+    ErtsDigit b2 = y[yl-2];
+    ErtsDigit a1;
+    ErtsDigit a2;
     int r_signed = 0;
     dsize_t ql;
     dsize_t rl;
@@ -485,7 +857,7 @@ static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
 	ql = 1;
 
     do {
-	digit_t q0;
+	ErtsDigit q0;
 	dsize_t nsz = yl;
 	dsize_t nnsz;
 
@@ -505,7 +877,7 @@ static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
 	    if (b2 <= a2)
 		q0 = 1;
 	    else {
-		q0 = D_BASE-1;
+		q0 = D_MASK;
 		nsz++;
 		rp--;
 		qp--;
@@ -555,11 +927,10 @@ static dsize_t I_div(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl,
 
 /*
 ** Remainder of digits in x and a digit d
-** 32UPDATE
 */
-static digit_t D_rem(digit_t* x, dsize_t xl, digit_t d)
+static ErtsDigit D_rem(ErtsDigit* x, dsize_t xl, ErtsDigit d)
 {
-    digit_t rem = 0;
+    ErtsDigit rem = 0;
 
     x += (xl-1);
     do {
@@ -578,15 +949,14 @@ static digit_t D_rem(digit_t* x, dsize_t xl, digit_t d)
 **
 ** Assumtions: xl >= yl, yl > 1
 **			   r must contain at least xl number of digits
-** 32UPDATE
 */
-static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
+static dsize_t I_rem(ErtsDigit* x, dsize_t xl, ErtsDigit* y, dsize_t yl, ErtsDigit* r)
 {
-    digit_t* rp;
-    digit_t b1 = y[yl-1];
-    digit_t b2 = y[yl-2];
-    digit_t a1;
-    digit_t a2;
+    ErtsDigit* rp;
+    ErtsDigit b1 = y[yl-1];
+    ErtsDigit b2 = y[yl-2];
+    ErtsDigit a1;
+    ErtsDigit a2;
     int r_signed = 0;
     dsize_t rl;
 	
@@ -596,7 +966,7 @@ static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
     rl = xl;
 
     do {
-	digit_t q0;
+	ErtsDigit q0;
 	dsize_t nsz = yl;
 	dsize_t nnsz;
 		
@@ -614,7 +984,7 @@ static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 	    if (b2 <= a2)
 		q0 = 1;
 	    else {
-		q0 = D_BASE-1;
+		q0 = D_MASK;
 		nsz++;
 		rp--;
 	    }
@@ -649,30 +1019,29 @@ static dsize_t I_rem(digit_t* x, dsize_t xl, digit_t* y, dsize_t yl, digit_t* r)
 
 /*
 ** Remove trailing digits from bitwise operations
-** 32UPDATE
 */
-static dsize_t I_btrail(digit_t* r0, digit_t* r, short sign)
+static dsize_t I_btrail(ErtsDigit* r0, ErtsDigit* r, short sign)
 {
     /* convert negative numbers to one complement */
     if (sign) {
 	dsize_t rl;
-	digit_t d;
+	ErtsDigit d;
 
 	/* 1 remove all 0xffff words */
 	do {
 	    r--;
-	} while((d = *r) == D_BASE-1 && r != r0);
+	} while(((d = *r) == D_MASK) && (r != r0));
 
 	/* 2 complement high digit */
-	if (d == D_BASE-1)
+	if (d == D_MASK)
 	    *r = 0;
 	else {
-	    digit_t prev_mask = 0;
-	    digit_t mask = D_BASE >> 1;
+	    ErtsDigit prev_mask = 0;
+	    ErtsDigit mask = (DCONST(1) << (D_EXP-1));
 
 	    while((d & mask) == mask) {
 		prev_mask = mask;
-		mask = (prev_mask >> 1) | (D_BASE>>1);
+		mask = (prev_mask >> 1) | (DCONST(1)<<(D_EXP-1));
 	    }
 	    *r = ~d & ~prev_mask;
 	}
@@ -692,12 +1061,11 @@ static dsize_t I_btrail(digit_t* r0, digit_t* r, short sign)
 
 /* 
 ** Bitwise and
-** 32UPDATE
 */
-static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
-		      digit_t* y, dsize_t yl, short ysgn, digit_t* r)
+static dsize_t I_band(ErtsDigit* x, dsize_t xl, short xsgn,
+		      ErtsDigit* y, dsize_t yl, short ysgn, ErtsDigit* r)
 {
-    digit_t* r0 = r;
+    ErtsDigit* r0 = r;
     short sign = xsgn && ysgn;
 
     ASSERT(xl >= yl);
@@ -710,8 +1078,8 @@ static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
 		*r++ = *x++ & *y++;
 	}
 	else {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*y,1,b,c);
 	    *r++ = *x++ & ~c;
@@ -729,8 +1097,8 @@ static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
     }
     else {
 	if (!ysgn) {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*x,1,b,c);
 	    *r = ~c & *y;
@@ -743,8 +1111,8 @@ static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
 	    }
 	}
 	else {
-	    digit_t b1, b2;
-	    digit_t c1, c2;
+	    ErtsDigit b1, b2;
+	    ErtsDigit c1, c2;
 
 	    DSUB(*x,1,b1,c1);
 	    DSUB(*y,1,b2,c2);
@@ -768,10 +1136,10 @@ static dsize_t I_band(digit_t* x, dsize_t xl, short xsgn,
  * Bitwise 'or'.
  */
 static dsize_t
-I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
-      dsize_t yl, short ysgn, digit_t* r)
+I_bor(ErtsDigit* x, dsize_t xl, short xsgn, ErtsDigit* y,
+      dsize_t yl, short ysgn, ErtsDigit* r)
 {
-    digit_t* r0 = r;
+    ErtsDigit* r0 = r;
     short sign = xsgn || ysgn;
 
     ASSERT(xl >= yl);
@@ -786,8 +1154,8 @@ I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
 		*r++ = *x++;
 	}
 	else {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*y,1,b,c);
 	    *r++ = *x++ | ~c;
@@ -802,8 +1170,8 @@ I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
     }
     else {
 	if (!ysgn) {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*x,1,b,c);
 	    *r++ = ~c | *y++;
@@ -821,8 +1189,8 @@ I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
 	    }
 	}
 	else {
-	    digit_t b1, b2;
-	    digit_t c1, c2;
+	    ErtsDigit b1, b2;
+	    ErtsDigit c1, c2;
 
 	    DSUB(*x,1,b1,c1);
 	    DSUB(*y,1,b2,c2);
@@ -843,10 +1211,10 @@ I_bor(digit_t* x, dsize_t xl, short xsgn, digit_t* y,
 /* 
 ** Bitwise xor
 */
-static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
-		      digit_t* y, dsize_t yl, short ysgn, digit_t* r)
+static dsize_t I_bxor(ErtsDigit* x, dsize_t xl, short xsgn,
+		      ErtsDigit* y, dsize_t yl, short ysgn, ErtsDigit* r)
 {
-    digit_t* r0 = r;
+    ErtsDigit* r0 = r;
     short sign = xsgn != ysgn;
 
     ASSERT(xl >= yl);
@@ -861,8 +1229,8 @@ static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
 		*r++ = *x++;
 	}
 	else {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*y,1,b,c);
 	    *r++ = *x++ ^ ~c;
@@ -879,8 +1247,8 @@ static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
     }
     else {
 	if (!ysgn) {
-	    digit_t b;
-	    digit_t c;
+	    ErtsDigit b;
+	    ErtsDigit c;
 
 	    DSUB(*x,1,b,c);
 	    *r++ = ~c ^ *y++;
@@ -895,8 +1263,8 @@ static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
 		*r++ = ~*x++;
 	}
 	else {
-	    digit_t b1, b2;
-	    digit_t c1, c2;
+	    ErtsDigit b1, b2;
+	    ErtsDigit c1, c2;
 
 	    DSUB(*x,1,b1,c1);
 	    DSUB(*y,1,b2,c2);
@@ -921,9 +1289,8 @@ static dsize_t I_bxor(digit_t* x, dsize_t xl, short xsgn,
 ** Bitwise not  simulated as
 ** bnot -X  == (X - 1)
 ** bnot +X  == -(X + 1)
-** 32OK
 */
-static dsize_t I_bnot(digit_t* x, dsize_t xl, short xsgn, digit_t* r)
+static dsize_t I_bnot(ErtsDigit* x, dsize_t xl, short xsgn, ErtsDigit* r)
 {
     if (xsgn)
 	return D_add(x, xl, 1, r);
@@ -933,10 +1300,9 @@ static dsize_t I_bnot(digit_t* x, dsize_t xl, short xsgn, digit_t* r)
 
 /*
 ** Arithmetic left shift or right
-** 32UPDATE
 */
-static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y, 
-			short sign, digit_t* r)
+static dsize_t I_lshift(ErtsDigit* x, dsize_t xl, Sint y, 
+			short sign, ErtsDigit* r)
 {
     if (y == 0) {
 	MOVE_DIGITS(r, x, xl);
@@ -951,26 +1317,34 @@ static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y,
 	int bw = ay / D_EXP;
 	int sw = ay % D_EXP;
 	dsize_t rl;
-	reg_t a = 0;
+	ErtsDigit a1=0;
+	ErtsDigit a0=0;
 
 	if (y > 0) {		/* shift left */
 	    rl = xl + bw + 1;
 
 	    while(bw--)
 		*r++ = 0;
-	    while(xl--) {
-		a = DHIGH(a) | ((reg_t) *x << sw);
-		*r++ = DLOW(a);
-		x++;
+	    if (sw) {  // NOTE! x >> 32 is not = 0!
+		while(xl--) {
+		    a0 = (*x << sw) | a1;
+		    a1 = (*x >> (D_EXP - sw));
+		    *r++ = a0;
+		    x++;
+		}
 	    }
-	    if (DHIGH(a) == 0)
+	    else {
+		while(xl--) {
+		    *r++ = *x++;
+		}
+	    }
+	    if (a1 == 0)
 		return rl-1;
-	    *r = DHIGH(a);
+	    *r = a1;
 	    return rl;
 	}
 	else {			/* shift right */
-	    digit_t* r0 = r;
-	    int rw = D_EXP - sw;
+	    ErtsDigit* r0 = r;
 	    int add_one = 0;
 
 	    if (xl <= bw) {
@@ -983,7 +1357,7 @@ static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y,
 
 	    if (sign) {
 		int zl = bw;
-		digit_t* z = x;
+		ErtsDigit* z = x;
 
 		while(zl--) {
 		    if (*z != 0) {
@@ -998,13 +1372,21 @@ static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y,
 	    x += (xl-1);
 	    r += (rl-1);
 	    xl -= bw;
-	    while(xl--) {
-		a = DLOW2HIGH(a) | ((reg_t) *x << rw);
-		*r-- = DHIGH(a);
-		x--;
+	    if (sw) { // NOTE! x >> 32 is not = 0!
+		while(xl--) {
+		    a1 = (*x >> sw) | a0;
+		    a0 = (*x << (D_EXP-sw));
+		    *r-- = a1;
+		    x--;
+		}
+	    }
+	    else {
+		while(xl--) {
+		    *r-- = *x--;
+		}
 	    }
 
-	    if (sign && DLOW(a) != 0)
+	    if (sign && (a0 != 0))
 		add_one = 1;
 
 	    if (r[rl] == 0) {
@@ -1024,12 +1406,11 @@ static dsize_t I_lshift(digit_t* x, dsize_t xl, Sint y,
 
 /*
 ** Return log(x)/log(2)
-** 32OK
 */
-static int I_lg(digit_t* x, dsize_t xl)
+static int I_lg(ErtsDigit* x, dsize_t xl)
 {
     dsize_t sz = xl - 1;
-    digit_t d = x[sz];
+    ErtsDigit d = x[sz];
 
     sz *= D_EXP;
     while(d != 0) {
@@ -1059,22 +1440,19 @@ erts_make_integer(Uint x, Process *p)
 }
 
 /*
-** convert uint32 to bigint
-** 32UPDATE (as macro?)
+** convert Uint to bigint
 ** (must only be used if x is to big to be stored as a small)
 */
 Eterm uint_to_big(Uint x, Eterm *y)
 {
     *y = make_pos_bignum_header(1);
-    BIG_DIGIT(y, 0) = DLOW(x);
-    BIG_DIGIT(y, 1) = DHIGH(x);
+    BIG_DIGIT(y, 0) = x;
     return make_big(y);
 }
 
 
 /*
 ** convert signed int to bigint
-** 32UPDATE (as macro?)
 */
 Eterm small_to_big(Sint x, Eterm *y)
 {
@@ -1084,14 +1462,12 @@ Eterm small_to_big(Sint x, Eterm *y)
 	x = -x;
 	*y = make_neg_bignum_header(1);
     }
-    BIG_DIGIT(y, 0) = DLOW(x);
-    BIG_DIGIT(y, 1) = DHIGH(x);
+    BIG_DIGIT(y, 0) = x;
     return make_big(y);
 }
 
 /*
 ** Convert a bignum to a double float
-** 32OK XXX must check
 */
 int
 big_to_double(Eterm x, double* resp)
@@ -1099,14 +1475,16 @@ big_to_double(Eterm x, double* resp)
     double d = 0.0;
     Eterm* xp = big_val(x);
     dsize_t xl = BIG_SIZE(xp);
-    digit_t* s = BIG_V(xp) + xl;
+    ErtsDigit* s = BIG_V(xp) + xl;
     short xsgn = BIG_SIGN(xp);
+    double dbase = ((double)(D_MASK)+1);
+
     volatile int *fpexnp = erts_get_current_fp_exception();
     __ERTS_SAVE_FP_EXCEPTION(fpexnp);
 
     __ERTS_FP_CHECK_INIT(fpexnp);
     while (xl--) {
-	d = d * D_BASE + *--s;
+	d = d * dbase + *--s;
 
 	__ERTS_FP_ERROR(fpexnp, d, __ERTS_RESTORE_FP_EXCEPTION(fpexnp); return -1);
     }
@@ -1138,10 +1516,10 @@ int big_decimal_estimate(Eterm x)
 static void write_big(Eterm x, void (*write_func)(void *, char), void *arg)
 {
     Eterm* xp = big_val(x);
-    digit_t* dx = BIG_V(xp);
+    ErtsDigit* dx = BIG_V(xp);
     dsize_t xl = BIG_SIZE(xp);
     short sign = BIG_SIGN(xp);
-    digit_t rem;
+    ErtsDigit rem;
 
     if (xl == 1 && *dx < D_DECIMAL_BASE) {
 	rem = *dx;
@@ -1155,8 +1533,8 @@ static void write_big(Eterm x, void (*write_func)(void *, char), void *arg)
 	}
     }
     else {
-	digit_t* tmp  = (digit_t*) erts_alloc(ERTS_ALC_T_TMP,
-					      sizeof(digit_t)*xl);
+	ErtsDigit* tmp  = (ErtsDigit*) erts_alloc(ERTS_ALC_T_TMP,
+					      sizeof(ErtsDigit)*xl);
 	dsize_t tmpl = xl;
 
 	MOVE_DIGITS(tmp, dx, xl);
@@ -1226,7 +1604,6 @@ char *erts_big_to_string(Eterm x, char *buf, Uint buf_sz)
 /*
 ** Normalize a bignum given thing pointer length in digits and a sign
 ** patch zero if odd length
-** 32UPDATE  in 32 bit version no patch is needed
 */
 static Eterm big_norm(Eterm *x, dsize_t xl, short sign)
 {
@@ -1236,16 +1613,6 @@ static Eterm big_norm(Eterm *x, dsize_t xl, short sign)
 	Uint y = BIG_DIGIT(x, 0);
 
 	if (D_EXP < SMALL_BITS || IS_USMALL(sign, y)) {
-	    if (sign)
-		return make_small(-((Sint)y));
-	    else
-		return make_small(y);
-	}
-    }
-    else if (xl == 2) {
-	Uint y = BIG_DIGIT(x,0) + BIG_DIGIT(x,1)*D_BASE;
-
-	if (IS_USMALL(sign, y)) {
 	    if (sign)
 		return make_small(-((Sint)y));
 	    else
@@ -1263,22 +1630,11 @@ static Eterm big_norm(Eterm *x, dsize_t xl, short sign)
     else {
       *x = make_pos_bignum_header(arity);
     }
-
-    /* Its VERY important to patch a zero if odd number of digits! */
-    switch(xl & 1) {
-    case 0:
-      break;
-    case 1:
-      BIG_DIGIT(x, xl) = 0;
-      break;
-    }
-
     return make_big(x);
 }
 
 /*
 ** Compare bignums
-** 32OK
 */
 int big_comp(Eterm x, Eterm y)
 {
@@ -1298,7 +1654,6 @@ int big_comp(Eterm x, Eterm y)
 
 /*
 ** Unsigned compare
-** 32OK
 */
 int big_ucomp(Eterm x, Eterm y)
 {
@@ -1309,83 +1664,15 @@ int big_ucomp(Eterm x, Eterm y)
 }
 
 /*
-** Check if bytes in xp corresponds to a bignum y
-** 32UPDATE
-*/
-#if 0	/* XXX: unused */
-int bytes_eq_big(byte *xp, dsize_t xsz, int xsgn, Eterm y)
-{
-    if (is_big(y)) {
-	Eterm* yp = big_val(y);
-
-	dsize_t ysz = big_bytes(y); /* ysz in bytes */
-	short sgny = BIG_SIGN(yp);
-	digit_t* ywp = BIG_V(yp);
-	digit_t d;
-
-	if (sgny != xsgn) return 0;
-	if (xsz != ysz) return 0;
-	while (xsz >= 2) {
-	    d = xp[0] | (xp[1] << 8);
-	    if (d != *ywp)
-		return 0;
-	    ywp++;
-	    xp += 2;
-	    xsz -= 2;
-	}
-	if (xsz == 1)
-	{
-	    d = *xp;
-	    if (d != *ywp) return 0;
-	}
-	return 1;
-    }
-    else if (is_small(y)) {
-	Sint yv = signed_val(y);
-	Uint xv;
-
-	if (xsz > 4) return 0;
-	if ((yv < 0) != xsgn) return 0;
-
-	switch(xsz) {
-	case 1:
-	    xv = *xp;
-	    break;
-	case 2:
-	    xv = xp[0] | (xp[1] << 8);
-	    break;
-	case 3:
-	    xv = xp[0] | (xp[1] << 8) | (xp[2] << 16);
-	    break;
-	case 4:
-	    xv = xp[0] | (xp[1] << 8) | (xp[2] << 16) | (xp[3] << 24);
-	    break;
-	default:		/* Silence compiler warning. */
-	    xv = 0;
-	    break;
-	}
-	if (!IS_USMALL(xsgn, xv)) return 0;
-	if (yv < 0)
-	    return (-yv == xv);
-	else
-	    return (yv == xv);
-    }
-    return 0;
-}
-#endif	/* 0 */
-
-/*
 ** Return number of bytes in the bignum
-** 32UPDATE
 */
 dsize_t big_bytes(Eterm x)
 {
     Eterm* xp = big_val(x);
-
     dsize_t sz = BIG_SIZE(xp);
-    digit_t d = BIG_DIGIT(xp, sz-1);
+    ErtsDigit d = BIG_DIGIT(xp, sz-1);
 
-    sz = (sz-1) * sizeof(digit_t);
+    sz = (sz-1) * sizeof(ErtsDigit);
     while (d != 0) {
 	++sz;
 	d >>= 8;
@@ -1396,23 +1683,22 @@ dsize_t big_bytes(Eterm x)
 /*
 ** Load a bignum from bytes
 ** xsz is the number of bytes in xp
-** 32UPDATE
 */
 Eterm bytes_to_big(byte *xp, dsize_t xsz, int xsgn, Eterm *r)
 {
-    digit_t* rwp = BIG_V(r);
+    ErtsDigit* rwp = BIG_V(r);
     dsize_t rsz = 0;
-    digit_t d;
+    ErtsDigit d;
     int i;
 
-    while(xsz >= sizeof(digit_t)) {
+    while(xsz >= sizeof(ErtsDigit)) {
 	d = 0;
-	for(i = sizeof(digit_t); --i >= 0;)
+	for(i = sizeof(ErtsDigit); --i >= 0;)
 	    d = (d << 8) | xp[i];
 	*rwp = d;
 	rwp++;
-	xsz -= sizeof(digit_t);
-	xp += sizeof(digit_t);
+	xsz -= sizeof(ErtsDigit);
+	xp += sizeof(ErtsDigit);
 	rsz++;
     }
 
@@ -1429,23 +1715,22 @@ Eterm bytes_to_big(byte *xp, dsize_t xsz, int xsgn, Eterm *r)
 
 /*
 ** Store digits in the array of bytes pointed to by p
-** 32UPDATE
 */
 byte* big_to_bytes(Eterm x, byte *p)
 {
-    digit_t* xr = big_v(x);
+    ErtsDigit* xr = big_v(x);
     dsize_t  xl = big_size(x);
-    digit_t d;
+    ErtsDigit d;
     int i;
 
     while(xl > 1) {
 	d = *xr;
 	xr++;
-	for(i = 0; i < sizeof(digit_t); ++i) {
+	for(i = 0; i < sizeof(ErtsDigit); ++i) {
 	    p[i] = d & 0xff;
 	    d >>= 8;
 	}
-	p += sizeof(digit_t);
+	p += sizeof(ErtsDigit);
 	xl--;
     }
     d = *xr;
@@ -1475,12 +1760,12 @@ term_to_Uint(Eterm term, Uint *up)
 	*up = (Uint) i;
 	return 1;
     } else if (is_big(term)) {
-	digit_t* xr = big_v(term);
+	ErtsDigit* xr = big_v(term);
 	dsize_t  xl = big_size(term);
 	Uint uval = 0;
 	int n = 0;
 	
-	if (big_sign(term) || xl*D_EXP > sizeof(Uint)*CHAR_BIT) {
+	if (big_sign(term) || xl*D_EXP > sizeof(Uint)*8) {
 	    return 0;
 	}
 	while (xl-- > 0) {
@@ -1500,13 +1785,13 @@ int term_to_Sint(Eterm term, Sint *sp)
 	*sp = signed_val(term);
 	return 1;
     } else if (is_big(term)) {
-	digit_t* xr = big_v(term);
+	ErtsDigit* xr = big_v(term);
 	dsize_t xl = big_size(term);
 	int sign = big_sign(term);
 	Uint uval = 0;
 	int n = 0;
 
-	if (xl*D_EXP > sizeof(Uint)*CHAR_BIT) {
+	if (xl*D_EXP > sizeof(Uint)*8) {
 	    return 0;
 	}
 	while (xl-- > 0) {
@@ -1530,10 +1815,9 @@ int term_to_Sint(Eterm term, Sint *sp)
 
 /*
 ** Add and subtract
-** 32OK
 */
-static Eterm B_plus_minus(digit_t *x, dsize_t xl, short xsgn, 
-			  digit_t *y, dsize_t yl, short ysgn, Eterm *r)
+static Eterm B_plus_minus(ErtsDigit *x, dsize_t xl, short xsgn, 
+			  ErtsDigit *y, dsize_t yl, short ysgn, Eterm *r)
 {
     if (xsgn == ysgn) {
 	if (xl > yl)
@@ -1554,7 +1838,6 @@ static Eterm B_plus_minus(digit_t *x, dsize_t xl, short xsgn,
 
 /*
 ** Add bignums
-** 32OK
 */
 Eterm big_plus(Eterm x, Eterm y, Eterm *r)
 {
@@ -1567,7 +1850,6 @@ Eterm big_plus(Eterm x, Eterm y, Eterm *r)
 
 /*
 ** Subtract bignums
-** 32OK
 */
 
 Eterm big_minus(Eterm x, Eterm y, Eterm *r)
@@ -1587,16 +1869,48 @@ Eterm big_minus_small(Eterm x, Eterm y, Eterm *r)
     Eterm* xp = big_val(x);
 
     if (BIG_SIGN(xp))
-	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, BIG_V(r)), 
+	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (ErtsDigit) y, BIG_V(r)), 
 			(short) BIG_SIGN(xp));
     else
-	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, BIG_V(r)), 
+	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (ErtsDigit) y, BIG_V(r)), 
 			(short) BIG_SIGN(xp));
 }
 
 /*
+** Multiply smallnums
+*/
+
+Eterm small_times(Sint x, Sint y, Eterm *r)
+{
+    short sign = (x<0) != (y<0);
+    ErtsDigit xu = (x > 0) ? x : -x;
+    ErtsDigit yu = (y > 0) ? y : -y;
+    ErtsDigit d1=0;
+    ErtsDigit d0;
+    Uint arity;
+
+    DMULc(xu, yu, d1, d0);
+
+    if (!d1 && ((D_EXP < SMALL_BITS) || IS_USMALL(sign, d0))) {
+      if (sign)
+	return make_small(-((Sint)d0));
+      else
+	return make_small(d0);
+    }
+
+    BIG_DIGIT(r,0) = d0;
+    arity = d1 ? 2 : 1;
+    if (sign)
+      *r = make_neg_bignum_header(arity);
+    else
+      *r = make_pos_bignum_header(arity);
+    if (d1)
+      BIG_DIGIT(r,1) = d1;
+    return make_big(r);
+}
+
+/*
 ** Multiply bignums
-** 32OK
 */
 
 Eterm big_times(Eterm x, Eterm y, Eterm *r)
@@ -1610,7 +1924,7 @@ Eterm big_times(Eterm x, Eterm y, Eterm *r)
     dsize_t rsz;
 
     if (ysz == 1)
-	rsz = D_mul(BIG_V(xp), xsz, BIG_DIGIT(yp, 0), BIG_V(r));
+      rsz = D_mul(BIG_V(xp), xsz, BIG_DIGIT(yp, 0), BIG_V(r));
     else if (xsz == 1)
 	rsz = D_mul(BIG_V(yp), ysz, BIG_DIGIT(xp, 0), BIG_V(r));
     else if (xp == yp) {
@@ -1631,7 +1945,6 @@ Eterm big_times(Eterm x, Eterm y, Eterm *r)
 
 /* 
 ** Divide bignums
-** 32UPDATE?
 */
 
 Eterm big_div(Eterm x, Eterm y, Eterm *q)
@@ -1645,7 +1958,7 @@ Eterm big_div(Eterm x, Eterm y, Eterm *q)
     dsize_t qsz;
 
     if (ysz == 1) {
-	digit_t rem;
+	ErtsDigit rem;
 	qsz = D_div(BIG_V(xp), xsz, BIG_DIGIT(yp,0), BIG_V(q), &rem);
     }
     else {
@@ -1662,7 +1975,6 @@ Eterm big_div(Eterm x, Eterm y, Eterm *q)
 
 /*
 ** Remainder
-** 32UPDATE?
 */
 Eterm big_rem(Eterm x, Eterm y, Eterm *r)
 {
@@ -1673,12 +1985,22 @@ Eterm big_rem(Eterm x, Eterm y, Eterm *r)
     dsize_t ysz = BIG_SIZE(yp);
 
     if (ysz == 1) {
-	digit_t rem;
+	ErtsDigit rem;
 	rem = D_rem(BIG_V(xp), xsz, BIG_DIGIT(yp,0));
-	if (sign)
-	    return make_small(-(Sint)rem);
-	else
-	    return make_small(rem);
+	if (IS_USMALL(sign, rem)) {
+	    if (sign)
+		return make_small(-(Sint)rem);
+	    else
+		return make_small(rem);
+	}
+	else {
+	    if (sign)
+		*r = make_neg_bignum_header(1);
+	    else
+		*r = make_pos_bignum_header(1);
+	    BIG_DIGIT(r, 0) = rem;
+	    return make_big(r);
+	}
     }
     else {
 	dsize_t rsz = I_rem(BIG_V(xp), xsz, BIG_V(yp), ysz, BIG_V(r));
@@ -1785,10 +2107,10 @@ Eterm big_plus_small(Eterm x, Uint y, Eterm *r)
     Eterm* xp = big_val(x);
 
     if (BIG_SIGN(xp))
-	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+	return big_norm(r, D_sub(BIG_V(xp),BIG_SIZE(xp), (ErtsDigit) y, 
 				 BIG_V(r)), (short) BIG_SIGN(xp));
     else
-	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+	return big_norm(r, D_add(BIG_V(xp),BIG_SIZE(xp), (ErtsDigit) y, 
 				 BIG_V(r)), (short) BIG_SIGN(xp));
 }
 
@@ -1796,7 +2118,7 @@ Eterm big_times_small(Eterm x, Uint y, Eterm *r)
 {
     Eterm* xp = big_val(x);
 
-    return big_norm(r, D_mul(BIG_V(xp),BIG_SIZE(xp), (digit_t) y, 
+    return big_norm(r, D_mul(BIG_V(xp),BIG_SIZE(xp), (ErtsDigit) y, 
 			     BIG_V(r)), (short) BIG_SIGN(xp));
 }
 
@@ -1828,9 +2150,17 @@ int term_equals_2pow32(Eterm x)
 	if (!is_big(x))
 	    return 0;
 	bp = big_val(x);
-	if (BIG_SIZE(bp) == 3 && !BIG_DIGIT(bp,0) && !BIG_DIGIT(bp,1) &&
-	    BIG_DIGIT(bp,2) == 1)
-	    return 1;
+#if D_EXP == 16   // 16 bit platfrom not really supported!!!
+	return (BIG_SIZE(bp) == 3) && !BIG_DIGIT(bp,0) && !BIG_DIGIT(bp,1) && 
+	    BIG_DIGIT(bp,2) == 1;
+#elif D_EXP == 32
+	return (BIG_SIZE(bp) == 2) && !BIG_DIGIT(bp,0) &&
+	    BIG_DIGIT(bp,1) == 1;
+#elif D_EXP == 64
+	return (BIG_SIZE(bp) == 1) && 
+	    ((BIG_DIGIT(bp,0) & 0xffffffff) == 0) &&
+	    ((BIG_DIGIT(bp,0) >> 32) == 1);
+#endif
 	return 0;
     }
 }

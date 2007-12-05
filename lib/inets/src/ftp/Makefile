@@ -61,7 +61,7 @@ endif
 # ----------------------------------------------------
 # FLAGS
 # ----------------------------------------------------
-INETS_ERL_FLAGS += -I ../inets_app
+INETS_ERL_FLAGS += -I ../inets_app -pa ../../ebin
 
 ERL_COMPILE_FLAGS += $(INETS_ERL_FLAGS) \
 		     $(INETS_FLAGS) \

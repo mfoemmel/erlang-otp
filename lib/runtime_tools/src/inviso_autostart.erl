@@ -54,38 +54,79 @@ autostart(_AutoModArgs) ->
 	case application:get_env(inviso_autostart_conf) of
 	    {ok,FileName} when is_list(FileName) -> % Use this filename then.
 		FileName;
-	    {ok,{M,F}} ->                       % Use M:F(node())
-		case catch M:F(node()) of
-		    FileName when is_list(FileName) ->
-			FileName;
-		    _ ->
+	    {ok,{load,FileNames,{M,F}}} ->  % First load the module, then...
+		case try_load_module(FileNames) of
+		    ok ->
+			autostart_apply(M,F);
+		    false ->                % No such module available
 			"inviso_autostart.config"
 		end;
+	    {ok,{gettia_asc,asc_file}} ->   % Uggly hack to not have to change in GSN-CPS.
+		case try_load_module(["/tmp/DPE_COMMONLOG/gettia_asc",
+				      "/tmp/DPE_COMMONLOG/gettia_overload"]) of
+		    ok ->
+			autostart_apply(gettia_asc,asc_file);
+		    false ->                % No such module available
+			false
+		end;
+	    {ok,{M,F}} ->                   % Use M:F(node())
+		autostart_apply(M,F);
+	    {ok,no_autostart} ->
+		false;
 	    _ ->                            % Use a default name, in CWD!
 		"inviso_autostart.config"
 	end,
-    case file:consult(ConfigFile) of
-	{ok,Terms} ->                       % There is a configuration.
-	    case handle_repeat(ConfigFile,Terms) of
-		ok ->                       % Handled or not, we shall continue.
-		    {get_mfa(Terms),get_options(Terms),get_tag(Terms)};
-		stop ->                     % We are out of allowed starts.
-		    true                    % Then no autostart.
+    if
+	is_list(ConfigFile) ->
+	    case file:consult(ConfigFile) of
+		{ok,Terms} ->               % There is a configuration.
+		    case handle_repeat(ConfigFile,Terms) of
+			ok ->               % Handled or not, we shall continue.
+			    {get_mfa(Terms),get_options(Terms),get_tag(Terms)};
+			stop ->             % We are out of allowed starts.
+			    true            % Then no autostart.
+		    end;
+		{error,_} ->                % There is no config file
+		    true                    % Then no autostart!
 	    end;
-	{error,_} ->                        % There is no config file
-	    true                            % Then no autostart!
+	true ->                             % Skip it then.
+	    true
     end.
+
+autostart_apply(M,F) ->
+    case catch M:F(node()) of
+	FileName when is_list(FileName) ->
+	    FileName;
+	no_autostart ->                     % No autostart after all.
+	    false;
+	_ ->
+	    "inviso_autostart.config"
+    end.
+
+%% This function is necessary since it is not always the case that all code-paths
+%% are set at the time of an autostart.
+try_load_module([AbsFileName|Rest]) when is_list(AbsFileName) ->
+    case catch code:load_abs(AbsFileName) of % May not be a proper filename.
+	{module,_Mod} ->
+	    try_load_module(Rest);
+	_ ->
+	    false
+    end;
+try_load_module([]) ->                      % Load all beam files successfully.
+    ok;
+try_load_module(AbsFileName) when is_list(AbsFileName) ->
+    try_load_module([AbsFileName]).
 %% -----------------------------------------------------------------------------
 
 %% Function returning the filename probably used as autostart config file.
 %% Note that this function must be executed at the node in question.
 which_config_file() ->
     case application:get_env(runtime_tools,inviso_autostart_conf) of
-	{ok,FileName} when is_list(FileName) -> % Use this filename then.
+	{ok,FileName} when list(FileName) -> % Use this filename then.
 	    FileName;
 	{ok,{M,F}} ->                       % Use M:F(node())
 	    case catch M:F(node()) of
-		FileName when is_list(FileName) ->
+		FileName when list(FileName) ->
 		    FileName;
 		_ ->
 		    {ok,CWD}=file:get_cwd(),

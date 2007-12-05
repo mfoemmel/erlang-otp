@@ -779,14 +779,19 @@ line_head(Fd,<<$\n:8,Bin/binary>>,Acc,_N) ->
 line_head(Fd,<<$::8,$\r:8,$\n:8,Bin/binary>>,Acc,_N) ->
     put_chunk(Fd,Bin),
     lists:reverse(Acc);
-line_head(Fd,<<$::8,Space:8,Bin/binary>>,Acc,_N) when Space=:=$ ;Space=:=$\n ->
-    put_chunk(Fd,Bin),
-    lists:reverse(Acc);
-line_head(Fd,Colon,Acc,N) when Colon == <<$::8>>; Colon == <<$::8,$\r:8>>->
+line_head(Fd,<<$::8,$\r:8>>,Acc,N) ->
     case get_chunk(Fd) of
 	{ok,Bin} -> line_head(Fd,<<$:,Bin/binary>>,Acc,N);
 	eof -> {eof,lists:reverse(Acc)}
     end;
+line_head(Fd,<<$::8>>,Acc,N) ->
+    case get_chunk(Fd) of
+	{ok,Bin} -> line_head(Fd,<<$:,Bin/binary>>,Acc,N);
+	eof -> {eof,lists:reverse(Acc)}
+    end;
+line_head(Fd,<<$::8,Space:8,Bin/binary>>,Acc,_N) when Space=:=$ ;Space=:=$\n ->
+    put_chunk(Fd,Bin),
+    lists:reverse(Acc);
 line_head(Fd,<<$::8,Bin/binary>>,Acc,_N) ->
     put_chunk(Fd,Bin),
     lists:reverse(Acc);
@@ -827,24 +832,21 @@ val(Fd) ->
 
 get_rest_of_line(Fd) ->
     case get_chunk(Fd) of
-	{ok,Bin} -> get_rest_of_line_1(Fd, Bin, 0, []);
+	{ok,Bin} -> get_rest_of_line_1(Fd, Bin, []);
 	eof -> {eof,[]}
     end.
 
-get_rest_of_line_1(Fd, Bin0, I, Acc) ->
-    case Bin0 of
-	<<_:I/binary,$\n:8,Bin/binary>> ->
-	    put_chunk(Fd, Bin),
-	    lists:reverse(Acc);
-	<<_:I/binary,$\r:8,_/binary>> ->
-	    get_rest_of_line_1(Fd, Bin0, I+1, Acc);
-	<<_:I/binary,Char:8,_/binary>> ->
-	    get_rest_of_line_1(Fd, Bin0, I+1, [Char|Acc]);
-	<<_:I/binary>> ->
-	    case get_chunk(Fd) of
-		{ok,Bin} -> get_rest_of_line_1(Fd, Bin, 0, Acc);
-		eof -> {eof,lists:reverse(Acc)}
-	    end
+get_rest_of_line_1(Fd, <<$\n:8,Bin/binary>>, Acc) ->
+    put_chunk(Fd, Bin),
+    lists:reverse(Acc);
+get_rest_of_line_1(Fd, <<$\r:8,Rest/binary>>, Acc) ->
+    get_rest_of_line_1(Fd, Rest, Acc);
+get_rest_of_line_1(Fd, <<Char:8,Rest/binary>>, Acc) ->
+    get_rest_of_line_1(Fd, Rest, [Char|Acc]);
+get_rest_of_line_1(Fd, <<>>, Acc) ->
+    case get_chunk(Fd) of
+	{ok,Bin} -> get_rest_of_line_1(Fd, Bin, Acc);
+	eof -> {eof,lists:reverse(Acc)}
     end.
 
 count_rest_of_line(Fd) ->

@@ -516,8 +516,8 @@
 	 mk_const/1,             %% mk_const(Const)
 	 %% mk_const_fun/4,	 %% mk_const_fun(MFA, U, I, Args)
 	 mk_var/1,               %% mk_var(Id)
-	 annotate_var/2,         %% annotate_var(Var, Type)
-	 unannotate_var/1,	 %% unannotate_var(Var)
+	 annotate_var_or_reg/2,  %% annotate_var_or_reg(VarOrReg, Type)
+	 unannotate_var_or_reg/1,%% unannotate_var_or_reg(VarOrReg)
 	 mk_reg/1,               %% mk_reg(Id)
 	 mk_fvar/1,              %% mk_fvar(Id)
 	 mk_new_var/0,           %% mk_new_var()
@@ -543,7 +543,7 @@
 	 is_const/1,
 	 is_const_fun/1,
 	 is_var/1,
-	 is_annotated_var/1,
+	 is_annotated_var_or_reg/1,
 	 is_fvar/1,
 	 is_reg/1,
 	 is_var_or_fvar_or_reg/1,
@@ -577,7 +577,7 @@
 	 fail_label/1,
 	 fail_set_label/2,
 	 var_name/1,
-	 var_annotation/1,
+	 reg_or_var_annotation/1,
 	 fvar_name/1,
 	 %% reg_name/1,		 
 	 reg_is_gcsafe/1,
@@ -1058,6 +1058,13 @@ unannotate_var({var, Name, _}) -> {var, Name}.
 
 -record(reg, {name}).
 
+annotate_reg({reg, Name}, Type) -> {reg, Name, Type};
+annotate_reg({reg, Name, _OldType}, Type) -> {reg, Name, Type}.
+is_annotated_reg({reg, _Name, _Type}) -> true;
+is_annotated_reg(_) -> false.
+reg_annotation({reg, _Name, Type}) -> Type.
+unannotate_reg({reg, Name, _}) -> {reg, Name}.
+
 mk_reg(V) -> #reg{name=V}.
 reg_name(#reg{name=Name}) -> Name.
 reg_is_gcsafe(#reg{}) -> false. % for now
@@ -1078,6 +1085,33 @@ is_var_or_fvar_or_reg(#var{}) -> true;
 is_var_or_fvar_or_reg(#fvar{}) -> true;
 is_var_or_fvar_or_reg(#reg{}) -> true;
 is_var_or_fvar_or_reg(_) -> false.
+
+annotate_var_or_reg(X, Anno) ->
+  case is_var(X) or is_annotated_var(X) of
+    true ->
+      annotate_var(X, Anno);
+    false ->
+      annotate_reg(X, Anno)
+  end.
+
+is_annotated_var_or_reg(X) ->
+  is_annotated_var(X) or is_annotated_reg(X).
+
+unannotate_var_or_reg(X) ->
+  case is_annotated_var(X) of
+    true ->
+      unannotate_var(X);
+    false ->
+      unannotate_reg(X)
+  end.
+
+reg_or_var_annotation(X) ->
+  case is_annotated_var(X) of
+    true ->
+      var_annotation(X);
+    false ->
+      reg_annotation(X)
+  end.
 
 %%
 %% Floating point Icode instructions.

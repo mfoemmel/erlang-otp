@@ -17,7 +17,7 @@
 -record(pseudo_return, {regs}).
 -record(pseudo_spill, {source,dest}).
 -record(pseudo_unspill, {source,dest}).
--record(pseudo_push, {reg}).
+%% -record(pseudo_push, {reg}).
 -record(pseudo_pop, {reg,index}).
 
 -record(load_atom, {dst, atom}).

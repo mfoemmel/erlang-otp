@@ -27,13 +27,13 @@
 do(Info) ->
     case Info#mod.method of
 	"GET" ->
-	    case httpd_util:key1search(Info#mod.data,status) of
+	    case proplists:get_value(status, Info#mod.data) of
 		%% A status code has been generated!
 		{_StatusCode, _PhraseArgs, _Reason} ->
 		    {proceed,Info#mod.data};
 		%% No status code has been generated!
 		undefined ->
-		    case httpd_util:key1search(Info#mod.data, response) of
+		    case proplists:get_value(response, Info#mod.data) of
 			%% No response has been generated!
 			undefined ->
 			    do_include(Info);
@@ -79,7 +79,7 @@ config(_Info, Context, ErrorLog, TagList, ValueList, R) ->
 	    {ok,update_context(TagList,ValueList,Context),ErrorLog,"",R};
 	{error,Reason} ->
 	    {ok,Context,[{internal_info,Reason}|ErrorLog],
-	     httpd_util:key1search(Context,errmsg,""),R}
+	     proplists:get_value(errmsg,Context,""),R}
     end.
 
 update_context([],[],Context) ->
@@ -118,7 +118,7 @@ include(Info, Context, ErrorLog, [file], [FileName], R) ->
 include(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok, Context,
      [{internal_info,?NICE("include directive has a spurious tag")}|
-      ErrorLog], httpd_util:key1search(Context, errmsg, ""), R}.
+      ErrorLog], proplists:get_value(errmsg, Context, ""), R}.
 
 include(Info, Context, ErrorLog, R, Path) ->
     case file:read_file(Path) of
@@ -129,7 +129,7 @@ include(Info, Context, ErrorLog, R, Path) ->
 	{error, _Reason} ->
 	    {ok, Context, 
 	     [{internal_info, ?NICE("Can't open "++Path)}|ErrorLog],
-	     httpd_util:key1search(Context, errmsg, ""), R}
+	     proplists:get_value(errmsg, Context, ""), R}
     end.
 
 file(ConfigDB, RequestURI, FileName) ->
@@ -247,12 +247,12 @@ fsize(Info,Context,ErrorLog,[file],[FileName],R) ->
   fsize(Info,Context,ErrorLog,R,Path);
 fsize(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
   {ok,Context,[{internal_info,?NICE("fsize directive has a spurious tag")}|
-	       ErrorLog],httpd_util:key1search(Context,errmsg,""),R}.
+	       ErrorLog],proplists:get_value(errmsg,Context,""),R}.
 
 fsize(_Info, Context, ErrorLog, R, Path) ->
     case file:read_file_info(Path) of
 	{ok,FileInfo} ->
-	    case httpd_util:key1search(Context,sizefmt) of
+	    case proplists:get_value(sizefmt,Context) of
 		"bytes" ->
 		    {ok,Context,ErrorLog,
 		     integer_to_list(FileInfo#file_info.size),R};
@@ -265,11 +265,11 @@ fsize(_Info, Context, ErrorLog, R, Path) ->
 		       ?NICE("fsize directive has a spurious tag value ("++
 			     Value++")")}|
 		      ErrorLog],
-		     httpd_util:key1search(Context, errmsg, ""), R}
+		     proplists:get_value(errmsg, Context, ""), R}
 	    end;
 	{error, _Reason} ->
 	    {ok,Context,[{internal_info,?NICE("Can't open "++Path)}|ErrorLog],
-	     httpd_util:key1search(Context,errmsg,""),R}
+	     proplists:get_value(errmsg,Context,""),R}
     end.
 
 %%
@@ -288,7 +288,7 @@ flastmod(#mod{config_db = Db, request_uri = RequestUri} = Info,
 flastmod(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok,Context,
      [{internal_info,?NICE("flastmod directive has a spurious tag")}|
-      ErrorLog],httpd_util:key1search(Context,errmsg,""),R}.
+      ErrorLog],proplists:get_value(errmsg,Context,""),R}.
 
 flastmod(_Info, Context, ErrorLog, R, File) ->
     case file:read_file_info(File) of
@@ -302,7 +302,7 @@ flastmod(_Info, Context, ErrorLog, R, File) ->
 	    {ok, Context, ErrorLog, Result, R};
 	{error, _Reason} ->
 	    {ok,Context,[{internal_info,?NICE("Can't open "++File)}|ErrorLog],
-	     httpd_util:key1search(Context,errmsg,""),R}
+	     proplists:get_value(errmsg,Context,""),R}
     end.
 
 %%
@@ -316,7 +316,7 @@ exec(Info,Context,ErrorLog,[cgi],[RequestURI],R) ->
 exec(_Info, Context, ErrorLog, _TagList, _ValueList, R) ->
     {ok, Context,
      [{internal_info,?NICE("exec directive has a spurious tag")}|
-      ErrorLog], httpd_util:key1search(Context,errmsg,""),R}.
+      ErrorLog], proplists:get_value(errmsg,Context,""),R}.
 
 %% cmd
 
@@ -361,7 +361,7 @@ cgi(Info, Context, ErrorLog, R, RequestURI) ->
 	not_a_script ->
 	    {ok, Context,
 	     [{internal_info, ?NICE(RequestURI++" is not a script")}|
-	      ErrorLog], httpd_util:key1search(Context, errmsg, ""),R}
+	      ErrorLog], proplists:get_value(errmsg, Context, ""),R}
     end.
 
 remove_header([]) ->

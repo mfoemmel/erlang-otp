@@ -15,7 +15,7 @@
 	Name "${OTP_PRODUCT} ${OTP_VERSION}"
 
 	!include "MUI.nsh"
-
+	!include "WordFunc.nsh"
 ;--------------------------------
 ;Configuration
 
@@ -45,6 +45,9 @@ Var STARTMENU_FOLDER
 
 ;--------------------------------
 ;Modern UI Configuration
+!ifdef HAVE_CUSTOM_MODERN
+	!define MUI_UI "custom_modern.exe"
+!endif
         !define MUI_ICON "erlang_inst.ico"
         !define MUI_UNICON "erlang_uninst.ico"
 
@@ -80,17 +83,35 @@ Var STARTMENU_FOLDER
 !ifdef HAVE_DOCS
   	LangString DESC_SecErlangDoc ${LANG_ENGLISH} "Documentation."
 !endif
+!ifdef HAVE_REDIST_FILE
+  	LangString DESC_SecMSRedist ${LANG_ENGLISH} "Microsoft redistributable C runtime libraries, these are mandatory for Erlang runtime and development. Always installed if not already present."
+!endif
+;--------------------------------
+; WordFunc
+!ifdef HAVE_REDIST_FILE
+	!insertmacro VersionCompare
+!endif
 ;--------------------------------
 ;Installer Sections
+
+!ifdef HAVE_REDIST_FILE
+Section "Microsoft redistributable libraries." SecMSRedist
+
+  	SetOutPath "$INSTDIR"
+	File "${TESTROOT}\vcredist_x86.exe"
+  
+; Set back verbosity...
+  	!verbose 1
+; Run the setup program  
+  	ExecWait '"$INSTDIR\vcredist_x86.exe"'
+
+  	!verbose 1
+SectionEnd ; MSRedist
+!endif
 
 SubSection /e "Erlang" SecErlang
 Section "Development" SecErlangDev
 SectionIn 1 RO
-
-;  	StrCmp ${MUI_STARTMENUPAGE_VARIABLE} "" 0 skip_silent_mode
-;	StrCpy ${MUI_STARTMENUPAGE_VARIABLE} \
-;	"${MUI_STARTMENUPAGE_DEFAULTFOLDER}"
-;skip_silent_mode:
 
   	SetOutPath "$INSTDIR"
   	File "${TESTROOT}\Install.ini"
@@ -121,9 +142,6 @@ SectionIn 1 RO
 continue_create:
   	CreateShortCut "$SMPROGRAMS\$STARTMENU_FOLDER\Erlang.lnk" \
 		"$INSTDIR\bin\werl.exe"
-;  	CreateShortCut \
-;		"$SMPROGRAMS\$STARTMENU_FOLDER\Uninstall.lnk" \
-;		"$INSTDIR\Uninstall.exe"
   
   	!insertmacro MUI_STARTMENU_WRITE_END
 ; And once again, the verbosity...
@@ -265,6 +283,67 @@ continue_create:
 SectionEnd ; ErlangDoc
 !endif
 
+!ifdef HAVE_REDIST_FILE
+Function DllVersionGoodEnough
+    IntCmp 0 $R0 normal0 normal0 negative0
+    normal0: 
+        IntOp $R2 $R0 >> 16
+	Goto continue0
+    negative0:
+	IntOp $R2 $R0 & 0x7FFF0000
+	IntOp $R2 $R2 >> 16
+	IntOp $R2 $R2 | 0x8000
+    continue0:		
+    IntOp $R3 $R0 & 0x0000FFFF
+    IntCmp 0 $R1 normal1 normal1 negative1
+    normal1: 
+        IntOp $R4 $R1 >> 16
+	Goto continue1
+    negative1:
+	IntOp $R4 $R1 & 0x7FFF0000
+	IntOp $R4 $R4 >> 16
+	IntOp $R4 $R4 | 0x8000
+    continue1:		
+    IntOp $R5 $R1 & 0x0000FFFF
+    StrCpy $2 "$R2.$R3.$R4.$R5"
+    ${VersionCompare} $2 ${REDIST_DLL_VERSION} $R0
+    Return
+FunctionEnd
+
+Function .onInit
+   SectionGetFlags 0 $MYTEMP 
+;   MessageBox MB_YESNO "Found $SYSDIR\msvcr80.dll" IDYES FoundLbl
+   IfFileExists $SYSDIR\msvcr80.dll MaybeFoundInSystemLbl
+   SearchSxsLbl:	
+        FindFirst $0 $1 $WINDIR\WinSxS\x86*
+        LoopLbl:
+	    StrCmp $1 "" NotFoundLbl
+	    IfFileExists $WINDIR\WinSxS\$1\msvcr80.dll MaybeFoundInSxsLbl
+	    FindNext $0 $1
+	    Goto LoopLbl
+        MaybeFoundInSxsLbl:
+	    GetDllVersion $WINDIR\WinSxS\$1\msvcr80.dll $R0 $R1
+	    Call DllVersionGoodEnough
+	    FindNext $0 $1
+	    IntCmp 2 $R0 LoopLbl
+	    Goto FoundLbl  
+   MaybeFoundInSystemLbl:
+	GetDllVersion $SYSDIR\msvcr80.dll $R0 $R1
+	Call DllVersionGoodEnough
+	IntCmp 2 $R0 SearchSxSLbl  
+   FoundLbl:
+	IntOp $MYTEMP $MYTEMP & 4294967294
+	SectionSetFlags 0 $MYTEMP
+	SectionSetText 0 "Microsoft DLL's (present)"
+	Return
+   NotFoundLbl:
+        IntOp $MYTEMP $MYTEMP | 16
+	SectionSetFlags 0 $MYTEMP
+	SectionSetText 0 "Microsoft DLL's (needed)"
+	Return
+FunctionEnd
+!endif
+
 
 ;Display the Finish header
 ;Insert this macro after the sections if you are not using a finish page
@@ -280,6 +359,9 @@ SectionEnd ; ErlangDoc
 		$(DESC_SecErlangAssoc)
 !ifdef HAVE_DOCS
   	!insertmacro MUI_DESCRIPTION_TEXT ${SecErlangDoc} $(DESC_SecErlangDoc)
+!endif
+!ifdef HAVE_REDIST_FILE
+  	!insertmacro MUI_DESCRIPTION_TEXT ${SecMSRedist} $(DESC_SecMSRedist)
 !endif
 	!insertmacro MUI_FUNCTION_DESCRIPTION_END
  

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 
 %%% Description: SSH user authenication
@@ -446,11 +448,12 @@ get_user_from_cm(CM) ->
 
 reg_user_auth_server() ->
     case whereis(?MODULE) of
-	undefined -> ok;
-	_ -> unregister(?MODULE)
-    end,
-    Pid = spawn(fun() -> reg_user_auth_server_loop([]) end),
-    register(?MODULE, Pid).
+	undefined ->
+	    Pid = spawn(fun() -> reg_user_auth_server_loop([]) end),
+	    register(?MODULE, Pid);
+	_ ->
+	    ok
+    end.
 
 reg_user_auth_server_loop(Users) ->
     receive
@@ -463,6 +466,8 @@ reg_user_auth_server_loop(Users) ->
 	    NewUsers = [{User, From} | Users],
 	    From ! {self(), ok},
 	    reg_user_auth_server_loop(NewUsers);
+	{quit, _From} ->
+	    exit(normal);
 	_ ->
 	    ok
     end.

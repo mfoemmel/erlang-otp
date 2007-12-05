@@ -52,7 +52,7 @@ version of Erlang. If making changes to the build system (like
 makefiles etc) please bear in mind that the same makefiles are used on
 Unix/VxWorks/OSEDelta, so that your changes don't break other
 platforms. That of course goes for C-code too, system specific code
-resides in the $ERL_TOP/erts/emulator/sys/win32 and $ERL_etc/win32
+resides in the $ERL_TOP/erts/emulator/sys/win32 and $ERL_TOP/erts/etc/win32
 directories mostly. The  $ERL_TOP/erts/emulator/beam directory is for
 common code.
 
@@ -60,7 +60,7 @@ Before the R9C release of Erlang/OTP, the Windows release was built
 partly on a Unix (Solaris) box and partly on a Windows box, using Perl
 hacks to communicate and sync between the two machines. R9C was the
 first release ever built solely on Windows, where no Unix machine is
-needed at all. Now we'we used this build procedure for a couple of
+needed at all. Now we've used this build procedure for a couple of
 releases, and it has worked fine for us. Still, there might be all
 sorts of troubles on different machines and with different
 setups. I'll try to give hints wherever I've encountered difficulties,
@@ -86,24 +86,22 @@ Erlang are free-ware/open source, but not the C compiler.
 
 Q: Why haven't you got rid of VC++ then, you ******
 
-A: Well, the primary goal with this new Windows build system was to be
-able to build solely on Windows. To make that possible I needed a
-Unix'ish environment (otherwise I would have needed to rewrite most of
-the build procedures using nmake-compatible files or whatever). Our
-source code for Windows still depends somewhat on the VC++ compiler
-and the issue of replacing that compiler was not the primary goal this
-time. It will be next time though, I'm aiming at the possibility to use
-Mingw (which is a gcc for "native" Windows environment, that does not
-rely on Unix emulation libraries like binaries in the Cygwin
-distribution does). The biggest problem with using other compilers is
-the header files for Windows, which are not re-distributable, but
-property of Microsoft. We need to adopt our source code to use
-whatever Mingw can support to make use of that gcc, that haven't been
-done yet, and I frankly don't know when it will be done, cause it will
-surely happen in my spare time, as Ericsson does not pay me to replace
-one commercial compiler with a free one when the gain is only for the
-few open source users who are brave enough to build the Windows
-release by themselves.
+A: Well, partly because it's a good compiler - really! Actually it's
+been possible in late R11-releases to build using mingw instead of
+visual C++ (you might see the remnants of that in some scripts and
+directories). Unfortunately the development of the SMP version for
+Windows broke the mingw build and we chose to focus on the VC++ build
+as the performance has been much better in the VC++ versions. The
+mingw build will be back, but as long as VC++ gives better
+performance, the commercial build will be a VC++ one.
+
+Q: OK, VC++ you need, but now you've started to demand a very recent
+(and expensive) version of Visual studio, not the old and stable VC++
+6.0 that was used in earlier versions. Why?
+
+A: The SMP version of Erlang needs features in the Visual Studio
+2005. Can't live without them. Besides the new compiler gives the
+Erlang emulator a ~40% performance boost(!)
 
 Q: Can/will I build a Cygwin binary with the procedure you describe?
 
@@ -116,11 +114,11 @@ some problems. Fixing those problems might be easy or might be hard.
 I suggest you try yourself and share your experience. No one would be
 happier if a simple ./configure && make would produce a fully fledged
 Cygwin binary. Ericsson does however not pay me to... Well, you know
-that by know I suppose :-)
+that by now I suppose :-)
 
 Q: Hah, I saw you, you used GCC even though you said you didn't!
 
-A: OK, I admit, one of the files is compiled using Cygwins GCC and
+A: OK, I admit, one of the files is compiled using Cygwin's GCC and
 the resulting object code is then converted to MS VC++ compatible coff
 using a small C hack. It's because that particular file, beam_emu.c
 benefits immensely from being able to use the GCC labels-as-values
@@ -147,22 +145,22 @@ A: Cygwin is the environment, which closely resembles the environments
 found on any Unix machine. It's almost like you had a virtual Unix
 machine inside Windows. Configure, given certain parameters, then
 creates makefiles that are used by the Cygwin gnu-make to built the
-system. Most of the actual compilers etc are not, however, Cygwin tools,
-so I've written a couple of wrappers (Bourne-shell scripts), which
-reside in $ERL_TOP/etc/win32/cygwin_tools and they all do conversion
-of parameters and switches common in the Unix environment to fit the
-native Windows tools. Most notable is of course the paths, which in
-Cygwin are Unix-like paths with "forward slashes" (/) and no drive
-letters, the Cygwin specific command 'cygpath' is used for most of the
-path conversions. Luckily most compilers accept forward slashes
+system. Most of the actual compilers etc are not, however, Cygwin
+tools, so I've written a couple of wrappers (Bourne-shell scripts),
+which reside in $ERL_TOP/etc/win32/cygwin_tools and they all do
+conversion of parameters and switches common in the Unix environment
+to fit the native Windows tools. Most notable is of course the paths,
+which in Cygwin are Unix-like paths with "forward slashes" (/) and no
+drive letters, the Cygwin specific command 'cygpath' is used for most
+of the path conversions. Luckily most compilers accept forward slashes
 instead of backslashes as path separators, one still have to get the
-drive letters etc right, though. The wrapper scripts are not general in
-the sense that, for example, cc.sh would understand and translates every
-possible gcc option and passes correct options to cl.exe. The principle is
-that the scripts are powerful enough to allow building of Erlang/OTP,
-no more, no less. They might need extensions to cope with changes
-during the development of Erlang, that's one of the reasons I made
-them into shell-scripts and not Perl-scripts, I believe they are
+drive letters etc right, though. The wrapper scripts are not general
+in the sense that, for example, cc.sh would understand and translates
+every possible gcc option and passes correct options to cl.exe. The
+principle is that the scripts are powerful enough to allow building of
+Erlang/OTP, no more, no less. They might need extensions to cope with
+changes during the development of Erlang, that's one of the reasons I
+made them into shell-scripts and not Perl-scripts, I believe they are
 easier to understand and change that way. I might be wrong though,
 cause another reason I didn't write them in Perl is because I've never
 liked Perl and my Perl code is no pleasant reading :-)
@@ -192,16 +190,16 @@ building. What versions you use shouldn't really matter, I try to
 include workarounds for the bugs I've found in different Cygwin
 releases, please help me to add workarounds for new Cygwin-related
 bugs as soon as you encounter them. Also please do submit bug reports
-to the appropriate Cygwin developers. The Cygwin GCC we used for R11B was 
-version 3.3.1. We used VC++ 6.0, Sun's JDK 1.2.2, NSIS 2.01, and
-Win32 OpenSSL 0.9.7b. Please reed the next section for details
-on what you need.
+to the appropriate Cygwin developers. The Cygwin GCC we used for R12B
+was version 3.4.4. We used VC++ 8.0 (i.e. Visual studio 2005 SP1),
+Sun's JDK 1.4.2_15, NSIS 2.30, and Win32 OpenSSL 0.9.8e. Please read
+the next section for details on what you need.
 
 Q: Can you help me setup X in Cygwin?
 
-A: No, unfortunately I haven't got time to help with Cygwin
-related user problems, please read Cygwin related web sites, newsgroups
-and mailing lists.
+A: No, unfortunately I haven't got time to help with Cygwin related
+user problems, please read Cygwin related web sites, newsgroups and
+mailing lists.
 
 Q: Why is the instruction so long? Is it really that complicated?
 
@@ -215,11 +213,11 @@ seemed to be in place. The short story, for the experienced and
 impatient is:
 
 * Get and install complete Cygwin (latest)
-* (Buy and) Install Microsoft Visual C++ 6.0 (or higher)
-* Get and install Sun's JDK 1.2.2
-* Get and install NSIS 2.01 or higher (up to 2.16 tried and working)
-* Get and install OpenSSL 0.9.7b or higher
-* Get and unpack the erlang source distribution with Cygwins tar.
+* (Buy and) Install Microsoft Visual studio 2005 and SP1 (or higher)
+* Get and install Sun's JDK 1.4.2
+* Get and install NSIS 2.01 or higher (up to 2.30 tried and working)
+* Get and install OpenSSL 0.9.7c or higher
+* Get and unpack the erlang source distribution with Cygwin's tar.
 * Modify PATH and other environment variables so that all these tools
 are runnable from a bash shell
 * set ERL_TOP to where you unpacked the source distribution
@@ -291,34 +289,38 @@ If you want to use (t)csh instead of bash you're on your own, I
 haven't tried (god forbid :-)) and know of no one that has. I expect
 that you use bash in all shell examples.
 
-* Microsoft Visual C++ 6.0. Please install all possible service packs
-too. The installer might update your environment so that you can run
+* Microsoft Visual Studio 2005 SP1. Please don't skip the service
+pack! The installer might update your environment so that you can run
 the 'cl' command from the bash prompt, then again it might
-not... There is always a BAT file in VC98\Bin under the installation
-directory (default C:\Program Files\Microsoft Visual Studio) called
-VCVARS.BAT. Either add the environment settings in that file to the
+not... There is always a BAT file in VC\Bin under the installation
+directory (default C:\Program Files\Microsoft Visual Studio 8) called
+VCVARS32.BAT. Either add the environment settings in that file to the
 global environment settings in Windows or add the corresponding BASH
 environment settings to your .profile/.bashrc. For example, in my case
 I could add the following to .profile
 ------------------------------------------------------------
 #Visual C++ Root directory as Cygwin style pathname
-VCROOT=/cygdrive/c/Program\ Files/Microsoft\ Visual\ Studio
+VCROOT=/cygdrive/c/Program\ Files/Microsoft\ Visual\ Studio 8
 
 # Visual C++ Root directory as Windows style pathname
-WIN_VCROOT="C:\\Program Files\\Microsoft Visual Studio"
+WIN_VCROOT="C:\\Program Files\\Microsoft Visual Studio 8"
 
 # The PATH variable should be Cygwin'ish
-PATH=$VCROOT/Common/Tools/WinNT:$VCROOT/Common/MSDev98/Bin:\
-$VCROOT/Common/Tools:$VCROOT/VC98/bin:$PATH
+PATH=$VCROOT/Common7/IDE:$VCROOT/VC/BIN:$VCROOT/Common7/Tools:\
+$VCROOT/Common7/Tools/bin:$VCROOT/VC/PlatformSDK/bin:$VCROOT/SDK/v2.0/bin:\
+$VCROOT/VC/VCPackages:$PATH
 
 # Lib and INCLUDE should be Windows'ish
 # Note that semicolon (;) is used to separate Windows style paths but
 # colon (:) to separate Cygwin ditto!
 
-LIB=$WIN_VCROOT\\VC98\\mfc\\lib\;$WIN_VCROOT\\VC98\\lib
+LIBPATH=$WIN_VCROOT\\VC\\ATLMFC\\LIB
 
-INCLUDE=$WIN_VCROOT\\VC98\\atl\\include\;$WIN_VCROOT\\VC98\\mfc\\include\;\
-$WIN_VCROOT\\VC98\\include
+LIB=$WIN_VCROOT\\VC\\ATLMFC\\LIB\;$WIN_VCROOT\\VC\\LIB\;\
+$WIN_VCROOT\\VC\\PlatformSDK\\lib\;$WIN_VCROOT\\SDK\\v2.0\\lib
+
+INCLUDE=$WIN_VCROOT\\VC\\ATLMFC\\INCLUDE\;$WIN_VCROOT\\VC\\INCLUDE\;\
+$WIN_VCROOT\\VC\\PlatformSDK\\include
 
 export PATH LIB INCLUDE
 --------------------------------------------------------------
@@ -332,8 +334,8 @@ backslashes in your path environment variable in Cygwin bash, but LIB
 and INCLUDE should contain Windows style paths with semicolon,
 drive letters and backslashes.
 
-* Sun's Java JDK 1.2.2 or higher. Our Java code (jinterface, ic) is
-written for JDK 1.2.2. Get it for Windows and install it, the JRE is
+* Sun's Java JDK 1.4.2 or higher. Our Java code (jinterface, ic) is
+written for JDK 1.4.2. Get it for Windows and install it, the JRE is
 not enough. If you don't care about Java, you can skip this step, the
 result will be that jinterface is not built.
 
@@ -341,12 +343,12 @@ URL: http://java.sun.com
 
 Add javac *LAST* to your path environment in bash, in my case this means:
 --------------------------------------------------------------
-PATH=$PATH:/cygdrive/c/jdk1.2.2/bin
+PATH=$PATH:/cygdrive/c/jdk1.4.2/bin
 --------------------------------------------------------------
 No CLASSPATH or anything is needed. Type "javac" at the bash prompt
 and you should get a list of available Java options. Make sure by
 typing "which java" that you use the Java you installed. Note however that
-Cygwins jar.exe is used, that's why the JDK bin-directory should be
+Cygwin's jar.exe is used, that's why the JDK bin-directory should be
 added last in the PATH.
 
 * Nullsoft NSIS installer system. You need this to build the self
@@ -368,7 +370,7 @@ applications to compile (and run). Go to http://www.openssl.org, click
 on the "Related" link and then on the "Binaries" link (upper right
 corner of the page last time I looked), you can then reach the
 "Shining Lights Productions" Web site for Windows binaries
-distributions. Get the latest or 0.9.7b if you get trouble with the
+distributions. Get the latest or 0.9.7c if you get trouble with the
 latest. It's a nifty installer. The rest should be handled by
 configure, you needn't put anything in the path or anything.  
 
@@ -427,9 +429,10 @@ This should do the final touch to the environment and building should
 be easy after this. You could run "./otp_build env_win32" without
 "eval" just to see what it does, and to see that the environment it
 sets seems OK. The path is cleaned of spaces if possible (using DOS
-style short names instead), the variables OVERRIDE_TARGET, CC, CXX,
-AR and RANLIB are set to their respective wrappers and the directory
-$ERL_TOP/erts/etc/win32/cygwin_tools is added first in the PATH.
+style short names instead), the variables OVERRIDE_TARGET, CC, CXX, AR
+and RANLIB are set to their respective wrappers and the directories
+$ERL_TOP/erts/etc/win32/cygwin_tools/vc and
+$ERL_TOP/erts/etc/win32/cygwin_tool are added first in the PATH.
 
 Try now a "which erlc". That should result in the erlc wrapper script
 (which does not have the .sh extension, for reasons best kept
@@ -441,12 +444,8 @@ Now you're ready to build...
 
 Building and installing
 -----------------------
-Before building you need to do the last environment setting for each
-new shell you use to build, that is to run:
-$ cd $ERL_TOP
-$ eval `./otp_build env_win32`
-- the rest of the environmental needs (:-)) should have been taken
-care of by your .profile/.basrc. 
+Now it's assumed that you have executed "eval `./otp_build env_win32`"
+for this particular shell...
 
 Building is easiest using the otp_build script. That script takes care
 of running configure, bootstrapping etc on Windows in a simple
@@ -467,7 +466,7 @@ $ ./otp_build boot -a
 $ ./otp_build release -a <installation directory>
 $ ./otp_build installer_win32 <installation directory> # optional
 
-Now you will have a file called otp_win32_R11B.exe in the <installation
+Now you will have a file called otp_win32_R12B.exe in the <installation
 directory>, i.e. $ERL_TOP/release/win32.
 
 Lets get into more detail:
@@ -612,7 +611,7 @@ $ cd $ERL_TOP/lib/stdlib/src
 $ make opt
 
 Note that you're expected o have a fresh erlang in your path when
-doing this, preferably the plain R11B you have built in the previous
+doing this, preferably the plain R12B you have built in the previous
 steps. You could also add $ERL_TOP/bootstrap/bin to your PATH before
 rebuilding specific libraries, that would give you a good enough
 Erlang system to compile any OTP erlang code.

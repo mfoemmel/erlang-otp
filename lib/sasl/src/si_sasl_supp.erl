@@ -194,7 +194,7 @@ open_log_file(OldFile, NewFile) ->
 
 open_log_file(standard_io) -> standard_io;
 open_log_file(FileName) ->
-    case file:open(FileName, write) of
+    case file:open(FileName, [write]) of
 	{ok, Fd} -> Fd;
 	Error -> 
 	    io:format("si_sasl_supp: Cannot open file '~s' (~w).~n",

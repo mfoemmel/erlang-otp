@@ -16,6 +16,9 @@
    */
 #undef CORRECT_USING_TIMES
 
+/* Modern style mcontext_t in MacOSX */
+#undef DARWIN_MODERN_MCONTEXT
+
 /* Define if you need to include rpc/types.h to get INADDR_LOOPBACK defined */
 #undef DEF_INADDR_LOOPBACK_IN_RPC_TYPES_H
 
@@ -46,8 +49,9 @@
 /* Define if sbrk()/brk() wrappers can track malloc()s core memory use */
 #undef ERTS_BRK_WRAPPERS_CAN_TRACK_MALLOC
 
-/* Define if you do not want to use port tasks */
-#undef ERTS_DONT_USE_PORT_TASKS
+/* The only reason ERTS_EMU_CMDLINE_FLAGS exists is to force modification of
+   config.h when the emulator command line flags are modified by configure */
+#undef ERTS_EMU_CMDLINE_FLAGS
 
 /* Define if you have kernel poll and want to use it */
 #undef ERTS_ENABLE_KERNEL_POLL
@@ -61,27 +65,14 @@
 /* Define if dlopen() needs to be called before first call to dlerror() */
 #undef ERTS_NEED_DLOPEN_BEFORE_DLERROR
 
-/* Define if you want to use SMP I/O thread */
-#undef ERTS_SMP_USE_IO_THREAD
-
 /* Define if poll() should be used instead of select() */
 #undef ERTS_USE_POLL
-
-/* Define if you want to use port tasks */
-#undef ERTS_USE_PORT_TASKS
 
 /* Define if __after_morecore_hook can track malloc()s core memory use. */
 #undef ERTS___AFTER_MORECORE_HOOK_CAN_TRACK_MALLOC
 
-/* Define if you want to enable extended functionality in the ethread library
-   */
-#undef ETHR_EXTENDED_LIB
-
 /* Define if you have all ethread defines */
 #undef ETHR_HAVE_ETHREAD_DEFINES
-
-/* Define if you have the InitializeCriticalSectionAndSpinCount function */
-#undef ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT
 
 /* Define if the pthread.h header file is in pthread/mit directory. */
 #undef ETHR_HAVE_MIT_PTHREAD_H
@@ -101,18 +92,21 @@
 /* Define if you have the pthread_mutexattr_settype function. */
 #undef ETHR_HAVE_PTHREAD_MUTEXATTR_SETTYPE
 
+/* Define if you have the pthread_rwlock_init function. */
+#undef ETHR_HAVE_PTHREAD_RWLOCK_INIT
+
 /* Define if you have the pthread_spin_lock function. */
 #undef ETHR_HAVE_PTHREAD_SPIN_LOCK
 
 /* Define if you have the <sys/time.h> header file. */
 #undef ETHR_HAVE_SYS_TIME_H
 
-/* Define if you have the TryEnterCriticalSection function */
-#undef ETHR_HAVE_TRYENTERCRITICALSECTION
-
 /* Define if mutexes should be reinitialized (instead of unlocked) in child at
    fork. */
 #undef ETHR_INIT_MUTEX_IN_CHILD_AT_FORK
+
+/* Define if you want to modify the default stack size */
+#undef ETHR_MODIFIED_DEFAULT_STACK_SIZE
 
 /* Define if you have pthreads */
 #undef ETHR_PTHREADS
@@ -579,9 +573,6 @@
 /* Define to 1 if your processor stores words with the most significant byte
    first (like Motorola and SPARC, unlike Intel and VAX). */
 #undef WORDS_BIGENDIAN
-
-/* Define NT version if you want to turn on some NT features */
-#undef _WIN32_WINNT
 
 /* Define like PROTOTYPES; this can be used by system headers. */
 #undef __PROTOTYPES

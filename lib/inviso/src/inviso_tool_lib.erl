@@ -28,6 +28,7 @@
 %% Exported library APIs
 %% -----------------------------------------------------------------------------
 -export([inviso_cmd/3,expand_module_names/3,make_patterns/7,std_tdg/2]).
+-export([mk_tdg_args/2,mk_complete_tdg_args/2,get_datetime_from_tdg_args/1]).
 -export([debug/3]).
 
 %% -----------------------------------------------------------------------------
@@ -293,6 +294,28 @@ std_tdg(Node,{{Y,Mo,D},{H,Mi,S}}) ->
     [{trace,LogTD},{ti,TiTD}].
 %% ------------------------------------------------------------------------------
 
+%% mk_tdg_args(DateTime,Args)=TDGargs
+%%   DateTime={Date,Time}
+%%     Date=tuple(),
+%%     Time=tuple(),
+%%   Args=list()
+%%   TDGargs=list(),
+%% Creates the TDGargs list used when calling functions making the CompleteTDGargs.
+mk_tdg_args(DateTime,Args) ->
+    [DateTime|Args].
+%% ------------------------------------------------------------------------------
+
+%% mk_complete_tdg_args(Node,TDGargs)=CompleteTDGargs
+%% Returns the list of all arguments a tracer data generator function must accept.
+mk_complete_tdg_args(Node,TDGargs) ->
+    [Node|TDGargs].
+%% ------------------------------------------------------------------------------
+
+%% get_datetime_from_tdg_args(TDGargs)=DateTime
+%% Function returning the DateTime tuple in a TDGargs list.
+get_datetime_from_tdg_args([DateTime|_]) ->
+    DateTime.
+%% ------------------------------------------------------------------------------
 
 
 %% =============================================================================

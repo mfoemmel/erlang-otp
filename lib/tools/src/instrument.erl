@@ -37,9 +37,9 @@
 memory_data() ->
     case catch erlang:system_info(allocated) of
 	{'EXIT',{Error,_}} ->
-	    erlang:fault(Error, []);
+	    erlang:error(Error, []);
 	{'EXIT',Error} ->
-	    erlang:fault(Error, []);
+	    erlang:error(Error, []);
 	Res ->
 	    Res
     end.
@@ -47,9 +47,9 @@ memory_data() ->
 store_memory_data(File) ->
     case catch erlang:system_info({allocated, File}) of
 	{'EXIT',{Error,_}} ->
-	    erlang:fault(Error, [File]);
+	    erlang:error(Error, [File]);
 	{'EXIT',Error} ->
-	    erlang:fault(Error, [File]);
+	    erlang:error(Error, [File]);
 	Res ->
 	    Res
     end.
@@ -57,26 +57,26 @@ store_memory_data(File) ->
 memory_status(Type) when is_atom(Type) ->
     case catch erlang:system_info({allocated, status, Type}) of
 	{'EXIT',{Error,_}} ->
-	    erlang:fault(Error, [Type]);
+	    erlang:error(Error, [Type]);
 	{'EXIT',Error} ->
-	    erlang:fault(Error, [Type]);
+	    erlang:error(Error, [Type]);
 	Res ->
 	    Res
     end;
 memory_status(Type) ->
-    erlang:fault(badarg, [Type]).
+    erlang:error(badarg, [Type]).
 
 store_memory_status(File) when is_list(File) ->
     case catch erlang:system_info({allocated, status, File}) of
 	{'EXIT',{Error,_}} ->
-	    erlang:fault(Error, [File]);
+	    erlang:error(Error, [File]);
 	{'EXIT',Error} ->
-	    erlang:fault(Error, [File]);
+	    erlang:error(Error, [File]);
 	Res ->
 	    Res
     end;
 store_memory_status(File) ->
-    erlang:fault(badarg, [File]).
+    erlang:error(badarg, [File]).
 
 read_memory_data(File) when is_list(File) ->
     case file:consult(File) of
@@ -99,7 +99,7 @@ read_memory_data(File) when is_list(File) ->
 	    Error
     end;
 read_memory_data(File) ->
-    erlang:fault(badarg, [File]).
+    erlang:error(badarg, [File]).
 
 read_memory_status(File) when is_list(File) ->
     case file:consult(File) of
@@ -111,7 +111,7 @@ read_memory_status(File) when is_list(File) ->
 	    Error
     end;
 read_memory_status(File) ->
-    erlang:fault(badarg, [File]).
+    erlang:error(badarg, [File]).
 
 holes({Hdr, MD}) when ?IHDR(Hdr) ->
     check_holes(?INFO_SIZE(Hdr), MD).

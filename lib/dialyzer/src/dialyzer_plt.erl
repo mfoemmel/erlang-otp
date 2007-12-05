@@ -11,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -30,20 +30,23 @@
 	 check_init_plt/1,
 	 copy/2,
 	 contains_mfa/2,
+	 contains_module/2,
 	 delete/1,
+	 delete_contract_list/2,
 	 delete_list/2,
 	 delete_module/2,
-	 from_file/2,
+	 from_file/1,
+	 get_mod_deps/1,
 	 insert/2,
+	 insert_contract/2,
 	 lookup/2,
-	 lookup/3,
+	 lookup_contract/2,
 	 lookup_module/2,
-	 merge_and_write_file/2,
 	 merge_plts/1,
-	 new/1,
-	 strip_non_member_mfas/2,
+	 new/0,
 	 to_edoc/1,
-	 to_edoc/4
+	 to_edoc/4,
+	 to_file/4
 	]).
 
 %% Debug utilities
@@ -51,96 +54,95 @@
 
 -include("dialyzer.hrl").
 
--record(dialyzer_plt, {version, libs, md5, tab}).
+-record(dialyzer_file_plt, {version, libs, md5, info, contracts,
+			    mod_deps, implementation_md5}).
 
-new(Name) when is_atom(Name) ->
-  ets:new(Name, [set, public]).
+-record(dialyzer_plt, {info, 
+		       contracts}).
 
-delete(Name) ->
-  ets:delete(Name).
+new() ->
+  #dialyzer_plt{info=table_new(),contracts=table_new()}.
 
-delete_module(Plt, Mod) ->
-  ets:match_delete(Plt, {{Mod, '_', '_'}, '_', '_'}).
-
-delete_list(Plt, [H|T]) ->
-  ets:delete(Plt, H),
-  delete_list(Plt, T);
-delete_list(_Plt, []) ->
+delete(#dialyzer_plt{info=Info, contracts=Contracts}) ->
+  table_delete(Info),
+  table_delete(Contracts),
   ok.
 
-copy(From, To) ->
-  List = ets:tab2list(From),
-  ets:delete_all_objects(To),
-  ets:insert_new(To, List).
+delete_module(#dialyzer_plt{info=Info, contracts=Contracts}, Mod) ->
+  #dialyzer_plt{info=table_delete_module(Info, Mod),
+		contracts=table_delete_module(Contracts, Mod)}.
 
-insert(Plt, Object) ->
-  ets:insert(Plt, Object).
+delete_list(#dialyzer_plt{info=Info, contracts=Contracts}, List) ->
+  #dialyzer_plt{info=table_delete_list(Info, List),
+		contracts=table_delete_list(Contracts, List)}.
 
+copy(#dialyzer_plt{info=FromInfo, contracts=FromContracts}, 
+     #dialyzer_plt{info=ToInfo, contracts=ToContracts}) ->
+  #dialyzer_plt{info=table_copy(FromInfo, ToInfo),
+		contracts=table_copy(FromContracts, ToContracts)}.
 
+insert_contract(Plt = #dialyzer_plt{contracts=Contracts}, Object) ->
+  Plt#dialyzer_plt{contracts=table_insert(Contracts, Object)}.
 
+lookup_contract(#dialyzer_plt{contracts=Contracts}, 
+		MFA={M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 
+				    0 =< A, A =< 255 ->
+  table_lookup(Contracts, MFA).
 
-lookup(Plt, MFA={M, F, A}, Args) when is_atom(M), is_atom(F),
-				  is_integer(A), 0 =< A, A =< 255 ->
-  lookup_1(Plt, MFA, Args);
-lookup(Plt, Label, Args) when is_integer(Label) ->
-  lookup_1(Plt, Label, Args).
+delete_contract_list(Plt = #dialyzer_plt{contracts=Contracts}, List) ->
+  Plt#dialyzer_plt{contracts=table_delete_list(Contracts, List)}.
 
-lookup_1(Plt, Obj, Args) ->
-  case ets:lookup(Plt, Obj) of
-    [] -> none;
-    [{Obj, {contract, Ret_fun, Arg}}] ->
-      if (Args =:= none) -> 
-	  {value, {Ret_fun(Arg), Arg}};
-	 true -> 
-	  {value, {Ret_fun(Args), Arg}}
-      end;
-    [{Obj, Ret, Arg}] -> {value, {Ret, Arg}}
-  end.
+insert(Plt = #dialyzer_plt{info=Info}, Object) ->
+  Plt#dialyzer_plt{info=table_insert(Info, Object)}.
 
+lookup(#dialyzer_plt{info=Info}, MFA={M, F, A}) when is_atom(M), 
+						     is_atom(F),
+						     is_integer(A), 
+						     0 =< A, A =< 255 ->
+  table_lookup(Info, MFA);
+lookup(#dialyzer_plt{info=Info}, Label) when is_integer(Label) ->
+  table_lookup(Info, Label).
 
-lookup(Plt, MFA={M, F, A}) when is_atom(M), is_atom(F),
-                            is_integer(A), 0 =< A, A =< 255 ->
-  lookup_1(Plt, MFA);
-lookup(Plt, Label) when is_integer(Label) ->
-  lookup_1(Plt, Label).
+lookup_module(#dialyzer_plt{info=Info}, M) when is_atom(M) ->
+  table_lookup_module(Info, M).
 
-lookup_1(Plt, Obj) ->
-  case ets:lookup(Plt, Obj) of
-    [] -> none;
-    [{Obj, {contract, Ret_fun, Arg}}] ->
-      {contract, {Ret_fun, Arg}};
-    [{Obj, Ret, Arg}] -> {value, {Ret, Arg}}
-  end.
-
-
-lookup_module(Plt, M) when is_atom(M) ->
-  case ets:match_object(Plt, {{M, '_', '_'}, '_', '_'}) of
-    [] -> none;
-    [_|_] = List -> {value, List}
-  end.
+contains_module(#dialyzer_plt{info=Info}, M) when is_atom(M) ->
+  table_contains_module(Info, M).
   
-from_file(Name, FileName) ->
+from_file(FileName) ->
   case get_record_from_file(FileName) of
     {ok, Rec} ->
       case check_version(Rec) of
-	{error, _Vsn} -> erlang:fault(old_plt);
+	error -> 
+	  Msg = io_lib:format("Old plt file ~s\n", [FileName]),
+	  error(Msg);
 	ok -> 
-	  Plt = new(Name),
-	  insert(Plt, Rec#dialyzer_plt.tab),
-	  Plt
+	  Info = Rec#dialyzer_file_plt.info,
+	  Contracts = Rec#dialyzer_file_plt.contracts,
+	  #dialyzer_plt{info = table_from_list(Info),
+			contracts = table_from_list(Contracts)}
       end;
     {error, Reason} ->
-      error(io_lib:format("Could not read plt file ~s: ~p\n", [Name, Reason]))
+      error(io_lib:format("Could not read plt file ~s: ~p\n", 
+			  [FileName, Reason]))
   end.
 
-check_version(#dialyzer_plt{version=?VSN}) -> ok;
-check_version(#dialyzer_plt{version=Vsn}) -> {error, Vsn}.
+check_version(#dialyzer_file_plt{version=?VSN, implementation_md5=ImplMd5}) ->
+  case compute_implementation_md5() =:= ImplMd5 of
+    true -> ok;
+    false -> error
+  end;
+check_version(#dialyzer_file_plt{}) -> error.
+
+get_mod_deps(FileName) ->
+  {ok, Rec} = get_record_from_file(FileName),
+  Rec#dialyzer_file_plt.mod_deps.
 
 get_record_from_file(FileName) ->
   case file:read_file(FileName) of
     {ok, Bin} ->
       case catch binary_to_term(Bin) of
-	Rec = #dialyzer_plt{} -> {ok, Rec};
+	Rec = #dialyzer_file_plt{} -> {ok, Rec};
 	_ -> 
 	  %% Lets see if this is a dets, i.e., an old type of plt.
 	  case dets:is_dets_file(FileName) of
@@ -154,29 +156,27 @@ get_record_from_file(FileName) ->
       {error, read_error}
   end.
 
-merge_and_write_file(PltList, File) ->
-  NewPlt = merge_plts(PltList--[none]),
-  to_file(NewPlt, File).
+merge_plts(List) ->
+  InfoList = lists:map(fun(#dialyzer_plt{info=Info}) -> Info end, List),
+  ContractsList = lists:map(fun(#dialyzer_plt{contracts=Contracts}) -> 
+				Contracts 
+			      end, List),
+  #dialyzer_plt{info=table_merge(InfoList),
+		contracts=table_merge(ContractsList)}.
 
-merge_plts([Plt]) ->
-  Plt;
-merge_plts([Plt1, Plt2|Left]) ->
-  ets:foldl(fun(Obj, _) -> insert(Plt1, Obj) end, [], Plt2),
-  ets:delete(Plt2),
-  merge_plts([Plt1|Left]).
-
-to_file(Plt, FileName) ->
-  MD5 = case ets:lookup(Plt, md5) of
-	  [] -> none;
-	  [{md5, Val1}] -> Val1
-	end,
-  Libs = case ets:lookup(Plt, libs) of
-	   [] -> none;
-	   [{libs, Val2}] -> Val2
-	 end,
-  Record = #dialyzer_plt{version=?VSN, md5=MD5, 
-			 libs=Libs, tab=ets:tab2list(Plt)},
-  Bin = term_to_binary(Record),
+to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts}, 
+	ModDeps, {MD5, Libs, OldModDeps}) ->
+  NewModDeps = dict:merge(fun(_Key, _OldVal, NewVal) -> NewVal end, 
+			  OldModDeps, ModDeps),
+  ImplMd5 = compute_implementation_md5(),
+  Record = #dialyzer_file_plt{version=?VSN, 
+			      md5=MD5, 
+			      libs=Libs, 
+			      info=table_to_list(Info),
+			      contracts=table_to_list(Contracts),
+			      mod_deps=NewModDeps,
+			      implementation_md5=ImplMd5},
+  Bin = term_to_binary(Record, [compressed]),
   case file:write_file(FileName, Bin) of
     ok -> ok;
     {error, Reason} ->
@@ -187,7 +187,7 @@ to_file(Plt, FileName) ->
 
 check_init_plt(FileName) ->
   case get_record_from_file(FileName) of
-    {ok, Rec = #dialyzer_plt{libs=FileLibs, md5=Md5}} ->
+    {ok, Rec = #dialyzer_file_plt{libs=FileLibs, md5=Md5}} ->
       case (FileLibs =:= ?DEFAULT_LIBS) or (Md5 =:= none) of
 	false -> 
 	  {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
@@ -205,14 +205,14 @@ check_init_plt(FileName) ->
 		    end,
 		  {fail, NewMd5, DiffMd5, Libs, FileName}
 	      end;
-	    {error, Vsn} ->
+	    error ->
 	      case Md5 =:= none of
 		true ->
 		  %% This is a user defined plt. No md5 check.
 		  Msg = io_lib:format("    The plt ~s was built with "
-				      "Dialyzer ~s\n"
+				      "an old Dialyzer.\n"
 				      "    Please rebuild it using the current "
-				      "version (~s)\n", [FileName, Vsn, ?VSN]),
+				      "version (~s)\n", [FileName, ?VSN]),
 		  {error, Msg};
 		false ->
 		  NewMd5 = compute_md5(Libs),
@@ -260,14 +260,22 @@ compute_md5(Libs) ->
   end.
 
 compute_md5_from_file(File) ->
-  case beam_lib:md5(File) of
-    {ok, {_Module, _Chunks}=Ret} ->
-      Ret;
-    {error, beam_lib, Reason} ->
+  case dialyzer_utils:get_abstract_code_from_beam(File) of
+    {error, Reason} ->
       throw({dialyzer_error, 
-	     io_lib:format("Could not compute md5 for file: ~s\nReason: ~p\n", 
-			   [File, Reason])})
+	     io_lib:format("Could not compute md5 for file: ~s\n~s\n", 
+			   [File, Reason])});
+    Abs ->
+      ModName = list_to_atom(filename:basename(File, ".beam")),
+      Md5 = erlang:md5(term_to_binary(Abs)),
+      {ModName, Md5}
   end.
+
+compute_implementation_md5() ->
+  Dir = code:lib_dir(hipe),
+  Files1 = ["erl_types.beam", "erl_bif_types.beam"],
+  Files2 = [filename:join([Dir, "ebin", F]) || F <- Files1],
+  [compute_md5_from_file(F) || F <- Files2].
 
 find_diffs_in_md5(NewMd5, OldMd5) ->
   find_diffs_in_md5(NewMd5, OldMd5, []).
@@ -300,18 +308,20 @@ list_dirs([], [], Acc) ->
 list_dirs([], Error, _Acc) ->
   {error, lists:flatten(Error)}.
 
-contains_mfa(Plt, MFA) ->
-  ets:lookup(Plt, MFA) =/= [].
+contains_mfa(#dialyzer_plt{info=Info}, MFA) ->
+  table_lookup(Info, MFA) =/= none.
 
-to_edoc(PLT) ->
-  to_edoc(PLT, '_', '_', '_').
+to_edoc(#dialyzer_plt{info=Info}) ->
+  %% TODO: Should print contracts as well.
+  List = 
+    lists:sort([{MFA, Val} || {MFA = {_,_,_}, Val} <- table_to_list(Info)]),
+  lists:flatten(expand_edoc(List, [])).
 
 to_edoc(PLT, M, F, A) when is_atom(M), is_atom(F) ->
-  List = ets:match_object(PLT, {{M, F, A}, '_', '_'}),
-  SortedList = lists:keysort(1, List),
-  lists:flatten(expand_edoc(SortedList, [])).
+  {value, Val} = lookup(PLT, {M, F, A}),
+  expand_edoc([{{M, F, A}, Val}], []).
 
-expand_edoc([{{M, F, A}, ReturnType, ArgTypes}|Left], M) ->
+expand_edoc([{{M, F, A}, {ReturnType, ArgTypes}}|Left], M) ->
   case erl_types:t_is_any(ArgTypes) of
     true ->
       [io_lib:format("%% @spec ~w(~s) -> ~s\n", 
@@ -324,7 +334,7 @@ expand_edoc([{{M, F, A}, ReturnType, ArgTypes}|Left], M) ->
 		      erl_types:t_to_string(ReturnType)])
        | expand_edoc(Left, M)]
   end;
-expand_edoc(List = [{{M1, _F, _A}, _ReturnType, _ArgTypes}| _], _M) ->
+expand_edoc(List = [{{M1, _F, _A}, {_ReturnType, _ArgTypes}}| _], _M) ->
   [io_lib:format("\n\n%% -------  Module: ~w -------\n\n", [M1]) | 
    expand_edoc(List, M1)];
 expand_edoc([], _) ->
@@ -351,30 +361,203 @@ expand_args([ArgType|Left]) ->
    end ++
    ","|expand_args(Left)].
 
-strip_non_member_mfas(Plt, Set) ->
-  Fun = fun({{_, _, _} = MFA, _, _}, Acc) ->
-	    case sets:is_element(MFA, Set) of
-	      true -> Acc;
-	      false -> [MFA|Acc]
-	    end;
-	   ({Label, _, _}, Acc) when is_integer(Label) -> [Label|Acc];
-	   (_, Acc) -> Acc
-	end,
-  ets:safe_fixtable(Plt, true),
-  Delete = ets:foldl(Fun, [], Plt),
-  ets:safe_fixtable(Plt, false),
-  delete_list(Plt, Delete).
-
 error(Msg) ->
   throw({dialyzer_error, lists:flatten(Msg)}).
+
+%%---------------------------------------------------------------------------
+%% Ets table
+
+-define(USE_DICT, true).
+%-define(USE_GBTREE, true).
+
+-ifdef(USE_DICT).
+table_new() ->
+  dict:new().
+
+table_to_list(Plt) ->
+  %% TODO: We only need to do this as a comparison to the ets.
+  dict:to_list(Plt).
+
+table_from_list(List) ->
+  dict:from_list(List).
+
+table_delete(_Name) ->
+  %% For symmetry with the imperative versions.
+  ok.
+
+table_delete_module(Plt, Mod) ->
+  dict:filter(fun({M, _F, _A}, _Val) -> M =/= Mod;
+		 (_, _) -> true
+	      end, Plt).
+
+table_delete_list(Plt, [H|T]) ->
+  table_delete_list(dict:erase(H, Plt), T);
+table_delete_list(Plt, []) ->
+  Plt.
+
+table_copy(From, _To) ->
+  %% For symmetry with the imperative versions.
+  From.
+
+table_insert(Plt, [H|T]) ->
+  table_insert(insert_one(Plt, H), T);
+table_insert(Plt, []) ->
+  Plt;
+table_insert(Plt, Obj) ->
+  insert_one(Plt, Obj).
+
+%%% TODO: Hack to preserve the interface.
+insert_one(Plt, {Key, Ret, Arg}) -> 
+  dict:store(Key, {Ret, Arg}, Plt);
+insert_one(Plt, {Key, Val}) -> 
+  dict:store(Key, Val, Plt).
+
+table_lookup(Plt, Obj) ->
+  case dict:find(Obj, Plt) of
+    error -> none;
+    {ok, Val} -> {value, Val}
+  end.
+
+%% TODO: Hack to preserve the interface
+table_lookup_module(Plt, Mod) ->
+  List = dict:fold(fun(Key, Val, Acc) ->
+		       case Key of
+			 {Mod, _F, _A} -> [{Key, element(1, Val),
+					    element(2, Val)}|Acc];
+			 _ -> Acc
+		       end
+		   end, [], Plt),
+  case List =:= [] of
+    true -> none;
+    false -> {value, List}
+  end.
+
+table_contains_module(Plt, Mod) ->
+  dict:fold(fun({M, _F, _A}, _Val, _Acc) when M =:= Mod -> true;
+	       (_, _, Acc) -> Acc
+	    end, false, Plt).
+
+table_merge([H|T]) ->
+  table_merge(T, H).
+
+table_merge([], Acc) ->
+  Acc;
+table_merge([Plt|Left], Acc) ->
+  NewAcc = dict:merge(fun(_Key, Val, Val) -> Val end, Plt, Acc),
+  table_merge(Left, NewAcc).
+
+-endif.
+
+-ifdef(USE_GBTREE).
+table_new() ->
+  gb_trees:empty().
+
+table_to_list(Plt) ->
+  gb_trees:to_list(Plt).
+
+table_from_list(List) ->
+  gb_trees:from_orddict(orddict:from_list(List)).
+
+table_delete(_Plt) ->
+  %% For symmetry with the imperative versions.
+  ok.
+
+table_delete_module(Plt, Mod) ->
+  DelList = table_fold(fun(Key, _Val, Acc) ->
+			   case Key of
+			     {Mod, _, _} -> [Key|Acc];
+			     _ -> Acc
+			   end
+		       end, [], Plt),
+  table_delete_list_unsafe(Plt, DelList).
+
+table_fold(Fun, Acc, Tree) ->
+  table_fold_1(Fun, Acc, gb_trees:iterator(Tree)).
+
+table_fold_1(Fun, Acc, Iter) when is_function(Fun) ->
+  case gb_trees:next(Iter) of
+    none -> Acc;
+    {Key, Val, NewIter} -> table_fold_1(Fun, Fun(Key, Val, Acc), NewIter)
+  end.
+
+
+table_delete_list(Plt, [H|T]) ->
+  table_delete_list(gb_trees:delete_any(H, Plt), T);
+table_delete_list(Plt, []) ->
+  Plt.
+
+table_delete_list_unsafe(Plt, [H|T]) ->
+  table_delete_list_unsafe(gb_trees:delete(H, Plt), T);
+table_delete_list_unsafe(Plt, []) ->
+  Plt.
+
+table_copy(From, _To) ->
+  %% For symmetry with the imperative versions.
+  From.
+
+table_insert(Plt, [H|T]) ->
+  table_insert(insert_one(Plt, H), T);
+table_insert(Plt, []) ->
+  Plt;
+table_insert(Plt, Obj) ->
+  insert_one(Plt, Obj).
+
+%%% TODO: Hack to preserve the interface.
+insert_one(Plt, {Key, Ret, Arg}) -> 
+  gb_trees:enter(Key, {Ret, Arg}, Plt);
+insert_one(Plt, {Key, Val}) ->
+  gb_trees:enter(Key, Val, Plt).
+
+table_lookup(Plt, Obj) ->
+  case gb_trees:lookup(Obj, Plt) of
+    none -> none;
+    {value, Val} -> {value, Val}
+  end.
+
+
+%% TODO: Hack to preserve the interface
+table_lookup_module(Plt, Mod) ->
+  List = table_fold(fun(Key, Val, Acc) ->
+			case Key of
+			  {Mod, _, _} -> [{Key, element(1, Val),
+					   element(2, Val)}|Acc];
+			  _ -> Acc
+			end
+		    end, [], Plt),
+  case List =:= [] of
+    true -> none;
+    false -> {value, List}
+  end.
+
+table_contains_module(Plt, Mod) ->
+  table_fold(fun({M, _F, _A}, _Val, _Acc) when M =:= Mod -> true;
+		(_, _, Acc) -> Acc
+	     end, false, Plt).
+
+table_merge([H|T]) ->
+  table_merge(T, H).
+
+table_merge([], Acc) ->
+  Acc;
+table_merge([Plt|Left], Acc) ->
+  Fun = fun(Key, Val, AccTree) ->
+	    case table_lookup(AccTree, Key) of
+	      none -> gb_trees:insert(Key, Val, AccTree);
+	      {value, Val} -> AccTree
+	    end
+	end,
+  NewAcc = table_fold(Fun, Acc, Plt),
+  table_merge(Left, NewAcc).
+
+-endif.
 
 %%---------------------------------------------------------------------------
 %% Debug utilities.
 
 pp_non_returning() ->
   PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
-  Plt = from_file(foo, PltFile),
-  List = ets:tab2list(Plt),
+  Plt = from_file(PltFile),
+  List = table_to_list(Plt#dialyzer_plt.info),
   Unit = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
 						erl_types:t_is_unit(Range)],
   None = [{MFA, erl_types:t_fun(Dom, Range)} || {MFA, Range, Dom} <- List,
@@ -384,22 +567,22 @@ pp_non_returning() ->
   io:format("=========================================\n\n"),
   [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
    || {{M,F,A}, Type} <- lists:sort(Unit)],
-  io:format("\n\n=========================================\n"),
+  io:format("\n\n"),
+  io:format("=========================================\n"),
   io:format("=                Errors                 =\n"),
   io:format("=========================================\n\n"),
 
   [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
    || {{M,F,A}, Type} <- lists:sort(None)],
-  ets:delete(Plt),
+  delete(Plt),
   ok.
 
 pp_mod(Mod) when is_atom(Mod) ->
   PltFile = filename:join([code:lib_dir(dialyzer), "plt", "dialyzer_init_plt"]),
-  Plt = from_file(foo, PltFile),
-  List = ets:match_object(Plt, {{Mod, '_', '_'}, '_', '_'}),
+  Plt = from_file(PltFile),
+  {value, List} = lookup_module(Plt, Mod),
   [io:format("~w:~w/~p :: ~s\n", 
 	     [M, F, A, erl_types:t_to_string(erl_types:t_fun(Args, Ret))])
-   || {{M,F,A}, Ret, Args} <- lists:sort(List)],
-  ets:delete(Plt),
+   || {{M,F,A}, {Ret, Args}} <- lists:sort(List)],
+  delete(Plt),
   ok.
-  

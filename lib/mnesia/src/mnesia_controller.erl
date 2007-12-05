@@ -543,9 +543,8 @@ call(Msg) ->
                 {'EXIT', Pid, _Reason} ->
                     {error, {node_not_running, node()}}
             after 0 ->
-                    ignore
-            end,
-	    Res
+                    Res
+            end
     end.
 
 remote_call(Node, Func, Args) ->
@@ -1417,7 +1416,7 @@ node_has_tabs([Tab | Tabs], Node, State) when Node /= node() ->
 	    {'EXIT', R} ->  %% Tab was just deleted?
 		case ?catch_val({Tab, cstruct}) of
 		    {'EXIT', _} -> State; % yes
-		    _ ->  erlang:fault(R) 
+		    _ ->  erlang:error(R) 
 		end
 	end,
     node_has_tabs(Tabs, Node, State2);

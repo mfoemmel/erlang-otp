@@ -93,7 +93,7 @@ apply(Fun, Args)
   when is_function(Fun), is_list(Args) ->
     apply_1(Fun, Args, []);
 apply(A, B) ->
-    erlang:fault(badarg, [A, B]).
+    erlang:error(badarg, [A, B]).
 
 apply(M, F, Args) when is_atom(M), is_atom(F), is_list(Args) ->
     apply_1({M, F}, Args, []);
@@ -104,13 +104,13 @@ apply(Fun, Args, Options)
   when is_function(Fun), is_list(Args), is_list(Options) ->
     apply_1(Fun, Args, Options);
 apply(A, B, C) ->
-    erlang:fault(badarg, [A, B, C]).
+    erlang:error(badarg, [A, B, C]).
 
 apply(Module, Function, Args, Options) 
   when is_atom(Module), is_atom(Function), is_list(Args), is_list(Options) ->
     apply_1({Module, Function}, Args, Options);
 apply(A, B, C, D) ->
-    erlang:fault(badarg, [A, B, C, D]).
+    erlang:error(badarg, [A, B, C, D]).
 
 
 apply_1(Function, Args, Options) ->        
@@ -128,7 +128,7 @@ apply_1(Function, Args, Options) ->
 	[continue] ->
 	    apply_continue(Function, Args, Procs_1, Options_1);
 	_ ->
-	    erlang:fault(badarg, [Function, Args, Options])
+	    erlang:error(badarg, [Function, Args, Options])
     end.
 
 
@@ -281,7 +281,7 @@ trace(verbose, Filename) ->
 trace(Option, Value) when is_atom(Option) ->
     trace([{Option, Value}]);
 trace(Option, Value) ->
-    erlang:fault(badarg, [Option, Value]).
+    erlang:error(badarg, [Option, Value]).
 
 trace(stop) ->
     %% This shortcut is present to minimize the number of undesired
@@ -316,21 +316,21 @@ trace(Options) when is_list(Options) ->
 			       {[], []} ->
 				   {file, ?TRACE_FILE};
 			       _ ->
-				   erlang:fault(badarg, [Options])
+				   erlang:error(badarg, [Options])
 			   end,
 	    V = case Verbose of
 		       [] -> normal;
 		       [verbose] -> verbose;
 		       [{verbose, true}] -> verbose;
 		       [{verbose, false}] -> normal;
-		       _ -> erlang:fault(badarg, [Options])
+		       _ -> erlang:error(badarg, [Options])
 		   end,
 	    CT = case CpuTime of
 		     [] -> wallclock;
 		     [cpu_time] -> cpu_time;
 		     [{cpu_time, true}] -> cpu_time;
 		     [{cpu_time, false}] -> wallclock;
-		     _ -> erlang:fault(badarg, [Options])
+		     _ -> erlang:error(badarg, [Options])
 		 end,
 	    call(#trace_start{procs = case Procs of
 					  [] ->
@@ -340,16 +340,16 @@ trace(Options) when is_list(Options) ->
 					  [{procs, P}] ->
 					      [P];
 					  _ ->
-					      erlang:fault(badarg, [Options])
+					      erlang:error(badarg, [Options])
 				      end,
 			      mode = {V, CT},
 			      type = Type,
 			      dest = Dest});
 	_ ->
-	    erlang:fault(badarg, [Options])
+	    erlang:error(badarg, [Options])
     end;
 trace(Options) ->
-    erlang:fault(badarg, [Options]).
+    erlang:error(badarg, [Options]).
 
 
 
@@ -359,7 +359,7 @@ profile() ->
 profile(Option, Value) when is_atom(Option) ->
     profile([{Option, Value}]);
 profile(Option, Value) ->
-    erlang:fault(badarg, [Option, Value]).
+    erlang:error(badarg, [Option, Value]).
 
 profile(Option) when is_atom(Option) ->
     profile([Option]);
@@ -379,13 +379,13 @@ profile(Options) when is_list(Options) ->
 		    {[{dump, []}], [append]} ->
 			{?DUMP_FILE, [append]};
 		    {[{dump, D}], [append]} when is_pid(D) ->
-			erlang:fault(badarg, [Options]);
+			erlang:error(badarg, [Options]);
 		    {[{dump, D}], [append]} ->
 			{D, [append]};
 		    {[{dump, D}], []} ->
 			{D, []};
 		    _ ->
-			erlang:fault(badarg, [Options])
+			erlang:error(badarg, [Options])
 		end,
 	    case {Start, File} of
 		{[start], []} ->
@@ -404,22 +404,22 @@ profile(Options) when is_list(Options) ->
 			    [{file, F}] ->
 				F;
 			    _ ->
-				erlang:fault(badarg, [Options])
+				erlang:error(badarg, [Options])
 			end,
 		    call(#profile{src = Src,
 				  group_leader = group_leader(),
 				  dump = Target,
 				  flags = Flags});
 		_ ->
-		    erlang:fault(badarg, [Options])
+		    erlang:error(badarg, [Options])
 	    end;
 	{[[], [stop], [], [], []], []} ->
 	    call(#profile_stop{});
 	_ ->
-	    erlang:fault(badarg, [Options])
+	    erlang:error(badarg, [Options])
     end;
 profile(Options) ->
-    erlang:fault(badarg, [Options]).
+    erlang:error(badarg, [Options]).
 
 
 
@@ -429,7 +429,7 @@ analyse() ->
 analyse(Option, Value) when is_atom(Option) ->
     analyse([{Option, Value}]);
 analyse(Option, Value) ->
-    erlang:fault(badarg, [Option, Value]).
+    erlang:error(badarg, [Option, Value]).
 
 analyse(Option) when is_atom(Option) ->
     analyse([Option]);
@@ -452,13 +452,13 @@ analyse(Options) when is_list(Options) ->
 		    {[{dest, []}], [append]} ->
 			{?ANALYSIS_FILE, [append]};
 		    {[{dest, F}], [append]} when is_pid(F) ->
-			erlang:fault(badarg, [Options]);
+			erlang:error(badarg, [Options]);
 		    {[{dest, F}], [append]} ->
 			{F, [append]};
 		    {[{dest, F}], []} ->
 			{F, []};
 		    _ ->
-			erlang:fault(badarg, [Options])
+			erlang:error(badarg, [Options])
 		end,
 	    call(#analyse{group_leader = group_leader(),
 			  dest = Target,
@@ -469,7 +469,7 @@ analyse(Options) when is_list(Options) ->
 				     [{cols, C}] when is_integer(C), C > 0 ->
 					 C;
 				     _ ->
-					 erlang:fault(badarg, [Options])
+					 erlang:error(badarg, [Options])
 				 end,
 			  callers = case {Callers, NoCallers} of
 					{[], []} -> 
@@ -483,7 +483,7 @@ analyse(Options) when is_list(Options) ->
 					{[], [no_callers]} ->
 					    false;
 					_ ->
-					    erlang:fault(badarg, [Options])
+					    erlang:error(badarg, [Options])
 				    end,
 			  sort = case Sort of
 				     [] -> 
@@ -493,7 +493,7 @@ analyse(Options) when is_list(Options) ->
 				     [{sort, own}] ->
 					 own;
 				     _ ->
-					 erlang:fault(badarg, [Options])
+					 erlang:error(badarg, [Options])
 				 end,
 			  totals = case Totals of
 				       [] -> 
@@ -505,7 +505,7 @@ analyse(Options) when is_list(Options) ->
 				       [{totals, false}] ->
 					   false;
 				       _ ->
-					   erlang:fault(badarg, [Options])
+					   erlang:error(badarg, [Options])
 				   end,
 			  details = case {Details, NoDetails} of
 					{[], []} ->
@@ -519,13 +519,13 @@ analyse(Options) when is_list(Options) ->
 					{[], [no_details]} ->
 					    false;
 				       _ ->
-					   erlang:fault(badarg, [Options])
+					   erlang:error(badarg, [Options])
 				    end});
   	_ ->
-	    erlang:fault(badarg, [Options])
+	    erlang:error(badarg, [Options])
     end;
 analyse(Options) ->
-    erlang:fault(badarg, [Options]).
+    erlang:error(badarg, [Options]).
 
 
 
@@ -546,7 +546,7 @@ save_profile() ->
 save_profile(Option, Value) when is_atom(Option) ->
     save_profile([{Option, Value}]);
 save_profile(Option, Value) ->
-    erlang:fault(badarg, [Option, Value]).
+    erlang:error(badarg, [Option, Value]).
 
 save_profile(Option) when is_atom(Option) ->
     save_profile([Option]);
@@ -559,13 +559,13 @@ save_profile(Options) when is_list(Options) ->
 					  [{file, F}] ->
 					      F;
 					  _ ->
-					      erlang:fault(badarg, [Options])
+					      erlang:error(badarg, [Options])
 				      end});
   	_ ->
-	    erlang:fault(badarg, [Options])
+	    erlang:error(badarg, [Options])
     end;
 save_profile(Options) ->
-    erlang:fault(badarg, [Options]).
+    erlang:error(badarg, [Options]).
 
 
 
@@ -575,7 +575,7 @@ load_profile() ->
 load_profile(Option, Value) when is_atom(Option) ->
     load_profile([{Option, Value}]);
 load_profile(Option, Value) ->
-    erlang:fault(badarg, [Option, Value]).
+    erlang:error(badarg, [Option, Value]).
 
 load_profile(Option) when is_atom(Option) ->
     load_profile([Option]);
@@ -588,13 +588,13 @@ load_profile(Options) when is_list(Options) ->
 					  [{file, F}] ->
 					      F;
 					  _ ->
-					      erlang:fault(badarg, [Options])
+					      erlang:error(badarg, [Options])
 				      end});
   	_ ->
-	    erlang:fault(badarg, [Options])
+	    erlang:error(badarg, [Options])
     end;
 load_profile(Options) ->
-    erlang:fault(badarg, [Options]).
+    erlang:error(badarg, [Options]).
 
 
 

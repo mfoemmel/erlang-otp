@@ -1,25 +1,28 @@
 <?xml version="1.0" encoding="latin1" ?>
 <!DOCTYPE chapter SYSTEM "chapter.dtd">
-<!-- 
- ``The contents of this file are subject to the Erlang Public License,
- Version 1.1, (the "License"); you may not use this file except in
- compliance with the License. You should have received a copy of the
- Erlang Public License along with this software. If not, it can be
- retrieved via the world wide web at http://www.erlang.org/.
- 
- Software distributed under the License is distributed on an "AS IS"
- basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
- the License for the specific language governing rights and limitations
- under the License.
- 
- The Initial Developer of the Original Code is Ericsson AB.
- Portions created by Ericsson are Copyright 2007, Ericsson AB.
- All Rights Reserved.''
- 
-     $Id$
--->
+
 <chapter>
   <header>
+    <copyright>
+      <year>1997</year>
+      <year>2007</year>
+      <holder>Ericsson AB, All Rights Reserved</holder>
+    </copyright>
+    <legalnotice>
+  The contents of this file are subject to the Erlang Public License,
+  Version 1.1, (the "License"); you may not use this file except in
+  compliance with the License. You should have received a copy of the
+  Erlang Public License along with this software. If not, it can be
+  retrieved online at http://www.erlang.org/.
+
+  Software distributed under the License is distributed on an "AS IS"
+  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
+  the License for the specific language governing rights and limitations
+  under the License.
+
+  The Initial Developer of the Original Code is Ericsson AB.
+    </legalnotice>
+
     <title>Header Tags</title>
     <prepared></prepared>
     <docno></docno>
@@ -35,6 +38,8 @@
   <p>An full header looks like:</p>
   <pre>
 &lt;header>
+  &lt;copyright>...&lt;/copyright>
+  &lt;legalnotice>...&lt;/legalnotice>
   &lt;title>...&lt;/title>
   &lt;prepared>...&lt;/prepared>
   &lt;responsible>...&lt;/responsible>
@@ -52,6 +57,36 @@
     <title>&lt;header&gt;</title>
 
     <p>Top level tag for the header part.</p>
+  </section>
+
+  <section>
+    <marker id="copyrightTAG"></marker>
+    <title>&lt;copyright&gt;</title>
+
+    <p>The <c>copyright</c> element holds information about date(s) and holder(s) of
+    a document copyright. The <c>copyright</c> element is optional.
+    The <c>copyright</c> element has an inner structure containing one or 
+    more 
+    <c>year</c> elements followed by zero of more <c>holder</c> elements.<br/> 
+    See example below:
+    </p>
+    <code><![CDATA[
+    <copyright>
+      <year>1997</year>
+      <year>2007</year>
+      <holder>Ericsson AB</holder>
+    </copyright>
+    ]]></code>
+  </section>
+
+  <section>
+    <marker id="legalnoticeTAG"></marker>
+    <title>&lt;legalnotice&gt;</title>
+
+    <p>The <c>legalnotice</c> element is used to express copyright, trademark,
+    license, and other legal formalities of a document. The element contains
+    only PCDATA in the same manner as <c>code</c> and <c>pre</c>.
+    </p>
   </section>
 
   <section>
@@ -146,3 +181,4 @@
       ignored by DocBuilder.</p>
   </section>
 </chapter>
+

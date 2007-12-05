@@ -35,10 +35,10 @@
 %%-export([analyze/2, analyze/5, annotate/1, annotate/2, annotate/5]).
 
 -import(erl_types, [t_any/0, t_atom/0, t_is_atom/1, t_binary/0, t_cons/2,
-		    t_cons_hd/1, t_cons_tl/1, t_pos_improper_list/0,
+		    t_cons_hd/1, t_cons_tl/1, t_maybe_improper_list/0,
 		    t_components/1, t_float/0, t_fun/0, t_fun/2,
 		    t_inf/2, t_integer/0, t_atom_vals/1, t_is_cons/1,
-		    t_is_pos_improper_list/1, t_is_list/1, t_is_tuple/1,
+		    t_is_maybe_improper_list/1, t_is_list/1, t_is_tuple/1,
 		    t_is_none/1, t_is_any/1, t_limit/2,
 		    t_list_elements/1, t_number/0, t_pid/0, t_port/0,
 		    t_product/1, t_ref/0, t_tuple/0, t_tuple/1,
@@ -159,7 +159,7 @@ annotate(T, Limit, Esc, Dep, Par) ->
     {cerl_trees:map(F, T), Type, Vars}.
 
 append_ann(Tag, Val, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
+    if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
 	    append_ann(Tag, Val, Xs);
        true ->
 	    [X | append_ann(Tag, Val, Xs)]
@@ -168,7 +168,7 @@ append_ann(Tag, Val, []) ->
     [{Tag, Val}].
 
 delete_ann(Tag, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
+    if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
 	    delete_ann(Tag, Xs);
        true ->
 	    [X | delete_ann(Tag, Xs)]
@@ -573,7 +573,7 @@ bind_pat_vars(P, X, Vars) ->
 						  Vars),
 			    bind_pat_vars(cons_tl(P), X, Vars1);
 			false ->
-			    case t_is_pos_improper_list(X) of
+			    case t_is_maybe_improper_list(X) of
 				true ->
 				    %% If X is "cons cell of X1", both
 				    %% the head and tail have type X1.
@@ -897,7 +897,7 @@ guard_filters(T, Env, Vars) ->
 			{erlang, is_integer, 1} ->
 			    filter(As, t_integer(), Env);
 			{erlang, is_list, 1} ->
-			    filter(As, t_pos_improper_list(), Env);
+			    filter(As, t_maybe_improper_list(), Env);
 			{erlang, is_number, 1} ->
 			    filter(As, t_number(), Env);
 			{erlang, is_pid, 1} ->

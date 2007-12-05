@@ -25,6 +25,7 @@
 -define(LINEMAX, 30).
 -define(DEF_HISTORY, 20).
 -define(DEF_RESULTS, 20).
+-define(DEF_CATCH_EXCEPTION, false).
 
 -define(RECORDS, shell_records).
 
@@ -111,19 +112,19 @@ start_restricted(RShMod) when is_atom(RShMod) ->
     case code:ensure_loaded(RShMod) of
 	{module,RShMod} -> 
 	    application:set_env(stdlib, restricted_shell, RShMod),
-	    exit('restricted shell starts now');
+            exit(restricted_shell_started);
 	{error,What} ->
 	    error_logger:error_report(
 	      lists:flatten(
-		io_lib:format(
-		  "Restricted shell module ~w not found: ~p~n", 
+		io_lib:fwrite(
+		  <<"Restricted shell module ~w not found: ~p\n">>, 
 		  [RShMod,What]))),
 	    {error,What}
     end.
 
 stop_restricted() ->
     application:unset_env(stdlib, restricted_shell),
-    exit('restricted shell stopped').
+    exit(restricted_shell_stopped).
 
 default_packages() ->
     [].
@@ -187,7 +188,7 @@ server(StartSync) ->
     RShErr = 
 	case application:get_env(stdlib, restricted_shell) of
 	    {ok,RShMod} ->
-		io:fwrite("Restricted ", []),
+		io:fwrite(<<"Restricted ">>, []),
 		case code:ensure_loaded(RShMod) of
 		    {module,RShMod} -> 
 			undefined;
@@ -200,19 +201,22 @@ server(StartSync) ->
 
     case get(no_control_g) of
 	true ->
-	    io:fwrite("Eshell V~s~n", [erlang:system_info(version)]);
+	    io:fwrite(<<"Eshell V~s\n">>, [erlang:system_info(version)]);
 	_undefined_or_false ->
-	    io:fwrite("Eshell V~s  (abort with ^G)~n",
+	    io:fwrite(<<"Eshell V~s  (abort with ^G)\n">>,
 		      [erlang:system_info(version)])
     end,
     erase(no_control_g),
 
     case RShErr of
-	undefined       -> ok;
-	{RShMod2,What2} -> io:fwrite("Warning! Restricted shell module ~w not found: ~p.~nOnly the commands q() and init:stop() will be allowed!~n", 
-				     [RShMod2,What2]),
-			   application:set_env(stdlib, restricted_shell, 
-					       ?MODULE)
+	undefined -> 
+            ok;
+	{RShMod2,What2} -> 
+            io:fwrite(
+              <<"Warning! Restricted shell module ~w not found: ~p.\n"
+                "Only the commands q() and init:stop() will be allowed!\n">>,
+                      [RShMod2,What2]),
+            application:set_env(stdlib, restricted_shell, ?MODULE)
     end,
 
     {History,Results} = check_and_get_history_and_results(),
@@ -241,11 +245,12 @@ server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
                     end,
                     server_loop(N, Eval, Bs, RT, Ds, History, Results);
                 {error,E} ->
-                    io:fwrite("** ~s **\n", [E]),
+                    fwrite_severity(benign, <<"~s">>, [E]),
                     server_loop(N0, Eval0, Bs0, RT, Ds0, History0, Results0)
             end;
 	{error,{Line,Mod,What},_EndLine} ->
-	    io:fwrite("** ~w: ~s **\n", [Line,Mod:format_error(What)]),
+            fwrite_severity(benign, <<"~w: ~s">>, 
+                            [Line, Mod:format_error(What)]),
 	    server_loop(N0, Eval0, Bs0, RT, Ds0, History0, Results0);
 	{error,terminated} ->			%Io process terminated
 	    exit(Eval0, kill),
@@ -255,10 +260,10 @@ server_loop(N0, Eval_0, Bs0, RT, Ds0, History0, Results0) ->
 	    {_,Eval,_,_} = shell_rep(Eval0, Bs0, RT, Ds0),
 	    server_loop(N0, Eval, Bs0, RT, Ds0, History0, Results0);
 	{eof,_EndLine} ->
-	    io:fwrite("** Terminating erlang (~w) **\n", [node()]),
+            fwrite_severity(fatal, <<"Terminating erlang (~w)">>, [node()]),
 	    halt();
 	eof ->
-	    io:fwrite("** Terminating erlang (~w) **\n", [node()]),
+            fwrite_severity(fatal, <<"Terminating erlang (~w)">>, [node()]),
 	    halt()
     end.
 
@@ -271,15 +276,18 @@ get_command1(Pid, Eval, Bs, RT, Ds) ->
     receive
 	{'EXIT', Pid, Res} ->
 	    {Res, Eval};
+	{'EXIT', Eval, {Reason,Stacktrace}} ->
+            report_exception(error, {Reason,Stacktrace}, RT),
+	    get_command1(Pid, start_eval(Bs, RT, Ds), Bs, RT, Ds);
 	{'EXIT', Eval, Reason} ->
-	    io:fwrite("** exited: ~P **\n", [Reason, ?LINEMAX]),
+            report_exception(error, {Reason,[]}, RT),
 	    get_command1(Pid, start_eval(Bs, RT, Ds), Bs, RT, Ds)
     end.
 
 prompt(N) ->
     case is_alive() of
-	true -> {format,"(~s)~w> ",[node(),N]};
-	false -> {format,"~w> ",[N]}
+	true -> {format,<<"(~s)~w> ">>,[node(),N]};
+	false -> {format,<<"~w> ">>,[N]}
     end.
 
 %% expand_hist(Expressions, CommandNumber)
@@ -316,8 +324,9 @@ expand_expr({'if',L,Cs}, C) ->
     {'if',L,expand_cs(Cs, C)};
 expand_expr({'case',L,E,Cs}, C) ->
     {'case',L,expand_expr(E, C),expand_cs(Cs, C)};
-expand_expr({'try',L,Es,Scs,Ccs}, C) ->
-    {'try',L,expand_exprs(Es, C),expand_cs(Scs, C),expand_cs(Ccs, C)};
+expand_expr({'try',L,Es,Scs,Ccs,As}, C) ->
+    {'try',L,expand_exprs(Es, C),expand_cs(Scs, C),
+     expand_cs(Ccs, C),expand_exprs(As, C)};
 expand_expr({'receive',L,Cs}, C) ->
     {'receive',L,expand_cs(Cs, C)};
 expand_expr({'receive',L,Cs,To,ToEs}, C) ->
@@ -375,7 +384,8 @@ expand_quals([E|Qs], C) ->
 expand_quals([], _C) -> [].
 
 no_command(N) ->
-    throw({error,io_lib:fwrite("~s: command not found", [erl_pp:expr(N)])}).
+    throw({error,
+           io_lib:fwrite(<<"~s: command not found">>, [erl_pp:expr(N)])}).
 
 %% add_cmd(Number, Expressions, Value)
 %% get_cmd(Number, CurrentCommand)
@@ -438,7 +448,8 @@ shell_rep(Ev, Bs0, RT, Ds0) ->
 	{shell_rep,Ev,{value,V,Bs,Ds}} ->
 	    {V,Ev,Bs,Ds};
         {shell_rep,Ev,{command_error,{Line,M,Error}}} -> 
-	    io:fwrite("** ~w: ~s **\n", [Line,M:format_error(Error)]),
+            fwrite_severity(benign, <<"~w: ~s">>, 
+                            [Line, M:format_error(Error)]),
             {{'EXIT',Error},Ev,Bs0,Ds0};
 	{shell_req,Ev,get_cmd} ->
 	    Ev ! {shell_rep,self(),get()},
@@ -449,18 +460,50 @@ shell_rep(Ev, Bs0, RT, Ds0) ->
 	{shell_req,Ev,{update_dict,Ds}} ->	% Update dictionary
 	    Ev ! {shell_rep,self(),ok},
 	    shell_rep(Ev, Bs0, RT, Ds);
-	{'EXIT',Ev,Reason} ->			% It has exited unnaturally
-	    io:fwrite("** exited: ~P **\n", [Reason,?LINEMAX]),
+        {ev_exit,{Ev,Class,Reason0}} ->         % It has exited unnaturally
+            receive {'EXIT',Ev,normal} -> ok end,
+	    report_exception(Class, Reason0, RT),
+            Reason = nocatch(Class, Reason0),
 	    {{'EXIT',Reason},start_eval(Bs0, RT, Ds0), Bs0, Ds0};
+        {ev_caught,{Ev,Class,Reason0}} ->       % catch_exception is in effect
+	    report_exception(Class, benign, Reason0, RT),
+            Reason = nocatch(Class, Reason0),
+            {{'EXIT',Reason},Ev,Bs0,Ds0};
 	{'EXIT',_Id,interrupt} ->		% Someone interrupted us
 	    exit(Ev, kill),
 	    shell_rep(Ev, Bs0, RT, Ds0);
+        {'EXIT',Ev,{Reason,Stacktrace}} ->
+            report_exception(exit, {Reason,Stacktrace}, RT),
+	    {{'EXIT',Reason},start_eval(Bs0, RT, Ds0), Bs0, Ds0};
+        {'EXIT',Ev,Reason} ->
+            report_exception(exit, {Reason,[]}, RT),
+	    {{'EXIT',Reason},start_eval(Bs0, RT, Ds0), Bs0, Ds0};
 	{'EXIT',_Id,R} ->
 	    exit(Ev, R),
 	    exit(R);
 	_Other ->				% Ignore everything else
 	    shell_rep(Ev, Bs0, RT, Ds0)
     end.
+
+nocatch(throw, {Term,Stack}) ->
+    {{nocatch,Term},Stack};
+nocatch(error, Reason) ->
+    Reason;
+nocatch(exit, Reason) ->
+    Reason.
+
+report_exception(Class, Reason, RT) ->
+    report_exception(Class, serious, Reason, RT).
+
+report_exception(Class, Severity, {Reason,Stacktrace}, RT) ->
+    Tag = severity_tag(Severity),
+    I = iolist_size(Tag) + 1,
+    PF = fun(Term, I1) -> pp(Term, I1, RT) end,
+    SF = fun(M, _F, _A) -> (M =:= erl_eval) or (M =:= ?MODULE) end,
+    io:requests([{put_chars, Tag},
+                 {put_chars, 
+                  lib:format_exception(I, Class, Reason, Stacktrace, SF, PF)},
+                 nl]).
 
 start_eval(Bs, RT, Ds) ->
     Self = self(),
@@ -492,9 +535,8 @@ eval_loop(Shell, Bs0, RT) ->
             Ef = {value, 
                   fun(MForFun, As) -> apply_fun(MForFun, As, Shell) end},
             Lf = local_func_handler(Shell, RT, Ef),
-            {R,Bs2} = exprs(Es, Bs0, RT, Lf, Ef),
-	    Shell ! {shell_rep,self(),R},
-	    eval_loop(Shell, Bs2, RT)
+            Bs = eval_exprs(Es, Shell, Bs0, RT, Lf, Ef),
+	    eval_loop(Shell, Bs, RT)
     end.
 
 restricted_eval_loop(Shell, Bs0, RT, RShMod) ->
@@ -502,9 +544,40 @@ restricted_eval_loop(Shell, Bs0, RT, RShMod) ->
 	{shell_cmd,Shell,{eval,Es}} ->
             {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
             put(restricted_expr_state, []),
-            {R,Bs2} = exprs(Es, Bs0, RT, {eval,LFH}, {value,NLFH}),
-	    Shell ! {shell_rep,self(),R},
-	    restricted_eval_loop(Shell, Bs2, RT, RShMod)
+            Bs = eval_exprs(Es, Shell, Bs0, RT, {eval,LFH}, {value,NLFH}),
+	    restricted_eval_loop(Shell, Bs, RT, RShMod)
+    end.
+
+eval_exprs(Es, Shell, Bs0, RT, Lf, Ef) ->
+    try 
+        {R,Bs2} = exprs(Es, Bs0, RT, Lf, Ef),
+        Shell ! {shell_rep,self(),R},
+        Bs2
+    catch 
+        exit:normal ->
+            exit(normal);
+        Class:Reason ->
+            M = {self(),Class,{Reason,erlang:get_stacktrace()}},
+            case do_catch(Class, Reason) of
+                true ->
+                    Shell ! {ev_caught,M},
+                    Bs0;
+                false ->
+                    Shell ! {ev_exit,M},
+                    exit(normal)
+            end
+    end.
+
+do_catch(exit, restricted_shell_stopped) ->
+    false;
+do_catch(exit, restricted_shell_started) ->
+    false;
+do_catch(_Class, _Reason) ->
+    case application:get_env(stdlib, shell_catch_exception) of
+        {ok, true} ->
+            true;
+        _ ->
+            false
     end.
 
 exprs(Es, Bs0, RT, Lf, Ef) ->
@@ -521,15 +594,13 @@ exprs([E0|Es], Bs1, RT, Lf, Ef, Bs0) ->
                                           not is_expand_variable(X)]),
             if
                 Es =:= [] ->
-                    VS = io_lib_pretty:print(V0, ?LINEMAX, 
-                                             record_print_fun(RT)),
-                    io:put_chars(VS),
-                    io:nl(),
-                    %% Don't send the result back if it is known to be
-                    %% thrown away anyway.
-                    V = case get_history_and_results() of
-                            {_, 0} -> ignored;
-                            _ -> V0
+                    VS = pp(V0, 1, RT),
+                    io:requests([{put_chars, VS}, nl]),
+                    %% Don't send the result back if it will be
+                    %% discarded anyway.
+                    V = case result_will_be_saved() of
+                            true -> V0;
+                            false -> ignored
                         end,
                     {{value,V,Bs,get()},Bs};
                 true -> 
@@ -543,6 +614,12 @@ is_expand_variable(V) ->
     case catch atom_to_list(V) of
         "rec" ++ _Integer -> true;
         _ -> false
+    end.
+
+result_will_be_saved() ->
+    case get_history_and_results() of
+        {_, 0} -> false;
+        _ -> true
     end.
 
 used_record_defs(E, RT) ->
@@ -595,6 +672,19 @@ used_records(T) when is_tuple(T) ->
 used_records(E) ->
     {expr, E}.
 
+fwrite_severity(Severity, S, As) ->
+    io:fwrite(<<"~s\n">>, [format_severity(Severity, S, As)]).
+
+format_severity(Severity, S, As) ->
+    add_severity(Severity, io_lib:fwrite(S, As)).
+
+add_severity(Severity, S) ->
+    [severity_tag(Severity), S].
+
+severity_tag(fatal)   -> <<"*** ">>;
+severity_tag(serious) -> <<"** ">>;
+severity_tag(benign)  -> <<"* ">>.
+
 restrict_handlers(RShMod, Shell, RT) ->
     { fun(F,As,Binds) -> 
 	      local_allowed(F, As, RShMod, Binds, Shell, RT) 
@@ -603,6 +693,12 @@ restrict_handlers(RShMod, Shell, RT) ->
 	      non_local_allowed(MF, As, RShMod, Shell) 
       end }.
 
+-define(BAD_RETURN(M, F, V),
+        try erlang:error(reason)
+        catch _:_ -> erlang:raise(exit, {restricted_shell_bad_return,V}, 
+                                  [{M,F,3} | erlang:get_stacktrace()])
+        end).
+
 local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
     {LFH,NLFH} = restrict_handlers(RShMod, Shell, RT),
     case not_restricted(F, As) of % Not restricted is the same as builtin. 
@@ -610,8 +706,7 @@ local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
 	                          % to the shell process. Those are never
 	                          % restricted.
 	true ->
-	    Res = local_func(F, As, Bs, Shell, RT, {eval,LFH}, {value,NLFH}),
-	    Res;
+	    local_func(F, As, Bs, Shell, RT, {eval,LFH}, {value,NLFH});
 	false ->
             {AsEv,Bs1} = expr_list(As, Bs, {eval,LFH}, {value,NLFH}),
 	    case RShMod:local_allowed(F, AsEv, {get(restricted_shell_state),
@@ -621,14 +716,13 @@ local_allowed(F, As, RShMod, Bs, Shell, RT) when is_atom(F) ->
 		    put(restricted_expr_state, RShExprSt),
 		    if not Result -> 
 			    shell_req(Shell, {update_dict,get()}),
-			    exit({disallowed,{F,AsEv}});
+			    exit({restricted_shell_disallowed,{F,AsEv}});
 		       true -> % This is never a builtin, 
                                % those are handled above.
 			    non_builtin_local_func(F,AsEv,Bs1)
 		    end;
 		Unexpected ->  % The user supplied non conforming module
-		    exit({bad_return_value,
-			  {RShMod,local_allowed},Unexpected})
+                    ?BAD_RETURN(RShMod, local_allowed, Unexpected)
 	    end
     end.
 
@@ -641,15 +735,14 @@ non_local_allowed(MForFun, As, RShMod, Shell) ->
             case Result of 
                 false -> 
 		    shell_req(Shell, {update_dict,get()}),
-		    exit({disallowed,{MForFun,As}});
+		    exit({restricted_shell_disallowed,{MForFun,As}});
                 {redirect, NewMForFun, NewAs} ->
                     apply_fun(NewMForFun, NewAs, Shell);
                 _ -> 
 		    apply_fun(MForFun, As, Shell)
 	    end;
-	Unexpected ->				% the user didn't read the manual
-	    exit({bad_return_value,
-		  {RShMod,non_local_allowed},Unexpected})
+	Unexpected ->  % The user supplied non conforming module
+            ?BAD_RETURN(RShMod, non_local_allowed, Unexpected)
     end.
 
 %% The commands implemented in shell should not be checked if allowed
@@ -676,6 +769,8 @@ not_restricted(use_all, [_]) ->
 not_restricted(history, [_]) ->
     true;
 not_restricted(results, [_]) ->
+    true;
+not_restricted(catch_exception, [_]) ->
     true;
 not_restricted(exit, []) ->
     true;
@@ -709,6 +804,8 @@ apply_fun({erlang,garbage_collect}, [], Shell) ->
     erlang:garbage_collect(Shell),
     catch erlang:garbage_collect(whereis(user)),
     erlang:garbage_collect();
+apply_fun({M,F}, As, _Shell) ->
+    apply(M, F, As);
 apply_fun(MForFun, As, _Shell) ->
     apply(MForFun, As).
 
@@ -778,7 +875,7 @@ local_func(f, [], _Bs, _Shell, _RT, _Lf, _Ef) ->
 local_func(f, [{var,_,Name}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,ok,erl_eval:del_binding(Name, Bs)};
 local_func(f, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
-    exit({function_clause,[{shell,f,1}]});
+    erlang:raise(error, function_clause, [{shell,f,1}]);
 local_func(rd, [{atom,_,RecName},RecDef0], Bs, _Shell, RT, _Lf, _Ef) ->
     RecDef = expand_value(RecDef0),
     RDs = lists:flatten(erl_pp:expr(RecDef)),
@@ -789,11 +886,11 @@ local_func(rd, [{atom,_,RecName},RecDef0], Bs, _Shell, RT, _Lf, _Ef) ->
             [RN] = add_records([AttrForm], Bs, RT),
             {value,RN,Bs};
         {error,{_Line,M,ErrDesc}} ->
-            ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
+            ErrStr = io_lib:fwrite(<<"~s">>, [M:format_error(ErrDesc)]),
             exit(lists:flatten(ErrStr))
     end;
 local_func(rd, [_,_], _Bs, _Shell, _RT, _Lf, _Ef) ->
-    exit({function_clause,[{shell,rd,2}]});
+    erlang:raise(error, function_clause, [{shell,rd,2}]);
 local_func(rf, [], Bs, _Shell, RT, _Lf, _Ef) ->
     true = ets:delete_all_objects(RT),
     {value,initiate_records(Bs, RT),Bs};
@@ -813,8 +910,10 @@ local_func(rl, [A], Bs0, _Shell, RT, Lf, Ef) ->
     {value,list_records(record_defs(RT, listify(Recs))),Bs};
 local_func(rp, [A], Bs0, _Shell, RT, Lf, Ef) ->
     {[V],Bs} = expr_list([A], Bs0, Lf, Ef),
-    io:put_chars(io_lib_pretty:print(V, record_print_fun(RT))),
-    io:nl(),
+    W = columns(),
+    io:requests([{put_chars, 
+                  io_lib_pretty:print(V, 1, W, -1, record_print_fun(RT))},
+                 nl]),
     {value,ok,Bs};
 local_func(rr, [A], Bs0, _Shell, RT, Lf, Ef) ->
     {[File],Bs} = expr_list([A], Bs0, Lf, Ef),
@@ -833,10 +932,10 @@ local_func(which, [{atom,_,M}], Bs, _Shell, _RT, _Lf, _Ef) ->
 	    {value,M,Bs}
     end;
 local_func(which, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
-    exit({function_clause,[{shell,which,1}]});
+    erlang:raise(error, function_clause, [{shell,which,1}]);
 local_func(import, [M], Bs, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(M) of
-	error -> exit({function_clause,[{shell,import,1}]});
+	error -> erlang:raise(error, function_clause, [{shell,import,1}]);
 	M1 ->
 	    Mod = packages:concat(M1),
 	    case packages:is_valid(Mod) of
@@ -850,7 +949,7 @@ local_func(import, [M], Bs, _Shell, _RT, _Lf, _Ef) ->
     end;
 local_func(import_all, [P], Bs0, _Shell, _RT, _Lf, _Ef) ->
     case erl_parse:package_segments(P) of
-	error -> exit({function_clause,[{shell,import_all,1}]});
+	error -> erlang:raise(error, function_clause, [{shell,import_all,1}]);
 	P1 ->
 	    Name = packages:concat(P1),
 	    case packages:is_valid(Name) of
@@ -869,11 +968,16 @@ local_func(use_all, [M], Bs, Shell, RT, Lf, Ef) ->
 local_func(history, [{integer,_,N}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,history(N),Bs};
 local_func(history, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
-    exit({function_clause,{shell,history,1}});
+    erlang:raise(error, function_clause, [{shell,history,1}]);
 local_func(results, [{integer,_,N}], Bs, _Shell, _RT, _Lf, _Ef) ->
     {value,results(N),Bs};
 local_func(results, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
-    exit({function_clause,[{shell,results,1}]});
+    erlang:raise(error, function_clause, [{shell,results,1}]);
+local_func(catch_exception, [{atom,_,Bool}], Bs, _Shell, _RT, _Lf, _Ef) 
+                             when Bool; not Bool ->
+    {value,catch_exception(Bool),Bs};
+local_func(catch_exception, [_Other], _Bs, _Shell, _RT, _Lf, _Ef) ->
+    erlang:raise(error, function_clause, [{shell,catch_exception,1}]);
 local_func(exit, [], _Bs, Shell, _RT, _Lf, _Ef) ->
     shell_req(Shell, exit),			%This terminates us
     exit(normal);
@@ -965,7 +1069,7 @@ add_records(RAs, Bs0, RT) ->
     case check_command([], Bs1) of
         {error,{_Line,M,ErrDesc}} ->
             %% A source file that has not been compiled.
-            ErrStr = io_lib:fwrite("~s", [M:format_error(ErrDesc)]),
+            ErrStr = io_lib:fwrite(<<"~s">>, [M:format_error(ErrDesc)]),
             exit(lists:flatten(ErrStr));
         ok ->
             true = ets:insert(RT, Recs),
@@ -1139,28 +1243,28 @@ shell_req(Shell, Req) ->
 
 list_commands([{{N,command},Es0}, {{N,result}, V} |Ds], RT) ->
     Es = prep_list_commands(Es0),
-    VS = io_lib_pretty:print(V, 4, 80, ?LINEMAX, record_print_fun(RT)),
-    Ns = io_lib:fwrite("~w: ", [N]),
+    VS = pp(V, 4, RT),
+    Ns = io_lib:fwrite(<<"~w: ">>, [N]),
     I = iolist_size(Ns),
     io:requests([{put_chars, Ns},
-                 {format,"~s~n",[erl_pp:exprs(Es, I, none)]},
-		 {format,"-> ",[]},
+                 {format,<<"~s\n">>,[erl_pp:exprs(Es, I, none)]},
+		 {format,<<"-> ">>,[]},
                  {put_chars, VS},
                  nl]),
     list_commands(Ds, RT);
 list_commands([{{N,command},Es0} |Ds], RT) ->
     Es = prep_list_commands(Es0),
-    Ns = io_lib:fwrite("~w: ", [N]),
+    Ns = io_lib:fwrite(<<"~w: ">>, [N]),
     I = iolist_size(Ns),
     io:requests([{put_chars, Ns},
-                 {format,"~s~n",[erl_pp:exprs(Es, I, none)]}]),
+                 {format,<<"~s\n">>,[erl_pp:exprs(Es, I, none)]}]),
     list_commands(Ds, RT);
 list_commands([_D|Ds], RT) ->
     list_commands(Ds, RT);
 list_commands([], _RT) -> ok.
 
 list_bindings([{{module,M},Val}|Bs], RT) ->
-    io:fwrite("~p is ~p~n", [M,Val]),
+    io:fwrite(<<"~p is ~p\n">>, [M,Val]),
     list_bindings(Bs, RT);
 list_bindings([{Name,Val}|Bs], RT) ->
     case erl_eval:fun_data(Val) of
@@ -1168,15 +1272,14 @@ list_bindings([{Name,Val}|Bs], RT) ->
             FCs = expand_value(FCs0), % looks nicer
             F = {'fun',0,{clauses,FCs}},
             M = {match,0,{var,0,Name},F},
-            io:fwrite("~s~n", [erl_pp:expr(M)]);
+            io:fwrite(<<"~s\n">>, [erl_pp:expr(M)]);
         false ->
-            Namel = io_lib:fwrite("~s = ", [Name]),
+            Namel = io_lib:fwrite(<<"~s = ">>, [Name]),
             Nl = iolist_size(Namel)+1,
-            io:put_chars(Namel),
-            ValS = io_lib_pretty:print(Val, Nl, 80, ?LINEMAX, 
-                                       record_print_fun(RT)),
-            io:put_chars(ValS),
-            io:nl()
+            ValS = pp(Val, Nl, RT),
+            io:requests([{put_chars, Namel},
+                         {put_chars, ValS},
+                         nl])
     end,
     list_bindings(Bs, RT);
 list_bindings([], _RT) ->
@@ -1184,7 +1287,7 @@ list_bindings([], _RT) ->
 
 list_records(Records) ->
     lists:foreach(fun({_Name,Attr}) -> 
-                          io:fwrite("~s", [erl_pp:attribute(Attr)])
+                          io:fwrite(<<"~s">>, [erl_pp:attribute(Attr)])
                   end, Records).
 
 record_defs(RT, Names) ->
@@ -1217,8 +1320,8 @@ substitute_v1(_F, E) ->
     E.
 
 check_and_get_history_and_results() ->
-    check_env(shell_history_length, "shell history length"),
-    check_env(shell_saved_results, "max number of saved results"),
+    check_env(shell_history_length),
+    check_env(shell_saved_results),
     get_history_and_results().
 
 get_history_and_results() ->
@@ -1231,6 +1334,15 @@ min(X, Y) when X < Y ->
 min(_X, Y) ->
     Y.
 
+pp(V, I, RT) ->
+    io_lib_pretty:print(V, I, columns(), ?LINEMAX, record_print_fun(RT)).
+
+columns() ->
+    case io:columns() of
+        {ok,N} ->  N;
+        _ -> 80
+    end.
+
 get_env(V, Def) ->
     case application:get_env(stdlib, V) of
 	{ok, Val} when is_integer(Val), Val >= 0 ->
@@ -1239,14 +1351,16 @@ get_env(V, Def) ->
 	    Def
     end.
 	    
-check_env(V, Name) ->
+check_env(V) ->
     case application:get_env(stdlib, V) of
 	undefined ->
 	    ok;
 	{ok, Val} when is_integer(Val), Val >= 0 ->
 	    ok;
-	{ok, Val} ->
-	    Txt = io_lib:fwrite("Invalid ~s ~p~n", [Name, Val]),
+        {ok, Val} ->
+            Txt = io_lib:fwrite(
+              <<"Invalid value of STDLIB configuration parameter ~p: ~p\n">>,
+                    [V, Val]),
 	    error_logger:info_report(lists:flatten(Txt))
     end.
 	    
@@ -1265,3 +1379,6 @@ history(L) when is_integer(L), L >= 0 ->
 
 results(L) when is_integer(L), L >= 0 ->
     set_env(stdlib, shell_saved_results, L, ?DEF_RESULTS).
+
+catch_exception(Bool) ->
+    set_env(stdlib, shell_catch_exception, Bool, ?DEF_CATCH_EXCEPTION).

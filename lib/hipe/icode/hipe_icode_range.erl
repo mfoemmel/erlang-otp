@@ -20,6 +20,7 @@
 %%=====================================================================
 
 -import(erl_types, [t_any/0,
+		    t_components/1,
 		    t_inf/2, t_integer/0,
 		    t_from_range_unsafe/2,
 		    t_to_string/1,
@@ -86,7 +87,7 @@ make_data(Cfg, {_M,_F,A}=MFA) ->
     end,
   Args = lists:duplicate(NoArgs, any_type()), 
   ArgsFun = fun(_,_) -> Args end,
-  CallFun = fun(_,_) -> [any_type()] end,
+  CallFun = fun(_,_) -> any_type() end,
   FinalFun = fun(_,_) -> ok end,
   {MFA,ArgsFun,CallFun,FinalFun}.
 
@@ -95,7 +96,7 @@ analyse(Cfg, Data={MFA,_,_,_}) ->
     State = state__init(Cfg,Data),
     Work = init_work(State),
     NewState = analyse_blocks(State,Work,false),
-    (state__resultaction(NewState))(MFA,state__ret_type(NewState)),
+    (state__resultaction(NewState))(MFA,[state__ret_type(NewState)]),
     NewState
   catch throw:no_input -> ok
   end.
@@ -122,7 +123,6 @@ analyse_blocks(State, Work, Rewrite) ->
       State;
     {Label, NewWork} ->
       Info = state__info_in(State, Label),
-      %%if Label == 20 -> io:format("Infoin: ~p~n", [gb_trees:to_list(Info)]); true -> ok end,
       {NewState, NewLabels}  = 
 	try analyse_block(Label, Info, State, Rewrite)
 	catch throw:none_range ->
@@ -180,9 +180,9 @@ handle_args(I, Info, WidenFun) ->
   hipe_icode:subst_uses(lists:zip(Uses, NewUses),I).
 
 join_info(Ann = #ann{range=R1,type=Type,count=?WIDEN}, R2, Fun)  ->
-  Ann#ann{range = Fun(R1,R2,range_from_type(Type))};
+  Ann#ann{range = Fun(R1,R2,range_from_simple_type(Type))};
 join_info(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) when C < ?WIDEN -> 
-  case join_three(R1, R2, range_from_type(Type)) of
+  case join_three(R1, R2, range_from_simple_type(Type)) of
     R1 -> Ann;
     NewR -> Ann#ann{range = NewR, count=C+1}
   end.
@@ -195,20 +195,20 @@ update_info(Var, Range) ->
 
 update_info({var,Name,Ann}, R, Fun) ->
   {var,Name,update_info1(Ann,R,Fun)};
-update_info({reg,Name}, _R, _) ->
-  {reg,Name};
+update_info({reg,Name,Ann}, R, Fun) ->
+  {reg,Name,update_info1(Ann,R,Fun)};
 update_info({fvar,Name}, _R, _) ->
   {fvar,Name}.
 
 update_info1(Ann = #ann{range=R1,type=Type,count=?WIDEN}, R2, Fun)  ->
-  Ann#ann{range = Fun(R1,R2,range_from_type(Type))};
+  Ann#ann{range = Fun(R1,R2,range_from_simple_type(Type))};
 update_info1(Ann = #ann{range=R1,type=Type,count=C}, R2, _Fun) -> 
-  case update_three(R1, R2, range_from_type(Type)) of
+  case update_three(R1, R2, range_from_simple_type(Type)) of
     R1 -> Ann;
     NewR -> Ann#ann{range = NewR, count=C+1}
   end;
 update_info1(Type,R2, _Fun) ->
-  #ann{range = inf(range_from_type(Type),R2), type = Type, count=1}.
+  #ann{range = inf(range_from_simple_type(Type),R2), type = Type, count=1}.
 
 update_three(_R1,R2,R3) ->
   inf(R2,R3).
@@ -274,13 +274,17 @@ widen(#range{range=Old},#range{range=New},T = #range{range=Wide}) ->
   T#range{range=ResRange}.
 	
 analyse_call(Call, LookupFun) ->
-  Args = hipe_icode:args(Call),
-  Dsts = hipe_icode:call_dstlist(Call),
-  Fun = hipe_icode:call_fun(Call),
-  Type = hipe_icode:call_type(Call),
-  DstRange = analyse_call_or_enter_fun(Fun, Args, Type, LookupFun),
-  NewDefs = [update_info(Var,DstRange) || Var <- Dsts],
-  hipe_icode:subst_defines(lists:zip(Dsts,NewDefs),Call).
+  case hipe_icode:call_dstlist(Call) of
+    [] ->
+      Call;
+    Dsts ->
+      Args = hipe_icode:args(Call),
+      Fun = hipe_icode:call_fun(Call),
+      Type = hipe_icode:call_type(Call),
+      DstRanges = analyse_call_or_enter_fun(Fun, Args, Type, LookupFun),
+      NewDefs = [update_info(Var,Type) || {Var,Type} <- lists:zip(Dsts,DstRanges)],
+      hipe_icode:subst_defines(lists:zip(Dsts,NewDefs),Call)
+  end.
 
 analyse_fmove(FMove) ->
   Dst = hipe_icode:fmove_dst(FMove),
@@ -317,27 +321,27 @@ analyse_last_insn(I, Info, Rewrite, LookupFun) ->
   case NewI of 
     #return{} -> analyse_return(NewI, Info);
     #enter{} -> analyse_enter(NewI, Info, LookupFun);
-    #switch_val{} -> {analyse_switch_val(NewI, Info, Rewrite),[none_type()]};
-    #'if'{} -> {analyse_if(NewI, Info, Rewrite),[none_type()]};
-    #goto{} -> {analyse_goto(NewI, Info),[none_type()]};	
-    #type{} -> {analyse_type(NewI, Info, Rewrite),[none_type()]};
-    #fail{} -> {analyse_fail(NewI, Info),[none_type()]};
-    #call{} -> {analyse_last_call(NewI, Info, LookupFun),[none_type()]};
+    #switch_val{} -> {analyse_switch_val(NewI, Info, Rewrite),none_type()};
+    #'if'{} -> {analyse_if(NewI, Info, Rewrite),none_type()};
+    #goto{} -> {analyse_goto(NewI, Info),none_type()};	
+    #type{} -> {analyse_type(NewI, Info, Rewrite),none_type()};
+    #fail{} -> {analyse_fail(NewI, Info),none_type()};
+    #call{} -> {analyse_last_call(NewI, Info, LookupFun),none_type()};
     #switch_tuple_arity{} -> 
-      {analyse_switch_tuple_arity(NewI, Info),[none_type()]};
-    #begin_try{} -> {analyse_begin_try(NewI, Info),[none_type()]}
+      {analyse_switch_tuple_arity(NewI, Info),none_type()};
+    #begin_try{} -> {analyse_begin_try(NewI, Info),none_type()}
   end.
 
 analyse_return(Insn, _Info) ->
-  RetRange = get_range_from_args(hipe_icode:return_vars(Insn)),
+  [RetRange] = get_range_from_args(hipe_icode:return_vars(Insn)),
   {{Insn,[]},RetRange}.
   
 analyse_enter(Insn, _Info, LookupFun) ->
   Args = hipe_icode:args(Insn),
   Fun = hipe_icode:enter_fun(Insn),
   CallType = hipe_icode:enter_type(Insn),
-  RetRange = analyse_call_or_enter_fun(Fun,Args,CallType,LookupFun),
-  {{Insn,[]},[RetRange]}.
+  [RetRange] = analyse_call_or_enter_fun(Fun,Args,CallType,LookupFun),
+  {{Insn,[]},RetRange}.
 
 analyse_switch_val(Switch, Info, Rewrite) -> 
   Arg = hipe_icode:switch_val_arg(Switch),
@@ -686,6 +690,14 @@ val_to_string(neg_inf) -> "-inf";
 val_to_string(X) when is_integer(X) -> integer_to_list(X).
 
 range_from_type(Type) ->
+  case t_components(Type) of
+    [_|_] = Types ->
+      [range_from_simple_type(T) || T <- Types];
+    _ ->
+      [range_from_simple_type(Type)]
+  end.
+  
+range_from_simple_type(Type) ->
   None = t_none(),
   case t_inf(t_integer(),Type) of
     None ->
@@ -780,7 +792,7 @@ get_range_from_arg(Arg) ->
 	{var,_,#ann{range=Range}} ->
 	  Range;
 	{var,_,Type} ->
-	  range_from_type(Type);
+	  range_from_simple_type(Type);
 	_ ->
 	  any_type()
       end
@@ -834,38 +846,38 @@ analyse_call_or_enter_fun(Fun, Args, CallType, LookupFun) ->
       A1_is_empty = range__is_empty(Arg_range1),
       A2_is_empty = range__is_empty(Arg_range2),
       if A1_is_empty or A2_is_empty ->
-	  none_type();
+	  [none_type()];
 	 true ->
-	  Operation(Arg_range1, Arg_range2)
+	  [Operation(Arg_range1, Arg_range2)]
       end;
     {unary, Operation} ->
       [Arg_range] = get_range_from_args(Args),
       case range__is_empty(Arg_range) of
 	true ->
-	  none_type();
+	  [none_type()];
 	false ->
-	  Operation(Arg_range)
+	  [Operation(Arg_range)]
       end;
     {fcall, MFA} ->
       case CallType of
 	local ->
-	  [Range] = LookupFun(MFA, get_range_from_args(Args)),
+	  Range = LookupFun(MFA, get_range_from_args(Args)),
 	  case range__is_none(Range) of
 	    true ->
 	      throw(none_range);
 	    false ->
-	      Range
+	      [Range]
 	  end;
 	remote ->
-	  any_type()
+	  [any_type()]
       end;
     not_int ->
-      any_type();
+      [any_type()];
     not_analysed -> 
-      any_type();
+      [any_type()];
     {hipe_bs_primop, {bs_get_integer, Size, Flags}} ->
       {Min, Max} = analyse_bs_get_integer_funs(Size, Flags, length(Args) =:= 1),
-      #range{range={Min, Max}, other=false};
+      [#range{range={Min, Max}, other=false},any_type()];
     {hipe_bs_primop, _} = Primop ->
       Type = hipe_icode_primops:type(Primop),
       range_from_type(Type)
@@ -1381,7 +1393,7 @@ state__init(Cfg,{MFA,ArgsFun,CallFun,FinalFun}) ->
       Info = enter_defines(NewParams,gb_trees:empty()),
       InfoMap = gb_trees:insert({Start, in}, Info, gb_trees:empty()),
       #state{info_map=InfoMap, cfg=NewCfg, liveness=Liveness,
-	     ret_type=[none_type()],
+	     ret_type=none_type(),
 	     lookupfun=CallFun, resultaction=FinalFun}
   end.
 
@@ -1402,7 +1414,7 @@ state__resultaction(#state{resultaction = RA}) -> RA.
 state__ret_type(#state{ret_type = RT}) -> RT.
 
 state__ret_type_update(#state{ret_type=RT} = State, NewType) ->
-  TotType = lists:zipwith(fun sup/2, RT, NewType),
+  TotType = sup(RT, NewType),
   State#state{ret_type=TotType}.
 
 state__info_in(S, Label) ->
@@ -1431,10 +1443,7 @@ update_info([], State, LabelAcc,_Rewrite) ->
 state__info_in_update(S=#state{info_map=IM,liveness=Liveness}, Label, Info) ->
   case gb_trees:lookup({Label, in}, IM) of
     none -> 
-      Pred = hipe_icode_cfg:pred(state__cfg(S), Label),
-      RawLiveIn = [hipe_icode_ssa:ssa_liveness__livein(Liveness, Label, X) ||
-		X <- Pred],
-      LiveIn = ordsets:from_list(lists:flatten(RawLiveIn)),
+      LiveIn = hipe_icode_ssa:ssa_liveness__livein(Liveness, Label),
       NamesLiveIn = [Name || {var,Name} <- LiveIn],
       OldInfo = gb_trees:empty(),
       case join_info_in(NamesLiveIn, OldInfo, Info) of
@@ -1512,7 +1521,7 @@ lookup({var,Name,_},Info) ->
     {value,Val} ->
       Val
   end;
-lookup({reg,_},_Info) ->
+lookup({reg,_,_},_Info) ->
   any_type();
 lookup({fvar,_},_Info) ->
   none_range().
@@ -1550,11 +1559,11 @@ convert_cfg_to_types(Cfg) ->
   Lbls = hipe_icode_cfg:reverse_postorder(Cfg),
   lists:foldl(fun convert_lbl_to_type/2, Cfg, Lbls).
 
-convert_lbl_to_type(Lbl,Cfg) -> 
+convert_lbl_to_type(Lbl, Cfg) ->
   BB = hipe_icode_cfg:bb(Cfg, Lbl),
   Code = hipe_bb:code(BB),
   NewCode = [convert_instr_to_type(I) || I <- Code],
-  hipe_icode_cfg:bb_add(Cfg,Lbl,hipe_bb:mk_bb(NewCode)).
+  hipe_icode_cfg:bb_add(Cfg, Lbl, hipe_bb:mk_bb(NewCode)).
 
 convert_instr_to_type(I) ->
   Uses = hipe_icode:uses(I),
@@ -1566,11 +1575,11 @@ convert_instr_to_type(I) ->
 		   Def = {var,Name,Ann = #ann{}} <- Defs],
   hipe_icode:subst_defines(DefSubstList, NewI).
 
-convert_ann_to_types(#ann{range=#range{range={Min,Max},other=false}}) ->
-  t_from_range_unsafe(Min,Max);
-convert_ann_to_types(#ann{range=#range{range=empty,other=false}}) ->
+convert_ann_to_types(#ann{range=#range{range={Min,Max}, other=false}}) ->
+  t_from_range_unsafe(Min, Max);
+convert_ann_to_types(#ann{range=#range{range=empty, other=false}}) ->
   t_none();
-convert_ann_to_types(#ann{range=#range{other=true},type=Type}) ->
+convert_ann_to_types(#ann{range=#range{other=true}, type=Type}) ->
   Type.
 
 %%=====================================================================
@@ -1586,14 +1595,14 @@ replace_none(Arg) ->
     false -> Arg
   end.
       
-update__info(NewRanges,OldRanges) ->
-  SupFun = fun(Ann,Range) -> 
+update__info(NewRanges, OldRanges) ->
+  SupFun = fun(Ann, Range) -> 
 	       join_info(Ann, Range, fun safe_widen/3)
 	   end,
   EqFun = fun(X,Y) -> X =:= Y end,
-  ResRanges = lists:zipwith(SupFun,OldRanges,NewRanges),
-  Change = lists:zipwith(EqFun,ResRanges,OldRanges),
-  {lists:all(fun(X) -> X end, Change),ResRanges}.
+  ResRanges = lists:zipwith(SupFun, OldRanges, NewRanges),
+  Change = lists:zipwith(EqFun, ResRanges, OldRanges),
+  {lists:all(fun(X) -> X end, Change), ResRanges}.
 
 new__info(NewRanges) ->
   [#ann{range=Range,count=1,type=t_any()} || Range <- NewRanges].
@@ -1601,24 +1610,24 @@ new__info(NewRanges) ->
 return__info(Ranges) ->
   [Range || #ann{range=Range} <- Ranges].
 
-return_none() ->  
+return_none() ->
   [none_type()].
 
-return_none_args(Cfg,{_M,_F,A}) ->
-  NoArgs = 
+return_none_args(Cfg, {_M,_F,A}) ->
+  NoArgs =
     case hipe_icode_cfg:is_closure(Cfg) of
-      true -> hipe_icode_cfg:closure_arity(Cfg)+1;
+      true -> hipe_icode_cfg:closure_arity(Cfg) + 1;
       false -> A
     end,
-  lists:duplicate(NoArgs,none_type()).
+  lists:duplicate(NoArgs, none_type()).
 
-return_any_args(Cfg,{_M,_F,A}) ->
+return_any_args(Cfg, {_M,_F,A}) ->
   NoArgs = 
     case hipe_icode_cfg:is_closure(Cfg) of
-      true -> hipe_icode_cfg:closure_arity(Cfg)+1;
+      true -> hipe_icode_cfg:closure_arity(Cfg) + 1;
       false -> A
     end,
-  lists:duplicate(NoArgs,any_type()).
+  lists:duplicate(NoArgs, any_type()).
 
 %%=====================================================================
 

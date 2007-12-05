@@ -111,6 +111,14 @@ GEN_ASN_HRL = $(ASN_MODULES:%=%.hrl)
 GEN_ASN_DBS = $(ASN_MODULES:%=%.asn1db)
 GEN_ASN_TABLES = $(ASN_MODULES:%=%.table)
 
+PKIX_FILES = \
+	OrberCSIv2.asn1 \
+	PKIXAttributeCertificate.asn1 \
+	PKIX1Explicit88.asn1 \
+	PKIX1Algorithms88.asn1 \
+	PKIX1Implicit88.asn1 \
+	OrberCSIv2.set.asn
+
 EXTERNAL_HRL_FILES= ../include/corba.hrl \
 	../include/ifr_types.hrl \
 	../include/orber_pi.hrl
@@ -137,7 +145,8 @@ GEN_ERL_FILES3 =  \
 	OrberApp_IFR.erl
 
 GEN_ERL_FILES =  $(GEN_ERL_FILES1) $(GEN_ERL_FILES2) \
-	$(GEN_ERL_FILES3) $(GEN_ASN_ERL)
+	$(GEN_ERL_FILES3) \
+#	$(GEN_ASN_ERL)
 
 GEN_HRL_FILES1 = \
 	oe_erlang.hrl \
@@ -154,15 +163,16 @@ GEN_HRL_FILES3 = \
 
 GEN_HRL_FILES_EXT = $(GEN_HRL_FILES1)
 
-GEN_HRL_FILES_LOC = $(GEN_HRL_FILES2) $(GEN_HRL_FILES3) $(GEN_ASN_HRL)
+GEN_HRL_FILES_LOC = $(GEN_HRL_FILES2) $(GEN_HRL_FILES3) \
+#	$(GEN_ASN_HRL)
 
 
 GEN_FILES = \
 	$(GEN_ERL_FILES) \
 	$(GEN_HRL_FILES_LOC) \
 	$(GEN_HRL_FILES_EXT) \
-	$(GEN_ASN_DBS) \
-	$(GEN_ASN_TABLES)
+#	$(GEN_ASN_DBS) \
+#	$(GEN_ASN_TABLES)
 
 TARGET_FILES =  \
 	$(GEN_ERL_FILES:%.erl=$(EBIN)/%.$(EMULATOR)) \
@@ -189,7 +199,7 @@ ERL_COMPILE_FLAGS += $(ERL_IDL_FLAGS) \
 	-D'ORBVSN="$(ORBER_VSN)"'
 
 ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize \
-	+noobj -I $(ERL_TOP)/lib/ssl/pkix/
+	+nowarn_unused_record
 
 # ----------------------------------------------------
 # Targets
@@ -226,12 +236,15 @@ $(GEN_ERL_FILES3) $(GEN_HRL_FILES3): OrberIFR.idl
 	OrberIFR.idl
 
 $(GEN_ASN_ERL) $(GEN_ASN_HRL): OrberCSIv2.asn1 OrberCSIv2.set.asn
-	erlc $(ERL_COMPILE_FLAGS) $(ASN_FLAGS) OrberCSIv2.asn1 ;\
-	erlc $(GEN_ASN_ERL) 
+	erlc $(ERL_COMPILE_FLAGS) $(ASN_FLAGS) +'{inline,"OrberCSIv2"}' OrberCSIv2.set.asn
+	rm -f $(GEN_ASN_ERL:%.erl=%.beam)
+
+#	erlc $(ERL_COMPILE_FLAGS) $(ASN_FLAGS) OrberCSIv2.asn1 ;\
+#	erlc $(GEN_ASN_ERL) 
 # Use the following when we safely can inline the ASN1 runtime code.
 # Requires igor (part of syntax_tools (introduced in R10B
-#	erlc $(ERL_FLAGS) $(ASN_FLAGS) +'{inline,"OrberCSIv2"}' OrberCSIv2.set.asn ; \
-#	rm -f $(GEN_ASN_ERL:%.erl=%.beam)
+#	erlc $(ERL_COMPILE_FLAGS) $(ASN_FLAGS) +'{inline,"OrberCSIv2"}' OrberCSIv2.set.asn ; \
+
 
 # ----------------------------------------------------
 # Release Target

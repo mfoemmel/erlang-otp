@@ -121,6 +121,8 @@
 
 #define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
 
+#define field_sizeof(STRUCT, FIELD) (sizeof(((STRUCT *)0)->FIELD)) 
+
 static const unsigned int CRCTABLE[256] = {
     0x00000000, 0x77073096, 0xEE0E612C, 0x990951BA,
     0x076DC419, 0x706AF48F, 0xE963A535, 0x9E6495A3,
@@ -232,12 +234,13 @@ crc_update_int(unsigned int crc_value, const unsigned int *p)
  */
 static const struct literal {
     const char *name;
-    unsigned int value;
+    unsigned int value;  
 } literals[] = {
     /* Field offsets in a process struct */
     { "P_HP", offsetof(struct process, htop) },
     { "P_HP_LIMIT", offsetof(struct process, stop) },
     { "P_OFF_HEAP_MSO", offsetof(struct process, off_heap.mso) },
+    { "P_MBUF", offsetof(struct process, mbuf) },
     { "P_ID", offsetof(struct process, id) },
     { "P_FLAGS", offsetof(struct process, flags) },
     { "P_FVALUE", offsetof(struct process, fvalue) },
@@ -289,6 +292,8 @@ static const struct literal {
 
     /* bit syntax */
     { "BSF_ALIGNED", BSF_ALIGNED},
+    { "PB_ACTIVE_WRITER", PB_ACTIVE_WRITER},
+    { "PB_IS_WRITABLE", PB_IS_WRITABLE},
     { "MB_ORIG", offsetof(struct erl_bin_match_buffer, orig) },
     { "MB_BASE", offsetof(struct erl_bin_match_buffer, base) },
     { "MB_OFFSET", offsetof(struct erl_bin_match_buffer, offset) },
@@ -298,22 +303,52 @@ static const struct literal {
     { "PROC_BIN_NEXT", offsetof(struct proc_bin, next) },
     { "PROC_BIN_VAL", offsetof(struct proc_bin, val) },
     { "PROC_BIN_BYTES", offsetof(struct proc_bin, bytes) },
+    { "PROC_BIN_FLAGS", offsetof(struct proc_bin, flags) },
     { "PROC_BIN_WORDSIZE", PROC_BIN_SIZE},
     { "SUB_BIN_THING_WORD", offsetof(struct erl_sub_bin, thing_word) },
     { "SUB_BIN_BINSIZE", offsetof(struct erl_sub_bin, size) },
     { "SUB_BIN_BITSIZE", offsetof(struct erl_sub_bin, bitsize) },
     { "SUB_BIN_OFFS", offsetof(struct erl_sub_bin, offs) },
     { "SUB_BIN_BITOFFS", offsetof(struct erl_sub_bin, bitoffs) },
+    { "SUB_BIN_WRITABLE", offsetof(struct erl_sub_bin, is_writable) },
     { "SUB_BIN_ORIG", offsetof(struct erl_sub_bin, orig) },
     { "SUB_BIN_WORDSIZE", ERL_SUB_BIN_SIZE},
     { "HEAP_BIN_THING_WORD", offsetof(struct erl_heap_bin, thing_word) },
     { "HEAP_BIN_SIZE", offsetof(struct erl_heap_bin, size) },
     { "HEAP_BIN_DATA", offsetof(struct erl_heap_bin, data) },
+    { "BINARY_ORIG_SIZE", offsetof(struct binary, orig_size) },
     { "BINARY_ORIG_BYTES", offsetof(struct binary, orig_bytes) },
     { "MAX_HEAP_BIN_SIZE", ERL_ONHEAP_BIN_LIMIT},
     { "MS_THING_WORD", offsetof(struct erl_bin_match_struct, thing_word)},
     { "MS_MATCHBUFFER", offsetof(struct erl_bin_match_struct, mb)},
     { "MS_SAVEOFFSET", offsetof(struct erl_bin_match_struct, save_offset)},
+    
+    { "MB_ORIG_SIZE", field_sizeof( struct erl_bin_match_buffer, orig) },
+    { "MB_BASE_SIZE", field_sizeof( struct erl_bin_match_buffer, base) },
+    { "MB_OFFSET_SIZE", field_sizeof( struct erl_bin_match_buffer, offset) },
+    { "MB_SIZE_SIZE", field_sizeof( struct erl_bin_match_buffer, size) },
+    { "PROC_BIN_THING_WORD_SIZE", field_sizeof( struct proc_bin, thing_word) },
+    { "PROC_BIN_BINSIZE_SIZE", field_sizeof( struct proc_bin, size) },
+    { "PROC_BIN_NEXT_SIZE", field_sizeof( struct proc_bin, next) },
+    { "PROC_BIN_VAL_SIZE", field_sizeof( struct proc_bin, val) },
+    { "PROC_BIN_BYTES_SIZE", field_sizeof( struct proc_bin, bytes) },
+    { "PROC_BIN_FLAGS_SIZE", field_sizeof( struct proc_bin, flags) },
+    { "SUB_BIN_THING_WORD_SIZE", field_sizeof( struct erl_sub_bin, thing_word) },
+    { "SUB_BIN_BINSIZE_SIZE", field_sizeof( struct erl_sub_bin, size) },
+    { "SUB_BIN_BITSIZE_SIZE", field_sizeof( struct erl_sub_bin, bitsize) },
+    { "SUB_BIN_OFFS_SIZE", field_sizeof( struct erl_sub_bin, offs) },
+    { "SUB_BIN_BITOFFS_SIZE", field_sizeof( struct erl_sub_bin, bitoffs) },
+    { "SUB_BIN_WRITABLE_SIZE", field_sizeof( struct erl_sub_bin, is_writable) },
+    { "SUB_BIN_ORIG_SIZE", field_sizeof( struct erl_sub_bin, orig) },
+    { "HEAP_BIN_THING_WORD_SIZE", field_sizeof( struct erl_heap_bin, thing_word) },
+    { "HEAP_BIN_SIZE_SIZE", field_sizeof( struct erl_heap_bin, size) },
+    { "HEAP_BIN_DATA_SIZE", field_sizeof( struct erl_heap_bin, data) },
+    { "BINARY_ORIG_SIZE_SIZE", field_sizeof( struct binary, orig_size) },
+    { "BINARY_ORIG_BYTES_SIZE", field_sizeof( struct binary, orig_bytes) },
+    { "MS_THING_WORD_SIZE", field_sizeof( struct erl_bin_match_struct, thing_word)},
+    { "MS_SAVEOFFSET_SIZE", field_sizeof( struct erl_bin_match_struct, save_offset)},
+
+    { "MS_MIN_SIZE", ERL_BIN_MATCHSTATE_SIZE(1)},
     
     /* messages */
     { "P_MSG_FIRST", offsetof(struct process, msg.first) },
@@ -406,11 +441,6 @@ static const struct rts_param {
       1, offsetof(struct process, scheduler_data)
 #endif
     },
-    { 13, "SCHED_DATA_ERTS_MB_OFFS",
-#if defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
-      1, offsetof(ErtsSchedulerData, erl_bits_state.erts_mb_)
-#endif
-    },
     { 14, "P_FP_EXCEPTION",
 #if !defined(NO_FPE_SIGNALS)
       1, offsetof(struct process, fp_exception)
@@ -429,20 +459,7 @@ static const struct rts_param {
     { 19, "MSG_MESSAGE",
       1, offsetof(struct erl_mesg, m[0])
     },
-    /* This flag is always defined, but its value is configuration-dependent. */
-    { 20, "ERTS_IS_NOFRAG",
-      1,
-#if defined(HEAP_FRAG_ELIM_TEST)
-      1
-#else
-      0
-#endif
-    },
-    { 21, "P_MBUF",
-#if defined(HEAP_FRAG_ELIM_TEST)
-      1, offsetof(struct process, mbuf)
-#endif
-    },
+    /* highest entry ever used == 21 */
 };
 
 #define NR_PARAMS	ARRAY_SIZE(rts_params)

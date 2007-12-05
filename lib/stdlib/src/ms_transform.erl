@@ -297,6 +297,11 @@ clause({clause,Line,H0,G0,B0}) ->
 copy({call,Line,{remote,_Line2,{atom,_Line3,ets},{atom,_Line4,fun2ms}},
       As0}) ->
     transform_call(ets,Line,As0);
+copy({call,Line,{remote,_Line2,{record_field,_Line3,
+                                {atom,_Line4,''},{atom,_Line5,ets}},
+                 {atom,_Line6,fun2ms}}, As0}) ->
+    %% Packages...
+    transform_call(ets,Line,As0);
 copy({call,Line,{remote,_Line2,{atom,_Line3,dbg},{atom,_Line4,fun2ms}},
       As0}) ->
     transform_call(dbg,Line,As0);

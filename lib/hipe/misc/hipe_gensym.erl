@@ -1,6 +1,7 @@
+%% -*- erlang-indent-level: 2 -*-
 %%=======================================================================
 %% File        : hipe_gensym.erl
-%% Author      : Eric Johansson, Kostis Sagonas
+%% Author      : Eric Johansson and Kostis Sagonas
 %% Description : Generates unique symbols and fresh integer counts.
 %%=======================================================================
 %% $Id$
@@ -21,8 +22,11 @@
 	 set_label/2, get_label/1, get_next_label/1]).
 
 %%-----------------------------------------------------------------------
-%% 
-%% 
+%% Types of allowable entities to set global variables for
+%%-----------------------------------------------------------------------
+
+-type(gvarname() :: 'icode' | 'rtl' | 'arm' | 'ppc' | 'sparc' | 'x86').
+
 %%-----------------------------------------------------------------------
 
 %% init() ->
@@ -31,21 +35,25 @@
 %%   put(var_min, 0),
 %%   put(var_max, 0),
 %%   put(lbl_min, 1),
-%%   put(lbl_max, 1).
+%%   put(lbl_max, 1),
+%%   ok.
 
+-spec(init/1 :: (gvarname()) -> 'ok').
 init(What) ->
   put({What,var_count}, 0),
   put({What,label_count}, 0),
   put({What,var_min}, 0),
   put({What,var_max}, 0),
   put({What,lbl_min}, 1),
-  put({What,lbl_max}, 1).
+  put({What,lbl_max}, 1),
+  ok.
 
 %% new_var() ->
 %%   V = get(var_count),
 %%   put(var_count, V+1),
 %%   V.
 
+-spec(new_var/1 :: (gvarname()) -> non_neg_integer()).
 new_var(What) ->
   V = get({What,var_count}),
   put({What,var_count}, V+1),
@@ -56,6 +64,7 @@ new_var(What) ->
 %%   put(label_count, L+1),
 %%   L.
 
+-spec(new_label/1 :: (gvarname()) -> non_neg_integer()).
 new_label(What) ->
   L = get({What,label_count}),
   put({What,label_count}, L+1),
@@ -65,35 +74,43 @@ new_label(What) ->
 %%   Vmax = get(var_max),
 %%   Vmin = get(var_min),
 %%   put(var_min, lists:min([V, Vmin])),
-%%   put(var_max, lists:max([V, Vmax])).
+%%   put(var_max, lists:max([V, Vmax])),
+%%   ok.
 
-update_vrange(What,V) ->
+-spec(update_vrange/2 :: (gvarname(), non_neg_integer()) -> 'ok').
+update_vrange(What, V) ->
   Vmax = get({What,var_max}),
   Vmin = get({What,var_min}),
   put({What,var_min}, lists:min([V, Vmin])),
-  put({What,var_max}, lists:max([V, Vmax])).
+  put({What,var_max}, lists:max([V, Vmax])),
+  ok.
 
 %% update_lblrange(L) ->
 %%   Lmax = get(lbl_max),
 %%   Lmin = get(lbl_min),
 %%   put(lbl_min, lists:min([L, Lmin])),
-%%   put(lbl_max, lists:max([L, Lmax])).
+%%   put(lbl_max, lists:max([L, Lmax])),
+%%   ok.
 
-update_lblrange(What,L) ->
+-spec(update_lblrange/2 :: (gvarname(), non_neg_integer()) -> 'ok').
+update_lblrange(What, L) ->
   Lmax = get({What,lbl_max}),
   Lmin = get({What,lbl_min}),
   put({What,lbl_min}, lists:min([L, Lmin])),
-  put({What,lbl_max}, lists:max([L, Lmax])).
+  put({What,lbl_max}, lists:max([L, Lmax])),
+  ok.
 
 %% var_range() ->
 %%   {get(var_min), get(var_max)}.
 
+-spec(var_range/1 :: (gvarname()) -> {non_neg_integer(), non_neg_integer()}).
 var_range(What) ->
   {get({What,var_min}), get({What,var_max})}.
 
 %% label_range() ->
 %%   {get(lbl_min), get(lbl_max)}.
 
+-spec(label_range/1 :: (gvarname()) -> {non_neg_integer(), non_neg_integer()}).
 label_range(What) ->
   {get({What,lbl_min}), get({What,lbl_max})}.
  
@@ -101,20 +118,31 @@ label_range(What) ->
 %% Variable counter
 %%-----------------------------------------------------------------------
 
+-spec(set_var/1 :: (non_neg_integer()) -> 'ok').
 set_var(X) ->
-  put(var_max, X).
-set_var(What,X) ->
-  put({What,var_max}, X).
+  put(var_max, X),
+  ok.
 
+-spec(set_var/2 :: (gvarname(), non_neg_integer()) -> 'ok').
+set_var(What, X) ->
+  put({What,var_max}, X),
+  ok.
+
+-spec(get_var/0 :: () -> non_neg_integer()).
 get_var() ->
   get(var_max).
+
+-spec(get_var/1 :: (gvarname()) -> non_neg_integer()).
 get_var(What) ->
   get({What,var_max}).
 
+-spec(get_next_var/0 :: () -> non_neg_integer()).
 get_next_var() ->
   C = get(var_max),
   put(var_max, C+1),
   C+1.
+
+-spec(get_next_var/1 :: (gvarname()) -> non_neg_integer()).
 get_next_var(What) ->
   C = get({What,var_max}),
   put({What,var_max}, C+1),
@@ -124,20 +152,31 @@ get_next_var(What) ->
 %% Label counter
 %%-----------------------------------------------------------------------
 
+-spec(set_label/1 :: (non_neg_integer()) -> 'ok').
 set_label(X) ->
-  put(lbl_max, X).
-set_label(What,X) ->
-  put({What,lbl_max}, X).
+  put(lbl_max, X),
+  ok.
 
+-spec(set_label/2 :: (gvarname(), non_neg_integer()) -> 'ok').
+set_label(What, X) ->
+  put({What,lbl_max}, X),
+  ok.
+
+-spec(get_label/0 :: () -> non_neg_integer()).
 get_label() ->
   get(lbl_max).
+
+-spec(get_label/1 :: (gvarname()) -> non_neg_integer()).
 get_label(What) ->
   get({What,lbl_max}).
 
+-spec(get_next_label/0 :: () -> non_neg_integer()).
 get_next_label() ->
   C = get(lbl_max),
   put(lbl_max, C+1),
   C+1.
+
+-spec(get_next_label/1 :: (gvarname()) -> non_neg_integer()).
 get_next_label(What) ->
   C = get({What,lbl_max}),
   put({What,lbl_max}, C+1),

@@ -1,6 +1,6 @@
 {application, parsetools,
  [{description, "XLATETOOLS  CXC 138 xx"},
-  {vsn, "1.4.1.1"},
+  {vsn, "1.4.2"},
   {modules, [yecc,
 	     yeccparser,
 	     yeccscan

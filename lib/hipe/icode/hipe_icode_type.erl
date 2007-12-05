@@ -55,22 +55,27 @@
 -define(server_debug, fun(_, _) -> ok end).
 
 -import(erl_types, [t_any/0, t_atom/1, t_atom/0, t_atom_vals/1,
-		    t_binary/0, t_bool/0, t_cons/0, t_constant/0,
-		    t_pos_improper_list/0,
+		    t_binary/0, t_bitstr/0, t_bitstr_base/1, t_bitstr_unit/1, 
+		    t_bool/0, t_components/1, t_cons/0, t_constant/0,
+		    t_maybe_improper_list/0,
 		    t_float/0, t_from_term/1, t_fun/0, t_fun/1, t_fun/2,
 		    t_fun_args/1, t_fun_arity/1, 
 		    %t_fun_range/1,
 		    t_inf/2, t_inf_lists/2, t_integer/0,
-		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1,
+		    t_integer/1, t_is_atom/1, t_is_any/1, t_is_binary/1, 
+		    t_is_bitstr/1,
 		    t_is_bool/1, t_is_fixnum/1, t_is_cons/1, t_is_constant/1,
-		    t_is_pos_improper_list/1, t_is_equal/2, t_is_float/1,
-		    t_is_fun/1, t_is_integer/1, t_is_number/1,
+		    t_is_maybe_improper_list/1, t_is_equal/2, t_is_float/1,
+		    t_is_fun/1, t_is_integer/1, t_is_non_neg_integer/1, 
+		    t_is_number/1,
 		    %t_is_list/1, 
 		    t_is_nil/1, t_is_port/1, t_is_pid/1,
 		    t_is_ref/1, t_is_subtype/2, 
 		    t_is_tuple/1,
 		    t_is_none/1, t_limit/2, 
 		    %t_list/0, 
+		    t_matchstate_present/1, t_matchstate/0, 
+		    t_matchstate_slots/1,
 		    t_nil/0, t_number/0, t_number/1, t_number_vals/1, 
 		    t_pid/0, t_port/0, t_ref/0, t_subtract/2, t_sup/2,
 		    t_to_string/1, t_tuple/0, t_tuple/1,
@@ -172,7 +177,6 @@ analyse_blocks(Work, State, MFA) ->
     fixpoint ->
       State;
     {Label, NewWork} ->
-      %% io:format("~w ~w~n",[Label,MFA]),
       Info = state__info_in(State, Label),
       {NewState, NewLabels}  =
 	try analyse_block(Label, Info, State)
@@ -229,6 +233,7 @@ analyse_insn(I, Info, LookupFun) ->
       do_move(I, Info);
     #call{} ->
       NewInfo = do_call(I, Info, LookupFun),
+      %%io:format("Analysing Call: ~w~n~w~n", [I,NewInfo]),
       update_call_arguments(I, NewInfo);
     #phi{} ->
       Type = t_limit(join_list(hipe_icode:args(I), Info), ?TYPE_DEPTH),
@@ -280,10 +285,7 @@ do_basic_call(I, Info, LookupFun) ->
 
 do_call(I, Info, LookupFun) ->
   RetType = do_basic_call(I, Info, LookupFun),
-  IsNone = 
-    if is_list(RetType) -> any_is_none(RetType);
-       true -> t_is_none(RetType)
-    end,
+  IsNone =  t_is_none(RetType),
   %%io:format("RetType ~p~nIsNone ~p~n~p~n",[RetType,IsNone,I]),
   if IsNone -> throw(none_type);
      true -> enter_defines(I, RetType, Info)
@@ -297,7 +299,7 @@ do_last_call(Last,InfoOut,State,Label) ->
   try 
     NewInfoOut = do_call(Last, InfoOut, state__lookupfun(State)),
     NewState = state__info_out_update(State, Label, NewInfoOut),
-    ContInfo = update_call_arguments(Last, NewInfoOut),      
+    ContInfo = update_call_arguments(Last, NewInfoOut),
     Cont = hipe_icode:call_continuation(Last),
     Fail = hipe_icode:call_fail_label(Last),
     ?call_debug("Continfo, NewInfoOut", {ContInfo, NewInfoOut}),
@@ -871,6 +873,8 @@ test_type0(port, T) ->
   t_is_port(T);
 test_type0(binary, T) ->
   t_is_binary(T);
+test_type0(bitstr, T) ->
+  t_is_bitstr(T);
 test_type0(reference, T) ->
   t_is_ref(T);
 test_type0(function, T) ->
@@ -878,15 +882,13 @@ test_type0(function, T) ->
 test_type0(boolean, T) ->
   t_is_bool(T);
 test_type0(list, T) ->
-  t_is_pos_improper_list(T);
+  t_is_maybe_improper_list(T);
 test_type0(cons, T) ->
   t_is_cons(T);
 test_type0(nil, T) ->
   t_is_nil(T);
 test_type0(constant, T) ->
-  t_is_constant(T);
-test_type0(T, _) ->
-  exit({unknown_typetest, T}).
+  t_is_constant(T).
 
 
 true_branch_info(integer) ->
@@ -902,7 +904,7 @@ true_branch_info(atom) ->
 true_branch_info({atom, A}) ->
   t_atom(A);
 true_branch_info(list) ->
-  t_pos_improper_list();
+  t_maybe_improper_list();
 true_branch_info(tuple) ->
   t_tuple();
 true_branch_info({tuple, N}) ->
@@ -913,6 +915,8 @@ true_branch_info(port) ->
   t_port();
 true_branch_info(binary) ->
   t_binary();
+true_branch_info(bitstr) ->
+  t_bitstr();
 true_branch_info(reference) ->
   t_ref();
 true_branch_info(function) ->
@@ -1151,10 +1155,10 @@ handle_call_and_enter(I) ->
       end;
     {erlang, hd, 1} -> transform_hd_or_tl(I, unsafe_hd);
     {erlang, tl, 1} -> transform_hd_or_tl(I, unsafe_tl);
-    {hipe_bs_primop, {bs_put_integer, Size, Flags, ConstInfo}} ->
-      transform_bs_put_integer(I, {hipe_bs_primop,
-				   {unsafe_bs_put_integer, 
-				    Size, Flags, ConstInfo}});
+    {hipe_bs_primop, BsOP} ->
+      NewBsOp =
+	bit_opts(BsOP, get_type_list(hipe_icode:args(I))),
+      update_call_or_enter(I, {hipe_bs_primop,NewBsOp});
     conv_to_float -> 
       [Src] = hipe_icode:args(I),
       case t_is_float(get_type(Src)) of
@@ -1195,7 +1199,7 @@ is_arith_function(Name) ->
 
 %%---------------------------------------------------------------------
 %% Perform a limited form of strength reduction for multiplication and
-%% division of an integer with contants which are multiples of 2.
+%% division of an integer with constants which are multiples of 2.
 %%---------------------------------------------------------------------
 
 strength_reduce(I, Op) ->
@@ -1208,8 +1212,14 @@ strength_reduce(I, Op) ->
           case hipe_icode:is_const(Arg2) of
             true ->
               case hipe_icode:const_value(Arg2) of
-		  0 -> hipe_icode:mk_move(call_dst(I), Arg2);
-		  1 -> hipe_icode:mk_move(call_dst(I), Arg1);
+		  0 -> case call_dstlist(I) of
+			 [] -> remove_useless_arithmetic_instruction(I);
+			 [Dst] -> hipe_icode:mk_move(Dst, Arg2)
+		       end;
+		  1 -> case call_dstlist(I) of
+			 [] -> remove_useless_arithmetic_instruction(I);
+			 [Dst] -> hipe_icode:mk_move(Dst, Arg1)
+		       end;
 		  2 -> strength_reduce_imult(I, Arg1, 1);
 		  4 -> strength_reduce_imult(I, Arg1, 2);
 		  8 -> strength_reduce_imult(I, Arg1, 3);
@@ -1227,13 +1237,16 @@ strength_reduce(I, Op) ->
     'div' ->
       [Arg1, Arg2] = hipe_icode:args(I),
       ArgT1 = get_type(Arg1),
-      case t_is_integer(ArgT1) of
-        true ->
+      case t_is_non_neg_integer(ArgT1) of
+        true -> %% the optimization is NOT valid for negative integers
           case hipe_icode:is_const(Arg2) of
             true ->
               case hipe_icode:const_value(Arg2) of
 		  0 -> io:fwrite("Integer division by 0 detected!\n"), I;
-		  1 -> hipe_icode:mk_move(call_dst(I), Arg1);
+		  1 -> case call_dstlist(I) of
+			 [] -> remove_useless_arithmetic_instruction(I);
+			 [Dst] -> hipe_icode:mk_move(Dst, Arg1)
+		       end;
 		  2 -> strength_reduce_div(I, Arg1, 1);
 		  4 -> strength_reduce_div(I, Arg1, 2);
 		  8 -> strength_reduce_div(I, Arg1, 3);
@@ -1251,13 +1264,16 @@ strength_reduce(I, Op) ->
     'rem' ->
       [Arg1, Arg2] = hipe_icode:args(I),
       ArgT1 = get_type(Arg1),
-      case t_is_integer(ArgT1) of
-	true ->
+      case t_is_non_neg_integer(ArgT1) of
+	true -> %% the optimization is NOT valid for negative integers
 	  case hipe_icode:is_const(Arg2) of
 	    true ->
 	      case hipe_icode:const_value(Arg2) of
 		  0 -> io:fwrite("Remainder with 0 detected!\n"), I;
-		  1 -> hipe_icode:mk_move(call_dst(I), hipe_icode:mk_const(0));
+		  1 -> case call_dstlist(I) of
+			 [] -> remove_useless_arithmetic_instruction(I);
+			 [Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const(0))
+		       end;
 		  2 -> strength_reduce_rem(I, Arg1,   1);
 		  4 -> strength_reduce_rem(I, Arg1,   3);
 		  8 -> strength_reduce_rem(I, Arg1,   7);
@@ -1275,6 +1291,10 @@ strength_reduce(I, Op) ->
     _ -> I
   end.
 
+remove_useless_arithmetic_instruction(I) ->
+  %% io:format("The instruction ~w should be removed; not yet handled\n", [I]),
+  I.
+
 %% Puts the args of a multiplication in a form where the constant
 %% (if present) is always the second argument.
 mult_args_const_second(I) ->
@@ -1291,7 +1311,10 @@ strength_reduce_imult(I, Arg1, N) ->
   case t_number_vals(get_type(Arg1)) of
     [X] when is_integer(X) ->
       %% io:format("Multiplication with constant arguments:\n  ~w\n", [I]),
-      hipe_icode:mk_move(call_dst(I), hipe_icode:mk_const((X bsl N)));
+      case call_dstlist(I) of
+	[] -> remove_useless_arithmetic_instruction(I);
+	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X bsl N)))
+      end;
     _ ->
       update_call_or_enter(I, 'bsl', [Arg1, hipe_icode:mk_const(N)])
   end.
@@ -1300,7 +1323,10 @@ strength_reduce_div(I, Arg1, N) ->
   case t_number_vals(get_type(Arg1)) of
     [X] when is_integer(X) ->
       %% io:format("Division with constant arguments:\n  ~w\n", [I]),
-      hipe_icode:mk_move(call_dst(I), hipe_icode:mk_const((X bsr N)));
+      case call_dstlist(I) of
+	[] -> remove_useless_arithmetic_instruction(I);
+	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X bsr N)))
+      end;
     _ ->
       update_call_or_enter(I, 'bsr', [Arg1, hipe_icode:mk_const(N)])
   end.
@@ -1309,7 +1335,10 @@ strength_reduce_rem(I, Arg1, N) ->
   case t_number_vals(get_type(Arg1)) of
     [X] when is_integer(X) ->
       %% io:format("Remainder with constant arguments:\n  ~w\n", [I]),
-      hipe_icode:mk_move(call_dst(I), hipe_icode:mk_const((X band N)));
+      case call_dstlist(I) of
+	[] -> remove_useless_arithmetic_instruction(I);
+	[Dst] -> hipe_icode:mk_move(Dst, hipe_icode:mk_const((X band N)))
+      end;
     _ ->
       update_call_or_enter(I, 'band', [Arg1, hipe_icode:mk_const(N)])
   end.
@@ -1324,7 +1353,14 @@ call_or_enter_fun(I) ->
 
 update_call_or_enter(I, NewFun) ->
   case hipe_icode:is_call(I) of
-    true -> hipe_icode:call_fun_update(I, NewFun);
+    true ->
+      case hipe_icode_primops:fails(NewFun) of
+	false ->
+	  NewI = hipe_icode:call_fun_update(I, NewFun),
+	  hipe_icode:call_set_fail_label(NewI, []);
+	true ->
+	  hipe_icode:call_fun_update(I, NewFun)
+      end;
     false -> hipe_icode:enter_fun_update(I, NewFun)
   end.
 
@@ -1406,13 +1442,6 @@ transform_hd_or_tl(I, Primop) ->
     false -> I
   end.
 
-transform_bs_put_integer(I, Primop) -> 
-  [Src|_] = get_type_list(hipe_icode:args(I)),
-  case t_is_fixnum(Src) of
-    true -> update_call_or_enter(I, Primop);
-    false -> I
-  end.
-
 transform_arith(I, Op) ->
   ArgTypes = get_type_list(hipe_icode:args(I)),
   %% io:format("Op = ~w, Args = ~w\n", [Op, ArgTypes]),
@@ -1484,6 +1513,75 @@ fixnum_ifop(Op) ->
     Op    -> Op
   end.
 
+bit_opts({Name, Size, Flags}, [MSType]) when Name =:= bs_get_integer;
+					     Name =:= bs_get_float;
+					     Name =:= bs_get_binary ->
+  Bits = t_matchstate_present(MSType),
+  case t_is_bitstr(Bits) of
+    true ->
+      Base = t_bitstr_base(Bits),
+      if Base >= Size ->
+	  {Name, Size, Flags bor 16};
+	 true ->
+	  {Name, Size, Flags}
+      end;
+    false ->
+      {Name, Size, Flags}
+  end;
+bit_opts({bs_get_binary_all, Size, Flags}, [MSType]) ->
+  Bits = t_matchstate_present(MSType),
+  case t_is_bitstr(Bits) of
+    true ->
+      Base = t_bitstr_base(Bits),
+      Unit = t_bitstr_unit(Bits),
+      if (Base rem Size) =:= 0 andalso (Unit rem Size) =:= 0 ->
+	  {bs_get_binary_all, Size, Flags bor 16};
+	 true ->
+	  {bs_get_binary_all, Size, Flags}
+      end;
+    false ->
+      {bs_get_binary_all, Size, Flags}
+  end;
+bit_opts({bs_test_unit, Size}, [MSType]) ->
+  Bits = t_matchstate_present(MSType),
+  case t_is_bitstr(Bits) of
+    true ->
+      Base = t_bitstr_base(Bits),
+      Unit = t_bitstr_unit(Bits),
+      if (Base rem Size) =:= 0 andalso (Unit rem Size) =:= 0 ->
+	  {bs_test_unit, 1};
+	 true ->
+	  {bs_test_unit, Size}
+      end;    
+    false ->
+      {bs_test_unit, Size}
+  end;
+bit_opts({bs_put_integer, Size, Flags, ConstInfo}, [Src|_]) -> 
+  case t_is_fixnum(Src) of
+    true -> 
+      {unsafe_bs_put_integer, Size, Flags, ConstInfo};
+    false -> 
+      {bs_put_integer, Size, Flags, ConstInfo}
+  end;
+bit_opts({bs_start_match, Max}, [Src]) ->
+  Name = 
+  case t_is_bitstr(Src) of
+    true -> {{bs_start_match, bitstr}, Max};
+    false ->
+      MSorNone = t_inf(t_matchstate(), Src),
+      case not (t_is_none(MSorNone)) andalso 
+	is_list(t_components(t_matchstate_slots(MSorNone))) andalso 
+	(length(t_components(t_matchstate_slots(MSorNone))) >= Max) 
+	of
+	true ->
+	  {{bs_start_match, ok_matchstate}, Max};
+	false ->
+	  {bs_start_match, Max}
+      end
+  end,
+  Name;
+bit_opts(I, _) -> I.
+
 is_exact_comp(Op) ->
   case Op of
     '=:=' -> true;
@@ -1519,7 +1617,8 @@ primop_type(Op, Args) ->
       t_inf(t_fun(), find_signature_mfa(MFA));
     _ ->
       None = t_none(),
-      case hipe_icode_primops:type(get_standard_primop(Op), Args) of
+      RetType = hipe_icode_primops:type(get_standard_primop(Op), Args),
+      case RetType of
 	None ->
 	  hipe_icode_primops:type(get_standard_primop(Op),
 				  add_funs_to_arg_types(Args));
@@ -1551,10 +1650,10 @@ get_type_list(ArgList) ->
   [get_type(Arg) || Arg <- ArgList].
 
 get_type(Arg) ->
-  case hipe_icode:is_annotated_var(Arg) of
+  case hipe_icode:is_annotated_var_or_reg(Arg) of
     true ->
       None = t_none(),
-      case hipe_icode:var_annotation(Arg) of
+      case hipe_icode:reg_or_var_annotation(Arg) of
 	None -> t_any();
 	Type -> Type
       end;
@@ -1576,7 +1675,7 @@ lookup(Var, Tree) ->
 	false -> t_none()
       end;
     {value, Val} ->
-      case hipe_icode:is_var(Val) of
+      case is_var_or_reg(Val) of
 	true ->
 	  lookup(Val, Tree);
 	false ->
@@ -1606,7 +1705,7 @@ safe_lookup(Var, Tree) ->
 	  t_any()
       end;
     {value, Val} ->
-      case hipe_icode:is_var(Val) of
+      case is_var_or_reg(Val) of
 	true ->
 	  safe_lookup(Val, Tree);
 	false ->
@@ -1631,7 +1730,7 @@ enter_list([], [], Info) ->
 enter([Key], Value, Tree) ->
   enter(Key, Value, Tree);
 enter(Key, Value, Tree) ->
-  case hipe_icode:is_var(Key) of
+  case is_var_or_reg(Key) of
     true ->
       enter_to_leaf(Key, Value, Tree);
     false ->
@@ -1643,8 +1742,8 @@ enter_to_leaf(Key, Value, Tree) ->
     {value, Value} ->
       Tree;
     {value, Val} ->
-      case hipe_icode:is_var(Val) of
-	true->
+      case is_var_or_reg(Val) of
+	true ->
 	  enter_to_leaf(Val, Value, Tree);
 	false ->
 	  case t_is_none(Value) of
@@ -1675,6 +1774,9 @@ join_list([H|T], Info, Acc) ->
 join_list([], _, Acc) ->
   Acc.
 
+join_info_in([], _OldInfo, _NewInfo) ->
+  %% No variables are live in. The information must be at a fixpoint.
+  fixpoint;
 join_info_in(Vars, OldInfo, NewInfo) ->
   NewInfo2 = join_info_in(Vars, Vars, OldInfo, NewInfo, gb_trees:empty()),
   case info_is_equal(NewInfo2, OldInfo) of
@@ -1695,7 +1797,7 @@ join_info_in([Var|Left], LiveIn, Info1, Info2, Acc) ->
       join_info_in(Left, LiveIn, Info1, Info2, Acc);
     {none, {value, Val}} ->
       NewVal =
-	case hipe_icode:is_var(Val) of
+	case is_var_or_reg(Val) of
 	  true -> lookup(Val, Info2);
 	  false -> Val
 	end,
@@ -1703,7 +1805,7 @@ join_info_in([Var|Left], LiveIn, Info1, Info2, Acc) ->
       join_info_in(Left, LiveIn, Info1, Info2, NewTree);
     {{value, Val}, none} ->
       NewVal =
-	case hipe_icode:is_var(Val) of
+	case is_var_or_reg(Val) of
 	  true -> lookup(Val, Info2);
 	  false -> Val
 	end,
@@ -1711,7 +1813,7 @@ join_info_in([Var|Left], LiveIn, Info1, Info2, Acc) ->
       join_info_in(Left, LiveIn, Info1, Info2, NewTree);
     {{value, Val}, {value, Val}} ->
       NewVal =
-	case hipe_icode:is_var(Val) of
+	case is_var_or_reg(Val) of
 	  false -> Val;
 	  true ->
 	    case ordsets:is_element(Val, LiveIn) of
@@ -1723,7 +1825,7 @@ join_info_in([Var|Left], LiveIn, Info1, Info2, Acc) ->
       join_info_in(Left, LiveIn, Info1, Info2, NewTree);
     {{value, Val1}, {value, Val2}} ->
       NewVal = 
-	case {hipe_icode:is_var(Val1), hipe_icode:is_var(Val2)} of
+	case {is_var_or_reg(Val1), is_var_or_reg(Val2)} of
 	  {false, false} -> t_sup(Val1, Val2);
 	  {true, true} -> t_sup(lookup(Val1, Info1), lookup(Val2, Info2));
 	  {false, true} -> t_sup(Val1, lookup(Val2, Info2));
@@ -1768,37 +1870,40 @@ do_updates(State, [{Label, Info}|Tail], Worklist) ->
 do_updates(State, [], Worklist) ->
   {State, Worklist}.
 
-enter_defines(I, Types, Info) when is_list(Types) ->
-  case defines(I) of
-    [] -> Info;
-    Def ->
-      {NewInfo, _} =
-	lists:foldl(fun(X, {Inf,[Type|Tail]}) -> {enter(X,Type,Inf), Tail} end,
-		    {Info, Types}, Def),
-      NewInfo
-  end;
 enter_defines(I, Type, Info) ->
   case defines(I) of
     [] -> Info;
-    Def ->
-      lists:foldl(fun(X, Acc) -> enter(X, Type, Acc) end, Info, Def)
+    [Def] ->
+      enter(Def, Type, Info);
+    Defs ->
+      Comp = t_components(Type),
+      Pairs = case t_is_any(Comp) of
+		true ->
+		  [{Def,t_any()} || Def <- Defs];
+		false ->
+		  case t_is_none(Comp) of
+		    true ->
+		      [{Def,t_none()} || Def <- Defs];
+		    false ->
+		      lists:zip(Defs,Comp)
+		  end
+	      end,
+      lists:foldl(
+	fun({X,Type}, Inf) -> enter(X,Type,Inf) end,
+	Info, Pairs)
   end.
 
 defines(I) ->
-  keep_vars(hipe_icode:defines(I)).
-
-call_dst(I) ->
-  [Dst] = hipe_icode:call_dstlist(I),
-  Dst.
+  keep_vars_and_regs(hipe_icode:defines(I)).
 
 call_dstlist(I) ->
   hipe_icode:call_dstlist(I).
 
 uses(I) ->
-  keep_vars(hipe_icode:uses(I)).
+  keep_vars_and_regs(hipe_icode:uses(I)).
 
-keep_vars(Vars) ->
-  [V || V <- Vars, hipe_icode:is_var(V)].
+keep_vars_and_regs(Vars) ->
+  [V || V <- Vars, is_var_or_reg(V)].
 
 butlast([_]) ->
   [];
@@ -1812,6 +1917,9 @@ any_is_none([H|T]) ->
   end;
 any_is_none([]) ->
   false.
+
+is_var_or_reg(X) ->
+  hipe_icode:is_var(X) orelse hipe_icode:is_reg(X).
       
 %% _________________________________________________________________
 %%
@@ -1843,9 +1951,6 @@ state__cfg(#state{cfg=Cfg}) ->
 
 state__succ(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:succ(Cfg, Label).
-
-state__pred(#state{cfg=Cfg}, Label) ->
-  hipe_icode_cfg:pred(Cfg, Label).
 
 state__bb(#state{cfg=Cfg}, Label) ->
   hipe_icode_cfg:bb(Cfg, Label).
@@ -1884,10 +1989,7 @@ state__ret_type_update(#state{ret_type=RT} = State, NewType) ->
   state__ret_type_update(State, lists:duplicate(length(RT),NewType)). 
 
 state__info_in_update(S=#state{info_map=IM, liveness=Liveness}, Label, Info) ->
-  Pred = state__pred(S, Label),
-  RawLiveIn = [hipe_icode_ssa:ssa_liveness__livein(Liveness, Label, X) ||
-		X <- Pred],
-  LiveIn = ordsets:from_list(lists:flatten(RawLiveIn)),
+  LiveIn = hipe_icode_ssa:ssa_liveness__livein(Liveness, Label),
   case gb_trees:lookup({Label, in}, IM) of
     none -> 
       OldInfo = gb_trees:empty(),
@@ -1930,7 +2032,7 @@ get_work({[], [], _Set}) ->
 get_work({[], List, Set}) ->
   get_work({lists:reverse(List), [], Set}).
 
-add_work(Work = {List1, List2, Set},[Label|Left]) ->
+add_work(Work = {List1, List2, Set}, [Label|Left]) ->
   case gb_sets:is_member(Label, Set) of
     true ->
       add_work(Work, Left);
@@ -2052,7 +2154,7 @@ annotate_cfg(State) ->
  
 annotate_params(Params, State, Start) ->
   Info = state__info_in(State, Start),
-  AnnoFun = fun hipe_icode:annotate_var/2,
+  AnnoFun = fun hipe_icode:annotate_var_or_reg/2,
   NewParams = lists:zipwith(AnnoFun,Params,[safe_lookup(P,Info) || P <- Params]),
   state__params_update(State,NewParams).
 
@@ -2092,7 +2194,7 @@ annotate_instr_list([I|Left], Info, LookupFun, Acc) ->
 annotate_instr(I, DefInfo, UseInfo) ->
   Def = defines(I),
   Use = uses(I),
-  Fun = fun(X, Y) -> hipe_icode:annotate_var(X, Y) end,
+  Fun = fun(X, Y) -> hipe_icode:annotate_var_or_reg(X, Y) end,
   DefSubst = [{X, Fun(X, safe_lookup(X, DefInfo))} || X <- Def],
   UseSubst = [{X, Fun(X, safe_lookup(X, UseInfo))} || X <- Use],
   case  DefSubst ++ UseSubst of
@@ -2109,9 +2211,9 @@ unannotate_cfg(Cfg) ->
 
 unannotate_params(Cfg) ->
   Params = hipe_icode_cfg:params(Cfg),
-  NewParams = [hipe_icode:unannotate_var(X)
+  NewParams = [hipe_icode:unannotate_var_or_reg(X)
 	       || X <- Params,
-		  hipe_icode:is_annotated_var(X) =:= true],
+		  hipe_icode:is_annotated_var_or_reg(X) =:= true],
   hipe_icode_cfg:params_update(Cfg,NewParams).
   
   
@@ -2133,9 +2235,9 @@ unannotate_instr_list([], Acc) ->
 
 unannotate_instr(I) ->
   DefUses = hipe_icode:defines(I) ++ hipe_icode:uses(I),
-  Subst = [{X, hipe_icode:unannotate_var(X)}
+  Subst = [{X, hipe_icode:unannotate_var_or_reg(X)}
 	   || X <- DefUses,
-	      hipe_icode:is_annotated_var(X) =:= true],
+	      hipe_icode:is_annotated_var_or_reg(X) =:= true],
   if Subst =:= [] -> I;
      true -> hipe_icode:subst(Subst, I)
   end.

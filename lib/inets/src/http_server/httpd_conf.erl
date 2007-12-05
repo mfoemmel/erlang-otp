@@ -23,7 +23,7 @@
 
 %% Application internal API
 -export([load/1, load/2, load_mime_types/1, store/1, store/2,
-	remove/1, remove_all/1, config/1]).
+	remove/1, remove_all/1, config/1, get_config/2, get_config/3]).
 
 -define(VMODULE,"CONF").
 -include("httpd.hrl").
@@ -135,6 +135,20 @@ check_enum(Enum,[Enum|_Rest]) ->
 check_enum(Enum, [_NotValid|Rest]) ->
     check_enum(Enum, Rest).
 
+get_config(Address, Port) ->    
+    Tab = httpd_util:make_name("httpd_conf", Address, Port),
+    Properties =  ets:tab2list(Tab),
+    MimeTab = proplists:get_value(mime_types, Properties),
+    NewProperties = proplists:delete(mime_types, Properties),
+    [{mime_types, ets:tab2list(MimeTab)} | NewProperties].
+     
+get_config(Address, Port, Properties) ->    
+    Tab = httpd_util:make_name("httpd_conf", Address, Port),
+    Config = 
+	lists:map(fun(Prop) -> {Prop, httpd_util:lookup(Tab, Prop)} end,
+		  Properties),
+    [{Proporty, Value} || {Proporty, Value} <- Config, Value =/= undefined].  
+			   
 %%%=========================================================================
 %%%  Application internal API
 %%%=========================================================================
@@ -170,8 +184,16 @@ load("MaxHeaderSize " ++ MaxHeaderSize, []) ->
             {error, ?NICE(clean(MaxHeaderSize)++
                           " is an invalid number of MaxHeaderSize")}
     end;
-load("MaxHeaderAction " ++ Action, []) ->
-    {ok, [], {max_header_action,list_to_atom(clean(Action))}};
+
+load("MaxURISize " ++ MaxHeaderSize, []) ->
+    case make_integer(MaxHeaderSize) of
+        {ok, Integer} ->
+            {ok, [], {max_uri_size, Integer}};
+        {error, _} ->
+            {error, ?NICE(clean(MaxHeaderSize)++
+                          " is an invalid number of MaxHeaderSize")}
+    end;
+
 load("MaxBodySize " ++ MaxBodySize, []) ->
     case make_integer(MaxBodySize) of
         {ok, Integer} ->
@@ -180,8 +202,7 @@ load("MaxBodySize " ++ MaxBodySize, []) ->
             {error, ?NICE(clean(MaxBodySize)++
                           " is an invalid number of MaxBodySize")}
     end;
-load("MaxBodyAction " ++ Action, []) ->
-    {ok, [], {max_body_action,list_to_atom(clean(Action))}};
+
 load("ServerName " ++ ServerName, []) ->
     {ok,[],{server_name,clean(ServerName)}};
 load("SocketType " ++ SocketType, []) ->
@@ -209,31 +230,19 @@ load("BindAddress " ++ Address, []) ->
 	"*" ->
 	    {ok, [], {bind_address,any}};
 	CAddress ->
-	    case (catch inet:getaddr(CAddress,inet6)) of
-		{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
-		    case inet:getaddr(CAddress, inet) of
-			{ok, IPAddr} ->
-			    {ok, [], {bind_address,IPAddr}};
-			{error, _} ->
-			    {error, ?NICE(CAddress++" is an invalid address")}
-		    end;
+	    case httpd_util:ip_address(CAddress) of
 		{ok, IPAddr} ->
-		    {ok, [], {bind_address, IPAddr}};
-		_ ->
-		    case inet:getaddr(CAddress, inet) of
-			{ok, IPAddr} ->
-			    {ok, [], {bind_address,IPAddr}};
-			{error, _} ->
-			    {error, ?NICE(CAddress++" is an invalid address")}
-		    end
+		    {ok, [], {bind_address,IPAddr}};
+		{error, _} ->
+		    {error, ?NICE(CAddress++" is an invalid address")}
 	    end
     end;
 load("KeepAlive " ++ OnorOff, []) ->
     case list_to_atom(clean(OnorOff)) of
 	off ->
-	    {ok, [], {persistent_conn, false}};
+	    {ok, [], {keep_alive, false}};
 	_ ->
-	    {ok, [], {persistent_conn, true}}
+	    {ok, [], {keep_alive, true}}
     end;
 load("MaxKeepAliveRequests " ++  MaxRequests, []) ->
     case make_integer(MaxRequests) of
@@ -267,18 +276,19 @@ load("ServerAdmin " ++ ServerAdmin, []) ->
 load("ServerRoot " ++ ServerRoot, []) ->
     case is_directory(clean(ServerRoot)) of
 	{ok, Directory} ->
-	    MimeTypesFile = 
-		filename:join([clean(ServerRoot),"conf", "mime.types"]),
-	    case load_mime_types(MimeTypesFile) of
-		{ok, MimeTypesList} ->
-		    {ok, [], [{server_root,string:strip(Directory,right,$/)},
-			      {mime_types,MimeTypesList}]};
-		{error, Reason} ->
-		    {error, Reason}
-	    end;
+	    {ok, [], [{server_root,string:strip(Directory,right,$/)}]};
 	{error, _} ->
 	    {error, ?NICE(clean(ServerRoot)++" is an invalid ServerRoot")}
     end;
+
+load("MimeTypes " ++ MimeTypes, []) ->
+    case load_mime_types(clean(MimeTypes)) of
+	{ok, MimeTypesList} ->
+	    {ok, [], [{mime_types, MimeTypesList}]};
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+
 load("MaxClients " ++ MaxClients, []) ->
     case make_integer(MaxClients) of
 	{ok, Integer} ->
@@ -369,18 +379,194 @@ load_mime_types(MimeTypesFile) ->
 	    {error, ?NICE("Can't open " ++ MimeTypesFile)}
     end.
 
-%% Phase 2: Store
-store(ConfigList) ->
-    Modules = httpd_util:key1search(ConfigList, modules, []),
-    Port = httpd_util:key1search(ConfigList, port),
-    Addr = httpd_util:key1search(ConfigList,bind_address),
-    Name = httpd_util:make_name("httpd_conf",Addr,Port),
-    ConfigDB = ets:new(Name, [named_table, bag, protected]),
-    store(ConfigDB, ConfigList, lists:append(Modules,[?MODULE]),ConfigList).
+validate_config_params([]) ->
+    ok;
+validate_config_params([{max_header_size, Value} | Rest]) 
+  when is_integer(Value), Value > 0 ->
+    validate_config_params(Rest);
+validate_config_params([{max_header_size, Value} | _]) ->
+    throw({max_header_size, Value});
+
+validate_config_params([{max_body_size, Value} | Rest]) 
+  when is_integer(Value), Value > 0 ->
+    validate_config_params(Rest);
+validate_config_params([{max_body_size, Value} | _]) -> 
+    throw({max_body_size, Value});
+
+validate_config_params([{server_name, Value} | Rest])  
+  when is_list(Value)->
+    validate_config_params(Rest);
+validate_config_params([{server_name, Value} | _]) ->
+    throw({server_name, Value});
+
+validate_config_params([{socket_type, Value} | Rest]) 
+  when Value == ip_comm;
+       Value == ssl ->
+    validate_config_params(Rest);
+validate_config_params([{socket_type, Value} | _]) ->
+    throw({socket_type, Value});
+
+validate_config_params([{port, Value} | Rest]) 
+  when is_integer(Value), Value >= 0 ->
+    validate_config_params(Rest);
+validate_config_params([{port, Value} | _]) -> 
+    throw({port, Value});
+
+validate_config_params([{bind_address, Value} | Rest])  ->
+    case is_bind_address(Value) of
+	true ->
+	    validate_config_params(Rest);
+	false ->
+	    throw({bind_address, Value})
+    end;
+
+validate_config_params([{keep_alive, Value} | Rest])  
+  when Value == true;
+       Value == false ->
+    validate_config_params(Rest);
+validate_config_params([{keep_alive, Value} | _]) ->
+    throw({keep_alive, Value});
+
+validate_config_params([{max_keep_alive_request, Value} | Rest]) 
+  when is_integer(Value), Value > 0 ->
+    validate_config_params(Rest);
+validate_config_params([{max_keep_alive_request, Value} | _]) ->
+    throw({max_header_size, Value});
+
+validate_config_params([{keep_alive_timeout, Value} | Rest]) 
+  when is_integer(Value), Value >= 0 ->
+    validate_config_params(Rest);
+validate_config_params([{keep_alive_timeout, Value} | _]) ->
+    throw({keep_alive_timeout, Value});
+
+validate_config_params([{modules, Value} | Rest]) ->
+    ok = httpd_util:modules_validate(Value),
+    validate_config_params(Rest);
+	  
+validate_config_params([{server_admin, Value} | Rest]) when is_list(Value)->
+    validate_config_params(Rest);
+validate_config_params([{server_admin, Value} | _]) ->
+    throw({server_admin, Value});
+
+validate_config_params([{server_root, Value} | Rest]) ->
+    ok = httpd_util:dir_validate(server_root, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{mime_types, Value} | Rest]) ->
+    ok = httpd_util:mime_types_validate(Value),
+    validate_config_params(Rest);
+
+validate_config_params([{max_clients, Value} | Rest]) 
+  when is_integer(Value), Value > 0 ->
+    validate_config_params(Rest);
+validate_config_params([{max_clients, Value} | _]) ->
+    throw({max_clients, Value});
+
+validate_config_params([{document_root, Value} | Rest]) ->
+    ok = httpd_util:dir_validate(document_root, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{default_type, Value} | Rest]) when is_list(Value) ->
+    validate_config_params(Rest);
+validate_config_params([{default_type, Value} | _]) ->
+    throw({default_type, Value});
+
+validate_config_params([{ssl_certificate_file, Value} | Rest]) ->
+    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{ssl_certificate_key_file, Value} | Rest]) ->
+    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{ssl_verify_client, Value} | Rest]) when 
+  Value == 0; Value == 1; Value == 2 ->
+    validate_config_params(Rest);
+
+validate_config_params([{ssl_verify_client_depth, Value} | Rest]) 
+  when is_integer(Value), Value >= 0 ->
+    validate_config_params(Rest);
+validate_config_params([{ssl_verify_client_depth, Value} | _]) ->
+    throw({ssl_verify_client_depth, Value});
+
+validate_config_params([{ssl_ciphers, Value} | Rest]) when is_list(Value) ->
+    validate_config_params(Rest);
+validate_config_params([{ssl_ciphers, Value} | _]) ->
+    throw({ssl_ciphers, Value});
+
+validate_config_params([{ssl_ca_certificate_file, Value} | Rest]) ->
+    ok = httpd_util:file_validate(ssl_certificate_file, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{ssl_password_callback_module, Value} | Rest]) ->
+    ok = httpd_util:file_validate(ssl_password_callback_module, Value),
+    validate_config_params(Rest);
+
+validate_config_params([{ssl_password_callback_function, Value} | Rest]) 
+  when is_atom(Value) ->
+    validate_config_params(Rest);
+validate_config_params([{ssl_password_callback_function, Value} | _]) ->
+    throw({ssl_password_callback_function, Value});
+
+validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
+			Rest])  when Value == true; Value == false ->
+    validate_config_params(Rest);
+validate_config_params([{disable_chunked_transfer_encoding_send, Value} |
+			_ ]) ->
+    throw({disable_chunked_transfer_encoding_send, Value});
+validate_config_params([_| Rest]) ->
+    validate_config_params(Rest).
+
+is_bind_address(any) ->
+    true;
+is_bind_address(Value) ->
+    case inet:gethostbyaddr(Value) of
+	{ok, _} ->
+	    true;
+	_ ->
+	    false
+    end.
+
+store(ConfigList0) -> 
+    try validate_config_params(ConfigList0) of
+	ok ->
+	    Modules = 
+		proplists:get_value(modules, ConfigList0, ?DEFAULT_MODS),
+	    Port = proplists:get_value(port, ConfigList0),
+	    Addr = proplists:get_value(bind_address, ConfigList0, any),
+	    ConfigList = fix_mime_types(ConfigList0),
+	    Name = httpd_util:make_name("httpd_conf",Addr,Port),
+	    ConfigDB = ets:new(Name, [named_table, bag, protected]),
+	    store(ConfigDB, ConfigList, 
+		  lists:append(Modules,[?MODULE]), ConfigList)
+    catch
+	throw:Error ->
+	    {error, {wrong_type, Error}}
+    end.
+
+fix_mime_types(ConfigList0) ->
+    case proplists:get_value(mime_types, ConfigList0) of
+	undefined ->
+	    ServerRoot = proplists:get_value(server_root, ConfigList0),
+		MimeTypesFile = 
+		filename:join([ServerRoot,"conf", "mime.types"]),
+		case filelib:is_file(MimeTypesFile) of
+		    true ->
+			{ok, MimeTypesList} = load_mime_types(MimeTypesFile),
+			[{mime_types, MimeTypesList} | ConfigList0];
+		    false ->
+			[{mime_types,
+			  [{"html","text/html"},{"htm","text/html"}]} 
+			 | ConfigList0]
+		end;
+	_ ->
+	    ConfigList0
+    end.
+
 
 store({mime_types,MimeTypesList},ConfigList) ->
-    Port = httpd_util:key1search(ConfigList, port),
-    Addr = httpd_util:key1search(ConfigList, bind_address),
+    Port = proplists:get_value(port, ConfigList),
+    Addr = proplists:get_value(bind_address, ConfigList),
     Name = httpd_util:make_name("httpd_mime",Addr,Port),
     {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),
     {ok, {mime_types,MimeTypesDB}};
@@ -423,7 +609,7 @@ config(ConfigDB) ->
 %%%========================================================================
 %%% Phase 1 Load:
 bootstrap([]) ->
-    {error, ?NICE("Modules must be specified in the config file")};
+    {ok, ?DEFAULT_MODS};
 bootstrap([Line|Config]) ->
     case Line of
 	"Modules " ++ Modules ->
@@ -444,13 +630,8 @@ load_config(Config, Modules) ->
     Contexts = lists:duplicate(length(Modules), []),
     load_config(Config, Modules, Contexts, []).
 load_config([], _Modules, _Contexts, ConfigList) ->
-    case a_must(ConfigList, [server_name,port,server_root,document_root]) of
-	ok ->
-	    {ok, ConfigList};
-	{missing, Directive} ->
-	    {error, ?NICE(atom_to_list(Directive)++
-			  " must be specified in the config file")}
-    end;
+    {ok, ConfigList};
+	
 load_config([Line|Config], Modules, Contexts, ConfigList) ->
     case load_traverse(Line, Contexts, Modules, [], ConfigList, no) of
 	{ok, NewContexts, NewConfigList} ->
@@ -490,7 +671,8 @@ load_traverse(Line, [Context|Contexts], [Module|Modules], NewContexts,
 	    load_traverse(Line, Contexts, Modules, 
 			  [NewContext|NewContexts], ConfigList,yes);
 	{ok, NewContext, ConfigEntry} when tuple(ConfigEntry) ->
-	    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
+	  load_traverse(Line, Contexts, 
+			Modules, [NewContext|NewContexts],
 			  [ConfigEntry|ConfigList], yes);
 	{ok, NewContext, ConfigEntry} when list(ConfigEntry) ->
 	    load_traverse(Line, Contexts, Modules, [NewContext|NewContexts],
@@ -572,15 +754,6 @@ suffixes(_MimeType,[]) ->
 suffixes(MimeType,[Suffix|Rest]) ->
     [{Suffix,MimeType}|suffixes(MimeType,Rest)].
 
-a_must(_ConfigList,[]) ->
-    ok;
-a_must(ConfigList,[Directive|Rest]) ->
-    case httpd_util:key1search(ConfigList,Directive) of
-	undefined ->
-	    {missing,Directive};
-	_ ->
-	    a_must(ConfigList,Rest)
-    end.
 
 %% Pahse 2: store
 store(ConfigDB, _ConfigList, _Modules,[]) ->
@@ -717,4 +890,3 @@ ssl_ca_certificate_file(ConfigDB) ->
 error_report(Where,M,F,Error) ->
     error_logger:error_report([{?MODULE, Where}, 
 			       {apply, {M, F, []}}, Error]).
-

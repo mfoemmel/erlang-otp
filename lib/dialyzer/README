@@ -3,7 +3,7 @@
 ## Author(s): Tobias Lindahl <tobias.lindahl@it.uu.se>
 ##	      Kostis Sagonas <kostis@it.uu.se>
 ##
-## Copyright: Held by the authors; all rights reserved (2004, 2005, 2006).
+## Copyright: Held by the authors; all rights reserved (2004 - 2007).
 ##
 ## $Id$
 ##----------------------------------------------------------------------------
@@ -39,9 +39,12 @@ the Erlang/OTP installation for discrepancies.
 
 The complete set of Dialyzer options is:
 
-	dialyzer [--help] [--version] [--shell] [--plt plt]
-                 [-pa dir]* [-Ddefine]* [-I include_dir]* [-Wwarn]*
-                 [--src] [-c applications] [-r applications] [-o outfile] [-q]
+	dialyzer [--help] [--version] [--shell] [--quiet] [--verbose]
+                 [-pa dir]* [--plt plt] [-Ddefine]* [-I include_dir]* 
+                 [--old_style] [--output_plt file] [-Wwarn]* 
+                 [--no_warn_on_inline] [--src] [-c applications] 
+                 [-r applications] [-o outfile]
+                 [--dataflow] [--succ_typings]
 
 Use "./dialyzer --help" to see an explanation of these options.
 
@@ -73,7 +76,7 @@ to read a brief overview and a user manual.
 --
 -----------------------------------------------
 
-At this point, we welcome user feedback (even wish-lists!). If you notice
+We welcome all sorts of user feedback (even wish-lists!). If you notice
 something weird, please send an error report describing the symptoms and
 how to reproduce them to:
 

@@ -21,20 +21,9 @@
 -export([expr_grp/3,expr_grp/5,match_bits/6, 
 	 match_bits/7,bin_gen/6]).
 
-%% EXPERIMENTAL.
--export([bitlevel_binaries_enabled/0]).
-
-%% EXPERIMENTAL feature used here: Don't use in applications!
+%% XXX Remove in R12B-1 (keep in R12B-0 for bootstrapping purposes).
 -compile(bitlevel_binaries).
 -compile(binary_comprehension).
-
-%% Only to be used during development of bitlevel binaries to selectively
-%% skip test suites. Will be removed in the future.
-
-bitlevel_binaries_enabled() ->
-    %% For testing and future development of the EXPERIMENTAL feature
-    %% bitlevel binaries, the following line can be changed to true.
-    false.
 
 %% Types used in this module:
 %% @type bindings(). An abstract structure for bindings between
@@ -75,14 +64,6 @@ expr_grp([Field | FS], Bs0, Lf, Acc) ->
     {Bin,Bs} = eval_field(Field, Bs0, Lf),
     expr_grp(FS, Bs, Lf, <<Acc/binary-unit:1,Bin/binary-unit:1>>);
 expr_grp([], Bs0, _Lf, Acc) ->
-    case bitlevel_binaries_enabled() of
-	true -> ok;
-	false ->
-	    case erlang:bitsize(Acc) rem 8 of
-		0 -> ok;
-		_ -> error(badarg)
-	    end
-    end,
     {value,Acc,Bs0}.
 
 eval_field({bin_element, _, {string, _, S}, default, default}, Bs0, _Fun) ->
@@ -118,9 +99,13 @@ eval_exp_field(Val, Size, Unit, float, native, _) ->
     <<Val:(Size*Unit)/float-native>>;
 eval_exp_field(Val, Size, Unit, float, big, _) ->
     <<Val:(Size*Unit)/float>>;
-eval_exp_field(Val, all, _Unit, binary, _, _) ->
-    Size = erlang:bitsize(Val),
-    <<Val:Size/binary-unit:1>>;
+eval_exp_field(Val, all, Unit, binary, _, _) ->
+    case erlang:bitsize(Val) of
+	Size when Size rem Unit =:= 0 ->
+	    <<Val:Size/binary-unit:1>>;
+	_ ->
+	    error(badarg)
+    end;
 eval_exp_field(Val, Size, Unit, binary, _, _) ->
     <<Val:(Size*Unit)/binary-unit:1>>.
 
@@ -223,8 +208,9 @@ match_field_1({bin_element,Line,VE,Size0,Options0},
     {Size1, [Type,{unit,Unit},Sign,Endian]} = 
         make_bit_type(Line, Size0, Options0),
     V = erl_eval:partial_eval(VE),
-    match_check_size(Size1,BBs0),
-    {value, Size, _BBs} = Efun(Size1, BBs0),
+    Size2 = erl_eval:partial_eval(Size1),
+    match_check_size(Size2,BBs0),
+    {value, Size, _BBs} = Efun(Size2, BBs0),
     {Val,Rest} = get_value(Bin, Type, Size, Unit, Sign, Endian),
     NewV = coerce_to_float(V, Type),
     {match,Bs} = Mfun(NewV, Val, Bs0),
@@ -256,21 +242,11 @@ get_value(Bin, float, Size, Unit, _Sign, Endian) ->
     get_float(Bin, Size*Unit, Endian);
 get_value(Bin, binary, all, Unit, _Sign, _Endian) ->
     0 = (erlang:bitsize(Bin) rem Unit),
-    maybe_disallow_bitlevel_binary(Bin),
     {Bin,<<>>};
 get_value(Bin, binary, Size, Unit, _Sign, _Endian) ->
     TotSize = Size*Unit,
     <<Val:TotSize/bitstr,Rest/bitstr>> = Bin,
-    maybe_disallow_bitlevel_binary(Val),
     {Val,Rest}.
-
-maybe_disallow_bitlevel_binary(Bin) ->
-    case bitlevel_binaries_enabled() of
-	false ->
-	    0 = erlang:bitsize(Bin) rem 8;
-	true ->
-	    ok
-    end.
 
 get_integer(Bin, Size, signed, little) ->
     <<Val:Size/little-signed,Rest/binary-unit:1>> = Bin,

@@ -974,7 +974,7 @@ static int db_select_continue_tree(Process *p,
 
     BUMP_REDS(p, 1000 - sc.max);
 
-    if (sc.max > 0) {
+    if (sc.max > 0 || (chunk_size && sc.got == chunk_size)) {
 	if (chunk_size) {
 	    Eterm *hp; 
 	    unsigned sz;
@@ -1436,7 +1436,7 @@ static int db_select_chunk_tree(Process *p, DbTable *tbl,
     }
 
     BUMP_REDS(p, 1000 - sc.max);
-    if (sc.max > 0) {
+    if (sc.max > 0 || sc.got == chunk_size) {
 	Eterm *hp; 
 	unsigned sz;
 
@@ -2980,6 +2980,13 @@ static int doit_select(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	}
 	sc->accum = CONS(hp, ret, sc->accum);
     }
+    if (MBUF(sc->p)) {
+	/*
+	 * Force a trap and GC if a heap fragment was created. Many heap fragments
+	 * make the GC slow.
+	 */
+	sc->max = 0;
+    }
     if (--(sc->max) <= 0) {
 	return 0;
     }
@@ -3055,6 +3062,13 @@ static int doit_select_chunk(DbTableTree *tb, TreeDbTerm *this, void *ptr,
 	    ret = copy_struct(ret, sz, &hp, &MSO(sc->p));
 	}
 	sc->accum = CONS(hp, ret, sc->accum);
+    }
+    if (MBUF(sc->p)) {
+	/*
+	 * Force a trap and GC if a heap fragment was created. Many heap fragments
+	 * make the GC slow.
+	 */
+	sc->max = 0;
     }
     if (--(sc->max) <= 0 || sc->got == sc->chunk_size) {
 	return 0;

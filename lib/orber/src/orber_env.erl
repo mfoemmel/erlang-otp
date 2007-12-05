@@ -62,7 +62,7 @@
 	 get_debug_level/0, getaddrstr/2, addr2str/1, iiop_packet_size/0,
 	 iiop_ssl_ip_address_local/0, ip_address_local/0, iiop_in_keepalive/0, 
 	 iiop_out_keepalive/0, iiop_ssl_in_keepalive/0, iiop_ssl_out_keepalive/0,
-	 iiop_ssl_accept_timeout/0]).
+	 iiop_ssl_accept_timeout/0, ssl_generation/0]).
 
 
 %%-----------------------------------------------------------------
@@ -286,8 +286,9 @@ create_security_info(no, Info) ->
 create_security_info(ssl, Info) ->
     lists:flatten([Info, 
 		   io_lib:format("ORB security..................: ssl~n"
-%				 "SSL IIOP in keepalive.........: ~p~n"
-%				 "SSL IIOP out keepalive........: ~p~n"
+				 "SSL generation................: ~p~n"
+				 "SSL IIOP in keepalive.........: ~p~n"
+				 "SSL IIOP out keepalive........: ~p~n"
 				 "SSL IIOP port number..........: ~p~n"
 				 "SSL IIOP NAT port number......: ~p~n"
 				 "SSL IIOP accept timeout.......: ~p~n"
@@ -310,8 +311,8 @@ create_security_info(ssl, Info) ->
 				 "SSL client ciphers............: ~p~n"
 				 "SSL client cachetimeout.......: ~p~n"
 				 "=========================================~n",
-				 [iiop_ssl_port(), 
-%				  iiop_ssl_in_keepalive(), iiop_ssl_out_keepalive(),
+				 [ssl_generation(), iiop_ssl_port(), 
+				  iiop_ssl_in_keepalive(), iiop_ssl_out_keepalive(),
 				  nat_iiop_ssl_port(), iiop_ssl_accept_timeout(), 
 				  iiop_ssl_backlog(), iiop_ssl_ip_address_local(),
 				  ssl_server_certfile(), ssl_server_verify(),
@@ -808,6 +809,14 @@ secure() ->
 	_ ->
 	    no
     end.
+
+ssl_generation() ->
+    case application:get_env(orber, ssl_generation) of
+	{ok, V} ->
+	    V;
+	_ ->
+	    2
+    end.	 
  
 iiop_ssl_ip_address_local() ->
     case application:get_env(orber, iiop_ssl_ip_address_local) of
@@ -1265,6 +1274,8 @@ configure(iiop_ssl_accept_timeout, infinity, Status) ->
     do_configure(iiop_ssl_accept_timeout, infinity, Status);
 configure(iiop_ssl_accept_timeout, Value, Status) when integer(Value), Value >= 0 ->
     do_configure(iiop_ssl_accept_timeout, Value, Status);
+configure(ssl_generation, Generation, Status) when integer(Generation), Generation >= 2 ->
+    do_safe_configure(ssl_generation, Generation, Status);
 configure(secure, ssl, Status) ->
     do_safe_configure(secure, ssl, Status);
 configure(iiop_ssl_ip_address_local, Value, Status) when list(Value) ->

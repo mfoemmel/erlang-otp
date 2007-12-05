@@ -54,58 +54,55 @@
 #define HAVE_MALLOPT 0
 #endif
 
+/* profile_scheduler mini message queue */
+
+#ifdef ERTS_TIMER_THREAD
+/* A timer thread is not welcomed with this lock violation work around.
+ * - Björn-Egil
+ */
+#error Timer thread may not be enabled due to lock violation.
+#endif
+
+typedef struct {
+    Uint scheduler_id;
+    Uint no_schedulers;
+    Uint Ms;
+    Uint s;
+    Uint us;
+    Eterm state;
+} profile_sched_msg;
+
+typedef struct {
+    profile_sched_msg msg[2];
+    Uint n;
+} profile_sched_msg_q;
+
+static void 
+dispatch_profile_msg_q(profile_sched_msg_q *psmq)
+{
+    int i = 0;
+    profile_sched_msg *msg = NULL;
+    ASSERT(psmq != NULL);
+    for (i = 0; i < psmq->n; i++) {
+        msg = &(psmq->msg[i]);
+	profile_scheduler_q(make_small(msg->scheduler_id), msg->state, am_undefined, msg->Ms, msg->s, msg->us);
+    }
+}
+
 Eterm*
 erts_heap_alloc(Process* p, Uint need)
 {
     ErlHeapFragment* bp;
+    Eterm* htop;
     Uint n;
 #if defined(DEBUG) || defined(CHECK_FOR_HOLES)
     Uint i;
 #endif
 
-#if defined(HEAP_FRAG_ELIM_TEST)
     n = need;
-#else
-    /*
-     * Check if there is any space left in the previous heap fragment.
-     */
-
-    if (need <= ARITH_AVAIL(p)) {
-	Eterm* hp = ARITH_HEAP(p);
-
-	ARITH_HEAP(p) += need;
-	ARITH_AVAIL(p) -= need;
-	return hp;
-    }
-
-    /*
-     * Allocate a new arith heap; first find a suitable size.
-     */
-
-    n = need;
-
-    if (ARITH_AVAIL(p) < 16 || n < 64) {
-#if defined(HYBRID) || defined(CHECK_FOR_HOLES)
-        /*
-         * Fill the rest of the current arith heap.
-         */
-        while(ARITH_AVAIL(p) != 0) {
-            *ARITH_HEAP(p)++ = NIL;
-            ARITH_AVAIL(p)--;
-        }
-#endif
-	ARITH_AVAIL(p) = 0;
-	n = p->min_heap_size/2 + need;
-	if (n > 16*1024 && n > 2*need) {
-	    n = 2*need;
-	}
-    }
-#endif
-
 #ifdef DEBUG
     n++;
 #endif
-
     bp = (ErlHeapFragment*)
 	ERTS_HEAP_ALLOC(ERTS_ALC_T_HEAP_FRAG,
 			sizeof(ErlHeapFragment) + ((n-1)*sizeof(Eterm)));
@@ -114,40 +111,25 @@ erts_heap_alloc(Process* p, Uint need)
     n--;
 #endif
 
-
-#ifndef HEAP_FRAG_ELIM_TEST
-    if (ARITH_AVAIL(p) == 0) {
-	ARITH_AVAIL(p) = n - need;
-	ARITH_HEAP(p) = bp->mem + need;
-    }
-#endif
-
 #if defined(DEBUG)
     for (i = 0; i <= n; i++) {
 	bp->mem[i] = ERTS_HOLE_MARKER;
     }
-#ifndef HEAP_FRAG_ELIM_TEST
-    ARITH_CHECK_ME(p) = ARITH_HEAP(p);
-#endif
 #elif defined(CHECK_FOR_HOLES)
     for (i = 0; i < n; i++) {
 	bp->mem[i] = ERTS_HOLE_MARKER;
     }
 #endif
 
-#ifdef HEAP_FRAG_ELIM_TEST
-    {
-	/*
-	 * When we have create a heap fragment, we are no longer allowed
-	 * to store anything more on the heap. 
-	 */
-	Eterm* htop = HEAP_TOP(p);
-	if (htop < HEAP_LIMIT(p)) {
-	    *htop = make_pos_bignum_header(HEAP_LIMIT(p)-htop-1);
-	    HEAP_TOP(p) = HEAP_LIMIT(p);
-	}
+    /*
+     * When we have created a heap fragment, we are no longer allowed
+     * to store anything more on the heap. 
+     */
+    htop = HEAP_TOP(p);
+    if (htop < HEAP_LIMIT(p)) {
+	*htop = make_pos_bignum_header(HEAP_LIMIT(p)-htop-1);
+	HEAP_TOP(p) = HEAP_LIMIT(p);
     }
-#endif
 
     bp->next = MBUF(p);
     MBUF(p) = bp;
@@ -160,20 +142,9 @@ erts_heap_alloc(Process* p, Uint need)
     bp->off_heap.externals = NULL;
     bp->off_heap.overhead = 0;
 
-    /*
-     * Test if time to do GC; if so bump the reduction count to force
-     * a context switch.
-     */
-#if !defined HEAP_FRAG_ELIM_TEST
-    MSO(p).overhead += (sizeof(ErlHeapFragment)/sizeof(Eterm) - 1); 
-    if (((MBUF_SIZE(p) + MSO(p).overhead)*MBUF_GC_FACTOR) >= HEAP_SIZE(p)) {
-	BUMP_ALL_REDS(p);
-    }
-#endif
     return bp->mem;
 }
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 void erts_arith_shrink(Process* p, Eterm* hp)
 {
 #if defined(CHECK_FOR_HOLES)
@@ -183,7 +154,7 @@ void erts_arith_shrink(Process* p, Eterm* hp)
      * We must find the heap fragment that hp points into.
      * If we are unlucky, we might have to search through
      * a large part of the list. We'll hope that will not
-     * happen to often.
+     * happen too often.
      */
     for (hf = MBUF(p); hf != 0; hf = hf->next) {
 	if (hp - hf->mem < (unsigned long)hf->size) {
@@ -201,62 +172,6 @@ void erts_arith_shrink(Process* p, Eterm* hp)
     }
 #endif
 }
-#else
-void erts_arith_shrink(Process* p, Eterm* hp)
-{
-    ErlHeapFragment* hf;
-
-#if !defined(HYBRID) && !defined(DEBUG) && !defined(CHECK_FOR_HOLES)
-    if (ARITH_AVAIL(p) == 0) {
-	/*
-	 * For a non-hybrid system, there is nothing to gain by
-	 * do any work here.
-	 */
-	return;
-    }
-#endif
-
-    /*
-     * We must find the heap fragment that hp points into.
-     * If we are unlucky, we might have to search through
-     * a large part of the list. We'll hope that will not
-     * happen to often.
-     */
-    for (hf = MBUF(p); hf != 0; hf = hf->next) {
-	if (hp - hf->mem < (unsigned long)hf->size) {
-	    if (ARITH_HEAP(p) - hf->mem < (unsigned long)hf->size) {
-		/*
-		 * Regain lost space from the current arith heap
-		 * and make sure that there are no garbage in a heap
-		 * fragment (important for the hybrid heap).
-		 */
-		Uint diff = ARITH_HEAP(p) - hp;
-		ARITH_HEAP(p) = hp;
-		ARITH_AVAIL(p) += diff;
-#ifdef DEBUG
-		while (diff != 0) {
-		    hp[--diff] = ERTS_HOLE_MARKER;
-		}
-		ARITH_CHECK_ME(p) = hp;
-#endif
-#if defined(HYBRID) || defined(DEBUG) || defined(CHECK_FOR_HOLES)
-	    } else {
-		/*
-		 * We are not allowed to changed hf->size (because the
-		 * size must be correct when deallocating). Therefore,
-		 * clear out the uninitialized part of the heap fragment.
-		 */
-		Eterm* to = hf->mem + hf->size;
-		while (hp < to) {
-		    *hp++ = NIL;
-		}
-#endif
-	    }
-	    return;
-	}
-    }
-}
-#endif
 
 #ifdef CHECK_FOR_HOLES
 Eterm*
@@ -554,6 +469,40 @@ erts_bld_2tup_list(Uint **hpp, Uint *szp,
     return res;
 }
 
+Eterm
+erts_bld_atom_uint_2tup_list(Uint **hpp, Uint *szp,
+			     Sint length, Eterm atoms[], Uint uints[])
+{
+    Sint i;
+    Eterm res = THE_NON_VALUE;
+    if (szp) {
+	*szp += 5*length;
+	i = length;
+	while (--i >= 0) {
+	    if (!IS_USMALL(0, uints[i]))
+		*szp += BIG_UINT_HEAP_SIZE;
+	}
+    }
+    if (hpp) {
+	i = length;
+	res = NIL;
+
+	while (--i >= 0) {
+	    Eterm ui;
+
+	    if (IS_USMALL(0, uints[i]))
+		ui = make_small(uints[i]);
+	    else {
+		ui = uint_to_big(uints[i], *hpp);
+		*hpp += BIG_UINT_HEAP_SIZE;
+	    }
+	    
+	    res = CONS(*hpp+3, TUPLE2(*hpp, atoms[i], ui), res);
+	    *hpp += 5;
+	}
+    }
+    return res;
+}
 
 /*                                                                           *\
  *                                                                           *
@@ -631,6 +580,7 @@ erts_bld_2tup_list(Uint **hpp, Uint *szp,
 #define FUNNY_NUMBER9  268439627
 #define FUNNY_NUMBER10 268440479
 #define FUNNY_NUMBER11 268440577
+#define FUNNY_NUMBER12 268440581
 
 static Uint32
 hash_binary_bytes(Eterm bin, Uint sz, Uint32 hash)
@@ -639,24 +589,36 @@ hash_binary_bytes(Eterm bin, Uint sz, Uint32 hash)
     Uint bitoffs;
     Uint bitsize;
 
-    if (sz > 0) {
-	ERTS_GET_BINARY_BYTES(bin, ptr, bitoffs, bitsize);
-	if (bitoffs == 0) {
-	    while (sz--) {
-		hash = hash*FUNNY_NUMBER1 + *ptr++;
-	    }
-	} else {
-	    Uint previous = *ptr++;
-	    Uint b;
-	    Uint lshift = bitoffs;
-	    Uint rshift = 8 - lshift;
+    ERTS_GET_BINARY_BYTES(bin, ptr, bitoffs, bitsize);
+    if (bitoffs == 0) {
+	while (sz--) {
+	    hash = hash*FUNNY_NUMBER1 + *ptr++;
+	}
+	if (bitsize > 0) {
+	    byte b = *ptr;
+
+	    b >>= 8 - bitsize;
+	    hash = (hash*FUNNY_NUMBER1 + b) * FUNNY_NUMBER12 + bitsize;
+	}
+    } else {
+	Uint previous = *ptr++;
+	Uint b;
+	Uint lshift = bitoffs;
+	Uint rshift = 8 - lshift;
 	    
-	    while (sz--) {
-		b = (previous << lshift) & 0xFF;
-		previous = *ptr++;
-		b |= previous >> rshift;
-		hash = hash*FUNNY_NUMBER1 + b;
-	    }
+	while (sz--) {
+	    b = (previous << lshift) & 0xFF;
+	    previous = *ptr++;
+	    b |= previous >> rshift;
+	    hash = hash*FUNNY_NUMBER1 + b;
+	}
+	if (bitsize > 0) {
+	    b = (previous << lshift) & 0xFF;
+	    previous = *ptr++;
+	    b |= previous >> rshift;
+	    
+	    b >>= 8 - bitsize;
+	    hash = (hash*FUNNY_NUMBER1 + b) * FUNNY_NUMBER12 + bitsize;
 	}
     }
     return hash;
@@ -811,30 +773,36 @@ make_hash(Eterm term, Uint32 hash)
     case BIG_DEF:
 	/* Note that this is the exact same thing as the hashing of smalls.*/
 	{
-	  /* FIXED: __alpha__ this was remade to be backwards +
-	   * compaible with 32 bit implmentation 
-	   */
 	    Eterm* ptr  = big_val(term);
 	    Uint n = BIG_SIZE(ptr);
+	    Uint k = n-1;
+	    ErtsDigit d;
 	    int is_neg = BIG_SIGN(ptr);
 	    Uint i;
+	    int j;
 
-	    if (D_EXP < 32 && (n & 1)) /* emulate 32 bit behaviour (add a MSB 0 :-( )*/
-	      n++;
-
-	    for (i = 0; i < n; i++)  {
-	      digit_t d = BIG_DIGIT(ptr, i);
-	      int j;
-	      for(j = 0; j < sizeof(digit_t); ++j) {
-		  hash = (hash*FUNNY_NUMBER2) + (d & 0xff);
-		  d >>= 8;
-	      }
+	    for (i = 0; i < k; i++)  {
+		d = BIG_DIGIT(ptr, i);
+		for(j = 0; j < sizeof(ErtsDigit); ++j) {
+		    hash = (hash*FUNNY_NUMBER2) + (d & 0xff);
+		    d >>= 8;
+		}
+	    }
+	    d = BIG_DIGIT(ptr, k);
+	    k = sizeof(ErtsDigit);
+#ifdef ARCH_64
+	    if (!(d >> 32))
+		k /= 2;
+#endif
+	    for(j = 0; j < (int)k; ++j) {
+		hash = (hash*FUNNY_NUMBER2) + (d & 0xff);
+		d >>= 8;
 	    }
 	    if (is_neg) {
 		return hash*FUNNY_NUMBER4;
 	    }
 	    else {
-	      return hash*FUNNY_NUMBER3;
+		return hash*FUNNY_NUMBER3;
 	    }
 	}
 	break;
@@ -939,6 +907,7 @@ make_hash2(Eterm term)
 #define HCONST_12 0x6a99b4acUL
 #define HCONST_13 0x08d12e65UL
 #define HCONST_14 0xa708a81eUL
+#define HCONST_15 0x454021d7UL
 
 #define UINT32_HASH_2(Expr1, Expr2, AConst)       \
          do {                                     \
@@ -1084,20 +1053,28 @@ make_hash2(Eterm term)
 		byte* bptr;
 		unsigned sz = binary_size(term);
 		Uint32 con = HCONST_13 + hash;
+		Uint bitoffs;
+		Uint bitsize;
 
-		if (sz == 0) {
+		ERTS_GET_BINARY_BYTES(term, bptr, bitoffs, bitsize);
+		if (sz == 0 && bitsize == 0) {
 		    hash = con;
 		} else {
-		    Uint bitoffs;
-		    Uint bitsize;
-
-		    ERTS_GET_BINARY_BYTES(term, bptr, bitoffs, bitsize);
 		    if (bitoffs == 0) {
 			hash = block_hash(bptr, sz, con);
+			if (bitsize > 0) {
+			    UINT32_HASH_2(bitsize, (bptr[sz] >> (8 - bitsize)),
+					  HCONST_15);
+			}
 		    } else {
-			byte* buf = (byte *) erts_alloc(ERTS_ALC_T_TMP, sz);
-			erts_copy_bits(bptr, bitoffs, 1, buf, 0, 1, sz*8);
+			byte* buf = (byte *) erts_alloc(ERTS_ALC_T_TMP,
+							sz + (bitsize != 0));
+			erts_copy_bits(bptr, bitoffs, 1, buf, 0, 1, sz*8+bitsize);
 			hash = block_hash(buf, sz, con);
+			if (bitsize > 0) {
+			    UINT32_HASH_2(bitsize, (buf[sz] >> (8 - bitsize)),
+					  HCONST_15);
+			}
 			erts_free(ERTS_ALC_T_TMP, (void *) buf);
 		    }
 		}
@@ -1111,19 +1088,34 @@ make_hash2(Eterm term)
 		Uint i = 0;
 		Uint n = BIG_SIZE(ptr);
 		Uint32 con = BIG_SIGN(ptr) ? HCONST_10 : HCONST_11;
-
+#if D_EXP == 16
 		do {
-		    Uint x, y;
-		    ASSERT(sizeof(digit_t) <= 4);
-		    ASSERT(D_EXP < 8*sizeof(Uint));
+		    Uint32 x, y;
 		    x = i < n ? BIG_DIGIT(ptr, i++) : 0;
-		    if (sizeof(digit_t) == 2)
-			x += (Uint)(i < n ? BIG_DIGIT(ptr, i++) : 0) << D_EXP;
+		    x += (Uint32)(i < n ? BIG_DIGIT(ptr, i++) : 0) << 16;
 		    y = i < n ? BIG_DIGIT(ptr, i++) : 0;
-		    if (sizeof(digit_t) == 2)
-			y += (Uint)(i < n ? BIG_DIGIT(ptr, i++) : 0) << D_EXP;
-		    UINT32_HASH_2((Uint32)x, (Uint32)y, con);
+		    y += (Uint32)(i < n ? BIG_DIGIT(ptr, i++) : 0) << 16;
+		    UINT32_HASH_2(x, y, con);
 		} while (i < n);
+#elif D_EXP == 32
+		do {
+		    Uint32 x, y;
+		    x = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    y = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    UINT32_HASH_2(x, y, con);
+		} while (i < n);
+#elif D_EXP == 64
+		do {
+		    Uint t;
+		    Uint32 x, y;
+		    t = i < n ? BIG_DIGIT(ptr, i++) : 0;
+		    x = t & 0xffffffff;
+		    y = t >> 32;
+		    UINT32_HASH_2(x, y, con);
+		} while (i < n);
+#else
+#error "unsupported D_EXP size"
+#endif
 		goto hash2_common;
 	    }
 	    break;
@@ -1343,35 +1335,61 @@ make_broken_hash(Eterm term, Uint hash)
 	}
 	break;
 
-    case BIG_DEF:
+     case BIG_DEF:
 	{
 	    Eterm* ptr  = big_val(term);
 	    int is_neg = BIG_SIGN(ptr);
 	    Uint arity = BIG_ARITY(ptr);
-	    
-#ifdef ARCH_64
-	    Uint i = 0;
-	    Uint n = BIG_SIZE(ptr);
-	    arity = n;
+	    Uint i = arity;
+	    ptr++;
+#if D_EXP == 16
+	    /* hash over 32 bit LE */
 
-	    for (i = 0; i < n; i++)
-	    {
-		digit_t d = BIG_DIGIT(ptr, i);
+	    while(i--) {
+		hash = hash*FUNNY_NUMBER2 + *ptr++;
+	    }
+#elif D_EXP == 32
+
 #if defined(WORDS_BIGENDIAN)
+	    while(i--) {
+		Uint d = *ptr++;
 		hash = hash*FUNNY_NUMBER2 + ((d << 16) | (d >> 16));
-#else
-		hash = hash*FUNNY_NUMBER2 + d;
-#endif
 	    }
 #else
-	    int i = arity;
-
-	    ptr++;
-	    while (i--) {
+	    while(i--) {
 		hash = hash*FUNNY_NUMBER2 + *ptr++;
 	    }
 #endif
 
+#elif D_EXP == 64
+	    {
+	      Uint32 h, l;
+#if defined(WORDS_BIGENDIAN)
+	      while(i--) {
+		  Uint d = *ptr++;
+		  l = d & 0xffffffff;
+		  h = d >> 32;
+		  hash = hash*FUNNY_NUMBER2 + ((l << 16) | (l >> 16));
+		  if (h || i)
+		      hash = hash*FUNNY_NUMBER2 + ((h << 16) | (h >> 16));
+	      }
+#else
+	      while(i--) {
+		  Uint d = *ptr++;
+		  l = d & 0xffffffff;
+		  h = d >> 32;
+		  hash = hash*FUNNY_NUMBER2 + l;
+		  if (h || i)
+		      hash = hash*FUNNY_NUMBER2 + h;
+	      }
+#endif
+	      /* adjust arity to match 32 bit mode */
+	      arity = (arity << 1) - (h == 0);
+	    }
+
+#else
+#error "unsupported D_EXP size"	
+#endif
 	    if (is_neg)
 		return hash*FUNNY_NUMBER3 + arity;
 	    else
@@ -1410,9 +1428,8 @@ static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
     Eterm gl;
     Eterm list,plist,format,tuple1,tuple2,tuple3;
     ErlOffHeap *ohp;
-#ifdef ERTS_SMP
-    ErlHeapFragment *bp;
-#else
+    ErlHeapFragment *bp = NULL;
+#if !defined(ERTS_SMP)
     Process *p;
 #endif
 
@@ -1439,15 +1456,21 @@ static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
     gl_sz = IS_CONST(gleader) ? 0 : size_object(gleader);
     sz = len * 2 /* message list */+ 2 /* cons surrounding message list */
 	+ gl_sz + 
-	3 /*outher 2-tuple*/ + 4 /* middle 3-tuple */ + 4 /*inner 3-tuple */ +
+	3 /*outer 2-tuple*/ + 4 /* middle 3-tuple */ + 4 /*inner 3-tuple */ +
 	8 /* "~s~n" */;
-#ifdef ERTS_SMP
-    bp = new_message_buffer(sz);
-    ohp = &bp->off_heap;
-    hp = bp->mem;
-#else
-    ohp = &MSO(p);
-    hp = HAlloc(p, sz);
+
+#ifndef ERTS_SMP
+    if (sz <= HeapWordsLeft(p)) {
+	ohp = &MSO(p);
+	hp = HEAP_TOP(p);
+	HEAP_TOP(p) += sz;
+    } else {
+#endif
+	bp = new_message_buffer(sz);
+	ohp = &bp->off_heap;
+	hp = bp->mem;
+#ifndef ERTS_SMP
+    }
 #endif
     gl = (is_nil(gleader)
 	  ? am_noproc
@@ -1474,7 +1497,7 @@ static int do_send_to_logger(Eterm tag, Eterm gleader, char *buf, int len)
 	erts_queue_error_logger_message(from, tuple3, bp);
     }
 #else
-    erts_queue_message(p, 0/* only used for smp build */, NULL, tuple3, NIL);
+    erts_queue_message(p, 0/* only used for smp build */, bp, tuple3, NIL);
 #endif
     return 0;
 }
@@ -2382,7 +2405,7 @@ cmp(Eterm a, Eterm b)
 	    if (big_to_double(a, &f1.fd) < 0) {
 		return big_sign(a) ? -1 : 1;
 	    }
-	    GET_DOUBLE(b, f2);
+    GET_DOUBLE(b, f2);
 	    return float_comp(f1.fd, f2.fd);
 	case FLOAT_SMALL:
 	    GET_DOUBLE(a, f1);
@@ -3006,6 +3029,7 @@ sys_alloc_stat(SysAllocStat *sasp)
 #ifdef ERTS_SMP
 
 /* Local system block state */
+
 struct {
     int emergency;
     int threads_to_block;
@@ -3058,9 +3082,9 @@ block_me(void (*prepare)(void *),
 	 void *arg,
 	 int mtx_locked,
 	 int want_to_block,
-	 int update_act_changing)
+	 int update_act_changing,
+	 profile_sched_msg_q *psmq)
 {
-
     if (prepare)
 	(*prepare)(arg);
 
@@ -3075,20 +3099,53 @@ block_me(void (*prepare)(void *),
 
 	if (is_blockable)
 	    system_block_state.threads_to_block--;
+
+	if (erts_system_profile_flags.scheduler && psmq) {
+	    ErtsSchedulerData *esdp = erts_get_scheduler_data();
+	    if (esdp) {
+	    	profile_sched_msg *msg = NULL;
+	        
+		ASSERT(psmq->n < 2);
+		msg = &((psmq->msg)[psmq->n]);
+		msg->scheduler_id = esdp->no;
+		get_now(&(msg->Ms), &(msg->s), &(msg->us));
+		msg->no_schedulers = 0;
+		msg->state = am_inactive;
+	    	psmq->n++;
+	    }
+	}
+
 #ifdef ERTS_ENABLE_LOCK_CHECK
 	if (update_act_changing)
 	    system_block_state.activity_changing--;
 #endif
+
 	erts_smp_cnd_broadcast(&system_block_state.cnd);
 
 	do {
 	    erts_smp_cnd_wait(&system_block_state.cnd, &system_block_state.mtx);
 	} while (erts_smp_pending_system_block()
 		 && !(want_to_block && !system_block_state.have_blocker));
+
 #ifdef ERTS_ENABLE_LOCK_CHECK
 	if (update_act_changing)
 	    system_block_state.activity_changing++;
 #endif
+	if (erts_system_profile_flags.scheduler && psmq) {
+	    ErtsSchedulerData *esdp = erts_get_scheduler_data();
+	    if (esdp) {
+	    	profile_sched_msg *msg = NULL;
+	        
+		ASSERT(psmq->n < 2);
+		msg = &((psmq->msg)[psmq->n]);
+		msg->scheduler_id = esdp->no;
+		get_now(&(msg->Ms), &(msg->s), &(msg->us));
+		msg->no_schedulers = 0;
+		msg->state = am_active;
+	    	psmq->n++;
+	    }
+	}
+
 	if (is_blockable)
 	    system_block_state.threads_to_block++;
     }
@@ -3105,6 +3162,8 @@ erts_block_me(void (*prepare)(void *),
 	      void (*resume)(void *),
 	      void *arg)
 {
+    profile_sched_msg_q psmq;
+    psmq.n = 0;
     if (prepare)
 	(*prepare)(arg);
 
@@ -3112,7 +3171,10 @@ erts_block_me(void (*prepare)(void *),
     erts_lc_check_exact(NULL, 0); /* No locks should be locked */
 #endif
 
-    block_me(NULL, NULL, NULL, 0, 0, 0);
+    block_me(NULL, NULL, NULL, 0, 0, 0, &psmq);
+
+    if (erts_system_profile_flags.scheduler && psmq.n > 0) 
+    	dispatch_profile_msg_q(&psmq);
 
     if (resume)
 	(*resume)(arg);
@@ -3121,6 +3183,8 @@ erts_block_me(void (*prepare)(void *),
 void
 erts_register_blockable_thread(void)
 {
+    profile_sched_msg_q psmq;
+    psmq.n = 0;
     if (!is_blockable_thread()) {
 	erts_smp_mtx_lock(&system_block_state.mtx);
 	system_block_state.threads_to_block++;
@@ -3129,8 +3193,11 @@ erts_register_blockable_thread(void)
 
 	/* Someone might be waiting for us to block... */
 	if (erts_smp_pending_system_block())
-	    block_me(NULL, NULL, NULL, 1, 0, 0);
+	    block_me(NULL, NULL, NULL, 1, 0, 0, &psmq);
 	erts_smp_mtx_unlock(&system_block_state.mtx);
+
+	if (erts_system_profile_flags.scheduler && psmq.n > 0)
+	    dispatch_profile_msg_q(&psmq);
     }
 }
 
@@ -3187,7 +3254,9 @@ erts_check_block(erts_activity_t old_activity,
 		 void *arg)
 {
     int do_block;
+    profile_sched_msg_q psmq;
 
+    psmq.n = 0;
     if (!locked && prepare)
 	(*prepare)(arg);
 
@@ -3261,11 +3330,14 @@ erts_check_block(erts_activity_t old_activity,
 	}
 #endif
 
-	block_me(NULL, NULL, NULL, 1, 0, 1);
+	block_me(NULL, NULL, NULL, 1, 0, 1, &psmq);
 
     }
 
     erts_smp_mtx_unlock(&system_block_state.mtx);
+
+    if (erts_system_profile_flags.scheduler && psmq.n > 0) 
+	dispatch_profile_msg_q(&psmq);	
 
     if (!locked && resume)
 	(*resume)(arg);
@@ -3347,6 +3419,9 @@ void
 erts_block_system(Uint32 allowed_activities)
 {
     int do_block;
+    profile_sched_msg_q psmq;
+    
+    psmq.n = 0;
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_check_exact(NULL, 0); /* No locks should be locked */
 #endif
@@ -3373,7 +3448,7 @@ erts_block_system(Uint32 allowed_activities)
 	/* Someone else might be waiting for us to block... */
 	if (do_block) {
 	do_block_me:
-	    block_me(NULL, NULL, NULL, 1, 1, 0);
+	    block_me(NULL, NULL, NULL, 1, 1, 0, &psmq);
 	}
 
 	ASSERT(!system_block_state.have_blocker);
@@ -3394,6 +3469,9 @@ erts_block_system(Uint32 allowed_activities)
     }
 
     erts_smp_mtx_unlock(&system_block_state.mtx);
+
+    if (erts_system_profile_flags.scheduler && psmq.n > 0 )
+    	dispatch_profile_msg_q(&psmq);
 }
 
 /*
@@ -3469,6 +3547,9 @@ void
 erts_release_system(void)
 {
     long do_block;
+    profile_sched_msg_q psmq;
+    
+    psmq.n = 0;
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_check_exact(NULL, 0); /* No locks should be locked */
@@ -3491,13 +3572,15 @@ erts_release_system(void)
 
 	/* Someone else might be waiting for us to block... */
 	if (do_block)
-	    block_me(NULL, NULL, NULL, 1, 0, 0);
+	    block_me(NULL, NULL, NULL, 1, 0, 0, &psmq);
 	else
 	    erts_smp_cnd_broadcast(&system_block_state.cnd);
     }
 
     erts_smp_mtx_unlock(&system_block_state.mtx);
-    
+
+    if (erts_system_profile_flags.scheduler && psmq.n > 0) 
+    	dispatch_profile_msg_q(&psmq);
 }
 
 #ifdef ERTS_ENABLE_LOCK_CHECK

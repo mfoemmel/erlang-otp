@@ -25,9 +25,9 @@
 	 sort/1, merge/1, merge/2, rmerge/2, merge3/3, rmerge3/3,
 	 usort/1, umerge/1, umerge3/3, umerge/2, rumerge3/3, rumerge/2,
 	 concat/1, flatten/1, flatten/2, flat_length/1, flatlength/1,
-	 keydelete/3, keyreplace/4,
+	 keydelete/3, keyreplace/4, keytake/3, keystore/4,
 	 keysort/2, keymerge/3, rkeymerge/3, rukeymerge/3, 
-	 ukeysort/2, ukeymerge/3, keymap/3, keymap/4]).
+	 ukeysort/2, ukeymerge/3, keymap/3]).
 
 %% Bifs: member/2, reverse/2
 %% Bifs: keymember/3, keysearch/3
@@ -38,11 +38,6 @@
 	 partition/2,zf/2,
 	 mapfoldl/3,mapfoldr/3,foreach/2,takewhile/2,dropwhile/2,splitwith/2,
 	 split/2]).
--export([all/3,any/3,map/3,flatmap/3,foldl/4,foldr/4,filter/3,zf/3,
-	 mapfoldl/4,mapfoldr/4,foreach/3]).
-
--deprecated([{keymap,4},{all,3},{any,3},{map,3},{flatmap,3},{foldl,4},
-             {foldr,4},{filter,3},{mapfoldl,4},{mapfoldr,4},{foreach,3}]).
 
 %% member(X, L) -> (true | false)
 %%  test if X is a member of the list L
@@ -55,9 +50,13 @@
 
 %% append(X, Y) appends lists X and Y
 
+-spec(append/2 :: ([T],[T]) -> [T]).
+
 append(L1, L2) -> L1 ++ L2.
 
 %% append(L) appends the list of lists L
+
+-spec(append/1 :: ([[T]]) -> [T]).
 
 append([E]) -> E;
 append([H|T]) -> H ++ append(T);
@@ -65,9 +64,13 @@ append([]) -> [].
 
 %% subtract(List1, List2) subtract elements in List2 form List1.
 
+-spec(subtract/2 :: ([T],[T]) -> [T]).
+
 subtract(L1, L2) -> L1 -- L2.
 
 %% reverse(L) reverse all elements in the list L. Is now a BIF!
+
+-spec(reverse/1 :: ([T]) -> [T]).
 
 reverse([] = L) ->
     L;
@@ -86,9 +89,13 @@ reverse([A, B | L]) ->
 %% nth(N, L) returns the N`th element of the list L
 %% nthtail(N, L) returns the N`th tail of the list L
 
+-spec(nth/2 :: (pos_integer(),[T,...]) -> T).
+
 nth(1, [H|_]) -> H;
 nth(N, [_|T]) when N > 1 ->
     nth(N - 1, T).
+
+-spec(nthtail/2 :: (non_neg_integer(),[T,...]) -> [T]).
 
 nthtail(1, [_|T]) -> T;
 nthtail(N, [_|T]) when N > 1 ->
@@ -97,6 +104,8 @@ nthtail(0, L) when is_list(L) -> L.
 
 %% prefix(Prefix, List) -> (true | false)
 
+-spec(prefix/2 :: ([T],[T]) -> bool()).
+
 prefix([X|PreTail], [X|Tail]) ->
     prefix(PreTail, Tail);
 prefix([], List) when is_list(List) -> true;
@@ -104,12 +113,16 @@ prefix([_|_], List) when is_list(List) -> false.
 
 %% suffix(Suffix, List) -> (true | false)
 
+-spec(suffix/2 :: ([T],[T]) -> bool()).
+
 suffix(Suffix, Suffix) when is_list(Suffix) -> true;
 suffix(Suffix, [_|Tail]) ->
     suffix(Suffix, Tail);
 suffix(Suffix, []) when is_list(Suffix) -> false.
 
 %% last(List) returns the last element in a list.
+
+-spec(last/1 :: ([T,...]) -> T).
 
 last([E|Es]) -> last(E, Es).
 
@@ -120,6 +133,8 @@ last(E, []) -> E.
 %% seq(Min, Max, Incr) -> [Min,Min+Incr, ..., Max]
 %%  returns the sequence Min..Max
 %%  Min <= Max and Min and Max must be integers
+
+-spec(seq/2 :: (integer(),integer()) -> [integer(),...]).
 
 seq(Min, Max) when is_integer(Min), is_integer(Max), Min =< Max -> 
     seq(Min, Max, 1, []).
@@ -134,7 +149,9 @@ seq(M, M, 0) when is_integer(M) ->
 seq(Min, Min, _, L) -> [Min|L];
 seq(Min, Max, I, L) -> seq(Min, Max-I, I, [Max|L]).
 
-%% sum(L) suns the sum of the elements in L
+%% sum(L) returns the sum of the elements in L
+
+-spec(sum/1 :: ([number()]) -> number()).
 
 sum(L)          -> sum(L, 0).
 
@@ -144,12 +161,16 @@ sum([], Sum)    -> Sum.
 %% duplicate(N, X) -> [X,X,X,.....,X]  (N times)
 %%   return N copies of X
 
+-spec(duplicate/2 :: (non_neg_integer(),T) -> [T]).
+
 duplicate(N, X) when is_integer(N), N >= 0 -> duplicate(N, X, []).
 
 duplicate(0, _, L) -> L;
 duplicate(N, X, L) -> duplicate(N-1, X, [X|L]).
 
 %% min(L) -> returns the minimum element of the list L
+
+-spec(min/1 :: ([T,...]) -> T).
 
 min([H|T]) -> min(T, H).
 
@@ -158,6 +179,8 @@ min([_|T], Min)              -> min(T, Min);
 min([],    Min)              -> Min. 
 
 %% max(L) -> returns the maximum element of the list L
+
+-spec(max/1 :: ([T,...]) -> T).
 
 max([H|T]) -> max(T, H).
 
@@ -168,8 +191,12 @@ max([],    Max)              -> Max.
 %% sublist(List, Start, Length)
 %%  Returns the sub-list starting at Start of length Length.
 
+-spec(sublist/3 :: ([T],pos_integer(),non_neg_integer()) -> [T]).
+
 sublist(List, S, L) when is_integer(L), L >= 0 ->
     sublist(nthtail(S-1, List), L).
+
+-spec(sublist/2 :: ([T],non_neg_integer()) -> [T]).
 
 sublist(List, L) when is_integer(L), is_list(List) ->
     sublist_2(List, L).
@@ -182,21 +209,27 @@ sublist_2(List, L) when is_list(List), L > 0 ->
     [].
 
 %% delete(Item, List) -> List'
-%%  Delete the first occurance of Item from the list L.
+%%  Delete the first occurrence of Item from the list L.
+
+-spec(delete/2 :: (T, [T]) -> [T]).
 
 delete(Item, [Item|Rest]) -> Rest;
-delete(Item, [H|Rest]) ->
+delete(Item, [H|Rest]) -> 
     [H|delete(Item, Rest)];
 delete(_, []) -> [].
 
 %% Return [{X0, Y0}, {X1, Y1}, ..., {Xn, Yn}] for lists [X0, X1, ...,
 %% Xn] and [Y0, Y1, ..., Yn].
 
+-spec(zip/2 :: ([A],[B]) -> [{A,B}]).
+
 zip([X | Xs], [Y | Ys]) -> [{X, Y} | zip(Xs, Ys)];
 zip([], []) -> [].
 
 %% Return {[X0, X1, ..., Xn], [Y0, Y1, ..., Yn]}, for a list [{X0, Y0},
 %% {X1, Y1}, ..., {Xn, Yn}].
+
+-spec(unzip/1 :: ([{A,B}]) -> {[A],[B]}).
 
 unzip(Ts) -> unzip(Ts, [], []).
 
@@ -205,6 +238,8 @@ unzip([], Xs, Ys) -> {reverse(Xs), reverse(Ys)}.
 
 %% Return [{X0, Y0, Z0}, {X1, Y1, Z1}, ..., {Xn, Yn, Zn}] for lists [X0,
 %% X1, ..., Xn], [Y0, Y1, ..., Yn] and [Z0, Z1, ..., Zn].
+
+-spec(zip3/3 :: ([A],[B],[C]) -> [{A,B,C}]).
 
 zip3([X | Xs], [Y | Ys], [Z | Zs]) -> [{X, Y, Z} | zip3(Xs, Ys, Zs)];
 zip3([], [], []) -> [].
@@ -222,11 +257,15 @@ unzip3([], Xs, Ys, Zs) ->
 %% Return [F(X0, Y0), F(X1, Y1), ..., F(Xn, Yn)] for lists [X0, X1, ...,
 %% Xn] and [Y0, Y1, ..., Yn].
 
+-spec(zipwith/3 :: (fun((X, Y) -> R), [X], [Y]) -> [R]).
+
 zipwith(F, [X | Xs], [Y | Ys]) -> [F(X, Y) | zipwith(F, Xs, Ys)];
 zipwith(F, [], []) when is_function(F, 2) -> [].
 
 %% Return [F(X0, Y0, Z0), F(X1, Y1, Z1), ..., F(Xn, Yn, Zn)] for lists
 %% [X0, X1, ..., Xn], [Y0, Y1, ..., Yn] and [Z0, Z1, ..., Zn].
+
+-spec(zipwith3/4 :: (fun((X, Y, Z) -> R), [X], [Y], [Z]) -> [R]).
 
 zipwith3(F, [X | Xs], [Y | Ys], [Z | Zs]) ->
     [F(X, Y, Z) | zipwith3(F, Xs, Ys, Zs)];
@@ -234,6 +273,8 @@ zipwith3(F, [], [], []) when is_function(F, 3) -> [].
 
 %% sort(List) -> L
 %%  sorts the list L
+
+-spec(sort/1 :: ([T]) -> [T]).
 
 sort([X, Y | L] = L0) when X =< Y ->
     case L of
@@ -280,11 +321,15 @@ sort_1(X, [], R) ->
 %% merge(List) -> L
 %%  merges a list of sorted lists
 
+-spec(merge/1 :: ([T]) -> [T]).
+
 merge(L) ->
     mergel(L, []).
 
 %% merge3(X, Y, Z) -> L
 %%  merges three sorted lists X, Y and Z
+
+-spec(merge3/3 :: ([_],[_],[_]) -> [_]).
 
 merge3(L1, [], L3) ->
    merge(L1, L3);
@@ -296,6 +341,8 @@ merge3(L1, [H2 | T2], [H3 | T3]) ->
 %% rmerge3(X, Y, Z) -> L
 %%  merges three reversed sorted lists X, Y and Z
 
+-spec(rmerge3/3 :: ([_],[_],[_]) -> [_]).
+
 rmerge3(L1, [], L3) ->
    rmerge(L1, L3);
 rmerge3(L1, L2, []) ->
@@ -306,6 +353,8 @@ rmerge3(L1, [H2 | T2], [H3 | T3]) ->
 %% merge(X, Y) -> L
 %%  merges two sorted lists X and Y
 
+-spec(merge/2 :: ([_], [_]) -> [_]).
+
 merge(T1, []) ->
     T1;
 merge(T1, [H2 | T2]) ->
@@ -315,14 +364,20 @@ merge(T1, [H2 | T2]) ->
 %%  merges two reversed sorted lists X and Y
 
 %% reverse(rmerge(reverse(A),reverse(B))) is equal to merge(I,A,B).
+
+-spec(rmerge/2 :: ([_], [_]) -> [_]).
+
 rmerge(T1, []) ->
     T1;
 rmerge(T1, [H2 | T2]) ->
     lists:reverse(rmerge2_1(T1, H2, T2, []), []).
 
-%% concat(L) concatinate the list representation of the elements
-%%  in L - the elements in L can be atoms, integers of strings.
+%% concat(L) concatenate the list representation of the elements
+%%  in L - the elements in L can be atoms, numbers of strings.
 %%  Returns a list of characters.
+
+-type(concat_thing() :: atom() | integer() | float() | string()).
+-spec(concat/1 :: ([concat_thing()]) -> string()).
 
 concat(List) ->
     flatmap(fun thing_to_list/1, List).
@@ -336,8 +391,12 @@ thing_to_list(X) when is_list(X)    -> X.	%Assumed to be a string
 %% flatten(List, Tail)
 %%  Flatten a list, adding optional tail.
 
+-spec(flatten/1 :: ([_]) -> [_]).
+
 flatten(List) when is_list(List) ->
     do_flatten(List, []).
+
+-spec(flatten/2 :: ([_],[_]) -> [_]).
 
 flatten(List, Tail) when is_list(List), is_list(Tail) ->
     do_flatten(List, Tail).
@@ -352,10 +411,14 @@ do_flatten([], Tail) ->
 %% flat_length(List) (undocumented can be removed later)
 %%  Calculate the length of a list of lists.
 
+-spec(flat_length/1 :: ([_]) -> non_neg_integer()).
+
 flat_length(List) -> flatlength(List).
 
 %% flatlength(List)
 %%  Calculate the length of a list of lists.
+
+-spec(flatlength/1 :: ([_]) -> non_neg_integer()).
 
 flatlength(List) ->
     flatlength(List, 0).
@@ -370,6 +433,8 @@ flatlength([], L) -> L.
 %% keysearch(Key, Index, [Tuple]) Now a BIF!
 %% keydelete(Key, Index, [Tuple])
 %% keyreplace(Key, Index, [Tuple], NewTuple)
+%% keytake(Key, Index, [Tuple])
+%% keystore(Key, Index, [Tuple], NewTuple)
 %% keysort(Index, [Tuple])
 %% keymerge(Index, [Tuple], [Tuple])
 %% ukeysort(Index, [Tuple])
@@ -394,6 +459,8 @@ flatlength([], L) -> L.
 %    keysearch3(Key, N, T);
 %keysearch3(Key, N, []) -> false.
 
+-spec(keydelete/3 :: (_,pos_integer(),[T]) -> [T]).
+
 keydelete(K,N,L) when is_integer(N), N > 0 ->
     keydelete3(K,N,L).
 
@@ -402,6 +469,7 @@ keydelete3(Key, N, [H|T]) ->
     [H|keydelete3(Key, N, T)];
 keydelete3(_, _, []) -> [].
 
+-spec(keyreplace/4 :: (_, pos_integer(), [_], tuple()) -> [T]).
 keyreplace(K,N,L,New) when is_integer(N), N > 0, is_tuple(New) ->
     keyreplace3(K,N,L,New).
 
@@ -410,6 +478,29 @@ keyreplace3(Key, Pos, [Tup|Tail], New) when element(Pos, Tup) == Key ->
 keyreplace3(Key, Pos, [H|T], New) ->
     [H|keyreplace3(Key, Pos, T, New)];
 keyreplace3(_, _, [], _) -> [].
+
+-spec(keytake/3 :: (_, pos_integer(), [_]) -> {value,tuple(),[_]} | false).
+keytake(Key, N, L) when is_integer(N), N > 0 ->
+    keytake(Key, N, L, []).
+
+keytake(Key, N, [H|T], L) when element(N, H) == Key ->
+    {value, H, lists:reverse(L, T)};
+keytake(Key, N, [H|T], L) ->
+    keytake(Key, N, T, [H|L]);
+keytake(_K, _N, [], _L) -> false.
+
+-spec(keystore/4 :: (_, pos_integer(), [_], tuple()) -> [_]).
+keystore(K, N, L, New) when is_integer(N), N > 0, is_tuple(New) ->
+    keystore2(K, N, L, New).
+
+keystore2(Key, N, [H|T], New) when element(N, H) == Key ->
+    [New|T];
+keystore2(Key, N, [H|T], New) ->
+    [H|keystore2(Key, N, T, New)];
+keystore2(_Key, _N, [], New) ->
+    [New].
+
+-spec(keysort/2 :: (pos_integer(), [T]) -> [T] when is_subtype(T, tuple())).
 
 keysort(I, L) when is_integer(I), I > 0 ->
     case L of
@@ -466,6 +557,9 @@ keysort_1(I, X, EX, [Y | L], R) ->
 keysort_1(_I, X, _EX, [], R) ->
     lists:reverse(R, [X]).
 
+-spec(keymerge/3 :: (pos_integer(), [X], [Y]) ->
+	     [R] when is_subtype(X, tuple()), is_subtype(Y, tuple()), is_subtype(R, tuple())).
+
 keymerge(Index, T1, L2) when is_integer(Index), Index > 0 -> 
     case L2 of
 	[] ->
@@ -477,6 +571,10 @@ keymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
     end.
 
 %% reverse(rkeymerge(I,reverse(A),reverse(B))) is equal to keymerge(I,A,B).
+
+-spec(rkeymerge/3 :: (pos_integer(), [X], [Y]) ->
+	     [R] when is_subtype(X, tuple()), is_subtype(Y, tuple()), is_subtype(R, tuple())).
+
 rkeymerge(Index, T1, L2) when is_integer(Index), Index > 0 -> 
     case L2 of
 	[] ->
@@ -486,6 +584,8 @@ rkeymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
 	    M = rkeymerge2_1(Index, T1, E2, H2, T2, []),
 	    lists:reverse(M, [])
     end.
+
+-spec(ukeysort/2 :: (pos_integer(), [T]) -> [T] when is_subtype(T, tuple())).
 
 ukeysort(I, L) when is_integer(I), I > 0 ->
     case L of
@@ -550,6 +650,9 @@ ukeysort_1(I, X, EX, [Y | L]) ->
 ukeysort_1(_I, X, _EX, []) ->
     [X].
 
+-spec(ukeymerge/3 :: (pos_integer(), [X], [Y]) ->
+	     [_] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
+
 ukeymerge(Index, L1, T2) when is_integer(Index), Index > 0 ->
     case L1 of
 	[] ->
@@ -561,6 +664,10 @@ ukeymerge(Index, L1, T2) when is_integer(Index), Index > 0 ->
     end.
 
 %% reverse(rukeymerge(I,reverse(A),reverse(B))) is equal to ukeymerge(I,A,B).
+
+-spec(rukeymerge/3 :: (pos_integer(), [X], [Y]) ->
+	     [_] when is_subtype(X, tuple()), is_subtype(Y, tuple())).
+
 rukeymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
     case L2 of
 	[] ->
@@ -571,18 +678,17 @@ rukeymerge(Index, T1, L2) when is_integer(Index), Index > 0 ->
 	    lists:reverse(M, [])
     end.
 
+-spec(keymap/3 :: (fun((_) -> _), pos_integer(), [tuple()]) -> [tuple()]).
+
 keymap(Fun, Index, [Tup|Tail]) ->
    [setelement(Index, Tup, Fun(element(Index, Tup)))|keymap(Fun, Index, Tail)];
 keymap(Fun, Index, []) when is_integer(Index), Index >= 1, 
                             is_function(Fun, 1) -> [].
 
-keymap(Fun, ExtraArgs, Index, [Tup|Tail]) ->
-   [setelement(Index, Tup, apply(Fun, [element(Index, Tup)|ExtraArgs]))|
-    keymap(Fun, ExtraArgs, Index, Tail)];
-keymap(Fun, _ , _, []) when is_function(Fun) -> [].
-
-
 %%% Suggestion from OTP-2948: sort and merge with Fun.
+
+-spec(sort/2 :: (fun((T, T) -> bool()), [T]) -> [T]).
+
 sort(Fun, []) when is_function(Fun, 2) ->
     [];
 sort(Fun, [_] = L) when is_function(Fun, 2) ->
@@ -595,16 +701,23 @@ sort(Fun, [X, Y | T]) ->
 	    fsplit_2(Y, X, Fun, T, [], [])
     end.
 
+-spec(merge/3 :: (fun((X, Y) -> bool()), [X], [Y]) -> [_]).
+
 merge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(fmerge2_1(T1, H2, Fun, T2, []), []);
 merge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
 
 %% reverse(rmerge(F,reverse(A),reverse(B))) is equal to merge(F,A,B).
+
+-spec(rmerge/3 :: (fun((X, Y) -> bool()), [X], [Y]) -> [_]).
+
 rmerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
     lists:reverse(rfmerge2_1(T1, H2, Fun, T2, []), []);
 rmerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1.
+
+-spec(usort/2 :: (fun((T, T) -> bool()), [T]) -> [T]).
 
 usort(Fun, [_] = L) when is_function(Fun, 2) ->
     L;
@@ -631,12 +744,17 @@ usort_1(Fun, X, [Y | L]) ->
 	    ufsplit_2(Y, L, Fun, [X])
     end.
                     
+-spec(umerge/3 :: (fun((X, Y) -> bool()), [X], [Y]) -> [_]).
+
 umerge(Fun, [], T2) when is_function(Fun, 2) ->
     T2;
 umerge(Fun, [H1 | T1], T2) when is_function(Fun, 2) ->
     lists:reverse(ufmerge2_2(H1, T1, Fun, T2, []), []).
 
 %% reverse(rumerge(F,reverse(A),reverse(B))) is equal to umerge(F,A,B).
+
+-spec(rumerge/3 :: (fun((X, Y) -> bool()), [X], [Y]) -> [_]).
+
 rumerge(Fun, T1, []) when is_function(Fun, 2) ->
     T1;
 rumerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
@@ -644,6 +762,8 @@ rumerge(Fun, T1, [H2 | T2]) when is_function(Fun, 2) ->
 
 %% usort(List) -> L
 %%  sorts the list L, removes duplicates
+
+-spec(usort/1 :: ([T]) -> [T]).
 
 usort([X, Y | L] = L0) when X < Y ->
     case L of
@@ -698,12 +818,16 @@ usort_1(X, []) ->
 %% umerge(List) -> L
 %%  merges a list of sorted lists without duplicates, removes duplicates
 
+-spec(umerge/1 :: ([T]) -> [T]).
+
 umerge(L) ->
     umergel(L).
 
 %% umerge3(X, Y, Z) -> L
 %%  merges three sorted lists X, Y and Z without duplicates, 
 %%  removes duplicates
+
+-spec(umerge3/3 :: ([_], [_], [_]) -> [_]).
 
 umerge3(L1, [], L3) ->
    umerge(L1, L3);
@@ -716,6 +840,8 @@ umerge3(L1, [H2 | T2], [H3 | T3]) ->
 %%  merges three reversed sorted lists X, Y and Z without duplicates,
 %%  removes duplicates
 
+-spec(rumerge3/3 :: ([_], [_], [_]) -> [_]).
+
 rumerge3(L1, [], L3) ->
    rumerge(L1, L3);
 rumerge3(L1, L2, []) ->
@@ -725,6 +851,8 @@ rumerge3(L1, [H2 | T2], [H3 | T3]) ->
 
 %% umerge(X, Y) -> L
 %%  merges two sorted lists X and Y without duplicates, removes duplicates
+
+-spec(umerge/2 :: ([_], [_]) -> [_]).
 
 umerge([], T2) ->
     T2;
@@ -736,6 +864,9 @@ umerge([H1 | T1], T2) ->
 %%  removes duplicates
 
 %% reverse(rumerge(reverse(A),reverse(B))) is equal to umerge(I,A,B).
+
+-spec(rumerge/2 :: ([_], [_]) -> [_]).
+
 rumerge(T1, []) ->
     T1;
 rumerge(T1, [H2 | T2]) ->
@@ -767,12 +898,16 @@ rumerge(T1, [H2 | T2]) ->
 %%  There are also versions with an extra argument, ExtraArgs, which is a
 %%  list of extra arguments to each call.
 
+-spec(all/2 :: (fun((T) -> bool()), [T]) -> bool()).
+
 all(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
 	true -> all(Pred, Tail);
 	false -> false
     end;
 all(Pred, []) when is_function(Pred, 1) -> true. 
+
+-spec(any/2 :: (fun((T) -> bool()), [T]) -> bool()).
 
 any(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
@@ -781,27 +916,39 @@ any(Pred, [Hd|Tail]) ->
     end;
 any(Pred, []) when is_function(Pred, 1) -> false. 
 
+-spec(map/2 :: (fun((D) -> R), [D]) -> [R]).
+
 map(F, [H|T]) ->
     [F(H)|map(F, T)];
 map(F, []) when is_function(F, 1) -> [].
+
+-spec(flatmap/2 :: (fun((D) -> [R]), [D]) -> [R]).
 
 flatmap(F, [Hd|Tail]) ->
     F(Hd) ++ flatmap(F, Tail);
 flatmap(F, []) when is_function(F, 1) -> [].
 
+-spec(foldl/3 :: (fun((T, _) -> _), _, [T]) -> _).
+
 foldl(F, Accu, [Hd|Tail]) ->
     foldl(F, F(Hd, Accu), Tail);
 foldl(F, Accu, []) when is_function(F, 2) -> Accu.
 
+-spec(foldr/3 :: (fun((T, _) -> _), _, [T]) -> _).
+
 foldr(F, Accu, [Hd|Tail]) ->
     F(Hd, foldr(F, Accu, Tail));
 foldr(F, Accu, []) when is_function(F, 2) -> Accu.
+
+-spec(filter/2 :: (Pred :: fun((T) -> bool()), List :: [T]) -> [T]).
 
 filter(Pred, List) when is_function(Pred, 1) ->
     [ E || E <- List, Pred(E) ].
 
 %% Equivalent to {filter(F, L), filter(NotF, L)}, if NotF = 'fun(X) ->
 %% not F(X) end'.
+
+-spec(partition/2 :: (Pred :: fun((T) -> bool()), List :: [T]) -> {[T],[T]}).
 
 partition(Pred, L) ->
     partition(Pred, L, [], []).
@@ -814,6 +961,8 @@ partition(Pred, [H | T], As, Bs) ->
 partition(Pred, [], As, Bs) when is_function(Pred, 1) ->
     {reverse(As), reverse(Bs)}.
 
+-spec(zf/2 :: (fun((T) -> bool() | {true,_}), [T]) -> [_]).
+
 zf(F, [Hd|Tail]) ->
     case F(Hd) of
 	true ->
@@ -825,10 +974,14 @@ zf(F, [Hd|Tail]) ->
     end;
 zf(F, []) when is_function(F, 1) -> [].
 
+-spec(foreach/2 :: (F :: fun((T) -> _), List :: [T]) -> 'ok').
+
 foreach(F, [Hd|Tail]) ->
     F(Hd),
     foreach(F, Tail);
 foreach(F, []) when is_function(F, 1) -> ok.
+
+-spec(mapfoldl/3 :: (fun((T, _) -> {_,_}), _, [T]) -> {[_],_}).
 
 mapfoldl(F, Accu0, [Hd|Tail]) ->
     {R,Accu1} = F(Hd, Accu0),
@@ -836,11 +989,15 @@ mapfoldl(F, Accu0, [Hd|Tail]) ->
     {[R|Rs],Accu2};
 mapfoldl(F, Accu, []) when is_function(F, 2) -> {[],Accu}.
 
+-spec(mapfoldr/3 :: (fun((T, _) -> {_,_}), _, [T]) -> {[_],_}).
+
 mapfoldr(F, Accu0, [Hd|Tail]) ->
     {Rs,Accu1} = mapfoldr(F, Accu0, Tail),
     {R,Accu2} = F(Hd, Accu1),
     {[R|Rs],Accu2};
 mapfoldr(F, Accu, []) when is_function(F, 2) -> {[],Accu}.
+
+-spec(takewhile/2 :: (fun((T) -> bool()), [T]) -> [T]).
 
 takewhile(Pred, [Hd|Tail]) ->
     case Pred(Hd) of
@@ -849,12 +1006,16 @@ takewhile(Pred, [Hd|Tail]) ->
     end;
 takewhile(Pred, []) when is_function(Pred, 1) -> [].
 
+-spec(dropwhile/2 :: (fun((T) -> bool()), [T]) -> [T]).
+
 dropwhile(Pred, [Hd|Tail]=Rest) ->
     case Pred(Hd) of
 	true -> dropwhile(Pred, Tail);
 	false -> Rest
     end;
 dropwhile(Pred, []) when is_function(Pred, 1) -> [].
+
+-spec(splitwith/2 :: (fun((T) -> bool()), [T]) -> {[T],[T]}).
 
 splitwith(Pred, List) when is_function(Pred, 1) ->
     splitwith(Pred, List, []).
@@ -866,6 +1027,8 @@ splitwith(Pred, [Hd|Tail], Taken) ->
     end;
 splitwith(Pred, [], Taken) when is_function(Pred, 1) ->
     {reverse(Taken),[]}.
+
+-spec(split/2 :: (non_neg_integer(),[T]) -> {[T],[T]}).
 
 split(N, List) when is_integer(N), N >= 0, is_list(List) ->
     case split(N, List, []) of
@@ -882,69 +1045,6 @@ split(N, [H|T], R) ->
     split(N-1, T, [H|R]);
 split(_, [], _) ->
     badarg.
-
-%% Versions of the above functions with extra arguments.
-
-all(Pred, Eas, [Hd|Tail]) ->
-    case apply(Pred, [Hd|Eas]) of
-	true -> all(Pred, Eas, Tail);
-	false -> false
-    end;
-all(Pred, _, []) when is_function(Pred) -> true.
-
-any(Pred, Eas, [Hd|Tail]) ->
-    case apply(Pred, [Hd|Eas]) of
-	true -> true;
-	false -> any(Pred, Eas, Tail)
-    end;
-any(Pred, _, []) when is_function(Pred) -> false. 
-
-map(F, Eas, List) -> [ apply(F, [E|Eas]) || E <- List ].
-
-flatmap(F, Eas, [Hd|Tail]) ->
-    apply(F, [Hd|Eas]) ++ flatmap(F, Eas, Tail);
-flatmap(F, _, []) when is_function(F) -> [].
-
-foldl(F, Eas, Accu, [Hd|Tail]) ->
-    foldl(F, Eas, apply(F, [Hd,Accu|Eas]), Tail);
-foldl(F, _, Accu, []) when is_function(F) -> Accu.
-
-foldr(F, Eas, Accu, [Hd|Tail]) ->
-    apply(F, [Hd,foldr(F, Eas, Accu, Tail)|Eas]);
-foldr(F, _, Accu, []) when is_function(F) -> Accu.
-
-filter(Pred, Eas, List) -> [ E || E <- List, apply(Pred, [E|Eas]) ].
-
-zf(F, Eas, [Hd|Tail]) ->
-    case apply(F, [Hd|Eas]) of
-	true ->
-	    [Hd|zf(F, Eas, Tail)];
-	{true,Val} ->
-	    [Val|zf(F, Eas, Tail)];
-	false ->
-	    zf(F, Eas, Tail)
-    end;
-zf(F, _, []) when is_function(F) -> [].
-
-foreach(F, Eas, [Hd|Tail]) ->
-    apply(F, [Hd|Eas]),
-    foreach(F, Eas, Tail);
-foreach(F, _, []) when is_function(F) -> ok.
-
-mapfoldl(F, Eas, Accu0, [Hd|Tail]) ->
-    {R,Accu1} = apply(F, [Hd,Accu0|Eas]),
-    {Rs,Accu2} = mapfoldl(F, Eas, Accu1, Tail),
-    {[R|Rs],Accu2};
-mapfoldl(F, _, Accu, []) when is_function(F) -> {[],Accu}.
-
-mapfoldr(F, Eas, Accu0, [Hd|Tail]) ->
-    {Rs,Accu1} = mapfoldr(F, Eas, Accu0, Tail),
-    {R,Accu2} = apply(F, [Hd,Accu1|Eas]),
-    {[R|Rs],Accu2};
-mapfoldr(F, _, Accu, []) when is_function(F) -> {[],Accu}.
-
-%% takewhile/2, dropwhile/2 and splitwith/2 do not have versions with
-%% extra arguments as this going to be discontinued.
 
 %%% =================================================================
 %%% Here follows the implementation of the sort functions.

@@ -1,19 +1,21 @@
-# ``The contents of this file are subject to the Erlang Public License,
+#<copyright>
+# <year>2000-2007</year>
+# <holder>Ericsson AB, All Rights Reserved</holder>
+#</copyright>
+#<legalnotice>
+# The contents of this file are subject to the Erlang Public License,
 # Version 1.1, (the "License"); you may not use this file except in
 # compliance with the License. You should have received a copy of the
 # Erlang Public License along with this software. If not, it can be
-# retrieved via the world wide web at http://www.erlang.org/.
-# 
+# retrieved online at http://www.erlang.org/.
+#
 # Software distributed under the License is distributed on an "AS IS"
 # basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 # the License for the specific language governing rights and limitations
 # under the License.
-# 
-# The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-# Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-# AB. All Rights Reserved.''
-# 
-#     $Id$
+#
+# The Initial Developer of the Original Code is Ericsson AB.
+#</legalnotice>
 #
 include $(ERL_TOP)/make/target.mk
 
@@ -83,7 +85,13 @@ PREV3C_SPECS = $(BER_ASN1_PREV3C_SPEC)         \
                $(PER_BIN_ASN1_PREV3C_SPEC)     \
                $(PER_BIN_DRV_ASN1_PREV3C_SPEC) 
 
-V3_SPECS = $(PREV3A_SPECS) $(PREV3B_SPECS) $(PREV3C_SPECS)
+V3_SPECS = $(BER_ASN1_V3_SPEC)         \
+           $(BER_BIN_ASN1_V3_SPEC)     \
+           $(BER_BIN_DRV_ASN1_V3_SPEC) \
+           $(PER_ASN1_V3_SPEC)         \
+           $(PER_BIN_ASN1_V3_SPEC)     \
+           $(PER_BIN_DRV_ASN1_V3_SPEC) \
+           $(PREV3A_SPECS) $(PREV3B_SPECS) $(PREV3C_SPECS)
 
 SPECS = $(V1_SPECS) $(V2_SPECS) $(V3_SPECS)
 
@@ -102,13 +110,11 @@ SPEC_ASN1DB = $(V1_SPEC_ASN1DB) \
 
 V1_SPEC_BINS = $(V1_SPECS:%=%.erl) $(V1_SPECS:%=%.hrl) 
 V2_SPEC_BINS = $(V2_SPECS:%=%.erl) $(V2_SPECS:%=%.hrl) 
-PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) \
-                   $(PREV3A_SPECS:%=%.hrl) 
-PREV3B_SPEC_BINS = $(PREV3B_SPECS:%=%.erl) \
-                   $(PREV3B_SPECS:%=%.hrl) 
-PREV3C_SPEC_BINS = $(PREV3C_SPECS:%=%.erl) \
-                   $(PREV3C_SPECS:%=%.hrl) 
-V3_SPEC_BINS = $(PREV3A_SPEC_BINS) \
+PREV3A_SPEC_BINS = $(PREV3A_SPECS:%=%.erl) $(PREV3A_SPECS:%=%.hrl) 
+PREV3B_SPEC_BINS = $(PREV3B_SPECS:%=%.erl) $(PREV3B_SPECS:%=%.hrl) 
+PREV3C_SPEC_BINS = $(PREV3C_SPECS:%=%.erl) $(PREV3C_SPECS:%=%.hrl) 
+V3_SPEC_BINS = $(V3_SPECS:%=%.erl) $(V3_SPECS:%=%.hrl) \
+               $(PREV3A_SPEC_BINS) \
                $(PREV3B_SPEC_BINS) \
                $(PREV3C_SPEC_BINS) 
 SPEC_BINS    = $(V1_SPEC_BINS) $(V2_SPEC_BINS) $(V3_SPEC_BINS) 

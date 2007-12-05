@@ -10,6 +10,7 @@ EXTERNAL_HRL_FILES = \
         ../../include/megaco_message_prev3a.hrl \
         ../../include/megaco_message_prev3b.hrl \
         ../../include/megaco_message_prev3c.hrl \
+        ../../include/megaco_message_v3.hrl \
         ../../include/megaco_sdp.hrl
 
 INTERNAL_HRL_FILES = \

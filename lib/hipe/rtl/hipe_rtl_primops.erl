@@ -553,10 +553,12 @@ gen_bsr_2(Res, Args, Cont, Fail, Op) ->
 	Val < Limit, Val >= 0 ->
 	  case Res of
 	    [] ->
+	      FixLabel = hipe_rtl:mk_new_label(),
 	      [hipe_tagscheme:test_fixnum(Arg1,
-					  hipe_rtl:label_name(Cont),
+					  hipe_rtl:label_name(FixLabel),
 					  hipe_rtl:label_name(GenCaseLabel),
 					  0.99),
+	       FixLabel,
 	       gen_op_general_case(hipe_rtl:mk_new_var(), Op, Args, Cont, Fail,
 				   GenCaseLabel)];
 	    [Res0] ->
@@ -605,8 +607,10 @@ gen_bnot_2(Res, Args, Cont, Fail, Op) ->
   GenCaseLabel = hipe_rtl:mk_new_label(),
   case Res of
     [] -> %% The result is not used.
-      [hipe_tagscheme:test_fixnum(Arg, hipe_rtl:label_name(Cont),
+      FixLabel = hipe_rtl:mk_new_label(),
+      [hipe_tagscheme:test_fixnum(Arg, hipe_rtl:label_name(FixLabel),
 				  hipe_rtl:label_name(GenCaseLabel), 0.99),
+       FixLabel,
        gen_op_general_case(hipe_rtl:mk_new_var(), Op, Args, Cont, Fail, 
 			   GenCaseLabel)];
     
@@ -1041,10 +1045,7 @@ gen_tuple_header(Ptr, Arity) ->
 %%% Receives
 
 gen_check_get_msg(Dsts, GotoCont, Fail) ->
-  case (?ERTS_IS_SMP + ?ERTS_IS_NOFRAG) of
-    0 -> gen_check_get_msg_inline(Dsts, GotoCont, Fail);
-    _ -> gen_check_get_msg_outofline(Dsts, GotoCont, Fail)
-  end.
+  gen_check_get_msg_outofline(Dsts, GotoCont, Fail).
 
 gen_clear_timeout([], GotoCont) ->
   case ?ERTS_IS_SMP of
@@ -1052,6 +1053,7 @@ gen_clear_timeout([], GotoCont) ->
     1 -> gen_clear_timeout_smp(GotoCont)
   end.
 
+-ifdef(notdef).	% for reference, currently unused
 %%% check_get_msg is:
 %%%	if (!PEEK_MESSAGE(p)) goto Fail;
 %%%	Dst = ERL_MESSAGE_TERM(PEEK_MESSAGE(p));
@@ -1076,6 +1078,7 @@ gen_check_get_msg_inline(Dsts, GotoCont, Fail) ->
      [] -> % receive which throws away the message
        [GotoCont]
    end].
+-endif.
 
 %%% next_msg is:
 %%%	SAVE_MESSAGE(p);

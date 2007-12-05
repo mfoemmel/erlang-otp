@@ -74,7 +74,7 @@
 %%
 %% See also "Naive Set Theory" by Paul R. Halmos.
 %%
-%% By convention, erlang:fault/2 is called from exported functions.
+%% By convention, erlang:error/2 is called from exported functions.
 
 -define(TAG, 'Set').
 -define(ORDTAG, 'OrdSet').
@@ -87,7 +87,7 @@
 %-define(SET(L, T), 
 %       case is_type(T) of 
 %           true -> #?TAG{data = L, type = T};
-%           false -> erlang:fault(badtype, [T])
+%           false -> erlang:error(badtype, [T])
 %       end
 %       ).
 -define(SET(L, T), #?TAG{data = L, type = T}).
@@ -127,7 +127,7 @@ from_term(T) ->
            end,
     case catch setify(T, Type) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [T]);
+            erlang:error(badarg, [T]);
         Set ->
             Set
     end.
@@ -137,12 +137,12 @@ from_term(L, T) ->
         true ->
             case catch setify(L, T) of
                 {'EXIT', _} ->
-                    erlang:fault(badarg, [L, T]);
+                    erlang:error(badarg, [L, T]);
                 Set ->
                     Set
             end;
         false  ->
-            erlang:fault(badarg, [L, T])
+            erlang:error(badarg, [L, T])
     end.
 
 from_external(L, ?SET_OF(Type)) ->
@@ -165,7 +165,7 @@ is_type(_T) ->
 set(L) ->
     case catch usort(L) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [L]);
+            erlang:error(badarg, [L]);
         SL -> 
             ?SET(SL, ?ATOM_TYPE)
     end.
@@ -173,53 +173,53 @@ set(L) ->
 set(L, ?SET_OF(Type) = T) when ?IS_ATOM_TYPE(Type), Type =/= ?ANYTYPE ->
     case catch usort(L) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [L, T]);
+            erlang:error(badarg, [L, T]);
         SL -> 
             ?SET(SL, Type)
     end;
 set(L, ?SET_OF(_) = T) ->
     case catch setify(L, T) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [L, T]);
+            erlang:error(badarg, [L, T]);
         Set ->
             Set
     end;
 set(L, T) ->
-    erlang:fault(badarg, [L, T]).
+    erlang:error(badarg, [L, T]).
 
 from_sets(Ss) when is_list(Ss) ->
     case set_of_sets(Ss, [], ?ANYTYPE) of
         {error, Error} ->
-            erlang:fault(Error, [Ss]);
+            erlang:error(Error, [Ss]);
         Set ->
             Set
     end;
 from_sets(Tuple) when is_tuple(Tuple) ->
     case ordset_of_sets(tuple_to_list(Tuple), [], []) of
         error ->
-            erlang:fault(badarg, [Tuple]);
+            erlang:error(badarg, [Tuple]);
         Set ->
             Set
     end;
 from_sets(T) ->
-    erlang:fault(badarg, [T]).
+    erlang:error(badarg, [T]).
 
 relation([]) ->
     ?SET([], ?BINREL(?ATOM_TYPE, ?ATOM_TYPE));
 relation(Ts = [T | _]) when is_tuple(T) ->
     case catch rel(Ts, size(T)) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [Ts]);
+            erlang:error(badarg, [Ts]);
         Set ->
             Set
     end;
 relation(E) ->
-    erlang:fault(badarg, [E]).
+    erlang:error(badarg, [E]).
 
 relation(Ts, TS) ->
     case catch rel(Ts, TS) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [Ts, TS]);
+            erlang:error(badarg, [Ts, TS]);
 	Set ->
 	    Set
     end.
@@ -227,9 +227,9 @@ relation(Ts, TS) ->
 a_function(Ts) ->
     case catch func(Ts, ?BINREL(?ATOM_TYPE, ?ATOM_TYPE)) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [Ts]);
+            erlang:error(badarg, [Ts]);
         Bad when is_atom(Bad) ->
-            erlang:fault(Bad, [Ts]);
+            erlang:error(Bad, [Ts]);
 	Set ->
 	    Set
     end.
@@ -237,9 +237,9 @@ a_function(Ts) ->
 a_function(Ts, T) ->
     case catch a_func(Ts, T) of
 	{'EXIT', _} ->
-	    erlang:fault(badarg, [Ts, T]);
+	    erlang:error(badarg, [Ts, T]);
 	Bad when is_atom(Bad) ->
-	    erlang:fault(Bad, [Ts, T]);
+	    erlang:error(Bad, [Ts, T]);
 	Set ->
 	    Set
     end.
@@ -247,9 +247,9 @@ a_function(Ts, T) ->
 family(Ts) ->
     case catch fam2(Ts, ?FAMILY(?ATOM_TYPE, ?ATOM_TYPE)) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [Ts]);
+            erlang:error(badarg, [Ts]);
         Bad when is_atom(Bad) ->
-            erlang:fault(Bad, [Ts]);
+            erlang:error(Bad, [Ts]);
         Set ->
 	    Set
     end.
@@ -257,9 +257,9 @@ family(Ts) ->
 family(Ts, T) ->
     case catch fam(Ts, T) of
 	{'EXIT', _} ->
-	    erlang:fault(badarg, [Ts, T]);
+	    erlang:error(badarg, [Ts, T]);
 	Bad when is_atom(Bad) ->
-	    erlang:fault(Bad, [Ts, T]);
+	    erlang:error(Bad, [Ts, T]);
 	Set ->
 	    Set
     end.
@@ -286,14 +286,14 @@ to_sets(S) when ?IS_SET(S) ->
 to_sets(S) when ?IS_ORDSET(S), is_tuple(?ORDTYPE(S)) ->
     tuple_of_sets(tuple_to_list(?ORDDATA(S)), tuple_to_list(?ORDTYPE(S)), []);
 to_sets(S) when ?IS_ORDSET(S) ->
-    erlang:fault(badarg, [S]).
+    erlang:error(badarg, [S]).
 
 no_elements(S) when ?IS_SET(S) ->
     length(?LIST(S));
 no_elements(S) when ?IS_ORDSET(S), is_tuple(?ORDTYPE(S)) ->
     size(?ORDDATA(S));
 no_elements(S) when ?IS_ORDSET(S) ->
-    erlang:fault(badarg, [S]).
+    erlang:error(badarg, [S]).
 
 specification(Fun, S) when ?IS_SET(S) ->
     Type = ?TYPE(S),
@@ -307,36 +307,36 @@ specification(Fun, S) when ?IS_SET(S) ->
 	SL when is_list(SL) ->
 	    ?SET(SL, Type);
 	Bad ->
-	    erlang:fault(Bad, [Fun, S])
+	    erlang:error(Bad, [Fun, S])
     end.
 
 union(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case unify_types(?TYPE(S1), ?TYPE(S2)) of
-        [] -> erlang:fault(type_mismatch, [S1, S2]);
+        [] -> erlang:error(type_mismatch, [S1, S2]);
         Type ->  ?SET(umerge(?LIST(S1), ?LIST(S2)), Type)
     end.
 
 intersection(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case unify_types(?TYPE(S1), ?TYPE(S2)) of
-        [] -> erlang:fault(type_mismatch, [S1, S2]);
+        [] -> erlang:error(type_mismatch, [S1, S2]);
         Type ->  ?SET(intersection(?LIST(S1), ?LIST(S2), []), Type)
     end.
 
 difference(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case unify_types(?TYPE(S1), ?TYPE(S2)) of
-        [] -> erlang:fault(type_mismatch, [S1, S2]);
+        [] -> erlang:error(type_mismatch, [S1, S2]);
         Type ->  ?SET(difference(?LIST(S1), ?LIST(S2), []), Type)
     end.
 
 symdiff(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case unify_types(?TYPE(S1), ?TYPE(S2)) of
-        [] -> erlang:fault(type_mismatch, [S1, S2]);
+        [] -> erlang:error(type_mismatch, [S1, S2]);
         Type ->  ?SET(symdiff(?LIST(S1), ?LIST(S2), []), Type)
     end.
 
 symmetric_partition(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case unify_types(?TYPE(S1), ?TYPE(S2)) of
-        [] -> erlang:fault(type_mismatch, [S1, S2]);
+        [] -> erlang:error(type_mismatch, [S1, S2]);
         Type ->  sympart(?LIST(S1), ?LIST(S2), [], [], [], Type)
     end.
 
@@ -356,9 +356,9 @@ product(T) when is_tuple(T) ->
     Ss = tuple_to_list(T),
     case catch sets_to_list(Ss) of
         {'EXIT', _} ->
-            erlang:fault(badarg, [T]);
+            erlang:error(badarg, [T]);
         [] ->
-            erlang:fault(badarg, [T]);
+            erlang:error(badarg, [T]);
         L ->
             Type = types(Ss, []),
             case member([], L) of
@@ -375,30 +375,30 @@ constant_function(S, E) when ?IS_SET(S) ->
 	{Type, true} ->
 	    NType = ?BINREL(Type, type(E)),
 	    ?SET(constant_function(?LIST(S), to_external(E), []), NType);
-	_ -> erlang:fault(badarg, [S, E])
+	_ -> erlang:error(badarg, [S, E])
     end;
 constant_function(S, E) when ?IS_ORDSET(S) ->
-    erlang:fault(badarg, [S, E]).
+    erlang:error(badarg, [S, E]).
 
 is_equal(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case match_types(?TYPE(S1), ?TYPE(S2)) of
         true  -> ?LIST(S1) == ?LIST(S2);
-        false -> erlang:fault(type_mismatch, [S1, S2])
+        false -> erlang:error(type_mismatch, [S1, S2])
     end;
 is_equal(S1, S2) when ?IS_ORDSET(S1), ?IS_ORDSET(S2) ->
     case match_types(?ORDTYPE(S1), ?ORDTYPE(S2)) of
         true  -> ?ORDDATA(S1) == ?ORDDATA(S2);
-        false -> erlang:fault(type_mismatch, [S1, S2])
+        false -> erlang:error(type_mismatch, [S1, S2])
     end;
 is_equal(S1, S2) when ?IS_SET(S1), ?IS_ORDSET(S2) ->
-    erlang:fault(type_mismatch, [S1, S2]);
+    erlang:error(type_mismatch, [S1, S2]);
 is_equal(S1, S2) when ?IS_ORDSET(S1), ?IS_SET(S2) ->
-    erlang:fault(type_mismatch, [S1, S2]).
+    erlang:error(type_mismatch, [S1, S2]).
 
 is_subset(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     case match_types(?TYPE(S1), ?TYPE(S2)) of
         true  -> subset(?LIST(S1), ?LIST(S2));
-        false -> erlang:fault(type_mismatch, [S1, S2])
+        false -> erlang:error(type_mismatch, [S1, S2])
     end.
 
 is_sofs_set(S) when ?IS_SET(S) ->
@@ -425,7 +425,7 @@ is_disjoint(S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
                 [] -> true;
                 [A | As] -> disjoint(?LIST(S2), A, As)
             end;
-        false -> erlang:fault(type_mismatch, [S1, S2])
+        false -> erlang:error(type_mismatch, [S1, S2])
     end.
 
 %%%
@@ -436,17 +436,17 @@ union(Sets) when ?IS_SET(Sets) ->
     case ?TYPE(Sets) of
         ?SET_OF(Type) -> ?SET(lunion(?LIST(Sets)), Type);
         ?ANYTYPE -> Sets;
-        _ -> erlang:fault(badarg, [Sets])
+        _ -> erlang:error(badarg, [Sets])
     end.
 
 intersection(Sets) when ?IS_SET(Sets) ->
     case ?LIST(Sets) of
-        [] -> erlang:fault(badarg, [Sets]);
+        [] -> erlang:error(badarg, [Sets]);
         [L | Ls] ->
             case ?TYPE(Sets) of
                 ?SET_OF(Type) ->
                     ?SET(lintersection(Ls, L), Type);
-                _ -> erlang:fault(badarg, [Sets])
+                _ -> erlang:error(badarg, [Sets])
             end
     end.
 
@@ -457,7 +457,7 @@ canonical_relation(Sets) when ?IS_SET(Sets) ->
         ?SET_OF(Type) -> 
             ?SET(can_rel(?LIST(Sets), []), ?BINREL(Type, ST));
         ?ANYTYPE -> Sets;
-        _ -> erlang:fault(badarg, [Sets])
+        _ -> erlang:error(badarg, [Sets])
     end.
 
 %%% 
@@ -473,21 +473,21 @@ relation_to_family(R) when ?IS_SET(R) ->
         ?BINREL(DT, RT) -> 
             ?SET(rel2family(?LIST(R)), ?FAMILY(DT, RT));
         ?ANYTYPE -> R;
-        _Else    -> erlang:fault(badarg, [R])
+        _Else    -> erlang:error(badarg, [R])
     end.
 
 domain(R) when ?IS_SET(R) ->
     case ?TYPE(R) of
         ?BINREL(DT, _)  -> ?SET(dom(?LIST(R)), DT);
         ?ANYTYPE -> R;
-        _Else    -> erlang:fault(badarg, [R])
+        _Else    -> erlang:error(badarg, [R])
     end.
 
 range(R) when ?IS_SET(R) ->
     case ?TYPE(R) of
         ?BINREL(_, RT)  -> ?SET(ran(?LIST(R),  []), RT);
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R])
+        _ -> erlang:error(badarg, [R])
     end.
 
 %% In "Introduction to LOGIC", Suppes defines the field of a binary
@@ -499,7 +499,7 @@ field(R) ->
 relative_product(RT) when is_tuple(RT) ->
     case relprod_n(RT, foo, false, false) of
         {error, Reason} -> 
-            erlang:fault(Reason, [RT]);
+            erlang:error(Reason, [RT]);
         Reply ->
             Reply
     end.
@@ -510,11 +510,11 @@ relative_product(RT, R) when is_tuple(RT), ?IS_SET(R) ->
     EmptyR = case ?TYPE(R) of
                  ?BINREL(_, _) -> ?LIST(R) =:= [];
                  ?ANYTYPE -> true;
-                 _ -> erlang:fault(badarg, [RT, R])
+                 _ -> erlang:error(badarg, [RT, R])
              end,
     case relprod_n(RT, R, EmptyR, true) of
         {error, Reason} -> 
-            erlang:fault(Reason, [RT, R]);
+            erlang:error(Reason, [RT, R]);
         Reply ->
             Reply
     end.
@@ -523,25 +523,25 @@ relative_product1(R1, R2) when ?IS_SET(R1), ?IS_SET(R2) ->
     {DTR1, RTR1} = case ?TYPE(R1) of
                      ?BINREL(_, _) = R1T -> R1T;
                      ?ANYTYPE -> {?ANYTYPE, ?ANYTYPE};
-                     _ -> erlang:fault(badarg, [R1, R2])
+                     _ -> erlang:error(badarg, [R1, R2])
                  end,
     {DTR2, RTR2} = case ?TYPE(R2) of
                      ?BINREL(_, _) = R2T -> R2T;
                      ?ANYTYPE -> {?ANYTYPE, ?ANYTYPE};
-                     _ -> erlang:fault(badarg, [R1, R2])
+                     _ -> erlang:error(badarg, [R1, R2])
                  end,
     case match_types(DTR1, DTR2) of
         true when DTR1 =:= ?ANYTYPE -> R1;
         true when DTR2 =:= ?ANYTYPE -> R2;
         true -> ?SET(relprod(?LIST(R1), ?LIST(R2)), ?BINREL(RTR1, RTR2));
-        false -> erlang:fault(type_mismatch, [R1, R2])
+        false -> erlang:error(type_mismatch, [R1, R2])
     end.
 
 converse(R) when ?IS_SET(R) ->
     case ?TYPE(R) of
         ?BINREL(DT, RT) -> ?SET(converse(?LIST(R), []), ?BINREL(RT, DT));
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R])
+        _ -> erlang:error(badarg, [R])
     end.
     
 image(R, S) when ?IS_SET(R), ?IS_SET(S) ->
@@ -551,10 +551,10 @@ image(R, S) when ?IS_SET(R), ?IS_SET(S) ->
 		true ->
 		    ?SET(usort(restrict(?LIST(S), ?LIST(R))), RT);
 		false ->
-		    erlang:fault(type_mismatch, [R, S])
+		    erlang:error(type_mismatch, [R, S])
 	    end;
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R, S])
+        _ -> erlang:error(badarg, [R, S])
     end.
 
 inverse_image(R, S) when ?IS_SET(R), ?IS_SET(S) ->
@@ -565,10 +565,10 @@ inverse_image(R, S) when ?IS_SET(R), ?IS_SET(S) ->
 		    NL = restrict(?LIST(S), converse(?LIST(R), [])),
 		    ?SET(usort(NL), DT);
 		false ->
-		    erlang:fault(type_mismatch, [R, S])
+		    erlang:error(type_mismatch, [R, S])
 	    end;
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R, S])
+        _ -> erlang:error(badarg, [R, S])
     end.
 
 strict_relation(R) when ?IS_SET(R) ->
@@ -576,7 +576,7 @@ strict_relation(R) when ?IS_SET(R) ->
         Type = ?BINREL(_, _) -> 
             ?SET(strict(?LIST(R), []), Type);
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R])
+        _ -> erlang:error(badarg, [R])
     end.
     
 weak_relation(R) when ?IS_SET(R) ->
@@ -584,12 +584,12 @@ weak_relation(R) when ?IS_SET(R) ->
         ?BINREL(DT, RT) -> 
             case unify_types(DT, RT) of
                 [] ->
-                    erlang:fault(badarg, [R]);
+                    erlang:error(badarg, [R]);
                 Type ->
                     ?SET(weak(?LIST(R)), ?BINREL(Type, Type))
             end;
         ?ANYTYPE -> R;
-        _ -> erlang:fault(badarg, [R])
+        _ -> erlang:error(badarg, [R])
     end.
     
 extension(R, S, E) when ?IS_SET(R), ?IS_SET(S) ->
@@ -597,7 +597,7 @@ extension(R, S, E) when ?IS_SET(R), ?IS_SET(S) ->
 	{T=?BINREL(DT, RT), ST, true} ->
 	    case match_types(DT, ST) and match_types(RT, type(E)) of
 		false ->
-		    erlang:fault(type_mismatch, [R, S, E]);
+		    erlang:error(type_mismatch, [R, S, E]);
 		true ->
 		    RL = ?LIST(R),
 		    case extc([], ?LIST(S), to_external(E), RL) of
@@ -617,7 +617,7 @@ extension(R, S, E) when ?IS_SET(R), ?IS_SET(S) ->
 		    ?SET([], ?BINREL(ST, ET))
 	    end;
 	{_, _, true} ->
-	    erlang:fault(badarg, [R, S, E])
+	    erlang:error(badarg, [R, S, E])
     end.
 
 is_a_function(R) when ?IS_SET(R) ->
@@ -628,7 +628,7 @@ is_a_function(R) when ?IS_SET(R) ->
                 [{V,_} | Es] -> is_a_func(Es, V)
             end;
         ?ANYTYPE -> true;
-        _ -> erlang:fault(badarg, [R])
+        _ -> erlang:error(badarg, [R])
     end.
 
 restriction(Relation, Set) ->
@@ -645,12 +645,12 @@ composite(Fn1, Fn2) when ?IS_SET(Fn1), ?IS_SET(Fn2) ->
     ?BINREL(DTF1, RTF1) = case ?TYPE(Fn1)of
 			      ?BINREL(_, _) = F1T -> F1T;
 			      ?ANYTYPE -> {?ANYTYPE, ?ANYTYPE};
-			      _ -> erlang:fault(badarg, [Fn1, Fn2])
+			      _ -> erlang:error(badarg, [Fn1, Fn2])
 			  end,
     ?BINREL(DTF2, RTF2) = case ?TYPE(Fn2) of
 			      ?BINREL(_, _) = F2T -> F2T;
 			      ?ANYTYPE -> {?ANYTYPE, ?ANYTYPE};
-			      _ -> erlang:fault(badarg, [Fn1, Fn2])
+			      _ -> erlang:error(badarg, [Fn1, Fn2])
 			  end,
     case match_types(RTF1, DTF2) of
         true when DTF1 =:= ?ANYTYPE -> Fn1;
@@ -660,9 +660,9 @@ composite(Fn1, Fn2) when ?IS_SET(Fn1), ?IS_SET(Fn2) ->
 		SL when is_list(SL) ->
 		    ?SET(sort(SL), ?BINREL(DTF1, RTF2));
 		Bad ->
-		    erlang:fault(Bad, [Fn1, Fn2])
+		    erlang:error(Bad, [Fn1, Fn2])
 	    end;
-        false -> erlang:fault(type_mismatch, [Fn1, Fn2])
+        false -> erlang:error(type_mismatch, [Fn1, Fn2])
     end.
 
 inverse(Fn) when ?IS_SET(Fn) ->
@@ -672,10 +672,10 @@ inverse(Fn) when ?IS_SET(Fn) ->
 		SL when is_list(SL) ->
 		    ?SET(SL, ?BINREL(RT, DT));
 		Bad ->
-		    erlang:fault(Bad, [Fn])
+		    erlang:error(Bad, [Fn])
 	    end;
         ?ANYTYPE -> Fn;
-        _ -> erlang:fault(badarg, [Fn])
+        _ -> erlang:error(badarg, [Fn])
     end.
     
 %%% 
@@ -690,7 +690,7 @@ restriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 	empty ->
 	    R;
 	error ->
-	    erlang:fault(badarg, [I, R, S]);
+	    erlang:error(badarg, [I, R, S]);
 	Sort ->
 	    RL = ?LIST(R),
 	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
@@ -703,7 +703,7 @@ restriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 		{true, [E | Es]} ->
 		    ?SET(sort(restrict_n(I, keysort(I, RL), E, Es, [])), RT);
 		{false, _SL} ->
-		    erlang:fault(type_mismatch, [I, R, S])
+		    erlang:error(type_mismatch, [I, R, S])
 	    end
     end;
 restriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
@@ -721,27 +721,27 @@ restriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 			    NL = sort(restrict(?LIST(S2), converse(NSL, []))),
 			    ?SET(NL, Type1);
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end;
 		Bad ->
-		    erlang:fault(Bad, [SetFun, S1, S2])
+		    erlang:error(Bad, [SetFun, S1, S2])
 	    end;
 	_ when Type1 =:= ?ANYTYPE ->
 	    S1;
 	_XFun when ?IS_SET_OF(Type1) ->
-            erlang:fault(badarg, [SetFun, S1, S2]);
+            erlang:error(badarg, [SetFun, S1, S2]);
 	XFun ->
 	    FunT = XFun(Type1),
 	    case catch check_fun(Type1, XFun, FunT) of
 		{'EXIT', _} ->
-		    erlang:fault(badarg, [SetFun, S1, S2]);
+		    erlang:error(badarg, [SetFun, S1, S2]);
 		Sort ->
 		    case match_types(FunT, Type2) of
 			true ->
 			    R1 = inverse_substitution(SL1, XFun, Sort),
 			    ?SET(sort(Sort, restrict(?LIST(S2), R1)), Type1);
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end
 	    end
     end.
@@ -753,7 +753,7 @@ drestriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 	empty ->
 	    R;
 	error ->
-	    erlang:fault(badarg, [I, R, S]);
+	    erlang:error(badarg, [I, R, S]);
 	Sort ->
 	    RL = ?LIST(R),
 	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
@@ -766,7 +766,7 @@ drestriction(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 		{true, [E | Es]} ->
 		    ?SET(diff_restrict_n(I, keysort(I, RL), E, Es, []), RT);
 		{false, _SL} ->
-		    erlang:fault(type_mismatch, [I, R, S])
+		    erlang:error(type_mismatch, [I, R, S])
 	    end
     end;
 drestriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
@@ -785,20 +785,20 @@ drestriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 			    NL = sort(diff_restrict(SL2, converse(NSL, []))),
 			    ?SET(NL, Type1);
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end;
 		Bad ->
-		    erlang:fault(Bad, [SetFun, S1, S2])
+		    erlang:error(Bad, [SetFun, S1, S2])
 	    end;
 	_ when Type1 =:= ?ANYTYPE ->
 	    S1;
 	_XFun when ?IS_SET_OF(Type1) ->
-            erlang:fault(badarg, [SetFun, S1, S2]);
+            erlang:error(badarg, [SetFun, S1, S2]);
 	XFun ->
 	    FunT = XFun(Type1),
 	    case catch check_fun(Type1, XFun, FunT) of
 		{'EXIT', _} ->
-		    erlang:fault(badarg, [SetFun, S1, S2]);
+		    erlang:error(badarg, [SetFun, S1, S2]);
 		Sort ->
 		    case match_types(FunT, Type2) of
 			true ->
@@ -806,7 +806,7 @@ drestriction(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 			    SL2 = ?LIST(S2),
 			    ?SET(sort(Sort, diff_restrict(SL2, R1)), Type1);
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end
 	    end
     end.
@@ -817,7 +817,7 @@ projection(I, Set) when is_integer(I), ?IS_SET(Set) ->
         empty ->
             Set;
         error ->
-            erlang:fault(badarg, [I, Set]);
+            erlang:error(badarg, [I, Set]);
 	_ when I =:= 1 ->
 	    ?SET(projection1(?LIST(Set)), ?REL_TYPE(I, Type));
         _ ->
@@ -832,7 +832,7 @@ substitution(I, Set) when is_integer(I), ?IS_SET(Set) ->
 	empty ->
 	    Set;
 	error ->
-	    erlang:fault(badarg, [I, Set]);
+	    erlang:error(badarg, [I, Set]);
 	_Sort ->
 	    NType = ?REL_TYPE(I, Type),
 	    NSL = substitute_element(?LIST(Set), I, []),
@@ -847,19 +847,19 @@ substitution(SetFun, Set) when ?IS_SET(Set) ->
 		{SL, NewType} ->
 		    ?SET(reverse(SL), ?BINREL(Type, NewType));
 		Bad ->
-		    erlang:fault(Bad, [SetFun, Set])
+		    erlang:error(Bad, [SetFun, Set])
 	    end;
 	false ->
 	    empty_set();
 	_ when Type =:= ?ANYTYPE ->
 	    empty_set();
 	_XFun when ?IS_SET_OF(Type) ->
-            erlang:fault(badarg, [SetFun, Set]);
+            erlang:error(badarg, [SetFun, Set]);
 	XFun ->
 	    FunT = XFun(Type),
 	    case catch check_fun(Type, XFun, FunT) of
 		{'EXIT', _} ->
-		    erlang:fault(badarg, [SetFun, Set]);
+		    erlang:error(badarg, [SetFun, Set]);
 		_Sort ->
 		    SL = substitute(L, XFun, []),
 		    ?SET(SL, ?BINREL(Type, FunT))
@@ -877,7 +877,7 @@ partition(I, Set) when is_integer(I), ?IS_SET(Set) ->
         empty ->
             Set;
         error ->
-            erlang:fault(badarg, [I, Set]);
+            erlang:error(badarg, [I, Set]);
 	false -> % I =:= 1
 	    ?SET(partition_n(I, ?LIST(Set)), ?SET_OF(Type));
         true ->
@@ -893,7 +893,7 @@ partition(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 	empty ->
 	    {R, R};
 	error ->
-	    erlang:fault(badarg, [I, R, S]);
+	    erlang:error(badarg, [I, R, S]);
 	Sort ->
 	    RL = ?LIST(R),
 	    case {match_types(?REL_TYPE(I, RT), ST), ?LIST(S)} of
@@ -908,7 +908,7 @@ partition(I, R, S) when is_integer(I), ?IS_SET(R), ?IS_SET(S) ->
 		    [L1 | L2] = partition3_n(I, keysort(I,RL), E, Es, [], []),
 		    {?SET(L1, RT), ?SET(L2, RT)};
 		{false, _SL} ->
-		    erlang:fault(type_mismatch, [I, R, S])
+		    erlang:error(type_mismatch, [I, R, S])
 	    end
     end;
 partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
@@ -927,20 +927,20 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 			    [L1 | L2] = partition3(?LIST(S2), R1),
 			    {?SET(sort(L1), Type1), ?SET(sort(L2), Type1)};
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end;
 		Bad ->
-		    erlang:fault(Bad, [SetFun, S1, S2])
+		    erlang:error(Bad, [SetFun, S1, S2])
 	    end;
 	_ when Type1 =:= ?ANYTYPE ->
 	    {S1, S1};
 	_XFun when ?IS_SET_OF(Type1) ->
-            erlang:fault(badarg, [SetFun, S1, S2]);
+            erlang:error(badarg, [SetFun, S1, S2]);
 	XFun ->
 	    FunT = XFun(Type1),
 	    case catch check_fun(Type1, XFun, FunT) of
 		{'EXIT', _} ->
-		    erlang:fault(badarg, [SetFun, S1, S2]);
+		    erlang:error(badarg, [SetFun, S1, S2]);
 		Sort ->
 		    case match_types(FunT, Type2) of
 			true ->
@@ -948,7 +948,7 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
 			    [L1 | L2] = partition3(?LIST(S2), R1),
 			    {?SET(sort(L1), Type1), ?SET(sort(L2), Type1)};
 			false ->
-			    erlang:fault(type_mismatch, [SetFun, S1, S2])
+			    erlang:error(type_mismatch, [SetFun, S1, S2])
 		    end
 	    end
     end.
@@ -961,14 +961,14 @@ multiple_relative_product(T, R) when is_tuple(T), ?IS_SET(R) ->
 	    MProd = mul_relprod(tuple_to_list(T), 1, R),
 	    relative_product(list_to_tuple(MProd));
         false -> 
-	    erlang:fault(badarg, [T, R])
+	    erlang:error(badarg, [T, R])
     end.
 
 join(R1, I1, R2, I2) 
   when ?IS_SET(R1), ?IS_SET(R2), is_integer(I1), is_integer(I2) ->
     case test_rel(R1, I1, lte) and test_rel(R2, I2, lte) of
         false -> 
-	    erlang:fault(badarg, [R1, I1, R2, I2]);
+	    erlang:error(badarg, [R1, I1, R2, I2]);
         true when ?TYPE(R1) =:= ?ANYTYPE -> R1;
         true when ?TYPE(R2) =:= ?ANYTYPE -> R2;
         true ->
@@ -1009,7 +1009,7 @@ family_to_relation(F) when ?IS_SET(F) ->
         ?FAMILY(DT, RT) ->
 	    ?SET(family2rel(?LIST(F), []), ?BINREL(DT, RT));
         ?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_specification(Fun, F) when ?IS_SET(F) ->
@@ -1025,10 +1025,10 @@ family_specification(Fun, F) when ?IS_SET(F) ->
 		SL when is_list(SL) ->
 		    ?SET(SL, FType);
 		Bad ->
-		    erlang:fault(Bad, [Fun, F])
+		    erlang:error(Bad, [Fun, F])
 	    end;
         ?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [Fun, F])
+        _ -> erlang:error(badarg, [Fun, F])
     end.
 
 union_of_family(F) when ?IS_SET(F) ->
@@ -1036,7 +1036,7 @@ union_of_family(F) when ?IS_SET(F) ->
         ?FAMILY(_DT, Type) ->
 	    ?SET(un_of_fam(?LIST(F), []), Type);
         ?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 intersection_of_family(F) when ?IS_SET(F) ->
@@ -1046,9 +1046,9 @@ intersection_of_family(F) when ?IS_SET(F) ->
                 FU when is_list(FU) ->
                     ?SET(FU, Type);
                 Bad ->
-                    erlang:fault(Bad, [F])
+                    erlang:error(Bad, [F])
             end;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_union(F) when ?IS_SET(F) ->
@@ -1056,7 +1056,7 @@ family_union(F) when ?IS_SET(F) ->
         ?FAMILY(DT, ?SET_OF(Type)) ->
 	    ?SET(fam_un(?LIST(F), []), ?FAMILY(DT, Type));
         ?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_intersection(F) when ?IS_SET(F) ->
@@ -1066,10 +1066,10 @@ family_intersection(F) when ?IS_SET(F) ->
                 FU when is_list(FU) ->
                     ?SET(FU, ?FAMILY(DT, Type));
                 Bad ->
-                    erlang:fault(Bad, [F])
+                    erlang:error(Bad, [F])
             end;
         ?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_domain(F) when ?IS_SET(F) ->
@@ -1078,7 +1078,7 @@ family_domain(F) when ?IS_SET(F) ->
             ?SET(fam_dom(?LIST(F), []), ?FAMILY(FDT, DT));
         ?ANYTYPE -> F;
         ?FAMILY(_, ?ANYTYPE) -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_range(F) when ?IS_SET(F) ->
@@ -1087,7 +1087,7 @@ family_range(F) when ?IS_SET(F) ->
             ?SET(fam_ran(?LIST(F), []), ?FAMILY(DT, RT));
         ?ANYTYPE -> F;
         ?FAMILY(_, ?ANYTYPE) -> F;
-        _ -> erlang:fault(badarg, [F])
+        _ -> erlang:error(badarg, [F])
     end.
 
 family_field(F) ->
@@ -1106,12 +1106,12 @@ family_difference(F1, F2) ->
 fam_binop(F1, F2, FF) when ?IS_SET(F1), ?IS_SET(F2) ->
     case unify_types(?TYPE(F1), ?TYPE(F2)) of
         [] ->
-            erlang:fault(type_mismatch, [F1, F2]);
+            erlang:error(type_mismatch, [F1, F2]);
         ?ANYTYPE -> 
             F1;
         Type = ?FAMILY(_, _) -> 
 	    ?SET(FF(?LIST(F1), ?LIST(F2), []), Type);
-        _ ->  erlang:fault(badarg, [F1, F2])
+        _ ->  erlang:error(badarg, [F1, F2])
     end.
 
 partition_family(I, Set) when is_integer(I), ?IS_SET(Set) ->
@@ -1120,7 +1120,7 @@ partition_family(I, Set) when is_integer(I), ?IS_SET(Set) ->
         empty ->
             Set;
         error ->
-            erlang:fault(badarg, [I, Set]);
+            erlang:error(badarg, [I, Set]);
 	false -> % when I =:= 1
 	    ?SET(fam_partition_n(I, ?LIST(Set)),
 		 ?BINREL(?REL_TYPE(I, Type), ?SET_OF(Type)));
@@ -1138,19 +1138,19 @@ partition_family(SetFun, Set) when ?IS_SET(Set) ->
 		    P = fam_partition(converse(NSL, []), true),
 		    ?SET(reverse(P), ?BINREL(NewType, ?SET_OF(Type)));
 		Bad ->
-		    erlang:fault(Bad, [SetFun, Set])
+		    erlang:error(Bad, [SetFun, Set])
 	    end;
 	false ->
 	    empty_set();
 	_ when Type =:= ?ANYTYPE ->
 	    empty_set();
 	_XFun when ?IS_SET_OF(Type) ->
-            erlang:fault(badarg, [SetFun, Set]);
+            erlang:error(badarg, [SetFun, Set]);
 	XFun ->
 	    DType = XFun(Type),
 	    case catch check_fun(Type, XFun, DType) of
 		{'EXIT', _} ->
-		    erlang:fault(badarg, [SetFun, Set]);
+		    erlang:error(badarg, [SetFun, Set]);
 		Sort ->
 		    Ts = inverse_substitution(?LIST(Set), XFun, Sort),
 		    P = fam_partition(Ts, Sort),
@@ -1169,13 +1169,13 @@ family_projection(SetFun, F) when ?IS_SET(F) ->
 			{SL, NewType} ->
 			    ?SET(SL, ?BINREL(DT, NewType));
 			Bad ->
-			    erlang:fault(Bad, [SetFun, F])
+			    erlang:error(Bad, [SetFun, F])
 		    end;
 		_ -> 
-		    erlang:fault(badarg, [SetFun, F])
+		    erlang:error(badarg, [SetFun, F])
 	    end;
 	?ANYTYPE -> F;
-        _ -> erlang:fault(badarg, [SetFun, F])
+        _ -> erlang:error(badarg, [SetFun, F])
     end.
 
 %%%
@@ -1186,21 +1186,21 @@ family_to_digraph(F) when ?IS_SET(F) ->
     case ?TYPE(F) of
         ?FAMILY(_, _) -> fam2digraph(F, digraph:new());
         ?ANYTYPE -> digraph:new();
-        _Else -> erlang:fault(badarg, [F])
+        _Else -> erlang:error(badarg, [F])
     end.
 
 family_to_digraph(F, Type) when ?IS_SET(F) ->
     G = case ?TYPE(F) of
             ?FAMILY(_, _) -> digraph:new(Type);
             ?ANYTYPE -> digraph:new(Type);
-            _Else  -> erlang:fault(badarg, [F, Type])
+            _Else  -> erlang:error(badarg, [F, Type])
         end,
     case G of
-        {error, _} -> erlang:fault(badarg, [F, Type]);
+        {error, _} -> erlang:error(badarg, [F, Type]);
         _ -> case catch fam2digraph(F, G) of
                  {error, Reason} ->
                      true = digraph:delete(G),
-                     erlang:fault(Reason, [F, Type]);
+                     erlang:error(Reason, [F, Type]);
                  _ -> 
                      G
              end
@@ -1208,7 +1208,7 @@ family_to_digraph(F, Type) when ?IS_SET(F) ->
 
 digraph_to_family(G) ->
     case catch digraph_family(G) of
-        {'EXIT', _} -> erlang:fault(badarg, [G]);
+        {'EXIT', _} -> erlang:error(badarg, [G]);
         L -> ?SET(L, ?FAMILY(?ATOM_TYPE, ?ATOM_TYPE))
     end.
 
@@ -1216,11 +1216,11 @@ digraph_to_family(G, T) ->
     case {is_type(T), T} of
         {true, ?SET_OF(?FAMILY(_,_) = Type)} ->
             case catch digraph_family(G) of
-                {'EXIT', _} -> erlang:fault(badarg, [G, T]);
+                {'EXIT', _} -> erlang:error(badarg, [G, T]);
                 L -> ?SET(L, Type)
             end;
         _ ->
-            erlang:fault(badarg, [G, T])
+            erlang:error(badarg, [G, T])
     end.
 
 %%

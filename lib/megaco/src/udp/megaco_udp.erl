@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%-----------------------------------------------------------------
 %% Purpose: Interface to the UDP transport module for Megaco/H.248
@@ -24,6 +26,7 @@
 -include_lib("megaco/src/udp/megaco_udp.hrl").
 
 -record(send_handle, {socket, addr, port}).
+
 
 %%-----------------------------------------------------------------
 %% External exports
@@ -45,11 +48,6 @@
 -export([get_stats/0, get_stats/1, get_stats/2,
 	 reset_stats/0, reset_stats/1]).
 
-
-%%-----------------------------------------------------------------
-%% Internal exports
-%%-----------------------------------------------------------------
--export([]).
 
 %%-----------------------------------------------------------------
 %% External interface functions
@@ -193,6 +191,7 @@ create_snmp_counters(SH, [Counter|Counters]) ->
     ets:insert(megaco_udp_stats, {Key, 0}),
     create_snmp_counters(SH, Counters).
 
+
 %%-----------------------------------------------------------------
 %% Func: send_message
 %% Description: Function is used for sending data on the UDP socket
@@ -211,6 +210,7 @@ send_message(SH, Data) when record(SH, send_handle) ->
 send_message(SH, _Data) ->
     {error, {bad_send_handle, SH}}.
 
+
 %%-----------------------------------------------------------------
 %% Func: block
 %% Description: Function is used for blocking incomming messages
@@ -222,6 +222,7 @@ block(Socket) ->
     ?udp_debug({socket, Socket}, "udp block", []),
     inet:setopts(Socket, [{active, false}]).
       
+
 %%-----------------------------------------------------------------
 %% Func: unblock
 %% Description: Function is used for blocking incomming messages
@@ -232,6 +233,7 @@ unblock(SH) when record(SH, send_handle) ->
 unblock(Socket) ->
     ?udp_debug({socket, Socket}, "udp unblock", []),
     inet:setopts(Socket, [{active, once}]).
+
 
 %%-----------------------------------------------------------------
 %% Func: close
@@ -248,6 +250,7 @@ close(Socket) ->
 	    {error, already_closed}
     end.
 
+
 %%-----------------------------------------------------------------
 %% Internal functions
 %%-----------------------------------------------------------------
@@ -257,7 +260,8 @@ close(Socket) ->
 %%              process
 %%-----------------------------------------------------------------
 start_udp_server(SupPid, UdpRec) ->
-    supervisor:start_child(SupPid, [UdpRec]).
+    megaco_udp_sup:start_child(SupPid, UdpRec).
+
 
 %%-----------------------------------------------------------------
 %% Func: parse_options
@@ -269,13 +273,13 @@ parse_options([{Tag, Val} | T], UdpRec, Mand) ->
     case Tag of
 	port ->
 	    parse_options(T, UdpRec#megaco_udp{port = Val}, Mand2);
-	udp_options when list(Val)->
+	udp_options when is_list(Val) ->
 	    parse_options(T, UdpRec#megaco_udp{options = Val}, Mand2);
 	receive_handle ->
 	    parse_options(T, UdpRec#megaco_udp{receive_handle = Val}, Mand2);
-	module when atom(Val) ->
+	module when is_atom(Val) ->
 	    parse_options(T, UdpRec#megaco_udp{module = Val}, Mand2);
-	serialize when Val == true; Val == false ->
+	serialize when (Val == true) orelse (Val == false) ->
 	    parse_options(T, UdpRec#megaco_udp{serialize = Val}, Mand2);
         Bad ->
 	    {error, {bad_option, Bad}}

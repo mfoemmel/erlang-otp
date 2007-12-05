@@ -2,11 +2,12 @@
 
 {application, compiler,
  [{description, "ERTS  CXC 138 10"},
-  {vsn, "4.4.5"},
+  {vsn, "4.5"},
   {modules, [
 	     beam_asm,
 	     beam_block,
 	     beam_bool,
+	     beam_bsm,
 	     beam_clean,
 	     beam_dead,
 	     beam_dict,
@@ -15,7 +16,9 @@
 	     beam_jump,
 	     beam_listing,
 	     beam_opcodes,
+	     beam_trim,
 	     beam_type,
+	     beam_utils,
 	     beam_validator,
 	     cerl,
 	     cerl_clauses,

@@ -50,7 +50,6 @@ union db_table {
 				"ERL_MAX_ETS_TABLES" */
 #define ERL_MAX_ETS_TABLES_ENV "ERL_MAX_ETS_TABLES"
 
-EXTERN_FUNCTION(void, init_db, (_VOID_));
 void init_db(void);
 void db_proc_dead(Eterm pid);
 void db_info(int, void *, int);
@@ -65,6 +64,7 @@ extern Export ets_select_delete_continue_exp;
 extern Export ets_select_count_continue_exp;
 extern Export ets_select_continue_exp;
 
+Eterm erts_ets_slot_to_atom(Uint slot);
 
 #endif
 
@@ -218,16 +218,14 @@ ERTS_GLB_INLINE void erts_db_free(ErtsAlcType_t type,
 				  DbTable *tab,
 				  void *ptr,
 				  Uint size);
-ERTS_GLB_INLINE void erts_db_free_nt(ErtsAlcType_t type,
-				     void *ptr,
-				     Uint size);
 
 #if ERTS_GLB_INLINE_INCL_FUNC_DEF
 
 ERTS_GLB_INLINE void
 erts_db_free(ErtsAlcType_t type, DbTable *tab, void *ptr, Uint size)
 {
-    ASSERT(!ptr || size == ERTS_ALC_DBG_BLK_SZ(ptr));
+    ASSERT(ptr != 0);
+    ASSERT(size == ERTS_ALC_DBG_BLK_SZ(ptr));
     ERTS_DB_ALC_MEM_UPDATE_(tab, size, 0);
 
     ASSERT(((void *) tab) != ptr
@@ -235,16 +233,6 @@ erts_db_free(ErtsAlcType_t type, DbTable *tab, void *ptr, Uint size)
 
     erts_free(type, ptr);
 }
-
-ERTS_GLB_INLINE void
-erts_db_free_nt(ErtsAlcType_t type, void *ptr, Uint size)
-{
-    ASSERT(!ptr || size == ERTS_ALC_DBG_BLK_SZ(ptr));
-    ERTS_DB_ALC_MEM_UPDATE_NT_(size, 0);
-
-    erts_free(type, ptr);
-}
-
 #endif /* #if ERTS_GLB_INLINE_INCL_FUNC_DEF */
 
 #undef ERTS_DB_ALC_MEM_UPDATE_NT_

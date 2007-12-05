@@ -196,11 +196,7 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
 	bp->next = MBUF(proc);
 	MBUF(proc) = bp;
 	MBUF_SIZE(proc) += bp->size;
-#if defined(HEAP_FRAG_ELIM_TEST)
 	MSO(proc).overhead += proc->heap_sz; /* Force GC */
-#else
-	MSO(proc).overhead += (sizeof(ErlHeapFragment) / sizeof(Eterm) - 1);
-#endif
 
 	/* Move any binaries into the process */
 	if (bp->off_heap.mso != NULL) {
@@ -244,12 +240,16 @@ link_mbuf_to_proc(Process *proc, ErlHeapFragment *bp)
 /* Add a message last in message queue */
 void
 erts_queue_message(Process* receiver,
-		   Uint32 receiver_locks,
+		   ErtsProcLocks receiver_locks,
 		   ErlHeapFragment* bp,
 		   Eterm message,
 		   Eterm seq_trace_token)
 {
     ErlMessage* mp;
+
+#if !defined(ERTS_SMP)
+    ASSERT(bp != NULL || receiver->mbuf == NULL);
+#endif
 
     ERTS_SMP_LC_ASSERT(receiver_locks == erts_proc_lc_my_proc_locks(receiver));
     ERTS_SMP_LC_ASSERT((ERTS_PROC_LOCKS_MSG_SEND & receiver_locks)
@@ -271,12 +271,8 @@ erts_queue_message(Process* receiver,
 
 #ifdef ERTS_SMP
     if (receiver_locks & ERTS_PROC_LOCK_MAIN) {
-#if defined(HEAP_FRAG_ELIM_TEST)
 	mp->bp = bp;
-#else
-	mp->bp = NULL;
-	link_mbuf_to_proc(receiver, bp);
-#endif
+
 	/*
 	 * We move 'in queue' to 'private queue' and place
 	 * message at the end of 'private queue' in order
@@ -293,11 +289,7 @@ erts_queue_message(Process* receiver,
 	LINK_MESSAGE(receiver, mp);
     }
 #else
-#if defined(HEAP_FRAG_ELIM_TEST)
     mp->bp = bp;
-#else
-    link_mbuf_to_proc(receiver, bp);
-#endif
     LINK_MESSAGE(receiver, mp);
 #endif
 
@@ -312,7 +304,7 @@ erts_queue_message(Process* receiver,
     if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
 	trace_receive(receiver, message);
     }
-
+    
 #ifndef ERTS_SMP
     ERTS_HOLE_CHECK(receiver);
 #endif
@@ -321,20 +313,15 @@ erts_queue_message(Process* receiver,
 void
 erts_link_mbuf_to_proc(struct process *proc, ErlHeapFragment *bp)
 {
+    Eterm* htop = HEAP_TOP(proc);
+
     link_mbuf_to_proc(proc, bp);
-#ifdef HEAP_FRAG_ELIM_TEST
-    {
-	Eterm* htop = HEAP_TOP(proc);
-	if (htop < HEAP_LIMIT(proc)) {
-	    *htop = make_pos_bignum_header(HEAP_LIMIT(proc)-htop-1);
-	    HEAP_TOP(proc) = HEAP_LIMIT(proc);
-	}
+    if (htop < HEAP_LIMIT(proc)) {
+	*htop = make_pos_bignum_header(HEAP_LIMIT(proc)-htop-1);
+	HEAP_TOP(proc) = HEAP_LIMIT(proc);
     }
-#endif
 }
 
-
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 
 /*
  * Moves content of message buffer attached to a message into a heap.
@@ -612,8 +599,6 @@ erts_move_msg_mbuf_to_proc_mbufs(Process *p, ErlMessage *msg)
     msg->bp = NULL;
 }
 
-#endif
-
 /*
  * Send a local message when sender & receiver processes are known.
  */
@@ -621,7 +606,7 @@ erts_move_msg_mbuf_to_proc_mbufs(Process *p, ErlMessage *msg)
 void
 erts_send_message(Process* sender,
 		  Process* receiver,
-		  Uint32 *receiver_locks,
+		  ErtsProcLocks *receiver_locks,
 		  Eterm message,
 		  unsigned flags)
 {
@@ -692,7 +677,7 @@ erts_send_message(Process* sender,
         ERL_MESSAGE_TERM(mp) = message;
         ERL_MESSAGE_TOKEN(mp) = NIL;
         mp->next = NULL;
-        LINK_MESSAGE(receiver, mp);
+	LINK_MESSAGE(receiver, mp);
         ACTIVATE(receiver);
 
         if (receiver->status == P_WAITING) {
@@ -703,6 +688,7 @@ erts_send_message(Process* sender,
         if (IS_TRACED_FL(receiver, F_TRACE_RECEIVE)) {
             trace_receive(receiver, message);
         }
+
         BM_SWAP_TIMER(send,system);
         return;
 #else
@@ -710,9 +696,8 @@ erts_send_message(Process* sender,
 	/* Drop message if receiver has a pending exit ... */
 	if (!ERTS_PROC_PENDING_EXIT(receiver)) {
 	    ErlMessage* mp = message_alloc();
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
+
 	    mp->bp = NULL;
-#endif
 	    ERL_MESSAGE_TERM(mp) = message;
 	    ERL_MESSAGE_TOKEN(mp) = NIL;
 	    mp->next = NULL;
@@ -724,6 +709,7 @@ erts_send_message(Process* sender,
 	     * we don't need to include the 'in queue' in
 	     * the root set when garbage collecting.
 	     */
+	    
 	    ERTS_SMP_MSGQ_MV_INQ2PRIVQ(receiver);
 	    LINK_MESSAGE_PRIVQ(receiver, mp);
 
@@ -760,7 +746,7 @@ erts_send_message(Process* sender,
         BM_SWAP_TIMER(send,size);
         msize = size_object(message);
         BM_SWAP_TIMER(size,send);
-
+	
 	if (receiver->stop - receiver->htop <= msize) {
             BM_SWAP_TIMER(send,system);
 	    erts_garbage_collect(receiver, msize, receiver->arg_reg, receiver->arity);
@@ -770,14 +756,12 @@ erts_send_message(Process* sender,
 	receiver->htop = hp + msize;
         BM_SWAP_TIMER(send,copy);
 	message = copy_struct(message, msize, &hp, &receiver->off_heap);
-        BM_MESSAGE_COPIED(msize);
+	BM_MESSAGE_COPIED(msize);
         BM_SWAP_TIMER(copy,send);
 	ERL_MESSAGE_TERM(mp) = message;
 	ERL_MESSAGE_TOKEN(mp) = NIL;
 	mp->next = NULL;
-#if defined(HEAP_FRAG_ELIM_TEST)
 	mp->bp = NULL;
-#endif
 	LINK_MESSAGE(receiver, mp);
 
 	if (receiver->status == P_WAITING) {
@@ -801,7 +785,7 @@ erts_send_message(Process* sender,
  */
 
 void
-erts_deliver_exit_message(Eterm from, Process *to, Uint32 *to_locksp,
+erts_deliver_exit_message(Eterm from, Process *to, ErtsProcLocks *to_locksp,
 			  Eterm reason, Eterm token)
 {
     Eterm mess;

@@ -19,13 +19,11 @@ package com.ericsson.otp.erlang;
 
 final class OtpSystem {
 
-    private static boolean xpidsports;
+    // Place status variables here
 
     static {
 
 	String rel = System.getProperty("OtpCompatRel", "0");
-
-	xpidsports = true;
 
 	try {
 
@@ -39,8 +37,6 @@ final class OtpSystem {
 	    case 7:
 	    case 8:
 	    case 9:
-		xpidsports = false;
-		break;
 	    case 0:
 	    default:
 		break;
@@ -50,9 +46,7 @@ final class OtpSystem {
 	}
 
     }
-
-    protected static final boolean useExtendedPidsPorts() {
-	return xpidsports;
-    }
-
+    
+    // Place query functions here
+    
 }

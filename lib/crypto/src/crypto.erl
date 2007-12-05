@@ -29,15 +29,14 @@
 -export([des_ede3_cbc_encrypt/5, des_ede3_cbc_decrypt/5]).
 -export([aes_cfb_128_encrypt/3, aes_cfb_128_decrypt/3]).
 -export([exor/2]).
--export([rand_bytes/1,
-	 rand_bytes/3,
-	 rand_uniform/2,
-	 mod_exp/3,
-	 dss_verify/3,
-	 rsa_verify/3,
-	 aes_cbc_128_encrypt/3,
-	 aes_cbc_128_decrypt/3,
-	 mpint/1, erlint/1]).
+-export([rc4_encrypt/2, rc4_set_key/1, rc4_encrypt_with_state/2]).
+-export([rc2_40_cbc_encrypt/3, rc2_40_cbc_decrypt/3]).
+-export([dss_verify/3, rsa_verify/3]).
+-export([rand_bytes/1, rand_bytes/3, rand_uniform/2]).
+-export([mod_exp/3, mpint/1, erlint/1]).
+%% -export([idea_cbc_encrypt/3, idea_cbc_decrypt/3]).
+-export([aes_cbc_128_encrypt/3, aes_cbc_128_decrypt/3]).
+-export([aes_cbc_256_encrypt/3, aes_cbc_256_decrypt/3]).
 
 
 -define(INFO,		 0).
@@ -67,6 +66,15 @@
 -define(AES_CBC_128_ENCRYPT, 24).
 -define(AES_CBC_128_DECRYPT, 25).
 -define(XOR,		 26).
+-define(RC4_ENCRYPT,     27).
+-define(RC4_SET_KEY, 28).
+-define(RC4_ENCRYPT_WITH_STATE, 29).
+-define(RC2_40_CBC_ENCRYPT, 30).
+-define(RC2_40_CBC_DECRYPT, 31).
+-define(AES_CBC_256_ENCRYPT, 32).
+-define(AES_CBC_256_DECRYPT, 33).
+%% -define(IDEA_CBC_ENCRYPT, 34).
+%% -define(IDEA_CBC_DECRYPT, 35).
 
 -define(FUNC_LIST, [md5,
 		    md5_init,
@@ -80,20 +88,20 @@
 		    md5_mac_96,
 		    sha_mac,
 		    sha_mac_96,
-		    des_cbc_encrypt,
-		    des_cbc_decrypt,
-		    des_ede3_cbc_encrypt,
-		    des_ede3_cbc_decrypt,
-		    aes_cfb_128_encrypt,
-		    aes_cfb_128_decrypt,
+		    des_cbc_encrypt, des_cbc_decrypt,
+		    des_ede3_cbc_encrypt, des_ede3_cbc_decrypt,
+		    aes_cfb_128_encrypt, aes_cfb_128_decrypt,
 		    rand_bytes,
 		    rand_uniform,
 		    mod_exp,
 		    dss_verify,
 		    rsa_verify,
-		    aes_cbc_128_encrypt,
-		    aes_cbc_128_decrypt,
-		    exor]).
+		    aes_cbc_128_encrypt, aes_cbc_128_decrypt,
+		    exor,
+		    rc4_encrypt, rc4_set_key, rc4_encrypt_with_state,
+		    rc2_40_cbc_encrypt, rc2_40_cbc_decrypt,
+		    %% idea_cbc_encrypt, idea_cbc_decrypt,
+		    aes_cbc_256_encrypt, aes_cbc_256_decrypt]).
 
 start() ->
     application:start(crypto).
@@ -213,6 +221,16 @@ aes_cfb_128_decrypt(Key, IVec, Data) ->
     control(?AES_CFB_128_DECRYPT, [Key, IVec, Data]).    
 
 
+%% %%
+%% %% IDEA - in cipher block chaining mode (CBC)
+%% %%
+%% idea_cbc_encrypt(Key, IVec, Data) ->
+%%     control(?IDEA_CBC_ENCRYPT, [Key, IVec, Data]).
+
+%% idea_cbc_decrypt(Key, IVec, Data) ->
+%%     control(?IDEA_CBC_DECRYPT, [Key, IVec, Data]).
+
+
 %% 
 %% RAND - pseudo random numbers using RN_ functions in crypto lib
 %%
@@ -267,7 +285,7 @@ rsa_verify(Dgst,Signature,Key) ->
     control(?RSA_VERIFY, [Dgst,Signature,Key]) == <<1>>.
 
 %%
-%% AES - with 128 bit key in cipher block chaining mode (CBC)
+%% AES - with 128 or 256 bit key in cipher block chaining mode (CBC)
 %%
 
 aes_cbc_128_encrypt(Key, IVec, Data) ->
@@ -276,6 +294,12 @@ aes_cbc_128_encrypt(Key, IVec, Data) ->
 aes_cbc_128_decrypt(Key, IVec, Data) ->
     control(?AES_CBC_128_DECRYPT, [Key, IVec, Data]).
 
+aes_cbc_256_encrypt(Key, IVec, Data) ->
+    control(?AES_CBC_256_ENCRYPT, [Key, IVec, Data]).
+
+aes_cbc_256_decrypt(Key, IVec, Data) ->
+    control(?AES_CBC_256_DECRYPT, [Key, IVec, Data]).
+
 %%
 %% XOR - xor to iolists and return a binary
 %% NB doesn't check that they are the same size, just concatenates
@@ -283,6 +307,29 @@ aes_cbc_128_decrypt(Key, IVec, Data) ->
 %%
 exor(A, B) ->
     control(?XOR, [A, B]).
+
+%%
+%% RC4 - symmetric stream cipher
+%%
+rc4_encrypt(Key, Data) ->
+    control_bin(?RC4_ENCRYPT, Key, Data).
+
+rc4_set_key(Key) ->
+    control(?RC4_SET_KEY, Key).
+
+rc4_encrypt_with_state(State, Data) ->
+    <<Sz:32/integer-big-unsigned, S:Sz/binary, D/binary>> = 
+        control_bin(?RC4_ENCRYPT_WITH_STATE, State, Data),
+    {S, D}.
+
+%%
+%% RC2 - 40 bits block cipher
+%%
+rc2_40_cbc_encrypt(Key, IVec, Data) ->
+    control(?RC2_40_CBC_ENCRYPT, [Key, IVec, Data]).
+
+rc2_40_cbc_decrypt(Key, IVec, Data) ->
+    control(?RC2_40_CBC_DECRYPT, [Key, IVec, Data]).
 
 %%
 %%  LOCAL FUNCTIONS

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpm_server).
 
@@ -45,6 +47,9 @@
 	 cancel_async_request/2,
 
 	 discovery/2, discovery/3, discovery/4, discovery/5, discovery/6, 
+
+	 %% system_info_updated/2, 
+	 get_log_type/0,      set_log_type/1, 
 
 	 reconfigure/0,
 
@@ -376,6 +381,16 @@ verbosity2(Ref, Verbosity) ->
 	    {error, {invalid_verbosity, Verbosity}}
     end.
 
+%% Target -> all | server | net_if
+%% system_info_updated(Target, What) ->
+%%     call({system_info_updated, Target, What}).
+
+get_log_type() ->
+    call(get_log_type).
+
+set_log_type(NewType) ->
+    call({set_log_type, NewType}).
+
 reconfigure() ->
     call(reconfigure).
 
@@ -695,6 +710,24 @@ handle_call(is_started, _From, State) ->
     ?vlog("received is_started request", []),
     IsStarted = is_started(State), 
     {reply, IsStarted, State};
+
+%% handle_call({system_info_updated, Target, What}, _From, State) ->
+%%     ?vlog("received system_info_updated request: "
+%% 	  "~n   Target: ~p"
+%% 	  "~n   What:   ~p", [Target, What]),
+%%     Reply = handle_system_info_updated(State, Target, What), 
+%%     {reply, Reply, State};
+
+handle_call(get_log_type, _From, State) ->
+    ?vlog("received get_log_type request", []),
+    Reply = handle_get_log_type(State), 
+    {reply, Reply, State};
+
+handle_call({set_log_type, NewType}, _From, State) ->
+    ?vlog("received set_log_type request: "
+	  "~n   NewType: ~p", [NewType]),
+    Reply = handle_set_log_type(State, NewType), 
+    {reply, Reply, State};
 
 handle_call(stop, _From, State) ->
     ?vlog("received stop request", []),
@@ -1197,6 +1230,34 @@ handle_cancel_async_request(UserId, ReqId, _State) ->
 	    {error, not_found}
     end.
     
+
+%% handle_system_info_updated(#state{net_if = Pid, net_if_mod = Mod} = _State,
+%% 			   net_if = _Target, What) ->
+%%     case (catch Mod:system_info_updated(Pid, What)) of
+%% 	{'EXIT', _} ->
+%% 	    {error, not_supported};
+%% 	Else ->
+%% 	    Else
+%%     end;
+%% handle_system_info_updated(_State, Target, What) ->
+%%     {error, {bad_target, Target, What}}.
+
+handle_get_log_type(#state{net_if = Pid, net_if_mod = Mod}) ->
+    case (catch Mod:get_log_type(Pid)) of
+	{'EXIT', _} ->
+	    {error, not_supported};
+	Else ->
+	    Else
+    end.
+
+handle_set_log_type(#state{net_if = Pid, net_if_mod = Mod}, NewType) ->
+    case (catch Mod:set_log_type(Pid, NewType)) of
+	{'EXIT', _} ->
+	    {error, not_supported};
+	Else ->
+	    Else
+    end.
+
 
 handle_discovery(Pid, UserId, BAddr, Port, Config, Expire, ExtraInfo, State) ->
     ?vtrace("handle_discovery -> entry with"

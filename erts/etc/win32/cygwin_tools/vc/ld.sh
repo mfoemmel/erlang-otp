@@ -75,32 +75,63 @@ if [ $DEBUG_BUILD = true ]; then
 	STDLIB=MSVCRTD.LIB
     fi
 else
-    linktype=-release
+    # Generate a PDB 
+    linkadd_pdb=""
+    case "$OUTPUT_FILENAME" in
+	*.exe|*.EXE)
+	    fn=`echo "$OUTPUT_FILENAME" | sed 's,[eE][xX][eE]$,,g'`;
+	    linkadd_pdb="-pdb:\"${fn}pdb\"";;
+	*.dll|*.DLL)
+	    fn=`echo "$OUTPUT_FILENAME" | sed 's,[dD][lL][lL]$,,g'`;
+	    linkadd_pdb="-pdb:\"${fn}pdb\"";;
+	"")
+	    linkadd_pdb="-pdb:\"a.pdb\"";;
+	*)
+	    linkadd_pdb="-pdb:\"${OUTPUT_FILENAME}.pdb\"";;
+    esac
+	
+    linktype="-debug $linkadd_pdb"
 fi
 
 if [ $BUILD_DLL = true ];then
     case "$OUTPUT_FILENAME" in
 	*.exe|*.EXE)
 	    echo "Warning, output set to .exe when building DLL" >&2
-	    CMD="-dll -out:\"$OUTPUT_FILENAME\" $CMD";;
+	    CMD="-dll -out:\"$OUTPUT_FILENAME\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}\;2";
+	    MANIFEST="${OUTPUT_FILENAME}.manifest";;
 	*.dll|*.DLL)
-	    CMD="-dll -out:\"$OUTPUT_FILENAME\" $CMD";;
+	    CMD="-dll -out:\"$OUTPUT_FILENAME\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}\;2";
+	    MANIFEST="${OUTPUT_FILENAME}.manifest";;
 	"")
-	    CMD="-dll -out:\"a.dll\" $CMD";;
+	    CMD="-dll -out:\"a.dll\" $CMD";
+	    OUTPUTRES="a.dll\;2";
+	    MANIFEST="a.dll.manifest";;
 	*)
-	    CMD="-dll -out:\"${OUTPUT_FILENAME}.dll\" $CMD";;
+	    CMD="-dll -out:\"${OUTPUT_FILENAME}.dll\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}.dll\;2";
+	    MANIFEST="${OUTPUT_FILENAME}.dll.manifest";;
     esac
 else
     case "$OUTPUT_FILENAME" in
 	*.exe|*.EXE)
-	    CMD="-out:\"$OUTPUT_FILENAME\" $CMD";;
+	    CMD="-out:\"$OUTPUT_FILENAME\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}\;1"
+	    MANIFEST="${OUTPUT_FILENAME}.manifest";;
 	*.dll|*.DLL)
 	    echo "Warning, output set to .dll when building EXE" >&2
-	    CMD="-out:\"$OUTPUT_FILENAME\" $CMD";;
+	    CMD="-out:\"$OUTPUT_FILENAME\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}\;1";
+	    MANIFEST="${OUTPUT_FILENAME}.manifest";;
 	"")
-	    CMD="-out:\"a.exe\" $CMD";;
+	    CMD="-out:\"a.exe\" $CMD";
+	    OUTPUTRES="a.exe\;1";
+	    MANIFEST="a.exe.manifest";;
 	*)
-	    CMD="-out:\"${OUTPUT_FILENAME}.exe\" $CMD";;
+	    CMD="-out:\"${OUTPUT_FILENAME}.exe\" $CMD";
+	    OUTPUTRES="${OUTPUT_FILENAME}.exe\;1";
+	    MANIFEST="${OUTPUT_FILENAME}.exe.manifest";;
     esac
 fi    
 	    
@@ -112,6 +143,18 @@ if [ "X$LD_SH_DEBUG_LOG" != "X" ]; then
 fi
 eval link.exe "$CMD"  >/tmp/link.exe.${p}.1 2>/tmp/link.exe.${p}.2
 RES=$?
+CMANIFEST=`cygpath $MANIFEST`
+if [ "$RES" = "0" -a -f "$CMANIFEST" ]; then
+    eval mt.exe -nologo -manifest "$MANIFEST" -outputresource:"$OUTPUTRES" >>/tmp/link.exe.${p}.1 2>>/tmp/link.exe.${p}.2
+    RES=$?
+    if [ "$RES" != "0" ]; then
+	REMOVE=`echo "$OUTPUTRES" | sed 's,\\\;[12]$,,g'`
+	CREMOVE=`cygpath $REMOVE`
+	rm -f "$CREMOVE"
+    fi
+    rm -f "$CMANIFEST"
+fi
+    
 tail +2 /tmp/link.exe.${p}.2 >&2
 cat /tmp/link.exe.${p}.1
 rm -f /tmp/link.exe.${p}.2 /tmp/link.exe.${p}.1

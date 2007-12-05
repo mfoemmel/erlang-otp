@@ -58,7 +58,6 @@ int erts_sys_ddll_open(char *full_name, void **handle)
     }
     sys_strcpy(dlname, full_name);
     sys_strcpy(dlname+len, FILE_EXT);
-
     if ((hinstance = LoadLibrary(dlname)) == NULL) {
 	ret = ERL_DE_DYNAMIC_ERROR_OFFSET - GetLastError();
 	goto done;

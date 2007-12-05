@@ -20,7 +20,7 @@ static void print_slot(Eterm *sp, unsigned int live)
     printf(" | 0x%0*lx | 0x%0*lx | ",
 	   2*(int)sizeof(long), (unsigned long)sp,
 	   2*(int)sizeof(long), val);
-    if( live )
+    if (live)
 	erts_printf("%.30T", val);
     printf("\r\n");
 }
@@ -82,13 +82,13 @@ void hipe_print_nstack(Process *p)
 	   2+2*(int)sizeof(long), "Contents");
 
     ra = (unsigned long)p->hipe.nra;
-    if( !ra )
+    if (!ra)
 	return;
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend - 1;
 
     nstkarity = p->hipe.narity - NR_ARG_REGS;
-    if( (int)nstkarity < 0 )
+    if ((int)nstkarity < 0)
 	nstkarity = 0;
 
     /* First RA not on stack. Dump current args first. */
@@ -97,20 +97,20 @@ void hipe_print_nstack(Process *p)
 	print_slot(&nsp[i], 1);
     nsp += nstkarity;
 
-    if( ra == (unsigned long)&nbif_stack_trap_ra )
+    if (ra == (unsigned long)&nbif_stack_trap_ra)
 	ra = (unsigned long)p->hipe.ngra;
     sdesc = hipe_find_sdesc(ra);
 
     for(;;) {	/* INV: nsp at bottom of frame described by sdesc */
 	printf(" |%s|%s|\r\n", dashes, dashes);
-	if( nsp >= nsp_end ) {
-	    if( nsp == nsp_end )
+	if (nsp >= nsp_end) {
+	    if (nsp == nsp_end)
 		return;
 	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
 	    break;
 	}
 	ra = nsp[sdesc_fsize(sdesc)];
-	if( ra == (unsigned long)&nbif_stack_trap_ra )
+	if (ra == (unsigned long)&nbif_stack_trap_ra)
 	    sdesc1 = hipe_find_sdesc((unsigned long)p->hipe.ngra);
 	else
 	    sdesc1 = hipe_find_sdesc(ra);
@@ -118,23 +118,23 @@ void hipe_print_nstack(Process *p)
 	i = 0;
 	mask = sdesc->livebits[0];
 	for(;;) {
-	    if( i == sdesc_fsize(sdesc) ) {
+	    if (i == sdesc_fsize(sdesc)) {
 		printf(" | 0x%0*lx | 0x%0*lx | ",
 		       2*(int)sizeof(long), (unsigned long)&nsp[i],
 		       2*(int)sizeof(long), ra);
-		if( ra == (unsigned long)&nbif_stack_trap_ra )
+		if (ra == (unsigned long)&nbif_stack_trap_ra)
 		    printf("STACK TRAP, ORIG RA 0x%lx", (unsigned long)p->hipe.ngra);
 		else
 		    printf("NATIVE RA");
-		if( (exnra = sdesc_exnra(sdesc1)) != 0 )
+		if ((exnra = sdesc_exnra(sdesc1)) != 0)
 		    printf(", EXNRA 0x%lx", exnra);
 		printf("\r\n");
 	    } else {
 		print_slot(&nsp[i], (mask & 1));
 	    }
-	    if( ++i >= sdesc_size )
+	    if (++i >= sdesc_size)
 		break;
-	    if( i & 31 )
+	    if (i & 31)
 		mask >>= 1;
 	    else
 		mask = sdesc->livebits[i >> 5];
@@ -145,7 +145,7 @@ void hipe_print_nstack(Process *p)
     abort();
 }
 
-/* XXX: x86's values, not yet tuned for ppc */
+/* XXX: x86's values, not yet tuned for anyone else */
 #define MINSTACK	128
 #define NSKIPFRAMES	4
 
@@ -158,19 +158,19 @@ void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
 
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend - 1;
-    if( (unsigned long)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*) ) {
+    if ((unsigned long)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*)) {
 	p->hipe.nstgraylim = NULL;
 	return;
     }
     n = NSKIPFRAMES;
     for(;;) {
 	nsp += sdesc_fsize(sdesc);
-	if( nsp >= nsp_end ) {
+	if (nsp >= nsp_end) {
 	    p->hipe.nstgraylim = NULL;
 	    return;
 	}
 	ra = nsp[0];
-	if( --n <= 0 )
+	if (--n <= 0)
 	    break;
 	nsp += 1 + sdesc_arity(sdesc);
 	sdesc = hipe_find_sdesc(ra);
@@ -216,24 +216,24 @@ void hipe_find_handler(Process *p)
     nsp = p->hipe.nsp;
     nsp_end = p->hipe.nstend;
     arity = p->hipe.narity - NR_ARG_REGS;
-    if( (int)arity < 0 )
+    if ((int)arity < 0)
 	arity = 0;
 
     ra = (unsigned long)p->hipe.nra;
 
-    while( nsp < nsp_end ) {
+    while (nsp < nsp_end) {
 	nsp += arity;		/* skip actuals */
-	if( ra == (unsigned long)&nbif_stack_trap_ra )
+	if (ra == (unsigned long)&nbif_stack_trap_ra)
 	    ra = (unsigned long)p->hipe.ngra;
 	sdesc = hipe_find_sdesc(ra);
-	if( (exnra = sdesc_exnra(sdesc)) != 0 &&
+	if ((exnra = sdesc_exnra(sdesc)) != 0 &&
 	    (p->catches >= 0 ||
-	     exnra == (unsigned long)&nbif_fail) ) {
+	     exnra == (unsigned long)&nbif_fail)) {
 	    p->hipe.ncallee = (void(*)(void)) exnra;
 	    p->hipe.nsp = nsp;
 	    p->hipe.narity = 0;
 	    /* update the gray/white boundary if we threw past it */
-	    if( p->hipe.nstgraylim && nsp >= p->hipe.nstgraylim )
+	    if (p->hipe.nstgraylim && nsp >= p->hipe.nstgraylim)
 		hipe_update_stack_trap(p, sdesc);
 	    return;
 	}

@@ -148,14 +148,15 @@ req(Req, Arg) ->
 %%
 %% Time and Timeout is in milliseconds. Started is in microseconds.
 %%
-handle_call({apply_after, {Time, Op}, Started}, _From, Ts) 
+handle_call({apply_after, {Time, Op}, Started}, _From, _Ts) 
   when is_integer(Time), Time >= 0 ->
     BRef = {Started + 1000*Time, make_ref()},
     Timer = {BRef, timeout, Op},
-    {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), system_time()),
-    {reply, {ok, BRef}, Ts0, Timeout};
+    ets:insert(?TIMER_TAB, Timer),
+    Timeout = timer_timeout(system_time()),
+    {reply, {ok, BRef}, [], Timeout};
 
-handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts) 
+handle_call({apply_interval, {Time, To, MFA}, Started}, _From, _Ts) 
   when is_integer(Time), Time >= 0 ->
     %% To must be a pid or a registered name
     case get_pid(To) of
@@ -168,36 +169,37 @@ handle_call({apply_interval, {Time, To, MFA}, Started}, _From, Ts)
 	    BRef2 = {Started + Interval, Ref},
 	    Timer = {BRef2, {repeat, Interval, Pid}, MFA},
 	    ets:insert(?INTERVAL_TAB,{BRef1,BRef2,Pid}),
-	    {Timeout, Ts0} = timer_timeout(insert_sort(Timer, Ts), SysTime),
-	    {reply, {ok, BRef1}, Ts0, Timeout};
+	    ets:insert(?TIMER_TAB, Timer),
+	    Timeout = timer_timeout(SysTime),
+	    {reply, {ok, BRef1}, [], Timeout};
 	_ ->
-	    {reply, {error, badarg}, Ts, next_timeout(Ts)}
+	    {reply, {error, badarg}, [], next_timeout()}
     end;
 
 handle_call({cancel, BRef = {_Time, Ref}, _}, _From, Ts) 
                                            when is_reference(Ref) ->
-    Ts0 = delete_ref(BRef, Ts),
-    {reply, {ok, cancel}, Ts0, next_timeout(Ts0)};
+    delete_ref(BRef),
+    {reply, {ok, cancel}, Ts, next_timeout()};
 handle_call({cancel, _BRef, _}, _From, Ts) ->
-    {reply, {error, badarg}, Ts, next_timeout(Ts)};
+    {reply, {error, badarg}, Ts, next_timeout()};
 handle_call({apply_after, _, _}, _From, Ts) ->
-    {reply, {error, badarg}, Ts, next_timeout(Ts)};
+    {reply, {error, badarg}, Ts, next_timeout()};
 handle_call({apply_interval, _, _}, _From, Ts) ->
-    {reply, {error, badarg}, Ts, next_timeout(Ts)};
+    {reply, {error, badarg}, Ts, next_timeout()};
 handle_call(_Else, _From, Ts) ->			% Catch anything else
-    {noreply, Ts, next_timeout(Ts)}.
+    {noreply, Ts, next_timeout()}.
 
 handle_info(timeout, Ts) ->                     % Handle timeouts 
-    {Timeout, Ts0} = timer_timeout(Ts, system_time()),
-    {noreply, Ts0, Timeout};
-handle_info({'EXIT',  Pid, _Reason}, Ts) ->      % Oops someone died
-    Ts0 = pid_delete(Pid, Ts),
-    {noreply, Ts0, next_timeout(Ts0)};
+    Timeout = timer_timeout(system_time()),
+    {noreply, Ts, Timeout};
+handle_info({'EXIT',  Pid, _Reason}, Ts) ->      % Oops, someone died
+    pid_delete(Pid),
+    {noreply, Ts, next_timeout()};
 handle_info(_OtherMsg, Ts) ->                         % Other Msg's
-    {noreply, Ts, next_timeout(Ts)}.
+    {noreply, Ts, next_timeout()}.
 
 handle_cast(_Req, Ts) ->                         % Not predicted but handled
-    {noreply, Ts, next_timeout(Ts)}.
+    {noreply, Ts, next_timeout()}.
 
 terminate(_Reason, _State) ->
     ok.
@@ -213,96 +215,51 @@ code_change(_OldVsn, State, _Extra) ->
 %% {Time, BRef, Op, MFA}, where Time is in microseconds.
 %% Returns {Timeout, Timers}, where Timeout is in milliseconds.
 %%
-timer_timeout(Timers, SysTime) ->
+timer_timeout(SysTime) ->
     case ets:first(?TIMER_TAB) of
 	'$end_of_table' -> 
-	    {infinity, []};
+	    infinity;
 	{Time, _Ref} when Time > SysTime ->
 	    Timeout = (Time - SysTime) div 1000,
 	    %% Returned timeout must fit in a small int
-	    {min(Timeout, ?MAX_TIMEOUT), Timers};
+	    min(Timeout, ?MAX_TIMEOUT);
 	Key ->
 	    case ets:lookup(?TIMER_TAB, Key) of
 		[{Key, timeout, MFA}] ->
 		    ets:delete(?TIMER_TAB,Key),
 		    do_apply(MFA),
-		    timer_timeout(Timers, SysTime);
+		    timer_timeout(SysTime);
 		[{{Time, Ref}, Repeat = {repeat, Interv, To}, MFA}] ->
 		    ets:delete(?TIMER_TAB,Key),
 		    NewTime = Time + Interv,
 		    %% Update the interval entry (last in table)
 		    ets:insert(?INTERVAL_TAB,{{interval,Ref},{NewTime,Ref},To}),
 		    do_apply(MFA),
-		    Ts0 = insert_sort({{NewTime, Ref}, Repeat, MFA}, 
-				      Timers),
-		    timer_timeout(Ts0, SysTime)
+		    ets:insert(?TIMER_TAB, {{NewTime, Ref}, Repeat, MFA}),
+		    timer_timeout(SysTime)
 	    end
     end.
-
-
-% timer_timeout([], _) ->
-%     {infinity, []};
-
-% timer_timeout([{Time, BRef, Op, MFA} | Ts], SysTime) when Time > SysTime ->
-%     Timeout = positive(Time - SysTime) div 1000,
-%     %% Returned timeout must fit in a small int
-%     {min(Timeout, ?MAX_TIMEOUT), [{Time, BRef, Op, MFA} | Ts]};
-
-% timer_timeout([{Time, BRef, timeout, MFA} | Ts], SysTime) ->
-%     do_apply(MFA),
-%     timer_timeout(Ts, SysTime);
-
-% timer_timeout([{Time, BRef, {repeat, Interv, To}, MFA} | Ts], SysTime) ->
-%     do_apply(MFA),
-%     Ts0 = insert_sort({Time + Interv, BRef, {repeat, Interv, To}, MFA}, Ts),
-%     timer_timeout(Ts0, SysTime).
-
-%%
-%% Insert timer in a sorted timer list. 
-%%
-insert_sort(Timer, Timers) ->
-    ets:insert(?TIMER_TAB,Timer),
-    Timers.
-
-% insert_sort(Timer, []) ->
-%     [Timer];
-% insert_sort({Time0, BRef0, Op0, MFA0}, 
-% 	    [{Time1, BRef1, Op1, MFA1} | Rest]) when Time0 < Time1 ->
-%     [{Time0, BRef0, Op0, MFA0}, {Time1, BRef1, Op1, MFA1} | Rest];
-% insert_sort({Time0, BRef0, Op0, MFA0}, 
-% 	    [{Time1, BRef1, Op1, MFA1} | Rest]) ->
-%     [{Time1, BRef1, Op1, MFA1} | insert_sort({Time0, BRef0, Op0, MFA0}, Rest)].
 
 %%
 %% delete_ref 
 %%
 
-delete_ref(BRef = {interval, _}, Timers) ->
+delete_ref(BRef = {interval, _}) ->
     case ets:lookup(?INTERVAL_TAB, BRef) of
 	[{_, BRef2, _Pid}] ->
 	    ets:delete(?INTERVAL_TAB, BRef),
-	    ets:delete(?TIMER_TAB, BRef2),
-	    Timers;
+	    ets:delete(?TIMER_TAB, BRef2);
 	_ -> % TimerReference does not exist, do nothing
-	    Timers
+	    ok
     end;
-delete_ref(BRef, Timers) ->
-    ets:delete(?TIMER_TAB,BRef),
-    Timers.
-
-
-% delete_ref(BRef, [{_,BRef,_,_} | Rest]) ->
-%     Rest;
-% delete_ref(BRef, [H|R]) ->
-%     [H|delete_ref(BRef, R)];
-% delete_ref(BRef, []) ->
-%     [].
+delete_ref(BRef) ->
+    ets:delete(?TIMER_TAB,BRef).
 
 %%
 %% pid_delete
 %%
 
-pid_delete(Pid, Timers) ->
+pid_delete(Pid) ->
     IntervalTimerList = 
 	ets:select(?INTERVAL_TAB,
 		   [{{'_', '_','$1'},
@@ -311,24 +268,18 @@ pid_delete(Pid, Timers) ->
     lists:foreach(fun({IntKey, TimerKey, _ }) ->
 			  ets:delete(?INTERVAL_TAB,IntKey),
 			  ets:delete(?TIMER_TAB,TimerKey) 
-		  end, IntervalTimerList),
-    Timers.
+		  end, IntervalTimerList).
 
-%% Calculate time to the next timeout.Returned timeout must fit in a 
+%% Calculate time to the next timeout. Returned timeout must fit in a 
 %% small int.
 
-next_timeout(_Timers) ->
+next_timeout() ->
     case ets:first(?TIMER_TAB) of
 	'$end_of_table' -> 
 	    infinity;
 	{Time, _ } ->
 	    min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT)
     end.
-
-% next_timeout([{Time, _, _, _} | R]) ->
-%     min(positive((Time - system_time()) div 1000), ?MAX_TIMEOUT);
-% next_timeout([]) ->
-%     infinity.
 
 %% Help functions
 do_apply({M,F,A}) ->

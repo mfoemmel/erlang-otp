@@ -82,17 +82,12 @@
 EXTERN_FUNCTION(void, erl_start, (int, char**));
 EXTERN_FUNCTION(void, erl_exit, (int n, char*, _DOTS_));
 EXTERN_FUNCTION(void, erl_error, (char*, va_list));
-EXTERN_FUNCTION(void, input_ready, (int, int));
-EXTERN_FUNCTION(void, output_ready, (int, int));
 EXTERN_FUNCTION(int, driver_interrupt, (int, int));
 EXTERN_FUNCTION(void, increment_time, (int));
 EXTERN_FUNCTION(int, next_time, (_VOID_));
 EXTERN_FUNCTION(void, set_reclaim_free_function, (FreeFunction));
 EXTERN_FUNCTION(int, erl_mem_info_get, (MEM_PART_STATS *));
 EXTERN_FUNCTION(void, erl_crash_dump, (char* file, int line, char* fmt, ...));
-
-#define NULLTV  ((struct timeval *) 0)
-#define NULLFDS ((struct fd_set *) 0)
 
 #define ISREG(st) (((st).st_mode&S_IFMT) == S_IFREG)
 
@@ -102,7 +97,6 @@ extern int spTaskPriority, spTaskOptions;
 /* forward declarations */
 static FUNCTION(FUNCPTR, lookup, (char*));
 static FUNCTION(int, read_fill, (int, char*, int));
-static FUNCTION(void, check_io, (int));
 #if (CPU == SPARC)
 static FUNCTION(RETSIGTYPE, fpe_sig_handler, (int)); /*where is this fun? */
 #elif (CPU == PPC603)
@@ -139,22 +133,21 @@ static int sys_itime;
    probably shouldn't depend on it, but we try to pick it up... */
 static int max_files = 50;	/* default configAll.h */
 
+int erts_vxworks_max_files;
+
 /* 
  * used by the break handler (set by signal handler on ctl-c)
  */
-static volatile int break_requested = 0;
+volatile int erts_break_requested;
 
 /********************* General functions ****************************/
-
-Eterm erts_check_io_info(void *proc)
-{
-    return NIL;
-}
 
 Uint
 erts_sys_misc_mem_sz(void)
 {
-    return (Uint) 0 /* FIXME */;
+    Uint res = erts_check_io_size();
+    /* res += FIXME */
+    return res;
 }
 
 /*
@@ -182,14 +175,13 @@ static void do_trace(int line, char *file, char *format, ...)
 #define TRACEF(Args...) do_trace(__LINE__,__FILE__, ## Args)
 #endif
 
-void erts_sys_alloc_init(void)
+void
+erts_sys_pre_init(void)
 {
-    /* Some things done here should maybe be moved to erts_sys_init() */
-
     if (erlang_id != 0) {
 	/* NOTE: This particular case must *not* call erl_exit() */
 	erts_fprintf(stderr, "Sorry, erlang is already running (as task %d)\n",
-		   erlang_id);
+		     erlang_id);
 	exit(1);
     }
 
@@ -197,7 +189,7 @@ void erts_sys_alloc_init(void)
     if(!reclaim_init()) 
 	fprintf(stderr, "Warning : reclaim facility should be initiated before "
 		"erlang is started!\n");
-    max_files = reclaim_max_files();
+    erts_vxworks_max_files = max_files = reclaim_max_files();
 
     /* Floating point exceptions */
 #if (CPU == SPARC)
@@ -209,28 +201,32 @@ void erts_sys_alloc_init(void)
     /* register the private delete hook in reclaim */
     save_delete_hook((FUNCPTR)delete_hook, (caddr_t)0);
     erlang_id = taskIdSelf();
-    initialize_allocation();
-
-    setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
-    /* XXX Bug in VxWorks stdio loses fputch()'ed output after the
-       setvbuf() but before a *printf(), and possibly worse (malloc
-       errors, crash?) - so let's give it a *printf().... */
-    fprintf(stdout, "%s","");
 #ifdef DEBUG
     printf("emulator task id = 0x%x\n", erlang_id);
 #endif
 }
 
-void
-erts_sys_pre_init(void)
+void erts_sys_alloc_init(void)
 {
-
+    initialize_allocation();
 }
 
 void
 erl_sys_init(void)
 {
+    setvbuf(stdout, (char *)NULL, _IOLBF, BUFSIZ);
+    /* XXX Bug in VxWorks stdio loses fputch()'ed output after the
+       setvbuf() but before a *printf(), and possibly worse (malloc
+       errors, crash?) - so let's give it a *printf().... */
+    fprintf(stdout, "%s","");
+}
 
+void
+erl_sys_args(int* argc, char** argv)
+{
+    erts_init_check_io();
+    max_files = erts_check_io_max_files();
+    ASSERT(max_files <= erts_vxworks_max_files);
 }
 
 /*
@@ -240,12 +236,18 @@ erl_sys_init(void)
  */
 void
 erl_sys_schedule(int runnable)
+{	
+    erts_check_io_interrupt(0);
+    erts_check_io(!runnable);
+}
+
+void erts_do_break_handling(void)
 {
-    if (runnable) {
-	check_io(0);		/* Poll for I/O */
-    } else {
-	check_io(1);
-    }
+    SET_BLOCKING(0);
+    /* call the break handling function, reset the flag */
+    do_break();
+    erts_break_requested = 0;
+    SET_NONBLOCKING(0);
 }
 
 /* signal handling */
@@ -297,7 +299,8 @@ static void request_break(void)
 #ifdef DEBUG
   fprintf(stderr,"break!\n");
 #endif
-  break_requested = 1;
+  erts_break_requested = 1;
+  erts_check_io_interrupt(1); /* Make sure we don't sleep in erts_poll_wait */
 }
 
 static void do_quit(void)
@@ -502,10 +505,6 @@ static byte *tmp_buf;
 static Uint tmp_buf_size;
 
 /* II. The spawn/fd/vanilla drivers */
-
-static struct fd_set input_fds;
-static struct fd_set output_fds;
-static int max_fd;
 
 /* This data is shared by these drivers - initialized by spawn_init() */
 static struct driver_data {
@@ -1156,8 +1155,9 @@ static void output(ErlDrvData drv_data, char *buf, int len)
 	return;
     }
 
-    if (FD_ISSET(ofd, &output_fds)) {
+    if (fd_data[ofd].pending) {
 	sched_write(port_num, ofd, buf, len, pb);
+	return;
     }
     
     if ((pb == 2 && len > 65535) || (pb == 1 && len > 255)) {
@@ -1429,97 +1429,6 @@ static void ready_output(ErlDrvData drv_data, ErlDrvEvent drv_event)
   }
 }
 
-
-/* III. Generic I/O */
-
-
-/* Interface function available to driver writers */
-int driver_select(ErlDrvPort this_port, ErlDrvEvent fd, int mode, int on)
-{
-  if (fd >= 0 && fd < max_files) {
-    if (on) {
-      if (mode & DO_READ) {
-	fd_data[fd].inport = this_port;
-	FD_SET(fd, &input_fds);
-      }
-      if (mode & DO_WRITE) {
-	fd_data[fd].outport = this_port;
-	FD_SET(fd, &output_fds);
-      }
-      if ((mode & (DO_READ|DO_WRITE)) && max_fd < fd) max_fd = fd;
-    } else {
-      if (mode & DO_READ) {
-	FD_CLR(fd, &input_fds);
-      }
-      if (mode & DO_WRITE) {
-	FD_CLR(fd, &output_fds);
-      }
-      if ((mode & (DO_READ|DO_WRITE)) && max_fd == fd) {
-	while (max_fd >= 0 &&
-	       !FD_ISSET(max_fd, &input_fds) &&
-	       !FD_ISSET(max_fd, &output_fds))
-	  max_fd--;
-      }
-    }
-    return(0);
-  } else
-    return(-1);
-}
-
-int driver_event(ErlDrvPort ix, ErlDrvEvent e, ErlDrvEventData event_data) {
-    return -1;
-}
-
-/* See if there is any i/o pending. If wait is 1 wait for i/o.
-   Both are done using "select". NULLTV (ie 0) causes select to wait.
-   A pointer to a zero timeval causes select to poll.
-   */
-static void check_io(int wait)
-{
-    fd_set readfds,writefds;
-    struct timeval wait_time;
-    int i;
-
-    /* select() won't be interrupted - we need a timeout
-       if there is anything in the timer queue          */
-    if (wait) {
-	erts_time_remaining(&wait_time);
-    } else {
-	wait_time.tv_sec = wait_time.tv_usec = 0;
-    }
-
-    readfds = input_fds; 
-    writefds = output_fds;
-    i = select(max_fd + 1, &readfds, &writefds, NULLFDS, &wait_time);
-
-    erts_deliver_time();		/* sync the machine's idea of time */
-
-    /* break handling moved here, signal handler just sets flag */
-    if (break_requested) {
-	extern void do_break();
-
-	SET_BLOCKING(0);
-	/* call the break handling function, reset the flag */
-	do_break();
-	break_requested = 0;
-	SET_NONBLOCKING(0);
-    }
-
-    if (i <= 0) {
-	/* probably a poll with no input */
-	return;
-    }
-    /* do the write's first */
-    for(i =0; i <= max_fd; i++) {
-	if (FD_ISSET(i, &writefds))
-	    output_ready(fd_data[i].outport, i);
-    }
-    for (i = 0; i <= max_fd; i++) {
-	if (FD_ISSET(i, &readfds))
-	    input_ready(fd_data[i].inport, i);
-    }
-}
-
 /* Fills in the systems representation of the jam/beam process identifier.
 ** The Pid is put in STRING representation in the supplied buffer,
 ** no interpretatione of this should be done by the rest of the
@@ -1543,11 +1452,8 @@ sys_init_io(void)
 {
   tmp_buf = (byte *) erts_alloc(ERTS_ALC_T_SYS_TMP_BUF, SYS_TMP_BUF_SIZE);
   tmp_buf_size = SYS_TMP_BUF_SIZE;
-  FD_ZERO(&input_fds);
-  FD_ZERO(&output_fds);
   fd_data = (struct fd_data *)
       erts_alloc(ERTS_ALC_T_FD_TAB, max_files * sizeof(struct fd_data));
-  max_fd = -1;
 }
 
 
@@ -2626,9 +2532,3 @@ erl_debug(char* fmt, ...)
     fprintf(stderr, "%s\n", sbuf);
 }
 #endif
-
-void
-erl_sys_args(int* argc, char** argv)
-{
-    /* Dummy */
-}

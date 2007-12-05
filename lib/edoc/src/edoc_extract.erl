@@ -293,18 +293,21 @@ get_module_info(Forms, File) ->
 	    R ->
 		throw(R)
 	end,
-    Name = case lists:keysearch(module, 1, L) of
-	       {value, {module, N}} ->
-		   N;
-	       _ ->
-		   report(File, "module name missing.", []),
-		   exit(error)
-	   end,
+    {Name, Vars} = case lists:keysearch(module, 1, L) of
+		       {value, {module, N}} when is_atom(N) ->
+			   {N, none};
+		       {value, {module, {N, Vs}}} when is_atom(N) ->
+			   {N, Vs};
+		       _ ->
+			   report(File, "module name missing.", []),
+			   exit(error)
+		   end,
     Functions = ordsets:from_list(get_list_keyval(functions, L)),
     Exports = ordsets:from_list(get_list_keyval(exports, L)),
     Attributes = ordsets:from_list(get_list_keyval(attributes, L)),
     Records = get_list_keyval(records, L),
     #module{name = Name,
+	    parameters = Vars,
 	    functions = Functions,
 	    exports = ordsets:intersection(Exports, Functions),
 	    attributes = Attributes,

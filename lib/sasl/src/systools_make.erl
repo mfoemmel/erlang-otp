@@ -993,7 +993,7 @@ generate_script(Output, Release, Appls, Flags) ->
 	     },
 
     ScriptFile = Output ++ ".script",
-    case file:open(ScriptFile, write) of
+    case file:open(ScriptFile, [write]) of
 	{ok, Fd} ->
 	    io:format(Fd, "%% script generated at ~w ~w\n~p.\n",
 		      [date(), time(), Script]),
@@ -1721,7 +1721,7 @@ duplicates(_, L) -> L.
 %% Erlang term.
 
 read_file(File, Path) ->
-    case file:path_open(Path, File, read) of
+    case file:path_open(Path, File, [read]) of
 	{ok, Stream, FullName} ->
 	    Return = case systools_lib:read_term_from_stream(Stream, File) of
 			 {ok, Term} ->

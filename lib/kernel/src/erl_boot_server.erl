@@ -54,6 +54,11 @@
 
 -define(single_addr_mask, {255, 255, 255, 255}).
 
+-type(ip4_address() :: {0..255,0..255,0..255,0..255}).
+
+-spec(start/1 :: (Slaves :: [atom()]) -> 
+	{'ok', pid()} | {'error', any()}).
+
 start(Slaves) ->
     case check_arg(Slaves) of
 	{ok,AL} ->
@@ -61,6 +66,9 @@ start(Slaves) ->
 	_ ->
 	    {error, {badarg, Slaves}}
     end.
+
+-spec(start_link/1 :: (Slaves :: [atom()]) ->
+	{'ok', pid()} | {'error', any()}).
 
 start_link(Slaves) ->
     case check_arg(Slaves) of
@@ -86,6 +94,9 @@ check_arg([], Result) ->
 check_arg(_, _Result) ->
     error.
 
+-spec(add_slave/1 :: (Slave :: atom()) ->
+	'ok' | {'error', any()}).
+
 add_slave(Slave) ->
     case inet:getaddr(Slave, inet) of
 	{ok,IP} ->
@@ -93,6 +104,9 @@ add_slave(Slave) ->
 	_ ->
 	    {error, {badarg, Slave}}
     end.
+
+-spec(delete_slave/1 :: (Slave :: atom()) ->
+	'ok' | {'error', any()}).
 
 delete_slave(Slave) ->
     case inet:getaddr(Slave, inet) of
@@ -102,6 +116,11 @@ delete_slave(Slave) ->
 	    {error, {badarg, Slave}}
     end.
 
+-spec(add_subnet/2 :: (
+	Mask :: ip4_address(), 
+	Addr :: ip4_address()) -> 
+	{'error', any()} | 'ok').  
+
 add_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     case member_address(Addr, [{Mask, Addr}]) of
 	true ->
@@ -110,8 +129,16 @@ add_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
 	    {error, empty_subnet}
     end.
 
+-spec(delete_subnet/2 :: (
+	Mask :: ip4_address(), 
+	Addr :: ip4_address()) -> 
+	'ok').  
+
 delete_subnet(Mask, Addr) when is_tuple(Mask), is_tuple(Addr) ->
     gen_server:call(boot_server, {delete, {Mask, Addr}}).
+
+-spec(which_slaves/0 :: () ->
+	[atom()]).
 
 which_slaves() ->
     gen_server:call(boot_server, which).

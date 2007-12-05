@@ -32,25 +32,9 @@
 %% Also used by shell.erl.
 -export([match_clause/4]).
 
-%% The following exports are here for backwards compatibility.
--export([seq/2,seq/3,arg_list/2,arg_list/3]).
--deprecated([{seq,2},{seq,3},{arg_list,2},{arg_list,3}]).
-
 -export([check_command/2, fun_data/1]).
 
 -import(lists, [reverse/1,foldl/3,member/2]).
-
-%% seq(ExpressionSeq, Bindings)
-%% seq(ExpressionSeq, Bindings, LocalFuncHandler)
-%% arg_list(ExpressionList, Bindings)
-%% arg_list(ExpressionList, Bindings, LocalFuncHandler)
-%%  These calls are here for backwards compatibility.
-
-seq(Exprs, Bs)     -> exprs(Exprs, Bs).
-seq(Exprs, Bs, Lf) -> exprs(Exprs, Bs, Lf).
-
-arg_list(Es, Bs)     -> expr_list(Es, Bs).
-arg_list(Es, Bs, Lf) -> expr_list(Es, Bs, Lf).
 
 %% exprs(ExpressionSeq, Bindings)
 %% exprs(ExpressionSeq, Bindings, LocalFuncHandler)
@@ -110,10 +94,7 @@ expr(E, Bs, Lf, Ef) ->
 %% Check a command (a list of expressions) by calling erl_lint.
 
 check_command(Es, Bs) ->
-    Opts = case eval_bits:bitlevel_binaries_enabled() of
-	       false -> [];
-	       true -> [bitlevel_binaries,binary_comprehension]
-	   end,
+    Opts = [bitlevel_binaries,binary_comprehension],
     case erl_lint:exprs_opt(Es, bindings(Bs), Opts) of
         {ok,_Ws} ->
             ok;
@@ -263,6 +244,11 @@ expr({call,_,{remote,_,{atom,_,qlc},{atom,_,q}},[{lc,_,_E,_Qs}=LC | As0]},
         {not_ok,Error} ->
             ret_expr(Error, Bs0, RBs)
     end;
+expr({call,L1,{remote,L2,{record_field,_,{atom,_,''},{atom,_,qlc}=Mod},
+               {atom,_,q}=Func},
+      [{lc,_,_E,_Qs} | As0]=As}, 
+     Bs, Lf, Ef, RBs) when length(As0) =< 1 ->
+    expr({call,L1,{remote,L2,Mod,Func},As}, Bs, Lf, Ef, RBs);
 expr({call,_,{remote,_,Mod,Func},As0}, Bs0, Lf, Ef, RBs) ->
     Mod1 = expand_module_name(Mod, Bs0),
     {value,M,Bs1} = expr(Mod1, Bs0, Lf, Ef, none),
@@ -633,12 +619,8 @@ eval_fun([{clause,_,H,G,B}|Cs], As, Bs0, Lf, Ef, RBs) ->
 	    eval_fun(Cs, As, Bs0, Lf, Ef, RBs)
     end;
 eval_fun([], As, _Bs, _Lf, _Ef, _RBs) ->
-    '-inside-a-shell-fun-'(), % Dummy call to avoid warning.
-    %% list_to_tuple/1 below to avoid arity check.
     erlang:raise(error, function_clause, 
-		 [{?MODULE,'-inside-a-shell-fun-',As}|stacktrace()]).
-
-'-inside-a-shell-fun-'() -> ok.
+		 [{?MODULE,'-inside-an-interpreted-fun-',As}|stacktrace()]).
 
 %% expr_list(ExpressionList, Bindings)
 %% expr_list(ExpressionList, Bindings, LocalFuncHandler)
@@ -837,47 +819,17 @@ guard0([], _Bs, _Lf, _Ef) -> true.
 %%	{value,bool(),NewBindings}.
 %%  Evaluate one guard test. Never fails, returns bool().
 
-guard_test({call,_,{atom,_,Name},As0}, Bs0, Lf, Ef) ->
-    try 
-        {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
-        {value,true,_} = type_test(Name, As1, Bs1, Ef)
-    catch error:_ -> {value,false,Bs0} end;
-guard_test({op,_,Op,A0}, Bs0, Lf, Ef) ->
-    try
-        {[A],Bs1} = expr_list([A0], Bs0, Lf, Ef),
-        {value,true,_} = eval_op(Op, A, Bs1, Ef, none)
-    catch error:_ -> {value,false,Bs0} end;
-guard_test({op,_,'andalso',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
-    try {value,true,_} = expr(G, Bs0, Lf, Ef, none)
-    catch error:_ -> {value,false,Bs0} end;
-guard_test({op,_,'orelse',_Lhs0,_Rhs0}=G, Bs0, Lf, Ef) ->
-    try {value,true,_} = expr(G, Bs0, Lf, Ef, none)
-    catch error:_ -> {value,false,Bs0} end;
-guard_test({op,_,Op,Lhs0,Rhs0}, Bs0, Lf, Ef) ->
-    try
-        {[Lhs,Rhs],Bs1} = expr_list([Lhs0,Rhs0], Bs0, Lf, Ef),
-        {value,true,_} = eval_op(Op, Lhs, Rhs, Bs1, Ef, none)
-    catch error:_ -> {value,false,Bs0} end;   
-guard_test({atom,_,true}, Bs, _Lf, _Ef) -> {value,true,Bs};
-guard_test({atom,_,false}, Bs, _Lf, _Ef) -> {value,false,Bs};
-guard_test({var,_,V}, Bs, _Lf, _Ef) ->
-    {value,Val} = binding(V, Bs),
-    {value,Val =:= true,Bs};
-guard_test({call,_L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,F}},As0}, 
-          Bs0, Lf, Ef) ->
-    try
-        {As1,Bs1} = expr_list(As0, Bs0, Lf, Ef),
-        {value,true,_} = type_test(F, As1, Bs1, Ef)
-    catch error:_ -> {value,false,Bs0} end;
-guard_test({call,L,{tuple,L1,[{atom,Lm,erlang},{atom,L2,F}]},As}, 
-         Bs0, Lf, Ef) ->
-    guard_test({call,L,{remote,L1,{atom,Lm,erlang},{atom,L2,F}},As}, 
+guard_test({call,L,{atom,Ln,F},As0}, Bs0, Lf, Ef) ->
+    TT = type_test(F),
+    guard_test({call,L,{tuple,Ln,[{atom,Ln,erlang},{atom,Ln,TT}]},As0},
                Bs0, Lf, Ef);
-guard_test(_Other, Bs, _Lf, _Ef) -> {value,false,Bs}.
-
-type_test(Test, As, Bs, Ef) ->
-    do_apply({erlang,type_test(Test)}, As, Bs, Ef, none).
-
+guard_test({call,L,{remote,_Lr,{atom,_Lm,erlang},{atom,_Lf,_F}=T},As0}, 
+           Bs0, Lf, Ef) ->
+    guard_test({call,L,T,As0}, Bs0, Lf, Ef);
+guard_test(G, Bs0, Lf, Ef) ->
+    try {value,true,_} = expr(G, Bs0, Lf, Ef, none)
+    catch error:_ -> {value,false,Bs0} end.
+    
 type_test(integer) -> is_integer;
 type_test(float) -> is_float;
 type_test(number) -> is_number;
@@ -982,6 +934,8 @@ match1({op,_,'++',{nil,_},R}, Term, Bs, BBs) ->
     match1(R, Term, Bs, BBs);
 match1({op,_,'++',{cons,Li,{integer,L2,I},T},R}, Term, Bs, BBs) ->
     match1({cons,Li,{integer,L2,I},{op,Li,'++',T,R}}, Term, Bs, BBs);
+match1({op,_,'++',{cons,Li,{char,L2,C},T},R}, Term, Bs, BBs) ->
+    match1({cons,Li,{char,L2,C},{op,Li,'++',T,R}}, Term, Bs, BBs);
 match1({op,_,'++',{string,Li,L},R}, Term, Bs, BBs) ->
     match1(string_to_conses(L, Li, R), Term, Bs, BBs);
 match1({op,Line,Op,A}, Term, Bs, BBs) ->

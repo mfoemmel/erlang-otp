@@ -154,7 +154,7 @@ insert_node({Load,Node},[{L,N}|Tail]) when Load =< L ->
 insert_node(Ln,[H|T]) ->
     [H | insert_node(Ln,T)];
 insert_node(X,[]) ->          % Can't happen
-    error_logger:error_msg('Pool_master: Bad node list X=~w\n',[X]),
+    error_logger:error_msg("Pool_master: Bad node list X=~w\n", [X]),
     exit(crash).
 
 

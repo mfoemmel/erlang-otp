@@ -273,12 +273,10 @@ start_it_old(Tag, From, Type, ApplData) ->
     case catch M:start(Type, A) of
 	{ok, Pid} ->
 	    link(Pid),
-	    {ok, self()},
 	    From ! {Tag, {ok, self()}},
 	    loop_it(From, Pid, M, []);
 	{ok, Pid, AppState} ->
 	    link(Pid),
-	    {ok, self()},
 	    From ! {Tag, {ok, self()}},
 	    loop_it(From, Pid, M, AppState);
 	{'EXIT', normal} ->

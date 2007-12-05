@@ -1323,7 +1323,7 @@ remove_file(File) ->
     end.
 
 do_write_file(File, Str) ->
-    case file:open(File, write) of
+    case file:open(File, [write]) of
 	{ok, Fd} ->
 	    io:put_chars(Fd, Str),
 	    file:close(Fd),
@@ -1574,7 +1574,7 @@ write_releases(Dir, NewReleases, Masters) ->
     write_releases_m(Dir, NewReleases, Masters).
 
 do_write_release(Dir, RELEASES, NewReleases) ->
-    case file:open(filename:join(Dir, RELEASES), write) of
+    case file:open(filename:join(Dir, RELEASES), [write]) of
 	{ok, Fd} ->
 	    ok = io:format(Fd, "~p.~n", [NewReleases]),
 	    file:close(Fd),

@@ -113,9 +113,14 @@ TransactionReply ::= SEQUENCE
       transactionError   ErrorDescriptor, 
       actionReplies      SEQUENCE OF ActionReply 
     }, 
-    ...
---   segmentNumber         SegmentNumber OPTIONAL,
---   segmentationComplete  NULL OPTIONAL 
+    ...,
+   -- Erlang Note: NOT REALLY PART OF THIS IMPLEMENTATION
+   -- Erlang Note: The only reason why we need to include
+   -- Erlang Note: these definitions in this version is
+   -- Erlang Note: that we cannot distinguish between v3 
+   -- Erlang Note: versions in the megaco_messenger module
+   segmentNumber         SegmentNumber OPTIONAL,
+   segmentationComplete  NULL OPTIONAL 
  } 
 
 -- SegmentReply ::= SEQUENCE
@@ -126,7 +131,7 @@ TransactionReply ::= SEQUENCE
 --    ...
 --  }
 -- 
--- SegmentNumber ::= INTEGER(0..65535)
+SegmentNumber ::= INTEGER(0..65535)
 
 TransactionResponseAck ::= SEQUENCE OF TransactionAck 
 TransactionAck ::= SEQUENCE 

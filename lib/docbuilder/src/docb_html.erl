@@ -20,38 +20,38 @@
 -export([rule/2, rule/3]).
 
 rule([p, item, list|_], {_, _, _}) ->
-    {"", "<BR>\n"};
+    {"", "<br />\n"};
 rule([p, item, taglist|_], {_, _, _}) ->
-    {"", "<BR>\n"};
+    {"", "<br />\n"};
 rule([p|_], _) ->
-    {"\n<P>", ""};
+    {"\n<p>", "\n</p>"};
 
 rule([pre|_], _) ->
-    {"\n<PRE>\n", "\n</PRE>\n"};
+    {"\n<div class=\"example\"><pre>\n", "\n</pre></div>\n"};
 
 rule([input|_], _) ->
-    {"<STRONG>", "</STRONG>"};
+    {"<strong>", "</strong>"};
 
 rule([quote|_], _) ->
-    {"\n<BLOCKQUOTE>\n", "\n</BLOCKQUOTE>\n"};
+    {"\n<blockquote>\n", "\n</blockquote>\n"};
 
 rule([i|_], _) ->
-    {"<EM>", "</EM>"};
+    {"<em>", "</em>"};
 
 rule([b|_], _) ->
-    {"<STRONG>", "</STRONG>"};
+    {"<strong>", "</strong>"};
 
 rule([c|_], _) ->
-    {"<CODE>", "</CODE>"};
+    {"<span class=\"code\">", "</span>"};
 
 rule([em|_], _) ->
-    {"<STRONG>", "</STRONG>"};
+    {"<strong>", "</strong>"};
 
 rule([sub|_], _) ->
-    {"<SUB>", "</SUB>"};
+    {"<sub>", "</sub>"};
 
 rule([sup|_], _) ->
-    {"<SUP>", "</SUP>"};
+    {"<sup>", "</sup>"};
 
 rule([termdef|_], _) ->
     {drop, ""};
@@ -60,111 +60,117 @@ rule([citedef|_], _) ->
     {drop, ""};
 
 rule([br|_], _) ->
-    {"<BR>\n", ""};
+    {"<br />\n", ""};
 
 rule([digression|_], _) ->
-    {"<TABLE>\n"
-     "  <TR>\n"
-     "    <TD WIDTH=\"23\"></TD>\n"
-     "    <TD>\n"
-     "      <FONT SIZE=-1>\n",
-     "      </FONT>\n"
-     "    </TD>\n"
-     "  </TR>\n"
-     "</TABLE>\n"};
+    {"<table>\n"
+     "  <tr>\n"
+     "    <td width=\"23\"></td>\n"
+     "    <td>\n"
+     "      <font size=\"-1\">\n",
+     "      </font>\n"
+     "    </td>\n"
+     "  </tr>\n"
+     "</table>\n"};
 
 rule([list, item, list|_], {_, ["ORDERED"], _}) ->
-    {"\n<OL>\n", "\n</OL>\n"};
+    {"\n<ol>\n", "\n</ol>\n"};
 rule([list, item, taglist|_], {_, ["ORDERED"], _}) ->
-    {"\n<OL>\n", "\n</OL>\n"};
+    {"\n<ol>\n", "\n</ol>\n"};
 rule([list|_], {_, ["ORDERED"], _}) ->
-    {"\n<P>\n<OL>\n", "\n</OL>\n"};
+    {"\n<p>\n<ol>\n", "\n</ol>\n"};
 rule([list, item, list|_], {_, ["BULLETED"], _}) ->
-    {"\n<UL>\n", "\n</UL>\n"};
+    {"\n<ul>\n", "\n</ul>\n"};
 rule([list, item, taglist|_], {_, ["BULLETED"], _}) ->
-    {"\n<UL>\n", "\n</UL>\n"};
+    {"\n<ul>\n", "\n</ul>\n"};
 rule([list|_], {_, ["BULLETED"], _}) ->
-    {"\n<P>\n<UL>\n", "\n</UL>\n"};
+    {"\n<p>\n<ul>\n", "\n</ul>\n"};
 
 rule([taglist, item, taglist|_], _) ->
-    {"\n<DL>\n", "\n</DL>\n"};
+    {"\n<dl>\n", "\n</dl>\n"};
 rule([taglist, item, list|_], _) ->
-    {"\n<DL>\n", "\n</DL>\n"};
+    {"\n<dl>\n", "\n</dl>\n"};
 rule([taglist|_], _) ->
-    {"\n<P>\n<DL>\n", "\n</DL>\n"};
+    {"\n<p>\n<dl>\n", "\n</dl>\n"};
 
 rule([tag|_], _) ->
-    {"\n<DT>\n", "\n</DT>\n"};
+    {"\n<dt>\n", "\n</dt>\n"};
 
 rule([item, list|_], _) ->
-    {"\n<LI>\n", "\n</LI>\n\n"};
+    {"\n<li>\n", "\n</li>\n\n"};
 rule([item, taglist|_], _) ->
-    {"\n<DD>\n", "\n</DD>\n"};
+    {"\n<dd>\n", "\n</dd>\n"};
 
 rule([image|_], {_, [File], _}) ->
-    {["\n<P>\n<CENTER>\n", "<IMG ALT=\"", File, "\" SRC=\"", File,
-      ".gif\"><BR>\n"],
-     "\n</CENTER>\n"};
+    {["\n<p>\n<center>\n", "<img alt=\"", File, "\" src=\"", File,
+      ".gif\"><br />\n"],
+     "\n</center>\n"};
 
 rule([icaption|_], _) ->
-    {"<EM>", "</EM>\n"};
+    {"<em>", "</em>\n"};
 
 rule([url|_], {_, [HREF], _}) ->
     URI = docb_html_util:make_uri(HREF),
-    {io_lib:format("<A TARGET=\"_top\" HREF=\"~s\">", [URI]), "</A>"};
+    {io_lib:format("<a target=\"_top\" href=\"~s\">", [URI]), "</a>"};
 
 rule([marker|_], {_, [ID], _})   ->
     {ok, NewID, _} = regexp:sub(ID, "^[^#]*#", ""),
-    {drop, ["<A NAME=\"", NewID, "\"><!-- Empty --></A>"]};
+    {drop, ["<a name=\"", NewID, "\"><!-- Empty --></a>"]};
 
 rule([table|_], {_, ["", ""], Ts}) ->
     {newargs,
-     "\n<P><CENTER>\n"
-     "<TABLE CELLSPACING=0 CELLPADDING=2 BORDER=1>\n",
+     "\n<p><center>\n"
+     "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
      reorder_table(Ts),
-     "\n</TABLE>\n"
-     "</CENTER>\n"};
+     "\n</table>\n"
+     "</center>\n"};
 rule([table|_], {_, [Width, ""], Ts}) ->
     {newargs,
-     ["\n<P>\n<CENTER>\n"
-      "<TABLE CELLSPACING=0 CELLPADDING=2 BORDER=1 ",
-      "WIDTH=\"", Width, "%\">\n"],
+     ["\n<p>\n<center>\n"
+      "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\" ",
+      "width=\"", Width, "%\">\n"],
      reorder_table(Ts),
-     "\n</TABLE>\n"
-     "</CENTER>\n"};
+     "\n</table>\n"
+     "</center>\n"};
 
 %% The clauses above are for the report DTD. This one is for the other
 %% DTDs.
+rule([table|_], {_, ["LEFT"], Ts}) ->
+    {newargs,
+     "\n<p>\n"
+     "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
+     reorder_table(Ts),
+     "\n</table>\n"};
+
 rule([table|_], {_, _, Ts}) ->
     {newargs,
-     "\n<P>\n<CENTER>\n"
-     "<TABLE CELLSPACING=0 CELLPADDING=2 BORDER=1>\n",
+     "\n<p>\n<center>\n"
+     "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
      reorder_table(Ts),
-     "\n</TABLE>\n"
-     "</CENTER>\n"};
+     "\n</table>\n"
+     "</center>\n"};
 
 rule([row|_], _)   ->
-    {"  <TR>\n", "\n  </TR>\n"};
+    {"  <tr>\n", "\n  </tr>\n"};
 
 rule([cell|_], {_, ["", ""], _})   ->
-    {"    <TD>\n", "\n    </TD>\n"};
+    {"    <td>\n", "\n    </td>\n"};
 rule([cell|_], {_, [Align, ""], _})   ->
-    {["    <TD ALIGN=\"", Align, "\">\n"], "\n    </TD>\n"};
+    {["    <td align=\"", Align, "\">\n"], "\n    </td>\n"};
 rule([cell|_], {_, ["", VAlign], _})   ->
-    {["    <TD VALIGN=\"", VAlign, "\">\n"], "\n    </TD>\n"};
+    {["    <td valign=\"", VAlign, "\">\n"], "\n    </td>\n"};
 rule([cell|_], {_, [Align, VAlign], _})   ->
-    {["    <TD ALIGN=\"", Align, "\" VALIGN=\"", VAlign, "\">\n"],
-     "\n    </TD>\n"};
+    {["    <td align=\"", Align, "\" valign=\"", VAlign, "\">\n"],
+     "\n    </td>\n"};
 
 rule([tcaption|_], _)   ->
-    {"  <CAPTION ALIGN=BOTTOM><EM>", "</EM></CAPTION>\n"};
+    {"  <caption align=\"bottom\"><em>", "</em></caption>\n"};
 
-rule([codeinclude|_], {_, [File, Tag, "ERL"], _}) ->
-    docb_html_util:code_include(File, Tag);
-rule([codeinclude|_], {_, [File, Tag, "C"], _}) ->
-    docb_html_util:code_include(File, Tag);
-rule([codeinclude|_], {_, [File, Tag, "NONE"], _}) ->
-    docb_html_util:code_include(File, Tag);
+rule([codeinclude|_], {_, [File, Tag, _Type], _}) ->
+%% Type can be "ERL", "C" or "NONE"
+    {ok,Data} = docb_html_util:code_include(File, Tag),
+    {drop, ["\n<div class=\"example\"><pre>\n", Data,
+	     "\n</div></pre>\n"]};
 
 rule([erleval|_], {_, [Expr], _}) ->
     docb_html_util:erl_eval(Expr);
@@ -201,29 +207,39 @@ rule([seealso|_], {_, [Marker], _}, Opts) ->
 		%% User defined behavior, use result as-is
 		Href0
 	end,
-    {{["<A HREF=\"", Href, "\">"], "</A>"}, Opts};
+    {{["<a href=\"", Href, "\">"], "</a>"}, Opts};
 
 rule([warning|_], _, Opts) ->
     docb_html_util:copy_pics("warning.gif", "warning.gif", Opts),
-    {{"\n<P>\n"
-      "<TABLE CELLPADDING=4>\n"
-      "  <TR>\n"
-      "    <TD VALIGN=TOP><IMG ALT=\"Warning!\" SRC=\"warning.gif\"></TD>\n"
-      "    <TD>\n",
-      "    </TD>\n"
-      "  </TR>\n"
-      "</TABLE>\n"}, Opts};
+    {{"\n<div class=\"warning\">\n"
+      "<div class=\"label\">Warning</div>\n"
+      "<div class=\"content\">\n",
+      "\n</div>"
+      "\n</div>\n"}, Opts};
+%     {{"\n<P>\n"
+%       "<TABLE CELLPADDING=4>\n"
+%       "  <TR>\n"
+%       "    <TD VALIGN=TOP><IMG ALT=\"Warning!\" SRC=\"warning.gif\"></TD>\n"
+%       "    <TD>\n",
+%       "    </TD>\n"
+%       "  </TR>\n"
+%       "</TABLE>\n"}, Opts};
 
 rule([note|_], _, Opts) ->
     docb_html_util:copy_pics("note.gif", "note.gif", Opts),
-    {{"\n<P>\n"
-      "<TABLE CELLPADDING=4>\n"
-      "  <TR>\n"
-      "    <TD VALIGN=TOP><IMG ALT=\"Note!\" SRC=\"note.gif\"></TD>\n"
-      "    <TD>\n",
-      "    </TD>\n"
-      "  </TR>\n"
-      "</TABLE>\n"}, Opts};
+    {{"\n<div class=\"note\">\n"
+      "<div class=\"label\">Note</div>\n"
+      "<div class=\"content\">",
+      "\n</div>"
+      "\n</div>\n"}, Opts};
+%     {{"\n<P>\n"
+%       "<TABLE CELLPADDING=4>\n"
+%       "  <TR>\n"
+%       "    <TD VALIGN=TOP><IMG ALT=\"Note!\" SRC=\"note.gif\"></TD>\n"
+%       "    <TD>\n",
+%       "    </TD>\n"
+%       "  </TR>\n"
+%       "</TABLE>\n"}, Opts};
 
 rule([path|_], {_, [UNIX, Windows], [{pcdata, _, Text}]}, Opts) ->
     UnixPart =
@@ -233,24 +249,24 @@ rule([path|_], {_, [UNIX, Windows], [{pcdata, _, Text}]}, Opts) ->
     if
 	UnixPart, WinPart ->
 	    {{drop, [docb_html_util:pcdata_to_html(Text),
-		     " <FONT SIZE=\"-2\">(<CODE>UNIX: ", 
+		     " <font size=\"-2\">(<code>UNIX: ", 
 		     docb_html_util:attribute_cdata_to_html(UNIX),
 		     ", ",
 		     "Windows: ",
 		     docb_html_util:attribute_cdata_to_html(Windows),
-		     "</CODE>)</FONT>"]},
+		     "</code>)</font>"]},
 	     Opts};
 	UnixPart ->
 	    {{drop, [docb_html_util:pcdata_to_html(Text),
-		     " <FONT SIZE=\"-1\">(<CODE>UNIX: ",
+		     " <font size=\"-1\">(<code>UNIX: ",
 		     docb_html_util:attribute_cdata_to_html(UNIX),
-		     "</CODE>)</FONT>"]},
+		     "</code>)</font>"]},
 	     Opts};
 	WinPart ->
 	    {{drop, [docb_html_util:pcdata_to_html(Text),
-		     " <FONT SIZE=\"-1\">(<CODE>Windows: ",
+		     " <font size=\"-1\">(<code>Windows: ",
 		     docb_html_util:attribute_cdata_to_html(Windows),
-		     "</CODE>)</FONT>"]},
+		     "</code>)</font>"]},
 	     Opts};
 	true ->
 	    {{drop, docb_html_util:pcdata_to_html(Text)}, Opts}
@@ -261,46 +277,46 @@ rule([term|_], {_, [ID], _}, Opts) ->
 	false ->
 	    case docb_util:lookup_option({defs, term}, Opts) of
 		false ->
-		    {{drop, ["<EM><STRONG>",
+		    {{drop, ["<em><strong>",
 			    ID,
-			    "</STRONG></EM> "]}, Opts};
+			    "</strong></em> "]}, Opts};
 		TermList ->
 		    case lists:keysearch(ID, 1, TermList) of
 			false ->
-			    {{drop, ["<EM><STRONG>", ID,
-				    "</STRONG></EM> "]},
+			    {{drop, ["<em><strong>", ID,
+				    "</strong></em> "]},
 			     Opts};
 			{value, {ID, Name, _Description, _Resp}} ->
-			    {{drop, ["<EM><STRONG>", Name,
-				     "</STRONG></EM> "]},
+			    {{drop, ["<em><strong>", Name,
+				     "</strong></em> "]},
 			     Opts};
 			{value, {ID, Name, _Description}} ->
-			    {{drop, [ "<EM><STRONG>", Name,
-				      "</STRONG></EM> "]},
+			    {{drop, [ "<em><strong>", Name,
+				      "</strong></em> "]},
 			     Opts}
 		    end
 	    end;
 	true ->
 	    case docb_util:lookup_option({defs, term}, Opts) of
 		false ->
-		    {{drop, ["<EM><STRONG>",  ID,
-			     "</STRONG></EM> "]}, Opts};
+		    {{drop, ["<em><strong>",  ID,
+			     "</strong></em> "]}, Opts};
 		TermList ->
 		    PartApplication =
 			docb_util:lookup_option(part_application, Opts),
 		    case lists:keysearch(ID, 1, TermList) of
 			false ->
-			    {{drop, ["<A HREF=\"", PartApplication,
+			    {{drop, ["<a href=\"", PartApplication,
 				    "_term.html#", ID, "\">", ID,
-				    "</A> "]}, Opts};
+				    "</a> "]}, Opts};
 			{value, {ID, Name, _Description, _Resp}} ->
-			    {{drop, ["<A HREF=\"", PartApplication,
+			    {{drop, ["<a href=\"", PartApplication,
 				    "_term.html#", ID, "\">", Name,
-				    "</A> "]}, Opts};
+				    "</a> "]}, Opts};
 			{value, {ID, Name, _Description}} ->
-			    {{drop, ["<A HREF=\"", PartApplication,
+			    {{drop, ["<a href=\"", PartApplication,
 				    "_term.html#", ID, "\">", Name,
-				    "</A> "]}, Opts}
+				    "</a> "]}, Opts}
 		    end
 	    end
     end;
@@ -310,61 +326,60 @@ rule([cite|_], {_, [ID], _}, Opts) ->
 	false ->
 	    case docb_util:lookup_option({defs, cite}, Opts) of
 		false ->
-		    {{drop, ["<EM><STRONG>", ID, "</STRONG></EM> "]},
+		    {{drop, ["<em><strong>", ID, "</strong></em> "]},
 		     Opts};
 		CiteList ->
 		    case lists:keysearch(ID, 1, CiteList) of
 			false ->
 			    {{drop,
-			      ["<EM><STRONG>", ID, "</STRONG></EM> "]},
+			      ["<em><strong>", ID, "</strong></em> "]},
 			     Opts};
 			{value, {ID, Name, _Description, _Resp}} ->
-			    {{drop, ["<EM><STRONG>", Name,
-				     "</STRONG></EM> "]},
+			    {{drop, ["<em><strong>", Name,
+				     "</strong></em> "]},
 			     Opts};
 			{value, {ID, Name, _Description}} ->
-			    {{drop, ["<EM><STRONG>", Name,
-				     "</STRONG></EM> "]},
+			    {{drop, ["<em><strong>", Name,
+				     "</strong></em> "]},
 			     Opts}
 		    end
 	    end;
 	true ->
 	    case docb_util:lookup_option({defs, cite}, Opts) of
 		false ->
-		    {{drop, ["<EM><STRONG>", ID, "</STRONG></EM> "]},
+		    {{drop, ["<em><strong>", ID, "</strong></em> "]},
 		     Opts};
 		CiteList ->
 		    PartApp =
 			docb_util:lookup_option(part_application, Opts),
 		    case lists:keysearch(ID, 1, CiteList) of
 			false ->
-			    {{drop, ["<A HREF=\"", PartApp,
+			    {{drop, ["<a href=\"", PartApp,
 				     "_cite.html#", ID, "\">", ID,
-				     "</A> "]},
+				     "</a> "]},
 			     Opts};
 			{value, {ID, Name, _Description, _Resp}} ->
-			    {{drop, ["<A HREF=\"", PartApp,
+			    {{drop, ["<a href=\"", PartApp,
 				    "_cite.html#", ID, "\">", Name,
-				     "</A> "]},
+				     "</a> "]},
 			     Opts};
 			{value, {ID, Name, _Description}} ->
-			    {{drop, ["<A HREF=\"", PartApp,
+			    {{drop, ["<a href=\"", PartApp,
 				    "_cite.html#", ID, "\">", Name,
-				     "</A> "]},
+				     "</a> "]},
 			     Opts}
 		    end
 	    end
     end;
 
-rule([code|_], {_, ["ERL"], [{pcdata, _, Code}]}, Opts) ->
-    {{drop, ["\n<PRE>\n", docb_html_util:element_cdata_to_html(Code),
-	     "\n</PRE>\n"]}, Opts};
-rule([code|_], {_, ["C"], [{pcdata, _, Code}]}, Opts) ->
-    {{drop, ["\n<PRE>\n", docb_html_util:element_cdata_to_html(Code),
-	     "\n</PRE>\n"]}, Opts};
-rule([code|_], {_, ["NONE"], [{pcdata, _, Code}]}, Opts) ->
-    {{drop, ["\n<PRE>\n", docb_html_util:element_cdata_to_html(Code),
-	     "\n</PRE>\n"]}, Opts}.
+rule([code|_], {_, [Type], [{pcdata, _, Code}]}, Opts) ->
+    case lists:member(Type,["ERL","C","NONE"]) of
+	true ->
+	    {{drop, ["\n<div class=\"example\"><pre>\n", docb_html_util:element_cdata_to_html(Code),
+		     "\n</div></pre>\n"]}, Opts};
+	false ->
+	    exit({error,"unknown type of <code>"})
+    end.
 
 reorder_table(TableContent) ->
     reorder_table(TableContent, [], []).

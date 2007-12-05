@@ -19,17 +19,19 @@
 
 %% Hooks (called from mnesia)
 -export([check_ustruct/1, create_table/3, delete_table/2,
-	 key_to_oid/3, update/1, start/2,
+	 key_to_oid/2, key_to_oid/3, oid_to_key/2, 
+	 update/1, 
 	 get_row/2, get_next_index/2, get_mnesia_key/2]).
 
-%% sys callback functions
--export([system_continue/3,
-	 system_terminate/4,
-	 system_code_change/4
-	]).
+-export([key_to_oid_i/2, oid_to_key_1/2]). %% Test
 
-%% Internal exports
--export([b_init/2]).
+-include("mnesia.hrl").
+
+val(Var) ->
+    case ?catch_val(Var) of
+	{'EXIT', _ReASoN_} -> mnesia_lib:other_val(Var, _ReASoN_); 
+	_VaLuE_ -> _VaLuE_ 
+    end.
 
 check_ustruct([]) ->
     true;  %% default value, not SNMP'ified
@@ -40,8 +42,8 @@ check_ustruct(_) -> false.
 to_list(Tuple) when tuple(Tuple) -> tuple_to_list(Tuple);
 to_list(X) -> [X].
 
-is_snmp_type([integer | T]) -> is_snmp_type(T);
-is_snmp_type([string | T]) -> is_snmp_type(T);
+is_snmp_type([integer    | T]) -> is_snmp_type(T);
+is_snmp_type([string     | T]) -> is_snmp_type(T);
 is_snmp_type([fix_string | T]) -> is_snmp_type(T);
 is_snmp_type([]) -> true;
 is_snmp_type(_) -> false.
@@ -59,8 +61,6 @@ create_table([{key, Us}], MnesiaTab, Storage) ->
     
 build_table(MnesiaKey, MnesiaTab, Tree, Us, Storage)
   when MnesiaKey /= '$end_of_table' ->
-%%    SnmpKey = key_to_oid(MnesiaTab, MnesiaKey, Us),
-%%    update(write, Tree, MnesiaKey, SnmpKey),
     update(write, Tree, MnesiaKey, MnesiaKey),
     Next = mnesia_lib:db_next_key(Storage, MnesiaTab, MnesiaKey), 
     build_table(Next, MnesiaTab, Tree, Us, Storage);
@@ -68,7 +68,7 @@ build_table('$end_of_table', _MnesiaTab, _Tree, _Us, _Storage) ->
     ok.
 
 delete_table(_MnesiaTab, Tree) ->
-    exit(Tree, shutdown),
+    b_delete_tree(Tree),
     ok.
 
 %%-----------------------------------------------------------------
@@ -76,23 +76,23 @@ delete_table(_MnesiaTab, Tree) ->
 %%-----------------------------------------------------------------
    
 update({clear_table, MnesiaTab}) ->
-    Tree = mnesia_lib:val({MnesiaTab, {index, snmp}}),
+    Tree = val({MnesiaTab, {index, snmp}}),
     b_clear(Tree);
     
 update({Op, MnesiaTab, MnesiaKey, SnmpKey}) ->
-    Tree = mnesia_lib:val({MnesiaTab, {index, snmp}}),
+    Tree = val({MnesiaTab, {index, snmp}}),
     update(Op, Tree, MnesiaKey, SnmpKey).
 
-update(Op, Tree, MnesiaKey, _) ->
+update(Op, Tree, MnesiaKey, SnmpKey) ->
     case Op of
 	write ->
-	    b_insert(Tree, MnesiaKey, MnesiaKey);
+	    b_insert(Tree, SnmpKey, MnesiaKey);
 	update_counter ->
 	    ignore;
 	delete ->
-	    b_delete(Tree, MnesiaKey);
+	    b_delete(Tree, SnmpKey);
 	delete_object ->
-	    b_delete(Tree, MnesiaKey)
+	    b_delete(Tree, SnmpKey)
     end,
     ok.
 
@@ -108,32 +108,65 @@ update(Op, Tree, MnesiaKey, _) ->
 %%     Key = {"pelle", 42} AND Type = {fix_string, integer} =>
 %%        OID [$p, $e, $l, $l, $e, 42]
 %%-----------------------------------------------------------------
+
+key_to_oid(Tab,Key) ->
+    Types = val({Tab,snmp}),
+    key_to_oid(Tab, Key, Types).
+	     
 key_to_oid(Tab, Key, [{key, Types}]) ->
-    MnesiaOid = {Tab, Key},
-    if
-	tuple(Key), tuple(Types) ->
-	    case {size(Key), size(Types)} of
-		{Size, Size} ->
-		    keys_to_oid(MnesiaOid, Size, Key, [], Types);
-		_ ->
-		    exit({bad_snmp_key, MnesiaOid})
-	    end;
-	true ->
-	    key_to_oid_i(MnesiaOid, Key, Types)
+    try key_to_oid_i(Key,Types) 
+    catch _:_ ->
+	    mnesia:abort({bad_snmp_key, {Tab,Key}, Types})
+    end.
+	
+key_to_oid_i(Key, integer) when is_integer(Key) -> [Key];
+key_to_oid_i(Key, fix_string) when is_list(Key) -> Key;
+key_to_oid_i(Key, string) when is_list(Key) -> [length(Key) | Key];
+key_to_oid_i(Key, Types) -> keys_to_oid(size(Key), Key, [], Types).
+
+keys_to_oid(0, _Key, Oid, _Types) -> Oid;
+keys_to_oid(N, Key, Oid, Types) ->
+    Oid2 = lists:append(key_to_oid_i(element(N, Key), element(N, Types)), Oid),
+    keys_to_oid(N-1, Key, Oid2, Types).
+
+%%--------------------------------------------------
+%% The reverse of the above, i.e. snmp oid to mnesia key.
+%% This can be lookup up in tree but that might be on a remote node.
+%% It's probably faster to look it up, but use when it migth be remote 
+oid_to_key(Oid, Tab) ->
+    [{key, Types}] = val({Tab,snmp}),
+    oid_to_key_1(Types, Oid). 
+
+oid_to_key_1(integer, [Key])  -> Key;
+oid_to_key_1(fix_string, Key) -> Key;
+oid_to_key_1(string, [_|Key]) -> Key;
+oid_to_key_1(Tuple, Oid) ->
+    try 
+	List = oid_to_key_2(1, size(Tuple), Tuple, Oid),
+	list_to_tuple(List)
+    catch 
+	throw:fix_string ->
+	    unknown;
+	  _ : _ ->
+	    mnesia:abort({bad_snmp_key, Oid, Tuple})
     end.
 
-key_to_oid_i(_MnesiaOid, Key, integer) when integer(Key) -> [Key];
-key_to_oid_i(_MnesiaOid, Key, fix_string) when list(Key) -> Key;
-key_to_oid_i(_MnesiaOid, Key, string) when list(Key) -> [length(Key) | Key];
-key_to_oid_i(MnesiaOid, Key, Type) ->
-    exit({bad_snmp_key, [MnesiaOid, Key, Type]}).
-
-keys_to_oid(_MnesiaOid, 0, _Key, Oid, _Types) -> Oid;
-keys_to_oid(MnesiaOid, N, Key, Oid, Types) ->
-    Type = element(N, Types),
-    KeyPart = element(N, Key),
-    Oid2 = key_to_oid_i(MnesiaOid, KeyPart, Type) ++ Oid,
-    keys_to_oid(MnesiaOid, N-1, Key, Oid2, Types).
+oid_to_key_2(N, Sz, Tuple, Oid0) when N =< Sz ->
+    case element(N, Tuple) of
+	integer -> 
+	    [Key|Oid] = Oid0,
+	    [Key|oid_to_key_2(N+1, Sz, Tuple, Oid)];
+	fix_string when N =:= Sz ->
+	    [Oid0];
+	fix_string ->
+	    throw(fix_string);
+	string ->
+	    [Len|Oid1] = Oid0,
+	    {Str,Oid} = lists:split(Len, Oid1),
+	    [Str|oid_to_key_2(N+1, Sz, Tuple, Oid)]
+    end;
+oid_to_key_2(N, Sz, _, []) when N =:= (Sz+1) ->
+    [].
 
 %%-----------------------------------------------------------------
 %% Func: get_row/2
@@ -160,15 +193,15 @@ get_row(Name, RowIndex) ->
 %% Func: get_next_index/2
 %% Args: Name is the name of the table (atom)
 %%       RowIndex is an Oid
-%% Returns: {ok, NextIndex} | endOfTable
+%% Returns: {NextIndex,MnesiaKey}  | {endOfTable, undefined}
 %%-----------------------------------------------------------------
 get_next_index(Name, RowIndex) ->
     Tree = mnesia_lib:val({Name, {index, snmp}}),
     case b_lookup_next(Tree, RowIndex) of
-	{ok, {NextIndex, _Key}} ->
-	    {ok, NextIndex};
+	{ok, R} ->
+	    R;
 	_ ->
-	    endOfTable
+	    {endOfTable,undefined}
     end.
 
 %%-----------------------------------------------------------------
@@ -187,85 +220,37 @@ get_mnesia_key(Name, RowIndex) ->
 	    undefined
     end.
 
+
 %%-----------------------------------------------------------------
-%% Encapsulate a bplus_tree in a process.
-%%-----------------------------------------------------------------
+%% Internal implementation, ordered_set ets.
 
-b_new(MnesiaTab, Us) ->
-    case supervisor:start_child(mnesia_snmp_sup, [MnesiaTab, Us]) of
-	{ok, Tree} ->
-	    Tree;
-	{error, Reason} ->
-	    exit({badsnmp, MnesiaTab, Reason})
-    end.
+b_new(_Tab, _Us) ->
+    mnesia_monitor:unsafe_mktab(?MODULE, [public, ordered_set]).
 
-start(MnesiaTab, Us) ->
-    Name = {mnesia_snmp, MnesiaTab},
-    mnesia_monitor:start_proc(Name, ?MODULE, b_init, [self(), Us]).
-
-b_insert(Tree, Key, Val) -> Tree ! {insert, Key, Val}.
-b_delete(Tree, Key) -> Tree ! {delete, Key}.
-b_lookup(Tree, Key) ->
-    Tree ! {lookup, self(), Key},
-    receive
-	{bplus_res, Res} ->
-	    Res
-    end.
-b_lookup_next(Tree, Key) ->
-    Tree ! {lookup_next, self(), Key},
-    receive
-	{bplus_res, Res} ->
-	    Res
-    end.
+b_delete_tree(Tree) ->
+    ets:delete(Tree).  %% Close via mnesia_monitor ?
 
 b_clear(Tree) ->
-    Tree ! clear,
-    ok.
+    ets:delete_all_objects(Tree).
 
-b_init(Parent, Us) ->
-    %% Do not trap exit
-    Tree = snmp_index:new(Us),
-    proc_lib:init_ack(Parent, {ok, self()}),
-    b_loop(Parent, Tree, Us).
+b_insert(Tree, SnmpKey, MnesiaKey) ->
+    ets:insert(Tree, {SnmpKey, MnesiaKey}).
 
-b_loop(Parent, Tree, Us) ->
-    receive
-	{insert, Key, Val} ->
-	    NTree = snmp_index:insert(Tree, Key, Val),
-	    b_loop(Parent, NTree, Us);
-	{delete, Key} ->
-	    NTree = snmp_index:delete(Tree, Key),
-	    b_loop(Parent, NTree, Us);
-	{lookup, From, Key} ->
-	    Res = snmp_index:get(Tree, Key),
-	    From ! {bplus_res, Res},
-	    b_loop(Parent, Tree, Us);
-	{lookup_next, From, Key} ->
-	    Res = snmp_index:get_next(Tree, Key),
-	    From ! {bplus_res, Res},
-	    b_loop(Parent, Tree, Us);
-	clear ->
-	    catch snmp_index:delete(Tree), %% Catch because delete/1 is not 
-	    NewTree = snmp_index:new(Us),  %% available in old snmp (before R5)
-	    b_loop(Parent, NewTree, Us);
-	
-	{'EXIT', Parent, Reason} ->
-	    exit(Reason);
+b_delete(Tree, SnmpKey) ->
+    ets:delete(Tree, SnmpKey).
 
-	{system, From, Msg} ->
-	    mnesia_lib:dbg_out("~p got {system, ~p, ~p}~n", [?MODULE, From, Msg]),
-	    sys:handle_system_msg(Msg, From, Parent, ?MODULE, [], {Tree, Us})
-	
+b_lookup(Tree, RowIndex) ->
+    case ets:lookup(Tree, RowIndex) of
+	[X] ->
+	    {ok, X};
+	_ ->
+	    undefined
     end.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% System upgrade
-
-system_continue(Parent, _Debug, {Tree, Us}) ->
-    b_loop(Parent, Tree, Us).
-
-system_terminate(Reason, _Parent, _Debug, _Tree) ->
-    exit(Reason).
-
-system_code_change(State, _Module, _OldVsn, _Extra) ->
-    {ok, State}.
+b_lookup_next(Tree,RowIndex) ->
+    case ets:next(Tree, RowIndex) of
+	'$end_of_table' ->
+	    undefined;
+	Key ->
+	    b_lookup(Tree, Key)
+    end.

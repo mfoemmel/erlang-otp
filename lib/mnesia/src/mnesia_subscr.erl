@@ -207,9 +207,8 @@ call(Msg) ->
                 {'EXIT', _Pid, _Reason} ->
                     {error, {node_not_running, node()}}
             after 0 ->
-                    ignore
-            end,
-	    Res
+                    Res
+            end
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

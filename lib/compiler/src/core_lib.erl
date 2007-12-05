@@ -386,14 +386,19 @@ mapfold_def_list(F, Acc, L) ->
 %% is_var_used(VarName, Expr) -> true | false.
 %%  Test if the variable VarName is used in Expr.
 
-is_var_used(V, B) -> vu_body(V, B).
+is_var_used(V, B) -> vu_expr(V, B).
 
-vu_body(V, #c_values{es=Es}) ->
+vu_expr(V, #c_values{es=Es}) ->
     vu_expr_list(V, Es);
-vu_body(V, Body) ->
-    vu_expr(V, Body).
-
 vu_expr(V, #c_var{name=V2}) -> V =:= V2;
+vu_expr(V, #c_alias{var=V2,pat=Pat}) ->
+    %% XXX Must handle aliases in expressions because of sys_core_fold:kill_types/2,
+    %% that uses a pattern as if it was an expression.
+    case V =:= V2 of
+	true -> true;
+	false -> vu_expr(V, Pat)
+    end;
+vu_expr(_, #c_literal{}) -> false;
 vu_expr(V, #c_cons{hd=H,tl=T}) ->
     case vu_expr(V, H) of
 	true -> true;
@@ -407,27 +412,28 @@ vu_expr(V, #c_fun{vars=Vs,body=B}) ->
     %% Variables in fun shadow previous variables
     case vu_var_list(V, Vs) of
 	true -> false;
-	false -> vu_body(V, B)
+	false -> vu_expr(V, B)
     end;
+vu_expr(_, #c_fname{}) -> false;
 vu_expr(V, #c_let{vars=Vs,arg=Arg,body=B}) ->
-    case vu_body(V, Arg) of
+    case vu_expr(V, Arg) of
 	true -> true;
 	false ->
 	    %% Variables in let shadow previous variables.
 	    case vu_var_list(V, Vs) of
 		true -> false;
-		false -> vu_body(V, B)
+		false -> vu_expr(V, B)
 	    end
     end;
 vu_expr(V, #c_letrec{defs=Fs,body=B}) ->
-    case lists:any(fun ({_,Fb}) -> vu_body(V, Fb) end, Fs) of
+    case lists:any(fun ({_,Fb}) -> vu_expr(V, Fb) end, Fs) of
 	true -> true;
-	false -> vu_body(V, B)
+	false -> vu_expr(V, B)
     end;
 vu_expr(V, #c_seq{arg=Arg,body=B}) ->
     case vu_expr(V, Arg) of
 	true -> true;
-	false -> vu_body(V, B)
+	false -> vu_expr(V, B)
     end;
 vu_expr(V, #c_case{arg=Arg,clauses=Cs}) ->
     case vu_expr(V, Arg) of
@@ -440,7 +446,7 @@ vu_expr(V, #c_receive{clauses=Cs,timeout=T,action=A}) ->
 	false ->
 	    case vu_expr(V, T) of
 		true -> true;
-		false -> vu_body(V, A)
+		false -> vu_expr(V, A)
 	    end
     end;
 vu_expr(V, #c_apply{op=Op,args=As}) ->
@@ -450,25 +456,24 @@ vu_expr(V, #c_call{module=M,name=N,args=As}) ->
 vu_expr(V, #c_primop{args=As}) ->		%Name is an atom
     vu_expr_list(V, As);
 vu_expr(V, #c_catch{body=B}) ->
-    vu_body(V, B);
+    vu_expr(V, B);
 vu_expr(V, #c_try{arg=E,vars=Vs,body=B,evars=Evs,handler=H}) ->
-    case vu_body(V, E) of
+    case vu_expr(V, E) of
 	true -> true;
 	false ->
 	    %% Variables shadow previous ones.
 	    case case vu_var_list(V, Vs) of
 		     true -> false;
-		     false -> vu_body(V, B)
+		     false -> vu_expr(V, B)
 		 end of
 		true -> true;
 		false ->
 		    case vu_var_list(V, Evs) of
 			true -> false;
-			false -> vu_body(V, H)
+			false -> vu_expr(V, H)
 		    end
 	    end
-    end;
-vu_expr(_, _) -> false.				%Everything else
+    end.
 
 vu_expr_list(V, Es) ->
     lists:any(fun(E) -> vu_expr(V, E) end, Es).
@@ -490,9 +495,10 @@ vu_clause(V, #c_clause{pats=Ps,guard=G,body=B}) ->
 	{true,_Shad} -> true;			%It is used
 	{false,true} -> false;			%Shadowed
 	{false,false} ->			%Not affected
+	    %% Neither used nor shadowed. Check guard and body.
 	    case vu_expr(V, G) of
 		true -> true;
-		false ->vu_body(V, B)
+		false -> vu_expr(V, B)
 	    end
     end.
 
@@ -503,14 +509,14 @@ vu_clauses(V, Cs) ->
 %% vu_pattern_list(VarName, [Pattern]) -> {Used,Shadow}.
 %%  Binaries complicate patterns as a variable can both be properly
 %%  used, in a bit segment size, and shadow.  They can also do both.
-
+ 
 %%vu_pattern(V, Pat) -> vu_pattern(V, Pat, {false,false}).
 
-vu_pattern(V, #c_var{name=V2}, St) ->
-    setelement(2, St, V =:= V2);
+vu_pattern(V, #c_var{name=V2}, {Used,_}) ->
+    {Used,V =:= V2};
 vu_pattern(V, #c_cons{hd=H,tl=T}, St0) ->
     case vu_pattern(V, H, St0) of
-	{true,true}=St1 -> St1;			%Nothing more to know
+	{true,_}=St1 -> St1;			%Nothing more to know
 	St1 -> vu_pattern(V, T, St1)
     end;
 vu_pattern(V, #c_tuple{es=Es}, St) ->
@@ -519,7 +525,7 @@ vu_pattern(V, #c_binary{segments=Ss}, St) ->
     vu_pat_seg_list(V, Ss, St);
 vu_pattern(V, #c_alias{var=Var,pat=P}, St0) ->
     case vu_pattern(V, Var, St0) of
-	{true,true}=St1 -> St1;
+	{true,_}=St1 -> St1;
 	St1 -> vu_pattern(V, P, St1)
     end;
 vu_pattern(_, _, St) -> St.
@@ -530,12 +536,15 @@ vu_pattern_list(V, Ps, St0) ->
     lists:foldl(fun(P, St) -> vu_pattern(V, P, St) end, St0, Ps).
 
 vu_pat_seg_list(V, Ss, St) ->
-    lists:foldl(fun (#c_bitstr{val=Val,size=Size}, St0) ->
+    lists:foldl(fun(_, {true,_}=St0) -> St0;
+		   (#c_bitstr{val=Val,size=Size}, St0) ->
 			case vu_pattern(V, Val, St0) of
-			    {true,true}=St1 -> St1;
-			    {_Used,Shad} -> {vu_expr(V, Size),Shad}
+			    {true,_}=St1 -> St1;
+			    {false,Shad} ->
+				{vu_expr(V, Size),Shad}
 			end
 		end, St, Ss).
+    
 
 %% vu_var_list(VarName, [Var]) -> true | false.
 

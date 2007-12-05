@@ -37,6 +37,7 @@
 	 try_to_adopt/3,confirm_connection/2,get_node_info/1,
 	 suspend/2,call_suspend/2,cancel_suspension/1,change_options/2,
 	 clear/2,clear_all_tp/1,
+	 flush/1,
 	 trace_patterns_parallel/3,
 	 trace_flags_parallel/3,trace_flags_parallel/2,trace_flags_parallel/1,
 	 meta_tracer_call_parallel/2,
@@ -400,6 +401,13 @@ clear(Pid,Options) ->
     call(Pid,{clear,Options}).
 %% ------------------------------------------------------------------------------
 
+%% flush(Pid)=ok | {error,Reason}
+%% Sends the flush command to the trace-port, if we are using a trace-port and
+%% are tracing.
+flush(Pid) ->
+    call(Pid,flush).
+%% ------------------------------------------------------------------------------
+
 %% trace_patterns_parallel(RTpids,Args,Flags)=[{Node,Answer},...]
 %%   RTpids=[{RTpid,Node},...] or [{Error,Node},...]
 %%   Args=[Arg,...]
@@ -411,7 +419,7 @@ clear(Pid,Options) ->
 %% API function for the control component sending trace-patterns to a list of
 %% runtime components. Returns a [{Node,Answer},...] list in the same order.
 trace_patterns_parallel(RTpids,Args,Flags) ->     % Same args and flags for all.
-    call_parallel(lists:map(fun({Pid,Node})when is_pid(Pid)->{Pid,Node,{tp,Args,Flags}};
+    call_parallel(lists:map(fun({Pid,Node})when pid(Pid)->{Pid,Node,{tp,Args,Flags}};
 			       (Error)-> Error
 			    end,
 			    RTpids)).
@@ -437,13 +445,13 @@ trace_patterns_parallel(RTpids,Args,Flags) ->     % Same args and flags for all.
 %% API function used by the control component to send flags to a list of runtime
 %% components. Returns a list of [{Node,Answer},... ] in the same order.
 trace_flags_parallel(RTpids,Args,How) ->     % Same args for every node!
-    call_parallel(lists:map(fun({Pid,Node})when is_pid(Pid)->{Pid,Node,{tf,Args,How}};
+    call_parallel(lists:map(fun({Pid,Node})when pid(Pid)->{Pid,Node,{tf,Args,How}};
 			       (Error)-> Error
 			    end,
 			    RTpids)).
 
 trace_flags_parallel(RTpidArgs,How) ->       % Different args but same how.
-    call_parallel(lists:map(fun({Pid,Node,Args})when is_pid(Pid)->
+    call_parallel(lists:map(fun({Pid,Node,Args})when pid(Pid)->
 				    {Pid,Node,{tf,Args,How}};
 			       (Error)->
 				    Error
@@ -451,7 +459,7 @@ trace_flags_parallel(RTpidArgs,How) ->       % Different args but same how.
 			    RTpidArgs)).
 
 trace_flags_parallel(RTpidArgsHow) ->        % Both different args and hows.
-    call_parallel(lists:map(fun({Pid,Node,Args,How})when is_pid(Pid)->
+    call_parallel(lists:map(fun({Pid,Node,Args,How})when pid(Pid)->
 				    {Pid,Node,{tf,Args,How}};
 			       (Error)->
 				    Error
@@ -471,7 +479,7 @@ trace_flags_parallel(RTpidArgsHow) ->        % Both different args and hows.
 %% that there is an error with a particular node, the error answer can be placed
 %% in the RTpids list from the start.
 meta_tracer_call_parallel(RTpids,Args) ->    % Same args for all nodes.
-    call_parallel(lists:map(fun({Pid,Node})when is_pid(Pid)->
+    call_parallel(lists:map(fun({Pid,Node})when pid(Pid)->
 				    {Pid,Node,{meta_tracer_call,Args}};
 			       (Error)->
 				    Error
@@ -747,16 +755,16 @@ ctf(TraceConfList) ->
 %% be run by a client on a different node.
 %% Note that we must use two different functions for calling a named process and
 %% calling the runtime component at a specified node.
-call(Pid,Request) when is_pid(Pid) ->
+call(Pid,Request) when pid(Pid) ->
     call_2(Pid,Request);
 call(Node,Request) when Node==node() ->     % To our node!
     call_2(?MODULE,Request);
-call(Node,Request) when is_atom(Node) ->
+call(Node,Request) when atom(Node) ->
     call_2({?MODULE,Node},Request);
 call(To,_Request) ->
     {error,{badarg,To}}.
 
-call_regname(Name,Request) when is_atom(Name) -> % To a registered name.
+call_regname(Name,Request) when atom(Name) -> % To a registered name.
     call_2(Name,Request).
 
 call_2(To,Request) ->
@@ -796,7 +804,7 @@ call_parallel(RTspec) ->
     Replies=call_parallel_3(Ref,Pending,Nr,[],[]),
     call_parallel_build_reply(RTspec,1,Replies).
 
-call_parallel_2([{Pid,Node,Request}|Rest],Ref,Nr,Pending) when is_pid(Pid) ->
+call_parallel_2([{Pid,Node,Request}|Rest],Ref,Nr,Pending) when pid(Pid) ->
     Pid ! {Request,self(),{Ref,Nr+1}},
     MRef=erlang:monitor(process,Pid),        % So we won't wait for ever for it.
     call_parallel_2(Rest,Ref,Nr+1,[{Nr+1,Node,MRef}|Pending]);
@@ -841,7 +849,7 @@ call_parallel_3(Ref,Pending,NrOfPending,Replies,DownMsgs) ->
 %% Help function which build up the [{Node,Reply},...] list in the same order as RTspec.
 call_parallel_build_reply([],_,_) ->
     [];
-call_parallel_build_reply([{Pid,Node,_Request}|Rest],Nr,Replies) when is_pid(Pid) ->
+call_parallel_build_reply([{Pid,Node,_Request}|Rest],Nr,Replies) when pid(Pid) ->
     {value,{_Nr,_Node,Reply}}=lists:keysearch(Nr,1,Replies),
     [{Node,Reply}|call_parallel_build_reply(Rest,Nr+1,Replies)];
 call_parallel_build_reply([{{error,Reason},Node}|Rest],Nr,Replies) ->
@@ -850,12 +858,12 @@ call_parallel_build_reply([_Faulty|Rest],Nr,Replies) ->
     call_parallel_build_reply(Rest,Nr,Replies).
 %% ------------------------------------------------------------------------------
 
-cast(Pid,Request) when is_pid(Pid) ->
+cast(Pid,Request) when pid(Pid) ->
     cast2(Pid,Request);
 cast(Node,Request) when Node==node() ->
     catch cast2(?MODULE,Request),
     ok;
-cast(Node,Request) when is_atom(Node) ->
+cast(Node,Request) when atom(Node) ->
     catch cast2({?MODULE,Node},Request),
     ok;
 cast(BadAddress,_Request) ->
@@ -925,7 +933,7 @@ auto_init(AutoModArgs,Parent) ->
 
 auto_init_connect_control(LD1) ->
     case auto_init_connect_find_pid(LD1#rt.dependency) of
-	Pid when is_pid(Pid) ->                 % There is a control component.
+	Pid when pid(Pid) ->                 % There is a control component.
 	    CtrlRef=erlang:monitor(process,Pid),
 	    Pid ! {connect,node(),self(),LD1#rt.vsn,LD1#rt.tag},
 	    {ok,LD1#rt{ctrl_ref=CtrlRef,ctrl=Pid}};
@@ -936,14 +944,14 @@ auto_init_connect_control(LD1) ->
 %% Help function which finds the pid of the control component.
 auto_init_connect_find_pid({_TimeOut,Node}) when Node==node() ->
     whereis(?CTRL);
-auto_init_connect_find_pid({_TimeOut,Node}) when is_atom(Node) ->
+auto_init_connect_find_pid({_TimeOut,Node}) when atom(Node) ->
     rpc:call(Node,erlang,whereis,[?CTRL]);
 auto_init_connect_find_pid(_) ->             % Node is not a proper node.
     undefined.                               % Act as could not find control comp.
 
 %% Help function checking that the parameter is reasonable to be used as
 %% spawn_link argument.
-auto_init_check_mfa({M,F,A}) when is_atom(M),is_atom(F),is_list(A) ->
+auto_init_check_mfa({M,F,A}) when atom(M),atom(F),list(A) ->
     {ok,{M,F,A}};
 auto_init_check_mfa(_) ->
     false.
@@ -1019,9 +1027,9 @@ loop(LoopData,Timeout) ->
 			if
 			    LoopData#rt.status==running -> 
 				case {LoopData#rt.tracer_port,LoopData#rt.handler} of
-				    {Port,_} when is_port(Port) ->
+				    {Port,_} when port(Port) ->
 					do_set_trace_flags(Port,Args,How);
-				    {_,{Handler,_D}} when is_function(Handler) ->
+				    {_,{Handler,_D}} when function(Handler) ->
 					do_set_trace_flags(self(),Args,How);
 				    _ -> 
 					{error,no_tracer}
@@ -1037,7 +1045,7 @@ loop(LoopData,Timeout) ->
 	    if
 		LoopData#rt.status==running ->
 		    case LoopData#rt.meta_tracer of
-			MPid when is_pid(MPid) ->
+			MPid when pid(MPid) ->
 			    Reply=do_meta_pattern(MPid,Args),
 			    reply_and_loop(Reply,From,MRef,LoopData);
 			_ ->
@@ -1092,6 +1100,19 @@ loop(LoopData,Timeout) ->
 	{{clear,Options},From,MRef} ->
 	    NewLoopData=do_clear(LoopData,Options),
 	    reply_and_loop({ok,{new,NewLoopData#rt.status}},From,MRef,NewLoopData);
+	{flush,From,MRef} ->
+	    case LoopData#rt.state of
+		tracing ->                  % Can only flush if we are tracing.
+		    if
+			is_port(LoopData#rt.tracer_port) ->
+			    trace_port_control(LoopData#rt.tracer_port,flush),
+			    reply_and_loop(ok,From,MRef,LoopData);
+			true ->             % Not necessary but lets pretend.
+			    reply_and_loop(ok,From,MRef,LoopData)
+		    end;
+		State ->
+		    reply_and_loop({error,{not_tracing,State}},From,MRef,LoopData)
+	    end;
 	{list_logs,From,MRef} ->
 	    TracerData=LoopData#rt.tracerdata, % Current tracerdata.
 	    if
@@ -1153,7 +1174,7 @@ loop(LoopData,Timeout) ->
 		stop ->                      % Can't run alone with these options!
 		    terminate_overload(LoopData),
 		    From ! {ok,MRef};        % Don't care if From not a proper pid!
-		NewLoopData when is_record(NewLoopData,rt) ->
+		NewLoopData when record(NewLoopData,rt) ->
 		    reply_and_loop(ok,From,MRef,NewLoopData)
 	    end;
 	{get_status,From,MRef} ->
@@ -1182,9 +1203,9 @@ loop(LoopData,Timeout) ->
 		exit ->
 		    terminate_overload(LoopData),
 		    exit(Reason);
-		NewLoopData when is_record(NewLoopData,rt) ->
+		NewLoopData when record(NewLoopData,rt) ->
 		    loop1(NewLoopData);
-		{NewLoopData,NewTimeOut} when is_record(NewLoopData,rt) ->
+		{NewLoopData,NewTimeOut} when record(NewLoopData,rt) ->
 		    loop(NewLoopData,NewTimeOut)
 	    end;
 	Other ->                            % Check if it concerns overload.
@@ -1205,7 +1226,7 @@ loop(LoopData,Timeout) ->
 	    loop1(LoopData)
     end.
 
-reply_and_loop(Reply,To,MRef,LoopData) when is_pid(To) -> 
+reply_and_loop(Reply,To,MRef,LoopData) when pid(To) -> 
     To ! {Reply,MRef},
     loop1(LoopData);
 reply_and_loop(_,_,_,LoopData) ->            % Used together with incoming casts.
@@ -1234,7 +1255,9 @@ fetch_init(Parent,Files,CollectPid,ChunkSize) ->
 	    MRef=erlang:monitor(process,CollectPid),
 	    fetch_loop(Parent,RestFiles,CollectPid,ChunkSize,FileName,FD,MRef);
 	done ->
-	    fetch_end(CollectPid)
+	    fetch_end(CollectPid);
+	error ->
+	    fetch_incomplete(CollectPid)
     end.
 
 fetch_loop(Parent,Files,CollectPid,ChunkSize,FName,FD,MRef) ->
@@ -1257,6 +1280,9 @@ fetch_loop(Parent,Files,CollectPid,ChunkSize,FName,FD,MRef) ->
 		    case fetch_wait_for_chunk_ack(CollectPid,MRef) of
 			ok ->                % Collector ready to receive next chunk.
 			    fetch_loop(Parent,Files,CollectPid,ChunkSize,FName,FD,MRef);
+			cancel ->            % Send no more files!
+			    file:close(FD),  % Close file, send incomplete, terminate!
+			    fetch_incomplete(CollectPid);
 			'DOWN' ->            % Collector has terminate, stop!
 			    file:close(FD)   % Close file and terminate.
 		    end;
@@ -1268,18 +1294,14 @@ fetch_loop(Parent,Files,CollectPid,ChunkSize,FName,FD,MRef) ->
 			    fetch_loop(Parent,RestFiles,CollectPid,
 				       ChunkSize,NewFName,NewFD,MRef);
 			done ->
-			    fetch_end(CollectPid)
+			    fetch_end(CollectPid);
+			error ->
+			    fetch_incomplete(CollectPid)
 		    end;
-		{error,Reason} ->
+		{error,Reason} ->            % Do not continue.
 		    file:close(FD),
 		    fetch_send_readerror(CollectPid,FName,Reason),
-		    case fetch_open_file(Files,CollectPid) of
-			{ok,NewFName,NewFD,RestFiles} ->
-			    fetch_loop(Parent,RestFiles,CollectPid,
-				       ChunkSize,NewFName,NewFD,MRef);
-			done ->
-			    fetch_end(CollectPid)
-		    end
+		    fetch_incomplete(CollectPid)
 	    end
     end.
 %% -----------------------------------------------------------------------------
@@ -1294,12 +1316,12 @@ fetch_open_file([{FType,Dir,FileName}|RestFiles],CollectPid) ->
 	{ok,FD} ->
 	    CollectPid ! {node(),open,{FType,FileName}},
 	    {ok,FileName,FD,RestFiles};
-	{error,Reason} ->
-	    CollectPid ! {node(),{error,{file_open,{Reason,FileName}}}},
-	    fetch_open_file(RestFiles,CollectPid);
-	{'EXIT',Reason} ->                   % Faulty Dir or FileName.
-	    CollectPid ! {node(),{error,{file_open,{Reason,FileName}}}},
-	    fetch_open_file(RestFiles,CollectPid)
+	{error,_Reason} ->
+	    CollectPid ! {node(),open_failure,{FType,FileName}},
+	    error;
+	{'EXIT',_Reason} ->                   % Faulty Dir or FileName.
+	    CollectPid ! {node(),open_failure,{FType,FileName}},
+	    error
     end;    
 fetch_open_file([],_CollectPid) ->
     done.
@@ -1324,7 +1346,7 @@ fetch_send_readerror(CollectPid,FName,Reason) ->
 %% -----------------------------------------------------------------------------
 
 fetch_incomplete(CollectPid) ->
-    CollectPid ! {node(),{error,incomplete}}.
+    CollectPid ! {node(),incomplete}.
 %% -----------------------------------------------------------------------------
 
 %% Help function waiting for the collector to respond that it is ready to receive
@@ -1334,6 +1356,8 @@ fetch_wait_for_chunk_ack(CollectPid,MRef) ->
     receive
 	{CollectPid,chunk_ack} ->
 	    ok;
+	{CollectPid,cancel_transmission} ->  % Some problem at collector side.
+	    cancel;
 	{'DOWN',MRef,process,_,_} ->         % The collector terminated.
 	    'DOWN'
     end.
@@ -1358,6 +1382,9 @@ do_check_overload(LD,Data) ->
 	{suspend,Reason} ->                  % Emergency! suspend, suspend!
 	    NewLD=do_suspend(LD,Reason),
 	    {NewLD,infinity};                % No need to do load-checks now!
+	{new,NewData,Interval} ->            % The overload was restarted or something.
+	    NextLoadCheck=add_to_now(now(),Interval),
+	    {LD#rt{overload_data=NewData,next_loadcheck=NextLoadCheck},Interval};
 	error ->                             % Inhibit overload check then.
 	    {LD#rt{overload=?NO_LOADCHECK},infinity}
     end.
@@ -1366,13 +1393,15 @@ do_check_overload(LD,Data) ->
 %% {suspend,Reason}, 'error' ir 'ignore'.
 do_check_overload_2({{Mod,Func},Interval,_,_},Data) ->
     do_check_overload_3(Interval,catch Mod:Func(Data));
-do_check_overload_2({Fun,Interval,_,_},Data) when is_function(Fun) ->
+do_check_overload_2({Fun,Interval,_,_},Data) when function(Fun) ->
     do_check_overload_3(Interval,catch Fun(Data));
 do_check_overload_2(_,_) ->                  % Bad loadcheck configuration.
     error.                                   % Stop using load checks then.
 
 do_check_overload_3(Interval,ok) ->
     {ok,Interval};
+do_check_overload_3(Interval,{new,NewData}) ->
+    {new,NewData,Interval};
 do_check_overload_3(_Interval,{suspend,Reason}) ->
     {suspend,Reason};
 do_check_overload_3(_Interval,ignore) ->     % Loadcheck not triggered.
@@ -1392,11 +1421,11 @@ do_set_trace_patterns(Args,Flags) ->
 
 do_set_trace_patterns_2([{M,F,Arity,MS}|Rest],Flags,Replies) -> % Option-less.
     do_set_trace_patterns_2([{M,F,Arity,MS,[]}|Rest],Flags,Replies);
-do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when is_atom(M) ->
+do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when atom(M) ->
     case load_module_on_option(M,Opts) of
 	true ->                             % Already present, loaded or no option!
 	    case catch erlang:trace_pattern({M,F,Arity},MS,Flags) of
-		No when is_integer(No) ->
+		No when integer(No) ->
 		    do_set_trace_patterns_2(Rest,Flags,[No|Replies]);
 		{'EXIT',Reason} ->
 		    do_set_trace_patterns_2(Rest,
@@ -1407,11 +1436,11 @@ do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when is_atom(M
 	false ->                            % Module not present, or not found!
 	    do_set_trace_patterns_2(Rest,Flags,[0|Replies])
     end;
-do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when is_list(M) ->
+do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when list(M) ->
     case check_pattern_parameters(void,F,Arity,MS) of % We don't want to repeat bad params.
 	ok ->
 	    case inviso_rt_lib:expand_regexp(M,Opts) of % Get a list of real modulnames.
-		Mods when is_list(Mods) ->
+		Mods when list(Mods) ->
 		    MoreReplies=
 			do_set_trace_patterns_2(lists:map(fun(Mod)->
 								  {Mod,F,Arity,MS,Opts}
@@ -1429,11 +1458,11 @@ do_set_trace_patterns_2([{M,F,Arity,MS,Opts}|Rest],Flags,Replies) when is_list(M
 				    [{error,{bad_trace_args,{M,F,Arity,MS}}}|Replies])
     end;
 do_set_trace_patterns_2([{{Dir,M},F,Arity,MS,Opts}|Rest],Flags,Replies)
-  when is_list(Dir),is_list(M) ->
+  when list(Dir),list(M) ->
     case check_pattern_parameters(void,F,Arity,MS) of % We don't want to repeat bad params.
 	ok ->
 	    case inviso_rt_lib:expand_regexp(Dir,M,Opts) of % Get a list of real modulnames.
-		Mods when is_list(Mods) ->
+		Mods when list(Mods) ->
 		    MoreReplies=
 			do_set_trace_patterns_2(lists:map(fun(Mod)->
 								  {Mod,F,Arity,MS,Opts}
@@ -1467,7 +1496,7 @@ do_set_trace_flags(Tracer,Args,How) ->
 		case check_traceflag_pidspec(Proc) of
 		    {ok,Proc2} ->            % Reg-names converted.
 			case check_flags(Flags) of
-			    Flags2 when is_list(Flags2) -> % No error!
+			    Flags2 when list(Flags2) -> % No error!
 				case (catch
 					 case How of
 					     true ->
@@ -1479,11 +1508,11 @@ do_set_trace_flags(Tracer,Args,How) ->
 							      false,
 							      Flags2)
 					 end) of
-				    N when is_integer(N) ->
+				    N when integer(N) ->
 					N;
 				    {'EXIT',Reason} ->
 					if
-					    is_pid(Proc2) ->
+					    pid(Proc2) ->
 						0;    % Proc2 not alive or not at this node!
 					    true ->   % Otherwise, just error!
 						{error,
@@ -1531,7 +1560,7 @@ do_clear_trace_patterns() ->
 %% opening appropriate logfiles, starting meta-tracer. There must be one
 %% clause here for every "type" of logging we want to be able to do.
 %% Returns the Reply to be forwarded to the caller.
-do_init_tracing(LoopData,TD,{HandlerFun,Data},TiTD) when is_function(HandlerFun) ->
+do_init_tracing(LoopData,TD,{HandlerFun,Data},TiTD) when function(HandlerFun) ->
     {NewLoopData,Reply}=
 	case do_init_metatracing(TiTD,self()) of
 	    {ok,MetaPid} ->
@@ -1630,21 +1659,21 @@ do_stop_tracing(LoopData) ->
     send_event(state_change,NewLoopData3),
     NewLoopData3.
 
-do_stop_tracing_tracelog(LoopData=#rt{tracer_port=Port}) when is_port(Port) ->
+do_stop_tracing_tracelog(LoopData=#rt{tracer_port=Port}) when port(Port) ->
     trace_port_control(Port,flush),         % Write buffered trace messages.
     catch port_close(Port),
     LoopData#rt{tracer_port=undefined};
 do_stop_tracing_tracelog(LoopData) ->
     LoopData#rt{handler=undefined}.
 
-do_stop_tracing_metatracing(LoopData=#rt{meta_tracer=MPid}) when is_pid(MPid) ->
+do_stop_tracing_metatracing(LoopData=#rt{meta_tracer=MPid}) when pid(MPid) ->
     inviso_rt_meta:stop(MPid),
     LoopData#rt{meta_tracer=undefined};
 do_stop_tracing_metatracing(LoopData) ->    % No meta tracer running!
     LoopData.
 
 %% Help function killing the autostarter, if one is active.
-do_stop_tracing_kill_autostarter(P) when is_pid(P) ->
+do_stop_tracing_kill_autostarter(P) when pid(P) ->
     exit(P,stop_tracing);
 do_stop_tracing_kill_autostarter(_) ->      % No autostarter, do nothing.
     true.
@@ -1661,7 +1690,7 @@ do_suspend(LD,Reason) ->
     send_event(state_change,NewLD),         % Notify subscribers.
     NewLD.
 
-do_suspend_metatracer(MetaTracer) when is_pid(MetaTracer) ->
+do_suspend_metatracer(MetaTracer) when pid(MetaTracer) ->
     inviso_rt_meta:suspend(MetaTracer);     % This makes it suspended.
 do_suspend_metatracer(_) ->
     true.
@@ -1675,7 +1704,7 @@ do_suspend_fetchers([]) ->
 
 %% Function that stops all tracing, removes all trace-patterns and removes all
 %% logfiles. The idea is to return the runtime component to the 'new' state.
-do_clear(LoopData,Opts) when is_list(Opts) ->
+do_clear(LoopData,Opts) when list(Opts) ->
     NewLoopData=do_stop_tracing(LoopData),  % First stop tracing, if tracing.
     case lists:member(keep_trace_patterns,Opts) of
 	false ->
@@ -1736,7 +1765,7 @@ do_fetch_log(LD,CollectPid,What) ->
 		    {{ok,FetcherPid},add_fetcher_ld(FetcherPid,LD)};
 		tracerdata ->
 		    case do_fetch_log_tracerdata(CollectPid,What) of
-			{Reply,FetcherPid} when is_pid(FetcherPid) ->
+			{Reply,FetcherPid} when pid(FetcherPid) ->
 			    {Reply,add_fetcher_ld(FetcherPid,LD)};
 			{Reply,_} ->        % No fetch process was started.
 			    {Reply,LD}
@@ -1818,9 +1847,9 @@ do_delete_logs(TracerDataOrLogList) ->
 	    end;
 	files ->                              % It is [{trace_log,Dir,Files},..
 	    if
-		is_list(hd(TracerDataOrLogList)) -> % Just a list of files.
+		list(hd(TracerDataOrLogList)) -> % Just a list of files.
 		    {ok,delete_files(".",TracerDataOrLogList)};
-		is_tuple(hd(TracerDataOrLogList)) -> % A "modern" logspec.
+		tuple(hd(TracerDataOrLogList)) -> % A "modern" logspec.
 		    case {lists:keysearch(trace_log,1,TracerDataOrLogList),
 			  lists:keysearch(ti_log,1,TracerDataOrLogList)} of
 			{false,false} ->      % Hmm, no logs specified!
@@ -2005,7 +2034,7 @@ act_on_exit_overload(Pid,Reason,LoopData) ->
 %% Help function which calculates a new now-tuple by adding Interval milliseconds
 %% to the first argument. Note that Interval may be 'infinity' too.
 %% Returns a new now-tuple or "bigvalue" which is greater than any now-tuple.
-add_to_now({MegSec,Sec,MicroSec},Interval) when is_integer(Interval) ->
+add_to_now({MegSec,Sec,MicroSec},Interval) when integer(Interval) ->
     NewSec=Sec+(Interval div 1000),
     if
 	NewSec>=1000000 ->
@@ -2040,10 +2069,10 @@ collect_node_info(#rt{vsn=VSN,state=State,status=Status,tag=Tag}) ->
 
 %% Help function sending information to the control component that state/status
 %% change has occurred. Returns nothing significant.
-send_event(state_change,LoopData=#rt{ctrl=CtrlPid}) when is_pid(CtrlPid) ->
+send_event(state_change,LoopData=#rt{ctrl=CtrlPid}) when pid(CtrlPid) ->
     Event={trace_event,{state_change,node(),{LoopData#rt.state,LoopData#rt.status}}},
     CtrlPid ! Event;
-send_event(Event,#rt{ctrl=CtrlPid}) when is_pid(CtrlPid) ->
+send_event(Event,#rt{ctrl=CtrlPid}) when pid(CtrlPid) ->
     CtrlPid ! {event,Event};
 send_event(_,_) ->                          % We have no control to send to!
     true.                                   % Maybe tracing alone after autostart.
@@ -2084,20 +2113,20 @@ terminate_overload(_) ->
 check_traceflag_pidspec(all) -> {ok,all};
 check_traceflag_pidspec(new) -> {ok,new};
 check_traceflag_pidspec(existing) -> {ok,existing};
-check_traceflag_pidspec(Name) when is_atom(Name) ->
+check_traceflag_pidspec(Name) when atom(Name) ->
     check_traceflag_pidspec({local,Name});
-check_traceflag_pidspec({local,A}) when is_atom(A) ->
+check_traceflag_pidspec({local,A}) when atom(A) ->
     case whereis(A) of
 	undefined ->                         % Then it is considered faulty.
 	    {error,{nonexistent_name,A}};
-	Pid when is_pid(Pid) ->
+	Pid when pid(Pid) ->
 	    {ok,Pid}
     end;
-check_traceflag_pidspec({global,Name}) when is_atom(Name) ->
+check_traceflag_pidspec({global,Name}) when atom(Name) ->
     case global:whereis_name(Name) of
 	undefined ->                         % Then the name does not exist at all.
 	    {error,{nonexistent_name,{global,Name}}};
-	Pid when is_pid(Pid) ->                 % Ok, but must check that it is here.
+	Pid when pid(Pid) ->                 % Ok, but must check that it is here.
 	    if
 		node()==node(Pid) ->
 		    {ok,Pid};
@@ -2105,7 +2134,7 @@ check_traceflag_pidspec({global,Name}) when is_atom(Name) ->
 		    false                    % Not an error but cant be used.
 	    end
     end;
-check_traceflag_pidspec(Pid) when is_pid(Pid) ->
+check_traceflag_pidspec(Pid) when pid(Pid) ->
     {ok,Pid};
 check_traceflag_pidspec(Proc) ->
     {error,{faulty,Proc}}.
@@ -2164,7 +2193,7 @@ check_pattern_parameters(Mod,Func,Arity,MS) ->
 %% Help function finding out if Mod is loaded, and if not, if it can successfully
 %% be loaded. The Opts list can prevent modules from being loaded.
 %% Returns 'true' or 'false'.
-load_module_on_option(Mod,Opts) when is_list(Opts) ->
+load_module_on_option(Mod,Opts) when list(Opts) ->
     case lists:member(no_loadcheck,Opts) of
 	true ->                             % Then just skip this, return true.
 	    true;
@@ -2196,18 +2225,18 @@ read_option_list([],LD) ->                  % Done, return loopdata.
     LD;
 read_option_list([{dependency,{Value,Node}}|Rest],LD) ->
     read_option_list(Rest,LD#rt{dependency={Value,Node}});
-read_option_list([{dependency,Value}|Rest],LD) when is_integer(Value);Value==infinity ->
+read_option_list([{dependency,Value}|Rest],LD) when integer(Value);Value==infinity ->
     read_option_list(Rest,LD#rt{dependency={Value,node()}});
 read_option_list([overload|Rest],LD) ->     % So that we can remove loadcheck.
     read_option_list(Rest,LD#rt{overload=?NO_LOADCHECK});
 read_option_list([{overload,{MF,Interval}}|Rest],LD)
-  when is_integer(Interval);Interval==infinity ->
+  when integer(Interval);Interval==infinity ->
     read_option_list(Rest,LD#rt{overload={MF,Interval,void,void}});
 read_option_list([{overload,{MF,Interval,InitMFA,RemoveMFA}}|Rest],LD)
-  when is_integer(Interval);Interval==infinity ->
+  when integer(Interval);Interval==infinity ->
     read_option_list(Rest,LD#rt{overload={MF,Interval,InitMFA,RemoveMFA}});
 read_option_list([{overload,Interval}|Rest],LD)
-  when is_integer(Interval);Interval==infinity ->
+  when integer(Interval);Interval==infinity ->
     read_option_list(Rest,LD#rt{overload={fun ?DEFAULT_OVERLOAD_FUNC/1,
 					  Interval,
 					  void,
@@ -2236,9 +2265,9 @@ is_list_of_files_or_tracerdata(What) ->
 	    if
 		What==[] ->
 		    false;
-		is_list(What),is_list(hd(What)) ->
+		list(What),list(hd(What)) ->
 		    files;
-		is_list(What) ->
+		list(What) ->
 		    case lists:keysearch(trace_log,1,What) of
 			{value,_} ->
 			    files;
@@ -2262,7 +2291,7 @@ is_list_of_files_or_tracerdata(What) ->
 delete_files(Dir,ListOfFiles) ->
     delete_files_2(Dir,ListOfFiles, []).
 
-delete_files_2(Dir,[File|Tail],Reply) when is_list(Dir),is_list(File) ->
+delete_files_2(Dir,[File|Tail],Reply) when list(Dir),list(File) ->
     case catch file:delete(filename:join(Dir,File)) of
 	ok ->
 	    delete_files_2(Dir,Tail,[{ok,File}|Reply]);
@@ -2279,16 +2308,16 @@ delete_files_2(_,[],Reply) ->
 
 %% Help function which lists all trace logs belonging to this tracerdata.
 %% Note that this function operates on internal LogTD structures.
-list_logs_tracelog({file,FileName}) when is_list(FileName) ->
+list_logs_tracelog({file,FileName}) when list(FileName) ->
     case file:read_file_info(FileName) of
 	{ok,_} ->                            % The file exists.
 	    {filename:dirname(FileName),[filename:basename(FileName)]};
 	_ ->                                 % The file does not exist
 	    {filename:dirname(FileName),[]}
     end;
-list_logs_tracelog({file,Wrap}) when is_tuple(Wrap),element(2,Wrap)==wrap ->
+list_logs_tracelog({file,Wrap}) when tuple(Wrap),element(2,Wrap)==wrap ->
     case {element(1,Wrap),element(3,Wrap)} of
-	{FileName,Tail} when is_list(FileName),is_list(Tail) ->
+	{FileName,Tail} when list(FileName),list(Tail) ->
 	    case catch {filename:dirname(FileName),list_wrapset(FileName,Tail)} of
 		{'EXIT',_Reason} ->          % Garbage in either lists.
 		    {"",no_log};             % Interpret as no log for tracerdata.
@@ -2307,7 +2336,7 @@ list_logs_tracelog(_) ->                     % Some fun or similar.
 %% Help function which lists all ti-files belonging to this tracerdata.
 %% Note that this function operates on the internal TiTD structure.
 list_logs_tilog(TiTD)
-  when is_tuple(TiTD),size(TiTD)>=2,element(1,TiTD)==file,is_list(element(2,TiTD)) ->
+  when tuple(TiTD),size(TiTD)>=2,element(1,TiTD)==file,list(element(2,TiTD)) ->
     FileName=element(2,TiTD),
     case file:read_file_info(FileName) of
 	{ok,_} ->                            % Yes the file exists.
@@ -2710,7 +2739,7 @@ match_0_9(L) when is_list(L) ->
 %% translated into funs or similar.
 %% Returns {ok,LogTD,TiTD} or {error,Reason}.
 %% Note that TiTD may be 'void' since TiTD is not mandatory.
-translate_td(TracerData) when is_list(TracerData) -> % Both log and ti.
+translate_td(TracerData) when list(TracerData) -> % Both log and ti.
     case translate_td_logtd(get_trace_log_tracerdata(TracerData)) of
 	{ok,LogTD} ->
 	    case translate_td_titd(get_ti_log_tracerdata(TracerData)) of
@@ -2747,19 +2776,19 @@ translate_td_logtd(Arg) ->
 %% -----------------------------------------------------------------------------
 
 %% Help function translating ti-log tracerdata.
-translate_td_titd(TiTD={file,FileName}) when is_list(FileName) ->
+translate_td_titd(TiTD={file,FileName}) when list(FileName) ->
     {ok,TiTD};
 translate_td_titd({file,FileName,
 		   {InitPublLDmfa={M1,F1,L1},
 		    RemovePublLDmf={M2,F2},
 		    CleanPublLDmf={M3,F3}}})
-  when is_list(FileName),is_atom(M1),is_atom(F1),is_atom(M2),is_atom(F2),is_list(L1),is_atom(M3),is_atom(F3) ->
+  when list(FileName),atom(M1),atom(F1),atom(M2),atom(F2),list(L1),atom(M3),atom(F3) ->
     {ok,{file,FileName,{InitPublLDmfa,RemovePublLDmf,CleanPublLDmf}}};
 translate_td_titd({file,FileName,
 		   {InitPublLDmfa={M1,F1,L1},
 		    void,
 		    CleanPublLDmf={M3,F3}}})
-  when is_list(FileName),is_atom(M1),is_atom(F1),is_list(L1),is_atom(M3),is_atom(F3) ->
+  when list(FileName),atom(M1),atom(F1),list(L1),atom(M3),atom(F3) ->
     {ok,{file,FileName,{InitPublLDmfa,void,CleanPublLDmf}}};
 translate_td_titd(false) ->                  % Means no ti-tracerdata.
     {ok,void};
@@ -2793,10 +2822,10 @@ get_ti_log_tracerdata(TracerData) ->
 %% sane.
 check_traceport_parameters(Type,Args) ->
     case {Type,Args} of
-	{file,{FileName,wrap,Tail}} when is_list(FileName),is_list(Tail) ->
+	{file,{FileName,wrap,Tail}} when list(FileName),list(Tail) ->
 	    ok;
 	{file,{FileName,wrap,Tail,WrapSize}}
-	when is_list(FileName),
+	when list(FileName),
 	is_list(Tail),
 	is_integer(WrapSize),WrapSize>=0,WrapSize< (1 bsl 32) ->
 	    ok;
@@ -2814,7 +2843,7 @@ check_traceport_parameters(Type,Args) ->
 	    ok;
 	{ip,Portno} when is_integer(Portno),Portno=<16#FFFF -> 
 	    ok;
-	{ip,{Portno,Qsiz}} when is_integer(Portno),Portno=<16#FFFF,is_integer(Qsiz) ->
+	{ip,{Portno,Qsiz}} when integer(Portno),Portno=<16#FFFF,integer(Qsiz) ->
 	    ok;
 	_ ->
 	    {error,{trace_port_args,[Type,Args]}}

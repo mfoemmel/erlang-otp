@@ -457,6 +457,8 @@ expr({'query', Line, E0}) ->
 expr({lc,Line,E0,Gs0}) ->			%R8.
     Gs = lists:map(fun ({generate,L,P0,Qs}) ->
 			   {generate,L,expr(P0),expr(Qs)};
+		       ({b_generate,L,P0,Qs}) -> %R12.
+			   {b_generate,L,expr(P0),expr(Qs)};
 		       (Expr) ->
 			   case is_guard_test(Expr) of
 			       true -> {guard,[[guard_test(Expr)]]};
@@ -464,6 +466,18 @@ expr({lc,Line,E0,Gs0}) ->			%R8.
 			   end
 		   end, Gs0),
     {lc,Line,expr(E0),Gs};
+expr({bc,Line,E0,Gs0}) ->			%R12.
+    Gs = lists:map(fun ({generate,L,P0,Qs}) ->
+			   {generate,L,expr(P0),expr(Qs)};
+		       ({b_generate,L,P0,Qs}) -> %R12.
+			   {b_generate,L,expr(P0),expr(Qs)};
+		       (Expr) ->
+			   case is_guard_test(Expr) of
+			       true -> {guard,[[guard_test(Expr)]]};
+			       false -> expr(Expr)
+			   end
+		   end, Gs0),
+    {bc,Line,expr(E0),Gs};
 expr({match,Line,P0,E0}) ->
     E1 = expr(E0),
     P1 = pattern(P0),

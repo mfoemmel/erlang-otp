@@ -77,13 +77,16 @@ public class AbstractNode {
   static final int dFlagDistMonitor = 8;
   static final int dFlagFunTags = 16;
   static final int dFlagExtendedPidsPorts = 256;
+  static final int dFlagBitBinaries = 1024;
+  static final int dFlagNewFloats = 2048;
 
   int ntype = NTYPE_R6;
   int proto = 0; // tcp/ip
   int distHigh = 5; // Cannot talk to nodes before R6
   int distLow = 5;  // Cannot talk to nodes before R6
   int creation = 0;
-  int flags = dFlagExtendedReferences|dFlagExtendedPidsPorts;
+  int flags = dFlagExtendedReferences|dFlagExtendedPidsPorts
+      |dFlagBitBinaries|dFlagNewFloats;
 
   /* initialize hostname and default cookie */
   static {

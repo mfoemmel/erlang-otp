@@ -25,129 +25,92 @@
 
 -behaviour(supervisor).
 
+%% Internal application API
+-export([start_link/3, start_link/4]).
+
+%% Supervisor callbacks
 -export([init/1]).
 
-%% Internal API
--export([start/1, start_link/1, start_link/3, start2/1, start_link2/1, 
-	 stop/1, stop/2, stop2/1]).
-
 %%%=========================================================================
-%%%  Supervisor callback
+%%%  Internal Application API
 %%%=========================================================================
-init([ConfigFile, ConfigList, AcceptTimeout, Debug, Addr, Port]) -> 
-    httpd_util:enable_debug(Debug),
-    Flags = {one_for_one, 0, 1},
-    Children  = [sup_spec(httpd_acceptor_sup, Addr, Port), 
-		 sup_spec(httpd_misc_sup, Addr, Port), 
-		 worker_spec(httpd_manager, Addr, Port, 
-			     ConfigFile, ConfigList,AcceptTimeout)],
-    {ok, {Flags, Children}}.
+start_link([{_, _}| _] = Config, AcceptTimeout, Debug)  ->
+    Address = proplists:get_value(bind_address, Config),
+    Port = proplists:get_value(port, Config), 
+    Name = make_name(Address, Port),
+    SupName = {local, Name},
+    supervisor:start_link(SupName, ?MODULE, 
+			  [undefined, Config, AcceptTimeout,
+			   Debug, Address, Port]);
 
-
-%%%=========================================================================
-%%%  ??? functions
-%%%=========================================================================
-
-start(ConfigFile) ->
-    case start_link(ConfigFile) of
-	{ok, Pid} ->
-	    unlink(Pid),
-	    {ok, Pid};
-
-	Else ->
-	    Else
-    end.
-
-start_link(Config) ->
-    case catch httpd_options(Config) of
-	{error,Reason} ->
-	    error_logger:error_report(Reason),
-	    {stop, Reason};
-	{ConfigFile,AcceptTimeout,Debug} -> 
-	    start_link(ConfigFile, AcceptTimeout, Debug)
-    end.
 start_link(ConfigFile, AcceptTimeout, Debug) ->
-    case get_addr_and_port(ConfigFile) of
-	{ok, ConfigList, Addr, Port} ->
-	    Name    = make_name(Addr, Port),
+    case file_2_config(ConfigFile) of
+	{ok, ConfigList, Address, Port} ->
+	    Name    = make_name(Address, Port),
 	    SupName = {local, Name},
 	    supervisor:start_link(SupName, ?MODULE, 
-				  [ConfigFile, ConfigList ,AcceptTimeout ,
-				   Debug, Addr, Port]);	
+				  [ConfigFile, ConfigList, AcceptTimeout,
+				   Debug, Address, Port]);	
+	{error, Reason} ->
+	    error_logger:error_report(Reason),
+	    {stop, Reason}
+    end.
+start_link([{_, _}| _] = Config, AcceptTimeout, ListenInfo, Debug) ->
+    Address = proplists:get_value(bind_address, Config),
+    Port = proplists:get_value(port, Config), 
+    Name = make_name(Address, Port),
+    SupName = {local, Name},
+    supervisor:start_link(SupName, ?MODULE, 
+			  [undefined, Config, AcceptTimeout,
+			   Debug, Address, Port, ListenInfo]);
+
+start_link(ConfigFile, AcceptTimeout, ListenInfo, Debug) ->
+    case file_2_config(ConfigFile) of
+	{ok, ConfigList, Address, Port} ->
+	    Name    = make_name(Address, Port),
+	    SupName = {local, Name},
+	    supervisor:start_link(SupName, ?MODULE, 
+				  [ConfigFile, ConfigList, AcceptTimeout,
+				   Debug, Address, Port, ListenInfo]);	
 	{error, Reason} ->
 	    error_logger:error_report(Reason),
 	    {stop, Reason}
     end.
 
-    
-start2(ConfigList) ->
-    case start_link2(ConfigList) of
-	{ok, Pid} ->
-	    unlink(Pid),
-	    {ok, Pid};
+%%%=========================================================================
+%%%  Supervisor callback
+%%%=========================================================================
+init([ConfigFile, ConfigList, AcceptTimeout, _Debug, Address, Port]) -> 
+    Flags = {one_for_one, 0, 1},
+    Children  = [sup_spec(httpd_acceptor_sup, Address, Port), 
+		 sup_spec(httpd_misc_sup, Address, Port), 
+		 worker_spec(httpd_manager, Address, Port, 
+			     ConfigFile, ConfigList,AcceptTimeout)],
+    {ok, {Flags, Children}};
+init([ConfigFile, ConfigList, AcceptTimeout, _Debug, Address, Port, ListenInfo]) -> 
+    Flags = {one_for_one, 0, 1},
+    Children  = [sup_spec(httpd_acceptor_sup, Address, Port), 
+		 sup_spec(httpd_misc_sup, Address, Port), 
+		 worker_spec(httpd_manager, Address, Port, ListenInfo, 
+			     ConfigFile, ConfigList, AcceptTimeout)],
+    {ok, {Flags, Children}}.
 
-	Else ->
-	    Else
-    end.
-
-    
-start_link2(ConfigList) ->
-    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
-    Name    = make_name(Addr, Port),
-    SupName = {local, Name},
-    Debug = [],
-    AcceptTimeout = 15000,
-    supervisor:start_link(SupName, ?MODULE, 
-			  [undefined, ConfigList, AcceptTimeout, 
-			   Debug, Addr, Port]).
-    
-
-stop(Pid) when pid(Pid) ->
-    do_stop(Pid);
-stop(ConfigFile) when list(ConfigFile) ->
-    case get_addr_and_port(ConfigFile) of
-	{ok, _, Addr, Port} ->
-	    stop(Addr, Port);
-	    
-	Error ->
-	    Error
-    end;
-stop(_StartArgs) ->
-    ok.
-
-
-stop(Addr, Port) when integer(Port) ->
-    Name = make_name(Addr, Port), 
-    case whereis(Name) of
-	Pid when pid(Pid) ->
-	    do_stop(Pid),
-	    ok;
-	_ ->
-	    not_started
-    end.
-    
-
-stop2(ConfigList) when list(ConfigList) ->
-    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
-    stop(Addr, Port).
 
 %%%=========================================================================
 %%%  Internal functions
 %%%=========================================================================
-do_stop(Pid) ->
-    exit(Pid, shutdown).
-
-sup_spec(SupModule, Addr, Port) ->
-    Name = {SupModule, Addr, Port},
-    StartFunc = {SupModule, start_link, [Addr, Port]},
+sup_spec(SupModule, Address, Port) ->
+    Name = {SupModule, Address, Port},
+    StartFunc = {SupModule, start_link, [Address, Port]},
     Restart = permanent, 
     Shutdown = infinity,
     Modules = [SupModule],
     Type = supervisor,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
     
-worker_spec(WorkerModule, Addr, Port, ConfigFile, ConfigList, AcceptTimeout) ->
-    Name = {WorkerModule, Addr, Port},
+worker_spec(WorkerModule, Address, Port, ConfigFile, 
+	    ConfigList, AcceptTimeout) ->
+    Name = {WorkerModule, Address, Port},
     StartFunc = {WorkerModule, start_link, 
 		 [ConfigFile, ConfigList, AcceptTimeout]}, 
     Restart = permanent, 
@@ -156,38 +119,29 @@ worker_spec(WorkerModule, Addr, Port, ConfigFile, ConfigList, AcceptTimeout) ->
     Type = worker,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
-httpd_options(Config) ->
-    OptionList = mk_tuple_list(Config),
-    Debug = http_util:key1search(OptionList,debug,[]),
-    AcceptTimeout = http_util:key1search(OptionList,accept_timeout,15000),
-    ConfigFile =
-    case http_util:key1search(OptionList,file) of
-	undefined -> throw({error,{mandatory_conf_file_missed}});
-	File -> File
-    end,
-    httpd_util:valid_options(Debug,AcceptTimeout,ConfigFile),
-    {ConfigFile, AcceptTimeout, Debug}.
+worker_spec(WorkerModule, Address, Port, ListenInfo, ConfigFile, 
+	    ConfigList, AcceptTimeout) ->
+    Name = {WorkerModule, Address, Port},
+    StartFunc = {WorkerModule, start_link, 
+		 [ConfigFile, ConfigList, AcceptTimeout, ListenInfo]}, 
+    Restart = permanent, 
+    Shutdown = 4000,
+    Modules = [WorkerModule],
+    Type = worker,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
-mk_tuple_list([]) -> 
-    [];
-mk_tuple_list([H={_,_}|T]) -> 
-    [H|mk_tuple_list(T)];
-mk_tuple_list(F) when list(F) ->
-    [{file,F}].
+make_name(Address,Port) ->
+    httpd_util:make_name("httpd_instance_sup", Address, Port).
 
-make_name(Addr,Port) ->
-    httpd_util:make_name("httpd_instance_sup",Addr,Port).
 
-get_addr_and_port(ConfigFile) ->
+file_2_config(ConfigFile) ->
     case httpd_conf:load(ConfigFile) of
 	{ok, ConfigList} ->
-	    {ok, Addr, Port} = get_addr_and_port2(ConfigList),
-	    {ok, ConfigList, Addr, Port};
+	    Address =  proplists:get_value(bind_address, ConfigList),
+	    Port = proplists:get_value(port, ConfigList),
+	    {ok, ConfigList, Address, Port};
 	Error ->
 	    Error
     end.
 
-get_addr_and_port2(ConfigList) ->
-    Port = httpd_util:key1search(ConfigList, port, 80),
-    Addr = httpd_util:key1search(ConfigList, bind_address),
-    {ok, Addr, Port}.
+

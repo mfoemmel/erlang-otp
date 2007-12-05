@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: A fun implementation of user callbacks
@@ -26,12 +28,15 @@
 -export([
          handle_connect/2,
          handle_disconnect/3,
-         handle_syntax_error/3,
-         handle_message_error/3,
-         handle_trans_request/3,
-         handle_trans_long_request/3,
-         handle_trans_reply/4,
-         handle_trans_ack/4
+         handle_syntax_error/3,        handle_syntax_error/4, 
+         handle_message_error/3,       handle_message_error/4, 
+         handle_trans_request/3,       handle_trans_request/4, 
+         handle_trans_long_request/3,  handle_trans_long_request/4,
+         handle_trans_reply/4,         handle_trans_reply/5, 
+         handle_trans_ack/4,           handle_trans_ack/5,
+	 handle_unexpected_trans/3,    handle_unexpected_trans/4,
+         handle_trans_request_abort/4, handle_trans_request_abort/5,
+         handle_segment_reply/5,       handle_segment_reply/6
         ]).
 
 -export([
@@ -123,45 +128,105 @@ call_await_reply(Pid) ->
 %% Megaco user callback
 %%----------------------------------------------------------------------
 
+%% -- handle_connect/2 --
+
 handle_connect(ConnHandle, ProtocolVersion) ->
-%%     io:format("~p~p[~p]: handle_connect -> entry~n", 
-%% 	      [self(),?MODULE,?LINE]),
+    %%     io:format("~p~p[~p]: handle_connect -> entry~n", 
+    %% 	      [self(),?MODULE,?LINE]),
     call({connect, ConnHandle, ProtocolVersion, []}).
 
+
+%% -- handle_disconnect/3 --
+
 handle_disconnect(ConnHandle, ProtocolVersion, Reason) ->
-%%     io:format("~w:~w:~p:handle_disconnect -> entry with"
-%% 	      "~n   ConnHandle:      ~p"
-%% 	      "~n   ProtocolVersion: ~p"
-%% 	      "~n   Reason:          ~p"
-%% 	      "~n", 
-%% 	      [?MODULE, ?LINE, self(), ConnHandle, ProtocolVersion, Reason]),
+    %%     io:format("~w:~w:~p:handle_disconnect -> entry with"
+    %% 	      "~n   ConnHandle:      ~p"
+    %% 	      "~n   ProtocolVersion: ~p"
+    %% 	      "~n   Reason:          ~p"
+    %% 	      "~n", 
+    %% 	      [?MODULE, ?LINE, self(), ConnHandle, ProtocolVersion, Reason]),
     call({disconnect, ConnHandle, ProtocolVersion, [Reason]}).
+
+
+%% -- handle_syntax_error/3,4 --
 
 handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor) ->
     call({syntax_error, ReceiveHandle, ProtocolVersion, [ErrorDescriptor]}).
 
+handle_syntax_error(ReceiveHandle, ProtocolVersion, ErrorDescriptor, Extra) ->
+    call({syntax_error, ReceiveHandle, ProtocolVersion, [ErrorDescriptor, Extra]}).
+
+
+%% -- handle_message_error/3,4 --
+
 handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor) ->
     call({message_error, ConnHandle, ProtocolVersion, [ErrorDescriptor]}).
 
+handle_message_error(ConnHandle, ProtocolVersion, ErrorDescriptor, Extra) ->
+    call({message_error, ConnHandle, ProtocolVersion, [ErrorDescriptor, Extra]}).
+
+
+%% -- handle_trans_request/3,4 --
+
 handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests) ->
-%     io:format("~p~p[~p]: handle_trans_request -> entry~n", 
-% 	      [self(),?MODULE,?LINE]),
     call({request, ConnHandle, ProtocolVersion, [ActionRequests]}).
 
+handle_trans_request(ConnHandle, ProtocolVersion, ActionRequests, Extra) ->
+    call({request, ConnHandle, ProtocolVersion, [ActionRequests, Extra]}).
+
+%% -- handle_trans_long_request/3,4 --
+
 handle_trans_long_request(ConnHandle, ProtocolVersion, RequestData) ->
-%     io:format("~p~p[~p]: handle_trans_long_request -> entry~n", 
-% 	      [self(),?MODULE,?LINE]),
     call({long_request, ConnHandle, ProtocolVersion, [RequestData]}).
 
+handle_trans_long_request(ConnHandle, ProtocolVersion, RequestData, Extra) ->
+    call({long_request, ConnHandle, ProtocolVersion, [RequestData, Extra]}).
+
+
+%% -- handle_trans_relpy/4,5 --
+
 handle_trans_reply(ConnHandle, ProtocolVersion, UserReply, UserData) ->
-%     io:format("~p~p[~p]: handle_trans_reply -> entry~n", 
-% 	      [self(),?MODULE,?LINE]),
     call({reply, ConnHandle, ProtocolVersion, [UserReply, UserData]}).
 
+handle_trans_reply(ConnHandle, ProtocolVersion, UserReply, UserData, Extra) ->
+    call({reply, ConnHandle, ProtocolVersion, [UserReply, UserData, Extra]}).
+
+
+%% -- handle_trans_relpy/4,5 --
+
 handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData) ->
-%     io:format("~p~p[~p]: handle_trans_ack -> entry~n", 
-% 	      [self(),?MODULE,?LINE]),
     call({ack, ConnHandle, ProtocolVersion, [AckStatus, AckData]}).
+
+handle_trans_ack(ConnHandle, ProtocolVersion, AckStatus, AckData, Extra) ->
+    call({ack, ConnHandle, ProtocolVersion, [AckStatus, AckData, Extra]}).
+
+
+%% -- handle_unexpected_trans/3,4 --
+
+handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans) ->
+    call({unepected_trans, ConnHandle, ProtocolVersion, [Trans]}).
+
+handle_unexpected_trans(ConnHandle, ProtocolVersion, Trans, Extra) ->
+    call({unepected_trans, ConnHandle, ProtocolVersion, [Trans, Extra]}).
+
+
+%% -- handle_trans_request_abort/4,5 --
+
+handle_trans_request_abort(ConnHandle, ProtocolVersion, TransId, Pid) ->
+    call({request_abort, ConnHandle, ProtocolVersion, [TransId, Pid]}).
+
+handle_trans_request_abort(ConnHandle, ProtocolVersion, TransId, Pid, Extra) ->
+    call({request_abort, ConnHandle, ProtocolVersion, [TransId, Pid, Extra]}).
+
+
+%% -- handle_segment_reply/5,6 --
+
+handle_segment_reply(ConnHandle, ProtocolVersion, TransId, SN, SC) ->
+    call({segment_reply, ConnHandle, ProtocolVersion, [TransId, SN, SC]}).
+
+handle_segment_reply(ConnHandle, ProtocolVersion, TransId, SN, SC, Extra) ->
+    call({segment_reply, ConnHandle, ProtocolVersion, [TransId, SN, SC, Extra]}).
+
 
 %%----------------------------------------------------------------------
 %% The ultimate Megaco transport callback
@@ -184,7 +249,8 @@ loop_transport(Parent) ->
 
 send_message(Handles, Bin) ->
     ?LOG("send_message -> entry with"
-	 "~n   Handles: ~p", [Handles]),    
+	 "~n   Handles: ~p"
+	 "~n", [Handles]),    
     case megaco_tc_controller:lookup(allow_send_message) of
 	{value, ok} ->
 	    do_send_message(Handles, Bin);
@@ -200,7 +266,8 @@ send_message(Handles, Bin) ->
 
 resend_message(Handles, Bin) ->
     ?LOG("resend_message -> entry with"
-	 "~n   Handles: ~p", [Handles]),    
+	 "~n   Handles: ~p"
+	 "~n", [Handles]),    
     case megaco_tc_controller:lookup(allow_resend_message) of
 	{value, ok} ->
 	    do_send_message(Handles, Bin);
@@ -218,6 +285,12 @@ do_send_message({{RH, Pid} = LocalSendHandle, RemoteSendHandle}, Bin) ->
     ?LOG("do_send_message -> entry with"
 	 "~n   RH:               ~p"
 	 "~n   Pid:              ~p"
-	 "~n   RemoteSendHandle: ~p", [RH, Pid, RemoteSendHandle]),    
+	 "~n   RemoteSendHandle: ~p"
+	 "~n", [RH, Pid, RemoteSendHandle]),    
     SwappedSendHandle = {RemoteSendHandle, LocalSendHandle},
-    megaco:receive_message(RH, Pid, SwappedSendHandle, Bin).
+    case megaco_tc_controller:lookup(extra_transport_info) of
+	{value, Extra} ->
+	    megaco:receive_message(RH, Pid, SwappedSendHandle, Bin, Extra);
+	_ ->
+	    megaco:receive_message(RH, Pid, SwappedSendHandle, Bin)
+    end.

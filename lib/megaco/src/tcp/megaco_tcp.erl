@@ -1,20 +1,21 @@
-%%
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%-----------------------------------------------------------------
 %%
@@ -285,7 +286,7 @@ start_connection(SupPid, #megaco_tcp{socket = Socket} = TcpRec) ->
 	    ?d1("start_connection -> found connection supervisor: "
 		"~n   ConnSupPid: ~p", [ConnSupPid]),
 	    ?tcp_debug(TcpRec, "tcp connect", []),
-	    case supervisor:start_child(ConnSupPid, [TcpRec]) of
+	    case megaco_tcp_connection_sup:start_child(ConnSupPid, TcpRec) of
 		{ok, Pid} ->
 		    ?d1("start_connection -> started: "
 			"~n   Pid: ~p", [Pid]),
@@ -510,7 +511,7 @@ resetup(Pid, Reason, State) ->
 		    link(NewPid),
 		    NewList = lists:keyreplace(Pid, 1, State#state.linkdb,
 					       {NewPid, {TcpRec, Listener}}),
-		    State#state{linkdb=NewList};
+		    State#state{linkdb = NewList};
 		{error, Reason} ->
 		    ?d1("resetup -> failed starting new accept process: "
 			"~n   :Reason ~p", [Reason]),
@@ -583,13 +584,13 @@ parse_options([{Tag, Val} | T], TcpRec, Mand) ->
 	    parse_options(T, TcpRec#megaco_tcp{port = Val}, Mand2);
 	host ->
 	    parse_options(T, TcpRec#megaco_tcp{host = Val}, Mand2);
-	tcp_options when list(Val)->
+	tcp_options when is_list(Val) ->
 	    parse_options(T, TcpRec#megaco_tcp{options = Val}, Mand2);
 	receive_handle ->
 	    parse_options(T, TcpRec#megaco_tcp{receive_handle = Val}, Mand2);
-	module when atom(Val) ->
+	module when is_atom(Val) ->
 	    parse_options(T, TcpRec#megaco_tcp{module = Val}, Mand2);
-	serialize when Val == true; Val == false ->
+	serialize when (Val == true) orelse (Val == false) ->
 	    parse_options(T, TcpRec#megaco_tcp{serialize = Val}, Mand2);
         Bad ->
 	    ?d1("parse_options -> bad option: "
@@ -617,12 +618,11 @@ parse_options(BadList, _TcpRec, _Mand) ->
 get_pid_from_supervisor(SupPid, ProcName) ->
     ProcList = supervisor:which_children(SupPid),
     %% ProcList of type [{Name, Pid, Type, Modules}| Rest]
-    
     case lists:keysearch(ProcName, 1, ProcList) of
 	{value, {_Name, Pid, _Type, _Modules}} ->
 	    {ok, Pid};
 	false ->
-		{error, no_such_process}
+	    {error, no_such_process}
     end.
 
 

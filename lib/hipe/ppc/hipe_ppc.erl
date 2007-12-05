@@ -16,7 +16,6 @@
 	 mk_uimm16/1,
 
 	 mk_mfa/3,
-	 mfa_mfa/1,
 
 	 mk_prim/1,
 	 is_prim/1,
@@ -145,7 +144,6 @@ mk_simm16(Value) -> #ppc_simm16{value=Value}.
 mk_uimm16(Value) -> #ppc_uimm16{value=Value}.
 
 mk_mfa(M, F, A) -> #ppc_mfa{m=M, f=F, a=A}.
-mfa_mfa(#ppc_mfa{m=M, f=F, a=A}) -> {M, F, A}.
 
 mk_prim(Prim) -> #ppc_prim{prim=Prim}.
 is_prim(X) -> case X of #ppc_prim{} -> true; _ -> false end.

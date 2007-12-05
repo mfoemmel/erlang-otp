@@ -66,18 +66,18 @@ BEAM_FORMAT_NUMBER=0
 #
 # Arithmethic opcodes.
 #
-27: m_plus/4
-28: m_minus/4
-29: m_times/4
-30: m_div/4
-31: int_div/4
-32: int_rem/4
-33: int_band/4
-34: int_bor/4
-35: int_bxor/4
-36: int_bsl/4
-37: int_bsr/4
-38: int_bnot/3
+27: -m_plus/4
+28: -m_minus/4
+29: -m_times/4
+30: -m_div/4
+31: -int_div/4
+32: -int_rem/4
+33: -int_band/4
+34: -int_bor/4
+35: -int_bxor/4
+36: -int_bsl/4
+37: -int_bsr/4
+38: -int_bnot/3
 
 #
 # Comparision operators.
@@ -147,7 +147,7 @@ BEAM_FORMAT_NUMBER=0
 # 'fun' support.
 #
 75: call_fun/1
-76: make_fun/3
+76: -make_fun/3
 77: is_function/2
 
 #
@@ -158,20 +158,20 @@ BEAM_FORMAT_NUMBER=0
 #
 # Binary matching (R7).
 #
-79: bs_start_match/2
-80: bs_get_integer/5
-81: bs_get_float/5
-82: bs_get_binary/5
-83: bs_skip_bits/4
-84: bs_test_tail/2
-85: bs_save/1
-86: bs_restore/1
+79: -bs_start_match/2
+80: -bs_get_integer/5
+81: -bs_get_float/5
+82: -bs_get_binary/5
+83: -bs_skip_bits/4
+84: -bs_test_tail/2
+85: -bs_save/1
+86: -bs_restore/1
 
 #
 # Binary construction (R7A).
 #
-87: bs_init/2
-88: bs_final/2
+87: -bs_init/2
+88: -bs_final/2
 89: bs_put_integer/5
 90: bs_put_binary/5
 91: bs_put_float/5
@@ -180,7 +180,7 @@ BEAM_FORMAT_NUMBER=0
 #
 # Binary construction (R7B).
 #
-93: bs_need_buf/1
+93: -bs_need_buf/1
 
 #
 # Floating point arithmetic (R8).
@@ -231,12 +231,23 @@ BEAM_FORMAT_NUMBER=0
 124: gc_bif1/5
 125: gc_bif2/6
 
-# New bit_level bifs introduced in R11B.
+# Experimental new bit_level bifs introduced in R11B.
+# NOT used in R12B.
 126: bs_final2/2
 127: bs_bits_to_bytes2/2
 
 # R11B-4
-128: put_literal/2
+128: -put_literal/2
 
 # R11B-5
 129: is_bitstr/2
+
+# R12B
+130: bs_context_to_binary/1
+131: bs_test_unit/3
+132: bs_match_string/4
+133: bs_init_writable/0
+134: bs_append/8
+135: bs_private_append/6
+136: trim/2
+137: bs_init_bits/6

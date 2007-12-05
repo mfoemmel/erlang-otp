@@ -16,11 +16,7 @@
 %%---------------------------------------------------------------------
 
 allocate(_Fun, SparcCfg0, Options) ->
-  ?inc_counter(ra_caller_saves_counter,count_caller_saves(SparcCfg0)),
   ?opt_start_timer("Regalloc"),
-  ?start_ra_instrumentation(Options, 
-			    count_instrs_cfg(SparcCfg0),
-			    hipe_gensym:get_var(sparc)),
   
   SparcCfg = hipe_sparc_multimove:remove_multimoves(SparcCfg0),
   {NewCfg, TempMap, NextPos}  = 
@@ -40,9 +36,6 @@ allocate(_Fun, SparcCfg0, Options) ->
     end,
   
   ?opt_stop_timer("Regalloc done"),
-  ?stop_ra_instrumentation(Options, 
-			   count_instrs_cfg(NewCfg),
-			   hipe_gensym:get_var(NewCfg)),
 
   {NewCfg2, FpMap, NextPos2} = 
     case get(hipe_inline_fp) of
@@ -106,9 +99,11 @@ cols2tuple(Map) ->
   hipe_temp_map:cols2tuple(Map, hipe_sparc_specific).
 
 
+-ifdef(BENCHMARKING).
+
 %%---------------------------------------------------------------------
-%% This is only an info-gathering function used for benchmarking
-%% purposes
+%% This is only an information gathering function used for benchmarking
+%% purposes.
 %%---------------------------------------------------------------------
 
 count_caller_saves(CFG) ->
@@ -206,3 +201,4 @@ icount(I) ->
       1
   end.
 
+-endif.  %% BENCHMARKING

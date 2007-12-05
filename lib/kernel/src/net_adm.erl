@@ -25,8 +25,16 @@
 	 dns_hostname/1,
 	 ping/1]).
 
+%%------------------------------------------------------------------------
+
+-type(verbosity() :: 'silent' | 'verbose').
+
+%%------------------------------------------------------------------------
+
 %% Try to read .hosts.erlang file in 
 %% 1. cwd , 2. $HOME 3. init:root_dir() 
+
+-spec(host_file/0 :: () -> [atom()] | {'error',atom() | {integer(),atom(),_}}).
 
 host_file() ->
     Home = case init:get_argument(home) of
@@ -38,9 +46,10 @@ host_file() ->
 	Error -> Error
     end.
 	
-%%% Check whether a node is up or down
-%%% side effect: set up a connection to Node if there 
-%%  not yet is one.
+%% Check whether a node is up or down
+%%  side effect: set up a connection to Node if there not yet is one.
+
+-spec(ping/1 :: (atom()) -> 'pang' | 'pong').
 
 ping(Node) when is_atom(Node) ->
     case catch gen:call({net_kernel, Node},
@@ -53,6 +62,8 @@ ping(Node) when is_atom(Node) ->
 	    pang
     end.
 
+-spec(localhost/0 :: () -> string()).
+
 localhost() ->
     {ok, Host} = inet:gethostname(),
     case inet_db:res_option(domain) of
@@ -61,16 +72,23 @@ localhost() ->
     end.
 
 
+-spec(names/0 :: () -> {'ok', [{string(), integer()}]} | {'error', _}).
+
 names() ->
     names(localhost()).
 
+-spec(names/1 :: (atom() | string()) ->
+			{'ok', [{string(), integer()}]} | {'error', _}).
 names(Hostname) ->
     case inet:gethostbyname(Hostname) of
-	{ok,{hostent, _Name, _ , _Af, _Size, [Addr | _]}} ->
+	{ok, {hostent, _Name, _ , _Af, _Size, [Addr | _]}} ->
 	    erl_epmd:names(Addr);
 	Else ->
 	    Else
     end.
+
+-spec(dns_hostname/1 :: (atom() | string()) -> 
+			{'ok', string()} | {'error', atom() | string()}).
 
 dns_hostname(Hostname) ->
     case inet:gethostbyname(Hostname) of
@@ -96,6 +114,7 @@ dns_hostname(Hostname) ->
 %% nodes simultaneously and without *any* other already 
 %% running nodes execute this code. :-(
 
+-spec(ping_list/1 :: ([atom()]) -> [atom()]).
 
 ping_list(Nodelist) ->
     net_kernel:monitor_nodes(true),
@@ -103,8 +122,7 @@ ping_list(Nodelist) ->
     collect_new(Sofar, Nodelist).
 
 ping_first([], _S) ->
-	[];
-
+    [];
 ping_first([Node|Nodes], S) ->
     case lists:member(Node, S) of
 	true -> [Node | ping_first(Nodes, S)];
@@ -114,7 +132,7 @@ ping_first([Node|Nodes], S) ->
 		pang -> ping_first(Nodes, S)
 	    end
     end.
-    
+
 collect_new(Sofar, Nodelist) ->
     receive
 	{nodeup, Node} ->
@@ -143,14 +161,18 @@ collect_new(Sofar, Nodelist) ->
 world() ->
     world(silent).
 
+-spec(world/1 :: (verbosity()) -> [atom()]).
+
 world(Verbose) ->
     case net_adm:host_file() of
         {error,R} -> exit({error, R});
         Hosts -> expand_hosts(Hosts, Verbose)
     end.
 
-world_list(Hosts) when is_list (Hosts) ->
+world_list(Hosts) when is_list(Hosts) ->
     expand_hosts(Hosts, silent).
+
+-spec(world_list/2 :: ([atom() | string()], verbosity()) -> [atom()]).
 
 world_list(Hosts, Verbose) when is_list(Hosts) ->
     expand_hosts(Hosts, Verbose).
@@ -158,16 +180,16 @@ world_list(Hosts, Verbose) when is_list(Hosts) ->
 expand_hosts(Hosts, Verbose) ->
     lists:flatten(collect_nodes(Hosts, Verbose)).
 
-collect_nodes([],_) -> [];
-collect_nodes([Host|Tail],Verbose) ->
-    case collect_host_nodes(Host,Verbose) of
+collect_nodes([], _) -> [];
+collect_nodes([Host|Tail], Verbose) ->
+    case collect_host_nodes(Host, Verbose) of
         nil ->
-            collect_nodes(Tail,Verbose);
+            collect_nodes(Tail, Verbose);
         L ->
-            [L|collect_nodes(Tail,Verbose)]
+            [L|collect_nodes(Tail, Verbose)]
     end.
 
-collect_host_nodes(Host,Verbose) ->
+collect_host_nodes(Host, Verbose) ->
     case names(Host) of
 	{ok, Namelist} ->
 	    do_ping(Namelist, atom_to_list(Host), Verbose);

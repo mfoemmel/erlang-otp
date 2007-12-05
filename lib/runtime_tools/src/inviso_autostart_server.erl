@@ -180,6 +180,8 @@ interpret_cmd_files_1({inviso,F,Args},Bindings,Translations,Dbg) ->
 	{error,_Reason} ->
 	    error
     end;
+interpret_cmd_files_1({Mod,Func,Args},_Bindings,_Translations,_Dbg) ->
+    catch apply(Mod,Func,Args);
 %% This is the case when it actually is a trace case file.
 interpret_cmd_files_1(FileName,Bindings,Translations,Dbg) ->
     case file:open(FileName,[read]) of
@@ -208,7 +210,7 @@ interpret_cmd_files_2(_,_,{eof,_},_,_) ->    % End of file.
 
 interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
     case catch inviso_rt_lib:transform(Exprs,Translations) of
-	NewExprs when is_list(NewExprs) ->     % We may have translated the API.
+	NewExprs when list(NewExprs) ->     % We may have translated the API.
 	    case catch erl_eval:exprs(NewExprs,Bindings) of
 		{'EXIT',Reason} ->
 		    inviso_rt_lib:debug(Dbg,exprs,[Exprs,Bindings,{'EXIT',Reason}]),
@@ -224,7 +226,7 @@ interpret_cmd_files_3(Bindings,Exprs,Translations,Dbg) ->
 %% Help function adding variables to a bindings structure. If the variable already
 %% is assigned in the structure, it will be overridden. Returns a new
 %% bindings structure.
-join_local_and_global_vars([{Var,Val}|Rest],Bindings) when is_atom(Var) ->
+join_local_and_global_vars([{Var,Val}|Rest],Bindings) when atom(Var) ->
     join_local_and_global_vars(Rest,erl_eval:add_binding(Var,Val,Bindings));
 join_local_and_global_vars([_|Rest],Bindings) ->
     join_local_and_global_vars(Rest,Bindings);
@@ -252,7 +254,14 @@ tokenize_args([]) ->
 
 get_tracerdata_opts(ArgsFromConfig) ->
     case lists:keysearch(tracerdata,1,ArgsFromConfig) of
-	{value,{_,TracerData}} ->
+	{value,{_,{mfa,{M,F,CompleteTDGargs}}}} -> % Dynamic tracerdata.
+	    case catch apply(M,F,CompleteTDGargs) of
+		{'EXIT',_Reason} ->
+		    false;
+		TracerData ->
+		    {ok,TracerData}
+	    end;
+	{value,{_,TracerData}} ->           % Interpret this as static tracerdata.
 	    {ok,TracerData};
 	false ->
 	    false

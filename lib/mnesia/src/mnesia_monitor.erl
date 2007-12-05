@@ -221,9 +221,8 @@ call(Msg) ->
 		{'EXIT', Pid, _Reason} ->
 		    {error, {node_not_running, node()}}
 	    after 0 ->
-		    ignore
-	    end,
-	    Res
+		    Res
+	    end
     end.
 
 multicall(Nodes, Msg) ->

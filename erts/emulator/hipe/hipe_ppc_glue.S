@@ -437,7 +437,6 @@ ASYM(nbif_fail):
 	li	r3, HIPE_MODE_SWITCH_RES_THROW
 	b	.flush_exit	/* no need to save RA */
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 	GLOBAL(CSYM(nbif_0_gc_after_bif))
 	GLOBAL(CSYM(nbif_1_gc_after_bif))
 	GLOBAL(CSYM(nbif_2_gc_after_bif))
@@ -455,7 +454,7 @@ CSYM(nbif_3_gc_after_bif):
 	li	r4, 3
 	/*FALLTHROUGH*/
 .gc_after_bif:
-	stw	r4, P_NARITY(P)		# Note: narity is a 32-bit field
+	stw	r4, P_NARITY(P)		/* Note: narity is a 32-bit field */
 	STORE	TEMP_LR, P_NRA(P)
 	STORE	NSP, P_NSP(P)
 	mflr	TEMP_LR
@@ -465,9 +464,8 @@ CSYM(nbif_3_gc_after_bif):
 	mtlr	TEMP_LR
 	LOAD	TEMP_LR, P_NRA(P)
 	li	r4, 0
-	stw	r4, P_NARITY(P)		# Note: narity is a 32-bit field
+	stw	r4, P_NARITY(P)		/* Note: narity is a 32-bit field */
 	blr
-#endif
 
 /*
  * We end up here when a BIF called from native signals an
@@ -489,6 +487,7 @@ CSYM(nbif_3_simple_exception):
 	/*FALLTHROUGH*/
 .nbif_simple_exception:
 	LOAD	r3, P_FREASON(P)
+.nbif_simple_exception2:
 	CMPI	r3, FREASON_TRAP
 	beq-	.handle_trap
 	/*
@@ -545,7 +544,7 @@ CSYM(nbif_2_hairy_exception):
 .nbif_hairy_exception:
 	LOAD	r3, P_FREASON(P)
 	CMPI	r3, FREASON_RESCHEDULE
-	bne+	.nbif_simple_exception
+	bne+	.nbif_simple_exception2
 	/* handle reschedule */
 	STORE	r5, P_NCALLEE(P)
 #if PPC_NR_ARG_REGS == 0

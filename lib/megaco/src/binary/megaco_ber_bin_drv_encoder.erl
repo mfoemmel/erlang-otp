@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose : Handle ASN.1 BER encoding of Megaco/H.248
@@ -42,12 +44,14 @@
 -define(V3_ASN1_MOD,     megaco_ber_bin_drv_media_gateway_control_v3).
 -define(PREV3A_ASN1_MOD, megaco_ber_bin_drv_media_gateway_control_prev3a).
 -define(PREV3B_ASN1_MOD, megaco_ber_bin_drv_media_gateway_control_prev3b).
+-define(PREV3C_ASN1_MOD, megaco_ber_bin_drv_media_gateway_control_prev3c).
 
 -define(V1_TRANS_MOD,     megaco_binary_transformer_v1).
 -define(V2_TRANS_MOD,     megaco_binary_transformer_v2).
 -define(V3_TRANS_MOD,     megaco_binary_transformer_v3).
 -define(PREV3A_TRANS_MOD, megaco_binary_transformer_prev3a).
 -define(PREV3B_TRANS_MOD, megaco_binary_transformer_prev3b).
+-define(PREV3C_TRANS_MOD, megaco_binary_transformer_prev3c).
 
 -define(BIN_LIB, megaco_binary_encoder_lib).
 
@@ -57,14 +61,17 @@
 %% Return {ok, Version} | {error, Reason}
 %%----------------------------------------------------------------------
  
+version_of([{version3,v3}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
+version_of([{version3,prev3c}|EC], Binary) ->
+    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3C_ASN1_MOD], 
+    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3b}|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3B_ASN1_MOD], 
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of([{version3,prev3a}|EC], Binary) ->
     Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3A_ASN1_MOD], 
-    ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
-version_of([{version3,v3}|EC], Binary) ->
-    Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
     ?BIN_LIB:version_of(EC, Binary, dynamic, Decoders);
 version_of(EC, Binary) ->
     Decoders = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
@@ -89,14 +96,17 @@ encode_message([{version3,_}|EC], 2, MegaMsg) ->
     ?BIN_LIB:encode_message(EC, MegaMsg, ?V2_ASN1_MOD, ?V2_TRANS_MOD, io_list);
 encode_message(EC, 2, MegaMsg) ->
     ?BIN_LIB:encode_message(EC, MegaMsg, ?V2_ASN1_MOD, ?V2_TRANS_MOD, io_list);
+encode_message([{version3,v3}|EC], 3, MegaMsg) ->
+    ?BIN_LIB:encode_message(EC, MegaMsg, ?V3_ASN1_MOD, ?V3_TRANS_MOD, io_list);
+encode_message([{version3,prev3c}|EC], 3, MegaMsg) ->
+    ?BIN_LIB:encode_message(EC, MegaMsg, 
+			    ?PREV3C_ASN1_MOD, ?PREV3C_TRANS_MOD, io_list);
 encode_message([{version3,prev3b}|EC], 3, MegaMsg) ->
     ?BIN_LIB:encode_message(EC, MegaMsg, 
 			    ?PREV3B_ASN1_MOD, ?PREV3B_TRANS_MOD, io_list);
 encode_message([{version3,prev3a}|EC], 3, MegaMsg) ->
     ?BIN_LIB:encode_message(EC, MegaMsg, 
 			    ?PREV3A_ASN1_MOD, ?PREV3A_TRANS_MOD, io_list);
-encode_message([{version3,v3}|EC], 3, MegaMsg) ->
-    ?BIN_LIB:encode_message(EC, MegaMsg, ?V3_ASN1_MOD, ?V3_TRANS_MOD, io_list);
 encode_message(EC, 3, MegaMsg) ->
     ?BIN_LIB:encode_message(EC, MegaMsg, ?V3_ASN1_MOD, ?V3_TRANS_MOD, io_list).
 
@@ -186,6 +196,16 @@ decode_message(EC, Binary) ->
 
 %% Select from message
 %% This does not work at the moment so, we use version 1 for this
+decode_message([{version3,v3}|EC], dynamic, Binary) ->
+    Mods = [{?V1_ASN1_MOD, ?V1_TRANS_MOD},
+	    {?V2_ASN1_MOD, ?V2_TRANS_MOD}, 
+	    {?V3_ASN1_MOD, ?V3_TRANS_MOD}], 
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
+decode_message([{version3,prev3c}|EC], dynamic, Binary) ->
+    Mods = [{?V1_ASN1_MOD,     ?V1_TRANS_MOD},
+	    {?V2_ASN1_MOD,     ?V2_TRANS_MOD}, 
+	    {?PREV3C_ASN1_MOD, ?PREV3C_TRANS_MOD}], 
+    ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
 decode_message([{version3,prev3b}|EC], dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD,     ?V1_TRANS_MOD},
 	    {?V2_ASN1_MOD,     ?V2_TRANS_MOD}, 
@@ -195,11 +215,6 @@ decode_message([{version3,prev3a}|EC], dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD,     ?V1_TRANS_MOD},
 	    {?V2_ASN1_MOD,     ?V2_TRANS_MOD}, 
 	    {?PREV3A_ASN1_MOD, ?PREV3A_TRANS_MOD}], 
-    ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
-decode_message([{version3,v3}|EC], dynamic, Binary) ->
-    Mods = [{?V1_ASN1_MOD, ?V1_TRANS_MOD},
-	    {?V2_ASN1_MOD, ?V2_TRANS_MOD}, 
-	    {?V3_ASN1_MOD, ?V3_TRANS_MOD}], 
     ?BIN_LIB:decode_message_dynamic(EC, Binary, Mods, binary);
 decode_message(EC, dynamic, Binary) ->
     Mods = [{?V1_ASN1_MOD, ?V1_TRANS_MOD},
@@ -225,6 +240,14 @@ decode_message(EC, 2, Binary) ->
     TransMod = ?V2_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
+decode_message([{version3,v3}|EC], 3, Binary) ->
+    AsnMod   = ?V3_ASN1_MOD, 
+    TransMod = ?V3_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
+decode_message([{version3,prev3c}|EC], 3, Binary) ->
+    AsnMod   = ?PREV3C_ASN1_MOD, 
+    TransMod = ?PREV3C_TRANS_MOD, 
+    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message([{version3,prev3b}|EC], 3, Binary) ->
     AsnMod   = ?PREV3B_ASN1_MOD, 
     TransMod = ?PREV3B_TRANS_MOD, 
@@ -233,24 +256,23 @@ decode_message([{version3,prev3a}|EC], 3, Binary) ->
     AsnMod   = ?PREV3A_ASN1_MOD, 
     TransMod = ?PREV3A_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
-decode_message([{version3,v3}|EC], 3, Binary) ->
-    AsnMod   = ?V3_ASN1_MOD, 
-    TransMod = ?V3_TRANS_MOD, 
-    ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 decode_message(EC, 3, Binary) ->
     AsnMod   = ?V3_ASN1_MOD, 
     TransMod = ?V3_TRANS_MOD, 
     ?BIN_LIB:decode_message(EC, Binary, AsnMod, TransMod, binary);
 
 
+decode_mini_message([{version3,v3}|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
+decode_mini_message([{version3,prev3c}|EC], dynamic, Bin) ->
+    Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3C_ASN1_MOD], 
+    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3b}|EC], dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3B_ASN1_MOD], 
     ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message([{version3,prev3a}|EC], dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?PREV3A_ASN1_MOD], 
-    ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
-decode_mini_message([{version3,v3}|EC], dynamic, Bin) ->
-    Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
     ?BIN_LIB:decode_mini_message_dynamic(EC, Bin, Mods, binary);
 decode_mini_message(EC, dynamic, Bin) ->
     Mods = [?V1_ASN1_MOD, ?V2_ASN1_MOD, ?V3_ASN1_MOD], 
@@ -268,14 +290,17 @@ decode_mini_message([{version3,_}|EC], 2, Bin) ->
 decode_mini_message(EC, 2, Bin) ->
     AsnMod = ?V2_ASN1_MOD, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,v3}|EC], 3, Bin) ->
+    AsnMod = ?V3_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
+decode_mini_message([{version3,prev3c}|EC], 3, Bin) ->
+    AsnMod = ?PREV3C_ASN1_MOD, 
+    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3b}|EC], 3, Bin) ->
     AsnMod = ?PREV3B_ASN1_MOD, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message([{version3,prev3a}|EC], 3, Bin) ->
     AsnMod = ?PREV3A_ASN1_MOD, 
-    ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
-decode_mini_message([{version3,v3}|EC], 3, Bin) ->
-    AsnMod = ?V3_ASN1_MOD, 
     ?BIN_LIB:decode_mini_message(EC, Bin, AsnMod, binary);
 decode_mini_message(EC, 3, Bin) ->
     AsnMod = ?V3_ASN1_MOD, 

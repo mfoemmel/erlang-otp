@@ -584,9 +584,15 @@ get_default_emulator(char* progname)
     for (s = sbuf+strlen(sbuf); s >= sbuf; s--) {
 	if (IS_DIRSEP(*s)) {
 	    strcpy(s+1, ERL_NAME);
+#ifdef __WIN32__
+	    if (_access(sbuf, 0) != -1) {
+		return strsave(sbuf);
+	    }
+#else
 	    if (access(sbuf, 1) != -1) {
 		return strsave(sbuf);
 	    }
+#endif
 	    break;
 	}
     }

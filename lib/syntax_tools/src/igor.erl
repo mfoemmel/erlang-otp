@@ -2511,7 +2511,7 @@ get_module_info(Forms) ->
 		L1;
 	    syntax_error ->
 		report_error("syntax error in input."),
-		erlang:fault(badarg);
+		erlang:error(badarg);
 	    {'EXIT', R} ->
 		exit(R);
 	    R ->

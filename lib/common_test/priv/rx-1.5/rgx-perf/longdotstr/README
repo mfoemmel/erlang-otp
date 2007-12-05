@@ -1,0 +1,4 @@
+This test searches for a regexp containing ".*" in a long piece of
+text.  
+
+This test was added because Rx used to be very slow on this test.

@@ -47,9 +47,7 @@ RELEASE_PATH=$(ERL_TOP)/release/$(TARGET)
 endif
 RELSYSDIR = $(RELEASE_PATH)/lib/erl_interface-$(EI_VSN)
 
-# ----------------------------------------------------
-# XXXX
-# ----------------------------------------------------
+LDFLAGS = @LDFLAGS@
 
 ifeq ($(TYPE),debug)
 PURIFY =

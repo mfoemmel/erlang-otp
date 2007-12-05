@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Misc functions used both from the megaco_messenger module
@@ -29,7 +31,9 @@
 	 encode_trans_reply/2,
 	 encode_actions/3,
 	 send_body/3,
-	 send_message/3
+	 send_message/3,
+
+	 transform_transaction_reply/2
         ]).
 
 %% Test functions
@@ -39,6 +43,8 @@
 -include_lib("megaco/include/megaco.hrl").
 -include("megaco_message_internal.hrl").
 -include_lib("megaco/src/app/megaco_internal.hrl").
+
+-define(MSG_HDR_SZ, 128). % This is just a guess...
 
 -ifdef(MEGACO_TEST_CODE).
 -define(SIM(Other,Where),
@@ -72,26 +78,97 @@
 %% Encode the transaction request
 %%----------------------------------------------------------------------
 
-encode_trans_request(CD, TR) when record(TR, 'TransactionRequest') ->
+encode_trans_request(CD, TR) when is_record(TR, 'TransactionRequest') ->
     ?report_debug(CD, "encode trans request", [TR]),
     Trans = {transactionRequest, TR},
-    encode_trans(CD, Trans).
+    encode_transaction(CD, Trans).
 
-encode_trans_reply(CD, TR) when record(TR, 'TransactionReply') ->
+encode_trans_reply(#conn_data{segment_send     = SegSend, 
+			      max_pdu_size     = Max,
+			      protocol_version = V} = CD, Reply) 
+  when (SegSend == infinity) or (is_integer(SegSend) and (SegSend > 0)) and 
+       is_integer(V) and (V >= 3) and 
+       is_integer(Max) and (Max >= ?MSG_HDR_SZ) ->
+    (catch encode_segmented_trans_reply(CD, Reply));
+encode_trans_reply(CD, TR) when is_record(TR, megaco_transaction_reply) ->
+    ?report_debug(CD, "encode trans reply", [TR]),
+    Trans = {transactionReply, transform_transaction_reply(CD, TR)},
+    encode_transaction(CD, Trans);
+encode_trans_reply(CD, TR) when is_tuple(TR) and 
+				(element(1, TR) == 'TransactionReply') ->
     ?report_debug(CD, "encode trans reply", [TR]),
     Trans = {transactionReply, TR},
-    encode_trans(CD, Trans).
+    encode_transaction(CD, Trans).
 
 
-encode_trans(#conn_data{protocol_version = V,
-			encoding_mod     = EM,
-			encoding_config  = EC} = CD, Trans) ->
+encode_segmented_trans_reply(#conn_data{max_pdu_size = Max} = CD, Rep) ->
+    #megaco_transaction_reply{transactionResult = Res} = Rep,
+    case Res of
+	{actionReplies, AR} when length(AR) >= 1 ->
+	    case encode_action_replies(CD, AR) of
+		{Size, EncodecARs} when Size =< (Max - ?MSG_HDR_SZ) ->
+		    ?report_debug(CD, "action replies encoded size ok", 
+				  [Size, Max]),
+		    %% No need to segment message: within size limit
+		    Res   = {actionReplies, EncodecARs}, 
+		    TR = Rep#megaco_transaction_reply{transactionResult = Res},
+		    TR2   = transform_transaction_reply(CD, TR), 
+		    Trans = {transactionReply, TR2},
+		    encode_transaction(CD, Trans);
+
+		{Size, EncodecARs} ->
+		    ?report_debug(CD, 
+				  "action replies encoded size to large - "
+				  "segment", 
+				  [Size, Max]),
+		    %% Over size limit, so segment message
+		    encode_segments(CD, Rep, EncodecARs)
+	    end;
+	_ ->
+	    TR    = transform_transaction_reply(CD, Rep), 
+	    Trans = {transactionReply, TR},
+	    encode_transaction(CD, Trans)
+    end.
+
+encode_segments(CD, Reply, EncodecARs) ->
+    encode_segments(CD, Reply, EncodecARs, 1, []).
+
+encode_segments(CD, Reply, [EncodedAR], SN, EncodedSegs) ->
+    Bin = encode_segment(CD, Reply, EncodedAR, SN, 'NULL'),
+    {ok, lists:reverse([{SN, Bin}|EncodedSegs])};
+encode_segments(CD, Reply, [EncodedAR|EncodedARs], SN, EncodedSegs) ->
+    Bin = encode_segment(CD, Reply, EncodedAR, SN, asn1_NOVALUE),
+    encode_segments(CD, Reply, EncodedARs, SN + 1, [{SN, Bin}|EncodedSegs]).
+
+encode_segment(CD, Reply, EncodedAR, SN, SC) ->
+    Res   = {actionReplies, [EncodedAR]},
+    TR0   = Reply#megaco_transaction_reply{transactionResult    = Res,
+					   segmentNumber        = SN,
+					   segmentationComplete = SC},
+    TR    = transform_transaction_reply(CD, TR0), 
+    Trans = {transactionReply, TR},
+    case encode_transaction(CD, Trans) of
+	{ok, Bin} ->
+	    Bin;
+	Error ->
+	    throw(Error)
+    end.
+
+
+encode_transaction(#conn_data{protocol_version = V,
+			      encoding_mod     = EM,
+			      encoding_config  = EC} = CD, Trans) ->
     case (catch EM:encode_transaction(EC, V, Trans)) of
 	{ok, Bin} ->
 	    ?SIM({ok, Bin}, encode_trans);
-	Error ->
+	{error, not_implemented} = Error1 ->
+	    Error1;
+	{error, Reason} ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
-            {error, {EM, encode_trans, [EC, Trans], Error}}
+            {error, {EM, encode_transaction, [EC, V, Trans], Reason}};
+	Error2 ->
+	    incNumErrors(CD#conn_data.conn_handle),	    
+            {error, {EM, encode_transaction, [EC, V, Trans], Error2}}
     end.
 
 
@@ -106,16 +183,41 @@ encode_actions(#conn_data{protocol_version = V} = CD, TraceLabel, ARs) ->
     EM = CD#conn_data.encoding_mod,
     EC = CD#conn_data.encoding_config,
     case (catch EM:encode_action_requests(EC, V, ARs)) of
-        {ok, Bin} when binary(Bin) ->
+        {ok, Bin} when is_binary(Bin) ->
             ?SIM({ok, Bin}, encode_actions);
         {error, Reason} ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
-            {error, {EM, encode_actions, [EC, ARs], Reason}};
+            {error, {EM, encode_action_requests, [EC, ARs], Reason}};
         Error ->
 	    incNumErrors(CD#conn_data.conn_handle),	    
-            {error, {EM, encode_actions, [EC, ARs], Error}}
+            {error, {EM, encode_action_requests, [EC, ARs], Error}}
     end.
 
+
+%%----------------------------------------------------------------------
+%% Encode the action reply's
+%%----------------------------------------------------------------------
+
+encode_action_replies(CD, AR) ->
+    encode_action_replies(CD, AR, 0, []).
+
+encode_action_replies(_, [], Size, Acc) ->
+    {Size, lists:reverse(Acc)};
+encode_action_replies(#conn_data{protocol_version = V,
+				 encoding_mod     = Mod,
+				 encoding_config  = Conf} = CD, 
+		      [AR|ARs], Size, Acc) ->
+    case (catch Mod:encode_action_reply(Conf, V, AR)) of
+	{ok, Bin} when is_binary(Bin) ->
+	    encode_action_replies(CD, ARs, Size + size(Bin), [Bin|Acc]);
+	{error, Reason} ->
+            incNumErrors(CD#conn_data.conn_handle),
+	    throw({error, {Mod, encode_action_reply, [Conf, AR], Reason}});
+	Error ->
+            incNumErrors(CD#conn_data.conn_handle),
+	    throw({error, {Mod, encode_action_reply, [Conf, AR], Error}})
+    end.
+				      
 
 %%----------------------------------------------------------------------
 %% Encode the message body
@@ -232,6 +334,20 @@ do_send_message(ConnData, SendFunc, Bin) ->
 %%%-----------------------------------------------------------------
 %%% Misc internal util functions
 %%%-----------------------------------------------------------------
+
+transform_transaction_reply(#conn_data{protocol_version = V}, TR) 
+  when is_integer(V) and (V >= 3) ->
+    #megaco_transaction_reply{transactionId        = TransId, 
+			      immAckRequired       = IAR, 
+			      transactionResult    = TransRes,
+			      segmentNumber        = SegNo,
+			      segmentationComplete = SegComplete} = TR,
+    {'TransactionReply', TransId, IAR, TransRes, SegNo, SegComplete};
+transform_transaction_reply(_, TR) ->
+    #megaco_transaction_reply{transactionId        = TransId, 
+			      immAckRequired       = IAR, 
+			      transactionResult    = TransRes} = TR,
+    {'TransactionReply', TransId, IAR, TransRes}.
 
 
 %%-----------------------------------------------------------------

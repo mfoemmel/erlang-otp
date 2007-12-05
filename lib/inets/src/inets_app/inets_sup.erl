@@ -61,7 +61,9 @@ ftp_child_spec() ->
     Type = supervisor,
     {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
-httpc_child_spec(HttpcServices) ->
+
+httpc_child_spec(HttpcServices0) ->
+    HttpcServices = default_profile(HttpcServices0, []),
     Name = httpc_sup,
     StartFunc = {httpc_sup, start_link, [HttpcServices]},
     Restart = permanent, 
@@ -104,3 +106,10 @@ is_tftpd({tftpd, _}) ->
     true;
 is_tftpd(_) ->
     false.
+
+default_profile([], Acc) ->
+    [{httpc, {default, only_session_cookies}} | Acc];
+default_profile([{httpc, {default, _}} | _] = Profiles, Acc) ->
+    Profiles ++ Acc;
+default_profile([Profile | Profiles], Acc) ->
+    default_profile(Profiles, [Profile | Acc]).

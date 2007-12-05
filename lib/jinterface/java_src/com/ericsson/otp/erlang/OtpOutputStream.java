@@ -17,10 +17,12 @@
  */
 package com.ericsson.otp.erlang;
 
-import java.io.OutputStream;
+//import java.io.OutputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.text.DecimalFormat;
 import java.math.BigDecimal;
+import java.math.BigInteger;
 
 /**
  * Provides a stream for encoding Erlang terms to external format, for
@@ -30,24 +32,20 @@ import java.math.BigDecimal;
  * synchronization you must provide it yourself.
  *
  **/
-public class OtpOutputStream {
+public class OtpOutputStream extends ByteArrayOutputStream {
   /** The default initial size of the stream. **/
   public static final int defaultInitialSize = 2048;
 
   /** The default increment used when growing the stream. **/
   public static final int defaultIncrement = 2048;
   
-  private byte[] buf = null;
-  private int size = 0;
-  private int count = 0;
-
   // static formats, used to encode floats and doubles
   private static final DecimalFormat eform = new DecimalFormat("e+00;e-00");
   private static final BigDecimal ten = new BigDecimal(10.0);
   private static final BigDecimal one = new BigDecimal(1.0);
 
   /**
-   * Create a stream with the default initial size.
+   * Create a stream with the default initial size (2048 bytes).
    **/
   public OtpOutputStream() {
     this(defaultInitialSize);
@@ -57,9 +55,7 @@ public class OtpOutputStream {
    * Create a stream with the specified initial size.
    **/
   public OtpOutputStream(int size) {
-    this.size = size;
-    buf = new byte[size];
-    count = 0;
+    super(size);
   }
 
   /**
@@ -85,14 +81,7 @@ public class OtpOutputStream {
    * @return an input stream containing the same raw data.
    **/
   OtpInputStream getOtpInputStream(int offset) {
-    return new OtpInputStream(buf,offset,count-offset);
-  }
-
-  /**
-   * Reset the stream so that it can be reused.
-   **/
-  public void reset() {
-    count = 0;
+    return new OtpInputStream(super.buf, offset, super.count-offset);
   }
 
   /**
@@ -101,18 +90,7 @@ public class OtpOutputStream {
    * @return the current position in the stream.
    **/
   public int getPos() {
-    return count;
-  }
-
-  /**
-   * Get the contents of the stream in a byte array.
-   *
-   * @return a byte array containing a copy of the stream contents.
-   **/ 
-  public byte[] toByteArray() {
-    byte[] ba = new byte[count];
-    System.arraycopy(buf,0,ba,0,count);
-    return ba;
+    return super.count;
   }
 
   /**
@@ -122,15 +100,14 @@ public class OtpOutputStream {
    *
    **/
   public void write(byte b) {
-    if (count >= size) {
-      // System.err.println("Expanding buffer from " + size + " to " + size + defaultIncrement);
-      byte[] tmp = new byte[size + defaultIncrement];
-      System.arraycopy(buf,0,tmp,0,count);
-      size += defaultIncrement;
-      buf = tmp;
+    if (super.count >= super.buf.length) {
+      // System.err.println("Expanding buffer from " + this.buf.length
+      //     + " to " + (this.buf.length+defaultIncrement));
+      byte[] tmp = new byte[super.buf.length + defaultIncrement];
+      System.arraycopy(super.buf, 0, tmp, 0, super.count);
+      super.buf = tmp;
     }
-
-    buf[count++] = b;
+    super.buf[super.count++] = b;
   }
 
   /**
@@ -140,31 +117,15 @@ public class OtpOutputStream {
    *
    **/
   public void write(byte[] buf) {
-    if (count + buf.length > size) {
-      // System.err.println("Expanding buffer from " +
-      // size + " to " + buf.length + size + defaultIncrement);
-      byte[] tmp = new byte[size + buf.length + defaultIncrement];
-      System.arraycopy(this.buf,0,tmp,0,count);
-      size += defaultIncrement + buf.length;
-      this.buf = tmp;
+    if (super.count+buf.length > super.buf.length) {
+      // System.err.println("Expanding buffer from " + super.buf.length 
+      //     + " to " + (buf.length + super.buf.lengt + defaultIncrement));
+      byte[] tmp = new byte[super.buf.length+buf.length+defaultIncrement];
+      System.arraycopy(super.buf, 0, tmp, 0, super.count);
+      super.buf = tmp;
     }
-
-    System.arraycopy(buf,0,this.buf,count,buf.length);
-    count += buf.length;
-  }
-  
-  /**
-   * Write the contents of the stream to an OutputStream.
-   *
-   * @param os the OutputStream to write to.
-   *
-   * @exception java.io.IOException if there is an error writing to
-   * the OutputStream.
-   **/
-  public void writeTo(OutputStream os)
-    throws IOException {
-    os.write(buf,0,count);
-    os.flush();
+    System.arraycopy(buf, 0, super.buf, super.count, buf.length);
+    super.count += buf.length;
   }
   
   /**
@@ -194,14 +155,17 @@ public class OtpOutputStream {
    *
    * @return the size of the internal buffer used by the stream.
    **/
-  public int size() {
-    return size;
+  public int length() {
+    return super.buf.length;
   }
   
   /**
    * Get the number of bytes in the stream.
    *
    * @return the number of bytes in the stream.
+   *
+   * @deprecated  As of Jinterface 1.4, replaced by super.size().
+   * @see #size()
    **/
   public int count() {
     return count;
@@ -229,6 +193,23 @@ public class OtpOutputStream {
     write((byte)((n & 0xff0000) >> 16));
     write((byte)((n & 0xff00) >> 8));
     write((byte)(n & 0xff));
+  }
+
+  /**
+   * Write the low eight (all) bytes of a value to the stream in big endian
+   * order.
+   *
+   * @param n the value to use.
+   **/
+  public void write8BE(long n) {
+    write((byte)((n >> 56) & 0xff));
+    write((byte)((n >> 48) & 0xff));
+    write((byte)((n >> 40) & 0xff));
+    write((byte)((n >> 32) & 0xff));
+    write((byte)((n >> 24) & 0xff));
+    write((byte)((n >> 16) & 0xff));
+    write((byte)((n >>  8) & 0xff));
+    write((byte)(n         & 0xff));
   }
 
     /**
@@ -291,12 +272,12 @@ public class OtpOutputStream {
    * beyond the end of the stream, this method will have no effect.
    *
    * Normally this method should be used in conjunction with {@link
-   * #getPos() getPos()}, when is is necessary to insert data into the
+   * #size() size()}, when is is necessary to insert data into the
    * stream before it is known what the actual value should be. For
    * example:
    *
    <pre>
-   int pos = s.getPos();
+   int pos = s.size();
    s.write4BE(0); // make space for length data,
                   // but final value is not yet known
 
@@ -311,7 +292,7 @@ public class OtpOutputStream {
    * @param n the value to use.
    **/
   public void poke4BE(int offset, long n) {
-    if (offset < count) {
+    if (offset < super.count) {
       buf[offset+0] = ((byte)((n & 0xff000000) >> 24));
       buf[offset+1] = ((byte)((n & 0xff0000) >> 16));
       buf[offset+2] = ((byte)((n & 0xff00) >> 8));
@@ -338,6 +319,24 @@ public class OtpOutputStream {
   public void write_binary(byte[] bin) {
     this.write1(OtpExternal.binTag);
     this.write4BE(bin.length);
+    this.writeN(bin);
+  }
+
+  /**
+   * Write an array of bytes to the stream as an Erlang bitstr.
+   *
+   * @param bin the array of bytes to write.
+   * @param pad_bits the number of zero pad bits at the low end
+   *                 of the last byte
+   **/
+  public void write_bitstr(byte[] bin, int pad_bits) {
+    if (pad_bits == 0) {
+      write_binary(bin);
+      return;
+    }
+    this.write1(OtpExternal.bitBinTag);
+    this.write4BE(bin.length);
+    this.write1(8 - pad_bits);
     this.writeN(bin);
   }
 
@@ -379,45 +378,8 @@ public class OtpOutputStream {
    * @param d the double to use.
    **/
   public void write_double(double d) {
-    BigDecimal val;
-    int exp = 0;
-    int sign = 0;
-    String str;
-
-    // remove sign to simplify decimal shift
-    if (d >= 0) {
-      val = new BigDecimal(d);
-    }
-    else {
-      sign = 1;
-      val = new BigDecimal(-d);
-    }
-
-    // move the decimal point until we have a single units digit
-    if (val.signum() != 0) {
-      // until greater than or equal to 1.0  -> multiply by 10
-      while (val.compareTo(one) < 0) {
-        val = val.movePointRight(1);
-        exp--;
-      }
-      // until strictly less than 10.0 -> divide by 10
-      while (val.compareTo(ten) >= 0) {
-        val = val.movePointLeft(1);
-        exp++;
-      }
-    }
-      
-    // get 20 decimal digits, put sign back, add new exponent
-    val = val.setScale(20,BigDecimal.ROUND_HALF_EVEN);
-    str = (sign == 1 ? "-" : "") + val.toString() + eform.format(exp);
-
-    // write the value
-    this.write1(OtpExternal.floatTag);
-    this.writeN(str.getBytes());
-
-    // pad with zeros to 31 bytes
-    int i = str.getBytes().length;
-    for (; i < 31; i++) this.write1(0);
+    this.write1(OtpExternal.newFloatTag);
+    this.write8BE(Double.doubleToLongBits(d));
   }
 
 
@@ -428,6 +390,36 @@ public class OtpOutputStream {
    **/
   public void write_float(float f) {
     this.write_double(f);
+  }
+
+  public void write_big_integer(BigInteger v) {
+      if (v.bitLength() < 64) {
+	  this.write_long(v.longValue(), true);
+	  return;
+      }
+      int signum = v.signum();
+      if (signum < 0) {
+	  v = v.negate();
+      }
+      byte[] magnitude = v.toByteArray();
+      int n = magnitude.length;
+      // Reverse the array to make it little endian.
+      for (int i = 0, j = n;  i < j--;  i++) {
+	  // Swap [i] with [j]
+	  byte b = magnitude[i];
+	  magnitude[i] = magnitude[j];
+	  magnitude[j] = b;
+      }
+      if ((n & 0xFF) == n) {
+	  this.write1(OtpExternal.smallBigTag);
+	  this.write1(n); // length
+      } else {
+	  this.write1(OtpExternal.largeBigTag);
+	  this.write4BE(n); // length
+      }
+      this.write1(signum < 0 ? 1 : 0); // sign
+      // Write the array
+      this.writeN(magnitude);
   }
 
   void write_long(long v, boolean unsigned) {
@@ -711,6 +703,27 @@ public class OtpOutputStream {
     this.writeN(s.getBytes());
   }
 */
+  /**
+   * Write an arbitrary Erlang term to the stream in compressed format.
+   *
+   * @param o the Erlang tem to write.
+   */
+  public void write_compressed(OtpErlangObject o) {
+    OtpOutputStream oos = new OtpOutputStream(o);
+    this.write1(OtpExternal.compressedTag);
+    this.write4BE(oos.size());
+    java.io.FilterOutputStream fos =
+      new java.io.FilterOutputStream(this);
+    java.util.zip.DeflaterOutputStream dos =
+      new java.util.zip.DeflaterOutputStream(fos);
+    try {
+      oos.writeTo(dos);
+      dos.close();
+    } catch (IOException e) {
+      throw new java.lang.IllegalArgumentException
+	    ("Intremediate stream failed for Erlang object " + o);
+    }
+  }
 
   /**
    * Write an arbitrary Erlang term to the stream.
@@ -722,12 +735,3 @@ public class OtpOutputStream {
     o.encode(this);
   }
 }
-
-
-
-
-
-
-
-
-

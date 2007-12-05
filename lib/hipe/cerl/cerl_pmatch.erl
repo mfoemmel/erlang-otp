@@ -331,7 +331,7 @@ con_desc(E) ->
 	literal ->
 	    case cerl:concrete(E) of
 		[_|_] -> {?cons_id, 2};
-		T when is_tuple(T) -> {?tuple_id, size(T)};
+		T when is_tuple(T) -> {?tuple_id, tuple_size(T)};
 		V -> {?literal_id(V), 0}
 	    end;
 	_ ->

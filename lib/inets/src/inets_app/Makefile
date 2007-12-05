@@ -41,7 +41,8 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inets-$(VSN)
 MODULES = \
 	inets \
 	inets_app \
-	inets_sup 
+	inets_sup \
+	inets_service
 
 HRL_FILES = inets_internal.hrl
 

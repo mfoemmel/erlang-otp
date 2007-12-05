@@ -947,7 +947,7 @@ dcd2ets(Tab, Rep) ->
 		    file:delete(Fname),
 		    0;
 		{error, Error} ->
-		    erlang:fault({"Failed to load table from disc", [Tab, Error]})
+		    erlang:error({"Failed to load table from disc", [Tab, Error]})
 	    end
     end.
 

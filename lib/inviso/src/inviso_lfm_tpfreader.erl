@@ -175,7 +175,7 @@ open_next_file([FileName|Rest]) ->
 
 
 %% Help function which extract the originating process id from the log entry
-%% Term and returns a list of all associations to the PID found in TIalias.
+%% term and returns a list of all associations to the PID found in TIalias.
 make_pid_mappings(_,void,_,_) ->            % Trace Information is not used.
     [];                                     % Simply no pid mappings then!
 make_pid_mappings(Term,TIalias,TIunalias,TS)
@@ -190,6 +190,10 @@ make_pid_mappings(_Term,_TIalias,_TIunalias,_TS) -> % Don't understand Term.
 
 %% Help function traversing a list of ets-alias-table entries and returning a
 %% list of those old enough to have happend before TS.
+%% Note that it is possible to have an Offset in microseconds. This because an
+%% association may end up in the ti-file a short time after logentries starts
+%% to appear in the log file for the process in question. We therefore like to
+%% allow some slack, 
 find_aliases(List,TS) ->
     lists:filter(fun({_,Now,_}) when Now<TS -> true;
 		    (_) -> false

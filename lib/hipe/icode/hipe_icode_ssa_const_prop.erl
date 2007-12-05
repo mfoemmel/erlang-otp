@@ -56,8 +56,8 @@
 %%-----------------------------------------------------------------------------
 
 visit_expression(Instruction, Environment) ->
-  EvaluatedArguments =  [lookup_lattice_value(Argument, Environment) 
-                         || Argument <- hipe_icode:args(Instruction)],
+  EvaluatedArguments = [lookup_lattice_value(Argument, Environment) 
+			|| Argument <- hipe_icode:args(Instruction)],
   case Instruction of
     #move{}  ->
       visit_move_or_fmove     (Instruction, EvaluatedArguments, Environment);
@@ -135,7 +135,7 @@ visit_switch_tuple_arity(Instruction, [Argument], Environment) ->
       UnTagged = hipe_icode:const_value(Constant),
       case is_tuple(UnTagged) of
 	true ->
-	  Target = get_switch_target(Cases, size(UnTagged), FailLabel),
+	  Target = get_switch_target(Cases, tuple_size(UnTagged), FailLabel),
 	  {[Target], [], Environment};
 	false ->
 	  {[FailLabel], [], Environment}
@@ -195,7 +195,7 @@ visit_fail(Instruction, _Arguments, Environment) ->
   FlowWork = hipe_icode:successors(Instruction),
   {FlowWork, [], Environment}.
 
-%%-----------------------------------------------------------------------------              
+%%-----------------------------------------------------------------------------
 
 visit_type(Instruction, Values, Environment) ->
   case evaluate_type(hipe_icode:type_type(Instruction), Values) of
@@ -293,6 +293,12 @@ evaluate_call_or_enter([Argument], Fun) ->
       hipe_icode:mk_const(length(Argument));
     {erlang, size, 1} ->
       hipe_icode:mk_const(size(Argument));
+    {erlang, bit_size, 1} ->
+      hipe_icode:mk_const(bit_size(Argument));
+    {erlang, byte_size, 1} ->
+      hipe_icode:mk_const(byte_size(Argument));
+    {erlang, tuple_size, 1} ->
+      hipe_icode:mk_const(tuple_size(Argument));
     {erlang, abs, 1} ->
       hipe_icode:mk_const(abs(Argument));
     {erlang, round, 1} ->
@@ -409,11 +415,10 @@ evaluate_type_const(Type, [Arg|Left]) ->
       {nil,    _    }  -> false;
       {cons,   [_|_]}  -> true;
       {cons,   _    }  -> false;
-      {{tuple, N}, T} when is_tuple(T), size(T) =:= N -> true;
+      {{tuple, N}, T} when tuple_size(T) =:= N -> true;
       {atom,       A} when is_atom(A) -> true;
       {{atom, A},  A} when is_atom(A) -> true;
-      {{record, A, S}, R} when is_tuple(R), 
-			       size(R) =:= S, 
+      {{record, A, S}, R} when tuple_size(R) =:= S, 
 			       element(1, R) =:= A -> true;
       {{record, _, _}, _} -> false;
       _                -> bottom
@@ -669,7 +674,7 @@ update_switch_tuple_arity(Instruction, Environment) ->
 	true ->
 	  Cases     = hipe_icode:switch_tuple_arity_cases(Instruction),
 	  FailLabel = hipe_icode:switch_tuple_arity_fail_label(Instruction),
-	  Target = get_switch_target(Cases, size(UnTagged), FailLabel),
+	  Target = get_switch_target(Cases, tuple_size(UnTagged), FailLabel),
 	  ?CONST_PROP_MSG("sta: ~w ---> goto ~w\n", [Instruction, Target]),
 	  [hipe_icode:mk_goto(Target)];
 	false ->

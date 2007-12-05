@@ -23,7 +23,7 @@
 new(N, V) ->
     erlang:make_tuple(N, V).
 
-size(V) -> erlang:size(V).
+size(V) -> erlang:tuple_size(V).
 
 list(Vec) ->
     index(tuple_to_list(Vec), 0).

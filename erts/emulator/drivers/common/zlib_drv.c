@@ -52,8 +52,11 @@
 #define GET_BUFSZ       19
 #define GET_QSIZE       20
 
-#define ADLER32_1         21
-#define ADLER32_2         22
+#define ADLER32_1       21
+#define ADLER32_2       22
+
+#define CRC32_COMBINE   23
+#define ADLER32_COMBINE 24
 
 #define DEFAULT_BUFSZ   4000
 
@@ -112,10 +115,10 @@ static inline int i32(char* buf)
 #endif
 {
     return (int) (
-		  (((unsigned char*)buf)[0] << 24) |
-		  (((unsigned char*)buf)[1] << 16) |
-		  (((unsigned char*)buf)[2] << 8) |
-		  (((unsigned char*)buf)[3] << 0));
+		  (((int)((unsigned char*)buf)[0]) << 24) |
+		  (((int)((unsigned char*)buf)[1]) << 16) |
+		  (((int)((unsigned char*)buf)[2]) << 8) |
+		  (((int)((unsigned char*)buf)[3]) << 0));
 }
 
 static char* zlib_reason(int code, int* err)
@@ -266,7 +269,7 @@ static int zlib_inflate(ZLibData* d, int flush)
     }
 
     if (d->want_crc) {
-       d->crc = crc32(d->crc, d->bin->orig_bytes,
+       d->crc = crc32(d->crc, (unsigned char*) d->bin->orig_bytes,
 		      d->binsz - d->s.avail_out);
     }
     zlib_output(d);
@@ -323,11 +326,14 @@ static int zlib_deflate(ZLibData* d, int flush)
 		}
 	    }
 	} else {
-	    while (d->s.avail_out < d->binsz) {
-		zlib_output(d);
-		if (res == Z_STREAM_END) {
-		    break;
-		}
+	    while (d->s.avail_out == 0) {
+	       zlib_output(d);
+	       if ((res = deflate(&d->s, flush)) < 0) {
+		  return res;
+	       }
+	    }
+	    if (d->s.avail_out < d->binsz) {
+	       zlib_output(d);
 	    }
 	}
     }
@@ -572,31 +578,51 @@ static int zlib_ctl(ErlDrvData drv_data, unsigned int command, char *buf,
 
     case CRC32_1: {
 	uLong crc = crc32(0L, Z_NULL, 0);
-	crc = crc32(crc, (unsigned char*)buf, len);
+	crc = crc32(crc, (unsigned char*) buf, len);
 	return zlib_value(crc, rbuf, rlen);
     }
 	
     case CRC32_2: {
 	uLong crc;
 	if (len < 4) goto badarg;
-	crc = i32(buf);
-	crc = crc32(crc, (unsigned char*)buf+4, len-4);
+	crc = (unsigned int) i32(buf);
+	crc = crc32(crc, (unsigned char*) buf+4, len-4);
 	return zlib_value(crc, rbuf, rlen);
     }
 
     case ADLER32_1: {
 	uLong adler = adler32(0L, Z_NULL, 0);
-	adler = adler32(adler, buf, len);
+	adler = adler32(adler, (unsigned char*) buf, len);
 	return zlib_value(adler, rbuf, rlen);
     }
 	
     case ADLER32_2: {
-	uLong adler;
-	if (len < 4) goto badarg;
-	adler = i32(buf);
-	adler = adler32(adler, buf+4, len-4);
-	return zlib_value(adler, rbuf, rlen);
+       uLong adler;
+       if (len < 4) goto badarg;
+       adler = (unsigned int) i32(buf);
+       adler = adler32(adler, (unsigned char*) buf+4, len-4);
+       return zlib_value(adler, rbuf, rlen);
     }
+
+    case CRC32_COMBINE: {
+       uLong crc, crc1, crc2, len2;
+       if (len != 12) goto badarg;
+       crc1 = (unsigned int) i32(buf);
+       crc2 = (unsigned int) i32(buf+4);
+       len2 = (unsigned int) i32(buf+8);
+       crc = crc32_combine(crc1, crc2, len2);
+       return zlib_value(crc, rbuf, rlen);
+    }
+
+    case ADLER32_COMBINE: {
+       uLong adler, adler1, adler2, len2;
+       if (len != 12) goto badarg;
+       adler1 = (unsigned int) i32(buf);
+       adler2 = (unsigned int) i32(buf+4);
+       len2   = (unsigned int) i32(buf+8);
+       adler  = adler32_combine(adler1, adler2, len2);
+       return zlib_value(adler, rbuf, rlen);
+    }       
     }
 
  badarg:

@@ -135,10 +135,12 @@ tag_event(Event) ->
 read_index_file(Dir) ->
     case file:open(Dir ++ "/index", [raw, read]) of
 	{ok, Fd} ->
-	    case catch file:read(Fd, 1) of
-		{ok, [Index]} -> {ok, Index};
-		_ -> error
-	    end;
+	    Res = case catch file:read(Fd, 1) of
+		      {ok, [Index]} -> {ok, Index};
+		      _ -> error
+		  end,
+	    file:close(Fd),
+	    Res;
 	_ -> error
     end.
 

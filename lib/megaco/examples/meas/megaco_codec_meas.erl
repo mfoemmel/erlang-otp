@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2002-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Measure megaco codec's encoding & decoding time's
@@ -52,12 +54,12 @@
 
 -include_lib("kernel/include/file.hrl").
 
--define(V3, prev3c).
+-define(V3, v3).
 
--define(MEASURE_TIMEOUT, 100000).
+-define(MEASURE_TIMEOUT, 100000). % 100 sec
 
 -ifndef(MEASURE_COUNT_TIME).
--define(MEASURE_COUNT_TIME, 2*1000*1000). % 2 seconds
+-define(MEASURE_COUNT_TIME, 1*1000*1000). % 1 seconds
 -endif.
 
 -ifndef(MEASURE_TIME).
@@ -66,6 +68,7 @@
 
 -ifndef(MEASURE_CODECS).
 -define(MEASURE_CODECS, [pretty, compact, per, ber, erlang]).
+%% -define(MEASURE_CODECS, [pretty, compact]).
 -endif.
 
 -record(stat, {file, ecount, etime, dcount, dtime, size}).
@@ -113,6 +116,7 @@ ttc() ->
 %%
 
 t(Dirs) when list(Dirs) ->
+    %% process_flag(trap_exit, true),
     io:format("~n", []),
     display_os_info(),
     display_system_info(),
@@ -263,7 +267,7 @@ expand_dir(Dir) ->
 	"erlang" ->
 	    [
 	     {Dir, megaco_erl_dist_encoder, [megaco_compressed,compressed], 500},
-	     {Dir, megaco_erl_dist_encoder, [compressed], 500},
+	     {Dir, megaco_erl_dist_encoder, [compressed], 400},
 	     {Dir, megaco_erl_dist_encoder, [megaco_compressed], 10000},
  	     {Dir, megaco_erl_dist_encoder, [], 10000}
 	    ];
@@ -336,6 +340,7 @@ measure(Dir, Codec, Conf, [File|Files], Results, MCount) ->
 
 do_measure(Dir, Codec, Conf, File, MCount) ->
     BinMsg             = read_message(Dir, File),
+    %% io:format("~n~s~n", [binary_to_list(BinMsg)]),
     {Version, NewBin}  = detect_version(Codec, Conf, BinMsg),
     {Msg, Dcnt, Dtime} = measure_decode(Codec, Conf, Version, NewBin, MCount),
     {_,   Ecnt, Etime} = measure_encode(Codec, Conf, Version, Msg, MCount),
@@ -423,7 +428,15 @@ measure_codec(Codec, Func, Conf, Version, Bin, MCount) ->
 	Else ->
 	    {error, {unexpected_result, Else}}
     after ?MEASURE_TIMEOUT ->
-	    {error, timeout}
+	    Info = 
+		case (catch process_info(Pid)) of
+		    I when is_list(I) ->
+			exit(Pid, kill),
+			I;
+		    _ ->
+			undefined
+		end,
+	    {error, {timeout, MCount, Info}}
     end.
 
 

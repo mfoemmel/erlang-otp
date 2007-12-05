@@ -501,7 +501,7 @@ save_info(Win,File,ToolInfo) ->
 % Called by save_info/3
 %----------------------------------------
 save_info2(File,ToolInfo) ->
-    case file:open(File,write) of
+    case file:open(File, [write]) of
 	{ok,Fd} ->
 	    io:format(Fd,"{version,\"~s\"}.~n",[toolbar:version()]),
 	    io:format(Fd,"{{tool,\"~s\"},~n",[ToolInfo#toolinfo.tool]),

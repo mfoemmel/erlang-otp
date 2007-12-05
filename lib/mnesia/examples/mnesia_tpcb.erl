@@ -69,11 +69,7 @@
 %%    mnesia_tpcb:init(([{n_branches, 8}, {replica_type, disc_only_copies}]),
 %%    mnesia_tpcb:run(([{n_drivers_per_node, 8}]),
 %%    mnesia_tpcb:run(([{n_drivers_per_node, 64}]).
-%%
-%% AUTHOR
-%%
-%%   Hakan Mattsson, hakan@erix.ericsson.se
-%%
+%%    
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(mnesia_tpcb).
@@ -82,7 +78,7 @@
 -export([
 	 config/2,
 	 count_balance/0,
-	 driver_init/1,
+	 driver_init/2,
 	 init/1,
 	 reporter_init/2,
 	 run/1,
@@ -93,7 +89,7 @@
 	 real_trans/5,
 	 verify_tabs/0,
 	 reply_gen_branch/3,
-	 frag_add_delta/6,
+	 frag_add_delta/7,
 
 	 conflict_test/1,
 	 dist_test/1,
@@ -160,11 +156,11 @@
 -record(history,
 	{
 	 history_id  = {0, 0}, % {DriverId, DriverLocalHistoryid}
-	 time_stamp  = now(), % Time point during active transaction
-	 branch_id   = 0, % Branch associated with teller
-	 teller_id   = 0, % Teller invlolved in transaction
-	 account_id  = 0, % Account updated by transaction
-	 amount      = 0, % Amount (delta) specified by transaction
+	 time_stamp  = now(),  % Time point during active transaction
+	 branch_id   = 0,      % Branch associated with teller
+	 teller_id   = 0,      % Teller invlolved in transaction
+	 account_id  = 0,      % Account updated by transaction
+	 amount      = 0,      % Amount (delta) specified by transaction
 	 filler      = ?HISTORY_FILLER % Gap filler to ensure size >= 50 bytes
        }).
 
@@ -172,6 +168,7 @@
 -record(tab_config,
 	{
 	  db_nodes = [node()],
+	  n_replicas = 1, % Ignored for non-fragmented tables
 	  replica_nodes = [node()],
 	  replica_type = ram_copies,
 	  use_running_mnesia = false,
@@ -185,6 +182,7 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -record(run_config,
 	{
 	  driver_nodes = [node()],
@@ -199,6 +197,7 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -record(time,
 	{
 	  n_trans = 0,
@@ -209,13 +208,14 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -record(driver_state,
 	{
 	  driver_id,
 	  driver_node,
 	  seed,
-	  local_branches,
 	  n_local_branches,
+	  local_branches,
 	  tab_config,
 	  run_config,
 	  history_id,
@@ -225,6 +225,7 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 -record(reporter_state,
 	{
 	  driver_pids,
@@ -239,13 +240,16 @@
 	 }).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% One driver on this node, table not replicated
+%% One driver on each node, table not replicated
+
 config(frag_test, ReplicaType) ->
-    Nodes = [node() | nodes()],
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {n_branches, length(Nodes)},
      {n_fragments, length(Nodes)},
-     {replica_nodes, 1},
+     {replica_nodes, Nodes},
      {db_nodes, Nodes},
      {driver_nodes, Nodes},
      {n_accounts_per_branch, 100},
@@ -256,13 +260,17 @@ config(frag_test, ReplicaType) ->
     ];
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% One driver on this node, table replicated to two nodes.
+%% One driver on each node, table replicated to two nodes.
+
 config(frag2_test, ReplicaType) ->
-    Nodes = [node() | nodes()],
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {n_branches, length(Nodes)},
      {n_fragments, length(Nodes)},
-     {replica_nodes, 2},
+     {n_replicas, 2},
+     {replica_nodes,  Nodes},
      {db_nodes, Nodes},
      {driver_nodes, Nodes},
      {n_accounts_per_branch, 100},
@@ -274,11 +282,14 @@ config(frag2_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% One driver on this node, table replicated to all nodes.
+
 config(replica_test, ReplicaType) ->
-    Nodes = [node() | nodes()],
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {db_nodes, Nodes},
-     {driver_nodes, [node()]},
+     {driver_nodes, [Local]},
      {replica_nodes, Nodes},
      {n_accounts_per_branch, 100},
      {replica_type, ReplicaType},
@@ -289,8 +300,11 @@ config(replica_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% One driver on this node, table replicated to all nodes.
+
 config(sticky_replica_test, ReplicaType) ->
-    Nodes = [node()|nodes()],
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {db_nodes, Nodes},
      {driver_nodes, [node()]},
@@ -305,8 +319,11 @@ config(sticky_replica_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Ten drivers per node, tables replicated to all nodes, lots of branches
-config(dist_test, ReplicaType) ->
-    Nodes = [node()|nodes()],
+
+config(dist_test, ReplicaType) ->  
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {db_nodes, Nodes},
      {driver_nodes, Nodes},
@@ -322,8 +339,11 @@ config(dist_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Ten drivers per node, tables replicated to all nodes, single branch
+
 config(conflict_test, ReplicaType) ->
-    Nodes = [node()|nodes()],
+    Remote = nodes(),
+    Local = node(),
+    Nodes = [Local | Remote], 
     [
      {db_nodes, Nodes},
      {driver_nodes, Nodes},
@@ -339,6 +359,7 @@ config(conflict_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% One driver on this node, table replicated to all other nodes.
+
 config(remote_test, ReplicaType) ->
     Remote = nodes(),
     Local = node(),
@@ -356,6 +377,7 @@ config(remote_test, ReplicaType) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% One driver on this node, table replicated to two other nodes.
+
 config(remote_frag2_test, ReplicaType) ->
     Remote = nodes(),
     Local = node(),
@@ -363,7 +385,8 @@ config(remote_frag2_test, ReplicaType) ->
     [
      {n_branches, length(Remote)},
      {n_fragments, length(Remote)},
-     {replica_nodes, 2},
+     {n_replicas, 2},
+     {replica_nodes, Remote},
      {db_nodes, Nodes},
      {driver_nodes, [Local]},
      {n_accounts_per_branch, 100},
@@ -399,6 +422,7 @@ remote_frag2_test(ReplicaType) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Args is a list of {Key, Val} tuples where Key is a field name
 %% in either the record tab_config or run_config. Unknown keys are ignored.
+
 start() ->
     start([]).
 start(Args) ->
@@ -410,7 +434,7 @@ list2rec(List, Fields, DefaultTuple) ->
     List2 = list2rec(List, Fields, Defaults, []),
     list_to_tuple([Name] ++ List2).
 
-list2rec(List, [], [], Acc) ->
+list2rec(_List, [], [], Acc) ->
     Acc;
 list2rec(List, [F|Fields], [D|Defaults], Acc) ->
     {Val, List2} =
@@ -447,8 +471,16 @@ sync_stop(Pid) ->
 
 %% Args is a list of {Key, Val} tuples where Key is a field name
 %% in the record tab_config, unknown keys are ignored.
+
 init(Args) ->
-    TabConfig = list2rec(Args, record_info(fields, tab_config), #tab_config{}),
+    TabConfig0 = list2rec(Args, record_info(fields, tab_config), #tab_config{}),
+    TabConfig = 
+	if
+	    TabConfig0#tab_config.n_fragments =:= 0 ->
+		TabConfig0#tab_config{n_replicas = length(TabConfig0#tab_config.replica_nodes)};
+	    true ->
+		TabConfig0	
+	end,
     Tags = record_info(fields, tab_config),
     Fun = fun(F, Pos) -> {{F, element(Pos, TabConfig)}, Pos + 1} end,
     {List, _} = lists:mapfoldl(Fun, 2, Tags),
@@ -457,7 +489,7 @@ init(Args) ->
     DbNodes = TabConfig#tab_config.db_nodes,
     stop(),
     if
-	TabConfig#tab_config.use_running_mnesia == true ->
+	TabConfig#tab_config.use_running_mnesia =:= true ->
 	    ignore;
 	true ->
 	    rpc:multicall(DbNodes, mnesia, lkill, []),
@@ -467,8 +499,8 @@ init(Args) ->
 			ok ->
 			    {Replies, BadNodes} =
 				rpc:multicall(DbNodes, mnesia, start, []),
-			    case [Res || Res <- Replies, Res /= ok] of
-				[] when BadNodes == [] ->
+			    case [Res || Res <- Replies, Res =/= ok] of
+				[] when BadNodes =:= [] ->
 				    ok;
 				BadRes ->
 				    io:format("TPC-B: <ERROR> "
@@ -523,18 +555,18 @@ gen_tabs(TC) ->
 	    exit({inconsistent_tables, Reason})
     end.
 
-create_tab(TC, Name, Attrs, ForeignKey) when TC#tab_config.n_fragments == 0 ->
+create_tab(TC, Name, Attrs, _ForeignKey) when TC#tab_config.n_fragments =:= 0 ->
     Nodes = TC#tab_config.replica_nodes,
     Type = TC#tab_config.replica_type,
     Def = [{Type, Nodes}, {attributes, Attrs}],
     create_tab(Name, Def);
 create_tab(TC, Name, Attrs, ForeignKey) ->
-    NReplicas = TC#tab_config.replica_nodes,
+    NReplicas = TC#tab_config.n_replicas,
+    NodePool = TC#tab_config.replica_nodes,
     Type = TC#tab_config.replica_type,
-    DbNodes = TC#tab_config.db_nodes,
     NF = TC#tab_config.n_fragments,
     Props = [{n_fragments, NF},
-	     {node_pool, DbNodes},
+	     {node_pool, NodePool},
 	     {n_copies(Type), NReplicas},
 	     {foreign_key, ForeignKey}],
     Def = [{frag_properties, Props},
@@ -595,7 +627,7 @@ get_branch_nodes(BranchId, UsedNs) ->
     [{_, LeastUsed} | _ ] = lists:sort(WeightedNs),
     [LeastUsed | UsedNs].
 
-n_duplicates(N, [], Count) ->
+n_duplicates(_N, [], Count) ->
     Count;
 n_duplicates(N, [N | Tail], Count) ->    
     n_duplicates(N, Tail, Count + 1);
@@ -634,7 +666,7 @@ gen_accounts(_, _, _, _) ->
 default_branch(TC) ->  #branch{filler = TC#tab_config.branch_filler}.
 default_teller(TC) ->  #teller{filler = TC#tab_config.teller_filler}.
 default_account(TC) -> #account{filler = TC#tab_config.account_filler}.
-default_history(TC) -> #history{}.
+default_history(_TC) -> #history{}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%% Run the benchmark
@@ -663,13 +695,13 @@ reporter_init(Starter, RC) ->
     process_flag(trap_exit, true),
     DbNodes = mnesia:system_info(db_nodes),
     if
-	RC#run_config.use_running_mnesia == true ->
+	RC#run_config.use_running_mnesia =:= true ->
 	    ignore;
 	true ->
 	    {Replies, BadNodes} =
 		rpc:multicall(DbNodes, mnesia, start, []),
-	    case [Res || Res <- Replies, Res /= ok] of
-		[] when BadNodes == [] ->
+	    case [Res || Res <- Replies, Res =/= ok] of
+		[] when BadNodes =:= [] ->
 		    ok;
 		BadRes ->
 		    io:format("TPC-B: <ERROR> "
@@ -680,7 +712,7 @@ reporter_init(Starter, RC) ->
 	    verify_tabs()
     end,
 
-    N = table_info(branch, size),
+    N  = table_info(branch, size),
     NT = table_info(teller, size) div N,
     NA = table_info(account, size) div N,
 
@@ -705,7 +737,7 @@ reporter_init(Starter, RC) ->
 	{'EXIT', Reason} ->
 	    io:format("TPC-B: Abnormal termination: ~p~n", [Reason]),
 	    if
-		RC#run_config.use_running_mnesia == true ->
+		RC#run_config.use_running_mnesia =:= true ->
 		    ignore;
 		true ->
 		    rpc:multicall(DbNodes, mnesia, lkill, [])
@@ -725,13 +757,15 @@ reporter_init(Starter, RC) ->
 			{error, Reason}
 		end,
 	    if
-		RC#run_config.use_running_mnesia == true -> ignore;
-		true -> rpc:multicall(DbNodes, mnesia, stop, [])
+		RC#run_config.use_running_mnesia =:= true -> 
+		    ignore;
+		true -> 
+		    rpc:multicall(DbNodes, mnesia, stop, [])
 	    end,
 	    unlink(Starter),
 	    Starter ! {self(), {stopped, Res}},
 	    if
-		Stopper /= Starter ->
+		Stopper =/= Starter ->
 		    Stopper ! {self(), {stopped, Res}};
 		true ->
 		    ignore
@@ -752,9 +786,9 @@ table_storage(Tab) ->
 	    ND  = length(mnesia:table_info(Tab, disc_copies)),
 	    NDO = length(mnesia:table_info(Tab, disc_only_copies)),
 	    if
-		NR /= 0 -> {ram_copies, NFO, NR};
-		ND /= 0 -> {disc_copies, NFO, ND};
-		NDO /= 0 -> {disc_copies, NFO, NDO}
+		NR  =/= 0 -> {ram_copies, NFO, NR};
+		ND  =/= 0 -> {disc_copies, NFO, ND};
+		NDO =/= 0 -> {disc_copies, NFO, NDO}
 	    end;
 	Props ->
 	    {value, NFO} = lists:keysearch(n_fragments, 1, Props),
@@ -762,9 +796,9 @@ table_storage(Tab) ->
 	    ND  = table_info(Tab, n_disc_copies),
 	    NDO = table_info(Tab, n_disc_only_copies),
 	    if
-		NR /= 0 -> {ram_copies, NFO, NR};
-		ND /= 0 -> {disc_copies, NFO, ND};
-		NDO /= 0 -> {disc_copies, NFO, NDO}
+		NR  =/= 0 -> {ram_copies, NFO, NR};
+		ND  =/= 0 -> {disc_copies, NFO, ND};
+		NDO =/= 0 -> {disc_copies, NFO, NDO}
 	    end
     end.
     
@@ -773,14 +807,14 @@ reporter_loop(State) ->
     receive
 	{From, stop} ->
 	    {ok, From, call_drivers(State, stop)};
-	{'EXIT', Pid, Reason} when Pid == State#reporter_state.starter_pid ->
+	{'EXIT', Pid, Reason} when Pid =:= State#reporter_state.starter_pid ->
 	    %% call_drivers(State, stop),
 	    exit({starter_died, Pid, Reason})
     after RC#run_config.report_interval ->
 	    Iters = State#reporter_state.n_iters,
 	    State2 = State#reporter_state{n_iters = Iters + 1},
 	    case call_drivers(State2, report) of
-		State3 when State3#reporter_state.driver_pids /= [] ->
+		State3 when State3#reporter_state.driver_pids =/= [] ->
 		    State4 = State3#reporter_state{curr = #time{}},
 		    reporter_loop(State4);
 		_ ->
@@ -792,7 +826,7 @@ call_drivers(State, Msg) ->
     Drivers = State#reporter_state.driver_pids,
     lists:foreach(fun(Pid) -> Pid ! {self(), Msg} end, Drivers),
     State2 = show_report(calc_reports(Drivers, State)),
-    case Msg == stop of
+    case Msg =:= stop of
 	true ->
 	    Acc = State2#reporter_state.acc,
 	    Init = State2#reporter_state.init_micros,
@@ -808,11 +842,11 @@ calc_reports([], State) ->
     State;
 calc_reports([Pid|Drivers], State) ->
     receive
-	{'EXIT', P, Reason} when P == State#reporter_state.starter_pid ->
+	{'EXIT', P, Reason} when P =:= State#reporter_state.starter_pid ->
 	    exit({starter_died, P, Reason});
 	{'EXIT', Pid, Reason} ->
 	    exit({driver_died, Pid, Reason});
-	{Pid, Time} when record(Time, time) ->
+	{Pid, Time} when is_record(Time, time) ->
 	    %% io:format("~w: ~w~n", [Pid, Time]),
 	    A = add_time(State#reporter_state.acc, Time),
 	    C = add_time(State#reporter_state.curr, Time),
@@ -871,68 +905,66 @@ now_to_micros({Mega, Secs, Micros}) ->
 start_drivers(RC, TC) ->
     LastHistoryId = table_info(history, size),
     Reuse = RC#run_config.reuse_history_id,
-    DS = #driver_state{tab_config = TC,
-		       run_config = RC,
-		       local_branches = [],
+    DS = #driver_state{tab_config       = TC,
+		       run_config       = RC,
 		       n_local_branches = 0,
-		       history_id = LastHistoryId,
+		       local_branches   = [],
+		       history_id       = LastHistoryId,
 		       reuse_history_id = Reuse},
     Nodes = RC#run_config.driver_nodes,
     NB = TC#tab_config.n_branches,
     First = 0,
-    Candidates = lists:seq(First, First + NB - 1),
+    AllBranches = lists:seq(First, First + NB - 1),
     ND = RC#run_config.n_drivers_per_node,
     Spawn = fun(Spec) ->
 		    Node = Spec#driver_state.driver_node,
-		    spawn_link(Node, ?MODULE, driver_init, [Spec])
+		    spawn_link(Node, ?MODULE, driver_init, [Spec, AllBranches])
 	    end,
-    Specs = [[DS#driver_state{driver_id = Id, driver_node = N}
-	      || Id <- lists:seq(1, ND)] || N <- Nodes],
+    Specs = [DS#driver_state{driver_id = Id, driver_node = N}
+	     || N <- Nodes, 
+		Id <- lists:seq(1, ND)],
     Specs2 = lists:sort(lists:flatten(Specs)),
-    Specs3 = alloc_branches(Candidates, Specs2, TC),
+    {Specs3, OrphanBranches} = alloc_local_branches(AllBranches, Specs2, []),
+    case length(OrphanBranches) of
+	N when N =< 10 ->
+	    io:format("TPC-B: Orphan branches: ~p~n", [OrphanBranches]);
+	N ->
+	    io:format("TPC-B: Orphan branches: ~p~n", [N])
+    end,
     [Spawn(Spec) || Spec <- Specs3].
 
-alloc_branches(Branches, Specs, TC) when TC#tab_config.n_fragments == 0 ->
-    NB = length(Branches),
-    [DS#driver_state{local_branches = Branches, n_local_branches = NB}
-     || DS <- Specs];
-alloc_branches([BranchId | Tail], Specs, TC) ->
+alloc_local_branches([BranchId | Tail], Specs, OrphanBranches) ->
     Nodes = table_info({branch, BranchId}, where_to_write),
-    Candidates = [DS || DS <- Specs, lists:member(DS#driver_state.driver_node, Nodes)],
-    DS = hd(lists:keysort(#driver_state.n_local_branches, Candidates)),
-    NB = DS#driver_state.n_local_branches,
-    Branches = DS#driver_state.local_branches,
-    DriverId = DS#driver_state.driver_id,
-    Node = DS#driver_state.driver_node,
+    LocalSpecs = [DS || DS <- Specs,
+			lists:member(DS#driver_state.driver_node, Nodes)],
+    case lists:keysort(#driver_state.n_local_branches, LocalSpecs) of
+	[] ->
+	    alloc_local_branches(Tail, Specs, [BranchId | OrphanBranches]);
+	[DS | _] ->
+	    LocalNB = DS#driver_state.n_local_branches + 1,
+	    LocalBranches = [BranchId | DS#driver_state.local_branches],
+	    DS2 = DS#driver_state{n_local_branches = LocalNB,
+				  local_branches = LocalBranches},
+	    Specs2 = Specs -- [DS],
+	    Specs3 = [DS2 | Specs2],
+	    alloc_local_branches(Tail, Specs3, OrphanBranches)
+    end;
+alloc_local_branches([], Specs, OrphanBranches) ->
+    {Specs, OrphanBranches}.
     
-    DS2 = DS#driver_state{n_local_branches = NB + 1,
-			  local_branches = [BranchId | Branches]},
-    Replace = fun(Spec) when Spec#driver_state.driver_id == DriverId,
-			     Spec#driver_state.driver_node == Node ->
-		      DS2;
-		 (Spec) ->
-		      Spec
-	      end,
-    Specs2 = [Replace(Spec) || Spec <- Specs],
-    alloc_branches(Tail, Specs2, TC);
-alloc_branches([], Specs2, TC) ->
-    Specs2.
-    
-driver_init(DS) ->
-    TC = DS#driver_state.tab_config,
-    DebugInfo =
-	case TC#tab_config.n_fragments of
-	    0 ->
-		DS#driver_state.n_local_branches;
-	    _ when DS#driver_state.n_local_branches < 10 ->
-		DS#driver_state.local_branches;
-	    _ ->
-		DS#driver_state.n_local_branches
+driver_init(DS, AllBranches) ->
+    Seed = erlang:now(),
+    DS2 =
+	if
+	    DS#driver_state.n_local_branches =:= 0 ->
+		DS#driver_state{seed = Seed, 
+				n_local_branches = length(AllBranches),
+				local_branches   = AllBranches};
+	    true ->
+		DS#driver_state{seed = Seed}
 	end,
-    
     io:format("TPC-B: Driver ~p started as ~p on node ~p with ~p local branches~n",
-	      [DS#driver_state.driver_id, self(), node(), DebugInfo]),
-    DS2 = DS#driver_state{seed = erlang:now()},
+	      [DS2#driver_state.driver_id, self(), node(), DS2#driver_state.n_local_branches]),
     driver_loop(DS2).
 
 driver_loop(DS) ->
@@ -941,7 +973,8 @@ driver_loop(DS) ->
 	    From ! {self(), DS#driver_state.time},
 	    Acc = add_time(DS#driver_state.time, DS#driver_state.acc_time),
 	    DS2 = DS#driver_state{time=#time{}, acc_time = Acc}, % Reset timer
-	    driver_loop(calc_trans(DS2));
+	    DS3 = calc_trans(DS2),
+	    driver_loop(DS3);
 	{From, stop} ->
 	    Acc = add_time(DS#driver_state.time, DS#driver_state.acc_time),
 	    io:format("TPC-B: Driver ~p (~p) on node ~p stopped: ~w~n",
@@ -950,7 +983,8 @@ driver_loop(DS) ->
 	    unlink(From),
 	    exit(stopped)
     after 0 ->
-	    driver_loop(calc_trans(DS))
+	    DS2 = calc_trans(DS),
+	    driver_loop(DS2)
     end.
 
 calc_trans(DS) ->
@@ -972,7 +1006,6 @@ calc_trans(DS) ->
 
 %% Generate teller_id, account_id and delta
 %% Time the TPC-B transaction
-
 time_trans(DS) ->
     OldSeed = get(random_seed), % Avoid interference with Mnesia
     put(random_seed, DS#driver_state.seed),
@@ -990,7 +1023,7 @@ time_trans(DS) ->
     {Time, Res} = timer:tc(?MODULE, real_trans, [RC, Branchid, Fun, Args, Mod]),
 
     case Res of
-	AccountBal when integer(AccountBal) ->
+	AccountBal when is_integer(AccountBal) ->
 	    {Time, DS#driver_state{seed = NewSeed}};
 	Other ->
 	    exit({crash, Other, Args, Random, DS})
@@ -1013,27 +1046,28 @@ random_to_args(Random, DS) ->
 	    0 -> BranchPos - 1;
 	    _ -> lists:nth(BranchPos, Branches)
 	end,
-    RelativeTellerId = Tmp rem NT,
+    RelativeTellerId = Tmp div NT,
     TellerId = (BranchId * NT) + RelativeTellerId,
-    AccountId =
+    {AccountBranchId, AccountId} =
 	if
 	    Random >= 0.85, NB > 1 ->
 		%% Pick from a remote account
-                AccountId2 =  trunc(Random * (NB - 1) * NA),
-		BranchId2 = AccountId2 rem NB,
+                TmpAccountId= trunc(Random * (NB - 1) * NA),
+		TmpAccountBranchId = TmpAccountId div NA,
 		if
-		    BranchId2 >= BranchId ->
-			AccountId2 + NA;
+		    TmpAccountBranchId =:= BranchId ->
+			{TmpAccountBranchId + 1, TmpAccountId + NA};
 		    true ->
-			AccountId2
+			{TmpAccountBranchId, TmpAccountId}
 		end;
 	    true ->
 		%% Pick from a local account
 		RelativeAccountId = trunc(Random * NA),
-		(BranchId * NA) + RelativeAccountId
+		TmpAccountId = (BranchId * NA) + RelativeAccountId,
+		{BranchId, TmpAccountId}
 	end,
     
-    {BranchId, [DriverId, BranchId, TellerId, AccountId, HistoryId, Delta]}.
+    {BranchId, [DriverId, BranchId, TellerId, AccountBranchId, AccountId, HistoryId, Delta]}.
 
 real_trans(RC, BranchId, Fun, Args, Mod) ->
     Type = RC#run_config.activity_type,
@@ -1050,22 +1084,22 @@ real_trans(RC, BranchId, Fun, Args, Mod) ->
 
 trans_type(TC, RC) ->
     if
-	TC#tab_config.n_fragments == 0,
-	RC#run_config.use_sticky_locks == false ->
-	    {fun add_delta/6, mnesia};
-	TC#tab_config.n_fragments == 0,
-	RC#run_config.use_sticky_locks == true ->
-	    {fun sticky_add_delta/6, mnesia};
+	TC#tab_config.n_fragments =:= 0,
+	RC#run_config.use_sticky_locks =:= false ->
+	    {fun add_delta/7, mnesia};
+	TC#tab_config.n_fragments =:= 0,
+	RC#run_config.use_sticky_locks =:= true ->
+	    {fun sticky_add_delta/7, mnesia};
 	TC#tab_config.n_fragments > 0,
-	RC#run_config.use_sticky_locks == false ->
-	    {fun frag_add_delta/6, mnesia_frag}
+	RC#run_config.use_sticky_locks =:= false ->
+	    {fun frag_add_delta/7, mnesia_frag}
     end.
 
 %%
 %% Runs the TPC-B defined transaction and returns NewAccountBalance
 %%
 
-add_delta(DriverId, BranchId, TellerId, AccountId, HistoryId, Delta) ->
+add_delta(DriverId, BranchId, TellerId, _AccountBranchId, AccountId, HistoryId, Delta) ->
     %% Grab write lock already when the record is read 
     
     %% Add delta to branch balance
@@ -1095,7 +1129,7 @@ add_delta(DriverId, BranchId, TellerId, AccountId, HistoryId, Delta) ->
     %% Return account balance
     NewA#account.balance.
 
-sticky_add_delta(DriverId, BranchId, TellerId, AccountId, HistoryId, Delta) ->
+sticky_add_delta(DriverId, BranchId, TellerId, _AccountBranchId, AccountId, HistoryId, Delta) ->
     %% Grab orinary read lock when the record is read
     %% Grab sticky write lock when the record is written
     %% This transaction would benefit of an early  stick_write lock at read
@@ -1127,22 +1161,23 @@ sticky_add_delta(DriverId, BranchId, TellerId, AccountId, HistoryId, Delta) ->
     %% Return account balance
     NewA#account.balance.
 
-frag_add_delta(DriverId, BranchId, TellerId, AccountId, HistoryId, Delta) ->
+frag_add_delta(DriverId, BranchId, TellerId, AccountBranchId, AccountId, HistoryId, Delta) ->
     %% Access fragmented table
     %% Grab write lock already when the record is read 
 
     %% Add delta to branch balance
-    [B]  = mnesia:read(branch, BranchId, write),
+    [B] = mnesia:read(branch, BranchId, write),
     NewB = B#branch{balance = B#branch.balance + Delta},
     ok = mnesia:write(NewB),
 
     %% Add delta to teller balance
-    [T]  = mnesia:read({teller, BranchId}, TellerId, write),
+    [T] = mnesia:read({teller, BranchId}, TellerId, write),
     NewT = T#teller{balance = T#teller.balance + Delta},
     ok = mnesia:write(NewT),
 
     %% Add delta to account balance
-    [A]  = mnesia:read({account, BranchId}, AccountId, write),
+    %%io:format("frag_add_delta(~p): ~p\n", [node(), {account, BranchId, AccountId}]),
+    [A] = mnesia:read({account, AccountBranchId}, AccountId, write),
     NewA = A#account{balance = A#account.balance + Delta},
     ok = mnesia:write(NewA),
 
@@ -1166,7 +1201,7 @@ verify_tabs() ->
     case lists:member(node(), Nodes) of
 	true ->
 	    Tabs = [branch, teller, account, history],
-	    io:format("TPC-B: Verifying tables tables: ~w~n", [Tabs]),
+	    io:format("TPC-B: Verifying tables: ~w~n", [Tabs]),
 	    rpc:multicall(Nodes, mnesia, wait_for_tables, [Tabs, infinity]),
 	    
 	    Fun = fun() ->
@@ -1190,28 +1225,38 @@ verify_tabs() ->
 %% Assumes that no updates are performed
 
 -record(summary, {table, node, balance, size}).
+
 count_balance() ->
     [count_balance(branch, #branch.balance),
      count_balance(teller, #teller.balance),
      count_balance(account, #account.balance)].
 
 count_balance(Tab, BalPos) ->
-    count_balance(Tab, mnesia:dirty_first(Tab), 0, 0, BalPos).
+    Frags = table_info(Tab, frag_names),
+    count_balance(Tab, Frags, 0, 0, BalPos).
 
-count_balance(Tab, '$end_of_table', Acc, Size, _BalPos) ->
-    #summary{table = Tab, node = node(), balance = Acc, size = Size};
-count_balance(Tab, Key, Acc, Size, BalPos) ->
-    [Record] = mnesia:dirty_read({Tab, Key}),
-    Bal = element(BalPos, Record),
-    count_balance(Tab, mnesia:dirty_next(Tab, Key), Bal + Acc, Size + 1, BalPos).
+count_balance(Tab, [Frag | Frags], Bal, Size, BalPos) ->
+    First = mnesia:dirty_first(Frag),
+    {Bal2, Size2} = count_frag_balance(Frag, First, Bal, Size, BalPos),
+    count_balance(Tab, Frags, Bal2, Size2, BalPos);
+count_balance(Tab, [], Bal, Size, BalPos) ->
+    #summary{table = Tab, node = node(), balance = Bal, size = Size}.
+
+count_frag_balance(Frag, '$end_of_table', Bal, Size, _BalPos) ->
+    {Bal, Size};
+count_frag_balance(Frag, Key, Bal, Size, BalPos) ->
+    [Record] = mnesia:dirty_read({Frag, Key}),
+    Bal2 = Bal + element(BalPos, Record),
+    Next = mnesia:dirty_next(Frag, Key),
+    count_frag_balance(Frag, Next, Bal2, Size + 1, BalPos).
 
 check_balance([], []) ->
     mnesia:abort({"No balance"});
 check_balance(Summaries, []) ->
     [One | Rest] = lists:flatten(Summaries),
     Balance = One#summary.balance,
-    Size = One#summary.size,
-    case [S ||  S <- Rest, S#summary.balance /= Balance] of
+    %% Size = One#summary.size,
+    case [S ||  S <- Rest, S#summary.balance =/= Balance] of
 	[] ->
 	    ok;
 	BadSummaries ->

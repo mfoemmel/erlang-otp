@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1996-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmpa_agent).
 
@@ -34,11 +36,14 @@
          which_notification_filter/1,
  	 get_net_if/1]).
 -export([verbosity/2, dump_mibs/1, dump_mibs/2]).
--export([validate_err/3, make_value_a_correct_value/3, do_get/3, 
+-export([validate_err/3, make_value_a_correct_value/3, 
+	 do_get/3, do_get/4, 
 	 get/2, get/3, get_next/2, get_next/3]).
 -export([mib_of/1, mib_of/2, me_of/1, me_of/2]).
 -export([get_agent_mib_storage/0, db/1, 
 	 backup/2]).
+-export([get_log_type/1,      set_log_type/2]).
+-export([get_request_limit/1, set_request_limit/2]).
 
 %% Internal exports
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2,
@@ -106,7 +111,7 @@
 		note_store,
 		mib_server,   %% Currently unused
 		net_if,       %% Currently unused
-		net_if_mod,   %% Currently unused
+		net_if_mod,   
 		backup}).
 
 %%%-----------------------------------------------------------------
@@ -164,6 +169,17 @@ start_link(Prio, Name, Parent, Ref, Options) ->
 
 stop(Agent) -> call(Agent, stop).
 
+get_log_type(Agent) ->
+    call(Agent, get_log_type).
+
+set_log_type(Agent, NewType) ->
+    call(Agent, {set_log_type, NewType}).
+
+get_request_limit(Agent) ->
+    call(Agent, get_request_limit).
+
+set_request_limit(Agent, NewLimit) ->
+    call(Agent, {set_request_limit, NewLimit}).
 
 mib_of(Oid) when list(Oid) ->
     mib_of(snmp_master_agent, Oid).
@@ -222,7 +238,7 @@ do_init(Prio, Parent, Ref, Options) ->
     put(net_if, NetIfPid),
     put(mibserver, MibPid),
     process_flag(trap_exit, true),
-    {Worker, SetWorker} = start_workers(MultiT),
+    {Worker, SetWorker} = workers_start(MultiT),
     {ok, #state{type           = Type, 
 		parent         = Parent, 
 		worker         = Worker,
@@ -315,14 +331,6 @@ start_mib_server(Prio, Ref, Mibs, Options) ->
     end.
 
 
-start_workers(true) ->
-    ?vdebug("start worker and set-worker",[]),
-    {proc_lib:spawn_link(?MODULE,worker,[self(),get()]),
-     proc_lib:spawn_link(?MODULE,worker,[self(),get()])};
-start_workers(_) ->
-    {undefined, undefined}.
-
-
 %%-----------------------------------------------------------------
 %% Purpose: We must calculate the length of an empty Pdu.  This
 %%          length is used to calculate the max pdu size allowed
@@ -337,10 +345,13 @@ start_workers(_) ->
 %% Actually, this function is not used, we use a constant instead.
 %%-----------------------------------------------------------------
 %% Ret: 21
-%empty_pdu() ->
-%    Pdu = #pdu{type = 'get-response', request_id = 1,
-%	       error_status = noError, error_index = 0, varbinds = []},
-%    length(snmp_pdus:enc_pdu(Pdu)) + 8.
+%% empty_pdu() ->
+%%     Pdu = #pdu{type         = 'get-response', 
+%%                request_id   = 1,
+%% 	          error_status = noError, 
+%%                error_index  = 0, 
+%%                varbinds     = []},
+%%     length(snmp_pdus:enc_pdu(Pdu)) + 8.
 
 
 %%%--------------------------------------------------
@@ -581,16 +592,16 @@ handle_info({backup_done, Reply}, #state{backup = {_, From}} = S) ->
 %% we unregister the sa, and unlink us from the sa.
 %%-----------------------------------------------------------------
 handle_info({'EXIT', Pid, Reason}, #state{note_store = Pid} = S) ->
-    ?vlog("note store (~p) exited for reason ~n~p", [Pid,Reason]),
+    ?vlog("note store (~p) exited for reason ~n~p", [Pid, Reason]),
     error_msg("note-store exited: ~n~p", [Reason]),
-    {stop, {note_store_exit, Reason}, S};
+    {stop, {note_store_exit, Reason}, S#state{note_store = undefined}};
 handle_info({'EXIT', Pid, Reason}, #state{worker = Pid} = S) ->
     ?vlog("worker (~p) exited -> create new ~n~p", [Pid, Reason]),
-    NewWorker = proc_lib:spawn_link(?MODULE, worker, [self(), get()]),
+    NewWorker = worker_start(), 
     {noreply, S#state{worker = NewWorker}};
 handle_info({'EXIT', Pid, Reason}, #state{set_worker = Pid} = S) ->
     ?vlog("set-worker (~p) exited -> create new ~n~p", [Pid,Reason]),
-    NewWorker = proc_lib:spawn_link(?MODULE, worker, [self(), get()]),
+    NewWorker = worker_start(), 
     {noreply, S#state{set_worker = NewWorker}};
 handle_info({'EXIT', Pid, Reason}, #state{parent = Pid} = S) ->
     ?vlog("parent (~p) exited for reason ~n~p", [Pid,Reason]),
@@ -605,7 +616,7 @@ handle_info({'EXIT', Pid, Reason}, #state{backup = {Pid, From}} = S) ->
 	    {noreply, S#state{backup = undefined}}
     end;
 handle_info({'EXIT', Pid, Reason}, S) ->
-    ?vlog("~p exited for reason ~p", [Pid,Reason]),
+    ?vlog("~p exited for reason ~p", [Pid, Reason]),
     Mib   = get(mibserver),
     NetIf = get(net_if),
     case Pid of
@@ -624,7 +635,7 @@ handle_info({'EXIT', Pid, Reason}, S) ->
 		    snmpa_mib:unregister_subagent(Mib, Pid),
 		    unlink(Pid);
 		_ -> 
-		    %% Otherwise it was a probably a worker thread - ignore
+		    %% Otherwise it was probably a worker thread - ignore
 		    ok
 	    end,
 	    {noreply, S}
@@ -719,6 +730,18 @@ handle_call({get_next, Vars, Context}, _From, S) ->
                 end,
             {reply, Reply, S}
     end;
+
+handle_call({do_get, MibView, UnsortedVarbinds, IsNotification, PduData}, 
+	    _From, S) ->
+    ?vlog("[handle_call] do_get:"
+	  "~n   MibView:          ~p"
+	  "~n   UnsortedVarbinds: ~p"
+	  "~n   IsNotification:   ~p" 
+	  "~n   PduData:          ~p", 
+	  [MibView, UnsortedVarbinds, IsNotification, PduData]),
+    put_pdu_data(PduData),
+    Reply = do_get(MibView, UnsortedVarbinds, IsNotification),
+    {reply, Reply, S};
 
 handle_call({register_subagent, SubTreeOid, SubagentPid}, _From, S) ->
     Reply = 
@@ -819,6 +842,10 @@ handle_call({dump_mibs,File}, _From, S) ->
     
 handle_call({register_notification_filter, Id, Mod, Data, Where}, _From, 
 	    #state{nfilters = NFs} = S) ->
+    ?vlog("register_notification_filter -> "
+	  "~n   Id:    ~p"
+	  "~n   Mod:   ~p"
+	  "~n   Where: ~p", [Id, Mod, Where]),
     case lists:keymember(Id, 2, NFs) of
 	true ->
 	    {reply, {error, {already_registered, Id}}, S};
@@ -830,6 +857,8 @@ handle_call({register_notification_filter, Id, Mod, Data, Where}, _From,
 
 handle_call({unregister_notification_filter, Id}, _From, 
 	    #state{nfilters = NFs} = S) ->
+    ?vlog("unregister_notification_filter -> "
+	  "~n   Id: ~p", [Id]),
     case lists:keydelete(Id, 2, NFs) of
 	NFs ->
 	    {reply, {error, {not_found, Id}}, S};
@@ -839,6 +868,7 @@ handle_call({unregister_notification_filter, Id}, _From,
 
 handle_call(which_notification_filter, _From, 
 	    #state{nfilters = NFs} = S) ->
+    ?vlog("which_notification_filter", []),
     {reply, [Id || #notification_filter{id = Id} <- NFs], S};
 
 handle_call({mib_of, Oid}, _From, S) ->
@@ -849,6 +879,28 @@ handle_call({me_of, Oid}, _From, S) ->
     Reply = handle_me_of(get(mibserver), Oid),
     {reply, Reply, S};
 
+handle_call(get_log_type, _From, S) ->
+    ?vlog("get_log_type", []),
+    Reply = handle_get_log_type(S), 
+    {reply, Reply, S};
+    
+handle_call({set_log_type, NewType}, _From, S) ->
+    ?vlog("set_log_type -> "
+	  "~n   NewType: ~p", [NewType]),
+    Reply = handle_set_log_type(S, NewType), 
+    {reply, Reply, S};
+    
+handle_call(get_request_limit, _From, S) ->
+    ?vlog("get_request_limit", []),
+    Reply = handle_get_request_limit(S), 
+    {reply, Reply, S};
+    
+handle_call({set_request_limit, NewLimit}, _From, S) ->
+    ?vlog("set_request_limit -> "
+	  "~n   NewLimit: ~p", [NewLimit]),
+    Reply = handle_set_request_limit(S, NewLimit), 
+    {reply, Reply, S};
+    
 handle_call(stop, _From, S) ->
     {stop, normal, ok, S};
 
@@ -893,10 +945,16 @@ handle_cast(Msg, S) ->
     {noreply, S}.
 
     
-terminate(shutdown, #state{ref = Ref}) ->
-    %% Ordered shutdown - stop mib and net_if.
-    snmpa_misc_sup:stop_mib_server(Ref),
-    snmpa_misc_sup:stop_net_if(Ref);
+terminate(shutdown, #state{worker     = Worker,
+			   set_worker = SetWorker,
+			   backup     = Backup, 
+			   ref = Ref}) ->
+    %% Ordered shutdown - stop misc-workers, net_if, mib-server and note-store.
+    backup_server_stop(Backup), 
+    worker_stop(Worker, 100),
+    worker_stop(SetWorker, 100),
+    snmpa_misc_sup:stop_net_if(Ref), 
+    snmpa_misc_sup:stop_mib_server(Ref);
 terminate(_Reason, _S) ->
     %% We crashed!  We will reuse net_if and mib if we get restarted.
     ok.
@@ -910,32 +968,62 @@ terminate(_Reason, _S) ->
 %% Downgrade
 %%
 code_change({down, _Vsn}, S, downgrade_to_pre_4_9_3) ->
-    S1 = worker_restart(S),
+    S1 = workers_restart(S),
     {ok, S1};
 
 %% Upgrade
 %%
 code_change(_Vsn, S, upgrade_from_pre_4_9_3) ->
-    S1 = worker_restart(S),
+    S1 = workers_restart(S),
     {ok, S1};
 
 code_change(_Vsn, S, _Extra) ->
     {ok, S}.
 
 
-worker_restart(S) ->
-    Worker    = restart_worker(S#state.worker),
-    SetWorker = restart_worker(S#state.set_worker),
-    S#state{worker = Worker, set_worker = SetWorker}.
+workers_start(true) ->
+    ?vdebug("start worker and set-worker",[]),
+    {worker_start(), worker_start()};
+workers_start(_) ->
+    {undefined, undefined}.
 
-restart_worker(Pid) when pid(Pid) -> 
+workers_restart(#state{worker = W, set_worker = SW} = S) ->
+    Worker    = worker_restart(W),
+    SetWorker = worker_restart(SW),
+    S#state{worker     = Worker, 
+	    set_worker = SetWorker}.
+
+
+%%-----------------------------------------------------------------
+
+backup_server_stop({Pid, _}) when pid(Pid) ->
+    exit(Pid, kill);
+backup_server_stop(_) ->
+    ok.
+
+
+worker_start() ->
+    proc_lib:spawn_link(?MODULE, worker, [self(), get()]).
+
+worker_stop(Pid) ->
+    worker_stop(Pid, infinity).
+
+worker_stop(Pid, Timeout) when is_pid(Pid) ->
     Pid ! terminate, 
     receive 
 	{'EXIT', Pid, normal} ->
 	    ok
-    end,
-    proc_lib:spawn_link(?MODULE,worker,[self(),get()]);
-restart_worker(Any) ->
+    after Timeout ->
+	    (catch exit(Pid, kill)),
+	    ok
+    end;
+worker_stop(_, _) ->
+    ok.
+
+worker_restart(Pid) when pid(Pid) -> 
+    worker_stop(Pid),
+    worker_start();
+worker_restart(Any) ->
     Any.
 
 
@@ -1040,16 +1128,19 @@ worker(Master, Dict) ->
 worker_loop(Master) ->
     receive
 	{Vsn, Pdu, PduMS, ACMData, Address, Extra} ->
+	    ?vtrace("worker_loop -> received request", []),
 	    handle_pdu(Vsn, Pdu, PduMS, ACMData, Address, Extra),
 	    Master ! worker_available;
 
 	%% Old style message
 	{MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra} ->
+	    ?vtrace("worker_loop -> received (old) request", []),
 	    do_handle_pdu(MibView, Vsn, Pdu, PduMS, ACMData, AgentData, Extra),
 	    Master ! worker_available;
 
 	{TrapRec, NotifyName, ContextName, Recv, V} -> % We don't trap exits!
-	    ?vtrace("send trap:~n   ~p",[TrapRec]),
+	    ?vtrace("worker_loop -> send trap:"
+		    "~n   ~p", [TrapRec]),
 	    snmpa_trap:send_trap(TrapRec, NotifyName, 
 				 ContextName, Recv, V, get(net_if)),
 	    Master ! worker_available;
@@ -1555,6 +1646,7 @@ mk_next_oid(Vb) ->
 %%%   In rfc1905:4.2.1 this is not a problem since exceptions are
 %%%   used, and thus a genErr will be returned anyway.
 %%%-----------------------------------------------------------------
+
 %%-----------------------------------------------------------------
 %% Func: do_get/3
 %% Purpose: do_get handles "getRequests".
@@ -1562,10 +1654,37 @@ mk_next_oid(Vb) ->
 %% Returns: {noError, 0, ListOfNewVarbinds} |
 %%          {ErrorStatus, ErrorIndex, []}
 %%-----------------------------------------------------------------
+
+%% If this function is called from a worker-process, we *may* 
+%% need to tunnel into the master-agent and let it do the 
+%% work
+
 do_get(MibView, UnsortedVarbinds, IsNotification) ->
-    {OutSideView, InSideView} = split_vbs_view(UnsortedVarbinds, MibView),
-    {Error, Index, NewVbs} = do_get(InSideView, IsNotification),
-    {Error, Index, NewVbs ++ OutSideView}.
+    do_get(MibView, UnsortedVarbinds, IsNotification, false).
+
+do_get(MibView, UnsortedVarbinds, IsNotification, ForceMaster) ->
+    ?vtrace("do_get -> entry with"
+	    "~n   MibView:          ~p"
+	    "~n   UnsortedVarbinds: ~p"
+	    "~n   IsNotification:   ~p", 
+	    [MibView, UnsortedVarbinds, IsNotification]),
+    case (whereis(snmp_master_agent) == self()) of
+	false when (ForceMaster == true) ->
+	    %% I am a lowly worker process, handoff to the master agent
+	    PduData = get_pdu_data(), 
+	    call(snmp_master_agent, 
+		 {do_get, MibView, UnsortedVarbinds, IsNotification, PduData});
+
+	_ ->
+	    %% This is me, the master, so go ahead
+	    {OutSideView, InSideView} = 
+		split_vbs_view(UnsortedVarbinds, MibView),
+	    {Error, Index, NewVbs} = 
+		do_get(InSideView, IsNotification),
+	    {Error, Index, NewVbs ++ OutSideView}
+
+    end.
+
 
 split_vbs_view(Vbs, MibView) ->
     ?vtrace("split the varbinds view", []),
@@ -2904,11 +3023,11 @@ get_pdu_data() ->
      get(snmp_context)}.
 
 put_pdu_data({Extra, ReqId, Address, Community, ContextName}) -> 
-    put(net_if_data, Extra),
-    put(snmp_address, Address),
-    put(snmp_request_id, ReqId),
-    put(snmp_community, Community),
-    put(snmp_context, ContextName).
+    {put(net_if_data, Extra),
+     put(snmp_address, Address),
+     put(snmp_request_id, ReqId),
+     put(snmp_community, Community),
+     put(snmp_context, ContextName)}.
 
 tr_var(Oid, Idx) ->
     case snmp_misc:is_oid(Oid) of
@@ -2991,6 +3110,52 @@ subagents_verbosity(_,_V) ->
 
 
 %% ---------------------------------------------------------------------
+
+handle_get_log_type(#state{net_if_mod = Mod}) 
+  when Mod /= undefined ->
+    case (catch Mod:get_log_type(get(net_if))) of
+	{'EXIT', _} ->
+            {error, not_supported};
+        Else ->
+            Else
+    end;
+handle_get_log_type(_) ->
+    {error, not_supported}.
+
+handle_set_log_type(#state{net_if_mod = Mod}, NewType) 
+  when Mod /= undefined ->
+    case (catch Mod:set_log_type(get(net_if), NewType)) of
+	{'EXIT', _} ->
+            {error, not_supported};
+        Else ->
+            Else
+    end;
+handle_set_log_type(_, _) ->
+    {error, not_supported}.
+
+
+handle_get_request_limit(#state{net_if_mod = Mod}) 
+  when Mod /= undefined ->
+    case (catch Mod:get_request_limit(get(net_if))) of
+	{'EXIT', _} ->
+            {error, not_supported};
+        Else ->
+            Else
+    end;
+handle_get_request_limit(_) ->
+    {error, not_supported}.
+
+handle_set_request_limit(#state{net_if_mod = Mod}, NewLimit) 
+  when Mod /= undefined ->
+    case (catch Mod:set_request_limit(get(net_if), NewLimit)) of
+	{'EXIT', _} ->
+            {error, not_supported};
+        Else ->
+            Else
+    end;
+handle_set_request_limit(_, _) ->
+    {error, not_supported}.
+
 
 agent_info(#state{worker = W, set_worker = SW}) ->	 
     case (catch get_agent_info(W, SW)) of

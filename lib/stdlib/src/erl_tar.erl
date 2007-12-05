@@ -29,7 +29,7 @@
 
 -record(add_opts,
 	{read_info,				% Fun to use for read file/link info.
-	 verbose = false}).			% Verbose on/off.
+	 verbose = false :: bool()}).			% Verbose on/off.
 
 %% Opens a tar archive.
 
@@ -109,7 +109,11 @@ create(Name, FileList, Options) ->
                         end, Options),
     case open(Name, [write|Mode]) of
 	{ok, TarFile} ->
-	    Add = fun(Nm) -> add(TarFile, Nm, Nm, Options) end,
+	    Add = fun({NmInA, NmOrBin}) -> 
+			  add(TarFile, NmOrBin, NmInA, Options);
+		     (Nm) -> 
+			  add(TarFile, Nm, Nm, Options)
+		  end,
 	    Result = foreach_while_ok(Add, FileList),
 	    case {Result, close(TarFile)} of
 		{ok, Res} -> Res;
@@ -129,12 +133,7 @@ extract(Name) ->
 %%		{cwd, AbsoluteDirectory}
 
 extract(Name, Opts) ->
-    case foldl_read(Name, fun extract1/4, [], extract_opts(Opts)) of
-	[] ->
-	    ok;
-	Other ->
-	    Other
-    end.
+    foldl_read(Name, fun extract1/4, ok, extract_opts(Opts)).
 
 %% Returns a list of names of the files in the tar file Name.
 %% Options accepted: verbose
@@ -286,6 +285,23 @@ format_error(Term) ->
 %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
+add1(TarFile, Bin, NameInArchive, Opts) when is_binary(Bin) ->
+    Now = calendar:now_to_local_time(now()),
+    Info = #file_info{size = size(Bin),
+		      type = regular,
+		      access = read_write,
+		      atime = Now,
+		      mtime = Now,
+		      ctime = Now,
+		      mode  = 8#100644,
+		      links = 1,
+		      major_device = 0,
+		      minor_device = 0,
+		      inode = 0,
+		      uid = 0,
+		      gid = 0},
+    Header = create_header(NameInArchive, Info),
+    add1(TarFile, NameInArchive, Header, Bin, Opts);
 add1(TarFile, Name, NameInArchive, Opts) ->
     case read_file_and_info(Name, Opts) of
 	{ok, Bin, Info} when Info#file_info.type =:= regular ->
@@ -354,8 +370,7 @@ create_header(Name, #file_info {mode=Mode, uid=Uid, gid=Gid,
     512 = size(H),				%Assertion.
     ChksumString = to_octal(checksum(H), 6, [0,$\s]),
     <<Before:?th_chksum/binary,_:?th_chksum_len/binary,After/binary>> = H,
-    [Before,ChksumString|After].
-
+    [Before,ChksumString,After].
 
 file_type(regular) -> $0;
 file_type(symlink) -> $2;
@@ -407,12 +422,13 @@ split_filename([], Prefix, Suffix, _) ->
 %% Options used when reading a tar archive.
 
 -record(read_opts,
-	{cwd,					% Current working directory.
-	 keep_old_files = false,		% Owerwrite or not.
+	{cwd             :: string(),		% Current working directory.
+	 keep_old_files = false :: bool(),	% Owerwrite or not.
 	 files = all,				% Set of files to extract
 						% (or all).
+	 output = file   :: 'file' | 'memory',
 	 open_mode = [],			% Open mode options.
-	 verbose = false}).			% Verbose on/off.
+	 verbose = false :: bool()}).		% Verbose on/off.
 
 extract_opts(List) ->
     extract_opts(List, default_options()).
@@ -433,6 +449,8 @@ extract_opts([{cwd, Cwd}|Rest], Opts) ->
 extract_opts([{files, Files}|Rest], Opts) ->
     Set = ordsets:from_list(Files),
     extract_opts(Rest, Opts#read_opts{files=Set});
+extract_opts([memory|Rest], Opts) ->
+    extract_opts(Rest, Opts#read_opts{output=memory});
 extract_opts([compressed|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
     extract_opts(Rest, Opts#read_opts{open_mode=[compressed|OpenMode]});
 extract_opts([cooked|Rest], Opts=#read_opts{open_mode=OpenMode}) ->
@@ -500,28 +518,42 @@ table1(Header, File, _, Result) when is_record(Header, tar_header) ->
     skip(File, Header#tar_header.size),
     {ok, [Name|Result]}.
 
-extract1(eof, _, _, []) -> ok;
-extract1(Header, File, Opts, Result) ->
+extract1(eof, _, _, Acc) ->
+    if
+	is_list(Acc) ->
+	    {ok, lists:reverse(Acc)};
+	true ->
+	    Acc
+    end;
+extract1(Header, File, Opts, Acc) ->
     Name = Header#tar_header.name,
-    ok = extract2(File, Header, Opts, check_extract(Name, Opts)),
-    {ok, Result}.
-
-extract2(File, Header, Opts, true) ->
-    {ok, Bin} = get_element(File, Header),
-    write_extracted_element(Header, Bin, Opts);
-extract2(File, Header, _, false) ->
-    skip(File, Header#tar_header.size).
+    case check_extract(Name, Opts) of
+	true ->
+	    {ok, Bin} = get_element(File, Header),
+	    case write_extracted_element(Header, Bin, Opts) of
+		ok ->
+		    {ok, Acc};
+		{ok, NameBin} when is_list(Acc) ->
+		    {ok, [NameBin | Acc]};
+		{ok, NameBin} when Acc =:= ok ->
+		    {ok, [NameBin]}
+	    end;
+	false ->
+	    ok = skip(File, Header#tar_header.size),
+	    {ok, Acc}
+    end.
 
 %% Checks if the file Name should be extracted.
 
-check_extract(_, #read_opts{files=all}) -> true;
+check_extract(_, #read_opts{files=all}) ->
+    true;
 check_extract(Name, #read_opts{files=Files}) ->
     ordsets:is_element(Name, Files).
 
 get_header(File) ->
     case file:read(File, ?record_size) of
 	eof ->
-	    throw({error, eof});
+	    throw({error,eof});
 	{ok, Bin} when is_binary(Bin) ->
 	    convert_header(Bin);
 	{ok, List} ->
@@ -682,6 +714,14 @@ signed_sum([C|Rest], Sum) ->
     signed_sum(Rest, Sum+C-256);
 signed_sum([], Sum) -> Sum.
 
+write_extracted_element(Header, Bin, Opts)
+  when Opts#read_opts.output =:= memory ->
+    case Header#tar_header.typeflag of
+	regular ->
+	    {ok, {Header#tar_header.name, Bin}};
+	_ ->
+	    ok
+    end;
 write_extracted_element(Header, Bin, Opts) ->
     Name = filename:absname(Header#tar_header.name, Opts#read_opts.cwd),
     Created = 
@@ -803,6 +843,7 @@ read_verbose(_, _, _) ->
 %% Returns the checksum of a binary.
 
 checksum(Bin) -> checksum(Bin, 0).
+
 checksum(<<A,B,C,D,E,F,G,H,T/binary>>, Sum) ->
     checksum(T, Sum+A+B+C+D+E+F+G+H);
 checksum(<<A,T/binary>>, Sum) ->

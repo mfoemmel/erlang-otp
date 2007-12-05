@@ -7,7 +7,7 @@
 SAVE="$@"
 
 # Constants
-COMMON_CFLAGS="-nologo -D__WIN32__ -DWIN32 -DWINDOWS -D_WIN32 -DNT"
+COMMON_CFLAGS="-nologo -D__WIN32__ -DWIN32 -DWINDOWS -D_WIN32 -DNT -D_CRT_SECURE_NO_DEPRECATE"
 
 # Variables
 # The stdout and stderr for the compiler
@@ -35,7 +35,7 @@ DEBUG_FLAGS=""
 OPTIMIZE_FLAGS=""
 # The specified output filename (if any), may be either object or exe.
 OUTFILE=""
-# Unspe3cified command line options for the compiler
+# Unspecified command line options for the compiler
 CMD=""
 # All the c source files, in unix style
 SOURCES=""
@@ -62,7 +62,7 @@ while test -n "$1" ; do
 	    #CMD="$CMD -E";;
 	-O*)
 	    # Optimization hardcoded, needs to disable debugging too
-	    OPTIMIZE_FLAGS="-Ox";
+	    OPTIMIZE_FLAGS="-Ox -Zi";
 	    DEBUG_FLAGS="";
 	    DEBUG_BUILD=false;
 	    if [ $MD_FORCED = false ]; then
@@ -115,12 +115,19 @@ while test -n "$1" ; do
 	-D*)
 	    y=`echo $x | sed 's,",\\\",g'`;
 	    CMD="$CMD $y";;
+	-EH*)
+	    y=`echo $x | sed 's,",\\\",g'`;
+	    CMD="$CMD $y";;
 	-l*)
 	    y=`echo $x | sed 's,^-l\(.*\),\1,g'`;
 	    LINKCMD="$LINKCMD $x";;
 	/*.c)
 	    SOURCES="$SOURCES $x";;
 	*.c)
+	    SOURCES="$SOURCES $x";;
+	/*.cpp)
+	    SOURCES="$SOURCES $x";;
+	*.cpp)
 	    SOURCES="$SOURCES $x";;
 	/*.o)
 	    LINKCMD="$LINKCMD $x";;
@@ -176,7 +183,7 @@ for x in $SOURCES; do
 		output_filename="$output_filename/${o}";;
 	    *)
 		# Relative_directory or empty string (.//x.o is valid)
-		o=`echo $x | sed 's,.*/,,' | sed 's,\.c$,.o,'`
+		o=`echo $x | sed 's,.*/,,' | sed 's,\.cp*$,.o,'`
 		output_filename="./${OUTFILE}/${o}";;
 	esac
     else

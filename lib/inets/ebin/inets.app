@@ -1,10 +1,11 @@
 {application,inets,
  [{description,"INETS  CXC 138 49"},
-  {vsn,"4.7.16"},
+  {vsn,"5.0"},
   {modules,[
             inets,
             inets_sup,
-            inets_app,                  
+            inets_app,
+	    inets_service,	                  
 
             %% FTP
             ftp,
@@ -15,7 +16,9 @@
             %% HTTP client:
             http,
             httpc_handler,
+	    httpc_handler_sup,	
             httpc_manager,
+	    httpc_profile_sup,		
             httpc_request,
             httpc_response,     
             httpc_sup,
@@ -24,7 +27,6 @@
 	    http_uri, %% Proably will by used by server also in the future
 
             %% HTTP used by both client and server 
-            http_base_64,
             http_chunk,
             http_request,
             http_response,      

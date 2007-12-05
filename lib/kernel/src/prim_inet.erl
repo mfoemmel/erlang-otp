@@ -1024,10 +1024,16 @@ dec_opt(I) when is_integer(I)     -> undefined.
 %%                 for setopts and getopts.
 %% [Type]          Value required for setopts and getopts,
 %%                 will be encoded for both.
-%% [Type,Default]  Default used if value is 'undefined'
+%% [Type,Default]  Default used if value is 'undefined'.
+%% [[Type,Default]] A combination of the two above.
 %% Type            Value must be 'undefined' or nonexistent for getops,
 %%                 required for setopts.
 %%
+%% The use of [] and [[Type,Default]] is commented out in enc_value/2
+%% and type_value/2 below since they are only used in record fields.
+%% And record fields does not call enc_value/2 nor type_value/2.
+%% Anyone introducing these metatypes otherwhere will have to activate
+%% those clauses in enc_value/2 and type_value/2. You have been warned!
 
 type_opt(get, raw) -> [{[int],[int],[binary_or_uint]}];
 type_opt(_,   raw) -> {int,int,binary};
@@ -1211,9 +1217,13 @@ type_opt_1(O) when is_atom(O) -> undefined.
 
 %% Get. No supplied value.
 type_value(get, undefined)        -> false; % Undefined type
-type_value(get, [])               -> true;  % Ignored
-type_value(get, [[Type,Default]]) ->        % Required field, default value
-    type_value(get, Type, Default);
+%% These two clauses can not happen since they are only used
+%% in record fields - from record fields they must have a
+%% value though it might be 'undefined', so record fields
+%% calls type_value/3, not type_value/2.
+%% type_value(get, [])               -> true;  % Ignored
+%% type_value(get, [[Type,Default]]) ->        % Required field, default value
+%%     type_value(get, Type, Default);
 type_value(get, [{record,Types}]) ->        % Implied default value for record
     type_value_record(get, Types, erlang:make_tuple(size(Types), undefined), 2);
 type_value(get, [_])              -> false; % Required value missing
@@ -1285,7 +1295,8 @@ type_value_2(addr, {{A,B,C,D},Port}) when ?ip(A,B,C,D) ->
     type_value_2(uint16, Port);
 type_value_2(addr, {{A,B,C,D,E,F,G,H},Port}) when ?ip6(A,B,C,D,E,F,G,H) ->
     type_value_2(uint16, Port);
-type_value_2(ether,[_X1,_X2,_X3,_X4,_X5,_X6])         -> true;
+type_value_2(ether,[X1,X2,X3,X4,X5,X6])
+  when ?ether(X1,X2,X3,X4,X5,X6)                    -> true;
 type_value_2({enum,List}, Enum) -> 
     case enum_val(Enum, List) of
 	{value,_} 				    -> true;
@@ -1312,9 +1323,14 @@ type_value_2(_, _)         -> false.
 
 
 %% Get. No supplied value.
-enc_value(get, [])               -> [];  % Ignored
-enc_value(get, [[Type,Default]]) ->      % Required field, default value
-    enc_value(get, Type, Default);
+%%
+%% These two clauses can not happen since they are only used
+%% in record fields - from record fields they must have a
+%% value though it might be 'undefined', so record fields
+%% calls enc_value/3, not enc_value/2.
+%% enc_value(get, [])               -> [];  % Ignored
+%% enc_value(get, [[Type,Default]]) ->      % Required field, default value
+%%     enc_value(get, Type, Default);
 enc_value(get, [{record,Types}]) ->      % Implied default value for record
     enc_value_tuple(get, Types, erlang:make_tuple(size(Types), undefined), 2);
 enc_value(get, _)                -> [].
@@ -1407,14 +1423,16 @@ enc_value_2(binary_or_uint,Datum) when is_integer(Datum) ->
 %%
 dec_value(bool, [0,0,0,0|T])       -> {false,T};
 dec_value(bool, [_,_,_,_|T])       -> {true,T};
-dec_value(bool8, [0|T])            -> {false,T};
-dec_value(bool8, [_|T])            -> {true,T};
+%% Currently not used i.e only used by SCTP that does not dec_value/2
+%% dec_value(bool8, [0|T])            -> {false,T};
+%% dec_value(bool8, [_|T])            -> {true,T};
 dec_value(int,  [X3,X2,X1,X0|T])   -> {?i32(X3,X2,X1,X0),T};
 dec_value(uint, [X3,X2,X1,X0|T])   -> {?u32(X3,X2,X1,X0),T};
-dec_value(uint32, [X3,X2,X1,X0|T]) -> {?u32(X3,X2,X1,X0),T};
-dec_value(uint24, [X2,X1,X0|T])    -> {?u24(X2,X1,X0),T};
-dec_value(uint16, [X1,X0|T])       -> {?u16(X1,X0),T};
-dec_value(uint8,  [X0|T])          -> {?u8(X0),T};
+%% Currently not used i.e only used by SCTP that does not dec_value/2
+%% dec_value(uint32, [X3,X2,X1,X0|T]) -> {?u32(X3,X2,X1,X0),T};
+%% dec_value(uint24, [X2,X1,X0|T])    -> {?u24(X2,X1,X0),T};
+%% dec_value(uint16, [X1,X0|T])       -> {?u16(X1,X0),T};
+%% dec_value(uint8,  [X0|T])          -> {?u8(X0),T};
 dec_value(time, [X3,X2,X1,X0|T]) ->
     case ?i32(X3,X2,X1,X0) of
 	-1 -> {infinity, T};
@@ -1431,7 +1449,7 @@ dec_value({enum,List}, [X3,X2,X1,X0|T]) ->
 dec_value({bitenumlist,List}, [X3,X2,X1,X0|T]) ->
     Val = ?i32(X3,X2,X1,X0),
     {enum_names(Val, List), T};
-%% Currently not used
+%% Currently not used i.e only used by SCTP that does not dec_value/2
 %% dec_value({bitenumlist,List,Type}, T0) ->
 %%     {Val,T} = dec_value(Type, T0),
 %%     {enum_names(Val, List), T};
@@ -1617,11 +1635,14 @@ need_template(_, _) -> false.
 %% Replace 'undefined' record fields in option values with values
 %% from template records.
 %%
+merge_options([{Opt,undefined}|Opts], [{Opt,_}=T|Templates]) ->
+    [T|merge_options(Opts, Templates)];
 merge_options([{Opt,Val}|Opts], [{Opt,Template}|Templates])
   when is_atom(Opt), is_tuple(Val), size(Val) >= 2 ->
     Key = element(1, Val),
     Size = size(Val),
-    if Key =:= element(1, Template), Size =:= size(Template) ->
+    if is_tuple(Template), Key =:= element(1, Template), 
+       Size =:= size(Template) ->                 % is_record(Template, Key)
 	    [{Opt,list_to_tuple([Key|merge_fields(Val, Template, 2)])}
 	     |merge_options(Opts, Templates)];
        true ->
@@ -1629,7 +1650,9 @@ merge_options([{Opt,Val}|Opts], [{Opt,Template}|Templates])
     end;
 merge_options([OptVal|Opts], Templates) ->
     [OptVal|merge_options(Opts, Templates)];
-merge_options([], []) -> [].
+merge_options([], []) -> [];
+merge_options(Opts, Templates) ->
+    throw({merge,Opts,Templates}).
 
 merge_fields(Opt, Template, N) when is_integer(N), N =< size(Opt) ->
     case element(N, Opt) of
@@ -1704,12 +1727,14 @@ encode_ifopts([Opt|Opts], Acc) ->
     end;
 encode_ifopts([],Acc) -> {ok,Acc}.
 
-	    
+
+%% encode if options return a reverse list
 encode_ifopt_val([{Opt,Val}|Opts], Buf) ->
     Type = type_ifopt(Opt),
-    try type_value(Type, Val) of
-	true -> encode_ifopt_val(Opts,
-				 [Buf,enc_ifopt(Opt),enc_value(Type,Val)]);
+    try type_value(set, Type, Val) of
+	true -> 
+	    encode_ifopt_val(Opts,
+			     [Buf,enc_ifopt(Opt),enc_value(set, Type, Val)]);
 	false -> {error,einval}
     catch
 	Reason -> {error,Reason}

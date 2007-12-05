@@ -47,7 +47,7 @@ init(_) ->
     MaxT = 3600,
    
     Name = undefined, % As simple_one_for_one is used.
-    StartFunc = {ftp, start_link_sup, []},
+    StartFunc = {ftp, start_link, []},
     Restart = temporary, % E.g. should not be restarted
     Shutdown = 4000,
     Modules = [ftp],

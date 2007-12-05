@@ -22,7 +22,7 @@
 
 %% API
 -export([parse/1, result/2, send/2, error/2, is_server_closing/1, 
-	 stream_start/2]).
+	 stream_start/3]).
 
 %% Callback API - used for example if the header/body is received a
 %% little at a time on a socket. 
@@ -137,9 +137,16 @@ send(To, Msg) ->
 %%%========================================================================
 parse_version(<<>>, Version, MaxHeaderSize, Result) ->
     {?MODULE, parse_version, [Version, MaxHeaderSize,Result]};
-parse_version(<<?SP, Rest/binary>>, Version, MaxHeaderSize, Result) ->
-    parse_status_code(Rest, [], MaxHeaderSize,
-		      [lists:reverse(Version) | Result]);	
+parse_version(<<?SP, Rest/binary>>, Version, 
+	      MaxHeaderSize, Result) ->
+    case lists:reverse(Version) of
+	"HTTP/" ++ _ = Newversion ->
+	    parse_status_code(Rest, [], MaxHeaderSize,
+			      [Newversion | Result]);
+	NewVersion ->
+	    throw({error, {invalid_version, NewVersion}})
+    end;	  
+
 parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result) ->
     parse_version(Rest, [Octet | Version], MaxHeaderSize,Result).
 
@@ -156,10 +163,26 @@ parse_status_code(<<Octet, Rest/binary>>, StatusCodeStr,
 
 parse_reason_phrase(<<>>, Phrase, MaxHeaderSize, Result) ->
     {?MODULE, parse_reason_phrase, [<<>>, Phrase, MaxHeaderSize,Result]};
+
+parse_reason_phrase(<<?CR, ?LF, ?CR, ?LF, Body/binary>>, Phrase, 
+  		    _, Result) ->
+    ResponseHeaderRcord = 
+   	http_response:headers([], #http_response_h{}),
+     {ok, list_to_tuple(
+	    lists:reverse([Body, ResponseHeaderRcord | 
+			   [lists:reverse(Phrase) | Result]]))};
+
+parse_reason_phrase(<<?CR, ?LF, ?CR>> = Data, Phrase, MaxHeaderSize, Result) ->
+    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
+
+parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result) ->
+    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
+
 parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase, 
-		    MaxHeaderSize, Result) ->
+ 		    MaxHeaderSize, Result) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
-		  [lists:reverse(Phrase) | Result]); 
+ 		  [lists:reverse(Phrase) | Result]); 
+
 parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result) ->
     {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
 parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result) ->
@@ -167,6 +190,7 @@ parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result) ->
 
 parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result) -> 
     {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result]};
+
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 	      MaxHeaderSize, Result) ->
     HTTPHeaders = [lists:reverse(Header) | Headers],
@@ -281,12 +305,17 @@ transparent(Response, Request) ->
     {Msg, Data} =  format_response(Response),
     {ok, {Request#request.id, Msg}, Data}.
 
-stream_start(Headers, Request) ->
-    {Request#request.id, stream_start,  http_response:header_list(Headers)}.
+stream_start(Headers, Request, ignore) ->
+    {Request#request.id, stream_start, http_response:header_list(Headers)};
 
-stream_end(Response, Request = #request{stream = self}) -> 
+stream_start(Headers, Request, Pid) ->
+    {Request#request.id, stream_start, http_response:header_list(Headers), Pid}.
+
+stream_end(Response, Request = #request{stream = Self}) when Self == self;
+							     Self == {self, once}-> 
     {{_, Headers, _}, Data} =  format_response(Response),
     {ok, {Request#request.id, stream_end, Headers}, Data};
+
 stream_end(Response, Request) ->
     {_, Data} =  format_response(Response),
     {ok, {Request#request.id, saved_to_file}, Data}.

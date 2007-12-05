@@ -40,10 +40,6 @@
 -export([store/3,append/3,append_list/3,update/3,update/4,update_counter/3]).
 -export([fold/3,map/2,filter/2,merge/3]).
 
-%% Deprecated interface.
--export([dict_to_list/1,list_to_dict/1]).
--deprecated([{dict_to_list,1},{list_to_dict,1}]).
-
 %% Low-level interface.
 %%-export([get_slot/2,get_bucket/2,on_bucket/3,fold_dict/3,
 %%	 maybe_expand/2,maybe_contract/2]).
@@ -313,15 +309,6 @@ merge(F, D1, D2) ->
 		      update(K, fun (V1) -> F(K, V1, V2) end, V2, D)
 	      end, D1, D2).
 
-%% Deprecated interface.
-
-%% dict_to_list(Dictionary) -> [{Key,Value}].
-
-dict_to_list(D) -> to_list(D).
-
-%% list_to_dict([{Key,Value}]) -> Dictionary.
-
-list_to_dict(L) -> from_list(L).
 
 %% get_slot(Hashdb, Key) -> Slot.
 %%  Get the slot.  First hash on the new range, if we hit a bucket

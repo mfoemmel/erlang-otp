@@ -625,7 +625,9 @@ ren__map(Key, Ren) ->
 
 %% pmatch = 'true' | 'false' | 'no_duplicates' | 'duplicate_all'
 
--record(state, {module::atom(), function::atom(), pmatch=true,
+-record(state, {module::atom(),
+		function::{atom(), 0..256},
+		pmatch=true,
 		revisit = false}).
 
 s__new(Module) ->

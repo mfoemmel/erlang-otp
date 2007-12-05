@@ -93,6 +93,7 @@ new_binary(Process *p, byte *buf, int len)
     MSO(p).mso = pb;
     pb->val = bptr;
     pb->bytes = (byte*) bptr->orig_bytes;
+    pb->flags = 0;
 
     /*
      * Miscellanous updates. Return the tagged binary.
@@ -119,60 +120,13 @@ erts_new_heap_binary(Process *p, byte *buf, int len, byte** datap)
     return make_binary(hb);
 }
 
-#if !defined(HEAP_FRAG_ELIM_TEST)
-/* Like new_binary, but uses ArithAlloc. */
-/* Silly name. Come up with something better. */
-Eterm new_binary_arith(Process *p, byte *buf, int len)
-{
-    ProcBin* pb;
-    Binary* bptr;
-
-    if (len <= ERL_ONHEAP_BIN_LIMIT) {
-	ErlHeapBin* hb = (ErlHeapBin *) ArithAlloc(p, heap_bin_size(len));
-	hb->thing_word = header_heap_bin(len);
-	hb->size = len;
-	if (buf != NULL) {
-	    sys_memcpy(hb->data, buf, len);
-	}
-	return make_binary(hb);
-    }
-
-    /*
-     * Allocate the binary struct itself.
-     */
-    bptr = erts_bin_nrml_alloc(len);
-    bptr->flags = 0;
-    bptr->orig_size = len;
-    erts_refc_init(&bptr->refc, 1);
-    if (buf != NULL) {
-	sys_memcpy(bptr->orig_bytes, buf, len);
-    }
-
-    /*
-     * Now allocate the ProcBin on the heap.
-     */
-    pb = (ProcBin *) ArithAlloc(p, PROC_BIN_SIZE);
-    pb->thing_word = HEADER_PROC_BIN;
-    pb->size = len;
-    pb->next = MSO(p).mso;
-    MSO(p).mso = pb;
-    pb->val = bptr;
-    pb->bytes = (byte*) bptr->orig_bytes;
-
-    /*
-     * Miscellanous updates. Return the tagged binary.
-     */
-    MSO(p).overhead += pb->size / BINARY_OVERHEAD_FACTOR / sizeof(Eterm);
-    return make_binary(pb);
-}
-#endif
-
 Eterm
 erts_realloc_binary(Eterm bin, size_t size)
 {
     Eterm* bval = binary_val(bin);
 
     if (thing_subtag(*bval) == HEAP_BINARY_SUBTAG) {
+	ASSERT(size <= binary_size(bin));
 	binary_size(bin) = size;
     } else {			/* REFC */
 	ProcBin* pb = (ProcBin *) bval;
@@ -181,6 +135,7 @@ erts_realloc_binary(Eterm bin, size_t size)
 	pb->val = newbin;
 	pb->size = size;
 	pb->bytes = (byte*) newbin->orig_bytes;
+	pb->flags = 0;
 	bin = make_binary(pb);
     }
     return bin;
@@ -255,40 +210,24 @@ BIF_RETTYPE binary_to_list_1(BIF_ALIST_1)
     Uint size;
     Uint bitsize;
     Uint bitoffs;
-    byte* bytes;
-    Eterm previous = NIL;
-    Eterm* hp;
 
     if (is_not_binary(BIF_ARG_1)) {
+    error:
 	BIF_ERROR(BIF_P, BADARG);
     }
     size = binary_size(BIF_ARG_1);
     ERTS_GET_REAL_BIN(BIF_ARG_1, real_bin, offset, bitoffs, bitsize);
-    bytes = binary_bytes(real_bin)+offset;
-    if (bitsize == 0) {
-	hp = HAlloc(BIF_P, 2 * size);
-    } else {
-      if (size == 0) {
-	hp = HAlloc(BIF_P, 2);
-	BIF_RET(CONS(hp,BIF_ARG_1,NIL));
-      }
-      else
-	{
-	  ErlSubBin* last;
-	  hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE+2+2*size);
-	  last = (ErlSubBin *) hp;
-	  last->thing_word = HEADER_SUB_BIN;
-	  last->size = 0;
-	  last->bitsize = bitsize;
-	  last->offs = offset+size;
-	  last->bitoffs = bitoffs;
-	  last->orig = real_bin;
-	  hp += ERL_SUB_BIN_SIZE;
-	  previous = CONS(hp, make_binary(last), previous);
-	  hp += 2;
-	}
+    if (bitsize != 0) {
+	goto error;
     }
-    BIF_RET(bin_bytes_to_list(previous, hp, bytes, size, bitoffs));
+    if (size == 0) {
+	BIF_RET(NIL);
+    } else {
+	Eterm* hp = HAlloc(BIF_P, 2 * size);
+	byte* bytes = binary_bytes(real_bin)+offset;
+
+	BIF_RET(bin_bytes_to_list(NIL, hp, bytes, size, bitoffs));
+    }
 }
 
 BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
@@ -320,7 +259,13 @@ BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
     BIF_RET(bin_bytes_to_list(NIL, hp, bytes+start-1, i, bitoffs));
 }
 
+/* XXX Deprecated */
 BIF_RETTYPE bitstr_to_list_1(BIF_ALIST_1)
+{
+    return bitstring_to_list_1(BIF_P, BIF_ARG_1);
+}
+
+BIF_RETTYPE bitstring_to_list_1(BIF_ALIST_1)
 {
     Eterm real_bin;
     Uint offset;
@@ -353,6 +298,7 @@ BIF_RETTYPE bitstr_to_list_1(BIF_ALIST_1)
 	last->offs = offset+size;
 	last->bitoffs = bitoffs;
 	last->orig = real_bin;
+	last->is_writable = 0;
 	hp += ERL_SUB_BIN_SIZE;
 	previous = CONS(hp, make_binary(last), previous);
 	hp += 2;
@@ -396,6 +342,7 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 	sb1->orig = bin;
 	sb1->bitoffs = 0;
 	sb1->bitsize = offset;
+	sb1->is_writable = 0;
 	hp += ERL_SUB_BIN_SIZE;
 	bin = make_binary(sb1);
     }
@@ -440,13 +387,20 @@ BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
 	sb1->orig = bin;
 	sb1->bitoffs = 0;
 	sb1->bitsize = offset;
+	sb1->is_writable = 0;
 	hp += ERL_SUB_BIN_SIZE;
 	bin = make_binary(sb1);
     }
     BIF_RET(bin);
 }
 
+/* XXX Deprecated */
 BIF_RETTYPE list_to_bitstr_1(BIF_ALIST_1)
+{
+    return list_to_bitstring_1(BIF_P, BIF_ARG_1);
+}
+
+BIF_RETTYPE list_to_bitstring_1(BIF_ALIST_1)
 {
     Eterm bin;
     int i,offset;
@@ -478,6 +432,7 @@ BIF_RETTYPE list_to_bitstr_1(BIF_ALIST_1)
 	sb1->orig = bin;
 	sb1->bitoffs = 0;
 	sb1->bitsize = offset;
+	sb1->is_writable = 0;
 	hp += ERL_SUB_BIN_SIZE;
 	bin = make_binary(sb1);
     }
@@ -516,6 +471,7 @@ BIF_RETTYPE split_binary_2(BIF_ALIST_2)
     sb1->orig = orig;
     sb1->bitoffs = bit_offset;
     sb1->bitsize = 0;
+    sb1->is_writable = 0;
     hp += ERL_SUB_BIN_SIZE;
 
     sb2 = (ErlSubBin *) hp;
@@ -525,6 +481,7 @@ BIF_RETTYPE split_binary_2(BIF_ALIST_2)
     sb2->orig = orig;
     sb2->bitoffs = bit_offset;
     sb2->bitsize = bit_size;	/* The extra bits go into the second binary. */
+    sb2->is_writable = 0;
     hp += ERL_SUB_BIN_SIZE;
 
     return TUPLE2(hp, make_binary(sb1), make_binary(sb2));

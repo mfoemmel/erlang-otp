@@ -37,21 +37,26 @@ RELSYSDIR = $(RELEASE_PATH)/lib/ssl-$(VSN)
 .SUFFIXES: .asn1
 .PRECIOUS: %.erl
 
+ASN_TOP = OTP-PKIX
 ASN_MODULES = PKIX1Explicit88 PKIX1Implicit88 PKIX1Algorithms88 \
 	PKIXAttributeCertificate SSL-PKIX 
 ASN_ASNS = $(ASN_MODULES:%=%.asn1)
-ASN_ERLS = $(ASN_MODULES:%=%.erl)
-ASN_HRLS = $(ASN_MODULES:%=%.hrl)
+ASN_ERLS = $(ASN_TOP).erl
+ASN_HRLS = $(ASN_TOP).hrl
+ASN_CONFIGS = OTP-PKIX.asn1config
 ASN_DBS = $(ASN_MODULES:%=%.asn1db)
 ASN_TABLES = $(ASN_MODULES:%=%.table)
 
-GEN_MODULES = ssl_pkix_oid
+GEN_MODULES = ssl_pkix_oid $(ORBER_TMP_FIX_ERL)
 GEN_ERLS    = $(GEN_MODULES:%=%.erl)
-ERL_MODULES = $(ASN_MODULES) $(GEN_MODULES) 
+ERL_MODULES = $(ASN_TOP) $(GEN_MODULES)
 
 TARGET_FILES= $(ERL_MODULES:%=$(EBIN)/%.$(EMULATOR))
 
 HRL_FILES = $(ASN_HRLS:%=$(INCLUDE)/%)
+
+ORBER_TMP_FIX_HRL = PKIX1Algorithms88.hrl PKIX1Explicit88.hrl \
+	PKIX1Implicit88.hrl PKIXAttributeCertificate.hrl
 
 INCLUDE = ../include
 EBIN = ../ebin
@@ -62,7 +67,7 @@ EBIN = ../ebin
 EXTRA_ERLC_FLAGS = 
 ERL_COMPILE_FLAGS += $(EXTRA_ERLC_FLAGS)
 
-ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj
+ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj +asn1config +inline
 
 # ----------------------------------------------------
 # Targets
@@ -71,15 +76,15 @@ ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj
 debug opt: $(TARGET_FILES) $(HRL_FILES)
 
 clean:
-	rm -f $(ASN_ERLS) $(GEN_ERLS) $(ASN_HRLS) $(HRL_FILES) $(ASN_DBS) \
-		$(ASN_TABLES) $(TARGET_FILES) *.beam *~
+	-rm -f $(ASN_ERLS) $(GEN_ERLS) $(ASN_HRLS) $(HRL_FILES) $(ASN_DBS) \
+		$(ASN_TABLES)  $(TARGET_FILES) *.beam *~
 
 docs:
 
-%.erl: %.asn1
+%.erl: %.set.asn
 	erlc $(ASN_FLAGS) $<
 
-ssl_pkix_oid.erl:	mk_ssl_pkix_oid.beam $(EBIN)/SSL-PKIX.beam
+ssl_pkix_oid.erl:	mk_ssl_pkix_oid.beam $(EBIN)/OTP-PKIX.beam
 	erl -pa $(EBIN) -noshell -s mk_ssl_pkix_oid make -s erlang halt
 
 $(HRL_FILES):	$(ASN_HRLS)
@@ -94,8 +99,8 @@ release_spec: opt
 	$(INSTALL_DIR) $(RELSYSDIR)/include
 	$(INSTALL_DATA) $(HRL_FILES) $(RELSYSDIR)/include
 	$(INSTALL_DIR) $(RELSYSDIR)/pkix
-	$(INSTALL_DATA) $(ASN_ASNS) $(ASN_ERLS) $(ASN_HRLS) \
-		$(GEN_ERLS) mk_ssl_pkix_oid.erl $(RELSYSDIR)/pkix
+	$(INSTALL_DATA) $(ASN_ASNS) $(ASN_ERLS) $(ASN_HRLS) $(ASN_CONFIGS) \
+		$(ORBER_TMP_FIX_HRL) $(GEN_ERLS) mk_ssl_pkix_oid.erl $(RELSYSDIR)/pkix
 	$(INSTALL_DIR) $(RELSYSDIR)/ebin
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
@@ -104,10 +109,10 @@ release_docs_spec:
 #
 # Dependencies
 
-$(EBIN)/SSL-PKIX.beam: 	SSL-PKIX.erl SSL-PKIX.hrl
-SSL-PKIX.erl SSL-PKIX.hrl:	SSL-PKIX.asn1 
-SSL-PKIX.asn1:			PKIX1Algorithms88.asn1 \
+$(EBIN)/OTP-PKIX.beam: 	OTP-PKIX.erl OTP-PKIX.hrl
+OTP-PKIX.erl OTP-PKIX.hrl:	OTP-PKIX.asn1db
+OTP-PKIX.asn1db:		PKIX1Algorithms88.asn1 \
 				PKIX1Explicit88.asn1 \
 				PKIX1Implicit88.asn1 \
-				PKIXAttributeCertificate.asn1
-
+				PKIXAttributeCertificate.asn1 \
+				SSL-PKIX.asn1

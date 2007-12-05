@@ -448,7 +448,7 @@ find_beam(Module) when is_atom(Module) ->
 	    {ok, File}
     end;
 find_beam(Culprit) ->
-    erlang:fault(badarg, [Culprit]).
+    erlang:error(badarg, [Culprit]).
 
 %% options(Options, ValidOptions) -> {OptionValues, InvalidOptions}
 %%

@@ -41,7 +41,7 @@ block([], Acc) -> reverse(Acc).
 
 norm_block([{set,[],[],{alloc,R,Alloc}}|Is], Acc0) ->
     case insert_alloc_in_bs_init(Acc0, Alloc) of
-	not_possible ->
+	impossible ->
 	    norm_block(Is, reverse(norm_allocate(Alloc, R), Acc0));
 	Acc ->
 	    norm_block(Is, Acc)
@@ -59,7 +59,6 @@ norm({set,[D],[S1,S2],put_list})  -> {put_list,S1,S2,D};
 norm({set,[D],[],{put_tuple,A}})  -> {put_tuple,A,D};
 norm({set,[],[S],put})            -> {put,S};
 norm({set,[D],[],{put_string,L,S}})       -> {put_string,L,S,D};
-norm({set,[D],[],{put_literal,L}})        -> {put_literal,L,D};
 norm({set,[D],[S],{get_tuple_element,I}}) -> {get_tuple_element,S,I,D};
 norm({set,[],[S,D],{set_tuple_element,I}}) -> {set_tuple_element,S,D,I};
 norm({set,[D1,D2],[S],get_list})          -> {get_list,S,D1,D2};
@@ -71,44 +70,41 @@ norm({'%live',R})                  -> {'%live',R}.
 
 norm_allocate({_Zero,nostack,Nh,[]}, Regs) ->
     [{test_heap,Nh,Regs}];
-norm_allocate({_Zero,nostack,Nh,Nf,[]}, Regs) ->
-    [{test_heap,alloc_list(Nh, Nf),Regs}];
 norm_allocate({zero,0,Nh,[]}, Regs) ->
     norm_allocate({nozero,0,Nh,[]}, Regs);
-norm_allocate({zero,0,Nh,Nf,[]}, Regs) ->
-    norm_allocate({nozero,0,Nh,Nf,[]}, Regs);
 norm_allocate({zero,Ns,0,[]}, Regs) ->
-    [{allocate_zero,Ns,Regs}];
-norm_allocate({zero,Ns,0,0,[]}, Regs) ->
     [{allocate_zero,Ns,Regs}];
 norm_allocate({zero,Ns,Nh,[]}, Regs) ->
     [{allocate_heap_zero,Ns,Nh,Regs}];
 norm_allocate({nozero,Ns,0,Inits}, Regs) ->
     [{allocate,Ns,Regs}|Inits];
-norm_allocate({nozero,Ns,0,0,Inits}, Regs) ->
-    [{allocate,Ns,Regs}|Inits];
 norm_allocate({nozero,Ns,Nh,Inits}, Regs) ->
     [{allocate_heap,Ns,Nh,Regs}|Inits].
 
 %% insert_alloc_in_bs_init(ReverseInstructionStream, AllocationInfo) ->
-%%                                  not_possible | ReverseInstructionStream'
+%%                                  impossible | ReverseInstructionStream'
 %%   A bs_init2/6 instruction must not be followed by a test heap instruction.
 %%   Given the AllocationInfo from a test heap instruction, merge the
 %%   allocation amounts into the previous bs_init2/6 instruction (if any).
 
 insert_alloc_in_bs_init([I|_]=Is, Alloc) ->
-    %% Common case. The test heap instruction was introduced by
-    %% a floating point optimization.
     case is_bs_constructor(I) of
-	false ->
-	    not_possible;
-	true ->
-	    insert_alloc_1(Is, Alloc, [])
+	false -> impossible;
+	true -> insert_alloc_1(Is, Alloc, [])
     end.
 
-insert_alloc_1([{bs_init2,Fail,Bs,Ws1,Regs,F,Dst}|Is], {_,nostack,Ws2,[]}, Acc) ->
+insert_alloc_1([{bs_init2=Op,Fail,Bs,Ws1,Regs,F,Dst}|Is], {_,nostack,Ws2,[]}, Acc) ->
     Al = combine_heap_needs(Ws1, Ws2),
-    I = {bs_init2,Fail,Bs,Al,Regs,F,Dst},
+    I = {Op,Fail,Bs,Al,Regs,F,Dst},
+    reverse(Acc, [I|Is]);
+insert_alloc_1([{bs_init_bits=Op,Fail,Bs,Ws1,Regs,F,Dst}|Is], {_,nostack,Ws2,[]}, Acc) ->
+    Al = combine_heap_needs(Ws1, Ws2),
+    I = {Op,Fail,Bs,Al,Regs,F,Dst},
+    reverse(Acc, [I|Is]);
+insert_alloc_1([{bs_append,Fail,Sz,Ws1,Regs,U,Bin,Fl,Dst}|Is],
+	       {_,nostack,Ws2,[]}, Acc) ->
+    Al = combine_heap_needs(Ws1, Ws2),
+    I = {bs_append,Fail,Sz,Al,Regs,U,Bin,Fl,Dst},
     reverse(Acc, [I|Is]);
 insert_alloc_1([I|Is], Alloc, Acc) ->
     insert_alloc_1(Is, Alloc, [I|Acc]).
@@ -118,11 +114,8 @@ is_bs_constructor({bs_put_float,_,_,_,_,_}) -> true;
 is_bs_constructor({bs_put_binary,_,_,_,_,_}) -> true;
 is_bs_constructor({bs_put_string,_,_}) -> true;
 is_bs_constructor({bs_init2,_,_,_,_,_,_}) -> true;
+is_bs_constructor({bs_init_bits,_,_}) -> true;
 is_bs_constructor(_) -> false.
-
-alloc_list(Words, 0) -> Words;
-alloc_list(Words, Floats) ->
-    {alloc,[{words,Words},{floats,Floats}]}.
 
 %% combine_heap_needs(HeapNeed1, HeapNeed2) -> HeapNeed
 %%  Combine the heap need for two allocation instructions.
@@ -156,7 +149,8 @@ combine_alloc_lists_1([]) -> [].
 
 %% opt(Is0) -> Is
 %%  Simple peep-hole optimization to move a {move,Any,{x,0}} past
-%%  any kill up to the next call instruction.
+%%  any kill up to the next call instruction. (To give the loader
+%%  an opportunity to combine the 'move' and the 'call' instructions.)
 
 opt(Is) ->
     opt_1(Is, []).
@@ -176,5 +170,11 @@ move_past_kill([{kill,Src}|_], {move,Src,_}, _) ->
     impossible;
 move_past_kill([{kill,_}=I|Is], Move, Acc) ->
     move_past_kill(Is, Move, [I|Acc]);
+move_past_kill([{trim,N,_}=I|Is], {move,Src,Dst}=Move, Acc) ->
+    case Src of
+	{y,Y} when Y < N-> impossible;
+	{y,Y} -> {Is,[{move,{y,Y-N},Dst},I|Acc]};
+	_ -> {Is,[Move,I|Acc]}
+    end;
 move_past_kill(Is, Move, Acc) ->
     {Is,[Move|Acc]}.

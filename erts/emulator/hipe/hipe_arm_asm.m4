@@ -81,20 +81,23 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
 `defarg(5,`r6')')dnl
 
 /*
- * TEMP_RV:
- *	Used in nbif_stack_trap_ra to preserve the return value.
- *	Must be a C callee-save register.
- *	Must be otherwise unused in the return path.
- */
-`#define TEMP_RV	r7'
-
-/*
  * TEMP_ARG{0,1}:
  *	Used by NBIF_SAVE_RESCHED_ARGS to save argument
  *	registers in locations preserved by C.
  *	May be registers or process-private memory locations.
  *	Must not be C caller-save registers.
  *	Must not overlap with any Erlang global registers.
+ *
+ * TEMP_ARG0:
+ *	Used in nbif_stack_trap_ra to preserve the return value.
+ *	Must be a C callee-save register.
+ *	Must be otherwise unused in the return path.
+ *
+ * TEMP_ARG0:
+ *	Used in hipe_arm_inc_stack to preserve the return address
+ *	(TEMP_LR contains the caller's saved return address).
+ *	Must be a C callee-save register.
+ *	Must be otherwise unused in the call path.
  */
 `#define TEMP_ARG0	r7'
 `#define TEMP_ARG1	r6'
@@ -159,7 +162,7 @@ dnl May only be used in BIF/primop wrappers where SAVE_CONTEXT
 dnl has saved LR in TEMP_LR.
 dnl
 define(NSP_RETN,`add	NSP, NSP, #$1
-	mov pc, TEMP_LP')dnl
+	mov pc, TEMP_LR')dnl
 define(NSP_RET0,`mov pc, TEMP_LR')dnl
 define(RET_POP,`ifelse(eval($1 > NR_ARG_REGS),0,0,eval(4*($1 - NR_ARG_REGS)))')dnl
 define(NBIF_RET_N,`ifelse(eval($1),0,`NSP_RET0',`NSP_RETN($1)')')dnl

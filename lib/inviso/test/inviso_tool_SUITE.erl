@@ -34,9 +34,11 @@
 all(suite) ->
     [
      dist_basic_1,
+     dist_rtc,
      dist_reconnect,
      dist_adopt,
-     dist_history
+     dist_history,
+     dist_start_session_special
     ].
 %% -----------------------------------------------------------------------------
 
@@ -132,6 +134,7 @@ fin_per_testcase(_Case,Config) ->
 %%   stop_session/0                          dist_basic_1
 %%   atc/3                                   dist_basic_1
 %%   sync_atc/3                              dist_basic_1
+%%   sync_rtc/2,                             dist_rtc
 %%   dtc/2                                   dist_basic_1
 %%   sync_dtc/2                              dist_basic_1
 %%   inviso/2                                dist_basic_1
@@ -141,6 +144,8 @@ fin_per_testcase(_Case,Config) ->
 %%   save_history/1                          dist_history
 %%   restore_session/1                       dist_history
 %%   get_node_status/1                       dist_basic_1
+%%   get_session_data/0                      dist_basic_1
+%%   flush/0                                 dist_basic_1
 %% -----------------------------------------------------------------------------
 
 %% Non functional tests:
@@ -173,6 +178,8 @@ fin_per_testcase(_Case,Config) ->
 %%     then just deactivated).
 %%   Check that on-going reactivators and    NOT IMPLEMENTED
 %%     tracecases are killed when stop_session.
+%%   Check that inviso_tool can and will adopt
+%%     a running runtime component.          dist_adopt
 %% -----------------------------------------------------------------------------
 
 -define(TC_DEF_FILE,filename:join(DataDir,"tracecase_def.txt")).
@@ -195,7 +202,10 @@ dist_basic_1(Config) when list(Config) ->
     ?l start_inviso_tool(Nodes,CNode,Opts),
     %% Now we know that all inviso runtimes are running and are not tracing.
     ?l {error,no_session}=inviso_tool:inviso(tpl,[lists,module_info,0,[]]),
+    ?l {error,no_session}=inviso_tool:get_session_data(),
     ?l start_inviso_tool_session(CNode,[],1,Nodes),
+    ?l {ok,{tracing,1,TDGargs}}=inviso_tool:get_session_data(),
+    ?l true=is_list(TDGargs),
     %% Check that the initial tracecase has been executed at all tracing nodes.
     ?l lists:foreach(fun(N)->
 			     ok=poll(rpc,
@@ -222,7 +232,7 @@ dist_basic_1(Config) when list(Config) ->
     ?l ok=inviso_tool:atc(tracecase1,id1,[{'ProcessName',inviso_tool_test_proc}]),
     ?l {error,activating}=inviso_tool:atc(tracecase1,id1,[{'ProcessName',inviso_tool_test_proc}]),
     ?l {ok,[{tracecases,[{{tracecase1,id1},activating}]}]}=inviso_tool:get_activities(),
-    ?l timer:sleep(600),                     % There is a 500 ms delay in the tracecase.
+    ?l timer:sleep(1700),                     % There is a 500 ms delay in the tracecase.
     ?l {error,already_started}=
 	inviso_tool:atc(tracecase1,id1,[{'ProcessName',inviso_tool_test_proc}]),
 
@@ -301,18 +311,9 @@ dist_basic_1(Config) when list(Config) ->
     ?l {ok,{AutostartData1,NodeResults3}}=
 	inviso_tool:get_autostart_data(Nodes,{dependency,infinity}),
     ?l true=check_noderesults(Nodes,
-			      fun({_N,{ok,{[{dependency,infinity}],TDlist}}}) when list(TDlist)->
-				      case lists:keysearch(trace,1,TDlist) of
-					  {value,_} ->
-					      case lists:keysearch(ti,1,TDlist) of
-						  {value,_} ->
-						      true;
-						  _ ->
-						      false
-					      end;
-					  _ ->
-					      false
-				      end;
+			      fun({_N,{ok,{[{dependency,infinity}],{tdg,{_M,_F,TDlist}}}}})
+				 when list(TDlist)->
+				      true;
 				 (_) ->
 				      false
 			      end,
@@ -323,11 +324,9 @@ dist_basic_1(Config) when list(Config) ->
     ?l TraceCaseFileName2=filename:join(DataDir,"./tracecase2_on.trc"),
     ?l [{file,{TraceCaseFileNameInit,[]}},
 	{file,{TraceCaseFileName1,[{'ProcessName',inviso_tool_test_proc}]}},
-	{binary,Bin1},
+	{mfa,{inviso,tpl,[math,module_info,0,[]]}},
 	{file,{TraceCaseFileName2,[]}},
-	{binary,Bin2}]=AutostartData1,
-    ?l "inviso:tpl(math,module_info,0,[]).\n"=binary_to_list(Bin1),
-    ?l "inviso:tpl(math,sin,1,[]).\n"=binary_to_list(Bin2),
+	{mfa,{inviso,tpl,[math,sin,1,[]]}}]=AutostartData1,
 
     %% Try to activate a faulty tracecase. We shall get the same history as before.
     ?l ok=inviso_tool:atc(tracecase3,id3,[]),
@@ -342,9 +341,9 @@ dist_basic_1(Config) when list(Config) ->
     ?l {ok,{AutostartData2,_NodeResults}}=
 	inviso_tool:get_autostart_data(Nodes,{dependency,infinity}),
     ?l [{file,{TraceCaseFileNameInit,[]}},
-	{binary,Bin1},
+	{mfa,{inviso,tpl,[math,module_info,0,[]]}},
 	{file,{TraceCaseFileName2,[]}},
-	{binary,Bin2}]=AutostartData2,
+	{mfa,{inviso,tpl,[math,sin,1,[]]}}]=AutostartData2,
     %% Now tracing shall be removed since we deactivated tracecase1.
     ?l lists:foreach(fun(P)->
 			     ?l ok=poll(rpc,
@@ -380,9 +379,8 @@ dist_basic_1(Config) when list(Config) ->
     ?l {ok,{AutostartData3,NodeResults}}=
 	inviso_tool:get_autostart_data(Nodes,{dependency,infinity}),
     ?l [{file,{TraceCaseFileNameInit,[]}},
-	{binary,Bin3}]=AutostartData3,
-    ?l "inviso:tpl(math,module_info,0,[]).\ninviso:tpl(math,sin,1,[]).\n"=
-	binary_to_list(Bin3),
+	{mfa,{inviso,tpl,[math,module_info,0,[]]}},
+	{mfa,{inviso,tpl,[math,sin,1,[]]}}]=AutostartData3,
 
     %% Check that a deactivating tracecase is not redone at a reactivating node.
     ?l inviso_tool:sync_atc(tracecase5,id5,[]), % Updates the counter.
@@ -407,7 +405,30 @@ dist_basic_1(Config) when list(Config) ->
     ?l SideEffectCounter2B1=SideEffectCounter2B+1,
     ?l [{counter,SideEffectCounter2B1}]=rpc:call(BNode,ets,lookup,[test_proc_tab,counter]),
 
+    %% Check the flush function. It is difficult to find out if it really flushed.
+    ?l {ok,NodeResults4}=inviso_tool:flush(),
+    ?l true=check_noderesults(Nodes,ok,NodeResults4),
+
+    %% Check that this function still has a trace pattern. We are going to stop session
+    %% and check that it is still there.
+    ?l lists:foreach(fun(N)->
+			     ok=poll(rpc,
+				     call,
+				     [N,
+				      erlang,
+				      trace_info,
+				      [{math,sin,1},traced]],
+				     {traced,local},
+				     20)
+		     end,
+		     Nodes),
+
     ?l stop_inviso_tool_session(CNode,1,Nodes),
+    ?l {ok,{not_tracing,1,TDGargs}}=inviso_tool:get_session_data(),
+
+    ?l {ok,NodeResults5}=inviso_tool:flush(Nodes),
+    ?l true=check_noderesults(Nodes,fun({_,{error,_}})->true;(_)->false end,NodeResults5),
+    ?l {ok,[]}=inviso_tool:flush(),
 
     %% Check that you can not start trace cases when the session is stopped.
     ?l {error,no_session}=inviso_tool:atc(tracecase2,id3,[]),
@@ -416,9 +437,102 @@ dist_basic_1(Config) when list(Config) ->
 	inviso_tool:get_autostart_data(Nodes,{dependency,infinity}),
     ?l {ok,{inactive,running}}=inviso_tool:get_node_status(ANode),
 
+    %% Check that the trace pattern is still there.
+    ?l lists:foreach(fun(N)->
+			     ok=poll(rpc,
+				     call,
+				     [N,
+				      erlang,
+				      trace_info,
+				      [{math,sin,1},traced]],
+				     {traced,local},
+				     20)
+		     end,
+		     Nodes),
+
+    %% Now start a session and check that the trace patterns is gone.
+    ?l start_inviso_tool_session(CNode,[],2,Nodes),
+    ?l lists:foreach(fun(N)->
+			     ok=poll(rpc,
+				     call,
+				     [N,
+				      erlang,
+				      trace_info,
+				      [{math,sin,1},traced]],
+				     {traced,false},
+				     20)
+		     end,
+		     Nodes),
+    ?l stop_inviso_tool_session(CNode,2,Nodes),
+
     ?l stop_inviso_tool(CNode,Nodes),
     ok.
 %% -----------------------------------------------------------------------------
+
+%% This test case tests the rtc trace case mechanism.
+dist_rtc(doc) -> [""];
+dist_rtc(suite) -> [];
+dist_rtc(Config) when is_list(Config) ->
+    RemoteNodes=get_remotenodes_config(Config),
+    [RegExpNode|_]=RemoteNodes,
+    CNode=node(),
+    Nodes=RemoteNodes,
+    DataDir=?config(data_dir,Config),
+    PrivDir=?config(priv_dir,Config),
+    Opts=[{regexp_node,RegExpNode},
+	  {tdg,{?MODULE,tdg,[PrivDir]}},
+	  {tc_def_file,?TC_DEF_FILE},
+	  {initial_tcs,[{tracecase_init,[]}]},
+	  {dir,DataDir}],                    % This is where we find tracecases.
+    ?l start_inviso_tool(Nodes,CNode,Opts),
+    ?l start_inviso_tool_session(CNode,[],1,Nodes),
+    %% Check that the initial tracecase has been executed at all tracing nodes.
+    ?l lists:foreach(fun(N)->
+			     ok=poll(rpc,
+				     call,
+				     [N,
+				      erlang,
+				      trace_info,
+				      [{lists,module_info,1},traced]],
+				     {traced,local},
+				     20)
+		     end,
+		     Nodes),
+    %% Start a test process at every node with a runtime component.
+    ?l lists:foreach(fun(N)->spawn(N,?MODULE,test_proc_init,[]) end,Nodes),
+    %% Find the pids of the test processes.
+    ?l TestProcs=lists:map(fun(N)->rpc:call(N,erlang,whereis,[inviso_tool_test_proc]) end,
+			   Nodes),
+    ?l true=(1=<length(TestProcs)),
+    ?l [ANode|_]=Nodes,
+    ?l [{counter,Val}]=rpc:call(ANode,ets,lookup,[test_proc_tab,counter]),
+    %% Call the tracecase as an rtc.
+    ?l inviso_tool:sync_rtc(tracecase5,[]), % Updates the counter.
+    ?l [{counter,Val2}]=rpc:call(ANode,ets,lookup,[test_proc_tab,counter]),
+    ?l true=(Val2==Val+1),
+    ?l inviso_tool:sync_rtc(tracecase5,[]), % Updates the counter.
+    ?l [{counter,Val3}]=rpc:call(ANode,ets,lookup,[test_proc_tab,counter]),
+    ?l true=(Val3==Val2+1),
+
+    %% Now we stop the session and restore it again.
+    ?l stop_inviso_tool_session(CNode,1,Nodes),
+    ?l {ok,{2,_InvisoReturn}}=inviso_tool:restore_session(),
+    %% The tracecase shall be done twice then.
+    ?l ok=poll(rpc,call,[ANode,ets,lookup,[test_proc_tab,counter]],
+	       fun([{counter,V}]) when V==Val3+2 -> true;
+		  (_) -> false
+	       end,
+	       20),
+    ?l stop_inviso_tool_session(CNode,2,Nodes),
+
+    ?l {ok,{AutostartData,_NodeResults}}=
+	inviso_tool:get_autostart_data(Nodes,{dependency,infinity}),
+    ?l [{file,{_FileNameInit,_}},{file,{FileName,Bindings}},{file,{FileName,Bindings}}]=
+	AutostartData,
+    ?l stop_inviso_tool(CNode,Nodes),
+    ok.
+%% -----------------------------------------------------------------------------
+
 
 %% This test case tests mainly that reconnect and reinitiations of a node works.
 dist_reconnect(doc) -> [""];
@@ -501,7 +615,7 @@ dist_reconnect(Config) when list(Config) ->
     ?l UnknownNode='unknown@nonexistant',
     ?l {ok,[{RegExpNode,{error,already_connected}},{UnknownNode,{error,unknown_node}}]}=
 	inviso_tool:reconnect_nodes([RegExpNode,UnknownNode]),
-    ?l {ok,{ok,[{RegExpNode,_Result}]}}=inviso_tool:reinitiate_session([RegExpNode]),
+    ?l {ok,{ok,[{RegExpNode,{ok,_}}]}}=inviso_tool:reinitiate_session([RegExpNode]),
     ?l ok=poll(rpc,
 	       call,
 	       [RegExpNode,erlang,trace_info,[TPid,flags]],
@@ -569,7 +683,6 @@ dist_adopt(Config) when list(Config) ->
 			    [{trace,{file,filename:join(PrivDir,"dist_adopt_adoptednode.log")}},
 			     {ti,{file,filename:join(PrivDir,"dist_adopt_adoptednode.ti")}}]),
     ?l inviso:stop(),
-    ?l timer:sleep(100),
     ?l ok=poll(erlang,whereis,[inviso_c],undefined,10),
     ?l lists:foreach(fun(N)->true=(is_pid(rpc:call(N,erlang,whereis,[inviso_rt]))) end,
 		     Nodes),
@@ -706,7 +819,7 @@ dist_history(Config) when list(Config) ->
     ?l FName1=filename:join(DataDir,"tracecase1_on.trc"),
     ?l [{file,{FNameInit,[]}},
 	{file,{FName1,[{'ProcessName',inviso_tool_test_proc}]}},
-	{binary,_}]=AutostartData,
+	{mfa,{inviso,tpl,[math,module_info,0,[]]}}]=AutostartData,
     ?l stop_inviso_tool_session(CNode,2,Nodes),
     ?l NodeCounters=lists:foldl(fun(N,Acc)->[{_,X}]=rpc:call(N,ets,lookup,[test_proc_tab,counter]),
 					    [{N,X}|Acc]
@@ -750,8 +863,59 @@ dist_history(Config) when list(Config) ->
 		     end,
 		     Nodes),
     ?l stop_inviso_tool(CNode,Nodes),
-    ok.
 
+    %% Now we want to test that restoring a session at no active nodes will
+    %% not result in a crash. (Previous error).
+    ?l FaultyNodes=[gurka@nonexistant,tomat@nonexistant],
+    ?l Options=[{nodes,FaultyNodes},{c_node,CNode}|Opts],
+    ?l {ok,_Pid}=inviso_tool:start(Options),
+    ?l ok=poll(erlang,whereis,[inviso_tool],fun(X)->true=is_pid(X) end,10),
+    %% Now try to restore a session.
+    ?l {ok,{_,{ok,[]}}}=inviso_tool:restore_session(AbsFileName),
+    ?l {ok,down}=inviso_tool:get_node_status(gurka@nonexistant),
+    %% Now stop the (useless) session.
+    ?l {ok,{_,[]}}=inviso_tool:stop_session(),
+    ?l stop_inviso_tool(CNode,[]),
+    ok.
+%% -----------------------------------------------------------------------------
+
+%% This test tests a few strange situations when activating a session and there
+%% are no nodes that can be initiated or reinitiated.
+dist_start_session_special(doc) -> [""];
+dist_start_session_special(suite) -> [];
+dist_start_session_special(Config) when list(Config) ->
+    RemoteNodes=get_remotenodes_config(Config),
+    [RegExpNode|_]=RemoteNodes,
+    CNode=RegExpNode,                       % We use a remote control component.
+%    Nodes=RemoteNodes,
+    DataDir=?config(data_dir,Config),
+    PrivDir=?config(priv_dir,Config),
+
+    %% Start up the tool but with no exiting nodes.
+    FaultyNodes=[gurka@nonexistant,tomat@nonexistant],
+    Opts=[{regexp_node,RegExpNode},
+	  {tdg,{?MODULE,tdg,[PrivDir]}},
+	  {tc_def_file,?TC_DEF_FILE},
+	  {initial_tcs,[{tracecase_init,[]}]},
+	  {dir,DataDir}],                    % This is where we find tracecases.
+    ?l Options=[{nodes,FaultyNodes},{c_node,CNode}|Opts],
+    ?l {ok,_Pid}=inviso_tool:start(Options),
+    ?l ok=poll(erlang,whereis,[inviso_tool],fun(X)->true=is_pid(X) end,10),
+    %% Now try to initate a session.
+    ?l {ok,{SessionNr,{ok,[]}}}=inviso_tool:start_session(),
+    ?l {ok,down}=inviso_tool:get_node_status(gurka@nonexistant),
+    %% Now stop the (useless) session.
+    ?l {ok,{SessionNr,[]}}=inviso_tool:stop_session(),
+
+    %% Now start again, still no useful nodes.
+    ?l {ok,{SessionNr2,{ok,[]}}}=inviso_tool:start_session(),
+    ?l {ok,{SessionNr2,[]}}=inviso_tool:stop_session(),
+    ?l stop_inviso_tool(CNode,[]), % No nodes are connected.
+
+    ok.
+%% -----------------------------------------------------------------------------
+
+    
 %% ==============================================================================
 %% Help functions.
 %% ==============================================================================
@@ -778,7 +942,8 @@ start_inviso_tool(Nodes,CNode,OtherOpts) ->
 
 %% Stops the inviso_tool.
 stop_inviso_tool(CNode,Nodes) ->
-    ?l {ok,_NodeResults}=inviso_tool:stop(),
+    ?l {ok,NodeResults}=inviso_tool:stop(),
+    ?l true=check_noderesults(Nodes,ok,NodeResults),
     ?l ok=poll(erlang,whereis,[inviso_tool],undefined,10),
     %% Check that all inviso components are gone.
     ?l ok=poll(rpc,call,[CNode,erlang,whereis,[inviso_c]],undefined,10),
@@ -909,16 +1074,20 @@ tdg(Node,{{Y,Mo,D},{H,Mi,S}},PrivDir) ->
 %% ------------------------------------------------------------------------------
 
 insert_remotenode_config(Name,Node,Config) ->
-    [{remotenode,Name,Node}|Config].
+    [{remotenode,{Name,Node}}|Config].
 %% ------------------------------------------------------------------------------
 
 insert_timetraphandle_config(Handle,Config) ->
     [{timetraphandle,Handle}|Config].
 %% ------------------------------------------------------------------------------
 
-get_remotenode_config(Name,Config) ->
-    {value,{_,_,Node}}=lists:keysearch(Name,2,Config),
-    Node.
+get_remotenode_config(Name, [{remotenode, {Name, Node}}| _Cs]) ->
+    Node;
+get_remotenode_config(Name, [_C | Cs]) ->
+    get_remotenode_config(Name, Cs);
+get_remotenode_config(Name, []) ->
+    exit({no_remotenode, Name}).
+
 %% ------------------------------------------------------------------------------
 
 get_timetraphandle_config(Config) ->
@@ -926,7 +1095,7 @@ get_timetraphandle_config(Config) ->
     Handle.
 %% ------------------------------------------------------------------------------
 
-get_remotenodes_config([{remotenode,_Name,Node}|Config]) ->
+get_remotenodes_config([{remotenode,{_Name,Node}}|Config]) ->
     [Node|get_remotenodes_config(Config)];
 get_remotenodes_config([_|Config]) ->
     get_remotenodes_config(Config);
@@ -934,8 +1103,12 @@ get_remotenodes_config([]) ->
     [].
 %% ------------------------------------------------------------------------------
 
-remove_remotenode_config(Name,Config) ->
-    lists:keydelete(Name,2,Config).
+remove_remotenode_config(Name, [{remotenode, {Name, _}} | Cs]) ->
+    Cs;
+remove_remotenode_config(Name, [C | Cs]) ->
+    [C | remove_remotenode_config(Name, Cs)];
+remove_remotenode_config(_Name, []) ->
+    [].
 %% ------------------------------------------------------------------------------
 
 remove_timetraphandle_config(Config) ->

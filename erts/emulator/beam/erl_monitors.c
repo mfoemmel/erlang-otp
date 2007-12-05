@@ -179,6 +179,19 @@ static ErtsLink *create_link(Uint type, Eterm pid)
 
 #undef CP_LINK_VAL
 
+static ErtsSuspendMonitor *create_suspend_monitor(Eterm pid)
+{
+    ErtsSuspendMonitor *smon = erts_alloc(ERTS_ALC_T_SUSPEND_MON,
+					  sizeof(ErtsSuspendMonitor));
+    smon->left = smon->right = NULL; /* Always the same initial value */
+    smon->balance = 0;               /* Always the same initial value */
+    smon->pending = 0;
+    smon->active = 0;
+    smon->pid = pid;
+    ERTS_PROC_MORE_MEM(sizeof(ErtsSuspendMonitor));
+    return smon;
+}
+
 void
 erts_init_monitors(void)
 {
@@ -240,7 +253,12 @@ void erts_destroy_link(ErtsLink *lnk)
     }
     ERTS_PROC_LESS_MEM(lnk_size);
 }
-    
+
+void erts_destroy_suspend_monitor(ErtsSuspendMonitor *smon)
+{
+    erts_free(ERTS_ALC_T_SUSPEND_MON, smon);
+    ERTS_PROC_LESS_MEM(sizeof(ErtsSuspendMonitor));
+}
      
 static void insertion_rotation(int dstack[], int dpos, 
 			       void *tstack[], int tpos, 
@@ -385,6 +403,43 @@ int erts_add_link(ErtsLink **root, Uint type, Eterm pid)
     insertion_rotation(dstack, dpos, tstack, tpos, state);
     return 0;
 }
+
+ErtsSuspendMonitor *
+erts_add_or_lookup_suspend_monitor(ErtsSuspendMonitor **root, Eterm pid)
+{
+    void *tstack[STACK_NEED];
+    int tpos = 0;
+    int dstack[STACK_NEED+1];
+    int dpos = 1;
+    int state = 0;
+    ErtsSuspendMonitor **this = root;
+    ErtsSuspendMonitor *res;
+    Sint c;
+  
+    dstack[0] = DIR_END;
+    for (;;) {
+	if (!*this) { /* Found our place */
+	    state = 1;
+	    res = *this = create_suspend_monitor(pid);
+	    break;
+	} else if ((c = cmp(pid,(*this)->pid)) < 0) { 
+	    /* go left */
+	    dstack[dpos++] = DIR_LEFT;
+	    tstack[tpos++] = this;
+	    this = &((*this)->left);
+	} else if (c > 0) { /* go right */
+	    dstack[dpos++] = DIR_RIGHT;
+	    tstack[tpos++] = this;
+	    this = &((*this)->right);
+	} else { /* Already here... */
+	    ASSERT((*this)->pid == pid);
+	    return *this;
+	}
+    }
+    insertion_rotation(dstack, dpos, tstack, tpos, state);
+    return res;
+}
+
 
 /* Returns the new or old link structure */
 ErtsLink *erts_add_or_lookup_link(ErtsLink **root, Uint type, Eterm pid)
@@ -650,6 +705,59 @@ ErtsLink *erts_remove_link(ErtsLink **root, Eterm pid)
     return q;
 }
 
+void
+erts_delete_suspend_monitor(ErtsSuspendMonitor **root, Eterm pid)
+{
+    ErtsSuspendMonitor **tstack[STACK_NEED];
+    int tpos = 0;
+    int dstack[STACK_NEED+1];
+    int dpos = 1;
+    int state = 0;
+    ErtsSuspendMonitor **this = root;
+    Sint c;
+    int dir;
+    ErtsSuspendMonitor *q = NULL;
+
+    dstack[0] = DIR_END;
+    for (;;) {
+	if (!*this) { /* Nothing found */
+	    return;
+	} else if ((c = cmp(pid,(*this)->pid)) < 0) { 
+	    dstack[dpos++] = DIR_LEFT;
+	    tstack[tpos++] = this;
+	    this = &((*this)->left);
+	} else if (c > 0) { /* go right */
+	    dstack[dpos++] = DIR_RIGHT;
+	    tstack[tpos++] = this;
+	    this = &((*this)->right);
+	} else { /* Equal key, found the one to delete */
+	    q = (*this);
+	    ASSERT(q->pid == pid);
+	    if (q->right == NULL) {
+		(*this) = q->left;
+		state = 1;
+	    } else if (q->left == NULL) {
+		(*this) = q->right;
+		state = 1;
+	    } else {
+		dstack[dpos++] = DIR_LEFT;
+		tstack[tpos++] = this;
+		state = delsub((ErtsMonitorOrLink **) this);
+	    }
+	    erts_destroy_suspend_monitor(q);
+	    break;
+	}
+    }
+    while (state && ( dir = dstack[--dpos] ) != DIR_END) {
+	this = tstack[--tpos];
+	if (dir == DIR_LEFT) {
+	    state = balance_left((ErtsMonitorOrLink **) this);
+	} else {
+	    state = balance_right((ErtsMonitorOrLink **) this);
+	}
+    }
+}
+
 ErtsMonitor *erts_lookup_monitor(ErtsMonitor *root, Eterm ref) 
 {
     Sint c;
@@ -666,6 +774,22 @@ ErtsMonitor *erts_lookup_monitor(ErtsMonitor *root, Eterm ref)
 }
 
 ErtsLink *erts_lookup_link(ErtsLink *root, Eterm pid) 
+{
+    Sint c;
+
+    for (;;) {
+	if (root == NULL || (c = cmp(pid,root->pid)) == 0) {
+	    return root;
+	} else if (c < 0) { 
+	    root = root->left;
+	} else { /* c > 0 */ 
+	    root = root->right;
+	} 
+    }
+}
+
+ErtsSuspendMonitor *
+erts_lookup_suspend_monitor(ErtsSuspendMonitor *root, Eterm pid) 
 {
     Sint c;
 
@@ -752,6 +876,42 @@ void erts_sweep_links(ErtsLink *root,
     }
 }
 
+void erts_sweep_suspend_monitors(ErtsSuspendMonitor *root,
+				 void (*doit)(ErtsSuspendMonitor *, void *),
+				 void *context)
+{
+    ErtsSuspendMonitor *tstack[STACK_NEED];
+    int tpos = 0;
+    int dstack[STACK_NEED+1];
+    int dpos = 1;
+    int dir;
+    
+    dstack[0] = DIR_END;
+
+    for (;;) {
+	if (root == NULL) {
+	    if ((dir = dstack[dpos-1]) == DIR_END) {
+		return;
+	    }
+	    if (dir == DIR_LEFT) {
+		/* Still has DIR_RIGHT to do */
+		dstack[dpos-1] = DIR_RIGHT;
+		root = (tstack[tpos-1])->right;
+	    } else {
+		/* stacktop is an object to be deleted */
+		(*doit)(tstack[--tpos],context); /* expeted to do the 
+						    deletion */
+		--dpos;
+		root = NULL;
+	    }
+	} else {
+	    dstack[dpos++] = DIR_LEFT;
+	    tstack[tpos++] = root;
+	    root = root->left;
+	}
+    }
+}
+				
 
 /* Debug BIF, always present, but undocumented... */
 	    

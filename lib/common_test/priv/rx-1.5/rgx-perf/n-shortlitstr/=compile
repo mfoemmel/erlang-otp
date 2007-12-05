@@ -1,0 +1,8 @@
+#!/bin/sh
+
+HDR=$1
+LIB=$2
+
+rm -f regex.h
+ln -s $HDR regex.h
+gcc -o litstr litstr.c $LIB

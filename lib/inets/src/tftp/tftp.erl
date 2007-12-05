@@ -185,7 +185,7 @@
 %% Interface
 %%-------------------------------------------------------------------
 
-%% public functions
+%% Public functions
 -export([
 	 read_file/3,
 	 write_file/3,
@@ -196,6 +196,16 @@
 	]).
 
 -export([behaviour_info/1]).
+
+%% Application local functions
+-export([
+	 start_standalone/1,
+	 start_service/1,
+	 stop_service/1, 
+	 services/0,
+	 service_info/1
+	]).
+
 
 behaviour_info(callbacks) ->
     [{prepare, 6}, {open, 6}, {read, 1}, {write, 2}, {abort, 3}];
@@ -308,3 +318,25 @@ change_config(Pid, Options) ->
 
 start() ->
     application:start(inets).
+
+%%-------------------------------------------------------------------
+%% Inets service behavior
+%%-------------------------------------------------------------------
+
+start_standalone(Options) ->
+    start(Options).
+
+start_service(Options) ->
+    tftp_sup:start_child(Options).
+
+stop_service(Pid) ->
+    tftp_sup:stop_child(Pid).
+
+services() ->
+    tftp_sup:which_children().
+
+service_info(Pid) ->
+    info(Pid).
+	     
+	     
+       

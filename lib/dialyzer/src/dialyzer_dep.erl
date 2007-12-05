@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -9,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -67,7 +69,7 @@ traverse(Tree, Out, State, CurrentFun) ->
       %% Op is always a variable and should not be marked as escaping
       %% based on its use.
       case var =:= cerl:type(Op) of
-	false -> erlang:fault({apply_op_not_a_variable, cerl:type(Op)});
+	false -> erlang:error({apply_op_not_a_variable, cerl:type(Op)});
 	true -> ok
       end,
       OpFuns = case map__lookup(cerl_trees:get_label(Op), Out) of
@@ -77,7 +79,8 @@ traverse(Tree, Out, State, CurrentFun) ->
       {ArgFuns, State2} = traverse_list(Args, Out, State, CurrentFun),
       State3 = state__add_esc(merge_outs(ArgFuns), State2),
       State4 = state__add_deps(CurrentFun, OpFuns, State3),
-      State5 = state__store_callsite(cerl_trees:get_label(Tree), OpFuns,State4),
+      State5 = state__store_callsite(cerl_trees:get_label(Tree),
+				     OpFuns, length(Args), State4),
       {output(set__singleton(external)), State5};
     binary ->
       {output(none), State};
@@ -305,15 +308,21 @@ set__to_ordsets(#set{set=Set}) -> ordsets:from_list(sets:to_list(Set)).
 set__size(none) -> 0;
 set__size(#set{set=X}) -> sets:size(X).
 
+set__filter(#set{set=X}, Fun) -> 
+  NewSet = sets:filter(Fun, X),
+  case sets:size(NewSet) =:= 0 of
+    true -> none;
+    false -> #set{set=NewSet}
+  end.
+       
+
 %%____________________________________________________________
 %%
 %% Outputs
 %%
 
-%% #output{type = single|list, 
-%%         content = #set{} | [#output{}] | none}
-
--record(output, {type, content}).
+-record(output, {type    :: 'single' | 'list', 
+		 content :: 'none' | #set{} | [#output{}]}).
 
 output(none) -> #output{type=single, content=none};
 output(S = #set{}) -> #output{type=single, content=S};
@@ -339,6 +348,9 @@ merge_outs([#output{type=list, content=L1}|Left],
   merge_outs(Left, output(NewList));
 merge_outs([], Res) ->
   Res.
+
+filter_outs(#output{type=single, content=S}, Fun) -> 
+  output(set__filter(S, Fun)).
 
 add_external(#output{type=single, content=Set}) ->
   output(set__union(Set, set__singleton(external)));
@@ -443,14 +455,25 @@ all_vars(Tree, AccIn) ->
 %%
 %% The state
 
--record(state, {deps, esc, call}).
+-record(state, {deps, esc, call, arities}).
 
 state__new(Tree) ->
   Exports = set__from_list([X || X <- cerl:module_exports(Tree)]),
   InitEsc = set__from_list([cerl_trees:get_label(Fun) 
 			    || {Var, Fun} <- cerl:module_defs(Tree),
 			       set__is_element(Var, Exports)]),
-  #state{deps=map__new(), esc=InitEsc, call=map__new()}.
+  Arities = cerl_trees:fold(fun find_arities/2, dict:new(), Tree),
+  #state{deps=map__new(), esc=InitEsc, call=map__new(), arities=Arities}.
+
+find_arities(Tree, AccMap) ->
+  case cerl:is_c_fun(Tree) of
+    true ->
+      Label = cerl_trees:get_label(Tree),
+      Arity = cerl:fun_arity(Tree),
+      dict:store(Label, Arity, AccMap);
+    false ->
+      AccMap
+  end.
 
 state__add_deps(_From, #output{content=none}, State) ->
   State;
@@ -470,10 +493,17 @@ state__add_esc(#output{type=single, content=Set}, State = #state{esc=Esc}) ->
 state__esc(#state{esc=Esc}) ->
   Esc.
 
-state__store_callsite(_From, #output{content=none}, State) ->
+state__store_callsite(_From, #output{content=none}, _CallArity, State) ->
   State;
-state__store_callsite(From, To, State = #state{call=Calls}) ->
-  State#state{call=map__store(From, To, Calls)}.
+state__store_callsite(From, To, CallArity, 
+		      State = #state{call=Calls, arities=Arities}) ->
+  Filter = fun(external) -> true;
+	      (Fun) -> CallArity =:= dict:fetch(Fun, Arities) 
+	   end,
+  case filter_outs(To, Filter) of
+    #output{content=none} -> State;
+    To1 -> State#state{call=map__store(From, To1, Calls)}
+  end.
 
 state__calls(#state{call=Calls}) ->
   Calls.

@@ -170,7 +170,7 @@ daemon_loop(DaemonConfig, N, Servers) ->
 		Req  ->
 		    Reply = #tftp_msg_error{code = badop,
 					    text = "Illegal TFTP operation"},
-		    error("Daemon received: ~p from ~p:~p", [Req, RemoteHost, RemotePort]),
+		    warning("Daemon received: ~p from ~p:~p", [Req, RemoteHost, RemotePort]),
 		    send_msg(ServerConfig, daemon, Reply),
 		    daemon_loop(DaemonConfig, N, Servers)
 	    end;
@@ -185,11 +185,11 @@ daemon_loop(DaemonConfig, N, Servers) ->
 		true ->
 		    daemon_loop(DaemonConfig, N - 1, Servers -- [Pid]);
 		false ->
-		    error("Daemon received: ~p", [Info]),
+		    warning("Daemon received: ~p", [Info]),
 		    daemon_loop(DaemonConfig, N, Servers)
 	    end;
 	Info ->
-	    error("Daemon received: ~p", [Info]),
+	    warning("Daemon received: ~p", [Info]),
 	    daemon_loop(DaemonConfig, N, Servers)
     end.
 
@@ -451,17 +451,25 @@ common_read(Config, _, Req, _, _, _, {terminate, Result}) ->
     terminate(Config, Req, {ok, Result});
 common_read(Config, Callback, Req, LocalAccess, BlockNo, BlockNo, Prepared) ->
     case early_read(Config, Callback, Req, LocalAccess, Prepared) of
-	{Callback2, {more, Data}} ->
+	{Callback2, {more, Data}} when is_binary(Data) ->
 	    do_common_read(Config, Callback2, Req, LocalAccess, BlockNo, Data, undefined);
-	{undefined, {last, Data, Result}} ->
+	{undefined, {last, Data, Result}} when is_binary(Data) ->
 	    do_common_read(Config, undefined, Req, LocalAccess, BlockNo, Data, {terminate, Result});
-	{undefined, #tftp_msg_error{code = Code, text = Text} = Reply} ->	
-	    send_msg(Config, Req, Reply),
+	{undefined, #tftp_msg_error{code = Code, text = Text} = Error} ->	
+	    send_msg(Config, Req, Error),
 	    terminate(Config, Req, ?ERROR(read, Code, Text))
     end;
 common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Prepared) 
   when ActualBlockNo < ExpectedBlockNo ->
-    do_common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, Prepared, undefined);
+    case Prepared of
+	{more, Data} when is_binary(Data) ->
+	    do_common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, Data, undefined);
+	{last, Data, _Result}  when is_binary(Data) ->
+	    do_common_read(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, Data, undefined);
+	#tftp_msg_error{code = Code, text = Text} = Error ->
+	    send_msg(Config, Req, Error),
+	    terminate(Config, Req, ?ERROR(read, Code, Text))
+    end;
 common_read(Config, Callback, Req, _LocalAccess, ExpectedBlockNo, ActualBlockNo, _Prepared) ->
     Code = badblk,
     Text = "Unknown transfer ID = " ++ 
@@ -471,7 +479,7 @@ common_read(Config, Callback, Req, _LocalAccess, ExpectedBlockNo, ActualBlockNo,
     send_msg(Config, Req, Error),
     terminate(Config, Req, ?ERROR(read, Code, Text)).
 
-do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared) ->
+do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared) when is_binary(Data) ->
     NextBlockNo = BlockNo + 1,
     case NextBlockNo =< 65535 of
 	true ->
@@ -491,21 +499,22 @@ do_common_read(Config, Callback, Req, LocalAccess, BlockNo, Data, Prepared) ->
 
 common_write(Config, _, Req, _, _, _, _, {terminate, Result}) ->
     terminate(Config, Req, {ok, Result});
-common_write(Config, Callback, Req, LocalAccess, BlockNo, BlockNo, Data, undefined) ->
+common_write(Config, Callback, Req, LocalAccess, BlockNo, BlockNo, Data, undefined) when is_binary(Data) ->
     case callback({write, Data}, Config, Callback, Req) of
 	{Callback2, more} ->
 	    common_ack(Config, Callback2, Req, LocalAccess, BlockNo, undefined);
 	{undefined, {last, Result}} ->
 	    Config2 = pre_terminate(Config, Req, {ok, Result}),
 	    common_ack(Config2, undefined, Req, LocalAccess, BlockNo, {terminate, Result});
-	{undefined, #tftp_msg_error{code = Code, text = Text} = Reply} ->
-	    send_msg(Config, Req, Reply),
+	{undefined, #tftp_msg_error{code = Code, text = Text} = Error} ->
+	    send_msg(Config, Req, Error),
 	    terminate(Config, Req, ?ERROR(write, Code, Text))
     end;
-common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, _Data, undefined) 
-  when ActualBlockNo < ExpectedBlockNo ->
+common_write(Config, Callback, Req, LocalAccess, ExpectedBlockNo, ActualBlockNo, Data, undefined) 
+  when ActualBlockNo < ExpectedBlockNo,
+       is_binary(Data) ->
     common_ack(Config, Callback, Req, LocalAccess, ExpectedBlockNo - 1, undefined);
-common_write(Config, Callback, Req, _, ExpectedBlockNo, ActualBlockNo, _, _) ->
+common_write(Config, Callback, Req, _, ExpectedBlockNo, ActualBlockNo, Data, _)  when is_binary(Data) ->
     Code = badblk,
     Text = "Unknown transfer ID = " ++ 
 	integer_to_list(ActualBlockNo) ++ " (" ++ integer_to_list(ExpectedBlockNo) ++ ")", 
@@ -673,10 +682,25 @@ send_msg(Config, Req, Msg) ->
 
 do_send_msg(Config, Req, Msg, IoList) ->
     print_debug_info(Config, Req, send, Msg),
-    gen_udp:send(Config#config.udp_socket,
-		 Config#config.udp_host,
-		 Config#config.udp_port,
-		 IoList).
+    Res = gen_udp:send(Config#config.udp_socket,
+		       Config#config.udp_host,
+		       Config#config.udp_port,
+		       IoList),
+    case Res of
+	ok ->
+	    ok;
+	{error, einval = Reason} ->
+	    error("Stacktrace; ~p\n gen_udp:send(~p, ~p, ~p, ~p) -> ~p\n", 
+		  [erlang:get_stacktrace(),
+		   Config#config.udp_socket,
+		   Config#config.udp_host,
+		   Config#config.udp_port,
+		   IoList,
+		   {error, Reason}]);
+	{error, Reason} ->
+	    {error, Reason} 
+    end,
+    Res.
 
 wait_for_msg(Config, Callback, Req) ->
     receive
@@ -722,10 +746,10 @@ wait_for_msg(Config, Callback, Req) ->
 	    Text = "Parent exited.",
 	    terminate(Config, Req, ?ERROR(wait_for_msg, Code, Text));
 	Msg when Req#tftp_msg_req.local_filename /= undefined ->
-	    error("Client received : ~p", [Msg]),
+	    warning("Client received : ~p", [Msg]),
 	    wait_for_msg(Config, Callback, Req);
 	Msg when Req#tftp_msg_req.local_filename =:= undefined ->
-	    error("Server received : ~p", [Msg]),
+	    warning("Server received : ~p", [Msg]),
 	    wait_for_msg(Config, Callback, Req)
     after Config#config.timeout * 1000 ->
 	    print_debug_info(Config, Req, recv, timeout),
@@ -761,14 +785,14 @@ do_callback(read = Fun, Config, Callback, Req)
 					  block_no = BlockNo,
 					  count    = Count},
 	    verify_count(Config, Callback2, Req, {more, Bin});
-        {last, Data, Result} ->
-	    {undefined, {last, Data, Result}};
+        {last, Bin, Result} when is_binary(Bin) ->
+	    {undefined, {last, Bin, Result}};
 	{error, {Code, Text}} ->
 	    {undefined, #tftp_msg_error{code = Code, text = Text}};
-	Details ->
+	Illegal ->
 	    Code = undef,
 	    Text = "Internal error. File handler error.",
-	    callback({abort, {Code, Text, Details}}, Config, Callback, Req)
+	    callback({abort, {Code, Text, Illegal}}, Config, Callback, Req)
     end;
 do_callback({write = Fun, Bin}, Config, Callback, Req)
   when is_record(Config, config),
@@ -788,10 +812,10 @@ do_callback({write = Fun, Bin}, Config, Callback, Req)
 	    {undefined, {last, Result}};
 	{error, {Code, Text}} ->
 	    {undefined, #tftp_msg_error{code = Code, text = Text}};
-	Details ->
+	Illegal ->
 	    Code = undef,
 	    Text = "Internal error. File handler error.",
-	    callback({abort, {Code, Text, Details}}, Config, Callback, Req)
+	    callback({abort, {Code, Text, Illegal}}, Config, Callback, Req)
     end;
 do_callback({open, Type}, Config, Callback, Req)
   when is_record(Config, config),
@@ -825,10 +849,10 @@ do_callback({open, Type}, Config, Callback, Req)
 	    {Callback2, {ok, AcceptedOptions}};
 	{error, {Code, Text}} ->
 	    {undefined, #tftp_msg_error{code = Code, text = Text}};
-	Details ->
+	Illegal ->
 	    Code = undef,
 	    Text = "Internal error. File handler error.",
-	    callback({abort, {Code, Text, Details}}, Config, Callback, Req)
+	    callback({abort, {Code, Text, Illegal}}, Config, Callback, Req)
     end;
 do_callback({abort, {Code, Text}}, Config, Callback, Req) ->
     Error = #tftp_msg_error{code = Code, text = Text},
@@ -1024,8 +1048,12 @@ verify_integer(Key, Min, Max, Options) ->
 	false ->
 	    true
     end.
+
+warning(F, A) ->
+    ok = error_logger:warning_msg("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
+
 error(F, A) ->
-    ok = error_logger:format("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
+    ok = error_logger:error_msg("~p(~p): " ++ F ++ "~n", [?MODULE, self() | A]).
 
 print_debug_info(#config{debug_level = Level} = Config, Who, What, Data) ->
     if

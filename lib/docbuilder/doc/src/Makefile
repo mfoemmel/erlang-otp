@@ -38,7 +38,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/docbuilder-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-XML_APPLICATION_FILES = application.xml
+XML_APPLICATION_FILES = ref_man.xml
 XML_REF3_FILES = \
 	docb_gen.xml \
 	docb_transform.xml \
@@ -135,7 +135,7 @@ gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
 debug opt: 
 
 clean clean_docs clean_tex:
-	rm -f ../html/* application.kwc
+	rm -f ../html/* ref_man.kwc
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES) $(MAN6_FILES)
 	rm -f $(TOP_PDF_FILE) $(TOP_PS_FILE)

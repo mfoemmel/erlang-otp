@@ -28,7 +28,8 @@
 -include("ssl_int.hrl").
 -include("ssl_broker_int.hrl").
 
--define(filter(Call), filter((catch Call))).
+%-define(filter(Call), filter((catch Call))).
+-define(filter(Call), filter(Call)).
 
 listen(Port, Opts) ->
     St = newstate(listener),
@@ -42,7 +43,7 @@ connect(Address, Port, Opts) ->
 accept(ListenSt0) when record(ListenSt0, st) ->
     case transport_accept(ListenSt0) of
 	{ok, ListenSt1} ->
-	    ssl_accept(ListenSt1);
+	    ssl_accept(ListenSt0, ListenSt1);
 	Error ->
 	    Error
     end.
@@ -56,12 +57,12 @@ transport_accept(ListenSt) when record(ListenSt, st) ->
 	      ssl_server_prim, ListenFd,
 	      ListenOpts, infinity, NewSt)).
 
-ssl_accept(ListenSt) when record(ListenSt, st) ->
-    NewSt = newstate(acceptor),
-    ListenSocket=ListenSt#st.thissock,
-    ListenFd = ListenSocket#sslsocket.fd,
-    ?filter(ssl_broker:ssl_accept_prim(
-	      ssl_server_prim, gen_tcp, self(), ListenFd, infinity, NewSt)).
+ssl_accept(ListenSt0, ListenSt1) when is_record(ListenSt0, st) ->
+    LOpts = ListenSt0#st.opts,
+    A = ?filter(ssl_broker:ssl_accept_prim(
+		  ssl_server_prim, gen_tcp, self(), LOpts, infinity, ListenSt1)),
+    A.
+
 
 
 close(_St = #st{fd = Fd}) when integer(Fd) ->
@@ -180,5 +181,5 @@ nonactive([]) ->
 
 newstate(Type) ->
    #st{brokertype = Type, server = whereis(ssl_server_prim),
-       client = undefined, collector = undefiend, debug = false}. 
+       client = undefined, collector = undefined, debug = false}. 
 

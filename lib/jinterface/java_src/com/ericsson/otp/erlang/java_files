@@ -37,6 +37,7 @@ COMM = \
 ERL = \
 	OtpErlangAtom \
 	OtpErlangBinary \
+	OtpErlangBitstr \
 	OtpErlangBoolean \
 	OtpErlangByte \
 	OtpErlangChar \

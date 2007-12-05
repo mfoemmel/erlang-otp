@@ -3,9 +3,6 @@
 #ifndef HIPE_PRIMOPS_H
 #define HIPE_PRIMOPS_H
 
-#if !defined(ERTS_SMP) && !defined(HEAP_FRAG_ELIM_TEST)
-PRIMOP_LIST(am_erts_mb, &erts_mb)
-#endif
 PRIMOP_LIST(am_suspend_msg, &nbif_suspend_msg)
 PRIMOP_LIST(am_suspend_msg_timeout, &nbif_suspend_msg_timeout)
 PRIMOP_LIST(am_suspend_0, &nbif_suspend_0)
@@ -24,9 +21,7 @@ PRIMOP_LIST(am_bxor, &nbif_bxor_2)
 PRIMOP_LIST(am_bnot, &nbif_bnot_1)
 
 PRIMOP_LIST(am_gc_1, &nbif_gc_1)
-#if defined(ERTS_SMP) || defined(HEAP_FRAG_ELIM_TEST)
 PRIMOP_LIST(am_check_get_msg, &nbif_check_get_msg)
-#endif
 #ifdef ERTS_SMP
 PRIMOP_LIST(am_atomic_inc, &nbif_atomic_inc)
 PRIMOP_LIST(am_clear_timeout, &nbif_clear_timeout)
@@ -40,6 +35,7 @@ PRIMOP_LIST(am_bs_get_integer_2, &nbif_bs_get_integer_2)
 PRIMOP_LIST(am_bs_get_float_2, &nbif_bs_get_float_2)
 PRIMOP_LIST(am_bs_get_binary_2, &nbif_bs_get_binary_2)
 PRIMOP_LIST(am_bs_allocate, &nbif_bs_allocate)
+PRIMOP_LIST(am_bs_reallocate, &nbif_bs_reallocate)
 PRIMOP_LIST(am_bs_put_big_integer, &nbif_bs_put_big_integer)
 PRIMOP_LIST(am_bs_put_small_float, &nbif_bs_put_small_float)
 PRIMOP_LIST(am_bs_put_bits, &nbif_bs_put_bits)

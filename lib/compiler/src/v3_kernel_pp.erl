@@ -47,23 +47,27 @@ format(Node) -> format(Node, #ctxt{}).
 
 format(Node, Ctxt) ->
     case canno(Node) of
-	[] ->
-	    format_1(Node, Ctxt);
-	%% Comment out the following clause to have
-	%% line number annotations shown.
-	[L] when is_integer(L) ->
-	    format_1(Node, Ctxt);
-	List ->
-	    format_anno(List, Ctxt, fun (Ctxt1) -> format_1(Node, Ctxt1) end)
+%% 	[] ->
+%% 	    format_1(Node, Ctxt);
+%% 	[L,{file,_}] when is_integer(L) ->
+%% 	    format_1(Node, Ctxt);
+%% 	#k{a=Anno}=K when Anno =/= [] ->
+%% 	    format(setelement(2, Node, K#k{a=[]}), Ctxt);
+%% 	List ->
+%% 	    format_anno(List, Ctxt, fun (Ctxt1) ->
+%% 					    format_1(Node, Ctxt1)
+%% 				    end);
+	_ ->
+	    format_1(Node, Ctxt)
     end.
 
-format_anno(Anno, Ctxt0, ObjFun) ->
-    Ctxt1 = ctxt_bump_indent(Ctxt0, 1),
-    ["( ",
-     ObjFun(Ctxt0),
-     nl_indent(Ctxt1),
-     "-| ",io_lib:write(Anno),
-     " )"].
+%% format_anno(Anno, Ctxt0, ObjFun) ->
+%%     Ctxt1 = ctxt_bump_indent(Ctxt0, 1),
+%%     ["( ",
+%%      ObjFun(Ctxt0),
+%%      nl_indent(Ctxt1),
+%%      "-| ",io_lib:write(Anno),
+%%      " )"].
     
 
 %% format_1(Kexpr, Context) -> string().
@@ -381,6 +385,7 @@ format_list_tail(#k_cons{anno=[],hd=H,tl=T}, Ctxt) ->
 format_list_tail(Tail, Ctxt) ->
     ["|",format(Tail, ctxt_bump_indent(Ctxt, 1)), "]"].
 
+format_bin_seg([], _Ctx) -> "";
 format_bin_seg(#k_bin_end{anno=[]}, _Ctxt) -> "";
 format_bin_seg(#k_bin_seg{anno=[],next=N}=Seg, Ctxt) ->
     Txt = [$,|format_bin_seg_1(Seg, Ctxt)],

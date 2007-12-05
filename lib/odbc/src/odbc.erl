@@ -24,7 +24,8 @@
 
 %% API --------------------------------------------------------------------
 
--export([connect/2, disconnect/1, commit/2, commit/3, sql_query/2,
+-export([start/0, start/1, stop/0,
+	 connect/2, disconnect/1, commit/2, commit/3, sql_query/2,
 	 sql_query/3, select_count/2, select_count/3, first/1, first/2,
 	 last/1, last/2, next/1, next/2, prev/1, prev/2, select/3,
 	 select/4, param_query/3, param_query/4, describe_table/2,
@@ -68,6 +69,29 @@
 %%%  API
 %%%=========================================================================
 
+
+%%--------------------------------------------------------------------
+%% Function: start([, Type]) -> ok
+%%
+%%  Type =  permanent | transient | temporary
+%%
+%% Description: Starts the inets application. Default type
+%% is temporary. see application(3)
+%%--------------------------------------------------------------------
+start() -> 
+    application:start(odbc).
+
+start(Type) -> 
+    application:start(odbc, Type).
+
+%%--------------------------------------------------------------------
+%% Function: stop() -> ok
+%%
+%% Description: Stops the odbc application.
+%%--------------------------------------------------------------------
+stop() -> 
+    application:stop(odbc).
+
 %%-------------------------------------------------------------------------
 %% connect(ConnectionStr, Options) -> {ok, ConnectionReferense} |
 %%                                    {error, Reason}
@@ -77,23 +101,15 @@
 %%-------------------------------------------------------------------------
 connect(ConnectionStr, Options) when list(ConnectionStr), list(Options) ->
     
-    %% Start of the odbc application should really be handled by the 
-    %% application using odbc. 
-    case application:start(odbc) of
-	{error,{already_started,odbc}} ->
-	    ok;
-	ok ->
-	    error_logger:info_report("The odbc application was not started."
-				     " Has now been started as a temporary" 
-				     " application.")
-    end,
-    
     %% Spawn the erlang control process.
-    case supervisor:start_child(odbc_sup, [[{client, self()}]]) of
-	{ok, Pid} ->
+    try  supervisor:start_child(odbc_sup, [[{client, self()}]]) of
+	 {ok, Pid} ->
 	    connect(Pid, ConnectionStr, Options);
-	{error, Reason} ->
+	 {error, Reason} ->
 	    {error, Reason}
+    catch
+	exit:{noproc, _} ->
+            {error, odbc_not_started}
     end.
 
 %%--------------------------------------------------------------------------

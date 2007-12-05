@@ -115,6 +115,12 @@
 #define ERLOUT_FD     1
 
 
+/* procfs */
+#if defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
+#include <fcntl.h>
+#define MEMINFO "/proc/meminfo"
+#endif
+
 /*  prototypes */
 
 static void print_error(const char *,...);
@@ -202,6 +208,51 @@ get_vmtotal(struct vmtotal *vt)
 }
 #endif
 
+#if defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
+static int 
+get_basic_mem_procfs(unsigned long *total, unsigned long *used, unsigned long *pagesize){
+    int fd, nread;
+    char buffer[4097];
+    unsigned long mem_total, mem_free;
+    char *bp;
+    
+    *total = 0;
+    *used = 0;
+    *pagesize = 0;
+
+    if ( (fd = open(MEMINFO, O_RDONLY)) < 0) {
+	return -1;
+    }
+
+    if ( (nread = read(fd, buffer, 4096)) < 0) {
+	return -1;
+    }
+
+    close(fd);
+    buffer[nread] = '\0';
+
+    bp = strstr(buffer, "MemTotal:");    
+    if ( sscanf(bp, "MemTotal: %lu kB\n", &mem_total) != 1) {
+        return -1;
+    }
+    
+    bp = strstr(buffer, "MemFree:");
+    if ( sscanf(bp, "MemFree: %lu kB\n", &mem_free) != 1) {
+        return -1;
+    }
+
+    /* pagesize is really used to determine memory size in a generic function,
+     * if we report 1024 all will be well.
+     */
+
+    *total = mem_total;   
+    *used = mem_total - mem_free;
+    *pagesize = 1024; 
+ 
+    return 1;
+
+}
+#endif
 
 static void 
 get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
@@ -218,6 +269,11 @@ get_basic_mem(unsigned long *tot, unsigned long *used, unsigned long *pagesize){
     *used = (phys - avPhys);
     *tot = phys;
     *pagesize = sysconf(_SC_PAGESIZE);
+#elif defined(__linux__) && !defined(_SC_AVPHYS_PAGES)
+    if (get_basic_mem_procfs(tot, used, pagesize) < 0) {
+        print_error("ProcFS read error.");
+        exit(1);
+    }
 #elif defined(BSD4_4)
     struct vmtotal vt;
     long pgsz;
@@ -232,14 +288,15 @@ fail:
     print_error("%s", strerror(errno));
     exit(1);
 #elif defined(sgi)
-	struct rminfo rmi;
-	if (sysmp(MP_SAGET, MPSA_RMINFO, &rmi, sizeof(rmi)) != -1) {
-		*tot = (unsigned long)(rmi.physmem);
-		*used = (unsigned long)(rmi.physmem - rmi.freemem);
-		*pagesize = (unsigned long)getpagesize(); }
-	else {
-		print_error("%s", strerror(errno));
-		exit(1); }
+    struct rminfo rmi;
+    if (sysmp(MP_SAGET, MPSA_RMINFO, &rmi, sizeof(rmi)) != -1) {
+	*tot = (unsigned long)(rmi.physmem);
+	*used = (unsigned long)(rmi.physmem - rmi.freemem);
+	*pagesize = (unsigned long)getpagesize(); 
+    } else {
+	print_error("%s", strerror(errno));
+	exit(1); 
+    }
 #else  /* SunOS4 */
     *used = (1<<27);	       	/* Fake! 128 MB used */
     *tot = (1<<28);		/* Fake! 256 MB total */

@@ -67,12 +67,15 @@ MODULES =  \
 	beam_jump \
 	beam_type \
 	beam_clean \
+	beam_bsm \
+	beam_trim \
 	beam_flatten \
 	beam_listing \
 	beam_asm \
 	beam_dict \
 	beam_opcodes \
 	beam_disasm \
+	beam_utils \
 	beam_validator \
         erl_bifs \
 	cerl \
@@ -84,9 +87,11 @@ MODULES =  \
 BEAM_H = $(wildcard ../priv/beam_h/*.h)
 
 HRL_FILES= \
+	beam_disasm.hrl \
 	core_parse.hrl \
 	v3_kernel.hrl \
 	v3_life.hrl
+
 EXTRA_FILES= $(EGEN)/beam_opcodes.hrl
 
 ERL_FILES= $(MODULES:%=%.erl)
@@ -140,10 +145,6 @@ $(EBIN)/beam_asm.beam: $(ESRC)/beam_asm.erl $(EGEN)/beam_opcodes.hrl
 $(EBIN)/cerl_inline.beam: $(ESRC)/cerl_inline.erl
 	$(ERLC) $(ERL_COMPILE_FLAGS) +nowarn_shadow_vars -o$(EBIN) $<
 
-$(EBIN)/beam_disasm.beam: $(EGEN)/beam_opcodes.hrl
-
-$(EBIN)/core_parse.beam: $(EGEN)/core_parse.erl
-
 # ----------------------------------------------------
 # Release Target
 # ---------------------------------------------------- 
@@ -157,3 +158,25 @@ release_spec: opt
 	$(INSTALL_DATA) $(INSTALL_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
+
+# ----------------------------------------------------
+# Dependencies -- alphabetically, please
+# ---------------------------------------------------- 
+
+$(EBIN)/beam_disasm.beam: $(EGEN)/beam_opcodes.hrl beam_disasm.hrl
+$(EBIN)/beam_listing.beam: v3_life.hrl
+$(EBIN)/cerl.beam: core_parse.hrl
+$(EBIN)/compile.beam: core_parse.hrl ../../stdlib/include/erl_compile.hrl
+$(EBIN)/core_lib.beam: core_parse.hrl
+$(EBIN)/core_lint.beam: core_parse.hrl
+$(EBIN)/core_parse.beam: core_parse.hrl $(EGEN)/core_parse.erl
+$(EBIN)/core_pp.beam: core_parse.hrl
+$(EBIN)/sys_core_dsetel.beam: core_parse.hrl
+$(EBIN)/sys_core_fold.beam: core_parse.hrl
+$(EBIN)/sys_core_inline.beam: core_parse.hrl
+$(EBIN)/sys_pre_expand.beam: ../../stdlib/include/erl_bits.hrl
+$(EBIN)/v3_codegen.beam: v3_life.hrl
+$(EBIN)/v3_core.beam: core_parse.hrl
+$(EBIN)/v3_kernel.beam: core_parse.hrl v3_kernel.hrl
+$(EBIN)/v3_kernel_pp.beam: v3_kernel.hrl
+$(EBIN)/v3_life.beam: v3_kernel.hrl v3_life.hrl

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2007-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Verify the application specifics of the Megaco application
@@ -66,16 +68,25 @@ init_per_testcase(Case, Config) ->
 do_init_per_testcase(Case, Config) ->
     process_flag(trap_exit, true),
     {ok, _Pid} = megaco_monitor:start_link(),
-    megaco_test_lib:init_per_testcase(Case, [monitor_running|Config]).
+    megaco_test_lib:init_per_testcase(Case, [{monitor_running, true}|Config]).
     
 fin_per_testcase(Case, Config) ->
+    io:format("fin_per_testcase -> entry with"
+	       "~n   Case:   ~p"
+	       "~n   Config: ~p"
+	       "~n", [Case, Config]),
     process_flag(trap_exit, false),
-    case lists:delete(monitor_running, Config) of
+    case lists:keydelete(monitor_running, 1, Config) of
 	Config ->
 	    megaco_test_lib:fin_per_testcase(Case, Config);
 	Config2 ->
 	    megaco_monitor:stop(),
-	    megaco_test_lib:fin_per_testcase(Case, Config2)
+	    megaco_test_lib:fin_per_testcase(Case, Config2);
+        Apa ->
+    io:format("fin_per_testcase -> ok"
+	       "~n   Apa: ~p"
+	       "~n", [Apa]),
+            ok
     end.
 
 
@@ -133,12 +144,13 @@ simple_init(Config) when list(Config) ->
 	fun(Tmr) ->
 		case (catch megaco_timer:init(Tmr)) of
 		    {WaitFor, {NewTmr, _}} when 
-		        (((WaitFor == infinity) or is_integer(WaitFor)) and 
-			 is_record(NewTmr, megaco_incr_timer) and
-			 (is_record(Tmr, megaco_incr_timer) and (Tmr#megaco_incr_timer.max_retries == infinity_restartable))) ->
+		        (((WaitFor == infinity) or is_integer(WaitFor)) andalso 
+			 is_record(NewTmr, megaco_incr_timer) andalso
+			 (is_record(Tmr, megaco_incr_timer) andalso 
+			  (Tmr#megaco_incr_timer.max_retries == infinity_restartable))) ->
 			ok;
 		    {WaitFor, NewTmr} when 
-			 (((WaitFor == infinity) or is_integer(WaitFor)) and
+			 (((WaitFor == infinity) or is_integer(WaitFor)) andalso 
 			  ((NewTmr == timeout) or is_record(NewTmr, megaco_incr_timer))) ->
 			ok;
 		    X ->

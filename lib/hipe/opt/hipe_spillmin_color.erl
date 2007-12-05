@@ -198,11 +198,8 @@ build_ig_instr(X, Live, IG, Target, TempMap, TempMapping) ->
   {Def, Use} = def_use(X, Target, TempMap),
   ?report3("Live ~w\n~w : Def: ~w Use ~w\n",[Live, X, Def,Use]),
   
-  DefList = ordsets:to_list(Def),
-  UseList = ordsets:to_list(Use),
-  
-  DefListMapped = list_map(DefList, TempMapping, []),
-  UseListMapped = list_map(UseList, TempMapping, []),
+  DefListMapped = list_map(Def, TempMapping, []),
+  UseListMapped = list_map(Use, TempMapping, []),
 
   DefSetMapped = ordsets:from_list(DefListMapped),
   UseSetMapped = ordsets:from_list(UseListMapped),

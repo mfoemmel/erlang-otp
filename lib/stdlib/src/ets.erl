@@ -20,12 +20,9 @@
 %% Interface to the Term store BIF's
 %% ets == Erlang Term Store
 
--export([delete/1,
-	 file2tab/1,
+-export([file2tab/1,
 	 filter/3,
 	 foldl/3, foldr/3,
-	 info/1,
-	 info/2,
 	 match_delete/2,
 	 tab2file/2,
 	 from_dets/2,
@@ -41,16 +38,17 @@
 
 -export([i/0, i/1, i/2, i/3]).
 
--deprecated([{fixtable,2}]).
-
 %% The following functions used to be found in this module, but
 %% are now BIFs (i.e. implemented in C).
 %%
 %% all/0
 %% new/2
+%% delete/1
 %% delete/2
 %% first/1
-%% fixtable/2
+%% info/1
+%% info/2
+%% safe_fixtable/2
 %% lookup/2
 %% lookup_element/3
 %% insert/2
@@ -182,29 +180,29 @@ do_foldr(F, Accu0, Key, T) ->
 from_dets(EtsTable, DetsTable) ->
     case (catch dets:to_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
-	    erlang:fault(Reason,[EtsTable,DetsTable]);
+	    erlang:error(Reason,[EtsTable,DetsTable]);
 	{'EXIT', {Reason1, _Stack1}} ->
-	    erlang:fault(Reason1,[EtsTable,DetsTable]);
+	    erlang:error(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
-	    erlang:fault(EReason,[EtsTable,DetsTable]);
+	    erlang:error(EReason,[EtsTable,DetsTable]);
 	EtsTable ->
 	    true;
 	Unexpected -> %% Dets bug?
-	    erlang:fault(Unexpected,[EtsTable,DetsTable])
+	    erlang:error(Unexpected,[EtsTable,DetsTable])
     end.
 
 to_dets(EtsTable, DetsTable) ->
     case (catch dets:from_ets(DetsTable, EtsTable)) of
 	{error, Reason} ->
-	    erlang:fault(Reason,[EtsTable,DetsTable]);
+	    erlang:error(Reason,[EtsTable,DetsTable]);
 	{'EXIT', {Reason1, _Stack1}} ->
-	    erlang:fault(Reason1,[EtsTable,DetsTable]);
+	    erlang:error(Reason1,[EtsTable,DetsTable]);
 	{'EXIT', EReason} ->
-	    erlang:fault(EReason,[EtsTable,DetsTable]);
+	    erlang:error(EReason,[EtsTable,DetsTable]);
 	ok ->
 	    DetsTable;
 	Unexpected -> %% Dets bug?
-	    erlang:fault(Unexpected,[EtsTable,DetsTable])
+	    erlang:error(Unexpected,[EtsTable,DetsTable])
     end.
 
 test_ms(Term,MS) ->
@@ -242,67 +240,6 @@ match_delete(Table, Pattern) ->
     ets:select_delete(Table,[{Pattern,[],[true]}]),
     true.
 
-delete(T) when is_atom(T) ; is_integer(T) ->
-    ets:db_delete(T).
-
-info(T) when is_atom(T) ; is_integer(T) ->
-    local_info(T, node()).
-
-local_info(T, Node) ->
-    case catch ets:db_info(T, memory) of
-	undefined -> undefined;
-	{'EXIT', _} -> undefined;
-	Mem ->
-	    [{memory, Mem}, {owner, info(T, owner)}, 
-	     {name,info(T, name)},
-	     {size, info(T, size)}, {node, Node},
-	     {named_table, info(T, named_table)},
-	     {type, info(T, type)}, 
-	     {keypos, info(T, keypos)},
-	     {protection, info(T, protection)}]
-    end.
-
-info(T, What) when is_atom(T) ; is_integer(T) ->
-    local_info(T, What, node()).
-
-local_info(T, What, Node) ->
-    case What of 
-	node ->
-	    %% Use a bif call to determine if the table exists
-	    case (catch ets:db_info(T, type)) of
-		undefined ->
-		    undefined;
-		{'EXIT',_} ->
-		    undefined;
-		_ ->
-		    Node
-	    end;
-	named_table ->
-	    %% Use a bif call to determine if the table exists
-	    case (catch ets:db_info(T, type)) of
-		undefined ->
-		    undefined;
-		{'EXIT',_} ->
-		    undefined;
-		_ ->
-		    if
-			is_atom(T) -> 
-			    true;
-			true -> 
-			    false
-		    end
-	    end;
-	_ ->
-	    case (catch ets:db_info(T, What)) of
-	        undefined -> 
-		    undefined;
-		{'EXIT',_} -> 
-		    undefined;
-		Result -> 
-		    Result
-	    end
-    end.
-
 %% Produce a list of {Key,Value} tuples from a table
 
 tab2list(T) ->
@@ -330,7 +267,7 @@ tab2file(Tab, File) ->
     file:delete(File),
     Name = make_ref(),
     case {disk_log:open([{name, Name}, {file, File}]),
-	  local_info(Tab, node())} of
+	  ets:info(Tab)} of
 	{{ok, Name}, undefined} ->
 	    disk_log:close(Name),
 	    {error, badtab};
@@ -397,7 +334,7 @@ fill_tab(C, Name, Tab, [H|T]) ->
 fill_tab(C, Name, Tab, []) ->
     case disk_log:chunk(Name, C) of
 	{error, Reason} ->
-	    ets:db_delete(Tab),
+	    ets:delete(Tab),
 	    file2tab_error(Name, Reason);
 	eof ->
 	    ok;
@@ -426,7 +363,7 @@ table(Tab) ->
 table(Tab, Opts) ->
     case options(Opts, [traverse, n_objects]) of
         {badarg,_} ->
-            erlang:fault(badarg, [Tab, Opts]);
+            erlang:error(badarg, [Tab, Opts]);
         [[Traverse, NObjs], QlcOptions] ->
             TF = case Traverse of
                      first_next -> 
@@ -478,13 +415,13 @@ table(Tab, Opts) ->
     end.
          
 table_info(Tab, num_of_objects) ->
-    info(Tab, size);
+    ets:info(Tab, size);
 table_info(Tab, keypos) ->
-    info(Tab, keypos);
+    ets:info(Tab, keypos);
 table_info(Tab, is_unique_objects) ->
-    info(Tab, type) =/= duplicate_bag;
+    ets:info(Tab, type) =/= duplicate_bag;
 table_info(Tab, is_sorted_key) ->
-    info(Tab, type) =:= ordered_set;
+    ets:info(Tab, type) =:= ordered_set;
 table_info(_Tab, _) ->
     undefined.
 

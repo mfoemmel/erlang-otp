@@ -67,6 +67,7 @@ start(Flag, Arg) ->
 %%%====================================================================================
 %%%====================================================================================
 %%%====================================================================================
+
 init_send({any, NodesList, Name, Msg, From}) ->
     case whereis_any_loop(NodesList, Name) of
 	undefined ->
@@ -76,7 +77,6 @@ init_send({any, NodesList, Name, Msg, From}) ->
 	    gen_server:cast(global_group, {send_res, Pid, Name, Msg, self(), From})
     end,
     end_loop();
-
 init_send({group, Nodes, Name, Msg, From}) ->
     case whereis_group_loop(Nodes, Name) of
 	group_down ->
@@ -89,7 +89,6 @@ init_send({group, Nodes, Name, Msg, From}) ->
 	    gen_server:cast(global_group, {send_res, Pid, Name, Msg, self(), From})
     end,
     end_loop();
-
 init_send({node, Node, Name, Msg, From}) ->
     case whereis_check_node(Node, Name) of
 	node_down ->
@@ -104,7 +103,6 @@ init_send({node, Node, Name, Msg, From}) ->
     end_loop().
 
 
-
 %%%====================================================================================
 %%%====================================================================================
 %%%====================================================================================
@@ -115,11 +113,11 @@ init_send({node, Node, Name, Msg, From}) ->
 %%%====================================================================================
 %%%====================================================================================
 %%%====================================================================================
+
 init_whereis({any, NodesList, Name, From}) ->
     R = whereis_any_loop(NodesList, Name),
     gen_server:cast(global_group, {find_name_res, R, self(), From}),
     end_loop();
-
 init_whereis({group, Nodes, Name, From}) ->
     case whereis_group_loop(Nodes, Name) of
 	group_down ->
@@ -128,7 +126,6 @@ init_whereis({group, Nodes, Name, From}) ->
 	    gen_server:cast(global_group, {find_name_res, R, self(), From})
     end,
     end_loop();
-
 init_whereis({node, Node, Name, From}) ->
     case whereis_check_node(Node, Name) of
 	node_down ->
@@ -137,8 +134,6 @@ init_whereis({node, Node, Name, From}) ->
 	    gen_server:cast(global_group, {find_name_res, R, self(), From})
     end,
     end_loop().
-
-
 
 
 %%%====================================================================================
@@ -167,21 +162,17 @@ init_names({node, Node, From}) ->
     end,
     end_loop().
 
-
-
 %%%====================================================================================
 %%% Wait for the kill message.
 %%%====================================================================================
+
+-spec(end_loop/0 :: () -> no_return()).
+
 end_loop() ->
     receive
 	kill ->
 	    exit(normal)
     end.
-
-
-
-
-
 
 %%%====================================================================================
 %%% Search for the globally registered name in the whole known world.
@@ -197,6 +188,7 @@ whereis_any_loop([{_Group_name, Nodes}|T], Name) ->
 	R ->
 	    R
     end.
+
 %%%====================================================================================
 %%% Search for the globally registered name in a specified global group.
 %%%====================================================================================

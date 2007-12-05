@@ -19,6 +19,7 @@
 
 -include("inet.hrl").
 -include("inet_int.hrl").
+-include("inet_sctp.hrl").
 
 %% socket
 -export([peername/1, sockname/1, port/1, send/2,
@@ -51,8 +52,6 @@
 	 getaddr/2, getaddr/3, getaddr_tm/3]).
 -export([translate_ip/2]).
 
--export([bytes_to_ip6/16, ip6_to_bytes/1, ip4_to_bytes/1, ip_to_bytes/1]).
-
 -export([get_rc/0]).
 
 %% format error
@@ -73,9 +72,128 @@
 	element(1, Record) =:= element(1, RS),
 	size(Record) =:= element(2, RS)).
 
+%%% ---------------------------------
+%%% Contract type definitions
+
+-type(socket() :: port()).
+-type(posix() :: atom()).
+
+-type(socket_setopt() ::
+      {'raw', non_neg_integer(), non_neg_integer(), binary()} |
+      %% TCP/UDP options
+      {'reuseaddr',       bool()} |
+      {'keepalive',       bool()} |
+      {'dontroute',       bool()} |
+      {'linger',          {bool(), non_neg_integer()}} |
+      {'broadcast',       bool()} |
+      {'sndbuf',          non_neg_integer()} |
+      {'recbuf',          non_neg_integer()} |
+      {'priority',        non_neg_integer()} |
+      {'tos',             non_neg_integer()} |
+      {'nodelay',         bool()} |
+      {'multicast_ttl',   non_neg_integer()} |
+      {'multicast_loop',  bool()} |
+      {'multicast_if',    ip_address()} |
+      {'add_membership',  {ip_address(), ip_address()}} |
+      {'drop_membership', {ip_address(), ip_address()}} |
+      {'header',          non_neg_integer()} |
+      {'buffer',          non_neg_integer()} |
+      {'active',          bool() | 'once'} |
+      {'packet',        
+       0 | 1 | 2 | 4 | 'raw' | 'sunrm' |  'asn1' |
+       'cdr' | 'fcgi' | 'line' | 'tpkt' | 'http' | 'httph'} |
+      {'mode',           list() | binary()} |
+      {'port',           'port', 'term'} |
+      {'exit_on_close',   bool()} |
+      {'low_watermark',   non_neg_integer()} |
+      {'high_watermark',  non_neg_integer()} |
+      {'bit8',            'clear' | 'set' | 'on' | 'off'} |
+      {'send_timeout',    non_neg_integer() | 'infinity'} |
+      {'delay_send',      bool()} |
+      {'packet_size',     non_neg_integer()} |
+      {'read_packets',    non_neg_integer()} |
+      %% SCTP options
+      {'sctp_rtoinfo',               #sctp_rtoinfo{}} |
+      {'sctp_associnfo',             #sctp_assocparams{}} |
+      {'sctp_initmsg',               #sctp_initmsg{}} |
+      {'sctp_nodelay',               bool()} |
+      {'sctp_autoclose',             non_neg_integer()} |
+      {'sctp_disable_fragments',     bool()} |
+      {'sctp_i_want_mapped_v4_addr', bool()} |
+      {'sctp_maxseg',                non_neg_integer()} |
+      {'sctp_primary_addr',          #sctp_prim{}} |
+      {'sctp_set_peer_primary_addr', #sctp_setpeerprim{}} |
+      {'sctp_adaption_layer',        #sctp_setadaption{}} |
+      {'sctp_peer_addr_params',      #sctp_paddrparams{}} |
+      {'sctp_default_send_param',    #sctp_sndrcvinfo{}} |
+      {'sctp_events',                #sctp_event_subscribe{}} |
+      {'sctp_delayed_ack_time',      #sctp_assoc_value{}}).
+
+-type(socket_getopt() ::
+      {'raw',
+       non_neg_integer(), non_neg_integer(), binary()|non_neg_integer()} |
+      %% TCP/UDP options
+      'reuseaddr' | 'keepalive' | 'dontroute' | 'linger' |
+      'broadcast' | 'sndbuf' | 'recbuf' | 'priority' | 'tos' | 'nodelay' | 
+      'multicast_ttl' | 'multicast_loop' | 'multicast_if' | 
+      'add_membership' | 'drop_membership' | 
+      'header' | 'buffer' | 'active' | 'packet' | 'mode' | 'port' | 
+      'exit_on_close' | 'low_watermark' | 'high_watermark' | 'bit8' | 
+      'send_timeout' | 'delay_send' | 'packet_size' | 'read_packets' | 
+      %% SCTP options
+      {'sctp_status',                #sctp_status{}} |
+      'sctp_get_peer_addr_info' |
+      {'sctp_get_peer_addr_info',    #sctp_status{}} |
+      'sctp_rtoinfo' |
+      {'sctp_rtoinfo',               #sctp_rtoinfo{}} |
+      'sctp_associnfo' |
+      {'sctp_associnfo',             #sctp_assocparams{}} |
+      'sctp_initmsg' |
+      {'sctp_initmsg',               #sctp_initmsg{}} |
+      'sctp_nodelay' | 'sctp_autoclose' | 'sctp_disable_fragments' |
+      'sctp_i_want_mapped_v4_addr' | 'sctp_maxseg' |
+      {'sctp_primary_addr',          #sctp_prim{}} |
+      {'sctp_set_peer_primary_addr', #sctp_setpeerprim{}} |
+      'sctp_adaption_layer' |
+      {'sctp_adaption_layer',        #sctp_setadaption{}} |
+      {'sctp_peer_addr_params',      #sctp_paddrparams{}} |
+      'sctp_default_send_param' |
+      {'sctp_default_send_param',    #sctp_sndrcvinfo{}} |
+      'sctp_events' |
+      {'sctp_events',                #sctp_event_subscribe{}} |
+      'sctp_delayed_ack_time' |
+      {'sctp_delayed_ack_time',      #sctp_assoc_value{}}).
+
+-type(ether_address() :: [0..255]).
+
+-type(if_setopt() ::
+      {'addr', ip_address()} |
+      {'broadaddr', ip_address()} |
+      {'dstaddr', ip_address()} |
+      {'mtu', non_neg_integer()} |
+      {'netmask', ip_address()} |
+      {'flags', ['up' | 'down' | 'broadcast' | 'no_broadcast' |
+		 'pointtopoint' | 'no_pointtopoint' | 
+		 'running' | 'multicast']} |
+      {'hwaddr', ether_address()}).
+
+-type(if_getopt() ::
+      'addr' | 'broadaddr' | 'dstaddr' | 
+      'mtu' | 'netmask' | 'flags' |'hwaddr'). 
+
+-type(family_option() :: 'inet' | 'inet6').
+-type(protocol_option() :: 'tcp' | 'udp' | 'sctp').
+-type(stat_option() :: 
+	'recv_cnt' | 'recv_max' | 'recv_avg' | 'recv_oct' | 'recv_dvi' |
+	'send_cnt' | 'send_max' | 'send_avg' | 'send_oct' | 'send_pend').
+%%% ---------------------------------
+
+-spec(get_rc/0 :: () -> [{any(),any()}]).
 
 get_rc() ->
     inet_db:get_rc().
+
+-spec(close/1 :: (Socket :: socket()) -> 'ok').
 
 close(Socket) ->
     prim_inet:close(Socket),
@@ -86,20 +204,41 @@ close(Socket) ->
 	    ok
     end.
 
-peername(Socket) -> prim_inet:peername(Socket).
+-spec(peername/1 :: (Socket :: socket()) -> 
+	{'ok', {ip_address(), non_neg_integer()}} | {'error', posix()}).
 
+peername(Socket) -> 
+    prim_inet:peername(Socket).
+
+-spec(setpeername/2 :: (
+	Socket :: socket(), 
+	Address :: {ip_address(), ip_port()}) ->
+	'ok' | {'error', any()}).  
 
 setpeername(Socket, {IP,Port}) ->
     prim_inet:setpeername(Socket, {IP,Port});
 setpeername(Socket, undefined) ->
     prim_inet:setpeername(Socket, undefined).
 
-sockname(Socket) -> prim_inet:sockname(Socket).
+
+-spec(sockname/1 :: (Socket :: socket()) -> 
+	{'ok', {ip_address(), non_neg_integer()}} | {'error', posix()}).
+
+sockname(Socket) -> 
+    prim_inet:sockname(Socket).
+
+-spec(setsockname/2 :: (
+	Socket :: socket(),
+	Address :: {ip_address(), ip_port()}) ->
+	'ok' | {'error', any()}).	
 
 setsockname(Socket, {IP,Port}) -> 
     prim_inet:setsockname(Socket, {IP,Port});
 setsockname(Socket, undefined) ->
     prim_inet:setsockname(Socket, undefined).
+
+-spec(port/1 :: (Socket :: socket()) -> 
+	{'ok', ip_port()} | {'error', any()}). 
 
 port(Socket) ->
     case prim_inet:sockname(Socket) of
@@ -107,29 +246,90 @@ port(Socket) ->
 	Error -> Error
     end.
 
+-spec(send/2 :: (
+	Socket :: socket(),
+	Packet :: iolist()) -> % iolist()?
+	'ok' | {'error', posix()}).
+
 send(Socket, Packet) -> 
     prim_inet:send(Socket, Packet).
     
+-spec(setopts/2 :: (
+	Socket :: socket(),
+	Opts :: [socket_setopt()]) -> 
+	'ok' | {'error', posix()}).
+
 setopts(Socket, Opts) -> 
     prim_inet:setopts(Socket, Opts).
+
+-spec(getopts/2 :: (
+	Socket :: socket(),
+	Opts :: [socket_getopt()]) ->	
+	{'ok', [socket_setopt()]} | {'error', posix()}).
 
 getopts(Socket, Opts) ->
     prim_inet:getopts(Socket, Opts).
 
+-spec(getiflist/1 :: (Socket :: socket()) ->
+	{'ok', [string()]} | {'error', posix()}).	 
 
-getiflist(Socket) -> prim_inet:getiflist(Socket).
-getiflist() -> withsocket(fun(S) -> prim_inet:getiflist(S) end).
+getiflist(Socket) -> 
+    prim_inet:getiflist(Socket).
+
+-spec(getiflist/0 :: () ->
+	{'ok', [string()]} | {'error', posix()}).	 
+
+getiflist() -> 
+    withsocket(fun(S) -> prim_inet:getiflist(S) end).
     
-ifget(Socket, Name, Opts) -> prim_inet:ifget(Socket, Name, Opts).
-ifget(Name, Opts) -> withsocket(fun(S) -> prim_inet:ifget(S, Name, Opts) end).
+-spec(ifget/3 :: (
+	Socket :: socket(),
+        Name :: string() | atom(),
+	Opts :: [if_getopt()]) ->
+	{'ok', [if_setopt()]} | 
+	{'error', posix()}).	
 
-ifset(Socket, Name, Opts) -> prim_inet:ifset(Socket, Name, Opts).
-ifset(Name, Opts) -> withsocket(fun(S) -> prim_inet:ifset(S, Name, Opts) end).
+ifget(Socket, Name, Opts) -> 
+    prim_inet:ifget(Socket, Name, Opts).
 
+-spec(ifget/2 :: (
+	Name :: string() | atom(),
+	Opts :: [if_getopt()]) ->
+	{'ok', [if_setopt()]} | 
+	{'error', posix()}).	
 
-getif() -> withsocket(fun(S) -> getif(S) end).
+ifget(Name, Opts) -> 
+    withsocket(fun(S) -> prim_inet:ifget(S, Name, Opts) end).
+
+-spec(ifset/3 :: (
+	Socket :: socket(),
+	Name :: string() | atom(),
+	Opts :: [if_setopt()]) ->
+	'ok' | {'error', posix()}). 	
+
+ifset(Socket, Name, Opts) -> 
+    prim_inet:ifset(Socket, Name, Opts).
+
+-spec(ifset/2 :: (
+	Name :: string() | atom(),
+	Opts :: [if_setopt()]) ->
+	'ok' | {'error', posix()}). 	
+
+ifset(Name, Opts) -> 
+    withsocket(fun(S) -> prim_inet:ifset(S, Name, Opts) end).
+
+-spec(getif/0 :: () ->
+	{'ok', [{ip_address(), ip_address() | 'undefined', ip_address()}]} | 
+	{'error', posix()}).	
+
+getif() -> 
+    withsocket(fun(S) -> getif(S) end).
 
 %% backwards compatible getif
+-spec(getif/1 :: (Socket :: socket()) ->
+	{'ok', [{ip_address(), ip_address() | 'undefined', ip_address()}]} | 
+	{'error', posix()}).	
+
 getif(Socket) ->
     case prim_inet:getiflist(Socket) of
 	{ok, IfList} ->
@@ -149,7 +349,6 @@ getif(Socket) ->
 	Error -> Error
     end.
 
-
 withsocket(Fun) ->
     case inet_udp:open(0,[]) of
 	{ok,Socket} ->
@@ -159,7 +358,6 @@ withsocket(Fun) ->
 	Error ->
 	    Error
     end.
-    
 
 pushf(_Socket, Fun, _State) when is_function(Fun) ->
     {error, einval}.
@@ -174,6 +372,9 @@ popf(_Socket) ->
 % and network-cards inserted and removed in conjunction with
 % use of the DHCP-protocol
 % should never fail
+
+-spec(gethostname/0 :: () -> {'ok', string()}).
+
 gethostname() ->
     case inet_udp:open(0,[]) of
 	{ok,U} ->
@@ -185,20 +386,46 @@ gethostname() ->
 	    {ok, "nohost.nodomain"}
     end.
 
+-spec(gethostname/1 :: (Socket :: socket()) ->
+	{'ok', string()} | {'error', posix()}).
+
 gethostname(Socket) ->
     prim_inet:gethostname(Socket).
+
+-spec(getstat/1 :: (Socket :: socket()) ->
+	{'ok', [{stat_option(), integer()}]} | {'error', posix()}). 		
 
 getstat(Socket) ->
     prim_inet:getstat(Socket, stats()).
 
+-spec(getstat/2 :: (
+	Socket :: socket(),
+	Statoptions :: [stat_option()]) ->
+	{'ok', [{stat_option(), integer()}]} | {'error', posix()}). 		
+
 getstat(Socket,What) ->
     prim_inet:getstat(Socket, What).
 
+-spec(gethostbyname/1 :: (Name :: string() | atom()) ->
+	{'ok', #hostent{}} | {'error', posix()}).
 
-gethostbyname(Name) -> gethostbyname_tm(Name, inet, false).
+gethostbyname(Name) -> 
+    gethostbyname_tm(Name, inet, false).
 
-gethostbyname(Name,Family) -> gethostbyname_tm(Name, Family, false).
+-spec(gethostbyname/2 :: (
+	Name :: string() | atom(),
+	Family :: family_option()) ->
+	{'ok', #hostent{}} | {'error', posix()}).
 
+gethostbyname(Name,Family) -> 
+    gethostbyname_tm(Name, Family, false).
+
+-spec(gethostbyname/3 :: (
+	Name :: string() | atom(),
+	Family :: family_option(),
+	Timeout :: non_neg_integer() | 'infinity') ->
+	{'ok', #hostent{}} | {'error', posix()}).
+	
 gethostbyname(Name,Family,Timeout) ->
     Timer = start_timer(Timeout),
     Res = gethostbyname_tm(Name,Family,Timer),
@@ -209,8 +436,16 @@ gethostbyname_tm(Name,Family,Timer) ->
     gethostbyname_tm(Name,Family,Timer,inet_db:res_option(lookup)).
 
 
+-spec(gethostbyaddr/1 :: (Address :: string() | ip_address()) ->
+	{'ok', #hostent{}} | {'error', posix()}).
+
 gethostbyaddr(Address) ->
     gethostbyaddr_tm(Address, false).
+
+-spec(gethostbyaddr/2 :: (
+	Address :: string() | ip_address(), 
+	Timeout :: non_neg_integer() | 'infinity') ->
+	{'ok', #hostent{}} | {'error', posix()}).
 
 gethostbyaddr(Address,Timeout) ->
     Timer = start_timer(Timeout),    
@@ -220,6 +455,9 @@ gethostbyaddr(Address,Timeout) ->
 
 gethostbyaddr_tm(Address,Timer) ->
     gethostbyaddr_tm(Address, Timer, inet_db:res_option(lookup)).
+
+-spec(ip/1 :: (Ip :: ip_address() | string() | atom()) ->
+	{'ok', ip_address()} | {'error', posix()}).
 
 ip({A,B,C,D}) when ?ip(A,B,C,D) ->
     {ok, {A,B,C,D}};
@@ -233,20 +471,40 @@ ip(Name) ->
 %% This function returns the erlang port used (with inet_drv)
 %% Return values: {ok,#Port} if ok
 %%                {error, einval} if not applicable
+
+-spec(getll/1 :: (Socket :: socket()) ->
+	{'ok', socket()}).
+
 getll(Socket) when is_port(Socket) ->
     {ok, Socket}.
 
 %%
 %% Return the internal file descriptor number
 %%
+
+-spec(getfd/1 :: (Socket :: socket()) ->
+	{'ok', non_neg_integer()} | {'error', posix()}).
+
 getfd(Socket) ->
     prim_inet:getfd(Socket).
 
 %%
 %% Lookup an ip address
 %%
+
+-spec(getaddr/2 :: (
+	Host :: ip_address() | string() | atom(),
+	Family :: family_option()) ->
+	{'ok', ip_address()} | {'error', posix()}).	
+
 getaddr(Address, Family) ->
     getaddr(Address, Family, infinity).
+
+-spec(getaddr/3 :: (
+	Host :: ip_address() | string() | atom(),
+	Family :: family_option(),
+	Timeout :: non_neg_integer() | 'infinity') ->
+	{'ok', ip_address()} | {'error', posix()}).	
 
 getaddr(Address, Family, Timeout) ->
     Timer = start_timer(Timeout),
@@ -260,8 +518,19 @@ getaddr_tm(Address, Family, Timer) ->
 	Error -> Error
     end.
 
+-spec(getaddrs/2 :: (
+	Host :: ip_address() | string() | atom(),
+	Family :: family_option()) ->
+	{'ok', [ip_address()]} | {'error', posix()}).	
+
 getaddrs(Address, Family) -> 
     getaddrs(Address, Family, infinity).
+
+-spec(getaddrs/3 :: (
+	Host :: ip_address() | string() | atom(),
+	Family :: family_option(),
+	Timeout :: non_neg_integer() | 'infinity') ->
+	{'ok', [ip_address()]} | {'error', posix()}).	
 
 getaddrs(Address, Family,Timeout) -> 
     Timer = start_timer(Timeout),    
@@ -269,6 +538,10 @@ getaddrs(Address, Family,Timeout) ->
     stop_timer(Timer),
     Res.    
 
+-spec(getservbyport/2 :: (
+	Port :: ip_port(),
+	Protocol :: atom() | string()) ->
+	{'ok', string()} | {'error', posix()}). 
 
 getservbyport(Port, Proto) ->
     case inet_udp:open(0, []) of
@@ -278,6 +551,11 @@ getservbyport(Port, Proto) ->
 	    Res;
 	Error -> Error
     end.
+
+-spec(getservbyname/2 :: (
+	Name :: atom() | string(),
+	Protocol :: atom() | string()) ->
+	{'ok', ip_port()} | {'error', posix()}). 
 
 getservbyname(Name, Proto) when is_atom(Name) ->
     case inet_udp:open(0, []) of
@@ -300,6 +578,9 @@ options() ->
     ].
 
 %% Return a list of statistics options
+
+-spec(stats/0 :: () -> [stat_option(),...]).
+
 stats() ->
     [recv_oct, recv_cnt, recv_max, recv_avg, recv_dvi,
      send_oct, send_cnt, send_max, send_avg, send_pend].
@@ -716,6 +997,15 @@ gethostbyaddr_tm(Addr, Timer, [_ | Opts]) ->
 gethostbyaddr_tm(_Addr, _Timer, []) ->
     {error, nxdomain}.
 
+-spec(open/7 :: (
+	Fd :: integer(),
+	Addr :: ip_address(),
+	Port :: ip_port(),
+	Opts :: [socket_setopt()],
+	Protocol :: protocol_option(),
+	Family :: 'inet' | 'inet6',
+	Module :: atom()) ->
+	{'ok', socket()} | {'error', posix()}).
 
 open(Fd, Addr, Port, Opts, Protocol, Family, Module) when Fd < 0 ->
     case prim_inet:open(Protocol, Family) of
@@ -748,6 +1038,14 @@ open(Fd, Addr, Port, Opts, Protocol, Family, Module) when Fd < 0 ->
 open(Fd, _Addr, _Port, Opts, Protocol, Family, Module) ->
     fdopen(Fd, Opts, Protocol, Family, Module).
 
+-spec(fdopen/5 :: (
+	Fd :: non_neg_integer(),
+	Opts :: [socket_setopt()],
+	Protocol :: protocol_option(),
+	Family :: family_option(),
+	Module :: atom()) ->
+	{'ok', socket()} | {'error', posix()}).
+
 fdopen(Fd, Opts, Protocol, Family, Module) ->
     case prim_inet:fdopen(Protocol, Fd, Family) of
 	{ok, S} ->
@@ -760,22 +1058,6 @@ fdopen(Fd, Opts, Protocol, Family, Module) ->
 	    end;
 	Error -> Error
     end.
-
-
-ip_to_bytes(IP) when size(IP) =:= 4 -> ip4_to_bytes(IP);
-ip_to_bytes(IP) when size(IP) =:= 8 -> ip6_to_bytes(IP).
-
-
-ip4_to_bytes({A,B,C,D}) ->
-    [A band 16#ff, B band 16#ff, C band 16#ff, D band 16#ff].
-
-ip6_to_bytes({A,B,C,D,E,F,G,H}) ->
-    [?int16(A), ?int16(B), ?int16(C), ?int16(D),
-     ?int16(E), ?int16(F), ?int16(G), ?int16(H)].
-
-bytes_to_ip6(X1,X2,X3,X4,X5,X6,X7,X8,X9,X10,X11,X12,X13,X14,X15,X16) ->
-    { ?u16(X1,X2),?u16(X3,X4),?u16(X5,X6),?u16(X7,X8),
-     ?u16(X9,X10),?u16(X11,X12),?u16(X13,X14),?u16(X15,X16)}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%  socket stat

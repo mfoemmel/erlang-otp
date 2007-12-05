@@ -26,7 +26,7 @@
 %% where
 %% <ul>
 %%   <li><code> version():   {VERSION::string(), SYSTEM-CHECKSUM} </code></li>
-%%   <li><code> size():      integer() </code></li>
+%%   <li><code> size():      non_neg_integer() </code></li>
 %%   <li><code> constmap():  [ConstNo::integer(), Offset::integer(),
 %%                            Need::integer(), Type::consttype(),
 %%                            Exported::bool(), Data::term()

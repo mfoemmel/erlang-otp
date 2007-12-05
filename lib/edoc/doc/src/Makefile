@@ -43,43 +43,43 @@ INC_DIR = $(ERL_TOP)/lib/edoc/include
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-SGML_APPLICATION_FILES = application.sgml
-SGML_REF3_FILES = \
-	edoc.sgml \
-	edoc_doclet.sgml \
-	edoc_extract.sgml \
-	edoc_layout.sgml \
-	edoc_lib.sgml \
-	edoc_run.sgml
+XML_APPLICATION_FILES = ref_man.xml
+XML_REF3_FILES = \
+	edoc.xml \
+	edoc_doclet.xml \
+	edoc_extract.xml \
+	edoc_layout.xml \
+	edoc_lib.xml \
+	edoc_run.xml
 
-SGML_PART_FILES = part.sgml part_notes.sgml
-SGML_CHAPTER_FILES = chapter.sgml
-SGML_NOTES_FILES = notes.sgml
+XML_PART_FILES = part.xml part_notes.xml
+XML_CHAPTER_FILES = chapter.xml
+XML_NOTES_FILES = notes.xml
 
-BOOK_FILES = book.sgml
+BOOK_FILES = book.xml
 
 # ----------------------------------------------------
 INFO_FILE = ../../info
 
 HTML_FILES = \
-	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html)
 
 EXTRA_FILES = \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
-	$(SGML_REF3_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_NOTES_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_REF3_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_CHAPTER_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_NOTES_FILES:%.xml=$(HTMLDIR)/%.html)
 
-MAN3_FILES = $(SGML_REF3_FILES:%.sgml=$(MAN3DIR)/%.3)
+MAN3_FILES = $(XML_REF3_FILES:%.xml=$(MAN3DIR)/%.3)
 
 TEX_FILES_BOOK = \
-	$(BOOK_FILES:%.sgml=%.tex)
-TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
-	$(SGML_APPLICATION_FILES:%.sgml=%.tex)
+	$(BOOK_FILES:%.xml=%.tex)
+TEX_FILES_REF_MAN = $(XML_REF3_FILES:%.xml=%.tex) \
+	$(XML_APPLICATION_FILES:%.xml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
+	$(XML_CHAPTER_FILES:%.xml=%.tex)
 
 TOP_PDF_FILE = edoc-$(VSN).pdf
 TOP_PS_FILE  = edoc-$(VSN).ps
@@ -93,7 +93,7 @@ $(TOP_PS_FILE): book.dvi ../../vsn.mk
 # ----------------------------------------------------
 # FLAGS 
 # ----------------------------------------------------
-SGML_FLAGS += 
+XML_FLAGS += 
 DVIPS_FLAGS += 
 
 # ----------------------------------------------------
@@ -109,24 +109,24 @@ docs: html gifs man
 endif
 endif
 
-$(SGML_REF3_FILES):
+$(XML_REF3_FILES):
 	docb_gen -def vsn $(EDOC_VSN) -includes $(INC_DIR) \
-		$(SRC_DIR)/$(@:%.sgml=%.erl)
+		$(SRC_DIR)/$(@:%.xml=%.erl)
 
-$(SGML_CHAPTER_FILES):
+$(XML_CHAPTER_FILES):
 	docb_gen -chapter -def vsn $(EDOC_VSN) ../overview.edoc
 
-pdf: sgml $(TOP_PDF_FILE)
+pdf: xml $(TOP_PDF_FILE)
 
-ps: sgml $(TOP_PS_FILE)
+ps: xml $(TOP_PS_FILE)
 
-html: sgml $(HTML_FILES)
+html: xml $(HTML_FILES)
 
 man: $(MAN3_FILES)
 
 gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
 
-sgml: $(SGML_REF3_FILES) $(SGML_CHAPTER_FILES)
+xml: $(XML_REF3_FILES) $(XML_CHAPTER_FILES)
 
 debug opt: 
 
@@ -134,9 +134,9 @@ clean clean_docs clean_tex:
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES)
 	rm -f $(TOP_PDF_FILE) $(TOP_PS_FILE)
-	rm -f errs core *~ *sgmls_output *sgmls_errs $(LATEX_CLEAN)
-	rm -f application.kwc min_head.gif part.tex
-	rm -f $(SGML_REF3_FILES) $(SGML_CHAPTER_FILES) *.html
+	rm -f errs core *~ $(LATEX_CLEAN)
+	rm -f ref_man.kwc min_head.gif part.tex
+	rm -f $(XML_REF3_FILES) $(XML_CHAPTER_FILES) *.html
 
 # ----------------------------------------------------
 # Release Target

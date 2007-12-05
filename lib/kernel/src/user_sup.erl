@@ -53,7 +53,7 @@ start_slave(Master) ->
 	User when is_pid(User) ->
 	    spawn(?MODULE, relay, [User]);
 	_ ->
-	    error_logger:error_msg('Cannot get remote user', []),
+	    error_logger:error_msg("Cannot get remote user", []),
 	    receive after 1000 -> true end,
 	    halt()
     end.

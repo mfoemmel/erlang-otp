@@ -1,17 +1,20 @@
-Original Authors:
+Original Authors:	
 
-httpd by Joakim Grebenö and Mattias Nilsson
-
-ftp by Peter Högfeldt
-
-tftp by Håkan Mattsson
-
-Supported http-client by Ingela Anderton Andin 
+Ingela Anderton Andin - supported http client
+Johan Blom - unsupported http client
+Håkan Mattsson - tftp
+Peter Högfeldt - first version of ftp
+Joakim Grebenö - first version of httpd
+Mattias Nilsson - first version of httpd
 
 Contributors:
 
-Micael Karlberg, Martin Gustafsson, Johan Blom,
 Ingela Anderton Andin 
+Micael Karlberg
+Martin Gustafsson
+Johan Blom
+Torbjörn Törnkvist 
+Joe Armstrong
 
 
 

@@ -37,6 +37,7 @@
 	 init_tracing/1, init_tracing/2, 
 	 stop_tracing/0, stop_tracing/1, 
 	 clear/0, clear/1, clear/2,
+	 flush/0,flush/1,
 	 stop/0, stop_nodes/0, stop_nodes/1, stop_all/0,
 	 tp/1,tp/2,tp/4,tp/5,tp/6,
 	 tpl/1,tpl/2,tpl/4,tpl/5,tpl/6,
@@ -71,7 +72,12 @@
 %% ------------------------------------------------------------------------------
 
 -define(CONTROLLER,inviso_c).
+
+%% Some function calls to runtime components may take long time, we must wait
+%% longer than the standard timeout for a reply from the control component.
+-define(CALL_TIMEOUT,60000).
 %% ------------------------------------------------------------------------------
+
 
 
 %% =============================================================================
@@ -121,10 +127,10 @@ start(Options) ->
 %% Options will override any default options specified at start-up of the
 %% control component.
 add_node(Reference) ->
-    gen_server:call(?CONTROLLER,{add_nodes,[node()],[],Reference,any_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,[node()],[],Reference,any_ref},?CALL_TIMEOUT).
 
 add_node(Reference,Options) when list(Options) ->
-    gen_server:call(?CONTROLLER,{add_nodes,[node()],Options,Reference,any_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,[node()],Options,Reference,any_ref},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% add_node(Reference)=NodeResult|{error,{wrong_reference,OtherRef}}|{error,Reason}
@@ -134,10 +140,10 @@ add_node(Reference,Options) when list(Options) ->
 %% As add_node/1,/2 but will only connect to an already existing runtime component
 %% if its reference is the same as the one given as argument.
 add_node_if_ref(Reference) ->
-    gen_server:call(?CONTROLLER,{add_nodes,[node()],[],Reference,if_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,[node()],[],Reference,if_ref},?CALL_TIMEOUT).
 
 add_node_if_ref(Reference,Options) when list(Options) ->
-    gen_server:call(?CONTROLLER,{add_nodes,[node()],Options,Reference,if_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,[node()],Options,Reference,if_ref},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% add_nodes(Nodes,Reference)={ok,NodeResults}|{error,Reason}
@@ -151,10 +157,10 @@ add_node_if_ref(Reference,Options) when list(Options) ->
 %% be started. The return value will then follow the rules of non distributed
 %% returnvalues and not have a node indicator.
 add_nodes(Nodes,Reference) when list(Nodes) ->
-    gen_server:call(?CONTROLLER,{add_nodes,Nodes,[],Reference,any_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,Nodes,[],Reference,any_ref},?CALL_TIMEOUT).
 
 add_nodes(Nodes,Reference,Options) when list(Nodes),list(Options) ->
-    gen_server:call(?CONTROLLER,{add_nodes,Nodes,Options,Reference,any_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,Nodes,Options,Reference,any_ref},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% add_nodes_if_ref(Nodes,Reference)={ok,NodeResults}|{error,Reason}
@@ -163,10 +169,10 @@ add_nodes(Nodes,Reference,Options) when list(Nodes),list(Options) ->
 %% As add_nodes/2,/3 but will only connect to an already existing runtime component
 %% if its reference is the same as the one given as argument.
 add_nodes_if_ref(Nodes,Reference) when list(Nodes) ->
-    gen_server:call(?CONTROLLER,{add_nodes,Nodes,[],Reference,if_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,Nodes,[],Reference,if_ref},?CALL_TIMEOUT).
 
 add_nodes_if_ref(Nodes,Reference,Options) when list(Nodes),list(Options) ->
-    gen_server:call(?CONTROLLER,{add_nodes,Nodes,Options,Reference,if_ref}).
+    gen_server:call(?CONTROLLER,{add_nodes,Nodes,Options,Reference,if_ref},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% change_options(Options)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -177,9 +183,9 @@ add_nodes_if_ref(Nodes,Reference,Options) when list(Nodes),list(Options) ->
 %% Change options on all or specified Nodes. This may result in for instance
 %% reinitialization of overloadcheck.
 change_options(Options) when list(Options) ->
-    gen_server:call(?CONTROLLER,{change_options,all,Options}).
+    gen_server:call(?CONTROLLER,{change_options,all,Options},?CALL_TIMEOUT).
 change_options(Nodes,Options) when list(Nodes),list(Options)  ->
-    gen_server:call(?CONTROLLER,{change_options,Nodes,Options}).
+    gen_server:call(?CONTROLLER,{change_options,Nodes,Options},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% init_tracing(TracerData)={ok,[{Node,NodeResult}]} | NodeResult | {error,Reason}
@@ -226,14 +232,14 @@ change_options(Nodes,Options) when list(Nodes),list(Options)  ->
 %%   trace messages using the default handler writing them to io.
 %% ip | file - will open a trace-port on Node using PortParameters
 init_tracing(TracerDataList) ->
-    gen_server:call(?CONTROLLER,{init_tracing,TracerDataList}).
+    gen_server:call(?CONTROLLER,{init_tracing,TracerDataList},?CALL_TIMEOUT).
 
 init_tracing(Nodes,TracerData) when list(Nodes) ->
-    gen_server:call(?CONTROLLER,{init_tracing,Nodes,TracerData}).
+    gen_server:call(?CONTROLLER,{init_tracing,Nodes,TracerData},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% stop_tracing(Nodes)={ok,NodeResults}|{error,Reason}
-%% stop_tracing()={ok,NodeResults}|NodeResult}
+%% stop_tracing()={ok,NodeResults}|NodeResult
 %%   Nodes=[Node,...], 
 %%   NodeResults=[{Node,NodeResult},...]
 %%   NodeResult={ok,State}|{error,Reason}
@@ -242,10 +248,10 @@ init_tracing(Nodes,TracerData) when list(Nodes) ->
 %% closes trace port and removes all trace flags and meta-patterns.
 %% The nodes are called in parallel.
 stop_tracing() ->
-    gen_server:call(?CONTROLLER,{stop_tracing,all}).
+    gen_server:call(?CONTROLLER,{stop_tracing,all},?CALL_TIMEOUT).
 
 stop_tracing(Nodes) when is_list(Nodes) ->
-    gen_server:call(?CONTROLLER,{stop_tracing,Nodes}).
+    gen_server:call(?CONTROLLER,{stop_tracing,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% clear()={ok,NodeResults}|NodeResult
@@ -262,13 +268,27 @@ stop_tracing(Nodes) when is_list(Nodes) ->
 %% or idle, logs belonging to the current tracerdata are removed. Hence the node
 %% is returned to state 'new'. Note that node can still be suspended.
 clear() ->
-    gen_server:call(?CONTROLLER,{clear,all,[]}).
+    gen_server:call(?CONTROLLER,{clear,all,[]},?CALL_TIMEOUT).
 
 clear(Nodes) when list(Nodes) ->
-    gen_server:call(?CONTROLLER,{clear,Nodes,[]}).
+    gen_server:call(?CONTROLLER,{clear,Nodes,[]},?CALL_TIMEOUT).
 
 clear(Nodes,Options) when list(Nodes),list(Options) ->
-    gen_server:call(?CONTROLLER,{clear,Nodes,Options}).
+    gen_server:call(?CONTROLLER,{clear,Nodes,Options},?CALL_TIMEOUT).
+%% -----------------------------------------------------------------------------
+
+%% flush()={ok,NodeResults} | NodeResult
+%% flush(Nodes)={ok,NodeResults}
+%%   Nodes=[Node,...]
+%%   NodeResults=[{Node,NodeResult},...]
+%%   NodeResult=ok | {error,Reason}
+%% Sends a flush request to the trace-port driver on the nodes in Nodes.
+%% There will be an error for nodes that are not tracing. It is not an error to
+%% try to flush runtime components not using a trace-port.
+flush() ->
+    gen_server:call(?CONTROLLER,{flush,all},?CALL_TIMEOUT).
+flush(Nodes) when is_list(Nodes) ->
+    gen_server:call(?CONTROLLER,{flush,Nodes},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% stop()=shutdown
@@ -276,7 +296,7 @@ clear(Nodes,Options) when list(Nodes),list(Options) ->
 %% Stops the controll component. Runtime components are left as is. They will
 %% behave according to their dependency values.
 stop() ->
-    case catch gen_server:call(?CONTROLLER,stop) of
+    case catch gen_server:call(?CONTROLLER,stop,?CALL_TIMEOUT) of
 	shutdown ->
 	    shutdown;
 	{'EXIT',{noproc,_}} ->
@@ -295,9 +315,9 @@ stop() ->
 %% is running on a distributed node stop all runtime components. And if running
 %% on a non distributed node, stop the local and only runtime component.
 stop_nodes() ->
-    gen_server:call(?CONTROLLER,{stop_nodes,all}).
+    gen_server:call(?CONTROLLER,{stop_nodes,all},?CALL_TIMEOUT).
 stop_nodes(Nodes) when is_list(Nodes) ->
-    gen_server:call(?CONTROLLER,{stop_nodes,Nodes}).
+    gen_server:call(?CONTROLLER,{stop_nodes,Nodes},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% stop_all()={ok,NodeResults}|NodeResult
@@ -306,7 +326,7 @@ stop_nodes(Nodes) when is_list(Nodes) ->
 %%
 %% A combination of stop/0 and stop_nodes/0.
 stop_all() ->
-    gen_server:call(?CONTROLLER, stop_all).
+    gen_server:call(?CONTROLLER, stop_all,?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% tp(Nodes,Module,Function,Arity,MatchSpec,Opts)={ok,NodeResults}|{error,Reason}
@@ -439,7 +459,7 @@ ctpl(PatternList) when list(PatternList) ->
 %% Help function doing the control component calling for all tp/X, tpl/X, ctp/X
 %% and ctpl/X functions.
 trace_pattern(Nodes,Patterns,FlagList)  -> 
-    gen_server:call(?CONTROLLER, {trace_pattern, Nodes, Patterns, FlagList}).
+    gen_server:call(?CONTROLLER, {trace_pattern, Nodes, Patterns, FlagList},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 %% -----------------------------------------------------------------------------
 
@@ -517,21 +537,21 @@ ctf(TraceConfList) when list(TraceConfList) ->
 %%
 %% Clears all trace flags on all or specified nodes. Just for convenience.
 ctf_all() ->
-    gen_server:call(?CONTROLLER,{trace_flags,all,[{all,[all]}],false}).
+    gen_server:call(?CONTROLLER,{trace_flags,all,[{all,[all]}],false},?CALL_TIMEOUT).
 
 ctf_all(Nodes) ->
-    gen_server:call(?CONTROLLER,{trace_flags,Nodes,[{all,[all]}],false}).
+    gen_server:call(?CONTROLLER,{trace_flags,Nodes,[{all,[all]}],false},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% Help function to tf/X and ctf/X making the call to the control component.
 trace_flags(Nodes, TraceConfList, How) -> 
-    gen_server:call(?CONTROLLER, {trace_flags, Nodes, TraceConfList, How}).
+    gen_server:call(?CONTROLLER, {trace_flags, Nodes, TraceConfList, How},?CALL_TIMEOUT).
 
 trace_flags(NodeTraceConfList,How) ->
-    gen_server:call(?CONTROLLER,{trace_flags,NodeTraceConfList,How}).
+    gen_server:call(?CONTROLLER,{trace_flags,NodeTraceConfList,How},?CALL_TIMEOUT).
 
 trace_flags(NodeTraceConfListHow) ->
-    gen_server:call(?CONTROLLER,{trace_flags,NodeTraceConfListHow}).
+    gen_server:call(?CONTROLLER,{trace_flags,NodeTraceConfListHow},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 %% -----------------------------------------------------------------------------
 
@@ -548,7 +568,7 @@ tpm_localnames() ->
     tpm_localnames(all).
 
 tpm_localnames(Nodes) ->
-    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{local_register,[]}}).
+    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{local_register,[]}},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% tpm_globalnames()={ok,NodeResults}|NodeResult|{error,Reason}
@@ -562,7 +582,7 @@ tpm_globalnames() ->
     tpm_globalnames(all).
 
 tpm_globalnames(Nodes) ->
-    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{global_register,[]}}).
+    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{global_register,[]}},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% init_tpm(Mod,Func,Arity,CallFunc)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -598,7 +618,8 @@ init_tpm(Nodes,Mod,Func,Arity,CallFunc) ->
 		    {meta_pattern,
 		     Nodes,
 		     {init_tpm,
-		      [Mod,Func,Arity,CallFunc]}}).
+		      [Mod,Func,Arity,CallFunc]}},
+		    ?CALL_TIMEOUT).
 
 init_tpm(Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
     init_tpm(all,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc).
@@ -608,7 +629,8 @@ init_tpm(Nodes,Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
 		    {meta_pattern,
 		     Nodes,
 		     {init_tpm,
-		      [Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}}).
+		      [Mod,Func,Arity,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% tpm(Mod,Func,Arity,MS)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -664,7 +686,8 @@ tpm(Nodes,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
 		    {meta_pattern,
 		     Nodes,
 		     {tpm,
-		      [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}}).
+		      [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% Same as tpm/X but the meta tracer will append {tracer,Tracer} to any enable
@@ -674,7 +697,8 @@ tpm_tracer(Mod,Func,Arity,MS) ->
 
 tpm_tracer(Nodes,Mod,Func,Arity,MS) when integer(Arity) ->
     gen_server:call(?CONTROLLER,
-		    {meta_pattern,Nodes,{tpm_tracer,[Mod,Func,Arity,MS]}});
+		    {meta_pattern,Nodes,{tpm_tracer,[Mod,Func,Arity,MS]}},
+		    ?CALL_TIMEOUT);
 tpm_tracer(Mod,Func,Arity,MS,CallFunc) when integer(Arity) ->
     tpm_tracer(all,Mod,Func,Arity,MS,CallFunc).
 
@@ -683,14 +707,15 @@ tpm_tracer(Nodes,Mod,Func,Arity,MS,CallFunc) ->
 		    {meta_pattern,Nodes,{tpm_tracer,[Mod,Func,Arity,MS,CallFunc]}}).
 
 tpm_tracer(Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
-    tpm(all,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc).
+    tpm_tracer(all,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc).
 
 tpm_tracer(Nodes,Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc) ->
     gen_server:call(?CONTROLLER,
 		    {meta_pattern,
 		     Nodes,
 		     {tpm_tracer,
-		      [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}}).
+		      [Mod,Func,Arity,MS,InitFunc,CallFunc,ReturnFunc,RemoveFunc]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% tpm_ms(Mod,Func,Arity,MSname,MS)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -718,17 +743,19 @@ tpm_ms(Mod,Func,Arity,MSname,MS) ->
 
 tpm_ms(Nodes,Mod,Func,Arity,MSname,MS) ->
     gen_server:call(?CONTROLLER,
-		    {meta_pattern,Nodes,{tpm_ms,[Mod,Func,Arity,MSname,MS]}}).
+		    {meta_pattern,Nodes,{tpm_ms,[Mod,Func,Arity,MSname,MS]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% Same as tpm_ms/5, /6 but the meta tracer will append {tracer,Tracer} to any enable
 %% list in a trace body action term.
 tpm_ms_tracer(Mod,Func,Arity,MSname,MS) ->
-    tpm_ms(all,Mod,Func,Arity,MSname,MS).
+    tpm_ms_tracer(all,Mod,Func,Arity,MSname,MS).
 
 tpm_ms_tracer(Nodes,Mod,Func,Arity,MSname,MS) ->
     gen_server:call(?CONTROLLER,
-		    {meta_pattern,Nodes,{tpm_ms_tracer,[Mod,Func,Arity,MSname,MS]}}).
+		    {meta_pattern,Nodes,{tpm_ms_tracer,[Mod,Func,Arity,MSname,MS]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% ctpm_ms(Mod,Func,Arity,MSname)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -744,7 +771,8 @@ ctpm_ms(Mod,Func,Arity,MSname) ->
 
 ctpm_ms(Nodes,Mod,Func,Arity,MSname) ->
     gen_server:call(?CONTROLLER,
-		    {meta_pattern,Nodes,{ctpm_ms,[Mod,Func,Arity,MSname]}}).
+		    {meta_pattern,Nodes,{ctpm_ms,[Mod,Func,Arity,MSname]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% ctpm(Mod,Func,Arity)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -761,7 +789,8 @@ ctpm(Mod,Func,Arity) ->
 
 ctpm(Nodes,Mod,Func,Arity) ->
     gen_server:call(?CONTROLLER,
-		    {meta_pattern,Nodes,{ctpm,[Mod,Func,Arity]}}).
+		    {meta_pattern,Nodes,{ctpm,[Mod,Func,Arity]}},
+		    ?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% ctpm_localnames()={ok,NodeResults}|NodeResult|{error,Reason}
@@ -775,7 +804,7 @@ ctpm_localnames() ->
     ctpm_localnames(all).
 
 ctpm_localnames(Nodes) ->
-    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{remove_local_register,[]}}).
+    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{remove_local_register,[]}},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% ctpm_localnames()={ok,NodeResults}|NodeResult|{error,Reason}
@@ -791,7 +820,7 @@ ctpm_globalnames() ->
     ctpm_globalnames(all).
 
 ctpm_globalnames(Nodes) ->
-    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{remove_global_register,[]}}).
+    gen_server:call(?CONTROLLER,{meta_pattern,Nodes,{remove_global_register,[]}},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% ctp_all(Nodes)={ok,NodeResults}|{error,Reason}
@@ -803,10 +832,10 @@ ctpm_globalnames(Nodes) ->
 %% Clears all both global and local trace patterns on all or specified nodes.
 %% Does not effect meta patterns.
 ctp_all() ->
-    gen_server:call(?CONTROLLER,{ctp_all,all}).
+    gen_server:call(?CONTROLLER,{ctp_all,all},?CALL_TIMEOUT).
 
 ctp_all(Nodes) ->
-    gen_server:call(?CONTROLLER,{ctp_all,Nodes}).
+    gen_server:call(?CONTROLLER,{ctp_all,Nodes},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% suspend(Nodes,Reason)={ok,NodeResults}|{error,Reason}
@@ -819,10 +848,10 @@ ctp_all(Nodes) ->
 %% Suspend all or specified Nodes with reason Reason. Suspend means that all
 %% process trace flags are removed and all meta-patterns.
 suspend(Nodes, Reason) ->
-    gen_server:call(?CONTROLLER,{suspend,Reason,Nodes}).
+    gen_server:call(?CONTROLLER,{suspend,Reason,Nodes},?CALL_TIMEOUT).
 
 suspend(Reason) ->
-    gen_server:call(?CONTROLLER,{suspend,Reason,all}).
+    gen_server:call(?CONTROLLER,{suspend,Reason,all},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% cancel_suspension(Nodes)={ok,NodeResults}|{error,Reason}
@@ -834,10 +863,10 @@ suspend(Reason) ->
 %% that "business" is resumed as before. You must reactivate flags and meta-patter
 %% your self.
 cancel_suspension(Nodes) ->
-    gen_server:call(?CONTROLLER,{cancel_suspension,Nodes}).
+    gen_server:call(?CONTROLLER,{cancel_suspension,Nodes},?CALL_TIMEOUT).
 
 cancel_suspension() ->
-    gen_server:call(?CONTROLLER,{cancel_suspension,all}).
+    gen_server:call(?CONTROLLER,{cancel_suspension,all},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% get_status(Nodes)={ok,NodeResults}|{error,Reason}
@@ -850,10 +879,10 @@ cancel_suspension() ->
 %%
 %% Get Status form all or specified runtime components.
 get_status(Nodes) when list(Nodes) ->
-    gen_server:call(?CONTROLLER,{get_status,Nodes}).
+    gen_server:call(?CONTROLLER,{get_status,Nodes},?CALL_TIMEOUT).
 
 get_status() ->
-    gen_server:call(?CONTROLLER,{get_status,all}).
+    gen_server:call(?CONTROLLER,{get_status,all},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% get_tracerdata()={ok,NodeResults}|NodeResult|{error,Reason}
@@ -865,10 +894,10 @@ get_status() ->
 %%
 %% Get TracerData form all or specified runtime components.
 get_tracerdata() ->
-    gen_server:call(?CONTROLLER,{get_tracerdata,all}).
+    gen_server:call(?CONTROLLER,{get_tracerdata,all},?CALL_TIMEOUT).
 
 get_tracerdata(Nodes) when is_list(Nodes) -> 
-    gen_server:call(?CONTROLLER,{get_tracerdata,Nodes}).
+    gen_server:call(?CONTROLLER,{get_tracerdata,Nodes},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% list_logs(TracerData)={ok,NodeResults}|NodeResult|{error,Reason}
@@ -887,10 +916,10 @@ get_tracerdata(Nodes) when is_list(Nodes) ->
 %% TracerData. If TracerData is left out, the runtime components TracerData, 
 %% if existing, will be used instead. 
 list_logs() ->
-    gen_server:call(?CONTROLLER,list_logs).
+    gen_server:call(?CONTROLLER,list_logs,?CALL_TIMEOUT).
 
 list_logs(TracerDataOrNodesList) when list(TracerDataOrNodesList) ->
-    gen_server:call(?CONTROLLER,{list_logs,TracerDataOrNodesList}).
+    gen_server:call(?CONTROLLER,{list_logs,TracerDataOrNodesList},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 %% fetch_log(LogSpecList,DestDir,Prefix)={ok,NodeResults}|{error,not_distributed}|
@@ -970,11 +999,11 @@ fetch_log(ToNode,LogSpecList,DestDir,Prefix)
 %% or all Nodes. If no TracerData or list of files is specified in the call the 
 %% TracerData at Node will be used to identify log files to delete.
 delete_log() ->
-    gen_server:call(?CONTROLLER,{delete_log,all}).
+    gen_server:call(?CONTROLLER,{delete_log,all},?CALL_TIMEOUT).
 delete_log(What) ->
-    gen_server:call(?CONTROLLER,{delete_log,What}).
+    gen_server:call(?CONTROLLER,{delete_log,What},?CALL_TIMEOUT).
 delete_log(Nodes,Spec) ->
-    gen_server:call(?CONTROLLER,{delete_log,Nodes,Spec}).
+    gen_server:call(?CONTROLLER,{delete_log,Nodes,Spec},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% subscribe()= same as subscribe(self())
@@ -993,10 +1022,10 @@ delete_log(Nodes,Spec) ->
 %%   Node = node() | local_runtime (when running in a non-distributed 
 %%                                  environment)
 subscribe() ->
-    gen_server:call(?CONTROLLER,{subscribe,self()}).
+    gen_server:call(?CONTROLLER,{subscribe,self()},?CALL_TIMEOUT).
 
 subscribe(Pid) ->
-    gen_server:call(?CONTROLLER,{subscribe,Pid}).
+    gen_server:call(?CONTROLLER,{subscribe,Pid},?CALL_TIMEOUT).
 %% -----------------------------------------------------------------------------
 
 %% unsubscribe()= same as unsubscribe(self())
@@ -1006,10 +1035,10 @@ subscribe(Pid) ->
 %% Remove, if present, first occurrence of Pid or self() from event sending 
 %% list. Note that it is not an error to remove a non existing subscription.
 unsubscribe() ->
-    gen_server:call(?CONTROLLER,{unsubscribe,self()}).
+    gen_server:call(?CONTROLLER,{unsubscribe,self()},?CALL_TIMEOUT).
 
 unsubscribe(Pid) ->
-    gen_server:call(?CONTROLLER,{unsubscribe,Pid}).
+    gen_server:call(?CONTROLLER,{unsubscribe,Pid},?CALL_TIMEOUT).
 %% ------------------------------------------------------------------------------
 
 

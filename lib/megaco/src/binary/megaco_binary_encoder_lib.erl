@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose : Handle ASN.1 BER encoding of Megaco/H.248
@@ -111,39 +113,33 @@ encode_message(_EC, MegaMsg, _AsnMod, _TransMod, _Type) ->
 %% Should handle encoding of all types of transactions:
 %% TransactionAck, TransactionPending, TransactionRequest
 %% and TransactionReply
-encode_transaction(EC, [T|_] = Ts, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionAck') ->
-    Tag = transactionResponseAck,
-    do_encode_transaction(EC, Tag, Ts, AsnMod, TransMod, Type);
-encode_transaction(EC, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionAck') ->
-    Tag = transactionResponseAck,
-    do_encode_transaction(EC, Tag, [T], AsnMod, TransMod, Type);
-encode_transaction(EC, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionPending') ->
-    Tag = transactionPending,
-    do_encode_transaction(EC, Tag, T, AsnMod, TransMod, Type);
-encode_transaction(EC, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionRequest') ->
-    Tag = transactionRequest,
-    do_encode_transaction(EC, Tag, T, AsnMod, TransMod, Type);
-encode_transaction(EC, T, AsnMod, TransMod, Type) 
-  when record(T, 'TransactionReply') ->
-    Tag = transactionReply,
-    do_encode_transaction(EC, Tag, T, AsnMod, TransMod, Type);
+encode_transaction(EC, {Tag, _} = Trans, AsnMod, TransMod, Type) 
+  when (Tag == transactionResponseAck) ->
+    do_encode_transaction(EC, Trans, AsnMod, TransMod, Type);
+encode_transaction(EC, {Tag, _} = Trans, AsnMod, TransMod, Type) 
+  when (Tag == transactionPending) -> 
+    do_encode_transaction(EC, Trans, AsnMod, TransMod, Type);
+encode_transaction(EC, {Tag, _} = Trans, AsnMod, TransMod, Type) 
+  when (Tag == transactionRequest) ->
+    do_encode_transaction(EC, Trans, AsnMod, TransMod, Type);
+%% TransactionReply has been changed as of v3 so we cannot use 
+%% the record definition in this common module.
+encode_transaction(EC, {Tag, _} = Trans, AsnMod, TransMod, Type) 
+  when (Tag == transactionReply) ->
+    do_encode_transaction(EC, Trans, AsnMod, TransMod, Type);
 encode_transaction(_EC, T, _AsnMod, _TransMod, _Type) ->
     {error, {no_megaco_transaction, T}}.
 
-do_encode_transaction([native], _Tag, _T, _AsnMod, _TransMod, binary) ->
+do_encode_transaction([native], _Trans, _AsnMod, _TransMod, binary) ->
     %% asn1rt:encode(AsnMod, element(1, T), T);
     {error, not_implemented};
-do_encode_transaction(EC, _Tag, _T, _AsnMod, _TransMod, binary) 
+do_encode_transaction(EC, _Trans, _AsnMod, _TransMod, binary) 
   when list(EC) ->
-    %% T2 = TransMod:tr_transaction({Tag,T}, encode, EC),
+    %% T2 = TransMod:tr_transaction(Trans, encode, EC),
     %% asn1rt:encode(AsnMod, element(1, T), T2);
     {error, not_implemented};
-do_encode_transaction(EC, Tag, T, AsnMod, TransMod, io_list) ->
-    case do_encode_transaction(EC, Tag, T, AsnMod, TransMod, binary) of
+do_encode_transaction(EC, Trans, AsnMod, TransMod, io_list) ->
+    case do_encode_transaction(EC, Trans, AsnMod, TransMod, binary) of
 	{ok, Bin} when binary(Bin) ->
 	    {ok, Bin};
 	{ok, DeepIoList} ->
@@ -152,7 +148,7 @@ do_encode_transaction(EC, Tag, T, AsnMod, TransMod, io_list) ->
 	{error, Reason} ->
 	    {error, Reason} 
     end;
-do_encode_transaction(EC, _Tag, _T, _AsnMod, _TransMod, _Type) ->
+do_encode_transaction(EC, _Trans, _AsnMod, _TransMod, _Type) ->
     {error, {bad_encoding_config, EC}}.
 
 

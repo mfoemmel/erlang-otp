@@ -92,7 +92,12 @@ endif
 endif
 endif
 
+# On windows we always need reentrant libraries.
+ifeq ($(TARGET),win32)
+ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal_r$(ERTS_LIB_TYPEMARKER)
+else
 ERLEXEC_XLIBS=-L../../lib/internal/$(TARGET) -lerts_internal$(ERTS_LIB_TYPEMARKER)
+endif
 
 # ----------------------------------------------------
 # Release directory specification
@@ -352,7 +357,7 @@ $(OBJDIR)/escript.o: escript.c
 ifeq ($(TARGET),win32)
 
 $(BINDIR)/$(ERLEXEC): $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o  $(OBJDIR)/$(ERLRES_OBJ) dbg
-	$(LD) -dll $(LDFLAGS) -o $@ $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ) -L$(BINDIR) -lerl_dll $(ERLEXEC_XLIBS)
+	$(LD) -dll $(LDFLAGS) -o $@ $(OBJDIR)/erlexec.o $(OBJDIR)/win_erlexec.o $(OBJDIR)/init_file.o $(OBJDIR)/$(ERLRES_OBJ) $(ERLEXEC_XLIBS)
 
 dbg: 
 	echo DBG

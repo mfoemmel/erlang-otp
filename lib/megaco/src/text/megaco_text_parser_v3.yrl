@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: YECC grammar for text encoding of Megaco/H.248
@@ -58,6 +60,14 @@
 %%----------------------------------------------------------------------
 
 %%----------------------------------------------------------------------
+%% Number of expected shift/reduce warnings
+%% This is ugly but...
+%%----------------------------------------------------------------------
+
+Expect 90.
+
+
+%%----------------------------------------------------------------------
 %% Non-terminals
 %%----------------------------------------------------------------------
 
@@ -90,19 +100,22 @@ Nonterminals
     auditReturnItem
     auditReturnParameter
     auditReturnParameterList
+    auditSelectLogic                  %% v3
     authenticationHeader
     commandReplyList
     commandReplys                     %% v3
     commandRequest
     contextAttrDescriptor             %% v3
-    contextAttrDescProp               %% v3
-    contextAttrDescProps              %% v3
     contextAudit
     contextAuditProperties
     contextAuditProperty
+    contextAuditSelector              %% v3
     contextID
-    contextProperties                 %% v3 
+    contextIdList                     %% v3
+    contextIDs                        %% v3
+%%    contextProperties                 %% v3 
     contextProperty
+%%    contextPropertyList
     contextTerminationAudit
     daddr
     deviceName
@@ -114,11 +127,12 @@ Nonterminals
     embedNoSig
     embedSig
     embedWithSig
+    emergencyValue                    %% v3
     errorCode
     errorDescriptor
     errorText
     eventBufferControl
-    eventBufferControlState
+    eventBufferControlValue           %% v3
     eventBufferDescriptor
     eventDM
     eventParameter
@@ -131,6 +145,9 @@ Nonterminals
     eventsDescriptor
     extension
     extensionParameter
+
+    iaServiceStates                   %% v3
+    iepsValue
 
     %% v2 - start
     indAudauditReturnParameter
@@ -145,6 +162,7 @@ Nonterminals
     indAudlocalParmList
     indAudmediaDescriptor
     indAudmediaParm
+    indAudmediaParms                  %% v3   
     %% indAudmediaParmList
     indAudpackagesDescriptor
     indAudrequestedEvent
@@ -185,6 +203,8 @@ Nonterminals
     muxType
     notificationReason
     notificationReasons
+    notifyBehaviour                   %% v3
+    notifyRegulated                   %% v3
     notifyReply
     notifyReplyBody
     notifyRequest
@@ -212,6 +232,7 @@ Nonterminals
     priority
     propertyParm
     propertyParms
+    propertyParmList
     requestID
     requestedEvent
     requestedEventBody
@@ -222,6 +243,8 @@ Nonterminals
     secondRequestedEvent
     secondRequestedEventBody
     secondRequestedEvents
+    segmentReply                      %% v3 
+    %% segmentNumber                     %% v3
     servChgReplyParm
     servChgReplyParms
     serviceChangeAddress
@@ -238,8 +261,8 @@ Nonterminals
     serviceChangeReplyDescriptor
     serviceChangeRequest
     serviceChangeVersion
-    serviceState
     serviceStates
+    serviceStatesValue                %% v3
     sigParameter
     sigParameters
     signalList
@@ -261,9 +284,8 @@ Nonterminals
     streamParm
     streamParmList
     subtractRequest
-    terminationA
+    termIDList                        %% v3
     terminationAudit
-    terminationB
     terminationID
     terminationIDList
     terminationIDListRepeat
@@ -273,11 +295,12 @@ Nonterminals
     timeStamp
     topologyDescriptor
     topologyDirection
-    topologyTriple
-    topologyTripleList
+    topologyDescComp
+    topologyDescCompList
     transactionAck
     transactionAckList
     transactionID
+    transactionID_and_segment_info
     transactionItem
     transactionList
     transactionPending
@@ -297,6 +320,7 @@ Nonterminals
 Terminals
 
     'AddToken'
+    'AndAUDITselectToken'             %% v3
     'AuditCapToken'
     'AuditToken'
     'AuditValueToken'
@@ -309,6 +333,7 @@ Terminals
     'COMMA'
     'ContextAttrToken'                %% v3 
     'ContextAuditToken'
+    'ContextListToken'                %% v3 
     'CtxToken'
     'DelayToken'
     'DigitMapToken'
@@ -321,6 +346,7 @@ Terminals
     'EmbedToken'
     'EmergencyToken'
     'EmergencyOffToken'
+    'EmergencyValueToken'             %% v3
     'ErrorToken'
     'EventBufferToken'
     'EventsToken'
@@ -335,12 +361,15 @@ Terminals
     'HandOffToken'
     'IEPSToken'                       %% v3
     'ImmAckRequiredToken'
+    'INEQUAL'                         %% v3
     'InSvcToken'
     'InactiveToken'
     'InternalToken'                   %% v3 
     'InterruptByEventToken'
     'InterruptByNewSignalsDescrToken'
+    'IntsigDelayToken'                %% v3
     'IsolateToken'
+    'IterationToken'                  %% v3
     'KeepActiveToken'
     'LBRKT'
     'LESSER'
@@ -351,6 +380,7 @@ Terminals
     'LoopbackToken'
     'MediaToken'
     %% 'MegacopToken'
+    'MessageSegmentToken'
     'MethodToken'
     'MgcIdToken'
     'ModeToken'
@@ -360,7 +390,10 @@ Terminals
     'MtpAddressToken'
     'MuxToken'
     'NEQUAL'
+    'NeverNotifyToken'                %% v3
     'NotifyCompletionToken'
+    'NotifyImmediateToken'            %% v3
+    'NotifyRegulatedToken'            %% v3
     'NotifyToken'
     'Nx64Token'  %% v2
     'ObservedEventsToken'
@@ -368,6 +401,9 @@ Terminals
     'OnToken'
     'OnOffToken'
     'OnewayToken'
+    'OnewayExternalToken'             %% v3
+    'OnewayBothToken'                 %% v3
+    'OrAUDITselectToken'              %% v3
     'OtherReasonToken'
     'OutOfSvcToken'
     'PackagesToken'
@@ -384,10 +420,12 @@ Terminals
     'RequestIDToken'                  %% v3 
     'ReservedGroupToken'
     'ReservedValueToken'
+    'ResetEventsDescriptorToken'       %% v3
     'ResponseAckToken'
     'RestartToken'
     'SEP'
     'SafeChars'
+    %% 'SegmentationCompleteToken'
     'SendonlyToken'
     'SendrecvToken'
     'ServiceChangeAddressToken'
@@ -398,6 +436,7 @@ Terminals
     'SignalListToken'
     'SignalTypeToken'
     'SignalsToken'
+    %% 'SLASH'
     'StatsToken'
     'StreamToken'
     'SubtractToken'
@@ -453,85 +492,99 @@ authenticationHeader -> 'AuthToken' 'EQUAL' safeToken 'COLON'
                             : ensure_auth_header('$3', '$5', '$7') .
 authenticationHeader -> '$empty' : asn1_NOVALUE .
 
-message              -> safeToken mId messageBody : ensure_message('$1', '$2', '$3') .
+message         -> safeToken mId messageBody : 
+                   ensure_message('$1', '$2', '$3') .
 
-messageBody          -> errorDescriptor : {messageError, '$1'} .
-messageBody          -> transactionList : {transactions, '$1'} .
+messageBody     -> errorDescriptor : {messageError, '$1'} .
+messageBody     -> transactionList : {transactions, '$1'} .
 
-transactionList      -> transactionItem : ['$1'] .
-transactionList      -> transactionItem transactionList : ['$1' | '$2'] .
+transactionList -> transactionItem : ['$1'] .
+transactionList -> transactionItem transactionList : ['$1' | '$2'] .
 
-transactionItem      -> transactionRequest      : {transactionRequest,     '$1'} .
-transactionItem      -> transactionReply        : {transactionReply,       '$1'}.
-transactionItem      -> transactionPending      : {transactionPending,     '$1'} .
-transactionItem      -> transactionResponseAck  : {transactionResponseAck, '$1'} .
+transactionItem -> transactionRequest      : {transactionRequest,     '$1'} .
+transactionItem -> transactionReply        : {transactionReply,       '$1'}.
+transactionItem -> transactionPending      : {transactionPending,     '$1'} .
+transactionItem -> transactionResponseAck  : {transactionResponseAck, '$1'} .
+transactionItem -> segmentReply            : {segmentReply, '$1'} .
 
 transactionResponseAck -> 'ResponseAckToken'
-                          'LBRKT' transactionAck transactionAckList 'RBRKT' : ['$3' | '$4'] .
+                          'LBRKT' transactionAck 
+                                  transactionAckList 'RBRKT' : ['$3' | '$4'] .
 
-transactionAckList   -> 'COMMA' transactionAck transactionAckList : ['$2' | '$3'] .
-transactionAckList   -> '$empty' : [] .
+transactionAckList -> 'COMMA' transactionAck 
+                              transactionAckList : ['$2' | '$3'] .
+transactionAckList -> '$empty' : [] .
 
-transactionAck       -> safeToken : ensure_transactionAck('$1') .
+transactionAck     -> safeToken : ensure_transactionAck('$1') .
 
-transactionPending   -> 'PendingToken' 'EQUAL' transactionID 'LBRKT' 'RBRKT'
-                            : #'TransactionPending'{transactionId = ensure_transactionID('$3') } .
+transactionPending -> 'PendingToken' 'EQUAL' transactionID 'LBRKT' 'RBRKT' : 
+                      #'TransactionPending'{transactionId = ensure_transactionID('$3') } .
 
-transactionRequest   -> 'TransToken' 
-                        'LBRKT'  actionRequest actionRequestList 'RBRKT'
-                            : #'TransactionRequest'{transactionId = asn1_NOVALUE,
-                                                    actions = ['$3' | '$4']} .
-transactionRequest   -> 'TransToken' 'EQUAL' 
-                        'LBRKT'  actionRequest actionRequestList 'RBRKT'
-                            : #'TransactionRequest'{transactionId = asn1_NOVALUE,
-                                                    actions = ['$4' | '$5']} .
-transactionRequest   -> 'TransToken' 'EQUAL' transactionID
-                        'LBRKT'  actionRequest actionRequestList 'RBRKT'
-                            : #'TransactionRequest'{transactionId = ensure_transactionID('$3'),
-                                                    actions = ['$5' | '$6']} .
+transactionRequest -> 'TransToken' 'LBRKT'  actionRequest 
+                                            actionRequestList 'RBRKT' : 
+                      #'TransactionRequest'{transactionId = asn1_NOVALUE,
+                                            actions       = ['$3' | '$4']} .
+transactionRequest -> 'TransToken' 'EQUAL' 'LBRKT'  actionRequest 
+                                                    actionRequestList 'RBRKT' :
+                      #'TransactionRequest'{transactionId = asn1_NOVALUE,
+                                            actions       = ['$4' | '$5']} .
+transactionRequest -> 'TransToken' 'EQUAL' transactionID
+                      'LBRKT'  actionRequest actionRequestList 'RBRKT' :
+                      #'TransactionRequest'{transactionId = ensure_transactionID('$3'),
+                                            actions = ['$5' | '$6']} .
 
-actionRequestList    -> 'COMMA' actionRequest actionRequestList : ['$2' | '$3'] .
-actionRequestList    -> '$empty' : [] .
+actionRequestList  -> 'COMMA' actionRequest actionRequestList : ['$2' | '$3'] .
+actionRequestList  -> '$empty' : [] .
 
-actionRequest        -> 'CtxToken' 'EQUAL' contextID
-                        'LBRKT' actionRequestBody 'RBRKT'
-                        : merge_action_request('$3', '$5') .
+%% actionRequest     = CtxToken EQUAL ContextID LBRKT ((contextRequest
+%%                     [COMMA commandRequestList]) / 
+%%                     commandRequestList) RBRKT
+%% contextRequest    = ((contextProperties [COMMA contextAudit]) /
+%%                      contextAudit)
+%% contextProperties = contextProperty *(COMMA contextProperty)
 
-actionRequestBody    -> actionRequestItem actionRequestItems : ['$1' | '$2'] .
+actionRequest      -> 'CtxToken' 'EQUAL' contextID 
+                      'LBRKT' actionRequestBody 'RBRKT' : 
+                      merge_action_request('$3', '$5') .
+
+actionRequestBody  -> actionRequestItem actionRequestItems : ['$1' | '$2'] .
     
-actionRequestItems   -> 'COMMA' actionRequestItem actionRequestItems  
-                        : ['$2' | '$3'] .
-actionRequestItems   -> '$empty' : [] .
+actionRequestItems -> 'COMMA' actionRequestItem 
+                              actionRequestItems : ['$2' | '$3'] .
+actionRequestItems -> '$empty' : [] .
 
-actionRequestItem    -> contextProperties : {contextProps,   '$1'} .
-actionRequestItem    -> contextAudit      : {contextAudit,   '$1'} .
-actionRequestItem    -> commandRequest    : {commandRequest, '$1'} .
+actionRequestItem  -> contextProperty : {contextProp,    '$1'} .
+actionRequestItem  -> contextAudit    : {contextAudit,   '$1'} .
+actionRequestItem  -> commandRequest  : {commandRequest, '$1'} .
 
-contextProperties     -> contextAttrDescriptor : 
-                         merge_context_request(#'ContextRequest'{}, '$1') .
 
-contextAttrDescriptor -> 'ContextAttrToken' 
-                         'LBRKT' contextAttrDescProp 
-                                 contextAttrDescProps 'RBRKT' 
-                         : ['$3' | '$4'] .
-              
-contextAttrDescProp  -> contextProperty : '$1' .
+%% at-most-once (presumebly in contextProperties)
+contextProperty -> topologyDescriptor    : {topology,    '$1'}.
+contextProperty -> priority              : {priority,    '$1'}. 
+contextProperty -> 'EmergencyToken'      : {emergency,   true}.
+contextProperty -> 'EmergencyOffToken'   : {emergency,   false}.
+contextProperty -> iepsValue             : {iepsCallind, '$1'} .  
+contextProperty -> contextAttrDescriptor : '$1' .
 
-contextAttrDescProps -> 'COMMA' contextAttrDescProp contextAttrDescProps 
-                         : ['$2' | '$3'] .
-contextAttrDescProps -> '$empty' : [] .
+contextAttrDescriptor -> 'ContextAttrToken' 'LBRKT' propertyParms 'RBRKT' : 
+                         {contextProp, '$3'}.
+contextAttrDescriptor -> 'ContextAttrToken' 'LBRKT' contextIdList 'RBRKT' : 
+                         {contextList, '$3'}.
 
-%% at-most-once
-contextProperty      -> topologyDescriptor  : {topology,    '$1'}.
-contextProperty      -> priority            : {priority,    '$1'}. 
-contextProperty      -> 'EmergencyToken'    : {emergency,   true}.
-contextProperty      -> 'EmergencyOffToken' : {emergency,   false}.
-contextProperty      -> 'IEPSToken'         : {iepsCallind, true} .  % BMK BMK
-contextProperty      -> propertyParm        : {prop,        '$1'} . 
+contextIdList -> 'ContextListToken' 'EQUAL' 
+                 'LBRKT' contextID contextIDs 'RBRKT' : ['$4' | '$5'] .
 
-contextAudit -> 'ContextAuditToken' 'LBRKT' indAudcontextAttrDescriptor 'RBRKT'
-                : merge_context_attr_audit_request(
+contextIDs -> 'COMMA' contextID contextIDs : ['$2' | '$3'] .
+contextIDs -> '$empty' : [] .
+    
+contextAudit -> 'ContextAuditToken' 'LBRKT' 
+                indAudcontextAttrDescriptor 'RBRKT' : 
+                merge_context_attr_audit_request(
                          #'ContextAttrAuditRequest'{}, '$3') .
+contextAudit -> 'ContextAuditToken' 'LBRKT' 
+                contextAuditProperty contextAuditProperties 'RBRKT' : 
+                merge_context_attr_audit_request(
+                         #'ContextAttrAuditRequest'{}, ['$3' | '$4']) .
 
 indAudcontextAttrDescriptor -> 'ContextAttrToken' 
                                'LBRKT' contextAuditProperty 
@@ -542,12 +595,23 @@ contextAuditProperties -> 'COMMA' contextAuditProperty contextAuditProperties
                           : ['$2' | '$3'] .
 contextAuditProperties -> '$empty' : [] .
 
-%% at-most-once .
-contextAuditProperty -> 'TopologyToken'  : topologyAudit .
-contextAuditProperty -> 'EmergencyToken' : emergencyAudit .
-contextAuditProperty -> 'PriorityToken'  : priorityAudit .
-contextAuditProperty -> 'IEPSToken'      : iepsCallind .
-contextAuditProperty -> pkgdName         : {prop, '$1'} .
+%% at-most-once except contextAuditSelector.
+contextAuditProperty -> 'TopologyToken'      : topologyAudit .
+contextAuditProperty -> 'EmergencyToken'     : emergencyAudit .
+contextAuditProperty -> 'PriorityToken'      : priorityAudit .
+contextAuditProperty -> 'IEPSToken'          : iepsCallind .
+contextAuditProperty -> pkgdName             : {prop, '$1'} .
+contextAuditProperty -> contextAuditSelector : '$1' .
+
+%% at-most-once
+contextAuditSelector -> priority              : {select_prio,      '$1'} .
+contextAuditSelector -> emergencyValue        : {select_emergency, '$1'} .
+contextAuditSelector -> iepsValue             : {select_ieps,      '$1'} .
+contextAuditSelector -> auditSelectLogic      : {select_logic,     '$1'} .
+contextAuditSelector -> contextAttrDescriptor : '$1' .
+
+auditSelectLogic -> 'AndAUDITselectToken' : {andAUDITSelect, 'NULL'} .
+auditSelectLogic -> 'OrAUDITselectToken'  : {orAUDITSelect,  'NULL'} .
 
 commandRequest       -> ammRequest             : '$1'.
 commandRequest       -> subtractRequest        : '$1'.
@@ -555,14 +619,18 @@ commandRequest       -> auditRequest           : '$1'.
 commandRequest       -> notifyRequest          : '$1'.
 commandRequest       -> serviceChangeRequest   : '$1'.
 
-transactionReply     -> 'ReplyToken' 'EQUAL' transactionID 
+transactionReply     -> 'ReplyToken' 'EQUAL' transactionID_and_segment_info 
 			    'LBRKT'
 			        optImmAckRequired transactionReplyBody
-                            'RBRKT'
-			    : #'TransactionReply'{transactionId     = '$3',
-						  immAckRequired    = '$5',
-						  transactionResult = '$6'} .
+                            'RBRKT' :
+                         make_TransactionReply('$3', '$5', '$6') .
 
+segmentReply         -> 'MessageSegmentToken' 'EQUAL' 
+                        transactionID_and_segment_info : 
+                        make_SegmentReply('$3') .
+
+%% segmentNumber        -> safeToken : ensure_uint16('$1') .
+    
 optImmAckRequired    -> 'ImmAckRequiredToken' 'COMMA' : 'NULL' .
 optImmAckRequired    -> '$empty' : asn1_NOVALUE .
      
@@ -575,6 +643,8 @@ actionReplyList      -> '$empty' : [] .
 actionReply          -> 'CtxToken' 'EQUAL' contextID 
                         'LBRKT' actionReplyBody 'RBRKT' : 
                         setelement(#'ActionReply'.contextId, '$5', '$3') .
+actionReply          -> 'CtxToken' 'EQUAL' contextID : 
+                        #'ActionReply'{contextId = '$3'} .
 
 actionReplyBody      -> errorDescriptor :  
                         #'ActionReply'{errorDescriptor = '$1'} .
@@ -591,28 +661,28 @@ commandReplyList     -> 'COMMA' commandReplys commandReplyList  :
                          ['$2' | '$3'] .
 commandReplyList     -> '$empty' : [] .
 
-commandReplys         -> serviceChangeReply  : {command, '$1'} .
-commandReplys         -> auditReply          : {command, '$1'} .
-commandReplys         -> ammsReply           : {command, '$1'} .
-commandReplys         -> notifyReply         : {command, '$1'} .
-commandReplys         -> contextProperties   : {context, '$1'} .
+commandReplys         -> serviceChangeReply : {command, '$1'} .
+commandReplys         -> auditReply         : {command, '$1'} .
+commandReplys         -> ammsReply          : {command, '$1'} .
+commandReplys         -> notifyReply        : {command, '$1'} .
+commandReplys         -> contextProperty    : {context, '$1'} .
 
 %Add Move and Modify have the same request parameter
-ammRequest           -> ammToken 'EQUAL' terminationID ammRequestBody : 
-                        Descs = merge_AmmRequest_descriptors('$4', []),
-                        make_commandRequest('$1',
-				            #'AmmRequest'{terminationID = ['$3'],
-						          descriptors   = Descs}) .
+ammRequest     -> ammToken 'EQUAL' termIDList ammRequestBody : 
+                  Descs = merge_AmmRequest_descriptors('$4', []),
+                  make_commandRequest('$1',
+	       		              #'AmmRequest'{terminationID = '$3',
+	       				            descriptors   = Descs}) .
 
-ammToken             -> 'AddToken'     : {addReq,  '$1'} .
-ammToken             -> 'MoveToken'    : {moveReq, '$1'} .
-ammToken             -> 'ModifyToken'  : {modReq,  '$1'} .
+ammToken       -> 'AddToken'     : {addReq,  '$1'} .
+ammToken       -> 'MoveToken'    : {moveReq, '$1'} .
+ammToken       -> 'ModifyToken'  : {modReq,  '$1'} .
 
-ammRequestBody       -> 'LBRKT' ammParameter ammParameters 'RBRKT'  : ['$2' | '$3'] .
-ammRequestBody       -> '$empty' : [] .
+ammRequestBody -> 'LBRKT' ammParameter ammParameters 'RBRKT' : ['$2' | '$3'] .
+ammRequestBody -> '$empty' : [] .
 
-ammParameters        -> 'COMMA' ammParameter ammParameters  :  ['$2' | '$3'] .
-ammParameters        -> '$empty' : [] .
+ammParameters  -> 'COMMA' ammParameter ammParameters : ['$2' | '$3'] .
+ammParameters  -> '$empty' : [] .
 
 %at-most-once
 ammParameter         -> mediaDescriptor        : {mediaDescriptor,       '$1'}.
@@ -625,8 +695,8 @@ ammParameter         -> digitMapDescriptor     : {digitMapDescriptor,    '$1'}.
 ammParameter         -> auditDescriptor        : {auditDescriptor,       '$1'}.
 ammParameter         -> statisticsDescriptor   : {statisticsDescriptor,  '$1'}.
 
-ammsReply            -> ammsToken 'EQUAL' terminationID ammsReplyBody
-			    :  {'$1', #'AmmsReply'{terminationID = ['$3'],
+ammsReply            -> ammsToken 'EQUAL' termIDList ammsReplyBody
+			    :  {'$1', #'AmmsReply'{terminationID    = '$3',
 						   terminationAudit = '$4'}} .
 
 ammsToken            -> 'AddToken'       : addReply .
@@ -637,47 +707,40 @@ ammsToken            -> 'SubtractToken'  : subtractReply .
 ammsReplyBody        -> 'LBRKT' terminationAudit 'RBRKT' : '$2' .
 ammsReplyBody        -> '$empty' : asn1_NOVALUE .
 
-subtractRequest      -> 'SubtractToken' 'EQUAL' terminationID 
-                                                optAuditDescriptor
-                        : make_commandRequest({subtractReq, '$1'},
-                                               #'SubtractRequest'{terminationID = ['$3'],
-                                                                  auditDescriptor = '$4'}) .
+subtractRequest      -> 'SubtractToken' 'EQUAL' termIDList optAuditDescriptor :
+                        SR = #'SubtractRequest'{terminationID   = '$3',
+                                                auditDescriptor = '$4'},
+                        make_commandRequest({subtractReq, '$1'}, SR) .
   
 
 optAuditDescriptor   -> 'LBRKT' auditDescriptor 'RBRKT'  : '$2'.
 optAuditDescriptor   -> '$empty'                         : asn1_NOVALUE .
 
-auditRequest -> 'AuditValueToken' 'EQUAL' 
-                terminationID optAuditDescriptor : 
+auditRequest -> 'AuditValueToken' 'EQUAL' termIDList optAuditDescriptor : 
                 make_commandRequest({auditValueRequest, '$1'},
-		                    #'AuditRequest'{terminationID   = '$3',
-				                    auditDescriptor = '$4'}) .
-auditRequest -> 'AuditCapToken' 'EQUAL' 
-                terminationID optAuditDescriptor : 
+		                    make_auditRequest('$3', '$4')) .
+auditRequest -> 'AuditCapToken' 'EQUAL' termIDList optAuditDescriptor : 
                 make_commandRequest({auditCapRequest, '$1'},
-				    #'AuditRequest'{terminationID   = '$3',
-						    auditDescriptor = '$4'}) .
+				    make_auditRequest('$3', '$4')) .
 
-auditReply -> 'AuditValueToken' 'EQUAL' 'CtxToken' contextTerminationAudit
-		  : {auditValueReply, '$4'} .
-auditReply -> 'AuditCapToken'   'EQUAL' 'CtxToken' contextTerminationAudit
-		  : {auditCapReply,   '$4'} .
-auditReply -> 'AuditValueToken' 'EQUAL' auditOther
-		  : {auditValueReply, '$3'} .
-auditReply -> 'AuditCapToken'   'EQUAL' auditOther
-		  : {auditCapReply,   '$3'} .
+auditReply -> 'AuditValueToken' 'EQUAL' 'CtxToken' contextTerminationAudit : 
+              {auditValueReply, '$4'} .
+auditReply -> 'AuditCapToken'   'EQUAL' 'CtxToken' contextTerminationAudit : 
+              {auditCapReply,   '$4'} .
+auditReply -> 'AuditValueToken' 'EQUAL' auditOther : 
+              {auditValueReply, '$3'} .
+auditReply -> 'AuditCapToken'   'EQUAL' auditOther : 
+              {auditCapReply,   '$3'} .
 
-contextTerminationAudit -> terminationIDList               : {contextAuditResult, '$1'} .
-contextTerminationAudit -> 'LBRKT' errorDescriptor 'RBRKT' : {contextAuditResult, '$2'} .
+contextTerminationAudit -> terminationIDList               : 
+                           {contextAuditResult, '$1'} .
+contextTerminationAudit -> 'LBRKT' errorDescriptor 'RBRKT' : 
+                           {error, '$2'} .
 
-auditOther              -> terminationID : 
-                           {auditResult, 
-                            #'AuditResult'{terminationID          = '$1',
-					   terminationAuditResult = []}} .
-auditOther              -> terminationID 'LBRKT' terminationAudit 'RBRKT' :
-			   {auditResult, 
-                            #'AuditResult'{terminationID          = '$1',
-					   terminationAuditResult = '$3'}} .
+auditOther -> termIDList : 
+              merge_auditOther('$1', []) .
+auditOther -> termIDList 'LBRKT' terminationAudit 'RBRKT' : 
+              merge_auditOther('$1', '$3') .
 				  
 
 terminationAudit     -> auditReturnParameter auditReturnParameterList : 
@@ -757,29 +820,32 @@ indAudauditReturnParameter -> indAudpackagesDescriptor
  
 
 indAudmediaDescriptor -> 'MediaToken' 'LBRKT' 
-                         indAudmediaParm  'RBRKT' 
-                         : merge_indAudMediaDescriptor('$3') .
+                         indAudmediaParm indAudmediaParms 'RBRKT' 
+                         : merge_indAudMediaDescriptor(['$3'|'$4']) .
  
 %% at-most-once per item
 %% and either streamParm or streamDescriptor but not both
-%% <rambling>
-%% This is solved in another way in text than in binary :(
-%% Instead of having a list of indAudmediaParm we put this
-%% stuff in the indAudterminationAuditList with several 
-%% indAudmediaDescriptor's. 
-%% </rambling>
 %% 
  
 indAudmediaParm -> indAudstreamParm                 : {streamParm,     '$1'} .
 indAudmediaParm -> indAudstreamDescriptor           : {streamDescr,    '$1'} .
 indAudmediaParm -> indAudterminationStateDescriptor : {termStateDescr, '$1'} .
  
+indAudmediaParms -> 'COMMA' indAudmediaParm indAudmediaParms : ['$2' | '$3'] .
+indAudmediaParms -> '$empty' : [] .
+
 %% at-most-once
-indAudstreamParm -> indAudlocalControlDescriptor 
-                    : #'IndAudStreamParms'{localControlDescriptor = '$1'} .
-indAudstreamParm -> indAudstatisticsDescriptor 
-                    : #'IndAudStreamParms'{statisticsDescriptor = '$1'} .
- 
+indAudstreamParm -> 'RemoteDescriptorToken' : 
+                    RD = ensure_prop_groups('$1'), 
+                    #'IndAudStreamParms'{remoteDescriptor = RD} .
+indAudstreamParm -> 'LocalDescriptorToken' : 
+                    LD = ensure_prop_groups('$1'), 
+                    #'IndAudStreamParms'{localDescriptor = LD} .
+indAudstreamParm -> indAudlocalControlDescriptor : 
+                    #'IndAudStreamParms'{localControlDescriptor = '$1'} .
+indAudstreamParm -> indAudstatisticsDescriptor : 
+                    #'IndAudStreamParms'{statisticsDescriptor = '$1'} .
+
 indAudstreamDescriptor -> 'StreamToken' 'EQUAL' streamID 
                           'LBRKT' indAudstreamParm 'RBRKT' 
                           : #'IndAudStreamDescriptor'{streamID    = '$3',
@@ -787,15 +853,26 @@ indAudstreamDescriptor -> 'StreamToken' 'EQUAL' streamID
  
 
 indAudlocalControlDescriptor -> 'LocalControlToken' 
-                                'LBRKT' indAudlocalParm indAudlocalParmList 'RBRKT' :
-                                merge_indAudLocalControlDescriptor(['$3'| '$4']) .
+                                'LBRKT' indAudlocalParm 
+                                        indAudlocalParmList 'RBRKT' :
+                                merge_indAudLocalControlDescriptor(['$3' | '$4']) .
  
-indAudlocalParmList -> 'COMMA' indAudlocalParm indAudlocalParmList : ['$2'| '$3'] .
+indAudlocalParmList -> 'COMMA' indAudlocalParm 
+                               indAudlocalParmList : ['$2' | '$3'] .
 indAudlocalParmList -> '$empty' : [] .
 
 %% at-most-once per item
 %%  
-indAudlocalParm -> safeToken : ensure_indAudLocalParm('$1') . 
+%% propertyparm and streamModes are used only to specify audit selection
+%% criteria. AND/OR selection logic is specified at context level.
+%%  
+indAudlocalParm -> 'ReservedGroupToken'              : reservedGroupToken .
+indAudlocalParm -> 'ReservedValueToken'              : reservedValueToken .
+indAudlocalParm -> 'ModeToken'                       : modeToken .
+indAudlocalParm -> 'ModeToken' 'EQUAL'   streamModes : {mode, {equal,  '$3'}} .
+indAudlocalParm -> 'ModeToken' 'INEQUAL' streamModes : {mode, {inequal,'$3'}} .
+indAudlocalParm -> propertyParm                      : {prop,  '$1'} .
+indAudlocalParm -> pkgdName                          : {name,  '$1'} .
 
 indAudterminationStateDescriptor -> 'TerminationStateToken' 
                                     'LBRKT' indAudterminationStateParm 'RBRKT' 
@@ -805,9 +882,19 @@ indAudterminationStateDescriptor -> 'TerminationStateToken'
 %% at-most-once per item
 %%
 
-indAudterminationStateParm  -> safeToken : 
-                               ensure_indAudTerminationStateParm('$1') . 
+%% at-most-once per item except for propertyParm
+indAudterminationStateParm -> iaServiceStates : '$1' .
+indAudterminationStateParm -> 'BufferToken'   : bufferToken .
+indAudterminationStateParm -> propertyParm    : {prop, '$1'} .
+indAudterminationStateParm -> pkgdName        : {name, '$1'} .
 
+iaServiceStates -> 'ServiceStatesToken' : 
+                   serviceStatesToken .
+iaServiceStates -> 'ServiceStatesToken' 'EQUAL'   serviceStatesValue : 
+                   {serviceStates, {equal, '$3'}} .
+iaServiceStates -> 'ServiceStatesToken' 'INEQUAL' serviceStatesValue : 
+                   {serviceStates, {inequal, '$3'}} .
+     
 indAudeventBufferDescriptor -> 'EventBufferToken' 
                                'LBRKT' indAudeventSpec 'RBRKT' : '$3' .
 
@@ -822,15 +909,17 @@ optIndAudeventSpecParameter -> '$empty' : asn1_NOVALUE .
 indAudeventSpecParameter    -> eventStream        : {streamID, '$1'} .
 indAudeventSpecParameter    -> eventParameterName : {eventParameterName, '$1'} .
  
-indAudeventsDescriptor      -> 'EventsToken' 'EQUAL' requestID
-                               'LBRKT' indAudrequestedEvent 'RBRKT' 
-                               : #'IndAudEventsDescriptor'{requestID = '$3',
-                                                           pkgdName  = '$5'} .
+indAudeventsDescriptor  -> 'EventsToken' 'LBRKT' indAudrequestedEvent 'RBRKT' :
+                           #'IndAudEventsDescriptor'{pkgdName = '$3'} .
+indAudeventsDescriptor  -> 'EventsToken' 'EQUAL' requestID
+                           'LBRKT' indAudrequestedEvent 'RBRKT' : 
+                           #'IndAudEventsDescriptor'{requestID = '$3',
+                                                     pkgdName  = '$5'} .
  
-indAudrequestedEvent        -> pkgdName : '$1' .
+indAudrequestedEvent    -> pkgdName : '$1' .
 
 
-indAudsignalsDescriptor     -> 'SignalsToken' optIndAudsignalParm : '$2' .
+indAudsignalsDescriptor -> 'SignalsToken' optIndAudsignalParm : '$2' .
 
 
 optIndAudsignalParm -> 'LBRKT' 'RBRKT' : asn1_NOVALUE .
@@ -839,10 +928,12 @@ optIndAudsignalParm -> 'LBRKT' indAudsignalParm 'RBRKT'  : '$2' .
 indAudsignalParm -> indAudsignalList  : {seqSigList, '$1'} .
 indAudsignalParm -> signalRequest     : {signal, ensure_indAudSignal('$1')} .
 
+indAudsignalList -> 'SignalListToken' 'EQUAL' signalListId : 
+                     #'IndAudSeqSigList'{id = ensure_uint16('$3')} .
 indAudsignalList -> 'SignalListToken' 'EQUAL' signalListId
                     'LBRKT' signalListParm 'RBRKT' : 
-                     #'IndAudSeqSigList'{id = ensure_uint16('$3'),
-					   signalList = 
+                     #'IndAudSeqSigList'{id         = ensure_uint16('$3'),
+					 signalList = 
                                            ensure_indAudSignalListParm('$5')} .
 
 
@@ -862,44 +953,47 @@ eventStream                -> 'StreamToken' 'EQUAL' streamID : '$3' .
 %% 
 %% v2 - end
 
-notifyRequest        -> 'NotifyToken' 'EQUAL' terminationID
-                        'LBRKT' notifyRequestBody 'RBRKT'
-                      : make_commandRequest({notifyReq, '$1'},
-					    setelement(#'NotifyRequest'.terminationID, '$5', ['$3'])) .
+notifyRequest     -> 'NotifyToken' 'EQUAL' termIDList 
+                     'LBRKT' notifyRequestBody 'RBRKT' :
+                     NR = setelement(#'NotifyRequest'.terminationID, 
+                                     '$5', '$3'),
+                     make_commandRequest({notifyReq, '$1'}, NR) .
 
-notifyRequestBody    -> observedEventsDescriptor  
-                            : #'NotifyRequest'{observedEventsDescriptor = '$1'}.
-notifyRequestBody    -> errorDescriptor
-                            : #'NotifyRequest'{errorDescriptor = '$1'}.
+notifyRequestBody -> observedEventsDescriptor  : 
+                     #'NotifyRequest'{observedEventsDescriptor = '$1'}.
+notifyRequestBody -> errorDescriptor :
+                     #'NotifyRequest'{errorDescriptor = '$1'}.
 
-notifyReply          -> 'NotifyToken' 'EQUAL' terminationID notifyReplyBody
-			    : {notifyReply,
-			       #'NotifyReply'{terminationID = ['$3'],
-					      errorDescriptor = '$4'}} .
+notifyReply       -> 'NotifyToken' 'EQUAL' termIDList notifyReplyBody : 
+                     {notifyReply, #'NotifyReply'{terminationID   = '$3',
+					          errorDescriptor = '$4'}} .
 
-notifyReplyBody      -> 'LBRKT' errorDescriptor 'RBRKT' : '$2'.
-notifyReplyBody      -> '$empty' : asn1_NOVALUE .
+notifyReplyBody   -> 'LBRKT' errorDescriptor 'RBRKT' : '$2'.
+notifyReplyBody   -> '$empty' : asn1_NOVALUE .
 
-serviceChangeRequest -> 'ServiceChangeToken' 'EQUAL' terminationID
-                        'LBRKT' serviceChangeDescriptor 'RBRKT'
-                      : make_commandRequest({serviceChangeReq, '$1'},
-					    #'ServiceChangeRequest'{terminationID = ['$3'],
+serviceChangeRequest -> 'ServiceChangeToken' 'EQUAL' termIDList 
+                        'LBRKT' serviceChangeDescriptor 'RBRKT' : 
+                        make_commandRequest({serviceChangeReq, '$1'},
+					    #'ServiceChangeRequest'{terminationID = '$3',
 								    serviceChangeParms = '$5'}) .
 
-serviceChangeReply   -> 'ServiceChangeToken' 'EQUAL' terminationID serviceChangeReplyBody
-			: {serviceChangeReply,
-	                   #'ServiceChangeReply'{terminationID = ['$3'],
-						 serviceChangeResult = '$4'}} .
+serviceChangeReply   -> 'ServiceChangeToken' 'EQUAL' termIDList 
+                        serviceChangeReplyBody : 
+                        {serviceChangeReply,
+	                 #'ServiceChangeReply'{terminationID       = '$3',
+					       serviceChangeResult = '$4'}} .
 
-serviceChangeReplyBody -> 'LBRKT' errorDescriptor 'RBRKT'
-			      : {errorDescriptor, '$2'} .
-serviceChangeReplyBody -> 'LBRKT' serviceChangeReplyDescriptor 'RBRKT'
-			      : {serviceChangeResParms, '$2'} .
-serviceChangeReplyBody -> '$empty' : {serviceChangeResParms, #'ServiceChangeResParm'{}}.
+serviceChangeReplyBody -> 'LBRKT' errorDescriptor 'RBRKT' : 
+			  {errorDescriptor, '$2'} .
+serviceChangeReplyBody -> 'LBRKT' serviceChangeReplyDescriptor 'RBRKT' :
+			  {serviceChangeResParms, '$2'} .
+serviceChangeReplyBody -> '$empty' : 
+                          {serviceChangeResParms, #'ServiceChangeResParm'{}}.
 
-errorDescriptor      -> 'ErrorToken' 'EQUAL' errorCode 'LBRKT' errorText 'RBRKT'
-                            : #'ErrorDescriptor'{errorCode = '$3',
-                                                 errorText = '$5'} .
+errorDescriptor      -> 'ErrorToken' 'EQUAL' errorCode 'LBRKT' 
+                        errorText 'RBRKT' : 
+                        #'ErrorDescriptor'{errorCode = '$3',
+                                           errorText = '$5'} .
 
 errorCode            -> safeToken : ensure_uint('$1', 0, 999) .
 
@@ -907,6 +1001,8 @@ errorText            -> 'QuotedChars' : value_of('$1') .
 errorText            -> '$empty'      : asn1_NOVALUE .
 
 transactionID        -> safeToken : ensure_uint32('$1') .
+transactionID_and_segment_info -> safeToken : 
+                        make_transactionID_and_segment_info('$1') .
 
 mId                  -> domainName               : '$1' .
 mId                  -> domainAddress            : '$1' .
@@ -937,13 +1033,15 @@ portNumber           -> safeToken : ensure_uint16('$1') .
 
 mtpAddress           -> 'MtpAddressToken' : ensure_mtpAddress('$1') .
 
-%% terminationIDList    -> LBRKT terminationID *(COMMA terminationID) RBRKT .
+termIDList           -> terminationID : ['$1'] .
+termIDList           -> LSBRKT terminationID terminationIDListRepeat RSBRKT : 
+                        ['$2' | '$3'] .
 
-terminationIDList    -> 'LBRKT' terminationID terminationIDListRepeat 'RBRKT'  
-                                 : ['$2' | '$3'] .
+terminationIDList    -> 'LBRKT' terminationID terminationIDListRepeat 'RBRKT' :
+                        ['$2' | '$3'] .
 
-terminationIDListRepeat -> 'COMMA' terminationID terminationIDListRepeat
-                                 : ['$2'| '$3'] .
+terminationIDListRepeat -> 'COMMA' terminationID terminationIDListRepeat :
+                           ['$2'| '$3'] .
 terminationIDListRepeat -> '$empty' : [] .
 
 
@@ -967,7 +1065,7 @@ mediaParm            -> streamDescriptor
 mediaParm            -> terminationStateDescriptor
 			    : {termState, '$1'} .
 
-%% at-most-onc .
+%% at-most-once .
 %% Specially treated by the scanner.
 streamParm           -> 'LocalDescriptorToken'
 		      : {local, #'LocalRemoteDescriptor'{propGrps = ensure_prop_groups('$1')} } .
@@ -1055,8 +1153,9 @@ valueList            -> '$empty' : [] .
 
 
 eventBufferDescriptor -> 'EventBufferToken' : [] .
-eventBufferDescriptor -> 'EventBufferToken' 'LBRKT' eventSpec eventSpecList 'RBRKT'
-			 : ['$3' | '$4'] .
+eventBufferDescriptor -> 'EventBufferToken' 'LBRKT' eventSpec 
+                                                    eventSpecList 'RBRKT' : 
+			 ['$3' | '$4'] .
 
 eventSpecList        -> 'COMMA' eventSpec eventSpecList : ['$2' | '$3'] .
 eventSpecList        -> '$empty' : [] .
@@ -1068,16 +1167,16 @@ terminationStateParm -> serviceStates      : {serviceState, '$1'} .
 terminationStateParm -> eventBufferControl : {eventBufferControl, '$1'} .
 terminationStateParm -> propertyParm       : {propertyParm, '$1'} .
 
-serviceStates        -> 'ServiceStatesToken' 'EQUAL' serviceState : '$3' .
+serviceStates        -> 'ServiceStatesToken' 'EQUAL' serviceStatesValue : '$3'.
 
-serviceState         -> 'TestToken'     : test . 
-serviceState         -> 'OutOfSvcToken' : outOfSvc .
-serviceState         -> 'InSvcToken'    : inSvc .
+serviceStatesValue   -> 'TestToken'     : test . 
+serviceStatesValue   -> 'OutOfSvcToken' : outOfSvc .
+serviceStatesValue   -> 'InSvcToken'    : inSvc .
 
-eventBufferControl   -> 'BufferToken' 'EQUAL' eventBufferControlState : '$3' .
+eventBufferControl   -> 'BufferToken' 'EQUAL' eventBufferControlValue : '$3' .
 
-eventBufferControlState -> 'OffToken'      : off .
-eventBufferControlState -> 'LockStepToken' : lockStep .
+eventBufferControlValue -> 'OffToken'      : off .
+eventBufferControlValue -> 'LockStepToken' : lockStep .
 
 muxDescriptor        -> 'MuxToken' 'EQUAL' muxType  terminationIDList : 
                         #'MuxDescriptor'{muxType  = '$3',
@@ -1107,16 +1206,30 @@ requestedEventBody   -> 'LBRKT' eventParameter eventParameters 'RBRKT' :
 			 merge_eventParameters(['$2' | '$3']) .
 requestedEventBody   -> '$empty' : #'RequestedEvent'{evParList = []} .
 
+
+notifyRegulated      -> 'NotifyRegulatedToken' : 
+                        #'RegulatedEmbeddedDescriptor'{} .
+notifyRegulated      -> 'NotifyRegulatedToken' 'LBRKT' embedWithSig 'RBRKT' : 
+                        make_RegulatedEmbeddedDescriptor('$3') .
+notifyRegulated      -> 'NotifyRegulatedToken' 'LBRKT' embedNoSig 'RBRKT' : 
+                        make_RegulatedEmbeddedDescriptor('$3') .
+
+notifyBehaviour      -> 'NotifyImmediateToken' : {notifyImmediate, 'NULL'} .
+notifyBehaviour      -> 'NeverNotifyToken'     : {neverNotify,     'NULL'} .
+notifyBehaviour      -> notifyRegulated        : {notifyRegulated, '$1'} .
+     
 eventParameters      -> 'COMMA' eventParameter eventParameters : 
                         ['$2' | '$3'] .
 eventParameters      -> '$empty' : [] .
 
 %% at-most-once each of embedOrKeepActive , eventDM or eventStream
-eventParameter       -> 'KeepActiveToken'   : keepActive .
-eventParameter       -> embedWithSig        : '$1'.
-eventParameter       -> embedNoSig          : '$1'.
-eventParameter       -> eventDM             : '$1'.
-eventParameter       -> eventStreamOrOther  : '$1'.
+eventParameter       -> 'KeepActiveToken'           : keepActive .
+eventParameter       -> embedWithSig                : '$1'.
+eventParameter       -> embedNoSig                  : '$1'.
+eventParameter       -> eventDM                     : '$1'.
+eventParameter       -> eventStreamOrOther          : '$1'.
+eventParameter       -> notifyBehaviour             : {notifyBehaviour, '$1'}.
+eventParameter       -> 'ResetEventsDescriptorToken' : resetEventsDescriptor .
 
 embedWithSig         -> 'EmbedToken' 'LBRKT' signalsDescriptor 
 			    'COMMA' embedFirst 'RBRKT'
@@ -1150,10 +1263,12 @@ secondEventParameters -> 'COMMA' secondEventParameter secondEventParameters : ['
 secondEventParameters -> '$empty' : [] .
 
 %% at-most-once each of embedOrKeepActive , eventDM or eventStream
-secondEventParameter -> 'KeepActiveToken'    : keepActive .
-secondEventParameter -> embedSig             : '$1' .
-secondEventParameter -> eventDM              : '$1' .
-secondEventParameter -> eventStreamOrOther   : '$1' .
+secondEventParameter -> 'KeepActiveToken'           : keepActive .
+secondEventParameter -> embedSig                    : '$1' .
+secondEventParameter -> eventDM                     : '$1' .
+secondEventParameter -> eventStreamOrOther          : '$1' .
+secondEventParameter -> notifyBehaviour             : {notifyBehaviour, '$1'}.
+secondEventParameter -> 'ResetEventsDescriptorToken' : resetEventsDescriptor .
 
 embedSig             -> 'EmbedToken' 'LBRKT' signalsDescriptor 'RBRKT'
 			    : {second_embed, '$3'} .
@@ -1203,8 +1318,9 @@ sigParameters        -> '$empty' : [] .
 %%                             OtherReasonToken ) 
 %%    sigDirection         = DirectionToken EQUAL direction
 %%    sigRequestID         = RequestIDToken EQUAL RequestID
+%%    sigIntsigDelay       = IntsigDelayToken EQUAL UINT16
 
-sigParameter -> 'StreamToken'     'EQUAL' streamID : 
+sigParameter -> 'StreamToken' 'EQUAL' streamID : 
                 {stream, '$3'}.
 sigParameter -> 'SignalTypeToken' 'EQUAL' signalType : 
                 {signal_type, '$3'} .
@@ -1214,8 +1330,12 @@ sigParameter -> 'NotifyCompletionToken' 'EQUAL'
 		'LBRKT' notificationReason notificationReasons 'RBRKT' : 
                 {notify_completion, ['$4' | '$5']} .
 sigParameter -> 'KeepActiveToken' : keepActive .
-sigParameter -> 'DirectionToken' 'EQUAL' direction : {direction, '$3'} .
-sigParameter -> 'RequestIDToken' 'EQUAL' requestID : {requestId, '$3'} .
+sigParameter -> 'DirectionToken' 'EQUAL' direction : 
+                {direction, '$3'} .
+sigParameter -> 'RequestIDToken' 'EQUAL' requestID : 
+                {requestId, '$3'} .
+sigParameter -> 'IntsigDelayToken' 'EQUAL' safeToken : 
+                {intersigDelay, ensure_uint16('$3')} .
 sigParameter -> safeToken parmValue : 
                 {other, ensure_NAME('$1'), '$2'}.
 
@@ -1234,6 +1354,7 @@ notificationReason   -> 'TimeOutToken' : onTimeOut .
 notificationReason   -> 'InterruptByEventToken' : onInterruptByEvent .
 notificationReason   -> 'InterruptByNewSignalsDescrToken' : onInterruptByNewSignalDescr .
 notificationReason   -> 'OtherReasonToken' : otherReason .
+notificationReason   -> 'IterationToken' : iteration .
 
 signalList           -> 'SignalListToken' 'EQUAL' signalListId
                         'LBRKT' signalListParm signalListParms 'RBRKT'
@@ -1288,12 +1409,13 @@ modemTypeList 	     -> 'COMMA' modemType modemTypeList.
 modemTypeList 	     -> '$empty'.
 modemType            -> safeToken.
        
-optPropertyParms     -> 'LBRKT' propertyParm propertyParms 'RBRKT' : 
+optPropertyParms     -> 'LBRKT' propertyParm propertyParmList 'RBRKT' : 
                         ['$2' | '$3'] .
 optPropertyParms     -> '$empty' : [] .
        
-propertyParms  	     -> 'COMMA' propertyParm propertyParms :  ['$2' | '$3'] .
-propertyParms 	     -> '$empty' : [] .
+propertyParms        -> propertyParm propertyParmList : ['$1' | '$2'] .
+propertyParmList     -> 'COMMA' propertyParm propertyParmList :  ['$2' | '$3'] .
+propertyParmList     -> '$empty' : [] .
 
 % parmName             -> safeToken : ensure_NAME('$1') .
 
@@ -1382,34 +1504,39 @@ statisticsParameters -> 'COMMA' statisticsParameter statisticsParameters  : ['$2
 statisticsParameters -> '$empty' : [] .
 
 %%at-most-once per item
-statisticsParameter  -> pkgdName 
-                            : #'StatisticsParameter'{statName  = '$1',
-                                                     statValue = asn1_NOVALUE} .
-statisticsParameter  -> pkgdName 'EQUAL' value
-                            : #'StatisticsParameter'{statName  = '$1',
-                                                     statValue = ['$3']} .
+statisticsParameter  -> pkgdName :
+                        #'StatisticsParameter'{statName  = '$1',
+                                               statValue = asn1_NOVALUE} .
+statisticsParameter  -> pkgdName 'EQUAL' value :
+                        #'StatisticsParameter'{statName  = '$1',
+                                               statValue = ['$3']} .
+statisticsParameter  -> pkgdName 'EQUAL' 'LSBRKT' value valueList 'RSBRKT' :
+                        #'StatisticsParameter'{statName  = '$1',
+                                               statValue = ['$4' | '$5']} .
 
-topologyDescriptor   -> 'TopologyToken' 'LBRKT' topologyTriple
-                        topologyTripleList 'RBRKT' : ['$3' | '$4'] .
 
-terminationA         -> terminationID  : '$1' .
+topologyDescriptor   -> 'TopologyToken' 'LBRKT' 
+                        topologyDescComp topologyDescCompList 'RBRKT' :
+                        merge_topologyDescriptor(['$3' | '$4']) .
 
-terminationB         -> terminationID  : '$1' .
+topologyDescComp     -> terminationID         : {tid, '$1'} .
+topologyDescComp     -> eventStream           : {sid, '$1'} .
+topologyDescComp     -> topologyDirection     : '$1' .
+    
+topologyDescCompList -> '$empty' : [] .
+topologyDescCompList -> 'COMMA' topologyDescComp topologyDescCompList :
+                        ['$2' | '$3'] .
+    
+topologyDirection -> 'BothwayToken'        : {direction, bothway} .
+topologyDirection -> 'IsolateToken'        : {direction, isolate} .
+topologyDirection -> 'OnewayToken'         : {direction, oneway} .
+topologyDirection -> 'OnewayExternalToken' : {direction_ext, onewayexternal} .
+topologyDirection -> 'OnewayBothToken'     : {direction_ext, onewayboth} .
 
-topologyTriple       -> terminationA 'COMMA' 
-                        terminationB 'COMMA' 
-                        topologyDirection :
-                          #'TopologyRequest'{terminationFrom   = '$1',
-                                             terminationTo     = '$3',
-                                             topologyDirection = '$5'} .
+iepsValue            -> 'IEPSToken' 'EQUAL' onOrOff : '$3' .
 
-topologyTripleList   -> '$empty' : [] .
-topologyTripleList   -> 'COMMA' topologyTriple topologyTripleList :
-                          ['$2' | '$3'] .
-
-topologyDirection    -> 'BothwayToken' : bothway .
-topologyDirection    -> 'IsolateToken' : isolate .
-topologyDirection    -> 'OnewayToken'  : oneway .
+emergencyValue -> 'EmergencyValueToken' 'EQUAL' 'EmergencyToken'    : true .
+emergencyValue -> 'EmergencyValueToken' 'EQUAL' 'EmergencyOffToken' : false .
 
 priority             -> 'PriorityToken' 'EQUAL' safeToken : ensure_uint16('$3') .
 
@@ -1425,12 +1552,13 @@ safeToken            -> 'AuditCapToken'         : make_safe_token('$1') .
 safeToken            -> 'AuditValueToken'       : make_safe_token('$1') .
 safeToken            -> 'AuthToken'             : make_safe_token('$1') .
 %% v3-safeToken            -> 'BothToken'             : make_safe_token('$1') . % v3
-safeToken            -> 'BothwayToken'          : make_safe_token('$1') .
+%% v3-safeToken            -> 'BothwayToken'          : make_safe_token('$1') .
 safeToken            -> 'BriefToken'            : make_safe_token('$1') .
-safeToken            -> 'BufferToken'           : make_safe_token('$1') .
+%% v3-safeToken            -> 'BufferToken'           : make_safe_token('$1') .
 safeToken            -> 'CtxToken'              : make_safe_token('$1') .
 %% v3-safeToken            -> 'ContextAttrToken'      : make_safe_token('$1') . % v3
 safeToken            -> 'ContextAuditToken'     : make_safe_token('$1') .
+%% v3-safeToken            -> 'ContextListToken'      : make_safe_token('$1') . % v3
 %% v2-safeToken            -> 'DigitMapToken'         : make_safe_token('$1') .
 %% safeToken         -> 'DigitMapDescriptorToken' : make_safe_token('$1') .
 %% v3-
@@ -1459,7 +1587,7 @@ safeToken            -> 'InactiveToken'         : make_safe_token('$1') .
 %% v3-safeToken            -> 'InternalToken'         : make_safe_token('$1') . % v3
 safeToken            -> 'InterruptByEventToken' : make_safe_token('$1') .
 safeToken            -> 'InterruptByNewSignalsDescrToken' : make_safe_token('$1') .
-safeToken            -> 'IsolateToken'          : make_safe_token('$1') .
+%% v3-safeToken            -> 'IsolateToken'          : make_safe_token('$1') .
 safeToken            -> 'InSvcToken'            : make_safe_token('$1') .
 safeToken            -> 'KeepActiveToken'       : make_safe_token('$1') .
 %% safeToken         -> 'LocalToken'            : make_safe_token('$1') .
@@ -1471,7 +1599,7 @@ safeToken            -> 'LockStepToken'         : make_safe_token('$1') .
 %% safeToken         -> 'MegacopToken'          : make_safe_token('$1') .
 safeToken            -> 'MethodToken'           : make_safe_token('$1') .
 safeToken            -> 'MgcIdToken'            : make_safe_token('$1') .
-safeToken            -> 'ModeToken'             : make_safe_token('$1') .
+%% v3-safeToken            -> 'ModeToken'             : make_safe_token('$1') .
 %% BMK BMK safeToken            -> 'ModifyToken'           : make_safe_token('$1') .
 %% v2-safeToken            -> 'ModemToken'            : make_safe_token('$1') .
 %% BMK BMK safeToken            -> 'MoveToken'             : make_safe_token('$1') .
@@ -1482,7 +1610,9 @@ safeToken            -> 'NotifyToken'           : make_safe_token('$1') .
 safeToken            -> 'NotifyCompletionToken' : make_safe_token('$1') .
 safeToken            -> 'Nx64Token'             : make_safe_token('$1') .
 %% v2-safeToken            -> 'ObservedEventsToken'   : make_safe_token('$1') .
-safeToken            -> 'OnewayToken'           : make_safe_token('$1') .
+%% v3-safeToken            -> 'OnewayToken'           : make_safe_token('$1') .
+%% v3-safeToken            -> 'OnewayExternalToken'   : make_safe_token('$1') .
+%% v3-safeToken            -> 'OnewayBothToken'       : make_safe_token('$1') .
 safeToken            -> 'OffToken'              : make_safe_token('$1') .
 safeToken            -> 'OnToken'               : make_safe_token('$1') .
 safeToken            -> 'OnOffToken'            : make_safe_token('$1') .
@@ -1501,12 +1631,12 @@ safeToken            -> 'ResponseAckToken'      : make_safe_token('$1') .
 safeToken            -> 'RestartToken'          : make_safe_token('$1') .
 %% safeToken         -> 'RemoteToken'           : make_safe_token('$1') .
 %% safeToken         -> 'RemoteDescriptorToken' : make_safe_token('$1') .
-safeToken            -> 'ReservedGroupToken'    : make_safe_token('$1') .
-safeToken            -> 'ReservedValueToken'    : make_safe_token('$1') .
+%% v3-safeToken            -> 'ReservedGroupToken'    : make_safe_token('$1') .
+%% v3-safeToken            -> 'ReservedValueToken'    : make_safe_token('$1') .
 safeToken            -> 'SendonlyToken'         : make_safe_token('$1') .
 safeToken            -> 'SendrecvToken'         : make_safe_token('$1') .
 safeToken            -> 'ServicesToken'         : make_safe_token('$1') .
-safeToken            -> 'ServiceStatesToken'    : make_safe_token('$1') .
+%% v3-safeToken            -> 'ServiceStatesToken'    : make_safe_token('$1') .
 safeToken            -> 'ServiceChangeToken'    : make_safe_token('$1') .
 %% v3-safeToken            -> 'ServiceChangeIncompleteToken' : make_safe_token('$1') . % v3 
 safeToken            -> 'ServiceChangeAddressToken' : make_safe_token('$1') .
@@ -1539,6 +1669,6 @@ Erlang code.
 %% of the generated .erl file by the HiPE compiler.  Please do not remove.
 -compile([{hipe,[{regalloc,linear_scan}]}]).
 
--include("megaco_text_parser_prev3a.hrl").
+-include("megaco_text_parser_v3.hrl").
 
 

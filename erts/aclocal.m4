@@ -410,6 +410,8 @@ dnl
 AC_DEFUN(LM_FIND_ETHR_LIB,
 [
 
+ethr_modified_default_stack_size=
+
 dnl Name of lib where ethread implementation is located
 ethr_lib_name=ethread
 
@@ -428,34 +430,32 @@ dnl win32?
 AC_MSG_CHECKING([for native win32 threads])
 if test "X$host_os" = "Xwin32"; then
     AC_MSG_RESULT(yes)
+    # * _WIN32_WINNT >= 0x0400 is needed for
+    #   TryEnterCriticalSection
+    # * _WIN32_WINNT >= 0x0403 is needed for
+    #   InitializeCriticalSectionAndSpinCount
+    # The ethread lib will refuse to build if _WIN32_WINNT < 0x0403.
+    #
+    # -D_WIN32_WINNT should have been defined in $CPPFLAGS; fetch it
+    # and save it in ETHR_DEFS.
+    found_win32_winnt=no
+    for cppflag in $CPPFLAGS; do
+	case $cppflag in
+	    -D_WIN32_WINNT*)
+		ETHR_DEFS="$ETHR_DEFS $cppflag"
+		found_win32_winnt=yes
+		break
+		;;
+	    *)
+		;;
+	esac
+    done
+    if test $found_win32_winnt = no; then
+	AC_MSG_ERROR([-D_WIN32_WINNT missing in CPPFLAGS])
+    fi
     ETHR_X_LIBS=
-    ETHR_DEFS=
     ETHR_THR_LIB_BASE=win32_threads
     AC_DEFINE(ETHR_WIN32_THREADS, 1, [Define if you have win32 threads])
-
-    AC_CACHE_CHECK([for InitializeCriticalSectionAndSpinCount],
-		ethr_cv_func_initializecriticalsectionandspincount,
-		AC_TRY_LINK([#include <windows.h>],
-			[CRITICAL_SECTION cs;
-			InitializeCriticalSectionAndSpinCount(&cs, 1000);],
-			ethr_cv_func_initializecriticalsectionandspincount=yes,
-			ethr_cv_func_initializecriticalsectionandspincount=no))
-    if test $ethr_cv_func_initializecriticalsectionandspincount = yes; then
-    	AC_DEFINE(ETHR_HAVE_INITIALIZECRITICALSECTIONANDSPINCOUNT, 1, \
-[Define if you have the InitializeCriticalSectionAndSpinCount function])
-    fi
-
-    AC_CACHE_CHECK([for TryEnterCriticalSection],
-		ethr_cv_func_tryentercriticalsection,
-		AC_TRY_LINK([#include <windows.h>],
-			[CRITICAL_SECTION cs;
-			TryEnterCriticalSection(&cs);],
-			ethr_cv_func_tryentercriticalsection=yes,
-			ethr_cv_func_tryentercriticalsection=no))
-    if test $ethr_cv_func_tryentercriticalsection = yes; then
-    	AC_DEFINE(ETHR_HAVE_TRYENTERCRITICALSECTION, 1, \
-[Define if you have the TryEnterCriticalSection function])
-    fi
 else
     AC_MSG_RESULT(no)
 
@@ -491,6 +491,10 @@ dnl On ofs1 the '-pthread' switch should be used
 	ETHR_THR_LIB_BASE=pthread
     	AC_DEFINE(ETHR_PTHREADS, 1, [Define if you have pthreads])
 	case $host_os in
+	    openbsd*)
+		# The default stack size is insufficient for our needs
+		# on OpenBSD. We increase it to 256 kilo words.
+		ethr_modified_default_stack_size=256;;
 	    solaris*)
 		ETHR_DEFS="$ETHR_DEFS -D_POSIX_PTHREAD_SEMANTICS" ;;
 	    linux*)
@@ -620,6 +624,9 @@ dnl On ofs1 the '-pthread' switch should be used
 	AC_CHECK_FUNC(pthread_spin_lock, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_SPIN_LOCK, 1, \
 [Define if you have the pthread_spin_lock function.]))
+	AC_CHECK_FUNC(pthread_rwlock_init, \
+			AC_DEFINE(ETHR_HAVE_PTHREAD_RWLOCK_INIT, 1, \
+[Define if you have the pthread_rwlock_init function.]))
 	AC_CHECK_FUNC(pthread_attr_setguardsize, \
 			AC_DEFINE(ETHR_HAVE_PTHREAD_ATTR_SETGUARDSIZE, 1, \
 [Define if you have the pthread_attr_setguardsize function.]))
@@ -630,6 +637,14 @@ dnl On ofs1 the '-pthread' switch should be used
 	CPPFLAGS=$saved_cppflags
 
     fi
+fi
+
+AC_MSG_CHECKING([whether default stack size should be modified])
+if test "x$ethr_modified_default_stack_size" != "x"; then
+	AC_DEFINE_UNQUOTED(ETHR_MODIFIED_DEFAULT_STACK_SIZE, $ethr_modified_default_stack_size, [Define if you want to modify the default stack size])
+	AC_MSG_RESULT([yes; to $ethr_modified_default_stack_size kilo words])
+else
+	AC_MSG_RESULT([no])
 fi
 
 if test "x$ETHR_THR_LIB_BASE" != "x"; then
@@ -830,17 +845,25 @@ case $erl_gethrvtime in
 	  }
 	], erl_clock_gettime=true, erl_clock_gettime=false, erl_clock_gettime=false)
 	LIBS=$save_libs
-	case $erl_clock_gettime in
-	  true)
-		AC_DEFINE(HAVE_CLOCK_GETTIME,[],
-			[define if clock_gettime() works for getting process time])
-		AC_MSG_RESULT(using clock_gettime)
-		LIBRT=-lrt
-		;;
-	  *)
-		AC_MSG_RESULT(not working)
-		LIBRT=$xrtlib
-		;;
+	case $host_os in
+		linux*)
+			AC_MSG_RESULT([not stable, disabled])
+			LIBRT=$xrtlib
+			;;
+		*)
+			case $erl_clock_gettime in
+	  			true)
+					AC_DEFINE(HAVE_CLOCK_GETTIME,[],
+						  [define if clock_gettime() works for getting process time])
+					AC_MSG_RESULT(using clock_gettime)
+					LIBRT=-lrt
+					;;
+	  			*)
+					AC_MSG_RESULT(not working)
+					LIBRT=$xrtlib
+					;;
+			esac
+			;;
 	esac
 	AC_SUBST(LIBRT)
 	;;

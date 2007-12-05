@@ -21,6 +21,13 @@
 -module(ftp).
 
 -behaviour(gen_server).
+-behaviour(inets_service).
+
+-deprecated({open, 1, next_major_release}).
+-deprecated({open, 2, next_major_release}).
+-deprecated({open, 3, next_major_release}).
+-deprecated({close, 1, next_major_release}).
+-deprecated({force_active, 1, next_major_release}).
 
 %%  API - Client interface
 -export([cd/2, close/1, delete/2, formaterror/1, 
@@ -35,14 +42,18 @@
 	 send_chunk_start/2, send_chunk/2, send_chunk_end/1, 
 	 type/2, user/3, user/4, account/2,
 	 append/3, append/2, append_bin/3,
-	 append_chunk/2, append_chunk_end/1, append_chunk_start/2]).
+	 append_chunk/2, append_chunk_end/1, append_chunk_start/2, info/1]).
 
 %% gen_server callbacks
 -export([init/1, handle_call/3, handle_cast/2, 
 	 handle_info/2, terminate/2, code_change/3]).
 
 %% supervisor callbacks
--export([start_link_sup/1]).
+-export([start_link/1]).
+
+%% Behavior callbacks
+-export([start_standalone/1, start_service/1, 
+	 stop_service/1, services/0, service_info/1]).
 
 -include("ftp_internal.hrl").
 
@@ -86,21 +97,19 @@
 %%%  API - CLIENT FUNCTIONS
 %%%=========================================================================
 %%--------------------------------------------------------------------------
-%% open(Host, <Port>, <Flags>) -> {ok, Pid} | {error, ehost}
-%%	Host = string(), 
+%% open(HostOrOtpList, <Port>, <Flags>) -> {ok, Pid} | {error, ehost}
+%%	HostOrOtpList = string() | [{option_list, Options}] 
 %%      Port = integer(), 
 %%      Flags = [Flag], 
 %%      Flag = verbose | debug | trace
 %%
 %% Description:  Start an ftp client and connect to a host.
 %%--------------------------------------------------------------------------
-%% The only option was the host in textual form
 open({option_list, Options})->
-    ensure_started(),
     Flags = key_search(flags, Options, []),
     {ok, Pid} =  ftp_sup:start_child([[[{client, self()}, Flags], []]]),
     call(Pid, {open, ip_comm, Options}, pid);
-	 
+
 %% The only option was the tuple form of the ip-number
 open(Host) when tuple(Host) ->
     open(Host, ?FTP_PORT, []);
@@ -116,7 +125,6 @@ open(Host, Flags) when list(Flags) ->
     open(Host, ?FTP_PORT, Flags).
 
 open(Host, Port, Flags) when integer(Port), list(Flags) ->
-    ensure_started(),
     {ok, Pid} = ftp_sup:start_child([[[{client, self()}, Flags], []]]), 
     Opts = [{host, Host}, {port, Port}| Flags], 
     call(Pid, {open, ip_comm, Opts}, pid).
@@ -467,7 +475,7 @@ close(Pid) ->
 %%--------------------------------------------------------------------------
 force_active(Pid) ->
     error_logger:info_report("This function is deprecated use the mode flag "
-			     "to open/[1,2,3] instead", []),
+			     "instead", []),
     call(Pid, force_active, atom).
 
 %%--------------------------------------------------------------------------
@@ -478,6 +486,34 @@ force_active(Pid) ->
 %%--------------------------------------------------------------------------
 formaterror(Tag) ->
   ftp_response:error_string(Tag).
+
+info(Pid) ->
+    call(Pid, info, list).
+%%%========================================================================
+%%% Behavior callbacks
+%%%========================================================================
+start_standalone(Options) ->
+    Flags = key_search(flags, Options, []),
+    {ok, Pid} = start_link([[{client, self()}, Flags], []]),
+    call(Pid, {open, ip_comm, Options}, pid).
+
+start_service(Options) ->
+    Flags = key_search(flags, Options, []),
+    {ok, Pid} =  ftp_sup:start_child([[[{client, self()}, Flags], []]]),
+    call(Pid, {open, ip_comm, Options}, pid).
+
+stop_service(Pid) ->
+    close(Pid).
+
+services() ->
+    [{ftpc, Pid} || {_, Pid, _, _} <- 
+			supervisor:which_children(ftp_sup)].
+service_info(Pid) ->
+    {ok, Info} = call(Pid, info, list),
+    {ok, [proplists:lookup(mode, Info), 
+	  proplists:lookup(local_port, Info),
+	  proplists:lookup(peer, Info),
+	  proplists:lookup(peer_port, Info)]}.
 
 %%%========================================================================
 %%% gen_server callback functions 
@@ -532,6 +568,20 @@ init([{client, ClientPid}, Flags]) ->
 %%                                      {stop, Reason, Reply, State}   |
 %% Description: Handle incoming requests. 
 %%-------------------------------------------------------------------------
+handle_call({_, info}, _, #state{verbose = Verbose,
+			    mode = Mode,
+			    timeout = Timeout,
+			    ip_v6_disabled = IPv6Disabled,
+			    csock = Socket,
+			    progress = Progress} = State) ->
+    {ok, {_, LocalPort}} = inet:sockname(Socket),
+    {ok, {Address, Port}} = inet:peername(Socket),
+    Options = [{flags, [{verbose, Verbose}, {ip_v6_disabled, IPv6Disabled}]},
+	       {mode, Mode}, {peer, Address}, {local_port, LocalPort},
+	       {peer_port, Port}, 
+	       {timeout, Timeout}, {progress, Progress}],
+    {reply, {ok, Options}, State};
+
 handle_call({Pid, _}, _, #state{owner = Owner} = State) when Owner =/= Pid ->
     {reply, {error, not_connection_owner}, State};
 
@@ -932,13 +982,13 @@ code_change(_, State, _) ->
 %% Start/stop
 %%%=========================================================================
 %%--------------------------------------------------------------------------
-%% start_link_sup([Args, Options]) -> {ok, Pid} | {error, Reason} 
+%% start_link([Args, Options]) -> {ok, Pid} | {error, Reason} 
 %%                                    
 %% Description: Callback function for the ftp supervisor. It is called 
-%%            : when open/[1,3] calls ftp_sup:start_child/1 to start an 
-%%            : instance of the ftp process.
+%%            : when start_service/1 calls ftp_sup:start_child/1 to start an 
+%%            : instance of the ftp process. Also called by start_standalone/1
 %%--------------------------------------------------------------------------
-start_link_sup([Args, Options]) ->
+start_link([Args, Options]) ->
     gen_server:start_link(?MODULE, Args, Options).
 
 %%% Stop functionality is handled by close/1
@@ -1563,21 +1613,6 @@ verbose(Lines, true, Direction) ->
     erlang:display(DirStr++Str);
 verbose(_, false,_) ->
     ok.
-
-ensure_started() ->
-    %% Start of the inets application should really be handled by the 
-    %% application using inets. 
-    case application:start(inets) of
-	{error,{already_started,inets}} ->
-	    ok;
-	{error,{{already_started, _}, % Started as an included application
-		{inets_app,start, _}}} ->
-	    ok;
-	ok ->
-	    error_logger:info_report("The inets application was not started."
-				     " Has now been started as a temporary" 
-				     " application.")
-    end.
 
 progress(Options) ->
     ftp_progress:start_link(Options).

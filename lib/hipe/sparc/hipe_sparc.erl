@@ -448,10 +448,10 @@
 	 is_imm/1, imm_value/1, %% mk_spill/1,
 	 is_spill/1, spill_pos/1]).
 
--include("hipe_sparc_sdesc.hrl").
--include("hipe_sparc.hrl").
 %%-define(DO_ASSERT,true).
 -include("../main/hipe.hrl").
+-include("hipe_sparc_sdesc.hrl").
+-include("hipe_sparc.hrl").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

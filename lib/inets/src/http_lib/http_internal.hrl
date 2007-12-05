@@ -20,6 +20,7 @@
 
 -define(HTTP_MAX_BODY_SIZE, nolimit).
 -define(HTTP_MAX_HEADER_SIZE, 10240).
+-define(HTTP_MAX_URI_SIZE, nolimit).
 
 %%% Response headers
 -record(http_response_h,{

@@ -17,7 +17,7 @@
 %%
 -module(qlc).
 
-%%% Purpose: Main API module QLC. Functions for evaluation.
+%%% Purpose: Main API module qlc. Functions for evaluation.
 %%% Other files:
 %%% qlc_pt. Implements the parse transform.
 
@@ -69,13 +69,15 @@
                      % match specification; [T || P <- Tab, Fs]
         }).
 
--record(qlc_sort,   % qlc:sort/1,2 and qlc:keysort/2,3
+-record(qlc_sort,    % qlc:sort/1,2 and qlc:keysort/2,3
         {h,
-         keypos,    % sort | {keysort, KeyPos}
+         keypos,     % sort | {keysort, KeyPos}
          unique,
-         compressed,
+         compressed, % [] | [compressed]
          order,
-         opts,
+         fs_opts,    % file_sorter options
+         tmpdir_usage = allowed, % allowed | not_allowed 
+                                 %  | warning_msg | error_msg | info_msg
          tmpdir
         }).
 
@@ -109,7 +111,9 @@
          join = any,          % any | nested_loop | merge | lookup
          tmpdir = "",         % global tmpdir
          lookup = any,        % any | bool()
-         max_list = ?MAX_LIST_SIZE  % int() >= 0
+         max_list = ?MAX_LIST_SIZE,  % int() >= 0
+         tmpdir_usage = allowed    % allowed | not_allowed 
+                                   %  | warning_msg | error_msg | info_msg
         }).
 
 -record(setup, {parent}).
@@ -154,14 +158,15 @@ cursor(QH) ->
 
 cursor(QH, Options) ->
     case {options(Options, [unique_all, cache_all, tmpdir, 
-                            spawn_options, max_list_size]),
+                            spawn_options, max_list_size, 
+                            tmpdir_usage]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [QH, Options]);
-        {[GUnique, GCache, TmpDir, SpawnOptions0, MaxList], H} ->
+        {[GUnique, GCache, TmpDir, SpawnOptions0, MaxList, TmpUsage], H} ->
             SpawnOptions = spawn_options(SpawnOptions0),
             case cursor_process(H, GUnique, GCache, TmpDir, 
-                                SpawnOptions, MaxList) of
+                                SpawnOptions, MaxList, TmpUsage) of
                 Pid when is_pid(Pid) ->
                     #qlc_cursor{c = {Pid, self()}};
                 Error ->
@@ -186,21 +191,22 @@ eval(QH) ->
     eval(QH, []).
 
 eval(QH, Options) ->
-    case {options(Options, [unique_all, cache_all, tmpdir, max_list_size]),
+    case {options(Options, [unique_all, cache_all, tmpdir, max_list_size,
+                            tmpdir_usage]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [QH, Options]);
-        {[GUnique, GCache, TmpDir, MaxList], Handle} ->
+        {[GUnique, GCache, TmpDir, MaxList, TmpUsage], Handle} ->
             try 
                 Prep = prepare_qlc(Handle, [], GUnique, GCache, 
-                                   TmpDir, MaxList),
+                                   TmpDir, MaxList, TmpUsage),
                 case setup_qlc(Prep, #setup{parent = self()}) of
                     {L, Post, _LocalPost} when is_list(L) ->
                         post_funs(Post),
                         L;
                     {Objs, Post, _LocalPost} when is_function(Objs) ->
                         try
-                            (ensure_collecting(Prep, Objs))()
+                            collect(Objs)
                         after
                             post_funs(Post)
                         end
@@ -219,14 +225,15 @@ fold(Fun, Acc0, QH) ->
     fold(Fun, Acc0, QH, []).
 
 fold(Fun, Acc0, QH, Options) ->
-    case {options(Options, [unique_all, cache_all, tmpdir, max_list_size]), 
+    case {options(Options, [unique_all, cache_all, tmpdir, max_list_size,
+                            tmpdir_usage]), 
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [Fun, Acc0, QH, Options]);
-        {[GUnique, GCache, TmpDir, MaxList], Handle} ->
+        {[GUnique, GCache, TmpDir, MaxList, TmpUsage], Handle} ->
             try
                 Prep = prepare_qlc(Handle, not_a_list, GUnique, GCache,
-                                   TmpDir, MaxList),
+                                   TmpDir, MaxList, TmpUsage),
                 case setup_qlc(Prep, #setup{parent = self()}) of
                     {Objs, Post, _LocalPost} when is_function(Objs); 
                                                   is_list(Objs) ->
@@ -272,6 +279,8 @@ format_error({file_error, FileName, Reason}) ->
 format_error({premature_eof, FileName}) ->
     io_lib:format("\"~s\": end-of-file was encountered inside some binary term", 
                   [FileName]);
+format_error({tmpdir_usage, Why}) ->
+    io_lib:format("temporary file was needed for ~w~n", [Why]);
 format_error({error, Module, Reason}) ->
     Module:format_error(Reason);
 format_error(E) ->
@@ -282,13 +291,16 @@ info(QH) ->
 
 info(QH, Options) ->
     case {options(Options, [unique_all, cache_all, flat, format, n_elements, 
-                            tmpdir, max_list_size]),
+                            tmpdir, max_list_size, tmpdir_usage]),
           get_handle(QH)} of
         {B1, B2} when B1 =:= badarg; B2 =:= badarg ->
             erlang:error(badarg, [QH, Options]);
-        {[GUnique, GCache, Flat, Format, NElements, TmpDir, MaxList], H} ->
+        {[GUnique, GCache, Flat, Format, NElements, 
+          TmpDir, MaxList, TmpUsage],
+         H} ->
             try
-                Prep = prepare_qlc(H, [], GUnique, GCache, TmpDir, MaxList),
+                Prep = prepare_qlc(H, [], GUnique, GCache, 
+                                   TmpDir, MaxList, TmpUsage),
                 Info = le_info(Prep),
                 AbstractCode = abstract(Info, Flat, NElements),
                 case Format of
@@ -319,8 +331,10 @@ keysort(KeyPos, QH, Options) ->
           get_handle(QH)} of
         {true, [TmpDir, Order, Unique,Compressed | _], H} when H =/= badarg ->
             #qlc_handle{h = #qlc_sort{h = H, keypos = {keysort,KeyPos}, 
-                                      unique = Unique, compressed = Compressed,
-                                      order = Order, opts = listify(Options), 
+                                      unique = Unique, 
+                                      compressed = Compressed,
+                                      order = Order, 
+                                      fs_opts = listify(Options), 
                                       tmpdir = TmpDir}};
         _ ->
             erlang:error(badarg, [KeyPos, QH, Options])
@@ -375,7 +389,8 @@ sort(QH, Options) ->
         {[TD, Order, Unique, Compressed | _], H} ->
             #qlc_handle{h = #qlc_sort{h = H, keypos = sort, unique = Unique, 
                                       compressed = Compressed, order = Order,
-                                      opts = listify(Options), tmpdir = TD}}
+                                      fs_opts = listify(Options), 
+                                      tmpdir = TD}}
     end.
 
 %% Note that the generated code is evaluated by (the slow) erl_eval.
@@ -511,6 +526,12 @@ options(Options0, [Key | Keys], L) when is_list(Options0) ->
                 {ok, LookUp};
             {value, {max_list_size, Max}} when is_integer(Max), Max >= 0 ->
                 {ok, Max};
+            {value, {tmpdir_usage, TmpUsage}} when TmpUsage =:= allowed;
+                                                   TmpUsage =:= not_allowed;
+                                                   TmpUsage =:= info_msg;
+                                                   TmpUsage =:= warning_msg;
+                                                   TmpUsage =:= error_msg ->
+                {ok, TmpUsage};
             {value, {unique, Unique}} when Unique; not Unique ->
                 {ok, Unique};
             {value, {cache, Cache}} when Cache; not Cache; Cache =:= list ->
@@ -596,6 +617,7 @@ default_option(flat) -> true;
 default_option(format) -> string;
 default_option(n_elements) -> infinity;
 default_option(max_list_size) -> ?MAX_LIST_SIZE;
+default_option(tmpdir_usage) -> allowed;
 default_option(cache) -> false;
 default_option(cache_all) -> false;
 default_option(unique) -> false;
@@ -680,23 +702,16 @@ listify(T) ->
          sorted = no,  % yes | no | ascending | descending
          sort_info = [], % 
          sort_info2 = [], % 'sort_info' updated with pattern info; qh is LE
+         skip_quals = [], % qualifiers to skip due to lookup
          join = {[],[]}, % {Lookup, Merge}
          n_objs = undefined,   % for join (not used yet)
          is_unique_objects = false, % bool()
          is_cached = false          % bool() (true means 'ets' or 'list')
         }).
 
-ensure_collecting(Prep, Objs) ->
-    case Prep#prepared.qh of
-        #qlc{optz = #optz{unique = false, cache = false}} ->
-            Objs;
-        _ -> 
-            fun() -> collect(Objs, []) end
-    end.
-
 %%% Cursor process functions.
 
-cursor_process(H, GUnique, GCache, TmpDir, SpawnOptions, MaxList) ->
+cursor_process(H, GUnique, GCache, TmpDir, SpawnOptions, MaxList, TmpUsage) ->
     Parent = self(),
     Setup = #setup{parent = Parent},
     CF = fun() -> 
@@ -706,8 +721,8 @@ cursor_process(H, GUnique, GCache, TmpDir, SpawnOptions, MaxList) ->
                  MonRef = erlang:monitor(process, Parent),
                  {Objs, Post, _LocalPost} = 
                      try 
-                         Prep = prepare_qlc(H, not_a_list, GUnique, 
-                                            GCache, TmpDir, MaxList),
+                         Prep = prepare_qlc(H, not_a_list, GUnique, GCache, 
+                                            TmpDir, MaxList, TmpUsage),
                          setup_qlc(Prep, Setup)
                      catch Class:Reason ->
                            Parent ! {self(), {caught, Class, Reason, 
@@ -787,7 +802,7 @@ wait_for_request(Parent, MonRef, Post) ->
             wait_for_request(Parent, MonRef, Post);
         Other ->
             error_logger:error_msg(
-              "The QLC cursor ~w received an unexpected message:\n~p\n", 
+              "The qlc cursor ~w received an unexpected message:\n~p\n", 
               [self(), Other]),
             wait_for_request(Parent, MonRef, Post)
     end.
@@ -865,8 +880,8 @@ abstract({list, L}, NElements) ->
     erl_parse:abstract(lists:sublist(L, NElements) ++ more, 1).
 
 %% Since generator pattern variables cannot be used in list
-%% expressions, it is OK to flatten out QLC expressions using
-%% temporary variables.
+%% expressions, it is OK to flatten out QLCs using temporary
+%% variables.
 flatten_abstr(?QLC_Q(L1, L2, L3, L4, LC0, Os), VN0, Vars, Body0) ->
     {lc,L,E,Qs0} = LC0,
     F = fun({generate,Ln,P,LE0}, {VN1,Body1}) ->
@@ -894,23 +909,29 @@ flatten_abstr(E, VN, _Vars, Body) ->
 vars(Abstract) ->
     sets:from_list(ordsets:to_list(qlc_pt:vars(Abstract))).
 
-collect([], L) ->
-    lists:reverse(L);
-collect([Answer | Cont], L) ->
-    collect(Cont, [Answer | L]);
-collect(Cont, L) when is_function(Cont) ->
-    collect(Cont(), L);
-collect(Term, _L) ->
-    throw_error(Term).
+collect([]=L) ->
+    L;
+collect([Answer | Cont]) ->
+    [Answer | collect(Cont)];
+collect(Cont) ->
+    case Cont() of
+        Answers when is_list(Answers) ->
+            collect(Answers);
+        Term ->
+            throw_error(Term)
+    end.
 
 fold_loop(Fun, [Obj | Cont], Acc) ->
     fold_loop(Fun, Cont, Fun(Obj, Acc));
 fold_loop(_Fun, [], Acc) ->
     Acc;
-fold_loop(Fun, Cont, Acc) when is_function(Cont) ->
-    fold_loop(Fun, Cont(), Acc);
-fold_loop(_Fun, Term, _Acc) ->
-    throw_error(Term).
+fold_loop(Fun, Cont, Acc) ->
+    case Cont() of
+        Objects when is_list(Objects) ->
+            fold_loop(Fun, Objects, Acc);
+        Term -> 
+            Term
+    end.
 
 next_loop(Pid, L, N) when N =/= 0 ->
     case monitor_request(Pid, more) of
@@ -981,7 +1002,7 @@ template_state() ->
 %% le_info/1 returns an intermediate information format only used for
 %% testing purposes. Changes will happen without notice.
 %%
-%% QueryDesc = {qlc, TemplateDesc, [QualDesc], [QOpt]} 
+%% QueryDesc = {qlc, TemplateDesc, [QualDesc], [QueryOpt]} 
 %%           | {table, TableDesc}
 %%           | {append, [QueryDesc]}
 %%           | {sort, QueryDesc, [SortOption]}
@@ -996,8 +1017,8 @@ template_state() ->
 %% Args = [term()]
 %% QualDesc = FilterDesc
 %%          | {generate, PatternDesc, QueryDesc}
-%% QOpt = {cache, bool()} | cache 
-%%      | {unique, bool()} | unique
+%% QueryOpt = {cache, bool()} | cache 
+%%          | {unique, bool()} | unique
 %% FilterDesc = PatternDesc = TemplateDesc = binary()
 
 le_info(#prepared{qh = #simple_qlc{le = LE, p = P, line = L, optz = Optz}}) ->
@@ -1033,11 +1054,11 @@ le_info(#prepared{qh = #qlc_table{format_fun = FormatFun, trav_MS = TravMS,
 le_info(#prepared{qh = #qlc_append{hl = HL}}) ->
     {append, [le_info(H) || H <- HL]};
 le_info(#prepared{qh = #qlc_sort{h = H, keypos = sort, 
-                                 opts = SortOptions0, tmpdir = TmpDir}}) ->
+                                 fs_opts = SortOptions0, tmpdir = TmpDir}}) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
     {sort, le_info(H), SortOptions};
 le_info(#prepared{qh = #qlc_sort{h = H, keypos = {keysort, Kp}, 
-                                 opts = SortOptions0, tmpdir = TmpDir}}) ->
+                                 fs_opts = SortOptions0, tmpdir = TmpDir}}) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
     {keysort, le_info(H), Kp, SortOptions};
 le_info(#prepared{qh = #qlc_list{l = L, ms = no_match_spec}}) ->
@@ -1072,7 +1093,6 @@ join_info(Join, QInfo, Qdata, Code) ->
     {{I1,G1}, {I2,G2}, QInfoL} = 
         if
             Kind =:= merge ->
-                %% Create code for wh1 and wh2 in #join{}:
                 {JG1,QInfo1} = join_merge_info(QNum1, QInfo, Code, G1_0, Cs1),
                 {JG2,QInfo2} = join_merge_info(QNum2, QInfo, Code, G2_0, Cs2),
                 {JG1, JG2, QInfo1 ++ QInfo2};
@@ -1106,7 +1126,7 @@ join_merge_info(QNum, QInfo, Code, G, ExtraConstants) ->
     P = binary_to_term(element(QNum + 1, Code)),
     case {P, ExtraConstants} of
         {{var, _, _}, []} ->
-            %% No need to introduce a QLC expression.
+            %% No need to introduce a QLC.
             {{I,P}, [I]};
         _ -> 
             {EPV, M} = 
@@ -1146,8 +1166,8 @@ join_lookup_info(QNum, QInfo, G) ->
 opt_info(#optz{unique = Unique, cache = Cache0, join_option = JoinOption}) ->
     %% No 'nested_loop' options are added here, even if there are
     %% nested loops to carry out, unless a 'nested_loop' was given as
-    %% option. The reason is that QLC does not know about all
-    %% instances of nested loops.
+    %% option. The reason is that the qlc module does not know about
+    %% all instances of nested loops.
     Cache = if
                 Cache0 -> ets;
                 true -> Cache0
@@ -1156,9 +1176,10 @@ opt_info(#optz{unique = Unique, cache = Cache0, join_option = JoinOption}) ->
               V =/= default_option(T)] ++
     [{T,V} || {T,V} <- [{join,JoinOption}], V =:= nested_loop].
 
-prepare_qlc(H, InitialValue, GUnique, GCache, TmpDir, MaxList) ->
+prepare_qlc(H, InitialValue, GUnique, GCache, TmpDir, MaxList, TmpUsage) ->
     GOpt = #qlc_opt{unique = GUnique, cache = GCache, 
-                    tmpdir = TmpDir, max_list = MaxList},
+                    tmpdir = TmpDir, max_list = MaxList, 
+                    tmpdir_usage = TmpUsage},
     case opt_le(prep_le(H, GOpt), 1) of
         #prepared{qh = #qlc{} = QLC}=Prep ->
             Prep#prepared{qh = QLC#qlc{init_value = InitialValue}};
@@ -1171,18 +1192,21 @@ prepare_qlc(H, InitialValue, GUnique, GCache, TmpDir, MaxList) ->
 %%% The options given to append, q and table (unique and cache) as well
 %%% as the type of expression (list, table, append, qlc...) are
 %%% analyzed by prep_le. The results are is_unique_objects and
-%%% is_cached. List expressions are evaluated. 
+%%% is_cached. It is checked that the evaluation (in the Erlang sense)
+%%% of list expressions yields qlc handles.
 
 prep_le(#qlc_lc{lc = LC_fun, opt = #qlc_opt{} = Opt0}=H, GOpt) ->
     #qlc_opt{unique = GUnique, cache = GCache, 
-             tmpdir = TmpDir, max_list = MaxList} = GOpt,
+             tmpdir = TmpDir, max_list = MaxList, 
+             tmpdir_usage = TmpUsage} = GOpt,
     Unique = Opt0#qlc_opt.unique or GUnique,
     Cache = if
                 not GCache -> Opt0#qlc_opt.cache;
                 true -> GCache
             end,
     Opt = Opt0#qlc_opt{unique = Unique, cache = Cache, 
-                       tmpdir = TmpDir, max_list = MaxList},
+                       tmpdir = TmpDir, max_list = MaxList, 
+                       tmpdir_usage = TmpUsage},
     prep_qlc_lc(LC_fun(), Opt, GOpt, H);
 prep_le(#qlc_table{info_fun = IF}=T, GOpt) ->
     {SortInfo, Sorted} = table_sort_info(T),
@@ -1246,23 +1270,6 @@ eval_le(LE_fun, GOpt) ->
 prep_qlc_lc({simple_v1, PVar, LE_fun, L}, Opt, GOpt, _H) ->
     check_lookup_option(Opt, false),
     prep_simple_qlc(PVar, L, eval_le(LE_fun, GOpt), Opt);
-prep_qlc_lc({single_v1, QFun, CodeF, Qdata0, _, MS, PosFun}, Opt, GOpt, _H) ->
-    %% R10B
-    check_join_option(Opt),
-    %% Filter optional:
-    [?qual_data(QNum, GoI_G, SI_G, {gen, LE_fun}) | Filter] = Qdata0, 
-    Prep0 = eval_le(LE_fun, GOpt),
-    Fs = [0], % (effect: the match specification is always run)
-    {Done, _Skip, LookUp, Prep} = prep_gen(Prep0, PosFun, {MS,Fs}, Opt),
-    check_lookup_option(Opt, LookUp),
-    if
-        Done =:= replace ->
-            Prep;
-        true ->
-            Qdata = [?qual_data(QNum, GoI_G, SI_G, {gen, Prep}) | Filter],
-            QOpt = undefined,
-            prep_qlc(QFun, CodeF, Qdata, QOpt, Opt)
-    end;
 prep_qlc_lc({qlc_v1, QFun, CodeF, Qdata0, QOpt}, Opt, GOpt, _H) ->
     F = fun(?qual_data(_QNum, _GoI, _SI, fil)=QualData, ModGens) -> 
                 {QualData, ModGens};
@@ -1283,9 +1290,10 @@ prep_qlc_lc({qlc_v1, QFun, CodeF, Qdata0, QOpt}, Opt, GOpt, _H) ->
             OnePrep;
         _ -> 
             Prep0 = prep_qlc(QFun, CodeF, Qdata, QOpt, Opt),
-            SkipFs = lists:flatmap(fun({_QNum,_LookUp,Fs,_Prep}) -> Fs 
-                                   end, ModGens),
-            Prep1 = skip_lookup_filters(Prep0, SkipFs),
+            SkipQuals = 
+                lists:flatmap(fun({QNum,_LookUp,Fs,_Prep}) -> [{QNum,Fs}]
+                              end, ModGens),        
+            Prep1 = Prep0#prepared{skip_quals = SkipQuals},
             prep_join(Prep1, QOpt, Opt)
     end;
 prep_qlc_lc(_, _Opt, _GOpt, H) ->
@@ -1363,7 +1371,6 @@ may_create_simple(#qlc_opt{unique = Unique, cache = Cache} = Opt,
             Prep
     end.
 
-%% Sorted. Var kommer den ifrån? Påverkas den av unique&cache=list?
 prep_simple_qlc(PVar, Line, LE, Opt) ->
     check_join_option(Opt),
     #prepared{is_cached = IsCached, 
@@ -1384,11 +1391,13 @@ prep_simple_qlc(PVar, Line, LE, Opt) ->
               sort_info = SortInfo, sorted = Sorted,
               is_cached = IsCached or (Cachez =/= false)}.
 
-prep_sort(#qlc_sort{h = #prepared{sorted = yes}=Prep}, _Opt) ->
+prep_sort(#qlc_sort{h = #prepared{sorted = yes}=Prep}, _GOpt) ->
     Prep;
-prep_sort(#qlc_sort{h = #prepared{is_unique_objects = IsUniqueObjs}}=Q, Opt) ->
+prep_sort(#qlc_sort{h = #prepared{is_unique_objects = IsUniqueObjs}}=Q, 
+          GOpt) ->
     S1 = sort_unique(IsUniqueObjs, Q),
-    S = sort_tmpdir(S1, Opt),
+    S2 = sort_tmpdir(S1, GOpt),
+    S = S2#qlc_sort{tmpdir_usage = GOpt#qlc_opt.tmpdir_usage},
     {SortInfo, Sorted} = sort_sort_info(S),
     #prepared{qh = S, is_cached = true, sort_info = SortInfo,
               sorted = Sorted,
@@ -1416,14 +1425,6 @@ prep_qlc(QFun, CodeF, Qdata0, QOpt, Opt) ->
 %%
 %% The 'size' of the template is not used (size_of_qualifier(QOpt, 0)).
 
-qlc_sort_info(Qdata, undefined) -> % single_v1, R10B
-    F = fun(?qual_data(QNum, GoI, SI, 
-                       {gen, #prepared{sort_info = SI}=Prep})) ->
-                NPrepLE = Prep#prepared{sort_info2 = SI},
-                ?qual_data(QNum, GoI, SI, {gen, NPrepLE});
-           (Qd) -> Qd
-        end,
-    {lists:map(F, Qdata), []};
 qlc_sort_info(Qdata0, QOpt) ->
     F = fun(?qual_data(_QNum, _GoI, _SI, fil)=Qd, Info) -> 
                 {Qd, Info};
@@ -1469,11 +1470,11 @@ orders(yes) ->
 %   ,descending
     ].
 
-sort_unique(true, #qlc_sort{opts = SortOptions, keypos = sort}=Sort) ->
+sort_unique(true, #qlc_sort{fs_opts = SortOptions, keypos = sort}=Sort) ->
     Sort#qlc_sort{unique = false, 
-                  opts = lists:keydelete(unique, 
-                                         1, 
-                                         lists:delete(unique, SortOptions))};
+                  fs_opts = 
+                      lists:keydelete(unique, 1, 
+                                      lists:delete(unique, SortOptions))};
 sort_unique(_, Sort) ->
     Sort.
 
@@ -1524,9 +1525,6 @@ pos_vals(Pos, {usort_needed, Values, SkipFils}, Max) ->
     pos_vals_max(Pos, lists:usort(Values), SkipFils, Max);
 pos_vals(Pos, {values, Values, SkipFils}, Max) ->
     pos_vals_max(Pos, Values, SkipFils, Max);
-pos_vals(Pos, {Tag, Values}, Max) ->
-    %% R10B
-    pos_vals(Pos, {Tag, Values, {some,[]}}, Max);
 pos_vals(_Pos, _, _Max) ->
     false.
 
@@ -1535,17 +1533,6 @@ pos_vals_max(Pos, Values, Skip, Max) when Max =:= -1; Max >= length(Values) ->
     {{Pos, Values}, Skip};
 pos_vals_max(_Pos, _Value, _Skip, _Max) ->
     false.
-
-skip_lookup_filters(Prep, []) ->
-    Prep;
-skip_lookup_filters(#prepared{qh = #qlc{qdata = Qdata0}=QLC}=Prep, SkipFs) ->
-    Qdata = [case lists:member(QNum, SkipFs) of
-                 true ->
-                     ?qual_data(QNum, GoI, ?SKIP, fil);
-                 false ->
-                     Qd
-             end || ?qual_data(QNum, GoI, _, _)=Qd <- Qdata0],
-    Prep#prepared{qh = QLC#qlc{qdata = Qdata}}.
 
 prep_join(Prep, QOpt, Opt) ->
     case join_opt(QOpt) of
@@ -1606,9 +1593,14 @@ join_qual_data(QData, QNum) ->
             {join_indices(PrepLE), SortInfo}
     end.
 
+%% If the table has a match specification (ms =/= no_match_spec) that
+%% has _not_ been derived from a filter but from a query handle then
+%% the lookup join cannot be done. This particular case has not been
+%% excluded here but is taken care of in opt_join().
 join_indices(#prepared{qh = #qlc_table{info_fun = IF, 
-                                       ms = no_match_spec,
-                                       lu_vals = undefined}}) ->
+                                       lookup_fun = LU_fun,
+                                       lu_vals = undefined}}) 
+          when is_function(LU_fun) ->
     KpL = case call(IF, keypos, undefined, []) of
               undefined -> [];
               Kp -> [Kp]
@@ -1668,18 +1660,12 @@ eq_template_columns(QOpt, QNumColumn) ->
 size_of_constant_prefix(QOpt, QNum) ->
     (QOpt(n_leading_constant_columns))(QNum).
 
-constants(undefined, _QNum) ->
-    no_column_fun;
 constants(QOpt, QNum) ->
     (QOpt(constants))(QNum).
 
-join_opt(undefined=U) ->
-    U;
 join_opt(QOpt) ->
     QOpt(join).
 
-match_specs(undefined=U, _QNum) ->
-    U;
 match_specs(QOpt, QNum) ->
     (QOpt(match_specs))(QNum).
 
@@ -1690,17 +1676,17 @@ size_of_qualifier(QOpt, QNum) ->
     (QOpt(size))(QNum).
 
 %% Two optimizations are carried out:
-%% 1. The first generator is never cached if the QLC expression itself
-%% is cached. Since the answers do not need to be cached, the top-most
-%% QLC expression is never cached either. Simple QLCs not holding any
-%% options are removed. Simple QLCs are coalesced when possible.
+%% 1. The first generator is never cached if the QLC itself is cached.
+%% Since the answers do not need to be cached, the top-most QLC is
+%% never cached either. Simple QLCs not holding any options are
+%% removed. Simple QLCs are coalesced when possible.
 %% 2. Merge join and lookup join is done if possible.
 
 opt_le(#prepared{qh = #simple_qlc{le = LE0, optz = Optz0}=QLC}=Prep0, 
        GenNum) ->
     case LE0 of
         #prepared{qh = #simple_qlc{p = LE_Pvar, le = LE2, optz = Optz2}} ->
-            %% Coalesce two simple QLC expressions.
+            %% Coalesce two simple QLCs.
             Cachez = case Optz2#optz.cache of
                          false -> Optz0#optz.cache;
                          Cache2 -> Cache2
@@ -1723,11 +1709,22 @@ opt_le(#prepared{qh = #simple_qlc{le = LE0, optz = Optz0}=QLC}=Prep0,
                     Prep0#prepared{qh = QLC#simple_qlc{le = LE, optz = Optz1}}
             end
     end;
-opt_le(#prepared{qh = #qlc{qdata = Qdata0, optz = Optz0}=QLC}=Prep, GenNum) ->
+opt_le(#prepared{qh = #qlc{}, skip_quals = SkipQuals0} = Prep0, GenNum) ->
+    #prepared{qh = #qlc{qdata = Qdata0, optz = Optz0}=QLC} = Prep0,
     #optz{join_option = JoinOption, opt = Opt} = Optz0,
     JoinOption = Optz0#optz.join_option,
-    {Join, DoSort} = 
-        opt_join(Prep#prepared.join, JoinOption, Qdata0, Opt),
+    {LU_QNum, Join, DoSort} = 
+        opt_join(Prep0#prepared.join, JoinOption, Qdata0, Opt, SkipQuals0),
+    {LU_Skip, SkipQuals} = 
+        lists:partition(fun({QNum,_Fs}) -> QNum =:= LU_QNum end, SkipQuals0),
+    SkipFs = lists:flatmap(fun({_QNum,Fs}) -> Fs end, SkipQuals),
+    %% If LU_QNum has a match spec it must be applied _after_ the
+    %% lookup join (the filter must not be skipped!). 
+    Qdata1 = if 
+                 LU_Skip =:= [] -> Qdata0;
+                 true -> activate_join_lookup_filter(LU_QNum, Qdata0)
+             end,
+    Qdata2 = skip_lookup_filters(Qdata1, SkipFs),
     F = fun(?qual_data(QNum, GoI, SI, {gen, #prepared{}=PrepLE}), GenNum1) ->
                 NewPrepLE = maybe_sort(PrepLE, QNum, DoSort, Opt),
                 {?qual_data(QNum, GoI, SI, {gen, opt_le(NewPrepLE, GenNum1)}),
@@ -1735,10 +1732,10 @@ opt_le(#prepared{qh = #qlc{qdata = Qdata0, optz = Optz0}=QLC}=Prep, GenNum) ->
            (Qd, GenNum1) ->
                 {Qd, GenNum1}
         end,
-    {Qdata, _} = lists:mapfoldl(F, 1, Qdata0),
+    {Qdata, _} = lists:mapfoldl(F, 1, Qdata2),
     Optz1 = no_cache_of_first_generator(Optz0, GenNum),
     Optz = Optz1#optz{fast_join = Join},
-    Prep#prepared{qh = QLC#qlc{qdata = Qdata, optz = Optz}};
+    Prep0#prepared{qh = QLC#qlc{qdata = Qdata, optz = Optz}};
 opt_le(#prepared{qh = #qlc_append{hl = HL}}=Prep, GenNum) ->
     Hs = [opt_le(H, GenNum) || H <- HL],
     Prep#prepared{qh = #qlc_append{hl = Hs}};
@@ -1755,41 +1752,79 @@ no_cache_of_first_generator(Optz, 1) ->
 maybe_sort(LE, QNum, DoSort, Opt) ->
     case lists:keysearch(QNum, 1, DoSort) of
         {value, {QNum, Col}} ->
-            TmpDir = Opt#qlc_opt.tmpdir,
-            Opts = [{tmpdir,Dir} || Dir <- [TmpDir], Dir =/= ""],
+            #qlc_opt{tmpdir = TmpDir, tmpdir_usage = TmpUsage} = Opt,
+            SortOpts = [{tmpdir,Dir} || Dir <- [TmpDir], Dir =/= ""],
             Sort = #qlc_sort{h = LE, keypos = {keysort, Col}, unique = false,
                              compressed = [], order = ascending,
-                             opts = Opts, tmpdir = TmpDir},
+                             fs_opts = SortOpts, tmpdir_usage = TmpUsage,
+                             tmpdir = TmpDir},
             #prepared{qh = Sort, sorted = no, join = no};
         false ->
             LE
     end.
 
-opt_join(Join, JoinOption, Qdata, Opt) ->
+skip_lookup_filters(Qdata, []) ->
+    Qdata;
+skip_lookup_filters(Qdata0, SkipFs) ->
+    [case lists:member(QNum, SkipFs) of
+         true ->
+             ?qual_data(QNum, GoI, ?SKIP, fil);
+         false ->
+             Qd
+     end || ?qual_data(QNum, GoI, _, _)=Qd <- Qdata0].
+
+%% If the qualifier used for lookup by the join (QNum) has a match
+%% specification it must be applied _after_ the lookup join (the
+%% filter must not be skipped!).
+activate_join_lookup_filter(QNum, Qdata) ->
+    {value, {_,GoI2,SI2,{gen,Prep2}}} = lists:keysearch(QNum, 1, Qdata),
+    Table2 = Prep2#prepared.qh,
+    NPrep2 = Prep2#prepared{qh = Table2#qlc_table{ms = no_match_spec}},
+    %% Table2#qlc_table.ms has been reset; the filter will be run.
+    lists:keyreplace(QNum, 1, Qdata, ?qual_data(QNum,GoI2,SI2,{gen,NPrep2})).
+
+opt_join(Join, JoinOption, Qdata, Opt, SkipQuals) ->
     %% prep_qlc_lc() assures that no unwanted join is carried out
     case Join of 
-        {[{{Q1,C1,Q2,C2},[{lookup,_} | _]} | _], _} ->
-            [Table2] = [Prep#prepared.qh || 
-                           ?qual_data(QNum, _, _, {gen, Prep}) <- Qdata,
-                           QNum =:= Q2],
-            J = #qlc_join{kind = {lookup, Table2#qlc_table.lookup_fun}, 
-                          q1 = Q1, c1 = C1, q2 = Q2, c2 = C2, opt = Opt},
-            {J, []};
+        {[{{Q1,C1,Q2,C2},[{lookup,_} | _]} | LJ], MJ} ->
+            {value, {Q2,_,_,{gen,Prep2}}} = lists:keysearch(Q2, 1, Qdata),
+            #qlc_table{ms = MS, lookup_fun = LU_fun} = Prep2#prepared.qh,
+            %% If there is no filter to skip (the match spec was derived 
+            %% from a query handle) then the lookup join cannot be done.
+            case 
+                (MS =/= no_match_spec) andalso 
+                (lists:keysearch(Q2, 1, SkipQuals) =:= false) 
+            of 
+                true ->
+                    opt_join({LJ, MJ}, JoinOption, Qdata, Opt, SkipQuals);
+                false ->
+                    %% The join is preferred before evaluating the
+                    %% match spec (if there is one).
+                    J = #qlc_join{kind = {lookup, LU_fun}, q1 = Q1, c1 = C1, 
+                                  q2 = Q2, c2 = C2, opt = Opt},
+                    {Q2, J, []}
+            end;
         {_, [{_KpOrder_or_other,[{{Q1,C1,Q2,C2},{merge,DoSort}}|_]}|_]} ->
             J = #qlc_join{kind = merge, opt = Opt,
                           q1 = Q1, c1 = C1, q2 = Q2, c2 = C2},
-            {J, DoSort};
+            {not_a_qnum, J, DoSort};
         {[],[]} when JoinOption =:= nested_loop ->
-            {no, []};
+            {not_a_qnum, no, []};
         _ when JoinOption =/= any ->
             erlang:error(cannot_carry_out_join, [JoinOption]);
         _ ->
-            {no, []}
+            {not_a_qnum, no, []}
     end.
 
-%% -> {Objects, Post, LocalPost}
+%% -> {Objects, Post, LocalPost} | throw()
 %% Post is a list of funs (closures) to run afterwards.
 %% LocalPost should be run when all objects have been found (optimization).
+%% LocalPost will always be a subset of Post.
+%% List expressions are evaluated, resulting in lists of objects kept in
+%% RAM or on disk.
+%% An error term is thrown as soon as cleanup according Post has been
+%% done. (This is opposed to errors during evaluation; such errors are
+%% returned as terms.)
 setup_qlc(Prep, Setup) ->
     Post0 = [],
     setup_le(Prep, Post0, Setup).
@@ -1813,19 +1848,26 @@ setup_le(#prepared{qh = #qlc_append{hl = PrepL}}, Post0, Setup) ->
                 {Objs, {Post2, LPost1++LPost2}}
         end,
     {ObjsL, {Post, LocalPost}} = lists:mapfoldl(F, {Post0,[]}, PrepL),
-    {fun() -> append_loop(ObjsL) end, Post, LocalPost};
+    {fun() -> append_loop(ObjsL, 0) end, Post, LocalPost};
 setup_le(#prepared{qh = #qlc_sort{h = Prep, keypos = Kp, 
                                   unique = Unique, compressed = Compressed,
-                                  order = Order, opts = SortOptions0, 
-                                  tmpdir = TmpDir}}, Post0, Setup) ->
+                                  order = Order, fs_opts = SortOptions0, 
+                                  tmpdir_usage = TmpUsage,tmpdir = TmpDir}},
+         Post0, Setup) ->
     SortOptions = sort_options_global_tmp(SortOptions0, TmpDir),
+    LF = fun(Objs) -> 
+                 sort_list(Objs, Order, Unique, Kp, SortOptions, Post0)
+         end,
     case setup_le(Prep, Post0, Setup) of
         {L, Post, LocalPost} when is_list(L) ->
-            Objs = sort_list(L, Order, Unique, Kp, SortOptions, Post),
-            {Objs, Post, LocalPost};
+            {LF(L), Post, LocalPost};
         {Objs, Post, LocalPost} ->
-            sort_handle(Objs, Kp, SortOptions, TmpDir, Compressed, 
-                        Post, LocalPost)
+            FF = fun(Objs1) ->
+                         file_sort_handle(Objs1, Kp, SortOptions, TmpDir, 
+                                          Compressed, Post, LocalPost)
+                 end,
+            sort_handle(Objs, LF, FF, SortOptions, Post, LocalPost, 
+                        {TmpUsage, sorting})
     end;
 setup_le(#prepared{qh = #qlc_list{l = L, ms = MS}}, Post, _Setup) 
               when (no_match_spec =:= MS); L =:= [] ->
@@ -1908,7 +1950,7 @@ setup_quals(GenLoopS, [], Gs, P, LP, _Setup) ->
 %% Note: the parse transform has given each generator three slots
 %% in the GoTo table. The position of these slots within the GoTo table
 %% is fixed (at runtime).
-%% (Assumes there is only one join-generator in Qdata0.)
+%% (Assumes there is only one join-generator in Qdata.)
 setup_join(J, Qdata, GoTo0, FirstState0, JoinFun, Post0) ->
     #qlc_join{q1 = QNum1a, q2 = QNum2a, opt = Opt} = J,
     {?qual_data(_QN,JGoI,JSI,_), Rev, QNum1, QNum2, WH1, WH2, _CsFun} = 
@@ -2044,9 +2086,11 @@ table_handle(#qlc_table{trav_fun = TraverseFun, trav_MS = TravMS,
                     ets:match_spec_run(Objs, 
                                        ets:match_spec_compile(MS));
                 Error ->
+                    post_funs(Post),
                     throw_error(Error)
             end;
         _ when not TravMS ->
+            MS = no_match_spec, % assertion
             TraverseFun;
         _ when MS =:= no_match_spec ->
             fun() -> TraverseFun([{'$1',[],['$1']}]) end;
@@ -2060,39 +2104,47 @@ open_file(FileName, Extra, Post) ->
     case file:open(FileName, [read, raw, binary | Extra]) of
         {ok, Fd} ->
             {fun() -> 
-                     case file:position(Fd, bof) of
-                         {ok, 0} -> ok;
-                         Error -> file_error(FileName, Error)
-                     end,
-                     TF = fun([], _) -> [];
-                             (Ts, C) -> lists:reverse(Ts, C) 
-                          end,
-                     file_loop_read(<<>>, ?CHUNK_SIZE, 0, {Fd, FileName}, TF) 
+                 case file:position(Fd, bof) of
+                     {ok, 0} -> 
+                         TF = fun([], _) -> 
+                                      [];
+                                 (Ts, C) when is_list(Ts) -> 
+                                      lists:reverse(Ts, C) 
+                              end,
+                         file_loop_read(<<>>, ?CHUNK_SIZE, {Fd,FileName}, TF);
+                     Error -> 
+                         file_error(FileName, Error)
+                 end
              end, Fd};
         Error ->
             post_funs(Post),
-            file_error(FileName, Error)
+            throw_file_error(FileName, Error)
     end.
 
-file_loop(Bin, Pos, Fd_FName, Ts, TF) ->
-    case Bin of
-        <<_:Pos/unit:8, Size:4/unit:8, B:Size/binary, _/binary>> ->
-            Term = try
-                       binary_to_term(B)
-                   catch _:_ ->
-                       {_Fd, FileName} = Fd_FName,
-                       throw_reason({bad_object, FileName})
-                   end,
-             file_loop(Bin, Pos + 4 + Size, Fd_FName, [Term | Ts], TF);
-        <<_:Pos/unit:8, Size:4/unit:8, B/binary>> when Ts =:= [] ->
-             file_loop_read(Bin, Size - size(B) + 4, Pos, Fd_FName, TF);
-        <<_:Pos/unit:8, Size:4/unit:8, _/binary>> ->
-            C = fun() -> file_loop_read(Bin, Size+4, Pos, Fd_FName, TF) end,
+file_loop(Bin0, Fd_FName, Ts0, TF) ->
+    case 
+        try file_loop2(Bin0, Ts0) 
+        catch _:_ ->        
+            {_Fd, FileName} = Fd_FName,
+            error({bad_object, FileName})
+        end
+    of
+        {terms, <<Size:4/unit:8, B/binary>>=Bin, []} ->
+            file_loop_read(Bin, Size - size(B) + 4, Fd_FName, TF);
+        {terms, <<Size:4/unit:8, _/binary>>=Bin, Ts} ->
+            C = fun() -> file_loop_read(Bin, Size+4, Fd_FName, TF) end,
             TF(Ts, C);
-        B -> 
-            C = fun() -> file_loop_read(B, ?CHUNK_SIZE, Pos, Fd_FName,TF) end,
-            TF(Ts, C)
+        {terms, B, Ts} ->
+            C = fun() -> file_loop_read(B, ?CHUNK_SIZE, Fd_FName, TF) end,
+            TF(Ts, C);
+        Error ->
+            Error
     end.
+
+file_loop2(<<Size:4/unit:8, B:Size/binary, Bin/binary>>, Ts) ->
+    file_loop2(Bin, [binary_to_term(B) | Ts]);
+file_loop2(Bin, Ts) ->
+    {terms, Bin, Ts}.
 
 %% After power failures (and only then) files with corrupted Size
 %% fields have been observed in a disk_log file. If file:read/2 is
@@ -2100,30 +2152,33 @@ file_loop(Bin, Pos, Fd_FName, Ts, TF) ->
 %% has been done here to prevent such crashes (by inspecting
 %% BytesToRead in some way) since temporary files will never be read
 %% after a power failure.
-file_loop_read(B, MinBytesToRead, Pos, {Fd, FileName}=Fd_FName, TF) ->
+file_loop_read(B, MinBytesToRead, {Fd, FileName}=Fd_FName, TF) ->
     BytesToRead = lists:max([?CHUNK_SIZE, MinBytesToRead]),
     case file:read(Fd, BytesToRead) of
-        {ok, Bin} when size(B) =:= Pos ->
-            file_loop(Bin, 0, Fd_FName, [], TF);
+        {ok, Bin} when size(B) =:= 0 ->
+            file_loop(Bin, Fd_FName, [], TF);
         {ok, Bin} ->
             case B of 
-                <<_:Pos/unit:8, Size:4/unit:8, Tl/binary>> 
-                               when size(Bin)+size(Tl) >= Size ->
+                <<Size:4/unit:8, Tl/binary>> when size(Bin)+size(Tl) >= Size ->
                     {B1, B2} = split_binary(Bin, Size - size(Tl)),
-                    {_, B0} = split_binary(B, Pos),
                     Foo = fun([T], Fun) -> [T | Fun] end,
                     %% TF should be applied exactly once.
-                    [T | Fun] = file_loop(list_to_binary([B0, B1]), 0,
-                                          Fd_FName, [], Foo),
-                    true = is_function(Fun),
-                    file_loop(B2, 0, Fd_FName, [T], TF);
+                    case 
+                        file_loop(list_to_binary([B, B1]), Fd_FName, [], Foo) 
+                    of
+                        [T | Fun] -> 
+                            true = is_function(Fun),
+                            file_loop(B2, Fd_FName, [T], TF);
+                        Error ->
+                            Error
+                    end;
                 _ ->
-                    file_loop(list_to_binary([B, Bin]), Pos, Fd_FName, [], TF)
+                    file_loop(list_to_binary([B, Bin]), Fd_FName, [], TF)
             end;
-        eof when size(B) =:= Pos ->
+        eof when size(B) =:= 0 ->
             TF([], foo);
         eof ->
-            throw_reason({bad_object, FileName});
+            error({bad_object, FileName});
         Error ->
             file_error(FileName, Error)
     end.
@@ -2135,22 +2190,29 @@ sort_cursor_input(H, NoObjects) ->
             sort_cursor_input_read(H, NoObjects)
     end.
                     
-sort_cursor_list_output(TmpDir, Z) ->
+sort_cursor_list_output(TmpDir, Z, Unique) ->
     fun(close) ->
             {terms, []};
        ({value, NoObjects}) ->
-            fun(BTerms) when length(BTerms) =:= NoObjects ->
-                    {terms, BTerms};
+            fun(BTerms) when Unique; length(BTerms) =:= NoObjects ->
+                    fun(close) ->
+                            {terms, BTerms};
+                       (BTerms1) ->
+                            sort_cursor_file(BTerms ++ BTerms1, TmpDir, Z)
+                    end;
                (BTerms) ->
-                    FName = tmp_filename(TmpDir),
-                    case file:open(FName, [write, raw, binary | Z]) of
-                        {ok, Fd} ->
-                            WFun = write_terms(FName, Fd),
-                            WFun(BTerms);
-                        Error ->
-                            file_error(FName, Error)
-                    end
+                    sort_cursor_file(BTerms, TmpDir, Z)
             end
+    end.
+
+sort_cursor_file(BTerms, TmpDir, Z) ->
+    FName = tmp_filename(TmpDir),
+    case file:open(FName, [write, raw, binary | Z]) of
+        {ok, Fd} ->
+            WFun = write_terms(FName, Fd),
+            WFun(BTerms);
+        Error ->
+            throw_file_error(FName, Error)
     end.
 
 sort_options_global_tmp(S, "") ->
@@ -2183,7 +2245,7 @@ write_terms(FileName, Fd) ->
                     write_terms(FileName, Fd);
                 Error ->
                     file:close(Fd),
-                    file_error(FileName, Error)
+                    throw_file_error(FileName, Error)
             end
     end.
 
@@ -2196,10 +2258,13 @@ sort_cursor_input_read([], NoObjects) ->
     {end_of_input, NoObjects};
 sort_cursor_input_read([Object | Cont], NoObjects) ->
     {[term_to_binary(Object)], sort_cursor_input(Cont, NoObjects + 1)};
-sort_cursor_input_read(F, NoObjects) when is_function(F) ->
-    sort_cursor_input_read(F(), NoObjects);
-sort_cursor_input_read(Term, _NoObjects) ->
-    throw_error(Term).
+sort_cursor_input_read(F, NoObjects) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            sort_cursor_input_read(Objects, NoObjects);
+        Term ->
+            throw_error(Term)
+    end.
 
 unique_cache(L, Post, LocalPost, Optz) when is_list(L) ->
     case Optz#optz.unique of
@@ -2227,46 +2292,62 @@ unique_cache(H, Post, LocalPost, #optz{unique = true, cache = true}) ->
 unique_cache(H, Post, LocalPost, #optz{unique = false, cache = list}=Optz) ->
     Ref = make_ref(),
     F = del_lcache(Ref),
-    #qlc_opt{tmpdir = TmpDir, max_list = MaxList} = Optz#optz.opt,
-    {fun() -> lcache(H, Ref, LocalPost, TmpDir, MaxList) end, 
+    #qlc_opt{tmpdir = TmpDir, max_list = MaxList, tmpdir_usage = TmpUsage} =
+        Optz#optz.opt,
+    {fun() -> lcache(H, Ref, LocalPost, TmpDir, MaxList, TmpUsage) end, 
      [F | Post], [F]};
 unique_cache(H, Post0, LocalPost0, #optz{unique = true, cache = list}=Optz) ->
-    #qlc_opt{tmpdir = TmpDir, max_list = MaxList} = Optz#optz.opt,
+    #qlc_opt{tmpdir = TmpDir, max_list = MaxList, tmpdir_usage = TmpUsage} =
+        Optz#optz.opt,
     Size = if
-               MaxList >= 1 bsl 31 ->
-                   (1 bsl 31) - 1;
-               MaxList =:= 0 ->
-                   1;
-               true ->
-                   MaxList
+               MaxList >= 1 bsl 31 -> (1 bsl 31) - 1;
+               MaxList =:= 0 -> 1;
+               true ->  MaxList
            end,
     SortOptions = [{size, Size}, {tmpdir, TmpDir}],
     USortOptions = [{unique, true} | SortOptions],
-    {UH, Post1, LocalPost1} = 
-        sort_handle(tag_objects(H, 1), {keysort, 1}, USortOptions, 
-                    TmpDir, [], Post0, LocalPost0),
-    {SH, Post, LocalPost} = sort_handle(UH, {keysort, 2}, SortOptions, 
-                                        TmpDir, [], Post1, LocalPost1),
-    %% Every traversal untags the objects...
-    {fun() -> untag_objects(SH) end, Post, LocalPost}.
+    TmpUsageM = {TmpUsage, caching},
+    LF1 = fun(Objs) -> lists:ukeysort(1, Objs) end,
+    FF1 = fun(Objs) ->
+                  file_sort_handle(Objs, {keysort, 1}, USortOptions, 
+                                   TmpDir, [], Post0, LocalPost0)
+          end,
+    {UH, Post1, LocalPost1} = sort_handle(tag_objects(H, 1), LF1, FF1, 
+                                          USortOptions, Post0, LocalPost0, 
+                                          TmpUsageM),
+    LF2 = fun(Objs) -> lists:keysort(2, Objs) end,
+    FF2 = fun(Objs) ->
+                  file_sort_handle(Objs, {keysort, 2}, SortOptions, TmpDir,
+                                   [], Post1, LocalPost1)
+          end,
+    {SH, Post, LocalPost} = 
+        sort_handle(UH, LF2, FF2, SortOptions, Post1, LocalPost1, TmpUsageM),
+    if
+        is_list(SH) ->
+            %% Remove the tag once and for all.
+            {untag_objects2(SH), Post, LocalPost};
+        true ->
+            %% Every traversal untags the objects...
+            {fun() -> untag_objects(SH) end, Post, LocalPost}
+    end.
 
 unique_cache_post(E) ->
     {empty_table(E), del_table(E)}.
 
 unique_sort_list(L) ->
     E = ets:new(qlc, [set, private]),
-    unique_list(L, E, []).
+    unique_list(L, E).
 
-unique_list([], E, L) ->
+unique_list([], E) ->
     true = ets:delete(E),
-    lists:reverse(L);
-unique_list([Object | Objects], E, L) ->
+    [];
+unique_list([Object | Objects], E) ->
     case ets:member(E, Object) of
         false ->
             true = ets:insert(E, {Object}),
-            unique_list(Objects, E, [Object | L]);
+            [Object | unique_list(Objects, E)];
         true ->
-            unique_list(Objects, E, L)
+            unique_list(Objects, E)
     end.
 
 sort_list(L, CFun, true, sort, _SortOptions, _Post) when is_function(CFun) ->
@@ -2302,13 +2383,65 @@ sort_list(L, _Order, _Unique, Sort, SortOptions, Post) ->
 sort_list_output(L) ->
     fun(close) ->
             lists:append(lists:reverse(L));
-       (Terms) ->
+       (Terms) when is_list(Terms) ->
             sort_list_output([Terms | L])
     end.
 
-sort_handle(H, Kp, SortOptions, TmpDir, Compressed, Post, LocalPost) ->
+%% Don't use the file_sorter unless it is known that objects will be
+%% put on a temporary file (optimization).
+sort_handle(H, ListFun, FileFun, SortOptions, Post, LocalPost, TmpUsageM) ->
+    Size = case lists:keysearch(size, 1, SortOptions) of
+               {value, {size, Size0}} -> Size0;
+               false -> default_option(size)
+           end,
+    sort_cache(H, [], Size, {ListFun, FileFun, Post, LocalPost, TmpUsageM}).
+
+sort_cache([], CL, _Sz, {LF, _FF, Post, LocalPost, _TmpUsageM}) ->
+    {LF(lists:reverse(CL)), Post, LocalPost};
+sort_cache(Objs, CL, Sz, C) when Sz < 0 ->
+    sort_cache2(Objs, CL, false, C);
+sort_cache([Object | Cont], CL, Sz0, C) ->
+    Sz = decr_list_size(Sz0, Object),
+    sort_cache(Cont, [Object | CL], Sz, C);
+sort_cache(F, CL, Sz, C) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            sort_cache(Objects, CL, Sz, C);
+        Term -> 
+            {_LF, _FF, Post, _LocalPost, _TmpUsageM} = C,
+            post_funs(Post),
+            throw_error(Term)
+    end.
+
+sort_cache2([], CL, _X, {LF, _FF, Post, LocalPost, _TmpUsageM}) ->
+    {LF(lists:reverse(CL)), Post, LocalPost};
+sort_cache2([Object | Cont], CL, _, C) ->
+    sort_cache2(Cont, [Object | CL], true, C);
+sort_cache2(F, CL, false, C) ->
+    %% Find one extra object to be sure that temporary file(s) will be
+    %% used when calling the file_sorter. This works even if
+    %% duplicates are removed.
+    case F() of
+        Objects when is_list(Objects) ->
+            sort_cache2(Objects, CL, true, C);
+        Term -> 
+            {_LF, _FF, Post, _LocalPost, _TmpUsageM} = C,
+            post_funs(Post),
+            throw_error(Term)
+    end;
+sort_cache2(_Cont, _CL, true, {_LF,_FF,Post,_LocalPost, {not_allowed,M}}) ->
+    post_funs(Post),
+    throw_reason({tmpdir_usage, M});
+sort_cache2(Cont, CL, true, {_LF, FF, _Post, _LocalPost, {TmpUsage, M}}) ->
+    maybe_error_logger(TmpUsage, M),
+    FF(lists:reverse(CL, Cont)).
+
+file_sort_handle(H, Kp, SortOptions, TmpDir, Compressed, Post, LocalPost) ->
     In = sort_cursor_input(H, 0),
-    Out = sort_cursor_list_output(TmpDir, Compressed),
+    Unique = lists:member(unique, SortOptions) 
+             orelse
+             lists:keymember(unique, 1, SortOptions),
+    Out = sort_cursor_list_output(TmpDir, Compressed, Unique),
     Reply = do_sort(In, Out, Kp, SortOptions, Post),
     case Reply of
         {file, FileName} ->
@@ -2348,21 +2481,28 @@ del_table(Ets) ->
 empty_table(Ets) ->
     fun() -> true = ets:delete_all_objects(Ets) end.
 
-append_loop([[_ | _]=L]) ->
+append_loop([[_ | _]=L], _N) ->
     L;
-append_loop([F]) ->
+append_loop([F], _N) ->
     F();
-append_loop([L | Hs]) ->
-    append_loop(L, Hs).
+append_loop([L | Hs], N) ->
+    append_loop(L, N, Hs).
 
-append_loop([], Hs) ->
-    append_loop(Hs);
-append_loop([Object | Cont], Hs) ->    
-    [Object | fun() -> append_loop(Cont, Hs) end];
-append_loop(F, Hs) when is_function(F) ->
-    append_loop(F(), Hs);
-append_loop(Term, _Hs) ->
-    throw_error(Term).
+append_loop([], N, Hs) ->
+    append_loop(Hs, N);
+append_loop([Object | Cont], N, Hs) ->
+    [Object | append_loop(Cont, N + 1, Hs)];
+append_loop(F, 0, Hs) ->
+    case F() of
+        [] ->
+            append_loop(Hs, 0);
+        [Object | Cont] ->
+            [Object | append_loop(Cont, 1, Hs)];
+        Term ->
+            Term
+    end;
+append_loop(F, _N, Hs) -> % when _N > 0
+    fun() -> append_loop(F, 0, Hs) end.
 
 no_dups([]=Cont, UTab) ->
     true = ets:delete_all_objects(UTab),
@@ -2371,38 +2511,48 @@ no_dups([Object | Cont], UTab) ->
     case ets:member(UTab, Object)  of
         false ->
             true = ets:insert(UTab, {Object}),
+            %% A fun is created here, even if Cont is a list; objects
+            %% will not be copied to the ETS table unless requested.
             [Object | fun() -> no_dups(Cont, UTab) end];
         true ->
             no_dups(Cont, UTab)
     end;
-no_dups(F, UTab) when is_function(F) ->
-    no_dups(F(), UTab);
-no_dups(Term, _UTab) ->
-    throw_error(Term).
+no_dups(F, UTab) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            no_dups(Objects, UTab);
+        Term ->
+            Term
+    end.
 
-%% When all objects have been returned from a cached QLC expression,
-%% the generators of the expression will never be called again, and so
-%% the tables used by the generators (PostL) can be emptied.
+%% When all objects have been returned from a cached QLC, the
+%% generators of the expression will never be called again, and so the
+%% tables used by the generators (LocalPost) can be emptied.
 
-cache(H, MTab, PostL) ->
+cache(H, MTab, LocalPost) ->
     case ets:member(MTab, 0) of
         false ->
             true = ets:insert(MTab, {0}),
-            cache(H, MTab, 1, PostL);
+            cache(H, MTab, 1, LocalPost);
         true ->
             cache_recall(MTab, 1)
     end.
 
-cache([]=Cont, _MTab, _SeqNo, PostL) ->
-    local_post(PostL),
+cache([]=Cont, _MTab, _SeqNo, LocalPost) ->
+    local_post(LocalPost),
     Cont;
-cache([Object | Cont], MTab, SeqNo, PostL) ->
+cache([Object | Cont], MTab, SeqNo, LocalPost) ->
     true = ets:insert(MTab, {SeqNo, Object}),
-    [Object | fun() -> cache(Cont, MTab, SeqNo + 1, PostL) end];
-cache(F, MTab, SeqNo, PostL) when is_function(F) ->
-    cache(F(), MTab, SeqNo, PostL);
-cache(Term, _MTab, _SeqNo, _PostL) ->
-    throw_error(Term).
+    %% A fun is created here, even if Cont is a list; objects
+    %% will not be copied to the ETS table unless requested.
+    [Object | fun() -> cache(Cont, MTab, SeqNo + 1, LocalPost) end];
+cache(F, MTab, SeqNo, LocalPost) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            cache(Objects, MTab, SeqNo, LocalPost);
+        Term -> 
+            Term
+    end.
 
 cache_recall(MTab, SeqNo) ->
     case ets:lookup(MTab, SeqNo) of
@@ -2412,39 +2562,46 @@ cache_recall(MTab, SeqNo) ->
             [Object | fun() -> cache_recall(MTab, SeqNo + 1) end]
     end.
 
-ucache(H, UTab, MTab, PostL) ->
+ucache(H, UTab, MTab, LocalPost) ->
     case ets:member(MTab, 0) of
         false ->
             true = ets:insert(MTab, {0}),
-            ucache(H, UTab, MTab, 1, PostL);
+            ucache(H, UTab, MTab, 1, LocalPost);
         true ->
             ucache_recall(UTab, MTab, 1)
     end.
 
-ucache([]=Cont, _UTab, _MTab, _SeqNo, PostL) ->
-    local_post(PostL),
+ucache([]=Cont, _UTab, _MTab, _SeqNo, LocalPost) ->
+    local_post(LocalPost),
     Cont;
-ucache([Object | Cont], UTab, MTab, SeqNo, PostL) ->
+ucache([Object | Cont], UTab, MTab, SeqNo, LocalPost) ->
     %% Always using 28 bits hash value...
     Hash = erlang:phash2(Object),
     case ets:lookup(UTab, Hash) of
         [] ->
-            ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, PostL);
+            ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, LocalPost);
         HashSeqObjects ->
             case lists:keymember(Object, 3, HashSeqObjects) of
-                true -> ucache(Cont, UTab, MTab, SeqNo, PostL);
-                false -> ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, PostL)
+                true -> 
+                    ucache(Cont, UTab, MTab, SeqNo, LocalPost);
+                false -> 
+                    ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, LocalPost)
             end
     end;
-ucache(F, UTab, MTab, SeqNo, PostL) when is_function(F) ->
-    ucache(F(), UTab, MTab, SeqNo, PostL);
-ucache(Term, _UTab, _MTab, _SeqNo, _PostL) ->
-    throw_error(Term).
+ucache(F, UTab, MTab, SeqNo, LocalPost) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            ucache(Objects, UTab, MTab, SeqNo, LocalPost);
+        Term ->
+            Term
+    end.
 
-ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, PostL) ->
+ucache3(Object, Cont, Hash, UTab, MTab, SeqNo, LocalPost) ->
     true = ets:insert(UTab, {Hash, SeqNo, Object}),
     true = ets:insert(MTab, {SeqNo, Hash}),
-    [Object | fun() -> ucache(Cont, UTab, MTab, SeqNo+1, PostL) end].
+    %% A fun is created here, even if Cont is a list; objects
+    %% will not be copied to the ETS table unless requested.
+    [Object | fun() -> ucache(Cont, UTab, MTab, SeqNo+1, LocalPost) end].
 
 ucache_recall(UTab, MTab, SeqNo) ->
     case ets:lookup(MTab, SeqNo) of
@@ -2463,50 +2620,77 @@ ucache_recall(UTab, MTab, SeqNo) ->
 
 -define(LCACHE_FILE(Ref), {Ref, '$_qlc_cache_tmpfiles_'}).
 
-lcache(H, Ref, PostL, TmpDir, MaxList) ->
+lcache(H, Ref, LocalPost, TmpDir, MaxList, TmpUsage) ->
     Key = ?LCACHE_FILE(Ref),
     case get(Key) of
         undefined ->
-            lcache1(H, {Key, PostL, TmpDir, MaxList}, MaxList, []);
+            lcache1(H, {Key, LocalPost, TmpDir, MaxList, TmpUsage}, 
+                    MaxList, []);
         {file, _Fd, _TmpFile, F} ->
             F();
         L when is_list(L) ->
             L
     end.
     
-lcache1([]=Cont, {Key, PostL, _TmpDir, _MaxList}, _Sz, Acc) ->
-    local_post(PostL),
+lcache1([]=Cont, {Key, LocalPost, _TmpDir, _MaxList, _TmpUsage}, _Sz, Acc) ->
+    local_post(LocalPost),
     case get(Key) of
         undefined -> 
-            put(Key, lists:reverse(Acc));
+            put(Key, lists:reverse(Acc)),
+            Cont;
         {file, Fd, TmpFile, _F} ->
-            lcache_write(Fd, TmpFile, Acc)
-    end,
-    Cont;
+            case lcache_write(Fd, TmpFile, Acc) of
+                ok ->
+                    Cont;
+                Error ->
+                    Error
+            end
+    end;
 lcache1(H, State, Sz, Acc) when Sz < 0 ->
-    {Key, PostL, TmpDir, MaxList} = State,
-    {FileName, Fd} = 
+    {Key, LocalPost, TmpDir, MaxList, TmpUsage} = State,
+    GetFile = 
         case get(Key) of
             {file, Fd0, TmpFile, _F} ->
                 {TmpFile, Fd0};
+            undefined when TmpUsage =:= not_allowed ->
+                error({tmpdir_usage, caching});
             undefined ->
+                maybe_error_logger(TmpUsage, caching),
                 FName = tmp_filename(TmpDir),
-                {F, Fd0} = open_file(FName, [write], PostL),
+                {F, Fd0} = open_file(FName, [write], LocalPost),
                 put(Key, {file, Fd0, FName, F}),
                 {FName, Fd0}
         end,
-    lcache_write(Fd, FileName, Acc),
-    lcache1(H, State, MaxList, []);
+    case GetFile of
+        {FileName, Fd} ->
+            case lcache_write(Fd, FileName, Acc) of
+                ok -> 
+                    lcache1(H, State, MaxList, []);
+                Error ->
+                    Error
+            end;
+        Error ->
+            Error
+    end;
 lcache1([Object | Cont], State, Sz0, Acc) ->
     Sz = decr_list_size(Sz0, Object),
-    [Object | fun() -> lcache1(Cont, State, Sz, [Object | Acc]) end];
-lcache1(F, State, Sz, Acc) when is_function(F) ->
-    lcache1(F(), State, Sz, Acc);
-lcache1(Term, _State, _Sz, _Acc) ->
-    throw_error(Term).
-    
+    [Object | lcache2(Cont, State, Sz, [Object | Acc])];
+lcache1(F, State, Sz, Acc) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            lcache1(Objects, State, Sz, Acc);
+        Term ->
+            Term
+    end.
+
+lcache2([Object | Cont], State, Sz0, Acc) when Sz0 >= 0 ->
+    Sz = decr_list_size(Sz0, Object),
+    [Object | lcache2(Cont, State, Sz, [Object | Acc])];
+lcache2(Cont, State, Sz, Acc) ->
+    fun() -> lcache1(Cont, State, Sz, Acc) end.
+
 lcache_write(Fd, FileName, L) ->
-    (write_terms(FileName, Fd))(t2b(L, [])).
+    write_binary_terms(t2b(L, []), Fd, FileName).
 
 t2b([], Bs) ->
     Bs;
@@ -2528,42 +2712,64 @@ del_lcache(Ref) ->
             end
     end.
 
-tag_objects([Object | Cont], I) ->
-    [{Object, I} | fun() -> tag_objects(Cont, I + 1) end];
-tag_objects([]=Cont, _I) ->
+tag_objects([Object | Cont], T) ->
+    [{Object, T} | tag_objects2(Cont, T + 1)];
+tag_objects([]=Cont, _T) ->
     Cont;
-tag_objects(F, I) when is_function(F) ->
-    tag_objects(F(), I);
-tag_objects(T, _I) ->
-    T.
+tag_objects(F, T) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            tag_objects(Objects, T);
+        Term ->
+            Term
+    end.
 
+tag_objects2([Object | Cont], T) ->
+    [{Object, T} | tag_objects2(Cont, T + 1)];
+tag_objects2(Objects, T) ->
+    fun() -> tag_objects(Objects, T) end.
+
+untag_objects([]=Objs) ->
+    Objs;
 untag_objects([{Object, _N} | Cont]) ->
-    [Object | fun() -> untag_objects(Cont) end];
-untag_objects([]=Cont) ->
+    [Object | untag_objects2(Cont)];
+untag_objects(F) ->
+    case F() of
+        Objects when is_list(Objects) ->
+            untag_objects(Objects);
+        Term -> % Cannot happen
+            Term
+    end.
+
+untag_objects2([{Object, _N} | Cont]) ->
+    [Object | untag_objects2(Cont)];
+untag_objects2([]=Cont) ->
     Cont;
-untag_objects(F) when is_function(F) ->
-    untag_objects(F());
-untag_objects(T) ->
-    %% Cannot happen.
-    T.
+untag_objects2(Objects) ->
+    fun() -> untag_objects(Objects) end.
 
 %%% Merge join.
 %%% Temporary files are used when many objects have the same key.
 
 -define(JWRAP(E1, E2), [E1 | E2]).
 
--record(m, {id, tmpdir, max_list}).
+-record(m, {id, tmpdir, max_list, tmp_usage}).
 
 merge_join([]=Cont, _C1, _T2, _C2, _Opt) ->
     Cont;
 merge_join([E1 | L1], C1, L2, C2, Opt) ->
-    #qlc_opt{tmpdir = TmpDir, max_list = MaxList} = Opt,
-    M = #m{id = merge_join_id(), tmpdir = TmpDir, max_list = MaxList},
+    #qlc_opt{tmpdir = TmpDir, max_list = MaxList, 
+             tmpdir_usage = TmpUsage} = Opt,
+    M = #m{id = merge_join_id(), tmpdir = TmpDir, max_list = MaxList, 
+           tmp_usage = TmpUsage},
     merge_join2(E1, element(C1, E1), L1, C1, L2, C2, M);
-merge_join(F1, C1, L2, C2, Opt) when is_function(F1) ->
-    merge_join(F1(), C1, L2, C2, Opt);
-merge_join(T1, _C1, _L2, _C2, _Opt) ->
-    throw_error(T1).
+merge_join(F1, C1, L2, C2, Opt) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            merge_join(L1, C1, L2, C2, Opt);
+        T1 ->
+            T1
+    end.
 
 merge_join1(_E2, _K2, []=Cont, _C1, _L2, _C2, M) ->
     end_merge_join(Cont, M);
@@ -2577,10 +2783,13 @@ merge_join1(E2, K2, [E1 | L1], C1, L2, C2, M) ->
         true -> % K1 < K2
             merge_join1(E2, K2, L1, C1, L2, C2, M)
     end;
-merge_join1(E2, K2, F1, C1, L2, C2, M) when is_function(F1) ->
-    merge_join1(E2, K2, F1(), C1, L2, C2, M);
-merge_join1(_E2, _K2, T1, _C1, _L2, _C2, _M) ->
-    throw_error(T1).
+merge_join1(E2, K2, F1, C1, L2, C2, M) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            merge_join1(E2, K2, L1, C1, L2, C2, M);
+        T1 ->
+            T1
+    end.
 
 merge_join2(_E1, _K1, _L1, _C1, []=Cont, _C2, M) ->
     end_merge_join(Cont, M);
@@ -2594,10 +2803,13 @@ merge_join2(E1, K1, L1, C1, [E2 | L2], C2, M) ->
         true -> % K1 < K2
             merge_join1(E2, K2, L1, C1, L2, C2, M)
     end;
-merge_join2(E1, K1, L1, C1, F2, C2, M) when is_function(F2) ->
-    merge_join2(E1, K1, L1, C1, F2(), C2, M);
-merge_join2(_E1, _K1, _L1, _C1, T2, _C2, _M) ->
-    throw_error(T2).
+merge_join2(E1, K1, L1, C1, F2, C2, M) ->
+    case F2() of
+        L2 when is_list(L2) ->
+            merge_join2(E1, K1, L1, C1, L2, C2, M);
+        T2 ->
+            T2
+    end.
 
 %% element(C2, E2_0) == K1
 same_keys2(E1, K1, L1, C1, [], _C2, E2_0, M) ->
@@ -2612,11 +2824,14 @@ same_keys2(E1, K1, L1, C1, [E2 | L2]=L2_0, C2, E2_0, M) ->
             [?JWRAP(E1, E2_0) |
              fun() -> same_loop1(L1, K1, C1, E2_0, L2_0, C2, M) end]
     end;
-same_keys2(E1, K1, L1, C1, F2, C2, E2_0, M) when is_function(F2) ->
-    same_keys2(E1, K1, L1, C1, F2(), C2, E2_0, M);
-same_keys2(E1, K1, L1, C1, T2, _C2, E2_0, M) ->
-    Cont = fun(_L1b) -> throw_error(T2) end,
-    loop_same_keys(E1, K1, L1, C1, [E2_0], Cont, M).
+same_keys2(E1, K1, L1, C1, F2, C2, E2_0, M) ->
+    case F2() of
+        L2 when is_list(L2) ->
+            same_keys2(E1, K1, L1, C1, L2, C2, E2_0, M);
+        T2 ->
+            Cont = fun(_L1b) -> T2 end,
+            loop_same_keys(E1, K1, L1, C1, [E2_0], Cont, M)
+    end.
 
 same_loop1([], _K1_0, _C1, _E2_0, _L2, _C2, M) ->
     end_merge_join([], M);
@@ -2629,10 +2844,13 @@ same_loop1([E1 | L1], K1_0, C1, E2_0, L2, C2, M) ->
         K1_0 < K1 ->
             merge_join2(E1, K1, L1, C1, L2, C2, M)
     end;
-same_loop1(F1, K1_0, C1, E2_0, L2, C2, M) when is_function(F1) ->
-    same_loop1(F1(), K1_0, C1, E2_0, L2, C2, M);
-same_loop1(T1, _K1_0, _C1, _E2_0, _L2, _C2, _M) ->
-    throw_error(T1).
+same_loop1(F1, K1_0, C1, E2_0, L2, C2, M) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            same_loop1(L1, K1_0, C1, E2_0, L2, C2, M);
+        T1 ->
+            T1
+    end.
 
 %% element(C2, E2_0) == K1, element(C2, E2) == K1_0
 same_keys1(E1_0, _K1_0, [], _C1, E2, _C2, E2_0, _L2, M) ->
@@ -2648,11 +2866,14 @@ same_keys1(E1_0, K1_0, [E1 | _]=L1, C1, E2, C2, E2_0, L2, M) ->
             [?JWRAP(E1_0, E2_0), ?JWRAP(E1_0, E2) |
              fun() -> same_keys(K1_0, E1_0, L1, C1, L2, C2, M) end]
     end;
-same_keys1(E1_0, K1_0, F1, C1, E2, C2, E2_0, L2, M) when is_function(F1) ->
-    same_keys1(E1_0, K1_0, F1(), C1, E2, C2, E2_0, L2, M);
-same_keys1(E1_0, K1_0, T1, C1, E2, _C2, E2_0, _L2, M) ->
-    Cont = fun(_L1b) -> throw_error(T1) end,
-    loop_same_keys(E1_0, K1_0, T1, C1, [E2, E2_0], Cont, M).
+same_keys1(E1_0, K1_0, F1, C1, E2, C2, E2_0, L2, M) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            same_keys1(E1_0, K1_0, L1, C1, E2, C2, E2_0, L2, M);
+        T1 ->
+            Cont = fun() -> T1 end,
+            loop_same(E1_0, [E2, E2_0], Cont)
+    end.
 
 %% There is no such element E in L1 such that element(C1, E) == K1.
 same_keys(_K1, _E1, _L1, _C1, []=Cont, _C2, M) ->
@@ -2666,10 +2887,13 @@ same_keys(K1, E1, L1, C1, [E2 | L2], C2, M) ->
         K1 < K2 ->
             merge_join1(E2, K2, L1, C1, L2, C2, M)
     end;
-same_keys(K1, E1, L1, C1, F2, C2, M) when is_function(F2) ->
-    same_keys(K1, E1, L1, C1, F2(), C2, M);
-same_keys(_K1, _E1, _L1, _C1, T2, _C2, _M) ->
-    throw_error(T2).
+same_keys(K1, E1, L1, C1, F2, C2, M) ->
+    case F2() of
+        L2 when is_list(L2) ->
+            same_keys(K1, E1, L1, C1, L2, C2, M);
+        T2 ->
+            T2
+    end.
 
 %% There are at least two elements in [E1 | L1] that are to be combined
 %% with the elements in E2s (length(E2s) > 1). This loop covers the case
@@ -2678,10 +2902,16 @@ same_keys_cache(E1, K1, L1, C1, [], _C2, E2s, _Sz, M) ->
     Cont = fun(_L1b) -> end_merge_join([], M) end,
     loop_same_keys(E1, K1, L1, C1, E2s, Cont, M);
 same_keys_cache(E1, K1, L1, C1, L2, C2, E2s, Sz0, M) when Sz0 < 0 ->
-    ok = init_merge_join(M),
-    Sz = M#m.max_list,
-    C = fun() -> same_keys_file(E1, K1, L1, C1, L2, C2, [], Sz, M) end,
-    write_same_keys(E1, E2s, M, C);
+    case init_merge_join(M) of
+        ok -> 
+            Sz = M#m.max_list,
+            C = fun() -> 
+                        same_keys_file(E1, K1, L1, C1, L2, C2, [], Sz, M) 
+                end,
+            write_same_keys(E1, E2s, M, C);
+        Error ->
+            Error
+    end;
 same_keys_cache(E1, K1, L1, C1, [E2 | L2], C2, E2s, Sz0, M) ->
     K2 = element(C2, E2),
     if
@@ -2692,11 +2922,14 @@ same_keys_cache(E1, K1, L1, C1, [E2 | L2], C2, E2s, Sz0, M) ->
             Cont = fun(L1b) -> merge_join1(E2, K2, L1b, C1, L2, C2, M) end,
             loop_same_keys(E1, K1, L1, C1, E2s, Cont, M)
     end;
-same_keys_cache(E1, K1, L1, C1, F2, C2, E2s, Sz, M) when is_function(F2) ->
-    same_keys_cache(E1, K1, L1, C1, F2(), C2, E2s, Sz, M);
-same_keys_cache(E1, K1, L1, C1, T2, _C2, E2s, _Sz, M) ->
-    Cont = fun(_L1b) -> throw_error(T2) end,
-    loop_same_keys(E1, K1, L1, C1, E2s, Cont, M).
+same_keys_cache(E1, K1, L1, C1, F2, C2, E2s, Sz, M) ->
+    case F2() of
+        L2 when is_list(L2) ->
+            same_keys_cache(E1, K1, L1, C1, L2, C2, E2s, Sz, M);
+        T2 ->
+            Cont = fun(_L1b) -> T2 end,
+            loop_same_keys(E1, K1, L1, C1, E2s, Cont, M)
+    end.
 
 %% E2s holds all elements E2 in L2 such that element(E2, C2) == K1.
 loop_same_keys(E1, _K1, [], _C1, E2s, _Cont, M) ->
@@ -2717,12 +2950,15 @@ loop_keys(K, [E1 | L1]=L1_0, C1, E2s, Cont, M) ->
         K1 > K -> 
             Cont(L1_0)
     end;
-loop_keys(K, F1, C1, E2s, Cont, M) when is_function(F1) ->
-    loop_keys(K, F1(), C1, E2s, Cont, M);
 loop_keys(_K, []=L1, _C1, _Es2, Cont, _M) ->
     Cont(L1);
-loop_keys(_K, T1, _C1, _Es2, _Cont, _M) ->
-    throw_error(T1).
+loop_keys(K, F1, C1, E2s, Cont, M) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            loop_keys(K, L1, C1, E2s, Cont, M);
+        T1 ->
+            T1
+    end.
 
 %% This is for the case when a temporary file has to be used.
 same_keys_file(E1, K1, L1, C1, [], _C2, E2s, _Sz, M) ->
@@ -2745,11 +2981,14 @@ same_keys_file(E1, K1, L1, C1, [E2 | L2], C2, E2s, Sz0, M) ->
                    end,
             same_keys_file_write(E1, K1, L1, C1, E2s, M, Cont)
     end;
-same_keys_file(E1, K1, L1, C1, F2, C2, E2s, Sz, M) when is_function(F2) ->
-    same_keys_file(E1, K1, L1, C1, F2(), C2, E2s, Sz, M);
-same_keys_file(E1, K1, L1, C1, T2, _C2, E2s, _Sz, M) ->
-    Cont = fun(_L1b) -> throw_error(T2) end,
-    same_keys_file_write(E1, K1, L1, C1, E2s, M, Cont).
+same_keys_file(E1, K1, L1, C1, F2, C2, E2s, Sz, M) ->
+    case F2() of
+        L2 when is_list(L2) ->
+            same_keys_file(E1, K1, L1, C1, L2, C2, E2s, Sz, M);
+        T2 ->
+            Cont = fun(_L1b) -> T2 end,
+            same_keys_file_write(E1, K1, L1, C1, E2s, M, Cont)
+    end.
 
 same_keys_file_write(E1, K1, L1, C1, E2s, M, Cont) ->
     C = fun() -> loop_keys_file(K1, L1, C1, Cont, M) end,
@@ -2762,8 +3001,10 @@ write_same_keys(E1, Es2, M, Cont) ->
 
 %% Avoids one (the first) traversal of the temporary file.
 write_same_keys(_E1, [], M, E2s, Objs) ->
-    ok = write_merge_join(M, E2s),
-    Objs;
+    case write_merge_join(M, E2s) of
+        ok -> Objs;
+        Error -> Error
+    end;
 write_same_keys(E1, [E2 | E2s0], M, E2s, Objs) ->
     BE2 = term_to_binary(E2),
     write_same_keys(E1, E2s0, M, [BE2 | E2s], [?JWRAP(E1, E2) | Objs]).
@@ -2777,12 +3018,15 @@ loop_keys_file(K, [E1 | L1]=L1_0, C1, Cont, M) ->
         K1 > K ->
             Cont(L1_0)
     end;
-loop_keys_file(K, F1, C1, Cont, M) when is_function(F1) ->
-    loop_keys_file(K, F1(), C1, Cont, M);
 loop_keys_file(_K, []=L1, _C1, Cont, _M) ->
     Cont(L1);
-loop_keys_file(_K, T1, _C1, _Cont, _M) ->
-    throw_error(T1).
+loop_keys_file(K, F1, C1, Cont, M) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            loop_keys_file(K, L1, C1, Cont, M);
+        T1 ->
+            T1
+    end.
 
 end_merge_join(Reply, M) ->
     end_merge_join(M),
@@ -2798,7 +3042,7 @@ end_merge_join(Reply, M) ->
 
 -define(MERGE_JOIN_FILE, '$_qlc_merge_join_tmpfiles_').
 
-init_merge_join(#m{id = MergeId, tmpdir = TmpDir}) ->
+init_merge_join(#m{id = MergeId, tmpdir = TmpDir, tmp_usage = TmpUsage}) ->
     case tmp_merge_file(MergeId) of
         {Fd, FileName} ->
             case file:truncate(Fd) of
@@ -2807,7 +3051,10 @@ init_merge_join(#m{id = MergeId, tmpdir = TmpDir}) ->
                 Error ->
                     file_error(FileName, Error)
             end;
+        none when TmpUsage =:= not_allowed ->
+            error({tmpdir_usage, joining});
         none ->
+            maybe_error_logger(TmpUsage, joining),
             FName = tmp_filename(TmpDir),
             case file:open(FName, [raw, binary, read, write]) of
                 {ok, Fd} ->
@@ -2821,27 +3068,21 @@ init_merge_join(#m{id = MergeId, tmpdir = TmpDir}) ->
 
 write_merge_join(#m{id = MergeId}, BTerms) ->
     {Fd, FileName} = tmp_merge_file(MergeId),
-    case file:write(Fd, size_bin(BTerms, [])) of
-        ok ->
-            ok;
-        Error ->
-            file_error(FileName, Error)
-    end.
+    write_binary_terms(BTerms, Fd, FileName).
 
 read_merge_join(#m{id = MergeId}, E1, Cont) ->
     {Fd, FileName} = tmp_merge_file(MergeId),
     case file:position(Fd, bof) of
         {ok, 0} -> 
-            ok;
+            Fun = fun([], _) ->
+                          Cont();
+                     (Ts, C) when is_list(Ts) ->
+                          join_read_terms(E1, Ts, C)
+                  end,
+            file_loop_read(<<>>, ?CHUNK_SIZE, {Fd, FileName}, Fun);
         Error -> 
             file_error(FileName, Error)
-    end,
-    Fun = fun([], _) ->
-                  Cont();
-             (Ts, C) ->
-                  join_read_terms(E1, Ts, C)
-          end,
-    file_loop_read(<<>>, ?CHUNK_SIZE, 0, {Fd, FileName}, Fun).
+    end.
 
 join_read_terms(_E1, [], Objs) ->
     Objs;
@@ -2908,10 +3149,52 @@ lookup_join([E1 | L1], C1, LuF, C2, Rev) ->
     end;
 lookup_join([]=Cont, _C1, _LuF, _C2, _Rev) ->
     Cont;
-lookup_join(F1, C1, LuF, C2, Rev) when is_function(F1) ->
-    lookup_join(F1(), C1, LuF, C2, Rev);
-lookup_join(T1, _C1, _LuF, _C2, _Rev) ->
-    T1.
+lookup_join(F1, C1, LuF, C2, Rev) ->
+    case F1() of
+        L1 when is_list(L1) ->
+            lookup_join(L1, C1, LuF, C2, Rev);
+        T1 ->
+            T1
+    end.
+
+maybe_error_logger(allowed, _) ->
+    ok;
+maybe_error_logger(Name, Why) ->
+    [_, _, {?MODULE,maybe_error_logger,_} | Stacktrace] = expand_stacktrace(),
+    Trimmer = fun(M, _F, _A) -> M =:= erl_eval end,
+    Formater = fun(Term, I) -> io_lib:print(Term, I, 80, -1) end,
+    X = lib:format_stacktrace(1, Stacktrace, Trimmer, Formater),
+    error_logger:Name("qlc: temporary file was needed for ~w\n~s\n", 
+                      [Why, lists:flatten(X)]).
+
+expand_stacktrace() ->
+    D = erlang:system_flag(backtrace_depth, 8),
+    try
+        %% Compensate for a bug in erlang:system_flag/2:
+        expand_stacktrace(lists:max([1, D]))
+    after
+        erlang:system_flag(backtrace_depth, D)
+    end.
+
+expand_stacktrace(D) ->
+    _ = erlang:system_flag(backtrace_depth, D),
+    {'EXIT', {foo, Stacktrace}} = (catch erlang:error(foo)),
+    L = lists:takewhile(fun({M,_,_}) -> M =/= ?MODULE 
+                        end, lists:reverse(Stacktrace)),
+    if
+        length(L) < 3 andalso length(Stacktrace) =:= D ->
+            expand_stacktrace(D + 5);
+        true ->
+            Stacktrace
+    end.
+
+write_binary_terms(BTerms, Fd, FileName) ->
+    case file:write(Fd, size_bin(BTerms, [])) of
+        ok ->
+            ok;
+        Error ->
+            file_error(FileName, Error)
+    end.
 
 post_funs(L) ->
     end_all_merge_joins(),
@@ -2950,10 +3233,19 @@ family_union(L) ->
     sofs:to_external(sofs:family_union(sofs:relation_to_family(R))).
 
 file_error(File, {error, Reason}) ->
+    error({file_error, File, Reason}).
+
+-spec(throw_file_error/2 :: (string(), {'error',atom()}) -> no_return()).
+
+throw_file_error(File, {error, Reason}) ->
     throw_reason({file_error, File, Reason}).
+
+-spec(throw_reason/1 :: (_) -> no_return()).
 
 throw_reason(Reason) ->
     throw_error(error(Reason)).
+
+-spec(throw_error/1 :: (_) -> no_return()).
 
 throw_error(Error) ->
     throw(Error).

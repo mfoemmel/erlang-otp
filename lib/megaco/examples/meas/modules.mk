@@ -1,6 +1,7 @@
 #-*-makefile-*-   ; force emacs to enter makefile-mode
 
 SCRIPT_SKELETONS = \
+	meas.sh.skel \
 	trans.sh.skel \
 	mstone1.sh.skel
 

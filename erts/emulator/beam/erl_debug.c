@@ -28,7 +28,6 @@
 #include "bif.h"
 #include "beam_catches.h"
 #include "erl_debug.h"
-#include "ggc.h"
 
 #define WITHIN(ptr, x, y) ((x) <= (ptr) && (ptr) < (y))
 
@@ -340,21 +339,10 @@ void erts_check_for_holes(Process* p)
     p->last_htop = HEAP_TOP(p);
 
     for (hf = MBUF(p); hf != 0; hf = hf->next) {
-#if !defined(HEAP_FRAG_ELIM_TEST)
-	if (ARITH_HEAP(p) - hf->mem < (unsigned long)hf->size) {
-	    check_memory(hf->mem, ARITH_HEAP(p));
-	    if (hf == p->last_mbuf) {
-		break;
-	    }
-	} else {
-#endif
-	    if (hf == p->last_mbuf) {
-		break;
-	    }
-	    check_memory(hf->mem, hf->mem+hf->size);
-#if !defined(HEAP_FRAG_ELIM_TEST)
+	if (hf == p->last_mbuf) {
+	    break;
 	}
-#endif
+	check_memory(hf->mem, hf->mem+hf->size);
     }
     p->last_mbuf = MBUF(p);
 }
@@ -396,16 +384,7 @@ void erts_check_heap(Process *p)
     }
 
     while (bp) {
-#if !defined(HEAP_FRAG_ELIM_TEST)
-        if ((ARITH_HEAP(p) >= bp->mem) &&
-            (ARITH_HEAP(p) < bp->mem + bp->size)) {
-            erts_check_memory(p,bp->mem,ARITH_HEAP(p));
-        } else {
-#endif
-            erts_check_memory(p,bp->mem,bp->mem + bp->size);
-#if !defined(HEAP_FRAG_ELIM_TEST)
-        }
-#endif
+	erts_check_memory(p,bp->mem,bp->mem + bp->size);
         bp = bp->next;
     }
 }
@@ -418,18 +397,14 @@ void erts_check_memory(Process *p, Eterm *start, Eterm *end)
         Eterm hval = *pos++;
 
 #ifdef DEBUG
-        if (hval == ARITH_MARKER) {
-            erl_exit(1, "ARITH_MARKER in heap fragment @ 0x%0*lx!\n",
-                     PTR_SIZE,(unsigned long)(pos - 1));
-        }
-        else if (hval == DEBUG_BAD_WORD) {
+        if (hval == DEBUG_BAD_WORD) {
             print_untagged_memory(start, end);
             erl_exit(1, "Uninitialized HAlloc'ed memory found @ 0x%0*lx!\n",
                      PTR_SIZE,(unsigned long)(pos - 1));
         }
 #endif
 
-        if(is_thing(hval)) {
+        if (is_thing(hval)) {
             pos += thing_arityval(hval);
             continue;
         }
@@ -469,9 +444,6 @@ void verify_process(Process *p)
 
     if (p->dictionary)
         VERIFY_AREA("dictionary",p->dictionary->data, p->dictionary->used);
-    if (p->debug_dictionary)
-        VERIFY_AREA("debug dictionary",p->debug_dictionary->data,
-                    p->debug_dictionary->used);
     VERIFY_ETERM("seq trace token",p->seq_trace_token);
     VERIFY_ETERM("group leader",p->group_leader);
     VERIFY_ETERM("fvalue",p->fvalue);
@@ -720,14 +692,6 @@ static void print_process_memory(Process *p)
         erts_printf("\n");
     }
 
-    if (p->debug_dictionary != NULL) {
-        int n = p->debug_dictionary->used;
-        Eterm *ptr = p->debug_dictionary->data;
-        erts_printf("  Debug Dictionary: ");
-        while (n--) erts_printf("0x%0*lx ",PTR_SIZE,(unsigned long)ptr++);
-        erts_printf("\n");
-    }
-
     if (p->arity > 0) {
         int n = p->arity;
         Eterm *ptr = p->arg_reg;
@@ -784,16 +748,7 @@ static void print_process_memory(Process *p)
                     PTR_SIZE, "heap fragments",
                     dashes, dashes, dashes, dashes);
     while (bp) {
-#if !defined(HEAP_FRAG_ELIM_TEST)
-        if ((ARITH_HEAP(p) >= bp->mem) &&
-            (ARITH_HEAP(p) < bp->mem + bp->size)) {
-            print_untagged_memory(bp->mem,ARITH_HEAP(p));
-        } else {
-#endif
-            print_untagged_memory(bp->mem,bp->mem + bp->size);
-#if !defined(HEAP_FRAG_ELIM_TEST)
-        }
-#endif
+	print_untagged_memory(bp->mem,bp->mem + bp->size);
         bp = bp->next;
     }
 }

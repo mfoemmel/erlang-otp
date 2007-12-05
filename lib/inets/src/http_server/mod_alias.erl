@@ -22,6 +22,7 @@
 	 real_script_name/3,
 	 default_index/2,
 	 load/2,
+	 store/2,
 	 path/3]).
 
 -include("httpd.hrl").
@@ -31,13 +32,13 @@
 %% do
 
 do(Info) ->
-    case httpd_util:key1search(Info#mod.data, status) of
+    case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed,Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data, response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		%% No response has been generated!
 		undefined ->
 		    do_alias(Info);
@@ -142,7 +143,7 @@ append_index(RealName, [Index | Rest]) ->
 %% path
 
 path(Data, ConfigDB, RequestURI) ->
-    case httpd_util:key1search(Data, real_name) of
+    case proplists:get_value(real_name, Data) of
 	undefined ->
 	    DocumentRoot = httpd_util:lookup(ConfigDB, document_root, ""),
 	    {Path, _AfterPath} = 
@@ -178,3 +179,30 @@ load("ScriptAlias " ++ ScriptAlias, []) ->
 	    {error, ?NICE(httpd_conf:clean(ScriptAlias)++
 			  " is an invalid ScriptAlias")}
     end.
+
+store({directory_index, Value} = Conf, _) when is_list(Value) ->
+    case is_directory_index_list(Value) of
+	true ->
+	    {ok, Conf};
+	false ->
+	    {error, {wrong_type, {directory_index, Value}}}
+    end;
+store({directory_index, Value}, _) ->
+    {error, {wrong_type, {directory_index, Value}}};
+store({alias, {Fake, Real}} = Conf, _) when is_list(Fake),
+					    is_list(Real) ->
+    {ok, Conf};
+store({alias, Value}, _) ->
+    {error, {wrong_type, {alias, Value}}};
+store({script_alias, {Fake, Real}} = Conf, _) when is_list(Fake),
+						   is_list(Real) ->
+    {ok, Conf};
+store({script_alias, Value}, _) ->
+    {error, {wrong_type, {script_alias, Value}}}.
+
+is_directory_index_list([]) ->
+    true;
+is_directory_index_list([Head | Tail]) when is_list(Head) ->
+    is_directory_index_list(Tail);
+is_directory_index_list(_) ->
+    false.

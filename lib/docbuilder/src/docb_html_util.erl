@@ -326,9 +326,9 @@ erl_include(File, Tag) ->
 code_include(File, Tag) ->
     case docb_main:include(File, Tag, Tag) of
 	{ok, Cs} ->
-	    {drop, "\n<PRE>\n" ++ text_to_html(Cs) ++ "\n</PRE>\n"};
+	    {ok,text_to_html(Cs)};
 	error ->
-	    {drop, ""}
+	    {error, {codeinclude,File}}
     end.
 
 erl_eval(Expr) ->

@@ -20,7 +20,7 @@
 -export([test_nil/4, test_cons/4, test_flonum/4, test_fixnum/4,
 	 test_tuple/4, test_atom/4, test_bignum/4, 
 	 test_any_pid/4, test_any_port/4,
-	 test_ref/4, test_fun/4, test_fun2/5, test_binary/4, test_list/4,
+	 test_ref/4, test_fun/4, test_fun2/5, test_matchstate/4, test_binary/4, test_bitstr/4, test_list/4,
 	 test_integer/4, test_number/4, test_constant/4, test_tuple_N/5]).
 -export([realtag_fixnum/2, tag_fixnum/2, realuntag_fixnum/2, untag_fixnum/2]).
 -export([test_two_fixnums/3, test_fixnums/4, unsafe_fixnum_add/3,
@@ -33,16 +33,15 @@
 -export([unsafe_closure_element/3]).
 -export([mk_fun_header/0, tag_fun/2]).
 -export([unsafe_untag_float/2, unsafe_tag_float/2]).
--export([unsafe_mk_sub_binary/4,unsafe_mk_sub_binary/6, unsafe_mk_float/3, unsafe_mk_big/3, unsafe_load_float/3]).
--export([safe_mk_sub_binary/4,safe_mk_sub_binary/6]).
--export([bignum_sizeneed/1,bignum_sizeneed_code/2]).
+-export([mk_sub_binary/6,mk_sub_binary/7]).
+-export([unsafe_mk_float/3, unsafe_mk_big/3, unsafe_load_float/3]).
+-export([bignum_sizeneed/1,bignum_sizeneed_code/2, get_word_value_from_big/3]).
 -export([test_subbinary/3, test_heap_binary/3]).
--export([finalize_bin/4, get_base/2]).
--export([create_heap_binary/3, create_refc_binary/3]).
--export([get_erts_mb/1]).
--export([extract_offset/2, extract_binsize/2, extract_base/2, extract_orig/2]).
--export([update_offset/2, create_matchstate/6]).
--export([extract_slot/3, update_slot/3, extract_matchbuffer/2]).
+-export([create_heap_binary/3, create_refc_binary/3, create_refc_binary/4]).
+-export([create_matchstate/6, convert_matchstate/1, get_matchstate_nof_slots/2]).
+-export([get_field_from_term/3,get_field_from_pointer/3,
+	 set_field_from_term/3, set_field_from_pointer/3,
+	extract_matchbuffer/2, extract_binary_bytes/2]).
 
 -include("hipe_rtl.hrl").
 -include("hipe_literals.hrl").
@@ -102,6 +101,14 @@
 
 mk_header(SZ,TAG) -> (SZ bsl ?HEADER_ARITY_OFFS) + TAG.
 mk_arityval(SZ)	-> mk_header(SZ, ?TAG_HEADER_ARITYVAL).
+
+size_from_header(Sz,Header) ->
+  [hipe_rtl:mk_alu(Sz,Header,srl,hipe_rtl:mk_imm(?HEADER_ARITY_OFFS))].
+
+mk_var_header(Header, Size, Tag) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  [hipe_rtl:mk_alu(Tmp, Size, sll, hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
+   hipe_rtl:mk_alu(Header, Tmp, 'add', hipe_rtl:mk_imm(Tag))].
 
 mk_fixnum(X) -> (X bsl ?TAG_IMMED1_SIZE) + ?TAG_IMMED1_SMALL.
 
@@ -300,7 +307,16 @@ test_bignum(X, TrueLab, FalseLab, Pred) ->
    mask_and_compare(Tmp, BigMask, ?TAG_HEADER_POS_BIG,
 		    TrueLab, FalseLab, Pred)].
 
-test_binary(X, TrueLab, FalseLab, Pred) ->
+test_matchstate(X, TrueLab, FalseLab, Pred) ->
+  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
+  HalfTrueLab = hipe_rtl:mk_new_label(),
+  [test_is_boxed(X, hipe_rtl:label_name(HalfTrueLab), FalseLab, Pred),
+   HalfTrueLab,
+   get_header(Tmp, X),
+   mask_and_compare(Tmp, ?TAG_HEADER_MASK, ?TAG_HEADER_BIN_MATCHSTATE, 
+		    TrueLab, FalseLab, Pred)].
+
+test_bitstr(X, TrueLab, FalseLab, Pred) ->
   Tmp = hipe_rtl:mk_new_reg_gcsafe(),
   HalfTrueLab = hipe_rtl:mk_new_label(),
   Mask = ?TAG_HEADER_MASK - ?BINARY_XXX_MASK,
@@ -308,6 +324,25 @@ test_binary(X, TrueLab, FalseLab, Pred) ->
    HalfTrueLab,
    get_header(Tmp, X),
    mask_and_compare(Tmp, Mask, ?TAG_HEADER_REFC_BIN, TrueLab, FalseLab, Pred)].
+
+test_binary(X, TrueLab, FalseLab, Pred) ->
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+  IsBoxedLab = hipe_rtl:mk_new_label(),
+  IsBitStrLab = hipe_rtl:mk_new_label(),
+  IsSubBinLab =  hipe_rtl:mk_new_label(),
+  Mask = ?TAG_HEADER_MASK - ?BINARY_XXX_MASK,
+  [test_is_boxed(X, hipe_rtl:label_name(IsBoxedLab), FalseLab, Pred),
+   IsBoxedLab,
+   get_header(Tmp1, X),
+   mask_and_compare(Tmp1, Mask, ?TAG_HEADER_REFC_BIN,
+		    hipe_rtl:label_name(IsBitStrLab), FalseLab, Pred),
+   IsBitStrLab,
+   mask_and_compare(Tmp1, ?TAG_HEADER_MASK, ?TAG_HEADER_SUB_BIN,
+		    hipe_rtl:label_name(IsSubBinLab), TrueLab, 0.5),
+   IsSubBinLab,
+   get_field_from_term({sub_binary, bitsize}, X, Tmp2),
+   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(0), TrueLab, FalseLab, Pred)].
 
 test_list(X, TrueLab, FalseLab, Pred) ->
   Lab = hipe_rtl:mk_new_label(),
@@ -717,30 +752,12 @@ if_fun_get_arity_and_address(ArityReg, AddressReg, FunP, BadFunLab, Pred) ->
   IsFunCode ++ GetArityCode.
 -endif.
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% Floating point stuff.
-%%
-
-unsafe_untag_float(Dst, Src) ->
-  Offset = -(?TAG_PRIMARY_BOXED) + hipe_rtl_arch:word_size(),
-  [hipe_rtl:mk_fload(Dst, Src, hipe_rtl:mk_imm(Offset))].
-
-unsafe_tag_float(Dst, Src) ->
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  Head = hipe_rtl:mk_imm(flonum_header()),
-  WordSize = hipe_rtl_arch:word_size(),
-  [GetHPInsn,
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
-   hipe_rtl:mk_fstore(HP, hipe_rtl:mk_imm(WordSize), Src),
-   tag_flonum(Dst, HP),
-   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(WordSize+8)),
-   PutHPInsn].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
-%% Binary stuff
+%% Binary Code
 %%
+
 create_heap_binary(Base, Size, Dst) when is_integer(Size) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   WordSize = hipe_rtl_arch:word_size(),
@@ -750,8 +767,8 @@ create_heap_binary(Base, Size, Dst) when is_integer(Size) ->
 					    ?TAG_HEADER_HEAP_BIN)),
   [GetHPInsn,
    tag_boxed(Dst, HP),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_THING_WORD), HeapBinHeader),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_SIZE), hipe_rtl:mk_imm(Size)),
+   set_field_from_pointer({heap_bin, thing_word}, HP, HeapBinHeader),
+   set_field_from_pointer({heap_bin, binsize}, HP, hipe_rtl:mk_imm(Size)),
    hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA)),
    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(NoBytes)),
    PutHPInsn];
@@ -772,8 +789,8 @@ create_heap_binary(Base, Size, Dst) ->
    hipe_rtl:mk_alu(Tmp2, EvenWordSize, add, hipe_rtl:mk_imm(1)),
    hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(?HEAP_BIN_DATA)),
    mk_var_header(Header, Tmp2, ?TAG_HEADER_HEAP_BIN),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_THING_WORD), Header),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?HEAP_BIN_SIZE), Size),
+   set_field_from_pointer({heap_bin, thing_word}, HP, Header),
+   set_field_from_pointer({heap_bin, binsize}, HP, Size),
    tag_boxed(Dst, HP),
    hipe_rtl:mk_alu(Tmp3, HP, add, Size),
    hipe_rtl:mk_alu(Tmp4, Tmp3, add, hipe_rtl:mk_imm(3*WordSize-1)),
@@ -781,113 +798,74 @@ create_heap_binary(Base, Size, Dst) ->
    PutHPInsn].
 
 create_refc_binary(Base, Size, Dst) ->
+  create_refc_binary(Base, Size, hipe_rtl:mk_imm(0), Dst).
+
+create_refc_binary(Base, Size, Flags, Dst) ->
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   ProcBinHeader = hipe_rtl:mk_imm(?HEADER_PROC_BIN),
   WordSize = hipe_rtl_arch:word_size(),
-  Tmp2 = hipe_rtl:mk_new_reg(), % offset from Base
+  Val = hipe_rtl:mk_new_reg(), % offset from Base
   [GetHPInsn,
    tag_boxed(Dst, HP),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_THING_WORD), ProcBinHeader),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BINSIZE), Size),
+   set_field_from_pointer({proc_bin, thing_word}, HP, ProcBinHeader),
+   set_field_from_pointer({proc_bin, binsize}, HP, Size),
    heap_arch_spec(HP),
-   hipe_rtl:mk_alu(Tmp2, Base, sub, hipe_rtl:mk_imm(?BINARY_ORIG_BYTES)),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_VAL), Tmp2),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BYTES), Base),
+   hipe_rtl:mk_alu(Val, Base, sub, hipe_rtl:mk_imm(?BINARY_ORIG_BYTES)),
+   set_field_from_pointer({proc_bin, val}, HP, Val),
+   set_field_from_pointer({proc_bin, bytes}, HP, Base),
+   set_field_from_pointer({proc_bin, flags}, HP, Flags),
    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(?PROC_BIN_WORDSIZE*WordSize)),
    PutHPInsn].
-
-finalize_bin(Dst, Base, Offset, TrueLblName) ->
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  WordSize = hipe_rtl_arch:word_size(),
-  WordSizeShift = hipe_rtl_arch:log2_word_size(),
-  TmpOffset = hipe_rtl:mk_new_reg_gcsafe(),
-  Tmp2 = hipe_rtl:mk_new_reg(), % offset from Base
-  HeapLbl = hipe_rtl:mk_new_label(),
-  REFCLbl = hipe_rtl:mk_new_label(),
-  ProcBinHeader = hipe_rtl:mk_imm(?HEADER_PROC_BIN),
-  [GetHPInsn,
-   tag_boxed(Dst, HP),
-   hipe_rtl:mk_alu(TmpOffset, Offset, sra, hipe_rtl:mk_imm(3)),
-   hipe_rtl:mk_branch(TmpOffset, le, hipe_rtl:mk_imm(?MAX_HEAP_BIN_SIZE), 
-		      hipe_rtl:label_name(HeapLbl), hipe_rtl:label_name(REFCLbl)),
-   HeapLbl,
-   hipe_rtl:mk_alu(HP, HP, add, TmpOffset),
-   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize+(WordSize-1))),
-   %%hipe_rtl:mk_alu(HP, Tmp2, 'and', hipe_rtl:mk_imm (-WordSize)),
-   hipe_rtl:mk_alu(HP, HP, srl, hipe_rtl:mk_imm(WordSizeShift)),
-   hipe_rtl:mk_alu(HP, HP, sll, hipe_rtl:mk_imm(WordSizeShift)),
-   PutHPInsn,
-   hipe_rtl:mk_goto(TrueLblName),
-   REFCLbl,
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_THING_WORD), ProcBinHeader),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BINSIZE), TmpOffset),
-   heap_arch_spec(HP),
-   hipe_rtl:mk_alu(Tmp2, Base, sub, hipe_rtl:mk_imm(?BINARY_ORIG_BYTES)),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_VAL), Tmp2),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_BYTES), Base),
-   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(?PROC_BIN_WORDSIZE*WordSize)),
-   PutHPInsn,
-   hipe_rtl:mk_goto(TrueLblName)].
 
 heap_arch_spec(HP) ->
   Tmp1 = hipe_rtl:mk_new_reg(), % MSO state
   [hipe_rtl_arch:pcb_load(Tmp1, ?P_OFF_HEAP_MSO),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?PROC_BIN_NEXT), Tmp1),
+   set_field_from_pointer({proc_bin, next}, HP, Tmp1),
    hipe_rtl_arch:pcb_store(?P_OFF_HEAP_MSO, HP)].
 
-get_base(Base, ByteSize) ->
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(), 
-  Header = hipe_rtl:mk_new_reg_gcsafe(),
+test_heap_binary(Binary, TrueLblName, FalseLblName) ->
   Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
   Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
-  EvenWordSize = hipe_rtl:mk_new_reg_gcsafe(),
-  WordSize = hipe_rtl_arch:word_size(),
-  [GetHPInsn,
-   hipe_rtl:mk_alu(Tmp1, ByteSize, add, hipe_rtl:mk_imm(WordSize-1)),
-   hipe_rtl:mk_alu(EvenWordSize, Tmp1, sra, hipe_rtl:mk_imm(hipe_rtl_arch:log2_word_size())),
-   hipe_rtl:mk_alu(Tmp2, EvenWordSize, add, hipe_rtl:mk_imm(1)),
-   hipe_rtl:mk_alu(Base, HP, add, hipe_rtl:mk_imm(2*WordSize)),
-   mk_var_header(Header, Tmp2, ?TAG_HEADER_HEAP_BIN),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Header),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(WordSize), ByteSize),
-   PutHPInsn].
+  [get_header(Tmp1, Binary),
+   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
+   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_HEAP_BIN), 
+		      TrueLblName, FalseLblName)].
 
-safe_mk_sub_binary(Dst, Size, Offs, Orig) ->
-  [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)|unsafe_mk_sub_binary(Dst, Size, Offs, Orig)].
-unsafe_mk_sub_binary(Dst, Size, Offs, Orig) -> 
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, Orig) -> 
+  mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, 
+		       hipe_rtl:mk_imm(0), Orig).
+
+mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, 
+		     Writable, Orig) ->
+ {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   WordSize = hipe_rtl_arch:word_size(),
-  Head = hipe_rtl:mk_imm(?HEADER_SUB_BIN),
   [GetHPInsn,
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_THING_WORD), Head),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_BINSIZE), Size),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_OFFS), Offs),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_ORIG), Orig),
    tag_boxed(Dst, HP),
+   build_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, Writable, Orig),
    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE*WordSize)),
    PutHPInsn].
 
-safe_mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, Orig) ->
-  [hipe_rtl:mk_gctest(?SUB_BIN_WORDSIZE)|
-   unsafe_mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, Orig)].
-
-unsafe_mk_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, Orig) -> 
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  WordSize = hipe_rtl_arch:word_size(),
+build_sub_binary(Dst, ByteSize, ByteOffs, BitSize, BitOffs, 
+		 Writable, Orig) ->
   Head = hipe_rtl:mk_imm(?HEADER_SUB_BIN),
-  [GetHPInsn,
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_THING_WORD), Head),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_BINSIZE), ByteSize),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_OFFS), ByteOffs),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_BITSIZE), BitSize),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_BITOFFS), BitOffs),
-   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(?SUB_BIN_ORIG), Orig),
-   tag_boxed(Dst, HP),
-   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE*WordSize)),
-   PutHPInsn].
+  [set_field_from_term({sub_binary, thing_word}, Dst, Head),
+   set_field_from_term({sub_binary, binsize}, Dst, ByteSize),
+   set_field_from_term({sub_binary, offset}, Dst, ByteOffs),
+   set_field_from_term({sub_binary, bitsize}, Dst, BitSize),
+   set_field_from_term({sub_binary, bitoffset}, Dst, BitOffs),
+   set_field_from_term({sub_binary, is_writable}, Dst, Writable),
+   set_field_from_term({sub_binary, orig}, Dst, Orig)].
 
-%% safe_mk_float(Dst, FloatLo, FloatHi) ->
-%%   [hipe_rtl:mk_gctest(3)|unsafe_mk_float(Dst, FloatLo, FloatHi)].
+test_subbinary(Binary, TrueLblName, FalseLblName) ->
+  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
+  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
+  [get_header(Tmp1, Binary),
+   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
+   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_SUB_BIN), TrueLblName, FalseLblName)].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Float Code
 
 %% This mk_float takes two 32 bit regs and writes them starting at the
 %% first word boundary.
@@ -919,15 +897,26 @@ unsafe_load_float(DstLo, DstHi, Src) ->
        hipe_rtl:mk_load(DstLo, Src, hipe_rtl:mk_imm(Offset2), int32, unsigned)]
   end. 
 
+unsafe_untag_float(Dst, Src) ->
+  Offset = -(?TAG_PRIMARY_BOXED) + hipe_rtl_arch:word_size(),
+  [hipe_rtl:mk_fload(Dst, Src, hipe_rtl:mk_imm(Offset))].
+
+unsafe_tag_float(Dst, Src) ->
+  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
+  Head = hipe_rtl:mk_imm(flonum_header()),
+  WordSize = hipe_rtl_arch:word_size(),
+  [GetHPInsn,
+   hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0), Head),
+   hipe_rtl:mk_fstore(HP, hipe_rtl:mk_imm(WordSize), Src),
+   tag_flonum(Dst, HP),
+   hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(WordSize+8)),
+   PutHPInsn].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% BigNum Code
+
 unsafe_mk_big(Dst, Src, Signedness) ->
-  case hipe_rtl_arch:endianess() of
-    big ->
-      unsafe_mk_big_bigendian(Dst, Src, Signedness);
-    little ->
-      unsafe_mk_big_littleendian(Dst, Src, Signedness)
-  end.
-
-unsafe_mk_big_bigendian(Dst, Src, Signedness) ->
   WordSize = hipe_rtl_arch:word_size(),
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
   PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
@@ -935,67 +924,27 @@ unsafe_mk_big_bigendian(Dst, Src, Signedness) ->
   PosLabel = hipe_rtl:mk_new_label(),
   NegLabel = hipe_rtl:mk_new_label(),
   JoinLabel = hipe_rtl:mk_new_label(),
-  Halfword = hipe_rtl:mk_imm(?bytes_to_bits(hipe_rtl_arch:halfword_size())),
-  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
-  [GetHPInsn | case Signedness of
-		 unsigned ->
-		   [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
-		    hipe_rtl:mk_alu(Tmp1, Src, sll, Halfword),
-		    hipe_rtl:mk_alu(Src, Src, srl, Halfword),
-		    hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(WordSize), Src),
-		    tag_boxed(Dst, HP),
-		    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize)),
-		    PutHPInsn];
-		 signed ->
-		   [hipe_rtl:mk_branch(Src, ge, hipe_rtl:mk_imm(0), 
+  PutHeaderCode = 
+    case Signedness of
+      unsigned ->
+	[hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead)];
+      signed ->
+	[hipe_rtl:mk_branch(Src, ge, hipe_rtl:mk_imm(0), 
 				       hipe_rtl:label_name(PosLabel), 
 				       hipe_rtl:label_name(NegLabel)),
-		    PosLabel,
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
-		    hipe_rtl:mk_goto(hipe_rtl:label_name(JoinLabel)),
-		    NegLabel,
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), NegHead),
-		    JoinLabel,
-		    hipe_rtl:mk_alu(Tmp1, Src, sll, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
-		    hipe_rtl:mk_alu(Src, Src, srl, hipe_rtl:mk_imm(16)), % XXX: 64-bit unsafe
-		    hipe_rtl:mk_alu(Src, Src, 'or', Tmp1),
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), Src),
-		    tag_boxed(Dst, HP),
-		    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize)),
-		    PutHPInsn]
-	       end].
-
-unsafe_mk_big_littleendian(Dst, Src, Signedness) ->
-  WordSize = hipe_rtl_arch:word_size(),
-  {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
-  NegHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_NEG_BIG)),
-  PosLabel = hipe_rtl:mk_new_label(),
-  NegLabel = hipe_rtl:mk_new_label(),
-  JoinLabel = hipe_rtl:mk_new_label(),
-  [GetHPInsn | case Signedness of
-		 unsigned ->
-		   [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), Src),
-		    tag_boxed(Dst, HP),
-		    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize)),
-		    PutHPInsn];
-		 signed ->
-		   [hipe_rtl:mk_branch(Src, ge, hipe_rtl:mk_imm(0), 
-				       hipe_rtl:label_name(PosLabel), 
-				       hipe_rtl:label_name(NegLabel)),
-		    PosLabel,
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
-		    hipe_rtl:mk_goto(hipe_rtl:label_name(JoinLabel)),
-		    NegLabel,
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), NegHead),
-		    JoinLabel,
-		    hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), Src),
-		    tag_boxed(Dst, HP),
-		    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize)),
-		    PutHPInsn]
-	       end].
+	 PosLabel,
+	 hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), PosHead),
+	 hipe_rtl:mk_goto(hipe_rtl:label_name(JoinLabel)),
+	 NegLabel,
+	 hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(0*WordSize), NegHead),
+	 JoinLabel]
+    end,
+  RestCode = 
+    [hipe_rtl:mk_store(HP, hipe_rtl:mk_imm(1*WordSize), Src),
+     tag_boxed(Dst, HP),
+     hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(2*WordSize)),
+     PutHPInsn],
+  [GetHPInsn] ++ PutHeaderCode ++ RestCode.
 
 bignum_sizeneed(Size) ->
   WordSizeBits = hipe_rtl_arch:word_size() * 8,
@@ -1022,90 +971,230 @@ bignum_sizeneed_code(SizeReg,FixNumLblName) ->
      hipe_rtl:mk_alu(ResReg,ResReg,add,hipe_rtl:mk_imm(1))],
   {ResReg,Code}.
 
-test_subbinary(Binary, TrueLblName, FalseLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
-  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
-  [get_header(Tmp1, Binary),
-   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
-   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_SUB_BIN), TrueLblName, FalseLblName)].
-
-test_heap_binary(Binary, TrueLblName, FalseLblName) ->
-  Tmp1 = hipe_rtl:mk_new_reg_gcsafe(),
-  Tmp2 = hipe_rtl:mk_new_reg_gcsafe(),
-  [get_header(Tmp1, Binary),
-   hipe_rtl:mk_alu(Tmp2, Tmp1, 'and', hipe_rtl:mk_imm(?TAG_HEADER_MASK)),
-   hipe_rtl:mk_branch(Tmp2, eq, hipe_rtl:mk_imm(?TAG_HEADER_HEAP_BIN), TrueLblName, FalseLblName)].
-
-mk_var_header(Header, Size, Tag) ->
-  Tmp = hipe_rtl:mk_new_reg_gcsafe(),
-  [hipe_rtl:mk_alu(Tmp, Size, sll, hipe_rtl:mk_imm(?HEADER_ARITY_OFFS)),
-   hipe_rtl:mk_alu(Header, Tmp, 'add', hipe_rtl:mk_imm(Tag))].
-
-get_erts_mb(MatchBuf) ->
-  case ?P_SCHED_DATA of
-    [] ->
-      [hipe_rtl:mk_load_address(MatchBuf, erts_mb, c_const)];
-    Offset ->
-      Tmp = hipe_rtl:mk_new_reg(), % points to per-CPU state
-      [hipe_rtl_arch:pcb_load(Tmp, Offset),
-       hipe_rtl:mk_alu(MatchBuf, Tmp, 'add',
-		       hipe_rtl:mk_imm(?SCHED_DATA_ERTS_MB_OFFS))]
-  end.
-
-extract_offset(Offset, MatchState) ->
-  Offs = ?MS_MATCHBUFFER + ?MB_OFFSET - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_load(Offset, MatchState, hipe_rtl:mk_imm(Offs)).
-
-extract_orig(Orig, MatchState) ->
-  Offs = ?MS_MATCHBUFFER + ?MB_ORIG - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_load(Orig, MatchState, hipe_rtl:mk_imm(Offs)).
-
-extract_base(Base, MatchState) ->
-  Offs = ?MS_MATCHBUFFER + ?MB_BASE - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_load(Base, MatchState, hipe_rtl:mk_imm(Offs)).
-
-extract_binsize(BinSize, MatchState) ->
-  Offs = ?MS_MATCHBUFFER + ?MB_SIZE - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_load(BinSize, MatchState, hipe_rtl:mk_imm(Offs)).
-
-update_offset(Offset, MatchState) ->
-  Offs = ?MS_MATCHBUFFER + ?MB_OFFSET - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_store(MatchState, hipe_rtl:mk_imm(Offs), Offset).
-
-extract_slot(Dst, Slot, MatchState) ->
+get_word_value_from_big(Dst, Src, FailLblName) ->
+  ContLbl = hipe_rtl:mk_new_label(),
+  ContLbl2 = hipe_rtl:mk_new_label(),
+  Header = hipe_rtl:mk_new_reg(),
+  PosHead = hipe_rtl:mk_imm(mk_header(1, ?TAG_HEADER_POS_BIG)),
   WordSize = hipe_rtl_arch:word_size(),
-  Offs = ?MS_SAVEOFFSET + Slot*WordSize - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_load(Dst, MatchState, hipe_rtl:mk_imm(Offs)).
+  [test_bignum(Src, hipe_rtl:label_name(ContLbl), FailLblName, 0.99),
+   ContLbl,
+   hipe_rtl:mk_load(Header, Src, hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED)),
+   hipe_rtl:mk_branch(Header, eq, PosHead, hipe_rtl:label_name(ContLbl2), FailLblName),
+   ContLbl2,
+   hipe_rtl:mk_load(Dst, Src, 
+		    hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED + 
+				    1 * WordSize))].
 
-extract_matchbuffer(Dst, MatchState) -> 
-  Offs = ?MS_MATCHBUFFER - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_alu(Dst, MatchState, add, hipe_rtl:mk_imm(Offs)).
-
-update_slot(Slot, Src, MatchState) ->
-  WordSize = hipe_rtl_arch:word_size(),
-  Offs = ?MS_SAVEOFFSET + Slot*WordSize - ?TAG_PRIMARY_BOXED,
-  hipe_rtl:mk_store(MatchState, hipe_rtl:mk_imm(Offs), Src).
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% MatchState Code
 
 create_matchstate(Max, BinSize, Base, Offset, Orig, Ms) -> 
   WordSize = hipe_rtl_arch:word_size(),
   {GetHPInsn, HP, PutHPInsn} = hipe_rtl_arch:heap_pointer(),
-  ByteSize = Max*WordSize + ?MS_SAVEOFFSET,
+  ByteSize = (Max+1)*WordSize + ?MS_SAVEOFFSET,
   SizeInWords = ((ByteSize div WordSize) - 1),
   Header = hipe_rtl:mk_imm(mk_header(SizeInWords, 
 				     ?TAG_HEADER_BIN_MATCHSTATE)),
-  HeaderOffs = hipe_rtl:mk_imm(?MS_THING_WORD - ?TAG_PRIMARY_BOXED),
-  OrigOffs = hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_ORIG - ?TAG_PRIMARY_BOXED),
-  BaseOffs = hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_BASE - ?TAG_PRIMARY_BOXED),
-  BinSizeOffs = hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_SIZE - 
-				?TAG_PRIMARY_BOXED),
-  OffsetOffs = hipe_rtl:mk_imm(?MS_MATCHBUFFER + ?MB_OFFSET - 
-			       ?TAG_PRIMARY_BOXED),
   [GetHPInsn,
    hipe_rtl:mk_alu(Ms, HP, add, hipe_rtl:mk_imm(?TAG_PRIMARY_BOXED)),
-   hipe_rtl:mk_store(Ms, HeaderOffs, Header),
-   hipe_rtl:mk_store(Ms, OrigOffs, Orig),
-   hipe_rtl:mk_store(Ms, BaseOffs, Base),
-   hipe_rtl:mk_store(Ms, BinSizeOffs, BinSize),
-   hipe_rtl:mk_store(Ms, OffsetOffs, Offset),
+   set_field_from_term({matchstate,thing_word}, Ms, Header),
+   set_field_from_term({matchstate,{matchbuffer,orig}}, Ms, Orig),
+   set_field_from_term({matchstate,{matchbuffer,base}}, Ms, Base),
+   set_field_from_term({matchstate,{matchbuffer,binsize}}, Ms, BinSize),
+   set_field_from_term({matchstate,{matchbuffer,offset}}, Ms, Offset),
+   set_field_from_term({matchstate,{saveoffset, 0}}, Ms, Offset),
    hipe_rtl:mk_alu(HP, HP, add, hipe_rtl:mk_imm(ByteSize)),
    PutHPInsn].
+
+convert_matchstate(Ms) ->
+  WordSize = hipe_rtl_arch:word_size(),
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+  TmpSize = hipe_rtl:mk_new_reg_gcsafe(),
+  SavedOffset = hipe_rtl:mk_new_reg_gcsafe(),
+  Orig = hipe_rtl:mk_new_reg_gcsafe(),
+  BinSize = hipe_rtl:mk_new_reg_gcsafe(),
+  ByteSize = hipe_rtl:mk_new_reg_gcsafe(),
+  BitSize = hipe_rtl:mk_new_reg_gcsafe(),
+  ByteOffset = hipe_rtl:mk_new_reg_gcsafe(),
+  BitOffset = hipe_rtl:mk_new_reg_gcsafe(),
+  SizeInWords = hipe_rtl:mk_new_reg_gcsafe(),
+  Hole = hipe_rtl:mk_new_reg_gcsafe(),
+  BigIntHeader = hipe_rtl:mk_new_reg_gcsafe(),
+  [get_field_from_term({matchstate, {matchbuffer, orig}}, Ms, Orig),
+   get_field_from_term({matchstate, {matchbuffer, binsize}}, Ms, BinSize),
+   get_field_from_term({matchstate, {saveoffset, 0}}, Ms, SavedOffset),
+   get_field_from_term({matchstate, thing_word}, Ms, Header),
+   hipe_rtl:mk_alu(TmpSize, BinSize, sub, SavedOffset),
+   hipe_rtl:mk_alu(BitSize, TmpSize, 'and', hipe_rtl:mk_imm(7)),
+   hipe_rtl:mk_alu(BitOffset, SavedOffset, 'and', hipe_rtl:mk_imm(7)),
+   hipe_rtl:mk_alu(ByteSize, TmpSize, srl, hipe_rtl:mk_imm(3)),
+   hipe_rtl:mk_alu(ByteOffset, SavedOffset, srl, hipe_rtl:mk_imm(3)),
+   build_sub_binary(Ms, ByteSize, ByteOffset, BitSize, BitOffset, 
+		    hipe_rtl:mk_imm(0), Orig), 
+   size_from_header(SizeInWords, Header),
+   hipe_rtl:mk_alu(Hole, SizeInWords, sub, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE-1)),
+   mk_var_header(BigIntHeader, Hole, ?TAG_HEADER_POS_BIG),
+   hipe_rtl:mk_store(Ms, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE*WordSize-?TAG_PRIMARY_BOXED),
+		     BigIntHeader)].
+
+get_matchstate_nof_slots(NofSlots, Ms) ->
+  SizeInWords = hipe_rtl:mk_new_reg_gcsafe(),
+  Header = hipe_rtl:mk_new_reg_gcsafe(),
+   [hipe_rtl:mk_load(Header, Ms, hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED)),
+    size_from_header(SizeInWords, Header),
+    hipe_rtl:mk_alu(NofSlots, SizeInWords, sub, hipe_rtl:mk_imm(?MS_MIN_SIZE))].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%
+%% Struct manipulation code
+
+get_field_offset({matchstate, thing_word}) ->
+  ?MS_THING_WORD;
+get_field_offset({matchstate, matchbuffer}) ->
+  ?MS_MATCHBUFFER;
+get_field_offset({matchstate, {matchbuffer,_}=Field}) ->  
+  ?MS_MATCHBUFFER + get_field_offset(Field);
+get_field_offset({matchstate, {saveoffset,N}}=Field) ->  
+  ?MS_SAVEOFFSET + N*get_field_size1(Field);
+get_field_offset({sub_binary, thing_word}) ->
+  ?SUB_BIN_THING_WORD;
+get_field_offset({sub_binary, binsize}) ->
+  ?SUB_BIN_BINSIZE;
+get_field_offset({sub_binary, bitsize}) ->
+  ?SUB_BIN_BITSIZE;
+get_field_offset({sub_binary, offset}) ->
+  ?SUB_BIN_OFFS;
+get_field_offset({sub_binary, bitoffset}) ->
+  ?SUB_BIN_BITOFFS;
+get_field_offset({sub_binary, is_writable}) ->
+  ?SUB_BIN_WRITABLE;
+get_field_offset({sub_binary, orig}) ->
+  ?SUB_BIN_ORIG;
+get_field_offset({proc_bin, thing_word}) ->
+  ?PROC_BIN_THING_WORD;
+get_field_offset({proc_bin, binsize}) ->
+  ?PROC_BIN_BINSIZE;
+get_field_offset({proc_bin, next}) ->
+  ?PROC_BIN_NEXT;
+get_field_offset({proc_bin, val}) ->
+  ?PROC_BIN_VAL;
+get_field_offset({proc_bin, bytes}) ->
+  ?PROC_BIN_BYTES;
+get_field_offset({proc_bin, flags}) ->
+  ?PROC_BIN_FLAGS;
+get_field_offset({binary, orig_bytes}) ->
+  ?BINARY_ORIG_BYTES;
+get_field_offset({binary, orig_size}) ->
+  ?BINARY_ORIG_SIZE;
+get_field_offset({heap_bin, thing_word}) ->
+  ?HEAP_BIN_THING_WORD;
+get_field_offset({heap_bin, binsize}) ->
+  ?HEAP_BIN_SIZE;
+get_field_offset({heap_bin, {data,N}}=Field) ->
+  ?HEAP_BIN_DATA+N*get_field_size1(Field);
+get_field_offset({matchbuffer,offset}) ->
+  ?MB_OFFSET;
+get_field_offset({matchbuffer,orig}) ->  
+  ?MB_ORIG;
+get_field_offset({matchbuffer,base}) ->  
+  ?MB_BASE;
+get_field_offset({matchbuffer,binsize}) ->  
+  ?MB_SIZE.
+
+get_field_size(Field) ->
+  size_to_atom(get_field_size1(Field)).
+
+size_to_atom(Bytes) ->
+  WordSize = hipe_rtl_arch:word_size(),
+  case Bytes of
+    WordSize -> word;
+    4 -> int32;
+    %%2 -> int16; So far there are no 2 byte fields
+    1 -> byte
+  end.
+      
+
+get_field_size1({matchstate, thing_word}) ->
+  ?MS_THING_WORD_SIZE;
+get_field_size1({matchstate, {matchbuffer,_}=Field}) ->  
+  get_field_size1(Field);
+get_field_size1({matchstate, {saveoffset,_N}}) ->  
+  ?MS_SAVEOFFSET_SIZE;
+get_field_size1({sub_binary, thing_word}) ->
+  ?SUB_BIN_THING_WORD_SIZE;
+get_field_size1({sub_binary, binsize}) ->
+  ?SUB_BIN_BINSIZE_SIZE;
+get_field_size1({sub_binary, bitsize}) ->
+  ?SUB_BIN_BITSIZE_SIZE;
+get_field_size1({sub_binary, offset}) ->
+  ?SUB_BIN_OFFS_SIZE;
+get_field_size1({sub_binary, bitoffset}) ->
+  ?SUB_BIN_BITOFFS_SIZE;
+get_field_size1({sub_binary, is_writable}) ->
+  ?SUB_BIN_WRITABLE_SIZE;
+get_field_size1({sub_binary, orig}) ->
+  ?SUB_BIN_ORIG_SIZE;
+get_field_size1({proc_bin, thing_word}) ->
+  ?PROC_BIN_THING_WORD_SIZE;
+get_field_size1({proc_bin, binsize}) ->
+  ?PROC_BIN_BINSIZE_SIZE;
+get_field_size1({proc_bin, next}) ->
+  ?PROC_BIN_NEXT_SIZE;
+get_field_size1({proc_bin, val}) ->
+  ?PROC_BIN_VAL_SIZE;
+get_field_size1({proc_bin, bytes}) ->
+  ?PROC_BIN_BYTES_SIZE;
+get_field_size1({proc_bin, flags}) ->
+  ?PROC_BIN_FLAGS_SIZE;
+get_field_size1({binary, orig_bytes}) ->
+  ?BINARY_ORIG_BYTES_SIZE;
+get_field_size1({binary, orig_size}) ->
+  ?BINARY_ORIG_SIZE_SIZE;
+get_field_size1({heap_bin, thing_word}) ->
+  ?HEAP_BIN_THING_WORD_SIZE;
+get_field_size1({heap_bin, binsize}) ->
+  ?HEAP_BIN_SIZE_SIZE;
+get_field_size1({heap_bin, {data,_}}) ->
+  ?HEAP_BIN_DATA_SIZE;
+get_field_size1({matchbuffer,offset}) ->
+  ?MB_OFFSET_SIZE;
+get_field_size1({matchbuffer,orig}) ->  
+  ?MB_ORIG_SIZE;
+get_field_size1({matchbuffer,base}) ->  
+  ?MB_BASE_SIZE;
+get_field_size1({matchbuffer,binsize}) ->  
+  ?MB_SIZE_SIZE.
+
+get_field_from_term(Struct, Term, Dst) ->
+  Offset = hipe_rtl:mk_imm(get_field_offset(Struct) 
+			   - ?TAG_PRIMARY_BOXED),
+  Size = get_field_size(Struct),
+  hipe_rtl:mk_load(Dst, Term, Offset, Size, unsigned). 
+
+set_field_from_term(Struct, Term, Value) ->
+  Offset = hipe_rtl:mk_imm(get_field_offset(Struct) - 
+			   ?TAG_PRIMARY_BOXED),
+  Size = get_field_size(Struct),
+  hipe_rtl:mk_store(Term, Offset, Value, Size).
+
+get_field_from_pointer(Struct, Term, Dst) ->
+  Offset = hipe_rtl:mk_imm(get_field_offset(Struct)),
+  Size = get_field_size(Struct),
+  hipe_rtl:mk_load(Dst, Term, Offset, Size, unsigned). 
+
+set_field_from_pointer(Struct, Term, Value) ->
+  Offset = hipe_rtl:mk_imm(get_field_offset(Struct)),
+  Size = get_field_size(Struct),
+  hipe_rtl:mk_store(Term, Offset, Value, Size).
+  
+extract_matchbuffer(Mb, Ms) ->
+  hipe_rtl:mk_alu(Mb, Ms, add, 
+		  hipe_rtl:mk_imm(
+		    get_field_offset({matchstate, matchbuffer}) -
+		   ?TAG_PRIMARY_BOXED)).
+
+extract_binary_bytes(Binary, Base) ->
+  hipe_rtl:mk_alu(Base, Binary, add, 
+		  hipe_rtl:mk_imm(get_field_offset({binary, orig_bytes}))). 

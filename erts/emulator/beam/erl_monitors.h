@@ -123,6 +123,16 @@ typedef struct erts_link {
     Uint heap[1];            /* Larger in reality */
 } ErtsLink;   
 
+typedef struct erts_suspend_monitor {
+    struct erts_suspend_monitor *left, *right;
+    Sint16 balance;
+
+    int pending;
+    int active;
+    Eterm pid;
+} ErtsSuspendMonitor;
+
+
 #define ERTS_LINK_ROOT_AS_UINT(Linkp) (*((Uint *) &((Linkp)->root)))
 
 Uint erts_tot_link_lh_size(void);
@@ -147,9 +157,20 @@ ErtsLink *erts_lookup_link(ErtsLink *root, Eterm pid);
 void erts_sweep_links(ErtsLink *root, 
 		      void (*doit)(ErtsLink *, void *),
 		      void *context);
+
+void erts_destroy_suspend_monitor(ErtsSuspendMonitor *sproc);
+void erts_sweep_suspend_monitors(ErtsSuspendMonitor *root,
+				 void (*doit)(ErtsSuspendMonitor *, void *),
+				 void *context);
+ErtsSuspendMonitor *erts_add_or_lookup_suspend_monitor(ErtsSuspendMonitor **root,
+						       Eterm pid);
+ErtsSuspendMonitor *erts_lookup_suspend_monitor(ErtsSuspendMonitor *root,
+						Eterm pid);
+void erts_delete_suspend_monitor(ErtsSuspendMonitor **root, Eterm pid);
 void erts_init_monitors(void);
 
 #define erts_doforall_monitors erts_sweep_monitors
 #define erts_doforall_links erts_sweep_links
+#define erts_doforall_suspend_monitors erts_sweep_suspend_monitors
 
 #endif /* _ERL_MONITORS_H */

@@ -207,7 +207,7 @@ ann_escape(T, L, Esc) ->
     end.
 
 append_ann(Tag, [X | Xs]) ->
-    if is_tuple(X), size(X) >= 1, element(1, X) =:= Tag -> 
+    if tuple_size(X) >= 1, element(1, X) =:= Tag -> 
 	    append_ann(Tag, Xs);
        true ->
 	    [X | append_ann(Tag, Xs)]

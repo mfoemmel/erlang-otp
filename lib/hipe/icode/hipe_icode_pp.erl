@@ -282,6 +282,8 @@ pp_arg(Dev, {var, V}) ->
   io:format(Dev, "v~p", [V]);
 pp_arg(Dev, {fvar, V}) ->
   io:format(Dev, "fv~p", [V]);
+pp_arg(Dev, {reg, V, Ann}) -> 
+  io:format(Dev, "r~p (~s)", [V, hipe_icode_range:pp_ann(Ann)]);
 pp_arg(Dev, {reg, V}) -> 
   io:format(Dev, "r~p", [V]);
 pp_arg(Dev, C) ->

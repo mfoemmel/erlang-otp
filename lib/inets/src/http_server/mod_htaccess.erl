@@ -17,13 +17,9 @@
 
 -module(mod_htaccess).
 
--export([do/1, load/2]).
+-export([do/1, load/2, store/2]).
 
 -include("httpd.hrl").
-
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Public methods that interface the eswapi                         %%
@@ -37,12 +33,16 @@ load("AccessFileName" ++ FileNames, _Context)->
     CleanFileNames=httpd_conf:clean(FileNames),
     {ok,[],{access_files,string:tokens(CleanFileNames," ")}}.
 
+store({access_files, Files} = Conf, _) when is_list(Files)->
+    {ok, Conf};
+store({access_files, Value}, _) ->
+    {error, {wrong_type, {access_files, Value}}}.
 
 %----------------------------------------------------------------------
 % Public method that the webbserver calls to control the page 
 %----------------------------------------------------------------------
 do(Info)->
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status, Info#mod.data) of
 	{_Status_code, _PhraseArgs, _Reason}->
 	    {proceed,Info#mod.data};
 	undefined ->
@@ -396,11 +396,11 @@ authenticateUser(Info,AccessData,AllowedUsers)->
 %----------------------------------------------------------------------
 getAuthenticatingDataFromHeader(Info)->              
     PrsedHeader=Info#mod.parsed_header,
-    case httpd_util:key1search(PrsedHeader,"authorization" ) of
+    case proplists:get_value("authorization", PrsedHeader) of
 	undefined->
 	    {error,nouser};
 	[$B,$a,$s,$i,$c,$\ |EncodedString] = Credentials ->
-	    case (catch http_base_64:decode(EncodedString)) of
+	    case (catch base64:decode_to_string(EncodedString)) of
 		{'EXIT',{function_clause, _}} ->
 		    {error, Credentials};
 		UnCodedString ->

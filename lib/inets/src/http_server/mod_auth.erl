@@ -36,30 +36,26 @@
 -include("httpd.hrl").
 -include("mod_auth.hrl").
 
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
-
 -define(VMODULE,"AUTH").
 
 -define(NOPASSWORD,"NoPassword").
 
 %% do
 do(Info) ->
-    case httpd_util:key1search(Info#mod.data,status) of
+    case proplists:get_value(status,Info#mod.data) of
 	%% A status code has been generated!
 	{_StatusCode, _PhraseArgs, _Reason} ->
 	    {proceed, Info#mod.data};
 	%% No status code has been generated!
 	undefined ->
-	    case httpd_util:key1search(Info#mod.data,response) of
+	    case proplists:get_value(response, Info#mod.data) of
 		%% No response has been generated!
 		undefined ->
 		    Path = mod_alias:path(Info#mod.data,Info#mod.config_db,
 					  Info#mod.request_uri),
 		    %% Is it a secret area?
 		    case secretp(Path,Info#mod.config_db) of
-			{yes, Directory, DirectoryData} ->
+			{yes, {Directory, DirectoryData}} ->
 			    %% Authenticate (allow)
 			    case allow((Info#mod.init_data)#init_data.peername,
 				       Info#mod.socket_type,Info#mod.socket,
@@ -70,9 +66,9 @@ do(Info) ->
 					      Info#mod.socket,
 					      DirectoryData) of
 					not_denied ->
-					    case httpd_util:key1search(
-						   DirectoryData,
-						   auth_type) of
+					    case proplists:get_value(auth_type,
+						   DirectoryData
+						   ) of
 						undefined ->
 						    {proceed, Info#mod.data};
 						none ->
@@ -134,20 +130,20 @@ do_auth(Info, Directory, DirectoryData, _AuthType) ->
 
 require(Info, Directory, DirectoryData) ->
     ParsedHeader = Info#mod.parsed_header,
-    ValidUsers   = httpd_util:key1search(DirectoryData, require_user),
-    ValidGroups  = httpd_util:key1search(DirectoryData, require_group),
+    ValidUsers   = proplists:get_value(require_user, DirectoryData),
+    ValidGroups  = proplists:get_value(require_group, DirectoryData),
 
     %% Any user or group restrictions?
     case ValidGroups of
 	undefined when ValidUsers == undefined ->
 	    authorized;
 	_ ->
-	    case httpd_util:key1search(ParsedHeader, "authorization") of
+	    case proplists:get_value("authorization", ParsedHeader) of
 		undefined ->
 		    authorization_required(DirectoryData);
-		%% Check credentials!
+		%% Chec kcredentials!
 		"Basic" ++ EncodedString = Credentials ->
-		    case (catch http_base_64:decode(EncodedString)) of
+		    case (catch base64:decode_to_string(EncodedString)) of
 			{'EXIT',{function_clause, _}} ->
 			    {status, {401, none, ?NICE("Bad credentials "++
 						       Credentials)}};
@@ -164,7 +160,7 @@ require(Info, Directory, DirectoryData) ->
     end.
 
 authorization_required(DirectoryData) ->
-    case httpd_util:key1search(DirectoryData, auth_name) of
+    case proplists:get_value(auth_name, DirectoryData) of
 	undefined ->
 	    {status,{500, none,?NICE("AuthName directive not specified")}};
 	Realm ->
@@ -253,7 +249,7 @@ int_list_group_members(Group, _Dir, DirData) ->
     apply(AuthMod, list_group_members, [DirData, Group]).
 
 auth_mod_name(DirData) ->
-    case httpd_util:key1search(DirData, auth_type, plain) of
+    case proplists:get_value(auth_type, DirData, plain) of
 	plain ->    mod_auth_plain;
 	mnesia ->   mod_auth_mnesia;
 	dets ->	    mod_auth_dets
@@ -267,11 +263,12 @@ auth_mod_name(DirData) ->
 %% secretp
 
 secretp(Path,ConfigDB) ->
-    Directories = ets:match(ConfigDB,{directory,'$1','_'}),
+    Directories = ets:match(ConfigDB,{directory, {'$1','_'}}),
     case secret_path(Path, Directories) of
 	{yes,Directory} ->
-	    {yes,Directory,
-	     lists:flatten(ets:match(ConfigDB,{directory,Directory,'$1'}))};
+	    {yes, {Directory,
+		   lists:flatten(
+		     ets:match(ConfigDB,{directory, {Directory,'$1'}}))}};
 	no ->
 	    no
     end.
@@ -302,7 +299,7 @@ secret_path(Path, [[NewDirectory] | Rest], Directory) ->
 %% allow
 
 allow({_,RemoteAddr}, _SocketType, _Socket, DirectoryData) ->
-    Hosts = httpd_util:key1search(DirectoryData, allow_from, all),
+    Hosts = proplists:get_value(allow_from, DirectoryData, all),
     case validate_addr(RemoteAddr, Hosts) of
 	true ->
 	    allowed;
@@ -327,7 +324,7 @@ validate_addr(RemoteAddr, [HostRegExp | Rest]) ->
 %% deny
 
 deny({_,RemoteAddr}, _SocketType, _Socket,DirectoryData) ->
-    Hosts = httpd_util:key1search(DirectoryData, deny_from, none),
+    Hosts = proplists:get_value(deny_from, DirectoryData, none),
     case validate_addr(RemoteAddr,Hosts) of
 	true ->
 	    {denied, ?NICE("Connection from your host is not allowed")};
@@ -364,146 +361,146 @@ deny({_,RemoteAddr}, _SocketType, _Socket,DirectoryData) ->
 
 load("<Directory " ++ Directory,[]) ->
     Dir = httpd_conf:custom_clean(Directory,"",">"),
-    {ok,[{directory, Dir, [{path, Dir}]}]};
-load(eof,[{directory, Directory, _DirData}|_]) ->
+    {ok,[{directory, {Dir, [{path, Dir}]}}]};
+load(eof,[{directory, {Directory, _DirData}}|_]) ->
     {error, ?NICE("Premature end-of-file in "++ Directory)};
 
-load("AuthName " ++ AuthName, [{directory,Directory, DirData}|Rest]) ->
-    {ok, [{directory,Directory,
-	   [ {auth_name, httpd_conf:clean(AuthName)}|DirData]} | Rest ]};
-
+load("AuthName " ++ AuthName, [{directory, {Directory, DirData}}|Rest]) ->
+    {ok, [{directory, {Directory,
+		       [{auth_name, httpd_conf:clean(AuthName)} | DirData]}} 
+	  | Rest ]};
 load("AuthUserFile " ++ AuthUserFile0,
-     [{directory, Directory, DirData}|Rest]) ->
+     [{directory, {Directory, DirData}}|Rest]) ->
     AuthUserFile = httpd_conf:clean(AuthUserFile0),
-    {ok,[{directory,Directory,
-	  [ {auth_user_file, AuthUserFile}|DirData]} | Rest ]};
-
-load([$A,$u,$t,$h,$G,$r,$o,$u,$p,$F,$i,$l,$e,$ |AuthGroupFile0],
-	 [{directory,Directory, DirData}|Rest]) ->
+    {ok,[{directory, {Directory,
+		      [{auth_user_file, AuthUserFile}|DirData]}} | Rest ]};
+load("AuthGroupFile " ++ AuthGroupFile0,
+	 [{directory, {Directory, DirData}}|Rest]) ->
     AuthGroupFile = httpd_conf:clean(AuthGroupFile0),
-    {ok,[{directory,Directory,
-	  [ {auth_group_file, AuthGroupFile}|DirData]} | Rest]};
+    {ok,[{directory, {Directory,
+	  [ {auth_group_file, AuthGroupFile}|DirData]}} | Rest]};
 
 %AuthAccessPassword
 load("AuthAccessPassword " ++ AuthAccessPassword0,
-	 [{directory,Directory, DirData}|Rest]) ->
+	 [{directory, {Directory, DirData}}|Rest]) ->
     AuthAccessPassword = httpd_conf:clean(AuthAccessPassword0),
-    {ok,[{directory,Directory,
-	  [{auth_access_password, AuthAccessPassword}|DirData]} | Rest]};
-
-
-
+    {ok,[{directory, {Directory,
+	  [{auth_access_password, AuthAccessPassword}|DirData]}} | Rest]};
 
 load("AuthDBType " ++ Type,
-	 [{directory, Dir, DirData}|Rest]) ->
+	 [{directory, {Dir, DirData}}|Rest]) ->
     case httpd_conf:clean(Type) of
 	"plain" ->
-	    {ok, [{directory, Dir, [{auth_type, plain}|DirData]} | Rest ]};
+	    {ok, [{directory, {Dir, [{auth_type, plain}|DirData]}} | Rest ]};
 	"mnesia" ->
-	    {ok, [{directory, Dir, [{auth_type, mnesia}|DirData]} | Rest ]};
+	    {ok, [{directory, {Dir, [{auth_type, mnesia}|DirData]}} | Rest ]};
 	"dets" ->
-	    {ok, [{directory, Dir, [{auth_type, dets}|DirData]} | Rest ]};
+	    {ok, [{directory, {Dir, [{auth_type, dets}|DirData]}} | Rest ]};
 	_ ->
 	    {error, ?NICE(httpd_conf:clean(Type)++" is an invalid AuthDBType")}
     end;
 
-load("require " ++ Require,[{directory,Directory, DirData}|Rest]) ->
+load("require " ++ Require,[{directory, {Directory, DirData}}|Rest]) ->
     case regexp:split(Require," ") of
 	{ok,["user"|Users]} ->
-	    {ok,[{directory,Directory,
-		  [{require_user,Users}|DirData]} | Rest]};
+	    {ok,[{directory, {Directory,
+		  [{require_user,Users}|DirData]}} | Rest]};
 	{ok,["group"|Groups]} ->
-	    {ok,[{directory,Directory,
-		  [{require_group,Groups}|DirData]} | Rest]};
+	    {ok,[{directory, {Directory,
+		  [{require_group,Groups}|DirData]}} | Rest]};
 	{ok,_} ->
 	    {error,?NICE(httpd_conf:clean(Require) ++" is an invalid require")}
     end;
 
-load("allow " ++ Allow,[{directory,Directory, DirData}|Rest]) ->
+load("allow " ++ Allow,[{directory, {Directory, DirData}}|Rest]) ->
     case regexp:split(Allow," ") of
 	{ok,["from","all"]} ->
-	    {ok,[{directory,Directory,
-		  [{allow_from,all}|DirData]} | Rest]};
+	    {ok,[{directory, {Directory,
+		  [{allow_from,all}|DirData]}} | Rest]};
 	{ok,["from"|Hosts]} ->
-	    {ok,[{directory,Directory,
-		  [{allow_from,Hosts}|DirData]} | Rest]};
+	    {ok,[{directory, {Directory,
+		  [{allow_from,Hosts}|DirData]}} | Rest]};
 	{ok,_} ->
 	    {error,?NICE(httpd_conf:clean(Allow) ++" is an invalid allow")}
     end;
 
-load("deny " ++ Deny,[{directory,Directory, DirData}|Rest]) ->
+load("deny " ++ Deny,[{directory, {Directory, DirData}}|Rest]) ->
     case regexp:split(Deny," ") of
 	{ok, ["from", "all"]} ->
-	    {ok,[{directory, Directory,
-		  [{deny_from, all}|DirData]} | Rest]};
+	    {ok,[{{directory, Directory,
+		  [{deny_from, all}|DirData]}} | Rest]};
 	{ok, ["from"|Hosts]} ->
-	    {ok,[{directory, Directory,
-		  [{deny_from, Hosts}|DirData]} | Rest]};
+	    {ok,[{{directory, Directory,
+		   [{deny_from, Hosts}|DirData]}} | Rest]};
 	{ok, _} ->
 	    {error,?NICE(httpd_conf:clean(Deny) ++" is an invalid deny")}
     end;
 
-load("</Directory>",[{directory,Directory, DirData}|Rest]) -> 
-    directory_config_check(Directory, DirData),
-    {ok, Rest, {directory, Directory, DirData}};
+load("</Directory>",[{directory, {Directory, DirData}}|Rest]) -> 
+    {ok, Rest, {directory, {Directory, DirData}}};
 
 load("AuthMnesiaDB " ++ AuthMnesiaDB,
-      [{directory, Dir, DirData}|Rest]) ->
+      [{directory, {Dir, DirData}}|Rest]) ->
     case httpd_conf:clean(AuthMnesiaDB) of
 	"On" ->
-	    {ok,[{directory,Dir,[{auth_type,mnesia}|DirData]}|Rest]};
+	    {ok,[{directory, {Dir,[{auth_type,mnesia}|DirData]}}|Rest]};
 	"Off" ->
-	    {ok,[{directory,Dir,[{auth_type,plain}|DirData]}|Rest]};
+	    {ok,[{directory, {Dir,[{auth_type,plain}|DirData]}}|Rest]};
 	_ ->
 	    {error, ?NICE(httpd_conf:clean(AuthMnesiaDB) ++
 			  " is an invalid AuthMnesiaDB")}
     end.
 
 directory_config_check(Directory, DirData) ->
-    case httpd_util:key1search(DirData,auth_type) of
+    case proplists:get_value(auth_type, DirData) of
 	plain ->
 	    check_filename_present(Directory,auth_user_file,DirData),
 	    check_filename_present(Directory,auth_group_file,DirData);
 	undefined ->
-	    throw({error,
-		   ?NICE("Server configuration missed AuthDBType directive")});
+	    throw({missing_auth_type, {directory, {Directory, DirData}}});
 	_ ->
 	    ok
     end.
-check_filename_present(_Dir,AuthFile,DirData) ->
-    case httpd_util:key1search(DirData,AuthFile) of
+check_filename_present(Dir,AuthFile,DirData) ->
+    case proplists:get_value(AuthFile,DirData) of
 	Name when list(Name) ->
 	    ok;
 	_ ->
-	    throw({error,?NICE("Server configuration missed "++
-			       directive(AuthFile)++" directive")})
+	    throw({missing_auth_file, AuthFile, {directory, {Dir, DirData}}})
     end.
-
-directive(auth_user_file) ->
-    "AuthUserFile";
-directive(auth_group_file) ->
-    "AuthGroupFile".
 
 %% store
 
-store({directory,Directory0, DirData0}, ConfigList) ->
-    Port = httpd_util:key1search(ConfigList, port),
-    DirData = case httpd_util:key1search(ConfigList, bind_address) of
+store({directory, {Directory, DirData}}, ConfigList) when is_list(Directory), 
+							  is_list(DirData) ->
+    try directory_config_check(Directory, DirData) of
+	ok ->
+	    store_directory(Directory, DirData, ConfigList) 
+    catch
+	throw:Error ->
+	    {error, Error, {directory, Directory, DirData}}
+    end;
+store({directory, {Directory, DirData}}, _) ->
+    {error, {wrong_type, {directory, {Directory, DirData}}}}.
+
+store_directory(Directory0, DirData0, ConfigList) ->
+    Port = proplists:get_value(port, ConfigList),
+    DirData = case proplists:get_value(bind_address, ConfigList) of
 		  undefined ->
-		      [{port, Port}|DirData0];
-		  Addr ->
-		      [{port, Port},{bind_address,Addr}|DirData0]
-	      end,
-    Directory = 
-	case filename:pathtype(Directory0) of
-	    relative ->
-		SR = httpd_util:key1search(ConfigList, server_root),
-		filename:join(SR, Directory0);
-	    _ ->
-		Directory0
-	end,
+		    [{port, Port}|DirData0];
+		Addr ->
+		    [{port, Port},{bind_address,Addr}|DirData0]
+	    end,
+	    Directory = 
+		case filename:pathtype(Directory0) of
+		    relative ->
+			SR = proplists:get_value(server_root, ConfigList),
+			filename:join(SR, Directory0);
+		    _ ->
+			Directory0
+		end,
     AuthMod =
-	case httpd_util:key1search(DirData0, auth_type) of
+	case proplists:get_value(auth_type, DirData0) of
 	    mnesia -> mod_auth_mnesia;
 	    dets ->   mod_auth_dets;
 	    plain ->  mod_auth_plain;
@@ -511,25 +508,25 @@ store({directory,Directory0, DirData0}, ConfigList) ->
 	end,
     case AuthMod of
 	no_module_at_all ->
-	    {ok, {directory, Directory, DirData}};
+	    {ok, {directory, {Directory, DirData}}};
 	_ ->
 	    %% Control that there are a password or add a standard password: 
 	    %% "NoPassword"
 	    %% In this way a user must select to use a noPassword
-	    Pwd = case httpd_util:key1search(DirData,auth_access_password)of
+	    Pwd = case proplists:get_value(auth_access_password, DirData)of
 		      undefined->
 			  ?NOPASSWORD;
-		      PassW->
+		    PassW->
 			  PassW
 		  end,
 	    DirDataLast = lists:keydelete(auth_access_password,1,DirData), 
 	    case catch AuthMod:store_directory_data(Directory, DirDataLast) of
 		ok ->
 		    add_auth_password(Directory,Pwd,ConfigList),
-		    {ok, {directory, Directory, DirDataLast}};
+		    {ok, {directory, {Directory, DirDataLast}}};
 		{ok, NewDirData} ->
 		    add_auth_password(Directory,Pwd,ConfigList),
-		    {ok, {directory, Directory, NewDirData}};
+		    {ok, {directory, {Directory, NewDirData}}};
 		{error, Reason} ->
 		    {error, Reason};
 		Other ->
@@ -537,10 +534,9 @@ store({directory,Directory0, DirData0}, ConfigList) ->
 	    end
     end.
 
-
 add_auth_password(Dir, Pwd0, ConfigList) ->    
-    Addr = httpd_util:key1search(ConfigList, bind_address),
-    Port = httpd_util:key1search(ConfigList, port),
+    Addr = proplists:get_value(bind_address, ConfigList),
+    Port = proplists:get_value(port, ConfigList),
     mod_auth_server:start(Addr, Port),
     mod_auth_server:add_password(Addr, Port, Dir, Pwd0).
     
@@ -548,11 +544,11 @@ add_auth_password(Dir, Pwd0, ConfigList) ->
 
 
 remove(ConfigDB) ->
-    lists:foreach(fun({directory, _Dir, DirData}) -> 
+    lists:foreach(fun({directory, {_Dir, DirData}}) -> 
 			  AuthMod = auth_mod_name(DirData),
 			  (catch apply(AuthMod, remove, [DirData]))
 		  end,
-		  ets:match_object(ConfigDB,{directory,'_','_'})),
+		  ets:match_object(ConfigDB,{directory,{'_','_'}})),
     Addr = case lookup(ConfigDB, bind_address) of
 	       [] -> 
 		   undefined;
@@ -562,9 +558,6 @@ remove(ConfigDB) ->
     [{port, Port}] = lookup(ConfigDB, port),
     mod_auth_server:stop(Addr, Port),
     ok.
-
-
-
 
 %% --------------------------------------------------------------------
 
@@ -747,16 +740,14 @@ list_group_members(GroupName, Addr, Port, Dir) ->
 %%        {dir,  Dir},
 %%        {authPassword, AuthPassword} | FunctionSpecificData]
 get_options(Opt, mandatory)->    
-    case httpd_util:key1search(Opt, port, undefined) of
+    case proplists:get_value(port, Opt, undefined) of
 	Port when integer(Port) ->
-	    case httpd_util:key1search(Opt, dir, undefined) of
+	    case proplists:get_value(dir, Opt, undefined) of
 		Dir when list(Dir) ->
-		    Addr = httpd_util:key1search(Opt,
-						 addr,
+		    Addr = proplists:get_value(addr, Opt,
 						 undefined),
-		    AuthPwd = httpd_util:key1search(Opt,
-						    authPassword,
-						    ?NOPASSWORD),
+		    AuthPwd = proplists:get_value(authPassword, Opt,
+						  ?NOPASSWORD),
 		    {Addr, Port, Dir, AuthPwd};
 		_->
 		    {error, bad_dir}
@@ -767,11 +758,11 @@ get_options(Opt, mandatory)->
 
 %% FunctionSpecificData = {userData, UserData} | {password, Password}
 get_options(Opt, userData)->
-    case httpd_util:key1search(Opt, userData, undefined) of
+    case proplists:get_value(userData, Opt, undefined) of
 	undefined ->
 	    {error, no_userdata};
 	UserData ->
-	    case httpd_util:key1search(Opt, password, undefined) of
+	    case proplists:get_value(password, Opt, undefined) of
 		undefined->
 		    {error, no_password};
 		Pwd ->

@@ -19,24 +19,24 @@
 %% Generic compiler options, passed from the erl_compile module.
 
 -record(options,
-	 {includes=[],				% Include paths (list of absolute
-						% directory names).
-	  outdir=".",				% Directory for result (absolute
-						% path).
-	  output_type=undefined,		% Type of output file (atom).
-	  defines=[],				% Preprocessor defines.  Each
-						% element is an atom (the name to
-						% define), or a {Name, Value}
-						% tuple.
-	  warning=1,				% Warning level (0 - no
+	 {includes=[] :: [string()],		% Include paths (list of
+						% absolute directory names).
+	  outdir="."  :: string(),		% Directory for result
+						% (absolute path).
+	  output_type=undefined :: atom(),	% Type of output file.
+	  defines=[]  :: [atom() | {atom(),_}],	% Preprocessor defines.  Each
+						% element is an atom
+						% (the name to define), or 
+						% a {Name, Value} tuple.
+	  warning=1   :: non_neg_integer(),	% Warning level (0 - no
 						% warnings, 1 - standard level,
 						% 2, 3, ... - more warnings).
-	  verbose=false,			% Verbose (true/false).
+	  verbose=false :: bool(),		% Verbose (true/false).
 	  optimize=999,				% Optimize options.
-	  specific=[],				% Compiler specific options.
-	  outfile="",				% Name of output file (internal
+	  specific=[] :: [_],			% Compiler specific options.
+	  outfile=""  :: string(),		% Name of output file (internal
 						% use in erl_compile.erl).
-	  cwd					% Current working directory
+	  cwd	      :: string()		% Current working directory
 						% for erlc.
 	 }).
 

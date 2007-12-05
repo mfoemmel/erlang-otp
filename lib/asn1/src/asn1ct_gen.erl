@@ -150,7 +150,7 @@ pgen_partial_inc_dec(Erules,Module) ->
 %    io:format("Start partial incomplete decode gen?~n"),
     case asn1ct:get_gen_state_field(inc_type_pattern) of
 	undefined ->
-%	    io:format("Partial incomplete decode gen not started: ~w~n",[asn1ct:get_gen_state_field(active)]),
+%	    io:format("Partial incomplete decode gen not started: ~w~n",[asn1ct:get_gen_state_field(active)]),
 	    ok;
 %	[] ->
 %	    ok;
@@ -252,10 +252,10 @@ traverse_type_structure(Erules,Type,[],FuncName,TopTypeName) ->
 		#typedef{name=TopTypeName,typespec=Type};
 	    #typedef{} -> Type
 	end,
-    Ctmod:gen_decode_selected(Erules,TypeDef,FuncName); % kolla vad göra om Type är #type{}
+    Ctmod:gen_decode_selected(Erules,TypeDef,FuncName); % what if Type is #type{}
 traverse_type_structure(Erules,#type{def=Def},[[N]],FuncName,TopTypeName) 
   when integer(N) -> % this case a decode of one of the elements in
-                      % the SEQUENCE OF is required.
+                     % the SEQUENCE OF is required.
     InnerType = asn1ct_gen:get_inner(Def),
     case InnerType of
 	'SEQUENCE OF' ->
@@ -501,8 +501,13 @@ gen_part_decode_funcs({primitive,bif},_TypeName,
     asn1ct_gen_ber_bin_v2:gen_dec_prim(ber_bin_v2,Type,"Data",Tag,[],0,", mandatory, ");
 gen_part_decode_funcs(WhatKind,_TypeName,{_,Directive,_,_}) ->
     throw({error,{asn1,{"Not implemented yet",WhatKind," partial incomplete directive:",Directive}}}).
-    
-gen_types(Erules,Tname,{RootList,ExtList}) when list(RootList) ->
+
+gen_types(Erules,Tname,{RootL1,ExtList,RootL2}) 
+  when is_list(RootL1), is_list(RootL2) ->
+    gen_types(Erules,Tname,RootL1),
+    gen_types(Erules,Tname,ExtList),
+    gen_types(Erules,Tname,RootL2);
+gen_types(Erules,Tname,{RootList,ExtList}) when is_list(RootList) ->
     gen_types(Erules,Tname,RootList),
     gen_types(Erules,Tname,ExtList);
 gen_types(Erules,Tname,[{'EXTENSIONMARK',_,_}|Rest]) ->
@@ -997,26 +1002,23 @@ pgen_dispatcher(Erules,_Module,{Types,_Values,_,_,_Objects,_ObjectSets}) ->
 
     gen_decode_partial_incomplete(Erules),
 
-    case Types of
-	[] -> ok;
-	_ ->
-	    case Erules of
-		ber ->
-		    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
-		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
-		ber_bin ->
-		    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
-		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
-		ber_bin_v2 ->
-		    gen_dispatcher(Types,"encode_disp","enc_",""),
-		    gen_dispatcher(Types,"decode_disp","dec_",""),
-		    gen_partial_inc_dispatcher();
-		_PerOrPer_bin -> 
-		    gen_dispatcher(Types,"encode_disp","enc_",""),
-		    gen_dispatcher(Types,"decode_disp","dec_",",mandatory")
-	    end,
-	    emit([nl])
+    case Erules of
+	ber ->
+	    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
+	    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
+	ber_bin ->
+	    gen_dispatcher(Types,"encode_disp","enc_",",[]"),
+	    gen_dispatcher(Types,"decode_disp","dec_",",mandatory");
+	ber_bin_v2 ->
+	    gen_dispatcher(Types,"encode_disp","enc_",""),
+	    gen_dispatcher(Types,"decode_disp","dec_",""),
+	    gen_partial_inc_dispatcher();
+	_PerOrPer_bin -> 
+	    gen_dispatcher(Types,"encode_disp","enc_",""),
+	    gen_dispatcher(Types,"decode_disp","dec_",",mandatory")
     end,
+    emit([nl]),
+
     case Erules of
 	ber ->
 	    gen_wrapper();
@@ -1314,8 +1316,12 @@ gen_record(Tdef,NumRecords) when record(Tdef,ptypedef) ->
 gen_record(TorPtype,Name,[#'ComponentType'{name=Cname,typespec=Type}|T],Num) ->
     Num2 = gen_record(TorPtype,[Cname|Name],Type,Num),
     gen_record(TorPtype,Name,T,Num2);
-gen_record(TorPtype,Name,{Clist1,Clist2},Num) when list(Clist1), list(Clist2) ->
+gen_record(TorPtype,Name,{Clist1,Clist2},Num)
+  when is_list(Clist1), is_list(Clist2) ->
     gen_record(TorPtype,Name,Clist1++Clist2,Num);
+gen_record(TorPtype,Name,{Clist1,EClist,Clist2},Num) 
+  when is_list(Clist1), is_list(EClist), is_list(Clist2) ->
+    gen_record(TorPtype,Name,Clist1++EClist++Clist2,Num);
 gen_record(TorPtype,Name,[_|T],Num) -> % skip EXTENSIONMARK
     gen_record(TorPtype,Name,T,Num);
 gen_record(_TorPtype,_Name,[],Num) ->
@@ -1328,8 +1334,8 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 		  case Seq#'SEQUENCE'.pname of
 		      false ->
 			  {record,Seq#'SEQUENCE'.components};
-		      _Pname when TorPtype == type ->
-			  false;
+%% 		      _Pname when TorPtype == type ->
+%% 			  false;
 		      _ ->
 			  {record,Seq#'SEQUENCE'.components}
 		  end;
@@ -1360,7 +1366,8 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 	    RootList = case CompList of
 			   _ when list(CompList) ->
 			       CompList;
-			   {_Rl,_} -> _Rl
+			   {Rl,_} -> Rl;
+			   {Rl1,_Ext,_Rl2} -> Rl1
 		       end,
 	    gen_record2(Name,'SEQUENCE',RootList),
 	    NewCompList = 
@@ -1378,6 +1385,21 @@ gen_record(TorPtype,Name,Type,Num) when record(Type,type) ->
 				    "", ext),
 			emit({"}).",nl,nl}),
 			Tr ++ ExtensionList2;
+		    {Rootl1,Extl,Rootl2} ->
+			case Rootl1 of
+			    [] -> true;
+			    _ -> emit([",",nl])
+			end,
+			emit(["%% with extensions",nl]),
+			gen_record2(Name,'SEQUENCE',Extl,"",ext),
+			case Extl of
+			    [] -> true;
+			    _ -> emit([",",nl])
+			end,
+			emit(["%% end of extensions",nl]),
+			gen_record2(Name,'SEQUENCE',Rootl2,"",noext),
+			emit(["}).",nl,nl]),
+			Rootl1++Extl++Rootl2;
 		    _ -> 
 			emit({"}).",nl,nl}),
 			CompList
@@ -1409,8 +1431,7 @@ gen_head(Erules,Mod,Hrl) ->
 			    %% temporary code to enable rt2ct optimization
 			    case lists:member(optimize,Options) of
 				true -> {"RT_PER","asn1rt_per_bin_rt2ct"};
-				_ ->
-				    {"RT_PER",?RT_PER_BIN}
+				_ ->    {"RT_PER",?RT_PER_BIN}
 			    end;
 			ber_bin ->
 			    emit({"%% Generated by the Erlang ASN.1 BER-"

@@ -22,7 +22,8 @@
 #include "erl_version.h"
 #include <commdlg.h>
 #include <commctrl.h>
-#include "erl_alloc.h"
+#include "erl_driver.h"
+#include "win_con.h"
 
 #define WM_CONTEXT      (0x0401)
 #define WM_CONBEEP      (0x0402)
@@ -33,7 +34,7 @@
 #define FRAME_HEIGHT ((2*GetSystemMetrics(SM_CYEDGE))+(2*GetSystemMetrics(SM_CYFRAME))+GetSystemMetrics(SM_CYCAPTION))
 #define FRAME_WIDTH  (2*GetSystemMetrics(SM_CXFRAME)+(2*GetSystemMetrics(SM_CXFRAME))+GetSystemMetrics(SM_CXVSCROLL))
 
-#define LINE_LENGTH 80
+#define LINE_LENGTH canvasColumns
 #define COL(_l) ((_l) % LINE_LENGTH)
 #define LINE(_l) ((_l) / LINE_LENGTH)
 
@@ -51,7 +52,11 @@ typedef struct ScreenLine_s {
     struct ScreenLine_s* next;
     struct ScreenLine_s* prev;
     int width;
-    char text[LINE_LENGTH];
+#ifdef HARDDEBUG
+    int allocated;
+#endif
+    int newline; /* Ends with hard newline: 1, wrapped at end: 0 */
+    char *text;
 } ScreenLine_t;
 
 extern byte *lbuf;		/* The current line buffer */
@@ -61,6 +66,9 @@ extern int lpos;
 
 HANDLE console_input_event;
 HANDLE console_thread = NULL;
+
+#define DEF_CANVAS_COLUMNS 80
+#define DEF_CANVAS_ROWS 26
 
 #define BUFSIZE 4096
 #define MAXBUFSIZE 32768
@@ -91,6 +99,8 @@ static int iVscrollMax,iHscrollMax;
 static int nBufLines;
 static int cur_x;
 static int cur_y;
+static int canvasColumns = DEF_CANVAS_COLUMNS;
+static int canvasRows = DEF_CANVAS_ROWS;
 static ScreenLine_t *buffer_top,*buffer_bottom;
 static ScreenLine_t* cur_line;
 static POINT editBeg,editEnd;
@@ -119,13 +129,14 @@ static ScreenLine_t *GetLineFromY(int y);
 static void LoadUserPreferences(void);
 static void SaveUserPreferences(void);
 static void set_scroll_info(HWND hwnd);
-static void ConCarriageFeed(void);
+static void ConCarriageFeed(int);
 static void ConScrollScreen(void);
 static BOOL ConChooseFont(HWND hwnd);
 static void ConFontInitialize(HWND hwnd);
 static void ConSetFont(HWND hwnd);
 static void ConChooseColor(HWND hwnd);
 static void DrawSelection(HWND hwnd, POINT pt1, POINT pt2);
+static void InvertSelectionArea(HWND hwnd);
 static void OnEditCopy(HWND hwnd);
 static void OnEditPaste(HWND hwnd);
 static void OnEditSelAll(HWND hwnd);
@@ -141,6 +152,7 @@ static void ConDrawText(HWND hwnd);
 static BOOL (WINAPI *ctrl_handler)(DWORD);
 static HWND InitToolBar(HWND hwndParent); 
 static char* window_title(void);
+static void Client_OnMouseMove(HWND hwnd, int x, int y, UINT keyFlags);
 
 #define CON_VPRINTF_BUF_INC_SIZE 1024
 
@@ -156,7 +168,7 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 	size = (((need + CON_VPRINTF_BUF_INC_SIZE - 1)
 		 / CON_VPRINTF_BUF_INC_SIZE)
 		* CON_VPRINTF_BUF_INC_SIZE);
-	buf = (char *) erts_alloc_fnf(ERTS_ALC_T_CON_VPRINTF_BUF, size);
+	buf = (char *) driver_alloc(size);
     }
     else {
 	size_t free_size = dsbufp->size - dsbufp->str_len;
@@ -169,9 +181,8 @@ grow_con_vprintf_buf(erts_dsprintf_buf_t *dsbufp, size_t need)
 		 / CON_VPRINTF_BUF_INC_SIZE)
 		* CON_VPRINTF_BUF_INC_SIZE);
 	size += dsbufp->size;
-	buf = (char *) erts_realloc_fnf(ERTS_ALC_T_CON_VPRINTF_BUF,
-					(void *) dsbufp->str,
-					size);
+	buf = (char *) driver_realloc((void *) dsbufp->str,
+				      size);
     }
     if (!buf)
 	return NULL;
@@ -189,7 +200,7 @@ static int con_vprintf(char *format, va_list arg_list)
     if (res > 0)
 	write_outbuf(dsbuf.str, dsbuf.str_len);
     if (dsbuf.str)
-	erts_free(ERTS_ALC_T_CON_VPRINTF_BUF, (void *) dsbuf.str);
+	driver_free((void *) dsbuf.str);
     return res;
 }
 
@@ -306,6 +317,16 @@ int ConGetKey(void)
     ConReadInput(&c, 1);
     return c;
 }
+
+int ConGetColumns(void) 
+{
+    return (int) canvasColumns; /* 32bit atomic on windows */
+}
+
+int ConGetRows(void) {
+    return (int) canvasRows;
+}
+
 
 static HINSTANCE hInstance;
 extern HMODULE beam_module;
@@ -661,18 +682,142 @@ Client_OnPaint(HWND hwnd)
         pLine = pLine->next;
     }
     if (fTextSelected || fSelecting) {
-	DrawSelection(hwnd, editBeg, editEnd);
+	InvertSelectionArea(hwnd);
     }
     SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
     EndPaint(hwnd, &ps);
 }
 
+#ifdef HARDDEBUG
+static void dump_linebufs(void) {
+    char *buff;
+    ScreenLine_t *s = buffer_top;
+    fprintf(stderr,"LinebufDump------------------------\n");
+    while(s) {
+	if (s == buffer_top) fprintf(stderr,"BT-> ");
+	if (s == buffer_bottom) fprintf(stderr,"BB-> ");
+	if (s == cur_line) fprintf(stderr,"CL-> ");
+
+	buff = (char *) driver_alloc(s->width+1);
+	memcpy(buff,s->text,s->width);
+	buff[s->width] = '\0';
+	fprintf(stderr,"{\"%s\",%d,%d}\n",buff,s->newline,s->allocated);
+	driver_free(buff);
+	s = s->next;
+    }
+    fprintf(stderr,"LinebufDumpEnd---------------------\n");
+    fflush(stderr);
+}
+#endif	    
+
+static void reorganize_linebufs(void) {
+    ScreenLine_t *otop = buffer_top;
+    ScreenLine_t *obot = buffer_bottom;
+    ScreenLine_t *next;
+    int i,cpos;
+
+    cpos = 0;
+    i = nBufLines - cur_y;
+    while (i > 1) {
+	cpos += obot->width;
+	obot = obot->prev;
+	i--;
+    }
+    cpos += (obot->width - cur_x);
+#ifdef HARDDEBUG
+    fprintf(stderr,"nBufLines = %d, cur_x = %d, cur_y = %d, cpos = %d\n",
+	    nBufLines,cur_x,cur_y,cpos);
+    fflush(stderr);
+#endif
+    
+
+    nBufLines = 0;
+    buffer_top = cur_line = ConNewLine();
+    cur_line->next = buffer_bottom = ConNewLine();
+    buffer_bottom->prev = cur_line;
+    
+    cur_x = cur_y = 0; 
+    iVscrollPos = 0;
+    iHscrollPos = 0;
+
+    while(otop) {
+	for(i=0;i<otop->width;++i) {
+	    cur_line->text[cur_x] = otop->text[i];
+	    cur_x++;
+            if (cur_x > cur_line->width)
+		cur_line->width = cur_x; 
+            if (cur_x  >= LINE_LENGTH) {
+                ConCarriageFeed(0);
+	    }
+	}
+	if (otop->newline) {
+	    ConCarriageFeed(1);
+            /*ConScrollScreen();*/
+	}
+	next = otop->next;
+	driver_free(otop->text);
+	driver_free(otop);
+	otop = next;
+    }
+    i = cpos / canvasColumns;
+    cur_x -= (cpos % canvasColumns); 
+    if (cur_x < 0) {
+	++i;
+	cur_x += canvasColumns;
+    }
+    ConScrollScreen();
+    cur_y -= i;
+    while(i--) {
+	cur_line = cur_line->prev;
+    }
+    SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
+#ifdef HARDDEBUG
+    fprintf(stderr,"canvasColumns = %d,nBufLines = %d, cur_x = %d, cur_y = %d\n",
+	    canvasColumns,nBufLines,cur_x,cur_y);
+    fflush(stderr);
+#endif
+}
+	    
+
 static void
 Client_OnSize(HWND hwnd, UINT state, int cx, int cy)
 {
+    RECT r;
+    SCROLLBARINFO sbi;
+    int w,h,columns;
+    int scrollheight;
     cxClient = cx;
     cyClient = cy;
     set_scroll_info(hwnd);
+    GetClientRect(hwnd,&r);
+    w = r.right - r.left;
+    h = r.bottom - r.top;
+    sbi.cbSize = sizeof(SCROLLBARINFO);
+    if (!GetScrollBarInfo(hwnd, OBJID_HSCROLL,&sbi) || 
+	(sbi.rgstate[0] & STATE_SYSTEM_INVISIBLE)) {
+	scrollheight = 0;
+    } else {
+	scrollheight = sbi.rcScrollBar.bottom - sbi.rcScrollBar.top;
+    }
+    canvasRows = (h - scrollheight) / cyChar;
+    if (canvasRows < DEF_CANVAS_ROWS) {
+	canvasRows = DEF_CANVAS_ROWS;
+    }
+    columns = (w - GetSystemMetrics(SM_CXVSCROLL)) /cxChar;
+    if (columns < DEF_CANVAS_COLUMNS)
+	columns = DEF_CANVAS_COLUMNS;
+    if (columns != canvasColumns) {
+	canvasColumns = columns;
+	/*dump_linebufs();*/
+	reorganize_linebufs();
+	fSelecting = fTextSelected = FALSE;
+	InvalidateRect(hwnd, NULL, TRUE);
+#ifdef HARDDEBUG
+	fprintf(stderr,"Paint: cols = %d, rows = %d\n",canvasColumns,canvasRows);
+	fflush(stderr);
+#endif
+    }
+    
     SetCaretPos((cur_x-iHscrollPos)*cxChar, (cur_y-iVscrollPos)*cyChar);
 }
 
@@ -680,8 +825,13 @@ static void
 Client_OnLButtonDown(HWND hwnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 {
     SetFocus(GetParent(hwnd));	/* In case combobox steals the focus */
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"OnLButtonDown fSelecting = %d, fTextSelected = %d:\n",
+	    fSelecting,fTextSelected);
+    fflush(stderr);
+#endif
     if (fTextSelected) {
-	DrawSelection(hwnd, editBeg, editEnd);
+	InvertSelectionArea(hwnd);
     }
     fTextSelected = FALSE;
     editEnd.x = editBeg.x = x/cxChar + iHscrollPos;
@@ -693,39 +843,235 @@ Client_OnLButtonDown(HWND hwnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
 }
 
 static void
+Client_OnRButtonDown(HWND hwnd, BOOL fDoubleClick, int x, int y, UINT keyFlags)
+{
+    if (fTextSelected) {
+	fSelecting = TRUE;
+	Client_OnMouseMove(hwnd,x,y,keyFlags);
+	fSelecting = FALSE;
+    }
+}
+
+static void
 Client_OnLButtonUp(HWND hwnd, int x, int y, UINT keyFlags)
 {
-    if (fSelecting && editBeg.x != editEnd.x && editBeg.y != editEnd.y) {
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"OnLButtonUp fSelecting = %d, fTextSelected = %d:\n",
+	    fSelecting,fTextSelected);
+    fprintf(stderr,"(Beg.x = %d, Beg.y = %d, " 
+	    "End.x = %d, End.y = %d)\n",editBeg.x,editBeg.y,
+	    editEnd.x,editEnd.y);
+#endif
+    if (fSelecting && 
+	!(editBeg.x == editEnd.x && editBeg.y == (editEnd.y - 1))) {
 	fTextSelected = TRUE;
     }
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"OnLButtonUp fTextSelected = %d:\n",
+	    fTextSelected);
+    fflush(stderr);
+#endif
     fSelecting = FALSE;
     ReleaseCapture();
+}
+
+#define EMPTY_RECT(R) \
+(((R).bottom - (R).top == 0) || ((R).right - (R).left == 0))
+#define ABS(X) (((X)< 0) ? -1 * (X) : X) 
+#define DIFF(A,B) ABS(((int)(A)) - ((int)(B)))
+
+static int diff_sel_area(RECT old[3], RECT new[3], RECT result[6])
+{
+    int absposold = old[0].left + old[0].top * canvasColumns;
+    int absposnew = new[0].left + new[0].top * canvasColumns;
+    int absendold = absposold, absendnew = absposnew;
+    int i, x, ret = 0;
+    int abspos[2],absend[2];
+    for(i = 0; i < 3; ++i) {
+	if (!EMPTY_RECT(old[i])) {
+	    absendold += (old[i].right - old[i].left) * 
+		(old[i].bottom - old[i].top);
+	} 
+	if (!EMPTY_RECT(new[i])) {
+	    absendnew += (new[i].right - new[i].left) * 
+		(new[i].bottom - new[i].top);
+	}
+    }
+    abspos[0] = min(absposold, absposnew);
+    absend[0] = DIFF(absposold, absposnew) + abspos[0];
+    abspos[1] = min(absendold, absendnew);
+    absend[1] = DIFF(absendold, absendnew) + abspos[1];
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"abspos[0] = %d, absend[0] = %d, abspos[1] = %d, absend[1] = %d\n",abspos[0],absend[0],abspos[1],absend[1]);
+    fflush(stderr);
+#endif
+    i = 0;
+    for (x = 0; x < 2; ++x) {
+	if (abspos[x] != absend[x]) {
+	    int consumed = 0;
+	    result[i].left = abspos[x] % canvasColumns;
+	    result[i].top = abspos[x] / canvasColumns;
+	    result[i].bottom = result[i].top + 1;
+	    if ((absend[x] - abspos[x]) + result[i].left < canvasColumns) {
+#ifdef HARD_SEL_DEBUG
+		fprintf(stderr,"Nowrap, %d < canvasColumns\n",
+			(absend[x] - abspos[x]) + result[i].left);
+		fflush(stderr);
+#endif
+		result[i].right = (absend[x] - abspos[x]) + result[i].left;
+		consumed += result[i].right - result[i].left; 
+	    } else {
+#ifdef HARD_SEL_DEBUG
+		fprintf(stderr,"Wrap, %d >= canvasColumns\n",
+			(absend[x] - abspos[x]) + result[i].left);
+		fflush(stderr);
+#endif
+		result[i].right = canvasColumns;
+		consumed += result[i].right - result[i].left;
+		if (absend[x] - abspos[x] - consumed >= canvasColumns) {
+		    ++i;
+		    result[i].top = result[i-1].bottom;
+		    result[i].left = 0;
+		    result[i].right = canvasColumns;
+		    result[i].bottom = (absend[x] - abspos[x] - consumed) / canvasColumns + result[i].top;
+		    consumed += (result[i].bottom - result[i].top) * canvasColumns;
+		}
+		if (absend[x] - abspos[x] - consumed > 0) {
+		    ++i;
+		    result[i].top = result[i-1].bottom;
+		    result[i].bottom = result[i].top + 1;
+		    result[i].left = 0;
+		    result[i].right = absend[x] - abspos[x] - consumed;
+		}
+	    }
+	    ++i;
+	}
+    }
+#ifdef HARD_SEL_DEBUG
+    if (i > 2) {
+	int x;
+	fprintf(stderr,"i = %d\n",i);
+	fflush(stderr);
+	for (x = 0; x < i; ++x) {
+	    fprintf(stderr, "result[%d]: top = %d, left = %d, "
+		    "bottom = %d. right = %d\n",
+		    x, result[x].top, result[x].left,
+		    result[x].bottom, result[x].right);
+	}
+    }
+#endif
+    return i;
+}
+    
+
+
+static void calc_sel_area(RECT rects[3], POINT beg, POINT end) 
+{
+    /* These are not really rects and points, these are character
+       based positions, need to be multiplied by cxChar and cyChar to
+       make up canvas coordinates */
+    memset(rects,0,3*sizeof(RECT));
+    rects[0].left = beg.x;
+    rects[0].top = beg.y;
+    rects[0].bottom = beg.y+1;
+    if (end.y - beg.y == 1) { /* Only one row */
+	rects[0].right = end.x;
+	goto out;
+    }
+    rects[0].right = canvasColumns;
+    if (end.y - beg.y > 2) { 
+	rects[1].left = 0;
+	rects[1].top = rects[0].bottom;
+	rects[1].right = canvasColumns;
+	rects[1].bottom = end.y - 1;
+    }
+    rects[2].left = 0;
+    rects[2].top = end.y - 1;
+    rects[2].bottom = end.y;
+    rects[2].right = end.x;
+
+ out:
+#ifdef HARD_SEL_DEBUG
+    {
+	int i;
+	fprintf(stderr,"beg.x = %d, beg.y = %d, end.x = %d, end.y = %d\n",
+		beg.x,beg.y,end.x,end.y);
+	for (i = 0; i < 3; ++i) {
+	    fprintf(stderr,"[%d] left = %d, top = %d, "
+		    "right = %d, bottom = %d\n",
+		    i, rects[i].left, rects[i].top, 
+		    rects[i].right, rects[i].bottom);
+	}
+	fflush(stderr);
+    }
+#endif
+    return;
+}
+
+static void calc_sel_area_turned(RECT rects[3], POINT eBeg, POINT eEnd) {
+    POINT from,to;
+    if (eBeg.y >=  eEnd.y || 
+	(eBeg.y == eEnd.y - 1 && eBeg.x > eEnd.x)) {
+#ifdef HARD_SEL_DEBUG
+	fprintf(stderr,"Reverting (Beg.x = %d, Beg.y = %d, " 
+		"End.x = %d, End.y = %d)\n",eBeg.x,eBeg.y,
+		eEnd.x,eEnd.y);
+	fflush(stderr);
+#endif
+	from.x = eEnd.x;
+	from.y = eEnd.y - 1;
+	to.x = eBeg.x;
+	to.y = eBeg.y + 1; 
+	calc_sel_area(rects,from,to);
+    } else {
+	calc_sel_area(rects,eBeg,eEnd);
+    }
+}
+ 
+
+static void InvertSelectionArea(HWND hwnd)
+{
+    RECT rects[3];
+    POINT from,to;
+    int i;
+    calc_sel_area_turned(rects,editBeg,editEnd);
+    for (i = 0; i < 3; ++i) {
+	if (!EMPTY_RECT(rects[i])) {
+	    from.x = rects[i].left;
+	    to.x = rects[i].right;
+	    from.y = rects[i].top;
+	    to.y = rects[i].bottom;
+	    DrawSelection(hwnd,from,to);
+	}
+    }
 }
 
 static void
 Client_OnMouseMove(HWND hwnd, int x, int y, UINT keyFlags)
 {
     if (fSelecting) {
-	POINT pt;
-	POINT from;
-	POINT to;
+	RECT rold[3], rnew[3], rupdate[6];
+	int num_updates,i;
+	POINT from,to;
+	calc_sel_area_turned(rold,editBeg,editEnd);
 
-	pt.x = x/cxChar + iHscrollPos;
-	pt.y = y/cyChar + iVscrollPos + 1;
-
-	from.x = editEnd.x;
-	from.y = editBeg.y;
-	to.x = pt.x;
-	to.y = editEnd.y;
-	DrawSelection(hwnd, from, to);
-
-	from.x = editBeg.x;
-	from.y = editEnd.y;
-	to.x = pt.x;
-	to.y = pt.y;
-	DrawSelection(hwnd, from, to);
 	editEnd.x = x/cxChar + iHscrollPos;
 	editEnd.y = y/cyChar + iVscrollPos + 1;
+
+	calc_sel_area_turned(rnew,editBeg,editEnd);
+	num_updates = diff_sel_area(rold,rnew,rupdate);
+	for (i = 0; i < num_updates;++i) {
+	    from.x = rupdate[i].left;
+	    to.x = rupdate[i].right;
+	    from.y = rupdate[i].top;
+	    to.y = rupdate[i].bottom;
+#ifdef HARD_SEL_DEBUG
+	    fprintf(stderr,"from: x=%d,y=%d, to: x=%d, y=%d\n",
+		    from.x, from.y,to.x,to.y);
+	    fflush(stderr);
+#endif
+	    DrawSelection(hwnd,from,to);
+	}
     }
 }
 
@@ -805,6 +1151,7 @@ ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 	HANDLE_MSG(hwnd, WM_SIZE, Client_OnSize);
 	HANDLE_MSG(hwnd, WM_PAINT, Client_OnPaint);
 	HANDLE_MSG(hwnd, WM_LBUTTONDOWN, Client_OnLButtonDown);
+	HANDLE_MSG(hwnd, WM_RBUTTONDOWN, Client_OnRButtonDown);
 	HANDLE_MSG(hwnd, WM_LBUTTONUP, Client_OnLButtonUp);
 	HANDLE_MSG(hwnd, WM_MOUSEMOVE, Client_OnMouseMove);
 	HANDLE_MSG(hwnd, WM_VSCROLL, Client_OnVScroll);
@@ -918,14 +1265,15 @@ ensure_line_below(void)
     if (cur_line->next == NULL) {
 	if (nBufLines >= lines_to_save) {
 	    ScreenLine_t* pLine = buffer_top->next;
-	    free(buffer_top);
+	    driver_free(buffer_top->text);
+	    driver_free(buffer_top);
 	    buffer_top = pLine;
 	    buffer_top->prev = NULL;
 	    nBufLines--;
 	}
 	cur_line->next = ConNewLine();
 	cur_line->next->prev = cur_line;
-	buffer_bottom = cur_line;
+	buffer_bottom = cur_line->next;
 	set_scroll_info(hClientWnd);
     }
 }
@@ -935,11 +1283,16 @@ ConNewLine(void)
 {
     ScreenLine_t *pLine;
 
-    pLine = (ScreenLine_t *)malloc(sizeof(ScreenLine_t));
+    pLine = (ScreenLine_t *)driver_alloc(sizeof(ScreenLine_t));
     if (!pLine)
 	return NULL;
+    pLine->text = (char *) driver_alloc(canvasColumns);
+#ifdef HARDDEBUG
+    pLine->allocated = canvasColumns;
+#endif
     pLine->width = 0;
     pLine->prev = pLine->next = NULL;
+    pLine->newline = 0;
     nBufLines++;
     return pLine;
 }
@@ -958,10 +1311,11 @@ GetLineFromY(int y)
     return NULL;
 }    
 
-void ConCarriageFeed()
+void ConCarriageFeed(int hard_newline)
 {
     cur_x = 0;
     ensure_line_below();
+    cur_line->newline = hard_newline;
     cur_line = cur_line->next;
     if (cur_y < nBufLines-1) {
 	cur_y++;
@@ -1011,37 +1365,88 @@ DrawSelection(HWND hwnd, POINT pt1, POINT pt2)
 static void
 OnEditCopy(HWND hwnd)
 {
-    /* copy selected text to clipboard */
-    RECT rc;
-    int size,i,j;
     HGLOBAL hMem;
     char *pMem;
     ScreenLine_t *pLine;
-    				
-    rc.top = min(editBeg.y,editEnd.y);
-    rc.bottom = max(editBeg.y,editEnd.y);
-    rc.left = min(editBeg.x,editEnd.x);
-    rc.right = max(editBeg.x,editEnd.x);
-    size = (rc.bottom-rc.top) * (rc.right-rc.left+3) + 1;
-    hMem = GlobalAlloc(GHND, size);
-    pMem = GlobalLock(hMem);
-    
-    pLine = GetLineFromY(rc.top);
-    for (i = rc.top; i < rc.bottom && pLine != NULL; i++) {
-	for (j=rc.left ; j<rc.right; j++) {
-	    if (j >= pLine->width)
-		break;
-	    *pMem++ = pLine->text[j];
-	}
-        if (i < rc.bottom-1) {
-	    *pMem++ = '\r';
-	    *pMem++ = '\n';
-	}
-	pLine = pLine->next;
+    RECT rects[3];
+    POINT from,to;
+    int i,j,sum,len;
+    if (editBeg.y >=  editEnd.y || 
+	(editBeg.y == editEnd.y - 1 && editBeg.x > editEnd.x)) {
+#ifdef HARD_SEL_DEBUG
+	fprintf(stderr,"CopyReverting (Beg.x = %d, Beg.y = %d, " 
+		"End.x = %d, End.y = %d)\n",editBeg.x,editBeg.y,
+		editEnd.x,editEnd.y);
+	fflush(stderr);
+#endif
+	from.x = editEnd.x;
+	from.y = editEnd.y - 1;
+	to.x = editBeg.x;
+	to.y = editBeg.y + 1; 
+	calc_sel_area(rects,from,to);
+    } else {
+	calc_sel_area(rects,editBeg,editEnd);
     }
-				
+    sum = 1;
+    for (i = 0; i < 3; ++i) {
+	if (!EMPTY_RECT(rects[i])) {
+	    pLine = GetLineFromY(rects[i].top);
+	    for (j = rects[i].top; j < rects[i].bottom ;++j) {
+		if (pLine == NULL) {
+		    sum += 2;
+		    break;
+		}
+		if (pLine->width > rects[i].left) {
+		    sum += (pLine->width < rects[i].right) ?
+			pLine->width -  rects[i].left : 
+			rects[i].right - rects[i].left;
+		}
+		if(pLine->newline && rects[i].right >= pLine->width) {
+		    sum += 2;
+		}
+		pLine = pLine->next;
+	    }
+	}
+    }
+#ifdef HARD_SEL_DEBUG
+    fprintf(stderr,"sum = %d\n",sum);
+    fflush(stderr);
+#endif
+    hMem = GlobalAlloc(GHND, sum);
+    pMem = GlobalLock(hMem);
+    for (i = 0; i < 3; ++i) {
+	if (!EMPTY_RECT(rects[i])) {
+	    pLine = GetLineFromY(rects[i].top);
+	    for (j = rects[i].top; j < rects[i].bottom; ++j) {
+		if (pLine == NULL) {
+		    memcpy(pMem,"\r\n",2);
+		    pMem += 2;
+		    break;
+		}
+		if (pLine->width > rects[i].left) {
+		    len = (pLine->width < rects[i].right) ?
+			pLine->width -  rects[i].left : 
+			rects[i].right - rects[i].left;
+		    memcpy(pMem,pLine->text + rects[i].left,len);
+		    pMem +=len;
+		}
+		if(pLine->newline && rects[i].right >= pLine->width) {
+		    memcpy(pMem,"\r\n",2);
+		    pMem += 2;
+		}
+		pLine = pLine->next;
+	    }
+	}
+    }
+    *pMem = '\0';
+    /* Flash de selection area to give user feedback about copying */
+    InvertSelectionArea(hwnd);
+    Sleep(100);
+    InvertSelectionArea(hwnd);
+
     OpenClipboard(hwnd);
     EmptyClipboard();
+    GlobalUnlock(hMem);
     SetClipboardData(CF_TEXT,hMem);
     CloseClipboard();
 }
@@ -1055,7 +1460,7 @@ OnEditPaste(HWND hwnd)
 	return;
     if ((hClipMem = GetClipboardData(CF_TEXT)) != NULL) {
         pClipMem = GlobalLock(hClipMem);
-        pMem = (char *)malloc(GlobalSize(hClipMem));
+        pMem = (char *)driver_alloc(GlobalSize(hClipMem));
         pMem2 = pMem;
         while ((*pMem2 = *pClipMem) != '\0') {
             if (*pClipMem == '\r')
@@ -1336,8 +1741,8 @@ void LogFileWrite(unsigned char *buf, int nbytes)
 static void
 init_buffers(void)
 {
-    inbuf.data = (unsigned char *) malloc(BUFSIZE);
-    outbuf.data = (unsigned char *) malloc(BUFSIZE);
+    inbuf.data = (unsigned char *) driver_alloc(BUFSIZE);
+    outbuf.data = (unsigned char *) driver_alloc(BUFSIZE);
     inbuf.size = BUFSIZE;
     inbuf.rdPos = inbuf.wrPos = 0;
     outbuf.size = BUFSIZE;
@@ -1351,7 +1756,7 @@ check_realloc(buffer_t *buf, int nbytes)
 	if (buf->size > MAXBUFSIZE)
 	    return 0;
 	buf->size += nbytes + BUFSIZE;
-	if (!(buf->data = (unsigned char *)realloc(buf->data, buf->size))) {
+	if (!(buf->data = (unsigned char *)driver_realloc(buf->data, buf->size))) {
 	    buf->size = buf->rdPos = buf->wrPos = 0;
 	    return 0;
         }
@@ -1452,6 +1857,17 @@ ConDrawText(HWND hwnd)
     if (logfile != NULL)
 	LogFileWrite(buf, nbytes);
 
+
+#ifdef HARDDEBUG
+    {
+	char *bu = (char *) driver_alloc(nbytes+1);
+	memcpy(bu,buf,nbytes);
+	bu[nbytes]='\0';
+	fprintf(stderr,"ConDrawText\"%s\"\n",bu);
+	driver_free(bu);
+	fflush(stderr);
+    }
+#endif
     /*
      * Don't draw any text in the window; just update the line buffers
      * and invalidate the appropriate part of the window.  The window
@@ -1471,7 +1887,7 @@ ConDrawText(HWND hwnd)
 		InvalidateRect(hwnd, &rc, TRUE);
                 nchars = 0;
 	    }
-	    ConCarriageFeed();
+	    ConCarriageFeed(1);
             ConScrollScreen();
             break;
         case SET_CURSOR:
@@ -1528,7 +1944,7 @@ ConDrawText(HWND hwnd)
                     rc.bottom = rc.top + cyChar;
 		    InvalidateRect(hwnd, &rc, TRUE);
                 }
-                ConCarriageFeed();
+                ConCarriageFeed(0);
                 nchars = 0;
             }
         }

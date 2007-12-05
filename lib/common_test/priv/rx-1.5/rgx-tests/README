@@ -1,0 +1,21 @@
+To run these tests, use a command sequence like:
+
+	./=each ./=compile SRCDIR/rx/inst-rxposix.h BUILDDIR/rx/librx.a
+	./=each ./=doit ,rx
+
+substituting appropriate values for SRCDIR and BUILDDIR.
+
+The tests can be run for GNU regex using:
+
+	./=each ./=compile SRCDIR/rx/regex.h BUILDDIR/regex/regex.o
+	./=each ./=doit ,gnu
+
+Failed tests can be found using the commands:
+
+	grep -s "###" */,gnu
+and
+	grep -s "###" */,rx
+
+At the moment, the only known error is that GNU regex is known to fail
+the backrefs test.
+

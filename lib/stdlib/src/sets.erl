@@ -41,12 +41,7 @@
 -export([subtract/2,is_subset/2]).
 -export([fold/3,filter/2]).
 
-%% Deprecated interface.
-
--export([new_set/0,set_to_list/1,list_to_set/1,subset/2]).
--deprecated([{new_set,0},{set_to_list,1},{list_to_set,1},{subset,2}]).
-
-%% Note: mk_seg/1 must be changed too if you seg_size is changed.
+%% Note: mk_seg/1 must be changed too if seg_size is changed.
 -define(seg_size, 16).
 -define(max_seg, 32).
 -define(expand_load, 5).
@@ -191,15 +186,6 @@ fold(F, Acc, D) -> fold_set(F, Acc, D).
 
 filter(F, D) -> filter_set(F, D).
 
-%% Deprecated interface.
-
-new_set() -> new().
-
-set_to_list(S) -> to_list(S).
-
-list_to_set(L) -> from_list(L).
-
-subset(S1, S2) -> is_subset(S1, S2).
 
 %% get_slot(Hashdb, Key) -> Slot.
 %%  Get the slot.  First hash on the new range, if we hit a bucket

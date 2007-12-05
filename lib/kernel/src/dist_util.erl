@@ -65,6 +65,7 @@
 
 -define(u32(X3,X2,X1,X0),
         (((X3) bsl 24) bor ((X2) bsl 16) bor ((X1) bsl 8) bor (X0))).
+
 -record(tick, {read = 0,
 	       write = 0,
 	       tick = 0,
@@ -78,7 +79,6 @@ remove_flag(Flag, Flags) ->
 	_ ->
 	    Flags - Flag
     end.
-    
 
 adjust_flags(ThisFlags, OtherFlags) ->
     case (?DFLAG_PUBLISHED band ThisFlags) band OtherFlags of
@@ -278,8 +278,12 @@ is_pending(Kernel, Node) ->
 %% is closed in a controlled way by inet_drv.
 %%
 
+-spec(shutdown/3 :: (atom(), non_neg_integer(), _) -> no_return()).
+
 shutdown(Module, Line, Data) ->
     shutdown(Module, Line, Data, shutdown).
+
+-spec(shutdown/4 :: (atom(), non_neg_integer(), _, _) -> no_return()).
 
 shutdown(_Module, _Line, _Data, Reason) ->
     ?shutdown_trace("Net Kernel 2: shutting down connection "
@@ -381,11 +385,11 @@ gen_challenge() ->
 get_cookies(Node) ->
     case auth:get_cookie(Node) of
 	X when is_atom(X) ->
-	    {X,X};
-	{Y,Z} when is_atom(Y), is_atom(Z) ->
-	    {Y,Z};
-	_ ->
-	    erlang:fault("Corrupt cookie database")
+	    {X,X}
+%	{Y,Z} when is_atom(Y), is_atom(Z) ->
+%	    {Y,Z};
+%	_ ->
+%	    erlang:error("Corrupt cookie database")
     end.    
 
 %% No error return; either succeeds or terminates the process.

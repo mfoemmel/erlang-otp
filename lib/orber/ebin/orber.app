@@ -1,6 +1,6 @@
 {application, orber,
  [{description, "The Erlang ORB application"},
-  {vsn, "3.6.6"},
+  {vsn, "3.6.8"},
   {modules,
      [	
         'CosNaming_Binding',
@@ -20,7 +20,6 @@
         'CosNaming_NamingContextExt_InvalidAddress',
 	'OrberApp_IFR',
 	'OrberApp_IFR_impl',
-	'OrberCSIv2',
 	'oe_OrberIFR',
         'any',
         'cdr_decode',

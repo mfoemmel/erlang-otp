@@ -16,15 +16,8 @@
  *     $Id$
  */
 
-
-/* Define if you want to enable extended functionality in the ethread library */
-#undef ETHR_EXTENDED_LIB
-
 /* Define if you have win32 threads */
 #undef ETHR_WIN32_THREADS
-
-/* Define if you have the TryEnterCriticalSection function. */
-#undef ETHR_HAVE_TRYENTERCRITICALSECTION
 
 /* Define if you have pthreads */
 #undef ETHR_PTHREADS
@@ -46,6 +39,9 @@
 
 /* Define if you have the pthread_spin_lock function. */
 #undef ETHR_HAVE_PTHREAD_SPIN_LOCK
+
+/* Define if you have the pthread_rwlock_init function */
+#undef ETHR_HAVE_PTHREAD_RWLOCK_INIT
 
 /* Define if you want to turn on extra sanity checking in the ethread library */
 #undef ETHR_XCHK

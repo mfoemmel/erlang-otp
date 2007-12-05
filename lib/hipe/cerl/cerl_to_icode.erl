@@ -63,6 +63,7 @@
 -define(OP_APPLY_FIXARITY(N), #apply_N{arity=N}).
 -define(OP_MAKE_FUN(M, F, A, U, I), #mkfun{mfa={M,F,A}, magic_num=U, index=I}).
 -define(OP_FUN_ELEMENT(N), #closure_element{n=N}).
+-define(OP_BS_CONTEXT_TO_BINARY, {hipe_bs_primop,bs_context_to_binary}).
 
 %% Icode conditional tests
 
@@ -674,12 +675,12 @@ make_bs_bits_to_bytes(Old, Dst, _Ctxt, S0) ->
 make_binary_size(Old, Bin, Dst, #ctxt{fail=FL, class=guard}, S0) -> 
     SL1 = new_label(),
     SL2 = new_label(),
-    add_code([icode_guardop([Dst], {erlang, size, 1}, [Bin], SL1, FL),
+    add_code([icode_guardop([Dst], {erlang, byte_size, 1}, [Bin], SL1, FL),
 	      icode_label(SL1),
 	      icode_guardop([Dst], '+', [Old, Dst], SL2, FL),
 	      icode_label(SL2)], S0);
 make_binary_size(Old, Bin, Dst, _Ctxt, S0) ->
-    add_code([icode_call_primop([Dst], {erlang, size, 1}, [Bin]),
+    add_code([icode_call_primop([Dst], {erlang, byte_size, 1}, [Bin]),
 	      icode_call_primop([Dst], '+', [Old, Dst])], S0).
 
 binary_segments(SegList, TList, Ctxt=#ctxt{}, Env, S, Align, Base,
@@ -979,6 +980,8 @@ expr_primop_1(Name, Arity, As, E, Ts, Ctxt, Env, S) ->
 
 expr_primop_2(?PRIMOP_ELEMENT, 2, Vs, Ts, Ctxt, S) ->
     add_code(make_op(?OP_ELEMENT, Ts, Vs, Ctxt), S);
+expr_primop_2(?PRIMOP_BS_CONTEXT_TO_BINARY, 1, Vs, Ts, Ctxt, S) ->
+    add_code(make_op(?OP_BS_CONTEXT_TO_BINARY, Ts, Vs, Ctxt), S);
 expr_primop_2(?PRIMOP_EXIT, 1, [V], _Ts, Ctxt, S) ->
     add_exit(V, Ctxt, S);
 expr_primop_2(?PRIMOP_THROW, 1, [V], _Ts, Ctxt, S) ->
@@ -1419,12 +1422,13 @@ expr_case_2(Vs, Cs, F, Ctxt, Env, S1) ->
     end.
 
 %% Check if a list of clauses represents a switch over a number (more
-%% than 1) of constants (atoms or integers/floats), or tuples (whose
-%% elements are all variables)
+%% than 1) of constants (integers or atoms), or tuples (whose elements
+%% are all variables)
 
 is_constant_switch(Cs) ->
     is_switch(Cs, fun (P) -> (cerl:type(P) =:= literal) andalso
-				 is_constant(cerl:concrete(P)) end).
+				 (is_integer(cerl:concrete(P))
+				  orelse is_atom(cerl:concrete(P))) end).
 
 is_tuple_switch(Cs) ->
     is_switch(Cs, fun (P) -> cerl:is_c_tuple(P) andalso
@@ -1774,7 +1778,7 @@ bin_seg_pattern(P, V, MS, Fail, Env, S, Align) ->
     case calculate_size(Unit, Size, false, Env, S) of
 	{all, NewUnit, NewAlign, S0} ->
 	    Type = binary,
-	    Name = {bs_get_binary_all, NewUnit, Flags},
+	    Name = {bs_get_binary_all_2, NewUnit, Flags},
 	    Primop = {hipe_bs_primop, Name},
 	    S1 = add_code([icode_guardop([V,MS], Primop, [MS], L, Fail),
 			   icode_label(L)], S0),

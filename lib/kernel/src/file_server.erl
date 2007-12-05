@@ -205,7 +205,7 @@ handle_info({'EXIT', Pid, _Reason}, Handle) when is_pid(Pid) ->
     {noreply, Handle};
 
 handle_info({'EXIT', Handle, _Reason}, Handle) ->
-    error_logger:error_msg('Port controlling ~w terminated in ~w',
+    error_logger:error_msg("Port controlling ~w terminated in ~w",
 			   [?FILE_SERVER, ?MODULE]),
     {stop, normal, Handle};
 

@@ -107,15 +107,15 @@ while [ $# -gt 0 ]; do
 	    cargs="$cargs -smp"
 	    EMU_TYPE=.smp
 	    ;;
-	"-nofrag")
+	"-frag")
 	    shift
-	    cargs="$cargs -nofrag"
-	    EMU_TYPE=.nofrag
+	    cargs="$cargs -frag"
+	    EMU_TYPE=.frag
 	    ;;
-	"-smp_nofrag")
+	"-smp_frag")
 	    shift
-	    cargs="$cargs -smp_nofrag"
-	    EMU_TYPE=.smp_nofrag
+	    cargs="$cargs -smp_frag"
+	    EMU_TYPE=.smp_frag
 	    ;;
 	"-gprof")
 	    shift

@@ -26,35 +26,18 @@
 #include "erl_threads.h"
 
 #ifdef ERTS_SMP
-#ifndef ETHR_EXTENDED_LIB
-#error "Need extended ethread library for smp build"
-#endif
 #define ERTS_SMP_THR_OPTS_DEFAULT_INITER ERTS_THR_OPTS_DEFAULT_INITER
 typedef erts_thr_opts_t erts_smp_thr_opts_t;
 typedef erts_thr_init_data_t erts_smp_thr_init_data_t;
 typedef erts_tid_t erts_smp_tid_t;
 typedef erts_mtx_t erts_smp_mtx_t;
 typedef erts_cnd_t erts_smp_cnd_t;
-typedef struct {
-    ethr_rwmutex rwmtx;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_t lc;
-#endif
-} erts_smp_rwmtx_t;
+typedef erts_rwmtx_t erts_smp_rwmtx_t;
 typedef erts_tsd_key_t erts_smp_tsd_key_t;
+typedef erts_gate_t erts_smp_gate_t;
 typedef ethr_atomic_t erts_smp_atomic_t;
-typedef struct {
-    ethr_spinlock_t slck;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_t lc;
-#endif
-} erts_smp_spinlock_t;
-typedef struct {
-    ethr_rwlock_t rwlck;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_t lc;
-#endif
-} erts_smp_rwlock_t;
+typedef erts_spinlock_t erts_smp_spinlock_t;
+typedef erts_rwlock_t erts_smp_rwlock_t;
 typedef erts_thr_timeval_t erts_smp_thr_timeval_t;
 void erts_thr_fatal_error(int, char *); /* implemented in erl_init.c */
 
@@ -68,6 +51,7 @@ typedef int erts_smp_mtx_t;
 typedef int erts_smp_cnd_t;
 typedef int erts_smp_rwmtx_t;
 typedef int erts_smp_tsd_key_t;
+typedef int erts_smp_gate_t;
 typedef long erts_smp_atomic_t;
 #if __GNUC__ > 2
 typedef struct { } erts_smp_spinlock_t;
@@ -149,6 +133,8 @@ ERTS_GLB_INLINE long erts_smp_atomic_addtest(erts_smp_atomic_t *addp,
 ERTS_GLB_INLINE void erts_smp_atomic_add(erts_smp_atomic_t *addp, long i);
 ERTS_GLB_INLINE long erts_smp_atomic_xchg(erts_smp_atomic_t *xchgp,
 					  long new);
+ERTS_GLB_INLINE long erts_smp_atomic_bor(erts_smp_atomic_t *var, long mask);
+ERTS_GLB_INLINE long erts_smp_atomic_band(erts_smp_atomic_t *var, long mask);
 ERTS_GLB_INLINE void erts_smp_spinlock_init_x(erts_smp_spinlock_t *lock,
 					      char *name,
 					      Eterm extra);
@@ -175,6 +161,13 @@ ERTS_GLB_INLINE void erts_smp_tsd_key_create(erts_smp_tsd_key_t *keyp);
 ERTS_GLB_INLINE void erts_smp_tsd_key_delete(erts_smp_tsd_key_t key);
 ERTS_GLB_INLINE void erts_smp_tsd_set(erts_smp_tsd_key_t key, void *value);
 ERTS_GLB_INLINE void * erts_smp_tsd_get(erts_smp_tsd_key_t key);
+ERTS_GLB_INLINE void erts_smp_gate_init(erts_smp_gate_t *gp);
+ERTS_GLB_INLINE void erts_smp_gate_destroy(erts_smp_gate_t *gp);
+ERTS_GLB_INLINE void erts_smp_gate_close(erts_smp_gate_t *gp);
+ERTS_GLB_INLINE void erts_smp_gate_let_through(erts_smp_gate_t *gp, unsigned no);
+ERTS_GLB_INLINE void erts_smp_gate_wait(erts_smp_gate_t *gp);
+ERTS_GLB_INLINE void erts_smp_gate_swait(erts_smp_gate_t *gp, int spincount);
+
 #ifdef ERTS_THR_HAVE_SIG_FUNCS
 #define ERTS_SMP_THR_HAVE_SIG_FUNCS 1
 ERTS_GLB_INLINE void erts_smp_thr_sigmask(int how,
@@ -329,9 +322,6 @@ ERTS_GLB_INLINE int
 erts_smp_mtx_trylock(erts_smp_mtx_t *mtx)
 {
 #ifdef ERTS_SMP
-#ifndef ERTS_HAVE_MTX_TRYLOCK
-#error "no erts_mtx_trylock()"
-#endif
     return erts_mtx_trylock(mtx);
 #else
     return 0;
@@ -421,12 +411,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_init_x(erts_smp_rwmtx_t *rwmtx, char *name, Eterm extra)
 {
 #ifdef ERTS_SMP
-    int res = ethr_rwmutex_init(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "initialize rwmutex");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock_x(&rwmtx->lc, name, ERTS_LC_FLG_LT_RWMUTEX, extra);
-#endif
+    erts_rwmtx_init_x(rwmtx, name, extra);
 #endif
 }
 
@@ -434,12 +419,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_init(erts_smp_rwmtx_t *rwmtx, char *name)
 {
 #ifdef ERTS_SMP
-    int res = ethr_rwmutex_init(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "initialize rwmutex");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock(&rwmtx->lc, name, ERTS_LC_FLG_LT_RWMUTEX);
-#endif
+    erts_rwmtx_init(rwmtx, name);
 #endif
 }
 
@@ -447,13 +427,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_destroy(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_destroy_lock(&rwmtx->lc);
-#endif
-    res = ethr_rwmutex_destroy(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "destroy rwmutex");
+    erts_rwmtx_destroy(rwmtx);
 #endif
 }
 
@@ -461,24 +435,7 @@ ERTS_GLB_INLINE int
 erts_smp_rwmtx_tryrlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (erts_lc_trylock_force_busy_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ))
-	return EBUSY; /* Make sure caller can handle the situation without
-			 causing a lock order violation */
-#endif
-
-    res = ethr_rwmutex_tryrlock(&rwmtx->rwmtx);
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_trylock_flg(res == 0, &rwmtx->lc, ERTS_LC_FLG_LO_READ);
-#endif
-
-    if (res != 0 && res != EBUSY)
-	erts_thr_fatal_error(res, "try read lock rwmutex");
-    
-    return res;
+    return erts_rwmtx_tryrlock(rwmtx);
 #else
     return 0;
 #endif
@@ -488,13 +445,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_rlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ);
-#endif
-    res = ethr_rwmutex_rlock(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "read lock rwmutex");
+    erts_rwmtx_rlock(rwmtx);
 #endif
 }
 
@@ -502,13 +453,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_runlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_unlock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ);
-#endif
-    res = ethr_rwmutex_runlock(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "read unlock rwmutex");
+    erts_rwmtx_runlock(rwmtx);
 #endif
 }
 
@@ -517,24 +462,7 @@ ERTS_GLB_INLINE int
 erts_smp_rwmtx_tryrwlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    if (erts_lc_trylock_force_busy_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE))
-	return EBUSY; /* Make sure caller can handle the situation without
-			 causing a lock order violation */
-#endif
-
-    res = ethr_rwmutex_tryrwlock(&rwmtx->rwmtx);
-
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_trylock_flg(res == 0, &rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
-#endif
-
-    if (res != 0 && res != EBUSY)
-	erts_thr_fatal_error(res, "try write lock rwmutex");
-    
-    return res;
+    return erts_rwmtx_tryrwlock(rwmtx);
 #else
     return 0;
 #endif
@@ -544,13 +472,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_rwlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
-#endif
-    res = ethr_rwmutex_rwlock(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "write lock rwmutex");
+    erts_rwmtx_rwlock(rwmtx);
 #endif
 }
 
@@ -558,13 +480,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwmtx_rwunlock(erts_smp_rwmtx_t *rwmtx)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_unlock_flg(&rwmtx->lc, ERTS_LC_FLG_LO_READ_WRITE);
-#endif
-    res = ethr_rwmutex_rwunlock(&rwmtx->rwmtx);
-    if (res != 0)
-	erts_thr_fatal_error(res, "write unlock rwmutex");
+    erts_rwmtx_rwunlock(rwmtx);
 #endif
 }
 
@@ -598,11 +514,7 @@ ERTS_GLB_INLINE int
 erts_smp_lc_rwmtx_is_rlocked(erts_smp_rwmtx_t *mtx)
 {
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    int res;
-    erts_lc_lock_t lc = mtx->lc;
-    lc.flags = ERTS_LC_FLG_LO_READ;
-    erts_lc_have_locks(&res, &lc, 1);
-    return res;
+    return erts_lc_rwmtx_is_rlocked(mtx);
 #else
     return 0;
 #endif
@@ -612,11 +524,7 @@ ERTS_GLB_INLINE int
 erts_smp_lc_rwmtx_is_rwlocked(erts_smp_rwmtx_t *mtx)
 {
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    int res;
-    erts_lc_lock_t lc = mtx->lc;
-    lc.flags = ERTS_LC_FLG_LO_READ|ERTS_LC_FLG_LO_WRITE;
-    erts_lc_have_locks(&res, &lc, 1);
-    return res;
+    return erts_lc_rwmtx_is_rwlocked(mtx);
 #else
     return 0;
 #endif
@@ -626,9 +534,7 @@ ERTS_GLB_INLINE void
 erts_smp_atomic_init(erts_smp_atomic_t *var, long i)
 {
 #ifdef ERTS_SMP
-    int res = ethr_atomic_init(var, i);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic init");
+    erts_atomic_init(var, i);
 #else
     *var = i;
 #endif
@@ -638,9 +544,7 @@ ERTS_GLB_INLINE void
 erts_smp_atomic_set(erts_smp_atomic_t *var, long i)
 {
 #ifdef ERTS_SMP
-    int res = ethr_atomic_set(var, i);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic set");
+    erts_atomic_set(var, i);
 #else
     *var = i;
 #endif
@@ -650,11 +554,7 @@ ERTS_GLB_INLINE long
 erts_smp_atomic_read(erts_smp_atomic_t *var)
 {
 #ifdef ERTS_SMP
-    long i;
-    int res = ethr_atomic_read(var, &i);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic read");
-    return i;
+    return erts_atomic_read(var);
 #else
     return *var;
 #endif
@@ -664,11 +564,7 @@ ERTS_GLB_INLINE long
 erts_smp_atomic_inctest(erts_smp_atomic_t *incp)
 {
 #ifdef ERTS_SMP
-    long test;
-    int res = ethr_atomic_inctest(incp, &test);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic increment and test");
-    return test;
+    return erts_atomic_inctest(incp);
 #else
     return ++(*incp);
 #endif
@@ -678,11 +574,7 @@ ERTS_GLB_INLINE long
 erts_smp_atomic_dectest(erts_smp_atomic_t *decp)
 {
 #ifdef ERTS_SMP
-    long test;
-    int res = ethr_atomic_dectest(decp, &test);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic decrement and test");
-    return test;
+    return erts_atomic_dectest(decp);
 #else
     return --(*decp);
 #endif
@@ -692,9 +584,7 @@ ERTS_GLB_INLINE void
 erts_smp_atomic_inc(erts_smp_atomic_t *incp)
 {
 #ifdef ERTS_SMP
-    int res = ethr_atomic_inc(incp);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic increment");
+    erts_atomic_inc(incp);
 #else
     ++(*incp);
 #endif
@@ -704,9 +594,7 @@ ERTS_GLB_INLINE void
 erts_smp_atomic_dec(erts_smp_atomic_t *decp)
 {
 #ifdef ERTS_SMP
-    int res = ethr_atomic_dec(decp);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic decrement");
+    erts_atomic_dec(decp);
 #else
     --(*decp);
 #endif
@@ -716,11 +604,7 @@ ERTS_GLB_INLINE long
 erts_smp_atomic_addtest(erts_smp_atomic_t *addp, long i)
 {
 #ifdef ERTS_SMP
-    long test;
-    int res = ethr_atomic_addtest(addp, i, &test);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic addition and test");
-    return test;
+    return erts_atomic_addtest(addp, i);
 #else
     return *addp += i;
 #endif
@@ -730,9 +614,7 @@ ERTS_GLB_INLINE void
 erts_smp_atomic_add(erts_smp_atomic_t *addp, long i)
 {
 #ifdef ERTS_SMP
-    int res = ethr_atomic_add(addp, i);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic addition");
+    erts_atomic_add(addp, i);
 #else
     *addp += i;
 #endif
@@ -741,28 +623,47 @@ erts_smp_atomic_add(erts_smp_atomic_t *addp, long i)
 ERTS_GLB_INLINE long
 erts_smp_atomic_xchg(erts_smp_atomic_t *xchgp, long new)
 {
-    long old;
 #ifdef ERTS_SMP
-    int res = ethr_atomic_xchg(xchgp, new, &old);
-    if (res)
-	erts_thr_fatal_error(res, "perform atomic exchange");
+    return erts_atomic_xchg(xchgp, new);
 #else
+    long old;
     old = *xchgp;
     *xchgp = new;
-#endif
     return old;
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_smp_atomic_bor(erts_smp_atomic_t *var, long mask)
+{
+#ifdef ERTS_SMP
+    return erts_atomic_bor(var, mask);
+#else
+    long old;
+    old = *var;
+    *var |= mask;
+    return old;
+#endif
+}
+
+ERTS_GLB_INLINE long
+erts_smp_atomic_band(erts_smp_atomic_t *var, long mask)
+{
+#ifdef ERTS_SMP
+    return erts_atomic_band(var, mask);
+#else
+    long old;
+    old = *var;
+    *var &= mask;
+    return old;
+#endif
 }
 
 ERTS_GLB_INLINE void
 erts_smp_spinlock_init_x(erts_smp_spinlock_t *lock, char *name, Eterm extra)
 {
 #ifdef ERTS_SMP
-    int res = ethr_spinlock_init(&lock->slck);
-    if (res)
-	erts_thr_fatal_error(res, "init spinlock");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_SPINLOCK, extra);
-#endif
+    erts_spinlock_init_x(lock, name, extra);
 #else
     (void)lock;
 #endif
@@ -772,12 +673,7 @@ ERTS_GLB_INLINE void
 erts_smp_spinlock_init(erts_smp_spinlock_t *lock, char *name)
 {
 #ifdef ERTS_SMP
-    int res = ethr_spinlock_init(&lock->slck);
-    if (res)
-	erts_thr_fatal_error(res, "init spinlock");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock(&lock->lc, name, ERTS_LC_FLG_LT_SPINLOCK);
-#endif
+    erts_spinlock_init(lock, name);
 #else
     (void)lock;
 #endif
@@ -787,13 +683,7 @@ ERTS_GLB_INLINE void
 erts_smp_spinlock_destroy(erts_smp_spinlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_destroy_lock(&lock->lc);
-#endif
-    res = ethr_spinlock_destroy(&lock->slck);
-    if (res)
-	erts_thr_fatal_error(res, "destroy spinlock");
+    erts_spinlock_destroy(lock);
 #else
     (void)lock;
 #endif
@@ -803,13 +693,7 @@ ERTS_GLB_INLINE void
 erts_smp_spin_unlock(erts_smp_spinlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_unlock(&lock->lc);
-#endif
-    res = ethr_spin_unlock(&lock->slck);
-    if (res)
-	erts_thr_fatal_error(res, "release spin lock");
+    erts_spin_unlock(lock);
 #else
     (void)lock;
 #endif
@@ -819,13 +703,7 @@ ERTS_GLB_INLINE void
 erts_smp_spin_lock(erts_smp_spinlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock(&lock->lc);
-#endif
-    res = ethr_spin_lock(&lock->slck);
-    if (res)
-	erts_thr_fatal_error(res, "take spin lock");
+    erts_spin_lock(lock);
 #else
     (void)lock;
 #endif
@@ -835,11 +713,7 @@ ERTS_GLB_INLINE int
 erts_smp_lc_spinlock_is_locked(erts_smp_spinlock_t *lock)
 {
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    int res;
-    erts_lc_lock_t lc = lock->lc;
-    lc.flags = 0;
-    erts_lc_have_locks(&res, &lc, 1);
-    return res;
+    return erts_lc_spinlock_is_locked(lock);
 #else
     return 0;
 #endif
@@ -849,12 +723,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwlock_init_x(erts_smp_rwlock_t *lock, char *name, Eterm extra)
 {
 #ifdef ERTS_SMP
-    int res = ethr_rwlock_init(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "init rwlock");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock_x(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK, extra);
-#endif
+    erts_rwlock_init_x(lock, name, extra);
 #else
     (void)lock;
 #endif
@@ -864,12 +733,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwlock_init(erts_smp_rwlock_t *lock, char *name)
 {
 #ifdef ERTS_SMP
-    int res = ethr_rwlock_init(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "init rwlock");
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_init_lock(&lock->lc, name, ERTS_LC_FLG_LT_RWSPINLOCK);
-#endif
+    erts_rwlock_init(lock, name);
 #else
     (void)lock;
 #endif
@@ -879,13 +743,7 @@ ERTS_GLB_INLINE void
 erts_smp_rwlock_destroy(erts_smp_rwlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_destroy_lock(&lock->lc);
-#endif
-    res = ethr_rwlock_destroy(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "destroy rwlock");
+    erts_rwlock_destroy(lock);
 #else
     (void)lock;
 #endif
@@ -895,13 +753,7 @@ ERTS_GLB_INLINE void
 erts_smp_read_unlock(erts_smp_rwlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_unlock_flg(&lock->lc, ERTS_LC_FLG_LO_READ);
-#endif
-    res = ethr_read_unlock(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "release read lock");
+    erts_read_unlock(lock);
 #else
     (void)lock;
 #endif
@@ -911,13 +763,7 @@ ERTS_GLB_INLINE void
 erts_smp_read_lock(erts_smp_rwlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_flg(&lock->lc, ERTS_LC_FLG_LO_READ);
-#endif
-    res = ethr_read_lock(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "take read lock");
+    erts_read_lock(lock);
 #else
     (void)lock;
 #endif
@@ -927,13 +773,7 @@ ERTS_GLB_INLINE void
 erts_smp_write_unlock(erts_smp_rwlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_unlock_flg(&lock->lc, ERTS_LC_FLG_LO_READ_WRITE);
-#endif
-    res = ethr_write_unlock(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "release write lock");
+    erts_write_unlock(lock);
 #else
     (void)lock;
 #endif
@@ -943,13 +783,7 @@ ERTS_GLB_INLINE void
 erts_smp_write_lock(erts_smp_rwlock_t *lock)
 {
 #ifdef ERTS_SMP
-    int res;
-#ifdef ERTS_ENABLE_LOCK_CHECK
-    erts_lc_lock_flg(&lock->lc, ERTS_LC_FLG_LO_READ_WRITE);
-#endif
-    res = ethr_write_lock(&lock->rwlck);
-    if (res)
-	erts_thr_fatal_error(res, "take write lock");
+    erts_write_lock(lock);
 #else
     (void)lock;
 #endif
@@ -959,11 +793,7 @@ ERTS_GLB_INLINE int
 erts_smp_lc_rwlock_is_rlocked(erts_smp_rwlock_t *lock)
 {
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    int res;
-    erts_lc_lock_t lc = lock->lc;
-    lc.flags = ERTS_LC_FLG_LO_READ;
-    erts_lc_have_locks(&res, &lc, 1);
-    return res;
+    return erts_lc_rwlock_is_rlocked(lock);
 #else
     return 0;
 #endif
@@ -973,11 +803,7 @@ ERTS_GLB_INLINE int
 erts_smp_lc_rwlock_is_rwlocked(erts_smp_rwlock_t *lock)
 {
 #if defined(ERTS_SMP) && defined(ERTS_ENABLE_LOCK_CHECK)
-    int res;
-    erts_lc_lock_t lc = lock->lc;
-    lc.flags = ERTS_LC_FLG_LO_READ|ERTS_LC_FLG_LO_WRITE;
-    erts_lc_have_locks(&res, &lc, 1);
-    return res;
+    return erts_lc_rwlock_is_rwlocked(lock);
 #else
     return 0;
 #endif
@@ -1022,6 +848,54 @@ erts_smp_tsd_get(erts_smp_tsd_key_t key)
     return erts_tsd_get(key);
 #else
     return NULL;
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_init(erts_smp_gate_t *gp)
+{
+#ifdef ERTS_SMP
+    erts_gate_init((erts_gate_t *) gp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_destroy(erts_smp_gate_t *gp)
+{
+#ifdef ERTS_SMP
+    erts_gate_destroy((erts_gate_t *) gp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_close(erts_smp_gate_t *gp)
+{
+#ifdef ERTS_SMP
+    erts_gate_close((erts_gate_t *) gp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_let_through(erts_smp_gate_t *gp, unsigned no)
+{
+#ifdef ERTS_SMP
+    erts_gate_let_through((erts_gate_t *) gp, no);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_wait(erts_smp_gate_t *gp)
+{
+#ifdef ERTS_SMP
+    erts_gate_wait((erts_gate_t *) gp);
+#endif
+}
+
+ERTS_GLB_INLINE void
+erts_smp_gate_swait(erts_smp_gate_t *gp, int spincount)
+{
+#ifdef ERTS_SMP
+    erts_gate_swait((erts_gate_t *) gp, spincount);
 #endif
 }
 

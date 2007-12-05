@@ -215,3 +215,9 @@ volatile int *__erl_errno_place(void)
 #endif /* HAVE_PTHREAD_H || HAVE_MIT_PTHREAD_H */
 
 #endif /* _REENTRANT && !VXWORKS && !__WIN32__ */
+
+#if !defined(_REENTRANT) && !defined(VXWORKS) && !defined(__WIN32__)
+
+volatile int __erl_errno;
+
+#endif

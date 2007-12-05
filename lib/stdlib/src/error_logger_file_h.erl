@@ -49,7 +49,7 @@ init(File) ->
 
 init(File, PrevHandler) ->
     process_flag(trap_exit, true),
-    case file:open(File, write) of
+    case file:open(File, [write]) of
 	{ok,Fd} ->
 	    {ok, {Fd, File, PrevHandler}};
 	Error ->

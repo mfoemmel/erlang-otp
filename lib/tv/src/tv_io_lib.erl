@@ -56,6 +56,7 @@ write(Term, _D) when is_port(Term) -> "#Port";
 write(Term, _D) when is_pid(Term) -> pid_to_list(Term);
 write(Term, _D) when is_reference(Term) -> "#Ref";
 write(Term, _D) when is_binary(Term) -> "#Bin";
+write(Term, _D) when erlang:is_bitstr(Term) -> "#Bitstr";
 write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->

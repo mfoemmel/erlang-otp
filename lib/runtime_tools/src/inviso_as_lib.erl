@@ -30,7 +30,7 @@
 
 -export([setup_autostart/7,setup_autostart/8,setup_autostart/9,
 	 inhibit_autostart/1,
-	 set_repeat/2]).
+	 set_repeat/2,set_repeat_2/2]).
 %% -----------------------------------------------------------------------------
 
 %% setup_autostart(Node,Repeat,Options,TracerData,CmdFiles,Bindings) = ok|{error,Reason}.
@@ -76,49 +76,39 @@ setup_autostart(Node,Repeat,Options,TracerData,CmdFiles,Bindings,Translations,RT
 %% Inhibits autostart by simply making the repeat parameter zero in the
 %% configuration file at node Node. All other parameters are left untouched.
 inhibit_autostart(Node) ->
-    case examine_config_file(Node) of
-	{ok,FileName,Terms} ->
-	    NewTerms=[{repeat,0}|lists:keydelete(repeat,1,Terms)],
-	    case rpc:call(Node,file,open,[FileName,write]) of
-		{ok,RemoteFD} ->
-		    String=lists:flatten(lists:map(fun(_)->"~w.~n" end,NewTerms)),
-		    case catch io:format(RemoteFD,String,NewTerms) of
-			ok ->
-			    file:close(RemoteFD),
-			    ok;
-			{'EXIT',Reason} ->
-			    file:close(RemoteFD),
-			    {error,{format,Reason}}
-		    end;
-		{error,Reason} ->
-		    {error,{open,Reason}};
-		{badrpc,Reason} ->
-		    {error,{badrpc,{open,Reason}}}
-	    end;
-	{error,Reason} ->
-	    {error,Reason}
-    end.
+    set_repeat(Node,0).
 %% -----------------------------------------------------------------------------
 
+%% set_repeat(Node,N)=ok | {error,Reason}
+%%   N=integer(), the number of time autostart shall be allowed.
 set_repeat(Node,N) ->
     case examine_config_file(Node) of
 	{ok,FileName,Terms} ->
 	    NewTerms=[{repeat,N}|lists:keydelete(repeat,1,Terms)],
-	    case rpc:call(Node,file,open,[FileName,write]) of
-		{ok,RemoteFD} ->
-		    String=lists:flatten(lists:map(fun(_)->"~w.~n" end,NewTerms)),
-		    case catch io:format(RemoteFD,String,NewTerms) of
-			ok ->
-			    file:close(RemoteFD),
-			    ok;
-			{'EXIT',Reason} ->
-			    file:close(RemoteFD),
-			    {error,{format,Reason}}
-		    end;
-		{error,Reason} ->
-		    {error,{open,Reason}};
+	    case rpc:call(Node,?MODULE,set_repeat_2,[FileName,NewTerms]) of
 		{badrpc,Reason} ->
-		    {error,{badrpc,{open,Reason}}}
+		    {error,{badrpc,{open,Reason}}};
+		Result ->
+		    Result
+	    end;
+	{error,Reason} ->
+	    {error,Reason}
+    end.
+
+%% Must be a sepparate function to do rpc on. The entire function must be done
+%% in one rpc call. Otherwise the FD will die since it is linked to the opening
+%% process.
+set_repeat_2(FileName,NewTerms) ->
+    case file:open(FileName,[write]) of
+	{ok,FD} ->
+	    String=lists:flatten(lists:map(fun(_)->"~w.~n" end,NewTerms)),
+	    case catch io:format(FD,String,NewTerms) of
+		ok ->
+		    file:close(FD),
+		    ok;
+		{'EXIT',Reason} ->
+		    file:close(FD),
+		    {error,{format,Reason}}
 	    end;
 	{error,Reason} ->
 	    {error,Reason}

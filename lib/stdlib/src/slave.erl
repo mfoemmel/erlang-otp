@@ -68,12 +68,10 @@ start_pseudo(_,_,_) -> ok.  %% It's already there
 %% This relay can be used to relay all messages directed to a process.
 
 relay({badrpc,Reason}) ->
-    error_msg(' ** exiting relay server ~w :~w  **~n',
-			   [self(),Reason]),
+    error_msg(" ** exiting relay server ~w :~w  **~n", [self(),Reason]),
     exit(Reason);
 relay(undefined) ->
-    error_msg(' ** exiting relay server ~w  **~n',
-			   [self()]),
+    error_msg(" ** exiting relay server ~w  **~n", [self()]),
     exit(undefined);
 relay(Pid) when is_pid(Pid) ->
     relay1(Pid).

@@ -39,6 +39,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/stdlib-$(VSN)
 # Target Specs
 # ----------------------------------------------------
 MODULES= \
+	array \
 	base64 \
 	beam_lib \
 	c \
@@ -157,6 +158,23 @@ clean:
 
 docs:
 
+# This is a trick so that the preloaded files will get the correct type
+# specifications.
+primary_bootstrap_compiler: \
+  $(BOOTSTRAP_COMPILER)/ebin/erl_parse.beam \
+  $(BOOTSTRAP_COMPILER)/ebin/erl_lint.beam \
+  $(BOOTSTRAP_COMPILER)/ebin/otp_internal.beam
+
+$(BOOTSTRAP_COMPILER)/ebin/erl_parse.beam: erl_parse.yrl
+	$(ERLC) -o $(BOOTSTRAP_COMPILER)/egen erl_parse.yrl
+	$(ERLC) -o $(BOOTSTRAP_COMPILER)/ebin $(BOOTSTRAP_COMPILER)/egen/erl_parse.erl
+
+#$(BOOTSTRAP_COMPILER)/ebin/erl_lint.beam: erl_lint.erl
+#	$(ERLC) -o $(BOOTSTRAP_COMPILER)/ebin erl_lint.erl
+
+$(BOOTSTRAP_COMPILER)/ebin/%.beam: %.erl
+	$(ERLC) -o $(BOOTSTRAP_COMPILER)/ebin $<
+
 # ----------------------------------------------------
 # Special Build Targets
 # ----------------------------------------------------
@@ -182,3 +200,24 @@ release_spec: opt
 	$(INSTALL_DATA) $(TARGET_FILES) $(RELSYSDIR)/ebin
 
 release_docs_spec:
+
+# ----------------------------------------------------
+# Dependencies -- alphabetically, please
+# ---------------------------------------------------- 
+
+$(EBIN)/beam_lib.beam: ../include/erl_compile.hrl ../../kernel/include/file.hrl
+$(EBIN)/dets.beam: dets.hrl ../../kernel/include/file.hrl
+$(EBIN)/dets_server.beam: dets.hrl
+$(EBIN)/dets_utils.beam: dets.hrl
+$(EBIN)/dets_v8.beam: dets.hrl
+$(EBIN)/dets_v9.beam: dets.hrl
+$(EBIN)/erl_bits.beam: ../include/erl_bits.hrl
+$(EBIN)/erl_compile.beam: ../include/erl_compile.hrl ../../kernel/include/file.hrl
+$(EBIN)/erl_lint.beam: ../include/erl_bits.hrl
+$(EBIN)/erl_tar.beam: ../../kernel/include/file.hrl
+$(EBIN)/file_sorter.beam: ../../kernel/include/file.hrl
+$(EBIN)/filelib.beam: ../../kernel/include/file.hrl
+$(EBIN)/filename.beam: ../../kernel/include/file.hrl
+$(EBIN)/qlc_pt.beam: ../include/ms_transform.hrl
+$(EBIN)/shell.beam: ../../kernel/include/file.hrl
+$(EBIN)/zip.beam: ../include/zip.hrl ../../kernel/include/file.hrl

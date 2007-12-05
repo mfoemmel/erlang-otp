@@ -44,6 +44,11 @@
 %% -----------------------------------------------------------------------------
 
 %% -----------------------------------------------------------------------------
+%% Formatting functions.
+%% -----------------------------------------------------------------------------
+
+-export([format_arguments/3,format_argument_string/2]).
+%% -----------------------------------------------------------------------------
 %% Internal exports.
 %% -----------------------------------------------------------------------------
 
@@ -114,19 +119,25 @@ wait_for_response(ReceiverPid) ->
 
 %% Initial function for the receiver process. This function must be exported.
 init_receiver(From,Files,BeginHandlerFun,WorkHandlerFun,EndHandlerFun,HandlerData,Dbg) ->
-    Readers=setup_readers(Files),           % Create the reader processes.
-    process_flag(trap_exit,true),
-    if
-	function(BeginHandlerFun) ->
-	    case BeginHandlerFun(HandlerData) of
-		{ok,NewHandlerData} ->
-		    init_receiver_2(From,WorkHandlerFun,EndHandlerFun,
-				    NewHandlerData,Dbg,Readers);
-		{error,Reason} ->           % Faulty begin-function.
-		    {error,{begin_handler,Reason}}
+    case setup_readers(Files) of            % Create the reader processes.
+	{ok,Readers} ->
+	    process_flag(trap_exit,true),
+	    if
+		function(BeginHandlerFun) ->
+		    case catch BeginHandlerFun(HandlerData) of
+			{ok,NewHandlerData} ->
+			    init_receiver_2(From,WorkHandlerFun,EndHandlerFun,
+					    NewHandlerData,Dbg,Readers);
+			{error,Reason} ->   % Faulty begin-function.
+			    From ! {reply,self(),{error,{begin_handler,Reason}}};
+			{'EXIT',Reason} ->
+			    From ! {reply,self(),{error,{begin_handler,Reason}}}
+		    end;
+		true ->                     % There is no begin-handler.
+		    init_receiver_2(From,WorkHandlerFun,EndHandlerFun,HandlerData,Dbg,Readers)
 	    end;
-	true ->                             % There is no begin-handler.
-	    init_receiver_2(From,WorkHandlerFun,EndHandlerFun,HandlerData,Dbg,Readers)
+	{error,Reason} ->
+	    From ! {reply,self(),{error,{files,Reason}}}
     end.
 
 init_receiver_2(From,WorkHandlerFun,EndHandlerFun,HandlerData,Dbg,Readers) ->
@@ -151,12 +162,19 @@ init_receiver_2(From,WorkHandlerFun,EndHandlerFun,HandlerData,Dbg,Readers) ->
 %% Note that there is a possibility to design your own readers. The default
 %% reader understands trace-port generated logfiles.
 %% Returns a list of {Node,Pid}.
-setup_readers([{reader,Mod,Func,{Node,FileStruct}}|Rest]) ->
-    [{Node,spawn_link(Mod,Func,[self(),FileStruct])}|setup_readers(Rest)];
-setup_readers([{Node,FileStruct}|Rest]) ->
-    [{Node,spawn_link(inviso_lfm_tpfreader,init,[self(),FileStruct])}|setup_readers(Rest)];
-setup_readers([]) ->
-    [].
+setup_readers(Files) ->
+    setup_readers_2(Files,[]).
+
+setup_readers_2([{reader,Mod,Func,{Node,FileStruct}}|Rest],Acc) ->
+    Pid=spawn_link(Mod,Func,[self(),FileStruct]),
+    setup_readers_2(Rest,[{Node,Pid}|Acc]);
+setup_readers_2([{Node,FileStruct}|Rest],Acc) ->
+    Pid=spawn_link(inviso_lfm_tpfreader,init,[self(),FileStruct]),
+    setup_readers_2(Rest,[{Node,Pid}|Acc]);
+setup_readers_2([],Acc) ->
+    {ok,Acc};
+setup_readers_2([Faulty|_],_Acc) ->
+    {error,{bad_reader_spec,Faulty}}.
 %% -----------------------------------------------------------------------------
 
 %% This is the workloop that polls each reader for messages and writes them
@@ -181,7 +199,10 @@ loop(From,WorkHFun,HData,Readers,EntryStruct,Dbg,Count) ->
 	    {{ok,Count},HData}
     end.
 
-%% Help function which finds the oldest entry in the EntryStruct.
+%% Help function which finds the oldest entry in the EntryStruct. Note that the
+%% timestamp can actually be the atom 'false'. This happens for instance if it is
+%% a dropped-messages term. But since 'false' is smaller than any tuple, that
+%% term will be consumed immediately as soon as it turns up in EntryList.
 find_oldest_entry(EntryStruct) ->
     case list_all_entries(EntryStruct) of
 	[] ->                               % The we are done!
@@ -278,4 +299,133 @@ outfile_writer(Node,Term,PidMappings,FD) ->
 outfile_closer(FD) ->
     file:close(FD),
     ok.
+%% -----------------------------------------------------------------------------
+
+%% =============================================================================
+%% Formatting functions.
+%% =============================================================================
+
+%% This section contains a useful formatting function formatting an (function)
+%% argument list. It also offers a working example of how to write
+%% own datatype translators (which will be used by the formatting function to
+%% further enhance the output).
+
+%% format_arguments(Args,FOpts,Transaltors)=Args2 | <failure>
+%%   Args=list(), list of the argument as usually given in a trace message,
+%%     a stack trace or similar.
+%%   FOpts=term(), formatting options understood by the translation functions.
+%%   Translations=[Translator,...]
+%%     Translator=fun(Term,FOpts)=TResult | {M,F}, where M:F(Term,FOpts)=TResult
+%%       TResult={ok,TranslationString} | false
+%%   Arg2=list(), list of Args where terms may be replaced by own representations.
+%%     Note that terms not effected will remain as is, but if an own representation
+%%     is choosen, that must be a string in order for any io format function to
+%%     print it exactly as formatted here.
+format_arguments([Arg|Rest],FOpts,Translators) -> % More than one argument.
+    [format_argument(Arg,FOpts,Translators)|format_arguments(Rest,FOpts,Translators)];
+format_arguments([],_FOpts,_Translators) ->
+    [].                                     % The empty list.
+
+%% Help function handling the various Erlang datatypes. There must hence be one
+%% clause here for every existing datatype.
+format_argument(List,FOpts,Translators) when is_list(List) ->
+    case format_argument_own_datatype(List,FOpts,Translators) of
+	{true,TranslationStr} ->
+	    TranslationStr;
+	false ->
+	    format_argument_list(List,FOpts,Translators)
+    end;
+format_argument(Tuple,FOpts,Translators) when is_tuple(Tuple) ->
+    case format_argument_own_datatype(Tuple,FOpts,Translators) of
+	{true,TranslationStr} ->            % It was one of our special datatypes.
+	    TranslationStr;
+	false ->                            % Regular tuple.
+	    format_argument_tuple(Tuple,FOpts,Translators)
+    end;
+format_argument(Binary,FOpts,Translators) when is_binary(Binary) ->
+    case format_argument_own_datatype(Binary,FOpts,Translators) of
+	{true,TranslationStr} ->            % It was one of our special datatypes..
+	    TranslationStr;
+	false ->                            % Regular binary.
+	    format_argument_binary(Binary,FOpts,Translators)
+    end;
+format_argument(Atom,_FOpts,_Translators) when is_atom(Atom) ->
+    Atom;
+format_argument(Integer,_FOpts,_Translators) when is_integer(Integer) ->
+    Integer;
+format_argument(Float,_FOpts,_Translators) when is_float(Float) ->
+    Float;
+format_argument(Pid,_FOpts,_Translators) when is_pid(Pid) ->
+    Pid;
+format_argument(Port,_FOpts,_Translators) when is_port(Port) ->
+    Port;
+format_argument(Ref,_FOpts,_Translators) when is_reference(Ref) ->
+    Ref;
+format_argument(Fun,_FOpts,_Translators) when is_function(Fun) ->
+    Fun.
+
+%% Help function handling the case when an element is a list.
+format_argument_list([Element|Rest],FOpts,Translators) ->
+    [format_argument(Element,FOpts,Translators)|
+     format_argument_list(Rest,FOpts,Translators)];
+format_argument_list([],_FOpts,_Translators) ->
+    [].
+
+%% Help function handling the case when an element is a tuple.
+format_argument_tuple(Tuple,FOpts,Translators) ->
+    list_to_tuple(format_argument_tuple(Tuple,FOpts,Translators,size(Tuple),[])).
+
+format_argument_tuple(_,_,_,0,List) ->
+    List;
+format_argument_tuple(Tuple,FOpts,Translators,Index,List) ->
+    E=format_argument(element(Index,Tuple),FOpts,Translators),
+    format_argument_tuple(Tuple,FOpts,Translators,Index-1,[E|List]).
+
+%% Help function handling the case when an element is a binary.
+format_argument_binary(Binary,_FOpts,_Translators) ->
+    Binary.
+
+%% Help function trying to use the translations.
+format_argument_own_datatype(Term,FOpts,[Fun|Rest]) when is_function(Fun) ->
+    case catch Fun(Term,FOpts) of
+	{ok,TranslationStr} ->
+	    {true,TranslationStr};
+	_ ->
+	    format_argument_own_datatype(Term,FOpts,Rest)
+    end;
+format_argument_own_datatype(Term,FOpts,[{M,F}|Rest]) ->
+    case catch M:F(Term,FOpts) of
+	{ok,TranslationStr} ->
+	    {true,TranslationStr};
+	_ ->
+	    format_argument_own_datatype(Term,FOpts,Rest)
+    end;
+format_argument_own_datatype(Term,FOpts,[_|Rest]) ->
+    format_argument_own_datatype(Term,FOpts,Rest);
+format_argument_own_datatype(_Term,_FOpts,[]) -> % There is no applicable format.
+    false.
+%% -----------------------------------------------------------------------------
+
+%% format_argument_string(String,_FOpts)={ok,QuotedString} | false
+%%   String=string() | term()
+%%   QuotedString="String"
+%% Example of datatype checker that checks, in this case, that its argument is
+%% a string. If it is, it returns a deep list of the characters to print in order
+%% to make it a quoted string.
+format_argument_string(List=[_|_],_FOpts) -> % Must be at least one element.
+    case format_argument_string_2(List) of
+	true ->
+	    {ok,[$",List,$"]};
+	false ->
+	    false
+    end;
+format_argument_string(_,_FOpts) ->
+    false.
+
+format_argument_string_2([C|Rest]) when (((C<127) and (C>=32)) or ((C>=8) and (C=<13))) ->
+    format_argument_string_2(Rest);
+format_argument_string_2([_|_]) ->
+    false;
+format_argument_string_2([]) ->
+    true.
 %% -----------------------------------------------------------------------------

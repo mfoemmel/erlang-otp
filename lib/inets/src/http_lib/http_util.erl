@@ -17,43 +17,18 @@
 %%
 -module(http_util).
 
--export([key1search/2, key1search/3,
-	 to_upper/1, to_lower/1, convert_netscapecookie_date/1,
+-export([to_upper/1, to_lower/1, convert_netscapecookie_date/1,
 	 hexlist_to_integer/1, integer_to_hexlist/1, 
 	 convert_month/1, is_hostname/1]).
 
 %%%=========================================================================
 %%%  Internal application API
 %%%=========================================================================
-key1search(TupleList,Key) ->
-    key1search(TupleList,Key,undefined).
-
-key1search(TupleList,Key,Undefined) ->
-    case lists:keysearch(Key,1,TupleList) of
-	{value,{Key,Value}} ->
-	    Value;
-	false ->
-	    Undefined
-    end.
-
 to_upper(Str) ->
-    to_upper(Str, []).
-
-to_upper([C|Cs], Acc) when C >= $a, C =< $z ->
-    to_upper(Cs, [C-($a-$A)| Acc]);
-to_upper([C|Cs], Acc) ->
-    to_upper(Cs, [C | Acc]);
-to_upper([], Acc) ->
-    lists:reverse(Acc).
+    string:to_upper(Str).
 
 to_lower(Str) ->
-    to_lower(Str, []).
-to_lower([C|Cs], Acc) when C >= $A, C =< $Z ->
-    to_lower(Cs, [C+($a-$A)| Acc]);
-to_lower([C|Cs], Acc) ->
-    to_lower(Cs, [C| Acc]);
-to_lower([], Acc) ->
-    lists:reverse(Acc).
+    string:to_lower(Str).
 
 convert_netscapecookie_date([_D,_A,_Y, $,, _SP,
 			     D1,D2,_DA,

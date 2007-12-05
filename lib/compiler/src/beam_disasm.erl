@@ -2,7 +2,7 @@
 %%=======================================================================
 %% File        : beam_disasm.erl
 %% Author      : Kostis Sagonas
-%% Description : Disassembles an R5-R10 .beam file into symbolic BEAM code
+%% Description : Disassembles an R5-R12 .beam file into symbolic BEAM code
 %%=======================================================================
 %% $Id$
 %%=======================================================================
@@ -21,23 +21,22 @@
 -author("Kostis Sagonas").
 
 -include("beam_opcodes.hrl").
+-include("beam_disasm.hrl").
 
 %%-----------------------------------------------------------------------
 
--define(NO_DEBUG(Str,Xs),ok).
--define(DEBUG(Str,Xs),io:format(Str,Xs)).
--define(exit(Reason),exit({?MODULE,?LINE,Reason})).
+-type(symbolic_tag() :: 'a' | 'f' | 'h' | 'i' | 'u' | 'x' | 'y' | 'z').
 
 %%-----------------------------------------------------------------------
-%% Abstract Data Types (not visible in other parts of the system) and
-%% utility functions to get/set their fields. (Uncomment and export
+
+-define(NO_DEBUG(Str,Xs), ok).
+-define(DEBUG(Str,Xs), io:format(Str,Xs)).
+-define(exit(Reason), exit({?MODULE,?LINE,Reason})).
+
+%%-----------------------------------------------------------------------
+%% Utility functions to get/set their fields. (Uncomment and export
 %% them when/if they get used in other files.)
 %%-----------------------------------------------------------------------
-
--record(function, {name,    % atom()
-		   arity,   % byte()
-		   entry,   % unused ??
-		   code}).  % list of instructions
 
 %% function__name(#function{name=N}) -> N.
 %% function__arity(#function{arity=A}) -> A.
@@ -56,9 +55,8 @@ format_error({internal,Error}) ->
 		  [?MODULE, Error, 25]).
 
 %%-----------------------------------------------------------------------
-%% User comfort functions to directly disassemble to file or
-%% to stream, pretty-printed, and to just pretty-print, also
-%% commented.
+%% User comfort functions to directly disassemble to file or to
+%% stream, pretty-printed, and to just pretty-print, also commented.
 %%-----------------------------------------------------------------------
 
 dfs(Files) when is_list(Files) ->
@@ -193,7 +191,7 @@ disasm_lambdas(<<F:32,A:32,Lbl:32,Index:32,NumFree:32,OldUniq:32,More/binary>>,
 disasm_lambdas(<<>>, _, _) -> [].
 
 %%-----------------------------------------------------------------------
-%% Disassembles the literal table (contanst pool) of a BEAM file.
+%% Disassembles the literal table (constant pool) of a BEAM file.
 %%-----------------------------------------------------------------------
 
 beam_disasm_literals(none) -> none;
@@ -270,9 +268,13 @@ get_funs({LsR0,[{func_info,[{atom,M}=AtomM,{atom,F}=AtomF,ArityArg]}|Code0]})
   when is_atom(M), is_atom(F) ->
     Arity = resolve_arg_unsigned(ArityArg),
     {LsR,Code,RestCode} = get_fun(Code0, []),
+    Entry = case Code of
+		[{label,[{u,E}]}|_] -> E;
+		_ -> undefined
+	    end,
     [#function{name=F,
 	       arity=Arity,
-	       % entry=undefined,
+	       entry=Entry,
 	       code=lists:reverse(LsR0, [{func_info,AtomM,AtomF,Arity}|Code])}
      |get_funs({LsR,RestCode})].
 
@@ -338,7 +340,7 @@ disasm_instr(B, Bs, Atoms, Literals) ->
 %% Disassembles a BEAM select_* instruction used for indexing.
 %%   Currently handles {select_val,3} and {select_tuple_arity,3} insts.
 %%
-%%   The arruments of a "select"-type instruction look as follows:
+%%   The arguments of a "select"-type instruction look as follows:
 %%       <reg>, {f,FailLabel}, {list, <num cases>, [<case1> ... <caseN>]}
 %%   where each case is of the form [symbol,{f,Label}].
 %%-----------------------------------------------------------------------
@@ -425,7 +427,7 @@ decode_int(Tag,B,Bs) ->
     ?NO_DEBUG('Len = ~p, IntBs = ~p, Num = ~p~n', [Len,IntBs,Num]),
     {{Tag,Num},RemBs}.
 
-decode_int_length(B,Bs) ->
+decode_int_length(B, Bs) ->
     %% The following imitates get_erlang_integer() in beam_load.c
     %% Len is the size of the integer value in bytes
     case B bsr 5 of
@@ -459,6 +461,9 @@ decode_z_tagged(Tag,B,Bs,Literals) when (B band 16#08) =:= 0 ->
 	    decode_fr(Bs);
 	3 -> % allocation list
 	    decode_alloc_list(Bs, Literals);
+	4 -> % literal
+	    {{u,LitIndex},RestBs} = decode_arg(Bs),
+	    {{literal,gb_trees:get(LitIndex, Literals)},RestBs};
 	_ ->
 	    ?exit({decode_z_tagged,{invalid_extended_tag,N}})
     end;
@@ -532,6 +537,7 @@ decode_n_args(0, Acc, Bs, _, _) ->
 %% Convert a numeric tag value into a symbolic one
 %%-----------------------------------------------------------------------
 
+-spec(decode_tag/1 :: (0..7) -> symbolic_tag()).
 decode_tag(?tag_u) -> u;
 decode_tag(?tag_i) -> i;
 decode_tag(?tag_a) -> a;
@@ -539,8 +545,7 @@ decode_tag(?tag_x) -> x;
 decode_tag(?tag_y) -> y;
 decode_tag(?tag_f) -> f;
 decode_tag(?tag_h) -> h;
-decode_tag(?tag_z) -> z;
-decode_tag(X) -> ?exit({unknown_tag,X}).
+decode_tag(?tag_z) -> z.
 
 %%-----------------------------------------------------------------------
 %% - replace all references {a,I} with the atom with index I (or {atom,A})
@@ -762,7 +767,7 @@ resolve_inst({put_string,[{u,Len},{u,Off},Dst]},_,Strings,_) ->
     String = if Len > 0 -> binary_to_list(Strings, Off+1, Off+Len);
 		true -> ""
 	     end,
-?NO_DEBUG('put_string(~p, {string,~p}, ~p)~n',[Len,String,Dst]),
+    %% ?NO_DEBUG('put_string(~p, {string,~p}, ~p)~n',[Len,String,Dst]),
     {put_string,Len,{string,String},Dst};
 resolve_inst({put_list,[Src1,Src2,Dst]},_,_,_) ->
     {put_list,resolve_arg(Src1),resolve_arg(Src2),Dst};
@@ -866,7 +871,6 @@ resolve_inst({fnegate,Args},_,_,_) ->
 %%
 %% Instructions for try expressions added in January 2003 (R10).
 %%
-
 resolve_inst({'try',[Reg,Lbl]},_,_,_) -> % analogous to 'catch'
     {'try',Reg,Lbl};
 resolve_inst({try_end,[Reg]},_,_,_) ->   % analogous to 'catch_end'
@@ -882,7 +886,6 @@ resolve_inst({raise,[Reg1,Reg2]},_,_,_) ->
 %%
 %% New bit syntax instructions added in February 2004 (R10B).
 %%
-
 resolve_inst({bs_init2,[Lbl,Arg2,{u,W},{u,R},{u,F},Arg6]},_,_,_) ->
     [A2,A6] = resolve_args([Arg2,Arg6]),
     {bs_init2,Lbl,A2,W,R,decode_field_flags(F),A6};
@@ -938,6 +941,12 @@ resolve_inst({bs_save2=I,[Ms,{u,N}]},_,_,_) ->
     {I,Ms,N};
 resolve_inst({bs_restore2=I,[Ms,{u,N}]},_,_,_) ->
     {I,Ms,N};
+resolve_inst({bs_save2=I,[Ms,{atom,_}=Atom]},_,_,_) ->
+    %% New operand type in R12B.
+    {I,Ms,Atom};
+resolve_inst({bs_restore2=I,[Ms,{atom,_}=Atom]},_,_,_) ->
+    %% New operand type in R12B.
+    {I,Ms,Atom};
 
 %%
 %% New instructions for guard BIFs that may GC. Added in Jan 2006 (R11B).
@@ -959,7 +968,7 @@ resolve_inst({gc_bif2,Args},Imports,_,_) ->
     {gc_bif,BifName,F,Live,[A1,A2],Reg};
 
 %%
-%% New instructions for creating non-byte aligned binaries .
+%% New instructions for creating non-byte aligned binaries.
 %%
 resolve_inst({bs_bits_to_bytes2,[Arg2,Arg3]},_,_,_) ->
     [A2,A3] = resolve_args([Arg2,Arg3]),
@@ -973,6 +982,37 @@ resolve_inst({bs_final2,[X,Y]},_,_,_) ->
 resolve_inst({is_bitstr=I,Args0},_,_,_) ->
     [L|Args] = resolve_args(Args0),
     {test,I,L,Args};
+
+%%
+%% R12B.
+%%
+resolve_inst({bs_context_to_binary=I,[Reg0]},_,_,_) ->
+    Reg = resolve_arg(Reg0),
+    {I,Reg};
+resolve_inst({bs_test_unit=I,[F,Ms,{u,N}]},_,_,_) ->
+    {test,I,F,[Ms,N]};
+resolve_inst({bs_match_string=I,[F,Ms,{u,Bits},{u,Off}]},_,Strings,_) ->
+    Len = (Bits+7) div 8,
+    String = if
+		 Len > 0 -> 
+		     <<_:Off/binary,Bin:Len/binary,_/binary>> = Strings,
+		     Bin;
+		 true -> <<>>
+	     end,
+    {test,I,F,[Ms,Bits,String]};
+resolve_inst({bs_init_writable=I,[]},_,_,_) ->
+    I;
+resolve_inst({bs_append=I,[Lbl,Arg2,{u,W},{u,R},{u,U},Arg6,{u,F},Arg8]},_,_,_) ->
+    [A2,A6,A8] = resolve_args([Arg2,Arg6,Arg8]),
+    {I,Lbl,A2,W,R,U,A6,decode_field_flags(F),A8};
+resolve_inst({bs_private_append=I,[Lbl,Arg2,{u,U},Arg4,{u,F},Arg6]},_,_,_) ->
+    [A2,A4,A6] = resolve_args([Arg2,Arg4,Arg6]),
+    {I,Lbl,A2,U,A4,decode_field_flags(F),A6};
+resolve_inst({trim=I,[{u,N},{u,Remaining}]},_,_,_) ->
+    {I,N,Remaining};
+resolve_inst({bs_init_bits,[Lbl,Arg2,{u,W},{u,R},{u,F},Arg6]},_,_,_) ->
+    [A2,A6] = resolve_args([Arg2,Arg6]),
+    {bs_init_bits,Lbl,A2,W,R,decode_field_flags(F),A6};
 
 %%
 %% Catches instructions that are not yet handled.
@@ -993,6 +1033,7 @@ resolve_arg({u,_} = Arg) -> resolve_arg_unsigned(Arg);
 resolve_arg({i,_} = Arg) -> resolve_arg_integer(Arg);
 resolve_arg({atom,Atom} = Arg) when is_atom(Atom) -> Arg;
 resolve_arg({float,F} = Arg) when is_float(F) -> Arg;
+resolve_arg({literal,_} = Arg) -> Arg;
 resolve_arg(nil) -> nil.
 
 resolve_arg_unsigned({u,N}) when is_integer(N), N >= 0 -> N.

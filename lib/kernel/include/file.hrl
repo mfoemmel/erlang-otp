@@ -16,36 +16,42 @@
 %%     $Id$
 %%
 
+%%--------------------------------------------------------------------------
+
+-type(date() :: {pos_integer(), pos_integer(), pos_integer()}).
+-type(time() :: {non_neg_integer(), non_neg_integer(), non_neg_integer()}).
+-type(date_time() :: {date(), time()}).
+
+%%--------------------------------------------------------------------------
+
 -record(file_info,
-	{size,			% Size of file in bytes.
-	 type,			% Atom: device, directory, regular,
-				% or other.
-	 access,		% Atom: read, write, read_write, or none.
-	 atime,			% The local time the file was last read:
+	{size   :: non_neg_integer(),	% Size of file in bytes.
+	 type   :: 'device' | 'directory' | 'other' | 'regular' | 'symlink',
+	 access :: 'read' | 'write' | 'read_write' | 'none',
+	 atime  :: date_time(),	% The local time the file was last read:
 				% {{Year, Mon, Day}, {Hour, Min, Sec}}.
-	 mtime,			% The local time the file was last written.
-	 ctime,			% The interpreation of this time field
+	 mtime  :: date_time(),	% The local time the file was last written.
+	 ctime  :: date_time(),	% The interpretation of this time field
 	                        % is dependent on operating system.
 				% On Unix it is the last time the file or
 				% or the inode was changed.  On Windows,
 				% it is the creation time.
-	 mode,			% Integer: File permissions.  On Windows,
-	 			% the owner permissions will be duplicated
-				% for group and user.
-	 links,			% Number of links to the file (1 if the
-				% filesystem doesn't support links).
-	 major_device,		% Integer: Identifies the file system (Unix),
-	 			% or the drive number (A: = 0, B: = 1) (Windows).
-
-%% The following are Unix specific.  They are set to zero on other
-%% operating systems.
-	 minor_device,		% Only valid for devices.
-	 inode,			% Inode number for file.
-	 uid,			% User id for owner (integer).
-	 gid}).		        % Group id for owner (integer).
-
+	 mode   :: integer(),		% File permissions.  On Windows,
+	 				% the owner permissions will be
+					% duplicated for group and user.
+	 links  :: non_neg_integer(),	% Number of links to the file (1 if the
+					% filesystem doesn't support links).
+	 major_device :: integer(),	% Identifies the file system (Unix),
+	 				% or the drive number (A: = 0, B: = 1)
+					% (Windows).
+	 %% The following are Unix specific.
+	 %% They are set to zero on other operating systems.
+	 minor_device,			% Only valid for devices.
+	 inode  :: integer(),  		% Inode number for file.
+	 uid    :: integer(),  		% User id for owner (integer).
+	 gid    :: integer()}).	        % Group id for owner (integer).
 
 
 -record(file_descriptor,
-	{module,                % Module that handles this kind of file
-	 data}).                % Module dependant data
+	{module :: atom(),      % Module that handles this kind of file
+	 data   :: any()}).     % Module dependent data

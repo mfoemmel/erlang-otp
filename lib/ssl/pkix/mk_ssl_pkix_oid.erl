@@ -2,8 +2,7 @@
 
 -export([make/0]).
 
--define(PKIX_MODULES, ['PKIX1Algorithms88', 'PKIX1Explicit88',
-		       'PKIX1Implicit88']).
+-define(PKIX_MODULES, ['OTP-PKIX']).
 
 make() ->
     {ok, Fd} = file:open("ssl_pkix_oid.erl", [write]),

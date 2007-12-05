@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1996-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmp_misc).
 
@@ -40,7 +42,7 @@
 	 get_sec_level/1,
 	 ip/1,
 	 is_auth/1,
-	 is_bitstring/1,
+	 is_BitString/1,
 	 is_oid/1,
 	 is_priv/1,
 	 is_reportable/1,
@@ -116,26 +118,30 @@ now(sec) ->
     
 
 is_string([]) -> true;
-is_string([Tkn | Str]) when integer(Tkn), Tkn >= 0, Tkn =< 255 ->
+is_string([Tkn | Str]) 
+  when is_integer(Tkn) andalso (Tkn >= 0) andalso (Tkn =< 255) ->
     is_string(Str);
 is_string(_) -> false.
 
 
-is_oid([E1, E2| Rest]) when length(Rest) =< 126, E1 *40 + E2 =< 255 ->
+is_oid([E1, E2| Rest]) 
+  when (length(Rest) =< 126) andalso (E1 *40 + E2 =< 255) ->
     is_oid2(Rest);
 is_oid([E1]) when E1 =< 2 ->
     true;
 is_oid(_) -> false.
 
 is_oid2([]) -> true;
-is_oid2([Nbr | RestOid]) when integer(Nbr), 0 =< Nbr, Nbr =< 2147483647 ->
+is_oid2([Nbr | RestOid]) 
+  when is_integer(Nbr) andalso (0 =< Nbr) andalso (Nbr =< 2147483647) ->
     is_oid2(RestOid);
 is_oid2(_) -> false.
     
-is_bitstring([]) -> true;
-is_bitstring([Nbr | RestBitstring]) when integer(Nbr), Nbr >= 0, Nbr =< 1 ->
-    is_bitstring(RestBitstring);
-is_bitstring(_) -> false.
+is_BitString([]) -> true;
+is_BitString([Nbr | RestBitstring]) 
+  when is_integer(Nbr) andalso (Nbr >= 0) andalso (Nbr =< 1) ->
+    is_BitString(RestBitstring);
+is_BitString(_) -> false.
     
 
 %% Check if a Tag is a member in a TagList.  Tags and TagLists are defined

@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2001-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: 
@@ -118,7 +120,7 @@ encode(SDP) ->
 
 do_encode(SDP) when is_tuple(SDP) ->
     {ok, encode_PropertyParm(SDP)};
-do_encode([SDP|_] = PG) when tuple(SDP) ->
+do_encode([SDP|_] = PG) when is_tuple(SDP) ->
     encode_PropertyGroup(PG);
 do_encode([H|_] = PGs) when is_list(H) ->
     encode_PropertyGroups(PGs);
@@ -352,9 +354,9 @@ encode_PropertyParm(#megaco_sdp_c{network_type    = NetType,
 
 %% ===== Bandwidth =====
 %% 
-encode_PropertyParm(#megaco_sdp_b{modifier  = Modifier,
+encode_PropertyParm(#megaco_sdp_b{bwtype    = BwType,
 				  bandwidth = Bandwidth}) ->
-    encode_pp_bandwidth(Modifier, Bandwidth);
+    encode_pp_bandwidth(BwType, Bandwidth);
 
 
 %% ===== Times, Repeat Times and Time Zones =====
@@ -380,14 +382,45 @@ encode_PropertyParm(#megaco_sdp_k{method         = Method,
 
 %% ===== Attributes =====
 %% 
+encode_PropertyParm(#megaco_sdp_a_cat{category = Category}) ->
+    encode_pp_attribute_cat(Category);
+
+encode_PropertyParm(#megaco_sdp_a_keywds{keywords = Keywords}) ->
+    encode_pp_attribute_keywds(Keywords);
+
+encode_PropertyParm(#megaco_sdp_a_tool{name_and_version = NameAndVersion}) ->
+    encode_pp_attribute_tool(NameAndVersion);
+
+encode_PropertyParm(#megaco_sdp_a_ptime{packet_time = PacketTime}) ->
+    encode_pp_attribute_ptime(PacketTime);
+
+encode_PropertyParm(
+  #megaco_sdp_a_maxptime{maximum_packet_time = MaxPacketTime}) ->
+    encode_pp_attribute_maxptime(MaxPacketTime);
+
 encode_PropertyParm(#megaco_sdp_a_rtpmap{payload_type   = Payload, 
 					 encoding_name  = EncName,
 					 clock_rate     = ClockRate, 
 					 encoding_parms = EncPar}) ->
     encode_pp_attribute_rtpmap(Payload, EncName, ClockRate, EncPar);
 
-encode_PropertyParm(#megaco_sdp_a_ptime{packet_time = PacketTime}) ->
-    encode_pp_attribute_ptime(PacketTime);
+encode_PropertyParm(#megaco_sdp_a_orient{orientation = Orientation}) ->
+    encode_pp_attribute_orient(Orientation);
+
+encode_PropertyParm(#megaco_sdp_a_type{conf_type = CType}) ->
+    encode_pp_attribute_type(CType);
+
+encode_PropertyParm(#megaco_sdp_a_charset{char_set = CharSet}) ->
+    encode_pp_attribute_charset(CharSet);
+
+encode_PropertyParm(#megaco_sdp_a_sdplang{tag = Tag}) ->
+    encode_pp_attribute_sdplang(Tag);
+
+encode_PropertyParm(#megaco_sdp_a_lang{tag = Tag}) ->
+    encode_pp_attribute_lang(Tag);
+
+encode_PropertyParm(#megaco_sdp_a_framerate{frame_rate = FrameRate}) ->
+    encode_pp_attribute_framerate(FrameRate);
 
 encode_PropertyParm(#megaco_sdp_a_quality{quality = Quality}) ->
     encode_pp_attribute_quality(Quality);
@@ -484,15 +517,15 @@ decode_pp_origin(Value) ->
     ?d("decode_pp_origin -> entry with"
        "~n   Value: ~p", [Value]),
     case string:tokens(Value, " \t") of
-	[User, SessionId, Version, NetType, AddrType, Address] ->
+	[User, SessId, SessVersion, NetType, AddrType, UnicastAddress] ->
 	    ?d("decode_pp_origin -> entry with"
-	       "~n   User:      ~p"
-	       "~n   SessionId: ~p"
-	       "~n   Version:   ~p"
-	       "~n   NetType:   ~p"
-	       "~n   AddrType:  ~p"
-	       "~n   Address:   ~p", 
-	       [User, SessionId, Version, NetType, AddrType, Address]),
+	       "~n   User:           ~p"
+	       "~n   SessionId:      ~p"
+	       "~n   Version:        ~p"
+	       "~n   NetType:        ~p"
+	       "~n   AddrType:       ~p"
+	       "~n   UnicastAddress: ~p", 
+	       [User, SessId, SessVersion, NetType, AddrType, UnicastAddress]),
 	    F = fun(X, R) -> 
 			case (catch list_to_integer(X)) of
 			    I when is_integer(I) ->
@@ -501,14 +534,14 @@ decode_pp_origin(Value) ->
 				error({invalid_origin, {R, X}})
 			end
 		end,
-	    SID = F(SessionId, session_id), 
-	    V   = F(Version,   version), 
+	    SID = F(SessId,      sess_id), 
+	    V   = F(SessVersion, sess_version), 
 	    SDP = #megaco_sdp_o{user_name    = User,
 				session_id   = SID,
 				version      = V,
 				network_type = decode_network_type(NetType),
 				address_type = decode_address_type(AddrType),
-				address      = Address},
+				address      = UnicastAddress},
 	    {ok, SDP};
 	Err ->
 	    ?d("decode_pp_origin -> "
@@ -516,29 +549,30 @@ decode_pp_origin(Value) ->
 	    invalid_pp(origin, Value, Err)
     end.
     
-encode_pp_origin(User0, SessionId0, Version0, NetType0, AddrType0, Addr0) ->
+encode_pp_origin(User0, SessionId0, SessVersion0, 
+		 NetType0, AddrType0, UnicastAddr0) ->
     ?d("do_encode_pp_origin -> entry with"
-       "~n   User0:      ~p"
-       "~n   SessionId0: ~p"
-       "~n   Version0:   ~p"
-       "~n   NetType0:   ~p"
-       "~n   AddrType0:  ~p"
-       "~n   Addr0:      ~p", 
-       [User0, SessionId0, Version0, NetType0, AddrType0, Addr0]),
-    User      = encode_origin_user(User0),
-    SessionId = encode_origin_session_id(SessionId0),
-    Version   = encode_origin_version(Version0),
-    NetType   = encode_origin_network_type(NetType0), 
-    AddrType  = encode_origin_address_type(AddrType0), 
-    Addr      = encode_origin_address(Addr0), 
+       "~n   User0:        ~p"
+       "~n   SessionId0:   ~p"
+       "~n   SessVersion0: ~p"
+       "~n   NetType0:     ~p"
+       "~n   AddrType0:    ~p"
+       "~n   UnicastAddr0: ~p", 
+       [User0, SessionId0, SessVersion0, NetType0, AddrType0, UnicastAddr0]),
+    User        = encode_origin_user(User0),
+    SessionId   = encode_origin_session_id(SessionId0),
+    SessVersion = encode_origin_sess_version(SessVersion0),
+    NetType     = encode_origin_network_type(NetType0), 
+    AddrType    = encode_origin_address_type(AddrType0), 
+    UnicastAddr = encode_origin_unicast_address(UnicastAddr0), 
     #'PropertyParm'{name  = "o", 
 		    value = [
-			     User      ++ " " ++
-			     SessionId ++ " " ++
-			     Version   ++ " " ++
-			     NetType   ++ " " ++
-			     AddrType  ++ " " ++
-			     Addr
+			     User        ++ " " ++
+			     SessionId   ++ " " ++
+			     SessVersion ++ " " ++
+			     NetType     ++ " " ++
+			     AddrType    ++ " " ++
+			     UnicastAddr
 			    ]}.
 
 encode_origin_user(User) when is_list(User) ->
@@ -551,10 +585,10 @@ encode_origin_session_id(SID) when is_integer(SID) ->
 encode_origin_session_id(BadSID) ->
     error({invalid_origin_session_id, BadSID}).
 
-encode_origin_version(Version) when is_integer(Version) ->
-    integer_to_list(Version);
-encode_origin_version(BadVersion) ->
-    error({invalid_origin_version, BadVersion}).
+encode_origin_sess_version(SessVersion) when is_integer(SessVersion) ->
+    integer_to_list(SessVersion);
+encode_origin_sess_version(BadSessVersion) ->
+    error({invalid_origin_sess_version, BadSessVersion}).
 
 encode_origin_network_type(NT) ->
     case (catch encode_network_type(NT)) of
@@ -572,10 +606,10 @@ encode_origin_address_type(AT) ->
 	    Val
     end.
 
-encode_origin_address(Addr) when is_list(Addr) ->
-    Addr;
-encode_origin_address(BadAddr) ->
-    error({invalid_origin_address, BadAddr}).
+encode_origin_unicast_address(UnicastAddr) when is_list(UnicastAddr) ->
+    UnicastAddr;
+encode_origin_unicast_address(BadUnicastAddr) ->
+    error({invalid_origin_unicast_address, BadUnicastAddr}).
 
 
 %% ===== Session Name =====
@@ -808,34 +842,53 @@ decode_pp_bandwidth(Value) ->
     ?d("decode_pp_bandwidth -> entry with"
        "~n   Value: ~p", [Value]),
     case string:tokens(Value, ":") of
-	[Modifier, BandwidthStr] ->
+	[BwTypeStr, BandwidthStr] ->
 	    ?d("decode_pp_bandwidth -> "
-	       "~n   Modifier:     ~p"
-	       "~n   BandwidthStr: ~p", [Modifier, BandwidthStr]),
-	    Bandwidth = s2i(BandwidthStr, invalid_bandwidth_bandwidth),
+	       "~n   BwTypeStr:    ~p"
+	       "~n   BandwidthStr: ~p", [BwTypeStr, BandwidthStr]),
+	    BwType    = decode_bandwidth_bwt(BwTypeStr),
+	    ?d("decode_pp_bandwidth -> "
+	       "~n   BwType: ~w", [BwType]),
+	    Bandwidth = decode_bandwidth_bw(BandwidthStr),
 	    ?d("decode_pp_bandwidth -> "
 	       "~n   Bandwidth: ~w", [Bandwidth]),
-	    SDP = #megaco_sdp_b{modifier  = Modifier,
+	    SDP = #megaco_sdp_b{bwtype    = BwType,
 				bandwidth = Bandwidth},
 	    {ok, SDP};
 	Err ->
 	    invalid_pp(bandwidth_info, Value, Err)
     end.
     
-encode_pp_bandwidth(Modifier0, Bandwidth0) ->
+encode_pp_bandwidth(BwType0, Bandwidth0) ->
     ?d("encode_pp_bandwidth -> entry with"
-       "~n   Modifier0:  ~p"
-       "~n   Bandwidth0: ~p", [Modifier0, Bandwidth0]),
-    Modifier  = encode_bandwidth_mod(Modifier0),
+       "~n   BwType0:    ~p"
+       "~n   Bandwidth0: ~p", [BwType0, Bandwidth0]),
+    BwType    = encode_bandwidth_bwt(BwType0),
     Bandwidth = encode_bandwidth_bw(Bandwidth0), 
-    Val       = Modifier ++ ":" ++ Bandwidth, 
+    Val       = BwType ++ ":" ++ Bandwidth, 
     #'PropertyParm'{name  = "b", 
 		    value = [Val]}.
 
-encode_bandwidth_mod(Modifier) when is_list(Modifier) ->
-    Modifier;
-encode_bandwidth_mod(BadModifier) ->
-    error({invalid_bandwidth_modifier, BadModifier}).
+decode_bandwidth_bwt("CT") ->
+    ct;
+decode_bandwidth_bwt("AS") ->
+    as;
+decode_bandwidth_bwt(BwType) when is_list(BwType) ->
+    BwType;
+decode_bandwidth_bwt(BadBwType) ->
+    error({invalid_bandwidth_bwtype, BadBwType}).
+
+encode_bandwidth_bwt(ct) ->
+    "CT";
+encode_bandwidth_bwt(as) ->
+    "AS";
+encode_bandwidth_bwt(BwType) when is_list(BwType) ->
+    BwType;
+encode_bandwidth_bwt(BadBwType) ->
+    error({invalid_bandwidth_bwtype, BadBwType}).
+
+decode_bandwidth_bw(Bandwidth) ->
+    s2i(Bandwidth, invalid_bandwidth_bandwidth).
 
 encode_bandwidth_bw(Bandwidth) when is_integer(Bandwidth) ->
     integer_to_list(Bandwidth);
@@ -843,7 +896,7 @@ encode_bandwidth_bw(BadBandwidth) ->
     error({invalid_bandwidth_bandwidth, BadBandwidth}).
 
 
-%% ===== Times, Repeat Times and Time Zones =====
+%% ===== Times =====
 %% 
 decode_pp_times(Value) ->
     ?d("decode_pp_times -> entry with"
@@ -853,17 +906,17 @@ decode_pp_times(Value) ->
 	    ?d("decode_pp_times -> "
 	       "~n   StartStr: ~p"
 	       "~n   StopStr:  ~p", [StartStr, StopStr]),
-	    Start = s2i(StartStr, invalid_times_start),
+	    Start = decode_times_start(StartStr),
 	    ?d("decode_pp_times -> entry with"
 	       "~n   Stop: ~w", [Start]),
-	    Stop  = s2i(StopStr,  invalid_times_stop),
+	    Stop  = decode_times_stop(StopStr),
 	    ?d("decode_pp_times -> entry with"
 	       "~n   Stop:  ~w", [Stop]),
 	    SDP = #megaco_sdp_t{start = Start, 
 				stop  = Stop},
 	    {ok, SDP};
 	Err ->
-	    invalid_pp(time_session_active, Value, Err)
+	    invalid_pp(times, Value, Err)
     end.
 
 encode_pp_times(Start0, Stop0) ->
@@ -876,16 +929,25 @@ encode_pp_times(Start0, Stop0) ->
     #'PropertyParm'{name  = "t", 
 		    value = [Val]}.
 
+decode_times_start(Time) ->
+    s2i(Time, invalid_times_start).
+
 encode_times_start(Time) when is_integer(Time) ->
     integer_to_list(Time);
 encode_times_start(BadTime) ->
     error({invalid_times_start, BadTime}).
     
+decode_times_stop(Time) ->
+    s2i(Time, invalid_times_stop).
+
 encode_times_stop(Time) when is_integer(Time) ->
     integer_to_list(Time);
 encode_times_stop(BadTime) ->
     error({invalid_times_stop, BadTime}).
     
+
+%% ===== Repeat Times =====
+%% 
 decode_pp_rtimes(Value) ->
     ?d("decode_pp_rtimes -> entry with"
        "~n   Value: ~p", [Value]),
@@ -936,11 +998,15 @@ encode_rtimes_list_of_offsets(BadLoo) ->
     error({invalid_rtimes_list_of_offsets, BadLoo}).
     
 	    
-decode_pp_tzones(Value) ->
+%% ===== Time Zones =====
+%% 
+decode_pp_tzones(Value) when is_list(Value) and (length(Value) > 0) ->
     ?d("decode_pp_ztimes -> entry with"
        "~n   Value: ~p", [Value]),
-    List = string:tokens(Value, " \t"),
-    {ok, #megaco_sdp_z{list_of_adjustments = List}}.
+    LOA = decode_tzones_list_of_adjustments(string:tokens(Value, " \t"), []),
+    {ok, #megaco_sdp_z{list_of_adjustments = LOA}};
+decode_pp_tzones(BadValue) ->
+    error({invalid_tzones_list_of_adjustments, BadValue}).
 
 encode_pp_tzones(LOA) ->
     ?d("encode_pp_ztimes -> entry with"
@@ -949,14 +1015,23 @@ encode_pp_tzones(LOA) ->
     #'PropertyParm'{name  = "z", 
 		    value = [Val]}.
 
-encode_tzones_list_of_adjustments([H|T]) when is_list(H) ->
-    F = fun(Adjustment, Acc) when is_list(Adjustment) -> 
-		Acc ++ " " ++ Adjustment;
+decode_tzones_list_of_adjustments([], Acc) ->
+    lists:reverse(Acc);
+decode_tzones_list_of_adjustments([Adj], Acc) ->
+    error({invalid_tzones_list_of_adjustments, Adj, lists:reverse(Acc)});
+decode_tzones_list_of_adjustments([Time, Offset | LOA], Acc) ->
+    Adj = #megaco_sdp_z_adjustement{time = Time, offset = Offset},
+    decode_tzones_list_of_adjustments(LOA, [Adj | Acc]).
+
+encode_tzones_list_of_adjustments([H|_] = LOA) 
+  when is_record(H, megaco_sdp_z_adjustement) ->
+    F = fun(#megaco_sdp_z_adjustement{time = T, offset = O}, Acc) -> 
+		Acc ++ " " ++ T ++ " " ++ O;
 	   (BadAdjustment, Acc) ->
 		error({invalid_tzones_list_of_adjustments, 
 		       {BadAdjustment, Acc}})
 	end, 
-    lists:foldl(F, H, T);
+    lists:foldl(F, [], LOA);
 encode_tzones_list_of_adjustments(LOA) ->
     error({invalid_tzones_list_of_adjustments, LOA}).
 
@@ -982,14 +1057,14 @@ decode_pp_encryption_keys(Value) ->
 	end,
     M2 = 
 	case tolower(M) of
-	    "prompt" ->
-		prompt;
 	    "clear" ->
 		clear;
 	    "base64" ->
 		base64;
 	    "uri" ->
 		uri;
+	    "prompt" ->
+		prompt;
 	    _ ->
 		M
 	end,
@@ -1037,77 +1112,213 @@ encode_pp_encryption_keys(BadMethod, BadEK) ->
 decode_pp_attribute(Value) ->
     ?d("decode_pp_attribute -> entry with"
        "~n   Value: ~p", [Value]),
-    case string:tokens(Value, ":") of
-	["rtpmap", AttrValue] ->
-	    ?d("decode_pp_attribute -> rtpmap: "
-	       "~n   AttrValue: ~p", [AttrValue]),
-	    case string:tokens(AttrValue, "\/ \t") of
-		[PayloadStr, EncName, ClockRateStr | EncPar] ->
-		    ?d("decode_pp_attribute -> "
-		       "~n   PayloadStr:   ~p"
-		       "~n   EncName:      ~p"
-		       "~n   ClockRateStr: ~p"
-		       "~n   EncPar:       ~p", 
-		       [PayloadStr, EncName, ClockRateStr, EncPar]),
-		    Payload   = s2i(PayloadStr, invalid_rtpmap_payload),
-		    ?d("decode_pp_attribute -> Payload: ~w", [Payload]),
-		    ClockRate = s2i(ClockRateStr, invalid_rtpmap_payload), 
-		    ?d("decode_pp_attribute -> ClockRate: ~w", [ClockRate]),
-		    SDP = #megaco_sdp_a_rtpmap{payload_type   = Payload, 
-					       encoding_name  = EncName,
-					       clock_rate     = ClockRate, 
-					       encoding_parms = EncPar},
-		    {ok, SDP};
-		_ ->
-		    error({invalid_rtpmap, AttrValue})
-	    end;
-
-	["ptime", PacketTimeStr] ->
-	    ?d("decode_pp_attribute -> ptime: "
-	       "~n   PacketTimeStr: ~p", [PacketTimeStr]),
-	    PacketTime = s2i(PacketTimeStr, invalid_ptime_packet_time), 
-	    ?d("decode_pp_attribute -> PacketTime: ~w", [PacketTime]),
-	    SDP = #megaco_sdp_a_ptime{packet_time = PacketTime}, 
-	    {ok, SDP};
-
-	["quality", QualityStr] ->
-	    ?d("decode_pp_attribute -> quality: "
-	       "~n   QualityStr: ~p", [QualityStr]),
-	    Quality = s2i(QualityStr, invalid_quality_quality), 
-	    ?d("decode_pp_attribute -> Quality: ~w", [Quality]),
-	    SDP = #megaco_sdp_a_quality{quality = Quality}, 
-	    {ok, SDP};
-
-	["fmtp", FMTP] ->
-	    ?d("decode_pp_attribute -> fmtp: "
-	       "~n   FMTP: ~p", [FMTP]),
-	    case string:tokens(FMTP, " \t") of
-		[Fmt, Param] ->
-		    ?d("decode_pp_attribute -> "
-		       "~n   Fmt:   ~p"
-		       "~n   Param: ~p", [Fmt, Param]),
-		    SDP = #megaco_sdp_a_fmtp{format = Fmt,
-					     param  = Param}, 
-		    {ok, SDP};
-		_ ->
-		    error({invalid_fmtp, FMTP})
-	    end;
-
-	[Attr, AttrValue] ->
+    First = string:chr(Value, $:),
+    if 
+	(First > 0) and (First < length(Value)) ->
+	    ?d("decode_pp_attribute -> value attribute", []),
+	    Attr      = string:substr(Value, 1, First -1),
+	    AttrValue = string:substr(Value, First + 1),
 	    ?d("decode_pp_attribute -> "
 	       "~n   Attr:      ~p"
 	       "~n   AttrValue: ~p", [Attr, AttrValue]),
-	    {ok, #megaco_sdp_a{attribute = Attr, value = AttrValue}};
-
-	[Attr] ->
+	    decode_pp_attribute_value(Attr, AttrValue);
+	
+	First > 0 ->
+	    ?d("decode_pp_attribute -> value attribute (empty)", []),
+	    Attr = string:substr(Value, 1, First -1),
 	    ?d("decode_pp_attribute -> "
 	       "~n   Attr: ~p", [Attr]),
-	    {ok, #megaco_sdp_a{attribute = Attr}};
+	    decode_pp_attribute_value(Attr, []);
+	    
+	true ->
+	    ?d("decode_pp_attribute -> binary attribute", []),
+	    {ok, #megaco_sdp_a{attribute = Value}}
 
-	Err ->
-	    invalid_pp(invalid_attribute, Value, Err)
     end.
+
+decode_pp_attribute_value("cat", AttrValue) ->
+    ?d("decode_pp_attribute -> cat", []),
+    SDP = #megaco_sdp_a_cat{category = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("keywds", AttrValue) ->
+    ?d("decode_pp_attribute -> keywds", []),
+    SDP = #megaco_sdp_a_keywds{keywords = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("tool", AttrValue) ->
+    ?d("decode_pp_attribute -> tool", []),
+    SDP = #megaco_sdp_a_tool{name_and_version = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("ptime", AttrValue) ->
+    ?d("decode_pp_attribute -> ptime", []),
+    PacketTimeStr = AttrValue, 
+    PacketTime = 
+	s2i(PacketTimeStr, invalid_ptime_packet_time), 
+    ?d("decode_pp_attribute -> PacketTime: ~w", [PacketTime]),
+    SDP = #megaco_sdp_a_ptime{packet_time = PacketTime}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("maxptime", AttrValue) ->
+    ?d("decode_pp_attribute -> maxptime", []),
+    MaxPacketTimeStr = AttrValue, 
+    MaxPacketTime = 
+	s2i(MaxPacketTimeStr, invalid_maxptime_maximum_packet_time), 
+    ?d("decode_pp_attribute -> MaxPacketTime: ~w", [MaxPacketTime]),
+    SDP = #megaco_sdp_a_maxptime{maximum_packet_time = MaxPacketTime}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("rtpmap", AttrValue) ->
+    ?d("decode_pp_attribute -> rtpmap", []),
+    case string:tokens(AttrValue, "\/ \t") of
+	[PayloadStr, EncName, ClockRateStr | EncPar] ->
+	    ?d("decode_pp_attribute -> "
+	       "~n   PayloadStr:   ~p"
+	       "~n   EncName:      ~p"
+	       "~n   ClockRateStr: ~p"
+	       "~n   EncPar:       ~p", 
+	       [PayloadStr, EncName, ClockRateStr, EncPar]),
+		    Payload   = 
+		s2i(PayloadStr, invalid_rtpmap_payload),
+	    ?d("decode_pp_attribute -> Payload: ~w", 
+	       [Payload]),
+	    ClockRate = 
+		s2i(ClockRateStr, invalid_rtpmap_payload), 
+	    ?d("decode_pp_attribute -> ClockRate: ~w", 
+	       [ClockRate]),
+	    SDP = 
+		#megaco_sdp_a_rtpmap{payload_type   = Payload, 
+				     encoding_name  = EncName,
+				     clock_rate     = ClockRate, 
+				     encoding_parms = EncPar},
+	    {ok, SDP};
+	_ ->
+	    error({invalid_rtpmap, AttrValue})
+    end;
+
+decode_pp_attribute_value("orient", AttrValue) ->
+    ?d("decode_pp_attribute -> orient", []),
+    Orientation = decode_attribute_orientation(AttrValue),
+    SDP = #megaco_sdp_a_orient{orientation = Orientation}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("type", AttrValue) ->
+    ?d("decode_pp_attribute -> type", []),
+    SDP = #megaco_sdp_a_type{conf_type = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("charset", AttrValue) ->
+    ?d("decode_pp_attribute -> charset", []),
+    SDP = #megaco_sdp_a_charset{char_set = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("sdplang", AttrValue) ->
+    ?d("decode_pp_attribute -> sdplang", []),
+    SDP = #megaco_sdp_a_sdplang{tag = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("lang", AttrValue) ->
+    ?d("decode_pp_attribute -> lang", []),
+    SDP = #megaco_sdp_a_lang{tag = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("framerate", AttrValue) ->
+    ?d("decode_pp_attribute -> framerate", []),
+    SDP = #megaco_sdp_a_framerate{frame_rate = AttrValue}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("quality", AttrValue) ->
+    ?d("decode_pp_attribute -> quality", []),
+    QualityStr = AttrValue, 
+    Quality = s2i(QualityStr, invalid_quality_quality), 
+    ?d("decode_pp_attribute -> Quality: ~w", [Quality]),
+    SDP = #megaco_sdp_a_quality{quality = Quality}, 
+    {ok, SDP};
+
+decode_pp_attribute_value("fmtp", AttrValue) ->
+    ?d("decode_pp_attribute -> fmtp", []),
+    FMTP = AttrValue, 
+    case string:tokens(FMTP, " \t") of
+	[Fmt, Param] ->
+	    ?d("decode_pp_attribute -> "
+	       "~n   Fmt:   ~p"
+	       "~n   Param: ~p", [Fmt, Param]),
+	    SDP = #megaco_sdp_a_fmtp{format = Fmt,
+					     param  = Param}, 
+	    {ok, SDP};
+	_ ->
+	    error({invalid_fmtp, FMTP})
+    end;
+
+decode_pp_attribute_value(Attr, AttrValue) ->
+    ?d("decode_pp_attribute -> unknown value attribute", []),
+    {ok, #megaco_sdp_a{attribute = Attr, value = AttrValue}}.
+
+decode_attribute_orientation("portrait") -> 
+    portrait;
+decode_attribute_orientation("landscape") ->
+    landscape;
+decode_attribute_orientation("seascape") ->
+    seascape;
+decode_attribute_orientation(BadOrientation) ->
+    error({invalid_orient_orientation, BadOrientation}).
     
+encode_attribute_orientation(portrait) -> 
+    "portrait";
+encode_attribute_orientation(landscape) ->
+    "landscape";
+encode_attribute_orientation(seascape) ->
+    "seascape";
+encode_attribute_orientation(BadOrientation) ->
+    error({invalid_orient_orientation, BadOrientation}).
+    
+
+encode_pp_attribute_cat(Cat) when is_list(Cat) ->
+    ?d("encode_pp_attribute_cat -> entry with"
+       "~n   Cat: ~p", [Cat]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["cat:" ++ Cat]};
+encode_pp_attribute_cat(BadCat) ->
+    error({invalid_cat_category, BadCat}).
+
+
+encode_pp_attribute_keywds(Keywords) when is_list(Keywords) ->
+    ?d("encode_pp_attribute_keywds -> entry with"
+       "~n   Keywords: ~p", [Keywords]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["keywds:" ++ Keywords]};
+encode_pp_attribute_keywds(BadKeywords) ->
+    error({invalid_keywds_keywords, BadKeywords}).
+
+
+encode_pp_attribute_tool(NameAndVersion) when is_list(NameAndVersion) ->
+    ?d("encode_pp_attribute_tool -> entry with"
+       "~n   NameAndVersion: ~p", [NameAndVersion]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["tool:" ++ NameAndVersion]};
+encode_pp_attribute_tool(BadNameAndVersion) ->
+    error({invalid_tool_name_and_version, BadNameAndVersion}).
+
+
+encode_pp_attribute_ptime(PacketTime) when is_integer(PacketTime) ->
+    ?d("encode_pp_attribute_ptime -> entry with"
+       "~n   PacketTime: ~w", [PacketTime]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["ptime:" ++ integer_to_list(PacketTime)]};
+encode_pp_attribute_ptime(BadPT) ->
+    error({invalid_ptime_packet_time, BadPT}).
+
+
+encode_pp_attribute_maxptime(MaxPacketTime) when is_integer(MaxPacketTime) ->
+    ?d("encode_pp_attribute_maxptime -> entry with"
+       "~n   MaxPacketTime: ~w", [MaxPacketTime]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["maxptime:" ++ integer_to_list(MaxPacketTime)]};
+encode_pp_attribute_maxptime(BadMPT) ->
+    error({invalid_maxptime_maximum_packet_time, BadMPT}).
+
+
 encode_pp_attribute_rtpmap(Payload0, EncName0, ClockRate0, EncPar0) ->
     ?d("encode_pp_attribute_rtpmap -> entry with"
        "~n   Payload0:   ~p"
@@ -1149,13 +1360,58 @@ encode_rtpmap_encoding_parms(BadEncPar) ->
     error({invalid_rtpmap_encoding_parms, BadEncPar}).
 		
 
-encode_pp_attribute_ptime(PacketTime) when is_integer(PacketTime) ->
-    ?d("encode_pp_attribute_ptime -> entry with"
-       "~n   PacketTime: ~w", [PacketTime]),
+encode_pp_attribute_orient(Orientation0) ->
+    ?d("encode_pp_attribute_orient -> entry with"
+       "~n   Orientation0: ~w", [Orientation0]),
+    Orientation = encode_attribute_orientation(Orientation0), 
     #'PropertyParm'{name  = "a", 
-		    value = ["ptime:" ++ integer_to_list(PacketTime)]};
-encode_pp_attribute_ptime(BadPT) ->
-    error({invalid_ptime_packet_time, BadPT}).
+		    value = ["orient:" ++ Orientation]}.
+
+
+encode_pp_attribute_type(CType) when is_list(CType) ->
+    ?d("encode_pp_attribute_type -> entry with"
+       "~n   CType: ~p", [CType]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["type:" ++ CType]};
+encode_pp_attribute_type(BadCType) ->
+    error({invalid_type_conf_type, BadCType}).
+
+
+encode_pp_attribute_charset(CharSet) when is_list(CharSet) ->
+    ?d("encode_pp_attribute_charset -> entry with"
+       "~n   CharSet: ~p", [CharSet]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["charset:" ++ CharSet]};
+encode_pp_attribute_charset(BadCharSet) ->
+    error({invalid_charset_char_set, BadCharSet}).
+
+
+encode_pp_attribute_sdplang(SdpLang) when is_list(SdpLang) ->
+    ?d("encode_pp_attribute_sdplang -> entry with"
+       "~n   SdpLang: ~p", [SdpLang]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["sdplang:" ++ SdpLang]};
+encode_pp_attribute_sdplang(BadSdpLang) ->
+    error({invalid_sdplang_tag, BadSdpLang}).
+
+
+encode_pp_attribute_lang(Lang) when is_list(Lang) ->
+    ?d("encode_pp_attribute_lang -> entry with"
+       "~n   Lang: ~p", [Lang]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["lang:" ++ Lang]};
+encode_pp_attribute_lang(BadLang) ->
+    error({invalid_lang_tag, BadLang}).
+
+
+encode_pp_attribute_framerate(FrameRate) when is_list(FrameRate) ->
+    ?d("encode_pp_attribute_framerate -> entry with"
+       "~n   FrameRate: ~p", [FrameRate]),
+    #'PropertyParm'{name  = "a", 
+		    value = ["framerate:" ++ FrameRate]};
+encode_pp_attribute_framerate(BadFrameRate) ->
+    error({invalid_framerate_frame_rate, BadFrameRate}).
+
 
 encode_pp_attribute_quality(Quality) when is_integer(Quality) ->
     ?d("encode_pp_attribute_quality -> entry with"
@@ -1164,6 +1420,7 @@ encode_pp_attribute_quality(Quality) when is_integer(Quality) ->
 		    value = ["quality:" ++ integer_to_list(Quality)]};
 encode_pp_attribute_quality(BadQ) ->
     error({invalid_quality_quality, BadQ}).
+
 
 encode_pp_attribute_fmtp(Fmt0, Param0) ->
     ?d("encode_pp_attribute_rtpmap -> entry with"

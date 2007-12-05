@@ -53,7 +53,7 @@ document etp-help
 %   etp-msgq, etpf-msgq, 
 %   etp-stacktrace, etp-stackdump, etpf-stackdump, etp-dictdump
 %   etp-offheapdump, etpf-offheapdump,
-%   etp-search-heaps, etp-search-alloc,
+%   etp-print-procs, etp-search-heaps, etp-search-alloc,
 %   etp-ets-tables, etp-ets-tabledump
 %
 % Complex commands that use the Erlang support module.
@@ -1405,6 +1405,67 @@ document etpf-offheapdump
 %---------------------------------------------------------------------------
 end
 
+define etp-print-procs
+# Args: Eterm
+#
+# Non-reentrant
+#
+  etp-print-procs-1
+end
+
+define etp-print-procs-1
+# Args: Eterm*
+#
+# Non-reentrant
+#
+  set $etp_print_procs_q = erts_max_processes / 10
+  set $etp_print_procs_r = erts_max_processes % 10
+  set $etp_print_procs_t = 10
+  set $etp_print_procs_m = $etp_print_procs_q
+  if $etp_print_procs_r > 0
+    set $etp_print_procs_m++
+    set $etp_print_procs_r--
+  end
+  set $etp_print_procs_i = 0
+  set $etp_print_procs_found = 0
+  while $etp_print_procs_i < erts_max_processes
+    if process_tab[$etp_print_procs_i]
+      printf "%d: ", $etp_print_procs_i
+      etp-1 process_tab[$etp_print_procs_i]->id
+      printf " "
+      etp-1 ((Eterm)(process_tab[$etp_print_procs_i]->i))
+      printf " heap=%d/%d(%d)", process_tab[$etp_print_procs_i]->htop - process_tab[$etp_print_procs_i]->heap, \
+	        process_tab[$etp_print_procs_i]->hend - process_tab[$etp_print_procs_i]->heap, \
+		process_tab[$etp_print_procs_i]->hend - process_tab[$etp_print_procs_i]->stop
+      printf " old=%d/%d ", process_tab[$etp_print_procs_i]->old_htop - process_tab[$etp_print_procs_i]->old_heap, \
+                process_tab[$etp_print_procs_i]->old_hend - process_tab[$etp_print_procs_i]->old_heap
+      printf " mbuf_sz=%d ", process_tab[$etp_print_procs_i]->mbuf_sz
+      printf " min=%d ", process_tab[$etp_print_procs_i]->min_heap_size
+      printf " flags=%x ", process_tab[$etp_print_procs_i]->flags
+      printf " msgs=%d ", process_tab[$etp_print_procs_i]->msg.len
+      printf "\n"
+    end
+    set $etp_print_procs_i++
+    if $etp_print_procs_i > $etp_print_procs_m
+      printf "%% %d%%...\n", $etp_print_procs_t
+      set $etp_print_procs_t += 10
+      set $etp_print_procs_m += $etp_print_procs_q
+      if $etp_print_procs_r > 0
+        set $etp_print_procs_m++
+        set $etp_print_procs_r--
+      end
+    end
+  end
+  printf "%% 100%%.\n"
+end
+
+document etp-print-procs
+%---------------------------------------------------------------------------
+% etp-print-procs Eterm
+% 
+% Print some information about ALL processes.
+%---------------------------------------------------------------------------
+end
 
 
 define etp-search-heaps

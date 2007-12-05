@@ -504,7 +504,7 @@ tod(Cs) ->
 	D when D >= 0, D =< 255 ->
 	    D;
 	_ ->
-	    erlang:fault(badarg, [Cs])
+	    erlang:error(badarg, [Cs])
     end.
 
 %%
@@ -589,7 +589,7 @@ dup(0, _, L) ->
 dup(N, E, L) when is_integer(N), N >= 1 ->
     dup(N-1, E, [E|L]);
 dup(N, E, L) ->
-    erlang:fault(badarg, [N,E,L]).
+    erlang:error(badarg, [N,E,L]).
 
 %% Convert IPv4 adress to ascii
 %% Convert IPv6 / IPV4 adress to ascii (plain format)

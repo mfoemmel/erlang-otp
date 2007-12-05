@@ -1,3 +1,5 @@
+%% -*- erlang-indent-level: 2 -*-
+%%-----------------------------------------------------------------------
 %% ``The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
@@ -9,24 +11,28 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
-%%     $Id$
+%% $Id$
 %%
 
-%%% -*- erlang-indent-level: 2 -*-
-%%%-------------------------------------------------------------------
+%%%----------------------------------------------------------------------
 %%% File    : dialyzer_options.erl
 %%% Authors : Richard Carlsson <richardc@csd.uu.se>
 %%% Description : Provides a better way to start Dialyzer from a script.
 %%%
 %%% Created : 17 Oct 2004 by Richard Carlsson <richardc@csd.uu.se>
-%%%-------------------------------------------------------------------
+%%%----------------------------------------------------------------------
+
 -module(dialyzer_options).
 
 -export([build/1]).
 
 -include("dialyzer.hrl").
+
+%%-----------------------------------------------------------------------
+
+-spec(build/1 :: ([{atom(),_}]) -> #options{} | {'error',string()}).
 
 build(Opts) ->
   DefaultWarns = [?WARN_RETURN_NO_RETURN,
@@ -40,9 +46,11 @@ build(Opts) ->
 		  ?WARN_GUARDS,
 		  ?WARN_OLD_BEAM,
 		  ?WARN_FAILING_CALL,
-		  ?WARN_CALLGRAPH],
+		  ?WARN_CALLGRAPH,
+		  ?WARN_CONTRACT_TYPES,
+		  ?WARN_CONTRACT_SYNTAX],
   DefaultWarns1 = ordsets:from_list(DefaultWarns),
-  InitPlt=filename:join([code:lib_dir(dialyzer),"plt","dialyzer_init_plt"]),
+  InitPlt = filename:join([code:lib_dir(dialyzer),"plt","dialyzer_init_plt"]),
   DefaultOpts = #options{},
   DefaultOpts1 = DefaultOpts#options{legal_warnings=DefaultWarns1,
 				      init_plt=InitPlt},
@@ -154,10 +162,22 @@ build_warnings([Opt|Left], Warnings) ->
 	ordsets:del_element(?WARN_OLD_BEAM, Warnings);
       no_fail_call ->
 	ordsets:del_element(?WARN_FAILING_CALL, Warnings);
+      no_contracts ->
+	Warnings1 = ordsets:del_element(?WARN_CONTRACT_SYNTAX, Warnings),
+	ordsets:del_element(?WARN_CONTRACT_TYPES, Warnings1);
       error_handling ->
 	ordsets:add_element(?WARN_RETURN_ONLY_EXIT, Warnings);
       kostis ->
 	ordsets:add_element(?WARN_TERM_COMP, Warnings);
+      specdiffs ->
+	S = ordsets:from_list([?WARN_CONTRACT_SUBTYPE, 
+			       ?WARN_CONTRACT_SUPERTYPE,
+			       ?WARN_CONTRACT_NOT_EQUAL]),
+	ordsets:union(S, Warnings);
+      overspecs ->
+	ordsets:add_element(?WARN_CONTRACT_SUBTYPE, Warnings);
+      underspecs ->
+	ordsets:add_element(?WARN_CONTRACT_SUPERTYPE, Warnings);
       Other ->
 	bad_option(Other)
     end,

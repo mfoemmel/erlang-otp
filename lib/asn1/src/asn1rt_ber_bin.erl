@@ -46,7 +46,7 @@
 	 decode_components/7, decode_set/6]).
 
 -export([encode_open_type/1,encode_open_type/2,decode_open_type/1,decode_open_type/2,decode_open_type/3]).
--export([skipvalue/1, skipvalue/2]).
+-export([skipvalue/1, skipvalue/2,skip_ExtensionAdditions/2]).
  
 -include("asn1_records.hrl"). 
  
@@ -237,6 +237,29 @@ cindex(Ix,Val,Cname) ->
 	X -> X 
     end. 
  
+%%%
+%% skips byte sequence of Bytes that do not match a tag in Tags
+skip_ExtensionAdditions(Bytes,Tags) ->
+    skip_ExtensionAdditions(Bytes,Tags,0).
+skip_ExtensionAdditions(<<>>,_Tags,RmB) ->
+    {<<>>,RmB};
+skip_ExtensionAdditions(Bytes,Tags,RmB) ->
+    case catch decode_tag(Bytes) of
+	{'EXIT',_Reason} ->
+	    tag_error(no_data,Tags,Bytes,'OPTIONAL');
+	{_T={Class,_Form,TagNo},_Bytes2,_R2} ->
+	    case [X||X=#tag{class=Cl,number=TN} <- Tags,Cl==Class,TN==TagNo] of
+		[] ->
+		    %% skip this TLV and continue with next
+		    {Bytes3,R3} = skipvalue(Bytes),
+		    skip_ExtensionAdditions(Bytes3,Tags,RmB+R3);
+		_ ->
+		    {Bytes,RmB}
+	    end
+    end.
+		    
+    
+
 %%=============================================================================== 
 %%=============================================================================== 
 %%=============================================================================== 
@@ -1000,7 +1023,7 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 	First =:= 2#00000000 -> {0, Buffer2}; 
 	true -> 
 	    %% have some check here to verify only supported bases (2) 
-	    <<_B7:1,B6:1,B5_4:2,B3_2:2,B1_0:2>> = <<First>>,
+	    <<_B7:1,B6:1,B5_4:2,_B3_2:2,B1_0:2>> = <<First>>,
 		Sign = B6,
 	    Base = 
 		case B5_4 of
@@ -1008,10 +1031,10 @@ decode_real2(Buffer0, Form, Len, RemBytes1) ->
 		    _ -> exit({error,{asn1, {non_supported_base, First}}}) 
 		end, 
 %	    ScalingFactor = 
-		case B3_2 of
-		    0 -> 0;  % no scaling so far  
-		    _ -> exit({error,{asn1, {non_supported_scaling, First}}}) 
-		end, 
+%% 		case B3_2 of
+%% 		    0 -> 0;  % no scaling so far  
+%% 		    _ -> exit({error,{asn1, {non_supported_scaling, First}}}) 
+%% 		end, 
 						%	    ok = io:format("Buffer2: ~w~n",[Buffer2]), 
 	    {FirstLen, {Exp, Buffer3,_Rb2}, RemBytes2} = 
 		case B1_0 of
@@ -1713,6 +1736,8 @@ check_and_convert_restricted_string(Val,StringType,Range,NamedNumberList,_BinOrO
 	{Lb,Ub} when StrLen >= Lb, Ub >= StrLen -> % variable length constraint
 	    NewVal;
 	{{Lb,_Ub},[]} when StrLen >= Lb ->
+	    NewVal;
+	{{Lb,_Ub},_Ext=[MinExt|_]} when StrLen >= Lb; StrLen >= MinExt ->
 	    NewVal;
 	{{Lb1,Ub1},{Lb2,Ub2}} when StrLen >= Lb1, StrLen =< Ub1; 
 				   StrLen =< Ub2, StrLen >= Lb2 ->

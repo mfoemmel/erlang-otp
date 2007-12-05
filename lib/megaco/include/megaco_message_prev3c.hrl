@@ -86,12 +86,17 @@
 	{
 	  transactionId, 
 	  immAckRequired = asn1_NOVALUE, 
-	  transactionResult
+	  transactionResult,
 
 	  %% with extension mark -- v3 --
 
-	  %%  segmentNumber = asn1_NOVALUE,
-	  %%  segmentationComplete = asn1_NOVALUE
+	  %% Erlang Note: NOT REALLY PART OF THIS IMPLEMENTATION
+	  %% Erlang Note: The only reason why we need to include
+	  %% Erlang Note: these definitions in this version is
+	  %% Erlang Note: that we cannot distinguish between v3 
+	  %% Erlang Note: versions in the megaco_messenger module
+	  segmentNumber        = asn1_NOVALUE,
+	  segmentationComplete = asn1_NOVALUE
 	 }). 
 
 

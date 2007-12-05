@@ -180,6 +180,8 @@ handle_call({delete_log,FaultyNodes,_Specs},_From,LD) ->
     {reply,{error,{badarg,FaultyNodes}},LD};
 handle_call({clear,Nodes,Options},_From,LD) ->
     {reply,adapt_reply(LD,do_clear(Nodes,LD,Options)),LD};
+handle_call({flush,Nodes},_From,LD) ->
+    {reply,adapt_reply(LD,do_flush(Nodes,LD)),LD};
 handle_call({stop_nodes,Nodes},_From,LD) ->
     {NewLD,Reply}=do_stop_nodes(Nodes,LD),
     {reply,adapt_reply(NewLD,Reply),NewLD};
@@ -684,6 +686,24 @@ do_clear_2(FaultyNodes,_LD,_Options,_Replies) ->
     {error,{badarg,FaultyNodes}}.
 %% -----------------------------------------------------------------------------
 
+%% Function doing a flush trace-port.
+%% Returns {ok,Replies} or {error,Reason}.
+do_flush(Nodes,LD) ->
+    do_flush_2(started_trace_nodes(Nodes,LD),LD,[]).
+
+do_flush_2([Node|Rest],LD,Replies) ->
+    case get_node_rec(Node,LD) of
+	#node{pid=Pid} ->
+	    do_flush_2(Rest,LD,[{Node,?RUNTIME:flush(Pid)}|Replies]);
+	Error ->
+	    do_flush_2(Rest,LD,[{Node,Error}|Replies])
+    end;
+do_flush_2([],_LD,Replies) ->
+    {ok,lists:reverse(Replies)};
+do_flush_2(FaultyNodes,_LD,_Replies) ->
+    {error,{badarg,FaultyNodes}}.
+%% -----------------------------------------------------------------------------
+
 %% Function stopping runtime components. We can only stop runtime components
 %% belonging to this control component.
 %% Returns {NewLoopdata,Reply}.
@@ -1061,20 +1081,37 @@ log_rec_loop(Dest,Prefix,RTs,Replies,CMRef) ->
 		false ->
 		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
+	{Node,open_failure,{FType,RemoteFName}} ->
+	    case lists:keysearch(Node,1,RTs) of
+		{value,{_,MRef,_,_,_}} ->
+		    {NewRTs,NewReplies}=
+			log_rec_open_failure(Node,MRef,FType,RemoteFName,RTs,Replies),
+		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
+		false ->
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
+	    end;
 	{Node,payload,Bin,FPid} ->          % A chunk of data from a fetcher.
-	    FPid ! {self(),chunk_ack},      % For flow control.
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,_,_,_,void}} ->   % Node has no file open here.
+		    FPid ! {self(),cancel_transmission}, % No use sending more to me.
 		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef); % Simply ignore payload.
 		{value,{_Node,MRef,FType,FName,FD}} ->
-		    {NewRTs,NewReplies}=
-			log_rec_payload(Node,MRef,FType,FName,FD,Bin,RTs,Replies),
-		    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
+		    case log_rec_payload(Node,MRef,FType,FName,FD,Bin,RTs,Replies) of
+			{ok,{NewRTs,NewReplies}} ->
+			    FPid ! {self(),chunk_ack}, % For flow control.
+			    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef);
+			{error,{NewRTs,NewReplies}} ->
+			    FPid ! {self(),cancel_transmission}, % No use sending more to me.
+			    log_rec_loop(Dest,Prefix,NewRTs,NewReplies,CMRef)
+		    end;
 		false ->                    % Node is not part of transfere.
+		    FPid ! {self(),cancel_transmission}, % No use sending more to me.
 		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
 	{Node,end_of_file} ->
 	    case lists:keysearch(Node,1,RTs) of
+		{value,{_,_,_,_,void}} ->   % Node has no file open here.
+		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef);
 		{value,{_,MRef,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
 			log_rec_eof(Node,MRef,FType,FName,FD,RTs,Replies),
@@ -1093,7 +1130,7 @@ log_rec_loop(Dest,Prefix,RTs,Replies,CMRef) ->
 		false ->                    % Strange, not one of our nodes.
 		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
-	{Node,incomplete} ->
+	{Node,incomplete} ->                % This runtime is done (with errors).
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,MRef,FType,FName,FD}} ->
 		    erlang:demonitor(MRef),
@@ -1103,7 +1140,7 @@ log_rec_loop(Dest,Prefix,RTs,Replies,CMRef) ->
 		false ->                    % Not our, or not anylonger.
 		    log_rec_loop(Dest,Prefix,RTs,Replies,CMRef)
 	    end;
-	{Node,error,Reason} ->              % Remote file read_error.
+	{Node,{error,Reason}} ->            % Remote file read_error.
 	    case lists:keysearch(Node,1,RTs) of
 		{value,{_,MRef,FType,FName,FD}} ->
 		    {NewRTs,NewReplies}=
@@ -1158,21 +1195,30 @@ log_rec_open_2(Dest,Prefix,Node,MRef,FType,RemoteFName,RTs,Replies) ->
 	    {NewRTs,NewReplies}
     end.
 
+%% Help function adding a file that was unsuccessfully opened as failed.
+log_rec_open_failure(Node,MRef,FType,RemoteFName,RTs,Replies) ->
+    NewRTs=lists:keyreplace(Node,1,RTs,{Node,MRef,void,void,void}),
+    NewReplies=
+	log_rec_addreply(Node,
+			 FType,
+			 {error,{remote_open,RemoteFName}},Replies),
+    {NewRTs,NewReplies}.
+
 %% Help function whih writes the Bin to the FD file. If writing was unsuccessful,
 %% close the file and modify RTs and add a reply to Replies. Note that we can not
 %% stop the runtime from sending us more data belonging to this file. But we will
 %% simply just inore it from now on.
-%% Returns {NewRTs,NewReplies}.
+%% Returns {SuccessCode,{NewRTs,NewReplies}}.
 log_rec_payload(Node,MRef,FType,FName,FD,Bin,RTs,Replies) ->
     case file:write(FD,Bin) of
 	ok ->
-	    {RTs,Replies};
+	    {ok,{RTs,Replies}};
 	{error,Reason} ->
 	    file:close(FD),
 	    NewRTs=lists:keyreplace(Node,1,RTs,{Node,MRef,void,void,void}),
 	    NewReplies=
 		log_rec_addreply(Node,FType,{error,{file_write,{Reason,FName}}},Replies),
-	    {NewRTs,NewReplies}
+	    {error,{NewRTs,NewReplies}}
     end.
 
 %% Help function whih shall be used when a file has been successfully transfered.

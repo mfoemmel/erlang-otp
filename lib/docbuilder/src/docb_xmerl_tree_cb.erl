@@ -37,16 +37,21 @@
 '#root#'(Data, _Attrs, [], _E) ->
     Data.
 
-'#text#'("\n" ++ Text) -> % Ignore empty lines
-    case is_empty(Text) of
-	true -> [];
-	false -> {pcdata, [], nl("\n" ++ Text)}
-    end;
 '#text#'(Text) ->
-    {pcdata, [], nl(Text)}.
+    Text2 = strip_leading_blanks(Text),
+    case Text2 of
+	[$\n|T] ->
+	    case is_empty(T) of 
+		true -> [];
+		false -> {pcdata, [], nl(Text2)}
+	    end;
+
+	_ ->
+	    {pcdata, [], nl(Text2)}
+    end.
 
 '#element#'(Tag, Data, Attrs, Parents, _E) when Tag==pre; Tag==code ->
-    [H|T] = lists:flatten(Data),
+    [H|T] = reinsert_nl(Data),
     {Tag, attrs(get_dtd(Parents), Tag, Attrs), [strip_nl(H)|T]};
 '#element#'(Tag, Data, Attrs, Parents, _E) ->
     case single_pcdata_tag(Tag) of
@@ -74,6 +79,24 @@ is_empty("") ->
 is_empty(_) ->
     false.
 
+%% reinsert_nl(L1) -> L2
+%% Workaround for <pre>: Normally empty lines are ignored. However,
+%% Xmerl splits lines whenever it encounters an entity. In the case of
+%% <pre>, this may lead to that we ignores what we think is an empty
+%% line but is actually a line break that should be kept, for example
+%% in this case:
+%% <pre>
+%%   <input>some command</input> <-- this line break is lost!
+%%   &lt;some result&gt;
+%% </pre>
+%% This function reinserts line breaks where necessary.
+reinsert_nl([[]|T]) ->
+    [{pcdata,[],"\\n"} | reinsert_nl(T)];
+reinsert_nl([H|T]) ->
+    [H | reinsert_nl(T)];
+reinsert_nl([]) ->
+    [].
+
 %% sgmls treats line breaks in a way that DocBuilder relies on and
 %% which must be imitated here. Replace all "\n" with "\\n" and add
 %% "\n" to the end of each text element.
@@ -83,6 +106,26 @@ nl("\n"++Text) ->
     "\\n"++nl(Text);
 nl([Ch|Text]) ->
     [Ch|nl(Text)].
+
+
+%% strip_leading_blanks(Str) -> Str
+%% Leading spaces and tabs before a newline are always redundant
+%% and are therefore stripped of here
+%% If no newline is found the original string is returned unchanged
+
+strip_leading_blanks(Str) ->
+    strip_leading_blanks(Str,Str).
+
+strip_leading_blanks([],Str) ->
+    Str;
+strip_leading_blanks([$\s|T],Str) ->
+    strip_leading_blanks(T,Str);
+strip_leading_blanks([$\t|T],Str) ->
+    strip_leading_blanks(T,Str);
+strip_leading_blanks(Rest=[$\n|_],_) ->
+    Rest;
+strip_leading_blanks(_,Str) ->
+    Str.
 
 %% strip_nl(Str) -> Str
 %% The XMerL scan will often result in the contents of <pre> or <code>
@@ -191,6 +234,8 @@ default_attrs(_, seealso) ->
 default_attrs(report, table) ->
     [{width, "CDATA", "0"},
      {colspec, "CDATA", ""}];
+default_attrs(_, table) ->
+    [{align, "TOKEN", "center"}];
 default_attrs(_, term) ->
     [{id, "CDATA", ""}]; % required
 default_attrs(book, theheader) ->

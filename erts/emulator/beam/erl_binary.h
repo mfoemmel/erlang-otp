@@ -37,9 +37,10 @@
 typedef struct erl_sub_bin {
     Eterm thing_word;		/* Subtag SUB_BINARY_SUBTAG. */
     Uint size;			/* Binary size in bytes. */
-    Uint bitsize; 
     Uint offs;			/* Offset into original binary. */
-    Uint bitoffs; 
+    byte bitsize; 
+    byte bitoffs; 
+    byte is_writable;		/* The underlying binary is writable */
     Eterm orig;			/* Original binary (REFC or HEAP binary). */
 } ErlSubBin;
 
@@ -164,7 +165,7 @@ byte* erts_get_aligned_binary_bytes(Eterm, byte**);
 #endif
 
 #define ERTS_CHK_BIN_ALIGNMENT(B) \
-  ASSERT((((Uint) &((Binary *)(B))->orig_bytes[0]) & ERTS_BIN_ALIGNMENT_MASK) == ((Uint) 0))
+  do { ASSERT(!(B) || (((Uint) &((Binary *)(B))->orig_bytes[0]) & ERTS_BIN_ALIGNMENT_MASK) == ((Uint) 0)) } while(0)
 
 ERTS_GLB_INLINE void erts_free_aligned_binary_bytes(byte* buf);
 ERTS_GLB_INLINE Uint erts_get_binaries_size(void);
@@ -203,8 +204,8 @@ erts_bin_drv_alloc_fnf(Uint size)
     res = erts_alloc_fnf(ERTS_ALC_T_DRV_BINARY, bsize);
     if (res)
 	erts_allocated_binaries += bsize;
-    ERTS_CHK_BIN_ALIGNMENT(res);
     erts_mtx_unlock(&erts_bin_alloc_mtx);
+    ERTS_CHK_BIN_ALIGNMENT(res);
     return (Binary *) res;
 }
 
@@ -214,32 +215,34 @@ erts_bin_nrml_alloc(Uint size)
     Uint bsize = sizeof(Binary) + size;
     void *res;
     erts_mtx_lock(&erts_bin_alloc_mtx);
-    res = erts_alloc(ERTS_ALC_T_BINARY, bsize);
-    erts_allocated_binaries += bsize;
-    ERTS_CHK_BIN_ALIGNMENT(res);
+    res = erts_alloc_fnf(ERTS_ALC_T_BINARY, bsize);
+    if (res)
+	erts_allocated_binaries += bsize;
     erts_mtx_unlock(&erts_bin_alloc_mtx);
+    if (!res)
+	erts_alloc_n_enomem(ERTS_ALC_T2N(ERTS_ALC_T_BINARY), bsize);
+    ERTS_CHK_BIN_ALIGNMENT(res);
     return (Binary *) res;
 }
 
 ERTS_GLB_INLINE Binary *
 erts_bin_realloc_fnf(Binary *bp, Uint size)
 {
+    Binary *nbp;
     Uint bsize = sizeof(Binary) + size;
-    void *res;
     erts_mtx_lock(&erts_bin_alloc_mtx);
     if (bp->flags & BIN_FLAG_DRV)
-	res = erts_realloc_fnf(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
+	nbp = erts_realloc_fnf(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
     else
-	res = erts_realloc_fnf(ERTS_ALC_T_BINARY, (void *) bp, bsize);
-    if (res) {
-	Binary *nbp = (Binary *) res;
+	nbp = erts_realloc_fnf(ERTS_ALC_T_BINARY, (void *) bp, bsize);
+    if (nbp) {
 	ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
 	erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
 	erts_allocated_binaries += bsize;
-	ERTS_CHK_BIN_ALIGNMENT(res);
     }
     erts_mtx_unlock(&erts_bin_alloc_mtx);
-    return (Binary *) res;
+    ERTS_CHK_BIN_ALIGNMENT(nbp);
+    return nbp;
 }
 
 ERTS_GLB_INLINE Binary *
@@ -247,19 +250,25 @@ erts_bin_realloc(Binary *bp, Uint size)
 {
     Binary *nbp;
     Uint bsize = sizeof(Binary) + size;
-    void *res;
     erts_mtx_lock(&erts_bin_alloc_mtx);
     if (bp->flags & BIN_FLAG_DRV)
-	res = erts_realloc(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
+	nbp = erts_realloc_fnf(ERTS_ALC_T_DRV_BINARY, (void *) bp, bsize);
     else
-	res = erts_realloc(ERTS_ALC_T_BINARY, (void *) bp, bsize);
-    nbp = (Binary *) res;
-    ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
-    erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
-    erts_allocated_binaries += bsize;
-    ERTS_CHK_BIN_ALIGNMENT(res);
+	nbp = erts_realloc_fnf(ERTS_ALC_T_BINARY, (void *) bp, bsize);
+    if (nbp) {
+	ASSERT(erts_allocated_binaries >= sizeof(Binary) + nbp->orig_size);
+	erts_allocated_binaries -= sizeof(Binary) + nbp->orig_size;
+	erts_allocated_binaries += bsize;
+    }
     erts_mtx_unlock(&erts_bin_alloc_mtx);
-    return (Binary *) res;
+    if (!nbp)
+	erts_realloc_n_enomem(ERTS_ALC_T2N(bp->flags & BIN_FLAG_DRV
+					   ? ERTS_ALC_T_DRV_BINARY
+					   : ERTS_ALC_T_BINARY),
+			      bp,
+			      bsize);
+    ERTS_CHK_BIN_ALIGNMENT(nbp);
+    return nbp;
 }
 
 ERTS_GLB_INLINE void

@@ -38,43 +38,43 @@ RELSYSDIR = $(RELEASE_PATH)/lib/inviso-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-SGML_APPLICATION_FILES = application.sgml
-SGML_REF3_FILES = \
-	inviso.sgml \
-	inviso_as_lib.sgml \
-	inviso_lfm.sgml \
-	inviso_lfm_tpfreader.sgml \
-	inviso_rt.sgml \
-	inviso_rt_meta.sgml
+XML_APPLICATION_FILES = ref_man.xml
+XML_REF3_FILES = \
+	inviso.xml \
+	inviso_as_lib.xml \
+	inviso_lfm.xml \
+	inviso_lfm_tpfreader.xml \
+	inviso_rt.xml \
+	inviso_rt_meta.xml
 
-SGML_PART_FILES = part.sgml part_notes.sgml
-SGML_CHAPTER_FILES = inviso_chapter.sgml notes.sgml
+XML_PART_FILES = part.xml part_notes.xml
+XML_CHAPTER_FILES = inviso_chapter.xml notes.xml
 
-BOOK_FILES = book.sgml
+BOOK_FILES = book.xml
 
 GIF_FILES = \
 	inviso_users_guide_pic1.gif
 
 # ----------------------------------------------------
 
-HTML_FILES = $(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_PART_FILES:%.sgml=$(HTMLDIR)/%.html)
+HTML_FILES = $(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_PART_FILES:%.xml=$(HTMLDIR)/%.html)
 
 INFO_FILE = ../../info
 EXTRA_FILES = \
 	$(DEFAULT_GIF_FILES) \
 	$(DEFAULT_HTML_FILES) \
-	$(SGML_REF3_FILES:%.sgml=$(HTMLDIR)/%.html) \
-	$(SGML_CHAPTER_FILES:%.sgml=$(HTMLDIR)/%.html)
+	$(XML_REF3_FILES:%.xml=$(HTMLDIR)/%.html) \
+	$(XML_CHAPTER_FILES:%.xml=$(HTMLDIR)/%.html)
 
-MAN3_FILES = $(SGML_REF3_FILES:%.sgml=$(MAN3DIR)/%.3)
+MAN3_FILES = $(XML_REF3_FILES:%.xml=$(MAN3DIR)/%.3)
 
 TEX_FILES_BOOK = \
-	$(BOOK_FILES:%.sgml=%.tex)
-TEX_FILES_REF_MAN = $(SGML_REF3_FILES:%.sgml=%.tex) \
-	$(SGML_APPLICATION_FILES:%.sgml=%.tex)
+	$(BOOK_FILES:%.xml=%.tex)
+TEX_FILES_REF_MAN = $(XML_REF3_FILES:%.xml=%.tex) \
+	$(XML_APPLICATION_FILES:%.xml=%.tex)
 TEX_FILES_USERS_GUIDE = \
-	$(SGML_CHAPTER_FILES:%.sgml=%.tex)
+	$(XML_CHAPTER_FILES:%.xml=%.tex)
 
 TOP_PDF_FILE = inviso-$(VSN).pdf
 TOP_PS_FILE  = inviso-$(VSN).ps
@@ -88,7 +88,7 @@ $(TOP_PS_FILE): book.dvi ../../vsn.mk
 # ----------------------------------------------------
 # FLAGS 
 # ----------------------------------------------------
-SGML_FLAGS += 
+XML_FLAGS += 
 DVIPS_FLAGS += 
 
 # ----------------------------------------------------
@@ -151,3 +151,7 @@ endif
 endif
 
 release_spec:
+
+
+
+

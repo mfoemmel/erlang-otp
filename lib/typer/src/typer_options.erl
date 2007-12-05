@@ -1,37 +1,62 @@
 %% -*- erlang-indent-level: 2 -*-
-%%--------------------------------------------------------------------
+%%===========================================================================
 %% File        : typer_options.erl
 %% Author      : Bingwen He <Bingwen.He@gmail.com>
 %% Description : Handles all command-line options given to TypEr
-%%--------------------------------------------------------------------
+%%===========================================================================
 
 -module(typer_options).
 
--export([process/0, lookup/2]).
+-export([process/0, option_type/1]).
+
+%%---------------------------------------------------------------------------
 
 -include("typer.hrl").
+-include("typer_options.hrl").
+
+%%---------------------------------------------------------------------------
+%% Exported functions
+%%---------------------------------------------------------------------------
+
+-spec(process/0 :: () -> {#args{}, #analysis{}}).
 
 process() ->
-  Args = init:get_plain_arguments(),
+  ArgList = init:get_plain_arguments(),
   %% io:format("Args is ~p\n",[Args]),
-  analyze_arg(Args, #args{}, #analysis{}).
+  {Args, Analysis} = analyze_args(ArgList, #args{}, #analysis{}),
+  %% if the mode has not been set, set it to the default mode (show)
+  {Args, case Analysis#analysis.mode of
+	   undefined -> Analysis#analysis{mode=?SHOW};
+	   Mode when is_atom(Mode) -> Analysis
+	 end}.
 
-lookup(Elem, Options) ->
-  lists:member(Elem, Options).
+-spec(option_type/1 :: (typer_option()) -> 'for_annotation' | 'for_show').
 
-analyze_arg([], Arg, Analysis) -> {Arg, Analysis};
-analyze_arg(ArgList, Arg, Analysis) ->
-  {Result,Rest} = cl(ArgList),
-  {NewArg,NewAnalysis} = analyze_result(Result, Arg, Analysis),
-  analyze_arg(Rest, NewArg, NewAnalysis).
+option_type(?SHOW) -> for_show;
+option_type(?SHOW_EXPORTED) -> for_show;
+option_type(?ANNOTATE) -> for_annotation;
+option_type(?ANNOTATE_INC_FILES) -> for_annotation.
+
+%%---------------------------------------------------------------------------
+%% Internal functions
+%%---------------------------------------------------------------------------
+
+analyze_args([], Args, Analysis) ->
+  {Args, Analysis};
+analyze_args(ArgList, Args, Analysis) ->
+  {Result, Rest} = cl(ArgList),
+  {NewArgs, NewAnalysis} = analyze_result(Result, Args, Analysis),
+  analyze_args(Rest, NewArgs, NewAnalysis).
 
 cl(["-h"|_])     -> help_message();
 cl(["--help"|_]) -> help_message();
 cl(["-v"|_])        -> version_message();
 cl(["--version"|_]) -> version_message();
-cl(["--show"|Opts]) -> {{mode,show}, Opts};
-cl(["--show-exported"|Opts]) -> {{mode,show_exported}, Opts};
-cl(["--annotate-inc-files"|Opts]) -> {{mode,annotate_inc_files}, Opts};
+cl(["--comments"|Opts]) -> {comments, Opts};
+cl(["--show"|Opts]) -> {{mode,?SHOW}, Opts};
+cl(["--show-exported"|Opts]) -> {{mode,?SHOW_EXPORTED}, Opts};
+cl(["--annotate"|Opts]) -> {{mode,?ANNOTATE}, Opts};
+cl(["--annotate-inc-files"|Opts]) -> {{mode,?ANNOTATE_INC_FILES}, Opts};
 cl(["-D"++Defines|Opts]) ->
   case Defines of
     "" -> typer:error("no defines specified after -D");
@@ -80,11 +105,13 @@ analyze_result({a_dir_r,Val}, Args, Analysis) ->
 analyze_result({trust,Val}, Args, Analysis) -> 
   NewVal = Args#args.trust ++ Val,
   {Args#args{trust=NewVal}, Analysis};
+analyze_result(comments, Args, Analysis) ->
+  {Args, Analysis#analysis{contracts=false}};
 %% Get useful information for actual analysis
-analyze_result({mode,Val}, Args, Analysis) -> 
+analyze_result({mode, Val}, Args, Analysis) -> 
   case Analysis#analysis.mode of
-    [] -> {Args, Analysis#analysis{mode=[Val]}};
-    _  -> mode_error()
+    undefined -> {Args, Analysis#analysis{mode=Val}};
+    _ -> mode_error()
   end;
 analyze_result({macros,Val}, Args, Analysis) ->
   NewVal = Analysis#analysis.macros ++ [Val],
@@ -96,32 +123,35 @@ analyze_result({inc,Val}, Args, Analysis) ->
 %%--------------------------------------------------------------------
 
 mode_error() ->
-  typer:error("can not do \"show\", \"show-exported\", and \"annotate-inc-files\" at the same time").
+  typer:error("can not do \"show\", \"show-exported\", \"annotate\", and \"annotate-inc-files\" at the same time").
   
 version_message() ->
   io:format("TypEr version "++?VSN++"\n"),
   erlang:halt(0).
 
 help_message() ->
-  S = " Usage: typer [--help] [--version]
-              [--show | --show-exported | --annotate-inc-files]
+  S = " Usage: typer [--help] [--version] [--comments]
+              [--show | --show-exported | --annotate | --annotate-inc-files]
               [-Ddefine]* [-I include_dir]* [-T application]* [-r] file*
 
  Options:
-   -r
-       type annotate application(s) searching their directories
-       recursively for .erl files
+   -r dir*
+       search directories recursively for .erl files below them
    --show
-       Prints on the current output the types of all functions in the
-       file(s) that are analyzed (default is to annotate these files)
+       Prints type contracts for all functions on stdout.
+       (this is the default behaviour; this option is not really needed)
    --show-exported
-       Same as --show, but only prints types of exported functions
+       Same as --show, but prints contracts for exported functions only
+   --annotate
+       Annotates the specified files with type contracts
    --annotate-inc-files
-       Annotates all -include() files as well as all .erl files that
-       are analyzed
+       Same as --annotate but annotates all -include() files as well as
+       all .erl files (use this option with caution)
+   --comments
+       Print type information using comments, not type contracts
    -T file*
        The file(s) already contain type annotations and these annotations
-       are to be trusted in order to type annotate the rest of the files
+       are to be trusted in order to print contracts for the rest of the files
        (Multiple files or dirs, separated by spaces, can be specified.)
    -Dname (or -Dname=value)
        pass the defined name(s) to TypEr

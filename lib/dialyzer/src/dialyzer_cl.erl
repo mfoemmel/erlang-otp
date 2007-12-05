@@ -31,11 +31,12 @@
 -include("dialyzer.hrl").
 
 -record(cl_state, {backend_pid,
-		   init_plt,
 		   legal_warnings=[],
+		   mod_deps,
 		   nof_warnings=0::integer(),
 		   output=standard_io,
 		   output_plt,
+		   plt_info={none,none,none},
 		   quiet::bool(),
 		   return_status=?RET_NOTHING_SUSPICIOUS::integer(),
 		   stored_errors=do_not_store,
@@ -50,7 +51,7 @@ start(#options{} = DialyzerOptions) ->
       true -> [];
       false -> do_not_store
     end,
-  State = new_state(DialyzerOptions#options.init_plt),
+  State = new_state(),
   NewState1 = init_output(State, DialyzerOptions),  
   NewState2 = 
     NewState1#cl_state{legal_warnings=DialyzerOptions#options.legal_warnings,
@@ -88,7 +89,7 @@ check_init_plt(Opts, Force) ->
 	  InclDirs = Opts#options.include_dirs,
 	  {T1, _} = statistics(wall_clock),
 	  Ret =
-	    case create_init_plt(MD5, Libs, InitPlt, InclDirs) of
+	    case create_init_plt(MD5, DiffMd5, Libs, InitPlt, InclDirs) of
 	      ?RET_INTERNAL_ERROR ->
 		error("Problems during consistency check of initial PLT");
 	      ?RET_NOTHING_SUSPICIOUS -> ?RET_NOTHING_SUSPICIOUS;
@@ -142,28 +143,93 @@ check_if_installed() ->
     "dialyzer-" ++ _Version -> true
   end.  
 
-create_init_plt(MD5, Libs, InitPlt, IncludeDirs) ->  
-  hipe_compile(),
-  State = new_state_no_init(),
-  State1 = State#cl_state{output_plt=InitPlt},
-  Files = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
-  Analysis = #analysis{files=Files, 
-		       init_plt=dialyzer_plt:new(dialyzer_empty_plt),
-		       include_dirs=IncludeDirs,
-		       plt_info={MD5, Libs},
-		       start_from=byte_code,
-		       type=plt_build,
-		       user_plt=State1#cl_state.user_plt,
-		       supress_inline=true},
-  cl_loop(run_analysis(State1, Analysis)).
+create_init_plt(MD5, none, Libs, InitPltFile, IncludeDirs) ->
+  PltInfo = {MD5, Libs, dict:new()},
+  State = new_state(PltInfo),
+  State1 = State#cl_state{output_plt=InitPltFile},
+  Dirs = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
+  Files1 = [{D, file:list_dir(D)} || D <- Dirs],
+  Files2 = [[filename:join(D, F2) || F2 <- F] || {D, {ok, F}} <- Files1],
+  Files3 = lists:append(Files2),
+  BeamFiles = [F || F <- Files3, filename:extension(F) =:= ".beam"],
+  InitPlt = dialyzer_plt:new(),
+  create_init_plt_common(State1, BeamFiles, IncludeDirs, InitPlt);
+create_init_plt(MD5, DiffMd5, Libs, InitPltFile, IncludeDirs) ->
+  ChangedMods = ordsets:from_list([M || {diff, M} <- DiffMd5]),
+  AddedMods = ordsets:from_list([M || {new, M} <- DiffMd5]),
+  RemovedMods = ordsets:from_list([M || {removed, M} <- DiffMd5]),
+  ModDeps = dialyzer_plt:get_mod_deps(InitPltFile),
+  AnalyzeMods = expand_dependent_module(ChangedMods, AddedMods, 
+					RemovedMods, ModDeps),
+  Dirs = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
+  Files1 = [{D, file:list_dir(D)} || D <- Dirs],
+  Files2 = [[filename:join(D, F2) || F2 <- F] || {D, {ok, F}} <- Files1],
+  Files3 = lists:append(Files2),
+  BeamFiles = [{F, list_to_atom(filename:basename(F, ".beam"))} 
+	       || F <- Files3, filename:extension(F) =:= ".beam"],
+  AnalFiles = [F || {F, Mod} <- BeamFiles, 
+		    ordsets:is_element(Mod, AnalyzeMods)],
+  %% Clean the plt and the mod deps from the removed modules.
+  InitPlt = dialyzer_plt:from_file(InitPltFile),
+  {NewInitPlt, NewModDeps} = 
+    lists:foldl(fun(M, {AccPlt, AccModDeps}) -> 
+		    {dialyzer_plt:delete_module(AccPlt, M),
+		     dict:erase(M, AccModDeps)}
+		end, {InitPlt, ModDeps}, RemovedMods),
+  PltInfo = {MD5, Libs, NewModDeps},
+  State = new_state(PltInfo),
+  State1 = State#cl_state{output_plt=InitPltFile},
+  create_init_plt_common(State1, AnalFiles, IncludeDirs, NewInitPlt).
 
-hipe_compile() ->
+create_init_plt_common(State, Files, IncludeDirs, InitPlt) ->
+  %%io:format("Files: ~p\n", [Files]),
+  case Files =:= [] of
+    true ->
+      %% We have only removed files with no remaining dependencies.
+      return_value(State#cl_state{user_plt=InitPlt});
+    false ->
+      hipe_compile(Files),
+      Analysis = #analysis{files=Files, 
+			   init_plt=InitPlt,
+			   include_dirs=IncludeDirs,
+			   start_from=byte_code,
+			   type=plt_build,
+			   user_plt=State#cl_state.user_plt,
+			   supress_inline=true},
+      cl_loop(run_analysis(State, Analysis))
+  end.
+
+expand_dependent_module(ChangedMods, AddedMods, RemovedMods, ModDeps) ->
+  BigSet = lists:sort(ChangedMods++AddedMods++RemovedMods),
+  ExpandedSet = expand_dependent_module(BigSet, BigSet, ModDeps),
+  ordsets:subtract(ExpandedSet, RemovedMods).
+			
+expand_dependent_module([Mod|Left], Included, ModDeps) ->
+  case dict:find(Mod, ModDeps) of
+    {ok, Deps} ->
+      case ordsets:subtract(Deps, Included) of
+	[] -> 
+	  expand_dependent_module(Left, Included, ModDeps);
+	NewDeps -> 
+	  NewIncluded = ordsets:union(Included, NewDeps),
+	  expand_dependent_module(NewDeps ++ Left, NewIncluded, ModDeps)
+      end;
+    error ->
+      expand_dependent_module(Left, Included, ModDeps)
+  end;
+expand_dependent_module([], Included, _ModDeps) ->
+  Included.
+
+-define(MIN_FILES_FOR_NATIVE_COMPILE, 20).
+
+hipe_compile(Files) when length(Files) > ?MIN_FILES_FOR_NATIVE_COMPILE ->
   case erlang:system_info(hipe_architecture) of
     undefined -> ok;
     ultrasparc -> ok;
     _ ->
       {ok, lists}                       = hipe:c(lists),
       {ok, dict}                        = hipe:c(dict),
+      {ok, gb_trees}                    = hipe:c(gb_trees),
       {ok, dialyzer_succ_typings}       = hipe:c(dialyzer_succ_typings),
       {ok, dialyzer_analysis_callgraph} = hipe:c(dialyzer_analysis_callgraph),
       {ok, dialyzer_typesig}            = hipe:c(dialyzer_typesig),
@@ -173,18 +239,16 @@ hipe_compile() ->
       {ok, erl_bif_types}               = hipe:c(erl_bif_types),
       {ok, cerl}                        = hipe:c(cerl, [no_concurrent_comp]),
       ok
-  end.
+  end;
+hipe_compile(_Files) ->
+  ok.
 
-new_state(InitPlt) ->
-  NewInitPlt = dialyzer_plt:from_file(dialyzer_init_plt, InitPlt),
-  new_state1(NewInitPlt).
+new_state() ->
+  new_state(none).
 
-new_state_no_init() ->
-  new_state1(none).
-
-new_state1(InitPlt) ->
-  UserPLT = dialyzer_plt:new(dialyzer_user_plt),
-  #cl_state{user_plt=UserPLT, init_plt=InitPlt}.
+new_state(PltInfo) ->
+  UserPLT = dialyzer_plt:new(),
+  #cl_state{user_plt=UserPLT, mod_deps=dict:new(), plt_info=PltInfo}.
 
 init_output(State, DialyzerOptions) ->
   case DialyzerOptions#options.output_file of
@@ -212,38 +276,48 @@ maybe_close_output_file(State) ->
 %%  Main Loop
 %%
 
+-define(LOG_CACHE_SIZE, 10).
+
 cl_loop(State) ->
+  cl_loop(State, []).
+
+cl_loop(State, LogCache) ->
   BackendPid = State#cl_state.backend_pid,
   receive
-    {BackendPid, log, _LogMsg} ->
-      %% io:format(State#cl_state.output ,"Log: ~s", [_LogMsg]),
-      cl_loop(State);
+    {BackendPid, log, LogMsg} ->
+      %%io:format(State#cl_state.output ,"Log: ~s\n", [LogMsg]),
+      cl_loop(State, lists:sublist([LogMsg|LogCache], ?LOG_CACHE_SIZE));
     {BackendPid, warnings, Warnings} ->
       NewState = store_warnings(State, Warnings),
-      cl_loop(NewState);
+      cl_loop(NewState, LogCache);
     {BackendPid, error, Msg} ->
       State1 = store_error(State, Msg),
-      cl_loop(State1#cl_state{return_status=?RET_INTERNAL_ERROR});
-    {BackendPid, done} ->
-      return_value(State);
+      cl_loop(State1#cl_state{return_status=?RET_INTERNAL_ERROR}, LogCache);
+    {BackendPid, done, NewPlt, _NewDocPlt} ->
+      return_value(State#cl_state{user_plt=NewPlt});
     {BackendPid, ext_calls, ExtCalls} ->
       Msg = io_lib:format("Unknown functions: ~p\n", [ExtCalls]),
       NewState = print_ext_calls(State, Msg),
-      cl_loop(NewState);
+      cl_loop(NewState, LogCache);
+    {BackendPid, mod_deps, ModDeps} ->
+      NewState = State#cl_state{mod_deps=ModDeps},
+      cl_loop(NewState, LogCache);
     {'EXIT', BackendPid, {error, Reason}} ->
-      Msg = failed_anal_msg(Reason),
+      Msg = failed_anal_msg(Reason, LogCache),
       error(State, Msg);
     {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
-      Msg = failed_anal_msg(Reason),
+      Msg = failed_anal_msg(Reason, LogCache),
       maybe_close_output_file(State),
       error(State, Msg);
     _Other ->
       %% io:format("Received ~p\n", [_Other]),
-      cl_loop(State)
+      cl_loop(State, LogCache)
   end.
 
-failed_anal_msg(Reason) ->
-  io_lib:format("Analysis failed with error report:\n\t~P", [Reason, 12]).
+failed_anal_msg(Reason, LogCache) ->
+  io_lib:format("Analysis failed with error report:\n\t~P\n"
+		"Last messages in log cache: ~p\n", 
+		[Reason, 12, lists:reverse(LogCache)]).
 
 print_ext_calls(State = #cl_state{quiet=true}, _Msg) ->
   State;
@@ -304,9 +378,11 @@ error(State, Msg) ->
   throw({dialyzer_error, Msg}).
 
 return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
+			       mod_deps=ModDeps,
+			       plt_info=PltInfo,
 			       stored_errors=StoredErrors,
 			       stored_warnings=StoredWarnings,
-			       user_plt=UserPlt, init_plt=InitPlt}) ->
+			       user_plt=UserPlt}) ->
   maybe_close_output_file(State),
   RetValue =
     case State#cl_state.return_status of
@@ -314,8 +390,7 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
       _ ->      
 	case OutputPlt =:= undefined of
 	  true -> ok;
-	  false ->
-	    dialyzer_plt:merge_and_write_file([InitPlt, UserPlt], OutputPlt)
+	  false -> dialyzer_plt:to_file(OutputPlt, UserPlt, ModDeps, PltInfo)
 	end,
 	if NofWarnings =:= 0 -> ?RET_NOTHING_SUSPICIOUS;
 	   true              -> ?RET_DISCREPANCIES_FOUND
@@ -350,7 +425,7 @@ build_analysis_record(State, DialyzerOptions) ->
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
   AnalType = DialyzerOptions#options.analysis_type,
-  InitPlt = State#cl_state.init_plt,
+  InitPlt = dialyzer_plt:from_file(DialyzerOptions#options.init_plt),
   #analysis{type=AnalType,
 	    defines=Defines,
 	    include_dirs=IncludeDirs, init_plt=InitPlt, user_plt=PLT, 

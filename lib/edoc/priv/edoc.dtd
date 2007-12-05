@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="ISO-8859-1"?>
-<!-- EDoc DTD Version 0.2 -->
+<!-- EDoc DTD Version 0.3 -->
 
 <!ELEMENT overview (title, description?, author*, copyright?, version?,
                     since?, see*, reference*, todo?, packages, modules)>
@@ -18,7 +18,7 @@
 <!ELEMENT modules (module+)>
 
 
-<!ELEMENT module (description?, author*, copyright?, version?,
+<!ELEMENT module (args?, description?, author*, copyright?, version?,
 		  since?, deprecated?, see*, reference*, todo?,
 		  behaviour*, callbacks?, typedecls?, functions)>
 <!ATTLIST module

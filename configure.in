@@ -160,6 +160,47 @@ AC_ARG_ENABLE(erlang-mandir,
   esac ], erl_mandir='$(ERLANG_ILIBDIR)/man')
 AC_SUBST(erl_mandir)
 
+AC_ARG_ENABLE(darwin-universal,
+[  --enable-darwin-universal    build universal binaries on darwin i386],
+[ case "$enableval" in
+    no) enable_darwin_universal=no ;;
+    *)  enable_darwin_univeral=yes ;;
+  esac
+],enable_darwin_universal=no)
+
+
+AC_ARG_ENABLE(darwin-64bit,
+[  --enable-darwin-64bit    build 64bit binaries on darwin],
+[ case "$enableval" in
+    no) enable_darwin_64bit=no ;;
+    *)  enable_darwin_64bit=yes ;;
+  esac
+],enable_darwin_64bit=no)
+
+dnl OK, we might have darwin switches off different kinds, lets 
+dnl check it all before continuing.
+TMPSYS=`uname -s`-`uname -m`
+if test X${enable_darwin_universal} = Xyes; then
+	if test X${enable_darwin_64bit} = Xyes; then
+		AC_MSG_ERROR([--enable-darwin-universal and --enable-darwin-64bit mutually exclusive])
+	fi
+	enable_hipe=no
+	CFLAGS="-arch i386 -arch ppc $CFLAGS"
+	export CFLAGS
+	LDFLAGS="-arch i386 -arch ppc $LDFLAGS"
+	export LDFLAGS
+fi
+if test X${enable_darwin_64bit} = Xyes; then
+	if test X"$TMPSYS" '!=' X"Darwin-i386"; then
+		AC_MSG_ERROR([--enable-darwin-64bit only supported on x86 host])	
+	fi
+	enable_hipe=no
+	CFLAGS="-m64"
+	export CFLAGS
+	LDFLAGS="-m64 $LDFLAGS"
+	export LDFLAGS
+fi
+
 export ERL_TOP
 AC_CONFIG_SUBDIRS(lib erts)
 

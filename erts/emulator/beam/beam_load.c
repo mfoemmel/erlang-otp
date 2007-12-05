@@ -200,10 +200,34 @@ typedef struct {
  */
 
 typedef struct {
-    byte* ext;			/* Pointer to external format. */
-    Eterm term;			/* The tagged term (in the literal heap). */
+    Eterm term;			/* The tagged term (in the heap). */
     Uint heap_size;		/* (Exact) size on the heap. */
+    Uint offset;		/* Offset from temporary location to final. */
+    Eterm* heap;		/* Heap for term. */
 } Literal;
+
+/*
+ * This structure keeps information about an operand that needs to be
+ * patched to contain the correct address of a literal when the code is
+ * frozen.
+ */
+
+typedef struct literal_patch LiteralPatch;
+struct literal_patch {
+    int pos;			/* Position in code */
+    LiteralPatch* next;
+};
+
+/*
+ * This structure keeps information about an operand that needs to be
+ * patched to contain the correct address for an address into the string table.
+ */
+
+typedef struct string_patch StringPatch;
+struct string_patch {
+    int pos;			/* Position in code */
+    StringPatch* next;
+};
 
 /*
  * This structure contains all information about the module being loaded.
@@ -252,11 +276,8 @@ typedef struct {
     int ci;			/* Current index into loaded code. */
     Label* labels;
     Uint put_strings;		/* Linked list of put_string instructions. */
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    Uint bs_put_strings;	/* Linked list of i_bs_put_string instructions. */
-#endif
     Uint new_bs_put_strings;	/* Linked list of i_new_bs_put_string instructions. */
-    Uint put_literals;		/* Linked list of i_put_literal instructions. */
+    StringPatch* string_patches; /* Linked list of position into string table to patch. */
     Uint catches;		/* Linked list of catch_yf instructions. */
     unsigned loaded_size;	/* Final size of code when loaded. */
     byte mod_md5[16];		/* MD5 for module code. */
@@ -282,14 +303,6 @@ typedef struct {
     GenOpBlock* genop_blocks;	/* List of all block of allocated genops. */
 
     /*
-     * Heap for floats and bignums.
-     */
-
-    Uint* temp_heap;		/* Pointer to base of temporary heap. */
-    Uint temp_heap_top;		/* Index of next free word on heap. */
-    Uint temp_heap_size;	/* Points to the word beyond the heap. */
-
-    /*
      * Lambda table.
      */
 
@@ -304,14 +317,10 @@ typedef struct {
      */
 
     int num_literals;		/* Number of literals in table. */
+    int allocated_literals;	/* Number of literal entries allocated. */
     Literal* literals;		/* Array of literals. */
-    Eterm* literal_heap;	/* Heap for literal terms. */
-    Uint literal_heap_size;
-
-    /*
-     * Bit syntax.
-     */
-    int new_instructions;	/* New instructions are currently used. */
+    LiteralPatch* literal_patches; /* Operands that need to be patched. */
+    Uint total_literal_size;	/* Total heap size for all literals. */
 
     /*
      * Floating point.
@@ -340,11 +349,6 @@ typedef struct {
       } \
    } while (0)
 
-#define TempAlloc(Stp, Sz) \
-    (((Stp)->temp_heap_size <= ((Stp)->temp_heap_top + (Sz))) ? \
-        temp_alloc((Stp), (Sz)) : \
-        ((Stp)->temp_heap_top = (Stp)->temp_heap_top + (Sz), \
-         (Stp)->temp_heap_top - (Sz)))
 
 #define LoadError0(Stp, Fmt) \
     do { \
@@ -450,10 +454,10 @@ typedef struct {
   } while (0)
 
 
-static int bin_load(Process *c_p, Uint32 c_p_locks,
+static int bin_load(Process *c_p, ErtsProcLocks c_p_locks,
 		    Eterm group_leader, Eterm* modp, byte* bytes, int unloaded_size);
 static void init_state(LoaderState* stp);
-static int insert_new_code(Process *c_p, Uint32 c_p_locks,
+static int insert_new_code(Process *c_p, ErtsProcLocks c_p_locks,
 			   Eterm group_leader, Eterm module,
 			   Eterm* code, Uint size, Uint catches);
 static int scan_iff_file(LoaderState* stp, Uint* chunk_types,
@@ -477,11 +481,9 @@ static GenOp* const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
 			       GenOpArg Size, GenOpArg* Rest);
 static GenOp* gen_func_info(LoaderState* stp, GenOpArg mod, GenOpArg Func,
 			    GenOpArg arity, GenOpArg label);
-#if defined(HEAP_FRAG_ELIM_TEST)
 static GenOp*
 gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
 	      GenOpArg Src, GenOpArg Dst);
-#endif
 
 static int freeze_code(LoaderState* stp);
 
@@ -493,8 +495,10 @@ static void id_to_string(Uint id, char* s);
 static void new_genop(LoaderState* stp);
 static int get_int_val(LoaderState* stp, Uint len_code, Uint* result);
 static int get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result);
-static Uint temp_alloc(LoaderState* stp, unsigned needed);
 static int new_label(LoaderState* stp);
+static void new_literal_patch(LoaderState* stp, int pos);
+static void new_string_patch(LoaderState* stp, int pos);
+static Uint new_literal(LoaderState* stp, Eterm** hpp, Uint heap_size);
 static int genopargcompare(GenOpArg* a, GenOpArg* b);
 static Eterm exported_from_module(Process* p, Eterm mod);
 static Eterm functions_in_module(Process* p, Eterm mod);
@@ -504,6 +508,7 @@ static Eterm native_addresses(Process* p, Eterm mod);
 int patch_funentries(Eterm Patchlist);
 int patch(Eterm Addresses, Uint fe);
 static int safe_mul(Uint a, Uint b, Uint* resp);
+
 
 static int must_swap_floats;
 
@@ -549,7 +554,7 @@ define_file(LoaderState* stp, char* name, int idx)
 
 int
 erts_load_module(Process *c_p,
-		 Uint32 c_p_locks,
+		 ErtsProcLocks c_p_locks,
 		 Eterm group_leader, /* Group leader or NIL if none. */
 		 Eterm* modp,	/*
 				 * Module name as an atom (NIL to not check).
@@ -583,7 +588,7 @@ erts_load_module(Process *c_p,
 
 
 static int
-bin_load(Process *c_p, Uint32 c_p_locks,
+bin_load(Process *c_p, ErtsProcLocks c_p_locks,
 	 Eterm group_leader, Eterm* modp, byte* bytes, int unloaded_size)
 {
     LoaderState state;
@@ -709,17 +714,27 @@ bin_load(Process *c_p, Uint32 c_p_locks,
     if (state.export != NULL) {
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.export);
     }
-    if (state.temp_heap != NULL) {
-	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.temp_heap);
-    }
     if (state.lambdas != state.def_lambdas) {
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.lambdas);
     }
     if (state.literals != NULL) {
+	int i;
+	for (i = 0; i < state.num_literals; i++) {
+	    if (state.literals[i].heap != NULL) {
+		erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literals[i].heap);
+	    }
+	}
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literals);
     }
-    if (state.literal_heap != NULL) {
-	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literal_heap);
+    while (state.literal_patches != NULL) {
+	LiteralPatch* next = state.literal_patches->next;
+	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.literal_patches);
+	state.literal_patches = next;
+    }
+    while (state.string_patches != NULL) {
+	StringPatch* next = state.string_patches->next;
+	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) state.string_patches);
+	state.string_patches = next;
     }
     while (state.genop_blocks) {
 	GenOpBlock* next = state.genop_blocks->next;
@@ -745,22 +760,21 @@ init_state(LoaderState* stp)
     stp->export = NULL;
     stp->free_genop = NULL;
     stp->genop_blocks = NULL;
-    stp->temp_heap = NULL;
-    stp->temp_heap_top = 0;
-    stp->temp_heap_size = 0;
     stp->num_lambdas = 0;
     stp->lambdas_allocated = sizeof(stp->def_lambdas)/sizeof(Lambda);
     stp->lambdas = stp->def_lambdas;
     stp->lambda_error = NULL;
     stp->num_literals = 0;
+    stp->allocated_literals = 0;
     stp->literals = 0;
-    stp->literal_heap = 0;
-    stp->literal_heap_size = 0;
+    stp->total_literal_size = 0;
+    stp->literal_patches = 0;
+    stp->string_patches = 0;
     stp->new_float_instructions = 0;
 }
 
 static int
-insert_new_code(Process *c_p, Uint32 c_p_locks,
+insert_new_code(Process *c_p, ErtsProcLocks c_p_locks,
 		Eterm group_leader, Eterm module, Eterm* code, Uint size, Uint catches)
 {
     Module* modp;
@@ -1202,8 +1216,6 @@ static int
 read_literal_table(LoaderState* stp)
 {
     int i;
-    Uint total_heap_sz = 0;
-    Eterm* hp;
     Uint uncompressed_sz;
     byte* uncompressed = 0;
 
@@ -1218,37 +1230,37 @@ read_literal_table(LoaderState* stp)
     GetInt(stp, 4, stp->num_literals);
     stp->literals = (Literal *) erts_alloc(ERTS_ALC_T_LOADER_TMP,
 					   stp->num_literals * sizeof(Literal));
-    for (i = 0; i < stp->num_literals; i++) {
-	int sz;
-	int heap_size;
-	byte* p;
+    stp->allocated_literals = stp->num_literals;
 
-	GetInt(stp, 4, sz);	/* Size of external term format. */
-	stp->literals[i].ext = stp->file_p;
-	GetString(stp, p, sz);
-	if ((heap_size = decode_size(p, sz)) < 0) {
-	    LoadError1(stp, "literal %d: bad external format", i);
-	}
-	total_heap_sz += heap_size;
+    for (i = 0; i < stp->num_literals; i++) {
+	stp->literals[i].heap = 0;
     }
 
-    hp = stp->literal_heap = (Eterm *) erts_alloc(ERTS_ALC_T_LOADER_TMP,
-						    total_heap_sz*sizeof(Eterm));
     for (i = 0; i < stp->num_literals; i++) {
+	int sz;
+	Sint heap_size;
+	byte* p;
 	Eterm val;
-	Eterm* prev_hp = hp;
+	Eterm* hp;
 
-	val = erts_from_external_format(NULL, &hp, &stp->literals[i].ext, NULL);
+	GetInt(stp, 4, sz);	/* Size of external term format. */
+	GetString(stp, p, sz);
+	if ((heap_size = erts_decoded_size(p, sz, 1)) < 0) {
+	    LoadError1(stp, "literal %d: bad external format", i);
+	}
+	hp = stp->literals[i].heap = erts_alloc(ERTS_ALC_T_LOADER_TMP,
+						heap_size*sizeof(Eterm));
+	val = erts_from_external_format(NULL, &hp, &p, NULL);
+	stp->literals[i].heap_size = hp - stp->literals[i].heap;
+	if (stp->literals[i].heap_size > heap_size) {
+	    erl_exit(1, "overrun by %d word(s) for literal heap, term %d",
+		     stp->literals[i].heap_size - heap_size, i);
+	}
 	if (is_non_value(val)) {
 	    LoadError1(stp, "literal %d: bad external format", i);
 	}
 	stp->literals[i].term = val;
-	stp->literals[i].heap_size = hp - prev_hp;
-    }
-    stp->literal_heap_size = hp - stp->literal_heap;
-    if (stp->literal_heap_size > total_heap_sz) {
-	erl_exit(1,  "overrun by %d word(s) for literals heap",
-		 stp->literal_heap_size - total_heap_sz);
+	stp->total_literal_size += stp->literals[i].heap_size;
     }
     erts_free(ERTS_ALC_T_TMP, uncompressed);
     return 1;
@@ -1335,11 +1347,7 @@ read_code_header(LoaderState* stp)
     stp->code[MI_NUM_BREAKPOINTS] = 0;
 
     stp->put_strings = 0;
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    stp->bs_put_strings = 0;
-#endif
     stp->new_bs_put_strings = 0;
-    stp->put_literals = 0;
     stp->catches = 0;
     return 1;
 
@@ -1401,6 +1409,7 @@ load_code(LoaderState* stp)
 	if (gen_opc[new_op].name[0] == '\0') {
 	    LoadError1(stp, "invalid opcode %d", new_op);
 	}
+				       
 
 	/*
 	 * Create a new generic operation and put it last in the chain.
@@ -1515,13 +1524,18 @@ load_code(LoaderState* stp)
 		    GetValue(stp, first, ext_tag);
 		    switch (ext_tag) {
 		    case 0:	/* Floating point number */
-#ifdef ARCH_64
-			last_op->a[arg].type = TAG_o;
-			GetInt(stp, 8, last_op->a[arg].val);
-#else
 			{
-			    Uint hp;
+			    Eterm* hp;
+# ifndef ARCH_64
 			    Uint high, low;
+# endif
+			    last_op->a[arg].val = new_literal(stp, &hp,
+							      FLOAT_SIZE_OBJECT);
+			    hp[0] = HEADER_FLONUM;
+			    last_op->a[arg].type = TAG_q;
+# ifdef ARCH_64
+			    GetInt(stp, 8, hp[1]);
+# else
 			    GetInt(stp, 4, high);
 			    GetInt(stp, 4, low);
 			    if (must_swap_floats) {
@@ -1529,13 +1543,10 @@ load_code(LoaderState* stp)
 				high = low;
 				low = t;
 			    }
-			    hp = TempAlloc(stp, 2);
-			    stp->temp_heap[hp] = high;
-			    stp->temp_heap[hp+1] = low;
-			    last_op->a[arg].type = TAG_o;
-			    last_op->a[arg].val = hp;
+			    hp[1] = high;
+			    hp[2] = low;
+# endif
 			}
-#endif
 			break;
 		    case 1:	/* List. */
 			if (arg+1 != arity) {
@@ -1580,22 +1591,32 @@ load_code(LoaderState* stp)
 				    words += FLOAT_SIZE_OBJECT*val;
 				    break;
 				case 2:
-				    if (val >= stp->num_literals) {
-					LoadError1(stp, "alloc list: bad literal "
-						   "index %d", val);
-				    }
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-				    words += stp->literals[val].heap_size;
-#endif
+				    LoadError0(stp, "the code was compiled with an "
+					       "unofficial compiler (R11B with "
+					       "+constant_pool or a development version "
+					       "of R12B).");
 				    break;
 				default:
-				    LoadError1(stp, "alloc list: bad allocation descriptor %d", type);
+				    LoadError1(stp, "alloc list: bad allocation "
+					       "descriptor %d", type);
 				    break;
 				}
 			    }
 			    last_op->a[arg].type = TAG_u;
 			    last_op->a[arg].val = words;
+			    break;
+			}
+		    case 4:	/* Literal. */
+			{
+			    Uint val;
+
+			    GetTagAndValue(stp, tag, val);
+			    VerifyTag(stp, tag, TAG_u);
+			    if (val >= stp->num_literals) {
+				LoadError1(stp, "bad literal index %d", val);
+			    }
+			    last_op->a[arg].type = TAG_q;
+			    last_op->a[arg].val = val;
 			    break;
 			}
 		    default:
@@ -1655,11 +1676,7 @@ load_code(LoaderState* stp)
 	 * Special error message instruction.
 	 */
 	if (stp->genop->op == genop_too_old_compiler_0) {
-#if defined(HEAP_FRAG_ELIM_TEST)
-	    LoadError0(stp, "please re-compile this module with an R11B compiler");
-#else
-	    LoadError0(stp, "this module was compiled by an obsolete compiler (R5B/R6B); please re-compile it");
-#endif	    
+	    LoadError0(stp, "please re-compile this module with an R12B compiler");
 	}
 
 	/*
@@ -1668,13 +1685,15 @@ load_code(LoaderState* stp)
 	 */
 
 	{
-	    Uint mask[3] = {0, 0, 0};
+	    Uint32 mask[3] = {0, 0, 0};
 
 	    tmp_op = stp->genop;
 	    arity = gen_opc[tmp_op->op].arity;
-	    ASSERT(arity <= 6);
+	    if (arity > 6) {
+		LoadError0(stp, "no specific operation found (arity > 6)");
+	    }
 	    for (arg = 0; arg < arity; arg++) {
-		mask[arg/2] |= (1 << (tmp_op->a[arg].type)) << ((arg%2)*16);
+		mask[arg/2] |= ((Uint32)1 << (tmp_op->a[arg].type)) << ((arg%2)*16);
 	    }
 	    specific = gen_opc[tmp_op->op].specific;
 	    num_specific = gen_opc[tmp_op->op].num_specific;
@@ -1686,6 +1705,10 @@ load_code(LoaderState* stp)
 		}
 		specific++;
 	    }
+
+	    /*
+	     * No specific operation found.
+	     */
 	    if (i == num_specific) {
 		stp->specific_op = -1;
 		for (arg = 0; arg < tmp_op->arity; arg++) {
@@ -1697,6 +1720,16 @@ load_code(LoaderState* stp)
 			LoadError0(stp, "the character data type not supported");
 		    }
 		}
+
+		/*
+		 * No specific operations and no transformations means that
+		 * the instruction is obsolete.
+		 */
+		if (num_specific == 0 && gen_opc[tmp_op->op].transform == -1) {
+		    LoadError0(stp, "please re-compile this module with an "
+			       "R12B compiler ");
+		}
+
 		LoadError0(stp, "no specific operation found");
 	    }
 
@@ -1736,21 +1769,6 @@ load_code(LoaderState* stp)
 		VerifyTag(stp, tag_to_letter[tag], *sign);
 		code[ci++] = tmp_op->a[arg].val;
 		break;
-	    case 'w':		/* Big number */
-		{
-		    Eterm* bigp;
-		    Uint size;
-
-		    VerifyTag(stp, tag_to_letter[tag], *sign);
-		    bigp = stp->temp_heap+tmp_op->a[arg].val;
-		    size = thing_arityval(*bigp);
-		    code[ci++] = *bigp++;
-		    Need(size+50);
-		    while (size-- > 0) {
-			code[ci++] = *bigp++;
-		    }
-		}
-		break;
 	    case 'c':		/* Tagged constant */
 		switch (tag) {
 		case TAG_i:
@@ -1761,6 +1779,10 @@ load_code(LoaderState* stp)
 		    break;
 		case TAG_n:
 		    code[ci++] = NIL;
+		    break;
+		case TAG_q:
+		    new_literal_patch(stp, ci);
+		    code[ci++] = tmp_op->a[arg].val;
 		    break;
 		default:
 		    LoadError1(stp, "bad tag %d for tagged constant",
@@ -1881,26 +1903,13 @@ load_code(LoaderState* stp)
 		tmp = tmp_op->a[arg].val;
 		code[ci++] = (Eterm) ((tmp_op->a[arg].val+1) * sizeof(Eterm *));
 		break;
-	    case 'o':		/* Floating point number. */
-#ifdef ARCH_64
-		VerifyTag(stp, tag, TAG_o);
-		code[ci++] = HEADER_FLONUM;
-		code[ci++] = tmp_op->a[arg].val;
-		code[ci++] = 0;
-#else
-		{
-		    Eterm* fptr;
-		    VerifyTag(stp, tag, TAG_o);
-		    fptr = stp->temp_heap + tmp_op->a[arg].val;
-		    code[ci++] = HEADER_FLONUM;
-		    code[ci++] = *fptr++;
-		    code[ci++] = *fptr++;
-		}
-#endif
-		break;
 	    case 'l':		/* Floating point register. */
 		VerifyTag(stp, tag_to_letter[tag], *sign);
 		code[ci++] = tmp_op->a[arg].val * sizeof(FloatDef);
+		break;
+	    case 'q':		/* Literal */
+		new_literal_patch(stp, ci);
+		code[ci++] = tmp_op->a[arg].val;
 		break;
 	    default:
 		LoadError1(stp, "bad argument tag: %d", *sign);
@@ -1925,44 +1934,48 @@ load_code(LoaderState* stp)
 		Need(1);
 		code[ci++] = tmp_op->a[arg].val;
 		break;
-	    case TAG_w:
-		{
-		    Eterm* bigp;
-		    Uint size;
-
-		    bigp = stp->temp_heap+tmp_op->a[arg].val;
-		    size = thing_arityval(*bigp);
-		    Need(size+1);
-		    code[ci++] = *bigp++;
-		    while (size-- > 0) {
-			code[ci++] = *bigp++;
-		    }
-		}
-		break;
 	    case TAG_f:
 		Need(1);
 		code[ci] = stp->labels[tmp_op->a[arg].val].patches;
 		stp->labels[tmp_op->a[arg].val].patches = ci;
 		ci++;
 		break;
-	    case TAG_o:
-#ifdef ARCH_64
-		Need(1);
-		code[ci++] = tmp_op->a[arg].val;
-#else
+	    case TAG_q:
 		{
-		    Eterm* fptr;
+		    Eterm lit;
 
-		    fptr = stp->temp_heap + tmp_op->a[arg].val;
-		    Need(2);
-		    code[ci++] = *fptr++;
-		    code[ci++] = *fptr++;
-		}
+		    lit = stp->literals[tmp_op->a[arg].val].term;
+		    if (is_big(lit)) {
+			Eterm* bigp;
+			Uint size;
+
+			bigp = big_val(lit);
+			size = bignum_header_arity(*bigp);
+			Need(size+1);
+			code[ci++] = *bigp++;
+			while (size-- > 0) {
+			    code[ci++] = *bigp++;
+			}
+		    } else if (is_float(lit)) {
+#ifdef ARCH_64
+			Need(1);
+			code[ci++] = float_val(stp->literals[tmp_op->a[arg].val].term)[1];
+#else
+			Eterm* fptr;
+
+			fptr = float_val(stp->literals[tmp_op->a[arg].val].term)+1;
+			Need(2);
+			code[ci++] = *fptr++;
+			code[ci++] = *fptr;
 #endif
+		    } else {
+			LoadError0(stp, "literal is neither float nor big");
+		    }
+		}
 		break;
 	    default:
-		LoadError1(stp, "unsupported primitive type %d",
-			   tmp_op->a[arg].type);
+		LoadError1(stp, "unsupported primitive type '%c'",
+			   tag_to_letter[tmp_op->a[arg].type]);
 	    }
 	}
 
@@ -2064,36 +2077,7 @@ load_code(LoaderState* stp)
 		stp->put_strings = ci - 4;
 	    }
 	    break;
-#if !defined(HEAP_FRAG_ELIM_TEST)
-	case op_i_bs_put_string_II:
-	    {
-		/*
-		 * At entry:
-		 *
-		 * code[ci-3]	&&lb_i_bs_put_string_II
-		 * code[ci-2]	length of string
-		 * code[ci-1]   offset into string table
-		 *
-		 * Since we don't know the address of the string table yet,
-		 * just check the offset and length for validity, and use
-		 * the instruction field as a link field to link all put_string
-		 * instructions into a single linked list.  At exit:
-		 *
-		 * code[ci-3]	pointer to next i_bs_put_string instruction (or 0
-		 *		if this is the last)
-		 */
-		Uint offset = code[ci-1];
-		Uint len = code[ci-2];
-		unsigned strtab_size = stp->chunks[STR_CHUNK].size;
-		if (offset > strtab_size || offset + len > strtab_size) {
-		    LoadError2(stp, "invalid string reference %d, size %d", offset, len);
-		}
-		code[ci-3] = stp->bs_put_strings;
-		stp->bs_put_strings = ci - 3;
-	    }
-	    break;
-#endif
-	case op_i_new_bs_put_string_II:
+	case op_bs_put_string_II:
 	    {
 		/*
 		 * At entry:
@@ -2120,35 +2104,9 @@ load_code(LoaderState* stp)
 		stp->new_bs_put_strings = ci - 3;
 	    }
 	    break;
-
-	case op_i_put_literal_IId:
-	    {
-		/*
-		 * At entry:
-		 *
-		 * code[ci-4]	&&lb_put_literal_cId
-		 * code[ci-3]   index of literal in literal table
-		 * code[ci-2]	0
-		 * code[ci-1]   destination register
-		 *
-		 * Since we don't know the final address of the literal heap,
-		 * use the instruction field as a link field to link all put_literal
-		 * instructions into a single linked list.  At exit:
-		 *
-		 * code[ci-4]	pointer to next put_literal instruction (or 0
-		 *		if this is the last)
-		 * code[ci-3]   tagged pointer to literal
-		 * code[ci-2]   size of term on heap
-		 */
-		Uint index = code[ci-3];
-		if (index >= stp->num_literals) {
-		    LoadError1(stp, "invalid literal index %d", index);
-		}
-		code[ci-2] = (Eterm) stp->literals[index].heap_size;
-		code[ci-3] = (Eterm) stp->literals[index].term;
-		code[ci-4] = stp->put_literals;
-		stp->put_literals = ci - 4;
-	    }
+	case op_i_bs_match_string_rfII:
+	case op_i_bs_match_string_xfII:
+	    new_string_patch(stp, ci-1);
 	    break;
 
 	case op_catch_yf:
@@ -2159,19 +2117,6 @@ load_code(LoaderState* stp)
 	    code[ci-3] = stp->catches;
 	    stp->catches = ci-3;
 	    break;
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-	    /*
-	     * Validate operand.
-	     * code[ci-1]	Index (0 <= Index < MAX_REG)
-	     */
-	case op_bs_save_I:
-	case op_bs_restore_I:
-	    if (code[ci-1] >= MAX_REG) {
-		LoadError1(stp, "index %d out of range", code[ci-1]);
-	    }
-	    break;
-#endif
 
 	    /*
 	     * End of code found.
@@ -2257,7 +2202,13 @@ all_values_are_big(LoaderState* stp, GenOpArg Size, GenOpArg* Rest)
     }
 
     for (i = 0; i < Size.val; i += 2) {
-	if (Rest[i].type != TAG_w || Rest[i+1].type != TAG_f) {
+	if (Rest[i].type != TAG_q) {
+	    return 0;
+	}
+	if (is_not_big(stp->literals[Rest[i].val].term)) {
+	    return 0;
+	}
+	if (Rest[i+1].type != TAG_f) {
 	    return 0;
 	}
     }
@@ -2286,8 +2237,9 @@ fixed_size_values(LoaderState* stp, GenOpArg Size, GenOpArg* Rest)
 	case TAG_a:
 	case TAG_i:
 	case TAG_v:
-	case TAG_o:
 	    break;
+	case TAG_q:
+	    return is_float(stp->literals[Rest[i].val].term);
 	default:
 	    return 0;
 	}
@@ -2348,6 +2300,46 @@ gen_element(LoaderState* stp, GenOpArg Fail, GenOpArg Index,
     return op;
 }
 
+static GenOp*
+gen_bs_save(LoaderState* stp, GenOpArg Reg, GenOpArg Index)
+{
+    GenOp* op;
+
+    NEW_GENOP(stp, op);
+    op->op = genop_i_bs_save2_2;
+    op->arity = 2;
+    op->a[0] = Reg;
+    op->a[1] = Index;
+    if (Index.type == TAG_u) {
+	op->a[1].val = Index.val+1;
+    } else if (Index.type == TAG_a && Index.val == am_start) {
+	op->a[1].type = TAG_u;
+	op->a[1].val = 0;
+    }
+    op->next = NULL;
+    return op;
+}
+
+static GenOp*
+gen_bs_restore(LoaderState* stp, GenOpArg Reg, GenOpArg Index)
+{
+    GenOp* op;
+
+    NEW_GENOP(stp, op);
+    op->op = genop_i_bs_restore2_2;
+    op->arity = 2;
+    op->a[0] = Reg;
+    op->a[1] = Index;
+    if (Index.type == TAG_u) {
+	op->a[1].val = Index.val+1;
+    } else if (Index.type == TAG_a && Index.val == am_start) {
+	op->a[1].type = TAG_u;
+	op->a[1].val = 0;
+    }
+    op->next = NULL;
+    return op;
+}
+
 /*
  * Generate the fastest instruction to fetch an integer from a binary.
  */
@@ -2358,71 +2350,92 @@ gen_get_integer2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 		 GenOpArg Flags, GenOpArg Dst)
 {
     GenOp* op;
+    Uint bits;
+
     NEW_GENOP(stp, op);
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_i) {
-	Uint bits;
-	    
 	if (!safe_mul(Size.val, Unit.val, &bits)) {
 	    goto error;
 	} else if ((Flags.val & BSF_SIGNED) != 0) {
 	    goto generic;
 	} else if (bits == 8) {
-	    op->op = genop_i_bs_get_integer2_8_3;
+	    op->op = genop_i_bs_get_integer_8_3;
 	    op->arity = 3;
-	    op->a[0] = Fail;
-	    op->a[1] = Ms;
+	    op->a[0] = Ms;
+	    op->a[1] = Fail;
 	    op->a[2] = Dst;
 	} else if (bits == 16 && (Flags.val & BSF_LITTLE) == 0) {
-	    op->op = genop_i_bs_get_integer2_16_3;
+	    op->op = genop_i_bs_get_integer_16_3;
 	    op->arity = 3;
-	    op->a[0] = Fail;
-	    op->a[1] = Ms;
+	    op->a[0] = Ms;
+	    op->a[1] = Fail;
 	    op->a[2] = Dst;
+	} else if (bits == 32 && (Flags.val & BSF_LITTLE) == 0) {
+	    op->op = genop_i_bs_get_integer_32_4;
+	    op->arity = 4;
+	    op->a[0] = Ms;
+	    op->a[1] = Fail;
+	    op->a[2] = Live;
+	    op->a[3] = Dst;
 	} else {
 	generic:
-	    op->op = genop_i_bs_get_integer_imm2_6;
-	    op->arity = 6;
-	    op->a[0] = Fail;
-	    op->a[1] = Ms;
-	    op->a[2] = Live;
-	    op->a[3].type = TAG_u;
-	    op->a[3].val = bits;
-	    op->a[4] = Flags;
-	    op->a[5] = Dst;
+	    if (bits < SMALL_BITS) {
+		op->op = genop_i_bs_get_integer_small_imm_5;
+		op->arity = 5;
+		op->a[0] = Ms;
+		op->a[1].type = TAG_u;
+		op->a[1].val = bits;
+		op->a[2] = Fail;
+		op->a[3] = Flags;
+		op->a[4] = Dst;
+	    } else {
+		op->op = genop_i_bs_get_integer_imm_6;
+		op->arity = 6;
+		op->a[0] = Ms;
+		op->a[1].type = TAG_u;
+		op->a[1].val = bits;
+		op->a[2] = Live;
+		op->a[3] = Fail;
+		op->a[4] = Flags;
+		op->a[5] = Dst;
+	    }
 	}
-    } else if (Size.type == TAG_w) {
-	Eterm* big = stp->temp_heap + Size.val;
+    } else if (Size.type == TAG_q) {
+	Eterm big = stp->literals[Size.val].term;
 	Uint bigval;
-	if (!term_to_Uint(make_big(big), &bigval)) {
+
+	if (!term_to_Uint(big, &bigval)) {
 	error:
 	    op->op = genop_jump_1;
 	    op->arity = 1;
 	    op->a[0] = Fail;
 	} else {
-	    op->op = genop_i_bs_get_integer_imm2_6;
-	    op->arity = 6;
-	    op->a[0] = Fail;
-	    op->a[1] = Ms;
-	    op->a[2] = Live;
-	    op->a[3].type = TAG_u;
-	    if (!safe_mul(bigval, Unit.val, &op->a[3].val)) {
+	    if (!safe_mul(bigval, Unit.val, &bits)) {
 		goto error;
 	    }
-	    op->a[4] = Flags;
-	    op->a[5] = Dst;
+	    goto generic;
 	}
     } else {
-	op->op = genop_i_bs_get_integer2_6;
-	op->arity = 6;
-	op->a[0] = Fail;
-	op->a[1] = Ms;
-	op->a[2] = Live;
-	op->a[3] = Size;
-	op->a[4].type = TAG_u;
-	op->a[4].val = (Unit.val << 3) | Flags.val;
-	op->a[5] = Dst;
+	GenOp* op2;
+	NEW_GENOP(stp, op2);
+	
+	op->op = genop_i_fetch_2;
+	op->arity = 2;
+	op->a[0] = Ms;
+	op->a[1] = Size;
+	op->next = op2;
+
+	op2->op = genop_i_bs_get_integer_4;
+	op2->arity = 4;
+	op2->a[0] = Fail;
+	op2->a[1] = Live;
+	op2->a[2].type = TAG_u;
+	op2->a[2].val = (Unit.val << 3) | Flags.val;
+	op2->a[3] = Dst;
+	op2->next = NULL;
+	return op;
     }
     op->next = NULL;
     return op;
@@ -2442,13 +2455,21 @@ gen_get_binary2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = genop_i_bs_get_binary_all2_5;
-	op->arity = 5;
-	op->a[0] = Fail;
-	op->a[1] = Ms;
-	op->a[2] = Live;	
-	op->a[3] = Unit;
-	op->a[4] = Dst;
+	if (Ms.type == Dst.type && Ms.val == Dst.val) {
+	    op->op = genop_i_bs_get_binary_all_reuse_3;
+	    op->arity = 3;
+	    op->a[0] = Ms;
+	    op->a[1] = Fail;
+	    op->a[2] = Unit;
+	} else {
+	    op->op = genop_i_bs_get_binary_all2_5;
+	    op->arity = 5;
+	    op->a[0] = Fail;
+	    op->a[1] = Ms;
+	    op->a[2] = Live;	
+	    op->a[3] = Unit;
+	    op->a[4] = Dst;
+	}
     } else if (Size.type == TAG_i) {
 	op->op = genop_i_bs_get_binary_imm2_6;
 	op->arity = 6;
@@ -2461,10 +2482,11 @@ gen_get_binary2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms, GenOpArg Live,
 	}
 	op->a[4] = Flags;
 	op->a[5] = Dst;
-    } else if (Size.type == TAG_w) {
-	Eterm* big = stp->temp_heap + Size.val;
+    } else if (Size.type == TAG_q) {
+	Eterm big = stp->literals[Size.val].term;
 	Uint bigval;
-	if (!term_to_Uint(make_big(big), &bigval)) {
+
+	if (!term_to_Uint(big, &bigval)) {
 	error:
 	    op->op = genop_jump_1;
 	    op->arity = 1;
@@ -2517,31 +2539,11 @@ binary_too_big(LoaderState* stp, GenOpArg Size)
     return Size.type == TAG_u && ((Size.val >> (8*sizeof(Uint)-3)) != 0);
 }
 
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
 static int
-old_bs_instructions(LoaderState* stp)
+binary_too_big_bits(LoaderState* stp, GenOpArg Size)
 {
-    stp->new_instructions = 0;
-    return 1;
+    return Size.type == TAG_u && (((Size.val+7)/8) >> (8*sizeof(Uint)-3) != 0);
 }
-#endif
-
-static int
-new_bs_instructions(LoaderState* stp)
-{
-    stp->new_instructions = 1;
-    return 1;
-}
-
-#define query_new_instructions(stp) (stp->new_instructions)
- 
-#if defined(HEAP_FRAG_ELIM_TEST)
-# define NEW_OR_OLD(New,Old) New
-#else
-# define NEW_OR_OLD(New,Old) \
-  (stp->new_instructions ? New : Old)
-#endif
 
 #define new_float_allocation(Stp) ((Stp)->new_float_instructions)
 
@@ -2554,32 +2556,25 @@ gen_put_binary(LoaderState* stp, GenOpArg Fail,GenOpArg Size,
 
     NATIVE_ENDIAN(Flags);
     if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = NEW_OR_OLD(genop_i_new_bs_put_binary_all_2,genop_i_bs_put_binary_all_2);
-	op->arity = 2;
+	op->op = genop_i_new_bs_put_binary_all_3;
+	op->arity = 3;
 	op->a[0] = Fail;
 	op->a[1] = Src;
-    } else if (Size.type == TAG_i && stp->new_instructions) {
+	op->a[2] = Unit;
+    } else if (Size.type == TAG_i) {
 	op->op = genop_i_new_bs_put_binary_imm_3;
 	op->arity = 3;
 	op->a[0] = Fail;
 	op->a[1].type = TAG_u;
-	op->a[1].val = Size.val * Unit.val;
-	op->a[2] = Src;
-    } else if (Size.type == TAG_w && stp->new_instructions) {
-	Eterm* big = stp->temp_heap + Size.val;
-	Uint bigval;
-	if (!term_to_Uint(make_big(big), &bigval)) {
-	    ;
-	} else {
-	    op->op = genop_i_new_bs_put_binary_imm_3;
-	    op->arity = 3;
-	    op->a[0] = Fail;
-	    op->a[1].type = TAG_u;
-	    op->a[1].val = bigval * Unit.val;
+	if (safe_mul(Size.val, Unit.val, &op->a[1].val)) {
 	    op->a[2] = Src;
+	} else {
+	    op->op = genop_badarg_1;
+	    op->arity = 1;
+	    op->a[0] = Fail;
 	}
     } else {
-	op->op = NEW_OR_OLD(genop_i_new_bs_put_binary_4,genop_i_bs_put_binary_4);
+	op->op = genop_i_new_bs_put_binary_4;
 	op->arity = 4;
 	op->a[0] = Fail;
 	op->a[1] = Size;
@@ -2606,19 +2601,23 @@ gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 	op->op = genop_badarg_1;
 	op->arity = 1;
 	op->a[0] = Fail;
-    } else if (Size.type == TAG_i && stp->new_instructions) {
+    } else if (Size.type == TAG_i) {
 	op->op = genop_i_new_bs_put_integer_imm_4;
 	op->arity = 4;
 	op->a[0] = Fail;
 	op->a[1].type = TAG_u;
+	if (!safe_mul(Size.val, Unit.val, &op->a[1].val)) {
+	    goto error;
+	}
 	op->a[1].val = Size.val * Unit.val;
 	op->a[2].type = Flags.type;
 	op->a[2].val = (Flags.val & 7);
 	op->a[3] = Src;
-    } else if (Size.type == TAG_w && stp->new_instructions) {
-	Eterm* big = stp->temp_heap + Size.val;
+    } else if (Size.type == TAG_q) {
+	Eterm big = stp->literals[Size.val].term;
 	Uint bigval;
-	if (!term_to_Uint(make_big(big), &bigval)) {
+
+	if (!term_to_Uint(big, &bigval)) {
 	    goto error;
 	} else {
 	    op->op = genop_i_new_bs_put_integer_imm_4;
@@ -2631,7 +2630,7 @@ gen_put_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 	    op->a[3] = Src;
 	}
     } else {
-	op->op = NEW_OR_OLD(genop_i_new_bs_put_integer_4,genop_i_bs_put_integer_4);
+	op->op = genop_i_new_bs_put_integer_4;
 	op->arity = 4;
 	op->a[0] = Fail;
 	op->a[1] = Size;
@@ -2651,7 +2650,7 @@ gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
     NEW_GENOP(stp, op);
 
     NATIVE_ENDIAN(Flags);
-    if (Size.type == TAG_i && stp->new_instructions) {
+    if (Size.type == TAG_i) {
 	op->op = genop_i_new_bs_put_float_imm_4;
 	op->arity = 4;
 	op->a[0] = Fail;
@@ -2665,7 +2664,7 @@ gen_put_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
 	    op->a[3] = Src;
 	}
     } else {
-	op->op = NEW_OR_OLD(genop_i_new_bs_put_float_4,genop_i_bs_put_float_4);
+	op->op = genop_i_new_bs_put_float_4;
 	op->arity = 4;
 	op->a[0] = Fail;
 	op->a[1] = Size;
@@ -2729,10 +2728,11 @@ gen_skip_bits2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms,
 	if (!safe_mul(Size.val, Unit.val, &op->a[2].val)) {
 	    goto error;
 	}
-    } else if (Size.type == TAG_w) {
-	Eterm* big = stp->temp_heap + Size.val;
+    } else if (Size.type == TAG_q) {
+	Eterm big = stp->literals[Size.val].term;
 	Uint bigval;
-	if (!term_to_Uint(make_big(big), &bigval)) {
+
+	if (!term_to_Uint(big, &bigval)) {
 	error:
 	    op->op = genop_jump_1;
 	    op->arity = 1;
@@ -2758,116 +2758,6 @@ gen_skip_bits2(LoaderState* stp, GenOpArg Fail, GenOpArg Ms,
     op->next = NULL;
     return op;
 }
-
-
-#if !defined(HEAP_FRAG_ELIM_TEST)
-/*
- * Old binary matching instructions - not allowed in the nofrag emulator.
- */
-
-static GenOp*
-gen_get_integer(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
-		GenOpArg Flags, GenOpArg Dst)
-{
-    GenOp* op;
-    NEW_GENOP(stp, op);
-
-    NATIVE_ENDIAN(Flags);
-    op->op = genop_i_bs_get_integer_4;
-    op->arity = 4;
-    op->a[0] = Fail;
-    op->a[1] = Size;
-    op->a[2].type = TAG_u;
-    op->a[2].val = (Unit.val << 3) | Flags.val;
-    op->a[3] = Dst;
-    op->next = NULL;
-    return op;
-}
-
-static GenOp*
-gen_get_binary(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
-		GenOpArg Flags, GenOpArg Dst)
-{
-    GenOp* op;
-    NEW_GENOP(stp, op);
-
-    NATIVE_ENDIAN(Flags);
-    if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = genop_i_bs_get_binary_all_2;
-	op->arity = 2;
-	op->a[0] = Fail;
-	op->a[1] = Dst;
-    } else if (Size.type == TAG_i) {
-	op->op = genop_i_bs_get_binary_imm_4;
-	op->arity = 4;
-	op->a[0] = Fail;
-	op->a[1].type = TAG_u;
-	op->a[1].val = Size.val * Unit.val;
-	op->a[2] = Flags;
-	op->a[3] = Dst;
-    } else {
-	op->op = genop_i_bs_get_binary_4;
-	op->arity = 4;
-	op->a[0] = Fail;
-	op->a[1] = Size;
-	op->a[2].type = TAG_u;
-	op->a[2].val = (Unit.val << 3) | Flags.val;
-	op->a[3] = Dst;
-    }
-    op->next = NULL;
-    return op;
-}
-
-static GenOp*
-gen_get_float(LoaderState* stp, GenOpArg Fail, GenOpArg Size, GenOpArg Unit,
-	      GenOpArg Flags, GenOpArg Dst)
-{
-    GenOp* op;
-    NEW_GENOP(stp, op);
-
-    NATIVE_ENDIAN(Flags);
-    op->op = genop_i_bs_get_float_4;
-    op->arity = 4;
-    op->a[0] = Fail;
-    op->a[1] = Size;
-    op->a[2].type = TAG_u;
-    op->a[2].val = (Unit.val << 3) | Flags.val;
-    op->a[3] = Dst;
-    op->next = NULL;
-    return op;
-}
-
-static GenOp*
-gen_skip_bits(LoaderState* stp, GenOpArg Fail, GenOpArg Size,
-	      GenOpArg Unit, GenOpArg Flags)
-{
-    GenOp* op;
-
-    NATIVE_ENDIAN(Flags);
-    NEW_GENOP(stp, op);
-    if (Size.type == TAG_a && Size.val == am_all) {
-	op->op = genop_i_bs_skip_bits_all_1;
-	op->arity = 1;
-	op->a[0] = Fail;
-    } else if (Size.type == TAG_i) {
-	op->op = genop_i_bs_skip_bits_imm_2;
-	op->arity = 2;
-	op->a[0] = Fail;
-	op->a[1].type = TAG_u;
-	op->a[1].val = Size.val * Unit.val;
-    } else {
-	op->op = genop_i_bs_skip_bits_3;
-	op->arity = 3;
-	op->a[0] = Fail;
-	op->a[1] = Size;
-	op->a[2] = Unit;
-    }
-    op->next = NULL;
-    return op;
-}
-
-#endif
-
 
 static int
 smp(LoaderState* stp)
@@ -2932,17 +2822,24 @@ gen_literal_timeout(LoaderState* stp, GenOpArg Fail, GenOpArg Time)
 #endif
 	) {
 	op->a[1].val = timeout;
-#ifndef ARCH_64
-    } else if (Time.type == TAG_w) {
-	Eterm* bigp = stp->temp_heap + Time.val;
-	if (thing_arityval(*bigp) > 1 || BIG_SIGN(bigp)) {
-	    op->op = genop_i_wait_error_0;
-	    op->arity = 0;
+#if !defined(ARCH_64)
+    } else if (Time.type == TAG_q) {
+	Eterm big;
+
+	big = stp->literals[Time.val].term;
+	if (is_not_big(big)) {
+	    goto error;
+	}
+	if (big_arity(big) > 1 || big_sign(big)) {
+	    goto error;
 	} else {
-	    (void) term_to_Uint(make_big(bigp), &op->a[1].val);
+	    (void) term_to_Uint(big, &op->a[1].val);
 	}
 #endif
     } else {
+#if !defined(ARCH_64)
+    error:
+#endif
 	op->op = genop_i_wait_error_0;
 	op->arity = 0;
     }
@@ -2971,16 +2868,23 @@ gen_literal_timeout_locked(LoaderState* stp, GenOpArg Fail, GenOpArg Time)
 	) {
 	op->a[1].val = timeout;
 #ifndef ARCH_64
-    } else if (Time.type == TAG_w) {
-	Eterm* bigp = stp->temp_heap + Time.val;
-	if (thing_arityval(*bigp) > 1 || BIG_SIGN(bigp)) {
-	    op->op = genop_i_wait_error_locked_0;
-	    op->arity = 0;
+    } else if (Time.type == TAG_q) {
+	Eterm big;
+
+	big = stp->literals[Time.val].term;
+	if (is_not_big(big)) {
+	    goto error;
+	}
+	if (big_arity(big) > 1 || big_sign(big)) {
+	    goto error;
 	} else {
-	    (void) term_to_Uint(make_big(bigp), &op->a[1].val);
+	    (void) term_to_Uint(big, &op->a[1].val);
 	}
 #endif
     } else {
+#ifndef ARCH_64
+    error:
+#endif
 	op->op = genop_i_wait_error_locked_0;
 	op->arity = 0;
     }
@@ -3204,7 +3108,8 @@ genopargcompare(GenOpArg* a, GenOpArg* b)
 }
 
 /*
- * Generate a select_val instruction.  We know that a jump table is not suitable.
+ * Generate a select_val instruction.  We know that a jump table is not suitable,
+ * and that all values are of the same type (integer, atoms, floats; never bignums).
  */
 
 static GenOp*
@@ -3218,7 +3123,12 @@ gen_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
 
     NEW_GENOP(stp, op);
     op->next = NULL;
-    op->op = (Rest[0].type == TAG_o) ? genop_i_select_float_3 : genop_i_select_val_3;
+    if (Rest[0].type != TAG_q) {
+	op->op = genop_i_select_val_3;
+    } else {
+	ASSERT(is_float(stp->literals[Rest[0].val].term));
+	op->op = genop_i_select_float_3;
+    }
     GENOP_ARITY(op, arity);
     op->a[0] = S;
     op->a[1] = Fail;
@@ -3275,8 +3185,9 @@ gen_select_big(LoaderState* stp, GenOpArg S, GenOpArg Fail,
     op->a[0] = S;
     op->a[1] = Fail;
     for (i = 0; i < Size.val; i += 2) {
+	ASSERT(Rest[i].type == TAG_q);
 	op->a[i+2] = Rest[i];
-	op->a[i+2].bigarity = stp->temp_heap[op->a[i+2].val];
+	op->a[i+2].bigarity = *big_val(stp->literals[op->a[i+2].val].term);
 	op->a[i+3] = Rest[i+1];
     }
     ASSERT(i+2 == arity-1);
@@ -3284,7 +3195,7 @@ gen_select_big(LoaderState* stp, GenOpArg S, GenOpArg Fail,
     op->a[arity-1].val = 0;
 
     /*
-     * Sort the values to make them useful for a binary search.
+     * Sort the values in descending arity order.
      */
 
     qsort(op->a+2, size, 2*sizeof(GenOpArg), 
@@ -3307,7 +3218,7 @@ const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
     int i;
 
     ASSERT(Size.type == TAG_u);
-    ASSERT(S.type == TAG_w || S.type == TAG_o);
+    ASSERT(S.type == TAG_q);
 
     NEW_GENOP(stp, op);
     op->next = NULL;
@@ -3318,28 +3229,12 @@ const_select_val(LoaderState* stp, GenOpArg S, GenOpArg Fail,
      * Search for a literal matching the controlling expression.
      */
 
-    if (S.type == TAG_w) {
-	Eterm* given_big = stp->temp_heap + S.val;
-	Uint given_arity = *given_big;
-	Uint given_size = (thing_arityval(given_arity) + 1) * sizeof(Uint);
+    if (S.type == TAG_q) {
+	Eterm expr = stp->literals[S.val].term;
 	for (i = 0; i < Size.val; i += 2) {
-	    if (Rest[i].type == TAG_w) {
-		Eterm* big = stp->temp_heap + Rest[i].val;
-		if (*big == given_arity) {
-		    if (memcmp(given_big, big, given_size) == 0) {
-			ASSERT(Rest[i+1].type == TAG_f);
-			op->a[0] = Rest[i+1];
-			return op;
-		    }
-		}
-	    }
-	}
-    } else if (S.type == TAG_o) {
-	Eterm* given_float = stp->temp_heap + S.val;
-	for (i = 0; i < Size.val; i += 2) {
-	    if (Rest[i].type == TAG_o) {
-		Eterm* fl = stp->temp_heap + Rest[i].val;
-		if (given_float[0] == fl[0] && given_float[1] == fl[1]) {
+	    if (Rest[i].type == TAG_q) {
+		Eterm term = stp->literals[Rest[i].val].term;
+		if (eq(term, expr)) {
 		    ASSERT(Rest[i+1].type == TAG_f);
 		    op->a[0] = Rest[i+1];
 		    return op;
@@ -3421,49 +3316,6 @@ gen_func_info_mi(LoaderState* stp, GenOpArg mod,
 }
 
 
-#ifndef HEAP_FRAG_ELIM_TEST
-static GenOp*
-gen_make_fun(LoaderState* stp, GenOpArg lbl, GenOpArg uniq, GenOpArg num_free)
-{
-    ErlFunEntry* fe;
-    int old_uniq;
-    int old_index;
-    GenOp* op;
-
-    old_uniq = uniq.val;
-    old_index = stp->num_lambdas;
-    fe = erts_put_fun_entry(stp->module, old_uniq, old_index);
-
-    NEW_GENOP(stp, op);
-    op->op = genop_i_make_fun_2;
-    op->arity = 2;
-    op->a[0].type = TAG_u;
-    op->a[0].val = (Uint) fe;
-    op->a[1] = num_free;
-    op->next = NULL;
-
-    if (stp->num_lambdas >= stp->lambdas_allocated) {
-	unsigned need;
-
-	stp->lambdas_allocated *= 2;
-	need = stp->lambdas_allocated * sizeof(Lambda);
-	if (stp->lambdas == stp->def_lambdas) {
-	    stp->lambdas = erts_alloc(ERTS_ALC_T_LOADER_TMP, need);
-	    memcpy(stp->lambdas, stp->def_lambdas, sizeof(stp->def_lambdas));
-	} else {
-	    stp->lambdas = erts_realloc(ERTS_ALC_T_LOADER_TMP,
-					(void *) stp->lambdas,
-					need);
-	}
-    }
-    stp->lambdas[stp->num_lambdas].fe = fe;
-    stp->lambdas[stp->num_lambdas].label = lbl.val;
-    /* The number_of free vars is needed to create the right native-stub */
-    stp->lambdas[stp->num_lambdas].num_free = num_free.val;
-    stp->num_lambdas++;
-    return op;
-}
-#endif
 
 static GenOp*
 gen_make_fun2(LoaderState* stp, GenOpArg idx)
@@ -3489,7 +3341,6 @@ gen_make_fun2(LoaderState* stp, GenOpArg idx)
     return op;
 }
 
-#if defined(HEAP_FRAG_ELIM_TEST)
 static GenOp*
 gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
 	      GenOpArg Src, GenOpArg Dst)
@@ -3508,7 +3359,13 @@ gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
     } else if (bf == size_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_size_1;
     } else if (bf == bitsize_1) {
-	op->a[1].val = (Uint) (void *) erts_gc_bitsize_1;
+	/* XXX Deprecated */
+	op->a[1].val = (Uint) (void *) erts_gc_bit_size_1;
+    } else if (bf == bit_size_1) {
+	/* XXX Deprecated */
+	op->a[1].val = (Uint) (void *) erts_gc_bit_size_1;
+    } else if (bf == byte_size_1) {
+	op->a[1].val = (Uint) (void *) erts_gc_byte_size_1;
     } else if (bf == abs_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_abs_1;
     } else if (bf == float_1) {
@@ -3526,23 +3383,6 @@ gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
     op->next = NULL;
     return op;
 }
-#endif
-
-static GenOp*
-gen_put_literal(LoaderState* stp, GenOpArg Lit, GenOpArg Dst)
-{
-    GenOp* op;
-    NEW_GENOP(stp, op);
-    op->op = genop_i_put_literal_3;
-    op->arity = 3;
-    op->a[0] = Lit;
-    op->a[1].type = TAG_u;
-    op->a[1].val = 0;
-    op->a[2] = Dst;
-    op->next = NULL;
-    return op;
-}
-
 
 
 /*
@@ -3562,7 +3402,7 @@ freeze_code(LoaderState* stp)
     unsigned compile_size = stp->chunks[COMPILE_CHUNK].size;
     Uint size;
     unsigned catches;
-    int decoded_size;
+    Sint decoded_size;
 
     /*
      * Verify that there was a correct 'FunT' chunk if there were
@@ -3578,7 +3418,7 @@ freeze_code(LoaderState* stp)
      * Calculate the final size of the code.
      */
 
-    size = (stp->ci + stp->literal_heap_size) * sizeof(Eterm) +
+    size = (stp->ci + stp->total_literal_size) * sizeof(Eterm) +
 	strtab_size + attr_size + compile_size;
 
     /*
@@ -3603,45 +3443,57 @@ freeze_code(LoaderState* stp)
 	Eterm* ptr;
 	Eterm* low;
 	Eterm* high;
-	Uint offset;
+	LiteralPatch* lp;
 
 	low = code+stp->ci;
-	high = low + stp->literal_heap_size;
+	high = low + stp->total_literal_size;
 	code[MI_LITERALS_START] = (Eterm) low;
 	code[MI_LITERALS_END] = (Eterm) high;
-	sys_memcpy(low, stp->literal_heap, stp->literal_heap_size*sizeof(Eterm));
-	offset = low - stp->literal_heap;
 	ptr = low;
-	while (ptr < high) {
-	    Eterm val = *ptr;
-	    switch (primary_tag(val)) {
-	    case TAG_PRIMARY_LIST:
-	    case TAG_PRIMARY_BOXED:
-		*ptr++ = offset_ptr(val, offset);
-		break;
-	    case TAG_PRIMARY_HEADER:
-		ptr++;
-		if (header_is_thing(val)) {
-		    ptr += thing_arityval(val);
+	for (i = 0; i < stp->num_literals; i++) {
+	    Uint offset;
+
+	    sys_memcpy(ptr, stp->literals[i].heap,
+		       stp->literals[i].heap_size*sizeof(Eterm));
+	    offset = ptr - stp->literals[i].heap;
+	    stp->literals[i].offset = offset;
+	    high = ptr + stp->literals[i].heap_size;
+	    while (ptr < high) {
+		Eterm val = *ptr;
+		switch (primary_tag(val)) {
+		case TAG_PRIMARY_LIST:
+		case TAG_PRIMARY_BOXED:
+		    *ptr++ = offset_ptr(val, offset);
+		    break;
+		case TAG_PRIMARY_HEADER:
+		    ptr++;
+		    if (header_is_thing(val)) {
+			ptr += thing_arityval(val);
+		    }
+		    break;
+		default:
+		    ptr++;
+		    break;
 		}
-		break;
-	    default:
-		ptr++;
-		break;
 	    }
+	    ASSERT(ptr == high);
 	}
-	index = stp->put_literals;
-	while (index != 0) {
+	lp = stp->literal_patches;
+	while (lp != 0) {
+	    Uint* op_ptr;
 	    Uint literal;
-	    Uint next = code[index];
-	    code[index] = BeamOpCode(op_i_put_literal_IId);
-	    literal = code[index+1];
+	    Literal* lit;
+
+	    op_ptr = code + lp->pos;
+	    lit = &stp->literals[op_ptr[0]];
+	    literal = lit->term;
 	    if (is_boxed(literal) || is_list(literal)) {
-		code[index+1] = offset_ptr(literal, offset);
+		literal = offset_ptr(literal, lit->offset);
 	    }
-	    index = next;
+	    op_ptr[0] = literal;
+	    lp = lp->next;
 	}
-	stp->ci += stp->literal_heap_size;
+	stp->ci += stp->total_literal_size;
     }
     
     /*
@@ -3655,7 +3507,7 @@ freeze_code(LoaderState* stp)
 	sys_memcpy(attr, stp->chunks[ATTR_CHUNK].start, stp->chunks[ATTR_CHUNK].size);
 	code[MI_ATTR_PTR] = (Eterm) attr;
 	code[MI_ATTR_SIZE] = (Eterm) stp->chunks[ATTR_CHUNK].size;
-	decoded_size = decode_size(attr, attr_size);
+	decoded_size = erts_decoded_size(attr, attr_size, 0);
 	if (decoded_size < 0) {
  	    LoadError0(stp, "bad external term representation of module attributes");
  	}
@@ -3667,7 +3519,7 @@ freeze_code(LoaderState* stp)
 	       stp->chunks[COMPILE_CHUNK].size);
 	code[MI_COMPILE_PTR] = (Eterm) compile_info;
 	code[MI_COMPILE_SIZE] = (Eterm) stp->chunks[COMPILE_CHUNK].size;
-	decoded_size = decode_size(compile_info, compile_size);
+	decoded_size = erts_decoded_size(compile_info, compile_size, 0);
 	if (decoded_size < 0) {
  	    LoadError0(stp, "bad external term representation of compilation information");
  	}
@@ -3689,22 +3541,6 @@ freeze_code(LoaderState* stp)
 	index = next;
     }
 
-#if !defined(HEAP_FRAG_ELIM_TEST)
-    /*
-     * Go through all i_bs_put_strings instructions, restore the pointer to
-     * the instruction and convert string offsets to pointers (to the
-     * FIRST character).
-     */
-
-    index = stp->bs_put_strings;
-    while (index != 0) {
-	Uint next = code[index];
-	code[index] = BeamOpCode(op_i_bs_put_string_II);
-	code[index+2] = (Uint) (str_table + code[index+2]);
-	index = next;
-    }
-#endif
-
     /*
      * Go through all i_new_bs_put_strings instructions, restore the pointer to
      * the instruction and convert string offsets to pointers (to the
@@ -3714,9 +3550,23 @@ freeze_code(LoaderState* stp)
     index = stp->new_bs_put_strings;
     while (index != 0) {
 	Uint next = code[index];
-	code[index] = BeamOpCode(op_i_new_bs_put_string_II);
+	code[index] = BeamOpCode(op_bs_put_string_II);
 	code[index+2] = (Uint) (str_table + code[index+2]);
 	index = next;
+    }
+
+    {
+	StringPatch* sp = stp->string_patches;
+
+	while (sp != 0) {
+	    Uint* op_ptr;
+	    byte* strp;
+
+	    op_ptr = code + sp->pos;
+	    strp = str_table + op_ptr[0];
+	    op_ptr[0] = (Eterm) strp;
+	    sp = sp->next;
+	}
     }
 
     /*
@@ -3889,7 +3739,7 @@ transform_engine(LoaderState* st)
 	    mask = *pc++;
 
 	    ASSERT(ap < instr->arity);
-	    ASSERT(instr->a[ap].type < 15);
+	    ASSERT(instr->a[ap].type < BEAM_NUM_TAGS);
 	    if (((1 << instr->a[ap].type) & mask) == 0)
 		goto restart;
 	    break;
@@ -4253,7 +4103,6 @@ get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
     int neg = 0;
     Uint arity;
     Eterm* hp;
-    Uint hindex;
 
     /*
      * Retrieve the size of the value in bytes.
@@ -4283,10 +4132,9 @@ get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
 	    *result = val;
 	    return TAG_i;
 	} else {
-	    hindex = TempAlloc(stp, BIG_UINT_HEAP_SIZE);
-	    (void) small_to_big(val, stp->temp_heap+hindex);
-	    *result = hindex;
-	    return TAG_w;
+	    *result = new_literal(stp, &hp, BIG_UINT_HEAP_SIZE);
+	    (void) small_to_big(val, hp);
+	    return TAG_q;
 	}
     }
 
@@ -4342,17 +4190,13 @@ get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
      */
 
     arity = count/sizeof(Eterm);
-    hindex = TempAlloc(stp, arity+1);
-    hp = stp->temp_heap + hindex;
+    *result = new_literal(stp, &hp, arity+1);
     (void) bytes_to_big(bigbuf, count, neg, hp);
 
     if (bigbuf != default_buf) {
 	erts_free(ERTS_ALC_T_LOADER_TMP, (void *) bigbuf);
     }
-
-    *result = hindex;
-    return TAG_w;
-
+    return TAG_q;
 
  load_error:
     if (bigbuf != default_buf) {
@@ -4361,7 +4205,6 @@ get_erlang_integer(LoaderState* stp, Uint len_code, Uint* result)
     return -1;
 }
 
-
 /*
  * Converts an IFF id to a printable string.
  */
@@ -4377,7 +4220,6 @@ id_to_string(Uint id, char* s)
     *s++ = '\0';
 }
 
-
 static void
 new_genop(LoaderState* stp)
 {
@@ -4394,29 +4236,6 @@ new_genop(LoaderState* stp)
     stp->free_genop = p->genop;
 }
 
-
-static Uint
-temp_alloc(LoaderState* stp, unsigned needed)
-{
-    Uint rval = stp->temp_heap_top;
-
-    needed += rval;
-    while (stp->temp_heap_size < needed) {
-	stp->temp_heap_size = erts_next_heap_size(needed, 0);
-    }
-    if (stp->temp_heap == NULL) {
-	stp->temp_heap = erts_alloc(ERTS_ALC_T_LOADER_TMP,
-				    stp->temp_heap_size * sizeof(Eterm));
-    } else {
-	stp->temp_heap = erts_realloc(ERTS_ALC_T_LOADER_TMP,
-				      (void *) stp->temp_heap,
-				      stp->temp_heap_size * sizeof(Eterm));
-    }
-    stp->temp_heap_top = needed;
-    return rval;
-}
-
-
 static int
 new_label(LoaderState* stp)
 {
@@ -4429,6 +4248,58 @@ new_label(LoaderState* stp)
     stp->labels[num].value = 0;
     stp->labels[num].patches = 0;
     return num;
+}
+
+static void
+new_literal_patch(LoaderState* stp, int pos)
+{
+    LiteralPatch* p = erts_alloc(ERTS_ALC_T_LOADER_TMP, sizeof(LiteralPatch));
+    p->pos = pos;
+    p->next = stp->literal_patches;
+    stp->literal_patches = p;
+}
+
+static void
+new_string_patch(LoaderState* stp, int pos)
+{
+    StringPatch* p = erts_alloc(ERTS_ALC_T_LOADER_TMP, sizeof(StringPatch));
+    p->pos = pos;
+    p->next = stp->string_patches;
+    stp->string_patches = p;
+}
+
+static Uint
+new_literal(LoaderState* stp, Eterm** hpp, Uint heap_size)
+{
+    Literal* lit;
+
+    if (stp->allocated_literals == 0) {
+	Uint need;
+
+	ASSERT(stp->literals == 0);
+	ASSERT(stp->num_literals == 0);
+	stp->allocated_literals = 8;
+	need = stp->allocated_literals * sizeof(Literal);
+	stp->literals = (Literal *) erts_alloc(ERTS_ALC_T_LOADER_TMP,
+					       need);
+    } else if (stp->allocated_literals <= stp->num_literals) {
+	Uint need;
+
+	stp->allocated_literals *= 2;
+	need = stp->allocated_literals * sizeof(Literal);
+	stp->literals = (Literal *) erts_realloc(ERTS_ALC_T_LOADER_TMP,
+						 (void *) stp->literals,
+						 need);
+    }
+
+    stp->total_literal_size += heap_size;
+    lit = stp->literals + stp->num_literals;
+    lit->offset = 0;
+    lit->heap_size = heap_size;
+    lit->heap = erts_alloc(ERTS_ALC_T_LOADER_TMP, heap_size*sizeof(Eterm));
+    lit->term = make_boxed(lit->heap);
+    *hpp = lit->heap;
+    return stp->num_literals++;
 }
 
 
@@ -4805,6 +4676,7 @@ code_get_chunk_2(Process* p, Eterm Bin, Eterm Chunk)
 	sb->bitsize = 0;
 	sb->bitoffs = 0;
 	sb->offs = offset + (state.chunks[0].start - start);
+	sb->is_writable = 0;
 	res = make_binary(sb);
     }
     erts_free_aligned_binary_bytes(temp_alloc);
@@ -4862,12 +4734,12 @@ stub_copy_info(LoaderState* stp,
 	       Eterm* ptr_word,	/* Where to store pointer into info. */
 	       Eterm* size_word) /* Where to store size of info. */
 {
-    int decoded_size;
+    Sint decoded_size;
     Uint size = stp->chunks[chunk].size;
     if (size != 0) {
 	memcpy(info, stp->chunks[chunk].start, size);
 	*ptr_word = (Eterm) info;
-	decoded_size = decode_size(info, size);
+	decoded_size = erts_decoded_size(info, size, 0);
 	if (decoded_size < 0) {
  	    return 0;
  	}

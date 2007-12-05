@@ -79,7 +79,7 @@ Uint display_loads;		/* print info about loaded modules */
 int H_MIN_SIZE;			/* The minimum heap grain */
 
 Uint32 erts_debug_flags;	/* Debug flags. */
-#ifndef ERTS_SMP /* Not supported with smp emulator */
+#ifdef ERTS_OPCODE_COUNTER_SUPPORT
 int count_instructions;
 #endif
 int erts_backtrace_depth;	/* How many functions to show in a backtrace
@@ -246,11 +246,11 @@ erl_init(void)
     erts_bif_timer_init();
     erts_init_node_tables();
     init_dist();
+    erl_drv_thr_init();
     init_io();
     init_copy();
     init_load();
     erts_init_bif();
-    erts_init_obsolete();
     erts_delay_trap = erts_export_put(am_erlang, am_delay_trap, 2);
 #if HAVE_ERTS_MSEG
     erts_mseg_late_init(); /* Must be after timer (init_time()) and thread
@@ -923,8 +923,8 @@ erl_start(int argc, char **argv)
 	    if (argv[i][2] == 0) { /* -c: documented option */
 		erts_disable_tolerant_timeofday = 1;
 	    }
-#ifndef ERTS_SMP /* Not supported with smp emulator */
-	    else if (argv[i][2] == 'i') { /* -ci: undcoumented option */
+#ifdef ERTS_OPCODE_COUNTER_SUPPORT
+	    else if (argv[i][2] == 'i') { /* -ci: undcoumented option*/
 		count_instructions = 1;
 	    }
 #endif

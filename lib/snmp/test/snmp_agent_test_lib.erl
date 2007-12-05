@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 -module(snmp_agent_test_lib).
 
@@ -507,6 +509,11 @@ stop_agent(Config) when list(Config) ->
 	[Sup, 
 	(catch process_info(Sup)),
 	(catch process_info(Par))]),
+    
+    Info = agent_info(Sup),
+    ?DBG("stop_agent -> Agent info: "
+	 "~n   ~p", [Info]),
+    
     stop_sup(Sup, Par),
 
     {Sup2, Par2} = ?config(snmp_sub, Config),
@@ -535,7 +542,7 @@ start_sup() ->
 	    ?FAIL({start_failed,Else, ?IS_MNESIA_RUNNING()})
     end.
 
-stop_sup(Pid, _) when node(Pid) == node() ->
+stop_sup(Pid, _) when (node(Pid) == node()) ->
     case (catch process_info(Pid)) of
 	PI when list(PI) ->
 	    ?LOG("stop_sup -> attempt to stop ~p", [Pid]),
@@ -591,8 +598,10 @@ start_subagent(SaNode, RegTree, Mib) ->
     ?DBG("start_subagent -> MA: ~p", [MA]),
     MibDir = get(mib_dir),
     Mib1   = join(MibDir,Mib),
-    case rpc:call(SaNode, snmpa_supervisor, 
-		  start_sub_agent, [MA, RegTree, [Mib1]]) of
+    Mod    = snmpa_supervisor,
+    Func   = start_sub_agent,
+    Args   = [MA, RegTree, [Mib1]], 
+    case rpc:call(SaNode, Mod, Func, Args) of
 	{ok, SA} ->
 	    ?DBG("start_subagent -> SA: ~p", [SA]),
 	    {ok, SA};
@@ -602,7 +611,7 @@ start_subagent(SaNode, RegTree, Mib) ->
 
 stop_subagent(SA) ->
     ?DBG("stop_subagent -> entry with"
-	"~n   SA: ~p", [SA]),
+	 "~n   SA: ~p", [SA]),
     rpc:call(node(SA), snmpa_supervisor, stop_sub_agent, [SA]).
 
 
@@ -658,6 +667,12 @@ unload_mibs(Mibs) ->
     ?DBG("unload_mibs -> entry with"
 	"~n   Mibs: ~p", [Mibs]),
     ok = snmpa:unload_mibs(snmp_master_agent, Mibs).
+
+
+agent_info(Sup) ->
+    ?DBG("agent_info -> entry with"
+	 "~n   Sup: ~p", [Sup]),
+    rpc:call(node(Sup), snmpa, info, []).
 
 
 %% --- 

@@ -2258,6 +2258,7 @@ Eterm db_make_mp_binary(Process *p, Binary *mp, Eterm **hpp) {
     MSO(p).mso = pb;
     pb->val = mp;
     pb->bytes = (byte*) mp->orig_bytes;
+    pb->flags = 0;
     return make_binary(pb);
 }
 
@@ -2274,17 +2275,14 @@ DMCErrInfo *db_new_dmc_err_info(void)
 
 Eterm db_format_dmc_err_info(Process *p, DMCErrInfo *ei)
 {
-    int ll,sl;
+    int sl;
     int vnum;
     DMCError *tmp;
-    Eterm *lhp, *shp;
-    Eterm ret = NIL, tpl, sev;
+    Eterm *shp;
+    Eterm ret = NIL;
+    Eterm tlist, tpl, sev;
     char buff[DMC_ERR_STR_LEN + 20 /* for the number */];
 
-    ll = 0;
-    for (tmp = ei->first; tmp != NULL; tmp = tmp->next)
-	++ll;
-    lhp = HAlloc(p, ll * (2 /*cons cell*/ + 3 /*tuple of arity 2*/));
     for (tmp = ei->first; tmp != NULL; tmp = tmp->next) {
 	if (tmp->variable >= 0 && 
 	    tmp->variable < ei->num_trans &&
@@ -2298,14 +2296,15 @@ Eterm db_format_dmc_err_info(Process *p, DMCErrInfo *ei)
 	else
 	    strcpy(buff,tmp->error_string);
 	sl = strlen(buff);
-	shp = HAlloc(p, sl * 2);
+	shp = HAlloc(p, sl * 2 + 5);
 	sev = (tmp->severity == dmcWarning) ? 
 	    am_atom_put("warning",7) :
 	    am_error;
-	tpl = TUPLE2(lhp, sev, buf_to_intlist(&shp, buff, sl, NIL));
-	lhp += 3;
-	ret = CONS(lhp, tpl, ret);
-	lhp += 2;
+	tlist = buf_to_intlist(&shp, buff, sl, NIL);
+	tpl = TUPLE2(shp, sev, tlist);
+	shp += 3;
+	ret = CONS(shp, tpl, ret);
+	shp += 2;
     }
     return ret;
 }
@@ -2321,14 +2320,11 @@ void db_free_dmc_err_info(DMCErrInfo *ei){
     erts_free(ERTS_ALC_T_DB_DMC_ERR_INFO, ei);
 }
 
-#define FIX_BIG_SIZE 16
 #define MAX_NEED(x,y) (((x)>(y)) ? (x) : (y))
-
-static Eterm  big_tmp[2];
-static Eterm  db_big_buf[FIX_BIG_SIZE];
 
 static Eterm add_counter(Eterm counter, Eterm incr)
 {
+    Eterm big_tmp[2];
     Eterm res;
     Sint ires;
     Eterm arg1;
@@ -2341,10 +2337,14 @@ static Eterm add_counter(Eterm counter, Eterm incr)
 
     if (is_small(counter) && is_small(incr)) {
 	ires = signed_val(counter) + signed_val(incr);
-	if (IS_SSMALL(ires))
+	if (IS_SSMALL(ires)) {
 	    return make_small(ires);
-	else
-	    return small_to_big(ires, db_big_buf);
+	} else {
+	    ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, 2*sizeof(Eterm));
+	    if (!ptr)
+		return NIL;  /* system limit */
+	    return small_to_big(ires, ptr);
+	}
     }
     else {
 	switch(i = NUMBER_CODE(counter, incr)) {
@@ -2367,18 +2367,12 @@ static Eterm add_counter(Eterm counter, Eterm incr)
 	sz2 = big_size(arg2);
 	sz1 = MAX_NEED(sz1,sz2)+1;
 	need = BIG_NEED_SIZE(sz1);
-	if (need <= FIX_BIG_SIZE)
-	    ptr = db_big_buf;
-	else {
-	    ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP,
-					   need*sizeof(Eterm));
-	    if (!ptr)
-		return NIL;  /* system limit */
-	}
+	ptr = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, need*sizeof(Eterm));
+	if (!ptr)
+	    return NIL;  /* system limit */
 	res = big_plus(arg1, arg2, ptr);
 	if (is_small(res) || is_nil(res)) {
-	    if (ptr != db_big_buf)
-		erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
+	    erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
 	}
 	return res;
     }
@@ -2430,14 +2424,9 @@ int db_do_update_counter(Process *p,
 	    Eterm *tmp;
 	    Eterm *p = big_val(incr);
 	    Uint psz = BIG_ARITY(p)+1;
-	    if (psz > FIX_BIG_SIZE) {
-		tmp = db_big_buf;
-	    } else {
-		tmp = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP,
-					       psz*sizeof(Eterm));
-		if (!tmp)
-		    return DB_ERROR_SYSRES;
-	    }
+	    tmp = (Eterm *) erts_alloc_fnf(ERTS_ALC_T_DB_TMP, psz*sizeof(Eterm));
+	    if (!tmp)
+		return DB_ERROR_SYSRES;
 	    sys_memcpy(tmp, p, psz*sizeof(Eterm));
 	    res = make_big(tmp);
 	}		
@@ -2468,8 +2457,7 @@ int db_do_update_counter(Process *p,
 	sys_memcpy(hp, ptr, sz*sizeof(Eterm));
 	res = make_big(hp);
 	hp += sz;
-	if (ptr != db_big_buf)
-	    erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
+	erts_free(ERTS_ALC_T_DB_TMP, (void *) ptr);
 	*ret = res;
 	return DB_ERROR_NONE;
     }

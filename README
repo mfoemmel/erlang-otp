@@ -20,23 +20,23 @@ Binary releases for Windows can be found at http://www.erlang.org/
 
 At Ericsson we have a "Daily Build and Test" that runs on:
  
-    Operating system        Version
+    Operating system        Versions
     -----------------------------------------------------------
-    Solaris/Sparc           2.8      (1)
-    Linux/Suse x86	    9.2
-    Linux/Suse Amd64	    9.2
-    Linux/Suse Amd64	    10.0
+    Solaris/Sparc           2.8, 2.9, 2.10
+    Linux/Suse x86	    9.3, 10.0
+    Linux/Suse Amd64	    9.3, 10.0
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
-    Mac OS X/PPC            10.4.8   (2)
-    Mac OS X/Intel          10.4.8   (3)
-    Windows 		    XP
+    Mac OS X/Intel          10.4.10 (Tiger)
+    Windows 		    XP SP2
     Windows 		    2003
 
-(1) Older versions of Solaris should work as well, but we don't test them 
-    any longer.
-(2) Runs on an Apple eMac. See notes below.
-(3) Runs on an Mac Mini. See notes below.
+We have also done some limited testing on the following platforms:
+
+    Mac OS X/Intel          10.5.1 (Leopard)
+    Mac OS X/PPC            10.4.11 (Tiger)
+    Windows                 Vista
+
 
 Versions known *not* to work
 -------------------------------------
@@ -46,6 +46,25 @@ rpm named gcc-3.3.3-41. That version has a serious optimization bug
 that makes it unusable for building the erlang emulator. Please
 upgrade GCC to a newer version before building on Suse 9.1. Suse Linux
 EnterpriSe edition 9 (SLES9) has gcc-3.3.3-43 and is not affected.
+
+FreeBSD has a bug which cause kqueue/poll/select to fail to detect
+that a writev() on a pipe has been made. This bug should have been fixed
+in FreeBSD 6.3 and FreeBSD 7.0. More information can be found at:
+* http://www.freebsd.org/cgi/cvsweb.cgi/src/sys/kern/sys_pipe.c
+* http://lists.freebsd.org/pipermail/freebsd-arch/2007-September/006790.html
+NetBSD and DragonFlyBSD probably have or have had the same bug.
+
+getcwd() on Solaris 9 can cause an emulator crash. If you have async-threads
+enabled you can increase the stack size of the async-threads as a temporary
+workaround. See the +a command-line argument in the documentation of erl(1).
+Without async-threads the emulator isn't as vulnerable to this bug, but if
+you hit it without async-threads the only workaround available is to enable
+async-threads and increase the stack size of the async-threads.
+Sun has however released patches that fixes the issue:
+Problem Description: 6448300 large mnttab can cause stack overrun during
+                     Solaris 9 getcwd
+* http://sunsolve.sun.com/search/document.do?assetkey=1-21-112874-40-1&searchclause=6448300
+* http://sunsolve.sun.com/search/document.do?assetkey=1-21-114432-29-1&searchclause=6448300
 
 Required utilities
 ------------------
@@ -70,7 +89,7 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
 
   Perl 5
 
-  OpenSSL	        Optional but needed for building the Erlang/OTP
+  OpenSSL	        Optional, but needed for building the Erlang/OTP
                         applications 'ssl' and 'crypto'. You need the
                         "development package" of OpenSSL, i.e. including
                         the header files. For building the application 'ssl'
@@ -96,10 +115,13 @@ These are the tools you will need in order to unpack and build Erlang/OTP.
                         build the flex scanner for the megaco application
                         on Unix/Linux.
 
+  LibGD			Optional, but needed if you want to use the
+			percept application. http://www.libgd.org
+
   Installing
   ----------
 
-  An install program that can take multiple file names.
+  An 'install' program that can take multiple file names.
 
 
 How to build and install Erlang/OTP
@@ -108,12 +130,12 @@ How to build and install Erlang/OTP
 Start by unpacking the Erlang/OTP distribution file with your
 GNU compatible TAR
 
-  1)    gunzip -c otp_src_R11B-5.tar.gz | tar xf -
-  1)    zcat otp_src_R11B-5.tar.gz | tar xf -
+  1)    gunzip -c otp_src_R12B-0.tar.gz | tar xf -
+  1)    zcat otp_src_R12B-0.tar.gz | tar xf -
 
 Now cd into the base directory
 
-  2)    cd otp_src_R11B-5
+  2)    cd otp_src_R12B-0
 
 On some platforms Perl may behave strangely if certain locales are set,
 so optionally you may need to set the LANG variable:
@@ -124,10 +146,16 @@ or
 
 Run the following commands
 
-  4)    ./configure  [ options ]
+  4a)    ./configure  [ options ]
+or
+  4b)    ./configure --prefix=<BaseDir> [ other options ]
 
-If you upgraded the source with the patch you may need to clean up
-from previous builds before the new build. Do a "make clean", see
+By default, Erlang/OTP will be installed in /usr/local/{bin,lib/erlang,man/man1}.
+To instead install in <BaseDir>/{bin,lib/erlang,man/man1}, use the --prefix=<BaseDir>
+option.
+
+If you upgraded the source with some patch you may need to clean up
+from previous builds before the new build. Do a "make clean"; see
 "Caveats" below.
 
   5)    make
@@ -135,21 +163,27 @@ from previous builds before the new build. Do a "make clean", see
 
 Let's go through them in some detail:
 
-    Step 4 runs a configuration script created by the GNU autoconf
+Step 4 runs a configuration script created by the GNU autoconf
 utility, which checks for system specific features and then creates a
-number of makefiles. The configure script allows you to customize a
-number of parameters; type "./configure --help" for details. One of
-the things you can specify is where Erlang/OTP should be installed; by
-default Erlang/OTP will install in /usr/local/{bin,lib/erlang,man/man1};
-to keep the same structure but install in a different place, let's
-call it <Dir> rather than /usr/local use the --prefix argument. Like so:
-"./configure --prefix=<Dir>". This step will also configure any
-additional libraries unpacked in step 3 (if you didn't add any of the
-extra libraries configure will issue a warning saying that there is no
-configuration information in lib, this warning can safely be ignored).
+number of makefiles.
+
+The configure script allows you to customize a number of parameters;
+type "./configure --help" for details.
+
+One of the things you can specify is where Erlang/OTP should be installed: by
+default Erlang/OTP will be installed in /usr/local/{bin,lib/erlang,man/man1};
+to keep the same structure but install in a different place, <Dir> say,
+use the --prefix argument like this:
+"./configure --prefix=<Dir>".
+
+This step will also configure any additional libraries unpacked in step 3
+(if you didn't add any of the extra libraries configure will issue a warning
+saying that there is no configuration information in lib; this warning can
+safely be ignored).
 
 You can also specify where the OpenSSL include and library files are
-located, or else disable the use of SSL and Crypto. 
+located, or alternatively disable the use of SSL and Crypto.
+(The details can be found by typing './configure --help'.)
 
 Other options are:
 
@@ -170,13 +204,9 @@ Other options are:
 				supported platforms.
 	
 
-    Step 5 first builds the Erlang emulator, this will take
-approximately five minutes on a reasonably fast machine. It then
-proceeds to build the Erlang/OTP libraries in the "lib" subdirectory
-using the built emulator and the bootstrap libraries provided in the
-"bootstrap" subdirectory.  Compiling everything can take quite a long
-time, expect half an hour up to a couple of hours. After step 4 is
-completed you should have a working Erlang/OTP system which you can
+    Step 5 builds the Erlang/OTP system. On a fast computer,
+this will take about 5 minutes. After completion of this step,
+you should have a working Erlang/OTP system which you can
 try by typing "bin/erl". This should start up Erlang/OTP and give you
 a prompt.
 
@@ -187,39 +217,12 @@ having to do step 5 again).
 If you or your system has special requirements please read the
 Makefile for additional configuration information.
 
-Distribution with pre-built platform independent build results
---------------------------------------------------------------
-
-The distribution with pre-built platform independent build results
-contains all source files as well as most platform independent build
-results, e.g., most '*.beam' files. This distribution also contains a
-file named 'otp_src_R11B-5/prebuilt.files' which contains the names of
-all pre-built files. Most of the content of the bootstrap directory have
-been removed, but it can be recreated from the pre-built files.
-
-The build procedure is the same for this distribution as for the
-distribution without any pre-built files. The actual build will, however,
-go much faster since 'make' will notice that a lot of the build results
-already have been built.
-
-NOTE: Doing 'make clean' in an arbitrary directory of the source tree,
-may remove files needed for bootstrapping the build. Doing
-'make recreate_primary_bootstrap' from the $ERL_TOP directory before
-doing 'make clean' will ensure that it will be possible to build after
-doing 'make clean'. 'make recreate_primary_bootstrap' will be invoked
-automatically when 'make' is invoked from ERL_TOP with with either the
-clean target, or the default target.
 
 Support for SMP (Symmetric Multi Processing)
 --------------------------------------------
 
-New for this release is support for SMP (Symmetric Multi Processing).
-For more details, see the release notes for ERTS application and the
-documentation. Here follows some brief information.
-
 For platforms that are known by us to support the SMP emulator, the
-SMP emulator will be built automatically. Use "erl -smp" to start it.
-See the release notes for a list of the platforms.
+SMP emulator will be built automatically.
 
 To force building of an SMP emulator, use "./configure --enable-smp-support".
 For more details about this, see the release notes.
@@ -227,10 +230,14 @@ For more details about this, see the release notes.
 Use "./configure --disable-smp-support" if you for some reason don't
 want to have the SMP emulator built.
 
-
 If SMP support is enabled, support for threaded I/O will also be turned on
 (even in the standard, non-SMP emulator).
 
+New from the R12B release is that the 'erl' command automatically will
+start the SMP emulator if the computer has more than one core or CPU.
+(Use 'erl -smp disable' to force the non-SMP emulator to be started,
+or 'erl -smp enable' to start the SMP emulator on a computer with only one
+CPU.)
 
 How to install the Erlang/OTP documentation
 -------------------------------------------
@@ -297,7 +304,7 @@ SPARC:
 	to use Sun's assembler and linker. Using the GNU assembler but
 	Sun's linker has been known to cause problems.
 ARM:
-	Big-endian mode on ARMv5TE (i.e., XScale) processors should work.
+	Big-endian mode on ARMv5TE (i.e. XScale) processors should work.
 
 	Linux is supported.
 
@@ -305,7 +312,7 @@ HiPE is automatically enabled on the following systems:
 	x86 in 32-bit mode: Linux, Solaris, FreeBSD
 	x86 in 64-bit mode: Linux, Solaris, FreeBSD
 	PowerPC: Linux, MacOSX
-	SPARC: Linux, Solaris
+	SPARC: Linux
 	ARM: Linux
 On other supported systems you need to "./configure --enable-hipe".
 
@@ -341,30 +348,43 @@ to print out the available options.
 Mac OS X (Darwin)
 -----------------
 
-Mac OS X version 10.4 (Tiger) or later is recommended.
+Mac OS X version 10.4 (Tiger) or later is recommended. 10.5 (Leopard) is
+tested, but at the time of writing, not on a regular basis.
 
 Earlier releases of Mac OS X might work, but we have not
 tested them. On earlier releases, use the "gnutar" command
 to unpack the sources. (If a non-GNU tar is used, some files
 will not be correctly extracted and the build will fail.)
 
-Erlang/OTP will read the network configuration files in "/etc" at
-startup.  In Darwin these are normally not used by the operating
-system. The easiest way to force Erlang/OTP avoid reading the files
-is to put the line (including the ending '.')
-
-  {lookup,["native"]}.
-
-into the "$HOME/.inetrc" file.
-
 Make sure that the command "hostname" returns a valid fully qualified
 host name (this is configured in "/etc/hostconfig").
 
-If you develop linked in drivers (shared library) you need to link
-using "cc" and the flags "-bundle -flat_namespace -undefined
+If you develop linked-in drivers (shared library) you need to link
+using "gcc" and the flags "-bundle -flat_namespace -undefined
 suppress". You also include "-fno-common" in CFLAGS when
 compiling. Use ".so" as the library suffix.
 
+Universal 32bit binaries can be built on an Intel Mac using the
+--enable-darwin-universal configure option. There still may occur
+problems with certain applications using this option, but the base
+system should run smoothly.
+
+When building universal binaries on a PowerPC Mac (at least on Tiger),
+you must point out a suitable SDK that contains universal binaries:
+
+	export CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk"
+	export LDFLAGS=$CFLAGS
+	./configure --enable-darwin-universal
+
+Experimental support for 64bit x86 darwin binaries can be enabled
+using the --enable-darwin-64bit configure flag. The 64bit binaries are
+best built and run on Leopard, but most of the system also works on
+Tiger (Tiger's 64bit libraries are, however, limited; therefore e.g. odbc,
+crypto, ssl etc. are not supported in Tiger). 64bit PPC binaries are not
+supported and we have no plans to add such support (no machines to
+test on).
+
+Universal binaries and 64bit binaries are mutually exclusive options.
 
 Make and the variable "ERL_TOP"
 -------------------------------
@@ -390,6 +410,3 @@ More Information
 ----------------
 
 More information can be found at http://www.erlang.org.
-
-For commercial inquires (printed documentation, support, etc) please
-visit http://www.erlang.se.

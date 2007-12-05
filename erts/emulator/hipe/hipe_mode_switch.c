@@ -365,12 +365,13 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	   *
 	   * In native code a call to a closure of arity n looks like
 	   * F(A1, ..., AN, Closure),
-	   * Beam expects to get:
+	   * The BEAM code for a closure expects to get:
 	   * F(A1, ..., AN, FV1, ..., FVM, Closure)
-	   *  (Where Ai is argument i and FVi is free variable i)
+	   *  (Where Ai is argument i and FVj is free variable j)
 	   *
 	   * p->hipe.closure contains the closure
-	   * p->def_arg_reg[] contains the parameters (on SPARC)
+	   * p->def_arg_reg[] contains the register parameters
+	   * p->hipe.nsp[] contains the stacked parameters
 	   */
 	  ErlFunThing *closure;
 	  unsigned num_free, arity, i, is_recursive;
@@ -378,33 +379,47 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  HIPE_ASSERT(is_fun(p->hipe.closure));
 	  closure = (ErlFunThing*)fun_val(p->hipe.closure);
 	  num_free = closure->num_free;
-	  arity = closure->fe->address[-1] - num_free;
+	  arity = closure->fe->arity;
 
 	  /* Store the arity in p->arity for the stack popping. */
+	  /* Note: we already have the closure so only need to move arity
+	     values to reg[]. However, there are arity+1 parameters in the
+	     native code state that need to be removed. */
 	  p->arity = arity+1; /* +1 for the closure */
 
 	  /* Get parameters, don't do GC just yet. */
 	  is_recursive = hipe_call_from_native_is_recursive(p, reg);
 
-	  /* Append the free vars to the actual parameters. */
-	  for(i = 0; i < num_free; ++i)
-	      reg[arity+i] = closure->env[i];
-	  /* Put the closure as the last argument. */
-	  reg[arity+i] = p->hipe.closure;
+	  if ((Sint)closure->fe->address[-1] < 0) {
+	      /* Unloaded. Let beam_emu.c:call_fun() deal with it. */
+	      result = HIPE_MODE_SWITCH_RES_CALL_CLOSURE;
+	  } else {
+	      /* The BEAM code is present. Prepare to call it. */
 
-	  /* Make a call to the closure's BEAM code. */
-	  p->i = closure->fe->address;
+	      /* Append the free vars after the actual parameters. */
+	      for(i = 0; i < num_free; ++i)
+		  reg[arity+i] = closure->env[i];
 
-	  if( is_recursive ) {
+	      /* Update arity to reflect the new parameters. */
+	      arity += i;
+
+	      /* Make a call to the closure's BEAM code. */
+	      p->i = closure->fe->address;
+
+	      /* Change result code to the faster plain CALL type. */
+	      result = HIPE_MODE_SWITCH_RES_CALL;
+	  }
+	  /* Append the closure as the last parameter. Don't increment arity. */
+	  reg[arity] = p->hipe.closure;
+
+	  if (is_recursive) {
 	      /* BEAM called native, which now calls BEAM.
 		 Need to put a trap-frame on the beam stack.
 		 This may cause GC, which is safe now that
 		 the arguments, free vars, and most
 		 importantly the closure, all are in reg[]. */
-	      hipe_push_beam_trap_frame(p, reg, arity+i);
+	      hipe_push_beam_trap_frame(p, reg, arity+1);
 	  }
-
-	  result = HIPE_MODE_SWITCH_RES_CALL;
 	  break;
       }
       case HIPE_MODE_SWITCH_RES_RESCHEDULE: {
@@ -592,6 +607,6 @@ void hipe_set_closure_stub(ErlFunEntry *fe, unsigned num_free)
 {
     unsigned arity;
 
-    arity = fe->address[-1] - num_free;
+    arity = fe->arity;
     fe->native_address = (Eterm*) hipe_closure_stub_address(arity);
 }

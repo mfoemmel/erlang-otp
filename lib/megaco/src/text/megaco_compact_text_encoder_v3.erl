@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2005-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Encode COMPACT Megaco/H.248 text messages from internal form
@@ -28,6 +30,8 @@
 	 encode_command_request/2,
 	 encode_action_reply/2]).
 
+-export([token_tag2string/1]).
+
 
 -include_lib("megaco/include/megaco.hrl").
 -include_lib("megaco/include/megaco_message_v3.hrl").
@@ -39,34 +43,22 @@
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 
-encode_message([], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
+encode_message(EC, MegaMsg) 
+  when is_list(EC) andalso is_record(MegaMsg, 'MegacoMessage') ->
     case (catch enc_MegacoMessage(MegaMsg)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
 	    {ok, Bin}
     end;
-encode_message([{flex,_}], MegaMsg) when record(MegaMsg, 'MegacoMessage') ->
-    case (catch enc_MegacoMessage(MegaMsg)) of
-	{'EXIT', Reason} ->
-	    {error, Reason};
-	Bin when binary(Bin) ->
-	    {ok, Bin};
-	DeepIoList ->
-	    Bin = erlang:list_to_binary(DeepIoList),
-	    {ok, Bin}
-    end;
-encode_message([_|T], MegaMsg) ->
-    encode_message(T, MegaMsg);
 encode_message(EncodingConfig, MegaMsg) 
-  when record(MegaMsg, 'MegacoMessage')  ->
+  when is_record(MegaMsg, 'MegacoMessage')  ->
     {error, {bad_encoding_config, EncodingConfig}};
 encode_message(_EncodingConfig, _MegaMsg) ->
     {error, bad_megaco_message}.
-
 
 
 
@@ -78,7 +70,7 @@ encode_transaction(_EC, Trans) ->
     case (catch enc_Transaction(Trans)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -90,11 +82,11 @@ encode_transaction(_EC, Trans) ->
 %% Convert a list of ActionRequest record's into a binary
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
-encode_action_requests(_EC, ActReqs) ->
+encode_action_requests(_EC, ActReqs) when is_list(ActReqs) ->
     case (catch enc_ActionRequests(ActReqs)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -106,11 +98,11 @@ encode_action_requests(_EC, ActReqs) ->
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_request(_EC, ActReq) 
-  when record(ActReq, 'ActionRequest') ->
+  when is_record(ActReq, 'ActionRequest') ->
     case (catch enc_ActionRequest(ActReq)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -122,11 +114,11 @@ encode_action_request(_EC, ActReq)
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_command_request(_EC, CmdReq) 
-  when record(CmdReq, 'CommandRequest') ->
+  when is_record(CmdReq, 'CommandRequest') ->
     case (catch enc_CommandRequest(CmdReq)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
-	Bin when binary(Bin) ->
+	Bin when is_binary(Bin) ->
 	    {ok, Bin};
 	DeepIoList ->
 	    Bin = erlang:list_to_binary(DeepIoList),
@@ -138,13 +130,160 @@ encode_command_request(_EC, CmdReq)
 %% Return {ok, DeepIoList} | {error, Reason}
 %%----------------------------------------------------------------------
 encode_action_reply(_EC, ActRep) 
-  when record(ActRep, 'ActionReply') ->
+  when is_record(ActRep, 'ActionReply') ->
     case (catch enc_ActionReply(ActRep)) of
 	{'EXIT', Reason} ->
 	    {error, Reason};
+	Bin when is_binary(Bin) ->
+	    {ok, Bin};
 	DeepIoList ->
-	    {ok, DeepIoList}
+	    Bin = erlang:list_to_binary(DeepIoList),
+	    {ok, Bin}
     end.
+
+
+%%----------------------------------------------------------------------
+%% A utility function to pretty print the tags found in a megaco message
+%%----------------------------------------------------------------------
+
+token_tag2string(addReq)                 -> ?CompactAddToken;
+token_tag2string(addReply)               -> ?CompactAddToken;
+%% token_tag2string(X)               -> ?CompactAndAUDITSelectToken;
+token_tag2string(auditDescriptor)        -> ?CompactAuditToken;
+token_tag2string(auditCapRequest)        -> ?CompactAuditCapToken;
+token_tag2string(auditCapReply)          -> ?CompactAuditCapToken;
+token_tag2string(auditValueRequest)      -> ?CompactAuditValueToken;
+token_tag2string(auditValueReply)        -> ?CompactAuditValueToken;
+%% token_tag2string(X) -> ?CompactAuthToken;
+token_tag2string(both)                   -> ?CompactBothToken;
+token_tag2string(bothway)                -> ?CompactBothwayToken;
+token_tag2string(brief)                  -> ?CompactBriefToken;
+%% token_tag2string(X) -> ?CompactBufferToken;
+%% token_tag2string(X) -> ?CompactCtxToken;
+%% token_tag2string(X) -> ?CompactContextAuditToken;
+%% token_tag2string(X) -> ?CompactContextAttrToken;
+%% token_tag2string(X) -> ?CompactContextListToken;
+token_tag2string(digitMapDescriptor)     -> ?CompactDigitMapToken;
+token_tag2string(digitMapToken)          -> ?CompactDigitMapToken;
+%% token_tag2string(X) -> ?CompactDirectionToken;
+%% token_tag2string(X) -> ?CompactDiscardToken;
+%% token_tag2string(X) -> ?CompactDisconnectedToken;
+%% token_tag2string(X) -> ?CompactDelayToken;
+token_tag2string(duration)               -> ?CompactDurationToken;
+%% token_tag2string(X) -> ?CompactEmbedToken;
+token_tag2string(emergencyAudit)         -> ?CompactEmergencyToken;
+%% token_tag2string(X)         -> ?CompactEmergencyOffToken;
+%% token_tag2string(X)         -> ?CompactEmergencyValueToken;
+token_tag2string(errorDescriptor)        -> ?CompactErrorToken;
+token_tag2string(eventBufferDescriptor)  -> ?CompactEventBufferToken;
+token_tag2string(eventBufferToken)       -> ?CompactEventBufferToken;
+token_tag2string(eventsDescriptor)       -> ?CompactEventsToken;
+token_tag2string(eventsToken)            -> ?CompactEventsToken;
+token_tag2string(external)               -> ?CompactExternalToken;
+%% token_tag2string(X) -> ?CompactFailoverToken;
+%% token_tag2string(X) -> ?CompactForcedToken;
+%% token_tag2string(X) -> ?CompactGracefulToken;
+%% token_tag2string(X) -> ?CompactH221Token;
+%% token_tag2string(X) -> ?CompactH223Token;
+%% token_tag2string(X) -> ?CompactH226Token;
+%% token_tag2string(X) -> ?CompactHandOffToken;
+token_tag2string(iepsCallind)                 -> ?CompactIEPSToken;
+%% token_tag2string(X) -> ?CompactImmAckRequiredToken;
+token_tag2string(inactive)                    -> ?CompactInactiveToken;
+token_tag2string(internal)                    -> ?CompactInternalToken;
+%% token_tag2string(X)                    -> ?CompactIntsigDelayToken;
+token_tag2string(onInterruptByEvent)          -> ?CompactInterruptByEventToken;
+token_tag2string(onInterruptByNewSignalDescr) -> ?CompactInterruptByNewSignalsDescrToken;
+token_tag2string(isolate)        	 -> ?CompactIsolateToken;
+token_tag2string(inSvc)          	 -> ?CompactInSvcToken;
+token_tag2string(iteration)        	 -> ?CompactIterationToken;
+token_tag2string(keepActive)     	 -> ?CompactKeepActiveToken;
+token_tag2string(localDescriptor)        -> ?CompactLocalToken;
+token_tag2string(localControlDescriptor) -> ?CompactLocalControlToken;
+token_tag2string(lockStep)          	 -> ?CompactLockStepToken;
+token_tag2string(loopBack)          	 -> ?CompactLoopbackToken;
+token_tag2string(mediaDescriptor)   	 -> ?CompactMediaToken;
+token_tag2string(mediaToken)        	 -> ?CompactMediaToken;
+%% token_tag2string(X) -> ?CompactMegacopToken;
+%% token_tag2string(X) -> ?CompactMethodToken;
+%% token_tag2string(X) -> ?CompactMgcIdToken;
+%% token_tag2string(X) -> ?CompactModeToken;
+token_tag2string(modReq)               -> ?CompactModifyToken;
+token_tag2string(modReply)             -> ?CompactModifyToken;
+token_tag2string(modemDescriptor)      -> ?CompactModemToken;
+token_tag2string(modemToken)           -> ?CompactModemToken;
+token_tag2string(moveReq)              -> ?CompactMoveToken;
+token_tag2string(moveReply)            -> ?CompactMoveToken;
+%% token_tag2string(X) -> ?CompactMtpToken;
+token_tag2string(muxDescriptor)        -> ?CompactMuxToken;
+token_tag2string(muxToken)             -> ?CompactMuxToken;
+%% token_tag2string(X)            -> ?CompactNeverNotifyToken;
+token_tag2string(notifyReq)            -> ?CompactNotifyToken;
+%% token_tag2string(X) -> ?CompactNotifyCompletionToken;
+%% token_tag2string(X) -> ?CompactNotifyImmediateToken;
+%% token_tag2string(X) -> ?CompactNotifyRegulatedToken;
+%% token_tag2string(X) -> ?CompactNx64kToken;
+token_tag2string(observedEventsDescriptor) -> ?CompactObservedEventsToken;
+token_tag2string(observedEventsToken)      -> ?CompactObservedEventsToken;
+token_tag2string(false)                 -> ?CompactOffToken;
+token_tag2string(off)                   -> ?CompactOffToken;
+token_tag2string(oneway)                -> ?CompactOnewayToken;
+token_tag2string(onewayboth)            -> ?CompactOnewayBothToken;
+token_tag2string(onewayexternal)        -> ?CompactOnewayExternalToken;
+token_tag2string(onOff)                 -> ?CompactOnOffToken;
+%% token_tag2string(X)                  -> ?CompactOrAUDITselectToken;
+token_tag2string(true)                  -> ?CompactOnToken;
+token_tag2string(otherReason)           -> ?CompactOtherReasonToken;
+token_tag2string(outOfSvc)              -> ?CompactOutOfSvcToken;
+token_tag2string(packagesDescriptor)    -> ?CompactPackagesToken;
+token_tag2string(packagesToken)         -> ?CompactPackagesToken;
+%% token_tag2string(X) -> ?CompactPendingToken;
+token_tag2string(priorityAudit)         -> ?CompactPriorityToken;
+%% token_tag2string(X) -> ?CompactProfileToken;
+%% token_tag2string(X) -> ?CompactReasonToken;
+token_tag2string(recvOnly)              -> ?CompactRecvonlyToken;
+%% token_tag2string(X) -> ?CompactReplyToken;
+token_tag2string(resetEventsDescriptor) -> ?CompactResetEventsDescriptorToken;
+%% token_tag2string(X) -> ?CompactRequestIDToken;
+%% token_tag2string(X) -> ?CompactResponseAckToken;
+%% token_tag2string(X) -> ?CompactRestartToken;
+token_tag2string(remoteDescriptor)     -> ?CompactRemoteToken;
+%% token_tag2string(X) -> ?CompactReservedGroupToken;
+%% token_tag2string(X) -> ?CompactReservedValueToken;
+token_tag2string(sendOnly)             -> ?CompactSendonlyToken;
+token_tag2string(sendRecv)             -> ?CompactSendrecvToken;
+%% token_tag2string(X) -> ?CompactServicesToken;
+%% token_tag2string(X) -> ?CompactServiceStatesToken;
+token_tag2string(serviceChangeReq)     -> ?CompactServiceChangeToken;
+%% token_tag2string(X) -> ?CompactServiceChangeAddressToken;
+token_tag2string(incomplete)           -> ?CompactServiceChangeIncompleteToken;
+%% token_tag2string(X) -> ?CompactSignalListToken;
+token_tag2string(signalsDescriptor)    -> ?CompactSignalsToken;
+token_tag2string(signalsToken)         -> ?CompactSignalsToken; 
+%% token_tag2string(X) -> ?CompactSignalTypeToken;
+token_tag2string(statisticsDescriptor) -> ?CompactStatsToken;
+token_tag2string(statsToken)           -> ?CompactStatsToken;
+%% token_tag2string(X) -> ?CompactStreamToken;
+token_tag2string(subtractReq)          -> ?CompactSubtractToken;
+token_tag2string(subtractReply)        -> ?CompactSubtractToken;
+%% token_tag2string(X) -> ?CompactSynchISDNToken;
+%% token_tag2string(X) -> ?CompactTerminationStateToken;
+token_tag2string(test)                 -> ?CompactTestToken;
+token_tag2string(timeOut)              -> ?CompactTimeOutToken;
+token_tag2string(onTimeOut)            -> ?CompactTimeOutToken;
+token_tag2string(topologyAudit)        -> ?CompactTopologyToken;
+%% token_tag2string(X) -> ?CompactTransToken;
+%% token_tag2string(X) -> ?CompactV18Token;
+%% token_tag2string(X) -> ?CompactV22Token;
+%% token_tag2string(X) -> ?CompactV22bisToken;
+%% token_tag2string(X) -> ?CompactV32Token;
+%% token_tag2string(X) -> ?CompactV32bisToken;
+%% token_tag2string(X) -> ?CompactV34Token;
+%% token_tag2string(X) -> ?CompactV76Token;
+%% token_tag2string(X) -> ?CompactV90Token;
+%% token_tag2string(X) -> ?CompactV91Token;
+%% token_tag2string(X) -> ?CompactVersionToken;
+token_tag2string(_) -> [].
 
 
 %%----------------------------------------------------------------------
@@ -185,6 +324,7 @@ encode_action_reply(_EC, ActRep)
 %%----------------------------------------------------------------------
 
 -define(AddToken                   , ?CompactAddToken).
+-define(AndAUDITSelectToken        , ?CompactAndAUDITSelectToken).
 -define(AuditToken                 , ?CompactAuditToken).
 -define(AuditCapToken              , ?CompactAuditCapToken).
 -define(AuditValueToken            , ?CompactAuditValueToken).
@@ -196,6 +336,7 @@ encode_action_reply(_EC, ActRep)
 -define(CtxToken                   , ?CompactCtxToken).
 -define(ContextAuditToken          , ?CompactContextAuditToken).
 -define(ContextAttrToken           , ?CompactContextAttrToken).
+-define(ContextListToken           , ?CompactContextListToken).
 -define(DigitMapToken              , ?CompactDigitMapToken).
 -define(DirectionToken             , ?CompactDirectionToken).
 -define(DiscardToken               , ?CompactDiscardToken).
@@ -206,6 +347,7 @@ encode_action_reply(_EC, ActRep)
 -define(EmbedToken                 , ?CompactEmbedToken).
 -define(EmergencyToken             , ?CompactEmergencyToken).
 -define(EmergencyOffToken          , ?CompactEmergencyOffToken).
+-define(EmergencyValueToken        , ?CompactEmergencyValueToken).
 -define(ErrorToken                 , ?CompactErrorToken).
 -define(EventBufferToken           , ?CompactEventBufferToken).
 -define(EventsToken                , ?CompactEventsToken).
@@ -221,10 +363,12 @@ encode_action_reply(_EC, ActRep)
 -define(ImmAckRequiredToken        , ?CompactImmAckRequiredToken).
 -define(InactiveToken              , ?CompactInactiveToken).
 -define(InternalToken              , ?CompactInternalToken).
--define(InterruptByEventToken      , ?CompactInterruptByEventToken).
--define(InterruptByNewSignalsDescrToken, ?CompactInterruptByNewSignalsDescrToken).
+-define(IntsigDelayToken           , ?CompactIntsigDelayToken).
 -define(IsolateToken               , ?CompactIsolateToken).
 -define(InSvcToken                 , ?CompactInSvcToken).
+-define(InterruptByEventToken      , ?CompactInterruptByEventToken).
+-define(InterruptByNewSignalsDescrToken, ?CompactInterruptByNewSignalsDescrToken).
+-define(IterationToken             , ?CompactIterationToken).
 -define(KeepActiveToken            , ?CompactKeepActiveToken).
 -define(LocalToken                 , ?CompactLocalToken).
 -define(LocalControlToken          , ?CompactLocalControlToken).
@@ -232,6 +376,7 @@ encode_action_reply(_EC, ActRep)
 -define(LoopbackToken              , ?CompactLoopbackToken).
 -define(MediaToken                 , ?CompactMediaToken).
 -define(MegacopToken               , ?CompactMegacopToken).
+-define(MessageSegmentToken        , ?CompactMessageSegmentToken).
 -define(MethodToken                , ?CompactMethodToken).
 -define(MgcIdToken                 , ?CompactMgcIdToken).
 -define(ModeToken                  , ?CompactModeToken).
@@ -240,14 +385,20 @@ encode_action_reply(_EC, ActRep)
 -define(MoveToken                  , ?CompactMoveToken).
 -define(MtpToken                   , ?CompactMtpToken).
 -define(MuxToken                   , ?CompactMuxToken).
+-define(NeverNotifyToken           , ?CompactNeverNotifyToken).
 -define(NotifyToken                , ?CompactNotifyToken).
 -define(NotifyCompletionToken      , ?CompactNotifyCompletionToken).
+-define(NotifyImmediateToken       , ?CompactNotifyImmediateToken).
+-define(NotifyRegulatedToken       , ?CompactNotifyRegulatedToken).
 -define(Nx64kToken                 , ?CompactNx64kToken).
 -define(ObservedEventsToken        , ?CompactObservedEventsToken).
 -define(OffToken                   , ?CompactOffToken).
 -define(OnewayToken                , ?CompactOnewayToken).
+-define(OnewayBothToken            , ?CompactOnewayBothToken).
+-define(OnewayExternalToken        , ?CompactOnewayExternalToken).
 -define(OnOffToken                 , ?CompactOnOffToken).
 -define(OnToken                    , ?CompactOnToken).
+-define(OrAUDITselectToken         , ?CompactOrAUDITselectToken).
 -define(OtherReasonToken           , ?CompactOtherReasonToken).
 -define(OutOfSvcToken              , ?CompactOutOfSvcToken).
 -define(PackagesToken              , ?CompactPackagesToken).
@@ -257,12 +408,14 @@ encode_action_reply(_EC, ActRep)
 -define(ReasonToken                , ?CompactReasonToken).
 -define(RecvonlyToken              , ?CompactRecvonlyToken).
 -define(ReplyToken                 , ?CompactReplyToken).
+-define(ResetEventsDescriptorToken , ?CompactResetEventsDescriptorToken).
 -define(ResponseAckToken           , ?CompactResponseAckToken).
 -define(RestartToken               , ?CompactRestartToken).
 -define(RemoteToken                , ?CompactRemoteToken).
 -define(RequestIDToken             , ?CompactRequestIDToken).
 -define(ReservedGroupToken         , ?CompactReservedGroupToken).
 -define(ReservedValueToken         , ?CompactReservedValueToken).
+-define(SegmentationCompleteToken  , ?CompactSegmentationCompleteToken).
 -define(SendonlyToken              , ?CompactSendonlyToken).
 -define(SendrecvToken              , ?CompactSendrecvToken).
 -define(ServicesToken              , ?CompactServicesToken).

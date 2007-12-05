@@ -94,7 +94,7 @@ extern void hipe_update_stack_trap(Process*, const struct sdesc*);
 /*
  * GC support procedures
  */
-#ifdef HEAP_FRAG_ELIM_TEST
+#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
 extern void fullsweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
 #else
 extern Eterm *fullsweep_nstack(Process *p, Eterm *n_htop);

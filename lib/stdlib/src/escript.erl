@@ -95,13 +95,8 @@ interpret(File, Parse0, Args) ->
 			     end}),
 	my_halt(0)
     catch
-	error:Reason ->
-	    fatal("script failed with error reason ~P", [Reason,50]);
-	throw:Reason ->
-	    fatal("script failed: term '~P' was thrown, but not caught",
-		  [Reason,50]);
-	exit:Reason ->
-	    fatal("script failed with EXIT reason '~P'", [Reason,50])
+        Class:Reason ->
+            fatal(format_exception(Class, Reason))
     end.
 
 compile(Parse, Args) ->
@@ -118,15 +113,17 @@ run_code(Module, Args) ->
 	Module:main(Args),
 	my_halt(0)
     catch
-	error:Reason ->
-	    fatal("script failed: ~P",
-		  [{Reason,erlang:get_stacktrace()},50]);
-	throw:Reason ->
-	    fatal("script failed: ~P",
-		  [{{nocatch,Reason},erlang:get_stacktrace()},50]);
-	exit:Reason ->
-	    fatal("script failed with EXIT reason '~P'", [Reason,50])
+        Class:Reason ->
+            fatal(format_exception(Class, Reason))
     end.
+
+format_exception(Class, Reason) ->
+    PF = fun(Term, I) -> 
+                 io_lib:format("~." ++ integer_to_list(I) ++ "P", [Term, 50]) 
+         end,
+    StackTrace = erlang:get_stacktrace(),
+    StackFun = fun(M, _F, _A) -> (M =:= erl_eval) or (M =:= ?MODULE) end,
+    lib:format_exception(1, Class, Reason, StackTrace, StackFun, PF).
 
 parse_to_dict(L) -> parse_to_dict(L, dict:new()).
 
@@ -155,7 +152,7 @@ parse_file(File) ->
     parse_check_error(File, parse_file(File, 0, [], interpret)).
 
 parse_file(File, Nerrs, L, Mode) ->
-    {ok, P} = file:open(File, read),
+    {ok, P} = file:open(File, [read]),
     %% This is to skip the first line in the script
     io:get_line(P, ''),
     Ret = parse_loop(P, File, io:parse_erl_form(P, '', 2), Nerrs, L, Mode),
@@ -179,7 +176,7 @@ parse_include_lib(File, Nerrs, L0, Mode) ->
 open_lib_dir(File0) ->
     try
 	[LibName|Rest] = filename:split(File0),
-	File = filename:join([code:lib_dir(LibName)|Rest]),
+	File = filename:join([code:lib_dir(list_to_atom(LibName))|Rest]),
 	file:open(File, [read])
     catch
 	_:_ ->
@@ -264,9 +261,6 @@ is_main_exported([]) -> false.
 fatal(Str) ->
     throw(Str).
 				
-fatal(Format, Args) ->
-    throw(io_lib:format(Format, Args)).
-
 report_errors(Errors) ->
     foreach(fun ({{F,_L},Eds}) -> list_errors(F, Eds);
 		({F,Eds}) -> list_errors(F, Eds) end,

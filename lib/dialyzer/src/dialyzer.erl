@@ -11,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -48,24 +48,24 @@
 plain_cl() ->
   case dialyzer_cl_parse:start() of
     {check_init, Opts} -> 
-      cl_return(cl_check_init(Opts, true), Opts);
+      cl_halt(cl_check_init(Opts, true), Opts);
     {gui, Opts} ->
       case cl_check_init(Opts) of
-	{error, _} = Error -> gui_return(Error, Opts);
+	{error, _} = Error -> gui_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
 	  if Opts#options.quiet -> ok;
-	     true  -> io:put_chars("  Proceeding with startup...\n")
+	     true -> io:put_chars("  Proceeding with startup...\n")
 	  end,
-	  gui_return(internal_gui(Opts), Opts)
+	  gui_halt(internal_gui(Opts), Opts)
       end;
     {cl, Opts} -> 
       case cl_check_init(Opts) of
-	{error, _} = Error -> cl_return(Error, Opts);
+	{error, _} = Error -> cl_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
 	  if Opts#options.quiet -> ok;
 	     true  -> io:put_chars("  Proceeding with analysis... ")
 	  end,
-	  cl_return(cl(Opts), Opts)
+	  cl_halt(cl(Opts), Opts)
       end;
     {error, Msg} -> 
       cl_error(Msg)
@@ -80,7 +80,7 @@ cl_check_init(Opts, Force) ->
 			  "PLT exists and is up-to-date...")
   end,
   F = fun() ->
-	    dialyzer_cl:check_init_plt(Opts, Force)
+	  dialyzer_cl:check_init_plt(Opts, Force)
       end,
   doit(F).
 
@@ -99,9 +99,9 @@ run(Opts) when length(Opts) > 0 ->
 	  {ok, ?RET_NOTHING_SUSPICIOUS} ->
 	    case dialyzer_cl:start(OptsRecord) of
 	      {?RET_DISCREPANCIES_FOUND, Warnings, []} -> {ok, Warnings};
-	      {?RET_NOTHING_SUSPICIOUS, [], []}    -> {ok, []};
-	      {?RET_INTERNAL_ERROR, Warnings, Errors} -> {error, Warnings, 
-							  Errors}
+	      {?RET_NOTHING_SUSPICIOUS, [], []}        -> {ok, []};
+	      {?RET_INTERNAL_ERROR, Warnings, Errors}  -> {error, Warnings, 
+							   Errors}
 	    end;
 	  {error, ErrorMsg1} ->
 	    throw({dialyzer_error, ErrorMsg1})
@@ -109,7 +109,7 @@ run(Opts) when length(Opts) > 0 ->
     end
   catch
     throw:{dialyzer_error, ErrorMsg} -> 
-      erlang:fault({dialyzer_error, lists:flatten(ErrorMsg)})
+      erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
   end.
 
 internal_gui(OptsRecord) ->
@@ -122,7 +122,7 @@ internal_gui(OptsRecord) ->
 gui() ->
   gui([]).
 
-gui(Opts) ->  
+gui(Opts) ->
   try
     case dialyzer_options:build([{quiet, true}|Opts]) of
       {error, Msg} -> throw({dialyzer_error, Msg});
@@ -142,7 +142,7 @@ gui(Opts) ->
     end
   catch
     throw:{dialyzer_error, ErrorMsg} ->
-      erlang:fault({dialyzer_error, lists:flatten(ErrorMsg)})
+      erlang:error({dialyzer_error, lists:flatten(ErrorMsg)})
   end.
 
 %%-----------
@@ -158,30 +158,35 @@ doit(F) ->
   end.
 
 cl_error(Msg) ->
-  cl_return({error, Msg}, #options{}).
+  cl_halt({error, Msg}, #options{}).
 
-gui_return(R, Opts) ->
-  cl_return(R, Opts#options{quiet=true}).
+gui_halt(R, Opts) ->
+  cl_halt(R, Opts#options{quiet=true}).
 
-cl_return({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{quiet=true}) -> halt(R);
-cl_return({ok, R = ?RET_DISCREPANCIES_FOUND}, #options{quiet=true}) -> halt(R);
-cl_return({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{}) ->
+-spec(cl_halt/2 ::
+      ({'ok',atom()} | {'error',string()}, #options{}) -> no_return()).
+
+cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{quiet=true}) -> halt(R);
+cl_halt({ok, R = ?RET_DISCREPANCIES_FOUND}, #options{quiet=true}) -> halt(R);
+cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{}) ->
   io:put_chars("done (passed successfully)\n"),
   halt(R);
-cl_return({ok, R = ?RET_DISCREPANCIES_FOUND},  #options{output_file=Output}) ->
+cl_halt({ok, R = ?RET_DISCREPANCIES_FOUND},  #options{output_file=Output}) ->
   io:put_chars("done (warnings were emitted)\n"),
   cl_check_log(Output),
   halt(R);
-cl_return({ok, R = ?RET_INTERNAL_ERROR},  #options{output_file=Output}) ->
+cl_halt({ok, R = ?RET_INTERNAL_ERROR},  #options{output_file=Output}) ->
   Msg = "dialyzer: Internal problems were encountered in the analysis.",
   io:format("~s\n", [Msg]),
   cl_check_log(Output),
   halt(R);  
-cl_return({error, Msg1}, #options{output_file=Output}) ->
+cl_halt({error, Msg1}, #options{output_file=Output}) ->
   Msg2 = "dialyzer: Internal problems were encountered in the analysis.",
   io:format("\n~s\n~s\n", [Msg1, Msg2]),
   cl_check_log(Output),
   halt(?RET_INTERNAL_ERROR).
+
+-spec(cl_check_log/1 :: (string()) -> 'ok').
 
 cl_check_log("") ->
   ok;

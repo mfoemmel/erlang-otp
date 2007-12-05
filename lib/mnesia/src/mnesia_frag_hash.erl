@@ -35,70 +35,94 @@
 %%-behaviour(mnesia_frag_hash).
 
 %impl_doc_include
--record(hash_state, {n_fragments, next_n_to_split, n_doubles}).
+-record(hash_state,
+	{n_fragments,
+	 next_n_to_split,
+	 n_doubles,
+	 function}).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 init_state(_Tab, State) when State == undefined ->
-    #hash_state{n_fragments = 1,
+    #hash_state{n_fragments     = 1,
 		next_n_to_split = 1,
-		n_doubles = 0}.
+		n_doubles       = 0,
+		function        = phash2}.
+
+convert_old_state({hash_state, N, P, L}) ->
+    #hash_state{n_fragments     = N,
+		next_n_to_split = P,
+		n_doubles       = L,
+		function        = phash}.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-add_frag(State) when record(State, hash_state) ->
-    SplitN = State#hash_state.next_n_to_split,
+add_frag(#hash_state{next_n_to_split = SplitN, n_doubles = L, n_fragments = N} = State) ->
     P = SplitN + 1,
-    L = State#hash_state.n_doubles,
-    NewN = State#hash_state.n_fragments + 1,
-    State2 = case trunc(math:pow(2, L)) + 1 of
+    NewN = N + 1,
+    State2 = case power2(L) + 1 of
 		 P2 when P2 == P ->
-		     State#hash_state{n_fragments = NewN,
-				      n_doubles = L + 1,
+		     State#hash_state{n_fragments      = NewN,
+				      n_doubles        = L + 1,
 				      next_n_to_split = 1};
 		 _ ->
-		     State#hash_state{n_fragments = NewN,
+		     State#hash_state{n_fragments     = NewN,
 				      next_n_to_split = P}
 	     end,
-    {State2, [SplitN], [NewN]}.
+    {State2, [SplitN], [NewN]};
+add_frag(OldState) ->
+    State = convert_old_state(OldState),
+    add_frag(State).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-del_frag(State) when record(State, hash_state) ->
-    P = State#hash_state.next_n_to_split - 1,
-    L = State#hash_state.n_doubles,
-    N = State#hash_state.n_fragments,
+del_frag(#hash_state{next_n_to_split = SplitN, n_doubles = L, n_fragments = N} = State) ->
+    P = SplitN - 1,
     if
 	P < 1 ->
 	    L2 = L - 1,
-	    MergeN = trunc(math:pow(2, L2)),
-	    State2 = State#hash_state{n_fragments = N - 1,
+	    MergeN = power2(L2),
+	    State2 = State#hash_state{n_fragments     = N - 1,
 				      next_n_to_split = MergeN,
-				      n_doubles = L2},
+				      n_doubles       = L2},
 	    {State2, [N], [MergeN]};
 	true ->
 	    MergeN = P,
-	    State2 = State#hash_state{n_fragments = N - 1,
+	    State2 = State#hash_state{n_fragments     = N - 1,
 				      next_n_to_split = MergeN},
 	    {State2, [N], [MergeN]}
-	end.
+	end;
+del_frag(OldState) ->
+    State = convert_old_state(OldState),
+    del_frag(State).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-key_to_frag_number(State, Key) when record(State, hash_state) ->
-    L = State#hash_state.n_doubles,
-    A = erlang:phash(Key, trunc(math:pow(2, L))),
-    P = State#hash_state.next_n_to_split,
+key_to_frag_number(#hash_state{function = phash, next_n_to_split = SplitN, n_doubles = L}, Key) ->
+    P = SplitN,
+    A = erlang:phash(Key, power2(L)),
     if
 	A < P ->
-	    erlang:phash(Key, trunc(math:pow(2, L + 1)));
+	    erlang:phash(Key, power2(L + 1));
 	true ->
 	    A
-    end.
+    end;
+key_to_frag_number(#hash_state{function = phash2, next_n_to_split = SplitN, n_doubles = L}, Key) ->
+    P = SplitN,
+    A = erlang:phash2(Key, power2(L)) + 1,
+    if
+	A < P ->
+	    erlang:phash2(Key, power2(L + 1)) + 1;
+	true ->
+	    A
+    end;
+key_to_frag_number(OldState, Key) ->
+    State = convert_old_state(OldState),
+    key_to_frag_number(State, Key).
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-match_spec_to_frag_numbers(State, MatchSpec) when record(State, hash_state) ->
+match_spec_to_frag_numbers(#hash_state{n_fragments = N} = State, MatchSpec) ->
     case MatchSpec of
 	[{HeadPat, _, _}] when tuple(HeadPat), size(HeadPat) > 2 ->
 	    KeyPat = element(2, HeadPat),
@@ -106,11 +130,17 @@ match_spec_to_frag_numbers(State, MatchSpec) when record(State, hash_state) ->
 		false ->
 		    [key_to_frag_number(State, KeyPat)];
 		true ->
-		    lists:seq(1, State#hash_state.n_fragments)
+		    lists:seq(1, N)
 	    end;
 	_ -> 
-	    lists:seq(1, State#hash_state.n_fragments)
-    end.
+	    lists:seq(1, N)
+    end;
+match_spec_to_frag_numbers(OldState, MatchSpec) ->
+    State = convert_old_state(OldState),
+    match_spec_to_frag_numbers(State, MatchSpec).
+
+power2(Y) ->
+    1 bsl Y. % trunc(math:pow(2, Y)).
 
 %impl_doc_include
 

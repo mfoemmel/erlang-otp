@@ -23,6 +23,10 @@ Options:
                    can however be run with other factors, e.g. 
                    factor 10 means that 10 processes will be started 
                    for each megaco codec config.
+ -d <drv-mode>     driver mode for the test:
+                   std - all codec config(s) will be used
+                   nd  - only codec config(s) without drivers will be used
+                   od  - only codec config(s) with drivers will be used
  --                everything after this is just passed on to erl.
 "
 
@@ -32,7 +36,8 @@ MEAS_HOME=$MEGACO_HOME/examples/meas
 PATH=$ERL_HOME/bin:$PATH
 
 MODULE=megaco_codec_mstone1
-MSTONE="-s $MODULE"
+STARTF="start"
+FACTOR=""
 
 while test $# != 0; do
     # echo "DBG: Value = $1"
@@ -49,8 +54,25 @@ while test $# != 0; do
             ATP="+A $2";
             shift ; shift ;;
 
+        -d)
+	    case $2 in
+		std)
+		    STARTF="start";
+		    shift ; shift ;;
+		nd)
+		    STARTF="start_no_drv";
+		    shift ; shift ;;
+		od)
+		    STARTF="start_only_drv";
+		    shift ; shift ;;
+		*)
+		    echo "unknown driver mode: $2";
+		    echo "$usage" ;
+		    exit 0
+	    esac;;
+	    
         -f)
-            MSTONE="-s $MODULE start $2";
+            FACTOR="$2";
             shift ; shift ;;
 
         --)
@@ -64,11 +86,15 @@ while test $# != 0; do
     esac
 done
 
-for i in no_smp 01 02 04 08 16 32 64; do 
+MSTONE="-s $MODULE $STARTF $FACTOR"
+
+SCHEDS="no_smp 01 02 04 08 16 32 64"
+
+for i in `echo $SCHEDS`; do 
     case $i in
 	no_smp)
 	    SMP_INFO="No SMP"
-	    SMP_OPTS=""
+	    SMP_OPTS="-smp disable" # THIS IS THE R12B WAY TO DISABLE SMP
 	    LOG="mstone1-00.log"
 	    ;;
 

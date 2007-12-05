@@ -31,8 +31,6 @@
 #include "global.h"
 #include "erl_port_task.h"
 
-#ifdef ERTS_USE_PORT_TASKS
-
 #if defined(DEBUG) && 0
 #define HARD_DEBUG
 #endif
@@ -423,6 +421,7 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
     ErtsPortTaskQueue *ptqp;
     ErtsPortTask *ptp;
     Port *pp;
+    int port_is_dequeued = 0;
 
     erts_smp_tasks_lock();
 
@@ -465,8 +464,10 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
 	pp->sched.taskq = NULL;
 	if (port_taskq_pre_free(ptqp))
 	    ptqp = NULL;
-	if (!pp->sched.exe_taskq)
+	if (!pp->sched.exe_taskq) {
 	    dequeue_port(pp);
+	    port_is_dequeued = 1;
+	}
     }
 
     if (port_task_pre_free(ptp))
@@ -475,6 +476,9 @@ erts_port_task_abort(ErtsPortTaskHandle *pthp)
     ERTS_PT_CHK_PRES_PORTQ(pp);
 
     erts_smp_tasks_unlock();
+    if (erts_system_profile_flags.runnable_ports && port_is_dequeued) {
+    	profile_runnable_port(pp, am_inactive);
+    }
 
     if (ptp)
 	erts_free(ERTS_ALC_T_PORT_TASK, ptp);
@@ -623,6 +627,11 @@ erts_port_task_schedule(Eterm id,
 	    enqueue_port(pp);
 	    ERTS_PT_CHK_PRES_PORTQ(pp);
 	    erts_smp_tasks_unlock();
+	    
+	    if (erts_system_profile_flags.runnable_ports) {
+    		profile_runnable_port(pp, am_active);
+    	    }
+	    
 	    erts_smp_notify_inc_runq();
 	}
 	erts_smp_sched_unlock();
@@ -636,6 +645,8 @@ erts_port_task_schedule(Eterm id,
 void
 erts_port_task_free_port(Port *pp)
 {
+    int port_is_dequeued = 0;
+
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
     ASSERT(!(pp->status & ERTS_PORT_SFLGS_DEAD));
     erts_smp_sched_lock();
@@ -668,14 +679,18 @@ erts_port_task_free_port(Port *pp)
     }
     else {
 	ErtsPortTaskQueue *ptqp = pp->sched.taskq;
-	if (ptqp)
+	if (ptqp) {
 	    dequeue_port(pp);
+	    port_is_dequeued = 1;
+	}
 	erts_smp_port_tab_lock();
 	erts_ports_alive--;
 	pp->status &= ~ERTS_PORT_SFLG_CLOSING;
 	pp->status |= ERTS_PORT_SFLG_FREE_SCHEDULED;
 	erts_smp_port_tab_unlock();
+#ifdef ERTS_SMP
 	erts_smp_atomic_dec(&pp->refc); /* Not alive */
+#endif
 	ERTS_SMP_LC_ASSERT(erts_smp_atomic_read(&pp->refc) > 0); /* Lock */
 	erts_smp_sched_unlock();
 	handle_remaining_tasks(pp); /* May release tasks lock */
@@ -689,6 +704,10 @@ erts_port_task_free_port(Port *pp)
 	erts_port_status_set(pp, ERTS_PORT_SFLG_FREE);
 #endif
 	erts_smp_tasks_unlock();
+	if (erts_system_profile_flags.runnable_ports && port_is_dequeued) {
+    	    profile_runnable_port(pp, am_inactive);
+    	}
+
 	if (ptqp)
 	    erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
     }
@@ -723,6 +742,7 @@ resume_after_block(void *vresp)
 int
 erts_port_task_execute(void)
 {
+    int port_was_enqueued = 0;
     Port *pp;
     ErtsPortTaskQueue *ptqp;
     ErtsPortTask *ptp;
@@ -750,7 +770,6 @@ erts_port_task_execute(void)
 	res = 0;
 	goto done;
     }
-
     ASSERT(pp->sched.taskq);
     ASSERT(pp->sched.taskq->first);
     ptqp = pp->sched.taskq;
@@ -765,6 +784,11 @@ erts_port_task_execute(void)
     erts_smp_sched_unlock();
 
     erts_smp_port_lock(pp);
+    
+    /* trace port scheduling, in */
+    if (IS_TRACED_FL(pp, F_TRACE_SCHED_PORTS)) {
+	trace_sched_ports(pp, am_in);
+    }
 
     ERTS_SMP_LC_ASSERT(erts_lc_is_port_locked(pp));
 
@@ -864,9 +888,10 @@ erts_port_task_execute(void)
 		handle_remaining_tasks(pp);
 	    ASSERT(!ptqp->first
 		   && (!pp->sched.taskq || !pp->sched.taskq->first));
+#ifdef ERTS_SMP
 	    erts_smp_atomic_dec(&pp->refc); /* Not alive */
 	    ERTS_SMP_LC_ASSERT(erts_smp_atomic_read(&pp->refc) > 0); /* Lock */
-#ifndef ERTS_SMP
+#else
 	    erts_port_status_bor_set(pp, ERTS_PORT_SFLG_FREE);
 #endif
 	    if (port_task_pre_free(ptp))
@@ -894,6 +919,8 @@ erts_port_task_execute(void)
 	ASSERT(!(pp->status & ERTS_PORT_SFLGS_DEAD));
 	ASSERT(pp->sched.taskq->first);
 	enqueue_port(pp);
+	port_was_enqueued = 1;
+
 	/* 
 	   erts_smp_notify_inc_runq();
 
@@ -919,7 +946,15 @@ erts_port_task_execute(void)
 	erts_smp_tasks_unlock();
 	erts_free(ERTS_ALC_T_PORT_TASKQ, ptqp);
     }
+    
+    if (erts_system_profile_flags.runnable_ports && (port_was_enqueued != 1)) {
+    	profile_runnable_port(pp, am_inactive);
+    }
 
+    /* trace port scheduling, out */
+    if (IS_TRACED_FL(pp, F_TRACE_SCHED_PORTS)) {
+    	trace_sched_ports(pp, am_out);
+    }
 #ifndef ERTS_SMP
     erts_port_release(pp);
 #else
@@ -1010,6 +1045,16 @@ handle_remaining_tasks(Port *pp)
     ASSERT(!pp->sched.taskq);
 }
 
+int
+erts_port_is_scheduled(Port *pp)
+{
+    int res;
+    erts_smp_spin_lock(&erts_port_tasks_lock);
+    res = pp->sched.taskq || pp->sched.exe_taskq;
+    erts_smp_spin_unlock(&erts_port_tasks_lock);
+    return res;
+}
+
 /*
  * Initialize the module.
  */
@@ -1026,8 +1071,3 @@ erts_port_task_init(void)
     erts_port_run_q_len = 0;
     erts_ports_executing = 0;
 }
-
-#endif /* ERTS_USE_PORT_TASKS */
-
-
-

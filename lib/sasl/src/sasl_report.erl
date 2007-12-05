@@ -62,9 +62,7 @@ write_report2(Fd, Head, progress, Report) ->
     io:format(Fd, Head ++ "~s", [Format]);
 write_report2(Fd, Head, crash_report, Report) ->
     Format = proc_lib:format(Report),
-    io:format(Fd, Head ++ "~s", [Format]);
-write_report2(Fd, Head, Else, Rep) ->
-    io:format(Fd, Head ++ "UNKNOWN ~p ~p~n", [Else, Rep]).
+    io:format(Fd, Head ++ "~s", [Format]).
 
 format_key_val([{Tag,Data}|Rep]) ->
     io_lib:format("    ~16w: ~p~n",[Tag,Data]) ++ format_key_val(Rep);

@@ -25,8 +25,8 @@
 %%               Created.
 %%  CVS      :
 %%              $Author: kostis $
-%%              $Date: 2007/05/12 09:31:04 $
-%%              $Revision: 1.40 $
+%%              $Date: 2007/11/28 17:52:55 $
+%%              $Revision: 1.41 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -162,8 +162,8 @@ remap_fp_regs(I, FpMap) ->
 
 rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
   case I of
-    #pseudo_push{} ->
-      ?EXIT({pseudo_push, not_supportet_any_more,I});
+    %% #pseudo_push{} ->
+    %%   ?EXIT({pseudo_push, not_supported_any_more, I});
     #pseudo_pop{} ->
       Temp = hipe_sparc:pseudo_pop_reg(I),
       Reg = map(Temp,TempMap),

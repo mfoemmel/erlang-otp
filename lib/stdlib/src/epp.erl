@@ -21,7 +21,7 @@
 
 -export([open/2,open/3,close/1,format_error/1]).
 -export([scan_erl_form/1,parse_erl_form/1,macro_defs/1]).
--export([parse_file/3,parse_file/4]).
+-export([parse_file/3]).
 -export([interpret_file_attribute/1]).
 
 %% Epp state record.
@@ -112,12 +112,9 @@ format_error(E) -> file:format_error(E).
 %%	{ok,[Form]} | {error,OpenError}
 
 parse_file(Ifile, Path, Predefs) ->
-    parse_file(Ifile, Path, Predefs, []).
-
-parse_file(Ifile, Path, Predefs, Options) ->
     case open(Ifile, Path, Predefs) of
 	{ok,Epp} ->
-	    Forms = parse_file(Epp, Options),
+	    Forms = parse_file(Epp),
 	    close(Epp),
 	    {ok,Forms};
 	{error,E} ->
@@ -127,33 +124,42 @@ parse_file(Ifile, Path, Predefs, Options) ->
 %% parse_file(Epp) ->
 %%	[Form]
 
-parse_file(Epp, Options) ->
+parse_file(Epp) ->
     case parse_erl_form(Epp) of
 	{ok,Form} ->
 	    case Form of
-		{attribute,La,record,{Record, Val}} ->
-		    case lists:member(typed_record,Options) of
-			false ->
-			    [{attribute, La, record,
-			      {Record, normalize_typed_record_fields(Val)}}
-			     |parse_file(Epp, Options)];
-			true ->
-			    [Form|parse_file(Epp, Options)]
+		{attribute,La,record,{Record, Fields}} ->
+		    case normalize_typed_record_fields(Fields) of
+			{typed, NewFields} ->
+			    [{attribute, La, record, {Record, NewFields}},
+			     {attribute, La, type, 
+			      {{record, Record}, Fields, []}}
+			     |parse_file(Epp)];
+			not_typed ->
+			    [Form|parse_file(Epp)]
 		    end;
 		_ ->
-		    [Form|parse_file(Epp, Options)]
+		    [Form|parse_file(Epp)]
 	    end;
 	{error,E} ->
-	    [{error,E}|parse_file(Epp, Options)];
+	    [{error,E}|parse_file(Epp)];
 	{eof,Line} ->
 	    [{eof,Line}]
     end.
 
-normalize_typed_record_fields([]) ->[];
-normalize_typed_record_fields([{typed_record_field,Field,_}|Rest]) ->
-    [Field|normalize_typed_record_fields(Rest)];
-normalize_typed_record_fields([Field|Rest]) ->
-    [Field|normalize_typed_record_fields(Rest)].
+normalize_typed_record_fields(Fields) ->
+    normalize_typed_record_fields(Fields, [], false).
+
+normalize_typed_record_fields([], NewFields, Typed) ->
+    case Typed of
+	true -> {typed, lists:reverse(NewFields)};
+	false -> not_typed
+    end;
+normalize_typed_record_fields([{typed_record_field,Field,_}|Rest], 
+			      NewFields, _Typed) ->
+    normalize_typed_record_fields(Rest, [Field|NewFields], true);
+normalize_typed_record_fields([Field|Rest], NewFields, Typed) ->
+    normalize_typed_record_fields(Rest, [Field|NewFields], Typed).
 
 %% server(StarterPid, FileName, Path, PreDefMacros)
 
@@ -255,7 +261,7 @@ enter_file(_Path, _NewName, Li, From, St)
     epp_reply(From, {error,{Li,epp,{depth,"include"}}}),
     wait_req_scan(St);
 enter_file(Path, NewName, Li, From, St) ->
-    case file:path_open(Path, NewName, read) of
+    case file:path_open(Path, NewName, [read]) of
 	{ok,NewF,Pname} ->
 	    wait_req_scan(enter_file2(NewF, Pname, From, St, 1));
 	{error,_E} ->
@@ -516,7 +522,7 @@ scan_include(_Toks, Li, From, St) ->
 
 find_lib_dir(NewName) ->
     [Lib | Rest] = filename:split(NewName),
-    {code:lib_dir(Lib), Rest}.
+    {code:lib_dir(list_to_atom(Lib)), Rest}.
 
 scan_include_lib([{'(',_Llp},{string,_Lf,_NewName0},{')',_Lrp},{dot,_Ld}], Li,
 		 From, St)
@@ -526,7 +532,7 @@ scan_include_lib([{'(',_Llp},{string,_Lf,_NewName0},{')',_Lrp},{dot,_Ld}], Li,
 scan_include_lib([{'(',_Llp},{string,_Lf,NewName0},{')',_Lrp},{dot,_Ld}], Li,
 		 From, St) ->
     NewName = expand_var(NewName0),
-    case file:path_open(St#epp.path, NewName, read) of
+    case file:path_open(St#epp.path, NewName, [read]) of
 	{ok,NewF,Pname} ->
 	    wait_req_scan(enter_file2(NewF, Pname, From, St, 1));
 	{error,_E1} ->

@@ -315,11 +315,11 @@ loop(Parent, Name, State, Mod, Time, Debug) ->
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, State, Debug);
 	_Msg when Debug =:= [] ->
-	    handle_msg(Msg, Parent, Name, State, Mod, Time);
+	    handle_msg(Msg, Parent, Name, State, Mod);
 	_Msg ->
 	    Debug1 = sys:handle_debug(Debug, {?MODULE, print_event}, 
 				      Name, {in, Msg}),
-	    handle_msg(Msg, Parent, Name, State, Mod, Time, Debug1)
+	    handle_msg(Msg, Parent, Name, State, Mod, Debug1)
     end.
 
 %%% ---------------------------------------------------
@@ -521,7 +521,7 @@ dispatch({'$gen_cast', Msg}, Mod, State) ->
 dispatch(Info, Mod, State) ->
     Mod:handle_info(Info, State).
 
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time) ->
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod) ->
     case catch Mod:handle_call(Msg, From, State) of
 	{reply, Reply, NState} ->
 	    reply(From, Reply),
@@ -540,11 +540,11 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time) ->
 	    exit(R);
 	Other -> handle_common_reply(Other, Parent, Name, Msg, Mod, State)
     end;
-handle_msg(Msg, Parent, Name, State, Mod, _Time) ->
+handle_msg(Msg, Parent, Name, State, Mod) ->
     Reply = (catch dispatch(Msg, Mod, State)),
     handle_common_reply(Reply, Parent, Name, Msg, Mod, State).
 
-handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time, Debug) ->
+handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, Debug) ->
     case catch Mod:handle_call(Msg, From, State) of
 	{reply, Reply, NState} ->
 	    Debug1 = reply(Name, From, Reply, NState, Debug),
@@ -568,7 +568,7 @@ handle_msg({'$gen_call', From, Msg}, Parent, Name, State, Mod, _Time, Debug) ->
 	Other ->
 	    handle_common_reply(Other, Parent, Name, Msg, Mod, State, Debug)
     end;
-handle_msg(Msg, Parent, Name, State, Mod, _Time, Debug) ->
+handle_msg(Msg, Parent, Name, State, Mod, Debug) ->
     Reply = (catch dispatch(Msg, Mod, State)),
     handle_common_reply(Reply, Parent, Name, Msg, Mod, State, Debug).
 
@@ -615,6 +615,8 @@ reply(Name, {To, Tag}, Reply, State, Debug) ->
 %%-----------------------------------------------------------------
 system_continue(Parent, Debug, [Name, State, Mod, Time]) ->
     loop(Parent, Name, State, Mod, Time, Debug).
+
+-spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
 
 system_terminate(Reason, _Parent, Debug, [Name, State, Mod, _Time]) ->
     terminate(Reason, Name, [], Mod, State, Debug).

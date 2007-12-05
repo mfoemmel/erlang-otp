@@ -1,4 +1,4 @@
- /* ``The contents of this file are subject to the Erlang Public License,
+/* ``The contents of this file are subject to the Erlang Public License,
  * Version 1.1, (the "License"); you may not use this file except in
  * compliance with the License. You should have received a copy of the
  * Erlang Public License along with this software. If not, it can be
@@ -321,7 +321,7 @@ static void unmask_fpe(void)
 
 #endif
 
-#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && defined(__i386__)) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 #if !(defined(__OpenBSD__) && defined(__x86_64__))
 #include <ucontext.h>
 #endif
@@ -333,7 +333,18 @@ typedef mcontext_t *erts_mcontext_ptr_t;
 #define mc_pc(mc)	((mc)->gregs[REG_EIP])
 typedef mcontext_t *erts_mcontext_ptr_t;
 #elif defined(__DARWIN__) && defined(__i386__)
+#ifdef DARWIN_MODERN_MCONTEXT
+#define mc_pc(mc)	((mc)->__ss.__eip)
+#else
 #define mc_pc(mc)	((mc)->ss.eip)
+#endif
+typedef mcontext_t erts_mcontext_ptr_t;
+#elif defined(__DARWIN__) && defined(__x86_64__)
+#ifdef DARWIN_MODERN_MCONTEXT
+#define mc_pc(mc)	((mc)->__ss.__rip)
+#else
+#define mc_pc(mc)	((mc)->ss.rip)
+#endif
 typedef mcontext_t erts_mcontext_ptr_t;
 #elif defined(__FreeBSD__) && defined(__x86_64__)
 #define mc_pc(mc)	((mc)->mc_rip)
@@ -449,7 +460,7 @@ static void skip_sse2_insn(erts_mcontext_ptr_t mc)
 }
 #endif /* (__linux__ && (__x86_64__ || __i386__)) || (__DARWIN__ && __i386__) || (__FreeBSD__ && (__x86_64__ || __i386__)) || (__OpenBSD__ && __x86_64__) || (__sun__ && __x86_64__) */
 
-#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
+#if (defined(__linux__) && (defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__))) || (defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__) || defined(__ppc__))) || (defined(__FreeBSD__) && (defined(__x86_64__) || defined(__i386__))) || (defined(__OpenBSD__) && defined(__x86_64__)) || (defined(__sun__) && defined(__x86_64__))
 
 #if defined(__linux__) && defined(__i386__)
 #include <asm/sigcontext.h>
@@ -459,6 +470,8 @@ static void skip_sse2_insn(erts_mcontext_ptr_t mc)
 #elif defined(__FreeBSD__) && defined(__i386__)
 #include <sys/types.h>
 #include <machine/npx.h>
+#elif defined(__DARWIN__)
+#include <machine/signal.h>
 #elif defined(__OpenBSD__) && defined(__x86_64__)
 #include <sys/types.h>
 #include <machine/fpu.h>
@@ -511,13 +524,22 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
-#elif defined(__DARWIN__) && defined(__i386__)
+#elif defined(__DARWIN__) && (defined(__i386__) || defined(__x86_64__))
+#ifdef DARWIN_MODERN_MCONTEXT
+    mcontext_t mc = uc->uc_mcontext;
+    if (mc->__fs.__fpu_mxcsr & 0x000D) {
+	mc->__fs.__fpu_mxcsr &= ~(0x003F|0x0680);
+	skip_sse2_insn(mc);
+    }
+    *(unsigned short *)&mc->__fs.__fpu_fsw &= ~0xFF;
+#else
     mcontext_t mc = uc->uc_mcontext;
     if (mc->fs.fpu_mxcsr & 0x000D) {
 	mc->fs.fpu_mxcsr &= ~(0x003F|0x0680);
 	skip_sse2_insn(mc);
     }
     *(unsigned short *)&mc->fs.fpu_fsw &= ~0xFF;
+#endif /* DARWIN_MODERN_MCONTEXT */
 #elif defined(__DARWIN__) && defined(__ppc__)
     mcontext_t mc = uc->uc_mcontext;
     mc->ss.srr0 += 4;
@@ -574,7 +596,7 @@ static void erts_thread_catch_fp_exceptions(void)
     unmask_fpe();
 }
 
-#else  /* !((__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __ppc__))) */
+#else  /* !((__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __x86_64__ || __ppc__))) */
 
 static void fpe_sig_handler(int sig)
 {
@@ -587,7 +609,7 @@ static void erts_thread_catch_fp_exceptions(void)
     unmask_fpe();
 }
 
-#endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __ppc__))) */
+#endif /* (__linux__ && (__i386__ || __x86_64__ || __powerpc__)) || (__DARWIN__ && (__i386__ || __x86_64__ || __ppc__))) */
 
 /* once-only initialisation early in the main thread */
 void erts_sys_init_float(void)

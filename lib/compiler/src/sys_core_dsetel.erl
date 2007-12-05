@@ -55,6 +55,9 @@
 %%       ...
 %% if X1 is used exactly once.
 %% Thus, we need to track variable usage.
+%%
+%% NOTE: This pass must NOT be used if the no_constant_pool option is used.
+%%
 
 -module(sys_core_dsetel).
 
@@ -294,10 +297,12 @@ rewrite(#c_let{vars=[#c_var{name=X1}],
 rewrite(R, _, FinalEnv) ->
     {R, FinalEnv}.
 
+%% is_safe(CoreExpr) -> true|false
+%%  Determines whether the Core expression can cause a GC collection at run-time.
+%%  Note: Assumes that the constant pool is turned on.
+
 is_safe(#c_var{}) -> true;
-is_safe(#c_fname{}) -> true;
-is_safe(#c_literal{val=[_|_]}) -> false;
-is_safe(#c_literal{val=V}) -> not (is_tuple(V) orelse is_binary(V));
+is_safe(#c_literal{}) -> true;
 is_safe(_) -> false.
 
 is_single_use(V, Env) ->

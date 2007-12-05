@@ -16,31 +16,36 @@
 %%     $Id$
 %%
 -module(httpd_util).
--export([key1search/2, key1search/3, lookup/2, lookup/3, multi_lookup/2,
+-export([ip_address/1, key1search/2, key1search/3, lookup/2, lookup/3, multi_lookup/2,
 	 lookup_mime/2, lookup_mime/3, lookup_mime_default/2,
 	 lookup_mime_default/3, reason_phrase/1, message/3, rfc1123_date/0,
-	 rfc1123_date/1, day/1, month/1, decode_hex/1, decode_base64/1,
-	 encode_base64/1,
-	 flatlength/1, split_path/1, split_script_path/1, suffix/1, to_upper/1,
-	 to_lower/1, split/3, uniq/1,
+	 rfc1123_date/1, day/1, month/1, decode_hex/1,
+	 flatlength/1, split_path/1, split_script_path/1, 
+	 suffix/1, split/3, uniq/1,
 	 make_name/2,make_name/3,make_name/4,strip/1,
 	 hexlist_to_integer/1,integer_to_hexlist/1,
 	 convert_request_date/1,create_etag/1,create_etag/2,
-	 convert_netscapecookie_date/1, enable_debug/1, valid_options/3]).
+	 convert_netscapecookie_date/1, enable_debug/1, valid_options/3,
+	 modules_validate/1, module_validate/1, 
+	 dir_validate/2, file_validate/2, mime_type_validate/1, 
+	 mime_types_validate/1]).
 
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
 
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
--compile({nowarn_deprecated_function, {http_base_64, decode, 1}}).
-
--deprecated([{to_lower, 1, next_major_release},
-	     {to_upper, 1, next_major_release},
-	     {decode_base64, 1, next_major_release},
-	     {encode_base64, 1, next_major_release}
+-deprecated([{key1search, 2, next_major_release},
+	     {key1search, 3, next_major_release}
 	    ]).
+
+ip_address(Host) ->
+    case (catch inet:getaddr(Host,inet6)) of
+	{ok, {0, 0, 0, 0, 0, 16#ffff, _, _}} ->
+	    inet:getaddr(Host, inet);
+	{ok, IPAddr} ->
+	    {ok, IPAddr};
+	_ ->
+	    inet:getaddr(Host, inet) 
+    end.
 
 %% key1search
 
@@ -373,15 +378,6 @@ hex2dec(X) when X>=$0,X=<$9 -> X-$0;
 hex2dec(X) when X>=$A,X=<$F -> X-$A+10;
 hex2dec(X) when X>=$a,X=<$f -> X-$a+10.
 
-%% decode_base64 (DEBUG STRING: QWxhZGRpbjpvcGVuIHNlc2FtZQ==)
-
-%%% Base-64 decoding (RFC2045)
-%% Keep for backward compatibility
-decode_base64(Base64) -> 
-    http_base_64:decode(Base64).
-encode_base64(ASCII) -> 
-    http_base_64:encode(ASCII).
-
 %% flatlength
 flatlength(List) ->
     flatlength(List, 0).
@@ -485,17 +481,6 @@ suffix(Path) ->
 	Extension ->
 	    tl(Extension)
     end.
-
-%% to_upper
-
-to_upper(Str) ->
-    http_util:to_upper(Str).
-
-%% to_lower
-
-to_lower(Str) ->
-    http_util:to_lower(Str).
-
 
 
 %% strip
@@ -638,9 +623,96 @@ create_part(Values)->
 			  end
 	      end,Values).
 
+%%----------------------------------------------------------------------
+%% Validate httpd options
+%%----------------------------------------------------------------------
+modules_validate([]) ->
+    ok;
+modules_validate([Head | Tail]) ->
+    ok = module_validate(Head),
+    modules_validate(Tail).
+
+module_validate(Module) when is_atom(Module) ->
+    case code:which(Module) of
+	non_existing ->
+	    throw({module_does_not_exist, Module});
+	_ -> 
+	    ok
+    end;
+
+module_validate(Module) ->
+    throw({module_name_not_atom, Module}).
+
+dir_validate(ConfDir, Dir) ->
+    case filelib:is_dir(Dir) of
+	true ->
+	    ok;
+	false ->
+	    throw({ConfDir, Dir})
+    end.
+    
+file_validate(ConfFile, File) ->
+    case filelib:is_file(File) of
+	true ->
+	    ok;
+	false ->
+	    throw({ConfFile, File})
+    end.
+
+mime_type_validate({Value1, Value2}) when is_list(Value1), is_list(Value2) ->
+    ok;
+mime_type_validate({_, _} = Value) ->
+    throw({mime_type, Value});
+mime_type_validate(MimeFile) ->
+    file_validate(mime_types, MimeFile).
+
+mime_types_validate([{_, _} = Value | Rest]) ->
+    ok = mime_types_validate(Value),
+    mime_types_validate(Rest);
+mime_types_validate([]) ->
+    ok;
+mime_types_validate(MimeFile) ->
+    mime_type_validate(MimeFile).
+
+valid_options(Debug,AcceptTimeout,ConfigFile) ->
+    valid_debug(Debug),
+    valid_accept_timeout(AcceptTimeout),
+    valid_config_file(ConfigFile).
+valid_debug([]) ->
+    ok;
+valid_debug(disable) ->
+    ok;
+valid_debug(L) when list(L) ->
+    valid_debug2(L);
+valid_debug(D) ->
+    throw({error,{bad_debug_option,D}}).
+valid_debug2([{all_functions,L}|Rest]) when list(L) ->
+    try modules_validate(L) of
+	ok ->
+	    valid_debug2(Rest)
+    catch
+	throw:Error ->
+	    throw({error, Error})
+    end;
+valid_debug2([{exported_functions,L}|Rest]) when list(L) ->
+    modules_validate(L),
+    valid_debug2(Rest);
+valid_debug2([{disable,L}|Rest]) when list(L) ->
+    modules_validate(L),
+    valid_debug2(Rest);
+valid_debug2([H|_T]) ->
+    throw({error,{bad_debug_option,H}});
+valid_debug2([]) ->
+    ok.
+valid_accept_timeout(I) when is_integer(I) ->
+    ok;
+valid_accept_timeout(A) ->
+    throw({error,{bad_debug_option,A}}).
+valid_config_file(_) ->
+    ok.
 
 %%----------------------------------------------------------------------
-%% Enable debugging, validate httpd options
+%% Enable debugging, 
 %%----------------------------------------------------------------------
 
 enable_debug([]) ->
@@ -659,60 +731,24 @@ do_enable_debug([{Level,Modules}|Rest]) when atom(Level),list(Modules) ->
 	all_functions ->
 	    io:format("Tracing on all functions set on modules: ~p~n",
 		      [Modules]),
-	    lists:foreach(fun(X)->dbg:tpl(X, [{'_', [], [{return_trace}]}]) end,Modules);
+	    lists:foreach(
+	      fun(X)-> 
+		      dbg:tpl(X, [{'_', [], [{return_trace}]}]) 
+	      end, Modules);
 	exported_functions -> 
-	    io:format("Tracing on exported functions set on modules: ~p~n",[Modules]),
-	    lists:foreach(fun(X)->dbg:tp(X, [{'_', [], [{return_trace}]}]) end,Modules);
+	    io:format("Tracing on exported functions set on "
+		      "modules: ~p~n",[Modules]),
+	    lists:foreach(
+	      fun(X)->
+		      dbg:tp(X, [{'_', [], [{return_trace}]}]) 
+	      end, Modules);
 	disable ->
-	    io:format("Tracing disabled on modules: ~p~n",[Modules]),
-	    lists:foreach(fun(X)->dbg:ctp(X) end,Modules);
+	    io:format("Tracing disabled on modules: ~p~n", [Modules]),
+	    lists:foreach(
+	      fun(X)-> 
+		      dbg:ctp(X) 
+	      end, Modules);
 	_ ->
 	    ok
     end,
     do_enable_debug(Rest).
-
-
-
-valid_options(Debug,AcceptTimeout,ConfigFile) ->
-    valid_debug(Debug),
-    valid_accept_timeout(AcceptTimeout),
-    valid_config_file(ConfigFile).
-valid_debug([]) ->
-    ok;
-valid_debug(disable) ->
-    ok;
-valid_debug(L) when list(L) ->
-    valid_debug2(L);
-valid_debug(D) ->
-    throw({error,{bad_debug_option,D}}).
-valid_debug2([{all_functions,L}|Rest]) when list(L) ->
-    test_load_modules(L),
-    valid_debug2(Rest);
-valid_debug2([{exported_functions,L}|Rest]) when list(L) ->
-    test_load_modules(L),
-    valid_debug2(Rest);
-valid_debug2([{disable,L}|Rest]) when list(L) ->
-    test_load_modules(L),
-    valid_debug2(Rest);
-valid_debug2([H|_T]) ->
-    throw({error,{bad_debug_option,H}});
-valid_debug2([]) ->
-    ok.
-valid_accept_timeout(I) when is_integer(I) ->
-    ok;
-valid_accept_timeout(A) ->
-    throw({error,{bad_debug_option,A}}).
-valid_config_file(_) ->
-    ok.
-
-test_load_modules([H|T]) when atom(H) ->
-    case code:which(H) of
-	non_existing ->
-	    throw({error,{module_does_not_exist,H}});
-	_ -> ok
-    end,
-    test_load_modules(T);
-test_load_modules([H|_T]) ->
-    throw({error,{module_name_not_atom,H}});
-test_load_modules([]) ->
-    ok.

@@ -119,7 +119,7 @@ compile1(File,Options) when is_list(Options) ->
     Ret = compile_erl(Continue4,OutFile,Options),
     case inline(is_inline(Options),
 		inline_output(Options,filename:rootname(File)),
-		[OutFile++".erl"],Options) of
+		lists:concat([OutFile,".erl"]),Options) of
 	false ->
 	    Ret;
 	InlineRet ->
@@ -144,14 +144,14 @@ compile1(File,Options) when is_list(Options) ->
 %%     Modules -> [filename()]
 %%     Options -> [term()]
 %%     filename() -> file:filename()
-inline(true,Name,Modules,Options) ->
+inline(true,Name,Module,Options) ->
     RTmodule = get_runtime_mod(Options),
     IgorOptions = igorify_options(remove_asn_flags(Options)),
     IgorName = filename:rootname(filename:basename(Name)),
 %    io:format("*****~nName: ~p~nModules: ~p~nIgorOptions: ~p~n*****~n",
 %	      [IgorName,Modules++RTmodule,IgorOptions]),
-    io:format("Inlining modules: ~p in ~p~n",[Modules++RTmodule,IgorName]),
-    case catch igor:merge(IgorName,Modules++RTmodule,[{preprocess,true},{stubs,false},{backups,false}]++IgorOptions) of
+    io:format("Inlining modules: ~p in ~p~n",[[Module]++RTmodule,IgorName]),
+    case catch igor:merge(IgorName,[Module]++RTmodule,[{preprocess,true},{stubs,false},{backups,false}]++IgorOptions) of
 	{'EXIT',{undef,Reason}} -> %% module igor first in R10B
 	    io:format("Module igor in syntax_tools must be available:~n~p~n",
 		      [Reason]),
@@ -219,7 +219,7 @@ check_set(ParseRes,SetBase,OutFile,Includes,EncRule,DbFile,
     Ret = compile_erl(Continue2,OutFile,Options),
     case inline(is_inline(Options),
 		inline_output(Options,filename:rootname(OutFile)),
-		[OutFile++".erl"],Options) of
+		lists:concat([OutFile,".erl"]),Options) of
 	false ->
 	    Ret;
 	InlineRet ->
@@ -1050,11 +1050,13 @@ get_rule(Options) ->
 get_runtime_mod(Options) ->
     RtMod1=
 	case get_rule(Options) of
-	    per -> ["asn1rt_per_v1.erl"];
+	    per -> ["asn1rt_per_bin.erl"];
 	    ber -> ["asn1rt_ber_bin.erl"];
 	    per_bin ->
-		case lists:member(optimize,Options) of
-		    true -> ["asn1rt_per_bin_rt2ct.erl"];
+		case {lists:member(optimize,Options),
+		      lists:member(bit_opt,Options)} of
+		    {true,_} -> ["asn1rt_per_bin_rt2ct.erl"];
+%		    {_,true} -> ["asn1rt_per_bin_v2.erl"];
 		    _ -> ["asn1rt_per_bin.erl"]
 		end;
 	    ber_bin -> ["asn1rt_ber_bin.erl"];

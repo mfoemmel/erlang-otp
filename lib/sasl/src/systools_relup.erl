@@ -460,7 +460,7 @@ write_relup_file(Relup, Opts) ->
 			       throw({error, ?MODULE, {badarg, {outdir,Badarg}}})
 		       end,
 			   
-	    case file:open(Filename, write) of
+	    case file:open(Filename, [write]) of
 		{ok, Fd} ->
 		    io:format(Fd, "~p.~n", [Relup]),
 		    file:close(Fd);

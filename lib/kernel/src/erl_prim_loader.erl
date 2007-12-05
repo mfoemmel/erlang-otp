@@ -71,6 +71,8 @@
 %%% Interface Functions. 
 %%% --------------------------------------------------------
 
+-spec(start/3 :: (_, atom() | string(), atom() | [atom()]) -> {'ok',pid()} | {'error',_}).
+
 start(Id, Pgm, Hosts) when is_atom(Hosts) ->
     start(Id, Pgm, [Hosts]);
 start(Id, Pgm0, Hosts) ->
@@ -140,20 +142,26 @@ init_ack(Pid) ->
     Pid ! {self(),ok}.
 
 %% -> ok
+-spec(set_path/1 :: ([string()]) -> 'ok').
+
 set_path(Paths) when is_list(Paths) ->
     request({set_path,Paths}).
 
 %% -> {ok,Paths}
+-spec(get_path/0 :: () -> {'ok',[string()]}).
+
 get_path() ->
     request({get_path,[]}).
 
 %% -> {ok,BinFile,File} | error
+-spec(get_file/1 :: (atom() | string()) -> {'ok',binary(),string()} | 'error').
+
 get_file(File) when is_atom(File) ->
     get_file(atom_to_list(File));
 get_file(File) ->
     check_file_result(get_file, File, request({get_file,File})).
 
-%% -> ok | {error,Module} | {error,Reason,Module}
+%% -> ok | {error,Module}
 get_files(ModFiles, Fun) ->
     case request({get_files,{ModFiles,Fun}}) of
 	E = {error,_M} ->
@@ -166,18 +174,26 @@ get_files(ModFiles, Fun) ->
     end.
 
 %% -> {ok,List} | error
+-spec(list_dir/1 :: (string()) -> {'ok',[string()]} | 'error').
+
 list_dir(Dir) ->
     check_file_result(list_dir, Dir, request({list_dir,Dir})).
 
 %% -> {ok,Info} | error
+-spec(read_file_info/1 :: (string()) -> {'ok',tuple()} | 'error').
+
 read_file_info(Elem) ->
     check_file_result(read_file_info, Elem, request({read_file_info,Elem})).
 
 %% -> {ok,Cwd} | error
+-spec(get_cwd/0 :: () -> {'ok',string()} | 'error').
+
 get_cwd() ->
     check_file_result(get_cwd, [], request({get_cwd,[]})).
 
 %% -> {ok,Cwd} | error
+-spec(get_cwd/1 :: (string()) -> {'ok',string()} | 'error').
+
 get_cwd(Drive) ->
     check_file_result(get_cwd, Drive, request({get_cwd,[Drive]})).
 

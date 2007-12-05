@@ -258,6 +258,10 @@ test_op(#k_remote{mod=#k_atom{val=erlang},name=#k_atom{val=N}}) -> N.
 
 k_bif(_A, #k_internal{name=dsetelement,arity=3}, As, []) ->
     {bif,dsetelement,atomic_list(As),[]};
+k_bif(_A, #k_internal{name=bs_context_to_binary=Op,arity=1}, As, []) ->
+    {bif,Op,atomic_list(As),[]};
+k_bif(_A, #k_internal{name=bs_init_writable=Op,arity=1}, As, Rs) ->
+    {bif,Op,atomic_list(As),var_list(Rs)};
 k_bif(_A, #k_internal{name=make_fun},
       [#k_atom{val=Fun},#k_int{val=Arity},
        #k_int{val=Index},#k_int{val=Uniq}|Free],
@@ -283,13 +287,18 @@ match(#k_alt{anno=A,first=Kf,then=Kt}, Ls, I, Ctxt, Vdb0) ->
     T = match(Kt, Ls, I+1, Ctxt, Vdb1),
     #l{ke={alt,F,T},i=I,vdb=Vdb1,a=A#k.a};
 match(#k_select{anno=A,var=V,types=Kts}, Ls0, I, Ctxt, Vdb0) ->
-    Ls1 = case member(no_usage, get_kanno(V)) of
+    Vanno = get_kanno(V),
+    Ls1 = case member(no_usage, Vanno) of
 	      false -> add_element(V#k_var.name, Ls0);
 	      true -> Ls0
 	  end,
+    Anno = case member(reuse_for_context, Vanno) of
+	       true -> [reuse_for_context|A#k.a];
+	       false -> A#k.a
+	   end,
     Vdb1 = use_vars(union(A#k.us, Ls1), I, Vdb0),
     Ts = map(fun (Tc) -> type_clause(Tc, Ls1, I+1, Ctxt, Vdb1) end, Kts),
-    #l{ke={select,literal2(V, Ctxt),Ts},i=I,vdb=Vdb1,a=A#k.a};
+    #l{ke={select,literal2(V, Ctxt),Ts},i=I,vdb=Vdb1,a=Anno};
 match(#k_guard{anno=A,clauses=Kcs}, Ls, I, Ctxt, Vdb0) ->
     Vdb1 = use_vars(union(A#k.us, Ls), I, Vdb0),
     Cs = map(fun (G) -> guard_clause(G, Ls, I+1, Ctxt, Vdb1) end, Kcs),
@@ -352,16 +361,9 @@ type(k_nil) -> nil;
 type(k_cons) -> cons;
 type(k_tuple) -> tuple;
 type(k_binary) -> binary;
-type(k_bin_seg) ->
-    case get_opt(no_new_binaries) of
-	false -> bin_seg;
-	true -> old_bin_seg
-    end;
-type(k_bin_end) ->
-    case get_opt(no_new_binaries) of
-	false -> bin_end;
-	true -> old_bin_end
-    end.
+type(k_bin_seg) -> bin_seg;
+type(k_bin_int) -> bin_int;
+type(k_bin_end) -> bin_end.
 
 %% variable(Klit) -> Lit.
 %% var_list([Klit]) -> [Lit].
@@ -373,6 +375,7 @@ var_list(Ks) -> map(fun variable/1, Ks).
 %% atomic(Klit) -> Lit.
 %% atomic_list([Klit]) -> [Lit].
 
+atomic(#k_literal{val=V}) -> {literal,V};
 atomic(#k_var{name=N}) -> {var,N};
 atomic(#k_int{val=I}) -> {integer,I};
 atomic(#k_float{val=F}) -> {float,F};
@@ -396,26 +399,12 @@ literal(#k_nil{}, _) -> nil;
 literal(#k_cons{hd=H,tl=T}, Ctxt) ->
     {cons,[literal(H, Ctxt),literal(T, Ctxt)]};
 literal(#k_binary{segs=V}, Ctxt) ->
-    case get_opt(no_new_binaries) of
-	true ->
-	    {old_binary,literal(V, Ctxt)};
-	false ->
-	    {binary,literal(V, Ctxt)}
-    end;
+	    {binary,literal(V, Ctxt)};
 literal(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}, Ctxt) ->
-    case get_opt(no_new_binaries) of
-	true ->
-	    {old_bin_seg,literal(S, Ctxt),U,T,Fs,
-	     [literal(Seg, Ctxt),literal(N, Ctxt)]};
-	false ->
-	    {bin_seg,Ctxt,literal(S, Ctxt),U,T,Fs,
-	     [literal(Seg, Ctxt),literal(N, Ctxt)]}
-    end;
+    {bin_seg,Ctxt,literal(S, Ctxt),U,T,Fs,
+     [literal(Seg, Ctxt),literal(N, Ctxt)]};
 literal(#k_bin_end{}, Ctxt) ->
-    case get_opt(no_new_binaries) of
-	true -> old_bin_end;
-	false -> {bin_end,Ctxt}
-    end;
+    {bin_end,Ctxt};
 literal(#k_tuple{es=Es}, Ctxt) ->
     {tuple,literal_list(Es, Ctxt)};
 literal(#k_literal{val=V}, _Ctxt) ->
@@ -434,26 +423,17 @@ literal2(#k_nil{}, _) -> nil;
 literal2(#k_cons{hd=H,tl=T}, Ctxt) ->
     {cons,[literal2(H, Ctxt),literal2(T, Ctxt)]};
 literal2(#k_binary{segs=V}, Ctxt) ->
-    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
-	true ->
-	    {old_binary,literal2(V, Ctxt)};
-	false ->
-	    {binary,literal2(V, Ctxt)}
-    end;
+    {binary,literal2(V, Ctxt)};
+literal2(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=[]}, Ctxt) ->
+    {bin_seg,Ctxt,literal2(S, Ctxt),U,T,Fs,[literal2(Seg, Ctxt)]};
 literal2(#k_bin_seg{size=S,unit=U,type=T,flags=Fs,seg=Seg,next=N}, Ctxt) ->
-    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
-	true ->
-	    {old_bin_seg,literal2(S, Ctxt),U,T,Fs,
-	     [literal2(Seg, Ctxt),literal2(N, Ctxt)]};
-	false ->
-	    {bin_seg,Ctxt,literal2(S, Ctxt),U,T,Fs,
-	     [literal2(Seg, Ctxt),literal2(N, Ctxt)]}
-    end;
+    {bin_seg,Ctxt,literal2(S, Ctxt),U,T,Fs,
+     [literal2(Seg, Ctxt),literal2(N, Ctxt)]};
+literal2(#k_bin_int{size=S,unit=U,flags=Fs,val=Int,next=N}, Ctxt) ->
+    {bin_int,Ctxt,literal2(S, Ctxt),U,Fs,Int,
+     [literal2(N, Ctxt)]};
 literal2(#k_bin_end{}, Ctxt) ->
-    case proplists:get_bool(no_new_binaries, get(?MODULE)) of
-	true -> old_bin_end;
-	false -> {bin_end,Ctxt}
-    end;
+    {bin_end,Ctxt};
 literal2(#k_tuple{es=Es}, Ctxt) ->
     {tuple,literal_list2(Es, Ctxt)}.
 
@@ -473,7 +453,6 @@ is_gc_bif(Name, Arity) ->
 	false -> is_gc_bif_1(Name, Arity)
 end.
 
-is_gc_bif_1(is_bitstr, 1) -> false;		%XXX Remove in R12B.
 is_gc_bif_1(hd, 1) -> false;
 is_gc_bif_1(tl, 1) -> false;
 is_gc_bif_1(self, 0) -> false;
@@ -482,6 +461,7 @@ is_gc_bif_1(node, 1) -> false;
 is_gc_bif_1(element, 2) -> false;
 is_gc_bif_1(get, 1) -> false;
 is_gc_bif_1(raise, 2) -> false;
+is_gc_bif_1(tuple_size, 1) -> false;
 is_gc_bif_1(Bif, Arity) ->
     not (erl_internal:bool_op(Bif, Arity) orelse
 	 erl_internal:new_type_test(Bif, Arity) orelse

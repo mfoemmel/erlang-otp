@@ -1,0 +1,12 @@
+#!/bin/sh
+
+time -o $1.tmp -f "%U" ./litstr > /dev/null
+time -a -o $1.tmp -f "%U" ./litstr > /dev/null
+time -a -o $1.tmp -f "%U" ./litstr > /dev/null
+
+echo "timed litstr user time (stresses regexec for literal regexps on long searches)" > $1
+cat $1.tmp >> $1
+echo "2 k + + 3 / p" >> $1.tmp
+echo -n "average: " >> $1
+dc < $1.tmp >> $1
+rm -f $1.tmp

@@ -1,0 +1,11 @@
+These tests come from several sources, notably a test-suite started by
+Henry Spencer, and the "Khadafy" test suite by Scott Anderson.
+
+Originally these tests were put together to test the correctness of
+the results returned by Rx, but here, they are being used as a timing
+test.
+
+The strings being compared to regexps by these tests are all very short.
+As a result, this is mostly a test of the performance of regcomp, not 
+of regexec.
+

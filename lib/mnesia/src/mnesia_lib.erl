@@ -32,7 +32,6 @@
 	 add_lsort/2,
 	 all_nodes/0,
 %%	 catch_val/1,
-	 cleanup_tmp_files/1,	 
 	 copy_file/2,
 	 copy_holders/1,
 	 coredump/0,
@@ -131,7 +130,6 @@
 	 show/2,
 	 sort_commit/1,
 	 storage_type_at_node/2,
-	 swap_tmp_files/1,
 	 tab2dat/1,
 	 tab2dmp/1,
 	 tab2tmp/1,
@@ -395,6 +393,8 @@ other_val(Var, Other) ->
 	    pr_other(Var, Other)
     end.
 
+-spec(pr_other/2 :: (_,_) -> no_return()).
+
 pr_other(Var, Other) ->
     Why = 
 	case is_running() of
@@ -408,7 +408,7 @@ pr_other(Var, Other) ->
 	{badarg, [{ets, lookup_element, _}|_]} ->
 	    exit(Why);
 	_ ->
-	    erlang:fault(Why)
+	    erlang:error(Why)
     end.
 
 %% Some functions for list valued variables
@@ -994,11 +994,6 @@ copy_file(From, To) ->
 
 copy_file_loop(F, T, ChunkSize) ->
     case file:read(F, ChunkSize) of
-	{ok, {0, _}} ->
-	    ok;
-	{ok, {_, Bin}} ->
-	    file:write(T, Bin),
-	    copy_file_loop(F, T, ChunkSize);
 	{ok, Bin} ->
 	    file:write(T, Bin),
 	    copy_file_loop(F, T, ChunkSize);
@@ -1214,28 +1209,6 @@ dets_sync_close(Tab) ->
     catch dets:close(Tab),
     unlock_table(Tab),
     ok.
-
-cleanup_tmp_files([Tab | Tabs]) ->
-    dets_sync_close(Tab),
-    file:delete(tab2tmp(Tab)),
-    cleanup_tmp_files(Tabs);
-cleanup_tmp_files([]) ->
-    ok.
-
-%% Returns a list of bad tables
-swap_tmp_files([Tab | Tabs]) ->
-    dets_sync_close(Tab),
-    Tmp = tab2tmp(Tab),
-    Dat = tab2dat(Tab),
-    case file:rename(Tmp, Dat) of
-	ok ->
-	    swap_tmp_files(Tabs);
-	_ -> 
-	    file:delete(Tmp),
-	    [Tab | swap_tmp_files(Tabs)]
-    end;
-swap_tmp_files([]) ->
-    [].
 
 readable_indecies(Tab) ->
     val({Tab, index}).

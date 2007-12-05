@@ -30,8 +30,8 @@ rule([func|_],_) ->
 
 rule([name, func, funcs, RefType|_], {_,_,[{pcdata,[],Name0}]}) ->
     Name1 = docb_html_util:make_anchor_name_short(Name0, RefType),
-    {"<A NAME=\"" ++ Name1 ++ "\"><STRONG><CODE>",
-     "</CODE></STRONG></A><BR>\n"};
+    {"<A NAME=\"" ++ Name1 ++ "\"><span class=\"bold_code\">",
+     "</span></A><BR>\n"};
 
 rule([fsummary|_],_) ->
     {drop, ""};
@@ -41,7 +41,7 @@ rule([type|_], _) ->
      "\n  </DIV>\n</DIV>\n"};
 
 rule([v|_], _) ->
-    {"<STRONG><CODE>","</CODE></STRONG><BR>\n"};
+    {"<span class=\"bold_code\">","</span><BR>\n"};
 
 rule([d|_], _) ->
     {"\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
@@ -49,7 +49,7 @@ rule([d|_], _) ->
 rule([desc|_], _) ->
     {"\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
 
-rule([authors|_], _) ->
+rule([authors|_], _) -> 
     {"\n<H3>AUTHORS</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
 
 rule([aname|_], _) ->

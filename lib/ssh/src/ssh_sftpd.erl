@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2004-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 
 %%% Description: SFTP server daemon
@@ -43,9 +45,11 @@
 -record(state, {
 	  xf,   			% [{channel,ssh_xfer states}...]
 	  cwd,				% current dir (on first connect)
+	  root,				% root dir
 	  remote_channel,		% remote channel
 	  pending,                      % binary() 
 	  file_handler,			% atom() - callback module 
+	  file_state,                   % state for the file callback module
 	  handles			% list of open handles
 	  %% handle is either {<int>, directory, {Path, unread|eof}} or
 	  %% {<int>, file, {Path, IoDevice}}
@@ -88,12 +92,19 @@ stop(Pid) ->
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
 init([Options]) ->
-    FileMod = proplists:get_value(file_handler, Options, 
-				      ssh_sftpd_file),
-    {ok, Default} = FileMod:get_cwd(),
+    {FileMod, FS0} = case proplists:get_value(file_handler, Options, 
+					      {ssh_sftpd_file,[]}) of
+			 {F, S} ->
+			     {F, S};
+			 F ->
+			     {F, []}
+		     end,
+    
+    {{ok, Default}, FS1} = FileMod:get_cwd(FS0),
     CWD = proplists:get_value(cwd, Options, Default),
-    State = #state{cwd = CWD, handles = [], pending = <<>>,
-		   file_handler = FileMod},
+    Root = proplists:get_value(root, Options, ""),
+    State = #state{cwd = CWD, root = Root, handles = [], pending = <<>>,
+		   file_handler = FileMod, file_state = FS1},
     {ok, State}.
 
 %%--------------------------------------------------------------------
@@ -189,17 +200,19 @@ handle_op(?SSH_FXP_REALPATH, ReqId,
     State;
 handle_op(?SSH_FXP_OPENDIR, ReqId,
 	 <<?UINT32(RLen), RPath:RLen/binary>>,
-	  State = #state{file_handler = FileMod}) ->
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
     RelPath = binary_to_list(RPath),
-    AbsPath = relate_file_name(RelPath, State),
-    XF = State#state.xf,
-    case FileMod:is_dir(AbsPath) of
+    AbsPath = relate_file_name(RelPath, State0),
+    XF = State0#state.xf,
+    {IsDir, FS1} = FileMod:is_dir(AbsPath, FS0),
+    State1 = State0#state{file_state = FS1},
+    case IsDir of
 	false ->
 	    ssh_xfer:xf_send_status(XF, ReqId, ?SSH_FX_NOT_A_DIRECTORY,
 				    "Not a directory"),
-	    State;
+	    State1;
 	true ->
-	    add_handle(State, XF, ReqId, directory, {RelPath,unread})
+	    add_handle(State1, XF, ReqId, directory, {RelPath,unread})
     end;
 handle_op(?SSH_FXP_READDIR, ReqId,
 	  <<?UINT32(HLen), BinHandle:HLen/binary>>,
@@ -217,18 +230,19 @@ handle_op(?SSH_FXP_READDIR, ReqId,
     end;
 handle_op(?SSH_FXP_CLOSE,  ReqId,
 	  <<?UINT32(HLen), BinHandle:HLen/binary>>,
-	    State = #state{handles = Handles, xf = XF,
-			   file_handler = FileMod}) ->
+	  State = #state{handles = Handles, xf = XF,
+			 file_handler = FileMod, file_state = FS0}) ->
     case get_handle(Handles, BinHandle) of
 	{Handle, Type, T} ->
-	    case Type of
-		file ->
-		    close_our_file(T, FileMod);
-		_ ->
-		    ok
-	    end,
+	    FS1 = case Type of
+			     file ->
+				 close_our_file(T, FileMod, FS0);
+			     _ ->
+				 FS0
+			 end,
 	    ssh_xfer:xf_send_status(XF, ReqId, ?SSH_FX_OK),
-	    State#state{handles = lists:keydelete(Handle, 1, Handles)};
+	    State#state{handles = lists:keydelete(Handle, 1, Handles),
+			file_state = FS1};
 	_ ->
 	    ssh_xfer:xf_send_status(XF, ReqId, ?SSH_FX_INVALID_HANDLE),
 	    State
@@ -264,10 +278,11 @@ handle_op(?SSH_FXP_WRITE, ReqId,
 	    State
     end;
 handle_op(?SSH_FXP_READLINK, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>, 
-	  State = #state{file_handler = FileMod}) ->
+	  State = #state{file_handler = FileMod, file_state = FS0}) ->
     RelPath = binary_to_list(BPath),
     AbsPath = relate_file_name(RelPath, State),
-    case FileMod:read_link(AbsPath) of
+    {Res, FS1} = FileMod:read_link(AbsPath, FS0),
+    case Res of
 	{ok, NewPath} ->
 	    ssh_xfer:xf_send_name(State#state.xf, ReqId, NewPath,
 				  #ssh_xfer_attr{type=regular});
@@ -275,51 +290,55 @@ handle_op(?SSH_FXP_READLINK, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>,
 	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
 				    ssh_xfer:encode_erlang_status(Error))
     end,
-    State;
+    State#state{file_state = FS1};
 handle_op(?SSH_FXP_SETSTAT, ReqId, <<?UINT32(PLen), BPath:PLen/binary,
-				    Attr/binary>>, State) ->
-    Path = relate_file_name(BPath, State),
-    Status = set_stat(Attr, Path, State),
-    send_status(Status, ReqId, State);
+				    Attr/binary>>, State0) ->
+    Path = relate_file_name(BPath, State0),
+    {Status, State1} = set_stat(Attr, Path, State0),
+    send_status(Status, ReqId, State1);
 handle_op(?SSH_FXP_MKDIR, ReqId, <<?UINT32(PLen), BPath:PLen/binary,
 				  Attr/binary>>, 
-	    State = #state{file_handler = FileMod}) ->
-    Path = relate_file_name(BPath, State),
-    case FileMod:make_dir(Path) of
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    Path = relate_file_name(BPath, State0),
+    {Res, FS1} = FileMod:make_dir(Path, FS0),
+    State1 = State0#state{file_state = FS1},
+    case Res of
 	ok ->
-	    set_stat(Attr, Path, State),
-	    send_status(ok, ReqId, State);
+	    {_, State2} = set_stat(Attr, Path, State1),
+	    send_status(ok, ReqId, State2);
 	{error, Error} ->
-	    send_status({error, Error}, ReqId, State)
+	    send_status({error, Error}, ReqId, State1)
     end;
 handle_op(?SSH_FXP_FSETSTAT, ReqId, <<?UINT32(HLen), BinHandle:HLen/binary, 
 				     Attr/binary>>, 
-	  State = #state{handles = Handles}) ->
+	  State0 = #state{handles = Handles}) ->
     case get_handle(Handles, BinHandle) of
 	{_Handle, _Type, {Path,_}} ->
-	    Status = set_stat(Attr, Path, State),
-	    send_status(Status, ReqId, State);
+	    {Status, State1} = set_stat(Attr, Path, State0),
+	    send_status(Status, ReqId, State1);
 	_ ->
-	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
+	    ssh_xfer:xf_send_status(State0#state.xf, ReqId,
 				    ?SSH_FX_INVALID_HANDLE),
-	    State
+	    State0
     end;
 handle_op(?SSH_FXP_REMOVE, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>, 
-	  State = #state{file_handler = FileMod}) ->
-    Path = relate_file_name(BPath, State),
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    Path = relate_file_name(BPath, State0),
     %%  case FileMod:is_dir(Path) of %% This version 6 we still have ver 5
     %% 	true ->
     %% 	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
     %% 				    ?SSH_FX_FILE_IS_A_DIRECTORY); 
     %% 	false ->
-    Status = FileMod:delete(Path),
-    send_status(Status, ReqId, State);
+    {Status, FS1} = FileMod:delete(Path, FS0),
+    State1 = State0#state{file_state = FS1},
+    send_status(Status, ReqId, State1);
     %%end;
 handle_op(?SSH_FXP_RMDIR, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>, 
-	  State = #state{file_handler = FileMod}) ->
-    Path = relate_file_name(BPath, State),
-    Status = FileMod:del_dir(Path),
-    send_status(Status, ReqId, State);
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    Path = relate_file_name(BPath, State0),
+    {Status, FS1} = FileMod:del_dir(Path, FS0),
+    State1 = State0#state{file_state = FS1},
+    send_status(Status, ReqId, State1);
 
 handle_op(?SSH_FXP_RENAME, ReqId,
 	  Bin = <<?UINT32(PLen), _:PLen/binary, ?UINT32(PLen2), 
@@ -328,37 +347,41 @@ handle_op(?SSH_FXP_RENAME, ReqId,
 
 handle_op(?SSH_FXP_RENAME, ReqId,
 	  <<?UINT32(PLen), BPath:PLen/binary, ?UINT32(PLen2), 
-	   BPath2:PLen2/binary,
-	   ?UINT32(Flags)>>, State = #state{file_handler = FileMod}) ->
-    Path = relate_file_name(BPath, State),
-    Path2 = relate_file_name(BPath2, State),
+	   BPath2:PLen2/binary, ?UINT32(Flags)>>,
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    Path = relate_file_name(BPath, State0),
+    Path2 = relate_file_name(BPath2, State0),
     case Flags band ?SSH_FXP_RENAME_ATOMIC of
 	0 ->
 	    case Flags band ?SSH_FXP_RENAME_OVERWRITE of
 		0 ->
-		    case FileMod:read_link_info(Path2) of
+		    {Res, FS1} = FileMod:read_link_info(Path2, FS0),
+		    State1 = State0#state{file_state = FS1},
+		    case Res of
 			{ok, _Info} ->
-			    ssh_xfer:xf_send_status(State#state.xf, ReqId,
+			    ssh_xfer:xf_send_status(State1#state.xf, ReqId,
 						    ?SSH_FX_FILE_ALREADY_EXISTS),
-			    State;
+			    State1;
 			_ ->
-			    rename(Path, Path2, ReqId, State)
+			    rename(Path, Path2, ReqId, State1)
 		    end;
 		_ ->
-		    rename(Path, Path2, ReqId, State)
+		    rename(Path, Path2, ReqId, State0)
 	    end;
 	_ ->
-	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
+	    ssh_xfer:xf_send_status(State0#state.xf, ReqId,
 				    ?SSH_FX_OP_UNSUPPORTED),
-	    State
+	    State0
     end;
 handle_op(?SSH_FXP_SYMLINK, ReqId,
 	  <<?UINT32(PLen), BPath:PLen/binary, ?UINT32(PLen2),
-	   BPath2:PLen2/binary>>, State = #state{file_handler = FileMod}) ->
-    Path = relate_file_name(BPath, State),
-    Path2 = relate_file_name(BPath2, State),
-    Status = FileMod:make_symlink(Path2, Path),
-    send_status(Status, ReqId, State).
+	   BPath2:PLen2/binary>>, 
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    Path = relate_file_name(BPath, State0),
+    Path2 = relate_file_name(BPath2, State0),
+    {Status, FS1} = FileMod:make_symlink(Path2, Path, FS0),
+    State1 = State0#state{file_state = FS1},
+    send_status(Status, ReqId, State1).
 
 %%--------------------------------------------------------------------
 %% Function: terminate(Reason, State) -> void()
@@ -367,13 +390,14 @@ handle_op(?SSH_FXP_SYMLINK, ReqId,
 %% cleaning up. When it returns, the gen_server terminates with Reason.
 %% The return value is ignored.
 %%--------------------------------------------------------------------
-terminate(_, #state{handles = Handles, file_handler = FileMod}) ->
-    CloseFun = fun({_, file, {_, Fd}}) ->
-		       FileMod:close(Fd);
-		  (_) ->
-		       ok
+terminate(_, #state{handles=Handles, file_handler=FileMod, file_state=FS}) ->
+    CloseFun = fun({_, file, {_, Fd}}, FS0) ->
+		       {_Res, FS1} = FileMod:close(Fd, FS0),
+		       FS1;
+		  (_, FS0) ->
+		       FS0
 	       end,
-    lists:foreach(CloseFun, Handles),
+    lists:foldl(CloseFun, FS, Handles),
     ok.
 
 %%--------------------------------------------------------------------
@@ -412,33 +436,46 @@ get_handle(Handles, BinHandle) ->
     end.
 
 %%% read_dir/5: read directory, send names, and return new state
-read_dir(State = #state{file_handler = FileMod}, XF, ReqId, Handle, RelPath) ->
-    AbsPath = relate_file_name(RelPath, State),
+read_dir(State0 = #state{file_handler = FileMod, file_state = FS0},
+	 XF, ReqId, Handle, RelPath) ->
+    AbsPath = relate_file_name(RelPath, State0),
     ?dbg(true, "read_dir: AbsPath=~p\n", [AbsPath]),
-    case FileMod:list_dir(AbsPath) of
+    {Res, FS1} = FileMod:list_dir(AbsPath, FS0),
+    case Res of
 	{ok, Files} ->
-	    NamesAndAttrs = get_attrs(AbsPath, Files, FileMod),
+	    {NamesAndAttrs, FS2} = get_attrs(AbsPath, Files, FileMod, FS1),
 	    ssh_xfer:xf_send_names(XF, ReqId, NamesAndAttrs),
 	    Handles = lists:keyreplace(Handle, 1,
-				       State#state.handles,
+				       State0#state.handles,
 				       {Handle, directory, {RelPath,eof}}),
-	    State#state{handles = Handles};
+	    State0#state{handles = Handles, file_state = FS2};
 	{error, Error} ->
-	    send_status({error, Error}, ReqId, State)
+	    State1 = State0#state{file_state = FS1},
+	    send_status({error, Error}, ReqId, State1)
     end.
 
 %%% get_attrs: get stat of each file and return
-get_attrs(RelPath, Files, FileMod) ->
-    lists:map(fun(F) ->
-		      Path = filename:absname(F, RelPath),
-		      ?dbg(true, "get_attrs fun: F=~p\n", [F]),
-		      {ok, Info} = FileMod:read_link_info(Path),
-		      Attrs = ssh_sftp:info_to_attr(Info),
-		      {F, Attrs}
-	      end, Files).
+get_attrs(RelPath, Files, FileMod, FS) ->
+    get_attrs(RelPath, Files, FileMod, FS, []).
 
-close_our_file({_,Fd}, FileMod) ->
-    FileMod:close(Fd).
+get_attrs(_RelPath, [], _FileMod, FS, Acc) ->
+    {lists:reverse(Acc), FS};
+get_attrs(RelPath, [F | Rest], FileMod, FS0, Acc) ->
+    Path = filename:absname(F, RelPath),
+    ?dbg(true, "get_attrs fun: F=~p\n", [F]),
+    case FileMod:read_link_info(Path, FS0) of
+	{{ok, Info}, FS1} ->
+	    Attrs = ssh_sftp:info_to_attr(Info),
+	    get_attrs(RelPath, Rest, FileMod, FS1, [{F, Attrs} | Acc]);
+	{{error, enoent}, FS1} ->
+	    get_attrs(RelPath, Rest, FileMod, FS1, Acc);
+	{Error, FS1} ->
+	    {Error, FS1}
+    end.
+
+close_our_file({_,Fd}, FileMod, FS0) ->
+    {_Res, FS1} = FileMod:close(Fd, FS0),
+    FS1.
 
 %%% stat: do the stat
 stat(Vsn, ReqId, Data, State, F) when Vsn =< 3->
@@ -465,18 +502,19 @@ fstat(ReqId, BinHandle, State) ->
 	    State
     end.
 
-stat(ReqId, RelPath, State = #state{file_handler = FileMod}, F) ->
-    AbsPath = relate_file_name(RelPath, State),
-    XF = State#state.xf,
+stat(ReqId, RelPath, State0=#state{file_handler=FileMod, file_state=FS0}, F) ->
+    AbsPath = relate_file_name(RelPath, State0),
+    XF = State0#state.xf,
     ?dbg(false, "stat: AbsPath=~p\n", [AbsPath]),
-    case FileMod:F(AbsPath) of
+    {Res, FS1} = FileMod:F(AbsPath, FS0),
+    State1 = State0#state{file_state = FS1},
+    case Res of
 	{ok, FileInfo} ->
 	    ssh_xfer:xf_send_attr(XF, ReqId, ssh_sftp:info_to_attr(FileInfo)),
-	    State;
+	    State1;
 	{error, E} ->
-	    send_status({error, E}, ReqId, State)
-    end,
-    State.
+	    send_status({error, E}, ReqId, State1)
+    end.
 
 decode_4_open_flag(create_new) ->
     [write];
@@ -523,22 +561,24 @@ open(Vsn, ReqId, Data, State) when Vsn >= 4 ->
     ?dbg(true, "open: Flags=~p\n", [Flags]),
     do_open(ReqId, State, Path, Flags).
 
-do_open(ReqId, State = #state{file_handler = FileMod}, Path, Flags) ->
-    XF = State#state.xf,
+do_open(ReqId, State0, Path, Flags) ->
+    #state{file_handler = FileMod, file_state = FS0} = State0,
+    XF = State0#state.xf,
     F = [raw, binary | Flags],
     %%   case FileMod:is_dir(Path) of %% This is version 6 we still have 5
     %% 	true ->
     %% 	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
     %% 				    ?SSH_FX_FILE_IS_A_DIRECTORY);
     %% 	false ->
-    case FileMod:open(Path, F) of
+    {Res, FS1} = FileMod:open(Path, F, FS0),
+    State1 = State0#state{file_state = FS1},
+    case Res of
 	{ok, IoDevice} ->
-	    add_handle(State, XF, ReqId, file, {Path,IoDevice});
+	    add_handle(State1, XF, ReqId, file, {Path,IoDevice});
 	{error, Error} ->
-	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
-				    ssh_xfer:encode_erlang_status(
-				      Error)),
-	    State
+	    ssh_xfer:xf_send_status(State1#state.xf, ReqId,
+				    ssh_xfer:encode_erlang_status(Error)),
+	    State1
 	    %%end
     end.
 
@@ -546,45 +586,56 @@ do_open(ReqId, State = #state{file_handler = FileMod}, Path, Flags) ->
 %%% most times)
 relate_file_name(F, State) when binary(F) ->
     relate_file_name(binary_to_list(F), State);
-relate_file_name(F, #state{cwd = CWD}) ->
-    F1 = filename:absname(F, CWD),    
-    filename:join(fix_file_name(lists:reverse(filename:split(F1)), [])).
+relate_file_name(F, #state{cwd = CWD, root = Root}) ->
+    F1 = filename:absname(F, CWD),
+    Parts = fix_file_name(filename:split(F1), []),
+    R = Root++filename:join(Parts),
+    R.
 
-%%% fix file just a little: a/b/.. -> a/b and a/. -> a
-fix_file_name(["..", _ | Rest], Acc) ->
+%%% fix file just a little: a/b/.. -> a and a/. -> a
+fix_file_name([".." | Rest], ["/"] = Acc) ->
     fix_file_name(Rest, Acc);
+fix_file_name([".." | Rest], [_Dir | Paths]) ->
+    fix_file_name(Rest, Paths);
 fix_file_name(["." | Rest], Acc) ->
     fix_file_name(Rest, Acc);
 fix_file_name([A | Rest], Acc) ->
     fix_file_name(Rest, [A | Acc]);
 fix_file_name([], Acc) ->
-    Acc.
+    lists:reverse(Acc).
     
 read_file(ReqId, IoDevice, Offset, Len,	
-	  State = #state{file_handler = FileMod}) ->
-    case FileMod:position(IoDevice, {bof, Offset}) of
+	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    {Res1, FS1} = FileMod:position(IoDevice, {bof, Offset}, FS0),
+    case Res1 of
 	{ok, _NewPos} ->
-	    case FileMod:read(IoDevice, Len) of
+	    {Res2, FS2} = FileMod:read(IoDevice, Len, FS1),
+	    State1 = State0#state{file_state = FS2},
+	    case Res2 of
 		{ok, Data} ->
-		    ssh_xfer:xf_send_data(State#state.xf, ReqId, Data),
-		    State;
+		    ssh_xfer:xf_send_data(State1#state.xf, ReqId, Data),
+		    State1;
 		{error, Error} ->
-		    send_status({error, Error}, ReqId, State);
+		    send_status({error, Error}, ReqId, State1);
 		eof ->
-		    send_status(eof, ReqId, State)
+		    send_status(eof, ReqId, State1)
 	    end;
 	{error, Error} ->
-		    send_status({error, Error}, ReqId, State)
+    	    State1 = State0#state{file_state = FS1},
+	    send_status({error, Error}, ReqId, State1)
     end.
 
 write_file(ReqId, IoDevice, Offset, Data, 
-	   State = #state{file_handler = FileMod}) ->
-    case FileMod:position(IoDevice, {bof, Offset}) of
+	   State0 = #state{file_handler = FileMod, file_state = FS0}) ->
+    {Res, FS1} = FileMod:position(IoDevice, {bof, Offset}, FS0),
+    case Res of
 	{ok, _NewPos} ->
-	    Status = FileMod:write(IoDevice, Data),
-	    send_status(Status, ReqId, State);
+	    {Status, FS2} = FileMod:write(IoDevice, Data, FS1),
+	    State1 = State0#state{file_state = FS2},
+	    send_status(Status, ReqId, State1);
 	{error, Error} ->
-	    send_status({error, Error}, ReqId, State)
+	    State1 = State0#state{file_state = FS1},
+	    send_status({error, Error}, ReqId, State1)
     end.
 
 get_status(ok) ->
@@ -599,21 +650,25 @@ send_status(Status, ReqId, State) ->
     State.
 
 %%
-set_stat(<<>>, _Path, _State) ->
-    ok;
-set_stat(Attr, Path, State = #state{file_handler = FileMod}) ->
+set_stat(<<>>, _Path, State) ->
+    {ok, State};
+set_stat(Attr, Path, State0 = #state{file_handler=FileMod, file_state=FS0}) ->
     {DecodedAttr, _Rest} = 
-	ssh_xfer:decode_ATTR((State#state.xf)#ssh_xfer.vsn, Attr),
+	ssh_xfer:decode_ATTR((State0#state.xf)#ssh_xfer.vsn, Attr),
     ?dbg(true, "set_stat DecodedAttr=~p\n", [DecodedAttr]),
     Info = ssh_sftp:attr_to_info(DecodedAttr),
-    case FileMod:read_link_info(Path) of
+    {Res1, FS1} = FileMod:read_link_info(Path, FS0),
+    case Res1 of
 	{ok, OldInfo} ->
 	    NewInfo = set_file_info(Info, OldInfo),
 	    ?dbg(true, "set_stat Path=~p\nInfo=~p\nOldInfo=~p\nNewInfo=~p\n",
 		 [Path, Info, OldInfo, NewInfo]),
-	    FileMod:write_file_info(Path, NewInfo);
+	    {Res2, FS2} = FileMod:write_file_info(Path, NewInfo, FS1),
+	    State1 = State0#state{file_state = FS2},
+	    {Res2, State1};
 	{error, Error} ->
-	    {error, Error}
+	    State1 = State0#state{file_state = FS1},
+	    {{error, Error}, State1}
     end.
 
 
@@ -635,6 +690,8 @@ set_file_info(#file_info{atime = Dst_atime, mtime = Dst_mtime,
 	       uid = set_file_info_sel(Dst_uid, Src_uid),
 	       gid = set_file_info_sel(Dst_gid, Src_gid)}.
 
-rename(Path, Path2, ReqId, State = #state{file_handler = FileMod}) ->
-    Status = FileMod:rename(Path, Path2),
-    send_status(Status, ReqId, State).
+rename(Path, Path2, ReqId, State0) ->
+    #state{file_handler = FileMod, file_state = FS0} = State0,
+    {Status, FS1} = FileMod:rename(Path, Path2, FS0),
+    State1 = State0#state{file_state = FS1},
+    send_status(Status, ReqId, State1).

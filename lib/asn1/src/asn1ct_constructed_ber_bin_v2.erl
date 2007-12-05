@@ -82,6 +82,7 @@ gen_encode_sequence(Erules,Typename,D) when record(D,type) ->
 	end,
     Ext = extensible(CompList),
     CompList1 = case CompList of
+		    {Rl1,El,Rl2} -> Rl1 ++ El ++ Rl2;
 		    {Rl,El} -> Rl ++ El;
 		    _ -> CompList
 		end,
@@ -174,10 +175,12 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:new(tag),
     #'SEQUENCE'{tablecinf=TableConsInfo,components=CList} = D#type.def,
     Ext = extensible(CList),
-    CompList = case CList of
-		   {Rl,El}  -> Rl ++ El;
-		   _ -> CList
-	       end,
+    {CompList,CompList2} = 
+	case CList of
+	    {Rl1,El,Rl2} -> {Rl1 ++ El ++ Rl2, CList};
+	    {Rl,El}  -> {Rl ++ El, Rl ++ El};
+	    _ -> {CList, CList}
+	end,
 
     emit(["   %%-------------------------------------------------",nl]),
     emit(["   %% decode tag and length ",nl]),
@@ -185,7 +188,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 
     asn1ct_name:new(tlv),
     case CompList of
-	EmptyCL when EmptyCL == [];EmptyCL == {[],[]}-> % empty sequence
+	[] -> % empty sequence
 	    true;
 	_ ->
 	    emit([{curr,tlv}," = "])
@@ -225,7 +228,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 		{false,false,false}
 %	end
 	end,
-    case gen_dec_sequence_call(Erules,Typename,CompList,Ext,DecObjInf) of
+    case gen_dec_sequence_call(Erules,Typename,CompList2,Ext,DecObjInf) of
 	no_terms -> % an empty sequence	    
 	    emit([nl,nl]),
 	    demit(["Result = "]), %dbg
@@ -251,7 +254,7 @@ gen_decode_sequence(Erules,Typename,D) when record(D,type) ->
 	    case Ext of
 		{ext,_,_} -> 
 		    emit(["case ",{prev,tlv}," of [] -> true; _ -> true end, % ... extra fields skipped",nl]);
-		noext -> 
+		_ -> % noext | extensible 
 		    emit(["case ",{prev,tlv}," of",nl,
 			  "[] -> true;",
 			  "_ -> exit({error,{asn1, {unexpected,",{prev,tlv},
@@ -328,7 +331,12 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:new(tag),
     #'SET'{tablecinf=TableConsInfo,components=TCompList} = D#type.def,
     Ext = extensible(TCompList),
+    ToOptional = fun(mandatory) ->
+			 'OPTIONAL';
+		    (X) -> X
+		 end,
     CompList = case TCompList of
+		   {Rl1,El,Rl2} -> Rl1 ++ [X#'ComponentType'{prop=ToOptional(Y)}||X = #'ComponentType'{prop=Y}<-El] ++ Rl2;
 		   {Rl,El} -> Rl ++ El;
 		   _ -> TCompList
 	       end,
@@ -336,7 +344,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
     asn1ct_name:clear(),
     asn1ct_name:new(tlv),
     case CompList of
-	EmptyCL when EmptyCL == [];EmptyCL == {[],[]}-> % empty sequence
+	[] -> % empty sequence
 	    true;
 	_ ->
 	    emit([{curr,tlv}," = "])
@@ -407,7 +415,7 @@ gen_decode_set(Erules,Typename,D) when record(D,type) ->
 	    demit(["Result = "]), %dbg
 	    %% return value as record
 	    case Ext of
-		{ext,_,_} -> 
+		Extnsn when Extnsn =/= noext -> 
 		    emit(["case ",{prev,tlv}," of [] -> true; _ -> true end, % ... extra fields skipped",nl]);
 		noext -> 
 		    emit(["case ",{prev,tlv}," of",nl,
@@ -528,6 +536,7 @@ gen_encode_choice(Erules,Typename,D) when record(D,type) ->
     {'CHOICE',CompList} = D#type.def,
     Ext = extensible(CompList),
     CompList1 = case CompList of
+		    {Rl1,El,Rl2} -> Rl1 ++ El ++ Rl2;
 		    {Rl,El} -> Rl ++ El;
 		    _ -> CompList
 		end,
@@ -541,6 +550,7 @@ gen_decode_choice(Erules,Typename,D) when record(D,type) ->
     {'CHOICE',CompList} = D#type.def,
     Ext = extensible(CompList),
     CompList1 = case CompList of
+		    {Rl1,El,Rl2} -> Rl1 ++ El ++ Rl2;
 		    {Rl,El} -> Rl ++ El;
 		    _ -> CompList
 		end,
@@ -577,8 +587,11 @@ gen_enc_sequence_call(_Erules,_TopType,[],_Num,_,_) ->
 %%
 %%============================================================================
 
+gen_dec_sequence_call(Erules,TopType,CompList,Ext,DecObjInf)
+  when is_list(CompList) ->
+    gen_dec_sequence_call1(Erules,TopType, CompList, 1, Ext,DecObjInf,[],[]);
 gen_dec_sequence_call(Erules,TopType,CompList,Ext,DecObjInf) ->
-    gen_dec_sequence_call1(Erules,TopType, CompList, 1, Ext,DecObjInf,[],[]).
+    gen_dec_sequence_call2(Erules,TopType, CompList, Ext,DecObjInf).
 
 
 gen_dec_sequence_call1(Erules,TopType,[#'ComponentType'{name=Cname,typespec=Type,prop=Prop,tags=Tags}|Rest],Num,Ext,DecObjInf,LeadingAttrAcc,ArgsAcc) ->
@@ -598,6 +611,47 @@ gen_dec_sequence_call1(Erules,TopType,[#'ComponentType'{name=Cname,typespec=Type
 gen_dec_sequence_call1(_Erules,_TopType,[],1,_,_,_,_) ->
     no_terms.
 
+gen_dec_sequence_call2(_Erules,_TopType, {[], [], []}, _Ext,_DecObjInf) ->
+    no_terms;
+gen_dec_sequence_call2(Erules,TopType,{Root1,EList,Root2},_Ext,DecObjInf) ->
+    {LA,ArgsAcc} =
+	case gen_dec_sequence_call1(Erules,TopType,Root1++EList,1,
+				    extensible({Root1,EList}),DecObjInf,[],[]) of
+	    no_terms ->
+		{[],[]};
+	    Res -> Res
+	end,
+    %% TagList is the tags of Root2 elements from the first up to and
+    %% including the first mandatory element.
+    TagList = get_root2_taglist(Root2,[]),
+    emit({com,nl}),
+    emit([{curr,tlv}," = ?RT_BER:skip_ExtensionAdditions(",
+	  {prev,tlv},", ",{asis,TagList},"),",nl]),
+    asn1ct_name:new(tlv),
+    gen_dec_sequence_call1(Erules,TopType,Root2,
+			   length(Root1)+length(EList),noext,
+			   DecObjInf,LA,ArgsAcc).
+
+%% returns a list of tags of the elements in the component (second
+%% root) list up to and including the first mandatory tag. See 24.6 in
+%% X.680 (7/2002)
+get_root2_taglist([],Acc) ->
+    lists:reverse(Acc);
+get_root2_taglist([#'ComponentType'{prop=Prop,typespec=Type}|Rest],Acc) ->
+    FirstTag = fun([])->[];
+		  ([H|_T])->(?ASN1CT_GEN_BER:decode_class(H#tag.class) bsl 10)
+				+ H#tag.number
+	       end(Type#type.tag),
+    case Prop of
+	mandatory ->
+	    %% match_tags/ may be used
+	    %% this is the last tag of interest -> return
+	    lists:reverse([FirstTag|Acc]);
+	_ ->
+	    get_root2_taglist(Rest,[FirstTag|Acc])
+    end.
+
+    
 
 %%----------------------------
 %%SEQUENCE mandatory
@@ -609,13 +663,7 @@ gen_dec_component(Erules,TopType,Cname,CTags,Type,Pos,Prop,Ext,DecObjInf) ->
 	    #'ObjectClassFieldType'{type=OCFTType} -> OCFTType;
 	    _ -> asn1ct_gen:get_inner(Type#type.def)
 	end,
-% 	case asn1ct_gen:get_constraint(Type#type.constraint,
-% 				       tableconstraint_info) of
-% 	    no ->
-% 		asn1ct_gen:get_inner(Type#type.def);
-% 	    _ ->
-% 		Type#type.def
-% 	end,
+
     Prop1 = case {Prop,Ext} of
 		{mandatory,{ext,Epos,_}} when Pos >= Epos ->
 		    'OPTIONAL';
@@ -1328,7 +1376,9 @@ mkvplus(L) ->
 extensible(CompList) when list(CompList) ->
     noext;
 extensible({RootList,ExtList}) ->
-    {ext,length(RootList)+1,length(ExtList)}.
+    {ext,length(RootList)+1,length(ExtList)};
+extensible({_Rl1,_Ext,_Rl2}) ->
+    extensible.
 
 
 print_attribute_comment(InnerType,Pos,Cname,Prop) ->

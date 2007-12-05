@@ -91,7 +91,7 @@ peep([Move=#fmove{src=Src, dst=Dst},
 %% --------------
 peep([#move{src=Src1, dst=Dst}, 
       #alu{aluop=Op,src=Src2,dst=Dst}|Insns], Res, Lst)
-  when (Src1 == #x86_imm{}) and (Src2 /= #x86_imm{}) and 
+  when (Src1 =:= #x86_imm{}) and (Src2 =/= #x86_imm{}) and 
        ((Op =:= 'add') or (Op =:= 'and') or (Op =:= 'or') or (Op =:= 'xor'))  ->
   peep(Insns, [#alu{aluop=Op,src=Src1,dst=Dst},
 	       #move{src=Src2, dst=Dst}|Res], 
@@ -101,7 +101,7 @@ peep([#move{src=Src1, dst=Dst},
 %% ElimCmp0
 %% --------
 peep([C=#cmp{src=Src, dst=Dst},J=#jcc{cc=Cond, label=Lab}|Insns],Res,Lst) ->
-    case (((Src == #x86_imm{value=0}) or (Dst == #x86_imm{value=0})) and
+    case (((Src =:= #x86_imm{value=0}) or (Dst =:= #x86_imm{value=0})) and
 	  ((Cond =:= 'eq') or (Cond =:= 'neq'))) of
 	true ->
 	    Src2 = case Src of #x86_imm{value=0} -> Src; _ -> Dst end, 
@@ -116,7 +116,7 @@ peep([C=#cmp{src=Src, dst=Dst},J=#jcc{cc=Cond, label=Lab}|Insns],Res,Lst) ->
 
 %% ElimCmpTest
 %% -----------
-peep([I|Insns],Res,Lst) when (I == #cmp{}) or (I == #test{}) -> 
+peep([I|Insns],Res,Lst) when (I =:= #cmp{}) or (I =:= #test{}) -> 
     case check(Insns) of
 	#jcc{} ->
 	    peep(Insns, [I|Res], Lst);

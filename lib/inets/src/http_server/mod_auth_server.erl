@@ -35,10 +35,6 @@
 	 handle_call/3, handle_cast/2, handle_info/2,
 	 terminate/2, code_change/3]).
 
-%% We will not make the change to use base64 in stdlib in inets just yet.
-%% it will be included in the next major release of inets. 
--compile({nowarn_deprecated_function, {http_base_64, encode, 1}}).
-
 -record(state,{tab}).
 
 
@@ -299,8 +295,8 @@ api_call(Addr, Port, Dir, Func, Args,Password,State) ->
     case controlPassword(Password,State,Dir) of
 	ok->
 	    ConfigName = httpd_util:make_name("httpd_conf",Addr,Port),
-	    case ets:match_object(ConfigName, {directory, Dir, '$1'}) of
-		[{directory, Dir, DirData}] ->
+	    case ets:match_object(ConfigName, {directory, {Dir, '$1'}}) of
+		[{directory, {Dir, DirData}}] ->
 		    AuthMod = auth_mod_name(DirData),
 		    (catch apply(AuthMod, Func, [DirData|Args]));
 		_ ->
@@ -348,7 +344,7 @@ do_add_password(Dir, Password, State) ->
 	    
 
 auth_mod_name(DirData) ->
-    case httpd_util:key1search(DirData, auth_type, plain) of
+    case proplists:get_value(auth_type, DirData, plain) of
 	plain ->    mod_auth_plain;
 	mnesia ->   mod_auth_mnesia;
 	dets ->	    mod_auth_dets

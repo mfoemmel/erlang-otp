@@ -2,7 +2,7 @@
 
 {application, ssh,
  [{description, "SSH-2 for Erlang/OTP"},
-  {vsn, "0.9.9.1"},
+  {vsn, "0.9.9.3"},
   {modules, ['DSS',
 	     'PKCS-1',
 	     ssh,
@@ -19,6 +19,7 @@
 	     ssh_sftp,
 	     ssh_sftpd,
 	     ssh_sftpd_file,
+	     ssh_sftpd_file_api,
 	     ssh_ssh,
 	     ssh_sshd,
 	     ssh_tcp,

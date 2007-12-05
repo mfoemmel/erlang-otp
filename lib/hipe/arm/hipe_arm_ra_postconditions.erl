@@ -248,7 +248,7 @@ temp_is_spilled(Temp, TempMap) ->
   case hipe_arm:temp_is_allocatable(Temp) of
     true ->
       Reg = hipe_arm:temp_reg(Temp),
-      case size(TempMap) > Reg of
+      case tuple_size(TempMap) > Reg of
 	true -> hipe_temp_map:is_spilled(Reg, TempMap);
 	false -> false
       end;

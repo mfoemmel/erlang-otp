@@ -22,7 +22,7 @@
 -export([module/4]).
 -export([encode/2]).
 
--import(lists, [map/2,member/2,keymember/3,duplicate/2]).
+-import(lists, [map/2,member/2,keymember/3,duplicate/2,filter/2]).
 -include("beam_opcodes.hrl").
 
 module(Code, Abst, SourceFile, Opts) ->
@@ -171,7 +171,11 @@ flatten_exports(Exps) ->
 flatten_imports(Imps) ->
     list_to_binary(map(fun({M,F,A}) -> <<M:32,F:32,A:32>> end, Imps)).
 
-build_attributes(Opts, SourceFile, Attr, Essentials) ->
+build_attributes(Opts, SourceFile, Attr0, Essentials) ->
+    Attr = filter(fun({type,_}) -> false;
+		     ({spec,_}) -> false;
+		     (_) -> true
+		  end, Attr0),
     Misc = case member(slim, Opts) of
 	       false ->
 		   {{Y,Mo,D},{H,Mi,S}} = erlang:universaltime(),
@@ -213,26 +217,11 @@ filter_funtab(<<Important:20/binary,_OldUniq:4/binary,T/binary>>, Zero) ->
     [Important,Zero|filter_funtab(T, Zero)];
 filter_funtab(<<>>, _) -> [].
 
-
-bif_type('-', 1)    -> negate;
-bif_type('+', 2)    -> {op, m_plus};
-bif_type('-', 2)    -> {op, m_minus};
-bif_type('*', 2)    -> {op, m_times};
-bif_type('/', 2)    -> {op, m_div};
-bif_type('div', 2)  -> {op, int_div};
-bif_type('rem', 2)  -> {op, int_rem};
-bif_type('band', 2) -> {op, int_band};
-bif_type('bor', 2)  -> {op, int_bor};
-bif_type('bxor', 2) -> {op, int_bxor};
-bif_type('bsl', 2)  -> {op, int_bsl};
-bif_type('bsr', 2)  -> {op, int_bsr};
-bif_type('bnot', 1) -> {op, int_bnot};
-bif_type(fnegate, 1) -> {op, fnegate};
-bif_type(fadd, 2)   -> {op, fadd};
-bif_type(fsub, 2)   -> {op, fsub};
-bif_type(fmul, 2)   -> {op, fmul};
-bif_type(fdiv, 2)   -> {op, fdiv};
-bif_type(_, 0)      -> bif0;
+bif_type(fnegate, 1) -> {op,fnegate};
+bif_type(fadd, 2)   -> {op,fadd};
+bif_type(fsub, 2)   -> {op,fsub};
+bif_type(fmul, 2)   -> {op,fmul};
+bif_type(fdiv, 2)   -> {op,fdiv};
 bif_type(_, 1)      -> bif1;
 bif_type(_, 2)      -> bif2.
 
@@ -249,9 +238,6 @@ make_op({bif,Bif,Fail,Args,Dest}, Dict) ->
     case bif_type(Bif, Arity) of
 	{op,Op} ->
 	    make_op(list_to_tuple([Op,Fail|Args++[Dest]]), Dict);
-	negate ->
-	    %% Fake negation operator.
-	    make_op({m_minus,Fail,{integer,0},hd(Args),Dest}, Dict);
 	BifOp when is_atom(BifOp) ->
 	    encode_op(BifOp, [Fail,{extfunc,erlang,Bif,Arity}|Args++[Dest]],
 		      Dict)
@@ -259,7 +245,6 @@ make_op({bif,Bif,Fail,Args,Dest}, Dict) ->
 make_op({gc_bif,Bif,Fail,Live,Args,Dest}, Dict) ->
     Arity = length(Args),
     BifOp = case Arity of
-		0 -> gc_bif0;
 		1 -> gc_bif1;
 		2 -> gc_bif2
 	    end,
@@ -285,6 +270,10 @@ make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5}, Dict) ->
     encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5], Dict);
 make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5,Arg6}, Dict) ->
     encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6], Dict);
+%% make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5,Arg6,Arg7}, Dict) ->
+%%     encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6,Arg7], Dict);
+make_op({Name,Arg1,Arg2,Arg3,Arg4,Arg5,Arg6,Arg7,Arg8}, Dict) ->
+    encode_op(Name, [Arg1,Arg2,Arg3,Arg4,Arg5,Arg6,Arg7,Arg8], Dict);
 make_op(Op, Dict) when is_atom(Op) ->
     encode_op(Op, [], Dict).
 
@@ -311,8 +300,8 @@ encode_arg(nil, Dict) ->
     {encode(?tag_a, 0), Dict};
 encode_arg({f, W}, Dict) ->
     {encode(?tag_f, W), Dict};
-encode_arg({'char', C}, Dict) ->
-    {encode(?tag_h, C), Dict};
+%% encode_arg({'char', C}, Dict) ->
+%%     {encode(?tag_h, C), Dict};
 encode_arg({string, String}, Dict0) ->
     {Offset, Dict} = beam_dict:string(String, Dict0),
     {encode(?tag_u, Offset), Dict};
@@ -333,21 +322,20 @@ encode_arg({alloc,List}, Dict) ->
     encode_alloc_list(List, Dict);
 encode_arg({literal,Lit}, Dict0) ->
     {Index,Dict} = beam_dict:literal(Lit, Dict0),
-    {encode(?tag_u, Index),Dict};
+    {[encode(?tag_z, 4),encode(?tag_u, Index)],Dict};
 encode_arg(Int, Dict) when is_integer(Int) ->
     {encode(?tag_u, Int),Dict}.
 
-flag_to_bit(aligned) -> 16#01;
+%%flag_to_bit(aligned) -> 16#01; %% No longer useful.
 flag_to_bit(little)  -> 16#02;
 flag_to_bit(big)     -> 16#00;
 flag_to_bit(signed)  -> 16#04;
 flag_to_bit(unsigned)-> 16#00;
-flag_to_bit(exact)   -> 16#08;
-flag_to_bit(native)  -> 16#10.
+%%flag_to_bit(exact)   -> 16#08;
+flag_to_bit(native)  -> 16#10;
+flag_to_bit({anno,_}) -> 0.
     
-encode_list([H|T], _Dict, _Acc) when is_list(H) ->
-    exit({illegal_nested_list,encode_arg,[H|T]});
-encode_list([H|T], Dict0, Acc) ->
+encode_list([H|T], Dict0, Acc) when not is_list(H) ->
     {Enc,Dict} = encode_arg(H, Dict0),
     encode_list(T, Dict, [Acc,Enc]);
 encode_list([], Dict, Acc) -> {Acc,Dict}.
@@ -361,10 +349,6 @@ encode_alloc_list_1([{words,Words}|T], Dict, Acc0) ->
     encode_alloc_list_1(T, Dict, Acc);
 encode_alloc_list_1([{floats,Floats}|T], Dict, Acc0) ->
     Acc = [Acc0,encode(?tag_u, 1),encode(?tag_u, Floats)],
-    encode_alloc_list_1(T, Dict, Acc);
-encode_alloc_list_1([{literal,Lit}|T], Dict0, Acc0) ->
-    {Index,Dict} = beam_dict:literal(Lit, Dict0),
-    Acc = [Acc0,encode(?tag_u, 2),encode(?tag_u, Index)],
     encode_alloc_list_1(T, Dict, Acc);
 encode_alloc_list_1([], Dict, Acc) ->
     {iolist_to_binary(Acc),Dict}.

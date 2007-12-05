@@ -346,7 +346,7 @@ encode(Code, Options) ->
   ExportMap = build_export_map(Code, 0, []),
   {AccCode,Relocs} = encode_mfas(Code, 0, [], [], Options),
   CodeBinary = list_to_binary(lists:reverse(AccCode)),
-  ?ASSERT(CodeSize =:= size(CodeBinary)),
+  ?ASSERT(CodeSize =:= byte_size(CodeBinary)),
   CombinedLabelMap = combine_label_maps(Code, 0, gb_trees:empty()),
   {CodeSize,CodeBinary,Relocs,CombinedLabelMap,ExportMap}.
 

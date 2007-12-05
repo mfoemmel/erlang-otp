@@ -44,7 +44,9 @@
 #define DIRSEP "\\"
 #define PATHSEP ";"
 #define NULL_DEVICE "nul"
-#define BINARY_EXT ".exe"
+#define BINARY_EXT ""
+#define DLL_EXT ".dll"
+#define EMULATOR_EXECUTABLE "beam.dll"
 #else
 #define PATHSEP ":"
 #define DIRSEP "/"
@@ -116,14 +118,22 @@ static char *plusM_other_switches[] = {
 #define SMP_SUFFIX	  ".smp"
 #define HYBRID_SUFFIX	  ".hybrid"
 
+#ifdef __WIN32__
+#define DEBUG_SUFFIX      ".debug"
+#define EMU_TYPE_SUFFIX_LENGTH  (strlen(HYBRID_SUFFIX)+(strlen(DEBUG_SUFFIX)))
+#else
 /* The length of the longest memory architecture suffix. */
 #define EMU_TYPE_SUFFIX_LENGTH  strlen(HYBRID_SUFFIX)
-
+#endif
 /*
  * Define flags for different memory architectures.
  */
 #define EMU_TYPE_SMP		0x0001
 #define EMU_TYPE_HYBRID		0x0002
+
+#ifdef __WIN32__
+#define EMU_TYPE_DEBUG		0x0004
+#endif
 
 void usage(const char *switchname);
 void start_epmd(char *epmd);
@@ -160,8 +170,8 @@ static char* possibly_quote(char* arg);
 /* 
  * Functions from win_erlexec.c
  */
-int start_win_emulator(char* emu, char** argv, int start_detached);
-int start_emulator(char* emu, char** argv, int start_detached);
+int start_win_emulator(char* emu, char *startprog,char** argv, int start_detached);
+int start_emulator(char* emu, char*start_prog, char** argv, int start_detached);
 #endif
 
 
@@ -185,8 +195,11 @@ static int start_detached = 0;	/* If non-zero, the emulator should be
 				 */
 static int emu_type = 0;	/* If non-zero, start beam.ARCH or beam.ARCH.exe
 				 * instead of beam or beam.exe, where ARCH is defined by flags. */
+static int emu_type_passed = 0;	/* Types explicitly set */
 
 #ifdef __WIN32__
+static char *start_emulator_program = NULL; /* For detachec mode - 
+					       erl.exe/werl.exe */
 static char* key_val_name = ERLANG_VERSION; /* Used by the registry
 					   * access functions.
 					   */
@@ -211,7 +224,7 @@ static char* home;		/* Path of user's home directory. */
 
 /*
  * Add the arcitecture suffix to the program name if needed,
- * except on Windows, where we insert it just before ".EXE".
+ * except on Windows, where we insert it just before ".DLL".
  */
 static char*
 add_extra_suffixes(char *prog, int type)
@@ -220,8 +233,8 @@ add_extra_suffixes(char *prog, int type)
    char *p;
    int len;
 #ifdef __WIN32__
-   char *exe_p;
-   int exe = 0;
+   char *dll_p;
+   int dll = 0;
 #endif
 
    if (!type) {
@@ -238,18 +251,24 @@ add_extra_suffixes(char *prog, int type)
    p = write_str(p, prog);
 
 #ifdef __WIN32__
-   exe_p = res + len - 4;
-   if (exe_p >= res) {
-      if (exe_p[0] == '.' &&
-	  (exe_p[1] == 'e' || exe_p[1] == 'E') &&
-	  (exe_p[2] == 'x' || exe_p[2] == 'X') &&
-	  (exe_p[3] == 'e' || exe_p[3] == 'E')) {
-	  p = exe_p;
-	  exe = 1;
+   dll_p = res + len - 4;
+   if (dll_p >= res) {
+      if (dll_p[0] == '.' &&
+	  (dll_p[1] == 'd' || dll_p[1] == 'D') &&
+	  (dll_p[2] == 'l' || dll_p[2] == 'L') &&
+	  (dll_p[3] == 'l' || dll_p[3] == 'L')) {
+	  p = dll_p;
+	  dll = 1;
       }
    }
 #endif
 
+#ifdef __WIN32__
+   if (type & EMU_TYPE_DEBUG) {
+       p = write_str(p, DEBUG_SUFFIX);
+       type &= ~(EMU_TYPE_DEBUG);
+   }
+#endif
    if (type == EMU_TYPE_SMP) {
        p = write_str(p, SMP_SUFFIX);
    }
@@ -257,8 +276,8 @@ add_extra_suffixes(char *prog, int type)
        p = write_str(p, HYBRID_SUFFIX);
    }
 #ifdef __WIN32__
-   if (exe) {
-       p = write_str(p, ".exe");
+   if (dll) {
+       p = write_str(p, DLL_EXT);
    }
 #endif
 
@@ -290,9 +309,17 @@ int main(int argc, char **argv)
      * directly to start_emulator */
     s = getenv("ERL_CONSOLE_MODE");
     if (s != NULL && strcmp(s, "detached")==0) {
+	s = getenv("ERL_EMULATOR_DLL");
+	if (s != NULL) {
+	    argv[0] = strsave(s);
+	} else {
+	    argv[0] = strsave(EMULATOR_EXECUTABLE);
+	}
 	ensure_EargsSz(argc + 1);
 	memcpy((void *) Eargsp, (void *) argv, argc * sizeof(char *));
 	Eargsp[argc] = NULL;
+	emu = argv[0];
+	start_emulator_program = strsave(argv[0]);
 	goto skip_arg_massage;
     }   
 #endif
@@ -314,6 +341,17 @@ int main(int argc, char **argv)
      * Construct the path of the executable.
      */
 
+    /* '-smp auto' is default */ 
+#ifdef ERTS_HAVE_SMP_EMU
+    if (erts_no_of_cpus() > 1)
+	emu_type |= EMU_TYPE_SMP;
+#endif
+
+#if defined(__WIN32__) && defined(WIN32_ALWAYS_DEBUG)
+    emu_type_passed |= EMU_TYPE_DEBUG;
+    emu_type |= EMU_TYPE_DEBUG;
+#endif
+
     /* We need to do this before the ordinary processing. */
     malloc_lib = getenv("ERL_MALLOC_LIB");
     while (i < argc) {
@@ -331,13 +369,13 @@ int main(int argc, char **argv)
 	}
 	else if (argv[i][0] == '-') {
 	    if (strcmp(argv[i], "-smp") == 0) {
-
 		if (i + 1 >= argc)
 		    goto smp;
 
 		if (strcmp(argv[i+1], "auto") == 0) {
 		    i++;
 		smp_auto:
+		    emu_type_passed |= EMU_TYPE_SMP;
 #ifdef ERTS_HAVE_SMP_EMU
 		    if (erts_no_of_cpus() > 1)
 			emu_type |= EMU_TYPE_SMP;
@@ -348,6 +386,7 @@ int main(int argc, char **argv)
 		else if (strcmp(argv[i+1], "enable") == 0) {
 		    i++;
 		smp_enable:
+		    emu_type_passed |= EMU_TYPE_SMP;
 #ifdef ERTS_HAVE_SMP_EMU
 		    emu_type |= EMU_TYPE_SMP;
 #else
@@ -357,10 +396,13 @@ int main(int argc, char **argv)
 		else if (strcmp(argv[i+1], "disable") == 0) {
 		    i++;
 		smp_disable:
+		    emu_type_passed |= EMU_TYPE_SMP;
 		    emu_type &= ~EMU_TYPE_SMP;
 		}
 		else {
 		smp:
+
+		    emu_type_passed |= EMU_TYPE_SMP;
 #ifdef ERTS_HAVE_SMP_EMU
 		    emu_type |= EMU_TYPE_SMP;
 #else
@@ -373,7 +415,13 @@ int main(int argc, char **argv)
 		goto smp_auto;
 	    } else if (strcmp(argv[i], "-smpdisable") == 0) {
 		goto smp_disable;
+#ifdef __WIN32__
+	    } else if (strcmp(argv[i], "-debug") == 0) {
+		emu_type_passed |= EMU_TYPE_DEBUG;
+		emu_type |= EMU_TYPE_DEBUG;
+#endif
 	    } else if (strcmp(argv[i], "-hybrid") == 0) {
+		emu_type_passed |= EMU_TYPE_HYBRID;
 #ifdef ERTS_HAVE_HYBRID_EMU
 		emu_type |= EMU_TYPE_HYBRID;
 #else
@@ -386,20 +434,26 @@ int main(int argc, char **argv)
 	i++;
     }
 
-    if ((emu_type & EMU_TYPE_HYBRID) && (emu_type & EMU_TYPE_SMP))
-	usage_msg("Hybrid heap emulator with SMP support selected. The "
-		  "combination hybrid heap and SMP support is currently not "
-		  "supported.");
+    if ((emu_type & EMU_TYPE_HYBRID) && (emu_type & EMU_TYPE_SMP)) {
+	/*
+	 * We have a conflict. Only using explicitly passed arguments
+	 * may solve it...
+	 */
+	emu_type &= emu_type_passed;
+	if ((emu_type & EMU_TYPE_HYBRID) && (emu_type & EMU_TYPE_SMP)) {
+	    usage_msg("Hybrid heap emulator with SMP support selected. The "
+		      "combination hybrid heap and SMP support is currently "
+		      "not supported.");
+	}
+    }
 
     if (malloc_lib) {
 	if (strcmp(malloc_lib, "libc") != 0)
 	    usage("+MYm");
     }
-#if !defined(__WIN32__)
     emu = add_extra_suffixes(emu, emu_type);
     sprintf(tmpStr, "%s" DIRSEP "%s" BINARY_EXT, bindir, emu);
     emu = strsave(tmpStr);
-#endif
 
     add_Eargs(emu);		/* Will be argv[0] -- necessary! */
 
@@ -590,7 +644,7 @@ int main(int argc, char **argv)
 			i++;
 		    }
 #ifdef __WIN32__
-		    else if (strcmp(argv[i], "-service_event")) {
+		    else if (strcmp(argv[i], "-service_event") == 0) {
 			add_arg(argv[i]);
 			add_arg(argv[i+1]);
 			i++;
@@ -773,11 +827,12 @@ int main(int argc, char **argv)
     efree((void *) argsp);
 
  skip_arg_massage:
+    /*DebugBreak();*/
 
     if (run_werl) {
-      return start_win_emulator(emu, Eargsp, start_detached);
+      return start_win_emulator(emu, start_emulator_program, Eargsp, start_detached);
     } else {
-      return start_emulator(emu, Eargsp, start_detached);
+      return start_emulator(emu, start_emulator_program, Eargsp, start_detached);
     }
 
 #else
@@ -1173,7 +1228,8 @@ static void get_parameters(int argc, char** argv)
     bindir = do_lookup_in_section(inis, "Bindir", INI_SECTION, ini_filename,1);
     rootdir = do_lookup_in_section(inis, "Rootdir", INI_SECTION, 
 				   ini_filename,1);
-    emu = argv[0];
+    emu = EMULATOR_EXECUTABLE;
+    start_emulator_program = strsave(argv[0]);
 
     free_init_file(inif);
     free(ini_filename);

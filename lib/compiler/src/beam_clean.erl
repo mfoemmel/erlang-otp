@@ -22,7 +22,7 @@
 -export([module/2]).
 -export([bs_clean_saves/1]).
 -export([clean_labels/1]).
--import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1]).
+-import(lists, [member/2,map/2,foldl/3,mapfoldl/3,reverse/1,sort/1,all/2]).
 
 module({Mod,Exp,Attr,Fs0,_}, _Opt) ->
     Order = [Lbl || {function,_,_,Lbl,_} <- Fs0],
@@ -115,19 +115,21 @@ function_renumber([{function,Name,Arity,_Entry,Asm0}|Fs], St0, Acc) ->
 function_renumber([], St, Acc) -> {Acc,St}.
 
 renumber_labels([{bif,is_record,{f,_},
-		  [Term,Tag,{integer,Arity}],Dst}|Is0], Acc, St) ->
+		  [Term,{atom,Tag}=TagAtom,{integer,Arity}],Dst}|Is0], Acc, St) ->
     ContLabel = 900000000+2*St#st.lc,
     FailLabel = ContLabel+1,
     Fail = {f,FailLabel},
     Tmp = Dst,
-    Is = case is_literal(Term) of
-	     true ->
+    Is = case is_record_tuple(Term, Tag, Arity) of
+	     yes ->
+		 [{move,{atom,true},Dst}|Is0];
+	     no ->
 		 [{move,{atom,false},Dst}|Is0];
-	     false ->
+	     maybe ->
 		 [{test,is_tuple,Fail,[Term]},
 		  {test,test_arity,Fail,[Term,Arity]},
 		  {get_tuple_element,Term,0,Tmp},
-		  {test,is_eq_exact,Fail,[Tmp,Tag]},
+		  {test,is_eq_exact,Fail,[Tmp,TagAtom]},
 		  {move,{atom,true},Dst},
 		  {jump,{f,ContLabel}},
 		  {label,FailLabel},
@@ -137,16 +139,18 @@ renumber_labels([{bif,is_record,{f,_},
 	 end,
     renumber_labels(Is, Acc, St);
 renumber_labels([{test,is_record,{f,_}=Fail,
-		  [Term,Tag,{integer,Arity}]}|Is0], Acc, St) ->
+		  [Term,{atom,Tag}=TagAtom,{integer,Arity}]}|Is0], Acc, St) ->
     Tmp = {x,1023},
-    Is = case is_literal(Term) of
-	     true ->
+    Is = case is_record_tuple(Term, Tag, Arity) of
+	     yes ->
+		 Is0;
+	     no ->
 		 [{jump,Fail}|Is0];
-	     false ->
+	     maybe ->
 		 [{test,is_tuple,Fail,[Term]},
 		  {test,test_arity,Fail,[Term,Arity]},
 		  {get_tuple_element,Term,0,Tmp},
-		  {test,is_eq_exact,Fail,[Tmp,Tag]}|Is0]
+		  {test,is_eq_exact,Fail,[Tmp,TagAtom]}|Is0]
 	 end,
     renumber_labels(Is, Acc, St);
 renumber_labels([{label,Old}|Is], [{label,New}|_]=Acc, #st{lmap=D0}=St) ->
@@ -162,9 +166,11 @@ renumber_labels([I|Is], Acc, St0) ->
     renumber_labels(Is, [I|Acc], St0);
 renumber_labels([], Acc, St) -> {Acc,St}.
 
-is_literal({x,_}) -> false;
-is_literal({y,_}) -> false;
-is_literal(_) -> true.
+is_record_tuple({x,_}, _, _) -> maybe;
+is_record_tuple({y,_}, _, _) -> maybe;
+is_record_tuple({literal,Tuple}, Tag, Arity)
+  when element(1, Tuple) =:= Tag, size(Tuple) =:= Arity -> yes;
+is_record_tuple(_, _, _) -> no.
 
 function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
     Asm = try
@@ -178,6 +184,14 @@ function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
     function_replace(Fs, Dict, [{function,Name,Arity,Entry,Asm}|Acc]);
 function_replace([], _, Acc) -> Acc.
 
+replace([{test,bs_match_string=Op,{f,Lbl},[Ctx,Bin0]}|Is], Acc, D) ->
+    Bits = erlang:bitsize(Bin0),
+    Bin = case Bits rem 8 of
+	      0 -> Bin0;
+	      Rem -> <<Bin0/bitstr,0:(8-Rem)>>
+	  end,
+    I = {test,Op,{f,label(Lbl, D)},[Ctx,Bits,{string,binary_to_list(Bin)}]},
+    replace(Is, [I|Acc], D);
 replace([{test,Test,{f,Lbl},Ops}|Is], Acc, D) ->
     replace(Is, [{test,Test,{f,label(Lbl, D)},Ops}|Acc], D);
 replace([{select_val,R,{f,Fail0},{list,Vls0}}|Is], Acc, D) ->
@@ -224,18 +238,19 @@ replace([{make_fun2,{f,Lbl},U1,U2,U3}|Is], Acc, D) ->
     replace(Is, [{make_fun2,{f,label(Lbl, D)},U1,U2,U3}|Acc], D);
 replace([{bs_init2,{f,Lbl},Sz,Words,R,F,Dst}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_init2,{f,label(Lbl, D)},Sz,Words,R,F,Dst}|Acc], D);
+replace([{bs_init_bits,{f,Lbl},Sz,Words,R,F,Dst}|Is], Acc, D) when Lbl =/= 0 ->
+    replace(Is, [{bs_init_bits,{f,label(Lbl, D)},Sz,Words,R,F,Dst}|Acc], D);
 replace([{bs_put_integer,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_integer,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
 replace([{bs_put_binary,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_binary,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
 replace([{bs_put_float,{f,Lbl},Bits,Unit,Fl,Val}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_put_float,{f,label(Lbl, D)},Bits,Unit,Fl,Val}|Acc], D);
-replace([{bs_final,{f,Lbl},R}|Is], Acc, D) when Lbl =/= 0 ->
-    replace(Is, [{bs_final,{f,label(Lbl, D)},R}|Acc], D);
 replace([{bs_add,{f,Lbl},Src,Dst}|Is], Acc, D) when Lbl =/= 0 ->
     replace(Is, [{bs_add,{f,label(Lbl, D)},Src,Dst}|Acc], D);
-replace([{bs_bits_to_bytes,{f,Lbl},Bits,Dst}|Is], Acc, D) when Lbl =/= 0 ->
-    replace(Is, [{bs_bits_to_bytes,{f,label(Lbl, D)},Bits,Dst}|Acc], D);
+replace([{bs_append,{f,Lbl},_,_,_,_,_,_,_}=I0|Is], Acc, D) when Lbl =/= 0 ->
+    I = setelement(2, I0, {f,label(Lbl, D)}),
+    replace(Is, [I|Acc], D);
 replace([I|Is], Acc, D) ->
     replace(Is, [I|Acc], D);
 replace([], Acc, _) -> Acc.
@@ -294,6 +309,9 @@ make_save_point_dict_1([], Ctx, I, Acc) ->
     [{Ctx,I}|Acc].
 
 %% Pass 1.
+bs_restores([{bs_restore2,_,{Same,Same}}|Is], Dict) ->
+    %% This save point is special. No explicit save is needed.
+    bs_restores(Is, Dict);
 bs_restores([{bs_restore2,_,{_,_}=SavePoint}|Is], Dict) ->
     bs_restores(Is, [SavePoint|Dict]);
 bs_restores([_|Is], Dict) ->
@@ -315,6 +333,10 @@ bs_replace([{bs_save2,CtxR,{_,_}=SavePoint}|T], Dict, Acc) ->
 	none ->
 	    bs_replace(T, Dict, Acc)
     end;
+bs_replace([{bs_restore2,CtxR,{Same,Same}}|T], Dict, Acc) ->
+    %% This save refers to the point in the binary where the match
+    %% started. It has a special name.
+    bs_replace(T, Dict, [{bs_restore2,CtxR,{atom,start}}|Acc]);
 bs_replace([{bs_restore2,CtxR,{_,_}=SavePoint}|T], Dict, Acc) ->
     N = gb_trees:get(SavePoint, Dict),
     bs_replace(T, Dict, [{bs_restore2,CtxR,N}|Acc]);
@@ -330,4 +352,3 @@ bs_clean_saves_1([{bs_save2,_,{_,_}=SavePoint}=I|Is], Needed, Acc) ->
 bs_clean_saves_1([I|Is], Needed, Acc) ->
     bs_clean_saves_1(Is, Needed, [I|Acc]);
 bs_clean_saves_1([], _, Acc) -> reverse(Acc).
-	    

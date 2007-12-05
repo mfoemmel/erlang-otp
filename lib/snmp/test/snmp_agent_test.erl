@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2003-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
-%% 
+%% retrieved online at http://www.erlang.org/.
+%%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
-%% 
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%% 
-%%     $Id$
+%%
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %% Test: ts:run(snmp, snmp_agent_test, [batch]).
 %%
@@ -112,14 +114,14 @@ cases() ->
 	    ];
 	_Else ->
   	    [
-      	     misc, 
-       	     test_v1, 
-    	     test_v2, 
-    	     test_v1_v2, 
-   	     test_v3, 
+             misc, 
+             test_v1, 
+             test_v2, 
+             test_v1_v2, 
+             test_v3, 
 	     test_multi_threaded, 
      	     mib_storage, 
-     	     tickets
+      	     tickets
 	    ]
     end.
 
@@ -2788,21 +2790,43 @@ multi_threaded_test() ->
 
 %% Req. Test1, TestTrapv2
 mt_trap_test(MA) ->
+    ?P1("Testing trap-sending with multi threaded agent..."),
+    ?DBG("mt_trap_test(01) -> issue testTrapv22 (standard trap)", []),
     snmpa:send_trap(MA, testTrapv22, "standard trap"),
+    ?DBG("mt_trap_test(02) -> await v2trap", []),
     ?line expect(1, v2trap, [{[sysUpTime, 0], any},
 			     {[snmpTrapOID, 0], ?system ++ [0,1]}]),
 
+    ?DBG("mt_trap_test(03) -> issue mtTrap (standard trap)", []),
     snmpa:send_trap(MA, mtTrap, "standard trap"),
     Pid = get_multi_pid(),
+    ?DBG("mt_trap_test(04) -> multi pid: ~p. Now request sysUpTime...", [Pid]),
     g([[sysUpTime,0]]),
+
+    %% Previously (before OTP-6784) this was done at 09 below 
+    %% when the test1:multiStr was actually executed by the 
+    %% worker-process, but as of 4.9.4, this is now executed
+    %% my the master_agent-process...
+    ?DBG("mt_trap_test(05) -> send continue to multi-pid", []),
+    Pid ! continue,
+
+    ?DBG("mt_trap_test(06) -> await sysUpTime", []),
     ?line expect(2, [{[sysUpTime,0], any}]),
+    ?DBG("mt_trap_test(07) -> issue testTrapv22 (standard trap)", []),
     snmpa:send_trap(MA, testTrapv22, "standard trap"),
+    ?DBG("mt_trap_test(08) -> await v2trap", []),
     ?line expect(3, v2trap, [{[sysUpTime, 0], any},
 			     {[snmpTrapOID, 0], ?system ++ [0,1]}]),
-    Pid ! continue,
+
+    %% ?DBG("mt_trap_test(09) -> send continue to multi-pid", []),
+    %% Pid ! continue,
+
+    ?DBG("mt_trap_test(10) -> await v2trap", []),
     ?line expect(4, v2trap, [{[sysUpTime, 0], any},
 			     {[snmpTrapOID, 0], ?testTrap ++ [2]},
-			     {[multiStr,0], "ok"}]).
+			     {[multiStr,0], "ok"}]),
+    ?DBG("mt_trap_test(11) -> done", []),
+    ok.
 
     
 get_multi_pid() ->

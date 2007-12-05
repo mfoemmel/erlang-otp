@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2001-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Test application config
@@ -317,12 +319,124 @@ decode_encode(Config) when list(Config) ->
 
 
     %% -- (PP) (ok) --
-    PP_A08_A    = "orient", 
-    PP_A08_V    = "portrait", 
-    PP_A08      = cre_PropertyParm_a(PP_A08_A, PP_A08_V), 
-    SDP_A08     = cre_sdp_a(PP_A08_A, PP_A08_V),
+    PP_A08_V    = portrait, 
+    PP_A08      = cre_PropertyParm_orient(PP_A08_V), 
+    SDP_A08     = cre_sdp_a_orient(PP_A08_V),
     PP_A08_Exp  = {ok, SDP_A08}, 
     SDP_A08_Exp = {ok, PP_A08}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A09_V    = landscape, 
+    PP_A09      = cre_PropertyParm_orient(PP_A09_V), 
+    SDP_A09     = cre_sdp_a_orient(PP_A09_V),
+    PP_A09_Exp  = {ok, SDP_A09}, 
+    SDP_A09_Exp = {ok, PP_A09}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A10_V    = seascape, 
+    PP_A10      = cre_PropertyParm_orient(PP_A10_V), 
+    SDP_A10     = cre_sdp_a_orient(PP_A10_V),
+    PP_A10_Exp  = {ok, SDP_A10}, 
+    SDP_A10_Exp = {ok, PP_A10}, 
+
+
+    %% -- (PP) (error) --
+    PP_A11_V    = gurka, 
+    SDP_A11_V   = atom_to_list(PP_A11_V),
+    PP_A11      = cre_PropertyParm_orient(PP_A11_V), 
+    SDP_A11     = cre_sdp_a_orient(PP_A11_V),
+    PP_A11_Exp  = {error, {invalid_orient_orientation, SDP_A11_V}}, 
+    SDP_A11_Exp = {error, {invalid_orient_orientation, PP_A11_V}}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A12_V    = "gurka", 
+    PP_A12      = cre_PropertyParm_cat(PP_A12_V), 
+    SDP_A12     = cre_sdp_a_cat(PP_A12_V),
+    PP_A12_Exp  = {ok, SDP_A12}, 
+    SDP_A12_Exp = {ok, PP_A12}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A13_V    = "gurka", 
+    PP_A13      = cre_PropertyParm_keywds(PP_A13_V), 
+    SDP_A13     = cre_sdp_a_keywds(PP_A13_V),
+    PP_A13_Exp  = {ok, SDP_A13}, 
+    SDP_A13_Exp = {ok, PP_A13}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A14_V    = "gurka 1.0", 
+    PP_A14      = cre_PropertyParm_tool(PP_A14_V), 
+    SDP_A14     = cre_sdp_a_tool(PP_A14_V),
+    PP_A14_Exp  = {ok, SDP_A14}, 
+    SDP_A14_Exp = {ok, PP_A14}, 
+
+
+    %% -- (PP) (ok) --
+    PP_A15_V    = 15, 
+    PP_A15      = cre_PropertyParm_maxptime(PP_A15_V), 
+    SDP_A15     = cre_sdp_a_maxptime(PP_A15_V),
+    PP_A15_Exp  = {ok, SDP_A15}, 
+    SDP_A15_Exp = {ok, PP_A15},
+
+
+    %% -- (PP) (error) --
+    PP_A16_V    = "gurka", 
+    PP_A16      = cre_PropertyParm_maxptime(PP_A16_V), 
+    SDP_A16     = cre_sdp_a_maxptime(PP_A16_V),
+    PP_A16_Exp  = {error, {invalid_maxptime_maximum_packet_time, PP_A16_V}},
+    SDP_A16_Exp = {error, {invalid_maxptime_maximum_packet_time, PP_A16_V}},
+
+
+    %% -- (PP) (ok) --
+    PP_A17_V    = "H332", 
+    PP_A17      = cre_PropertyParm_type(PP_A17_V ), 
+    SDP_A17     = cre_sdp_a_type(PP_A17_V),
+    PP_A17_Exp  = {ok, SDP_A17}, 
+    SDP_A17_Exp = {ok, PP_A17},
+
+
+    %% -- (PP) (ok) --
+    PP_A18_V    = "ISO-8859-1", 
+    PP_A18      = cre_PropertyParm_charset(PP_A18_V), 
+    SDP_A18     = cre_sdp_a_charset(PP_A18_V),
+    PP_A18_Exp  = {ok, SDP_A18}, 
+    SDP_A18_Exp = {ok, PP_A18},
+
+
+    %% -- (PP) (ok) --
+    PP_A19_PT   = "gurka", 
+    PP_A19      = cre_PropertyParm_sdplang(PP_A19_PT), 
+    SDP_A19     = cre_sdp_a_sdplang(PP_A19_PT),
+    PP_A19_Exp  = {ok, SDP_A19}, 
+    SDP_A19_Exp = {ok, PP_A19},
+
+
+    %% -- (PP) (ok) --
+    PP_A20_PT   = "gurka", 
+    PP_A20      = cre_PropertyParm_lang(PP_A20_PT), 
+    SDP_A20     = cre_sdp_a_lang(PP_A20_PT),
+    PP_A20_Exp  = {ok, SDP_A20}, 
+    SDP_A20_Exp = {ok, PP_A20},
+
+
+    %% -- (PP) (ok) --
+    PP_A21_PT   = "21.0", 
+    PP_A21      = cre_PropertyParm_framerate(PP_A21_PT), 
+    SDP_A21     = cre_sdp_a_framerate(PP_A21_PT),
+    PP_A21_Exp  = {ok, SDP_A21}, 
+    SDP_A21_Exp = {ok, PP_A21},
+
+
+%%     %% -- (PP) (ok) --
+%%     PP_A22_PT   = "ISO-8859-1", 
+%%     PP_A22      = cre_PropertyParm_(PP_A22_T), 
+%%     SDP_A22     = cre_sdp_a_(PP_A22_PT),
+%%     PP_A22_Exp  = {ok, SDP_A22}, 
+%%     SDP_A22_Exp = {ok, PP_A22},
 
 
     %% -- (PP) (ok) --
@@ -351,10 +465,10 @@ decode_encode(Config) when list(Config) ->
 
 
     %% -- (PP) (error) --
-    PP_B04_MOD  = "X",
+    PP_B04_BWT  = "X",
     PP_B04_BW   = "sune", 
-    PP_B04      = cre_PropertyParm_b(PP_B04_MOD, PP_B04_BW),
-    SDP_B04     = cre_sdp_b(PP_B04_MOD, PP_B04_BW), 
+    PP_B04      = cre_PropertyParm_b(PP_B04_BWT, PP_B04_BW),
+    SDP_B04     = cre_sdp_b(PP_B04_BWT, PP_B04_BW), 
     PP_B04_Exp  = {error, {invalid_bandwidth_bandwidth, PP_B04_BW}}, 
     SDP_B04_Exp = {error, {invalid_bandwidth_bandwidth, PP_B04_BW}}, 
 
@@ -379,11 +493,22 @@ decode_encode(Config) when list(Config) ->
 
 
     %% -- (PP) (ok) --
-    PP_Z01_LOA  = ["12121212", "-1h", "34343434", "0"], 
+    PP_Z01_LOA_V1 = #megaco_sdp_z_adjustement{time   = "12121212", 
+					      offset = "-1h"},
+    PP_Z01_LOA_V2 = #megaco_sdp_z_adjustement{time   = "34343434", 
+					      offset = "0"},
+    PP_Z01_LOA  = [PP_Z01_LOA_V1, PP_Z01_LOA_V2], 
     PP_Z01      = cre_PropertyParm_z(PP_Z01_LOA), 
     SDP_Z01     = cre_sdp_z(PP_Z01_LOA), 
     PP_Z01_Exp  = {ok, SDP_Z01}, 
     SDP_Z01_Exp = {ok, PP_Z01}, 
+
+
+    %% -- (PP) (error) --
+    PP_Z02      = cre_PropertyParm("z", []), 
+    SDP_Z02     = cre_sdp_z([]), 
+    PP_Z02_Exp  = {error, {invalid_tzones_list_of_adjustments, []}}, 
+    SDP_Z02_Exp = {error, {invalid_tzones_list_of_adjustments, []}}, 
 
 
     %% -- (PP) (ok) --
@@ -538,6 +663,35 @@ decode_encode(Config) when list(Config) ->
 	 pp_enc_instruction("attributes 07 - enc [ok]", SDP_A07, SDP_A07_Exp),    
 	 pp_dec_instruction("attributes 08 - dec [ok]", PP_A08,  PP_A08_Exp),    
 	 pp_enc_instruction("attributes 08 - enc [ok]", SDP_A08, SDP_A08_Exp),    
+
+	 pp_dec_instruction("attributes 09 - dec [ok]", PP_A09,  PP_A09_Exp),    
+	 pp_enc_instruction("attributes 09 - enc [ok]", SDP_A09, SDP_A09_Exp),    
+	 pp_dec_instruction("attributes 10 - dec [ok]", PP_A10,  PP_A10_Exp),    
+	 pp_enc_instruction("attributes 10 - enc [ok]", SDP_A10, SDP_A10_Exp),    
+	 pp_dec_instruction("attributes 11 - dec [error]", PP_A11,  PP_A11_Exp),    
+	 pp_enc_instruction("attributes 11 - enc [error]", SDP_A11, SDP_A11_Exp),    
+
+	 pp_dec_instruction("attributes 12 - dec [ok]", PP_A12,  PP_A12_Exp),    
+	 pp_enc_instruction("attributes 12 - enc [ok]", SDP_A12, SDP_A12_Exp),    
+	 pp_dec_instruction("attributes 13 - dec [ok]", PP_A13,  PP_A13_Exp),    
+	 pp_enc_instruction("attributes 13 - enc [ok]", SDP_A13, SDP_A13_Exp),    
+	 pp_dec_instruction("attributes 14 - dec [ok]", PP_A14,  PP_A14_Exp),    
+	 pp_enc_instruction("attributes 14 - enc [ok]", SDP_A14, SDP_A14_Exp),    
+	 pp_dec_instruction("attributes 15 - dec [ok]", PP_A15,  PP_A15_Exp),    
+	 pp_enc_instruction("attributes 15 - enc [ok]", SDP_A15, SDP_A15_Exp),    
+	 pp_dec_instruction("attributes 16 - dec [error]", PP_A16,  PP_A16_Exp),    
+	 pp_enc_instruction("attributes 16 - enc [error]", SDP_A16, SDP_A16_Exp),    
+	 pp_dec_instruction("attributes 17 - dec [ok]", PP_A17,  PP_A17_Exp),    
+	 pp_enc_instruction("attributes 17 - enc [ok]", SDP_A17, SDP_A17_Exp),    
+	 pp_dec_instruction("attributes 18 - dec [ok]", PP_A18,  PP_A18_Exp),    
+	 pp_enc_instruction("attributes 18 - enc [ok]", SDP_A18, SDP_A18_Exp),    
+	 pp_dec_instruction("attributes 19 - dec [ok]", PP_A19,  PP_A19_Exp),    
+	 pp_enc_instruction("attributes 19 - enc [ok]", SDP_A19, SDP_A19_Exp),    
+	 pp_dec_instruction("attributes 20 - dec [ok]", PP_A20,  PP_A20_Exp),    
+	 pp_enc_instruction("attributes 20 - enc [ok]", SDP_A20, SDP_A20_Exp),    
+	 pp_dec_instruction("attributes 21 - dec [ok]", PP_A21,  PP_A21_Exp),    
+	 pp_enc_instruction("attributes 21 - enc [ok]", SDP_A21, SDP_A21_Exp),    
+
 	 pp_dec_instruction("bandwidth 01 - dec [ok]", PP_B01,  PP_B01_Exp),    
 	 pp_enc_instruction("bandwidth 01 - enc [ok]", SDP_B01, SDP_B01_Exp),    
 	 pp_dec_instruction("bandwidth 02 - dec [ok]", PP_B02,  PP_B02_Exp),    
@@ -552,6 +706,8 @@ decode_encode(Config) when list(Config) ->
 	 pp_enc_instruction("repeat times 01 - enc [ok]", SDP_R01, SDP_R01_Exp),    
 	 pp_dec_instruction("time zones 01 - dec [ok]", PP_Z01,  PP_Z01_Exp),    
 	 pp_enc_instruction("time zones 01 - enc [ok]", SDP_Z01, SDP_Z01_Exp),    
+	 pp_dec_instruction("time zones 02 - dec [error]", PP_Z02,  PP_Z02_Exp),    
+	 pp_enc_instruction("time zones 02 - enc [error]", SDP_Z02, SDP_Z02_Exp),    
 	 pp_dec_instruction("encryption keys 01 - dec [ok]", PP_K01,  PP_K01_Exp),    
 	 pp_enc_instruction("encryption keys 01 - enc [ok]", SDP_K01, SDP_K01_Exp),    
 	 pp_dec_instruction("encryption keys 01 - dec [ok]", PP_K02,  PP_K02_Exp),    
@@ -731,9 +887,11 @@ cre_sdp_k(M) ->
 cre_sdp_k(M, EK) ->
     #megaco_sdp_k{method = M, encryption_key = EK}.
 
-cre_PropertyParm_z([H | T]) when is_list(H) ->
-    F = fun(Elem, Str) -> Str ++ " " ++ Elem end, 
-    cre_PropertyParm("z", lists:foldl(F, H, T)).
+cre_PropertyParm_z([H | _] = LOA) when is_record(H, megaco_sdp_z_adjustement) ->
+    F = fun(#megaco_sdp_z_adjustement{time = T, offset = O}, Str) -> 
+		Str ++ " " ++ T ++ " " ++ O
+	end, 
+    cre_PropertyParm("z", lists:foldl(F, [], LOA)).
 
 cre_sdp_z(LOA) ->
     #megaco_sdp_z{list_of_adjustments = LOA}.
@@ -758,30 +916,37 @@ cre_PropertyParm_t(Start, Stop) ->
 cre_sdp_t(Start, Stop) ->
     #megaco_sdp_t{start = Start, stop = Stop}.
 
-cre_PropertyParm_b(Modifier, Bandwidth) 
-  when is_list(Modifier) and is_integer(Bandwidth) ->
-    cre_PropertyParm_b(Modifier, i2s(Bandwidth));
-cre_PropertyParm_b(Modifier, Bandwidth) 
-  when is_list(Modifier) and is_list(Bandwidth) ->
-    cre_PropertyParm("b", Modifier ++ ":" ++ Bandwidth).
+cre_PropertyParm_b(BwType, Bandwidth) 
+  when is_list(BwType) and is_integer(Bandwidth) ->
+    cre_PropertyParm_b(BwType, i2s(Bandwidth));
+cre_PropertyParm_b(BwType, Bandwidth) 
+  when is_list(BwType) and is_list(Bandwidth) ->
+    cre_PropertyParm("b", BwType ++ ":" ++ Bandwidth).
 
-cre_sdp_b(Mod, BW) ->
-    #megaco_sdp_b{modifier = Mod, bandwidth = BW}.
+cre_sdp_b(BWT, BW) ->
+    #megaco_sdp_b{bwtype = BWT, bandwidth = BW}.
 
-%% cre_PropertyParm_fmtp(Format, Param) 
-%%   when is_list(Format) and is_list(Param) ->
-%%     cre_PropertyParm_a("fmtp", Format ++ " " ++ Param).
 
-%% cre_sdp_a_fmtp(Fmt, Parm) ->
-%%     #megaco_sdp_a_fmtp{format = Fmt, param = Parm}.
+cre_PropertyParm_cat(Cat) when is_list(Cat) ->
+    cre_PropertyParm_a("cat", Cat).
 
-cre_PropertyParm_quality(Quality) when is_integer(Quality) ->
-    cre_PropertyParm_quality(i2s(Quality));
-cre_PropertyParm_quality(Quality) when is_list(Quality) ->
-    cre_PropertyParm_a("quality", Quality).
+cre_sdp_a_cat(C) ->
+    #megaco_sdp_a_cat{category = C}.
 
-cre_sdp_a_quality(Qa) ->
-    #megaco_sdp_a_quality{quality = Qa}.
+
+cre_PropertyParm_keywds(KeyWds) when is_list(KeyWds) ->
+    cre_PropertyParm_a("keywds", KeyWds).
+
+cre_sdp_a_keywds(KW) ->
+    #megaco_sdp_a_keywds{keywords = KW}.
+
+
+cre_PropertyParm_tool(NameAndVersion) when is_list(NameAndVersion) ->
+    cre_PropertyParm_a("tool", NameAndVersion).
+
+cre_sdp_a_tool(NAV) ->
+    #megaco_sdp_a_tool{name_and_version = NAV}.
+
 
 cre_PropertyParm_ptime(PacketTime) when is_integer(PacketTime) ->
     cre_PropertyParm_ptime(i2s(PacketTime));
@@ -790,6 +955,16 @@ cre_PropertyParm_ptime(PacketTime) when is_list(PacketTime) ->
 
 cre_sdp_a_ptime(PT) ->
     #megaco_sdp_a_ptime{packet_time = PT}.
+
+
+cre_PropertyParm_maxptime(MaxPacketTime) when is_integer(MaxPacketTime) ->
+    cre_PropertyParm_maxptime(i2s(MaxPacketTime));
+cre_PropertyParm_maxptime(MaxPacketTime) when is_list(MaxPacketTime) ->
+    cre_PropertyParm_a("maxptime", MaxPacketTime).
+
+cre_sdp_a_maxptime(PT) ->
+    #megaco_sdp_a_maxptime{maximum_packet_time = PT}.
+
 
 cre_PropertyParm_rtpmap(Payload, EncName, ClockRate) ->
     cre_PropertyParm_rtpmap(Payload, EncName, ClockRate, []).
@@ -816,12 +991,65 @@ cre_sdp_a_rtpmap(Payload, EncName, ClockRate, EncParms) ->
 			 clock_rate     = ClockRate,
 			 encoding_parms = EncParms}.
 
+cre_PropertyParm_orient(Orientation) when is_atom(Orientation) ->
+    cre_PropertyParm_orient(atom_to_list(Orientation));
+cre_PropertyParm_orient(Orientation) when is_list(Orientation) ->
+    cre_PropertyParm_a("orient", Orientation).
+
+cre_sdp_a_orient(O) ->
+    #megaco_sdp_a_orient{orientation = O}.
+
+cre_PropertyParm_type(CT) when is_list(CT) ->
+    cre_PropertyParm_a("type", CT).
+
+cre_sdp_a_type(CT) ->
+    #megaco_sdp_a_type{conf_type = CT}.
+
+cre_PropertyParm_charset(CS) when is_list(CS) ->
+    cre_PropertyParm_a("charset", CS).
+
+cre_sdp_a_charset(CS) ->
+    #megaco_sdp_a_charset{char_set = CS}.
+
+cre_PropertyParm_sdplang(L) when is_list(L) ->
+    cre_PropertyParm_a("sdplang", L).
+
+cre_sdp_a_sdplang(L) ->
+    #megaco_sdp_a_sdplang{tag = L}.
+
+cre_PropertyParm_lang(L) when is_list(L) ->
+    cre_PropertyParm_a("lang", L).
+
+cre_sdp_a_lang(L) ->
+    #megaco_sdp_a_lang{tag = L}.
+
+cre_PropertyParm_framerate(FR) when is_list(FR) ->
+    cre_PropertyParm_a("framerate", FR).
+
+cre_sdp_a_framerate(FR) ->
+    #megaco_sdp_a_framerate{frame_rate = FR}.
+
+cre_PropertyParm_quality(Quality) when is_integer(Quality) ->
+    cre_PropertyParm_quality(i2s(Quality));
+cre_PropertyParm_quality(Quality) when is_list(Quality) ->
+    cre_PropertyParm_a("quality", Quality).
+
+cre_sdp_a_quality(Qa) ->
+    #megaco_sdp_a_quality{quality = Qa}.
+
 cre_PropertyParm_a(Attr, AttrValue) 
   when is_list(Attr) and is_list(AttrValue) ->
     cre_PropertyParm("a", Attr ++ ":" ++ AttrValue).
 
 cre_PropertyParm_a(Attr) when is_list(Attr) ->
     cre_PropertyParm("a", Attr).
+
+%% cre_PropertyParm_fmtp(Format, Param) 
+%%   when is_list(Format) and is_list(Param) ->
+%%     cre_PropertyParm_a("fmtp", Format ++ " " ++ Param).
+
+%% cre_sdp_a_fmtp(Fmt, Parm) ->
+%%     #megaco_sdp_a_fmtp{format = Fmt, param = Parm}.
 
 cre_sdp_a(Attr) ->
     #megaco_sdp_a{attribute = Attr}.

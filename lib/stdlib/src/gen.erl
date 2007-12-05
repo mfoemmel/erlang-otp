@@ -143,17 +143,12 @@ call({global, _Name}=Process, Label, Request, Timeout)
     case where(Process) of
 	Pid when is_pid(Pid) ->
 	    Node = node(Pid),
-	    case catch do_call(Pid, Label, Request, Timeout) of
-		{'EXIT', {nodedown, Node}} ->
-		    % A nodedown not yet detected by global, pretend that it
-		    % was.
-		    exit(noproc);
-		{'EXIT', noproc} ->
-		    exit(noproc);
-		{'EXIT', OtherExits} ->
-		    exit(OtherExits);
-		Result ->
-		    Result
+ 	    try do_call(Pid, Label, Request, Timeout)
+ 	    catch
+ 		exit:{nodedown, Node} ->
+ 		    %% A nodedown not yet detected by global,
+ 		    %% pretend that it was.
+ 		    exit(noproc)
 	    end;
 	undefined ->
 	    exit(noproc)
@@ -180,56 +175,43 @@ do_call(Process, Label, Request, Timeout) ->
     %% or a {Name, Node} tuple (of atoms) and in this 
     %% case this node (node()) _is_ distributed and Node =/= node().
     Node = case Process of
-	       {_S, N} ->
-		   N;
-	       _ when is_pid(Process) ->
-		   node(Process);
-	       _ ->
-		   node()
+ 	       {_S, N} when is_atom(N) ->
+ 		   N;
+ 	       _ when is_pid(Process) ->
+ 		   node(Process)
 	   end,
-    case catch erlang:monitor(process, Process) of
-	Mref when is_reference(Mref) ->
+    try erlang:monitor(process, Process) of
+	Mref ->
 	    receive
-		{'DOWN', Mref, _, Pid1, noconnection} when is_pid(Pid1) ->
-		    exit({nodedown, node(Pid1)});
 		{'DOWN', Mref, _, _, noconnection} ->
 		    exit({nodedown, Node});
 		{'DOWN', Mref, _, _, _} ->
 		    exit(noproc)
 	    after 0 ->
 		    Process ! {Label, {self(), Mref}, Request},
-		    wait_resp_mon(Process, Mref, Timeout)
-	    end;
-	{'EXIT', _} ->
-	    %% Old node is not supporting the monitor.
+		    wait_resp_mon(Node, Mref, Timeout)
+	    end
+    catch
+	error:_ ->
+	    %% Node (C/Java?) is not supporting the monitor.
 	    %% The other possible case -- this node is not distributed
 	    %% -- should have been handled earlier.
 	    %% Do the best possible with monitor_node/2.
 	    %% This code may hang indefinitely if the Process 
-	    %% does not exist. It is only used for old remote nodes.
+	    %% does not exist. It is only used for featureweak remote nodes.
 	    monitor_node(Node, true),
 	    receive
 		{nodedown, Node} -> 
 		    monitor_node(Node, false),
 		    exit({nodedown, Node})
 	    after 0 -> 
-		    Mref = make_ref(),
-		    Process ! {Label, {self(),Mref}, Request},
-		    Res = wait_resp(Node, Mref, Timeout),
-		    monitor_node(Node, false),
-		    Res
+		    Tag = make_ref(),
+		    Process ! {Label, {self(), Tag}, Request},
+		    wait_resp(Node, Tag, Timeout)
 	    end
     end.
 
-wait_resp_mon(Process, Mref, Timeout) ->
-    Node = case Process of
-	       {_S, N} ->
-		   N;
-	       _ when is_pid(Process) ->
-		   node(Process);
-	       _ ->
-		   node()
-	   end,
+wait_resp_mon(Node, Mref, Timeout) ->
     receive
 	{Mref, Reply} ->
 	    erlang:demonitor(Mref),
@@ -239,48 +221,14 @@ wait_resp_mon(Process, Mref, Timeout) ->
 	    after 0 -> 
 		    {ok, Reply}
 	    end;
-	{'DOWN', Mref, _, Pid, Reason} when is_pid(Pid) ->
-	    receive
-		{'EXIT', Pid, noconnection} -> 
-		    exit({nodedown, Node});
-		{'EXIT', Pid, What} -> 
-		    exit(What)
-	    after 1 -> % Give 'EXIT' message time to arrive
-		    case Reason of
-			noconnection ->
-			    exit({nodedown, Node});
-			_ ->
-			    exit(Reason)
-		    end
-	    end;
 	{'DOWN', Mref, _, _, noconnection} ->
-	    %% Here is a hole, when the monitor is remote by name
-	    %% and the remote node goes down, we will never find 
-	    %% out the Pid and cannot know which 'EXIT' message
-	    %% to read out. This awkward case should have been 
-	    %% handled earlier (except for against rex) 
-	    %% by not using remote monitor by name.
-	    case Process of
-		_ when is_pid(Process) ->
-		    receive
-			{'EXIT', Process, noconnection} ->
-			    exit({nodedown, Node});
-			{'EXIT', Process, What} ->
-			    exit(What)
-		    after 1 -> % Give 'EXIT' message time to arrive
-			    exit({nodedown, node(Process)})
-		    end;
-		_ ->
-		    exit({nodedown, Node})
-	    end;
-	%% {'DOWN', Mref, _, _, noproc} ->
-	%%     exit(noproc);
-	{'DOWN', Mref, _Tag, _Item, Reason} ->
+	    exit({nodedown, Node});
+	{'DOWN', Mref, _, _, Reason} ->
 	    exit(Reason)
     after Timeout ->
 	    erlang:demonitor(Mref),
 	    receive
-		{'DOWN', Mref, _, _, _Reason} -> true 
+		{'DOWN', Mref, _, _, _} -> true 
 	    after 0 -> true
 	    end,
 	    exit(timeout)
@@ -289,6 +237,7 @@ wait_resp_mon(Process, Mref, Timeout) ->
 wait_resp(Node, Tag, Timeout) ->
     receive
 	{Tag, Reply} ->
+	    monitor_node(Node, false),
 	    {ok,Reply};
 	{nodedown, Node} ->
 	    monitor_node(Node, false),
@@ -302,7 +251,8 @@ wait_resp(Node, Tag, Timeout) ->
 % Send a reply to the client.
 %
 reply({To, Tag}, Reply) ->
-    catch To ! {Tag, Reply}.
+    Msg = {Tag, Reply},
+    try To ! Msg catch _:_ -> Msg end.
 
 %%%-----------------------------------------------------------------
 %%%  Misc. functions.
@@ -313,16 +263,17 @@ where({local, Name})  -> whereis(Name).
 name({global, Name})    -> Name;
 name({local, Name})     -> Name.
 
-name_register({local, Name}) ->
-    case catch register(Name, self()) of
-	true -> true;
-	{'EXIT', _} ->
-	    {false, where({local, Name})}
+name_register({local, Name} = LN) ->
+    try register(Name, self()) of
+	true -> true
+    catch
+	error:_ ->
+	    {false, where(LN)}
     end;
-name_register({global, Name}) ->
+name_register({global, Name} = GN) ->
     case global:register_name(Name, self()) of
 	yes -> true;
-	no -> {false, where({global, Name})}
+	no -> {false, where(GN)}
     end.
 
 timeout(Options) ->

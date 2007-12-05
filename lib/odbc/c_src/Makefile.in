@@ -57,11 +57,9 @@ ENTRY_LDFLAGS=-entry:$(PORT_ENTRY_POINT)
 WIN32_TARGET = $(WIN_BIN_DIR)/odbcserver.exe
 EXE_TARGET = $(WIN32_TARGET)
 else
-ifneq ($(BITS64),yes)
 EI_LIB = -lerl_interface -lei
 UNIX_TARGET = $(BIN_DIR)/odbcserver
 EXE_TARGET = $(UNIX_TARGET)
-endif
 endif
 
 C_FILES = odbcserver.c 

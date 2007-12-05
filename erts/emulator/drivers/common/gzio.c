@@ -80,7 +80,7 @@ typedef struct gz_stream {
 					    *  this structure. */
 } gz_stream;
 
-gzFile gzbufopen OF((char* bytes, int size));
+/* gzFile erts_gzbufopen OF((char* bytes, int size)); */
 
 local gzFile gz_open      OF((const char *path, const char *mode, int  fd));
 local int    get_byte     OF((gz_stream *s));
@@ -229,7 +229,7 @@ local int gz_rewind (gz_stream *s)
 /* ===========================================================================
      Opens a gzip (.gz) file for reading or writing.
 */
-gzFile gzopen (path, mode)
+gzFile erts_gzopen (path, mode)
     const char *path;
     const char *mode;
 {
@@ -240,7 +240,7 @@ gzFile gzopen (path, mode)
      Associate a gzFile with the file descriptor fd. fd is not dup'ed here
    to mimic the behavio(u)r of fdopen.
 */
-gzFile gzdopen (fd, mode)
+gzFile erts_gzdopen (fd, mode)
     int fd;
     const char *mode;
 {
@@ -668,7 +668,7 @@ erts_gzinflate_buffer(char* start, int size)
     gzFile fd;
     int bytes_read = 0;
 
-    if ((fd = gzbufopen(start, size)) == NULL)
+    if ((fd = erts_gzbufopen(start, size)) == NULL)
 	return NULL;
     size *= 2;
     if ((bin = driver_alloc_binary(size)) == NULL) {
@@ -774,7 +774,7 @@ erts_gzdeflate_buffer(char* start, int size)
 */
 
 gzFile
-gzbufopen(bytes, size)
+erts_gzbufopen(bytes, size)
     char* bytes;		/* Start of buffer to read from. */
     int size;			/* Size of buffer. */
 {

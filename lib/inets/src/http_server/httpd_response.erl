@@ -19,6 +19,7 @@
 -export([generate_and_send_response/1, send_status/3, send_header/3, 
 	 send_body/3, send_chunk/3, send_final_chunk/2, split_header/2,
 	 is_disable_chunked_send/1, cache_headers/1]).
+-export([map_status_code/2]).
 
 -include("httpd.hrl").
 -include("http_internal.hrl").
@@ -37,12 +38,12 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
 	done ->
 	    ok;
 	{proceed, Data} ->
-	    case httpd_util:key1search(Data, status) of
+	    case proplists:get_value(status, Data) of
 		{StatusCode, PhraseArgs, _Reason} ->
 		    send_status(ModData, StatusCode, PhraseArgs),
 		    ok;		
 		undefined ->
-		    case httpd_util:key1search(Data, response) of
+		    case proplists:get_value(response, Data) of
 			{already_sent, _StatusCode, _Size} ->
 			    ok;
 			{response, Header, Body} -> %% New way
@@ -62,7 +63,7 @@ generate_and_send_response(#mod{config_db = ConfigDB} = ModData) ->
 %% traverse_modules
 
 traverse_modules(ModData,[]) ->
-    {proceed,ModData#mod.data};
+  {proceed,ModData#mod.data};
 traverse_modules(ModData,[Module|Rest]) ->
     case (catch apply(Module,do,[ModData])) of
 	{'EXIT', Reason} ->
@@ -111,7 +112,7 @@ get_body(ReasonPhrase, Message)->
  
 
 send_response(ModData, Header, Body) ->
-    case httpd_util:key1search(Header, code) of
+    case proplists:get_value(code, Header) of
 	undefined ->
 	    %% No status code 
 	    %% Ooops this must be very bad:
@@ -119,8 +120,8 @@ send_response(ModData, Header, Body) ->
 	    send_status(ModData, 404, "The file is not availible");
 	StatusCode ->
 	    case send_header(ModData, StatusCode, lists:keydelete(code, 1,
-							       Header)) of
-		ok ->
+								  Header)) of
+		ok -> 
 		    send_body(ModData, StatusCode, Body);
 		_ ->
 		    done   
@@ -148,11 +149,23 @@ send_header(#mod{socket_type = Type, socket = Sock,
 		 _ ->
 		     Ver
 	     end,
-    StatusLine = [NewVer, " ", io_lib:write(StatusCode), " ",
-		  httpd_util:reason_phrase(StatusCode), ?CRLF],
+    NewStatusCode = map_status_code(NewVer, StatusCode), 
+    StatusLine = [NewVer, " ", io_lib:write(NewStatusCode), " ",
+		  httpd_util:reason_phrase(NewStatusCode), ?CRLF],
     ConnectionHeader = get_connection(Conn, NewVer),
     Head = list_to_binary([StatusLine, Headers, ConnectionHeader , ?CRLF]),
     httpd_socket:deliver(Type, Sock, Head).
+
+map_status_code("HTTP/1.0", Code) when (Code div 100) == 2, Code > 204 ->
+    403;
+map_status_code("HTTP/1.0", Code) when (Code div 100) == 3, Code > 304 ->
+    403;
+map_status_code("HTTP/1.0", Code) when (Code div 100) == 4, Code > 404 ->
+    403;
+map_status_code("HTTP/1.0", Code) when (Code div 100) == 5, Code > 503 ->
+    403;
+map_status_code(_, Code) ->
+    Code.
 
 send_body(#mod{socket_type = Type, socket = Socket}, _, nobody) ->
     httpd_socket:close(Type, Socket),
@@ -171,15 +184,15 @@ send_body(#mod{socket_type = Type, socket = Sock} = ModData,
 
 	sent ->
 	    {proceed,[{response,{already_sent, StatusCode, 
-				 httpd_util:key1search(ModData#mod.data,
-						       content_length)}}]};
+				 proplists:get_value(content_length, 
+						     ModData#mod.data)}}]};
 	{ok, Body} ->
 	    case httpd_socket:deliver(Type, Sock, Body) of
 		ok ->
 		    {proceed,[{response,
 			       {already_sent, StatusCode, 
-				httpd_util:key1search(ModData#mod.data,
-						      content_length)}}]};
+				proplists:get_value(content_length,
+						    ModData#mod.data)}}]};
 		_ ->
 		    done
 	    end;	    

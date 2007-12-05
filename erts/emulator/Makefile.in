@@ -32,6 +32,8 @@ THR_DEFS=@EMU_THR_DEFS@
 M4FLAGS=
 CREATE_DIRS=
 
+LDFLAGS=@LDFLAGS@
+
 ifeq ($(TYPE),debug)
 PURIFY =
 TYPEMARKER = .debug
@@ -103,42 +105,23 @@ endif
 ifeq ($(FLAVOR),smp)
 FLAVOR_MARKER=.smp
 FLAVOR_FLAGS=-DERTS_SMP
-ENABLE_ALLOC_TYPE_VARS += smp
+ENABLE_ALLOC_TYPE_VARS += smp nofrag
 M4FLAGS += -DERTS_SMP=1
-OPCODE_TABLES += beam/frag_ops.tab
 else
 
 ifeq ($(FLAVOR),hybrid)
 FLAVOR_MARKER=.hybrid
 FLAVOR_FLAGS=-DHYBRID
 ENABLE_ALLOC_TYPE_VARS += hybrid
-OPCODE_TABLES += beam/frag_ops.tab
-else
-
-ifeq ($(FLAVOR),nofrag)
-FLAVOR_MARKER=.nofrag
-FLAVOR_FLAGS=-DHEAP_FRAG_ELIM_TEST
-ENABLE_ALLOC_TYPE_VARS += nofrag
-M4FLAGS += -DHEAP_FRAG_ELIM_TEST=1
-OPCODE_TABLES += beam/nofrag_ops.tab
-else
-
-ifeq ($(FLAVOR),smp_nofrag)
-FLAVOR_MARKER=.smp_nofrag
-FLAVOR_FLAGS=-DERTS_SMP -DHEAP_FRAG_ELIM_TEST
-ENABLE_ALLOC_TYPE_VARS += smp nofrag
-M4FLAGS += -DERTS_SMP=1 -DHEAP_FRAG_ELIM_TEST=1
-OPCODE_TABLES += beam/nofrag_ops.tab
 else
 
 # If flavor isn't one of the above, it *is* plain flavor...
 override FLAVOR=plain
 FLAVOR_MARKER=
 FLAVOR_FLAGS=
-OPCODE_TABLES += beam/frag_ops.tab
+ENABLE_ALLOC_TYPE_VARS += nofrag
+M4FLAGS +=
 
-endif
-endif
 endif
 endif
 
@@ -246,7 +229,7 @@ endif
 
 LIBS	= @LIBS@ @TERMCAP_LIB@ -L../lib/internal/$(TARGET)
 ifeq ($(TARGET),win32)
-LIBS    += -L$(ERL_TOP)/erts/obj$(TF_MARKER)/$(TARGET) -lz
+LIBS    += -L$(ERL_TOP)/erts/obj$(TYPEMARKER)/$(TARGET) -lz
 else
 # Build on darwin fails if -lz is used
 LIBS    += $(ERL_TOP)/erts/obj/$(TARGET)/libz.a
@@ -354,7 +337,8 @@ endif
 	$(RM) -f $(BINDIR)/beam $(BINDIR)/beam.*
 	$(RM) -f $(BINDIR)/child_setup $(BINDIR)/child_setup.*
 	$(RM) -f $(BINDIR)/hipe_mkliterals $(BINDIR)/hipe_mkliterals.*
-
+	@set -e ; cd zlib && $(MAKE) clean
+ 
 .PHONY: all sae zlib clean
 
 docs:
@@ -557,10 +541,8 @@ CFLAGS_NOOPT=@CFLAGS_NOOPT@ @DEFS@ $(WFLAGS) $(THR_DEFS) $(ARCHCFLAGS)
 $(OBJDIR)/beam_emu.o: beam/beam_emu.c
 	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
 
-# ggc and erl_process do not work properly with DIAB's -XO option,
-# we'll compile them with gcc instead
-$(OBJDIR)/ggc.o: beam/ggc.c
-	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
+# erl_process does not work properly with DIAB's -XO option,
+# we'll compile it with gcc instead
 $(OBJDIR)/erl_process.o: beam/erl_process.c
 	$(VXCC) $(VXCFLAGS) $(INCLUDES) -c $< -o $@
 
@@ -613,11 +595,10 @@ $(OBJDIR)/%.elib.o: beam/%.c
 $(OBJDIR)/sys_sae.o: sys/$(ERLANG_OSTYPE)/sys.c
 	$(CC) -DDISABLE_VFORK=1 $(CFLAGS) $(INCLUDES) -c $< -o $@
 
-
-$(OBJDIR)/%.kp.o: sys/unix/%.c
+$(OBJDIR)/%.kp.o: sys/common/%.c
 	$(CC) -DERTS_KERNEL_POLL_VERSION $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
 
-$(OBJDIR)/%.nkp.o: sys/unix/%.c
+$(OBJDIR)/%.nkp.o: sys/common/%.c
 	$(CC) -DERTS_NO_KERNEL_POLL_VERSION $(subst -O2, $(GEN_OPT_FLGS), $(CFLAGS)) $(INCLUDES) -c $< -o $@
 
 ifeq ($(CC), gcc)
@@ -634,8 +615,14 @@ endif
 # rebuilding (is this a good idea?) add a dummy dependency to this target.
 #
 
+ifeq ($(findstring clearmake,$(MAKE)),clearmake)
+BEAMFILE_MAKEFLAG=-T
+else
+BEAMFILE_MAKEFLAG=
+endif
+
 $(ERL_TOP)/lib/%.beam:
-	cd $(@D)/../src && $(MAKE) ../ebin/$(@F)
+	cd $(@D)/../src && $(MAKE) $(BEAMFILE_MAKEFLAG) ../ebin/$(@F)
 
 
 # ----------------------------------------------------------------------
@@ -677,7 +664,8 @@ RUN_OBJS = \
 	$(OBJDIR)/io.o 			$(OBJDIR)/erl_printf_term.o\
 	$(OBJDIR)/erl_debug.o		$(OBJDIR)/erl_md5.o \
 	$(OBJDIR)/erl_message.o		$(OBJDIR)/erl_process.o \
-	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_arith.o \
+	$(OBJDIR)/erl_process_dict.o	$(OBJDIR)/erl_process_lock.o \
+	$(OBJDIR)/erl_port_task.o	$(OBJDIR)/erl_arith.o \
 	$(OBJDIR)/time.o		$(OBJDIR)/erl_time_sup.o  \
 	$(OBJDIR)/external.o		$(OBJDIR)/dist.o \
 	$(OBJDIR)/binary.o		$(OBJDIR)/erl_db.o \
@@ -688,14 +676,14 @@ RUN_OBJS = \
 	$(OBJDIR)/module.o		$(OBJDIR)/export.o \
 	$(OBJDIR)/register.o		$(OBJDIR)/break.o \
 	$(OBJDIR)/erl_async.o		$(OBJDIR)/erl_lock_check.o \
-	$(OBJDIR)/ggc.o 		$(OBJDIR)/erl_gc.o \
+	$(OBJDIR)/erl_gc.o \
 	$(OBJDIR)/erl_nmgc.o		$(OBJDIR)/erl_posix_str.o \
 	$(OBJDIR)/erl_bits.o 		$(OBJDIR)/erl_math.o \
 	$(OBJDIR)/erl_fun.o             $(OBJDIR)/erl_bif_port.o \
 	$(OBJDIR)/erl_term.o 		$(OBJDIR)/erl_node_tables.o \
 	$(OBJDIR)/erl_monitors.o	$(OBJDIR)/erl_process_dump.o \
 	$(OBJDIR)/erl_obsolete.o	$(OBJDIR)/erl_bif_timer.o \
-	$(OBJDIR)/erl_port_task.o
+	$(OBJDIR)/erl_drv_thread.o
 
 ifeq ($(TARGET),win32)
 DRV_OBJS = \
@@ -712,11 +700,10 @@ OS_OBJS = \
 	$(OBJDIR)/gzio.o \
 	$(OBJDIR)/sys_float.o \
 	$(OBJDIR)/sys_time.o \
-	$(OBJDIR)/sys_select.o \
+	$(OBJDIR)/sys_interrupt.o \
 	$(OBJDIR)/sys_env.o \
 	$(OBJDIR)/dosmap.o \
 	$(OBJDIR)/elib_malloc.o
-
 else
 OS_OBJS = \
 	$(OBJDIR)/sys.o \
@@ -736,16 +723,6 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 else
 	OS_OBJS += $(OBJDIR)/sys_float.o \
                    $(OBJDIR)/sys_time.o
-
-ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
-	OS_OBJS += $(OBJDIR)/erl_poll.kp.o \
-                   $(OBJDIR)/erl_check_io.kp.o \
-                   $(OBJDIR)/erl_poll.nkp.o \
-                   $(OBJDIR)/erl_check_io.nkp.o
-else
-	OS_OBJS += $(OBJDIR)/erl_poll.o \
-                   $(OBJDIR)/erl_check_io.o
-endif
 endif
 endif
 DRV_OBJS = \
@@ -761,6 +738,16 @@ ifneq ($(findstring vxworks,$(TARGET)),vxworks)
   else
 	DRV_OBJS += $(OBJDIR)/ttsl_drv.o
   endif
+endif
+
+ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
+OS_OBJS += 	$(OBJDIR)/erl_poll.kp.o \
+		$(OBJDIR)/erl_check_io.kp.o \
+		$(OBJDIR)/erl_poll.nkp.o \
+		$(OBJDIR)/erl_check_io.nkp.o
+else
+OS_OBJS +=	$(OBJDIR)/erl_poll.o \
+		$(OBJDIR)/erl_check_io.o
 endif
 
 OS_OBJS +=	$(OBJDIR)/erl_mseg.o \
@@ -953,52 +940,78 @@ $(TARGET)/Makefile: Makefile.in
 	@echo
 	@exit 1
 
+SED_REPL_WIN_DRIVE=s|\([ 	]\)\([A-Za-z]\):|\1/cygdrive/\2|g;s|^\([A-Za-z]\):|/cygdrive/\1|g
 SED_REPL_O=s|^\([^:]*:\)|$$(OBJDIR)/\1|g
 SED_REPL_ELIB_O=s|^\([^:]*\).o[ 	]*:|$$(OBJDIR)/\1.elib.o:|g
 SED_REPL_TTF_DIR=s|$(TTF_DIR)/|$$(TTF_DIR)/|g
-SED_REPL_ERL_TOP=s|$(ERL_TOP)/|$$(ERL_TOP)/|g
+SED_REPL_ERL_TOP=s|\([ 	]\)$(ERL_TOP)/|\1$$(ERL_TOP)/|g;s|^$(ERL_TOP)/|$$(ERL_TOP)/|g
 SED_REPL_POLL=s|$$(OBJDIR)/erl_poll.o|$$(OBJDIR)/erl_poll.kp.o $$(OBJDIR)/erl_poll.nkp.o|g
 SED_REPL_CHK_IO=s|$$(OBJDIR)/erl_check_io.o|$$(OBJDIR)/erl_check_io.kp.o $$(OBJDIR)/erl_check_io.nkp.o|g
 
-SED_DEPEND=sed '$(SED_REPL_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)'
-SED_ELIB_DEPEND=sed '$(SED_REPL_ELIB_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)'
-
-ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
-SED_SYS_DEPEND=sed '$(SED_REPL_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP);$(SED_REPL_POLL);$(SED_REPL_CHK_IO)'
+ifeq ($(TARGET),win32)
+SED_PREFIX=$(SED_REPL_WIN_DRIVE);
 else
-SED_SYS_DEPEND=$(SED_DEPEND)
+SED_PREFIX=
 endif
 
+ifeq ($(ERTS_ENABLE_KERNEL_POLL),yes)
+SED_SUFFIX=;$(SED_REPL_POLL);$(SED_REPL_CHK_IO)
+else
+SED_SUFFIX=
+endif
+
+SED_DEPEND=sed '$(SED_PREFIX)$(SED_REPL_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)$(SED_SUFFIX)'
+SED_ELIB_DEPEND=sed '$(SED_PREFIX)$(SED_REPL_ELIB_O);$(SED_REPL_TTF_DIR);$(SED_REPL_ERL_TOP)$(SED_SUFFIX)'
+
 ifdef HIPE_ENABLED
-HIPE_SRC=hipe/*.c
+HIPE_SRC=$(wildcard hipe/*.c)
 else
 HIPE_SRC=
 endif
+
+BEAM_SRC=$(wildcard beam/*.c)
+DRV_SRC=$(wildcard drivers/common/*.c) $(wildcard drivers/$(ERLANG_OSTYPE)/*.c)
+ALL_SYS_SRC=$(wildcard sys/$(ERLANG_OSTYPE)/*.c) $(wildcard sys/common/*.c)
+TARGET_SRC=$(wildcard $(TARGET)/*.c) $(wildcard $(TTF_DIR)/*.c)
 
 # I do not want the -MG flag on windows, it does not work properly for a 
 # windows build.
 
 ifeq ($(TARGET),win32)
+
 DEP_CC=$(EMU_CC)
-DEP_FLAGS=-MM $(subst -O2,,$(CFLAGS)) $(INCLUDES) -I../etc/win32 -Idrivers/common
-else
+DEP_FLAGS=-MM  $(subst -O2,,$(CFLAGS)) $(INCLUDES) -I../etc/win32 -Idrivers/common
+ifeq (@MIXED_CYGWIN_VC@,yes)
+# VC++ used for compiling. If __GNUC__ is defined we will include
+# other headers then when compiling which will result in faulty
+# dependencies.
+DEP_FLAGS += -U__GNUC__
+endif
+# On windows we have the erl_poll implementation in sys/win32
+SYS_SRC=$(subst sys/common/erl_poll.c,,$(ALL_SYS_SRC))
+
+else # !win32
 DEP_CC=$(CC)
 DEP_FLAGS=-MM -MG $(CFLAGS) $(INCLUDES) -Idrivers/common
+SYS_SRC=$(ALL_SYS_SRC)
 endif
 
 depend:
-	$(DEP_CC) $(DEP_FLAGS) beam/*.c \
+	$(DEP_CC) $(DEP_FLAGS) $(BEAM_SRC) \
 		| $(SED_DEPEND) > $(TARGET)/depend.mk
-	$(DEP_CC) $(DEP_FLAGS) drivers/common/*.c drivers/$(ERLANG_OSTYPE)/*.c \
+	$(DEP_CC) $(DEP_FLAGS) $(DRV_SRC) \
 		| $(SED_DEPEND) >> $(TARGET)/depend.mk
-	$(DEP_CC) $(DEP_FLAGS) \
-		sys/$(ERLANG_OSTYPE)/*.c sys/common/*.c $(HIPE_SRC) \
-		| $(SED_SYS_DEPEND) >> $(TARGET)/depend.mk
-	$(DEP_CC) $(DEP_FLAGS) $(TARGET)/*.c $(TTF_DIR)/*.c \
+	$(DEP_CC) $(DEP_FLAGS) $(SYS_SRC) \
+		| $(SED_DEPEND) >> $(TARGET)/depend.mk
+	$(DEP_CC) $(DEP_FLAGS) $(TARGET_SRC) \
 		| $(SED_DEPEND) >> $(TARGET)/depend.mk
 ifneq ($(TARGET),win32)
 	$(DEP_CC) $(DEP_FLAGS) $(ELIB_FLAGS) $(ELIB_C_FILES) \
 		| $(SED_ELIB_DEPEND) >> $(TARGET)/depend.mk
+endif
+ifdef HIPE_ENABLED
+	$(DEP_CC) $(DEP_FLAGS) $(HIPE_SRC) \
+		| $(SED_DEPEND) >> $(TARGET)/depend.mk
 endif
 -include $(TARGET)/depend.mk
 

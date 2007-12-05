@@ -34,7 +34,7 @@ void error(char* format, ...);
 /*
  * Local functions.
  */
-
+#define  LOAD_BEAM_DYNAMICALLY 1
 static int start(char* emu, char** argv);
 static void start_winsock(void);
 static char* last_error(void);
@@ -43,29 +43,86 @@ static char* win32_errorstr(int error);
 static int has_console(void);
 static char** fnuttify_argv(char **argv);
 static void free_fnuttified(char **v);
+static int windowed = 0;
+
+#ifdef LOAD_BEAM_DYNAMICALLY
+typedef int SysGetKeyFunction(int);
+typedef void ErlStartFunction(int, char **);
+typedef void SysPrimitiveInitFunction(HMODULE);
+static SysGetKeyFunction *sys_get_key_p;
+static ErlStartFunction *erl_start_p;
+static SysPrimitiveInitFunction *sys_primitive_init_p;
+
+static HMODULE load_win_beam_dll(char *name)
+{
+    HMODULE beam_module;
+    beam_module=LoadLibrary(name);
+    if (beam_module == INVALID_HANDLE_VALUE || beam_module == NULL) {
+	error("Unable to load emulator DLL\n(%s)",name);
+	return NULL;
+    }
+    sys_get_key_p = (SysGetKeyFunction *) 
+	GetProcAddress(beam_module, "sys_get_key");
+    erl_start_p = (ErlStartFunction *)
+	GetProcAddress(beam_module, "erl_start");
+    sys_primitive_init_p = (SysPrimitiveInitFunction *)
+	GetProcAddress(beam_module, "sys_primitive_init");
+    return beam_module;
+}
+#endif
+
+#define DLL_ENV "ERL_EMULATOR_DLL"
 
 int
-start_win_emulator(char* emu, char** argv, int start_detached)
+start_win_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 {
     int result;
 
+    windowed = 1;
     if (start_detached) {
+	char *buff;
 	close(0);
 	close(1);
 	close(2);
 	
 	putenv("ERL_CONSOLE_MODE=detached");
+	buff = malloc(strlen(emu)+strlen(DLL_ENV)+2);
+	strcpy(buff,DLL_ENV);
+	strcat(buff,"=");
+	strcat(buff,emu);
+	putenv(buff);
+
+	argv[0] = start_prog;
 	argv = fnuttify_argv(argv);
-	result = spawnv(_P_DETACH, emu, argv);
+	result = spawnv(_P_DETACH, start_prog, argv);
 	free_fnuttified(argv);
     } else {
 	int argc = 0;
-
+#ifdef LOAD_BEAM_DYNAMICALLY
+	HMODULE beam_module = load_win_beam_dll(emu);
+#endif	
 	putenv("ERL_CONSOLE_MODE=window");
 	while (argv[argc] != NULL) {
 	    ++argc;
 	}
+#ifdef ARGS_HARDDEBUG
+	{
+	    char sbuf[2048] = "";
+	    int i;
+	    for (i = 0; i < argc; ++i) {
+		strcat(sbuf,"|");
+		strcat(sbuf, argv[i]);
+		strcat(sbuf,"| ");
+	    }
+	    MessageBox(NULL, sbuf, "Werl", MB_OK|MB_ICONERROR);
+	}
+#endif
+#ifdef LOAD_BEAM_DYNAMICALLY
+	(*sys_primitive_init_p)(beam_module);
+	(*erl_start_p)(argc,argv);
+#else
 	erl_start(argc, argv);
+#endif
 	result = 0;
     }
     if (result == -1) {
@@ -78,17 +135,24 @@ void __cdecl
 do_keep_window(void)
 {
     printf("\nPress any key to close window.\n");
+#ifdef LOAD_BEAM_DYNAMICALLY
+    (*sys_get_key_p)(0);
+#else 
     sys_get_key(0);
+#endif 
 }
 
 int
-start_emulator(char* emu, char** argv, int start_detached)
+start_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 {
     int result;
     static char console_mode[] = "ERL_CONSOLE_MODE=tty:ccc";
     char* fd_type;
     char* title;
-    int argc = 0;
+
+#ifdef HARDDEBUG
+    fprintf(stderr,"emu = %s, start_prog = %s\n",emu, start_prog);
+#endif
 
     fd_type = strchr(console_mode, ':');
     fd_type++;
@@ -99,37 +163,82 @@ start_emulator(char* emu, char** argv, int start_detached)
      */
 
     if (start_detached) {
+	char *buff;
 	close(0);
 	close(1);
 	close(2);
 	putenv("ERL_CONSOLE_MODE=detached");
+
+	buff = malloc(strlen(emu)+strlen(DLL_ENV)+2);
+	strcpy(buff,DLL_ENV);
+	strcat(buff,"=");
+	strcat(buff,emu);
+	putenv(buff);
+
+	argv[0] = start_prog;
 	argv = fnuttify_argv(argv);
-	result = spawnv(_P_DETACH, emu, argv);
+#ifdef ARGS_HARDDEBUG
+	{
+	    char buffer[2048];
+	    int i;
+	    sprintf(buffer,"Start detached [%s]\n",start_prog);
+	    for(i=0;argv[i] != NULL;++i) {
+		strcat(buffer,"|");
+		strcat(buffer,argv[i]);
+		strcat(buffer,"|\n");
+	    }
+	    MessageBox(NULL, buffer,"Start detached",MB_OK);
+	}
+#endif	    
+	result = spawnv(_P_DETACH, start_prog, argv);
 	free_fnuttified(argv);
 	if (result == -1) {
+#ifdef ARGS_HARDDEBUG
+	    MessageBox(NULL, "_spawnv failed","Start detached",MB_OK);
+#endif
 	    return 1;
 	}
 	SetPriorityClass((HANDLE) result, GetPriorityClass(GetCurrentProcess()));
-	return 0;
-    }
+    } else {
+	int argc = 0;
+#ifdef LOAD_BEAM_DYNAMICALLY
+	HMODULE beam_module = load_win_beam_dll(emu);
+#endif	
 
-
-    /*
-     * Start the emulator.
-     */
-
-    if ((title = getenv("ERL_WINDOW_TITLE")) != NULL) {
-	SetConsoleTitle(title);
+	/*
+	 * Start the emulator.
+	 */
+	
+	if ((title = getenv("ERL_WINDOW_TITLE")) != NULL) {
+	    SetConsoleTitle(title);
+	}
+	
+	putenv(console_mode);
+	while (argv[argc] != NULL) {
+	    ++argc;
+	}
+	if (keep_window) {
+	    atexit(do_keep_window);
+	}
+#ifdef ARGS_HARDDEBUG
+	{
+	    char sbuf[2048] = "";
+	    int i;
+	    for (i = 0; i < argc; ++i) {
+		strcat(sbuf,"|");
+		strcat(sbuf, argv[i]);
+		strcat(sbuf,"|\n");
+	    }
+	    MessageBox(NULL, sbuf, "erl", MB_OK);
+	}
+#endif
+#ifdef LOAD_BEAM_DYNAMICALLY
+	(*sys_primitive_init_p)(beam_module);
+	(*erl_start_p)(argc,argv);
+#else
+	erl_start(argc, argv);
+#endif
     }
-
-    putenv(console_mode);
-    while (argv[argc] != NULL) {
-	++argc;
-    }
-    if (keep_window) {
-	atexit(do_keep_window);
-    }
-    erl_start(argc, argv);
     return 0;
 }
 
@@ -143,7 +252,7 @@ error(char* format, ...)
     vsprintf(sbuf, format, ap);
     va_end(ap);
 
-    if (has_console()) {
+    if (!windowed && has_console()) {
 	fprintf(stderr, "%s\n", sbuf);
     } else {
 	MessageBox(NULL, sbuf, "Werl", MB_OK|MB_ICONERROR);

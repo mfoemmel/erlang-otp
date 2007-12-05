@@ -281,29 +281,8 @@ guard_tests([Gt0|Gts0], St0) ->
     {[Gt1|Gts1],St2};
 guard_tests([], St) -> {[],St}.
 
-%% The following clause as well as normalise_test/1 can be removed 
-%% as soon as R11B has been released.
-guard_test({call,Line,{atom,Lt,Tname},As}, St) ->
-    Test = {remote,Lt,
-            {atom,Lt,erlang},
-            {atom,Lt,normalise_test(Tname, length(As))}},
-    expr({call,Line,Test,As}, St);
 guard_test(Test, St) ->
     expr(Test, St).
-
-normalise_test(atom, 1)      -> is_atom;
-normalise_test(binary, 1)    -> is_binary;
-normalise_test(constant, 1)  -> is_constant;
-normalise_test(float, 1)     -> is_float;
-normalise_test(function, 1)  -> is_function;
-normalise_test(integer, 1)   -> is_integer;
-normalise_test(list, 1)      -> is_list;
-normalise_test(number, 1)    -> is_number;
-normalise_test(pid, 1)       -> is_pid; 
-normalise_test(port, 1)      -> is_port; 
-normalise_test(reference, 1) -> is_reference;
-normalise_test(tuple, 1)     -> is_tuple;
-normalise_test(Name, _) -> Name.
 
 %% exprs(Expressions, State) ->
 %%      {TransformedExprs,State'}

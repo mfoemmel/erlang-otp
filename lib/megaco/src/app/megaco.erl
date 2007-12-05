@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>1999-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose : Main API for Megaco/H.248 protocol stack
@@ -32,11 +34,12 @@
          start_user/2,
          stop_user/1,
 
-         user_info/2,
+	 info/0, 
+         user_info/1, user_info/2,
          update_user_info/3,
-         conn_info/2,
+         conn_info/1, conn_info/2,
          update_conn_info/3,
-         system_info/1,
+         system_info/0, system_info/1,
 
          connect/4,
          disconnect/2,
@@ -44,8 +47,8 @@
          call/3,
          cast/3,
          cancel/2,
-         process_received_message/4,
-         receive_message/4,
+         process_received_message/4, process_received_message/5,
+         receive_message/4, receive_message/5,
 
 	 encode_actions/3,
 
@@ -129,6 +132,10 @@ stop_user(UserMid) ->
 %% Lookup user information
 %%-----------------------------------------------------------------
 
+user_info(UserMid) ->
+    [{requests, user_info(UserMid, requests)},
+     {replies,  user_info(UserMid, replies)} | user_info(UserMid, all)].
+
 user_info(UserMid, requests) ->
     megaco_messenger:which_requests(UserMid);
 user_info(UserMid, replies) ->
@@ -149,6 +156,10 @@ update_user_info(UserMid, Item, Value) ->
 %% Lookup information about an active connection
 %%-----------------------------------------------------------------
 
+conn_info(ConnHandle) ->
+    [{requests, conn_info(ConnHandle, requests)},
+     {replies,  conn_info(ConnHandle, replies)} | conn_info(ConnHandle, all)].
+
 conn_info(ConnHandle, requests) ->
     megaco_messenger:which_requests(ConnHandle);
 conn_info(ConnHandle, replies) ->
@@ -166,8 +177,69 @@ update_conn_info(ConnHandle, Item, Value) ->
 
 
 %%-----------------------------------------------------------------
+%% All information for the application
+%%-----------------------------------------------------------------
+
+info() ->
+    Stats = 
+	case get_stats() of
+	    {ok, Statistics} ->
+		Statistics;
+	    _ ->
+		[]
+	end,
+    SysInfo = system_info(),
+    [{statistics, Stats} | info(SysInfo)].
+
+info(SysInfo) ->
+    info(SysInfo, []).
+
+info([], Acc) ->
+    lists:reverse(Acc);
+info([{connections, Conns} | SysInfo], Acc) ->
+    Conns2 = extend_conns_info(Conns),
+    info(SysInfo, [{connections, Conns2} | Acc]);
+info([{users, Users} | SysInfo], Acc) ->
+    Users2 = extend_users_info(Users),
+    info(SysInfo, [{users, Users2} | Acc]);
+info([Info | SysInfo], Acc) ->
+    info(SysInfo, [Info | Acc]).
+
+extend_conns_info(Conns) ->
+    extend_conns_info(Conns, []).
+
+extend_conns_info([], Acc) ->
+    lists:reverse(Acc);
+extend_conns_info([Conn | Conns], Acc) ->
+    ConnInfo = conn_info(Conn),
+    extend_conns_info(Conns, [{Conn, ConnInfo} | Acc]).
+
+extend_users_info(Users) ->
+    extend_users_info(Users, []).
+
+extend_users_info([], Acc) ->
+    lists:reverse(Acc);
+extend_users_info([User | Users], Acc) ->
+    UserInfo = user_info(User),
+    extend_users_info(Users, [{User, UserInfo} | Acc]).
+
+
+%%-----------------------------------------------------------------
 %% Lookup system information
 %%-----------------------------------------------------------------
+
+system_info_items() ->
+    [
+     text_config, 
+     connections, 
+     users, 
+     n_active_requests, 
+     n_active_replies, 
+     n_active_connections
+    ].
+
+system_info() ->
+    [{Item, system_info(Item)} || Item <- system_info_items()].
 
 system_info(Item) ->
     megaco_config:system_info(Item).
@@ -263,9 +335,19 @@ process_received_message(ReceiveHandle, ControlPid, SendHandle, BinMsg) ->
     megaco_messenger:process_received_message(ReceiveHandle, ControlPid, 
 					      SendHandle, BinMsg).
 
+process_received_message(ReceiveHandle, ControlPid, SendHandle, BinMsg, Extra) ->
+    megaco_messenger:process_received_message(ReceiveHandle, ControlPid, 
+					      SendHandle, BinMsg, 
+					      Extra).
+
 receive_message(ReceiveHandle, ControlPid, SendHandle, BinMsg) ->
     megaco_messenger:receive_message(ReceiveHandle, ControlPid, 
 				     SendHandle, BinMsg).
+
+receive_message(ReceiveHandle, ControlPid, SendHandle, BinMsg, Extra) ->
+    megaco_messenger:receive_message(ReceiveHandle, ControlPid, 
+				     SendHandle, BinMsg,
+				     Extra).
 
 
 %%-----------------------------------------------------------------
@@ -643,8 +725,12 @@ nc(Mods) when list(Mods) ->
     [Mod || Mod <- Mods, ok /= load(Mod, compile)].
 
 ni() -> 
-    Mods = ms(),
-    ni(Mods).
+    case ms() of
+	{ok, Mods} ->
+	    ni(Mods);
+	Error ->
+	    Error
+    end.
 
 ni(all) -> 
     application:load(?APPLICATION),

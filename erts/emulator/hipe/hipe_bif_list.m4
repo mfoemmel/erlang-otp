@@ -97,6 +97,14 @@
  */
 
 /*
+ * expensive_gc_bif_interface_1(nbif_name, cbif_name)
+ * expensive_gc_bif_interface_2(nbif_name, cbif_name)
+ *
+ * A BIF which may fail with RESCHEDULE, otherwise
+ * identical to gc_bif_interface_N.
+ */
+
+/*
  * gc_nofail_primop_interface_1(nbif_name, cbif_name)
  *
  * A primop with implicit P parameter, 1 ordinary parameter,
@@ -143,16 +151,22 @@ expensive_bif_interface_2(nbif_group_leader_2, group_leader_2)
 expensive_bif_interface_1(nbif_link_1, link_1)
 expensive_bif_interface_2(nbif_monitor_2, monitor_2)
 expensive_bif_interface_2(nbif_port_command_2, port_command_2)
+expensive_bif_interface_2(nbif_process_info_1, process_info_1)
+expensive_bif_interface_2(nbif_process_info_2, process_info_2)
 expensive_bif_interface_2(nbif_send_2, send_2)
+expensive_bif_interface_2(nbif_send_3, send_3)
+expensive_bif_interface_2(nbif_setnode_3, setnode_3)
+expensive_bif_interface_2(nbif_suspend_process_2, suspend_process_2)
+expensive_bif_interface_2(nbif_system_flag_2, system_flag_2)
 expensive_bif_interface_1(nbif_unlink_1, unlink_1)
-expensive_bif_interface_1(nbif_hipe_bifs_test_reschedule_1, hipe_bifs_test_reschedule_1)
+expensive_bif_interface_2(nbif_erts_debug_set_internal_state_2, erts_debug_set_internal_state_2)
 
 /*
  * BIFs and primops that may do a GC (change heap limit and walk the native stack).
  */
-gc_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
+expensive_gc_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
 gc_bif_interface_0(nbif_garbage_collect_0, garbage_collect_0)
-gc_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
+expensive_gc_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
 gc_nofail_primop_interface_1(nbif_gc_1, hipe_gc)
 
 /*
@@ -204,17 +218,8 @@ noproc_primop_interface_2(nbif_eq_2, eq)
 /*
  * Bit-syntax primops with implicit P parameter.
  * XXX: all of the _2 versions cons on the ordinary heap
- * XXX: the non-_2 versions only cons on the arithmetic heap
  * XXX: all of them can cons and thus update FCALLS
- * The non-_2 versions disappear when HEAP_FRAG_ELIM_TEST is enabled.
  */
-ifelse(HEAP_FRAG_ELIM_TEST,1,,`
-nofail_primop_interface_2(nbif_bs_get_integer, erts_bs_get_integer)
-nofail_primop_interface_2(nbif_bs_get_binary, erts_bs_get_binary)
-nofail_primop_interface_2(nbif_bs_get_float, erts_bs_get_float)
-nofail_primop_interface_0(nbif_bs_get_binary_all, erts_bs_get_binary_all)
-nofail_primop_interface_0(nbif_bs_final, erts_bs_final)
-')dnl
 nofail_primop_interface_3(nbif_bs_get_integer_2, erts_bs_get_integer_2)
 nofail_primop_interface_3(nbif_bs_get_binary_2, erts_bs_get_binary_2)
 nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
@@ -224,6 +229,7 @@ nofail_primop_interface_3(nbif_bs_get_float_2, erts_bs_get_float_2)
  * These cannot CONS or gc.
  */
 noproc_primop_interface_1(nbif_bs_allocate, hipe_bs_allocate)
+noproc_primop_interface_2(nbif_bs_reallocate, hipe_bs_reallocate)
 
 /*
  * Bit-syntax primops. The ERTS_SMP runtime system requires P,
@@ -239,14 +245,7 @@ nocons_nofail_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_intege
 noproc_primop_interface_5(nbif_bs_put_big_integer, hipe_bs_put_big_integer)
 ')dnl
 
-/* crap crap crap */
-ifelse(ERTS_SMP,1,`
-nocons_nofail_primop_interface_0(nbif_check_get_msg, hipe_check_get_msg)
-',`
-ifelse(HEAP_FRAG_ELIM_TEST,1,`
 gc_bif_interface_0(nbif_check_get_msg, hipe_check_get_msg)
-',)dnl
-')dnl
 
 /*
  * SMP-specific stuff

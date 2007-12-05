@@ -107,7 +107,7 @@ write_complex_list_tail([H|T], Indent) ->
     {Indent, [$,,nl_indent(Indent),S1,S2]};
 write_complex_list_tail([], Indent) ->
     {Indent, "]"};
-write_complex_list_tail(Other, Indent) ->$,, 
+write_complex_list_tail(Other, Indent) -> 
     {_, S} = term(Other, Indent),
     {Indent, [$|,S,$]]}.
 
@@ -117,7 +117,7 @@ write_complex_list_tail(Other, Indent) ->$,,
 
 complex_list([]) -> 
     false;
-complex_list([H|T]) when constant(H) -> 
+complex_list([H|T]) when is_list(H) =:= false , is_tuple(H) =:= false -> 
     complex_list(T);
 complex_list([H|T]) ->
     case is_string(H) of

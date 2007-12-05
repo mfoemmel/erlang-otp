@@ -53,7 +53,7 @@ static Eterm Uint_to_term(Uint x, Process *p)
     if( IS_USMALL(0, x) ) {
 	return make_small(x);
     } else {
-	Eterm *hp = HAlloc(p, BIG_NEED_SIZE(2));
+	Eterm *hp = HAlloc(p, BIG_UINT_HEAP_SIZE);
 	return uint_to_big(x, hp);
     }
 }

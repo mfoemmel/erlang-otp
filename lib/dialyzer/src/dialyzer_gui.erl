@@ -11,7 +11,7 @@
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %% 
-%% Copyright 2006, Tobias Lindahl and Kostis Sagonas
+%% Copyright 2006, 2007 Tobias Lindahl and Kostis Sagonas
 %% 
 %%     $Id$
 %%
@@ -45,8 +45,9 @@
 	       plt_empty, plt_search_doc, plt_show_doc,
 	       warnings}).
 	       
--record(mode, {start_byte_code, iter_fixpoint,
-	       start_src_code, iter_qad, dataflow, succ_typings, old_style}).
+-record(mode, {start_byte_code, start_src_code, 
+	       dataflow, succ_typings, old_style}).
+	       
 
 
 start(DialyzerOptions = #options{}) ->
@@ -256,7 +257,15 @@ start(DialyzerOptions = #options{}) ->
   MenuWarnCallNonExported = gs:menuitem(MenuWarn,
 					[{label, 
 					  {text,"Call to unexported function"}},
-					 {itemtype, check}, {select, true}]),  
+					 {itemtype, check}, {select, true}]), 
+  MenuWarnContractTypes = gs:menuitem(MenuWarn,
+				      [{label, 
+					{text,"Wrong contracts"}},
+				       {itemtype, check}, {select, true}]),
+  MenuWarnContractSyntax = gs:menuitem(MenuWarn,
+				       [{label, 
+					 {text,"Wrong contract syntax"}},
+					{itemtype, check}, {select, true}]), 
   
   %% PLT Menu
   MenuBarPLT = gs:menubutton(MenuBar, [{label, {text,"PLT"}}]),
@@ -294,7 +303,10 @@ start(DialyzerOptions = #options{}) ->
 	      {?WARN_GUARDS, MenuWarnGuards},
 	      {?WARN_OLD_BEAM, MenuWarnBeam},
 	      {?WARN_FAILING_CALL, MenuWarnFailingCall},
-	      {?WARN_CALLGRAPH, MenuWarnCallNonExported}
+	      {?WARN_CALLGRAPH, MenuWarnCallNonExported},
+	      %% For contracts. 
+	      {?WARN_CONTRACT_TYPES, MenuWarnContractTypes},
+	      {?WARN_CONTRACT_SYNTAX, MenuWarnContractSyntax}
 	     ],
 
   init_warnings(Warnings, DialyzerOptions#options.legal_warnings),
@@ -320,9 +332,9 @@ start(DialyzerOptions = #options{}) ->
   gs:config(Packer, WH),
   {ok, CWD} = file:get_cwd(),
   
-  EmptyPlt = dialyzer_plt:new(dialyzer_empty_plt),
+  EmptyPlt = dialyzer_plt:new(),
   InitPlt0 = DialyzerOptions#options.init_plt,
-  InitPlt = dialyzer_plt:from_file(dialyzer_init_plt, InitPlt0),
+  InitPlt = dialyzer_plt:from_file(InitPlt0),
 
   State = #gui_state{add_all=AddAll,
 		     add_file=AddFile, 
@@ -373,7 +385,6 @@ gui_loop(State = #gui_state{}) ->
   Stop = State#gui_state.stop,
   Log = State#gui_state.log,
   BackendPid = State#gui_state.backend_pid,
-  Options = State#gui_state.options,
 
   %% --- Menu ---
   Menu = State#gui_state.menu,
@@ -495,15 +506,29 @@ gui_loop(State = #gui_state{}) ->
       update_editor(State#gui_state.log, LogMsg),
       gui_loop(State);
     {BackendPid, warnings, Warnings} ->
+      Mode = State#gui_state.mode,
+      Type =
+	case gs:read(Mode#mode.dataflow, select) of
+	  true -> dataflow;
+	  false ->
+	    case gs:read(Mode#mode.succ_typings, select) of
+	      true -> succ_typings;
+	      false -> old_style
+	    end
+	end,
       WarningString = 
-	case Options#options.analysis_type of
+	case Type of
 	  old_style ->
 	    lists:flatten([io_lib:format("~w: ~s", [Fun, W])
 			   || {Fun, W} <- Warnings]);
-	  dataflow ->
+	  Other when (Other =:= dataflow) orelse (Other =:= succ_typings) ->
 	    lists:flatten([io_lib:format("~s:~w: ~s", 
-					 [filename:basename(File), Line, W])
-			   || {{File, Line}, W} <- Warnings])
+					 [filename:basename(F), Line, W])
+			   || {{F, Line}, W} <- Warnings]);
+	  succ_typings -> 
+	    lists:flatten([io_lib:format("~s:~w: ~s", 
+					 [filename:basename(F), Line, W])
+			   || {{F, Line}, W} <- Warnings])
 	end,
       update_editor(State#gui_state.warnings_box, WarningString),
       gui_loop(State);
@@ -515,11 +540,10 @@ gui_loop(State = #gui_state{}) ->
       update_editor(State#gui_state.log, 
 		    "*** Analysis failed! See warnings for details\n"),
       gui_loop(State);
-    {BackendPid, done} ->
-      dialyzer_plt:delete(State#gui_state.user_plt),
+    {BackendPid, done, _NewPlt, NewDocPlt} ->
       message(State, "Analysis done"),
       config_gui_stop(State),
-      gui_loop(State);
+      gui_loop(State#gui_state{doc_plt=NewDocPlt});
     {'EXIT', BackendPid, {error, Reason}} ->
       dialyzer_plt:delete(State#gui_state.user_plt),
       error(State, Reason),
@@ -1503,22 +1527,20 @@ get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
 run_analysis(State, Analysis) ->
   config_gui_start(State),
   Self = self(),
-  DocEts = 
-    case State#gui_state.doc_plt of
-      undefined -> ets:new(fun_info, [set, public, {keypos, 1}]);
-      Ets -> 
-	ets:delete_all_objects(Ets),
-	Ets
-    end,
-  UserPlt = dialyzer_plt:new(dialyzer_user_plt),
-  NewAnalysis = Analysis#analysis{doc_plt=DocEts, user_plt=UserPlt},
+  case State#gui_state.doc_plt =:= undefined of
+    true -> ok;
+    false -> dialyzer_plt:delete(State#gui_state.doc_plt)
+  end,
+  DocPlt = dialyzer_plt:new(),
+  UserPlt = dialyzer_plt:new(),
+  NewAnalysis = Analysis#analysis{doc_plt=DocPlt, user_plt=UserPlt},
   LegalWarnings = find_legal_warnings(State),
   Fun = 
     fun() -> 
 	dialyzer_analysis_callgraph:start(Self, LegalWarnings, NewAnalysis)
     end,
   BackendPid = spawn_link(Fun),
-  State#gui_state{backend_pid=BackendPid,doc_plt=DocEts,user_plt=UserPlt}.
+  State#gui_state{backend_pid=BackendPid, user_plt=UserPlt, doc_plt=DocPlt}.
 
 
 find_legal_warnings(#gui_state{menu=#menu{warnings=Warnings}}) ->

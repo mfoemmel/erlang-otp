@@ -2,6 +2,6 @@
 %%% $Id$
 
 -record(sdi_info,
-	{lb,		% span lower bound for short form
-	 ub,		% span upper bound for short form
-	 incr}).	% instruction size increase for long form
+	{lb   :: integer(),	% span lower bound for short form
+	 ub   :: integer(),	% span upper bound for short form
+	 incr :: byte()}).	% instruction size increase for long form

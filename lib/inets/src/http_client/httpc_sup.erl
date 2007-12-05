@@ -15,6 +15,11 @@
 %% 
 %%     $Id$
 %%
+%%----------------------------------------------------------------------
+%% Purpose: The top supervisor for the http client hangs under 
+%%          inets_sup.
+%%----------------------------------------------------------------------
+
 -module(httpc_sup).
 
 -behaviour(supervisor).
@@ -34,37 +39,35 @@ start_link(HttpcServices) ->
 %%%=========================================================================
 %%%  Supervisor callback
 %%%=========================================================================
-init([]) ->
-    init([[]]);
 init([HttpcServices]) ->
     RestartStrategy = one_for_one,
     MaxR = 10,
     MaxT = 3600,
-    Children = child_spec(HttpcServices, []),
+    Children = child_specs(HttpcServices),
     {ok, {{RestartStrategy, MaxR, MaxT}, Children}}.
 
-child_spec([], []) ->
-    [httpc_child_spec(default, only_session_cookies)];
-child_spec([], Acc) ->
-    Acc;
-child_spec([{httpc, {Profile, Dir}} | Rest], Acc) ->
-    case httpc_child_spec(Profile, Dir) of
-	{} ->
-	    child_spec(Rest, Acc);
-	Spec ->
-	    child_spec(Rest, [Spec | Acc])
-    end.
+%%%=========================================================================
+%%%  Internal functions
+%%%=========================================================================
+child_specs(HttpcServices) ->
+    [httpc_profile_sup(HttpcServices), httpc_handler_sup()].
 
-%% Note currently only one profile is supported e.i. the default profile
-httpc_child_spec(default, Dir) ->
-    Name = httpc_manager,  
-    StartFunc = {httpc_manager, start_link, [{default, Dir}]},
+httpc_profile_sup(HttpcServices) ->
+    Name = httpc_profile_sup,
+    StartFunc = {httpc_profile_sup, start_link, [HttpcServices]},
     Restart = permanent, 
-    Shutdown = 4000,
-    Modules = [httpc_manager],
-    Type = worker,
-    {Name, StartFunc, Restart, Shutdown, Type, Modules};
-httpc_child_spec(_,_) ->
-    {}.
+    Shutdown = infinity,
+    Modules = [httpc_profile_sup],
+    Type = supervisor,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
+
+httpc_handler_sup() ->
+    Name = httpc_handler_sup,
+    StartFunc = {httpc_handler_sup, start_link, []},
+    Restart = permanent, 
+    Shutdown = infinity,
+    Modules = [httpc_handler_sup],
+    Type = supervisor,
+    {Name, StartFunc, Restart, Shutdown, Type, Modules}.
 
 

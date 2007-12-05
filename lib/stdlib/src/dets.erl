@@ -771,19 +771,25 @@ compile_match_spec(delete, Pat) ->
 
 %% Process the args list as provided to open_file/2.
 defaults(Tab, Args) ->
-    Defaults = #open_args{file = to_list(Tab),
-                          type = set,
-                          keypos = 1,
-                          repair = true, 
-                          min_no_slots = default,
-			  max_no_slots = default,
-                          ram_file = false,
-                          delayed_write = ?DEFAULT_CACHE,
-                          auto_save = timer:minutes(?DEFAULT_AUTOSAVE),
-                          access = read_write,
-                          version = default},
+    Defaults0 = #open_args{file = to_list(Tab),
+                           type = set,
+                           keypos = 1,
+                           repair = true, 
+                           min_no_slots = default,
+                           max_no_slots = default,
+                           ram_file = false,
+                           delayed_write = ?DEFAULT_CACHE,
+                           auto_save = timer:minutes(?DEFAULT_AUTOSAVE),
+                           access = read_write,
+                           version = default},
     Fun = fun repl/2,
-    lists:foldl(Fun, Defaults, Args).
+    Defaults = lists:foldl(Fun, Defaults0, Args),
+    case Defaults#open_args.version of
+        8 ->
+            Defaults#open_args{max_no_slots = default};
+        _ ->
+            is_comp_min_max(Defaults)
+    end.
 
 to_list(T) when is_atom(T) -> atom_to_list(T);
 to_list(T) -> T.
@@ -814,10 +820,10 @@ repl({keypos, P}, Defs) when is_integer(P), P > 0 ->
 repl({max_no_slots, I}, Defs)  ->
     %% Version 9 only.
     MaxSlots = is_max_no_slots(I),
-    is_comp_min_max(Defs#open_args{max_no_slots = MaxSlots});
+    Defs#open_args{max_no_slots = MaxSlots};
 repl({min_no_slots, I}, Defs)  ->
     MinSlots = is_min_no_slots(I),
-    is_comp_min_max(Defs#open_args{min_no_slots = MinSlots});
+    Defs#open_args{min_no_slots = MinSlots};
 repl({ram_file, Bool}, Defs) ->
     mem(Bool, [true, false]),
     Defs#open_args{ram_file = Bool};
@@ -829,7 +835,7 @@ repl({type, T}, Defs) ->
     Defs#open_args{type =T};
 repl({version, Version}, Defs) ->
     V = is_version(Version),
-    is_comp_min_max(Defs#open_args{version = V});
+    Defs#open_args{version = V};
 repl({_, _}, _) ->
     exit(badarg).
 
@@ -841,13 +847,11 @@ is_max_no_slots(default) -> default;
 is_max_no_slots(I) when is_integer(I), I > 0, I < 1 bsl 31 -> I.
 
 is_comp_min_max(Defs) ->
-    %% Bug: accepts version = default, when default means version 8.
     #open_args{max_no_slots = Max, min_no_slots = Min, version = V} = Defs,
     case V of
-	8 when Max =:= default, Min =:= default -> Defs;
-	_ when V =/= 8, Min =:= default -> Defs;
-	_ when V =/= 8, Max =:= default -> Defs;
-	_ -> V =/= 8, true = Min =< Max, Defs
+	_ when Min =:= default -> Defs;
+	_ when Max =:= default -> Defs;
+	_ -> true = Min =< Max, Defs
     end.
 
 is_version(default) -> default;
@@ -940,6 +944,8 @@ req(Proc, R) ->
 
 %% Inlined.
 einval({error, {file_error, _, einval}}, A) ->
+    erlang:error(badarg, A);
+einval({error, {file_error, _, badarg}}, A) ->
     erlang:error(badarg, A);
 einval(Reply, _A) ->
     Reply.

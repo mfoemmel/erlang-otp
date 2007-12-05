@@ -32,19 +32,19 @@ report_top(Data, Opts) ->
      Vsn0, _File] = Data,
     html_header(Title, Opts) ++
     docb_util:html_snippet(top, Opts) ++
-"<CENTER>
-<H1>" ++ Title ++ "</H1>
-<BIG>
-  " ++ DocNo ++ version(Opts, Vsn0) ++ "<BR>
-  " ++ Prepared ++ "<BR>
-</BIG>
-</CENTER>
+"<center>
+<h1>" ++ Title ++ "</h1>
+<big>
+  " ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
+  " ++ Prepared ++ "<br />
+</big>
+</center>
 ".
 
 report_bot(Opts) ->
     docb_util:html_snippet(bottom, Opts) ++
-"</BODY>
-</HTML>
+"</body>
+</html>
 ".
 
 %% First
@@ -54,11 +54,11 @@ first_top(Data, Opts) ->
      Vsn0, _File] = Data,
     html_header(Title, Opts) ++
     docb_util:html_snippet(top, Opts) ++
-"<CENTER>
-<H1>" ++ Title ++ "</H1>
-<BIG>" ++ DocNo ++ version(Opts, Vsn0) ++ "<BR>
-</BIG>
-</CENTER>
+"<center>
+<h1>" ++ Title ++ "</h1>
+<big>" ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
+</big>
+</center>
 ".
 
 first_bot(Opts) ->
@@ -72,14 +72,14 @@ ref_top(Data, Opts) ->
     ref_html_header(Title, Opts) ++
 "<!-- refpage -->\n" ++
     docb_util:html_snippet(top, Opts) ++
-"<CENTER>
-<H1>" ++ Title ++ "</H1>
-</CENTER>".
+"<center>
+<h1>" ++ Title ++ "</h1>
+</center>".
 
 ref_bot(Opts) ->
     docb_util:html_snippet(bottom, Opts) ++
-"</BODY>
-</HTML>
+"</body>
+</html>
 ".
 
 %% Chapter
@@ -99,58 +99,58 @@ application_toc_top(Data, DocName, Opts) ->
     [Title, _Prepared, _Responsible, DocNo, _Approved, _Checked,
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
-"<CENTER>
-<STRONG>" ++ Title ++ "</STRONG>
-<P>
-<SMALL>
+"<center>
+<strong>" ++ Title ++ "</strong>
+<p>
+<small>
   " ++ DocNo ++ version(Opts, Vsn0) ++ "
-</SMALL>
-<P>
-<SMALL>
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</A>" ++ top_index(Opts) ++
-"</SMALL>
-</CENTER>
-<P>
-<SMALL>
-<STRONG>Table of Contents</STRONG>
-</SMALL>
+</small>
+<p>
+<small>
+  <a target=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>" ++ top_index(Opts) ++
+"</small>
+</center>
+<p>
+<small>
+<strong>Table of Contents</strong>
+</small>
 ".
 
 application_toc_top(Data, DocName, Opts, HRefTexts) ->
     [Title, _Prepared, _Responsible, DocNo, _Approved, _Checked,
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
-"<CENTER>
-<SMALL>
+"<center>
+<small>
 " ++
 	docb_util:join(
 	  lists:map(
 	    fun({HRef, Text}) ->
-		    "<A TARGET=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
-			Text ++ "</A>"
+		    "<a target=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
+			Text ++ "</a>"
 	    end,
 	    HRefTexts), " | ") ++ top_index(Opts) ++
-"</SMALL>
-<P>
-<STRONG>" ++ Title ++ "</STRONG>
-<P>
-<SMALL>" ++ DocNo ++ version(Opts, Vsn0) ++ "<BR>
-</SMALL>
-<P>
-<SMALL>
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++	"_first.html\">Cover</A>
-</SMALL>
-</CENTER>
-<P>
-<SMALL>
-<STRONG>Table of Contents</STRONG>
-</SMALL>
+"</small>
+<p>
+<strong>" ++ Title ++ "</strong>
+<p>
+<small>" ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
+</small>
+<p>
+<small>
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++	"_first.html\">Cover</a>
+</small>
+</center>
+<p>
+<small>
+<strong>Table of Contents</strong>
+</small>
 ".
 
 %% Part ToC
@@ -159,71 +159,71 @@ part_toc_top(Data, DocName, Opts) ->
     [Title, _Prepared, _Responsible, DocNo, _Approved, _Checked,
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
-"<CENTER>
-<STRONG>" ++ Title ++ "</STRONG>
-<P>
-<SMALL>" ++ DocNo ++ version(Opts, Vsn0) ++ "<BR>
-</SMALL>
-<P>
-<SMALL>
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</A>" ++
+"<center>
+<strong>" ++ Title ++ "</strong>
+<p>
+<small>" ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
+</small>
+<p>
+<small>
+  <a target=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>" ++
 	top_index(Opts) ++
-"</SMALL>
-</CENTER>
-<P>
-<SMALL>
-<STRONG>Table of Contents</STRONG>
-</SMALL>
+"</small>
+</center>
+<p>
+<small>
+<strong>Table of Contents</strong>
+</small>
 ".
 
 part_toc_top(Data, DocName, Opts, HRefTexts) ->
     [Title, _Prepared, _Responsible, DocNo, _Approved, _Checked,
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
-"<CENTER>
-<SMALL>
+"<center>
+<small>
 " ++
 	docb_util:join(
 	  lists:map(
 	    fun({HRef, Text}) ->
-		    "<A TARGET=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
-			Text ++ "</A>"
+		    "<a target=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
+			Text ++ "</a>"
 	    end,
 	    HRefTexts), " | ") ++ top_index(Opts) ++
-"</SMALL>
-<P>
-<STRONG>" ++ Title ++ "</STRONG>
-<P>
-<SMALL>
-  " ++ DocNo ++ version(Opts, Vsn0) ++ "<BR>
-</SMALL>
-<P>
-<SMALL>
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</A> |
-  <A TARGET=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</A>
-</SMALL>
-</CENTER>
-<P>
-<SMALL>
-<STRONG>Table of Contents</STRONG>
-</SMALL>
+"</small>
+<p>
+<strong>" ++ Title ++ "</strong>
+<p>
+<small>
+  " ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
+</small>
+<p>
+<small>
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>
+</small>
+</center>
+<p>
+<small>
+<strong>Table of Contents</strong>
+</small>
 ".
 
 part_toc_bot() ->
-"</BODY>
-</HTML>
+"</body >
+</html>
 ".
 
 %% Index
 
 index_top(_Data) ->
     ref_html_header("INDEX", []) ++
-"<H1>INDEX</H1>
-<P><EM>Emphasized</EM> index entries refer to <EM>modules</EM>
-and <CODE>Courier</CODE> ditos to <CODE>functions</CODE>.\n".
+"<h1>INDEX</h1>
+<p><em>Emphasized</em> index entries refer to <em>modules</em>
+and <code>Courier</code> ditos to <code>functions</code>.\n</p>\n".
 
 index_bot() ->
     part_toc_bot().
@@ -234,30 +234,112 @@ html_header(Title, Opts) ->
     Vsn = docb_util:version(),
 "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
 <!-- This document was generated using DocBuilder-" ++ Vsn ++ " -->
-<HTML>
-<HEAD>
-  <TITLE>" ++ Title ++ "</TITLE>" ++
-  docb_util:html_snippet(head, Opts) ++
-"</HEAD>
-<BODY BGCOLOR=\"#FFFFFF\" TEXT=\"#000000\" LINK=\"#0000FF\" VLINK=\"#FF00FF\" ALINK=\"#FF0000\">
+<html>
+<head>
+  <title>" ++ Title ++ "</title>
+  " ++ docb_util:html_snippet(head, Opts) ++ "
+  <style type=\"text/css\">
+<!--
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    span.bold_code        { font-family: courier;font-weight: bold}
+    span.code        { font-family: courier;font-weight: normal}
+
+.note, .warning {
+  border: solid black 1px;
+  margin: 1em 3em;
+}
+
+.note .label {
+  background: #30d42a;
+  color: white;
+  font-weight: bold;
+  padding: 5px 10px;
+}
+.note .content {
+  background: #eafeea;
+  color: black;
+  line-height: 120%;
+  font-size: 90%;
+  padding: 5px 10px;
+}
+.warning .label {
+  background: #C00;
+  color: white;
+  font-weight: bold;
+  padding: 5px 10px;
+}
+.warning .content {
+  background: #FFF0F0;
+  color: black;
+  line-height: 120%;
+  font-size: 90%;
+  padding: 5px 10px;
+}
+
+    .example     { background-color:#eeeeff } 
+    pre          { font-family: courier; font-weight: normal }
+    .REFBODY     { margin-left: 13mm }
+    .REFTYPES    { margin-left: 8mm }
+-->
+  </style>
+</head>
+<body bgcolor=\"#FFFFFF\" text=\"#000000\" link=\"#0000FF\" vlink=\"#FF00FF\" alink=\"#FF0000\">
 ".
 
 ref_html_header(Title, Opts) ->
     Vsn = docb_util:version(),
 "<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
 <!-- This document was generated using DocBuilder-" ++ Vsn ++ " -->
-<HTML>
-<HEAD>
-  <TITLE>" ++ Title ++ "</TITLE>" ++
-  docb_util:html_snippet(head, Opts) ++
-"  <STYLE TYPE=\"text/css\">
+<html>
+<head>
+  <title>" ++ Title ++ "</title>
+  " ++ docb_util:html_snippet(head, Opts) ++ "
+  <style type=\"text/css\">
 <!--
+    body          { font-family: Verdana, Arial, Helvetica, sans-serif }
+    span.bold_code        { font-family: courier;font-weight: bold}
+    span.code        { font-family: courier;font-weight: normal}
+
+.note, .warning {
+  border: solid black 1px;
+  margin: 1em 3em;
+}
+
+.note .label {
+  background: #30d42a;
+  color: white;
+  font-weight: bold;
+  padding: 5px 10px;
+}
+.note .content {
+  background: #eafeea;
+  color: black;
+  line-height: 120%;
+  font-size: 90%;
+  padding: 5px 10px;
+}
+.warning .label {
+  background: #C00;
+  color: white;
+  font-weight: bold;
+  padding: 5px 10px;
+}
+.warning .content {
+  background: #FFF0F0;
+  color: black;
+  line-height: 120%;
+  font-size: 90%;
+  padding: 5px 10px;
+}
+
+    .example     { background-color:#eeeeff } 
+    pre          { font-family: courier; font-weight: normal }
     .REFBODY     { margin-left: 13mm }
     .REFTYPES    { margin-left: 8mm }
 -->
-  </STYLE>
-</HEAD>
-<BODY BGCOLOR=\"#FFFFFF\" TEXT=\"#000000\" LINK=\"#0000FF\" VLINK=\"#FF00FF\" ALINK=\"#FF0000\">
+  </style>
+</head>
+<body bgcolor=\"#FFFFFF\" text=\"#000000\" link=\"#0000FF\" vlink=\"#FF00FF\" alink=\"#FF0000\">
 ".
 
 version(Opts, Vsn0) ->
@@ -270,5 +352,5 @@ top_index(Opts) ->
     case docb_util:lookup_option(top, Opts) of
 	false -> "";
 	TIFile ->
-	    " | <A TARGET=\"_top\" HREF=\"" ++ TIFile ++ "\">Top</A>"
+	    " | <a target=\"_top\" href=\"" ++ TIFile ++ "\">Top</a>"
     end.

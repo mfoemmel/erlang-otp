@@ -96,7 +96,6 @@ static erts_smp_spinlock_t db_tables_lock;
 static struct tab_entry {
     DbTable *t;
     Uint id;              /* Automatically initialized */
-    Eterm name;           /* An atom */
 } *db_tables;  /* Local variable db_tables */
 
 typedef enum { LCK_READ=1, LCK_WRITE=2 } db_lock_kind_t;
@@ -123,12 +122,14 @@ static void fix_table_locked(Process* p, DbTable* tb);
 static void unfix_table_locked(Process* p,  DbTable* tb);
 static void free_fixations_locked(DbTable *tb);
 
-static Eterm free_table_cont(Process *p, DbTable *tb, int first);
+static Eterm free_table_cont(Process *p, DbTable *tb, Eterm cont, int first);
 static void print_table(int to, void *to_arg, int show,  DbTable* tb);
 static int next_prime(int n);
 static BIF_RETTYPE ets_select_delete_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_count_1(Process *p, Eterm a1);
 static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1);
+static BIF_RETTYPE ets_delete_trap(Process *p, Eterm a1);
+static Eterm table_info(Process* p, DbTable* tb, Eterm What);
 
 /* 
  * Exported global
@@ -136,6 +137,11 @@ static BIF_RETTYPE ets_select_trap_1(Process *p, Eterm a1);
 Export ets_select_delete_continue_exp;
 Export ets_select_count_continue_exp;
 Export ets_select_continue_exp;
+
+/*
+ * Static traps
+ */
+static Export ets_delete_continue_exp;
 
 static ERTS_INLINE DbTable* db_ref(DbTable* tb)
 {
@@ -299,56 +305,8 @@ static void meta_mark_free(int idx)
 
 
 /*
-** BIF's
-*/
-
-/*
-** Disables/enables rehashing for a table (if it is a hash table).
-*/
-BIF_RETTYPE ets_fixtable_2(BIF_ALIST_2)
-{
-    DbTable* tb;
-    Eterm arg;
-
-    /* This doesn't affect trees, but who cares... */
-
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_WRITE, LCK_WRITE)) == NULL) {
-	BIF_ERROR(BIF_P, BADARG);
-    }
-
-    arg = BIF_ARG_2;
-
-    if (BIF_ARG_2 == am_true) {
-	fix_table_locked(BIF_P, tb);
-    }
-    else if (BIF_ARG_2 == am_false) {
-	DbFixation *fix;
-
-	for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
-	    db_lock(meta_pid_to_fixed_tab, LCK_WRITE);
-	    db_erase_bag_exact2(meta_pid_to_fixed_tab,
-				fix->pid,
-				make_small(tb->common.slot));
-	    db_unlock(meta_pid_to_fixed_tab, LCK_WRITE);
-	}
-	while (tb->common.fixations != NULL) {
-	    fix = tb->common.fixations;
-	    tb->common.fixations = fix->next;
-	    erts_db_free(ERTS_ALC_T_DB_FIXATION,
-			 tb, (void *) fix, sizeof(DbFixation));
-	}
-	if (IS_HASH_TABLE(tb->common.status)) {
-	    db_unfix_table_hash(&(tb->hash));
-	}	
-	tb->common.status &= ~DB_FIXED;
-    }
-    else {
-	db_unlock(tb, LCK_WRITE);
-	BIF_ERROR(BIF_P, BADARG);
-    }
-    db_unlock(tb, LCK_WRITE);
-    BIF_RET(am_true);
-}
+ * BIFs.
+ */
 
 BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
 {
@@ -360,7 +318,6 @@ BIF_RETTYPE ets_safe_fixtable_2(BIF_ALIST_2)
 		BIF_ARG_1, BIF_ARG_2, BIF_P->id,
 		BIF_P->initial[0], BIF_P->initial[1], BIF_P->initial[2]);
 #endif
-    /* SMP fixme (should be a write lock) */
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_WRITE)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
@@ -759,14 +716,38 @@ BIF_RETTYPE ets_rename_2(BIF_ALIST_2)
     erts_smp_spin_lock(&db_tables_lock);
     newslot = atom_val(BIF_ARG_2) % db_max_tabs;
     while (1) {
-	if (ISFREE(newslot))
+	if (ISFREE(newslot)) {
+	    int s = newslot;
+
+	    /*
+	     * We have found the slot nearest to the hash value,
+	     * but we must verify that the name is not present in
+	     * the rest of the table. We must search until we find
+	     * a slot that has never been used, or until the entire
+	     * table has been searched.
+	     */
+	    while (1) {
+		if (++s == db_max_tabs) {
+		    s = 0;
+		}
+		if (db_tables[s].id == BIF_ARG_2) {
+		    erts_smp_spin_unlock(&db_tables_lock);
+		    goto badarg;
+		}
+		if (ISNOTUSED(s) || s == newslot) {
+		    /* Not found - OK. */
+		    break;
+		}
+	    }
 	    break;
+	}
 	if (db_tables[newslot].id == BIF_ARG_2) {
 	    erts_smp_spin_unlock(&db_tables_lock);
 	    goto badarg;
 	}
-	if (++newslot == db_max_tabs)
-	    newslot=0; 
+	if (++newslot == db_max_tabs) {
+	    newslot = 0;
+	}
     }
     db_tables[newslot].id = BIF_ARG_2;
     db_tables[newslot].t = tb;
@@ -791,22 +772,20 @@ BIF_RETTYPE ets_rename_2(BIF_ALIST_2)
 			tb->common.owner,make_small(oldslot));
     db_unlock(meta_pid_to_tab, LCK_WRITE);
 
+    db_lock(meta_pid_to_fixed_tab, LCK_WRITE);
     for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
-	db_lock(meta_pid_to_fixed_tab, LCK_WRITE);
 	db_erase_bag_exact2(meta_pid_to_fixed_tab,
 			    fix->pid,
 			    make_small(oldslot));
-	db_unlock(meta_pid_to_fixed_tab, LCK_WRITE);
 	if (db_put_hash(NULL, meta_pid_to_fixed_tab,
 			TUPLE2(meta_tuple, 
 			       fix->pid, 
-			       make_small(newslot)),
-			&dummy)
-	    != DB_ERROR_NONE) {
-	    erl_exit(1,"Could not insert ets metadata"
-		     " in rename.");
+			       make_small(newslot)), &dummy) != DB_ERROR_NONE) {
+	    erl_exit(1,"Could not insert ets metadata in rename.");
 	}		
     }
+    db_unlock(meta_pid_to_fixed_tab, LCK_WRITE);
+
  done:
     ret = tb->common.id;
     db_unlock(tb, LCK_WRITE);
@@ -960,7 +939,27 @@ BIF_RETTYPE ets_new_2(BIF_ALIST_2)
 	slot = atom_val(BIF_ARG_1) % db_max_tabs;
 	while (1) {
 	    if (ISFREE(slot)) {
+		int s = slot;
 		ret = BIF_ARG_1;
+		/*
+		 * We have found the slot nearest to the hash value,
+		 * but we must verify that the name is not present in
+		 * the rest of the table. We must search until we find
+		 * a slot that has never been used, or until the entire
+		 * table has been searched.
+		 */
+		while (1) {
+		    if (++s == db_max_tabs) {
+			s = 0;
+		    }
+		    if (db_tables[s].id == BIF_ARG_1) {
+			goto badarg;
+		    }
+		    if (ISNOTUSED(s) || s == slot) {
+			/* Not found - OK. */
+			break;
+		    }
+		}
 		break;
 	    }
 	    if (db_tables[slot].id == BIF_ARG_1) {
@@ -1124,24 +1123,12 @@ BIF_RETTYPE ets_lookup_element_3(BIF_ALIST_3)
 }
 
 /* 
-** BIF to erase a whole table and release all memory it holds 
-*/
-BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
+ * BIF to erase a whole table and release all memory it holds 
+ */
+BIF_RETTYPE ets_delete_1(BIF_ALIST_1)
 {
     DbTable* tb;
-
-    if (is_CP(BIF_ARG_1)) {
-#ifdef HARDDEBUG
-	erts_fprintf(stderr,
-		     "ets:delete(%T); TRAP Process: %T, initial: %T:%T/%bpu\n",
-		     ((DbTable*)BIF_ARG_1)->common.id, BIF_P->id,
-		     BIF_P->initial[0], BIF_P->initial[1], BIF_P->initial[2]);
-#endif
-	/*
-	 * We have been called through a trap.
-	 */
-	return free_table_cont(BIF_P, (DbTable *) BIF_ARG_1, 0);
-    }
+    Eterm* hp;
 
 #ifdef HARDDEBUG
     erts_fprintf(stderr,
@@ -1161,6 +1148,10 @@ BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
      * table while it is being deleted.
      */
     tb->common.status &= ~(DB_PROTECTED|DB_PUBLIC|DB_PRIVATE);
+
+    erts_smp_spin_lock(&db_tables_lock);
+    db_tables[tb->common.slot].id = make_small(db_max_tabs);
+    erts_smp_spin_unlock(&db_tables_lock);
     
     if (tb->common.owner != BIF_P->id) {
 	Eterm dummy;
@@ -1187,7 +1178,18 @@ BIF_RETTYPE ets_db_delete_1(BIF_ALIST_1)
     }
 
     free_fixations_locked(tb);
-    return free_table_cont(BIF_P, tb, 1);
+
+    /*
+     * Package the DbTable* pointer into a bignum so that it can be safely
+     * passed through a trap. We used to passe the DbTable* pointer directly
+     * (it looks like an continuation pointer), but that is will crash the
+     * emulator if this BIF is call traced.
+     */
+    hp = HAlloc(BIF_P, 2);
+    hp[0] = make_pos_bignum_header(1);
+    hp[1] = (Eterm) tb;
+    
+    return free_table_cont(BIF_P, tb, make_big(hp), 1);
 }
 
 /* 
@@ -1432,12 +1434,13 @@ BIF_RETTYPE ets_slot_2(BIF_ALIST_2)
 
     CHECK_TABLES();
 
-    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_READ, LCK_READ)) == NULL) {
+    if ((tb = db_get_table2(BIF_P, BIF_ARG_1, DB_READ, 
+			    step_lock_type)) == NULL) {
 	BIF_ERROR(BIF_P, BADARG);
     }
     /* The slot number is checked in table specific code. */
     cret = tb->common.meth->db_slot(BIF_P, tb, BIF_ARG_2, &ret);
-    db_unlock(tb, LCK_READ);
+    db_unlock(tb, STEP_LOCK_TYPE(tb));
     switch (cret) {
     case DB_ERROR_NONE:
 	BIF_RET(ret);
@@ -1913,101 +1916,63 @@ BIF_RETTYPE ets_match_object_3(BIF_ALIST_3)
 }
 
 /* 
-** BIF to extract information about a particular table
-** Only the "memory" parameter generates table specific calls.
-*/ 
+ * BIF to extract information about a particular table.
+ */ 
 
-BIF_RETTYPE ets_db_info_2(BIF_ALIST_2)
+BIF_RETTYPE ets_info_1(BIF_ALIST_1)
+{
+    static Eterm fields[] = {am_protection, am_keypos, am_type, am_named_table,
+				 am_node, am_size, am_name, am_owner, am_memory};
+    Eterm results[sizeof(fields)/sizeof(Eterm)];
+    DbTable* tb;
+    Eterm res;
+    int i;
+    Eterm* hp;
+
+    if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_INFO, LCK_READ)) == NULL) {
+	if (is_atom(BIF_ARG_1) || is_small(BIF_ARG_1)) {
+	    BIF_RET(am_undefined);
+	}
+	BIF_ERROR(BIF_P, BADARG);
+    }
+    for (i = 0; i < sizeof(fields)/sizeof(Eterm); i++) {
+	results[i] = table_info(BIF_P, tb, fields[i]);
+	ASSERT(is_value(results[i]));
+    }
+    db_unlock(tb, LCK_READ);
+
+    hp = HAlloc(BIF_P, 5*sizeof(fields)/sizeof(Eterm));
+    res = NIL;
+    for (i = 0; i < sizeof(fields)/sizeof(Eterm); i++) {
+	Eterm tuple;
+	tuple = TUPLE2(hp, fields[i], results[i]);
+	hp += 3;
+	res = CONS(hp, tuple, res);
+	hp += 2;
+    }
+    BIF_RET(res);
+}
+
+/* 
+ * BIF to extract information about a particular table.
+ */ 
+
+BIF_RETTYPE ets_info_2(BIF_ALIST_2)
 {
     DbTable* tb;
     Eterm ret = THE_NON_VALUE;
 
     if ((tb = db_get_table(BIF_P, BIF_ARG_1, DB_INFO, LCK_READ)) == NULL) {
+	if (is_atom(BIF_ARG_1) || is_small(BIF_ARG_1)) {
+	    BIF_RET(am_undefined);
+	}
 	BIF_ERROR(BIF_P, BADARG);
     }
-    
-    if (BIF_ARG_2 == am_size) 
-	ret = make_small(tb->common.nitems);
-    else if (BIF_ARG_2 == am_type) {
-	if (tb->common.status & DB_SET)  {
-	    ret = am_set;
-	}
-	else if (tb->common.status & DB_DUPLICATE_BAG) {
-	    ret = am_duplicate_bag;
-	}
-	else if (tb->common.status & DB_ORDERED_SET) {
-	    ret = am_ordered_set;
-	}
-	/*TT*/
-	else {
-	    ret = am_bag;
-	}
-    }
-    else if (BIF_ARG_2 == am_memory) {
-	Uint words = (Uint) ((erts_smp_atomic_read(&tb->common.memory_size)
-			      + sizeof(Uint)
-			      - 1)
-			     / sizeof(Uint));
-	ret = erts_make_integer(words, BIF_P);
-    }
-    else if (BIF_ARG_2 == am_owner) 
-	ret = tb->common.owner;
-    else if (BIF_ARG_2 == am_protection) {
-	if (tb->common.status & DB_PRIVATE) 
-	    ret = am_private;
-	else if (tb->common.status & DB_PROTECTED)
-	    ret = am_protected;
-	else if (tb->common.status & DB_PUBLIC)
-	    ret = am_public;
-    }
-    else if (BIF_ARG_2 == am_name)
-	ret = tb->common.the_name;
-    else if (BIF_ARG_2 == am_keypos) 
-	ret = make_small(tb->common.keypos);
-    /* For debugging purpouses */
-    else if (BIF_ARG_2 == am_data) { 
-	print_table(ERTS_PRINT_STDOUT, NULL, 1, tb);
-	ret = am_true;
-    }
-    else if (BIF_ARG_2 == am_atom_put("fixed",5)) { 
-	if (tb->common.status & DB_FIXED)
-	    ret = am_true;
-	else
-	    ret = am_false;
-    }
-    else if (BIF_ARG_2 == am_atom_put("kept_objects",12)) 
-	ret = make_small(tb->common.kept_items);
-    else if (BIF_ARG_2 == am_atom_put("safe_fixed",10)) { 
-	if (tb->common.fixations != NULL) {
-	    Uint need;
-	    Eterm *hp;
-	    Eterm tpl, lst;
-	    DbFixation *fix;
-	    need = 7;
-	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
-		need += 5;
-	    }
-	    hp = HAlloc(BIF_P,need);
-	    lst = NIL;
-	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
-		tpl = TUPLE2(hp,fix->pid,make_small(fix->counter));
-		hp += 3;
-		lst = CONS(hp,tpl,lst);
-		hp += 2;
-	    }
-	    tpl = TUPLE3(hp,
-			 make_small(tb->common.megasec),
-			 make_small(tb->common.sec),
-			 make_small(tb->common.microsec));
-	    hp += 4;
-	    ret = TUPLE2(hp, tpl, lst);
-	} else {
-	    ret = am_false;
-	}
-    }
+    ret = table_info(BIF_P, tb, BIF_ARG_2);
     db_unlock(tb, LCK_READ);
-    if (ret == THE_NON_VALUE)
+    if (is_non_value(ret)) {
 	BIF_ERROR(BIF_P, BADARG);
+    }
     BIF_RET(ret);
 }
 
@@ -2036,6 +2001,7 @@ BIF_RETTYPE ets_match_spec_compile_1(BIF_ALIST_1)
     MSO(BIF_P).mso = pb;
     pb->val = mp;
     pb->bytes = (byte*) mp->orig_bytes;
+    pb->flags = 0;
     BIF_RET(make_binary(pb));
 }
 
@@ -2196,6 +2162,7 @@ void init_db(void)
 	(Eterm) em_apply_bif;
     ets_select_delete_continue_exp.code[4] = 
 	(Eterm) &ets_select_delete_1;
+
     /* Non visual BIF to trap to. */
     memset(&ets_select_count_continue_exp, 0, sizeof(Export));
     ets_select_count_continue_exp.address = 
@@ -2207,6 +2174,7 @@ void init_db(void)
 	(Eterm) em_apply_bif;
     ets_select_count_continue_exp.code[4] = 
 	(Eterm) &ets_select_count_1;
+
     /* Non visual BIF to trap to. */
     memset(&ets_select_continue_exp, 0, sizeof(Export));
     ets_select_continue_exp.address = 
@@ -2218,6 +2186,16 @@ void init_db(void)
 	(Eterm) em_apply_bif;
     ets_select_continue_exp.code[4] = 
 	(Eterm) &ets_select_trap_1;
+
+    /* Non visual BIF to trap to. */
+    memset(&ets_delete_continue_exp, 0, sizeof(Export));
+    ets_delete_continue_exp.address = &ets_delete_continue_exp.code[3];
+    ets_delete_continue_exp.code[0] = am_ets;
+    ets_delete_continue_exp.code[1] = am_atom_put("delete_trap",11);
+    ets_delete_continue_exp.code[2] = 1;
+    ets_delete_continue_exp.code[3] = (Eterm) em_apply_bif;
+    ets_delete_continue_exp.code[4] = (Eterm) &ets_delete_trap;
+
     hp = ms_delete_all_buff;
     ms_delete_all = CONS(hp, am_true, NIL);
     hp += 2;
@@ -2471,7 +2449,17 @@ static void free_fixations_locked(DbTable *tb)
 }
 
 
-static BIF_RETTYPE free_table_cont(Process* p, DbTable *tb, int first)
+static BIF_RETTYPE ets_delete_trap(Process *p, Eterm cont)
+{
+    Eterm* ptr;
+
+    ptr = big_val(cont);
+    ASSERT(*ptr == make_pos_bignum_header(1));
+    return free_table_cont(p, (DbTable *) ptr[1], cont, 0);
+}
+
+
+static BIF_RETTYPE free_table_cont(Process* p, DbTable *tb, Eterm cont, int first)
 {
     Eterm result;
 
@@ -2492,11 +2480,9 @@ static BIF_RETTYPE free_table_cont(Process* p, DbTable *tb, int first)
 #endif
 	db_unlock(tb, LCK_WRITE);
 	/* More work to be done. Let other processes work and call us again. */
-	/* SMP FIXME: can we really pass tb here??? */
 	BUMP_ALL_REDS(p);
-	BIF_TRAP1(bif_export[BIF_ets_db_delete_1], p, (Eterm) tb);
+	BIF_TRAP1(&ets_delete_continue_exp, p, cont);
     } else {
-	int nitems;
 #ifdef HARDDEBUG
 	erts_fprintf(stderr,"ets: free_table_cont %T (continue end)\r\n",
 		     tb->common.id);
@@ -2512,12 +2498,95 @@ static BIF_RETTYPE free_table_cont(Process* p, DbTable *tb, int first)
 	db_erase_bag_exact2(meta_pid_to_tab,tb->common.owner,
 			    make_small(tb->common.slot));
 	db_unlock(meta_pid_to_tab, LCK_WRITE);
-	nitems = tb->common.nitems;
 	db_unlock(tb, LCK_WRITE);
 	db_unref(tb);
-	BUMP_REDS(p, nitems/15);
+	BUMP_REDS(p, 100);
 	return am_true;
     }
+}
+
+static Eterm table_info(Process* p, DbTable* tb, Eterm What)
+{
+    Eterm ret = THE_NON_VALUE;
+
+    if (What == am_size) {
+	ret = make_small(tb->common.nitems);
+    } else if (What == am_type) {
+	if (tb->common.status & DB_SET)  {
+	    ret = am_set;
+	} else if (tb->common.status & DB_DUPLICATE_BAG) {
+	    ret = am_duplicate_bag;
+	} else if (tb->common.status & DB_ORDERED_SET) {
+	    ret = am_ordered_set;
+	} else { /*TT*/
+	    ASSERT(tb->common.status & DB_BAG);
+	    ret = am_bag;
+	}
+    } else if (What == am_memory) {
+	Uint words = (Uint) ((erts_smp_atomic_read(&tb->common.memory_size)
+			      + sizeof(Uint)
+			      - 1)
+			     / sizeof(Uint));
+	ret = erts_make_integer(words, p);
+    } else if (What == am_owner) {
+	ret = tb->common.owner;
+    } else if (What == am_protection) {
+	if (tb->common.status & DB_PRIVATE) 
+	    ret = am_private;
+	else if (tb->common.status & DB_PROTECTED)
+	    ret = am_protected;
+	else if (tb->common.status & DB_PUBLIC)
+	    ret = am_public;
+    } else if (What == am_name) {
+	ret = tb->common.the_name;
+    } else if (What == am_keypos) {
+	ret = make_small(tb->common.keypos);
+    } else if (What == am_node) {
+	ret = erts_this_dist_entry->sysname;
+    } else if (What == am_named_table) {
+	ret = is_atom(tb->common.id) ? am_true : am_false;
+    /*
+     * For debugging purposes
+     */
+    } else if (What == am_data) { 
+	print_table(ERTS_PRINT_STDOUT, NULL, 1, tb);
+	ret = am_true;
+    } else if (What == am_atom_put("fixed",5)) { 
+	if (tb->common.status & DB_FIXED)
+	    ret = am_true;
+	else
+	    ret = am_false;
+    } else if (What == am_atom_put("kept_objects",12)) {
+	ret = make_small(tb->common.kept_items);
+    } else if (What == am_atom_put("safe_fixed",10)) { 
+	if (tb->common.fixations != NULL) {
+	    Uint need;
+	    Eterm *hp;
+	    Eterm tpl, lst;
+	    DbFixation *fix;
+	    need = 7;
+	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+		need += 5;
+	    }
+	    hp = HAlloc(p, need);
+	    lst = NIL;
+	    for (fix = tb->common.fixations; fix != NULL; fix = fix->next) {
+		tpl = TUPLE2(hp,fix->pid,make_small(fix->counter));
+		hp += 3;
+		lst = CONS(hp,tpl,lst);
+		hp += 2;
+	    }
+	    tpl = TUPLE3(hp,
+			 make_small(tb->common.megasec),
+			 make_small(tb->common.sec),
+			 make_small(tb->common.microsec));
+	    hp += 4;
+	    ret = TUPLE2(hp, tpl, lst);
+	} else {
+	    ret = am_false;
+	}
+    }
+    return ret;
 }
 
 static void print_table(int to, void *to_arg, int show,  DbTable* tb)
@@ -2581,6 +2650,31 @@ erts_db_foreach_offheap(DbTable *tb,
 {
     tb->common.meth->db_foreach_offheap(tb, func, arg);
 }
+
+
+/*
+ * For testing of meta tables only.
+ *
+ * Given a slot number (as returned from ets:new/2), try to
+ * calculate an atom that will hash to that slot. Returns
+ * [] if none is found, otherwise the atom.
+ */
+Eterm
+erts_ets_slot_to_atom(Uint slot)
+{
+    Uint i;
+    Eterm term;
+    int num_atoms = atom_table_size();
+
+    for (i = 0; i < 100; i++) {
+	term = slot + i*db_max_tabs;
+	if (is_atom(term) && atom_val(term) < num_atoms) {
+	    return term;
+	}
+    }
+    return NIL;
+}
+
 
 #ifdef HARDDEBUG   /* Here comes some debug functions */
 

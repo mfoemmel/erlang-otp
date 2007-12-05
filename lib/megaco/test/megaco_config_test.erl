@@ -1,19 +1,21 @@
-%% ``The contents of this file are subject to the Erlang Public License,
+%%<copyright>
+%% <year>2000-2007</year>
+%% <holder>Ericsson AB, All Rights Reserved</holder>
+%%</copyright>
+%%<legalnotice>
+%% The contents of this file are subject to the Erlang Public License,
 %% Version 1.1, (the "License"); you may not use this file except in
 %% compliance with the License. You should have received a copy of the
 %% Erlang Public License along with this software. If not, it can be
-%% retrieved via the world wide web at http://www.erlang.org/.
+%% retrieved online at http://www.erlang.org/.
 %%
 %% Software distributed under the License is distributed on an "AS IS"
 %% basis, WITHOUT WARRANTY OF ANY KIND, either express or implied. See
 %% the License for the specific language governing rights and limitations
 %% under the License.
 %%
-%% The Initial Developer of the Original Code is Ericsson Utvecklings AB.
-%% Portions created by Ericsson are Copyright 1999, Ericsson Utvecklings
-%% AB. All Rights Reserved.''
-%%
-%%     $Id$
+%% The Initial Developer of the Original Code is Ericsson AB.
+%%</legalnotice>
 %%
 %%----------------------------------------------------------------------
 %% Purpose: Test application config
@@ -56,7 +58,7 @@ config(Config) when list(Config) ->
     
     %% Nice values
     Int = 3,
-    IT = #megaco_incr_timer{max_retries = Int},
+    IT  = #megaco_incr_timer{max_retries = Int},
 
     %% Evil values
     NonInt = non_int,
@@ -68,6 +70,8 @@ config(Config) when list(Config) ->
     Commands = 
 	[
 	 %% Initial commands
+	 initial_command( 0, "enable trace", 
+			  fun() -> megaco:enable_trace(100, io) end, ok),
 	 initial_command( 1, "start", 
 			  fun() -> megaco:start() end, ok),
 	 initial_command( 2, "Verify no active requests", 
@@ -85,7 +89,7 @@ config(Config) when list(Config) ->
 			  fun() -> megaco:system_info(connections) end, []),
 	 initial_command( 6, "Verify no users", 
 			  fun() -> megaco:system_info(users) end, []), 
-	 initial_command( 6, "Start user", 
+	 initial_command( 7, "Start user", 
 			  fun() -> megaco:start_user(Mid, []) end, ok),
 
 

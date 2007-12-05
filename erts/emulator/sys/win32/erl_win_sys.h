@@ -55,15 +55,6 @@
 #include <windows.h>
 #undef WIN32_LEAN_AND_MEAN
 
-#ifdef PURIFY
-#  include "pure.h"
-#  define purify_is_running PurifyIsRunning
-#  define purify_printf PurifyPrintf
-#  define purify_new_leaks PurifyNewLeaks
-#  define purify_new_fds_inuse PurifyNewHandlesInuse
-#  define purify_set_pool_id 
-#endif
-
 /*
  * Define MAXPATHLEN in terms of MAXPATH if available.
  */
@@ -101,19 +92,15 @@
 #define CreateAutoEvent(state) CreateEvent(NULL, FALSE, state, NULL)
 #define CreateManualEvent(state) CreateEvent(NULL, TRUE, state, NULL)
 
-/*
- * API to console window.
- */
 
-void ConInit(void);
-int ConPutChar(int c);
-void ConPrintf(char *format, ...);
-void ConVprintf(char *format, va_list va);
-void ConSetCursor(int from, int to);
-void ConSetCtrlHandler(BOOL (WINAPI *handler)(DWORD CtrlType));
-int ConGetKey(void);
-void ConBeep(void);
-int ConReadInput(unsigned char *data, int n);
+/*
+ * Our own type of "FD's"
+ */
+#define ERTS_SYS_FD_TYPE HANDLE
+#define NO_FSTAT_ON_SYS_FD_TYPE 1 /* They are events, not files */
+
+#define HAVE_ERTS_CHECK_IO_DEBUG
+int erts_check_io_debug(void);
 
 /*
  * For erl_time_sup

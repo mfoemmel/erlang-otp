@@ -171,4 +171,7 @@ extern clock_t sys_times(SysTimes *t);
  */
 #define SYS_TMP_BUF_SIZE 65536
 
+/* Need to be able to interrupt erts_poll_wait() from signal handler */
+#define ERTS_POLL_NEED_ASYNC_INTERRUPT_SUPPORT
+
 #endif /* __ERL_VXWORKS_SYS_H__ */

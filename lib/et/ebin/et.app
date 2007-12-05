@@ -1,6 +1,6 @@
 {application, et,
  [{description, "Event Tracer"},
-  {vsn, "1.0.0.1"},
+  {vsn, "1.3"},
   {modules,
    [	
 	et,

@@ -1131,8 +1131,6 @@ make_add_table_copy(Tab, Node, Storage) ->
     %% Check storage and if node is running
     IsRunning = lists:member(Node, val({current, db_nodes})),
     if
-	Storage == unknown ->
-	    mnesia:abort({badarg, Tab, Storage});
 	Tab == schema ->
 	    if
 		Storage /= ram_copies ->
@@ -1300,13 +1298,6 @@ make_change_table_copy_type(Tab, Node, ToS) ->
     Cs3 = new_cs(Cs2, Node, ToS, add),
     verify_cstruct(Cs3),
     
-    if
-	FromS == unknown ->
-	    make_add_table_copy(Tab, Node, ToS);
-	true ->
-	    ignore
-    end,
-
     [{op, change_table_copy_type, Node, FromS, ToS, cs2list(Cs3)}].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -2462,7 +2453,7 @@ restore(Opaque, Args, Module) when list(Args), atom(Module) ->
     InitR = #r{opaque = Opaque, module = Module},
     case catch lists:foldl(fun check_restore_arg/2, InitR, Args) of
 	R when record(R, r) ->
-	    case mnesia_bup:read_schema(Module, Opaque) of
+	    case mnesia_bup:read_schema(R#r.module, Opaque) of
 		{error, Reason} ->
 		    {aborted, Reason};
 		BupSchema -> 

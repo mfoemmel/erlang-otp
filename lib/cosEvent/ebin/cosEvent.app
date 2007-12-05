@@ -1,6 +1,6 @@
 {application, cosEvent,
  [{description, "The Erlang CosEvent application"},
-  {vsn, "2.1.1"},
+  {vsn, "2.1.2"},
   {modules,
      [
 	'CosEventChannelAdmin_ProxyPullConsumer_impl',

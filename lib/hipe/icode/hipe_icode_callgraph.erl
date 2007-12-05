@@ -49,10 +49,12 @@ pp(#callgraph{scc_order=SCCs})->
 construct(List) ->
   Calls = get_local_calls(List),
   %% io:format("Calls: ~p\n", [lists:keysort(1, Calls)]),
-  Edges = get_edges(Calls),  
+  Edges = get_edges(Calls),
   %% io:format("Edges: ~p\n", [Edges]),
   DiGraph = hipe_digraph:from_list(Edges),
-  SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph),
+  Nodes = ordsets:from_list([MFA || {MFA, _} <- List]),
+  DiGraph1 = hipe_digraph:add_node_list(Nodes, DiGraph),
+  SCCs = hipe_digraph:reverse_preorder_sccs(DiGraph1),
   #callgraph{scc_order=SCCs, codedict=dict:from_list(List)}.
 
 construct_callgraph(List) ->
@@ -170,9 +172,6 @@ get_local_calls_1([], Set) ->
 get_edges(Calls) ->
   get_edges(Calls, []).
 
-get_edges([{MFA, []}|Left], Edges) ->  
-  %% Add en self-edge to ensure that the function is not lost
-  get_edges(Left, ordsets:add_element({MFA, MFA}, Edges));
 get_edges([{MFA, Set}|Left], Edges) ->  
   EdgeList = [{MFA, X} || X <- Set],
   EdgeSet = ordsets:from_list(EdgeList),
