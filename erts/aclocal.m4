@@ -393,7 +393,7 @@ fi
 
 dnl ----------------------------------------------------------------------
 dnl
-dnl LM_FIND_ETHR_LIB
+dnl ERL_FIND_ETHR_LIB
 dnl
 dnl Find a thread library to use. Sets ETHR_LIBS to libraries to link
 dnl with, ETHR_X_LIBS to extra libraries to link with (same as ETHR_LIBS
@@ -401,13 +401,13 @@ dnl except that the ethread lib itself is not included), ETHR_DEFS to
 dnl defines to compile with, ETHR_THR_LIB_BASE to the name of the
 dnl thread library which the ethread library is based on, and ETHR_LIB_NAME
 dnl to the name of the library where the ethread implementation is located.
-dnl  LM_FIND_ETHR_LIB currently searches for 'pthreads', and
+dnl  ERL_FIND_ETHR_LIB currently searches for 'pthreads', and
 dnl 'win32_threads'. If no thread library was found ETHR_LIBS, ETHR_X_LIBS,
 dnl ETHR_DEFS, ETHR_THR_LIB_BASE, and ETHR_LIB_NAME are all set to the
 dnl empty string.
 dnl
 
-AC_DEFUN(LM_FIND_ETHR_LIB,
+AC_DEFUN(ERL_FIND_ETHR_LIB,
 [
 
 ethr_modified_default_stack_size=
@@ -441,10 +441,12 @@ if test "X$host_os" = "Xwin32"; then
     found_win32_winnt=no
     for cppflag in $CPPFLAGS; do
 	case $cppflag in
+	    -DWINVER*)
+		ETHR_DEFS="$ETHR_DEFS $cppflag"
+		;;
 	    -D_WIN32_WINNT*)
 		ETHR_DEFS="$ETHR_DEFS $cppflag"
 		found_win32_winnt=yes
-		break
 		;;
 	    *)
 		;;
@@ -651,6 +653,13 @@ if test "x$ETHR_THR_LIB_BASE" != "x"; then
 	ETHR_DEFS="-DUSE_THREADS $ETHR_DEFS"
 	ETHR_LIBS="-l$ethr_lib_name $ETHR_X_LIBS"
 	ETHR_LIB_NAME=$ethr_lib_name
+fi
+
+AC_CHECK_SIZEOF(void *, 4)
+AC_DEFINE_UNQUOTED(ETHR_SIZEOF_PTR, $ac_cv_sizeof_void_p, [Define to the size of pointers])
+
+if test "X$disable_native_ethr_impls" = "Xyes"; then
+	AC_DEFINE(ETHR_DISABLE_NATIVE_IMPLS, 1, [Define if you want to disable native ethread implementations])
 fi
 
 AC_DEFINE(ETHR_HAVE_ETHREAD_DEFINES, 1, \

@@ -102,8 +102,8 @@ build_options([Term = {OptionName, Value}|Rest], Options) ->
     output_plt ->
       assert_filenames([Term], [Value]),
       build_options(Rest, Options#options{output_plt=Value});
-    quiet ->
-      build_options(Rest, Options#options{quiet=Value});
+    report_mode ->
+      build_options(Rest, Options#options{report_mode=Value});
     erlang_mode ->
       build_options(Rest, Options#options{erlang_mode=true});
     supress_inline ->

@@ -366,7 +366,11 @@ load("DisableChunkedTransferEncodingSend " ++ TrueOrFalse, []) ->
 	    {ok, [], {disable_chunked_transfer_encoding_send, true}};
 	_ ->
 	    {ok, [], {disable_chunked_transfer_encoding_send, false}}
-    end.
+    end;
+load("LogFormat " ++ LogFormat, []) ->
+    {ok,[],{log_format, list_to_atom(httpd_conf:clean(LogFormat))}};
+load("ErrorLogFormat " ++ LogFormat, []) ->
+    {ok,[],{error_log_format, list_to_atom(httpd_conf:clean(LogFormat))}}.
 
 %%
 %% load_mime_types/1 -> {ok, MimeTypes} | {error, Reason}
@@ -520,7 +524,7 @@ validate_config_params([_| Rest]) ->
 is_bind_address(any) ->
     true;
 is_bind_address(Value) ->
-    case inet:gethostbyaddr(Value) of
+    case httpd_util:ip_address(Value) of
 	{ok, _} ->
 	    true;
 	_ ->
@@ -563,13 +567,18 @@ fix_mime_types(ConfigList0) ->
 	    ConfigList0
     end.
 
-
 store({mime_types,MimeTypesList},ConfigList) ->
     Port = proplists:get_value(port, ConfigList),
     Addr = proplists:get_value(bind_address, ConfigList),
     Name = httpd_util:make_name("httpd_mime",Addr,Port),
     {ok, MimeTypesDB} = store_mime_types(Name,MimeTypesList),
     {ok, {mime_types,MimeTypesDB}};
+store({log_format, LogFormat}, _ConfigList) when LogFormat == common; 
+						 LogFormat == combined ->
+    {ok,{log_format, LogFormat}};
+store({log_format, LogFormat}, _ConfigList) when LogFormat == compact; 
+						 LogFormat == pretty ->
+    {ok,{log_format, LogFormat}};
 store(ConfigListEntry, _ConfigList) ->
     {ok, ConfigListEntry}.
 

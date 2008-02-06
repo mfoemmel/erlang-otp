@@ -25,22 +25,16 @@ static __inline__ int hipe_word32_address_ok(void *address)
 /* Used when a BIF can trigger a stack walk. */
 static __inline__ void hipe_set_narity(Process *p, unsigned int arity)
 {
-    /* Do nothing. The 'stack arity' is always zero since no
-       BIF has arity greater than HIPE_SPARC_ARGS_IN_REGS. */
+    /* XXX: for now; later we should have sufficient # of args in regs */
+    p->hipe.narity = arity;
 }
 
 /* Native stack growth direction. */
-#define HIPE_NSTACK_GROWS_UP
+#define HIPE_NSTACK_GROWS_DOWN
 
 #define hipe_arch_name	am_ultrasparc
 
-extern void nbif_inc_stack_0args(void);
-extern void nbif_inc_stack_1args(void);
-extern void nbif_inc_stack_2args(void);
-extern void nbif_inc_stack_3args(void);
-extern void nbif_inc_stack_4args(void);
-extern void nbif_inc_stack_5args(void);
-extern void nbif_inc_stack_6args(void);
+extern void hipe_sparc_inc_stack(void);
 
 /* for hipe_bifs_enter_code_2 */
 extern void *hipe_alloc_code(Uint nrbytes, Eterm callees, Eterm *trampolines, Process *p);

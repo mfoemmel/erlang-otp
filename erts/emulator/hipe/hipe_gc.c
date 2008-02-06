@@ -12,11 +12,7 @@
 #include "hipe_gc.h"
 #include "hipe_bif0.h"		/* for hipe_constants_{start,next} */
 
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-void fullsweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop)
-#else
 Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
-#endif
 {
     /* known nstack walk state */
     Eterm *nsp;
@@ -30,18 +26,11 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
     struct nstack_walk_state walk_state;
 
     /* fullsweep-specific state */
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-    Eterm *n_htop, *old_htop;
-#endif
     char *src, *oh;
     Uint src_size, oh_size;
 
     if( !nstack_walk_init_check(p) )
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-	return;
-#else
 	return n_htop;
-#endif
 
     nsp = nstack_walk_nsp_begin(p);
     nsp_end = p->hipe.nstgraylim;
@@ -51,10 +40,6 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 
     sdesc = nstack_walk_init_sdesc(p, &walk_state);
 
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-    old_htop = *ptr_old_htop;
-    n_htop = *ptr_n_htop;
-#endif
     src = (char*)HEAP_START(p);
     src_size = (char*)HEAP_TOP(p) - src;
     oh = (char*)OLD_HEAP(p);
@@ -68,13 +53,7 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 		    p->hipe.nstblacklim = nsp; /* nsp == nsp_end */
 		    nstack_walk_update_trap(p, walk_state.sdesc0);
 		}
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-		*ptr_old_htop = old_htop;
-		*ptr_n_htop = n_htop;
-		return;
-#else
 		return n_htop;
-#endif
 	    }
 	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
 	    break;
@@ -92,37 +71,20 @@ Eterm *fullsweep_nstack(Process *p, Eterm *n_htop)
 		    if (IS_MOVED(val)) {
 			ASSERT(is_boxed(val));
 			*nsp_i = val;
-#if NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
 		    } else if (in_area(ptr, src, src_size) ||
 			       in_area(ptr, oh, oh_size)) {
 			MOVE_BOXED(ptr,val,n_htop,nsp_i);
 		    }
-#else
-		    } else if (in_area(ptr, src, src_size)) {
-			MOVE_BOXED(ptr,val,n_htop,nsp_i);
-		    } else if (in_area(ptr, oh, oh_size)) {
-			MOVE_BOXED(ptr,val,old_htop,nsp_i);
-		    }
-#endif
 		} else if( is_list(gval) ) {
 		    Eterm *ptr = list_val(gval);
 		    Eterm val = *ptr;
 		    if (is_non_value(val)) {
 			*nsp_i = ptr[1];
-#if NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
 		    } else if (in_area(ptr, src, src_size) ||
 			       in_area(ptr, oh, oh_size)) {
 			ASSERT(within(ptr, p));
 			MOVE_CONS(ptr,val,n_htop,nsp_i);
 		    }
-#else
-		    } else if (in_area(ptr, src, src_size)) {
-			ASSERT(within(ptr, p));
-			MOVE_CONS(ptr,val,n_htop,nsp_i);
-		    } else if (in_area(ptr, oh, oh_size)) {
-			MOVE_CONS(ptr,val,old_htop,nsp_i);
-		    }
-#endif
 		}
 	    }
 	    if( ++i >= sdesc_size )

@@ -31,6 +31,8 @@
 %%	affect the state, nor depend on the state, although its
 %%	evaluation is not guaranteed to complete normally for all input.
 
+-spec(is_pure/3 :: (atom(), atom(), byte()) -> bool()).
+
 is_pure(erlang, '*', 2) -> true;
 is_pure(erlang, '+', 1) -> true;    % (even for non-numbers)
 is_pure(erlang, '+', 2) -> true;
@@ -141,7 +143,9 @@ is_pure(_, _, _) -> false.
 %%
 %%      Note: is_function/2 and is_record/3 are NOT safe: is_function(X, foo)
 %%      and is_record(X, foo, bar) will fail.
-%%
+
+-spec(is_safe/3 :: (atom(), atom(), byte()) -> bool()).
+
 is_safe(erlang, '/=', 2) -> true;
 is_safe(erlang, '<', 2) -> true;
 is_safe(erlang, '=/=', 2) -> true;
@@ -193,7 +197,9 @@ is_safe(_, _, _) -> false.
 %%	Returns `true' if the function `Module:Name/Arity' never returns
 %%	normally, i.e., if it always causes an exception regardless of
 %%	its arguments.
-%%
+
+-spec(is_exit_bif/3 :: (atom(), atom(), byte()) -> bool()).
+
 is_exit_bif(erlang, exit, 1) -> true;
 is_exit_bif(erlang, throw, 1) -> true;
 is_exit_bif(erlang, error, 1) -> true;

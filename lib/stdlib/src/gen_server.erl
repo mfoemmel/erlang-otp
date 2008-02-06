@@ -91,7 +91,7 @@
 	 cast/2, reply/2,
 	 abcast/2, abcast/3,
 	 multi_call/2, multi_call/3, multi_call/4,
-	 enter_loop/3, enter_loop/4, enter_loop/5]).
+	 enter_loop/3, enter_loop/4, enter_loop/5, wake_hib/5]).
 
 -export([behaviour_info/1]).
 
@@ -301,6 +301,8 @@ init_it(Starter, Parent, Name, Mod, Args, Options) ->
 %%% ---------------------------------------------------
 %%% The MAIN loop.
 %%% ---------------------------------------------------
+loop(Parent, Name, State, Mod, hibernate, Debug) ->
+    proc_lib:hibernate(?MODULE,wake_hib,[Parent, Name, State, Mod, Debug]);
 loop(Parent, Name, State, Mod, Time, Debug) ->
     Msg = receive
 	      Input ->
@@ -308,10 +310,20 @@ loop(Parent, Name, State, Mod, Time, Debug) ->
 	  after Time ->
 		  timeout
 	  end,
+    decode_msg(Msg, Parent, Name, State, Mod, Time, Debug, false).
+
+wake_hib(Parent, Name, State, Mod, Debug) ->
+    Msg = receive
+	      Input ->
+		  Input
+	  end,
+    decode_msg(Msg, Parent, Name, State, Mod, hibernate, Debug, true).
+
+decode_msg(Msg, Parent, Name, State, Mod, Time, Debug, Hib) ->
     case Msg of
 	{system, From, Req} ->
 	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
-				  [Name, State, Mod, Time]);
+				  [Name, State, Mod, Time], Hib);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, State, Debug);
 	_Msg when Debug =:= [] ->

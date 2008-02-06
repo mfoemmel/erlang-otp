@@ -35,24 +35,25 @@ transform(File, {application, _Attrs, [Header|Rest]}, Opts0) ->
 	    case file:open(OutFile, [write]) of
 		{ok, Fd} ->
 		    io:format(Fd,
-"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\">
+"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD XHTML 1.0 Frameset//EN\"
+\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd\">
 <!-- This document was generated using DocBuilder-" ++ docb_util:version() ++ " -->
-<HTML>
-<HEAD>
-  <TITLE>~s</TITLE>
+<html>
+<head>
+  <title>~s</title>
   " ++ docb_util:html_snippet(head, Opts0) ++ "
-</HEAD>
-<FRAMESET COLS=\"150, *\">
-  <FRAME SRC=\"~s\" NAME=\"toc\">
-  <FRAME SRC=\"~s\" NAME=\"document\">
-  <NOFRAMES>
-    <BODY BGCOLOR=\"#FFFFFF\" TEXT=\"#000000\" LINK=\"#0000FF\"
-          VLINK=\"#FF00FF\" ALINK=\"#FF0000\">
-    <P>This documentation requires a browser that can handle frames
-    </BODY>
-  </NOFRAMES>
-</FRAMESET>
-</HTML>
+</head>
+<frameset cols=\"150, *\">
+  <frame src=\"~s\" name=\"toc\">
+  <frame src=\"~s\" name=\"document\">
+  <noframes>
+    <body bgcolor=\"#FFFFFF\" text=\"#000000\" link=\"#0000FF\"
+          vlink=\"#FF00FF\" alink=\"#FF0000\">
+    <p>This documentation requires a browser that can handle frames</p>
+    </body>
+  </noframes>
+</frameset>
+</html>
 ",
 			      [Title,
 			       File++".html", File++"_first.html"]),
@@ -218,29 +219,29 @@ make_toc([{_Tag, _Attrs, More}|Rest]) ->
     lists:append(make_toc(More), make_toc(Rest)).
 
 rule([module|_], {_, [File], _}) ->
-    {"<SMALL><A TARGET=\"document\" HREF=\"" ++
+    {"<small><a target=\"document\" href=\"" ++
      docb_html_util:make_anchor_href(File) ++ "\">",
-     "</A></SMALL><BR>\n"};
+     "</a></small><br/>\n"};
 
 rule([file|_], {_, [File], _}) ->
-    {"<SMALL><A TARGET=\"document\" HREF=\"" ++
+    {"<small><a target=\"document\" href=\"" ++
      docb_html_util:make_anchor_href(File) ++ "\">",
-     "</A></SMALL><BR>\n"};
+     "</a></small><br/>\n"};
 
 rule([app|_], {_, [File], _}) ->
-    {"<SMALL><A TARGET=\"document\" HREF=\"" ++
+    {"<small><a target=\"document\" href=\"" ++
      docb_html_util:make_anchor_href(File) ++ "\">",
-     "</A></SMALL><BR>\n"};
+     "</a></small><br/>\n"};
 
 rule([lib|_], {_, [File], _}) ->
-    {"<SMALL><A TARGET=\"document\" HREF=\"" ++
+    {"<small><a target=\"document\" href=\"" ++
      docb_html_util:make_anchor_href(File) ++ "\">",
-     "</A></SMALL><BR>\n"};
+     "</a></small><br/>\n"};
 
 rule([com|_], {_, [File], _}) ->
-    {"<SMALL><A TARGET=\"document\" HREF=\"" ++
+    {"<small><a target=\"document\" href=\"" ++
      docb_html_util:make_anchor_href(File) ++ "\">",
-     "</A></SMALL><BR>\n"};
+     "</a></small><br/>\n"};
 
 rule([pcdata|_], {_, _, Data}) ->
     {drop, docb_html_util:pcdata_to_html(Data)};
@@ -264,7 +265,7 @@ rule([toc|_], {_Depth, [File], [Header|_]}, Opts) ->
 		  FascData),
 	    {{docb_html_layout:application_toc_top(
 		docb_html_util:all_header_data(Header),
-		File, Opts, HRefTexts) ++ "\n<P>\n",
+		File, Opts, HRefTexts) ++ "\n",
 	      docb_html_layout:part_toc_bot()}, Opts}
     end.
 

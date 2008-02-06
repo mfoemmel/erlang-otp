@@ -19,6 +19,7 @@
 #   -purify     Run emulator compiled for purify
 #   -quantify   Run emulator compiled for quantify
 #   -purecov    Run emulator compiled for purecov
+#   -gcov       Run emulator compiled for gcov
 #   -valgrind   Run emulator compiled for valgrind
 #   -nox        Unset the DISPLAY variable to disable us of X Windows
 #
@@ -171,6 +172,11 @@ while [ $# -gt 0 ]; do
 	    shift
 	    cargs="$cargs -purecov"
 	    TYPE=.purecov
+	    ;;
+	"-gcov")
+	    shift
+	    cargs="$cargs -gcov"
+	    TYPE=.gcov
 	    ;;
 	"-valgrind")
 	    shift

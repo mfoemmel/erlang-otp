@@ -3666,7 +3666,7 @@ BIF_RETTYPE hash_2(BIF_ALIST_2)
 	BIF_ERROR(BIF_P, BADARG);
     }
 #ifdef ARCH_64
-    if (range > ((1 << 27) - 1))
+    if (range > ((1L << 27) - 1))
 	BIF_ERROR(BIF_P, BADARG);
 #endif
     hash = make_broken_hash(BIF_ARG_1, 0);
@@ -3709,7 +3709,7 @@ BIF_RETTYPE phash2_1(BIF_ALIST_1)
     Uint32 hash;
 
     hash = make_hash2(BIF_ARG_1);
-    BIF_RET(make_small(hash & MAX_SMALL));
+    BIF_RET(make_small(hash & ((1L << 27) - 1)));
 }
 
 BIF_RETTYPE phash2_2(BIF_ALIST_2)

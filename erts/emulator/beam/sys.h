@@ -595,10 +595,6 @@ int local_to_univ(Sint *year, Sint *month, Sint *day,
 void get_now(Uint*, Uint*, Uint*);
 EXTERN_FUNCTION(void, set_break_quit, (void (*)(void), void (*)(void)));
 
-
-
-typedef void *GETENV_STATE;
-
 void os_flavor(char*, unsigned);
 void os_version(int*, int*, int*);
 void init_getenv_state(GETENV_STATE *);
@@ -610,7 +606,18 @@ void init_sys_float(void);
 int sys_chars_to_double(char*, double*);
 int sys_double_to_chars(double, char*);
 void sys_get_pid(char *);
-int sys_putenv(char *);
+
+/* erts_sys_putenv() returns, 0 on success and a value != 0 on failure. */
+int erts_sys_putenv(char *key_value, int sep_ix);
+/* erts_sys_getenv() returns 0 on success (length of value string in
+   *size), a value > 0 if value buffer is too small (*size is set to needed
+   size), and a value < 0 on failure. */
+int erts_sys_getenv(char *key, char *value, size_t *size);
+
+/* Easier to use, but not as efficient, environment functions */
+char *erts_read_env(char *key);
+void erts_free_read_env(void *value);
+int erts_write_env(char *key, char *value);
 
 /* utils.c */
 

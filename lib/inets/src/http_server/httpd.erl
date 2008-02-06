@@ -166,8 +166,13 @@ child_name2info({httpd_instance_sup, any, Port}) ->
     {ok, [{bind_address,  any}, {host, Host}, {port, Port} | Info]};
 child_name2info({httpd_instance_sup, Address, Port}) ->
     Info = info(Address, Port, [server_name]),
-    {ok, {_, Host, _, _,_, _}} = inet:gethostbyaddr(Address),
-    {ok, [{bind_address, Address}, {host, Host}, {port, Port} | Info]}.
+    case inet:gethostbyaddr(Address) of
+	{ok, {_, Host, _, _,_, _}} ->
+	    {ok, [{bind_address, Address}, 
+		  {host, Host}, {port, Port} | Info]};
+	_  ->
+	    {ok, [{bind_address, Address}, {port, Port} | Info]}
+    end.
 
 reload(Config, Address, Port) ->
     Name = make_name(Address,Port),
@@ -519,7 +524,7 @@ start() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
 start(ConfigFile) ->
-    {ok, Pid} = httpd_instance_sup:start_link(ConfigFile, infinity, disable),
+    {ok, Pid} = inets:start(httpd, ConfigFile, stand_alone), 
     unlink(Pid),
     {ok, Pid}.
 
@@ -527,7 +532,7 @@ start_link() ->
     start("/var/tmp/server_root/conf/8888.conf").
 
 start_link(ConfigFile) when is_list(ConfigFile) ->
-    httpd_instance_sup:start_link(ConfigFile, infinity, disable).
+    inets:start(httpd, ConfigFile, stand_alone). 
 
 stop() ->
   stop(8888).

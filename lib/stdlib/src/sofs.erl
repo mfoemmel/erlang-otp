@@ -106,7 +106,7 @@
 -define(ANYTYPE, '_').
 -define(BINREL(X, Y), {X, Y}).
 -define(IS_RELATION(R), is_tuple(R)).
--define(REL_ARITY(R), size(R)).
+-define(REL_ARITY(R), tuple_size(R)).
 -define(REL_TYPE(I, R), element(I, R)).
 -define(SET_OF(X), [X]).
 -define(IS_SET_OF(X), is_list(X)).
@@ -157,8 +157,8 @@ is_type(Atom) when ?IS_ATOM_TYPE(Atom), Atom =/= ?ANYTYPE ->
     true;
 is_type(?SET_OF(T)) ->
     is_element_type(T);
-is_type(T) when is_tuple(T), size(T) > 0 ->
-    is_types(size(T), T);
+is_type(T) when tuple_size(T) > 0 ->
+    is_types(tuple_size(T), T);
 is_type(_T) ->
     false.
 
@@ -207,7 +207,7 @@ from_sets(T) ->
 relation([]) ->
     ?SET([], ?BINREL(?ATOM_TYPE, ?ATOM_TYPE));
 relation(Ts = [T | _]) when is_tuple(T) ->
-    case catch rel(Ts, size(T)) of
+    case catch rel(Ts, tuple_size(T)) of
         {'EXIT', _} ->
             erlang:error(badarg, [Ts]);
         Set ->
@@ -291,7 +291,7 @@ to_sets(S) when ?IS_ORDSET(S) ->
 no_elements(S) when ?IS_SET(S) ->
     length(?LIST(S));
 no_elements(S) when ?IS_ORDSET(S), is_tuple(?ORDTYPE(S)) ->
-    size(?ORDDATA(S));
+    tuple_size(?ORDDATA(S));
 no_elements(S) when ?IS_ORDSET(S) ->
     erlang:error(badarg, [S]).
 
@@ -954,7 +954,7 @@ partition(SetFun, S1, S2) when ?IS_SET(S1), ?IS_SET(S2) ->
     end.
 
 multiple_relative_product(T, R) when is_tuple(T), ?IS_SET(R) ->
-    case test_rel(R, size(T), eq) of
+    case test_rel(R, tuple_size(T), eq) of
 	true when ?TYPE(R) =:= ?ANYTYPE ->
 	    empty_set();
         true -> 
@@ -1276,7 +1276,7 @@ ordset_of_sets(_, _L, _T) ->
 rel(Ts, [Type]) ->
     case is_type(Type) and atoms_only(Type, 1) of
         true ->
-            rel(Ts, size(Type), Type);
+            rel(Ts, tuple_size(Type), Type);
         false ->
             rel_type(Ts, [], Type)
     end;
@@ -1285,7 +1285,7 @@ rel(Ts, Sz) ->
     
 atoms_only(Type, I) when ?IS_ATOM_TYPE(?REL_TYPE(I, Type)) ->
     atoms_only(Type, I+1);
-atoms_only(Type, I) when I > size(Type), ?IS_RELATION(Type) ->
+atoms_only(Type, I) when I > tuple_size(Type), ?IS_RELATION(Type) ->
     true;
 atoms_only(_Type, _I) ->
     false.
@@ -1294,7 +1294,7 @@ rel(Ts, Sz, Type) when Sz >= 1 ->
     SL = usort(Ts),
     rel(SL, SL, Sz, Type).
 
-rel([T | Ts], L, Sz, Type) when is_tuple(T), size(T) =:= Sz ->
+rel([T | Ts], L, Sz, Type) when tuple_size(T) =:= Sz ->
     rel(Ts, L, Sz, Type);
 rel([], L, _Sz, Type) ->
     ?SET(L, Type).
@@ -1382,7 +1382,7 @@ setify(E, Type0) ->
     ?ORDSET(OrdSet, Type).
 
 is_no_lists(T) when is_tuple(T) -> 
-   Sz = size(T),
+   Sz = tuple_size(T),
    is_no_lists(T, Sz, Sz, []).
 
 is_no_lists(_T, 0, Sz, []) ->
@@ -1408,10 +1408,10 @@ make_element(C, Atom, ?ANYTYPE) when ?IS_ATOM_TYPE(Atom),
 make_element(C, Atom, Atom) when ?IS_ATOM_TYPE(Atom) ->
     {Atom, C};
 make_element(T, TT, ?ANYTYPE) when is_tuple(T), is_tuple(TT), 
-                                   size(T) =:= size(TT) ->
+                                   tuple_size(T) =:= tuple_size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], ?ANYTYPE);
 make_element(T, TT, T0) when is_tuple(T), is_tuple(TT), 
-                             size(T) =:= size(TT) ->
+                             tuple_size(T) =:= tuple_size(TT) ->
     make_tuple(tuple_to_list(T), tuple_to_list(TT), [], [], tuple_to_list(T0));
 make_element(L, [LT], ?ANYTYPE) when is_list(L) ->
     create(L, LT, ?ANYTYPE, []);
@@ -1448,9 +1448,9 @@ make_oset([], _Szs, L, Type) ->
     ?SET(usort(L), Type).
 
 %% Optimization. Avoid re-building (nested) tuples.
-test_oset({Sz,Args}, T, T0) when is_tuple(T), size(T) =:= Sz ->
+test_oset({Sz,Args}, T, T0) when is_tuple(T), tuple_size(T) =:= Sz ->
     test_oset_args(Args, T, T0);
-test_oset(Sz, T, _T0) when is_tuple(T), size(T) =:= Sz ->
+test_oset(Sz, T, _T0) when is_tuple(T), tuple_size(T) =:= Sz ->
     true.
 
 test_oset_args([{Arg,Szs} | Ss], T, T0) ->
@@ -1771,7 +1771,7 @@ relprod_n(RT, R, EmptyR, IsR) ->
                         ?SET([], Type);
                     false ->
                         TL = ?LIST((relprod_n(RL))),
-                        Sz = size(RT),
+                        Sz = tuple_size(RT),
                         Fun = fun({X,A}) -> {X, flat(Sz, A, [])} end,
                         ?SET(map(Fun, TL), Type)
                 end,
@@ -2463,8 +2463,8 @@ unify_types1(Type, ?ANYTYPE) ->
     Type;
 unify_types1(?SET_OF(Type1), ?SET_OF(Type2)) ->
     [unify_types1(Type1, Type2)];
-unify_types1(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
-    unify_typesl(size(T1), T1, T2, []);
+unify_types1(T1, T2) when tuple_size(T1) =:= tuple_size(T2) ->
+    unify_typesl(tuple_size(T1), T1, T2, []);
 unify_types1(_T1, _T2) ->
     throw([]).
 
@@ -2486,8 +2486,8 @@ match_types1(_, ?ANYTYPE) ->
     true;
 match_types1(?SET_OF(Type1), ?SET_OF(Type2)) -> 
     match_types1(Type1, Type2);
-match_types1(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
-    match_typesl(size(T1), T1, T2);
+match_types1(T1, T2) when tuple_size(T1) =:= tuple_size(T2) ->
+    match_typesl(tuple_size(T1), T1, T2);
 match_types1(_T1, _T2) ->
     false.
 

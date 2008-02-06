@@ -117,7 +117,7 @@ do_read_mib(FileName) ->
 
 %% Ret. {ok, Res} | {error, Line, Error} | {error, open_file}
 read_noexit(File, CheckFunc) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
 	{ok, Fd} ->
 	    case loop(Fd, [], CheckFunc, 1, File) of
 		{error, Line, R} ->

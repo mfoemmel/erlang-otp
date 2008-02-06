@@ -1,54 +1,39 @@
+%%% -*- erlang-indent-level: 2 -*-
 %%% $Id$
-%%% Linear Scan register allocator for sparc
+%%% Linear Scan register allocator for SPARC
+
 -module(hipe_sparc_ra_ls).
--export([alloc/2]).
--define(HIPE_INSTRUMENT_COMPILER, true). %% Turn on instrumentation.
-%-define(DEBUG,true).
--include("../main/hipe.hrl").
+-export([ra/3]).
 
--define(no_temps,hipe_sparc_specific:number_of_temporaries).
+ra(Defun, SpillIndex, Options) ->
+  NewDefun = Defun, %% hipe_${ARCH}_ra_rename:rename(Defun,Options),
+  CFG = hipe_sparc_cfg:init(NewDefun),
+  SpillLimit = hipe_sparc_specific:number_of_temporaries(CFG),
+  alloc(NewDefun, SpillIndex, SpillLimit, Options).
 
-alloc(CFG, Options) ->
-  ?inc_counter(ra_calls_counter,1), 
-  SpillLimit = ?no_temps(CFG),
-  ?inc_counter(bbs_counter, length(hipe_sparc_cfg:labels(CFG))),
-  alloc(CFG, SpillLimit, Options).
-
-alloc(SparcCfg, SpillLimit, Options) ->
-  ?inc_counter(ra_iteration_counter,1), 
-  ?opt_start_timer("Alloc"),  
-  {Map,_NewSpillIndex} = 
-    hipe_ls_regalloc:regalloc(
-      SparcCfg,
-      hipe_sparc_registers:allocatable() -- 
-      %% Save temp1 and temp2 for spill load & stores
-      [hipe_sparc_registers:temp1(),hipe_sparc_registers:temp2()],
-      [hipe_sparc_cfg:start_label(SparcCfg)],
-      0,
-      SpillLimit,
-      Options,
+alloc(Defun, SpillIndex, SpillLimit, Options) ->
+  CFG = hipe_sparc_cfg:init(Defun),
+  {Coloring, _NewSpillIndex} =
+    regalloc(
+      CFG,
+      hipe_sparc_registers:allocatable_gpr()--
+      [hipe_sparc_registers:temp3(),
+       hipe_sparc_registers:temp2(),
+       hipe_sparc_registers:temp1()],
+      [hipe_sparc_cfg:start_label(CFG)],
+      SpillIndex, SpillLimit, Options,
       hipe_sparc_specific),
-  ?opt_stop_timer("Alloc Done"),
-  TempMap = hipe_temp_map:cols2tuple(Map, hipe_sparc_specific),
-
-  %% Code to minimize stack size by allocation of temps to spillpositions
-  ?opt_start_timer("Minimize"),  
-  {TempMap2, NewSpillIndex2} = 
-    hipe_spillmin:stackalloc(SparcCfg, [], 0, Options, 
+  {NewDefun, _DidSpill} =
+    hipe_sparc_ra_postconditions:check_and_rewrite(
+      Defun, Coloring, 'linearscan'),
+  TempMap = hipe_temp_map:cols2tuple(Coloring, hipe_sparc_specific),
+  {TempMap2,_NewSpillIndex2} =
+    hipe_spillmin:stackalloc(CFG, [], SpillIndex, Options,
 			     hipe_sparc_specific, TempMap),
-  TempMap3 = hipe_spillmin:mapmerge(
-	       hipe_temp_map:to_substlist(TempMap), 
-	       TempMap2),
+  Coloring2 =
+    hipe_spillmin:mapmerge(hipe_temp_map:to_substlist(TempMap), TempMap2),
+  {NewDefun, Coloring2}.
 
-  ?opt_stop_timer("Minimize Done"),
-  TempMap4 = hipe_temp_map:cols2tuple(TempMap3, hipe_sparc_specific),
-
-  ?opt_start_timer("Rewrite"),
-  NewCfg = hipe_sparc_ra_post_ls:rewrite(SparcCfg, TempMap4, Options),
-  ?opt_stop_timer("Rewrite Done"),
-  ?add_spills(Options, NewSpillIndex2),
-
-  {NewCfg, TempMap4, NewSpillIndex2}.
-
-
-
+regalloc(CFG, PhysRegs, Entrypoints, SpillIndex, DontSpill, Options, Target) ->
+  hipe_ls_regalloc:regalloc(
+    CFG, PhysRegs, Entrypoints, SpillIndex, DontSpill, Options, Target).

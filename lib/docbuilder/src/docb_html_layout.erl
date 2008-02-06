@@ -105,18 +105,21 @@ application_toc_top(Data, DocName, Opts) ->
 <small>
   " ++ DocNo ++ version(Opts, Vsn0) ++ "
 </small>
+</p>
 <p>
 <small>
-  <a target=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>" ++ top_index(Opts) ++
+  <a target=\"document\" href=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_index.html\">Index</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_first.html\">Cover</a>" ++ top_index(Opts) ++
 "</small>
+</p>
 </center>
 <p>
 <small>
 <strong>Table of Contents</strong>
 </small>
+</p>
 ".
 
 application_toc_top(Data, DocName, Opts, HRefTexts) ->
@@ -129,28 +132,32 @@ application_toc_top(Data, DocName, Opts, HRefTexts) ->
 	docb_util:join(
 	  lists:map(
 	    fun({HRef, Text}) ->
-		    "<a target=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
+		    "<a target=\"_top\" href=\"" ++ HRef ++ "\">" ++
 			Text ++ "</a>"
 	    end,
 	    HRefTexts), " | ") ++ top_index(Opts) ++
 "</small>
 <p>
 <strong>" ++ Title ++ "</strong>
+</p>
 <p>
 <small>" ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
 </small>
+</p>
 <p>
 <small>
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_index.html\">Index</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++	"_first.html\">Cover</a>
+  <a target=\"document\" href=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_index.html\">Index</a> |
+  <a target=\"document\" href=\"" ++ DocName ++	"_first.html\">Cover</a>
 </small>
+</p>
 </center>
 <p>
 <small>
 <strong>Table of Contents</strong>
 </small>
+</p>
 ".
 
 %% Part ToC
@@ -160,22 +167,27 @@ part_toc_top(Data, DocName, Opts) ->
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
 "<center>
+<p>
 <strong>" ++ Title ++ "</strong>
+</p>
 <p>
 <small>" ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
 </small>
+</p>
 <p>
 <small>
-  <a target=\"document\" HREF=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>" ++
+  <a target=\"document\" href=\"" ++ DocName ++	"_cite.html\">Bibliography</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_first.html\">Cover</a>" ++
 	top_index(Opts) ++
 "</small>
+</p>
 </center>
 <p>
 <small>
 <strong>Table of Contents</strong>
 </small>
+</p>
 ".
 
 part_toc_top(Data, DocName, Opts, HRefTexts) ->
@@ -183,33 +195,39 @@ part_toc_top(Data, DocName, Opts, HRefTexts) ->
      _Date, Vsn0, _File] = Data,
     html_header(Title, []) ++
 "<center>
+<p>
 <small>
 " ++
 	docb_util:join(
 	  lists:map(
 	    fun({HRef, Text}) ->
-		    "<a target=\"_top\" HREF=\"" ++ HRef ++ "\">" ++
+		    "<a target=\"_top\" href=\"" ++ HRef ++ "\">" ++
 			Text ++ "</a>"
 	    end,
 	    HRefTexts), " | ") ++ top_index(Opts) ++
 "</small>
+</p>
 <p>
 <strong>" ++ Title ++ "</strong>
+</p>
 <p>
 <small>
   " ++ DocNo ++ version(Opts, Vsn0) ++ "<br />
 </small>
+</p>
 <p>
 <small>
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_term.html\">Glossary</a> |
-  <a target=\"document\" HREF=\"" ++ DocName ++ "_first.html\">Cover</a>
+  <a target=\"document\" href=\"" ++ DocName ++ "_cite.html\">Bibliography</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_term.html\">Glossary</a> |
+  <a target=\"document\" href=\"" ++ DocName ++ "_first.html\">Cover</a>
 </small>
+</p>
 </center>
 <p>
 <small>
 <strong>Table of Contents</strong>
 </small>
+</p>
 ".
 
 part_toc_bot() ->
@@ -232,11 +250,14 @@ index_bot() ->
 
 html_header(Title, Opts) ->
     Vsn = docb_util:version(),
-"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
+%%"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
+"<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"
+   \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">
 <!-- This document was generated using DocBuilder-" ++ Vsn ++ " -->
-<html>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">
 <head>
   <title>" ++ Title ++ "</title>
+  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\"/>
   " ++ docb_util:html_snippet(head, Opts) ++ "
   <style type=\"text/css\">
 <!--
@@ -288,11 +309,14 @@ html_header(Title, Opts) ->
 
 ref_html_header(Title, Opts) ->
     Vsn = docb_util:version(),
-"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
+%%"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Transitional//EN\">
+"<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"
+   \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">
 <!-- This document was generated using DocBuilder-" ++ Vsn ++ " -->
-<html>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">
 <head>
   <title>" ++ Title ++ "</title>
+  <meta http-equiv=\"Content-Type\" content=\"text/html; charset=ISO-8859-1\"/>
   " ++ docb_util:html_snippet(head, Opts) ++ "
   <style type=\"text/css\">
 <!--

@@ -104,10 +104,17 @@ module(#c_module{defs=Ds0}=Mod, Opts) ->
     erase(bin_opt_info),
     {ok,Mod#c_module{defs=Ds1},get_warnings()}.
 
-function_1({Name,B0}) ->
-    ?ASSERT([] =:= core_lib:free_vars(B0)),
-    B = expr(B0, value, sub_new()),			%This must be a fun!
-    {Name,B}.
+function_1({#c_fname{id=F,arity=Arity}=Name,B0}) ->
+    try
+	?ASSERT([] =:= core_lib:free_vars(B0)),
+	B = expr(B0, value, sub_new()),			%This must be a fun!
+	{Name,B}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [F,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
 
 %% body(Expr, Sub) -> Expr.
 %% body(Expr, Context, Sub) -> Expr.
@@ -239,7 +246,7 @@ expr(#c_binary{segments=Ss}=Bin, Ctxt, Sub) ->
 	value -> ok
     end,
     %% Keep because of possible side effect (exception).
-    Bin#c_binary{segments=bitstr_list(Ss, Sub)};
+    eval_binary(Bin#c_binary{segments=bitstr_list(Ss, Sub)});
 expr(#c_fname{}=Fname, _, _) -> Fname;
 expr(#c_fun{}=Fun, effect, _) ->
     %% A fun is created, but not used. Warn, and replace with the void value.
@@ -413,6 +420,110 @@ eval_tuple_1([#c_literal{val=Val}|Es], Acc) ->
     eval_tuple_1(Es, [Val|Acc]);
 eval_tuple_1([_|_], _) -> no;
 eval_tuple_1([], Acc) -> reverse(Acc).
+
+eval_binary(#c_binary{anno=Anno,segments=Ss}=Bin) ->
+    try
+	#c_literal{anno=Anno,val=eval_binary_1(Ss, <<>>)}
+    catch
+	throw:impossible ->
+	    Bin;
+	  throw:{badarg,Warning} ->
+	    add_warning(Bin, Warning),
+	    #c_call{module=#c_literal{val=erlang},
+		    name=#c_literal{val=error},
+		    args=[#c_literal{val=badarg}]}
+    end.
+
+eval_binary_1([#c_bitstr{val=#c_literal{val=Val},size=#c_literal{val=Sz},
+			 unit=#c_literal{val=Unit},type=#c_literal{val=Type},
+			 flags=#c_literal{val=Flags}}|Ss], Acc0) ->
+    Endian = case member(big, Flags) of
+		 true ->
+		     big;
+		 false ->
+		     case member(little, Flags) of
+			 true -> little;
+			 false -> throw(impossible) %Native endian.
+		     end
+	     end,
+
+    %% Make sure that the size is reasonable.
+    case Type of
+	binary when is_bitstring(Val) ->
+	    if
+		Sz =:= all ->
+		    ok;
+		Sz*Unit =< bit_size(Val) ->
+		    ok;
+		true ->
+		    %% Field size is greater than the actual binary - will fail.
+		    throw({badarg,embedded_binary_size})
+	    end;
+	integer when is_integer(Val) ->
+	    %% Estimate the number of bits needed to to hold the integer
+	    %% literal. Check whether the field size is reasonable in
+	    %% proportion to the number of bits needed.
+	    if
+		Sz*Unit =< 256 ->
+		    %% Don't be cheap - always accept fields up to this size.
+		    ok;
+		true ->
+		    case count_bits(Val) of
+			BitsNeeded when 2*BitsNeeded >= Sz*Unit ->
+			    ok;
+			_ ->
+			    %% More than about half of the field size will be
+			    %% filled out with zeroes - not acceptable.
+			    throw(impossible)
+		    end
+	    end;
+	float when is_float(Val) ->
+	    %% Bad float size.
+	    case Sz*Unit of
+		32 -> ok;
+		64 -> ok;
+		_ -> throw(impossible)
+	    end;
+	_ ->
+	    throw(impossible)
+    end,
+
+    %% Evaluate the field.
+    try eval_binary_2(Acc0, Val, Sz, Unit, Type, Endian) of
+	Acc -> eval_binary_1(Ss, Acc)
+    catch
+	error:_ ->
+	    throw(impossible)
+    end;
+eval_binary_1([], Acc) -> Acc;
+eval_binary_1(_, _) -> throw(impossible).
+
+eval_binary_2(Acc, Val, Size, Unit, integer, little) ->
+    <<Acc/bitstring,Val:(Size*Unit)/little>>;
+eval_binary_2(Acc, Val, Size, Unit, integer, big) ->
+    <<Acc/bitstring,Val:(Size*Unit)/big>>;
+eval_binary_2(Acc, Val, Size, Unit, float, little) ->
+    <<Acc/bitstring,Val:(Size*Unit)/little-float>>;
+eval_binary_2(Acc, Val, Size, Unit, float, big) ->
+    <<Acc/bitstring,Val:(Size*Unit)/big-float>>;
+eval_binary_2(Acc, Val, all, Unit, binary, _) ->
+    case bit_size(Val) of
+	Size when Size rem Unit =:= 0 ->
+	    <<Acc/bitstring,Val:Size/bitstring>>;
+	Size ->
+	    throw({badarg,{embedded_unit,Unit,Size}})
+    end;
+eval_binary_2(Acc, Val, Size, Unit, binary, _) ->
+    <<Acc/bitstring,Val:(Size*Unit)/bitstring>>.
+
+%% Count the number of bits approximately needed to store Int.
+%% (We don't need an exact result for this purpose.)
+
+count_bits(Int) -> 
+    count_bits_1(abs(Int), 64).
+
+count_bits_1(0, Bits) -> Bits;
+count_bits_1(Int, Bits) -> count_bits_1(Int bsr 64, Bits+64).
 
 %% useless_call(Context, #c_call{}) -> no | {yes,Expr}
 %%  Check whether the function is called only for effect,
@@ -910,7 +1021,7 @@ eval_element(Call, #c_literal{val=Pos}, #c_tuple{es=Es}) when is_integer(Pos) ->
 eval_element(Call, #c_literal{val=Pos}, #c_literal{val=Val}=Lit)
   when is_integer(Pos), is_tuple(Val) ->
     if
-	1 =< Pos, Pos =< size(Val) ->
+	1 =< Pos, Pos =< tuple_size(Val) ->
 	    Lit#c_literal{val=element(Pos, Val)};
 	true ->
 	    eval_failure(Call, badarg)
@@ -1190,7 +1301,7 @@ clauses_1(E, [C0|Cs], Ctxt, Sub) ->
 		false ->
 		    shadow_warning(Cs, Line);
 		true ->
-		    %% If the constant expression is a literal,
+		    %% If the case expression is a literal,
 		    %% it is probably OK that some clauses don't match.
 		    %% It is a proably some sort of debug macro.
 		    ok
@@ -1237,20 +1348,9 @@ will_match_1(E, #c_alias{pat=P}) ->		%Pattern decides
 will_match_1(#c_var{}, _P) -> maybe;
 will_match_1(#c_tuple{es=Es}, #c_tuple{es=Ps}) ->
     will_match_list(Es, Ps, yes);
-will_match_1(#c_binary{}, _P) ->
-    maybe;					%Binaries are tricky to compare.
-will_match_1(_E, #c_binary{}) ->
-    maybe;
-will_match_1(E, P) ->
-    case core_lib:is_literal(E) andalso core_lib:is_literal(P) of
-	false -> maybe;
-	true ->
-	    %% Both are literals (not binaries); compare them.
-	    case core_lib:literal_value(E) =:= core_lib:literal_value(P) of
-		false -> no;
-		true -> yes
-	    end
-    end.
+will_match_1(#c_literal{val=Lit}, P) ->
+    will_match_lit(Lit, P);
+will_match_1(_, _) -> maybe.
 
 will_match_list([E|Es], [P|Ps], M) ->
     case will_match_1(E, P) of
@@ -1259,6 +1359,44 @@ will_match_list([E|Es], [P|Ps], M) ->
 	no -> no
     end;
 will_match_list([], [], M) -> M.
+
+will_match_lit(Cons, #c_cons{hd=Hp,tl=Tp}) ->
+    case Cons of
+	[H|T] ->
+	    case will_match_lit(H, Hp) of
+		yes -> will_match_lit(T, Tp);
+		Other -> Other
+	    end;
+	_ ->
+	    no
+    end;
+will_match_lit(Tuple, #c_tuple{es=Es}) ->
+    case is_tuple(Tuple) andalso tuple_size(Tuple) =:= length(Es) of
+	true -> will_match_lit_list(tuple_to_list(Tuple), Es);
+	false -> no
+    end;
+will_match_lit(Bin, #c_binary{}) ->
+    case is_bitstring(Bin) of
+	true -> maybe;
+	false -> no
+    end;
+will_match_lit(_, #c_var{}) ->
+    yes;
+will_match_lit(Lit, #c_alias{pat=P}) ->
+    will_match_lit(Lit, P);
+will_match_lit(Lit1, #c_literal{val=Lit2}) ->
+    case Lit1 =:= Lit2 of
+	true -> yes;
+	false -> no
+    end;
+will_match_lit(_, _) -> maybe.
+
+will_match_lit_list([H|T], [P|Ps]) ->
+    case will_match_lit(H, P) of
+	yes -> will_match_lit_list(T, Ps);
+	Other -> Other
+    end;
+will_match_lit_list([], []) -> yes.
 
 %% simplify_case(Case) -> CoreExpr
 %%  We attempt to simplify the case expression and clauses in several different
@@ -1304,8 +1442,14 @@ simplify_case_0('not', [Expr], _, Case) ->
     simplify_case_not(Expr, Case);
 simplify_case_0(Name, Args, Call, Case) ->
     Arity = length(Args),
-    case erl_internal:comp_op(Name, Arity) orelse
-	erl_internal:new_type_test(Name, Arity) of
+
+    %% If the call is a comparision operator or type test (which can't fail),
+    %% and the arguments are safe, move this call to the guard.
+    %% Note: v3_core never generates unsafe arguments, but another
+    %% code generator might.
+    case (erl_internal:comp_op(Name, Arity) orelse
+	erl_internal:new_type_test(Name, Arity)) andalso
+	is_safe_simple_list(Args) of
 	false -> Case;
 	true -> simplify_case_1(Call, Case)
     end.
@@ -1673,7 +1817,7 @@ is_bool_expr_list([]) -> true.
 
 tuple_to_values(#c_tuple{es=Es}, Arity) when length(Es) =:= Arity ->
     core_lib:make_values(Es);
-tuple_to_values(#c_literal{val=Tuple}=Lit, Arity) when size(Tuple) =:= Arity ->
+tuple_to_values(#c_literal{val=Tuple}=Lit, Arity) when tuple_size(Tuple) =:= Arity ->
     Es = [Lit#c_literal{val=E} || E <- tuple_to_list(Tuple)],
     core_lib:make_values(Es);
 tuple_to_values(#c_case{clauses=Cs0}=Case, Arity) ->
@@ -2019,7 +2163,8 @@ bsm_ensure_no_partition_2([#c_binary{}=Where|_], 1, _, Vstate, State) ->
     case State of
 	before when Vstate =:= simple_vars -> within;
 	before -> bsm_problem(Where, Vstate);
-	within -> within;
+	within when Vstate =:= simple_vars -> within;
+	within -> bsm_problem(Where, Vstate);
 	'after' -> bsm_problem(Where, bin_partition)
     end;
 bsm_ensure_no_partition_2([#c_alias{}=Alias|_], 1, N, Vstate, State) ->
@@ -2051,7 +2196,7 @@ bsm_ensure_no_partition_2([_|Ps], N, G, _, S) ->
 bsm_could_match_binary(#c_alias{pat=P}) -> bsm_could_match_binary(P);
 bsm_could_match_binary(#c_cons{}) -> false;
 bsm_could_match_binary(#c_tuple{}) -> false;
-bsm_could_match_binary(#c_literal{val=Lit}) -> erlang:is_bitstr(Lit);
+bsm_could_match_binary(#c_literal{val=Lit}) -> is_bitstring(Lit);
 bsm_could_match_binary(_) -> true.
 
 bsm_real_pattern(#c_alias{pat=P}) -> bsm_real_pattern(P);
@@ -2115,8 +2260,14 @@ get_warnings() ->
     ordsets:from_list((erase({?MODULE,warnings}))).
 
 format_error({eval_failure,Reason}) ->
-    lists:flatten(io_lib:format("this expression would cause a '~p' exception at run-time",
-				[Reason]));
+    flatten(io_lib:format("this expression will fail with a '~p' exception", [Reason]));
+format_error(embedded_binary_size) ->
+    "binary construction will fail with a 'badarg' exception "
+	"(field size for binary/bitstring greater than actual size)";
+format_error({embedded_unit,Unit,Size}) ->
+    M = io_lib:format("binary construction will fail with a 'badarg' exception "
+		      "(size ~p cannot be evenly divided by unit ~p)", [Size,Unit]),
+    flatten(M);
 format_error({nomatch_shadow,Line}) ->
     M = io_lib:format("this clause cannot match because a previous clause at line ~p "
 		      "always matches", [Line]),

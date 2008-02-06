@@ -1,2 +1,2 @@
-PERCEPT_VSN = 0.5.0
+PERCEPT_VSN = 0.6.2
 

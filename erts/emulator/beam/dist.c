@@ -718,7 +718,8 @@ int dist_group_leader(Process* c_p, ErtsProcLocks c_p_locks,
 
 #  define PURIFY_MSG(msg)                                                \
     do {								 \
-	if (getenv("VALGRIND_LOG_XML") != NULL) {			 \
+	char buf__[1]; size_t bufsz__ = sizeof(buf__);			 \
+	if (erts_sys_getenv("VALGRIND_LOG_XML", buf__, &bufsz__) >= 0) { \
 	    VALGRIND_PRINTF("<erlang_error_log>"			 \
 			    "%s, line %d: %s</erlang_error_log>\n",	 \
 			    __FILE__, __LINE__, msg);			 \

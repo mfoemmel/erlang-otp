@@ -86,7 +86,7 @@ release_docs_spec:
 
 # Please keep this list sorted.
 $(EBIN)/hipe_arm_assemble.beam: ../main/hipe.hrl ../../kernel/src/hipe_ext_format.hrl ../rtl/hipe_literals.hrl
-$(EBIN)/hipe_arm_cfg.beam: ../flow/cfg.inc
+$(EBIN)/hipe_arm_cfg.beam: ../flow/cfg.hrl ../flow/cfg.inc
 $(EBIN)/hipe_arm_frame.beam: ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_arm_liveness_gpr.beam: ../flow/liveness.inc
 $(EBIN)/hipe_arm_registers.beam: ../rtl/hipe_literals.hrl

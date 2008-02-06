@@ -38,24 +38,50 @@ other_alg(ssh_dsa) -> ssh_rsa.
 auth(SSH, Service, Opts) ->
     case user_name(Opts) of
 	{ok, User} ->
-	    _Failure = none(SSH, Service, User),
-	    AlgM = proplists:get_value(public_key_alg,
-				       Opts, ?PREFERRED_PK_ALG),
-	    case public_key(SSH, Service, User, Opts, AlgM) of
-		ok -> ok;
-		{failure, _F1} ->
-		    case public_key(SSH, Service, User, Opts,
-				    other_alg(AlgM)) of
-			ok ->
-			    ok;
-			{failure, _F2} ->
-			    passwd(SSH, Service, User, Opts);
-			Error -> Error
-		    end;
-		Error -> Error
+	    case none(SSH, Service, User, Opts) of
+		ok ->
+		    ok;
+		{failure,Methods} ->
+		    try_auth_methods(SSH, Service, User, Opts, Methods);
+		_Error ->
+		    try_auth_methods(SSH, Service, User, Opts,
+				     ["publickey", "password"])
 	    end;
 	Error -> Error
     end.
+
+try_auth_methods(SSH, Service, User, Opts, Methods) ->
+    AlgM = proplists:get_value(public_key_alg, Opts, ?PREFERRED_PK_ALG),
+    try_methods_2(
+      Methods,
+      [{"publickey", fun() -> public_key(SSH, Service, User, Opts, AlgM)
+		     end},
+       {"publickey", fun() -> OtherAlgM = other_alg(AlgM),
+			      public_key(SSH, Service, User, Opts, OtherAlgM)
+		     end},
+       {"password",  fun() -> passwd(SSH, Service, User, Opts)
+		     end},
+       {"keyboard-interactive", fun() -> keyboard_interactive(SSH, Service,
+							      User, Opts)
+				end}
+      ],
+      no_matching_supported_method).
+
+try_methods_2(Allowed, [{Method,Fn} | Rest], LastFailure) ->
+    case lists:member(Method, Allowed) of
+	true ->
+	    case Fn() of
+		ok           -> ok;
+		{failure, F} -> try_methods_2(Allowed, Rest, F);
+		Error        -> Error
+	    end;
+	false ->
+	    try_methods_2(Allowed, Rest, LastFailure)
+    end;
+try_methods_2(_Allowed, [], LastFailure) ->
+    {failure, LastFailure}.
+
+
 
 %% Find user name
 user_name(Opts) ->
@@ -91,7 +117,7 @@ public_key(SSH, Service, User, Opts, AlgM) ->
 					  ?string(Alg),
 					  ?binary(PubKeyBlob),
 					  ?binary(SigBlob)]}},
-	    public_key_reply(SSH);
+	    public_key_reply(SSH, Opts);
 	{error, enoent} ->
 	    {failure, enoent};
 	Error ->
@@ -99,7 +125,7 @@ public_key(SSH, Service, User, Opts, AlgM) ->
     end.
 
 %% Send none to find out supported authentication methods
-none(SSH, Service, User) ->
+none(SSH, Service, User, Opts) ->
     SSH ! {ssh_install, 
 	   userauth_messages() ++ userauth_passwd_messages()},
     SSH ! {ssh_msg, self(), 
@@ -107,13 +133,21 @@ none(SSH, Service, User) ->
 				       service = Service,
 				       method = "none",
 				       data = <<>> }},
-    passwd_reply(SSH).
+    passwd_reply(SSH, Opts).
 
 %% Password authentication for ssh-connection
 passwd(SSH, Service, User, Opts) -> 
     SSH ! {ssh_install, 
 	   userauth_messages() ++ userauth_passwd_messages()},
     do_password(SSH, Service, User, Opts).
+
+
+%% Keyboard-interactive authentication for ssh-connection
+keyboard_interactive(SSH, Service, User, Opts) -> 
+    SSH ! {ssh_install, 
+	   userauth_messages() ++
+	   userauth_keyboard_interactive_messages()},
+    do_keyboard_interactive(SSH, Service, User, Opts).
 
 
 check_password(User, Password, Opts) ->
@@ -200,9 +234,21 @@ do_password(SSH, Service, User, Opts) ->
 				       data =
 				       <<?BOOLEAN(?FALSE),
 					?STRING(list_to_binary(Password))>> }},
-    passwd_reply(SSH).
+    passwd_reply(SSH, Opts).
 
-public_key_reply(SSH) ->
+
+%% See RFC 4256 for info on keyboard-interactive
+do_keyboard_interactive(SSH, Service, User, Opts) ->
+    SSH ! {ssh_msg, self(), 
+	   #ssh_msg_userauth_request { user = User,
+				       service = Service,
+				       method = "keyboard-interactive",
+				       data = <<?STRING(<<"">>),
+					       ?STRING(<<>>)>> }},
+    keyboard_interactive_reply(SSH, Opts).
+
+
+public_key_reply(SSH, Opts) ->
     receive
 	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_success) ->
 	    ok;
@@ -210,8 +256,11 @@ public_key_reply(SSH) ->
 	    {failure,
 	     string:tokens(R#ssh_msg_userauth_failure.authentications, ",")};
 	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_banner) ->
-	    io:format("~w", [R#ssh_msg_userauth_banner.message]),
-	    public_key_reply(SSH);
+	    case proplists:get_bool(quiet_mode, Opts) of
+		true  -> ok;
+		false -> io:format("~s", [R#ssh_msg_userauth_banner.message])
+	    end,
+	    public_key_reply(SSH, Opts);
 	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
 	    {error, disconnected};
 	_Other ->
@@ -219,7 +268,7 @@ public_key_reply(SSH) ->
 	    {error, unknown_msg}
     end.
 
-passwd_reply(SSH) ->
+passwd_reply(SSH, Opts) ->
     receive
 	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_success) ->
 	    ok;
@@ -227,8 +276,11 @@ passwd_reply(SSH) ->
 	    {failure,
 	     string:tokens(R#ssh_msg_userauth_failure.authentications, ",")};
 	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_banner) ->
-	    io:format("~w", [R#ssh_msg_userauth_banner.message]),
-	    passwd_reply(SSH);
+	    case proplists:get_bool(quiet_mode, Opts) of
+		true  -> ok;
+		false -> io:format("~s", [R#ssh_msg_userauth_banner.message])
+	    end,
+	    passwd_reply(SSH, Opts);
 	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_passwd_changereq) ->
 	    {error, R};
 	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
@@ -238,6 +290,91 @@ passwd_reply(SSH) ->
 	    self() ! Other,
 	    {error, unknown_msg}
     end.
+
+keyboard_interactive_reply(SSH, Opts) ->
+    receive
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_info_request) ->
+	    ?dbg(true, "keyboard_interactive_reply: got req:~n  R=~p\n", [R]),
+	    #ssh_msg_userauth_info_request { name = Name,
+					     instruction = Instr,
+					     num_prompts = NumPrompts,
+					     data  = Data} = R,
+
+	    PromptInfos = decode_keyboard_interactive_prompts(NumPrompts,Data),
+	    Resps = keyboard_interact_get_responses(SSH, Opts,
+						    Name, Instr, PromptInfos),
+	    ?dbg(true, "keyboard_interactive_reply: resps=~n  ~p\n", [Resps]),
+	    RespBin = list_to_binary(
+			lists:map(fun(S) -> <<?STRING(list_to_binary(S))>> end,
+				  Resps)),
+
+	    SSH ! {ssh_msg, self(), 
+		   #ssh_msg_userauth_info_response {
+				  num_responses = NumPrompts,
+				  data = RespBin }},
+	    keyboard_interactive_reply(SSH, Opts);
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_success) ->
+	    ok;
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_failure) ->
+	    {failure,
+	     string:tokens(R#ssh_msg_userauth_failure.authentications, ",")};
+	{ssh_msg, SSH, R} when record(R, ssh_msg_userauth_banner) ->
+	    case proplists:get_bool(quiet_mode, Opts) of
+		true  -> ok;
+		false -> io:format("~s", [R#ssh_msg_userauth_banner.message])
+	    end,
+	    keyboard_interactive_reply(SSH, Opts);
+	{ssh_msg, SSH, R} when record(R, ssh_msg_disconnect) ->
+	    {error, disconnected};
+	_Other ->
+	    ?dbg(true, "keyboard_interactive_reply: Other=~w\n", [_Other]),
+	    {error, unknown_msg}
+    end.
+
+decode_keyboard_interactive_prompts(NumPrompts, Data) ->
+    Types = lists:append(lists:duplicate(NumPrompts, [string, boolean])),
+    pairwise_tuplify(ssh_bits:decode(Data, Types)).
+
+pairwise_tuplify([E1, E2 | Rest]) -> [{E1, E2} | pairwise_tuplify(Rest)];
+pairwise_tuplify([])              -> [].
+    
+keyboard_interact_get_responses(SSH, Opts, Name, Instr, PromptInfos) ->
+    NumPrompts = length(PromptInfos),
+    case proplists:get_value(keyboard_interact_fun, Opts) of
+	undefined when NumPrompts == 1 ->
+	    %% Special case/fallback for just one prompt
+	    %% (assumed to be the password prompt)
+	    case proplists:get_value(password, Opts) of
+		undefined -> keyboard_interact(SSH, Name, Instr, PromptInfos);
+		PW        -> [PW]
+	    end;
+	undefined ->
+	    keyboard_interact(SSH, Name, Instr, PromptInfos);
+	KbdInteractFun ->
+	    Prompts = lists:map(fun({Prompt, _Echo}) -> Prompt end,
+				PromptInfos),
+	    case KbdInteractFun(Name, Instr, Prompts) of
+		Rs when length(Rs) == NumPrompts ->
+		    Rs;
+		Rs ->
+		    erlang:error({mismatching_number_of_responses,
+				  {got,Rs},
+				  {expected,NumPrompts}})
+	    end
+    end.
+
+keyboard_interact(SSH, Name, Instr, Prompts) ->
+    if Name /= "" -> ssh_transport:format(SSH, "~s", [Name]);
+       true       -> ok
+    end,
+    if Instr /= "" -> ssh_transport:format(SSH, "~s", [Instr]);
+       true        -> ok
+    end,
+    lists:map(fun({Prompt, true})  -> ssh_transport:read_line(SSH, Prompt);
+		 ({Prompt, false}) -> ssh_transport:read_password(SSH, Prompt)
+	      end,
+	      Prompts).
+
 
 auth_remote(SSH, Service, Opts) ->
     SSH ! {ssh_install, 
@@ -403,6 +540,19 @@ userauth_passwd_messages() ->
       {ssh_msg_userauth_passwd_changereq, ?SSH_MSG_USERAUTH_PASSWD_CHANGEREQ,
        [string, 
 	string]}
+     ].
+
+userauth_keyboard_interactive_messages() ->
+    [ {ssh_msg_userauth_info_request, ?SSH_MSG_USERAUTH_INFO_REQUEST,
+       [string, 
+	string,
+	string,
+	uint32,
+	'...']},
+
+      {ssh_msg_userauth_info_response, ?SSH_MSG_USERAUTH_INFO_RESPONSE,
+       [uint32, 
+	'...']}
      ].
 
 userauth_pk_messages() ->

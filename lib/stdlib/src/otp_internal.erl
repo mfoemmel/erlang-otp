@@ -207,15 +207,15 @@ obsolete_1(auth, node_cookie, 2) ->
 
 %% Added in R11B-5.
 obsolete_1(http_base_64, _, _) ->
-    {deprecated, "The http_base_64 module is deprecated; use the base64 module instead"};
+    {removed, "The http_base_64 module was removed in R12B; use the base64 module instead"};
 obsolete_1(httpd_util, encode_base64, 1) ->
-    {deprecated, "Deprecated; use one of the encode functions in the base64 module instead"};
+    {removed, "Removed in R12B; use one of the encode functions in the base64 module instead"};
 obsolete_1(httpd_util, decode_base64, 1) ->
-    {deprecated, "Deprecated; use one of the decode functions in the base64 module instead"};
+    {removed, "Removed in R12B; use one of the decode functions in the base64 module instead"};
 obsolete_1(httpd_util, to_upper, 1) ->
-    {deprecated, {string, to_upper, 1}};
+    {removed, {string, to_upper, 1}, "R12B"};
 obsolete_1(httpd_util, to_lower, 1) ->
-    {deprecated, {string, to_lower, 1}};
+    {removed, {string, to_lower, 1}, "R12B"};
 obsolete_1(erlang, is_constant, 1) ->
     {deprecated, "Deprecated; will be removed in R13B"};
 
@@ -223,17 +223,11 @@ obsolete_1(erlang, is_constant, 1) ->
 obsolete_1(ssl, port, 1) ->
     {deprecated, {ssl, sockname, 1}, "R13B"};
 obsolete_1(ssl, accept, A) when A =:= 1; A =:= 2 ->
-    {deprecated, "deprecated; use ssl:transport_accept/1,2 or ssl:ssl_accept/1,2"};
+    {deprecated, "deprecated; use ssl:transport_accept/1,2 and ssl:ssl_accept/1,2"};
 obsolete_1(erlang, fault, 1) ->
     {deprecated, {erlang,error,1}, "R13B"};
 obsolete_1(erlang, fault, 2) ->
     {deprecated, {erlang,error,2}, "R13B"};
-obsolete_1(erlang, bitsize, 1) ->
-    {experimental, {erlang,bit_size,1}, "R12B-1"};
-obsolete_1(erlang, bitstr_to_list, 1) ->
-    {experimental, {erlang,bitstring_to_list,1}, "R12B-1"};
-obsolete_1(erlang, list_to_bitstr, 1) ->
-    {experimental, {erlang,list_to_bitstring,1}, "R12B-1"};
 
 obsolete_1(httpd, start, 0) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(httpd, start, 1) 	  -> {deprecated,{inets,start,[2,3]},"R14B"};
@@ -262,7 +256,7 @@ obsolete_1(httpd_util, key1search, 3) -> {deprecated,{proplists,get_value,3},"R1
 obsolete_1(ftp, open, 1)          -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(ftp, open, 2)          -> {deprecated,{inets,start,[2,3]},"R14B"};
 obsolete_1(ftp, open, 3)          -> {deprecated,{inets,start,[2,3]},"R14B"};
-obsolete_1(ftp, close, 1)         -> {deprecated,{inets,start,[2,3]},"R14B"};
+obsolete_1(ftp, close, 1)         -> {deprecated,{inets,stop,2},"R14B"};
 obsolete_1(ftp, force_active, 1)  -> {deprecated,{inets,start,[2,3]},"R14B"};
 
 obsolete_1(_, _, _) ->

@@ -112,7 +112,7 @@ map_1(F, T) ->
 		[_ | _] ->
 		    update_c_cons(T, map(F, cons_hd(T)),
 				  map(F, cons_tl(T)));
-		V when is_tuple(V), size(V) > 0 ->
+		V when is_tuple(V), tuple_size(V) > 0 ->
 		    update_c_tuple(T, map_list(F, tuple_es(T)));
 		_ ->
 		    T
@@ -217,7 +217,7 @@ fold_1(F, S, T) ->
 	    case concrete(T) of
 		[_ | _] ->
 		    fold(F, fold(F, S, cons_hd(T)), cons_tl(T));
-		V when is_tuple(V), size(V) > 0 ->
+		V when is_tuple(V), tuple_size(V) > 0 ->
 		    fold_list(F, S, tuple_es(T));
 		_ ->
 		    S
@@ -323,7 +323,7 @@ mapfold(F, S0, T) ->
 		    {T1, S1} = mapfold(F, S0, cons_hd(T)),
 		    {T2, S2} = mapfold(F, S1, cons_tl(T)),
 		    F(update_c_cons(T, T1, T2), S2);
-		V when is_tuple(V), size(V) > 0 ->
+		V when is_tuple(V), tuple_size(V) > 0 ->
 		    {Ts, S1} = mapfold_list(F, S0, tuple_es(T)),
 		    F(update_c_tuple(T, Ts), S1);
 		_ ->

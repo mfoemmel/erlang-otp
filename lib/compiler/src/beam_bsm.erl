@@ -269,13 +269,20 @@ btb_reaches_match_2([{bs_init2,{f,0},_,_,_,_,Dst}|Is], Regs, D) ->
     btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
 btb_reaches_match_2([{bs_init_bits,{f,0},_,_,_,_,Dst}|Is], Regs, D) ->
     btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
-btb_reaches_match_2([{bs_append,{f,0},_,_,_,_,_,_,Dst}|Is], Regs, D) ->
+btb_reaches_match_2([{bs_append,{f,0},_,_,_,_,Src,_,Dst}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
-btb_reaches_match_2([{bs_private_append,{f,0},_,_,_,_,Dst}|Is], Regs, D) ->
+btb_reaches_match_2([{bs_private_append,{f,0},_,_,Src,_,Dst}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, btb_kill([Dst], Regs), D);
-btb_reaches_match_2([{bs_put_integer,{f,0},_,_,_,_}|Is], Regs, D) ->
+btb_reaches_match_2([{bs_put_integer,{f,0},_,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, Regs, D);
-btb_reaches_match_2([{bs_put_binary,{f,0},_,_,_,_}|Is], Regs, D) ->
+btb_reaches_match_2([{bs_put_float,{f,0},_,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
+    btb_reaches_match_1(Is, Regs, D);
+btb_reaches_match_2([{bs_put_binary,{f,0},_,_,_,Src}=I|Is], Regs, D) ->
+    btb_ensure_not_used([Src], I, Regs),
     btb_reaches_match_1(Is, Regs, D);
 btb_reaches_match_2([{bs_put_string,_,_}|Is], Regs, D) ->
     btb_reaches_match_1(Is, Regs, D);

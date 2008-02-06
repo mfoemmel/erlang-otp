@@ -199,7 +199,7 @@ class_descr({Hdr, _}, TypeNo) when ?IHDRVSN(Hdr, 1), is_integer(TypeNo) ->
     "unknown".
 
 type_no_range({Hdr, _}) when ?IHDRVSN(Hdr, 2) ->
-    {1, size(?TYPEMAP(Hdr))};
+    {1, tuple_size(?TYPEMAP(Hdr))};
 type_no_range({Hdr, _}) when ?IHDRVSN(Hdr, 1) ->
     {-1, 1000}.
 

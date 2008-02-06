@@ -18,8 +18,6 @@
 #ifndef __ERL_VM_H__
 #define __ERL_VM_H__
 
-#define NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP 1
-
 /* #define ERTS_OPCODE_COUNTER_SUPPORT */
 
 #if defined(HYBRID)
@@ -126,6 +124,27 @@
 #if defined(DEBUG) || defined(CHECK_FOR_HOLES)
 # define ERTS_HOLE_MARKER (((0xcafebabeUL << 24) << 8) | 0xaf5e78ccUL)
 #endif
+
+/*
+ * Allocate heap memory on the ordinary heap, NEVER in a heap
+ * segment. The caller must ensure that there is enough words
+ * left on the heap before calling HeapOnlyAlloc() (for instance,
+ * by testing HeapWordsLeft() and calling the garbage collector
+ * if not enough).
+ */
+#ifdef CHECK_FOR_HOLES
+# define HeapOnlyAlloc(p, sz)					\
+    (ASSERT_EXPR((sz) >= 0),					\
+     (ASSERT_EXPR(((HEAP_LIMIT(p) - HEAP_TOP(p)) >= (sz))),	\
+      (erts_set_hole_marker(HEAP_TOP(p), (sz)),			\
+       (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz)))))
+#else
+# define HeapOnlyAlloc(p, sz)					\
+    (ASSERT_EXPR((sz) >= 0),					\
+     (ASSERT_EXPR(((HEAP_LIMIT(p) - HEAP_TOP(p)) >= (sz))),	\
+      (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
+#endif
+
 
 /*
  * Description for each instruction (defined here because the name and

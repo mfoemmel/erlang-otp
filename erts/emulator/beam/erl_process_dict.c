@@ -40,10 +40,6 @@
 ** Utility macros
 */
 
-/* Error codes from subroutines */
-#define PDICT_OK            0
-#define PDICT_SYSTEM_LIMIT -1
-
 /* Flags to pd_get_hash */
 #define PD_GET_OTHER_PROCESS 1UL
 
@@ -85,14 +81,14 @@
 /*
  * Forward decalarations
  */
-static int pd_hash_erase(Process *p, Eterm id, Eterm *ret);
-static int pd_hash_erase_all(Process *p);
-static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret) ;
+static void pd_hash_erase(Process *p, Eterm id, Eterm *ret);
+static void pd_hash_erase_all(Process *p);
+static Eterm pd_hash_get_keys(Process *p, Eterm value);
 static Eterm pd_hash_get_all(Process *p, ProcDict *pd);
-static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret);
+static Eterm pd_hash_put(Process *p, Eterm id, Eterm value);
 
-static int shrink(Process *p); 
-static int grow(Process *p);
+static void shrink(Process *p, Eterm* ret); 
+static void grow(Process *p);
 
 static void array_shrink(ProcDict **ppd, unsigned int need);
 static Eterm array_put(ProcDict **ppdict, unsigned int ndx, Eterm term);
@@ -214,9 +210,10 @@ erts_dicts_mem_size(Process *p)
 void
 erts_erase_dicts(Process *p)
 {
-    if (p->dictionary)
+    if (p->dictionary) {
 	pd_hash_erase_all(p);
-    p->dictionary = NULL;
+	p->dictionary = NULL;
+    }
 }
 
 /* 
@@ -283,11 +280,9 @@ BIF_RETTYPE get_1(BIF_ALIST_1)
 BIF_RETTYPE get_keys_1(BIF_ALIST_1)
 {
     Eterm ret;
+
     PD_CHECK(BIF_P->dictionary);
-    if (pd_hash_get_keys(BIF_P, BIF_ARG_1, &ret) != PDICT_OK) {
-	PD_CHECK(BIF_P->dictionary);
-	BIF_ERROR(BIF_P, BADARG);
-    }
+    ret = pd_hash_get_keys(BIF_P, BIF_ARG_1);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
 }
@@ -295,11 +290,9 @@ BIF_RETTYPE get_keys_1(BIF_ALIST_1)
 BIF_RETTYPE put_2(BIF_ALIST_2)
 {
     Eterm ret;
+
     PD_CHECK(BIF_P->dictionary);
-    if (pd_hash_put(BIF_P, BIF_ARG_1, BIF_ARG_2, &ret) != PDICT_OK) {
-	PD_CHECK(BIF_P->dictionary);
-	BIF_ERROR(BIF_P, BADARG);
-    }
+    ret = pd_hash_put(BIF_P, BIF_ARG_1, BIF_ARG_2);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
 }
@@ -318,29 +311,25 @@ BIF_RETTYPE erase_1(BIF_ALIST_1)
 {
     Eterm ret;
     PD_CHECK(BIF_P->dictionary);
-    if (pd_hash_erase(BIF_P, BIF_ARG_1, &ret) != PDICT_OK) {
-	PD_CHECK(BIF_P->dictionary);
-	BIF_ERROR(BIF_P, BADARG);
-    }
+    pd_hash_erase(BIF_P, BIF_ARG_1, &ret);
     PD_CHECK(BIF_P->dictionary);
     BIF_RET(ret);
 }
 
 /*
-** BIF implementations
-*/
-static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
+ * BIF implementations
+ */
+static void pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 {
     unsigned int hval;
-    Eterm *hp;
     Eterm old;
     Eterm tmp;
-    int i;
     unsigned int range;
 
     *ret = am_undefined;
-    if (p->dictionary == NULL)
-	return PDICT_OK;
+    if (p->dictionary == NULL) {
+	return;
+    }
     hval = pd_hash_value(p->dictionary, id);
     old = ARRAY_GET(p->dictionary, hval);
     if (is_boxed(old)) {	/* Tuple */
@@ -352,24 +341,21 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 	}
     } else if (is_list(old)) {
 	/* Find cons cell for identical value */
-	i = 0;
-	for (tmp = old; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); 
-	     tmp = TCDR(tmp))
-	    ++i;
-	if (tmp != NIL) {
-	    Eterm nlist;
-	    nlist = TCDR(tmp);
-	    hp = HAlloc(p, i*2);
-	    while (old != tmp) {
-		nlist = CONS(hp, TCAR(old), nlist);
-		hp += 2;
-		old = TCDR(old);
+	Eterm* prev = &p->dictionary->data[hval];
+
+	for (tmp = *prev; tmp != NIL; prev = &TCDR(tmp), tmp = *prev) {
+	    if (EQ(tuple_val(TCAR(tmp))[1], id)) {
+		*prev = TCDR(tmp);
+		*ret = tuple_val(TCAR(tmp))[2];
+		--(p->dictionary->numElements);
 	    }
-	    if (TCDR(nlist) == NIL)
-		nlist = TCAR(nlist);
-	    array_put(&(p->dictionary), hval, nlist);
-	    *ret = tuple_val(TCAR(tmp))[2];
-	    --(p->dictionary->numElements);
+	}
+
+	/* If there is only one element left in the list we must remove the list. */
+	old = ARRAY_GET(p->dictionary, hval);
+	ASSERT(is_list(old));
+	if (is_nil(TCDR(old))) {
+	    array_put(&p->dictionary, hval, TCAR(old));
 	}
     } else if (is_not_nil(old)) {
 #ifdef DEBUG
@@ -381,18 +367,17 @@ static int pd_hash_erase(Process *p, Eterm id, Eterm *ret)
 	erl_exit(1, "Damaged process dictionary found during erase/1.");
     }
     if ((range = HASH_RANGE(p->dictionary)) > INITIAL_SIZE && 
-	range / 2  > (p->dictionary->numElements))
-	return shrink(p);
-    return PDICT_OK;
+	range / 2  > (p->dictionary->numElements)) {
+	shrink(p, ret);
+    }
 }
 
-static int pd_hash_erase_all(Process *p)
+static void pd_hash_erase_all(Process *p)
 {
     if (p->dictionary != NULL) {
 	PD_FREE(p->dictionary, PD_SZ2BYTES(p->dictionary->size));
 	p->dictionary = NULL;
     }
-    return PDICT_OK;
 }
 
 Eterm erts_pd_hash_get(Process *p, Eterm id) 
@@ -429,10 +414,7 @@ Eterm erts_pd_hash_get(Process *p, Eterm id)
     return am_undefined;
 }
 
-/*
-** I cant help thinking this is a useless interface...
-*/
-static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret) 
+static Eterm pd_hash_get_keys(Process *p, Eterm value) 
 {
     Eterm *hp;
     Eterm res = NIL;
@@ -440,8 +422,10 @@ static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret)
     unsigned int i, num;
     Eterm tmp, tmp2;
 
-    if (pd == NULL)
-	goto done;
+    if (pd == NULL) {
+	return res;
+    }
+
     num = HASH_RANGE(pd);
     for (i = 0; i < num; ++i) {
 	tmp = ARRAY_GET(pd, i);
@@ -462,9 +446,7 @@ static int pd_hash_get_keys(Process *p, Eterm value, Eterm *ret)
 	    }
 	}
     }
-done:
-    *ret = res;
-    return PDICT_OK;
+    return res;
 }
 	
 
@@ -474,7 +456,8 @@ pd_hash_get_all(Process *p, ProcDict *pd)
     Eterm* hp;
     Eterm res = NIL;
     Eterm tmp, tmp2;
-    unsigned int i, num;
+    unsigned int i;
+    unsigned int num;
 
     if (pd == NULL) {
 	return res;
@@ -500,16 +483,18 @@ pd_hash_get_all(Process *p, ProcDict *pd)
     return res;
 }
 
-static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
+static Eterm pd_hash_put(Process *p, Eterm id, Eterm value)
 { 
     unsigned int hval;
     Eterm *hp;
     Eterm tpl;
     Eterm old;
     Eterm tmp;
-    int i;
-
-    *ret = am_undefined;
+    int needed;
+    int i = 0;
+#ifdef DEBUG
+    Eterm *hp_limit;
+#endif
 
     if (p->dictionary == NULL) {
 	/* Create it */
@@ -517,9 +502,54 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 	p->dictionary->homeSize = INITIAL_SIZE;
     }	
     hval = pd_hash_value(p->dictionary, id);
-    hp = HAlloc(p, 3);
-    tpl = TUPLE2(hp, id, value);
     old = ARRAY_GET(p->dictionary, hval);
+
+    /*
+     * Calculate the number of heap words needed and garbage
+     * collect if necessary. (Might be a slight overestimation.)
+     */
+    needed = 3;			/* {Key,Value} tuple */
+    if (is_boxed(old)) {
+	/*
+	 * We don't want to compare keys twice, so we'll always
+	 * reserve the space for two CONS cells.
+	 */
+	needed += 2+2;
+    } else if (is_list(old)) {
+	i = 0;
+	for (tmp = old; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); tmp = TCDR(tmp)) {
+	    ++i;
+	}
+	if (is_nil(tmp)) {
+	    i = -1;
+	    needed += 2;
+	} else {
+	    needed += 2*(i+1);
+	}
+    }
+    if (HeapWordsLeft(p) < needed) {
+	Eterm root[3];
+	root[0] = id;
+	root[1] = value;
+	root[2] = old;
+	BUMP_REDS(p, erts_garbage_collect(p, needed, root, 3));
+	id = root[0];
+	value = root[1];
+	old = root[2];
+    }
+#ifdef DEBUG
+    hp_limit = p->htop + needed;
+#endif
+
+    /*
+     * Create the {Key,Value} tuple.
+     */
+    hp = HeapOnlyAlloc(p, 3);
+    tpl = TUPLE2(hp, id, value);
+
+    /*
+     * Update the dictionary.
+     */
     if (is_nil(old)) {
 	array_put(&(p->dictionary), hval, tpl);
 	++(p->dictionary->numElements);
@@ -527,36 +557,59 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 	ASSERT(is_tuple(old));
 	if (EQ(tuple_val(old)[1],id)) {
 	    array_put(&(p->dictionary), hval, tpl);
-	    *ret = tuple_val(old)[2];
+	    return tuple_val(old)[2];
 	} else {
-	    hp = HAlloc(p, 4);
+	    hp = HeapOnlyAlloc(p, 4);
 	    tmp = CONS(hp, old, NIL);
 	    hp += 2;
 	    ++(p->dictionary->numElements);
 	    array_put(&(p->dictionary), hval, CONS(hp, tpl, tmp));
+	    hp += 2;
+	    ASSERT(hp <= hp_limit);
 	}
     } else if (is_list(old)) {
-	/* Find cons cell for identical value */
-	i = 0;
-	for (tmp = old; tmp != NIL && !EQ(tuple_val(TCAR(tmp))[1], id); 
-	     tmp = TCDR(tmp))
-	    ++i;
-	if (is_nil(tmp)) {
-	    /* Not found */
-	    hp = HAlloc(p, 2);
+	if (i == -1) {
+	    /*
+	     * New key. Simply prepend the tuple to the beginning of the list.
+	     */
+	    hp = HeapOnlyAlloc(p, 2);
 	    array_put(&(p->dictionary), hval, CONS(hp, tpl, old));
+	    hp += 2;
+	    ASSERT(hp <= hp_limit);
 	    ++(p->dictionary->numElements);
 	} else {
-	    /* Remove old value from list */
-	    Eterm nlist = TCDR(tmp);
-	    Eterm tmp2;
-	    hp = HAlloc(p, (i+1)*2);
-	    for (tmp2 = old; tmp2 != tmp; tmp2 = TCDR(tmp2)) {
-		nlist = CONS(hp, TCAR(tmp2), nlist);
+	    /*
+	     * i = Number of CDRs to skip to reach the changed element in the list.
+	     *
+	     * Replace old value in list. To avoid pointers from the old generation
+	     * to the new, we must rebuild the list from the beginning up to and
+	     * including the changed element.
+	     */
+	    Eterm nlist;
+	    int j;
+
+	    hp = HeapOnlyAlloc(p, (i+1)*2);
+	    
+	    /* Find the list element to change. */
+	    for (j = 0, nlist = old; j < i; j++, nlist = TCDR(nlist)) {
+		;
+	    }
+	    ASSERT(EQ(tuple_val(TCAR(nlist))[1], id));
+	    nlist = TCDR(nlist); /* Unchanged part of list. */
+
+	    /* Rebuild list before the updated element. */
+	    for (tmp = old; i-- > 0; tmp = TCDR(tmp)) {
+		nlist = CONS(hp, TCAR(tmp), nlist);
 		hp += 2;
 	    }
-	    array_put(&(p->dictionary), hval, CONS(hp, tpl, nlist));
-	    *ret = tuple_val(TCAR(tmp))[2];
+	    ASSERT(EQ(tuple_val(TCAR(tmp))[1], id));
+
+	    /* Put the updated element first in the new list. */
+	    nlist = CONS(hp, tpl, nlist);
+	    hp += 2;
+	    ASSERT(hp <= hp_limit);
+	    array_put(&(p->dictionary), hval, nlist);
+	    return tuple_val(TCAR(tmp))[2];
 	}
     } else {
 #ifdef DEBUG
@@ -568,26 +621,31 @@ static int pd_hash_put(Process *p, Eterm id, Eterm value, Eterm *ret)
 
 	erl_exit(1, "Damaged process dictionary found during put/2.");
     }
-    if (HASH_RANGE(p->dictionary) <= p->dictionary->numElements)
-	return grow(p);
-    return PDICT_OK;
+    if (HASH_RANGE(p->dictionary) <= p->dictionary->numElements) {
+	grow(p);
+    }
+    return am_undefined;
 }
 
 /*
-** Hash table utilities, rehashing
-*/
+ * Hash table utilities, rehashing
+ */
 
-static int shrink(Process *p) 
+static void shrink(Process *p, Eterm* ret) 
 {
     unsigned int range = HASH_RANGE(p->dictionary);
     unsigned int steps = (range*3) / 10;
     Eterm hi, lo, tmp;
-    unsigned int i,j;
+    unsigned int i;
     Eterm *hp;
+#ifdef DEBUG
+    Eterm *hp_limit;
+#endif
 
-    if (range - steps < INITIAL_SIZE)
+    if (range - steps < INITIAL_SIZE) {
 	steps = range - INITIAL_SIZE; 
-    
+    }
+
     for (i = 0; i < steps; ++i) {
 	ProcDict *pd = p->dictionary;
 	if (pd->splitPosition == 0) {
@@ -601,33 +659,49 @@ static int shrink(Process *p)
 	    if (lo == NIL) {
 		array_put(&(p->dictionary), pd->splitPosition, hi);
 	    } else {
+		int needed = 4;
+		if (is_list(hi) && is_list(lo)) {
+		    needed = 2*list_length(hi);
+		}
+		if (HeapWordsLeft(p) < needed) {
+		    BUMP_REDS(p, erts_garbage_collect(p, needed, ret, 1));
+		    hi = pd->data[(pd->splitPosition + pd->homeSize)];
+		    lo = pd->data[pd->splitPosition];
+		}
+#ifdef DEBUG
+		hp_limit = p->htop + needed;
+#endif
 		if (is_tuple(lo)) {
 		    if (is_tuple(hi)) {
-			hp = HAlloc(p, 4);
+			hp = HeapOnlyAlloc(p, 4);
 			tmp = CONS(hp, hi, NIL);
 			hp += 2;
 			array_put(&(p->dictionary), pd->splitPosition, 
 				  CONS(hp,lo,tmp));
+			hp += 2;
+			ASSERT(hp <= hp_limit);
 		    } else { /* hi is a list */
-			hp = HAlloc(p, 2);
+			hp = HeapOnlyAlloc(p, 2);
 			array_put(&(p->dictionary), pd->splitPosition, 
 				  CONS(hp, lo, hi));
+			hp += 2;
+			ASSERT(hp <= hp_limit);
 		    }
 		} else { /* lo is a list */
 		    if (is_tuple(hi)) {
-			hp = HAlloc(p, 2);
+			hp = HeapOnlyAlloc(p, 2);
 			array_put(&(p->dictionary), pd->splitPosition, 
 				  CONS(hp, hi, lo));
+			hp += 2;
+			ASSERT(hp <= hp_limit);
+
 		    } else { /* Two lists */
-			/* Just select one and count the length */
-			j = 0;
-			for (tmp = hi; tmp != NIL; tmp = TCDR(tmp))
-			    ++j;
-			hp = HAlloc(p, j*2);
+			hp = HeapOnlyAlloc(p, needed);
 			for (tmp = hi; tmp != NIL; tmp = TCDR(tmp)) {
 			    lo = CONS(hp, TCAR(tmp), lo);
 			    hp += 2;
 			}
+			ASSERT(hp <= hp_limit);
 			array_put(&(p->dictionary), pd->splitPosition, lo);
 		    }
 		}
@@ -635,12 +709,12 @@ static int shrink(Process *p)
 	}
 	array_put(&(p->dictionary), (pd->splitPosition + pd->homeSize), NIL);
     }
-    if (HASH_RANGE(p->dictionary) <= (p->dictionary->size / 4))
+    if (HASH_RANGE(p->dictionary) <= (p->dictionary->size / 4)) {
 	array_shrink(&(p->dictionary), (HASH_RANGE(p->dictionary) * 3) / 2);
-    return PDICT_OK;
+    }
 }
 
-static int grow(Process *p)
+static void grow(Process *p)
 {
     unsigned int i,j;
     unsigned int steps = p->dictionary->homeSize / 5;
@@ -648,13 +722,54 @@ static int grow(Process *p)
     Eterm l;
     Eterm *hp;
     unsigned int pos;
+    unsigned int homeSize;
+    int needed = 0;
+    ProcDict *pd;
+#ifdef DEBUG
+    Eterm *hp_limit;
+#endif
 
     HDEBUGF(("grow: steps = %d", steps));
     if (steps == 0)
 	steps = 1;
     /* Dont grow over MAX_HASH */
-    if ((MAX_HASH - steps) <= HASH_RANGE(p->dictionary))
-	return PDICT_OK;
+    if ((MAX_HASH - steps) <= HASH_RANGE(p->dictionary)) {
+	return;
+    }
+
+    /*
+     * Calculate total number of heap words needed, and garbage collect
+     * if necessary.
+     */
+
+    pd = p->dictionary;
+    pos = pd->splitPosition;
+    homeSize = pd->homeSize;
+    for (i = 0; i < steps; ++i) {
+	if (pos == homeSize) {
+	    homeSize *= 2;
+	    pos = 0;
+	}
+	l = ARRAY_GET(pd, pos);
+	pos++;
+	if (is_not_tuple(l)) {
+	    while (l != NIL) {
+		needed += 2;
+		l = TCDR(l);
+	    }
+	}
+    }
+    if (HeapWordsLeft(p) < needed) {
+	BUMP_REDS(p, erts_garbage_collect(p, needed, 0, 0));
+    }
+#ifdef DEBUG
+    hp_limit = p->htop + needed;
+#endif
+
+    /*
+     * Now grow.
+     */
+
     for (i = 0; i < steps; ++i) {
 	ProcDict *pd = p->dictionary;
 	if (pd->splitPosition == pd->homeSize) {
@@ -674,8 +789,8 @@ static int grow(Process *p)
 	    l2 = NIL;
 	    l1 = l;
 	    for (j = 0; l1 != NIL; l1 = TCDR(l1))
-		++j;
-	    hp = HAlloc(p,j*2);
+		j += 2;
+	    hp = HeapOnlyAlloc(p, j);
 	
 	    while (l != NIL) {
 		if (pd_hash_value(pd, tuple_val(TCAR(l))[1]) == pos) 
@@ -689,6 +804,7 @@ static int grow(Process *p)
 		l1 = TCAR(l1);
 	    if (l2 != NIL && TCDR(l2) == NIL)
 		l2 = TCAR(l2);
+	    ASSERT(hp <= hp_limit);
 	    /* After array_put pd is no longer valid */
 	    array_put(&(p->dictionary), pos, l1);
 	    array_put(&(p->dictionary), pos + 
@@ -699,8 +815,6 @@ static int grow(Process *p)
 #ifdef HARDDEBUG
     dictionary_dump(p->dictionary,CERR);
 #endif
-
-    return PDICT_OK;
 }
 
 /*

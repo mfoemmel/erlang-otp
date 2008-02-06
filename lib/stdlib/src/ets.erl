@@ -21,10 +21,13 @@
 %% ets == Erlang Term Store
 
 -export([file2tab/1,
+	 file2tab/2,
 	 filter/3,
 	 foldl/3, foldr/3,
 	 match_delete/2,
 	 tab2file/2,
+	 tab2file/3,
+	 tabfile_info/1,
 	 from_dets/2,
 	 to_dets/2,
 	 init_table/2,
@@ -84,12 +87,11 @@ match_spec_run(List,CompiledMS) ->
 repair_continuation('$end_of_table',_) ->
     '$end_of_table';
 % ordered_set
-repair_continuation(Untouched = {Table,Lastkey,L1,N2,Bin,L2,N3,N4}, MS) when
+repair_continuation(Untouched = {Table,Lastkey,EndCondition,N2,Bin,L2,N3,N4}, MS) when
 (is_atom(Table) or is_integer(Table)),
-is_list(L1),
 is_integer(N2),
 is_binary(Bin),
-size(Bin) =:= 0,
+byte_size(Bin) =:= 0,
 is_list(L2),
 is_integer(N3),
 is_integer(N4) ->
@@ -97,7 +99,7 @@ is_integer(N4) ->
 	true ->
 	    Untouched;
 	false ->
-	    {Table,Lastkey,L1,N2,ets:match_spec_compile(MS),L2,N3,N4}
+	    {Table,Lastkey,EndCondition,N2,ets:match_spec_compile(MS),L2,N3,N4}
     end;
 
 % set/bag/duplicate_bag
@@ -106,7 +108,7 @@ repair_continuation(Untouched = {Table,N1,N2,Bin,L,N3}, MS) when
 is_integer(N1),
 is_integer(N2),
 is_binary(Bin),
-size(Bin) =:= 0,
+byte_size(Bin) =:= 0,
 is_list(L),
 is_integer(N3) ->
     case ets:is_compiled_ms(Bin) of
@@ -263,99 +265,596 @@ do_filter(Tab, Key, F, A, Ack) ->
 
     
 %% Dump a table to a file using the disk_log facility
-tab2file(Tab, File) ->
-    file:delete(File),
-    Name = make_ref(),
-    case {disk_log:open([{name, Name}, {file, File}]),
-	  ets:info(Tab)} of
-	{{ok, Name}, undefined} ->
-	    disk_log:close(Name),
-	    {error, badtab};
-	{_, undefined} ->
-	    {error, badtab};
-	{{ok, Name}, Info0} ->
-	    %% For backwards compatibility, the table parameters should be a tuple.
-	    Info = list_to_tuple(Info0),
-	    ok = disk_log:log(Name, Info),
-	    tab2file(Tab, ets:first(Tab), Name)
-    end.
-tab2file(Tab, K, Name) ->
-    case get_objs(Tab, K, 10, []) of
-	{'$end_of_table', Objs} ->
-	    disk_log:log_terms(Name, Objs),
-	    disk_log:close(Name);
-	{Next, Objs} ->
-	    disk_log:log_terms(Name, Objs),
-	    tab2file(Tab, Next, Name)
+
+%% Options := [Option]
+%% Option := {extended_info,[ExtInfo]}
+%% ExtInfo := object_count | md5sum
+
+-define(MAJOR_F2T_VERSION,1).
+-define(MINOR_F2T_VERSION,0).
+-record(filetab_options,
+	{
+	  object_count = false,
+	  md5sum = false
+	 }).
+
+tab2file(Tab,File) ->
+    tab2file(Tab,File,[]).
+
+tab2file(Tab, File, Options) ->
+    try
+	{ok, FtOptions} = parse_ft_options(Options),
+	file:delete(File),
+	case file:read_file_info(File) of
+	    {error,enoent} -> ok;
+	    _ -> throw(eaccess)
+	end,
+	Name = make_ref(),
+	case disk_log:open([{name, Name}, {file, File}]) of
+	    {ok, Name} ->
+		ok;
+	    {error, Reason} ->
+		throw(Reason)
+	end,
+	try
+	    Info0 = case ets:info(Tab) of
+		       undefined ->
+			   %%erlang:error(badarg,[Tab, File, Options]);
+			   throw(badtab);
+		       I ->
+			   I
+	    end,
+	    Info = [list_to_tuple(Info0 ++ 
+				  [{major_version,?MAJOR_F2T_VERSION},
+				   {minor_version,?MINOR_F2T_VERSION},
+				   {extended_info, 
+				    ft_options_to_list(FtOptions)}])],
+	    {LogFun, InitState} = 
+	    case FtOptions#filetab_options.md5sum of
+		true ->
+		    {fun(Oldstate,Termlist) ->
+			     {NewState,BinList} = 
+				 md5terms(Oldstate,Termlist),
+			     disk_log:blog_terms(Name,BinList),
+			     NewState
+		     end,
+		     erlang:md5_init()};
+		false ->
+		    {fun(_,Termlist) ->
+			     disk_log:log_terms(Name,Termlist),
+			     true
+		     end, 
+		     true}
+	    end,
+	    ets:safe_fixtable(Tab,true),
+	    {NewState1,Num} = try
+				  NewState = LogFun(InitState,Info),
+				  dump_file(
+				      ets:select(Tab,[{'_',[],['$_']}],100),
+				      LogFun, NewState,0)
+			      after
+				  (catch ets:safe_fixtable(Tab,false))
+			      end,
+	    EndInfo = 
+	    case  FtOptions#filetab_options.object_count of
+		true ->
+		    [{count,Num}];
+		false ->
+		    []
+	    end ++
+	    case  FtOptions#filetab_options.md5sum of
+		true ->
+		    [{md5,erlang:md5_final(NewState1)}];
+		false ->
+		    []
+	    end,
+	    case EndInfo of
+		[] ->
+		    ok;
+		List ->
+		    LogFun(NewState1,[['$end_of_table',List]])
+	    end,
+	    disk_log:close(Name)
+	catch
+	    throw:TReason ->
+		disk_log:close(Name),
+		file:delete(File),
+		throw(TReason);
+	    exit:ExReason ->
+		disk_log:close(Name),
+		file:delete(File),
+		exit(ExReason);
+	    error:ErReason ->
+		disk_log:close(Name),
+		file:delete(File),
+	        erlang:raise(error,ErReason,erlang:get_stacktrace())
+	end
+    catch
+	throw:TReason2 ->
+	    {error,TReason2};
+	exit:ExReason2 ->
+	    {error,ExReason2}
     end.
 
-get_objs(_Tab, K, 0, Ack) ->
-    {K, lists:reverse(Ack)};
-get_objs(_Tab, '$end_of_table', _, Ack) ->
-    {'$end_of_table', lists:reverse(Ack)};
-get_objs(Tab, K, I, Ack) ->
-    Os = ets:lookup(Tab, K),
-    get_objs(Tab, ets:next(Tab, K), I-1, Os ++ Ack).
+dump_file('$end_of_table', _LogFun, State, Num) ->
+    {State,Num};
+dump_file({Terms,Context},LogFun,State,Num) ->
+    Count = length(Terms),
+    NewState = LogFun(State,Terms),
+    dump_file(ets:select(Context),LogFun,NewState,Num+Count).
 
-%% Restore a table from a file, given that the file was written with
-%% the tab2file/2 function from above
+ft_options_to_list(#filetab_options{md5sum = MD5, object_count = PS}) ->
+    case PS of
+	true ->
+	    [object_count]; 
+	_ ->
+	    []
+    end ++
+	case MD5 of
+	    true ->
+		[md5sum]; 
+	    _ ->
+		[]
+	end.
+    
+	
+
+md5terms(State,[]) ->
+    {State,[]};
+md5terms(State,[H | T]) ->
+    B = term_to_binary(H),
+    NewState = erlang:md5_update(State,B),
+    {FinState, TL} = md5terms(NewState,T),
+    {FinState,[B | TL]}.
+
+parse_ft_options(Options) when is_list(Options) ->
+    {Opt,Rest} = case (catch lists:keytake(extended_info,1,Options)) of
+		     false -> 
+			 {[],Options};
+		     {value,{extended_info,L},R} when is_list(L) ->
+			 {L,R}
+		 end,
+    case Rest of
+	[] ->
+	    parse_ft_info_options(#filetab_options{},Opt);
+	Other ->
+	    throw({unknown_option, Other})
+    end;
+parse_ft_options(Malformed) ->
+    throw({malformed_option,Malformed}).
+
+parse_ft_info_options(FtOpt,[]) ->
+    {ok,FtOpt};
+parse_ft_info_options(FtOpt,[object_count | T]) ->
+    parse_ft_info_options(FtOpt#filetab_options{object_count = true}, T);
+parse_ft_info_options(FtOpt,[md5sum | T]) ->
+    parse_ft_info_options(FtOpt#filetab_options{md5sum = true}, T);
+parse_ft_info_options(_,[Unexpected | _]) ->
+    throw({unknown_option,[{extended_info,[Unexpected]}]});
+parse_ft_info_options(_,Malformed) ->
+    throw({malformed_option,Malformed}).
+		     
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Read a dumped file from disk and create a corresponding table
+%% Opts := [Opt]
+%% Opt := {verify,bool()}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 file2tab(File) ->
-    Name  = make_ref(),
-    case disk_log:open([{name, Name}, {file, File}, {mode, read_only}]) of
-	{ok, Name} ->
-	    init_file2tab(Name);
-	{repaired, Name, _,_} ->
-	    init_file2tab(Name);
-	_Other ->
-	    {error, badfile}
-    end.
+    file2tab(File,[]).
 
-init_file2tab(Name) ->
-    case disk_log:chunk(Name, start) of
-	{error, Reason} ->
-	    file2tab_error(Name, Reason);
-	eof ->
-	    file2tab_error(Name, eof);
-	{Cont, [Info | Tail]} ->
-	    case catch mk_tab(tuple_to_list(Info)) of
-		{'EXIT', _} ->
-		    file2tab_error(Name, "Can't create table");
-		Tab ->
-		    fill_tab(Cont, Name, Tab, Tail),
-		    disk_log:close(Name),
-		    {ok, Tab}
+file2tab(File,Opts) ->
+    try
+	{ok,Verify} = parse_f2t_opts(Opts,false),
+	Name = make_ref(),
+	{ok, Major, Minor, FtOptions, MD5State, FullHeader, DLContext} = 
+	    case disk_log:open([{name, Name}, 
+				{file, File}, 
+				{mode, read_only}]) of
+		{ok, Name} ->
+		    get_header_data(Name,Verify);
+		{repaired, Name, _,_} -> %Uh? cannot happen?
+		    case Verify of
+			true ->
+			    disk_log:close(Name),
+			    throw(badfile);
+			false ->
+			    get_header_data(Name,Verify)
+		    end;
+		{error, Other1} ->
+		    throw({read_error, Other1});
+		Other2 ->
+		    throw(Other2)
+	    end,
+	try
+	    if  
+		Major > ?MAJOR_F2T_VERSION -> 
+		    throw({unsupported_file_version,{Major,Minor}});
+		true ->
+		    ok
+	    end,
+	    {ok,Tab, HeadCount} = create_tab(FullHeader),
+	    StrippedOptions = 				   
+	        case Verify of
+		    true ->
+			FtOptions;
+		    false ->
+			#filetab_options{}
+		end,
+	    {ReadFun,InitState} = 
+	        case StrippedOptions#filetab_options.md5sum of
+		    true ->
+			{fun({OldMD5State,OldCount,_OL,ODLContext} = OS) ->
+				 case wrap_bchunk(Name,ODLContext,100,Verify) of
+				     eof ->
+					 {OS,[]};
+				     {NDLContext,Blist} ->
+					 {Termlist, NewMD5State, 
+					  NewCount,NewLast} =
+					     md5_and_convert(Blist,
+							     OldMD5State,
+							     OldCount),
+					 {{NewMD5State, NewCount,
+					   NewLast,NDLContext},
+					  Termlist}
+				 end
+			 end,
+			 {MD5State,0,[],DLContext}};
+		    false ->
+			{fun({_,OldCount,_OL,ODLContext} = OS) ->
+				 case wrap_chunk(Name,ODLContext,100,Verify) of
+				     eof ->
+					 {OS,[]};
+				     {NDLContext,List} ->
+					 {NewLast,NewCount,NewList} = 
+					     scan_for_endinfo(List, OldCount),
+					 {{false,NewCount,NewLast,NDLContext},
+					  NewList}
+				 end
+			 end,
+			 {false,0,[],DLContext}}
+		end,
+	    try
+		do_read_and_verify(ReadFun,InitState,Tab,
+				   StrippedOptions,HeadCount,Verify)
+	    catch
+		throw:TReason ->
+		    ets:delete(Tab),    
+		    throw(TReason);
+		exit:ExReason ->
+		    ets:delete(Tab),
+		    exit(ExReason);
+		error:ErReason ->
+		    ets:delete(Tab),
+		    erlang:raise(error,ErReason,erlang:get_stacktrace())
 	    end
+	after
+	    disk_log:close(Name)
+	end
+    catch
+	throw:TReason2 ->
+	    {error,TReason2};
+	exit:ExReason2 ->
+	    {error,ExReason2}
     end.
 
-fill_tab(C, Name, Tab, [H|T]) ->
-    ets:insert(Tab, H),
-    fill_tab(C, Name, Tab, T);
-fill_tab(C, Name, Tab, []) ->
-    case disk_log:chunk(Name, C) of
-	{error, Reason} ->
-	    ets:delete(Tab),
-	    file2tab_error(Name, Reason);
-	eof ->
-	    ok;
-	{C2, Objs} ->
-	    fill_tab(C2, Name, Tab, Objs)
+do_read_and_verify(ReadFun,InitState,Tab,FtOptions,HeadCount,Verify) ->
+    case load_table(ReadFun,InitState,Tab) of
+	{ok,{_,FinalCount,[],_}} ->
+	    case {FtOptions#filetab_options.md5sum,
+		  FtOptions#filetab_options.object_count} of
+		{false,false} ->
+		    case Verify of
+			false ->
+			    ok;
+			true ->
+			    case FinalCount of
+				HeadCount ->
+				    ok;
+				_ ->
+				    throw(invalid_object_count)
+			    end
+		    end;
+		_ ->
+		    throw(badfile)
+	    end,
+	    {ok,Tab};
+	{ok,{FinalMD5State,FinalCount,['$end_of_table',LastInfo],_}} ->
+	    ECount = case lists:keysearch(count,1,LastInfo) of
+			 {value,{count,N}} ->
+			     N;
+			 _ ->
+			     false
+		     end,
+	    EMD5 = case lists:keysearch(md5,1,LastInfo) of
+			 {value,{md5,M}} ->
+			     M;
+			 _ ->
+			     false
+		     end,
+	    case FtOptions#filetab_options.md5sum of
+		true ->
+		    case erlang:md5_final(FinalMD5State) of
+			EMD5 ->
+			    ok;
+			_MD5MisM ->
+			    throw(checksum_error)
+		    end;
+		false ->
+		    ok
+	    end,
+	    case FtOptions#filetab_options.object_count of
+		true ->
+		    case FinalCount of
+			ECount ->
+			    ok;
+			_Other ->
+			    throw(invalid_object_count)
+		    end;
+		false ->
+		    %% Only use header count if no extended info
+		    %% at all is present and verification is requested.
+		    case {Verify,FtOptions#filetab_options.md5sum} of
+			{true,false} ->
+			    case FinalCount of
+				HeadCount ->
+				    ok;
+				_Other2 ->
+				     throw(invalid_object_count)
+			    end;
+			_ ->
+			    ok
+		    end
+	    end,
+	    {ok,Tab}
     end.
 
-file2tab_error(Name, Reason) ->
-    disk_log:close(Name),
-    {error, Reason}.
+parse_f2t_opts([],Verify) ->
+    {ok,Verify};
+parse_f2t_opts([{verify, true}|T],_OV) ->
+    parse_f2t_opts(T,true);
+parse_f2t_opts([{verify,false}|T],OV) ->
+    parse_f2t_opts(T,OV);
+parse_f2t_opts([Unexpected|_],_) ->
+    throw({unknown_option,Unexpected});
+parse_f2t_opts(Malformed,_) ->
+    throw({malformed_option,Malformed}).
+    
+			   
+count_mandatory([]) ->
+    0;
+count_mandatory([{Tag,_}|T]) when Tag =:= name;
+				  Tag =:= type;
+				  Tag =:= protection;
+				  Tag =:= named_table;
+				  Tag =:= keypos;
+				  Tag =:= size ->
+    1+count_mandatory(T);
+count_mandatory([_|T]) ->
+    count_mandatory(T).
+				   
+verify_header_mandatory(L) ->						 
+    count_mandatory(L) =:= 6.
 
-mk_tab(I) ->
+wrap_bchunk(Name,C,N,true) ->
+    case disk_log:bchunk(Name,C,N) of
+	{_,_,X} when X > 0 ->
+	    throw(badfile);
+	{NC,Bin,_} ->
+	    {NC,Bin};
+	Y ->
+	    Y
+    end;
+wrap_bchunk(Name,C,N,false) ->
+    case disk_log:bchunk(Name,C,N) of
+	{NC,Bin,_} ->
+	    {NC,Bin};
+	Y ->
+	    Y
+    end.
+					  
+wrap_chunk(Name,C,N,true) ->
+    case disk_log:chunk(Name,C,N) of
+	{_,_,X} when X > 0 ->
+	    throw(badfile);
+	{NC,TL,_} ->
+	    {NC,TL};
+	Y ->
+	    Y
+    end;
+wrap_chunk(Name,C,N,false) ->
+    case disk_log:chunk(Name,C,N) of
+	{NC,TL,_} ->
+	    {NC,TL};
+	Y ->
+	    Y
+    end.
+
+get_header_data(Name,true) ->
+    case wrap_bchunk(Name,start,1,true) of
+	{C,[Bin]} when is_binary(Bin) ->
+	    T = binary_to_term(Bin),
+	    case T of
+		Tup when is_tuple(Tup) ->
+		    L = tuple_to_list(Tup),
+		    case verify_header_mandatory(L) of
+			false ->
+			    throw(badfile);
+			true ->
+			    Major = case lists:keysearch(major,1,L) of
+					{value,{major,Maj}} ->
+					    Maj;
+					_ ->
+					    0
+				    end,
+			    Minor = case lists:keysearch(minor,1,L) of
+					{value,{minor,Min}} ->
+					    Min;
+					_ ->
+					    0
+				    end,
+			    FtOptions = 
+				case lists:keysearch(extended_info,1,L) of
+				    {value,{extended_info,I}} 
+				    when is_list(I) ->
+					#filetab_options
+					    {
+					    object_count = 
+					      lists:member(object_count,I),
+					    md5sum = 
+					      lists:member(md5sum,I)
+					    };
+				    _ ->
+					#filetab_options{}
+				end,
+			    MD5Initial = 
+				case FtOptions#filetab_options.md5sum of
+				    true ->
+					X = erlang:md5_init(),
+					erlang:md5_update(X,Bin);
+				    false ->
+					false
+				end,
+			    {ok, Major, Minor, FtOptions, MD5Initial, L, C}
+		    end;
+		_X ->
+		    throw(badfile)
+	    end;
+	_Y ->
+	    throw(badfile)
+    end;
+
+get_header_data(Name, false) ->
+   case wrap_chunk(Name,start,1,false) of 
+       {C,[Tup]} when is_tuple(Tup) ->
+	   L = tuple_to_list(Tup),
+	   case verify_header_mandatory(L) of
+	       false ->
+		   throw(badfile);
+	       true ->
+		   Major = case lists:keysearch(major_version,1,L) of
+			       {value,{major_version,Maj}} ->
+				   Maj;
+			       _ ->
+				   0
+			   end,
+		   Minor = case lists:keysearch(minor_version,1,L) of
+			       {value,{minor_version,Min}} ->
+				   Min;
+			       _ ->
+				   0
+			   end,
+		   FtOptions = 
+		       case lists:keysearch(extended_info,1,L) of
+			   {value,{extended_info,I}} 
+			   when is_list(I) ->
+			       #filetab_options
+					 {
+					 object_count = 
+					 lists:member(object_count,I),
+					 md5sum = 
+					 lists:member(md5sum,I)
+					};
+			   _ ->
+			       #filetab_options{}
+		       end,
+		   {ok, Major, Minor, FtOptions, false, L, C}
+	   end;
+       _ ->
+	   throw(badfile)
+    end.
+
+md5_and_convert([],MD5State,Count) ->
+    {[],MD5State,Count,[]};
+md5_and_convert([H|T],MD5State,Count) when is_binary(H) ->
+    case (catch binary_to_term(H)) of
+	{'EXIT', _} ->
+	    md5_and_convert(T,MD5State,Count);
+	['$end_of_table',Dat] ->
+	   {[],MD5State,Count,['$end_of_table',Dat]}; 
+	Term ->
+	    X = erlang:md5_update(MD5State,H),
+	    {Rest,NewMD5,NewCount,NewLast} = md5_and_convert(T,X,Count+1),
+	    {[Term | Rest],NewMD5,NewCount,NewLast}
+    end.
+scan_for_endinfo([],Count) ->
+    {[],Count,[]};
+scan_for_endinfo([['$end_of_table',Dat]],Count) ->
+    {['$end_of_table',Dat],Count,[]};
+scan_for_endinfo([Term|T],Count) ->
+    {NewLast,NCount,Rest} = scan_for_endinfo(T,Count+1),
+    {NewLast,NCount,[Term | Rest]}.
+
+load_table(ReadFun, State, Tab) ->
+    {NewState,NewData} = ReadFun(State),
+    case NewData of
+	[] ->
+	    {ok,NewState};
+	List ->
+	    ets:insert(Tab,List),
+	    load_table(ReadFun,NewState,Tab)
+    end.
+	    
+		   
+create_tab(I) ->
     {value, {name, Name}} = lists:keysearch(name, 1, I),
     {value, {type, Type}} = lists:keysearch(type, 1, I),
     {value, {protection, P}} = lists:keysearch(protection, 1, I),
     {value, {named_table, Val}} = lists:keysearch(named_table, 1, I),
     {value, {keypos, Kp}} = lists:keysearch(keypos, 1, I),
-    ets:new(Name, [Type, P, {keypos, Kp} | named_table(Val)]).
+    {value, {size, Sz}} = lists:keysearch(size, 1, I),
+    try
+	Tab = ets:new(Name, [Type, P, {keypos, Kp} | named_table(Val)]),
+	{ok, Tab, Sz}
+    catch
+	_:_ ->
+	    throw(cannot_create_table)
+    end.
+	    
 
 named_table(true) -> [named_table];
 named_table(false) -> [].
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% tabfile_info/1 reads the head information in an ets table
+%% dumpet to disk by means of file2tab and returns a list of 
+%% the relevant table information
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+tabfile_info(File) when is_list(File) ; is_atom(File) ->
+    try
+	Name = make_ref(),
+	{ok, Major, Minor, _FtOptions, _MD5State, FullHeader, _DLContext} = 
+	    case disk_log:open([{name, Name}, 
+				{file, File}, 
+				{mode, read_only}]) of
+		{ok, Name} ->
+		    get_header_data(Name,false);
+		{repaired, Name, _,_} -> %Uh? cannot happen?
+		    get_header_data(Name,false);
+		{error, Other1} ->
+		    throw({read_error, Other1});
+		Other2 ->
+		    throw(Other2)
+	    end,
+	disk_log:close(Name),
+	{value, N} = lists:keysearch(name, 1, FullHeader),
+	{value, Type} = lists:keysearch(type, 1, FullHeader),
+	{value, P} = lists:keysearch(protection, 1, FullHeader),
+	{value, Val} = lists:keysearch(named_table, 1, FullHeader),
+	{value, Kp} = lists:keysearch(keypos, 1, FullHeader),
+	{value, Sz} = lists:keysearch(size, 1, FullHeader),
+	Ei = case lists:keysearch(extended_info, 1, FullHeader) of
+		 {value, Ei0} -> Ei0;
+		 _ -> {extended_info, []}
+	     end,
+	{ok, [N,Type,P,Val,Kp,Sz,Ei,{version,{Major,Minor}}]}
+    catch
+	throw:TReason ->
+	    {error,TReason};
+	exit:ExReason ->
+	    {error,ExReason}
+    end.
 
 table(Tab) ->
     table(Tab, []).

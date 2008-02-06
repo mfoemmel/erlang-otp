@@ -12,7 +12,7 @@
 
 -module(hipe_icode_type).
 
--export([cfg/3, unannotate_cfg/1, specialize/1]).
+-export([cfg/4, unannotate_cfg/1, specialize/1]).
 
 %%=====================================================================
 %% Icode Coordinator Callbacks
@@ -27,6 +27,7 @@
 -define(TYPE_DEPTH, 4).
 -include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
+-include("../main/hipe.hrl").
 
 %-define(DO_HIPE_ICODE_TYPE_TEST, false).
 
@@ -78,49 +79,46 @@
 		    t_matchstate_slots/1,
 		    t_nil/0, t_number/0, t_number/1, t_number_vals/1, 
 		    t_pid/0, t_port/0, t_ref/0, t_subtract/2, t_sup/2,
-		    t_to_string/1, t_tuple/0, t_tuple/1,
+		    t_tuple/0, t_tuple/1,
 		    %%t_tuple_arity/1, 
 		    t_tuple_arities/1, t_none/0,
 		    number_min/1, number_max/1, t_from_range/2, 
 		    min/2, max/2, t_is_bitwidth/1]).
 
-cfg(Cfg, IcodeFun, Options) ->
+cfg(Cfg, IcodeFun, Options, Servers) ->
   case proplists:get_bool(concurrent_comp, Options) of
     true ->
-      concurrent_cfg(Cfg, IcodeFun, Options, 
-		     proplists:get_value(icode_type_server,Options));
+      concurrent_cfg(Cfg, IcodeFun, Servers#comp_servers.type);
     false ->
-      ordinary_cfg(Cfg, IcodeFun, Options)
+      ordinary_cfg(Cfg, IcodeFun)
   end.
 
-concurrent_cfg(Cfg, MFA, Options, CompServer) ->
+concurrent_cfg(Cfg, MFA, CompServer) ->
   CompServer ! {ready,{MFA,self()}},
-  {ArgsFun,CallFun,FinalFun} = do_analysis(Cfg, MFA, Options),
-  do_rewrite(Cfg, MFA, Options, ArgsFun, CallFun, FinalFun).
+  {ArgsFun,CallFun,FinalFun} = do_analysis(Cfg, MFA),
+  do_rewrite(Cfg, MFA, ArgsFun, CallFun, FinalFun).
 
-do_analysis(Cfg, MFA, Options) ->
+do_analysis(Cfg, MFA) ->
   receive
     {analyse,{ArgsFun,CallFun,FinalFun}} ->
       analyse(Cfg, {MFA,ArgsFun,CallFun,FinalFun}),
-      do_analysis(Cfg, MFA, Options);
+      do_analysis(Cfg, MFA);
     {done,{NewArgsFun,NewCallFun,NewFinalFun}} ->
       {NewArgsFun,NewCallFun,NewFinalFun}
   end.
 
-do_rewrite(Cfg, MFA, Options, ArgsFun, CallFun, FinalFun) ->
-  common_rewrite(Cfg, MFA, Options, {MFA,ArgsFun,CallFun,FinalFun}).
+do_rewrite(Cfg, MFA, ArgsFun, CallFun, FinalFun) ->
+  common_rewrite(Cfg, {MFA,ArgsFun,CallFun,FinalFun}).
  
-ordinary_cfg(Cfg, MFA, Options) ->
+ordinary_cfg(Cfg, MFA) ->
   Data = make_data(Cfg,MFA),
-  common_rewrite(Cfg, MFA, Options, Data).
+  common_rewrite(Cfg, Data).
   
-common_rewrite(Cfg, MFA, Options, Data) ->
+common_rewrite(Cfg, Data) ->
   State = analyse(Cfg, Data),
-  pp(state__cfg(annotate_cfg(State)),State, MFA, Options, "Pre-specialization"),
   NewState = simplify_controlflow(State),  
   NewCfg = state__cfg(annotate_cfg(NewState)),
   SpecialCfg = hipe_icode_cfg:remove_unreachable_code(specialize(NewCfg)),
-  pp(SpecialCfg,NewState, MFA, Options, "Post-specialization"),
   SpecialCfg.
 
 make_data(Cfg, {_M,_F,A}=MFA) ->
@@ -2043,102 +2041,6 @@ add_work(Work = {List1, List2, Set}, [Label|Left]) ->
 add_work(Work, []) ->
   Work.
 
-%% _________________________________________________________________
-%%
-%% Pretty printer
-%%
-
-pp(AnnotatedCfg, State, IcodeFun, Options, Msg) ->
-  PP_fun = 
-    fun() ->
-	PP =
-	  case proplists:get_value(pp_typed_icode, Options) of
-	    true ->
-	      true;
-	    {only,Lst} ->
-	      lists:member(IcodeFun,Lst);
-	  Other ->
-	      Other
-	  end,
-	case PP of
-	  true ->
-	    io:format("-------------- " ++ Msg ++ " ---------------\n", []),
-	    [ReturnType|_] = state__ret_type(State),
-	    hipe_icode_cfg:pp(AnnotatedCfg),
-	    case t_is_none(ReturnType) of
-	      true ->
-		io:format("Function ~w will never return a proper value!\n", 
-			  [IcodeFun]);
-	      false ->
-		io:format("Return type for ~w: ~s\n",
-			  [IcodeFun, format_type(ReturnType)])
-	    end;
-	  {file, FileName} ->
-	    AnnotatedCfg = state__cfg(annotate_cfg(State)),
-	    [ReturnType|_] = state__ret_type(State),
-	    {ok,File} = file:open(FileName,[write,append]),
-	    io:format(File, "-------------- " ++ Msg ++ " ---------------\n", []),
-	    hipe_icode_cfg:pp(File, AnnotatedCfg),
-	    case t_is_none(ReturnType) of
-	      true ->
-	      io:format(File,
-			"Function ~w will never return a proper value!\n", 
-			[IcodeFun]);
-	      false ->
-		io:format(File, "Return type for ~w: ~s\n",
-			  [IcodeFun, format_type(ReturnType)])
-	    end;
-	  _ ->
-	    ok
-	end
-    end,
-  case proplists:get_value(pp_server, Options) of
-    Pid when is_pid(Pid) ->
-      Pid ! {print,PP_fun};
-    _ ->
-      PP_fun()
-  end.
-
-format_type(T) ->
-  case t_is_number(T) of
-    true ->
-      format_number(T);
-    false ->
-      case t_is_atom(T) of
-	true -> 
-	  case t_atom_vals(T) of
-	    any -> "an atom";
-	    _ -> t_to_string(T)
-	  end;
-	false -> t_to_string(T)
-      end
-  end.
-
-format_number(T) ->
-  case t_number_vals(T) of
-    Numbers when is_list(Numbers) ->
-      case lists:all(fun(N) -> is_float(N) end, Numbers) of
-	true ->
-	  case t_is_any(T) of
-	    true -> io_lib:format("a float", []);
-	    false -> io_lib:format("the float ~s", [t_to_string(T)])
-	  end;
-	false ->
-	  case lists:all(fun(N) -> is_integer(N) end, Numbers) of
-	    true ->
-	      case t_is_any(T) of
-		true -> io_lib:format("an integer", []);
-		false -> io_lib:format("the integer ~s", [t_to_string(T)])
-	      end;
-	    false ->
-	      case t_is_any(T) of
-		true -> io_lib:format("a number", [])
-	      end
-	  end
-      end;
-    any ->
-      t_to_string(T)
-  end.
 
 %% _________________________________________________________________
 %%

@@ -33,6 +33,7 @@ usage ()
     echo "release [-a] <target_dir> - creates full release to <target_dir>"
     echo "tests <dir> - Build testsuites to <dir>"
     echo ""
+    echo "debuginfo_win32 <dir> - adds debug emulator and pdb files to <dir>"
     echo "installer_win32 <dir> - creates a windows installer from <dir>" 
     echo ""
     echo "Before trying to build on windows, consider the following option"
@@ -652,6 +653,26 @@ do_tests ()
     fi
 }
 
+do_debuginfo_win32 ()
+{
+    setup_make
+    (cd erts/emulator && $MAKE MAKE="$MAKE" TARGET=$TARGET FLAVOR=smp debug &&\
+	$MAKE MAKE="$MAKE" TARGET=$TARGET FLAVOR=plain debug) || exit 1
+    if [ -z "$1" ]; then
+	RELDIR=$ERL_TOP/release/$TARGET
+    else
+	RELDIR="$1"
+    fi
+    BINDIR=$ERL_TOP/bin/$TARGET
+    EVSN=`cat erts/vsn.mk | sed 's,^VSN.*=[^0-9]*\([0-9].*\)$,@\1,g;s,^[^@].*,,g;s,^@,,g'`
+    for f in beam.debug.dll beam.debug.smp.dll beam.pdb beam.smp.pdb erl.pdb werl.pdb erlexec.pdb; do
+	if [ -f $BINDIR/$f ]; then
+	    rm -f $RELDIR/erts-$EVSN/bin/$f
+	    cp $BINDIR/$f $RELDIR/erts-$EVSN/bin/$f
+	fi
+    done
+}
+
 do_installer_win32 ()
 {
     setup_make
@@ -792,6 +813,11 @@ case "$1" in
 		    shift
 		fi;
 		do_installer_win32 "$2";;
+	debuginfo_win32)
+		if [ $minus_a_flag = true ]; then 
+		    shift
+		fi;
+		do_debuginfo_win32 "$2";;
 	env_win32)
 		echo_env_win32;;
 	env_mingw32)

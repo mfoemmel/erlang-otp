@@ -1,701 +1,963 @@
-%% -*- erlang-indent-level: 2 -*-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% hipe_rtl_to_sparc - translate RTL-code to SPARC-code
-%%
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id$
 
 -module(hipe_rtl_to_sparc).
--export([translate/2]).
+-export([translate/1]).
 
--include("../main/hipe.hrl").
 -include("../rtl/hipe_rtl.hrl").
 
-%%
-%% Translates RTL-code to SPARC-code.
-%%
-
-translate(Rtl, _Options) ->
-  VarMap = new_var_map(),
-  Code = hipe_rtl:rtl_code(Rtl),
-  Data = hipe_rtl:rtl_data(Rtl),
+translate(RTL) ->
   hipe_gensym:init(sparc),
-  hipe_gensym:set_label(sparc,hipe_gensym:get_label(rtl)+1),
-  hipe_gensym:set_var(sparc,hipe_sparc_registers:first_virtual()),
-  Arity = length(hipe_rtl:rtl_params(Rtl)),
-  Closure = hipe_rtl:rtl_is_closure(Rtl),
-  Leaf = hipe_rtl:rtl_is_leaf(Rtl),
+  hipe_gensym:set_var(sparc, hipe_sparc_registers:first_virtual()),
+  hipe_gensym:set_label(sparc, hipe_gensym:get_label(rtl)),
+  Map0 = vmap_empty(),
+  {Formals, Map1} = conv_formals(hipe_rtl:rtl_params(RTL), Map0),
+  OldData = hipe_rtl:rtl_data(RTL),
+  {Code0, NewData} = conv_insn_list(hipe_rtl:rtl_code(RTL), Map1, OldData),
+  {RegFormals, _} = split_args(Formals),
+  Code =
+    case RegFormals of
+      [] -> Code0;
+      _ -> [hipe_sparc:mk_label(hipe_gensym:get_next_label(sparc)) |
+	    move_formals(RegFormals, Code0)]
+    end,
+  IsClosure = hipe_rtl:rtl_is_closure(RTL),
+  IsLeaf = hipe_rtl:rtl_is_leaf(RTL),
+  hipe_sparc:mk_defun(conv_mfa(hipe_rtl:rtl_fun(RTL)),
+		      Formals,
+		      IsClosure,
+		      IsLeaf,
+		      Code,
+		      NewData,
+		      [], 
+		      []).
 
-  {InitCode, VarMap1} = head(Rtl,VarMap),
-  {SparcCode, NewData} = translate_instructions(Code, VarMap1, Data),
-  SparcCode1 = lists:flatten(SparcCode), 
-  FirstLab = hd(SparcCode1),
-  Goto = hipe_sparc:goto_create(hipe_sparc:label_name(FirstLab)),
-  Sparc =
-    hipe_sparc:mk_sparc(hipe_rtl:rtl_fun(Rtl),
-			Arity, Closure, Leaf,
-			InitCode++[Goto|SparcCode1],
-			NewData,
-			{1, hipe_gensym:get_var(sparc)}, 
-			{1, hipe_gensym:get_label(sparc)}),
-  %%  hipe_sparc_pp:pp(Sparc),
-  Sparc.
+conv_insn_list([H|T], Map, Data) ->
+  {NewH, NewMap, NewData1} = conv_insn(H, Map, Data),
+  %% io:format("~w \n  ==>\n ~w\n- - - - - - - - -\n",[H,NewH]),
+  {NewT, NewData2} = conv_insn_list(T, NewMap, NewData1),
+  {NewH ++ NewT, NewData2};
+conv_insn_list([], _, Data) ->
+  {[], Data}.
 
-
-head(Rtl,Map) ->
-  StartLabel = hipe_sparc:label_create_new(),
-  Params = hipe_rtl:rtl_params(Rtl),
-  {SparcParams, Map0} = rvs2srs(Params, Map),
-  {_Regs,Moves} = move_args_to_vars(SparcParams),
-  {[StartLabel|Moves],Map0}.
-  
-translate_instructions([], _Map, ConstTab) ->
-  {[], ConstTab};
-translate_instructions([I|Is], Map, ConstTab) ->
-  {NewIs, NewMap, NewConstTab} = translate_instruction(I, Map, ConstTab),
-  {NewIs2, NewConstTab2} = translate_instructions(Is, NewMap, NewConstTab),
-  {NewIs ++  NewIs2, NewConstTab2}.
-
-translate_instruction(I, Map, ConstTab) ->
+conv_insn(I, Map, Data) ->
   case I of
-    #label{} ->           translate_label(I, Map, ConstTab);
-    #move{} ->            translate_move(I, Map, ConstTab);
-    #multimove{} ->       translate_multimove(I, Map, ConstTab);
-    #alu{} ->             translate_alu(I, Map, ConstTab);
-    #goto{} ->            translate_goto(I, Map, ConstTab);
-    #load{} ->            translate_load(I, Map, ConstTab);
-    #load_atom{} ->       translate_load_atom(I, Map, ConstTab);
-    #load_word_index{} -> translate_load_word_index(I, Map, ConstTab);
-    #goto_index{} ->      translate_goto_index(I, Map, ConstTab);
-    #load_address{} ->    translate_load_address(I, Map, ConstTab);
-    #store{} ->           translate_store(I, Map, ConstTab);
-    #call{} ->            translate_call(I, Map, ConstTab);
-    #enter{} ->
-      {Args, Map0} = rvs2srs(hipe_rtl:enter_arglist(I), Map),
-      {RegArgs,Head} = move_vars_to_args(Args),
-      {Target, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
-      Type = hipe_rtl:enter_type(I),
-      Ins = [Head, hipe_sparc:pseudo_enter_create(Target, RegArgs, Type)],
-      {Ins, Map1, ConstTab};
-    #branch{} ->
-      {Src1, Map0} = rv2sr(hipe_rtl:branch_src1(I), Map),
-      {Src2, Map1} = rv2sr(hipe_rtl:branch_src2(I), Map0),
-      Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
-      Pred = hipe_rtl:branch_pred(I),
-      Cond = rtl_cond_to_sparc_cc(hipe_rtl:branch_cond(I)),
-      Ins = [hipe_sparc:alu_cc_create(Zero, Src1, '-', Src2),
-	     if Pred >= 0.5 ->
-		 hipe_sparc:b_create(Cond,
-				     hipe_rtl:branch_true_label(I),
-				     hipe_rtl:branch_false_label(I),
-				     Pred,
-				     na);
-		true ->
-		  hipe_sparc:b_create(neg_cond(Cond),
-				      hipe_rtl:branch_false_label(I),
-				      hipe_rtl:branch_true_label(I),
-				      1.0 - Pred,
-				      na)
-	     end],
-      {Ins, Map1, ConstTab};
-    #alub{} -> %% this instruction is a little more high-level
-      Op = rtl_op2sparc_op(hipe_rtl:alub_op(I)),
-      {Dst, Map0} = rv2sr(hipe_rtl:alub_dst(I), Map),
-      {Src1, Map1} = rv2sr(hipe_rtl:alub_src1(I), Map0),
-      {Src2, Map2} = rv2sr(hipe_rtl:alub_src2(I), Map1),
-      Cond0 = rtl_cond_to_sparc_cc(hipe_rtl:alub_cond(I)),
-      Cond =
-	case {Op,Cond0} of
-	  {'smul','vs'} -> 'ne';	% overflow becomes not-equal
-	  {'smul','vc'} -> 'e';		% no-overflow becomes equal
-	  {'smul',_} -> exit({?MODULE, {"invalid mul alub cond", Cond0}});
-	  {_,_} -> Cond0
-	end,
-      Pred = hipe_rtl:alub_pred(I),
-      Branch = 
-	if Pred >= 0.5 ->
-	    hipe_sparc:b_create(Cond, 
-				hipe_rtl:alub_true_label(I),
-				hipe_rtl:alub_false_label(I),
-				Pred,
-				na);
-	   true ->
-	    hipe_sparc:b_create(neg_cond(Cond), 
-				hipe_rtl:alub_false_label(I),
-				hipe_rtl:alub_true_label(I),
-				1.0 - Pred,
-				na)
-	end,
-      Ins =
-	case Op of
-	  'smul' ->
-	    %% To check for overflow in 32x32->32 multiplication:
-	    %% smul Src1,Src2,Dst	% Dst receives the low 32 bits, %y the high 32 bits
-	    %% rd %y,Reg1
-	    %% sra Dst,31,Reg2	% fill Reg2 with sign of Dst
-	    %% cmp Reg1,Reg2	% V9: xor Reg1,Reg2,Reg3
-	    %% bne OverflowLabel	% V9: brnz Reg3,OverflowLabel
-	    Reg1 = hipe_sparc:mk_new_reg(),
-	    Reg2 = hipe_sparc:mk_new_reg(),
-	    G0 = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
-	    [hipe_sparc:alu_create(Dst, Src1, Op, Src2), % smul also sets %y
-	     hipe_sparc:rdy_create(Reg1),
-	     hipe_sparc:alu_create(Reg2, Dst, '>>?', hipe_sparc:mk_imm(31)),
-	     hipe_sparc:alu_cc_create(G0, Reg1, '-', Reg2),
-	     Branch];
-	  _ ->
-	    [hipe_sparc:alu_cc_create(Dst, Src1, Op, Src2),
-	     Branch]
-	end,
-      {Ins, Map2, ConstTab};
-    #switch{} -> % this instruction is a lot more high-level
-      Labels = hipe_rtl:switch_labels(I),
-      LMap = [{label,L}|| L <- Labels],
-      {NewConstTab, JmpT} = 
-	case hipe_rtl:switch_sort_order(I) of
-	  [] -> 
-	    hipe_consttab:insert_block(ConstTab, word, LMap);
-	  SortOrder ->
-	    hipe_consttab:insert_sorted_block(ConstTab, word, LMap, SortOrder)
-	end,
-      JTR = hipe_sparc:mk_new_reg(),
-      AlignedR = hipe_sparc:mk_new_reg(),
-      DestR = hipe_sparc:mk_new_reg(),
-      {StartR, Map1} = rv2sr(hipe_rtl:switch_src(I), Map),
-      Ins = [hipe_sparc:load_address_create(JTR, JmpT, constant),
-	     %% Multiply by 4, wordalign 
-	     hipe_sparc:alu_create(AlignedR, StartR, '<<', hipe_sparc:mk_imm(2)),
-	     %% Get the destination from: &JmpT + (Index-Min) * 4
-	     hipe_sparc:load_create(DestR, uw, JTR, AlignedR),
-	     %% Jump to the dest.
-	     hipe_sparc:jmp_create(DestR, hipe_sparc:mk_imm(0), [], Labels)],
-      {Ins, Map1, NewConstTab};
-    #return{} ->
-      {Regs, Map1} = rvs2srs(hipe_rtl:return_varlist(I), Map),
-      {RegArgs, Moves} = move_vars_to_retregs(Regs),
-      RetIs = [hipe_sparc:pseudo_return_create(RegArgs)],
-      {Moves ++ RetIs, Map1, ConstTab};
-    #comment{} ->
-      Ins = [hipe_sparc:comment_create(hipe_rtl:comment_text(I))],
-      {Ins, Map, ConstTab};
-    #fload{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fload_dst(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fload_src(I), Map0),
-      {Off, Map2} = rv2sr(hipe_rtl:fload_offset(I), Map1),      
-      Ins = [hipe_sparc:load_fp_create(Dst, Src, Off)],
-      {Ins, Map2, ConstTab};
-    #fstore{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fstore_base(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fstore_src(I), Map0),
-      {Off, Map2} = rv2sr(hipe_rtl:fstore_offset(I), Map1),
-      Ins = [hipe_sparc:store_fp_create(Dst, Off, Src)],
-      {Ins, Map2, ConstTab};
-    #fp{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fp_dst(I), Map),
-      {Src1, Map1} = rv2sr(hipe_rtl:fp_src1(I), Map0),
-      {Src2, Map2} = rv2sr(hipe_rtl:fp_src2(I), Map1),
-      Op = rtl_op2sparc_op(hipe_rtl:fp_op(I)),
-      Ins = [hipe_sparc:fop_create(Dst, Src1, Op, Src2)],
-      {Ins, Map2, ConstTab};
-    #fp_unop{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fp_unop_dst(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fp_unop_src(I), Map0),
-      Ins = 
-	case rtl_op2sparc_op(hipe_rtl:fp_unop_op(I)) of
-	  'fchs' ->
-	    [hipe_sparc:fmove_create(Dst,double,Src,true,false)];
-	  Op ->
-	    exit({?MODULE, {"unknown fp_unop", Op}})
-	end,
-      {Ins, Map1, ConstTab};
-    #fmove{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fmove_dst(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fmove_src(I), Map0),
-      Ins = [hipe_sparc:fmove_create(Dst,double,Src,false,false)],
-      {Ins, Map1, ConstTab};
-    #fconv{} ->
-      {Dst, Map0} = rv2sr(hipe_rtl:fconv_dst(I), Map),
-      {Src, Map1} = rv2sr(hipe_rtl:fconv_src(I), Map0),
-      Ins = [hipe_sparc:conv_fp_create(Dst,Src)],
-      {Ins, Map1, ConstTab};   
-    X ->
-      throw({?MODULE, {"unknown rtl-instruction", X}})
+    #alu{} -> conv_alu(I, Map, Data);
+    #alub{} -> conv_alub(I, Map, Data);
+    #branch{} -> conv_branch(I, Map, Data);
+    #call{} -> conv_call(I, Map, Data);
+    #comment{} -> conv_comment(I, Map, Data);
+    #enter{} -> conv_enter(I, Map, Data);
+    #goto{} -> conv_goto(I, Map, Data);
+    #label{} -> conv_label(I, Map, Data);
+    #load{} -> conv_load(I, Map, Data);
+    #load_address{} -> conv_load_address(I, Map, Data);
+    #load_atom{} -> conv_load_atom(I, Map, Data);
+    #move{} -> conv_move(I, Map, Data);
+    #return{} -> conv_return(I, Map, Data);
+    #store{} -> conv_store(I, Map, Data);
+    #switch{} -> conv_switch(I, Map, Data); % XXX: only switch uses/updates Data
+    #fconv{} -> conv_fconv(I, Map, Data);
+    #fmove{} -> conv_fmove(I, Map, Data);
+    #fload{} -> conv_fload(I, Map, Data);
+    #fstore{} -> conv_fstore(I, Map, Data);
+    #fp{} -> conv_fp_binary(I, Map, Data);
+    #fp_unop{} -> conv_fp_unary(I, Map, Data);
+    _ -> exit({?MODULE,conv_insn,I})
   end.
 
+conv_fconv(I, Map, Data) ->
+  %% Dst := (double)Src, where Dst is FP reg and Src is int reg
+  {Src, Map1} = conv_src(hipe_rtl:fconv_src(I), Map), % exclude imm src
+  {Dst, Map2} = conv_fpreg(hipe_rtl:fconv_dst(I), Map1),
+  I2 = mk_fconv(Src, Dst),
+  {I2, Map2, Data}.
 
-translate_label(I, Map, ConstTab)->
-  Ins = [hipe_sparc:label_create(hipe_rtl:label_name(I))],
-  {Ins, Map, ConstTab}.
+mk_fconv(Src, Dst) ->
+  CSP = hipe_sparc:mk_temp(14, 'untagged'), % o6
+  Disp = hipe_sparc:mk_simm13(100),
+  [hipe_sparc:mk_store('stw', Src, CSP, Disp),
+   hipe_sparc:mk_pseudo_fload(CSP, Disp, Dst, true),
+   hipe_sparc:mk_fp_unary('fitod', Dst, Dst)].
 
-translate_move(I, Map, ConstTab)->
-  {Dst, Map0} = rv2sr(hipe_rtl:move_dst(I), Map),
-  {Src, Map1} = rv2sr(hipe_rtl:move_src(I), Map0),
-  Ins = [hipe_sparc:move_create(Dst, Src)],
-  {Ins, Map1, ConstTab}.
+conv_fmove(I, Map, Data) ->
+  %% Dst := Src, where both Dst and Src are FP regs
+  {Src, Map1} = conv_fpreg(hipe_rtl:fmove_src(I), Map),
+  {Dst, Map2} = conv_fpreg(hipe_rtl:fmove_dst(I), Map1),
+  I2 = mk_fmove(Src, Dst),
+  {I2, Map2, Data}.
 
-translate_multimove(I, Map, ConstTab) ->
-  {DstList, Map0} = rvs2srs(hipe_rtl:multimove_dstlist(I), Map),
-  {SrcList, Map1} = rvs2srs(hipe_rtl:multimove_srclist(I), Map0),
-  Ins = [hipe_sparc:multimove_create(DstList, SrcList)],
-  {Ins, Map1, ConstTab}.
+mk_fmove(Src, Dst) ->
+  [hipe_sparc:mk_pseudo_fmove(Src, Dst)].
 
-translate_alu(I, Map, ConstTab) ->
-  Op = rtl_op2sparc_op(hipe_rtl:alu_op(I)),
-  {Dst, Map0} = rv2sr(hipe_rtl:alu_dst(I), Map),
-  {Src1, Map1} = rv2sr(hipe_rtl:alu_src1(I), Map0),
-  {Src2, Map2} = rv2sr(hipe_rtl:alu_src2(I), Map1),
-  Ins = [hipe_sparc:alu_create(Dst, Src1, Op, Src2)],
-  {Ins, Map2, ConstTab}.
+conv_fload(I, Map, Data) ->
+  %% Dst := MEM[Base+Off], where Dst is FP reg
+  {Base1, Map1} = conv_src(hipe_rtl:fload_src(I), Map),
+  {Base2, Map2} = conv_src(hipe_rtl:fload_offset(I), Map1),
+  {Dst, Map3} = conv_fpreg(hipe_rtl:fload_dst(I), Map2),
+  I2 = mk_fload(Base1, Base2, Dst),
+  {I2, Map3, Data}.
 
-translate_goto(I, Map, ConstTab) ->
-  Ins = [hipe_sparc:goto_create(hipe_rtl:goto_label(I))],
-  {Ins, Map, ConstTab}.
-
-
-translate_load(I, Map, ConstTab) ->
-  %% v9-specific
-  {Dst, Map0} = rv2sr(hipe_rtl:load_dst(I), Map),
-  {Src, Map1} = rv2sr(hipe_rtl:load_src(I), Map0),
-  {Off, Map2} = rv2sr(hipe_rtl:load_offset(I), Map1),
-  case hipe_rtl:load_size(I) of
-    word ->
-      Ins = [hipe_sparc:load_create(Dst, uw, Src, Off)];
-    int32 ->
-      Ins = [hipe_sparc:load_create(Dst, uw, Src, Off)];
+mk_fload(Base1, Base2, Dst) ->
+  case hipe_sparc:is_temp(Base1) of
+    true ->
+      case hipe_sparc:is_temp(Base2) of
+	true ->
+	  mk_fload_rr(Base1, Base2, Dst);
+	_ ->
+	  mk_fload_ri(Base1, Base2, Dst)
+      end;
     _ ->
-      case hipe_rtl:load_sign(I) of
-	signed ->
-	  case hipe_rtl:load_size(I) of
-	    
-	    int16 ->
-	      Ins = [hipe_sparc:load_create(Dst, sh, Src, Off)];
-	    
-	    byte ->
-	      Ins = [hipe_sparc:load_create(Dst, sb, Src, Off)]
-	  end;
-	unsigned ->
-	  case hipe_rtl:load_size(I) of
-	   
-	    int16 ->
-	      Ins = [hipe_sparc:load_create(Dst, uh, Src, Off)];
-	    
-	    byte ->
-	      Ins = [hipe_sparc:load_create(Dst, ub, Src, Off)]
-	   
-	  end
+      case hipe_sparc:is_temp(Base2) of
+	true ->
+	  mk_fload_ri(Base2, Base1, Dst);
+	_ ->
+	  mk_fload_ii(Base1, Base2, Dst)
       end
-  end,
-{Ins, Map2, ConstTab}.
+  end.
 
-translate_load_atom(I, Map, ConstTab) ->
-  {Dst, Map0} = rv2sr(hipe_rtl:load_atom_dst(I), Map),
-  Ins = [hipe_sparc:load_atom_create(Dst, hipe_rtl:load_atom_atom(I))],
-  {Ins, Map0, ConstTab}.
+mk_fload_rr(Base1, Base2, Dst) ->
+  Tmp = new_untagged_temp(),
+  Disp = hipe_sparc:mk_simm13(0),
+  [hipe_sparc:mk_alu('add', Base1, Base2, Tmp),
+   hipe_sparc:mk_pseudo_fload(Tmp, Disp, Dst, false)].
 
+mk_fload_ii(Base1, Base2, Dst) ->
+  io:format("~w: RTL fload with two immediates\n", [?MODULE]),
+  Tmp = new_untagged_temp(),
+  mk_set(Base1, Tmp,
+	 mk_fload_ri(Tmp, Base2, Dst)).
 
-translate_load_word_index(I, Map, ConstTab) ->
-  Block = hipe_rtl:load_word_index_block(I),
-  Index = hipe_rtl:load_word_index_index(I),
-  {Dst, Map0} = rv2sr(hipe_rtl:load_word_index_dst(I), Map),
-  Ins = [hipe_sparc:load_word_index_create(Dst, Block, Index)],
-  {Ins, Map0, ConstTab}.
+mk_fload_ri(Base, Disp, Dst) ->
+  hipe_sparc:mk_fload(Base, Disp, Dst, 'new').
 
-translate_goto_index(I, Map, ConstTab) ->
-  Block = hipe_rtl:goto_index_block(I),
-  Index = hipe_rtl:goto_index_index(I),
-  Labels = hipe_rtl:goto_index_labels(I),
-  JReg = hipe_sparc:mk_new_reg(),
-  Ins = [hipe_sparc:load_word_index_create(JReg, Block, Index),
-	 hipe_sparc:jmp_create(JReg, hipe_sparc:mk_imm(0),[], Labels)
-	],
-  {Ins, Map, ConstTab}.
+conv_fstore(I, Map, Data) ->
+  %% MEM[Base+Off] := Src, where Src is FP reg
+  {Base1, Map1} = conv_dst(hipe_rtl:fstore_base(I), Map),
+  {Base2, Map2} = conv_src(hipe_rtl:fstore_offset(I), Map1),
+  {Src, Map3} = conv_fpreg(hipe_rtl:fstore_src(I), Map2),
+  I2 = mk_fstore(Src, Base1, Base2),
+  {I2, Map3, Data}.
 
+mk_fstore(Src, Base1, Base2) ->
+  case hipe_sparc:is_temp(Base2) of
+    true ->
+      mk_fstore_rr(Src, Base1, Base2);
+    _ ->
+      mk_fstore_ri(Src, Base1, Base2)
+  end.
 
-translate_load_address(I, Map, ConstTab) ->
-  {Dst, Map0} = rv2sr(hipe_rtl:load_address_dst(I), Map),
-  Ins = [hipe_sparc:load_address_create(
-	   Dst,
-	   hipe_rtl:load_address_address(I), 
-	   hipe_rtl:load_address_type(I))],
-  {Ins, Map0, ConstTab}.
+mk_fstore_rr(Src, Base1, Base2) ->
+  Tmp = new_untagged_temp(),
+  Disp = hipe_sparc:mk_simm13(0),
+  [hipe_sparc:mk_alu('add', Base1, Base2, Tmp),
+   hipe_sparc:mk_pseudo_fstore(Src, Tmp, Disp)].
 
-translate_store(I, Map, ConstTab) ->
-  {Dst, Map0} = rv2sr(hipe_rtl:store_base(I), Map),
-  {Src, Map1} = rv2sr(hipe_rtl:store_src(I), Map0),
-  {Off, Map2} = rv2sr(hipe_rtl:store_offset(I), Map1),
-  Ins =
-    case hipe_rtl:store_size(I) of
-      word ->
-	[hipe_sparc:store_create(Dst, Off, w, Src)];
-      int32 ->
-	[hipe_sparc:store_create(Dst, Off, w, Src)];
-      int16 ->
-	[hipe_sparc:store_create(Dst, Off, h, Src)];
-      byte ->
-	[hipe_sparc:store_create(Dst, Off, b, Src)]
+mk_fstore_ri(Src, Base, Disp) ->
+  hipe_sparc:mk_fstore(Src, Base, Disp, 'new').
+
+conv_fp_binary(I, Map, Data) ->
+  {Src1, Map1} = conv_fpreg(hipe_rtl:fp_src1(I), Map),
+  {Src2, Map2} = conv_fpreg(hipe_rtl:fp_src2(I), Map1),
+  {Dst, Map3} = conv_fpreg(hipe_rtl:fp_dst(I), Map2),
+  RtlFpOp = hipe_rtl:fp_op(I),
+  I2 = mk_fp_binary(RtlFpOp, Src1, Src2, Dst),
+  {I2, Map3, Data}.
+
+mk_fp_binary(RtlFpOp, Src1, Src2, Dst) ->
+  FpBinOp =
+    case RtlFpOp of
+      'fadd' -> 'faddd';
+      'fdiv' -> 'fdivd';
+      'fmul' -> 'fmuld';
+      'fsub' -> 'fsubd'
     end,
-  {Ins, Map2, ConstTab}.
+  [hipe_sparc:mk_fp_binary(FpBinOp, Src1, Src2, Dst)].
 
-translate_call(I, Map, ConstTab) ->
-  {Args, Map0} = rvs2srs(hipe_rtl:call_arglist(I), Map),
-  {RetVals, Map1} = rvs2srs(hipe_rtl:call_dstlist(I), Map0),
-  {Target, Map2} = conv_fun(hipe_rtl:call_fun(I), Map1),
-  Type = hipe_rtl:call_type(I),
-  Ins = conv_call(RetVals, Target, Args,  hipe_rtl:call_continuation(I),
-		  hipe_rtl:call_fail(I), Type),
-  {Ins, Map2, ConstTab}.
+conv_fp_unary(I, Map, Data) ->
+  {Src, Map1} = conv_fpreg(hipe_rtl:fp_unop_src(I), Map),
+  {Dst, Map2} = conv_fpreg(hipe_rtl:fp_unop_dst(I), Map1),
+  RtlFpUnOp = hipe_rtl:fp_unop_op(I),
+  I2 = mk_fp_unary(RtlFpUnOp, Src, Dst),
+  {I2, Map2, Data}.
+
+mk_fp_unary(RtlFpUnOp, Src, Dst) ->
+  FpUnOp =
+    case RtlFpUnOp of
+      'fchs' -> 'fnegd'
+    end,
+  [hipe_sparc:mk_fp_unary(FpUnOp, Src, Dst)].
+
+conv_alu(I, Map, Data) ->
+  %% dst = src1 aluop src2
+  {Dst, Map0} = conv_dst(hipe_rtl:alu_dst(I), Map),
+  {Src1, Map1} = conv_src(hipe_rtl:alu_src1(I), Map0),
+  {Src2, Map2} = conv_src(hipe_rtl:alu_src2(I), Map1),
+  AluOp = conv_aluop(hipe_rtl:alu_op(I)),
+  {I2, _DidCommute} = mk_alu(AluOp, Src1, Src2, Dst),
+  {I2, Map2, Data}.
+
+mk_alu(XAluOp, Src1, Src2, Dst) ->
+  case hipe_sparc:is_temp(Src1) of
+    true ->
+      case hipe_sparc:is_temp(Src2) of
+	true ->
+	  {mk_alu_rs(XAluOp, Src1, Src2, Dst),
+	   false};
+	_ ->
+	  {mk_alu_ri(XAluOp, Src1, Src2, Dst),
+	   false}
+      end;
+    _ ->
+      case hipe_sparc:is_temp(Src2) of
+	true ->
+	  mk_alu_ir(XAluOp, Src1, Src2, Dst);
+	_ ->
+	  {mk_alu_ii(XAluOp, Src1, Src2, Dst),
+	   false}
+      end
+  end.
+
+mk_alu_ii(XAluOp, Src1, Src2, Dst) ->
+  io:format("~w: ALU with two immediates (~w ~w ~w ~w)\n",
+	    [?MODULE, XAluOp, Src1, Src2, Dst]),
+  Tmp = new_untagged_temp(),
+  mk_set(Src1, Tmp,
+	 mk_alu_ri(XAluOp, Tmp, Src2, Dst)).
+
+mk_alu_ir(XAluOp, Src1, Src2, Dst) ->
+  case xaluop_commutes(XAluOp) of
+    true ->
+      {mk_alu_ri(XAluOp, Src2, Src1, Dst),
+       true};
+    _ ->
+      Tmp = new_untagged_temp(),
+      {mk_set(Src1, Tmp,
+	      mk_alu_rs(XAluOp, Tmp, Src2, Dst)),
+       false}
+  end.
+
+mk_alu_ri(XAluOp, Src1, Src2, Dst) ->
+  case xaluop_is_shift(XAluOp) of
+    true ->
+      mk_shift_ri(XAluOp, Src1, Src2, Dst);
+    false ->
+      mk_arith_ri(XAluOp, Src1, Src2, Dst)
+  end.
+
+mk_shift_ri(XShiftOp, Src1, Src2, Dst) when is_integer(Src2) ->
+  if Src2 >= 0, Src2 < 32 ->	% XXX: sparc64: < 64
+      mk_alu_rs(XShiftOp, Src1, hipe_sparc:mk_uimm5(Src2), Dst);
+     true ->
+      exit({?MODULE,mk_shift_ri,Src2})	% excessive shifts are errors
+  end.
+
+mk_arith_ri(XAluOp, Src1, Src2, Dst) when is_integer(Src2) ->
+  if -4096 =< Src2, Src2 < 4096 ->
+      mk_alu_rs(XAluOp, Src1, hipe_sparc:mk_simm13(Src2), Dst);
+     true ->
+      Tmp = new_untagged_temp(),
+      mk_set(Src2, Tmp,
+	     mk_alu_rs(XAluOp, Src1, Tmp, Dst))
+  end.
+
+mk_alu_rs(XAluOp, Src1, Src2, Dst) ->
+  [hipe_sparc:mk_alu(xaluop_normalise(XAluOp), Src1, Src2, Dst)].
+
+conv_alub(I, Map, Data) ->
+  %% dst = src1 aluop src2; if COND goto label
+  {Dst, Map0} = conv_dst(hipe_rtl:alub_dst(I), Map),
+  {Src1, Map1} = conv_src(hipe_rtl:alub_src1(I), Map0),
+  {Src2, Map2} = conv_src(hipe_rtl:alub_src2(I), Map1),
+  Cond = conv_alub_cond(hipe_rtl:alub_cond(I)),
+  RtlAlubOp = hipe_rtl:alub_op(I),
+  I2 =
+    case RtlAlubOp of
+      'mul' ->
+	%% To check for overflow in 32x32->32 multiplication:
+	%% smul Src1,Src2,Dst	% Dst is lo32(Res), %y is %hi32(Res)
+	%% rd %y,TmpHi
+	%% sra Dst,31,TmpSign	% fill TmpSign with sign of Dst
+	%% subcc TmpSign,TmpHi,%g0
+	%% [bne OverflowLabel]
+	NewCond =
+	  case Cond of
+	    vs -> ne;
+	    vc -> eq
+	  end,
+	TmpHi = hipe_sparc:mk_new_temp('untagged'),
+	TmpSign = hipe_sparc:mk_new_temp('untagged'),
+	G0 = hipe_sparc:mk_g0(),
+	{I1, _DidCommute} = mk_alu('smul', Src1, Src2, Dst),
+	I1 ++
+	[hipe_sparc:mk_rdy(TmpHi),
+	 hipe_sparc:mk_alu('sra', Dst, hipe_sparc:mk_uimm5(31), TmpSign) |
+	 conv_alub2(G0, TmpSign, 'sub', NewCond, TmpHi, I)];
+      _ ->
+	conv_alub2(Dst, Src1, RtlAlubOp, Cond, Src2, I)
+    end,
+  {I2, Map2, Data}.
+
+-ifdef(notdef).	% XXX: only for sparc64, alas
+conv_alub2(Dst, Src1, RtlAlubOp, Cond, Src2, I) ->
+  case conv_cond_rcond(Cond) of
+    [] ->
+      conv_alub_bp(Dst, Src1, RtlAlubOp, Cond, Src2, I);
+    RCond ->
+      conv_alub_br(Dst, Src1, RtlAlubOp, RCond, Src2, I)
+  end.
+
+conv_alub_br(Dst, Src1, RtlAlubOp, RCond, Src2, I) ->
+  TrueLab = hipe_rtl:alub_true_label(I),
+  FalseLab = hipe_rtl:alub_false_label(I),
+  Pred = hipe_rtl:alub_pred(I),
+  %% "Dst = Src1 AluOp Src2; if COND" becomes
+  %% "Dst = Src1 AluOp Src2; if-COND(Dst)"
+  {I2, _DidCommute} = mk_alu(conv_alubop_nocc(RtlAlubOp), Src1, Src2, Dst),
+  I2 ++ mk_pseudo_br(RCond, Dst, TrueLab, FalseLab, Pred).
+
+conv_cond_rcond(Cond) ->
+  case Cond of
+    'e'  -> 'z';
+    'ne' -> 'nz';
+    'g'  -> 'gz';
+    'ge' -> 'gez';
+    'l'  -> 'lz';
+    'le' -> 'lez';
+    _	 -> []	% vs, vc, gu, geu, lu, leu
+  end.
+
+conv_alubop_nocc(RtlAlubOp) ->
+  case RtlAlubOp of
+    'add' -> 'add';
+    'sub' -> 'sub';
+    %% mul: handled elsewhere
+    'or' -> 'or';
+    'and' -> 'and';
+    'xor' -> 'xor'
+    %% no shift ops
+  end.
+
+mk_pseudo_br(RCond, Dst, TrueLab, FalseLab, Pred) ->
+  [hipe_sparc:mk_pseudo_br(RCond, Dst, TrueLab, FalseLab, Pred)].
+-else.
+conv_alub2(Dst, Src1, RtlAlubOp, Cond, Src2, I) ->
+  conv_alub_bp(Dst, Src1, RtlAlubOp, Cond, Src2, I).
+-endif.
+
+conv_alub_bp(Dst, Src1, RtlAlubOp, Cond, Src2, I) ->
+  TrueLab = hipe_rtl:alub_true_label(I),
+  FalseLab = hipe_rtl:alub_false_label(I),
+  Pred = hipe_rtl:alub_pred(I),
+  %% "Dst = Src1 AluOp Src2; if COND" becomes
+  %% "Dst = Src1 AluOpCC Src22; if-COND(CC)"
+  {I2, _DidCommute} = mk_alu(conv_alubop_cc(RtlAlubOp), Src1, Src2, Dst),
+  I2 ++ mk_pseudo_bp(Cond, TrueLab, FalseLab, Pred).
+
+conv_alubop_cc(RtlAlubOp) ->
+  case RtlAlubOp of
+    'add' -> 'addcc';
+    'sub' -> 'subcc';
+    %% mul: handled elsewhere
+    'or' -> 'orcc';
+    'and' -> 'andcc';
+    'xor' -> 'xorcc'
+    %% no shift ops
+  end.
+
+conv_branch(I, Map, Data) ->
+  %% <unused> = src1 - src2; if COND goto label
+  {Src1, Map0} = conv_src(hipe_rtl:branch_src1(I), Map),
+  {Src2, Map1} = conv_src(hipe_rtl:branch_src2(I), Map0),
+  Cond = conv_branch_cond(hipe_rtl:branch_cond(I)),
+  I2 = conv_branch2(Src1, Cond, Src2, I),
+  {I2, Map1, Data}.
+
+-ifdef(notdef).	% XXX: only for sparc64, alas
+conv_branch2(Src1, Cond, Src2, I) ->
+  case conv_cond_rcond(Cond) of
+    [] ->
+      conv_branch_bp(Src1, Cond, Src2, I);
+    RCond ->
+      conv_branch_br(Src1, RCond, Src2, I)
+  end.
+
+conv_branch_br(Src1, RCond, Src2, I) ->
+  TrueLab = hipe_rtl:branch_true_label(I),
+  FalseLab = hipe_rtl:branch_false_label(I),
+  Pred = hipe_rtl:branch_pred(I),
+  %% "if src1-COND-src2" becomes
+  %% "sub src1,src2,tmp; if-COND(tmp)"
+  Dst = hipe_sparc:mk_new_temp('untagged'),
+  XAluOp = 'cmp',	% == a sub that commutes
+  {I1, DidCommute} = mk_alu(XAluOp, Src1, Src2, Dst),
+  NewRCond =
+    case DidCommute of
+      true -> commute_rcond(RCond);
+      false -> RCond
+    end,
+  I1 ++ mk_pseudo_br(NewRCond, Dst, TrueLab, FalseLab, Pred).
+
+commute_rcond(RCond) ->	% if x RCond y, then y commute_rcond(RCond) x
+  case RCond of
+    'z'   -> 'z';	% ==, ==
+    'nz'  -> 'nz';	% !=, !=
+    'gz'  -> 'lz';	% >, <
+    'gez' -> 'lez';	% >=, <=
+    'lz'  -> 'gz';	% <, >
+    'lez' -> 'gez'	% <=, >=
+  end.
+-else.
+conv_branch2(Src1, Cond, Src2, I) ->
+  conv_branch_bp(Src1, Cond, Src2, I).
+-endif.
+
+conv_branch_bp(Src1, Cond, Src2, I) ->
+  TrueLab = hipe_rtl:branch_true_label(I),
+  FalseLab = hipe_rtl:branch_false_label(I),
+  Pred = hipe_rtl:branch_pred(I),
+  %% "if src1-COND-src2" becomes
+  %% "subcc src1,src2,%g0; if-COND(CC)"
+  Dst = hipe_sparc:mk_g0(),
+  XAluOp = 'cmpcc',	% == a subcc that commutes
+  {I1, DidCommute} = mk_alu(XAluOp, Src1, Src2, Dst),
+  NewCond =
+    case DidCommute of
+      true -> commute_cond(Cond);
+      false -> Cond
+    end,
+  I1 ++ mk_pseudo_bp(NewCond, TrueLab, FalseLab, Pred).
+
+conv_call(I, Map, Data) ->
+  {Args, Map0} = conv_src_list(hipe_rtl:call_arglist(I), Map),
+  {Dsts, Map1} = conv_dst_list(hipe_rtl:call_dstlist(I), Map0),
+  {Fun, Map2} = conv_fun(hipe_rtl:call_fun(I), Map1),
+  ContLab = hipe_rtl:call_continuation(I),
+  ExnLab = hipe_rtl:call_fail(I),
+  Linkage = hipe_rtl:call_type(I),
+  I2 = mk_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage),
+  {I2, Map2, Data}.
+
+mk_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage) ->
+  case hipe_sparc:is_prim(Fun) of
+    true ->
+      mk_primop_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage);
+    false ->
+      mk_general_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage)
+  end.
+
+mk_primop_call(Dsts, Prim, Args, ContLab, ExnLab, Linkage) ->
+  case hipe_sparc:prim_prim(Prim) of
+    %% no SPARC-specific primops defined yet
+    _ ->
+      mk_general_call(Dsts, Prim, Args, ContLab, ExnLab, Linkage)
+  end.
+
+mk_general_call(Dsts, Fun, Args, ContLab, ExnLab, Linkage) ->
+  %% The backend does not support pseudo_calls without a
+  %% continuation label, so we make sure each call has one.
+  {RealContLab, Tail} =
+    case mk_call_results(Dsts) of
+      [] ->
+	%% Avoid consing up a dummy basic block if the moves list
+	%% is empty, as is typical for calls to suspend/0.
+	%% This should be subsumed by a general "optimise the CFG"
+	%% module, and could probably be removed.
+	case ContLab of
+	  [] ->
+	    NewContLab = hipe_gensym:get_next_label(sparc),
+	    {NewContLab, [hipe_sparc:mk_label(NewContLab)]};
+	  _ ->
+	    {ContLab, []}
+	end;
+      Moves ->
+	%% Change the call to continue at a new basic block.
+	%% In this block move the result registers to the Dsts,
+	%% then continue at the call's original continuation.
+	NewContLab = hipe_gensym:get_next_label(sparc),
+	case ContLab of
+	  [] ->
+	    %% This is just a fallthrough
+	    %% No jump back after the moves.
+	    {NewContLab,
+	     [hipe_sparc:mk_label(NewContLab) |
+	      Moves]};
+	  _ ->
+	    %% The call has a continuation. Jump to it.
+	    {NewContLab,
+	     [hipe_sparc:mk_label(NewContLab) |
+	      Moves ++
+	      [hipe_sparc:mk_b_label(ContLab)]]}
+	end
+    end,
+  SDesc = hipe_sparc:mk_sdesc(ExnLab, 0, length(Args), {}),
+  CallInsn = hipe_sparc:mk_pseudo_call(Fun, SDesc, RealContLab, Linkage),
+  {RegArgs,StkArgs} = split_args(Args),
+  mk_push_args(StkArgs, move_actuals(RegArgs, [CallInsn | Tail])).
+
+mk_call_results(Dsts) ->
+  case Dsts of
+    [] -> [];
+    [Dst] ->
+      RV = hipe_sparc:mk_rv(),
+      [hipe_sparc:mk_pseudo_move(RV, Dst)]
+  end.
+
+mk_push_args(StkArgs, Tail) ->
+  case length(StkArgs) of
+    0 ->
+      Tail;
+    NrStkArgs ->
+      [hipe_sparc:mk_pseudo_call_prepare(NrStkArgs) |
+       mk_store_args(StkArgs, NrStkArgs * word_size(), Tail)]
+  end.
+  
+mk_store_args([Arg|Args], PrevOffset, Tail) ->
+  Offset = PrevOffset - word_size(),
+  {Src,FixSrc} =
+    case hipe_sparc:is_temp(Arg) of
+      true ->
+	{Arg, []};
+      _ ->
+	Tmp = new_tagged_temp(),
+	{Tmp, mk_set(Arg, Tmp)}
+    end,
+  %% XXX: sparc64: stx
+  Store = hipe_sparc:mk_store('stw', Src, hipe_sparc:mk_sp(), hipe_sparc:mk_simm13(Offset)),
+  mk_store_args(Args, Offset, FixSrc ++ [Store | Tail]);
+mk_store_args([], _, Tail) ->
+  Tail.
+
+conv_comment(I, Map, Data) ->
+  I2 = [hipe_sparc:mk_comment(hipe_rtl:comment_text(I))],
+  {I2, Map, Data}.
+
+conv_enter(I, Map, Data) ->
+  {Args, Map0} = conv_src_list(hipe_rtl:enter_arglist(I), Map),
+  {Fun, Map1} = conv_fun(hipe_rtl:enter_fun(I), Map0),
+  I2 = mk_enter(Fun, Args, hipe_rtl:enter_type(I)),
+  {I2, Map1, Data}.
+
+mk_enter(Fun, Args, Linkage) ->
+  Arity = length(Args),
+  {RegArgs,StkArgs} = split_args(Args),
+  move_actuals(RegArgs,
+	       [hipe_sparc:mk_pseudo_tailcall_prepare(),
+		hipe_sparc:mk_pseudo_tailcall(Fun, Arity, StkArgs, Linkage)]).
+
+conv_goto(I, Map, Data) ->
+  I2 = [hipe_sparc:mk_b_label(hipe_rtl:goto_label(I))],
+  {I2, Map, Data}.
+
+conv_label(I, Map, Data) ->
+  I2 = [hipe_sparc:mk_label(hipe_rtl:label_name(I))],
+  {I2, Map, Data}.
+
+conv_load(I, Map, Data) ->
+  {Dst, Map0} = conv_dst(hipe_rtl:load_dst(I), Map),
+  {Base1, Map1} = conv_src(hipe_rtl:load_src(I), Map0),
+  {Base2, Map2} = conv_src(hipe_rtl:load_offset(I), Map1),
+  LdOp = conv_ldop(hipe_rtl:load_size(I), hipe_rtl:load_sign(I)),
+  {I2, _DidCommute} = mk_alu(LdOp, Base1, Base2, Dst),
+  {I2, Map2, Data}.
+
+conv_ldop(LoadSize, LoadSign) ->
+  case LoadSize of
+    word -> 'lduw';	% XXX: sparc64: ldx
+    int32 -> 'lduw';	% XXX: sparc64: lduw or ldsw
+    int16 ->
+      case LoadSign of
+	signed -> 'ldsh';
+	unsigned -> 'lduh'
+      end;
+    byte ->
+      case LoadSign of
+	signed -> 'ldsb';
+	unsigned -> 'ldub'
+      end
+  end.
+
+conv_load_address(I, Map, Data) ->
+  {Dst, Map0} = conv_dst(hipe_rtl:load_address_dst(I), Map),
+  Addr = hipe_rtl:load_address_addr(I),
+  Type = hipe_rtl:load_address_type(I),
+  Src = {Addr,Type},
+  I2 = [hipe_sparc:mk_pseudo_set(Src, Dst)],
+  {I2, Map0, Data}.
+
+conv_load_atom(I, Map, Data) ->
+  {Dst, Map0} = conv_dst(hipe_rtl:load_atom_dst(I), Map),
+  Src = hipe_rtl:load_atom_atom(I),
+  I2 = [hipe_sparc:mk_pseudo_set(Src, Dst)],
+  {I2, Map0, Data}.
+
+conv_move(I, Map, Data) ->
+  {Dst, Map0} = conv_dst(hipe_rtl:move_dst(I), Map),
+  {Src, Map1} = conv_src(hipe_rtl:move_src(I), Map0),
+  I2 = mk_move(Src, Dst, []),
+  {I2, Map1, Data}.
+
+mk_move(Src, Dst, Tail) ->
+  case hipe_sparc:is_temp(Src) of
+    true -> [hipe_sparc:mk_pseudo_move(Src, Dst) | Tail];
+    _ -> mk_set(Src, Dst, Tail)
+  end.
+
+conv_return(I, Map, Data) ->
+  %% TODO: multiple-value returns
+  {[Arg], Map0} = conv_src_list(hipe_rtl:return_varlist(I), Map),
+  I2 = mk_move(Arg, hipe_sparc:mk_rv(),
+	       [hipe_sparc:mk_pseudo_ret()]),
+  {I2, Map0, Data}.
+
+conv_store(I, Map, Data) ->
+  {Base1, Map0} = conv_dst(hipe_rtl:store_base(I), Map), % no immediates allowed
+  {Src, Map1} = conv_src(hipe_rtl:store_src(I), Map0),
+  {Base2, Map2} = conv_src(hipe_rtl:store_offset(I), Map1),
+  StOp = conv_stop(hipe_rtl:store_size(I)),
+  I2 = mk_store(StOp, Src, Base1, Base2),
+  {I2, Map2, Data}.
+
+conv_stop(StoreSize) ->
+  case StoreSize of
+    word -> 'stw';	% XXX: sparc64: stx
+    int32 -> 'stw';
+    byte -> 'stb'
+  end.
+
+mk_store(StOp, Src, Base1, Base2) ->
+  case hipe_sparc:is_temp(Src) of
+    true ->
+      mk_store2(StOp, Src, Base1, Base2);
+    _ ->
+      Tmp = new_untagged_temp(),
+      mk_set(Src, Tmp,
+	     mk_store2(StOp, Tmp, Base1, Base2))
+  end.
+
+mk_store2(StOp, Src, Base1, Base2) ->
+  case hipe_sparc:is_temp(Base2) of
+    true ->
+      mk_store_rr(StOp, Src, Base1, Base2);
+    _ ->
+      mk_store_ri(StOp, Src, Base1, Base2)
+  end.
+  
+mk_store_ri(StOp, Src, Base, Disp) ->
+  hipe_sparc:mk_store(StOp, Src, Base, Disp, 'new', []).
+
+mk_store_rr(StOp, Src, Base1, Base2) ->
+  [hipe_sparc:mk_store(StOp, Src, Base1, Base2)].
+
+conv_switch(I, Map, Data) ->
+  Labels = hipe_rtl:switch_labels(I),
+  LMap = [{label,L} || L <- Labels],
+  {NewData, JTabLab} =
+    case hipe_rtl:switch_sort_order(I) of
+      [] ->
+	hipe_consttab:insert_block(Data, word, LMap);
+      SortOrder ->
+	hipe_consttab:insert_sorted_block(
+	  Data, word, LMap, SortOrder)
+    end,
+  %% no immediates allowed here
+  {IndexR, Map1} = conv_dst(hipe_rtl:switch_src(I), Map),
+  JTabR = new_untagged_temp(),
+  OffsetR = new_untagged_temp(),
+  DestR = new_untagged_temp(),
+  I2 =
+    [hipe_sparc:mk_pseudo_set({JTabLab,constant}, JTabR),
+     %% XXX: sparc64: << 3
+     hipe_sparc:mk_alu('sll', IndexR, hipe_sparc:mk_uimm5(2), OffsetR),
+     %% XXX: sparc64: ldx
+     hipe_sparc:mk_alu('lduw', JTabR, OffsetR, DestR),
+     hipe_sparc:mk_jmp(DestR, hipe_sparc:mk_simm13(0), Labels)],
+  {I2, Map1, NewData}.
+
+%%% Create a conditional branch.
+
+mk_pseudo_bp(Cond, TrueLabel, FalseLabel, Pred) ->
+  [hipe_sparc:mk_pseudo_bp(Cond, TrueLabel, FalseLabel, Pred)].
+
+%%% Load an integer constant into a register.
+
+mk_set(Value, Dst) -> mk_set(Value, Dst, []).
+
+mk_set(Value, Dst, Tail) ->
+  hipe_sparc:mk_set(Value, Dst, Tail).
+
+%%% Convert an RTL ALU op.
+
+conv_aluop(RtlAluOp) ->
+  case RtlAluOp of
+    'add' -> 'add';
+    'sub' -> 'sub';
+    'mul' -> 'mulx';
+    'or' -> 'or';
+    'and' -> 'and';
+    'xor' -> 'xor';
+    'sll' -> 'sll';	% XXX: sparc64: sllx
+    'srl' -> 'srl';	% XXX: sparc64: srlx
+    'sra' -> 'sra'	% XXX: sparc64: srax
+  end.
+
+%%% Check if an extended SPARC AluOp commutes.
+
+xaluop_commutes(XAluOp) ->
+  case XAluOp of
+    'cmp' -> true;
+    'cmpcc' -> true;
+    'add' -> true;
+    'addcc' -> true;
+    'and' -> true;
+    'andcc' -> true;
+    'or' -> true;
+    'orcc' -> true;
+    'xor' -> true;
+    'xorcc' -> true;
+    'sub' -> false;
+    'subcc' -> false;
+    'mulx' -> true;
+    'smul' -> true;
+    'sll' -> false;
+    'srl' -> false;
+    'sra' -> false;
+    'sllx' -> false;
+    'srlx' -> false;
+    'srax' -> false;
+    'ldsb' -> true;
+    'ldsh' -> true;
+    'ldsw' -> true;
+    'ldub' -> true;
+    'lduh' -> true;
+    'lduw' -> true;
+    'ldx' -> true
+  end.
+
+%%% Check if an extended SPARC AluOp is a shift.
+
+xaluop_is_shift(XAluOp) ->
+  case XAluOp of
+    'sll' -> true;
+    'srl' -> true;
+    'sra' -> true;
+    'sllx' -> true;
+    'srlx' -> true;
+    'srax' -> true;
+    _ -> false
+  end.
+
+%%% Convert an extended SPARC AluOp back to a plain AluOp.
+%%% This just maps cmp{,cc} to sub{,cc}.
+
+xaluop_normalise(XAluOp) ->
+  case XAluOp of
+    'cmp' -> 'sub';
+    'cmpcc' -> 'subcc';
+    _ -> XAluOp
+  end.
+
+%%% Convert an RTL ALUB condition code.
+
+conv_alub_cond(RtlAlubCond) ->	% only signed
+  case RtlAlubCond of
+    eq	-> 'e';
+    ne	-> 'ne';
+    gt	-> 'g';
+    ge	-> 'ge';
+    lt	-> 'l';
+    le	-> 'le';
+    overflow -> 'vs';
+    not_overflow -> 'vc'
+  end.
+
+%%% Convert an RTL BRANCH condition code.
+
+conv_branch_cond(RtlBCond) ->	% may be unsigned
+  case RtlBCond of
+    gtu -> 'gu';	% >u
+    geu -> 'geu';	% >=u
+    ltu -> 'lu';	% <u
+    leu -> 'leu';	% <=u
+    _   -> conv_alub_cond(RtlBCond)
+  end.    
+
+%%% Commute a SPARC condition code.
+
+commute_cond(Cond) ->	% if x Cond y, then y commute_cond(Cond) x
+  case Cond of
+    'e'   -> 'e';	% ==, ==
+    'ne'  -> 'ne';	% !=, !=
+    'g'   -> 'l';	% >, <
+    'ge'  -> 'le';	% >=, <=
+    'l'   -> 'g';	% <, >
+    'le'  -> 'ge';	% <=, >=
+    'gu'  -> 'lu';	% >u, <u
+    'geu' -> 'leu';	% >=u, <=u
+    'lu'  -> 'gu';	% <u, >u
+    'leu' -> 'geu'	% <=u, >=u
+    %% vs/vc: n/a
+  end.
+
+%%% Split a list of formal or actual parameters into the
+%%% part passed in registers and the part passed on the stack.
+%%% The parameters passed in registers are also tagged with
+%%% the corresponding registers.
+
+split_args(Args) ->
+  split_args(0, hipe_sparc_registers:nr_args(), Args, []).
+
+split_args(I, N, [Arg|Args], RegArgs) when I < N ->
+  Reg = hipe_sparc_registers:arg(I),
+  Temp = hipe_sparc:mk_temp(Reg, 'tagged'),
+  split_args(I+1, N, Args, [{Arg,Temp}|RegArgs]);
+split_args(_, _, StkArgs, RegArgs) ->
+  {RegArgs, StkArgs}.
+
+%%% Convert a list of actual parameters passed in
+%%% registers (from split_args/1) to a list of moves.
+
+move_actuals([{Src,Dst}|Actuals], Rest) ->
+  move_actuals(Actuals, mk_move(Src, Dst, Rest));
+move_actuals([], Rest) ->
+  Rest.
+
+%%% Convert a list of formal parameters passed in
+%%% registers (from split_args/1) to a list of moves.
+
+move_formals([{Dst,Src}|Formals], Rest) ->
+  move_formals(Formals, [hipe_sparc:mk_pseudo_move(Src, Dst) | Rest]);
+move_formals([], Rest) ->
+  Rest.
+
+%%% Convert a 'fun' operand (MFA, prim, or temp)
 
 conv_fun(Fun, Map) ->
   case hipe_rtl:is_var(Fun) of
     true ->
-      rv2sr(Fun, Map);
+      conv_dst(Fun, Map);
     false ->
       case hipe_rtl:is_reg(Fun) of
 	true ->
-	  rv2sr(Fun, Map);
+	  conv_dst(Fun, Map);
 	false ->
-	  {Fun, Map}
-      end
-  end.
-
-%% Finalise the conversion of a call instruction.
-
-conv_call(Dsts, Fun, Args, ContLab, ExnLab, Type) ->
-  {RetArgs,RealContLab, Tail} =
-    case move_rets_to_vars(Dsts) of
-      {[],[]} ->
-	%% Avoid consing up a dummy basic block if the moves list
-	%% is empty, as is typical for calls to suspend/0.
-	{[],ContLab, []};
-      {RAs,Moves}  ->
-	%% Change the call to continue at a new basic block.
-	%% In this block, move the result registers to the Dsts,
-	%% then continue at the call's original continuation.
-	NewContLab = hipe_sparc:label_create_new(),
-	case ContLab of
-	  [] -> 
-	     {RAs,
-	     hipe_sparc:label_name(NewContLab),
-	     [NewContLab |
-	      Moves]};
-	  _ ->
-	    {RAs,
-	     hipe_sparc:label_name(NewContLab),
-	     [NewContLab |
-	      Moves ++
-	      [hipe_sparc:goto_create(ContLab)]]}
-	end
-	
-    end,
-  {RegArgs,Head} = move_vars_to_args(Args),
-  CP = hipe_sparc:mk_reg(hipe_sparc_registers:return_address()),
-
-  CallInsn = hipe_sparc:call_link_create(Fun, CP, RetArgs, RegArgs,
-					 RealContLab, ExnLab, Type),
-
-  [Head | [[CallInsn | Tail]]].
-
-
-%%
-%% Generate instructions so that a list of variables end up
-%% in registers and on the stack ready for a function call.
-%% Returns a tuple {RegArgs, Code} where RegArgs is a list
-%% of registers used to pass arguments.
-%%
-
-move_vars_to_args(Vars) ->
-  {InRegs, OnStack} = 
-    get_arg_pos(Vars, hipe_sparc_registers:register_args(),[]),
-
-  NoRegArgs = length(InRegs),
-  case NoRegArgs > 0 of
-    true ->
-      RegArgs = arg_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(RegArgs, InRegs),
-
-      StackArgs = length(OnStack),
-      case StackArgs > 0 of
-	true ->
-	  {RegArgs++OnStack,[I]};
-		    % move_vars_to_args(OnStack, NoRegArgs)]};
-	false ->
-	  {RegArgs,[I]}
-      end;
-    false ->
-      {[],[]}
-  end.
-
-move_vars_to_retregs(Vars) ->
-  {InRegs, OnStack} = 
-    get_ret_pos(Vars, hipe_sparc_registers:register_rets(),[]),
-
-  NoRegArgs = length(InRegs),
-  case NoRegArgs > 0 of
-    true ->
-      RegArgs = ret_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(RegArgs, InRegs),
-
-      StackArgs = length(OnStack),
-      case StackArgs > 0 of
-	true ->
-	  {RegArgs++OnStack,[I]};
-		    % move_vars_to_args(OnStack, NoRegArgs)]};
-	false ->
-	  {RegArgs,[I]}
-      end;
-    false ->
-      {[],[]}
-  end.
-
-
-%% TODO: make into listcomprehension.
-
-%% move_vars_to_args([], _ArgIndex) ->
-%%   [];
-%% %%  RegArgs = hipe_sparc_registers:register_args(),
-%% %%  SP = hipe_rtl:mk_reg(hipe_sparc_registers:stack_pointer()),
-%% %%  StackGrowth = (_ArgIndex-RegArgs)*4,
-%% %%  [hipe_rtl:mk_alu(SP, SP, 'add', hipe_rtl:mk_imm(StackGrowth))];
-%% move_vars_to_args([V|Vs], ArgIndex) ->
-%%   %%  RegArgs = hipe_sparc_registers:register_args(),
-%%   Code = move_vars_to_args(Vs, ArgIndex+1),
-%%   %%  Off = (ArgIndex-RegArgs)*4,
-%%   %%  SP = hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
-%%   I = hipe_sparc:pseudo_push_create(V),
-%%   [I|Code].
-
-
-%%
-%% Generate instructions so that the arguments to a function end up 
-%% in registers.
-%%
-
-move_args_to_vars(Vars) ->
-  {InRegs,OnStack} =
-    get_arg_pos(Vars, hipe_sparc_registers:register_args(), []),
-  move_args_to_vars(InRegs, OnStack).
-
-get_arg_pos([],_N,InRegs) ->
-  {lists:reverse(InRegs),[]};
-
-get_arg_pos([V|Vs], N, InRegs) when N > 0 ->
-  get_arg_pos(Vs, N-1, [V|InRegs]);
-get_arg_pos(Args, _N, InRegs) ->
-  {lists:reverse(InRegs), Args}.
-
-
-move_rets_to_vars(Vars) ->
-  {InRegs,OnStack} =
-    get_ret_pos(Vars, hipe_sparc_registers:register_rets(), []),
-  move_rets_to_vars(InRegs, OnStack).
-
-get_ret_pos([],_N,InRegs) ->
-  {lists:reverse(InRegs),[]};
-
-get_ret_pos([V|Vs], N, InRegs) when N > 0 ->
-  get_ret_pos(Vs, N-1, [V|InRegs]);
-get_ret_pos(Args, _N, InRegs) ->
-  {lists:reverse(InRegs), Args}.
-
-
-move_args_to_vars(InRegs, OnStack) ->
-  NoRegArgs = length(InRegs),
-  case NoRegArgs > 0 of
-    true ->
-      StackArgs = length(OnStack),
-      RegArgs = arg_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(InRegs, RegArgs),
-      case StackArgs > 0 of
-	true ->
-	  {RegArgs,[I|move_args_to_vars(OnStack, NoRegArgs, StackArgs+NoRegArgs)]};
-	false ->
-	  {RegArgs,[I]}
-      end;
-    false ->
-      {[],[]}
-  end.
-
-move_args_to_vars([],_ArgIndex,_) ->
-  [];
-%%  RegArgs = hipe_sparc_registers:register_args(),
-%%  SP = hipe_rtl:mk_reg(hipe_sparc_registers:stack_pointer()),
-%%  StackDec = (_ArgIndex-RegArgs)*4,
-%%  [hipe_rtl:mk_alu(SP, SP, 'sub', hipe_rtl:mk_imm(StackDec))];
-
-move_args_to_vars([V|Vs], ArgIndex, Arity) -> 
-  %%  SP = hipe_rtl:mk_reg(hipe_sparc_registers:stack_pointer()),
-  %%  StackIndex = (ArgIndex-Arity)*4,
-  I = hipe_sparc:pseudo_pop_create(V,hipe_sparc:mk_imm(-(ArgIndex-Arity))),
-  %% , SP, hipe_rtl:mk_imm(StackIndex)),
-  [I | move_args_to_vars(Vs, ArgIndex+1, Arity)].
-
-
-move_rets_to_vars(InRegs, OnStack) ->
-  NoRegArgs = length(InRegs),
-  case NoRegArgs > 0 of
-    true ->
-      StackArgs = length(OnStack),
-      RegArgs = ret_vars(NoRegArgs-1),
-      I = hipe_sparc:multimove_create(InRegs, RegArgs),
-      case StackArgs > 0 of
-	true ->
-	  {RegArgs,[I|move_rets_to_vars(OnStack, NoRegArgs, StackArgs+NoRegArgs)]};
-	false ->
-	  {RegArgs,[I]}
-      end;
-    false ->
-      {[],[]}
-  end.
-
-move_rets_to_vars([],_ArgIndex,_) ->
-  [];
-%%  RegArgs = hipe_sparc_registers:register_args(),
-%%  SP = hipe_rtl:mk_reg(hipe_sparc_registers:stack_pointer()),
-%%  StackDec = (_ArgIndex-RegArgs)*4,
-%%  [hipe_rtl:mk_alu(SP, SP, 'sub', hipe_rtl:mk_imm(StackDec))];
-
-move_rets_to_vars([V|Vs], ArgIndex, Arity) -> 
-  %%  SP = hipe_rtl:mk_reg(hipe_sparc_registers:stack_pointer()),
-  %%  StackIndex = (ArgIndex-Arity)*4,
-  I = hipe_sparc:pseudo_pop_create(V,hipe_sparc:mk_imm(-(ArgIndex-Arity))),
-  %% , SP, hipe_rtl:mk_imm(StackIndex)),
-  [I | move_rets_to_vars(Vs, ArgIndex+1, Arity)].
-
-
-%%
-%% Return a variable corresponding to argument number 'X'
-%%
-
-arg_var(X) ->
-  hipe_sparc:mk_reg(hipe_sparc_registers:arg(X)).
-
-arg_vars(N) ->
-  arg_vars(N,[]).
-
-arg_vars(N, Acc) when N >= 0 ->
-  arg_vars(N-1, [arg_var(N)|Acc]);
-arg_vars(_, Acc) -> Acc.
-
-ret_var(X) ->
-  hipe_sparc:mk_reg(hipe_sparc_registers:ret(X)).
-
-ret_vars(N) ->
-  ret_vars(N,[]).
-
-ret_vars(N, Acc) when N >= 0 ->
-  ret_vars(N-1, [ret_var(N)|Acc]);
-ret_vars(_, Acc) -> Acc.
-
-
-
-%%% Convert a 'fun' operand (MFA, prim, or temp)
-
-%%
-%% Convert a operator from rtl to a sparc condition code.
-%%
-
-rtl_op2sparc_op(add) -> '+';
-rtl_op2sparc_op(sub) -> '-';
-rtl_op2sparc_op(fadd) -> '+';
-rtl_op2sparc_op(fchs) -> 'fchs';
-rtl_op2sparc_op(fsub) -> '-';
-rtl_op2sparc_op(fmul) -> '*';
-rtl_op2sparc_op(fdiv) -> '/';
-rtl_op2sparc_op('or') -> 'or';
-rtl_op2sparc_op('and') -> 'and';
-rtl_op2sparc_op('xor') -> 'xor';
-rtl_op2sparc_op('xornot') -> 'xnor';
-rtl_op2sparc_op(andnot) -> andn;
-rtl_op2sparc_op(sll) -> '<<';
-rtl_op2sparc_op(sllx) -> '<<64';
-rtl_op2sparc_op(srl) -> '>>';
-rtl_op2sparc_op(srlx) -> '>>64';
-rtl_op2sparc_op(sra) -> '>>?';
-rtl_op2sparc_op(srax) -> '>>?64';
-rtl_op2sparc_op(mul) -> 'smul';
-rtl_op2sparc_op(X) -> exit({?MODULE, {"unknown alu-op", X}}).
-
-
-%%
-%% Convert a relational operator from rtl to a sparc condition code.
-%%
-
-rtl_cond_to_sparc_cc(Cond) ->
-  case Cond of
-    eq	-> 'e';
-    ne	-> 'ne';
-    gt	-> 'g';
-    gtu	-> 'gu';
-    ge	-> 'ge';
-    geu	-> 'geu';
-    lt	-> 'l';
-    ltu	-> 'lu';
-    le	-> 'le';
-    leu	-> 'leu';
-    overflow -> 'vs';
-    not_overflow -> 'vc';
-    %% not generated: pos, neg, a, n
-    _	-> exit({?MODULE, {"unknown cond-op", Cond}})
-  end.
-
-
-neg_cond(Cond) ->
-  hipe_sparc:cc_negate(Cond).
-
-%%
-%% Convert an RTL instruction argument to a SPARC ditto
-%%
-
-rv2sr(Var, Map) ->
-  case hipe_rtl:is_imm(Var) of
-    true ->
-      {hipe_sparc:mk_imm(hipe_rtl:imm_value(Var)), Map};
-    false ->
-      Name = case hipe_rtl:is_var(Var) of
-	       true ->
-		 hipe_rtl:var_index(Var);
-	       false ->
-		 case hipe_rtl:is_reg(Var) of
-		   true ->
-		     hipe_rtl:reg_index(Var);
-		   false ->
-		     case hipe_rtl:is_fpreg(Var) of
-		       true ->
-			 hipe_rtl:fpreg_index(Var);
-		       false ->
-			 ?EXIT({"bad RTL value",Var})
-		     end
-		 end
-	     end,
-      case hipe_sparc_registers:is_precoloured(Name) of
-	true ->
-	  {hipe_sparc:mk_reg(Name), Map};
-	false ->
-	  case lists:keysearch(Name, 1, Map) of
-	    {value, {_, NewVar}} ->
-	      {NewVar, Map};
-	    false ->
-	      case hipe_rtl:is_fpreg(Var) of
-		true ->
-		  NewVar = hipe_sparc:mk_new_fpreg();
-		false ->
-		  NewVar = hipe_sparc:mk_new_reg()
-	      end,
-	      {NewVar, [{Name, NewVar}|Map]}
+	  if is_atom(Fun) ->
+	      {hipe_sparc:mk_prim(Fun), Map};
+	     true ->
+	      {conv_mfa(Fun), Map}
 	  end
       end
   end.
 
+%%% Convert an MFA operand.
 
-rvs2srs([], Map) ->
-  {[], Map};
-rvs2srs([V|Vs], Map) ->
-  {NewV, Map0} = rv2sr(V, Map),
-  {NewVs, Map1} = rvs2srs(Vs, Map0),
-  {[NewV|NewVs], Map1}.
+conv_mfa({M,F,A}) when is_atom(M), is_atom(F), is_integer(A) ->
+  hipe_sparc:mk_mfa(M, F, A).
 
-%%
-%% This should probably be something more efficient than an a-list.
-%%
+%%% Convert an RTL source operand (imm/var/reg).
+%%% Returns a temp or a naked integer.
 
-new_var_map() ->
-  [].
+conv_src(Opnd, Map) ->
+  case hipe_rtl:is_imm(Opnd) of
+    true ->
+      Value = hipe_rtl:imm_value(Opnd),
+      if is_integer(Value) ->
+	  {Value, Map}
+      end;
+    false ->
+      conv_dst(Opnd, Map)
+  end.
+
+conv_src_list([O|Os], Map) ->
+  {V, Map1} = conv_src(O, Map),
+  {Vs, Map2} = conv_src_list(Os, Map1),
+  {[V|Vs], Map2};
+conv_src_list([], Map) ->
+  {[], Map}.
+
+%%% Convert an RTL destination operand (var/reg).
+
+conv_fpreg(Opnd, Map) ->
+  case hipe_rtl:is_fpreg(Opnd) of
+    true -> conv_dst(Opnd, Map)
+  end.
+
+conv_dst(Opnd, Map) ->
+  {Name, Type} =
+    case hipe_rtl:is_var(Opnd) of
+      true ->
+	{hipe_rtl:var_index(Opnd), 'tagged'};
+      false ->
+	case hipe_rtl:is_fpreg(Opnd) of
+	  true ->
+	    {hipe_rtl:fpreg_index(Opnd), 'double'};
+	  false ->
+	    {hipe_rtl:reg_index(Opnd), 'untagged'}
+	end
+    end,
+  IsPrecoloured =
+    case Type of
+      'double' -> false; %hipe_sparc_registers:is_precoloured_fpr(Name);
+      _ -> hipe_sparc_registers:is_precoloured_gpr(Name)
+    end,
+  case IsPrecoloured of
+    true ->
+      {hipe_sparc:mk_temp(Name, Type), Map};
+    false ->
+      case vmap_lookup(Map, Opnd) of
+	{value, NewTemp} ->
+	  {NewTemp, Map};
+	_ ->
+	  NewTemp = hipe_sparc:mk_new_temp(Type),
+	  {NewTemp, vmap_bind(Map, Opnd, NewTemp)}
+      end
+  end.
+
+conv_dst_list([O|Os], Map) ->
+  {Dst, Map1} = conv_dst(O, Map),
+  {Dsts, Map2} = conv_dst_list(Os, Map1),
+  {[Dst|Dsts], Map2};
+conv_dst_list([], Map) ->
+  {[], Map}.
+
+conv_formals(Os, Map) ->
+  conv_formals(hipe_sparc_registers:nr_args(), Os, Map, []).
+
+conv_formals(N, [O|Os], Map, Res) ->
+  Type =
+    case hipe_rtl:is_var(O) of
+      true -> 'tagged';
+      _ -> 'untagged'
+    end,
+  Dst =
+    if N > 0 -> hipe_sparc:mk_new_temp(Type);	% allocatable
+       true -> hipe_sparc:mk_new_nonallocatable_temp(Type)
+    end,
+  Map1 = vmap_bind(Map, O, Dst),
+  conv_formals(N-1, Os, Map1, [Dst|Res]);
+conv_formals(_, [], Map, Res) ->
+  {lists:reverse(Res), Map}.
+
+%%% new_untagged_temp -- conjure up an untagged scratch reg
+
+new_untagged_temp() ->
+  hipe_sparc:mk_new_temp('untagged').
+
+%%% new_tagged_temp -- conjure up a tagged scratch reg
+
+new_tagged_temp() ->
+  hipe_sparc:mk_new_temp('tagged').
+
+%%% Map from RTL var/reg operands to temps.
+
+vmap_empty() ->
+  gb_trees:empty().
+
+vmap_lookup(Map, Key) ->
+  gb_trees:lookup(Key, Map).
+
+vmap_bind(Map, Key, Val) ->
+  gb_trees:insert(Key, Val, Map).
+
+word_size() ->
+  hipe_rtl_arch:word_size().

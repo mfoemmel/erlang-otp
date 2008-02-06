@@ -300,9 +300,9 @@ do_start(Flags) ->
     end.
 
 do_stick_dirs() ->
-    do_s("compiler"),
-    do_s("stdlib"),
-    do_s("kernel").
+    do_s(compiler),
+    do_s(stdlib),
+    do_s(kernel).
 
 do_s(Lib) ->
     case lib_dir(Lib) of

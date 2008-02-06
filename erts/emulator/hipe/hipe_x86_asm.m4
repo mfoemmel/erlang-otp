@@ -253,9 +253,9 @@ define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 
 dnl
 dnl NBIF_SAVE_RESCHED_ARGS(ARITY)
-dnl Used in the expensive_bif_interface_{1,2}() macros to copy
+dnl Used in the expensive_bif_interface_{1,2,3}() macros to copy
 dnl caller-save registers to non-volatile locations.
-dnl Currently, 1 <= ARITY <= 2, so this simply moves the argument
+dnl Currently, 1 <= ARITY <= 3, so this simply moves the argument
 dnl registers to the argument slots in the PCB.
 dnl
 define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
@@ -264,6 +264,7 @@ define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)
 define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'
 `/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
+`/* #define NBIF_SAVE_RESCHED_ARGS_3 'NBIF_SAVE_RESCHED_ARGS(3)` */'
 
 dnl
 dnl STORE_CALLER_SAVE

@@ -143,6 +143,14 @@ extern SysHrTime sys_gethrtime(void);
 extern clock_t sys_times(SysTimes *buffer);
 
 extern char *win_build_environment(char *);
+
+typedef struct {
+    char *environment_strings;
+    char *next_string;
+} GETENV_STATE;
+
+void erts_sys_env_init(void);
+
 /*
  ** These are to avoid irritating warnings
  */

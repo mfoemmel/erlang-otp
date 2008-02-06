@@ -47,8 +47,8 @@ size(Tuple, Seen0, Sum0) when is_tuple(Tuple) ->
     case remember_term(Tuple, Seen0) of
 	seen -> {Sum0,Seen0};
 	Seen ->
-	    Sum = Sum0 + 1 + erlang:size(Tuple),
-	    tuple_size(1, erlang:size(Tuple), Tuple, Seen, Sum)
+	    Sum = Sum0 + 1 + tuple_size(Tuple),
+	    tuple_size(1, tuple_size(Tuple), Tuple, Seen, Sum)
     end;
 size(Term, Seen0, Sum) ->
     case erts_debug:flat_size(Term) of

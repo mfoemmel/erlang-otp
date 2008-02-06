@@ -5,195 +5,76 @@ HiPE SPARC ABI
 This document describes aspects of HiPE's runtime system
 that are specific for the SPARC architecture.
 
-See SPARC ABI for background:
-   http://soldc.sun.com/articles/sparcv9abi.html
-   http://www.users.qwest.net/~eballen1/sparc.tech.links.html
-   http://compilers.iecc.com/comparch/article/93-12-073
-
-
 Register Usage
 --------------
- Special Erlang/HiPE registers:
-  P       - Pointer to the current process structure.
-            This register is assumed to be saved over
-            C-calls. At the moment allocated to a 
-            C-callee-saves register but could be allocated
-            to a global register if all called C code 
-            could be made aware of this.
-  HP      - Pointer to next free word on the heap.
-	    Assumed to be in a C-callee save.  
-  FCALLS  - Number of available function calls in the 
-            current time-slice.
-	    Assumed to be in a C-callee save.  
-  NSP     - Native stack pointer.
-	    Assumed to be in a C-callee save.
-            Grows toward higher addresses (at the moment).
-            It is not safe to use the C-stack due to
-            the following hack (in hipe_sparc_frame):
-             With excessive spilling (more than 1023 spills)
-             some spillslots are not accessible through 
-             [NSP+ImmOffset] since ImmOffset must be less than 4092.
-    	     (or larger than -4092)
-             This is now solved by a small temporary adjustment
-             to the stackpointer. 
-               [NSP-BigOffset] = T
-             becomes
-               NSP -= 4092 ! 1
-                ... 
-               NSP -= 4092 ! n
-               [NSP - (BigOffset-(n*4092))] = T
-               NSP += 4092 
-               ...
-               NSP += 4092 
-  S-LIMIT - The end of the stack.
-            Assumed to never change in native code. 
-            Assumed to be in a C-callee-saves register. 
-  H-LIMIT - The end of the heap.
-            Assumed to never change in native code. 
-            Assumed to be in a C-callee-saves register. 
-  RA      - Return address.
-            Assumed to be %o7 !!
-            This is unlikely to be possible to change.
-  TEMP0   - Global scratch register.
-            At the moment assumed to allways be free
-            to use as a scratch register and to never
-            be saved over any type of function calls.
-            (Think twice before using this.)
-            Used by the HiPE assembler in some tricky cases.
-            (e.g. In the stack need test on function entry.
-                  In (tail) calls when arguemnts passed on 
-		  the stack are spilled.
-		  For the address of the callee in tail-calls.
-		  For the address of calls to closures, if
-                  the closure address is spilled.) 
-	    Used in nbif_stack_trap_ra as a scratch reg.
-            Used in hariy_exception for address of failing bif.
-            Also used in stubs for emulated code for the
-            BEAM code address.
-  TEMP1   - Local scratch register.
-            Assumed to be in a C-callee-saves register.
-            Used in hariy_exception for first actual parameter.
-	    Used in inc_stack to save return address during a
-            C call.
-	    Used in nbif_suspend_msg_timeout as a scratch reg.
-            TEMP1 is used in the stack-need test on entry to a
-            function if the stack need of the function is larger 
-            than 4092 (largest immediate).
-            Also used in stubs for emulated code for the
-            arity.
-   
+%g6, %g7, %o6 (%sp), and %i6 (%fp) are reserved for the C runtime system.
 
-  TEMP2   - Local scratch register.
-            Assumed to be in a C-callee-saves register. 
-            Used in hariy_exception for second actual parameter.
-	    Used in calls to inc_stack to save 'previous' 
-            return address. 
-            Also used in stubs for emulated code for the
-            return address to the calling native code.
-  TEMP3   - Local scratch register.
-	    Used during bif calls to save the native return address.
-            Assumed to be in a C-callee-saves register. 
+%i0-%i2 are fixed (unallocatable).
+%i0 (P) is the current process' "Process" pointer.
+%i1 (NSP) is the current process' native stack pointer.
+%i2 (HP) is the current process' heap pointer.
 
- (M-Mode: 
-    A-Allocatable 
-    R-Reserved 
-    G-Global 
-    X-Reserved by C/OS 
-    0-zero)
+%g1-%g5, %o0-%o5, %o7 (RA), %l0-%l7, %i3-%i5, and %i7 are caller-save.
+They are used as temporary scratch registers and for function call
+parameters and results.
 
- reg HiPE-name M notes
- ----------------------------
- %g0 ZERO      0
- %g1 TEMP0     R Scratch reg.
- %g2 ARG10     A Argument 11  
- %g3 ARG11     A Argument 12  
- %g4 ARG12     A Argument 13  
- %g5 ARG13     A Argument 14  
-                 (OS-reserved in SPARC V8 but not in SPARC V8PLUS)
- %g6 [OS]      X (used by system libraries, libthread and libpthread.) 
- %g7 [OS]      X (reserved by OS) 
- %o0 ARG15     A Return value 1
- %o1 ARG0      A Argument 1 (Allocatable when not used.)
- %o2 ARG1      A Argument 2  -- || -- 
- %o3 ARG2      A Argument 3  -- || -- 
- %o4 ARG3      A Argument 4  -- || -- 
- %o5 ARG4      A Argument 5  -- || -- 
- %o6 [sp]      X C-stack pointer.
- %o7 RA / CP   G Return Address 
- %l0 ARG5      A Argument 6  -- || --            
- %l1 ARG6      A Argument 7  -- || --            
- %l2 ARG7      A Argument 8  -- || -- 
- %l3 ARG8      A Argument 9  -- || -- 
- %l4 ARG9      A Argument 10  -- || --  
- %l5 TEMP3     A Local scratch (see above)
- %l6 TEMP2     A Local scratch (see above)
- %l7 TEMP1     A Local scratch (see above)
- %i0 P         G Current Process pointer.
- %i1 HP        G Heap Pointer, grows towards higher addresses.
- %i2 H-limit   G Assumed to never change in native.
- %i3 SP        G Stack pointer, grows towards higher addresses.
- %i4 S-limit   G Assumed to never change in native.
- %i5 FCALLS    G Reduction count.
- %i6 [fp]      X C-frame pointer.
- %i7 ARG14     A Argument 15  (C ret adr)
-
-
- %icc ICC        Condition codes 
- %xcc XCC
- %fcc0 
- %fcc1
- %fcc2
- %fcc3
- %y   Y
-
-
-
-
-The first return value from a function is placed in ARG0, the second
-(if any) is placed in ARG1 and so on.
-Note that the first return value is not the same as the first
-argument.
-At the moment ARG0 to ARG2 corresponds to %o1 to %o3 and the
-return register is %o0 this is done in order to make calls
-to Bif in C (which takes P as the first arguemnt) efficient.
-The caller-save registers are used as temporary scratch registers.
-
-[If gcc refrains from using %g2 and %g3 which are Application
- registers, these could be used for P as a global register
- throughout the whole system.]
+The runtime system uses temporaries in specific contexts:
+%l7 (TEMP_ARG2) is used to preserve ARG2 in BIFs that may fail with
+RESCHEDULE.
+%i5 (TEMP_ARG1) is used to preserve ARG1 in BIFs that may fail with
+RESCHEDULE, and to pass the callee arity in native-to-BEAM traps.
+%i4 (TEMP_ARG0) is used to preserve ARG0 in BIFs that may fail
+with RESCHEDULE, preserve the return value in nbif_stack_trap_ra,
+preserve RA in hipe_sparc_inc_stack (the caller saved its RA in
+TEMP_RA), to pass the callee address in native-to-BEAM traps,
+and to contain the target in BEAM-to-native calls.
+%i3 (TEMP_RA) is used to preserve RA around BIF calls.
+%o2 (ARG1) is used to pass the NBIF address when a BIF that may
+fail with RESCHEDULE throws an exception.
+%o1 (ARG0) is used for MBUF-after-BIF checks, for storing the
+arity of a BIF that throws an exception or does GC due to MBUF,
+and for checking P->flags for pending timeout.
+%o0 is used to inspect the type of a thrown exception, and to
+return a result token from glue.S back to hipe_mode_switch().
 
 Calling Convention
 ------------------
-(The bif glue assumes that at least 3 arguments are passed in regs.)
+The first NR_ARG_REGS parameters (a tunable parameter between 0 and 6,
+inclusive) are passed in %o1-%o5 and %o0.
+
+%o0 is not used for parameter passing. This allows the BIF wrappers to
+simply move P to %o0 without shifting the remaining parameter registers.
+
+%o7 (RA) contains the return address during function calls.
+
+The return value from a function is placed in %o0.
 
 Stack Frame Layout
-------------------
- From bottom to top: 
-  formals in left-to-right order 
-  incoming return address (Pushed by callee)
-  fixed-size chunk for locals & spills 
-  [variable-size area for actuals] 
-
-The callee pops the actuals.
-
 Stack Descriptors
 -----------------
-sdesc_fsize() is the frame size \emph{including} the return address word.
+Same as AMD64/ARM/PowerPC/x86.
 
-BIFs
-----
-(Note that hipe_sparc_bifs.m4 assumes that some register are
- C-callee saves (like P and TEMP3).)
- 
+Standard SPARC Calling Conventions
+==================================
 
-There are some special primitives that have slightly different
-calling conventions.
- 
- nbif_inc_stack:
- Called from a function that needs more stack space.   
- For this call nothing is saved on the stack in native code.
- The current returnaddress is saved in the register TEMP2
- then glue code in hipe_sparc_glue.S is called.
- This code saves any register arguments and global registers
- into the PCB, and RA to TEMP1 then calls C-code. 
+Reg		Status		Role
+---		------		----
+%g0		reserved	constant 0
+%g1-%g5		calleR-save	volatile
+%g6-%g7		reserved	thread register? got?
+%o0		calleR-save	volatile, parameter, return value
+%o1-%o5		calleR-save	volatile, parameters
+%o6		reserved	stack pointer, 8-byte aligned
+%o7		reserved	return address
+%l0-%l7		calleE-save	local variables
+%i0-%i5		calleE-save	input parameters, local variables
+%i6		calleE-save	frame pointer (caller's stack pointer)
+%i7		calleE-save	input return address, local variable
 
+The stack grows from high to low addresses.
+Excess parameters are stored on the stack, at %sp+92 and up.
+
+See also:
+http://soldc.sun.com/articles/sparcv9abi.html
+http://www.users.qwest.net/~eballen1/sparc.tech.links.html
+http://compilers.iecc.com/comparch/article/93-12-073

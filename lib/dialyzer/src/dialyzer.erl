@@ -34,15 +34,17 @@
 -export([plain_cl/0, 
 	 run/1, 
 	 gui/0,
-	 gui/1]).
+	 gui/1,
+	 format_warning/1]).
 
 -include("dialyzer.hrl").
 
 %%--------------------------------------------------------------------
 %% Interfaces:
-%%  - plain_cl/0 : to be used ONLY by the dialyzer C program.
-%%  - run/1:       Erlang interface for a command line-like analysis
-%%  - gui/0/1:     Erlang interface for the gui.
+%%  - plain_cl/0 :      to be used ONLY by the dialyzer C program.
+%%  - run/1:            Erlang interface for a command line-like analysis
+%%  - gui/0/1:          Erlang interface for the gui.
+%%  - format_warning/1: Get the string representation of a warning.
 %%--------------------------------------------------------------------
 
 plain_cl() ->
@@ -53,7 +55,7 @@ plain_cl() ->
       case cl_check_init(Opts) of
 	{error, _} = Error -> gui_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
-	  if Opts#options.quiet -> ok;
+	  if Opts#options.report_mode =:= quiet -> ok;
 	     true -> io:put_chars("  Proceeding with startup...\n")
 	  end,
 	  gui_halt(internal_gui(Opts), Opts)
@@ -62,7 +64,7 @@ plain_cl() ->
       case cl_check_init(Opts) of
 	{error, _} = Error -> cl_halt(Error, Opts);
 	{ok, ?RET_NOTHING_SUSPICIOUS} ->
-	  if Opts#options.quiet -> ok;
+	  if Opts#options.report_mode =:= quiet -> ok;
 	     true  -> io:put_chars("  Proceeding with analysis... ")
 	  end,
 	  cl_halt(cl(Opts), Opts)
@@ -75,7 +77,7 @@ cl_check_init(Opts) ->
   cl_check_init(Opts, false).
 
 cl_check_init(Opts, Force) ->
-  if Opts#options.quiet -> ok;
+  if Opts#options.report_mode =:= quiet -> ok;
      true -> io:put_chars("  Checking whether the initial "
 			  "PLT exists and is up-to-date...")
   end,
@@ -92,7 +94,8 @@ cl(Opts) ->
 
 run(Opts) when length(Opts) > 0 ->
   try
-    case dialyzer_options:build([{quiet, true}, {erlang_mode, true}|Opts]) of
+    case dialyzer_options:build([{report_mode, quiet}, 
+				 {erlang_mode, true}|Opts]) of
       {error, Msg} -> throw({dialyzer_error, Msg});
       OptsRecord ->
 	case cl_check_init(OptsRecord) of
@@ -124,7 +127,7 @@ gui() ->
 
 gui(Opts) ->
   try
-    case dialyzer_options:build([{quiet, true}|Opts]) of
+    case dialyzer_options:build([{report_mode, quiet}|Opts]) of
       {error, Msg} -> throw({dialyzer_error, Msg});
       OptsRecord ->
 	case cl_check_init(OptsRecord) of
@@ -161,13 +164,15 @@ cl_error(Msg) ->
   cl_halt({error, Msg}, #options{}).
 
 gui_halt(R, Opts) ->
-  cl_halt(R, Opts#options{quiet=true}).
+  cl_halt(R, Opts#options{report_mode=quiet}).
 
 -spec(cl_halt/2 ::
       ({'ok',atom()} | {'error',string()}, #options{}) -> no_return()).
 
-cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{quiet=true}) -> halt(R);
-cl_halt({ok, R = ?RET_DISCREPANCIES_FOUND}, #options{quiet=true}) -> halt(R);
+cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{report_mode=quiet}) -> 
+  halt(R);
+cl_halt({ok, R = ?RET_DISCREPANCIES_FOUND}, #options{report_mode=quiet}) -> 
+  halt(R);
 cl_halt({ok, R = ?RET_NOTHING_SUSPICIOUS},  #options{}) ->
   io:put_chars("done (passed successfully)\n"),
   halt(R);
@@ -192,3 +197,12 @@ cl_check_log("") ->
   ok;
 cl_check_log(Output) ->
   io:format("  Check output file `~s' for details\n", [Output]).
+
+format_warning({_Tag, {File, Line}, Msg}) when is_list(File), 
+						is_integer(Line) ->
+  BaseName = filename:basename(File),
+  lists:flatten(io_lib:format("~s:~w: ~s", [BaseName, Line, Msg]));
+format_warning({_Tag, {M, F, A} = MFA, Msg}) when is_atom(M), 
+						    is_atom(F), 
+						    is_integer(A)-> 
+  lists:flatten(io_lib:format("~w: ~s", [MFA, Msg])).

@@ -55,8 +55,8 @@ else
       ifeq ($(findstring win32,$(TARGET)),win32) # BUILD_ALL on win32
         OTHER_SUB_DIRECTORIES += 			\
           snmp otp_mibs appmon erl_interface asn1 jinterface gs inets ic \
-          mnesia $(CRYPTO_APP) orber os_mon parsetools syntax_tools pman \
-          $(SSL_APP) toolbar tv observer debugger odbc runtime_tools \
+          mnesia crypto orber os_mon parsetools syntax_tools pman \
+          ssl toolbar tv observer debugger odbc runtime_tools \
           cosTransactions cosEvent cosTime cosNotification cosProperty \
           cosFileTransfer cosEventDomain et megaco webtool \
 	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept
@@ -65,8 +65,8 @@ else
       else # BUILD_ALL on unix
         OTHER_SUB_DIRECTORIES += \
           snmp otp_mibs appmon erl_interface asn1 jinterface debugger gs inets \
-          ic mnesia  $(CRYPTO_APP) orber os_mon parsetools syntax_tools \
-          pman $(SSL_APP) toolbar tv observer odbc \
+          ic mnesia  crypto orber os_mon parsetools syntax_tools \
+          pman ssl toolbar tv observer odbc \
           runtime_tools cosTransactions cosEvent cosTime cosNotification \
           cosProperty cosFileTransfer cosEventDomain et megaco webtool \
 	  xmerl edoc ssh inviso typer docbuilder test_server common_test percept

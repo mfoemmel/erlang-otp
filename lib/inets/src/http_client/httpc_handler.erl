@@ -237,18 +237,21 @@ handle_call(Request, _, State = #state{session = Session =
 					    timers = NewTimers}};
 		undefined ->
 		    %% Note: tcp-message reciving has already been
-		    %% activated by handle_pipeline/2. Also
-		    %% the parsing-function #state.mfa is initiated
-		    %% by handle_pipeline/2.
+		    %% activated by handle_pipeline/2. 
 		    cancel_timer(Timers#timers.pipeline_timer, 
 				 timeout_pipeline),
 		    NewSession = 
 			Session#tcp_session{pipeline_length = 1,
 					    client_close = ClientClose},
 		    httpc_manager:insert_session(NewSession, ProfileName),
+		    Relaxed = 
+			(Request#request.settings)#http_options.relaxed, 
 		    {reply, ok, 
 		     NewState#state{request = Request,
 				    session = NewSession,
+				    mfa = {httpc_response, parse,
+					   [State#state.max_header_size,
+					    Relaxed]},
 				    timers = 
 				    Timers#timers{pipeline_timer =
 						  undefined}}}
@@ -299,7 +302,7 @@ handle_info({Proto, _Socket, Data}, State =
 		   session = Session, status_line = StatusLine}) 
   when Proto == tcp; Proto == ssl; Proto == httpc_handler ->
 
-    case Module:Function([Data | Args]) of
+    try Module:Function([Data | Args]) of
         {ok, Result} ->
             handle_http_msg(Result, State); 
         {_, whole_body, _} when Method == head ->
@@ -326,6 +329,20 @@ handle_info({Proto, _Socket, Data}, State =
                                    Session#tcp_session.socket, 
 				   [{active, once}]),
             {noreply, State#state{mfa = NewMFA}}
+    catch
+	exit:_ ->
+	    ClientErrMsg = httpc_response:error(Request, 
+						{could_not_parse_as_http, 
+						 Data}),
+	    NewState = answer_request(Request, ClientErrMsg, State),
+	    {stop, normal, NewState};
+	error:_ ->    
+	    ClientErrMsg = httpc_response:error(Request, 
+						{could_not_parse_as_http, 
+						 Data}),
+	    NewState = answer_request(Request, ClientErrMsg, State),   
+	    {stop, normal, NewState}
+    
     end;
 
 %% The Server may close the connection to indicate that the
@@ -426,14 +443,46 @@ terminate(Reason, State = #state{request = Request})->
 	       end,
     terminate(Reason, NewState#state{request = undefined}).
 
-
 %%--------------------------------------------------------------------
 %% Func: code_change(_OldVsn, State, Extra) -> {ok, NewState}
 %% Purpose: Convert process state when code is changed
 %%--------------------------------------------------------------------
-code_change(_, State, _Extra) ->
+code_change(_, #state{request = Request, pipeline = Queue} = State, 
+	    [{from, '5.0.1'}, {to, '5.0.2'}]) ->
+    Settings = new_http_options(Request#request.settings),
+    NewRequest = Request#request{settings = Settings},
+    NewQueue = new_queue(Queue, fun new_http_options/1),
+    {ok, State#state{request = NewRequest, pipeline = NewQueue}};
+
+code_change(_, #state{request = Request, pipeline = Queue} = State, 
+	    [{from, '5.0.2'}, {to, '5.0.1'}]) ->
+    Settings = old_http_options(Request#request.settings),
+    NewRequest = Request#request{settings = Settings},
+    NewQueue = new_queue(Queue, fun old_http_options/1),
+    {ok, State#state{request = NewRequest, pipeline = NewQueue}};
+
+code_change(_, State, _) ->
     {ok, State}.
 
+new_http_options({http_options, TimeOut, AutoRedirect, SslOpts,
+		  Auth, Relaxed}) ->
+    {http_options, "HTTP/1.1", TimeOut, AutoRedirect, SslOpts,
+     Auth, Relaxed}.
+
+old_http_options({http_options, _, TimeOut, AutoRedirect,
+		  SslOpts, Auth, Relaxed}) ->
+    {http_options, TimeOut, AutoRedirect, SslOpts, Auth, Relaxed}.
+
+new_queue(Queue, Fun) ->
+    List = queue:to_list(Queue),
+    NewList = 
+	lists:map(fun(Request) ->
+			  Settings = 
+			      Fun(Request#request.settings),
+			  Request#request{settings = Settings}
+		  end, List),
+    queue:from_list(NewList).
+    
 %%--------------------------------------------------------------------
 %%% Internal functions
 %%--------------------------------------------------------------------
@@ -455,10 +504,9 @@ send_first_request(Address, Request, State) ->
 				     client_close = ClientClose},
 		    TmpState = State#state{request = Request, 
 					   session = Session, 
-					   mfa = 
-					   {httpc_response, parse,
-					    [State#state.max_header_size]},
-					   status_line = undefined,
+					   mfa = init_mfa(Request, State),
+					   status_line = 
+					   init_status_line(Request),
 					   headers = undefined,
 					   body = undefined,
 					   status = new},
@@ -630,9 +678,11 @@ handle_response(State =
 	    http_transport:setopts(socket_type(Session#tcp_session.scheme), 
 				   Session#tcp_session.socket, 
 				   [{active, once}]),
+	    Relaxed = (Request#request.settings)#http_options.relaxed,
 	    {noreply, 
 	     State#state{mfa = {httpc_response, parse,
-				[State#state.max_header_size]},
+				[State#state.max_header_size,
+				 Relaxed]},
 			 status_line = undefined,
 			 headers = undefined,
 			 body = undefined
@@ -640,9 +690,11 @@ handle_response(State =
 	%% Ignore unexpected 100-continue response and receive the
 	%% actual response that the server will send right away. 
 	{ignore, Data} -> 
+	    Relaxed = (Request#request.settings)#http_options.relaxed,
 	    NewState = State#state{mfa = 
 				   {httpc_response, parse,
-				    [State#state.max_header_size]},
+				    [State#state.max_header_size,
+				     Relaxed]},
 				   status_line = undefined,
 				   headers = undefined,
 				   body = undefined},
@@ -700,10 +752,11 @@ handle_pipeline(State = #state{status = pipeline, session = Session,
 	    NewState = activate_pipeline_timeout(State),
 	    NewSession = Session#tcp_session{pipeline_length = 0},
 	    httpc_manager:insert_session(NewSession, ProfileName),
+	    %% Note mfa will be initilized when a new request 
+	    %% arrives.
 	    {noreply, 
 	     NewState#state{request = undefined, 
-			    mfa = {httpc_response, parse,
-				   [NewState#state.max_header_size]},
+			    mfa = undefined,
 			    status_line = undefined,
 			    headers = undefined,
 			    body = undefined
@@ -723,11 +776,14 @@ handle_pipeline(State = #state{status = pipeline, session = Session,
 					    %% Queue + current
 					    queue:len(Pipeline) + 1},
 		    httpc_manager:insert_session(NewSession, ProfileName),
+		    Relaxed = 
+			(NextRequest#request.settings)#http_options.relaxed,
 		    NewState = 
 			State#state{pipeline = Pipeline,
 				    request = NextRequest,
 				    mfa = {httpc_response, parse,
-					   [State#state.max_header_size]},
+					   [State#state.max_header_size,
+					    Relaxed]},
 				    status_line = undefined,
 				    headers = undefined,
 				    body = undefined},
@@ -800,8 +856,8 @@ try_to_enable_pipline(State = #state{session = Session,
 				     status_line = {Version, _, _},
 				     headers = Headers,
 				     profile_name = ProfileName}) ->
-    case (is_pipeline_capable_server(Version, Headers)) and  
-	(is_keep_alive_connection(Headers, Session)) and 
+    case (is_pipeline_capable_server(Version, Headers)) andalso  
+	(is_keep_alive_connection(Headers, Session)) andalso 
 	(httpc_request:is_idempotent(Method)) of
 	true ->
 	    httpc_manager:insert_session(Session, ProfileName),
@@ -908,6 +964,23 @@ is_no_proxy_dest_address(Dest, Dest) ->
     true;
 is_no_proxy_dest_address(Dest, AddressPart) ->
     lists:prefix(AddressPart, Dest).
+
+init_mfa(#request{settings = Settings}, State) ->
+    case Settings#http_options.version of
+	"HTTP/0.9" ->
+	    {httpc_response, whole_body, [<<>>, -1]};
+	_ ->
+	    Relaxed = Settings#http_options.relaxed,
+	    {httpc_response, parse, [State#state.max_header_size, Relaxed]}
+    end.
+
+init_status_line(#request{settings = Settings}) ->
+    case Settings#http_options.version of
+	"HTTP/0.9" ->
+	    {"HTTP/0.9", 200, "OK"};
+	_ ->
+	    undefined
+    end.
 
 socket_type(#request{scheme = http}) ->
     ip_comm;

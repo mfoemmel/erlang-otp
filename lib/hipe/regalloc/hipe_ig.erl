@@ -428,21 +428,8 @@ analyze_bb_instructions([Instruction|Instructions], Live, IG, Target) ->
     %% 4. Def contains exactly one non-precoloured register, and the
     %%    remaining ones are all non-allocatable precoloured registers.
     %%
-    %% HiPE's backends (except SPARC) only create multiple-element Def sets
+    %% HiPE's backends only create multiple-element Def sets
     %% for CALL instructions, and then all elements are precoloured.
-    %%
-    %% The SPARC backend requires more careful consideration:
-    %% 1. multimove instructions define multiple non-precoloured registers.
-    %%    However, multimoves are are eliminated before register allocation
-    %%    [see hipe_sparc_ra:allocate()].
-    %% 2. The alu_cc instruction sets the condition codes, and the backend
-    %%    records this by making alu_cc define virtual precoloured "%icc" and
-    %%    "%xcc" registers together with the non-precoloured result register.
-    %%    However, "%icc" and "%xcc" are non-allocatable, so no edges between
-    %%    them and the result register are needed.
-    %%    XXX: Nothing in the SPARC backend appears to use the "%icc" or
-    %%    "%xcc" registers, but removing them from the def/use sets breaks
-    %%    the backend for unknown reasons.
     %%
     %% Therefore we can avoid adding Def to Live. The benefit is greatest
     %% on backends with many physical registers, since CALLs clobber all
@@ -722,14 +709,7 @@ interfere_if_uncolored(Temporary, Interfere_temporary, Adj_list, Degree,
 %%   A list of register numbers.
 %%----------------------------------------------------------------------
 
-reg_numbers(Regs2, Target) -> 
-  Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(Regs2);
-      _ ->
-	Regs2
-    end,
+reg_numbers(Regs, Target) -> 
   [Target:reg_nr(X) || X <- Regs].
 
 %%---------------------------------------------------------------------

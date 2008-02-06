@@ -55,10 +55,9 @@
 
 start(Parent, LegalWarnings, Analysis) ->
   NewAnalysis1 = expand_files(Analysis),
-  NewAnalysis2 = init_plt(NewAnalysis1),
-  NewAnalysis3 = run_analysis(NewAnalysis2),
+  NewAnalysis2 = run_analysis(NewAnalysis1),
   State = #state{parent=Parent, legal_warnings=LegalWarnings},
-  loop(State, NewAnalysis3, none).
+  loop(State, NewAnalysis2, none).
 
 run_analysis(Analysis) ->
   Self = self(),
@@ -112,7 +111,7 @@ analysis_start(Parent, Analysis) ->
   
   CServer = dialyzer_codeserver:new(),
 
-  Plt = Analysis#analysis.user_plt,
+  Plt = Analysis#analysis.plt,
   State = #analysis_state{codeserver=CServer,
 			  analysis_type=Analysis#analysis.type,
 			  defines=Analysis#analysis.defines,
@@ -368,13 +367,8 @@ cleanup_callgraph(#analysis_state{plt=InitPlt, parent=Parent,
 				  analysis_type=AnalType,
 				  codeserver=CodeServer}, 
 		  CServer, Callgraph, Files) ->
-  case AnalType =:= plt_build of
-    true ->
-      ModuleDeps = dialyzer_callgraph:module_deps(Callgraph),
-      send_mod_deps(Parent, ModuleDeps);
-    false ->
-      ok
-  end,
+  ModuleDeps = dialyzer_callgraph:module_deps(Callgraph),
+  send_mod_deps(Parent, ModuleDeps),
   {Callgraph1, ExtCalls} = dialyzer_callgraph:remove_external(Callgraph),
   ExtCalls1 = lists:filter(fun({_From, To}) -> 
 			       not dialyzer_plt:contains_mfa(InitPlt, To)
@@ -633,7 +627,8 @@ send_warnings(Parent, Warnings) ->
   Parent ! {self(), warnings, Warnings}.
 
 filter_warnings(LegalWarnings, Warnings) ->
-  [Warning || {Tag, Warning} <- Warnings, lists:member(Tag, LegalWarnings)].
+  [{Tag, Id, Warning} || {Tag, Id, Warning} <- Warnings, 
+			 ordsets:is_element(Tag, LegalWarnings)].
 
 send_analysis_done(Parent, Plt, DocPlt) ->
   Parent ! {self(), done, Plt, DocPlt}.
@@ -655,8 +650,8 @@ send_ext_calls(Parent, ExtCalls) ->
 send_bad_calls(Parent, BadCalls, old_style, _CodeServer) ->
   Warnings = 
     [{?WARN_CALLGRAPH, 
-      {From, io_lib:format("Call to missing or unexported function ~w\n", 
-			   [To])}}
+      From, io_lib:format("Call to missing or unexported function ~w\n", 
+			  [To])}
      || {From, {_,F,A} = To} <- BadCalls,
 	not(F =:= module_info andalso (A =:= 0 orelse A =:= 1))],
   send_warnings(Parent, Warnings);
@@ -675,7 +670,7 @@ format_bad_calls([{From, To = {M, F, A}}|Left],
   Msg = io_lib:format("Call to missing or unexported function ~w:~w/~w\n", 
 		      [M, F, A]),
   FileLine = find_call_file_and_line(Tree, To),
-  NewAcc = [{?WARN_CALLGRAPH, {FileLine, Msg}}|Acc],
+  NewAcc = [{?WARN_CALLGRAPH, FileLine, Msg}|Acc],
   format_bad_calls(Left, CodeServer, NewAcc);
 format_bad_calls([], _CodeServer, Acc) ->
   Acc.
@@ -709,12 +704,3 @@ get_line([]) -> -1.
 
 get_file([{file, File}|_]) -> File;
 get_file([_|Tail]) -> get_file(Tail).
-
-%%____________________________________________________________
-%%
-%% Handle the PLT
-%%
-
-init_plt(Analysis = #analysis{init_plt=InitPlt, user_plt=Plt}) ->
-  Plt1 = dialyzer_plt:copy(InitPlt, Plt),
-  Analysis#analysis{user_plt=Plt1}.

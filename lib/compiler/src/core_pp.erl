@@ -112,7 +112,7 @@ format_1(#c_literal{val=[H|T]}, Ctxt) ->
     format_1(#c_cons{hd=#c_literal{val=H},tl=#c_literal{val=T}}, Ctxt);
 format_1(#c_literal{val=Tuple}, Ctxt) when is_tuple(Tuple) ->
     format_1(#c_tuple{es=[#c_literal{val=E} || E <- tuple_to_list(Tuple)]}, Ctxt);
-format_1(#c_literal{anno=A,val=Bitstring}, Ctxt) when erlang:is_bitstr(Bitstring) ->
+format_1(#c_literal{anno=A,val=Bitstring}, Ctxt) when is_bitstring(Bitstring) ->
     Segs = segs_from_bitstring(Bitstring),
     format_1(#c_binary{anno=A,segments=Segs}, Ctxt);
 format_1(#c_var{name=V}, _) ->
@@ -351,14 +351,23 @@ format_clause_1(#c_clause{pats=Ps,guard=G,body=B}, Ctxt) ->
     Ptxt = format_values(Ps, Ctxt),
     Ctxt2 = add_indent(Ctxt, Ctxt#ctxt.body_indent),
     [Ptxt,
-     " when ",
-     format_guard(G, add_indent(set_class(Ctxt, expr),
-				 width(Ptxt, Ctxt) + 6)),
+     case is_trivial_guard(G) of
+	 true ->
+	     [" when ",
+	      format_guard(G, add_indent(set_class(Ctxt, expr),
+					 width(Ptxt, Ctxt) + 6))];
+	 false ->
+	     [nl_indent(Ctxt2), "when ",
+	      format_guard(G, add_indent(Ctxt2, 2))]
+     end++
      " ->",
      nl_indent(Ctxt2)
      | format(B, set_class(Ctxt2, expr))
     ].
 
+is_trivial_guard(#c_literal{val=Val}) when is_atom(Val) -> true;
+is_trivial_guard(_) -> false.
+    
 format_guard(Node, Ctxt) ->
     maybe_anno(Node, fun format_guard_1/2, Ctxt).
 
@@ -475,7 +484,7 @@ is_simple_term(#c_literal{val=V}) -> not is_tuple(V);
 is_simple_term(#c_fname{}) -> true;
 is_simple_term(_) -> false.
 
-segs_from_bitstring(<<H,T/bitstr>>) ->
+segs_from_bitstring(<<H,T/bitstring>>) ->
     [#c_bitstr{val=#c_literal{val=H},
 	       size=#c_literal{val=8},
 	       unit=#c_literal{val=1},
@@ -484,7 +493,7 @@ segs_from_bitstring(<<H,T/bitstr>>) ->
 segs_from_bitstring(<<>>) ->
     [];
 segs_from_bitstring(Bitstring) ->
-    N = erlang:bitsize(Bitstring),
+    N = bit_size(Bitstring),
     <<I:N>> = Bitstring,
     [#c_bitstr{val=#c_literal{val=I},
 	      size=#c_literal{val=N},

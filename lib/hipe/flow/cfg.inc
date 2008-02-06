@@ -36,18 +36,6 @@
 %%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
--record(cfg_info, {'fun',      % :: mfa(),
-		   start_label,
-		   is_closure    :: bool(),
-		   closure_arity :: byte(),
-		   is_leaf       :: bool(),
-		   params,     % :: list()
-		   extra,
-		   info=[]}).
--record(cfg, {table,  %
-	      info,   % #cfg_info{}
-	      data}). %
-
 %%=====================================================================
 %% The following are ugly as hell, but what else can I do???
 %%=====================================================================
@@ -81,29 +69,12 @@
 -define(CFG_CAN_HAVE_PHI_NODES,true).
 -endif.
 
--ifdef(SPARC_CFG).
--define(PREORDER,true).
--define(BREADTH_ORDER,true).
--define(EXTRA_NEEDED,true).
--define(FIND_NEW_LABEL_NEEDED,true).
--define(INCLUDE_ALL_ORDERINGS,true).
--define(PRED_MAP_NEEDED,true).
--define(REMOVE_TRIVIAL_BBS_NEEDED,true).
--endif.
-
 %%=====================================================================
-
--ifdef(INFO_NEEDED).
--export([info_update/2]).
--endif.
 
 -ifdef(START_LABEL_UPDATE_NEEDED).
 -export([start_label_update/2]).
 -endif.
 
--ifdef(INCLUDE_ALL_ORDERINGS).
--export([preorder/1, inorder/1, reverse_inorder/1]).
--endif.
 -ifdef(BREADTH_ORDER).
 -export([breadthorder/1]).
 -endif.
@@ -237,7 +208,7 @@ other_entrypoints(CFG) ->
 bb(CFG, Label) ->
   HT = CFG#cfg.table,
   case gb_trees:lookup(Label, HT) of
-    {value,{Block,_Succ,_Pred}} ->
+    {value, {Block,_Succ,_Pred}} ->
       Block;
     none ->
       not_found
@@ -246,9 +217,11 @@ bb(CFG, Label) ->
 %% Remove duplicates from a list. The first instance
 %% (in left-to-right order) of an element is kept,
 %% remaining instances are removed.
+-spec(remove_duplicates/1 :: ([Elem]) -> [Elem]).
 remove_duplicates(List) ->
   remove_duplicates(List, []).
 
+-spec(remove_duplicates/2 :: ([Elem], [Elem]) -> [Elem]).
 remove_duplicates([H|T], Acc) ->
   NewAcc =
     case lists:member(H, Acc) of
@@ -315,7 +288,6 @@ redirect_phis([I|Rest], OldPred, NewPred, Acc) ->
       redirect_phis(Rest, OldPred, NewPred, [I|Acc])
   end.
 
-
 -endif.
 
 %% @spec bb(CFG::cfg(), Label::label(), NewBB::basic_block()) -> cfg()
@@ -376,7 +348,7 @@ add_pred(HT, ToL, PredL) ->
 
 %% find_highest_label(CFG) ->
 %%   Labels = labels(CFG),
-%%   lists:foldl(fun(X, Acc)->max(X, Acc)end, 0, Labels).
+%%   lists:foldl(fun(X, Acc) -> max(X, Acc) end, 0, Labels).
 %% 
 %% find_highest_var(CFG) ->
 %%   Labels = labels(CFG),
@@ -402,7 +374,7 @@ remove_pred_from_phis(List = [I|Left], Label, Acc) ->
       NewAcc = [phi_remove_pred(I, Label)|Acc],
       remove_pred_from_phis(Left, Label, NewAcc);
     false ->
-      lists:reverse(Acc)++List
+      lists:reverse(Acc) ++ List
   end;
 remove_pred_from_phis([], _Label, Acc) ->
   lists:reverse(Acc).
@@ -443,7 +415,7 @@ take_bbs(Xs, CFG) ->
 
 take_bb([], Code) ->
   {lists:reverse(Code), []};
-take_bb([X, Y |Xs], Code) ->
+take_bb([X, Y|Xs], Code) ->
   case is_label(X) of
     true -> %% Empty block fallthrough
       {[mk_goto(label_name(X))], [X,Y|Xs]};
@@ -516,76 +488,6 @@ depth_search([N|Ns], Visited, Succ, Acc) ->
   end;
 depth_search([], Visited, _, Ordering) ->
   {Ordering,Visited}.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% The following are included only if orderings are needed -- currently
-%% this is the case for the SPARC back-end only.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
--ifdef(INCLUDE_ALL_ORDERINGS).
-
-%% depth_first_ordering(CFG) ->
-%%     Start = start_label(CFG),
-%%     Succ = succ_map(CFG),
-%%     {Ordering, _Visited} =
-%% 	df_search([Start|other_entrypoints(CFG)],
-%% 		  none_visited(), Succ, []),
-%%     Ordering.
-%% 
-%% df_search([N|Ns], Visited, Succ, Acc) ->
-%%   case is_visited(N, Visited) of 
-%%     true ->
-%%       df_search(Ns, Visited, Succ, Acc);
-%%     false ->
-%%       {Order, Vis} = df_search(succ(Succ, N), visit(N, Visited), Succ, Acc),
-%%       df_search(Ns, Vis, Succ, [N|Order])
-%%   end;
-%% df_search([], Visited, _, Ordering) -> {Ordering, Visited}.
-
-inorder(CFG) ->
-  lists:reverse(reverse_inorder(CFG)).
-
-reverse_inorder(CFG) ->
-  Start = start_label(CFG),
-  Succ = succ_map(CFG),
-  {Ordering,_Visited} =
-    inorder_search([Start|other_entrypoints(CFG)], none_visited(), Succ, []),
-  Ordering. 
-
-inorder_search([N|Ns], Visited, Succ, Acc) ->
-  case is_visited(N, Visited) of 
-    true ->
-      inorder_search(Ns, Visited, Succ, Acc);
-    false ->
-      case succ(Succ, N) of
-	[First|Rest] ->
-	  {Order, Vis} = inorder_search([First], visit(N,Visited), Succ, Acc),
-	  inorder_search(Rest++Ns, Vis, Succ, [N|Order]);
-	[] ->
-	  inorder_search(Ns, visit(N, Visited), Succ, [N|Acc])
-      end
-  end;
-inorder_search([], Visited, _, Ordering) ->
-  {Ordering,Visited}.
-
-%% post(X, Vis, Succ, PO) ->
-%%    case is_visited(X,Vis) of 
-%%       true ->
-%% 	 {Vis, PO};
-%%       false ->
-%% 	 post_list(succ(Succ,X), visit(X,Vis), Succ, [X|PO])
-%%    end.
-%% 
-%% post_list([], Vis, Succ, PO) -> 
-%%    {Vis, PO};
-%% post_list([X|Xs], Vis, Succ, PO) ->
-%%    {Vis1, PO_1} = post(X, Vis, Succ, PO),
-%%    post_list(Xs, Vis1, Succ, PO_1).
-
-%% reverse_preorder(CFG) ->
-%%     postorder(CFG).
-
--endif.	% INCLUDE_ORDERINGS
 
 -ifdef(PREORDER).
 preorder(CFG) ->
@@ -918,6 +820,7 @@ is_empty_bb([]) ->
 
 %% Rewrite all pure branches with one successor to goto:s
 
+-spec(rewrite_trivial_branches/1 :: (#cfg{}) -> #cfg{}).
 rewrite_trivial_branches(CFG) ->
   SuccMap = succ_map(CFG),
   rewrite_trivial_branches(postorder(CFG), SuccMap, CFG).
@@ -964,7 +867,7 @@ merge_bbs(CFG) ->
   lists:foldl(fun merge_successor/2, CFG, postorder(CFG)).
 
 %% If L fulfills the requirements, merge it with its successor.
-merge_successor(L,CFG) ->
+merge_successor(L, CFG) ->
   %% Get the BB L (If it still exists).
   case bb(CFG, L) of
     not_found -> CFG;
@@ -979,10 +882,10 @@ merge_successor(L,CFG) ->
 	  CFG;
 	{[Successor],_} when Successor =/= StartLabel ->
 	  %% Make sure the succesor only have this block as predecessor.
-	  case  [L] =:= pred(pred_map(CFG),Successor) of
+	  case  [L] =:= pred(pred_map(CFG), Successor) of
 	    true ->
 	      %% Remove the goto or remap fall-through in BB and merge the BBs
-	      NewCode = merge(BB,bb(CFG,Successor),Successor),
+	      NewCode = merge(BB, bb(CFG, Successor), Successor),
 	      NewBB = hipe_bb:mk_bb(NewCode),
 	      bb_add(bb_remove(CFG, Successor), L, NewBB);
 	    false ->
@@ -995,7 +898,7 @@ merge_successor(L,CFG) ->
       end
   end.
 
-%% Merge BB and BB2 
+%% Merge BB and BB2
 merge(BB, BB2, BB2_Label) ->
   Head = hipe_bb:butlast(BB),
   Last = hipe_bb:last(BB),
@@ -1008,7 +911,7 @@ merge(BB, BB2, BB2_Label) ->
       %% The last instr is not a goto,
       %%  e.g. a call with only fall-through
       %% Remove the fall-through with the []-label. 
-      Head ++ [redirect_jmp(Last,BB2_Label,[])| Tail]
+      Head ++ [redirect_jmp(Last, BB2_Label, [])|Tail]
   end.
 
 -endif.	% REMOVE_TRIVIAL_BBS_NEEDED
@@ -1024,6 +927,8 @@ merge(BB, BB2, BB2_Label) ->
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -ifdef(REMOVE_UNREACHABLE_CODE).
+
+-spec(remove_unreachable_code/1 :: (#cfg{}) -> #cfg{}).
 
 remove_unreachable_code(Cfg) ->
   Start = start_label(Cfg),
@@ -1043,7 +948,7 @@ remove_unreachable_code(Cfg) ->
 find_reachable([Label|Left], SuccMap, Acc) ->
   NewAcc = gb_sets:add(Label, Acc),
   Succ = succ(SuccMap, Label),
-  find_reachable([X||X<-Succ, not gb_sets:is_member(X, Acc)]++Left,
+  find_reachable([X || X <- Succ, not gb_sets:is_member(X, Acc)] ++ Left,
 		 SuccMap, NewAcc);
 find_reachable([], _SuccMap, Acc) ->
   gb_sets:to_list(Acc).

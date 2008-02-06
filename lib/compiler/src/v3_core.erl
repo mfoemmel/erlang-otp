@@ -702,7 +702,7 @@ bitstr({bin_element,_,E0,Size0,[Type,{unit,Unit}|Flags]}, St0) ->
 	{_,#c_var{}} -> ok;
 	{integer,#c_literal{val=I}} when is_integer(I) -> ok;
 	{float,#c_literal{val=V}} when is_number(V) -> ok;
-	{binary,#c_literal{val=V}} when erlang:is_bitstr(V) -> ok;
+	{binary,#c_literal{val=V}} when is_bitstring(V) -> ok;
 	{_,_} -> throw(bad_binary)
     end,
     {#c_bitstr{val=E1,size=Size1,
@@ -1075,9 +1075,33 @@ safe_list(Es, St) ->
 		  {[Ce|Ces],Ep ++ Esp,St1}
 	  end, {[],[],St}, Es).
 
-force_safe(#imatch{anno=Anno,pat=P,arg=E,fc=Fc}, St0) ->
-    {Le,Lps,St1} = force_safe(E, St0),
-    {Le,Lps ++ [#imatch{anno=Anno,pat=P,arg=Le,fc=Fc}],St1};
+force_safe(#imatch{pat=P,arg=E}=Imatch, St0) ->
+    {Le,Lps0,St1} = force_safe(E, St0),
+    Lps = Lps0 ++ [Imatch#imatch{arg=Le}],
+
+    %% Make sure we don't duplicate the expression E. sys_core_fold
+    %% will usually optimize away the duplicate expression, but may
+    %% generate a warning while doing so.
+    case Le of
+	#c_var{} ->
+	    %% Le is a variable.
+	    %% Thus: P = Le, Le.  (Traditional, since the V2 compiler.)
+	    {Le,Lps,St1};
+	_ ->
+	    %% Le is not a variable.
+	    %% Thus: NewVar = P = Le, NewVar.   (New for R12B-1.)
+	    %%
+	    %% Note: It is tempting to rewrite V = Le to V = Le, V,
+	    %% but that will generate extra warnings in sys_core_fold
+	    %% for this expression:
+	    %%
+	    %%    [{X,Y} || {X,_} <- E, (Y = X) =:= (Y = 1 + 1)]
+	    %%
+	    %% (There will be a 'case Y =:= Y of...' which will generate
+	    %% a warning.)
+	    {V,St2} = new_var(St1),
+	    {V,Lps0 ++ [Imatch#imatch{pat=#c_alias{var=V,pat=P},arg=Le}],St2}
+    end;
 force_safe(Ce, St0) ->
     case is_safe(Ce) of
 	true -> {Ce,[],St0};

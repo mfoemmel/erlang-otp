@@ -73,6 +73,10 @@
 -define(CFG,  hipe_rtl_cfg).
 -include("../ssa/hipe_ssa_const_prop.inc").
 
+-type(bool_lattice() :: 'true' | 'false' | 'top' | 'bottom').
+-type(conditional() :: 'eq' | 'ne' | 'ge' | 'geu' | 'gt' | 'gtu' | 'le' |
+      'leu' | 'lt' | 'ltu' | 'overflow' | 'not_overflow').
+
 %%-----------------------------------------------------------------------------
 %% Procedure : visit_expression/2
 %% Purpose   : do a symbolic exectuion (nice words eh?) of the given 
@@ -369,32 +373,35 @@ evaluate_alu(Val1, Op, Val2) ->
       end
   end.
 
-%% partial_eval_branch/5 returns the result of the comparisson in alub.
+maybe_top_or_bottom(List) ->
+  maybe_top_or_bottom(List, false).
 
-%% we use the fact that if evaluate_alu set any flag to top or bottom then 
-%% all flags that are not true/false have the same value (top or bottom).
-%% so we call the hipe_rtl_arch:eval_cond_bits to do the real evaluation, 
-%% and try to catch the exception that is thrown if something blows up.
+maybe_top_or_bottom([],          TB) -> TB;
+maybe_top_or_bottom([top | Rest], _) -> maybe_top_or_bottom(Rest, top);
+maybe_top_or_bottom([bottom | _], _) -> bottom;
+maybe_top_or_bottom([_ | Rest],  TB) -> maybe_top_or_bottom(Rest, TB).
 
-find_first_top_or_bottom([top |_]) -> top;
-find_first_top_or_bottom([bottom| _ ]) -> bottom;
-find_first_top_or_bottom([_| Ls])-> find_first_top_or_bottom(Ls).
-
-partial_eval_branch(Cond, N, Z, V, C) ->
-  case (catch hipe_rtl_arch:eval_cond_bits(Cond, N, Z, V, C)) of
-    {'EXIT', {badarg, _}} -> 
-      % the eval-vond fails (hopefulle b/c of logic operation on top
-      % or bottom). Unfortunately we can't use any of the stacktrace
-      % since native code does not support it.
-      find_first_top_or_bottom([N, Z, V, C]);
-    true  -> true;
-    false -> false;
-    bottom -> bottom;  % some operators return e.g. Z
+-spec(partial_eval_branch/5 :: (conditional(), bool_lattice(), bool_lattice(),
+				bool_lattice() | 0, bool_lattice() | 0) ->
+	 bool_lattice()).
+partial_eval_branch(Cond, N0, Z0, V0, C0) ->
+  {N, Z, V, C} =
+    if Cond =:= 'eq';
+       Cond =:= 'ne'           -> {true, Z0,   true, true};
+       Cond =:= 'gt';
+       Cond =:= 'le'           -> {N0,   Z0,   V0,   true};
+       Cond =:= 'gtu'          -> {true, Z0,   true, C0  };
+       Cond =:= 'lt';
+       Cond =:= 'ge'           -> {N0,   true, V0,   true};
+       Cond =:= 'geu';
+       Cond =:= 'ltu'          -> {true, true, true, C0  };
+       Cond =:= 'overflow';
+       Cond =:= 'not_overflow' -> {true, true, V0,   true}
+    end,
+  case maybe_top_or_bottom([N, Z, V, C]) of
+    false  -> hipe_rtl_arch:eval_cond_bits(Cond, N, Z, V, C);
     top    -> top;
-    E      -> 
-      io:format("~w: Rethrowing ~w when doing ~w\n",
-                [?MODULE, E, {Cond, N, Z, V, C}]),
-      throw(E)
+    bottom -> bottom
   end.
 
 %%-----------------------------------------------------------------------------

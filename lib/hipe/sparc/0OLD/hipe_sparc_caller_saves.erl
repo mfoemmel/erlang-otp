@@ -10,9 +10,9 @@
 %%  History  :	* 2001-11-16 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2005/11/06 13:10:51 $
-%%              $Revision: 1.18 $
+%%              $Author: mikpe $
+%%              $Date: 2007/12/18 09:18:21 $
+%%              $Revision: 1.1 $
 %% ====================================================================
 %%  Exports  :
 %%

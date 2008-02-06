@@ -112,11 +112,11 @@
 	  assoc_id	= 0
 	}).
 
-%% sctp_adaption_event: "adaption_ind" is opaque user-specified data:
--record(sctp_adaption_event,
+%% sctp_adaptation_event: "adaptation_ind" is opaque user-specified data:
+-record(sctp_adaptation_event,
 	{
-	  adaption_ind = 0,
-	  assoc_id     = 0
+	  adaptation_ind = 0,
+	  assoc_id       = 0
 	}).
 
 %% sctp_partial_delivery_event: XXX: Not clear whether it is delivered to
@@ -166,9 +166,9 @@
 	  addr      % When set: { IP, Port}
 	}).
 
--record(sctp_setadaption,	% For SCTP_OPT_ADAPTION_LAYER
+-record(sctp_setadaptation,	% For SCTP_OPT_ADAPTATION_LAYER
 	{
-	  adaption_ind % 0
+	  adaptation_ind % 0
 	}).
 
 -record(sctp_paddrparams,	% For SCTP_OPT_PEER_ADDR_PARAMS
@@ -203,7 +203,8 @@
 	  peer_error_event,       % true,	% Delivered as an ERROR
 	  shutdown_event,         % true,	% Used by gen_sctp
 	  partial_delivery_event, % true,	% Unlikely to happen...
-	  adaption_layer_event    % false	% Probably not needed...
+	  adaptation_layer_event, % false	% Probably not needed...
+	  authentication_event    % false       % Not implemented yet...
 	}).
 
 -record(sctp_assoc_value,	% For SCTP_OPT_DELAYED_ACK_TIME

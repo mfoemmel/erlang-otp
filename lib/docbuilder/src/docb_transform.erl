@@ -54,7 +54,7 @@ file(File0, RawOpts) ->
 			    {{local_defs,term},[]},
 			    {{local_defs,cite},[]} | Opts0],
 		    case docb_main:process(File, Opts) of
-			errors -> ok;
+			errors -> error;
 			ok -> ok
 		    end;
 		Error -> % {error, {badopt,Term}}

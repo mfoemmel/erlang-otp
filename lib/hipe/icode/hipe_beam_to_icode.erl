@@ -187,7 +187,7 @@ trans_mfa_code(M,F,A, FunBeamCode, ClosureInfo) ->
 		  {Code3,_Env3} = {Code2,Env1}), % Code3 = fix_gotos(Code2),
   %% For stack optimization
   Leafness = leafness(Code3),
-  IsLeaf = is_sparc_leaf_code(Leafness),
+  IsLeaf = is_leaf_code(Leafness),
   Code4 =
     [FunLbl |
      case needs_redtest(Leafness) of
@@ -265,14 +265,14 @@ leafness([I|Is], Leafness) ->
 	  {M,F,A} = hipe_icode:enter_fun(I),
 	  case erlang:is_builtin(M, F, A) of
 	    true -> leafness(Is, Leafness);
-	    _ -> false % SPARC doesn't do leaf optimisation for tailcalls
+	    _ -> false
 	  end
       end;
     _ -> leafness(Is, Leafness)
   end.
 
-%% XXX: Only used for SPARC. Should be eliminated.
-is_sparc_leaf_code(Leafness) ->
+%% XXX: this old stuff is passed around but essentially unused
+is_leaf_code(Leafness) ->
   case Leafness of
     true -> true;
     selfrec -> true;
@@ -383,14 +383,14 @@ trans_fun([{bif,BifName,{f,Lbl},[_,_] = Args,Reg}|Instructions], Env) ->
 trans_fun([{allocate,StackSlots,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_heap --- IGNORED ON PURPOSE
-trans_fun([{allocate_heap,_,_,_}|Instructions], Env) ->
-  trans_fun(Instructions,Env);
+trans_fun([{allocate_heap,StackSlots,_,_}|Instructions], Env) ->
+  trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_zero
 trans_fun([{allocate_zero,StackSlots,_}|Instructions], Env) ->
   trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- allocate_heap_zero --- IGNORED ON PURPOSE
-trans_fun([{allocate_heap_zero,_,_,_}|Instructions], Env) ->
-  trans_fun(Instructions,Env);
+trans_fun([{allocate_heap_zero,StackSlots,_,_}|Instructions], Env) ->
+  trans_allocate(StackSlots) ++ trans_fun(Instructions,Env);
 %%--- test_heap --- IGNORED ON PURPOSE
 trans_fun([{test_heap,_,_}|Instructions], Env) ->
   trans_fun(Instructions,Env);
@@ -785,22 +785,28 @@ trans_fun([{test,bs_test_unit,{f,Lbl},[Ms,Unit]}|
 		[MsVar], [], Env, Instructions);
 trans_fun([{test,bs_match_string,{f,Lbl},[Ms,BitSize,Bin]}|
 	   Instructions], Env) -> 
+  True = mk_label(new),
+  FalseLabName = map_label(Lbl),
+  TrueLabName = hipe_icode:label_name(True),
   MsVar = mk_var(Ms),
+  TmpVar = mk_var(new),
   ByteSize = BitSize div 8,
-  case BitSize rem 8 of
-    0 ->
+  ExtraBits = BitSize rem 8,
+  WordSize = hipe_rtl_arch:word_size(),
+  if ExtraBits == 0 ->
       trans_op_call({hipe_bs_primop,{bs_match_string,Bin,ByteSize}}, Lbl, 
-		[MsVar], [MsVar], Env, Instructions);
-    X when X > 0 ->
-      Pad = 8-X,
-      True = mk_label(new),
-      FalseLabName = map_label(Lbl),
-      TrueLabName = hipe_icode:label_name(True),
-      <<RealBin:ByteSize/binary, Int:X, _:Pad>> = Bin,
-      TmpVar = mk_var(new),
+		    [MsVar], [MsVar], Env, Instructions);
+      BitSize =< ((WordSize * 8) - 5) -> 
+      <<Int:BitSize, _/bits>> = Bin,
+      {I1,Env1} = trans_one_op_call({hipe_bs_primop,{bs_get_integer,BitSize,0}}, Lbl, 
+				    [MsVar], [TmpVar, MsVar], Env), 
+      I2 = hipe_icode:mk_type([TmpVar], {integer,Int}, TrueLabName, FalseLabName),
+      I1 ++ [I2,True] ++ trans_fun(Instructions, Env1);
+     true ->
+      <<RealBin:ByteSize/binary, Int:ExtraBits, _/bits>> = Bin,
       {I1,Env1} = trans_one_op_call({hipe_bs_primop,{bs_match_string,RealBin,ByteSize}}, Lbl, 
 				    [MsVar], [MsVar], Env),
-      {I2,Env2} = trans_one_op_call({hipe_bs_primop,{bs_get_integer,X,0}}, Lbl, 
+      {I2,Env2} = trans_one_op_call({hipe_bs_primop,{bs_get_integer,ExtraBits,0}}, Lbl, 
 				    [MsVar], [TmpVar, MsVar], Env1),
       I3 = hipe_icode:mk_type([TmpVar], {integer,Int}, TrueLabName, FalseLabName),
       I1 ++ I2 ++ [I3,True] ++ trans_fun(Instructions, Env2)

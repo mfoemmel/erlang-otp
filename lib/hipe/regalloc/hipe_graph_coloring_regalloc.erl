@@ -769,14 +769,7 @@ def_use(X, Target) ->
   {ordsets:from_list(reg_names(Target:defines(X), Target)), 
    ordsets:from_list(reg_names(Target:uses(X), Target))}.
 
-reg_names(Rs, Target) ->
-  Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(Rs);
-      _ ->
-	Rs
-    end,
+reg_names(Regs, Target) ->
   [Target:reg_nr(X) || X <- Regs].
 
 %%

@@ -532,6 +532,7 @@ CSYM(nbif_3_simple_exception):
  * heap pointer was just read from P.
  * TEMP_ARG0 is the first actual parameter, if PPC_NR_ARG_REGS > 0.
  * TEMP_ARG1 is the second actual parameter (if defined), if PPC_NR_ARG_REGS > 1.
+ * TEMP_ARG2 is the third actual parameter (if defined), if PPC_NR_ARG_REGS > 2.
  */
 	GLOBAL(CSYM(nbif_1_hairy_exception))
 CSYM(nbif_1_hairy_exception):
@@ -540,6 +541,10 @@ CSYM(nbif_1_hairy_exception):
 	GLOBAL(CSYM(nbif_2_hairy_exception))
 CSYM(nbif_2_hairy_exception):
 	li	r4, 2
+	b	.nbif_hairy_exception
+	GLOBAL(CSYM(nbif_3_hairy_exception))
+CSYM(nbif_3_hairy_exception):
+	li	r4, 3
 	/*FALLTHROUGH*/
 .nbif_hairy_exception:
 	LOAD	r3, P_FREASON(P)
@@ -547,15 +552,9 @@ CSYM(nbif_2_hairy_exception):
 	bne+	.nbif_simple_exception2
 	/* handle reschedule */
 	STORE	r5, P_NCALLEE(P)
-#if PPC_NR_ARG_REGS == 0
-	li	r4, 0		/* arity unused -- args on nstack */
-#elif PPC_NR_ARG_REGS == 1
-	li	r4, 1		/* 1 even if arity is 2 */
-	STORE	TEMP_ARG0, P_ARG0(P)
-#else
 	STORE	TEMP_ARG0, P_ARG0(P)
 	STORE	TEMP_ARG1, P_ARG1(P)
-#endif
+	STORE	TEMP_ARG2, P_ARG2(P)
 	li	r3, HIPE_MODE_SWITCH_RES_RESCHEDULE
 	b	.bif_exit
 

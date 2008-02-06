@@ -28,7 +28,7 @@
 	 convert_netscapecookie_date/1, enable_debug/1, valid_options/3,
 	 modules_validate/1, module_validate/1, 
 	 dir_validate/2, file_validate/2, mime_type_validate/1, 
-	 mime_types_validate/1]).
+	 mime_types_validate/1, custom_date/0]).
 
 -export([encode_hex/1]).
 -include_lib("kernel/include/file.hrl").
@@ -329,6 +329,27 @@ rfc1123_date(LocalTime) ->
     lists:flatten(
       io_lib:format("~s, ~2.2.0w ~3.s ~4.4.0w ~2.2.0w:~2.2.0w:~2.2.0w GMT",
 		    [day(DayNumber),DD,month(MM),YYYY,Hour,Min,Sec])).
+
+custom_date() ->
+    LocalTime     = calendar:local_time(),
+    UniversalTime = calendar:universal_time(),
+    Minutes       = round(diff_in_minutes(LocalTime,UniversalTime)),
+    {{YYYY,MM,DD},{Hour,Min,Sec}} = LocalTime,
+    Date = 
+	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
+		      [DD,httpd_util:month(MM),YYYY,Hour,Min,Sec,
+		       sign(Minutes), abs(Minutes) div 60,
+		       abs(Minutes) rem 60]),  
+    lists:flatten(Date).
+
+diff_in_minutes(L,U) ->
+    (calendar:datetime_to_gregorian_seconds(L) -
+     calendar:datetime_to_gregorian_seconds(U))/60.
+
+sign(Minutes) when Minutes > 0 ->
+    $+;
+sign(_Minutes) ->
+    $-.
 
 %% uniq
 

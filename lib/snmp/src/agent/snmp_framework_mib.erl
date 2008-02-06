@@ -148,7 +148,7 @@ sort_agent(L) ->
 convert_context(Dir) ->
     config_err("missing context.conf file => generating a default file", []),
     File = filename:join(Dir,"context.conf"),
-    case file:open(File,write) of
+    case file:open(File, [write]) of
 	{ok, Fid} ->
 	    ok = io:format(Fid, "~s\n", [context_header()]),
 	    ok = io:format(Fid, "%% The default context\n\"\".\n", []),

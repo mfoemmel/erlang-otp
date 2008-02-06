@@ -2278,7 +2278,7 @@ verify_count(Count, Min, Max) ->
 %% -------------------------------------------------------------------
 
 error(Reason) ->
-    erlang:fault(Reason).
+    erlang:error(Reason).
 
 % d(F) ->
 %     d(F, []).

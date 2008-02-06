@@ -15,6 +15,7 @@ MODULES = \
 	megaco_call_flow_test \
 	megaco_codec_test \
 	megaco_codec_test_lib \
+	megaco_codec_flex_lib \
 	megaco_codec_v1_test \
 	megaco_codec_v2_test \
 	megaco_codec_prev3a_test \

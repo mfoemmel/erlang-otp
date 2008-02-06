@@ -22,6 +22,8 @@
 %% Interface for compiler.
 -export([module/2,format_error/1]).
 
+-include("beam_disasm.hrl").
+
 -import(lists, [reverse/1,foldl/3,foreach/2,member/2,dropwhile/2]).
 
 -define(MAXREG, 1024).
@@ -123,9 +125,7 @@ add_func({Name,Arity,Entry}, Is, Acc) ->
 beam_file(Name) ->
     try beam_disasm:file(Name) of
 	{error,beam_lib,Reason} -> [{beam_lib,Reason}];
-	{beam_file,L} ->
-	    {value,{module,Module}} = lists:keysearch(module, 1, L),
-	    {value,{code,Code0}} = lists:keysearch(code, 1, L),
+	#beam_file{module=Module, code=Code0} ->
 	    Code = normalize_disassembled_code(Code0),
 	    validate(Module, Code)
     catch _:_ -> [disassembly_failed]
@@ -548,11 +548,11 @@ valfun_4({apply,Live}, Vst) ->
 valfun_4({apply_last,Live,_}, Vst) ->
     tail_call(apply, Live+2, Vst);
 valfun_4({call_fun,Live}, Vst) ->
-    call('fun', Live, Vst);
+    call('fun', Live+1, Vst);
 valfun_4({call,Live,Func}, Vst) ->
     call(Func, Live, Vst);
 valfun_4({call_ext,Live,Func}, Vst) ->
-    %% Exception BIFs has alread been taken care of above.
+    %% Exception BIFs has already been taken care of above.
     call(Func, Live, Vst);
 valfun_4({call_only,Live,Func}, Vst) ->
     tail_call(Func, Live, Vst);

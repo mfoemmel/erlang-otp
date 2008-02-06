@@ -516,7 +516,7 @@ ethr_init(ethr_init_data *id)
 #ifdef ETHR_HAVE_PTHREAD_SPIN_LOCK
 	    res = pthread_spin_init(&ethr_atomic_protection__[i].u.spnlck, 0);
 #else
-	    res = pthread_mutex_init(&ethr_atomic_protection__[i].u.mtx, NULL);
+	    res = ethr_mutex_init(&ethr_atomic_protection__[i].u.mtx);
 #endif
 	    if (res != 0)
 		goto error;
@@ -1527,7 +1527,7 @@ static void thr_exit_cleanup(thr_data_ *td, void *res)
     LeaveCriticalSection(&thr_table_cs);
 }
 
-static unsigned thr_wrapper(void* args)
+static unsigned __stdcall thr_wrapper(LPVOID args)
 {
     void *(*func)(void*) = ((thr_wrap_data_ *) args)->func;
     void *arg = ((thr_wrap_data_ *) args)->arg;
@@ -1892,7 +1892,8 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     thr_wrap_data_ twd;
     thr_data_ *my_td, *child_td = NULL;
     ethr_tid child_tid, child_serial, child_ix;
-    DWORD code, ID;
+    DWORD code;
+    unsigned ID;
     unsigned stack_size = 0; /* 0 = system default */
     int use_stack_size = (opts && opts->suggested_stack_size >= 0
 			  ? opts->suggested_stack_size
@@ -1983,13 +1984,12 @@ ethr_thr_create(ethr_tid *tid, void * (*func)(void *), void *arg,
     ASSERT(!my_td->wait_event.in_queue);
 
     /* spawn the thr_wrapper function */
-    child_td->thr_handle
-	= (HANDLE) _beginthreadex(NULL,
-				  stack_size,
-				  (LPTHREAD_START_ROUTINE) thr_wrapper, 
-				  (LPVOID) &twd,
-				  0,
-				  &ID);
+    child_td->thr_handle = (HANDLE) _beginthreadex(NULL,
+						   stack_size,
+						   thr_wrapper,
+						   (LPVOID) &twd,
+						   0,
+						   &ID);
     if (child_td->thr_handle == (HANDLE) 0) {
 	child_td->thr_handle = INVALID_HANDLE_VALUE;
 	goto error;

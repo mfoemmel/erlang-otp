@@ -1712,23 +1712,15 @@ read_manager_config_file(Dir) ->
     end.
 
 default_manager_config() ->
-    Addr = 
-	case inet:gethostname() of
-	    {ok, HostName} ->
-		case inet:getaddr(HostName, inet) of
-		    {ok, A} ->
-			[{address, tuple_to_list(A)}];
-		    {error, _Reason} ->
-			?d("default_manager_config -> failed getting address: "
-			   "~n   _Reason: ~p", [_Reason]),
-			[]
-		end;
-	    {error, _Reason} ->
-		?d("default_manager_config -> failed getting hostname: "
-		   "~n   Reason: ~p", [_Reason]),
-		[]
-	end,
-    Addr.
+    {ok, HostName} = inet:gethostname(),
+    case inet:getaddr(HostName, inet) of
+	{ok, A} ->
+	    [{address, tuple_to_list(A)}];
+	{error, _Reason} ->
+	    ?d("default_manager_config -> failed getting address: "
+	       "~n   _Reason: ~p", [_Reason]),
+	    []
+    end.
     
 check_manager_config({address, Addr}) ->
     snmp_conf:check_ip(Addr);

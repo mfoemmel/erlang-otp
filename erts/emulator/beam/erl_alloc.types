@@ -62,38 +62,34 @@
 #
 #		<ALLOCATOR>	<MULTI_THREAD>	<DESCRIPTION>
 
+allocator	SYSTEM		true		sys_alloc
+
 +if smp
 
-allocator	SYSTEM		true		sys_alloc
 allocator	TEMPORARY	true		temp_alloc
 allocator	SHORT_LIVED	true		sl_alloc
 allocator	STANDARD	true		std_alloc
 allocator	LONG_LIVED	true		ll_alloc
 allocator	EHEAP		true		eheap_alloc
-
-				# Binary alloc has its own thread
-				# safety implementation
-allocator	BINARY		false		binary_alloc
 allocator	ETS		true		ets_alloc
 allocator	FIXED_SIZE	true		fix_alloc
 
 +enable thread_safe_std_alloc
 +else # Non smp build
 
-allocator	SYSTEM		true		sys_alloc
 allocator	TEMPORARY	false		temp_alloc
 allocator	SHORT_LIVED	false		sl_alloc
 allocator	STANDARD	false		std_alloc
 allocator	LONG_LIVED	false		ll_alloc
 allocator	EHEAP		false		eheap_alloc
-
-				# Binary alloc has its own thread
-				# safety implementation
-allocator	BINARY		false		binary_alloc
 allocator	ETS		false		ets_alloc
 allocator	FIXED_SIZE	false		fix_alloc
 
 +endif
+
+allocator	BINARY		true		binary_alloc
+allocator	DRIVER		true		driver_alloc
+
 
 # --- Class declarations -----------------------------------------------------
 #
@@ -170,7 +166,7 @@ type	NODE_ENTRY	STANDARD	SYSTEM		node_entry
 type	PROC_TABLE	LONG_LIVED	PROCESSES	proc_tab
 type	PORT_TABLE	LONG_LIVED	SYSTEM		port_tab
 type	TIMER_WHEEL	LONG_LIVED	SYSTEM		timer_wheel
-type	DRV		SYSTEM		SYSTEM		drv_internal
+type	DRV		DRIVER		SYSTEM		drv_internal
 type	DRV_BINARY	BINARY		BINARIES	drv_binary
 type	DRV_ENTRY_LIST	STANDARD	SYSTEM		drv_entry_list
 type	BINARY		BINARY		BINARIES	binary

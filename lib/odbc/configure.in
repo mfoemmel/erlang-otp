@@ -43,64 +43,6 @@ AC_PROG_MAKE_SET
 AC_CHECK_PROGS(DED_LD, [ld.sh ld], '$(CC)')
 AC_SUBST(DED_LD)
 
-# ODBC 
-/bin/rm -f $ERL_TOP/lib/odbc/SKIP
-
-have_pthread_lib=no
-
-AC_SUBST(TARGET_FLAGS)
-    case $host_os in
-        win32|cygwin)
-		TARGET_FLAGS="-DWIN32"
-		AC_CHECK_LIB(ws2_32, main)
-		if test ! -d "$with_odbc"; then				
-		    ODBC_LIB=""   
-		    ODBC_INCLUDE=""
-		else
-		    ODBC_LIB=-L"$with_odbc/lib"
-		    ODBC_INCLUDE="-I$with_odbc/include"
-		fi  
-	    ;;
-	    *)
-	       TARGET_FLAGS="-DUNIX"
-	       AC_CHECK_LIB(pthread, pthread_create,
-			    [AC_DEFINE(HAVE_LIBPTHREAD, 1, [Define if you have the pthread library (-lpthread).])
-			     LIBS="$LIBS -lpthread"
-			     have_pthread_lib=yes])
-	       if test ! -d "$with_odbc"; then			
-	       AC_MSG_CHECKING([for odbc in standard locations])
-	         for dir in /usr/local/odbc /usr/local /usr/odbc \
-		     /usr /opt/local/pgm/odbc /usr/local/pgm/odbc
-		 do
-		    if test -f "$dir/include/sql.h"; then
-		      is_odbc_std_location=yes	   
-		       ODBC_LIB=-L"$dir/lib"
-		       ODBC_INCLUDE="-I$dir/include"
-		       break	
-		    fi	    
-	         done	    			
-                 if  test "x$is_odbc_std_location" != "xyes"; then
-		    AC_MSG_RESULT(no)
-		    AC_MSG_WARN([No odbc library found skipping odbc])
-		    echo "No odbc library found" > $ERL_TOP/lib/odbc/SKIP
-	         else
-		      AC_MSG_RESULT($ODBC_LIB)
-	         fi     
-              else
-                ODBC_LIB=-L"$with_odbc/lib"
-                ODBC_INCLUDE="-I$with_odbc/include"
-              fi
-	  ;;
-esac
-
-AC_CHECK_LIB(odbc, SQLAllocHandle, [ODBC_LIB="$ODBC_LIB -lodbc"],
-		   [], [$ODBC_LIB])
-	 
-AC_SUBST(ODBC_LIB)
-AC_SUBST(ODBC_INCLUDE)
-
-AC_CHECK_LIB(odbc32, main)
-	    
 # Sockets
 #--------------------------------------------------------------------
 #	Check for the existence of the -lsocket and -lnsl libraries.
@@ -185,5 +127,67 @@ AC_TYPE_SIZE_T
 
 dnl Checks for library functions.
 AC_CHECK_FUNCS([memset socket])
+	
+# ODBC 
+/bin/rm -f $ERL_TOP/lib/odbc/SKIP
+
+have_pthread_lib=no
+have_odbc_lib=no
+	
+AC_SUBST(TARGET_FLAGS)
+    case $host_os in
+        win32|cygwin)
+		TARGET_FLAGS="-DWIN32"
+		AC_CHECK_LIB(ws2_32, main)
+		if test ! -d "$with_odbc"; then				
+		    ODBC_LIB=""   
+		    ODBC_INCLUDE=""
+		else
+		    ODBC_LIB=-L"$with_odbc/lib"
+		    ODBC_INCLUDE="-I$with_odbc/include"
+		fi
+		AC_CHECK_LIB(odbc32, main, [ODBC_LIB="$ODBC_LIB -lodbc32" odbc_lib_link_sucess=yes])
+	    ;;
+	    *)
+	       TARGET_FLAGS="-DUNIX"
+	       AC_CHECK_LIB(pthread, pthread_create,
+			    [AC_DEFINE(HAVE_LIBPTHREAD, 1, [Define if you have the pthread library (-lpthread).])
+			     LIBS="$LIBS -lpthread"
+			     have_pthread_lib=yes])
+	       if test ! -d "$with_odbc"; then			
+	       AC_MSG_CHECKING([for odbc in standard locations])
+	         for dir in /usr/local/odbc /usr/local /usr/odbc \
+		     /usr /opt/local/pgm/odbc /usr/local/pgm/odbc
+		 do
+		    if test -f "$dir/include/sql.h"; then
+		      is_odbc_std_location=yes	   
+		       ODBC_LIB=-L"$dir/lib"
+		       ODBC_INCLUDE="-I$dir/include"
+		       break	
+		    fi	    
+	         done	    			
+                 if  test "x$is_odbc_std_location" != "xyes"; then
+		    AC_MSG_RESULT(no)
+		    AC_MSG_WARN([No odbc library found skipping odbc])
+		    echo "No odbc library found" > $ERL_TOP/lib/odbc/SKIP
+	         else
+		      AC_MSG_RESULT($ODBC_LIB)
+		      AC_CHECK_LIB(odbc, SQLAllocHandle,[ODBC_LIB="$ODBC_LIB -lodbc" odbc_lib_link_sucess=yes])			 
+	         fi     
+              else
+                ODBC_LIB=-L"$with_odbc/lib"
+                ODBC_INCLUDE="-I$with_odbc/include"
+	        AC_CHECK_LIB(odbc, SQLAllocHandle,[ODBC_LIB="$ODBC_LIB -lodbc" odbc_lib_link_sucess=yes])		
+              fi
+	  ;;
+esac
+
+if test "x$odbc_lib_link_sucess" != "xyes";  then
+    AC_MSG_WARN(["ODBC library - link check failed"])
+    echo "ODBC library - link check failed" > $ERL_TOP/lib/odbc/SKIP
+fi
+		
+AC_SUBST(ODBC_LIB)
+AC_SUBST(ODBC_INCLUDE)
 
 AC_OUTPUT(c_src/$host/Makefile:c_src/Makefile.in)

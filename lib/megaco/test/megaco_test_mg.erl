@@ -1027,7 +1027,7 @@ make_notify_request(_Offset, 0, Actions, ReplyDatas) ->
 make_notify_request(Offset, N, Actions, ReplyDatas) when N > 0 ->
     TimeStamp = cre_timeNotation(),
     Event     = cre_observedEvent("al/of", TimeStamp),
-    Desc      = cre_observedEventsDesc(2220 + N, [Event]),
+    Desc      = cre_observedEventsDesc(2000 + N, [Event]),
     NotifyReq = cre_notifyReq([#megaco_term_id{id = tid(100+Offset-N)}],Desc),
     CmdReq    = cre_commandReq({notifyReq, NotifyReq}),
     ActReq    = cre_actionReq(?megaco_null_context_id, [CmdReq]),

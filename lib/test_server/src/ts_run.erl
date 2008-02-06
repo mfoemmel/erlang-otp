@@ -178,7 +178,16 @@ get_spec_filename(Vars, TestDir, File) ->
 	true ->
 	    Bs0 = erl_eval:new_bindings(),
 	    Bs1 = erl_eval:add_binding('Target', ts_lib:var(target, Vars), Bs0),
-	    Bs = erl_eval:add_binding('Os', ts_lib:var(os, Vars), Bs1),
+	    Bs2 = erl_eval:add_binding('Os', ts_lib:var(os, Vars), Bs1),
+	    TCCStr = ts_lib:var(test_c_compiler, Vars),
+	    TCC = try
+		      {ok, Toks, _} = erl_scan:string(TCCStr ++ "."),
+		      {ok, Tcc} = erl_parse:parse_term(Toks),
+		      Tcc
+		  catch
+		      _:_ -> undefined
+		  end,
+	    Bs = erl_eval:add_binding('TestCCompiler', TCC, Bs2),
 	    {DynSpec,file:script(DynSpec, Bs)};
 	false ->
 	    SpecFile = get_spec_filename_1(Vars, TestDir, File),
@@ -266,7 +275,8 @@ run_pre_makefile(Vars, Spec, St) ->
     Makefile = St#state.makefile,
     Shortname = filename:basename(Makefile),
     DataDir = filename:dirname(Makefile),
-    case ts_make:make(DataDir, Shortname) of
+    Make = ts_lib:var(make_command, Vars),
+    case ts_make:make(Make,DataDir, Shortname) of
 	ok -> {ok,Vars,Spec,St};
 	{error,_Reason}=Error -> Error
     end.
@@ -321,7 +331,9 @@ add_make_testcase(Vars, Spec, St) ->
 	    MakeMod = list_to_atom(MakeModule),
 	    case filelib:is_file(MakeModuleSrc) of
 		true -> ok;
-		false -> generate_make_module(MakeModuleSrc, MakeModule)
+		false -> generate_make_module(ts_lib:var(make_command, Vars),
+					      MakeModuleSrc, 
+					      MakeModule)
 	    end,
 	    case Suite of
 		"all_SUITE" ->
@@ -343,7 +355,7 @@ add_make_testcase(Vars, Spec, St) ->
 	    end
     end.
 
-generate_make_module(Name, ModuleString) ->
+generate_make_module(MakeCmd, Name, ModuleString) ->
     {ok,Host} = inet:gethostname(),
     file:write_file(Name,
 		    ["-module(",ModuleString,").\n",
@@ -354,7 +366,7 @@ generate_make_module(Name, ModuleString) ->
 		     "    Mins = " ++ integer_to_list(?DEFAULT_MAKE_TIMETRAP_MINUTES) ++ ",\n"
 		     "    test_server:format(\"=== Setting timetrap to ~p minutes ===~n\", [Mins]),\n"
 		     "    TimeTrap = test_server:timetrap(test_server:minutes(Mins)),\n"
-		     "    Res = ts_make:make([{cross_node,\'ts@" ++ Host ++ "\'}|Config]),\n",
+		     "    Res = ts_make:make([{make_command, \""++MakeCmd++"\"},{cross_node,\'ts@" ++ Host ++ "\'}|Config]),\n",
 		     "    test_server:timetrap_cancel(TimeTrap),\n"
 		     "    Res.\n"
 		     "\n",
@@ -362,7 +374,7 @@ generate_make_module(Name, ModuleString) ->
 		     "    Mins = " ++ integer_to_list(?DEFAULT_UNMAKE_TIMETRAP_MINUTES) ++ ",\n"
 		     "    test_server:format(\"=== Setting timetrap to ~p minutes ===~n\", [Mins]),\n"
 		     "    TimeTrap = test_server:timetrap(test_server:minutes(Mins)),\n"
-		     "    Res = ts_make:unmake(Config),\n"
+		     "    Res = ts_make:unmake([{make_command, \""++MakeCmd++"\"}|Config]),\n"
 		     "    test_server:timetrap_cancel(TimeTrap),\n"
 		     "    Res.\n"
 		     "\n"]).

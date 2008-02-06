@@ -19,7 +19,6 @@
 %% optimizes them.
 
 -module(beam_block).
--compile([bitlevel_binaries]).			%Remove in R12B-1.
 
 -export([module/2]).
 -export([live_at_entry/1]).			%Used by beam_type, beam_bool.
@@ -654,7 +653,7 @@ bsm_opt_2([{test,bs_skip_bits2,F,[Ctx,{integer,I1},Unit1,_]}|Is],
 		    [Ctx,{integer,I1*Unit1+I2*Unit2},1,Flags]}|Acc]);
 bsm_opt_2([{test,bs_match_string,F,[Ctx,Bin1]},
 	   {test,bs_match_string,F,[Ctx,Bin2]}|Is], Acc) ->
-    I = {test,bs_match_string,F,[Ctx,<<Bin1/bitstr,Bin2/bitstr>>]},
+    I = {test,bs_match_string,F,[Ctx,<<Bin1/bitstring,Bin2/bitstring>>]},
     bsm_opt_2([I|Is], Acc);
 bsm_opt_2([I|Is], Acc) ->
     bsm_opt_2(Is, [I|Acc]);

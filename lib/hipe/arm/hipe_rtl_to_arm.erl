@@ -492,7 +492,7 @@ mk_ldrsb_rr(Dst, Base1, Base2) ->
 
 conv_load_address(I, Map, Data) ->
   {Dst, Map0} = conv_dst(hipe_rtl:load_address_dst(I), Map),
-  Addr = hipe_rtl:load_address_address(I),
+  Addr = hipe_rtl:load_address_addr(I),
   Type = hipe_rtl:load_address_type(I),
   Src = {Addr,Type},
   I2 = [hipe_arm:mk_pseudo_li(Dst, Src)],

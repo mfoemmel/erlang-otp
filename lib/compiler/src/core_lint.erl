@@ -18,7 +18,7 @@
 %% Purpose : Do necessary checking of Core Erlang code.
 
 %% Check Core module for errors.  Seeing this module is used in the
-%% compiler after optimisations wedone more checking than would be
+%% compiler after optimisations we do more checking than would be
 %% necessary after just parsing.  Don't check all constructs.
 %%
 %% We check the following:
@@ -160,10 +160,6 @@ check_state(Es, Defined, St) ->
 		      false -> add_error({undefined_function,F}, St)
 		  end
 	  end, St, Es).
-%     Undef = subtract(Es, Defined),
-%     St1 = foldl(fun (F, St) -> add_error({undefined_function,F}, St) end,
-% 		St0, Undef),
-%     St1.
 
 %% module_defs(CoreBody, Defined, State) -> State.
 
@@ -243,10 +239,10 @@ gexpr(#c_call{module=#c_literal{val=erlang},
 gexpr(#c_primop{name=#c_literal{val=A},args=As}, Def, _Rt, St0) when is_atom(A) ->
     gexpr_list(As, Def, St0);
 gexpr(#c_try{arg=E,vars=[#c_var{name=X}],body=#c_var{name=X},
-	     evars=[#c_var{},#c_var{},#c_var{}],handler=#c_literal{val=false}},
+	     evars=[#c_var{},#c_var{}],handler=#c_literal{val=false}},
       Def, Rt, St) ->
     gbody(E, Def, Rt, St);
-gexpr(_, _, _, St) ->
+gexpr(Core, _, _, St) ->
     add_error({illegal_guard,St#lint.func}, St).
 
 %% gexpr_list([Expr], Defined, State) -> State.
@@ -310,7 +306,7 @@ expr(#c_catch{body=B}, Def, Rt, St) ->
     return_match(Rt, 1, body(B, Def, 1, St));
 expr(#c_try{arg=A,vars=Vs,body=B,evars=Evs,handler=H}, Def, Rt, St0) ->
     St1 = case length(Evs) of
-	      2 -> St0;
+	      3 -> St0;
 	      _ -> add_error({illegal_try,St0#lint.func}, St0)
 	  end,
     St2 = body(A, Def, let_varcount(Vs), St1),

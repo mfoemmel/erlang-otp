@@ -258,7 +258,7 @@ pwrite_int(_, [_|_], _N, _Spec, _Data) ->
 
 pwrite_int(Port, T, N, Spec, Data, Offs, Bin)
   when is_binary(Bin) ->
-    Size = size(Bin),
+    Size = byte_size(Bin),
     pwrite_int(Port, T, N+1, 
 	       [<<Offs:64/signed, Size:64>> | Spec], 
 	       [Bin | Data]);
@@ -1103,12 +1103,12 @@ transform_ldata(N, L0, Sizes) ->
 transform_ldata(1, <<0:64>>, <<>>, R) ->
     reverse(R, [eof]);
 transform_ldata(1, <<Size:64>>, Data, R) 
-  when is_binary(Data), size(Data) =:= Size ->
+  when byte_size(Data) =:= Size ->
     reverse(R, [Data]);
 transform_ldata(N, <<0:64, Sizes/binary>>, [<<>> | Datas], R) ->
     transform_ldata(N-1, Sizes, Datas, [eof | R]);
 transform_ldata(N, <<Size:64, Sizes/binary>>, [Data | Datas], R) 
-  when is_binary(Data), size(Data) =:= Size ->
+  when byte_size(Data) =:= Size ->
     transform_ldata(N-1, Sizes, Datas, [Data | R]);
 %% List mode
 transform_ldata(0, [], [], R) ->

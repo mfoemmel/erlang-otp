@@ -54,6 +54,8 @@ pcdata_to_html(Data, RmSp) ->
 %% replace.
 
 %% data2html(Cs, RmSpace)
+data2html([246| Cs], RmSp) ->
+    [$&, $#, $2, $4, $6, $;| data2html(Cs, RmSp)];
 data2html([$>| Cs], RmSp) ->
     [$&, $#, $6, $2, $;| data2html(Cs, RmSp)];
 data2html([$<| Cs], RmSp) ->
@@ -275,23 +277,28 @@ make_anchor_href(Path0, Frag0) ->
 	"" ->
 	    attribute_cdata_to_html(Path1);
 	_ ->
-	    attribute_cdata_to_html(Path1) ++ "#" ++
-		attribute_cdata_to_html(Frag1)
-   end.
+	    attribute_cdata_to_html(Path1) ++ 
+		"#" ++
+		attribute_cdata_to_html([case Ch of $/ -> $-; _ -> Ch end||
+					    Ch <-Frag1])
+    end.
 
 make_anchor_href_short(Path, Frag, RefType) ->
-    ShortFrag = make_funcdef_short(Frag, RefType),
+    ShortFrag = make_funcdef_short(Frag, RefType,"-"),
     make_anchor_href(Path, ShortFrag).
 
 make_anchor_name_short(FuncName0, RefType) ->
-    FuncName1 = make_funcdef_short(FuncName0, RefType),
+    FuncName1 = make_funcdef_short(FuncName0, RefType,"-"),
     attribute_cdata_to_html(FuncName1).
 
 make_funcdef_short(FuncDef0, RefType) ->
+    make_funcdef_short(FuncDef0, RefType, "/").
+
+make_funcdef_short(FuncDef0, RefType,Delimiter) ->
     FuncDef1 = docb_util:trim(FuncDef0),
     Any0 = case lists:member(RefType, [cref, erlref]) of
 	       true ->
-		   case catch docb_util:fknidx(FuncDef1, "/") of
+		   case catch docb_util:fknidx(FuncDef1, Delimiter) of
 		       {'EXIT', _} ->
 			   false;
 		       Any1  ->
@@ -318,7 +325,7 @@ make_funcdef_short(FuncDef0, RefType) ->
 erl_include(File, Tag) ->
     case docb_main:include_file(File, Tag) of
 	{ok, Cs} ->
-	    {drop, "\n<PRE>\n" ++ text_to_html(Cs) ++ "\n</PRE>\n"};
+	    {drop, "\n<pre>\n" ++ text_to_html(Cs) ++ "\n</pre>\n"};
 	error ->
 	    {drop, ""}
     end.
@@ -333,7 +340,7 @@ code_include(File, Tag) ->
 
 erl_eval(Expr) ->
     Cs = docb_main:eval_str(Expr),
-    {drop, "\n<PRE>\n" ++ text_to_html(Cs) ++ "\n</PRE>\n"}.
+    {drop, "\n<pre>\n" ++ text_to_html(Cs) ++ "\n</pre>\n"}.
 
 %% Only replaces certain characters. Spaces and new lines etc are kept.
 %% Used for plain text (e.g. inclusions of code).
@@ -392,8 +399,8 @@ count_sections([]) ->
 
 format_toc(Toc) ->
     lists:map(fun({Number, Title}) ->
-		      [Number, " <A HREF = \"#", Number,
-		       "\">", Title, "</A><BR>\n"]
+		      [Number, " <a href = \"#", Number,
+		       "\">", Title, "</a><br/>\n"]
 	      end, Toc).
 
 %%--Convert HTML ISO Latin 1 characters to ordinary characters----------

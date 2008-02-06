@@ -780,7 +780,7 @@ abst(File, Builtins, Mode) when Mode =:= modules ->
 
 mfa_exports(X0, Attributes, M) ->
     %% Adjust arities for abstract modules.
-    X1 = case member({abstract, true}, Attributes) of
+    X1 = case xref_utils:is_abstract_module(Attributes) of
              true ->
                  [{F,adjust_arity(F,A)} || {F,A} <- X0];
              false ->
@@ -1745,10 +1745,10 @@ pack1({MFA, L}) when is_integer(L) -> % DefAt
 %% End optimization.
 pack1([]) ->
     [];
-pack1(T) -> % when tuple(T)
+pack1(T) -> % when is_tuple(T)
     case get(T) of
 	undefined ->
-	    NT = tpack(T, size(T), []),
+	    NT = tpack(T, tuple_size(T), []),
 	    put(NT, NT),
 	    NT;
 	NT ->

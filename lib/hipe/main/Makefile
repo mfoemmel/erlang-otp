@@ -67,7 +67,7 @@ hipe.hrl: ../vsn.mk hipe.hrl.src
 	sed -e "s;%VSN%;$(HIPE_VSN);" hipe.hrl.src > hipe.hrl
 
 $(EBIN)/hipe.beam: hipe.hrl
-$(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl
+$(EBIN)/hipe.beam: ../rtl/hipe_literals.hrl ../../compiler/src/beam_disasm.hrl
 $(EBIN)/hipe_main.beam: hipe.hrl
 
 debug opt: $(TARGET_FILES) 

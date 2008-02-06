@@ -31,6 +31,37 @@
   </header>
   <p>This document describes the changes made to HiPE.</p>
 
+<section><title>Hipe 3.6.5</title>
+
+    <section><title>Fixed Bugs and Malfunctions</title>
+      <list>
+        <item>
+          <p>
+	    HIPE: Corrected the choice of interface to the send/3 and
+	    setnode/3 BIFs for native-compiled code. Using the
+	    incorrect interface could, in unusual circumstances, lead
+	    to random runtime errors.</p>
+          <p>
+	    Own Id: OTP-7067</p>
+        </item>
+      </list>
+    </section>
+
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The HiPE compiler's SPARC backend has been rewritten,
+	    improving its correctness and long-term maintainability.</p>
+          <p>
+	    Own Id: OTP-7133</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section>
     <title>Hipe 3.6.3</title>
 

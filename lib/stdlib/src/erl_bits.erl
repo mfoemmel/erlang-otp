@@ -64,9 +64,6 @@ update_type(integer,      Type) -> Type#bittype { type   = integer};
 update_type(float,        Type) -> Type#bittype { type   = float};
 update_type(binary,       Type) -> Type#bittype { type   = binary};
 update_type(bytes,        Type) -> Type#bittype { type   = binary,unit=8};
-update_type(bitstr,       Type) ->
-    %% XXX Experimental. Remove in R12B-1.
-    Type#bittype { type   = binary,unit=1};
 update_type(bitstring,    Type) -> Type#bittype { type   = binary,unit=1};
 update_type(bits,         Type) -> Type#bittype { type   = binary,unit=1};
 update_type(big,          Type) -> Type#bittype { endian = big };

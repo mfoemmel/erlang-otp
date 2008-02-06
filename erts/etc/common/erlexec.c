@@ -57,11 +57,13 @@
 
 /* +M alloc_util allocators */
 static const char plusM_au_allocs[]= {
+    'u',	/* all alloc_util allocators */
     'B',	/* binary_alloc		*/
     'D',	/* std_alloc		*/
     'E',	/* ets_alloc		*/
     'H',	/* eheap_alloc		*/
     'L',	/* ll_alloc		*/
+    'R',	/* driver_alloc		*/
     'S',	/* sl_alloc		*/
     'T',	/* temp_alloc		*/
     '\0'
@@ -72,6 +74,7 @@ static char *plusM_au_alloc_switches[] = {
     "as",
     "asbcst",
     "e",
+    "t",
     "lmbcs",
     "mbcgs",
     "mbsd",
@@ -79,6 +82,7 @@ static char *plusM_au_alloc_switches[] = {
     "mmmbc",
     "mmsbc",
     "msbclt",
+    "ramv",
     "rsbcmt",
     "rsbcst",
     "sbct",
@@ -222,6 +226,59 @@ static char* emu;		/* Emulator to run. */
 static char* progname;		/* Name of this program. */
 static char* home;		/* Path of user's home directory. */
 
+static void
+set_env(char *key, char *value)
+{
+#ifdef __WIN32__
+    if (!SetEnvironmentVariable((LPCTSTR) key, (LPCTSTR) value))
+	error("SetEnvironmentVariable(\"%s\", \"%s\") failed!", key, value);
+#else
+    size_t size = strlen(key) + 1 + strlen(value) + 1;
+    char *str = emalloc(size);
+    sprintf(str, "%s=%s", key, value);
+    if (putenv(str) != 0)
+	error("putenv(\"%s\") failed!", str);
+#ifdef HAVE_COPYING_PUTENV
+    efree(str);
+#endif
+#endif
+}
+
+static char *
+get_env(char *key)
+{
+#ifdef __WIN32__
+    DWORD size = 32;
+    char *value = NULL;
+    while (1) {
+	DWORD nsz;
+	if (value)
+	    efree(value);
+	value = emalloc(size);
+	SetLastError(0);
+	nsz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) value, size);
+	if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+	    efree(value);
+	    return NULL;
+	}
+	if (nsz <= size)
+	    return value;
+	size = nsz;
+    }
+#else
+    return getenv(key);
+#endif
+}
+
+static void
+free_env_val(char *value)
+{
+#ifdef __WIN32__
+    if (value)
+	free(value);
+#endif
+}
+
 /*
  * Add the arcitecture suffix to the program name if needed,
  * except on Windows, where we insert it just before ".DLL".
@@ -307,9 +364,10 @@ int main(int argc, char **argv)
     /* if we started this erl just to get a detached emulator, 
      * the arguments are already prepared for beam, so we skip
      * directly to start_emulator */
-    s = getenv("ERL_CONSOLE_MODE");
+    s = get_env("ERL_CONSOLE_MODE");
     if (s != NULL && strcmp(s, "detached")==0) {
-	s = getenv("ERL_EMULATOR_DLL");
+	free_env_val(s);
+	s = get_env("ERL_EMULATOR_DLL");
 	if (s != NULL) {
 	    argv[0] = strsave(s);
 	} else {
@@ -322,6 +380,7 @@ int main(int argc, char **argv)
 	start_emulator_program = strsave(argv[0]);
 	goto skip_arg_massage;
     }   
+    free_env_val(s);
 #endif
 
     initial_argv_massage(&argc, &argv); /* Merge with env; expand -args_file */
@@ -353,7 +412,7 @@ int main(int argc, char **argv)
 #endif
 
     /* We need to do this before the ordinary processing. */
-    malloc_lib = getenv("ERL_MALLOC_LIB");
+    malloc_lib = get_env("ERL_MALLOC_LIB");
     while (i < argc) {
 	if (argv[i][0] == '+') {
 	    if (argv[i][1] == 'M' && argv[i][2] == 'Y' && argv[i][3] == 'm') {
@@ -461,16 +520,18 @@ int main(int argc, char **argv)
      * Add the bindir to the path (unless it is there already).
      */
 
-    if ((s = getenv("PATH")) == NULL) {
-	sprintf(tmpStr, "PATH=%s" PATHSEP "%s" DIRSEP "bin", bindir, rootdir);
+    s = get_env("PATH");
+    if (!s) {
+	sprintf(tmpStr, "%s" PATHSEP "%s" DIRSEP "bin", bindir, rootdir);
     } else if (strstr(s, bindir) == NULL) {
-	sprintf(tmpStr, "PATH=%s" PATHSEP "%s" DIRSEP "bin" PATHSEP "%s", bindir, 
+	sprintf(tmpStr, "%s" PATHSEP "%s" DIRSEP "bin" PATHSEP "%s", bindir, 
 		rootdir, s);
     } else {
-	sprintf(tmpStr, "PATH=%s", s);
+	sprintf(tmpStr, "%s", s);
     }
-    putenv(strsave(tmpStr));
-
+    free_env_val(s);
+    set_env("PATH", tmpStr);
+    
     i = 1;
 
 #ifdef __WIN32__
@@ -564,8 +625,7 @@ int main(int argc, char **argv)
 		    } else if (strcmp(argv[i], "-env") == 0) { /* -env VARNAME VARVALUE */
 			if (i+2 >= argc)
 			    usage("-env");
-			sprintf(tmpStr, "%s=%s", argv[i+1], argv[i+2]);
-			putenv(strsave(tmpStr));
+			set_env(argv[i+1], argv[i+2]);
 			i += 2;
 		    } else if (strcmp(argv[i], "-epmd") == 0) { 
 			if (i+1 >= argc)
@@ -598,8 +658,8 @@ int main(int argc, char **argv)
 			error("-man not supported on Windows");
 #else
 			argv[i] = "man";
-			sprintf(tmpStr, "MANPATH=%s/man", rootdir);
-			putenv(strsave(tmpStr));
+			sprintf(tmpStr, "%s/man", rootdir);
+			set_env("MANPATH", tmpStr);
 			execvp("man", argv+i);
 			error("Could not execute the 'man' command.");
 #endif
@@ -1091,6 +1151,7 @@ static void get_start_erl_data(char *file)
     char tmpbuffer[512];
     char start_erl_data[512];
     int bytesread;
+    char* env;
     char* reldir;
     char* otpstring;
     char* tprogname;
@@ -1098,13 +1159,14 @@ static void get_start_erl_data(char *file)
 	error("Conflicting -start_erl and -boot options");
     if (config_script)
 	error("Conflicting -start_erl and -config options");
-    reldir = getenv("RELDIR");
-    if (reldir)
-	reldir = strsave(reldir);
+    env = get_env("RELDIR");
+    if (env)
+	reldir = strsave(env);
     else {
 	sprintf(tmpbuffer, "%s/releases", rootdir);
 	reldir = strsave(tmpbuffer);
     }
+    free_env_val(env);
     if (file == NULL)
        sprintf(start_erl_data, "%s/start_erl.data", reldir);
     else
@@ -1243,8 +1305,8 @@ get_home(void)
     char* homedrive;
     char* homepath;
 
-    homedrive = getenv("HOMEDRIVE");
-    homepath = getenv("HOMEPATH");
+    homedrive = get_env("HOMEDRIVE");
+    homepath = get_env("HOMEPATH");
     if (!homedrive || !homepath) {
 	if (len = GetWindowsDirectory(tmpstr,MAX_PATH)) {
 	    home = emalloc(len+1);
@@ -1256,6 +1318,8 @@ get_home(void)
 	strcpy(home, homedrive);
 	strcat(home, homepath);
     }
+    free_env_val(homedrive);
+    free_env_val(homepath);
 }
 
 #else
@@ -1263,10 +1327,10 @@ get_home(void)
 static void
 get_parameters(int argc, char** argv)
 {
-    progname = getenv("PROGNAME");
-    bindir = getenv("BINDIR");
-    rootdir = getenv("ROOTDIR");
-    emu = getenv("EMU");
+    progname = get_env("PROGNAME");
+    bindir = get_env("BINDIR");
+    rootdir = get_env("ROOTDIR");
+    emu = get_env("EMU");
     if (!progname || !bindir || !rootdir || !emu ) {
 	error("BINDIR, ROOTDIR, EMU and PROGNAME  must be set");
     }
@@ -1275,7 +1339,7 @@ get_parameters(int argc, char** argv)
 static void
 get_home(void)
 {
-    home = getenv("HOME");
+    home = get_env("HOME");
     if (home == NULL)
 	error("HOME must be set");
 }
@@ -1285,7 +1349,10 @@ get_home(void)
 
 static char **build_args_from_env(char *env_var)
 {
-    return build_args_from_string(getenv(env_var));
+    char *value = get_env(env_var);
+    char **res = build_args_from_string(value);
+    free_env_val(value);
+    return res;
 }
 
 static char **build_args_from_string(char *string)

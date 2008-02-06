@@ -20,9 +20,9 @@
 %%              * 2002-10-08, Happi: Cleanup and speedup
 %%
 %% CVS:
-%%    $Author: kostis $
-%%    $Date: 2007/05/13 10:45:06 $
-%%    $Revision: 1.5 $
+%%    $Author: mikpe $
+%%    $Date: 2007/12/18 09:13:34 $
+%%    $Revision: 1.6 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   stackalloc(CFG, StackSlots, SpillIndex, Options, Target, TempMap) -> 
@@ -578,14 +578,5 @@ uses(I, Target)->
 defines(I, Target) ->
   regnames(Target:defines(I), Target).
 
-regnames(AllRegs, Target) ->
-  Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(AllRegs);
-      hipe_sparc_specific_fp ->
-	hipe_sparc:keep_fp_registers(AllRegs);
-      _ ->
-	AllRegs
-    end,
+regnames(Regs, Target) ->
   [Target:reg_nr(X) || X <- Regs]. 

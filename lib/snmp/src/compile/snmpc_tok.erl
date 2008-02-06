@@ -50,7 +50,7 @@
 start_link(Reserved_words, Options) ->
     case lists:keysearch(file, 1, Options) of
 	{value, {file, Filename}} ->
-	    case file:open(Filename, read) of
+	    case file:open(Filename, [read]) of
 		{ok, Fid} ->
 		    gen_server:start_link(?MODULE,
 					  {Reserved_words, Options,

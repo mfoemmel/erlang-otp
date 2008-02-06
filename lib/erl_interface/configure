@@ -5132,7 +5132,37 @@ test -z "$INSTALL_SCRIPT" && INSTALL_SCRIPT='${INSTALL}'
 
 test -z "$INSTALL_DATA" && INSTALL_DATA='${INSTALL} -m 644'
 
-INSTALL_DIR="\${INSTALL} -d"
+echo "$as_me:$LINENO: checking how to create a directory including parents" >&5
+echo $ECHO_N "checking how to create a directory including parents... $ECHO_C" >&6
+if test "${ac_cv_prog_mkdir_p+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+
+temp_name_base=config.$$
+temp_name=$temp_name_base/x/y/z
+$INSTALL -d $temp_name >/dev/null 2>&1
+ac_cv_prog_mkdir_p=none
+if test -d $temp_name; then
+        ac_cv_prog_mkdir_p="$INSTALL -d"
+else
+        mkdir -p $temp_name >/dev/null 2>&1
+        if test -d $temp_name; then
+                ac_cv_prog_mkdir_p="mkdir -p"
+        fi
+fi
+rm -fr $temp_name_base
+
+fi
+echo "$as_me:$LINENO: result: $ac_cv_prog_mkdir_p" >&5
+echo "${ECHO_T}$ac_cv_prog_mkdir_p" >&6
+
+case "${ac_cv_prog_mkdir_p}" in
+  none) { { echo "$as_me:$LINENO: error: don't know how create directories with parents" >&5
+echo "$as_me: error: don't know how create directories with parents" >&2;}
+   { (exit 1); exit 1; }; } ;;
+  *)    INSTALL_DIR="$ac_cv_prog_mkdir_p"      ;;
+esac
+
 
 
 case $host_os in

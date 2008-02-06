@@ -21,3 +21,5 @@ obj:@obj@
 exe:@exe@
 SSLEAY_ROOT:@SSLEAY_ROOT@
 JAVAC:@JAVAC@
+make_command:@make_command@
+test_c_compiler:@test_c_compiler@

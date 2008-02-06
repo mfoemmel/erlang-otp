@@ -494,8 +494,12 @@ erts_proc_lock_failed(Process *p,
 	wflgs = need_locks << ERTS_PROC_LOCK_WAITER_SHIFT;
 	olflgs = ERTS_PROC_LOCK_FLGS_BOR_(&p->lock, need_locks);
 
-	if ((olflgs & (wflgs | need_locks)) == 0)
+	if ((olflgs & (wflgs | need_locks)) == 0) {
+#if !ERTS_PROC_LOCK_ATOMIC_IMPL
+	    erts_pix_unlock(pix_lock);
+#endif
 	    return; /* got them all */
+	}
 	spin_count--;
 #if !ERTS_PROC_LOCK_ATOMIC_IMPL
 	erts_pix_unlock(pix_lock);

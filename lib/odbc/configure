@@ -309,7 +309,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT MIXED_CYGWIN_VC SET_MAKE DED_LD TARGET_FLAGS ODBC_LIB ODBC_INCLUDE CPP EGREP LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT MIXED_CYGWIN_VC SET_MAKE DED_LD CPP EGREP TARGET_FLAGS ODBC_LIB ODBC_INCLUDE LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -2412,339 +2412,6 @@ test -n "$DED_LD" || DED_LD="'$(CC)'"
 
 
 
-# ODBC
-/bin/rm -f $ERL_TOP/lib/odbc/SKIP
-
-have_pthread_lib=no
-
-
-    case $host_os in
-        win32|cygwin)
-		TARGET_FLAGS="-DWIN32"
-
-
-echo "$as_me:$LINENO: checking for main in -lws2_32" >&5
-echo $ECHO_N "checking for main in -lws2_32... $ECHO_C" >&6
-if test "${ac_cv_lib_ws2_32_main+set}" = set; then
-  echo $ECHO_N "(cached) $ECHO_C" >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lws2_32  $LIBS"
-cat >conftest.$ac_ext <<_ACEOF
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-
-
-int
-main ()
-{
-main ();
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext conftest$ac_exeext
-if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
-  (eval $ac_link) 2>conftest.er1
-  ac_status=$?
-  grep -v '^ *+' conftest.er1 >conftest.err
-  rm -f conftest.er1
-  cat conftest.err >&5
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-	 { ac_try='test -z "$ac_c_werror_flag"
-			 || test ! -s conftest.err'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; } &&
-	 { ac_try='test -s conftest$ac_exeext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_lib_ws2_32_main=yes
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_lib_ws2_32_main=no
-fi
-rm -f conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-echo "$as_me:$LINENO: result: $ac_cv_lib_ws2_32_main" >&5
-echo "${ECHO_T}$ac_cv_lib_ws2_32_main" >&6
-if test $ac_cv_lib_ws2_32_main = yes; then
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBWS2_32 1
-_ACEOF
-
-  LIBS="-lws2_32 $LIBS"
-
-fi
-
-		if test ! -d "$with_odbc"; then
-		    ODBC_LIB=""
-		    ODBC_INCLUDE=""
-		else
-		    ODBC_LIB=-L"$with_odbc/lib"
-		    ODBC_INCLUDE="-I$with_odbc/include"
-		fi
-	    ;;
-	    *)
-	       TARGET_FLAGS="-DUNIX"
-	       echo "$as_me:$LINENO: checking for pthread_create in -lpthread" >&5
-echo $ECHO_N "checking for pthread_create in -lpthread... $ECHO_C" >&6
-if test "${ac_cv_lib_pthread_pthread_create+set}" = set; then
-  echo $ECHO_N "(cached) $ECHO_C" >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lpthread  $LIBS"
-cat >conftest.$ac_ext <<_ACEOF
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-
-/* Override any gcc2 internal prototype to avoid an error.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-/* We use char because int might match the return type of a gcc2
-   builtin and then its argument prototype would still apply.  */
-char pthread_create ();
-int
-main ()
-{
-pthread_create ();
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext conftest$ac_exeext
-if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
-  (eval $ac_link) 2>conftest.er1
-  ac_status=$?
-  grep -v '^ *+' conftest.er1 >conftest.err
-  rm -f conftest.er1
-  cat conftest.err >&5
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-	 { ac_try='test -z "$ac_c_werror_flag"
-			 || test ! -s conftest.err'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; } &&
-	 { ac_try='test -s conftest$ac_exeext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_lib_pthread_pthread_create=yes
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_lib_pthread_pthread_create=no
-fi
-rm -f conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-echo "$as_me:$LINENO: result: $ac_cv_lib_pthread_pthread_create" >&5
-echo "${ECHO_T}$ac_cv_lib_pthread_pthread_create" >&6
-if test $ac_cv_lib_pthread_pthread_create = yes; then
-
-cat >>confdefs.h <<\_ACEOF
-#define HAVE_LIBPTHREAD 1
-_ACEOF
-
-			     LIBS="$LIBS -lpthread"
-			     have_pthread_lib=yes
-fi
-
-	       if test ! -d "$with_odbc"; then
-	       echo "$as_me:$LINENO: checking for odbc in standard locations" >&5
-echo $ECHO_N "checking for odbc in standard locations... $ECHO_C" >&6
-	         for dir in /usr/local/odbc /usr/local /usr/odbc \
-		     /usr /opt/local/pgm/odbc /usr/local/pgm/odbc
-		 do
-		    if test -f "$dir/include/sql.h"; then
-		      is_odbc_std_location=yes
-		       ODBC_LIB=-L"$dir/lib"
-		       ODBC_INCLUDE="-I$dir/include"
-		       break
-		    fi
-	         done
-                 if  test "x$is_odbc_std_location" != "xyes"; then
-		    echo "$as_me:$LINENO: result: no" >&5
-echo "${ECHO_T}no" >&6
-		    { echo "$as_me:$LINENO: WARNING: No odbc library found skipping odbc" >&5
-echo "$as_me: WARNING: No odbc library found skipping odbc" >&2;}
-		    echo "No odbc library found" > $ERL_TOP/lib/odbc/SKIP
-	         else
-		      echo "$as_me:$LINENO: result: $ODBC_LIB" >&5
-echo "${ECHO_T}$ODBC_LIB" >&6
-	         fi
-              else
-                ODBC_LIB=-L"$with_odbc/lib"
-                ODBC_INCLUDE="-I$with_odbc/include"
-              fi
-	  ;;
-esac
-
-echo "$as_me:$LINENO: checking for SQLAllocHandle in -lodbc" >&5
-echo $ECHO_N "checking for SQLAllocHandle in -lodbc... $ECHO_C" >&6
-if test "${ac_cv_lib_odbc_SQLAllocHandle+set}" = set; then
-  echo $ECHO_N "(cached) $ECHO_C" >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lodbc $ODBC_LIB $LIBS"
-cat >conftest.$ac_ext <<_ACEOF
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-
-/* Override any gcc2 internal prototype to avoid an error.  */
-#ifdef __cplusplus
-extern "C"
-#endif
-/* We use char because int might match the return type of a gcc2
-   builtin and then its argument prototype would still apply.  */
-char SQLAllocHandle ();
-int
-main ()
-{
-SQLAllocHandle ();
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext conftest$ac_exeext
-if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
-  (eval $ac_link) 2>conftest.er1
-  ac_status=$?
-  grep -v '^ *+' conftest.er1 >conftest.err
-  rm -f conftest.er1
-  cat conftest.err >&5
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-	 { ac_try='test -z "$ac_c_werror_flag"
-			 || test ! -s conftest.err'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; } &&
-	 { ac_try='test -s conftest$ac_exeext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_lib_odbc_SQLAllocHandle=yes
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_lib_odbc_SQLAllocHandle=no
-fi
-rm -f conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-echo "$as_me:$LINENO: result: $ac_cv_lib_odbc_SQLAllocHandle" >&5
-echo "${ECHO_T}$ac_cv_lib_odbc_SQLAllocHandle" >&6
-if test $ac_cv_lib_odbc_SQLAllocHandle = yes; then
-  ODBC_LIB="$ODBC_LIB -lodbc"
-fi
-
-
-
-
-
-
-echo "$as_me:$LINENO: checking for main in -lodbc32" >&5
-echo $ECHO_N "checking for main in -lodbc32... $ECHO_C" >&6
-if test "${ac_cv_lib_odbc32_main+set}" = set; then
-  echo $ECHO_N "(cached) $ECHO_C" >&6
-else
-  ac_check_lib_save_LIBS=$LIBS
-LIBS="-lodbc32  $LIBS"
-cat >conftest.$ac_ext <<_ACEOF
-/* confdefs.h.  */
-_ACEOF
-cat confdefs.h >>conftest.$ac_ext
-cat >>conftest.$ac_ext <<_ACEOF
-/* end confdefs.h.  */
-
-
-int
-main ()
-{
-main ();
-  ;
-  return 0;
-}
-_ACEOF
-rm -f conftest.$ac_objext conftest$ac_exeext
-if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
-  (eval $ac_link) 2>conftest.er1
-  ac_status=$?
-  grep -v '^ *+' conftest.er1 >conftest.err
-  rm -f conftest.er1
-  cat conftest.err >&5
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); } &&
-	 { ac_try='test -z "$ac_c_werror_flag"
-			 || test ! -s conftest.err'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; } &&
-	 { ac_try='test -s conftest$ac_exeext'
-  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
-  (eval $ac_try) 2>&5
-  ac_status=$?
-  echo "$as_me:$LINENO: \$? = $ac_status" >&5
-  (exit $ac_status); }; }; then
-  ac_cv_lib_odbc32_main=yes
-else
-  echo "$as_me: failed program was:" >&5
-sed 's/^/| /' conftest.$ac_ext >&5
-
-ac_cv_lib_odbc32_main=no
-fi
-rm -f conftest.err conftest.$ac_objext \
-      conftest$ac_exeext conftest.$ac_ext
-LIBS=$ac_check_lib_save_LIBS
-fi
-echo "$as_me:$LINENO: result: $ac_cv_lib_odbc32_main" >&5
-echo "${ECHO_T}$ac_cv_lib_odbc32_main" >&6
-if test $ac_cv_lib_odbc32_main = yes; then
-  cat >>confdefs.h <<_ACEOF
-#define HAVE_LIBODBC32 1
-_ACEOF
-
-  LIBS="-lodbc32 $LIBS"
-
-fi
-
-
 # Sockets
 #--------------------------------------------------------------------
 #	Check for the existence of the -lsocket and -lnsl libraries.
@@ -2764,6 +2431,7 @@ fi
 #	   if -lsocket doesn't work by itself.
 #--------------------------------------------------------------------
 erl_checkBoth=0
+
 echo "$as_me:$LINENO: checking for connect" >&5
 echo $ECHO_N "checking for connect... $ECHO_C" >&6
 if test "${ac_cv_func_connect+set}" = set; then
@@ -4439,6 +4107,405 @@ fi
 done
 
 
+# ODBC
+/bin/rm -f $ERL_TOP/lib/odbc/SKIP
+
+have_pthread_lib=no
+have_odbc_lib=no
+
+
+    case $host_os in
+        win32|cygwin)
+		TARGET_FLAGS="-DWIN32"
+
+echo "$as_me:$LINENO: checking for main in -lws2_32" >&5
+echo $ECHO_N "checking for main in -lws2_32... $ECHO_C" >&6
+if test "${ac_cv_lib_ws2_32_main+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lws2_32  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+
+int
+main ()
+{
+main ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_ws2_32_main=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_ws2_32_main=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_ws2_32_main" >&5
+echo "${ECHO_T}$ac_cv_lib_ws2_32_main" >&6
+if test $ac_cv_lib_ws2_32_main = yes; then
+  cat >>confdefs.h <<_ACEOF
+#define HAVE_LIBWS2_32 1
+_ACEOF
+
+  LIBS="-lws2_32 $LIBS"
+
+fi
+
+		if test ! -d "$with_odbc"; then
+		    ODBC_LIB=""
+		    ODBC_INCLUDE=""
+		else
+		    ODBC_LIB=-L"$with_odbc/lib"
+		    ODBC_INCLUDE="-I$with_odbc/include"
+		fi
+		echo "$as_me:$LINENO: checking for main in -lodbc32" >&5
+echo $ECHO_N "checking for main in -lodbc32... $ECHO_C" >&6
+if test "${ac_cv_lib_odbc32_main+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lodbc32  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+
+int
+main ()
+{
+main ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_odbc32_main=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_odbc32_main=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_odbc32_main" >&5
+echo "${ECHO_T}$ac_cv_lib_odbc32_main" >&6
+if test $ac_cv_lib_odbc32_main = yes; then
+  ODBC_LIB="$ODBC_LIB -lodbc32" odbc_lib_link_sucess=yes
+fi
+
+	    ;;
+	    *)
+	       TARGET_FLAGS="-DUNIX"
+	       echo "$as_me:$LINENO: checking for pthread_create in -lpthread" >&5
+echo $ECHO_N "checking for pthread_create in -lpthread... $ECHO_C" >&6
+if test "${ac_cv_lib_pthread_pthread_create+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lpthread  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char pthread_create ();
+int
+main ()
+{
+pthread_create ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_pthread_pthread_create=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_pthread_pthread_create=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_pthread_pthread_create" >&5
+echo "${ECHO_T}$ac_cv_lib_pthread_pthread_create" >&6
+if test $ac_cv_lib_pthread_pthread_create = yes; then
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_LIBPTHREAD 1
+_ACEOF
+
+			     LIBS="$LIBS -lpthread"
+			     have_pthread_lib=yes
+fi
+
+	       if test ! -d "$with_odbc"; then
+	       echo "$as_me:$LINENO: checking for odbc in standard locations" >&5
+echo $ECHO_N "checking for odbc in standard locations... $ECHO_C" >&6
+	         for dir in /usr/local/odbc /usr/local /usr/odbc \
+		     /usr /opt/local/pgm/odbc /usr/local/pgm/odbc
+		 do
+		    if test -f "$dir/include/sql.h"; then
+		      is_odbc_std_location=yes
+		       ODBC_LIB=-L"$dir/lib"
+		       ODBC_INCLUDE="-I$dir/include"
+		       break
+		    fi
+	         done
+                 if  test "x$is_odbc_std_location" != "xyes"; then
+		    echo "$as_me:$LINENO: result: no" >&5
+echo "${ECHO_T}no" >&6
+		    { echo "$as_me:$LINENO: WARNING: No odbc library found skipping odbc" >&5
+echo "$as_me: WARNING: No odbc library found skipping odbc" >&2;}
+		    echo "No odbc library found" > $ERL_TOP/lib/odbc/SKIP
+	         else
+		      echo "$as_me:$LINENO: result: $ODBC_LIB" >&5
+echo "${ECHO_T}$ODBC_LIB" >&6
+		      echo "$as_me:$LINENO: checking for SQLAllocHandle in -lodbc" >&5
+echo $ECHO_N "checking for SQLAllocHandle in -lodbc... $ECHO_C" >&6
+if test "${ac_cv_lib_odbc_SQLAllocHandle+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lodbc  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char SQLAllocHandle ();
+int
+main ()
+{
+SQLAllocHandle ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_odbc_SQLAllocHandle=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_odbc_SQLAllocHandle=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_odbc_SQLAllocHandle" >&5
+echo "${ECHO_T}$ac_cv_lib_odbc_SQLAllocHandle" >&6
+if test $ac_cv_lib_odbc_SQLAllocHandle = yes; then
+  ODBC_LIB="$ODBC_LIB -lodbc" odbc_lib_link_sucess=yes
+fi
+
+	         fi
+              else
+                ODBC_LIB=-L"$with_odbc/lib"
+                ODBC_INCLUDE="-I$with_odbc/include"
+	        echo "$as_me:$LINENO: checking for SQLAllocHandle in -lodbc" >&5
+echo $ECHO_N "checking for SQLAllocHandle in -lodbc... $ECHO_C" >&6
+if test "${ac_cv_lib_odbc_SQLAllocHandle+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lodbc  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char SQLAllocHandle ();
+int
+main ()
+{
+SQLAllocHandle ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_odbc_SQLAllocHandle=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_odbc_SQLAllocHandle=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_odbc_SQLAllocHandle" >&5
+echo "${ECHO_T}$ac_cv_lib_odbc_SQLAllocHandle" >&6
+if test $ac_cv_lib_odbc_SQLAllocHandle = yes; then
+  ODBC_LIB="$ODBC_LIB -lodbc" odbc_lib_link_sucess=yes
+fi
+
+              fi
+	  ;;
+esac
+
+if test "x$odbc_lib_link_sucess" != "xyes";  then
+    { echo "$as_me:$LINENO: WARNING: \"ODBC library - link check failed\"" >&5
+echo "$as_me: WARNING: \"ODBC library - link check failed\"" >&2;}
+    echo "ODBC library - link check failed" > $ERL_TOP/lib/odbc/SKIP
+fi
+
+
+
+
           ac_config_files="$ac_config_files c_src/$host/Makefile:c_src/Makefile.in"
 
 
@@ -5039,11 +5106,11 @@ s,@OBJEXT@,$OBJEXT,;t t
 s,@MIXED_CYGWIN_VC@,$MIXED_CYGWIN_VC,;t t
 s,@SET_MAKE@,$SET_MAKE,;t t
 s,@DED_LD@,$DED_LD,;t t
+s,@CPP@,$CPP,;t t
+s,@EGREP@,$EGREP,;t t
 s,@TARGET_FLAGS@,$TARGET_FLAGS,;t t
 s,@ODBC_LIB@,$ODBC_LIB,;t t
 s,@ODBC_INCLUDE@,$ODBC_INCLUDE,;t t
-s,@CPP@,$CPP,;t t
-s,@EGREP@,$EGREP,;t t
 s,@LIBOBJS@,$LIBOBJS,;t t
 s,@LTLIBOBJS@,$LTLIBOBJS,;t t
 CEOF

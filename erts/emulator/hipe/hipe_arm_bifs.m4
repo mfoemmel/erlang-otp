@@ -98,8 +98,9 @@ $1:
 /*
  * expensive_bif_interface_1(nbif_name, cbif_name)
  * expensive_bif_interface_2(nbif_name, cbif_name)
+ * expensive_bif_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 1-2 parameters and
+ * Generate native interface for a BIF with 1-3 parameters and
  * an expensive failure mode (may fail with RESCHEDULE).
  */
 define(expensive_bif_interface_1,
@@ -159,6 +160,38 @@ $1:
 1:
 	sub	r2, pc, #(.+8)-$1
 	b	nbif_2_hairy_exception
+	.size	$1, .-$1
+	.type	$1, %function
+#endif')
+
+define(expensive_bif_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.global	$1
+$1:
+	/* Set up C argument registers. */
+	mov	r0, P
+	NBIF_ARG(r1,3,0)
+	NBIF_ARG(r2,3,1)
+	NBIF_ARG(r3,3,2)
+
+	/* Save actual parameters in case we must reschedule. */
+	NBIF_SAVE_RESCHED_ARGS(3)
+
+	/* Save caller-save registers and call the C function. */
+	SAVE_CONTEXT_BIF
+	bl	$2
+	TEST_GOT_MBUF(3)
+
+	/* Restore registers. Check for exception. */
+	cmp	r0, #THE_NON_VALUE
+	RESTORE_CONTEXT_BIF
+	beq	1f
+	NBIF_RET(3)
+1:
+	sub	r2, pc, #(.+8)-$1
+	b	nbif_3_hairy_exception
 	.size	$1, .-$1
 	.type	$1, %function
 #endif')

@@ -39,6 +39,8 @@
 -include("../../kernel/src/hipe_ext_format.hrl").
 -include("../rtl/hipe_literals.hrl").
 -include("../misc/hipe_sdi.hrl").
+-undef(ASSERT).
+-define(ASSERT(G), if G -> [] ; true -> exit({assertion_failed,?MODULE,?LINE,??G}) end).
 
 assemble(CompiledCode, Closures, Exports, Options) ->
   ?when_option(time, Options, ?start_timer("x86 assembler")),
@@ -55,10 +57,10 @@ assemble(CompiledCode, Closures, Exports, Options) ->
   {CodeSize,CodeBinary,AccRefs,LabelMap,ExportMap} =
     encode(translate(Code, ConstMap, Options), Options),
   print("Total num bytes=~w\n", [CodeSize], Options),
-  put(code_size, CodeSize),
-  put(const_size, ConstSize),
-  ?when_option(verbose, Options,
-	       ?debug_msg("Constants are ~w bytes\n",[ConstSize])),
+  %% put(code_size, CodeSize),
+  %% put(const_size, ConstSize),
+  %% ?when_option(verbose, Options,
+  %%	       ?debug_msg("Constants are ~w bytes\n",[ConstSize])),
   %%
   SC = hipe_pack_constants:slim_constmap(ConstMap),
   DataRelocs = mk_data_relocs(RefsFromConsts, LabelMap),
@@ -73,10 +75,8 @@ assemble(CompiledCode, Closures, Exports, Options) ->
 			0,[] % ColdCodeSize, SlimColdRefs
 		       ]),
   %%
-  ?when_option(time, Options, ?stop_timer("x86 assembler")),
+  %% ?when_option(time, Options, ?stop_timer("x86 assembler")),
   Bin.
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 %%%
 %%% Assembly Pass 1.
@@ -457,9 +457,6 @@ translate_dst(Dst) ->
 %%% Return {CombinedCodeSize,BinaryCode,Relocs,CombinedLabelMap,ExportMap}.
 %%%
 
--undef(ASSERT).
--define(ASSERT(G), if G -> [] ; true -> exit({assertion_failed,?MODULE,?LINE,??G}) end).
-
 encode(Code, Options) ->
   CodeSize = compute_code_size(Code, 0),
   ExportMap = build_export_map(Code, 0, []),
@@ -493,7 +490,7 @@ merge_label_map([], _MFA, _Address, CLM) -> CLM.
 
 encode_mfas([{MFA,Insns,CodeSize,LabelMap}|Code], Address, AccCode, Relocs, Options) ->
   print("Generating code for:~w\n", [MFA], Options),
-  print("Offset   | Opcode (hex)             | Instruction\n", [], Options),
+  print("Offset   | Opcode                   | Instruction\n", [], Options),
   {Address1,Relocs1,AccCode1} =
     encode_insns(Insns, Address, Address, LabelMap, Relocs, AccCode, Options),
   ExpectedAddress = align_entry(Address + CodeSize),

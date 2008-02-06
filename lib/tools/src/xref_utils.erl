@@ -31,7 +31,7 @@
 
 -export([predefined_functions/0, is_funfun/3, is_builtin/3]).
 
--export([is_static_function/2]).
+-export([is_static_function/2, is_abstract_module/1]).
 
 -export([closure/1, components/1, condensation/1, path/2, use/2, call/2]).
 
@@ -346,6 +346,16 @@ is_builtin(erts_debug, apply, 4) -> true;
 is_builtin(M, F, A) ->
     erlang:is_builtin(M, F, A).
 
+is_abstract_module(Attributes) ->
+    case keysearch(abstract, 1, Attributes) of
+        {value, {abstract, true}} ->
+            true;
+        {value, {abstract, Vals}} when is_list(Vals) ->
+            member(true, Vals);
+        _ ->
+            false
+    end.
+
 %% A "static function" is a function in an abstract module that may be
 %% called directly.
 is_static_function(module_info, 0) ->
@@ -353,6 +363,8 @@ is_static_function(module_info, 0) ->
 is_static_function(module_info, 1) ->
     true;
 is_static_function(new, _) ->
+    true;
+is_static_function(instance, _) ->
     true;
 is_static_function(_F, _A) ->
     false.

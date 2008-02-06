@@ -565,7 +565,31 @@ void complete_options(void)
 {
     /* Try to find a descent RelDir */
     if( !RelDir ) {
-	if( (RelDir=getenv("RELDIR")) == NULL ) {
+	DWORD sz = 32;
+	while (1) {
+	    DWORD nsz;
+	    if (RelDir)
+		free(RelDir);
+	    RelDir = malloc(sz);
+	    if (!RelDir) {
+		fprintf(stderr, "** Error : failed to allocate memory\n");
+		exit(1);
+	    }
+	    SetLastError(0);
+	    nsz = GetEnvironmentVariable((LPCTSTR) "RELDIR",
+					 (LPTSTR) RelDir,
+					 sz);
+	    if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+		free(RelDir);
+		RelDir = NULL;
+		break;
+	    }
+	    else if (nsz <= sz)
+		break;
+	    else
+		sz = nsz;
+	}
+	if (RelDir == NULL) {
 	    if(DataFileName){
 		/* Needs to be absolute for this to work, but we
 		   can try... */

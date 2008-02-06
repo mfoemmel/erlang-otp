@@ -5,9 +5,9 @@
 %%  Filename : 	hipe_rtl_arch.erl
 %%  History  :	* 2001-04-10 Erik Johansson (happi@csd.uu.se): Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2007/10/31 17:24:24 $
-%%              $Revision: 1.61 $
+%%              $Author: mikpe $
+%%              $Date: 2007/12/18 09:13:35 $
+%%              $Revision: 1.62 $
 %%=====================================================================
 %% @doc
 %%
@@ -124,7 +124,7 @@ heap_pointer_from_pcb() ->
 heap_limit() ->	% {GetHLIMITInsn, HLIMITReg}
   case get(hipe_target_arch) of
     ultrasparc ->
-      heap_limit_from_reg(hipe_sparc_registers:heap_limit());
+      heap_limit_from_pcb();
     powerpc ->
       heap_limit_from_pcb();
     arm ->
@@ -146,7 +146,7 @@ heap_limit_from_pcb() ->
 fcalls() ->	% {GetFCallsInsn, FCallsReg, PutFCallsInsn}
   case get(hipe_target_arch) of
     ultrasparc ->
-      fcalls_from_reg(hipe_sparc_registers:fcalls());
+      fcalls_from_pcb();
     powerpc ->
       fcalls_from_pcb();
     arm ->
@@ -171,8 +171,7 @@ fcalls_from_pcb() ->
 add_ra_reg(Rest) ->
   case get(hipe_target_arch) of
     ultrasparc ->
-      %% XXX: shouldn't this mk_var be mk_reg?
-      [hipe_rtl:mk_var(hipe_sparc_registers:return_address()) | Rest];
+      [hipe_rtl:mk_reg(hipe_sparc_registers:return_address()) | Rest];
     powerpc ->
       Rest;	% do not include LR: it's not a normal register
     arm ->
@@ -186,7 +185,7 @@ add_ra_reg(Rest) ->
 reg_name(Reg) ->
   case get(hipe_target_arch) of
     ultrasparc ->
-      hipe_sparc_registers:reg_name(Reg);
+      hipe_sparc_registers:reg_name_gpr(Reg);
     powerpc ->
       hipe_ppc_registers:reg_name_gpr(Reg);
     arm ->
@@ -217,7 +216,7 @@ is_precoloured(Arg) ->
 is_precolored_regnum(RegNum) ->
   case get(hipe_target_arch) of
     ultrasparc ->
-      hipe_sparc_registers:is_precoloured(RegNum);
+      hipe_sparc_registers:is_precoloured_gpr(RegNum);
     powerpc ->
       hipe_ppc_registers:is_precoloured_gpr(RegNum);
     arm ->
@@ -232,7 +231,7 @@ live_at_return() ->
   case get(hipe_target_arch) of
     ultrasparc ->
       ordsets:from_list([hipe_rtl:mk_reg(R)
-			 || R <- hipe_sparc_registers:global()]);
+			 || {R,_} <- hipe_sparc_registers:live_at_return()]);
     powerpc ->
       ordsets:from_list([hipe_rtl:mk_reg(R)
 			 || {R,_} <- hipe_ppc_registers:live_at_return()]);
@@ -247,19 +246,7 @@ live_at_return() ->
 			 || {R,_} <- hipe_amd64_registers:live_at_return()])
   end.
 
-safe_handling_of_registers() ->
-  case get(hipe_target_arch) of
-    ultrasparc ->
-      false;
-    powerpc ->
-      true;
-    arm ->
-      true;
-    x86 ->
-      true;
-    amd64 ->
-      true
-  end.
+safe_handling_of_registers() -> true.
 
 %% @spec word_size() -> integer()
 %%

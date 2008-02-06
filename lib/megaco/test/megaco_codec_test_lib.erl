@@ -32,6 +32,8 @@
 %% ----
 
 -export([
+	 skip/1, 
+
 	 display_text_messages/2, display_text_messages/3,
 	 generate_text_messages/4,
 	 test_msgs/6,
@@ -958,6 +960,22 @@ expect_exec([#expect_instruction{description = Desc,
     end.
 
 %% =======================================================================
+
+skip({What, Why}) when is_atom(What) andalso is_list(Why) ->
+    Reason = lists:flatten(io_lib:format("~p: ~s", [What, Why])),
+    exit({skipped, Reason});
+skip({What, Why}) ->
+    Reason = lists:flatten(io_lib:format("~p: ~p", [What, Why])),
+    exit({skipped, Reason});
+skip(Reason) when is_list(Reason) ->
+    exit({skipped, Reason});
+skip(Reason1) ->
+    Reason2 = lists:flatten(io_lib:format("~p", [Reason1])),
+    exit({skipped, Reason2}).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
 
 %% ------------------------------------------------------------------
 %% Internal functions

@@ -30,17 +30,19 @@
 #include "erl_binary.h"
 #include "erl_bits.h"
 
-Uint erts_allocated_binaries;
-erts_mtx_t erts_bin_alloc_mtx;
+erts_atomic_t erts_allocated_binaries;
 
+#ifdef DEBUG
 static int list_to_bitstr_buf(Eterm obj, char* buf, int len);
+#else
+static int list_to_bitstr_buf(Eterm obj, char* buf);
+#endif
 static Sint bitstr_list_len(Eterm obj);
 
 void
 erts_init_binary(void)
 {
-    erts_allocated_binaries = 0;
-    erts_mtx_init(&erts_bin_alloc_mtx, "binary_alloc");
+    erts_atomic_init(&erts_allocated_binaries, 0);
 
     /* Verify Binary alignment... */
     if ((((Uint) &((Binary *) 0)->orig_bytes[0]) % ((Uint) 8)) != 0) {
@@ -259,12 +261,6 @@ BIF_RETTYPE binary_to_list_3(BIF_ALIST_3)
     BIF_RET(bin_bytes_to_list(NIL, hp, bytes+start-1, i, bitoffs));
 }
 
-/* XXX Deprecated */
-BIF_RETTYPE bitstr_to_list_1(BIF_ALIST_1)
-{
-    return bitstring_to_list_1(BIF_P, BIF_ARG_1);
-}
-
 BIF_RETTYPE bitstring_to_list_1(BIF_ALIST_1)
 {
     Eterm real_bin;
@@ -313,10 +309,9 @@ BIF_RETTYPE bitstring_to_list_1(BIF_ALIST_1)
 BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 {
     Eterm bin;
-    int i,offset;
+    int i;
+    int offset;
     byte* bytes;
-    ErlSubBin* sb1; 
-    Eterm* hp;
     
     if (is_nil(BIF_ARG_1)) {
 	BIF_RET(new_binary(BIF_P,(byte*)"",0));
@@ -331,22 +326,7 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
     bin = new_binary(BIF_P, (byte *)NULL, i);
     bytes = binary_bytes(bin);
     offset = io_list_to_buf(BIF_ARG_1, (char*) bytes, i);
-    if (offset < 0) {
-	goto error;
-    } else if (offset > 0) {
-	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE);
-	sb1 = (ErlSubBin *) hp;
-	sb1->thing_word = HEADER_SUB_BIN;
-	sb1->size = i-1;
-	sb1->offs = 0;
-	sb1->orig = bin;
-	sb1->bitoffs = 0;
-	sb1->bitsize = offset;
-	sb1->is_writable = 0;
-	hp += ERL_SUB_BIN_SIZE;
-	bin = make_binary(sb1);
-    }
-    
+    ASSERT(offset == 0);
     BIF_RET(bin);
 }
 
@@ -356,10 +336,9 @@ BIF_RETTYPE list_to_binary_1(BIF_ALIST_1)
 BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
 {
     Eterm bin;
-    int i, offset;
+    int i;
+    int offset;
     byte* bytes;
-    ErlSubBin* sb1; 
-    Eterm* hp;
 
     if (is_binary(BIF_ARG_1)) {
 	BIF_RET(BIF_ARG_1);
@@ -376,28 +355,9 @@ BIF_RETTYPE iolist_to_binary_1(BIF_ALIST_1)
     }
     bin = new_binary(BIF_P, (byte *)NULL, i);
     bytes = binary_bytes(bin);
-    if ((offset = io_list_to_buf(BIF_ARG_1, (char*) bytes, i)) < 0) {
-	goto error;
-    } else if (offset > 0) {
-	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE);
-	sb1 = (ErlSubBin *) hp;
-	sb1->thing_word = HEADER_SUB_BIN;
-	sb1->size = i-1;
-	sb1->offs = 0;
-	sb1->orig = bin;
-	sb1->bitoffs = 0;
-	sb1->bitsize = offset;
-	sb1->is_writable = 0;
-	hp += ERL_SUB_BIN_SIZE;
-	bin = make_binary(sb1);
-    }
+    offset = io_list_to_buf(BIF_ARG_1, (char*) bytes, i);
+    ASSERT(offset == 0);
     BIF_RET(bin);
-}
-
-/* XXX Deprecated */
-BIF_RETTYPE list_to_bitstr_1(BIF_ALIST_1)
-{
-    return list_to_bitstring_1(BIF_P, BIF_ARG_1);
 }
 
 BIF_RETTYPE list_to_bitstring_1(BIF_ALIST_1)
@@ -420,10 +380,13 @@ BIF_RETTYPE list_to_bitstring_1(BIF_ALIST_1)
     }
     bin = new_binary(BIF_P, (byte *)NULL, i);
     bytes = binary_bytes(bin);
+#ifdef DEBUG
     offset = list_to_bitstr_buf(BIF_ARG_1, (char*) bytes, i);
-    if (offset < 0) {
-	goto error;
-    } else if (offset > 0) {
+#else
+    offset = list_to_bitstr_buf(BIF_ARG_1, (char*) bytes);
+#endif
+    ASSERT(offset >= 0);
+    if (offset > 0) {
 	hp = HAlloc(BIF_P, ERL_SUB_BIN_SIZE);
 	sb1 = (ErlSubBin *) hp;
 	sb1->thing_word = HEADER_SUB_BIN;
@@ -507,11 +470,20 @@ erts_cleanup_mso(ProcBin* pb)
  * Local functions.
  */
 
+/*
+ * The input list is assumed to be type-correct and the buffer is
+ * assumed to be of sufficient size. Those assumptions are verified in
+ * the DEBUG-built emulator.
+ */
 static int
+#ifdef DEBUG
 list_to_bitstr_buf(Eterm obj, char* buf, int len)
+#else
+list_to_bitstr_buf(Eterm obj, char* buf)
+#endif
 {
     Eterm* objp;
-    int offset=0;
+    int offset = 0;
     DECLARE_ESTACK(s);
     goto L_again;
     
@@ -523,9 +495,8 @@ list_to_bitstr_buf(Eterm obj, char* buf, int len)
 	    objp = list_val(obj);
 	    obj = CAR(objp);
 	    if (is_byte(obj)) {
-		if (len == 0)
-		    goto L_overflow;
-		if (offset==0) {
+		ASSERT(len > 0);
+		if (offset == 0) {
 		    *buf++ = unsigned_val(obj);
 		} else {
 		    *buf =  (char)((unsigned_val(obj) >> offset) | 
@@ -533,7 +504,9 @@ list_to_bitstr_buf(Eterm obj, char* buf, int len)
 		    buf++;
 		    *buf = (unsigned_val(obj) << (8-offset));
 		}   
+#ifdef DEBUG
 		len--;
+#endif
 	    } else if (is_binary(obj)) {
 		byte* bptr;
 		size_t size = binary_size(obj);
@@ -541,21 +514,21 @@ list_to_bitstr_buf(Eterm obj, char* buf, int len)
 		Uint bitoffs;
 		Uint num_bits;
 		
-		if (len < size) {
-		    goto L_overflow;
-		}
+		ASSERT(size <= len);
 		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
 		num_bits = 8*size+bitsize;
 		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
 		offset += bitsize;
-		buf += size+(offset>7);
-		len -= size+(offset>7);
+		buf += size + (offset>7);
+#ifdef DEBUG
+		len -= size + (offset>7);
+#endif
 		offset = offset & 7;
 	    } else if (is_list(obj)) {
 		ESTACK_PUSH(s, CDR(objp));
 		goto L_iter_list; /* on head */
-	    } else if (is_not_nil(obj)) {
-		goto L_type_error;
+	    } else {
+		ASSERT(is_nil(obj));
 	    }
 
 	    obj = CDR(objp);
@@ -567,18 +540,19 @@ list_to_bitstr_buf(Eterm obj, char* buf, int len)
 		Uint bitsize;
 		Uint bitoffs;
 		Uint num_bits;
-		if (len < size) {
-		    goto L_overflow;
-		}
+
+		ASSERT(size <= len);
 		ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
 		num_bits = 8*size+bitsize;
 		copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
 		offset += bitsize;
 		buf += size+(offset>7);
+#ifdef DEBUG
 		len -= size+(offset>7);
+#endif
 		offset = offset & 7;
-	    } else if (is_not_nil(obj)) {
-		goto L_type_error;
+	    } else {
+		ASSERT(is_nil(obj));
 	    }
 	} else if (is_binary(obj)) {
 	    byte* bptr;
@@ -586,31 +560,24 @@ list_to_bitstr_buf(Eterm obj, char* buf, int len)
 	    Uint bitsize;
 	    Uint bitoffs;
 	    Uint num_bits;
-	    if (len < size) {
-		goto L_overflow;
-	    }
+
+	    ASSERT(size <= len);
 	    ERTS_GET_BINARY_BYTES(obj, bptr, bitoffs, bitsize);
 	    num_bits = 8*size+bitsize;
 	    copy_binary_to_buffer(buf, offset, bptr, bitoffs, num_bits);
 	    offset += bitsize;
-	    buf += size+(offset>7);
-	    len -= size+(offset>7);
+	    buf += size + (offset>7);
+#ifdef DEBUG
+	    len -= size + (offset>7);
+#endif
 	    offset = offset & 7;
-	} else if (is_not_nil(obj)) {
-	    goto L_type_error;
+	} else {
+	    ASSERT(is_nil(obj));
 	}
     }
     
     DESTROY_ESTACK(s);
     return offset;
-
- L_type_error:
-    DESTROY_ESTACK(s);
-    return -2;
-
- L_overflow:
-    DESTROY_ESTACK(s);
-    return -1;
 }
 
 static Sint
@@ -651,7 +618,7 @@ bitstr_list_len(Eterm obj)
 	    } else if (is_not_nil(obj)) {
 		goto L_type_error;
 	    }
-	} else if (is_binary(obj)) { /* Tail was binary */
+	} else if (is_binary(obj)) {
 	    len += binary_size(obj);
 	    offs += binary_bitsize(obj);
 	} else if (is_not_nil(obj)) {

@@ -804,7 +804,7 @@ handle_call(Request, _From, State) ->
 		    [] ->
 			As
 		end,
-	    if size(IP) =:= 4 ->
+	    if tuple_size(IP) =:= 4 ->
 		    %% temporary special as above
 		    case ets:lookup(State#state.hosts,{127,0,0,1}) of
 			[{IP,_,AList}] ->
@@ -818,7 +818,7 @@ handle_call(Request, _From, State) ->
 		    %% end temporary special
 		    ets:insert(State#state.hosts, {IP,inet,As1}),
 		    {reply, ok, State};
-	       size(IP) =:= 8 ->
+	       tuple_size(IP) =:= 8 ->
 		    ets:insert(State#state.hosts, {IP,inet6,As1}),
 		    {reply, ok, State};
 	       true ->

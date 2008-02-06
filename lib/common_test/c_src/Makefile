@@ -36,8 +36,8 @@ LD = ld
 
 ERLINCL = $(ERL_TOP)/erts/emulator/beam
 
-CFLAGS	= -g -O2 -Wall -D_THREAD_SAFE -I$(ERLINCL) -I$(RX)/rx -fpic
-LDFLAGS =  -G -L$(RX)/rx -lrx
+CFLAGS	= -g -O2 -Wall -D_THREAD_SAFE -I$(ERLINCL) -I$(RX)/rx -fPIC
+LDFLAGS =  -G -L$(RX)/rx -lrx -lc
 
 #
 # Files

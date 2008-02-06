@@ -122,7 +122,7 @@ compact(List) ->
 lookup(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    {Key, true};
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    %% Note that <code>Key</code> does not have to be an atom in this case.
 	    P;
        true ->
@@ -142,7 +142,7 @@ lookup(_Key, []) ->
 lookup_all(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    [{Key, true} | lookup_all(Key, Ps)];
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    [P | lookup_all(Key, Ps)];
        true ->
 	    lookup_all(Key, Ps)
@@ -162,7 +162,7 @@ lookup_all(_Key, []) ->
 is_defined(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    true;
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    true;
        true ->
 	    is_defined(Key, Ps)
@@ -195,7 +195,7 @@ get_value(Key, List) ->
 get_value(Key, [P | Ps], Default) ->
     if is_atom(P), P =:= Key ->
 	    true;
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    case P of
 		{_, Value} ->
 		    Value;
@@ -221,7 +221,7 @@ get_value(_Key, [], Default) ->
 get_all_values(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    [true | get_all_values(Key, Ps)];
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    case P of
 		{_, Value} ->
 		    [Value | get_all_values(Key, Ps)];
@@ -248,7 +248,7 @@ get_all_values(_Key, []) ->
 append_values(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    [true | append_values(Key, Ps)];
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    case P of
 		{_, Value} when is_list(Value) ->
 		    Value ++ append_values(Key, Ps);
@@ -279,7 +279,7 @@ append_values(_Key, []) ->
 get_bool(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    true;
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    case P of
 		{_, true} ->
 		    true;
@@ -307,7 +307,7 @@ get_keys(Ps) ->
 get_keys([P | Ps], Keys) ->
     if is_atom(P) ->
 	    get_keys(Ps, sets:add_element(P, Keys));
-       is_tuple(P), size(P) >= 1 ->
+       tuple_size(P) >= 1 ->
 	    get_keys(Ps, sets:add_element(element(1, P), Keys));
        true ->
 	    get_keys(Ps, Keys)
@@ -327,7 +327,7 @@ get_keys([], Keys) ->
 delete(Key, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    delete(Key, Ps);
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    delete(Key, Ps);
        true ->
 	    [P | delete(Key, Ps)]
@@ -364,7 +364,7 @@ substitute_aliases(As, Props) ->
 substitute_aliases_1([{Key, Key1} | As], P) ->
     if is_atom(P), P =:= Key ->
 	    property(Key1, true);
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    property(setelement(1, P, Key1));
        true ->
 	    substitute_aliases_1(As, P)
@@ -407,7 +407,7 @@ substitute_negations(As, Props) ->
 substitute_negations_1([{Key, Key1} | As], P) ->
     if is_atom(P), P =:= Key ->
 	    property(Key1, false);
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    case P of
 		{_, true} ->
 		    property(Key1, false);
@@ -485,7 +485,7 @@ expand_1(P, L, Ps) ->
     %% P has a minimal representation here.
     if is_atom(P) ->
 	    expand_2(P, P, L, Ps);
-       is_tuple(P), size(P) >= 1 ->
+       tuple_size(P) >= 1 ->
 	    expand_2(element(1, P), P, L, Ps);
        true ->
 	    Ps    % refuse to expand non-property
@@ -494,7 +494,7 @@ expand_1(P, L, Ps) ->
 expand_2(Key, P1, L, [P | Ps]) ->
     if is_atom(P), P =:= Key ->
 	    expand_3(Key, P1, P, L, Ps);
-       is_tuple(P), size(P) >= 1, element(1, P) =:= Key ->
+       tuple_size(P) >= 1, element(1, P) =:= Key ->
 	    expand_3(Key, P1, property(P), L, Ps);
        true ->
 	    %% This case handles non-property entries, and thus
@@ -615,7 +615,7 @@ split([P | Ps], Store, Rest) ->
 		false ->
 		    split(Ps, Store, [P | Rest])
 	    end;
-       is_tuple(P), size(P) >= 1 ->
+       tuple_size(P) >= 1 ->
 	    %% Note that Key does not have to be an atom in this case.
 	    Key = element(1, P),
 	    case dict:is_key(Key, Store) of

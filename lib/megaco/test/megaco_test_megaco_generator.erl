@@ -827,7 +827,7 @@ validate(error, Tag, Res, #state{result = Acc} = S) ->
 
 %% ----- termination -----
 
-terminate(normal, #state{result = Result} = State) ->
+terminate(normal, #state{result = Result} = _State) ->
     d("terminate -> entry when normal with"
       "~n   Result: ~p", [Result]),
     %% megaco_cleanup(State),

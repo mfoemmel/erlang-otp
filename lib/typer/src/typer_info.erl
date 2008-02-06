@@ -26,10 +26,7 @@ collect(Analysis) ->
   NewPlt =
     try get_dialyzer_plt() of
 	DialyzerPlt ->
-	TmpPlt = dialyzer_plt:merge_plts([Analysis#analysis.trust_plt, 
-					  DialyzerPlt]),
-	dialyzer_plt:delete(DialyzerPlt),
-	TmpPlt
+	dialyzer_plt:merge_plts([Analysis#analysis.trust_plt, DialyzerPlt])
     catch
       throw:{dialyzer_error,_Reason} ->
 	typer:error("Dialyzer init plt missing or not up-to-date\n"++

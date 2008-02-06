@@ -267,6 +267,60 @@ static int   tlen;			/* total message length */
 static FILE* conh;
 
 #endif
+
+static int
+is_env_set(char *key)
+{
+#ifdef __WIN32__
+    char buf[1];
+    DWORD sz = (DWORD) sizeof(buf);
+    SetLastError(0);
+    sz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) buf, sz);
+    return sz || GetLastError() != ERROR_ENVVAR_NOT_FOUND; 
+#else
+    return getenv(key) != NULL;
+#endif
+}
+
+static char *
+get_env(char *key)
+{
+#ifdef __WIN32__
+    DWORD size = 32;
+    char *value = NULL;
+    while (1) {
+	DWORD nsz;
+	if (value)
+	    free(value);
+	value = malloc(size);
+	if (!value) {
+	    print_error("Failed to allocate memory. Terminating...");
+	    exit(1);
+	}
+	SetLastError(0);
+	nsz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) value, size);
+	if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+	    free(value);
+	    return NULL;
+	}
+	if (nsz <= size)
+	    return value;
+	size = nsz;
+    }
+#else
+    return getenv(key);
+#endif
+}
+
+static void
+free_env_val(char *value)
+{
+#ifdef __WIN32__
+    if (value)
+	free(value);
+#endif
+}
+
 /*
  *  main
  */
@@ -334,7 +388,7 @@ heart(argc, argv)
 {
     get_arguments(argc,argv);
     strcpy(program_name, argv[0]);
-    if (getenv("HEART_DEBUG") != NULL)
+    if (is_env_set("HEART_DEBUG"))
 	debug_on=1;
     notify_ack(erlout_fd);
 #ifdef USE_WATCHDOG
@@ -347,11 +401,11 @@ heart(argc, argv)
 int
 main(int argc, char **argv){
     get_arguments(argc,argv);
-    if (getenv("HEART_DEBUG") != NULL)
+    if (is_env_set("HEART_DEBUG"))
 	debug_on=1;
 #ifdef __WIN32__
     if (debug_on) {
-	if(getenv("ERLSRV_SERVICE_NAME") == NULL) {
+	if(!is_env_set("ERLSRV_SERVICE_NAME")) {
 	    /* this redirects stderr to a separate console (for debugging purposes)*/
 	    erlin_fd = _dup(0);
 	    erlout_fd = _dup(1);
@@ -408,7 +462,7 @@ start_hw_wd(int timeout,
   int fds[2], res;
   char chbuf;
   
-  if (getenv("HW_WD_DISABLE") != NULL)
+  if (is_env_set("HW_WD_DISABLE"))
     return 0;
 
   /* Is there an already running wd_keeper in the system? */
@@ -576,11 +630,15 @@ message_loop(erlin_fd, erlout_fd)
 			case GET_CMD:
 				/* send back command string */
 			        {
-				    char *command = cmd[0] ? (char *)cmd :
-					getenv(HEART_COMMAND_ENV);
+				    char *env = NULL;
+				    char *command
+					= (cmd[0]
+					   ? (char *)cmd
+					   : (env = get_env(HEART_COMMAND_ENV)));
 				    /* Not set and not in env  return "" */
 				    if (!command) command = "";
 				    heart_cmd_reply(erlout_fd, command);
+				    free_env_val(env);
 				}
 			        break;
 			default:
@@ -655,6 +713,7 @@ void win_system(char *command)
     char *comspec;
     char * cmdbuff;
     char * extra = " /C ";
+    char *env;
     STARTUPINFO start;
     SECURITY_ATTRIBUTES attr;
     PROCESS_INFORMATION info;
@@ -663,13 +722,18 @@ void win_system(char *command)
 	system(command);
 	return;
     }
-    comspec = getenv("COMSPEC");
+    comspec = env = get_env("COMSPEC");
     if (!comspec)
 	comspec = "CMD.EXE";
     cmdbuff = malloc(strlen(command) + strlen(comspec) + strlen(extra) + 1);
+    if (!cmdbuff) {
+	print_error("Failed to allocate memory. Terminating...");
+	exit(1);
+    }
     strcpy(cmdbuff, comspec);
     strcat(cmdbuff, extra);
     strcat(cmdbuff, command);
+    free_env_val(env);
 
     debugf("running \"%s\"\r\n", cmdbuff);
 
@@ -735,7 +799,7 @@ do_terminate(reason)
 #elif defined(__WIN32__) /* Not VxWorks */
     {
       if(!cmd[0]) {
-	char *command = getenv(HEART_COMMAND_ENV);
+	char *command = get_env(HEART_COMMAND_ENV);
 	if(!command)
 	  print_error("Would reboot. Terminating.");
 	else {
@@ -745,6 +809,7 @@ do_terminate(reason)
 	  win_system(command);
 	  print_error("Executed \"%s\". Terminating.",command);
 	}
+	free_env_val(command);
       }
       else {
 	kill_old_erlang();
@@ -758,7 +823,7 @@ do_terminate(reason)
 #else
     {
       if(!cmd[0]) {
-	char *command = getenv(HEART_COMMAND_ENV);
+	char *command = get_env(HEART_COMMAND_ENV);
 	if(!command)
 	  print_error("Would reboot. Terminating.");
 	else {
@@ -766,6 +831,7 @@ do_terminate(reason)
 	  system(command);
 	  print_error("Executed \"%s\". Terminating.",command);
 	}
+	free_env_val(command);
       }
       else {
 	kill_old_erlang();

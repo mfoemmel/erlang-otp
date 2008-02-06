@@ -250,12 +250,12 @@ ttb_send_to_port(_Port,_MetaFile,[]) ->
 
 ttb_make_binary(Term) ->
     B = term_to_binary(Term),
-    SizeB = size(B),
+    SizeB = byte_size(B),
     if SizeB > 255 ->
 	    %% size is bigger than 8 bits, must therefore add an extra
 	    %% size field
 	    SB = term_to_binary({'$size',SizeB}),
-	    <<(size(SB)):8, SB/binary, B/binary>>;
+	    <<(byte_size(SB)):8, SB/binary, B/binary>>;
         true ->
 	    <<SizeB:8, B/binary>>
     end.

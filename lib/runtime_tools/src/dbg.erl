@@ -917,14 +917,14 @@ do_relay_1(RelP) ->
 
 dhandler(end_of_trace, Out) ->
     Out;
-dhandler(Trace, Out) when element(1, Trace) == trace, size(Trace) >= 3 ->
-    dhandler1(Trace, size(Trace), Out);
-dhandler(Trace, Out) when element(1, Trace) == trace_ts, size(Trace) >= 4 ->
-    dhandler1(Trace, size(Trace)-1, Out);
-dhandler(Trace, Out) when element(1, Trace) == drop, size(Trace) == 2 ->
+dhandler(Trace, Out) when element(1, Trace) == trace, tuple_size(Trace) >= 3 ->
+    dhandler1(Trace, tuple_size(Trace), Out);
+dhandler(Trace, Out) when element(1, Trace) == trace_ts, tuple_size(Trace) >= 4 ->
+    dhandler1(Trace, tuple_size(Trace)-1, Out);
+dhandler(Trace, Out) when element(1, Trace) == drop, tuple_size(Trace) =:= 2 ->
     io:format(Out, "*** Dropped ~p messages.~n", [element(2,Trace)]),
     Out;
-dhandler(Trace, Out) when element(1, Trace) == seq_trace, size(Trace) >= 3 ->
+dhandler(Trace, Out) when element(1, Trace) == seq_trace, tuple_size(Trace) >= 3 ->
     SeqTraceInfo = case Trace of
 		       {seq_trace, Lbl, STI, TS} ->
 			   io:format(Out, "SeqTrace ~p [~p]: ",
@@ -1286,7 +1286,7 @@ read_term(ReadFun, Source, <<Op, Size:32>> = Tag) ->
 
 file_read(File, N) ->
     case file:read(File, N) of
-	{ok, Bin} when is_binary(Bin), size(Bin) =:= N -> 
+	{ok, Bin} when byte_size(Bin) =:= N -> 
 	    Bin;
 	{ok, Bin} when is_binary(Bin) ->
 	    exit({'truncated file', binary_to_list(Bin)});
@@ -1303,7 +1303,7 @@ follow_read(File, N, Pos) ->
     case file:position(File, Pos) of
 	{ok, Offset} ->
 	    case file:read(File, N) of
-		{ok, Bin} when is_binary(Bin), size(Bin) =:= N -> 
+		{ok, Bin} when byte_size(Bin) =:= N -> 
 		    Bin;
 		{ok, Bin} when is_binary(Bin) ->
 		    follow_read(File, N, Offset);
@@ -1318,9 +1318,9 @@ follow_read(File, N, Pos) ->
 
 ip_read(Socket, N) ->
     case gen_tcp:recv(Socket, N) of
-	{ok, Bin} when is_binary(Bin), size(Bin) < N ->
-	    [Bin | ip_read(Socket, N-size(Bin))];
-	{ok, Bin} when is_binary(Bin), size(Bin) == N ->
+	{ok, Bin} when byte_size(Bin) < N ->
+	    [Bin | ip_read(Socket, N-byte_size(Bin))];
+	{ok, Bin} when byte_size(Bin) == N ->
 	    [Bin];
 	{ok, Bin} when is_binary(Bin) ->
 	    exit({'socket read too much data', Bin});

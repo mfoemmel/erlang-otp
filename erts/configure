@@ -309,7 +309,7 @@ ac_includes_default="\
 # include <unistd.h>
 #endif"
 
-ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_APP CRYPTO_APP SSH_APP SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL GD_APP GD_INCLUDE GD_LIB os_mon_programs JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
+ac_subst_vars='SHELL PATH_SEPARATOR PACKAGE_NAME PACKAGE_TARNAME PACKAGE_VERSION PACKAGE_STRING PACKAGE_BUGREPORT exec_prefix prefix program_transform_name bindir sbindir libexecdir datadir sysconfdir sharedstatedir localstatedir libdir includedir oldincludedir infodir mandir build_alias host_alias target_alias DEFS ECHO_C ECHO_N ECHO_T LIBS build build_cpu build_vendor build_os host host_cpu host_vendor host_os CC CFLAGS LDFLAGS CPPFLAGS ac_ct_CC EXEEXT OBJEXT ENABLE_ALLOC_TYPE_VARS PERFCTR_PATH OTP_RELEASE MIXED_CYGWIN_VC MIXED_CYGWIN_MINGW MIXED_CYGWIN DEBUG_FLAGS DEBUG_CFLAGS WFLAGS CFLAG_RUNTIME_LIBRARY_PATH CPP EGREP OPSYS ARCH RANLIB ac_ct_RANLIB YACC PERL LN_S AR RM MKDIR INSTALL_PROGRAM INSTALL_SCRIPT INSTALL_DATA INSTALL_DIR HCC HCFLAGS vxworks_reclaim LD ERLANG_OSTYPE DEXPORT ETHR_X_LIBS ETHR_LIBS ETHR_LIB_NAME ETHR_DEFS ETHR_THR_LIB_BASE ETHR_THR_LIB_BASE_NAME ERTS_BUILD_SMP_EMU EMU_THR_LIB_NAME EMU_THR_X_LIBS EMU_THR_LIBS EMU_THR_DEFS EMU_LOCK_CHECKING THR_LIBS THR_DEFS TERMCAP_LIB WITH_SCTP HAVE_VALGRIND BITS64 LIBRT TSP_APP ERTS_BUILD_HYBRID_EMU HIPE_HELPERS HIPE_ENABLED USE_PERFCTR ERTS_ENABLE_KERNEL_POLL DED_CFLAGS DED_LD DED_LDFLAGS DED_LD_FLAG_RUNTIME_LIBRARY_PATH STATIC_CFLAGS EMU_CC SSL_INCLUDE SSL_ROOT SSL_LIBDIR SSL_DYNAMIC_ONLY SSL_LINK_WITH_KERBEROS STATIC_KERBEROS_LIBS SSL_LINK_WITH_ZLIB STATIC_ZLIB_LIBS OPENSSL_CMD REGTOOL GD_APP GD_INCLUDE GD_LIB os_mon_programs CPU_SUP_LIBS JAVAC CXXFLAGS CXX CC32 CFLAGS32 LIBOBJS LTLIBOBJS'
 ac_subst_files=''
 
 # Initialize some variables set by options.
@@ -864,7 +864,10 @@ Optional Features:
   --enable-darwin-64bit    build 64bit binaries on darwin
   --disable-fixalloc      disable the use of fix_alloc
   --enable-clock-gettime  Use clock-gettime for time correction
+  --enable-native-ethr-impls enable native ethread implementations
+  --disable-native-ethr-impls disable native ethread implementations
   --disable-megaco-flex-scanner-lineno disable megaco flex scanner lineno
+  --enable-dynamic-ssl-lib        enable using dynamic openssl libraries
 
 Optional Packages:
   --with-PACKAGE[=ARG]    use PACKAGE [ARG=yes]
@@ -877,7 +880,7 @@ Optional Packages:
   --with-ssl=PATH         specify location of OpenSSL include and lib
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL
-  --with-gd=PATH         specify location of gd include and lib
+  --with-gd=PATH         specify location of libgd include and lib
   --with-gd              use gd (default)
   --without-gd           don't use gd
 
@@ -2699,6 +2702,17 @@ else
   clock_gettime_correction=unknown
 fi;
 
+# Check whether --enable-native-ethr-impls or --disable-native-ethr-impls was given.
+if test "${enable_native_ethr_impls+set}" = set; then
+  enableval="$enable_native_ethr_impls"
+   case "$enableval" in
+    no) disable_native_ethr_impls=yes ;;
+    *)  disable_native_ethr_impls=no ;;
+  esac
+else
+  disable_native_ethr_impls=no
+fi;
+
 
 # Check whether --enable-megaco_flex_scanner_lineno or --disable-megaco_flex_scanner_lineno was given.
 if test "${enable_megaco_flex_scanner_lineno+set}" = set; then
@@ -3492,7 +3506,7 @@ case $host_os in
     win32)
 	# The ethread library requires _WIN32_WINNT of at least 0x0403.
 	# -D_WIN32_WINNT=* from CPPFLAGS is saved in ETHR_DEFS.
-	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0403"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500 -DWINVER=0x0500"
 	# _USE_32BIT_TIME_T is needed when using VC++ 2005 (ctime() will fail
 	# otherwise since we pass it a 32-bit value).
 	#
@@ -3603,7 +3617,58 @@ if test "x$GCC" = xyes; then
   # until the emulator can handle this, I suggest we turn it off!
   #WFLAGS="-Wall -Wshadow -Wcast-qual -Wmissing-declarations"
   WFLAGS="-Wall -Wstrict-prototypes -Wmissing-prototypes"
-  #WFLAGS=""
+
+  saved_CFLAGS=$CFLAGS
+  CFLAGS="$CFLAGS -Wdeclaration-after-statement"
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+int
+main ()
+{
+;
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  warn_decl_after_st=true
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+warn_decl_after_st=false
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+  if test "X$warn_decl_after_st" = "Xtrue"; then
+    WFLAGS="$WFLAGS -Wdeclaration-after-statement"
+  fi
+  CFLAGS=$saved_CFLAGS
 else
   WFLAGS=""
 fi
@@ -4575,6 +4640,11 @@ sparc64-4)
 	echo "$as_me:$LINENO: result: yes: adjusting ARCH=sparc64 to ARCH=ultrasparc" >&5
 echo "${ECHO_T}yes: adjusting ARCH=sparc64 to ARCH=ultrasparc" >&6
 	ARCH=ultrasparc
+	;;
+ppc64-4)
+	echo "$as_me:$LINENO: result: yes: adjusting ARCH=ppc64 to ARCH=ppc" >&5
+echo "${ECHO_T}yes: adjusting ARCH=ppc64 to ARCH=ppc" >&6
+	ARCH=ppc
 	;;
 *)
 	echo "$as_me:$LINENO: result: no" >&5
@@ -5820,10 +5890,12 @@ echo "${ECHO_T}yes" >&6
     found_win32_winnt=no
     for cppflag in $CPPFLAGS; do
 	case $cppflag in
+	    -DWINVER*)
+		ETHR_DEFS="$ETHR_DEFS $cppflag"
+		;;
 	    -D_WIN32_WINNT*)
 		ETHR_DEFS="$ETHR_DEFS $cppflag"
 		found_win32_winnt=yes
-		break
 		;;
 	    *)
 		;;
@@ -7557,6 +7629,434 @@ if test "x$ETHR_THR_LIB_BASE" != "x"; then
 	ETHR_LIB_NAME=$ethr_lib_name
 fi
 
+echo "$as_me:$LINENO: checking for void *" >&5
+echo $ECHO_N "checking for void *... $ECHO_C" >&6
+if test "${ac_cv_type_void_p+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+if ((void * *) 0)
+  return 0;
+if (sizeof (void *))
+  return 0;
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_type_void_p=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_type_void_p=no
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+echo "$as_me:$LINENO: result: $ac_cv_type_void_p" >&5
+echo "${ECHO_T}$ac_cv_type_void_p" >&6
+
+echo "$as_me:$LINENO: checking size of void *" >&5
+echo $ECHO_N "checking size of void *... $ECHO_C" >&6
+if test "${ac_cv_sizeof_void_p+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  if test "$ac_cv_type_void_p" = yes; then
+  # The cast to unsigned long works around a bug in the HP C Compiler
+  # version HP92453-01 B.11.11.23709.GP, which incorrectly rejects
+  # declarations like `int a3[[(sizeof (unsigned char)) >= 0]];'.
+  # This bug is HP SR number 8606223364.
+  if test "$cross_compiling" = yes; then
+  # Depending upon the size, compute the lo and hi bounds.
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+static int test_array [1 - 2 * !(((long) (sizeof (void *))) >= 0)];
+test_array [0] = 0
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_lo=0 ac_mid=0
+  while :; do
+    cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+static int test_array [1 - 2 * !(((long) (sizeof (void *))) <= $ac_mid)];
+test_array [0] = 0
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_hi=$ac_mid; break
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_lo=`expr $ac_mid + 1`
+		    if test $ac_lo -le $ac_mid; then
+		      ac_lo= ac_hi=
+		      break
+		    fi
+		    ac_mid=`expr 2 '*' $ac_mid + 1`
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+  done
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+static int test_array [1 - 2 * !(((long) (sizeof (void *))) < 0)];
+test_array [0] = 0
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_hi=-1 ac_mid=-1
+  while :; do
+    cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+static int test_array [1 - 2 * !(((long) (sizeof (void *))) >= $ac_mid)];
+test_array [0] = 0
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_lo=$ac_mid; break
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_hi=`expr '(' $ac_mid ')' - 1`
+		       if test $ac_mid -le $ac_hi; then
+			 ac_lo= ac_hi=
+			 break
+		       fi
+		       ac_mid=`expr 2 '*' $ac_mid`
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+  done
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_lo= ac_hi=
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+# Binary search between lo and hi bounds.
+while test "x$ac_lo" != "x$ac_hi"; do
+  ac_mid=`expr '(' $ac_hi - $ac_lo ')' / 2 + $ac_lo`
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+int
+main ()
+{
+static int test_array [1 - 2 * !(((long) (sizeof (void *))) <= $ac_mid)];
+test_array [0] = 0
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext
+if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
+  (eval $ac_compile) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest.$ac_objext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_hi=$ac_mid
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_lo=`expr '(' $ac_mid ')' + 1`
+fi
+rm -f conftest.err conftest.$ac_objext conftest.$ac_ext
+done
+case $ac_lo in
+?*) ac_cv_sizeof_void_p=$ac_lo;;
+'') { { echo "$as_me:$LINENO: error: cannot compute sizeof (void *), 77
+See \`config.log' for more details." >&5
+echo "$as_me: error: cannot compute sizeof (void *), 77
+See \`config.log' for more details." >&2;}
+   { (exit 1); exit 1; }; } ;;
+esac
+else
+  if test "$cross_compiling" = yes; then
+  { { echo "$as_me:$LINENO: error: cannot run test program while cross compiling
+See \`config.log' for more details." >&5
+echo "$as_me: error: cannot run test program while cross compiling
+See \`config.log' for more details." >&2;}
+   { (exit 1); exit 1; }; }
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+$ac_includes_default
+long longval () { return (long) (sizeof (void *)); }
+unsigned long ulongval () { return (long) (sizeof (void *)); }
+#include <stdio.h>
+#include <stdlib.h>
+int
+main ()
+{
+
+  FILE *f = fopen ("conftest.val", "w");
+  if (! f)
+    exit (1);
+  if (((long) (sizeof (void *))) < 0)
+    {
+      long i = longval ();
+      if (i != ((long) (sizeof (void *))))
+	exit (1);
+      fprintf (f, "%ld\n", i);
+    }
+  else
+    {
+      unsigned long i = ulongval ();
+      if (i != ((long) (sizeof (void *))))
+	exit (1);
+      fprintf (f, "%lu\n", i);
+    }
+  exit (ferror (f) || fclose (f) != 0);
+
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_sizeof_void_p=`cat conftest.val`
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+{ { echo "$as_me:$LINENO: error: cannot compute sizeof (void *), 77
+See \`config.log' for more details." >&5
+echo "$as_me: error: cannot compute sizeof (void *), 77
+See \`config.log' for more details." >&2;}
+   { (exit 1); exit 1; }; }
+fi
+rm -f core *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+fi
+rm -f conftest.val
+else
+  ac_cv_sizeof_void_p=0
+fi
+fi
+echo "$as_me:$LINENO: result: $ac_cv_sizeof_void_p" >&5
+echo "${ECHO_T}$ac_cv_sizeof_void_p" >&6
+cat >>confdefs.h <<_ACEOF
+#define SIZEOF_VOID_P $ac_cv_sizeof_void_p
+_ACEOF
+
+
+
+cat >>confdefs.h <<_ACEOF
+#define ETHR_SIZEOF_PTR $ac_cv_sizeof_void_p
+_ACEOF
+
+
+if test "X$disable_native_ethr_impls" = "Xyes"; then
+
+cat >>confdefs.h <<\_ACEOF
+#define ETHR_DISABLE_NATIVE_IMPLS 1
+_ACEOF
+
+fi
+
 
 cat >>confdefs.h <<\_ACEOF
 #define ETHR_HAVE_ETHREAD_DEFINES 1
@@ -7853,13 +8353,13 @@ echo "${ECHO_T}no" >&6
 		;;
 	esac
 
-	# Remove -D_WIN32_WINNT* and -D_GNU_SOURCE from EMU_THR_DEFS
+	# Remove -D_WIN32_WINNT*, -DWINVER* and -D_GNU_SOURCE from EMU_THR_DEFS
 	# (defined in CFLAGS). Note that we want to keep these flags
 	# in ETHR_DEFS, but not in EMU_THR_DEFS.
 	new_emu_thr_defs=
 	for thr_def in $EMU_THR_DEFS; do
 	    case $thr_def in
-		-D_GNU_SOURCE*|-D_WIN32_WINNT*)
+		-D_GNU_SOURCE*|-D_WIN32_WINNT*|-DWINVER*)
 		    ;;
 		*)
 		    new_emu_thr_defs="$new_emu_thr_defs $thr_def"
@@ -10074,7 +10574,7 @@ fi
 
 
 
-if test "x$enable_sctp" != "xno" ; then
+if test "x$enable_sctp" == "xyes" ; then
     echo "$as_me:$LINENO: checking for netinet/sctp.h" >&5
 echo $ECHO_N "checking for netinet/sctp.h... $ECHO_C" >&6
 if test "${ac_cv_header_netinet_sctp_h+set}" = set; then
@@ -10127,11 +10627,79 @@ fi
 echo "$as_me:$LINENO: result: $ac_cv_header_netinet_sctp_h" >&5
 echo "${ECHO_T}$ac_cv_header_netinet_sctp_h" >&6
 if test $ac_cv_header_netinet_sctp_h = yes; then
+  echo "$as_me:$LINENO: checking for sctp_bindx in -lsctp" >&5
+echo $ECHO_N "checking for sctp_bindx in -lsctp... $ECHO_C" >&6
+if test "${ac_cv_lib_sctp_sctp_bindx+set}" = set; then
+  echo $ECHO_N "(cached) $ECHO_C" >&6
+else
+  ac_check_lib_save_LIBS=$LIBS
+LIBS="-lsctp  $LIBS"
+cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+/* Override any gcc2 internal prototype to avoid an error.  */
+#ifdef __cplusplus
+extern "C"
+#endif
+/* We use char because int might match the return type of a gcc2
+   builtin and then its argument prototype would still apply.  */
+char sctp_bindx ();
+int
+main ()
+{
+sctp_bindx ();
+  ;
+  return 0;
+}
+_ACEOF
+rm -f conftest.$ac_objext conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>conftest.er1
+  ac_status=$?
+  grep -v '^ *+' conftest.er1 >conftest.err
+  rm -f conftest.er1
+  cat conftest.err >&5
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } &&
+	 { ac_try='test -z "$ac_c_werror_flag"
+			 || test ! -s conftest.err'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; } &&
+	 { ac_try='test -s conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  ac_cv_lib_sctp_sctp_bindx=yes
+else
+  echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+ac_cv_lib_sctp_sctp_bindx=no
+fi
+rm -f conftest.err conftest.$ac_objext \
+      conftest$ac_exeext conftest.$ac_ext
+LIBS=$ac_check_lib_save_LIBS
+fi
+echo "$as_me:$LINENO: result: $ac_cv_lib_sctp_sctp_bindx" >&5
+echo "${ECHO_T}$ac_cv_lib_sctp_sctp_bindx" >&6
+if test $ac_cv_lib_sctp_sctp_bindx = yes; then
   WITH_SCTP=1,
 
 cat >>confdefs.h <<\_ACEOF
 #define HAVE_SCTP_H 1
 _ACEOF
+
+fi
+
 
 fi
 
@@ -18434,14 +19002,22 @@ static __inline__ int check_fpe(double f)
 
 #elif defined(__sparc__) && defined(__linux__)
 
+#if defined(__arch64__)
+#define LDX "ldx"
+#define STX "stx"
+#else
+#define LDX "ld"
+#define STX "st"
+#endif
+
 static void unmask_fpe(void)
 {
     unsigned long fsr;
 
-    __asm__("st %%fsr, %0" : "=m"(fsr));
+    __asm__(STX " %%fsr, %0" : "=m"(fsr));
     fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
-    __asm__ __volatile__("ld %0, %%fsr" : : "m"(fsr));
+    __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
 }
 
 static __inline__ int check_fpe(double f)
@@ -18594,6 +19170,11 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     if ((fpstate->status >> 16) == X86_FXSR_MAGIC)
 	((struct _fpstate*)fpstate)->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
+#elif defined(__sparc__) && defined(__arch64__)
+    /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
+    struct sigcontext *sc = (struct sigcontext*)puc;
+    sc->sigc_regs.tpc = sc->sigc_regs.tnpc;
+    sc->sigc_regs.tnpc += 4;
 #elif defined(__sparc__)
     /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
     struct sigcontext *sc = (struct sigcontext*)puc;
@@ -19331,6 +19912,80 @@ echo "${ECHO_T}yes; $have_kernel_poll" >&6;;
 esac
 
 
+echo "$as_me:$LINENO: checking whether putenv() stores a copy of the key-value pair" >&5
+echo $ECHO_N "checking whether putenv() stores a copy of the key-value pair... $ECHO_C" >&6
+if test "$cross_compiling" = yes; then
+  copying_putenv=no
+else
+  cat >conftest.$ac_ext <<_ACEOF
+/* confdefs.h.  */
+_ACEOF
+cat confdefs.h >>conftest.$ac_ext
+cat >>conftest.$ac_ext <<_ACEOF
+/* end confdefs.h.  */
+
+#include <stdlib.h>
+int main(void) {
+    int i;
+    char *env;
+    char buf[10];
+    for (i = 0; i < 7; i++)
+	buf[i] = 'X';
+    buf[i] = '\0';
+    buf[3] = '=';
+    if (putenv(buf) != 0)
+	return 1;
+    for (i = 4; i < 7; i++)
+	buf[i] = 'Y';
+    env = getenv("XXX");
+    if (!env)
+	return 2;
+    for (i = 0; i < 3; i++)
+	if (env[i] != 'X')
+	    return 3;
+    for (i = 0; i < 3; i++)
+	buf[i] = 'Y';
+    env = getenv("XXX");
+    if (!env)
+	return 4;
+    for (i = 0; i < 3; i++)
+	if (env[i] != 'X')
+	    return 5;
+    return 0;
+}
+
+_ACEOF
+rm -f conftest$ac_exeext
+if { (eval echo "$as_me:$LINENO: \"$ac_link\"") >&5
+  (eval $ac_link) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); } && { ac_try='./conftest$ac_exeext'
+  { (eval echo "$as_me:$LINENO: \"$ac_try\"") >&5
+  (eval $ac_try) 2>&5
+  ac_status=$?
+  echo "$as_me:$LINENO: \$? = $ac_status" >&5
+  (exit $ac_status); }; }; then
+  copying_putenv=yes
+else
+  echo "$as_me: program exited with status $ac_status" >&5
+echo "$as_me: failed program was:" >&5
+sed 's/^/| /' conftest.$ac_ext >&5
+
+( exit $ac_status )
+copying_putenv=no
+fi
+rm -f core *.core gmon.out bb.out conftest$ac_exeext conftest.$ac_objext conftest.$ac_ext
+fi
+if test $copying_putenv = yes; then
+
+cat >>confdefs.h <<\_ACEOF
+#define HAVE_COPYING_PUTENV 1
+_ACEOF
+
+fi
+echo "$as_me:$LINENO: result: $copying_putenv" >&5
+echo "${ECHO_T}$copying_putenv" >&6
 
 
 #--------------------------------------------------------------------
@@ -19396,7 +20051,7 @@ case $host_os in
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
 		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
-	linux*)
+	linux*|freebsd*)
 		DED_LD="$CC"
 		DED_LDFLAGS="-shared"
 	;;
@@ -19622,9 +20277,6 @@ fi
 
 
 
-
-
-
 # Check whether --with-ssl-zlib or --without-ssl-zlib was given.
 if test "${with_ssl_zlib+set}" = set; then
   withval="$with_ssl_zlib"
@@ -19701,18 +20353,43 @@ if test "${with_ssl+set}" = set; then
 
 fi;
 
+# Check whether --enable-dynamic-ssl-lib or --disable-dynamic-ssl-lib was given.
+if test "${enable_dynamic_ssl_lib+set}" = set; then
+  enableval="$enable_dynamic_ssl_lib"
+   case "$enableval" in
+    no) enable_dynamic_ssl=no ;;
+    *)  enable_dynamic_ssl=yes ;;
+  esac
+else
+  enable_dynamic_ssl=no
+fi;
+
+#----------------------------------------------------------------------
+# We actually might do the SSL tests twice due to late discovery of
+# kerberos problems with static linking, in case we redo it all trying
+# dynamic SSL libraries instead.
+#----------------------------------------------------------------------
+
+ssl_done=no
+
+while test "x$ssl_done" != "xyes"; do
+
+ssl_done=yes # Default only one run
 
 # Remove all SKIP files from previous runs
 for a in ssl crypto ssh; do
   /bin/rm -f $ERL_TOP/lib/$a/SKIP
 done
 
-SSL_DYNAMIC_ONLY=no
+SSL_DYNAMIC_ONLY=$enable_dynamic_ssl
 
 if test "x$with_ssl" = "xno"; then
     SSL_APP=
     CRYPTO_APP=
     SSH_APP=
+    for a in ssl crypto ssh; do
+        echo "User gave --without-ssl option" > $ERL_TOP/lib/$a/SKIP
+    done
 elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     # On windows, we could try to find the installation
     # of Shining Light OpenSSL, which can be found by poking in
@@ -20077,24 +20754,37 @@ if (eval "$ac_cpp conftest.$ac_ext") 2>&5 |
       echo "$as_me:$LINENO: result: yes" >&5
 echo "${ECHO_T}yes" >&6
       ssl_krb5_enabled=yes
-      if test -f $SSL_LIBDIR/libkrb5.a; then
-          SSL_LINK_WITH_KERBEROS=yes
-	  STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
-	  if test -f $SSL_LIBDIR/libkrb5support.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libk5crypto.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libresolv.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libcom_err.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
-	  fi
+      if test "x$SSL_DYNAMIC_ONLY" != "xyes"; then
+          if test -f $SSL_LIBDIR/libkrb5.a; then
+              SSL_LINK_WITH_KERBEROS=yes
+	      STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
+	      if test -f $SSL_LIBDIR/libkrb5support.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libk5crypto.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libresolv.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libcom_err.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
+	      fi
+          else
+	      { echo "$as_me:$LINENO: WARNING: Kerberos needed but no kerberos static libraries found" >&5
+echo "$as_me: WARNING: Kerberos needed but no kerberos static libraries found" >&2;}
+	      { echo "$as_me:$LINENO: WARNING: Rescanning for dynamic SSL libraries" >&5
+echo "$as_me: WARNING: Rescanning for dynamic SSL libraries" >&2;}
+	      enable_dynamic_ssl=yes
+	      ssl_done=no
+	      SSL_LINK_WITH_KERBEROS=no
+	      STATIC_KERBEROS_LIBS=""
+	      ssl_krb5_enabled=no
+	      SSL_WITH_KERBEROS=no
+          fi
       else
-	 SSL_LINK_WITH_KERBEROS=no
-	 STATIC_KERBEROS_LIBS=""
+	      SSL_LINK_WITH_KERBEROS=no
+	      STATIC_KERBEROS_LIBS=""
       fi
 
 else
@@ -20141,6 +20831,8 @@ echo "${ECHO_T}found in $SSL_KRB5_INCLUDE" >&6
     fi
 fi
 
+done # while test ssl_done != yes
+
 #--------------------------------------------------------------------
 # Erlang GD driver stuff. (egd)
 #--------------------------------------------------------------------
@@ -20181,7 +20873,7 @@ echo "${ECHO_T}no; not supported" >&6
 	else
 		gd_found=no
 		gd_linkable=no
-		for dir in /usr/local/pgm /usr/local /usr
+		for dir in /usr/local/pgm /usr/local /usr /opt /opt/local /sw
 		do
 			if test "x$ARCH" = "xamd64" -o \
 				"x$ARCH" = "xppc64"; then
@@ -20256,6 +20948,9 @@ rm -f conftest.err conftest.$ac_objext \
  				CFLAGS="$saveCFLAGS"
  				LDFLAGS="$saveLDFLAGS"
  			fi
+	 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xyes"  ; then
+	   			break;
+         		fi
 		done
 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xno"; then
 			echo "$as_me:$LINENO: result: no; found but not usable" >&5
@@ -20283,7 +20978,7 @@ echo "${ECHO_T}$GD_LIB" >&6
 else
 	if test -f "$with_gd/lib/libgd.$soext"; then
 		GD_LIB="$with_gd/lib"
-		GD_INCLUDE="$with_gd/include"
+		GD_INCLUDE="-I$with_gd/include"
 		echo "$as_me:$LINENO: result: $GD_LIB" >&5
 echo "${ECHO_T}$GD_LIB" >&6
 	else
@@ -20300,6 +20995,8 @@ fi
 #--------------------------------------------------------------------
 # Os mon stuff.
 #--------------------------------------------------------------------
+
+
 
 echo "$as_me:$LINENO: checking for kstat_open in -lkstat" >&5
 echo $ECHO_N "checking for kstat_open in -lkstat... $ECHO_C" >&6
@@ -20366,17 +21063,22 @@ fi
 echo "$as_me:$LINENO: result: $ac_cv_lib_kstat_kstat_open" >&5
 echo "${ECHO_T}$ac_cv_lib_kstat_kstat_open" >&6
 if test $ac_cv_lib_kstat_kstat_open = yes; then
-  os_mon_programs="$os_mon_programs cpu_sup"
+
+	os_mon_programs="$os_mon_programs cpu_sup"
+	CPU_SUP_LIBS="$CPU_SUP_LIBS -lkstat"
+
 fi
+
 
 case $host_os in
 	solaris2*)
 		os_mon_programs="$os_mon_programs ferrule mod_syslog" ;;
+	linux*)
+		os_mon_programs="$os_mon_programs cpu_sup" ;;
 esac
 
 
-need_java="jinterface ic/java_src orber/java_src
-	   mnesia_session/examples/person/java_session"
+need_java="jinterface ic/java_src orber/java_src"
 
 # Remove all SKIP files from previous runs
 for a in $need_java ; do
@@ -21284,9 +21986,6 @@ s,@DED_LDFLAGS@,$DED_LDFLAGS,;t t
 s,@DED_LD_FLAG_RUNTIME_LIBRARY_PATH@,$DED_LD_FLAG_RUNTIME_LIBRARY_PATH,;t t
 s,@STATIC_CFLAGS@,$STATIC_CFLAGS,;t t
 s,@EMU_CC@,$EMU_CC,;t t
-s,@SSL_APP@,$SSL_APP,;t t
-s,@CRYPTO_APP@,$CRYPTO_APP,;t t
-s,@SSH_APP@,$SSH_APP,;t t
 s,@SSL_INCLUDE@,$SSL_INCLUDE,;t t
 s,@SSL_ROOT@,$SSL_ROOT,;t t
 s,@SSL_LIBDIR@,$SSL_LIBDIR,;t t
@@ -21301,6 +22000,7 @@ s,@GD_APP@,$GD_APP,;t t
 s,@GD_INCLUDE@,$GD_INCLUDE,;t t
 s,@GD_LIB@,$GD_LIB,;t t
 s,@os_mon_programs@,$os_mon_programs,;t t
+s,@CPU_SUP_LIBS@,$CPU_SUP_LIBS,;t t
 s,@JAVAC@,$JAVAC,;t t
 s,@CXXFLAGS@,$CXXFLAGS,;t t
 s,@CXX@,$CXX,;t t

@@ -465,7 +465,7 @@ bulk_input(Head, InitFun, Cntrs, Ref) ->
 
 bulk_objects([T | Ts], Head, Cntrs, Kp, L) ->
     BT = term_to_binary(T),
-    Sz = size(BT),
+    Sz = byte_size(BT),
     LogSz = sz2pos(Sz+?OHDSZ),
     count_object(Cntrs, LogSz),
     Key = element(Kp, T),
@@ -526,7 +526,7 @@ output_objs2(E, Acc, Head, Cntrs, DCT, End, ChunkI, MaxNoChunks) ->
 	    DCT1 = output_slot(Acc, Head, DCT),
 	    NDCT = write_all_sizes(DCT1, Cntrs),
 	    ?DCT(NoDups, CT) = NDCT,
-	    [SegAddr | []] = ?VGET(size(CT), CT),
+	    [SegAddr | []] = ?VGET(tuple_size(CT), CT),
             FinalZ = End - SegAddr,
             [{?FSCK_SEGMENT, _, {FileName, Fd}, _}] = 
 		ets:lookup(Cntrs, ?FSCK_SEGMENT),
@@ -587,7 +587,7 @@ allocate_all(Head, [], Cntrs, CT) ->
     {FileName, Fd} = temp_file(Head, ?FSCK_SEGMENT),
     Addr = ?SEGADDR(?SEGARRSZ),
     true = ets:insert(Cntrs, {?FSCK_SEGMENT, Addr, {FileName, Fd}, 0}),
-    NCT = ?VSET(size(CT), CT, [Addr | []]),
+    NCT = ?VSET(tuple_size(CT), CT, [Addr | []]),
     {Head, NCT}.
 
 temp_file(Head, N) ->
@@ -601,7 +601,7 @@ bin2term([], L) ->
     lists:reverse(L).
 
 write_all_sizes(?DCT(D, CT), Cntrs) ->
-    ?DCT(D, write_sizes(1, size(CT), CT, Cntrs)).
+    ?DCT(D, write_sizes(1, tuple_size(CT), CT, Cntrs)).
 
 write_sizes(Sz, Sz, CT, Cntrs) ->
     write_size(Sz, ?FSCK_SEGMENT, CT, Cntrs);
@@ -662,7 +662,7 @@ choose_one([], _Key, L) ->
 
 output_slot([E | Es], Next, _Slot, CT) ->
     {_Key, {Slot, LSize, BinTerm}} = E,
-    Size = size(BinTerm),
+    Size = byte_size(BinTerm),
     Size2 = ?POW(LSize-1),
     Pad = <<0:(Size2-Size-?OHDSZ)/unit:8>>,
     BinObject = [<<Next:32, Size:32, ?ACTIVE:32>>, BinTerm | Pad],
@@ -670,7 +670,7 @@ output_slot([E | Es], Next, _Slot, CT) ->
     NCT = ?VSET(LSize, CT, [Addr+Size2 | [BinObject | L]]),
     output_slot(Es, Addr, Slot, NCT);
 output_slot([], Next, Slot, CT) ->
-    I = size(CT),
+    I = tuple_size(CT),
     [Addr | L] = ?VGET(I, CT),
     {Pos, _} = slot_position(Slot),
     NoZeros = Pos - Addr,
@@ -753,7 +753,7 @@ read_more_bytes(B, Min, Pos, F, L) ->
 	eof ->
 	    {done, L};
 	Bin ->
-	    NewPos = Pos + size(Bin),
+	    NewPos = Pos + byte_size(Bin),
 	    {cont, L, list_to_binary([B, Bin]), NewPos}
     end.
 
@@ -795,14 +795,14 @@ skip_bytes(Bin, Skip, Kp, Head, L) ->
 	<<_:Skip/binary, Tail/binary>> ->
 	    fsck_objs(Tail, Kp, Head, L);
 	_ ->
-            {new, Skip - size(Bin), L}
+            {new, Skip - byte_size(Bin), L}
     end.
 
 %% -> {NewHead, ok} | throw({Head, Error})
 do_perform_save(H) ->
     FL = dets_utils:get_freelists(H),
     B = term_to_binary(FL),
-    Size = size(B),
+    Size = byte_size(B),
     ?DEBUGF("size of freelist = ~p~n", [Size]),
     ?DEBUGF("head.m = ~p~n", [H#head.m]),
     ?DEBUGF("head.no_objects = ~p~n", [H#head.no_objects]),
@@ -904,7 +904,7 @@ re_hash_read(Head, Cs, R, RCs) ->
 re_hash_read(Head, [{Pos, Size} | Ps], [C | Cs], 
 	     [<<Next:32, Sz:32, _Status:32, Bin0/binary>> | Bins], 
 	     DoneCs, R, RCs) ->
-    case size(Bin0) of
+    case byte_size(Bin0) of
 	BinSz when BinSz >= Sz ->
 	    case catch binary_to_term(Bin0) of
 		{'EXIT', _Error} ->
@@ -1232,7 +1232,7 @@ eval_first([<<Next:32, Sz:32, _Status:32, Bin/binary>> | Bins],
 	   [SP | SPs], Head, Ls, LU) ->
     {P1, P2, WLs} = SP,
     L0 = [{old,P1}],
-    case size(Bin) of
+    case byte_size(Bin) of
 	BinSz when BinSz >= Sz ->
 	    Term = binary_to_term(Bin),
 	    Key = element(Head#head.keypos, Term),
@@ -1321,7 +1321,7 @@ eval_object(Size, Term, Delete, LookUp, Objects, Head, Pos, L, LU) ->
 		    {[], L1, LU};
 		{value, {Term2,-1}} ->
 		    Bin2 = term_to_binary(Term2),
-		    NSize = size(Bin2),
+		    NSize = byte_size(Bin2),
 		    Overwrite = 
 			if
 			    NSize =:= Size ->
@@ -1382,14 +1382,14 @@ create_writes([{old,Pos} | L], H, Ws, No, Next, false) ->
     W = {Pos, <<Next:32>>},
     create_writes(L, H, [W | Ws], No, Pos, true);
 create_writes([{insert,N,Bin} | L], H, Ws, No, Next, _NextIsOld) ->
-    {NH, NWs, Pos} = create_inserts(N, H, Ws, Next, size(Bin), Bin),
+    {NH, NWs, Pos} = create_inserts(N, H, Ws, Next, byte_size(Bin), Bin),
     create_writes(L, NH, NWs, No+N, Pos, false);
 create_writes([{overwrite,Bin,Pos} | L], H, Ws, No, Next, _) ->
-    Size = size(Bin),
+    Size = byte_size(Bin),
     W = {Pos, [<<Next:32, Size:32, ?ACTIVE:32>>, Bin]},
     create_writes(L, H, [W | Ws], No, Pos, true);
 create_writes([{replace,Bin,Pos,OSize} | L], H, Ws, No, Next, _) ->
-    Size = size(Bin),
+    Size = byte_size(Bin),
     {H1, _} = dets_utils:free(H, Pos, OSize+?OHDSZ),
     {NH, NewPos, _} = dets_utils:alloc(H1, ?OHDSZ + Size),
     W1 = {NewPos, [<<Next:32, Size:32, ?ACTIVE:32>>, Bin]},
@@ -1494,7 +1494,7 @@ prterm(Head, Pos, ReadAhead) ->
     ?DEBUGF("file:pread(~p, ~p, ?) -> ~p~n", [Head#head.filename, Pos, Res]),
     {ok, <<Next:32, Sz:32, _Status:32, Bin0/binary>>} = Res,
     ?DEBUGF("{Next, Sz} = ~p~n", [{Next, Sz}]),
-    Bin = case size(Bin0) of
+    Bin = case byte_size(Bin0) of
 	      Actual when Actual >= Sz ->
 		  Bin0;
 	      _ ->

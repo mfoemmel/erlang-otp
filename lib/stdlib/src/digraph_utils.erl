@@ -19,7 +19,7 @@
 
 %%% Operations on directed (and undirected) graphs.
 %%%
-%%% Implementation based on Landsbury, John: Graph Algorithms with a 
+%%% Implementation based on Launchbury, John: Graph Algorithms with a 
 %%% Functional Flavour, in Jeuring, Johan, and Meijer, Erik (Eds.): 
 %%% Advanced Functional Programming, Lecture Notes in Computer 
 %%% Science 925, Springer Verlag, 1995.
@@ -27,7 +27,9 @@
 -export([components/1, strong_components/1, cyclic_strong_components/1, 
 	 reachable/2, reachable_neighbours/2, 
 	 reaching/2, reaching_neighbours/2,
-	 topsort/1, is_acyclic/1, loop_vertices/1,
+	 topsort/1, is_acyclic/1, 
+         arborescence_root/1, is_arborescence/1, is_tree/1, 
+         loop_vertices/1,
 	 subgraph/2, subgraph/3, condensation/1,
 	 preorder/1, postorder/1]).
 
@@ -69,6 +71,32 @@ is_acyclic(G) ->
 	_  -> false
     end.
     
+arborescence_root(G) ->
+    case digraph:no_edges(G) =:= digraph:no_vertices(G) - 1 of
+        true ->
+            try
+                F = fun(V, Z) ->
+                            case digraph:in_degree(G, V) of
+                                1 -> Z;
+                                0 when Z =:= [] -> [V]
+                            end
+                    end,
+                [Root] = lists:foldl(F, [], digraph:vertices(G)),
+                {yes, Root}
+            catch _:_ ->
+                no
+            end;
+        false ->
+            no
+    end.
+
+is_arborescence(G) ->
+    arborescence_root(G) =/= no.
+
+is_tree(G) ->
+    (digraph:no_edges(G) =:= digraph:no_vertices(G) - 1)
+    andalso (length(components(G)) =:= 1).
+
 loop_vertices(G) ->
     lists:filter(fun(V) -> is_reflexive_vertex(V, G) end, digraph:vertices(G)).
 

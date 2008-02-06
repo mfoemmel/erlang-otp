@@ -82,7 +82,7 @@ extern void hipe_find_handler(Process*);
 extern void (*hipe_handle_stack_trap(Process*))(void);
 extern void hipe_update_stack_trap(Process*, const struct sdesc*);
 
-#if defined(HIPE_NSTACK_GROWS_UP)
+#if 0 && defined(HIPE_NSTACK_GROWS_UP)
 #define hipe_nstack_start(p)	((p)->hipe.nstack)
 #define hipe_nstack_used(p)	((p)->hipe.nsp - (p)->hipe.nstack)
 #endif
@@ -94,11 +94,7 @@ extern void hipe_update_stack_trap(Process*, const struct sdesc*);
 /*
  * GC support procedures
  */
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-extern void fullsweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
-#else
 extern Eterm *fullsweep_nstack(Process *p, Eterm *n_htop);
-#endif
 extern void gensweep_nstack(Process *p, Eterm **ptr_old_htop, Eterm **ptr_n_htop);
 
 #ifdef HYBRID

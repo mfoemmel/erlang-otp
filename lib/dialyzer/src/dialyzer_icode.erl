@@ -1373,14 +1373,14 @@ warn_on_return_val(FinalLabels, FinalState, IcodeFun) ->
     true ->
       case (not HasReturn) andalso (not IsExplicit) of
 	true ->
-	  [{?WARN_RETURN_NO_RETURN, 
-	    {IcodeFun, "Function has no local return\n"}}];
+	  [mk_warning(?WARN_RETURN_NO_RETURN, IcodeFun, 
+		      "Function has no local return\n")];
 	false ->
 	  case IsExplicit andalso not HasReturn of
 	    true ->
-	      [{?WARN_RETURN_ONLY_EXIT, 
-		{IcodeFun, 
-		 "Function only terminates with explicit exception\n"}}];
+	      [mk_warning(?WARN_RETURN_ONLY_EXIT, IcodeFun,
+			  "Function only terminates with "
+			  "explicit exception\n")];
 	    false ->
 	      []
 	  end
@@ -1416,7 +1416,8 @@ warn_on_args(IcodeFun, Cfg) ->
     {value, {_, ArgType}} when length(ArgType) > 0 ->
       case any_is_none(ArgType) of
 	true -> 
-	  [{?WARN_NOT_CALLED, {IcodeFun, "Function will never be called!\n"}}];
+	  [mk_warning(?WARN_NOT_CALLED, IcodeFun, 
+		      "Function will never be called!\n")];
 	false ->
 	  []
       end;
@@ -1547,7 +1548,7 @@ warn_on_type(I, Info, IcodeFun) ->
 			  "since variable has type ~s!\n",
 			  [Test, ArgType])
 	end,
-      {?WARN_MATCHING, {IcodeFun, W}};
+      mk_warning(?WARN_MATCHING, IcodeFun, W);
     _ ->
       none
   end.
@@ -1571,7 +1572,7 @@ warn_on_cons(Args, Info, IcodeFun) ->
       W = io_lib:format("Cons will produce"
 			" a non-proper list since its 2nd arg is ~s!\n",
 			[format_type(Tail)]),
-      {?WARN_NON_PROPER_LIST, {IcodeFun, W}}
+      mk_warning(?WARN_NON_PROPER_LIST, IcodeFun, W)
   end.
 
 'warn_on_++'(I, Info, IcodeFun) ->
@@ -1588,7 +1589,7 @@ warn_on_cons(Args, Info, IcodeFun) ->
 	  W = io_lib:format("Call to '++'/2 will produce"
 			    " a non-proper list; 2nd arg is ~s!\n",
 			    [format_type(Tail)]),
-	  {?WARN_NON_PROPER_LIST, {IcodeFun, W}}
+	  mk_warning(?WARN_NON_PROPER_LIST, IcodeFun, W)
       end
   end.
 
@@ -1607,17 +1608,17 @@ warn_on_call_fun(Args0, Info, IcodeFun) ->
 	  Msg = io_lib:format("Trying to use fun with type ~s "
 			      "with arguments ~s\n",
 			      [format_type(Fun), ArgString]),
-	  {?WARN_FUN_APP, {IcodeFun, Msg}};
+	  mk_warning(?WARN_FUN_APP, IcodeFun, Msg);
 	false ->
  	  case t_is_tuple(Fun) of
 	    true ->
 	      Msg = io_lib:format("Tuple used as fun will fail in "
 				  "native compiled code.\n", []),
-	      {?WARN_TUPLE_AS_FUN, {IcodeFun, Msg}};
+	      mk_warning(?WARN_TUPLE_AS_FUN, IcodeFun, Msg);
 	    false ->
 	      Msg = io_lib:format("Fun application using type ~s "
 				  "instead of a fun!\n", [format_type(Fun)]),
-	      {?WARN_FUN_APP, {IcodeFun, Msg}}
+	      mk_warning(?WARN_FUN_APP, IcodeFun, Msg)
 	  end
       end
   end.
@@ -1695,7 +1696,7 @@ warn_on_call(I, Ins, Info, IcodeFun) ->
 			"Matching on newly created reference "
 			  "will never succeed\n"
 		    end,
-		  {{?WARN_MATCHING, {IcodeFun, W}}, []};
+		  {mk_warning(?WARN_MATCHING, IcodeFun, W), []};
 		_ -> {none, Ins}
 	      end;
 	    _ -> {none, Ins}
@@ -1725,7 +1726,7 @@ warn_on_call_1(I, Info, IcodeFun) ->
 	true -> 
 	  W = io_lib:format("Unsafe use of tuple as a fun"
 			    " in call to ~w\n", [Fun]),
-	  {?WARN_TUPLE_AS_FUN, {IcodeFun, W}};
+	  mk_warning(?WARN_TUPLE_AS_FUN, IcodeFun, W);
 	false ->
 	  call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
       end
@@ -1741,7 +1742,7 @@ warn_on_enter(I, Info, IcodeFun) ->
 	true -> 
 	  W = io_lib:format("Unsafe use of tuple as a fun in call "
 			    "to ~w\n", [Fun]),
-	  {?WARN_TUPLE_AS_FUN, {IcodeFun, W}};
+	  mk_warning(?WARN_TUPLE_AS_FUN, IcodeFun, W);
 	false ->
 	  call_warning(Fun, IcodeFun, safe_lookup_list(args(I), Info))
       end;
@@ -1760,11 +1761,11 @@ warn_on_switch_tuple_arity(I, Info, IcodeFun) ->
       ArgType1 = format_type(ArgType),
       IllegalCases = [X || X <- Cases, not lists:member(X, LegalCases)],
       Arities = [hipe_icode:const_value(X) || {X, _} <- IllegalCases],
-      Ws = [{IcodeFun, io_lib:format("The clause matching on tuple with"
-				     " arity ~w will never match;"
-				     " argument is of type ~s!\n", 
-				     [X, ArgType1])}|| X <- Arities],
-      [{?WARN_MATCHING, X} || X <- Ws]
+      [mk_warning(?WARN_MATCHING, IcodeFun, 
+		  io_lib:format("The clause matching on tuple with"
+				" arity ~w will never match;"
+				" argument is of type ~s!\n", [X, ArgType1]))
+       || X <- Arities]
   end.
 
 warn_on_switch_val(I, Info, IcodeFun) ->
@@ -1778,11 +1779,11 @@ warn_on_switch_val(I, Info, IcodeFun) ->
       IllegalCases = [X || X <- Cases, not lists:member(X, LegalCases)],
       Vals = [t_from_term(hipe_icode:const_value(X)) || {X, _} <- IllegalCases],
       ArgTypeString = format_type(ArgType),
-      Ws = [{IcodeFun, io_lib:format("The clause matching on ~s will"
-				     " never match; argument is of type ~s\n", 
-				     [format_type(X), ArgTypeString])}
-	    || X <- Vals],
-      [{?WARN_MATCHING, X} || X <- Ws]
+      [mk_warning(?WARN_MATCHING, IcodeFun, 
+		  io_lib:format("The clause matching on ~s will"
+				" never match; argument is of type ~s\n", 
+				[format_type(X), ArgTypeString]))
+       || X <- Vals]
   end.
 
 warn_on_if(I, Info, IcodeFun) ->
@@ -1828,7 +1829,7 @@ warn_on_if(I, Info, IcodeFun) ->
 	    io_lib:format("> between ~s and ~s will always fail!\n",
 			  [format_type(Arg1), format_type(Arg2)])
 	end,
-      {?WARN_COMP, {IcodeFun, W}};
+      mk_warning(?WARN_COMP, IcodeFun, W);
     [{TrueLab, _}] ->
       none
   end.
@@ -1838,7 +1839,7 @@ warn_on_guard(I, IcodeFun, Args) ->
   W = io_lib:format("The guard ~w will always fail since "
 		    "the arguments are of type ~s!\n", 
 		    [Fun, pp_args(Args)]),
-  {?WARN_GUARDS, {IcodeFun, W}}.
+  mk_warning(?WARN_GUARDS, IcodeFun, W).
 
 call_warning(Fun, IcodeFun, Args) ->
   case hipe_icode_primops:fails(Fun) of
@@ -1866,11 +1867,11 @@ call_warning(Fun, IcodeFun, Args) ->
 			    "fail since the arguments are of type ~s!\n",
 			    [Bif, Fun, format_sig(Signature),
 			     pp_args(Args)]),
-	  {?WARN_FAILING_CALL, {IcodeFun, W}}
+	  mk_warning(?WARN_FAILING_CALL, IcodeFun, W)
       end;
     false ->
       W = "Unsafe BEAM code! Please recompile with a newer BEAM compiler.\n",
-      {?WARN_OLD_BEAM, {IcodeFun, W}}
+      mk_warning(?WARN_OLD_BEAM, IcodeFun, W)
   end.
 
 format_sig(Type) ->
@@ -1878,6 +1879,8 @@ format_sig(Type) ->
   ")" ++ RevSig = lists:reverse(Sig),
   lists:reverse(RevSig).
 
+mk_warning(Tag, IcodeFun, Msg) ->
+  {Tag, IcodeFun, Msg}.
 
 %% _________________________________________________________________
 %%

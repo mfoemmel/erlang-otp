@@ -34,25 +34,33 @@ RELSYSDIR = $(RELEASE_PATH)/lib/percept-$(VSN)
 # ----------------------------------------------------
 
 EDOC_DIR = $(ERL_TOP)/lib/edoc
-SYNTAX_TOOLS_DIR = $(ERL_TOP)/lib/syntax_tools
 
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
 PERCEPT_DIR = $(ERL_TOP)/lib/percept/src
+RUNTIME_TOOLS_DIR = $(ERL_TOP)/lib/runtime_tools/src
 
 PERCEPT_MODULES = \
 	egd\
-	percept 
+	percept
 
+RUNTIME_TOOLS_MODULES = \
+	percept_profile
 
 XML_APPLICATION_FILES = \
 	ref_man.xml
-PERCEPT_XML_FILES = $(PERCEPT_MODULES:=.xml)
+
+PERCEPT_XML_FILES = $(PERCEPT_MODULES:=.xml) 
+
+RUNTIME_TOOLS_XML_FILES = $(RUNTIME_TOOLS_MODULES:=.xml)
+
+MODULE_XML_FILES = $(PERCEPT_XML_FILES) $(RUNTIME_TOOLS_XML_FILES)
 
 XML_REF_MAN = \
 	ref_man.xml
-XML_REF3_FILES = $(PERCEPT_XML_FILES)
+
+XML_REF3_FILES = $(MODULE_XML_FILES)
 
 XML_PART_FILES = \
 	part.xml \
@@ -145,10 +153,13 @@ $(HTMLDIR)/%.gif: %.gif
 $(PERCEPT_XML_FILES):
 	docb_gen $(PERCEPT_DIR)/$(@:%.xml=%.erl)
 
+$(RUNTIME_TOOLS_XML_FILES):
+	docb_gen $(RUNTIME_TOOLS_DIR)/$(@:%.xml=%.erl)
+
 info:
 	@echo "XML_PART_FILES: $(XML_PART_FILES)"
 	@echo "XML_APPLICATION_FILES: $(XML_APPLICATION_FILES)"
-	@echo "PERCEPT_XML_FILES: $(PERCEPT_XML_FILES)"
+	@echo "PERCEPT_XML_FILES: $(MODULE_XML_FILES)"
 	@echo "PERCEPT_MODULES: $(PERCEPT_MODULES)"
 	@echo "HTML_FILES: $(HTML_FILES)"
 	@echo "HTMLDIR: $(HTMLDIR)"
@@ -166,13 +177,13 @@ man: $(MAN3_FILES) $(MAN6_FILES)
 
 gifs: $(GIF_FILES:%=$(HTMLDIR)/%)
 
-xml: $(PERCEPT_XML_FILES)
+xml: $(MODULE_XML_FILES)
 
 debug opt: 
 
 
 clean clean_docs clean_tex:
-	rm -f $(PERCEPT_XML_FILES)
+	rm -f $(MODULE_XML_FILES)
 	rm -f $(TEX_FILES_USERS_GUIDE) $(TEX_FILES_REF_MAN) $(TEX_FILES_BOOK)
 	rm -f $(HTML_FILES) $(MAN3_FILES) $(MAN6_FILES)
 	rm -f $(EXTRA_FILES:fascicules.xml= )

@@ -149,8 +149,8 @@
 	 mk_load_address/3,
 	 load_address_dst/1,
 	 %% load_address_dst_update/2,
-	 load_address_address/1,
-	 load_address_address_update/2,
+	 load_address_addr/1,
+	 load_address_addr_update/2,
 	 load_address_type/1,
 	 %% load_address_type_update/2,
 
@@ -512,12 +512,12 @@ goto_index_labels(#goto_index{labels=Labels}) -> Labels.
 %%
 
 mk_load_address(Dst, Addr, Type) -> 
-  #load_address{dst=Dst,address=Addr, type=Type}.
+  #load_address{dst=Dst, addr=Addr, type=Type}.
 load_address_dst(#load_address{dst=Dst}) -> Dst.
 load_address_dst_update(LA, NewDst) -> LA#load_address{dst=NewDst}.
-load_address_address(#load_address{address=Addr}) -> Addr.
-load_address_address_update(LoadAddress, NewAdr) -> 
-  LoadAddress#load_address{address=NewAdr}.
+load_address_addr(#load_address{addr=Addr}) -> Addr.
+load_address_addr_update(LoadAddress, NewAdr) -> 
+  LoadAddress#load_address{addr=NewAdr}.
 load_address_type(#load_address{type=Type}) -> Type.
 %% load_address_type_update(LA, NewType) -> LA#load_address{type=NewType}.
 
@@ -1381,11 +1381,11 @@ pp_instr(Dev, I) ->
       pp_arg(Dev, load_address_dst(I)),
       case load_address_type(I) of
 	constant ->
-	  io:format(Dev, " <- DL~p~n", [load_address_address(I)]);
+	  io:format(Dev, " <- DL~p~n", [load_address_addr(I)]);
 	closure ->
-	  io:format(Dev, " <- L~p [closure]~n", [load_address_address(I)]);
+	  io:format(Dev, " <- L~p [closure]~n", [load_address_addr(I)]);
 	Type ->
-	  io:format(Dev, " <- L~p [~p]~n", [load_address_address(I),Type])
+	  io:format(Dev, " <- L~p [~p]~n", [load_address_addr(I),Type])
       end;
     #store{} ->
       io:format(Dev, "    [", []),

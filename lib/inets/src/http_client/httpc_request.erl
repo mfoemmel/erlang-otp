@@ -61,22 +61,22 @@ send(SendAddr, #request{method = Method, scheme = Scheme,
 
     FinalHeaders = case NewHeaders of
 		       HeaderList when is_list(HeaderList) ->
-			   headers(HeaderList, []);
+			   http_headers(HeaderList, []);
 		       _  ->
 			   http_request:http_headers(NewHeaders)
 		   end,
+    Version = HttpOptions#http_options.version,
+
+    Message = [method(Method), " ", Uri, " ", 
+	       version(Version), ?CRLF, headers(FinalHeaders, Version), ?CRLF, Body],
     
-    Message = 
-	lists:append([method(Method), " ", Uri, " HTTP/1.1", ?CRLF, 
-		      FinalHeaders, ?CRLF, Body]),
-    
-    http_transport:send(socket_type(Scheme), Socket, Message).
+    http_transport:send(socket_type(Scheme), Socket, lists:append(Message)).
 
 %%-------------------------------------------------------------------------
 %% is_idempotent(Method) ->
 %% Method = atom()
 %%                                   
-%% Description: Checks if Methode is considered idempotent.
+%% Description: Checks if Method is considered idempotent.
 %%-------------------------------------------------------------------------
 
 %% In particular, the convention has been established that the GET and
@@ -156,16 +156,29 @@ body_length(Body) when is_list(Body) ->
 method(Method) ->
     http_util:to_upper(atom_to_list(Method)).
 
+version("HTTP/0.9") ->
+    "";
+version(Version) ->
+    Version.
+
+headers(_, "HTTP/0.9") ->
+    "";
+%% HTTP 1.1 headers not present in HTTP 1.0 should be
+%% consider as unknown extension headers that should be
+%% ignored. 
+headers(Headers, _) ->
+    Headers.
+
 socket_type(http) ->
     ip_comm;
 socket_type(https) ->
     {ssl, []}.
 
-headers([], Headers) ->
+http_headers([], Headers) ->
     lists:flatten(Headers);
-headers([{Key,Value} | Rest], Headers) ->
+http_headers([{Key,Value} | Rest], Headers) ->
     Header = Key ++ ": " ++ Value ++ ?CRLF,
-    headers(Rest, [Header | Headers]).
+    http_headers(Rest, [Header | Headers]).
 
 handle_proxy(_, Headers) when is_list(Headers) ->
     Headers; %% Headers as is option was specified

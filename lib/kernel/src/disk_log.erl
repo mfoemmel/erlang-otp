@@ -292,8 +292,9 @@ ichunk_bad_end([B | Bs], Mode, Log, C, Bad, A) ->
 		   end,
 	    {error, {corrupt_log_file, File}};
 	{'EXIT', _} when read_only =:= Mode ->
-	    Reread = lists:foldl(fun(Bin, Sz) -> Sz+size(Bin)+?HEADERSZ end, 
-				 0, Bs),
+	    Reread = lists:foldl(fun(Bin, Sz) -> 
+                                         Sz + byte_size(Bin) + ?HEADERSZ 
+                                 end, 0, Bs),
 	    NewPos = case C#continuation.pos of
 			 Pos when is_integer(Pos) -> Pos-Reread;
 			 {FileNo, Pos} -> {FileNo, Pos-Reread}
@@ -1553,7 +1554,7 @@ bsize(B, external) ->
 bsize(B, internal) ->
     disk_log_1:logl(B).
 
-xsz([B|T], Sz) -> xsz(T, size(B) + Sz);
+xsz([B|T], Sz) -> xsz(T, byte_size(B) + Sz);
 xsz([], Sz) -> Sz.
 	
 halt_write_full(L, [Bin | Bins], Format, N) ->
@@ -1623,7 +1624,7 @@ do_trunc(L, Head) when L#log.type =:= halt ->
                         {ok, NFdC};
 		    {ok, NFdC} ->
 			{ok, H} = Head,
-                        disk_log_1:fwrite(NFdC, FName, H, size(H));
+                        disk_log_1:fwrite(NFdC, FName, H, byte_size(H));
 		    R -> 
 			R
 		end

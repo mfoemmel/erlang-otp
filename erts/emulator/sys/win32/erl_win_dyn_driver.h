@@ -139,6 +139,8 @@ WDD_TYPEDEF(ErlDrvTid, erl_drv_thread_self, (void));
 WDD_TYPEDEF(int, erl_drv_equal_tids, (ErlDrvTid tid1, ErlDrvTid tid2));
 WDD_TYPEDEF(void, erl_drv_thread_exit, (void *resp));
 WDD_TYPEDEF(int, erl_drv_thread_join, (ErlDrvTid, void **respp));
+WDD_TYPEDEF(int, erl_drv_putenv, (char *key, char *value));
+WDD_TYPEDEF(int, erl_drv_getenv, (char *key, char *value, size_t *value_size));
 
 typedef struct {
     WDD_FTYPE(null_func) *null_func;
@@ -238,6 +240,8 @@ typedef struct {
     WDD_FTYPE(erl_drv_equal_tids) *erl_drv_equal_tids;
     WDD_FTYPE(erl_drv_thread_exit) *erl_drv_thread_exit;
     WDD_FTYPE(erl_drv_thread_join) *erl_drv_thread_join;
+    WDD_FTYPE(erl_drv_putenv) *erl_drv_putenv;
+    WDD_FTYPE(erl_drv_getenv) *erl_drv_getenv;
   /* Add new calls here */
 } TWinDynDriverCallbacks;   
 
@@ -350,6 +354,8 @@ extern TWinDynDriverCallbacks WinDynDriverCallbacks;
 #define erl_drv_equal_tids (WinDynDriverCallbacks.erl_drv_equal_tids)
 #define erl_drv_thread_exit (WinDynDriverCallbacks.erl_drv_thread_exit)
 #define erl_drv_thread_join (WinDynDriverCallbacks.erl_drv_thread_join)
+#define erl_drv_putenv (WinDynDriverCallbacks.erl_drv_putenv)
+#define erl_drv_getenv (WinDynDriverCallbacks.erl_drv_getenv)
 
 /* The only variable in the interface... */
 #define driver_term_nil (driver_mk_term_nil())
@@ -472,6 +478,8 @@ do {				                        \
 ((W).erl_drv_equal_tids) = erl_drv_equal_tids;		\
 ((W).erl_drv_thread_exit) = erl_drv_thread_exit;	\
 ((W).erl_drv_thread_join) = erl_drv_thread_join;	\
+((W).erl_drv_putenv) = erl_drv_putenv;			\
+((W).erl_drv_getenv) = erl_drv_getenv;			\
 } while (0)
 
 

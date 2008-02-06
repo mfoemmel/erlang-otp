@@ -111,8 +111,9 @@ $1:
 /*
  * expensive_bif_interface_1(nbif_name, cbif_name)
  * expensive_bif_interface_2(nbif_name, cbif_name)
+ * expensive_bif_interface_3(nbif_name, cbif_name)
  *
- * Generate native interface for a BIF with 1-2 parameters and
+ * Generate native interface for a BIF with 1-3 parameters and
  * an expensive failure mode (may fail with RESCHEDULE).
  */
 define(expensive_bif_interface_1,
@@ -178,6 +179,41 @@ $1:
 	movq	`$'$1, %rdx	/* resumption address */
 	jmp	nbif_2_hairy_exception
 	HANDLE_GOT_MBUF(2)
+	.size	$1,.-$1
+	.type	$1,@function
+#endif')
+
+define(expensive_bif_interface_3,
+`
+#ifndef HAVE_$1
+#`define' HAVE_$1
+	.section ".text"
+	.align	4
+	.global	$1
+$1:
+	/* set up the parameters */
+	movq	P, %rdi
+	NBIF_ARG(%rsi,3,0)
+	NBIF_ARG(%rdx,3,1)
+	NBIF_ARG(%rcx,3,2)
+
+	/* save actual parameters in case we must reschedule */
+	NBIF_SAVE_RESCHED_ARGS(3)
+
+	/* make the call on the C stack */
+	SWITCH_ERLANG_TO_C
+	call	$2
+	TEST_GOT_MBUF
+	SWITCH_C_TO_ERLANG
+
+	/* throw exception if failure, otherwise return */
+	TEST_GOT_EXN
+	jz	1f
+	NBIF_RET(3)
+1:
+	movq	`$'$1, %rdx	/* resumption address */
+	jmp	nbif_3_hairy_exception
+	HANDLE_GOT_MBUF(3)
 	.size	$1,.-$1
 	.type	$1,@function
 #endif')

@@ -138,6 +138,8 @@ void erts_check_children(void);
 #  endif
 #endif
 
+typedef void *GETENV_STATE;
+
 /*
 ** For the erl_timer_sup module.
 */

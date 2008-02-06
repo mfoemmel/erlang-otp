@@ -32,6 +32,22 @@
   <p>This document describes the changes made to the DocBuilder
      application.</p>
 
+<section><title>Docbuilder 0.9.8</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    The generated html should now be valid xhtml (with a few
+	    exceptions to be fixed in next version).</p>
+          <p>
+	    Own Id: OTP-7027</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
   <section><title>Docbuilder 0.9.7</title>
 
     <section><title>Improvements and New Features</title>

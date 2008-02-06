@@ -1040,7 +1040,8 @@ scc_fold_fun(F, FunMap, State) ->
     error ->
       NewFunMap = enter_type(F, NewType, FunMap)
   end,
-  ?debug("Done solving for function ~w :: ~s\n", [debug_lookup_name(F)]),
+  ?debug("Done solving for function ~w :: ~s\n", [debug_lookup_name(F),
+						  format_type(NewType)]),
   NewFunMap.
 
 solve_ref_or_list(#constraint_ref{id=Id, deps=Deps, type='fun'}, 

@@ -2,7 +2,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% File        : hipe_rtl_lcm.erl
 %% Author      : Henrik Nyman and Erik Cedheim
-%% Description : Performs Lazy Code Motion on RTL.
+%% Description : Performs Lazy Code Motion on RTL
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% $Id$
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -14,6 +14,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 -module(hipe_rtl_lcm).
+
 -export([rtl_lcm/2]).
 
 -define(SETS, ordsets).   %% Which set implementation module to use
@@ -32,20 +33,20 @@
 %% @doc Performs Lazy Code Motion on RTL.
 %%
 rtl_lcm(CFG, Options) ->
-  %% Perform precalculation of the data sets.
+  %% Perform pre-calculation of the data sets.
   ?opt_start_timer("RTL LCM precalc"),
   {NodeInfo, EdgeInfo, AllExpr, ExprMap, IdMap, Labels} = lcm_precalc(CFG, Options),
   ?opt_stop_timer("RTL LCM precalc"),
-%  {NodeInfo, EdgeInfo, AllExpr, ExprMap, Labels} = 
-%    ?option_time(lcm_precalc(CFG, Options), "RTL LCM precalc", Options),
+  %% {NodeInfo, EdgeInfo, AllExpr, ExprMap, Labels} = 
+  %%   ?option_time(lcm_precalc(CFG, Options), "RTL LCM precalc", Options),
   
-  pp_debug("-------------------------------------------------~n",[]),%DEBUG
+  pp_debug("-------------------------------------------------~n",[]),
   %% pp_debug( "~w~n", [MFA]),
   
   %% A check if we should pretty print the result.
   case proplists:get_bool(pp_rtl_lcm, Options) of
     true->
-      pp_debug("-------------------------------------------------~n",[]),%DEBUG
+      pp_debug("-------------------------------------------------~n",[]),
       %% pp_debug("AllExpr:  ~w~n", [AllExpr]),
       pp_debug("AllExpr:~n", []),
       pp_exprs(ExprMap, IdMap, ?SETS:to_list(AllExpr)),
@@ -55,10 +56,7 @@ rtl_lcm(CFG, Options) ->
       ok
   end,
   
-  pp_debug("-------------------------------------------------~n",[]),%DEBUG
-%   {CFG1, MoveSet} = 
-%     perform_lcm(CFG, NodeInfo, EdgeInfo, ExprMap, IdMap,
-% 		AllExpr, ?SETS:new(), Labels),
+  pp_debug("-------------------------------------------------~n",[]),
   ?option_time({CFG1, MoveSet} = perform_lcm(CFG, NodeInfo, EdgeInfo, ExprMap, 
 					     IdMap, AllExpr, mk_edge_bb_map(), 
 					     ?SETS:new(), Labels),
@@ -70,7 +68,7 @@ rtl_lcm(CFG, Options) ->
   ?option_time(CFG2 = moved_expr_replace_assignments(CFG1, ExprMap, IdMap, 
 						     MoveList),
 	       "RTL LCM moved_expr_replace_assignments", Options),
-  pp_debug("-------------------------------------------------~n~n",[]),%DEBUG
+  pp_debug("-------------------------------------------------~n~n",[]),
   
   CFG2.
 
@@ -87,8 +85,7 @@ perform_lcm(CFG0, NodeInfo, EdgeInfo, ExprMap, IdMap, AllExp, BetweenMap,
   {CFG1, MoveSet1} = 
     case ?SETS:size(DeleteSet) > 0 of
       true ->
-        pp_debug("Label ~w: Expressions Deleted: ~n", %DEBUG
-		 [Label]), %DEBUG
+        pp_debug("Label ~w: Expressions Deleted: ~n", [Label]),
         Code1 = delete_exprs(Code0, ExprMap, IdMap, ?SETS:to_list(DeleteSet)),
         BB = hipe_bb:mk_bb(Code1),
         {hipe_rtl_cfg:bb_add(CFG0, Label, BB), 
@@ -108,7 +105,7 @@ perform_lcm(CFG0, NodeInfo, EdgeInfo, ExprMap, IdMap, AllExp, BetweenMap,
 		    %% Check if something should be inserted on this edge.
 		    case ?SETS:size(InsertSet) > 0 of
 		      true ->
-			pp_debug("Label ~w: Expressions Inserted for Successor: ~w~n", [Label, Succ]), %DEBUG
+			pp_debug("Label ~w: Expressions Inserted for Successor: ~w~n", [Label, Succ]),
 			InsertList = ?SETS:to_list(InsertSet),
 			{NewCFG, NewBtwMap} =
 			  insert_exprs(CFG, Label, Succ, ExprMap, IdMap, 
@@ -135,7 +132,7 @@ moved_expr_replace_assignments(CFG0, ExprMap, IdMap, [ExprId|Exprs]) ->
     {value, {_, ReplaceList, NewReg}} -> 
       CFG1 = lists:foldl(fun({Label, Reg}, CFG) ->
                       %% Find and replace expression in block
-		      pp_debug("Label ~w: Expressions Replaced:~n", [Label]), %DEBUG
+		      pp_debug("Label ~w: Expressions Replaced:~n", [Label]),
 		      Code0 = hipe_bb:code(hipe_rtl_cfg:bb(CFG, Label)),
                       Code1 = 
                         moved_expr_do_replacement(expr_set_dst(Expr, Reg), 
@@ -153,11 +150,11 @@ moved_expr_do_replacement(Expr, Reg, NewReg, [Expr|Instrs]) ->
   NewExpr = expr_set_dst(Expr, NewReg),
   Move = mk_expr_move_instr(Reg, NewReg),
 
-  pp_debug("  Replacing:~n", []), %DEBUG
-  pp_debug_instr(Expr), %DEBUG
-  pp_debug("  With:~n", []), %DEBUG
-  pp_debug_instr(NewExpr), %DEBUG
-  pp_debug_instr(Move), %DEBUG
+  pp_debug("  Replacing:~n", []),
+  pp_debug_instr(Expr),
+  pp_debug("  With:~n", []),
+  pp_debug_instr(NewExpr),
+  pp_debug_instr(Move),
   [NewExpr, Move | moved_expr_do_replacement(Expr, Reg, NewReg, Instrs)];
 moved_expr_do_replacement(Expr, Reg, NewReg, [Instr|Instrs]) ->
   [Instr | moved_expr_do_replacement(Expr, Reg, NewReg, Instrs)].
@@ -181,8 +178,8 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
                        true ->
                          case expr_clear_dst(CodeExpr) =:= Expr of
                            true ->
-                             pp_debug("  Deleting:         ", []),%DEBUG
-                             pp_debug_instr(CodeExpr),%DEBUG
+                             pp_debug("  Deleting:         ", []),
+                             pp_debug_instr(CodeExpr),
                             
                              %% Lookup expression entry.
                              Defines = 
@@ -190,20 +187,19 @@ delete_exprs(Code, ExprMap, IdMap, [ExprId|Exprs]) ->
                                  {value, {_, _, Defs}} -> 
 				   Defs;
                                  none -> 
-                                   exit({?MODULE,expr_map_lookup,
-                                         {"expression missing"}})
+                                   exit({?MODULE, expr_map_lookup,
+                                         "expression missing"})
                                end,
                                  
                              MoveCode = 
                                mk_expr_move_instr
                                  (hipe_rtl:defines(CodeExpr), Defines),
 
-                             pp_debug("    Replacing with: ", []),%DEBUG
-                             pp_debug_instr(MoveCode),%DEBUG
+                             pp_debug("    Replacing with: ", []),
+                             pp_debug_instr(MoveCode),
                              
                              [MoveCode|Acc];
                            false ->
-                             %Acc ++ [CodeExpr]
                              [CodeExpr|Acc]
                          end;
                      false ->
@@ -224,21 +220,21 @@ insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
   Succs = hipe_rtl_cfg:succ(hipe_rtl_cfg:succ_map(CFG), Pred),
   case length(Succs) =:= 1 of
     true ->
-      pp_debug("  Inserted last: ", []),%DEBUG
-      pp_debug_instr(Instr),%DEBUG
+      pp_debug("  Inserted last: ", []),
+      pp_debug_instr(Instr),
       NewCFG = insert_expr_last(CFG, Pred, Instr),
       insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, BetweenMap, Exprs);
     false ->
       Preds = hipe_rtl_cfg:pred(hipe_rtl_cfg:pred_map(CFG), Succ),
       case length(Preds) =:= 1 of
         true ->
-	  pp_debug("  Inserted first: ", []),%DEBUG
-	  pp_debug_instr(Instr),%DEBUG
+	  pp_debug("  Inserted first: ", []),
+	  pp_debug_instr(Instr),
           NewCFG = insert_expr_first(CFG, Succ, Instr),
           insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, BetweenMap, Exprs);
         false ->
-	  pp_debug("  Inserted between: ", []),%DEBUG
-	  pp_debug_instr(Instr),%DEBUG
+	  pp_debug("  Inserted between: ", []),
+	  pp_debug_instr(Instr),
           {NewCFG, NewBetweenMap} = 
 	    insert_expr_between(CFG, BetweenMap, Pred, Succ, Instr),
           insert_exprs(NewCFG, Pred, Succ, ExprMap, IdMap, NewBetweenMap, Exprs)
@@ -247,8 +243,8 @@ insert_exprs(CFG, Pred, Succ, ExprMap, IdMap, BetweenMap, [ExprId|Exprs])->
 
 %%=============================================================================
 %% Recursively goes through the code in a block and returns a new block
-%% with the new code inserted second to last (assuming the last expression is
-%% a branch operation.
+%% with the new code inserted second to last (assuming the last expression
+%% is a branch operation).
 insert_expr_last(CFG0, Label, Instr) ->
   Code0 = hipe_bb:code(hipe_rtl_cfg:bb(CFG0, Label)),
   %% FIXME Use hipe_bb:butlast() instead?
@@ -257,8 +253,8 @@ insert_expr_last(CFG0, Label, Instr) ->
 
 %%=============================================================================
 %% Recursively goes through the code in a block and returns a new block
-%% with the new code inserted second to last (assuming the last expression is
-%% a branch operation.
+%% with the new code inserted second to last (assuming the last expression
+%% is a branch operation).
 insert_expr_last_work(_, Instr, []) ->
   %% This case should not happen since this means that block was completely 
   %% empty when the function was called. For compability we insert it last.
@@ -349,7 +345,7 @@ is_expr(I) ->
 %%    	  Src1 = hipe_rtl:alu_src1(I),
 %%    	  Src2 = hipe_rtl:alu_src2(I),
 
-   	  %% Check if dest updates src
+   	  %% Check if dst updates src
 %%    	  case Dst =:= Src1 orelse Dst =:= Src2 of
 %%    	    true ->
 %%    	      false;
@@ -426,8 +422,8 @@ expr_set_dst(I, [Dst|Dsts]) ->
     #load_address{} -> hipe_rtl:load_address_dst_update(I, Dst);
     #load_atom{} -> hipe_rtl:load_atom_dst_update(I, Dst);
     #load_word_index{} -> hipe_rtl:load_word_index_dst_update(I, Dst);
-    %% move -> hipe_rtl:move_dst_update(I, Dst);
-    _ -> exit({?MODULE,expr_set_dst, {"bad expression"}})
+    %% #move{} -> hipe_rtl:move_dst_update(I, Dst);
+    _ -> exit({?MODULE, expr_set_dst, "bad expression"})
   end.
 
 %%=============================================================================
@@ -448,7 +444,7 @@ expr_clear_dst(I) ->
     #load_atom{} -> hipe_rtl:load_atom_dst_update(I, nil);
     #load_word_index{} -> hipe_rtl:load_word_index_dst_update(I, nil);
     %% #move{} -> hipe_rtl:move_dst_update(I, nil);
-    _ -> exit({?MODULE,expr_clear_dst, {"bad expression"}})
+    _ -> exit({?MODULE, expr_clear_dst, "bad expression"})
 
   end.
 
@@ -488,11 +484,8 @@ lcm_precalc(CFG, Options) ->
 	       "RTL LCM calc_avail", Options),
   ?option_time(NodeInfo5 = calc_antic(CFG, NodeInfo4, AllExpr), 
 	       "RTL LCM calc_antic", Options),
-
   ?option_time(EdgeInfo1 = calc_earliest(CFG, NodeInfo5, EdgeInfo0, Labels), 
   	       "RTL LCM calc_earliest", Options),
-  %%EdgeInfo1 = EdgeInfo0,
-
   ?option_time({NodeInfo6, EdgeInfo2} = calc_later(CFG, NodeInfo5, EdgeInfo1),
 	       "RTL LCM calc_later", Options),
   ?option_time(NodeInfo7 = calc_delete(CFG, NodeInfo6, Labels), 
@@ -662,13 +655,12 @@ calc_antic_node(Label, CFG, NodeInfo, AllExpr) ->
 %%=============================================================================
 %% Calculates the Later and LaterIn sets, and returns updates of both 
 %% NodeInfo (with LaterIn sets) and EdgeInfo (with Later sets).
+
 calc_later(CFG, NodeInfo, EdgeInfo) ->
   StartLabel = hipe_rtl_cfg:start_label(CFG),
   Work = init_work([{node, StartLabel}]),
-
   %% Initialize start node
-  NewNodeInfo = set_later_in(NodeInfo, StartLabel, ?SETS:new()), 
-
+  NewNodeInfo = set_later_in(NodeInfo, StartLabel, ?SETS:new()),
   calc_later_fixpoint(Work, CFG, NewNodeInfo, EdgeInfo).
 
 calc_later_fixpoint(Work, CFG, NodeInfo, EdgeInfo) ->
@@ -741,7 +733,7 @@ calc_down_exp(_, _, NodeInfo, []) ->
   NodeInfo;
 calc_down_exp(CFG, ExprMap, NodeInfo, [Label|Labels]) ->
   Code = hipe_bb:code(hipe_rtl_cfg:bb(CFG, Label)),
-%  Data = ?SETS:from_list(lists:map(fun expr_clear_dst/1, exp_work(Code))),
+  %% Data = ?SETS:from_list(lists:map(fun expr_clear_dst/1, exp_work(Code))),
   Data = ?SETS:from_list(get_expr_ids(ExprMap, exp_work(Code))),
   NewNodeInfo = set_down_exp(NodeInfo, Label, Data),
   calc_down_exp(CFG, ExprMap, NewNodeInfo, Labels).
@@ -771,7 +763,7 @@ exp_work(Code) ->
 
 exp_work([], [Instr|Instrs]) ->
   case is_expr(Instr) of
-    true ->
+    true  ->
       exp_work([Instr], Instrs);
     false ->
       exp_work([], Instrs)
@@ -779,15 +771,13 @@ exp_work([], [Instr|Instrs]) ->
 exp_work(Exprs, []) ->
   Exprs;
 exp_work(Exprs, [Instr|Instrs]) ->
-  case is_expr(Instr) of
-    true ->
-      NewExprs = exp_kill_expr(Instr, [Instr|Exprs]),
-      exp_work(NewExprs, Instrs);
-
-    false ->
-      NewExprs = exp_kill_expr(Instr, Exprs),
-      exp_work(NewExprs, Instrs)
-  end.
+  NewExprs = case is_expr(Instr) of
+	       true ->
+		 exp_kill_expr(Instr, [Instr|Exprs]);
+	       false ->
+		 exp_kill_expr(Instr, Exprs)
+	     end,
+  exp_work(NewExprs, Instrs).
 
 %%=============================================================================
 %% Checks if the given instruction redefines any operands of 
@@ -812,9 +802,9 @@ exp_kill_expr(Instr, [CheckedExpr|Exprs]) ->
 	  [CheckedExpr | exp_kill_expr(Instr, Exprs)]
       end;
     _ ->
-      InstrDefines  = hipe_rtl:defines(Instr),
-      ExprUses      = hipe_rtl:uses(CheckedExpr),
-      Diff          = ExprUses -- InstrDefines,
+      InstrDefines = hipe_rtl:defines(Instr),
+      ExprUses     = hipe_rtl:uses(CheckedExpr),
+      Diff         = ExprUses -- InstrDefines,
       case length(Diff) < length(ExprUses) of  
 	true ->
 	  exp_kill_expr(Instr, Exprs);
@@ -1132,7 +1122,7 @@ lookup_later(EdgeInfo, Edge) ->
 %% insert(EdgeInfo, Edge) ->
 %%   case gb_trees:lookup(Edge, EdgeInfo) of
 %%     none -> 
-%%       exit({?MODULE, insert, {"Edge info not found"}}),
+%%       exit({?MODULE, insert, "edge info not found"}),
 %%       none;
 %%     {value, #edge_data{insert = Data}} ->
 %%       Data
@@ -1407,14 +1397,14 @@ expr_map_lookup(Map, Expr) ->
   gb_trees:lookup(Expr, Map).
 
 %%=============================================================================
-%% Gets the actual rtl instruction to be generated for insertions of an 
+%% Gets the actual RTL instruction to be generated for insertions of an 
 %% expression.
 expr_map_get_instr(Map, Expr) ->
   case gb_trees:lookup(Expr, Map) of
     {value, {_, _, Regs}} ->
       expr_set_dst(Expr, Regs);
     none ->
-      exit({?MODULE,expr_map_get_instr, {"expression missing"}})
+      exit({?MODULE, expr_map_get_instr, "expression missing"})
   end.
 
 %%=============================================================================
@@ -1424,7 +1414,7 @@ expr_map_get_id(Map, Expr) ->
     {value, {ExprId, _, _}} ->
       ExprId;
     none ->
-      exit({?MODULE,expr_map_get_instr, {"expression missing"}})
+      exit({?MODULE, expr_map_get_instr, "expression missing"})
   end.
 
 %%=============================================================================
@@ -1444,7 +1434,7 @@ mk_expr_move_instr([Reg|Regs], Defines) ->
   %%  untested/unused.)
   hipe_rtl:mk_multimove([Reg|Regs], Defines);
 mk_expr_move_instr(_, []) ->
-  exit({?MODULE,mk_expr_move_instr, {"bad match"}}).
+  exit({?MODULE, mk_expr_move_instr, "bad match"}).
 
 %%=============================================================================
 %% Returns a set of all expressions in the code.
@@ -1489,16 +1479,18 @@ expr_id_map_get_expr(Map, ExprId) ->
     {value, Expr} ->
       Expr;
     none ->
-      exit({?MODULE,expr_id_map_get_expr, {"expression id missing"}})
+      exit({?MODULE, expr_id_map_get_expr, "expression id missing"})
   end.
 
 %%=============================================================================
 %% Expression ID counter
 init_expr_id() ->
-  put({rtl_lcm,expr_id_count}, 0).
+  put({rtl_lcm,expr_id_count}, 0),
+  ok.
 
+-spec(new_expr_id/0 :: () -> non_neg_integer()).
 new_expr_id() ->
-  V = get({rtl_lcm,expr_id_count}),
+  V = get({rtl_lcm, expr_id_count}),
   put({rtl_lcm,expr_id_count}, V+1),
   V.
 

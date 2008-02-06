@@ -92,12 +92,11 @@ eval_alu(Op, Arg1, Arg2)
       Res = N = Z = V = C = 0,
       ?EXIT({"unknown alu op", Op})
   end,
-  {two_comp_to_erl(Res),N,Z,V,C};
- 
-eval_alu(Op,Arg1,Arg2) ->
+  {two_comp_to_erl(Res), N, Z, V, C};
+eval_alu(Op, Arg1, Arg2) ->
   ?EXIT({argument_overflow,Op,Arg1,Arg2}).
 
-%% Björn & Bjarni: 
+%% Björn & Bjarni:
 %% We need to be able to do evaluations based only on the bits, since
 %% there are cases where we can evaluate a subset of the bits, but can
 %% not do a full eval-alub call (eg. a + 0 gives no carry)
@@ -110,7 +109,7 @@ eval_cond_bits(Cond, N, Z, V, C) ->
       Z;
     'ne' -> 
       not Z;
-    'gt'	-> 
+    'gt' ->
       not (Z or (N xor V));
     'gtu' -> 
       not (C or Z);
@@ -118,13 +117,13 @@ eval_cond_bits(Cond, N, Z, V, C) ->
       not (N xor V);
     'geu'-> 
       not C;
-    'lt'	->
+    'lt' ->
       N xor V;
-    'ltu'-> 
+    'ltu'->
       C;
-    'le'	->
+    'le' ->
       Z or (N xor V);
-    'leu'-> 
+    'leu'->
       C or Z;
     'overflow' ->
       V;
@@ -135,11 +134,11 @@ eval_cond_bits(Cond, N, Z, V, C) ->
   end.
 
 eval_alub(Op, Cond, Arg1, Arg2) ->
-  {Res,N,Z,V,C} = eval_alu(Op,Arg1,Arg2),
-  {Res, eval_cond_bits(Cond, N, Z, V, C) }.
+  {Res, N, Z, V, C} = eval_alu(Op, Arg1, Arg2),
+  {Res, eval_cond_bits(Cond, N, Z, V, C)}.
 
 eval_cond(Cond, Arg1, Arg2) ->
-  {_,Bool} = eval_alub('sub', Cond, Arg1, Arg2),
+  {_, Bool} = eval_alub('sub', Cond, Arg1, Arg2),
   Bool.
 
 sign_bit(Val) ->
@@ -152,8 +151,8 @@ two_comp_to_erl(V) ->
   end.
 
 shiftmask(Arg) ->
-  Setbits = ?BITS-Arg,
-  (1 bsl Setbits)-1.
+  Setbits = ?BITS - Arg,
+  (1 bsl Setbits) - 1.
 
 zero(Val) ->
   Val =:= 0.

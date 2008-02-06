@@ -24,8 +24,8 @@
 	 log/2, log/3, trace/2, trace/3, statistics/2, statistics/3,
 	 log_to_file/2, log_to_file/3, no_debug/1, no_debug/2,
 	 install/2, install/3, remove/2, remove/3]).
--export([handle_system_msg/6, handle_debug/4,
-	 print_log/1, get_debug/3, debug_options/1]).
+-export([handle_system_msg/6, handle_system_msg/7, handle_debug/4,
+	 print_log/1, get_debug/3, debug_options/1, suspend_loop_hib/6]).
 
 %%-----------------------------------------------------------------
 %% System messages
@@ -126,13 +126,16 @@ mfa(Name, Req, Timeout) ->
 %%          and format_status/2 for status information.
 %%-----------------------------------------------------------------
 handle_system_msg(Msg, From, Parent, Module, Debug, Misc) ->
-    handle_system_msg(running, Msg, From, Parent, Module, Debug, Misc).
+    handle_system_msg(running, Msg, From, Parent, Module, Debug, Misc, false).
 
-handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc) ->
+handle_system_msg(Msg, From, Parent, Mod, Debug, Misc, Hib) ->
+   handle_system_msg(running, Msg, From, Parent, Mod, Debug, Misc, Hib).
+
+handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc, Hib) ->
     case do_cmd(SysState, Msg, Parent, Mod, Debug, Misc) of
 	{suspended, Reply, NDebug, NMisc} ->
 	    gen:reply(From, Reply),
-	    suspend_loop(suspended, Parent, Mod, NDebug, NMisc);
+	    suspend_loop(suspended, Parent, Mod, NDebug, NMisc, Hib);
 	{running, Reply, NDebug, NMisc} ->
 	    gen:reply(From, Reply),
             Mod:system_continue(Parent, NDebug, NMisc)
@@ -175,13 +178,30 @@ handle_debug([], _FormFunc, _State, _Event) ->
 %% When a process is suspended, it can only respond to system
 %% messages.
 %%-----------------------------------------------------------------
-suspend_loop(SysState, Parent, Mod, Debug, Misc) ->
+suspend_loop(SysState, Parent, Mod, Debug, Misc, Hib) ->
+    case Hib of
+	true ->
+	   suspend_loop_hib(SysState, Parent, Mod, Debug, Misc, Hib);
+	_ ->
+	    receive
+		{system, From, Msg} ->
+		    handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc, Hib);
+		{'EXIT', Parent, Reason} ->
+		    Mod:system_terminate(Reason, Parent, Debug, Misc)
+	    end
+    end.
+
+suspend_loop_hib(SysState, Parent, Mod, Debug, Misc, Hib) ->
     receive
 	{system, From, Msg} ->
-	    handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc);
+	    handle_system_msg(SysState, Msg, From, Parent, Mod, Debug, Misc, Hib);
 	{'EXIT', Parent, Reason} ->
             Mod:system_terminate(Reason, Parent, Debug, Misc)
+    after 0 -> % Not a system message, go back into hibernation
+	 proc_lib:hibernate(?MODULE,suspend_loop_hib,[SysState, Parent, Mod, 
+							      Debug, Misc, Hib])
     end.
+
 
 do_cmd(_, suspend, _Parent, _Mod, Debug, Misc) ->
     {suspended, ok, Debug, Misc};

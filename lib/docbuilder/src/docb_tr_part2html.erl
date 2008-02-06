@@ -32,24 +32,25 @@ transform(File, {part, _Attrs, [Header| Rest]}, Opts0) ->
     case file:open(OutFile, [write]) of
 	{ok, Frame} ->
 	    io:format(Frame,
-"<!DOCTYPE HTML PUBLIC \"-//W3C//DTD HTML 4.01 Frameset//EN\">
+"<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Frameset//EN\"
+   \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-frameset.dtd\">
 <!-- This document was generated using DocBuilder-" ++ docb_util:version() ++ " -->
-<HTML>
-<HEAD>
-  <TITLE>~s</TITLE>
+<html xmlns=\"http://www.w3.org/1999/xhtml\" xml:lang=\"en\" lang=\"en\">
+<head>
+  <title>~s</title>
   " ++ docb_util:html_snippet(head,  Opts0) ++ "
-</HEAD>
-<FRAMESET COLS=\"200, *\">
-  <FRAME SRC=\"~s\" NAME=\"toc\">
-  <FRAME SRC=\"~s\" NAME=\"document\">
-  <NOFRAMES>
-    <BODY BGCOLOR=\"#FFFFFF\" TEXT=\"#000000\" LINK=\"#0000FF\"
-          VLINK=\"#FF00FF\" ALINK=\"#FF0000\">
-    <P>This documentation requires a browser that can handle frames
-    </BODY>
-  </NOFRAMES>
-</FRAMESET>
-</HTML>
+</head>
+<frameset cols=\"200, *\">
+  <frame src=\"~s\" name=\"toc\"/>
+  <frame src=\"~s\" name=\"document\"/>
+  <noframes>
+    <body bgcolor=\"#FFFFFF\" text=\"#000000\" link=\"#0000FF\"
+          vlink=\"#FF00FF\" alink=\"#FF0000\">
+    <p>This documentation requires a browser that can handle frames</p>
+    </body>
+  </noframes>
+</frameset>
+</html>
 ",
 		      [Title, File ++ ".html", File ++ "_first.html"]),
 	    file:close(Frame)
@@ -195,21 +196,21 @@ rule([title| Rest], {_, [Number, File], [{pcdata, _, Title}]}, Opts) ->
     if
 	N == 1 ->
 	    {{drop,
-	      "<P>\n<SMALL>" ++
+	      "<hr/>\n<small>" ++
 	      Number ++
-	      " <A TARGET=\"document\" HREF=\"" ++ OutFile ++ "#" ++
+	      " <a target=\"document\" href=\"" ++ OutFile ++ "#" ++
 	      Number ++ "\">" ++
 	      docb_html_util:pcdata_to_html(Title) ++
-	      "</A></SMALL><BR>\n"},
+	      "</a></small><br/>\n"},
 	     Opts};
 	N < 3 ->
 	    {{drop,
-	      "<SMALL>" ++
+	      "<small>" ++
 	      Number ++
-	      " <A TARGET=\"document\" HREF=\"" ++ OutFile ++ "#" ++
+	      " <a target=\"document\" href=\"" ++ OutFile ++ "#" ++
 	      Number ++ "\">" ++
 	      docb_html_util:pcdata_to_html(Title) ++
-	      "</A></SMALL><BR>\n"},
+	      "</a></small><br/>\n"},
 	     Opts};
 	true ->
 	    {{drop, ""}, Opts}

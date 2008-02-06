@@ -30,22 +30,26 @@
 
 -include("dialyzer.hrl").
 
--record(cl_state, {backend_pid,
-		   legal_warnings=[],
-		   mod_deps,
-		   nof_warnings=0::integer(),
-		   output=standard_io,
-		   output_plt,
-		   plt_info={none,none,none},
-		   quiet::bool(),
-		   return_status=?RET_NOTHING_SUSPICIOUS::integer(),
-		   stored_errors=do_not_store,
-		   stored_warnings=do_not_store,
-		   user_plt
-		  }).
+-record(cl_state,
+	{backend_pid                            :: pid(),
+	 legal_warnings  = ordsets:new()        :: [_],
+	 mod_deps                               :: dict(),
+	 nof_warnings    = 0			:: integer(),
+	 output          = standard_io,
+	 output_plt                             :: string(),
+	 plt_info                               :: {md5(), 
+						    [atom()],
+						    {mergable | non_mergable, 
+						     dict()}},
+	 report_mode     = normal             :: 'quiet' | 'normal' | 'verbose',
+	 return_status=?RET_NOTHING_SUSPICIOUS	:: integer(),
+	 stored_errors   = do_not_store         :: [_] | 'do_not_store',
+	 stored_warnings = do_not_store         :: [_] | 'do_not_store'
+	}).
 
 start(#options{} = DialyzerOptions) ->
   process_flag(trap_exit, true),
+  {InitAnalysis, PltInfo} = build_analysis_record(DialyzerOptions),
   StoreWarningsAndErrors =
     case DialyzerOptions#options.erlang_mode of
       true -> [];
@@ -56,25 +60,22 @@ start(#options{} = DialyzerOptions) ->
   NewState2 = 
     NewState1#cl_state{legal_warnings=DialyzerOptions#options.legal_warnings,
 		       output_plt=DialyzerOptions#options.output_plt,
+		       plt_info=PltInfo,
 		       stored_errors=StoreWarningsAndErrors,
 		       stored_warnings=StoreWarningsAndErrors,
-		       quiet=DialyzerOptions#options.quiet},
-  InitAnalysis = build_analysis_record(NewState2, DialyzerOptions),
+		       report_mode=DialyzerOptions#options.report_mode},
   NewState3 = run_analysis(NewState2, InitAnalysis),
   cl_loop(NewState3).
 
 check_init_plt(Opts, Force) ->
   process_flag(trap_exit, true),
-  Quiet = Opts#options.quiet,
+  ReportMode = Opts#options.report_mode,
   case dialyzer_plt:check_init_plt(Opts#options.init_plt) of
     {fail, MD5, DiffMd5, Libs, InitPlt} ->      
-      if Quiet -> ok;
-	 true  -> 
-	  io:format(" no\n", []),
-	  case Quiet =:= verbose of
-	    true -> print_md5_diff(DiffMd5);
-	    false -> ok
-	  end
+      case ReportMode of
+	quiet -> ok;
+	normal -> io:format(" no\n", []);
+	verbose -> print_md5_diff(DiffMd5)
       end,
       case (not Force) andalso check_if_installed() of
 	true -> 
@@ -96,18 +97,18 @@ check_init_plt(Opts, Force) ->
 	      ?RET_DISCREPANCIES_FOUND -> ?RET_NOTHING_SUSPICIOUS
 	    end,
 	  {T2, _} = statistics(wall_clock),
-	  if Quiet -> ok;
+	  if ReportMode =:= quiet -> ok;
 	     true -> print_elapsed_time(T1, T2)
 	  end,
 	  Ret
       end;
     {ok, _InitPlt} ->
-      if Quiet -> ok;
+      if ReportMode =:= quiet -> ok;
 	 true  -> io:format(" yes\n")
       end,
       ?RET_NOTHING_SUSPICIOUS;
     {error, Msg} ->
-      if Quiet -> ok;
+      if ReportMode =:= quiet -> ok;
 	 true  -> io:format(" no\n")
       end,
       error(Msg)
@@ -144,9 +145,9 @@ check_if_installed() ->
   end.  
 
 create_init_plt(MD5, none, Libs, InitPltFile, IncludeDirs) ->
-  PltInfo = {MD5, Libs, dict:new()},
-  State = new_state(PltInfo),
-  State1 = State#cl_state{output_plt=InitPltFile},
+  State = new_state(),
+  State1 = State#cl_state{output_plt=InitPltFile,
+			  plt_info={MD5, Libs, {mergable, dict:new()}}},
   Dirs = [filename:join(code:lib_dir(Lib), "ebin")|| Lib <- Libs],
   Files1 = [{D, file:list_dir(D)} || D <- Dirs],
   Files2 = [[filename:join(D, F2) || F2 <- F] || {D, {ok, F}} <- Files1],
@@ -176,9 +177,9 @@ create_init_plt(MD5, DiffMd5, Libs, InitPltFile, IncludeDirs) ->
 		    {dialyzer_plt:delete_module(AccPlt, M),
 		     dict:erase(M, AccModDeps)}
 		end, {InitPlt, ModDeps}, RemovedMods),
-  PltInfo = {MD5, Libs, NewModDeps},
-  State = new_state(PltInfo),
-  State1 = State#cl_state{output_plt=InitPltFile},
+  State = new_state(),
+  State1 = State#cl_state{output_plt=InitPltFile,
+			  plt_info={MD5, Libs, {mergable, NewModDeps}}},
   create_init_plt_common(State1, AnalFiles, IncludeDirs, NewInitPlt).
 
 create_init_plt_common(State, Files, IncludeDirs, InitPlt) ->
@@ -186,15 +187,14 @@ create_init_plt_common(State, Files, IncludeDirs, InitPlt) ->
   case Files =:= [] of
     true ->
       %% We have only removed files with no remaining dependencies.
-      return_value(State#cl_state{user_plt=InitPlt});
+      return_value(State, InitPlt);
     false ->
       hipe_compile(Files),
       Analysis = #analysis{files=Files, 
-			   init_plt=InitPlt,
+			   plt=InitPlt,
 			   include_dirs=IncludeDirs,
 			   start_from=byte_code,
 			   type=plt_build,
-			   user_plt=State#cl_state.user_plt,
 			   supress_inline=true},
       cl_loop(run_analysis(State, Analysis))
   end.
@@ -225,7 +225,6 @@ expand_dependent_module([], Included, _ModDeps) ->
 hipe_compile(Files) when length(Files) > ?MIN_FILES_FOR_NATIVE_COMPILE ->
   case erlang:system_info(hipe_architecture) of
     undefined -> ok;
-    ultrasparc -> ok;
     _ ->
       {ok, lists}                       = hipe:c(lists),
       {ok, dict}                        = hipe:c(dict),
@@ -244,11 +243,7 @@ hipe_compile(_Files) ->
   ok.
 
 new_state() ->
-  new_state(none).
-
-new_state(PltInfo) ->
-  UserPLT = dialyzer_plt:new(),
-  #cl_state{user_plt=UserPLT, mod_deps=dict:new(), plt_info=PltInfo}.
+  #cl_state{mod_deps=dict:new()}.
 
 init_output(State, DialyzerOptions) ->
   case DialyzerOptions#options.output_file of
@@ -294,7 +289,7 @@ cl_loop(State, LogCache) ->
       State1 = store_error(State, Msg),
       cl_loop(State1#cl_state{return_status=?RET_INTERNAL_ERROR}, LogCache);
     {BackendPid, done, NewPlt, _NewDocPlt} ->
-      return_value(State#cl_state{user_plt=NewPlt});
+      return_value(State, NewPlt);
     {BackendPid, ext_calls, ExtCalls} ->
       Msg = io_lib:format("Unknown functions: ~p\n", [ExtCalls]),
       NewState = print_ext_calls(State, Msg),
@@ -319,7 +314,7 @@ failed_anal_msg(Reason, LogCache) ->
 		"Last messages in log cache: ~p\n", 
 		[Reason, 12, lists:reverse(LogCache)]).
 
-print_ext_calls(State = #cl_state{quiet=true}, _Msg) ->
+print_ext_calls(State = #cl_state{report_mode=quiet}, _Msg) ->
   State;
 print_ext_calls(State = #cl_state{}, Msg) ->
   print_warning_string(State, Msg),
@@ -340,7 +335,8 @@ store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
   NewStoredWarnings =
     case StoredWarnings =:= do_not_store of
       true ->
-	WarningString = format_warnings(Warnings),
+	WarningString = lists:flatten([dialyzer:format_warning(W) 
+				       || W <- Warnings]),
 	print_warning_string(State, WarningString),
 	StoredWarnings;
       false ->
@@ -349,16 +345,6 @@ store_warnings(State = #cl_state{nof_warnings=NofOldWarnings,
   NofNewWarning = length(Warnings),
   State#cl_state{nof_warnings=NofOldWarnings+NofNewWarning, 
 		 stored_warnings=NewStoredWarnings}.
-
-format_warnings(Warnings) ->
-  MapFun =
-    fun({{M, F, A} = MFA, Msg}) when is_atom(M), is_atom(F), is_integer(A)-> 
-	io_lib:format("~w: ~s", [MFA, Msg]);
-       ({{File, Line}, Msg}) when is_list(File), is_integer(Line) ->
-	BaseName = filename:basename(File),
-	io_lib:format("~s:~w: ~s", [BaseName, Line, Msg])
-    end,
-  lists:flatten(lists:map(MapFun, lists:keysort(1, Warnings))).
 
 print_warning_string(#cl_state{nof_warnings=NofWarn, output=Output}, String) ->
   case NofWarn of
@@ -381,8 +367,8 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
 			       mod_deps=ModDeps,
 			       plt_info=PltInfo,
 			       stored_errors=StoredErrors,
-			       stored_warnings=StoredWarnings,
-			       user_plt=UserPlt}) ->
+			       stored_warnings=StoredWarnings},
+	     Plt) ->
   maybe_close_output_file(State),
   RetValue =
     case State#cl_state.return_status of
@@ -390,7 +376,7 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
       _ ->      
 	case OutputPlt =:= undefined of
 	  true -> ok;
-	  false -> dialyzer_plt:to_file(OutputPlt, UserPlt, ModDeps, PltInfo)
+	  false -> dialyzer_plt:to_file(OutputPlt, Plt, ModDeps, PltInfo)
 	end,
 	if NofWarnings =:= 0 -> ?RET_NOTHING_SUSPICIOUS;
 	   true              -> ?RET_DISCREPANCIES_FOUND
@@ -413,8 +399,7 @@ return_value(State = #cl_state{nof_warnings=NofWarnings, output_plt=OutputPlt,
 %%  Run the analysis
 %%
 
-build_analysis_record(State, DialyzerOptions) ->
-  PLT = State#cl_state.user_plt,
+build_analysis_record(DialyzerOptions) ->
   From = DialyzerOptions#options.from,
   IncludeDirs = DialyzerOptions#options.include_dirs,
   Defines = DialyzerOptions#options.defines,
@@ -425,11 +410,13 @@ build_analysis_record(State, DialyzerOptions) ->
   Files2 = add_files_rec(DialyzerOptions#options.files_rec, From),  
   Files = ordsets:union(Files1, Files2),
   AnalType = DialyzerOptions#options.analysis_type,
-  InitPlt = dialyzer_plt:from_file(DialyzerOptions#options.init_plt),
-  #analysis{type=AnalType,
-	    defines=Defines,
-	    include_dirs=IncludeDirs, init_plt=InitPlt, user_plt=PLT, 
-	    files=Files, start_from=From, supress_inline=SupressInline}.
+  {InitPlt, PltInfo} = 
+    dialyzer_plt:plt_and_info_from_file(DialyzerOptions#options.init_plt),
+  {#analysis{type=AnalType,
+	     defines=Defines,
+	     include_dirs=IncludeDirs, plt=InitPlt,
+	     files=Files, start_from=From, supress_inline=SupressInline},
+   PltInfo}.
 
 add_files_rec(Files, From) ->
   Files1 = ordsets:from_list(Files), 

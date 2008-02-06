@@ -134,14 +134,21 @@ module(#c_module{anno=A,name=M,exports=Es,attrs=As,defs=Fs}, Options) ->
 		body=Kfs ++ St#kern.funs},lists:sort(St#kern.ws)}.
 
 function({#c_fname{id=F,arity=Arity},Body}, St0) ->
-    %%ok = io:fwrite("kern: ~p~n", [{F,Arity}]),
-    FA = {F,Arity},
-    St1 = St0#kern{func=FA,ff=undefined,vcount=0,fcount=0,ds=sets:new()},
-    {#ifun{anno=Ab,vars=Kvs,body=B0},[],St2} = expr(Body, new_sub(), St1),
-    {B1,_,St3} = ubody(B0, return, St2),
-    %%B1 = B0, St3 = St2,				%Null second pass
-    {#k_fdef{anno=#k{us=[],ns=[],a=Ab},
-	     func=F,arity=Arity,vars=Kvs,body=B1},St3}.
+    try
+	FA = {F,Arity},
+	St1 = St0#kern{func=FA,ff=undefined,vcount=0,fcount=0,ds=sets:new()},
+	{#ifun{anno=Ab,vars=Kvs,body=B0},[],St2} = expr(Body, new_sub(), St1),
+	{B1,_,St3} = ubody(B0, return, St2),
+	%%B1 = B0, St3 = St2,				%Null second pass
+	{#k_fdef{anno=#k{us=[],ns=[],a=Ab},
+		 func=F,arity=Arity,vars=Kvs,body=B1},St3}
+    catch
+	Class:Error ->
+	    Stack = erlang:get_stacktrace(),
+	    io:fwrite("Function: ~w/~w\n", [F,Arity]),
+	    erlang:raise(Class, Error, Stack)
+    end.
+	
 
 %% body(Cexpr, Sub, State) -> {Kexpr,[PreKepxr],State}.
 %%  Do the main sequence of a body.  A body ends in an atomic value or
@@ -411,12 +418,10 @@ expr(#c_call{anno=A,module=M0,name=F0,args=Cargs}, Sub, St0) ->
 		   end,
 	    {Call,Ap,St}
     end;
-expr(#c_primop{anno=A,name=#c_literal{val=match_fail},args=Cargs0}, Sub,
-     #kern{lit=LitFlag}=St0) ->
+expr(#c_primop{anno=A,name=#c_literal{val=match_fail},args=Cargs0}, Sub, St0) ->
     Cargs = translate_match_fail(Cargs0, St0),
     %% This special case will disappear.
-    {Kargs,Ap,St1} = atomic_list(Cargs, Sub, St0#kern{lit=no}),
-    St = St1#kern{lit=LitFlag},
+    {Kargs,Ap,St} = atomic_list(Cargs, Sub, St0),
     Ar = length(Cargs),
     Call = #k_call{anno=A,op=#k_internal{name=match_fail,arity=Ar},args=Kargs},
     {Call,Ap,St};
@@ -1085,7 +1090,7 @@ select_assert_not_expensive(Sz, Val, Fs) ->
     Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,1}|Fs]}],
     {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
     if
-	erlang:bitsize(Bin) > 1024 ->
+	bit_size(Bin) > 1024 ->
 	    throw(not_possible);
 	true ->
 	    ok
@@ -1725,7 +1730,7 @@ handle_literal(#c_literal{anno=A,val=V}) ->
 	    #k_literal{anno=A,val=V};
 	V when is_tuple(V) ->
 	    #k_literal{anno=A,val=V};
-	V when erlang:is_bitstr(V) ->
+	V when is_bitstring(V) ->
 	    #k_literal{anno=A,val=V};
 	_ ->
 	    expand_literal(V, A)

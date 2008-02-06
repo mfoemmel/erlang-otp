@@ -1,2 +1,2 @@
-V	171012150506Z		01	unknown	/CN=client/OU=Erlang OTP/O=Ericsson AB/C=SE/L=Stockholm/emailAddress=peter@erix.ericsson.se
-V	171012150507Z		02	unknown	/CN=server/OU=Erlang OTP/O=Ericsson AB/C=SE/L=Stockholm/emailAddress=peter@erix.ericsson.se
+V	171214193439Z		01	unknown	/CN=client/OU=Erlang OTP/O=Ericsson AB/C=SE/L=Stockholm/emailAddress=peter@erix.ericsson.se
+V	171214193439Z		02	unknown	/CN=server/OU=Erlang OTP/O=Ericsson AB/C=SE/L=Stockholm/emailAddress=peter@erix.ericsson.se

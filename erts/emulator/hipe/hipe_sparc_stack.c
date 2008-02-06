@@ -4,12 +4,12 @@
 #include "config.h"
 #endif
 #include "global.h"
+#include "bif.h"
 #include "hipe_stack.h"
-#include "hipe_process.h"
+#include "hipe_sparc_asm.h"	/* for NR_ARG_REGS */
 
-extern void nbif_return(void);
-extern void nbif_fail(void);
-extern void nbif_stack_trap_ra(void);
+AEXTERN(void,nbif_fail,(void));
+AEXTERN(void,nbif_stack_trap_ra,(void));
 
 /*
  * hipe_print_nstack() is called from hipe_bifs:show_nstack/1.
@@ -28,13 +28,15 @@ static void print_slot(Eterm *sp, unsigned int live)
 void hipe_print_nstack(Process *p)
 {
     Eterm *nsp;
-    Eterm *nstart;
+    Eterm *nsp_end;
+    const struct sdesc *sdesc1;
     const struct sdesc *sdesc;
     unsigned long ra;
     unsigned long exnra;
-    unsigned int arity;
-    unsigned int lsize;
+    unsigned int mask;
+    unsigned int sdesc_size;
     unsigned int i;
+    unsigned int nstkarity;
     static const char dashes[2*sizeof(long)+5] = {
 	[0 ... 2*sizeof(long)+3] = '-'
     };
@@ -57,9 +59,6 @@ void hipe_print_nstack(Process *p)
 	   2+2*(int)sizeof(long), "old_hend",
 	   2*(int)sizeof(long), (unsigned long)p->old_hend);
     printf(" | %*s | 0x%0*lx |\r\n",
-	   2+2*(int)sizeof(long), "nstack",
-	   2*(int)sizeof(long), (unsigned long)p->hipe.nstack);
-    printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "nsp",
 	   2*(int)sizeof(long), (unsigned long)p->hipe.nsp);
     printf(" | %*s | 0x%0*lx |\r\n",
@@ -71,86 +70,114 @@ void hipe_print_nstack(Process *p)
     printf(" | %*s | 0x%0*lx |\r\n",
 	   2+2*(int)sizeof(long), "nstgraylim",
 	   2*(int)sizeof(long), (unsigned long)p->hipe.nstgraylim);
+    printf(" | %*s | 0x%0*lx |\r\n",
+	   2+2*(int)sizeof(long), "nra",
+	   2*(int)sizeof(long), (unsigned long)p->hipe.nra);
+    printf(" | %*s | 0x%0*x |\r\n",
+	   2+2*(int)sizeof(long), "narity",
+	   2*(int)sizeof(long), p->hipe.narity);
     printf(" |%s|%s|\r\n", dashes, dashes);
     printf(" | %*s | %*s |\r\n",
 	   2+2*(int)sizeof(long), "Address",
 	   2+2*(int)sizeof(long), "Contents");
-    printf(" |%s|%s|\r\n", dashes, dashes);
 
     ra = (unsigned long)p->hipe.nra;
     if (!ra)
 	return;
-    nsp = p->hipe.nsp-1;
-    nstart = p->hipe.nstack;
+    nsp = p->hipe.nsp;
+    nsp_end = p->hipe.nstend - 1;
+
+    nstkarity = p->hipe.narity - NR_ARG_REGS;
+    if ((int)nstkarity < 0)
+	nstkarity = 0;
+
+    /* First RA not on stack. Dump current args first. */
+    printf(" |%s|%s|\r\n", dashes, dashes);
+    for(i = 0; i < nstkarity; ++i)
+	print_slot(&nsp[i], 1);
+    nsp += nstkarity;
 
     if (ra == (unsigned long)&nbif_stack_trap_ra)
 	ra = (unsigned long)p->hipe.ngra;
     sdesc = hipe_find_sdesc(ra);
 
-    while (nsp > nstart) {
-	arity = sdesc_arity(sdesc);
-	lsize = sdesc_fsize(sdesc)- 1;
-	printf(" | LOCALS %3i : ARITY %4i | \r\n", lsize, arity);
-	for(i = 0; i < lsize; i++)
-	    print_slot(&nsp[-i], sdesc->livebits[i>>5] & (1<<(i&31)));
-	nsp -= lsize;
-	ra = nsp[0];
+    for(;;) {	/* INV: nsp at bottom of frame described by sdesc */
+	printf(" |%s|%s|\r\n", dashes, dashes);
+	if (nsp >= nsp_end) {
+	    if (nsp == nsp_end)
+		return;
+	    fprintf(stderr, "%s: passed end of stack\r\n", __FUNCTION__);
+	    break;
+	}
+	ra = nsp[sdesc_fsize(sdesc)];
 	if (ra == (unsigned long)&nbif_stack_trap_ra)
-	    sdesc = hipe_find_sdesc((unsigned long)p->hipe.ngra);
+	    sdesc1 = hipe_find_sdesc((unsigned long)p->hipe.ngra);
 	else
-	    sdesc = hipe_find_sdesc(ra);
-	printf(" | 0x%0*lx | 0x%0*lx | ",
-	       2*(int)sizeof(long), (unsigned long)&nsp[0],
-	       2*(int)sizeof(long), ra);
-	if (ra == (unsigned long)&nbif_stack_trap_ra)
-	    printf("STACK TRAP, ORIG RA 0x%lx", (unsigned long)p->hipe.ngra);
-	else if (ra == (unsigned long)&nbif_return)
-	    printf("MODE SWITCH");
-	else
-	    printf("NATIVE RA");
-	if ((exnra = sdesc_exnra(sdesc)) != 0)
-	    printf(", EXNRA 0x%lx", exnra);
-	printf("\r\n");
-	nsp -= 1;
-	for(i = 0; i < arity; ++i)
-	    print_slot(&nsp[-i], 1);
-	nsp -= arity;
-	printf(" |------------|------------|\r\n");
+	    sdesc1 = hipe_find_sdesc(ra);
+	sdesc_size = sdesc_fsize(sdesc) + 1 + sdesc_arity(sdesc);
+	i = 0;
+	mask = sdesc->livebits[0];
+	for(;;) {
+	    if (i == sdesc_fsize(sdesc)) {
+		printf(" | 0x%0*lx | 0x%0*lx | ",
+		       2*(int)sizeof(long), (unsigned long)&nsp[i],
+		       2*(int)sizeof(long), ra);
+		if (ra == (unsigned long)&nbif_stack_trap_ra)
+		    printf("STACK TRAP, ORIG RA 0x%lx", (unsigned long)p->hipe.ngra);
+		else
+		    printf("NATIVE RA");
+		if ((exnra = sdesc_exnra(sdesc1)) != 0)
+		    printf(", EXNRA 0x%lx", exnra);
+		printf("\r\n");
+	    } else {
+		print_slot(&nsp[i], (mask & 1));
+	    }
+	    if (++i >= sdesc_size)
+		break;
+	    if (i & 31)
+		mask >>= 1;
+	    else
+		mask = sdesc->livebits[i >> 5];
+	}
+	nsp += sdesc_size;
+	sdesc = sdesc1;
     }
+    abort();
 }
 
-#define MINSTACK	256
-#define NSKIPFRAMES	32
+/* XXX: x86's values, not yet tuned for anyone else */
+#define MINSTACK	128
+#define NSKIPFRAMES	4
 
 void hipe_update_stack_trap(Process *p, const struct sdesc *sdesc)
 {
     Eterm *nsp;
-    Eterm *nstart;
+    Eterm *nsp_end;
     unsigned long ra;
     int n;
 
-    nsp = p->hipe.nsp-1;
-    nstart = p->hipe.nstack;
-    if ((unsigned long)((char*)nsp - (char*)nstart) < MINSTACK*sizeof(Eterm*)) {
+    nsp = p->hipe.nsp;
+    nsp_end = p->hipe.nstend - 1;
+    if ((unsigned long)((char*)nsp_end - (char*)nsp) < MINSTACK*sizeof(Eterm*)) {
 	p->hipe.nstgraylim = NULL;
 	return;
     }
     n = NSKIPFRAMES;
     for(;;) {
-	nsp -= sdesc_fsize(sdesc);
-	if (nsp <= nstart) {
+	nsp += sdesc_fsize(sdesc);
+	if (nsp >= nsp_end) {
 	    p->hipe.nstgraylim = NULL;
 	    return;
 	}
-	ra = nsp[1];
+	ra = nsp[0];
 	if (--n <= 0)
 	    break;
-	nsp -= sdesc_arity(sdesc);
+	nsp += 1 + sdesc_arity(sdesc);
 	sdesc = hipe_find_sdesc(ra);
     }
-    p->hipe.nstgraylim = nsp - sdesc_arity(sdesc);
+    p->hipe.nstgraylim = nsp + 1 + sdesc_arity(sdesc);
     p->hipe.ngra = (void(*)(void))ra;
-    nsp[1] = (unsigned long)nbif_stack_trap_ra;
+    nsp[0] = (unsigned long)&nbif_stack_trap_ra;
 }
 
 /*
@@ -164,7 +191,6 @@ void (*hipe_handle_stack_trap(Process *p))(void)
 {
     void (*ngra)(void) = p->hipe.ngra;
     const struct sdesc *sdesc = hipe_find_sdesc((unsigned long)ngra);
-    p->hipe.nra=p->hipe.ngra;
     hipe_update_stack_trap(p, sdesc);
     return ngra;
 }
@@ -172,24 +198,31 @@ void (*hipe_handle_stack_trap(Process *p))(void)
 /*
  * hipe_find_handler() is called from hipe_handle_exception() to locate
  * the current exception handler's PC and SP.
+ * The native stack MUST contain a stack frame as it appears on
+ * entry to a function (actuals, caller's frame, caller's return address).
+ * p->hipe.narity MUST contain the arity (number of actuals).
  * On exit, p->hipe.ncallee is set to the handler's PC and p->hipe.nsp
- * is set to its SP.
+ * is set to its SP (low address of its stack frame).
  */
 void hipe_find_handler(Process *p)
 {
     Eterm *nsp;
-    Eterm *nstart;
+    Eterm *nsp_end;
     unsigned long ra;
     unsigned long exnra;
     unsigned int arity;
     const struct sdesc *sdesc;
 
     nsp = p->hipe.nsp;
-    nstart = p->hipe.nstack;
+    nsp_end = p->hipe.nstend;
+    arity = p->hipe.narity - NR_ARG_REGS;
+    if ((int)arity < 0)
+	arity = 0;
 
     ra = (unsigned long)p->hipe.nra;
 
-    while (nsp > nstart) {
+    while (nsp < nsp_end) {
+	nsp += arity;		/* skip actuals */
 	if (ra == (unsigned long)&nbif_stack_trap_ra)
 	    ra = (unsigned long)p->hipe.ngra;
 	sdesc = hipe_find_sdesc(ra);
@@ -198,15 +231,15 @@ void hipe_find_handler(Process *p)
 	     exnra == (unsigned long)&nbif_fail)) {
 	    p->hipe.ncallee = (void(*)(void)) exnra;
 	    p->hipe.nsp = nsp;
+	    p->hipe.narity = 0;
 	    /* update the gray/white boundary if we threw past it */
-	    if (p->hipe.nstgraylim && nsp <= p->hipe.nstgraylim)
-	      hipe_update_stack_trap(p, sdesc);
+	    if (p->hipe.nstgraylim && nsp >= p->hipe.nstgraylim)
+		hipe_update_stack_trap(p, sdesc);
 	    return;
 	}
-	nsp -= sdesc_fsize(sdesc);
-	ra = nsp[0];
+	nsp += sdesc_fsize(sdesc);	/* skip locals */
 	arity = sdesc_arity(sdesc);
-	nsp -= arity;		/* skip actuals on stack */
+	ra = *nsp++;			/* fetch & skip saved ra */
     }
     fprintf(stderr, "%s: no native CATCH found!\r\n", __FUNCTION__);
     abort();

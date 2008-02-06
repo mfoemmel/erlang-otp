@@ -367,9 +367,11 @@ nbif_3_simple_exception:
  * The stack/heap registers were just read from P.
  * P_ARG0(P) is the first actual parameter, if X86_NR_ARG_REGS > 0.
  * P_ARG1(P) is the second actual parameter (if defined), if X86_NR_ARG_REGS > 1.
+ * P_ARG2(P) is the third actual parameter (if defined), if X86_NR_ARG_REGS > 2.
  */
 	GLOBAL(nbif_1_hairy_exception)
 	GLOBAL(nbif_2_hairy_exception)
+	GLOBAL(nbif_3_hairy_exception)
 	.align	4
 nbif_1_hairy_exception:
 	movl	$1, %eax
@@ -377,6 +379,10 @@ nbif_1_hairy_exception:
 	.align	4
 nbif_2_hairy_exception:
 	movl	$2, %eax
+	jmp	.nbif_hairy_exception
+	.align	4
+nbif_3_hairy_exception:
+	movl	$3, %eax
 	/*FALLTHROUGH*/
 	.align	4
 .nbif_hairy_exception:
@@ -384,13 +390,7 @@ nbif_2_hairy_exception:
 	jne	.nbif_simple_exception
 	/* handle reschedule */
 	movl	%edx, P_NCALLEE(P)
-#if X86_NR_ARG_REGS == 0
-	movl	$0, P_ARITY(P)	# arity unused -- args on nstack
-#elif X86_NR_ARG_REGS == 1
-	movl	$1, P_ARITY(P)		# 1 even if arity is 2
-#else
-	movl	%eax, P_ARITY(P)	# 1 or 2
-#endif
+	movl	%eax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
 	jmp	.nosave_exit
 

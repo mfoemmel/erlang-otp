@@ -16,7 +16,7 @@ void hipe_flush_icache_range(void *address, unsigned int nbytes)
     char *a = (char*)address;
     int n = nbytes;
 
-    while( n > 0 ) {
+    while (n > 0) {
 	hipe_flush_icache_word(a);
 	a += 4;
 	n -= 4;
@@ -196,17 +196,17 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
     
     code = alloc_code(5*sizeof(int));
 
-    /* sethi %hi(Address), %g1 */
-    code[0] = 0x03000000 | (((unsigned int)beamAddress >> 10) & 0x3FFFFF);
-    /* or %g0, %o7, %l6 ! mov %o7, %l6 */
-    code[1] = 0xAC10000F;
-    /* or %g1, %lo(Address), %g1 */
-    code[2] = 0x82106000 | ((unsigned int)beamAddress & 0x3FF);
+    /* sethi %hi(Address), %i4 */
+    code[0] = 0x39000000 | (((unsigned int)beamAddress >> 10) & 0x3FFFFF);
+    /* or %g0, %o7, %i3 ! mov %o7, %i3 */
+    code[1] = 0xB610000F;
+    /* or %i4, %lo(Address), %i4 */
+    code[2] = 0xB8172000 | ((unsigned int)beamAddress & 0x3FF);
     /* call callemu */
     callEmuOffset = (char*)nbif_callemu - (char*)&code[3];
     code[3] = (1 << 30) | ((callEmuOffset >> 2) & 0x3FFFFFFF);
-    /* or %g0, Arity, %l7 ! mov Arity, %l7 */
-    code[4] = 0xAE102000 | (beamArity & 0x0FFF);
+    /* or %g0, Arity, %i5 ! mov Arity, %i5 */
+    code[4] = 0xBA102000 | (beamArity & 0x0FFF);
 
     /* flush I-cache as if by write_u32() */
     for(i = 0; i < 5; ++i)
@@ -218,7 +218,8 @@ void *hipe_make_native_stub(void *beamAddress, unsigned int beamArity)
 void hipe_arch_print_pcb(struct hipe_process_state *p)
 {
 #define U(n,x) \
-    printf(" % 4d | %s | 0x%08x |            |\r\n", offsetof(struct hipe_process_state,x), n, (unsigned)p->x)
+    printf(" % 4d | %s | 0x%0*lx | %*s |\r\n", (int)offsetof(struct hipe_process_state,x), n, 2*(int)sizeof(long), (unsigned long)p->x, 2+2*(int)sizeof(long), "")
     U("nra        ", nra);
+    U("narity     ", narity);
 #undef U
 }

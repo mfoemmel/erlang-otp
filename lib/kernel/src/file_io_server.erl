@@ -276,17 +276,17 @@ put_chars(Chars, #state{handle=Handle}=State) ->
 get_chars(0, #state{read_mode=ReadMode}=State) ->
     {reply,cast(<<>>, ReadMode),State};
 get_chars(N, #state{buf=Buf,read_mode=ReadMode}=State) 
-  when is_integer(N), N > 0, N =< size(Buf) ->
+  when is_integer(N), N > 0, N =< byte_size(Buf) ->
     {B1,B2} = split_binary(Buf, N),
     {reply,cast(B1, ReadMode),State#state{buf=B2}};
 get_chars(N, #state{handle=Handle,buf=Buf,read_mode=ReadMode}=State) 
   when is_integer(N), N > 0 ->
-    BufSize = size(Buf),
+    BufSize = byte_size(Buf),
     NeedSize = N-BufSize,
     Size = max(NeedSize, ?READ_SIZE_BINARY),
     case ?PRIM_FILE:read(Handle, Size) of
 	{ok, B} ->
-	    if BufSize+size(B) < N ->
+	    if BufSize+byte_size(B) < N ->
 		    std_reply(cat(Buf, B, ReadMode), State);
 	       true ->
 		    {B1,B2} = split_binary(B, NeedSize),
@@ -397,7 +397,7 @@ max(_, B) ->
 position(Handle, cur, Buf) ->
     position(Handle, {cur, 0}, Buf);
 position(Handle, {cur, Offs}, Buf) when is_binary(Buf) ->
-    ?PRIM_FILE:position(Handle, {cur, Offs-size(Buf)});
+    ?PRIM_FILE:position(Handle, {cur, Offs-byte_size(Buf)});
 position(Handle, At, _Buf) ->
     ?PRIM_FILE:position(Handle, At).
 

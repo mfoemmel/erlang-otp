@@ -79,7 +79,7 @@ logl(X) ->
     logl(X, [], 0).
 
 logl([X | T], Bs, Size) ->
-    Sz = size(X),
+    Sz = byte_size(X),
     BSz = <<Sz:?SIZESZ/unit:8>>,
     NBs = case Sz < ?MIN_MD5_TERM of
               true ->
@@ -121,7 +121,7 @@ truncate(FdC, FileName, Head) ->
 
 %% -> {NewFdC, Reply}, Reply = {Cont, Binaries} | {error, Reason} | eof
 chunk(FdC, FileName, Pos, B, N) when is_binary(B) ->
-    true = size(B) >= ?HEADERSZ,
+    true = byte_size(B) >= ?HEADERSZ,
     do_handle_chunk(FdC, FileName, Pos, B, N);
 chunk(FdC, FileName, Pos, NoBytes, N) ->
     MaxNoBytes = case NoBytes of
@@ -129,10 +129,10 @@ chunk(FdC, FileName, Pos, NoBytes, N) ->
                      _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
                  end,
     case read_chunk(FdC, FileName, Pos, MaxNoBytes) of
-	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
+	{NewFdC, {ok, Bin}} when byte_size(Bin) < ?HEADERSZ ->
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
-	{NewFdC, {ok, Bin}} when NoBytes =:= []; size(Bin) >= NoBytes ->
-	    NewPos = Pos + size(Bin),
+	{NewFdC, {ok, Bin}} when NoBytes =:= []; byte_size(Bin) >= NoBytes ->
+	    NewPos = Pos + byte_size(Bin),
             do_handle_chunk(NewFdC, FileName, NewPos, Bin, N);
 	{NewFdC, {ok, _Bin}} ->
 	    {NewFdC, {error, {corrupt_log_file, FileName}}};
@@ -152,7 +152,7 @@ do_handle_chunk(FdC, FileName, Pos, B, N) ->
             {FdC, C_Ack}
     end.
 
-handle_chunk(B, Pos, 0, Ack) when size(B) >= ?HEADERSZ ->
+handle_chunk(B, Pos, 0, Ack) when byte_size(B) >= ?HEADERSZ ->
     {#continuation{pos = Pos, b = B}, Ack};
 handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
              Tail/binary>>, Pos, N, Ack) when Size < ?MIN_MD5_TERM ->
@@ -162,7 +162,7 @@ handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
 	    handle_chunk(Tail2, Pos, N-1, [BinTerm | Ack]);
 	_ ->
 	    BytesToRead = Size + ?HEADERSZ,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack}
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack}
     end;
 handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
              Tail/binary>>, Pos, _N, Ack) -> % when Size >= ?MIN_MD5_TERM
@@ -173,11 +173,11 @@ handle_chunk(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
             {#continuation{pos = Pos, b = []}, [Bin | Ack]};
         <<MD5:16/binary, _/binary>> ->
             BytesToRead = Size + ?HEADERSZ + 16,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack};
-        _ when size(Tail) >= 16 ->
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack};
+        _ when byte_size(Tail) >= 16 ->
             corrupt;
         _ ->
-            {#continuation{pos = Pos - size(B), b = []}, Ack}
+            {#continuation{pos = Pos - byte_size(B), b = []}, Ack}
     end;
 handle_chunk(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
 	     Pos, N, Ack) ->
@@ -188,12 +188,12 @@ handle_chunk(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
 	_ ->
 	    %% We read the whole thing into one binary, even if Size is huge.
 	    BytesToRead = Size + ?HEADERSZ,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack}
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack}
     end;
-handle_chunk(B, _Pos, _N, _Ack) when size(B) >= ?HEADERSZ ->
+handle_chunk(B, _Pos, _N, _Ack) when byte_size(B) >= ?HEADERSZ ->
     corrupt;
 handle_chunk(B, Pos, _N, Ack) ->
-    {#continuation{pos = Pos-size(B), b = []}, Ack}.
+    {#continuation{pos = Pos-byte_size(B), b = []}, Ack}.
 
 read_chunk(FdC, FileName, Pos, MaxBytes) ->
     {FdC1, R} = pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes),
@@ -216,7 +216,7 @@ chunk_read_only(Fd, FileName, Pos, B, N) ->
     Reply.
 
 do_chunk_read_only(FdC, FileName, Pos, B, N) when is_binary(B) ->
-    true = size(B) >= ?HEADERSZ,
+    true = byte_size(B) >= ?HEADERSZ,
     do_handle_chunk_ro(FdC, FileName, Pos, B, N);
 do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
     MaxNoBytes = case NoBytes of
@@ -224,15 +224,15 @@ do_chunk_read_only(FdC, FileName, Pos, NoBytes, N) ->
                      _ -> lists:max([NoBytes, ?MAX_CHUNK_SIZE])
                  end,
     case read_chunk_ro(FdC, FileName, Pos, MaxNoBytes) of
-	{NewFdC, {ok, Bin}} when size(Bin) < ?HEADERSZ ->
-	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
-	    {NewFdC, {NewCont, [], size(Bin)}};
-	{NewFdC, {ok, Bin}} when NoBytes =:= []; size(Bin) >= NoBytes ->
-	    NewPos = Pos + size(Bin),
+	{NewFdC, {ok, Bin}} when byte_size(Bin) < ?HEADERSZ ->
+	    NewCont = #continuation{pos = Pos+byte_size(Bin), b = []},
+	    {NewFdC, {NewCont, [], byte_size(Bin)}};
+	{NewFdC, {ok, Bin}} when NoBytes =:= []; byte_size(Bin) >= NoBytes ->
+	    NewPos = Pos + byte_size(Bin),
 	    do_handle_chunk_ro(NewFdC, FileName, NewPos, Bin, N);
 	{NewFdC, {ok, Bin}} ->
-	    NewCont = #continuation{pos = Pos+size(Bin), b = []},
-	    {NewFdC, {NewCont, [], size(Bin)-?HEADERSZ}};
+	    NewCont = #continuation{pos = Pos+byte_size(Bin), b = []},
+	    {NewFdC, {NewCont, [], byte_size(Bin)-?HEADERSZ}};
 	{NewFdC, eof} when is_integer(NoBytes) -> % "cannot happen"
 	    {NewFdC, eof}; % what else?
 	Other -> 
@@ -248,7 +248,7 @@ do_handle_chunk_ro(FdC, FileName, Pos, B, N) ->
             {FdC, C_Ack_Bad}
     end.
 
-handle_chunk_ro(B, Pos, 0, Ack, Bad) when size(B) >= ?HEADERSZ ->
+handle_chunk_ro(B, Pos, 0, Ack, Bad) when byte_size(B) >= ?HEADERSZ ->
     {#continuation{pos = Pos, b = B}, Ack, Bad};
 handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
                 Tail/binary>>, Pos, N, Ack, Bad) when Size < ?MIN_MD5_TERM ->
@@ -257,7 +257,7 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
 	    handle_chunk_ro(Tail2, Pos, N-1, [BinTerm | Ack], Bad);
 	_ ->
 	    BytesToRead = Size + ?HEADERSZ,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad}
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack, Bad}
     end;
 handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, 
                 Tail/binary>>, Pos, N, Ack, Bad) -> % when Size>=?MIN_MD5_TERM
@@ -268,11 +268,11 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8,
             {#continuation{pos = Pos, b = []}, [Bin | Ack], Bad};
         <<MD5:16/binary, _/binary>> ->
             BytesToRead = Size + ?HEADERSZ + 16,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad};
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack, Bad};
         <<_BadMD5:16/binary, _:1/unit:8, Tail2/binary>> ->
             handle_chunk_ro(Tail2, Pos, N-1, Ack, Bad+1);
         _ ->
-            {#continuation{pos = Pos - size(B), b = []}, Ack, Bad}
+            {#continuation{pos = Pos - byte_size(B), b = []}, Ack, Bad}
     end;
 handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
                 Tail/binary>>, Pos, N, Ack, Bad) ->
@@ -283,13 +283,13 @@ handle_chunk_ro(B= <<Size:?SIZESZ/unit:8, ?MAGICINT:?MAGICSZ/unit:8,
 	_ ->
 	    %% We read the whole thing into one binary, even if Size is huge.
 	    BytesToRead = Size + ?HEADERSZ,
-            {#continuation{pos = Pos - size(B), b = BytesToRead}, Ack, Bad}
+            {#continuation{pos = Pos - byte_size(B), b = BytesToRead}, Ack, Bad}
     end;
-handle_chunk_ro(B, Pos, N, Ack, Bad) when size(B) >= ?HEADERSZ ->
+handle_chunk_ro(B, Pos, N, Ack, Bad) when byte_size(B) >= ?HEADERSZ ->
     <<_:1/unit:8, B2/binary>> = B,
     handle_chunk_ro(B2, Pos, N-1, Ack, Bad+1);
 handle_chunk_ro(B, Pos, _N, Ack, Bad) ->
-    {#continuation{pos = Pos-size(B), b = []}, Ack, Bad}.
+    {#continuation{pos = Pos-byte_size(B), b = []}, Ack, Bad}.
 
 read_chunk_ro(FdC, FileName, Pos, MaxBytes) ->
     pread(FdC, FileName, Pos + ?HEADSZ, MaxBytes).
@@ -444,7 +444,7 @@ new_ext_file(FName, Head) ->
 ext_log_head(Fd, Head) ->
     case lh(Head, external) of
 	{ok, BinHead} -> 
-            Size = size(BinHead),
+            Size = byte_size(BinHead),
             {ok, FdC} = fwrite_header(Fd, BinHead, Size),
             {FdC, {1, Size}};
 	none ->
@@ -497,7 +497,7 @@ repair(In, File) ->
 scan_f_read(B, In, Out, File, FSz, Tmp, MaxBytes, No, Bad) ->
     case file:read(In, MaxBytes) of
         eof ->
-            done_scan(In, Out, Tmp, File, No, Bad+size(B));
+            done_scan(In, Out, Tmp, File, No, Bad+byte_size(B));
         {ok, Bin}  ->
             NewBin = list_to_binary([B, Bin]),
             {NB, NMax, Ack, NNo, NBad} =
@@ -527,9 +527,9 @@ scan_f(B = <<Size:?SIZESZ/unit:8, ?BIGMAGICINT:?MAGICSZ/unit:8, Tail/binary>>,
                     scan_f(Tail2, FSz, [BinTerm | Ack], No+1, Bad)
             end;
         <<MD5:16/binary, _/binary>> ->
-            {B, Size-size(Tail)+16, Ack, No, Bad};
-        _ when size(Tail) < 16 ->
-            {B, Size-size(Tail)+16, Ack, No, Bad};
+            {B, Size-byte_size(Tail)+16, Ack, No, Bad};
+        _ when byte_size(Tail) < 16 ->
+            {B, Size-byte_size(Tail)+16, Ack, No, Bad};
         _ ->
             <<_:8, B2/binary>> = B,
             scan_f(B2, FSz, Ack, No, Bad+1)
@@ -556,7 +556,7 @@ scan_f2(B, FSz, Ack, No, Bad, Size, Tail) ->
                     scan_f(Tail2, FSz, [BinTerm | Ack], No+1, Bad)
             end;
         _ ->
-            {B, Size-size(Tail), Ack, No, Bad}
+            {B, Size-byte_size(Tail), Ack, No, Bad}
     end.
 
 done_scan(In, Out, OutName, FName, RecoveredTerms, BadChars) ->
@@ -1062,7 +1062,7 @@ parse_index(CurF, V, N, <<Sz:32, Tail/binary>>, Fd, CurSz, TotSz, NFiles)
     parse_index(CurF, V, N+1, Tail, Fd, CurSz, TotSz + Sz, NFiles+1);
 parse_index(CurF, V, N, B, Fd, CurSz, TotSz, NFiles) ->
     case file:read(Fd, ?MAX_CHUNK_SIZE) of
-	eof when 0 =:= size(B) ->
+	eof when 0 =:= byte_size(B) ->
 	    {CurF, CurSz, TotSz, NFiles};	    
 	{ok, Bin} ->
             NewB = list_to_binary([B, Bin]),
@@ -1133,7 +1133,7 @@ write_index_file(read_write, FName, NewFile, OldFile, OldCnt) ->
 
 to_8_bytes(<<N:32,T/binary>>, NT, FileName, Fd) ->
     to_8_bytes(T, [NT | <<N:64>>], FileName, Fd);
-to_8_bytes(B, NT, _FileName, _Fd) when size(B) =:= 0 ->
+to_8_bytes(B, NT, _FileName, _Fd) when byte_size(B) =:= 0 ->
     NT;
 to_8_bytes(_B, _NT, FileName, Fd) ->
     file:close(Fd),
@@ -1266,7 +1266,7 @@ ext_split_bins(CurB, MaxB, FirstPos, Bins) ->
     ext_split_bins(MaxBs, IsFirst, [], Bins, 0, 0).
 
 ext_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
-    NBs = Bs + size(X),
+    NBs = Bs + byte_size(X),
     if
         NBs =< MaxBs ->
 	    ext_split_bins(MaxBs, IsFirst, [First | X], Last, NBs, N+1);
@@ -1286,7 +1286,7 @@ int_split_bins(CurB, MaxB, FirstPos, Bins) ->
     int_split_bins(MaxBs, IsFirst, [], Bins, 0, 0).
 
 int_split_bins(MaxBs, IsFirst, First, [X | Last], Bs, N) ->
-    Sz = size(X),
+    Sz = byte_size(X),
     NBs = Bs + Sz + ?HEADERSZ,
     BSz = <<Sz:?SIZESZ/unit:8>>,
     XB = case Sz < ?MIN_MD5_TERM of
@@ -1476,7 +1476,7 @@ truncate_at(FdC, FileName, Pos) ->
     case position(FdC, FileName, Pos) of
 	{ok, NewFdC, _Pos} ->
 	    case file:truncate(NewFdC#cache.fd) of
-		ok    ->
+		ok ->
 		    {ok, NewFdC};
 		Error ->
 		    {catch file_error(FileName, Error), NewFdC}
@@ -1530,7 +1530,7 @@ write_cache(Fd, FileName, C) ->
         Error -> {catch file_error(FileName, Error), #cache{fd = Fd}}
     end.
 
-%% -> cache{} | throw(Error)
+%% -> #cache{} | throw(Error)
 write_cache_close(Fd, _FileName, []) ->
     #cache{fd = Fd};
 write_cache_close(Fd, FileName, C) ->

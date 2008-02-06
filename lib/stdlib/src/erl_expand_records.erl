@@ -602,20 +602,20 @@ record_update(R, Name, Fs, Us0, St0) ->
     %% Try to be intelligent about which method of updating record to use.
     {Update,St} =
         if
-            Nu =:= 0 -> {R,St2};                 %No fields updated
+            Nu =:= 0 -> 
+                record_match(Var, Name, Line, Fs, Us, St2);
             Nu =< Nc ->                         %Few fields updated
                 {record_setel(Var, Name, Fs, Us), St2};
-            true ->                           %The wide area inbetween
-                record_match(Var, Name, Fs, Us, St2)
+            true ->                             %The wide area inbetween
+                record_match(Var, Name, element(2, hd(Us)), Fs, Us, St2)
         end,
-    {{block,element(2, R),Pre ++ [{match,Line,Var,R},Update]},St}.
+    {{block,Line,Pre ++ [{match,Line,Var,R},Update]},St}.
 
 %% record_match(Record, RecordName, [RecDefField], [Update], State)
 %%  Build a 'case' expression to modify record fields.
 
-record_match(R, Name, Fs, Us, St0) ->
+record_match(R, Name, Lr, Fs, Us, St0) ->
     {Ps,News,St1} = record_upd_fs(Fs, Us, St0),
-    Lr = element(2, hd(Us)),
     {{'case',Lr,R,
       [{clause,Lr,[{tuple,Lr,[{atom,Lr,Name} | Ps]}],[],
         [{tuple,Lr,[{atom,Lr,Name} | News]}]},
@@ -639,10 +639,11 @@ record_upd_fs([], _, St) -> {[],[],St}.
 
 record_setel(R, Name, Fs, Us0) ->
     Us1 = foldl(fun ({record_field,Lf,Field,Val}, Acc) ->
-                        I = index_expr(Lf, Field, Name, Fs),
-                        [{I,Lf,Val} | Acc]
+                        {integer,_,FieldIndex} = I = index_expr(Lf, Field, Name, Fs),
+                        [{FieldIndex,{I,Lf,Val}} | Acc]
                 end, [], Us0),
-    Us = sort(Us1),
+    Us2 = sort(Us1),
+    Us = [T || {_,T} <- Us2],
     Lr = element(2, hd(Us)),
     Wildcards = duplicate(length(Fs), {var,Lr,'_'}),
     {'case',Lr,R,

@@ -253,8 +253,8 @@ option(Option, Gstkid, _MainW, DB, Editor) ->
 		{bad_result,Re} -> 
 		    {error,{no_such_file,editor,save,F2,Re}}
 	    end;
-	{enable,      true} -> {c, [Editor, " conf -sta normal"]};
-	{enable,     false} -> {c, [Editor, " conf -sta disabled"]};
+	{enable,      true} -> {c, [Editor, " conf -state normal"]};
+	{enable,     false} -> {c, [Editor, " conf -state disabled"]};
 	
 	{setfocus,     true} -> {c, ["focus ", Editor]};
 	{setfocus,    false} -> {c, ["focus ."]};

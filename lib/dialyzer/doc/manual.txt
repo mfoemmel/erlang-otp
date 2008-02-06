@@ -256,45 +256,51 @@ a description of these.
 
 Interface:
 
-dialyzer:gui() -> ok
-	        | {error, Msg}
+dialyzer:gui() -> 'ok'
 
-dialyzer:gui(OptList) -> ok.
-		       | {error, Msg}
+dialyzer:gui(OptList) -> 'ok'
 
-dialyzer:run(OptList) -> {ok, Warnings, Errors}
-		       | {ok, Warnings}
+dialyzer:run(OptList) -> {'ok', Warnings, Errors}
+		       | {'ok', Warnings}
 		       | {error, Message}
 
-Warnings : [{MFA, string()}]
-MFA      : {Module : atom(), Function : atom(), Arity : integer()}
-Errors   : [string()]
-Message  : string()
+Warnings :: [{tag(), id(), string()}]
+tag()    ::  'warn_return_no_exit' | 'warn_return_only_exit' | 'warn_not_called'
+           | 'warn_non_proper_list' | 'warn_comp' | 'warn_fun_app' 
+           | 'warn_tuple_as_fun' | 'warn_matching' | 'warn_guards' 
+           | 'warn_old_beam' | 'warn_failing_call' | 'warn_contract_types' 
+           | 'warn_contract_syntax' | 'warn_contract_not_equal' 
+           | 'warn_contract_subtype' | 'warn_contract_supertype'
+id()     :: mfa() | {File :: string(), Line :: integer()}
+mfa()    :: {Module :: atom(), Function :: atom(), Arity :: byte()}
+Errors   :: [string()]
+Message  :: string()
 
-OptList  : [Option]
-Option   : {files,          [Filename : string()]}
-	 | {files_rec,      [DirName : string()]}
-	 | {defines,        [{Macro: atom(), Value : term()}]}
-	 | {from,           src_code | byte_code} %% Defaults to byte_code
-	 | {init_plt,       FileName : string()}  %% If changed from default
-	 | {include_dirs,   [DirName : string()]} 
-	 | {old_style,      bool()}               %% Defaults to false
-	 | {output_file,    FileName : string()}
-	 | {supress_inline, bool()}               %% Defaults to true
-	 | {warnings,       [WarnOpts]}
-         | {analysis_type,  dataflow | succ_typings | old_style}
+OptList  :: [Option]
+Option   :: {files,          [Filename :: string()]}
+	  | {files_rec,      [DirName :: string()]}
+	  | {defines,        [{Macro :: atom(), Value :: term()}]}
+	  | {from,           src_code | byte_code} %% Defaults to byte_code
+	  | {init_plt,       FileName :: string()} %% If changed from default
+	  | {include_dirs,   [DirName :: string()]} 
+	  | {old_style,      bool()}               %% Defaults to false
+	  | {output_file,    FileName :: string()}
+	  | {output_plt,     FileName :: string()}
+	  | {supress_inline, bool()}               %% Defaults to true
+	  | {warnings,       [WarnOpts]}
+          | {analysis_type,  dataflow | succ_typings | old_style}
 
-WarnOpts : no_return
-	 | no_unused
-	 | no_improper_lists
-	 | no_tuple_as_fun
-	 | no_fun_app
-	 | no_match
-	 | no_comp
-	 | no_guards
-	 | no_unsafe_beam
-	 | no_fail_call
-	 | error_handling
+WarnOpts :: no_return
+	  | no_unused
+	  | no_improper_lists
+	  | no_tuple_as_fun
+	  | no_fun_app
+	  | no_match
+	  | no_comp
+	  | no_guards
+	  | no_unsafe_beam
+	  | no_fail_call
+	  | error_handling
 
 -----------------------------------------------
 --

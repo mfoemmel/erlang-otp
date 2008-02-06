@@ -22,13 +22,13 @@
 %%              * 2001-07-16 EJ: Made less sparc-specific.
 %% CVS:
 %%    $Author: mikpe $
-%%    $Date: 2006/09/14 13:33:28 $
-%%    $Revision: 1.32 $
+%%    $Date: 2007/12/18 09:13:34 $
+%%    $Revision: 1.33 $
 %% =====================================================================
 %% Exported functions (short description):
 %%   regalloc(CFG,PhysRegs,Entrypoints, Options) -> 
 %%    {Coloring, NumberOfSpills}
-%%    Takes a (SPARC) CFG and returns a coloring of all used registers.  
+%%    Takes a CFG and returns a coloring of all used registers.  
 %%    PhysRegs should be a list of available physical registers.
 %%    Entrypoints should be a list of names of Basic Blocks that have
 %%     external entry points.
@@ -254,7 +254,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
       %% Get the physical name of the register.
       PhysName = physical_name(Temp, Target), 
       %% Bind it to the precoloured name.
-      NewAlloc = alloc(Temp, PhysName, Alloc,Target), 
+      NewAlloc = alloc(Temp, PhysName, Alloc),
       case is_global(Temp, Target) of
 	true -> 
 	  %% this is a global precoloured register 
@@ -282,7 +282,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 		  allocate(RIS, RestFree, 
 			   add_active(OtherEnd, OtherStart, 
 				      NewPhys, OtherTemp, NewActive3),
-			   alloc(OtherTemp,NewPhys,NewAlloc,Target),
+			   alloc(OtherTemp,NewPhys,NewAlloc),
 			   SpillIndex, DontSpill, Target);
 		false ->
 		  NewSpillIndex = Target:new_spill_index(SpillIndex),
@@ -315,7 +315,7 @@ allocate([RegInt|RIS], Free, Active, Alloc, SpillIndex, DontSpill, Target) ->
 	  allocate(RIS,Regs,
 		   add_active(endpoint(RegInt), startpoint(RegInt),
 			      FreeReg, Temp, NewActive),
-		   alloc(Temp, FreeReg, Alloc,Target),
+		   alloc(Temp, FreeReg, Alloc),
 		   SpillIndex, DontSpill, Target)
       end
   end;
@@ -431,7 +431,7 @@ spill(CurrentReg, CurrentEndpoint,CurrentStartpoint,
 
 	  %% Allocated the current register to the physical register
 	  %% used by the spill candidate.
-	  NewAlloc = alloc(CurrentReg, SpillPhysName, SpillAlloc,Target),
+	  NewAlloc = alloc(CurrentReg, SpillPhysName, SpillAlloc),
 	  
 	  %% Add the current register to the active registers
 	  NewActive2 = 
@@ -499,22 +499,12 @@ can_spill(Name, DontSpill, Target) ->
 %% ---------------------------------------------------------------------
 empty_allocation() -> [].
 
-alloc(Name,Reg,[{Name,_}|A],Target) ->
-  case Target of
-    hipe_sparc_specific_fp ->
-      [{Name,{fp_reg,Reg}}|A];
-    _->
-      [{Name,{reg,Reg}}|A]
-  end;
-alloc(Name,Reg,[{Name2,Binding}|Bindings],Target) when Name > Name2 ->
-  [{Name2,Binding}|alloc(Name,Reg,Bindings,Target)];
-alloc(Name,Reg,Bindings,Target) ->
-  case Target of
-    hipe_sparc_specific_fp ->
-      [{Name,{fp_reg,Reg}}|Bindings];
-    _->
-      [{Name,{reg,Reg}}|Bindings]
-  end.
+alloc(Name,Reg,[{Name,_}|A]) ->
+  [{Name,{reg,Reg}}|A];
+alloc(Name,Reg,[{Name2,Binding}|Bindings]) when Name > Name2 ->
+  [{Name2,Binding}|alloc(Name,Reg,Bindings)];
+alloc(Name,Reg,Bindings) ->
+  [{Name,{reg,Reg}}|Bindings].
 
 spillalloc(Name,N,[{Name,_}|A]) ->
   ?debug_msg("Spilled ~w\n",[Name]),
@@ -959,16 +949,7 @@ is_global(R, Target) ->
 physical_name(R, Target) ->
   Target:physical_name(R).
 
-regnames(Regs2, Target) ->
-  Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(Regs2);
-      hipe_sparc_specific_fp->
-	hipe_sparc:keep_fp_registers(Regs2);
-      _ ->
-	Regs2
-    end,
+regnames(Regs, Target) ->
   [Target:reg_nr(X) || X <- Regs].
 
 arg_vars(CFG, Target) ->

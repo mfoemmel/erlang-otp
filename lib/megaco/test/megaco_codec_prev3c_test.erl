@@ -199,8 +199,6 @@
 
 	 init_per_testcase/2, fin_per_testcase/2]).  
 
--export([flex_scanner_handler/1]).
-
 -export([display_text_messages/0, generate_text_messages/0]).
 
 
@@ -590,30 +588,11 @@ pretty_test_msgs(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-flex_pretty_init(Config) when list(Config) ->
-    Flag = process_flag(trap_exit, true),    
-    Res = (catch start_flex_scanner()),
-    process_flag(trap_exit, Flag),
-    case Res of
-	{error, Reason} ->
-  	    ?LOG("flex_pretty_init -> error: "
-  		 "~n   Reason: ~p~n", [Reason]),
-	    skip(Reason);
-	{Pid, Conf} when pid(Pid) ->
-	    [{flex_scanner, Pid, Conf}|Config]
-    end;
 flex_pretty_init(Config) ->
-    exit({invalid_config, Config}).
-    
+    flex_init(Config).
 
-flex_pretty_finish(Config) when list(Config) ->
-    case lists:keysearch(flex_scanner, 1, Config) of
-	{value, {flex_scanner, Pid, _Conf}} ->
-	    stop_flex_scanner(Pid),
-	    lists:keydelete(flex_scanner, 1, Config);
-	false ->
-	    Config
-    end.
+flex_pretty_finish(Config) ->
+    flex_finish(Config).
     
 flex_pretty_test_msgs(suite) ->
     [];
@@ -651,29 +630,11 @@ compact_test_msgs(Config) when list(Config) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-flex_compact_init(Config) when list(Config) ->
-    Flag = process_flag(trap_exit, true),    
-    Res = (catch start_flex_scanner()),
-    process_flag(trap_exit, Flag),
-    case Res of
-	{error, Reason} ->
- 	    ?LOG("flex_compact_init -> error: "
- 		 "~n   Reason: ~p~n", [Reason]),
-	    skip(Reason);
-	{Pid, Conf} when pid(Pid) ->
-	    [{flex_scanner, Pid, Conf}|Config]
-    end.
-    
+flex_compact_init(Config) ->
+    flex_init(Config).
 
-flex_compact_finish(Config) when list(Config) ->
-    case lists:keysearch(flex_scanner, 1, Config) of
-	{value, {flex_scanner, Pid, _Conf}} ->
-	    stop_flex_scanner(Pid),
-	    lists:keydelete(flex_scanner, 1, Config);
-	false ->
-	    Config
-    end.
-    
+flex_compact_finish(Config) ->
+    flex_finish(Config).
 
 flex_compact_test_msgs(suite) ->
     [];
@@ -6929,100 +6890,8 @@ rfc3525_msgs_test(Codec, Config, Ver) ->
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-flex_scanner_conf(Config) when list(Config) ->
-    case lists:keysearch(flex_scanner, 1, Config) of
-	{value, {flex_scanner, Pid, Conf}} ->
-	    case ping_flex_scanner(Pid) of
-		ok ->
-		    Conf;
-		Else ->
-		    skip({no_response_from_flex_scanner_handler, Else})
-	    end;
-	false ->
-	    skip("Flex scanner driver not loaded")
-    end.
-
-
-skip({What, Why}) when atom(What), list(Why) ->
-    Reason = lists:flatten(io_lib:format("~p: ~s", [What, Why])),
-    exit({skipped, Reason});
-skip({What, Why}) ->
-    Reason = lists:flatten(io_lib:format("~p: ~p", [What, Why])),
-    exit({skipped, Reason});
-skip(Reason) when list(Reason) ->
-    exit({skipped, Reason});
-skip(Reason1) ->
-    Reason2 = lists:flatten(io_lib:format("~p", [Reason1])),
-    exit({skipped, Reason2}).
-
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-
-start_flex_scanner() ->
-    Pid = proc_lib:spawn(?MODULE, flex_scanner_handler, [self()]),
-    receive
-	{flex_scanner_started, Pid, Conf} ->
-	    {Pid, Conf};
-	{flex_scanner_error, {failed_loading_flex_scanner_driver, Reason}} ->
- 	    ?LOG("start_flex_scanner -> failed loading flex scanner driver: "
- 		 "~n   Reason: ~p~n", [Reason]),
-	    {error, {failed_loading_flex_scanner_driver, Reason}};
-	{flex_scanner_error, Reason} ->
- 	    ?LOG("start_flex_scanner -> error: "
- 		 "~n   Reason: ~p~n", [Reason]),
-	    {error, {failed_loading_flex_scanner_driver, Reason}}
-    after 10000 ->
-	    exit(Pid, kill),
-	    {error, {failed_starting_flex_scanner, timeout}}
-    end.
-
-
-ping_flex_scanner(Pid) ->
-    Pid ! {ping, self()},
-    receive
-	{pong, Pid} ->
-	    ok
-    after 5000 ->
-	    timeout
-    end.
-
-
-stop_flex_scanner(Pid) ->
-    Pid ! stop_flex_scanner.
-
-
-flex_scanner_handler(Pid) ->
-    case (catch megaco_flex_scanner:start()) of
-	{ok, Port} when port(Port) ->
-	    Pid ! {flex_scanner_started, self(), {flex, Port}},
-	    flex_scanner_handler(Pid, Port);
-	{error, {load_driver, {open_error, Reason}}} ->
-	    Error = {failed_loading_flex_scanner_driver, Reason},
-	    Pid ! {flex_scanner_error, Error},
-	    exit(Error);
-	Else ->
-	    Error = {unknown_result_from_start_flex_scanner, Else},
-	    Pid ! {flex_scanner_error, Error},
-	    exit(Error)
-    end.
-
-flex_scanner_handler(Pid, Port) ->
-    receive
-	{ping, Pinger} ->
-	    Pinger ! {pong, self()},
-	    flex_scanner_handler(Pid, Port);
-	{'EXIT', Port, Reason} ->
-	    Pid ! {flex_scanner_exit, Reason},
-	    exit({flex_scanner_exit, Reason});
-	stop_flex_scanner ->
-	    megaco_flex_scanner:stop(Port),
-	    exit(normal);
-	Other ->
-	    io:format("flex scanner handler got something:~n"
-		      "~p", [Other]),
-	    flex_scanner_handler(Pid, Port)
-    end.
-	    
+%% skip(Reason) ->
+%%     megaco_codec_test_lib:skip(Reason).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -7720,6 +7589,24 @@ cre_PkgsItem(Name, Ver) ->
 
 cre_BOOLEAN(B) ->
     ?MSG_LIB:cre_BOOLEAN(B).
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+flex_init(Config) ->
+    megaco_codec_flex_lib:init(Config).
+
+flex_finish(Config) ->
+    megaco_codec_flex_lib:finish(Config).
+
+flex_scanner_conf(Config) ->
+    megaco_codec_flex_lib:scanner_conf(Config).
+
+%% start_flex_scanner() ->
+%%     megaco_codec_flex_lib:start().
+
+%% stop_flex_scanner(Pid) ->
+%%     megaco_codec_flex_lib:stop(Pid).
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

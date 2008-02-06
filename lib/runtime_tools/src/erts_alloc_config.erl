@@ -33,7 +33,9 @@
 
 -record(alloc, {name,
 		enabled,
+		need_config_change,
 		alloc_util,
+		instances,
 		low_mbc_blocks_size,
 		high_mbc_blocks_size,
 		sbct,
@@ -48,6 +50,8 @@
 -define(PRINT_WITDH, 76).
 
 -define(SERVER, '__erts_alloc_config__').
+
+-define(MAX_ALLOCATOR_INSTANCES, 16).
 
 -define(KB, 1024).
 -define(MB, 1048576).
@@ -69,7 +73,8 @@
 	A == eheap_alloc;
 	A == ll_alloc;
 	A == sl_alloc;
-	A == temp_alloc).
+	A == temp_alloc;
+	A == driver_alloc).
 
 -define(ALLOCATORS,
 	[binary_alloc,
@@ -81,7 +86,8 @@
 	 sl_alloc,
 	 std_alloc,
 	 sys_alloc,
-	 temp_alloc]).
+	 temp_alloc,
+	 driver_alloc]).
 
 -define(MMBCS_DEFAULTS,
 	[{binary_alloc, 131072},
@@ -90,7 +96,8 @@
 	 {eheap_alloc, 524288},
 	 {ll_alloc, 2097152},
 	 {sl_alloc, 131072},
-	 {temp_alloc, 131072}]).
+	 {temp_alloc, 131072},
+	 {driver_alloc, 131072}]).
 
 -define(MMMBC_DEFAULTS,
 	[{binary_alloc, 10},
@@ -99,7 +106,8 @@
 	 {eheap_alloc, 10},
 	 {ll_alloc, 0},
 	 {sl_alloc, 10},
-	 {temp_alloc, 10}]).
+	 {temp_alloc, 10},
+	 {driver_alloc, 10}]).
 
 
 %%%
@@ -216,8 +224,22 @@ server_loop(State) ->
 	       end,
     server_loop(NewState).
 
+allocator_instances(temp_alloc) ->
+    erlang:system_info(schedulers) + 1;
+allocator_instances(ll_alloc) ->
+    1;
+allocator_instances(_Allocator) ->
+    case erlang:system_info(schedulers) of
+	Schdlrs when Schdlrs =< ?MAX_ALLOCATOR_INSTANCES -> Schdlrs;
+	_Schdlrs -> ?MAX_ALLOCATOR_INSTANCES
+    end.
+					   
 make_state() ->
-    #state{alloc = lists:map(fun (A) -> #alloc{name = A} end, ?ALLOCATORS)}.
+    #state{alloc = lists:map(fun (A) ->
+				     #alloc{name = A,
+					    instances = allocator_instances(A)}
+			     end,
+			     ?ALLOCATORS)}.
 
 %%
 %% Save scenario
@@ -279,6 +301,22 @@ save_scenario(AlcList) ->
     process_flag(priority, OP),
     Res.
     
+save_ai2(Alc, AI) ->
+    Alc1 = chk_sbct(Alc, AI),
+    case ai_value(mbcs, blocks_size, AI) of
+	{blocks_size, MinBS, _, MaxBS} ->
+	    set_alloc_util(chk_mbcs_blocks_size(Alc1, MinBS, MaxBS), true);
+	_ ->
+	    set_alloc_util(Alc, false)
+    end.
+
+save_ai(Alc, [{instance, 0, AI}]) ->
+    save_ai2(Alc, AI);
+save_ai(Alc, [{instance, _, _}, {instance, _, _}| _]) ->
+    Alc#alloc{enabled = true, need_config_change = true};
+save_ai(Alc, AI) ->
+    save_ai2(Alc, AI). % Non erts_alloc_util allocator
+
 do_save_scenario(AlcList) ->
     lists:map(fun (#alloc{enabled = false} = Alc) ->
 		      Alc;
@@ -289,16 +327,7 @@ do_save_scenario(AlcList) ->
 			  false ->
 			      Alc#alloc{enabled = false};
 			  AI when is_list(AI) ->
-			      Alc1 = chk_sbct(Alc, AI),
-			      case ai_value(mbcs, blocks_size, AI) of
-				  {blocks_size, MinBS, _, MaxBS} ->
-				      set_alloc_util(chk_mbcs_blocks_size(Alc1,
-									  MinBS,
-									  MaxBS),
-						     true);
-				  _ ->
-				      set_alloc_util(Alc, false)
-			      end
+			      save_ai(Alc, AI)
 		      end
 	      end,
 	      AlcList).
@@ -324,20 +353,39 @@ sbct(#conf{format_to = FTO}, #alloc{name = A, sbct = SBCT}) ->
     fc(FTO, "Sbc threshold size of ~p kilobytes.", [SBCT]),
     format(FTO, " +M~csbct ~p~n", [alloc_char(A), SBCT]).
 
-mmbcs(#conf{format_to = FTO},
-      #alloc{name = A, low_mbc_blocks_size = BlocksSize}) ->
+default_mmbcs(temp_alloc = A, _Insts) ->
     {value, {A, MMBCS_Default}} = lists:keysearch(A, 1, ?MMBCS_DEFAULTS),
-    if BlocksSize > MMBCS_Default ->
-	    MMBCS = conf_size(BlocksSize),
+    MMBCS_Default;
+default_mmbcs(A, Insts) ->
+    {value, {A, MMBCS_Default}} = lists:keysearch(A, 1, ?MMBCS_DEFAULTS),
+    I = case Insts > 4 of
+	    true -> 4;
+	    _ -> Insts
+	end,
+    ?ROUNDUP(MMBCS_Default div I, ?B2KB(1*?KB)).
+
+mmbcs(#conf{format_to = FTO},
+      #alloc{name = A, instances = Insts, low_mbc_blocks_size = BlocksSize}) ->
+    BS = case A of
+	     temp_alloc -> BlocksSize;
+	     _ -> BlocksSize div Insts
+	 end,
+    case BS > default_mmbcs(A, Insts) of
+	true ->
+	    MMBCS = conf_size(BS),
 	    fc(FTO, "Main mbc size of ~p kilobytes.", [MMBCS]),
 	    format(FTO, " +M~cmmbcs ~p~n", [alloc_char(A), MMBCS]);
-       true ->
+	false ->
 	    ok
     end.
 
 smbcs_lmbcs_mmmbc(#conf{format_to = FTO},
-		  #alloc{name = A, segments = Segments}) ->
-    MMMBC = Segments#segment.number,
+		  #alloc{name = A, instances = Insts, segments = Segments}) ->
+    MMMBC = case {A, Insts} of
+		{_, 1} -> Segments#segment.number;
+		{temp_alloc, _} -> Segments#segment.number;
+		_ -> (Segments#segment.number div Insts) + 1
+	    end,
     MBCS = Segments#segment.size,
     AC = alloc_char(A),
     fc(FTO, "Mseg mbc size of ~p kilobytes.", [MBCS]),
@@ -353,6 +401,7 @@ alloc_char(fix_alloc) -> $F;
 alloc_char(eheap_alloc) -> $H;
 alloc_char(ll_alloc) -> $L;
 alloc_char(mseg_alloc) -> $M;
+alloc_char(driver_alloc) -> $R;
 alloc_char(sl_alloc) -> $S;
 alloc_char(temp_alloc) -> $T;
 alloc_char(sys_alloc) -> $Y;
@@ -363,9 +412,20 @@ conf_alloc(#conf{format_to = FTO},
 	   #alloc{name = A, enabled = false}) ->
     fcl(FTO, A),
     fcp(FTO,
-	"WARNING: ~p has been disabled. Consider enabling ~p and rerun "
+	"WARNING: ~p has been disabled. Consider enabling ~p by passing "
+	"the \"+M~ce true\" command line argument and rerun "
 	"erts_alloc_config.",
-	[A,A]);
+	[A, A, alloc_char(A)]);
+conf_alloc(#conf{format_to = FTO},
+	   #alloc{name = A, need_config_change = true}) ->
+    fcl(FTO, A),
+    fcp(FTO,
+	"WARNING: ~p has been configured in a way that prevents "
+	"erts_alloc_config from creating a configuration. The configuration "
+	"will be automatically adjusted to fit erts_alloc_config if you "
+	"use the \"+Mea config\" command line argument while running "
+	"erts_alloc_config.",
+	[A]);
 conf_alloc(#conf{format_to = FTO} = Conf,
 	   #alloc{name = A, alloc_util = true} = Alc) ->
     fcl(FTO, A),
@@ -396,10 +456,21 @@ chk_xnote(#conf{}, #alloc{}) ->
     ok.
 
 au_conf_alloc(#conf{format_to = FTO} = Conf,
-	      #alloc{alloc_util = true,
+	      #alloc{name = A,
+		     alloc_util = true,
+		     instances = Insts,
 		     low_mbc_blocks_size = Low,
 		     high_mbc_blocks_size = High} = Alc) ->
     fcp(FTO, "Usage of mbcs: ~p - ~p kilobytes", [?B2KB(Low), ?B2KB(High)]),
+    case Insts of
+	1 ->
+	    fc(FTO, "One instance used."),
+	    format(FTO, " +M~ct false~n", [alloc_char(A)]);
+	_ ->
+	    fc(FTO, "~p instances used.",
+	       [Insts]),
+	    format(FTO, " +M~ct ~p~n", [alloc_char(A), Insts])
+    end,	    
     mmbcs(Conf, Alc),
     smbcs_lmbcs_mmmbc(Conf, Alc),
     sbct(Conf, Alc).
@@ -483,6 +554,19 @@ format_header(FTO) ->
     fcp(FTO,
 	"~s was used when generating the configuration.",
 	[string:strip(erlang:system_info(system_version), both, $\n)]),
+    case erlang:system_info(schedulers) of
+	1 -> ok;
+	Schdlrs ->
+	    MinSchdlrs = case Schdlrs > ?MAX_ALLOCATOR_INSTANCES of
+			     true -> ?MAX_ALLOCATOR_INSTANCES;
+			     false -> Schdlrs
+			 end,
+	    fcp(FTO,
+		"NOTE: This configuration was made for ~p schedulers. "
+		"It is very important that at least ~p schedulers "
+		"are used.",
+		[Schdlrs, MinSchdlrs])
+    end,
     fcp(FTO,
 	"This configuration is intended as a suggestion and "
 	"may need to be adjusted manually. Instead of modifying "

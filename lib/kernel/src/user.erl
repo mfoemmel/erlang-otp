@@ -419,7 +419,7 @@ string_chr(Bin, Characters) when is_binary(Bin), is_list(Characters) ->
 string_chr(List, Characters) when is_list(List), is_list(Characters) ->
     string_chr_list(1, List, Characters).
 
-string_chr_bin(I, B, Cs) when I < size(B) ->
+string_chr_bin(I, B, Cs) when I < byte_size(B) ->
     J = I+1,
     case string_chr_bin_check(I, B, Cs) of
 	ok ->

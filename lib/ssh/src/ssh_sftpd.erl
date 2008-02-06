@@ -145,17 +145,20 @@ handle_info({ssh_cm, CM, {data, Channel, Type, Data}}, State) ->
     {noreply, State1};
 handle_info({ssh_cm, CM, {subsystem, _Channel, WantsReply, "sftp"}}, State) ->
     CM = (State#state.xf)#ssh_xfer.cm, 		% hmmm going through xf...
+    CM ! {same_user, self()},
     case WantsReply of
 	true -> CM ! {ssh_cm, self(), {success, State#state.remote_channel}}
     end,
     {noreply, State};
 
 %% The client has terminated the session
+%% TODO: why check channel in xf ssh_xfer?
 handle_info({ssh_cm, _, {eof, Channel}}, 
 	    State = #state{xf = #ssh_xfer{channel = Channel}}) ->
     {stop, normal, State};
 
 handle_info(_Info, State) ->
+    io:format("handle_info ~p\n", [_Info]),
     ?dbg(true, "handle_info: Info=~p State=~p\n", [_Info, State]),
     {noreply, State}.
 
@@ -189,20 +192,27 @@ handle_op(?SSH_FXP_INIT, Version, B, State) when is_binary(B) ->
     State#state{xf = XF1};
 handle_op(?SSH_FXP_REALPATH, ReqId,
 	  <<?UINT32(Rlen), RPath:Rlen/binary>>,
-	  State) ->
+	  #state{root = Root} = State) ->
     RelPath = binary_to_list(RPath),
     AbsPath = relate_file_name(RelPath, State),
+    NewAbsPath = case AbsPath of
+		     Root -> 
+			 "/";
+		     Other ->
+			 Other -- Root
+		 end,
     ?dbg(true, "handle_op ?SSH_FXP_REALPATH: RelPath=~p AbsPath=~p\n",
-	 [RelPath, AbsPath]),
+	 [RelPath, NewAbsPath]),
     XF = State#state.xf,
     Attr = #ssh_xfer_attr{type=directory},
-    ssh_xfer:xf_send_name(XF, ReqId, AbsPath, Attr),
+    ssh_xfer:xf_send_name(XF, ReqId, NewAbsPath, Attr),
     State;
 handle_op(?SSH_FXP_OPENDIR, ReqId,
 	 <<?UINT32(RLen), RPath:RLen/binary>>,
 	  State0 = #state{file_handler = FileMod, file_state = FS0}) ->
     RelPath = binary_to_list(RPath),
     AbsPath = relate_file_name(RelPath, State0),
+    
     XF = State0#state.xf,
     {IsDir, FS1} = FileMod:is_dir(AbsPath, FS0),
     State1 = State0#state{file_state = FS1},
@@ -312,6 +322,7 @@ handle_op(?SSH_FXP_MKDIR, ReqId, <<?UINT32(PLen), BPath:PLen/binary,
 handle_op(?SSH_FXP_FSETSTAT, ReqId, <<?UINT32(HLen), BinHandle:HLen/binary, 
 				     Attr/binary>>, 
 	  State0 = #state{handles = Handles}) ->
+
     case get_handle(Handles, BinHandle) of
 	{_Handle, _Type, {Path,_}} ->
 	    {Status, State1} = set_stat(Attr, Path, State0),
@@ -342,7 +353,8 @@ handle_op(?SSH_FXP_RMDIR, ReqId, <<?UINT32(PLen), BPath:PLen/binary>>,
 
 handle_op(?SSH_FXP_RENAME, ReqId,
 	  Bin = <<?UINT32(PLen), _:PLen/binary, ?UINT32(PLen2), 
-		 _:PLen2/binary>>, State = #state{xf = #ssh_xfer{vsn = 3}}) ->
+		 _:PLen2/binary>>, 
+	  State = #state{xf = #ssh_xfer{vsn = 3}}) ->
     handle_op(?SSH_FXP_RENAME, ReqId, <<Bin/binary, 0:32>>, State);
 
 handle_op(?SSH_FXP_RENAME, ReqId,
@@ -359,8 +371,10 @@ handle_op(?SSH_FXP_RENAME, ReqId,
 		    State1 = State0#state{file_state = FS1},
 		    case Res of
 			{ok, _Info} ->
-			    ssh_xfer:xf_send_status(State1#state.xf, ReqId,
-						    ?SSH_FX_FILE_ALREADY_EXISTS),
+			    ssh_xfer:xf_send_status(
+			      State1#state.xf, 
+			      ReqId,
+			      ?SSH_FX_FILE_ALREADY_EXISTS),
 			    State1;
 			_ ->
 			    rename(Path, Path2, ReqId, State1)
@@ -502,7 +516,8 @@ fstat(ReqId, BinHandle, State) ->
 	    State
     end.
 
-stat(ReqId, RelPath, State0=#state{file_handler=FileMod, file_state=FS0}, F) ->
+stat(ReqId, RelPath, State0=#state{file_handler=FileMod, 
+				   file_state=FS0}, F) ->
     AbsPath = relate_file_name(RelPath, State0),
     XF = State0#state.xf,
     ?dbg(false, "stat: AbsPath=~p\n", [AbsPath]),
@@ -510,7 +525,8 @@ stat(ReqId, RelPath, State0=#state{file_handler=FileMod, file_state=FS0}, F) ->
     State1 = State0#state{file_state = FS1},
     case Res of
 	{ok, FileInfo} ->
-	    ssh_xfer:xf_send_attr(XF, ReqId, ssh_sftp:info_to_attr(FileInfo)),
+	    ssh_xfer:xf_send_attr(XF, ReqId, 
+				  ssh_sftp:info_to_attr(FileInfo)),
 	    State1;
 	{error, E} ->
 	    send_status({error, E}, ReqId, State1)
@@ -541,14 +557,7 @@ open(Vsn, ReqId, Data, State) when Vsn =< 3 ->
     <<?UINT32(BLen), BPath:BLen/binary, ?UINT32(PFlags),
      _Attrs/binary>> = Data,
     Path = binary_to_list(BPath),
-%%     ?dbg(true, "open: PFlags=~p\n", [PFlags]),
     Flags = ssh_xfer:decode_open_flags(Vsn, PFlags) -- [creat, excl, trunc],
-%%     ?dbg(true, "open: F=~p\n", [F]),
-%%     Flags = F -- [trunc],
-%%     Flags = case lists:member(trunc, F) of
-%% 		true -> F -- [trunc];
-%% 		_ -> F
-%% 	    end,
     ?dbg(true, "open: Flags=~p\n", [Flags]),
     do_open(ReqId, State, Path, Flags);
 open(Vsn, ReqId, Data, State) when Vsn >= 4 ->
@@ -562,7 +571,7 @@ open(Vsn, ReqId, Data, State) when Vsn >= 4 ->
     do_open(ReqId, State, Path, Flags).
 
 do_open(ReqId, State0, Path, Flags) ->
-    #state{file_handler = FileMod, file_state = FS0} = State0,
+    #state{file_handler = FileMod, file_state = FS0, root = Root} = State0,
     XF = State0#state.xf,
     F = [raw, binary | Flags],
     %%   case FileMod:is_dir(Path) of %% This is version 6 we still have 5
@@ -570,7 +579,15 @@ do_open(ReqId, State0, Path, Flags) ->
     %% 	    ssh_xfer:xf_send_status(State#state.xf, ReqId,
     %% 				    ?SSH_FX_FILE_IS_A_DIRECTORY);
     %% 	false ->
-    {Res, FS1} = FileMod:open(Path, F, FS0),
+    
+    AbsPath = case Root of
+		  "" ->
+		      Path;
+		  _ ->
+		      relate_file_name(Path, State0)  
+	      end,
+
+    {Res, FS1} = FileMod:open(AbsPath, F, FS0),
     State1 = State0#state{file_state = FS1},
     case Res of
 	{ok, IoDevice} ->
@@ -579,18 +596,33 @@ do_open(ReqId, State0, Path, Flags) ->
 	    ssh_xfer:xf_send_status(State1#state.xf, ReqId,
 				    ssh_xfer:encode_erlang_status(Error)),
 	    State1
-	    %%end
     end.
 
-%%% relate given filenames to our CWD (needed? seems we get abs. path
-%%% most times)
-relate_file_name(F, State) when binary(F) ->
-    relate_file_name(binary_to_list(F), State);
-relate_file_name(F, #state{cwd = CWD, root = Root}) ->
-    F1 = filename:absname(F, CWD),
-    Parts = fix_file_name(filename:split(F1), []),
-    R = Root++filename:join(Parts),
-    R.
+relate_file_name(File, State) when binary(File) ->
+    relate_file_name(binary_to_list(File), State);
+relate_file_name(File, #state{cwd = CWD, root = ""}) ->
+    relate(File, CWD);
+relate_file_name(File, #state{root = Root}) ->
+    case within_root(Root, File) of
+	File ->
+	    File;
+	Root ->
+	    NewFile = relate(string:strip(File, left, $/), Root),
+	    within_root(Root, NewFile)
+    end.
+
+within_root(Root, File) ->
+    case lists:prefix(Root, File) of
+	true ->
+	    File;
+	false ->
+	    Root
+    end.
+
+relate(File0, Path) ->
+    File1 = filename:absname(File0, Path),
+    Parts = fix_file_name(filename:split(File1), []),
+    filename:join(Parts).
 
 %%% fix file just a little: a/b/.. -> a and a/. -> a
 fix_file_name([".." | Rest], ["/"] = Acc) ->
@@ -652,7 +684,8 @@ send_status(Status, ReqId, State) ->
 %%
 set_stat(<<>>, _Path, State) ->
     {ok, State};
-set_stat(Attr, Path, State0 = #state{file_handler=FileMod, file_state=FS0}) ->
+set_stat(Attr, Path, 
+	 State0 = #state{file_handler=FileMod, file_state=FS0}) ->
     {DecodedAttr, _Rest} = 
 	ssh_xfer:decode_ATTR((State0#state.xf)#ssh_xfer.vsn, Attr),
     ?dbg(true, "set_stat DecodedAttr=~p\n", [DecodedAttr]),
@@ -682,7 +715,7 @@ set_file_info(#file_info{atime = Dst_atime, mtime = Dst_mtime,
 			 mode = Dst_mode, uid = Dst_uid, gid = Dst_gid},
 	      #file_info{atime = Src_atime, mtime = Src_mtime, 
 			 ctime = Src_ctime,
-			 mode = Src_mode, uid = Src_uid, gid = Src_gid}) ->    
+			 mode = Src_mode, uid = Src_uid, gid = Src_gid}) ->  
     #file_info{atime = set_file_info_sel(Dst_atime, Src_atime),
 	       mtime = set_file_info_sel(Dst_mtime, Src_mtime),
 	       ctime = set_file_info_sel(Dst_ctime, Src_ctime),

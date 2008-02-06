@@ -83,7 +83,7 @@ ASN_HRLS = $(ASN_MODULES:%=%.hrl)
 ASN_DBS = $(ASN_MODULES:%=%.asn1db)
 ASN_TABLES = $(ASN_MODULES:%=%.table)
 
-ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj
+ASN_FLAGS = -bber_bin +der +compact_bit_string +optimize +noobj +inline
 
 # ----------------------------------------------------
 # FLAGS

@@ -45,9 +45,6 @@
 %%   <dt><code>o0, 'O0', o1, 'O1', o2, 'O2', o3, 'O3'</code></dt>
 %%     <dd>Set optimization level (default 2).</dd>
 %%
-%%   <dt><code>{'O', N}</code></dt>
-%%     <dd>Set optimization level to <code>N</code>.</dd>
-%%
 %%   <dt><code>load</code></dt>
 %%     <dd>Automatically load the code into memory after compiling.</dd>
 %%
@@ -155,48 +152,6 @@
 %%   <dt><code>rtl_ssapre</code></dt>
 %%     <dd>Lazy Partial Redundancy Elimination on RTL (SSA level).</dd>
 %%
-%%   <dt><code>sparc_estimate_block_times</code></dt>
-%%     <dd>Do not perform instruction scheduling, but annotate with cycle
-%%     estimates</dd>
-%%
-%%   <dt><code>sparc_post_schedule</code></dt>
-%%   <dd>Perform instruction scheduling after register allocation as well.
-%%   There are two reasons why this might be beneficial:
-%%   <ol>
-%%     <li>Spill code (rare).</li>
-%%     <li>Register allocation may reuse registers in nearby
-%%     instructions, which can destroy our careful schedule;
-%%     post-scheduling tries to repair the damage (if any; no difference
-%%     has been observed so far).</li>
-%%   </ol></dd>
-%%
-%%   <dt><code>sparc_profile</code></dt>
-%%     <dd>Inserts profiling counters into code. You get an annotated
-%%     CFG by <code>hipe_profile:annot(MFA)</code> (see also
-%%     <code>misc/hipe_profile.erl</code> for more info). Also
-%%     <code>{sparc_profile, Prof_type}</code>.
-%%
-%%     <p><code>Prof_type</code> is one of the following:
-%%     <ul>
-%%       <li><code>true</code>/<code>false</code>: normal
-%%       profiling/no profiling</li>
-%%       <li><code>block</code>: </li>
-%%       <li><code>arc</code>: </li>
-%%     </ul></p>
-%%   </dd>
-%%
-%%   <dt><code>sparc_schedule</code></dt>
-%%     <dd>Perform ILP scheduling on code (also annotates code with
-%%     cycle estimates). Also <code>{sparc_schedule, Sched_type}</code>.
-%%
-%%     <p><code>Sched_type</code> is one of are the following:
-%%     <ul>
-%%        <li><code>true</code>/<code>false</code>: normal
-%%        scheduling/no scheduling</li>
-%%         <li><code>ultra</code>:</li>
-%%     </ul></p>
-%%   </dd>
-%%
 %%   <dt><code>use_indexing</code></dt>
 %%     <dd>Use indexing for multiple-choice branch selection.</dd>
 %%
@@ -243,6 +198,7 @@
 
 -include("hipe.hrl").
 -include("../rtl/hipe_literals.hrl").
+-include("../../compiler/src/beam_disasm.hrl").
 
 %%-------------------------------------------------------------------
 %% Basic type declaration for exported functions of the 'hipe' module
@@ -251,8 +207,6 @@
 -type(mod() :: atom()).
 -type(c_unit() :: mod() | mfa()).
 -type(f_unit() :: mod() | binary()).
--type(comp_option() :: atom() | {atom(), atom()}).
--type(comp_options() :: [comp_option()]).
 -type(c_ret() :: {'ok',c_unit()} | {'error',_}).
 -type(compile_file() :: atom() | string() | binary()).
 -type(compile_ret() :: {hipe_architecture(), binary()} | list()).
@@ -627,10 +581,7 @@ file(File, Options) when is_atom(File) ->
 
 disasm(File) ->
   case beam_disasm:file(File) of
-    {beam_file,DisasmBeam} ->
-      {value,{code,BeamCode}} = lists:keysearch(code,1,DisasmBeam),
-      {value,{exports,BeamExports}} = lists:keysearch(exports,1,DisasmBeam),
-      {value,{comp_info,CompInfo}} = lists:keysearch(comp_info,1,DisasmBeam),
+    #beam_file{exports=BeamExports, comp_info=CompInfo, code=BeamCode} ->
       {value,{options,CompOpts}} = lists:keysearch(options,1,CompInfo),
       HCompOpts = case lists:keysearch(hipe,1,CompOpts) of
 		    {value,{hipe,L}} when is_list(L) -> L;
@@ -639,7 +590,7 @@ disasm(File) ->
 		  end,
       Exports = fix_beam_exports(BeamExports),
       {{BeamCode, Exports}, HCompOpts};
-    Error ->
+    {error, _Mod, Error} ->
       io:format("~s\n", [beam_lib:format_error(Error)]),
       ?EXIT(no_beam_code)
   end.
@@ -768,9 +719,7 @@ compile_finish({Mod, Exports, Icode}, WholeModule, Options) ->
 %% finalize/4 compiles, assembles, and optionally loads a list of `{MFA,
 %% Icode}' pairs, and returns `{ok, Binary}' or `{error, Reason}'.
 
-%% TODO: make the Exports info accessible to the compilation passes.
-finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
-  Opts = [{exports, Exports} |Opts0],
+finalize(OrigList, Mod, Exports, WholeModule, Opts) ->
   List = icode_multret(OrigList, Mod, Opts, Exports),
   {T1Compile,_} = erlang:statistics(runtime),
   CompiledCode =
@@ -779,11 +728,11 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
 	%% Compiling the functions bottom-up by using a call graph
 	CallGraph = hipe_icode_callgraph:construct(List),
 	OrdList = hipe_icode_callgraph:to_list(CallGraph),
-	finalize_fun(OrdList, Opts);
+	finalize_fun(OrdList, Exports, Opts);
       _ -> 
 	%% Compiling the functions bottom-up by reversing the list
 	OrdList = lists:reverse(List),
-	finalize_fun(OrdList, Opts)
+	finalize_fun(OrdList, Exports, Opts)
     end,
   {T2Compile,_} = erlang:statistics(runtime),
   ?when_option(verbose, Opts,
@@ -813,19 +762,19 @@ finalize(OrigList, Mod, Exports, WholeModule, Opts0) ->
   end.
 
 
-finalize_fun(MfaIcodeList, Opts) ->
+finalize_fun(MfaIcodeList, Exports, Opts) ->
   case proplists:get_value(concurrent_comp, Opts) of
     FalseVal when (FalseVal =:= undefined) or (FalseVal =:= false) ->
-      [finalize_fun_sequential({MFA, Icode}, Opts) || {MFA, Icode} <- MfaIcodeList];
+      [finalize_fun_sequential({MFA, Icode}, Opts, #comp_servers{}) || 
+	{MFA, Icode} <- MfaIcodeList];
     TrueVal when (TrueVal =:= true) or (TrueVal =:= debug) ->
-      finalize_fun_concurrent(MfaIcodeList, Opts)
+      finalize_fun_concurrent(MfaIcodeList, Exports, Opts)
   end.
 
-finalize_fun_concurrent(MfaIcodeList, Opts) ->
+finalize_fun_concurrent(MfaIcodeList, Exports, Opts) ->
   Self = self(),
   case MfaIcodeList of
     [{{M,_,_},_}|_] ->
-      Exports = proplists:get_value(exports,Opts),
       CallGraph = hipe_icode_callgraph:construct_callgraph(MfaIcodeList),
       Closures = [{MFA,true} || {MFA, Icode} <- MfaIcodeList,
 				hipe_icode:icode_is_closure(Icode)],
@@ -852,15 +801,15 @@ finalize_fun_concurrent(MfaIcodeList, Opts) ->
 					      NonEscaping, hipe_icode_range)
 	end,
       RangeServer = spawn_link(RangeServerFun),
-      NewOpts = [{icode_range_server,RangeServer},
-		 {icode_type_server,TypeServer},
-		 {pp_server,PPServer}|Opts],
+      Servers = #comp_servers{pp_server=PPServer,
+			      range=RangeServer,
+			      type=TypeServer},
       CompFuns =
 	[fun() ->
-	     set_architecture(NewOpts),
-	     pre_init(NewOpts),
-	     init(NewOpts),
-	     Self ! finalize_fun_sequential(IcodeFun, NewOpts)
+	     set_architecture(Opts),
+	     pre_init(Opts),
+	     init(Opts),
+	     Self ! finalize_fun_sequential(IcodeFun, Opts, Servers)
 	 end || IcodeFun <- MfaIcodeList],
       [spawn_link(Fun) || Fun <- CompFuns],
       Final = [receive Res when element(1,Res) =:= MFA -> Res end ||
@@ -878,32 +827,26 @@ stop_and_wait(Pid) ->
       ok
   end.
 
-finalize_fun_sequential({MFA, Icode}, Opts) ->
+finalize_fun_sequential({MFA, Icode}, Opts, Servers) ->
   {T1,_} = erlang:statistics(runtime),
-  ?when_option(verbose, Opts, ?debug_msg("Compiling ~w~n",[MFA])),
-  case catch hipe_main:compile_icode(MFA, Icode, Opts) of
-    {native, Platform, {unprofiled,Code}} ->
+  ?when_option(verbose, Opts, ?debug_msg("Compiling ~w~n", [MFA])),
+  case catch hipe_main:compile_icode(MFA, Icode, Opts, Servers) of
+    {native, _Platform, {unprofiled,Code}} ->
       {T2,_} = erlang:statistics(runtime),
       ?when_option(verbose, Opts,
 		   ?debug_msg("Compiled ~w in ~.2f s\n", [MFA,(T2-T1)/1000])),
-      case Platform of
-	ultrasparc -> {Entry,Ct} = Code, {MFA,Entry,Ct};
-	powerpc -> {MFA, Code};
-	arm -> {MFA, Code};
-	x86 -> {MFA, Code};
-        amd64 -> {MFA, Code}
-      end;
+      {MFA, Code};
     {rtl, LinearRtl} ->
       io:format("~p~n", [LinearRtl]),
       {MFA, LinearRtl};
     {dialyzer, IcodeSSA} ->
       {MFA, IcodeSSA};
     {native, X} ->
-      ?error_msg("ERROR: unknown native code format: ~P.\n",[X]),
+      ?error_msg("ERROR: unknown native code format: ~P.\n", [X]),
       ?EXIT(unknown_format);
     {'EXIT', Error} -> 
-      ?when_option(verbose, Opts,?debug_untagged_msg("\n",[])),
-      ?error_msg("ERROR: ~p~n",[Error]),
+      ?when_option(verbose, Opts,?debug_untagged_msg("\n", [])),
+      ?error_msg("ERROR: ~p~n", [Error]),
       ?EXIT(Error)
   end.
 
@@ -942,13 +885,11 @@ maybe_load(Mod, Bin, WholeModule, Opts) ->
 do_load(Mod, Bin, WholeModule) ->
   HostArch = get(hipe_host_arch),
   TargetArch = get(hipe_target_arch),
-
   %% Make sure we can do the load.
   if HostArch =/= TargetArch ->
     ?EXIT({host_and_target_arch_differ,HostArch,TargetArch});
     true -> ok
   end,
-
   case WholeModule of 
     false ->
       %% In this case, the emulated code for the module must be loaded.
@@ -1062,9 +1003,7 @@ post(Res, Icode, Options) ->
 	get();  % return whole process dictionary list (simplest way...)
       false -> []
     end,
-
   Info = TimerVals ++ CounterVals ++ Measures,
-  
   case proplists:get_bool(get_called_modules, Options) of
     true ->
       CalledMods = hipe_icode_callgraph:get_called_modules(Icode),
@@ -1085,8 +1024,8 @@ post(Res, Icode, Options) ->
 
 %% --------------------------------------------------------------------
 
-%% @spec version() -> string()
 %% @doc Returns the current HiPE version as a string().
+-spec(version/0 :: () -> string()).
 version() ->
   ?VERSION_STRING().
 
@@ -1095,8 +1034,8 @@ version() ->
 %% D O C U M E N T A T I O N   -   H E L P 
 %%
 
-%% @spec () -> ok
 %% @doc Prints on-line documentation to the standard output.
+-spec(help/0 :: () -> 'ok').
 help() ->
   M =
     "The HiPE Compiler (Version " ++ ?VERSION_STRING() ++ ")\n" ++
@@ -1126,6 +1065,7 @@ help() ->
   io:put_chars(M),
   ok.
 
+-spec(help_hiper/0 :: () -> 'ok').
 help_hiper() ->
   M =
     " This interface is supposed to be used by HiPE-developers only!\n" ++
@@ -1158,8 +1098,8 @@ help_hiper() ->
 %% TODO: it should be possible to specify the target somehow when asking
 %% for available options. Right now, you only see host machine options.
 
-%% @spec () -> ok
 %% @doc Prints documentation about options to the standard output.
+-spec(help_options/0 :: () -> 'ok').
 help_options() ->
   set_architecture([]), %% needed for target-specific option expansion
   O1 = expand_options([o1]),
@@ -1173,7 +1113,7 @@ help_options() ->
 	    " General boolean options:\n" ++
 	    "   ~p.\n\n" ++
 	    " Non-boolean options:\n" ++
-	    "   {'O', Level}, where 0 =< Level =< 3:\n" ++
+	    "   o#, where 0 =< # =< 3:\n" ++
 	    "     Select optimization level (the default is 2).\n\n" ++
 	    " Further options can be found below; " ++
 	    "use `hipe:help_option(Name)' for details.\n\n" ++
@@ -1183,30 +1123,30 @@ help_options() ->
 	    "   pp_x86 = pp_native,\n" ++
 	    "   pp_amd64 = pp_native,\n" ++
 	    "   pp_ppc = pp_native,\n" ++
-	    "   o0 = {'O',0},\n" ++
-	    "   o1 = {'O',1} = ~p,\n" ++
-	    "   o2 = {'O',2} = ~p ++ o1,\n" ++
-	    "   o3 = {'O',3} = ~p ++ o2.\n",
+	    "   o0,\n" ++
+	    "   o1 = ~p,\n" ++
+	    "   o2 = ~p ++ o1,\n" ++
+	    "   o3 = ~p ++ o2.\n",
 	    [ordsets:from_list([verbose, debug, time, load, pp_beam,
 				pp_icode, pp_rtl, pp_native, pp_asm,
 				timeout]),
 	     expand_options([pp_all]),
-	     O1 -- [{'O',1}],
-	     (O2 -- O1) -- [{'O',2}],
-	     (O3 -- O2) -- [{'O',3}]]),
+	     O1 -- [o1],
+	     (O2 -- O1) -- [o2],
+	     (O3 -- O2) -- [o3]]),
   ok.
 
 %% Documentation of the individual options.
 %% If you add an option, please add help-text here.
 
+-spec(option_text/1 :: (atom()) -> string()).
+
 option_text('O') ->
-  "Specify optimization level. Used as {'O', LEVEL}.\n" ++
+  "Specify optimization level. Used as o1, o2, o3.\n" ++
   "    At the moment levels 0 - 3 are implemented.\n" ++
-  "    Aliases: o1, o2, o3, 'O1', 'O2', O3'.";
+  "    Aliases: 'O1', 'O2', O3'.";
 option_text(debug) ->
   "Outputs internal debugging information during compilation";
-option_text(fill_delayslot) ->
-  "Try to optimize Sparc delay slots";
 option_text(icode_range) ->
   "Performs integer range analysis on the Icode level";
 option_text(icode_ssa_check) ->
@@ -1260,10 +1200,6 @@ option_text(rtl_lcm) ->
   "Perform Lazy Code Motion on RTL";
 option_text(rtl_ssapre) ->
   "Perform A-SSAPRE on RTL";
-option_text(sparc_peephole) ->
-  "Perform Sparc peephole optimization";
-option_text(sparc_prop) ->
-  "Perform Sparc-level optimization";
 option_text(time) ->
   "Reports the compilation times for the different stages\n" ++
   "of the compiler.\n" ++
@@ -1288,9 +1224,9 @@ option_text(verbose) ->
 option_text(Opt) when is_atom(Opt) ->
   "".
 
-%% @spec (option()) -> ok
 %% @doc Prints documentation about a specific option to the standard
 %% output.
+-spec(help_option/1 :: (comp_option()) -> 'ok').
 help_option(Opt) ->
   set_architecture([]), %% needed for target-specific option expansion
   case expand_options([Opt]) of
@@ -1315,9 +1251,9 @@ help_option(Opt) ->
   end,
   ok.
 
-%% @spec () -> ok
 %% @doc Prints documentation about debugging options to the standard
 %% output.
+-spec(help_debug_options/0 :: () -> 'ok').
 help_debug_options() ->
   io:format("HiPE compiler debug options:\n" ++
 	    "  Might require that some modules have been compiled " ++ 
@@ -1337,19 +1273,11 @@ hipe_timers() ->
 %% These are currently in use, but not documented:
 %%
 %%     count_instrs:
-%%     fill_delayslot:
-%%     {hot, Functions}:
 %%     icode_type:
 %%     icode_range:
 %%     {ls_order, Order}:
 %%     {regalloc, Algorithm}:
 %%     remove_comments
-%%     sparc_estimate_block_time
-%%     sparc_peephole:
-%%     sparc_post_schedule
-%%     sparc_profile:
-%%     sparc_rename:
-%%     sparc_schedule
 %%     timeregalloc:
 %%     timers
 %%     use_indexing
@@ -1358,7 +1286,7 @@ hipe_timers() ->
 %% done after the options have been expanded to normal form.)
 
 opt_keys() ->
-    ['O',
+    [
      bitlevel_binaries,
      concurrent_comp,
      check_for_inlining,
@@ -1370,10 +1298,8 @@ opt_keys() ->
      count_temps,
      dialyzer,
      debug,
-     fill_delayslot,
      frame_x86,
      get_called_modules,
-     hot,
      split_arith,
      split_arith_unsafe,
      icode_inline_bifs,
@@ -1413,13 +1339,6 @@ opt_keys() ->
      rtl_lcm,
      rtl_ssapre,
      rtl_show_translation,
-     sparc_estimate_block_time,
-     sparc_peephole,
-     sparc_post_schedule,
-     sparc_profile,
-     sparc_prop,
-     sparc_schedule,
-     sparc_rename,
      spillmin_color,
      target,
      time,
@@ -1443,7 +1362,7 @@ o1_opts() ->
   Common = [inline_fp, pmatch, peephole],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [sparc_peephole, fill_delayslot | Common];
+      Common;
     powerpc ->
       Common;
     arm ->
@@ -1464,7 +1383,7 @@ o2_opts() ->
 	    concurrent_comp | o1_opts()],
   case get(hipe_target_arch) of
     ultrasparc ->
-      [sparc_prop | Common];	% no rtl_lcm here; untagged values over GC...
+      [rtl_lcm | Common];
     powerpc ->
       [rtl_lcm | Common];
     arm ->
@@ -1503,7 +1422,6 @@ opt_negations() ->
   [{no_bitlevel_binaries, bitlevel_binaries},
    {no_core, core},
    {no_debug, debug},
-   {no_fill_delayslot, fill_delayslot},
    {no_get_called_modules, get_called_modules},
    {no_split_arith, split_arith},
    {no_concurrent_comp, concurrent_comp},
@@ -1535,12 +1453,6 @@ opt_negations() ->
    {no_rtl_lcm, rtl_lcm},
    {no_rtl_ssapre, rtl_ssapre},
    {no_rtl_show_translation, rtl_show_translation},
-   {no_sparc_estimate_block_time, sparc_estimate_block_time},
-   {no_sparc_peephole, sparc_peephole},
-   {no_sparc_post_schedule, sparc_post_schedule},
-   {no_sparc_profile, sparc_profile},
-   {no_sparc_prop, sparc_prop},
-   {no_sparc_schedule, sparc_schedule},
    {no_time, time},
    {no_type_warnings, type_warnings},
    {no_use_callgraph, use_callgraph},
@@ -1564,16 +1476,10 @@ opt_aliases() ->
 opt_basic_expansions() ->
   [{pp_all, [pp_beam, pp_icode, pp_rtl, pp_native]}].
 
-opt_pre_expansions() ->
-  [{o0, [{'O', 0}]},
-   {o1, [{'O', 1}]},
-   {o2, [{'O', 2}]},
-   {o3, [{'O', 3}]}].
-
 opt_expansions() ->
-  [{{'O', 1}, [{'O', 1} | o1_opts()]},
-   {{'O', 2}, [{'O', 2} | o2_opts()]},
-   {{'O', 3}, [{'O', 3} | o3_opts()]},
+  [{o1, o1_opts()},
+   {o2, o2_opts()},
+   {o3, o3_opts()},
    {x87, [x87, inline_fp]},
    {inline_fp, case get(hipe_target_arch) of %% XXX: Temporary until x86
 		 x86 -> [x87, inline_fp];    %%       has sse2
@@ -1604,7 +1510,6 @@ expand_options(Opts) ->
   proplists:normalize(Opts, [{negations, opt_negations()},
 			     {aliases, opt_aliases()},
 			     {expand, opt_basic_expansions()},
-			     {expand, opt_pre_expansions()},
 			     {expand, opt_expansions()}]).
 
 -spec(check_options/1 :: (comp_options()) -> 'ok').

@@ -9,9 +9,9 @@
 %%  History  :	* 2001-07-24 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2007/05/12 09:31:03 $
-%%              $Revision: 1.10 $
+%%              $Author: mikpe $
+%%              $Date: 2007/12/18 09:13:35 $
+%%              $Revision: 1.11 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -52,15 +52,11 @@ cols2tuple(N, [{R, C}|Ms], Vs, Target) when N =:= R ->
   %% N makes sure the mapping is dense. N is he next key.
   cols2tuple(N+1, Ms, [C|Vs], Target);
 cols2tuple(N, SourceMapping, Vs, Target) ->
-  %% The source was sparce, make up some placeholders...
+  %% The source was sparse, make up some placeholders...
   Val = 	      
     case Target:is_precoloured(N) of
       %% If it is precoloured, we know what to map it to.
-      true -> 
-	case Target of
-	  hipe_sparc_specific_fp -> {fp_reg, N};
-	  _ -> {reg, N}
-	end;
+      true -> {reg, N};
       false -> unknown
     end,
   cols2tuple(N+1, SourceMapping, [Val|Vs], Target).

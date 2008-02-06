@@ -35,7 +35,12 @@ undefined_function(Module, Func, Args) ->
 		true ->
 		    apply(Module, Func, Args);
 		false ->
-		    crash(Module, Func, Args)
+		    case check_inheritance(Module, Args) of
+			{value, Base, Args1} ->
+			    apply(Base, Func, Args1);
+			none ->
+			    crash(Module, Func, Args)
+		    end
 	    end;
 	{module, _} ->
 	    crash(Module, Func, Args);
@@ -114,3 +119,28 @@ ensure_loaded(Module) ->
 
 stub_function(Mod, Func, Args) ->
     exit({undef,[{Mod,Func,Args}]}).
+
+check_inheritance(Module, Args) ->
+    Attrs = erlang:get_module_info(Module, attributes),
+    case lists:keysearch(extends, 1, Attrs) of
+	{value,{extends,[Base]}} when is_atom(Base), Base =/= Module ->
+	    %% This is just a heuristic for detecting abstract modules
+	    %% with inheritance so they can be handled; it would be
+	    %% much better to do it in the emulator runtime
+	    case lists:keysearch(abstract, 1, Attrs) of
+		{value,{abstract,[true]}} ->
+		    case lists:reverse(Args) of
+			[M|Rs] when tuple_size(M) > 1,
+			element(1,M) =:= Module,
+			tuple_size(element(2,M)) > 0,
+			is_atom(element(1,element(2,M))) ->
+			    {value, Base, lists:reverse(Rs, [element(2,M)])};
+			_ ->
+			    {value, Base, Args}
+		    end;
+		_ ->
+		    {value, Base, Args}
+	    end;
+	_ ->
+	    none
+    end.

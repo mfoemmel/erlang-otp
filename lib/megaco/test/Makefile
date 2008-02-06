@@ -82,7 +82,7 @@ ERL_COMPILE_FLAGS += -DMEGACO_TEST_CODE=mona_lisa_spelar_doom
 endif
 
 ifeq ($(USE_MEGACO_HIPE),true)
-ERL_COMPILE_FLAGS += -Dmegaco_hipe_special=true
+ERL_COMPILE_FLAGS += +native -Dmegaco_hipe_special=true
 endif
 
 ERL_COMPILE_FLAGS += \
@@ -104,6 +104,13 @@ ifeq ($(DONT_STOP),true)
 MAYBE_ESTOP =
 else
 MAYBE_ESTOP = $(ESTOP)
+endif
+
+ETVIEW = -s et_viewer
+ifeq ($(USE_ET_VIEWER),true)
+MAYBE_ETVIEW =
+else
+MAYBE_ETVIEW = $(ETVIEW)
 endif
 
 ifeq ($(MERL),)
@@ -197,7 +204,7 @@ test: make
 
 utest: make
 	$(MERL) $(ARGS) -sname megaco_utest $(ERL_PATH) \
-            -s et_viewer \
+            $(MAYBE_ETVIEW) \
             -s megaco_test_lib t $(SUITE) \
             $(ESTOP)
 
@@ -380,8 +387,8 @@ actions: make
             $(MAYBE_ESTOP)
 
 mess: make
-        # -s et_viewer
 	$(MERL) $(ARGS) -sname megaco_mess $(ERL_PATH) \
+            $(MAYBE_ETVIEW) \
             -s megaco_test_lib t megaco_mess_test \
             $(ESTOP)
 

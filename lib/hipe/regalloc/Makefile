@@ -46,8 +46,8 @@ MODULES = hipe_ig hipe_ig_moves hipe_moves \
 	  hipe_graph_coloring_regalloc \
 	  hipe_regalloc_loop \
 	  hipe_ls_regalloc \
-	  hipe_sparc_specific hipe_sparc_specific_fp \
 	  hipe_ppc_specific hipe_ppc_specific_fp \
+	  hipe_sparc_specific hipe_sparc_specific_fp \
 	  hipe_arm_specific \
 	  hipe_x86_specific hipe_x86_specific_x87 \
 	  hipe_amd64_specific hipe_amd64_specific_sse2 hipe_amd64_specific_x87

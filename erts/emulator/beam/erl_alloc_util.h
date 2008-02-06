@@ -19,7 +19,7 @@
 #ifndef ERL_ALLOC_UTIL__
 #define ERL_ALLOC_UTIL__
 
-#define ERTS_ALCU_VSN_STR "2.1"
+#define ERTS_ALCU_VSN_STR "2.2"
 
 #include "erl_alloc_types.h"
 
@@ -34,6 +34,9 @@ typedef struct {
     char *name_prefix;
     ErtsAlcType_t alloc_no;
     int ts;
+    int tspec;
+    int tpref;
+    int ramv;
     Uint sbct;
     Uint asbcst;
     Uint rsbcst;
@@ -57,6 +60,9 @@ typedef struct {
     NULL,                                                                  \
     ERTS_ALC_A_INVALID,	/* (number) alloc_no: allocator number           */\
     1,			/* (bool)   ts:     thread safe                  */\
+    0,			/* (bool)   tspec:  thread specific              */\
+    0,			/* (bool)   tpref:  thread preferred             */\
+    0,			/* (bool)   ramv:   realloc always moves         */\
     512*1024,		/* (bytes)  sbct:   sbc threshold                */\
     2*1024*2024,	/* (amount) asbcst: abs sbc shrink threshold     */\
     20,			/* (%)      rsbcst: rel sbc shrink threshold     */\
@@ -64,7 +70,7 @@ typedef struct {
     1024*1024,		/* (bytes)  mmbcs:  main multiblock carrier size */\
     256,		/* (amount) mmsbc:  max mseg sbcs                */\
     10,			/* (amount) mmmbc:  max mseg mbcs                */\
-    5*1024*1024,	/* (bytes)  lmbcs:  largest mbc size             */\
+    10*1024*1024,	/* (bytes)  lmbcs:  largest mbc size             */\
     1024*1024,		/* (bytes)  smbcs:  smallest mbc size            */\
     10			/* (amount) mbcgs:  mbc growth stages            */\
 }
@@ -80,6 +86,9 @@ typedef struct {
     NULL,                                                                  \
     ERTS_ALC_A_INVALID,	/* (number) alloc_no: allocator number           */\
     1,			/* (bool)   ts:     thread safe                  */\
+    0,			/* (bool)   tspec:  thread specific              */\
+    0,			/* (bool)   tpref:  thread preferred             */\
+    0,			/* (bool)   ramv:   realloc always moves         */\
     64*1024,		/* (bytes)  sbct:   sbc threshold                */\
     2*1024*2024,	/* (amount) asbcst: abs sbc shrink threshold     */\
     20,			/* (%)      rsbcst: rel sbc shrink threshold     */\
@@ -96,16 +105,21 @@ typedef struct {
 
 void *	erts_alcu_alloc(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc(ErtsAlcType_t, void *, void *, Uint);
+void *	erts_alcu_realloc_mv(ErtsAlcType_t, void *, void *, Uint);
 void	erts_alcu_free(ErtsAlcType_t, void *, void *);
 #ifdef USE_THREADS
 void *	erts_alcu_alloc_ts(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc_ts(ErtsAlcType_t, void *, void *, Uint);
+void *	erts_alcu_realloc_mv_ts(ErtsAlcType_t, void *, void *, Uint);
 void	erts_alcu_free_ts(ErtsAlcType_t, void *, void *);
-#ifdef ERTS_ALC_THR_SPEC_ALLOCS
 void *	erts_alcu_alloc_thr_spec(ErtsAlcType_t, void *, Uint);
 void *	erts_alcu_realloc_thr_spec(ErtsAlcType_t, void *, void *, Uint);
+void *	erts_alcu_realloc_mv_thr_spec(ErtsAlcType_t, void *, void *, Uint);
 void	erts_alcu_free_thr_spec(ErtsAlcType_t, void *, void *);
-#endif
+void *	erts_alcu_alloc_thr_pref(ErtsAlcType_t, void *, Uint);
+void *	erts_alcu_realloc_thr_pref(ErtsAlcType_t, void *, void *, Uint);
+void *	erts_alcu_realloc_mv_thr_pref(ErtsAlcType_t, void *, void *, Uint);
+void	erts_alcu_free_thr_pref(ErtsAlcType_t, void *, void *);
 #endif
 Eterm	erts_alcu_au_info_options(int *, void *, Uint **, Uint *);
 Eterm	erts_alcu_info_options(Allctr_t *, int *, void *, Uint **, Uint *);
@@ -219,6 +233,8 @@ struct Allctr_t_ {
     char *		vsn_str;
 
     /* Options */
+    int			t;
+    int			ramv;
     Uint		sbc_threshold;
     Uint		sbc_move_threshold;
     Uint		main_carrier_size;
@@ -233,6 +249,7 @@ struct Allctr_t_ {
 
     /* */
     Uint		mbc_header_size;
+    Uint		sbc_header_size;
     Uint		min_mbc_size;
     Uint		min_mbc_first_free_size;
     Uint		min_block_size;
@@ -291,6 +308,14 @@ struct Allctr_t_ {
     CarriersStats_t	sbcs;
     CarriersStats_t	mbcs;
 
+#ifdef DEBUG
+#ifdef USE_THREADS
+    struct {
+	int saved_tid;
+	erts_tid_t tid;
+    } debug;
+#endif
+#endif
 };
 
 int	erts_alcu_start(Allctr_t *, AllctrInit_t *);

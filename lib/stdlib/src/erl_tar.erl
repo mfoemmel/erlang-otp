@@ -287,7 +287,7 @@ format_error(Term) ->
 
 add1(TarFile, Bin, NameInArchive, Opts) when is_binary(Bin) ->
     Now = calendar:now_to_local_time(now()),
-    Info = #file_info{size = size(Bin),
+    Info = #file_info{size = byte_size(Bin),
 		      type = regular,
 		      access = read_write,
 		      atime = Now,
@@ -326,7 +326,7 @@ add1(TarFile, Name, NameInArchive, Opts) ->
 
 add1(Tar, Name, Header, Bin, Options) ->
     add_verbose(Options, "a ~s~n", [Name]),
-    file:write(Tar, [Header, Bin, padding(size(Bin), ?record_size)]).
+    file:write(Tar, [Header, Bin, padding(byte_size(Bin), ?record_size)]).
 
 add_directory(TarFile, DirName, NameInArchive, Info, Options) ->
     case file:list_dir(DirName) of
@@ -367,7 +367,7 @@ create_header(Name, #file_info {mode=Mode, uid=Uid, gid=Gid,
 	  zeroes(?th_prefix-?th_version-?th_version_len),
 	  to_string(Prefix, ?th_prefix_len)],
     H = list_to_binary(H0),
-    512 = size(H),				%Assertion.
+    512 = byte_size(H),				%Assertion.
     ChksumString = to_octal(checksum(H), 6, [0,$\s]),
     <<Before:?th_chksum/binary,_:?th_chksum_len/binary,After/binary>> = H,
     [Before,ChksumString,After].
@@ -385,7 +385,7 @@ to_octal(Int, Count, Result) ->
 
 to_string(Str0, Count) ->
     Str = list_to_binary(Str0),
-    case size(Str) of
+    case byte_size(Str) of
 	Size when Size < Count ->
 	    [Str|zeroes(Count-Size)];
 	_ -> Str
@@ -564,7 +564,7 @@ get_header(File) ->
 
 %% Converts the tar header to a record.
 
-convert_header(Bin) when size(Bin) =:= ?record_size ->
+convert_header(Bin) when byte_size(Bin) =:= ?record_size ->
     case verify_checksum(Bin) of
 	ok ->
 	    Hd = #tar_header{name=get_name(Bin),
@@ -580,7 +580,7 @@ convert_header(Bin) when size(Bin) =:= ?record_size ->
 	eof ->
 	    eof
     end;
-convert_header(Bin) when size(Bin) =:= 0 ->
+convert_header(Bin) when byte_size(Bin) =:= 0 ->
     eof;
 convert_header(_Bin) ->
     throw({error, eof}).
@@ -619,7 +619,7 @@ get_name(Bin) ->
 	[0] ->
 	    Name;
 	[_] ->
-	    Prefix = binary_to_list(Bin, ?th_prefix+1, size(Bin)),
+	    Prefix = binary_to_list(Bin, ?th_prefix+1, byte_size(Bin)),
 	    lists:reverse(remove_nulls(Prefix), [$/|Name])
     end.
 
@@ -668,7 +668,7 @@ get_element(File, #tar_header{size = 0}) ->
     {ok,<<>>};
 get_element(File, #tar_header{size = Size}) ->
     case file:read(File, Size) of
-	{ok,Bin}=Res when size(Bin) =:= Size ->
+	{ok,Bin}=Res when byte_size(Bin) =:= Size ->
 	    skip_to_next(File),
 	    Res;
 	{ok,List} when length(List) =:= Size ->

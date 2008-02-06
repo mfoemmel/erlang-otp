@@ -600,7 +600,7 @@ prune_nodes(Nodes, NonFailSet) ->
 %% Map calculations. 
 
 %%-----------------------------------------------------------------------------
-%% Create a maps stucture from the Nodes record
+%% Create a maps structure from the Nodes record
 
 create_maps(Nodes) ->
   Maps = lists:foldl(fun(Label, MapsAcc) ->
@@ -610,9 +610,7 @@ create_maps(Nodes) ->
     %NewMapsAcc3 = maps_from_node_atom_type(NewMapsAcc2, Node),
     maps_from_node_code(NewMapsAcc2, Node)
   end, #maps{}, nodes_rev_postorder(Nodes)),
-
   maps_balance(Maps).
-
 
 create_elem_expr_key(0, _, Key) -> Key;
 create_elem_expr_key(N, Var, Key) -> 
@@ -675,10 +673,9 @@ maps_from_node_struct_elems(Maps, Node) ->
   end, Maps, node_struct_elems(Node)).
 
 
-
 %%-----------------------------------------------------------------------------
-%% Get all expressions defined by the Node and insert them into Maps. Also insert
-%% information about all affected variables into Maps.
+%% Get all expressions defined by the Node and insert them into Maps.
+%% Also insert information about all affected variables into Maps.
 
 maps_from_node_code(Maps, Node) ->
   %%debug_struct("Node Label: ", Label),
@@ -731,9 +728,8 @@ maps_from_node_code(Maps, Node) ->
   end, Maps, node_code(Node)).
 
 %%-----------------------------------------------------------------------------
-%% Creates varinfo structures with exprid set to ExprId
-%% for all variables contained in Defines. These are put into
-%% MapsIn.
+%% Creates varinfo structures with exprid set to ExprId for all
+%% variables contained in Defines. These are put into MapsIn.
 
 maps_varinfos_create(Defines, ExprId, Elem, MapsIn) ->
   VarInfo = #varinfo{exprid = ExprId, elem = Elem},
@@ -766,8 +762,6 @@ maps_expr_varinfos_create(Instr, RefKey, Maps) ->
   
   Maps3 = maps_varinfos_create(Defines, ExprId, none, Maps2),
   update_maps_var_use(Instr, ExprId, Maps3).
-
-
 
 %%-----------------------------------------------------------------------------
 %% A variable replacement function that returns a tuple of three elements
@@ -803,9 +797,10 @@ replace_call_vars_elems(Maps, Instr) ->
   hipe_icode:call_args_update(Instr, Elems)}.
 
 %%-----------------------------------------------------------------------------
-%% Updates the usage information of all variables used by Instr to also contain
-%% Id and updates Maps to contain the new variable information. Also Updates the
-%% expressions where the updated variables are used to contain the use information.
+%% Updates the usage information of all variables used by Instr to also
+%% contain Id and updates Maps to contain the new variable information.
+%% Also updates the expressions where the updated variables are used to
+%% contain the use information.
 
 update_maps_var_use(Instr, Id, Maps) ->
   lists:foldl(fun(Use, MapsAcc) ->
@@ -826,7 +821,7 @@ update_maps_var_use(Instr, Id, Maps) ->
   end, Maps, hipe_icode:uses(Instr)).
 
 %%-----------------------------------------------------------------------------
-%% looks up an old variable info or creates a new one if none is found.
+%% Looks up an old variable info or creates a new one if none is found.
 
 get_varinfo(Var, Maps) ->
   case maps_var_lookup(Var, Maps) of
@@ -857,10 +852,10 @@ init_nodes(Nodes, Maps) ->
 
   lists:foldl(fun(Node, NodesAcc) -> 
     UEExpr = calc_up_exposed_expr(maps_var(Maps), Node),
-    %%print_list("Up ExprSet: ", ?SETS:to_list(UEExpr)),
+    %% print_list("Up ExprSet: ", ?SETS:to_list(UEExpr)),
 
     KilledExpr = calc_killed_expr(Node, Maps),
-    %%print_list("Killed: ", ?SETS:to_list(KilledExpr)),
+    %% print_list("Killed: ", ?SETS:to_list(KilledExpr)),
 
     %% End nodes have no anticipated out
     AnticOut =
@@ -882,36 +877,27 @@ init_nodes(Nodes, Maps) ->
 %% Calculate the upwards exposed expressions for a node.
 
 calc_up_exposed_expr(VarMap, Node) ->
-  %debug_struct("UpExpr label: ", node_label(Node)),
-  
+  %% debug_struct("UpExpr label: ", node_label(Node)),
   NonStructDefs = node_non_struct_defs(Node),
-
   {_, ExprIdSet} = 
     lists:foldl(fun(Instr, {NotToUseAcc, ExprIdAcc}) ->
-
       Defs = hipe_icode:defines(Instr),
       Uses = hipe_icode:uses(Instr),
-
       IsNotToUse = 
-	lists:any(fun(Use) ->
-	  gb_sets:is_member(Use, NotToUseAcc) end, Uses),
-
-	case IsNotToUse of 
+	lists:any(fun(Use) -> gb_sets:is_member(Use, NotToUseAcc) end, Uses),
+	case IsNotToUse of
 	  false ->
 	    NewExprIdAcc = 
 	      lists:foldl(fun(Def, Acc) ->
 		#varinfo{exprid = Id} = gb_trees:get(Def, VarMap),
 		?SETS:add_element(Id, Acc) end, ExprIdAcc, Defs),
-
 	    {NotToUseAcc, NewExprIdAcc};
 	  true ->
 	    NewNotToUse =
 	      gb_sets:union(gb_sets:from_list(Defs), NotToUseAcc),
-
 	    {NewNotToUse, ExprIdAcc}
 	end
     end, {NonStructDefs, ?SETS:new()}, node_code(Node)),
-
     ExprIdSet.
 
 %%-----------------------------------------------------------------------------
@@ -1001,7 +987,7 @@ calc_inserts(NodesIn, MapsIn) ->
     AnticOut = node_antic_out(Node),
     SubIns = node_sub_inserts(Node),
 
-    %debug_struct("Label: ", Label),
+    %%debug_struct("Label: ", Label),
 
     {HasIns, NewMapsAcc} = 
       ?SETS:fold(fun(ExprId, {HasInsAcc, MapsAcc2}) ->

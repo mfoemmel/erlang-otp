@@ -32,10 +32,10 @@ rule([header|_],_) ->
     {drop, ""};
 
 rule([app|_],_) ->
-    {"\n<H3>APPLICATION</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<h3>APPLICATION</h3>\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule([appsummary|_],_) ->
-    {"\n<H3>APPLICATION SUMMARY</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<h3>APPLICATION SUMMARY</h3>\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule(TagHistory, TagBody) ->
     docb_html_ref:rule(TagHistory,TagBody).

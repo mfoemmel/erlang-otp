@@ -24,6 +24,7 @@
 
 %%% HTTP Client per request settings
 -record(http_options,{
+	  version,       % string() - "HTTP/1.1" | "HTTP/1.0" | "HTTP/0.9"
 	  %% Milliseconds before a request times out
 	  timeout = ?HTTP_REQUEST_TIMEOUT,  
 	  %% bool() - True if automatic redirection on 30X responses.

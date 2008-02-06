@@ -12,9 +12,11 @@
 -export([nr_of_use/2]).
 -endif.
 
+-type(hipe_array() :: integer()).
+
 -record(spill_cost,
-	{uses::binary(),       	% number of uses of each temp
-	 bb_uses::binary()	% number of basic blocks each temp occurs in
+	{uses	 :: hipe_array(),	% number of uses of each temp
+	 bb_uses :: hipe_array()	% number of basic blocks each temp occurs in
 	}).
 
 new(NrTemps) ->

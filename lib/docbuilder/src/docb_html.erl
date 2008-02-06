@@ -78,20 +78,20 @@ rule([list, item, list|_], {_, ["ORDERED"], _}) ->
 rule([list, item, taglist|_], {_, ["ORDERED"], _}) ->
     {"\n<ol>\n", "\n</ol>\n"};
 rule([list|_], {_, ["ORDERED"], _}) ->
-    {"\n<p>\n<ol>\n", "\n</ol>\n"};
+    {"\n<ol>\n", "\n</ol>\n"};
 rule([list, item, list|_], {_, ["BULLETED"], _}) ->
     {"\n<ul>\n", "\n</ul>\n"};
 rule([list, item, taglist|_], {_, ["BULLETED"], _}) ->
     {"\n<ul>\n", "\n</ul>\n"};
 rule([list|_], {_, ["BULLETED"], _}) ->
-    {"\n<p>\n<ul>\n", "\n</ul>\n"};
+    {"\n<ul>\n", "\n</ul>\n"};
 
 rule([taglist, item, taglist|_], _) ->
     {"\n<dl>\n", "\n</dl>\n"};
 rule([taglist, item, list|_], _) ->
     {"\n<dl>\n", "\n</dl>\n"};
 rule([taglist|_], _) ->
-    {"\n<p>\n<dl>\n", "\n</dl>\n"};
+    {"\n<dl>\n", "\n</dl>\n"};
 
 rule([tag|_], _) ->
     {"\n<dt>\n", "\n</dt>\n"};
@@ -102,8 +102,8 @@ rule([item, taglist|_], _) ->
     {"\n<dd>\n", "\n</dd>\n"};
 
 rule([image|_], {_, [File], _}) ->
-    {["\n<p>\n<center>\n", "<img alt=\"", File, "\" src=\"", File,
-      ".gif\"><br />\n"],
+    {["\n<center>\n", "<img alt=\"", File, "\" src=\"", File,
+      ".gif\"/><br/>\n"],
      "\n</center>\n"};
 
 rule([icaption|_], _) ->
@@ -114,19 +114,26 @@ rule([url|_], {_, [HREF], _}) ->
     {io_lib:format("<a target=\"_top\" href=\"~s\">", [URI]), "</a>"};
 
 rule([marker|_], {_, [ID], _})   ->
-    {ok, NewID, _} = regexp:sub(ID, "^[^#]*#", ""),
-    {drop, ["<a name=\"", NewID, "\"><!-- Empty --></a>"]};
+    %% remove all chars before first # including the #
+    {ok, NewID, _} = regexp:sub(ID, "^[^#]*#", ""), 
+    %% replace "/" with "-" because "/" xhtml does not
+    %% allow "/" in the name attribute of element <a>
+    %% so we have to do the same as for marker i.e
+    %% Function/Arity is translated to an anchor in xhtml
+    %% like this : <a name="Function-Arity"/>
+    NewID2 = [case X of $/ -> $-;_->X end||X <- NewID], 
+    {drop, ["<a name=\"", NewID2, "\"><!-- Empty --></a>"]};
 
 rule([table|_], {_, ["", ""], Ts}) ->
     {newargs,
-     "\n<p><center>\n"
+     "\n<center>\n"
      "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
      reorder_table(Ts),
      "\n</table>\n"
      "</center>\n"};
 rule([table|_], {_, [Width, ""], Ts}) ->
     {newargs,
-     ["\n<p>\n<center>\n"
+     ["\n<center>\n"
       "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\" ",
       "width=\"", Width, "%\">\n"],
      reorder_table(Ts),
@@ -137,14 +144,14 @@ rule([table|_], {_, [Width, ""], Ts}) ->
 %% DTDs.
 rule([table|_], {_, ["LEFT"], Ts}) ->
     {newargs,
-     "\n<p>\n"
+     "\n"
      "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
      reorder_table(Ts),
      "\n</table>\n"};
 
 rule([table|_], {_, _, Ts}) ->
     {newargs,
-     "\n<p>\n<center>\n"
+     "\n<center>\n"
      "<table cellspacing=\"0\" cellpadding=\"2\" border=\"1\">\n",
      reorder_table(Ts),
      "\n</table>\n"
@@ -156,11 +163,11 @@ rule([row|_], _)   ->
 rule([cell|_], {_, ["", ""], _})   ->
     {"    <td>\n", "\n    </td>\n"};
 rule([cell|_], {_, [Align, ""], _})   ->
-    {["    <td align=\"", Align, "\">\n"], "\n    </td>\n"};
+    {["    <td align=\"", string:to_lower(Align), "\">\n"], "\n    </td>\n"};
 rule([cell|_], {_, ["", VAlign], _})   ->
-    {["    <td valign=\"", VAlign, "\">\n"], "\n    </td>\n"};
+    {["    <td valign=\"", string:to_lower(VAlign), "\">\n"], "\n    </td>\n"};
 rule([cell|_], {_, [Align, VAlign], _})   ->
-    {["    <td align=\"", Align, "\" valign=\"", VAlign, "\">\n"],
+    {["    <td align=\"", string:to_lower(Align), "\" valign=\"", string:to_lower(VAlign), "\">\n"],
      "\n    </td>\n"};
 
 rule([tcaption|_], _)   ->
@@ -170,7 +177,7 @@ rule([codeinclude|_], {_, [File, Tag, _Type], _}) ->
 %% Type can be "ERL", "C" or "NONE"
     {ok,Data} = docb_html_util:code_include(File, Tag),
     {drop, ["\n<div class=\"example\"><pre>\n", Data,
-	     "\n</div></pre>\n"]};
+	     "\n</pre></div>\n"]};
 
 rule([erleval|_], {_, [Expr], _}) ->
     docb_html_util:erl_eval(Expr);
@@ -193,9 +200,15 @@ rule([seealso|_], {_, [Marker], _}, Opts) ->
 		    0 -> % No Fragment
 			Marker++".html";
 		    1 -> % No Path
-			Marker;
+			%% replace "/" with "-" because "/" xhtml does not
+			%% allow "/" in the name attribute of element <a>
+			%% so we have to do the same as for marker i.e
+			%% Function/Arity is translated to an anchor in xhtml
+			%% like this : <a name="Function-Arity"/>
+			[case X of $/ -> $-;_->X end||X <- Marker]; 
 		    _ ->
-			case string:tokens(Marker, "#") of
+			Marker1 = [case X of $/ -> $-;_->X end||X <- Marker], 
+			case string:tokens(Marker1, "#") of
 			    [Path] -> % # at end, remove it
 				Path++".html";
 			    [Path | Frag0] ->
@@ -216,14 +229,6 @@ rule([warning|_], _, Opts) ->
       "<div class=\"content\">\n",
       "\n</div>"
       "\n</div>\n"}, Opts};
-%     {{"\n<P>\n"
-%       "<TABLE CELLPADDING=4>\n"
-%       "  <TR>\n"
-%       "    <TD VALIGN=TOP><IMG ALT=\"Warning!\" SRC=\"warning.gif\"></TD>\n"
-%       "    <TD>\n",
-%       "    </TD>\n"
-%       "  </TR>\n"
-%       "</TABLE>\n"}, Opts};
 
 rule([note|_], _, Opts) ->
     docb_html_util:copy_pics("note.gif", "note.gif", Opts),
@@ -232,14 +237,6 @@ rule([note|_], _, Opts) ->
       "<div class=\"content\">",
       "\n</div>"
       "\n</div>\n"}, Opts};
-%     {{"\n<P>\n"
-%       "<TABLE CELLPADDING=4>\n"
-%       "  <TR>\n"
-%       "    <TD VALIGN=TOP><IMG ALT=\"Note!\" SRC=\"note.gif\"></TD>\n"
-%       "    <TD>\n",
-%       "    </TD>\n"
-%       "  </TR>\n"
-%       "</TABLE>\n"}, Opts};
 
 rule([path|_], {_, [UNIX, Windows], [{pcdata, _, Text}]}, Opts) ->
     UnixPart =
@@ -334,7 +331,8 @@ rule([cite|_], {_, [ID], _}, Opts) ->
 			    {{drop,
 			      ["<em><strong>", ID, "</strong></em> "]},
 			     Opts};
-			{value, {ID, Name, _Description, _Resp}} ->
+	
+		{value, {ID, Name, _Description, _Resp}} ->
 			    {{drop, ["<em><strong>", Name,
 				     "</strong></em> "]},
 			     Opts};
@@ -376,7 +374,7 @@ rule([code|_], {_, [Type], [{pcdata, _, Code}]}, Opts) ->
     case lists:member(Type,["ERL","C","NONE"]) of
 	true ->
 	    {{drop, ["\n<div class=\"example\"><pre>\n", docb_html_util:element_cdata_to_html(Code),
-		     "\n</div></pre>\n"]}, Opts};
+		     "\n</pre></div>\n"]}, Opts};
 	false ->
 	    exit({error,"unknown type of <code>"})
     end.

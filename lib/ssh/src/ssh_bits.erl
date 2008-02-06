@@ -263,8 +263,16 @@ decode(Binary, Offset, [Type|Ts], Acc) ->
 	    decode(Binary, Offset+2+L, Ts, [X | Acc]);
 
 	string ->
-	    <<_:Offset/binary,?UINT32(L), X:L/binary,_/binary>> = Binary,
-	    decode(Binary, Offset+4+L, Ts, [binary_to_list(X) | Acc]);
+	    Size = size(Binary),
+	    if Size < Offset + 4  ->
+		    %% empty string at end
+		    {Size, reverse(["" | Acc])};
+	       true ->
+		    <<_:Offset/binary,?UINT32(L), X:L/binary,_/binary>> =
+			Binary,
+		    decode(Binary, Offset+4+L, Ts, [binary_to_list(X) | 
+						    Acc])
+	    end;
 
 	binary ->
 	    <<_:Offset/binary,?UINT32(L), X:L/binary,_/binary>> = Binary,
@@ -462,50 +470,13 @@ rand32() ->
 %%
 
 b64_encode(Bs) when list(Bs) -> 
-    b64_enc(list_to_binary(Bs));    
+    base64:encode(Bs);    
 b64_encode(Bin) when binary(Bin) ->
-    b64_enc(Bin).
-
-b64_enc(<<C1:6, C2:6, C3:6, C4:6, Bs/binary>>) ->
-    [b64e(C1), b64e(C2), b64e(C3), b64e(C4)| b64_enc(Bs)];
-b64_enc(<<B:2/binary>>) ->
-    <<C1:6, C2:6, C3:6, _:6>> = <<B/binary, 0>>,
-    [b64e(C1), b64e(C2), b64e(C3), $=];
-b64_enc(<<B:1/binary>>) ->
-    <<C1:6, C2:6, _:4>> = <<B/binary, 0>>,
-    [b64e(C1), b64e(C2), $=, $=];
-b64_enc(<<>>) ->
-    [].
-
-b64e(C) when C =< 25 -> C+$A;
-b64e(C) when C =< 51 -> (C-26)+$a;
-b64e(C) when C =< 61 -> (C-52)+$0;
-b64e(62) -> $+;
-b64e(63) -> $/.
+    base64:encode(Bin).
 
 b64_decode(Bin) when binary(Bin) -> 
-    list_to_binary(b64_dec(binary_to_list(Bin)));
+    base64:mime_decode(Bin);
 b64_decode(Cs) when list(Cs) -> 
-    list_to_binary(b64_dec(Cs)).
+    base64:mime_decode(Cs).
 
-b64_dec([$\s|Cs]) -> b64_dec(Cs);
-b64_dec([$\t|Cs]) -> b64_dec(Cs);
-b64_dec([$\r,$\n|Cs]) -> b64_dec(Cs);
-b64_dec([$\n|Cs]) -> b64_dec(Cs);
-b64_dec([C1,C2,$=,$=|_]) ->
-    <<B1, _:16>> = <<(b64d(C1)):6, (b64d(C2)):6, 0:12>>,
-    [B1];
-b64_dec([C1,C2,C3,$=|_]) ->
-    <<B1, B2, _:8>> = <<(b64d(C1)):6,(b64d(C2)):6,(b64d(C3)):6, 0:6>>,
-    [B1, B2];
-b64_dec([C1,C2,C3,C4| Cs]) ->
-    Bin = <<(b64d(C1)):6, (b64d(C2)):6, (b64d(C3)):6, (b64d(C4)):6>>,
-    [Bin| b64_dec(Cs)];
-b64_dec([]) ->
-    [].
 
-b64d(C) when C >= $A, C =< $Z -> C-$A;
-b64d(C) when C >= $a, C =< $z -> (C-$a)+26;
-b64d(C) when C >= $0, C =< $9 -> (C-$0)+52;
-b64d($+) -> 62;
-b64d($/) -> 63.

@@ -38,6 +38,16 @@
 -define(ping,"p").
 -define(util,"u").
 
+-define(cu_cpu_id, 0).
+-define(cu_user, 1).
+-define(cu_nice_user, 2).
+-define(cu_kernel, 3).
+-define(cu_io_wait, 4).
+-define(cu_idle, 5).
+-define(cu_hard_irq, 6).
+-define(cu_soft_irq, 7).
+-define(cu_steal, 8).
+
 -define(INT32(D3,D2,D1,D0),
 	(((D3) bsl 24) bor ((D2) bsl 16) bor ((D1) bsl 8) bor (D0))).
 
@@ -45,10 +55,27 @@
 
 -record(cpu_util, {cpu, busy = [], non_busy = []}).
 
--record(state, {port = not_used, util = [], os_type}).
+-record(state, {server, os_type}).
+%-record(state, {server, port = not_used, util = [], os_type}).
+
+-record(internal, {port = not_used, util = [], os_type}).
 
 %%----------------------------------------------------------------------
-%% API
+%% Contract specifications 
+%%----------------------------------------------------------------------
+
+-type(util_cpus() :: 'all' | integer() | [integer()]).
+-type(util_state() :: 
+	'user' | 
+	'nice_user' | 
+	'kernel' |
+	'wait' |
+	'idle').
+-type(util_value() :: {util_state(), float()} | float()).
+-type(util_desc() :: {util_cpus(), util_value(), util_value(), []}).
+
+%%----------------------------------------------------------------------
+%% Exported functions
 %%----------------------------------------------------------------------
 
 start() ->
@@ -58,40 +85,52 @@ start_link() ->
     gen_server:start_link({local, cpu_sup}, cpu_sup, [], []).
 
 stop() ->
-    gen_server:call(cpu_sup,?quit).
+    gen_server:call(cpu_sup, ?quit, infinity).
+
+-spec(nprocs/0 :: () -> integer() | {'error', any()}).
 
 nprocs() ->
-    os_mon:call(cpu_sup,?nprocs).
+    os_mon:call(cpu_sup, ?nprocs, infinity).
+
+-spec(avg1/0 :: () -> integer() | {'error', any()}).
+
 avg1() ->
-    os_mon:call(cpu_sup,?avg1).
+    os_mon:call(cpu_sup, ?avg1, infinity).
+
+-spec(avg5/0 :: () -> integer() | {'error', any()}).
 
 avg5() ->
-    os_mon:call(cpu_sup,?avg5).
+    os_mon:call(cpu_sup, ?avg5, infinity).
+
+-spec(avg15/0 :: () -> integer() | {'error', any()}).
 
 avg15() ->
-    os_mon:call(cpu_sup,?avg15).
+    os_mon:call(cpu_sup, ?avg15, infinity).
 
-util(ArgList) when is_list(ArgList) ->
-    case lists:foldl(fun (detailed, {_, PC}) -> {true, PC};
-			 (per_cpu,  {D, _}) ->  {D,    true};
-			 (_, _) ->              badarg
-		     end,
-		     {false, false},
-		     ArgList) of
-	badarg ->
+-spec(util/1 :: ([ 'detailed' | 'per_cpu']) -> 
+	util_desc() | [util_desc()] | {'error', any()}).
+
+util(Args) when is_list (Args) ->
+   % Get arguments
+   case lists:foldl(
+	    fun (detailed, {_ , PC}) -> {true, PC  };
+	        (per_cpu , {D , _ }) -> {D   , true};
+	        (_       , _       ) -> badarg
+	    end, {false, false}, Args) of
+	badarg -> 
 	    erlang:error(badarg);
 	{Detailed, PerCpu} ->
-	    os_mon:call(cpu_sup, {?util, Detailed, PerCpu})
+	    os_mon:call(cpu_sup, {?util, Detailed, PerCpu}, infinity)
     end;
-util(_Arg) ->
+util(_) ->
     erlang:error(badarg).
+
+-spec(util/0 :: () -> float()).
 
 util() ->
     case util([]) of
-	{all, Busy, _, _} ->
-	    Busy;
-	Error ->
-	    Error
+	{all, Busy, _, _} -> Busy;
+	Error -> Error
     end.
 
 dummy_reply(?nprocs) -> 0;
@@ -111,48 +150,29 @@ ping() ->
 %% gen_server callbacks
 %%----------------------------------------------------------------------
 
+%% init
 init([]) ->
     process_flag(trap_exit, true),
     process_flag(priority, low),
-    OS = os:type(),
-    Port = case OS of
-	       {unix, sunos} ->
-		   start_portprogram();
-	       {unix, Flavor} when Flavor==darwin;
-				   Flavor==freebsd;
-				   Flavor==linux;
-				   Flavor==openbsd;
-				   Flavor==irix64;
-				   Flavor==irix ->
-		   not_used;
-	       _ ->
-		   exit({unsupported_os, OS})
-	   end,
-    {ok, #state{port=Port, os_type=OS}}.
-
+    {ok, 
+	#state{	os_type = os:type(), 
+		server = measurement_server_start()
+	}
+    }.
 handle_call(?quit, _From, State) ->
     {stop, normal, ok, State};
-handle_call({?util, Detailed, PerCpu}, {Client, _Tag},
-	    #state{port = Port, os_type = {unix, sunos}} = State) ->
-    Port ! {self(), {command, ?util}},
-    get_util_measurement_reply(Client,
-			       Detailed,
-			       PerCpu,
-			       fun () ->
-				       %% Port program sends cpu
-				       %% information sorted on
-				       %% cpu index in ascending
-				       %% order.
-				       sunos_receive_cpu_util(Port)
-			       end,
-			       State);
-handle_call({?util, Detailed, PerCpu}, {Client, _Tag},
-	    #state{os_type = {unix, linux}} = State) ->
-    get_util_measurement_reply(Client,
-			       Detailed,
-			       PerCpu,
-			       fun () -> linux_read_cpu_util() end,
-			       State);
+handle_call({?util, D, PC}, {Client, _Tag},
+	#state{os_type = {unix, Flavor}} = State) 
+	when Flavor == sunos;
+	     Flavor == linux ->
+    case measurement_server_call(State#state.server, {?util, D, PC, Client}) of
+	{error, Reason} -> 
+	    {	reply, 
+		{error, Reason}, 
+		State#state{server=measurement_server_restart(State#state.server)}
+	    };
+	Result -> {reply, Result, State}
+    end;
 handle_call({?util, Detailed, PerCpu}, _From, State) ->
     String = "OS_MON (cpu_sup), util/1 unavailable for this OS~n",
     error_logger:warning_msg(String),
@@ -162,28 +182,23 @@ handle_call(Request, _From, State) when Request==?nprocs;
 					Request==?avg5;
 					Request==?avg15;
 					Request==?ping ->
-    Result = get_int_measurement(Request, State),
-    {reply, Result, State}.
-
+    case measurement_server_call(State#state.server, Request) of
+	{error, Reason} -> 
+	    {	reply, 
+		{error, Reason}, 
+		State#state{server=measurement_server_restart(State#state.server)}
+	    };
+	Result -> {reply, Result, State}
+    end.
 handle_cast(_Msg, State) ->
     {noreply, State}.
-
 handle_info({'EXIT', _Port, Reason}, State) ->
-    {stop, {port_died, Reason}, State#state{port=not_used}};
-handle_info({'DOWN',Monitor,process,_,_}, #state{util = Utils} = State) ->
-    {noreply, State#state{util = lists:keydelete(Monitor, 2, Utils)}};
+    {stop, {server_died, Reason}, State#state{server=not_used}};
 handle_info(_Info, State) ->
     {noreply, State}.
 
 terminate(_Reason, State) ->
-    case State#state.port of
-	not_used ->
-	    ok;
-	Port ->
-	    Port ! {self(), {command, ?quit}},
-	    port_close(Port)
-    end,
-    ok.
+    exit(State#state.server, normal).
 
 %% os_mon-2.0
 %% For live downgrade to/upgrade from os_mon-1.8[.1]
@@ -203,39 +218,12 @@ code_change(_OldVsn, State, _Extra) ->
     {ok, State}.
 
 %%----------------------------------------------------------------------
-%% Internal functions
+%% internal functions 
 %%----------------------------------------------------------------------
 
-start_portprogram() ->
-    Command = filename:join([code:priv_dir(os_mon), "bin", "cpu_sup"]),
-    Port = open_port({spawn, Command}, [stream]),
-    Port ! {self(), {command, ?ping}},
-    4711 = receive_int(Port),
-    Port.
-
-get_util_measurement_reply(Client, Detailed, PerCpu, NewCpuUtilFun,
-			   #state{util = Utils} = State) ->
-    {Monitor, OldCpuUtil, Utils2} = case keysearchdelete(Client, 1, Utils) of
-					{{value, {Client, Mon, U}}, Us} ->
-					    {Mon, U, Us};
-					{false, Us} ->
-					    {erlang:monitor(process, Client),
-					     [],
-					     Us}
-				    end,
-    case NewCpuUtilFun() of
-	{error, Error} ->
-	    {stop, Error, Error, State};
-	NewCpuUtil ->
-	    {reply,
-	     cpu_util_rel(NewCpuUtil, OldCpuUtil, Detailed, PerCpu),
-	     State#state{util = [{Client,Monitor,NewCpuUtil}|Utils2]}}
-    end.
-
-get_int_measurement(Request, #state{port = Port, os_type = {unix, sunos}}) ->
-    Port ! {self(), {command, Request}},
-    receive_int(Port);
-get_int_measurement(Request, #state{os_type = {unix, linux}}) ->
+get_uint32_measurement(Request, #internal{port = P, os_type = {unix, sunos}}) ->
+    port_server_call(P, Request);
+get_uint32_measurement(Request, #internal{os_type = {unix, linux}}) ->
     {ok,F} = file:open("/proc/loadavg",[read,raw]),
     {ok,D} = file:read(F,24),
     ok = file:close(F),
@@ -247,7 +235,7 @@ get_int_measurement(Request, #state{os_type = {unix, linux}}) ->
 	?ping -> 4711;
 	?nprocs -> PTotal
     end;
-get_int_measurement(Request, #state{os_type = {unix, freebsd}}) ->
+get_uint32_measurement(Request, #internal{os_type = {unix, freebsd}}) ->
     D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
     {ok,[Load1,Load5,Load15],_} = io_lib:fread("{ ~f ~f ~f }", D),
     %% We could count the lines from the ps command as well
@@ -261,7 +249,7 @@ get_int_measurement(Request, #state{os_type = {unix, freebsd}}) ->
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
     end;
-get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
+get_uint32_measurement(Request, #internal{os_type = {unix, openbsd}}) ->
     D = os:cmd("/sbin/sysctl -n vm.loadavg") -- "\n",
     {ok, [L1, L5, L15], _} = io_lib:fread("~f ~f ~f", D),
     case Request of
@@ -274,7 +262,7 @@ get_int_measurement(Request, #state{os_type = {unix, openbsd}}) ->
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
     end;
-get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
+get_uint32_measurement(Request, #internal{os_type = {unix, darwin}}) ->
     %% Get the load average using uptime, overriding Locale setting.
     D = os:cmd("LANG=C uptime") -- "\n",
     %% Here is a sample uptime string from Mac OS 10.3.8 (C Locale):
@@ -294,7 +282,7 @@ get_int_measurement(Request, #state{os_type = {unix, darwin}}) ->
 	    {ok, [N], _} = io_lib:fread("~d", Ps),
 	    N-1
     end;
-get_int_measurement(Request, #state{os_type = {unix, Sys}}) when Sys == irix64;
+get_uint32_measurement(Request, #internal{os_type = {unix, Sys}}) when Sys == irix64;
 								 Sys == irix ->
     %% Get the load average using uptime.
     %% "8:01pm  up 2 days, 22:12,  4 users,  load average: 0.70, 0.58, 0.43"
@@ -309,27 +297,27 @@ get_int_measurement(Request, #state{os_type = {unix, Sys}}) when Sys == irix64;
 	?nprocs ->
 	    {ok, ProcList} = file:list_dir("/proc/pinfo"),
 	    length(ProcList)
-    end.
+    end;
+get_uint32_measurement(_, _) -> 
+    throw(not_implemented).
+
+
+get_util_measurement(?util, #internal{port = P }) ->
+    case port_server_call(P, ?util) of
+	{error, Error} -> {error, Error};
+        NewCpuUtil -> NewCpuUtil
+    end;
+get_util_measurement(_,_) ->
+    throw(not_implemented).
+
+%%----------------------------------------------------------------------
+%% BEGIN: tainted internal functions 
+%%----------------------------------------------------------------------
 
 sunify(Val)  ->
     round(Val*256). % Note that Solaris and Linux load averages are
-		    % measured quite differently anyway
+		% measured quite differently anyway
 
-
-receive_int(Port) ->
-    receive_int(Port, []).
-
-receive_int(_Port, [D3,D2,D1,D0]) ->
-    ?INT32(D3,D2,D1,D0);
-receive_int(_, [_,_,_,_|Garbage]) ->
-    exit({port_error, Garbage});
-receive_int(Port, Data) ->
-    receive
-	{Port, {data, NxtData}} ->
-	    receive_int(Port, Data ++ NxtData);
-	{'EXIT', Port, Reason} ->
-	    exit({port_died, Reason})
-    end.
 
 keysearchdelete(_, _, []) ->
     {false, []};
@@ -352,48 +340,47 @@ cpu_util_diff(New, Old) ->
 cpu_util_diff([], [], Acc) ->
     Acc;
 cpu_util_diff([#cpu_util{cpu      = Cpu,
-			 busy     = NewBusy,
-			 non_busy = NewNonBusy} | NewCpuUtils],
-	      [#cpu_util{cpu      = Cpu,
-			 busy     = OldBusy,
-			 non_busy = OldNonBusy} | OldCpuUtils],
-	      Acc) ->
+		     busy     = NewBusy,
+		     non_busy = NewNonBusy} | NewCpuUtils],
+	  [#cpu_util{cpu      = Cpu,
+		     busy     = OldBusy,
+		     non_busy = OldNonBusy} | OldCpuUtils],
+	  Acc) ->
     {PreBusy, GotBusy} = state_list_diff(NewBusy, OldBusy),
     {NonBusy, GotNonBusy} = state_list_diff(NewNonBusy, OldNonBusy),
     Busy = case GotBusy orelse GotNonBusy of
-	       true ->
-		   PreBusy;
-	       false ->
-		   %% This can happen if cpu_sup:util/[0,1] is called
-		   %% again immediately after the previous call has
-		   %% returned. Because the user obviously is doing
-		   %% something we charge "user".
-		   lists:map(fun ({user, 0}) -> {user, 1};
-				 ({_, 0} = StateTup) -> StateTup
-			     end,
-			     PreBusy)
-	   end,
-    cpu_util_diff(NewCpuUtils, OldCpuUtils, [#cpu_util{cpu      = Cpu,
-						       busy     = Busy,
-						       non_busy = NonBusy}
-					     | Acc]);
+	   true ->
+	       PreBusy;
+	   false ->
+	       %% This can happen if cpu_sup:util/[0,1] is called
+	       %% again immediately after the previous call has
+	       %% returned. Because the user obviously is doing
+	       %% something we charge "user".
+	       lists:map(fun ({user, 0}) -> {user, 1};
+			     ({_, 0} = StateTup) -> StateTup
+			 end,
+			 PreBusy)
+       end,
+cpu_util_diff(NewCpuUtils, OldCpuUtils, [#cpu_util{cpu      = Cpu,
+						   busy     = Busy,
+						   non_busy = NonBusy}
+					 | Acc]);
 
 %% A new cpu appeared
 cpu_util_diff([#cpu_util{cpu = NC}|_] = New,
-	      [#cpu_util{cpu = OC}|_] = Old,
-	      Acc) when NC < OC ->
-    cpu_util_diff(New, [#cpu_util{cpu = NC}|Old], Acc);
+	  [#cpu_util{cpu = OC}|_] = Old,
+	  Acc) when NC < OC ->
+cpu_util_diff(New, [#cpu_util{cpu = NC}|Old], Acc);
 cpu_util_diff([#cpu_util{cpu = NC}|_] = New, [], Acc) ->
-    cpu_util_diff(New, [#cpu_util{cpu = NC}], Acc);
+cpu_util_diff(New, [#cpu_util{cpu = NC}], Acc);
 
 %% An old cpu disappeared
 cpu_util_diff([#cpu_util{cpu = NC}|Ns],
-	      [#cpu_util{cpu = OC}|_] = Old,
-	      Acc) when NC > OC ->
-    cpu_util_diff(Ns, Old, Acc);
+	  [#cpu_util{cpu = OC}|_] = Old,
+	  Acc) when NC > OC ->
+cpu_util_diff(Ns, Old, Acc);
 cpu_util_diff([], _Old, Acc) ->
-    cpu_util_diff([], [], Acc).
-
+cpu_util_diff([], [], Acc).
 
 cpu_util_rel(NewCpuUtils, OldCpuUtils, Detailed, PerCpu) ->
     cpu_util_rel(cpu_util_diff(NewCpuUtils, OldCpuUtils), Detailed, PerCpu).
@@ -463,13 +450,11 @@ cpu_util_rel_det_pcpu([#cpu_util{cpu      = Cpu,
 			    mk_rel_states(NonBusy, Total),
 			    []} | Acc]).
 
-
 mk_rel_states(States, Total) ->
     lists:map(fun ({State, Value}) -> {State, 100*Value/Total} end, States).
 
 state_list_sum(StateList) ->
     lists:foldl(fun ({_, X}, Acc) -> Acc+X end, 0, StateList).
-
 
 state_list_diff([],[]) ->
     {[], false};
@@ -518,121 +503,278 @@ ensure_positive_diff(_State, Diff) when Diff >= 0 ->
     Diff;
 ensure_positive_diff(State, Diff) ->
     throw({error, {negative_diff, State, Diff}}).
+%%----------------------------------------------------------------------
+%% END: tainted internal functions 
+%%----------------------------------------------------------------------
 
-%%
-%% Sunos specific functions...
-%%
+%%----------------------------------------------------------------------
+%% cpu_sup measurement server wrapper
+%%----------------------------------------------------------------------
 
-sunos_receive_cpu_util(Port) ->
+measurement_server_call(Pid, Request) ->
+    Timeout = 5000,
+    Pid ! {self(), Request},
     receive
-	{Port, {data, [N3,N2,N1,N0|CpuUtilData]}} ->
-	    sunos_receive_cpu_util(Port, ?INT32(N3,N2,N1,N0), CpuUtilData, []);
-	{'EXIT', Port, Reason} ->
-	    exit({port_died, Reason})
+	{data, Data} -> Data
+    after Timeout -> 
+	{error, timeout}
     end.
 
-sunos_receive_cpu_util(_, 0, [], Acc) ->
-    lists:reverse(Acc); % Now sorted in ascending order on cpu index.
-sunos_receive_cpu_util(_, 0, Garbage, _) ->
-    exit({port_error, Garbage});
-sunos_receive_cpu_util(Port, N, [C3,C2,C1,C0,
-				 U3,U2,U1,U0,
-				 K3,K2,K1,K0,
-				 W3,W2,W1,W0,
-				 I3,I2,I1,I0 | CpuSD], Acc) ->
-    sunos_receive_cpu_util(Port,
-			   N-1,
-			   CpuSD,
-			   [#cpu_util{cpu      = ?INT32(C3,C2,C1,C0),
-				      busy     = [{user, ?INT32(U3,U2,U1,U0)},
-						  {kernel,?INT32(K3,K2,K1,K0)}],
-				      non_busy = [{wait, ?INT32(W3,W2,W1,W0)},
-						  {idle, ?INT32(I3,I2,I1,I0)}]}
-			    | Acc]);
-sunos_receive_cpu_util(Port, N, CpuSD, Acc) ->
-    receive
-	{Port, {data, NxtCpuSD}} ->
-	    sunos_receive_cpu_util(Port, N, CpuSD ++ NxtCpuSD, Acc);
-	{'EXIT', Port, Reason} ->
-	    exit({port_died, Reason})
-    end.
+measurement_server_restart(Pid) ->
+    exit(Pid, kill),
+    measurement_server_start().
 
-%%
-%% Linux specific functions...
-%%
+measurement_server_start() ->
+    spawn(fun() -> measurement_server_init() end).
 
-linux_get_cpu(all, Data, MoreDataFun) ->
-    linux_get_cpu([], Data, MoreDataFun, "cpu ~d ~d ~d ~d");
-linux_get_cpu(no, Data, MoreDataFun) ->
-    linux_get_cpu([], Data, MoreDataFun, "cpu~d ~d ~d ~d ~d").
-
-linux_get_cpu(Cont, Data, MoreDataFun, Format) ->
-    case io_lib:fread(Cont, Data, Format) of
-	{more, Cont2} ->
-	    Data2 = case MoreDataFun() of
-			eod -> throw({error, unexpected_end_of_data});
-			D -> D
-		    end,
-	    linux_get_cpu(Cont2, Data2, MoreDataFun, Format);
-	{done, {ok, CpuUtilList}, NextData} ->
-	    {linux_cpu_util_list_to_cpu_util(CpuUtilList), NextData};
+measurement_server_init() ->
+    process_flag(trap_exit, true),
+    OS = os:type(),
+    Server = case OS of
+	{unix, Flavor} when Flavor==sunos;
+			    Flavor==linux ->
+	    port_server_start();
+	{unix, Flavor} when Flavor==darwin;
+			    Flavor==freebsd;
+			    Flavor==openbsd;
+			    Flavor==irix64;
+			    Flavor==irix ->
+	    not_used;
 	_ ->
-	    throw({error, unexpected_data_format})
-    end.
+	    exit({unsupported_os, OS})
+    end, 
+    measurement_server_loop(#internal{port=Server, os_type=OS}).
 
-linux_cpu_util_list_to_cpu_util([_User, _NiceUser, _Kernel, _Idle] = Data) ->
-    linux_cpu_util_list_to_cpu_util([-1|Data]);
-linux_cpu_util_list_to_cpu_util([Cpu, User, NiceUser, Kernel, Idle]) ->
-    #cpu_util{cpu      = Cpu,
-	      busy     = [{user,User}, {nice_user,NiceUser}, {kernel,Kernel}],
-	      non_busy = [{idle,Idle}]}.
-
-linux_read_cpus(MoreDataFun) ->
-    catch linux_read_cpus([], MoreDataFun, []).
-
-linux_read_cpus(Data, MoreDataFun, CpuUtils) ->
-    case linux_read_until_cpu(Data, MoreDataFun) of
-	eod ->
-	    case CpuUtils of
-		[#cpu_util{cpu = -1} = CpuUtil] ->
-		    [CpuUtil#cpu_util{cpu = 0}];
-		_ ->
-		    case lists:keysort(#cpu_util.cpu, CpuUtils) of
-			[#cpu_util{cpu = -1} | NewCpuUtils] ->
-			    NewCpuUtils;
-			NewCpuUtils ->
-			    NewCpuUtils
-		    end
+measurement_server_loop(State) ->
+    receive
+	{_, quit} ->
+	    State#internal.port ! {self(), ?quit}, 
+	    ok;
+	{'DOWN',Monitor,process,_,_} ->
+	    measurement_server_loop(State#internal{ util = lists:keydelete(
+		Monitor,
+		2,
+		State#internal.util)});
+	{Pid, {?util, D, PC, Client}} ->
+	    {Monitor, OldCpuUtil, Utils2} = case keysearchdelete(Client, 1, State#internal.util) of
+		{{value, {Client, Mon, U}}, Us} -> {Mon, U, Us};
+		{false, Us} -> {erlang:monitor(process, Client), [], Us}
+	    end,
+	    try get_util_measurement(?util, State) of
+		NewCpuUtil ->
+		    Result = cpu_util_rel(NewCpuUtil, OldCpuUtil, D, PC),
+		    Pid ! {data, Result},
+	   	    measurement_server_loop(State#internal{util=[{Client,Monitor,NewCpuUtil}|Utils2]})
+	    catch
+		Error -> 
+		    Pid ! {error, Error},
+		    measurement_server_loop(State)
 	    end;
-	{Type, Data2} ->
-	    {CpuUtil, Data3} = linux_get_cpu(Type, Data2, MoreDataFun),
-	    linux_read_cpus(Data3, MoreDataFun, [CpuUtil|CpuUtils])
-    end.
-
-
-linux_read_until_cpu([$c,$p,$u,X|_] = Data, _) ->
-    {case X of $0 -> no; $1 -> no; $2 -> no; $3 -> no; $4 -> no; $5 -> no;
-	 $6 -> no; $7 -> no; $8 -> no; $9 -> no; _ -> all end, Data};
-linux_read_until_cpu([_,_,_,_|_] = Data, MoreDataFun) ->
-    [_|Rest] = Data,
-    linux_read_until_cpu(Rest, MoreDataFun);
-linux_read_until_cpu(Data, MoreDataFun) ->
-    case MoreDataFun() of
-	eod  -> eod;
-	NewData -> linux_read_until_cpu(Data++NewData, MoreDataFun)
-    end.    
-
-linux_read_cpu_util() ->
-    case catch file:open("/proc/stat",[read,raw]) of
-	{ok, IODev} ->
-	    linux_read_cpus(fun () ->
-				    case file:read(IODev, 100) of
-					{ok, Data} -> Data;
-					_ -> file:close(IODev), eod
-				    end
-			    end);
-	_ ->
-	    {error, {file_open_failed, "/proc/stat"}}
+	{Pid, Request} ->
+	    try get_uint32_measurement(Request, State) of
+		Result -> Pid ! {data, Result}
+	    catch
+		Error -> Pid ! {error, Error}
+	    end,
+	    measurement_server_loop(State);
+        {'EXIT', Pid, _n} when State#internal.port == Pid -> 
+	    measurement_server_loop(State#internal{port = port_server_start()});
+	_Other ->
+	    measurement_server_loop(State)
     end.
 
 %%----------------------------------------------------------------------
+%% cpu_sup port program server wrapper
+%%----------------------------------------------------------------------
+
+port_server_call(Pid, Command) ->
+    Pid ! {self(), Command},
+    receive
+	{Pid, {data, Result}} -> Result;
+	{Pid, {error, Reason}} -> {error, Reason}
+    end.
+    
+port_server_start() ->
+    Timeout = 6000,
+    Pid = spawn_link(fun() -> port_server_init(Timeout) end),
+    Pid ! {self(), ?ping},
+    receive
+	{Pid, {data,4711}} -> Pid;
+	{error,Reason} -> {error, Reason}
+    after Timeout -> 
+	{error, timeout}
+    end.
+
+port_server_init(Timeout) ->
+    Port = start_portprogram(),
+    port_server_loop(Port, Timeout).
+
+port_server_loop(Port, Timeout) ->
+    receive
+
+	% Adjust timeout
+	{Pid, {timeout, Timeout}} ->
+	    Pid ! {data, Timeout},
+	    port_server_loop(Port, Timeout);
+	% Number of processors
+        {Pid, ?nprocs} ->
+	    port_command(Port, ?nprocs),
+	    Result = port_receive_uint32(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+
+	% Average load for the past minute
+        {Pid, ?avg1} ->
+	    port_command(Port, ?avg1),
+	    Result = port_receive_uint32(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+
+	% Average load for the past five minutes
+        {Pid, ?avg5} ->
+	    port_command(Port, ?avg5),
+	    Result = port_receive_uint32(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+	
+	% Average load for the past 15 minutes
+        {Pid, ?avg15} ->
+	    port_command(Port, ?avg15),
+	    Result = port_receive_uint32(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+
+	{Pid, ?util} ->
+	    port_command(Port, ?util),
+	    Result = port_receive_util(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+
+	% Port ping
+	{Pid, ?ping} ->
+	    port_command(Port, ?ping),
+	    Result = port_receive_uint32(Port, Timeout),
+	    port_server_handle_reply(Port, Pid, Result, Timeout);
+
+	% Close port and this server
+	{Pid, ?quit} ->
+	    port_command(Port, ?quit),
+	    port_close(Port),
+	    Pid ! {self(), {data, quit}},
+	    ok;
+
+	% Ignore other commands
+	_Other -> port_server_loop(Port, Timeout)
+    end.	
+
+port_server_handle_reply(Port, Pid, Reply, Timeout) ->
+    case Reply of
+	{error, Reason} ->
+	    %%% FIXME: Could this happen?
+
+	    % Explain error for the client
+	    Pid ! {self(), {error, Reason}},
+	    % Kill and clean the port and its messages
+	    port_command(Port, ?quit),
+	    port_close(Port),
+	    port_server_flush_messages(Port),
+	    % Reboot port
+	    exit(timeout); 
+	Result -> 
+	   % All is fine, send result to client
+	   Pid ! {self(), {data, Result}},
+	   port_server_loop(Port, Timeout)
+    end.
+   
+%% Necessary?
+port_server_flush_messages(Port) ->
+    receive {'EXIT', Port, _} -> ok after 0 -> ok end,
+    receive {Port, {data, _}} -> ok after 0 -> ok end.
+
+port_receive_uint32( Port,  Timeout) -> port_receive_uint32(Port, Timeout, []).
+port_receive_uint32(_Port, _Timeout, [D3,D2,D1,D0]) -> ?INT32(D3,D2,D1,D0);
+port_receive_uint32(_Port, _Timeout, [_,_,_,_ | G]) -> exit({port_garbage, G});
+port_receive_uint32(Port, Timeout, D) ->
+    receive
+	{'EXIT', Port, Reason} -> exit({port_exit, Reason});
+	{Port, {data, ND}} -> port_receive_uint32(Port, Timeout, D ++ ND)
+    after Timeout -> exit(timeout_uint32) end.
+
+port_receive_util(Port, Timeout) ->
+    receive
+	{Port, {data, [ NP3,NP2,NP1,NP0,  % Number of processors
+		        NE3,NE2,NE1,NE0   % Number of entries per processor
+		      | CpuData]}} ->
+	    port_receive_cpu_util( ?INT32(NP3,NP2,NP1,NP0),
+				   ?INT32(NE3,NE2,NE1,NE0),
+				   CpuData, []);
+	{'EXIT', Port, Reason} -> exit({port_exit, Reason})
+    after Timeout -> exit(timeout_util) end.
+
+% per processor receive loop
+port_receive_cpu_util(0, _NE, [], CpuList) ->
+    % Return in ascending cpu_id order
+    lists:reverse(CpuList); 
+port_receive_cpu_util(0, _NE, Garbage, _) ->
+    exit( {port_garbage, Garbage});
+port_receive_cpu_util(NP, NE, CpuData, CpuList) ->
+    case port_receive_cpu_util_entries(NE, #cpu_util{}, CpuData) of
+	{error, Reason} -> exit({port_receive_cpu_util_entries_exit, Reason});
+	{CpuUtil, Rest} -> port_receive_cpu_util(NP - 1, NE, Rest, [ CpuUtil | CpuList])
+    end.
+
+% per entry receive loop
+port_receive_cpu_util_entries(0, CU, Rest) ->
+    {CU, Rest};
+port_receive_cpu_util_entries(NE, CU,
+	[ CID3, CID2, CID1, CID0,
+	  Val3, Val2, Val1, Val0 |
+	  CpuData]) ->
+
+    TagId = ?INT32(CID3,CID2,CID1,CID0),
+    Value = ?INT32(Val3,Val2,Val1,Val0),
+
+    % Conversions from integers to atoms
+    case TagId of
+	?cu_cpu_id ->
+	    NewCU = CU#cpu_util{cpu = Value},
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_user ->
+	    NewCU = CU#cpu_util{
+		busy     = [{user, Value} | CU#cpu_util.busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_nice_user ->
+	    NewCU = CU#cpu_util{
+		busy     = [{nice_user, Value} | CU#cpu_util.busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_kernel ->
+	    NewCU = CU#cpu_util{
+		busy     = [{kernel, Value} | CU#cpu_util.busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_io_wait ->
+	    NewCU = CU#cpu_util{
+		non_busy = [{wait, Value} | CU#cpu_util.non_busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_idle ->	
+	    NewCU = CU#cpu_util{
+		non_busy = [{idle, Value} | CU#cpu_util.non_busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_hard_irq -> 	
+	    NewCU = CU#cpu_util{
+		busy =     [{hard_irq, Value} | CU#cpu_util.busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_soft_irq ->
+	    NewCU = CU#cpu_util{
+		busy =     [{soft_irq, Value} | CU#cpu_util.busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+	?cu_steal ->
+	    NewCU = CU#cpu_util{
+		non_busy = [{steal, Value} | CU#cpu_util.non_busy] },
+    	    port_receive_cpu_util_entries(NE - 1, NewCU, CpuData);
+    	Unhandled ->
+	    exit({unexpected_type_id, Unhandled})
+    end;
+port_receive_cpu_util_entries(_, _, Data) -> 
+     exit({data_mismatch, Data}).
+
+start_portprogram() ->
+    Command = filename:join([code:priv_dir(os_mon), "bin", "cpu_sup"]),
+    Port = open_port({spawn, Command}, [stream]),
+    port_command(Port, ?ping),
+    4711 = port_receive_uint32(Port, 5000),
+    Port.

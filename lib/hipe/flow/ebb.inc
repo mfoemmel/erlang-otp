@@ -21,6 +21,8 @@
 %% Returns a list of extended basic blocks.
 %%
 
+-spec(cfg/1 :: (#cfg{}) -> [_]).
+
 cfg(CFG) ->
   Start = ?cfg:start_label(CFG),
   Labels = ?cfg:reverse_postorder(CFG),

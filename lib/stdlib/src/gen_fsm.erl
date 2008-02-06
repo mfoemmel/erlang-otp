@@ -110,7 +110,7 @@
 	 sync_send_all_state_event/2, sync_send_all_state_event/3,
 	 reply/2,
 	 start_timer/2,send_event_after/2,cancel_timer/1,
-	 enter_loop/4, enter_loop/5, enter_loop/6]).
+	 enter_loop/4, enter_loop/5, enter_loop/6, wake_hib/6]).
 
 -export([behaviour_info/1]).
 
@@ -338,6 +338,10 @@ init_it(Starter, Parent, Name, Mod, Args, Options) ->
 %%-----------------------------------------------------------------
 %% The MAIN loop
 %%-----------------------------------------------------------------
+loop(Parent, Name, StateName, StateData, Mod, hibernate, Debug) ->
+    proc_lib:hibernate(?MODULE,wake_hib,
+		       [Parent, Name, StateName, StateData, Mod, 
+			Debug]);
 loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
     Msg = receive
 	      Input ->
@@ -345,10 +349,20 @@ loop(Parent, Name, StateName, StateData, Mod, Time, Debug) ->
 	  after Time ->
 		  {'$gen_event', timeout}
 	  end,
+    decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug, false).
+
+wake_hib(Parent, Name, StateName, StateData, Mod, Debug) ->
+    Msg = receive
+	      Input ->
+		  Input
+	  end,
+    decode_msg(Msg, Parent, Name, StateName, StateData, Mod, hibernate, Debug, true).
+
+decode_msg(Msg,Parent, Name, StateName, StateData, Mod, Time, Debug, Hib) ->
     case Msg of
         {system, From, Req} ->
 	    sys:handle_system_msg(Req, From, Parent, ?MODULE, Debug,
-				  [Name, StateName, StateData, Mod, Time]);
+				  [Name, StateName, StateData, Mod, Time], Hib);
 	{'EXIT', Parent, Reason} ->
 	    terminate(Reason, Name, Msg, Mod, StateName, StateData, Debug);
 	_Msg when Debug =:= [] ->

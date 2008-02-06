@@ -21,6 +21,7 @@ include $(ERL_TOP)/make/$(TARGET)/otp.mk
 CC = @CC@
 LD = @LD@
 LIBS = @LIBS@
+CPU_SUP_LIBS = @CPU_SUP_LIBS@
 
 BINDIR = ../priv/bin/$(TARGET)
 OBJDIR = ../priv/obj/$(TARGET)
@@ -114,7 +115,7 @@ $(BINDIR)/memsup: $(OBJDIR)/memsup.o
 	$(LD) $(LDFLAGS) -o $@ $<
 
 $(BINDIR)/cpu_sup: $(OBJDIR)/cpu_sup.o
-	$(LD) $(LDFLAGS) -o $@ $< -lkstat
+	$(LD) $(LDFLAGS) -o $@ $< $(CPU_SUP_LIBS) 
 
 $(OBJDIR)/%.o: %.c
 	$(CC) -c -o $@ $(ALL_CFLAGS) $<

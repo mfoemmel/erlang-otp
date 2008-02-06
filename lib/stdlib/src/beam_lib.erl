@@ -274,13 +274,13 @@ strip_file(File) ->
 
 build_module(Chunks0) ->
     Chunks = list_to_binary(build_chunks(Chunks0)),
-    Size = size(Chunks),
+    Size = byte_size(Chunks),
     0 = Size rem 4, % Assertion: correct padding?
     {ok, <<"FOR1", (Size+4):32, "BEAM", Chunks/binary>>}.
 
 build_chunks([{Id, Data} | Chunks]) ->
     BId = list_to_binary(Id),
-    Size = size(Data),
+    Size = byte_size(Data),
     Chunk = [<<BId/binary, Size:32>>, Data | pad(Size)],
     [Chunk | build_chunks(Chunks)];
 build_chunks([]) -> 
@@ -452,8 +452,8 @@ get_chunk(Id, Pos, Size, FD) ->
 	    {NFD, <<>>};
 	{_NFD, eof} when Size > 0 ->
 	    error({chunk_too_big, filename(FD), Id, Size, 0});
-	{_NFD, {ok, Chunk}} when Size > size(Chunk) ->
-	    error({chunk_too_big, filename(FD), Id, Size, size(Chunk)});
+	{_NFD, {ok, Chunk}} when Size > byte_size(Chunk) ->
+	    error({chunk_too_big, filename(FD), Id, Size, byte_size(Chunk)});
 	{NFD, {ok, Chunk}} -> % when Size =:= size(Chunk)
 	    {NFD, Chunk}
     end.
@@ -624,8 +624,8 @@ pread(FD, AtPos, Size) ->
 	<<_:Skip/binary, B:Size/binary, Bin/binary>> ->
 	    NFD = FD#bb{pos = AtPos+Size, bin = Bin},
 	    {NFD, {ok, B}};
-	<<_:Skip/binary, Bin/binary>> when size(Bin) > 0 ->
-	    NFD = FD#bb{pos = AtPos+size(Bin), bin = <<>>},
+	<<_:Skip/binary, Bin/binary>> when byte_size(Bin) > 0 ->
+	    NFD = FD#bb{pos = AtPos+byte_size(Bin), bin = <<>>},
 	    {NFD, {ok, Bin}};
         _ ->
             {FD, eof}

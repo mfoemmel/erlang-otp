@@ -59,7 +59,7 @@
 #include "erl_mseg.h"
 
 extern char **environ;
-erts_smp_rwmtx_t environ_rwmtx;
+static erts_smp_rwmtx_t environ_rwmtx;
 
 #define MAX_VSIZE 16		/* Max number of entries allowed in an I/O
 				 * vector sock_sendv().
@@ -484,12 +484,20 @@ void
 erl_sys_init(void)
 {
 #if !DISABLE_VFORK
-    char *bindir;
+    int res;
+    char bindir[MAXPATHLEN];
+    size_t bindirsz = sizeof(bindir);
     Uint csp_path_sz;
 
-    bindir = getenv("BINDIR");
-    if (!bindir)
-        erl_exit(-1, "Environment variable BINDIR is not set\n");
+    res = erts_sys_getenv("BINDIR", bindir, &bindirsz);
+    if (res != 0) {
+	if (res < 0)
+	    erl_exit(-1,
+		     "Environment variable BINDIR is not set\n");
+	if (res > 0)
+	    erl_exit(-1,
+		     "Value of environment variable BINDIR is too large\n");
+    }
     if (bindir[0] != DIR_SEPARATOR_CHAR)
 	erl_exit(-1,
 		 "Environment variable BINDIR does not contain an"
@@ -612,7 +620,8 @@ static ERTS_INLINE void
 prepare_crash_dump(void)
 {
     int i, max;
-    char* env;
+    char env[21]; /* enough to hold any 64-bit integer */
+    size_t envsz;
 
     if (ERTS_PREPARED_CRASH_DUMP)
 	return; /* We have already been called */
@@ -635,20 +644,22 @@ prepare_crash_dump(void)
 	close(i);
     }
 
-    env = getenv("ERL_CRASH_DUMP_NICE");
-    if (env) {
+    envsz = sizeof(env);
+    i = erts_sys_getenv("ERL_CRASH_DUMP_NICE", env, &envsz);
+    if (i >= 0) {
 	int nice_val;
-	nice_val = atoi(env);
+	nice_val = i != 0 ? 0 : atoi(env);
 	if (nice_val > 39) {
 	    nice_val = 39;
 	}
 	nice(nice_val);
     }
     
-    env = getenv("ERL_CRASH_DUMP_SECONDS");
-    if (env) {
+    envsz = sizeof(env);
+    i = erts_sys_getenv("ERL_CRASH_DUMP_SECONDS", env, &envsz);
+    if (i >= 0) {
 	unsigned sec;
-	sec = (unsigned) atoi(env);
+	sec = (unsigned) i != 0 ? 0 : atoi(env);
 	alarm(sec);
     }
 
@@ -1271,6 +1282,14 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
     int saved_errno;
     long res;
     char *cmd_line;
+#if !DISABLE_VFORK
+    int no_vfork;
+    size_t no_vfork_sz = sizeof(no_vfork);
+
+    no_vfork = (erts_sys_getenv("ERL_NO_VFORK",
+				(char *) &no_vfork,
+				&no_vfork_sz) >= 0);
+#endif
 
     switch (opts->read_write) {
     case DO_READ:
@@ -1346,7 +1365,7 @@ static ErlDrvData spawn_start(ErlDrvPort port_num, char* name, SysDriverOpts* op
 
 #if !DISABLE_VFORK
     /* See fork/vfork discussion before this function. */
-    if (getenv("ERL_NO_VFORK") != NULL) {
+    if (no_vfork) {
 #endif
 
 	DEBUGF(("Using fork\n"));
@@ -2240,7 +2259,7 @@ void erts_do_break_handling(void)
      * therefore, make sure that all threads but this one are blocked before
      * proceeding!
      */
-    erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
+    erts_smp_block_system(0);
     /*
      * NOTE: since we allow gc we are not allowed to lock
      *       (any) process main locks while blocking system...
@@ -2286,16 +2305,47 @@ void sys_get_pid(char *buffer){
     sprintf(buffer,"%lu",(unsigned long) p);
 }
 
-int sys_putenv(char *buffer)
+int
+erts_sys_putenv(char *buffer, int sep_ix)
 {
     int res;
+    char *env;
+#ifdef HAVE_COPYING_PUTENV
+    env = buffer;
+#else
     Uint sz = strlen(buffer)+1;
-    char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
+    env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
     erts_smp_atomic_add(&sys_misc_mem_sz, sz);
     strcpy(env,buffer);
+#endif
     erts_smp_rwmtx_rwlock(&environ_rwmtx);
     res = putenv(env);
     erts_smp_rwmtx_rwunlock(&environ_rwmtx);
+    return res;
+}
+
+int
+erts_sys_getenv(char *key, char *value, size_t *size)
+{
+    char *orig_value;
+    int res;
+    erts_smp_rwmtx_rlock(&environ_rwmtx);
+    orig_value = getenv(key);
+    if (!orig_value)
+	res = -1;
+    else {
+	size_t len = sys_strlen(orig_value);
+	if (len >= *size) {
+	    *size = len + 1;
+	    res = 1;
+	}
+	else {
+	    *size = len;
+	    sys_memcpy((void *) value, (void *) orig_value, len+1);
+	    res = 0;
+	}
+    }
+    erts_smp_rwmtx_runlock(&environ_rwmtx);
     return res;
 }
 
@@ -2889,10 +2939,13 @@ erl_sys_args(int* argc, char** argv)
 
 #ifdef ERTS_ENABLE_KERNEL_POLL
     if (erts_use_kernel_poll) {
-	char *no_kp = getenv("ERL_NO_KERNEL_POLL");
-	if (no_kp
-	    && sys_strcmp("false", no_kp) != 0
-	    && sys_strcmp("FALSE", no_kp) != 0) {
+	char no_kp[10];
+	size_t no_kp_sz = sizeof(no_kp);
+	int res = erts_sys_getenv("ERL_NO_KERNEL_POLL", no_kp, &no_kp_sz);
+	if (res > 0
+	    || (res == 0
+		&& sys_strcmp("false", no_kp) != 0
+		&& sys_strcmp("FALSE", no_kp) != 0)) {
 	    erts_use_kernel_poll = 0;
 	}
     }

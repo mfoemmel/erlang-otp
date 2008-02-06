@@ -18,7 +18,7 @@
 %%=====================================================================
 
 -module(hipe_main).
--export([compile_icode/3]).
+-export([compile_icode/4]).
 
 %%=====================================================================
 
@@ -56,8 +56,8 @@
 %% generated). The compiler options must have already been expanded
 %% (cf. `<a href="hipe.html">hipe:expand_options</a>'). </p>
 
-compile_icode(MFA, LinearIcode, Options) ->
-  compile_icode(MFA, LinearIcode, Options, get(hipe_debug)).
+compile_icode(MFA, LinearIcode, Options, Servers) ->
+  compile_icode(MFA, LinearIcode, Options, Servers, get(hipe_debug)).
 
 %%--------------------------------------------------------------------
 %%
@@ -77,12 +77,12 @@ compile_icode(MFA, LinearIcode, Options) ->
 %%
 %%---------------------------------------------------------------------
 
-compile_icode(MFA, LinearIcode0, Options, DebugState) ->  
+compile_icode(MFA, LinearIcode0, Options, Servers, DebugState) ->  
   %% Set up gensym with the right ranges for this function.
-  {_LMin,LMax} = hipe_icode:icode_label_range(LinearIcode0),
-  hipe_gensym:set_label(icode, LMax+1),
-  {_VMin,VMax} = hipe_icode:icode_var_range(LinearIcode0),
-  hipe_gensym:set_var(icode, VMax+1),
+  {LMin,LMax} = hipe_icode:icode_label_range(LinearIcode0),
+  hipe_gensym:set_label_range(icode, LMin, LMax+1),
+  {VMin,VMax} = hipe_icode:icode_var_range(LinearIcode0),
+  hipe_gensym:set_var_range(icode, VMin, VMax+1),
   %%hipe_icode_pp:pp(LinearIcode0),
   ?opt_start_timer("Icode"),
   LinearIcode1 = icode_no_comment(LinearIcode0, Options),
@@ -91,23 +91,23 @@ compile_icode(MFA, LinearIcode0, Options, DebugState) ->
   IcodeCfg1 = icode_handle_exceptions(IcodeCfg0, MFA, Options),
   IcodeCfg2 = icode_binary_pass(IcodeCfg1, Options),
   IcodeCfg3 = icode_inline_bifs(IcodeCfg2, Options),
-  icode_pp(IcodeCfg3, MFA, proplists:get_value(pp_icode, Options), Options),
-  case icode_ssa(IcodeCfg3, MFA, Options) of
+  pp(IcodeCfg3, MFA, icode, pp_icode, Options, Servers),
+  case icode_ssa(IcodeCfg3, MFA, Options, Servers) of
     {dialyzer, IcodeSSA} -> {dialyzer, IcodeSSA};
-    IcodeCfg4 -> compile_icode_2(MFA, IcodeCfg4, Options, DebugState)
+    IcodeCfg4 -> compile_icode_2(MFA, IcodeCfg4, Options, Servers, DebugState)
   end.
 
-compile_icode_2(MFA, IcodeCfg4, Options, DebugState) ->  
+compile_icode_2(MFA, IcodeCfg4, Options, Servers, DebugState) ->  
   IcodeCfg5 = icode_split_arith(IcodeCfg4, MFA, Options),
-  icode_pp(IcodeCfg5, MFA, proplists:get_value(pp_icode_split_arith, Options), Options),
+  pp(IcodeCfg5, MFA, icode, pp_icode_split_arith, Options, Servers),
   IcodeCfg6 = icode_heap_test(IcodeCfg5, Options),
   IcodeCfg7 = icode_remove_trivial_bbs(IcodeCfg6, Options),
-  icode_pp(IcodeCfg7, MFA, proplists:get_value(pp_opt_icode, Options),Options),
-  icode_liveness_pp(IcodeCfg7, MFA, Options),
+  pp(IcodeCfg7, MFA, icode, pp_opt_icode, Options, Servers),
+  pp(IcodeCfg7, MFA, icode_liveness, pp_icode_liveness, Options, Servers),
   FinalIcode = hipe_icode_cfg:cfg_to_linear(IcodeCfg7),
   ?opt_stop_timer("Icode"),
 
-  ?option_time(LinearRTL=icode_to_rtl(MFA,FinalIcode,Options), "RTL", Options),
+  ?option_time(LinearRTL=icode_to_rtl(MFA,FinalIcode,Options, Servers), "RTL", Options),
   case proplists:get_bool(to_rtl, Options) of
     false ->
       rtl_to_native(MFA, LinearRTL, Options, DebugState);
@@ -177,56 +177,45 @@ icode_remove_trivial_bbs(IcodeCfg, Options) ->
   ?option_time(hipe_icode_cfg:remove_trivial_bbs(IcodeCfg),
 	       "Icode trivial BB removal", Options).
 
-icode_pp(IcodeCfg, MFA, PrintOption, Options) ->
-  perform_io(
-    fun() ->
-	case PrintOption of
-	  true ->
-	    hipe_icode_cfg:pp(IcodeCfg);
-	  {only, Lst} when is_list(Lst) ->
-	    case lists:member(MFA, Lst) of
-	      true ->
-		hipe_icode_cfg:pp(IcodeCfg);
-	      false ->
-		ok
-	    end;
-	  {only, MFA} ->
-	    hipe_icode_cfg:pp(IcodeCfg);
-	  {file, FileName} ->
-	    {ok, File} = file:open(FileName, [write,append]),
-	    hipe_icode_cfg:pp(File, IcodeCfg);
-	  _ ->
-	    ok
-	end
-    end, Options).
+pp(Cfg, MFA, Level, PrintOption, Options, Servers) ->
+  perform_io(pp_fun(Cfg, MFA, get_pp_module(Level), 
+		    proplists:get_value(PrintOption, Options)), 
+		    Servers#comp_servers.pp_server).
 
-icode_liveness_pp(IcodeCfg, MFA, Options) ->
-  perform_io(
-    fun() ->
-	case proplists:get_value(pp_icode_liveness, Options) of
-	  true ->
-	    hipe_icode_liveness:pp(IcodeCfg);
-	  {only, Lst} when is_list(Lst) ->
-	    case lists:member(MFA, Lst) of
-	      true ->
-		hipe_icode_liveness:pp(IcodeCfg);
-	      false ->
-		ok
-	    end;
-	  {only, MFA} ->
-	    hipe_icode_liveness:pp(IcodeCfg);
-	  _ ->
-	    ok
-	end
-    end,Options).
-
-perform_io(Fun,Opts) ->
-  case proplists:get_value(pp_server, Opts) of
-    Pid when is_pid(Pid) ->
-      Pid ! {print,Fun};
+pp_fun(Cfg, MFA, PP, PrintOptionValue) ->
+  case PrintOptionValue of
+    true ->
+      fun() -> PP:pp(Cfg) end;
+    {only, Lst} when is_list(Lst) ->
+      case lists:member(MFA, Lst) of
+	true ->
+	  fun() -> PP:pp(Cfg) end;
+	false ->
+	  no_fun
+      end;
+    {only, MFA} ->
+      fun() -> PP:pp(Cfg) end;
+    {file, FileName} ->
+      fun() ->
+	  {ok, File} = file:open(FileName, [write,append]),
+	  PP:pp(File, Cfg),
+	  file:close(File)
+      end;
     _ ->
-      Fun()
+      no_fun
   end.
+
+get_pp_module(icode) -> hipe_icode_cfg;
+get_pp_module(rtl) -> hipe_rtl_cfg;
+get_pp_module(rtl_linear) -> hipe_rtl;
+get_pp_module(icode_liveness) -> hipe_icode_liveness;
+get_pp_module(rtl_liveness) -> hipe_rtl_liveness.
+  
+perform_io(no_fun, _) -> ok;
+perform_io(Fun,PPServer) when is_pid(PPServer) ->
+  PPServer ! {print,Fun};
+perform_io(Fun, undefined) ->
+  Fun().
 
 
 %%--------------------------------------------------------------------
@@ -245,39 +234,40 @@ perform_io(Fun,Opts) ->
 %%
 %%---------------------------------------------------------------------
 
-icode_ssa(IcodeCfg0, MFA, Options) ->
+icode_ssa(IcodeCfg0, MFA, Options, Servers) ->
   ?opt_start_timer("Icode SSA passes"),
   IcodeSSA0 = icode_ssa_convert(IcodeCfg0, Options),
   IcodeSSA2 = icode_ssa_const_prop(IcodeSSA0, Options),
-  icode_pp(IcodeSSA0, MFA, proplists:get_value(pp_icode_ssa,Options),Options),
+  pp(IcodeSSA0, MFA, icode, pp_icode_ssa, Options, Servers),
   IcodeSSA3 = icode_ssa_copy_prop(IcodeSSA2, Options),
   case proplists:get_bool(dialyzer, Options) of
     true ->
       {dialyzer, IcodeSSA3};
     false ->
-      IcodeSSA4 = icode_ssa_type(IcodeSSA3, MFA, Options),
+      IcodeSSA4 = icode_ssa_type(IcodeSSA3, MFA, Options, Servers),
       IcodeSSA5 = icode_ssa_dead_code_elimination(IcodeSSA4, Options),
       IcodeSSA6 = icode_ssa_struct_reuse(IcodeSSA5, Options),
       icode_ssa_check(IcodeSSA6, Options), %% just for sanity
-      icode_pp(IcodeSSA6, MFA, proplists:get_value(pp_icode_ssa,Options), Options),
+      pp(IcodeSSA6, MFA, icode, pp_icode_ssa, Options, Servers),
       IcodeCfg = icode_ssa_unconvert(IcodeSSA6, Options),
       ?opt_stop_timer("Icode SSA passes"),
       IcodeCfg
   end.
 
-icode_ssa_type(IcodeSSA, MFA, Options) ->
+icode_ssa_type(IcodeSSA, MFA, Options, Servers) ->
   case proplists:get_value(icode_type, Options) of
     false -> IcodeSSA;
     undefined -> IcodeSSA;
     true ->
-      AnnIcode1 = icode_ssa_type_info(IcodeSSA, MFA, Options),
+      AnnIcode1 = icode_ssa_type_info(IcodeSSA, MFA, Options, Servers),
+      pp(AnnIcode1, MFA, icode, pp_typed_icode, Options, Servers),
       AnnIcode2 = 
 	case proplists:get_bool(inline_fp, Options) of
 	  true -> hipe_icode_fp:cfg(AnnIcode1);
 	  false -> AnnIcode1
 	end,
-      AnnIcode3 = icode_range_analysis(AnnIcode2, MFA, Options),
-      icode_pp(AnnIcode3, MFA, proplists:get_value(pp_range_icode,Options), Options),
+      AnnIcode3 = icode_range_analysis(AnnIcode2, MFA, Options, Servers),
+      pp(AnnIcode3, MFA, icode, pp_range_icode, Options, Servers),
       hipe_icode_type:unannotate_cfg(AnnIcode3)
   end.
 
@@ -314,14 +304,14 @@ icode_ssa_struct_reuse(IcodeSSA, Options) ->
       IcodeSSA
   end.
 
-icode_ssa_type_info(IcodeSSA, MFA, Options) ->
-    ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options),
+icode_ssa_type_info(IcodeSSA, MFA, Options, Servers) ->
+    ?option_time(hipe_icode_type:cfg(IcodeSSA, MFA, Options, Servers),
 		 "Icode SSA type info", Options).
 
-icode_range_analysis(IcodeSSA, MFA, Options) ->
+icode_range_analysis(IcodeSSA, MFA, Options, Servers) ->
   case proplists:get_bool(icode_range, Options) of
     true ->
-      ?option_time(hipe_icode_range:cfg(IcodeSSA, MFA, Options), 
+      ?option_time(hipe_icode_range:cfg(IcodeSSA, MFA, Options, Servers), 
 		   "Icode SSA integer range analysis", Options);
     false ->
      IcodeSSA
@@ -374,13 +364,10 @@ icode_ssa_unconvert(IcodeSSA, Options) ->
 %%
 %%----------------------------------------------------------------------
  
-icode_to_rtl(MFA, Icode, Options) ->
+icode_to_rtl(MFA, Icode, Options, Servers) ->
   debug("ICODE -> RTL: ~w, ~w~n", [MFA, hash(Icode)], Options),
   LinearRTL = translate_to_rtl(Icode, Options),
-  perform_io(fun() ->
-		 ?when_option(pp_rtl_linear, Options,
-			      hipe_rtl:pp(standard_io, LinearRTL))
-	     end, Options),
+  pp(LinearRTL, MFA, rtl_linear, pp_rtl_linear, Options, Servers),
   RtlCfg  = initialize_rtl_cfg(LinearRTL, Options),
   %% hipe_rtl_cfg:pp(RtlCfg),
   RtlCfg0 = hipe_rtl_cfg:remove_unreachable_code(RtlCfg),
@@ -389,10 +376,9 @@ icode_to_rtl(MFA, Icode, Options) ->
   RtlCfg2 = rtl_ssa(RtlCfg1, Options),
   RtlCfg3 = rtl_symbolic(RtlCfg2, Options),
   %% hipe_rtl_cfg:pp(RtlCfg3),
-  rtl_liveness_pp(MFA, RtlCfg3, Options),
+  pp(RtlCfg3, MFA, rtl_liveness, pp_rtl_liveness, Options, Servers),
   RtlCfg4 = rtl_lcm(RtlCfg3, Options),
-  rtl_pp(MFA, RtlCfg4, Options),
-  debug("linearize: ~w, ~w~n", [MFA, hash(RtlCfg4)], Options),
+  pp(RtlCfg4, MFA, rtl, pp_rtl, Options, Servers),
   LinearRTL1 = hipe_rtl_cfg:linearize(RtlCfg4),
   LinearRTL2 = hipe_rtl_cleanup_const:cleanup(LinearRTL1),
   %% hipe_rtl:pp(standard_io, LinearRTL2),
@@ -409,26 +395,6 @@ initialize_rtl_cfg(LinearRTL, Options) ->
 rtl_symbolic(RtlCfg, Options) ->
   ?option_time(hipe_rtl_symbolic:expand(RtlCfg),
 	       "Expansion of symbolic instructions", Options).
-
-rtl_liveness_pp(MFA, RtlCfg, Options) ->
-  perform_io(
-    fun() ->
-	case proplists:get_value(pp_rtl_liveness, Options) of
-	  true ->
-	    hipe_rtl_liveness:pp(RtlCfg);
-	  {only, Lst} when is_list(Lst) ->
-	    case lists:member(MFA, Lst) of
-	      true ->
-		hipe_rtl_liveness:pp(RtlCfg);
-	      false ->
-		ok
-	    end;
-	  {only, MFA} ->
-	    hipe_rtl_liveness:pp(RtlCfg);
-	  _ ->
-	    ok
-	end
-    end, Options).
 
 %%----------------------------------------------------------------------
 %%
@@ -544,28 +510,6 @@ rtl_lcm(RtlCfg, Options) ->
   
 %%---------------------------------------------------------------------
 
-rtl_pp(MFA, RtlCfg, Options) ->
-  perform_io(
-    fun() ->
-	case proplists:get_value(pp_rtl, Options) of
-	  true ->
-	    hipe_rtl_cfg:pp(RtlCfg);
-	  {only, Lst} when is_list(Lst) ->
-	    case lists:member(MFA, Lst) of
-	      true ->
-		hipe_rtl_cfg:pp(RtlCfg);
-	      false ->
-		ok
-	    end;
-	  {only, MFA} ->
-	    hipe_rtl_cfg:pp(RtlCfg);
-	  {file, FileName} ->
-	    {ok,File} = file:open(FileName, [write,append]),
-	    hipe_rtl_cfg:pp(File, RtlCfg);
-	  _ ->
-	    ok
-	end
-    end, Options).
 
 %%=====================================================================
 

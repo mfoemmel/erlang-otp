@@ -169,7 +169,7 @@ renumber_labels([], Acc, St) -> {Acc,St}.
 is_record_tuple({x,_}, _, _) -> maybe;
 is_record_tuple({y,_}, _, _) -> maybe;
 is_record_tuple({literal,Tuple}, Tag, Arity)
-  when element(1, Tuple) =:= Tag, size(Tuple) =:= Arity -> yes;
+  when element(1, Tuple) =:= Tag, tuple_size(Tuple) =:= Arity -> yes;
 is_record_tuple(_, _, _) -> no.
 
 function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
@@ -185,10 +185,10 @@ function_replace([{function,Name,Arity,Entry,Asm0}|Fs], Dict, Acc) ->
 function_replace([], _, Acc) -> Acc.
 
 replace([{test,bs_match_string=Op,{f,Lbl},[Ctx,Bin0]}|Is], Acc, D) ->
-    Bits = erlang:bitsize(Bin0),
+    Bits = bit_size(Bin0),
     Bin = case Bits rem 8 of
 	      0 -> Bin0;
-	      Rem -> <<Bin0/bitstr,0:(8-Rem)>>
+	      Rem -> <<Bin0/bitstring,0:(8-Rem)>>
 	  end,
     I = {test,Op,{f,label(Lbl, D)},[Ctx,Bits,{string,binary_to_list(Bin)}]},
     replace(Is, [I|Acc], D);

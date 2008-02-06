@@ -128,9 +128,9 @@ fixnum_opt(Code,Info) ->
 do_fixnums(Instr, {Acc,Env}) ->
   case Instr of
     #call{} -> 
-      register_safety(Instr,Acc,Env);
+      {Acc++[Instr],Env};
     #gctest{} ->
-      register_safety(Instr,Acc,Env);
+      {Acc++[Instr],Env};
     #fixnumop{dst=Dst,src=Src} -> 
       case lookup_y(Src,Env) of
 	none -> 
@@ -153,14 +153,6 @@ do_fixnums(Instr, {Acc,Env}) ->
       {Acc++[Instr],Env}
   end.
 	      
-register_safety(Instr,Acc,Env) ->   %% Damn that SPARC backend  
-  case hipe_rtl_arch:safe_handling_of_registers() of
-    true ->
-      {Acc++[Instr],Env};
-    false ->
-      {Acc++[Instr],new_env()}
-  end.
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%
 %% Code handling functions 

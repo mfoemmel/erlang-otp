@@ -39,7 +39,8 @@
 % FIXME There has to be a better solution....
 % FIXME Add option in app file or environmen  variable.
 
--define(WISHNAMES, ["wish84","wish8.4",
+-define(WISHNAMES, ["wish85","wish8.5",
+		    "wish84","wish8.4",
 		    "wish83","wish8.3",
 		    "wish82","wish8.2",
 		    "wish"]).

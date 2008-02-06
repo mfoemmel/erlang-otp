@@ -44,7 +44,7 @@ debug opt release docs release_docs tests release_tests clean depend:
 		    if test -f $$d/ignore_config_record.inf; then	\
 			xflag=$$tflag ;					\
 		    fi ;						\
-		    (cd $$d && $(MAKE) $$xflag $@) ;			\
+		    (cd $$d && $(MAKE) $$xflag $@) || exit $$? ;	\
 		fi ;							\
 	    fi ;							\
 	done ;								\

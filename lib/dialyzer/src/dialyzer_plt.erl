@@ -28,22 +28,21 @@
 
 -export([
 	 check_init_plt/1,
-	 copy/2,
 	 contains_mfa/2,
 	 contains_module/2,
-	 delete/1,
 	 delete_contract_list/2,
 	 delete_list/2,
 	 delete_module/2,
 	 from_file/1,
 	 get_mod_deps/1,
 	 insert/2,
-	 insert_contract/2,
+	 insert_contracts/2,
 	 lookup/2,
 	 lookup_contract/2,
 	 lookup_module/2,
 	 merge_plts/1,
 	 new/0,
+	 plt_and_info_from_file/1,
 	 to_edoc/1,
 	 to_edoc/4,
 	 to_file/4
@@ -54,40 +53,47 @@
 
 -include("dialyzer.hrl").
 
--record(dialyzer_file_plt, {version, libs, md5, info, contracts,
-			    mod_deps, implementation_md5}).
+-record(dialyzer_file_plt, {version=[]            :: string(), 
+			    libs=[]               :: [atom()], 
+			    md5=[]                :: md5(),
+			    info=[]               :: [{_, _}],
+			    contracts=[]          :: [{_, _}],
+			    mod_deps              :: dict(),
+			    implementation_md5=[] :: [{atom(), _}]
+			   }).
 
--record(dialyzer_plt, {info, 
-		       contracts}).
+-spec(new/0 :: () -> #dialyzer_plt{}).
 
 new() ->
-  #dialyzer_plt{info=table_new(),contracts=table_new()}.
+  #dialyzer_plt{info=table_new(), contracts=table_new()}.
 
-delete(#dialyzer_plt{info=Info, contracts=Contracts}) ->
-  table_delete(Info),
-  table_delete(Contracts),
-  ok.
+-spec(delete_module/2 :: (#dialyzer_plt{}, atom()) -> #dialyzer_plt{}).
 
 delete_module(#dialyzer_plt{info=Info, contracts=Contracts}, Mod) ->
   #dialyzer_plt{info=table_delete_module(Info, Mod),
 		contracts=table_delete_module(Contracts, Mod)}.
 
+-spec(delete_list/2 :: (#dialyzer_plt{}, [_]) -> #dialyzer_plt{}).
+
 delete_list(#dialyzer_plt{info=Info, contracts=Contracts}, List) ->
   #dialyzer_plt{info=table_delete_list(Info, List),
 		contracts=table_delete_list(Contracts, List)}.
 
-copy(#dialyzer_plt{info=FromInfo, contracts=FromContracts}, 
-     #dialyzer_plt{info=ToInfo, contracts=ToContracts}) ->
-  #dialyzer_plt{info=table_copy(FromInfo, ToInfo),
-		contracts=table_copy(FromContracts, ToContracts)}.
+-spec(insert_contracts/2 :: 
+      (#dialyzer_plt{}, [{mfa(), #contract{}}]) -> #dialyzer_plt{}).
 
-insert_contract(Plt = #dialyzer_plt{contracts=Contracts}, Object) ->
+insert_contracts(Plt = #dialyzer_plt{contracts=Contracts}, Object) ->
   Plt#dialyzer_plt{contracts=table_insert(Contracts, Object)}.
+
+-spec(lookup_contract/2 :: 
+      (#dialyzer_plt{}, mfa()) -> 'none' | {'value', #contract{}}).
 
 lookup_contract(#dialyzer_plt{contracts=Contracts}, 
 		MFA={M, F, A}) when is_atom(M), is_atom(F), is_integer(A), 
 				    0 =< A, A =< 255 ->
   table_lookup(Contracts, MFA).
+
+-spec(delete_contract_list/2 :: (#dialyzer_plt{}, [mfa()]) -> #dialyzer_plt{}).
 
 delete_contract_list(Plt = #dialyzer_plt{contracts=Contracts}, List) ->
   Plt#dialyzer_plt{contracts=table_delete_list(Contracts, List)}.
@@ -109,7 +115,13 @@ lookup_module(#dialyzer_plt{info=Info}, M) when is_atom(M) ->
 contains_module(#dialyzer_plt{info=Info}, M) when is_atom(M) ->
   table_contains_module(Info, M).
   
+plt_and_info_from_file(FileName) ->
+  from_file(FileName, true).
+
 from_file(FileName) ->
+  from_file(FileName, false).
+
+from_file(FileName, ReturnInfo) ->
   case get_record_from_file(FileName) of
     {ok, Rec} ->
       case check_version(Rec) of
@@ -119,8 +131,16 @@ from_file(FileName) ->
 	ok -> 
 	  Info = Rec#dialyzer_file_plt.info,
 	  Contracts = Rec#dialyzer_file_plt.contracts,
-	  #dialyzer_plt{info = table_from_list(Info),
-			contracts = table_from_list(Contracts)}
+	  Plt = #dialyzer_plt{info = table_from_list(Info),
+			      contracts = table_from_list(Contracts)},
+	  case ReturnInfo of
+	    false -> Plt;
+	    true ->
+	      PltInfo = {Rec#dialyzer_file_plt.md5,
+			 Rec#dialyzer_file_plt.libs,
+			 {non_mergable, Rec#dialyzer_file_plt.mod_deps}},
+	      {Plt, PltInfo}
+	  end
       end;
     {error, Reason} ->
       error(io_lib:format("Could not read plt file ~s: ~p\n", 
@@ -166,8 +186,14 @@ merge_plts(List) ->
 
 to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts}, 
 	ModDeps, {MD5, Libs, OldModDeps}) ->
-  NewModDeps = dict:merge(fun(_Key, _OldVal, NewVal) -> NewVal end, 
-			  OldModDeps, ModDeps),
+  NewModDeps =
+    case OldModDeps of
+      {mergable, OMDs} -> 
+	dict:merge(fun(_Key, _OldVal, NewVal) -> NewVal end, 
+		   OMDs, ModDeps);
+      {non_mergable, OMDs} ->
+	OMDs
+    end,
   ImplMd5 = compute_implementation_md5(),
   Record = #dialyzer_file_plt{version=?VSN, 
 			      md5=MD5, 
@@ -188,7 +214,7 @@ to_file(FileName, #dialyzer_plt{info=Info, contracts=Contracts},
 check_init_plt(FileName) ->
   case get_record_from_file(FileName) of
     {ok, Rec = #dialyzer_file_plt{libs=FileLibs, md5=Md5}} ->
-      case (FileLibs =:= ?DEFAULT_LIBS) or (Md5 =:= none) of
+      case FileLibs =:= ?DEFAULT_LIBS of
 	false -> 
 	  {fail, compute_md5(?DEFAULT_LIBS), none, ?DEFAULT_LIBS, FileName};
 	true -> 
@@ -206,18 +232,8 @@ check_init_plt(FileName) ->
 		  {fail, NewMd5, DiffMd5, Libs, FileName}
 	      end;
 	    error ->
-	      case Md5 =:= none of
-		true ->
-		  %% This is a user defined plt. No md5 check.
-		  Msg = io_lib:format("    The plt ~s was built with "
-				      "an old Dialyzer.\n"
-				      "    Please rebuild it using the current "
-				      "version (~s)\n", [FileName, ?VSN]),
-		  {error, Msg};
-		false ->
-		  NewMd5 = compute_md5(Libs),
-		  {fail, NewMd5, none, Libs, FileName}
-	      end
+	      NewMd5 = compute_md5(Libs),
+	      {fail, NewMd5, none, Libs, FileName}
 	  end
       end;
     {error, dets_plt} ->
@@ -381,10 +397,6 @@ table_to_list(Plt) ->
 table_from_list(List) ->
   dict:from_list(List).
 
-table_delete(_Name) ->
-  %% For symmetry with the imperative versions.
-  ok.
-
 table_delete_module(Plt, Mod) ->
   dict:filter(fun({M, _F, _A}, _Val) -> M =/= Mod;
 		 (_, _) -> true
@@ -394,10 +406,6 @@ table_delete_list(Plt, [H|T]) ->
   table_delete_list(dict:erase(H, Plt), T);
 table_delete_list(Plt, []) ->
   Plt.
-
-table_copy(From, _To) ->
-  %% For symmetry with the imperative versions.
-  From.
 
 table_insert(Plt, [H|T]) ->
   table_insert(insert_one(Plt, H), T);
@@ -458,10 +466,6 @@ table_to_list(Plt) ->
 table_from_list(List) ->
   gb_trees:from_orddict(orddict:from_list(List)).
 
-table_delete(_Plt) ->
-  %% For symmetry with the imperative versions.
-  ok.
-
 table_delete_module(Plt, Mod) ->
   DelList = table_fold(fun(Key, _Val, Acc) ->
 			   case Key of
@@ -490,10 +494,6 @@ table_delete_list_unsafe(Plt, [H|T]) ->
   table_delete_list_unsafe(gb_trees:delete(H, Plt), T);
 table_delete_list_unsafe(Plt, []) ->
   Plt.
-
-table_copy(From, _To) ->
-  %% For symmetry with the imperative versions.
-  From.
 
 table_insert(Plt, [H|T]) ->
   table_insert(insert_one(Plt, H), T);
@@ -574,7 +574,6 @@ pp_non_returning() ->
 
   [io:format("~w:~w/~p :: ~s\n", [M, F, A, erl_types:t_to_string(Type)])
    || {{M,F,A}, Type} <- lists:sort(None)],
-  delete(Plt),
   ok.
 
 pp_mod(Mod) when is_atom(Mod) ->
@@ -584,5 +583,4 @@ pp_mod(Mod) when is_atom(Mod) ->
   [io:format("~w:~w/~p :: ~s\n", 
 	     [M, F, A, erl_types:t_to_string(erl_types:t_fun(Args, Ret))])
    || {{M,F,A}, {Ret, Args}} <- lists:sort(List)],
-  delete(Plt),
   ok.

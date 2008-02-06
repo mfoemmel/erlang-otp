@@ -613,12 +613,43 @@ static int move_cursor(int from, int to)
 
 static int start_termcap(void)
 {
+    int eres;
+    size_t envsz = 1024;
+    char *env = NULL;
     char *c;
 
-    if (!(c = getenv("TERM")) || tgetent((char*)lbuf, c) <= 0)
-      return FALSE;
-    if (!(capbuf = driver_alloc(1024)))
-      return FALSE;
+    capbuf = driver_alloc(1024);
+    if (!capbuf)
+	goto false;
+    eres = erl_drv_getenv("TERM", capbuf, &envsz);
+    if (eres == 0)
+	env = capbuf;
+    else if (eres < 0)
+	goto false;
+    else /* if (eres > 1) */ {
+      char *envbuf = driver_alloc(envsz);
+      if (!envbuf)
+	  goto false;
+      while (1) {
+	  char *newenvbuf;
+	  eres = erl_drv_getenv("TERM", envbuf, &envsz);
+	  if (eres == 0)
+	      break;
+	  newenvbuf = driver_realloc(envbuf, envsz);
+	  if (eres < 0 || !newenvbuf) {
+	      env = newenvbuf ? newenvbuf : envbuf;
+	      goto false;
+	  }
+	  envbuf = newenvbuf;
+      }
+      env = envbuf;
+    }
+    if (tgetent((char*)lbuf, env) <= 0)
+      goto false;
+    if (env != capbuf) {
+	env = NULL;
+	driver_free(env);
+    }
     c = capbuf;
     cols = tgetnum("co");
     xn = tgetflag("xn");
@@ -630,7 +661,12 @@ static int start_termcap(void)
     right = tgetstr("nd", &c);
     if (up && down && left && right)
       return TRUE;
-    driver_free(capbuf);
+ false:
+    if (env && env != capbuf)
+	driver_free(env);
+    if (capbuf)
+	driver_free(capbuf);
+    capbuf = NULL;
     return FALSE;
 }
 

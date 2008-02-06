@@ -56,7 +56,8 @@
 %% Attrs = {ALC, AXC, Bad}
 %% ALC, AXC and Bad are extracted from the attribute 'xref'. An experiment.
 module(Module, Forms, CollectBuiltins, X, DF) ->
-    IsAbstract = [V || {attribute,_Line,abstract,V} <- Forms] =:= [true],
+    Attrs = [{Attr,V} || {attribute,_Line,Attr,V} <- Forms],
+    IsAbstract = xref_utils:is_abstract_module(Attrs),
     S = #xrefr{module = Module, builtins_too = CollectBuiltins, 
                is_abstr = IsAbstract, x = X, df = DF},
     forms(Forms, S).
@@ -325,18 +326,18 @@ handle_call(Locality, To0, Line, S, IsUnres) ->
     Call = {From, To},
     CallAt = {Call, Line},
     S1 = if
-	     IsUnres ->
-		 S#xrefr{unresolved = [CallAt | S#xrefr.unresolved]};
-	     true ->
-		 S
-	 end,
+             IsUnres ->
+                 S#xrefr{unresolved = [CallAt | S#xrefr.unresolved]};
+             true ->
+                 S
+         end,
     case Locality of 
-	local -> 
-	    S1#xrefr{el = [Call | S1#xrefr.el],
-		     l_call_at = [CallAt | S1#xrefr.l_call_at]};
-	external -> 
-	    S1#xrefr{ex = [Call | S1#xrefr.ex],
-		     x_call_at = [CallAt | S1#xrefr.x_call_at]}
+        local -> 
+            S1#xrefr{el = [Call | S1#xrefr.el],
+                     l_call_at = [CallAt | S1#xrefr.l_call_at]};
+        external -> 
+            S1#xrefr{ex = [Call | S1#xrefr.ex],
+                     x_call_at = [CallAt | S1#xrefr.x_call_at]}
     end.
 
 adjust_arity(#xrefr{is_abstr = true, module = M}, {M, F, A} = MFA) ->

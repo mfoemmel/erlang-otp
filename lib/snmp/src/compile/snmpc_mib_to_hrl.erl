@@ -60,7 +60,7 @@ convert(MibFile, HrlFile, MibName) ->
 
 resolve(Types, MEs, Traps, HrlFile, MibName) ->
     t("resolve -> entry"),
-    case file:open(HrlFile, write) of
+    case file:open(HrlFile, [write]) of
 	{ok, Fd} ->
 	    insert_header(Fd),
 	    insert_begin(Fd, MibName),

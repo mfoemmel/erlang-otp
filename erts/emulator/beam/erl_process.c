@@ -688,6 +688,7 @@ sched_thread_func(void *vesdp)
 	erts_lc_set_thread_name(&buf[0]);
     }
 #endif
+    erts_alloc_reg_scheduler_id(((ErtsSchedulerData *) vesdp)->no);
     erts_tsd_set(sched_data_key, vesdp);
 #ifdef ERTS_SMP
     erts_proc_lock_prepare_proc_lock_waiter();

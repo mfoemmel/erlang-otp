@@ -394,4 +394,14 @@ if test -n "$JAVAC"; then
   :
 fi
 
+AC_CHECK_PROGS([make_command], [make gmake], [false])
+AC_SUBST(make_command)
+
+if test "$GCC" = yes; then
+  test_c_compiler="{gnuc, undefined}"
+else
+  test_c_compiler="undefined"
+fi
+AC_SUBST(test_c_compiler)
+
 AC_OUTPUT(conf_vars)

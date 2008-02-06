@@ -44,6 +44,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <sys/param.h>
 #endif 
 
 /* common to all platforms */
@@ -587,7 +588,7 @@ struct hostent *ei_gethostbyaddr_r(const char *addr,
 #ifndef HAVE_GETHOSTBYNAME_R
   return my_gethostbyaddr_r(addr,length,type,hostp,buffer,buflen,h_errnop);
 #else
-#ifdef __GLIBC__
+#if (defined(__GLIBC__) || (__FreeBSD_version >= 602000))
   struct hostent *result;
 
   gethostbyaddr_r(addr, length, type, hostp, buffer, buflen, &result,

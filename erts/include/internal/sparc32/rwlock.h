@@ -25,7 +25,7 @@
 
 /* Unlocked if zero, read-locked if positive, write-locked if -1. */
 typedef struct {
-    volatile int counter;
+    volatile int lock;
 } ethr_native_rwlock_t;
 
 #ifdef ETHR_TRY_INLINE_FUNCS
@@ -33,7 +33,7 @@ typedef struct {
 static ETHR_INLINE void
 ethr_native_rwlock_init(ethr_native_rwlock_t *lock)
 {
-    lock->counter = 0;
+    lock->lock = 0;
 }
 
 static ETHR_INLINE void
@@ -43,12 +43,12 @@ ethr_native_read_unlock(ethr_native_rwlock_t *lock)
 
     __asm__ __volatile__("membar #LoadLoad|#StoreLoad");
     do {
-	old = lock->counter;
+	old = lock->lock;
 	new = old-1;
 	__asm__ __volatile__(
 	    "cas [%2], %1, %0"
 	    : "=&r"(new)
-	    : "r"(old), "r"(&lock->counter), "0"(new)
+	    : "r"(old), "r"(&lock->lock), "0"(new)
 	    : "memory");
     } while (__builtin_expect(old != new, 0));
 }
@@ -59,14 +59,14 @@ ethr_native_read_trylock(ethr_native_rwlock_t *lock)
     int old, new;
 
     do {
-	old = lock->counter;
+	old = lock->lock;
 	if (__builtin_expect(old < 0, 0))
 	    return 0;
 	new = old+1;
 	__asm__ __volatile__(
 	    "cas [%2], %1, %0"
 	    : "=&r"(new)
-	    : "r"(old), "r"(&lock->counter), "0"(new)
+	    : "r"(old), "r"(&lock->lock), "0"(new)
 	    : "memory");
     } while (__builtin_expect(old != new, 0));
     __asm__ __volatile__("membar #StoreLoad|#StoreStore");
@@ -76,7 +76,7 @@ ethr_native_read_trylock(ethr_native_rwlock_t *lock)
 static ETHR_INLINE int
 ethr_native_read_is_locked(ethr_native_rwlock_t *lock)
 {
-    return lock->counter < 0;
+    return lock->lock < 0;
 }
 
 static ETHR_INLINE void
@@ -95,7 +95,7 @@ static ETHR_INLINE void
 ethr_native_write_unlock(ethr_native_rwlock_t *lock)
 {
     __asm__ __volatile__("membar #LoadStore|#StoreStore");
-    lock->counter = 0;
+    lock->lock = 0;
 }
 
 static ETHR_INLINE int
@@ -104,14 +104,14 @@ ethr_native_write_trylock(ethr_native_rwlock_t *lock)
     unsigned int old, new;
 
     do {
-	old = lock->counter;
+	old = lock->lock;
 	if (__builtin_expect(old != 0, 0))
 	    return 0;
 	new = -1;
 	__asm__ __volatile__(
 	    "cas [%2], %1, %0"
 	    : "=&r"(new)
-	    : "r"(old), "r"(&lock->counter), "0"(new)
+	    : "r"(old), "r"(&lock->lock), "0"(new)
 	    : "memory");
     } while (__builtin_expect(old != new, 0));
     __asm__ __volatile__("membar #StoreLoad|#StoreStore");
@@ -121,7 +121,7 @@ ethr_native_write_trylock(ethr_native_rwlock_t *lock)
 static ETHR_INLINE int
 ethr_native_write_is_locked(ethr_native_rwlock_t *lock)
 {
-    return lock->counter != 0;
+    return lock->lock != 0;
 }
 
 static ETHR_INLINE void

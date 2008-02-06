@@ -17,34 +17,29 @@
 
 -export([cfg/1]).
 
-%-ifndef(DEBUG).
-%-define(DEBUG,1).
-%-endif.
 -define(DO_ASSERT,true).
 
 -include("../main/hipe.hrl").
 -include("hipe_icode.hrl").
 -include("hipe_icode_primops.hrl").
-
-%-------------------------------------------------------------------------
+-include("../flow/cfg.hrl").
 -include("../rtl/hipe_literals.hrl").
+
 %-------------------------------------------------------------------------
 
+-spec(cfg/1 :: (#cfg{}) -> #cfg{}).
 
 cfg(CFG) ->
   Icode = hipe_icode_cfg:cfg_to_linear(CFG),
   Code = hipe_icode:icode_code(Icode),
   ActualVmax = hipe_icode:highest_var(Code),
   ActualLmax = hipe_icode:highest_label(Code),
-
-  hipe_gensym:set_label(icode,ActualLmax+1),
-  hipe_gensym:set_var(icode,ActualVmax+1),
-
+  hipe_gensym:set_label(icode, ActualLmax+1),
+  hipe_gensym:set_var(icode, ActualVmax+1),
   EBBs = hipe_icode_ebb:cfg(CFG),
-  {EBBcode,_Visited} = ebbs(EBBs,[], CFG),
+  {EBBcode,_Visited} = ebbs(EBBs, [], CFG),
   NewCode = add_gc_tests(EBBcode),
-  NewIcode = hipe_icode:icode_code_update(Icode,NewCode),
-
+  NewIcode = hipe_icode:icode_code_update(Icode, NewCode),
   NewCFG = hipe_icode_cfg:linear_to_cfg(NewIcode),
   %% hipe_icode_cfg:pp(NewCFG),
   NewCFG.
@@ -76,12 +71,12 @@ ebbs([EBB|EBBs], Visited, CFG) ->
     leaf ->
       ebbs(EBBs, Visited, CFG)
   end;
-ebbs([],Visited,_) ->
-  {[[]],Visited}.
+ebbs([], Visited,_) ->
+  {[[]], Visited}.
 
 
 visited(L, Visited) ->
-  lists:member(L,Visited).
+  lists:member(L, Visited).
 
 add_gc_tests([[]|EBBCodes]) -> add_gc_tests(EBBCodes);
 add_gc_tests([EBBCode|EBBCodes]) ->

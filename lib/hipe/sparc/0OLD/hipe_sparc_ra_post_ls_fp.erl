@@ -7,9 +7,9 @@
 %%  Purpose  :  
 %%  Notes    : 
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2004/02/04 00:57:35 $
-%%              $Revision: 1.4 $
+%%              $Author: mikpe $
+%%              $Date: 2007/12/18 09:18:22 $
+%%              $Revision: 1.1 $
 %% ====================================================================
 %%  Exports  :
 %%hipe:c({test13,test,0},[late_frames,{regalloc,lfls},pp_sparc]).

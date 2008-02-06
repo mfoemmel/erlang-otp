@@ -16,28 +16,80 @@
 %%     $Id$
 %%
 -module(mod_disk_log).
--export([do/1,error_log/5,security_log/2,load/2,store/2,remove/1]).
 
--export([report_error/2]).
+%% Application internal API
+-export([error_log/2, report_error/2, security_log/2]).
+
+%% Callback API
+-export([do/1, load/2, store/2, remove/1]).
 
 -define(VMODULE,"DISK_LOG").
 
 -include("httpd.hrl").
+%%%=========================================================================
+%%%  API 
+%%%=========================================================================
 
-%% do
+%% security_log
+security_log(#mod{config_db = ConfigDb} = Info, Event) ->
+    Format = get_log_format(ConfigDb),
+    Date = httpd_util:custom_date(),
+    case httpd_log:security_entry(security_disk_log, no_security_log, 
+				  Info, Date, Event) of
+	no_security_log ->
+	    ok;
+	{Log, Entry} ->
+	    write(Log, Entry, Format)
+    end.
 
+report_error(ConfigDB, Error) ->
+    Format = get_log_format(ConfigDB),
+    Date = httpd_util:custom_date(),
+    case httpd_log:error_report_entry(error_disk_log, no_error_log, ConfigDB,
+				      Date, Error) of
+	no_error_log ->
+	    ok;
+	{Log, Entry} ->
+	    write(Log, Entry, Format)
+    end.
+
+error_log(Info, Reason) ->
+    Date = httpd_util:custom_date(),
+    error_log(Info, Date, Reason).
+
+error_log(#mod{config_db = ConfigDB} = Info, Date, Reason) ->
+    Format = get_log_format(ConfigDB),
+     case httpd_log:error_entry(error_disk_log, no_error_log, 
+			       Info, Date, Reason) of
+	no_error_log ->
+	    ok;
+	{Log, Entry} ->
+	     write(Log, Entry, Format)
+    end.
+
+%%%=========================================================================
+%%%  CALLBACK API 
+%%%=========================================================================
+%%--------------------------------------------------------------------------
+%% do(ModData) -> {proceed, OldData} | {proceed, NewData} | {break, NewData} 
+%%                | done
+%%     ModData = #mod{}
+%%
+%% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 do(Info) ->
     AuthUser  = auth_user(Info#mod.data),
-    Date      = custom_date(),
+    Date      = httpd_util:custom_date(),
     log_internal_info(Info,Date,Info#mod.data),
     LogFormat = get_log_format(Info#mod.config_db),
     case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
 	{StatusCode, _PhraseArgs, Reason} ->
-	    transfer_log(Info, "-", AuthUser, Date, StatusCode, 0, LogFormat),
+	    transfer_log(Info, "-", AuthUser, Date, StatusCode, 0,
+			 LogFormat),
 	    if
 		StatusCode >= 400 ->
-		    error_log(Info, Date, Reason, LogFormat);
+		    error_log(Info, Date, Reason);
 		true ->
 		    not_an_error
 	    end,
@@ -68,131 +120,18 @@ do(Info) ->
 	    end
     end.
 
-custom_date() ->
-    LocalTime     = calendar:local_time(),
-    UniversalTime = calendar:universal_time(),
-    Minutes       = round(diff_in_minutes(LocalTime,UniversalTime)),
-    {{YYYY,MM,DD},{Hour,Min,Sec}} = LocalTime,
-    Date = 
-	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
-		      [DD,httpd_util:month(MM),YYYY,Hour,Min,Sec,sign(Minutes),
-		       abs(Minutes) div 60,abs(Minutes) rem 60]),  
-    lists:flatten(Date).
-
-diff_in_minutes(L,U) ->
-    (calendar:datetime_to_gregorian_seconds(L) -
-     calendar:datetime_to_gregorian_seconds(U))/60.
-
-sign(Minutes) when Minutes > 0 ->
-    $+;
-sign(_Minutes) ->
-    $-.
-
-auth_user(Data) ->
-    case proplists:get_value(remote_user,Data) of
-	undefined ->
-	    "-";
-	RemoteUser ->
-	    RemoteUser
-    end.
-
-%% log_internal_info
-
-log_internal_info(_, _,[]) ->
-    ok;
-log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
-    Format = get_log_format(Info#mod.config_db),
-    error_log(Info,Date,Reason,Format),
-    log_internal_info(Info,Date,Rest);
-log_internal_info(Info,Date,[_|Rest]) ->
-    log_internal_info(Info,Date,Rest).
-
-
-%% transfer_log
-
-transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes,Format) ->
-    case httpd_util:lookup(Info#mod.config_db,transfer_disk_log) of
-	undefined ->
-	    no_transfer_log;
-	TransferDiskLog ->
-	    {_PortNumber, RemoteHost}=(Info#mod.init_data)#init_data.peername,
-	    Entry = io_lib:format("~s ~s ~s [~s] \"~s\" ~w ~w~n",
-				  [RemoteHost, RFC931, AuthUser, Date,
-				   Info#mod.request_line, StatusCode, Bytes]),
-	    write(TransferDiskLog, Entry, Format)
-    end.
-
-
-%% error_log
-
-error_log(Info, Date, Reason, Format) ->
-    Format=get_log_format(Info#mod.config_db),
-    case httpd_util:lookup(Info#mod.config_db,error_disk_log) of
-	undefined ->
-	    no_error_log;
-	ErrorDiskLog ->
-	    {_PortNumber, RemoteHost}=(Info#mod.init_data)#init_data.peername,
-	    Entry = 
-		io_lib:format("[~s] access to ~s failed for ~s, reason: ~p~n",
-			      [Date, Info#mod.request_uri, 
-			       RemoteHost, Reason]),
-	    write(ErrorDiskLog, Entry, Format)
-    end.
-
-error_log(_SocketType, _Socket, ConfigDB, {_PortNumber, RemoteHost}, Reason) ->
-    Format = get_log_format(ConfigDB),
-    case httpd_util:lookup(ConfigDB,error_disk_log) of
-	undefined ->
-	    no_error_log;
-	ErrorDiskLog ->
-	    Date  = custom_date(),
-	    Entry = 
-		io_lib:format("[~s] server crash for ~s, reason: ~p~n",
-			      [Date,RemoteHost,Reason]),
-	    write(ErrorDiskLog, Entry, Format),
-	    ok
-    end.
-
-
-%% security_log
-
-security_log(ConfigDB, Event) ->
-    Format = get_log_format(ConfigDB),
-    case httpd_util:lookup(ConfigDB,security_disk_log) of
-	undefined ->
-	    no_error_log;
-	DiskLog ->
-	    Date  = custom_date(),
-	    Entry = io_lib:format("[~s] ~s ~n", [Date, Event]),
-	    write(DiskLog, Entry, Format),
-	    ok
-    end.
-
-report_error(ConfigDB, Error) ->
-    Format = get_log_format(ConfigDB),
-    case httpd_util:lookup(ConfigDB, error_disk_log) of
-	undefined ->
-	    no_error_log;
-	ErrorDiskLog ->
-	    Date  = custom_date(),
-	    Entry = io_lib:format("[~s] reporting error: ~s",[Date,Error]),
-	    write(ErrorDiskLog, Entry, Format),
-	    ok
-    end.
-
-%%----------------------------------------------------------------------
-%% Get the current format of the disklog
-%%----------------------------------------------------------------------
-get_log_format(ConfigDB)->
-    httpd_util:lookup(ConfigDB,disk_log_format,external).
-
-
+%%--------------------------------------------------------------------------
+%% load(Line, Context) ->  eof | ok | {ok, NewContext} | 
+%%                     {ok, NewContext, Directive} | 
+%%                     {ok, NewContext, DirectiveList} | {error, Reason}
+%% Line = string()
+%% Context = NewContext = DirectiveList = [Directive]
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
 %%
-%% Configuration
-%%
-
-%% load
-
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 load("TransferDiskLogSiSize " ++ TransferDiskLogSize, []) ->
     case regexp:split(TransferDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
@@ -214,7 +153,7 @@ load("TransferDiskLogSiSize " ++ TransferDiskLogSize, []) ->
     end;
 load("TransferDiskLog " ++ TransferDiskLog,[]) ->
     {ok,[],{transfer_disk_log,httpd_conf:clean(TransferDiskLog)}};
-
+ 
 load("ErrorDiskLogSize " ++  ErrorDiskLogSize, []) ->
     case regexp:split(ErrorDiskLogSize," ") of
 	{ok,[MaxBytes,MaxFiles]} ->
@@ -268,8 +207,16 @@ load("DiskLogFormat " ++ Format, []) ->
 	    {ok, [], {disk_log_format,external}}
     end.
 
-%% store
-
+%%--------------------------------------------------------------------------
+%% store(Directive, DirectiveList) -> {ok, NewDirective} | 
+%%                                    {ok, [NewDirective]} |
+%%                                    {error, Reason} 
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 store({transfer_disk_log,TransferDiskLog}, ConfigList) 
   when is_list(TransferDiskLog) ->
     case create_disk_log(TransferDiskLog, 
@@ -323,6 +270,39 @@ store({disk_log_format, Value} = Conf, _) when Value == internal;
 store({disk_log_format, Value}, _) ->
     {error, {wrong_type, {disk_log_format, Value}}}.
 
+%%--------------------------------------------------------------------------
+%% remove(ConfigDb) -> _
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
+remove(ConfigDB) ->
+    lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
+		  ets:match(ConfigDB,{transfer_disk_log,'$1'})),
+    lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
+		  ets:match(ConfigDB,{error_disk_log,'$1'})),
+    lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
+		  ets:match(ConfigDB,{security_disk_log,'$1'})),
+    ok.
+
+%%%========================================================================
+%%% Internal functions
+%%%======================================================================== 
+
+%% transfer_log
+transfer_log(Info, RFC931, AuthUser, Date, StatusCode, Bytes, Format) ->
+    case httpd_log:access_entry(transfer_disk_log, no_transfer_log,
+				Info, RFC931, AuthUser, Date, StatusCode, 
+				Bytes) of
+	no_transfer_log ->
+	    ok;
+	{Log, Entry} ->
+    	    write(Log, Entry, Format)
+    end.
+
+
+get_log_format(ConfigDB)->
+    httpd_util:lookup(ConfigDB,disk_log_format,external).
+
 %%----------------------------------------------------------------------
 %% Open or creates the disklogs 
 %%----------------------------------------------------------------------
@@ -355,20 +335,6 @@ create_disk_log(Filename, MaxBytes, MaxFiles, ConfigList) ->
     Format = proplists:get_value(disk_log_format, ConfigList, external),
     open(Filename, MaxBytes, MaxFiles, Format).
     
-
-
-%% remove
-remove(ConfigDB) ->
-    lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
-		  ets:match(ConfigDB,{transfer_disk_log,'$1'})),
-    lists:foreach(fun([DiskLog]) -> close(DiskLog) end,
-		  ets:match(ConfigDB,{error_disk_log,'$1'})),
-    ok.
-
-
-%% 
-%% Some disk_log wrapper functions:
-%% 
 
 %%----------------------------------------------------------------------
 %% Function:    open/4
@@ -417,11 +383,29 @@ open2(Opts, Size) ->
 %% internal disk_log write it with log otherwise with blog.
 %%----------------------------------------------------------------------  
 write(Log, Entry, internal) ->
-    disk_log:log(Log, Entry);
+    disk_log:log(Log, list_to_binary(Entry));
 
 write(Log, Entry, _) ->
-    disk_log:blog(Log, Entry).
+    disk_log:blog(Log, list_to_binary(Entry)).
 
 %% Close the log file
 close(Log) ->
     disk_log:close(Log).
+
+auth_user(Data) ->
+    case proplists:get_value(remote_user,Data) of
+	undefined ->
+	    "-";
+	RemoteUser ->
+	    RemoteUser
+    end.
+%% log_internal_info
+
+log_internal_info(_, _,[]) ->
+    ok;
+log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
+    error_log(Info,Date,Reason),
+    log_internal_info(Info,Date,Rest);
+log_internal_info(Info,Date,[_|Rest]) ->
+    log_internal_info(Info,Date,Rest).
+

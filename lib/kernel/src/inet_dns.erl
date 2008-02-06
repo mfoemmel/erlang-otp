@@ -465,7 +465,7 @@ dn_exp_label(N, [H|T], Name, Buffer) ->
 %% Encode data field
 %%
 encode_data(?S_A, in, {A,B,C,D}, Ptrs, _)  -> {[A,B,C,D], Ptrs};
-encode_data(?S_AAAA, in, As, Ptrs, _) when is_tuple(As), size(As) =:= 8 ->
+encode_data(?S_AAAA, in, As, Ptrs, _) when tuple_size(As) =:= 8 ->
     {X1,X2,X3,X4,X5,X6,X7,X8} = As,
     A = ?int16(X1) ++ ?int16(X2) ++ ?int16(X3) ++ ?int16(X4) ++ 
 	?int16(X5) ++ ?int16(X6) ++ ?int16(X7) ++ ?int16(X8),

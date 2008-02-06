@@ -22,20 +22,18 @@ At Ericsson we have a "Daily Build and Test" that runs on:
  
     Operating system        Versions
     -----------------------------------------------------------
-    Solaris/Sparc           2.8, 2.9, 2.10
+    Solaris/Sparc32         8, 9, 10
     Linux/Suse x86	    9.3, 10.0
     Linux/Suse Amd64	    9.3, 10.0
     Linux/Montavista PPC    3.1
     FreeBSD x86             5.0
     Mac OS X/Intel          10.4.10 (Tiger)
-    Windows 		    XP SP2
-    Windows 		    2003
+    Windows x86		    XP SP2, 2003, Vista
 
 We have also done some limited testing on the following platforms:
 
     Mac OS X/Intel          10.5.1 (Leopard)
     Mac OS X/PPC            10.4.11 (Tiger)
-    Windows                 Vista
 
 
 Versions known *not* to work
@@ -372,9 +370,7 @@ system should run smoothly.
 When building universal binaries on a PowerPC Mac (at least on Tiger),
 you must point out a suitable SDK that contains universal binaries:
 
-	export CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk"
-	export LDFLAGS=$CFLAGS
-	./configure --enable-darwin-universal
+CFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" LDFLAGS="-isysroot /Developer/SDKs/MacOSX10.4u.sdk" 	./configure --enable-darwin-universal
 
 Experimental support for 64bit x86 darwin binaries can be enabled
 using the --enable-darwin-64bit configure flag. The 64bit binaries are

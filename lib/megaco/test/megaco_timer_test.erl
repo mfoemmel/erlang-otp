@@ -81,12 +81,7 @@ fin_per_testcase(Case, Config) ->
 	    megaco_test_lib:fin_per_testcase(Case, Config);
 	Config2 ->
 	    megaco_monitor:stop(),
-	    megaco_test_lib:fin_per_testcase(Case, Config2);
-        Apa ->
-    io:format("fin_per_testcase -> ok"
-	       "~n   Apa: ~p"
-	       "~n", [Apa]),
-            ok
+	    megaco_test_lib:fin_per_testcase(Case, Config2)
     end.
 
 

@@ -34,6 +34,7 @@
 #include "global.h"
 #include "erl_threads.h"
 #include "erl_mtrace.h"
+#include "big.h"
 
 #if HAVE_ERTS_MSEG
 
@@ -153,8 +154,48 @@ static Uint rel_max_cache_bad_fit;
 static Uint min_seg_size;
 #endif
 
-static Sint no_of_segments;
-static Sint no_of_segments_watermark;
+struct {
+    struct {
+	Uint watermark;
+	Uint no;
+	Uint sz;
+    } current;
+    struct {
+	Uint no;
+	Uint sz;
+    } max;
+    struct {
+	Uint no;
+	Uint sz;
+    } max_ever;
+} segments;
+
+#define ERTS_MSEG_ALLOC_STAT(SZ)					\
+do {									\
+    segments.current.no++;						\
+    if (segments.max.no < segments.current.no)				\
+	segments.max.no = segments.current.no;				\
+    if (segments.current.watermark < segments.current.no)		\
+	segments.current.watermark = segments.current.no;		\
+    segments.current.sz += (SZ);					\
+    if (segments.max.sz < segments.current.sz)				\
+	segments.max.sz = segments.current.sz;				\
+} while (0)
+
+#define ERTS_MSEG_DEALLOC_STAT(SZ)					\
+do {									\
+    ASSERT(segments.current.no > 0);					\
+    segments.current.no--;						\
+    ASSERT(segments.current.sz >= (SZ));				\
+    segments.current.sz -= (SZ);					\
+} while (0) 
+
+#define ERTS_MSEG_REALLOC_STAT(OSZ, NSZ)				\
+do {									\
+    ASSERT(segments.current.sz >= (OSZ));				\
+    segments.current.sz -= (OSZ);					\
+    segments.current.sz += (NSZ);					\
+} while (0)
 
 #define ONE_GIGA (1000000000)
 
@@ -183,7 +224,6 @@ static void thread_safe_init(void)
 {
     erts_mtx_init(&init_atoms_mutex, "mseg_init_atoms");
     erts_mtx_init(&mseg_mutex, "mseg");
-    erts_mtx_set_forksafe(&mseg_mutex);
 #ifndef ERTS_SMP
     erts_cnd_init(&mseg_cond);
     do_shutdown = 0;
@@ -475,7 +515,8 @@ adjust_cache_size(int force_check_limits)
 {
     cache_desc_t *cd;
     int check_limits = force_check_limits;
-    Sint max_cached = no_of_segments_watermark - no_of_segments;
+    Sint max_cached = ((Sint) segments.current.watermark
+		       - (Sint) segments.current.no);
 
     while (((Sint) cache_size) > max_cached && ((Sint) cache_size) > 0) {
 	ASSERT(cache_end);
@@ -506,8 +547,8 @@ check_cache(void *unused)
 
     is_cache_check_scheduled = 0;
 
-    if (no_of_segments_watermark > no_of_segments)
-	no_of_segments_watermark--;
+    if (segments.current.watermark > segments.current.no)
+	segments.current.watermark--;
     adjust_cache_size(0);
 
     if (cache_size)
@@ -524,7 +565,7 @@ check_cache(void *unused)
 static void
 mseg_clear_cache(void)
 {
-    no_of_segments_watermark = 0;
+    segments.current.watermark = 0;
 
     adjust_cache_size(1);
 
@@ -532,7 +573,7 @@ mseg_clear_cache(void)
     ASSERT(!cache_end);
     ASSERT(!cache_size);
 
-    no_of_segments_watermark = no_of_segments;
+    segments.current.watermark = segments.current.no;
 
     INC_CC(clear_cache);
 }
@@ -548,10 +589,6 @@ mseg_alloc(ErtsAlcType_t atype, Uint *size_p, const ErtsMsegOpt_t *opt)
     INC_CC(alloc);
 
     size = PAGE_CEILING(*size_p);
-
-    no_of_segments++;
-    if (no_of_segments_watermark < no_of_segments)
-	no_of_segments_watermark = no_of_segments;
 
 #if CAN_PARTLY_DESTROY
     if (size < min_seg_size)	
@@ -570,8 +607,11 @@ mseg_alloc(ErtsAlcType_t atype, Uint *size_p, const ErtsMsegOpt_t *opt)
 	}
 
 	*size_p = size;
-	if (erts_mtrace_enabled)
-	    erts_mtrace_crr_alloc(seg, atype, ERTS_MTRACE_SEGMENT_ID, size);
+	if (seg) {
+	    if (erts_mtrace_enabled)
+		erts_mtrace_crr_alloc(seg, atype, ERTS_MTRACE_SEGMENT_ID, size);
+	    ERTS_MSEG_ALLOC_STAT(size);
+	}
 	return seg;
     }
 
@@ -646,6 +686,9 @@ mseg_alloc(ErtsAlcType_t atype, Uint *size_p, const ErtsMsegOpt_t *opt)
 	erts_mtrace_crr_free(SEGTYPE, SEGTYPE, seg);
 	erts_mtrace_crr_alloc(seg, atype, SEGTYPE, size);
     }
+
+    if (seg)
+	ERTS_MSEG_ALLOC_STAT(size);
     return seg;
 }
 
@@ -656,7 +699,7 @@ mseg_dealloc(ErtsAlcType_t atype, void *seg, Uint size,
 {
     cache_desc_t *cd;
 
-    no_of_segments--;
+    ERTS_MSEG_DEALLOC_STAT(size);
 
     if (!opt->cache || max_cache_size == 0) {
 	if (erts_mtrace_enabled)
@@ -695,7 +738,7 @@ mseg_dealloc(ErtsAlcType_t atype, void *seg, Uint size,
 	    erts_mtrace_crr_alloc(seg, SEGTYPE, SEGTYPE, size);
 	}
 
-	/* ASSERT(no_of_segments_watermark >= no_of_segments + cache_size); */
+	/* ASSERT(segments.current.watermark >= segments.current.no + cache_size); */
 
 	if (check_limits)
 	    check_cache_limits();
@@ -832,6 +875,8 @@ mseg_realloc(ErtsAlcType_t atype, void *seg, Uint old_size, Uint *new_size_p,
 
     *new_size_p = new_size;
 
+    ERTS_MSEG_REALLOC_STAT(old_size, new_size);
+
     return new_seg;
 }
 
@@ -850,6 +895,7 @@ static struct {
     Eterm cached_segments;
     Eterm cache_hits;
     Eterm segments;
+    Eterm segments_size;
     Eterm segments_watermark;
 
 
@@ -905,6 +951,7 @@ init_atoms(void)
 	AM_INIT(cached_segments);
 	AM_INIT(cache_hits);
 	AM_INIT(segments);
+	AM_INIT(segments_size);
 	AM_INIT(segments_watermark);
 
 	AM_INIT(calls);
@@ -938,6 +985,31 @@ init_atoms(void)
 #define bld_string	erts_bld_string
 #define bld_2tup_list	erts_bld_2tup_list
 
+
+/*
+ * bld_unstable_uint() (instead of bld_uint()) is used when values may
+ * change between size check and actual build. This because a value
+ * that would fit a small when size check is done may need to be built
+ * as a big when the actual build is performed. Caller is required to
+ * HRelease after build.
+ */
+static ERTS_INLINE Eterm
+bld_unstable_uint(Uint **hpp, Uint *szp, Uint ui)
+{
+    Eterm res = THE_NON_VALUE;
+    if (szp)
+	*szp += BIG_UINT_HEAP_SIZE;
+    if (hpp) {
+	if (IS_USMALL(0, ui))
+	    res = make_small(ui);
+	else {
+	    res = uint_to_big(ui, *hpp);
+	    *hpp += BIG_UINT_HEAP_SIZE;
+	}
+    }
+    return res;
+}
+
 static ERTS_INLINE void
 add_2tup(Uint **hpp, Uint *szp, Eterm *lp, Eterm el1, Eterm el2)
 {
@@ -948,6 +1020,13 @@ static ERTS_INLINE void
 add_3tup(Uint **hpp, Uint *szp, Eterm *lp, Eterm el1, Eterm el2, Eterm el3)
 {
     *lp = bld_cons(hpp, szp, bld_tuple(hpp, szp, 3, el1, el2, el3), *lp);
+}
+
+static ERTS_INLINE void
+add_4tup(Uint **hpp, Uint *szp, Eterm *lp,
+	 Eterm el1, Eterm el2, Eterm el3, Eterm el4)
+{
+    *lp = bld_cons(hpp, szp, bld_tuple(hpp, szp, 4, el1, el2, el3, el4), *lp);
 }
 
 static Eterm
@@ -1030,77 +1109,101 @@ info_calls(int *print_to_p, void *print_to_arg, Uint **hpp, Uint *szp)
 
 	add_3tup(hpp, szp, &res,
 		 am.mseg_check_cache,
-		 bld_uint(hpp, szp, calls.check_cache.giga_no),
-		 bld_uint(hpp, szp, calls.check_cache.no));
+		 bld_unstable_uint(hpp, szp, calls.check_cache.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.check_cache.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_clear_cache,
-		 bld_uint(hpp, szp, calls.clear_cache.giga_no),
-		 bld_uint(hpp, szp, calls.clear_cache.no));
+		 bld_unstable_uint(hpp, szp, calls.clear_cache.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.clear_cache.no));
 
 #if HAVE_MSEG_RECREATE
 	add_3tup(hpp, szp, &res,
 		 am.mseg_recreate,
-		 bld_uint(hpp, szp, calls.recreate.giga_no),
-		 bld_uint(hpp, szp, calls.recreate.no));
+		 bld_unstable_uint(hpp, szp, calls.recreate.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.recreate.no));
 #endif
 	add_3tup(hpp, szp, &res,
 		 am.mseg_destroy,
-		 bld_uint(hpp, szp, calls.destroy.giga_no),
-		 bld_uint(hpp, szp, calls.destroy.no));
+		 bld_unstable_uint(hpp, szp, calls.destroy.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.destroy.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_create,
-		 bld_uint(hpp, szp, calls.create.giga_no),
-		 bld_uint(hpp, szp, calls.create.no));
+		 bld_unstable_uint(hpp, szp, calls.create.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.create.no));
 
 
 	add_3tup(hpp, szp, &res,
 		 am.mseg_realloc,
-		 bld_uint(hpp, szp, calls.realloc.giga_no),
-		 bld_uint(hpp, szp, calls.realloc.no));
+		 bld_unstable_uint(hpp, szp, calls.realloc.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.realloc.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_dealloc,
-		 bld_uint(hpp, szp, calls.dealloc.giga_no),
-		 bld_uint(hpp, szp, calls.dealloc.no));
+		 bld_unstable_uint(hpp, szp, calls.dealloc.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.dealloc.no));
 	add_3tup(hpp, szp, &res,
 		 am.mseg_alloc,
-		 bld_uint(hpp, szp, calls.alloc.giga_no),
-		 bld_uint(hpp, szp, calls.alloc.no));
+		 bld_unstable_uint(hpp, szp, calls.alloc.giga_no),
+		 bld_unstable_uint(hpp, szp, calls.alloc.no));
     }
 
     return res;
 }
 
 static Eterm
-info_status(int *print_to_p, void *print_to_arg, Uint **hpp, Uint *szp)
+info_status(int *print_to_p,
+	    void *print_to_arg,
+	    int begin_new_max_period,
+	    Uint **hpp,
+	    Uint *szp)
 {
     Eterm res = THE_NON_VALUE;
     
+    if (segments.max_ever.no < segments.max.no)
+	segments.max_ever.no = segments.max.no;
+    if (segments.max_ever.sz < segments.max.sz)
+	segments.max_ever.sz = segments.max.sz;
+
     if (print_to_p) {
 	int to = *print_to_p;
 	void *arg = print_to_arg;
 
 	erts_print(to, arg, "cached_segments: %bpu\n", cache_size);
 	erts_print(to, arg, "cache_hits: %bpu\n", cache_hits);
-	erts_print(to, arg, "segments: %bpu\n", no_of_segments);
+	erts_print(to, arg, "segments: %bpu %bpu %bpu\n",
+		   segments.current.no, segments.max.no, segments.max_ever.no);
+	erts_print(to, arg, "segments_size: %bpu %bpu %bpu\n",
+		   segments.current.sz, segments.max.sz, segments.max_ever.sz);
 	erts_print(to, arg, "segments_watermark: %bpu\n",
-		   no_of_segments_watermark);
+		   segments.current.watermark);
     }
 
     if (hpp || szp) {
 	res = NIL;
 	add_2tup(hpp, szp, &res,
 		 am.segments_watermark,
-		 bld_uint(hpp, szp, no_of_segments_watermark));
-	add_2tup(hpp, szp, &res,
+		 bld_unstable_uint(hpp, szp, segments.current.watermark));
+	add_4tup(hpp, szp, &res,
+		 am.segments_size,
+		 bld_unstable_uint(hpp, szp, segments.current.sz),
+		 bld_unstable_uint(hpp, szp, segments.max.sz),
+		 bld_unstable_uint(hpp, szp, segments.max_ever.sz));
+	add_4tup(hpp, szp, &res,
 		 am.segments,
-		 bld_uint(hpp, szp, no_of_segments));
+		 bld_unstable_uint(hpp, szp, segments.current.no),
+		 bld_unstable_uint(hpp, szp, segments.max.no),
+		 bld_unstable_uint(hpp, szp, segments.max_ever.no));
 	add_2tup(hpp, szp, &res,
 		 am.cache_hits,
-		 bld_uint(hpp, szp, cache_hits));
+		 bld_unstable_uint(hpp, szp, cache_hits));
 	add_2tup(hpp, szp, &res,
 		 am.cached_segments,
-		 bld_uint(hpp, szp, cache_size));
+		 bld_unstable_uint(hpp, szp, cache_size));
 
+    }
+
+    if (begin_new_max_period) {
+	segments.max.no = segments.current.no;
+	segments.max.sz = segments.current.sz;
     }
 
     return res;
@@ -1143,7 +1246,11 @@ erts_mseg_info_options(int *print_to_p, void *print_to_arg,
 }
 
 Eterm
-erts_mseg_info(int *print_to_p, void *print_to_arg, Uint **hpp, Uint *szp)
+erts_mseg_info(int *print_to_p,
+	       void *print_to_arg,
+	       int begin_max_per,
+	       Uint **hpp,
+	       Uint *szp)
 {
     Eterm res = THE_NON_VALUE;
     Eterm atoms[4];
@@ -1164,7 +1271,7 @@ erts_mseg_info(int *print_to_p, void *print_to_arg, Uint **hpp, Uint *szp)
 
     values[0] = info_version(print_to_p, print_to_arg, hpp, szp);
     values[1] = info_options("option ", print_to_p, print_to_arg, hpp, szp);
-    values[2] = info_status(print_to_p, print_to_arg, hpp, szp);
+    values[2] = info_status(print_to_p, print_to_arg, begin_max_per, hpp, szp);
     values[3] = info_calls(print_to_p, print_to_arg, hpp, szp);
 
     if (hpp || szp)
@@ -1237,7 +1344,7 @@ erts_mseg_no(void)
 {
     Uint n;
     erts_mtx_lock(&mseg_mutex);
-    n = no_of_segments;
+    n = segments.current.no;
     erts_mtx_unlock(&mseg_mutex);
     return n;
 }
@@ -1310,8 +1417,13 @@ erts_mseg_init(ErtsMsegInit_t *init)
     else
 	free_cache_descs = NULL;
 
-    no_of_segments = 0;
-    no_of_segments_watermark = 0;
+    segments.current.watermark = 0;
+    segments.current.no = 0;
+    segments.current.sz = 0;
+    segments.max.no = 0;
+    segments.max.sz = 0;
+    segments.max_ever.no = 0;
+    segments.max_ever.sz = 0;
 }
 
 

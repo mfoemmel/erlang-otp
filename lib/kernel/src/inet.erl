@@ -123,7 +123,7 @@
       {'sctp_maxseg',                non_neg_integer()} |
       {'sctp_primary_addr',          #sctp_prim{}} |
       {'sctp_set_peer_primary_addr', #sctp_setpeerprim{}} |
-      {'sctp_adaption_layer',        #sctp_setadaption{}} |
+      {'sctp_adaptation_layer',      #sctp_setadaptation{}} |
       {'sctp_peer_addr_params',      #sctp_paddrparams{}} |
       {'sctp_default_send_param',    #sctp_sndrcvinfo{}} |
       {'sctp_events',                #sctp_event_subscribe{}} |
@@ -154,8 +154,8 @@
       'sctp_i_want_mapped_v4_addr' | 'sctp_maxseg' |
       {'sctp_primary_addr',          #sctp_prim{}} |
       {'sctp_set_peer_primary_addr', #sctp_setpeerprim{}} |
-      'sctp_adaption_layer' |
-      {'sctp_adaption_layer',        #sctp_setadaption{}} |
+      'sctp_adaptation_layer' |
+      {'sctp_adaptation_layer',      #sctp_setadaptation{}} |
       {'sctp_peer_addr_params',      #sctp_paddrparams{}} |
       'sctp_default_send_param' |
       {'sctp_default_send_param',    #sctp_sndrcvinfo{}} |
@@ -766,7 +766,7 @@ sctp_options() ->
     sctp_rtoinfo,   		 sctp_associnfo,	sctp_initmsg,
     sctp_autoclose,		 sctp_nodelay,		sctp_disable_fragments,
     sctp_i_want_mapped_v4_addr,  sctp_maxseg,		sctp_primary_addr,
-    sctp_set_peer_primary_addr,  sctp_adaption_layer,	sctp_peer_addr_params,
+    sctp_set_peer_primary_addr,  sctp_adaptation_layer,	sctp_peer_addr_params,
     sctp_default_send_param,	 sctp_events,		sctp_delayed_ack_time,
     sctp_status,	   	 sctp_get_peer_addr_info
 ].

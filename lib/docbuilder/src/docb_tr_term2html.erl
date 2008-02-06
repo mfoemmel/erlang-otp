@@ -63,19 +63,19 @@ rule(_, _) ->
 rule([term|_], {_,[],[Header]}, Opts) ->
     {{docb_html_layout:chapter_top(
 	docb_html_util:all_header_data(Header), Opts) ++
-      "\n<CENTER><H1>Glossary</H1></CENTER>\n",
+      "\n<center><h1>Glossary</h1></center>\n",
       docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([term|_], {_,[],[Header|_]},Opts) ->
     {{docb_html_layout:chapter_top(
 	docb_html_util:all_header_data(Header), Opts) ++
-      "\n<CENTER><H1>Glossary</H1></CENTER>\n<DL>\n",
-      "\n</DL>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
+      "\n<center><h1>Glossary</h1></center>\n<dl>\n",
+      "\n</dl>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([term|_], {_,[Data],_}, Opts) ->
     {{docb_html_layout:chapter_top(Data, Opts) ++
-      "\n<CENTER><H1>Bibliography</H1></CENTER>\n<DL>\n",
-      "\n</DL>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
+      "\n<center><h1>Bibliography</h1></center>\n<dl>\n",
+      "\n</dl>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([term|_], {_,[Name,ID],[{termdef,[],[{pcdata,[],Def}]}]}, Opts) ->
     TermList = case docb_util:lookup_option({defs,term}, Opts) of
@@ -84,22 +84,22 @@ rule([term|_], {_,[Name,ID],[{termdef,[],[{pcdata,[],Def}]}]}, Opts) ->
 	       end,
     case lists:keysearch(ID, 1, TermList) of
 	false ->
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ ID ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Def) ++ "\n"}, Opts};
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ ID ++ "</strong></a>\n</dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Def) ++ "\n</dd>\n"}, Opts};
 	{value, {ID, Name, Description, _Responsible}} ->
 	    docb_util:message(warning,
 			      "Global term ~s overriding local", [ID]),
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"},
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"},
 	     Opts};
 	{value, {ID, Name, Description}} ->
 	    docb_util:message(warning,
 			      "Global term ~s overriding local", [ID]),
-	    {{drop, "\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"}, Opts}
+	    {{drop, "\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"}, Opts}
     end;
 
 rule([term|_], {_,[Name,ID],_}, Opts) ->
@@ -111,16 +111,16 @@ rule([term|_], {_,[Name,ID],_}, Opts) ->
 	false ->
 	    docb_util:message(error,
 			      "The term ~s has no definition", [ID]),
-	    {{drop, "\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ ID ++ "</STRONG></A>\n<DD>" ++
-	      "??" ++ "\n"}, Opts};
+	    {{drop, "\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ ID ++ "</strong></a></dt>\n<dd>" ++
+	      "??" ++ "\n</dd>\n"}, Opts};
 	{value, {ID, Name, Description, _Responsible}} ->
-	    {{drop, "\n<DT><A NAME=\"" ++ ID ++ "\">" ++
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"},
+	    {{drop, "\n<dt><a name=\"" ++ ID ++ "\">" ++
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"},
 	     Opts};
 	{value, {ID, Name, Description}} ->
-	    {{drop, "\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"}, Opts}
+	    {{drop, "\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"}, Opts}
     end.

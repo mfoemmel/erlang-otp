@@ -165,6 +165,7 @@ release_docs_spec:
 
 $(EBIN)/beam_disasm.beam: $(EGEN)/beam_opcodes.hrl beam_disasm.hrl
 $(EBIN)/beam_listing.beam: v3_life.hrl
+$(EBIN)/beam_validator.beam: beam_disasm.hrl
 $(EBIN)/cerl.beam: core_parse.hrl
 $(EBIN)/compile.beam: core_parse.hrl ../../stdlib/include/erl_compile.hrl
 $(EBIN)/core_lib.beam: core_parse.hrl

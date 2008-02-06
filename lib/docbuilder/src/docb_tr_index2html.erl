@@ -152,15 +152,15 @@ sort_entries(Entries) ->
 
 rule([index| _], _) ->
     {docb_html_layout:index_top("") ++
-     "<P><DL>\n",
-     "</DL>\n" ++ docb_html_layout:index_bot()};
+     "<dl>\n",
+     "</dl>\n" ++ docb_html_layout:index_bot()};
 
 rule([header| _], _) ->
     {drop, ""};
 
 rule([reffile| _], {_, [File, _RefType|_], _}) ->
     CFile = docb_html_util:attribute_cdata_to_html(File),
-    {"<DT><EM>" ++ CFile ++ "</EM></DT>\n", ""};
+    {"<dt><em>" ++ CFile ++ "</em></dt>\n", ""};
 
 rule([funcdef2| _], {_, [File, RefType|_], [{pcdata, [], FuncDef}]}) ->
     FFuncDef = lists:flatten(docb_html_util:pcdata_to_html(FuncDef)),
@@ -169,8 +169,8 @@ rule([funcdef2| _], {_, [File, RefType|_], [{pcdata, [], FuncDef}]}) ->
     HRef =
 	docb_html_util:make_anchor_href_short(File, TFuncDef, RefType),
     {drop,
-     "<DD><A HREF=\"" ++ HRef ++ "\"><CODE>" ++
-     ShortFuncDef ++ "</CODE></A></DD>\n"};
+     "<dd><a href=\"" ++ HRef ++ "\"><code>" ++
+     ShortFuncDef ++ "</code></a></dd>\n"};
 
 rule([funcdef| _], {_, [File, RefType|_], [{pcdata, [], FuncDef}]}) ->
     FFuncDef = lists:flatten(docb_html_util:pcdata_to_html(FuncDef)),
@@ -180,9 +180,9 @@ rule([funcdef| _], {_, [File, RefType|_], [{pcdata, [], FuncDef}]}) ->
 	docb_html_util:make_anchor_href_short(File, TFuncDef, RefType),
     CFile = docb_html_util:attribute_cdata_to_html(File),
     {drop,
-     "<DT><CODE>" ++ ShortFuncDef ++ "</CODE></DT>\n"
-     "<DD><A HREF=\"" ++ HRef ++ "\"><EM>" ++
-     CFile ++ "</EM></A></DD>\n"};
+     "<dt><code>" ++ ShortFuncDef ++ "</code></dt>\n"
+     "<dd><a href=\"" ++ HRef ++ "\"><em>" ++
+     CFile ++ "</em></a></dd>\n"};
 
 rule(_, _) ->
     {drop, ""}.

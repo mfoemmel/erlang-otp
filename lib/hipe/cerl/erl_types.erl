@@ -2479,6 +2479,7 @@ t_form_to_string({type, _L, tuple, Args}) ->
   "{" ++ sequence(t_form_to_string_list(Args), ",") ++ "}";
 t_form_to_string({type, _L, union, Args}) ->
   sequence(t_form_to_string_list(Args), " | ");
+t_form_to_string({type, _L, mfa, []}) -> "mfa()";
 t_form_to_string(T = {type, _L, Name, []}) ->
   try t_to_string(t_from_form(T))
   catch throw:{error, _} -> atom_to_list(Name) ++ "()"

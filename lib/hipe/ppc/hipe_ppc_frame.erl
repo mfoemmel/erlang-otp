@@ -410,7 +410,8 @@ tmap_lookup(Map, Key) ->
 %%%	temp1 = LR				[if ClobbersLR][hoisted]
 %%%	if (ltu) goto IncStack else goto AllocFrame
 %%% AllocFrame:
-%%%	SP -= FrameSize
+%%%	SP = temp2			[if FrameSize == MaxStack]
+%%%	SP -= FrameSize			[if FrameSize != MaxStack]
 %%%	*(SP + FrameSize-WordSize) = temp1	[if ClobbersLR]
 %%%	goto OldStart
 %%% OldStart:

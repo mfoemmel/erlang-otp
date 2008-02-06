@@ -73,6 +73,44 @@ static HMODULE load_win_beam_dll(char *name)
 
 #define DLL_ENV "ERL_EMULATOR_DLL"
 
+static void
+set_env(char *key, char *value)
+{
+    if (!SetEnvironmentVariable((LPCTSTR) key, (LPCTSTR) value))
+	error("SetEnvironmentVariable(\"%s\", \"%s\") failed!", key, value);
+}
+
+static char *
+get_env(char *key)
+{
+    DWORD size = 32;
+    char *value = NULL;
+    while (1) {
+	DWORD nsz;
+	if (value)
+	    free(value);
+	value = malloc(size);
+	if (!value)
+	    error("GetEnvironmentVariable(\"%s\") failed", key);
+	SetLastError(0);
+	nsz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) value, size);
+	if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+	    free(value);
+	    return NULL;
+	}
+	if (nsz <= size)
+	    return value;
+	size = nsz;
+    }
+}
+
+free_env_val(char *value)
+{
+    if (value)
+	free(value);
+}
+
+
 int
 start_win_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 {
@@ -85,12 +123,8 @@ start_win_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 	close(1);
 	close(2);
 	
-	putenv("ERL_CONSOLE_MODE=detached");
-	buff = malloc(strlen(emu)+strlen(DLL_ENV)+2);
-	strcpy(buff,DLL_ENV);
-	strcat(buff,"=");
-	strcat(buff,emu);
-	putenv(buff);
+	set_env("ERL_CONSOLE_MODE", "detached");
+	set_env(DLL_ENV, emu);
 
 	argv[0] = start_prog;
 	argv = fnuttify_argv(argv);
@@ -101,7 +135,7 @@ start_win_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 #ifdef LOAD_BEAM_DYNAMICALLY
 	HMODULE beam_module = load_win_beam_dll(emu);
 #endif	
-	putenv("ERL_CONSOLE_MODE=window");
+	set_env("ERL_CONSOLE_MODE", "window");
 	while (argv[argc] != NULL) {
 	    ++argc;
 	}
@@ -146,7 +180,7 @@ int
 start_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 {
     int result;
-    static char console_mode[] = "ERL_CONSOLE_MODE=tty:ccc";
+    static char console_mode[] = "tty:ccc";
     char* fd_type;
     char* title;
 
@@ -167,13 +201,8 @@ start_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 	close(0);
 	close(1);
 	close(2);
-	putenv("ERL_CONSOLE_MODE=detached");
-
-	buff = malloc(strlen(emu)+strlen(DLL_ENV)+2);
-	strcpy(buff,DLL_ENV);
-	strcat(buff,"=");
-	strcat(buff,emu);
-	putenv(buff);
+	set_env("ERL_CONSOLE_MODE", "detached");
+	set_env(DLL_ENV, emu);
 
 	argv[0] = start_prog;
 	argv = fnuttify_argv(argv);
@@ -208,12 +237,14 @@ start_emulator(char* emu, char *start_prog, char** argv, int start_detached)
 	/*
 	 * Start the emulator.
 	 */
-	
-	if ((title = getenv("ERL_WINDOW_TITLE")) != NULL) {
+
+	title = get_env("ERL_WINDOW_TITLE");
+	if (title) {
 	    SetConsoleTitle(title);
 	}
+	free_env_val(title);
 	
-	putenv(console_mode);
+	set_env("ERL_CONSOLE_MODE", console_mode);
 	while (argv[argc] != NULL) {
 	    ++argc;
 	}

@@ -79,36 +79,63 @@ Eterm
 os_getenv_1(Process* p, Eterm key)
 {
     Eterm str;
-    int len;
-    char *key_str;
-    char* val;
+    int len, res;
+    char *key_str, *val;
+    char buf[1024];
+    size_t val_size = sizeof(buf);
 
     len = is_string(key);
     if (!len) {
 	BIF_ERROR(p, BADARG);
     }
-    key_str = (char *) erts_alloc(ERTS_ALC_T_TMP, len+1);
+    /* Leave at least one byte in buf for value */
+    key_str = len < sizeof(buf)-2 ? &buf[0] : erts_alloc(ERTS_ALC_T_TMP, len+1);
     if (intlist_to_buf(key, key_str, len) != len)
 	erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);
     key_str[len] = '\0';
-    val = getenv(key_str);
-    if (val == NULL) {
+
+    if (key_str != &buf[0])
+	val = &buf[0];
+    else {
+	val_size -= len + 1;
+	val = &buf[len + 1];
+    }
+    res = erts_sys_getenv(key_str, val, &val_size);
+
+    if (res < 0) {
+    no_var:
 	str = am_false;
     } else {
 	Eterm* hp;
-	len = strlen(val);
-	hp = HAlloc(p, len*2);
-	str = buf_to_intlist(&hp, val, len, NIL);
+	if (res > 0) {
+	    val = erts_alloc(ERTS_ALC_T_TMP, val_size);
+	    while (1) {
+		res = erts_sys_getenv(key_str, val, &val_size);
+		if (res == 0)
+		    break;
+		else if (res < 0)
+		    goto no_var;
+		else
+		    val = erts_realloc(ERTS_ALC_T_TMP, val, val_size);
+	    }
+	}
+	if (val_size)
+	    hp = HAlloc(p, val_size*2);
+	str = buf_to_intlist(&hp, val, val_size, NIL);
     }
-    erts_free(ERTS_ALC_T_TMP, (void *) key_str);
+    if (key_str != &buf[0])
+	erts_free(ERTS_ALC_T_TMP, key_str);
+    if (val < &buf[0] || &buf[sizeof(buf)-1] < val)
+	erts_free(ERTS_ALC_T_TMP, val);
     BIF_RET(str);
 }
 
 Eterm
 os_putenv_2(Process* p, Eterm key, Eterm value)
 {
+    char def_buf[1024];
     char *buf = NULL;
-    int i, key_len, value_len;
+    int sep_ix, i, key_len, value_len, tot_len;
     key_len = is_string(key);
     if (!key_len) {
     error:
@@ -116,22 +143,33 @@ os_putenv_2(Process* p, Eterm key, Eterm value)
 	    erts_free(ERTS_ALC_T_TMP, (void *) buf);
 	BIF_ERROR(p, BADARG);
     }
-    value_len = is_string(value);
-    if (!value_len)
-	goto error;
-    buf = erts_alloc(ERTS_ALC_T_TMP, key_len + 1 + value_len + 1);
+    if (is_nil(value))
+	value_len = 0;
+    else {
+	value_len = is_string(value);
+	if (!value_len)
+	    goto error;
+    }
+    tot_len = key_len + 1 + value_len + 1;
+    if (tot_len <= sizeof(def_buf))
+	buf = &def_buf[0];
+    else
+	buf = erts_alloc(ERTS_ALC_T_TMP, tot_len);
     i = intlist_to_buf(key, buf, key_len);
     if (i != key_len)
 	erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);	
+    sep_ix = i;
     buf[i++] = '=';
-    i += intlist_to_buf(value, &buf[i], value_len);
+    if (is_not_nil(value))
+	i += intlist_to_buf(value, &buf[i], value_len);
     if (i != key_len + 1 + value_len)
 	erl_exit(1, "%s:%d: Internal error\n", __FILE__, __LINE__);	
     buf[i] = '\0';
-    if (sys_putenv(buf)) {
+    if (erts_sys_putenv(buf, sep_ix)) {
 	goto error;
     }
-    erts_free(ERTS_ALC_T_TMP, (void *) buf);
+    if (buf != &def_buf[0])
+	erts_free(ERTS_ALC_T_TMP, (void *) buf);
     BIF_RET(am_true);
 }
 

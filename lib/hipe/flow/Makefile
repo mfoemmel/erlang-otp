@@ -93,4 +93,5 @@ release_spec: opt
 
 release_docs_spec:
 
-$(EBIN)/hipe_gen_cfg.beam: ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_bb.beam: hipe_bb.hrl
+$(EBIN)/hipe_gen_cfg.beam: cfg.hrl cfg.inc ../main/hipe.hrl

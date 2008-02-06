@@ -1,1041 +1,627 @@
-%% -*- erlang-indent-level: 2 -*-
-%% ====================================================================
-%%  Filename : 	hipe_sparc_frame.erl
-%%  Module   :	hipe_sparc_frame
-%%  Purpose  :  
-%%  Notes    :  
-%%              The code may only have spilled registers in
-%%              the pseudo instructions: 
-%%
-%%                pseudo_spill   t1, t2 ; spills t1 to spillpos of t2
-%%                pseudo_unspill t1, t2 ; loads t1 from spillpos of t2 
-%% 
-%%              The TempMap must contain mappings from all used temps
-%%              to physical registers or spill positions.   
-%%
-%%              XXX: New immediates are introduced as stack offsets.
-%%                   If more than 1024 stack slots are needed,
-%%                   the immediate offsets will be to big for a
-%%                   sparc instruction.
-%%                   This can happen with the naive allocator.
-%%                   A special pass called from hipe_main 
-%%                   rectifies this situation.
-%% 
-%%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2007/11/28 17:52:55 $
-%%              $Revision: 1.41 $
-%% ====================================================================
-%%  Exports  :
-%%
-%% TODO:
-%%  Optimize 
-%%  Handle multiple return values
-%%
-%% Testcases:
-%% hipe:c({len,len,2},[pp_rtl,{regalloc,naive}]).
-%% hipe:c({len,len,2},[pp_sparc,{regalloc,lfls}]).
-%% hipe:c({late,t,0},[pp_sparc,{regalloc,lfls}]).
-%% hipe:c({late,seven,7},[pp_sparc,{regalloc,lfls}]).
-%% hipe:c({late,test_enter,7},[pp_sparc,{regalloc,lfls}]).
-%% hipe:c({trivial_19,test,0},[pp_sparc,{regalloc,lfls}]).
-%%
-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id$
 
 -module(hipe_sparc_frame).
--export([frame/5]).
+-export([frame/1]).
 
-%% -define(DO_ASSERT,true).
--include("../main/hipe.hrl").
 -include("hipe_sparc.hrl").
 -include("../rtl/hipe_literals.hrl").
 
--define(MK_CP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:return_address()))).
--define(MK_SP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()))).
--define(MK_TEMP_REG(),(hipe_sparc:mk_reg(hipe_sparc_registers:temp0()))).
--define(MK_TEMP_FPREG(),(hipe_sparc:mk_fpreg(0))).
--define(IS_SPILLED(Reg,Map),hipe_temp_map:is_spilled(hipe_sparc:reg_nr(Reg),Map)).
+frame(Defun) ->
+  Formals = fix_formals(hipe_sparc:defun_formals(Defun)),
+  Temps0 = all_temps(hipe_sparc:defun_code(Defun), Formals),
+  MinFrame = defun_minframe(Defun),
+  Temps = ensure_minframe(MinFrame, Temps0),
+  ClobbersRA = clobbers_ra(hipe_sparc:defun_code(Defun)),
+  CFG0 = hipe_sparc_cfg:init(Defun),
+  Liveness = hipe_sparc_liveness_all:analyse(CFG0),
+  CFG1 = do_body(CFG0, Liveness, Formals, Temps, ClobbersRA),
+  hipe_sparc_cfg:linearise(CFG1).
 
-frame(Cfg, TempMap, FpMap, NextSpillPos, _Options) ->
-  %% io:format("~p\n",[TempMap]),
-  rewrite(Cfg, TempMap, FpMap, NextSpillPos).
+fix_formals(Formals) ->
+  fix_formals(hipe_sparc_registers:nr_args(), Formals).
 
-rewrite(Cfg, TempMap, FpMap, NextSpillPos) ->
-  %% hipe_sparc_cfg:pp(Cfg),
-  Sparc = hipe_sparc_cfg:linearize(Cfg),
-  Arity = hipe_sparc:sparc_arity(Sparc),
-  Code = hipe_sparc:sparc_code(Sparc),
-  %% ConvNeed is added if there are any conv_fp instructions.
-  ConvNeed = 
-    case get(hipe_inline_fp) of
-      true ->  
-      	lists:foldl(fun(I, Acc) -> 
-			case hipe_sparc:is_conv_fp(I) of true -> 1; _ -> Acc end
-		    end, 0, Code);
-      _ ->
-	0
-    end,
-  
-  %% Need is stack positions for spills
-  Need = NextSpillPos + 1 + ConvNeed, 
-  %% +1 for CP, not realy needed for leaf functions... 
-  
-  %% ExtraNeed is room for arguments in calls. 
-  ExtraNeed = extra_stack_need(Code, Need, Arity),
-  StackNeed = Need + ExtraNeed,
+fix_formals(0, Rest) -> Rest;
+fix_formals(N, [_|Rest]) -> fix_formals(N-1, Rest);
+fix_formals(_, []) -> [].
 
-  SP = ?MK_SP_REG(),
-  CP = ?MK_CP_REG(),
-  NewStart = hipe_sparc:label_create_new(),
+do_body(CFG0, Liveness, Formals, Temps, ClobbersRA) ->
+  Context = mk_context(Liveness, Formals, Temps, ClobbersRA),
+  CFG1 = do_blocks(CFG0, Context),
+  do_prologue(CFG1, Context).
 
-  {StackTestCode, StackIncCode} =
-    gen_stack_test(StackNeed, SP, CP, Arity, Cfg),
-  NeedInBytes = Need bsl ?log2_wordsize,
-  AllocCode = gen_alloc_code(NeedInBytes, SP),
+do_blocks(CFG, Context) ->
+  Labels = hipe_sparc_cfg:labels(CFG),
+  do_blocks(Labels, CFG, Context).
 
-  EntryCode = 
-    [NewStart,
-     StackTestCode,  %% (We will flatten the list later.)
-     AllocCode,
-     gen_save_cp(Need)],
+do_blocks([Label|Labels], CFG, Context) ->
+  Liveness = context_liveness(Context),
+  LiveOut = hipe_sparc_liveness_all:liveout(Liveness, Label),
+  Block = hipe_sparc_cfg:bb(CFG, Label),
+  Code = hipe_bb:code(Block),
+  NewCode = do_block(Code, LiveOut, Context),
+  NewBlock = hipe_bb:code_update(Block, NewCode),
+  NewCFG = hipe_sparc_cfg:bb_add(CFG, Label, NewBlock),
+  do_blocks(Labels, NewCFG, Context);
+do_blocks([], CFG, _) ->
+  CFG.
 
-  {RetCode,RetLabel} = gen_ret(Need, Arity),
-  
-  NewCode = 
-    [EntryCode,
-     %% Rewrite instructions to use physical registers 
-     %% instead of temps.
-     %% Also, handle pseudo instructions.
-     if is_tuple(TempMap) -> % XXX: can someone please explain the logic here?
-	 [rewrite_instr(I, TempMap, FpMap, Need, Arity, RetLabel) || I <- Code];
-	true ->
-	 rewrite_instrs(Code, [], TempMap, FpMap, Need, Arity, RetLabel)
-     end,
-     RetCode,
-     %% code to call increment stack.
-     StackIncCode],
+do_block(Insns, LiveOut, Context) ->
+  do_block(Insns, LiveOut, Context, context_framesize(Context), []).
 
-  %% Create a new CFG
-  NewSparc = hipe_sparc:sparc_code_update(Sparc, lists:flatten(NewCode)),
-  CFG0 = hipe_sparc_cfg:init(NewSparc),
-  %% io:format("\n\n\n\n\n\n\n\nAfter frame\n"),
-  %% hipe_sparc_cfg:pp(CFG1),
-  CFG0.
+do_block([I|Insns], LiveOut, Context, FPoff0, RevCode) ->
+  {NewIs, FPoff1} = do_insn(I, LiveOut, Context, FPoff0),
+  do_block(Insns, LiveOut, Context, FPoff1, lists:reverse(NewIs, RevCode));
+do_block([], _, Context, FPoff, RevCode) ->
+  FPoff0 = context_framesize(Context),
+  if FPoff =:= FPoff0 -> [];
+     true -> exit({?MODULE,do_block,FPoff})
+  end,
+  lists:reverse(RevCode, []).
 
-rewrite_instrs([I|Is], TempMap, TempMaps, FpMap, Need, Arity, RetLabel) ->
-  NewMap = 
-    case hipe_sparc:is_label(I) of
-      true ->
-%%	io:format("~w\n",[hipe_vectors:get(TempMaps, hipe_sparc:label_name(I)-1)]),
-      	hipe_vectors:get(TempMaps, hipe_sparc:label_name(I)-1);
-      false ->
-	TempMap
-    end,
-  [rewrite_instr(I, NewMap, FpMap, Need, Arity, RetLabel) |
-   rewrite_instrs(Is, NewMap, TempMaps, FpMap, Need, Arity, RetLabel)];
-rewrite_instrs([], _, _, _, _, _, _) ->
-  [].
-
-rewrite_instr(I, TempMap, FpMap, Need, Arity, RetLabel) ->
-  %% io:format("\n\n~w -> \n",[I]),
-  I1 = remap_fp_regs(I, FpMap),
-  I2 = rewrite_instr2(I1, TempMap, FpMap,Need, Arity, RetLabel),
-  %% io:format("~w\n",[I2]),
-  I2.
-
-remap_fp_regs(I, FpMap) ->
+do_insn(I, LiveOut, Context, FPoff) ->
   case I of
-    %% These instructions handle their own remapping.
-    #fmove{} -> I;
-    #pseudo_spill{} -> I;
-    #pseudo_unspill{} -> I;
+    #pseudo_call{} ->
+      do_pseudo_call(I, LiveOut, Context, FPoff);
+    #pseudo_call_prepare{} ->
+      do_pseudo_call_prepare(I, FPoff);
+    #pseudo_move{} ->
+      {do_pseudo_move(I, Context, FPoff), FPoff};
+    #pseudo_ret{} ->
+      {do_pseudo_ret(I, Context, FPoff), context_framesize(Context)};
+    #pseudo_tailcall{} ->
+      {do_pseudo_tailcall(I, Context), context_framesize(Context)};
+    #pseudo_fmove{} ->
+      {do_pseudo_fmove(I, Context, FPoff), FPoff};
     _ ->
-      Defs = hipe_sparc:fp_reg_defines(I),
-      NewI = remap_fp(remap_fp(I, Defs, FpMap),
-		      hipe_sparc:fp_reg_uses(I),
-		      FpMap),
-      NewI
+      {[I], FPoff}
   end.
 
-rewrite_instr2(I, TempMap, FpMap, Need, Arity, RetLabel) ->
-  case I of
-    %% #pseudo_push{} ->
-    %%   ?EXIT({pseudo_push, not_supported_any_more, I});
-    #pseudo_pop{} ->
-      Temp = hipe_sparc:pseudo_pop_reg(I),
-      Reg = map(Temp,TempMap),
-      %% Arg position on stack = -(arg index + need)*4
-      ArgIndex = hipe_sparc:imm_value(hipe_sparc:pseudo_pop_index(I)),
-      Pos = - ((ArgIndex + Need) bsl ?log2_wordsize),
-      gen_stack_load(Pos, Reg);
-    #move{} ->
-      rewrite_move(I, TempMap);
-    #pseudo_spill{} ->
-      rewrite_spill(I, TempMap, FpMap);
-    #pseudo_unspill{} ->
-      rewrite_unspill(I, TempMap, FpMap);
-    #call_link{} ->
-      rewrite_call(I, TempMap, Need, Arity);
-    #pseudo_return{} ->
-      %% Note we assume that the arguments to return have been 
-      %% mapped to physical register in the translation RTL->SPARC.
+%%%
+%%% Moves, with Dst or Src possibly a pseudo
+%%%
 
-      %% XXX: Fix if we start using multiple return values
-      %%      Acctually just fix gen_ret/2 to annotate the
-      %%      jmp with the live registers...
-      case length(hipe_sparc:pseudo_return_regs(I)) =:= 1 of
-	true -> %% Just one retval all is ok
-	  hipe_sparc:goto_create(RetLabel);
-	false ->
-	  %% Number of retvalues not 1.
-	  ?EXIT({multiple_retvals_not_handled,I})
-      end;
-    #pseudo_enter{} ->
-      rewrite_enter(I, TempMap, Need, Arity);
-    #fmove{} ->
-      rewrite_fmove(I, TempMap, FpMap);
-    #load_fp{} -> 
-      rewrite_load_fp(I, TempMap);
-    #store_fp{} -> 
-      rewrite_store_fp(I, TempMap);
-    #conv_fp{} ->
-      NewI = map_temps(I, TempMap),
-      Source = hipe_sparc:conv_fp_src(NewI),
-      Dest = hipe_sparc:conv_fp_dest(NewI),
-      Off = hipe_sparc:mk_imm(get_offset(Need - 1)),
-      SP = hipe_sparc:mk_reg(hipe_sparc_registers:stack_pointer()),
-      [hipe_sparc:store_create(SP, Off, w, Source),
-       hipe_sparc:load_fp_create(Dest, 32, single, SP, Off),
-       hipe_sparc:conv_fp_create(Dest, Dest)];
-    _ -> 
-      %% All other instructions.
-      %% No special handling, just map the temps to regs or spill positions.
-      map_temps(I, TempMap)
-  end.
-
-
-rewrite_enter(I, TempMap, Need, Arity) ->
-  %% Calculate number of args (to current fun) on stack
-  %% Consider moving this out of the loop.
-  NoRegArgs = hipe_sparc_registers:register_args(),
-  ArgsOnStack = 
-    if Arity > NoRegArgs -> Arity - NoRegArgs; 
-       true -> 0 
-    end,
-
-  %% Get arguments to enter.
-  Args = hipe_sparc:pseudo_enter_args(I), 
-  RegArgs = lists:sublist(Args, 1, NoRegArgs),
-  %% Get target (closure or address).
-  T = hipe_sparc:pseudo_enter_target(I),
-  {Target,GetTInstr} =
-    case hipe_sparc:pseudo_enter_is_known(I) of
-      false ->
-	{map(T, TempMap),[]};
-      true ->
-	TR = ?MK_TEMP_REG(),
-	TT = case hipe_sparc:pseudo_enter_type(I) of
-	       remote -> remote_function;
-	       not_remote -> local_function
-	     end,
-	TI = hipe_sparc:load_address_create(TR, T, TT),
-	{TR,TI}
-    end,
-  CP = ?MK_CP_REG(),
-
-  %% The code for enter.
-  [
-   %% Restore CP from stack
-   %% TODO: Do this only in non-leaf functions.
-   gen_stack_load(-(Need bsl ?log2_wordsize), CP),
-   
-   %% If arguments to the called function spill over to the 
-   %% stack, do some shuffling.
-   %% Otherwise just adjust the stackpointer.
-   case length(Args) > NoRegArgs of
-     true ->
-       enter_stack_args(Args, Need, TempMap, ArgsOnStack);
-     false ->
-       gen_dealloc_code((ArgsOnStack+Need) bsl ?log2_wordsize)
-   end,
-   
-   %% Jump to the target function.
-   GetTInstr,
-   hipe_sparc:jmp_create(Target, hipe_sparc:mk_imm(0), 
-			 [map(R,TempMap)||R <- RegArgs] , [])].
-
-map_temps(I, TempMap) ->
-  Defs = hipe_sparc:keep_registers(hipe_sparc:defines(I)),
-  Uses = hipe_sparc:keep_registers(hipe_sparc:uses(I)),
-  remap(remap(I, Defs, TempMap), Uses, TempMap).
-
-rewrite_call(Call, TempMap, Need, Arity) ->
-  I = set_stack_size(Call,Need, Arity),
-  Args = hipe_sparc:call_link_args(I),
-  PushCode = push_call_args(Args, TempMap),
-  NewI = remap_call_regs(I, TempMap),
-  [PushCode,NewI].
-
-
-remap_call_regs(I, TempMap) ->
-  Defs = hipe_sparc:keep_registers(hipe_sparc:defines(I)),
-  ArgsInRegs = lists:sublist(hipe_sparc:call_link_args(I), 
-			     hipe_sparc_registers:register_args()),
-  case hipe_sparc:call_link_is_known(I) of
-    false ->
-      Target = hipe_sparc:call_link_target(I),
-      case ?IS_SPILLED(Target,TempMap) of
-	true ->
-	  RemappedCall = remap(I, Defs ++ ArgsInRegs, TempMap),
-	  Temp = ?MK_TEMP_REG(),
-	  Pos = get_spill_offset(hipe_temp_map:find(hipe_sparc:reg_nr(Target), TempMap)),
-	  [gen_stack_load(Pos, Temp),
-	   hipe_sparc:call_link_target_update(RemappedCall, Temp)];
-	false ->
-	  remap(I, [Target | (Defs ++ ArgsInRegs)], TempMap)
-      end;
+do_pseudo_move(I, Context, FPoff) ->
+  Dst = hipe_sparc:pseudo_move_dst(I),
+  Src = hipe_sparc:pseudo_move_src(I),
+  case temp_is_pseudo(Dst) of
     true ->
-      remap(I, Defs ++ ArgsInRegs, TempMap)
-  end.
-
-
-%% ____________________________________________________________________
-%%
-%% Returns: 	
-%% Arguments:	
-%% Description:	 
-%% ____________________________________________________________________
-rewrite_move(I, TempMap) ->
-  Src = hipe_sparc:move_src(I),
-  Dest = hipe_sparc:move_dest(I),
-  DestReg = hipe_sparc:reg_nr(Dest),
-
-  case hipe_sparc:is_reg(Src) of
-    false ->
-      case hipe_temp_map:is_spilled(DestReg,TempMap) of
-	true ->
-	  Pos = get_spill_offset(hipe_temp_map:find(DestReg, TempMap)),
-	  Reg = ?MK_TEMP_REG(),
-	  [hipe_sparc:move_dest_update(I,Reg)|
-	   gen_stack_store(Pos, Reg)];
-	false ->
-	  remap(I, [Dest], TempMap)
-      end;
-    true ->
-      SrcReg = hipe_sparc:reg_nr(Src),
-      case {hipe_temp_map:is_spilled(SrcReg,TempMap),
-	    hipe_temp_map:is_spilled(DestReg,TempMap)} of
-	{false,true} -> %% spill
-	  Pos = get_spill_offset(hipe_temp_map:find(DestReg, TempMap)),
-	  Reg = map(Src,TempMap),
-	  gen_stack_store(Pos, Reg);
-	{true,false} -> %% unspill
-	  Pos = get_spill_offset(hipe_temp_map:find(SrcReg, TempMap)),
-	  Reg = map(Dest,TempMap),
-	  gen_stack_load(Pos, Reg);
-	{false,false} ->
-	  remap(I, [Src,Dest], TempMap);
-	{true,true} ->
-	  Pos1 = get_spill_offset(hipe_temp_map:find(SrcReg, TempMap)),
-	  Pos2 = get_spill_offset(hipe_temp_map:find(DestReg, TempMap)),
-	  Reg = ?MK_TEMP_REG(),
-	  [gen_stack_load(Pos1, Reg),
-	   gen_stack_store(Pos2, Reg)]
-      end
-  end.
-
-%% ____________________________________________________________________
-%%      
-%% Returns: 	
-%% Arguments:	
-%% Description:	 
-%% ____________________________________________________________________
-rewrite_spill(I, TempMap, FpMap) ->
-  SrcReg = hipe_sparc:pseudo_spill_reg(I),
-  Pos = get_spill_offset(hipe_sparc:pseudo_spill_pos(I)),
-
-  case hipe_sparc:is_fpreg(SrcReg) of
-    true ->
-      SrcFpRegNr = hipe_sparc:fpreg_nr(SrcReg),
-      case hipe_temp_map:in_fp_reg(SrcFpRegNr,FpMap) of
-	false ->
-	  %% Spilling a spilled reg...
-	  ?ASSERT(check_spill(SrcFpRegNr,FpMap,Pos,I)),
-	  hipe_sparc:comment_create({already_spilled,I});
-	true -> %% Not spilled...
-	  Reg = map_fp(SrcReg, FpMap),
-	  gen_stack_store_fp(Pos, Reg)
-      end;
-    false ->
-      SrcRegNr = hipe_sparc:reg_nr(SrcReg),
-      case hipe_temp_map:in_reg(SrcRegNr,TempMap) of
-	false ->
-	  %% Spilling a spilled reg...
-	  ?ASSERT(check_spill(SrcRegNr,TempMap,Pos,I)),
-	  hipe_sparc:comment_create({already_spilled,I});
-	true -> %% Not spilled...
-	  Reg = map(SrcReg,TempMap),
-	  gen_stack_store(Pos, Reg)
-      end
-  end.
-
-%% --------------------------------------------------------------------
-%% Returns: 	
-%% Arguments:	
-%% Description:	
-%% --------------------------------------------------------------------
-
-rewrite_unspill(I, TempMap, FpMap) ->
-  DstReg = hipe_sparc:pseudo_unspill_reg(I),
-  Pos = get_spill_offset(hipe_sparc:pseudo_unspill_pos(I)),
-  case hipe_sparc:is_fpreg(DstReg) of
-    true ->
-      DstFpRegNr = hipe_sparc:fpreg_nr(DstReg),
-      case hipe_temp_map:in_fp_reg(DstFpRegNr,FpMap) of
-	false ->
-	  %% Unspilling to a spilled fpreg...
-	  ?ASSERT(check_spill(DstFpRegNr,FpMap,Pos,I)),
-	  hipe_sparc:comment_create({already_unspilled,I});
-	true -> %% Not spilled...
-	  Reg = map_fp(DstReg, FpMap),
-	  gen_stack_load_fp(Pos, Reg)
-      end;
-    false ->
-      DstRegNr = hipe_sparc:reg_nr(DstReg),
-      case hipe_temp_map:in_reg(DstRegNr,TempMap) of
-	false -> %% Unspilling to a spilled reg.
-	  ?ASSERT(check_spill(DstRegNr,TempMap,Pos,I)),
-	  hipe_sparc:comment_create({already_unspilled,I});
-	true -> %% Not spilled.
-	  Reg = map(DstReg,TempMap),
-	  gen_stack_load(Pos,Reg)
-      end
-  end.
-
--ifdef(DO_ASSERT).
-check_spill(RegNr,TempMap,Pos,I) ->
-  case (catch hipe_temp_map:find(RegNr, TempMap)) of
-    unknown -> true;
-    DPos -> (get_spill_offset(DPos) =:= Pos)
-  end.
--endif.
-
-rewrite_fmove(I0, TempMap, FpMap)->
-  I = map_temps(I0, TempMap),
-  Src = hipe_sparc:fmove_src(I),
-  Dest = hipe_sparc:fmove_dest(I),
-  DestReg = hipe_sparc:fpreg_nr(Dest),
-
-  case hipe_sparc:is_fpreg(Src) of
-    false -> %% Can this happen?
-      case hipe_temp_map:is_spilled(DestReg,FpMap) of
-	true ->
-	  Pos = get_spill_offset(hipe_temp_map:find(DestReg, FpMap)),
-	  Reg = ?MK_TEMP_FPREG(),
-	  [hipe_sparc:fmove_dest_update(I,Reg)|
-	   gen_stack_store_fp(Pos, Reg)];
-	false ->
-	  remap_fp(I, [Dest], FpMap)
-      end;
-    true ->
-      SrcReg = hipe_sparc:fpreg_nr(Src),
-
-      case {hipe_temp_map:is_spilled(SrcReg,FpMap),
-	    hipe_temp_map:is_spilled(DestReg,FpMap)} of
-	{false,true} -> %% spill
-	  Pos = get_spill_offset(hipe_temp_map:find(DestReg, FpMap)),
-	  Reg = map_fp(Src,FpMap),
-	  gen_stack_store_fp(Pos, Reg);
-	{true,false} -> %% unspill
-	  Pos = get_spill_offset(hipe_temp_map:find(SrcReg, FpMap)),
-	  Reg = map_fp(Dest,FpMap),
-	  gen_stack_load_fp(Pos, Reg);
-	{false,false} ->
-	  remap_fp(I, [Src,Dest], FpMap);
-	{true,true} ->
-	  Pos1 = get_spill_offset(hipe_temp_map:find(SrcReg, FpMap)),
-	  Pos2 = get_spill_offset(hipe_temp_map:find(DestReg, FpMap)),
-	  Reg = ?MK_TEMP_FPREG(),
-	  [gen_stack_load_fp(Pos1, Reg),
-	   gen_stack_store_fp(Pos2, Reg)]
-      end
-  end.  
-
-rewrite_load_fp(I, TempMap)->
-  NewI = map_temps(I, TempMap),
-  Source = hipe_sparc:load_fp_src(NewI),
-  Dest = hipe_sparc:load_fp_dest(NewI),
-  Off = hipe_sparc:load_fp_off(NewI),
-  Align = hipe_sparc:load_fp_align(NewI),
-  case hipe_sparc:load_fp_type(NewI) of
-    double ->
-      Dest2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Dest) + 1),
-      case hipe_sparc:is_imm(Off) of
-	true ->
-	  Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
-	  [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off),
-	   hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off2)];
-	_ -> %% The offset is a register
-	  [hipe_sparc:load_fp_create(Dest, Align, single, Source, Off),
-	   hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4)),
-	   hipe_sparc:load_fp_create(Dest2, Align, single, Source, Off),
-	   hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4))]
-      end;
+      Offset = pseudo_offset(Dst, FPoff, Context),
+      mk_store(Src, hipe_sparc:mk_sp(), Offset, []);
     _ ->
-      NewI
-  end.
-
-rewrite_store_fp(I, TempMap)->
-  NewI = map_temps(I, TempMap),
-  Source = hipe_sparc:store_fp_src(NewI),
-  Dest = hipe_sparc:store_fp_dest(NewI),
-  Off = hipe_sparc:store_fp_off(NewI),
-  Align = hipe_sparc:store_fp_align(NewI),
-  case hipe_sparc:store_fp_type(NewI) of
-    double ->
-      Source2 = hipe_sparc:mk_fpreg(hipe_sparc:fpreg_nr(Source) + 1),
-      case hipe_sparc:is_imm(Off) of
+      case temp_is_pseudo(Src) of
 	true ->
-	  Off2 = hipe_sparc:mk_imm(hipe_sparc:imm_value(Off) + 4),
-	  [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source),
-	   hipe_sparc:store_fp_create(Dest, Off2, single, Align, Source2)];
+	  Offset = pseudo_offset(Src, FPoff, Context),
+	  mk_load(hipe_sparc:mk_sp(), Offset, Dst, []);
 	_ ->
-	  [hipe_sparc:store_fp_create(Dest, Off, single, Align, Source),
-	   hipe_sparc:alu_create(Off, Off, '+', hipe_sparc:mk_imm(4)),
-	   hipe_sparc:store_fp_create(Dest, Off, single, Align, Source2),
-	   hipe_sparc:alu_create(Off, Off, '-', hipe_sparc:mk_imm(4))]
-      end;
-    _ ->
-      NewI
+	  [hipe_sparc:mk_mov(Src, Dst)]
+      end
   end.
 
-get_offset(O) when is_integer(O) ->
-  -4 * O.
-
-get_spill_pos(P) ->
-  get_offset(P+1).
-
-get_spill_offset(T) ->
- get_spill_pos(element(2,T)).
-
-enter_stack_args(Args, Need, TempMap, ArgsOnStack) ->
-  enter_stack_args(0, hipe_sparc_registers:register_args(), Args,
-		   Need, TempMap, ArgsOnStack).
-
-%%
-%% The stack on SPARC grows uppwards (At least now...)
-%%
-%% Assume a function f with Arity = j is doing a tail-call to
-%% a function g with arity k. 
-%% Also assume the current function has spilled i temps.
-%%
-%%  Current stack frame:
-%%
-%%        |         |
-%% SP ->  |         |
-%%        | Spill 0 |
-%%        |  ...    |
-%%        | Spill i |
-%%        | Dead CP |  (Read to %o7)    
-%%        | Arg j   |
-%%        | ...     |
-%%        | Arg 6   |  (Currently 5 args in reg)
-%%        |OLD FRAME|
-%%
-%%  Stack just before call to target:
-%%        |         |
-%% sp ->  |         |
-%%        |         |
-%% SP ->  |         |                   
-%%        | Arg' k  |
-%%        | ...     |
-%%        | ...     |
-%%        | ...     |
-%%        | Arg' 6  |  (Currently 5 args in reg)
-%%        |OLD FRAME|
-%%
-%% The arguments to g might be on the stack
-%% If they are in the dangezone (the area overwritten by the arguments)
-%% They have to be moved.
-%% e.g. ( d marks the dangerzone)
-%%           f/7               g/10
-%%        |         |
-%% SP ->  |         |
-%%        | Spill 1 |   SP ->|         |
-%%   d    | Spill 2 |        | Spill 1 |
-%%   d    | Spill 3 |        | Spill 2 |
-%%   d    | Dead CP |        | Spill 3 |
-%%   d    | Arg 7   |        | Arg 6   |
-%%   d    | Arg 6   |        | t1      |
-%%        |OLD FRAME|        |OLD FRAME|
-%%
-%%   The DangerZone is SP - 2 to SP - 6
-%%  We go through the arguments to g bottom up:
-%%
-%%   DZ     ARG      POSITION       SAVE  
-%%
-%%    < -6, t1     : in reg -> OK
-%%    < -5, Arg 6  : SP-6 -> in DZ, Save = [SP-6]  
-%%    < -4, Spill 2: SP-2 -> OK
-%%    < -3, Spill 3: SP-1 -> OK
-%%    < -2, Spill 1: SP-3 -> in DZ, Save = [SP-3, SP-6]
-%%
-%%  Then we copy the positions in Save to the top of the stack.
-%%        | Arg 6   |
-%% SP ->  | Spill 1 |
-%%        | Spill 3 |
-%%   d    | Spill 2 |
-%%   d    | Spill 1 |
-%%   d    | Dead CP |
-%%   d    | Arg 7   |
-%%   d    | Arg 6   |
-%%        |OLD FRAME|
-%%
-%%  Now we can rewrite the stack safely:
-%%        | A g 6   |
-%% sp ->  | S i l 1 |
-%% SP ->  | s i l 2 |
-%%        | Spill 1 |
-%%        | Spill 2 |
-%%        | Spill 3 |
-%%        | Arg 6   |
-%%        | t1      |
-%%        |OLD FRAME|
-
-%% TODO: Verify that this really is correct.
-
-enter_stack_args(ArgNo, ArgNo, Args, Need, TempMap, ArgsOnStack) ->
-  %% How many args has to be spilled to the stack?
-  NoNewArgsOnStack = length(Args),
-
-  %% Where does the first arg end up?
-  %% SP - (Need + ArgsOnStack)*4
-  Base = -(Need + ArgsOnStack),
-
-  {ToSave,RealArgs} = args_in_danger(Args, Base-1, [], 0, [], TempMap),
-
-  TempReg = ?MK_TEMP_REG(),
-  SaveCode = save(ToSave,0, TempReg),
-  PushCode = pushem(RealArgs, Base, TempReg),
-
-  AdjustOffset = (ArgsOnStack + Need - NoNewArgsOnStack) bsl ?log2_wordsize,
-  AdjustSP = gen_dealloc_code(AdjustOffset),
-  [SaveCode, PushCode, AdjustSP];
-enter_stack_args(No, NoRegArgs, [_Arg|Args], Need, TempMap, ArgsOnStack) ->
-  enter_stack_args(No+1, NoRegArgs, Args, Need, TempMap, ArgsOnStack).
-
-args_in_danger([Arg|Args], DangerZone, ToSave, SavePos, MappedArgs, TempMap) ->
-  case hipe_sparc:is_reg(Arg) of
+do_pseudo_fmove(I, Context, FPoff) ->
+  Dst = hipe_sparc:pseudo_fmove_dst(I),
+  Src = hipe_sparc:pseudo_fmove_src(I),
+  case temp_is_pseudo(Dst) of
     true ->
-      case hipe_temp_map:find(hipe_sparc:reg_nr(Arg), TempMap) of
-	{reg, Reg} -> %% Arg in reg all cool.
-	  args_in_danger(Args, DangerZone+1, ToSave, SavePos, 
-			 [{reg, Reg}|MappedArgs], TempMap);
-	{spill, Pos} when is_integer(Pos) ->
-	  if -Pos < DangerZone -> %% Spill in dangerzone
-	      args_in_danger(Args, DangerZone+1, [-Pos|ToSave], SavePos+1,
-			     [{spill, SavePos}|MappedArgs], TempMap);
-	     true ->
-	      args_in_danger(Args, DangerZone+1, ToSave, SavePos,
-			     [{spill, -(Pos+1)}|MappedArgs], TempMap)
-	  end
-      end;
-    false ->
-      case hipe_sparc:is_imm(Arg) of 
+      Offset = pseudo_offset(Dst, FPoff, Context),
+      mk_fstore(Src, hipe_sparc:mk_sp(), Offset);
+    _ ->
+      case temp_is_pseudo(Src) of
 	true ->
-	  args_in_danger(Args, DangerZone+1, ToSave, SavePos, 
-			 [{imm,	hipe_sparc:imm_value(Arg)}|MappedArgs],
-			 TempMap);
-	false ->
-	  %% TODO: XXX: Dont handle fpreg ...
-	  ?EXIT({do_no_handle,Arg})
+	  Offset = pseudo_offset(Src, FPoff, Context),
+	  mk_fload(hipe_sparc:mk_sp(), Offset, Dst);
+	_ ->
+	  [hipe_sparc:mk_fp_unary('fmovd', Src, Dst)]
+      end
+  end.
+
+pseudo_offset(Temp, FPoff, Context) ->
+  FPoff + context_offset(Context, Temp).
+
+%%%
+%%% Return - deallocate frame and emit 'ret $N' insn.
+%%%
+
+do_pseudo_ret(I, Context, FPoff) ->
+  %% XXX: typically only one instruction between
+  %% the move-to-RA and the jmp-via-RA, ouch
+  restore_ra(FPoff, Context,
+	     adjust_sp(FPoff + word_size() * context_arity(Context),
+		       [I])).
+
+restore_ra(FPoff, Context, Rest) ->
+  case context_clobbers_ra(Context) of
+    false -> Rest;
+    true ->
+      RA = hipe_sparc:mk_ra(),
+      mk_load(hipe_sparc:mk_sp(), FPoff - word_size(), RA, Rest)
+  end.
+
+adjust_sp(N, Rest) ->
+  if N =:= 0 ->
+      Rest;
+     true ->
+      SP = hipe_sparc:mk_sp(),
+      hipe_sparc:mk_addi(SP, N, SP, Rest)
+  end.
+
+%%%
+%%% Recursive calls.
+%%%
+
+do_pseudo_call_prepare(I, FPoff0) ->
+  %% Create outgoing arguments area on the stack.
+  NrStkArgs = hipe_sparc:pseudo_call_prepare_nrstkargs(I),
+  Offset = NrStkArgs * word_size(),
+  {adjust_sp(-Offset, []), FPoff0 + Offset}.
+
+do_pseudo_call(I, LiveOut, Context, FPoff0) ->
+  #sparc_sdesc{exnlab=ExnLab,arity=OrigArity} = hipe_sparc:pseudo_call_sdesc(I),
+  FunV = hipe_sparc:pseudo_call_funv(I),
+  LiveTemps = [Temp || Temp <- LiveOut, temp_is_pseudo(Temp)],
+  SDesc = mk_sdesc(ExnLab, Context, LiveTemps),
+  ContLab = hipe_sparc:pseudo_call_contlab(I),
+  Linkage = hipe_sparc:pseudo_call_linkage(I),
+  CallCode = [hipe_sparc:mk_pseudo_call(FunV, SDesc, ContLab, Linkage)],
+  StkArity = max(0, OrigArity - hipe_sparc_registers:nr_args()),
+  context_need_stack(Context, stack_need(FPoff0, StkArity, FunV)),
+  ArgsBytes = word_size() * StkArity,
+  {CallCode, FPoff0 - ArgsBytes}.
+
+stack_need(FPoff, StkArity, FunV) ->
+  case FunV of
+    #sparc_prim{} -> FPoff;
+    #sparc_mfa{m=M,f=F,a=A} ->
+      case erlang:is_builtin(M, F, A) of
+	true -> FPoff;
+	false -> stack_need_general(FPoff, StkArity)
+      end;
+    _ -> stack_need_general(FPoff, StkArity)
+  end.
+
+stack_need_general(FPoff, StkArity) ->
+  max(FPoff, FPoff + (?SPARC_LEAF_WORDS - StkArity) * word_size()).
+
+%%%
+%%% Create stack descriptors for call sites.
+%%%
+
+mk_sdesc(ExnLab, Context, Temps) ->	% for normal calls
+  Temps0 = only_tagged(Temps),
+  Live = mk_live(Context, Temps0),
+  Arity = context_arity(Context),
+  FSize = context_framesize(Context),
+  hipe_sparc:mk_sdesc(ExnLab, (FSize div word_size())-1, Arity,
+		      list_to_tuple(Live)).
+
+only_tagged(Temps)->
+  [X || X <- Temps, hipe_sparc:temp_type(X) =:= 'tagged'].
+
+mk_live(Context, Temps) ->
+  lists:sort([temp_to_slot(Context, Temp) || Temp <- Temps]).
+
+temp_to_slot(Context, Temp) ->
+  (context_framesize(Context) + context_offset(Context, Temp))
+    div word_size().
+
+mk_minimal_sdesc(Context) ->		% for inc_stack_0 calls
+  hipe_sparc:mk_sdesc([], 0, context_arity(Context), {}).
+
+%%%
+%%% Tailcalls.
+%%%
+
+do_pseudo_tailcall(I, Context) -> % always at FPoff=context_framesize(Context)
+  Arity = context_arity(Context),
+  Args = hipe_sparc:pseudo_tailcall_stkargs(I),
+  FunV = hipe_sparc:pseudo_tailcall_funv(I),
+  Linkage = hipe_sparc:pseudo_tailcall_linkage(I),
+  {Insns, FPoff1} = do_tailcall_args(Args, Context),
+  context_need_stack(Context, FPoff1),
+  StkArity = length(Args),
+  FPoff2 = FPoff1 + (Arity - StkArity) * word_size(),
+  context_need_stack(Context, stack_need(FPoff2, StkArity, FunV)),
+  I2 =
+    case FunV of
+      #sparc_temp{} ->
+	hipe_sparc:mk_jmp(FunV, hipe_sparc:mk_simm13(0), []);
+      Fun ->
+	hipe_sparc:mk_call_tail(Fun, Linkage)
+    end,
+  %% XXX: break out the RA restore, just like for pseudo_ret?
+  restore_ra(context_framesize(Context), Context,
+	     Insns ++ adjust_sp(FPoff2, [I2])).
+
+do_tailcall_args(Args, Context) ->
+  FPoff0 = context_framesize(Context),
+  Arity = context_arity(Context),
+  FrameTop = word_size()*Arity,
+  DangerOff = FrameTop - word_size()*length(Args),
+  %%
+  Moves = mk_moves(Args, FrameTop, []),
+  %%
+  {Stores, Simple, Conflict} =
+    split_moves(Moves, Context, DangerOff, [], [], []),
+  %% sanity check (shouldn't trigger any more)
+  if DangerOff < -FPoff0 ->
+      exit({?MODULE,do_tailcall_args,DangerOff,-FPoff0});
+     true -> []
+  end,
+  FPoff1 = FPoff0,
+  %%
+  {Pushes, Pops, FPoff2} = split_conflict(Conflict, FPoff1, [], []),
+  %%
+  TempReg = hipe_sparc_registers:temp1(),
+  %%
+  {adjust_sp(-(FPoff2 - FPoff1),
+	     simple_moves(Pushes, FPoff2, TempReg,
+			  store_moves(Stores, FPoff2, TempReg,
+				      simple_moves(Simple, FPoff2, TempReg,
+						   simple_moves(Pops, FPoff2, TempReg,
+								[]))))),
+   FPoff2}.
+
+mk_moves([Arg|Args], Off, Moves) ->
+  Off1 = Off - word_size(),
+  mk_moves(Args, Off1, [{Arg,Off1}|Moves]);
+mk_moves([], _, Moves) ->
+  Moves.
+
+split_moves([Move|Moves], Context, DangerOff, Stores, Simple, Conflict) ->
+  {Src,DstOff} = Move,
+  case src_is_pseudo(Src) of
+    false ->
+      split_moves(Moves, Context, DangerOff, [Move|Stores],
+		  Simple, Conflict);
+    true ->
+      SrcOff = context_offset(Context, Src),
+      Type = typeof_temp(Src),
+      if SrcOff =:= DstOff ->
+	  split_moves(Moves, Context, DangerOff, Stores,
+		      Simple, Conflict);
+	 SrcOff >= DangerOff ->
+	  split_moves(Moves, Context, DangerOff, Stores,
+		      Simple, [{SrcOff,DstOff,Type}|Conflict]);
+	 true ->
+	  split_moves(Moves, Context, DangerOff, Stores,
+		      [{SrcOff,DstOff,Type}|Simple], Conflict)
       end
   end;
-args_in_danger([],_,ToSave,_,Args,_) ->
-  {lists:reverse(ToSave),lists:reverse(Args)}.
+split_moves([], _, _, Stores, Simple, Conflict) ->
+  {Stores, Simple, Conflict}.
 
-save([Pos|Poses], Offset, TempReg) ->
-  ToPos = Offset bsl ?log2_wordsize,
-  FromPos = get_offset(Pos+1),
-  [gen_stack_load(FromPos, TempReg),
-   gen_stack_store(ToPos, TempReg)
-   | save(Poses, Offset+1, TempReg)];
-save([],_,_) -> [].
+split_conflict([{SrcOff,DstOff,Type}|Conflict], FPoff, Pushes, Pops) ->
+  FPoff1 = FPoff + word_size(),
+  Push = {SrcOff,-FPoff1,Type},
+  Pop = {-FPoff1,DstOff,Type},
+  split_conflict(Conflict, FPoff1, [Push|Pushes], [Pop|Pops]);
+split_conflict([], FPoff, Pushes, Pops) ->
+  {lists:reverse(Pushes), Pops, FPoff}.
 
-pushem([{reg,R}|Args], Pos, Temp) ->
-  ToPos = Pos bsl ?log2_wordsize,
-  [gen_stack_store(ToPos, hipe_sparc:mk_reg(R)) | pushem(Args,Pos+1, Temp)];
-pushem([{spill,P}|Args], Pos, Temp) ->
-  FromPos = P bsl ?log2_wordsize, 
-  ToPos = Pos bsl ?log2_wordsize,
-  [gen_stack_load(FromPos, Temp),
-   gen_stack_store(ToPos, Temp) |
-   pushem(Args,Pos+1, Temp)];
-pushem([{imm,I}|Args], Pos, Temp) ->
-  ToPos = Pos bsl ?log2_wordsize,
-  [hipe_sparc:move_create(Temp, hipe_sparc:mk_imm(I)),
-   gen_stack_store(ToPos, Temp) |
-   pushem(Args, Pos+1, Temp)];
-pushem([], _, _) -> [].
+simple_moves([{SrcOff,DstOff,Type}|Moves], FPoff, TempReg, Rest) ->
+  Temp = hipe_sparc:mk_temp(TempReg, Type),
+  SP = hipe_sparc:mk_sp(),
+  LoadOff = FPoff+SrcOff,
+  StoreOff = FPoff+DstOff,
+  simple_moves(Moves, FPoff, TempReg,
+	       mk_load(SP, LoadOff, Temp,
+		       mk_store(Temp, SP, StoreOff,
+				Rest)));
+simple_moves([], _, _, Rest) ->
+  Rest.
 
-find_reg(Temp,Map) ->
-  case hipe_temp_map:find(hipe_sparc:reg_nr(Temp), Map) of 
-    {reg, Pos} ->
-      Pos;
-    Where -> ?EXIT({temp_assumed_in_reg,Temp,Where})
-  end.
-
-find_fpreg(Temp,Map) ->
-  case hipe_temp_map:find(hipe_sparc:fpreg_nr(Temp), Map) of 
-    {fp_reg, Pos} ->
-      Pos;
-    Where -> ?EXIT({temp_assumed_in_fpreg,Temp,Where})
-  end.
-
-%%find_pos(Temp,Map) ->
-%%    case hipe_temp_map:find(hipe_sparc:reg_nr(Temp), Map) of
-%%    {spill, Pos} ->
-%%      Pos;
-%%    Where -> ?EXIT({temp_assumed_on_stack,Temp,Where})
-%%  end.
-
-remap(I, Temps, Map) ->
-  %% io:format("\n\n~w~w\n~w\n",[I,Temps,Map]),
-  Substs = [{Temp, hipe_sparc:mk_reg(find_reg(Temp,Map))} || Temp <- Temps],
-  hipe_sparc:subst(I, Substs).
-
-remap_fp(I, Temps, Map) ->
-  %% io:format("\n\n~w~w\n~w\n",[I,Temps,Map]),
-  Substs = 
-    [{Temp, hipe_sparc:mk_fpreg(find_fpreg(Temp,Map))} || Temp <- Temps],
-  hipe_sparc:subst(I, Substs).
-
-map_fp(Temp, Map) ->
-  case hipe_sparc:is_fpreg(Temp) of
-    true ->
-      hipe_sparc:mk_fpreg(find_fpreg(Temp, Map));
-    false ->
-      Temp
-  end.
-
-map(Temp, Map) ->
-  case hipe_sparc:is_reg(Temp) of
-    true ->
-      hipe_sparc:mk_reg(find_reg(Temp, Map));
-    false ->
-      Temp
-  end.
- 
-max(P, A) when is_integer(P), is_integer(A) ->
-  if P > A -> P;
-     true -> A
-  end.
-
-min(P, A) when is_integer(P), is_integer(A) ->
-  if P < A -> P;
-     true -> A
-  end.
-
-push_call_args(Args, TempMap) ->
-  ArgsOnStack = args_on_stack(hipe_sparc_registers:register_args(), Args),
-  NoArgs = length(ArgsOnStack),      
-  if NoArgs > 0 ->
-      MappedArgs = 
-	[
-	 case hipe_sparc:is_reg(Arg) of
-	   true ->
-	     case hipe_temp_map:find(hipe_sparc:reg_nr(Arg), TempMap) of
-	       {reg, Reg} -> {reg,Reg};
-	       {spill, Pos} -> {spill, -(1+Pos+NoArgs)}
-	     end;
-	   false ->
-	     case hipe_sparc:is_imm(Arg) of 
-	       true ->
-		 {imm,hipe_sparc:imm_value(Arg)};
-	       false ->
-		 %% TODO: XXX: Dont handle fpreg ...
-		 ?EXIT({do_no_handle,Arg})
-	     end
-	 end
-	 || Arg <- ArgsOnStack],
-      SP = ?MK_SP_REG(),
-      TempReg = ?MK_TEMP_REG(),
-      AdjustSP = hipe_sparc:alu_create(SP,SP,'+',hipe_sparc:mk_imm(4*NoArgs)),
-      PushCode = pushem(MappedArgs,-NoArgs,TempReg),
-      [AdjustSP|PushCode];
-    true ->
-      [] %% No args on the stack.
-  end.
-
-args_on_stack(0, [_|_] = Args) ->
-  Args;
-args_on_stack(N, [_Arg|Args]) ->
-  args_on_stack(N-1, Args);
-args_on_stack(_N, []) -> 
-  [].
-
-extra_stack_need(Code, Need, Arity) when is_integer(Need) ->
-  %% Calculate number of args (to current fun) on stack
-  NoRegArgs = hipe_sparc_registers:register_args(),
-  ArgsOnStack = 
-    if Arity > NoRegArgs -> Arity - NoRegArgs; 
-       true -> 0 
+store_moves([{Src,DstOff}|Moves], FPoff, TempReg, Rest) ->
+  %% Type = typeof_temp(Src),
+  SP = hipe_sparc:mk_sp(),
+  StoreOff = FPoff+DstOff,
+  {NewSrc,FixSrc} =
+    case hipe_sparc:is_temp(Src) of
+      true ->
+	{Src, []};
+      _ ->
+	Temp = hipe_sparc:mk_temp(TempReg, 'untagged'),
+	{Temp, hipe_sparc:mk_set(Src, Temp)}
     end,
-  PrevSPLevel = ArgsOnStack + Need,  
-  lists:foldl(fun (I, Max) ->
-		  max(stack_need(I, PrevSPLevel), Max)
-	      end, 
-	      0,
-	      Code).
+  store_moves(Moves, FPoff, TempReg,
+	      FixSrc ++ mk_store(NewSrc, SP, StoreOff, Rest));
+store_moves([], _, _, Rest) ->
+  Rest.
 
-stack_need(I, PrevSPLevel) ->
-  %% io:format("\n\n~w\n~w\n",[I,TempMap]),
-  case I of
-    #call_link{} ->
-      Argneed = call_args_need(hipe_sparc:call_link_args(I)),
-      Argneed;
-    #pseudo_enter{} ->
-      NoArgs = length(hipe_sparc:pseudo_enter_args(I)),
-      NoRegArgs = hipe_sparc_registers:register_args(),
-      %% stack, do some shuffling.
-      %% Otherwise just adjust the stack pointer.
-      case NoArgs > NoRegArgs of
-	true ->        
-	  %% Arguments to the called function spill 
-	  NewOnStack = NoArgs - NoRegArgs,
-	  case NewOnStack > PrevSPLevel of
-	    true -> NewOnStack - PrevSPLevel;
-	    false -> 0
-	  end;
-	false -> %% All arguments on stack...
-	  0
-      end;
-    _ -> 
-      %% All other instructions no extra need.
-      0
+%%%
+%%% Contexts
+%%%
+
+-record(context, {liveness, framesize, arity, map, clobbers_ra, ref_maxstack}).
+
+mk_context(Liveness, Formals, Temps, ClobbersRA) ->
+  {Map, MinOff} = mk_temp_map(Formals, ClobbersRA, Temps),
+  FrameSize = (-MinOff),
+  RefMaxStack = hipe_bifs:ref(FrameSize),
+  Context = #context{liveness=Liveness,
+		     framesize=FrameSize, arity=length(Formals),
+		     map=Map, clobbers_ra=ClobbersRA, ref_maxstack=RefMaxStack},
+  Context.
+
+context_need_stack(#context{ref_maxstack=RM}, N) ->
+  M = hipe_bifs:ref_get(RM),
+  if N > M -> hipe_bifs:ref_set(RM, N);
+     true -> []
   end.
 
-call_args_need(Args) ->
-  length(args_on_stack(hipe_sparc_registers:register_args(), Args)).
+context_maxstack(#context{ref_maxstack=RM}) ->
+  hipe_bifs:ref_get(RM).
 
-set_stack_size(Call, Size, Arity) ->
-  SD = hipe_sparc:call_link_stack_desc(Call),
-  NewSD = hipe_sparc:sdesc_size_update(SD, Size),
-  NewSD2 = hipe_sparc:sdesc_arity_update(NewSD, Arity),
-  hipe_sparc:call_link_stack_desc_update(Call, NewSD2).
+context_arity(#context{arity=Arity}) ->
+  Arity.
 
-gen_stack_test(StackNeed, SP, CP, Arity, Cfg) when is_integer(StackNeed) ->
-  Leaf = hipe_sparc_cfg:is_leaf(Cfg),
-  TempReg = ?MK_TEMP_REG(),
-  TempReg1 = hipe_sparc:mk_reg(hipe_sparc_registers:temp1()),
-  if StackNeed =:= 0 ->
-      {[],[]};
-     StackNeed < ?SPARC_LEAF_WORDS, Leaf =:= true ->
-      {[],[]};
-     true -> 
-      Zero = hipe_sparc:mk_reg(hipe_sparc_registers:zero()),
-      SL = hipe_sparc:mk_reg(hipe_sparc_registers:stack_limit()),
-      Pred = 0.01,
-      OverflowLbl = hipe_sparc:label_create_new(),
-      StartLbl = hipe_sparc:label_create_new(),
-      TestLbl = hipe_sparc:label_create_new(),
-      RetLbl = hipe_sparc:label_create_new(),
-      OverflowName = hipe_rtl:label_name(OverflowLbl), 
-      StartName = hipe_rtl:label_name(StartLbl),
-      TestName = hipe_rtl:label_name(TestLbl),
-      ByteNeed = (?SPARC_LEAF_WORDS+StackNeed) bsl ?log2_wordsize, 
-      TestCode = 
-	if ByteNeed > 16#fff -> %% Max in simm13.
-	    [
-	     hipe_sparc:alu_create(TempReg, SL, '-', SP),
-	     hipe_sparc:sethi_create(TempReg1,
-				     hipe_sparc:mk_imm(high22(ByteNeed))),
-	     hipe_sparc:alu_create(TempReg1, TempReg1, 'or', 
-				   hipe_sparc:mk_imm(low10(ByteNeed))),
-	     hipe_sparc:alu_cc_create(Zero, TempReg, '-', TempReg1),
-	     hipe_sparc:b_create(l, OverflowName, StartName, Pred, na),
-	     StartLbl];
-	   true ->
-	    [hipe_sparc:alu_create(TempReg, SL, '-', SP),
-	     hipe_sparc:alu_cc_create(Zero, TempReg, '-', 
-				      hipe_sparc:mk_imm(ByteNeed)),
-	     hipe_sparc:b_create(l, OverflowName, StartName, Pred, na),
-	     StartLbl]
+context_framesize(#context{framesize=FrameSize}) ->
+  FrameSize.
+
+context_liveness(#context{liveness=Liveness}) ->
+  Liveness.
+
+context_offset(#context{map=Map}, Temp) ->
+  tmap_lookup(Map, Temp).
+
+context_clobbers_ra(#context{clobbers_ra=ClobbersRA}) -> ClobbersRA.
+
+mk_temp_map(Formals, ClobbersRA, Temps) ->
+  {Map, 0} = enter_vars(Formals, word_size() * length(Formals),
+			tmap_empty()),
+  TempsList = tset_to_list(Temps),
+  AllTemps =
+    case ClobbersRA of
+      false -> TempsList;
+      true ->
+	RA = hipe_sparc:mk_new_temp('untagged'),
+	[RA|TempsList]
+    end,
+  enter_vars(AllTemps, 0, Map).
+
+enter_vars([V|Vs], PrevOff, Map) ->
+  Off =
+    case hipe_sparc:temp_type(V) of
+      'double' -> PrevOff - 2*word_size(); % XXX: sparc64: 1*word_size()
+      _ -> PrevOff - word_size()
+    end,
+  enter_vars(Vs, Off, tmap_bind(Map, V, Off));
+enter_vars([], Off, Map) ->
+  {Map, Off}.
+
+tmap_empty() ->
+  gb_trees:empty().
+
+tmap_bind(Map, Key, Val) ->
+  gb_trees:insert(Key, Val, Map).
+
+tmap_lookup(Map, Key) ->
+  gb_trees:get(Key, Map).
+
+%%%
+%%% do_prologue: prepend stack frame allocation code.
+%%%
+%%% NewStart:
+%%%	temp1 = *(P + P_SP_LIMIT)
+%%%	temp2 = SP - MaxStack
+%%%	cmp temp2, temp1
+%%%	if (ltu) goto IncStack else goto AllocFrame
+%%% AllocFrame:
+%%%	SP = temp2		[if FrameSize == MaxStack]
+%%%	SP -= FrameSize		[if FrameSize != MaxStack]
+%%%	*(SP + FrameSize-WordSize) = RA		[if ClobbersRA]
+%%%	goto OldStart
+%%% OldStart:
+%%%	...
+%%% IncStack:
+%%%	temp1 = RA
+%%%	call inc_stack; nop
+%%%	RA = temp1
+%%%	goto NewStart
+
+do_prologue(CFG, Context) ->
+  MaxStack = context_maxstack(Context),
+  if MaxStack > 0 ->
+      FrameSize = context_framesize(Context),
+      OldStartLab = hipe_sparc_cfg:start_label(CFG),
+      NewStartLab = hipe_gensym:get_next_label(sparc),
+      %%
+      P = hipe_sparc:mk_temp(hipe_sparc_registers:proc_pointer(), 'untagged'),
+      Temp1 = hipe_sparc:mk_temp1(),
+      SP = hipe_sparc:mk_sp(),
+      %%
+      RA = hipe_sparc:mk_ra(),
+      ClobbersRA = context_clobbers_ra(Context),
+      GotoOldStartCode = [hipe_sparc:mk_b_label(OldStartLab)],
+      AllocFrameCodeTail =
+	case ClobbersRA of
+	  false -> GotoOldStartCode;
+	  true -> mk_store(RA, SP, FrameSize-word_size(), GotoOldStartCode)
 	end,
-      CPSAVE = hipe_sparc:mk_reg(hipe_sparc_registers:cpsave()),
-      {[hipe_sparc:goto_create(TestName),
-	TestLbl|TestCode],
-       [OverflowLbl,
-	hipe_sparc:move_create(CPSAVE, CP),
-	hipe_sparc:call_link_create(inc_stack_fun(Arity),
-				    CP,
-				    [CPSAVE],
-				    hipe_rtl:label_name(RetLbl), [], not_remote),
-	RetLbl,
-	hipe_sparc:move_create(CP, CPSAVE),
-	hipe_sparc:goto_create(TestName)]
-      }
-  end.
-
-inc_stack_fun(Arity) ->
-  ArgsInRegs = min(Arity, hipe_sparc_registers:register_args()), 
-  list_to_atom("inc_stack_" ++ integer_to_list(ArgsInRegs) ++ "args_0").
-
-gen_alloc_code(NeededBytes,SP) ->
-  TempReg = ?MK_TEMP_REG(),
-  %% Alloc space on stack for spills
-  if NeededBytes > 4092 -> %% Too big for imm
-      [hipe_sparc:sethi_create(TempReg,
-			       hipe_sparc:mk_imm(high22(NeededBytes))),
-       hipe_sparc:alu_create(TempReg, TempReg, 'or', 
-			     hipe_sparc:mk_imm(low10(NeededBytes))),
-       hipe_sparc:alu_create(SP,SP,'+',TempReg)];
+      %%
+      Arity = context_arity(Context),
+      Guaranteed = max(0, (?SPARC_LEAF_WORDS - Arity) * word_size()),
+      %%
+      {CFG1,NewStartCode} =
+	if MaxStack =< Guaranteed ->
+	    %% io:format("~w: MaxStack ~w =< Guaranteed ~w :-)\n", [?MODULE,MaxStack,Guaranteed]),
+	    AllocFrameCode = adjust_sp(-FrameSize, AllocFrameCodeTail),
+	    NewStartCode0 = AllocFrameCode, % no mflr needed
+	    {CFG,NewStartCode0};
+	   true ->
+	    %% io:format("~w: MaxStack ~w > Guaranteed ~w :-(\n", [?MODULE,MaxStack,Guaranteed]),
+	    AllocFrameLab = hipe_gensym:get_next_label(sparc),
+	    IncStackLab = hipe_gensym:get_next_label(sparc),
+	    Temp2 = hipe_sparc:mk_temp2(),
+	    %%
+	    NewStartCodeTail2 =
+	      [hipe_sparc:mk_pseudo_bp('lu', IncStackLab, AllocFrameLab, 0.01)],
+	    NewStartCodeTail1 = NewStartCodeTail2, % no mflr needed
+	    NewStartCode0 =
+	      mk_load(P, ?P_NSP_LIMIT, Temp1,
+		      hipe_sparc:mk_addi(SP, -MaxStack, Temp2,
+					 [hipe_sparc:mk_alu('subcc', Temp2, Temp1, hipe_sparc:mk_g0()) |
+					  NewStartCodeTail1])),
+	    %%
+	    AllocFrameCode =
+	      if MaxStack =:= FrameSize ->
+		  %% io:format("~w: MaxStack =:= FrameSize =:= ~w :-)\n", [?MODULE,MaxStack]),
+		  [hipe_sparc:mk_mov(Temp2, SP) |
+		   AllocFrameCodeTail];
+		 true ->
+		  %% io:format("~w: MaxStack ~w =/= FrameSize ~w :-(\n", [?MODULE,MaxStack,FrameSize]),
+		  adjust_sp(-FrameSize, AllocFrameCodeTail)
+	      end,
+	    %%
+	    IncStackCodeTail =
+	      [hipe_sparc:mk_call_rec(hipe_sparc:mk_prim('inc_stack_0'),
+				      mk_minimal_sdesc(Context), not_remote),
+	       hipe_sparc:mk_mov(Temp1, RA),
+	       hipe_sparc:mk_b_label(NewStartLab)],
+	    IncStackCode =
+	      [hipe_sparc:mk_mov(RA, Temp1) | IncStackCodeTail], % mflr always needed
+	    %%
+	    CFG0a = hipe_sparc_cfg:bb_add(CFG, AllocFrameLab,
+					  hipe_bb:mk_bb(AllocFrameCode)),
+	    CFG0b = hipe_sparc_cfg:bb_add(CFG0a, IncStackLab,
+					  hipe_bb:mk_bb(IncStackCode)),
+	    %%
+	    {CFG0b,NewStartCode0}
+	end,
+      %%
+      CFG2 = hipe_sparc_cfg:bb_add(CFG1, NewStartLab,
+				   hipe_bb:mk_bb(NewStartCode)),
+      hipe_sparc_cfg:start_label_update(CFG2, NewStartLab);
      true ->
-      [hipe_sparc:alu_create(SP,SP,'+',hipe_sparc:mk_imm(NeededBytes))]
-  end.
- 
-gen_dealloc_code(Bytes) ->
-  TempReg = ?MK_TEMP_REG(),
-  SP = ?MK_SP_REG(),
-  %% dealloc space on stack.
-  if Bytes > 4092 -> %% Too big for imm
-      [hipe_sparc:sethi_create(TempReg,
-			       hipe_sparc:mk_imm(high22(Bytes))),
-       hipe_sparc:alu_create(TempReg, TempReg, 'or', 
-			     hipe_sparc:mk_imm(low10(Bytes))),
-       hipe_sparc:alu_create(SP,SP,'-',TempReg)];
-     true ->
-      [hipe_sparc:alu_create(SP,SP,'-',hipe_sparc:mk_imm(Bytes))]
-  end.
-					
-gen_save_cp(Need) ->
-  CP = ?MK_CP_REG(),
-  Offset = get_offset(Need),
-  gen_stack_store(Offset,CP).
-
-gen_ret(Need, Arity) ->
-  %% Generate code for stack cleanup and return.
-
-  %% XXX: Fix if we start using multiple return values
-  RegArgs = [hipe_sparc:mk_reg(hipe_sparc_registers:ret(0))], 
-  CP = ?MK_CP_REG(),
-  %% Calculate number of args (to current fun) on stack
-  %% Consider moving this out of the loop.
-  NoRegArgs = hipe_sparc_registers:register_rets(),
-  ArgsOnStack = 
-    if Arity > NoRegArgs -> Arity - NoRegArgs; 
-       true -> 0 
-    end,
-  RetLabel = hipe_sparc:label_create_new(),
-  
-  StackAdjust = (ArgsOnStack+Need) bsl ?log2_wordsize,
-  {[RetLabel,
-    gen_stack_load(get_offset(Need),CP),
-    gen_dealloc_code(StackAdjust),
-    hipe_sparc:jmp_create(CP, hipe_sparc:mk_imm(8), RegArgs, [])
-   ],
-   hipe_sparc:label_name(RetLabel)}.
-
-high22(X) -> X bsr 10.
-
-low10(X) -> X band 16#3ff.
-
-gen_stack_load(Offset, DestReg) ->
-  if Offset < -4092 ->
-      load_huge_spillpos(Offset,DestReg);
-     true ->
-      SP = ?MK_SP_REG(),
-      ImmOffset = hipe_sparc:mk_imm(Offset),
-      [hipe_sparc:load_create(DestReg, uw, SP, ImmOffset)]
+      CFG
   end.
 
-gen_stack_store(Offset, Reg) ->
-  if Offset < -4092 ->
-      store_huge_spillpos(Offset,Reg);
-     true ->
-      SP = ?MK_SP_REG(),
-      ImmOffset = hipe_sparc:mk_imm(Offset),
-      [hipe_sparc:store_create(SP,ImmOffset, w, Reg)]
+%%% Create a load instruction.
+%%% May clobber Dst early for large offsets. In principle we could
+%%% clobber TEMP2 if Dst =:= Base, but Dst =/= Base here in frame.
+
+mk_load(Base, Offset, Dst, Rest) ->
+  LdOp = 'lduw',	% XXX: sparc64: ldx
+  hipe_sparc:mk_load(LdOp, Base, Offset, Dst, 'error', Rest).
+
+mk_fload(Base, Offset, Dst) ->
+  hipe_sparc:mk_fload(Base, Offset, Dst, 'temp2').
+
+%%% Create a store instruction.
+%%% May clobber TEMP2 for large offsets.
+
+mk_store(Src, Base, Offset, Rest) ->
+  StOp = 'stw',		% XXX: sparc64: stx
+  hipe_sparc:mk_store(StOp, Src, Base, Offset, 'temp2', Rest).
+
+mk_fstore(Src, Base, Offset) ->
+  hipe_sparc:mk_fstore(Src, Base, Offset, 'temp2').
+
+%%% typeof_temp -- what's temp's type?
+
+typeof_temp(Temp) ->
+  hipe_sparc:temp_type(Temp).
+
+%%% Check if an operand is a pseudo-Temp.
+
+src_is_pseudo(Src) ->
+  case hipe_sparc:is_temp(Src) of
+    true -> temp_is_pseudo(Src);
+    _ -> false
   end.
 
-store_huge_spillpos(Offset, RegToSave) ->
-  SP = ?MK_SP_REG(),
-  {DecCode, IncCode, NewOffset} = adjust(Offset,SP),
-  [DecCode, 
-   hipe_sparc:store_create(SP, hipe_sparc:mk_imm(NewOffset), RegToSave),
-   IncCode].
+temp_is_pseudo(Temp) ->
+  not(hipe_sparc:temp_is_precoloured(Temp)).
 
-load_huge_spillpos(Offset, RegToLoad) ->
-  SP = ?MK_SP_REG(),
-  {DecCode, _IncCode, NewOffset} = adjust(Offset, RegToLoad),
-  [hipe_sparc:move_create(RegToLoad, SP),
-   DecCode, 
-   hipe_sparc:load_create(RegToLoad, RegToLoad,
-			  hipe_sparc:mk_imm(NewOffset))].
+%%%
+%%% Detect if a Defun's body clobbers RA.
+%%%
 
-gen_stack_load_fp(Offset, DestReg) ->
-  Offset2 = Offset - 4,
-  if Offset2 < -4092 ->
-      load_huge_spillpos_fp(Offset2, DestReg);
-     true ->
-      DestRegNr = hipe_sparc:fpreg_nr(DestReg),
-      DestReg2 = hipe_sparc:mk_fpreg(DestRegNr + 1),
-      SP = ?MK_SP_REG(),
-      [hipe_sparc:load_fp_create(DestReg, 32, single, SP, 
-				 hipe_sparc:mk_imm(Offset)),
-       hipe_sparc:load_fp_create(DestReg2, 32, single, SP,
-				 hipe_sparc:mk_imm(Offset2))]
+clobbers_ra(Insns) ->
+  case Insns of
+    [#pseudo_call{}|_] -> true;
+    %% moves to RA cannot occur yet
+    [_|Rest] -> clobbers_ra(Rest);
+    [] -> false
   end.
 
-gen_stack_store_fp(Offset, SrcReg) ->
-  Offset2 = Offset - 4,
-  if Offset2 < -4092 ->
-      store_huge_spillpos_fp(Offset2, SrcReg);
-     true ->  
-      SrcRegNr = hipe_sparc:fpreg_nr(SrcReg),
-      SrcReg2 = hipe_sparc:mk_fpreg(SrcRegNr + 1),
-      SP = ?MK_SP_REG(),
-      [hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(Offset), 
-				  single, 32, SrcReg),
-       hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(Offset2), 
-				  single, 32, SrcReg2)]
+%%%
+%%% Build the set of all temps used in a Defun's body.
+%%%
+
+all_temps(Code, Formals) ->
+  S0 = find_temps(Code, tset_empty()),
+  S1 = tset_del_list(S0, Formals),
+  S2 = tset_filter(S1, fun(T) -> temp_is_pseudo(T) end),
+  S2.
+
+find_temps([I|Insns], S0) ->
+  S1 = tset_add_list(S0, hipe_sparc_defuse:insn_def_all(I)),
+  S2 = tset_add_list(S1, hipe_sparc_defuse:insn_use_all(I)),
+  find_temps(Insns, S2);
+find_temps([], S) ->
+  S.
+
+tset_empty() ->
+  gb_sets:new().
+
+tset_size(S) ->
+  gb_sets:size(S).
+
+tset_insert(S, T) ->
+  gb_sets:add_element(T, S).
+
+tset_add_list(S, Ts) ->
+  gb_sets:union(S, gb_sets:from_list(Ts)).
+
+tset_del_list(S, Ts) ->
+  gb_sets:subtract(S, gb_sets:from_list(Ts)).
+
+tset_filter(S, F) ->
+  gb_sets:filter(F, S).
+
+tset_to_list(S) ->
+  gb_sets:to_list(S).
+
+%%%
+%%% Compute minimum permissible frame size, ignoring spilled temps.
+%%% This is done to ensure that we won't have to adjust the frame size
+%%% in the middle of a tailcall.
+%%%
+
+defun_minframe(Defun) ->
+  MaxTailArity = body_mta(hipe_sparc:defun_code(Defun), 0),
+  MyArity = length(fix_formals(hipe_sparc:defun_formals(Defun))),
+  max(MaxTailArity - MyArity, 0).
+
+body_mta([I|Code], MTA) ->
+  body_mta(Code, insn_mta(I, MTA));
+body_mta([], MTA) ->
+  MTA.
+
+insn_mta(I, MTA) ->
+  case I of
+    #pseudo_tailcall{arity=Arity} ->
+      max(MTA, Arity - hipe_sparc_registers:nr_args());
+    _ -> MTA
   end.
 
-store_huge_spillpos_fp(Offset2, RegToSave) ->
-  RegNr = hipe_sparc:fpreg_nr(RegToSave),
-  RegToSave2 = hipe_sparc:mk_fpreg(RegNr+ 1),
-  SP = ?MK_SP_REG(),
-  {DecCode, IncCode, NewOffset2} = adjust(Offset2,SP),
-  [DecCode,
-   hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(NewOffset2+4), 
-			      single, 32, RegToSave),
-   hipe_sparc:store_fp_create(SP, hipe_sparc:mk_imm(NewOffset2), 
-			      single, 32, RegToSave2),
-   IncCode].
+max(X, Y) -> % why isn't max/2 a standard BIF?
+  if X > Y -> X; true -> Y end.
 
-load_huge_spillpos_fp(Offset2, RegToLoad) ->
-  RegNr = hipe_sparc:fpreg_nr(RegToLoad),
-  RegToLoad2 = hipe_sparc:mk_fpreg(RegNr + 1),
-  SP = ?MK_SP_REG(),
-  {DecCode, IncCode, NewOffset2} = adjust(Offset2,SP),
-  [DecCode,
-   hipe_sparc:load_fp_create(RegToLoad, 32, single, SP, 
-			     hipe_sparc:mk_imm(NewOffset2+4)),
-   hipe_sparc:load_fp_create(RegToLoad2, 32, single, SP, 
-			     hipe_sparc:mk_imm(NewOffset2)),
-   IncCode].
+%%%
+%%% Ensure that we have enough temps to satisfy the minimum frame size,
+%%% if necessary by prepending unused dummy temps.
+%%%
 
-adjust(Offset, Reg) ->
-  adjust(Offset, Reg, [], []).
+ensure_minframe(MinFrame, Temps) ->
+  ensure_minframe(MinFrame, tset_size(Temps), Temps).
 
-adjust(Offset, _Reg, Dec,Inc) when Offset > -4092 ->
-  {Dec,Inc,Offset};
-adjust(Offset, Reg, Dec,Inc) ->
-  NewOffset = Offset + 4092,
-  Step = hipe_sparc:mk_imm(4092),
-  adjust(NewOffset, Reg,
-	 [hipe_sparc:alu_create(Reg,Reg,'-',Step)| Dec],
-	 [hipe_sparc:alu_create(Reg,Reg,'+',Step)| Inc]).
+ensure_minframe(MinFrame, Frame, Temps) ->
+  if MinFrame > Frame ->
+      Temp = hipe_sparc:mk_new_temp('untagged'),
+      ensure_minframe(MinFrame, Frame+1, tset_insert(Temps, Temp));
+     true -> Temps
+  end.
+
+word_size() ->
+  hipe_rtl_arch:word_size().

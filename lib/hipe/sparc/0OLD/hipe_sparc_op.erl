@@ -6,8 +6,8 @@
 %%  History  :	* 1997-04-14 Erik Johansson (happi@csd.uu.se): Created.
 %% CVS:
 %%    $Author: mikpe $
-%%    $Date: 2006/12/19 17:11:52 $
-%%    $Revision: 1.9 $
+%%    $Date: 2007/12/18 09:18:22 $
+%%    $Revision: 1.1 $
 %% ====================================================================
 %% Exported functions (short description):
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

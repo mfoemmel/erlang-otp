@@ -33,7 +33,7 @@
 -export([start/0, start/1, start_link/0, start_link/1, stop/1, notify/2, 
 	 sync_notify/2,
 	 add_handler/3, add_sup_handler/3, delete_handler/3, swap_handler/3,
-	 swap_sup_handler/3, which_handlers/1, call/3, call/4]).
+	 swap_sup_handler/3, which_handlers/1, call/3, call/4, wake_hib/4]).
 
 -export([behaviour_info/1]).
 
@@ -124,7 +124,7 @@ init_it(Starter, Parent, Name, _, _, Options) ->
     process_flag(trap_exit, true),
     Debug = gen:debug_options(Options),
     proc_lib:init_ack(Starter, {ok, self()}),
-    loop(Parent, Name, [], Debug).
+    loop(Parent, Name, [], Debug, false).
 
 add_handler(M, Handler, Args)      -> rpc (M, {add_handler, Handler, Args}).
 add_sup_handler(M, Handler, Args)  ->
@@ -168,12 +168,19 @@ send({global, Name}, Cmd) ->
 send(M, Cmd) ->
     M ! Cmd,
     ok.
+loop(Parent, ServerName, MSL, Debug, true) ->
+     proc_lib:hibernate(?MODULE,wake_hib,[Parent, ServerName, MSL, Debug]);
+loop(Parent, ServerName, MSL, Debug, _) ->
+    fetch_msg(Parent, ServerName, MSL, Debug, false).
 
-loop(Parent, ServerName, MSL, Debug) ->
+wake_hib(Parent, ServerName, MSL, Debug) ->
+    fetch_msg(Parent, ServerName, MSL, Debug, true).
+
+fetch_msg(Parent, ServerName, MSL, Debug, Hib) ->
     receive
 	{system, From, Req} ->
 	    sys:handle_system_msg(Req, From, Parent, gen_event, Debug,
-				  [ServerName, MSL]);
+				  [ServerName, MSL, Hib],Hib);
 	{'EXIT', Parent, Reason} ->
 	    terminate_server(Reason, Parent, MSL, ServerName);
 	Msg when Debug =:= [] ->
@@ -187,55 +194,55 @@ loop(Parent, ServerName, MSL, Debug) ->
 handle_msg(Msg, Parent, ServerName, MSL, Debug) ->
     case Msg of
 	{notify, Event} ->
-	    MSL1 = server_notify(Event, handle_event, MSL, ServerName),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    {Hib,MSL1} = server_notify(Event, handle_event, MSL, ServerName),
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {sync_notify, Event}} ->
-	    MSL1 = server_notify(Event, handle_event, MSL, ServerName),
+	    {Hib, MSL1} = server_notify(Event, handle_event, MSL, ServerName),
 	    ?reply(ok),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{'EXIT', From, Reason} ->
 	    MSL1 = handle_exit(From, Reason, MSL, ServerName),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, false);
 	{From, Tag, {call, Handler, Query}} ->
-	    {Reply, MSL1} = server_call(Handler, Query, MSL, ServerName),
+	    {Hib, Reply, MSL1} = server_call(Handler, Query, MSL, ServerName),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {add_handler, Handler, Args}} ->
-	    {Reply, MSL1} = server_add_handler(Handler, Args, MSL),
+	    {Hib, Reply, MSL1} = server_add_handler(Handler, Args, MSL),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {add_sup_handler, Handler, Args, SupP}} ->
-	    {Reply, MSL1} = server_add_sup_handler(Handler, Args, MSL, SupP),
+	    {Hib, Reply, MSL1} = server_add_sup_handler(Handler, Args, MSL, SupP),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {delete_handler, Handler, Args}} ->
 	    {Reply, MSL1} = server_delete_handler(Handler, Args, MSL,
 						  ServerName),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, false);
 	{From, Tag, {swap_handler, Handler1, Args1, Handler2, Args2}} ->
-	    {Reply, MSL1} = server_swap_handler(Handler1, Args1, Handler2,
+	    {Hib, Reply, MSL1} = server_swap_handler(Handler1, Args1, Handler2,
 						Args2, MSL, ServerName),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, {swap_sup_handler, Handler1, Args1, Handler2, Args2,
 		     Sup}} ->
-	    {Reply, MSL1} = server_swap_handler(Handler1, Args1, Handler2,
+	    {Hib, Reply, MSL1} = server_swap_handler(Handler1, Args1, Handler2,
 						Args2, MSL, Sup, ServerName),
 	    ?reply(Reply),
-	    loop(Parent, ServerName, MSL1, Debug);
+	    loop(Parent, ServerName, MSL1, Debug, Hib);
 	{From, Tag, stop} ->
 	    catch terminate_server(normal, Parent, MSL, ServerName),
 	    ?reply(ok);
 	{From, Tag, which_handlers} ->
 	    ?reply(the_handlers(MSL)),
-	    loop(Parent, ServerName, MSL, Debug);
+	    loop(Parent, ServerName, MSL, Debug, false);
 	{From, Tag, get_modules} ->
 	    ?reply(get_modules(MSL)),
-	    loop(Parent, ServerName, MSL, Debug);
+	    loop(Parent, ServerName, MSL, Debug, false);
 	Other  ->
-	    MSL1 = server_notify(Other, handle_info, MSL, ServerName),
-	    loop(Parent, ServerName, MSL1, Debug)
+	    {Hib, MSL1} = server_notify(Other, handle_info, MSL, ServerName),
+	    loop(Parent, ServerName, MSL1, Debug, Hib)
     end.
 
 terminate_server(Reason, Parent, MSL, ServerName) ->
@@ -264,7 +271,8 @@ do_unlink(Parent, MSL) ->
 %% may be so !
 handle_exit(From, Reason, MSL, SName) ->
     MSL1 = terminate_supervised(From, Reason, MSL, SName),
-    server_notify({'EXIT', From, Reason}, handle_info, MSL1, SName).
+    {_,MSL2}=server_notify({'EXIT', From, Reason}, handle_info, MSL1, SName),
+    MSL2.
 
 terminate_supervised(Pid, Reason, MSL, SName) ->
     F = fun(Ha) when Ha#handler.supervised =:= Pid ->
@@ -284,19 +292,19 @@ terminate_supervised(Pid, Reason, MSL, SName) ->
 %%-----------------------------------------------------------------
 %% Callback functions for system messages handling.
 %%-----------------------------------------------------------------
-system_continue(Parent, Debug, [ServerName, MSL]) ->
-    loop(Parent, ServerName, MSL, Debug).
+system_continue(Parent, Debug, [ServerName, MSL, Hib]) ->
+    loop(Parent, ServerName, MSL, Debug, Hib).
 
 -spec(system_terminate/4 :: (_, _, _, [_]) -> no_return()).
 
-system_terminate(Reason, Parent, _Debug, [ServerName, MSL]) ->
+system_terminate(Reason, Parent, _Debug, [ServerName, MSL, _Hib]) ->
     terminate_server(Reason, Parent, MSL, ServerName).
 
 %%-----------------------------------------------------------------
 %% Module here is sent in the system msg change_code.  It specifies
 %% which module should be changed.
 %%-----------------------------------------------------------------
-system_code_change([ServerName, MSL], Module, OldVsn, Extra) ->
+system_code_change([ServerName, MSL, Hib], Module, OldVsn, Extra) ->
     MSL1 = lists:zf(fun(H) when H#handler.module =:= Module ->
 			    {ok, NewState} =
 				Module:code_change(OldVsn,
@@ -305,7 +313,7 @@ system_code_change([ServerName, MSL], Module, OldVsn, Extra) ->
 		       (_) -> true
 		    end,
 		    MSL),
-    {ok, [ServerName, MSL1]}.
+    {ok, [ServerName, MSL1, Hib]}.
 
 %%-----------------------------------------------------------------
 %% Format debug messages.  Print them as the call-back module sees
@@ -341,9 +349,11 @@ server_add_handler(Mod, Args, MSL) ->
 server_add_handler(Mod, Handler, Args, MSL) ->
     case catch Mod:init(Args) of
         {ok, State} ->
-	    {ok, [Handler#handler{state = State}|MSL]};
+	    {false, ok, [Handler#handler{state = State}|MSL]};
+        {ok, State, hibernate} ->
+	    {true, ok, [Handler#handler{state = State}|MSL]};
         Other ->
-            {Other, MSL}
+            {false, Other, MSL}
     end.
 
 %% Set up a link to the supervising process.
@@ -382,20 +392,20 @@ server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, SName) ->
     {State2, Sup, MSL1} = split_and_terminate(Handler1, Args1, MSL,
 					      SName, Handler2, false),
     case s_s_h(Sup, Handler2, {Args2, State2}, MSL1) of
-	{ok, MSL2} ->
-	    {ok, MSL2};
-	{What, MSL2} ->
-	    {{error, What}, MSL2}
+	{Hib, ok, MSL2} ->
+	    {Hib, ok, MSL2};
+	{Hib, What, MSL2} ->
+	    {Hib, {error, What}, MSL2}
     end.
 
 server_swap_handler(Handler1, Args1, Handler2, Args2, MSL, Sup, SName) ->
     {State2, _, MSL1} = split_and_terminate(Handler1, Args1, MSL,
 					    SName, Handler2, Sup),
     case s_s_h(Sup, Handler2, {Args2, State2}, MSL1) of
-	{ok, MSL2} ->
-	    {ok, MSL2};
-	{What, MSL2} ->
-	    {{error, What}, MSL2}
+	{Hib, ok, MSL2} ->
+	    {Hib, ok, MSL2};
+	{Hib, What, MSL2} ->
+	    {Hib, {error, What}, MSL2}
     end.
 
 s_s_h(false, Handler, Args, MSL) ->
@@ -425,12 +435,16 @@ split_and_terminate(HandlerId, Args, MSL, SName, Handler2, Sup) ->
 server_notify(Event, Func, [Handler|T], SName) -> 
     case server_update(Handler, Func, Event, SName) of
 	{ok, Handler1} ->
-	    [Handler1|server_notify(Event, Func, T, SName)];
+	    {Hib, NewHandlers} = server_notify(Event, Func, T, SName),
+	    {Hib,[Handler1|NewHandlers]};
+	{hibernate, Handler1} ->
+	    {_Hib, NewHandlers} = server_notify(Event, Func, T, SName),
+	    {true,[Handler1|NewHandlers]};
 	no ->
 	    server_notify(Event, Func, T, SName)
     end;
 server_notify(_, _, [], _) ->
-    [].
+    {false,[]}.
 
 %% server_update(Handler, Func, Event, ServerName) -> Handler1 | no
 
@@ -440,6 +454,8 @@ server_update(Handler1, Func, Event, SName) ->
     case catch Mod1:Func(Event, State) of
 	{ok, State1} -> 
 	    {ok, Handler1#handler{state = State1}};
+	{ok, State1, hibernate} -> 
+	    {hibernate, Handler1#handler{state = State1}};
 	{swap_handler, Args1, State1, Handler2, Args2} ->
 	    do_swap(Mod1,Handler1,Args1,State1,Handler2,Args2,SName);
 	remove_handler ->
@@ -499,12 +515,14 @@ server_call(Handler, Query, MSL, SName) ->
 	{ok, Ha} ->
 	    case server_call_update(Ha, Query, SName) of
 		{no, Reply} ->
-		    {Reply, delete(Handler, MSL)};
+		    {false, Reply, delete(Handler, MSL)};
 		{{ok, Ha1}, Reply} ->
-		    {Reply, replace(Handler, MSL, Ha1)}
+		    {false, Reply, replace(Handler, MSL, Ha1)};
+		{{hibernate, Ha1}, Reply} ->
+		    {true, Reply, replace(Handler, MSL, Ha1)}
 	    end;
 	false ->
-	    {{error, bad_module}, MSL}
+	    {false, {error, bad_module}, MSL}
     end.
 
 search({Mod, Id}, [Ha|_MSL]) when Ha#handler.module =:= Mod,
@@ -549,6 +567,9 @@ server_call_update(Handler1, Query, SName) ->
     case catch Mod1:handle_call(Query, State) of
 	{ok, Reply, State1} -> 
 	    {{ok, Handler1#handler{state = State1}}, Reply};
+	{ok, Reply, State1, hibernate} -> 
+	    {{hibernate, Handler1#handler{state = State1}}, 
+	     Reply};
 	{swap_handler, Reply, Args1, State1, Handler2, Args2} ->
 	    {do_swap(Mod1,Handler1,Args1,State1,Handler2,Args2,SName), Reply};
 	{remove_handler, Reply} -> 
@@ -646,7 +667,7 @@ get_modules(MSL) ->
 %% Status information
 %%-----------------------------------------------------------------
 format_status(_Opt, StatusData) ->
-    [_PDict, SysState, Parent, _Debug, [ServerName, MSL]] = StatusData,
+    [_PDict, SysState, Parent, _Debug, [ServerName, MSL, _Hib]] = StatusData,
     Header = lists:concat(["Status for event handler ", ServerName]),
     [{header, Header},
      {data, [{"Status", SysState},

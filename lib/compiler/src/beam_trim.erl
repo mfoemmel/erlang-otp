@@ -274,8 +274,11 @@ frame_size([{call_fun,_}|Is], Safe) ->
     frame_size(Is, Safe);
 frame_size([{call,_,_}|Is], Safe) ->
     frame_size(Is, Safe);
-frame_size([{call_ext,_,_}|Is], Safe) ->
-    frame_size(Is, Safe);
+frame_size([{call_ext,A,{extfunc,M,F,A}}|Is], Safe) ->
+    case erl_bifs:is_exit_bif(M, F, A) of
+	true -> throw(not_possible);
+	false -> frame_size(Is, Safe)
+    end;
 frame_size([{apply,_}|Is], Safe) ->
     frame_size(Is, Safe);
 frame_size([{bif,_,{f,L},_,_}|Is], Safe) ->

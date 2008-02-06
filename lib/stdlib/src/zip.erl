@@ -991,7 +991,7 @@ get_end_of_central_dir(In0, Sz, Input) ->
 find_eocd_header(<<?END_OF_CENTRAL_DIR_MAGIC:32/little, Rest/binary>>) ->
     Rest;
 find_eocd_header(<<_:8, Rest/binary>>)
-  when size(Rest) > ?END_OF_CENTRAL_DIR_SZ-4 ->
+  when byte_size(Rest) > ?END_OF_CENTRAL_DIR_SZ-4 ->
     find_eocd_header(Rest);
 find_eocd_header(_) ->
     none.
@@ -1357,7 +1357,7 @@ binary_io({file_info, {_Filename, B}}, A) ->
     binary_io({file_info, B}, A);
 binary_io({file_info, B}, _) ->
     Now = calendar:local_time(),
-    #file_info{size = size(B), type = regular, access = read_write,
+    #file_info{size = byte_size(B), type = regular, access = read_write,
 	       atime = Now, mtime = Now, ctime = Now,
 	       mode = 0, links = 1, major_device = 0,
 	       minor_device = 0, inode = 0, uid = 0, gid = 0};
@@ -1367,11 +1367,11 @@ binary_io({open, B, _Opts}, _) when is_binary(B) ->
     {0, B};
 binary_io({open, Filename, _Opts}, _) when is_list(Filename) ->
     {0, <<>>};
-binary_io({read, N}, {Pos, B}) when Pos >= size(B) ->
+binary_io({read, N}, {Pos, B}) when Pos >= byte_size(B) ->
     {eof, {Pos+N, B}};
-binary_io({read, N}, {Pos, B}) when Pos + N > size(B) ->
+binary_io({read, N}, {Pos, B}) when Pos + N > byte_size(B) ->
     <<_:Pos/binary, Read/binary>> = B,
-    {Read, {size(B), B}};
+    {Read, {byte_size(B), B}};
 binary_io({pread, Pos, N}, {OldPos, B}) ->
     case B of
 	<<_:Pos/binary, Read:N/binary, _Rest/binary>> ->
@@ -1387,7 +1387,7 @@ binary_io({seek, bof, Pos}, {_OldPos, B}) ->
 binary_io({seek, cur, Pos}, {OldPos, B}) ->
     {OldPos + Pos, B};
 binary_io({seek, eof, Pos}, {_OldPos, B}) ->
-    {size(B) + Pos, B};
+    {byte_size(B) + Pos, B};
 binary_io({pwrite, Pos, Data}, {OldPos, B}) ->
     {OldPos, pwrite_binary(B, Pos, Data)};
 binary_io({write, Data}, {Pos, B}) ->

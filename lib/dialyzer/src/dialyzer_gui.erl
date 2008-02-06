@@ -34,8 +34,8 @@
 -record(gui_state, {add_all, add_file, add_rec,
 		    chosen_box, analysis_pid, del_file,
 		    doc_plt, clear_chosen, clear_log, clear_warn, 
-		    empty_plt, fixpoint, init_plt, 
-		    user_plt, dir_entry, file_box, file_wd, gs, log, menu, mode,
+		    fixpoint, init_plt, 
+		    dir_entry, file_box, file_wd, gs, log, menu, mode,
 		    options, packer, run, stop, top, warnings_box,
 		    backend_pid}).
 
@@ -332,9 +332,7 @@ start(DialyzerOptions = #options{}) ->
   gs:config(Packer, WH),
   {ok, CWD} = file:get_cwd(),
   
-  EmptyPlt = dialyzer_plt:new(),
-  InitPlt0 = DialyzerOptions#options.init_plt,
-  InitPlt = dialyzer_plt:from_file(InitPlt0),
+  InitPlt = dialyzer_plt:from_file(DialyzerOptions#options.init_plt),
 
   State = #gui_state{add_all=AddAll,
 		     add_file=AddFile, 
@@ -344,8 +342,8 @@ start(DialyzerOptions = #options{}) ->
 		     clear_log=ClearLog, 
 		     clear_warn=ClearWarn, 
 		     del_file=DelFile, 
+		     doc_plt=dialyzer_plt:new(),
 		     dir_entry=DirEntry,
-		     empty_plt=EmptyPlt,
 		     file_box=File, 
 		     file_wd=CWD,
 		     gs=GS, 
@@ -447,7 +445,6 @@ gui_loop(State = #gui_state{}) ->
       NewState = start_analysis(State),
       gui_loop(NewState);
     {gs, Stop, click, _, _} ->
-      dialyzer_plt:delete(State#gui_state.user_plt),
       config_gui_stop(State),
       BackendPid ! {self(), stop},
       update_editor(State#gui_state.log, "\n***** Analysis stopped ****\n"),
@@ -506,30 +503,8 @@ gui_loop(State = #gui_state{}) ->
       update_editor(State#gui_state.log, LogMsg),
       gui_loop(State);
     {BackendPid, warnings, Warnings} ->
-      Mode = State#gui_state.mode,
-      Type =
-	case gs:read(Mode#mode.dataflow, select) of
-	  true -> dataflow;
-	  false ->
-	    case gs:read(Mode#mode.succ_typings, select) of
-	      true -> succ_typings;
-	      false -> old_style
-	    end
-	end,
-      WarningString = 
-	case Type of
-	  old_style ->
-	    lists:flatten([io_lib:format("~w: ~s", [Fun, W])
-			   || {Fun, W} <- Warnings]);
-	  Other when (Other =:= dataflow) orelse (Other =:= succ_typings) ->
-	    lists:flatten([io_lib:format("~s:~w: ~s", 
-					 [filename:basename(F), Line, W])
-			   || {{F, Line}, W} <- Warnings]);
-	  succ_typings -> 
-	    lists:flatten([io_lib:format("~s:~w: ~s", 
-					 [filename:basename(F), Line, W])
-			   || {{F, Line}, W} <- Warnings])
-	end,
+      WarningString = lists:flatten([dialyzer:format_warning(W) 
+				     || W <- Warnings]),
       update_editor(State#gui_state.warnings_box, WarningString),
       gui_loop(State);
     {BackendPid, inline_warnings, Warnings} ->
@@ -545,12 +520,10 @@ gui_loop(State = #gui_state{}) ->
       config_gui_stop(State),
       gui_loop(State#gui_state{doc_plt=NewDocPlt});
     {'EXIT', BackendPid, {error, Reason}} ->
-      dialyzer_plt:delete(State#gui_state.user_plt),
       error(State, Reason),
       config_gui_stop(State),
       gui_loop(State);
     {'EXIT', BackendPid, Reason} when Reason =/= 'normal' ->
-      dialyzer_plt:delete(State#gui_state.user_plt),
       error(State, io_lib:format("~p", [Reason])),
       config_gui_stop(State),
       gui_loop(State);
@@ -1074,16 +1047,7 @@ save_loop(State, OkButton, CancelButton, Entry, Save, Editor) ->
 
 %% ---- Plt Menu ----
 
-search_doc_plt(State) ->
-  case State#gui_state.doc_plt of
-    undefined -> error(State, "No analysis has been made yet!\n");
-    PLT ->
-      search_doc_plt(State, PLT)
-  end.
-
-search_doc_plt(State, PLT) ->
-  GS = State#gui_state.gs,
-  TopWin = State#gui_state.top,
+search_doc_plt(State = #gui_state{gs = GS, top=TopWin}) ->
   WH = [{width, 400}, {height, 100}],
   WHB = [{width, 120}, {height, 30}],
   Title = io_lib:format("Search the PLT", []),
@@ -1112,11 +1076,11 @@ search_doc_plt(State, PLT) ->
   gs:config(Frame, WH),
   gs:config(ButtonPacker, WHB),
   search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
-		      FunEntry, ArityEntry, PLT, Win, TopWin).
+		      FunEntry, ArityEntry, Win, TopWin).
 
 
 search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
-		    FunEntry, ArityEntry, PLT, Win, TopWin) ->
+		    FunEntry, ArityEntry, Win, TopWin) ->
   receive
     {gs, CancelButton, click, _, _} ->
       gs:destroy(Win),
@@ -1127,11 +1091,11 @@ search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry,
       M = format_search(gs:read(ModEntry, text)),
       F = format_search(gs:read(FunEntry, text)),
       A = format_search(gs:read(ArityEntry, text)),
-      case dialyzer_plt:to_edoc(PLT, M, F, A) of
+      case dialyzer_plt:to_edoc(State#gui_state.doc_plt, M, F, A) of
 	[] -> 
 	  error(State, "No such function"),
 	  search_doc_plt_loop(State, CancelButton, SearchButton, ModEntry, 
-			      FunEntry, ArityEntry, PLT, Win, TopWin);
+			      FunEntry, ArityEntry, Win, TopWin);
 	String ->
 	  gs:destroy(Win),
 	  free_editor(State, String, "Content of PLT")
@@ -1324,19 +1288,16 @@ macro_dialog(State, Parent) ->
 				   {packer_y, {fixed, 30}}]),
   AddButton = gs:button(ButtonPacker1, [{label, {text, "Add"}}, 
 					{pack_xy, {1,1}}]),
-  
   Options = State#gui_state.options,
   Macros = [io_lib:format("~p = ~p", [X,Y]) || {X,Y}<-Options#options.defines],
   MacroBox = gs:listbox(Frame, [{pack_x, {1,2}}, {pack_y, 4}, {vscroll, right},
 				{bg, white}, {configure, true},
 				{selectmode, multiple},
 				{items, Macros}]),
-  
   ButtonPacker2 = gs:frame(Frame, [{pack_x, {1,2}}, {pack_y, 5}, 
 				   {packer_x, [{fixed, 60},{fixed, 70},
 					       {stretch,1}]},%Empty space
 				   {packer_y, {fixed, 30}}]),
-  
   DeleteButton = gs:button(ButtonPacker2, [{label, {text, "Delete"}}, 
 					   {pack_xy, {1,1}}]),
   DeleteAllButton = gs:button(ButtonPacker2, [{label, {text, "Delete All"}}, 
@@ -1345,15 +1306,12 @@ macro_dialog(State, Parent) ->
 				   {packer_x, [{stretch,1},%Empty space
 					       {fixed, 60},{fixed, 60}]},
 				   {packer_y, {fixed, 30}}]),
-
   OkButton = gs:button(ButtonPacker3, [{label, {text, "Ok"}},
 				       {pack_xy, {2,1}}]),
   CancelButton = gs:button(ButtonPacker3, [{label, {text, "Cancel"}},
 					   {pack_xy, {3,1}}]),
-
   gs:config(Win, {map, true}),
   gs:config(Frame, WH),
-
   macro_loop(Parent, Options, Frame, AddButton, DeleteAllButton, DeleteButton, 
 	     MacroBox, MacroEntry, TermEntry, OkButton, CancelButton, Win).
   
@@ -1477,7 +1435,7 @@ start_analysis(State) ->
   end.
 
 build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
-				 init_plt=InitPlt0, empty_plt=EmptyPlt}) ->
+				 init_plt=InitPlt0}) ->
   StartFrom =
     case gs:read(Mode#mode.start_byte_code, select) of
       true -> byte_code;
@@ -1490,7 +1448,7 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
     end,
   InitPlt =
     case gs:read(Menu#menu.plt_empty, select) of
-      true -> EmptyPlt;
+      true -> dialyzer_plt:new();
       false -> InitPlt0
     end,
   AnalType = 
@@ -1507,7 +1465,7 @@ build_analysis_record(#gui_state{mode=Mode, menu=Menu, options=Options,
 	    type=AnalType,
 	    defines=Options#options.defines,
 	    include_dirs=Options#options.include_dirs,
-	    init_plt=InitPlt,
+	    plt=InitPlt,
 	    start_from=StartFrom}.
 	    
 
@@ -1527,24 +1485,19 @@ get_anal_files(#gui_state{chosen_box=ChosenBox}, StartFrom) ->
 run_analysis(State, Analysis) ->
   config_gui_start(State),
   Self = self(),
-  case State#gui_state.doc_plt =:= undefined of
-    true -> ok;
-    false -> dialyzer_plt:delete(State#gui_state.doc_plt)
-  end,
-  DocPlt = dialyzer_plt:new(),
-  UserPlt = dialyzer_plt:new(),
-  NewAnalysis = Analysis#analysis{doc_plt=DocPlt, user_plt=UserPlt},
+  NewAnalysis = Analysis#analysis{doc_plt=dialyzer_plt:new()},
   LegalWarnings = find_legal_warnings(State),
   Fun = 
     fun() -> 
 	dialyzer_analysis_callgraph:start(Self, LegalWarnings, NewAnalysis)
     end,
   BackendPid = spawn_link(Fun),
-  State#gui_state{backend_pid=BackendPid, user_plt=UserPlt, doc_plt=DocPlt}.
+  State#gui_state{backend_pid=BackendPid}.
 
 
 find_legal_warnings(#gui_state{menu=#menu{warnings=Warnings}}) ->
-  [Tag || {Tag, GSItem} <- Warnings, gs:read(GSItem, select) =:= true].
+  ordsets:from_list([Tag || {Tag, GSItem} <- Warnings, 
+			    gs:read(GSItem, select) =:= true]).
 
 
 flush() ->

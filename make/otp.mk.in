@@ -21,21 +21,6 @@ DEFAULT_TARGETS =  opt debug release release_docs clean docs
 DUBIOUS_ORIGINS = /undefined/environment/
 
 # ----------------------------------------------------
-#	Application section
-# ----------------------------------------------------
-
-#
-# Some applications need special support libraries or might only be
-# applicable on certain platforms. These definitions are blank if
-# the application should not be compiled or contain the name of
-# the application if it should be compiled.
-#
-
-TSP_APP = @TSP_APP@
-SSL_APP = @SSL_APP@
-CRYPTO_APP = @CRYPTO_APP@
-
-# ----------------------------------------------------
 #	HiPE
 # ----------------------------------------------------
 
@@ -198,7 +183,6 @@ TEXDIR = .
 # HTML & GIF files that always are generated and must be delivered 
 SGML_COLL_FILES = $(SGML_APPLICATION_FILES) $(SGML_PART_FILES)
 XML_COLL_FILES = $(XML_APPLICATION_FILES) $(XML_PART_FILES)
-FASCICULES = $(wildcard fascicules.sgml) $(wildcard fascicules.xml)
 DEFAULT_HTML_FILES = \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_frame.html) \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_first.html) \
@@ -206,14 +190,13 @@ DEFAULT_HTML_FILES = \
 	$(SGML_COLL_FILES:%.sgml=$(HTMLDIR)/%_cite.html) \
 	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%_index.html) \
 	$(SGML_APPLICATION_FILES:%.sgml=$(HTMLDIR)/%.kwc) \
-	$(FASCICULES:%.sgml=$(HTMLDIR)/index.html) \
 	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_frame.html) \
 	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_first.html) \
 	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_term.html) \
 	$(XML_COLL_FILES:%.xml=$(HTMLDIR)/%_cite.html) \
 	$(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%_index.html) \
 	$(XML_APPLICATION_FILES:%.xml=$(HTMLDIR)/%.kwc) \
-	$(FASCICULES:%.xml=$(HTMLDIR)/index.html)
+	$(HTMLDIR)/index.html
 
 DEFAULT_GIF_FILES = $(HTMLDIR)/min_head.gif
 

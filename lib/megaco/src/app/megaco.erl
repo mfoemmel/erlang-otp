@@ -835,7 +835,7 @@ find_file([], File) ->
 %% 
 %%-----------------------------------------------------------------
 enable_trace(Level, File) when list(File) ->
-    case file:open(File, write) of
+    case file:open(File, [write]) of
 	{ok, Fd} ->
 	    HandleSpec = {fun handle_trace/2, Fd},
 	    dbg:tracer(process, HandleSpec),

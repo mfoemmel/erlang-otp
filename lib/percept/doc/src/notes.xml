@@ -31,6 +31,24 @@
   </header>
   <p>This document describes the changes made to the Percept application.</p>
 
+<section><title>Percept 0.6.2</title>
+
+    <section><title>Improvements and New Features</title>
+      <list>
+        <item>
+          <p>
+	    A new module, percept_profile, can now be used to collect
+	    profiling data even if the percept application is not
+	    installed. This should help profiling erlang application
+	    on target machines without libgd installed.</p>
+          <p>
+	    Own Id: OTP-7126</p>
+        </item>
+      </list>
+    </section>
+
+</section>
+
 <section>
   <title>Percept 0.5.0</title>
     <section><title>First Release</title>

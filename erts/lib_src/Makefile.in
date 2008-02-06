@@ -63,6 +63,11 @@ CFLAGS=@DEBUG_CFLAGS@ -DPURECOV
 TYPE_SUFFIX=.purecov
 PRE_LD=purecov $(PURECOV_BUILD_OPTIONS)
 else
+ifeq ($(TYPE),gcov)
+CFLAGS=@DEBUG_CFLAGS@ -fprofile-arcs -ftest-coverage -O0
+TYPE_SUFFIX=.gcov
+PRE_LD=
+else
 ifeq ($(TYPE),valgrind)
 CFLAGS=@DEBUG_CFLAGS@ -DVALGRIND
 TYPE_SUFFIX=.valgrind
@@ -77,6 +82,7 @@ override TYPE=opt
 OMIT_FP=true
 TYPE_SUFFIX=
 PRE_LD=
+endif
 endif
 endif
 endif
@@ -429,7 +435,7 @@ INTERNAL_RELEASE_INCLUDES= \
 	$(ERTS_INCL_INT)/erl_printf_format.h \
 	$(ERTS_INCL_INT)/erl_memory_trace_protocol.h
 
-INTERNAL_X_RELEASE_INCLUDE_DIRS= i386 x86_64 ppc32 sparc32
+INTERNAL_X_RELEASE_INCLUDE_DIRS= i386 x86_64 ppc32 sparc32 sparc64
 
 INTERNAL_RELEASE_LIBS= \
 	../lib/internal/README \

@@ -75,9 +75,9 @@ typedef struct {
 #  define ETHR_TRY_INLINE_FUNCS
 #endif
 
-#if !defined(ETHR_DISABLE_NATIVE_OPS) \
+#if !defined(ETHR_DISABLE_NATIVE_IMPLS) \
     && (defined(PURIFY) || defined(VALGRIND) || defined(ERTS_MIXED_CYGWIN_VC))
-#  define ETHR_DISABLE_NATIVE_IMP
+#  define ETHR_DISABLE_NATIVE_IMPLS
 #endif
 
 #define ETHR_RWMUTEX_INITIALIZED 	0x99999999
@@ -669,20 +669,26 @@ ETHR_INLINE_FUNC_NAME_(ethr_write_lock)(ethr_rwlock_t *lock)
 #endif
 
 /* For CPU-optimised atomics, spinlocks, and rwlocks. */
-#if !defined(ETHR_DISABLE_NATIVE_IMP) && defined(__GNUC__)
+#if !defined(ETHR_DISABLE_NATIVE_IMPLS) && defined(__GNUC__)
 #  if __GNUC__ < 3 && (__GNUC__ != 2 || __GNUC_MINOR__ < 96)
 #    define __builtin_expect(X, Y) (X)
 #  endif
-#  if defined(__i386__)
-#    include "i386/ethread.h"
-#  elif defined(__x86_64__)
-#    include "x86_64/ethread.h"
-#  elif (defined(__powerpc__) || defined(__ppc__)) && !defined(__powerpc64__)
-#    include "ppc32/ethread.h"
-#  elif defined(__sparc__)
-#    include "sparc32/ethread.h"
+#  if ETHR_SIZEOF_PTR == 4
+#    if defined(__i386__)
+#      include "i386/ethread.h"
+#    elif (defined(__powerpc__) || defined(__ppc__)) && !defined(__powerpc64__)
+#      include "ppc32/ethread.h"
+#    elif defined(__sparc__)
+#      include "sparc32/ethread.h"
+#    endif
+#  elif ETHR_SIZEOF_PTR == 8
+#    if defined(__x86_64__)
+#      include "x86_64/ethread.h"
+#    elif defined(__sparc__) && defined(__arch64__)
+#      include "sparc64/ethread.h"
+#    endif
 #  endif
-#endif /* !defined(ETHR_DISABLE_NATIVE_IMP) && defined(__GNUC__) */
+#endif /* !defined(ETHR_DISABLE_NATIVE_IMPLS) && defined(__GNUC__) */
 
 #ifdef ETHR_HAVE_OPTIMIZED_ATOMIC_OPS
 #  undef ETHR_HAVE_NATIVE_ATOMICS

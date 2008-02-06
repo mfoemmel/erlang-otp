@@ -200,14 +200,6 @@ BIF_RETTYPE size_1(BIF_ALIST_1)
 }
 
 /**********************************************************************/
-/* returns the bitsize of a bitstring (DEPRECATED) */
-
-BIF_RETTYPE bitsize_1(BIF_ALIST_1)
-{
-    return bit_size_1(BIF_P, BIF_ARG_1);
-}
-
-/**********************************************************************/
 /* returns the bitsize of a bitstring */
 
 BIF_RETTYPE bit_size_1(BIF_ALIST_1)

@@ -1,6 +1,6 @@
 {application, gs,
  [{description, "GS  The Graphics System"},
-  {vsn, "1.5.7"},
+  {vsn, "1.5.8"},
   {modules, [gs,gs_frontend,gs_make,gs_widgets,gstk,gstk_arc,gstk_button,
 	     gstk_canvas,gstk_checkbutton,gstk_db,gstk_editor,gstk_entry,
              gstk_font,gstk_frame,gstk_generic,gstk_grid,gstk_gridline,gstk_gs,

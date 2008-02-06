@@ -3358,11 +3358,7 @@ gen_guard_bif(LoaderState* stp, GenOpArg Fail, GenOpArg Live, GenOpArg Bif,
 	op->a[1].val = (Uint) (void *) erts_gc_length_1;
     } else if (bf == size_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_size_1;
-    } else if (bf == bitsize_1) {
-	/* XXX Deprecated */
-	op->a[1].val = (Uint) (void *) erts_gc_bit_size_1;
     } else if (bf == bit_size_1) {
-	/* XXX Deprecated */
 	op->a[1].val = (Uint) (void *) erts_gc_bit_size_1;
     } else if (bf == byte_size_1) {
 	op->a[1].val = (Uint) (void *) erts_gc_byte_size_1;

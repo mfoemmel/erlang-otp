@@ -256,7 +256,7 @@ int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
  */
 static void hipe_sigaltstack(void *ss_sp)
 {
-    struct sigaltstack ss;
+    stack_t ss;
 
     ss.ss_sp = ss_sp;
     ss.ss_flags = SS_ONSTACK;

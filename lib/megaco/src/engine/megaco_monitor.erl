@@ -51,7 +51,7 @@
 	 lookup_reply/1,
 	 match_replies/1,
 	 which_replies/1,
-	 insert_reply/1,
+	 insert_reply/1, insert_reply_new/1,
 	 delete_reply/1,
 
 	 apply_at_exit/4,
@@ -106,6 +106,9 @@ which_replies(Pat) ->
 
 insert_reply(Rec) ->
     ets:insert(megaco_replies, Rec).
+
+insert_reply_new(Rec) ->
+    ets:insert_new(megaco_replies, Rec).
 
 delete_reply(Key) ->
     ets:delete(megaco_replies, Key).

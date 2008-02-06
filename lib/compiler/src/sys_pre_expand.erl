@@ -96,24 +96,70 @@ module(Fs0, Opts0) ->
 compiler_options(Forms) ->
     lists:flatten([C || {attribute,_,compile,C} <- Forms]).
     
-expand_pmod(Fs0, St) ->
-    case St#expand.parameters of
+expand_pmod(Fs0, St0) ->
+    case St0#expand.parameters of
         undefined ->
-            {Fs0,St};
-        Ps ->
+            {Fs0,St0};
+        Ps0 ->
+	    Base = get_base(St0#expand.attributes),
+	    Ps = if is_atom(Base) ->
+			 ['BASE' | Ps0];
+		    true ->
+			 Ps0
+		 end,
             {Fs1,Xs,Ds} = sys_expand_pmod:forms(Fs0, Ps,
-                                                St#expand.exports,
-                                                St#expand.defined),
-            A = length(Ps),
-            Vs = [{var,0,V} || V <- Ps],
-            N = {atom,0,St#expand.module},
-            B = [{tuple,0,[N|Vs]}],
-            F = {function,0,new,A,[{clause,0,Vs,[],B}]},
-            As = St#expand.attributes,
-            {[F|Fs1],St#expand{exports=add_element({new,A}, Xs),
-                               defined=add_element({new,A}, Ds),
-                               attributes = [{abstract, true} | As]}}
+                                                St0#expand.exports,
+                                                St0#expand.defined),
+	    St1 = St0#expand{exports=Xs, defined=Ds},
+	    {Fs2,St2} = add_instance(Ps, Fs1, St1),
+	    {Fs3,St3} = ensure_new(Base, Ps0, Fs2, St2),
+            {Fs3,St3#expand{attributes = [{abstract, [true]}
+					  | St3#expand.attributes]}}
     end.
+
+get_base(As) ->
+    case lists:keysearch(extends, 1, As) of
+	{value,{extends,[Base]}} when is_atom(Base) ->
+	    Base;
+	_ ->
+	    []
+    end.
+
+ensure_new(Base, Ps, Fs, St) ->
+    case has_new(Fs) of
+	true ->
+	    {Fs, St};
+	false ->
+	    add_new(Base, Ps, Fs, St)
+    end.
+
+has_new([{function,_L,new,_A,_Cs} | _Fs]) ->
+    true;
+has_new([_ | Fs]) ->
+    has_new(Fs);
+has_new([]) ->
+    false.
+
+add_new(Base, Ps, Fs, St) ->
+    Vs = [{var,0,V} || V <- Ps],
+    As = if is_atom(Base) ->
+		 [{call,0,{remote,0,{atom,0,Base},{atom,0,new}},Vs} | Vs];
+	    true ->
+		 Vs
+	 end,
+    Body = [{call,0,{atom,0,instance},As}],
+    add_func(new, Vs, Body, Fs, St).
+
+add_instance(Ps, Fs, St) ->
+    Vs = [{var,0,V} || V <- Ps],
+    AbsMod = [{tuple,0,[{atom,0,St#expand.module}|Vs]}],
+    add_func(instance, Vs, AbsMod, Fs, St).
+
+add_func(Name, Args, Body, Fs, St) ->
+    A = length(Args), 
+    F = {function,0,Name,A,[{clause,0,Args,[],Body}]},
+    {[F|Fs],St#expand{exports=add_element({Name,A}, St#expand.exports),
+		      defined=add_element({Name,A}, St#expand.defined)}}.
 
 %% -type define_function(Form, State) -> State.
 %%  Add function to defined if form is a function.

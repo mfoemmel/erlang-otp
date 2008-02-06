@@ -798,8 +798,8 @@ handle_meta(_,_,_,_) ->                     % Don't know how to do this.
 write_output(TI,[OutPut|Rest]) ->
     write_output(TI,OutPut),
     write_output(TI,Rest);
-write_output({file,FD},Bin) when binary(Bin) -> % Plain direct-binary file
-    Size=size(Bin),
+write_output({file,FD},Bin) when is_binary(Bin) -> % Plain direct-binary file
+    Size=byte_size(Bin),
     file:write(FD,list_to_binary([<<0,Size:32>>,Bin]));
 write_output({relay,ToNode},Bin) when atom(ToNode),binary(Bin) ->
     {inviso_rt_meta,ToNode} ! {relayed_meta,Bin};
@@ -1113,7 +1113,7 @@ init_std_publld(Size,GlobalData) ->
 %% tuple must be the now item.
 %% Returns a new publ-ld structure.
 clean_std_publld({Part1,GlobalData}) ->
-    {clean_std_publld_2(Part1,now(),size(Part1),[]),GlobalData}.
+    {clean_std_publld_2(Part1,now(),tuple_size(Part1),[]),GlobalData}.
 
 clean_std_publld_2(_,_,0,Accum) ->
     list_to_tuple(Accum);
@@ -1122,7 +1122,7 @@ clean_std_publld_2(PublLD,Now,Index,Accum) ->
     clean_std_publld_2(PublLD,Now,Index-1,[NewTupleList|Accum]).
 
 clean_std_publld_3([Tuple|Rest],Now) ->
-    PrevNow=element(size(Tuple),Tuple),     % Last item shall be the now item.
+    PrevNow=element(tuple_size(Tuple),Tuple), % Last item shall be the now item.
     case difference_in_now(PrevNow,Now,30) of
 	true ->                             % Remove it then!
 	    clean_std_publld_3(Rest,Now);

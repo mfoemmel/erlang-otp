@@ -73,9 +73,6 @@ static char erts_system_version[] = ("Erlang (" EMULATOR ")"
 #ifdef ERTS_ENABLE_KERNEL_POLL
 				     " [kernel-poll:%s]"
 #endif	
-#if !NOFRAG_MAJOR_GC_DISCARDS_OLD_HEAP
-				     " [major-gc-retains-old-heap]"
-#endif
 #ifdef HYBRID
 				     " [hybrid heap]"
 #endif
@@ -1421,7 +1418,9 @@ process_info_aux(Process *BIF_P,
 #if defined(VALGRIND)
 static int check_if_xml(void)
 {
-    return (getenv("VALGRIND_LOG_XML") != NULL);
+    char buf[1];
+    size_t bufsz = sizeof(buf);
+    return erts_sys_getenv("VALGRIND_LOG_XML", buf, &bufsz) >= 0;
 }
 #else
 #define check_if_xml() 0
@@ -1630,6 +1629,60 @@ erts_destroy_info_dsbuf(erts_dsprintf_buf_t *dsbufp)
     erts_free(ERTS_ALC_T_INFO_DSBUF, (void *) dsbufp);
 }
 
+static Eterm
+c_compiler_used(Eterm **hpp, Uint *szp)
+{
+
+#if defined(__GNUC__)
+#  if defined(__GNUC_MINOR__) && defined(__GNUC_PATCHLEVEL__)
+#    define ERTS_GNUC_VSN_NUMS 3
+#  elif defined(__GNUC_MINOR__)
+#    define ERTS_GNUC_VSN_NUMS 2
+#  else
+#    define ERTS_GNUC_VSN_NUMS 1
+#  endif
+    return erts_bld_tuple(hpp,
+			  szp,
+			  2,
+			  erts_bld_atom(hpp, szp, "gnuc"),
+#if ERTS_GNUC_VSN_NUMS > 1
+			  erts_bld_tuple(hpp,
+					 szp,
+					 ERTS_GNUC_VSN_NUMS,
+#endif
+					 erts_bld_uint(hpp, szp,
+						       (Uint) __GNUC__)
+#ifdef __GNUC_MINOR__
+					 ,
+					 erts_bld_uint(hpp, szp,
+						       (Uint) __GNUC_MINOR__)
+#ifdef __GNUC_PATCHLEVEL__
+					 ,
+					 erts_bld_uint(hpp, szp,
+						       (Uint) __GNUC_PATCHLEVEL__)
+#endif
+#endif
+#if ERTS_GNUC_VSN_NUMS > 1
+			     )
+#endif
+	);
+
+#elif defined(_MSC_VER)
+    return erts_bld_tuple(hpp,
+			  szp,
+			  2,
+			  erts_bld_atom(hpp, szp, "msc"),
+			  erts_bld_uint(hpp, szp, (Uint) _MSC_VER));
+
+#else
+    return erts_bld_tuple(hpp,
+			  szp,
+			  2,
+			  am_undefined,
+			  am_undefined);
+#endif
+
+}
 
 BIF_RETTYPE system_info_1(BIF_ALIST_1)
 {
@@ -2083,6 +2136,7 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	DECL_AM(modified_timing_level);
 	DECL_AM(stop_memory_trace);
 	DECL_AM(multi_scheduling_blockers);
+	DECL_AM(c_compiler_used);
 
 	if (BIF_ARG_1 == AM_otp_release) {
 	    int n = sizeof(ERLANG_OTP_RELEASE)-1;
@@ -2106,6 +2160,13 @@ BIF_RETTYPE system_info_1(BIF_ALIST_1)
 	} else if (BIF_ARG_1 == AM_schedulers) {
 	    res = make_small(erts_no_of_schedulers);
 	    BIF_RET(res);
+	} else if (BIF_ARG_1 == AM_c_compiler_used) {
+	    Eterm *hp = NULL;
+	    Uint sz = 0;
+	    (void) c_compiler_used(NULL, &sz);
+	    if (sz)
+		hp = HAlloc(BIF_P, sz);
+	    BIF_RET(c_compiler_used(&hp, NULL));
 	} else if (BIF_ARG_1 == AM_kernel_poll) {
 #ifdef ERTS_ENABLE_KERNEL_POLL
 	    BIF_RET(erts_use_kernel_poll ? am_true : am_false);

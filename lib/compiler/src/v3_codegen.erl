@@ -287,71 +287,95 @@ match_fail_cg({try_clause,Reason}, Le, Vdb, Bef, St) ->
 %%  We know from an annotation that the register for a binary can
 %%  be reused for the match context because the two are not truly
 %%  alive at the same time (even though the conservative life time
-%%  information calculated by v3_life says so). The easiest way
-%%  to have those variables share the same register is to rename
-%%  the variable with the shortest life-span (the match context)
-%%  to the variable for the binary (which can have a very long life-time
-%%  because it is locked during matching). We KNOW that the match
-%%  state variable will only be alive during the matching.
+%%  information calculated by v3_life says so).
+%%
+%%  The easiest way to have those variables share the same register is
+%%  to rename the variable with the shortest life-span (the match
+%%  context) to the variable for the binary (which can have a very
+%%  long life-time because it is locked during matching). We KNOW that
+%%  the match state variable will only be alive during the matching.
+%%
+%%  We must also remove all information about the match context
+%%  variable from all life-time information databases (Vdb).
 
 bsm_rename_ctx([#l{ke={type_clause,binary,
 		       [#l{ke={val_clause,{binary,{var,Old}},Ke0}}=L2]}}=L1|Cs], New) ->
-    Ke = bsm_rename_ctx(Ke0, Old, New),
+    Ke = bsm_rename_ctx(Ke0, Old, New, false),
     [L1#l{ke={type_clause,binary,
 	      [L2#l{ke={val_clause,{binary,{var,New}},Ke}}]}}|bsm_rename_ctx(Cs, New)];
 bsm_rename_ctx([C|Cs], New) ->
     [C|bsm_rename_ctx(Cs, New)];
 bsm_rename_ctx([], _) -> [].
 
-bsm_rename_ctx(#l{ke={select,{var,V},Cs0}}=L, Old, New) ->
-    Cs = bsm_rename_ctx_list(Cs0, Old, New),
+%% bsm_rename_ctx(Ke, OldName, NewName, InProt) -> Ke'
+%%  Rename and clear OldName from life-time information. We must
+%%  recurse into any block contained in a protected, but it would
+%%  only complicatate things to recurse into blocks not in a protected
+%%  (the match context variable will is not live inside them).
+
+bsm_rename_ctx(#l{ke={select,{var,V},Cs0}}=L, Old, New, InProt) ->
+    Cs = bsm_rename_ctx_list(Cs0, Old, New, InProt),
     L#l{ke={select,{var,bsm_rename_var(V, Old, New)},Cs}};
-bsm_rename_ctx(#l{ke={type_clause,Type,Cs0}}=L, Old, New) ->
-    Cs = bsm_rename_ctx_list(Cs0, Old, New),
+bsm_rename_ctx(#l{ke={type_clause,Type,Cs0}}=L, Old, New, InProt) ->
+    Cs = bsm_rename_ctx_list(Cs0, Old, New, InProt),
     L#l{ke={type_clause,Type,Cs}};
-bsm_rename_ctx(#l{ke={val_clause,{bin_end,V},Ke0}}=L, Old, New) ->
-    Ke = bsm_rename_ctx(Ke0, Old, New),
+bsm_rename_ctx(#l{ke={val_clause,{bin_end,V},Ke0}}=L, Old, New, InProt) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New, InProt),
     L#l{ke={val_clause,{bin_end,bsm_rename_var(V, Old, New)},Ke}};
-bsm_rename_ctx(#l{ke={val_clause,{bin_seg,V,Sz,U,Type,Fl,Vs},Ke0}}=L, Old, New) ->
-    Ke = bsm_rename_ctx(Ke0, Old, New),
+bsm_rename_ctx(#l{ke={val_clause,{bin_seg,V,Sz,U,Type,Fl,Vs},Ke0}}=L,
+	       Old, New, InProt) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New, InProt),
     L#l{ke={val_clause,{bin_seg,bsm_rename_var(V, Old, New),Sz,U,Type,Fl,Vs},Ke}};
-bsm_rename_ctx(#l{ke={val_clause,{bin_int,V,Sz,U,Fl,Val,Vs},Ke0}}=L, Old, New) ->
-    Ke = bsm_rename_ctx(Ke0, Old, New),
+bsm_rename_ctx(#l{ke={val_clause,{bin_int,V,Sz,U,Fl,Val,Vs},Ke0}}=L,
+	       Old, New, InProt) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New, InProt),
     L#l{ke={val_clause,{bin_int,bsm_rename_var(V, Old, New),Sz,U,Fl,Val,Vs},Ke}};
-bsm_rename_ctx(#l{ke={val_clause,Val,Ke0}}=L, Old, New) ->
-    Ke = bsm_rename_ctx(Ke0, Old, New),
+bsm_rename_ctx(#l{ke={val_clause,Val,Ke0}}=L, Old, New, InProt) ->
+    Ke = bsm_rename_ctx(Ke0, Old, New, InProt),
     L#l{ke={val_clause,Val,Ke}};
-bsm_rename_ctx(#l{ke={alt,F0,S0}}=L, Old, New) ->
-    F = bsm_rename_ctx(F0, Old, New),
-    S = bsm_rename_ctx(S0, Old, New),
+bsm_rename_ctx(#l{ke={alt,F0,S0}}=L, Old, New, InProt) ->
+    F = bsm_rename_ctx(F0, Old, New, InProt),
+    S = bsm_rename_ctx(S0, Old, New, InProt),
     L#l{ke={alt,F,S}};
-bsm_rename_ctx(#l{ke={guard,Gcs0}}=L, Old, New) ->
-    Gcs = bsm_rename_ctx_list(Gcs0, Old, New),
+bsm_rename_ctx(#l{ke={guard,Gcs0}}=L, Old, New, InProt) ->
+    Gcs = bsm_rename_ctx_list(Gcs0, Old, New, InProt),
     L#l{ke={guard,Gcs}};
-bsm_rename_ctx(#l{ke={guard_clause,G0,B0}}=L, Old, New) ->
-    G = bsm_rename_ctx(G0, Old, New),
-    B = bsm_rename_ctx(B0, Old, New),
+bsm_rename_ctx(#l{ke={guard_clause,G0,B0}}=L, Old, New, InProt) ->
+    G = bsm_rename_ctx(G0, Old, New, InProt),
+    B = bsm_rename_ctx(B0, Old, New, InProt),
     %% A guard clause may cause unsaved variables to be saved on the stack.
     %% Since the match state variable Old is an alias for New (uses the
     %% same register), it is neither in the stack nor register descriptor
     %% lists and we would crash when we didn't find it unless we remove
     %% it from the database.
     bsm_forget_var(L#l{ke={guard_clause,G,B}}, Old);
-bsm_rename_ctx(#l{ke={protected,Ts0,Rs}}=L, Old, New) ->
-    Ts = bsm_rename_ctx_list(Ts0, Old, New),
+bsm_rename_ctx(#l{ke={protected,Ts0,Rs}}=L, Old, New, _InProt) ->
+    InProt = true,
+    Ts = bsm_rename_ctx_list(Ts0, Old, New, InProt),
     bsm_forget_var(L#l{ke={protected,Ts,Rs}}, Old);
-bsm_rename_ctx(#l{ke={match,Ms0,Rs}}=L, Old, New) ->
-    Ms = bsm_rename_ctx(Ms0, Old, New),
+bsm_rename_ctx(#l{ke={match,Ms0,Rs}}=L, Old, New, InProt) ->
+    Ms = bsm_rename_ctx(Ms0, Old, New, InProt),
     L#l{ke={match,Ms,Rs}};
-bsm_rename_ctx(#l{ke={test,_,_}}=L, _, _) -> L;
-bsm_rename_ctx(#l{ke={bif,_,_,_}}=L, _, _) -> L;
-bsm_rename_ctx(#l{ke={gc_bif,_,_,_}}=L, _, _) -> L;
-bsm_rename_ctx(#l{ke={set,_,_}}=L, _, _) -> L;
-bsm_rename_ctx(#l{ke={block,_}}=L, Old, _) -> bsm_forget_var(L, Old).
+bsm_rename_ctx(#l{ke={test,_,_}}=L, _, _, _) -> L;
+bsm_rename_ctx(#l{ke={bif,_,_,_}}=L, _, _, _) -> L;
+bsm_rename_ctx(#l{ke={gc_bif,_,_,_}}=L, _, _, _) -> L;
+bsm_rename_ctx(#l{ke={set,_,_}}=L, _, _, _) -> L;
+bsm_rename_ctx(#l{ke={block,_}}=L, Old, _, false) ->
+    %% This block is not inside a protected. The match context variable cannot
+    %% possibly be live inside the block.
+    bsm_forget_var(L, Old);
+bsm_rename_ctx(#l{ke={block,Bl0}}=L, Old, New, true) ->
+    %% A block in a protected. We must recursively rename the variable
+    %% inside the block.
+    Bl = bsm_rename_ctx_list(Bl0, Old, New, true),
+    bsm_forget_var(L#l{ke={block,Bl}}, Old);
+bsm_rename_ctx(#l{ke={break,_}}=L, Old, _New, _InProt) ->
+    bsm_forget_var(L, Old).
 
-bsm_rename_ctx_list([C|Cs], Old, New) ->
-    [bsm_rename_ctx(C, Old, New)|bsm_rename_ctx_list(Cs, Old, New)];
-bsm_rename_ctx_list([], _, _) -> [].
+bsm_rename_ctx_list([C|Cs], Old, New, InProt) ->
+    [bsm_rename_ctx(C, Old, New, InProt)|
+     bsm_rename_ctx_list(Cs, Old, New, InProt)];
+bsm_rename_ctx_list([], _, _, _) -> [].
     
 bsm_rename_var(Old, Old, New) -> New;
 bsm_rename_var(V, _, _) -> V.
@@ -537,7 +561,7 @@ top_level_block(Keis, Bef, MaxRegs, _St) ->
 			(return) ->
 			    [{deallocate,FrameSz},return];
 			(Tuple) when is_tuple(Tuple) ->
-			    [turn_yregs(size(Tuple), Tuple, MaxY)];
+			    [turn_yregs(tuple_size(Tuple), Tuple, MaxY)];
 			(Other) ->
 			    [Other]
 		    end, Keis),
@@ -688,7 +712,7 @@ select_extract_int([{var,Tl}], Val, {integer,Sz}, U, Fs, Vf,
     Expr = [{bin_element,0,{integer,0,Val},{integer,0,Sz},[{unit,U}|Fs]}],
     {value,Bin,EmptyBindings} = eval_bits:expr_grp(Expr, EmptyBindings, EvalFun),
     Bits = U*Sz,
-    Bits = erlang:bitsize(Bin),			%Assertion.
+    Bits = bit_size(Bin),			%Assertion.
     CtxReg = fetch_var(Ctx, Bef),
     {[{test,bs_match_string,{f,Vf},[CtxReg,Bin]},{bs_save2,CtxReg,{Ctx,Tl}}],
      clear_dead(Bef, I, Vdb),St}.

@@ -74,15 +74,18 @@ main(int argc, char** argv)
 	} else if (sbuf[0] == 'e' && strncmp("exec", sbuf, 4) == 0) {
 	    continue;		/* Comment ;-) */
 	} else if ((eq = strchr(sbuf, '=')) != NULL) {
+	    char* val;
 	    char* p = strchr(sbuf, '\n');
 	    if (p) {
 		*p = '\0';
 	    }
 	    *eq = '\0';
-	    if (getenv(sbuf) == NULL) {
+	    val = erts_read_env(sbuf);
+	    if (val == NULL) {
 		*eq = '=';
-		sys_putenv(sbuf);
+		erts_sys_putenv(sbuf, eq - &sbuf[0]);
 	    }
+	    erts_free_read_env(val);
 	} else if (sbuf[0] == ':' && '0' <= sbuf[1] && sbuf[1] <= '9') {
 	    int load_size = atoi(sbuf+1);
 	    void* bin;
@@ -97,6 +100,7 @@ main(int argc, char** argv)
 	} else if (strcmp(sbuf, "--end--\n") == 0) {
 	    int rval;
 	    Eterm mod = NIL;
+	    char *val;
 
 	    fclose(fp);
 
@@ -104,9 +108,11 @@ main(int argc, char** argv)
 		abort();
 	    }
 
- 	    if (getenv("ERLBREAKHANDLER")) {
+	    val = erts_read_env("ERLBREAKHANDLER");
+ 	    if (val) {
 		init_break_handler();
 	    }
+	    erts_free_read_env(val);
 
 	    if ((rval = erts_load_module(NULL, 0, NIL, &mod, bins[0].p, bins[0].sz)) < 0) {
 		fprintf(stderr, "%s: Load of initial module failed: %d\n",

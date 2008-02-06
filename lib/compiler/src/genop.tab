@@ -233,8 +233,8 @@ BEAM_FORMAT_NUMBER=0
 
 # Experimental new bit_level bifs introduced in R11B.
 # NOT used in R12B.
-126: bs_final2/2
-127: bs_bits_to_bytes2/2
+126: -bs_final2/2
+127: -bs_bits_to_bytes2/2
 
 # R11B-4
 128: -put_literal/2

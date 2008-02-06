@@ -84,6 +84,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
 -record(lint, {state=start,                     %start | attribute | function
                module=[],                       %Module
                package="",                      %Module package
+               extends=[],                      %Extends
                behaviour=[],                    %Behaviour
                exports=gb_sets:empty(),		%Exports
                imports=[],                      %Imports
@@ -103,6 +104,7 @@ value_option(Flag, Default, On, OnVal, Off, OffVal, Opts) ->
                recdef_top=false,                %true in record initialisation
                                                 %outside any fun or lc
                xqlc=false,                      %true if qlc.hrl included
+               new = false,                     %Has user-defined 'new/N'
                called=[],			%Called functions
                usage = #usage{},
 	       specs=dict:new(),                %Type specifications
@@ -118,6 +120,10 @@ format_error({bad_module_name, M}) ->
     io_lib:format("bad module name '~s'", [M]);
 format_error(redefine_module) ->
     "redefining module";
+format_error(redefine_extends) ->
+    "redefining extends attribute";
+format_error(extends_self) ->
+    "cannot extend from self";
 %%% format_error({redefine_mod_import, M, P}) ->
 %%%     io_lib:format("module '~s' already imported from package '~s'",
 %%%               [M, P]);
@@ -142,6 +148,10 @@ format_error({bad_inline,{F,A}}) ->
     io_lib:format("inlined function ~w/~w undefined", [F,A]);
 format_error({invalid_deprecated,D}) ->
     io_lib:format("badly formed deprecated attribute ~w", [D]);
+format_error(invalid_extends) ->
+    "badly formed extends attribute";
+format_error(define_instance) ->
+    "defining instance function not allowed in abstract module";
 format_error({bad_deprecated,{F,A}}) ->
     io_lib:format("deprecated function ~w/~w undefined or not exported", 
                   [F, A]);
@@ -177,20 +187,13 @@ format_error({deprecated, MFA, ReplacementMFA, Rel}) ->
 		  [format_mfa(MFA), Rel, format_mfa(ReplacementMFA)]);
 format_error({deprecated, {M1, F1, A1}, String}) when is_list(String) ->
     io_lib:format("~p:~p/~p: ~s", [M1, F1, A1, String]);
-format_error({experimental, {M1, F1, A1}, {M2, F2, A2}, Rel}) ->
-    io_lib:format("~p:~p/~p is experimental and unsupported and will be removed in ~s; "
-		  "use ~p:~p/~p", [M1, F1, A1, Rel, M2, F2, A2]);
-format_error(bitstr_experimental) ->
-    "use /bitstring or /bits instead of /bitstr; /bitstr will be removed in R12B-1";
 format_error({removed, MFA, ReplacementMFA, Rel}) ->
     io_lib:format("call to ~s will fail, since it was removed in ~s; "
 		  "use ~s", [format_mfa(MFA), Rel, format_mfa(ReplacementMFA)]);
+format_error({removed, MFA, String}) when is_list(String) ->
+    io_lib:format("~s: ~s", [format_mfa(MFA), String]);
 format_error({obsolete_guard, {F, A}}) ->
     io_lib:format("~p/~p obsolete", [F, A]);
-format_error({experimental_guard,{F,A},{NewF,A}}) ->
-    %% XXX Remove in R12B-1.
-    io_lib:format("~p/~p is experimental and unsupported and will "
-		  "be removed in R12B-1; use ~p/~p", [F,A,NewF,A]);
 format_error({reserved_for_future,K}) ->
     io_lib:format("atom ~w: future reserved keyword - rename or quote", [K]);
 
@@ -248,12 +251,6 @@ format_error(typed_literal_string) ->
     "a literal string in a binary pattern must not have a type or a size";
 format_error({bad_bitsize,Type}) ->
     io_lib:format("bad ~s bit size", [Type]);
-format_error(unaligned_bitpat) ->
-    "bit pattern not byte aligned";
-format_error(binary_comprehension) ->
-    "binary comprehension in code, and binary comprehensions were turned off";
-format_error(binary_generator) ->
-    "binary generator in code, and binary comprehensions were turned off";
 
 format_error({format_error,{Fmt,Args}}) ->
     io_lib:format(Fmt, Args);
@@ -274,6 +271,8 @@ format_error({undefined_behaviour_callbacks,Behaviour}) ->
 format_error({ill_defined_behaviour_callbacks,Behaviour}) ->
     io_lib:format("behaviour ~w callback functions erroneously defined",
                   [Behaviour]);
+format_error({singleton_typevar, Name}) ->
+    io_lib:format("type variable ~w is only used once (is unbound)", [Name]);
 format_error({type_ref, {TypeName, Arity}}) ->
     io_lib:format("type ~w~s undefined", [TypeName, gen_type_paren(Arity)]);
 format_error({unused_type, {TypeName, Arity}}) ->
@@ -397,10 +396,6 @@ start(File, Opts) ->
 	 {deprecated_function,
 	  bool_option(warn_deprecated_function, nowarn_deprecated_function,
 		      true, Opts)},
-	 {bitlevel_binaries,
-	  bool_option(bitlevel_binaries, no_bit_level_binaries, true, Opts)},
-	 {binary_comprehension,
-	  bool_option(binary_comprehension, no_binary_comprehension, true, Opts)},
          {obsolete_guard,
           bool_option(warn_obsolete_guard, nowarn_obsolete_guard,
                       false, Opts)}
@@ -483,9 +478,18 @@ forms(Forms0, St0) ->
     St1 = includes_qlc_hrl(Forms, St0),
     St2 = bif_clashes(Forms, St1),
     St3 = not_deprecated(Forms, St2),
-    St4 = foldl(fun form/2, St3, Forms),
+    St4 = foldl(fun form/2, pre_scan(Forms0, St3), Forms),
     post_traversal_check(Forms, St4).
 
+pre_scan([{function,_L,new,_A,_Cs} | Fs], St) ->
+    pre_scan(Fs, St#lint{new=true});
+pre_scan([{attribute,_L,extends,M} | Fs], St) when is_atom(M) ->
+    pre_scan(Fs, St#lint{extends=true});
+pre_scan([_ | Fs], St) ->
+    pre_scan(Fs, St);
+pre_scan([], St) ->
+    St.
+    
 includes_qlc_hrl(Forms, St) ->
     %% QLC calls erl_lint several times, sometimes with the compile
     %% attribute removed. The file attribute, however, is left as is.
@@ -527,18 +531,22 @@ form(Form, #lint{state=State}=St) ->
 
 start_state({attribute,L,module,{M,Ps}}, St) ->
     St1 = set_module(M, L, St),
-    F = {new, length(Ps)},
-    Vt = orddict:from_list([{V, {bound, used, []}} || V <- ['THIS' | Ps]]),
-    St1#lint{state = attribute,
-	     exports = gb_sets:add_element(F, St#lint.exports),
-	     defined = gb_sets:add_element(F, St#lint.defined),
-	     global_vt = Vt};
+    Arity = length(Ps),
+    Ps1 = if is_atom(St1#lint.extends) ->
+		  ['BASE', 'THIS' | Ps];
+	     true ->
+		  ['THIS' | Ps]
+	  end,
+    Vt = orddict:from_list([{V, {bound, used, []}} || V <- Ps1]),
+    St2 = add_instance(Arity, St1),
+    St3 = ensure_new(Arity, St2),
+    St3#lint{state=attribute, extends=[], global_vt=Vt};
 start_state({attribute,L,module,M}, St) ->
     St1 = set_module(M, L, St),
-    St1#lint{state = attribute};
+    St1#lint{state=attribute, extends=[]};
 start_state(Form, St) ->
     St1 = add_error(element(2, Form), undefined_module, St),
-    attribute_state(Form, St1#lint{state=attribute}).
+    attribute_state(Form, St1#lint{state=attribute, extends=[]}).
 
 set_module(M, L, St) ->
     M1 = package_to_string(M),
@@ -550,11 +558,39 @@ set_module(M, L, St) ->
 	    add_error(L, {bad_module_name, M1}, St)
     end.
 
+ensure_new(Arity, St) ->
+    case St#lint.new of
+	true ->
+	    St;
+	false ->
+	    add_func(new, Arity, St)
+    end.
+
+add_instance(Arity, St) ->
+    A = Arity + (if is_atom(St#lint.extends) -> 1; true -> 0 end),
+    add_func(instance, A, St).
+
+add_func(Name, Arity, St) ->
+    F = {Name, Arity},
+    St#lint{exports = gb_sets:add_element(F, St#lint.exports),
+	    defined = gb_sets:add_element(F, St#lint.defined)}.
+
 %% attribute_state(Form, State) ->
 %%      State'
 
+attribute_state({attribute,_L,module,_M}, #lint{module=[]}=St) ->
+    St;
 attribute_state({attribute,L,module,_M}, St) ->
     add_error(L, redefine_module, St);
+attribute_state({attribute,L,extends,M}, #lint{module=M}=St) when is_atom(M) ->
+    add_error(L, extends_self, St);
+attribute_state({attribute,_L,extends,M}, #lint{extends=[]}=St)
+  when is_atom(M) ->
+    St#lint{extends=M};
+attribute_state({attribute,L,extends,M}, St) when is_atom(M) ->
+    add_error(L, redefine_extends, St);
+attribute_state({attribute,L,extends,_M}, St) ->
+    add_error(L, invalid_extends, St);
 attribute_state({attribute,L,export,Es}, St) ->
     export(L, Es, St);
 attribute_state({attribute,L,import,Is}, St) ->
@@ -1010,6 +1046,9 @@ is_function_exported(Name, Arity, #lint{exports=Exports,compile=Compile}) ->
     
 %% function(Line, Name, Arity, Clauses, State) -> State.
 
+
+function(Line, instance, _Arity, _Cs, St) when St#lint.global_vt =/= [] ->
+    add_error(Line, define_instance, St);
 function(Line, Name, Arity, Cs, St0) ->
     St1 = define_function(Line, Name, Arity, St0#lint{func={Name,Arity}}),
     clauses(Cs, St1#lint.global_vt, St1).
@@ -1123,8 +1162,8 @@ pattern({record,Line,Name,Pfs}, Vt, Old, Bvt, St) ->
             pattern_fields(Pfs, Name, Fields, Vt, Old, Bvt, St1);
         error -> {[],[],add_error(Line, {undefined_record,Name}, St)}
     end;
-pattern({bin,Line,Fs}, Vt, Old, Bvt, St) ->
-    pattern_bin(Line, Fs, Vt, Old, Bvt, St);
+pattern({bin,_,Fs}, Vt, Old, Bvt, St) ->
+    pattern_bin(Fs, Vt, Old, Bvt, St);
 pattern({op,_Line,'++',{nil,_},R}, Vt, Old, Bvt, St) ->
     pattern(R, Vt, Old, Bvt, St);
 pattern({op,_Line,'++',{cons,Li,{char,_L2,_C},T},R}, Vt, Old, Bvt, St) ->
@@ -1253,23 +1292,16 @@ is_pattern_expr_1({op,_Line,Op,A1,A2}) ->
     end;
 is_pattern_expr_1(_Other) -> false.
 
-%% pattern_bin(Line, [Element], VarTable, Old, BinVarTable, State) -> 
+%% pattern_bin([Element], VarTable, Old, BinVarTable, State) -> 
 %%           {UpdVarTable,UpdBinVarTable,State}.
 %%  Check a pattern group. BinVarTable are used binsize variables.
 
-pattern_bin(Line, Es, Vt, Old, Bvt0, St0) ->
-    {Sz,Esvt,Bvt,St1} = foldl(fun (E, Acc) ->
-                                  pattern_element(E, Vt, Old, Acc)
-                          end,
-                          {0,[],Bvt0,St0}, Es),
-    St2 = if is_integer(Sz), Sz rem 8 =/= 0 -> 
-	      case bitlevel_binaries(St1) of
-		  true -> St1;
-		  false -> add_warning(Line,unaligned_bitpat, St1)
-	      end;
-	     true -> St1
-	  end,
-    {Esvt,Bvt,St2}.
+pattern_bin(Es, Vt, Old, Bvt0, St0) ->
+    {_Sz,Esvt,Bvt,St1} = foldl(fun (E, Acc) ->
+				       pattern_element(E, Vt, Old, Acc)
+			       end,
+			       {0,[],Bvt0,St0}, Es),
+    {Esvt,Bvt,St1}.
 
 pattern_element({bin_element,Line,{string,_,_},Size,Ts}, _, _, {Sz,Esvt,Bvt,St0})
   when Ts =/= default; Size =/= default  ->
@@ -1327,17 +1359,10 @@ pat_bit_size(Size, _Vt, _Bvt, St) ->
 %% expr_bin(Line, [Element], VarTable, State, CheckFun) -> {UpdVarTable,State}.
 %%  Check an expression group.
 
-expr_bin(Line, Es, Vt, St0, Check) ->
-    {Sz,Esvt,St1} = foldl(fun (E, Acc) -> bin_element(E, Vt, Acc, Check) end,
+expr_bin(Es, Vt, St0, Check) ->
+    {_Sz,Esvt,St1} = foldl(fun (E, Acc) -> bin_element(E, Vt, Acc, Check) end,
                           {0,[],St0}, Es),
-    St2 = if is_integer(Sz), Sz rem 8 =/= 0 -> 
-		  case bitlevel_binaries(St1) of
-		      true -> St1;
-		      false -> add_warning(Line,unaligned_bitpat, St1)
-		  end;
-	     true -> St1
-          end,
-    {Esvt,St2}.
+    {Esvt,St1}.
 
 bin_element({bin_element,Line,E,Sz0,Ts}, Vt, {Size0,Esvt,St0}, Check) ->
     {Vt1,St1} = Check(E, Vt, St0),
@@ -1368,12 +1393,7 @@ bit_size(Size, Vt, St, Check) ->
 %% bit_type(Line, Size, TypeList, State) ->  {Size,#bittype,St}.
 %%  Perform warning check on type and size.
 
-bit_type(Line, Size0, Type, St0) ->
-    %% XXX Remove support for /bitstr in R12B-1.
-    St = case is_list(Type) andalso member(bitstr, Type) of
-	     true -> add_warning(Line, bitstr_experimental, St0);
-	     false -> St0
-	 end,
+bit_type(Line, Size0, Type, St) ->
     case erl_bits:set_bit_type(Size0, Type) of
         {ok,Size1,Bt} -> {Size1,Bt,St};
 	{error,What} ->
@@ -1385,7 +1405,6 @@ bit_type(Line, Size0, Type, St0) ->
 %% bit_size_check(Line, Size, BitType, State) -> {BitSize,State}.
 %%  Do some checking & warnings on types
 %%   float == 32 or 64
-%%   list/binary sizes must be multiple of 8 
 
 bit_size_check(_Line, unknown, _, St) -> {unknown,St};
 bit_size_check(Line, all, #bittype{type=Type}, St) ->
@@ -1402,11 +1421,6 @@ elemtype_check(_Line, float, 32, St) -> St;
 elemtype_check(_Line, float, 64, St) -> St;
 elemtype_check(Line, float, _Size, St) ->
     add_warning(Line, {bad_bitsize,"float"}, St);
-elemtype_check(Line, binary, N, St) when (N rem 8) =/= 0 ->
-    case bitlevel_binaries(St) of
-	true -> St; 
-	false -> add_warning(Line, {bad_bitsize,"binary"}, St)
-    end;
 elemtype_check(_Line, _Type, _Size, St) ->  St.
 
 
@@ -1506,8 +1520,8 @@ gexpr({record,Line,Name,Inits}, Vt, St) ->
                  fun (Dfs, St1) ->
                          ginit_fields(Inits, Line, Name, Dfs, Vt, St1)
                  end);
-gexpr({bin,Line,Fs}, Vt,St) ->
-    expr_bin(Line, Fs, Vt, St, fun gexpr/3);
+gexpr({bin,_Line,Fs}, Vt,St) ->
+    expr_bin(Fs, Vt, St, fun gexpr/3);
 gexpr({call,_Line,{atom,_Lr,is_record},[E,{atom,Ln,Name}]}, Vt, St0) ->
     {Rvt,St1} = gexpr(E, Vt, St0),
     {Rvt,exist_record(Ln, Name, St1)};
@@ -1526,10 +1540,6 @@ gexpr({call,Line,{atom,_Lr,is_record},[_,_,_]=Asvt0}, Vt, St0) ->
 gexpr({call,Line,{remote,_,{atom,_,erlang},{atom,_,is_record}=Isr},[_,_,_]=Args},
       Vt, St0) ->
     gexpr({call,Line,Isr,Args}, Vt, St0);
-gexpr({call,Line,{atom,_La,bitsize},[_]=As}, Vt, St0) ->
-    %% XXX Remove in R12B-1.
-    {Asvt,St1} = gexpr_list(As, Vt, St0),
-    {Asvt,add_warning(Line, {experimental_guard,{bitsize,1},{bit_size,1}}, St1)};
 gexpr({call,Line,{atom,_La,F},As}, Vt, St0) ->
     {Asvt,St1} = gexpr_list(As, Vt, St0),
     A = length(As),
@@ -1712,12 +1722,7 @@ expr({lc,Line,E,Qs}, Vt0, St0) ->
     {vtold(Vt, Vt0),St};                      %Don't export local variables
 expr({bc,Line,E,Qs}, Vt0, St0) ->
     {Vt,St} = handle_comprehension(Line, E, Qs, Vt0, St0),
-    case binary_comprehension(St0) of
-	true ->
-	    {vtold(Vt,Vt0),St};               %Don't export local variables
-	false ->
-	    {vtold(Vt,Vt0), add_error(Line,binary_comprehension,St)}
-    end;
+    {vtold(Vt,Vt0),St};			 %Don't export local variables
 expr({tuple,_Line,Es}, Vt, St) ->
     expr_list(Es, Vt, St);
 %%expr({struct,Line,Tag,Es}, Vt, St) ->
@@ -1754,8 +1759,8 @@ expr({record,Line,Rec,Name,Upds}, Vt, St0) ->
         true -> {[],add_error(Line, {wildcard_in_update,Name}, St2)};
         false -> {vtmerge(Rvt, Usvt),St2}
     end;
-expr({bin,Line,Fs}, Vt, St) ->
-    expr_bin(Line, Fs, Vt, St, fun expr/3);
+expr({bin,_Line,Fs}, Vt, St) ->
+    expr_bin(Fs, Vt, St, fun expr/3);
 expr({block,_Line,Es}, Vt, St) ->
     %% Unfold block into a sequence.
     exprs(Es, Vt, St);
@@ -2183,8 +2188,8 @@ find_field(_F, []) -> error.
 type_def(_Line, {record, _RecName}, Fields, [], St0) ->
     %% The record field names and such is checked in the record format.
     %% We only need to check the types.
-   Types = [T || {typed_record_field, _, T} <- Fields],
-    lists:foldl(fun check_type/2, St0, Types);
+    Types = [T || {typed_record_field, _, T} <- Fields],
+    check_type({type, -1, product, Types}, St0);
 type_def(Line, TypeName, ProtoType, Args, St0) ->
     TypeDefs = St0#lint.types,
     Arity = length(Args),
@@ -2197,35 +2202,60 @@ type_def(Line, TypeName, ProtoType, Args, St0) ->
 	    check_type(ProtoType, St0#lint{types=NewDefs})
     end.
 
-check_type({integer, _L, _}, St) -> St;
-check_type({atom, _L, _}, St) -> St;
-check_type({var, _L, _}, St) -> St;
-check_type({type, L, 'fun', [Dom, Range]}, St) -> 
+check_type(Types, St) ->
+    {SeenVars, St1} = check_type(Types, dict:new(), St),
+    dict:fold(fun(Var, {seen_once, Line}, AccSt) ->
+		      add_error(Line, {singleton_typevar, Var}, AccSt);
+		 (_Var, seen_multiple, AccSt) ->
+		      AccSt
+	      end, St1, SeenVars).
+
+check_type({integer, _L, _}, SeenVars, St) -> {SeenVars, St};
+check_type({atom, _L, _}, SeenVars, St) -> {SeenVars, St};
+check_type({var, _L, '_'}, SeenVars, St) -> {SeenVars, St};
+check_type({var, L, Name}, SeenVars, St) ->
+    NewSeenVars =
+	case dict:find(Name, SeenVars) of
+	    {ok, {seen_once, _}} -> dict:store(Name, seen_multiple, SeenVars);
+	    {ok, seen_multiple} -> SeenVars;
+	    error -> dict:store(Name, {seen_once, L}, SeenVars)
+	end,
+    {NewSeenVars, St};
+check_type({type, L, 'fun', [Dom, Range]}, SeenVars, St) -> 
     St1 =
 	case Dom of
 	    {type, _, product, _} -> St;
 	    {type, _, any, []} -> St;
 	    _ -> add_error(L, {type_syntax, 'fun'}, St)
 	end,
-    lists:foldl(fun check_type/2, St1, [Dom, Range]);
-check_type({type, L, range, [From, To]}, St) ->
-    case {From, To} of
-	{{integer, _, X}, {integer, _, Y}} when X < Y -> St;
-	_ -> add_error(L, {type_syntax, range}, St)
-    end;
-check_type({type, _L, tuple, any}, St) -> St;
-check_type({type, L, binary, [Base, Unit]}, St) ->
-    case {Base, Unit} of
-	{{integer, _, BaseVal}, 
-	 {integer, _, UnitVal}} when BaseVal >= 0, UnitVal >= 0 -> St;
-	_ -> add_error(L, {type_syntax, binary}, St)
-    end;
-check_type({type, L, record, [Name|Fields]}, St) ->
+    check_type({type, -1, product, [Dom, Range]}, SeenVars, St1);
+check_type({type, L, range, [From, To]}, SeenVars, St) ->
+    St1 =
+	case {From, To} of
+	    {{integer, _, X}, {integer, _, Y}} when X < Y -> St;
+	    _ -> add_error(L, {type_syntax, range}, St)
+	end,
+    {SeenVars, St1};
+check_type({type, _L, tuple, any}, SeenVars, St) -> {SeenVars, St};
+check_type({type, L, binary, [Base, Unit]}, SeenVars, St) ->
+    St1 =
+	case {Base, Unit} of
+	    {{integer, _, BaseVal}, 
+	     {integer, _, UnitVal}} when BaseVal >= 0, UnitVal >= 0 -> St;
+	    _ -> add_error(L, {type_syntax, binary}, St)
+	end,
+    {SeenVars, St1};
+check_type({type, L, record, [Name|Fields]}, SeenVars, St) ->
     case Name of
-	{atom, _, Atom} -> check_record_types(L, Atom, Fields, St);
-	_ -> add_error(L, {type_syntax, record}, St)
+	{atom, _, Atom} -> check_record_types(L, Atom, Fields, SeenVars, St);
+	_ -> {SeenVars, add_error(L, {type_syntax, record}, St)}
     end;
-check_type({type, La, TypeName, Args}, St = #lint{types=Defs, usage=Usage}) ->
+check_type({type, _L, product, Args}, SeenVars, St) ->
+    lists:foldl(fun(T, {AccSeenVars, AccSt}) ->
+			check_type(T, AccSeenVars, AccSt)
+		end, {SeenVars, St}, Args);
+check_type({type, La, TypeName, Args}, SeenVars, 
+	   St = #lint{types=Defs, usage=Usage}) ->
     Arity = length(Args),
     St1 =
 	case dict:is_key({TypeName, Arity}, Defs) of
@@ -2239,39 +2269,40 @@ check_type({type, La, TypeName, Args}, St = #lint{types=Defs, usage=Usage}) ->
 		    false -> add_error(La, {type_ref, {TypeName, Arity}}, St)
 		end
 	end,
-    lists:foldl(fun check_type/2, St1, Args).
+    check_type({type, -1, product, Args}, SeenVars, St1).
 
-check_record_types(Line, Name, Fields, St) ->
+check_record_types(Line, Name, Fields, SeenVars, St) ->
     case dict:find(Name, St#lint.records) of
         {ok,{_L,DefFields}} ->
 	    case lists:all(fun({type, _, field_type, _}) -> true;
 			      (_) -> false
 			   end, Fields) of
-		true -> check_record_types(Fields, Name, DefFields, St, []);
-		false -> add_error(Line, {type_syntax, record}, St)
+		true -> check_record_types(Fields, Name, DefFields, 
+					   SeenVars, St, []);
+		false -> {SeenVars, add_error(Line, {type_syntax, record}, St)}
 	    end;
         error -> 
-	    add_error(Line, {undefined_record,Name}, St)
+	    {SeenVars, add_error(Line, {undefined_record,Name}, St)}
     end.
 
 check_record_types([{type, _, field_type, [{atom, AL, FName}, Type]}|Left],
-		   Name, DefFields, St, Seen) ->
+		   Name, DefFields, SeenVars, St, SeenFields) ->
     %% Check that the field name is valid
     St1 = case exist_field(FName, DefFields) of
 	      true -> St;
 	      false -> add_error(AL, {undefined_field, Name, FName}, St)
 	  end,
     %% Check for duplicates
-    St2 = case ordsets:is_element(FName, Seen) of
+    St2 = case ordsets:is_element(FName, SeenFields) of
 	      true -> add_error(AL, {redefine_field, Name, FName}, St1);
 	      false -> St1
 	  end,
     %% Check Type
-    St3 = check_type(Type, St2),
-    NewSeen = ordsets:add_element(Name, Seen),
-    check_record_types(Left, Name, DefFields, St3, NewSeen);
-check_record_types([], _Name, _DefFields, St, _Seen) ->
-    St.
+    {NewSeenVars, St3} = check_type(Type, SeenVars, St2),
+    NewSeenFields = ordsets:add_element(Name, SeenFields),
+    check_record_types(Left, Name, DefFields, NewSeenVars, St3, NewSeenFields);
+check_record_types([], _Name, _DefFields, SeenVars, St, _SeenFields) ->
+    {SeenVars, St}.
 
 is_var_arity_type(tuple) -> true;
 is_var_arity_type(product) -> true;
@@ -2335,12 +2366,12 @@ spec_decl(Line, MFA0, TypeSpecs, St0 = #lint{specs=AccSpecs}) ->
     end.
 
 check_specs([FunType|Left], Arity, St0) ->
-    FunType1 =
+    {FunType1, CTypes} =
 	case FunType of
-	    {type, _, bounded_fun, [FT = {type, _, 'fun', _},_]} -> 
-		%% TODO: Check constraints
-		FT;
-	    {type, _, 'fun', _} = FT -> FT
+	    {type, _, bounded_fun, [FT = {type, _, 'fun', _},Cs]} -> 
+		Types0 = [T || {type, _, constraint, [_, T]} <- Cs],
+		{FT, lists:append(Types0)};
+	    {type, _, 'fun', _} = FT -> {FT, []}
 	end,
     SpecArity =
 	case FunType1 of
@@ -2351,7 +2382,7 @@ check_specs([FunType|Left], Arity, St0) ->
 	      true -> St0;
 	      false -> add_error(L, spec_wrong_arity, St0)
 	  end,
-    St2 = check_type(FunType1, St1),
+    St2 = check_type({type, -1, product, [FunType1|CTypes]}, St1),
     check_specs(Left, Arity, St2);
 check_specs([], _Arity, St) ->
     St.
@@ -2500,14 +2531,9 @@ lc_quals(Qs, Vt0, St0) ->
 lc_quals([{generate,_Line,P,E} | Qs], Vt0, Uvt0, St0) ->
     {Vt,Uvt,St} = handle_generator(P,E,Vt0,Uvt0,St0),
     lc_quals(Qs, Vt, Uvt, St);
-lc_quals([{b_generate,Line,P,E} | Qs], Vt0, Uvt0, St0) ->
+lc_quals([{b_generate,_Line,P,E} | Qs], Vt0, Uvt0, St0) ->
     {Vt,Uvt,St} = handle_generator(P,E,Vt0,Uvt0,St0),
-    case binary_comprehension(St0) of
-	true ->
-	    lc_quals(Qs, Vt, Uvt, St);
-	false ->
-	    lc_quals(Qs, Vt, Uvt, add_error(Line,binary_generator,St))
-    end;
+    lc_quals(Qs, Vt, Uvt, St);
 lc_quals([F|Qs], Vt, Uvt, St0) ->
     {Fvt,St1} = case is_guard_test2(F, St0#lint.records) of
 		    true -> guard_test(F, Vt, St0);
@@ -2920,9 +2946,6 @@ deprecated_function(Line, M, F, As, St) ->
     Arity = length(As),
     MFA = {M, F, Arity},
     case otp_internal:obsolete(M, F, Arity) of
-        {experimental, Replacement, Rel} ->
-	    %% Warning cannot be turned off.
-            add_warning(Line, {experimental, MFA, Replacement, Rel}, St);
 	{deprecated, String} when is_list(String) ->
             case not is_warn_enabled(deprecated_function, St) orelse
 		ordsets:is_element(MFA, St#lint.not_deprecated) of
@@ -2939,15 +2962,14 @@ deprecated_function(Line, M, F, As, St) ->
                 false ->
 		    add_warning(Line, {deprecated, MFA, Replacement, Rel}, St)
             end;
+	{removed, String} when is_list(String) ->
+	    add_warning(Line, {removed, MFA, String}, St);
 	{removed, Replacement, Rel} ->
 	    add_warning(Line, {removed, MFA, Replacement, Rel}, St);
         no ->
 	    St
     end.
 
-obsolete_guard({call,_,{atom,Lr,is_bitstr},[_]}, St) ->
-    %% XXX Remove in R12B-1.
-    add_warning(Lr, {experimental_guard,{is_bitstr,1},{is_bitstring,1}}, St);
 obsolete_guard({call,Line,{atom,Lr,F},As}, St0) ->
     Arity = length(As),
     case erl_internal:old_type_test(F, Arity) of
@@ -3169,9 +3191,3 @@ expand_package(M, St0) ->
                     {error, St1}
             end
     end.
-
-bitlevel_binaries(#lint{enabled_warnings=Enabled}) ->
-    ordsets:is_element(bitlevel_binaries, Enabled).
-
-binary_comprehension(#lint{enabled_warnings=Enabled}) ->
-    ordsets:is_element(binary_comprehension, Enabled).

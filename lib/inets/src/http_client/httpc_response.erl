@@ -33,27 +33,27 @@
 %%%  API
 %%%=========================================================================
 
-parse([Bin, MaxHeaderSize]) ->
-    parse_version(Bin, [], MaxHeaderSize, []).
+parse([Bin, MaxHeaderSize, Relaxed]) ->
+    parse_version(Bin, [], MaxHeaderSize, [], Relaxed).
 
 whole_body([Bin, Body, Length])  ->
     whole_body(<<Body/binary, Bin/binary>>, Length).
 
 %% Functions that may be returned during the decoding process
 %% if the input data is incompleate. 
-parse_version([Bin, Version, MaxHeaderSize, Result]) ->
-    parse_version(Bin, Version, MaxHeaderSize, Result).
+parse_version([Bin, Version, MaxHeaderSize, Result, Relaxed]) ->
+    parse_version(Bin, Version, MaxHeaderSize, Result, Relaxed).
 
-parse_status_code([Bin, Code, MaxHeaderSize, Result]) ->
-    parse_status_code(Bin, Code, MaxHeaderSize, Result).
+parse_status_code([Bin, Code, MaxHeaderSize, Result, Relaxed]) ->
+    parse_status_code(Bin, Code, MaxHeaderSize, Result, Relaxed).
 
-parse_reason_phrase([Bin, Rest, Phrase, MaxHeaderSize, Result]) ->
+parse_reason_phrase([Bin, Rest, Phrase, MaxHeaderSize, Result, Relaxed]) ->
     parse_reason_phrase(<<Rest/binary, Bin/binary>>, Phrase, 
-			MaxHeaderSize, Result).
+			MaxHeaderSize, Result, Relaxed).
 
-parse_headers([Bin, Rest,Header, Headers, MaxHeaderSize, Result]) ->
+parse_headers([Bin, Rest,Header, Headers, MaxHeaderSize, Result, Relaxed]) ->
     parse_headers(<<Rest/binary, Bin/binary>>, Header, Headers, 
-		  MaxHeaderSize, Result).
+		  MaxHeaderSize, Result, Relaxed).
     
 whole_body(Body, Length) ->
     case size(Body) of
@@ -135,64 +135,89 @@ send(To, Msg) ->
 %%%========================================================================
 %%% Internal functions
 %%%========================================================================
-parse_version(<<>>, Version, MaxHeaderSize, Result) ->
-    {?MODULE, parse_version, [Version, MaxHeaderSize,Result]};
+parse_version(<<>>, Version, MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_version, [Version, MaxHeaderSize,Result, Relaxed]};
 parse_version(<<?SP, Rest/binary>>, Version, 
-	      MaxHeaderSize, Result) ->
+	      MaxHeaderSize, Result, Relaxed) ->
     case lists:reverse(Version) of
 	"HTTP/" ++ _ = Newversion ->
 	    parse_status_code(Rest, [], MaxHeaderSize,
-			      [Newversion | Result]);
+			      [Newversion | Result], Relaxed);
 	NewVersion ->
 	    throw({error, {invalid_version, NewVersion}})
     end;	  
 
-parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result) ->
-    parse_version(Rest, [Octet | Version], MaxHeaderSize,Result).
+parse_version(<<Octet, Rest/binary>>, Version, MaxHeaderSize, Result, Relaxed) ->
+    parse_version(Rest, [Octet | Version], MaxHeaderSize,Result, Relaxed).
 
-parse_status_code(<<>>, StatusCodeStr, MaxHeaderSize, Result) -> 
-    {?MODULE, parse_status_code, [StatusCodeStr, MaxHeaderSize, Result]};
+parse_status_code(<<>>, StatusCodeStr, MaxHeaderSize, Result, Relaxed) -> 
+    {?MODULE, parse_status_code, 
+     [StatusCodeStr, MaxHeaderSize, Result, Relaxed]};
+
+%% Some Apache servers has been known to leave out the reason phrase,
+%% in relaxed mode we will allow this.
+parse_status_code(<<?CR>> = Data, StatusCodeStr, 
+		  MaxHeaderSize, Result, true) ->
+    {?MODULE, parse_status_code, 
+     [Data, StatusCodeStr, MaxHeaderSize, Result, true]};
+parse_status_code(<<?CR, ?LF, Rest/binary>>, StatusCodeStr, 
+		  MaxHeaderSize, Result, true) ->
+    parse_headers(Rest, [], [], MaxHeaderSize,
+ 		  [" ", list_to_integer(lists:reverse(
+				     string:strip(StatusCodeStr))) 
+		   | Result], true); 
+
 parse_status_code(<<?SP, Rest/binary>>, StatusCodeStr, 
-		  MaxHeaderSize, Result) ->
+		  MaxHeaderSize, Result, Relaxed) ->
     parse_reason_phrase(Rest, [], MaxHeaderSize, 
 			[list_to_integer(lists:reverse(StatusCodeStr)) | 
-			 Result]);
-parse_status_code(<<Octet, Rest/binary>>, StatusCodeStr, 
-		  MaxHeaderSize,Result) ->
-    parse_status_code(Rest, [Octet | StatusCodeStr], MaxHeaderSize, Result).
+			 Result], Relaxed);
 
-parse_reason_phrase(<<>>, Phrase, MaxHeaderSize, Result) ->
-    {?MODULE, parse_reason_phrase, [<<>>, Phrase, MaxHeaderSize,Result]};
+parse_status_code(<<Octet, Rest/binary>>, StatusCodeStr, 
+		  MaxHeaderSize,Result, Relaxed) ->
+    parse_status_code(Rest, [Octet | StatusCodeStr], MaxHeaderSize, Result,
+		      Relaxed).
+
+parse_reason_phrase(<<>>, Phrase, MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_reason_phrase, 
+     [<<>>, Phrase, MaxHeaderSize, Result, Relaxed]};
 
 parse_reason_phrase(<<?CR, ?LF, ?CR, ?LF, Body/binary>>, Phrase, 
-  		    _, Result) ->
+  		    _, Result, _) ->
     ResponseHeaderRcord = 
    	http_response:headers([], #http_response_h{}),
      {ok, list_to_tuple(
 	    lists:reverse([Body, ResponseHeaderRcord | 
 			   [lists:reverse(Phrase) | Result]]))};
 
-parse_reason_phrase(<<?CR, ?LF, ?CR>> = Data, Phrase, MaxHeaderSize, Result) ->
-    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
+parse_reason_phrase(<<?CR, ?LF, ?CR>> = Data, Phrase, MaxHeaderSize, Result,
+		    Relaxed) ->
+    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize, Result],
+     Relaxed};
 
-parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result) ->
-    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
+parse_reason_phrase(<<?CR, ?LF>> = Data, Phrase, MaxHeaderSize, Result, 
+		    Relaxed) ->
+    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize, Result,
+				    Relaxed]};
 
 parse_reason_phrase(<<?CR, ?LF, Rest/binary>>, Phrase, 
- 		    MaxHeaderSize, Result) ->
+ 		    MaxHeaderSize, Result, Relaxed) ->
     parse_headers(Rest, [], [], MaxHeaderSize,
- 		  [lists:reverse(Phrase) | Result]); 
+ 		  [lists:reverse(Phrase) | Result], Relaxed); 
 
-parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result) ->
-    {?MODULE, parse_reason_phrase, [Data, Phrase, MaxHeaderSize,Result]};
-parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result) ->
-    parse_reason_phrase(Rest, [Octet | Phrase], MaxHeaderSize, Result).
+parse_reason_phrase(<<?CR>> = Data, Phrase, MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_reason_phrase, 
+     [Data, Phrase, MaxHeaderSize, Result, Relaxed]};
+parse_reason_phrase(<<Octet, Rest/binary>>, Phrase, MaxHeaderSize, Result, 
+		    Relaxed) ->
+    parse_reason_phrase(Rest, [Octet | Phrase], MaxHeaderSize, Result, Relaxed).
 
-parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result) -> 
-    {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result]};
+parse_headers(<<>>, Header, Headers, MaxHeaderSize, Result, Relaxed) -> 
+    {?MODULE, parse_headers, [<<>>, Header, Headers, MaxHeaderSize, Result,
+			      Relaxed]};
 
 parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
-	      MaxHeaderSize, Result) ->
+	      MaxHeaderSize, Result, _) ->
     HTTPHeaders = [lists:reverse(Header) | Headers],
     Length = lists:foldl(fun(H, Acc) -> length(H) + Acc end,
 			   0, HTTPHeaders),
@@ -207,21 +232,26 @@ parse_headers(<<?CR,?LF,?CR,?LF,Body/binary>>, Header, Headers,
 			   MaxHeaderSize-Length}})
     end;
 parse_headers(<<?CR,?LF,?CR>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+	      MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, 
+			      MaxHeaderSize, Result, Relaxed]};
 parse_headers(<<?CR,?LF>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+	      MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, 
+			      Result, Relaxed]};
 parse_headers(<<?CR,?LF, Octet, Rest/binary>>, Header, Headers,
-	      MaxHeaderSize, Result) ->
+	      MaxHeaderSize, Result, Relaxed) ->
     parse_headers(Rest, [Octet], 
-		  [lists:reverse(Header) | Headers], MaxHeaderSize, Result);
+		  [lists:reverse(Header) | Headers], MaxHeaderSize, 
+		  Result, Relaxed);
 parse_headers(<<?CR>> = Data, Header, Headers, 
-	      MaxHeaderSize, Result) ->
-    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, Result]};
+	      MaxHeaderSize, Result, Relaxed) ->
+    {?MODULE, parse_headers, [Data, Header, Headers, MaxHeaderSize, 
+			      Result, Relaxed]};
 parse_headers(<<Octet, Rest/binary>>, Header, Headers,
-	      MaxHeaderSize, Result) ->
-    parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, Result).
+	      MaxHeaderSize, Result, Relaxed) ->
+    parse_headers(Rest, [Octet | Header], Headers, MaxHeaderSize, 
+		  Result, Relaxed).
 
 
 %% RFC2616, Section 10.1.1
@@ -328,6 +358,8 @@ is_server_closing(Headers) when record(Headers,http_response_h) ->
 	    false
     end.
 
+format_response({{"HTTP/0.9", _, _} = StatusLine, _, Body}) ->
+    {{StatusLine, [], Body}, <<>>};
 format_response({StatusLine, Headers, Body = <<>>}) ->
     {{StatusLine, http_response:header_list(Headers), Body}, <<>>};
 

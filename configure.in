@@ -68,6 +68,9 @@ AC_SUBST(TARGET)
 
 dnl Checks for programs.
 
+AC_PROG_CC
+
+
 #
 # We need GNU make, complain if we can't find it
 #
@@ -149,6 +152,14 @@ AC_ARG_WITH(ssl,
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL])
 
+AC_ARG_ENABLE(dynamic-ssl-lib,
+[  --enable-dynamic-ssl-lib        force using dynamic openssl libraries])
+
+AC_ARG_WITH(gd,
+[  --with-gd=PATH          specify location of libgd include and lib
+  --with-gd               use gd (default)
+  --without-gd            don't use gd])
+
 #
 # Set Erlang man page directory
 #
@@ -195,7 +206,7 @@ if test X${enable_darwin_64bit} = Xyes; then
 		AC_MSG_ERROR([--enable-darwin-64bit only supported on x86 host])	
 	fi
 	enable_hipe=no
-	CFLAGS="-m64"
+	CFLAGS="-m64 $CFLAGS"
 	export CFLAGS
 	LDFLAGS="-m64 $LDFLAGS"
 	export LDFLAGS

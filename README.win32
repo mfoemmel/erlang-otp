@@ -15,8 +15,8 @@ Introduction
 This file describes how to build the Erlang emulator and the OTP
 libraries on Windows. The instructions apply to versions of Windows
 supporting the Cygwin emulated gnuish environment for Windows. We've
-built on the following platforms: Windows NT 4 (SP6), Windows 2000
-Professional, Windows 2003 server, Windows XP Home/Professional. Any
+built on the following platforms: Windows 2000 Professional, Windows
+2003 server, Windows XP Home/Professional, and Windows Vista. Any
 Windows95'ish platform will surely get you into trouble, what I'm not
 sure of, but it certainly will...
 

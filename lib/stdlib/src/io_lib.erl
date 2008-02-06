@@ -54,11 +54,9 @@
 %% 370 - 377	ø - ÿ		lowercase
 %%
 %% Many punctuation characters region have special meaning.  Must
-%% watch using × \327, bvery close to x \170
+%% watch using × \327, very close to x \170
 
 -module(io_lib).
-
--compile(bitlevel_binaries).
 
 -export([fwrite/2,fread/2,fread/3,format/2]).
 -export([print/1,print/4,indentation/2]).
@@ -119,7 +117,7 @@ write(Atom, _D) when is_atom(Atom) -> write_atom(Atom);
 write(Term, _D) when is_port(Term) -> write_port(Term);
 write(Term, _D) when is_pid(Term) -> pid_to_list(Term);
 write(Term, _D) when is_reference(Term) -> write_ref(Term);
-write(<<_/bitstr>>=Term, D) -> write_binary(Term, D);
+write(<<_/bitstring>>=Term, D) -> write_binary(Term, D);
 write([], _D) -> "[]";
 write({}, _D) -> "{}";
 write([H|T], D) ->
@@ -165,10 +163,10 @@ write_binary_body(<<>>, _D) ->
     "";
 write_binary_body(<<X:8>>, _D) ->
     [integer_to_list(X)];
-write_binary_body(<<X:8,Rest/bitstr>>, D) ->
+write_binary_body(<<X:8,Rest/bitstring>>, D) ->
     [integer_to_list(X),$,|write_binary_body(Rest, D-1)];
 write_binary_body(B, _D) ->
-    L = erlang:bitsize(B),
+    L = bit_size(B),
     <<X:L>> = B,
     [integer_to_list(X),$:,integer_to_list(L)].
 
@@ -316,7 +314,7 @@ nl() ->
 %%      {stop,Result,RestData}
 %%      NewState
 collect_chars(start, Data, N) when is_binary(Data) ->
-    Size = size(Data),
+    Size = byte_size(Data),
     if Size > N ->
 	    {B1,B2} = split_binary(Data, N),
 	    {stop,B1,B2};
@@ -332,7 +330,7 @@ collect_chars(start, eof, _) ->
 collect_chars({binary,Stack,_N}, eof, _) ->
     {stop,binrev(Stack),eof};
 collect_chars({binary,Stack,N}, Data, _) ->
-    Size = size(Data),
+    Size = byte_size(Data),
     if Size > N ->
 	    {B1,B2} = split_binary(Data, N),
 	    {stop,binrev(Stack, [B1]),B2};
@@ -426,7 +424,7 @@ collect_line(Stack, eof, _) ->
 collect_line_bin([<<$\r>>|Stack], <<$\n,B2/binary>>, 0) ->
     %% Special case for splitted CRLF
     {stop,binrev(Stack, [$\n]),B2};
-collect_line_bin(Stack, B, N) when N < size(B) ->
+collect_line_bin(Stack, B, N) when N < byte_size(B) ->
     case B of
 	<<B1:N/binary,$\r,$\n,B2/binary>> ->
 	    %% Base case for CRLF

@@ -1,63 +1,93 @@
-%% -*- erlang-indent-level: 2 -*-
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%% Copyright (c) 1997-2005 by the HiPE group.  All Rights Reserved 
-%% ====================================================================
-%%  Filename : 	hipe_sparc.hrl
-%%  Module   :	hipe_sparc
-%%  Purpose  :  Definition of SPARC three address instuction
-%%  History  :	* 1997-04-01 Jan Sjödin (jans@csd.uu.se): Created.
-%% ====================================================================
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id$
 
--record(sparc, {'fun', closure, arity, leaf, code, data, var_range, label_range}).
-%% Arity is needed as a separate field since the arity in 'fun' is 
-%% incorrect for closures.
+%%% Basic Values:
+%%%
+%%% temp	::= #sparc_temp{reg, type, allocatable}
+%%% reg		::= <token from hipe_sparc_registers>
+%%% type	::= tagged | untagged | double
+%%% allocatable	::= true | false
+%%%
+%%% sdesc	::= #sparc_sdesc{exnlab, fsize, arity, live}
+%%% exnlab	::= [] | label
+%%% fsize	::= int32		(frame size in words)
+%%% live	::= <tuple of int32>	(word offsets)
+%%% arity	::= uint8
+%%%
+%%% mfa		::= #sparc_mfa{atom, atom, arity}
+%%% prim	::= #sparc_prim{atom}
 
--record(pseudo_enter, {target,args,type}).
--record(pseudo_return, {regs}).
--record(pseudo_spill, {source,dest}).
--record(pseudo_unspill, {source,dest}).
-%% -record(pseudo_push, {reg}).
--record(pseudo_pop, {reg,index}).
+-record(sparc_mfa, {m::atom(), f::atom(), a::byte()}).
+-record(sparc_prim, {prim}).
+-record(sparc_sdesc, {exnlab, fsize, arity, live}).
+-record(sparc_temp, {reg, type, allocatable}).
+-record(sparc_simm13, {value}).
+-record(sparc_uimm5, {value}).
+-record(sparc_uimm6, {value}).	% shift counts in 64-bit mode
+-record(sparc_uimm22, {value}).
 
--record(load_atom, {dst, atom}).
--record(load_address, {dst, address, type}).
--record(load_word_index, {dst,block,index}).
+%%% Instruction Operands:
+%%%
+%%% aluop	::= add | addcc | and | andcc | or | orcc
+%%%		  | xor | xorcc | sub | subcc | mulx | smul
+%%%		  | sll | srl | sra | sllx | srlx | srax
+%%%		  | ldsb | ldsh | ldsw | ldub | lduh | lduw | ldx
+%%%		  (HW has andn{,cc}, orn{,cc}, xnor{,cc}, addc{,cc},
+%%%		   and subc{,cc}, but we don't use them)
+%%% cond	::= n | e | le | l | leu | lu | neg | vs |
+%%%		  | a | ne | g | ge | gu | geu | pos | vc
+%%% rcond	::= z | lez | lz | nz | gz | gez
+%%% stop	::= stb | stw | stx	(HW has sth, but we don't use it)
+%%%
+%%% immediate	::= int32 | atom | {label, label_type}
+%%% label_type	::= constant | closure | c_const
+%%%
+%%% dst		::= temp
+%%% src		::= temp
+%%% src1	::= temp
+%%% src2	::= temp
+%%%		  | simm13 	(only in alu.src2, jmp.src2, jmpl.src2)
+%%% base	::= src1
+%%% disp	::= src2
+%%%
+%%% fun		::= mfa | prim
+%%% funv	::= fun | temp
+%%%
+%%% fp_binop	::= faddd | fdivd | fmuld | fsubd
+%%% fp_unop	::= fitod | fmovd | fnegd
 
--record(label, {id}).
--record(nop, {}).
--record(block, {size}).
--record(align, {alignment=4}).
--record(comment, {text=""}).
--record(move, {dst, src}).
--record(multimove, {dst, src}).
--record(cmov_cc, {dst, src, cc}).
--record(cmov_r, {dst, src, reg, rcc}).
--record(alu, {dst, src1, op, src2}).
--record(alu_cc, {dst, src1, op, src2}).
+%%% Instructions:
+
+-record(alu, {aluop, src1, src2, dst}).
+-record(bp, {'cond', label, pred}).	% local jump on %icc
+-ifdef(notdef).	% XXX: only for sparc64, alas
+-record(br, {rcond, src, label, pred}).	% local jump on register
+-endif.
+-record(call_rec, {'fun', sdesc, linkage}).	% known recursive call
+-record(call_tail, {'fun', linkage}).	% known tailcall
+-record(comment, {term}).
+-record(jmp, {src1, src2, labels}).	% return, switch, or computed tailcall
+-record(jmpl, {src, sdesc}).		% computed recursive call (jmpl [src+0],%o7)
+-record(label, {label}).
+-record(pseudo_bp, {'cond', true_label, false_label, pred}).
+%%-record(pseudo_br, {rcond, src, true_label, false_label, pred}).
+-record(pseudo_call, {funv, sdesc, contlab, linkage}).
+-record(pseudo_call_prepare, {nrstkargs}).
+-record(pseudo_move, {src, dst}).
+-record(pseudo_ret, {}).
+-record(pseudo_set, {imm, dst}).
+-record(pseudo_tailcall, {funv, arity, stkargs, linkage}).
+-record(pseudo_tailcall_prepare, {}).
 -record(rdy, {dst}).
--record(sethi, {dst, const}).
--record(load, {dst, type, src, off}).
--record(store, {dst, off, type, src}).
--record(b, {cc, true_label, false_label, pred, annul=na}).
--record(br, {reg, rcc, true_label, false_label, pred, annul=na}).
--record(goto, {label}).
--record(jmp_link, {target, off, link, args, continuation_label,
-		   fail_label}).
--record(jmp, {target, off, args, fail_label, destinations=[]}).
--record(call_link, {target, link, dests, args, continuation_label,
-		    fail_label, type, stack_descriptor}).
-%% Floating point operations
--record(load_fp, {dst, align, type, src, off}).
--record(store_fp, {dst, off, type, align, src}).
--record(fb, {fcc, n=0, true_label, false_label, pred, annul=na}).
--record(fop, {dst, type, src1, fop, src2}).
--record(fcmp, {fccn, src1, type, src2, exception}).
--record(fmove, {dst, type, src, negate, abs}).
--record(conv_fp, {dst, dst_type, src, src_type}).
+-record(sethi, {uimm22, dst}).
+-record(store, {stop, src, base, disp}).
+-record(fp_binary, {fp_binop, src1, src2, dst}).
+-record(fp_unary, {fp_unop, src, dst}).
+-record(pseudo_fload, {base, disp, dst, is_single}).
+-record(pseudo_fmove, {src, dst}).
+-record(pseudo_fstore, {src, base, disp}).
 
-%%---------------------------------------------------------------------
+%%% Function definitions.
 
--define(log2_wordsize, 2).
-
-%%---------------------------------------------------------------------
+-record(defun, {mfa, formals, code, data, isclosure, isleaf,
+		var_range, label_range}).

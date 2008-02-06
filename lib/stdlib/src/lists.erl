@@ -469,7 +469,7 @@ keydelete3(Key, N, [H|T]) ->
     [H|keydelete3(Key, N, T)];
 keydelete3(_, _, []) -> [].
 
--spec(keyreplace/4 :: (_, pos_integer(), [_], tuple()) -> [T]).
+-spec(keyreplace/4 :: (_, pos_integer(), [_], tuple()) -> [_]).
 keyreplace(K,N,L,New) when is_integer(N), N > 0, is_tuple(New) ->
     keyreplace3(K,N,L,New).
 

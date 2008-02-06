@@ -38,7 +38,7 @@
 -export([bignum_sizeneed/1,bignum_sizeneed_code/2, get_word_value_from_big/3]).
 -export([test_subbinary/3, test_heap_binary/3]).
 -export([create_heap_binary/3, create_refc_binary/3, create_refc_binary/4]).
--export([create_matchstate/6, convert_matchstate/1, get_matchstate_nof_slots/2]).
+-export([create_matchstate/6, convert_matchstate/1, compare_matchstate/4]).
 -export([get_field_from_term/3,get_field_from_pointer/3,
 	 set_field_from_term/3, set_field_from_pointer/3,
 	extract_matchbuffer/2, extract_binary_bytes/2]).
@@ -390,7 +390,7 @@ test_constant(X, TrueLab, FalseLab, Pred) ->
 tag_fixnum(DestVar, SrcReg) ->
   [hipe_rtl:mk_fixnumop(DestVar, SrcReg, tag)].
 %% [hipe_rtl:mk_alu(DestVar, SrcReg, sll, hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
-%%   hipe_rtl:mk_alu(DestVar, DestVar, add, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
+%%  hipe_rtl:mk_alu(DestVar, DestVar, add, hipe_rtl:mk_imm(?TAG_IMMED1_SMALL))].
 
 realtag_fixnum(DestVar, SrcReg) ->
   [hipe_rtl:mk_alu(DestVar, SrcReg, sll, hipe_rtl:mk_imm(?TAG_IMMED1_SIZE)),
@@ -1039,12 +1039,15 @@ convert_matchstate(Ms) ->
    hipe_rtl:mk_store(Ms, hipe_rtl:mk_imm(?SUB_BIN_WORDSIZE*WordSize-?TAG_PRIMARY_BOXED),
 		     BigIntHeader)].
 
-get_matchstate_nof_slots(NofSlots, Ms) ->
-  SizeInWords = hipe_rtl:mk_new_reg_gcsafe(),
-  Header = hipe_rtl:mk_new_reg_gcsafe(),
-   [hipe_rtl:mk_load(Header, Ms, hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED)),
-    size_from_header(SizeInWords, Header),
-    hipe_rtl:mk_alu(NofSlots, SizeInWords, sub, hipe_rtl:mk_imm(?MS_MIN_SIZE))].
+compare_matchstate(Max, Ms, LargeEnough, TooSmall) ->
+  WordSize = hipe_rtl_arch:word_size(),
+  ByteSize = (Max+1)*WordSize + ?MS_SAVEOFFSET,
+  SizeInWords = ((ByteSize div WordSize) - 1),
+  Header = hipe_rtl:mk_imm(mk_header(SizeInWords, 
+				     ?TAG_HEADER_BIN_MATCHSTATE)),
+  RealHeader = hipe_rtl:mk_new_reg_gcsafe(),
+   [hipe_rtl:mk_load(RealHeader, Ms, hipe_rtl:mk_imm(-?TAG_PRIMARY_BOXED)),
+    hipe_rtl:mk_branch(RealHeader, ge, Header, LargeEnough, TooSmall)].
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%

@@ -423,6 +423,8 @@ Process *hipe_mode_switch(Process *p, unsigned cmd, Eterm reg[])
 	  break;
       }
       case HIPE_MODE_SWITCH_RES_RESCHEDULE: {
+	  if (p->arity > NR_ARG_REGS)
+	      p->arity = NR_ARG_REGS;
 	  DPRINTF("native reschedules 0x%#lx/%u\r\n", p->hipe.ncallee, p->arity);
 	  hipe_reschedule_from_native(p);
 	  p->i = hipe_beam_pc_reschedule;
@@ -551,7 +553,7 @@ static unsigned hipe_next_nstack_size(unsigned size)
     return size ? size * 2 : HIPE_INITIAL_NSTACK_SIZE;
 }
 
-#ifdef HIPE_NSTACK_GROWS_UP
+#if 0 && defined(HIPE_NSTACK_GROWS_UP)
 #define hipe_nstack_avail(p)	((p)->hipe.nstend - (p)->hipe.nsp)
 void hipe_inc_nstack(Process *p)
 {
@@ -575,7 +577,7 @@ void hipe_inc_nstack(Process *p)
 }
 #endif
 
-#ifdef HIPE_NSTACK_GROWS_DOWN
+#if defined(HIPE_NSTACK_GROWS_DOWN)
 #define hipe_nstack_avail(p)	((unsigned)((p)->hipe.nsp - (p)->hipe.nstack))
 void hipe_inc_nstack(Process *p)
 {

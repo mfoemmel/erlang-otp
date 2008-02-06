@@ -97,7 +97,7 @@ read(File, Check) when function(Check) ->
     end.
 
 open_file(File) ->
-    case file:open(File, read) of
+    case file:open(File, [read]) of
         {ok, Fd} -> 
             Fd;
         {error, Reason} ->

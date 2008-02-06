@@ -18,8 +18,6 @@
 %%
 -module(erl_eval).
 
--compile(bitlevel_binaries).
-
 %% An evaluator for Erlang abstract syntax.
 
 -export([exprs/2,exprs/3,exprs/4,expr/2,expr/3,expr/4,
@@ -444,7 +442,7 @@ bif(Name, As, Bs, Ef, RBs) ->
 %% MF is a tuple {Module,Function} or a fun.
 
 do_apply({M,F}=Func, As, Bs0, Ef, RBs)
-  when is_tuple(M), size(M) >= 1, is_atom(element(1, M)), is_atom(F) ->
+  when tuple_size(M) >= 1, is_atom(element(1, M)), is_atom(F) ->
     case Ef of
         none when RBs =:= value ->
             %% Make tail recursive calls when possible.
@@ -538,7 +536,7 @@ eval_bc1(E, [F|Qs], Bs0, Lf, Ef, Acc) ->
     eval_filter(F, Bs0, Lf, Ef, CompFun, Acc);
 eval_bc1(E, [], Bs, Lf, Ef, Acc) ->
     {value,V,_} = expr(E, Bs, Lf, Ef, none),
-    <<Acc/bitstr,V/bitstr>>.
+    <<Acc/bitstring,V/bitstring>>.
 
 eval_generate([V|Rest], P, Bs0, Lf, Ef, CompFun, Acc) ->
     case match(P, V, new_bindings(), Bs0) of
@@ -554,7 +552,7 @@ eval_generate([], _P, _Bs0, _Lf, _Ef, _CompFun, Acc) ->
 eval_generate(Term, _P, _Bs0, _Lf, _Ef, _CompFun, _Acc) ->
     erlang:raise(error, {bad_generator,Term}, stacktrace()).
 
-eval_b_generate(<<_/bitstr>>=Bin, P, Bs0, Lf, Ef, CompFun, Acc) ->
+eval_b_generate(<<_/bitstring>>=Bin, P, Bs0, Lf, Ef, CompFun, Acc) ->
     Mfun = fun(L, R, Bs) -> match1(L, R, Bs, Bs0) end,
     Efun = fun(Exp, Bs) -> expr(Exp, Bs, Lf, Ef, none) end,
     case eval_bits:bin_gen(P, Bin, new_bindings(), Bs0, Mfun, Efun) of
@@ -919,12 +917,12 @@ match1({cons,_,H,T}, [H1|T1], Bs0, BBs) ->
     match1(T, T1, Bs, BBs);
 match1({cons,_,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({tuple,_,Elts}, Tuple, Bs, BBs) when is_tuple(Tuple),
-					    length(Elts) =:= size(Tuple) ->
+match1({tuple,_,Elts}, Tuple, Bs, BBs) 
+         when length(Elts) =:= tuple_size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs, BBs);
 match1({tuple,_,_}, _, _Bs, _BBs) ->
     throw(nomatch);
-match1({bin, _, Fs}, <<_/bitstr>>=B, Bs0, BBs) ->
+match1({bin, _, Fs}, <<_/bitstring>>=B, Bs0, BBs) ->
     eval_bits:match_bits(Fs, B, Bs0, BBs,
 			 fun(L, R, Bs) -> match1(L, R, Bs, BBs) end,
 			 fun(E, Bs) -> expr(E, Bs, none, none, none) end);

@@ -118,7 +118,6 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"pollwaiter",				"address"		},
     {   "break_waiter_lock",                    NULL                    },
 #endif /* __WIN32__ */
-    {	"binary_alloc",				NULL			},
     {	"alcu_init_atoms",			NULL			},
     {	"mseg_init_atoms",			NULL			},
     {	"drv_tsd",				NULL			},
@@ -150,6 +149,9 @@ static erts_lc_lock_order_t erts_lock_order[] = {
     {	"pollsets_lock",			NULL			},
     {	"async_id",				NULL			},
     {	"pix_lock",				"address"		},
+#endif
+    {	"alloc_thr_ix_lock",			NULL			},
+#ifdef ERTS_SMP
     {	"proc_lck_wtr_alloc",			NULL 			},
 #ifdef __WIN32__
     {	"sys_driver_data_lock",			NULL 			}, 

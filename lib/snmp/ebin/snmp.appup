@@ -1,21 +1,14 @@
-{"4.10",
+{"4.10.1",
  [
-  {"4.9.6",   
+  {"4.10",   
    [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_framework_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_pdus, soft_purge, soft_purge, []},
+    {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_config, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_server]},
-    {load_module, snmpm_network_interface, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, [snmpa_net_if_filter]},
-    {load_module, snmpa_network_interface, soft_purge, soft_purge, []},
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_net_if]},
-    {update, snmpm_net_if, soft, soft_purge, soft_purge, 
-     [snmpm_network_interface]},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_net_if]},
-    {add_module, snmpa_net_if_filter}, 
-    {add_module, snmpa_network_interface_filter},
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, 
-     [snmpa_network_interface, snmpa_net_if_filter, snmpa_mpd]}
+    {load_module, snmp_log, soft_purge, soft_purge, []},
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}
    ]
   }
  ], 
@@ -23,20 +16,15 @@
 %% ---------------------------------------------------------------------------
 
  [
-  {"4.9.6",   
+  {"4.10",   
    [
+    {load_module, snmp, soft_purge, soft_purge, []},
+    {load_module, snmp_framework_mib, soft_purge, soft_purge, []},
+    {load_module, snmp_pdus, soft_purge, soft_purge, []},
+    {load_module, snmp_conf, soft_purge, soft_purge, []},
     {load_module, snmp_config, soft_purge, soft_purge, []},
-    {load_module, snmpm, soft_purge, soft_purge, [snmpm_server]},
-    {load_module, snmpm_network_interface, soft_purge, soft_purge, []},
-    {load_module, snmpa, soft_purge, soft_purge, [snmpa_agent]},
-    {load_module, snmpa_mpd, soft_purge, soft_purge, []},
-    {load_module, snmpa_network_interface, soft_purge, soft_purge, []},
-    {update, snmpm_server, soft, soft_purge, soft_purge, [snmpm_net_if]},
-    {update, snmpm_net_if, soft, soft_purge, soft_purge, 
-     [snmpm_network_interface]},
-    {update, snmpa_agent, soft, soft_purge, soft_purge, [snmpa_net_if]},
-    {update, snmpa_net_if, soft, soft_purge, soft_purge, 
-     [snmpa_network_interface, snmpa_mpd]}
+    {load_module, snmp_log, soft_purge, soft_purge, []},
+    {load_module, snmpa_supervisor, soft_purge, soft_purge, []}
    ]
   }
  ]

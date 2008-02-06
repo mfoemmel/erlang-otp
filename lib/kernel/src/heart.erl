@@ -78,14 +78,18 @@ init(Starter, Parent) ->
 	    Starter ! {start_error, self()}
     end.
 
+-spec(set_cmd/1 :: (Cmd) -> 'ok' | {'error', {'bad_cmd', Cmd}}
+			    when is_subtype(Cmd, string())).
 set_cmd(Cmd) ->
     heart ! {self(), set_cmd, Cmd},
     wait().
 
+-spec(get_cmd/0 :: () -> 'ok').
 get_cmd() ->
     heart ! {self(), get_cmd},
     wait().
 
+-spec(clear_cmd/0 :: () -> {'ok', string()}).
 clear_cmd() ->
     heart ! {self(), clear_cmd},
     wait().
@@ -194,6 +198,7 @@ loop(Parent, Port, Cmd) ->
 	    loop(Parent, Port, Cmd)
     end.
 
+-spec(no_reboot_shutdown/1 :: (port()) -> no_return()).
 no_reboot_shutdown(Port) ->
     send_shutdown(Port),
     receive

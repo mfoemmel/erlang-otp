@@ -163,21 +163,7 @@ void erts_bits_destroy_state(ERL_BITS_PROTO_0);
  * Binary matching.
  */
 
-int erts_bs_start_match(ERL_BITS_PROTO_1(Eterm Bin));
-int erts_bs_skip_bits(ERL_BITS_PROTO_1(Uint num_bits));
-int erts_bs_skip_bits_all(ERL_BITS_PROTO_0);
-int erts_bs_test_tail(ERL_BITS_PROTO_1(Uint num_bits));
-void erts_bs_save(ERL_BITS_PROTO_1(int index));
-void erts_bs_restore(ERL_BITS_PROTO_1(int index));
-Eterm erts_bs_get_integer(Process *p, Uint num_bits, unsigned flags);
-Eterm erts_bs_get_binary(Process *p, Uint num_bits, unsigned flags);
-Eterm erts_bs_get_float(Process *p, Uint num_bits, unsigned flags);
-Eterm erts_bs_get_binary_all(Process *p);
-
-
 Eterm erts_bs_start_match_2(Process *p, Eterm Bin, Uint Max);
-void erts_bs_save_2(int index, ErlBinMatchState* ms);
-void erts_bs_restore_2(int index, ErlBinMatchState* ms);
 Eterm erts_bs_get_integer_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb);
 Eterm erts_bs_get_binary_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb);
 Eterm erts_bs_get_float_2(Process *p, Uint num_bits, unsigned flags, ErlBinMatchBuffer* mb);
@@ -193,19 +179,7 @@ int erts_new_bs_put_binary_all(ERL_BITS_PROTO_2(Eterm Bin, Uint unit));
 int erts_new_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
 void erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
 
-/*
- * Binary construction, old instruction set.
- */
-
-void erts_bs_init(ERL_BITS_PROTO_0);
-Eterm erts_bs_final(Process* p);
-Eterm erts_bs_final2(Process* p, Eterm bin);
 Uint erts_bits_bufs_size(void);
-int erts_bs_put_integer(ERL_BITS_PROTO_3(Eterm Integer, Uint num_bits, unsigned flags));
-int erts_bs_put_binary(ERL_BITS_PROTO_2(Eterm Bin, Uint num_bits));
-int erts_bs_put_binary_all(ERL_BITS_PROTO_1(Eterm Bin));
-int erts_bs_put_float(Process *c_p, Eterm Float, Uint num_bits, int flags);
-void erts_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes));
 Uint32 erts_bs_get_unaligned_uint32(Process *p, ErlBinMatchBuffer* mb);
 Eterm erts_bs_append(Process* p, Eterm* reg, Uint live, Eterm build_size_term,
 		     Uint extra_words, Uint unit);

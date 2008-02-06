@@ -49,8 +49,13 @@ load_driver(Path) ->
     case erl_ddll:load_driver(Path, drv_name()) of
 	ok ->
 	    ok;
-	 {error, Reason} ->
-	    throw({error, {load_driver, Reason}})
+	{error, Reason} ->
+	    case (catch erl_ddll:format_error(Reason)) of
+		FormatReason when is_list(FormatReason) ->
+		    throw({error, {load_driver, FormatReason}});
+		_ ->
+		    throw({error, {load_driver, Reason}})
+	    end
     end.
 
 

@@ -553,8 +553,13 @@ static struct t_data *cq_deq(file_descriptor *desc) {
 static int 
 file_init(void)
 {
-    char *p = getenv("ERL_EFILE_THREAD_SHORT_CIRCUIT");
-    thread_short_circuit = p ? atoi(p) : 0;
+    char buf[21]; /* enough to hold any 64-bit integer */
+    size_t bufsz = sizeof(buf);
+    thread_short_circuit = (erl_drv_getenv("ERL_EFILE_THREAD_SHORT_CIRCUIT",
+					   buf,
+					   &bufsz) == 0
+			    ? atoi(buf)
+			    : 0);
     driver_system_info(&sys_info, sizeof(ErlDrvSysInfo));
     return 0;
 }

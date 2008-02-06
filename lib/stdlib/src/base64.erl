@@ -45,7 +45,7 @@ encode_to_string(List) when is_list(List) ->
 %%                                   
 %% Description: Encodes a plain ASCII string (or binary) into base64.
 %%-------------------------------------------------------------------------
-encode(Bin) when is_binary(Bin), size(Bin) > ?BIG ->
+encode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
     L = encode_l(binary_to_list(A)),
     list_to_binary([L, encode(B)]);
@@ -85,7 +85,7 @@ encode([A,B,C|Ls], T) ->
 %% mime_decode strips away all characters not Base64 before converting,
 %% whereas decode crashes if an illegal character is found
 %%-------------------------------------------------------------------------
-decode(Bin) when is_binary(Bin), size(Bin) > ?BIG ->
+decode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
     L = decode_l(binary_to_list(A)),
     list_to_binary([L, decode(B)]);
@@ -94,7 +94,7 @@ decode(Bin) when is_binary(Bin) ->
 decode(List) when is_list(List) ->
     list_to_binary(decode_l(List)).
 
-mime_decode(Bin) when is_binary(Bin), size(Bin) > ?BIG ->
+mime_decode(Bin) when is_binary(Bin), byte_size(Bin) > ?BIG ->
     {A, B} = split_binary(Bin, ?BIG),
     L = mime_decode_l(binary_to_list(A)),
     list_to_binary([L, mime_decode(B)]);

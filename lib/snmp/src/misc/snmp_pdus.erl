@@ -717,10 +717,10 @@ enint(-1, [B1|T]) when B1 > 127 ->
 enint(N, Acc) ->
     enint(N bsr 8, [N band 16#ff|Acc]).
  
-enc_oct_str_tag(OStr) when list(OStr) ->
+enc_oct_str_tag(OStr) when is_list(OStr) ->
     lists:append([4|elength(length(OStr))],OStr);
 enc_oct_str_tag(OBin) ->
-    [4,elength(size(OBin)),OBin].
+    [4 | elength(size(OBin))] ++ binary_to_list(OBin).
 
 
 enc_oct_str_notag(OStr) -> OStr.

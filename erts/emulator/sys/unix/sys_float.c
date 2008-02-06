@@ -215,14 +215,22 @@ void erts_restore_fpu(void)
 
 #elif defined(__sparc__) && defined(__linux__)
 
+#if defined(__arch64__)
+#define LDX "ldx"
+#define STX "stx"
+#else
+#define LDX "ld"
+#define STX "st"
+#endif
+
 static void unmask_fpe(void)
 {
     unsigned long fsr;
 
-    __asm__("st %%fsr, %0" : "=m"(fsr));
+    __asm__(STX " %%fsr, %0" : "=m"(fsr));
     fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
-    __asm__ __volatile__("ld %0, %%fsr" : : "m"(fsr));
+    __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
 }
 
 #elif (defined(__powerpc__) && defined(__linux__)) || (defined(__ppc__) && defined(__DARWIN__))
@@ -508,6 +516,11 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
 	skip_sse2_insn(mc);
     }
     fpstate->sw &= ~0xFF;
+#elif defined(__sparc__) && defined(__arch64__)
+    /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
+    struct sigcontext *sc = (struct sigcontext*)puc;
+    sc->sigc_regs.tpc = sc->sigc_regs.tnpc;
+    sc->sigc_regs.tnpc += 4;
 #elif defined(__sparc__)
     /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
     struct sigcontext *sc = (struct sigcontext*)puc;
@@ -672,7 +685,9 @@ sys_double_to_chars(double fp, char *buf)
 int
 sys_chars_to_double(char* buf, double* fp)
 {
+#ifndef NO_FPE_SIGNALS
     volatile int *fpexnp = erts_get_current_fp_exception();
+#endif
     char *s = buf, *t, *dp;
 
     /* Robert says that something like this is what he really wanted:
@@ -720,22 +735,11 @@ sys_chars_to_double(char* buf, double* fp)
 	__ERTS_FP_ERROR_THOROUGH(fpexnp, *fp, return -1);
     }
 
-#ifdef DEBUG
-    if (errno == ERANGE)
-	fprintf(stderr, "errno = ERANGE in list_to_float\n\r");
-#endif
 #ifdef NO_FPE_SIGNALS
-    if (errno == ERANGE)
+    if (errno == ERANGE && (*fp == 0.0 || *fp == HUGE_VAL || *fp == -HUGE_VAL)) {
 	return -1;
+    }
 #endif
-/*
-**  Replaces following code:
-**   if (errno == ERANGE) {
-**       *fp = 1.2e300;		
-**       *fp = *fp / 1.5e-100;	
-**   }				
-*/
-
     return 0;
 }
 

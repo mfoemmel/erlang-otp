@@ -169,7 +169,9 @@ set_options(Options, Profile) ->
 %% verify_cookies(SetCookieHeaders, Url [, Profile]) -> ok | {error, reason} 
 %%   
 %%                                 
-%% Description: 
+%% Description: Store the cookies from <SetCookieHeaders> in the cookie database
+%% for the profile <Profile>. This function shall be used when the option
+%% cookie is set to verify. 
 %%-------------------------------------------------------------------------
 verify_cookies(SetCookieHeaders, Url) ->
     verify_cookies(SetCookieHeaders, Url, default).
@@ -261,25 +263,25 @@ handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
 				   {http_util:to_lower(Key), Val} end,
 			   Headers),
     Stream = proplists:get_value(stream, Options, none),
-
+    Version = http_util:to_upper(proplists:get_value(version, 
+						     HTTPOptions, "HTTP/1.1")),
     case {Sync, Stream} of
 	{true, self} ->
 	    {error, streaming_error};
 	_ ->
 	    RecordHeaders = header_record(NewHeaders, #http_request_h{}, 
-					  Host),
+					  Host, Version),
 	    Request = #request{from = self(),
 			       scheme = Scheme, address = {Host,Port},
 			       path = Path, pquery = Query, method = Method,
 			       headers = RecordHeaders, 
 			       content = {ContentType,Body},
-			       settings = HTTPRecordOptions,
+			       settings = 
+			       HTTPRecordOptions#http_options{version = Version},
 			       abs_uri = Url, userinfo = UserInfo, 
 			       stream = Stream, 
 			       headers_as_is = 
 			       headers_as_is(Headers, Options)},
-	    
-	    
 	    try httpc_manager:request(Request, profile_name(Profile)) of
 		{ok, RequestId} ->
 		    handle_answer(RequestId, Sync, Options);
@@ -290,6 +292,7 @@ handle_request(Method, Url, {{Scheme, UserInfo, Host, Port, Path, Query},
 		    {error, {not_started, Profile}}
 	    end
     end.
+
 
 handle_answer(RequestId, false, _) ->
     {ok, RequestId};
@@ -302,15 +305,15 @@ handle_answer(RequestId, true, Options) ->
 	{http, {RequestId, {error, Reason}}} ->
 	    {error, Reason}
     end.
- 
+
+return_answer(Options, {{"HTTP/0.9",_,_}, _, BinBody}) ->
+    Body = format_body(BinBody, Options),
+    {ok, Body};
+   
 return_answer(Options, {StatusLine, Headers, BinBody}) ->
-    Body = 
-	case proplists:get_value(body_format, Options, string) of
-	    string ->
-		binary_to_list(BinBody);
-	    _ ->
-		BinBody
-	end,
+
+    Body = format_body(BinBody, Options),
+    
     case proplists:get_value(full_result, Options, true) of
 	true ->
 	    {ok, {StatusLine, Headers, Body}};
@@ -319,6 +322,13 @@ return_answer(Options, {StatusLine, Headers, BinBody}) ->
 	    {ok, {Status, Body}}
     end.
 
+format_body(BinBody, Options) ->
+    case proplists:get_value(body_format, Options, string) of
+	string ->
+	    binary_to_list(BinBody);
+	_ ->
+	    BinBody
+    end.
 
 %% This options is a workaround for http servers that do not follow the 
 %% http standard and have case sensative header parsing. Should only be
@@ -351,6 +361,9 @@ http_options([{proxy_auth, Val = {User, Passwd}} | Settings], Acc)
   when is_list(User),
        is_list(Passwd) ->
     http_options(Settings, Acc#http_options{proxy_auth = Val});
+http_options([{version, Val} | Settings], Acc) 
+  when is_atom(Val)->
+    http_options(Settings, Acc#http_options{version = Val});
 http_options([Option | Settings], Acc) ->
     error_logger:info_report("Invalid option ignored ~p~n", [Option]),
     http_options(Settings, Acc).
@@ -382,123 +395,151 @@ validate_options([{verbose, Value}| Tail]) when Value == false;
 validate_options([{_, _} = Opt| _]) ->
     {error, {not_an_option, Opt}}.
 
-header_record([], RequestHeaders, Host) ->
-    validate_headers(RequestHeaders, Host);
-header_record([{"cache-control", Val} | Rest], RequestHeaders, Host) ->
+header_record([], RequestHeaders, Host, Version) ->
+    validate_headers(RequestHeaders, Host, Version);
+header_record([{"cache-control", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'cache-control' = Val},
-		  Host);  
-header_record([{"connection", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{connection = Val}, Host);
-header_record([{"date", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{date = Val}, Host);  
-header_record([{"pragma", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{pragma = Val}, Host);  
-header_record([{"trailer", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{trailer = Val}, Host);  
-header_record([{"transfer-encoding", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"connection", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{connection = Val}, Host,
+		 Version);
+header_record([{"date", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{date = Val}, Host, 
+		  Version);  
+header_record([{"pragma", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{pragma = Val}, Host,
+		  Version);  
+header_record([{"trailer", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{trailer = Val}, Host,
+		  Version);  
+header_record([{"transfer-encoding", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, 
 		  RequestHeaders#http_request_h{'transfer-encoding' = Val},
-		  Host);  
-header_record([{"upgrade", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{upgrade = Val}, Host);  
-header_record([{"via", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{via = Val}, Host);  
-header_record([{"warning", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{warning = Val}, Host);  
-header_record([{"accept", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{accept = Val}, Host);  
-header_record([{"accept-charset", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"upgrade", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{upgrade = Val}, Host,
+		  Version);  
+header_record([{"via", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{via = Val}, Host, 
+		  Version);  
+header_record([{"warning", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{warning = Val}, Host,
+		  Version);  
+header_record([{"accept", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{accept = Val}, Host,
+		  Version);  
+header_record([{"accept-charset", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'accept-charset' = Val}, 
-		  Host);  
-header_record([{"accept-encoding", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"accept-encoding", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'accept-encoding' = Val},
-		  Host);  
-header_record([{"accept-language", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"accept-language", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'accept-language' = Val},
-		  Host);  
-header_record([{"authorization", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"authorization", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{authorization = Val}, 
-		  Host);  
-header_record([{"expect", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{expect = Val}, Host);
-header_record([{"from", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{from = Val}, Host);  
-header_record([{"host", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{host = Val}, Host);
-header_record([{"if-match", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"expect", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{expect = Val}, Host,
+		  Version);
+header_record([{"from", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{from = Val}, Host, 
+		  Version);  
+header_record([{"host", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{host = Val}, Host, 
+		  Version);
+header_record([{"if-match", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'if-match' = Val},
-		  Host);  
-header_record([{"if-modified-since", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"if-modified-since", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, 
 		  RequestHeaders#http_request_h{'if-modified-since' = Val},
-		  Host);  
-header_record([{"if-none-match", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"if-none-match", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'if-none-match' = Val}, 
-		  Host);  
-header_record([{"if-range", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"if-range", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'if-range' = Val}, 
-		  Host);  
+		  Host, Version);  
 
-header_record([{"if-unmodified-since", Val} | Rest], RequestHeaders, Host) ->
+header_record([{"if-unmodified-since", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'if-unmodified-since' 
-						      = Val}, Host);  
-header_record([{"max-forwards", Val} | Rest], RequestHeaders, Host) ->
+						      = Val}, Host, Version);  
+header_record([{"max-forwards", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'max-forwards' = Val}, 
-		  Host);  
-header_record([{"proxy-authorization", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"proxy-authorization", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'proxy-authorization' 
-						      = Val}, Host);  
-header_record([{"range", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{range = Val}, Host);  
-header_record([{"referer", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{referer = Val}, Host);  
-header_record([{"te", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{te = Val}, Host);  
-header_record([{"user-agent", Val} | Rest], RequestHeaders, Host) ->
+						      = Val}, Host, Version);  
+header_record([{"range", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{range = Val}, Host, 
+		  Version);  
+header_record([{"referer", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{referer = Val}, Host, 
+		  Version);  
+header_record([{"te", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{te = Val}, Host, 
+		  Version);  
+header_record([{"user-agent", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'user-agent' = Val}, 
-		  Host);  
-header_record([{"allow", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{allow = Val}, Host);  
-header_record([{"content-encoding", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"allow", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{allow = Val}, Host, 
+		  Version);  
+header_record([{"content-encoding", Val} | Rest], RequestHeaders, Host, 
+	      Version) ->
     header_record(Rest, 
 		  RequestHeaders#http_request_h{'content-encoding' = Val},
-		  Host);  
-header_record([{"content-language", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-language", Val} | Rest], RequestHeaders, 
+	      Host, Version) ->
     header_record(Rest, 
 		  RequestHeaders#http_request_h{'content-language' = Val}, 
-		  Host);  
-header_record([{"content-length", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-length", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'content-length' = Val},
-		  Host);  
-header_record([{"content-location", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-location", Val} | Rest], RequestHeaders, 
+	      Host, Version) ->
     header_record(Rest, 
 		  RequestHeaders#http_request_h{'content-location' = Val},
-		  Host);  
-header_record([{"content-md5", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-md5", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'content-md5' = Val}, 
-		  Host);  
-header_record([{"content-range", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-range", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'content-range' = Val},
-		  Host);  
-header_record([{"content-type", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"content-type", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'content-type' = Val}, 
-		  Host);  
-header_record([{"expires", Val} | Rest], RequestHeaders, Host) ->
-    header_record(Rest, RequestHeaders#http_request_h{expires = Val}, Host);  
-header_record([{"last-modified", Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{"expires", Val} | Rest], RequestHeaders, Host, Version) ->
+    header_record(Rest, RequestHeaders#http_request_h{expires = Val}, Host, 
+		  Version);  
+header_record([{"last-modified", Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{'last-modified' = Val},
-		  Host);  
-header_record([{Key, Val} | Rest], RequestHeaders, Host) ->
+		  Host, Version);  
+header_record([{Key, Val} | Rest], RequestHeaders, Host, Version) ->
     header_record(Rest, RequestHeaders#http_request_h{
 			  other = [{Key, Val} |
 				   RequestHeaders#http_request_h.other]}, 
-		  Host).
+		  Host, Version).
 
-validate_headers(RequestHeaders = #http_request_h{te = undefined}, Host) ->
-    validate_headers(RequestHeaders#http_request_h{te = ""}, Host);
-validate_headers(RequestHeaders = #http_request_h{host = undefined}, Host) ->
-    validate_headers(RequestHeaders#http_request_h{host = Host}, Host);
-validate_headers(RequestHeaders, _) ->
+validate_headers(RequestHeaders = #http_request_h{te = undefined}, Host, 
+		 "HTTP/1.1" = Version) ->
+    validate_headers(RequestHeaders#http_request_h{te = ""}, Host, 
+		     "HTTP/1.1" = Version);
+validate_headers(RequestHeaders = #http_request_h{host = undefined}, 
+		 Host, "HTTP/1.1" = Version) ->
+    validate_headers(RequestHeaders#http_request_h{host = Host}, Host, Version);
+validate_headers(RequestHeaders, _, _) ->
     RequestHeaders.
 
 profile_name(default) ->

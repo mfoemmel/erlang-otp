@@ -138,7 +138,7 @@ make_literal(T0) when is_tuple(T0) ->
 	true -> #c_literal{val=list_to_tuple(concrete_list(T))}
     end;
 make_literal(Bs) when is_binary(Bs) ->
-    case erlang:bitsize(Bs) of
+    case bit_size(Bs) of
 	Bitsize when Bitsize rem 8 =:= 0 ->
 	    #c_literal{val=Bs}
     end.

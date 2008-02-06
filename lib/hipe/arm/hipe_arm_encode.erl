@@ -88,7 +88,7 @@ bf(LeftBit, RightBit, Value) ->
 
 -define(BF(LB,RB,V), bf(LB,RB,V)).
 -define(BIT(Pos,Val), ?BF(Pos,Pos,Val)).
--define(BITS(N,Val), ?BF(N,0,Val)).
+%%-define(BITS(N,Val), ?BF(N,0,Val)).
 
 %%%
 %%% Addressing Modes

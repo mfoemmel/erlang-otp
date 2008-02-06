@@ -39,45 +39,56 @@
 
 '#text#'(Text) ->
     Text2 = strip_leading_blanks(Text),
-    case Text2 of
-	[$\n|T] ->
-	    case is_empty(T) of 
-		true -> [];
-		false -> {pcdata, [], nl(Text2)}
-	    end;
-
-	_ ->
-	    {pcdata, [], nl(Text2)}
-    end.
+%% before
+%%    case Text2 of
+%%	[$\n|T] ->
+%%	    case is_empty(T) of 
+%%		true -> [];
+%%		false -> {pcdata, [], nl(Text2)}
+%%	    end;
+%%
+%%	_ ->
+%%	    {pcdata, [], nl(Text2)}
+%%    end.
+%% after
+    {pcdata, [], nl(Text2)}.
 
 '#element#'(Tag, Data, Attrs, Parents, _E) when Tag==pre; Tag==code ->
     [H|T] = reinsert_nl(Data),
     {Tag, attrs(get_dtd(Parents), Tag, Attrs), [strip_nl(H)|T]};
 '#element#'(Tag, Data, Attrs, Parents, _E) ->
-    case single_pcdata_tag(Tag) of
-	true when length(Data)>1 ->
-	    FixedData = fix_single_pcdata(Data),
-	    {Tag, attrs(get_dtd(Parents), Tag, Attrs), FixedData};
-	_ ->
-	    FlatData = lists:flatten(Data),
-	    {Tag, attrs(get_dtd(Parents), Tag, Attrs), FlatData}
-    end.
+    NewData = case tag_content(Tag) of
+		  no_pcdata -> % remove all pcdata
+		      [Dat|| 
+			  Dat <- Data, 
+			  begin 
+			      Fun = fun({pcdata,_,_}) -> false;
+				       (_) -> true end,
+			      Fun(Dat)
+			  end];
+		  single_pcdata when length(Data)>1 -> 
+		      %% merge several pcdata's into one single pcdata
+		      fix_single_pcdata(Data);
+		  _ ->
+		      lists:flatten(Data)
+	      end,
+    {Tag, attrs(get_dtd(Parents), Tag, Attrs), NewData}. 
 
 %%--Internal functions--------------------------------------------------
 
 %% is_empty(Str) -> bool()
 %% Returns true if the string Str only contains blanks, tabs and
 %% newlines, false otherwise.
-is_empty("\n" ++ Text) ->
-    is_empty(Text);
-is_empty("\t" ++ Text) ->
-    is_empty(Text);
-is_empty(" " ++ Text) ->
-    is_empty(Text);
-is_empty("") ->
-    true;
-is_empty(_) ->
-    false.
+%% is_empty("\n" ++ Text) ->
+%%     is_empty(Text);
+%% is_empty("\t" ++ Text) ->
+%%     is_empty(Text);
+%% is_empty(" " ++ Text) ->
+%%     is_empty(Text);
+%% is_empty("") ->
+%%     true;
+%% is_empty(_) ->
+%%     false.
 
 %% reinsert_nl(L1) -> L2
 %% Workaround for <pre>: Normally empty lines are ignored. However,
@@ -258,53 +269,67 @@ default_attrs(_, _) -> [].
 %% example title and aname, to contain a single PCDATA element. (That
 %% is also what nsgmls returned.)
 
-single_pcdata_tag(aname) ->         true;
-single_pcdata_tag(app) ->           true;
-single_pcdata_tag(approved) ->      true;
-single_pcdata_tag(appsummary) ->    true;
-single_pcdata_tag(b) ->             true;
-single_pcdata_tag(c) ->             true;
-single_pcdata_tag(cauthor) ->       true;
-single_pcdata_tag(checked) ->       true;
-single_pcdata_tag(chowpublished) -> true;
-single_pcdata_tag(code) ->          true;
-single_pcdata_tag(com) ->           true;
-single_pcdata_tag(comsummary) ->    true;
-single_pcdata_tag(ctitle) ->        true;
-single_pcdata_tag(date) ->          true;
-single_pcdata_tag(docno) ->         true;
-single_pcdata_tag(email) ->         true;
-single_pcdata_tag(fascicule) ->     true;
-single_pcdata_tag(file) ->          true;
-single_pcdata_tag(filesummary) ->   true;
-single_pcdata_tag(headline) ->      true;
-single_pcdata_tag(i) ->             true;
-single_pcdata_tag(icaption) ->      true;
-single_pcdata_tag(id) ->            true;
-single_pcdata_tag(lib) ->           true;
-single_pcdata_tag(libsummary) ->    true;
-single_pcdata_tag(module) ->        true;
-single_pcdata_tag(modulesummary) -> true;
-single_pcdata_tag(name) ->          true;
-single_pcdata_tag(nametext) ->      true;
-single_pcdata_tag(pagetext) ->      true;
-single_pcdata_tag(path) ->          true;
-single_pcdata_tag(prepared) ->      true;
-single_pcdata_tag(resp) ->          true;
-single_pcdata_tag(responsible) ->   true;
-single_pcdata_tag(ret) ->           true;
-single_pcdata_tag(rev) ->           true;
-single_pcdata_tag(seealso) ->       true;
-single_pcdata_tag(shortdef) ->      true;
-single_pcdata_tag(shorttitle) ->    true;
-single_pcdata_tag(tcaption) ->      true;
-single_pcdata_tag(termdef) ->       true;
-single_pcdata_tag(title) ->         true;
-single_pcdata_tag(url) ->           true;
-single_pcdata_tag(v) ->             true;
-single_pcdata_tag(_Tag) ->          false.
-
 fix_single_pcdata([{pcdata,[],Str1}, {pcdata,[],Str2}|T]) ->
     fix_single_pcdata([{pcdata,[],Str1++Str2}|T]);
 fix_single_pcdata(FixedData) ->
     FixedData.
+
+tag_content(aname) -> single_pcdata;
+tag_content(app) -> single_pcdata;
+tag_content(approved) -> single_pcdata;
+tag_content(appsummary) -> single_pcdata;
+tag_content(b) -> single_pcdata;
+tag_content(c) -> single_pcdata;
+tag_content(cauthor) -> single_pcdata;
+tag_content(cell) -> mixed_content;
+tag_content(checked) -> single_pcdata;
+tag_content(chowpublished) -> single_pcdata;
+tag_content(code) -> single_pcdata; % mixed?
+tag_content(com) -> single_pcdata;
+tag_content(comsummary) -> single_pcdata;
+tag_content(copyright) -> mixed_content;
+tag_content(ctitle) -> single_pcdata;
+tag_content(date) -> single_pcdata;
+tag_content(docno) -> single_pcdata;
+tag_content(em) -> mixed_content;
+tag_content(email) -> single_pcdata;
+tag_content(fascicule) -> single_pcdata;
+tag_content(file) -> single_pcdata;
+tag_content(filesummary) -> single_pcdata;
+tag_content(fsummary) -> mixed_content;
+tag_content(headline) -> single_pcdata;
+tag_content(holder) -> single_pcdata;
+tag_content(i) -> single_pcdata;
+tag_content(icaption) -> single_pcdata;
+tag_content(id) -> single_pcdata;
+tag_content(input) -> mixed_content;
+tag_content(item) -> mixed_content;
+tag_content(legalnotice) -> single_pcdata;
+tag_content(lib) -> single_pcdata;
+tag_content(libsummary) -> single_pcdata;
+tag_content(module) -> single_pcdata;
+tag_content(modulesummary) -> single_pcdata;
+tag_content(name) -> single_pcdata;
+tag_content(nametext) -> single_pcdata;
+tag_content(p) -> mixed_content;
+tag_content(pagetext) -> single_pcdata;
+tag_content(path) -> single_pcdata; % mixed?
+tag_content(pre) -> mixed_content;
+tag_content(prepared) -> single_pcdata;
+tag_content(resp) -> single_pcdata;
+tag_content(responsible) -> single_pcdata;
+tag_content(ret) -> single_pcdata;
+tag_content(rev) -> single_pcdata;
+tag_content(seealso) -> single_pcdata; % mixed?
+tag_content(shortdef) -> single_pcdata;
+tag_content(shorttitle) -> single_pcdata;
+tag_content(tag) -> mixed_content;
+tag_content(tcaption) -> single_pcdata;
+tag_content(termdef) -> single_pcdata;
+tag_content(title) -> single_pcdata;
+tag_content(url) -> single_pcdata; % mixed
+tag_content(v) -> single_pcdata;
+tag_content(year) -> single_pcdata;
+tag_content(_) -> no_pcdata.
+
+

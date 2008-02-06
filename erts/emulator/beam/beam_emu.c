@@ -1738,11 +1738,32 @@ void process_main(void)
      struct Pairs* low;
      struct Pairs* high;
      struct Pairs* mid;
+     int bdiff; /* int not long because the arrays aren't that large */
 
      low = (struct Pairs *) &Arg(3);
      high = low + Arg(2);
-     while (low < high) {
-	 mid = low + (high-low) / 2;
+
+     /* The pointer subtraction (high-low) below must produce
+      * a signed result, because high could be < low. That
+      * requires the compiler to insert quite a bit of code.
+      *
+      * However, high will be > low so the result will be
+      * positive. We can use that knowledge to optimise the
+      * entire sequence, from the initial comparison to the
+      * computation of mid.
+      *
+      * -- Mikael Pettersson, Acumem AB
+      *
+      * Original loop control code:
+      *
+      * while (low < high) {
+      *    mid = low + (high-low) / 2;
+      *
+      */
+     while ((bdiff = (int)((char*)high - (char*)low)) > 0) {
+	 unsigned int boffset = ((unsigned int)bdiff >> 1) & ~(sizeof(struct Pairs)-1);
+
+	 mid = (struct Pairs*)((char*)low + boffset);
 	 if (tmp_arg1 < mid->val) {
 	     high = mid;
 	 } else if (tmp_arg1 > mid->val) {
@@ -3312,77 +3333,6 @@ void process_main(void)
      }
  }
 
- /*
-  * XXX Experimental instructions in R11B-5. Kept for bootstrap purpose.
-  * Can probably be deleted in R12B-1.
-  */
- OpCase(i_bs_bits_to_bytes2_rd): {
-     tmp_arg1 = r(0);
-     goto do_bits_to_bytes2;
- }
-
- OpCase(i_bs_bits_to_bytes2_yd): {
-     tmp_arg1 = yb(Arg(0));
-     I++;
-     goto do_bits_to_bytes2;
-
- OpCase(i_bs_bits_to_bytes2_xd): {
-     tmp_arg1 = xb(Arg(0));
-     I++;
- }
- 
- do_bits_to_bytes2:
-     {
-	 if (is_small(tmp_arg1)) {
-	     Sint val = signed_val(tmp_arg1);
-	     if (val >= 0) {
-		 tmp_arg1 = make_small((val+7) >> 3);
-	     }
-	 } else if (is_big(tmp_arg1)) {
-	     Uint bytes;
-	     if (term_to_Uint(tmp_arg1, &bytes)) {
-		 tmp_arg1 = bytes;
-		 SWAPOUT;
-		 tmp_arg1 = erts_make_integer((tmp_arg1+7) >> 3, c_p);
-		 HTOP = HEAP_TOP(c_p);
-	     }
-	 }
-
-	 /*
-	  * If there is an error, we leave the original value and
-	  * trust bs_init2 to notice the problem and signal the exception.
-	  */
-	 StoreBifResult(0, tmp_arg1);
-     }
- }
-
- /*
-  * XXX Experimental instructions in R11B-5. Kept for bootstrap purpose.
-  * Can probably be deleted in R12B-1.
-  */
- OpCase(i_bs_final2_rd): {
-   tmp_arg1 = r(0);
-   goto do_bs_final2;
- }  
- OpCase(i_bs_final2_yd): {
-   tmp_arg1 = yb(Arg(0));
-   I++;
-   goto do_bs_final2;
-       
- OpCase(i_bs_final2_xd): {
-   tmp_arg1 = xb(Arg(0));
-   I++;
- }
-
- do_bs_final2:
-     { 
-       SWAPOUT;
-       tmp_arg1 = erts_bs_final2(c_p, tmp_arg1);
-       HTOP = HEAP_TOP(c_p);
-       StoreBifResult(0, tmp_arg1);
-     }
- }
-
  OpCase(i_bs_add_jId): {
      Uint Unit = Arg(1);
      if (is_both_small(tmp_arg1, tmp_arg2)) {
@@ -4555,6 +4505,7 @@ void process_main(void)
      erts_smp_proc_lock(c_p, ERTS_PROC_LOCK_STATUS);
      add_to_schedule_q(c_p);
      erts_smp_proc_unlock(c_p, ERTS_PROC_LOCK_STATUS);
+     c_p->current = NULL;
      goto do_schedule;
  }
 

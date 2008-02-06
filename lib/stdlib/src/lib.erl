@@ -368,7 +368,7 @@ pp_arguments(PF, As, I) ->
 
 brackets_to_parens(S) ->
     B = iolist_to_binary(S),
-    Sz = size(B) - 2,
+    Sz = byte_size(B) - 2,
     <<$[,R:Sz/binary,$]>> = B,
     [$(,R,$)].
 

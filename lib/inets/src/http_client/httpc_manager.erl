@@ -55,7 +55,8 @@
 %%--------------------------------------------------------------------
 start_link({default, CookieDir}) ->
     gen_server:start_link({local, ?MODULE}, ?MODULE, 
-			  [?MODULE, {http_default_cookie_db, CookieDir}], []);
+			  [?MODULE, {http_default_cookie_db, CookieDir}],
+			  []);
 start_link({Profile, CookieDir}) ->
     ProfileName = list_to_atom("httpc_manager_" ++ atom_to_list(Profile)), 
     gen_server:start_link({local, ProfileName}, ?MODULE, 
@@ -64,7 +65,8 @@ start_link({Profile, CookieDir}) ->
 start_link({Profile, CookieDir}, stand_alone) ->
     ProfileName = list_to_atom("stand_alone_" ++ atom_to_list(Profile)), 
     gen_server:start_link(?MODULE, [ProfileName, 
-				    {http_default_cookie_db, CookieDir}], []).
+				    {http_default_cookie_db, CookieDir}], 
+			  []).
 %%--------------------------------------------------------------------
 %% Function: request(Request, ProfileName) ->
 %%                                      {ok, Requestid} | {error, Reason}
@@ -386,6 +388,30 @@ code_change(_OldVsn, State, _Extra) ->
 %%--------------------------------------------------------------------
 %% Internal functions
 %%--------------------------------------------------------------------
+handle_request(#request{settings = 
+			#http_options{version = "HTTP/0.9"}} = Request, 
+	       State) ->
+    %% Act as an HTTP/0.9 client that does not know anything
+    %% about persistent connections
+    NewRequest = handle_cookies(generate_request_id(Request), State),
+    NewHeaders = 
+	(NewRequest#request.headers)#http_request_h{connection
+						    = undefined},
+    start_handler(NewRequest#request{headers = NewHeaders}, State),
+    {reply, {ok, NewRequest#request.id}, State};
+
+handle_request(#request{settings = 
+			#http_options{version = "HTTP/1.0"}} = Request, 
+	       State) ->
+    %% Act as an HTTP/1.0 client that does not 
+    %% use persistent connections
+    NewRequest = handle_cookies(generate_request_id(Request), State),
+    NewHeaders = 
+	(NewRequest#request.headers)#http_request_h{connection
+						    = "close"},
+    start_handler(NewRequest#request{headers = NewHeaders}, State),
+    {reply, {ok, NewRequest#request.id}, State};
+
 handle_request(Request, State = #state{options = Options}) ->
     NewRequest = handle_cookies(generate_request_id(Request), State),
     case select_session(Request#request.method, 

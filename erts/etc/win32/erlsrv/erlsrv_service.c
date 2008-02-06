@@ -675,7 +675,6 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
   HANDLE harr[2];
   FILETIME creationt,exitt,kernelt,usert;
   LONGLONG creationl,exitl,diffl;
-  char *envadd;
   char event_name[MAX_PATH] = "ErlSrv_";
   char executable_name[MAX_PATH];
 #ifdef DEBUG
@@ -688,11 +687,9 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
     log_error("Could not get Display name of erlang service.");
     set_stopped(ERROR_CANTREAD);
     return;
-  }    
-  envadd = malloc(strlen(SERVICE_ENV)+1+strlen(service_name)+
-		  1);
-  sprintf(envadd,"%s=%s",SERVICE_ENV,service_name);
-  _putenv(envadd);
+  }
+
+  SetEnvironmentVariable((LPCTSTR) SERVICE_ENV, (LPCTSTR) service_name);
 
   strncat(event_name, service_name, MAX_PATH - strlen(event_name));
   event_name[MAX_PATH - 1] = '\0';
@@ -701,10 +698,10 @@ static VOID WINAPI service_main_loop(DWORD argc, char **argv){
       log_error("Unable to retrieve module file name, " EXECUTABLE_ENV 
 		" will not be set.");
   } else {
-      envadd = malloc(strlen(EXECUTABLE_ENV)+3+strlen(executable_name)+
-		      1);
-      sprintf(envadd,"%s=\"%s\"",EXECUTABLE_ENV,executable_name);
-      _putenv(envadd);
+      char quoted_exe_name[MAX_PATH+4];
+      sprintf(quoted_exe_name, "\"%s\"", executable_name);
+      SetEnvironmentVariable((LPCTSTR) EXECUTABLE_ENV,
+			     (LPCTSTR) quoted_exe_name);
   }
 
   log_debug("Here we go, service_main_loop...");

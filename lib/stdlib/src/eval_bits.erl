@@ -21,10 +21,6 @@
 -export([expr_grp/3,expr_grp/5,match_bits/6, 
 	 match_bits/7,bin_gen/6]).
 
-%% XXX Remove in R12B-1 (keep in R12B-0 for bootstrapping purposes).
--compile(bitlevel_binaries).
--compile(binary_comprehension).
-
 %% Types used in this module:
 %% @type bindings(). An abstract structure for bindings between
 %% variables and values (the environment)
@@ -77,7 +73,7 @@ eval_field({bin_element,Line,E,Size0,Options0}, Bs0, Fun) ->
 
 eval_exp_field1(V, Size, Unit, Type, Endian, Sign) ->
     case catch eval_exp_field(V, Size, Unit, Type, Endian, Sign) of
-        <<Val/bitstr>> -> Val;
+        <<Val/bitstring>> -> Val;
         _ -> error(badarg)
     end.
 
@@ -100,7 +96,7 @@ eval_exp_field(Val, Size, Unit, float, native, _) ->
 eval_exp_field(Val, Size, Unit, float, big, _) ->
     <<Val:(Size*Unit)/float>>;
 eval_exp_field(Val, all, Unit, binary, _, _) ->
-    case erlang:bitsize(Val) of
+    case bit_size(Val) of
 	Size when Size rem Unit =:= 0 ->
 	    <<Val:Size/binary-unit:1>>;
 	_ ->
@@ -140,11 +136,11 @@ bin_gen([], Bin, _Bs0, _BBs0, _Mfun, _Efun, false) ->
 bin_gen_field({bin_element,_,{string,_,S},default,default},
               Bin, Bs, BBs, _Mfun, _Efun) ->
     Bits = list_to_binary(S),
-    Size = size(Bits),
+    Size = byte_size(Bits),
     case Bin of
-        <<Bits:Size/binary,Rest/bitstr>> ->
+        <<Bits:Size/binary,Rest/bitstring>> ->
             {match,Bs,BBs,Rest};
-        <<_:Size/binary,Rest/bitstr>> ->
+        <<_:Size/binary,Rest/bitstring>> ->
             {nomatch,Rest};
         _ ->
             done
@@ -157,7 +153,7 @@ bin_gen_field({bin_element,Line,VE,Size0,Options0},
     match_check_size(Size1, BBs0),
     {value, Size, _BBs} = Efun(Size1, BBs0),
     case catch get_value(Bin, Type, Size, Unit, Sign, Endian) of
-        {Val,<<_/bitstr>>=Rest} ->
+        {Val,<<_/bitstring>>=Rest} ->
             NewV = coerce_to_float(V, Type),
             case catch Mfun(NewV, Val, Bs0) of
                 {match,Bs} ->
@@ -200,7 +196,7 @@ match_bits_1([F|Fs], Bits0, Bs0, BBs0, Mfun, Efun) ->
 match_field_1({bin_element,_,{string,_,S},default,default},
               Bin, Bs, BBs, _Mfun, _Efun) ->
     Bits = list_to_binary(S),
-    Size = size(Bits),
+    Size = byte_size(Bits),
     <<Bits:Size/binary,Rest/binary-unit:1>> = Bin,
     {Bs,BBs,Rest};
 match_field_1({bin_element,Line,VE,Size0,Options0}, 
@@ -241,11 +237,11 @@ get_value(Bin, integer, Size, Unit, Sign, Endian) ->
 get_value(Bin, float, Size, Unit, _Sign, Endian) ->
     get_float(Bin, Size*Unit, Endian);
 get_value(Bin, binary, all, Unit, _Sign, _Endian) ->
-    0 = (erlang:bitsize(Bin) rem Unit),
+    0 = (bit_size(Bin) rem Unit),
     {Bin,<<>>};
 get_value(Bin, binary, Size, Unit, _Sign, _Endian) ->
     TotSize = Size*Unit,
-    <<Val:TotSize/bitstr,Rest/bitstr>> = Bin,
+    <<Val:TotSize/bitstring,Rest/bitstring>> = Bin,
     {Val,Rest}.
 
 get_integer(Bin, Size, signed, little) ->

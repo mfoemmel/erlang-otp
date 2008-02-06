@@ -18,6 +18,7 @@
 	 set_label/1, get_label/0, get_next_label/0]).
 -export([init/1, new_var/1, new_label/1,
 	 update_vrange/2, update_lblrange/2, var_range/1, label_range/1,
+	 set_var_range/3, set_label_range/3,
 	 set_var/2, get_var/1, get_next_var/1,
 	 set_label/2, get_label/1, get_next_label/1]).
 
@@ -107,6 +108,12 @@ update_lblrange(What, L) ->
 var_range(What) ->
   {get({What,var_min}), get({What,var_max})}.
 
+-spec(set_var_range/3 :: (gvarname(), non_neg_integer(), non_neg_integer()) -> 'ok').
+set_var_range(What, Min, Max) ->
+  put({What,var_min}, Min),
+  put({What,var_max}, Max),
+  ok.
+
 %% label_range() ->
 %%   {get(lbl_min), get(lbl_max)}.
 
@@ -114,6 +121,12 @@ var_range(What) ->
 label_range(What) ->
   {get({What,lbl_min}), get({What,lbl_max})}.
  
+-spec(set_label_range/3 :: (gvarname(), non_neg_integer(), non_neg_integer()) -> 'ok').
+set_label_range(What, Min, Max) ->
+  put({What,lbl_min}, Min),
+  put({What,lbl_max}, Max),
+  ok.
+  
 %%-----------------------------------------------------------------------
 %% Variable counter
 %%-----------------------------------------------------------------------

@@ -109,21 +109,24 @@ release_docs_spec:
 
 $(EBIN)/hipe_beam_to_icode.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../../compiler/src/beam_disasm.hrl
 $(EBIN)/hipe_icode.beam: hipe_icode.hrl ../main/hipe.hrl
+$(EBIN)/hipe_icode_binary_pass.beam: ../flow/cfg.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode_bincomp.beam: hipe_icode.hrl ../flow/cfg.hrl
 $(EBIN)/hipe_icode_callgraph.beam: hipe_icode.hrl hipe_icode_primops.hrl
-$(EBIN)/hipe_icode_cfg.beam: hipe_icode.hrl ../flow/cfg.inc ../main/hipe.hrl
-$(EBIN)/hipe_icode_ebb.beam: ../flow/ebb.inc
-$(EBIN)/hipe_icode_exceptions.beam: hipe_icode.hrl
-$(EBIN)/hipe_icode_fp.beam: hipe_icode.hrl
-$(EBIN)/hipe_icode_heap_test.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../rtl/hipe_literals.hrl
+$(EBIN)/hipe_icode_cfg.beam: hipe_icode.hrl ../flow/cfg.hrl ../flow/cfg.inc ../main/hipe.hrl
+$(EBIN)/hipe_icode_ebb.beam: ../flow/cfg.hrl ../flow/ebb.inc
+$(EBIN)/hipe_icode_exceptions.beam: hipe_icode.hrl ../flow/cfg.hrl
+$(EBIN)/hipe_icode_fp.beam: hipe_icode.hrl ../flow/cfg.hrl
+$(EBIN)/hipe_icode_heap_test.beam: ../main/hipe.hrl hipe_icode.hrl hipe_icode_primops.hrl ../flow/cfg.hrl ../rtl/hipe_literals.hrl
 $(EBIN)/hipe_icode_inline_bifs.beam: hipe_icode.hrl
-$(EBIN)/hipe_icode_liveness.beam: ../flow/liveness.inc
+$(EBIN)/hipe_icode_instruction_counter.beam: hipe_icode.hrl ../flow/cfg.hrl
+$(EBIN)/hipe_icode_liveness.beam: hipe_icode.hrl ../flow/cfg.hrl ../flow/liveness.inc
 $(EBIN)/hipe_icode_multret.beam: hipe_icode.hrl hipe_icode_primops.hrl
 $(EBIN)/hipe_icode_pp.beam: hipe_icode.hrl
 $(EBIN)/hipe_icode_primops.beam: hipe_icode_primops.hrl
-$(EBIN)/hipe_icode_range.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl
-$(EBIN)/hipe_icode_split_arith.beam: hipe_icode.hrl
-$(EBIN)/hipe_icode_ssa.beam: ../ssa/hipe_ssa.inc ../main/hipe.hrl ../ssa/hipe_ssa_liveness.inc
-$(EBIN)/hipe_icode_ssa_const_prop.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../ssa/hipe_ssa_const_prop.inc
-$(EBIN)/hipe_icode_ssa_copy_prop.beam: hipe_icode.hrl ../ssa/hipe_ssa_copy_prop.inc
-$(EBIN)/hipe_icode_type.beam: hipe_icode.hrl hipe_icode_primops.hrl hipe_icode_type.hrl
+$(EBIN)/hipe_icode_range.beam: ../main/hipe.hrl ../flow/cfg.hrl ../flow/hipe_bb.hrl hipe_icode.hrl hipe_icode_primops.hrl
+$(EBIN)/hipe_icode_split_arith.beam: hipe_icode.hrl ../flow/cfg.hrl
+$(EBIN)/hipe_icode_ssa.beam: ../main/hipe.hrl hipe_icode.hrl ../ssa/hipe_ssa.inc ../ssa/hipe_ssa_liveness.inc
+$(EBIN)/hipe_icode_ssa_const_prop.beam: hipe_icode.hrl hipe_icode_primops.hrl ../main/hipe.hrl ../flow/cfg.hrl ../ssa/hipe_ssa_const_prop.inc
+$(EBIN)/hipe_icode_ssa_copy_prop.beam: hipe_icode.hrl ../flow/cfg.hrl ../ssa/hipe_ssa_copy_prop.inc
+$(EBIN)/hipe_icode_type.beam: hipe_icode.hrl hipe_icode_primops.hrl ../flow/cfg.hrl hipe_icode_type.hrl
 

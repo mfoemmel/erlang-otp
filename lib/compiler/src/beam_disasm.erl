@@ -15,7 +15,7 @@
 -module(beam_disasm).
 
 -export([file/1]). %% the main function and some utilities below
--export([dfs/1, df/1, files/1, file/2, pp/1, pp/2, format_error/1]).
+-export([dfs/1, df/1, files/1, pp/1, pp/2, format_error/1]).
 -export([function__code/1]).
 
 -author("Kostis Sagonas").
@@ -25,7 +25,12 @@
 
 %%-----------------------------------------------------------------------
 
+%% -type(gb_tree()      :: tuple()).  % XXX: temporarily
+
+%% -type(literals()     :: 'none' | gb_tree()).
 -type(symbolic_tag() :: 'a' | 'f' | 'h' | 'i' | 'u' | 'x' | 'y' | 'z').
+%% -type(disasm_tag() :: symbolic_tag() | 'fr' | 'atom' | 'float' | 'literal').
+%% -type(disasm_term()  :: 'nil' | {disasm_tag(), _}).
 
 %%-----------------------------------------------------------------------
 
@@ -38,21 +43,29 @@
 %% them when/if they get used in other files.)
 %%-----------------------------------------------------------------------
 
+%% -spec(function__name/1 :: (#function{}) -> atom()).
 %% function__name(#function{name=N}) -> N.
+%% -spec(function__arity/1 :: (#function{}) -> byte()).
 %% function__arity(#function{arity=A}) -> A.
 %% function__entry(#function{entry=E}) -> E.
+
+-spec(function__code/1 :: (#function{}) -> [beam_instr()]).
 function__code(#function{code=Code}) -> Code.
+
+-spec(function__code_update/2 :: (#function{}, [beam_instr()]) -> #function{}).
 function__code_update(Function, NewCode) ->
   Function#function{code = NewCode}.
 
 %%-----------------------------------------------------------------------
 %% Error information
 
-format_error({error,Module,Error}) ->
-    Module:format_error(Error);
+-spec(format_error/1 :: ({'internal',_} | {'error',atom(),_}) -> string()).
+
 format_error({internal,Error}) ->
     io_lib:format("~p: disassembly failed with reason ~P.",
-		  [?MODULE, Error, 25]).
+		  [?MODULE, Error, 25]);
+format_error({error,Module,Error}) ->
+    lists:flatten(Module:format_error(Error)).
 
 %%-----------------------------------------------------------------------
 %% User comfort functions to directly disassemble to file or to
@@ -77,13 +90,17 @@ files(Files) when is_list(Files) ->
 
 file(File, Dest) ->
     case file(File) of
-	{beam_file,Disasm} ->
-	    pp(Dest, [{file,File}|Disasm]);
+	#beam_file{code=DisasmCode} ->
+	    pp(Dest, [{file,File},{code,DisasmCode}]);
 	Error -> Error
     end.
 
+-spec(pp/1 :: ([_]) -> 'ok' | {'error','file',atom()}).
+
 pp(Disasm) ->
     pp(group_leader(), Disasm).
+
+-spec(pp/2 :: (pid() | string(), [_]) -> 'ok' | {'error','file',atom()}).
 
 pp(Stream, Disasm) when is_pid(Stream), is_list(Disasm) ->
     NL = io_lib:nl(),
@@ -123,9 +140,10 @@ pp_instr(I) ->
 %%-----------------------------------------------------------------------
 %% The main exported function
 %%   File is either a file name or a binary containing the code.
-%%   Returns `{beam_file, [...]}' or `{error, Module, Reason}'.
 %%   Call `format_error({error, Module, Reason})' for an error string.
 %%-----------------------------------------------------------------------
+
+-spec(file/1 :: (string() | binary()) -> #beam_file{} | {'error',atom(),_}).
 
 file(File) ->
     try process_chunks(File)
@@ -157,12 +175,11 @@ process_chunks(F) ->
 		    CompInfoBin when is_binary(CompInfoBin) ->
 			binary_to_term(CompInfoBin)
 		end,
-	    All = [{module,Module},
-		   {exports,Exports},
-		   {attributes,Attributes},
-		   {comp_info,CompInfo},
-		   {code,Code}],
-	    {beam_file,[Item || {_Key,Data}=Item <- All, Data =/= none]};
+	    #beam_file{module=Module,
+		       exports=Exports,
+		       attributes=Attributes,
+		       comp_info=CompInfo,
+		       code=Code};
 	Error -> Error
     end.
 
@@ -180,6 +197,9 @@ optional_chunk(F, ChunkTag) ->
 %% Disassembles the lambda (fun) table of a BEAM file.
 %%-----------------------------------------------------------------------
 
+%-type(lambda_info() :: {non_neg_integer(), tuple()}).
+%-spec(beam_disasm_lambdas/2 ::
+%      ('none' | binary(), gb_tree()) -> 'none' | [lambda_info()]).
 beam_disasm_lambdas(none, _) -> none;
 beam_disasm_lambdas(<<_:32,Tab/binary>>, Atoms) ->
     disasm_lambdas(Tab, Atoms, 0).
@@ -194,6 +214,7 @@ disasm_lambdas(<<>>, _, _) -> [].
 %% Disassembles the literal table (constant pool) of a BEAM file.
 %%-----------------------------------------------------------------------
 
+%% -spec(beam_disasm_literals/1 :: ('none' | binary()) -> literals()).
 beam_disasm_literals(none) -> none;
 beam_disasm_literals(<<_:32,Compressed/binary>>) ->
     <<_:32,Tab/binary>> = zlib:uncompress(Compressed),
@@ -363,6 +384,7 @@ disasm_select_inst(Inst, Bs, Atoms, Literals) ->
 %%   assign a type to it
 %%-----------------------------------------------------------------------
 
+%% -spec(decode_arg/1 :: ([byte(),...]) -> {{disasm_tag(),_}, [byte()]}).
 decode_arg([B|Bs]) ->
     Tag = decode_tag(B band 2#111),
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n',[Tag,B,Bs]),
@@ -374,6 +396,8 @@ decode_arg([B|Bs]) ->
 	    decode_int(Tag, B, Bs)
     end.
 
+%% -spec(decode_arg/3 ::
+%%      ([byte(),...], gb_tree(), literals()) -> {disasm_term(), [byte()]}).
 decode_arg([B|Bs0], Atoms, Literals) ->
     Tag = decode_tag(B band 2#111),
     ?NO_DEBUG('Tag = ~p, B = ~p, Bs = ~p~n',[Tag,B,Bs]),
@@ -427,6 +451,7 @@ decode_int(Tag,B,Bs) ->
     ?NO_DEBUG('Len = ~p, IntBs = ~p, Num = ~p~n', [Len,IntBs,Num]),
     {{Tag,Num},RemBs}.
 
+-spec(decode_int_length/2 :: (integer(), [byte()]) -> {integer(), [byte()]}).
 decode_int_length(B, Bs) ->
     %% The following imitates get_erlang_integer() in beam_load.c
     %% Len is the size of the integer value in bytes
@@ -443,6 +468,8 @@ decode_int_length(B, Bs) ->
 	    {L+2,Bs}
     end.
     
+-spec(decode_negative/2 ::
+      (non_neg_integer(), non_neg_integer()) -> neg_integer()).
 decode_negative(N, Len) ->
     N - (1 bsl (Len*8)). % 8 is number of bits in a byte
 
@@ -470,11 +497,13 @@ decode_z_tagged(Tag,B,Bs,Literals) when (B band 16#08) =:= 0 ->
 decode_z_tagged(_,B,_,_) ->
     ?exit({decode_z_tagged,{weird_value,B}}).
 
+-spec(decode_float/1 :: ([byte(),...]) -> {{'float',float()}, [byte()]}).
 decode_float(Bs) ->
     {FL,RestBs} = take_bytes(8,Bs),
     <<Float:64/float>> = list_to_binary(FL),
     {{float,Float},RestBs}.
 
+-spec(decode_fr/1 :: ([byte(),...]) -> {{'fr',non_neg_integer()}, [byte()]}).
 decode_fr(Bs) ->
     {{u,Fr},RestBs} = decode_arg(Bs),
     {{fr,Fr},RestBs}.
@@ -499,6 +528,7 @@ decode_alloc_list_1(N, Literals, Bs0, Acc) ->
 %% take N bytes from a stream, return {Taken_bytes, Remaining_bytes}
 %%-----------------------------------------------------------------------
 
+-spec(take_bytes/2 :: (non_neg_integer(), [byte()]) -> {[byte()],[byte()]}).
 take_bytes(N, Bs) ->
     take_bytes(N, Bs, []).
 

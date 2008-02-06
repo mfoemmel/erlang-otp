@@ -135,6 +135,8 @@ Unsupported CPU value !
 
 #endif
 
+typedef void *GETENV_STATE;
+
 #define HAVE_GETHRTIME
 
 extern int erts_clock_rate;

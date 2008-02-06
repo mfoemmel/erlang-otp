@@ -9,9 +9,9 @@
 %%  History  :	* 2001-02-25 Erik Johansson (happi@csd.uu.se): 
 %%               Created.
 %%  CVS      :
-%%              $Author: kostis $
-%%              $Date: 2005/12/12 23:20:16 $
-%%              $Revision: 1.6 $
+%%              $Author: mikpe $
+%%              $Date: 2007/12/18 09:13:34 $
+%%              $Revision: 1.7 $
 %% ====================================================================
 %%  Exports  :
 %%
@@ -48,13 +48,6 @@ pp_element(Dev, Name, Element, CodeType, Prefix) ->
 	 true ->
 	  io:format(Dev, ".DL~w: ", [Name])
       end;
-    sparc ->
-      if Exported==true ->
-	  io:format(Dev, "    .global ~s_dl_~w\n", [Prefix,Name]),
-	  io:format(Dev, "~s_dl_~w: .word ", [Prefix, Name]);
-	 true ->
-	  io:format(Dev, ".~s_dl_~w: .word ", [Prefix, Name])
-      end;
     _ -> 
       io:format(Dev, "~w ", [Name])
   end,
@@ -63,8 +56,6 @@ pp_element(Dev, Name, Element, CodeType, Prefix) ->
   case hipe_consttab:const_type(Element) of
     term ->
       case CodeType of
-	sparc ->
-	  io:format(Dev, "0 ! .term ~w\n", [hipe_consttab:const_data(Element)]);
 	_ ->
 	  io:format(Dev, "~w\n", [hipe_consttab:const_data(Element)])
       end;
@@ -82,8 +73,6 @@ pp_block(Dev, {word, Data, SortOrder}, CodeType, Prefix) ->
   case CodeType of 
     rtl ->
       io:format(Dev, "\n",[]);
-    sparc ->
-      io:format(Dev, ".word\n",[]);
     _ ->
       ok
   end,
@@ -91,16 +80,12 @@ pp_block(Dev, {word, Data, SortOrder}, CodeType, Prefix) ->
   case CodeType of 
     rtl ->
       io:format(Dev, ";; Sorted by ~w\n",[SortOrder]);
-    sparc ->
-      io:format(Dev, "!! Sorted by ~w\n",[SortOrder]);
     _ ->
       ok
   end;
 pp_block(Dev, {word, Data}, CodeType, Prefix) ->
   case CodeType of 
     rtl ->
-      io:format(Dev, ".word\n",[]);
-    sparc ->
       io:format(Dev, ".word\n",[]);
     _ ->
       ok
@@ -109,8 +94,6 @@ pp_block(Dev, {word, Data}, CodeType, Prefix) ->
 pp_block(Dev, {byte, Data}, CodeType, _Prefix) ->
   case CodeType of 
     rtl ->
-      io:format(Dev, ".byte\n   ",[]);
-    sparc ->
       io:format(Dev, ".byte\n   ",[]);
     _ -> 
       ok
@@ -126,8 +109,6 @@ pp_wordlist(Dev, [{label,L}|Rest], CodeType, Prefix) ->
   case CodeType of 
     rtl ->
       io:format(Dev, "      &L~w\n",[L]);
-    sparc ->
-      io:format(Dev, "      .~s_~w\n",[Prefix, L]);
     _ -> 
       io:format(Dev, "      <~w>\n",[L])
   end,

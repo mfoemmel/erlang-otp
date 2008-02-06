@@ -27,12 +27,11 @@
 %% phi-instruction.
 %%
 %% Solution: 
-%% * Find all dependencies between the uses of a
-%%   phi-instruction to the destination of any earlier phi-instruction
-%%   in the same phi-node; 
-%% * Keep the copying move/fmove that defines the variable used in the 
-%%   latter phi-instruction; and 
-%% * Do not propagate the copy into the phi-instruction
+%%  * Find all dependencies between the uses of a phi-instruction to
+%%    the destination of any earlier phi-instruction in the same phi-node; 
+%%  * Keep the copying move/fmove that defines the variable used in the 
+%%    latter phi-instruction; and 
+%%  * Do not propagate the copy into the phi-instruction
 %%
 %%--------------------------------------------------------------------
 
@@ -149,7 +148,6 @@ rewrite_move_or_fmove(I, Fun, Info, PhiDep) ->
       end
   end.
 
-
 rewrite_instr(I, Info, PhiDep) ->
   rewrite_instr0(I, ?code:uses(I), Info, PhiDep, []).
 
@@ -185,17 +183,3 @@ add_binding([Key|Left], Val, Info) ->
   add_binding(Left, Val, NewInfo);
 add_binding([], _, Info) ->
   Info.
-
-%% Returns the root of a 
-%lookup_binding(Key, Info)->
-%  case gb_trees:lookup(Key, Info) of
-%    {value, Val} ->
-%      case  gb_trees:lookup(Val, Info) of
-%	{value, Root} ->
-%	  {value, Root};
-%	none ->
-%	  {value, Val}
-%      end;
-%    none ->
-%      none
-%  end.

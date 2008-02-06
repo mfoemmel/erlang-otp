@@ -440,6 +440,15 @@ decode_encode(Config) when list(Config) ->
 
 
     %% -- (PP) (ok) --
+    PP_A23_FORMAT = "125",
+    PP_A23_PARAM  = "profile-level-id=222; max-br=1212; max-mbps=20200", 
+    PP_A23        = cre_PropertyParm_a_fmtp(PP_A23_FORMAT, PP_A23_PARAM),
+    SDP_A23       = cre_sdp_a_fmtp(PP_A23_FORMAT, PP_A23_PARAM), 
+    PP_A23_Exp    = {ok, SDP_A23}, 
+    SDP_A23_Exp   = {ok, PP_A23}, 
+
+
+    %% -- (PP) (ok) --
     PP_B01_MOD  = "2",
     PP_B01_BW   = 523,
     PP_B01      = cre_PropertyParm_b(PP_B01_MOD, PP_B01_BW),
@@ -691,6 +700,8 @@ decode_encode(Config) when list(Config) ->
 	 pp_enc_instruction("attributes 20 - enc [ok]", SDP_A20, SDP_A20_Exp),    
 	 pp_dec_instruction("attributes 21 - dec [ok]", PP_A21,  PP_A21_Exp),    
 	 pp_enc_instruction("attributes 21 - enc [ok]", SDP_A21, SDP_A21_Exp),    
+	 pp_dec_instruction("attributes 23 - dec [ok]", PP_A23,  PP_A23_Exp),    
+	 pp_enc_instruction("attributes 24 - enc [ok]", SDP_A23, SDP_A23_Exp),    
 
 	 pp_dec_instruction("bandwidth 01 - dec [ok]", PP_B01,  PP_B01_Exp),    
 	 pp_enc_instruction("bandwidth 01 - enc [ok]", SDP_B01, SDP_B01_Exp),    
@@ -1044,19 +1055,19 @@ cre_PropertyParm_a(Attr, AttrValue)
 cre_PropertyParm_a(Attr) when is_list(Attr) ->
     cre_PropertyParm("a", Attr).
 
-%% cre_PropertyParm_fmtp(Format, Param) 
-%%   when is_list(Format) and is_list(Param) ->
-%%     cre_PropertyParm_a("fmtp", Format ++ " " ++ Param).
+cre_PropertyParm_a_fmtp(Format, Param) 
+  when is_list(Format) and is_list(Param) ->
+    cre_PropertyParm_a("fmtp", Format ++ " " ++ Param).
 
-%% cre_sdp_a_fmtp(Fmt, Parm) ->
-%%     #megaco_sdp_a_fmtp{format = Fmt, param = Parm}.
+cre_sdp_a_fmtp(Fmt, Parm) ->
+    #megaco_sdp_a_fmtp{format = Fmt, param = Parm}.
 
 cre_sdp_a(Attr) ->
     #megaco_sdp_a{attribute = Attr}.
 
-cre_sdp_a(Attr, Val) ->
-    #megaco_sdp_a{attribute = Attr,
-		  value     = Val}.
+%% cre_sdp_a(Attr, Val) ->
+%%     #megaco_sdp_a{attribute = Attr,
+%% 		  value     = Val}.
 
 cre_PropertyParm_o(User, SID, Version, AddrType, Addr) ->
     cre_PropertyParm_o(User, SID, Version, in, AddrType, Addr).

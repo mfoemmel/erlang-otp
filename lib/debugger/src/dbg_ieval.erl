@@ -1577,9 +1577,9 @@ match1({cons,_,H,T}, [H1|T1], Bs0, BBs) ->
     {match,Bs} = match1(H, H1, Bs0, BBs),
     match1(T, T1, Bs, BBs);
 match1({tuple,_,Elts}, Tuple, Bs, BBs) 
-  when is_tuple(Tuple), length(Elts)=:=size(Tuple) ->
+  when length(Elts) =:= tuple_size(Tuple) ->
     match_tuple(Elts, Tuple, 1, Bs, BBs);
-match1({bin,_,Fs}, B, Bs0, BBs0) when erlang:is_bitstr(B) ->
+match1({bin,_,Fs}, B, Bs0, BBs0) when is_bitstring(B) ->
     Bs1 = lists:sort(Bs0),  %Kludge.
     BBs = lists:sort(BBs0),
     try eval_bits:match_bits(Fs, B, Bs1, BBs,

@@ -194,6 +194,14 @@ AC_ARG_ENABLE(clock-gettime,
     *) clock_gettime_correction=yes ;;
   esac ], clock_gettime_correction=unknown)
 
+AC_ARG_ENABLE(native-ethr-impls,
+[  --enable-native-ethr-impls enable native ethread implementations
+  --disable-native-ethr-impls disable native ethread implementations],
+[ case "$enableval" in
+    no) disable_native_ethr_impls=yes ;;
+    *)  disable_native_ethr_impls=no ;;
+  esac ], disable_native_ethr_impls=no)
+
 dnl Defined in libraries/megaco/configure.in but we need it here
 dnl also in order to show it to the "top user"
 
@@ -264,7 +272,7 @@ case $host_os in
     win32)
 	# The ethread library requires _WIN32_WINNT of at least 0x0403.
 	# -D_WIN32_WINNT=* from CPPFLAGS is saved in ETHR_DEFS.
-	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0403"
+	CPPFLAGS="$CPPFLAGS -D_WIN32_WINNT=0x0500 -DWINVER=0x0500"
 	# _USE_32BIT_TIME_T is needed when using VC++ 2005 (ctime() will fail
 	# otherwise since we pass it a 32-bit value).
 	#
@@ -368,7 +376,14 @@ if test "x$GCC" = xyes; then
   # until the emulator can handle this, I suggest we turn it off!
   #WFLAGS="-Wall -Wshadow -Wcast-qual -Wmissing-declarations"
   WFLAGS="-Wall -Wstrict-prototypes -Wmissing-prototypes"
-  #WFLAGS=""
+
+  saved_CFLAGS=$CFLAGS
+  CFLAGS="$CFLAGS -Wdeclaration-after-statement"
+  AC_TRY_COMPILE([],[;], warn_decl_after_st=true, warn_decl_after_st=false)
+  if test "X$warn_decl_after_st" = "Xtrue"; then
+    WFLAGS="$WFLAGS -Wdeclaration-after-statement"
+  fi
+  CFLAGS=$saved_CFLAGS
 else
   WFLAGS=""
 fi
@@ -441,6 +456,10 @@ ultrasparc-8)
 sparc64-4)
 	AC_MSG_RESULT(yes: adjusting ARCH=sparc64 to ARCH=ultrasparc)
 	ARCH=ultrasparc
+	;;
+ppc64-4)
+	AC_MSG_RESULT(yes: adjusting ARCH=ppc64 to ARCH=ppc)
+	ARCH=ppc
 	;;
 *)
 	AC_MSG_RESULT(no)
@@ -654,8 +673,8 @@ AC_CHECK_LIB(util, openpty)
 dnl Try to find a thread library.
 dnl
 dnl ETHR_LIB_NAME, ETHR_LIBS, ETHR_X_LIBS, ETHR_THR_LIB_BASE and ETHR_DEFS
-dnl are set by LM_FIND_ETHR_LIB
-LM_FIND_ETHR_LIB
+dnl are set by ERL_FIND_ETHR_LIB
+ERL_FIND_ETHR_LIB
 
 if test "X$ETHR_LIB_NAME" = "X"; then
     found_threads=no
@@ -855,13 +874,13 @@ else
 		;;
 	esac
 
-	# Remove -D_WIN32_WINNT* and -D_GNU_SOURCE from EMU_THR_DEFS
+	# Remove -D_WIN32_WINNT*, -DWINVER* and -D_GNU_SOURCE from EMU_THR_DEFS
 	# (defined in CFLAGS). Note that we want to keep these flags
 	# in ETHR_DEFS, but not in EMU_THR_DEFS.
 	new_emu_thr_defs=
 	for thr_def in $EMU_THR_DEFS; do
 	    case $thr_def in
-		-D_GNU_SOURCE*|-D_WIN32_WINNT*)
+		-D_GNU_SOURCE*|-D_WIN32_WINNT*|-DWINVER*)
 		    ;;
 		*)
 		    new_emu_thr_defs="$new_emu_thr_defs $thr_def"
@@ -1082,11 +1101,13 @@ AC_CHECK_HEADER(sys/devpoll.h, have_kernel_poll=/dev/poll)
 
 dnl Check for kernel SCTP support
 AC_SUBST(WITH_SCTP)
-if test "x$enable_sctp" != "xno" ; then
+if test "x$enable_sctp" == "xyes" ; then
     AC_CHECK_HEADER(netinet/sctp.h,
-        [WITH_SCTP=1,
-         AC_DEFINE(HAVE_SCTP_H, [1],
-            [Define to 1 if you have the <netinet/sctp.h> header file])],
+        [AC_CHECK_LIB(sctp, sctp_bindx,
+	    [WITH_SCTP=1,
+             AC_DEFINE(HAVE_SCTP_H, [1],
+                [Define to 1 if you have the <netinet/sctp.h> header file])])
+        ],
 	[],
 	[#if HAVE_SYS_SOCKET_H
 	 #include <sys/socket.h>
@@ -1899,14 +1920,22 @@ static __inline__ int check_fpe(double f)
 
 #elif defined(__sparc__) && defined(__linux__)
 
+#if defined(__arch64__)
+#define LDX "ldx"
+#define STX "stx"
+#else
+#define LDX "ld"
+#define STX "st"
+#endif
+
 static void unmask_fpe(void)
 {
     unsigned long fsr;
 
-    __asm__("st %%fsr, %0" : "=m"(fsr));
+    __asm__(STX " %%fsr, %0" : "=m"(fsr));
     fsr &= ~(0x1FUL << 23);	/* clear FSR[TEM] field */
     fsr |= (0x1AUL << 23);	/* enable NV, OF, DZ exceptions */
-    __asm__ __volatile__("ld %0, %%fsr" : : "m"(fsr));
+    __asm__ __volatile__(LDX " %0, %%fsr" : : "m"(fsr));
 }
 
 static __inline__ int check_fpe(double f)
@@ -2059,6 +2088,11 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     if ((fpstate->status >> 16) == X86_FXSR_MAGIC)
 	((struct _fpstate*)fpstate)->mxcsr = 0x1F80;
     fpstate->sw &= ~0xFF;
+#elif defined(__sparc__) && defined(__arch64__)
+    /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
+    struct sigcontext *sc = (struct sigcontext*)puc;
+    sc->sigc_regs.tpc = sc->sigc_regs.tnpc;
+    sc->sigc_regs.tnpc += 4;
 #elif defined(__sparc__)
     /* on SPARC the 3rd parameter points to a sigcontext not a ucontext */
     struct sigcontext *sc = (struct sigcontext*)puc;
@@ -2075,7 +2109,7 @@ static void fpe_sig_action(int sig, siginfo_t *si, void *puc)
     regs[PT_NIP] += 4;
     regs[PT_FPSCR] = 0x80|0x40|0x10;	/* VE, OE, ZE; not UE or XE */
 #endif
-#elif defined(__DARWIN__) 
+#elif defined(__DARWIN__)
 #if defined(__x86_64__)
      mcontext_t mc = uc->uc_mcontext;
     struct __darwin_x86_float_state64 *fpstate = &mc->__fs;
@@ -2479,11 +2513,42 @@ case $enable_kernel_poll-$have_kernel_poll in
 esac
 AC_SUBST(ERTS_ENABLE_KERNEL_POLL)
 
-dnl --- this stuff should probably not be here /rickard ---
-dnl saved_cppflags=$CPPFLAGS
-dnl CPPFLAGS="$CPPFLAGS $EMU_THR_DEFS"
-dnl saved_libs=$LIBS
-dnl LIBS="$LIBS $EMU_THR_X_LIBS"
+AC_MSG_CHECKING([whether putenv() stores a copy of the key-value pair])
+AC_TRY_RUN([
+#include <stdlib.h>
+int main(void) {
+    int i;
+    char *env;
+    char buf[10];
+    for (i = 0; i < 7; i++)
+	buf[i] = 'X';
+    buf[i] = '\0';
+    buf[3] = '=';
+    if (putenv(buf) != 0)
+	return 1;
+    for (i = 4; i < 7; i++)
+	buf[i] = 'Y';
+    env = getenv("XXX");
+    if (!env)
+	return 2;
+    for (i = 0; i < 3; i++)
+	if (env[i] != 'X')
+	    return 3;
+    for (i = 0; i < 3; i++)
+	buf[i] = 'Y';
+    env = getenv("XXX");
+    if (!env)
+	return 4;
+    for (i = 0; i < 3; i++)
+	if (env[i] != 'X')
+	    return 5;
+    return 0;
+}
+], copying_putenv=yes, copying_putenv=no, copying_putenv=no)
+if test $copying_putenv = yes; then
+	AC_DEFINE(HAVE_COPYING_PUTENV,[1],[Define if you have a putenv() that stores a copy of the key-value pair])
+fi
+AC_MSG_RESULT($copying_putenv)
 
 dnl ----------------------------------------------------------------------
 dnl Stuff that should be moved into their respective application
@@ -2553,7 +2618,7 @@ case $host_os in
 		DED_LD_FLAG_RUNTIME_LIBRARY_PATH=
 		STATIC_CFLAGS="-mdynamic-no-pic"
 	;;
-	linux*)
+	linux*|freebsd*)
 		DED_LD="$CC"
 		DED_LDFLAGS="-shared"
 	;;	
@@ -2605,9 +2670,6 @@ dnl If set to --without-ssl we disable the use of SSL, SSH and CRYPTO.
 dnl If set to --with-ssl=PATH we use that path as the prefix, i.e. we
 dnl use "PATH/include" and "PATH/lib".
 
-AC_SUBST(SSL_APP)
-AC_SUBST(CRYPTO_APP)
-AC_SUBST(SSH_APP)
 AC_SUBST(SSL_INCLUDE)
 AC_SUBST(SSL_ROOT)
 AC_SUBST(SSL_LIBDIR)
@@ -2686,18 +2748,39 @@ AC_ARG_WITH(ssl,
   --with-ssl              use SSL (default)
   --without-ssl           don't use SSL])
 
+AC_ARG_ENABLE(dynamic-ssl-lib,
+[  --enable-dynamic-ssl-lib        enable using dynamic openssl libraries],
+[ case "$enableval" in
+    no) enable_dynamic_ssl=no ;;
+    *)  enable_dynamic_ssl=yes ;;
+  esac ], enable_dynamic_ssl=no)
+
+#----------------------------------------------------------------------
+# We actually might do the SSL tests twice due to late discovery of 
+# kerberos problems with static linking, in case we redo it all trying
+# dynamic SSL libraries instead.
+#----------------------------------------------------------------------
+
+ssl_done=no
+
+while test "x$ssl_done" != "xyes"; do
+
+ssl_done=yes # Default only one run
 
 # Remove all SKIP files from previous runs
 for a in ssl crypto ssh; do
   /bin/rm -f $ERL_TOP/lib/$a/SKIP
 done
 
-SSL_DYNAMIC_ONLY=no
+SSL_DYNAMIC_ONLY=$enable_dynamic_ssl
 
 if test "x$with_ssl" = "xno"; then
     SSL_APP=
     CRYPTO_APP=
     SSH_APP=
+    for a in ssl crypto ssh; do
+        echo "User gave --without-ssl option" > $ERL_TOP/lib/$a/SKIP
+    done
 elif test "x$with_ssl" = "xyes" -o "x$with_ssl" = "x" ;then
     # On windows, we could try to find the installation
     # of Shining Light OpenSSL, which can be found by poking in
@@ -2917,25 +3000,36 @@ if test "x$SSL_APP" != "x" ; then
       ],[
       AC_MSG_RESULT([yes])
       ssl_krb5_enabled=yes
-      if test -f $SSL_LIBDIR/libkrb5.a; then
-          SSL_LINK_WITH_KERBEROS=yes
-	  STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
-	  if test -f $SSL_LIBDIR/libkrb5support.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libk5crypto.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libresolv.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
-	  fi
-	  if test -f $SSL_LIBDIR/libcom_err.a; then
-		STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
-	  fi
-      else
-	 SSL_LINK_WITH_KERBEROS=no
-	 STATIC_KERBEROS_LIBS=""
-      fi 	
+      if test "x$SSL_DYNAMIC_ONLY" != "xyes"; then
+          if test -f $SSL_LIBDIR/libkrb5.a; then
+              SSL_LINK_WITH_KERBEROS=yes
+	      STATIC_KERBEROS_LIBS="$SSL_LIBDIR/libkrb5.a"
+	      if test -f $SSL_LIBDIR/libkrb5support.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libkrb5support.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libk5crypto.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libk5crypto.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libresolv.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libresolv.a"
+	      fi
+	      if test -f $SSL_LIBDIR/libcom_err.a; then
+		  STATIC_KERBEROS_LIBS="$STATIC_KERBEROS_LIBS $SSL_LIBDIR/libcom_err.a"
+	      fi
+          else
+	      AC_MSG_WARN([Kerberos needed but no kerberos static libraries found])
+	      AC_MSG_WARN([Rescanning for dynamic SSL libraries])
+	      enable_dynamic_ssl=yes
+	      ssl_done=no
+	      SSL_LINK_WITH_KERBEROS=no
+	      STATIC_KERBEROS_LIBS=""
+	      ssl_krb5_enabled=no
+	      SSL_WITH_KERBEROS=no
+          fi
+      else 	
+	      SSL_LINK_WITH_KERBEROS=no
+	      STATIC_KERBEROS_LIBS=""
+      fi
       ],[
       AC_MSG_RESULT([no])
       ssl_krb5_enabled=no
@@ -2971,6 +3065,8 @@ if test "x$SSL_APP" != "x" ; then
     fi
 fi
 
+done # while test ssl_done != yes
+
 #--------------------------------------------------------------------
 # Erlang GD driver stuff. (egd)
 #--------------------------------------------------------------------
@@ -2980,7 +3076,7 @@ AC_SUBST(GD_LIB)
 
 dnl check for gd.h, gdfontt.h, gdfonts.h, gdfontmb.h, gdfontl.h, gdfontg.h
 AC_ARG_WITH(gd,
-[  --with-gd=PATH         specify location of gd include and lib
+[  --with-gd=PATH         specify location of libgd include and lib
   --with-gd              use gd (default)
   --without-gd           don't use gd])
 
@@ -3007,7 +3103,7 @@ elif test "x$with_gd" = "xyes" -o "x$with_gd" = "x" ;then
 	else
 		gd_found=no
 		gd_linkable=no
-		for dir in /usr/local/pgm /usr/local /usr
+		for dir in /usr/local/pgm /usr/local /usr /opt /opt/local /sw
 		do
 			if test "x$ARCH" = "xamd64" -o \
 				"x$ARCH" = "xppc64"; then
@@ -3040,6 +3136,9 @@ elif test "x$with_gd" = "xyes" -o "x$with_gd" = "x" ;then
  				CFLAGS="$saveCFLAGS"
  				LDFLAGS="$saveLDFLAGS"
  			fi
+	 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xyes"  ; then
+	   			break;
+         		fi
 		done
 		if test "x$gd_found" = "xyes" -a "x$gd_linkable" = "xno"; then
 			AC_MSG_RESULT([no; found but not usable])
@@ -3065,7 +3164,7 @@ else
 dnl	With a given path to gd
 	if test -f "$with_gd/lib/libgd.$soext"; then
 		GD_LIB="$with_gd/lib"
-		GD_INCLUDE="$with_gd/include"
+		GD_INCLUDE="-I$with_gd/include"
 		AC_MSG_RESULT([$GD_LIB])
 	else
 		GD_APP=
@@ -3080,18 +3179,25 @@ fi
 # Os mon stuff.
 #--------------------------------------------------------------------
 AC_SUBST(os_mon_programs)
-AC_CHECK_LIB(kstat, kstat_open, [os_mon_programs="$os_mon_programs cpu_sup"])
+AC_SUBST(CPU_SUP_LIBS)
+
+AC_CHECK_LIB(kstat, kstat_open, [ 
+	os_mon_programs="$os_mon_programs cpu_sup"	 
+	CPU_SUP_LIBS="$CPU_SUP_LIBS -lkstat"
+	])
+
 case $host_os in
 	solaris2*)
 		os_mon_programs="$os_mon_programs ferrule mod_syslog" ;;
+	linux*)
+		os_mon_programs="$os_mon_programs cpu_sup" ;;
 esac
 
 
 dnl
 dnl Then there are a number of apps which needs a java compiler...
 dnl
-need_java="jinterface ic/java_src orber/java_src
-	   mnesia_session/examples/person/java_session"
+need_java="jinterface ic/java_src orber/java_src"
 
 # Remove all SKIP files from previous runs
 for a in $need_java ; do

@@ -110,7 +110,7 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, SourceFile, Opts) ->
 			   LitTab1 = iolist_to_binary(LitTab0),
 			   LitTab2 = <<NumLiterals:32,LitTab1/binary>>,
 			   LitTab = iolist_to_binary(zlib:compress(LitTab2)),
-			   chunk(<<"LitT">>, <<(size(LitTab2)):32>>, LitTab)
+			   chunk(<<"LitT">>, <<(byte_size(LitTab2)):32>>, LitTab)
 		   end,
     
 
@@ -137,24 +137,24 @@ build_file(Code, Attr, Dict, NumLabels, NumFuncs, Abst, SourceFile, Opts) ->
 
 %% Build an IFF form.
 
-build_form(Id, Chunks0) when size(Id) =:= 4, is_list(Chunks0) ->
+build_form(Id, Chunks0) when byte_size(Id) =:= 4, is_list(Chunks0) ->
     Chunks = list_to_binary(Chunks0),
-    Size = size(Chunks),
+    Size = byte_size(Chunks),
     0 = Size rem 4,				% Assertion: correct padding?
     <<"FOR1",(Size+4):32,Id/binary,Chunks/binary>>.
 
 %% Build a correctly padded chunk (with no sub-header).
 
-chunk(Id, Contents) when size(Id) =:= 4, is_binary(Contents) ->
-    Size = size(Contents),
+chunk(Id, Contents) when byte_size(Id) =:= 4, is_binary(Contents) ->
+    Size = byte_size(Contents),
     [<<Id/binary,Size:32>>,Contents|pad(Size)];
 chunk(Id, Contents) when is_list(Contents) ->
     chunk(Id, list_to_binary(Contents)).
 
 %% Build a correctly padded chunk (with a sub-header).
 
-chunk(Id, Head, Contents) when size(Id) =:= 4, is_binary(Head), is_binary(Contents) ->
-    Size = size(Head)+size(Contents),
+chunk(Id, Head, Contents) when byte_size(Id) =:= 4, is_binary(Head), is_binary(Contents) ->
+    Size = byte_size(Head)+byte_size(Contents),
     [<<Id/binary,Size:32,Head/binary>>,Contents|pad(Size)];
 chunk(Id, Head, Contents) when is_list(Contents) ->
     chunk(Id, Head, list_to_binary(Contents)).

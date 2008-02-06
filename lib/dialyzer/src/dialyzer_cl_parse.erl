@@ -109,10 +109,10 @@ cl(["--plt", Plt|T]) ->
 cl(["--plt"]) ->
   error("No plt specified for --plt");
 cl(["-q"|T]) ->
-  put(dialyzer_options_quiet, true),
+  put(dialyzer_options_report_mode, quiet),
   cl(T);
 cl(["--quiet"|T]) ->
-  put(dialyzer_options_quiet, true),
+  put(dialyzer_options_report_mode, quiet),
   cl(T);
 cl(["--src"|T]) ->
   put(dialyzer_options_from, src_code),
@@ -124,7 +124,7 @@ cl(["--version"|_]) ->
   io:format("Dialyzer version "++?VSN++"\n"),
   erlang:halt(?RET_NOTHING_SUSPICIOUS);
 cl(["--verbose"|T]) ->
-  put(dialyzer_options_quiet, verbose),
+  put(dialyzer_options_report_mode, verbose),
   cl(T);
 cl(["-W"|_]) ->
   error("-W given without warning");
@@ -173,7 +173,7 @@ init() ->
   put(dialyzer_only_check_init_plt, false),
   put(dialyzer_options_gui, true),
   put(dialyzer_options_files_rec, []),
-  put(dialyzer_options_quiet, false),
+  put(dialyzer_options_report_mode, normal),
   put(dialyzer_options_libs, ?DEFAULT_LIBS),
   put(dialyzer_warnings, []),
 
@@ -224,7 +224,7 @@ common_options() ->
    {init_plt, get(dialyzer_init_plt)},
    {output_plt, get(dialyzer_output_plt)},
    {old_style, get(dialyzer_options_analysis_type) =:= old_style},
-   {quiet, get(dialyzer_options_quiet)},
+   {report_mode, get(dialyzer_options_report_mode)},
    {supress_inline, get(dialyzer_options_suppress_inline)},
    {warnings, get(dialyzer_warnings)}].
 

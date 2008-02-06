@@ -47,7 +47,7 @@
 -export([comment/1]).
 -export([os_type/0]).
 -export([run_on_shielded_node/2]).
--export([is_cover/0,is_debug/0]).
+-export([is_cover/0,is_debug/0,is_commercial/0]).
 
 -export([break/1,continue/0]).
 
@@ -900,7 +900,7 @@ init_per_testcase(Mod,Func,Args) ->
 		    {skip,init_per_testcase_bad_return}; 		    
 		{'EXIT', Reason} ->
 		    Line = get_loc(),
-		    FormattedLoc = test_server_sup:format_loc(Line),
+		    FormattedLoc = test_server_sup:format_loc(mod_loc(Line)),
 		    group_leader() ! {print,12, 
 				      "ERROR! init_per_testcase crashed!\n"
 				      "\tLine: ~s\n\tReason: ~p\n",
@@ -910,7 +910,7 @@ init_per_testcase(Mod,Func,Args) ->
 		    {skip,SkipReason};
 		Other ->
 		    Line = get_loc(),
-		    FormattedLoc = test_server_sup:format_loc(Line),
+		    FormattedLoc = test_server_sup:format_loc(mod_loc(Line)),
 		    group_leader() ! {print,12, 
 				      "ERROR! init_per_testcase thrown!\n"
 				      "\tLine: ~s\n\tReason: ~p\n",
@@ -955,7 +955,7 @@ do_end_per_testcase(Mod,EndFunc,Func,Conf) ->
 			      "Line: ~s\n",
 			      [EndFunc, Reason, 
 			       test_server_sup:format_loc(
-				 get_loc())]},
+				 mod_loc(get_loc()))]},
 	    ok;
 	Other ->
 	    comment(io_lib:format("WARNING: ~w thrown!\n",[EndFunc])),
@@ -965,7 +965,7 @@ do_end_per_testcase(Mod,EndFunc,Func,Conf) ->
 			      "Line: ~s\n",
 			      [EndFunc, Other, 
 			       test_server_sup:format_loc(
-				 get_loc())]},  
+				 mod_loc(get_loc()))]},  
 	    ok
     end.
 
@@ -1784,6 +1784,19 @@ is_debug() ->
     case string:str(erlang:system_info(system_version), "debug") of
 	Int when is_integer(Int), Int > 0 -> true;
 	_ -> false
+    end.
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% is_commercial_build() -> boolean()
+%%
+%% Returns true if the current emulator is commercially supported.
+%% (The emulator will not have "[source]" in its start-up message.)
+%% We might want to do more tests on a commercial platform, for instance
+%% ensuring that all applications have documentation).
+is_commercial() ->
+    case string:str(erlang:system_info(system_version), "source") of
+	Int when is_integer(Int), Int > 0 -> false;
+	_ -> true
     end.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

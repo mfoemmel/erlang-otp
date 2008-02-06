@@ -390,9 +390,11 @@ nbif_3_simple_exception:
  * The stack/heap registers were just read from P.
  * TEMP_ARG0 is the first actual parameter, if NR_ARG_REGS > 0.
  * TEMP_ARG1 is the second actual parameter (if defined), if NR_ARG_REGS > 1.
+ * TEMP_ARG2 is the third actual parameter (if defined), if NR_ARG_REGS > 2.
  */
 	.global	nbif_1_hairy_exception
 	.global	nbif_2_hairy_exception
+	.global	nbif_3_hairy_exception
 	.align	4
 nbif_1_hairy_exception:
 	movl	$1, %eax
@@ -400,6 +402,10 @@ nbif_1_hairy_exception:
 	.align	4
 nbif_2_hairy_exception:
 	movl	$2, %eax
+	jmp	.nbif_hairy_exception
+	.align	4
+nbif_3_hairy_exception:
+	movl	$3, %eax
 	/*FALLTHROUGH*/
 	.align	4
 .nbif_hairy_exception:
@@ -407,15 +413,9 @@ nbif_2_hairy_exception:
 	jne	.nbif_simple_exception
 	/* handle reschedule */
 	movq	%rdx, P_NCALLEE(P)
-#if NR_ARG_REGS == 0
-	xorl	%eax, %eax	# arity unused -- args on nstack
-#elif NR_ARG_REGS == 1
-	movl	$1, %eax	# 1 even if arity is 2
-	movq	TEMP_ARG0, P_ARG0(P)
-#else
 	movq	TEMP_ARG0, P_ARG0(P)
 	movq	TEMP_ARG1, P_ARG1(P)
-#endif
+	movq	TEMP_ARG2, P_ARG2(P)
 	movq	%rax, P_ARITY(P)
 	movl	$HIPE_MODE_SWITCH_RES_RESCHEDULE, %eax
 	jmp	.nosave_exit

@@ -124,7 +124,7 @@ MODULES = \
 	wrap_log_reader \
 	zlib
 
-HRL_FILES= ../include/file.hrl ../include/inet.hrl
+HRL_FILES= ../include/file.hrl ../include/inet.hrl ../include/inet_sctp.hrl
 INTERNAL_HRL_FILES= application_master.hrl disk_log.hrl \
         net_address.hrl inet_dns.hrl inet_res.hrl \
         inet_boot.hrl inet_config.hrl inet_int.hrl \
@@ -230,7 +230,7 @@ $(EBIN)/gen_udp.beam: inet_int.hrl
 $(EBIN)/gen_sctp.beam: ../include/inet_sctp.hrl
 $(EBIN)/global.beam: ../../stdlib/include/ms_transform.hrl
 $(EBIN)/hipe_unified_loader.beam: ../../hipe/main/hipe.hrl hipe_ext_format.hrl
-$(EBIN)/inet.beam: ../include/inet.hrl inet_int.hrl
+$(EBIN)/inet.beam: ../include/inet.hrl inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/inet6_tcp.beam: inet_int.hrl
 $(EBIN)/inet6_tcp_dist.beam: net_address.hrl dist.hrl dist_util.hrl
 $(EBIN)/inet6_udp.beam: inet_int.hrl
@@ -249,6 +249,6 @@ $(EBIN)/inet_sctp.beam: inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/net_kernel.beam: net_address.hrl
 $(EBIN)/os.beam: ../include/file.hrl
 $(EBIN)/prim_file.beam: ../include/file.hrl
-$(EBIN)/prim_inet.beam: inet_int.hrl
+$(EBIN)/prim_inet.beam: inet_int.hrl ../include/inet_sctp.hrl
 $(EBIN)/ram_file.beam: ../include/file.hrl
 $(EBIN)/wrap_log_reader.beam: disk_log.hrl ../include/file.hrl

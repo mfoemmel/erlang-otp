@@ -280,6 +280,20 @@ extern void select_release(void);
 #     define    SCTP_EOF        MSG_EOF
 #endif
 
+/* New spelling in lksctp 2.6.22 or maybe even earlier:
+ *  adaption -> adaptation
+ */
+#if !defined(SCTP_ADAPTATION_LAYER) && defined (SCTP_ADAPTION_LAYER)
+#     define SCTP_ADAPTATION_LAYER       SCTP_ADAPTION_LAYER
+#     define SCTP_ADAPTATION_INDICATION  SCTP_ADAPTION_INDICATION
+#     define sctp_adaptation_event       sctp_adaption_event
+#     define sctp_setadaptation          sctp_setadaption
+#     define sn_adaptation_event         sn_adaption_event
+#     define sai_adaptation_ind          sai_adaption_ind
+#     define ssb_adaptation_ind          ssb_adaption_ind
+#     define sctp_adaptation_layer_event sctp_adaption_layer_event
+#endif
+
 #endif /* SCTP supported */
 
 #ifndef WANT_NONBLOCKING
@@ -545,7 +559,7 @@ static int my_strncasecmp(const char *s1, const char *s2, size_t n)
 #define SCTP_OPT_MAXSEG			107
 #define SCTP_OPT_SET_PEER_PRIMARY_ADDR  108
 #define SCTP_OPT_PRIMARY_ADDR		109
-#define SCTP_OPT_ADAPTION_LAYER 	110
+#define SCTP_OPT_ADAPTATION_LAYER 	110
 #define SCTP_OPT_PEER_ADDR_PARAMS	111
 #define SCTP_OPT_DEFAULT_SEND_PARAM	112
 #define SCTP_OPT_EVENTS			113
@@ -2711,7 +2725,7 @@ static ErlDrvTermData   am_sctp_rtoinfo, /* Option names */
     am_sctp_autoclose,                 am_sctp_nodelay,
     am_sctp_disable_fragments,         am_sctp_i_want_mapped_v4_addr,
     am_sctp_maxseg,                    am_sctp_set_peer_primary_addr,
-    am_sctp_primary_addr,              am_sctp_adaption_layer,
+    am_sctp_primary_addr,              am_sctp_adaptation_layer,
     am_sctp_peer_addr_params,          am_sctp_default_send_param,
     am_sctp_events,                    am_sctp_delayed_ack_time,
     am_sctp_status,                    am_sctp_get_peer_addr_info,
@@ -2720,9 +2734,9 @@ static ErlDrvTermData   am_sctp_rtoinfo, /* Option names */
     am_sctp_sndrcvinfo,                am_sctp_assoc_change,
     am_sctp_paddr_change,              am_sctp_remote_error,
     am_sctp_send_failed,               am_sctp_shutdown_event,
-    am_sctp_adaption_event,            am_sctp_pdapi_event,
+    am_sctp_adaptation_event,          am_sctp_pdapi_event,
     am_sctp_assocparams,               am_sctp_prim,
-    am_sctp_setpeerprim,               am_sctp_setadaption,
+    am_sctp_setpeerprim,               am_sctp_setadaptation,
     am_sctp_paddrparams,               am_sctp_event_subscribe,
     am_sctp_assoc_value,               am_sctp_paddrinfo,
 
@@ -2776,11 +2790,13 @@ static ErlDrvTermData   am_sctp_rtoinfo, /* Option names */
 static int sctp_parse_sndrcvinfo
 	   (ErlDrvTermData * spec, int i, struct sctp_sndrcvinfo * sri)
 {
+    int n;
+    
     i = LOAD_ATOM	(spec, i, am_sctp_sndrcvinfo);
     i = LOAD_INT	(spec, i, sri->sinfo_stream);
     i = LOAD_INT	(spec, i, sri->sinfo_ssn);
     /* Now Flags, as a list: */
-    int n = 0;
+    n = 0;
     if (sri->sinfo_flags & SCTP_UNORDERED)
 	{ i = LOAD_ATOM (spec, i, am_unordered);     n++; }
 
@@ -2822,6 +2838,8 @@ static int sctp_parse_ancillary_data
     int    s = 0;
     for (cmsg = frst_msg; cmsg != NULL; cmsg = CMSG_NXTHDR(mptr,cmsg))
     {
+	struct sctp_sndrcvinfo * sri;
+	
 	/* Skip other possible ancillary data, e.g. from IPv6: */
 	if (cmsg->cmsg_level != IPPROTO_SCTP ||
 	    cmsg->cmsg_type  != SCTP_SNDRCV)
@@ -2837,9 +2855,7 @@ static int sctp_parse_ancillary_data
 	   is "sctp_sndrcvinfo" (on sending, "sctp_initmsg" can be specified
 	   by the user). So parse this type:
 	*/
-	struct sctp_sndrcvinfo * sri =
-	    (struct sctp_sndrcvinfo*) CMSG_DATA(cmsg);
-
+	sri = (struct sctp_sndrcvinfo*) CMSG_DATA(cmsg);
 	i = sctp_parse_sndrcvinfo (spec, i, sri);
 	s ++;
     }
@@ -2864,17 +2880,19 @@ static int sctp_parse_error_chunk
     /* The "chunk" itself contains its length, which must not be greater than
        the "chlen" derived from the over-all msg size:
     */
+    char *causes, *cause;
+    int coff,  /* Cause offset */
+	ccode, /* Cause code */
+	clen,  /* cause length */
+	s;
     int len = sock_ntohs (*((uint16_t*)(chunk+2)));
     ASSERT(len >= 4 && len <= chlen);
 
-    char * causes = chunk + 4;
-    int    coff   = 0;  /* Cause offset */
-    len -= 4;	    	/* Total length of the "causes" fields */
-
-    int    ccode;	/* Cause code   */
-    int    clen;	/* Cause length */
-    char * cause  = causes;
-    int    s      = 0;
+    causes = chunk + 4;
+    coff   = 0;
+    len -= 4;  /* Total length of the "causes" fields */
+    cause  = causes;
+    s      = 0;
 
     while (coff < len)
     {
@@ -3006,6 +3024,8 @@ static int sctp_parse_async_event
 		RemoteCauses	: [Atom()] // Remote Error flags
 	       }
 	    */
+	    char *chunk;
+	    int chlen;
 	    struct sctp_remote_error * sptr = &(nptr->sn_remote_error);
 	    ASSERT(sptr->sre_length <= sz);   /* No buffer overrun */
 
@@ -3019,11 +3039,11 @@ static int sctp_parse_async_event
 	    i = LOAD_INT   (spec, i, sptr->sre_assoc_id);
 
 #	    ifdef HAVE_SCTP_REMOTE_ERROR_SRE_DATA
-	    char * chunk = (char*) (&(sptr->sre_data));
+	    chunk = (char*) (&(sptr->sre_data));
 #	    else
-	    char * chunk = ((char*)sptr) + sizeof(*sptr);
+	    chunk = ((char*)sptr) + sizeof(*sptr);
 #	    endif
-	    int    chlen = sptr->sre_length  - (chunk - (char *)sptr);
+	    chlen = sptr->sre_length  - (chunk - (char *)sptr);
 	    i = sctp_parse_error_chunk(spec, i, chunk, chlen);
 
 	    i = LOAD_TUPLE (spec, i, 4);
@@ -3041,6 +3061,8 @@ static int sctp_parse_async_event
 	       }
 	       This is also an ERROR condition -- overwrite the 'ok':
 	    */
+	    char *chunk;
+	    int chlen, choff;
 	    struct sctp_send_failed * sptr = &(nptr->sn_send_failed);
 	    ASSERT(sptr->ssf_length <= sz);	/* No buffer overrun */
 
@@ -3068,12 +3090,12 @@ static int sctp_parse_async_event
 	       orig_bytes. In Solaris 10, we don't have ssf_data:
 	    */
 #	    ifdef HAVE_SCTP_SEND_FAILED_SSF_DATA
-	    char * chunk = (char*) (&(sptr->ssf_data));
+	    chunk = (char*) (&(sptr->ssf_data));
 #	    else
-	    char * chunk = ((char*)sptr) + sizeof(*sptr);
+	    chunk = ((char*)sptr) + sizeof(*sptr);
 #	    endif
-	    int    chlen = sptr->ssf_length - (chunk - (char*) sptr);
-	    int    choff = chunk - bin->orig_bytes;
+	    chlen = sptr->ssf_length - (chunk - (char*) sptr);
+	    choff = chunk - bin->orig_bytes;
 
 	    i = LOAD_BINARY(spec, i, bin, choff, chlen);
 	    i = LOAD_TUPLE (spec, i, 6);
@@ -3097,18 +3119,19 @@ static int sctp_parse_async_event
 	    break;
 	}
 
-	case SCTP_ADAPTION_INDICATION:
-	{   /* {sctp_adaption_event,
+	case SCTP_ADAPTATION_INDICATION:
+	{   /* {sctp_adaptation_event,
 		Indication	: Atom(),
 		AssocID		: Int()
 	       }
 	    */
-	    struct sctp_adaption_event * sptr = &(nptr->sn_adaption_event);
-	    ASSERT (sptr->sai_length == sizeof(struct sctp_adaption_event) &&
-		    sptr->sai_length <= sz);	/* No buffer overrun */
+	    struct sctp_adaptation_event * sptr = 
+		&(nptr->sn_adaptation_event);
+	    ASSERT (sptr->sai_length == sizeof(struct sctp_adaptation_event)
+		    && sptr->sai_length <= sz);	/* No buffer overrun */
 
-	    i = LOAD_ATOM  (spec, i, am_sctp_adaption_event);
-	    i = LOAD_INT   (spec, i, sock_ntohl(sptr->sai_adaption_ind));
+	    i = LOAD_ATOM  (spec, i, am_sctp_adaptation_event);
+	    i = LOAD_INT   (spec, i, sock_ntohl(sptr->sai_adaptation_ind));
 	    i = LOAD_INT   (spec, i, sptr->sai_assoc_id);
 	    i = LOAD_TUPLE (spec, i, 3);
 	    break;
@@ -3122,9 +3145,10 @@ static int sctp_parse_async_event
 		condition:
 		{sctp_pdapi_event, sctp_partial_delivery_aborted, AssocID}:
 	    */
+	    struct sctp_pdapi_event * sptr;
 	    (void) LOAD_ATOM  (spec, ok_pos, error_atom);
 
-	    struct sctp_pdapi_event * sptr = &(nptr->sn_pdapi_event);
+	    sptr = &(nptr->sn_pdapi_event);
 	    ASSERT (sptr->pdapi_length == sizeof(struct sctp_pdapi_event) &&
 		    sptr->pdapi_length <= sz);  /* No buffer overrun */
 
@@ -3182,6 +3206,7 @@ inet_async_binary_data
     int aid;
     int req;
     int i = 0;
+    int ok_pos;
 
     DEBUGF(("inet_async_binary_data(%ld): offs=%d, len=%d\r\n", 
 	    (long)desc->port, offs, len));
@@ -3196,7 +3221,7 @@ inet_async_binary_data
 #ifdef HAVE_SCTP
     /* Need to memoise the position of the 'ok' atom written, as it may
        later be overridden by an 'error': */
-    int ok_pos = i;
+    ok_pos = i;
 #endif
     i = LOAD_ATOM(spec, i, am_ok);
 
@@ -3204,14 +3229,17 @@ inet_async_binary_data
     if (IS_SCTP(desc))
     {	/* For SCTP we always have desc->hsz==0 (i.e., no application-level
 	   headers are used), so hsz==phsz (see above): */
+	struct msghdr* mptr;
+	int sz;
+	
 	ASSERT (hsz == phsz && hsz != 0);
-	int sz = len - hsz;  /* Size of the msg data proper, w/o the addr */
+	sz = len - hsz;  /* Size of the msg data proper, w/o the addr */
 
 	/* We always put the Addr as a list in front */
 	i = LOAD_STRING(spec, i, bin->orig_bytes+offs, hsz);
 
 	/* Put in the list (possibly empty) of Ancillary Data: */
-	struct msghdr* mptr = (struct msghdr *) extra;
+	mptr = (struct msghdr *) extra;
 	i = sctp_parse_ancillary_data (spec, i, mptr);
 
 	/* Then: Data or Event (Notification)? */
@@ -3431,10 +3459,11 @@ static int packet_binary_message
     else
     {	/* For SCTP we always have desc->hsz==0 (i.e., no application-level
 	   headers are used): */
+	struct msghdr* mptr;
 	ASSERT(hsz == 0);
 
 	/* Put in the list (possibly empty) of Ancillary Data: */
-	struct msghdr* mptr = (struct msghdr *) extra;
+	mptr = (struct msghdr *) extra;
 	i = sctp_parse_ancillary_data (spec, i, mptr);
 
 	/* Then: Data or Event (Notification)? */
@@ -3766,7 +3795,7 @@ static int inet_init()
     INIT_ATOM(sctp_maxseg);
     INIT_ATOM(sctp_set_peer_primary_addr);
     INIT_ATOM(sctp_primary_addr);
-    INIT_ATOM(sctp_adaption_layer);
+    INIT_ATOM(sctp_adaptation_layer);
     INIT_ATOM(sctp_peer_addr_params);
     INIT_ATOM(sctp_default_send_param);
     INIT_ATOM(sctp_events);
@@ -3781,12 +3810,12 @@ static int inet_init()
     INIT_ATOM(sctp_remote_error);
     INIT_ATOM(sctp_send_failed);
     INIT_ATOM(sctp_shutdown_event);
-    INIT_ATOM(sctp_adaption_event);
+    INIT_ATOM(sctp_adaptation_event);
     INIT_ATOM(sctp_pdapi_event);
     INIT_ATOM(sctp_assocparams);
     INIT_ATOM(sctp_prim);
     INIT_ATOM(sctp_setpeerprim);
-    INIT_ATOM(sctp_setadaption);
+    INIT_ATOM(sctp_setadaptation);
     INIT_ATOM(sctp_paddrparams);
     INIT_ATOM(sctp_event_subscribe);
     INIT_ATOM(sctp_assoc_value);
@@ -5268,14 +5297,17 @@ static char* sctp_get_initmsg(struct sctp_initmsg* ini, char* curr)
 #define SCTP_GET_SENDPARAMS_LEN (2*2 + 3*4 + ASSOC_ID_LEN)
 static char* sctp_get_sendparams (struct sctp_sndrcvinfo* sri, char* curr)
 {
+    int eflags;
+    int cflags;
+    
     sri->sinfo_stream       = get_int16(curr);		curr += 2;
     sri->sinfo_ssn	    = 0;
 
     /* The "flags" are already ORed at the Erlang side, here we
        reconstruct the real SCTP flags:
     */
-    int eflags		    = get_int16(curr);		curr += 2;
-    int cflags		    = 0;
+    eflags		    = get_int16(curr);		curr += 2;
+    cflags		    = 0;
     if (eflags & SCTP_FLAG_UNORDERED) cflags |= SCTP_UNORDERED;
     if (eflags & SCTP_FLAG_ADDR_OVER) cflags |= SCTP_ADDR_OVER;
     if (eflags & SCTP_FLAG_ABORT)     cflags |= SCTP_ABORT;
@@ -5320,7 +5352,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	struct sctp_initmsg	    im;
 	struct linger		    lin;
 	struct sctp_setpeerprim	    prim;
-	struct sctp_setadaption	    ad;
+	struct sctp_setadaptation   ad;
 	struct sctp_paddrparams	    pap;
 	struct sctp_sndrcvinfo	    sri;
 	struct sctp_event_subscribe es;
@@ -5548,6 +5580,9 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	case SCTP_OPT_PRIMARY_ADDR:
 	case SCTP_OPT_SET_PEER_PRIMARY_ADDR:
 	{
+	    int alen;
+	    char *after;
+	    
 	    CHKLEN(curr, ASSOC_ID_LEN);
 	    /* XXX: These 2 opts have isomorphic value data structures,
 	       "sctp_setpeerprim" and "sctp_prim" (in Solaris 10, the latter
@@ -5556,11 +5591,10 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    arg.prim.sspp_assoc_id = GET_ASSOC_ID(curr); curr += ASSOC_ID_LEN;
 
 	    /* Fill in "arg.prim.sspp_addr": */
-	    int    alen  = ptr + len - curr;
-	    char * after =
-		   inet_set_address
-		   	(desc->sfamily, (inet_address*) (&arg.prim.sspp_addr),
-			curr,  &alen);
+	    alen  = ptr + len - curr;
+	    after = inet_set_address(desc->sfamily,
+				     (inet_address*) (&arg.prim.sspp_addr),
+				     curr,  &alen);
 	    if (after == NULL)
 		return -1;
 	    curr  = after;
@@ -5575,28 +5609,30 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    arg_sz   =  sizeof  ( arg.prim);
 	    break;
 	}
-	case SCTP_OPT_ADAPTION_LAYER:
+	case SCTP_OPT_ADAPTATION_LAYER:
 	{
 	    /* XXX: do we need to convert the Ind into network byte order??? */
-	    arg.ad.ssb_adaption_ind = sock_htonl (get_int32(curr));  curr += 4;
+	    arg.ad.ssb_adaptation_ind = sock_htonl (get_int32(curr));  curr += 4;
 
 	    proto   = IPPROTO_SCTP;
-	    type    = SCTP_ADAPTION_LAYER;
+	    type    = SCTP_ADAPTATION_LAYER;
 	    arg_ptr = (char*) (&arg.ad);
 	    arg_sz  = sizeof  ( arg.ad);
 	    break;
 	}
 	case SCTP_OPT_PEER_ADDR_PARAMS:
 	{
+	    int alen;
+	    char *after;
+	    
 	    CHKLEN(curr, ASSOC_ID_LEN);
 	    arg.pap.spp_assoc_id = GET_ASSOC_ID(curr);	curr += ASSOC_ID_LEN;
 
 	    /* Fill in "pap.spp_address": */
-	    int    alen  = ptr + len - curr;
-	    char * after =
-		   inet_set_address
-			(desc->sfamily, (inet_address*) (&arg.pap.spp_address),
-			curr,  &alen);
+	    alen  = ptr + len - curr;
+	    after = inet_set_address(desc->sfamily, 
+				     (inet_address*) (&arg.pap.spp_address),
+				     curr,  &alen);
 	    if (after == NULL)
 		return -1;
 	    curr = after;
@@ -5666,7 +5702,7 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	}
 	case SCTP_OPT_EVENTS:
 	{
-	    CHKLEN(curr, 8);
+	    CHKLEN(curr, 9);
 	    /* We do not support "sctp_authentication_event" -- it is not
 	       implemented in Linux Kernel SCTP anyway.   Just in case if
 	       the above structure has more fields than we support,  zero
@@ -5685,7 +5721,8 @@ static int sctp_set_opts(inet_descriptor* desc, char* ptr, int len)
 	    arg.es.sctp_peer_error_event       = get_int8(curr);   curr++;
 	    arg.es.sctp_shutdown_event	       = get_int8(curr);   curr++;
 	    arg.es.sctp_partial_delivery_event = get_int8(curr);   curr++;
-	    arg.es.sctp_adaption_layer_event   = get_int8(curr);   curr++;
+	    arg.es.sctp_adaptation_layer_event = get_int8(curr);   curr++;
+	    /* sctp_authentication_event not implemented */ curr++;
 
 	    proto   = IPPROTO_SCTP;
 	    type    = SCTP_EVENTS;
@@ -6443,19 +6480,19 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	    i = LOAD_TUPLE	(spec, i, 2);
 	    break;
 	}
-	case SCTP_OPT_ADAPTION_LAYER:
+	case SCTP_OPT_ADAPTATION_LAYER:
 	{
-	    struct       sctp_setadaption ad;
+	    struct       sctp_setadaptation ad;
 	    unsigned int sz  = sizeof (ad);
 	    
-	    if (sock_getopt(desc->s, IPPROTO_SCTP, SCTP_ADAPTION_LAYER, 
+	    if (sock_getopt(desc->s, IPPROTO_SCTP, SCTP_ADAPTATION_LAYER, 
 			    &ad, &sz) < 0) continue;
 	    /* Fill in the response: */
 	    PLACE_FOR(spec, i, 
 		      2*LOAD_ATOM_CNT + LOAD_INT_CNT + 2*LOAD_TUPLE_CNT);
-	    i = LOAD_ATOM	(spec, i, am_sctp_adaption_layer);
-	    i = LOAD_ATOM	(spec, i, am_sctp_setadaption);
-	    i = LOAD_INT	(spec, i, ad.ssb_adaption_ind);
+	    i = LOAD_ATOM	(spec, i, am_sctp_adaptation_layer);
+	    i = LOAD_ATOM	(spec, i, am_sctp_setadaptation);
+	    i = LOAD_INT	(spec, i, ad.ssb_adaptation_ind);
 	    i = LOAD_TUPLE	(spec, i, 2);
 	    i = LOAD_TUPLE	(spec, i, 2);
 	    break;
@@ -6573,7 +6610,7 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 			    &evs, &sz) < 0) continue;
 	    /* Fill in the response: */
 	    PLACE_FOR(spec, i, 
-		      2*LOAD_ATOM_CNT + 8*LOAD_BOOL_CNT + 2*LOAD_TUPLE_CNT);
+		      2*LOAD_ATOM_CNT + 9*LOAD_BOOL_CNT + 2*LOAD_TUPLE_CNT);
 	    i = LOAD_ATOM	(spec, i, am_sctp_events);
 	    i = LOAD_ATOM	(spec, i, am_sctp_event_subscribe);
 	    i = LOAD_BOOL	(spec, i, evs.sctp_data_io_event);
@@ -6583,9 +6620,11 @@ static int sctp_fill_opts(inet_descriptor* desc, char* buf, int buflen,
 	    i = LOAD_BOOL	(spec, i, evs.sctp_peer_error_event);
 	    i = LOAD_BOOL	(spec, i, evs.sctp_shutdown_event);
 	    i = LOAD_BOOL	(spec, i, evs.sctp_partial_delivery_event);
-	    i = LOAD_BOOL	(spec, i, evs.sctp_adaption_layer_event);
-	    /* NB: sctp_authentication_event is not yet supported in Linux */
-	    i = LOAD_TUPLE	(spec, i, 9);
+	    i = LOAD_BOOL	(spec, i, evs.sctp_adaptation_layer_event);
+	    i = LOAD_BOOL	(spec, i, 0);/* NB: sctp_authentication_event
+					      * is not yet supported in Linux
+					      */
+	    i = LOAD_TUPLE	(spec, i, 10);
 	    i = LOAD_TUPLE	(spec, i, 2);
 	    break;
 	}
@@ -9414,6 +9453,8 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	    return ctl_xerror(EXBADSEQ,  rbuf, rsize);
 #ifdef HAVE_SCTP
 	if (IS_SCTP(desc)) { 
+	    inet_address remote;
+	    
 	    if (IS_CONNECTING(desc))
 		return ctl_error(EINVAL, rbuf, rsize);
 	    if (len < 6)
@@ -9424,7 +9465,6 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 
 	    /* For SCTP, we do not set the peer's addr in desc->remote, as
 	       multiple peers are possible: */
-	    inet_address remote;
 	    if (inet_set_address(desc->sfamily, &remote, buf, &len) == NULL)
 		return ctl_error(EINVAL, rbuf, rsize);
 	
@@ -9490,6 +9530,8 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	{	/* LISTEN is only for SCTP sockets, not UDP. This code is borrowed
 		   from the TCP section. Returns: {ok,[]} on success.
 		*/
+	    int flag;
+	    
 	    DEBUGF(("packet_inet_ctl(%ld): LISTEN\r\n", (long)desc->port)); 
 	    if (!IS_SCTP(desc))
 		return ctl_xerror(EXBADPORT, rbuf, rsize);
@@ -9501,7 +9543,7 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 	    /* The arg is a binary value: 1:enable, 0:disable */
 	    if (len != 1)
 		return ctl_error(EINVAL, rbuf, rsize);
-	    int flag = get_int8(buf);
+	    flag = get_int8(buf);
 
 	    if (sock_listen(desc->s, flag) == SOCKET_ERROR)
 		return ctl_error(sock_errno(), rbuf, rsize);
@@ -9512,17 +9554,19 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 
     case SCTP_REQ_BINDX:
 	{   /* Multi-homing bind for SCTP: */
-	    if (!IS_SCTP(desc))
-		return ctl_xerror(EXBADPORT, rbuf, rsize);
-
 	    /* Construct the list of addresses we bind to. The curr limit is
 	       256 addrs. Buff structure: Flags(1), ListItem,...:
 	    */
-	    char* curr     = buf;
-	    int   add_flag = get_int8(curr);
-	    curr++;
 	    struct sockaddr addrs[256];
-	    int   n;
+	    char* curr;
+	    int   add_flag, n, rflag;
+	    
+	    if (!IS_SCTP(desc))
+		return ctl_xerror(EXBADPORT, rbuf, rsize);
+
+	    curr = buf;
+	    add_flag = get_int8(curr);
+	    curr++;
 
 	    for(n=0; n < 256 && curr < buf+len; n++)
 		{
@@ -9540,7 +9584,7 @@ static int packet_inet_ctl(ErlDrvData e, unsigned int cmd, char* buf, int len,
 		    memcpy(addrs + n, &tmp, sizeof(struct sockaddr));
 		}
 	    /* Make the real flags: */
-	    int rflag = add_flag ? SCTP_BINDX_ADD_ADDR : SCTP_BINDX_REM_ADDR;
+	    rflag = add_flag ? SCTP_BINDX_ADD_ADDR : SCTP_BINDX_REM_ADDR;
 
 	    /* Invoke the call: */
 	    if (sctp_bindx(desc->s, addrs, n, rflag) < 0)

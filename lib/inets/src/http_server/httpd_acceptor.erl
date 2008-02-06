@@ -92,11 +92,11 @@ acceptor_loop(Manager, SocketType, ListenSocket, ConfigDb, AcceptTimeout) ->
 	    ?MODULE:acceptor_loop(Manager, SocketType, 
 				  ListenSocket, ConfigDb,AcceptTimeout);
 	{error, Reason} ->
-	    handle_error(Reason, ConfigDb, SocketType),
+	    handle_error(Reason, ConfigDb),
 	    ?MODULE:acceptor_loop(Manager, SocketType, ListenSocket, 
 				  ConfigDb, AcceptTimeout);
 	{'EXIT', Reason} ->
-	    handle_error({'EXIT', Reason}, ConfigDb, SocketType),
+	    handle_error({'EXIT', Reason}, ConfigDb),
 	    ?MODULE:acceptor_loop(Manager, SocketType, ListenSocket, 
 				  ConfigDb, AcceptTimeout)
     end.
@@ -107,18 +107,18 @@ handle_connection(Manager, ConfigDb, AcceptTimeout, SocketType, Socket) ->
     http_transport:controlling_process(SocketType, Socket, Pid),
     httpd_request_handler:socket_ownership_transfered(Pid, SocketType, Socket).
 
-handle_error(timeout, _, _) ->
+handle_error(timeout, _) ->
     ok;
 
-handle_error({enfile, _}, _, _) ->
+handle_error({enfile, _}, _) ->
     %% Out of sockets...
     sleep(200);
 
-handle_error(emfile, _, _) ->
+handle_error(emfile, _) ->
     %% Too many open files -> Out of sockets...
     sleep(200);
 
-handle_error(closed, _, _) ->
+handle_error(closed, _) ->
     error_logger:info_report("The httpd accept socket was closed by " 
 			     "a third party. "
 			     "This will not have an impact on inets "
@@ -132,33 +132,33 @@ handle_error(closed, _, _) ->
 %% and is not a problem for the server, so we want
 %% to terminate normal so that we can restart without any 
 %% error messages.
-handle_error(econnreset,_,_) ->
+handle_error(econnreset,_) ->
     exit(normal);
 
-handle_error(econnaborted, _, _) ->
+handle_error(econnaborted, _) ->
     ok;
 
-handle_error(esslaccept, _, _) ->
+handle_error(esslaccept, _) ->
     %% The user has selected to cancel the installation of 
     %% the certifikate, This is not a real error, so we do 
     %% not write an error message.
     ok;
 
-handle_error({'EXIT', Reason}, ConfigDb, SocketType) ->
+handle_error({'EXIT', Reason}, ConfigDb) ->
     String = lists:flatten(io_lib:format("Accept exit: ~p", [Reason])),
-    accept_failed(SocketType, ConfigDb, String);
+    accept_failed(ConfigDb, String);
 
-handle_error(Reason, ConfigDb, SocketType) ->
+handle_error(Reason, ConfigDb) ->
     String = lists:flatten(io_lib:format("Accept error: ~p", [Reason])),
-    accept_failed(SocketType, ConfigDb, String).
+    accept_failed(ConfigDb, String).
 
 
-accept_failed(SocketType, ConfigDb, String) ->
+accept_failed(ConfigDb, String) ->
     error_logger:error_report(String),
-    mod_log:error_log(SocketType, undefined, ConfigDb, 
-		      {0, "unknown"}, String),
-    mod_disk_log:error_log(SocketType, undefined, ConfigDb, 
-			   {0, "unknown"}, String),
+    InitData = #init_data{peername =  {0, "unknown"}},
+    Info = #mod{config_db = ConfigDb, init_data = InitData},
+    mod_log:error_log(Info, String),
+    mod_disk_log:error_log(Info, String),
     exit({accept_failed, String}).    
 
 sleep(T) -> receive after T -> ok end.

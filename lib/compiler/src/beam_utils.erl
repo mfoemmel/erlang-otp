@@ -303,7 +303,7 @@ check_liveness(R, [{call_ext,Live,Func}|Is], St) ->
     end;
 check_liveness(R, [{call_fun,Live}|Is], St) ->
     case R of
-	{x,X} when X < Live -> used;
+	{x,X} when X =< Live -> used;
 	{x,_} -> killed;
 	{y,_} -> check_liveness(R, Is, St)
     end;

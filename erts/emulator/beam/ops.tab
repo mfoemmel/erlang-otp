@@ -128,6 +128,9 @@ select_val S=s Fail=f Size=u Rest=* | fixed_size_values(Size, Rest) => \
 select_val S=s Fail=f Size=u Rest=* | all_values_are_big(Size, Rest) => \
   gen_select_big(S, Fail, Size, Rest)
 
+is_tuple Fail=f S | select_tuple_arity S=s Fail=f Size=u Rest=* => \
+  gen_select_tuple_arity(S, Fail, Size, Rest)
+
 select_tuple_arity S=s Fail=f Size=u Rest=* => \
   gen_select_tuple_arity(S, Fail, Size, Rest)
 
@@ -705,6 +708,19 @@ call_ext_last u==1 Bif=u$bif:erlang:garbage_collect/1 D => i_call_ext_last Bif D
 call_ext_only u==1 Bif=u$bif:erlang:garbage_collect/1 => i_call_ext_only Bif
 
 #
+# put/2 and erase/1 must be able to do garbage collection, so we must call
+# them like functions.
+#
+
+call_ext u==2 Bif=u$bif:erlang:put/2 => i_call_ext Bif
+call_ext_last u==2 Bif=u$bif:erlang:put/2 D => i_call_ext_last Bif D
+call_ext_only u==2 Bif=u$bif:erlang:put/2 => i_call_ext_only Bif
+
+call_ext u==1 Bif=u$bif:erlang:erase/1 => i_call_ext Bif
+call_ext_last u==1 Bif=u$bif:erlang:erase/1 D => i_call_ext_last Bif D
+call_ext_only u==1 Bif=u$bif:erlang:erase/1 => i_call_ext_only Bif
+
+#
 # The process_info/1,2 BIF should be called like a function, to force
 # the emulator to set c_p->current before calling it (a BIF call doesn't
 # set it).
@@ -1158,22 +1174,6 @@ i_bs_append j I I I d
 i_bs_private_append j I d
 
 #
-# XXX Experimental instructions in R11B-5. Kept only for bootstrapping purposes.
-#
-bs_bits_to_bytes2 Src Dst => i_bs_bits_to_bytes2 Src Dst
-
-i_bs_bits_to_bytes2 r d
-i_bs_bits_to_bytes2 x d
-i_bs_bits_to_bytes2 y d
- 
-bs_final2 Src Dst => i_bs_final2 Src Dst
- 
-i_bs_final2 r d
-i_bs_final2 x d
-i_bs_final2 y d
- 
-
-#
 # Storing integers into binaries.
 #
 
@@ -1332,9 +1332,6 @@ gc_bif1 Fail I Bif=u$bif:erlang:length/1 Src Dst=d => \
 	gen_guard_bif(Fail, I, Bif, Src, Dst)
 
 gc_bif1 Fail I Bif=u$bif:erlang:size/1 Src Dst=d => \
-	gen_guard_bif(Fail, I, Bif, Src, Dst)
-
-gc_bif1 Fail I Bif=u$bif:erlang:bitsize/1 Src Dst=d => \
 	gen_guard_bif(Fail, I, Bif, Src, Dst)
 
 gc_bif1 Fail I Bif=u$bif:erlang:bit_size/1 Src Dst=d => \

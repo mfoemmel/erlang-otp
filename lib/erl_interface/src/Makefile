@@ -6,7 +6,7 @@
 
 include $(ERL_TOP)/make/target.mk
 
-debug opt shared purify quantify purecov:
+debug opt shared purify quantify purecov gcov:
 	$(MAKE) -f $(TARGET)/Makefile TYPE=$@
 
 clean depend docs release release_docs tests release_tests check:

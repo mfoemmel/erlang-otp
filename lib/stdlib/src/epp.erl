@@ -191,10 +191,12 @@ predef_macros(File) ->
     Ms1 = dict:store({atom,'FILE'}, {none,[{string,1,File}]}, Ms0),
     Ms2 = dict:store({atom,'LINE'}, {none,[{integer,1,1}]}, Ms1),
     Ms3 = dict:store({atom,'MODULE'}, undefined, Ms2),
-    Ms31 = dict:store({atom,'MODULE_STRING'}, undefined, Ms3),
+    Ms4 = dict:store({atom,'MODULE_STRING'}, undefined, Ms3),
+    Ms5 = dict:store({atom,'BASE_MODULE'}, undefined, Ms4),
+    Ms6 = dict:store({atom,'BASE_MODULE_STRING'}, undefined, Ms5),
     Machine = list_to_atom(erlang:system_info(machine)),
-    Ms4 = dict:store({atom,'MACHINE'}, {none,[{atom,1,Machine}]}, Ms31),
-    dict:store({atom,Machine}, {none,[{atom,1,true}]}, Ms4).
+    Ms7 = dict:store({atom,'MACHINE'}, {none,[{atom,1,Machine}]}, Ms6),
+    dict:store({atom,Machine}, {none,[{atom,1,true}]}, Ms7).
 
 %% user_predef(PreDefMacros, Macros) ->
 %%	{ok,MacroDict} | {error,E}
@@ -378,6 +380,8 @@ scan_toks(Toks0, From, St) ->
 
 scan_module([{'-',_Lh},{atom,_Lm,module},{'(',_Ll}|Ts], Ms) ->
     scan_module_1(Ts, [], Ms);
+scan_module([{'-',_Lh},{atom,_Lm,extends},{'(',_Ll}|Ts], Ms) ->
+    scan_extends(Ts, [], Ms);
 scan_module(_Ts, Ms) -> Ms.
 
 scan_module_1([{atom,_,_}=A,{',',L}|Ts], As, Ms) ->
@@ -393,6 +397,17 @@ scan_module_1([{atom,_Ln,A},{'.',_Lr}|Ts], As, Ms) ->
 scan_module_1([{'.',_Lr}|Ts], As, Ms) ->
     scan_module_1(Ts, As, Ms);
 scan_module_1(_Ts, _As, Ms) -> Ms.
+
+scan_extends([{atom,Ln,A},{')',_Lr}|_Ts], As, Ms0) ->
+    Mod = lists:concat(lists:reverse([A|As])),
+    Ms = dict:store({atom,'BASE_MODULE'},
+		     {none,[{atom,Ln,list_to_atom(Mod)}]}, Ms0),
+    dict:store({atom,'BASE_MODULE_STRING'}, {none,[{string,Ln,Mod}]}, Ms);
+scan_extends([{atom,_Ln,A},{'.',_Lr}|Ts], As, Ms) ->
+    scan_extends(Ts, [".",A|As], Ms);
+scan_extends([{'.',_Lr}|Ts], As, Ms) ->
+    scan_extends(Ts, As, Ms);
+scan_extends(_Ts, _As, Ms) -> Ms.
 
 %% scan_define(Tokens, DefineLine, From, EppState)
 

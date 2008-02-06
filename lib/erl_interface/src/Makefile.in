@@ -48,6 +48,7 @@ endif
 RELSYSDIR = $(RELEASE_PATH)/lib/erl_interface-$(EI_VSN)
 
 LDFLAGS = @LDFLAGS@
+LIBS = @LIBS@
 
 ifeq ($(TYPE),debug)
 PURIFY =
@@ -72,6 +73,14 @@ PURIFY = purecov --follow-child-processes=yes
 TYPEMARKER = .purecov
 TYPE_FLAGS = -g -DPURECOV -DNO_JUMP_TABLE
 else
+ifeq ($(TYPE),gcov)
+PURIFY =
+TYPEMARKER =
+TYPE_FLAGS = -DNO_JUMP_TABLE -fprofile-arcs -ftest-coverage
+ifeq ($(TARGET),linux)
+LIBS += -lgcov
+endif
+else
 PURIFY =
 TYPEMARKER =
 TYPE_FLAGS =
@@ -79,7 +88,7 @@ endif
 endif
 endif
 endif
-
+endif
 
 CC = @CC@
 LD = @LD@
@@ -106,7 +115,6 @@ ifeq ($(findstring vxworks,$(TARGET)),vxworks)
 PROG_CFLAGS += -nostartfiles -Wl,-r,-d
 endif
 
-LIBS = @LIBS@
 
 INSTALL = @INSTALL@
 INSTALL_DIR = @INSTALL_DIR@

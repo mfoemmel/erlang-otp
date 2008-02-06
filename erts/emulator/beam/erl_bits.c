@@ -123,19 +123,6 @@ erts_init_bits(void)
  ***
  *****************************************************************/
 
-#ifdef CHECK_FOR_HOLES
-# define HeapOnlyAlloc(p, sz)					\
-    (ASSERT_EXPR((sz) >= 0),					\
-     (ASSERT_EXPR(((HEAP_LIMIT(p) - HEAP_TOP(p)) >= (sz))),	\
-      (erts_set_hole_marker(HEAP_TOP(p), (sz)),			\
-       (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz)))))
-#else
-# define HeapOnlyAlloc(p, sz)					\
-    (ASSERT_EXPR((sz) >= 0),					\
-     (ASSERT_EXPR(((HEAP_LIMIT(p) - HEAP_TOP(p)) >= (sz))),	\
-      (HEAP_TOP(p) = HEAP_TOP(p) + (sz), HEAP_TOP(p) - (sz))))
-#endif
-
 #define ReadToVariable(v64, Buffer, x)		\
   do{						\
     int _i;					\
@@ -533,19 +520,6 @@ erts_bs_get_binary_all_2(Process *p, ErlBinMatchBuffer* mb)
     return make_binary(sb);
 }
 
-void
-erts_bs_save_2(int index, ErlBinMatchState* ms)
-{
-    ms->save_offset[index] = (ms->mb).offset;
-}
-
-void
-  erts_bs_restore_2(int index, ErlBinMatchState* ms)
-{
-    (ms->mb).offset = ms->save_offset[index];
-}
-
-
 /****************************************************************
  ***
  *** Building binaries
@@ -794,10 +768,24 @@ erts_new_bs_put_integer(ERL_BITS_PROTO_3(Eterm arg, Uint num_bits, unsigned flag
 	     * Handle the bits up to the next byte boundary specially,
 	     * then let fmt_int() handle the rest.
 	     */
+	    Uint shift_count = num_bits - rbits;
+	    Sint val = signed_val(arg);
 	    iptr = erts_current_bin+BYTE_OFFSET(bin_offset);
 	    b = *iptr & (0xff << rbits);
-	    b |= (signed_val(arg) >> (num_bits - rbits)) &
-		((1 << rbits) - 1);
+
+	    /*
+	     * Shifting with a shift count greater than or equal to the word
+	     * size may be a no-op (instead of 0 the result may be the unshifted
+	     * value). Therefore, only do the shift and the OR if the shift count
+	     * is less than the word size if the number is positive; if negative,
+	     * we must simulate the sign extension.
+	     */
+	    if (shift_count < sizeof(Uint)*8) {
+		b |= (val >> shift_count) & ((1 << rbits) - 1);
+	    } else if (val < 0) {
+		/* Simulate sign extension. */
+		b |= (-1) & ((1 << rbits) - 1);
+	    }
 	    *iptr++ = b;
 	    if (fmt_int(iptr, NBYTES(num_bits-rbits), arg,
 			num_bits-rbits, flags) < 0) {
@@ -1058,36 +1046,6 @@ erts_new_bs_put_string(ERL_BITS_PROTO_2(byte* iptr, Uint num_bytes))
 	sys_memcpy(erts_current_bin+BYTE_OFFSET(erts_bin_offset), iptr, num_bytes);
     }
     erts_bin_offset += num_bytes*8;
-}
-
-Eterm
-erts_bs_final2(Process* p, Eterm bin)
-{ 
-    ErlSubBin* sb;
-    ERL_BITS_DEFINE_STATEP(p);
-    
-    if ((erts_bin_offset & 7) == 0) {
-	return bin;
-    }
-    if (*boxed_val(bin) == HEADER_SUB_BIN) {
-	/*
-	 * This is a writable binary. We only need to update some
-	 * of the fields.
-	 */
-	sb = (ErlSubBin *) boxed_val(bin);
-	sb->size = (erts_bin_offset - (erts_bin_offset & 7))/8;
-	sb->bitsize = erts_bin_offset & 7;
-	return bin;
-    }
-    sb = (ErlSubBin *) HeapOnlyAlloc(p, ERL_SUB_BIN_SIZE);
-    sb->thing_word = HEADER_SUB_BIN;
-    sb->size = (erts_bin_offset - (erts_bin_offset & 7))/8;
-    sb->bitsize = erts_bin_offset & 7;
-    sb->offs = 0;
-    sb->bitoffs = 0;
-    sb->is_writable = 0;
-    sb->orig = bin;
-    return make_binary(sb);
 }
 
 Eterm

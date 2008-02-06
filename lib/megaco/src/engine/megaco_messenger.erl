@@ -1022,9 +1022,19 @@ prepare_request(ConnData, T, Rest, AckList, ReqList, Extra) ->
 			 pending_timer_ref = PendingRef,
 			 handler           = self(),
 			 version           = Version},
-            megaco_monitor:insert_reply(Rep),
-            prepare_trans(ConnData, Rest, AckList, 
-			  [{ConnData, TransId, T} | ReqList], Extra);
+            case megaco_monitor:insert_reply_new(Rep) of
+		true ->
+		    prepare_trans(ConnData, Rest, AckList, 
+				  [{ConnData, TransId, T} | ReqList], Extra);
+		false ->
+		    %% Oups - someone got there before we did...
+		    ?report_debug(ConnData, 
+				  "prepare request: conflicting requests", 
+				  [TransId]),
+		    send_pending(ConnData),
+		    megaco_monitor:cancel_apply_after(PendingRef),
+		    prepare_trans(ConnData, Rest, AckList, ReqList, Extra)
+	    end;
 
         [#reply{state             = State, 
 		handler           = Pid,
@@ -4123,7 +4133,9 @@ handle_reply_timer_timeout(ConnHandle, TransId) ->
 	    megaco_monitor:cancel_apply_after(Ref),
 	    cancel_segment_timers(SegSent), 
 	    megaco_monitor:delete_reply(TransId),
-	    megaco_config:del_pending_counter(sent, TransId)
+	    megaco_config:del_pending_counter(sent, TransId);
+	[] ->
+	    ignore_reply_removed
     end.
     
 %% segment_reply_timeout(ConnHandle, TransId, SN, timeout) ->

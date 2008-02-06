@@ -187,7 +187,7 @@ literal_table(#asm{literals=Tab,next_literal=NumLiterals}) ->
 			   [{Num,my_term_to_binary(Lit)}|Acc]
 		   end, [], Tab),
     L1 = lists:sort(L0),
-    L = [[<<(size(Term)):32>>,Term] || {_,Term} <- L1],
+    L = [[<<(byte_size(Term)):32>>,Term] || {_,Term} <- L1],
     {NumLiterals,L}.
 
 my_term_to_binary(Term) ->

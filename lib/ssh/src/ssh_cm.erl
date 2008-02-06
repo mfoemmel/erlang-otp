@@ -44,7 +44,7 @@
 -export([encode_ip/1]).
 
 %% API
--export([adjust_window/3, attach/2, detach/2,
+-export([adjust_window/3, attach/2, attach/3, detach/2,
 	 tcpip_forward/3, cancel_tcpip_forward/3, direct_tcpip/6,
 	 direct_tcpip/8, 
 	 close/2,
@@ -320,17 +320,20 @@ subsystem(CM, Channel, SubSystem, TMO) ->
 
 winch(CM, Channel, Width, Height) ->
     winch(CM, Channel, Width, Height, 0, 0).
-winch(CM, Channel, Width, Height, PixWidth, PixHeight)                     ->
+winch(CM, Channel, Width, Height, PixWidth, PixHeight) ->
     request(CM, Channel, "window-change", false, 
 	    [?uint32(Width), ?uint32(Height),
 	     ?uint32(PixWidth), ?uint32(PixHeight)], 0).
 
-signal(CM, Channel, Sig)                                                   ->
+signal(CM, Channel, Sig) ->
     request(CM, Channel, "signal", false,
 	    [?string(Sig)], 0).
 
 attach(CM, TMO) ->
     gen_server:call(CM, {attach, self()}, TMO).
+
+attach(CM, User, TMO) ->
+    gen_server:call(CM, {attach, User}, TMO).
 
 detach(CM, TMO) ->
     gen_server:call(CM, {detach, self()}, TMO).
@@ -643,13 +646,7 @@ handle_call({set_user, Channel, User}, _From, State) ->
 		false -> {error, einval};
 		true ->
 		    CTab = State#state.ctab,
-		    case ets:lookup(CTab, Channel) of
-			[C] ->
-			    ets:insert(CTab, C#channel { user = User }),
-			    ok;
-			[] -> 
-			    {error, einval}
-		    end
+		    set_user(CTab, Channel, User)
 	    end,
     {reply, Reply, State};
 handle_call(get_authhandle, _From, State) ->
@@ -894,7 +891,9 @@ ssh_message(SSH, Msg, State) ->
 	    case Type of
 		"exit-status" ->
 		    <<?UINT32(Status)>> = Data,
-		    send_user(CTab, Channel, {exit_status,Channel,Status});
+		    send_user(CTab, Channel, {exit_status,Channel,Status}),
+		    State;
+
 		"exit-signal" ->
 		    <<?UINT32(SigLen), SigName:SigLen/binary,
 		     ?BOOLEAN(_Core), 
@@ -903,25 +902,42 @@ ssh_message(SSH, Msg, State) ->
 		    send_user(CTab, Channel, {exit_signal, Channel,
 					      binary_to_list(SigName),
 					      binary_to_list(Err),
-					      binary_to_list(Lang)});
+					      binary_to_list(Lang)}),
+		    State;
+
 		"xon-xoff" ->
 		    <<?BOOLEAN(CDo)>> = Data,
-		    send_user(CTab, Channel, {xon_xoff, Channel, CDo=/= 0});
+		    send_user(CTab, Channel, {xon_xoff, Channel, CDo=/= 0}),
+		    State;
 		
 		"window-change" ->
 		    <<?UINT32(Width),?UINT32(Height),
 		     ?UINT32(PixWidth), ?UINT32(PixHeight)>> = Data,
 		    send_user(CTab, Channel, {window_change,Channel,
 					      Width, Height,
-					      PixWidth, PixHeight});
+					      PixWidth, PixHeight}),
+		    State;
+
 		"signal" ->
 		    <<?UINT32(SigLen), SigName:SigLen/binary>> = Data,
 		    send_user(CTab, Channel, {signal,Channel,
-					      binary_to_list(SigName)});
+					      binary_to_list(SigName)}),
+		    State;
+
 		"subsystem" ->
 		    <<?UINT32(SsLen), SsName:SsLen/binary>> = Data,
-		    send_user(CTab, Channel, {subsystem,Channel, WantReply,
-					      binary_to_list(SsName)});
+		    send_user(CTab, Channel, {subsystem, Channel, WantReply,
+					      binary_to_list(SsName)}),
+ 		    receive
+			{same_user, _OldUser} ->
+			    State;
+ 			{new_user, OldUser, NewUser} ->
+ 			    StateA = del_user(OldUser, State),
+ 			    StateB = add_user(NewUser, StateA),
+			    set_user(CTab, Channel, NewUser),
+ 			    StateB
+ 		    end;
+
 		"pty-req" ->
 		    <<?UINT32(TermLen), BTermName:TermLen/binary,
 		     ?UINT32(Width),?UINT32(Height),
@@ -935,14 +951,17 @@ ssh_message(SSH, Msg, State) ->
 				   pixel_width = PixWidth,
 				   pixel_height = PixHeight,
 				   modes = decode_pty_opts(Modes)},
-		    send_user(CTab, Channel, {pty, Channel, WantReply, Pty});
+		    send_user(CTab, Channel, {pty, Channel, WantReply, Pty}),
+		    State;
 
 		"shell" ->
-		    send_user(CTab, Channel, {shell});
+		    send_user(CTab, Channel, {shell}),
+		    State;
 
 		"exec" ->
 		    <<?UINT32(Len), Command:Len/binary>> = Data,
-		    send_user(CTab, Channel, {exec, binary_to_list(Command)});
+		    send_user(CTab, Channel, {exec, binary_to_list(Command)}),
+		    State;
 
 		_Other ->
 		    ?dbg(true, "ssh_msg ssh_msg_channel_request: Other=~p\n",
@@ -951,9 +970,9 @@ ssh_message(SSH, Msg, State) ->
 			    channel_failure(SSH, Channel);
 		       true ->
 			    ignore
-		    end
-	    end,
-	    State;
+		    end,
+		    State
+	    end;
 	    
 	#ssh_msg_global_request { name = _Type,
 				  want_reply = WantReply,
@@ -1067,7 +1086,7 @@ reply_request(Channel, Reply, State) ->
     end.
 
 %% Send ssh_cm messages to the 'user'
-send_user(C, Msg) when record(C, channel) ->
+send_user(C, Msg) when is_record(C, channel) ->
     C#channel.user ! {ssh_cm, self(), Msg}.
 
 send_user(CTab, Channel, Msg) ->
@@ -1432,6 +1451,7 @@ add_request(true, Channel, From, State) ->
 
 
 put_bind(IP, Port, User, State) ->
+    io:format("put_bind ~p\n", [[IP, Port, User, State]]),
     Binds = [{{IP, Port}, User}
 	     | lists:keydelete({IP, Port}, 1, State#state.binds)],
     State#state{binds = Binds}.
@@ -1504,3 +1524,12 @@ new_channel_id(State) ->
 
 not_zero(0, B) -> B;
 not_zero(A, _) -> A.
+
+set_user(CTab, Channel, User) ->
+    case ets:lookup(CTab, Channel) of
+	[C] ->
+	    ets:insert(CTab, C#channel { user = User }),
+	    ok;
+	[] -> 
+	    {error, einval}
+    end.

@@ -356,7 +356,7 @@ read_line(Fd) when is_record(Fd, file_descriptor) ->
 collect_line(Fd, Cs) ->
     case file:read(Fd, 80) of
 	{ok, Line} when is_binary(Line) ->
-	    collect_line(Fd, size(Line), binary_to_list(Line), Cs);
+	    collect_line(Fd, byte_size(Line), binary_to_list(Line), Cs);
 	{ok, Line} ->
 	    collect_line(Fd, length(Line), Line, Cs);
 	eof when Cs =:= [] ->

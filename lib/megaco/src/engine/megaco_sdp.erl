@@ -425,8 +425,8 @@ encode_PropertyParm(#megaco_sdp_a_framerate{frame_rate = FrameRate}) ->
 encode_PropertyParm(#megaco_sdp_a_quality{quality = Quality}) ->
     encode_pp_attribute_quality(Quality);
 
-encode_PropertyParm(#megaco_sdp_a_fmtp{format = Fmt, param = Param}) ->
-    encode_pp_attribute_fmtp(Fmt, Param);
+encode_PropertyParm(#megaco_sdp_a_fmtp{format = Fmt, param = Params}) ->
+    encode_pp_attribute_fmtp(Fmt, Params);
 
 encode_PropertyParm(#megaco_sdp_a{attribute = Attr, value = Value}) ->
     encode_pp_attribute(Attr, Value);
@@ -1239,16 +1239,30 @@ decode_pp_attribute_value("quality", AttrValue) ->
 decode_pp_attribute_value("fmtp", AttrValue) ->
     ?d("decode_pp_attribute -> fmtp", []),
     FMTP = AttrValue, 
-    case string:tokens(FMTP, " \t") of
-	[Fmt, Param] ->
-	    ?d("decode_pp_attribute -> "
-	       "~n   Fmt:   ~p"
-	       "~n   Param: ~p", [Fmt, Param]),
-	    SDP = #megaco_sdp_a_fmtp{format = Fmt,
-					     param  = Param}, 
+    First = string:chr(FMTP, $ ),
+    if 
+	(First > 0) and (First < length(FMTP)) ->
+	    ?d("decode_pp_attribute_value -> valid fmtp with params", []),
+	    Format = string:substr(FMTP, 1, First - 1),
+	    Params = string:substr(FMTP, First + 1),
+	    ?d("decode_pp_attribute_value -> "
+	       "~n   Format: ~p"
+	       "~n   Params: ~p", [Format, Params]),
+	    SDP = #megaco_sdp_a_fmtp{format = Format,
+				     param  = Params}, 
 	    {ok, SDP};
-	_ ->
-	    error({invalid_fmtp, FMTP})
+	
+	First > 0 ->
+	    ?d("decode_pp_attribute -> valid fmtp", []),
+	    Format = string:substr(FMTP, 1, First - 1),
+	    ?d("decode_pp_attribute -> "
+	       "~n   Format: ~p", [Format]),
+	    {ok, #megaco_sdp_a_fmtp{format = Format, param = []}};
+	    
+	true ->
+	    ?d("decode_pp_attribute_value -> no params", []),
+	    {ok, #megaco_sdp_a_fmtp{format = FMTP, param = []}}
+
     end;
 
 decode_pp_attribute_value(Attr, AttrValue) ->
@@ -1422,13 +1436,13 @@ encode_pp_attribute_quality(BadQ) ->
     error({invalid_quality_quality, BadQ}).
 
 
-encode_pp_attribute_fmtp(Fmt0, Param0) ->
+encode_pp_attribute_fmtp(Fmt0, Params0) ->
     ?d("encode_pp_attribute_rtpmap -> entry with"
-       "~n   Fmt0:   ~p"
-       "~n   Param0: ~p", [Fmt0, Param0]),
-    Fmt   = encode_fmtp_format(Fmt0),
-    Param = encode_fmtp_param(Param0),
-    Val   = "fmtp:" ++ Fmt ++ " " ++ Param, 
+       "~n   Fmt0:    ~p"
+       "~n   Params0: ~p", [Fmt0, Params0]),
+    Fmt    = encode_fmtp_format(Fmt0),
+    Params = encode_fmtp_param(Params0),
+    Val    = "fmtp:" ++ Fmt ++ " " ++ Params, 
     #'PropertyParm'{name  = "a", 
 		    value = [Val]}.
 

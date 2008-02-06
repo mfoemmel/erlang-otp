@@ -46,6 +46,7 @@ MODULES = \
 	httpd_esi \
 	httpd_file\
 	httpd_instance_sup \
+	httpd_log \
 	httpd_manager \
 	httpd_misc_sup \
 	httpd_request \

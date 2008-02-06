@@ -37,9 +37,7 @@ RELSYSDIR = $(RELEASE_PATH)/lib/hipe-$(VSN)
 # ----------------------------------------------------
 # Target Specs
 # ----------------------------------------------------
-MODULES = hipe_schedule hipe_schedule_prio \
-	  hipe_target_machine hipe_ultra_mod2 hipe_ultra_prio \
-	  hipe_spillmin hipe_spillmin_color hipe_spillmin_scan
+MODULES = hipe_spillmin hipe_spillmin_color hipe_spillmin_scan
 
 HRL_FILES=
 ERL_FILES= $(MODULES:%=%.erl)
@@ -90,9 +88,4 @@ release_spec: opt
 
 release_docs_spec:
 
-
-$(EBIN)/hipe_schedule.beam: ../sparc/hipe_sparc.hrl
-$(EBIN)/hipe_spill_minimize.beam: ../main/hipe.hrl
-$(EBIN)/hipe_ultra_mod2.beam: ../sparc/hipe_sparc.hrl
-$(EBIN)/hipe_ultra_prio.beam: ../sparc/hipe_sparc.hrl
 $(EBIN)/hipe_spill_minimize.beam: ../main/hipe.hrl

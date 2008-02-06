@@ -14,18 +14,29 @@
 
 -define(MAX_BINSIZE, trunc(?MAX_HEAP_BIN_SIZE / hipe_rtl_arch:word_size()) + 2).
 -define(BYTE_SHIFT, 3). %% Turn bits into bytes or vice versa
--define(LOW_BITS, 7). %% Three lowest bits set
--define(MS_WORDSIZE, 7). 
+-define(LOW_BITS, 7). %% Three lowest bits set 
 -define(BYTE_SIZE, 8).
 -define(MAX_SMALL_BITS, (hipe_rtl_arch:word_size() * ?BYTE_SIZE - 5)).
 
+gen_rtl({bs_start_match, 0}, [Ms], [Binary],  
+	TrueLblName, FalseLblName) ->
+  ReInitLbl = hipe_rtl:mk_new_label(),
+  BinaryLbl = hipe_rtl:mk_new_label(),
+  TestCode = 
+    [hipe_rtl:mk_move(Ms,Binary),
+     hipe_tagscheme:test_matchstate(Binary, 
+				   hipe_rtl:label_name(ReInitLbl),
+				    hipe_rtl:label_name(BinaryLbl),
+				    0.99)],
+  ReInitCode = reinit_matchstate(Ms, TrueLblName),  
+  OrdinaryCode = make_matchstate(Binary, 0, Ms, TrueLblName, FalseLblName),
+  [TestCode,[ReInitLbl|ReInitCode],[BinaryLbl|OrdinaryCode]];
 gen_rtl({bs_start_match, Max}, [Ms], [Binary],  
 	TrueLblName, FalseLblName) ->
   MatchStateLbl = hipe_rtl:mk_new_label(),
   BinaryLbl = hipe_rtl:mk_new_label(),
   ReSizeLbl = hipe_rtl:mk_new_label(),
   ReInitLbl = hipe_rtl:mk_new_label(),
-  NofSlots = hipe_rtl:mk_new_reg_gcsafe(),
   TestCode = 
     [hipe_rtl:mk_move(Ms,Binary),
      hipe_tagscheme:test_matchstate(Binary, 
@@ -33,10 +44,9 @@ gen_rtl({bs_start_match, Max}, [Ms], [Binary],
 				    hipe_rtl:label_name(BinaryLbl),
 				    0.99)],
   MatchStateTestCode = 
-    [hipe_tagscheme:get_matchstate_nof_slots(NofSlots, Ms),
-     hipe_rtl:mk_branch(NofSlots, lt, hipe_rtl:mk_imm(Max), 
-			hipe_rtl:label_name(ReSizeLbl), 
-			hipe_rtl:label_name(ReInitLbl))],
+    [hipe_tagscheme:compare_matchstate(Max, Ms, 
+				       hipe_rtl:label_name(ReInitLbl),
+				       hipe_rtl:label_name(ReSizeLbl))],
   ReSizeCode = resize_matchstate(Ms, Max, TrueLblName),
   ReInitCode = reinit_matchstate(Ms, TrueLblName),  
   OrdinaryCode = make_matchstate(Binary, Max, Ms, TrueLblName, FalseLblName),
@@ -103,14 +113,12 @@ gen_rtl({bs_get_integer,Size,Flags}, [Dst,NewMs], Args,
       {SizeCode1, SizeReg1} = 
 	make_size(Size, Arg, FalseLblName),
       GCCode = make_int_gc_code(SizeReg1),
-      {SizeCode2, SizeReg2} = 
-	sparc_safety_code(SizeReg1, Size, Arg, FalseLblName),
-      CCode = int_get_c_code(Dst, Ms, SizeReg2, Flags, 
+      CCode = int_get_c_code(Dst, Ms, SizeReg1, Flags, 
 			     TrueLblName, FalseLblName),
-      InCode=get_dynamic_int(Dst, Ms, SizeReg2, CCode, 
+      InCode=get_dynamic_int(Dst, Ms, SizeReg1, CCode, 
 			     Signed, LittleEndian, Aligned, 
 			     TrueLblName, FalseLblName),
-      update_ms(NewMs, Ms) ++ SizeCode1 ++ GCCode ++ SizeCode2 ++ InCode
+      update_ms(NewMs, Ms) ++ SizeCode1 ++ GCCode ++ InCode
   end;
 gen_rtl({bs_get_float,Size,Flags}, [Dst1,NewMs], Args, 
 	TrueLblName, FalseLblName) ->
@@ -344,14 +352,6 @@ make_int_gc_code(SReg) ->
     [hipe_rtl:mk_gctest(ResReg),
      hipe_rtl:mk_goto(FixNumLblName),
      FixNumLbl].
-
-sparc_safety_code(SizeReg, Size, Arg, FalseLblName) ->
-  case hipe_rtl_arch:safe_handling_of_registers() of
-    true ->
-      {[],SizeReg};
-    false ->
-      make_size(Size, Arg, FalseLblName)
-  end.
 
 get_static_int(Dst1, Ms, Size, CCode, Signed, LittleEndian, Aligned, 
 	       Unsafe, TrueLblName, FalseLblName) ->

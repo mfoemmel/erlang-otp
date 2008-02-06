@@ -8656,7 +8656,7 @@ otp_6275_mgc_verify_notify_rep_msg(#'MegacoMessage'{mess = Mess} = M) ->
 	#'ErrorDescriptor'{errorCode = ?megaco_transaction_req_received_before_servicechange_reply} ->
 	    ok;
 	_ ->
-	    {error, {invalid_transactionError, ED}}
+	    throw({error, {invalid_transactionError, ED}})
     end,
     {ok, M};
 otp_6275_mgc_verify_notify_rep_msg(Crap) ->

@@ -15,6 +15,7 @@
  * 
  *     $Id$
  */
+
 #include <stdio.h>
 #include "sys.h"
 #include <windowsx.h>
@@ -24,6 +25,11 @@
 #include <commctrl.h>
 #include "erl_driver.h"
 #include "win_con.h"
+
+#ifndef STATE_SYSTEM_INVISIBLE
+/* Mingw problem with oleacc.h and WIN32_LEAN_AND_MEAN */
+#define STATE_SYSTEM_INVISIBLE 0x00008000
+#endif
 
 #define WM_CONTEXT      (0x0401)
 #define WM_CONBEEP      (0x0402)
@@ -118,7 +124,14 @@ static BOOL destroyed = FALSE;
 
 static int lines_to_save = 1000; /* Maximum number of screen lines to save. */
 
-static DWORD WINAPI ConThreadInit(LPVOID param);
+struct title_buf {
+    char *name;
+    char buf[256];
+};
+
+static char *erlang_window_title = "Erlang";
+
+static unsigned __stdcall ConThreadInit(LPVOID param);
 static LRESULT CALLBACK ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
 static LRESULT CALLBACK FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam);
 static BOOL CALLBACK AboutDlgProc(HWND hDlg, UINT iMsg, WPARAM wParam, LPARAM lParam);
@@ -151,7 +164,8 @@ static int write_outbuf(unsigned char *data, int nbytes);
 static void ConDrawText(HWND hwnd);
 static BOOL (WINAPI *ctrl_handler)(DWORD);
 static HWND InitToolBar(HWND hwndParent); 
-static char* window_title(void);
+static void window_title(struct title_buf *);
+static void free_window_title(struct title_buf *);
 static void Client_OnMouseMove(HWND hwnd, int x, int y, UINT keyFlags);
 
 #define CON_VPRINTF_BUF_INC_SIZE 1024
@@ -207,12 +221,13 @@ static int con_vprintf(char *format, va_list arg_list)
 void
 ConInit(void)
 {
-    DWORD tid;
+    unsigned tid;
     
     console_input = CreateSemaphore(NULL, 0, 1, NULL);
     console_output = CreateSemaphore(NULL, 0, 1, NULL);
     console_input_event = CreateManualEvent(FALSE);
-    console_thread = (HANDLE *) _beginthreadex(NULL, 0, ConThreadInit,
+    console_thread = (HANDLE *) _beginthreadex(NULL, 0, 
+					       ConThreadInit,
 					       0, 0, &tid);
 
     /* Make all erts_*printf on stdout and stderr use con_vprintf */
@@ -331,7 +346,7 @@ int ConGetRows(void) {
 static HINSTANCE hInstance;
 extern HMODULE beam_module;
 
-static DWORD WINAPI
+static unsigned __stdcall
 ConThreadInit(LPVOID param)
 {
     MSG msg;
@@ -340,6 +355,7 @@ ConThreadInit(LPVOID param)
     STARTUPINFO StartupInfo;
     HACCEL hAccel;
     int x, y, w, h;
+    struct title_buf title;
 
     /*DebugBreak();*/
     hInstance = GetModuleHandle(NULL);
@@ -389,11 +405,13 @@ ConThreadInit(LPVOID param)
     buffer_bottom->prev = cur_line;
 
     /* Create Frame Window */
-    hFrameWnd = CreateWindowEx(0, szFrameClass, window_title(),
+    window_title(&title);
+    hFrameWnd = CreateWindowEx(0, szFrameClass, title.name,
 			       WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,
 			       CW_USEDEFAULT,CW_USEDEFAULT,CW_USEDEFAULT,	
 			       NULL,LoadMenu(beam_module,MAKEINTRESOURCE(1)),
 			       hInstance,NULL);
+    free_window_title(&title);
 
     /* XXX OTP-5522:
        The window position is not saved correctly and if the window
@@ -453,15 +471,18 @@ FrameWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
     unsigned char c;
     unsigned long l;
     char buf[128];
+    struct title_buf title;
 
     switch (iMsg) {         
     case WM_CREATE:
         /* client window creation */
-        hClientWnd = CreateWindowEx(WS_EX_CLIENTEDGE, szClientClass, window_title(),
+	window_title(&title);
+        hClientWnd = CreateWindowEx(WS_EX_CLIENTEDGE, szClientClass, title.name,
 				    WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_HSCROLL,
 				    CW_USEDEFAULT, CW_USEDEFAULT,
 				    CW_USEDEFAULT, CW_USEDEFAULT,		
 				    hwnd, (HMENU)0, hInstance, NULL);
+	free_window_title(&title);
         hTBWnd = InitToolBar(hwnd);
         UpdateWindow (hClientWnd);
         return 0;
@@ -1174,9 +1195,9 @@ ClientWndProc(HWND hwnd, UINT iMsg, WPARAM wParam, LPARAM lParam)
 static void
 LoadUserPreferences(void) 
 {
-    int size;
-    int res;
-    int type;
+    DWORD size;
+    DWORD res;
+    DWORD type;
 
     /* default prefs */
     GetObject(GetStockObject(SYSTEM_FIXED_FONT),sizeof(LOGFONT),(PSTR)&logfont);
@@ -2081,10 +2102,50 @@ InitToolBar(HWND hwndParent)
     return hwndTB; 
 } 
 
-static char*
-window_title(void)
+static void
+window_title(struct title_buf *tbuf)
 {
-    char* title = getenv("ERL_WINDOW_TITLE");
+    int res;
+    size_t bufsz = sizeof(tbuf->buf);
 
-    return title ? title : "Erlang";
+    res = erl_drv_getenv("ERL_WINDOW_TITLE", &tbuf->buf[0], &bufsz);
+    if (res < 0)
+	tbuf->name = erlang_window_title;
+    else if (res == 0) 
+	tbuf->name = &tbuf->buf[0];
+    else {
+	char *buf = driver_alloc(bufsz);
+	if (!buf)
+	    tbuf->name = erlang_window_title;
+	else {
+	    while (1) {
+		char *newbuf;
+		res = erl_drv_getenv("ERL_WINDOW_TITLE", buf, &bufsz);
+		if (res <= 0) {
+		    if (res == 0)
+			tbuf->name = buf;
+		    else {
+			tbuf->name = erlang_window_title;
+			driver_free(buf);
+		    }
+		    break;
+		}
+		newbuf = driver_realloc(buf, bufsz);
+		if (newbuf)
+		    buf = newbuf;
+		else {
+		    tbuf->name = erlang_window_title;
+		    driver_free(buf);
+		    break;
+		}
+	    }
+	}
+    }
+}
+
+static void
+free_window_title(struct title_buf *tbuf)
+{
+    if (tbuf->name != erlang_window_title && tbuf->name != &tbuf->buf[0])
+	driver_free(tbuf->name);
 }

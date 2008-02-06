@@ -116,10 +116,14 @@ SectionIn 1 RO
   	SetOutPath "$INSTDIR"
   	File "${TESTROOT}\Install.ini"
   	File "${TESTROOT}\Install.exe"
-  	File /r "${TESTROOT}\releases"
-  	File /r "${TESTROOT}\lib"
-  	File /r "${TESTROOT}\erts-${ERTS_VERSION}"
-  	File /r "${TESTROOT}\usr"
+	SetOutPath "$INSTDIR\releases"
+  	File /r "${TESTROOT}\releases\"
+	SetOutPath "$INSTDIR\lib"
+  	File /r "${TESTROOT}\lib\"
+	SetOutPath "$INSTDIR\erts-${ERTS_VERSION}"
+  	File /r "${TESTROOT}\erts-${ERTS_VERSION}\"
+	SetOutPath "$INSTDIR\usr"
+  	File /r "${TESTROOT}\usr\"
   
 ;Store install folder
   	WriteRegStr HKLM "SOFTWARE\Ericsson\Erlang\${ERTS_VERSION}" "" $INSTDIR

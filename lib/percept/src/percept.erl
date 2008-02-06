@@ -81,35 +81,29 @@ stop(_State) ->
 %%==========================================================================
 
 %% @spec profile(Filename::string()) -> {ok, Port} | {already_started, Port}
-%% @equiv profile(Filename, [procs])
+%% @equiv percept_profile:start(Filename, [procs])
+
+%% profiling
 
 -spec(profile/1 :: (Filename :: string()) -> 
 	{'ok', port()} | {'already_started', port()}).
 
 profile(Filename) ->
-    profile_to_file(Filename, [procs]).
+    percept_profile:start(Filename, [procs]).
 
-%% @spec profile(Filename::string(), Options::[profile_option()]) -> {ok, Port} | {already_started, Port}
-%%	Port = port()
-%% @doc Starts profiling with supplied options. 
-%%	All events are stored in the file given by Filename. 
-%%	An explicit call to stop_profile/0 is needed to stop profiling. 
-%% @see stop_profile/0
+%% @spec profile(Filename::string(), [percept_option()]) -> {ok, Port} | {already_started, Port}
+%% @equiv percept_profile:start(Filename, Options)
 
 -spec(profile/2 :: (
 	Filename :: string(),
 	Options :: [percept_option()]) ->
 	{'ok', port()} | {'already_started', port()}).
 
-profile(Filename, Opts) ->
-    profile_to_file(Filename, Opts). 
+profile(Filename, Options) ->
+    percept_profile:start(Filename, Options). 
 
-%% @spec profile(string(), MFA::mfa(), [percept_option()]) -> ok | {already_started, Port} | {error, not_started}
-%%	Port = port()
-%% @doc Starts profiling at the entrypoint specified by the MFA. All events are collected, 
-%%	this means that processes outside the scope of the entry-point are also profiled. 
-%%	No explicit call to stop_profile/0 is needed, the profiling stops when
-%%	the entry function returns.
+%% @spec profile(Filename::string(), MFA::mfa(), [percept_option()]) -> ok | {already_started, Port} | {error, not_started}
+%% @equiv percept_profile:start(Filename, MFA, Options)
 
 -spec(profile/3 :: (
 	Filename :: string(),
@@ -117,37 +111,19 @@ profile(Filename, Opts) ->
 	Options :: [percept_option()]) ->
 	'ok' | {'already_started', port()} | {'error', 'not_started'}).
 
-profile(Filename, {Module, Function, Args}, Opts) ->
-    case whereis(percept_port) of
-	undefined ->
-	    profile_to_file(Filename, Opts),
-	    erlang:apply(Module, Function, Args),
-	    stop_profile();
-	Port ->
-	    {already_started, Port}
-    end.
+profile(Filename, MFA, Options) ->
+    percept_profile:start(Filename, MFA, Options).
 
 -spec(stop_profile/0 :: () -> 'ok' | {'error', 'not_started'}).
 
 %% @spec stop_profile() -> ok | {'error', 'not_started'}
-%% @doc Stops profiling.
+%% @equiv percept_profile:stop()
 
 stop_profile() ->
-    erlang:system_profile(undefined, [runnable_ports, runnable_procs]),
-    erlang:trace(all, false, [procs, ports, timestamp]),
-    
-    case whereis(percept_port) of
-    	undefined -> 
-	    {error, not_started};
-	Port ->
-	    erlang:port_command(Port, erlang:term_to_binary({profile_stop, erlang:now()})),
-	    %% trace delivered?
-	    erlang:port_close(Port),
-	    ok
-    end. 
+    percept_profile:stop().
 
 %% @spec analyze(string()) -> ok | {error, Reason} 
-%% @doc Analyse file.
+%% @doc Analyze file.
 
 -spec(analyze/1 :: (Filename :: string()) -> 
 	'ok' | {'error', any()}).
@@ -236,68 +212,6 @@ stop_webserver(Port) ->
 %% 		Auxiliary functions 
 %%
 %%==========================================================================
-
-profile_to_file(Filename, Opts) ->
-    case whereis(percept_port) of 
-	undefined ->
-	    io:format("Starting profiling.~n", []),
-
-	    erlang:system_flag(multi_scheduling, block),
-	    Port = (dbg:trace_port(file, Filename))(),
-	    % Send start time
-	    erlang:port_command(Port, erlang:term_to_binary({profile_start, erlang:now()})),
-	    erlang:system_flag(multi_scheduling, unblock),
-		
-	    %% Register Port
-    	    erlang:register(percept_port, Port),
-	    set_tracer(Port, Opts), 
-	    {ok, Port};
-	Port ->
-	    io:format("Profiling already started at port ~p.~n", [Port]),
-	    {already_started, Port}
-    end.
-
-%% set_tracer
-
-set_tracer(Port, Opts) ->
-    {TOpts, POpts} = parse_profile_options(Opts),
-    % Setup profiling and tracing
-    erlang:trace(all, true, [{tracer, Port}, timestamp | TOpts]),
-    erlang:system_profile(Port, POpts).
-
-%% parse_profile_options
-
-parse_profile_options(Opts) ->
-    parse_profile_options(Opts, {[],[]}).
-
-parse_profile_options([], Out) ->
-    Out;
-parse_profile_options([Opt|Opts], {TOpts, POpts}) ->
-    case Opt of
-	procs ->
-	    parse_profile_options(Opts, {
-		[procs | TOpts], 
-		[runnable_procs | POpts]
-	    });
-	ports ->
-	    parse_profile_options(Opts, {
-		[ports | TOpts], 
-		[runnable_ports | POpts]
-	    });
-	scheduler ->
-	    parse_profile_options(Opts, {
-		[TOpts], 
-		[scheduler | POpts]
-	    });
-	exclusive ->
-	    parse_profile_options(Opts, {
-		[TOpts], 
-		[exclusive | POpts]
-	    });
-	_ -> 
-	    parse_profile_options(Opts, {TOpts, POpts})
-
-    end.
 
 %% parse_and_insert
 

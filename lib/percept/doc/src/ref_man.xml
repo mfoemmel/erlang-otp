@@ -42,5 +42,6 @@
   </description>
   <include file="egd"></include>
   <include file="percept"></include>
+  <include file="percept_profile"></include>
 </application>
 

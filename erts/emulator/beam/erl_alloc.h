@@ -21,10 +21,8 @@
 
 #include "erl_alloc_types.h"
 #include "erl_alloc_util.h"
-#ifdef ERTS_ALC_THR_SPEC_ALLOCS
 #ifdef USE_THREADS
 #include "erl_threads.h"
-#endif
 #endif
 
 #ifdef DEBUG
@@ -74,7 +72,12 @@ void erts_allocator_info(int, void *);
 Eterm erts_allocator_info_term(void *proc, Eterm which_alloc);
 Eterm erts_allocator_options(void *proc);
 
-void erts_alloc_init(int *argc, char **argv);
+#define ERTS_ALLOC_INIT_DEF_OPTS_INITER {0}
+typedef struct {
+    int no_of_schedulers;
+} ErtsAllocInitOpts;
+
+void erts_alloc_init(int *argc, char **argv, ErtsAllocInitOpts *eaiop);
 
 #if defined(GET_ERTS_ALC_TEST) || defined(ERTS_ALC_INTERNAL__)
 /* Only for testing */
@@ -97,6 +100,7 @@ unsigned long erts_alc_test(unsigned long,
 typedef struct {
     int alloc_util;
     int enabled;
+    int thr_spec;
     void *extra;
 } ErtsAllocatorInfo_t;
 
@@ -110,18 +114,17 @@ typedef struct {
 extern ErtsAllocatorFunctions_t erts_allctrs[ERTS_ALC_A_MAX+1];
 extern ErtsAllocatorInfo_t erts_allctrs_info[ERTS_ALC_A_MAX+1];
 
-#ifdef ERTS_ALC_THR_SPEC_ALLOCS
-#ifdef USE_THREADS
-
 typedef struct {
+    int enabled;
     erts_tsd_key_t key;
-    void * (*start)(void);
+    int size;
+    Allctr_t **allctr;
 } ErtsAllocatorThrSpec_t;
 
 extern ErtsAllocatorThrSpec_t erts_allctr_thr_spec[ERTS_ALC_A_MAX+1];
 
-#endif
-#endif
+int erts_alc_get_thr_ix(void);
+void erts_alloc_reg_scheduler_id(Uint id);
 
 void erts_alloc_enomem(ErtsAlcType_t,Uint)		__noreturn;
 void erts_alloc_n_enomem(ErtsAlcType_t,Uint)		__noreturn;

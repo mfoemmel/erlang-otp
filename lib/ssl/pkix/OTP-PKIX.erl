@@ -6,7 +6,7 @@
 %% 		`asn1rt_check'
 %% 		`asn1rt_driver_handler'
 %% 
-%% Created by Igor 2007-12-04, 16:04:42.
+%% Created by Igor 2008-02-05, 20:34:16.
 %% 
 
 -module('OTP-PKIX').
@@ -730,16 +730,16 @@
 %%<<<             {options,
 %%<<<              [ber_bin_v2, report_errors,
 %%<<<               {cwd,
-%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2007-12-"
-%%<<<                "04_15/otp_src_R12B-0/lib/ssl/pkix"},
+%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2008-02-"
+%%<<<                "05_20/otp_src_R12B-1/lib/ssl/pkix"},
 %%<<<               {outdir,
-%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2007-12-"
-%%<<<                "04_15/otp_src_R12B-0/lib/ssl/pkix"},
+%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2008-02-"
+%%<<<                "05_20/otp_src_R12B-1/lib/ssl/pkix"},
 %%<<<               inline, asn1config, noobj, optimize, compact_bit_string,
 %%<<<               der, {i, "."},
 %%<<<               {i,
-%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2007-12-"
-%%<<<                "04_15/otp_src_R12B-0/lib/ssl/pkix"}]}]).
+%%<<<                "/ldisk/daily_build/otp_prebuild_r12b.2008-02-"
+%%<<<                "05_20/otp_src_R12B-1/lib/ssl/pkix"}]}]).
 
 encoding_rule() -> ber_bin_v2.
 

@@ -1343,7 +1343,8 @@ prep_gen(#prepared{qh = LE0}=Prep0, PosFun, {MS, Fs}, Opt) ->
             Prep = Prep0#prepared{qh = LE0#qlc_table{lu_vals = LuV}},
             {skip, SkipFils, LU, Prep};
         #qlc_table{trav_MS = true} when MS =/= no_match_spec ->
-            Prep = Prep0#prepared{qh = LE0#qlc_table{ms = MS}},
+            Prep = Prep0#prepared{qh = LE0#qlc_table{ms = MS},
+                                  is_unique_objects = false},
             {replace, Fs, false, may_create_simple(Opt, Prep)};
         #qlc_list{l = []} -> % unique and cached
             {replace, Fs, false, Prep0};
@@ -2130,7 +2131,7 @@ file_loop(Bin0, Fd_FName, Ts0, TF) ->
         end
     of
         {terms, <<Size:4/unit:8, B/binary>>=Bin, []} ->
-            file_loop_read(Bin, Size - size(B) + 4, Fd_FName, TF);
+            file_loop_read(Bin, Size - byte_size(B) + 4, Fd_FName, TF);
         {terms, <<Size:4/unit:8, _/binary>>=Bin, Ts} ->
             C = fun() -> file_loop_read(Bin, Size+4, Fd_FName, TF) end,
             TF(Ts, C);
@@ -2155,12 +2156,13 @@ file_loop2(Bin, Ts) ->
 file_loop_read(B, MinBytesToRead, {Fd, FileName}=Fd_FName, TF) ->
     BytesToRead = lists:max([?CHUNK_SIZE, MinBytesToRead]),
     case file:read(Fd, BytesToRead) of
-        {ok, Bin} when size(B) =:= 0 ->
+        {ok, Bin} when byte_size(B) =:= 0 ->
             file_loop(Bin, Fd_FName, [], TF);
         {ok, Bin} ->
             case B of 
-                <<Size:4/unit:8, Tl/binary>> when size(Bin)+size(Tl) >= Size ->
-                    {B1, B2} = split_binary(Bin, Size - size(Tl)),
+                <<Size:4/unit:8, Tl/binary>> 
+                                when byte_size(Bin) + byte_size(Tl) >= Size ->
+                    {B1, B2} = split_binary(Bin, Size - byte_size(Tl)),
                     Foo = fun([T], Fun) -> [T | Fun] end,
                     %% TF should be applied exactly once.
                     case 
@@ -2175,7 +2177,7 @@ file_loop_read(B, MinBytesToRead, {Fd, FileName}=Fd_FName, TF) ->
                 _ ->
                     file_loop(list_to_binary([B, Bin]), Fd_FName, [], TF)
             end;
-        eof when size(B) =:= 0 ->
+        eof when byte_size(B) =:= 0 ->
             TF([], foo);
         eof ->
             error({bad_object, FileName});
@@ -2252,7 +2254,7 @@ write_terms(FileName, Fd) ->
 size_bin([], L) ->
     L;
 size_bin([BinTerm | BinTerms], L) ->
-    size_bin(BinTerms, [L, <<(size(BinTerm)):4/unit:8>> | BinTerm]).
+    size_bin(BinTerms, [L, <<(byte_size(BinTerm)):4/unit:8>> | BinTerm]).
 
 sort_cursor_input_read([], NoObjects) ->
     {end_of_input, NoObjects};

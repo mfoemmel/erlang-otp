@@ -1,6 +1,6 @@
 {application,inets,
  [{description,"INETS  CXC 138 49"},
-  {vsn,"5.0"},
+  {vsn,"5.0.2"},
   {modules,[
             inets,
             inets_sup,
@@ -43,6 +43,7 @@
             httpd_example,
 	    httpd_file,
             httpd_instance_sup,
+	    httpd_log,
             httpd_manager,
             httpd_misc_sup,
             httpd_request,

@@ -6,5 +6,6 @@
 -module(hipe_icode_ebb).
 
 -define(CFG, hipe_icode_cfg).
--include("../flow/ebb.inc").
 
+-include("../flow/cfg.hrl").
+-include("../flow/ebb.inc").

@@ -23,7 +23,7 @@
 -record(goto_index, {block, index, labels}).
 -record(label, {name}).
 -record(load, {dst, src, offset, size, sign}).
--record(load_address, {dst, address, type}).
+-record(load_address, {dst, addr, type}).
 -record(load_atom, {dst, atom}).
 -record(load_word_index, {dst, block, index}).
 -record(move, {dst, src}).

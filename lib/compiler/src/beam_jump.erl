@@ -124,7 +124,7 @@ function({function,Name,Arity,CLabel,Asm0}) ->
 %%%
 
 share(Is) ->
-    share_1(reverse(Is), gb_trees:empty(), [], []).
+    share_1(reverse(Is), dict:new(), [], []).
 
 share_1([{label,_}=Lbl|Is], Dict, [], Acc) ->
     share_1(Is, Dict, [], [Lbl|Acc]);
@@ -133,11 +133,11 @@ share_1([{label,L}=Lbl|Is], Dict0, Seq, Acc) ->
 	false ->
 	    share_1(Is, Dict0, [], [Lbl|Seq ++ Acc]);
 	true ->
-	    case gb_trees:lookup(Seq, Dict0) of
-		none ->
-		    Dict = gb_trees:insert(Seq, L, Dict0),
+	    case dict:find(Seq, Dict0) of
+		error ->
+		    Dict = dict:store(Seq, L, Dict0),
 		    share_1(Is, Dict, [], [Lbl|Seq ++ Acc]);
-		{value,Label} ->
+		{ok,Label} ->
 		    share_1(Is, Dict0, [], [Lbl,{jump,{f,Label}}|Acc])
 	    end
     end;

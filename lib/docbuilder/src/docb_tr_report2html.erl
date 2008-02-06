@@ -45,7 +45,7 @@ rule([header|_], _) ->
     {drop, ""};
 
 rule([toc|_], {_,_,ToC}) ->
-    {drop, "\n<H3>Table of Contents</H3>\n" ++
+    {drop, "\n<h3>Table of Contents</h3>\n" ++
      docb_html_util:format_toc(ToC) ++ "\n"};
 
 rule([section|_], _) ->
@@ -53,8 +53,8 @@ rule([section|_], _) ->
 
 rule([title|Rest], {_,[Number,_File], [{pcdata,_,Title}]}) ->
     N = integer_to_list(docb_html_util:count_sections(Rest)+1),
-    {drop, "\n<H" ++ N ++ ">" ++ Number ++ " " ++
-     docb_html_util:pcdata_to_html(Title) ++ "</H" ++ N ++ ">\n"};
+    {drop, "\n<h" ++ N ++ ">" ++ Number ++ " " ++
+     docb_html_util:pcdata_to_html(Title) ++ "</h" ++ N ++ ">\n"};
 
 rule([erlinclude|_], {_,[File,Tag],_}) ->
     docb_html_util:erl_include(File, Tag);

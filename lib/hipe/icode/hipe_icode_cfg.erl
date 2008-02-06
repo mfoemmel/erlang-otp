@@ -8,7 +8,7 @@
 	 cfg_to_linear/1,
 	 is_closure/1,
 	 closure_arity/1,
-	 closure_arity_update/2,function/1,
+	 function/1,
          info/1, linear_to_cfg/1,
          labels/1, start_label/1,
 	 params/1, params_update/2,
@@ -21,10 +21,11 @@
 	]).
 -export([postorder/1, reverse_postorder/1]).
 
--define(ICODE_CFG,true).	% needed by cfg.inc below
+-define(ICODE_CFG, true).	% needed by cfg.inc below
 
 %%-define(DO_ASSERT, true).
 -include("../main/hipe.hrl").
+-include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
 -include("hipe_icode.hrl").
 
@@ -50,13 +51,11 @@ linear_to_cfg(LinearIcode) ->
   FullCFG = take_bbs(Code, CFG2),
   ?opt_stop_timer("Get BBs icode"),
   FullCFG.
-  
 
 %% remove_blocks(CFG, []) ->
 %%   CFG;
 %% remove_blocks(CFG, [Lbl|Lbls]) ->
 %%   remove_blocks(bb_remove(CFG, Lbl), Lbls).
-
 
 is_label(Instr) ->
   hipe_icode:is_label(Instr).
@@ -97,13 +96,13 @@ is_pure_branch(Instr) ->
     _ -> false
   end.
 
-is_phi(I)->
+is_phi(I) ->
   hipe_icode:is_phi(I).
 
-phi_remove_pred(I, Pred)->
+phi_remove_pred(I, Pred) ->
   hipe_icode:phi_remove_pred(I, Pred).
 
-%% phi_redirect_pred(I, OldPred, NewPred)->
+%% phi_redirect_pred(I, OldPred, NewPred) ->
 %%   hipe_icode:phi_redirect_pred(I, OldPred, NewPred).
 
 redirect_jmp(Jmp, ToOld, ToNew) ->
@@ -120,7 +119,7 @@ pp(Dev, CFG) ->
 
 cfg_to_linear(CFG) ->
   Code = linearize_cfg(CFG),
-  Icode = hipe_icode:mk_icode(function(CFG), 
+  Icode = hipe_icode:mk_icode(function(CFG),
 			      params(CFG),
 			      is_closure(CFG),
 			      is_leaf(CFG),

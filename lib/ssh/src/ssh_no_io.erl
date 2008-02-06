@@ -22,7 +22,7 @@
 
 -module(ssh_no_io).
 
--export([yes_no/1, read_password/1, read_line/1]).
+-export([yes_no/1, read_password/1, read_line/1, format/2]).
 
 yes_no(_Prompt) ->
     throw({no_io_allowed, yes_no}).
@@ -32,3 +32,7 @@ read_password(_Prompt) ->
 
 read_line(_Prompt) ->
     throw({no_io_allowed, read_line}).
+
+format(_Fmt, _Args) ->
+    throw({no_io_allowed, format}).
+    

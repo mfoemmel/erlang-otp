@@ -473,17 +473,16 @@ dump_attributes(int to, void *to_arg, byte* ptr, int size)
 void
 do_break(void)
 {
-#ifdef __WIN32__
     int i;
-    char* mode = getenv("ERL_CONSOLE_MODE");
+#ifdef __WIN32__
+    char *mode; /* enough for storing "window" */
 
     /* check if we're in console mode and, if so,
        halt immediately if break is called */
-    if (mode != NULL)
-	if (strcmp(mode, "window") != 0)
-	    halt_0(0);
-#else
-    int i;
+    mode = erts_read_env("ERL_CONSOLE_MODE");
+    if (mode && strcmp(mode, "window") != 0)
+	erl_exit(0, "");
+    erts_free_read_env(mode);
 #endif /* __WIN32__ */
 
     erts_printf("\n"
@@ -649,6 +648,8 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
 {
     int fd;
     time_t now;
+    size_t dumpnamebufsize = MAXPATHLEN;
+    char dumpnamebuf[MAXPATHLEN];
     char* dumpname;
 
     if (ERTS_IS_CRASH_DUMPING)
@@ -678,10 +679,10 @@ erl_crash_dump_v(char *file, int line, char* fmt, va_list args)
 
     erts_sys_prepare_crash_dump();
 
-    dumpname = getenv("ERL_CRASH_DUMP");
-    if (!dumpname) {
+    if (erts_sys_getenv("ERL_CRASH_DUMP",&dumpnamebuf[0],&dumpnamebufsize) != 0)
 	dumpname = "erl_crash.dump";
-    }
+    else
+	dumpname = &dumpnamebuf[0];
 
     fd = open(dumpname,O_WRONLY | O_CREAT | O_TRUNC,0640);
     if (fd < 0) 

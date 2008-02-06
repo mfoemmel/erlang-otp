@@ -1,6 +1,6 @@
 {application, megaco,
  [{description, "Megaco/H.248 protocol"},
-  {vsn, "3.7"},
+  {vsn, "3.7.1"},
   {modules,
    [	
 	megaco,

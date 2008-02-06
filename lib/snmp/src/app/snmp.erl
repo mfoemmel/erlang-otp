@@ -51,6 +51,7 @@
 	 change_log_size/2,
 
 	 enable_trace/0, disable_trace/0, 
+	 set_trace/1, reset_trace/1, 
 	 set_trace/2, set_trace/3]).
 
 %% Compiler exports
@@ -80,7 +81,8 @@
 	 add_agent_caps/2, del_agent_caps/1, get_agent_caps/0,
 
 	 log_to_txt/2, log_to_txt/3, log_to_txt/4, 
-	 change_log_size/1 
+	 change_log_size/1
+
 	]).
 
 %% This is for XREF
@@ -181,20 +183,29 @@ enable_trace() ->
 disable_trace() ->    
     dbg:stop().
 
+set_trace(Module) when is_atom(Module) ->
+    set_trace([Module]);
+set_trace(Modules) when is_list(Modules) ->
+    Opts = [], % Use default values for all options
+    set_trace(Modules, Opts).
+
+reset_trace(Module) when is_atom(Module) ->
+    set_trace(Module, disable);
+reset_trace(Modules) when is_list(Modules) ->
+    set_trace(Modules, disable).
+
 set_trace(Module, disable) when is_atom(Module) ->
     dbg:ctp(Module);
 set_trace(Module, Opts) when is_atom(Module) andalso is_list(Opts) ->
-    set_trace(all, Module, Opts);
+    (catch set_trace(all, Module, Opts));
 set_trace(Modules, Opts) when is_list(Modules) ->
-    set_trace(all, Modules, Opts).
+    (catch set_trace(all, Modules, Opts)).
 
 set_trace(Item, Module, Opts) when is_atom(Module) ->
     set_trace(Item, [{Module, []}], Opts);
 set_trace(_Item, Modules, disable) when is_list(Modules) ->
     DisableTrace = 
 	fun(Module) when is_atom(Module) ->
-		dbg:ctp(Module);
-	   ({Module, _}) when is_atom(Module) ->
 		dbg:ctp(Module);
 	   (_) ->
 		ok
@@ -209,35 +220,51 @@ set_trace(Item, Modules, Opts) when is_list(Modules) ->
     lists:foreach(SetTrace, Mods),
     Flags = 
 	case lists:keysearch(timestamp, 1, Opts) of
-	    {value, {timestamp, true}} ->
-		[call, timestamp];
+	    {value, {timestamp, false}} ->
+		[call];
 	    _ ->
-		[call]
+		[call, timestamp]
 	end,
-    dbg:p(Item, Flags).
+    case dbg:p(Item, Flags) of
+	{ok, _} ->
+	    ok;
+	Error ->
+	    Error
+    end.
 
 set_module_trace(Module, disable) ->
     dbg:ctp(Module);
 set_module_trace(Module, Opts) ->
     ReturnTrace = 
 	case lists:keysearch(return_trace, 1, Opts) of
-	    {value, {return_trace, true}} ->
-		[{return_trace}];
+	    {value, {return_trace, false}} ->
+		[];
 	    _ ->
-		[]
+		%% Default is allways  to include return values
+		[{return_trace}]
 	end,
-    case lists:keysearch(target, 1, Opts) of
-	{value, {target, all_functions}} ->
-	    dbg:tpl(Module, [{'_', [], ReturnTrace}]);
-	{value, {target, exported_functions}}  ->
-	    dbg:tp(Module, [{'_', [], ReturnTrace}]);
-	{value, {target, Func}}  when is_atom(Func) ->
-	    dbg:tpl(Module, Func, [{'_', [], ReturnTrace}]);
-	{value, {target, {Func, Arity}}}  when is_atom(Func) and 
-					      is_integer(Arity) ->
-	    dbg:tpl(Module, Func, Arity, [{'_', [], ReturnTrace}])
-    end,
-    ok.
+    TraceRes = 
+	case lists:keysearch(scope, 1, Opts) of
+	    {value, {scope, all_functions}} ->
+		dbg:tpl(Module, [{'_', [], ReturnTrace}]);
+	    {value, {scope, exported_functions}}  ->
+		dbg:tp(Module, [{'_', [], ReturnTrace}]);
+	    {value, {scope, Func}}  when is_atom(Func) ->
+		dbg:tpl(Module, Func, [{'_', [], ReturnTrace}]);
+	    {value, {scope, {Func, Arity}}}  when is_atom(Func) andalso 
+						  is_integer(Arity) ->
+		dbg:tpl(Module, Func, Arity, [{'_', [], ReturnTrace}]);
+	    false ->
+	    %% Default scope is exported functions
+		dbg:tp(Module, [{'_', [], ReturnTrace}])
+	end,
+    case TraceRes of
+	{error, Reason} ->
+	    throw({error, {failed_enabling_trace, Module, Opts, Reason}});
+	_ ->
+	    ok
+    end.
+
 
 parse_modules(Modules, Opts) ->
     parse_modules(Modules, Opts, []).
@@ -271,12 +298,44 @@ update_trace_options([_|Opts], ModOpts) ->
     update_trace_options(Opts, ModOpts).
 
 
-    
+handle_trace_event({trace, Who, call, Event}, Data) ->
+    io:format("*** call trace event *** "
+	      "~n   Who:   ~p"
+	      "~n   Event: ~p"
+	      "~n", [Who, Event]),
+    Data;
+handle_trace_event({trace, Who, return_from, Func, Value}, Data) ->
+    io:format("*** return trace event *** "
+	      "~n   Who:      ~p"
+	      "~n   Function: ~p"
+	      "~n   Value:    ~p"
+	      "~n", [Who, Func, Value]),
+    Data;
+handle_trace_event({trace_ts, Who, call, {Mod, Func, Args}, Ts}, Data) 
+  when is_atom(Mod) andalso is_atom(Func) andalso is_list(Args) ->
+    io:format("*** call trace event ~s *** "
+	      "~n   Who:  ~p"
+	      "~n   Mod:  ~p"
+	      "~n   Func: ~p"
+	      "~n   Args: ~p"
+	      "~n", [format_timestamp(Ts), Who, Mod, Func, Args]),
+    Data;
 handle_trace_event({trace_ts, Who, call, Event, Ts}, Data) ->
     io:format("*** call trace event ~s *** "
 	      "~n   Who:   ~p"
 	      "~n   Event: ~p"
 	      "~n", [format_timestamp(Ts), Who, Event]),
+    Data;
+handle_trace_event({trace_ts, Who, return_from, {Mod, Func, Arity}, Value, Ts},
+		   Data) 
+  when is_atom(Mod) andalso is_atom(Func) andalso is_integer(Arity) ->
+    io:format("*** return trace event ~s *** "
+	      "~n   Who:   ~p"
+	      "~n   Mod:   ~p"
+	      "~n   Func:  ~p"
+	      "~n   Arity: ~p"
+	      "~n   Value: ~p"
+	      "~n", [format_timestamp(Ts), Who, Mod, Func, Arity, Value]),
     Data;
 handle_trace_event({trace_ts, Who, return_from, Func, Value, Ts}, Data) ->
     io:format("*** return trace event ~s *** "
@@ -706,8 +765,6 @@ to_erlang_term(String) ->
     Term.
 
 
-
-
 %%%-----------------------------------------------------------------
 %%% BACKWARD COMPATIBILLITY CRAP
 %%%-----------------------------------------------------------------
@@ -778,3 +835,6 @@ log_to_txt(LogDir, Mibs, OutFile, LogName) ->
     snmpa:log_to_txt(LogDir, Mibs, OutFile, LogName).
 change_log_size(NewSize) -> 
     snmpa:change_log_size(NewSize).
+
+
+

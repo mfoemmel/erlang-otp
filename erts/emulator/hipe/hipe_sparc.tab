@@ -1,11 +1,5 @@
 # $Id$
 # SPARC-specific atoms
 
-atom inc_stack_0args_0
-atom inc_stack_1args_0
-atom inc_stack_2args_0
-atom inc_stack_3args_0
-atom inc_stack_4args_0
-atom inc_stack_5args_0
-atom inc_stack_6args_0
+atom inc_stack_0
 atom ultrasparc

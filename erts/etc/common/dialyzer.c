@@ -98,18 +98,52 @@ char *strerror(int errnum)
 }
 #endif /* !HAVE_STRERROR */
 
+static char *
+get_env(char *key)
+{
+#ifdef __WIN32__
+    DWORD size = 32;
+    char *value = NULL;
+    while (1) {
+	DWORD nsz;
+	if (value)
+	    free(value);
+	value = emalloc(size);
+	SetLastError(0);
+	nsz = GetEnvironmentVariable((LPCTSTR) key, (LPTSTR) value, size);
+	if (nsz == 0 && GetLastError() == ERROR_ENVVAR_NOT_FOUND) {
+	    free(value);
+	    return NULL;
+	}
+	if (nsz <= size)
+	    return value;
+	size = nsz;
+    }
+#else
+    return getenv(key);
+#endif
+}
+
+static void
+free_env_val(char *value)
+{
+#ifdef __WIN32__
+    if (value)
+	free(value);
+#endif
+}
+
 int
 main(int argc, char** argv)
 {
     int eargv_size;
     int eargc_base;		/* How many arguments in the base of eargv. */
     char* emulator;
+    char *env;
     int need_shell = 0;
 
-    emulator = getenv("DIALYZER_EMULATOR");
-    if (emulator == NULL) {
-	emulator = get_default_emulator(argv[0]);
-    }
+    env = get_env("DIALYZER_EMULATOR");
+    emulator = env ? env : get_default_emulator(argv[0]);
 
     /*
      * Allocate the argv vector to be used for arguments to Erlang.
@@ -125,6 +159,8 @@ main(int argc, char** argv)
     eargc_base = eargc;
     eargv = eargv + eargv_size/2;
     eargc = 0;
+
+    free_env_val(env);
 
     /*
      * Push initial arguments.

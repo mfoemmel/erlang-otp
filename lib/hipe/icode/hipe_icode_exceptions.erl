@@ -62,6 +62,11 @@
 -export([fix_catches/1]).
 
 -include("hipe_icode.hrl").
+-include("../flow/cfg.hrl").
+
+%%----------------------------------------------------------------------------
+
+-spec(fix_catches/1 :: (#cfg{}) -> #cfg{}).
 
 fix_catches(CFG) ->
   {Map, State} = build_mapping(find_catches(init_state(CFG))),
@@ -360,7 +365,7 @@ get_renaming(C, Map) ->
 %% State abstraction
 
 -record(state, {cfg,
-		changed = false,
+		changed = false :: bool(),
 		succ,
 		pred,
 		start,

@@ -87,10 +87,10 @@ ERL_MANEXT       =
 # ----------------------------------------------------------------------
 
 # Must be GNU make!
-MAKE    = @MAKE_PROG@
+MAKE		= @MAKE_PROG@
 
 # This should be set to the target "arch-vendor-os"
-TARGET  = @TARGET@
+export TARGET	= @TARGET@
 
 # A BSD compatible install program
 INSTALL         = @INSTALL@

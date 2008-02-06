@@ -418,11 +418,11 @@ has_binary(T) ->
     end.
 
 has_bin(T) when is_tuple(T) ->
-    has_bin(T, size(T));
+    has_bin(T, tuple_size(T));
 has_bin([E | Es]) ->
     has_bin(E),
     has_bin(Es);
-has_bin(B) when is_binary(B), size(B) > ?MAXSIZE_HEAPBINARY ->
+has_bin(B) when is_binary(B), byte_size(B) > ?MAXSIZE_HEAPBINARY ->
     throw(true);
 has_bin(T) ->
     T.

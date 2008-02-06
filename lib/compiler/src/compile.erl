@@ -976,7 +976,7 @@ generate_key(String) when is_list(String) ->
     generate_key({des3_cbc,String}).
 
 encrypt(des3_cbc=Mode, {K1,K2,K3, IVec}, Bin0) ->
-    Bin1 = case size(Bin0) rem 8 of
+    Bin1 = case byte_size(Bin0) rem 8 of
 	       0 -> Bin0;
 	       N -> list_to_binary([Bin0,random_bytes(8-N)])
 	   end,
@@ -1120,7 +1120,7 @@ report_warnings(#compile{options=Opts,warnings=Ws0}) ->
 	    Ws1 = flatmap(fun({{F,_L},Eds}) -> format_message(F, Eds);
 			     ({F,Eds}) -> format_message(F, Eds) end,
 			  Ws0),
-	    Ws = ordsets:from_list(Ws1),
+	    Ws = lists:sort(Ws1),
 	    foreach(fun({_,Str}) -> io:put_chars(Str) end, Ws);
 	false -> ok
     end.

@@ -27,6 +27,8 @@ fail with RESCHEDULE, the return value in nbif_stack_trap_ra,
 and lr in hipe_arm_inc_stack (the caller saved its lr in TEMP_LR).
 r6 (TEMP_ARG1) is used to preserve ARG1 in BIFs that may
 fail with RESCHEDULE.
+r5 (TEMP_ARG2) is used to preserve ARG2 in BIFs that may
+fail with RESCHEDULE.
 r2 (ARG1) is used to pass the NBIF address when a BIF that may
 fail with RESCHEDULE throws an exception.
 r1 (ARG0) is used for MBUF-after-BIF checks, for storing the

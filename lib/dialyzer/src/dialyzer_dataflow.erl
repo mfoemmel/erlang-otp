@@ -84,7 +84,6 @@ pp(File) ->
   Code = dialyzer_utils:get_core_from_src(File, [no_copt]),
   Plt = get_def_plt(),
   AnnTree = annotate_module(Code, Plt),
-  dialyzer_plt:delete(Plt),
   io:put_chars(cerl_prettypr:format(AnnTree, [{hook, cerl_typean:pp_hook()}])),
   io:nl().
 
@@ -403,14 +402,21 @@ handle_apply(Tree, Map, State) ->
 	false ->
 	  OpType1 = t_inf(OpType, t_fun(length(Args), t_any())),
 	  case t_is_none(OpType1) of
-	    true -> {State2, Map2, t_none()};
+	    true ->
+	      Msg = 
+		io_lib:format("Fun application will fail since "
+			      "~s :: ~s is not a function\n",
+			      [format_cerl(Op), format_type(OpType, State2)]),
+	      State3 = state__add_warning(State2, ?WARN_FAILING_CALL,
+					  Tree, Msg),
+	      {State3, Map2, t_none()};
 	    false ->
 	      NewArgs = t_inf_lists(ArgTypes, t_fun_args(OpType1)),
 	      case any_none(NewArgs) of
 		true -> 
 		  Msg = 
 		    io_lib:format("Fun application with arguments ~s will fail "
-				  "since the function has type ~s",
+				  "since the function has type ~s\n",
 				  [format_args(Args, ArgTypes, State),
 				   format_type(OpType, State)]),
 		  State3 = state__add_warning(State2, ?WARN_FAILING_CALL,
@@ -2138,13 +2144,13 @@ state__add_warning(State = #state{warnings=Warnings, warning_mode=true},
   Ann = cerl:get_ann(Tree),
   case Force of
     true ->
-      Warn = {Tag, {{get_file(Ann), abs(get_line(Ann))}, Msg}},
+      Warn = {Tag, {get_file(Ann), abs(get_line(Ann))}, Msg},
       State#state{warnings=[Warn|Warnings]};
     false ->
       case is_compiler_generated(Ann) of
 	    true -> State;
 	false ->
-	  Warn = {Tag, {{get_file(Ann), get_line(Ann)}, Msg}},
+	  Warn = {Tag, {get_file(Ann), get_line(Ann)}, Msg},
 	  State#state{warnings=[Warn|Warnings]}
       end
   end.

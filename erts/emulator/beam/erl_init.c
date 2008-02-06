@@ -545,6 +545,11 @@ early_init(int *argc, char **argv) /*
 				   * early!
 				   */
 {
+    ErtsAllocInitOpts alloc_opts = ERTS_ALLOC_INIT_DEF_OPTS_INITER;
+#ifdef ERTS_SMP
+    int ncpu;
+#endif
+
     erts_printf_eterm_func = erts_printf_term;
     erts_disable_tolerant_timeofday = 0;
     display_items = 200;
@@ -585,7 +590,53 @@ early_init(int *argc, char **argv) /*
 
     erts_init_utils();
 
-    erts_alloc_init(argc, argv); /* Handles (and removes) -M flags */
+    /*
+     * We need to know the number of schedulers to use before we
+     * can initialize the allocators.
+     */
+#ifdef ERTS_SMP
+    ncpu = erts_no_of_cpus();
+    no_of_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
+#endif
+    if (argc && argv) {
+	int i = 1;
+	while (i < *argc) {
+	    if (strcmp(argv[i], "--") == 0) { /* end of emulator options */
+		i++;
+		break;
+	    }
+	    if (argv[i][0] == '-') {
+		switch (argv[i][1]) {
+		case 'S' : {
+		    int no;
+		    char *arg = get_arg(argv[i]+2, argv[i+1], &i);
+		    no = atoi(arg);
+		    if (no < 1 || ERTS_MAX_NO_OF_SCHEDULERS < no) {
+			erts_fprintf(stderr,
+				     "bad number of scheduler threads %s\n",
+				     arg);
+			erts_usage();
+		    }
+		    VERBOSE(DEBUG_SYSTEM,
+			    ("using %d scheduler(s)\n", no));
+#ifdef ERTS_SMP
+		    no_of_schedulers = (Uint) no;
+#endif
+		    break;
+		}
+		default:
+		    break;
+		}
+	    }
+	    i++;
+	}
+    }
+
+#ifdef ERTS_SMP
+    alloc_opts.no_of_schedulers = (int) no_of_schedulers;
+#endif
+    erts_alloc_init(argc, argv, &alloc_opts); /* Handles (and removes)
+						 -M flags. */
 
 #ifdef ERTS_ENABLE_LOCK_CHECK
     erts_lc_late_init();
@@ -595,12 +646,7 @@ early_init(int *argc, char **argv) /*
     hipe_signal_init();	/* must be done very early */
 #endif
     erl_sys_init();
-#ifdef ERTS_SMP
-    {
-	int ncpu = erts_no_of_cpus();
-	no_of_schedulers = (Uint) (ncpu > 0 ? ncpu : 1);
-    }
-#endif
+
     erl_sys_args(argc, argv);
 
     erts_ets_realloc_always_moves = 0;
@@ -614,26 +660,27 @@ erl_start(int argc, char **argv)
     char* arg=NULL;
     char* Parg = NULL;
     int have_break_handler = 1;
-    char* tmpenvbuf;
+    char envbuf[21]; /* enough for any 64-bit integer */
+    size_t envbufsz;
     int async_max_threads = erts_async_max_threads;
 
     early_init(&argc, argv);
 
-    tmpenvbuf = getenv(ERL_MAX_ETS_TABLES_ENV);
-    if (tmpenvbuf != NULL) 
-	user_requested_db_max_tabs = atoi(tmpenvbuf);
+    envbufsz = sizeof(envbuf);
+    if (erts_sys_getenv(ERL_MAX_ETS_TABLES_ENV, envbuf, &envbufsz) == 0)
+	user_requested_db_max_tabs = atoi(envbuf);
     else
 	user_requested_db_max_tabs = 0;
 
-    tmpenvbuf = getenv("ERL_FULLSWEEP_AFTER");
-    if (tmpenvbuf != NULL) {
-	Uint16 max_gen_gcs = atoi(tmpenvbuf);
+    envbufsz = sizeof(envbuf);
+    if (erts_sys_getenv("ERL_FULLSWEEP_AFTER", envbuf, &envbufsz) == 0) {
+	Uint16 max_gen_gcs = atoi(envbuf);
 	erts_smp_atomic_set(&erts_max_gen_gcs, (long) max_gen_gcs);
     }
 
-    tmpenvbuf = getenv("ERL_THREAD_POOL_SIZE");
-    if (tmpenvbuf != NULL) {
-	async_max_threads = atoi(tmpenvbuf);
+    envbufsz = sizeof(envbuf);
+    if (erts_sys_getenv("ERL_THREAD_POOL_SIZE", envbuf, &envbufsz) == 0) {
+	async_max_threads = atoi(envbuf);
     }
     
 
@@ -822,23 +869,10 @@ erl_start(int argc, char **argv)
 	       may be given after +P. */
 	    break;
 
-	case 'S' : {
-	    int no;
-	    arg = get_arg(argv[i]+2, argv[i+1], &i);
-	    no = atoi(arg);
-	    if (no < 1 || ERTS_MAX_NO_OF_SCHEDULERS < no) {
-		erts_fprintf(stderr, "bad number of scheduler threads %s\n",
-			     arg);
-		erts_usage();
-	    }
-	    VERBOSE(DEBUG_SYSTEM,
-                    ("using %d scheduler(s)\n", no));
-#ifdef ERTS_SMP
-	    no_of_schedulers = (Uint) no;
-#endif
+	case 'S' : /* Was handled in early_init() just read past it */
+	    (void) get_arg(argv[i]+2, argv[i+1], &i);
 	    break;
-	}
-	    
+
 	case 'T' :
 	    arg = get_arg(argv[i]+2, argv[i+1], &i);
 	    errno = 0;

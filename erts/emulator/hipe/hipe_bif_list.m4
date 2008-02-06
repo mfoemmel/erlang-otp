@@ -69,6 +69,7 @@
 /*
  * expensive_bif_interface_1(nbif_name, cbif_name)
  * expensive_bif_interface_2(nbif_name, cbif_name)
+ * expensive_bif_interface_3(nbif_name, cbif_name)
  *
  * A BIF which may fail with RESCHEDULE, otherwise
  * identical to standard_bif_interface_N.
@@ -151,11 +152,11 @@ expensive_bif_interface_2(nbif_group_leader_2, group_leader_2)
 expensive_bif_interface_1(nbif_link_1, link_1)
 expensive_bif_interface_2(nbif_monitor_2, monitor_2)
 expensive_bif_interface_2(nbif_port_command_2, port_command_2)
-expensive_bif_interface_2(nbif_process_info_1, process_info_1)
+expensive_bif_interface_1(nbif_process_info_1, process_info_1)
 expensive_bif_interface_2(nbif_process_info_2, process_info_2)
 expensive_bif_interface_2(nbif_send_2, send_2)
-expensive_bif_interface_2(nbif_send_3, send_3)
-expensive_bif_interface_2(nbif_setnode_3, setnode_3)
+expensive_bif_interface_3(nbif_send_3, send_3)
+expensive_bif_interface_3(nbif_setnode_3, setnode_3)
 expensive_bif_interface_2(nbif_suspend_process_2, suspend_process_2)
 expensive_bif_interface_2(nbif_system_flag_2, system_flag_2)
 expensive_bif_interface_1(nbif_unlink_1, unlink_1)
@@ -163,11 +164,14 @@ expensive_bif_interface_2(nbif_erts_debug_set_internal_state_2, erts_debug_set_i
 
 /*
  * BIFs and primops that may do a GC (change heap limit and walk the native stack).
+ * XXX: erase/1 and put/2 cannot fail
  */
 expensive_gc_bif_interface_2(nbif_check_process_code_2, hipe_check_process_code_2)
+gc_bif_interface_1(nbif_erase_1, erase_1)
 gc_bif_interface_0(nbif_garbage_collect_0, garbage_collect_0)
 expensive_gc_bif_interface_1(nbif_garbage_collect_1, hipe_garbage_collect_1)
 gc_nofail_primop_interface_1(nbif_gc_1, hipe_gc)
+gc_bif_interface_2(nbif_put_2, put_2)
 
 /*
  * Debug BIFs that need read access to the full state.

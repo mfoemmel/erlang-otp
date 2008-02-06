@@ -57,3 +57,5 @@
 -record(fail, {class, args, fail_label=[]}).
 
 -record(comment, {text}).
+
+-type(icode_instr() :: tuple()).

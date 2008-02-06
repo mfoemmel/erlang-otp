@@ -973,7 +973,7 @@ enc_opt(sctp_i_want_mapped_v4_addr)-> ?SCTP_OPT_I_WANT_MAPPED_V4_ADDR;
 enc_opt(sctp_maxseg)		   -> ?SCTP_OPT_MAXSEG;
 enc_opt(sctp_set_peer_primary_addr)-> ?SCTP_OPT_SET_PEER_PRIMARY_ADDR;
 enc_opt(sctp_primary_addr)	   -> ?SCTP_OPT_PRIMARY_ADDR;
-enc_opt(sctp_adaption_layer)	   -> ?SCTP_OPT_ADAPTION_LAYER;
+enc_opt(sctp_adaptation_layer)	   -> ?SCTP_OPT_ADAPTATION_LAYER;
 enc_opt(sctp_peer_addr_params)	   -> ?SCTP_OPT_PEER_ADDR_PARAMS;
 enc_opt(sctp_default_send_param)   -> ?SCTP_OPT_DEFAULT_SEND_PARAM;
 enc_opt(sctp_events)		   -> ?SCTP_OPT_EVENTS;
@@ -1152,10 +1152,10 @@ type_opt_1(sctp_set_peer_primary_addr) ->
     [{record,#sctp_setpeerprim{
 	assoc_id = [sctp_assoc_id],
 	addr     = addr}}];
-%% for SCTP_OPT_ADAPTION_LAYER
-type_opt_1(sctp_adaption_layer) ->
-    [{record,#sctp_setadaption{
-	adaption_ind = [uint32,0]}}];
+%% for SCTP_OPT_ADAPTATION_LAYER
+type_opt_1(sctp_adaptation_layer) ->
+    [{record,#sctp_setadaptation{
+	adaptation_ind = [uint32,0]}}];
 %% for SCTP_OPT_PEER_ADDR_PARAMS
 type_opt_1(sctp_peer_addr_params) ->
     [{record,#sctp_paddrparams{
@@ -1203,7 +1203,8 @@ type_opt_1(sctp_events) ->
 	peer_error_event       = [bool8,true], 
 	shutdown_event         = [bool8,true], 
 	partial_delivery_event = [bool8,true], 
-	adaption_layer_event   = [bool8,false]}}];
+	adaptation_layer_event = [bool8,false],
+	authentication_event   = [bool8,false]}}];
 %% for SCTP_OPT_DELAYED_ACK_TIME
 type_opt_1(sctp_delayed_ack_time) ->
     [{record,#sctp_assoc_value{
@@ -1225,7 +1226,8 @@ type_value(get, undefined)        -> false; % Undefined type
 %% type_value(get, [[Type,Default]]) ->        % Required field, default value
 %%     type_value(get, Type, Default);
 type_value(get, [{record,Types}]) ->        % Implied default value for record
-    type_value_record(get, Types, erlang:make_tuple(size(Types), undefined), 2);
+    type_value_record(get, Types, 
+		      erlang:make_tuple(tuple_size(Types), undefined), 2);
 type_value(get, [_])              -> false; % Required value missing
 type_value(get, _)                -> true.  % Field is supposed to be undefined
 
@@ -1248,22 +1250,25 @@ type_value_default(Q, Type, Value) ->
     type_value_1(Q, Type, Value).
 
 type_value_1(Q, {record,Types}, undefined) ->
-    type_value_record(Q, Types, erlang:make_tuple(size(Types), undefined), 2);
+    type_value_record(Q, Types,
+		      erlang:make_tuple(tuple_size(Types), undefined), 2);
 type_value_1(Q, {record,Types}, Values)
-  when is_tuple(Values), size(Types) =:= size(Values) ->
+  when tuple_size(Types) =:= tuple_size(Values) ->
     type_value_record(Q, Types, Values, 2);
 type_value_1(Q, Types, Values)
-  when is_tuple(Types), is_tuple(Values), size(Types) =:= size(Values) ->
+  when tuple_size(Types) =:= tuple_size(Values) ->
     type_value_tuple(Q, Types, Values, 1);
 type_value_1(_, Type, Value) ->
     type_value_2(Type, Value).
 
-type_value_tuple(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+type_value_tuple(Q, Types, Values, N)
+  when is_integer(N), N =< tuple_size(Types) ->
     type_value(Q, element(N, Types), element(N, Values)) 
 	andalso type_value_tuple(Q, Types, Values, N+1);
 type_value_tuple(_, _, _, _) -> true.
 
-type_value_record(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+type_value_record(Q, Types, Values, N)
+  when is_integer(N), N =< tuple_size(Types) ->
     case type_value(Q, element(N, Types), element(N, Values)) of
 	true -> type_value_record(Q, Types, Values, N+1);
 	false ->
@@ -1332,7 +1337,8 @@ type_value_2(_, _)         -> false.
 %% enc_value(get, [[Type,Default]]) ->      % Required field, default value
 %%     enc_value(get, Type, Default);
 enc_value(get, [{record,Types}]) ->      % Implied default value for record
-    enc_value_tuple(get, Types, erlang:make_tuple(size(Types), undefined), 2);
+    enc_value_tuple(get, Types, 
+		    erlang:make_tuple(tuple_size(Types), undefined), 2);
 enc_value(get, _)                -> [].
     
 %% Get and set
@@ -1351,17 +1357,18 @@ enc_value_default(Q, Type, Value) ->
     enc_value_1(Q, Type, Value).
 
 enc_value_1(Q, {record,Types}, undefined) ->
-    enc_value_tuple(Q, Types, erlang:make_tuple(size(Types), undefined), 2);
+    enc_value_tuple(Q, Types, 
+		    erlang:make_tuple(tuple_size(Types), undefined), 2);
 enc_value_1(Q, {record,Types}, Values)
-  when is_tuple(Values), size(Types) =:= size(Values) ->
+  when tuple_size(Types) =:= tuple_size(Values) ->
     enc_value_tuple(Q, Types, Values, 2);
-enc_value_1(Q, Types, Values)
-  when is_tuple(Types), is_tuple(Values), size(Types) =:= size(Values) ->
+enc_value_1(Q, Types, Values) when tuple_size(Types) =:= tuple_size(Values) ->
     enc_value_tuple(Q, Types, Values, 1);
 enc_value_1(_, Type, Value) ->
     enc_value_2(Type, Value).
 
-enc_value_tuple(Q, Types, Values, N) when is_integer(N), N =< size(Types) ->
+enc_value_tuple(Q, Types, Values, N)
+  when is_integer(N), N =< tuple_size(Types) ->
     [enc_value(Q, element(N, Types), element(N, Values))
      |enc_value_tuple(Q, Types, Values, N+1)];
 enc_value_tuple(_, _, _, _) -> [].
@@ -1389,7 +1396,7 @@ enc_value_2(addr, {any,Port}) ->
 enc_value_2(addr, {loopback,Port}) ->
     [?INET_AF_LOOPBACK|?int16(Port)];
 enc_value_2(addr, {IP,Port}) ->
-    case size(IP) of
+    case tuple_size(IP) of
 	4 ->
 	    [?INET_AF_INET,?int16(Port)|ip4_to_bytes(IP)];
 	8 ->
@@ -1397,7 +1404,7 @@ enc_value_2(addr, {IP,Port}) ->
     end;
 enc_value_2(ether, [X1,X2,X3,X4,X5,X6]) -> [X1,X2,X3,X4,X5,X6];
 enc_value_2(sctp_assoc_id, Val) -> ?int32(Val);
-%% enc_value_2(sctp_assoc_id, Bin) -> [size(Bin),Bin];
+%% enc_value_2(sctp_assoc_id, Bin) -> [byte_size(Bin),Bin];
 enc_value_2({enum,List}, Enum) ->
     {value,Val} = enum_val(Enum, List),
     ?int32(Val);
@@ -1409,7 +1416,7 @@ enc_value_2({bitenumlist,List,Type}, EnumList) ->
     Vs = enum_vals(EnumList, List),
     Value = borlist(Vs, 0),
     enc_value_2(Type, Value);
-enc_value_2(binary,Bin) -> [?int32(size(Bin)),Bin];
+enc_value_2(binary,Bin) -> [?int32(byte_size(Bin)),Bin];
 enc_value_2(binary_or_uint,Datum) when is_binary(Datum) -> 
     [1,enc_value_2(binary, Datum)];
 enc_value_2(binary_or_uint,Datum) when is_integer(Datum) -> 
@@ -1465,7 +1472,8 @@ dec_value(Type, Val) ->
 %% dec_value(_, B) ->
 %%     {undefined, B}.
 
-dec_value_tuple(Types, List, N, Acc) when is_integer(N), N =< size(Types) ->
+dec_value_tuple(Types, List, N, Acc)
+  when is_integer(N), N =< tuple_size(Types) ->
     {Term,Tail} = dec_value(element(N, Types), List),
     dec_value_tuple(Types, Tail, N+1, [Term|Acc]);
 dec_value_tuple(_, List, _, Acc) ->
@@ -1624,7 +1632,7 @@ need_template([_|Opts]) ->
     need_template(Opts);
 need_template([]) -> [].
 %%
-need_template(T, N) when is_tuple(T), is_integer(N), N =< size(T) ->
+need_template(T, N) when is_integer(N), N =< tuple_size(T) ->
     case element(N, T) of
 	undefined -> true;
 	_ ->
@@ -1638,11 +1646,11 @@ need_template(_, _) -> false.
 merge_options([{Opt,undefined}|Opts], [{Opt,_}=T|Templates]) ->
     [T|merge_options(Opts, Templates)];
 merge_options([{Opt,Val}|Opts], [{Opt,Template}|Templates])
-  when is_atom(Opt), is_tuple(Val), size(Val) >= 2 ->
+  when is_atom(Opt), tuple_size(Val) >= 2 ->
     Key = element(1, Val),
-    Size = size(Val),
-    if is_tuple(Template), Key =:= element(1, Template), 
-       Size =:= size(Template) ->                 % is_record(Template, Key)
+    Size = tuple_size(Val),
+    if Size =:= tuple_size(Template), Key =:= element(1, Template) ->
+	    %% is_record(Template, Key)
 	    [{Opt,list_to_tuple([Key|merge_fields(Val, Template, 2)])}
 	     |merge_options(Opts, Templates)];
        true ->
@@ -1654,7 +1662,7 @@ merge_options([], []) -> [];
 merge_options(Opts, Templates) ->
     throw({merge,Opts,Templates}).
 
-merge_fields(Opt, Template, N) when is_integer(N), N =< size(Opt) ->
+merge_fields(Opt, Template, N) when is_integer(N), N =< tuple_size(Opt) ->
     case element(N, Opt) of
 	undefined ->
 	    [element(N, Template)|merge_fields(Opt, Template, N+1)];
@@ -1895,8 +1903,8 @@ rev(L) -> rev(L,[]).
 rev([C|L],Acc) -> rev(L,[C|Acc]);
 rev([],Acc) -> Acc.
 
-ip_to_bytes(IP) when size(IP) =:= 4 -> ip4_to_bytes(IP);
-ip_to_bytes(IP) when size(IP) =:= 8 -> ip6_to_bytes(IP).
+ip_to_bytes(IP) when tuple_size(IP) =:= 4 -> ip4_to_bytes(IP);
+ip_to_bytes(IP) when tuple_size(IP) =:= 8 -> ip6_to_bytes(IP).
 
 ip4_to_bytes({A,B,C,D}) ->
     [A band 16#ff, B band 16#ff, C band 16#ff, D band 16#ff].

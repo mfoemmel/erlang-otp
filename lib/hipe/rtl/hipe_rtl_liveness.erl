@@ -18,6 +18,8 @@
 
 -define(LIVEOUT_NEEDED,true).	% needed for liveness.inc below.
 -define(PRETTY_PRINT,true).
+
+-include("../flow/cfg.hrl").
 -include("../flow/liveness.inc").
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

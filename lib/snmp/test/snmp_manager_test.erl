@@ -1,5 +1,5 @@
 %%<copyright>
-%% <year>2003-2007</year>
+%% <year>2003-2008</year>
 %% <holder>Ericsson AB, All Rights Reserved</holder>
 %%</copyright>
 %%<legalnotice>
@@ -2129,177 +2129,9 @@ discovery(Config) when list(Config) ->
 
 
 %%======================================================================
-
-trap1(suite) -> [];
-trap1(Config) when list(Config) ->
-    process_flag(trap_exit, true),
-    put(tname,t1),
-    p("starting with Config: ~p~n", [Config]),
-
-    MgrNode   = ?config(manager_node, Config),
-    AgentNode = ?config(agent_node, Config),
-
-    ?line ok = mgr_user_load_mib(MgrNode, snmpv2_mib()),
-    Test2Mib      = test2_mib(Config), 
-    TestTrapMib   = test_trap_mib(Config), 
-    TestTrapv2Mib = test_trap_v2_mib(Config), 
-    ?line ok = mgr_user_load_mib(MgrNode, Test2Mib),
-    ?line ok = mgr_user_load_mib(MgrNode, TestTrapMib),
-    ?line ok = mgr_user_load_mib(MgrNode, TestTrapv2Mib),
-    ?line ok = agent_load_mib(AgentNode,  Test2Mib),
-    ?line ok = agent_load_mib(AgentNode,  TestTrapMib),
-    ?line ok = agent_load_mib(AgentNode,  TestTrapv2Mib),
-
-    Cmd1 = 
-	fun() ->
-		p("manager info: ~n~p", [mgr_info(MgrNode)]),
-		p("agent info: ~n~p", [agent_info(AgentNode)]),
-		ok
-	end,
-
-    Cmd2 = 
-	fun() ->
-		VBs = [{ifIndex,       [1], 1},
-		       {ifAdminStatus, [1], 1},
-		       {ifOperStatus,  [1], 2}],
-		agent_send_trap(AgentNode, linkUp, "standard trap", VBs),
-		ok
-	end,
-
-    Cmd3 = 
-	fun() ->
-		receive
-		    {async_event, _From, {trap, Trap}} ->
-			p("received trap"),
-			case Trap of
-			    {[1,2,3], 3, 0, _Timestamp, VBs} ->
-				p("trap info as expected"), 
-				ExpVBs = [{[ifIndex,       1], 1},
-					  {[ifAdminStatus, 1], 1},
-					  {[ifOperStatus,  1], 2}],
-				case (catch validate_vbs(MgrNode, 
-							 ExpVBs, VBs)) of
-				    ok ->
-					p("valid trap"),
-					ok;
-				    Error ->
-					p("invalid trap: ~n   Error: ~p", 
-					  [Error]),
-					Error
-				end;
-			    {Enteprise, Generic, Spec, Timestamp, VBs} ->
-				p("unepxected trap info:"
-				  "~n   Enteprise: ~p"
-				  "~n   Generic:   ~p"
-				  "~n   Spec:      ~p"
-				  "~n   Timestamp: ~p"
-				  "~n   VBs:       ~p", 
-				  [Enteprise, Generic, Spec, Timestamp, VBs]),
-				Reason = {unexpected_trap, Trap},
-				{error, Reason};
-			    {Err, Idx, VBs} ->
-				p("unexpected error status: "
-				  "~n   Err: ~p"
-				  "~n   Idx: ~p"
-				  "~n   VBs: ~p", [Err, Idx, VBs]),
-				Reason = {unexpected_status, {Err, Idx, VBs}},
-				{error, Reason}
-			end
-		after 10000 ->
-			receive 
-			    Any ->
-				{error, {timeout_crap, Any}}
-			after 1000 ->
-				{error, timeout}
-			end
-		end
-	end,
-
-    %% This is the v2-equivalent of the v1-trap above
-    Cmd4 = 
-	fun() ->
-		receive 
-		    {async_event, _From, {trap, Trap}} ->
-			p("received trap"),
-			case Trap of
-			    {noError, 0, VBs0} ->
-				p("trap info as expected: ~n~p", [VBs0]), 
-				%% The first two are a timestamp and oid
-				[_,_|VBs] = VBs0,
-				ExpVBs = [{[ifIndex,       1], 1},
-					  {[ifAdminStatus, 1], 1},
-					  {[ifOperStatus,  1], 2}],
-				case (catch validate_vbs(MgrNode, 
-							 ExpVBs, VBs)) of
-				    ok ->
-					p("valid trap"),
-					ok;
-				    Error ->
-					p("invalid trap: ~n   Error: ~p", 
-					  [Error]),
-					Error
-				end;
-			    {Err, Idx, VBs} ->
-				p("unexpected error status: "
-				  "~n   Err: ~p"
-				  "~n   Idx: ~p"
-				  "~n   VBs: ~p", [Err, Idx, VBs]),
-				Reason = {unexpected_status, {Err, Idx, VBs}},
-				{error, Reason}
-			end
-		after 10000 ->
-			receive 
-			    Any ->
-				{error, {timeout_crap, Any}}
-			after 1000 ->
-				{error, timeout}
-			end
-		end
-	end,
-
-    %% This is the a result of erroneous configuration.
-%%     Cmd5 = 
-%% 	fun() ->
-%% 		receive 
-%% 		    {async_event, _From, {error, Reason}} ->
-%% 			p("received error"),
-%% 			case Reason of
-%% 			    {failed_processing_message,
-%% 			     {securityError, usmStatsUnknownEngineIDs}} ->
-%% 				p("expected error"), 
-%% 				ok;
-%% 			    _ ->
-%% 				p("unexpected error: "
-%% 				  "~n   Reason: ~p", [Reason]),
-%% 				{error, {unexpected_error, Reason}}
-%% 			end
-%% 		after 10000 ->
-%% 			receive 
-%% 			    Any ->
-%% 				{error, {crap, Any}}
-%% 			after 1000 ->
-%% 				{error, timeout}
-%% 			end
-%% 		end
-%% 	end,
-
-    Cmd6 = fun() -> ?SLEEP(1000), ok end,
-
-    Commands = 
-	[
-	 {1, "Manager and agent info at start of test", Cmd1},
-	 {2, "Send trap from agent", Cmd2},
-	 {3, "Await trap to manager", Cmd3},
-	 {4, "Await (v2) trap to manager", Cmd4},
-%% 	 {5, "Await error info (because of erroneous config)", Cmd5},
-	 {6, "Sleep some time (1 sec)", Cmd6},
-	 {7, "Manager and agent info after test completion", Cmd1}
-	],
-
-    command_handler(Commands).
-
-    
-%%======================================================================
+%% 
+%% Utility functions for cases trap1 and trap2
+%% 
 
 collect_traps(N) ->
     collect_traps(N, []).
@@ -2351,6 +2183,159 @@ verify_trap(Trap, [{Id, Verifier}|Verifiers]) ->
 	    verify_trap(Trap, Verifiers)
     end.
 
+
+%%======================================================================
+
+trap1(suite) -> [];
+trap1(Config) when list(Config) ->
+    process_flag(trap_exit, true),
+    put(tname,t1),
+    p("starting with Config: ~p~n", [Config]),
+
+    MgrNode   = ?config(manager_node, Config),
+    AgentNode = ?config(agent_node, Config),
+
+    ?line ok = mgr_user_load_mib(MgrNode, snmpv2_mib()),
+    Test2Mib      = test2_mib(Config), 
+    TestTrapMib   = test_trap_mib(Config), 
+    TestTrapv2Mib = test_trap_v2_mib(Config), 
+    ?line ok = mgr_user_load_mib(MgrNode, Test2Mib),
+    ?line ok = mgr_user_load_mib(MgrNode, TestTrapMib),
+    ?line ok = mgr_user_load_mib(MgrNode, TestTrapv2Mib),
+    ?line ok = agent_load_mib(AgentNode,  Test2Mib),
+    ?line ok = agent_load_mib(AgentNode,  TestTrapMib),
+    ?line ok = agent_load_mib(AgentNode,  TestTrapv2Mib),
+
+    %% Version 1 trap verification function:
+    VerifyTrap_v1 = 
+	fun(Ent, Gen, Spec, ExpVBs, Trap) ->
+		case Trap of
+		    {Ent, Gen, Spec, _Timestamp, VBs} ->
+			p("trap info as expected"), 
+			case (catch validate_vbs(MgrNode, 
+						 ExpVBs, VBs)) of
+			    ok ->
+				p("valid trap"),
+				ok;
+			    Error ->
+				p("invalid trap: ~n   Error: ~p", [Error]),
+				Error
+			end;
+		    {Enteprise, Generic, Spec, Timestamp, VBs} ->
+			p("unepxected v1 trap info:"
+			  "~n   Enteprise: ~p"
+			  "~n   Generic:   ~p"
+			  "~n   Spec:      ~p"
+			  "~n   Timestamp: ~p"
+			  "~n   VBs:       ~p", 
+			  [Enteprise, Generic, Spec, Timestamp, VBs]),
+			ExpTrap = {Ent, Gen, Spec, ignore, ExpVBs}, 
+			Reason = {unexpected_trap, {ExpTrap, Trap}},
+			{error, Reason};
+		    {Err, Idx, VBs} ->
+			p("unexpected trap info: "
+			  "~n   Err: ~p"
+			  "~n   Idx: ~p"
+			  "~n   VBs: ~p", [Err, Idx, VBs]),
+			Reason = {unexpected_status, {Err, Idx, VBs}},
+			{error, Reason}
+		end
+	end,
+
+    %% Version 2 trap verification function:
+    VerifyTrap_v2 = 
+	fun(ExpVBs, Trap) ->
+		case Trap of
+		    {noError, 0, VBs0} ->
+			p("trap info as expected: ~n~p", [VBs0]), 
+			%% The first two are a timestamp and oid
+			[_,_|VBs] = VBs0,
+			case (catch validate_vbs(MgrNode, 
+						 ExpVBs, VBs)) of
+			    ok ->
+				p("valid trap"),
+				ok;
+			    Error ->
+				p("invalid trap: ~n   Error: ~p", 
+				  [Error]),
+				Error
+			end;
+		    {Err, Idx, VBs} ->
+			p("unexpected error status: "
+			  "~n   Err: ~p"
+			  "~n   Idx: ~p"
+			  "~n   VBs: ~p", [Err, Idx, VBs]),
+			Reason = {unexpected_status, {Err, Idx, VBs}},
+			{error, Reason}
+		end
+	end,
+
+
+    %% -- command 1 --
+    %% Collect various info about the manager and the agent
+    Cmd1 = 
+	fun() ->
+		p("manager info: ~n~p", [mgr_info(MgrNode)]),
+		p("agent info: ~n~p", [agent_info(AgentNode)]),
+		ok
+	end,
+
+    %% -- command 2 --
+    %% Make the agent send trap(s) (both a v1 and a v2 trap)
+    Cmd2 = 
+	fun() ->
+		VBs = [{ifIndex,       [1], 1},
+		       {ifAdminStatus, [1], 1},
+		       {ifOperStatus,  [1], 2}],
+		agent_send_trap(AgentNode, linkUp, "standard trap", VBs),
+		ok
+	end,
+
+    %% -- command 3 --
+    %% Version 1 trap verify function
+    Cmd3_VerifyTrap_v1 = 
+	fun(Trap) ->
+		Ent    = [1,2,3], 
+		Gen    = 3, 
+		Spec   = 0, 
+		ExpVBs = [{[ifIndex,       1], 1},
+			  {[ifAdminStatus, 1], 1},
+			  {[ifOperStatus,  1], 2}],
+		VerifyTrap_v1(Ent, Gen, Spec, ExpVBs, Trap)
+	end,
+
+    %% Version 2 trap verify function
+    Cmd3_VerifyTrap_v2 = 
+	fun(Trap) ->
+		ExpVBs = [{[ifIndex,       1], 1},
+			  {[ifAdminStatus, 1], 1},
+			  {[ifOperStatus,  1], 2}],
+		VerifyTrap_v2(ExpVBs, Trap)
+	end,
+
+    %% Verify the two traps. The order of them is unknown
+    Cmd3 = 
+	fun() ->
+		Verifiers = [{"v1 trap verifier", Cmd3_VerifyTrap_v1},
+			     {"v2 trap verifier", Cmd3_VerifyTrap_v2}],
+		verify_traps(collect_traps(2), Verifiers)
+	end,
+
+    Cmd4 = fun() -> ?SLEEP(1000), ok end,
+
+    Commands = 
+	[
+	 {1, "Manager and agent info at start of test", Cmd1},
+	 {2, "Send trap from agent", Cmd2},
+	 {3, "Await trap(s) to manager", Cmd3},
+	 {4, "Sleep some time (1 sec)", Cmd4},
+	 {5, "Manager and agent info after test completion", Cmd1}
+	],
+
+    command_handler(Commands).
+
+    
+%%======================================================================
 
 trap2(suite) -> [];
 trap2(Config) when list(Config) ->
@@ -4180,6 +4165,13 @@ rcall(Node, Mod, Func, Args) ->
 
 %% ------
 
+%% Time in milli sec
+%% t() ->
+%%     {A,B,C} = erlang:now(),
+%%     A*1000000000+B*1000+(C div 1000).
+
+
+%% ------
 
 p(F) ->
     p(F, []).

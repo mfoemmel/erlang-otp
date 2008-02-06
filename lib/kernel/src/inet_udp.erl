@@ -117,8 +117,7 @@ optuniquify(Opt, [], Rest, Result) ->
     optuniquify(lists:reverse(Rest), [Opt | Result]);
 %% Duplicate option tuple
 optuniquify(Opt0, [Opt1 | Tail], Rest, Result)
-  when is_tuple(Opt0), is_tuple(Opt1), 
-       size(Opt0) =:= size(Opt1), 
+  when tuple_size(Opt0) =:= tuple_size(Opt1), 
        element(1, Opt0) =:= element(1, Opt1) ->
     %% Waste duplicate
     optuniquify(Opt0, Tail, Rest, Result);

@@ -55,7 +55,12 @@ DTD_FILES = \
 	part.dtd \
 	report.dtd \
 	terms.dtd \
-	xhtml-lat1.ent
+	xhtml-lat1.ent \
+	xhtml-special.ent \
+	xhtml-symbol.ent \
+	xhtml1-frameset.dtd \
+	xhtml1-strict.dtd \
+	xhtml1-transitional.dtd
 
 # ----------------------------------------------------
 # Targets

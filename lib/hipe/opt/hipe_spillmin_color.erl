@@ -546,12 +546,5 @@ def_use(X, Target, TempMap) ->
 	       hipe_temp_map:is_spilled(Z, TempMap)],
   {Defines, Uses}.
 
-reg_names(Rs, Target) ->
-   Regs = 
-    case Target of
-      hipe_sparc_specific ->
-	hipe_sparc:keep_registers(Rs);
-      _ ->
-	Rs
-    end,
+reg_names(Regs, Target) ->
   [Target:reg_nr(X) || X <- Regs].

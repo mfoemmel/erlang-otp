@@ -71,6 +71,9 @@
 /* Define if __after_morecore_hook can track malloc()s core memory use. */
 #undef ERTS___AFTER_MORECORE_HOOK_CAN_TRACK_MALLOC
 
+/* Define if you want to disable native ethread implementations */
+#undef ETHR_DISABLE_NATIVE_IMPLS
+
 /* Define if you have all ethread defines */
 #undef ETHR_HAVE_ETHREAD_DEFINES
 
@@ -111,6 +114,9 @@
 /* Define if you have pthreads */
 #undef ETHR_PTHREADS
 
+/* Define to the size of pointers */
+#undef ETHR_SIZEOF_PTR
+
 /* Define if you can safely include both <sys/time.h> and <time.h>. */
 #undef ETHR_TIME_WITH_SYS_TIME
 
@@ -131,6 +137,9 @@
 
 /* Define if you have a decl of fread that conflicts with int fread */
 #undef HAVE_CONFLICTING_FREAD_DECLARATION
+
+/* Define if you have a putenv() that stores a copy of the key-value pair */
+#undef HAVE_COPYING_PUTENV
 
 /* Define to 1 if you have the declaration of `SCTP_ABORT', and to 0 if you
    don't. */

@@ -291,7 +291,7 @@ compress(Binary) ->
     list_to_binary(Bs).
 
 -spec(uncompress/1 :: (binary()) -> binary()).
-uncompress(Binary) when is_binary(Binary), size(Binary) >= 8 ->
+uncompress(Binary) when byte_size(Binary) >= 8 ->
     Z = open(),
     inflateInit(Z),
     Bs = inflate(Z, Binary),

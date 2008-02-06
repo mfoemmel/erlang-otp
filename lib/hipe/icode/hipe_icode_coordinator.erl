@@ -150,7 +150,8 @@ analysis_funs(Pid) ->
 		  Ans
 	      end,
   FinalFun = fun(MFA,RetTypes) ->
-		 Self ! {done,RetTypes,MFA} 
+		 Self ! {done,RetTypes,MFA}, 
+		 ok
 	     end,
   {ArgsFun,GetResFun,FinalFun}. 
 

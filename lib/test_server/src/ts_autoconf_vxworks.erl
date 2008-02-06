@@ -62,7 +62,8 @@ tests() ->
      {"for cross-linker", fun find_ld/2},
      {"for object extension", fun find_obj/2},
      {"for shared libraries extension", fun find_dll/2},
-     {"for executables extension", fun find_exe/2}].
+     {"for executables extension", fun find_exe/2},
+     {"for make", fun find_make/2}].
 
 target_architecture({Architecture, _Target_host}, Vars) ->
     case lists:member(Architecture, ?PLATFORMS) of
@@ -93,7 +94,8 @@ find_gcc({Arch, _Target_host}, Vars) ->
 		    {'DEFS', ""},
 		    {'ERTS_LIBS', ""},
 		    {'LIBS', ""},
-		    {'SHLIB_CFLAGS', Cflags} | Vars]}
+		    {'SHLIB_CFLAGS', Cflags},
+		    {test_c_compiler, "{gnuc, undefined}"} | Vars]}
     end.
 
 find_ld({Arch, _Target_host}, Vars) ->
@@ -121,6 +123,9 @@ find_dll({Arch, _Target_host}, Vars) ->
 find_exe({Arch, _Target_host}, Vars) ->
     Exe = exe_ext(Arch),
     {Exe, [{exe, Exe}|Vars]}.
+
+find_make(_, Vars) ->
+    {"make", [{make_command, "make"} | Vars]}.
 
 %%% some utility functions 
 gnu_suffix(Arch) ->

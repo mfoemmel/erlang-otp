@@ -102,7 +102,7 @@ case $host in
 esac
 
 AC_PROG_INSTALL
-INSTALL_DIR="\${INSTALL} -d"
+LM_PROG_INSTALL_DIR
 AC_SUBST(INSTALL_DIR)
 
 case $host_os in

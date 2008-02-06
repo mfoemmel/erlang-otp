@@ -65,7 +65,7 @@ print(Term, Col, Ll, D, RecDefFun) when is_tuple(Term);
                               1),
             pp(If, Col, Ll, TInd, indent(Col), 0, 0)
     end;
-print(<<_/bitstr>>=Term, Col, Ll, D, RecDefFun) ->
+print(<<_/bitstring>>=Term, Col, Ll, D, RecDefFun) ->
     If = {_S, Len} = print_length(Term, D, RecDefFun),
     if
         Len < Ll - Col, Len =< ?MAXCS ->
@@ -306,7 +306,7 @@ print_length(Fun, _D, _RF) when is_function(Fun) ->
     {S, iolist_size(S)};
 print_length(R, D, RF) when is_atom(element(1, R)), 
                             is_function(RF) ->
-    case RF(element(1, R), size(R) - 1) of
+    case RF(element(1, R), tuple_size(R) - 1) of
         no -> 
             print_length_tuple(R, D, RF);
         RDefs ->
@@ -316,10 +316,10 @@ print_length(Tuple, D, RF) when is_tuple(Tuple) ->
     print_length_tuple(Tuple, D, RF);
 print_length(<<>>, _D, _RF) ->
     {"<<>>", 4};
-print_length(<<_/bitstr>>, 1, _RF) ->
+print_length(<<_/bitstring>>, 1, _RF) ->
     {"<<...>>", 7};
-print_length(<<_/bitstr>>=Bin, D, _RF) ->
-    case erlang:bitsize(Bin) rem 8 of
+print_length(<<_/bitstring>>=Bin, D, _RF) ->
+    case bit_size(Bin) rem 8 of
         0 ->
 	    D1 = D - 1, 
 	    case printable_bin(Bin, D1) of
@@ -345,7 +345,7 @@ print_length_tuple(_Tuple, 1, _RF) ->
     {"{...}", 5};
 print_length_tuple(Tuple, D, RF) ->
     L = print_length_list1(tuple_to_list(Tuple), D, RF),
-    IsTagged = is_atom(element(1, Tuple)) and (size(Tuple) > 1),
+    IsTagged = is_atom(element(1, Tuple)) and (tuple_size(Tuple) > 1),
     {{tuple,IsTagged,L}, list_length(L, 2)}.
 
 print_length_record(_Tuple, 1, _RF, _RDefs) ->
@@ -419,22 +419,22 @@ printable_list(L, _D) ->
 %             false
 %     end.
 
-printable_bin(Bin, D) when D >= 0, ?CHARS * D =< size(Bin) ->
-    printable_bin(Bin, min(?CHARS * D, size(Bin)), D);
+printable_bin(Bin, D) when D >= 0, ?CHARS * D =< byte_size(Bin) ->
+    printable_bin(Bin, min(?CHARS * D, byte_size(Bin)), D);
 printable_bin(Bin, D) ->
-    printable_bin(Bin, size(Bin), D).
+    printable_bin(Bin, byte_size(Bin), D).
 
 printable_bin(Bin, Len, D) ->
     N = min(20, Len),
     L = binary_to_list(Bin, 1, N),
     case printable_list1(L, N) of
-        all when N =:= size(Bin)  ->
+        all when N =:= byte_size(Bin)  ->
             L;
-        all when N =:= Len -> % N < size(Bin)
+        all when N =:= Len -> % N < byte_size(Bin)
             {true, L};
         all ->
             case printable_bin1(Bin, 1 + N, Len - N) of
-                0 when size(Bin) =:= Len ->
+                0 when byte_size(Bin) =:= Len ->
                     binary_to_list(Bin);
                 NC when D > 0, Len - NC >= D ->
                     {true, binary_to_list(Bin, 1, Len - NC)};

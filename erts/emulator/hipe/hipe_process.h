@@ -17,18 +17,11 @@ struct hipe_process_state {
     Eterm *nstblacklim;		/* Black/gray stack boundary. Must exist if
 				   graylim exists. Ignored if no graylim. */
     void (*ngra)(void);		/* Saved original RA from graylim frame. */
-#if defined(__sparc__)
-    void (*nra)(void);		/* Native Return Address == where to resume. */
-                                /* XXX: Used to store the return address 
-                                        of the current bif call.
-                                        To find the first stack descriptor
-					at GC or exception. */
-#endif
 #if defined(__i386__) || defined(__x86_64__)
     Eterm *ncsp;		/* Saved C stack pointer. */
-    unsigned int narity;
+    unsigned int narity;	/* Arity of BIF call, for stack walks. */
 #endif
-#if defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
+#if defined(__sparc__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     void (*nra)(void);		/* Native code return address. */
     unsigned int narity;	/* Arity of BIF call, for stack walks. */
 #endif
@@ -47,14 +40,14 @@ static __inline__ void hipe_init_process(struct hipe_process_state *p)
 #if defined(__sparc__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     p->nra = NULL;
 #endif
-#if defined(__i386__) || defined(__x86_64__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
+#if defined(__i386__) || defined(__x86_64__) || defined(__sparc__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     p->narity = 0;
 #endif
 }
 
 static __inline__ void hipe_delete_process(struct hipe_process_state *p)
 {
-    if( p->nstack )
+    if (p->nstack)
 	erts_free(ERTS_ALC_T_HIPE, (void*)p->nstack);
 }
 

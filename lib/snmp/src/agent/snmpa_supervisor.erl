@@ -81,7 +81,7 @@ start_link(sub, Opts, _Type) ->
     start_sub_sup(Opts);
 start_link(master, Opts, normal) ->
     start_master_sup(Opts);
-start_link(master, Opts, {takeover, Node}) when node(Node) ->
+start_link(master, Opts, {takeover, Node}) ->
     case start_master_sup(Opts) of
 	{ok, Pid} ->
             OwnMibNames = get_own_loaded_mibs(),

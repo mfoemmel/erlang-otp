@@ -20,12 +20,13 @@
  * Boston, MA 02111-1307, USA. 
  */
 
-
-#if 0
 #include <stdlib.h>
+#include <stdio.h>
+#include <string.h>
+#if 0
 #include "malloc.h"
 #endif
-
+
 #ifdef __STDC__
 
 #else /* STDC */

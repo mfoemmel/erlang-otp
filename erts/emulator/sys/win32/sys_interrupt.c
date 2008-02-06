@@ -51,7 +51,7 @@ void erts_do_break_handling(void)
      * therefore, make sure that all threads but this one are blocked before
      * proceeding!
      */
-    erts_smp_block_system(ERTS_BS_FLG_ALLOW_GC);
+    erts_smp_block_system(0);
     /* call the break handling function, reset the flag */
     do_break();
 

@@ -143,7 +143,7 @@ conv_insn(I, Map, Data) ->
       {FixSrc++FixOff++I2, Map2, Data};
     #load_address{} ->
       {Dst, Map0} = conv_dst(hipe_rtl:load_address_dst(I), Map),
-      Addr = hipe_rtl:load_address_address(I),
+      Addr = hipe_rtl:load_address_addr(I),
       Type = hipe_rtl:load_address_type(I),
       Src = hipe_x86:mk_imm_from_addr(Addr, Type),
       I2 = mk_load_address(Type, Src, Dst),

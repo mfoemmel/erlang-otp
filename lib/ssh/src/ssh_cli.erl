@@ -45,7 +45,9 @@
 	  pty,
 	  group,
 	  buf,
-	  shell
+	  shell,
+	  remote_channel,
+	  options
 	 }).
 
 %%====================================================================
@@ -71,7 +73,7 @@ listen(Shell, Addr, Port, Opts) ->
     ssh_cm:listen(
       fun() ->
 	      {ok, Pid} =
-		  gen_server:start_link(?MODULE, [Shell], []),
+		  gen_server:start_link(?MODULE, [Shell, Opts], []),
 	      Pid
       end, Addr, Port, Opts).
 
@@ -93,8 +95,8 @@ stop(Pid) ->
 %%                         {stop, Reason}
 %% Description: Initiates the server
 %%--------------------------------------------------------------------
-init([Shell]) ->
-    {ok, #state{shell = Shell}}.
+init([Shell, Opts]) ->
+    {ok, #state{shell = Shell, options = Opts}}.
 
 %%--------------------------------------------------------------------
 %% Function: %% handle_call(Request, From, State) -> {reply, Reply, State} |
@@ -129,31 +131,9 @@ handle_cast(_Msg, State) ->
 %%                                       {stop, Reason, State}
 %% Description: Handling all non call/cast messages
 %%--------------------------------------------------------------------
-handle_info({ssh_cm, CM, {open, Channel, _RemoteChannel, {session}}}, State) ->
-    Shell = State#state.shell,
-    ?dbg(true, "session open: self()=~p CM=~p Channel=~p Shell=~p\n",
-	 [self(), CM, Channel, Shell]),
-    ShellFun = case is_function(Shell) of
-		   true ->
-		       case erlang:fun_info(Shell, arity) of
-			   {arity, 1} ->
-			       User = ssh_userauth:get_user_from_cm(CM),
-			       fun() -> Shell(User) end;
-			   {arity, 2} ->
-			       User = ssh_userauth:get_user_from_cm(CM),
-			       {ok, PeerAddr} = ssh_cm:get_peer_addr(CM),
-			       fun() -> Shell(User, PeerAddr) end;
-			   _ ->
-			       Shell
-		       end;
-		   _ ->
-		       Shell
-	       end,
-    Group = group:start(self(), ShellFun, []),
-    process_flag(trap_exit, true),
+handle_info({ssh_cm, CM, {open, Channel, RemoteChannel, {session}}}, State) ->
     {noreply,
-     State#state{cm = CM, channel = Channel,
-		 buf = empty_buf(), group = Group}};
+     State#state{cm = CM, channel = Channel, remote_channel = RemoteChannel}};
 handle_info({ssh_cm, CM, {data, Channel, _Type, Data}}, State) ->
     ssh_cm:adjust_window(CM, Channel, size(Data)),
     State#state.group ! {self(), {data, binary_to_list(Data)}},
@@ -176,10 +156,32 @@ handle_info({Group, Req}, State) when Group==State#state.group ->
     {Chars, NewBuf} = io_request(Req, Buf, Pty),
     write_chars(CM, Channel, Chars),
     {noreply, State#state{buf = NewBuf}};
-handle_info({ssh_cm, _CM, {shell}}, State) ->
-    {noreply, State};
-handle_info({ssh_cm, _CM, {exec, Cmd}}, State) ->
-    State#state.group ! {self(), {data, Cmd ++ "\n"}},
+handle_info({ssh_cm, CM, {shell}}, State) ->
+    NewState = start_shell(CM, State),
+    process_flag(trap_exit, true),
+    {noreply, NewState};
+handle_info({ssh_cm, CM, {exec, Cmd}}, #state{channel = Channel} = State) ->
+    %% NewState = start_shell(CM, State),
+    %% NewState#state.group ! {self(), {data, Cmd ++ "\n"}},
+    Reply = case erl_scan:string(Cmd) of
+		{ok, Tokens, _EndList} ->
+		    case erl_parse:parse_exprs(Tokens) of
+			{ok, Expr_list} ->
+			    case (catch erl_eval:exprs(
+					  Expr_list,
+					  erl_eval:new_bindings())) of
+				{value, Value, _NewBindings} ->
+				    Value;
+				{'EXIT', {E, _}} -> E;
+				E -> E
+			    end;
+			E -> E
+		    end;
+		E -> E
+	    end,
+    write_chars(CM, Channel, io_lib:format("~p\n", [Reply])),
+    ssh_cm:send_eof(CM, Channel),
+    ssh_cm:close(CM, Channel),
     {noreply, State};
 handle_info({get_cm, From}, #state{cm=CM} = State) ->
     From ! {From, cm, CM},
@@ -189,12 +191,28 @@ handle_info({ssh_cm, _CM, {eof, _Channel}}, State) ->
 handle_info({ssh_cm, _CM, {closed, _Channel}}, State) ->
     %% ignore -- we'll get an {eof, Channel} soon??
     {noreply, State};
+handle_info({ssh_cm, CM, {subsystem, Channel, _WantsReply, SsName}} = Msg,
+	    State) ->
+    case check_subsystem(SsName, State#state.options) of
+	none ->
+	    CM ! {same_user, self()},
+	    {noreply, State};
+	Module when is_atom(Module) ->
+	    {ok, SubSystemD} = gen_server:start_link(Module, [State#state.options], []),
+	    RemoteChannel = State#state.remote_channel,
+	    %% FIXME: this is a bit of a kludge
+	    SubSystemD ! {ssh_cm, CM, {open, Channel, RemoteChannel, {session}}},
+	    SubSystemD ! Msg,
+	    CM ! {new_user, self(), SubSystemD},
+	    {stop, normal, State}
+    end;
 handle_info({'EXIT', Group, normal},
 	    #state{cm=CM, channel=Channel, group=Group} = State) ->
     ssh_cm:close(CM, Channel),
     ssh_cm:stop(CM),
     {stop, normal, State};
 handle_info(Info, State) ->
+    io:format("~p:handle_info ~p\n", [?MODULE, Info]),
     ?dbg(true, "~p:handle_info: BAD info ~p\n(State ~p)\n", [?MODULE, Info, State]),
     {stop, {bad_info, Info}, State}.
 
@@ -232,6 +250,12 @@ io_request({delete_chars,N}, Buf, Tty) ->
     delete_chars(N, Buf, Tty);
 io_request(beep, Buf, _Tty) ->
     {[7], Buf};
+
+%% New in R12
+io_request({get_geometry,columns},Buf,Tty) ->
+    {ok, Tty#ssh_pty.width, Buf};
+io_request({get_geometry,rows},Buf,Tty) ->
+    {ok, Tty#ssh_pty.height, Buf};
 io_request({requests,Rs}, Buf, Tty) ->
     io_requests(Rs, Buf, Tty, []);
 io_request(_R, Buf, _Tty) ->
@@ -417,3 +441,32 @@ bin_to_list(L) when list(L) ->
 bin_to_list(I) when integer(I) ->
     I.
 
+start_shell(CM, State) ->
+    Shell = State#state.shell,
+    ?dbg(true, "start_shell: self()=~p CM=~p Shell=~p\n",
+	 [self(), CM, Shell]),
+    ShellFun = case is_function(Shell) of
+		   true ->
+		       case erlang:fun_info(Shell, arity) of
+			   {arity, 1} ->
+			       User = ssh_userauth:get_user_from_cm(CM),
+			       fun() -> Shell(User) end;
+			   {arity, 2} ->
+			       User = ssh_userauth:get_user_from_cm(CM),
+			       {ok, PeerAddr} = ssh_cm:get_peer_addr(CM),
+			       fun() -> Shell(User, PeerAddr) end;
+			   _ ->
+			       Shell
+		       end;
+		   _ ->
+		       Shell
+	       end,
+    Group = group:start(self(), ShellFun, []),
+    State#state{group = Group, buf = empty_buf()}.
+
+check_subsystem(SsName, Options) ->
+    Subsystems = proplists:get_value(subsystems, Options, [{"sftp", ssh_sftpd}]),
+    proplists:get_value(SsName, Subsystems, none).
+
+    
+					 

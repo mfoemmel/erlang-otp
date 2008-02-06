@@ -1040,7 +1040,7 @@ insert_state(#tabs{state_id = StateIdTab}, StateTab0, State, StateId) ->
     {N, _Items} = State,
     insert_state_id(StateIdTab, N, StateId),
     StateTab = if 
-                   size(StateTab0) > N ->
+                   tuple_size(StateTab0) > N ->
                        StateTab0;
                    true ->
                        list_to_tuple(tuple_to_list(StateTab0) ++

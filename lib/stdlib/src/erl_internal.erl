@@ -63,7 +63,6 @@ guard_bif(length, 1) -> true;
 guard_bif(hd, 1) -> true;
 guard_bif(tl, 1) -> true;
 guard_bif(size, 1) -> true;
-guard_bif(bitsize, 1) -> true;			%XXX Deprecated
 guard_bif(bit_size, 1) -> true;
 guard_bif(byte_size, 1) -> true;
 guard_bif(element, 2) -> true;
@@ -73,7 +72,6 @@ guard_bif(node, 1) -> true;
 guard_bif(tuple_size, 1) -> true;
 guard_bif(is_atom, 1) -> true;
 guard_bif(is_binary, 1) -> true;
-guard_bif(is_bitstr, 1) -> true;		%XXX Deprecated
 guard_bif(is_bitstring, 1) -> true;
 guard_bif(is_boolean, 1) -> true;
 guard_bif(is_constant, 1) -> true;
@@ -105,7 +103,6 @@ type_test(Name, Arity) ->
 new_type_test(is_atom, 1) -> true;
 new_type_test(is_boolean, 1) -> true;
 new_type_test(is_binary, 1) -> true;
-new_type_test(is_bitstr, 1) -> true;		%XXX Deprecated
 new_type_test(is_bitstring, 1) -> true;
 new_type_test(is_constant, 1) -> true;
 new_type_test(is_float, 1) -> true;

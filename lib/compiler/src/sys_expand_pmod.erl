@@ -22,7 +22,7 @@
 %% away. Any calls on the form 'foo(...)' must be calls to local
 %% functions. Auto-generated functions (module_info,...) have not yet
 %% been added to the function definitions, but are listed in 'defined'
-%% and 'exports'. The 'new/N' function is neither added to the
+%% and 'exports'. The automatic 'new/N' function is neither added to the
 %% definitions nor to the 'exports'/'defines' lists yet.
 
 -export([forms/4]).
@@ -49,13 +49,15 @@ forms(Fs0, Ps, Es0, Ds0, PreDef) ->
 update_function_names(Es, St) ->
     [update_function_name(E, St) || E <- Es].
 
-update_function_name(E={F,A}, St) ->
+update_function_name(E={F,A}, St) when F =/= new ->
     case ordsets:is_element(E, St#pmod.predef) of
 	true -> E;
 	false -> {F, A + 1}
-    end.
+    end;
+update_function_name(E, _St) ->
+    E.
 
-update_forms([{function,L,N,A,Cs}|Fs],St) ->
+update_forms([{function,L,N,A,Cs}|Fs],St) when N =/= new ->
     [{function,L,N,A+1,Cs}|update_forms(Fs,St)];
 update_forms([F|Fs],St) ->
     [F|update_forms(Fs,St)];
@@ -72,7 +74,7 @@ forms([], St0) ->
     {[], St0}.
 
 %% Only function definitions are of interest here. State is not updated.
-form({function,Line,Name0,Arity0,Clauses0},St) ->
+form({function,Line,Name0,Arity0,Clauses0},St) when Name0 =/= new ->
     {Name,Arity,Clauses} = function(Name0, Arity0, Clauses0, St),
     {{function,Line,Name,Arity,Clauses},St};
 %% Pass anything else through
@@ -342,9 +344,14 @@ expr({'fun',Line,Body,Info},St) ->
 	{function,M,F,A} ->			%This is an error in lint!
 	    {'fun',Line,{function,M,F,A},Info}
     end;
-expr({call,Lc,{atom,_,new}=Name,As0},#pmod{parameters=Ps}=St)
-  when length(As0) =:= length(Ps) ->
-    %% The new() function does not take a 'THIS' argument (it's static).
+expr({call,Lc,{atom,_,instance}=Name,As0},St) ->
+    %% All local functions 'instance(...)' are static by definition,
+    %% so they do not take a 'THIS' argument when called
+    As1 = expr_list(As0,St),
+    {call,Lc,Name,As1};
+expr({call,Lc,{atom,_,new}=Name,As0},St) ->
+    %% All local functions 'new(...)' are static by definition,
+    %% so they do not take a 'THIS' argument when called
     As1 = expr_list(As0,St),
     {call,Lc,Name,As1};
 expr({call,Lc,{atom,_,module_info}=Name,As0},St)

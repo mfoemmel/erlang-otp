@@ -43,11 +43,11 @@
                          | {'applications', [atom()]}
                          | {'included_applications', [atom()]}
                          | {'env', [{atom(), any()}]}
-                         | {'start_phases', [{atom(), any()}]}
+                         | {'start_phases', [{atom(), any()}] | 'undefined'}
                          | {'maxT', timeout()}                % max timeout
                          | {'maxP', integer() | 'infinity'}   % max processes
                          | {'mod', {atom(), any()}}).
--type(application_spec() :: [{'application', atom(), [application_opt()]}]).
+-type(application_spec() :: {'application', atom(), [application_opt()]}).
 
 %%------------------------------------------------------------------
 
@@ -224,7 +224,7 @@ get_all_env(Application) ->
 get_key(Key) -> 
     application_controller:get_pid_key(group_leader(), Key).
 
--spec(get_key/2 :: (Application :: atom, Key :: atom()) ->
+-spec(get_key/2 :: (Application :: atom(), Key :: atom()) ->
 	     'undefined' | {'ok', any()}).
 
 get_key(Application, Key) -> 

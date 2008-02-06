@@ -232,25 +232,22 @@ erts_sys_prepare_crash_dump(void)
 static void
 init_console()
 {
-    char* mode = getenv("ERL_CONSOLE_MODE");
+    char* mode = erts_read_env("ERL_CONSOLE_MODE");
 
-    if (mode == NULL) {
-	mode = "window";
-    }
-
-    if (strcmp(mode, "window") == 0) {
+    if (!mode || strcmp(mode, "window") == 0) {
 	win_console = TRUE;
 	ConInit();
 	/*nohup = 0;*/
     } else if (strncmp(mode, "tty:", 4) == 0) {
-	mode += 4;
-	if (mode[1] == 'c') {
+	if (mode[5] == 'c') {
 	    setvbuf(stdout, NULL, _IONBF, 0);
 	}
-	if (mode[2] == 'c') {
+	if (mode[6] == 'c') {
 	    setvbuf(stderr, NULL, _IONBF, 0);
 	}
     }
+
+    erts_free_read_env(mode);
 }
 
 int sys_max_files() 
@@ -348,37 +345,6 @@ int* pBuild;			/* Pointer to build number. */
   *pMajor = int_os_version.dwMajorVersion;
   *pMinor = int_os_version.dwMinorVersion;
   *pBuild = int_os_version.dwBuildNumber;
-}
-
-void init_getenv_state(GETENV_STATE *state)
-{
-   *state = NULL;
-}
-
-char *getenv_string(GETENV_STATE *state0)
-{
-   char *state = (char *) *state0;
-   char *cp;
-   int len;
-
-   if (state == NULL)
-      state = (char *) GetEnvironmentStrings();
-
-   if (*state == '\0')
-      return NULL;
-
-   len = strlen(state);
-   cp = state;
-   state += len+1;
-
-   *state0 = (GETENV_STATE) state;
-
-   return cp;
-}
-
-void fini_getenv_state(GETENV_STATE *state)
-{
-   *state = NULL;
 }
 
 /************************** Port I/O *******************************/
@@ -2241,14 +2207,6 @@ void sys_get_pid(char *buffer){
     sprintf(buffer,"%lu",(unsigned long) p);
 }
 
-int sys_putenv(char *buffer){
-    Uint sz = strlen(buffer)+1;
-    char *env = erts_alloc(ERTS_ALC_T_PUTENV_STR, sz);
-    erts_smp_atomic_add(&sys_misc_mem_sz, sz);
-    strcpy(env,buffer);
-    return(_putenv(env));
-}
-
 void
 sys_init_io(void)
 {
@@ -2686,6 +2644,7 @@ erts_sys_pre_init(void)
     }
 #endif
     erts_smp_atomic_init(&sys_misc_mem_sz, 0);
+    erts_sys_env_init();
 }
 
 /*

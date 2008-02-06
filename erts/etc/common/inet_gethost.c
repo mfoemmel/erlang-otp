@@ -303,24 +303,39 @@ static int fillin_reply(Worker *pw);
 static int send_request_to_worker(AddrByte *pr, int rsize, Worker *pw);
 #endif
 
+#define ERL_DBG_LVL_ENV_VAR "ERL_INET_GETHOST_DEBUG"
+
+static int
+get_env_debug_level(void)
+{
+#ifdef __WIN32__
+    char value[21]; /* Enough for any 64-bit values */
+    DWORD sz = GetEnvironmentVariable((LPCTSTR) ERL_DBG_LVL_ENV_VAR,
+				      (LPTSTR) value,
+				      (DWORD) sizeof(value));
+    if (sz == 0 || sz > sizeof(value))
+	return 0;
+#else
+    char *value = getenv(ERL_DBG_LVL_ENV_VAR);
+    if (!value)
+	return 0;
+#endif
+    return atoi(value);
+}
+
 /*
  * Main
  */
 int main(int argc, char **argv) 
 {
     int num_workers = 1;
-    char *dls;
     char **ap = argv + 1;
     int x;
     int disable_greedy = 0;
 
     program_name = *argv;
     que_first = que_last = NULL;
-    if ((dls = getenv("ERL_INET_GETHOST_DEBUG")) != NULL) {
-	debug_level = atoi(dls);
-    } else {
-	debug_level = 0;
-    }
+    debug_level = get_env_debug_level();
     greedy_threshold = 0;
 
     while (*ap) {

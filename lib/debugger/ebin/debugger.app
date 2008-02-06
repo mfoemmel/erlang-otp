@@ -1,6 +1,6 @@
 {application, debugger,
  [{description, "Debugger"},
-  {vsn, "3.1.1.1"},
+  {vsn, "3.1.1.2"},
   {modules, [
 	     dbg_debugged,
 	     dbg_icmd,

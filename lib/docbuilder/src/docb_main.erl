@@ -23,7 +23,9 @@
 	 insert_after/3,
 	 transform/5, pp/5,
 	 include_file/2, include/3,
-	 eval_str/1]).
+	 eval_str/1,
+	 validate_html/1
+	]).
 -export([do_parse_sgmls/1]).
 
 %%----------------------------------------------------------------------
@@ -50,11 +52,12 @@ process(File, Opts) ->
 		      Tos0==[] -> [html];
 		      true -> Tos0
 		  end,
-
-	    lists:foreach(
-	      fun(To) ->
-		      transform(From, To, Opts, File, Tree)
-	      end, Tos)
+	    Result = [transform(From, To, Opts, File, Tree)||To <- Tos],
+	    case lists:member(transformation_error,Result) of 
+		true -> errors;
+		_ -> ok
+	    end
+    
     end.
 
 %%----------------------------------------------------------------------
@@ -74,6 +77,24 @@ parse(File, Opts) ->
 %% (in File.html.sgmls_errs) information to stdout.
 parse1(File, Opts) ->
     parse(File, [{print_parse_errs, true}|Opts]).
+
+
+validate_html(InFile) ->
+    ScanOpts = [{validation,true}, {fetch_fun, fun fetch_dtd/2}],
+    case xmerl_scan:file(InFile, ScanOpts) of
+	{_XMLTuple,[]} -> % ok
+	    {InFile,ok};
+	{'EXIT',Reason} ->
+	    {InFile,Reason}
+    end.
+
+fetch_dtd({public,_,"http://www.w3.org/TR/xhtml1/DTD/"++ Rest},GlobalState) ->
+    Filename = filename:join(docb_util:dtd_dir(),Rest),
+    {ok,{file,Filename},GlobalState};
+fetch_dtd({public,_,Str},GlobalState) ->
+    {ok,{file,filename:join(docb_util:dtd_dir(),Str)},GlobalState}.
+    
+    
 
 parse_xml(InFile, Opts) ->
     DtdDir = docb_util:dtd_dir(),

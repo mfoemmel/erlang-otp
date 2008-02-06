@@ -2085,15 +2085,15 @@ await_completion(Ids) ->
 	    ?ERROR({failed, Reply})
     end.
 
-await_completion(Ids, Timeout) ->
-    case megaco_test_generator_lib:await_completion(Ids, Timeout) of
-	{ok, Reply} ->
-	    d("OK => Reply: ~n~p", [Reply]),
-	    ok;
-	{error, Reply} ->
-	    d("ERROR => Reply: ~n~p", [Reply]),
-	    ?ERROR({failed, Reply})
-    end.
+%% await_completion(Ids, Timeout) ->
+%%     case megaco_test_generator_lib:await_completion(Ids, Timeout) of
+%% 	{ok, Reply} ->
+%% 	    d("OK => Reply: ~n~p", [Reply]),
+%% 	    ok;
+%% 	{error, Reply} ->
+%% 	    d("ERROR => Reply: ~n~p", [Reply]),
+%% 	    ?ERROR({failed, Reply})
+%%     end.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%

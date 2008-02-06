@@ -395,7 +395,7 @@ close(_) ->
 	
 
 read(File, Sz) when is_pid(File), is_integer(Sz), Sz >= 0 ->
-    case io:request(File, {get_chars, "", Sz}) of
+    case io:request(File, {get_chars, '', Sz}) of
 	Data when is_list(Data); is_binary(Data) ->
 	    {ok, Data};
 	Other ->
@@ -682,7 +682,7 @@ copy_opened_int(Source, Dest, Length, Copied) ->
     N = if Length > 65536 -> 65536; true -> Length end, % atom() > integer() !
     case read(Source, N) of
 	{ok, Data} ->
-	    M = if is_binary(Data) -> size(Data);
+	    M = if is_binary(Data) -> byte_size(Data);
 		   is_list(Data)   -> length(Data)
 		end,
 	    case write(Dest, Data) of
@@ -1004,7 +1004,7 @@ consult_stream(Fd) ->
     consult_stream(Fd, 1, []).
 
 consult_stream(Fd, Line, Acc) ->
-    case io:read(Fd, "", Line) of
+    case io:read(Fd, '', Line) of
 	{ok,Term,EndLine} ->
 	    consult_stream(Fd, EndLine, [Term|Acc]);
 	{error,Error,_Line} ->

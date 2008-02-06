@@ -214,7 +214,7 @@ convert_name(Name) ->
 %% -- do_log_to_text ---
 
 do_log_to_file(Log, TextFile, Mibs, Start, Stop) ->
-    case file:open(TextFile, write) of
+    case file:open(TextFile, [write]) of
         {ok, Fd} ->
             MiniMib = snmp_mini_mib:create(Mibs),
 	    Write = fun(X) -> 

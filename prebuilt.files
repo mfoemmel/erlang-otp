@@ -974,6 +974,7 @@
 ./lib/inets/ebin/httpd_example.beam
 ./lib/inets/ebin/httpd_file.beam
 ./lib/inets/ebin/httpd_instance_sup.beam
+./lib/inets/ebin/httpd_log.beam
 ./lib/inets/ebin/httpd_manager.beam
 ./lib/inets/ebin/httpd_misc_sup.beam
 ./lib/inets/ebin/httpd_request.beam
@@ -1542,6 +1543,7 @@
 ./lib/runtime_tools/ebin/inviso_rt_lib.beam
 ./lib/runtime_tools/ebin/inviso_rt_meta.beam
 ./lib/runtime_tools/ebin/observer_backend.beam
+./lib/runtime_tools/ebin/percept_profile.beam
 ./lib/runtime_tools/ebin/runtime_tools.app
 ./lib/runtime_tools/ebin/runtime_tools.appup
 ./lib/runtime_tools/ebin/runtime_tools.beam

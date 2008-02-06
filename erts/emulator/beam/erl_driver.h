@@ -549,6 +549,10 @@ EXTERN void *driver_dl_sym(void *, char *);
 EXTERN int driver_dl_close(void *);
 EXTERN char *driver_dl_error(void);
 
+/* environment */
+EXTERN int erl_drv_putenv(char *key, char *value);
+EXTERN int erl_drv_getenv(char *key, char *value, size_t *value_size);
+
 #endif /* !ERL_DRIVER_TYPES_ONLY */
 
 #ifdef WIN32_DYNAMIC_ERL_DRIVER

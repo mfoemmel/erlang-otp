@@ -1,140 +1,95 @@
-%% -*- erlang-indent-level: 2 -*-
-%%======================================================================
-%% File    : hipe_sparc_specific.erl
-%% Author  : Ingemar Åberg <d95ina@it.uu.se>
-%% Purpose : Provide target specific functions to the register allocator
-%% Created : 2 April 2000 by Ingemar Åberg <d95ina@it.uu.se>
-%%======================================================================
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id$
 
 -module(hipe_sparc_specific).
 
--export([number_of_temporaries/1]).
+%% for hipe_coalescing_regalloc:
+-export([number_of_temporaries/1
+	 ,analyze/1
+	 ,labels/1
+	 ,all_precoloured/0
+	 ,bb/2
+	 ,liveout/2
+	 ,reg_nr/1
+	 ,def_use/1
+	 ,is_move/1
+	 ,is_precoloured/1
+	 ,var_range/1
+	 ,allocatable/0
+	 ,non_alloc/1
+	 ,physical_name/1
+	 ,reverse_postorder/1
+	 ,succ_map/1
+	 ,livein/2
+	 ,uses/1
+	 ,defines/1
+	]).
 
-%% The following exports are (also) used as M:F(...) calls from other
-%% modules; e.g. hipe_x86_ra_ls.
--export([analyze/1,
-	 bb/2,
-	 args/1,
-	 labels/1,
-	 livein/2,
-	 liveout/2,
-	 succ_map/1,
-	 uses/1,
-	 defines/1,
-	 def_use/1,
-	 is_arg/1,      %% used by hipe_ls_regalloc
-	 is_move/1,
-	 is_fixed/1,    %% used by hipe_graph_coloring_regalloc
-	 is_global/1,
-	 is_precoloured/1,
-	 reg_nr/1,
-	 non_alloc/1,
-	 allocatable/0,
-	 physical_name/1,
-	 all_precoloured/0,
-	 new_spill_index/1,     %% used by hipe_ls_regalloc
-	 var_range/1,
-	 breadthorder/1,
-	 preorder/1,
-	 postorder/1,
-	 inorder/1,
-	 reverse_inorder/1,
-	 predictionorder/1,
-	 reverse_postorder/1]).
+%% for hipe_graph_coloring_regalloc:
+-export([is_fixed/1]).
 
-%% ---------------- Liveness stuff -------------------------------------
+%% for hipe_ls_regalloc:
+-export([args/1, is_arg/1, is_global/1, new_spill_index/1]).
+-export([breadthorder/1, postorder/1]).
+
+%% callbacks for hipe_regalloc_loop
+-export([defun_to_cfg/1,
+	 check_and_rewrite/2]).
+
+defun_to_cfg(Defun) ->
+  hipe_sparc_cfg:init(Defun).
+
+check_and_rewrite(Defun, Coloring) ->
+  hipe_sparc_ra_postconditions:check_and_rewrite(Defun, Coloring, 'normal').
+
+reverse_postorder(CFG) ->
+  hipe_sparc_cfg:reverse_postorder(CFG).
+
+non_alloc(CFG) ->
+  non_alloc(hipe_sparc_registers:nr_args(), hipe_sparc_cfg:params(CFG)).
+
+%% same as hipe_sparc_frame:fix_formals/2
+non_alloc(0, Rest) -> Rest;
+non_alloc(N, [_|Rest]) -> non_alloc(N-1, Rest);
+non_alloc(_, []) -> [].
+
+%% Liveness stuff
 
 analyze(CFG) ->
-  hipe_sparc_liveness:analyze(CFG).
-
-liveout(BB_in_out_liveness,Label) ->
-  hipe_sparc_liveness:liveout(BB_in_out_liveness,Label).
+  hipe_sparc_liveness_gpr:analyse(CFG).
 
 livein(Liveness,L) ->
-  hipe_sparc_liveness:livein(Liveness,L).
+  [X || X <- hipe_sparc_liveness_gpr:livein(Liveness,L),
+	hipe_sparc:temp_is_allocatable(X)].
 
-%% ---------------- Registers stuff ------------------------------------
+liveout(BB_in_out_liveness,Label) ->
+  [X || X <- hipe_sparc_liveness_gpr:liveout(BB_in_out_liveness,Label),
+	hipe_sparc:temp_is_allocatable(X)].
+
+%% Registers stuff
 
 allocatable() ->
-  hipe_sparc_registers:allocatable().
+  hipe_sparc_registers:allocatable_gpr().
 
 all_precoloured() ->
   hipe_sparc_registers:all_precoloured().
 
 is_precoloured(Reg) ->
-  hipe_sparc_registers:is_precoloured(Reg).
-
-physical_name(Reg) ->
-  hipe_sparc_registers:physical_name(Reg).
-
-is_global(R) ->
-  not lists:member(R, hipe_sparc_registers:allocatable()).
+  hipe_sparc_registers:is_precoloured_gpr(Reg).
 
 is_fixed(R) ->
   hipe_sparc_registers:is_fixed(R).
 
-all_args() ->
-  [hipe_sparc_registers:arg(0),
-   hipe_sparc_registers:arg(1),
-   hipe_sparc_registers:arg(2),
-   hipe_sparc_registers:arg(3),
-   hipe_sparc_registers:arg(4),
-   hipe_sparc_registers:arg(5)].
+physical_name(Reg) ->
+  Reg.
 
-is_arg(R) ->
-  lists:member(R, all_args()).
+%% CFG stuff
 
-%% -------------- CFG stuff --------------------------------------------
+succ_map(CFG) ->
+  hipe_sparc_cfg:succ_map(CFG).
 
-%% Return registers that are used to pass arguments to the CFG.
-args(CFG) ->
-  Arity = arity(CFG),
-  arg_vars(Arity).
-
-non_alloc(_CFG) ->
-  [].
-
-arg_vars(N, Acc) when is_integer(N), N >= 0 ->
-  arg_vars(N-1, [arg_var(N)|Acc]);
-arg_vars(-1, Acc) -> Acc.
-
-arg_vars(N) ->
-  case N >= hipe_sparc_registers:register_args() of
-    false ->
-      arg_vars(N-1, []);
-    true ->
-      arg_vars(hipe_sparc_registers:register_args()-1, [])
-  end.
-
-arg_var(X) ->
-  hipe_sparc_registers:arg(X).
-
-arity(CFG) ->
-  hipe_sparc_cfg:extra(CFG).
- 
 labels(CFG) ->
   hipe_sparc_cfg:labels(CFG).
-
-reverse_postorder(CFG) ->
-  hipe_sparc_cfg:reverse_postorder(CFG).
-
-breadthorder(CFG) ->
-  hipe_sparc_cfg:breadthorder(CFG).
-
-postorder(CFG) ->
-  hipe_sparc_cfg:postorder(CFG).
-
-predictionorder(CFG) ->
-  hipe_sparc_cfg:predictionorder(CFG).
-
-inorder(CFG) ->
-  hipe_sparc_cfg:inorder(CFG).
-
-reverse_inorder(CFG) ->
-  hipe_sparc_cfg:reverse_inorder(CFG).
-
-preorder(CFG) ->
-  hipe_sparc_cfg:preorder(CFG).
 
 var_range(_CFG) ->
   hipe_gensym:var_range(sparc).
@@ -142,30 +97,59 @@ var_range(_CFG) ->
 number_of_temporaries(_CFG) ->
   Highest_temporary = hipe_gensym:get_var(sparc),
   %% Since we can have temps from 0 to Max adjust by +1.
-  %% (Well, on sparc this is not entirely true, but lets pretend...)
   Highest_temporary + 1.
 
-bb(CFG, L) ->
-  hipe_sparc_cfg:bb(CFG, L).
+bb(CFG,L) ->
+  hipe_sparc_cfg:bb(CFG,L).
 
-succ_map(CFG) ->
-  hipe_sparc_cfg:succ_map(CFG).
-
-uses(I) ->
-  hipe_sparc:keep_registers(hipe_sparc:uses(I)).
-
-defines(I) ->
-  hipe_sparc:keep_registers(hipe_sparc:defines(I)).
+%% SPARC stuff
 
 def_use(Instruction) ->
-  {D, U} = hipe_sparc:def_use(Instruction),
-  {hipe_sparc:keep_registers(D), hipe_sparc:keep_registers(U)}.
+  {defines(Instruction), uses(Instruction)}.
+
+uses(I) ->
+  [X || X <- hipe_sparc_defuse:insn_use_gpr(I),
+	hipe_sparc:temp_is_allocatable(X)].
+
+defines(I) ->
+  [X || X <- hipe_sparc_defuse:insn_def_gpr(I),
+	hipe_sparc:temp_is_allocatable(X)].
 
 is_move(Instruction) ->
-  hipe_sparc:is_move(Instruction).
+  case hipe_sparc:is_pseudo_move(Instruction) of
+    true ->
+      Dst = hipe_sparc:pseudo_move_dst(Instruction),
+      case hipe_sparc:temp_is_allocatable(Dst) of
+	false -> false;
+	_ ->
+	  Src = hipe_sparc:pseudo_move_src(Instruction),
+	  hipe_sparc:temp_is_allocatable(Src)
+      end;
+    false -> false
+  end.
 
 reg_nr(Reg) ->
-  hipe_sparc:reg_nr(Reg).
+  hipe_sparc:temp_reg(Reg).
+
+%%% Linear Scan stuff
 
 new_spill_index(SpillIndex) when is_integer(SpillIndex) ->
-  SpillIndex + 1.
+  SpillIndex+1.
+
+breadthorder(CFG) ->
+  hipe_sparc_cfg:breadthorder(CFG).
+
+postorder(CFG) ->
+  hipe_sparc_cfg:postorder(CFG).
+
+is_global(R) ->
+  R =:= hipe_sparc_registers:temp1() orelse
+  R =:= hipe_sparc_registers:temp2() orelse
+  R =:= hipe_sparc_registers:temp3() orelse
+  hipe_sparc_registers:is_fixed(R).
+
+is_arg(R) ->
+  hipe_sparc_registers:is_arg(R).
+
+args(CFG) ->
+  hipe_sparc_registers:args(hipe_sparc_cfg:arity(CFG)).

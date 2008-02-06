@@ -20,27 +20,39 @@
 	 last/1,
 	 butlast/1]).
 
--record(bb, {code=[]}).
+-include("hipe_bb.hrl").
 
 %%
 %% Constructs a basic block.
 %% Returns a basic block: {bb, Code}
 %%   * Code is a list of instructions
 
+-spec(mk_bb/1 :: ([_]) -> bb()).
+
 mk_bb(Code) ->
     #bb{code=Code}.
+
+-spec(is_bb/1 :: (_) -> bool()).
 
 is_bb(#bb{}) -> true;
 is_bb(_) -> false.
 
+-spec(code_update/2 :: (bb(), [_]) -> bb()).
+
 code_update(BB, Code) ->
     BB#bb{code = Code}.
+
+-spec(code/1 :: (bb()) -> [_]).
 
 code(#bb{code = Code}) -> 
     Code.
 
+-spec(last/1 :: (bb()) -> _).
+
 last(#bb{code = Code}) -> 
     lists:last(Code).
+
+-spec(butlast/1 :: (bb()) -> [_]).
 
 butlast(#bb{code = Code}) ->
     butlast_1(Code).

@@ -1248,7 +1248,8 @@ void init_io(void)
     int i;
     ErlDrvEntry** dp;
     ErlDrvEntry* drv;
-    char *maxports;
+    char maxports[21]; /* enough for any 64-bit integer */
+    size_t maxportssize = sizeof(maxports);
     Uint ports_bits = ERTS_PORTS_BITS;
 
 #ifdef ERTS_SMP
@@ -1257,8 +1258,7 @@ void init_io(void)
 
     pdl_init();
 
-    maxports = getenv("ERL_MAX_PORTS");
-    if (maxports != NULL) 
+    if (erts_sys_getenv("ERL_MAX_PORTS", maxports, &maxportssize) == 0) 
 	erts_max_ports = atoi(maxports);
     else
 	erts_max_ports = sys_max_files();
@@ -4738,3 +4738,14 @@ int null_func(void)
     return 0;
 }
 
+int
+erl_drv_putenv(char *key, char *value)
+{
+    return erts_write_env(key, value);
+}
+
+int
+erl_drv_getenv(char *key, char *value, size_t *value_size)
+{
+    return erts_sys_getenv(key, value, value_size);
+}

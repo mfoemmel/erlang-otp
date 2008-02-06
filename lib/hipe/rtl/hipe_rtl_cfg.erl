@@ -18,9 +18,10 @@
 	 pp/1, pp/2]).
 -export([preorder/1, postorder/1, reverse_postorder/1]).
 
--define(RTL_CFG,true).	% needed for cfg.inc below
+-define(RTL_CFG, true).	% needed for cfg.inc below
 
 -include("../main/hipe.hrl").
+-include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
 -include("hipe_rtl.hrl").
 
@@ -41,7 +42,7 @@ init(Rtl) ->
 		      hipe_rtl:rtl_is_leaf(Rtl),
 		      hipe_rtl:rtl_params(Rtl),
 		      Extra),
-  CFG = hipe_rtl_cfg:info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
+  CFG = info_update(CFG0, hipe_rtl:rtl_info(Rtl)),
   take_bbs(Code, CFG).
 
 %% @spec is_comment(hipe_rtl:rtl_instruction()) -> bool()
@@ -125,7 +126,7 @@ redirect_ops([Label|Labels], CFG, Map) ->
   BB = bb(CFG, Label),
   Code = hipe_bb:code(BB),
   NewCode = [rewrite(I,Map) || I <- Code],
-  NewCFG = bb_add(CFG, Label,hipe_bb:code_update(BB, NewCode)),
+  NewCFG = bb_add(CFG, Label, hipe_bb:code_update(BB, NewCode)),
   redirect_ops(Labels, NewCFG, Map);
 redirect_ops([],CFG,_) -> CFG.
 
@@ -136,8 +137,8 @@ rewrite(I, Map) ->
 	  constant -> I;
 	  _ -> 
 	    NewL =
-	      find_new_label(hipe_rtl:load_address_address(I),Map),
-	    hipe_rtl:load_address_address_update(I,NewL)
+	      find_new_label(hipe_rtl:load_address_addr(I), Map),
+	    hipe_rtl:load_address_addr_update(I, NewL)
 	end;
     _ -> I
   end.

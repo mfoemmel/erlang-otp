@@ -152,22 +152,24 @@ lookup_vartype(Type) ->
 %% entry is {M,F,A}.
 %%--------------------------------------------------
 read_funcs(FileName) ->
-    case snmpc_misc:read_noexit(FileName,m(check_of)) of
+    case snmpc_misc:read_noexit(FileName, fun check_of/1) of
 	{ok, Res} -> Res;
 	{error, LineNo, Reason} ->
-	    print_error("~p: ~w: Syntax error: ~p", [FileName, LineNo, Reason]),
+	    print_error("~p: ~w: Syntax error: ~p", 
+			[FileName, LineNo, Reason]),
 	    [];
         {error, open_file} -> []
     end.
 
-check_of({module, M}) when atom(M) ->
+check_of({module, M}) when is_atom(M) ->
     {ok, {module, M}};
-check_of({Oid, {M, F, A}}) when atom(M), atom(F), list(A) ->
+check_of({Oid, {M, F, A}}) when is_atom(M) andalso is_atom(F) andalso is_list(A) ->
     {ok, {Oid, {M, F, A}}};
 check_of({_Oid, {M, F, A}})  ->
     {invalid_argument, {M, F, A}};
 check_of(X) ->
     {invalid_func, X}.
+
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %% Section for IMPORT implementation
@@ -175,6 +177,7 @@ check_of(X) ->
 
 import(ImportList) ->
     lists:foreach(fun import_mib/1, ImportList).
+
 
 %%----------------------------------------------------------------------
 %% Returns: <nothing> only side effect stuff.
@@ -460,29 +463,30 @@ is_consistent(Filenames) ->
     end.
     
 check_all_consistency(Filenames) ->
-    MIBs = lists:map(fun load_mib/1, Filenames),
+    MIBs = [load_mib(Filename) || Filename <- Filenames],
     check_oid_conflicts(MIBs),
     check_trap_conflicts(MIBs),
     ok.
 
 check_oid_conflicts(MIBs) ->
-    MEs = lists:append(snmpc_misc:map(m(get_elem), [#mib.mes], MIBs)),
+    MEs = lists:append( [get_elem(MIB, #mib.mes) || MIB <- MIBs] ), 
     SortedMEs = lists:keysort(#me.oid, MEs),
     search_for_dublettes2(#me{aliasname=dummy_init}, SortedMEs).
 
 check_trap_conflicts(MIBs) ->
-    Traps = lists:append(snmpc_misc:map(m(get_elem), [#mib.traps], MIBs)),
-    snmpc_misc:foreach(m(check_trap), [Traps], Traps).
+    Traps = lists:append( [get_elem(MIB, #mib.traps) || MIB <- MIBs] ),
+    [check_trap(Trap, Traps) || Trap <- Traps].
 
 check_trap(Trap, Traps) ->
-    case lists:member(error,
-		      snmpc_misc:map(m(check_trap),[Trap,undef],
-				lists:delete(Trap,Traps))) of
+    %% check_trap/3 -> error | ok
+    Checked = [check_trap(T, Trap, undef) || T <- lists:delete(Trap, Traps)],
+    case lists:member(error, Checked) of
 	true ->
 	    throw({undef,"",[]});
 	false ->
 	    ok
     end.
+
 
 %%----------------------------------------------------------------------
 %% Returns: {Oid, ASN1Type}
@@ -1521,7 +1525,7 @@ vvalidate(V)       -> exit({invalid_verbosity,V}).
 %% Section for misc useful functions
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-m(M) -> {?MODULE, M}.
+%% m(M) -> {?MODULE, M}.
 
 set_dir(File, NewDir) ->
     case string:chr(File, $/) of

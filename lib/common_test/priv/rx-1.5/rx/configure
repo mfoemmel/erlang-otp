@@ -610,12 +610,12 @@ echo "$ac_t""$ac_cv_prog_gcc" 1>&6
 if test $ac_cv_prog_gcc = yes; then
   GCC=yes
   if test "${CFLAGS+set}" != set; then
-    echo $ac_n "checking whether ${CC-cc} accepts -fpic -g""... $ac_c" 1>&6
+    echo $ac_n "checking whether ${CC-cc} accepts -fPIC -g""... $ac_c" 1>&6
 if eval "test \"`echo '$''{'ac_cv_prog_gcc_g'+set}'`\" = set"; then
   echo $ac_n "(cached) $ac_c" 1>&6
 else
   echo 'void f(){}' > conftest.c
-if test -z "`${CC-cc} -fpic -g -c conftest.c 2>&1`"; then
+if test -z "`${CC-cc} -fPIC -g -c conftest.c 2>&1`"; then
   ac_cv_prog_gcc_g=yes
 else
   ac_cv_prog_gcc_g=no
@@ -626,7 +626,7 @@ fi
 
 echo "$ac_t""$ac_cv_prog_gcc_g" 1>&6
     if test $ac_cv_prog_gcc_g = yes; then
-      CFLAGS="-fpic -w -g -O"
+      CFLAGS="-fPIC -w -g -O"
     else
       CFLAGS="-w -O"
     fi

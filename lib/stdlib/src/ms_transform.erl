@@ -617,7 +617,7 @@ tg({bin_element,Line,X,Y,Z},B) ->
 tg({bin,Line,List},B) ->
     {bin,Line,[tg(X,B) || X <- List]};
     
-tg(T,B) when is_tuple(T), size(T) >= 2 ->
+tg(T,B) when is_tuple(T), tuple_size(T) >= 2 ->
     Element = element(1,T),
     Line = element(2,T),
     throw({error,Line,{?ERR_GENELEMENT+B#tgd.eb,

@@ -266,7 +266,7 @@ mk_trampoline_map(CalleeMFAs, Trampolines) ->
       amd64 -> 8;
       _ -> 4
     end,
-  mk_trampoline_map(size(CalleeMFAs), CalleeMFAs,
+  mk_trampoline_map(tuple_size(CalleeMFAs), CalleeMFAs,
 		    Trampolines, SizeofLong, gb_trees:empty()).
 
 mk_trampoline_map(I, CalleeMFAs, Trampolines, SizeofLong, Map) when I >= 1 ->
@@ -880,9 +880,9 @@ assert_local_patch(Address) when is_integer(Address) ->
 %% Beam: nil() | binary()  (used as a flag)
 
 enter_code(CodeSize, CodeBinary, CalleeMFAs, Mod, Beam) ->
-  true = size(CodeBinary) =:= CodeSize,
+  true = byte_size(CodeBinary) =:= CodeSize,
   hipe_bifs:update_code_size(Mod, Beam, CodeSize),
   {CodeAddress,Trampolines} = hipe_bifs:enter_code(CodeBinary, CalleeMFAs),
-  ?init_assert_patch(CodeAddress, size(CodeBinary)),
+  ?init_assert_patch(CodeAddress, byte_size(CodeBinary)),
   {CodeAddress,Trampolines}.
 

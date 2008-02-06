@@ -997,12 +997,12 @@ close_read_fun(Fd, FileName, fsort) ->
 
 read_objs(Fd, FileName, I, L, Bin0, Size0, LSz, W) ->
     Max = max(Size0, ?CHUNKSIZE),
-    BSz0 = size(Bin0),
+    BSz0 = byte_size(Bin0),
     Min = Size0 - BSz0 + W#w.hdlen, % Min > 0
     NoBytes = max(Min, Max),
     case read(Fd, FileName, NoBytes, W) of
         {ok, Bin} ->
-            BSz = size(Bin),
+            BSz = byte_size(Bin),
             NLSz = LSz + BSz,
             case catch file_loop(L, I, Bin0, Bin, Size0, BSz0, BSz, Min, W)
                 of
@@ -1011,7 +1011,7 @@ read_objs(Fd, FileName, I, L, Bin0, Size0, LSz, W) ->
                 Reply ->
                     {Reply, NLSz}
             end;
-        eof when size(Bin0) =:= 0 ->
+        eof when byte_size(Bin0) =:= 0 ->
             eof;
         eof ->
             error({error, {premature_eof, FileName}}, W)
@@ -1039,7 +1039,7 @@ file_loop1(L, I, B, Sz, Kp, F, HdLen) ->
 file_loop2(L, _I, B, Sz, SzB, 0, binary, HdLen) ->
     {NL, NB, NSz, NSzB} = file_binloop(L, Sz, SzB, B, HdLen),
     if 
-        size(NB) =:= NSz ->
+        byte_size(NB) =:= NSz ->
             <<Bin:NSz/binary>> = NB,
             {0, [?OBJ(Bin, [NSzB | Bin]) | NL], <<>>, 0};
         true ->
@@ -1127,21 +1127,21 @@ fun_loop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen) when is_integer(I) ->
     fun_keyloop(Objs, L, LSz, RunSize, I, Keypos, Fun, HdLen).
 
 fun_binloop([B | Bs], L, LSz, RunSize, HL) when LSz < RunSize ->
-    Size = size(B),
+    Size = byte_size(B),
     Obj = ?OBJ(B, [<<Size:HL/unit:8>> | B]),
     fun_binloop(Bs, [Obj | L], LSz+Size, RunSize, HL);
 fun_binloop(Bs, L, LSz, _RunSize, _HL) ->
     {0, Bs, L, LSz}.
 
 fun_loop([B | Bs], L, LSz, RunSize, Fun, HL) when LSz < RunSize ->
-    Size = size(B),
+    Size = byte_size(B),
     Obj = ?OBJ(Fun(B), [<<Size:HL/unit:8>> | B]),
     fun_loop(Bs, [Obj | L], LSz+Size, RunSize, Fun, HL);
 fun_loop(Bs, L, LSz, _RunSize, _Fun, _HL) ->
     {0, Bs, L, LSz}.
 
 fun_keyloop([B | Bs], L, LSz, RunSize, I, Kp, Fun, HL) when LSz < RunSize ->
-    Size = size(B),
+    Size = byte_size(B),
     UniqueKey = make_key(Kp, Fun(B)),
     E = ?OBJ(UniqueKey, [<<Size:HL/unit:8>> | B]),
     fun_keyloop(Bs, [E | L], LSz+Size, RunSize, I+1, Kp, Fun, HL);
@@ -1149,7 +1149,7 @@ fun_keyloop(Bs, L, LSz, _RunSize, I, _Kp, _Fun, _HL) ->
     {I, Bs, L, LSz}.
 
 fun_mergeloop([B | Bs], L, LSz, RunSize, I, Kp, Fun, HL) when LSz < RunSize ->
-    Size = size(B),
+    Size = byte_size(B),
     UniqueKey = make_stable_key(Kp, I, Fun(B)),
     E = ?OBJ(UniqueKey, [<<Size:HL/unit:8>> | B]),
     fun_mergeloop(Bs, [E | L], LSz+Size, RunSize, I, Kp, Fun, HL);
@@ -1417,7 +1417,7 @@ file_rterms2(Fd, L, LSz, FileName, Files) when LSz < ?CHUNKSIZE ->
     case io:read(Fd, '') of
         {ok, Term} ->
             B = term_to_binary(Term),
-            file_rterms2(Fd, [B | L], LSz + size(B), FileName, Files);
+            file_rterms2(Fd, [B | L], LSz + byte_size(B), FileName, Files);
         eof ->
             file:close(Fd),
             {lists:reverse(L), file_rterms(no_file, Files)};

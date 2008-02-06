@@ -81,7 +81,7 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
 `defarg(5,`r6')')dnl
 
 /*
- * TEMP_ARG{0,1}:
+ * TEMP_ARG{0,1,2}:
  *	Used by NBIF_SAVE_RESCHED_ARGS to save argument
  *	registers in locations preserved by C.
  *	May be registers or process-private memory locations.
@@ -101,6 +101,7 @@ ifelse(eval(NR_ARG_REGS >= 6),0,,
  */
 `#define TEMP_ARG0	r7'
 `#define TEMP_ARG1	r6'
+`#define TEMP_ARG2	r5'
 
 dnl XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 dnl X								X
@@ -175,9 +176,9 @@ define(NBIF_RET,`NBIF_RET_N(eval(RET_POP($1)))')dnl
 
 dnl
 dnl NBIF_SAVE_RESCHED_ARGS(ARITY)
-dnl Used in the expensive_bif_interface_{1,2}() macros to copy
+dnl Used in the expensive_bif_interface_{1,2,3}() macros to copy
 dnl caller-save argument registers to non-volatile locations.
-dnl Currently, 1 <= ARITY <= 2, so this simply moves the arguments
+dnl Currently, 1 <= ARITY <= 3, so this simply moves the arguments
 dnl to C callee-save registers.
 dnl
 define(NBIF_MIN,`ifelse(eval($1 > $2),0,$1,$2)')dnl
@@ -186,6 +187,7 @@ define(NBIF_SVA_N,`ifelse(eval($1 >= 0),0,,`NBIF_SVA_N(eval($1-1))NBIF_SVA_1($1)
 define(NBIF_SAVE_RESCHED_ARGS,`NBIF_SVA_N(eval(NBIF_MIN($1,NR_ARG_REGS)-1))')dnl
 `/* #define NBIF_SAVE_RESCHED_ARGS_1 'NBIF_SAVE_RESCHED_ARGS(1)` */'
 `/* #define NBIF_SAVE_RESCHED_ARGS_2 'NBIF_SAVE_RESCHED_ARGS(2)` */'
+`/* #define NBIF_SAVE_RESCHED_ARGS_3 'NBIF_SAVE_RESCHED_ARGS(3)` */'
 
 dnl
 dnl QUICK_CALL_RET(CFUN,ARITY)

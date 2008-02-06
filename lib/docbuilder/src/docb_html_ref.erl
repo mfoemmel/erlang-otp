@@ -20,37 +20,37 @@
 -export([rule/2, rule/3]).
 
 rule([description|_],_) ->
-    {"\n<H3>DESCRIPTION</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<h3>DESCRIPTION</h3>\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule([funcs|_],_) ->
-    {"\n<H3>EXPORTS</H3>\n",""};
+    {"\n<h3>EXPORTS</h3>\n",""};
 
 rule([func|_],_) ->
-    {"\n<P>",""};
+    {"\n<p>",""};
 
 rule([name, func, funcs, RefType|_], {_,_,[{pcdata,[],Name0}]}) ->
     Name1 = docb_html_util:make_anchor_name_short(Name0, RefType),
-    {"<A NAME=\"" ++ Name1 ++ "\"><span class=\"bold_code\">",
-     "</span></A><BR>\n"};
+    {"<a name=\"" ++ Name1 ++ "\"><span class=\"bold_code\">",
+     "</span></a><br/>\n"};
 
 rule([fsummary|_],_) ->
-    {drop, ""};
+    {drop, "\n</p>\n"};
 
 rule([type|_], _) ->
-    {"\n<DIV CLASS=REFBODY><P>Types:\n  <DIV CLASS=REFTYPES>\n<P>\n",
-     "\n  </DIV>\n</DIV>\n"};
+    {"\n<div class=\"REFBODY\"><p>Types:</p>\n  <div class=\"REFTYPES\">\n<p>\n",
+     "\n </p> </div>\n</div>\n"};
 
 rule([v|_], _) ->
-    {"<span class=\"bold_code\">","</span><BR>\n"};
+    {"<span class=\"bold_code\">","</span><br/>\n"};
 
 rule([d|_], _) ->
-    {"\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule([desc|_], _) ->
-    {"\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule([authors|_], _) -> 
-    {"\n<H3>AUTHORS</H3>\n<DIV CLASS=REFBODY>\n","\n</DIV>\n"};
+    {"\n<h3>AUTHORS</h3>\n<div class=\"REFBODY\">\n","\n</div>\n"};
 
 rule([aname|_], _) ->
     {"", " - "};
@@ -58,10 +58,10 @@ rule([aname|_], _) ->
 rule([section|_], {1,_,_}) ->
     {"", ""};
 rule([section|_], {_N,_,_}) ->
-    {"", "\n</DIV>\n"};
+    {"", "\n</div>\n"};
 
 rule([title|_], _) ->
-    {"\n<H3>", "</H3>\n<DIV CLASS=REFBODY>\n"};
+    {"\n<h3>", "</h3>\n<div class=\"REFBODY\">\n"};
 
 rule(TagHistory, TagBody) ->
     docb_html:rule(TagHistory, TagBody).
@@ -69,9 +69,9 @@ rule(TagHistory, TagBody) ->
 rule([email|_], _, Opts) ->
     case docb_util:html_snippet(email, Opts) of
 	"" ->
-	    {{"","<BR>\n"}, Opts};
+	    {{"","<br/>\n"}, Opts};
 	Email ->
-	    {{drop, Email++"<BR>\n"}, Opts}
+	    {{drop, Email++"<br/>\n"}, Opts}
     end;
 
 rule(TagHistory, TagBody, Opts) ->

@@ -565,7 +565,7 @@ parse_address(BinHostent) ->
     end.
 	    
 listify(Bin) ->
-    N = size(Bin) - 1,
+    N = byte_size(Bin) - 1,
     <<Bin2:N/binary, Ch>> = Bin,
     case Ch of
 	0 ->
@@ -588,7 +588,7 @@ pick_addresses_v6(Num,<<A:16,B:16,C:16,D:16,E:16,F:16,G:16,H:16,
     {NTail, [{A,B,C,D,E,F,G,H} | OList]}.
 
 ndx(Ch,Bin) ->
-    ndx(Ch,0,size(Bin),Bin).
+    ndx(Ch,0,byte_size(Bin),Bin).
 
 ndx(_,N,N,_) ->
     undefined;

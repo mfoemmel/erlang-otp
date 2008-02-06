@@ -389,10 +389,11 @@ tmap_lookup(Map, Key) ->
 %%% NewStart:
 %%%	temp1 = *(P + P_SP_LIMIT)
 %%%	temp2 = SP - MaxStack
-%%%	cmp temp2, Temp1
+%%%	cmp temp2, temp1
 %%%	if (ltu) goto IncStack else goto AllocFrame
 %%% AllocFrame:
-%%%	SP -= FrameSize
+%%%	SP = temp2		[if FrameSize == MaxStack]
+%%%	SP -= FrameSize		[if FrameSize != MaxStack]
 %%%	*(SP + FrameSize-WordSize) = LR		[if ClobbersLR]
 %%%	goto OldStart
 %%% OldStart:

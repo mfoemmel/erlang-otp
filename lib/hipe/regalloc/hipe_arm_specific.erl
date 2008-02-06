@@ -102,7 +102,7 @@ number_of_temporaries(_CFG) ->
 bb(CFG,L) ->
   hipe_arm_cfg:bb(CFG,L).
 
-%% PowerPC stuff
+%% ARM stuff
 
 def_use(Instruction) ->
   {defines(Instruction), uses(Instruction)}.

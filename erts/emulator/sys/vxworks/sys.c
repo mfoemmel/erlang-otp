@@ -1441,11 +1441,34 @@ void sys_get_pid(char *buffer){
     sprintf(buffer,"%d", p);
 }
 
-
-int sys_putenv(char *buffer){
-    return(putenv(buffer));
+int
+erts_sys_putenv(char *buffer, int sep_ix)
+{
+    return putenv(buffer);
 }
 
+int
+erts_sys_getenv(char *key, char *value, size_t *size)
+{
+    char *orig_value;
+    int res;
+    orig_value = getenv(key);
+    if (!orig_value)
+	res = -1;
+    else {
+	size_t len = sys_strlen(orig_value);
+	if (len >= *size) {
+	    *size = len + 1;
+	    res = 1;
+	}
+	else {
+	    *size = len;
+	    sys_memcpy((void *) value, (void *) orig_value, len+1);
+	    res = 0;
+	}
+    }
+    return res;
+}
 
 void
 sys_init_io(void)

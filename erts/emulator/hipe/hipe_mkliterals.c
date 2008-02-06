@@ -22,7 +22,6 @@
 #undef NSP
 #undef HP
 #undef TEMP_LR
-#undef TEMP_RV
 #undef SAVE_CACHED_STATE
 #undef RESTORE_CACHED_STATE
 #undef SAVE_CONTEXT_QUICK
@@ -36,6 +35,7 @@
 #undef STORE_ARG_REGS
 #undef TEMP_ARG0
 #undef TEMP_ARG1
+#undef TEMP_ARG2
 #undef ARG0
 #undef ARG1
 #undef ARG2
@@ -46,25 +46,35 @@
 #include "hipe_ppc_asm.h"
 #undef P
 #undef NSP
+#undef HP
+#undef TEMP_LR
+#undef SAVE_CACHED_STATE
+#undef RESTORE_CACHED_STATE
+#undef SAVE_CONTEXT_QUICK
+#undef RESTORE_CONTEXT_QUICK
+#undef SAVE_CONTEXT_BIF
+#undef RESTORE_CONTEXT_BIF
+#undef SAVE_CONTEXT_GC
+#undef RESTORE_CONTEXT_GC
 #undef NR_ARG_REGS
 #undef LOAD_ARG_REGS
 #undef STORE_ARG_REGS
-#undef SAVE_CACHED_STATE
-#undef RESTORE_CACHED_STATE
+#undef TEMP_ARG0
+#undef TEMP_ARG1
+#undef TEMP_ARG2
 #undef ARG0
 #undef ARG1
 #undef ARG2
 #undef ARG3
 #undef ARG4
 #undef ARG5
-#undef TEMP_ARG0
-#undef TEMP_ARG1
 #include "hipe_amd64_asm.h"
 #undef P
 #undef HP
 #undef NSP
-#undef TEMP0
-#undef TEMP1
+#undef TEMP_ARG0
+#undef TEMP_ARG1
+#undef TEMP_ARG2
 #undef ARG0
 #undef ARG1
 #undef ARG2
@@ -109,14 +119,9 @@
 #undef NR_ARG_REGS
 #undef LEAF_WORDS
 #undef TEMP_RV
+#undef LOAD_ARG_REGS
+#undef STORE_ARG_REGS
 #include "hipe_sparc_asm.h"
-#undef P
-#undef HP
-#undef TEMP0
-#undef TEMP1
-#undef ARG0
-#undef ARG1
-#undef ARG2
 #include "erl_binary.h"
 
 #define ARRAY_SIZE(x)	(sizeof(x) / sizeof((x)[0]))
@@ -259,14 +264,11 @@ static const struct literal {
     { "P_NSP", offsetof(struct process, hipe.nsp) },
     { "P_NCALLEE", offsetof(struct process, hipe.ncallee) },
     { "P_CLOSURE", offsetof(struct process, hipe.closure) },
-#if defined(__sparc__)
-    { "P_NSP_LIMIT", offsetof(struct process, hipe.nstend) },
-    { "P_NRA", offsetof(struct process, hipe.nra) },
-#elif defined(__i386__) || defined(__x86_64__)
+#if defined(__i386__) || defined(__x86_64__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_CSP", offsetof(struct process, hipe.ncsp) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
-#elif defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
+#elif defined(__sparc__) || defined(__powerpc__) || defined(__ppc__) || defined(__powerpc64__) || defined(__arm__)
     { "P_NSP_LIMIT", offsetof(struct process, hipe.nstack) },
     { "P_NRA", offsetof(struct process, hipe.nra) },
     { "P_NARITY", offsetof(struct process, hipe.narity) },
@@ -322,6 +324,8 @@ static const struct literal {
     { "MS_THING_WORD", offsetof(struct erl_bin_match_struct, thing_word)},
     { "MS_MATCHBUFFER", offsetof(struct erl_bin_match_struct, mb)},
     { "MS_SAVEOFFSET", offsetof(struct erl_bin_match_struct, save_offset)},
+
+    { "MS_MIN_SIZE", ERL_BIN_MATCHSTATE_SIZE(0)},
     
     { "MB_ORIG_SIZE", field_sizeof( struct erl_bin_match_buffer, orig) },
     { "MB_BASE_SIZE", field_sizeof( struct erl_bin_match_buffer, base) },
@@ -347,8 +351,6 @@ static const struct literal {
     { "BINARY_ORIG_BYTES_SIZE", field_sizeof( struct binary, orig_bytes) },
     { "MS_THING_WORD_SIZE", field_sizeof( struct erl_bin_match_struct, thing_word)},
     { "MS_SAVEOFFSET_SIZE", field_sizeof( struct erl_bin_match_struct, save_offset)},
-
-    { "MS_MIN_SIZE", ERL_BIN_MATCHSTATE_SIZE(1)},
     
     /* messages */
     { "P_MSG_FIRST", offsetof(struct process, msg.first) },

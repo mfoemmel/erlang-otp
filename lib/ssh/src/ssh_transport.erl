@@ -43,7 +43,7 @@
 -export([peername/1]).
 
 %% io wrappers
--export([yes_no/2, read_password/2]).
+-export([yes_no/2, read_password/2, read_line/2, format/3]).
 
 
 -define(DEFAULT_TIMEOUT, 5000).
@@ -200,11 +200,17 @@ read_password(SSH, Prompt) when pid(SSH)                                 ->
 read_password(SSH, Prompt) when record(SSH,ssh)                          ->
     (SSH#ssh.io_cb):read_password(Prompt).
 
-%% read_line(SSH, Prompt) when pid(SSH) ->
-%%     {ok, CB} = call(SSH, {get_cb, io}),
-%%     CB:read_line(Prompt);
-%% read_line(SSH, Prompt) when record(SSH,ssh) ->
-%%     (SSH#ssh.io_cb):read_line(Prompt).
+read_line(SSH, Prompt) when pid(SSH) ->
+    {ok, CB} = call(SSH, {get_cb, io}),
+    CB:read_line(Prompt);
+read_line(SSH, Prompt) when record(SSH,ssh) ->
+    (SSH#ssh.io_cb):read_line(Prompt).
+
+format(SSH, Fmt, Args) when pid(SSH) ->
+    {ok, CB} = call(SSH, {get_cb, io}),
+    CB:format(Fmt, Args);
+format(SSH, Fmt, Args) when record(SSH,ssh) ->
+    (SSH#ssh.io_cb):format(Fmt, Args).
 
 peername(SSH) ->
     call(SSH, peername).
@@ -306,10 +312,11 @@ client_init(User, Host, Port, Opts) ->
     IfAddr = proplists:get_value(ifaddr, Opts, any),
     Tmo    = proplists:get_value(connect_timeout, Opts, ?DEFAULT_TIMEOUT),
     NoDelay= proplists:get_value(tcp_nodelay, Opts, false),
+    ExtraSSHOpts = proplists:lookup_all(fd, Opts),
     case gen_tcp:connect(Host, Port, [{packet,line},
 				      {active,once},
 				      {nodelay, NoDelay},
-				      {ifaddr,IfAddr}], Tmo) of
+				      {ifaddr,IfAddr}]++ExtraSSHOpts, Tmo) of
 	{ok, S} ->
 	    SSH = ssh_init(S, client, Opts),
 	    Peer = if tuple(Host) -> inet_parse:ntoa(Host);
@@ -553,7 +560,9 @@ newkeys(S, User, SSH, UserAck)                                           ->
 		    inet:setopts(S, [{active, once}]),
 		    ssh_main(S, User, SSH1)
 	    end;
-	{ok,_} ->
+	{ok, _} ->
+	    {error, bad_message};
+	continue ->
 	    {error, bad_message};
 	Error ->
 	    Error
@@ -584,7 +593,9 @@ client_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
 		Error ->
 		    Error
 	    end;
-	{ok,_} ->
+	{ok, _} ->
+	    {error, bad_message};
+	continue ->
 	    {error, bad_message};
 	Error ->
 	    Error
@@ -623,12 +634,16 @@ client_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
 			Error ->
 			    Error
 		    end;
-		{ok,_} ->
+		{ok, _} ->
+		    {error, bad_message};
+		continue ->
 		    {error, bad_message};
 		Error ->
 		    Error
 	    end;
-	{ok,_} ->
+	{ok, _} ->
+	    {error, bad_message};
+	continue ->
 	    {error, bad_message};
 	Error ->
 	    Error
@@ -659,7 +674,9 @@ server_kex(S, SSH, 'diffie-hellman-group1-sha1')                         ->
 	    {ok, SSH#ssh { shared_secret = K,
 			   exchanged_hash = H,
 			   session_id = H }};
-	{ok,_} ->
+	{ok, _} ->
+	    {error, bad_message};
+	continue ->
 	    {error, bad_message};
 	Error ->
 	    Error
@@ -690,7 +707,9 @@ server_kex(S, SSH, 'diffie-hellman-group-exchange-sha1')                 ->
 	    {ok, SSH#ssh { shared_secret = K,
 			   exchanged_hash = H,
 			   session_id = H }};
-	{ok,_} ->
+	{ok, _} ->
+	    {error, bad_message};
+	continue ->
 	    {error, bad_message};
 	Error ->
 	    Error
@@ -717,8 +736,13 @@ ssh_main(S, User, SSH) ->
 			  M#ssh_msg_disconnect.description]),
 		    gen_tcp:close(S);
 
-		{ok,M} when record(M, ssh_msg_kexinit) ->
+		{ok,M} when is_record(M, ssh_msg_kexinit) ->
 		    recv_negotiate(S, User, SSH, M, false);
+
+		continue ->
+		    %% ignore and debug messages
+		    inet:setopts(S, [{active, once}]),
+		    ssh_main(S, User, SSH);
 
 		{ok,M} when is_record(M, ssh_msg_service_request) ->
 		    User ! {ssh_msg, self(), M},
@@ -738,9 +762,17 @@ ssh_main(S, User, SSH) ->
 		    inet:setopts(S, [{active, once}]),
 		    ssh_main(S, User, SSH);
 		{error, _Other} ->
-		    inet:setopts(S, [{active, once}]),
-		    %% send disconnect!
-		    ssh_main(S, User, SSH)
+		    %% socket may or may not be closed, regardless
+		    %% we close again
+		    %% discon msg may be sent.
+		    User ! {
+                     ssh_msg, self(),
+                     #ssh_msg_disconnect {
+                                    code=?SSH_DISCONNECT_CONNECTION_LOST,
+                                    description = "Connection closed",
+                                    language = "" }},
+		    gen_tcp:close(S),
+		    ok
 	    end;
 
 	{tcp_closed, S} ->
@@ -1168,11 +1200,9 @@ recv_msg(S, SSH) ->
 			    ?dbg(true, "DEBUG: ~p\n",
 				 [M#ssh_msg_debug.message])
 		    end,
-		    inet:setopts(S, [{active, once}]),
-		    recv_msg(S, SSH);
+		    continue;
 		{ok, M} when record(M, ssh_msg_ignore) ->
-		    inet:setopts(S, [{active, once}]),
-		    recv_msg(S, SSH);
+		    continue;
 		{ok, Msg} ->
 		    ?dbg(?DBG_MESSAGE, "RECV_MSG: ~70p\n", [Msg]),
 		    {ok, Msg};

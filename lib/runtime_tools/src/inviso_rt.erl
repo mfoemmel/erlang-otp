@@ -2336,7 +2336,7 @@ list_logs_tracelog(_) ->                     % Some fun or similar.
 %% Help function which lists all ti-files belonging to this tracerdata.
 %% Note that this function operates on the internal TiTD structure.
 list_logs_tilog(TiTD)
-  when tuple(TiTD),size(TiTD)>=2,element(1,TiTD)==file,list(element(2,TiTD)) ->
+  when tuple_size(TiTD)>=2,element(1,TiTD)==file,list(element(2,TiTD)) ->
     FileName=element(2,TiTD),
     case file:read_file_info(FileName) of
 	{ok,_} ->                            % Yes the file exists.
@@ -2416,17 +2416,17 @@ relay_handler(Msg,Tracer) ->
 dhandler(end_of_trace, Out) ->
     Out;
 dhandler(Trace, Out) when element(1, Trace) == trace, 
-			  size(Trace) >= 3 ->
-    dhandler1(Trace, size(Trace), Out);
+			  tuple_size(Trace) >= 3 ->
+    dhandler1(Trace, tuple_size(Trace), Out);
 dhandler(Trace, Out) when element(1, Trace) == trace_ts, 
-			  size(Trace) >= 4 ->
-    dhandler1(Trace, size(Trace)-1, Out);
+			  tuple_size(Trace) >= 4 ->
+    dhandler1(Trace, tuple_size(Trace)-1, Out);
 dhandler(Trace, Out) when element(1, Trace) == drop, 
-			  size(Trace) == 2 ->
+			  tuple_size(Trace) == 2 ->
     io:format(Out, "*** Dropped ~p messages.~n", [element(2,Trace)]),
     Out;
 dhandler(Trace, Out) when element(1, Trace) == seq_trace, 
-			  size(Trace) >= 3 ->
+			  tuple_size(Trace) >= 3 ->
     SeqTraceInfo = case Trace of
 		       {seq_trace, Lbl, STI, TS} ->
 			   io:format(Out, "SeqTrace ~p [~p]: ",

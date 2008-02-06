@@ -82,7 +82,7 @@ handle_event(Event, State) ->
     case catch Pred(Event) of
 	true -> 
 	    Bin = term_to_binary(tag_event(Event)),
-	    Size = size(Bin),
+	    Size = byte_size(Bin),
 	    NewState =
 		if
 		    CurB + Size < MaxB -> State;

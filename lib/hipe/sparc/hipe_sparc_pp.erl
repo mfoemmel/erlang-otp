@@ -1,633 +1,325 @@
-%% -*- erlang-indent-level: 2 -*-
-%% ====================================================================
-%%  Filename : 	hipe_sparc_pp.erl
-%%  Module   :	hipe_sparc_pp
-%%  Purpose  :  Pretty printer for sparc code
-%%  Notes    : 
-%%  History  :	* 2001-10-25 Erik Johansson (happi@csd.uu.se): 
-%%               Created.
-%%  CVS      :
-%%              $Author: mikpe $
-%%              $Date: 2006/12/19 17:11:52 $
-%%              $Revision: 1.26 $
-%% ====================================================================
-%%  Exports  :
-%%              pp/1,        Pretty prints linear SPARC code.
-%%	        pp/2,        -- "" -- To a file
-%%              pp_instr/1,  Pretty prints a SPARC instruction.
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% -*- erlang-indent-level: 2 -*-
+%%% $Id$
 
 -module(hipe_sparc_pp).
--export([pp/1,		%% Pretty prints linear SPARC code.
-	 pp/2]).	%% -- "" -- To a device (file)
-%%-export([pp_instr/1]). %% Pretty prints a SPARC instruction.
-
--include("../main/hipe.hrl").
+-export([pp/1, pp/2, pp_insn/1]).
 -include("hipe_sparc.hrl").
 
-%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%%
-%% Pretty printer
-%%
-%% - pp/1: pretty prints linear SPARC code
-%%
+pp(Defun) ->
+  pp(standard_io, Defun).
 
-pp(Sparc) ->
-  pp(Sparc, standard_io).
-
-pp(Sparc, Dev) ->
-  {M, F, A} = hipe_sparc:sparc_fun(Sparc),
+pp(Dev, #defun{mfa=#sparc_mfa{m=M,f=F,a=A}, code=Code, data=Data}) ->
   Fname = atom_to_list(M)++"_"++atom_to_list(F)++"_"++integer_to_list(A),
-   case hipe_sparc:sparc_is_closure(Sparc) of
-     true ->
-       io:format(Dev, "! Closure\n", []);
-     _ -> ok
-   end,
-   case hipe_sparc:sparc_is_leaf(Sparc) of
-     true ->
-       io:format(Dev, "! Leaf function\n", []);
-     _ -> ok
-   end,
-  io:format(Dev, ".section    \".text\"~n", []),
-  io:format(Dev, "    .align 4~n", []),
-  io:format(Dev, "    .global ", []),
-  io:format(Dev, "~s~n", [Fname]),
-  io:format(Dev, ".section    \".data\"\n", []),
-  hipe_data_pp:pp(Dev, hipe_sparc:sparc_data(Sparc), sparc, Fname), 
-  io:format(Dev, ".section    \".code\"\n", []),
-  io:format(Dev, "~s:~n", [Fname]),
-  pp_instrs(hipe_sparc:sparc_code(Sparc), Dev, Fname),
-  io:format(Dev, "~n~n", []).
+  io:format(Dev, "\t.text\n", []),
+  io:format(Dev, "\t.align 4\n", []),
+  io:format(Dev, "\t.global ~s\n", [Fname]),
+  io:format(Dev, "~s:\n", [Fname]),
+  pp_insns(Dev, Code, Fname),
+  io:format(Dev, "\t.rodata\n", []),
+  io:format(Dev, "\t.align 4\n", []),
+  hipe_data_pp:pp(Dev, Data, sparc, Fname),
+  io:format(Dev, "\n", []).
 
-pp_instrs([], _Dev, _Fname) ->
-  ok;
-pp_instrs([I|Is], Dev, Fname) ->
-  pp_instr(I, Dev, Fname),
-  pp_instrs(Is, Dev, Fname).
+pp_insns(Dev, [I|Is], Fname) ->
+  pp_insn(Dev, I, Fname),
+  pp_insns(Dev, Is, Fname);
+pp_insns(_, [], _) ->
+  [].
 
+pp_insn(I) ->
+  pp_insn(standard_io, I, "").
 
-%% pp_instr(I) ->
-%%   pp_instr(I, standard_io, "").
-
-pp_instr(I, Dev, Pre) ->
+pp_insn(Dev, I, Pre) ->
   case I of
-    #pseudo_return{} ->
-      io:format(Dev, "    retl ! ", []),
-      pp_args(Dev, hipe_sparc:pseudo_return_regs(I)),
-      io:format(Dev, "~n", []);
-    #pseudo_enter{} ->
-      io:format(Dev, "!    pseudo_enter ", []),
-      pp_target(Dev, 
-		hipe_sparc:pseudo_enter_target(I),
-		hipe_sparc:pseudo_enter_is_known(I)),
-      io:format(Dev, " ! (",[]),
-      pp_args(Dev, hipe_sparc:pseudo_enter_args(I)),
-      io:format(Dev, ")~n", []);
-%%  #pseudo_push{} ->
-%%    io:format(Dev, "!    pseudo_push ", []),
-%%    pp_arg(Dev, hipe_sparc:pseudo_push_reg(I)),
-%%    io:format(Dev, "~n", []);
-    #pseudo_spill{} ->
-      io:format(Dev, "!    pseudo_spill ", []),
-      pp_arg(Dev, hipe_sparc:pseudo_spill_reg(I)),
-      io:format(Dev, ", SP<", []),
-      pp_arg(Dev, hipe_sparc:pseudo_spill_pos(I)),
-      io:format(Dev, ">~n", []);
-    #pseudo_unspill{} ->
-      io:format(Dev, "!    pseudo_unspill ", []),
-      pp_arg(Dev, hipe_sparc:pseudo_unspill_reg(I)),
-      io:format(Dev, ", SP<", []),
-      pp_arg(Dev, hipe_sparc:pseudo_unspill_pos(I)),
-      io:format(Dev, ">~n", []);
-    #pseudo_pop{} ->
-      io:format(Dev, "!    pseudo_get_arg ", []),
-      pp_arg(Dev, hipe_sparc:pseudo_pop_index(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:pseudo_pop_reg(I)),
-      io:format(Dev, "~n", []);
-    #label{} ->
-      io:format(Dev, ".~s_~w:~n", [Pre, hipe_sparc:label_name(I)]);
-    #comment{} ->
-      io:format(Dev, "    ! ~p~n", [hipe_sparc:comment_text(I)]);
-    #nop{} ->
-      io:format(Dev, "    nop~n", []);
-    #move{} ->
-      io:format(Dev, "    mov ", []),
-      pp_arg(Dev, hipe_sparc:move_src(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:move_dest(I)),
-      io:format(Dev, "~n", []);
-    #multimove{} ->
-      Srcs = hipe_sparc:multimove_src(I),
-      Dsts = hipe_sparc:multimove_dest(I),
-      case length(Srcs) of
-	1 ->
-	  io:format(Dev, "    mov ", []),
-	  pp_arg(Dev, hd(Srcs)),
+    #alu{aluop=AluOp, dst=Dst, src1=Src1, src2=Src2} ->
+      io:format(Dev, "\t~s ", [alu_op_name(AluOp)]),
+      case aluop_is_ldop(AluOp) of
+	true ->
+	  io:format(Dev, "[", []),
+	  pp_temp(Dev, Src1),
+	  io:format(Dev, " + ", []),
+	  pp_src(Dev, Src2),
+	  io:format(Dev, "]", []);
+	false ->
+	  pp_temp(Dev, Src1),
 	  io:format(Dev, ", ", []),
-	  pp_arg(Dev, hd(Dsts)),
-	  io:format(Dev, " ! mmove ~n", []);
+	  pp_src(Dev, Src2)
+      end,
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #bp{'cond'=Cond, label=Label, pred=Pred} ->
+      io:format(Dev, "\tb~w,~w .~s_~w\n",
+		[cond_name(Cond), pred_name(Pred), Pre, Label]);
+    %% #br{} -> pp_br(Dev, I, Pre);
+    #call_rec{'fun'=Fun, sdesc=SDesc, linkage=Linkage} ->
+      io:format(Dev, "\tcall ", []),
+      pp_fun(Dev, Fun),
+      io:format(Dev, " #", []),
+      pp_sdesc(Dev, Pre, SDesc),
+      io:format(Dev, " ~w\n", [Linkage]);
+    #call_tail{'fun'=Fun, linkage=Linkage} ->
+      io:format(Dev, "\tb ", []),
+      pp_fun(Dev, Fun),
+      io:format(Dev, " # ~w\n", [Linkage]);
+    #comment{term=Term} ->
+      io:format(Dev, "\t# ~p\n", [Term]);
+    #jmp{src1=Src1, src2=Src2, labels=Labels} ->
+      io:format(Dev, "\tjmp [", []),
+      pp_temp(Dev, Src1),
+      io:format(Dev, " + ", []),
+      pp_src(Dev, Src2),
+      io:format(Dev, "]", []),
+      case Labels of
+	[] -> [];
 	_ ->
-	  io:format(Dev, "    ! Multimove   !~n",[]),
-	  pp_mmoves(Dev, Srcs, Dsts),
-	  io:format(Dev, "    ! End mmove   !~n",[])
-      end;
-    #alu{} ->
-      io:format(Dev, "    ", []),
-      pp_alu_op(Dev, hipe_sparc:alu_operator(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:alu_src1(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:alu_src2(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:alu_dest(I)),
-      io:format(Dev, "~n", []);
-    #alu_cc{} ->
-      io:format(Dev, "    ", []),
-      pp_alu_op(Dev, hipe_sparc:alu_cc_operator(I)),
-      io:format(Dev, "cc ", []),
-      pp_arg(Dev, hipe_sparc:alu_cc_src1(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:alu_cc_src2(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:alu_cc_dest(I)),
-      io:format(Dev, "~n", []);
-%%  #br{} ->
-%%    io:format(Dev, "    br", []),
-%%    pp_regcc(Dev, hipe_sparc:br_regcond(I)),
-%%    pp_annul(Dev, hipe_sparc:br_annul(I)),
-%%    pp_pred(Dev, hipe_sparc:br_taken(I)),
-%%    io:format(Dev, " ", []),
-%%    pp_arg(Dev, hipe_sparc:br_reg(I)),
-%%    pp_target(Dev, 
-%% 		hipe_sparc:br_true_label(I),
-%% 		hipe_sparc:br_false_label(I),
-%% 		Pre),
-%%    io:format(Dev, "~n", []);
-    #b{} ->
-      io:format(Dev, "    b", []),
-      pp_cc(Dev, hipe_sparc:b_cond(I)),
-      pp_annul(Dev, hipe_sparc:b_annul(I)),
-      pp_pred(Dev, hipe_sparc:b_taken(I)),
-      io:format(Dev, " %icc",[]),
-      pp_target(Dev, 
-		hipe_sparc:b_true_label(I),
-		hipe_sparc:b_false_label(I),
-		Pre),
-      io:format(Dev, "~n", []);
-    #goto{} ->
-      io:format(Dev, "    ba .~s_~w~n", [Pre, hipe_sparc:goto_label(I)]);
-    #jmp{} ->
-      io:format(Dev, "    jmpl ", []),
-      pp_arg(Dev, hipe_sparc:jmp_target(I)),
-      io:format(Dev, "+", []),
-      pp_arg(Dev, hipe_sparc:jmp_off(I)),
-      io:format(Dev, ", %g0 ! (", []),
-      pp_args(Dev, hipe_sparc:jmp_args(I)),
-      io:format(Dev, ") ", []),
-      case hipe_sparc:jmp_destinations(I) of
-	[] -> io:format(Dev, "~n", []);
-	Lbls -> pp_switch_labels(Dev,Lbls, Pre),
-		io:format(Dev, "~n", [])
-      end;
-    %% #jmp_link{} ->
-    #call_link{} ->
-      io:format(Dev, "    call ", []),
-      pp_target(Dev, 
-		hipe_sparc:call_link_target(I),
-		hipe_sparc:call_link_is_known(I)),
-      io:format(Dev, " ! (",[]),
-      pp_args(Dev, hipe_sparc:call_link_args(I)),
-      io:format(Dev, ") <", []),
-      pp_args(Dev, hipe_sparc:call_link_dests(I)),
-      io:format(Dev, ">", []),
-      case hipe_sparc:call_link_fail(I) of
-	[] -> true;
-	L ->
-	  io:format(Dev, " fail to ~s_~w", [Pre,L])
+	  io:format(Dev, " #", []),
+	  pp_labels(Dev, Labels, Pre)
       end,
-      %% io:format(Dev, "~n", []),
-      case hipe_sparc:call_link_continuation(I) of
-	[] -> ok;
-	CL -> io:format(Dev, "   (~s_~w)", [Pre,CL])
-      end,
-      hipe_sparc:pp_sdesc(Dev, hipe_sparc:call_link_stack_desc(I)),
-      io:format(Dev, "~n", []);
-    #load{} ->
-      io:format(Dev, "    ", []),
-      pp_load_op(Dev, hipe_sparc:load_type(I)),
-      io:format(Dev, " [", []),
-      pp_arg(Dev, hipe_sparc:load_src(I)),
-      io:format(Dev, "+", []),
-      pp_arg(Dev, hipe_sparc:load_off(I)),
-      io:format(Dev, "], ", []),
-      pp_arg(Dev, hipe_sparc:load_dest(I)),
-      io:format(Dev, "~n", []);
-    #load_atom{} ->
-      Atom = hipe_sparc:load_atom_atom(I),
-      io:format(Dev, "   sethi %hi(~w), ", [hipe_bifs:atom_to_word(Atom)]),
-      pp_arg(Dev, hipe_sparc:load_atom_dest(I)),
-      io:format(Dev, "~n   or ",[]),
-      pp_arg(Dev, hipe_sparc:load_atom_dest(I)),
-      io:format(Dev, ",  %lo(~w), ", [hipe_bifs:atom_to_word(Atom)]),
-      pp_arg(Dev, hipe_sparc:load_atom_dest(I)),
-      io:format(Dev, " ! load_atom('~w') ~n", [Atom]);
-    #load_word_index{} ->
-      io:format(Dev, "    mov word_index(~s_dl_~w, ~w), ", 
-		[Pre, hipe_sparc:load_word_index_block(I), hipe_sparc:load_word_index_index(I)]),
-      pp_arg(Dev, hipe_sparc:load_word_index_dest(I)),
-      io:format(Dev, "~n",[]);
-    #load_address{} ->
-      Address = hipe_sparc:load_address_address(I),
-      Type = hipe_sparc:load_address_type(I), 
-      case Type of
-	function ->
-	  case Address of
-	    {M, F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    {F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    F -> 
-	      io:format(Dev, "    sethi %hi( ", []),
-	      io:format(Dev, "~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
-	  end;
-	remote_function ->
-	  case Address of
-	    {M, F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    {F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    F -> 
-	      io:format(Dev, "    sethi %hi( ", []),
-	      io:format(Dev, "~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
-	  end;
-	local_function ->
-	  case Address of
-	    {M, F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w_~w), ", [M, F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    {F, A} -> 
-	      io:format(Dev, "    sethi %hi(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w_~w), ", [F, A]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	    F -> 
-	      io:format(Dev, "    sethi %hi( ", []),
-	      io:format(Dev, "~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, "~n    or  ", []),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	      io:format(Dev, ", %lo(~w), ", [F]),
-	      pp_arg(Dev, hipe_sparc:load_address_dest(I))
-	  end;
-	constant ->
-	  io:format(Dev, "    sethi %hi( ", []),
-	  io:format(Dev, "~s_dl_~w), ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, "~n    or  ", []),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, ", %lo(~s_dl_~w), ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	c_const ->
-	  io:format(Dev, "    sethi %hi(", []),
-	  io:format(Dev, "~w), ", [Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, "~n    or  ", []),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, ", %lo(~w), ", [Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	label ->
-	  io:format(Dev, "    sethi %hi( ", []),
-	  io:format(Dev, "~s_~w), ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, "~n    or", []),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, ", %lo(~s_dl_~w), ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I));
-	closure ->
-	  io:format(Dev, "    lda ", []),
-	  io:format(Dev, "~s_~w, ", [Pre, Address]),
-	  pp_arg(Dev, hipe_sparc:load_address_dest(I)),
-	  io:format(Dev, " ! [closure]",[])
-      end,
-      io:format(Dev, "~n", []);
-    #store{} ->
-      io:format(Dev, "    ", []),
-      pp_store_op(Dev, hipe_sparc:store_type(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:store_src(I)),
+      io:format(Dev, "\n", []);
+    #jmpl{src=Src, sdesc=SDesc} ->
+      io:format(Dev, "\tjmpl [", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, " + 0], %o7 # ", []),
+      pp_sdesc(Dev, Pre, SDesc),
+      io:format(Dev, "\n", []);
+    #label{label=Label} ->
+      io:format(Dev, ".~s_~w:~n", [Pre, Label]);
+    #pseudo_bp{'cond'=Cond, true_label=TrueLab, false_label=FalseLab, pred=Pred} ->
+      io:format(Dev, "\tpseudo_b~w,~w .~s_~w # .~s_~w\n",
+		[cond_name(Cond), pred_name(Pred), Pre, TrueLab, Pre, FalseLab]);
+    %% #pseudo_br{} -> pp_pseudo_br(Dev, I, Pre);
+    #pseudo_call{funv=FunV, sdesc=SDesc, contlab=ContLab, linkage=Linkage} ->
+      io:format(Dev, "\tpseudo_call ", []),
+      pp_funv(Dev, FunV),
+      io:format(Dev, " # contlab .~s_~w", [Pre, ContLab]),
+      pp_sdesc(Dev, Pre, SDesc),
+      io:format(Dev, " ~w\n", [Linkage]);
+    #pseudo_call_prepare{nrstkargs=NrStkArgs} ->
+      SP = hipe_sparc_registers:reg_name_gpr(hipe_sparc_registers:stack_pointer()),
+      io:format(Dev, "\tsub ~s, ~w, ~s # pseudo_call_prepare\n",
+		[SP, 4*NrStkArgs, SP]);
+    #pseudo_move{src=Src, dst=Dst} ->
+      io:format(Dev, "\tpseudo_move ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #pseudo_ret{} ->
+      io:format(Dev, "\tpseudo_ret\n", []);
+    #pseudo_set{imm=Imm, dst=Dst} ->
+      io:format(Dev, "\tpseudo_set ", []),
+      pp_imm(Dev, Imm),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #pseudo_tailcall{funv=FunV, arity=Arity, stkargs=StkArgs, linkage=Linkage} ->
+      io:format(Dev, "\tpseudo_tailcall ", []),
+      pp_funv(Dev, FunV),
+      io:format(Dev, "/~w (", [Arity]),
+      pp_args(Dev, StkArgs),
+      io:format(Dev, ") ~w\n", [Linkage]);
+    #pseudo_tailcall_prepare{} ->
+      io:format(Dev, "\tpseudo_tailcall_prepare\n", []);
+    #rdy{dst=Dst} ->
+      io:format(Dev, "\trd %y, ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #sethi{dst=Dst, uimm22=#sparc_uimm22{value=Value}} ->
+      io:format(Dev, "\tsethi ", []),
+      pp_hex(Dev, Value),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #store{stop=StOp, src=Src, base=Base, disp=Disp} ->
+      io:format(Dev, "\t~s ", [stop_name(StOp)]),
+      pp_temp(Dev, Src),
       io:format(Dev, ", [", []),
-      pp_arg(Dev, hipe_sparc:store_dest(I)),
-      io:format(Dev, "+", []),
-      pp_arg(Dev, hipe_sparc:store_off(I)),
-      io:format(Dev, "]~n", []);
-    #rdy{} ->
-      io:format(Dev, "    rd %y, ", []),
-      pp_arg(Dev, hipe_sparc:rdy_dest(I)),
-      io:format(Dev, "~n", []);
-    #sethi{} ->
-      io:format(Dev, "    sethi ", []),
-      pp_arg(Dev, hipe_sparc:sethi_const(I)),
+      pp_temp(Dev, Base),
+      io:format(Dev, " + ", []),
+      pp_src(Dev, Disp),
+      io:format(Dev, "]\n", []);
+    #fp_binary{fp_binop=FpBinOp, src1=Src1, src2=Src2, dst=Dst} ->
+      io:format(Dev, "\t~s ", [FpBinOp]),
+      pp_temp(Dev, Src1),
       io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:sethi_dest(I)),
-      io:format(Dev, "~n", []);
-    #load_fp{} ->
-      io:format(Dev, "    ", []),
-      pp_load_fp_op(Dev, hipe_sparc:load_fp_type(I)),
-      io:format(Dev, " [", []),
-      pp_arg(Dev, hipe_sparc:load_fp_src(I)),
-      io:format(Dev, "+", []),
-      pp_arg(Dev, hipe_sparc:load_fp_off(I)),
+      pp_temp(Dev, Src2),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #fp_unary{fp_unop=FpUnOp, src=Src, dst=Dst} ->
+      io:format(Dev, "\t~s ", [FpUnOp]),
+      pp_temp(Dev, Src),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #pseudo_fload{base=Base, disp=Disp, dst=Dst, is_single=IsSingle} ->
+      io:format(Dev, "\t~s [",
+		[case IsSingle of
+		   true -> 'ldf';
+		   _ -> 'pseudo_fload' end]),
+      pp_temp(Dev, Base),
+      io:format(Dev, " + ", []),
+      pp_simm13(Dev, Disp),
       io:format(Dev, "], ", []),
-      pp_arg(Dev, hipe_sparc:load_fp_dest(I)),
-      io:format(Dev, "~n", []);
-    #store_fp{} ->
-      io:format(Dev, "    ", []),
-      pp_store_fp_op(Dev, hipe_sparc:store_fp_type(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:store_fp_src(I)),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #pseudo_fmove{src=Src, dst=Dst} ->
+      io:format(Dev, "\tpseudo_fmove ", []),
+      pp_temp(Dev, Src),
+      io:format(Dev, ", ", []),
+      pp_temp(Dev, Dst),
+      io:format(Dev, "\n", []);
+    #pseudo_fstore{src=Src, base=Base, disp=Disp} ->
+      io:format(Dev, "\tpseudo_fstore ", []),
+      pp_temp(Dev, Src),
       io:format(Dev, ", [", []),
-      pp_arg(Dev, hipe_sparc:store_fp_dest(I)),
-      io:format(Dev, "+", []),
-      pp_arg(Dev, hipe_sparc:store_fp_off(I)),
-      io:format(Dev, "]~n", []);
-%%  #fb{} ->
-%%    io:format(Dev, "    fb", []),
-%%    pp_fcc(Dev, hipe_sparc:fb_cond(I)),
-%%    pp_annul(Dev, hipe_sparc:fb_annul(I)),
-%%    pp_pred(Dev, hipe_sparc:fb_taken(I)),
-%%    io:format(Dev, " %fcc~w",[hipe_sparc:fb_fcc_reg(I)]),
-%%    pp_target(Dev, 
-%% 		hipe_sparc:fb_true_label(I),
-%% 		hipe_sparc:fb_false_label(I),
-%% 		Pre),
-%%    io:format(Dev, "~n", []);
-    #fop{} ->
-      io:format(Dev, "    ", []),
-      pp_fop_op(Dev, hipe_sparc:fop_operator(I)),
-      pp_fp_type(Dev,hipe_sparc:fop_type(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:fop_src1(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:fop_src2(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:fop_dest(I)),
-      io:format(Dev, "~n", []);
-%%  #fcmp{} ->
-%%    io:format(Dev, "    fcmp", []),
-%%    case hipe_sparc:fcmp_exception(I) of
-%% 	true -> io:format(Dev, "e",[]);
-%% 	_ -> ok
-%%    end,
-%%    pp_fp_type(Dev,hipe_sparc:fcmp_type(I)),
-%%    io:format(Dev, " ", []),
-%%    io:format(Dev, " %fcc~w",[hipe_sparc:fcmp_fcc_reg(I)]),
-%%    io:format(Dev, ",", []),
-%%    pp_arg(Dev, hipe_sparc:fcmp_src1(I)),
-%%    io:format(Dev, ", ", []),
-%%    pp_arg(Dev, hipe_sparc:fcmp_src2(I)),
-%%    io:format(Dev, "~n", []);
-    #fmove{} ->
-      case {hipe_sparc:fmove_negate(I),hipe_sparc:fmove_abs(I)} of
-	{true, false} ->
-	  io:format(Dev, "    fneg", []);
-	{false, true} ->
-	  io:format(Dev, "    fabs", []);
-	{false, false} ->
-	  io:format(Dev, "    fmov", []);
-	_ ->
-	  ?EXIT({"Illegal SPARC fmov instruction", I})
-      end,
-      pp_fp_type(Dev,hipe_sparc:fmove_type(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:fmove_src(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:fmove_dest(I)),
-      io:format(Dev, "~n", []);
-    #conv_fp{} ->
-      io:format(Dev, "    ", []),
-      io:format(Dev, "fito", []),
-      pp_fp_type(Dev, hipe_sparc:conv_fp_dest_type(I)),
-      io:format(Dev, " ", []),
-      pp_arg(Dev, hipe_sparc:conv_fp_src(I)),
-      io:format(Dev, ", ", []),
-      pp_arg(Dev, hipe_sparc:conv_fp_dest(I)),
-      io:format(Dev, "~n", []);
-    X ->
-      ?EXIT({"unknown sparc instruction", X})
+      pp_temp(Dev, Base),
+      io:format(Dev, " + ", []),
+      pp_simm13(Dev, Disp),
+      io:format(Dev, "]\n", []);
+    _ ->
+      exit({?MODULE, pp_insn, I})
   end.
 
-pp_mmoves(Dev, [Src|Srcs], [Dst| Dsts]) ->
-  io:format(Dev, "    mov ", []),
-  pp_arg(Dev, Src),
-  io:format(Dev, ", ", []),
-  pp_arg(Dev, Dst),
-  io:format(Dev, " !~n", []),
-  pp_mmoves(Dev, Srcs, Dsts);
-pp_mmoves(_,[],[]) -> ok.
+-ifdef(notdef).	% XXX: only for sparc64, alas
+pp_br(Dev, I, Pre) ->
+  #br{rcond=RCond, src=Src, label=Label, pred=Pred} = I,
+  io:format(Dev, "\tbr~w,~w ", [rcond_name(RCond), pred_name(Pred)]),
+  pp_temp(Dev, Src),
+  io:format(Dev, ", .~s_~w\n", [Pre, Label]).
 
+pp_pseudo_br(Dev, I, Pre) ->
+  #pseudo_br{rcond=RCond, src=Src, true_label=TrueLab, false_label=FalseLab, pred=Pred} = I,
+  io:format(Dev, "\tpseudo_br~w,~w ", [rcond_name(RCond), pred_name(Pred)]),
+  pp_src(Dev, Src),
+  io:format(Dev, ", .~s_~w # .~s_~w\n", [Pre, TrueLab, Pre, FalseLab]).
+-endif.
 
-pp_alu_op(Dev, Op) ->
-  Str = case Op of
-	  '+' -> "add";
-	  '-' -> "sub";
-	  '>>' -> "srl";
-	  '>>64' -> "srlx";
-	  '>>?' -> "sra";
-	  '>>?64' -> "srax";
-	  '<<' -> "sll";
-	  '<<64' -> "sllx";
-	  'and' -> "and";
-	  'or' -> "or";
-	  'xor' -> "xor";
-	  '+c' -> "addc";
-	  '-c' -> "subc";
-	  'andn' -> "andn";
-	  'xnor' ->  "xnor";
-	  'smul' -> "smul";
-	  X -> exit({sparc, {"unkown alu-op", X}}), ""
+to_hex(N) ->
+  io_lib:format("~.16x", [N, "0x"]).
+
+pp_sdesc(Dev, Pre, #sparc_sdesc{exnlab=ExnLab,fsize=FSize,arity=Arity,live=Live}) ->
+  pp_sdesc_exnlab(Dev, Pre, ExnLab),
+  io:format(Dev, " ~s ~w [", [to_hex(FSize), Arity]),
+  pp_sdesc_live(Dev, Live),
+  io:format(Dev, "]", []).
+
+pp_sdesc_exnlab(Dev, _, []) -> io:format(Dev, " []", []);
+pp_sdesc_exnlab(Dev, Pre, ExnLab) -> io:format(Dev, " .~s_~w", [Pre, ExnLab]).
+
+pp_sdesc_live(_, {}) -> [];
+pp_sdesc_live(Dev, Live) -> pp_sdesc_live(Dev, Live, 1).
+
+pp_sdesc_live(Dev, Live, I) ->
+  io:format(Dev, "~s", [to_hex(element(I, Live))]),
+  if I < size(Live) ->
+      io:format(Dev, ",", []),
+      pp_sdesc_live(Dev, Live, I+1);
+     true -> []
+  end.
+
+pp_labels(Dev, [Label|Labels], Pre) ->
+  io:format(Dev, " .~s_~w", [Pre, Label]),
+  pp_labels(Dev, Labels, Pre);
+pp_labels(_, [], _) ->
+  [].
+
+pp_fun(Dev, Fun) ->
+  case Fun of
+    #sparc_mfa{m=M, f=F, a=A} ->
+      io:format(Dev, "~w:~w/~w", [M, F, A]);
+    #sparc_prim{prim=Prim} ->
+      io:format(Dev, "~w", [Prim])
+  end.
+
+pp_funv(Dev, FunV) ->
+  case FunV of
+    #sparc_temp{} ->
+      pp_temp(Dev, FunV);
+    Fun ->
+      pp_fun(Dev, Fun)
+  end.
+
+alu_op_name(Op) -> Op.
+
+aluop_is_ldop(AluOp) ->
+  case AluOp of
+    'ldsb' -> true;
+    'ldsh' -> true;
+    'ldsw' -> true;
+    'ldub' -> true;
+    'lduh' -> true;
+    'lduw' -> true;
+    'ldx' -> true;
+    _ -> false
+  end.
+
+cond_name(Cond) -> Cond.
+%%rcond_name(RCond) -> RCond.
+
+pred_name(Pred) ->
+  if Pred >= 0.5 -> 'pt';
+     true -> 'pn'
+  end.
+
+stop_name(StOp) -> StOp.
+
+pp_temp(Dev, Temp=#sparc_temp{reg=Reg, type=Type}) ->
+  case hipe_sparc:temp_is_precoloured(Temp) of
+    true ->
+      Name =
+	case Type of
+	  double -> hipe_sparc_registers:reg_name_fpr(Reg);
+	  _ -> hipe_sparc_registers:reg_name_gpr(Reg)
 	end,
-  io:format(Dev, "~s", [Str]).
-
-pp_fop_op(Dev, Op) ->
-  Str = case Op of
-	  '+' -> "fadd";
-	  '-' -> "fsub";
-	  '*' -> "fmul";
-	  '/' -> "fdiv";
-	  X -> exit({sparc, {"unkown floating point-op", X}}), ""
+      io:format(Dev, "~s", [Name]);
+    false ->
+      Tag =
+	case Type of
+	  double -> "f";
+	  tagged -> "t";
+	  untagged -> "u"
 	end,
-  io:format(Dev, "~s", [Str]).
+      io:format(Dev, "~s~w", [Tag, Reg])
+  end.
 
-pp_fp_type(Dev,Type) ->
-  Str = case Type of
-	  single -> "s";
-	  double -> "d";
-	  quad -> "q"
-	end,
-  io:format(Dev, "~s", [Str]).
+pp_hex(Dev, Value) -> io:format(Dev, "~s", [to_hex(Value)]).
+pp_simm13(Dev, #sparc_simm13{value=Value}) -> pp_hex(Dev, Value).
+pp_uimm5(Dev, #sparc_uimm5{value=Value}) -> pp_hex(Dev, Value).
 
-pp_load_fp_op(Dev, Type) ->
-  Str = case Type of
-	  single -> "ld";
-	  double -> "ldd";
-	  quad -> "ldq"
-	end,
-  io:format(Dev, "~s", [Str]).
+pp_imm(Dev, Value) ->
+  if is_integer(Value) -> pp_hex(Dev, Value);
+     true -> io:format(Dev, "~w", [Value])
+  end.
 
-pp_store_fp_op(Dev, Type) ->
-  Str = case Type of
-	  single -> "st";
-	  double -> "std";
-	  quad -> "stdq"
-	end,
-  io:format(Dev, "~s", [Str]).
-
-pp_load_op(Dev, Type) ->
-  Str = case Type of
-	  ub -> "ldub";
-	  sb -> "ldsb";
-	  uh -> "lduh";
-	  sh -> "ldsh";
-	  sw -> "ldsw";
-	  uw -> "lduw";
-	  xw -> "ldx"
-	end,
-  io:format(Dev, "~s", [Str]).
-
-pp_store_op(Dev, Type) ->
-  Str = case Type of
-	  b -> "stb";
-	  h -> "sth";
-	  w -> "stw";
-	  x -> "stx"
-	end,
-  io:format(Dev, "~s", [Str]).
-
-
-%% pp_regcc(Dev, CC) ->
-%%   io:format(Dev, "~s", [CC]).
-
-pp_cc(Dev, CC) ->
-  io:format(Dev, "~s", [CC]).
-
-%% pp_fcc(Dev, FCC) ->
-%%   io:format(Dev, "~s", [FCC]).
+pp_src(Dev, Src) ->
+  case Src of
+    #sparc_temp{} ->
+      pp_temp(Dev, Src);
+    #sparc_simm13{} ->
+      pp_simm13(Dev, Src);
+    #sparc_uimm5{} ->	% XXX: sparc64: uimm6
+      pp_uimm5(Dev, Src)
+  end.
 
 pp_arg(Dev, Arg) ->
-  case  hipe_sparc:is_reg(Arg) of
-    true ->
-      io:format(Dev, "~s", 
-		[hipe_sparc_registers:reg_name( hipe_sparc:reg_nr(Arg))]);
-    false ->
-      case hipe_sparc:is_imm(Arg) of
-	true ->
-	  io:format(Dev, "~w", [ hipe_sparc:imm_value(Arg)]);
-	false ->
-	  case hipe_sparc:is_fpreg(Arg) of
-	    true ->
-	      io:format(Dev, "~s", 
-			[hipe_sparc_registers:fpreg_name( hipe_sparc:fpreg_nr(Arg))]);
-	    false ->
-	      case hipe_sparc:is_spill(Arg) of
-		true ->
-		  io:format(Dev, "~w", [ hipe_sparc:spill_pos(Arg)]);
-		false ->
-		  ?EXIT({bad_sparc_arg,Arg})
-	      end
-	  end
-      end
+  case Arg of
+    #sparc_temp{} ->
+      pp_temp(Dev, Arg);
+    _ ->
+      pp_hex(Dev, Arg)
   end.
 
-
-pp_args(_Dev, []) ->
-  ok;
-pp_args(Dev, [A]) ->
-  pp_arg(Dev, A);
 pp_args(Dev, [A|As]) ->
   pp_arg(Dev, A),
+  pp_comma_args(Dev, As);
+pp_args(_, []) ->
+  [].
+
+pp_comma_args(Dev, [A|As]) ->
   io:format(Dev, ", ", []),
-  pp_args(Dev, As).
-
-
-pp_switch_labels(Dev,Lbls, Pre) -> 
-  pp_switch_labels(Dev,Lbls,1, Pre).
-
-pp_switch_labels(Dev, [L], _Pos, Pre) -> 
-  io:format(Dev, "~s_~w", [Pre,L]);
-pp_switch_labels(Dev, [L|Ls], Pos,Pre) -> 
-  io:format(Dev, "~s_~w, ", [Pre,L]),
-  NewPos = 
-    case Pos of
-      3 -> io:format(Dev, "\n             ! ",[]),
-	   0;
-      N -> N + 1
-    end,
-  pp_switch_labels(Dev, Ls, NewPos, Pre);
-pp_switch_labels(_Dev, [], _, _) -> ok.
-
-
-pp_target(Dev,T,_Known=false) ->
-  pp_arg(Dev,T);
-pp_target(Dev,T,true) ->
-  case T of
-    {M, F, A} -> io:format(Dev, "~w_~w_~w ", [M, F, A]);
-    {F, A} -> io:format(Dev, "~w_~w ", [F, A]);
-    F -> io:format(Dev, "~w ", [F])
-  end.
-
-pp_target(Dev, Target, [], Pre) ->
-  io:format(Dev, ", .~s_~w", [Pre, Target]);
-pp_target(Dev, Target, Fail, Pre) ->
-  io:format(Dev, ", .~s_~w ! .~s_~w", 
-	    [Pre, Target, Pre, Fail]). 
-
-pp_annul(Dev, A) ->
-  case A of
-    a ->  io:format(Dev, ",a", []);
-    na -> ok
-  end.
-
-
-pp_pred(Dev, P) ->
-  case P of
-    true -> ok;
-    false -> io:format(Dev, ",pn", [])
-  end.
-
+  pp_arg(Dev, A),
+  pp_comma_args(Dev, As);
+pp_comma_args(_, []) ->
+  [].

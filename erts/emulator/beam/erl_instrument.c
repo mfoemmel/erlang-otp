@@ -1160,7 +1160,6 @@ erts_instr_init(int stat, int map_stat)
     stats = erts_alloc(ERTS_ALC_T_INSTR_INFO, sizeof(struct stats_));
 
     erts_mtx_init(&instr_mutex, "instr");
-    erts_mtx_set_forksafe(&instr_mutex);
 
     mem_anchor = NULL;
 
@@ -1184,7 +1183,6 @@ erts_instr_init(int stat, int map_stat)
     if (map_stat) {
 
 	erts_mtx_init(&instr_x_mutex, "instr_x");
-	erts_mtx_set_forksafe(&instr_x_mutex);
 
 	erts_instr_memory_map = 1;
 	erts_instr_stat = 1;

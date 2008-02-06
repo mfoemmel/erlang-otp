@@ -63,19 +63,19 @@ rule(_, _) ->
 rule([cite|_], {_,[],[Header]}, Opts) ->
     HeaderData = docb_html_util:all_header_data(Header),
     {{docb_html_layout:chapter_top(HeaderData, Opts) ++
-      "\n<CENTER><H1>Bibliography</H1></CENTER>\n",
+      "\n<center><h1>Bibliography</h1></center>\n",
       docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([cite|_], {_,[],[Header|_]}, Opts) ->
     HeaderData = docb_html_util:all_header_data(Header),
     {{docb_html_layout:chapter_top(HeaderData, Opts) ++
-      "\n<CENTER><H1>Bibliography</H1></CENTER>\n<DL>\n",
-      "\n</DL>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
+      "\n<center><h1>Bibliography</h1></center>\n<dl>\n",
+      "\n</dl>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([cite|_], {_,[Data],_}, Opts) ->
     {{docb_html_layout:chapter_top(Data, Opts) ++
-      "\n<CENTER><H1>Bibliography</H1></CENTER>\n<DL>\n",
-      "\n</DL>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
+      "\n<center><h1>Bibliography</h1></center>\n<dl>\n",
+      "\n</dl>\n" ++ docb_html_layout:chapter_bot(Opts)}, Opts};
 
 rule([cite|T], {A, B, [{citedef,C,
 			[{ctitle, [], [{pcdata,[],CTitle}]},
@@ -93,22 +93,22 @@ rule([cite|_], {_,[Name,ID], [{citedef,[],[{pcdata,[],Def}]}]}, Opts) ->
 	end,
     case lists:keysearch(ID, 1, CiteList) of
 	false ->
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ ID ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Def) ++ "\n"}, Opts};
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ ID ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Def) ++ "\n</dd>\n"}, Opts};
 	{value, {ID, Name, Description, _Responsible}} ->
 	    docb_util:message(warning,
 			      "Global cite ~s overriding local", [ID]),
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"},
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"},
 	     Opts};
 	{value, {ID, Name, Description}} ->
 	    docb_util:message(warning,
 			      "Global cite ~s overriding local", [ID]),
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"}, Opts}
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"}, Opts}
     end;
 
 rule([cite|_], {_,[Name,ID],_}, Opts) ->
@@ -121,16 +121,16 @@ rule([cite|_], {_,[Name,ID],_}, Opts) ->
 	false ->
 	    docb_util:message(error,
 			      "The cite ~s has no definition", [ID]),
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ ID ++ "</STRONG></A>\n<DD>" ++
-	      "??" ++ "\n"}, Opts};
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ ID ++ "</strong></a></dt>\n<dd>" ++
+	      "??" ++ "\n</dd>\n"}, Opts};
 	{value, {ID, Name, Description, _Responsible}} ->
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"},
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"},
 	     Opts};
 	{value, {ID, Name, Description}} ->
-	    {{drop,"\n<DT><A NAME=\"" ++ ID ++ "\">" ++ 
-	      "<STRONG>" ++ Name ++ "</STRONG></A>\n<DD>" ++
-	      docb_html_util:pcdata_to_html(Description) ++ "\n"}, Opts}
+	    {{drop,"\n<dt><a name=\"" ++ ID ++ "\">" ++ 
+	      "<strong>" ++ Name ++ "</strong></a></dt>\n<dd>" ++
+	      docb_html_util:pcdata_to_html(Description) ++ "\n</dd>\n"}, Opts}
     end.

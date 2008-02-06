@@ -1999,7 +1999,7 @@ update_manager_usm_config(Dir, Usms) ->
 %% 
 
 write_sys_config_file(Dir, Services) ->
-    {ok, Fid} = file:open(filename:join(Dir,"sys.config"),write),
+    {ok, Fid} = file:open(filename:join(Dir,"sys.config"), [write]),
     ok = io:format(Fid, "~s", [header()]),
     ok = io:format(Fid, "[{snmp, ~n", []),
     ok = io:format(Fid, "  [~n", []),
@@ -2222,7 +2222,7 @@ write_config_file(Dir, FileName, Verify, Write)
 
 do_write_config_file(Dir, FileName, Verify, Write) ->
     Verify(),
-    case file:open(filename:join(Dir, FileName),[write]) of
+    case file:open(filename:join(Dir, FileName), [write]) of
 	{ok, Fd} ->
 	    (catch Write(Fd)),
 	    file:close(Fd),

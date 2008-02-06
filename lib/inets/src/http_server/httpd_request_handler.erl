@@ -509,20 +509,18 @@ decrease(N) when integer(N)->
 decrease(N) ->
     N.
 
-error_log(ReasonString, #mod{socket = Socket, socket_type = SocketType,
-			     config_db = ConfigDB, 
-			     init_data = #init_data{peername = Peername}}) ->
+error_log(ReasonString, Info) ->
     Error = lists:flatten(
-	      io_lib:format("Error reading request: ~s",[ReasonString])),
-    error_log(mod_log, SocketType, Socket, ConfigDB, Peername, Error),
-    error_log(mod_disk_log, SocketType, Socket, ConfigDB, Peername, Error).
+	      io_lib:format("Error reading request:~s",[ReasonString])),
+    error_log(mod_log, Info, Error),
+    error_log(mod_disk_log, Info, Error).
 
-error_log(Mod, SocketType, Socket, ConfigDB, Peername, String) ->
+error_log(Mod, #mod{config_db = ConfigDB} = Info, String) ->
     Modules = httpd_util:lookup(ConfigDB, modules,
 				[mod_get, mod_head, mod_log]),
     case lists:member(Mod, Modules) of
 	true ->
-	    Mod:error_log(SocketType, Socket, ConfigDB, Peername, String);
+	    Mod:error_log(Info, String);
 	_ ->
 	    ok
     end.

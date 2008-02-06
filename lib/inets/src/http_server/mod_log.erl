@@ -16,18 +16,68 @@
 %%     $Id$
 %%
 -module(mod_log).
--export([do/1,error_log/5,security_log/2,load/2,store/2,remove/1]).
 
--export([report_error/2]).
+%% Application internal API
+-export([error_log/2, security_log/2, report_error/2]).
+
+%% Callback API
+-export([do/1, load/2, store/2, remove/1]).
 
 -include("httpd.hrl").
 -define(VMODULE,"LOG").
 
-%% do
+%%%=========================================================================
+%%%  API 
+%%%=========================================================================
 
+%% security log
+security_log(Info, ReasonStr) ->
+    Date = httpd_util:custom_date(),
+    case httpd_log:security_entry(security_log, no_security_log, Info,
+				 Date, ReasonStr) of
+	no_security_log ->
+	    ok;
+	{Log, Entry} ->
+	    io:format(Log, "~s", [Entry])
+    end.
+
+%% error_log
+error_log(Info, Reason) ->
+    Date = httpd_util:custom_date(),
+    error_log(Info, Date, Reason).
+
+error_log(Info, Date, Reason) ->
+    case httpd_log:error_entry(error_log, no_error_log, 
+			       Info, Date, Reason) of
+	no_error_log ->
+	    ok;
+	{Log, Entry} ->
+	    io:format(Log, "~s", [Entry])
+    end.
+
+report_error(ConfigDB, Error) ->
+    Date = httpd_util:custom_date(),
+    case httpd_log:error_report_entry(error_log, no_error_log, ConfigDB,
+				      Date, Error) of
+	no_error_log ->
+	    ok;
+	{Log, Entry} ->
+	    io:format(Log, "~s", [Entry])
+    end.
+
+%%%=========================================================================
+%%%  CALLBACK API 
+%%%=========================================================================
+%%--------------------------------------------------------------------------
+%% do(ModData) -> {proceed, OldData} | {proceed, NewData} | {break, NewData} 
+%%                | done
+%%     ModData = #mod{}
+%%
+%% Description:  See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 do(Info) ->
     AuthUser = auth_user(Info#mod.data),
-    Date     = custom_date(),
+    Date     = httpd_util:custom_date(),
     log_internal_info(Info,Date,Info#mod.data),
     case proplists:get_value(status, Info#mod.data) of
 	%% A status code has been generated!
@@ -61,118 +111,18 @@ do(Info) ->
 	    end
     end.
 
-custom_date() ->
-    LocalTime     = calendar:local_time(),
-    UniversalTime = calendar:universal_time(),
-    Minutes       = round(diff_in_minutes(LocalTime, UniversalTime)),
-    {{YYYY,MM,DD},{Hour,Min,Sec}} = LocalTime,
-    Date = 
-	io_lib:format("~.2.0w/~.3s/~.4w:~.2.0w:~.2.0w:~.2.0w ~c~.2.0w~.2.0w",
-		      [DD, httpd_util:month(MM), YYYY, Hour, Min, Sec, 
-		       sign(Minutes),
-		       abs(Minutes) div 60, abs(Minutes) rem 60]),  
-    lists:flatten(Date).
-
-diff_in_minutes(L,U) ->
-    (calendar:datetime_to_gregorian_seconds(L) -
-     calendar:datetime_to_gregorian_seconds(U))/60.
-
-sign(Minutes) when Minutes > 0 ->
-    $+;
-sign(_Minutes) ->
-    $-.
-
-auth_user(Data) ->
-    case proplists:get_value(remote_user, Data) of
-	undefined ->
-	    "-";
-	RemoteUser ->
-	    RemoteUser
-    end.
-
-%% log_internal_info
-
-log_internal_info(_Info, _Date, []) ->
-    ok;
-log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
-    error_log(Info,Date,Reason),
-    log_internal_info(Info,Date,Rest);
-log_internal_info(Info,Date,[_|Rest]) ->
-    log_internal_info(Info,Date,Rest).
-
-%% transfer_log
-
-transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes) ->
-    case httpd_util:lookup(Info#mod.config_db,transfer_log) of
-	undefined ->
-	    no_transfer_log;
-	TransferLog ->
-	    {_PortNumber, RemoteHost} = 
-		(Info#mod.init_data)#init_data.peername,
-	    case (catch io:format(TransferLog, 
-				  "~s ~s ~s [~s] \"~s\" ~w ~w~n",
-				  [RemoteHost, RFC931, AuthUser, 
-				   Date, Info#mod.request_line,
-				   StatusCode, Bytes])) of
-		ok ->
-		    ok;
-		Error ->
-		    error_logger:error_report(Error)
-	    end
-    end.
-
-%% security log
-
-security_log(Info, Reason) ->
-    case httpd_util:lookup(Info#mod.config_db, security_log) of
-	undefined ->
-	    no_security_log;
-	SecurityLog ->
-	    io:format(SecurityLog,"[~s] ~s~n", [custom_date(), Reason])
-    end.
-
-%% error_log
-
-error_log(Info, Date, Reason) ->
-    case httpd_util:lookup(Info#mod.config_db, error_log) of
-	undefined ->
-	    no_error_log;
-	ErrorLog ->
-	    {_PortNumber, RemoteHost} = 
-		(Info#mod.init_data)#init_data.peername,
-	    io:format(ErrorLog,
-		      "[~s] access to ~s failed for ~s, reason: ~p~n",
-		      [Date,Info#mod.request_uri,RemoteHost,Reason])
-    end.
-
-error_log(_SocketType, _Socket, ConfigDB, {_PortNumber, RemoteHost}, Reason) ->
-    case httpd_util:lookup(ConfigDB, error_log) of
-	undefined ->
-	    no_error_log;
-	ErrorLog ->
-	    Date = custom_date(),
-	    io:format(ErrorLog,"[~s] server crash for ~s, reason: ~p~n",
-		      [Date,RemoteHost,Reason]),
-	    ok
-    end.
-
-
-report_error(ConfigDB, Error) ->
-    case httpd_util:lookup(ConfigDB, error_log) of
-	undefined ->
-	    no_error_log;
-	ErrorLog ->
-	    Date = custom_date(),
-	    io:format(ErrorLog,"[~s] reporting error: ~s~n",[Date,Error]),
-	    ok
-    end.
-
+%%--------------------------------------------------------------------------
+%% load(Line, Context) ->  eof | ok | {ok, NewContext} | 
+%%                     {ok, NewContext, Directive} | 
+%%                     {ok, NewContext, DirectiveList} | {error, Reason}
+%% Line = string()
+%% Context = NewContext = DirectiveList = [Directive]
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
 %%
-%% Configuration
-%%
-
-%% load
-
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 load("TransferLog " ++ TransferLog, []) ->
     {ok,[],{transfer_log,httpd_conf:clean(TransferLog)}};
 load("ErrorLog " ++ ErrorLog, []) ->
@@ -180,8 +130,16 @@ load("ErrorLog " ++ ErrorLog, []) ->
 load("SecurityLog " ++ SecurityLog, []) ->
     {ok, [], {security_log, httpd_conf:clean(SecurityLog)}}.
 
-%% store
-
+%%--------------------------------------------------------------------------
+%% store(Directive, DirectiveList) -> {ok, NewDirective} | 
+%%                                    {ok, [NewDirective]} |
+%%                                    {error, Reason} 
+%% Directive = {DirectiveKey , DirectiveValue}
+%% DirectiveKey = DirectiveValue = term()
+%% Reason = term() 
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
 store({transfer_log,TransferLog}, ConfigList) when is_list(TransferLog)->
     case create_log(TransferLog,ConfigList) of
 	{ok,TransferLogStream} ->
@@ -210,6 +168,34 @@ store({security_log, SecurityLog}, ConfigList) when is_list(SecurityLog) ->
 store({security_log, SecurityLog}, _) ->
     {error, {wrong_type, {security_log, SecurityLog}}}.
 
+%%--------------------------------------------------------------------------
+%% remove(ConfigDb) -> _
+%%
+%% Description: See httpd(3) ESWAPI CALLBACK FUNCTIONS
+%%-------------------------------------------------------------------------
+remove(ConfigDB) ->
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{transfer_log,'$1'})),
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{error_log,'$1'})),
+    lists:foreach(fun([Stream]) -> file:close(Stream) end,
+		  ets:match(ConfigDB,{security_log,'$1'})),
+    ok.
+
+%%%========================================================================
+%%% Internal functions
+%%%======================================================================== 
+%% transfer_log
+transfer_log(Info,RFC931,AuthUser,Date,StatusCode,Bytes) ->
+    case httpd_log:access_entry(transfer_log, no_transfer_log,
+				Info, RFC931, AuthUser, Date, 
+				StatusCode, Bytes) of
+	no_transfer_log ->
+	    ok;
+	{Log, Entry} ->
+	    io:format(Log, "~s", [Entry])
+    end.
+	    
 create_log(LogFile, ConfigList) ->
     Filename = httpd_conf:clean(LogFile),
     case filename:pathtype(Filename) of
@@ -234,7 +220,8 @@ create_log(LogFile, ConfigList) ->
 		undefined ->
 		    {error,
 		     ?NICE(Filename++
-			   " is an invalid logfile name beacuse ServerRoot is not defined")};
+			   " is an invalid logfile name beacuse "
+			   "ServerRoot is not defined")};
 		ServerRoot ->
 		    AbsoluteFilename=filename:join(ServerRoot,Filename),
 		    case file:open(AbsoluteFilename,read_write) of
@@ -247,13 +234,21 @@ create_log(LogFile, ConfigList) ->
 	    end
     end.
 
-%% remove
+%% log_internal_info
+log_internal_info(_Info, _Date, []) ->
+    ok;
+log_internal_info(Info,Date,[{internal_info,Reason}|Rest]) ->
+    error_log(Info, Date, Reason),
+    log_internal_info(Info,Date,Rest);
+log_internal_info(Info,Date,[_|Rest]) ->
+    log_internal_info(Info,Date,Rest).
 
-remove(ConfigDB) ->
-    lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		  ets:match(ConfigDB,{transfer_log,'$1'})),
-    lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		  ets:match(ConfigDB,{error_log,'$1'})),
-    lists:foreach(fun([Stream]) -> file:close(Stream) end,
-		  ets:match(ConfigDB,{security_log,'$1'})),
-    ok.
+auth_user(Data) ->
+    case proplists:get_value(remote_user, Data) of
+	undefined ->
+	    "-";
+	RemoteUser ->
+	    RemoteUser
+    end.
+
+

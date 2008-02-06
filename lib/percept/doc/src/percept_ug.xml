@@ -62,6 +62,11 @@
 	Events are collected and stored to a file. The file can be moved and
 	analyzed on a different machine than the target machine.
     </p>
+    <p>
+	Note, even if percept is not installed on your target machine, profiling
+	can still be done via the module <seealso marker="percept_profile.xml">percept_profile</seealso>
+	located in runtime_tools.
+    </p>
   </section>
   <section>
     <title>Getting started</title>

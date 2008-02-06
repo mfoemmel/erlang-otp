@@ -318,7 +318,7 @@ analyze_scc(SCC, State = #state{codeserver=Codeserver}) ->
   {SuccTypes, PltContracts, NotFixpoint} = 
     find_succ_types_for_scc(SCC2, Contracts3, State),
   State1 = insert_into_plt(SuccTypes, State),
-  ContrPlt = dialyzer_plt:insert_contract(State1#state.plt, PltContracts),
+  ContrPlt = dialyzer_plt:insert_contracts(State1#state.plt, PltContracts),
   {State1#state{plt=ContrPlt}, NotFixpoint}.
 
 find_succ_types_for_scc(SCC, Contracts, 
@@ -496,7 +496,6 @@ get_top_level_signatures(Code, Records, Contracts) ->
 	    end, ErrorContracts),
 
   Types = [{MFA, dialyzer_plt:lookup(Plt2, MFA)} || MFA <- Functions],
-  dialyzer_plt:delete(Plt2),
   ordsets:from_list([{{F, A}, erl_types:t_fun(ArgT, RetT)} 
 		     || {{_M, F, A}, {value, {RetT, ArgT}}} <- Types]),
     Sigs = [{{F, A}, erl_types:t_fun(ArgT, RetT)} 

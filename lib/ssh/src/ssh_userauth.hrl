@@ -26,6 +26,8 @@
 -define(SSH_MSG_USERAUTH_BANNER,  53).
 -define(SSH_MSG_USERAUTH_PK_OK,  60).
 -define(SSH_MSG_USERAUTH_PASSWD_CHANGEREQ, 60).
+-define(SSH_MSG_USERAUTH_INFO_REQUEST, 60).
+-define(SSH_MSG_USERAUTH_INFO_RESPONSE, 61).
 
 -record(ssh_msg_userauth_request,
 	{
@@ -62,3 +64,13 @@
 	  algorithm_name, % string
 	  key_blob % string
 	 }).
+
+-record(ssh_msg_userauth_info_request,
+	{name,
+	 instruction,
+	 language_tag,
+	 num_prompts,
+	 data}).
+-record(ssh_msg_userauth_info_response,
+	{num_responses,
+	 data}).

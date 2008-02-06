@@ -32,6 +32,8 @@
 -export([corrupt_reason/2, corrupt/2, corrupt_file/2, 
          vformat/2, file_error/2]).
 
+-export([debug_mode/0, bad_object/2]).
+
 -export([cache_lookup/4, cache_size/1, new_cache/1,
 	 reset_cache/1, is_empty_cache/1]).
 
@@ -49,6 +51,10 @@
 		   {bplus_get_tree,2}, {bplus_get_lkey,2},
 		   {bplus_get_rkey,2}]}).
 
+%% Debug
+-export([init_disk_map/1, stop_disk_map/0, 
+         disk_map_segment_p/2, disk_map_segment/2]).
+
 -include("dets.hrl").
 
 %%% A total ordering of all Erlang terms.
@@ -62,8 +68,8 @@ cmp([E1 | T1], [E2 | T2]) ->
         0 -> cmp(T1, T2);
         R -> R
     end;
-cmp(T1, T2) when is_tuple(T1), is_tuple(T2), size(T1) =:= size(T2) ->
-    tcmp(T1, T2, 1, size(T1));
+cmp(T1, T2) when tuple_size(T1) =:= tuple_size(T2) ->
+    tcmp(T1, T2, 1, tuple_size(T1));
 cmp(I, F) when is_integer(I), is_float(F) ->
     -1;
 cmp(F, I) when is_float(F), is_integer(I) ->
@@ -106,9 +112,9 @@ mkeysearch2(_Key, _I, []) ->
 mkeysearch2(Key, I, [E | _L]) when element(I, E) =:= Key ->
     {value, E};
 mkeysearch2(Key, I, [_ | L]) ->
-    mkeysearch(Key, I, L).
+    mkeysearch2(Key, I, L).
 
-%% Be careful never to compare key, but use matching instead.
+%% Be careful never to compare keys, but use matching instead.
 %% Otherwise sofs could have been used:
 %%    sofs:to_external(sofs:relation_to_family(sofs:relation(L, 2))).
 family([]) ->
@@ -162,7 +168,7 @@ pread(Head, Pos, Min, Extra) ->
 		{error, {bad_object_header, Head#head.filename}};
 	    {error, Reason} ->
 		{file_error, Head#head.filename, Reason};
-	    {ok, Bin} when size(Bin) < Min ->
+	    {ok, Bin} when byte_size(Bin) < Min ->
 		{error, {premature_eof, Head#head.filename}};
 	    OK -> OK
 	end,
@@ -173,9 +179,14 @@ pread(Head, Pos, Min, Extra) ->
 	    throw(corrupt(Head, Error))
     end.
 	    
-%% -> eof | [] | {ok, Pointer, binary()}
-ipread(Fd, Pos1, MaxSize) ->
-    case file:ipread_s32bu_p32bu(Fd, Pos1, MaxSize) of
+%% -> eof | [] | {ok, {Size, Pointer, binary()}}
+ipread(Head, Pos1, MaxSize) ->
+    try 
+        disk_map_pread(Pos1)
+    catch Bad ->
+        throw(corrupt_reason(Head, {disk_map, Bad}))
+    end,
+    case file:ipread_s32bu_p32bu(Head#head.fptr, Pos1, MaxSize) of
 	{ok, {0, 0, eof}} ->
 	    [];
 	{ok, Reply} ->
@@ -188,8 +199,18 @@ ipread(Fd, Pos1, MaxSize) ->
 pwrite(Head, []) ->
     {Head, ok};
 pwrite(Head, Bins) ->
+    try
+        disk_map(Bins)
+    catch Bad -> 
+        throw(corrupt_reason(Head, {disk_map, Bad, Bins}))
+    end,
     case file:pwrite(Head#head.fptr, Bins) of
 	ok ->
+            try
+                pwrite_check(Head#head.fptr, remove_overlaps(Bins))
+            catch BadPos ->
+                throw(corrupt_reason(Head, {bad_pwrite, BadPos, Bins}))
+            end,
 	    {Head, ok};
 	Error ->
 	    corrupt_file(Head, Error)
@@ -309,7 +330,7 @@ pread_close(Fd, FileName, Pos, Size) ->
     case file:pread(Fd, Pos, Size) of
 	{error, Error} ->
 	    file_error_close(Fd, FileName, {error, Error});
-	{ok, Bin} when size(Bin) < Size ->
+	{ok, Bin} when byte_size(Bin) < Size ->
 	    file:close(Fd),
 	    throw({error, {tooshort, FileName}});
 	eof ->
@@ -325,6 +346,18 @@ file_error_close(Fd, FileName, {error, Reason}) ->
     file:close(Fd),
     throw({error, {file_error, FileName, Reason}}).
 	    
+debug_mode() ->
+    os:getenv("DETS_DEBUG") =:= "true".    
+
+bad_object(Where, Extra) ->
+    case debug_mode() of
+        true ->
+            {bad_object, Where, Extra};
+        false ->
+            %% Avoid showing possibly secret data on the error logger.
+            {bad_object, Where}
+    end.
+
 read_n(Fd, Max) ->
     case file:read(Fd, Max) of
 	{ok, Bin} ->
@@ -351,7 +384,15 @@ corrupt_file(Head, {error, Reason}) ->
     throw(corrupt(Head, Error)).
 
 %% -> {NewHead, Error}
-corrupt_reason(Head, Reason) ->
+corrupt_reason(Head, Reason0) ->
+    Reason = case get_disk_map() of
+                 no_disk_map -> 
+                     Reason0;
+                 DM ->
+                    ST = erlang:get_stacktrace(),
+                    PD = get(),
+                    {Reason0, ST, PD, DM}
+             end,
     Error = {error, {Reason, Head#head.filename}},    
     corrupt(Head, Error).
 
@@ -720,7 +761,7 @@ all_allocated_as_list([{X,Y} | L], _X0, Y0, A) when Y0 < X ->
     all_allocated_as_list(L, X, Y, [[Y0 | X] | A]).
 
 all(Tab) ->
-    all(Tab, size(Tab), []).
+    all(Tab, tuple_size(Tab), []).
 
 all(_Tab, 0, L) ->
     %% This is not as bad as it looks. L contains less than 32 runs,
@@ -772,7 +813,7 @@ find_next_allocated(Ftab, Addr, Base) ->
 %% Finds the first free address starting att Addr or later. 
 %% -> none | {FirstFreeAddress, FtabPosition}
 find_next_free(Ftab, Addr, Base) ->
-    MaxBud = size(Ftab),
+    MaxBud = tuple_size(Ftab),
     find_next_free(Ftab, Addr, 1, MaxBud, -1, -1, Base).
 
 find_next_free(Ftab, Addr0, Pos, MaxBud, Next, PosN, Base)  
@@ -793,7 +834,7 @@ find_next_free(_Ftab, _Addr, _Pos, _MaxBud, Next, PosN, _Base) ->
     {Next, PosN}.
 
 collect_all_interval(Ftab, Addr, MaxAddr, Base) ->
-    MaxBud = size(Ftab),
+    MaxBud = tuple_size(Ftab),
     collect_all_interval(Ftab, Addr, MaxAddr, 1, MaxBud, Base, []).
 
 collect_all_interval(Ftab, L0, U, Pos, MaxBud, Base, Acc0) when Pos =< MaxBud ->
@@ -819,8 +860,277 @@ adjust_addr(Addr, Pos, Base) ->
     end.
 
 %%%-----------------------------------------------------------------
-%%% These functions implements a B+ tree.
-%%% The code is originally written by lelle@erlang.ericsson.se,
+%%% The Disk Map is used for debugging only.
+%%% Very tightly coupled to the way dets_v9 works.
+%%%-----------------------------------------------------------------
+
+-define(DM, disk_map).
+
+get_disk_map() ->
+    case get(?DM) of
+        undefined -> no_disk_map;
+        T -> {disk_map, ets:tab2list(T)}
+    end.
+
+init_disk_map(Name) ->
+    error_logger:info_msg("** dets: (debug) using disk map for ~p~n", [Name]),
+    put(?DM, ets:new(any,[ordered_set])).
+
+stop_disk_map() ->
+    catch ets:delete(erase(?DM)).
+
+disk_map_segment_p(Fd, P) ->
+    case get(?DM) of
+        undefined ->
+            ok;
+        _T ->
+            disk_map_segment(P, pread_n(Fd, P, 8*256))
+    end.
+
+disk_map_segment(P, Segment) ->
+    case get(?DM) of
+        undefined ->
+            ok;
+        T ->
+            Ps = segment_fragment_to_pointers(P, iolist_to_binary(Segment)),
+            Ss = [{X,<<Sz:32,?ACTIVE:32>>} || 
+                     {_P1,<<Sz:32,X:32>>} <- Ps,
+                     X > 0], % optimization
+            dm(Ps ++ Ss, T)
+    end.
+
+disk_map_pread(P) ->
+    case get(?DM) of
+        undefined ->
+            ok;
+        T ->
+            case ets:lookup(T, P) of
+                [] -> 
+                    throw({pread, P, 8});
+                [{P,{pointer,0,0}}] ->
+                    ok;
+                [{P,{pointer,Pointer,Sz}}] ->
+                    case ets:lookup(T, Pointer) of
+                        %% _P =/= P after re-hash...
+                        [{Pointer,{slot,_P,Sz}}] ->
+                            ok;
+                        Got ->
+                            throw({pread, P, Pointer, Got})
+                    end;
+                Got ->
+                    throw({pread, P, Got})
+            end
+    end.
+
+-define(STATUS_POS, 4).
+-define(BASE, 1336).
+disk_map(Bins) ->
+    case get(?DM) of
+        undefined -> 
+            ok;
+        T -> 
+            Bs = [{P,iolist_to_binary(Io)} || {P,Io} <- Bins],
+            dm(Bs, T)
+    end.
+
+dm([{P,_Header} | Bs], T) when P < ?BASE ->
+    dm(Bs, T);
+dm([{P0,<<?FREE:32>>} | Bs], T) ->
+    P = P0 - ?STATUS_POS,
+    case ets:lookup(T, P) of
+        [] -> 
+            throw({free, P0});
+        [{P,_OldSz}] ->
+            true = ets:delete(T, P)
+    end,
+    dm(Bs, T);
+dm([{SlotP,<<Sz:32,?ACTIVE:32,_/binary>>} | Bs], T) ->
+    Ptr = case ets:lookup(T, {pointer,SlotP}) of
+              [{{pointer,SlotP}, Pointer}] ->
+                  case ets:lookup(T, Pointer) of
+                      [{Pointer,{pointer,SlotP,Sz2}}] ->
+                          case log2(Sz) =:= log2(Sz2) of
+                              true -> 
+                                  Pointer;
+                              false ->
+                                  throw({active, SlotP, Sz, Pointer, Sz2})
+                          end;
+                      Got ->
+                          throw({active, SlotP, Sz, Got})
+                  end;
+              [] ->
+                  throw({active, SlotP, Sz})
+          end,
+    true = ets:insert(T, {SlotP,{slot,Ptr,Sz}}),
+    dm(Bs, T);
+dm([{P,<<Sz:32,X:32>>} | Bs], T) ->
+    %% Look for slot object in Bs?
+    case prev(P, T) of
+        {Prev, PrevSz} ->
+            throw({prev, P, Sz, X, Prev, PrevSz});
+        ok ->
+            ok
+    end,
+    case next(P, 8, T) of
+        {next, Next} ->
+            %% Can (should?) do more...
+            throw({next, P, Sz, X, Next});
+        ok ->
+            ok
+    end,
+    true = ets:insert(T, {P,{pointer,X,Sz}}),
+    if 
+        Sz =:= 0 -> 
+            X = 0; 
+        true -> 
+            true = ets:insert(T, {{pointer,X}, P})
+    end,
+    dm(Bs, T);
+dm([{P,<<X:32>>} | Bs], T) ->
+    case ets:lookup(T, X) of
+        [] -> throw({segment, P, X});
+        [{X,{pointer,0,0}}] -> ok;
+        [{X,{pointer,P,X}}] -> ok
+    end,
+    dm(Bs, T);
+dm([{P,<<_Sz:32,B0/binary>>=B} | Bs], T) ->
+    Overwrite = 
+        case catch binary_to_term(B0) of % accepts garbage at end of binary
+            {'EXIT', _} ->
+                <<_Sz1:32,B1/binary>> = B0,
+                case catch binary_to_term(B1) of
+                    {'EXIT', _}  ->
+                        false;
+                    _ ->
+                        true
+                end;
+            _ -> 
+                true
+        end,
+    if 
+        Overwrite ->
+            %% overwrite same
+            dm([{P-8,<<(byte_size(B) + 8):32,?ACTIVE:32,B/binary>>} | Bs], T);
+        true -> 
+            dm(segment_fragment_to_pointers(P, B)++Bs, T)
+    end;
+dm([], _T) ->
+    ok.
+
+segment_fragment_to_pointers(_P, <<>>) ->
+    [];
+segment_fragment_to_pointers(P, <<SzP:8/binary,B/binary>>) ->
+    [{P,SzP} | segment_fragment_to_pointers(P+8, B)].
+
+prev(P, T) ->
+    case ets:prev(T, P) of
+        '$end_of_table' -> ok;
+        Prev -> 
+            case ets:lookup(T, Prev) of
+                [{Prev,{pointer,_Ptr,_}}] when Prev + 8 > P -> 
+                    {Prev, 8};
+                [{Prev,{slot,_,Sz}}] when Prev + Sz > P ->
+                    {Prev, Sz};
+                _ ->
+                    ok
+            end
+    end.
+
+next(P, PSz, T) ->
+    case ets:next(T, P) of
+        '$end_of_table' -> ok;
+        Next when P + PSz > Next ->
+            {next, Next};
+        _ ->
+            ok
+    end.
+
+%%% Extra code just for checking pwrite/2.
+%%% If you see this comment, you have have an inofficial version of
+%%% dets_utils.erl. Not for production!
+
+pwrite_check(_Fd, []) ->
+    ok;
+pwrite_check(Fd, [{Pos,Bin0} | Bins]) ->
+    Bin = iolist_to_binary(Bin0),
+    case pread_n(Fd, Pos, byte_size(Bin)) of
+        Bin ->
+            pwrite_check(Fd, Bins);
+        Got ->
+            throw({Pos, Got})
+    end.
+
+%% [{Pos,Bin}], Pos = integer() -> [{Pos,Bin}]
+%% Bin is some binary placed at position Pos. If B2 occurs after B1,
+%% then B2 overwrites B1, should they overlap. Overwritten parts are
+%% removed.
+remove_overlaps([]) -> [];
+remove_overlaps(L) ->
+    join_bins(remov(lists:sort(number_bins(L, 1, [])), [])).
+
+number_bins([{P,B} | Es], I, L) ->
+    E = {P,P + bytes_size(B, 0),I,B},
+    number_bins(Es, I+1, [E | L]);
+number_bins([], _I, L) ->
+    L.
+
+remov([{F1,T1,N1,B1} | Ss], L) ->
+    remov(Ss, F1, T1, N1, B1, L);
+remov([], L) ->
+    L.
+
+remov([{F2,T2,N2,B2} | Ss], F1, T1, _N1, B1, L) when F2 >= T1 ->
+    remov(Ss, F2, T2, N2, B2, [{F1,T1,B1} | L]);
+remov([{F2,T2,N2,B2} | Ss], F1, T1, N1, _B1, L) when F1 == F2, T2>=T1, N2>N1 ->
+    remov(Ss, F2, T2, N2, B2, L);
+remov([{_F2,T2,N2,_B2} | Ss], F1, T1, N1, B1, L) when T1 >= T2, N1 > N2 ->
+    remov(Ss, F1, T1, N1, B1, L);
+remov(Ss = [{F2,_T2,N2,_B2} | _], F1, T1, N1, B1, L) when F1 < F2, N1 < N2 ->
+    Size = F2-F1,
+    {B, T} = split_bytes(B1, Size),
+    remov(place_bin(F2, T1, N1, T, Ss), [{F1,F2,B} | L]);
+remov([{F2,T2,N2,B2} | Ss], F1, T1, N1, B1, L) ->
+    Size = T1 - F2,
+    {_, T} = split_bytes(B2, Size),
+    NSs = place_bin(T1, T2, N2, T, Ss),
+    remov(NSs, F1, T1, N1, B1, L);
+remov([], F1, T1, _N1, B1, L) ->
+    [{F1,T1,B1} | L].
+
+place_bin(F, T, N, B, Ss) ->
+    lists:merge([{F,T,N,B}], Ss).
+
+join_bins([{F,_T,B} | Ss]) ->
+    join_bins(Ss, F, B, []);
+join_bins([]) ->
+    [].
+
+join_bins([{F1,T1,B1} | Ss], F2, B2, L) when F2 == T1 ->
+    join_bins(Ss, F1, [B1 | B2], L);
+join_bins([{F1,T1,B1} | Ss], F2, B, L) when F2 > T1 ->
+    join_bins(Ss, F1, B1, [{F2,B} | L]);
+join_bins([], F, B, L) ->
+    [{F,B} | L].
+
+bytes_size([], S) ->
+    S;
+bytes_size([B | Bs], S) ->
+    bytes_size(Bs, bytes_size(B, S));
+bytes_size(I, S) when is_integer(I) ->
+    S + 1;
+bytes_size(B, S) when is_binary(B) ->
+    S + byte_size(B).
+
+split_bytes(B, Sz) when is_binary(B) ->
+    <<X:Sz/binary,Y/binary>> = B,
+    {X, Y};
+split_bytes(B, Sz) ->
+    split_bytes(list_to_binary(B), Sz).
+
+%%% End of pwrite_check
+
+%%%-----------------------------------------------------------------
+%%% These functions implement a B+ tree.
 %%%-----------------------------------------------------------------
 
 -define(max_size, 16).
@@ -1561,9 +1871,9 @@ bplus_put_rkey(Tree, DKey, Pos) -> setelement(Pos*2+1, Tree, DKey).
 bplus_get_size(Tree) ->
     case ?NODE_TYPE(Tree) of
 	l ->
-	    size(Tree)-1;
+	    tuple_size(Tree)-1;
 	n ->
-	    size(Tree) div 2
+	    tuple_size(Tree) div 2
     end.
 
 %%-----------------------------------------------------------------

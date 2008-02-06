@@ -10,5 +10,6 @@
 -define(GEN_CFG,true).	% needed for cfg.inc below
 
 -include("../main/hipe.hrl").
--include("../flow/cfg.inc").
+-include("cfg.hrl").
+-include("cfg.inc").
 

@@ -1298,7 +1298,8 @@ find_main_filename([{attribute,_,file,{MainFile,_}}|_]) ->
 find_main_filename([_|Rest]) ->
     find_main_filename(Rest).
 
-transform_2([Form|Forms],MungedForms,Vars,MainFile,Switch) ->
+transform_2([Form0|Forms],MungedForms,Vars,MainFile,Switch) ->
+    Form = expand(Form0),
     case munge(Form,Vars,MainFile,Switch) of
 	ignore ->
 	    transform_2(Forms,MungedForms,Vars,MainFile,Switch);
@@ -1307,6 +1308,78 @@ transform_2([Form|Forms],MungedForms,Vars,MainFile,Switch) ->
     end;
 transform_2([],MungedForms,Vars,_,_) ->
     {ok, reverse(MungedForms), Vars}.
+
+%% Expand short-circuit Boolean expressions.
+expand(Expr) ->
+    AllVars = sets:from_list(ordsets:to_list(vars([], Expr))),
+    {Expr1,_} = expand(Expr, AllVars, 1),
+    Expr1.
+
+expand({clause,Line,Pattern,Guards,Body}, Vs, N) ->
+    {ExpandedBody,N2} = expand(Body, Vs, N),
+    {{clause,Line,Pattern,Guards,ExpandedBody},N2};
+expand({op,_Line,'andalso',ExprL,ExprR}, Vs, N) ->
+    {ExpandedExprL,N2} = expand(ExprL, Vs, N),
+    {ExpandedExprR,N3} = expand(ExprR, Vs, N2),
+    LineL = element(2, ExpandedExprL),
+    LineR = element(2, ExpandedExprR),
+    {bool_switch(ExpandedExprL, 
+                 bool_switch(ExpandedExprR,
+                             {atom,LineR,true},
+                             {atom,LineR,false},
+                             Vs, N3),
+                 {atom,LineL,false},
+                 Vs, N3 + 1),
+     N3 + 2};
+expand({op,_Line,'orelse',ExprL,ExprR}, Vs, N) ->
+    {ExpandedExprL,N2} = expand(ExprL, Vs, N),
+    {ExpandedExprR,N3} = expand(ExprR, Vs, N2),
+    LineL = element(2, ExpandedExprL),
+    LineR = element(2, ExpandedExprR),
+    {bool_switch(ExpandedExprL,
+                 {atom,LineL,true},
+                 bool_switch(ExpandedExprR,
+                             {atom,LineR,true},
+                             {atom,LineR,false},
+                             Vs, N3),
+                 Vs, N3 + 1),
+     N3 + 2};
+expand(T, Vs, N) when is_tuple(T) ->
+    {TL,N2} = expand(tuple_to_list(T), Vs, N),
+    {list_to_tuple(TL),N2};
+expand([E|Es], Vs, N) ->
+    {E2,N2} = expand(E, Vs, N),
+    {Es2,N3} = expand(Es, Vs, N2),
+    {[E2|Es2],N3};
+expand(T, _Vs, N) ->
+    {T,N}.
+
+vars(A, {var,_,V}) when V =/= '_' ->
+    [V|A];
+vars(A, T) when is_tuple(T) ->
+    vars(A, tuple_to_list(T));
+vars(A, [E|Es]) ->
+    vars(vars(A, E), Es);
+vars(A, _T) ->
+    A.
+
+bool_switch(E, T, F, AllVars, AuxVarN) ->
+    Line = element(2, E),
+    AuxVar = {var,Line,aux_var(AllVars, AuxVarN)},
+    {'case',Line,E,
+     [{clause,Line,[{atom,Line,true}],[],[T]},
+      {clause,Line,[{atom,Line,false}],[],[F]},
+      {clause,Line,[AuxVar],[],
+       [{call,Line,
+         {remote,Line,{atom,Line,erlang},{atom,Line,error}},
+         [{tuple,Line,[{atom,Line,badarg},AuxVar]}]}]}]}.
+
+aux_var(Vars, N) ->
+    Name = list_to_atom(lists:concat(['_', N])),
+    case sets:is_element(Name, Vars) of
+        true -> aux_var(Vars, N + 1);
+        false -> Name
+    end.
 
 %% This code traverses the abstract code, stored as the abstract_code
 %% chunk in the BEAM file, as described in absform(3) for Erlang/OTP R8B
@@ -1517,7 +1590,6 @@ munge_lc([Expr|LC], Vars, MungedLC) ->
     munge_lc(LC, Vars2, [MungedExpr|MungedLC]);
 munge_lc([], Vars, MungedLC) ->
     {reverse(MungedLC), Vars}.
-
 
 %%%--Analysis------------------------------------------------------------
 
@@ -1790,10 +1862,11 @@ do_write_module_data([],_Fd) ->
 
 write(Element,Fd) ->
     Bin = term_to_binary(Element,[compressed]),
-    case size(Bin) of
+    case byte_size(Bin) of
 	Size when Size > 255 ->
 	    SizeBin = term_to_binary({'$size',Size}),
-	    file:write(Fd,<<(size(SizeBin)):8,SizeBin/binary,Bin/binary>>);
+	    file:write(Fd,
+                       <<(byte_size(SizeBin)):8,SizeBin/binary,Bin/binary>>);
 	Size ->
 	    file:write(Fd,<<Size:8,Bin/binary>>)
     end,

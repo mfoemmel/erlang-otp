@@ -68,6 +68,7 @@
 		    t_identifier/0,
 		    t_inf/2,
 		    t_integer/0,
+		    t_integer/1,
 		    t_iolist/0,
 		    t_non_neg_integer/0,
 		    t_pos_integer/0,
@@ -1296,16 +1297,43 @@ type(erlang, start_timer, 3, Xs) ->
   strict(arg_types(erlang, start_timer, 3), Xs, fun (_) -> t_ref() end);
 type(erlang, statistics, 1, Xs) ->
   strict(arg_types(erlang, statistics, 1), Xs,
-	 fun (_) -> t_sup([t_non_neg_integer(),
-			   t_tuple([t_non_neg_integer(), t_non_neg_integer()]),
-			   %% When called with the argument 'io'.
-			   t_tuple([t_tuple([t_atom('input'),
-					     t_non_neg_integer()]),
-				    t_tuple([t_atom('output'),
-					     t_non_neg_integer()])]),
-			   t_tuple([t_non_neg_integer(),
-				    t_non_neg_integer(),
-				    t_non_neg_integer()])])
+	 fun ([Type]) ->
+	     T_statistics_1 = t_sup([t_non_neg_integer(),
+				     t_tuple([t_non_neg_integer(),
+					      t_non_neg_integer()]),
+				     %% When called with the argument 'io'.
+				     t_tuple([t_tuple([t_atom('input'),
+						       t_non_neg_integer()]),
+					      t_tuple([t_atom('output'),
+						       t_non_neg_integer()])]),
+				     t_tuple([t_non_neg_integer(),
+					      t_non_neg_integer(),
+					      t_non_neg_integer()])]),
+	     case t_atom_vals(Type) of
+	       ['context_switches'] ->
+		 t_tuple([t_non_neg_integer(), t_integer(0)]);
+	       ['exact_reductions'] ->
+		 t_tuple([t_non_neg_integer(), t_non_neg_integer()]);
+	       ['garbage_collection'] ->
+		 t_tuple([t_non_neg_integer(),
+			  t_non_neg_integer(),
+			  t_integer(0)]);
+	       ['io'] ->
+		 t_tuple([t_tuple([t_atom('input'),  t_non_neg_integer()]),
+			  t_tuple([t_atom('output'), t_non_neg_integer()])]);
+	       ['reductions'] ->
+		 t_tuple([t_non_neg_integer(), t_non_neg_integer()]);
+	       ['run_queue'] ->
+		 t_non_neg_integer();
+	       ['runtime'] ->
+		 t_tuple([t_non_neg_integer(), t_integer(0)]);
+	       ['wall_clock'] ->
+		 t_tuple([t_non_neg_integer(), t_integer(0)]);
+	       List when is_list(List) ->
+		 T_statistics_1;
+	       any ->
+		 T_statistics_1
+	     end
 	 end);
 type(erlang, suspend_process, 1, Xs) ->
   strict(arg_types(erlang, suspend_process, 1), Xs,
@@ -3463,7 +3491,14 @@ arg_types(erlang, split_binary, 2) ->
 arg_types(erlang, start_timer, 3) ->
   [t_non_neg_integer(), t_sup(t_pid(), t_atom()), t_any()];
 arg_types(erlang, statistics, 1) ->
-  [t_atom()];
+  [t_sup([t_atom('context_switches'),
+	  t_atom('exact_reductions'),
+	  t_atom('garbage_collection'),
+	  t_atom('io'),
+	  t_atom('reductions'),
+	  t_atom('run_queue'),
+	  t_atom('runtime'),
+	  t_atom('wall_clock')])];
 arg_types(erlang, suspend_process, 1) ->
   [t_pid()];
 arg_types(erlang, suspend_process, 2) ->
@@ -4380,7 +4415,7 @@ t_time() ->
   t_tuple([t_non_neg_fixnum(), t_non_neg_fixnum(), t_non_neg_fixnum()]).
 
 t_immarray() ->
-  t_binary().
+  t_sup(t_nil(), t_integer()).	%% abstract data type
 
 t_hiperef() ->
   t_immarray().

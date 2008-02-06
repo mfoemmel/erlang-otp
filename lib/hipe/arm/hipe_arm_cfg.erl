@@ -17,6 +17,8 @@
 -define(BREADTH_ORDER,true). % for linear scan
 -define(PARAMS_NEEDED,true).
 -define(START_LABEL_UPDATE_NEEDED,true).
+
+-include("../flow/cfg.hrl").
 -include("../flow/cfg.inc").
 -include("hipe_arm.hrl").
 
